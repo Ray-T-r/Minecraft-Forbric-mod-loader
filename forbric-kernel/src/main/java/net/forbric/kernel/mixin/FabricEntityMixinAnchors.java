@@ -94,11 +94,17 @@ public final class FabricEntityMixinAnchors {
     ||!MixinCallbackShape.binds(handler,target,host.name+host.desc))return 0;
   List<AnnotationNode> points=MixinFit.atNodes(inject);
   if(points.size()!=1||!MixinCallbackShape.names(points.getFirst(),"Ljava/util/List;isEmpty()Z",MixinCallbackShape.written(handler,source)))return 0;
-  List<AbstractInsnNode> body=code(host);if(body.size()<4||!(body.get(0) instanceof VarInsnNode self)||self.var!=0||self.getOpcode()!=Opcodes.ALOAD
-    ||!(body.get(1) instanceof VarInsnNode pos)||pos.var!=1||pos.getOpcode()!=Opcodes.ALOAD
-    ||!(body.get(2) instanceof InvokeDynamicInsnNode capture)||!capture.bsm.getOwner().equals("java/lang/invoke/LambdaMetafactory")
-    ||!capture.desc.equals("(Lnet/minecraft/server/level/ServerPlayer;Lnet/minecraft/core/BlockPos;)Ljava/util/function/Supplier;")
-    ||!call(body.get(3),"java/util/function/Supplier","get","()Ljava/lang/Object;"))return 0;
+  // The host hands its own receiver and position to one supplier it calls at once: that lambda is the native body. The
+  // capture need not open the method — a merge may keep another ecosystem's own early check in front of it.
+  List<AbstractInsnNode> body=code(host);InvokeDynamicInsnNode capture=null;int captures=0;
+  for(int i=0;i<body.size();i++)if(body.get(i) instanceof InvokeDynamicInsnNode site&&site.bsm.getOwner().equals("java/lang/invoke/LambdaMetafactory")
+    &&site.desc.equals("(Lnet/minecraft/server/level/ServerPlayer;Lnet/minecraft/core/BlockPos;)Ljava/util/function/Supplier;")) {
+   captures++;
+   if(i>=2&&i+1<body.size()&&body.get(i-2) instanceof VarInsnNode self&&self.var==0&&self.getOpcode()==Opcodes.ALOAD
+     &&body.get(i-1) instanceof VarInsnNode pos&&pos.var==1&&pos.getOpcode()==Opcodes.ALOAD
+     &&call(body.get(i+1),"java/util/function/Supplier","get","()Ljava/lang/Object;"))capture=site;
+  }
+  if(captures!=1||capture==null)return 0;
   List<MethodNode> matches=new ArrayList<>();
   for(Object argument:capture.bsmArgs)if(argument instanceof org.objectweb.asm.Handle h && h.getOwner().equals(target.name)
     &&h.getName().startsWith("lambda$startSleepInBed$")&&h.getDesc().equals(host.desc)

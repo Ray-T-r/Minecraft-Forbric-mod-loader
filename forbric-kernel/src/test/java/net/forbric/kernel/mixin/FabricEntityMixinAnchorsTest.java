@@ -41,6 +41,31 @@ class FabricEntityMixinAnchorsTest {
   List<String> methods=MixinFit.stringList(MixinFit.value(MixinFit.injectorOf(StagedFabricMixinFixture.method(mixin,"hasNoMonstersNearby")),"method"));
   assertEquals(1,methods.size());assertTrue(methods.getFirst().startsWith("lambda$startSleepInBed$"));assertTrue(methods.getFirst().endsWith("(Lnet/minecraft/core/BlockPos;)Lcom/mojang/datafixers/util/Either;"));
  }
+ /**
+  * The native lambda is the one supplier the host builds from its receiver and position and calls at once, wherever in the
+  * host that happens (a merge may keep another ecosystem's early check in front of it); two such suppliers are not guessed.
+  */
+ @Test void nearbyMonsterLambdaIsTheHostsOneImmediatelyCalledSupplierWhereverItStands()throws Exception{
+  String sleep="(Lnet/minecraft/core/BlockPos;)Lcom/mojang/datafixers/util/Either;";
+  ClassNode preceded=StagedFabricMixinFixture.game("net/minecraft/server/level/ServerPlayer",false);
+  MethodNode host=preceded.methods.stream().filter(m->m.name.equals("startSleepInBed")&&m.desc.equals(sleep)).findFirst().orElseThrow();
+  host.instructions.insert(new InsnNode(Opcodes.POP));host.instructions.insert(new VarInsnNode(Opcodes.ALOAD,1));
+  ClassNode mixin=StagedFabricMixinFixture.mixin("fabric-entity-events-v1",ROOT+"ServerPlayerMixin");
+  assertEquals(1,FabricEntityMixinAnchors.adapt(mixin,n->preceded),"a preamble in front of the supplier");
+
+  ClassNode twice=StagedFabricMixinFixture.game("net/minecraft/server/level/ServerPlayer",false);
+  MethodNode doubled=twice.methods.stream().filter(m->m.name.equals("startSleepInBed")&&m.desc.equals(sleep)).findFirst().orElseThrow();
+  InvokeDynamicInsnNode capture=null;
+  for(var i:doubled.instructions)if(i instanceof InvokeDynamicInsnNode site&&site.desc.endsWith(")Ljava/util/function/Supplier;"))capture=site;
+  assertNotNull(capture,"premise: the host builds a supplier");
+  InsnList copy=new InsnList();
+  copy.add(new VarInsnNode(Opcodes.ALOAD,0));copy.add(new VarInsnNode(Opcodes.ALOAD,1));
+  copy.add(new InvokeDynamicInsnNode(capture.name,capture.desc,capture.bsm,capture.bsmArgs));
+  copy.add(new MethodInsnNode(Opcodes.INVOKEINTERFACE,"java/util/function/Supplier","get","()Ljava/lang/Object;",true));copy.add(new InsnNode(Opcodes.POP));
+  doubled.instructions.insert(copy);
+  ClassNode untouched=StagedFabricMixinFixture.mixin("fabric-entity-events-v1",ROOT+"ServerPlayerMixin");
+  assertEquals(0,FabricEntityMixinAnchors.adapt(untouched,n->twice),"two suppliers: which is the native body is not guessed");
+ }
  @Test void actualEffectHandlersMoveToNativeValidationAndPreRemovalSnapshotStages()throws Exception{
   ClassNode mixin=effects(),target=StagedFabricMixinFixture.living(false);
   assertEquals(3,FabricEntityMixinAnchors.adapt(mixin,n->target));
