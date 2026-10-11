@@ -44,10 +44,13 @@ import net.forbric.kernel.TestFixtures.Fixture;
 /**
  * Covers {@code Mob.getSpawnReason()} against the REAL staged base.
  *
- * <p>The merge left {@code Mob} carrying both families' spawn fields under different names, and every producer
- * writes only one of them. {@code javap}: two {@code putfield spawnType}, zero {@code putfield spawnReason}. So
- * the accessor read a field nothing had ever written and answered null for every mob — which sends every mod
- * that branches on how a mob was spawned down one branch, silently.
+ * <p>The merge left {@code Mob} carrying both families' spawn fields under different names. The first merge wrote only
+ * one of them ({@code javap}: two {@code putfield spawnType}, zero {@code putfield spawnReason}), so the accessor read a
+ * field nothing had ever written and answered null for every mob — which sends every mod that branches on how a mob
+ * was spawned down one branch, silently. The edit-splicing merge keeps MinecraftForge's {@code this.spawnReason =
+ * reason} in {@code finalizeSpawn}, mirrored by NeoForge's {@code spawnType} store, but the load lambda restores only
+ * {@code spawnType}: every mob read back from disk answered null. The read moves in both shapes, and stays where it is
+ * when {@code spawnReason} has a producer of its own.
  *
  * <p>Checked against the staged base rather than a fixture, because what can drift is what the OTHER
  * repository's merge emits.
@@ -105,6 +108,65 @@ class MergedBaseSpawnReasonTest {
 				"net.minecraft.world.entity.Mob", once, null);
 
 		assertSame(once, twice, "with no reads left there is nothing to rewrite, and the pass must say so");
+	}
+
+	/**
+	 * Both merged shapes of the staged class: as staged, and with every {@code spawnReason} write taken out (the first
+	 * merge's shape). Every read moves to {@code spawnType} either way.
+	 */
+	@Test
+	void theReadMovesWhetherSpawnReasonIsNeverWrittenOrOnlyMirrored() throws Exception {
+		for (boolean stripped : new boolean[] { false, true }) {
+			ClassNode node = parse(original());
+			if (stripped) {
+				for (MethodNode method : node.methods) {
+					for (AbstractInsnNode insn : method.instructions.toArray()) {
+						if (insn instanceof FieldInsnNode f && f.getOpcode() == Opcodes.PUTFIELD && OWNER.equals(f.owner) && "spawnReason".equals(f.name)) {
+							// `aload 0; <value>; putfield` becomes nothing: the value and the receiver are both popped.
+							method.instructions.set(insn, new org.objectweb.asm.tree.InsnNode(Opcodes.POP2));
+						}
+					}
+				}
+				assertEquals(0, writes(node, "spawnReason"), "premise: the first merge's shape writes no spawnReason");
+			}
+			ClassNode repaired = parse(new ForbricMergedBaseCompatTransformer().transform("net.minecraft.world.entity.Mob", bytes(node), null));
+			assertEquals("spawnType", fieldRead(method(repaired, "getSpawnReason", "()" + SPAWN_REASON)), stripped ? "never written" : "only mirrored");
+		}
+	}
+
+	/**
+	 * A {@code spawnReason} producer without a {@code spawnType} twin makes the field live: here the load lambda,
+	 * restoring {@code spawnReason} alone, as MinecraftForge's own does. The read must then stay where it is.
+	 */
+	@Test
+	void aProducerOfItsOwnKeepsTheReadWhereItIs() throws Exception {
+		ClassNode node = parse(original());
+		int retargeted = 0;
+		for (MethodNode method : node.methods) {
+			if (!method.name.startsWith("lambda$readAdditionalSaveData$")) continue;
+			for (AbstractInsnNode insn : method.instructions) {
+				if (insn instanceof FieldInsnNode f && f.getOpcode() == Opcodes.PUTFIELD && OWNER.equals(f.owner) && "spawnType".equals(f.name)) {
+					f.name = "spawnReason";
+					retargeted++;
+				}
+			}
+		}
+		assertEquals(1, retargeted, "premise: the load lambda restores the spawn field");
+		ClassNode repaired = parse(new ForbricMergedBaseCompatTransformer().transform("net.minecraft.world.entity.Mob", bytes(node), null));
+		assertEquals("spawnReason", fieldRead(method(repaired, "getSpawnReason", "()" + SPAWN_REASON)),
+				"spawnReason has a producer of its own; rerouting its read would discard it");
+	}
+
+	private static ClassNode parse(byte[] bytes) {
+		ClassNode node = new ClassNode();
+		new ClassReader(bytes).accept(node, 0);
+		return node;
+	}
+
+	private static byte[] bytes(ClassNode node) {
+		org.objectweb.asm.ClassWriter writer = new org.objectweb.asm.ClassWriter(0);
+		node.accept(writer);
+		return writer.toByteArray();
 	}
 
 	@Test

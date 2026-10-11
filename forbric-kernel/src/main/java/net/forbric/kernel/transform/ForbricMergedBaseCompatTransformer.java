@@ -191,7 +191,7 @@ public final class ForbricMergedBaseCompatTransformer implements ClassTransforme
 		out.add(fixed("askNeoForgeWhatAnItemsAttributesAre", ITEM_STACK,
 				"an item's attributes are read off the raw component — elytra flight and every NeoForge attribute modifier stop working"));
 		out.add(fixed("readTheSpawnReasonThatIsActuallyWritten", "net/minecraft/world/entity/Mob",
-				"Mob.getSpawnReason() reads a field the game never writes — spawn-reason logic sees null"));
+				"Mob.getSpawnReason() reads a field the game does not always write — spawn-reason logic sees null"));
 		out.add(scanned("giveTheUnwrittenLoggerAValue", "any class with a static final Logger the merge left unassigned"));
 		// The capability composition (E) runs first in the same phase and composes the three roots itself on every
 		// launch — -Dforbric.forgeCapabilities=off turns off its dispatch, not the composition the roots' merged
@@ -2262,22 +2262,28 @@ public final class ForbricMergedBaseCompatTransformer implements ClassTransforme
 	 * <p>Only the read moves. The field declaration stays, because an access widener or a mixin may name it, and
 	 * removing it would cost more than the dead field does.
 	 *
-	 * <p>A merge that keeps both sides' edits may write {@code spawnReason} too — the edit-spliced base keeps
-	 * MinecraftForge's {@code this.spawnReason = reason} in {@code finalizeSpawn}, next to NeoForge's
-	 * {@code this.spawnType = reason} — but only there: a mob loaded from its save data still gets {@code spawnType}
-	 * alone, and {@code getSpawnReason()} answers null for it. So a {@code spawnReason} producer only makes the field
-	 * live when it is its own: every store into it must be matched, in the same method, by a store of the same unchanged
-	 * value into {@code spawnType} ({@link #spawnTypeCarriesSpawnReason}). Then {@code spawnType} holds everything
-	 * {@code spawnReason} ever does, and more, and the read moves; otherwise it is left alone.
+	 * <p>A merge that keeps both sides' edits writes {@code spawnReason} again — MinecraftForge's
+	 * {@code this.spawnReason = reason} next to NeoForge's {@code this.spawnType = reason} in {@code finalizeSpawn} —
+	 * but not on load, where only NeoForge's {@code spawnType} is restored, so every mob read back from disk answered
+	 * null. A {@code spawnReason} write that stores the same value as a {@code spawnType} write in the same method is a
+	 * mirror: it can only be as fresh as {@code spawnType}, never fresher, so the read still moves. Any
+	 * {@code spawnReason} write without such a twin is a producer of its own, and the field is left alone.
 	 */
 	private static boolean readTheSpawnReasonThatIsActuallyWritten(ClassNode node) {
 		if (!"net/minecraft/world/entity/Mob".equals(node.name)) return false;
 		if (!hasField(node, "spawnReason", SPAWN_REASON) || !hasField(node, "spawnType", SPAWN_REASON)) return false;
 
-		// If anything writes spawnReason that spawnType does not also receive, the field is live and must be left
-		// alone — the same guard the particle-map reroute uses, and for the same reason: a future base may keep the
-		// other family's producer.
-		if (!spawnTypeCarriesSpawnReason(node)) return false;
+		// If anything writes spawnReason on its own, the field is live and must be left alone — the same guard the
+		// particle-map reroute uses, and for the same reason: a future base may keep the other family's producer.
+		for (MethodNode method : node.methods) {
+			for (AbstractInsnNode insn = method.instructions.getFirst(); insn != null; insn = insn.getNext()) {
+				if (insn instanceof FieldInsnNode field && field.getOpcode() == Opcodes.PUTFIELD
+						&& node.name.equals(field.owner) && "spawnReason".equals(field.name)
+						&& !mirroredBy(method, field, "spawnType")) {
+					return false;
+				}
+			}
+		}
 
 		boolean changed = false;
 		for (MethodNode method : node.methods) {
@@ -2291,45 +2297,49 @@ public final class ForbricMergedBaseCompatTransformer implements ClassTransforme
 			}
 		}
 		if (changed) {
-			ForbricLog.warn("[Forbric/MergedBaseCompat] Mob.getSpawnReason() read a field nothing ever writes, so "
-					+ "it answered null for every mob — mods that branch on how a mob was spawned (spawner, egg, "
-					+ "command, natural) all took the same branch. It now reads the field the game writes");
+			ForbricLog.warn("[Forbric/MergedBaseCompat] Mob.getSpawnReason() read a field not every producer writes "
+					+ "(nothing at all, or only finalizeSpawn and never a load), so it answered null for every mob, or "
+					+ "every mob read back from disk — mods that branch on how a mob was spawned (spawner, egg, command, "
+					+ "natural) took the same branch. It now reads the field the game always writes");
 		}
 		return changed;
 	}
 
 	/**
-	 * Whether every {@code this.spawnReason = x} in {@code Mob} sits in a method that also does {@code this.spawnType = x}
-	 * with the same local {@code x}, which that method never reassigns. True when nothing writes {@code spawnReason}.
+	 * Whether {@code write} ({@code this.f = <local>}) is mirrored in {@code method} by {@code this.<twin> = <the same
+	 * local>}, with nothing between the two that could change the local, branch, or be branched into: the two fields
+	 * then hold the same value from that point on.
 	 */
-	private static boolean spawnTypeCarriesSpawnReason(ClassNode node) {
-		for (MethodNode method : node.methods) {
-			for (AbstractInsnNode insn = method.instructions.getFirst(); insn != null; insn = insn.getNext()) {
-				if (!(insn instanceof FieldInsnNode field) || field.getOpcode() != Opcodes.PUTFIELD
-						|| !node.name.equals(field.owner) || !"spawnReason".equals(field.name)) continue;
-				int local = storedLocal(field);
-				if (local < 0) return false;
-				boolean matched = false;
-				for (AbstractInsnNode other = method.instructions.getFirst(); other != null; other = other.getNext()) {
-					if (other instanceof VarInsnNode store && store.var == local && store.getOpcode() >= Opcodes.ISTORE
-							&& store.getOpcode() <= Opcodes.ASTORE) return false;
-					if (other instanceof FieldInsnNode twin && twin.getOpcode() == Opcodes.PUTFIELD && node.name.equals(twin.owner)
-							&& "spawnType".equals(twin.name) && SPAWN_REASON.equals(twin.desc) && storedLocal(twin) == local) matched = true;
-				}
-				if (!matched) return false;
-			}
+	private static boolean mirroredBy(MethodNode method, FieldInsnNode write, String twin) {
+		if (!(previousRealInsn(write) instanceof VarInsnNode value) || value.getOpcode() < Opcodes.ILOAD
+				|| value.getOpcode() > Opcodes.ALOAD || !(previousRealInsn(value) instanceof VarInsnNode self)
+				|| self.getOpcode() != Opcodes.ALOAD || self.var != 0) return false;
+		java.util.Set<LabelNode> targets = java.util.Collections.newSetFromMap(new java.util.IdentityHashMap<>());
+		for (AbstractInsnNode insn = method.instructions.getFirst(); insn != null; insn = insn.getNext()) {
+			if (insn instanceof JumpInsnNode jump) targets.add(jump.label);
+			if (insn instanceof org.objectweb.asm.tree.TableSwitchInsnNode table) { targets.add(table.dflt); targets.addAll(table.labels); }
+			if (insn instanceof org.objectweb.asm.tree.LookupSwitchInsnNode table) { targets.add(table.dflt); targets.addAll(table.labels); }
 		}
-		return true;
-	}
-
-	/** The local {@code put} stores into {@code this} ({@code aload 0; aload n; putfield}), or -1 for any other value. */
-	private static int storedLocal(FieldInsnNode put) {
-		AbstractInsnNode value = put.getPrevious();
-		while (value != null && value.getOpcode() < 0) value = value.getPrevious();
-		AbstractInsnNode receiver = value == null ? null : value.getPrevious();
-		while (receiver != null && receiver.getOpcode() < 0) receiver = receiver.getPrevious();
-		return value instanceof VarInsnNode load && load.getOpcode() == Opcodes.ALOAD
-				&& receiver instanceof VarInsnNode self && self.getOpcode() == Opcodes.ALOAD && self.var == 0 ? load.var : -1;
+		if (method.tryCatchBlocks != null) for (TryCatchBlockNode block : method.tryCatchBlocks) targets.add(block.handler);
+		for (AbstractInsnNode insn = method.instructions.getFirst(); insn != null; insn = insn.getNext()) {
+			if (!(insn instanceof FieldInsnNode other) || other.getOpcode() != Opcodes.PUTFIELD
+					|| !write.owner.equals(other.owner) || !twin.equals(other.name) || !write.desc.equals(other.desc)) continue;
+			if (!(previousRealInsn(other) instanceof VarInsnNode same) || same.getOpcode() != value.getOpcode()
+					|| same.var != value.var || !(previousRealInsn(same) instanceof VarInsnNode receiver)
+					|| receiver.getOpcode() != Opcodes.ALOAD || receiver.var != 0) continue;
+			int a = method.instructions.indexOf(write), b = method.instructions.indexOf(other);
+			AbstractInsnNode from = a < b ? write : other, to = a < b ? other : write;
+			boolean straight = true;
+			for (AbstractInsnNode at = from.getNext(); at != null && at != to && straight; at = at.getNext()) {
+				straight = !(at instanceof LabelNode label && targets.contains(label) || at instanceof JumpInsnNode
+						|| at instanceof org.objectweb.asm.tree.TableSwitchInsnNode || at instanceof org.objectweb.asm.tree.LookupSwitchInsnNode
+						|| at.getOpcode() == Opcodes.ATHROW || at.getOpcode() >= Opcodes.IRETURN && at.getOpcode() <= Opcodes.RETURN
+						|| at instanceof VarInsnNode store && store.getOpcode() >= Opcodes.ISTORE && store.getOpcode() <= Opcodes.ASTORE && store.var == value.var
+						|| at instanceof org.objectweb.asm.tree.IincInsnNode increment && increment.var == value.var);
+			}
+			if (straight) return true;
+		}
+		return false;
 	}
 
 	/**
