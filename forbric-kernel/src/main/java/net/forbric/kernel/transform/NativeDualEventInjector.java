@@ -478,9 +478,15 @@ public final class NativeDualEventInjector implements ClassTransformer {
 		Set<String> known = cache.get(key);
 		if (known != null) return known;
 		if (depth > DEPTH) return Set.of();
-		Set<String> out = readForgeDeliveries(owner, name, desc, depth, always);
-		cache.putIfAbsent(key, out);
-		return out;
+		// The cached hook classes are shared by the threads that load classes, and an Analyzer or an InsnList index
+		// writes into the nodes it reads, so the first reading of each hook is serialized; later ones hit the cache.
+		synchronized (parsed) {
+			known = cache.get(key);
+			if (known != null) return known;
+			Set<String> out = readForgeDeliveries(owner, name, desc, depth, always);
+			cache.putIfAbsent(key, out);
+			return out;
+		}
 	}
 
 	private Set<String> readForgeDeliveries(String owner, String name, String desc, int depth, boolean always) {
@@ -528,6 +534,13 @@ public final class NativeDualEventInjector implements ClassTransformer {
 		Boolean known = neoDeliveries.get(key);
 		if (known != null) return known;
 		if (depth > DEPTH) return false;
+		synchronized (parsed) {
+			known = neoDeliveries.get(key);
+			return known != null ? known : readNeoDelivers(owner, name, desc, depth, key);
+		}
+	}
+
+	private boolean readNeoDelivers(String owner, String name, String desc, int depth, String key) {
 		MethodNode hook = staticMethod(owner, name, desc);
 		boolean out = false;
 		if (hook != null) {
