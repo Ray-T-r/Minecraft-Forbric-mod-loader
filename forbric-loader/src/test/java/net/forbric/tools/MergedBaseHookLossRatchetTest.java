@@ -30,6 +30,11 @@ import org.objectweb.asm.tree.ClassNode;
  * <p>The platform census ({@link LostHookAttribution#platformCensus}) counts every occurrence of a platform call a
  * patched game makes that the merged base no longer makes in the same caller. Keeping both ecosystems' edits in the
  * methods both patched brought that from 794 to 409 on the MinecraftForge side and from 16 to 15 on the NeoForge side.
+ * The splice then stopped carrying runs that did the wrong thing in the base: an edit acting on a member both patches
+ * added while the base's edit acts on it too (a second implementation), a copy of code whose other copies stayed out,
+ * a read of a field nothing writes, a hook result the base overwrites before reading, a run the base reaches from
+ * code that skipped it; and every lambda a spliced method captures went back to the base's side. That raised the
+ * MinecraftForge count to 437 (the NeoForge count stayed 15), each added loss one of those changes.
  * A merge-tool change may lower these numbers and never raise them; when one lowers them, lower the ceilings with it.
  * A caller the merged base no longer has is unobserved, not lost, so the census must observe every caller too, or a
  * merge that dropped a whole method would move its calls out of the count.
@@ -41,7 +46,7 @@ import org.objectweb.asm.tree.ClassNode;
  * record this skips like the other staged tests; FORBRIC_COMPAT_FIXTURES_REQUIRED=1 makes the absence a failure.
  */
 class MergedBaseHookLossRatchetTest {
-	static final long FORGE_RAW_LOST_CEILING = 409;
+	static final long FORGE_RAW_LOST_CEILING = 437;
 	static final long NEO_RAW_LOST_CEILING = 15;
 
 	private record Staged(Path root, String build, Map<String, ClassNode> forge, Map<String, ClassNode> neo,
