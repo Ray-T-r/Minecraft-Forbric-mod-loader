@@ -19,8 +19,12 @@ if [ "${1:-}" = "--execute-phase" ]; then
     *) exit 2 ;;
   esac
   rm -f "$result" "$RESULTS/$phase-compatibility.json"
+  # The order the two families' portal listeners are asked in: the merged base's own while the composition is on,
+  # NeoForge's and then the legacy forward's when it is off (it takes a restored MinecraftForge call back out).
+  order="${M35_BASE_PORTAL_ORDER:?the parent run reads it from the merged base}"
+  [ "$portal" = off ] && order=neo-first
   RUNDIR="$RUNDIR" FORBRIC_COMPAT_POLICY="$policy" \
-    FORBRIC_JVM="${FORBRIC_JVM:-} -Dforbric.portalSpawn=$portal -Dforbric.spawnerFinalize=$spawner -Dforbric.unifiedEvents=$events -Dforbric.relaxGuestMixins=off -Dforbric.behaviorPhase=$phase -Dforbric.behaviorToken=$token -Dforbric.behaviorRoot=$RUNDIR -Dforbric.behaviorOutput=$result" \
+    FORBRIC_JVM="${FORBRIC_JVM:-} -Dforbric.behaviorPortalOrder=$order -Dforbric.portalSpawn=$portal -Dforbric.spawnerFinalize=$spawner -Dforbric.unifiedEvents=$events -Dforbric.relaxGuestMixins=off -Dforbric.behaviorPhase=$phase -Dforbric.behaviorToken=$token -Dforbric.behaviorRoot=$RUNDIR -Dforbric.behaviorOutput=$result" \
     "$KERNEL/run/launch-kernel-server.sh" </dev/null
   code=$?
   if [ -f "$RUNDIR/.forbric-kernel/compatibility-report.json" ]; then
@@ -46,6 +50,25 @@ FORGE_RT="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["for
 NEO_RT="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["neo"]["path"])' "$INPUTS")"
 COMPILE_GAME="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["compileGame"]["path"])' "$INPUTS")"
 export MERGED FORGE_RT NEO_RT
+
+# Which family BaseFireBlock.onPlace asks first, read from the merged base this run boots. A base carrying both portal
+# hooks asks them in its own order; one carrying only NeoForge's asks MinecraftForge through the forward, after it.
+# The probe is told, not left to assume: it once hard-coded NeoForge first, and a merge that keeps both sides' edits
+# writes MinecraftForge's statement first, so every veto case failed on a caller the kernel composes correctly.
+M35_BASE_PORTAL_ORDER="$(javap -c -p -cp "$MERGED" net.minecraft.world.level.block.BaseFireBlock 2>/dev/null | python3 -c '
+import re, sys
+text = sys.stdin.read()
+body = re.search(r"\n  [^\n]* onPlace\(net\.minecraft\.world\.level\.block\.state\.BlockState, net\.minecraft\.world\.level\.Level, "
+                 r"net\.minecraft\.core\.BlockPos, net\.minecraft\.world\.level\.block\.state\.BlockState, boolean\);\n(.*?)\n\n", text, re.S)
+if not body:
+    sys.exit("no BaseFireBlock.onPlace in the merged base")
+calls = [m.group(1) for m in re.finditer(r"Method (net/minecraftforge/event/ForgeEventFactory|net/neoforged/neoforge/event/EventHooks)\.onTrySpawnPortal:", body.group(1))]
+if "net/neoforged/neoforge/event/EventHooks" not in calls:
+    sys.exit("BaseFireBlock.onPlace asks no NeoForge portal hook: " + str(calls))
+print("forge-first" if calls[0] == "net/minecraftforge/event/ForgeEventFactory" else "neo-first")
+')" || { echo "[kernel] FAIL cannot read BaseFireBlock.onPlace's portal hooks from the merged base ($MERGED)"; exit 1; }
+export M35_BASE_PORTAL_ORDER
+echo "[kernel] the merged base asks the portal hooks $M35_BASE_PORTAL_ORDER"
 
 kill_owned_descendants() {
   local parent="$1" child

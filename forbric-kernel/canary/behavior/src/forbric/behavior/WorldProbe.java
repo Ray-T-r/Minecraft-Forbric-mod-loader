@@ -49,6 +49,8 @@ public final class WorldProbe {
     private static String activePortal, phase, token;
     private static BlockPos activeFire;
     private static int portalNeo, portalForge, spawnerNeo, spawnerForge, inputKeys, markerValue;
+    /** Which family's portal listener ran, in the order they ran, for the active portal. */
+    private static final List<String> portalOrder = new ArrayList<>();
     private static int itemNeo, itemForge, elapsed;
     private static FinalizeSpawnEvent neoFinalize;
     private static ProbeMob itemUser;
@@ -62,12 +64,12 @@ public final class WorldProbe {
     public static void installListeners() {
         NeoForge.EVENT_BUS.addListener(BlockEvent.PortalSpawnEvent.class, event -> {
             if (activePortal == null || !event.getPos().equals(activeFire)) return;
-            portalNeo++;
+            portalNeo++; portalOrder.add("neo");
             if (activePortal.equals("neo-veto")) event.setCanceled(true);
         });
         net.minecraftforge.event.level.BlockEvent.PortalSpawnEvent.BUS.addListener((java.util.function.Predicate<net.minecraftforge.event.level.BlockEvent.PortalSpawnEvent>) event -> {
             if (activePortal == null || !event.getPos().equals(activeFire)) return false;
-            portalForge++; return activePortal.equals("forge-veto");
+            portalForge++; portalOrder.add("forge"); return activePortal.equals("forge-veto");
         });
         NeoForge.EVENT_BUS.addListener(FinalizeSpawnEvent.class, event -> {
             if (activeSpawner == null || !(event.getEntity() instanceof ProbeMob)) return;
@@ -157,7 +159,7 @@ public final class WorldProbe {
 
     private static void portal(ServerLevel level, String mode, BlockPos fire) {
         Map<String, Object> evidence = new LinkedHashMap<>(); boolean pass = false;
-        activePortal = mode; activeFire = fire; portalNeo = portalForge = portalReplacementCalls = 0;
+        activePortal = mode; activeFire = fire; portalNeo = portalForge = portalReplacementCalls = 0; portalOrder.clear();
         BlockPos replacement = fire.offset(12, 0, 0);
         try {
             frame(level, fire); frame(level, replacement);
@@ -167,7 +169,15 @@ public final class WorldProbe {
             int first = portalBlocks(level, fire), second = portalBlocks(level, replacement);
             evidence.put("originalPortalBlocks", first); evidence.put("replacementPortalBlocks", second);
             evidence.put("neoEvents", portalNeo); evidence.put("forgeEvents", portalForge); evidence.put("replacementReturns", portalReplacementCalls);
-            require(portalNeo == 1 && portalForge == (mode.equals("neo-veto") ? 0 : 1), "portal callback count differs");
+            // Each family is asked once, in the order the game asks them, and the second only if the first allowed it.
+            // The order is the gate's to state (the merged base's own, or NeoForge's then the forward's), never this
+            // probe's to guess: it used to hard-code NeoForge first, which a base asking MinecraftForge first fails
+            // on its veto cases however correctly it composes them.
+            String askedFirst = System.getProperty("forbric.behaviorPortalOrder", "neo-first").equals("forge-first") ? "forge" : "neo";
+            String askedSecond = askedFirst.equals("neo") ? "forge" : "neo";
+            List<String> expected = mode.equals(askedFirst + "-veto") ? List.of(askedFirst) : List.of(askedFirst, askedSecond);
+            evidence.put("order", List.copyOf(portalOrder)); evidence.put("expectedOrder", expected);
+            require(portalOrder.equals(expected), "portal callback sequence differs");
             require(first == (mode.equals("allow") ? 6 : 0), "original frame result differs");
             require(second == (mode.equals("replacement") ? 6 : 0), "replacement frame result differs");
             if (mode.equals("replacement")) require(portalReplacementCalls == 1, "real Forge hook-return mixin did not run exactly once");
