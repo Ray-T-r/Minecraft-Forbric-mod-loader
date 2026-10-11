@@ -23,9 +23,12 @@ import org.objectweb.asm.tree.MethodNode;
 import net.fabricmc.api.EnvType;
 
 /**
- * {@link CommonNetworkInteropInjector} on a merged listener that kept MinecraftForge's own
- * {@code if (ForgeHooks.onCustomPayload(payload, connection)) return;} — the shape a base that splices both families'
- * edits of {@code handleCustomPayload} produces — run against the kernel's real boot-side {@code PayloadInterop}.
+ * {@link CommonNetworkInteropInjector} on a merged listener that kept MinecraftForge's own call to
+ * {@code ForgeHooks.onCustomPayload(payload, connection)} — what a base that splices both families' edits of
+ * {@code handleCustomPayload} produces — run against the kernel's real boot-side {@code PayloadInterop}. The two
+ * listeners keep it in two shapes: the client's {@code if (ForgeHooks.onCustomPayload(...)) return;}, and the
+ * server's bare call whose answer is POPped (MinecraftForge's own server body is empty), with NeoForge's body behind
+ * it either way.
  *
  * <p>The stand-in {@code ForgeHooks} does what MinecraftForge's does with a payload for a channel it has a target for:
  * it builds a {@code CustomPayloadEvent}, whose data buffer is taken from a {@code ForgePayload} and is null for
@@ -33,8 +36,9 @@ import net.fabricmc.api.EnvType;
  * (Forge's channel-registration channel claims it) but on a merged base decodes as NeoForge's record, because the
  * decode puts Forge last. As merged, that one packet ends every join without fabric-api.
  *
- * <p>The negative control is the other base shape: a listener that does NOT carry Forge's call still gets the kernel's
- * dispatch prologue, so a stand-down keyed on the call cannot leave a base without a Forge dispatcher.
+ * <p>The negative controls are the other shapes: a listener that does NOT carry Forge's call, and one whose call's
+ * answer ends nothing, still get the kernel's dispatch prologue, so a stand-down keyed on the call cannot leave a base
+ * without a Forge dispatcher or hand a ForgePayload on to NeoForge's body after Forge took it.
  */
 @ExecutesInjector(CommonNetworkInteropInjector.class)
 @ResourceLock("system-properties")
@@ -74,12 +78,28 @@ class NativeForgePayloadDispatchExecutionTest {
 				""".formatted(name);
 	}
 
+	/** How a merged listener carries MinecraftForge's call, if at all, in front of NeoForge's body. */
+	enum Forge {
+		/** NeoForge won the method: its body alone. */
+		ABSENT(""),
+		/** The client listener's patch: Forge's answer ends the method. */
+		RETURNS("if (net.minecraftforge.common.ForgeHooks.onCustomPayload(packet.payload(), this.connection)) return;"),
+		/** The server listener's patch: Forge's answer is discarded, and NeoForge's body runs whatever it was. */
+		DISCARDED("net.minecraftforge.common.ForgeHooks.onCustomPayload(packet.payload(), this.connection);");
+
+		final String statement;
+
+		Forge(String statement) {
+			this.statement = statement;
+		}
+	}
+
 	/**
-	 * A common listener as a both-edits merge leaves it: MinecraftForge's dispatch first, then NeoForge's body —
-	 * NeoForge's own unregister bookkeeping, then its dispatcher, which disconnects on a channel it never registered.
-	 * With {@code forgeFirst} false it is the other base: NeoForge's body alone.
+	 * A common listener as the merge leaves it: MinecraftForge's call in {@code forge}'s shape, then NeoForge's body —
+	 * its own unregister bookkeeping, then {@code isModdedPayload} into its dispatcher, which disconnects on a channel
+	 * it never registered, and vanilla's path for anything else.
 	 */
-	private static String commonListener(String pkg, String name, String packet, boolean forgeFirst) {
+	private static String commonListener(String pkg, String name, String packet, Forge forge) {
 		return """
 				package %s;
 
@@ -88,6 +108,7 @@ class NativeForgePayloadDispatchExecutionTest {
 				import net.minecraft.network.Connection;
 				import net.minecraft.network.protocol.common.%s;
 				import net.neoforged.neoforge.network.payload.MinecraftUnregisterPayload;
+				import net.neoforged.neoforge.network.registration.NetworkRegistry;
 
 				public class %s {
 					protected final Connection connection;
@@ -104,16 +125,18 @@ class NativeForgePayloadDispatchExecutionTest {
 							return;
 						}
 						String id = packet.payload().type().id().toString();
-						if (id.startsWith("neomod:")) handled.add("neoforge " + id);
-						else connection.disconnect("No Channel for " + id);
+						if (NetworkRegistry.isModdedPayload(packet.payload())) {
+							if (NetworkRegistry.registered(id)) handled.add("neoforge " + id);
+							else connection.disconnect("No Channel for " + id);
+							return;
+						}
+						handled.add("vanilla " + id);
 					}
 				}
-				""".formatted(pkg, packet, name, name, packet, forgeFirst
-						? "if (net.minecraftforge.common.ForgeHooks.onCustomPayload(packet.payload(), this.connection)) return;"
-						: "");
+				""".formatted(pkg, packet, name, name, packet, forge.statement);
 	}
 
-	private static Map<String, String> standIns(boolean forgeFirst) {
+	private static Map<String, String> standIns(Forge forge) {
 		Map<String, String> sources = new HashMap<>();
 		sources.put("net.minecraft.resources.Identifier", """
 				package net.minecraft.resources;
@@ -188,9 +211,9 @@ class NativeForgePayloadDispatchExecutionTest {
 				}
 				""");
 		sources.put(CLIENT_COMMON, commonListener("net.minecraft.client.multiplayer", "ClientCommonPacketListenerImpl",
-				"ClientboundCustomPayloadPacket", forgeFirst));
+				"ClientboundCustomPayloadPacket", forge));
 		sources.put(SERVER_COMMON, commonListener("net.minecraft.server.network", "ServerCommonPacketListenerImpl",
-				"ServerboundCustomPayloadPacket", forgeFirst));
+				"ServerboundCustomPayloadPacket", forge));
 		sources.put("net.minecraft.network.protocol.common.ServerCommonPacketListener",
 				"package net.minecraft.network.protocol.common; public interface ServerCommonPacketListener { }");
 		sources.put("net.neoforged.neoforge.network.registration.NetworkRegistry", """
@@ -201,12 +224,25 @@ class NativeForgePayloadDispatchExecutionTest {
 				import java.util.Map;
 				import net.minecraft.network.protocol.common.ServerCommonPacketListener;
 				import net.minecraft.network.protocol.common.ServerboundCustomPayloadPacket;
+				import net.minecraft.network.protocol.common.custom.CustomPacketPayload;
 				import net.minecraft.resources.Identifier;
 
 				public class NetworkRegistry {
 					public static final List<String> dispatched = new ArrayList<>();
 					static final Map<String, Map<Identifier, String>> PAYLOAD_REGISTRATIONS =
 							Map.of("play", Map.of(new Identifier("neomod:key"), "registered by a NeoForge mod"));
+
+					/** NeoForge's question: anything outside the minecraft namespace goes to its dispatcher. */
+					public static boolean isModdedPayload(CustomPacketPayload payload) {
+						return !payload.type().id().toString().startsWith("minecraft:");
+					}
+
+					public static boolean registered(String id) {
+						for (Map<Identifier, String> protocol : PAYLOAD_REGISTRATIONS.values()) {
+							if (protocol.containsKey(new Identifier(id))) return true;
+						}
+						return false;
+					}
 
 					public static void handleModdedPayload(ServerCommonPacketListener listener, ServerboundCustomPayloadPacket packet) {
 						dispatched.add("neoforge " + packet.payload().type().id());
@@ -243,13 +279,27 @@ class NativeForgePayloadDispatchExecutionTest {
 		}
 	}
 
-	private static Game game(Path work, boolean forgeFirst) throws Exception {
-		Map<String, byte[]> original = InjectorExecution.compile(work, standIns(forgeFirst));
+	private static Game game(Path work, Forge forge) throws Exception {
+		return game(work, forge, false);
+	}
+
+	/**
+	 * The stand-ins compiled, and the repaired copy as the kernel's chain leaves it: with {@code receive}, first
+	 * {@link ForeignPayloadReceiveInjector} (registered ahead of this repair in the same phase), then this repair.
+	 */
+	private static Game game(Path work, Forge forge, boolean receive) throws Exception {
+		Map<String, byte[]> original = InjectorExecution.compile(work, standIns(forge));
 		Map<String, byte[]> classes = new HashMap<>(original);
 		for (String target : List.of(CLIENT_COMMON, SERVER_COMMON, SERVER_GAME)) {
 			String internal = target.replace('.', '/');
-			byte[] out = InjectorExecution.transform(new CommonNetworkInteropInjector(), target, original.get(internal), EnvType.CLIENT);
-			assertNotSame(original.get(internal), out, target + " is a shape this repair edits");
+			byte[] in = original.get(internal);
+			if (receive && !target.equals(SERVER_GAME)) {
+				byte[] received = InjectorExecution.transform(new ForeignPayloadReceiveInjector(), target, in, EnvType.CLIENT);
+				assertNotSame(in, received, target + " asks isModdedPayload, which the receive repair follows");
+				in = received;
+			}
+			byte[] out = InjectorExecution.transform(new CommonNetworkInteropInjector(), target, in, EnvType.CLIENT);
+			assertNotSame(in, out, target + " is a shape this repair edits");
 			classes.put(internal, out);
 		}
 		ClassLoader repaired = InjectorExecution.load(classes);
@@ -288,8 +338,8 @@ class NativeForgePayloadDispatchExecutionTest {
 		return null;
 	}
 
-	@Test void aListenerThatKeptForgesOwnCallOffersForgeOnlyItsOwnPayloadOnce(@TempDir Path work) throws Throwable {
-		Game game = game(work, true);
+	@Test void aListenerThatReturnsOnForgesOwnCallOffersForgeOnlyItsOwnPayloadOnce(@TempDir Path work) throws Throwable {
+		Game game = game(work, Forge.RETURNS);
 		for (String[] side : new String[][] {{CLIENT_COMMON, "ClientboundCustomPayloadPacket"}, {SERVER_COMMON, "ServerboundCustomPayloadPacket"}}) {
 			MethodNode handler = handler(game.repaired.get(side[0].replace('.', '/')), side[0]);
 			assertEquals(0, calls(handler, "net/minecraftforge/common/ForgeHooks", "onCustomPayload"),
@@ -313,8 +363,57 @@ class NativeForgePayloadDispatchExecutionTest {
 		}
 	}
 
+	/**
+	 * The merged server listener's shape: Forge's call with its answer POPped and NeoForge's body right behind. A
+	 * prologue standing by there let every ForgePayload, after Forge's dispatcher had it, go on into NeoForge's body,
+	 * where only the receive repair's registry lookup kept it out of NeoForge's dispatcher — and with
+	 * {@code -Dforbric.foreignPayloadReceive=off}, a switch about other families' channels, every MinecraftForge
+	 * handshake ended in "No Channel for". The prologue goes in front; the filtered call behind it answers false.
+	 */
+	@Test void aListenerThatDiscardsForgesAnswerStillGetsTheKernelsDispatcherInFront(@TempDir Path work) throws Throwable {
+		for (boolean receive : new boolean[] {true, false}) {
+			Path dir = java.nio.file.Files.createDirectories(work.resolve("receive-" + receive));
+			Game game = game(dir.resolve("repaired"), Forge.DISCARDED, receive);
+			for (String[] side : new String[][] {{CLIENT_COMMON, "ClientboundCustomPayloadPacket"}, {SERVER_COMMON, "ServerboundCustomPayloadPacket"}}) {
+				String where = side[0] + " (foreignPayloadReceive " + (receive ? "on" : "off") + ")";
+				MethodNode handler = handler(game.repaired.get(side[0].replace('.', '/')), side[0]);
+				assertEquals(0, calls(handler, "net/minecraftforge/common/ForgeHooks", "onCustomPayload"),
+						where + ": no call hands Forge's dispatcher an unfiltered payload");
+				assertEquals(1, calls(handler, INTEROP, "offerToForge"), where + ": the base's own call is filtered in place");
+				assertEquals(1, calls(handler, INTEROP, "dispatchForgePayload"),
+						where + ": that call's answer ends nothing, so the kernel's prologue is the dispatcher, in front of it");
+
+				List<Object> outcome = new java.util.ArrayList<>();
+				assertNull(receive(game.repairedLoader(), side[0], side[1], outcome), where + ": nothing throws");
+				assertEquals(List.of("forgemod:sync=hello"), outcome.get(0),
+						where + ": MinecraftForge's payload reached its dispatcher exactly once, and NeoForge's unregister never did");
+				assertEquals(List.of("neoforge unregister [neomod:key]", "neoforge neomod:key"), outcome.get(1),
+						where + ": NeoForge's body saw its own two payloads and never MinecraftForge's");
+				assertNull(outcome.get(2), where + ": the connection stays up");
+
+				// The defect, as the stand-by left it: the base's call filtered and no prologue in front of it.
+				Map<String, byte[]> standingBy = new HashMap<>(game.merged);
+				String internal = side[0].replace('.', '/');
+				byte[] in = game.merged.get(internal);
+				if (receive) in = InjectorExecution.transform(new ForeignPayloadReceiveInjector(), side[0], in, EnvType.CLIENT);
+				standingBy.put(internal, filterOnly(in));
+				List<Object> stood = new java.util.ArrayList<>();
+				assertNull(receive(InjectorExecution.load(standingBy), side[0], side[1], stood), where);
+				assertEquals(List.of("forgemod:sync=hello"), stood.get(0), where + ": premise: Forge took its payload there too");
+				if (receive) {
+					assertEquals(List.of("vanilla forgemod:sync", "neoforge unregister [neomod:key]", "neoforge neomod:key"), stood.get(1),
+							where + ": premise: standing by, the ForgePayload went on into NeoForge's body after Forge took it");
+					assertNull(stood.get(2), where + ": premise: and only the receive repair's lookup kept the connection up");
+				} else {
+					assertEquals("No Channel for forgemod:sync", stood.get(2),
+							where + ": premise: standing by, NeoForge's dispatcher closed the connection on Forge's payload");
+				}
+			}
+		}
+	}
+
 	@Test void aListenerWithoutForgesCallStillGetsTheKernelsDispatcher(@TempDir Path work) throws Throwable {
-		Game game = game(work, false);
+		Game game = game(work, Forge.ABSENT);
 		for (String[] side : new String[][] {{CLIENT_COMMON, "ClientboundCustomPayloadPacket"}, {SERVER_COMMON, "ServerboundCustomPayloadPacket"}}) {
 			MethodNode handler = handler(game.repaired.get(side[0].replace('.', '/')), side[0]);
 			assertEquals(1, calls(handler, INTEROP, "dispatchForgePayload"),
@@ -336,7 +435,7 @@ class NativeForgePayloadDispatchExecutionTest {
 
 	/** The play listener's override carries the same call on every base, and gets the same filter behind its fall-through. */
 	@Test void thePlayOverrideOffersForgeOnlyItsOwnPayloadAndNeoForgeStillGetsItsOwn(@TempDir Path work) throws Throwable {
-		Game game = game(work, false);
+		Game game = game(work, Forge.ABSENT);
 		MethodNode handler = handler(game.repaired.get(SERVER_GAME.replace('.', '/')), SERVER_GAME);
 		assertEquals(0, calls(handler, "net/minecraftforge/common/ForgeHooks", "onCustomPayload"));
 		assertEquals(1, calls(handler, INTEROP, "offerToForge"));
@@ -352,7 +451,7 @@ class NativeForgePayloadDispatchExecutionTest {
 	/** The off switch leaves out the fall-through; the filter is not the fall-through and stays. */
 	@Test void theFallThroughSwitchDoesNotTurnTheFilterOff(@TempDir Path work) throws Throwable {
 		System.setProperty(SWITCH, "off");
-		Map<String, byte[]> original = InjectorExecution.compile(work, standIns(false));
+		Map<String, byte[]> original = InjectorExecution.compile(work, standIns(Forge.ABSENT));
 		String internal = SERVER_GAME.replace('.', '/');
 		byte[] out = InjectorExecution.transform(new CommonNetworkInteropInjector(), SERVER_GAME, original.get(internal), EnvType.CLIENT);
 		MethodNode was = handler(original.get(internal), SERVER_GAME);
@@ -380,6 +479,25 @@ class NativeForgePayloadDispatchExecutionTest {
 		}
 		return List.of(InjectorExecution.getStatic(loader.loadClass("net.minecraftforge.common.ForgeHooks"), "received"),
 				InjectorExecution.getStatic(loader.loadClass("net.neoforged.neoforge.network.registration.NetworkRegistry"), "dispatched"));
+	}
+
+	/** What the stand-by did: every call of Forge's hook pointed at the filter, and nothing else. */
+	private static byte[] filterOnly(byte[] bytes) {
+		ClassNode node = new ClassNode();
+		new ClassReader(bytes).accept(node, 0);
+		for (MethodNode m : node.methods) {
+			for (AbstractInsnNode insn : m.instructions) {
+				if (insn instanceof MethodInsnNode call && call.owner.equals("net/minecraftforge/common/ForgeHooks")
+						&& call.name.equals("onCustomPayload")) {
+					call.owner = INTEROP;
+					call.name = "offerToForge";
+					call.desc = "(Ljava/lang/Object;Ljava/lang/Object;)Z";
+				}
+			}
+		}
+		org.objectweb.asm.ClassWriter writer = new org.objectweb.asm.ClassWriter(org.objectweb.asm.ClassWriter.COMPUTE_MAXS);
+		node.accept(writer);
+		return writer.toByteArray();
 	}
 
 	private static MethodNode handler(byte[] bytes, String owner) {

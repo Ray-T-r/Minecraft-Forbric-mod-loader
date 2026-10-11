@@ -751,7 +751,10 @@ public final class PayloadInterop {
 	/**
 	 * The merged game's own call to {@code ForgeHooks.onCustomPayload(CustomPacketPayload, Connection)}, pointed here
 	 * by {@code CommonNetworkInteropInjector} wherever a common-phase listener carries one: the same two references
-	 * in, the same answer out, so the call's stack shape and the {@code if (answer) return;} around it are untouched.
+	 * in, the same answer out, so the call's stack shape and whatever the method does with the answer are untouched.
+	 * Where it returns on the answer (the client listener's {@code if (answer) return;}) this call is the method's one
+	 * Forge dispatch; where the answer is discarded (the server listener's patch POPs it), the injector's prologue in
+	 * front has already returned on every ForgePayload, so this call only ever answers false there.
 	 *
 	 * <p>On MinecraftForge the hook never sees anything but a {@code ForgePayload} for a channel it owns: Forge's codec
 	 * provider decodes every id Forge has a target for into one. A merged base cannot keep that promise — the decode

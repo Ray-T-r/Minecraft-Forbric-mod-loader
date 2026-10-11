@@ -108,9 +108,12 @@ public final class CommonNetworkInteropInjector implements ClassTransformer {
 	 * dispatcher at all. These two get a prologue that hands a ForgePayload to Forge's hook and returns when it
 	 * took it.
 	 *
-	 * <p>A base that keeps both families' edits of these methods keeps Forge's own call at their head instead. There
-	 * the prologue stands by and that call is filtered the same way ({@link #offerOnlyForgePayloads}): unfiltered, it
-	 * hands Forge another family's {@code minecraft:unregister} and the connection dies in Forge's channel.
+	 * <p>A base that keeps both families' edits of these methods keeps Forge's own call at their head instead, and
+	 * that call is filtered the same way ({@link #offerOnlyForgePayloads}): unfiltered, it hands Forge another
+	 * family's {@code minecraft:unregister} and the connection dies in Forge's channel. The prologue stands by only
+	 * where that call returns on its answer ({@link #returnsOnItsAnswerAtTheHead}) — the client listener's shape.
+	 * MinecraftForge's server-side patch POPs the answer, so the merged server listener goes on to NeoForge's body
+	 * after Forge took a ForgePayload; there the prologue goes in front of the call as on a base without it.
 	 */
 	private static final String CLIENT_COMMON_LISTENER = "net.minecraft.client.multiplayer.ClientCommonPacketListenerImpl";
 	private static final String SERVER_COMMON_LISTENER = "net.minecraft.server.network.ServerCommonPacketListenerImpl";
@@ -399,20 +402,34 @@ public final class CommonNetworkInteropInjector implements ClassTransformer {
 						className, FINISH_TASK);
 			} else if ((clientCommon && m.name.equals(HANDLE_PAYLOAD) && m.desc.equals(CLIENT_HANDLE_PAYLOAD_DESC))
 					|| (serverCommon && m.name.equals(HANDLE_PAYLOAD) && m.desc.equals(SERVER_HANDLE_PAYLOAD_DESC))) {
-				int kept = offerOnlyForgePayloads(m);
-				if (kept > 0) {
-					// The merged base kept MinecraftForge's own dispatch here, at the head where the prologue would go.
-					// A prologue in front of it would offer a ForgePayload once and then let every other payload reach
-					// that call unfiltered; the call itself, filtered, is the one dispatch this method needs.
-					ForbricLog.info("[Forbric/Net] %s.%s already asks ForgeHooks.onCustomPayload in the merged base's own "
-							+ "bytes — the dispatch prologue stands by, and that call now offers MinecraftForge only its own "
-							+ "ForgePayload (%d site(s))", className, HANDLE_PAYLOAD, kept);
+				List<MethodInsnNode> kept = offerOnlyForgePayloads(m);
+				boolean guarded = false;
+				for (MethodInsnNode call : kept) guarded |= returnsOnItsAnswerAtTheHead(m, call);
+				if (guarded) {
+					// The merged base kept MinecraftForge's own `if (onCustomPayload(...)) return;` here, at the head where
+					// the prologue would go. A prologue in front of it would offer a ForgePayload once and then let every
+					// other payload reach that call unfiltered; the call itself, filtered, is the one dispatch this needs.
+					ForbricLog.info("[Forbric/Net] %s.%s already returns on ForgeHooks.onCustomPayload's answer at the head "
+							+ "of the merged base's own bytes — the dispatch prologue stands by, and that call now offers "
+							+ "MinecraftForge only its own ForgePayload (%d site(s))", className, HANDLE_PAYLOAD, kept.size());
 				} else {
+					// No call of Forge's, or one whose answer ends nothing: MinecraftForge's server-side patch asks the hook
+					// and POPs the answer (its vanilla body is empty), and a merge that keeps it puts NeoForge's body right
+					// behind. Standing by there hands every ForgePayload, after Forge took it, to NeoForge's dispatcher —
+					// which closes the connection on a channel it never registered. The prologue returns on a ForgePayload;
+					// the base's own call, filtered, answers false for everything else, so nothing is offered twice.
 					String packetType = org.objectweb.asm.Type.getArgumentTypes(m.desc)[0].getInternalName();
 					m.instructions.insert(forgeDispatchPrologue(node.name, packetType));
 					bumpStack(m, 2);
-					ForbricLog.info("[Forbric/Net] handing MinecraftForge's payloads to ForgeHooks.onCustomPayload at %s.%s — "
-							+ "NeoForge won this method in the merge and Forge's dispatch went with it", className, HANDLE_PAYLOAD);
+					if (kept.isEmpty()) {
+						ForbricLog.info("[Forbric/Net] handing MinecraftForge's payloads to ForgeHooks.onCustomPayload at %s.%s — "
+								+ "NeoForge won this method in the merge and Forge's dispatch went with it", className, HANDLE_PAYLOAD);
+					} else {
+						ForbricLog.info("[Forbric/Net] %s.%s asks ForgeHooks.onCustomPayload in the merged base's own bytes but "
+								+ "goes on to NeoForge's body whatever it answers — the dispatch prologue goes in front and returns "
+								+ "on a ForgePayload, and that call now offers MinecraftForge only its own ForgePayload (%d site(s))",
+								className, HANDLE_PAYLOAD, kept.size());
+					}
 				}
 				changed = true;
 				reporter.hit(clientCommon ? CLAIM_CLIENT_COMMON_PAYLOAD : CLAIM_SERVER_COMMON_PAYLOAD);
@@ -426,7 +443,7 @@ public final class CommonNetworkInteropInjector implements ClassTransformer {
 							+ "(-Dforbric.playPayloadFallThrough=off to leave it)", className, HANDLE_PAYLOAD);
 				}
 				// After the fall-through, which finds the hook by its own owner: the same filter as the common listeners.
-				int kept = offerOnlyForgePayloads(m);
+				int kept = offerOnlyForgePayloads(m).size();
 				if (kept > 0) {
 					changed = true;
 					ForbricLog.info("[Forbric/Net] %s.%s's own ForgeHooks.onCustomPayload call now offers MinecraftForge "
@@ -861,9 +878,11 @@ public final class CommonNetworkInteropInjector implements ClassTransformer {
 	 *
 	 * <p>The hook takes two {@code Object}s and answers a boolean, so this replaces one instruction's constants: the
 	 * two references it consumes and the int it leaves are the same, and no frame, branch or handler moves.
+	 *
+	 * @return the calls it moved, in method order
 	 */
-	private static int offerOnlyForgePayloads(MethodNode m) {
-		int moved = 0;
+	private static List<MethodInsnNode> offerOnlyForgePayloads(MethodNode m) {
+		List<MethodInsnNode> moved = new ArrayList<>();
 		for (AbstractInsnNode insn : m.instructions.toArray()) {
 			if (!(insn instanceof MethodInsnNode call) || call.getOpcode() != Opcodes.INVOKESTATIC) continue;
 			if (!FORGE_HOOKS.equals(call.owner) || !ON_CUSTOM_PAYLOAD.equals(call.name)
@@ -872,9 +891,32 @@ public final class CommonNetworkInteropInjector implements ClassTransformer {
 			call.name = FORGE_OFFER_HOOK;
 			call.desc = FORGE_OFFER_HOOK_DESC;
 			call.itf = false;
-			moved++;
+			moved.add(call);
 		}
 		return moved;
+	}
+
+	/**
+	 * Whether {@code call}'s answer, when true, ends the void method {@code m} before anything else in it runs — the
+	 * shape {@code if (call(...)) return;} as the method's first statement.
+	 *
+	 * <p>Two things, both read from the bytecode. The call is reached straight from the method's entry: no branch,
+	 * switch, return or throw comes before it, so every invocation gets there first. And its answer is branched on
+	 * into a {@code RETURN}: an {@code IFEQ} whose fall-through is a {@code RETURN}, or an {@code IFNE} whose target
+	 * is one. A call whose answer is {@code POP}ped, stored, or branched on into anything else does not end the method,
+	 * and whatever follows it still sees the payload that call was offered.
+	 */
+	static boolean returnsOnItsAnswerAtTheHead(MethodNode m, MethodInsnNode call) {
+		for (AbstractInsnNode insn = m.instructions.getFirst(); insn != null && insn != call; insn = insn.getNext()) {
+			int op = insn.getOpcode();
+			if (insn instanceof JumpInsnNode || op == Opcodes.TABLESWITCH || op == Opcodes.LOOKUPSWITCH
+					|| (op >= Opcodes.IRETURN && op <= Opcodes.RETURN) || op == Opcodes.ATHROW) return false;
+		}
+		AbstractInsnNode use = nextOpcode(call);
+		if (!(use instanceof JumpInsnNode branch)) return false;
+		AbstractInsnNode taken = branch.getOpcode() == Opcodes.IFEQ ? nextOpcode(branch)
+				: branch.getOpcode() == Opcodes.IFNE ? nextOpcode(branch.label) : null;
+		return taken != null && taken.getOpcode() == Opcodes.RETURN;
 	}
 
 	private static InsnList forgeDispatchPrologue(String owner, String packetType) {
