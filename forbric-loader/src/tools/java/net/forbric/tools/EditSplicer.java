@@ -87,6 +87,12 @@ import org.objectweb.asm.tree.analysis.SourceValue;
  * that could not be carried is not carried either. A copy counts only when the lambdas it captures have the same
  * bodies on both sides.
  *
+ * <p>A lambda a carried run captures keeps its name only when the base side's own lambda of that name does the same
+ * thing, the lambdas it captures in turn included, or the base side has no lambda of that name and the merged class
+ * holds the other side's own; otherwise it is carried under a fresh name. Where the base side has the name, the
+ * merged class's current method of that name is never the reference: the per-method merge may have put the other
+ * side's body there, and the merge puts it back on the base's side once the class is merged.
+ *
  * <p>A run that replaced vanilla lines replaces the base's copy of those lines only when the base left them vanilla.
  * When the base changed the same lines too, the two edits are kept once when they are the same instructions, and
  * otherwise the run is reported as a conflict and the base's edit stands. When both patches added a member of the
@@ -1438,8 +1444,18 @@ final class EditSplicer {
 	}
 
 	/**
-	 * A private synthetic method of the owner the run names through a method handle: reuse the merged class's
-	 * method of that name when it is the same body, otherwise carry the other side's body under a fresh name.
+	 * A method of the owner the run names through a method handle.
+	 *
+	 * <p>A lambda is named, not called, and its final body is the one its capturing method's side has: the merge
+	 * puts every captured lambda back on its capturer's side once the class is merged, and the base's own code in
+	 * the spliced method captures the base's lambdas. So the run's lambda is compared with the BASE SIDE's own lambda
+	 * of that name, never with what the merged class holds while its methods are still being merged (the
+	 * per-method merge may have put the other side's body under that name, which a comparison with the merged class
+	 * then finds equal). The name is shared only when that is safe ({@link #shareable}); otherwise the other side's
+	 * body is carried under a fresh name, with what it captures carried the same way.
+	 *
+	 * <p>A named method is merged on its own, by its name, and the run calls whatever the merged class keeps under
+	 * it: that must be the run's own body, or the run is refused.
 	 */
 	private void carryOwnMethod(Input in, String name, String desc, Map<String, String> renames,
 			Map<String, MethodNode> addedMethods, int depth) {
@@ -1451,9 +1467,12 @@ final class EditSplicer {
 			if (in.ownerMethods().containsKey(key)) return; // a method of the merged class, not a lambda of theirs
 			throw new Refusal("run names a method the other side does not declare: " + key);
 		}
-		MethodNode ours = in.ownerMethods().get(key);
-		if (ours != null && bodyKey(ours).equals(bodyKey(theirs))) { renames.put(key, name); return; }
-		if (!name.startsWith("lambda$") || (theirs.access & Opcodes.ACC_SYNTHETIC) == 0) {
+		String owner = in.owner().name;
+		if (name.startsWith("lambda$") && (theirs.access & Opcodes.ACC_SYNTHETIC) != 0) {
+			if (shareable(in, key, 0)) { renames.put(key, name); return; }
+		} else {
+			MethodNode ours = in.ownerMethods().get(key);
+			if (ours != null && sameStatic(ours, theirs) && bodyKey(ours).equals(bodyKey(theirs))) { renames.put(key, name); return; }
 			throw new Refusal(ours == null ? "run names a method the merged class lacks: " + key
 					: "run names a method whose body differs in the base: " + key);
 		}
@@ -1464,9 +1483,84 @@ final class EditSplicer {
 		addedMethods.put(fresh + desc, carried);
 		for (AbstractInsnNode n : carried.instructions) {
 			if (n instanceof InvokeDynamicInsnNode d) for (Object arg : d.bsmArgs)
-				if (arg instanceof Handle h && h.getOwner().equals(in.owner().name)) carryOwnMethod(in, h.getName(), h.getDesc(), renames, addedMethods, depth + 1);
+				if (arg instanceof Handle h && h.getOwner().equals(owner)) carryOwnMethod(in, h.getName(), h.getDesc(), renames, addedMethods, depth + 1);
 		}
-		renameHandles(carried, in.owner().name, renames);
+		renameHandles(carried, owner, renames);
+	}
+
+	/**
+	 * Whether a carried run may name the other side's lambda {@code key} as it is. When the base side has a lambda of
+	 * that name, only if the two do the same thing ({@link #sameBody}): the merge leaves the base's under that name.
+	 * When the base side has none, the merged class holds the other side's own lambda there (it was added whole), and
+	 * the name is shared when that is the body the run captures and every lambda it captures in turn is shareable by
+	 * the same rule; the other side's mods then still find it under the name their own platform gave it.
+	 */
+	private static boolean shareable(Input in, String key, int depth) {
+		MethodNode theirs = in.otherMethods().get(key);
+		if (theirs == null) return false;
+		String owner = in.owner().name;
+		MethodNode ours = in.baseMethods().get(key);
+		if (ours != null) return sameBody(owner, in.otherMethods(), theirs, in.baseMethods(), ours);
+		MethodNode merged = in.ownerMethods().get(key);
+		if (merged == null || depth >= 8 || !sameStatic(merged, theirs) || !bodyKey(merged).equals(bodyKey(theirs))) return false;
+		List<Handle> a = ownHandles(theirs, owner), b = ownHandles(merged, owner);
+		if (!a.equals(b)) return false;
+		for (Handle h : a) if (!shareable(in, h.getName() + h.getDesc(), depth + 1)) return false;
+		return true;
+	}
+
+	/** The method handles into {@code owner} a method's call sites capture, in order. */
+	private static List<Handle> ownHandles(MethodNode m, String owner) {
+		List<Handle> out = new ArrayList<>();
+		for (AbstractInsnNode n : m.instructions) {
+			if (n instanceof InvokeDynamicInsnNode d) for (Object arg : d.bsmArgs)
+				if (arg instanceof Handle h && h.getOwner().equals(owner)) out.add(h);
+		}
+		return out;
+	}
+
+	/**
+	 * Whether two methods of {@code owner} do the same thing: the same static flag, the same instructions (lambdas
+	 * without their number, locals by name), and through every method handle into the class, the same kind of
+	 * handle to a method that again does the same thing. The left method's handles resolve among
+	 * {@code leftMethods}, the right one's among {@code rightMethods}: the two compiles number their lambdas
+	 * independently, so {@code lambda$m$0} on one side and {@code lambda$m$0} on the other share a name by accident.
+	 */
+	static boolean sameBody(String owner, Map<String, MethodNode> leftMethods, MethodNode left,
+			Map<String, MethodNode> rightMethods, MethodNode right) {
+		return sameBody(owner, leftMethods, left, rightMethods, right, 0);
+	}
+
+	private static boolean sameBody(String owner, Map<String, MethodNode> leftMethods, MethodNode left,
+			Map<String, MethodNode> rightMethods, MethodNode right, int depth) {
+		if (!sameStatic(left, right) || !bodyKey(left).equals(bodyKey(right))) return false;
+		List<InvokeDynamicInsnNode> l = new ArrayList<>(), r = new ArrayList<>();
+		for (AbstractInsnNode x : left.instructions) if (x instanceof InvokeDynamicInsnNode d) l.add(d);
+		for (AbstractInsnNode x : right.instructions) if (x instanceof InvokeDynamicInsnNode d) r.add(d);
+		if (l.size() != r.size()) return false;
+		for (int j = 0; j < l.size(); j++) if (!sameCaptures(owner, leftMethods, l.get(j), rightMethods, r.get(j), depth)) return false;
+		return true;
+	}
+
+	/** Whether two call sites capture, handle by handle, methods of {@code owner} that do the same thing. */
+	private static boolean sameCaptures(String owner, Map<String, MethodNode> leftMethods, InvokeDynamicInsnNode left,
+			Map<String, MethodNode> rightMethods, InvokeDynamicInsnNode right, int depth) {
+		for (int k = 0; k < left.bsmArgs.length && k < right.bsmArgs.length; k++) {
+			if (!(left.bsmArgs[k] instanceof Handle lh) || !(right.bsmArgs[k] instanceof Handle rh)) continue;
+			if (lh.getTag() != rh.getTag()) return false;
+			if (!lh.getOwner().equals(owner) || !rh.getOwner().equals(owner)) continue;
+			MethodNode lb = leftMethods.get(lh.getName() + lh.getDesc()), rb = rightMethods.get(rh.getName() + rh.getDesc());
+			if (lb == null || rb == null) {
+				if (lb != rb) return false;
+				continue;
+			}
+			if (depth >= 8 || !sameBody(owner, leftMethods, lb, rightMethods, rb, depth + 1)) return false;
+		}
+		return true;
+	}
+
+	private static boolean sameStatic(MethodNode a, MethodNode b) {
+		return (a.access & Opcodes.ACC_STATIC) == (b.access & Opcodes.ACC_STATIC);
 	}
 
 	private static void renameHandles(MethodNode m, String owner, Map<String, String> renames) {
@@ -1589,23 +1683,7 @@ final class EditSplicer {
 	}
 
 	private static boolean sameLambdas(Input in, InvokeDynamicInsnNode od, InvokeDynamicInsnNode bd, int depth) {
-		String owner = in.owner().name;
-		for (int k = 0; k < od.bsmArgs.length && k < bd.bsmArgs.length; k++) {
-			if (!(od.bsmArgs[k] instanceof Handle oh) || !(bd.bsmArgs[k] instanceof Handle bh) || !oh.getOwner().equals(owner)) continue;
-			MethodNode ob = in.otherMethods().get(oh.getName() + oh.getDesc()), bb = in.baseMethods().get(bh.getName() + bh.getDesc());
-			if (ob == null || bb == null) {
-				if (ob != bb) return false;
-				continue;
-			}
-			if (!bodyKey(ob).equals(bodyKey(bb))) return false;
-			if (depth >= 8) return false;
-			AbstractInsnNode[] oi = ob.instructions.toArray(), bi = bb.instructions.toArray();
-			List<InvokeDynamicInsnNode> on = new ArrayList<>(), bn = new ArrayList<>();
-			for (AbstractInsnNode x : oi) if (x instanceof InvokeDynamicInsnNode d) on.add(d);
-			for (AbstractInsnNode x : bi) if (x instanceof InvokeDynamicInsnNode d) bn.add(d);
-			for (int j = 0; j < on.size() && j < bn.size(); j++) if (!sameLambdas(in, on.get(j), bn.get(j), depth + 1)) return false;
-		}
-		return true;
+		return sameCaptures(in.owner().name, in.otherMethods(), od, in.baseMethods(), bd, depth);
 	}
 
 	private static int indexOfSequence(List<String> haystack, List<String> needle, int from) {

@@ -11,7 +11,9 @@ import java.util.Map;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.objectweb.asm.ClassWriter;
+import org.objectweb.asm.Handle;
 import org.objectweb.asm.Opcodes;
+import org.objectweb.asm.Type;
 import org.objectweb.asm.tree.*;
 
 /**
@@ -144,7 +146,13 @@ public class EditSplicerTest {
 	}
 
 	private static List<Integer> run(MethodNode method, int x) throws Exception {
+		return run(method, List.of(), x);
+	}
+
+	/** {@link #run} with further methods of the probe (lambdas) beside the method under test. */
+	private static List<Integer> run(MethodNode method, List<MethodNode> extra, int x) throws Exception {
 		ClassNode cn = runnableOwner(method);
+		for (MethodNode m : extra) cn.methods.add(EditSplicer.copy(m));
 		ClassWriter writer = new ClassWriter(ClassWriter.COMPUTE_FRAMES);
 		cn.accept(writer);
 		byte[] bytes = writer.toByteArray();
@@ -871,5 +879,165 @@ public class EditSplicerTest {
 		assertTrue(r.accepted(), r.reason() + " " + r.refused());
 		assertEquals(List.of(1, 0), run(r.method(), 0));
 		assertEquals(List.of(2, 200, 7), run(r.method(), 7));
+	}
+
+	// ---- rule: a carried run's lambdas against the base side's own ---------------------------------------------
+
+	private static final Handle METAFACTORY = new Handle(Opcodes.H_INVOKESTATIC, "java/lang/invoke/LambdaMetafactory", "metafactory",
+			"(Ljava/lang/invoke/MethodHandles$Lookup;Ljava/lang/String;Ljava/lang/invoke/MethodType;Ljava/lang/invoke/MethodType;"
+					+ "Ljava/lang/invoke/MethodHandle;Ljava/lang/invoke/MethodType;)Ljava/lang/invoke/CallSite;", false);
+
+	/** {@code ((Runnable) OWNER::lambda).run()} for a static lambda of the probe. */
+	private static AbstractInsnNode[] runLambda(String lambda) {
+		return new AbstractInsnNode[] { new InvokeDynamicInsnNode("run", "()Ljava/lang/Runnable;", METAFACTORY, Type.getType("()V"),
+				new Handle(Opcodes.H_INVOKESTATIC, OWNER, lambda, "()V", false), Type.getType("()V")),
+				new MethodInsnNode(Opcodes.INVOKEINTERFACE, "java/lang/Runnable", "run", "()V", true) };
+	}
+
+	/** {@code private static synthetic void name()} with the given body. */
+	private static MethodNode lambda(String name, AbstractInsnNode... body) {
+		MethodNode m = new MethodNode(Opcodes.ACC_PRIVATE | Opcodes.ACC_STATIC | Opcodes.ACC_SYNTHETIC, name, "()V", null, null);
+		for (AbstractInsnNode n : body) m.instructions.add(n);
+		m.instructions.add(new InsnNode(Opcodes.RETURN));
+		m.maxStack = 2;
+		return m;
+	}
+
+	private static Map<String, MethodNode> methods(MethodNode... ms) {
+		Map<String, MethodNode> out = new LinkedHashMap<>();
+		for (MethodNode m : ms) out.put(m.name + m.desc, m);
+		return out;
+	}
+
+	/** A splice where the merged class, the other side's class and the base side's class are given apart. */
+	private static EditSplicer.Result splice(MethodNode base, String basePatch, MethodNode other, String otherPatch,
+			boolean otherIsForge, Map<String, MethodNode> merged, Map<String, MethodNode> otherSide, Map<String, MethodNode> baseSide) {
+		return new EditSplicer(new ContractGraph(List.of(Map.of()))).splice(new EditSplicer.Input(owner(base), base, other, SOURCE,
+				PatchLineProvenance.of(Map.of(SOURCE, basePatch)), PatchLineProvenance.of(Map.of(SOURCE, otherPatch)),
+				otherIsForge, merged, otherSide, baseSide, EditSplicer.MemberOrigin.NONE));
+	}
+
+	private static String captured(MethodNode m, int nth) {
+		int i = 0;
+		for (AbstractInsnNode n : m.instructions) {
+			if (n instanceof InvokeDynamicInsnNode d && i++ == nth) return ((Handle) d.bsmArgs[1]).getName();
+		}
+		return null;
+	}
+
+	@Test
+	void aCarriedRunsLambdaIsComparedWithTheBaseSidesLambdaNotWithTheMergedClass() throws Exception {
+		// MinecraftForge's added button captures lambda$compute$0, its own new lambda; vanilla's lambda is its
+		// lambda$compute$1. NeoForge's lambda$compute$0 is vanilla's. The per-method merge already put
+		// MinecraftForge's lambda$compute$0 in the merged class (it hooked it, NeoForge did not); comparing with that
+		// found it equal and shared the name, so after the merge puts NeoForge's lambda back, MinecraftForge's button
+		// ran vanilla's body (PauseScreen's disconnect, Entity.load's NeoForgeData).
+		MethodNode neo = new Body().line(10, rec(1)).line(11, check(NEO_HOOKS, 0)).line(12, runLambda("lambda$compute$0")).line(13, returnX()).done();
+		MethodNode forge = new Body().line(10, rec(1)).line(11, runLambda("lambda$compute$0")).line(12, runLambda("lambda$compute$1"))
+				.line(13, returnX()).done();
+		MethodNode neoLambda = lambda("lambda$compute$0", rec(2));
+		MethodNode forgeAdded = lambda("lambda$compute$0", rec(100)), forgeVanilla = lambda("lambda$compute$1", rec(2));
+		Map<String, MethodNode> merged = methods(neo, forgeAdded, forgeVanilla);
+		EditSplicer.Result r = splice(neo, ADDED_AT_11_NEO, forge, ADDED_AT_11_FORGE, true, merged,
+				methods(forge, forgeAdded, forgeVanilla), methods(neo, neoLambda));
+		assertTrue(r.accepted(), r.reason() + " " + r.refused());
+		assertEquals("lambda$compute$0$forbricforge", captured(r.method(), 0));
+		assertEquals("lambda$compute$0", captured(r.method(), 1), "NeoForge's own capture keeps its name");
+		List<MethodNode> classAfterMerge = new ArrayList<>(List.of(neoLambda));
+		classAfterMerge.addAll(r.addedMethods());
+		assertEquals(List.of(1, 100, 201, 2, 7), run(r.method(), classAfterMerge, 7));
+	}
+
+	/** Negative control: a lambda the base side has under the same name, doing the same thing, keeps that name. */
+	@Test
+	void aCarriedRunsLambdaTheBaseSideHasTheSameKeepsItsName() throws Exception {
+		AbstractInsnNode[] forgeStatement = concat(runLambda("lambda$compute$1"), rec(5));
+		MethodNode neo = new Body().line(10, rec(1)).line(11, runLambda("lambda$compute$0")).line(12, check(NEO_HOOKS, 0))
+				.line(13, runLambda("lambda$compute$1")).line(14, returnX()).done();
+		MethodNode forge = new Body().line(10, rec(1)).line(11, runLambda("lambda$compute$0")).line(12, forgeStatement)
+				.line(13, returnX()).done();
+		MethodNode vanillaLambda = lambda("lambda$compute$0", rec(2));
+		MethodNode neoAdded = lambda("lambda$compute$1", rec(100)), forgeAdded = lambda("lambda$compute$1", rec(100));
+		EditSplicer.Result r = splice(neo, patch("_", 10, 3, " A", " B", "+N", "+M", " R"), forge, patch("10", 10, 3, " A", " B", "+F", " R"),
+				true, methods(neo, vanillaLambda, neoAdded), methods(forge, vanillaLambda, forgeAdded), methods(neo, vanillaLambda, neoAdded));
+		assertTrue(r.accepted(), r.reason() + " " + r.refused());
+		assertTrue(r.addedMethods().isEmpty(), "nothing to carry: " + r.addedMethods());
+		assertEquals(List.of(1, 2, 100, 5, 201, 100, 7), run(r.method(), List.of(vanillaLambda, neoAdded), 7));
+	}
+
+	@Test
+	void aLambdaWhoseOwnCapturesDifferOnTheBaseSideIsCarriedWithThem() throws Exception {
+		// Both sides' lambda$compute$0 read the same (each runs its lambda$compute$1), but MinecraftForge's
+		// lambda$compute$1 is its own hook and NeoForge's is vanilla's: the names inside the two bodies say nothing.
+		MethodNode neo = new Body().line(10, rec(1)).line(11, check(NEO_HOOKS, 0)).line(12, runLambda("lambda$compute$2")).line(13, returnX()).done();
+		MethodNode forge = new Body().line(10, rec(1)).line(11, runLambda("lambda$compute$0")).line(12, runLambda("lambda$compute$2"))
+				.line(13, returnX()).done();
+		MethodNode neoOuter = lambda("lambda$compute$0", runLambda("lambda$compute$1")), neoInner = lambda("lambda$compute$1", rec(2));
+		MethodNode forgeOuter = lambda("lambda$compute$0", runLambda("lambda$compute$1")), forgeInner = lambda("lambda$compute$1", rec(100));
+		MethodNode vanilla = lambda("lambda$compute$2", rec(3));
+		Map<String, MethodNode> neoSide = methods(neo, neoOuter, neoInner, vanilla);
+		EditSplicer.Result r = splice(neo, ADDED_AT_11_NEO, forge, ADDED_AT_11_FORGE, true, neoSide,
+				methods(forge, forgeOuter, forgeInner, vanilla), neoSide);
+		assertTrue(r.accepted(), r.reason() + " " + r.refused());
+		assertEquals("lambda$compute$0$forbricforge", captured(r.method(), 0));
+		List<MethodNode> classAfterMerge = new ArrayList<>(List.of(neoOuter, neoInner, vanilla));
+		classAfterMerge.addAll(r.addedMethods());
+		assertEquals(List.of(1, 100, 201, 3, 7), run(r.method(), classAfterMerge, 7));
+	}
+
+	/** Negative control: when the lambdas the two bodies capture do the same thing too, the name is shared. */
+	@Test
+	void aLambdaWhoseOwnCapturesMatchTheBaseSideKeepsItsName() throws Exception {
+		MethodNode neo = new Body().line(10, rec(1)).line(11, check(NEO_HOOKS, 0)).line(12, runLambda("lambda$compute$2")).line(13, returnX()).done();
+		MethodNode forge = new Body().line(10, rec(1)).line(11, runLambda("lambda$compute$0")).line(12, runLambda("lambda$compute$2"))
+				.line(13, returnX()).done();
+		MethodNode outer = lambda("lambda$compute$0", runLambda("lambda$compute$1")), inner = lambda("lambda$compute$1", rec(100));
+		MethodNode vanilla = lambda("lambda$compute$2", rec(3));
+		Map<String, MethodNode> side = methods(neo, outer, inner, vanilla);
+		EditSplicer.Result r = splice(neo, ADDED_AT_11_NEO, forge, ADDED_AT_11_FORGE, true, side, methods(forge, outer, inner, vanilla), side);
+		assertTrue(r.accepted(), r.reason() + " " + r.refused());
+		assertEquals("lambda$compute$0", captured(r.method(), 0));
+		assertTrue(r.addedMethods().isEmpty(), r.addedMethods().toString());
+		assertEquals(List.of(1, 100, 201, 3, 7), run(r.method(), List.of(outer, inner, vanilla), 7));
+	}
+
+	@Test
+	void aLambdaOnlyTheOtherSideHasKeepsItsNameWhenTheMergedClassHoldsItsBody() throws Exception {
+		// NeoForge has no lambda$compute$1; the merged class holds MinecraftForge's (added whole), so its mods still
+		// find it under that name.
+		MethodNode neo = new Body().line(10, rec(1)).line(11, check(NEO_HOOKS, 0)).line(12, runLambda("lambda$compute$0")).line(13, returnX()).done();
+		MethodNode forge = new Body().line(10, rec(1)).line(11, runLambda("lambda$compute$1")).line(12, runLambda("lambda$compute$0"))
+				.line(13, returnX()).done();
+		MethodNode vanillaLambda = lambda("lambda$compute$0", rec(2)), forgeOnly = lambda("lambda$compute$1", rec(100));
+		EditSplicer.Result r = splice(neo, ADDED_AT_11_NEO, forge, ADDED_AT_11_FORGE, true, methods(neo, vanillaLambda, forgeOnly),
+				methods(forge, vanillaLambda, forgeOnly), methods(neo, vanillaLambda));
+		assertTrue(r.accepted(), r.reason() + " " + r.refused());
+		assertEquals("lambda$compute$1", captured(r.method(), 0));
+		assertTrue(r.addedMethods().isEmpty(), r.addedMethods().toString());
+		assertEquals(List.of(1, 100, 201, 2, 7), run(r.method(), List.of(vanillaLambda, forgeOnly), 7));
+	}
+
+	/** Negative control: a lambda only the other side has, capturing one the base side numbers differently, is carried. */
+	@Test
+	void aLambdaOnlyTheOtherSideHasIsCarriedWhenWhatItCapturesDiffersOnTheBaseSide() throws Exception {
+		MethodNode neo = new Body().line(10, rec(1)).line(11, check(NEO_HOOKS, 0)).line(12, runLambda("lambda$compute$0")).line(13, returnX()).done();
+		MethodNode forge = new Body().line(10, rec(1)).line(11, runLambda("lambda$compute$1")).line(12, runLambda("lambda$compute$2"))
+				.line(13, returnX()).done();
+		MethodNode neoLambda = lambda("lambda$compute$0", rec(2));
+		MethodNode forgeInner = lambda("lambda$compute$0", rec(100)), forgeOuter = lambda("lambda$compute$1", runLambda("lambda$compute$0"));
+		MethodNode forgeVanilla = lambda("lambda$compute$2", rec(2));
+		EditSplicer.Result r = splice(neo, ADDED_AT_11_NEO, forge, ADDED_AT_11_FORGE, true, methods(neo, neoLambda, forgeOuter, forgeVanilla),
+				methods(forge, forgeInner, forgeOuter, forgeVanilla), methods(neo, neoLambda));
+		assertTrue(r.accepted(), r.reason() + " " + r.refused());
+		assertEquals("lambda$compute$1$forbricforge", captured(r.method(), 0));
+		List<MethodNode> classAfterMerge = new ArrayList<>(List.of(neoLambda, forgeOuter, forgeVanilla));
+		classAfterMerge.addAll(r.addedMethods());
+		assertEquals(List.of(1, 100, 201, 2, 7), run(r.method(), classAfterMerge, 7));
+	}
+
+	private static AbstractInsnNode[] concat(AbstractInsnNode[] a, AbstractInsnNode[] b) {
+		AbstractInsnNode[] out = java.util.Arrays.copyOf(a, a.length + b.length);
+		System.arraycopy(b, 0, out, a.length, b.length);
+		return out;
 	}
 }
