@@ -136,6 +136,29 @@ jobs:
       - name: Unit and transfer tests with the game files
         shell: bash
         run: cd forbric-kernel && ./gradlew jar test transferTest skipRatchet -Pforbric.skipBaseline=ci-prepared -Pforbric.requireTransfer=true -Pforbric.requireFixtures=staged,game-side,mc-libraries,java-25
+      # forbric-loader's merge-loss ratchet (MergedBaseHookLossRatchetTest) holds the merge to the platform calls the
+      # edit splice keeps. It reads a merged base together with the build record run/build-merged-base.sh writes
+      # beside it, which pairs the jar with its report; anywhere without one it skips, so this is the one place it
+      # runs. Build that base from the inputs prepared above into a stage of its own, and require it present.
+      - name: Merge-loss ratchet on the prepared inputs
+        shell: bash
+        env:
+          MC_DIR: ${{ github.workspace }}/forbric-kernel/.dev/minecraft
+        run: |
+          ./bootstrap.sh
+          staged="$GITHUB_WORKSPACE/forbric-kernel/.dev/staged/run"
+          ratchet="$RUNNER_TEMP/ratchet"
+          mkdir -p "$ratchet/run/merged-base"
+          ln -sfn "$staged/forge-patched" "$ratchet/run/forge-patched"
+          ln -sfn "$staged/neoforge-patched" "$ratchet/run/neoforge-patched"
+          (cd forbric-loader && ./gradlew -q toolsClasses)
+          FORGE="$staged/forge-patched/patched-mc-forge-26.2.jar" NEO="$staged/neoforge-patched/patched-mc-neoforge-26.2.jar" \
+          FORGE_RT="$staged/forge-runtime/forge-runtime.jar" NEO_RT="$staged/neoforge-runtime/neoforge-runtime.jar" \
+          OUT="$ratchet/run/merged-base/patched-mc-merged-26.2.jar" REPORT="$ratchet/run/merged-base/merge-conflicts.txt" \
+          FORGE_RT_PATCHED="$ratchet/run/merged-base/forge-runtime-interop.jar" \
+            bash forbric-loader/run/build-merged-base.sh
+          cd forbric-loader
+          FORBRIC_OLD="$ratchet" FORBRIC_COMPAT_FIXTURES_REQUIRED=1 ./gradlew test --tests net.forbric.tools.MergedBaseHookLossRatchetTest
       # Real dedicated servers through the kernel, on the same prepared files: a zero-mod boot (m1) and the gates whose
       # mods are canaries built from this repository's sources. m36 weaves real guest mixins in a running server and
       # checks what they did (its weave-level half also runs in the unit suite, see MixinOutcomeWeaveTest); m46 and m53
