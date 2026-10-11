@@ -106,8 +106,9 @@ class MergedBaseItemTooltipTest {
 
 	/**
 	 * gate-m9 asks whether a NeoForge mod can add a tooltip line by the line either outcome prints: the repair's when it
-	 * posts, the merged-base transformer's when the base already does. Both must match what the code prints, and the
-	 * repair's own line is pinned on the derived single-family body, so neither half can rot unseen.
+	 * posts, the merged-base transformer's when the base already does. Both must match what the code prints: the
+	 * transformer's line is captured from the transformer running, and the repair's is read from the compiled
+	 * KernelItemTooltips itself (its POSTED constant, which is what it logs), so neither half can rot unseen.
 	 */
 	@Test
 	void theGateRecognisesBothWaysTheEventGetsPosted(@org.junit.jupiter.api.io.TempDir Path scratch) throws Exception {
@@ -119,10 +120,19 @@ class MergedBaseItemTooltipTest {
 		boolean nativeNeo = nativeNeoForgeCalls(tooltipLines(parse(staged))) > 0;
 		assertEquals(nativeNeo ? 1 : 0, net.forbric.kernel.GateLogContract.count(scratch, pattern, log[0]),
 				"the stand-down line, exactly when the staged base posts NeoForge's event itself: " + log[0]);
-		String repairLine = "[Render thread/INFO]: [Forbric/Tooltips] NeoForge's ItemTooltipEvent is posted beside "
-				+ "MinecraftForge's, on the same tooltip list — the merged getTooltipLines carries only MinecraftForge's call\\n";
-		assertEquals(1, net.forbric.kernel.GateLogContract.count(scratch, pattern, repairLine.replace("\\n", "\n")),
-				"the repair's own first-post line (KernelItemTooltips)");
+		String repairLine = "[Render thread/INFO]: " + postedLine() + "\n";
+		assertEquals(1, net.forbric.kernel.GateLogContract.count(scratch, pattern, repairLine),
+				"the repair's own first-post line (KernelItemTooltips): " + repairLine);
+	}
+
+	/** The line KernelItemTooltips logs on its first post, read from its compiled class. */
+	private static String postedLine() throws Exception {
+		Path runtime = Path.of("build/classes/java/runtime/net/forbric/kernel/runtime/KernelItemTooltips.class");
+		net.forbric.kernel.TestFixtures.require(net.forbric.kernel.TestFixtures.Fixture.GAME_SIDE, java.nio.file.Files.isRegularFile(runtime),
+				"requires the runtime source set");
+		ClassNode node = parse(java.nio.file.Files.readAllBytes(runtime));
+		for (org.objectweb.asm.tree.FieldNode field : node.fields) if (field.name.equals("POSTED") && field.value instanceof String text) return text;
+		throw new AssertionError("KernelItemTooltips no longer declares the line it logs as POSTED");
 	}
 
 	/** NeoForge hook calls in {@code method} that hand back NeoForge's ItemTooltipEvent. */

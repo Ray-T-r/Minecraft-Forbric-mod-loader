@@ -53,6 +53,13 @@ import net.neoforged.neoforge.event.entity.player.ItemTooltipEvent;
  */
 public final class KernelItemTooltips {
 	static final String PROPERTY = "forbric.itemTooltipBridge";
+	/**
+	 * What the first post logs. gate-m9 greps for it; MergedBaseItemTooltipTest reads it from this class's bytes, so the
+	 * gate's pattern is checked against the line this code prints rather than a copy of it.
+	 */
+	static final String POSTED = "[Forbric/Tooltips] NeoForge's ItemTooltipEvent is posted beside MinecraftForge's, "
+			+ "on the same tooltip list — the merged getTooltipLines carries only MinecraftForge's call, "
+			+ "so a NeoForge mod's tooltip lines went into a list nobody built";
 	private static volatile boolean announced;
 	private static volatile boolean warned;
 
@@ -77,9 +84,7 @@ public final class KernelItemTooltips {
 			if (!announced) {
 				announced = true;
 				EventBridges.installed(GameEventBridge.ITEM_TOOLTIP);
-				ForbricLog.info("[Forbric/Tooltips] NeoForge's ItemTooltipEvent is posted beside MinecraftForge's, "
-						+ "on the same tooltip list — the merged getTooltipLines carries only MinecraftForge's call, "
-						+ "so a NeoForge mod's tooltip lines went into a list nobody built");
+				ForbricLog.info(POSTED);
 			}
 		} catch (Throwable t) {
 			if (!warned) {
