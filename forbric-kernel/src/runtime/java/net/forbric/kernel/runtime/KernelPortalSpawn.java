@@ -23,7 +23,10 @@ import net.neoforged.neoforge.event.EventHooks;
  * return a replacement: unlike an event-only forward, this call site has somewhere to carry that result.
  *
  * <p>A base whose merge restored MinecraftForge's own call keeps its native order and guards, and calls the two
- * halves of the wrapper in its place: {@link #onTrySpawnPortalNeoOnly} and {@link #onTrySpawnPortalForgeOnly}.
+ * halves of the wrapper in its place: {@link #onTrySpawnPortalNeoOnly} and {@link #onTrySpawnPortalForgeOnly}. That
+ * order is the merge's: NeoForge's call and then MinecraftForge's, or MinecraftForge's first when the merge keeps both
+ * sides' edits and puts MinecraftForge's code first where both inserted at the same place. Either way each half is
+ * handed the answer of the call before it.
  */
 public final class KernelPortalSpawn {
 	/** The arguments of each NeoForge dispatch this wrapper has in progress on this thread, innermost last. */
@@ -57,21 +60,22 @@ public final class KernelPortalSpawn {
 	}
 
 	/**
-	 * MinecraftForge's half, called with NeoForge's nonempty result, by the wrapper and by a proved restored caller
-	 * in place of its native Forge call. It keeps the legacy bridge's failure policy either way: a failed Forge
-	 * listener cannot discard NeoForge's result, and no base rebuild turns it into an exception out of onPlace.
+	 * MinecraftForge's half, called by the wrapper with NeoForge's nonempty result and by a proved restored caller, in
+	 * place of its native Forge call, with whatever that caller hands it: NeoForge's result, or vanilla's shape when the
+	 * caller runs MinecraftForge first. It keeps the legacy bridge's failure policy either way: a failed Forge listener
+	 * cannot discard the result it was handed, and no base rebuild turns it into an exception out of onPlace.
 	 */
 	public static Optional<PortalShape> onTrySpawnPortalForgeOnly(LevelAccessor level, BlockPos position,
-			Optional<PortalShape> neo) {
+			Optional<PortalShape> handed) {
 		try {
-			Optional<PortalShape> forge = ForgeEventFactory.onTrySpawnPortal(level, position, neo);
+			Optional<PortalShape> forge = ForgeEventFactory.onTrySpawnPortal(level, position, handed);
 			return forge == null ? Optional.empty() : forge;
 		} catch (Throwable failure) {
 			if (WARNED.compareAndSet(false, true)) {
-				ForbricLog.warn("[Forbric/PortalSpawn] MinecraftForge portal hook failed; retaining NeoForge's result",
+				ForbricLog.warn("[Forbric/PortalSpawn] MinecraftForge portal hook failed; retaining the result it was handed",
 						Reflect.unwrap(failure));
 			}
-			return neo;
+			return handed;
 		}
 	}
 

@@ -24,7 +24,9 @@ import org.objectweb.asm.tree.VarInsnNode;
 import net.forbric.kernel.util.ForbricLog;
 
 /**
- * Descriptor-preserving portal composition, including a narrowly proved restored direct-call pair.
+ * Descriptor-preserving portal composition, including a narrowly proved restored direct-call pair: NeoForge's call
+ * behind its own barrier and then MinecraftForge's, or MinecraftForge's statement straight before NeoForge's, which is
+ * how a merge that keeps both sides' edits writes two hooks inserted at the same place (MinecraftForge's first).
  *
  * <p>{@code -Dforbric.portalSpawn=off} turns Forbric's portal composition off and leaves the legacy event-only
  * forward as the only path to MinecraftForge, on every base. A base whose merge restored MinecraftForge's own call
@@ -100,7 +102,7 @@ public final class PortalSpawnInjector implements ClassTransformer {
 			forge.owner = RUNTIME;
 			forge.name = FORGE_ONLY;
 			ClassWriter writer = new ClassWriter(0); node.accept(writer);
-			ForbricLog.info("[Forbric/PortalSpawn] proved direct NeoForge then MinecraftForge portal calls; suppressing the legacy forward only inside that NeoForge call and keeping NeoForge's result if a MinecraftForge listener fails");
+			ForbricLog.info("[Forbric/PortalSpawn] proved direct NeoForge and MinecraftForge portal calls in the base's own order; suppressing the legacy forward only inside that NeoForge call and keeping the result MinecraftForge was handed if one of its listeners fails");
 			return writer.toByteArray();
 		}
 		if (!enabled() || forgeCalls > 0) return bytes;
@@ -115,42 +117,57 @@ public final class PortalSpawnInjector implements ClassTransformer {
 	}
 
 	/**
-	 * Accept one insertion into the reviewed native caller: after Neo's existing nonempty guard, invoke
-	 * Forge with that same result, store its answer, and repeat the same guard before the original consumer.
+	 * Accept one insertion into the reviewed native caller, in either of the two orders a restoring merge writes:
+	 * <ul>
+	 *   <li>after Neo's existing nonempty guard, invoke Forge with that same result, store its answer, and repeat the
+	 *       same guard before the original consumer; or</li>
+	 *   <li>immediately before Neo's statement, Forge's own statement on the same local
+	 *       ({@code shape = ForgeEventFactory.onTrySpawnPortal(level, pos, shape)}), so that Neo is handed Forge's
+	 *       answer and Neo's existing guard and consumer take Neo's — each family's hook passes an empty input through
+	 *       without posting, so the barrier Forge's own body has is the one its hook already applies.</li>
+	 * </ul>
 	 * Restoring the reviewed executable fingerprint proves the enclosing branches as well. Merely finding
 	 * both symbols (or even the right adjacent loads) cannot justify disabling an event forward.
 	 *
-	 * @return the eight inserted instructions in {@code host}, MinecraftForge's call fourth, or null when not proved
+	 * @return the inserted instructions in {@code host} — Forge's statement, followed by its repeated guard in the first
+	 *         order — with MinecraftForge's call fourth, or null when not proved
 	 */
 	private static List<AbstractInsnNode> provedDirectPair(MethodNode host) {
 		if ((host.access & Opcodes.ACC_SYNCHRONIZED) != 0 || !host.tryCatchBlocks.isEmpty()) return null;
 		List<AbstractInsnNode> code = code(host);
-		int at = -1;
-		for (int i = 0; i < code.size(); i++) if (call(code.get(i), Opcodes.INVOKESTATIC, NEO, "onTrySpawnPortal", HOOK_DESC)) at = i;
-		if (at < 3 || at + 18 >= code.size() || !(code.get(at + 1) instanceof VarInsnNode store)
+		int at = -1, forgeAt = -1;
+		for (int i = 0; i < code.size(); i++) {
+			if (call(code.get(i), Opcodes.INVOKESTATIC, NEO, "onTrySpawnPortal", HOOK_DESC)) at = i;
+			if (call(code.get(i), Opcodes.INVOKESTATIC, FORGE, "onTrySpawnPortal", HOOK_DESC)) forgeAt = i;
+		}
+		if (at < 3 || at + 10 >= code.size() || !(code.get(at + 1) instanceof VarInsnNode store)
 				|| store.getOpcode() != Opcodes.ASTORE) return null;
 		int slot = store.var;
-		if (!variable(code.get(at - 3), Opcodes.ALOAD, 2) || !variable(code.get(at - 2), Opcodes.ALOAD, 3)
-				|| !variable(code.get(at - 1), Opcodes.ALOAD, slot)
-				|| !variable(code.get(at + 2), Opcodes.ALOAD, slot)
-				|| !call(code.get(at + 3), Opcodes.INVOKEVIRTUAL, "java/util/Optional", "isPresent", "()Z")
-				|| !(code.get(at + 4) instanceof JumpInsnNode neoGuard) || neoGuard.getOpcode() != Opcodes.IFEQ
-				|| !variable(code.get(at + 5), Opcodes.ALOAD, 2) || !variable(code.get(at + 6), Opcodes.ALOAD, 3)
-				|| !variable(code.get(at + 7), Opcodes.ALOAD, slot)
-				|| !call(code.get(at + 8), Opcodes.INVOKESTATIC, FORGE, "onTrySpawnPortal", HOOK_DESC)
-				|| !variable(code.get(at + 9), Opcodes.ASTORE, slot)
-				|| !variable(code.get(at + 10), Opcodes.ALOAD, slot)
-				|| !call(code.get(at + 11), Opcodes.INVOKEVIRTUAL, "java/util/Optional", "isPresent", "()Z")
-				|| !(code.get(at + 12) instanceof JumpInsnNode forgeGuard) || forgeGuard.getOpcode() != Opcodes.IFEQ
-				|| nextCode(neoGuard.label) != nextCode(forgeGuard.label)
-				|| !variable(code.get(at + 13), Opcodes.ALOAD, slot)
-				|| !call(code.get(at + 14), Opcodes.INVOKEVIRTUAL, "java/util/Optional", "get", "()Ljava/lang/Object;")
-				|| !(code.get(at + 15) instanceof TypeInsnNode cast) || cast.getOpcode() != Opcodes.CHECKCAST
+		if (!statement(code, at, slot) || !guard(code, at + 2, slot)) return null;
+		JumpInsnNode neoGuard = (JumpInsnNode) code.get(at + 4);
+		int from, to, consumer;
+		if (forgeAt == at + 8) {
+			// Neo; Neo's guard; Forge; the same guard again; the consumer.
+			if (!statement(code, forgeAt, slot) || !guard(code, at + 10, slot)
+					|| nextCode(neoGuard.label) != nextCode(((JumpInsnNode) code.get(at + 12)).label)) return null;
+			from = at + 5;
+			to = at + 13;
+			consumer = at + 13;
+		} else if (forgeAt == at - 5) {
+			// Forge; Neo; Neo's guard; the consumer.
+			if (!statement(code, forgeAt, slot)) return null;
+			from = forgeAt - 3;
+			to = forgeAt + 2;
+			consumer = at + 5;
+		} else return null;
+		if (consumer + 5 >= code.size() || !variable(code.get(consumer), Opcodes.ALOAD, slot)
+				|| !call(code.get(consumer + 1), Opcodes.INVOKEVIRTUAL, "java/util/Optional", "get", "()Ljava/lang/Object;")
+				|| !(code.get(consumer + 2) instanceof TypeInsnNode cast) || cast.getOpcode() != Opcodes.CHECKCAST
 				|| !cast.desc.equals("net/minecraft/world/level/portal/PortalShape")
-				|| !variable(code.get(at + 16), Opcodes.ALOAD, 2)
-				|| !call(code.get(at + 17), Opcodes.INVOKEVIRTUAL, cast.desc, "createPortalBlocks", "(Lnet/minecraft/world/level/LevelAccessor;)V")
-				|| code.get(at + 18).getOpcode() != Opcodes.RETURN) return null;
-		List<AbstractInsnNode> inserted = List.copyOf(code.subList(at + 5, at + 13));
+				|| !variable(code.get(consumer + 3), Opcodes.ALOAD, 2)
+				|| !call(code.get(consumer + 4), Opcodes.INVOKEVIRTUAL, cast.desc, "createPortalBlocks", "(Lnet/minecraft/world/level/LevelAccessor;)V")
+				|| code.get(consumer + 5).getOpcode() != Opcodes.RETURN) return null;
+		List<AbstractInsnNode> inserted = List.copyOf(code.subList(from, to));
 		// No outside entry into the insertion may disappear when we normalize it away for the fingerprint.
 		for (AbstractInsnNode instruction : host.instructions) {
 			if (instruction instanceof JumpInsnNode jump && inserted.contains(nextCode(jump.label))) return null;
@@ -161,8 +178,22 @@ public final class PortalSpawnInjector implements ClassTransformer {
 		}
 		MethodNode copy = new MethodNode(host.access, host.name, host.desc, host.signature, host.exceptions.toArray(String[]::new)); host.accept(copy);
 		List<AbstractInsnNode> copied = code(copy);
-		for (int i = at + 5; i < at + 13; i++) copy.instructions.remove(copied.get(i));
+		for (int i = from; i < to; i++) copy.instructions.remove(copied.get(i));
 		return NATIVE_BODY.equals(MixinInstructionFingerprint.hash(copy)) ? inserted : null;
+	}
+
+	/** {@code slot = Hook.onTrySpawnPortal(level, pos, slot)} around the call at {@code at}. */
+	private static boolean statement(List<AbstractInsnNode> code, int at, int slot) {
+		return at >= 3 && at + 1 < code.size() && variable(code.get(at - 3), Opcodes.ALOAD, 2)
+				&& variable(code.get(at - 2), Opcodes.ALOAD, 3) && variable(code.get(at - 1), Opcodes.ALOAD, slot)
+				&& variable(code.get(at + 1), Opcodes.ASTORE, slot);
+	}
+
+	/** {@code if (!slot.isPresent())} jumping away, starting at {@code at}. */
+	private static boolean guard(List<AbstractInsnNode> code, int at, int slot) {
+		return at + 2 < code.size() && variable(code.get(at), Opcodes.ALOAD, slot)
+				&& call(code.get(at + 1), Opcodes.INVOKEVIRTUAL, "java/util/Optional", "isPresent", "()Z")
+				&& code.get(at + 2) instanceof JumpInsnNode jump && jump.getOpcode() == Opcodes.IFEQ;
 	}
 
 	private static List<AbstractInsnNode> code(MethodNode method) {

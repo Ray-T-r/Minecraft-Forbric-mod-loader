@@ -33,15 +33,17 @@ class PortalSpawnInjectorTest {
 	@Test void onlyTheHookOwnerChangesOnTheRealMergedBase() throws Exception {
 		byte[] original = staged("merged-base/patched-mc-merged-26.2.jar", PortalSpawnInjector.TARGET.replace('.', '/'));
 		// A base whose merge restored MinecraftForge's own call carries the proved pair: each family's call is routed
-		// through its own runtime entry. A base that lost it gets the wrapper that forwards to Forge itself. Either
-		// way only call targets change.
-		boolean restored = calls(host(parse(original))).stream().anyMatch(c -> c.owner.equals(PortalSpawnInjector.FORGE));
+		// through its own runtime entry, in the base's own order (NeoForge's first behind its barrier, or MinecraftForge's
+		// first where the merge kept both sides' edits). A base that lost it gets the wrapper that forwards to Forge
+		// itself. Either way only call targets change.
+		List<String> nativeOrder = calls(host(parse(original))).stream().filter(c -> c.name.equals("onTrySpawnPortal")).map(c -> c.owner).toList();
+		boolean restored = nativeOrder.contains(PortalSpawnInjector.FORGE);
 		byte[] changed = injector.transform(PortalSpawnInjector.TARGET, original, context);
 		assertNotSame(original, changed);
 		ClassNode after = parse(changed);
 		List<MethodInsnNode> runtime = calls(host(after)).stream().filter(c -> c.owner.equals(PortalSpawnInjector.RUNTIME)).toList();
-		assertEquals(restored ? List.of(PortalSpawnInjector.NEO_ONLY, PortalSpawnInjector.FORGE_ONLY) : List.of("onTrySpawnPortal"),
-				runtime.stream().map(hook -> hook.name).toList());
+		assertEquals(restored ? nativeOrder.stream().map(owner -> owner.equals(PortalSpawnInjector.FORGE) ? PortalSpawnInjector.FORGE_ONLY
+				: PortalSpawnInjector.NEO_ONLY).toList() : List.of("onTrySpawnPortal"), runtime.stream().map(hook -> hook.name).toList());
 		for (MethodInsnNode hook : runtime) assertEquals(PortalSpawnInjector.HOOK_DESC, hook.desc);
 		new Analyzer<>(new BasicVerifier()).analyze(after.name, host(after));
 		for (MethodInsnNode hook : runtime) {
