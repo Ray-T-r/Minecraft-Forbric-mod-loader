@@ -76,6 +76,20 @@ class PlayPayloadHandOverExecutionTest {
 						}
 					}
 					"""),
+			// MinecraftForge decodes every channel it has a target for into its own envelope, and only that envelope is
+			// offered to its dispatcher (CommonNetworkInteropInjector.offerOnlyForgePayloads).
+			Map.entry("net.minecraftforge.network.ForgePayload", """
+					package net.minecraftforge.network;
+
+					import net.minecraft.network.protocol.common.custom.CustomPacketPayload;
+					import net.minecraft.resources.Identifier;
+
+					public record ForgePayload(String id) implements CustomPacketPayload {
+						public Type type() {
+							return new Type(new Identifier(id));
+						}
+					}
+					"""),
 			Map.entry("net.minecraft.network.Connection", "package net.minecraft.network; public class Connection { }"),
 			Map.entry("net.minecraft.network.protocol.common.ServerboundCustomPayloadPacket", """
 					package net.minecraft.network.protocol.common;
@@ -164,7 +178,8 @@ class PlayPayloadHandOverExecutionTest {
 		Object listener = InjectorExecution.construct(loader.loadClass(GAME_LISTENER));
 		Class<?> packet = loader.loadClass("net.minecraft.network.protocol.common.ServerboundCustomPayloadPacket");
 		for (String id : ids) {
-			Object payload = InjectorExecution.construct(loader.loadClass("fixture.ModPayload"), id);
+			Object payload = InjectorExecution.construct(loader.loadClass(id.startsWith("forgemod:")
+					? "net.minecraftforge.network.ForgePayload" : "fixture.ModPayload"), id);
 			InjectorExecution.invoke(listener, "handleCustomPayload", InjectorExecution.construct(packet, payload));
 		}
 		return (List<?>) InjectorExecution.getStatic(loader.loadClass("fixture.Trace"), "events");
@@ -194,9 +209,28 @@ class PlayPayloadHandOverExecutionTest {
 				EnvType.CLIENT), "a second pass finds nothing left to edit");
 	}
 
-	@Test void theOffSwitchLeavesTheMergedOverrideAlone(@TempDir Path work) throws Exception {
+	/**
+	 * Off leaves out the hand-over: the override still drops what MinecraftForge declines. The filter on the override's
+	 * own Forge call is a separate repair and stays ({@code NativeForgePayloadDispatchExecutionTest}); it moves that one
+	 * call's constants and nothing else.
+	 */
+	@Test void theOffSwitchLeavesOutTheHandOver(@TempDir Path work) throws Throwable {
 		System.setProperty(SWITCH, "off");
-		byte[] bytes = InjectorExecution.compile(work, STAND_INS).get(GAME_LISTENER.replace('.', '/'));
-		assertSame(bytes, InjectorExecution.transform(new CommonNetworkInteropInjector(), GAME_LISTENER, bytes, EnvType.CLIENT));
+		Map<String, byte[]> original = InjectorExecution.compile(work, STAND_INS);
+		String internal = GAME_LISTENER.replace('.', '/');
+		byte[] bytes = original.get(internal);
+		byte[] out = InjectorExecution.transform(new CommonNetworkInteropInjector(), GAME_LISTENER, bytes, EnvType.CLIENT);
+		org.objectweb.asm.tree.ClassNode was = new org.objectweb.asm.tree.ClassNode();
+		new org.objectweb.asm.ClassReader(bytes).accept(was, 0);
+		org.objectweb.asm.tree.ClassNode now = new org.objectweb.asm.tree.ClassNode();
+		new org.objectweb.asm.ClassReader(out).accept(now, 0);
+		for (int i = 0; i < was.methods.size(); i++) {
+			assertEquals(was.methods.get(i).instructions.size(), now.methods.get(i).instructions.size(),
+					was.methods.get(i).name + ": no instruction added or removed");
+		}
+		Map<String, byte[]> classes = new HashMap<>(original);
+		classes.put(internal, out);
+		assertEquals(List.of("forge forgemod:ping"), receive(InjectorExecution.load(classes), "carryon:key_pressed", "forgemod:ping"),
+				"off: Carry On's key packet is dropped, as merged");
 	}
 }

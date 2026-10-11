@@ -107,6 +107,10 @@ public final class CommonNetworkInteropInjector implements ClassTransformer {
 	 * A Forge mod's packet reaching the client, or the server in the configuration phase, therefore had no
 	 * dispatcher at all. These two get a prologue that hands a ForgePayload to Forge's hook and returns when it
 	 * took it.
+	 *
+	 * <p>A base that keeps both families' edits of these methods keeps Forge's own call at their head instead. There
+	 * the prologue stands by and that call is filtered the same way ({@link #offerOnlyForgePayloads}): unfiltered, it
+	 * hands Forge another family's {@code minecraft:unregister} and the connection dies in Forge's channel.
 	 */
 	private static final String CLIENT_COMMON_LISTENER = "net.minecraft.client.multiplayer.ClientCommonPacketListenerImpl";
 	private static final String SERVER_COMMON_LISTENER = "net.minecraft.server.network.ServerCommonPacketListenerImpl";
@@ -118,9 +122,19 @@ public final class CommonNetworkInteropInjector implements ClassTransformer {
 	/** The hook that override consults, and whose answer it throws away. */
 	private static final String FORGE_HOOKS = "net/minecraftforge/common/ForgeHooks";
 	private static final String ON_CUSTOM_PAYLOAD = "onCustomPayload";
+	/** The common-phase overload: the payload and the connection, answering whether Forge took it. */
+	private static final String ON_CUSTOM_PAYLOAD_DESC = "(L" + "net/minecraft/network/protocol/common/custom/CustomPacketPayload"
+			+ ";Lnet/minecraft/network/Connection;)Z";
+	/**
+	 * Where a merged listener's own call to that overload is pointed instead: same two references in, same answer out,
+	 * but only a {@code ForgePayload} is offered to Forge. See {@link #offerOnlyForgePayloads}.
+	 */
+	private static final String FORGE_OFFER_HOOK = "offerToForge";
+	private static final String FORGE_OFFER_HOOK_DESC = "(Ljava/lang/Object;Ljava/lang/Object;)Z";
 	/**
 	 * The play-phase fall-through to NeoForge's dispatcher. ON by default; {@code -Dforbric.playPayloadFallThrough=off}
-	 * restores the merged method as it is, which drops every NeoForge mod's play-phase packet to the server.
+	 * leaves it out, so the merged method drops every NeoForge mod's play-phase packet to the server as it always did.
+	 * (The filter on the override's own Forge call, {@link #offerOnlyForgePayloads}, is not this and stays.)
 	 *
 	 * <p>The defect is real and measured: the merged {@code ServerGamePacketListenerImpl.handleCustomPayload} is
 	 * MinecraftForge's override, its whole body asks {@code ForgeHooks.onCustomPayload}, POPs the answer and
@@ -385,13 +399,23 @@ public final class CommonNetworkInteropInjector implements ClassTransformer {
 						className, FINISH_TASK);
 			} else if ((clientCommon && m.name.equals(HANDLE_PAYLOAD) && m.desc.equals(CLIENT_HANDLE_PAYLOAD_DESC))
 					|| (serverCommon && m.name.equals(HANDLE_PAYLOAD) && m.desc.equals(SERVER_HANDLE_PAYLOAD_DESC))) {
-				String packetType = org.objectweb.asm.Type.getArgumentTypes(m.desc)[0].getInternalName();
-				m.instructions.insert(forgeDispatchPrologue(node.name, packetType));
-				bumpStack(m, 2);
+				int kept = offerOnlyForgePayloads(m);
+				if (kept > 0) {
+					// The merged base kept MinecraftForge's own dispatch here, at the head where the prologue would go.
+					// A prologue in front of it would offer a ForgePayload once and then let every other payload reach
+					// that call unfiltered; the call itself, filtered, is the one dispatch this method needs.
+					ForbricLog.info("[Forbric/Net] %s.%s already asks ForgeHooks.onCustomPayload in the merged base's own "
+							+ "bytes — the dispatch prologue stands by, and that call now offers MinecraftForge only its own "
+							+ "ForgePayload (%d site(s))", className, HANDLE_PAYLOAD, kept);
+				} else {
+					String packetType = org.objectweb.asm.Type.getArgumentTypes(m.desc)[0].getInternalName();
+					m.instructions.insert(forgeDispatchPrologue(node.name, packetType));
+					bumpStack(m, 2);
+					ForbricLog.info("[Forbric/Net] handing MinecraftForge's payloads to ForgeHooks.onCustomPayload at %s.%s — "
+							+ "NeoForge won this method in the merge and Forge's dispatch went with it", className, HANDLE_PAYLOAD);
+				}
 				changed = true;
 				reporter.hit(clientCommon ? CLAIM_CLIENT_COMMON_PAYLOAD : CLAIM_SERVER_COMMON_PAYLOAD);
-				ForbricLog.info("[Forbric/Net] handing MinecraftForge's payloads to ForgeHooks.onCustomPayload at %s.%s — "
-						+ "NeoForge won this method in the merge and Forge's dispatch went with it", className, HANDLE_PAYLOAD);
 			} else if (serverGame && m.name.equals(HANDLE_PAYLOAD) && m.desc.equals(SERVER_HANDLE_PAYLOAD_DESC)) {
 				if (playFallThroughEnabled() && letNeoForgePayloadsThrough(m)) {
 					changed = true;
@@ -400,6 +424,13 @@ public final class CommonNetworkInteropInjector implements ClassTransformer {
 							+ "NeoForge's dispatcher — it is Forge's override and never reached NeoForge, so a NeoForge "
 							+ "mod's play-phase packet to the server (Carry On's carry key, a GUI button) reached nobody "
 							+ "(-Dforbric.playPayloadFallThrough=off to leave it)", className, HANDLE_PAYLOAD);
+				}
+				// After the fall-through, which finds the hook by its own owner: the same filter as the common listeners.
+				int kept = offerOnlyForgePayloads(m);
+				if (kept > 0) {
+					changed = true;
+					ForbricLog.info("[Forbric/Net] %s.%s's own ForgeHooks.onCustomPayload call now offers MinecraftForge "
+							+ "only its own ForgePayload (%d site(s))", className, HANDLE_PAYLOAD, kept);
 				}
 			} else if (neoRegistry && m.name.equals(CHECK_PACKET) && (m.access & Opcodes.ACC_STATIC) != 0
 					&& org.objectweb.asm.Type.getArgumentTypes(m.desc).length == 2) {
@@ -814,6 +845,36 @@ public final class CommonNetworkInteropInjector implements ClassTransformer {
 			return true;
 		}
 		return false;
+	}
+
+	/**
+	 * Points every {@code INVOKESTATIC ForgeHooks.onCustomPayload(CustomPacketPayload, Connection)Z} in {@code m} at
+	 * {@link net.forbric.kernel.interop.PayloadInterop#offerToForge}, and returns how many it moved.
+	 *
+	 * <p>Keyed on the call alone — owner, name and descriptor — because that call carries a promise only
+	 * MinecraftForge's own decoding keeps: every id Forge has a target for decodes into a {@code ForgePayload}, the
+	 * only payload Forge's {@code CustomPayloadEvent} takes data from. On a merged base the decode puts Forge last, so
+	 * a channel Forge shares with the others ({@code minecraft:register}, {@code minecraft:unregister}) arrives as
+	 * another family's type, Forge's channel-registration channel is handed a null buffer and throws "Received empty
+	 * payload", and the connection drops. A base that splices Forge's call into a common listener does exactly that to
+	 * every join without fabric-api; the play listener's override carries the same call on every base.
+	 *
+	 * <p>The hook takes two {@code Object}s and answers a boolean, so this replaces one instruction's constants: the
+	 * two references it consumes and the int it leaves are the same, and no frame, branch or handler moves.
+	 */
+	private static int offerOnlyForgePayloads(MethodNode m) {
+		int moved = 0;
+		for (AbstractInsnNode insn : m.instructions.toArray()) {
+			if (!(insn instanceof MethodInsnNode call) || call.getOpcode() != Opcodes.INVOKESTATIC) continue;
+			if (!FORGE_HOOKS.equals(call.owner) || !ON_CUSTOM_PAYLOAD.equals(call.name)
+					|| !ON_CUSTOM_PAYLOAD_DESC.equals(call.desc)) continue;
+			call.owner = INTEROP;
+			call.name = FORGE_OFFER_HOOK;
+			call.desc = FORGE_OFFER_HOOK_DESC;
+			call.itf = false;
+			moved++;
+		}
+		return moved;
 	}
 
 	private static InsnList forgeDispatchPrologue(String owner, String packetType) {

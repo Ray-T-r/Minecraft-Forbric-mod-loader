@@ -204,6 +204,50 @@ class CommonNetworkInteropInjectorTest {
 		new Analyzer<>(new BasicVerifier()).analyze(node.name, handler);
 	}
 
+	/**
+	 * Every common-phase listener of the staged base hands MinecraftForge a payload through one filtered path: no call
+	 * reaches {@code ForgeHooks.onCustomPayload(CustomPacketPayload, Connection)} unfiltered, each of the base's own
+	 * such calls is filtered in place, and a common listener with none gets the kernel's prologue instead — never both.
+	 *
+	 * <p>Read from the base the suite runs on, so it holds on a base whose listeners carry Forge's call (a both-edits
+	 * merge) and on one whose do not. Unfiltered, NeoForge's {@code minecraft:unregister} reaches Forge's
+	 * channel-registration channel without data and the join dies in the configuration phase.
+	 */
+	@Test
+	void everyListenerOffersMinecraftForgeOnlyItsOwnPayloadThroughOnePath() throws Exception {
+		TestFixtures.require(Fixture.STAGED, Files.isRegularFile(MERGED_BASE), "staged merged base absent — skipping real-bytecode check");
+		String hook = "(Lnet/minecraft/network/protocol/common/custom/CustomPacketPayload;Lnet/minecraft/network/Connection;)Z";
+		for (String[] site : new String[][] {
+				{"net/minecraft/client/multiplayer/ClientCommonPacketListenerImpl", "Lnet/minecraft/network/protocol/common/ClientboundCustomPayloadPacket;", "common"},
+				{"net/minecraft/server/network/ServerCommonPacketListenerImpl", "Lnet/minecraft/network/protocol/common/ServerboundCustomPayloadPacket;", "common"},
+				{"net/minecraft/server/network/ServerGamePacketListenerImpl", "Lnet/minecraft/network/protocol/common/ServerboundCustomPayloadPacket;", "play"}}) {
+			String desc = "(" + site[1] + ")V";
+			MethodNode was = method(parse(readClass(site[0] + ".class")), "handleCustomPayload", desc);
+			ClassNode after = transformed(site[0]);
+			MethodNode now = method(after, "handleCustomPayload", desc);
+			int kept = 0, raw = 0, filtered = 0, prologue = 0;
+			for (AbstractInsnNode insn : was.instructions) {
+				if (insn instanceof MethodInsnNode call && "net/minecraftforge/common/ForgeHooks".equals(call.owner)
+						&& "onCustomPayload".equals(call.name) && hook.equals(call.desc)) kept++;
+			}
+			for (AbstractInsnNode insn : now.instructions) {
+				if (!(insn instanceof MethodInsnNode call)) continue;
+				if ("net/minecraftforge/common/ForgeHooks".equals(call.owner) && "onCustomPayload".equals(call.name)) raw++;
+				if (INTEROP.equals(call.owner) && "offerToForge".equals(call.name)) filtered++;
+				if (INTEROP.equals(call.owner) && "dispatchForgePayload".equals(call.name)) prologue++;
+			}
+			assertEquals(0, raw, site[0] + ": no call hands Forge's dispatcher an unfiltered payload");
+			assertEquals(kept, filtered, site[0] + ": each of the base's own calls is filtered in place");
+			if (site[2].equals("common")) {
+				assertEquals(1, filtered + prologue, site[0] + ": exactly one Forge dispatch per payload — the base's own "
+						+ "call (" + kept + ") or the kernel's prologue (" + prologue + "), never both and never neither");
+			} else {
+				assertEquals(0, prologue, site[0] + ": the play override is Forge's own and gets no prologue");
+			}
+			new Analyzer<>(new BasicVerifier()).analyze(after.name, now);
+		}
+	}
+
 	/** On unless switched off: a dropped packet is a mod that silently does not work. */
 	@Test
 	void thePlayHandOverIsOnByDefaultAndHasAnOffSwitch() {
@@ -330,7 +374,8 @@ class CommonNetworkInteropInjectorTest {
 				"net/minecraft/server/network/ServerConfigurationPacketListenerImpl",
 				"net/minecraft/client/multiplayer/ClientConfigurationPacketListenerImpl",
 				"net/minecraft/client/multiplayer/ClientCommonPacketListenerImpl",
-				"net/minecraft/server/network/ServerCommonPacketListenerImpl")) {
+				"net/minecraft/server/network/ServerCommonPacketListenerImpl",
+				"net/minecraft/server/network/ServerGamePacketListenerImpl")) {
 			byte[] in = readClass(entry + ".class");
 			byte[] out = new CommonNetworkInteropInjector().transform(entry.replace('/', '.'), in, null);
 			assertTrue(out != in, entry + " must still need the injection");

@@ -745,7 +745,38 @@ public final class PayloadInterop {
 		if (listener == null || packet == null) return false;
 		Object payload = invokeNoArg(packet, "payload");
 		if (payload == null || !FORGE_PAYLOAD.equals(payload.getClass().getName())) return false;
-		Object connection = fieldValue(listener, "connection");
+		return offerToForge(payload, fieldValue(listener, "connection"), listener.getClass().getSimpleName());
+	}
+
+	/**
+	 * The merged game's own call to {@code ForgeHooks.onCustomPayload(CustomPacketPayload, Connection)}, pointed here
+	 * by {@code CommonNetworkInteropInjector} wherever a common-phase listener carries one: the same two references
+	 * in, the same answer out, so the call's stack shape and the {@code if (answer) return;} around it are untouched.
+	 *
+	 * <p>On MinecraftForge the hook never sees anything but a {@code ForgePayload} for a channel it owns: Forge's codec
+	 * provider decodes every id Forge has a target for into one. A merged base cannot keep that promise — the decode
+	 * puts Forge last, so {@code minecraft:register} and {@code minecraft:unregister}, which Forge's channel-registration
+	 * channel also claims, arrive as NeoForge's records — and Forge's {@code CustomPayloadEvent} takes the data only from
+	 * a {@code ForgePayload}, so the channel is handed null and throws "Received empty payload". Measured: a merged
+	 * base that keeps MinecraftForge's call in {@code ClientCommonPacketListenerImpl.handleCustomPayload} could not
+	 * finish configuring against any server without fabric-api, whose own head injection otherwise eats those two.
+	 *
+	 * <p>So a payload that is not a {@code ForgePayload} is not offered (false, and the method goes on to NeoForge's
+	 * body, as it would for a payload Forge did not take); a {@code ForgePayload} goes to Forge's dispatcher and the
+	 * answer is true whether or not a handler took it — the same verdict as {@link #dispatchForgePayload}, because
+	 * NeoForge's body would disconnect on a channel it never negotiated, which Forge never does.
+	 */
+	public static boolean offerToForge(Object payload, Object connection) {
+		if (payload == null) return false;
+		if (!FORGE_PAYLOAD.equals(payload.getClass().getName())) {
+			probe(() -> "not offering " + payloadId(payload) + " (" + payload.getClass().getName()
+					+ ") to MinecraftForge's dispatcher — only a ForgePayload carries the data its channels read");
+			return false;
+		}
+		return offerToForge(payload, connection, "the merged listener");
+	}
+
+	private static boolean offerToForge(Object payload, Object connection, String where) {
 		if (connection == null) return false;
 		ClassLoader loader = loaderFor(payload);
 		Class<?> hooks = load(loader, FORGE_HOOKS);
@@ -754,14 +785,14 @@ public final class PayloadInterop {
 		if (hooks == null || payloadApi == null || connectionCls == null) return false;
 		try {
 			Object handled = hooks.getMethod("onCustomPayload", payloadApi, connectionCls).invoke(null, payload, connection);
-			probe(() -> "forge dispatch of " + payloadId(payload) + " on " + listener.getClass().getSimpleName() + " -> " + handled);
+			probe(() -> "forge dispatch of " + payloadId(payload) + " on " + where + " -> " + handled);
 			if (!Boolean.TRUE.equals(handled)) {
 				ForbricLog.warn("[Forbric] no MinecraftForge handler took " + payloadId(payload) + " on "
-						+ listener.getClass().getSimpleName() + "; dropped, as Forge itself would");
+						+ where + "; dropped, as Forge itself would");
 			}
 		} catch (Throwable t) {
 			// Loud: a Forge mod's packet that its own dispatcher rejects is a bug in this bridge or in the mod.
-			ForbricLog.warn("[Forbric] MinecraftForge's dispatcher threw on " + payloadId(payload) + " (" + listener.getClass().getSimpleName() + ")", unwrap(t));
+			ForbricLog.warn("[Forbric] MinecraftForge's dispatcher threw on " + payloadId(payload) + " (" + where + ")", unwrap(t));
 		}
 		// A ForgePayload is Forge's whether or not a handler took it. Falling through would hand it to NeoForge's
 		// body, whose answer to a channel it never negotiated is to kick the client — a verdict Forge never gives.
