@@ -17,6 +17,7 @@
 package net.forbric.kernel.mixin;
 
 import java.util.ArrayList;
+import java.util.BitSet;
 import java.util.List;
 import java.util.function.BiFunction;
 import java.util.function.Function;
@@ -34,6 +35,11 @@ import org.objectweb.asm.tree.LocalVariableNode;
 import org.objectweb.asm.tree.MethodInsnNode;
 import org.objectweb.asm.tree.MethodNode;
 import org.objectweb.asm.tree.VarInsnNode;
+import org.objectweb.asm.tree.analysis.Analyzer;
+import org.objectweb.asm.tree.analysis.AnalyzerException;
+import org.objectweb.asm.tree.analysis.BasicInterpreter;
+import org.objectweb.asm.tree.analysis.BasicValue;
+import org.objectweb.asm.tree.analysis.Frame;
 
 import net.forbric.api.Ecosystem;
 import net.forbric.kernel.util.ForbricLog;
@@ -357,8 +363,16 @@ public final class FabricBlockBreakMixinAdapter {
 	}
 
 	/**
-	 * The method's locals after its arguments that the local variable table has in scope at {@code point}, by slot.
-	 * Null when two entries claim one slot there — the table is not one this can read.
+	 * The method's locals after its arguments that Mixin's frame holds at {@code point}, by slot: those the local variable
+	 * table has in scope there, less any whose slot holds no value anywhere above it. Null when two entries claim one slot
+	 * there — the table is not one this can read.
+	 *
+	 * <p>Mixin reads a method's locals top to bottom ({@code Locals.getLocalsAt}): a slot enters its frame at a store or a
+	 * load, or at a frame that lists it, and the table only names it. A table entry in scope before anything was stored in
+	 * its slot is therefore no local of Mixin's there — which is how a merged body declares a local it took from the other
+	 * ecosystem's patch: over the whole method, wider than the slot is ever written. Only a slot that no instruction above
+	 * {@code point} touches and that the data flow leaves empty at every instruction up to it is dropped, so a slot Mixin
+	 * might still hold there (a zombie of an earlier block, a value a back edge carries) stays counted.
 	 */
 	private static List<LocalVariableNode> inScope(MethodNode method, AbstractInsnNode point) {
 		int at = method.instructions.indexOf(point);
@@ -371,8 +385,33 @@ public final class FabricBlockBreakMixinAdapter {
 			for (LocalVariableNode other : found) if (other.index == local.index) return null;
 			found.add(local);
 		}
+		BitSet held = heldAbove(method, at);
+		if (held != null) found.removeIf(local -> !held.get(local.index));
 		found.sort((a, b) -> Integer.compare(a.index, b.index));
 		return found;
+	}
+
+	/**
+	 * Every slot that holds a value somewhere at or above instruction {@code at}: one an instruction above it stores or
+	 * loads, or one the data flow has filled before any instruction up to it. Null when the body does not analyze; the
+	 * table alone is read then.
+	 */
+	private static BitSet heldAbove(MethodNode method, int at) {
+		Frame<BasicValue>[] frames;
+		try {
+			frames = new Analyzer<>(new BasicInterpreter()).analyze(TARGET, method);
+		} catch (AnalyzerException | RuntimeException unreadable) {
+			return null;
+		}
+		BitSet held = new BitSet();
+		for (int i = 0; i <= at && i < frames.length; i++) {
+			if (i < at && method.instructions.get(i) instanceof VarInsnNode access) held.set(access.var);
+			if (frames[i] == null) continue;
+			for (int slot = 0; slot < frames[i].getLocals(); slot++) {
+				if (!BasicValue.UNINITIALIZED_VALUE.equals(frames[i].getLocal(slot))) held.set(slot);
+			}
+		}
+		return held;
 	}
 
 	private static LocalVariableNode onlyOfType(List<LocalVariableNode> frame, String internalName) {

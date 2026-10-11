@@ -82,7 +82,10 @@ class FabricBlockBreakMixinAdapterTest {
 		MethodNode destroy = target.methods.stream().filter(m -> m.name.equals("destroyBlock")).findFirst().orElseThrow();
 		LocalVariableNode changed = destroy.localVariables.stream().filter(l -> l.index == 10).findFirst().orElseThrow();
 		LabelNode early = destroy.localVariables.stream().filter(l -> l.index == 9).findFirst().orElseThrow().start;
-		changed.start = early;    // the removal result now in scope at mineBlock: two booleans, as in vanilla
+		// The removal result now holds a value at mineBlock: two booleans in Mixin's frame there, as in vanilla.
+		destroy.instructions.insertBefore(early, new InsnNode(Opcodes.ICONST_1));
+		destroy.instructions.insertBefore(early, new VarInsnNode(Opcodes.ISTORE, 10));
+		changed.start = early;
 		ClassNode mixin = apoli();
 		assertEquals(0, FabricBlockBreakMixinAdapter.adapt(mixin, name -> target));
 		assertEquals(1, MixinFit.value(MixinFit.injectorOf(method(mixin, "modifyEffectiveTool")), "ordinal"));
@@ -93,6 +96,36 @@ class FabricBlockBreakMixinAdapterTest {
 			if (insn instanceof MethodInsnNode call && call.name.equals("canHarvestBlock")) call.name = "isSignalSource";
 		}
 		assertEquals(0, FabricBlockBreakMixinAdapter.adapt(apoli(), name -> other));
+	}
+
+	/**
+	 * A boolean the table declares over the whole method, its slot written only after mineBlock — how the merge declares a
+	 * local it took from the other ecosystem's patch — is no second boolean there: Mixin's frame holds a slot from its first
+	 * store, so the harvest check is still the only boolean Mixin counts at mineBlock, and it is still ordinal 0.
+	 */
+	@Test void aBooleanTheTableDeclaresBeforeItsSlotIsWrittenIsNoSecondBoolean() throws Exception {
+		ClassNode target = merged();
+		MethodNode destroy = destroyBlock(target);
+		LocalVariableNode changed = destroy.localVariables.stream().filter(l -> l.index == 10).findFirst().orElseThrow();
+		LabelNode start = destroy.localVariables.stream().filter(l -> l.index == 0).findFirst().orElseThrow().start;
+		changed.start = start;    // in the table's scope at mineBlock; the removal result is still stored after it
+		ClassNode mixin = apoli();
+		assertEquals(1, FabricBlockBreakMixinAdapter.adapt(mixin, name -> target));
+		assertEquals(0, MixinFit.value(MixinFit.injectorOf(method(mixin, "modifyEffectiveTool")), "ordinal"));
+
+		// The same table with the slot written above mineBlock is the second boolean, and the ordinal is left alone.
+		ClassNode written = merged();
+		MethodNode body = destroyBlock(written);
+		LocalVariableNode early = body.localVariables.stream().filter(l -> l.index == 10).findFirst().orElseThrow();
+		LabelNode first = body.localVariables.stream().filter(l -> l.index == 0).findFirst().orElseThrow().start;
+		early.start = first;
+		AbstractInsnNode harvest = java.util.Arrays.stream(body.instructions.toArray())
+				.filter(i -> i instanceof VarInsnNode store && store.getOpcode() == Opcodes.ISTORE && store.var == 9).findFirst().orElseThrow();
+		body.instructions.insert(harvest, new VarInsnNode(Opcodes.ISTORE, 10));
+		body.instructions.insert(harvest, new InsnNode(Opcodes.ICONST_0));
+		ClassNode control = apoli();
+		assertEquals(0, FabricBlockBreakMixinAdapter.adapt(control, name -> written));
+		assertEquals(1, MixinFit.value(MixinFit.injectorOf(method(control, "modifyEffectiveTool")), "ordinal"));
 	}
 
 	@Test void theSwitchAndOtherMixinsAreLeftAlone() throws Exception {
