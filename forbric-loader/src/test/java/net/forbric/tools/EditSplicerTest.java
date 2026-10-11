@@ -99,6 +99,23 @@ public class EditSplicerTest {
 		return cn;
 	}
 
+	/**
+	 * The probe class as it runs: the method under test, a helper {@code static void bump(int)} that records its
+	 * argument, and a constant {@code static final int LIMIT = 42}. The member-origin tests treat the helper and the
+	 * constant as members both patches added.
+	 */
+	private static ClassNode runnableOwner(MethodNode method) {
+		ClassNode cn = owner(method);
+		MethodNode bump = new MethodNode(Opcodes.ACC_PUBLIC | Opcodes.ACC_STATIC, "bump", "(I)V", null, null);
+		bump.instructions.add(new VarInsnNode(Opcodes.ILOAD, 0));
+		bump.instructions.add(new MethodInsnNode(Opcodes.INVOKESTATIC, "net/forbric/tools/EditSplicerTest", "record", "(I)V", false));
+		bump.instructions.add(new InsnNode(Opcodes.RETURN));
+		cn.methods.add(bump);
+		cn.fields.add(new FieldNode(Opcodes.ACC_PUBLIC | Opcodes.ACC_STATIC | Opcodes.ACC_FINAL, "LIMIT", "I", null, 42));
+		cn.fields.add(new FieldNode(Opcodes.ACC_PUBLIC | Opcodes.ACC_STATIC, "count", "I", null, null));
+		return cn;
+	}
+
 	private static EditSplicer.Result splice(MethodNode base, String basePatch, MethodNode other, String otherPatch,
 			boolean otherIsForge) {
 		ClassNode owner = owner(base);
@@ -111,8 +128,23 @@ public class EditSplicerTest {
 				otherIsForge, ownerMethods, otherMethods));
 	}
 
+	/** {@link #splice} with a member oracle for which exactly the given members of the probe are added by both patches. */
+	private static EditSplicer.Result splice(MethodNode base, String basePatch, MethodNode other, String otherPatch,
+			boolean otherIsForge, String... addedByBoth) {
+		ClassNode owner = owner(base);
+		ContractGraph graph = new ContractGraph(List.of(Map.of()));
+		Map<String, MethodNode> ownerMethods = new LinkedHashMap<>(), otherMethods = new LinkedHashMap<>();
+		ownerMethods.put(base.name + base.desc, base);
+		otherMethods.put(other.name + other.desc, other);
+		List<String> both = List.of(addedByBoth);
+		EditSplicer.MemberOrigin members = (o, name, method) -> o.equals(OWNER) && both.contains(name);
+		return new EditSplicer(graph).splice(new EditSplicer.Input(owner, base, other, SOURCE,
+				PatchLineProvenance.of(Map.of(SOURCE, basePatch)), PatchLineProvenance.of(Map.of(SOURCE, otherPatch)),
+				otherIsForge, ownerMethods, otherMethods, ownerMethods, members));
+	}
+
 	private static List<Integer> run(MethodNode method, int x) throws Exception {
-		ClassNode cn = owner(method);
+		ClassNode cn = runnableOwner(method);
 		ClassWriter writer = new ClassWriter(ClassWriter.COMPUTE_FRAMES);
 		cn.accept(writer);
 		byte[] bytes = writer.toByteArray();
@@ -419,6 +451,12 @@ public class EditSplicerTest {
 				new MethodInsnNode(Opcodes.INVOKESTATIC, hooks, "check", "(I)V", false) };
 	}
 
+	/** {@code bump(value)}: the probe's helper that both patches added. */
+	private static AbstractInsnNode[] bump(int value) {
+		return new AbstractInsnNode[] { new IntInsnNode(Opcodes.SIPUSH, value),
+				new MethodInsnNode(Opcodes.INVOKESTATIC, OWNER, "bump", "(I)V", false) };
+	}
+
 	private static AbstractInsnNode[] returnX() {
 		return new AbstractInsnNode[] { new VarInsnNode(Opcodes.ILOAD, 0), new InsnNode(Opcodes.IRETURN) };
 	}
@@ -483,6 +521,56 @@ public class EditSplicerTest {
 		assertTrue(r.accepted(), r.reason() + " " + r.refused());
 		assertEquals(List.of(1, 101, 7), run(r.method(), 7));
 		assertEquals(List.of(1, 101, 9, 5), run(r.method(), 5));
+	}
+
+	// ---- rule: both sides reimplementing one feature ----------------------------------------------------------
+
+	/** record(1); [added line 11]; record(2); return x — the added statement given per side. */
+	private static MethodNode withAdded(AbstractInsnNode... added) {
+		return new Body().line(10, rec(1)).line(11, added).line(12, rec(2)).line(13, returnX()).done();
+	}
+
+	private static final String ADDED_AT_11_NEO = patch("_", 10, 3, " A", "+N", " B", " R");
+	private static final String ADDED_AT_11_FORGE = patch("10", 10, 3, " A", "+F", " B", " R");
+
+	@Test
+	void bothEditsInvokingAMemberBothPatchesAddedAreAConflict() {
+		// Both patches added bump() to the class and both edits call it: two implementations of one step, which
+		// running both would run twice (the block removed twice, the capture closed twice).
+		MethodNode neo = withAdded(bump(200)), forge = withAdded(bump(100));
+		EditSplicer.Result r = splice(neo, ADDED_AT_11_NEO, forge, ADDED_AT_11_FORGE, true, "bump");
+		assertFalse(r.accepted(), "MinecraftForge's bump must not run beside NeoForge's");
+		assertTrue(hasOutcome(r.conflicts(), "both-reimplemented", "bump"), r.conflicts().toString());
+	}
+
+	/** Negative control: each side calling only its own platform's hook with vanilla arguments still splices. */
+	@Test
+	void aHookOnlyPairStillSplices() throws Exception {
+		MethodNode neo = withAdded(check(NEO_HOOKS, 0)), forge = withAdded(check(FORGE_HOOKS, 0));
+		EditSplicer.Result r = splice(neo, ADDED_AT_11_NEO, forge, ADDED_AT_11_FORGE, true, "bump");
+		assertTrue(r.accepted(), r.reason() + " " + r.conflicts() + " " + r.refused());
+		assertEquals(List.of(1, 101, 201, 2, 7), run(r.method(), 7));
+	}
+
+	@Test
+	void bothEditsWritingAFieldBothPatchesAddedAreAConflict() {
+		MethodNode neo = withAdded(new IntInsnNode(Opcodes.SIPUSH, 200), new FieldInsnNode(Opcodes.PUTSTATIC, OWNER, "count", "I"));
+		MethodNode forge = withAdded(new IntInsnNode(Opcodes.SIPUSH, 100), new FieldInsnNode(Opcodes.PUTSTATIC, OWNER, "count", "I"));
+		EditSplicer.Result r = splice(neo, ADDED_AT_11_NEO, forge, ADDED_AT_11_FORGE, true, "count");
+		assertFalse(r.accepted());
+		assertTrue(hasOutcome(r.conflicts(), "both-reimplemented", "count"), r.conflicts().toString());
+	}
+
+	/** Negative control: two edits that only read a constant both patches added are not a reimplementation. */
+	@Test
+	void bothEditsReadingAConstantBothPatchesAddedStillSplice() throws Exception {
+		MethodNode neo = withAdded(new FieldInsnNode(Opcodes.GETSTATIC, OWNER, "LIMIT", "I"), new IntInsnNode(Opcodes.SIPUSH, 200),
+				new InsnNode(Opcodes.IADD), new MethodInsnNode(Opcodes.INVOKESTATIC, RECORD_OWNER, "record", "(I)V", false));
+		MethodNode forge = withAdded(new FieldInsnNode(Opcodes.GETSTATIC, OWNER, "LIMIT", "I"), new IntInsnNode(Opcodes.SIPUSH, 100),
+				new InsnNode(Opcodes.IADD), new MethodInsnNode(Opcodes.INVOKESTATIC, RECORD_OWNER, "record", "(I)V", false));
+		EditSplicer.Result r = splice(neo, ADDED_AT_11_NEO, forge, ADDED_AT_11_FORGE, true, "LIMIT");
+		assertTrue(r.accepted(), r.reason() + " " + r.conflicts() + " " + r.refused());
+		assertEquals(List.of(1, 142, 242, 2, 7), run(r.method(), 7));
 	}
 
 	// ---- rule: statement-level carry of insertion-only runs ---------------------------------------------------

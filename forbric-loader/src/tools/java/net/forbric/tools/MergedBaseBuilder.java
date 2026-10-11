@@ -125,6 +125,7 @@ public final class MergedBaseBuilder {
 	/** Each ecosystem's own patch record; null when no userdev was supplied, which turns edit splicing off. */
 	PatchLineProvenance forgeProvenance, neoProvenance;
 	private EditSplicer splicer;
+	private EditSplicer.MemberOrigin memberOrigin = EditSplicer.MemberOrigin.NONE;
 	private final List<String> spliceDecisions = new ArrayList<>();
 	private final Map<String, Integer> spliceRefusals = new TreeMap<>();
 	private int methodsSpliced, runsSpliced, runsConflicting, runsRefused, runsSameEdit;
@@ -226,7 +227,12 @@ public final class MergedBaseBuilder {
 		// A restored hook call has to link. Its owner lives in a runtime jar (ForgeEventFactory, EventHooks) or,
 		// for the few classes Forge bakes into its patched game, in that jar; without them nothing is restored.
 		hookContext = AdditiveMethodMerger.context(List.of(forgeRuntime, neoRuntime, forge, neo), reviewedRestorations);
-		if (forgeProvenance != null && neoProvenance != null) splicer = new EditSplicer(declarationGraph);
+		if (forgeProvenance != null && neoProvenance != null) {
+			splicer = new EditSplicer(declarationGraph);
+			// Which members both patches added under one name: the vanilla game against each patched game together
+			// with the runtime that holds its extension interfaces.
+			memberOrigin = new EditSplicer.PatchedHierarchies(List.of(vanilla), List.of(forge, forgeRuntime), List.of(neo, neoRuntime));
+		}
 
 		// Non-class resources of the merged jar: take the union, Neo first (its patched game is the base),
 		// then Forge's, then vanilla's — first writer wins so a class's own jar's resources are preferred.
@@ -1072,7 +1078,7 @@ public final class MergedBaseBuilder {
 		for (PendingSplice p : pendingSplices) {
 			EditSplicer.Result r = splicer.splice(new EditSplicer.Input(baseN, p.base(), p.other(), source,
 					baseIsForge ? forgeProvenance : neoProvenance, baseIsForge ? neoProvenance : forgeProvenance,
-					!baseIsForge, baseMethods, otherMethods, baseSideMethods));
+					!baseIsForge, baseMethods, otherMethods, baseSideMethods, memberOrigin));
 			recordSplice(name + "#" + p.key(), r);
 			if (r.accepted()) {
 				replaceMethod(baseN, p.key(), r.method(), baseMethods);

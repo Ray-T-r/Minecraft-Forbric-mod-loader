@@ -20,6 +20,7 @@ import org.objectweb.asm.Type;
 import org.objectweb.asm.tree.AbstractInsnNode;
 import org.objectweb.asm.tree.ClassNode;
 import org.objectweb.asm.tree.FieldInsnNode;
+import org.objectweb.asm.tree.FieldNode;
 import org.objectweb.asm.tree.FrameNode;
 import org.objectweb.asm.tree.IincInsnNode;
 import org.objectweb.asm.tree.InsnList;
@@ -44,6 +45,8 @@ import org.objectweb.asm.tree.analysis.BasicInterpreter;
 import org.objectweb.asm.tree.analysis.BasicValue;
 import org.objectweb.asm.tree.analysis.Frame;
 import org.objectweb.asm.tree.analysis.SimpleVerifier;
+import org.objectweb.asm.tree.analysis.SourceInterpreter;
+import org.objectweb.asm.tree.analysis.SourceValue;
 
 /**
  * Keeps BOTH ecosystems' edits to a method both of them patched, instead of keeping one body.
@@ -81,7 +84,9 @@ import org.objectweb.asm.tree.analysis.SimpleVerifier;
  *
  * <p>A run that replaced vanilla lines replaces the base's copy of those lines only when the base left them vanilla.
  * When the base changed the same lines too, the two edits are kept once when they are the same instructions, and
- * otherwise the run is reported as a conflict and the base's edit stands.
+ * otherwise the run is reported as a conflict and the base's edit stands. When both patches added a member of the
+ * same name (vanilla's hierarchy lacks it, both patched hierarchies have it) and both edits of this method act on
+ * it, the two sides reimplemented one feature and running both runs it twice: a conflict, the base's edit stands.
  * A run inserted where the base inserted its own run goes first when it is MinecraftForge's, so on every shared
  * insertion point MinecraftForge's code runs before NeoForge's. Nothing here keys on a class, method or mod name.
  *
@@ -100,21 +105,140 @@ final class EditSplicer {
 		}
 	}
 
+	/**
+	 * Where a member that an edit acts on came from. Two edits that act on a member both patches added under the
+	 * same name are two implementations of one feature, not two independent hooks.
+	 */
+	interface MemberOrigin {
+		/**
+		 * Whether {@code name} on {@code owner} is added by both patches: no class of the vanilla hierarchy of
+		 * {@code owner} declares it, and both the MinecraftForge-patched and the NeoForge-patched hierarchy of
+		 * {@code owner} declare it (by name, any descriptor).
+		 */
+		boolean addedByBoth(String owner, String name, boolean method);
+
+		/**
+		 * Whether method {@code name desc} of {@code owner}, as a patched game declares it, is a private step of the
+		 * class's own implementation: declared on {@code owner} itself as private (nothing outside the class calls or
+		 * overrides it), with a descriptor that names no platform type (a type only the patched games and their
+		 * runtimes have; a helper that takes or returns a platform's objects serves that platform alone).
+		 */
+		default boolean privateImplementation(String owner, String name, String desc) {
+			return false;
+		}
+
+		MemberOrigin NONE = (owner, name, method) -> false;
+	}
+
 	/** Both sides of one method, with everything a splice needs to read. */
 	record Input(ClassNode owner, MethodNode base, MethodNode other, String sourcePath,
 			PatchLineProvenance baseProvenance, PatchLineProvenance otherProvenance, boolean otherIsForge,
 			Map<String, MethodNode> ownerMethods, Map<String, MethodNode> otherMethods,
-			Map<String, MethodNode> baseMethods) {
+			Map<String, MethodNode> baseMethods, MemberOrigin members) {
 		Input {
 			if (baseMethods == null) baseMethods = ownerMethods;
+			if (members == null) members = MemberOrigin.NONE;
 		}
 
-		/** With the merged class's methods standing for the base side's own. */
+		/** Without a member oracle: no member counts as added by both, and the merged class is the base side. */
 		Input(ClassNode owner, MethodNode base, MethodNode other, String sourcePath,
 				PatchLineProvenance baseProvenance, PatchLineProvenance otherProvenance, boolean otherIsForge,
 				Map<String, MethodNode> ownerMethods, Map<String, MethodNode> otherMethods) {
 			this(owner, base, other, sourcePath, baseProvenance, otherProvenance, otherIsForge, ownerMethods, otherMethods,
-					ownerMethods);
+					ownerMethods, MemberOrigin.NONE);
+		}
+	}
+
+	/**
+	 * {@link MemberOrigin} over the three class sets themselves. Each side is the classes a hierarchy is read from:
+	 * the vanilla game; the MinecraftForge-patched game and its runtime; the NeoForge-patched game and its runtime
+	 * (the runtime holds the extension interfaces a patched class implements).
+	 */
+	static final class PatchedHierarchies implements MemberOrigin {
+		private final Side vanilla, forge, neo;
+
+		PatchedHierarchies(List<Map<String, byte[]>> vanilla, List<Map<String, byte[]>> forge, List<Map<String, byte[]>> neo) {
+			this.vanilla = new Side(vanilla);
+			this.forge = new Side(forge);
+			this.neo = new Side(neo);
+		}
+
+		@Override
+		public synchronized boolean addedByBoth(String owner, String name, boolean method) {
+			String key = (method ? "m " : "f ") + name;
+			return !vanilla.names(owner).contains(key) && forge.names(owner).contains(key) && neo.names(owner).contains(key);
+		}
+
+		@Override
+		public synchronized boolean privateImplementation(String owner, String name, String desc) {
+			boolean declared = false;
+			for (Side side : List.of(forge, neo)) {
+				ClassNode node = side.header(owner);
+				if (node == null) continue;
+				for (MethodNode m : node.methods) {
+					if (!m.name.equals(name) || !m.desc.equals(desc)) continue;
+					if ((m.access & Opcodes.ACC_PRIVATE) == 0) return false;
+					declared = true;
+				}
+			}
+			if (!declared) return false;
+			Type type = Type.getMethodType(desc);
+			List<Type> named = new ArrayList<>(List.of(type.getArgumentTypes()));
+			named.add(type.getReturnType());
+			for (Type t : named) {
+				while (t.getSort() == Type.ARRAY) t = t.getElementType();
+				if (t.getSort() == Type.OBJECT && platformType(t.getInternalName())) return false;
+			}
+			return true;
+		}
+
+		/** A class only the patched games and their runtimes have. */
+		private boolean platformType(String name) {
+			return vanilla.header(name) == null && (forge.header(name) != null || neo.header(name) != null);
+		}
+
+		private static final class Side {
+			private final List<Map<String, byte[]>> classes;
+			private final Map<String, java.util.Optional<ClassNode>> headers = new HashMap<>();
+			private final Map<String, Set<String>> names = new HashMap<>();
+
+			Side(List<Map<String, byte[]>> classes) {
+				this.classes = classes;
+			}
+
+			/** Every member name the class and its supertypes declare, as "m name" / "f name". */
+			Set<String> names(String owner) {
+				Set<String> known = names.get(owner);
+				if (known != null) return known;
+				names.put(owner, Set.of()); // a cyclic hierarchy (malformed input) ends here
+				Set<String> out = new HashSet<>();
+				ClassNode node = header(owner);
+				if (node != null) {
+					for (MethodNode m : node.methods) out.add("m " + m.name);
+					for (FieldNode f : node.fields) out.add("f " + f.name);
+					if (node.superName != null) out.addAll(names(node.superName));
+					for (String itf : node.interfaces) out.addAll(names(itf));
+				}
+				names.put(owner, out);
+				return out;
+			}
+
+			ClassNode header(String name) {
+				return headers.computeIfAbsent(name, n -> {
+					for (Map<String, byte[]> set : classes) {
+						byte[] bytes = set.get(n);
+						if (bytes == null) continue;
+						try {
+							ClassNode node = new ClassNode();
+							new ClassReader(bytes).accept(node, ClassReader.SKIP_CODE | ClassReader.SKIP_DEBUG | ClassReader.SKIP_FRAMES);
+							return java.util.Optional.of(node);
+						} catch (RuntimeException unreadable) {
+							return java.util.Optional.empty();
+						}
+					}
+					return java.util.Optional.empty();
+				}).orElse(null);
+			}
 		}
 	}
 
@@ -294,6 +418,9 @@ final class EditSplicer {
 	/** A base jump that must enter the inserted run rather than skip to the anchor. */
 	private record JumpRetarget(AbstractInsnNode jump, LabelNode from) { }
 
+	/** A member an edit acts on; which two count as one is {@link #sameMember}'s question. */
+	private record Member(String owner, String name, boolean method, String desc) { }
+
 	/** Everything one planning round shares between the runs it plans. */
 	private static final class Planning {
 		final Input in;
@@ -308,6 +435,9 @@ final class EditSplicer {
 		final Set<LabelNode> pinned = java.util.Collections.newSetFromMap(new IdentityHashMap<>());
 		/** Base labels the inserted runs' own jumps land on: pinned the same way. */
 		final Set<LabelNode> runTargets = java.util.Collections.newSetFromMap(new IdentityHashMap<>());
+		private Set<Member> baseActsOn;
+		private Frame<SourceValue>[] otherSources;
+		private boolean otherSourcesTried;
 
 		Planning(Input in, Annotated o, Annotated b, Map<Integer, Integer> match, MethodNode base) {
 			this.in = in;
@@ -319,6 +449,26 @@ final class EditSplicer {
 			this.nextSlot = new int[] { Math.max(base.maxLocals, maxSlot(base) + 1) };
 			for (AbstractInsnNode n : base.instructions) pinned.addAll(targets(n));
 			for (TryCatchBlockNode t : base.tryCatchBlocks) pinned.add(t.handler);
+		}
+
+		/** What the base's own edits in this method act on, its lambdas' bodies included. */
+		Set<Member> baseActsOn() {
+			if (baseActsOn == null) {
+				baseActsOn = new HashSet<>();
+				List<AbstractInsnNode> added = new ArrayList<>();
+				for (int i = 0; i < b.code.size(); i++) if (b.added(i)) added.add(b.code.get(i));
+				if (!added.isEmpty()) actsOn(b.method, added, sources(in.owner().name, b.method), baseActsOn, in.baseMethods(),
+						in.owner().name, new HashSet<>(), 0);
+			}
+			return baseActsOn;
+		}
+
+		Frame<SourceValue>[] otherSources() {
+			if (!otherSourcesTried) {
+				otherSourcesTried = true;
+				otherSources = sources(in.owner().name, o.method);
+			}
+			return otherSources;
 		}
 
 	}
@@ -591,6 +741,7 @@ final class EditSplicer {
 				conflicts.add(new Outcome("same-edit", first, last, "the base already has this inserted code"));
 				return null;
 			}
+			if (reimplemented(st, run, first, last, conflicts)) return null;
 			if (bNext >= 0) {
 				// Between the base's copies of the statements of this run that the base inserted too: after the one
 				// before it, before the one after it, so that the run's own order holds around what both share.
@@ -634,6 +785,7 @@ final class EditSplicer {
 					conflicts.add(new Outcome("base-deleted", first, last, "the base removed the vanilla lines this run replaces"));
 					return null;
 				}
+				if (reimplemented(st, run, first, last, conflicts)) return null;
 				// Only the vanilla lines the run replaced may go: every removed base instruction must come from one of
 				// them, and they must be one contiguous stretch of the base body.
 				for (int i : baseVanilla) {
@@ -818,6 +970,141 @@ final class EditSplicer {
 			else hi = Math.min(hi, copyStart);
 		}
 		return lo <= hi ? new Shared(lo, hi, copyOf, uncopied) : null;
+	}
+
+	/**
+	 * Both patches reimplemented one feature: the unit acts on a member both patches added under one name, and the
+	 * base's own edits in this method act on a member of the same owner and name. Running both implementations runs
+	 * the feature twice (a block removed twice, a shared list cleared and filled twice, a capture closed twice), so
+	 * the unit is a conflict and the base's implementation stands.
+	 *
+	 * <p>Acting on a member is what can run a feature twice: invoking a method, writing a field, or invoking a
+	 * method on the value a member gave (a shared collection a field holds, or one a capture handed back into a
+	 * local, being cleared, filled or spawned). Reading a constant or passing a method reference along is not.
+	 * Which two members are one is {@link #sameMember}'s question. Hooks that each side keeps on its own platform
+	 * classes never meet here: their owners differ.
+	 */
+	private static boolean reimplemented(Planning st, Run run, int first, int last, List<Outcome> conflicts) {
+		Set<Member> ours = st.baseActsOn();
+		if (ours.isEmpty()) return false;
+		Annotated o = st.o;
+		Set<Member> theirs = new LinkedHashSet<>();
+		actsOn(o.method, o.code.subList(run.start(), run.end() + 1), st.otherSources(), theirs, st.in.otherMethods(),
+				st.in.owner().name, new HashSet<>(), 0);
+		MemberOrigin origin = st.in.members();
+		for (Member m : theirs) {
+			Member same = null;
+			for (Member u : ours) if (sameMember(origin, m, u)) { same = u; break; }
+			if (same == null || !origin.addedByBoth(m.owner(), m.name(), m.method())) continue;
+			conflicts.add(new Outcome("both-reimplemented", first, last, "both patches added "
+					+ m.owner().substring(m.owner().lastIndexOf('/') + 1) + "." + m.name() + " and both edits here act on it; lost "
+					+ calls(o, run.start(), run.end())));
+			return true;
+		}
+		return false;
+	}
+
+	/**
+	 * Whether two acted-on members are one: the same field (a second descriptor is a second field of the merged
+	 * class), the same method, or two methods of one name that are both private steps of the class's own
+	 * implementation (each side's helper for the same step, retyped to what that side passes along). A method of
+	 * any other kind that each side has in its own descriptor is that side's API, which its own mods call or
+	 * override: each edit calling its own platform's version is that platform's hook, and the two do not meet.
+	 */
+	private static boolean sameMember(MemberOrigin origin, Member a, Member b) {
+		if (!a.owner().equals(b.owner()) || !a.name().equals(b.name()) || a.method() != b.method()) return false;
+		if (a.desc().equals(b.desc())) return true;
+		return a.method() && origin.privateImplementation(a.owner(), a.name(), a.desc())
+				&& origin.privateImplementation(b.owner(), b.name(), b.desc());
+	}
+
+	/**
+	 * The members the given instructions of {@code m} act on: the methods they invoke, the fields they write, and the
+	 * fields whose value they invoke a method on ({@code frames} are {@code m}'s source frames, or null when it did
+	 * not analyze). A lambda of the owner the code captures stands for its body, not its name: the compiler numbers
+	 * lambdas, so two compiles' {@code lambda$m$0} share a name by accident.
+	 */
+	private static void actsOn(MethodNode m, List<AbstractInsnNode> code, Frame<SourceValue>[] frames, Set<Member> out,
+			Map<String, MethodNode> methods, String owner, Set<String> seen, int depth) {
+		for (AbstractInsnNode n : code) {
+			if (n instanceof MethodInsnNode c) {
+				out.add(new Member(c.owner, c.name, true, c.desc));
+				Member holder = c.getOpcode() == Opcodes.INVOKESTATIC || frames == null ? null : receiverMember(frames, m, c);
+				if (holder != null) out.add(holder);
+			} else if (n instanceof FieldInsnNode f && (f.getOpcode() == Opcodes.PUTFIELD || f.getOpcode() == Opcodes.PUTSTATIC)) {
+				out.add(new Member(f.owner, f.name, false, f.desc));
+			} else if (n instanceof InvokeDynamicInsnNode d) {
+				for (Object arg : d.bsmArgs) {
+					if (!(arg instanceof Handle h) || !h.getOwner().equals(owner)) continue;
+					MethodNode body = methods.get(h.getName() + h.getDesc());
+					if (body == null || (body.access & Opcodes.ACC_SYNTHETIC) == 0 || body.instructions.size() == 0) continue;
+					if (depth >= 8 || !seen.add(h.getName() + h.getDesc())) continue;
+					List<AbstractInsnNode> inner = new ArrayList<>();
+					for (AbstractInsnNode x : body.instructions) if (x.getOpcode() >= 0) inner.add(x);
+					actsOn(body, inner, sources(owner, body), out, methods, owner, seen, depth + 1);
+				}
+			}
+		}
+	}
+
+	/**
+	 * The member whose value a call's receiver is, when every path produces it from that one member: a field read,
+	 * or a local every reaching store of which stores what one invocation or field read returned (the collection a
+	 * capture hands back, kept in a local and then filled or emptied).
+	 */
+	private static Member receiverMember(Frame<SourceValue>[] frames, MethodNode m, MethodInsnNode c) {
+		SourceValue receiver = receiver(frames, m, c);
+		if (receiver == null) return null;
+		Member found = null;
+		for (AbstractInsnNode src : receiver.insns) {
+			Member here;
+			if (src instanceof VarInsnNode load && load.getOpcode() == Opcodes.ALOAD) {
+				Frame<SourceValue> at = frames[m.instructions.indexOf(load)];
+				if (at == null) return null;
+				here = null;
+				for (AbstractInsnNode store : at.getLocal(load.var).insns) {
+					if (!(store instanceof VarInsnNode v) || v.getOpcode() != Opcodes.ASTORE) return null;
+					Frame<SourceValue> before = frames[m.instructions.indexOf(store)];
+					if (before == null || before.getStackSize() == 0) return null;
+					Member stored = null;
+					for (AbstractInsnNode producer : before.getStack(before.getStackSize() - 1).insns) {
+						Member p = produced(producer);
+						if (p == null || (stored != null && !stored.equals(p))) return null;
+						stored = p;
+					}
+					if (stored == null || (here != null && !here.equals(stored))) return null;
+					here = stored;
+				}
+			} else {
+				here = produced(src);
+			}
+			if (here == null || (found != null && !found.equals(here))) return null;
+			found = here;
+		}
+		return found;
+	}
+
+	/** The member an instruction reads a value from: an invocation's result, or a field. */
+	private static Member produced(AbstractInsnNode n) {
+		if (n instanceof MethodInsnNode c) return new Member(c.owner, c.name, true, c.desc);
+		if (n instanceof FieldInsnNode f && (f.getOpcode() == Opcodes.GETFIELD || f.getOpcode() == Opcodes.GETSTATIC))
+			return new Member(f.owner, f.name, false, f.desc);
+		return null;
+	}
+
+	private static SourceValue receiver(Frame<SourceValue>[] frames, MethodNode m, MethodInsnNode c) {
+		Frame<SourceValue> f = frames[m.instructions.indexOf(c)];
+		if (f == null) return null;
+		int depth = f.getStackSize() - 1 - Type.getArgumentTypes(c.desc).length;
+		return depth < 0 ? null : f.getStack(depth);
+	}
+
+	private static Frame<SourceValue>[] sources(String owner, MethodNode m) {
+		try {
+			return new Analyzer<>(new SourceInterpreter()).analyze(owner, m);
+		} catch (AnalyzerException | RuntimeException e) {
+			return null;
+		}
 	}
 
 	/**
