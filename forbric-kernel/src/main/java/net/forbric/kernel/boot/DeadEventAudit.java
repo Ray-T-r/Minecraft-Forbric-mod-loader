@@ -174,9 +174,10 @@ public final class DeadEventAudit {
 		// $Applicable got every call site back and left; four that had lost all of theirs (LivingConversionEvent$Pre,
 		// EntityLeaveLevelEvent, LevelEvent$Unload, PlayLevelSoundEvent$AtEntity) got some back and joined, and
 		// LivingConversionEvent$Post went from 3 of 7 to 4. Regenerated again once the splice carried an insertion
-		// statement by statement: ClientLevel's tracking end now posts EntityLeaveLevelEvent too (2 of 2), so it left.
+		// statement by statement: ClientLevel's tracking end now posts EntityLeaveLevelEvent too (2 of 2), so it left,
+		// and the pig's lightning conversion keeps MinecraftForge's onLivingConvert (Post is 5 of 7 now).
 		partial.put("net/minecraftforge/event/entity/living/LivingConversionEvent$Post",
-				"a completed conversion is announced on 4 of its 7 paths — not for pigs, hoglins or piglins — so a "
+				"a completed conversion is announced on 5 of its 7 paths — not for hoglins or piglins — so a "
 						+ "mod reacting to one will react to some conversions and not others");
 		partial.put("net/minecraftforge/event/entity/living/LivingConversionEvent$Pre",
 				"whether a mob may convert is asked on 5 of its 10 paths — not for lightning, a piglin or hoglin "
