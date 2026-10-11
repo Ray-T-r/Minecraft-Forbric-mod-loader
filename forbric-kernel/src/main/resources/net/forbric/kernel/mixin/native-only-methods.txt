@@ -11,7 +11,7 @@
 #                                    excludes them is not answered for
 # <id> <owner>#<name><descriptor>    a method the platform declares and the merged class does not
 # <id> merged-only <owner>           a class in vanilla's packages the platform does not have
-base 4fd5b9e67ce2c15642dc50a61d66cdcb0cd137ebc653e97feb41e83a9d204d1b
+base bcb5335e5e48b1175281672fac9ed4cee9db44687c3166d78a4e6ab7e05811d5
 fabric com/mojang/blaze3d/opengl/DirectStateAccess$Core#bindFrameBufferTextures(I[I[IIII)V
 fabric com/mojang/blaze3d/opengl/DirectStateAccess$Emulated#bindFrameBufferTextures(I[I[IIII)V
 fabric com/mojang/blaze3d/vulkan/VulkanRenderPass#<init>(Lcom/mojang/blaze3d/vulkan/VulkanDevice;Lcom/mojang/blaze3d/vulkan/VulkanCommandEncoder;Lorg/lwjgl/vulkan/VkCommandBuffer;Lcom/mojang/blaze3d/vulkan/checkpoints/CheckpointExtension$CheckpointStorage;Lcom/mojang/blaze3d/systems/RenderPass$RenderArea;IIZLjava/util/function/Supplier;)V
