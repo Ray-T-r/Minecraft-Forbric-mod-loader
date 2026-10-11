@@ -23,6 +23,7 @@ import com.electronwill.nightconfig.core.Config;
 import com.electronwill.nightconfig.json.JsonFormat;
 import org.junit.jupiter.api.Test;
 import org.objectweb.asm.tree.ClassNode;
+import org.objectweb.asm.tree.MethodNode;
 
 /**
  * Holds the merge to what the edit splice achieved, on the staged base it built.
@@ -99,7 +100,7 @@ class MergedBaseHookLossRatchetTest {
 				.map(splice -> splice.owner() + "#" + splice.method()).collect(Collectors.toSet());
 		Set<String> judged = s.report().splices().stream().map(splice -> splice.owner() + "#" + splice.method())
 				.collect(Collectors.toSet());
-		int named = 0;
+		int named = 0, displaced = 0;
 		for (LostHookAttribution.Conflict row : rows) {
 			String caller = row.owner() + "#" + row.method();
 			for (var side : List.of(s.forge(), s.neo(), s.merged())) {
@@ -115,12 +116,41 @@ class MergedBaseHookLossRatchetTest {
 						+ " body makes every platform call that side's body makes");
 				named++;
 			}
-			if (!judged.isEmpty()) {
+			if (row.displacedLambda()) {
+				// The capturer realignment's row: a lambda body no arbitration or splice judged, displaced from the merged
+				// class by the other side's body under its name.
+				ClassNode losing = (row.lostFamily().equals("forge") ? s.forge() : s.neo()).get(row.owner());
+				MethodNode lost = losing.methods.stream().filter(m -> (m.name + m.desc).equals(row.method())).findFirst().orElseThrow();
+				MethodNode kept = s.merged().get(row.owner()).methods.stream().filter(m -> (m.name + m.desc).equals(row.method()))
+						.findFirst().orElseThrow();
+				assertNotEquals(instructions(lost), instructions(kept), caller + " is listed as a displaced lambda body, yet the"
+						+ " merged class still holds that side's body");
+				displaced++;
+			} else if (!judged.isEmpty()) {
 				assertTrue(judged.contains(caller), caller + " is a hook-lost row the edit splice never judged");
 				assertFalse(taken.contains(caller), caller + " is a hook-lost row for a method the edit splice took");
 			}
 		}
 		assertTrue(named > 0, "no hook-lost row names a platform call; the census cannot have read these bodies");
+		System.out.println("[ratchet] hook-lost rows: " + rows.size() + ", of them displaced lambda bodies: " + displaced);
+	}
+
+	/** Opcodes and operands, one entry per instruction: what two bodies of one name differ in. */
+	private static List<String> instructions(MethodNode m) {
+		List<String> out = new java.util.ArrayList<>();
+		for (org.objectweb.asm.tree.AbstractInsnNode insn : m.instructions) {
+			if (insn.getOpcode() < 0) continue;
+			String operand = insn instanceof org.objectweb.asm.tree.MethodInsnNode c ? c.owner + "." + c.name + c.desc
+					: insn instanceof org.objectweb.asm.tree.FieldInsnNode f ? f.owner + "." + f.name + f.desc
+					: insn instanceof org.objectweb.asm.tree.TypeInsnNode t ? t.desc
+					: insn instanceof org.objectweb.asm.tree.LdcInsnNode l ? String.valueOf(l.cst)
+					: insn instanceof org.objectweb.asm.tree.IntInsnNode i ? String.valueOf(i.operand)
+					: insn instanceof org.objectweb.asm.tree.VarInsnNode v ? String.valueOf(v.var)
+					: insn instanceof org.objectweb.asm.tree.InvokeDynamicInsnNode d ? d.name + d.desc + java.util.Arrays.toString(d.bsmArgs)
+					: "";
+			out.add(insn.getOpcode() + " " + operand);
+		}
+		return out;
 	}
 
 	private static final Pattern SUMMARY = Pattern.compile(

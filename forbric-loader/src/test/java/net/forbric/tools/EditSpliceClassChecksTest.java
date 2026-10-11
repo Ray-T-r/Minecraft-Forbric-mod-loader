@@ -297,6 +297,7 @@ public class EditSpliceClassChecksTest {
 		assertTrue(b.report.contains(MENU + "#build(I)I SPLICED"), b.report);
 		assertTrue(b.report.contains(MENU + "#lambda$build$0()V (forge body carried as lambda$build$0$forbricforge for its spliced capturer)"), b.report);
 		assertFalse(b.report.contains(MENU + "#lambda$build$0()V (forge hook lost)"), b.report);
+		assertFalse(b.report.contains(MENU + "#lambda$build$0()V (" + MergedBaseBuilder.DISPLACED_LAMBDA + "forge hook lost)"), b.report);
 		assertEquals(7, call(b.load(MENU), null, "build", 7));
 		assertEquals(List.of(1, 100, 200, 202), CALLS, "MinecraftForge's button runs its own lambda, NeoForge's its own");
 	}
@@ -331,6 +332,8 @@ public class EditSpliceClassChecksTest {
 	// ---- a lambda that is one lambda on both sides ---------------------------------------------------------------
 
 	private static final String MINE = "net/minecraft/demo/Mine";
+	/** The row form of a lambda body the capturer realignment displaced. */
+	private static final String DISPLACED = MergedBaseBuilder.DISPLACED_LAMBDA;
 
 	/** A static lambda of MINE written line by line, as javac writes one: every statement on its own line. */
 	private static MethodNode lineLambda(String name, Object... linesAndCode) {
@@ -423,10 +426,10 @@ public class EditSpliceClassChecksTest {
 		// MinecraftForge's guard in vanilla's first lambda either runs at NeoForge's first capture, or its loss is named.
 		boolean atItsPlace = CALLS.equals(List.of(1, 100, 200, 101, 2, 2));
 		assertTrue(atItsPlace || (CALLS.equals(List.of(1, 100, 200, 2, 2))
-				&& b.report.contains(MINE + "#lambda$build$1()V (forge hook lost)")), CALLS + "\n" + b.report);
-		assertFalse(b.report.contains(MINE + "#lambda$build$0()V (forge hook lost)"),
+				&& b.report.contains(MINE + "#lambda$build$1()V (" + DISPLACED + "forge hook lost)")), CALLS + "\n" + b.report);
+		assertFalse(b.report.contains(MINE + "#lambda$build$0()V (" + DISPLACED + "forge hook lost)"),
 				"MinecraftForge's own lambda runs under the fresh name its spliced capturer carried: " + b.report);
-		assertFalse(b.report.contains(MINE + "#lambda$build$2()V (forge hook lost)"),
+		assertFalse(b.report.contains(MINE + "#lambda$build$2()V (" + DISPLACED + "forge hook lost)"),
 				"MinecraftForge's lambda$build$2 is vanilla's second lambda as vanilla wrote it, so nothing of its is lost: " + b.report);
 	}
 
@@ -458,7 +461,7 @@ public class EditSpliceClassChecksTest {
 		assertEquals(7, call(b.load(MINE), null, "build", 7));
 		assertEquals(List.of(1, 200, 2), CALLS.subList(0, 3), "NeoForge's first capture runs vanilla's first lambda");
 		assertTrue(CALLS.equals(List.of(1, 200, 2, 101, 3))
-				|| (CALLS.equals(List.of(1, 200, 2, 3)) && b.report.contains(MINE + "#lambda$build$0()V (forge hook lost)")),
+				|| (CALLS.equals(List.of(1, 200, 2, 3)) && b.report.contains(MINE + "#lambda$build$0()V (" + DISPLACED + "forge hook lost)")),
 				"MinecraftForge's guard runs in front of vanilla's second lambda, or its loss is named: " + CALLS + "\n" + b.report);
 	}
 
@@ -488,7 +491,7 @@ public class EditSpliceClassChecksTest {
 		assertEquals(7, call(b.load(MINE), null, "build", 7));
 		assertEquals(List.of(1, 200, 2), CALLS.subList(0, 3), "NeoForge's first capture runs vanilla's first lambda, unguarded");
 		assertTrue(CALLS.equals(List.of(1, 200, 2, 101, 2))
-				|| (CALLS.equals(List.of(1, 200, 2, 2)) && b.report.contains(MINE + "#lambda$build$0()V (forge hook lost)")),
+				|| (CALLS.equals(List.of(1, 200, 2, 2)) && b.report.contains(MINE + "#lambda$build$0()V (" + DISPLACED + "forge hook lost)")),
 				"MinecraftForge's guard runs in front of vanilla's second lambda, or its loss is named: " + CALLS + "\n" + b.report);
 	}
 
@@ -513,7 +516,7 @@ public class EditSpliceClassChecksTest {
 		Build b = build(vanilla, forge, neo, patch(hunk(29, 29, "G", "H", "L", "E")), patch(hunk(10, 10, "N", "A", "B", "C", "R")));
 		assertTrue(b.report.contains("lambdas-realigned-to-their-capturer=0 lambdas-kept-as-one-on-both-sides=1"), b.report);
 		assertEquals(List.of(MINE + "#lambda$build$1()V"), keptAsOne(b), b.report);
-		assertFalse(b.report.contains(MINE + "#lambda$build$1()V (forge hook lost)"), b.report);
+		assertFalse(b.report.contains(MINE + "#lambda$build$1()V (" + DISPLACED + "forge hook lost)"), b.report);
 		assertEquals(7, call(b.load(MINE), null, "build", 7));
 		assertEquals(List.of(1, 200, 2, 101, 2), CALLS, "MinecraftForge's guard runs at NeoForge's second capture");
 	}
@@ -534,7 +537,7 @@ public class EditSpliceClassChecksTest {
 				.line(12, returnX(false)).done(), lineLambda("lambda$mine$0", 20, mark(FORGE, 5), 21, ret()));
 		Build b = build(vanilla, forge, neo, patch("@@ -19,3 +19,3 @@\n H\n-L\n+X\n E\n"), patch(hunk(10, 10, "N", "A", "B", "R")));
 		assertTrue(b.report.contains("lambdas-realigned-to-their-capturer=1 lambdas-kept-as-one-on-both-sides=0"), b.report);
-		assertTrue(b.report.contains(MINE + "#lambda$mine$0()V (forge hook lost)"), b.report);
+		assertTrue(b.report.contains(MINE + "#lambda$mine$0()V (" + DISPLACED + "forge hook lost)"), b.report);
 		assertEquals(7, call(b.load(MINE), null, "mine", 7));
 		assertEquals(List.of(1, 200, 2), CALLS, "NeoForge's capturer runs NeoForge's (vanilla's) lambda");
 	}

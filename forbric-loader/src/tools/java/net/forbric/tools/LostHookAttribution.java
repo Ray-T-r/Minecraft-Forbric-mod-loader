@@ -115,12 +115,14 @@ public final class LostHookAttribution {
 			MethodNode m = method(merged.get(c.owner()), c.method());
 			if (f == null || n == null || m == null) { unobserved++; continue; }
 			judged++;
-			if (!attribution.attribute(c.owner() + "#" + c.method(), c.lostFamily(), c.fieldInitKept() ? " kind=FIELD_INIT_KEPT" : "",
+			if (!attribution.attribute(c.owner() + "#" + c.method(), c.lostFamily(),
+					c.fieldInitKept() ? " kind=FIELD_INIT_KEPT" : c.displacedLambda() ? " kind=DISPLACED_LAMBDA" : "",
 					c.lostFamily().equals("forge") ? f : n, c.lostFamily().equals("forge") ? n : f, m)) noHookFound++;
 		}
 		System.out.println("[attribution] conflicts=" + conflicts.size() + " judged=" + judged
 				+ " no-modelled-direct-hook=" + noHookFound + " unobserved=" + unobserved
-				+ " field-init-kept=" + conflicts.stream().filter(Conflict::fieldInitKept).count());
+				+ " field-init-kept=" + conflicts.stream().filter(Conflict::fieldInitKept).count()
+				+ " displaced-lambda=" + conflicts.stream().filter(Conflict::displacedLambda).count());
 		// A method the edit splice took is no hook-lost row, yet a run of the other side it reports as competing or
 		// refused is a hook that body still lacks. The report names which runs; the bodies say which family's hook.
 		// The base family's own calls are all kept (the splice only adds), so judging both families is exact.
@@ -353,8 +355,8 @@ public final class LostHookAttribution {
 		System.out.println("[platform-census] scope: all loaded classes and declared methods in each patched JAR;"
 				+ " every direct MethodInsnNode targeting net/minecraftforge/ or net/neoforged/; both namespaces"
 				+ " scanned on both sides; caller and symbol identities are owner#name+descriptor");
-		System.out.println("[platform-census] conflict-membership: LISTED is every '... hook lost)' row of the report, plain and"
-				+ " field-init-kept (an unrecognised form stops the run); SPLICE_RESIDUAL is a method the edit splice took while"
+		System.out.println("[platform-census] conflict-membership: LISTED is every '... hook lost)' row of the report, plain,"
+				+ " field-init-kept and displaced-lambda (an unrecognised form stops the run); SPLICE_RESIDUAL is a method the edit splice took while"
 				+ " reporting a run of the other side as competing or refused (an unrecognised edit-splice row stops the run);"
 				+ " UNLISTED callers are scanned equally; MODELLED_FACADE is the existing six-owner model;"
 				+ " OUTSIDE_EVENT_MODEL symbols are not classified as event hooks");
@@ -547,21 +549,29 @@ public final class LostHookAttribution {
 	/**
 	 * One method whose hook the merge gave up. {@code fieldInitKept} marks MergedBaseBuilder's second form: the
 	 * side that hooked the method lost because only the other side's body initialises a field that side added.
+	 * {@code displacedLambda} marks the third: a lambda body the capturer realignment displaced, which no arbitration
+	 * or edit splice judged.
 	 */
-	record Conflict(String owner, String method, String lostFamily, boolean fieldInitKept) {
+	record Conflict(String owner, String method, String lostFamily, boolean fieldInitKept, boolean displacedLambda) {
 		Conflict(String owner, String method, String lostFamily) {
-			this(owner, method, lostFamily, false);
+			this(owner, method, lostFamily, false, false);
+		}
+
+		Conflict(String owner, String method, String lostFamily, boolean fieldInitKept) {
+			this(owner, method, lostFamily, fieldInitKept, false);
 		}
 	}
 
 	/**
-	 * Both row forms MergedBaseBuilder writes. The plain one ends {@code (forge hook lost)}; the field-init one ends
+	 * The three row forms MergedBaseBuilder writes. The plain one ends {@code (forge hook lost)}; the field-init one ends
 	 * {@code (kept neo body to preserve base-added field init; forge hook lost)}, and matching the plain suffix
 	 * alone dropped all six of those without a word -- LivingEntity's constructor, and with it onLivingMakeBrain,
-	 * never reached the attribution while the census labelled it UNLISTED although the report lists it.
+	 * never reached the attribution while the census labelled it UNLISTED although the report lists it. The displaced
+	 * one ends {@code (lambda body displaced by its capturer's side; forge hook lost)}.
 	 */
 	private static final Pattern CONFLICT_ROW = Pattern.compile(
-			"^([^\\s#]+)#(\\S+) \\((?:kept (forge|neo) body to preserve base-added field init; )?(forge|neo) hook lost\\)$");
+			"^([^\\s#]+)#(\\S+) \\((?:kept (forge|neo) body to preserve base-added field init; |(lambda body displaced by its"
+					+ " capturer's side; ))?(forge|neo) hook lost\\)$");
 
 	/** The hook-lost rows of the report; the edit-splice section is read, validated, and never counted as a row. */
 	static List<Conflict> conflicts(Path report) throws IOException {
@@ -636,9 +646,9 @@ public final class LostHookAttribution {
 			// the next form MergedBaseBuilder learns to write has to be taught here, not skipped here.
 			Matcher row = CONFLICT_ROW.matcher(line.trim());
 			if (!row.matches()) throw new IOException("unrecognised hook-lost row in " + report + ": " + line);
-			String kept = row.group(3), lost = row.group(4);
+			String kept = row.group(3), lost = row.group(5);
 			if (kept != null && kept.equals(lost)) throw new IOException("row keeps and loses the same side: " + line);
-			conflicts.add(new Conflict(row.group(1), row.group(2), lost, kept != null));
+			conflicts.add(new Conflict(row.group(1), row.group(2), lost, kept != null, row.group(4) != null));
 		}
 		if (entry != null) splices.add(entry.done());
 		return new Report(List.copyOf(conflicts), List.copyOf(splices));

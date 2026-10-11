@@ -1762,9 +1762,9 @@ public final class MergedBaseBuilder {
 	 * body is one side's compile of {@code key} (when it is neither side's, its side is not a fact and nothing is
 	 * claimed); it carried an edit when it has code on a line that side's patch added, or, with no patch provenance,
 	 * when it calls that side's platform. Its edit still runs when a spliced capturer carried that body under the fresh
-	 * name the edit splice gives it, and only otherwise is it written as that family's lost hook, the way the per-method
-	 * arbitration writes one: a lambda its own patch renumbered, edited and captured at a vanilla capture the other side
-	 * captures under another name loses the edit here, and the report must name it.
+	 * name the edit splice gives it, and only otherwise is it written as that family's lost hook, in its own row form
+	 * ({@link #DISPLACED_LAMBDA}): a lambda its own patch renumbered, edited and captured at a vanilla capture the other
+	 * side captures under another name loses the edit here, and the report must name it.
 	 */
 	private void reportDisplacedEdit(ClassNode baseN, String key, MethodNode displaced, LambdaSides sides,
 			Map<String, MethodNode> baseMethods) {
@@ -1774,11 +1774,17 @@ public final class MergedBaseBuilder {
 		int paren = key.indexOf('(');
 		if (baseMethods.containsKey(key.substring(0, paren) + "$forbric" + family + key.substring(paren))) return;
 		if (!carriesOwnEdit(displaced, sides.provenanceOf(from), sides.source(), "forge".equals(family) ? FORGE_PKG : NEO_PKG)) return;
-		String row = baseN.name + "#" + key + " (" + family + " hook lost)";
+		String row = baseN.name + "#" + key + " (" + DISPLACED_LAMBDA + family + " hook lost)";
 		if (conflicts.contains(row)) return;
 		conflicts.add(row);
 		conflictMethods++;
 	}
+
+	/**
+	 * The third hook-lost row form, after the plain one and the field-init one: a lambda body the capturer realignment
+	 * displaced, not a method both sides edited that the arbitration or the edit splice judged.
+	 */
+	static final String DISPLACED_LAMBDA = "lambda body displaced by its capturer's side; ";
 
 	/** Whether a side's body has code on a line its patch added, or, with no provenance, calls into its platform. */
 	private static boolean carriesOwnEdit(MethodNode body, PatchLineProvenance provenance, String source, String platform) {

@@ -64,6 +64,24 @@ class LostHookAttributionTest {
 				MergeabilityCensus.conflicts(report).stream().map(c -> c[2]).toList());
 	}
 
+	/** The capturer realignment's row form is read with the family that lost the lambda body, and marked as such. */
+	@Test void displacedLambdaRowsAreInventoriedWithTheFamilyThatLostTheBody() throws Exception {
+		Path report = temporary.resolve("conflicts.txt");
+		Files.writeString(report, "game/A#tick()V (forge hook lost)\n"
+				+ "game/B#lambda$init$0(Lgame/Button;)V (" + MergedBaseBuilder.DISPLACED_LAMBDA + "forge hook lost)\n"
+				+ "game/C#lambda$static$6(Lgame/C;)Ljava/util/Optional; (" + MergedBaseBuilder.DISPLACED_LAMBDA + "neo hook lost)\n");
+		var rows = LostHookAttribution.conflicts(report);
+		assertEquals(3, rows.size());
+		assertFalse(rows.get(0).displacedLambda());
+		assertTrue(rows.get(1).displacedLambda());
+		assertEquals("lambda$init$0(Lgame/Button;)V", rows.get(1).method());
+		assertEquals("forge", rows.get(1).lostFamily());
+		assertFalse(rows.get(1).fieldInitKept());
+		assertTrue(rows.get(2).displacedLambda());
+		assertEquals("neo", rows.get(2).lostFamily());
+		assertEquals(List.of("forge", "forge", "neo"), MergeabilityCensus.conflicts(report).stream().map(c -> c[2]).toList());
+	}
+
 	/** A form nobody taught the parser must stop the run, not shrink the denominator. */
 	@Test void anUnrecognisedHookLostRowFailsInsteadOfDisappearing() throws Exception {
 		Path report = temporary.resolve("conflicts.txt");
