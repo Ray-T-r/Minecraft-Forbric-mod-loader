@@ -52,6 +52,12 @@ import net.forbric.kernel.util.ForbricLog;
  * Both that and a dispatch in which one bridge stood down for an event while kernel code forwarded it anyway are
  * {@code nativeAndForwarded}: the event reached MinecraftForge's listeners twice.
  *
+ * <p>A stand-down for a native call the game may still bypass ({@code NativeEventDelivery}'s faithful deliveries) is
+ * settled where the game bypasses it: {@code excused} where MinecraftForge's own body bypasses its call there too, and a
+ * {@code deferred} forward where only the merged game does. So every stand-down ends one of three ways — observed beside
+ * the game's own dispatch, excused, or forwarded late — and a deferred forward's MinecraftForge dispatch counts as a
+ * forward, not as one of the game's.
+ *
  * <p>What this does not see: composites that call both families' hooks one after the other at a call site
  * (portal, spawner, loot, fuel, tooltips) are not nested posts; their chains have their own gates. Result fields
  * other than cancellation are not compared.
@@ -79,6 +85,8 @@ public final class EventChainAudit {
 		String caller; int callerBci = -1;
 		/** Dispatches that finished directly inside this one, most recent first: see {@link #pairWithSiblings}. */
 		ArrayDeque<Sibling> siblings;
+		/** Entered as the root of a deferred forward: a kernel forward made after the dispatch it was owed for. */
+		boolean deferredRoot;
 		Frame(boolean neo, Object event) { this.neo = neo; this.event = event; this.type = event.getClass(); }
 	}
 
@@ -125,6 +133,8 @@ public final class EventChainAudit {
 	 */
 	static final class NativePair {
 		final LongAdder outerPosts = new LongAdder(), observed = new LongAdder(), alsoForwarded = new LongAdder();
+		/** Stand-downs settled where the game bypassed the native call: excused as MinecraftForge's own body does, or forwarded late. */
+		final LongAdder excused = new LongAdder(), deferred = new LongAdder();
 	}
 
 	static final class Outer {
@@ -133,6 +143,8 @@ public final class EventChainAudit {
 	}
 
 	private static final ThreadLocal<ArrayDeque<Frame>> STACK = ThreadLocal.withInitial(ArrayDeque::new);
+	/** Per thread: the stack depth a deferred forward runs at, or -1 when none is running. */
+	private static final ThreadLocal<int[]> DEFERRING = ThreadLocal.withInitial(() -> new int[] {-1});
 	/** Per thread: dispatches that finished outside any other dispatch, most recent first. */
 	private static final ThreadLocal<ArrayDeque<Sibling>> ROOT_SIBLINGS = ThreadLocal.withInitial(ArrayDeque::new);
 	private static final Map<String, Pair> PAIRS = new ConcurrentHashMap<>();
@@ -185,6 +197,32 @@ public final class EventChainAudit {
 		}
 	}
 
+	/**
+	 * A bridge stood down for {@code neoEvent} on a native call the game then bypassed where MinecraftForge's own body
+	 * bypasses it too: genuine MinecraftForge would not have delivered these MinecraftForge events (internal names).
+	 */
+	public static void excused(Object neoEvent, Set<String> forgeEvents) {
+		if (neoEvent == null || forgeEvents == null || !enabled()) return;
+		for (String name : forgeEvents) nativePairOf(neoEvent, name).excused.increment();
+	}
+
+	/**
+	 * A bridge stood down for {@code neoEvent} on a native call the game then bypassed where only the merged game does:
+	 * {@code forward} delivers it now. Its MinecraftForge dispatch is the kernel's forward, not one of the game's.
+	 */
+	public static void deferredForward(Object neoEvent, Set<String> forgeEvents, Runnable forward) {
+		if (neoEvent == null || forgeEvents == null || !enabled()) { forward.run(); return; }
+		for (String name : forgeEvents) nativePairOf(neoEvent, name).deferred.increment();
+		int[] deferring = DEFERRING.get();
+		int before = deferring[0];
+		deferring[0] = STACK.get().size();
+		try { forward.run(); } finally { deferring[0] = before; }
+	}
+
+	private static NativePair nativePairOf(Object neoEvent, String forge) {
+		return NATIVES.computeIfAbsent(key(true, neoEvent.getClass()) + " -> " + key(false, forge.replace('/', '.')), k -> new NativePair());
+	}
+
 	private static void enter(boolean neo, Object event) {
 		if (event == null) return;
 		if (HOOKED.compareAndSet(false, true) && enabled())
@@ -193,6 +231,7 @@ public final class EventChainAudit {
 		Frame frame = new Frame(neo, event), parent = stack.peek();
 		boolean kernel = poster(frame);
 		if (parent != null && parent.neo != neo) { frame.kernelPoster = kernel; frame.parentListener = parent.listener; }
+		frame.deferredRoot = !neo && kernel && DEFERRING.get()[0] == stack.size();
 		stack.push(frame);
 	}
 
@@ -250,6 +289,7 @@ public final class EventChainAudit {
 		}
 		Outer outer = OUTERS.computeIfAbsent(outerKey, k -> new Outer());
 		outer.posts.increment();
+		Frame parent = stack.peek();
 		if (failure != null) outer.failures.increment();
 		if (frame.children.isEmpty()) {
 			if (FORWARDED_OUTERS.contains(outerKey)) {
@@ -283,7 +323,7 @@ public final class EventChainAudit {
 		}
 		for (var entry : frame.incidental.entrySet())
 			INCIDENTAL.computeIfAbsent(outerKey + " -> " + key(!neo, entry.getKey()), k -> new LongAdder()).add(entry.getValue());
-		Frame parent = stack.peek();
+		Sibling done = new Sibling(frame, outerKey);
 		if (parent != null && parent.neo != neo && frame.kernelPoster) {
 			outer.asForward.increment();
 			Child child = parent.children.computeIfAbsent(frame.type, k -> new Child());
@@ -293,10 +333,14 @@ public final class EventChainAudit {
 			if (failure != null) child.failed++;
 			return;
 		}
+		if (frame.deferredRoot) {
+			// A forward owed for a dispatch that has finished: the kernel's, not the game's own MinecraftForge dispatch.
+			outer.asForward.increment();
+			return;
+		}
 		if (parent != null && parent.neo != neo) parent.incidental.merge(frame.type, 1, Integer::sum);
 		ArrayDeque<Sibling> siblings = parent == null ? ROOT_SIBLINGS.get()
 				: parent.siblings != null ? parent.siblings : (parent.siblings = new ArrayDeque<>());
-		Sibling done = new Sibling(frame, outerKey);
 		pairWithSiblings(done, siblings);
 		siblings.addFirst(done);
 		if (siblings.size() > SIBLING_WINDOW) siblings.removeLast();
@@ -415,7 +459,7 @@ public final class EventChainAudit {
 
 	static void reset() {
 		PAIRS.clear(); NATIVES.clear(); OUTERS.clear(); FORWARDED_OUTERS.clear(); INCIDENTAL.clear(); UNBALANCED.reset(); STACK.remove();
-		ROOT_SIBLINGS.remove();
+		ROOT_SIBLINGS.remove(); DEFERRING.remove();
 	}
 
 	public static synchronized String json() {
@@ -446,7 +490,8 @@ public final class EventChainAudit {
 			NativePair p = NATIVES.get(natives.get(i)); String[] ends = natives.get(i).split(" -> ");
 			out.append(i == 0 ? "\n" : ",\n").append("    {\"outer\": ").append(quote(ends[0])).append(", \"inner\": ").append(quote(ends[1]))
 					.append(", \"outerPosts\": ").append(p.outerPosts.sum()).append(", \"observed\": ").append(p.observed.sum())
-					.append(", \"alsoForwarded\": ").append(p.alsoForwarded.sum()).append('}');
+					.append(", \"alsoForwarded\": ").append(p.alsoForwarded.sum()).append(", \"excused\": ").append(p.excused.sum())
+					.append(", \"deferred\": ").append(p.deferred.sum()).append('}');
 		}
 		out.append(natives.isEmpty() ? "],\n" : "\n  ],\n").append("  \"outers\": [");
 		// Every dispatch of every event either bus saw, so a gate can put a pair's counts against all of its outer

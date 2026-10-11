@@ -645,11 +645,17 @@ public final class GameEventMultiplexer {
 	 * One bridge listener that stands down for an event the merged game delivered natively on its path. It says so
 	 * the first time, naming the MinecraftForge events, because a bridge that stands down forwards nothing and its own
 	 * proof lines (the ticks' 1:1 count) never print: the line is what a gate reads instead.
+	 *
+	 * <p>Where the native call comes later and the game may still bypass it, the stand-down leaves its forward with the
+	 * game ({@link net.forbric.api.NativeEventDelivery.Deferred}): made then, once, if the game leaves on a way
+	 * MinecraftForge's own body would have made the call on, and excused on a way it bypasses the call too. Each says so
+	 * the first time as well.
 	 */
 	static final class StandDownListener implements java.util.function.Consumer<Object> {
 		private final java.util.function.Consumer<Object> forward;
 		private final java.util.Set<String> forgeEvents;
-		private final java.util.concurrent.atomic.AtomicBoolean said = new java.util.concurrent.atomic.AtomicBoolean();
+		private final java.util.concurrent.atomic.AtomicBoolean said = new java.util.concurrent.atomic.AtomicBoolean(),
+				saidDeferred = new java.util.concurrent.atomic.AtomicBoolean(), saidExcused = new java.util.concurrent.atomic.AtomicBoolean();
 
 		StandDownListener(java.util.function.Consumer<Object> forward, java.util.Set<String> forgeEvents) {
 			this.forward = forward;
@@ -658,16 +664,51 @@ public final class GameEventMultiplexer {
 
 		@Override
 		public void accept(Object event) {
-			if (net.forbric.api.NativeEventDelivery.covered(event, forgeEvents)) {
-				EventChainAudit.nativelyDelivered(event, forgeEvents);
+			Owed owed = new Owed(event);
+			java.util.Set<String> stood = net.forbric.api.NativeEventDelivery.standDown(event, forgeEvents, owed);
+			if (!stood.isEmpty()) {
+				// Only the events the native call delivers: a bridge with several MinecraftForge events stood down for those.
+				owed.events = stood;
+				EventChainAudit.nativelyDelivered(event, stood);
 				if (said.compareAndSet(false, true)) {
 					ForbricLog.info("[Forbric/EventMux] the merged game delivered %s itself on the path of NeoForge's %s — "
 							+ "its bridge stands down there instead of delivering it a second time",
-							String.join(", ", new java.util.TreeSet<>(forgeEvents)), event.getClass().getName());
+							String.join(", ", stood), event.getClass().getName());
 				}
 				return;
 			}
 			forward.accept(event);
+		}
+
+		/** What standing down for {@code event} owes, if the game bypasses the native call it stood down for. */
+		private final class Owed implements net.forbric.api.NativeEventDelivery.Deferred {
+			private final Object event;
+			/** The MinecraftForge events the stand-down was for; set once it stood down, before the game can settle it. */
+			private java.util.Set<String> events = forgeEvents;
+
+			Owed(Object event) {
+				this.event = event;
+			}
+
+			@Override
+			public void deliver() {
+				if (saidDeferred.compareAndSet(false, true)) {
+					ForbricLog.info("[Forbric/EventMux] the merged game left the path of NeoForge's %s without the native %s "
+							+ "where MinecraftForge's own code would have delivered it — its bridge delivers it there, once",
+							event.getClass().getName(), String.join(", ", new java.util.TreeSet<>(events)));
+				}
+				EventChainAudit.deferredForward(event, events, () -> forward.accept(event));
+			}
+
+			@Override
+			public void excused() {
+				if (saidExcused.compareAndSet(false, true)) {
+					ForbricLog.info("[Forbric/EventMux] the merged game left the path of NeoForge's %s without the native %s "
+							+ "where MinecraftForge's own code skips it too — its bridge delivers nothing there either",
+							event.getClass().getName(), String.join(", ", new java.util.TreeSet<>(events)));
+				}
+				EventChainAudit.excused(event, events);
+			}
 		}
 	}
 }

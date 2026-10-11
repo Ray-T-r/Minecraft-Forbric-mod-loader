@@ -26,6 +26,15 @@ import java.util.concurrent.atomic.AtomicInteger;
  * spent when a bridge stands down on its account, so a NeoForge post repeated without a new MinecraftForge one is
  * forwarded again.
  *
+ * <p>A third source is a MinecraftForge delivery that comes AFTER the NeoForge one but not on every path: one the
+ * caller may bypass. Where the injector could tell, from MinecraftForge's own patched body of the same method, that
+ * every way the caller bypasses that call is a way MinecraftForge's own body bypasses it too (a guard both bodies
+ * have), the native call is the faithful delivery and the scope names it as such ({@code faithful}); a way out of the
+ * caller that MinecraftForge's own body does not have (an exit NeoForge's patch added) is where the event would be
+ * lost. A bridge that stands down for such an event leaves what it owes ({@link Deferred}) with the caller, and the
+ * caller settles it where it leaves the native delivery's path ({@link #bypassed}): delivered there on a NeoForge-only
+ * way out, excused on a shared one, and never asked for once the native call has run.
+ *
  * <p>Identity, not class: a listener of the outer event may post another event of the same class, and that one has no
  * native counterpart. Construction inside a wrapped hook is captured only while that hook is not itself dispatching
  * ({@link #dispatching}), so an event a listener constructs is never taken for the hook's own. Caller and mod names
@@ -36,6 +45,8 @@ public final class NativeEventDelivery {
 	private static final ThreadLocal<ArrayDeque<Recording>> RECORDINGS = new ThreadLocal<>();
 	/** Per thread: caller group → the MinecraftForge events recorded as delivered since that caller was entered. */
 	private static final ThreadLocal<Map<String, Set<String>>> PENDING = new ThreadLocal<>();
+	/** Per thread: caller group → what bridges that stood down for a faithful native delivery still owe. */
+	private static final ThreadLocal<Map<String, List<Owed>>> OWED = new ThreadLocal<>();
 	/** Scopes and recordings open on any thread: the hot paths read these volatiles and return while nothing is open. */
 	private static final AtomicInteger OPEN = new AtomicInteger(), RECORDING = new AtomicInteger();
 	/** The {@code ;}-joined event lists wrappers pass, parsed once each. */
@@ -67,10 +78,60 @@ public final class NativeEventDelivery {
 
 	// ------------------------------------------------------------------ the caller's native MinecraftForge deliveries
 
-	/** Inserted at the entry of a caller with recorded deliveries: nothing an earlier invocation recorded carries over. */
+	/**
+	 * Inserted at the entry of a caller with recorded or faithful deliveries: nothing an earlier invocation recorded, and
+	 * nothing a stand-down owed in it, carries over. An invocation that ran the native call leaves its debt unasked.
+	 */
 	public static void enterNative(String group) {
 		Map<String, Set<String>> pending = PENDING.get();
 		if (pending != null && pending.remove(group) != null && pending.isEmpty()) PENDING.remove();
+		Map<String, List<Owed>> owed = OWED.get();
+		if (owed != null && owed.remove(group) != null && owed.isEmpty()) OWED.remove();
+	}
+
+	/**
+	 * What a bridge that stood down for a faithful native delivery owes, settled where the caller leaves that delivery's
+	 * path without running it.
+	 */
+	public interface Deferred {
+		/** The caller left on a way MinecraftForge's own body does not have: deliver the event now, once. */
+		void deliver();
+
+		/** The caller left on a way MinecraftForge's own body has too: genuine MinecraftForge would not deliver it. */
+		void excused();
+	}
+
+	private record Owed(Set<String> events, Deferred deferred) { }
+
+	/**
+	 * Inserted on each edge where the caller bypasses a faithful native delivery of {@code events} ({@code ;}-joined
+	 * MinecraftForge event internal names): what a stand-down owes for any of them is delivered when MinecraftForge's own
+	 * body would have made the call on this way ({@code forgeBypassesToo} false), and excused when it bypasses it too.
+	 * A deferred delivery that throws costs only itself; the bridges report their own failures.
+	 */
+	public static void bypassed(String group, String events, boolean forgeBypassesToo) {
+		Map<String, List<Owed>> owed = OWED.get();
+		List<Owed> due = owed == null ? null : owed.get(group);
+		if (due == null) return;
+		Set<String> names = list(events);
+		List<Owed> settled = new ArrayList<>(due.size());
+		for (Iterator<Owed> it = due.iterator(); it.hasNext(); ) {
+			Owed one = it.next();
+			if (Collections.disjoint(one.events(), names)) continue;
+			it.remove();
+			settled.add(one);
+		}
+		if (due.isEmpty()) {
+			owed.remove(group);
+			if (owed.isEmpty()) OWED.remove();
+		}
+		for (Owed one : settled) {
+			try {
+				if (forgeBypassesToo) one.deferred().excused(); else one.deferred().deliver();
+			} catch (RuntimeException failed) {
+				// The bridge's own forward catches and reports what it throws; this keeps the caller's way out intact.
+			}
+		}
 	}
 
 	/**
@@ -169,16 +230,30 @@ public final class NativeEventDelivery {
 	 *                   not run be told apart from one that has
 	 */
 	public static Scope begin(String natively, String group, String candidates, Class<?> hook) {
+		return begin(natively, group, candidates, "", hook);
+	}
+
+	/**
+	 * The same with the MinecraftForge events {@code faithful} ({@code ;}-joined) delivers natively after this call on
+	 * every way MinecraftForge's own body would deliver them: a stand-down for one of them leaves what it owes with the
+	 * caller ({@link Deferred}), settled where the caller bypasses that call ({@link #bypassed}).
+	 */
+	public static Scope begin(String natively, String group, String candidates, String faithful, Class<?> hook) {
 		boolean live = hook != null && INSTRUMENTED.contains(hook.getName().replace('.', '/'));
-		return live ? open(list(natively), group, candidates) : open(Set.of(), null, "");
+		return live ? open(list(natively), group, candidates, list(faithful)) : open(Set.of(), null, "", Set.of());
 	}
 
 	/** The same for an inline post, whose event the wrapper hands over itself with {@link Scope#capture}. */
 	public static Scope begin(String natively, String group, String candidates) {
-		return open(list(natively), group, candidates);
+		return begin(natively, group, candidates, "");
 	}
 
-	private static Scope open(Set<String> proved, String group, String candidates) {
+	/** An inline post with faithful deliveries after it. */
+	public static Scope begin(String natively, String group, String candidates, String faithful) {
+		return open(list(natively), group, candidates, list(faithful));
+	}
+
+	private static Scope open(Set<String> proved, String group, String candidates, Set<String> faithful) {
 		Set<String> recorded = Set.of();
 		Map<String, Set<String>> pending = group == null ? null : PENDING.get();
 		Set<String> delivered = pending == null ? null : pending.get(group);
@@ -187,14 +262,19 @@ public final class NativeEventDelivery {
 			taken.retainAll(delivered);
 			if (!taken.isEmpty()) recorded = taken;
 		}
-		Set<String> covers = proved;
+		Set<String> definite = proved;
 		if (!recorded.isEmpty()) {
-			covers = new HashSet<>(recorded);
-			covers.addAll(proved);
+			definite = new HashSet<>(recorded);
+			definite.addAll(proved);
+		}
+		Set<String> covers = definite;
+		if (!faithful.isEmpty()) {
+			covers = new HashSet<>(definite);
+			covers.addAll(faithful);
 		}
 		ArrayDeque<Scope> scopes = SCOPES.get();
 		if (scopes == null) SCOPES.set(scopes = new ArrayDeque<>());
-		Scope scope = new Scope(covers, group, recorded, Thread.currentThread());
+		Scope scope = new Scope(covers, definite, group, recorded, Thread.currentThread());
 		scopes.addLast(scope);
 		OPEN.incrementAndGet();
 		return scope;
@@ -229,35 +309,79 @@ public final class NativeEventDelivery {
 	 * {@code forgeEvents}. A bridge whose MinecraftForge events these are stands down for exactly this event.
 	 */
 	public static boolean covered(Object event, Set<String> forgeEvents) {
-		if (event == null || forgeEvents == null || forgeEvents.isEmpty() || OPEN.get() == 0) return false;
+		return covered(event, forgeEvents, null);
+	}
+
+	/**
+	 * {@link #covered(Object, Set)}, for a bridge that can deliver later: where the covering delivery is a faithful one
+	 * the caller may still bypass, {@code deferred} is left with the caller and settled where it does ({@link #bypassed}).
+	 * Without {@code deferred} such a stand-down owes nothing.
+	 */
+	public static boolean covered(Object event, Set<String> forgeEvents, Deferred deferred) {
+		return !standDown(event, forgeEvents, deferred).isEmpty();
+	}
+
+	/**
+	 * Which of {@code forgeEvents} the game delivers natively for {@code event} — what a bridge whose MinecraftForge
+	 * events those are stands down for — or none. A bridge forwarding one NeoForge event as one of several
+	 * MinecraftForge events (chat: player, system or other) is covered for the one the native call delivers, not for
+	 * the others. {@code deferred} as for {@link #covered(Object, Set, Deferred)}.
+	 */
+	public static Set<String> standDown(Object event, Set<String> forgeEvents, Deferred deferred) {
+		if (event == null || forgeEvents == null || forgeEvents.isEmpty() || OPEN.get() == 0) return Set.of();
 		ArrayDeque<Scope> scopes = SCOPES.get();
-		if (scopes == null) return false;
+		if (scopes == null) return Set.of();
 		for (Scope scope : scopes) {
 			if (scope.holds(event) && !Collections.disjoint(scope.covers, forgeEvents)) {
 				scope.use(forgeEvents);
-				return true;
+				if (deferred != null) scope.owe(forgeEvents, deferred);
+				return intersection(forgeEvents, scope.covers);
 			}
 		}
-		return false;
+		return Set.of();
+	}
+
+	private static Set<String> intersection(Set<String> a, Set<String> b) {
+		Set<String> out = new TreeSet<>(a);
+		out.retainAll(b);
+		return Collections.unmodifiableSet(out);
 	}
 
 	/** One wrapped NeoForge call: the MinecraftForge events its path delivers natively, and the events it posted. */
 	public static final class Scope implements AutoCloseable {
 		private final Set<String> covers;
+		/** The covered events delivered for certain: proved on every path, or recorded as delivered. */
+		private final Set<String> definite;
 		private final String group;
 		private final Set<String> recorded;
 		private final Thread thread;
 		private Object[] events = new Object[2];
 		private Set<String> used = Set.of();
+		private List<Owed> owed = List.of();
 		private int size;
 		private int depth;
 		private boolean closed;
 
-		private Scope(Set<String> covers, String group, Set<String> recorded, Thread thread) {
+		private Scope(Set<String> covers, Set<String> definite, String group, Set<String> recorded, Thread thread) {
 			this.covers = covers;
+			this.definite = definite;
 			this.group = group;
 			this.recorded = recorded;
 			this.thread = thread;
+		}
+
+		/**
+		 * A bridge stood down for {@code forgeEvents} on this scope's account. Only a stand-down that rests on faithful
+		 * deliveries alone — none of its events delivered for certain — owes anything: for those of its events the caller
+		 * delivers faithfully.
+		 */
+		private void owe(Set<String> forgeEvents, Deferred deferred) {
+			if (group == null || !Collections.disjoint(definite, forgeEvents)) return;
+			Set<String> faithful = new HashSet<>(forgeEvents);
+			faithful.retainAll(covers);
+			if (faithful.isEmpty()) return;
+			if (owed.isEmpty()) owed = new ArrayList<>(1);
+			owed.add(new Owed(Set.copyOf(faithful), deferred));
 		}
 
 		/**
@@ -310,6 +434,11 @@ public final class NativeEventDelivery {
 			closed = true;
 			OPEN.decrementAndGet();
 			if (scopes.isEmpty()) SCOPES.remove();
+			if (!owed.isEmpty()) {
+				Map<String, List<Owed>> debts = OWED.get();
+				if (debts == null) OWED.set(debts = new HashMap<>());
+				debts.computeIfAbsent(group, k -> new ArrayList<>(1)).addAll(owed);
+			}
 			if (used.isEmpty()) return;
 			Map<String, Set<String>> pending = PENDING.get();
 			Set<String> delivered = pending == null ? null : pending.get(group);

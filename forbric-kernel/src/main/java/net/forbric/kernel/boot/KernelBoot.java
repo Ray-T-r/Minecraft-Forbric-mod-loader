@@ -727,12 +727,18 @@ public final class KernelBoot {
 		chain.register(TransformPhase.COREMOD, new net.forbric.kernel.transform.CompatibilityPromptTickInjector());
 		// Where a merged method delivers a bridged MinecraftForge event natively on the path of the NeoForge event its
 		// bridge forwards from, scope that NeoForge delivery so the bridge stands down for it (GameEventMultiplexer's
-		// guard). Order-free: the proof is dominance or post-dominance, not which family's call comes first.
-		chain.register(TransformPhase.COREMOD, new net.forbric.kernel.transform.NativeDualEventInjector(path -> {
+		// guard). Order-free: the proof is dominance or post-dominance, not which family's call comes first. A native call
+		// the method may bypass after NeoForge's is judged against MinecraftForge's own patched body of the method (the
+		// merged base's hash-pinned native reference): the bypasses both bodies share need no delivery, the others get it.
+		java.util.function.Function<String, byte[]> gameResources = path -> {
 			try (java.io.InputStream input = loader.getGameResourceAsStream(path)) {
 				return input == null ? null : input.readAllBytes();
 			} catch (java.io.IOException unavailable) { return null; }
-		}, DeadEventAudit.forwardedForgeEvents()));
+		};
+		net.forbric.kernel.mixin.NativeGameReferences forgeBodies = new net.forbric.kernel.mixin.NativeGameReferences(gameResources);
+		chain.register(TransformPhase.COREMOD, new net.forbric.kernel.transform.NativeDualEventInjector(gameResources,
+				DeadEventAudit.forwardedForgeEvents(), net.forbric.kernel.transform.NativeDualEventInjector.Families.DEFAULT,
+				owner -> forgeBodies.get(net.forbric.api.Ecosystem.FORGE, owner)));
 		chain.register(TransformPhase.COREMOD, new net.forbric.kernel.transform.PortalSpawnInjector());
 		// After merged-base compatibility: upgrade its owner-only redirect with the proven spawn input.
 		chain.register(TransformPhase.COREMOD, new net.forbric.kernel.transform.SpawnerFinalizeInjector());

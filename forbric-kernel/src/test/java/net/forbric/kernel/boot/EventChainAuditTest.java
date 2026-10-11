@@ -141,11 +141,28 @@ class EventChainAuditTest {
 				"no MinecraftForge dispatch of the event happened beside it: the stand-down is the bridge's word only");
 		assertTrue(EventChainAudit.violations().clean(), EventChainAudit.json());
 		assertTrue(EventChainAudit.json().contains("\"natives\": [\n    {\"outer\": \"NEO:" + NEO_PROBE + "\", \"inner\": \"FORGE:"
-				+ FORGE_PROBE + "\", \"outerPosts\": 1, \"observed\": 0, \"alsoForwarded\": 0}"), EventChainAudit.json());
+				+ FORGE_PROBE + "\", \"outerPosts\": 1, \"observed\": 0, \"alsoForwarded\": 0, \"excused\": 0, \"deferred\": 0}"), EventChainAudit.json());
 
 		postNeo();
 		assertEquals(1, pair().forwardedOnce.sum(), "outside the scope the same bridge forwards");
 		assertEquals(1, natively.outerPosts.sum(), "and that post is no native delivery");
+	}
+
+	/**
+	 * A bridge that forwards one NeoForge event as one of several MinecraftForge events (chat: player, system or other)
+	 * stands down for the one the game delivers natively, and only that one is credited.
+	 */
+	@Test void aBridgeWithSeveralEventsStandsDownForTheOneDeliveredNatively() throws Exception {
+		forgeListener(false);
+		String other = "probe/ForgeOther";
+		addNeo(new GameEventMultiplexer.StandDownListener(event -> invoke(post, forgeBus, forgeEvent()), Set.of(FORGE_INTERNAL, other)));
+		game("neoThenForge", covered(), forgeEvent());
+		var natively = EventChainAudit.nativePair("NEO:" + NEO_PROBE, "FORGE:" + FORGE_PROBE);
+		assertEquals(1, natively.outerPosts.sum(), EventChainAudit.json());
+		assertEquals(1, natively.observed.sum(), EventChainAudit.json());
+		assertNull(EventChainAudit.nativePair("NEO:" + NEO_PROBE, "FORGE:probe.ForgeOther"),
+				"the bridge's other event was not delivered natively, so nothing stood down for it: " + EventChainAudit.json());
+		assertTrue(EventChainAudit.violations().clean(), EventChainAudit.json());
 	}
 
 	/** The negative control: one bridge stands down for the native delivery while another forwards it anyway. */
@@ -253,6 +270,41 @@ class EventChainAuditTest {
 		assertEquals(0, pair().withNative.sum(), "the forward pairs with no later turn's dispatch: " + EventChainAudit.json());
 		assertEquals(2, EventChainAudit.nativePair("NEO:" + NEO_PROBE, "FORGE:" + FORGE_PROBE).observed.sum(), EventChainAudit.json());
 		assertTrue(EventChainAudit.violations().clean(), EventChainAudit.json());
+	}
+
+	/**
+	 * A stand-down for a native call the game may still bypass owes its forward, and the game settles it where it leaves
+	 * that call's path: excused where MinecraftForge's own body bypasses the call too, forwarded then where only the
+	 * merged game does — and that late MinecraftForge dispatch is the kernel's forward, not one of the game's own.
+	 */
+	@Test void aStandDownTheGameBypassesIsExcusedOrForwardedLate() throws Exception {
+		forgeListener(false);
+		addNeo(standDown());
+		Object shared = neoProbe.getConstructor().newInstance();
+		try (net.forbric.api.NativeEventDelivery.Scope scope = net.forbric.api.NativeEventDelivery.begin("", "caller", "", FORGE_INTERNAL)) {
+			scope.capture(shared);
+			postNeo(shared);
+		}
+		net.forbric.api.NativeEventDelivery.bypassed("caller", FORGE_INTERNAL, true);
+		var natively = EventChainAudit.nativePair("NEO:" + NEO_PROBE, "FORGE:" + FORGE_PROBE);
+		assertEquals(1, natively.excused.sum(), EventChainAudit.json());
+		assertNull(EventChainAudit.outer("FORGE:" + FORGE_PROBE), "nothing was delivered on the shared way out");
+
+		Object neoOnly = neoProbe.getConstructor().newInstance();
+		try (net.forbric.api.NativeEventDelivery.Scope scope = net.forbric.api.NativeEventDelivery.begin("", "caller", "", FORGE_INTERNAL)) {
+			scope.capture(neoOnly);
+			postNeo(neoOnly);
+		}
+		net.forbric.api.NativeEventDelivery.bypassed("caller", FORGE_INTERNAL, false);
+		net.forbric.api.NativeEventDelivery.bypassed("caller", FORGE_INTERNAL, false);
+		assertEquals(1, natively.deferred.sum(), "forwarded once on the NeoForge-only way out: " + EventChainAudit.json());
+		var forge = EventChainAudit.outer("FORGE:" + FORGE_PROBE);
+		assertEquals(1, forge.posts.sum());
+		assertEquals(1, forge.asForward.sum(), "the late dispatch is the kernel's forward: " + EventChainAudit.json());
+		assertEquals(2, natively.outerPosts.sum());
+		assertEquals(0, natively.observed.sum());
+		assertTrue(EventChainAudit.violations().clean(), EventChainAudit.json());
+		assertTrue(EventChainAudit.json().contains("\"alsoForwarded\": 0, \"excused\": 1, \"deferred\": 1}"), EventChainAudit.json());
 	}
 
 	@Test void nothingCrossesWhenNoBridgeIsInstalled() throws Exception {

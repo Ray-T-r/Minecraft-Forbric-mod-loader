@@ -49,10 +49,17 @@ import org.objectweb.asm.tree.analysis.*;
  *       and the N-site's scope covers it. A hook that posts only under a condition, or a pair of calls both families
  *       guard with the same test, covers exactly the invocations in which the MinecraftForge event was delivered. The
  *       record is cleared when the caller is entered, and spent when a bridge stands down on it.</li>
+ *   <li>Faithful, for an F-site after the N-site that the caller may bypass, judged from MinecraftForge's own patched
+ *       body of the same method ({@link NativeDeliveryPaths}): every edge on which the caller commits to bypassing the
+ *       F-site is classified as one MinecraftForge's body bypasses its call on as well (a guard both bodies have), or
+ *       one only the merged game has (an exit NeoForge's patch added). The native call is then the delivery
+ *       MinecraftForge itself would make, so the bridge stands down for the whole NeoForge delivery and leaves what it
+ *       owes with the caller; each bypass edge settles it ({@link NativeEventDelivery#bypassed}): delivered on a way
+ *       only the merged game has, excused on a shared one. A body that cannot be judged keeps its forward.</li>
  * </ul>
  *
- * <p>Different branches, a delivery that can be skipped after the NeoForge one, or a NeoForge post repeated in a loop
- * keep their forward. The NeoForge hook classes are instrumented to report each event they construct and to mark their
+ * <p>Different branches, an F-site the caller may bypass where MinecraftForge's own body cannot be read, or a NeoForge
+ * post repeated in a loop keep their forward. The NeoForge hook classes are instrumented to report each event they construct and to mark their
  * own dispatch, so a scope captures the hook's events by identity and never one a listener constructs; the
  * MinecraftForge hook classes report theirs the same way to a recording. Names of callers, mods and events never decide
  * anything: the ecosystems' namespaces and bus types are the whole vocabulary, and both are parameters.
@@ -81,6 +88,8 @@ public final class NativeDualEventInjector implements ClassTransformer {
 	}
 
 	private final Function<String, byte[]> resources;
+	/** MinecraftForge's own patched game class by internal name, or null where none can be read. */
+	private final Function<String, ClassNode> forgeReference;
 	private final Set<String> bridged;
 	private final Families families;
 	private final byte[][] callerPrefixes;
@@ -102,7 +111,17 @@ public final class NativeDualEventInjector implements ClassTransformer {
 	}
 
 	public NativeDualEventInjector(Function<String, byte[]> resources, Set<String> bridged, Families families) {
+		this(resources, bridged, families, owner -> null);
+	}
+
+	/**
+	 * @param forgeReference MinecraftForge's own patched game class by internal name (the merged base's native reference
+	 *                       of it), or null: what a caller's F-site is judged against when the caller may bypass it
+	 */
+	public NativeDualEventInjector(Function<String, byte[]> resources, Set<String> bridged, Families families,
+			Function<String, ClassNode> forgeReference) {
 		this.resources = Objects.requireNonNull(resources);
+		this.forgeReference = Objects.requireNonNull(forgeReference);
 		this.bridged = Set.copyOf(bridged);
 		this.families = Objects.requireNonNull(families);
 		this.callerPrefixes = new byte[][] {ByteScan.poolEntry(families.forge()), ByteScan.poolEntry(families.neo())};
@@ -151,10 +170,11 @@ public final class NativeDualEventInjector implements ClassTransformer {
 		boolean itf = (node.access & Opcodes.ACC_INTERFACE) != 0;
 		if (itf && (node.version & 0xFFFF) < Opcodes.V9) return input;
 		int changes = 0;
+		Map<String, Optional<ClassNode>> read = new HashMap<>();
 		for (MethodNode method : List.copyOf(node.methods)) {
 			if ((method.access & (Opcodes.ACC_ABSTRACT | Opcodes.ACC_NATIVE)) != 0) continue;
 			if (method.name.startsWith(WRAPPER_PREFIX) || method.name.startsWith(SOURCE_PREFIX)) continue;
-			changes += standDown(node, method, itf);
+			changes += standDown(node, method, itf, read);
 		}
 		if (changes == 0) return input;
 		ClassWriter writer = new ClassWriter(ClassWriter.COMPUTE_MAXS);
@@ -206,7 +226,7 @@ public final class NativeDualEventInjector implements ClassTransformer {
 	 */
 	private record Site(MethodInsnNode call, int index, boolean inline, Set<String> maybe, Set<String> always) { }
 
-	private int standDown(ClassNode owner, MethodNode method, boolean itf) {
+	private int standDown(ClassNode owner, MethodNode method, boolean itf, Map<String, Optional<ClassNode>> read) {
 		List<MethodInsnNode> forgeCalls = new ArrayList<>(), neoCalls = new ArrayList<>();
 		for (AbstractInsnNode instruction : method.instructions) {
 			if (!(instruction instanceof MethodInsnNode call)) continue;
@@ -247,10 +267,12 @@ public final class NativeDualEventInjector implements ClassTransformer {
 
 		String group = identity(owner.name + "#" + method.name + method.desc).substring(0, 32);
 		Set<Site> recorded = new LinkedHashSet<>();
+		Bypasses bypasses = new Bypasses();
+		Reference reference = null;
 		int changes = 0;
 		for (Site neo : neoSites) {
 			if (flow.frames[neo.index()] == null) continue;
-			Set<String> proved = new TreeSet<>(), candidates = new TreeSet<>();
+			Set<String> proved = new TreeSet<>(), candidates = new TreeSet<>(), faithful = new TreeSet<>();
 			for (Site forge : forgeSites) {
 				int f = forge.index(), n = neo.index();
 				if (!forge.always().isEmpty() && (dominates(flow, f, n) || postDominates(flow, f, n))) {
@@ -261,12 +283,33 @@ public final class NativeDualEventInjector implements ClassTransformer {
 					recorded.add(forge);
 				}
 			}
-			if (proved.isEmpty() && candidates.isEmpty()) continue;
-			if (wrapNeo(owner, neo, String.join(";", proved), group, String.join(";", candidates), itf)) changes++;
+			// What is left: F-sites after the NeoForge call that the caller may bypass. Judged against MinecraftForge's own
+			// body, event by event; one that cannot be judged keeps its forward.
+			Set<String> later = new TreeSet<>();
+			for (Site forge : forgeSites) if (flow.reachesFrom(neo.index(), forge.index())) later.addAll(forge.maybe());
+			later.removeAll(proved);
+			later.removeAll(candidates);
+			for (String event : later) {
+				if (reference == null) reference = reference(owner.name, method, read);
+				List<NativeDeliveryPaths.Edge> edges = reference.judge(flow, neo.index(), forgeSites, event);
+				if (edges == null) continue;
+				if (edges.isEmpty()) proved.add(event);
+				else {
+					faithful.add(event);
+					bypasses.add(method, edges, event);
+				}
+			}
+			if (proved.isEmpty() && candidates.isEmpty() && faithful.isEmpty()) continue;
+			if (wrapNeo(owner, neo, String.join(";", proved), group, String.join(";", candidates), String.join(";", faithful), itf)) {
+				changes++;
+			} else {
+				bypasses.drop(faithful);
+			}
 		}
 		if (changes == 0) return 0;
 		boolean recording = false;
 		for (Site forge : recorded) recording |= wrapForge(owner, forge, group, itf);
+		recording |= bypasses.apply(method, group);
 		if (recording) {
 			InsnList enter = new InsnList();
 			enter.add(new LdcInsnNode(group));
@@ -332,24 +375,27 @@ public final class NativeDualEventInjector implements ClassTransformer {
 		return inline ? "(L" + call.owner + ";" + call.desc.substring(1) : call.desc;
 	}
 
-	private boolean wrapNeo(ClassNode owner, Site site, String proved, String group, String candidates, boolean itf) {
+	private boolean wrapNeo(ClassNode owner, Site site, String proved, String group, String candidates, String faithful, boolean itf) {
 		MethodInsnNode call = site.call();
 		String desc = wrapperDesc(call, site.inline());
 		String name = WRAPPER_PREFIX + identity((site.inline() ? "post " : "hook ") + call.owner + "." + call.name + call.desc
-				+ " " + proved + " " + group + " " + candidates);
+				+ " " + proved + " " + group + " " + candidates + (faithful.isEmpty() ? "" : " " + faithful));
 		MethodNode existing = find(owner, name, desc);
 		if (existing == null) {
 			InsnList open = new InsnList();
 			open.add(new LdcInsnNode(proved));
 			open.add(new LdcInsnNode(group));
 			open.add(new LdcInsnNode(candidates));
+			String strings = "Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;";
+			if (!faithful.isEmpty()) {
+				open.add(new LdcInsnNode(faithful));
+				strings += "Ljava/lang/String;";
+			}
 			if (site.inline()) {
-				open.add(new MethodInsnNode(Opcodes.INVOKESTATIC, API, "begin",
-						"(Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;)L" + SCOPE + ";", false));
+				open.add(new MethodInsnNode(Opcodes.INVOKESTATIC, API, "begin", "(" + strings + ")L" + SCOPE + ";", false));
 			} else {
 				open.add(new LdcInsnNode(Type.getObjectType(call.owner)));
-				open.add(new MethodInsnNode(Opcodes.INVOKESTATIC, API, "begin",
-						"(Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/Class;)L" + SCOPE + ";", false));
+				open.add(new MethodInsnNode(Opcodes.INVOKESTATIC, API, "begin", "(" + strings + "Ljava/lang/Class;)L" + SCOPE + ";", false));
 			}
 			owner.methods.add(wrapper(name, desc, call, open, SCOPE, site.inline() ? "capture" : null));
 		} else if (!calls(existing, API, "begin")) {
@@ -454,6 +500,155 @@ public final class NativeDualEventInjector implements ClassTransformer {
 			case Type.OBJECT -> type.getInternalName();
 			default -> Opcodes.INTEGER;
 		};
+	}
+
+	// ---------------------------------------------------------------- faithful deliveries
+
+	/** MinecraftForge's own body of one caller method, read once per caller, with its delivery sites per event. */
+	private final class Reference {
+		final MethodNode merged, forge;
+		final Flow forgeFlow;
+		final Map<String, Set<Integer>> sites = new HashMap<>();
+		/** The two bodies aligned, read before any of the caller's calls is redirected. */
+		int[] match;
+		boolean aligned;
+
+		Reference(MethodNode merged, MethodNode forge, Flow forgeFlow) {
+			this.merged = merged;
+			this.forge = forge;
+			this.forgeFlow = forgeFlow;
+		}
+
+		/**
+		 * The bypass edges of the caller's deliveries of {@code event} after the N-site at {@code n}, or null when they
+		 * cannot be judged: every F-site that can deliver it after {@code n} must deliver it whenever it runs, at most once
+		 * on any path, and {@code n} must not run again.
+		 */
+		List<NativeDeliveryPaths.Edge> judge(Flow flow, int n, List<Site> forgeSites, String event) {
+			if (forge == null || forgeFlow == null || flow.reachesAgain(n, -1, -1)) return null;
+			Set<Integer> later = new TreeSet<>();
+			for (Site site : forgeSites) {
+				if (!site.maybe().contains(event) || !flow.reachesFrom(n, site.index())) continue;
+				if (!site.always().contains(event)) return null;
+				later.add(site.index());
+			}
+			if (later.isEmpty()) return null;
+			for (int f : later) for (int g : later) if (flow.reachesFrom(f, g)) return null;
+			Set<Integer> theirs = sites.computeIfAbsent(event, this::sitesOf);
+			if (theirs.isEmpty()) return null;
+			if (!aligned) {
+				match = NativeDeliveryPaths.align(merged, forge);
+				aligned = true;
+			}
+			return NativeDeliveryPaths.judge(merged, flow, n, later, forge, forgeFlow, theirs, match);
+		}
+
+		/** The calls and posts in MinecraftForge's own body that can deliver {@code event}. */
+		private Set<Integer> sitesOf(String event) {
+			Set<Integer> out = new TreeSet<>();
+			for (int i = 0; i < forge.instructions.size(); i++) {
+				if (!(forge.instructions.get(i) instanceof MethodInsnNode call) || forgeFlow.frames[i] == null) continue;
+				if (!forgeCandidate(call.getOpcode(), call.owner, call.name)) continue;
+				boolean delivers = forgePost(call.owner, call.name)
+						? inlineWrappable(call) && event.equals(postedEvent(forge, forgeFlow, call))
+						: forgeMaybe(call.owner, call.name, call.desc, 0).contains(event);
+				if (delivers) out.add(i);
+			}
+			return out;
+		}
+	}
+
+	/**
+	 * MinecraftForge's own body of {@code merged}. Its class is read once per transformed class ({@code read}), and kept
+	 * no longer: an analysis writes into the nodes it reads, so nothing is shared between class loads.
+	 */
+	private Reference reference(String owner, MethodNode merged, Map<String, Optional<ClassNode>> read) {
+		ClassNode node = read.computeIfAbsent(owner, name -> {
+			try {
+				return Optional.ofNullable(forgeReference.apply(name));
+			} catch (RuntimeException unreadable) {
+				return Optional.empty();
+			}
+		}).orElse(null);
+		MethodNode forge = null;
+		if (node != null) {
+			for (MethodNode m : node.methods) {
+				if (m.name.equals(merged.name) && m.desc.equals(merged.desc) && m.instructions.size() > 0) forge = m;
+			}
+		}
+		Flow forgeFlow = null;
+		if (forge != null) {
+			try {
+				forgeFlow = new Flow(owner, forge);
+			} catch (AnalyzerException unanalysable) {
+				forge = null;
+			}
+		}
+		return new Reference(merged, forge, forgeFlow);
+	}
+
+	/**
+	 * The bypass edges of one caller, collected over its N-sites and events, and written into it once every NeoForge
+	 * call is wrapped: per edge, a {@link NativeEventDelivery#bypassed} call for the events MinecraftForge's own body
+	 * bypasses there too, and one for those it does not.
+	 */
+	private static final class Bypasses {
+		/** Per edge (its branch, kind and label), the events per verdict: true = MinecraftForge's body bypasses too. */
+		private final Map<List<Object>, Map<Boolean, Set<String>>> edges = new LinkedHashMap<>();
+
+		void add(MethodNode method, List<NativeDeliveryPaths.Edge> found, String event) {
+			for (NativeDeliveryPaths.Edge edge : found) {
+				List<Object> key = Arrays.asList(method.instructions.get(edge.from()), edge.kind(), edge.label());
+				edges.computeIfAbsent(key, k -> new TreeMap<>()).computeIfAbsent(edge.forgeBypassesToo(), k -> new TreeSet<>()).add(event);
+			}
+		}
+
+		/** Events whose N-site could not be wrapped: nothing would be owed for them, so nothing settles them. */
+		void drop(Set<String> events) {
+			for (Map<Boolean, Set<String>> verdicts : edges.values()) for (Set<String> names : verdicts.values()) names.removeAll(events);
+		}
+
+		/** Writes the calls; whether any was written (the caller then needs its entry reset). */
+		boolean apply(MethodNode method, String group) {
+			boolean any = false;
+			for (var entry : edges.entrySet()) {
+				AbstractInsnNode branch = (AbstractInsnNode) entry.getKey().get(0);
+				NativeDeliveryPaths.Kind kind = (NativeDeliveryPaths.Kind) entry.getKey().get(1);
+				LabelNode label = (LabelNode) entry.getKey().get(2);
+				InsnList calls = new InsnList();
+				for (var verdict : entry.getValue().entrySet()) {
+					if (verdict.getValue().isEmpty()) continue;
+					calls.add(new LdcInsnNode(group));
+					calls.add(new LdcInsnNode(String.join(";", verdict.getValue())));
+					calls.add(new InsnNode(verdict.getKey() ? Opcodes.ICONST_1 : Opcodes.ICONST_0));
+					calls.add(new MethodInsnNode(Opcodes.INVOKESTATIC, API, "bypassed", "(Ljava/lang/String;Ljava/lang/String;Z)V", false));
+				}
+				if (calls.size() == 0) continue;
+				any = true;
+				if (kind == NativeDeliveryPaths.Kind.FALL) {
+					method.instructions.insert(branch, calls);
+					continue;
+				}
+				// A new edge into the old target: a trampoline after the method's last instruction (which never falls
+				// through), carrying the target's own frame, then on to the target.
+				FrameNode frame = NativeDeliveryPaths.frameAt(label);
+				LabelNode trampoline = new LabelNode();
+				method.instructions.add(trampoline);
+				method.instructions.add(new FrameNode(Opcodes.F_NEW, frame.local.size(), frame.local.toArray(), frame.stack.size(),
+						frame.stack.toArray()));
+				method.instructions.add(calls);
+				method.instructions.add(new JumpInsnNode(Opcodes.GOTO, label));
+				if (branch instanceof JumpInsnNode jump) jump.label = trampoline;
+				else if (branch instanceof TableSwitchInsnNode table) {
+					if (table.dflt == label) table.dflt = trampoline;
+					table.labels.replaceAll(l -> l == label ? trampoline : l);
+				} else if (branch instanceof LookupSwitchInsnNode lookup) {
+					if (lookup.dflt == label) lookup.dflt = trampoline;
+					lookup.labels.replaceAll(l -> l == label ? trampoline : l);
+				}
+			}
+			return any;
+		}
 	}
 
 	// ---------------------------------------------------------------- what the hooks deliver
@@ -714,6 +909,8 @@ public final class NativeDualEventInjector implements ClassTransformer {
 	/** A method's control-flow graph, exception edges included, with the source frames an inline post is traced on. */
 	static final class Flow {
 		final Map<Integer, Set<Integer>> edges = new HashMap<>();
+		/** The edges without the exception edges. */
+		final Map<Integer, Set<Integer>> normal = new HashMap<>();
 		final Frame<SourceValue>[] frames;
 		final boolean[] exit;
 
@@ -721,10 +918,11 @@ public final class NativeDualEventInjector implements ClassTransformer {
 			frames = new Analyzer<SourceValue>(new SourceInterpreter()) {
 				@Override protected void newControlFlowEdge(int from, int to) {
 					edges.computeIfAbsent(from, k -> new HashSet<>()).add(to);
+					normal.computeIfAbsent(from, k -> new HashSet<>()).add(to);
 				}
 
 				@Override protected boolean newControlFlowExceptionEdge(int from, int to) {
-					newControlFlowEdge(from, to);
+					edges.computeIfAbsent(from, k -> new HashSet<>()).add(to);
 					return true;
 				}
 			}.analyze(owner, method);
