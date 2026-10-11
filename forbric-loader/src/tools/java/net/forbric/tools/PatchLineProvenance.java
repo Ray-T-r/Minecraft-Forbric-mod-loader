@@ -36,10 +36,30 @@ import java.util.zip.ZipFile;
  */
 final class PatchLineProvenance {
 
-	/** One contiguous run of removed and/or added lines inside a hunk. */
-	record Block(int id, List<Integer> removedVanilla, List<Integer> addedPatched, int vanillaBefore, int vanillaAfter) {
+	/**
+	 * One contiguous run of removed and/or added lines inside a hunk, with the source text of each line as the patch
+	 * writes it (stripped of its indentation): a line removed in one place and added back in another is the same
+	 * statement moved, by the patch author's own record.
+	 */
+	record Block(int id, List<Integer> removedVanilla, List<Integer> addedPatched, int vanillaBefore, int vanillaAfter,
+			List<String> removedText, List<String> addedText, int hunk) {
+		Block(int id, List<Integer> removedVanilla, List<Integer> addedPatched, int vanillaBefore, int vanillaAfter) {
+			this(id, removedVanilla, addedPatched, vanillaBefore, vanillaAfter, List.of(), List.of(), -1);
+		}
+
 		boolean insertionOnly() {
 			return removedVanilla.isEmpty();
+		}
+
+		/** Removes vanilla lines and adds nothing in their place. */
+		boolean deletionOnly() {
+			return !removedVanilla.isEmpty() && addedPatched.isEmpty();
+		}
+
+		/** The text of added patched line {@code line}, or null when this block did not add it. */
+		String addedText(int line) {
+			int i = addedPatched.indexOf(line);
+			return i < 0 || i >= addedText.size() ? null : addedText.get(i);
 		}
 	}
 
@@ -94,6 +114,12 @@ final class PatchLineProvenance {
 		return files.containsKey(source);
 	}
 
+	/** Every block this side's patch of {@code source} has, in patch order; empty for a file it never patched. */
+	List<Block> blocks(String source) {
+		FileMap map = files.get(source);
+		return map == null ? List.of() : List.copyOf(map.blocks);
+	}
+
 	/**
 	 * The origin of {@code patchedLine} in {@code source}. A file the side never patched is vanilla line for line.
 	 * Line numbers below 1 have no origin.
@@ -120,6 +146,8 @@ final class PatchLineProvenance {
 		/** Outside hunks: the first patched line of a region -> (patched - vanilla) for that region. */
 		private final TreeMap<Integer, Integer> offsets = new TreeMap<>();
 		private final List<Block> blocks = new ArrayList<>();
+		/** The hunk being read: blocks of one hunk are edits the patch author made side by side. */
+		private int hunk = -1;
 
 		static FileMap parse(String text) {
 			FileMap map = new FileMap();
@@ -128,16 +156,20 @@ final class PatchLineProvenance {
 			int oldLine = -1, newLine = -1;
 			boolean inHunk = false;
 			List<Integer> removed = null, addedLines = null;
+			List<String> removedText = new ArrayList<>(), addedText = new ArrayList<>();
 			int before = 0;
 			for (String line : text.split("\n", -1)) {
 				Matcher hunk = HUNK.matcher(line);
 				if (hunk.find()) {
 					if (inHunk) {
-						map.closeBlock(removed, addedLines, before, oldLine);
+						map.closeBlock(removed, addedLines, before, oldLine, removedText, addedText);
 						delta = newLine - oldLine;
 						map.offsets.put(newLine, delta);
 					}
 					removed = addedLines = null;
+					removedText = new ArrayList<>();
+					addedText = new ArrayList<>();
+					map.hunk++;
 					oldLine = Integer.parseInt(hunk.group(1));
 					newLine = hunk.group(3).equals("_") ? oldLine + delta : Integer.parseInt(hunk.group(3));
 					before = oldLine - 1;
@@ -150,8 +182,10 @@ final class PatchLineProvenance {
 				char kind = line.isEmpty() ? ' ' : line.charAt(0);
 				if (kind == ' ') {
 					if (removed != null || addedLines != null) {
-						map.closeBlock(removed, addedLines, before, oldLine);
+						map.closeBlock(removed, addedLines, before, oldLine, removedText, addedText);
 						removed = addedLines = null;
+						removedText = new ArrayList<>();
+						addedText = new ArrayList<>();
 					}
 					map.context.put(newLine, oldLine);
 					before = oldLine;
@@ -160,29 +194,35 @@ final class PatchLineProvenance {
 				} else if (kind == '-') {
 					if (removed == null) removed = new ArrayList<>();
 					removed.add(oldLine++);
+					removedText.add(line.substring(1).strip());
 				} else if (kind == '+') {
 					if (addedLines == null) addedLines = new ArrayList<>();
 					addedLines.add(newLine++);
+					addedText.add(line.substring(1).strip());
 				} else {
 					// Anything else ends the hunk (trailing text, a new file header in a combined patch).
-					map.closeBlock(removed, addedLines, before, oldLine);
+					map.closeBlock(removed, addedLines, before, oldLine, removedText, addedText);
 					removed = addedLines = null;
+					removedText = new ArrayList<>();
+					addedText = new ArrayList<>();
 					delta = newLine - oldLine;
 					map.offsets.put(newLine, delta);
 					inHunk = false;
 				}
 			}
 			if (inHunk) {
-				map.closeBlock(removed, addedLines, before, oldLine);
+				map.closeBlock(removed, addedLines, before, oldLine, removedText, addedText);
 				map.offsets.put(newLine, newLine - oldLine);
 			}
 			return map;
 		}
 
-		private void closeBlock(List<Integer> removed, List<Integer> addedLines, int before, int after) {
+		private void closeBlock(List<Integer> removed, List<Integer> addedLines, int before, int after,
+				List<String> removedText, List<String> addedText) {
 			if (removed == null && addedLines == null) return;
 			Block block = new Block(blocks.size(), removed == null ? List.of() : List.copyOf(removed),
-					addedLines == null ? List.of() : List.copyOf(addedLines), before, after);
+					addedLines == null ? List.of() : List.copyOf(addedLines), before, after, List.copyOf(removedText),
+					List.copyOf(addedText), hunk);
 			blocks.add(block);
 			for (int line : block.addedPatched()) added.put(line, block);
 		}

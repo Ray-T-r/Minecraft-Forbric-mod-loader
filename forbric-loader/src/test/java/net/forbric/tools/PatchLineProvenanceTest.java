@@ -66,4 +66,28 @@ public class PatchLineProvenanceTest {
 		assertEquals("net/minecraft/world/Foo.java", PatchLineProvenance.sourcePath("net/minecraft/world/Foo$Inner", "Foo.java"));
 		assertNull(PatchLineProvenance.sourcePath("net/minecraft/world/Foo", null));
 	}
+
+	@Test
+	void blocksCarryTheirLinesTextAndHunk() {
+		String patch = "--- a/X\n+++ b/X\n"
+				+ "@@ -10,4 +10,4 @@\n a\n-    moved(this);\n b\n+    hook();\n c\n"
+				+ "@@ -40,2 +40,3 @@\n d\n+    moved(this);\n e\n";
+		List<PatchLineProvenance.Block> blocks = of(patch).blocks(SOURCE);
+		assertEquals(3, blocks.size());
+		PatchLineProvenance.Block removal = blocks.get(0), hook = blocks.get(1), move = blocks.get(2);
+		assertTrue(removal.deletionOnly());
+		assertEquals(List.of("moved(this);"), removal.removedText(), "the text without its indentation");
+		assertEquals(List.of(11), removal.removedVanilla());
+		assertFalse(hook.deletionOnly());
+		assertEquals("hook();", hook.addedText(12));
+		assertNull(hook.addedText(13));
+		assertEquals(removal.hunk(), hook.hunk(), "edits of one hunk sit side by side");
+		assertNotEquals(hook.hunk(), move.hunk());
+		assertEquals("moved(this);", move.addedText(41), "a line removed in one place and added in another is moved");
+	}
+
+	@Test
+	void aFileTheSideNeverPatchedHasNoBlocks() {
+		assertEquals(List.of(), of("--- a/X\n+++ b/X\n@@ -1,1 +1,2 @@\n a\n+b\n").blocks("net/minecraft/Other.java"));
+	}
 }
