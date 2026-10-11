@@ -48,12 +48,36 @@ class LinkBaselineProvenanceTest {
 		Config tools = provenance.get("toolSources");
 		assertNotNull(tools, "which tool sources produced the reviewed jar");
 		Set<String> compiled = new TreeSet<>();
-		Matcher source = Pattern.compile("net/forbric/tools/(\\w+\\.java)").matcher(Files.readString(
-				Path.of(System.getProperty("user.dir"), "run", "build-merged-base.sh")));
+		Matcher source = Pattern.compile("net/forbric/tools/(\\w+\\.java)").matcher(buildScript());
 		while (source.find()) compiled.add(source.group(1));
 		assertFalse(compiled.isEmpty());
 		assertEquals(compiled, new TreeSet<>(tools.valueMap().keySet()),
 				"every source build-merged-base.sh compiles is part of the tool the baseline was reviewed on");
 		for (Object hash : tools.valueMap().values()) assertTrue(HASH.matcher(String.valueOf(hash)).matches());
+	}
+
+	/**
+	 * The merge is a function of its inputs as much as of its sources: the edit splice made it read both userdev
+	 * artifacts, and a record that names five inputs would describe a build the current script cannot make. The
+	 * link baseline is the one input that is not the merge's own; the record names it by its hash.
+	 */
+	@Test void itNamesEveryInputTheMergeReads() throws Exception {
+		Set<String> read = new TreeSet<>();
+		Matcher input = Pattern.compile("--input ([\\w-]+)=").matcher(buildScript());
+		while (input.find()) read.add(input.group(1));
+		assertTrue(read.remove("link-baseline"), "build-merged-base.sh records the baseline it checked against");
+		assertTrue(read.containsAll(Set.of("vanilla", "forge-patched", "neo-patched")), read.toString());
+		Config inputs = provenance().get("mergeInputs");
+		assertNotNull(inputs, "which inputs the reviewed jar was merged from");
+		assertEquals(read, new TreeSet<>(inputs.valueMap().keySet()),
+				"every input build-merged-base.sh hands the merge is recorded for the reviewed build");
+		for (String role : read) {
+			assertTrue(HASH.matcher(String.valueOf((Object) inputs.get(List.of(role, "sha256")))).matches(), role);
+			assertFalse(String.valueOf((Object) inputs.get(List.of(role, "file"))).isBlank(), role);
+		}
+	}
+
+	private static String buildScript() throws Exception {
+		return Files.readString(Path.of(System.getProperty("user.dir"), "run", "build-merged-base.sh"));
 	}
 }
