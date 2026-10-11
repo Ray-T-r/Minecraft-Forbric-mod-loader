@@ -77,10 +77,13 @@ final class MergedBaseTool {
 	 *
 	 * @param report where the conflict report goes — kept rather than discarded, because a change in its contents
 	 *               is the earliest signal that an upstream bump moved something the merge was calibrated against
+	 * @param forgeUserdev the MinecraftForge userdev artifact; its source patches tell the merge which instructions
+	 *               of a patched method are Forge's edit, so a method both ecosystems patched keeps both edits
+	 * @param neoUserdev the NeoForge userdev artifact, for the same reason
 	 */
 	ArtifactResult merge(JdkLocator.Jvm jvm, Path vanilla, Path forgePatched, Path neoPatched,
 	                     Path forgeRuntime, Path neoforgeRuntime, Path outJar, Path report,
-	                     String coordinate, Path libraries) throws IOException {
+	                     String coordinate, Path libraries, Path forgeUserdev, Path neoUserdev) throws IOException {
 		if (BuildStamp.isFresh(outJar)) {
 			log.accept("[merge] up-to-date: " + outJar.getFileName());
 			return new ArtifactResult(coordinate, outJar, Util.sha1(outJar), Files.size(outJar));
@@ -94,7 +97,8 @@ final class MergedBaseTool {
 				"-cp", tools.toString(), MERGE_MAIN,
 				vanilla.toString(), forgePatched.toString(), neoPatched.toString(),
 				outJar.toString(), report.toString(),
-				forgeRuntime.toString(), neoforgeRuntime.toString(), libraries.toString()), "merged base");
+				forgeRuntime.toString(), neoforgeRuntime.toString(), libraries.toString(),
+				forgeUserdev.toString(), neoUserdev.toString()), "merged base");
 
 		if (!Files.isRegularFile(outJar) || Files.size(outJar) == 0) {
 			throw new IOException("the merge did not produce " + outJar);

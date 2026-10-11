@@ -15,10 +15,14 @@ FORGE="${FORGE:-$MC/libraries/net/forbric/patched-mc-forge/26.2-65.0.1/patched-m
 NEO="${NEO:-$HERE/neoforge-patched/patched-mc-neoforge-26.2.jar}"
 FORGE_RT="${FORGE_RT:-$HERE/forge-runtime/forge-runtime.jar}"
 NEO_RT="${NEO_RT:-$HERE/neoforge-runtime/neoforge-runtime.jar}"
+# Each ecosystem's userdev artifact: its source patches say which instructions of a patched method are that
+# ecosystem's edit, so a method both patched keeps both edits (EditSplicer). The installer downloads both.
+FORGE_USERDEV="${FORGE_USERDEV:-$MC/.forbric-build/dl/forge-userdev.jar}"
+NEO_USERDEV="${NEO_USERDEV:-$MC/.forbric-build/dl/neoforge-userdev.jar}"
 OUT="${OUT:-$HERE/merged-base/patched-mc-merged-26.2.jar}"
 REPORT="${REPORT:-$HERE/merged-base/merge-conflicts.txt}"
 
-for f in "$VANILLA" "$FORGE" "$NEO" "$FORGE_RT" "$NEO_RT"; do
+for f in "$VANILLA" "$FORGE" "$NEO" "$FORGE_RT" "$NEO_RT" "$FORGE_USERDEV" "$NEO_USERDEV"; do
   [ -f "$f" ] || { echo "input jar not found: $f" >&2; exit 2; }
 done
 
@@ -26,14 +30,16 @@ ASM="$(find "$HOME/.gradle/caches" -name 'asm-9*.jar' ! -name '*sources*' ! -nam
 ASM_TREE="$(find "$HOME/.gradle/caches" -name 'asm-tree-9*.jar' ! -name '*sources*' ! -name '*javadoc*' 2>/dev/null | sort -V | tail -1)"
 # asm-commons: ClassRemapper/SimpleRemapper, used by the divergent-anonymous-sibling pass (PASS 5).
 ASM_COMMONS="$(find "$HOME/.gradle/caches" -name 'asm-commons-9*.jar' ! -name '*sources*' ! -name '*javadoc*' 2>/dev/null | sort -V | tail -1)"
-[ -n "$ASM" ] && [ -n "$ASM_TREE" ] && [ -n "$ASM_COMMONS" ] || { echo "ASM jars not found in ~/.gradle/caches (build the loader once to fetch them)" >&2; exit 3; }
+# asm-analysis: the edit splice proves statement boundaries and verifies what it builds (EditSplicer).
+ASM_ANALYSIS="$(find "$HOME/.gradle/caches" -name 'asm-analysis-9*.jar' ! -name '*sources*' ! -name '*javadoc*' 2>/dev/null | sort -V | tail -1)"
+[ -n "$ASM" ] && [ -n "$ASM_TREE" ] && [ -n "$ASM_COMMONS" ] && [ -n "$ASM_ANALYSIS" ] || { echo "ASM jars not found in ~/.gradle/caches (build the loader once to fetch them)" >&2; exit 3; }
 
-CP="$ASM:$ASM_TREE:$ASM_COMMONS"
+CP="$ASM:$ASM_TREE:$ASM_COMMONS:$ASM_ANALYSIS"
 BUILD="$HERE/.merged-base-tools"
 rm -rf "$BUILD"; mkdir -p "$BUILD" "$(dirname "$OUT")"
 # A previous build's provenance must not survive next to a base this run replaces and then fails to link.
 rm -f "$OUT.provenance.json"
-echo "[build-merged-base] compiling merge tools (ASM: $(basename "$ASM"), $(basename "$ASM_TREE"), $(basename "$ASM_COMMONS")) …"
+echo "[build-merged-base] compiling merge tools (ASM: $(basename "$ASM"), $(basename "$ASM_TREE"), $(basename "$ASM_COMMONS"), $(basename "$ASM_ANALYSIS")) …"
 TOOL_SOURCES=(
   "$PROJECT/src/tools/java/net/forbric/tools/MergedBaseBuilder.java"
   "$PROJECT/src/tools/java/net/forbric/tools/AdditiveMethodMerger.java"
@@ -47,11 +53,13 @@ TOOL_SOURCES=(
   "$PROJECT/src/tools/java/net/forbric/tools/NonNullReturnProof.java"
   "$PROJECT/src/tools/java/net/forbric/tools/TailHookComposition.java"
   "$PROJECT/src/tools/java/net/forbric/tools/EmptyArrayContractBridge.java"
+  "$PROJECT/src/tools/java/net/forbric/tools/PatchLineProvenance.java"
+  "$PROJECT/src/tools/java/net/forbric/tools/EditSplicer.java"
 )
 javac --release 17 -cp "$CP" -d "$BUILD" "${TOOL_SOURCES[@]}"
 
 echo "[build-merged-base] vanilla=$(basename "$VANILLA")  forge=$(basename "$FORGE")  neo=$(basename "$NEO")"
-java -Xmx4g -cp "$BUILD:$CP" net.forbric.tools.MergedBaseBuilder "$VANILLA" "$FORGE" "$NEO" "$OUT" "$REPORT" "$FORGE_RT" "$NEO_RT" "$MC/libraries"
+java -Xmx4g -cp "$BUILD:$CP" net.forbric.tools.MergedBaseBuilder "$VANILLA" "$FORGE" "$NEO" "$OUT" "$REPORT" "$FORGE_RT" "$NEO_RT" "$MC/libraries" "$FORGE_USERDEV" "$NEO_USERDEV"
 echo "[build-merged-base] merged base -> $OUT ($(du -h "$OUT" | cut -f1))"
 
 # Cross-runtime-jar interop: forge-runtime.jar's own compiled classes (wholesale, never touched by the merge
@@ -100,5 +108,6 @@ python3 "$PROJECT/../forbric-kernel/run/compat/evidence.py" merge-provenance --s
   --output "$OUT.provenance.json" --link-check "${LINK_CHECK:-enforce}" \
   --input vanilla="$VANILLA" --input forge-patched="$FORGE" --input neo-patched="$NEO" \
   --input forge-runtime="$FORGE_RT" --input neo-runtime="$NEO_RT" --input link-baseline="$LINK_BASELINE" \
+  --input forge-userdev="$FORGE_USERDEV" --input neo-userdev="$NEO_USERDEV" \
   --produced merged="$OUT" --produced forge-interop="$FORGE_RT_PATCHED" --produced report="$REPORT" \
   "${TOOL_ARGS[@]}"

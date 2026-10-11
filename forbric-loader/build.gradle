@@ -107,13 +107,14 @@ dependencies {
 	// JSON reader for fabric.mod.json (placeholder until the reused Fabric ModMetadataParser is wired in at P0)
 	api "com.electronwill.night-config:json:${project.night_config_version}"
 
-	// The merge tools see ASM and nothing else — the same three artifacts run/build-merged-base.sh puts on
+	// The merge tools see ASM and nothing else — the same four artifacts run/build-merged-base.sh puts on
 	// javac's classpath when it compiles them by hand. They are `implementation`, not `api`: what mergeToolsJar
 	// shades is exactly this list, so an accidental extra dependency shows up as a bigger jar, not as a
 	// NoClassDefFoundError in the installer's subprocess.
 	toolsImplementation "org.ow2.asm:asm:${project.asm_version}"
 	toolsImplementation "org.ow2.asm:asm-commons:${project.asm_version}"
 	toolsImplementation "org.ow2.asm:asm-tree:${project.asm_version}"
+	toolsImplementation "org.ow2.asm:asm-analysis:${project.asm_version}"
 
 	testImplementation "org.junit.jupiter:junit-jupiter:${project.junit_version}"
 	testRuntimeOnly 'org.junit.platform:junit-platform-launcher'

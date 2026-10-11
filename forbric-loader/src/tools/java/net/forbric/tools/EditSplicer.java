@@ -435,9 +435,17 @@ final class EditSplicer {
 			}
 			insertBefore = labelBlockStart(b.code.get(anchor));
 		} else {
-			if (!baseAdded.isEmpty()) {
-				List<String> runVanillaFree = runKeys;
-				if (baseVanilla.isEmpty() && baseKeys.equals(runVanillaFree)) {
+			// The base's own edits in this stretch: an insertion next to the replaced lines is the base's and stays;
+			// a base edit that removed any of the same vanilla lines is a competing rewrite of them.
+			Set<Integer> replacedLines = new java.util.HashSet<>();
+			for (PatchLineProvenance.Block block : run.blocks()) replacedLines.addAll(block.removedVanilla());
+			List<Integer> competing = new ArrayList<>();
+			for (int i : baseAdded) {
+				PatchLineProvenance.Block block = b.origin.get(i).block();
+				if (block.removedVanilla().stream().anyMatch(replacedLines::contains)) competing.add(i);
+			}
+			if (!competing.isEmpty()) {
+				if (baseVanilla.isEmpty() && competing.stream().map(b.key::get).toList().equals(runKeys)) {
 					conflicts.add(new Outcome("same-edit", first, last, "the base made the same replacement"));
 					return null;
 				}
@@ -448,14 +456,15 @@ final class EditSplicer {
 				conflicts.add(new Outcome("base-deleted", first, last, "the base removed the vanilla lines this run replaces"));
 				return null;
 			}
-			// Only the vanilla lines the run replaced may go: every removed base instruction must come from one of them.
-			Set<Integer> replacedLines = new java.util.HashSet<>();
-			for (PatchLineProvenance.Block block : run.blocks()) replacedLines.addAll(block.removedVanilla());
+			// Only the vanilla lines the run replaced may go: every removed base instruction must come from one of
+			// them, and they must be one contiguous stretch of the base body.
 			for (int i : baseVanilla) {
 				PatchLineProvenance.Origin origin = b.origin.get(i);
 				if (origin == null || !replacedLines.contains(origin.vanilla()))
 					throw new Refusal("the base lines in place of the run are not the lines it replaced");
 			}
+			if (baseVanilla.get(baseVanilla.size() - 1) - baseVanilla.get(0) + 1 != baseVanilla.size())
+				throw new Refusal("the replaced base lines are interleaved with base edits");
 			for (int i : baseVanilla) remove.add(b.code.get(i));
 			int s = baseVanilla.get(0), e = baseVanilla.get(baseVanilla.size() - 1);
 			if (b.stack(s) != 0 || (bNext < b.code.size() && b.stack(bNext) != 0)) throw new Refusal("replaced base lines are not a statement");
