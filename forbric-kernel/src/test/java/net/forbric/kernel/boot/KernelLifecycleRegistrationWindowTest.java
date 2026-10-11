@@ -70,6 +70,33 @@ class KernelLifecycleRegistrationWindowTest {
 	}
 
 	/**
+	 * The window registerNeoForgeContent fires RegisterEvent in is the one {@code openRegistrationWindow} opens, and
+	 * its close puts the MinecraftForge gates back before the freeze. What opening does is executed against stand-in
+	 * carriers in {@link RegistrationWindowForgeLockTest}; this pins that the real window goes through it — the open
+	 * it replaced cleared only the vanilla flag, and every NeoForge registration then hit a wrapper MinecraftForge's
+	 * bootstrap snapshot had locked.
+	 */
+	@Test
+	void theRegistrationWindowOpensEveryGateBeforeRegisterEventAndPutsThemBackBeforeTheFreeze() throws Exception {
+		ClassNode node = compiled();
+		assertTrue(node != null,
+				"KernelLifecycle not found in the compiled src/main classes, which exist before any test runs");
+		MethodNode content = method(node, "registerNeoForgeContent");
+		int open = firstCall(content, "openRegistrationWindow");
+		int register = firstCall(content, "fireRegisterEvents");
+		assertTrue(open >= 0, "registerNeoForgeContent must open its window through openRegistrationWindow");
+		assertTrue(register > open, "the window must be open before RegisterEvent fires");
+		assertTrue(callsIn(method(node, "openRegistrationWindow")).contains("reopenForgeRegistries"),
+				"opening must clear the MinecraftForge gates, not only the vanilla frozen flag");
+
+		MethodNode close = method(node, "closeRegistrationWindow");
+		int reclose = firstCall(close, "recloseForgeRegistries");
+		int freeze = firstCall(close, "freeze");
+		assertTrue(reclose >= 0 && freeze > reclose,
+				"closing must put the cleared gates back, before the freeze, as the client entrypoint window does");
+	}
+
+	/**
 	 * The game buses must open before the setup lifecycle, where genuine NeoForge opens them.
 	 *
 	 * <p>{@code CommonModLoader.begin} starts {@code NeoForge.EVENT_BUS} right after its "Config loading" task and

@@ -685,6 +685,8 @@ public final class KernelLifecycle {
 	private static void registerNeoForgeContent(ClassLoader cl, Side side) {
 		// Whether the registration window was opened, and so whether the finally below owes it a close.
 		boolean closeWindow = false;
+		// The MinecraftForge gates the opening found already closed, which the close puts back.
+		ReopenedRegistries opened = ReopenedRegistries.NONE;
 		try {
 			setForgeLoadingState(cl, false);
 			Class<?> distClass = Class.forName(ForeignType.DIST.binary(Ecosystem.NEOFORGE), false, cl);
@@ -778,14 +780,7 @@ public final class KernelLifecycle {
 			}
 			buses.addAll(registrationBuses(mods, KernelModLoader.classlessNeoMods().values()));
 
-			// Capture the post-Bootstrap vanilla registry state for NEOFORGE only, before the window opens. NeoForge's
-			// unfreeze clear-callback empties its blockstate→id map, and BlockCallbacks.onBake only re-adds blocks that
-			// onAdd saw during the window (none of vanilla's) — so without a snapshot to restore from, the map stays
-			// empty and the first clientbound block_update cannot encode ("Can't find id for Block{minecraft:lava}").
-			// NOT MinecraftForge's: its vanillaSnapshot LOCKS the vanilla wrappers, and every later register in this
-			// window then throws "Can not register to a locked registry" (gate-m1 RED).
-			invokeGameDataOn(cl, ForeignType.GAME_DATA.binary(Ecosystem.NEOFORGE), "vanillaSnapshot");
-			unfreeze(cl);
+			opened = openRegistrationWindow(cl);
 			// From here the registries are OPEN, and everything that closes them again lives in the finally below.
 			// It used to live inline at the end of this try, so anything that threw in between — a Class.forName for
 			// a carrier type that was renamed, NeoForgeRegistries failing to initialise, an Error escaping the
@@ -869,7 +864,7 @@ public final class KernelLifecycle {
 			// NOT MinecraftForge's GameData.postRegisterEvents, which the kernel called here for years and which
 			// NEVER ONCE RAN: its second instruction block is `new LinkedHashSet<>(GameData.vanillaRegistryOrder)`
 			// and that field is written only by GameData.vanillaSnapshot(), which the kernel deliberately does not
-			// call on this side (it LOCKS the vanilla wrappers — see the NeoForge-only snapshot above). So it threw
+			// call on this side (it LOCKS the vanilla wrappers — see openRegistrationWindow). So it threw
 			// NPE at instruction 36 on every boot and the warning it produced described the symptom. What it would
 			// have reached is the same dispatch loop the kernel already drives itself, plus the attribute events —
 			// so the attribute events are what is called, directly, the way NeoForge's tail already is.
@@ -928,7 +923,7 @@ public final class KernelLifecycle {
 		} finally {
 			// Only when the window was actually opened: before unfreeze there is nothing to put back, and freezing
 			// a registry the kernel never opened would close one the caller still owns.
-			if (closeWindow) closeRegistrationWindow(cl);
+			if (closeWindow) closeRegistrationWindow(cl, opened);
 			if (!side.isClient()) fabricFreezePoint(cl, FabricFreezePointInjector.TAIL_HOOK);
 		}
 	}
@@ -1020,6 +1015,42 @@ public final class KernelLifecycle {
 	}
 
 	/**
+	 * Opens the main registration window: every gate between a registration call and its registry, whoever closed it.
+	 *
+	 * <p>First the post-Bootstrap vanilla registry state is captured for NEOFORGE. NeoForge's unfreeze clear-callback
+	 * empties its blockstate→id map, and {@code BlockCallbacks.onBake} only re-adds blocks that {@code onAdd} saw
+	 * during the window (none of vanilla's) — so without a snapshot to restore from, the map stays empty and the first
+	 * clientbound {@code block_update} cannot encode ("Can't find id for Block{minecraft:lava}"). The kernel never
+	 * calls MinecraftForge's {@code vanillaSnapshot}: it LOCKS the vanilla wrappers.
+	 *
+	 * <p>Then {@code unfreezeData}, which clears the vanilla {@code frozen} flag and nothing else, and then the two
+	 * MinecraftForge gates {@link #reopenForgeRegistries} clears: a {@code NamespacedWrapper}'s {@code locked} flag
+	 * and a frozen {@code ForgeRegistry}. Both used to be open when this window opened, because nothing before it
+	 * closed them. A merged {@code Bootstrap.bootStrap()} that keeps BOTH ecosystems' edits to vanilla's last call
+	 * runs MinecraftForge's {@code GameData.vanillaSnapshot()} next to NeoForge's, and its {@code LOCK_VANILLA}
+	 * locks every vanilla wrapper before any mod is constructed. NeoForge's {@code RegisterEvent.register} and a
+	 * Fabric mod's {@code Registry.register} both write through those wrappers, so every one of them threw "Can not
+	 * register to a locked registry": NeoForge's own attributes never registered, and the dedicated server died in
+	 * {@code DefaultAttributes.<clinit>} on "Trying to access unbound value: neoforge:swim_speed". MinecraftForge's
+	 * own {@code RegisterEvent} goes to the {@code ForgeRegistry} and never noticed. Clearing what is found closed,
+	 * rather than skipping one known caller, keeps the window open whatever closed a gate before it.
+	 *
+	 * @return the gates found closed, for {@link #closeRegistrationWindow} to put back
+	 */
+	static ReopenedRegistries openRegistrationWindow(ClassLoader cl) {
+		invokeGameDataOn(cl, ForeignType.GAME_DATA.binary(Ecosystem.NEOFORGE), "vanillaSnapshot");
+		unfreeze(cl);
+		ReopenedRegistries opened = reopenForgeRegistries(cl);
+		if (opened.count() > 0) {
+			ForbricLog.info("[Forbric/Lifecycle] the registration window found %d MinecraftForge registry wrapper(s) "
+					+ "locked and %d ForgeRegistr(ies) frozen before it opened, and cleared them — NeoForge's "
+					+ "RegisterEvent and Fabric's Registry.register write through those wrappers; both go back "
+					+ "when the window closes", opened.lockedWrappers().size(), opened.frozenForgeRegistries().size());
+		}
+		return opened;
+	}
+
+	/**
 	 * Closes the registration window and redoes the bookkeeping the open window invalidated.
 	 *
 	 * <p>Each of these four is a failure the kernel has already paid for once, so they are named rather than
@@ -1029,15 +1060,24 @@ public final class KernelLifecycle {
 	 * {@code rebuildNeoForgeBlockStateIds} re-adds the blockstate ids the open window's clear callback dropped, and
 	 * {@code sortNeoCreativeTabs} puts window-registered tabs into the strip the creative screen actually reads.
 	 *
+	 * <p>Before the freeze it puts back the MinecraftForge gates {@link #openRegistrationWindow} found closed, by the
+	 * mechanism that opened them, as {@link #closeClientEntrypointWindow} does for its window.
+	 *
 	 * <p>Best-effort as a whole AND per step, because this runs in a finally: it must not replace the exception
 	 * that brought it here.
 	 */
-	private static void closeRegistrationWindow(ClassLoader cl) {
+	static void closeRegistrationWindow(ClassLoader cl, ReopenedRegistries opened) {
 		try {
 			linkBlockItems(cl);
 		} catch (Throwable t) {
 			ForbricLog.warn("[Forbric/Lifecycle] could not link block->item mappings while closing the registration "
 					+ "window", unwrap(t));
+		}
+		try {
+			recloseForgeRegistries(cl, opened);
+		} catch (Throwable t) {
+			ForbricLog.warn("[Forbric/Lifecycle] could not put back the MinecraftForge registry gates the window "
+					+ "cleared", unwrap(t));
 		}
 		try {
 			freeze(cl);
@@ -2317,7 +2357,7 @@ public final class KernelLifecycle {
 	}
 
 	/** What a reopened registration window has to put back when it closes. */
-	private record ReopenedRegistries(List<Object> lockedWrappers, List<Object> frozenForgeRegistries) {
+	record ReopenedRegistries(List<Object> lockedWrappers, List<Object> frozenForgeRegistries) {
 		static final ReopenedRegistries NONE = new ReopenedRegistries(List.of(), List.of());
 
 		int count() {
@@ -2333,16 +2373,20 @@ public final class KernelLifecycle {
 	 *
 	 * <ol>
 	 *   <li>vanilla {@code MappedRegistry.frozen} — cleared by {@code GameData.unfreezeData}</li>
-	 *   <li>{@code NamespacedWrapper.locked} — set by {@code GameData.postRegisterEvents} at the end of the main
-	 *       window. {@code ILockableRegistry} declares {@code lock()} and deliberately nothing to undo it, so the
-	 *       flag is cleared directly. Symptom while set: "Can not register to a locked registry."</li>
+	 *   <li>{@code NamespacedWrapper.locked} — set by {@code ForgeRegistry.freeze()}, so by every
+	 *       {@code GameData.freezeData}, and by {@code GameData.vanillaSnapshot()}'s {@code LOCK_VANILLA}, which
+	 *       leaves the {@code ForgeRegistry} itself unfrozen. {@code ILockableRegistry} declares {@code lock()} and
+	 *       deliberately nothing to undo it, so the flag is cleared directly. Symptom while set: "Can not register
+	 *       to a locked registry."</li>
 	 *   <li>{@code ForgeRegistry.isFrozen} on the backing registry in {@code RegistryManager.ACTIVE} — this one
 	 *       does have {@code unfreeze()}. Symptom while set: "… is being added too late."</li>
 	 * </ol>
 	 *
 	 * <p>All three are Forge's answer to "a Forge mod should use {@code DeferredRegister}, not register late". A
 	 * Fabric mod has no such contract — it calls {@code Registry.register} directly, and on Fabric that keeps
-	 * working right through client init — so a window the kernel opens for Fabric code has to open all three.
+	 * working right through client init — so a window the kernel opens for Fabric code has to open all three. So
+	 * does the main window ({@link #openRegistrationWindow}): NeoForge's {@code RegisterEvent.register} is a
+	 * {@code Registry.register} too.
 	 */
 	private static ReopenedRegistries reopenForgeRegistries(ClassLoader cl) {
 		List<Object> unlocked = new ArrayList<>();
