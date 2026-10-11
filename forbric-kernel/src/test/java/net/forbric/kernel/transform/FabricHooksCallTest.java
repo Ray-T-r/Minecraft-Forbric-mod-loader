@@ -175,8 +175,18 @@ class FabricHooksCallTest {
 
 		MethodNode main = method(out, "main");
 		List<AbstractInsnNode> code = real(main);
-		int window = indexOfCall(code, KERNEL_LIFECYCLE, "onServerModLoading");
-		assertTrue(window >= 0, "the merged Main.main must still carry the NeoForge trigger");
+		// The window is the first trigger the merged main makes, in whichever ecosystem's form: a base keeping both
+		// (MinecraftForge's load() in front of NeoForge's load(false)) redirects each, and the kernel runs its window
+		// once, at the first. No genuine loader call is left, and Fabric's marker follows the first, once.
+		int window = -1, markers = 0;
+		for (int i = 0; i < code.size(); i++) {
+			if (!(code.get(i) instanceof MethodInsnNode call)) continue;
+			if (window < 0 && call.owner.equals(KERNEL_LIFECYCLE) && call.name.startsWith("onServerModLoading")) window = i;
+			if (call.owner.equals(HOOKS) && call.name.equals("startServer")) markers++;
+			assertFalse(call.name.equals("load") && call.owner.endsWith("/ServerModLoader"), "a genuine loader call survived: " + call.owner);
+		}
+		assertTrue(window >= 0, "the merged Main.main must still carry a mod-loading trigger");
+		assertEquals(1, markers, "one marker, whatever the number of triggers");
 		MethodInsnNode marker = (MethodInsnNode) code.get(window + 3);
 		assertEquals(HOOKS + ".startServer" + HOOK_DESC, marker.owner + "." + marker.name + marker.desc);
 

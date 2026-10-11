@@ -111,7 +111,9 @@ public final class LifecycleHookInjector implements ClassTransformer {
 	 */
 	private record Trigger(String owner, String name, String desc, String hookName, int popSlots) {}
 
-	// Server triggers: NeoForge won the entry (load(Z)V); the Forge no-arg form is kept in case a base flips it.
+	// Server triggers: NeoForge's load(Z)V and MinecraftForge's no-arg load()V. A base may carry both (an edit-spliced
+	// merge keeps MinecraftForge's `if (!initSettings) load()` in front of NeoForge's): each is redirected, the kernel's
+	// window runs once (KernelLifecycle.openWindow) at whichever comes first, and the one marker follows the first.
 	// Same descriptor as the hook — keep the boolean on the stack, plain owner+name swap.
 	private static final Trigger[] SERVER_TRIGGERS = {
 			new Trigger(ForeignType.SERVER_MOD_LOADER.internal(Ecosystem.NEOFORGE), "load", "(Z)V", "onServerModLoading", 0),
