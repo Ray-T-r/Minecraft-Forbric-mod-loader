@@ -118,6 +118,10 @@ public final class PassiveSeeder {
 		// FMLEnvironment is a one-shot that the first guest mixin plugin's <clinit> would otherwise decide. Kept
 		// here so seedAll still means "every identity" on any path that skipped that block.
 		seedForgeFmlLoader(gameLoader, gameDir, side);
+		// The other half of what FMLLoader establishes before the game starts: the early-window provider every
+		// Forge-patched window call dereferences. Here and not pre-Mixin: nothing reads it until the game builds its
+		// window, and loaded here the handler is weavable like any other game class.
+		seedForgeImmediateWindow(gameLoader);
 		// NOTE: NeoForge baseline-registry registration is NOT done here — NeoForgeRegistriesSetup.<clinit> touches
 		// game registries and throws "Not bootstrapped" pre-Main. It runs post-Bootstrap via KernelLifecycle
 		// (the redirected ServerModLoader.load window). See KernelLifecycle.onServerModLoading.
@@ -1807,6 +1811,187 @@ public final class PassiveSeeder {
 		setStaticIfNull(fmlLoader, "launchHandlerName", name);
 		ForbricLog.info("[Forbric/Seed] traditional-Forge launch handler seeded (%s) — FluidType.initClient and "
 				+ "anything else asking getLaunchHandler() now gets an answer instead of null", name);
+	}
+
+	/** MinecraftForge's static front for the early window, which every Forge-patched caller of it goes through. */
+	static final String FORGE_IMMEDIATE_WINDOW_HANDLER = "net.minecraftforge.fml.loading.ImmediateWindowHandler";
+
+	/**
+	 * The launch target handed to {@code ImmediateWindowHandler.load}. FML reads exactly one thing from it — whether it
+	 * contains {@code "client"} — and only to decide whether it may open an early window. Forbric never opens one, so
+	 * the target is one FML's own test reads as "no window": its {@code DummyProvider}, without consulting
+	 * {@code fml.toml} or {@code ServiceLoader} (on the client those would look for a real provider, and switching the
+	 * config off instead would make FML save the player's {@code fml.toml}).
+	 */
+	static final String NO_EARLY_WINDOW_TARGET = "forbric_kernel";
+
+	/**
+	 * Gives MinecraftForge's {@code ImmediateWindowHandler} the provider genuine FML gives it whenever no early window
+	 * is shown: Forge's own {@code DummyProvider}, with that provider's vanilla fallbacks bound.
+	 *
+	 * <p>Genuine FML never lets the game see this handler empty: {@code FMLLoader} calls {@code load} before the game
+	 * starts and {@code acceptGameLayer} right before it launches, and every Forge-patched caller dereferences
+	 * {@code provider} without a null check. The kernel runs neither, so the field stayed null, and the first patched
+	 * caller to run took the client down: a merged {@code Window.<init>} that keeps MinecraftForge's
+	 * {@code if (!positionWindow(...))} guard around vanilla's window positioning died on an NPE inside
+	 * {@code Minecraft.<init>}, before a frame was drawn. The trigger is structural — the handler exists and its
+	 * provider is null — and the cure is Forge's own answer, not a stand-in: {@code positionWindow} then returns
+	 * false and vanilla positions the window, {@code updateFBSize} and {@code renderTick} do nothing, the window
+	 * hand-off creates the window the way vanilla does.
+	 *
+	 * <p>The fallbacks are bound by replaying the binding Forge's own {@code updateModuleReads} performs: it reads the
+	 * fallback class's static methods by name into the provider's {@code Method} fields. The one step of it the kernel
+	 * cannot take is the module lookup — it finds the fallback class through a module named in a module layer, and
+	 * the kernel's game loader has no module layer — so that step is answered by the game loader and everything else
+	 * (which fallback class, which name lands in which field) is read from the provider's own bytecode. A renamed field
+	 * therefore still binds, and a provider whose binding cannot be read says so instead of half-binding.
+	 *
+	 * <p>Checked by asking the seeded handler the question that crashed: {@code positionWindow} with no monitor must
+	 * answer false without touching the window. A seed that cannot answer it is reported at ERROR, because the next
+	 * caller to ask is the game constructing its window.
+	 */
+	static void seedForgeImmediateWindow(ClassLoader gameLoader) {
+		try {
+			Class<?> handler = Class.forName(FORGE_IMMEDIATE_WINDOW_HANDLER, false, gameLoader);
+			Field providerField = handler.getDeclaredField("provider");
+			providerField.setAccessible(true);
+			if (providerField.get(null) != null) {
+				ForbricLog.debug("[Forbric/Seed] MinecraftForge's ImmediateWindowHandler already has a provider — "
+						+ "leaving it");
+				return;
+			}
+			handler.getMethod("load", String.class, String[].class)
+					.invoke(null, NO_EARLY_WINDOW_TARGET, (Object) new String[0]);
+			Object provider = providerField.get(null);
+			if (provider == null) {
+				ForbricLog.error("[Forbric/Seed] MinecraftForge's ImmediateWindowHandler.load left its provider null — "
+						+ "every Forge-patched window call will throw");
+				return;
+			}
+			int bound = bindWindowFallbacks(gameLoader, provider.getClass());
+			java.util.function.IntConsumer ignore = value -> {
+			};
+			Object positioned = handler.getMethod("positionWindow", Optional.class,
+					java.util.function.IntConsumer.class, java.util.function.IntConsumer.class,
+					java.util.function.IntConsumer.class, java.util.function.IntConsumer.class)
+					.invoke(null, Optional.empty(), ignore, ignore, ignore, ignore);
+			if (Boolean.FALSE.equals(positioned)) {
+				ForbricLog.info("[Forbric/Seed] MinecraftForge's ImmediateWindowHandler given FML's own no-early-window "
+						+ "provider (%s, %d fallback(s) bound): positionWindow answers false, so vanilla positions the "
+						+ "window", providerName(provider), bound);
+			} else {
+				ForbricLog.error("[Forbric/Seed] MinecraftForge's ImmediateWindowHandler was given %s, but positionWindow "
+						+ "with no monitor answered %s rather than false — the game's window would be left unpositioned",
+						providerName(provider), positioned);
+			}
+		} catch (ClassNotFoundException absent) {
+			ForbricLog.debug("[Forbric/Seed] MinecraftForge's ImmediateWindowHandler not present — nothing to seed");
+		} catch (Throwable t) {
+			ForbricLog.error("[Forbric/Seed] could not give MinecraftForge's ImmediateWindowHandler a provider — the "
+					+ "first Forge-patched window call (Window.<init> on a merged base that keeps one) will throw",
+					unwrap(t));
+		}
+	}
+
+	private static String providerName(Object provider) {
+		try {
+			Method name = provider.getClass().getMethod("name");
+			name.setAccessible(true);
+			return String.valueOf(name.invoke(provider));
+		} catch (ReflectiveOperationException | RuntimeException unnamed) {
+			return provider.getClass().getName();
+		}
+	}
+
+	/**
+	 * Binds {@code providerClass}'s fallback {@code Method} fields the way its own module-reads hook does, and returns
+	 * how many it bound. Fields already set are left alone.
+	 */
+	static int bindWindowFallbacks(ClassLoader gameLoader, Class<?> providerClass) throws Exception {
+		String resource = providerClass.getName().replace('.', '/') + ".class";
+		byte[] bytes;
+		try (java.io.InputStream in = gameLoader.getResourceAsStream(resource)) {
+			if (in == null) throw new IllegalStateException("no bytes for " + resource);
+			bytes = in.readAllBytes();
+		}
+		WindowFallbackBinding binding = readWindowFallbackBinding(bytes);
+		if (binding.fallbackClass() == null || binding.fieldToMethod().isEmpty()) {
+			throw new IllegalStateException(providerClass.getName() + " binds no fallback the kernel can read (fallback="
+					+ binding.fallbackClass() + ", fields=" + binding.fieldToMethod() + ")");
+		}
+		Class<?> fallback = Class.forName(binding.fallbackClass(), false, gameLoader);
+		Map<String, Method> statics = new LinkedHashMap<>();
+		for (Method m : fallback.getMethods()) {
+			if (java.lang.reflect.Modifier.isStatic(m.getModifiers())) statics.putIfAbsent(m.getName(), m);
+		}
+		int bound = 0;
+		for (Map.Entry<String, String> one : binding.fieldToMethod().entrySet()) {
+			Method target = statics.get(one.getValue());
+			if (target == null) {
+				throw new IllegalStateException(binding.fallbackClass() + " has no static " + one.getValue()
+						+ " for " + providerClass.getName() + "." + one.getKey());
+			}
+			Field field = providerClass.getDeclaredField(one.getKey());
+			field.setAccessible(true);
+			if (field.get(null) == null) {
+				field.set(null, target);
+				bound++;
+			}
+		}
+		return bound;
+	}
+
+	/** Which class a provider's fallbacks come from, and which of its fields each fallback method lands in. */
+	record WindowFallbackBinding(String fallbackClass, Map<String, String> fieldToMethod) {
+	}
+
+	/**
+	 * Reads a provider's fallback binding out of its bytecode: the class it resolves with
+	 * {@code Class.forName(Module, String)}, and every {@code ldc name; Map.get; checkcast Method; putstatic field}
+	 * run on its own static {@code Method} fields.
+	 */
+	static WindowFallbackBinding readWindowFallbackBinding(byte[] providerBytes) {
+		org.objectweb.asm.tree.ClassNode node = new org.objectweb.asm.tree.ClassNode();
+		new org.objectweb.asm.ClassReader(providerBytes).accept(node, org.objectweb.asm.ClassReader.SKIP_FRAMES);
+		String fallback = null;
+		Map<String, String> fields = new LinkedHashMap<>();
+		for (org.objectweb.asm.tree.MethodNode method : node.methods) {
+			for (org.objectweb.asm.tree.AbstractInsnNode insn : method.instructions) {
+				if (!(insn instanceof org.objectweb.asm.tree.MethodInsnNode call)) continue;
+				String name = stringLoadedBefore(insn);
+				if (name == null) continue;
+				if (call.getOpcode() == org.objectweb.asm.Opcodes.INVOKESTATIC && "java/lang/Class".equals(call.owner)
+						&& "forName".equals(call.name)
+						&& "(Ljava/lang/Module;Ljava/lang/String;)Ljava/lang/Class;".equals(call.desc)) {
+					fallback = name;
+				} else if ("java/util/Map".equals(call.owner) && "get".equals(call.name)) {
+					org.objectweb.asm.tree.AbstractInsnNode cast = realAfter(insn);
+					org.objectweb.asm.tree.AbstractInsnNode store = realAfter(cast);
+					if (cast instanceof org.objectweb.asm.tree.TypeInsnNode type
+							&& type.getOpcode() == org.objectweb.asm.Opcodes.CHECKCAST
+							&& "java/lang/reflect/Method".equals(type.desc)
+							&& store instanceof org.objectweb.asm.tree.FieldInsnNode put
+							&& put.getOpcode() == org.objectweb.asm.Opcodes.PUTSTATIC && node.name.equals(put.owner)
+							&& "Ljava/lang/reflect/Method;".equals(put.desc)) {
+						fields.put(put.name, name);
+					}
+				}
+			}
+		}
+		return new WindowFallbackBinding(fallback, fields);
+	}
+
+	private static String stringLoadedBefore(org.objectweb.asm.tree.AbstractInsnNode insn) {
+		org.objectweb.asm.tree.AbstractInsnNode before = insn.getPrevious();
+		while (before != null && before.getOpcode() < 0) before = before.getPrevious();
+		return before instanceof org.objectweb.asm.tree.LdcInsnNode ldc && ldc.cst instanceof String text ? text : null;
+	}
+
+	private static org.objectweb.asm.tree.AbstractInsnNode realAfter(org.objectweb.asm.tree.AbstractInsnNode insn) {
+		if (insn == null) return null;
+		org.objectweb.asm.tree.AbstractInsnNode after = insn.getNext();
+		while (after != null && after.getOpcode() < 0) after = after.getNext();
+		return after;
 	}
 
 	private static void setStaticIfNull(Class<?> owner, String field, Object value) throws Exception {
