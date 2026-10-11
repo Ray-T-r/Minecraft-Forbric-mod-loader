@@ -106,36 +106,39 @@ public final class LostHookAttribution {
 
 		int judged = 0, noHookFound = 0, unobserved = 0;
 		List<String> candidates = new ArrayList<>(), trades = new ArrayList<>();
-		List<Conflict> conflicts = conflicts(Path.of(args[5]));
+		Report report = report(Path.of(args[5]));
+		List<Conflict> conflicts = report.conflicts();
+		Attribution attribution = new Attribution(eventsOfHook, wanted, effective, effectiveCounts, candidates, trades);
 		for (Conflict c : conflicts) {
 			MethodNode f = method(forge.get(c.owner()), c.method());
 			MethodNode n = method(neo.get(c.owner()), c.method());
 			MethodNode m = method(merged.get(c.owner()), c.method());
 			if (f == null || n == null || m == null) { unobserved++; continue; }
 			judged++;
-			MethodNode losing = c.lostFamily().equals("forge") ? f : n;
-			MethodNode retained = c.lostFamily().equals("forge") ? n : f;
-			Set<String> lost = new TreeSet<>(hookCalls(losing));
-			lost.removeAll(hookCalls(m));
-			Set<String> kept = new TreeSet<>(hookCalls(retained));
-			kept.retainAll(hookCalls(m));
-			if (lost.isEmpty()) { noHookFound++; continue; }
-			boolean gainWanted = anyWanted(lost, eventsOfHook, wanted);
-			boolean giveUpWanted = anyWanted(kept, eventsOfHook, wanted);
-			String row = c.owner() + "#" + c.method() + " lost-family=" + c.lostFamily()
-					+ (c.fieldInitKept() ? " kind=FIELD_INIT_KEPT" : "") + " RAW-LOST " + lost + " RETAINED " + kept;
-			System.out.println("[attribution] " + row);
-			if (effective != null) for (String hook : lost) {
-				var state = effective.state(c.owner() + "#" + c.method(), hook);
-				effectiveCounts.merge(state, 1, Integer::sum);
-				System.out.println("[effective] " + c.owner() + "#" + c.method() + " hook=" + hook + " state=" + state);
-			}
-			if (gainWanted && !giveUpWanted) candidates.add(row);
-			else if (gainWanted) trades.add(row);
+			if (!attribution.attribute(c.owner() + "#" + c.method(), c.lostFamily(), c.fieldInitKept() ? " kind=FIELD_INIT_KEPT" : "",
+					c.lostFamily().equals("forge") ? f : n, c.lostFamily().equals("forge") ? n : f, m)) noHookFound++;
 		}
 		System.out.println("[attribution] conflicts=" + conflicts.size() + " judged=" + judged
 				+ " no-modelled-direct-hook=" + noHookFound + " unobserved=" + unobserved
 				+ " field-init-kept=" + conflicts.stream().filter(Conflict::fieldInitKept).count());
+		// A method the edit splice took is no hook-lost row, yet a run of the other side it reports as competing or
+		// refused is a hook that body still lacks. The report names which runs; the bodies say which family's hook.
+		// The base family's own calls are all kept (the splice only adds), so judging both families is exact.
+		int residualJudged = 0, residualNoHook = 0, residualUnobserved = 0;
+		List<Splice> residuals = report.splices().stream().filter(Splice::residual).toList();
+		for (Splice s : residuals) {
+			MethodNode f = method(forge.get(s.owner()), s.method());
+			MethodNode n = method(neo.get(s.owner()), s.method());
+			MethodNode m = method(merged.get(s.owner()), s.method());
+			if (f == null || n == null || m == null) { residualUnobserved++; continue; }
+			residualJudged++;
+			boolean named = attribution.attribute(s.owner() + "#" + s.method(), "forge", " kind=SPLICE_RESIDUAL", f, n, m);
+			named |= attribution.attribute(s.owner() + "#" + s.method(), "neo", " kind=SPLICE_RESIDUAL", n, f, m);
+			if (!named) residualNoHook++;
+		}
+		System.out.println("[attribution] spliced-residual=" + residuals.size() + " judged=" + residualJudged
+				+ " no-modelled-direct-hook=" + residualNoHook + " unobserved=" + residualUnobserved
+				+ " (methods the edit splice took with a run it reports as competing or refused)");
 		System.out.println("[attribution] scope: " + HOOK_CLASSES.length + " hook facades; direct calls and event"
 				+ " construction only; event type references are potential consumers, not proof of subscription");
 		if (effective == null) System.out.println("[attribution] runtime restoration=NOT_ASSESSED; supply actual defined-class evidence"
@@ -153,13 +156,42 @@ public final class LostHookAttribution {
 		for (String row : candidates) System.out.println("    + " + row);
 		System.out.println("[attribution] TRADES (both event types referenced): " + trades.size());
 		for (String row : trades) System.out.println("    ~ " + row);
-		printPlatformCensus(forge, neo, merged, conflicts, effective);
+		printPlatformCensus(forge, neo, merged, conflicts, report.splices(), effective);
+	}
+
+	/** One method's modelled hooks: which the losing family's body calls and the merged body does not. */
+	private record Attribution(Map<String, Set<String>> eventsOfHook, Set<String> wanted, EffectiveHookEvidence effective,
+			Map<EffectiveHookEvidence.State, Integer> effectiveCounts, List<String> candidates, List<String> trades) {
+		/** Prints the row and returns true when the losing body has a modelled hook the merged body lacks. */
+		boolean attribute(String caller, String lostFamily, String kind, MethodNode losing, MethodNode retained, MethodNode merged) {
+			Set<String> lost = new TreeSet<>(hookCalls(losing));
+			lost.removeAll(hookCalls(merged));
+			Set<String> kept = new TreeSet<>(hookCalls(retained));
+			kept.retainAll(hookCalls(merged));
+			if (lost.isEmpty()) return false;
+			boolean gainWanted = anyWanted(lost, eventsOfHook, wanted);
+			boolean giveUpWanted = anyWanted(kept, eventsOfHook, wanted);
+			String row = caller + " lost-family=" + lostFamily + kind + " RAW-LOST " + lost + " RETAINED " + kept;
+			System.out.println("[attribution] " + row);
+			if (effective != null) for (String hook : lost) {
+				var state = effective.state(caller, hook);
+				effectiveCounts.merge(state, 1, Integer::sum);
+				System.out.println("[effective] " + caller + " hook=" + hook + " state=" + state);
+			}
+			if (gainWanted && !giveUpWanted) candidates.add(row);
+			else if (gainWanted) trades.add(row);
+			return true;
+		}
 	}
 
 	/** Raw, same-caller bytecode coverage; none of these states asserts runtime event behavior. */
 	enum RawCallState { RAW_RETAINED, RAW_PARTIAL_LOSS, RAW_LOST, RAW_INVOCATION_CHANGED, MERGED_CALLER_MISSING }
 
-	record PlatformCall(String caller, String symbol, boolean modelledFacade, boolean listedConflict,
+	/**
+	 * {@code spliceResidual}: not a hook-lost row, but a method the edit splice took while reporting one of the
+	 * other side's runs as competing or refused -- the report lists that loss, in its edit-splice section.
+	 */
+	record PlatformCall(String caller, String symbol, boolean modelledFacade, boolean listedConflict, boolean spliceResidual,
 			RawCallState state, int originalOccurrences, int mergedOccurrences,
 			Map<String, Integer> originalForms, Map<String, Integer> mergedForms) {
 		int retainedOccurrences() {
@@ -169,22 +201,35 @@ public final class LostHookAttribution {
 		int lostOccurrences() {
 			return state == RawCallState.MERGED_CALLER_MISSING ? 0 : originalOccurrences - retainedOccurrences();
 		}
+
+		/** How the report lists this caller: a hook-lost row, a spliced method with a lost run, or not at all. */
+		String membership() {
+			return listedConflict ? "LISTED" : spliceResidual ? "SPLICE_RESIDUAL" : "UNLISTED";
+		}
 	}
 
-	record PlatformCensus(int classes, int methods, int callers, int listedConflictCallers,
+	record PlatformCensus(int classes, int methods, int callers, int listedConflictCallers, int spliceResidualCallers,
 			int missingMergedMethods, int missingMergedCallers, List<PlatformCall> calls) { }
+
+	/** The census over the hook-lost rows alone, for a report without an edit-splice section. */
+	static PlatformCensus platformCensus(Map<String, ClassNode> source, Map<String, ClassNode> merged,
+			List<Conflict> conflicts) {
+		return platformCensus(source, merged, conflicts, List.of());
+	}
 
 	/**
 	 * Full denominator for direct invocation instructions in the supplied patched JAR, including callers
 	 * absent from the conflict report. Symbols are owner + name + descriptor, not names or event guesses.
 	 * Repeated calls and opcode/itf are counted: overlap is a multiset comparison inside an exact matching caller,
 	 * not a claim that the same control-flow site survived. Missing callers are unobserved, not raw losses.
+	 * Membership only labels a caller; every caller is scanned the same way whatever the report says about it.
 	 */
 	static PlatformCensus platformCensus(Map<String, ClassNode> source, Map<String, ClassNode> merged,
-			List<Conflict> conflicts) {
-		Set<String> listed = new TreeSet<>();
+			List<Conflict> conflicts, List<Splice> splices) {
+		Set<String> listed = new TreeSet<>(), residual = new TreeSet<>();
 		for (Conflict conflict : conflicts) listed.add(conflict.owner() + "#" + conflict.method());
-		int methods = 0, callers = 0, listedCallers = 0, missingMethods = 0, missingCallers = 0;
+		for (Splice splice : splices) if (splice.residual()) residual.add(splice.owner() + "#" + splice.method());
+		int methods = 0, callers = 0, listedCallers = 0, residualCallers = 0, missingMethods = 0, missingCallers = 0;
 		List<PlatformCall> rows = new ArrayList<>();
 		for (ClassNode cn : new TreeMap<>(source).values()) {
 			for (MethodNode original : cn.methods.stream().sorted(Comparator.comparing(m -> m.name + m.desc)).toList()) {
@@ -196,7 +241,9 @@ public final class LostHookAttribution {
 				if (originalCalls.isEmpty()) continue;
 				callers++;
 				boolean listedConflict = listed.contains(caller);
+				boolean spliceResidual = !listedConflict && residual.contains(caller);
 				if (listedConflict) listedCallers++;
+				if (spliceResidual) residualCallers++;
 				if (counterpart == null) missingCallers++;
 				Map<String, Map<String, Integer>> mergedCalls = counterpart == null ? Map.of() : platformCallForms(counterpart);
 				for (var call : originalCalls.entrySet()) {
@@ -208,14 +255,14 @@ public final class LostHookAttribution {
 							: retainedCount == 0 ? RawCallState.RAW_INVOCATION_CHANGED
 							: retainedCount < originalCount ? RawCallState.RAW_PARTIAL_LOSS : RawCallState.RAW_RETAINED;
 					String owner = call.getKey().substring(0, call.getKey().indexOf('#'));
-					rows.add(new PlatformCall(caller, call.getKey(), isModelledFacade(owner), listedConflict,
+					rows.add(new PlatformCall(caller, call.getKey(), isModelledFacade(owner), listedConflict, spliceResidual,
 							state, originalCount, counterpart == null ? -1 : mergedCount,
 							Collections.unmodifiableMap(new TreeMap<>(originalForms)),
 							Collections.unmodifiableMap(new TreeMap<>(mergedForms))));
 				}
 			}
 		}
-		return new PlatformCensus(source.size(), methods, callers, listedCallers, missingMethods, missingCallers,
+		return new PlatformCensus(source.size(), methods, callers, listedCallers, residualCallers, missingMethods, missingCallers,
 				List.copyOf(rows));
 	}
 
@@ -282,12 +329,14 @@ public final class LostHookAttribution {
 	}
 
 	private static void printPlatformCensus(Map<String, ClassNode> forge, Map<String, ClassNode> neo,
-			Map<String, ClassNode> merged, List<Conflict> conflicts, EffectiveHookEvidence effective) {
+			Map<String, ClassNode> merged, List<Conflict> conflicts, List<Splice> splices, EffectiveHookEvidence effective) {
 		System.out.println("[platform-census] scope: all loaded classes and declared methods in each patched JAR;"
 				+ " every direct MethodInsnNode targeting net/minecraftforge/ or net/neoforged/; both namespaces"
 				+ " scanned on both sides; caller and symbol identities are owner#name+descriptor");
-		System.out.println("[platform-census] conflict-membership: every '... hook lost)' row of the report, plain and"
-				+ " field-init-kept (an unrecognised form stops the run); UNLISTED callers are scanned equally; MODELLED_FACADE is the existing six-owner model;"
+		System.out.println("[platform-census] conflict-membership: LISTED is every '... hook lost)' row of the report, plain and"
+				+ " field-init-kept (an unrecognised form stops the run); SPLICE_RESIDUAL is a method the edit splice took while"
+				+ " reporting a run of the other side as competing or refused (an unrecognised edit-splice row stops the run);"
+				+ " UNLISTED callers are scanned equally; MODELLED_FACADE is the existing six-owner model;"
 				+ " OUTSIDE_EVENT_MODEL symbols are not classified as event hooks");
 		System.out.println("[platform-census] comparison: raw symbol+opcode+itf occurrence-count overlap in the same caller;"
 				+ " not call-site/control-flow equivalence; MERGED_CALLER_MISSING is unobserved, excluded from raw"
@@ -295,28 +344,26 @@ public final class LostHookAttribution {
 				+ " Invokedynamic/handle targets, fields and reflection are NOT_ASSESSED; runtime rewriting, kernel"
 				+ " helpers and kernel event-bus forwards are classified per raw loss (effective=) only from supplied"
 				+ " defined-class evidence; raw absence is not proof of a behavior defect");
-		printPlatformCensus("forge", platformCensus(forge, merged, conflicts), effective);
-		printPlatformCensus("neo", platformCensus(neo, merged, conflicts), effective);
+		printPlatformCensus("forge", platformCensus(forge, merged, conflicts, splices), effective);
+		printPlatformCensus("neo", platformCensus(neo, merged, conflicts, splices), effective);
 	}
 
 	private static void printPlatformCensus(String side, PlatformCensus census, EffectiveHookEvidence effective) {
 		Map<PlatformCall, EffectiveHookEvidence.State> states = effective == null ? Map.of() : effectiveStates(census, effective);
 		Set<String> symbols = new TreeSet<>(), modelled = new TreeSet<>();
 		Map<String, long[]> groups = new TreeMap<>();
-		long occurrences = 0, retained = 0, lost = 0, unobserved = 0;
+		long occurrences = 0, retained = 0;
 		for (PlatformCall call : census.calls()) {
 			symbols.add(call.symbol());
 			if (call.modelledFacade()) modelled.add(call.symbol());
 			String scope = call.modelledFacade() ? "MODELLED_FACADE" : "OUTSIDE_EVENT_MODEL";
-			String membership = call.listedConflict() ? "LISTED" : "UNLISTED";
+			String membership = call.membership();
 			long[] counts = groups.computeIfAbsent(scope + " conflict=" + membership + " state=" + call.state(),
 					ignored -> new long[2]);
 			counts[0]++;
 			counts[1] += call.originalOccurrences();
 			occurrences += call.originalOccurrences();
 			retained += call.retainedOccurrences();
-			lost += call.lostOccurrences();
-			if (call.state() == RawCallState.MERGED_CALLER_MISSING) unobserved += call.originalOccurrences();
 			System.out.println("[platform-census] call side=" + side + " caller=" + call.caller() + " symbol=" + call.symbol()
 					+ " scope=" + scope + " conflict=" + membership + " state=" + call.state()
 					+ " original-occurrences=" + call.originalOccurrences() + " merged-occurrences="
@@ -329,13 +376,15 @@ public final class LostHookAttribution {
 		System.out.println("[platform-census] denominator side=" + side + " classes=" + census.classes()
 				+ " methods=" + census.methods() + " methods-without-platform-calls=" + (census.methods() - census.callers())
 				+ " platform-callers=" + census.callers() + " listed-conflict-callers=" + census.listedConflictCallers()
-				+ " unlisted-callers=" + (census.callers() - census.listedConflictCallers())
+				+ " splice-residual-callers=" + census.spliceResidualCallers()
+				+ " unlisted-callers=" + (census.callers() - census.listedConflictCallers() - census.spliceResidualCallers())
 				+ " merged-methods-missing=" + census.missingMergedMethods()
 				+ " merged-platform-callers-missing=" + census.missingMergedCallers());
 		System.out.println("[platform-census] totals side=" + side + " symbols=" + symbols.size()
 				+ " modelled-facade-symbols=" + modelled.size() + " outside-event-model-symbols=" + (symbols.size() - modelled.size())
 				+ " caller-symbol-pairs=" + census.calls().size() + " original-occurrences=" + occurrences
-				+ " retained-overlap=" + retained + " raw-lost-occurrences=" + lost + " unobserved-occurrences=" + unobserved);
+				+ " retained-overlap=" + retained + " raw-lost-occurrences=" + rawLostOccurrences(census)
+				+ " unobserved-occurrences=" + unobservedOccurrences(census));
 		for (var group : groups.entrySet()) System.out.println("[platform-census] coverage side=" + side + " scope="
 				+ group.getKey() + " caller-symbol-pairs=" + group.getValue()[0] + " original-occurrences=" + group.getValue()[1]);
 		long rawLossPairs = census.calls().stream().filter(call -> rawLoss(call.state())).count();
@@ -348,6 +397,23 @@ public final class LostHookAttribution {
 		for (var state : EffectiveHookEvidence.State.values())
 			totals.append(' ').append(state).append('=').append(states.values().stream().filter(state::equals).count());
 		System.out.println(totals);
+	}
+
+	/**
+	 * Every occurrence of a platform call the patched body makes that the merged body of the same caller does not:
+	 * the number this census prints as raw-lost-occurrences, and the one a ratchet on the merge bounds.
+	 */
+	static long rawLostOccurrences(PlatformCensus census) {
+		return census.calls().stream().mapToLong(PlatformCall::lostOccurrences).sum();
+	}
+
+	/**
+	 * Occurrences in callers the merged jar does not have. They are not counted as lost, so a bound on losses alone
+	 * would let a merge that drops a whole method move its calls out of the count; a ratchet bounds both.
+	 */
+	static long unobservedOccurrences(PlatformCensus census) {
+		return census.calls().stream().filter(call -> call.state() == RawCallState.MERGED_CALLER_MISSING)
+				.mapToLong(PlatformCall::originalOccurrences).sum();
 	}
 
 	private static boolean anyWanted(Set<String> hooks, Map<String, Set<String>> eventsOfHook, Set<String> wanted) {
@@ -477,9 +543,74 @@ public final class LostHookAttribution {
 	private static final Pattern CONFLICT_ROW = Pattern.compile(
 			"^([^\\s#]+)#(\\S+) \\((?:kept (forge|neo) body to preserve base-added field init; )?(forge|neo) hook lost\\)$");
 
+	/** The hook-lost rows of the report; the edit-splice section is read, validated, and never counted as a row. */
 	static List<Conflict> conflicts(Path report) throws IOException {
-		List<Conflict> out = new ArrayList<>();
+		return report(report).conflicts();
+	}
+
+	/** The heading MergedBaseBuilder writes above the per-method edit-splice decisions. */
+	static final String SPLICE_SECTION = "=== edit splice:";
+
+	/**
+	 * One run of the other side, as the edit-splice section reports it: {@code +} carried into the kept body,
+	 * {@code =} already there ({@code same-edit}) or competing with the base's own edit of the same vanilla lines,
+	 * {@code x} refused with a reason.
+	 */
+	record SpliceRun(char mark, String kind, int firstLine, int lastLine, String detail) {
+		/** A run the kept body does not have: the base's competing edit stood, or the run could not be placed. */
+		boolean lost() {
+			return mark == 'x' || (mark == '=' && !kind.equals("same-edit"));
+		}
+	}
+
+	/** One method's edit-splice entry: whether the splice took it, why not, and what became of each run. */
+	record Splice(String owner, String method, boolean spliced, String reason, List<SpliceRun> runs) {
+		/**
+		 * Taken, yet a run of the other side is reported lost. Such a method is no hook-lost row -- the merge kept
+		 * both sides' edits -- but it still lacks the part of the other side's edit that run was.
+		 */
+		boolean residual() {
+			return spliced && runs.stream().anyMatch(SpliceRun::lost);
+		}
+	}
+
+	record Report(List<Conflict> conflicts, List<Splice> splices) { }
+
+	private static final Pattern SPLICE_HEADER = Pattern.compile("^([^\\s#]+)#(\\S+) (SPLICED|NOT SPLICED \\((.*)\\))$");
+	private static final Pattern SPLICE_RUN = Pattern.compile("^    ([+=x]) (\\S+) L(-?\\d+)-(-?\\d+)(?: (.*))?$");
+
+	/**
+	 * Both parts of the report a census reads: every hook-lost row, and the edit-splice section. Inside that section
+	 * every line is a method entry or one of its runs; a line of neither form stops the run, the same way an
+	 * unrecognised hook-lost row does, because a decision the parser cannot read is one the census would silently
+	 * misfile. Nothing in the section is ever taken for a hook-lost row, whatever its text ends with.
+	 */
+	static Report report(Path report) throws IOException {
+		List<Conflict> conflicts = new ArrayList<>();
+		List<Splice> splices = new ArrayList<>();
+		SpliceEntry entry = null;
+		boolean inSplice = false;
 		for (String line : Files.readAllLines(report, StandardCharsets.UTF_8)) {
+			if (line.startsWith("===")) {
+				if (entry != null) splices.add(entry.done());
+				entry = null;
+				inSplice = line.startsWith(SPLICE_SECTION);
+				continue;
+			}
+			if (inSplice) {
+				if (line.isBlank()) continue;
+				Matcher header = SPLICE_HEADER.matcher(line), run = SPLICE_RUN.matcher(line);
+				if (header.matches()) {
+					if (entry != null) splices.add(entry.done());
+					entry = new SpliceEntry(header.group(1), header.group(2), header.group(3).equals("SPLICED"), header.group(4));
+				} else if (run.matches() && entry != null) {
+					entry.runs.add(new SpliceRun(run.group(1).charAt(0), run.group(2), Integer.parseInt(run.group(3)),
+							Integer.parseInt(run.group(4)), run.group(5) == null ? "" : run.group(5)));
+				} else {
+					throw new IOException("unrecognised edit-splice row in " + report + ": " + line);
+				}
+				continue;
+			}
 			if (!line.trim().endsWith("hook lost)")) continue;
 			// A row the parser does not understand is a row the denominator silently loses, so it stops the run:
 			// the next form MergedBaseBuilder learns to write has to be taught here, not skipped here.
@@ -487,12 +618,24 @@ public final class LostHookAttribution {
 			if (!row.matches()) throw new IOException("unrecognised hook-lost row in " + report + ": " + line);
 			String kept = row.group(3), lost = row.group(4);
 			if (kept != null && kept.equals(lost)) throw new IOException("row keeps and loses the same side: " + line);
-			out.add(new Conflict(row.group(1), row.group(2), lost, kept != null));
+			conflicts.add(new Conflict(row.group(1), row.group(2), lost, kept != null));
 		}
-		return out;
+		if (entry != null) splices.add(entry.done());
+		return new Report(List.copyOf(conflicts), List.copyOf(splices));
 	}
 
-	private static Map<String, ClassNode> load(String jar, String label) throws IOException {
+	/** An edit-splice entry while its run lines are still being read. */
+	private record SpliceEntry(String owner, String method, boolean spliced, String reason, List<SpliceRun> runs) {
+		SpliceEntry(String owner, String method, boolean spliced, String reason) {
+			this(owner, method, spliced, reason, new ArrayList<>());
+		}
+
+		Splice done() {
+			return new Splice(owner, method, spliced, reason, List.copyOf(runs));
+		}
+	}
+
+	static Map<String, ClassNode> load(String jar, String label) throws IOException {
 		Map<String, ClassNode> out = new LinkedHashMap<>();
 		try (ZipFile zf = new ZipFile(jar)) {
 			var entries = zf.entries();
