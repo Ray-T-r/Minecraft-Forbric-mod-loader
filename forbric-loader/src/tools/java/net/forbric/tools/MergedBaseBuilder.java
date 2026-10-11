@@ -83,7 +83,8 @@ import org.objectweb.asm.tree.TypeInsnNode;
 public final class MergedBaseBuilder {
 	public static void main(String[] args) throws IOException {
 		if (args.length < 4) {
-			System.err.println("usage: MergedBaseBuilder <vanilla> <forge-patched> <neo-patched> <out.jar> [report.txt]");
+			System.err.println("usage: MergedBaseBuilder <vanilla> <forge-patched> <neo-patched> <out.jar> [report.txt]"
+					+ " [forge-runtime] [neo-runtime] [libraries] [forge-userdev] [neo-userdev]");
 			System.exit(2);
 		}
 		Path vanillaJar = Path.of(args[0]);
@@ -97,7 +98,18 @@ public final class MergedBaseBuilder {
 		Path forgeRuntimeJar = args.length > 5 ? Path.of(args[5]) : null;
 		Path neoRuntimeJar = args.length > 6 ? Path.of(args[6]) : null;
 
-		new MergedBaseBuilder().run(vanillaJar, forgeJar, neoJar, outJar, report, forgeRuntimeJar, neoRuntimeJar, args.length > 7 ? Path.of(args[7]) : null);
+		// The two userdev artifacts carry each ecosystem's own source patches: they say which instructions of a
+		// patched method are that ecosystem's edit, so a method both patched keeps both edits (EditSplicer).
+		MergedBaseBuilder builder = new MergedBaseBuilder();
+		if (args.length > 9 && !"off".equals(System.getProperty("forbric.editSplice"))) {
+			builder.forgeProvenance = PatchLineProvenance.fromUserdev(Path.of(args[8]));
+			builder.neoProvenance = PatchLineProvenance.fromUserdev(Path.of(args[9]));
+			System.out.println("[merge] edit splice: forge patches=" + builder.forgeProvenance.patchedFiles()
+					+ " neo patches=" + builder.neoProvenance.patchedFiles());
+		} else {
+			System.out.println("[merge] edit splice: OFF (" + (args.length > 9 ? "-Dforbric.editSplice=off" : "no userdev patches supplied") + ")");
+		}
+		builder.run(vanillaJar, forgeJar, neoJar, outJar, report, forgeRuntimeJar, neoRuntimeJar, args.length > 7 ? Path.of(args[7]) : null);
 	}
 
 	private final List<String> conflicts = new ArrayList<>();
@@ -110,6 +122,12 @@ public final class MergedBaseBuilder {
 	private final Set<String> reviewedRestorations;
 	/** Built once the input jars are read: hook owners resolve against both patched games and both runtimes. */
 	private AdditiveMethodMerger.Context hookContext;
+	/** Each ecosystem's own patch record; null when no userdev was supplied, which turns edit splicing off. */
+	PatchLineProvenance forgeProvenance, neoProvenance;
+	private EditSplicer splicer;
+	private final List<String> spliceDecisions = new ArrayList<>();
+	private final Map<String, Integer> spliceRefusals = new TreeMap<>();
+	private int methodsSpliced, runsSpliced, runsConflicting, runsRefused, runsSameEdit;
 
 	public MergedBaseBuilder() {
 		this(AdditiveMethodMerger.REVIEWED_RESTORATIONS);
@@ -208,6 +226,7 @@ public final class MergedBaseBuilder {
 		// A restored hook call has to link. Its owner lives in a runtime jar (ForgeEventFactory, EventHooks) or,
 		// for the few classes Forge bakes into its patched game, in that jar; without them nothing is restored.
 		hookContext = AdditiveMethodMerger.context(List.of(forgeRuntime, neoRuntime, forge, neo), reviewedRestorations);
+		if (forgeProvenance != null && neoProvenance != null) splicer = new EditSplicer(declarationGraph);
 
 		// Non-class resources of the merged jar: take the union, Neo first (its patched game is the base),
 		// then Forge's, then vanilla's — first writer wins so a class's own jar's resources are preferred.
@@ -380,6 +399,9 @@ public final class MergedBaseBuilder {
 				ps.println();
 				ps.println("=== restricted entry-hook merges (declined methods retain the existing arbitration) ===");
 				for (String decision : additiveDecisions) ps.println(decision);
+				ps.println();
+				ps.println("=== edit splice: both ecosystems' edits kept in one body (per run; lines are the other side's patched source lines) ===");
+				for (String decision : spliceDecisions) ps.println(decision);
 			}
 			System.out.println("[merge] conflict report -> " + report);
 		}
@@ -1000,7 +1022,14 @@ public final class MergedBaseBuilder {
 
 			boolean otherHook = methodPatched(otherN, om, vm, otherPkg);
 			boolean baseHook = methodPatched(baseN, bm, vm, basePkg);
-			if (otherHook && !baseHook && writesBaseExclusiveFieldOtherDrops(name, bm, om, baseExclusiveAddedFields)) {
+			boolean keepsBaseFieldInit = otherHook && !baseHook && writesBaseExclusiveFieldOtherDrops(name, bm, om, baseExclusiveAddedFields);
+			if ((keepsBaseFieldInit || (otherHook && baseHook)) && splicer != null) {
+				// Both edits, one body. Deferred until every other-side method is in the merged class, because a
+				// carried run may name one of them (a lambda, a helper the other side added).
+				pendingSplices.add(new PendingSplice(key, bm, om, vm, keepsBaseFieldInit));
+				continue;
+			}
+			if (keepsBaseFieldInit) {
 				// The other side hooked this method (usually <init>) and base didn't — normally we'd take the
 				// other's body. But base's body is the ONLY one that initializes a base-exclusive added field
 				// (the other side doesn't know the field exists), so replacing would leave it null. Keep base's
@@ -1015,25 +1044,7 @@ public final class MergedBaseBuilder {
 				splicedMethods++;
 				recordAnonymousOverrides(name, om, otherPkg);
 			} else if (otherHook && baseHook) {
-				MethodNode tail = TailHookComposition.merge(baseN, vm, bm, om, basePkg, otherPkg, declarationGraph);
-				if (tail != null) {
-					replaceMethod(baseN, key, tail, baseMethods); additiveMethodsMerged++;
-					additiveDecisions.add(name + "#" + key + " ACCEPTED native append-only tail hook; both ecosystem calls retained");
-					continue;
-				}
-				AdditiveMethodMerger.Result addition = AdditiveMethodMerger.merge(name, vm, bm, om, basePkg, otherPkg, hookContext);
-				additiveDecisions.add(name + "#" + key + (addition.accepted() ? " ACCEPTED " : " DECLINED ")
-						+ addition.reason());
-				if (addition.accepted()) {
-					replaceMethod(baseN, key, addition.method(), baseMethods);
-					additiveMethodsMerged++;
-				} else {
-					int colon = addition.reason().indexOf(':');
-					additiveRefusals.merge(colon < 0 ? addition.reason() : addition.reason().substring(0, colon), 1, Integer::sum);
-					// A refusal deliberately preserves the previous choice, including its known limitations.
-					conflictMethods++;
-					conflicts.add(name + "#" + om.name + om.desc + (baseIsForge ? " (neo hook lost)" : " (forge hook lost)"));
-				}
+				if (arbitrateBothHooked(name, key, baseN, baseMethods, vm, bm, om, basePkg, otherPkg, baseIsForge)) continue;
 			}
 			// else (neither hooked): keep the base's body — semantically vanilla on both sides, nothing lost.
 
@@ -1053,6 +1064,39 @@ public final class MergedBaseBuilder {
 			}
 		}
 
+		Map<String, MethodNode> otherMethods = methodMap(parse(baseIsForge ? neu : frg));
+		String source = PatchLineProvenance.sourcePath(name, baseN.sourceFile);
+		for (PendingSplice p : pendingSplices) {
+			EditSplicer.Result r = splicer.splice(new EditSplicer.Input(baseN, p.base(), p.other(), source,
+					baseIsForge ? forgeProvenance : neoProvenance, baseIsForge ? neoProvenance : forgeProvenance,
+					!baseIsForge, baseMethods, otherMethods));
+			recordSplice(name + "#" + p.key(), r);
+			if (r.accepted()) {
+				replaceMethod(baseN, p.key(), r.method(), baseMethods);
+				for (MethodNode added : r.addedMethods()) {
+					if (baseMethods.containsKey(added.name + added.desc)) continue;
+					baseN.methods.add(added);
+					baseMethods.put(added.name + added.desc, added);
+				}
+				methodsSpliced++;
+			} else if (p.keepsBaseFieldInit()) {
+				fieldInitPreserved++;
+				conflicts.add(name + "#" + p.key() + " (kept " + (baseIsForge ? "forge" : "neo")
+						+ " body to preserve base-added field init; " + (baseIsForge ? "neo" : "forge") + " hook lost)");
+			} else if (arbitrateBothHooked(name, p.key(), baseN, baseMethods, p.vanilla(), p.base(), p.other(), basePkg, otherPkg, baseIsForge)) {
+				continue;
+			}
+			MethodNode kept = baseMethods.get(p.key());
+			if (kept != null) {
+				int widened = mostPermissive(kept.access, p.base().access, p.other().access);
+				if (widened != kept.access) {
+					kept.access = widened;
+					accessWidened++;
+				}
+			}
+		}
+
+		pendingSplices.clear();
 		realignCapturedLambdas(baseN, parse(baseIsForge ? frg : neu), otherN, baseMethods);
 		FieldContractReconciler.reconcile(baseN, frgN, neuN, declarationGraph, generatedFieldProviders);
 		resolveDuplicateFieldNames(baseN);
@@ -1065,6 +1109,59 @@ public final class MergedBaseBuilder {
 		ClassWriter cw = new ClassWriter(ClassWriter.COMPUTE_MAXS);
 		baseN.accept(cw);
 		return cw.toByteArray();
+	}
+
+	/** A method both sides hooked, waiting for the edit splice once the class has every other-side method. */
+	private record PendingSplice(String key, MethodNode base, MethodNode other, MethodNode vanilla, boolean keepsBaseFieldInit) { }
+
+	private final List<PendingSplice> pendingSplices = new ArrayList<>();
+
+	/**
+	 * The arbitration a both-hooked method had before edit splicing: a native tail composition, then the restricted
+	 * additive grammars, then the base's body with the other side's hook recorded as lost. Returns true when the
+	 * tail composition took it (the caller skips the access reconciliation, as it always did).
+	 */
+	private boolean arbitrateBothHooked(String name, String key, ClassNode baseN, Map<String, MethodNode> baseMethods,
+			MethodNode vm, MethodNode bm, MethodNode om, String basePkg, String otherPkg, boolean baseIsForge) {
+		MethodNode tail = TailHookComposition.merge(baseN, vm, bm, om, basePkg, otherPkg, declarationGraph);
+		if (tail != null) {
+			replaceMethod(baseN, key, tail, baseMethods); additiveMethodsMerged++;
+			additiveDecisions.add(name + "#" + key + " ACCEPTED native append-only tail hook; both ecosystem calls retained");
+			return true;
+		}
+		AdditiveMethodMerger.Result addition = AdditiveMethodMerger.merge(name, vm, bm, om, basePkg, otherPkg, hookContext);
+		additiveDecisions.add(name + "#" + key + (addition.accepted() ? " ACCEPTED " : " DECLINED ")
+				+ addition.reason());
+		if (addition.accepted()) {
+			replaceMethod(baseN, key, addition.method(), baseMethods);
+			additiveMethodsMerged++;
+		} else {
+			int colon = addition.reason().indexOf(':');
+			additiveRefusals.merge(colon < 0 ? addition.reason() : addition.reason().substring(0, colon), 1, Integer::sum);
+			// A refusal deliberately preserves the previous choice, including its known limitations.
+			conflictMethods++;
+			conflicts.add(name + "#" + om.name + om.desc + (baseIsForge ? " (neo hook lost)" : " (forge hook lost)"));
+		}
+		return false;
+	}
+
+	private void recordSplice(String method, EditSplicer.Result r) {
+		if (r.accepted()) {
+			runsSpliced += r.spliced().size();
+		} else {
+			String reason = r.reason();
+			int colon = reason.indexOf(':'), paren = reason.indexOf(" (");
+			int cut = colon < 0 ? paren : paren < 0 ? colon : Math.min(colon, paren);
+			spliceRefusals.merge(cut < 0 ? reason : reason.substring(0, cut), 1, Integer::sum);
+		}
+		for (EditSplicer.Outcome c : r.conflicts()) {
+			if (c.kind().equals("same-edit")) runsSameEdit++; else runsConflicting++;
+		}
+		runsRefused += r.refused().size();
+		spliceDecisions.add(method + (r.accepted() ? " SPLICED" : " NOT SPLICED (" + r.reason() + ")"));
+		for (EditSplicer.Outcome o : r.spliced()) spliceDecisions.add("    + " + o.kind() + " L" + o.firstLine() + "-" + o.lastLine());
+		for (EditSplicer.Outcome o : r.conflicts()) spliceDecisions.add("    = " + o.kind() + " L" + o.firstLine() + "-" + o.lastLine() + " " + o.detail());
+		for (EditSplicer.Outcome o : r.refused()) spliceDecisions.add("    x " + o.kind() + " L" + o.firstLine() + "-" + o.lastLine() + " " + o.detail());
 	}
 
 	/**
@@ -1894,5 +1991,8 @@ public final class MergedBaseBuilder {
 		ps.println("[merge] restricted entry-hook merges: accepted=" + additiveMethodsMerged
 				+ " declined=" + (additiveDecisions.size() - additiveMethodsMerged));
 		additiveRefusals.forEach((reason, count) -> ps.println("[merge]   declined " + count + ": " + reason));
+		ps.println("[merge] edit splice: " + (splicer == null ? "OFF" : "methods=" + methodsSpliced + " runs carried=" + runsSpliced
+				+ " already-present=" + runsSameEdit + " conflicting=" + runsConflicting + " refused=" + runsRefused));
+		spliceRefusals.forEach((reason, count) -> ps.println("[merge]   splice not taken " + count + ": " + reason));
 	}
 }
