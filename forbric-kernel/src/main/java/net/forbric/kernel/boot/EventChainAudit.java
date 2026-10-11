@@ -39,6 +39,13 @@ import net.forbric.kernel.util.ForbricLog;
  * a bridge installed twice (or two bridges for one event). One listener posting several is a fan-out when it
  * always does (one event per item), and multiplicity drift when that forward is otherwise one to one.
  *
+ * <p>A bridge that stands down because the merged game delivered the MinecraftForge event itself on the same path
+ * ({@code NativeEventDelivery}) forwards nothing, so it leaves no pair. It reports the stand-down here instead
+ * ({@link #nativelyDelivered}), and the report lists those native deliveries per (outer event, inner event) pair:
+ * a bridge seen standing down is a bridge whose event reached MinecraftForge's listeners once, from the game. A
+ * dispatch in which one bridge stood down for an event and kernel code forwarded the same event anyway delivered it
+ * twice, and is counted as {@code nativeAndForwarded}.
+ *
  * <p>What this does not see: composites that call both families' hooks one after the other at a call site
  * (portal, spawner, loot, fuel, tooltips) are not nested posts; their chains have their own gates. Result fields
  * other than cancellation are not compared.
@@ -60,6 +67,8 @@ public final class EventChainAudit {
 		int listener = -1;
 		/** Set on an inner frame at entry: who posted it, and which listener of the parent was running. */
 		boolean kernelPoster; int parentListener = -1;
+		/** MinecraftForge event classes a bridge stood down for in this dispatch, delivered natively instead. */
+		Set<String> natively = Set.of();
 		Frame(boolean neo, Object event) { this.neo = neo; this.event = event; this.type = event.getClass(); }
 	}
 
@@ -77,6 +86,11 @@ public final class EventChainAudit {
 		volatile String duplicatedExample, cancelLostExample;
 	}
 
+	/** One (outer event, natively delivered inner event) pair: dispatches a bridge stood down in. */
+	static final class NativePair {
+		final LongAdder outerPosts = new LongAdder(), alsoForwarded = new LongAdder();
+	}
+
 	static final class Outer {
 		final LongAdder posts = new LongAdder(), withoutForward = new LongAdder(), withoutForwardCancelled = new LongAdder(),
 				failures = new LongAdder();
@@ -84,6 +98,7 @@ public final class EventChainAudit {
 
 	private static final ThreadLocal<ArrayDeque<Frame>> STACK = ThreadLocal.withInitial(ArrayDeque::new);
 	private static final Map<String, Pair> PAIRS = new ConcurrentHashMap<>();
+	private static final Map<String, NativePair> NATIVES = new ConcurrentHashMap<>();
 	private static final Map<String, Outer> OUTERS = new ConcurrentHashMap<>();
 	/** Outer events that have been seen with an inner post at least once: only their unforwarded posts count. */
 	private static final Set<String> FORWARDED_OUTERS = ConcurrentHashMap.newKeySet();
@@ -118,6 +133,20 @@ public final class EventChainAudit {
 		exit(false, event, cancelled, cancellable, failure);
 	}
 
+	/**
+	 * A bridge stood down for {@code neoEvent}: the merged game delivered these MinecraftForge events (internal names)
+	 * natively on its path. Credited to the NeoForge dispatch of that very event on this thread.
+	 */
+	public static void nativelyDelivered(Object neoEvent, Set<String> forgeEvents) {
+		if (neoEvent == null || forgeEvents == null || forgeEvents.isEmpty() || !enabled()) return;
+		for (Frame frame : STACK.get()) {
+			if (!frame.neo || frame.event != neoEvent) continue;
+			if (frame.natively.isEmpty()) frame.natively = new LinkedHashSet<>();
+			for (String name : forgeEvents) frame.natively.add(name.replace('/', '.'));
+			return;
+		}
+	}
+
 	private static void enter(boolean neo, Object event) {
 		if (event == null) return;
 		if (HOOKED.compareAndSet(false, true) && enabled())
@@ -149,6 +178,11 @@ public final class EventChainAudit {
 		}
 		stack.pop();
 		String outerKey = key(neo, frame.type);
+		for (String inner : frame.natively) {
+			NativePair pair = NATIVES.computeIfAbsent(outerKey + " -> FORGE:" + inner, k -> new NativePair());
+			pair.outerPosts.increment();
+			for (Class<?> forwarded : frame.children.keySet()) if (forwarded.getName().equals(inner)) pair.alsoForwarded.increment();
+		}
 		Outer outer = OUTERS.computeIfAbsent(outerKey, k -> new Outer());
 		outer.posts.increment();
 		if (failure != null) outer.failures.increment();
@@ -224,34 +258,42 @@ public final class EventChainAudit {
 	}
 
 	/** Totals over every pair: the numbers a gate asserts are zero. */
-	public record Violations(long duplicated, long multiplicityDrift, long cancelLost, long innerFailures, long unbalanced) {
-		public boolean clean() { return duplicated == 0 && multiplicityDrift == 0 && cancelLost == 0 && innerFailures == 0 && unbalanced == 0; }
+	public record Violations(long duplicated, long multiplicityDrift, long cancelLost, long innerFailures, long unbalanced,
+			long nativeAndForwarded) {
+		public boolean clean() {
+			return duplicated == 0 && multiplicityDrift == 0 && cancelLost == 0 && innerFailures == 0 && unbalanced == 0
+					&& nativeAndForwarded == 0;
+		}
 	}
 
 	public static Violations violations() {
-		long duplicated = 0, drift = 0, lost = 0, failures = 0;
+		long duplicated = 0, drift = 0, lost = 0, failures = 0, twice = 0;
 		for (Pair pair : PAIRS.values()) {
 			duplicated += pair.duplicated.sum(); drift += pair.drift(); lost += pair.cancelLost.sum(); failures += pair.innerFailures.sum();
 		}
-		return new Violations(duplicated, drift, lost, failures, UNBALANCED.sum());
+		for (NativePair pair : NATIVES.values()) twice += pair.alsoForwarded.sum();
+		return new Violations(duplicated, drift, lost, failures, UNBALANCED.sum(), twice);
 	}
 
 	static int pairCount() { return PAIRS.size(); }
 
 	static Pair pair(String outer, String inner) { return PAIRS.get(outer + " -> " + inner); }
 
+	static NativePair nativePair(String outer, String inner) { return NATIVES.get(outer + " -> " + inner); }
+
 	static Outer outer(String key) { return OUTERS.get(key); }
 
 	static long incidental(String outer, String inner) { LongAdder n = INCIDENTAL.get(outer + " -> " + inner); return n == null ? 0 : n.sum(); }
 
-	static void reset() { PAIRS.clear(); OUTERS.clear(); FORWARDED_OUTERS.clear(); INCIDENTAL.clear(); UNBALANCED.reset(); STACK.remove(); }
+	static void reset() { PAIRS.clear(); NATIVES.clear(); OUTERS.clear(); FORWARDED_OUTERS.clear(); INCIDENTAL.clear(); UNBALANCED.reset(); STACK.remove(); }
 
 	public static synchronized String json() {
 		Violations v = violations();
 		StringBuilder out = new StringBuilder("{\n  \"schemaVersion\": 1,\n");
 		out.append("  \"violations\": {\"duplicated\": ").append(v.duplicated()).append(", \"multiplicityDrift\": ").append(v.multiplicityDrift())
 				.append(", \"cancelLost\": ").append(v.cancelLost())
-				.append(", \"innerFailures\": ").append(v.innerFailures()).append(", \"unbalanced\": ").append(v.unbalanced()).append("},\n");
+				.append(", \"innerFailures\": ").append(v.innerFailures()).append(", \"unbalanced\": ").append(v.unbalanced())
+				.append(", \"nativeAndForwarded\": ").append(v.nativeAndForwarded()).append("},\n");
 		out.append("  \"pairs\": [");
 		List<String> keys = new ArrayList<>(PAIRS.keySet()); Collections.sort(keys);
 		for (int i = 0; i < keys.size(); i++) {
@@ -266,7 +308,14 @@ public final class EventChainAudit {
 			if (p.cancelLostExample != null) out.append(", \"cancelLostExample\": ").append(quote(p.cancelLostExample));
 			out.append('}');
 		}
-		out.append(keys.isEmpty() ? "],\n" : "\n  ],\n").append("  \"forwardedOuters\": [");
+		out.append(keys.isEmpty() ? "],\n" : "\n  ],\n").append("  \"natives\": [");
+		List<String> natives = new ArrayList<>(NATIVES.keySet()); Collections.sort(natives);
+		for (int i = 0; i < natives.size(); i++) {
+			NativePair p = NATIVES.get(natives.get(i)); String[] ends = natives.get(i).split(" -> ");
+			out.append(i == 0 ? "\n" : ",\n").append("    {\"outer\": ").append(quote(ends[0])).append(", \"inner\": ").append(quote(ends[1]))
+					.append(", \"outerPosts\": ").append(p.outerPosts.sum()).append(", \"alsoForwarded\": ").append(p.alsoForwarded.sum()).append('}');
+		}
+		out.append(natives.isEmpty() ? "],\n" : "\n  ],\n").append("  \"forwardedOuters\": [");
 		List<String> outers = new ArrayList<>(FORWARDED_OUTERS); Collections.sort(outers);
 		for (int i = 0; i < outers.size(); i++) {
 			Outer o = OUTERS.get(outers.get(i)); if (o == null) continue;
@@ -292,8 +341,9 @@ public final class EventChainAudit {
 			if (target.getParent() != null) Files.createDirectories(target.getParent());
 			Files.writeString(target, json(), StandardCharsets.UTF_8);
 			Violations v = violations();
-			ForbricLog.info("[Forbric/EventChain] %d cross-bus pair(s) observed; duplicated=%d multiplicityDrift=%d cancelLost=%d innerFailures=%d unbalanced=%d -> %s",
-					pairCount(), v.duplicated(), v.multiplicityDrift(), v.cancelLost(), v.innerFailures(), v.unbalanced(), target);
+			ForbricLog.info("[Forbric/EventChain] %d cross-bus pair(s) observed, %d delivered natively; duplicated=%d multiplicityDrift=%d cancelLost=%d innerFailures=%d unbalanced=%d nativeAndForwarded=%d -> %s",
+					pairCount(), NATIVES.size(), v.duplicated(), v.multiplicityDrift(), v.cancelLost(), v.innerFailures(), v.unbalanced(),
+					v.nativeAndForwarded(), target);
 		} catch (IOException | RuntimeException failed) {
 			ForbricLog.warn("[Forbric/EventChain] could not write the event-chain report: %s", String.valueOf(failed));
 		}

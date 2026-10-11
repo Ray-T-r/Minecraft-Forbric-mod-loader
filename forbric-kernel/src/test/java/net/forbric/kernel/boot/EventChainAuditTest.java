@@ -26,6 +26,7 @@ import org.objectweb.asm.Opcodes;
 @ResourceLock("system-properties")
 class EventChainAuditTest {
 	private static final String NEO_PROBE = "probe.NeoProbe", FORGE_PROBE = "probe.ForgeProbe", MOD_CODE = "probe.ModCode";
+	private static final String FORGE_INTERNAL = FORGE_PROBE.replace('.', '/');
 	private Object neoBus, forgeBus;
 	private Class<?> neoProbe, forgeProbe;
 	private Method post, fire, setCanceled;
@@ -117,6 +118,48 @@ class EventChainAuditTest {
 		assertEquals(2, outer.posts.sum()); assertEquals(1, outer.withoutForward.sum());
 	}
 
+	/**
+	 * A bridge on the guarded bus that stands down because the merged game delivered MinecraftForge's event itself on
+	 * the NeoForge event's path forwards nothing: no pair, and a native delivery credited to that NeoForge event
+	 * instead. An event outside any such scope is forwarded as before.
+	 */
+	@Test void aBridgeThatStandsDownForANativeDeliveryIsCreditedWithIt() throws Exception {
+		forgeListener(false);
+		addNeo(new GameEventMultiplexer.StandDownListener(event -> invoke(post, forgeBus, forgeEvent()), Set.of(FORGE_INTERNAL)));
+		Object covered = neoProbe.getConstructor().newInstance();
+		try (net.forbric.api.NativeEventDelivery.Scope scope = net.forbric.api.NativeEventDelivery.begin(FORGE_INTERNAL, null, "")) {
+			scope.capture(covered);
+			postNeo(covered);
+		}
+		assertNull(EventChainAudit.pair("NEO:" + NEO_PROBE, "FORGE:" + FORGE_PROBE), EventChainAudit.json());
+		var natively = EventChainAudit.nativePair("NEO:" + NEO_PROBE, "FORGE:" + FORGE_PROBE);
+		assertNotNull(natively, EventChainAudit.json());
+		assertEquals(1, natively.outerPosts.sum());
+		assertEquals(0, natively.alsoForwarded.sum());
+		assertTrue(EventChainAudit.violations().clean(), EventChainAudit.json());
+		assertTrue(EventChainAudit.json().contains("\"natives\": [\n    {\"outer\": \"NEO:" + NEO_PROBE + "\", \"inner\": \"FORGE:"
+				+ FORGE_PROBE + "\", \"outerPosts\": 1, \"alsoForwarded\": 0}"), EventChainAudit.json());
+
+		postNeo();
+		assertEquals(1, pair().forwardedOnce.sum(), "outside the scope the same bridge forwards");
+		assertEquals(1, natively.outerPosts.sum(), "and that post is no native delivery");
+	}
+
+	/** The negative control: one bridge stands down for the native delivery while another forwards it anyway. */
+	@Test void aNativeDeliveryTheKernelForwardsAsWellIsDeliveredTwice() throws Exception {
+		forgeListener(false);
+		addNeo(new GameEventMultiplexer.StandDownListener(event -> invoke(post, forgeBus, forgeEvent()), Set.of(FORGE_INTERNAL)));
+		bridge(1, true, false);
+		Object covered = neoProbe.getConstructor().newInstance();
+		try (net.forbric.api.NativeEventDelivery.Scope scope = net.forbric.api.NativeEventDelivery.begin(FORGE_INTERNAL, null, "")) {
+			scope.capture(covered);
+			postNeo(covered);
+		}
+		assertEquals(1, EventChainAudit.nativePair("NEO:" + NEO_PROBE, "FORGE:" + FORGE_PROBE).alsoForwarded.sum(), EventChainAudit.json());
+		assertEquals(1, EventChainAudit.violations().nativeAndForwarded());
+		assertFalse(EventChainAudit.violations().clean());
+	}
+
 	@Test void nothingCrossesWhenNoBridgeIsInstalled() throws Exception {
 		forgeListener(false);
 		postNeo(); invoke(post, forgeBus, forgeEvent());
@@ -154,8 +197,12 @@ class EventChainAuditTest {
 	}
 
 	private void postNeo() throws Exception {
+		postNeo(neoProbe.getConstructor().newInstance());
+	}
+
+	private void postNeo(Object event) throws Exception {
 		Method neoPost = neoBus.getClass().getMethod("post", neoBus.getClass().getClassLoader().loadClass("net.neoforged.bus.api.Event"));
-		neoPost.invoke(neoBus, neoProbe.getConstructor().newInstance());
+		neoPost.invoke(neoBus, event);
 	}
 
 	private Object forgeEvent() {

@@ -5,11 +5,13 @@
 # -Dforbric.eventChainAudit, both families' dispatch reports entry and exit, and any post the kernel makes on one
 # bus inside the other bus's dispatch is a forward (EventChainAudit). For every such pair: each forward exactly once
 # per NeoForge listener (no bridge installed twice, no one-to-one forward that sometimes posts twice), a cancel on
-# the inner bus carried back to the outer event, and no failure inside the forward.
+# the inner bus carried back to the outer event, and no failure inside the forward. A bridge that stands down because
+# the merged game delivered MinecraftForge's event itself on that path forwards nothing; the audit lists it as a
+# native delivery, and one the kernel forwarded as well in the same dispatch is a violation (nativeAndForwarded).
 #
 #   1. breadth — the 97-mod client enters a world, drives a container screen with the mouse, and leaves: every
-#      tick, level, entity, tracking, lifecycle and screen-mouse bridge must be seen forwarding, and nothing may
-#      violate the rules above.
+#      tick, level, entity, tracking, lifecycle and screen-mouse bridge must be seen forwarding, or standing down for
+#      the game's own delivery of the same event, and nothing may violate the rules above.
 #   2. cancel — a dedicated server with a NeoForge mod whose MinecraftForge listener vetoes one tagged entity
 #      joining the level: the entity must stay out, an untagged one must get in, and the audit must see the veto
 #      carried back from MinecraftForge's event to NeoForge's.
@@ -56,12 +58,19 @@ if python3 - "$RESULTS/client.json" <<'PY'
 import json, sys
 report = json.load(open(sys.argv[1]))
 v = report['violations']
-assert all(v[k] == 0 for k in ('duplicated', 'multiplicityDrift', 'cancelLost', 'innerFailures', 'unbalanced')), v
-seen = {}
+assert all(v[k] == 0 for k in ('duplicated', 'multiplicityDrift', 'cancelLost', 'innerFailures', 'unbalanced', 'nativeAndForwarded')), v
+seen, native = {}, {}
 for pair in report['pairs']:
     assert pair['outer'].startswith('NEO:') and pair['inner'].startswith('FORGE:'), pair
     seen.setdefault(pair['outer'].rsplit('.', 1)[-1], 0)
     seen[pair['outer'].rsplit('.', 1)[-1]] += pair['forwardedOnce']
+# A merge that keeps both families' edits delivers some of these MinecraftForge events from the game itself, and the
+# bridge then stands down for exactly those posts (PlayerList.placeNewPlayer, Commands.<init>, initServer and
+# runServer, ServerEntity's pairing). Seen standing down is seen working: the event reached MinecraftForge once.
+for pair in report['natives']:
+    assert pair['outer'].startswith('NEO:') and pair['inner'].startswith('FORGE:') and pair['alsoForwarded'] == 0, pair
+    native.setdefault(pair['outer'].rsplit('.', 1)[-1], 0)
+    native[pair['outer'].rsplit('.', 1)[-1]] += pair['outerPosts']
 required = ['ServerTickEvent$Pre', 'ServerTickEvent$Post', 'LevelTickEvent$Pre', 'LevelTickEvent$Post',
             'PlayerTickEvent$Pre', 'PlayerTickEvent$Post', 'ClientTickEvent$Pre', 'ClientTickEvent$Post',
             'RenderFrameEvent$Pre', 'RenderFrameEvent$Post', 'EntityJoinLevelEvent', 'LevelEvent$Load',
@@ -69,9 +78,11 @@ required = ['ServerTickEvent$Pre', 'ServerTickEvent$Post', 'LevelTickEvent$Pre',
             'PlayerEvent$PlayerLoggedInEvent', 'RegisterCommandsEvent', 'ServerAboutToStartEvent', 'ServerStartingEvent',
             'ServerStartedEvent', 'ServerStoppingEvent', 'ServerStoppedEvent', 'ScreenEvent$MouseButtonPressed$Pre',
             'ScreenEvent$MouseButtonReleased$Pre', 'ScreenEvent$MouseDragged$Pre', 'ScreenEvent$MouseScrolled$Post']
-missing = [name for name in required if seen.get(name, 0) < 1]
-assert not missing, ('bridges never seen forwarding', missing, sorted(seen))
-print(f"[kernel] {len(report['pairs'])} forwarding pairs, {len(required)} required bridges seen, violations {v}; "
+missing = [name for name in required if seen.get(name, 0) < 1 and native.get(name, 0) < 1]
+assert not missing, ('bridges never seen forwarding or standing down for a native delivery', missing, sorted(seen), sorted(native))
+natively = sorted(name for name in required if seen.get(name, 0) < 1)
+print(f"[kernel] {len(report['pairs'])} forwarding pairs, {len(required)} required bridges seen ({len(natively)} only "
+      f"standing down for the game's own delivery: {natively}), violations {v}; "
       f"{len(report['incidental'])} incidental pair(s) not judged")
 PY
 then echo "[kernel] PASS every forward in the client session was exactly once, carried and clean"
@@ -104,7 +115,7 @@ report, probe = json.load(open(sys.argv[1])), json.load(open(sys.argv[2]))
 # addFreshEntity's answer is the outcome: an accepted entity is not always found by UUID the same tick.
 assert probe['forgeVetoes'] >= 1 and probe['vetoedAdded'] is False and probe['controlAdded'] is True, probe
 v = report['violations']
-assert all(v[k] == 0 for k in ('duplicated', 'multiplicityDrift', 'cancelLost', 'innerFailures', 'unbalanced')), v
+assert all(v[k] == 0 for k in ('duplicated', 'multiplicityDrift', 'cancelLost', 'innerFailures', 'unbalanced', 'nativeAndForwarded')), v
 join = [p for p in report['pairs'] if p['outer'].endswith('.EntityJoinLevelEvent') and p['inner'].endswith('.EntityJoinLevelEvent')]
 assert len(join) == 1, report['pairs']
 assert join[0]['innerCancelled'] >= 1 and join[0]['cancelCarried'] >= 1 and join[0]['cancelLost'] == 0, join[0]
@@ -119,6 +130,7 @@ if python3 - "$RESULTS/bridges-off.json" "$RESULTS/bridges-off-probe.json" <<'PY
 import json, sys
 report, probe = json.load(open(sys.argv[1])), json.load(open(sys.argv[2]))
 assert report['pairs'] == [], ('forwards seen with the bridges off', report['pairs'])
+assert report['natives'] == [], ('stand-downs seen with the bridges off', report['natives'])
 assert probe['forgeVetoes'] == 0 and probe['vetoedAdded'] is True, probe
 print('[kernel] no forwards and no veto without the bridges')
 PY

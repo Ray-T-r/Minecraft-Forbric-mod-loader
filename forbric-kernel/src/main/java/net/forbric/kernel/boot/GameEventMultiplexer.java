@@ -645,7 +645,10 @@ public final class GameEventMultiplexer {
 			implements java.util.function.Consumer<Object> {
 		@Override
 		public void accept(Object event) {
-			if (net.forbric.api.NativeEventDelivery.covered(event, forgeEvents)) return;
+			if (net.forbric.api.NativeEventDelivery.covered(event, forgeEvents)) {
+				EventChainAudit.nativelyDelivered(event, forgeEvents);
+				return;
+			}
 			forward.accept(event);
 		}
 	}
