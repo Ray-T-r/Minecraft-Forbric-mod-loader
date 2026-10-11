@@ -361,6 +361,7 @@ public class EditSpliceClassChecksTest {
 		assertTrue(b.report.contains(MINE + "#mine(I)I SPLICED"), b.report);
 		assertFalse(b.report.contains("lambda audit refused"), b.report);
 		assertTrue(b.report.contains("lambdas-realigned-to-their-capturer=0 lambdas-kept-as-one-on-both-sides=1"), b.report);
+		assertEquals(List.of(MINE + "#lambda$mine$0()V"), keptAsOne(b), b.report);
 		assertEquals(7, call(b.load(MINE), null, "mine", 7));
 		assertEquals(List.of(1, 100, 200, 101, 2), CALLS, "MinecraftForge's guard inside the lambda still runs");
 	}
@@ -414,21 +415,33 @@ public class EditSpliceClassChecksTest {
 		Build b = build(vanilla, forge, neo, forgePatch, patch(hunk(10, 10, "N", "A", "B", "C", "R")));
 		assertTrue(b.report.contains(MINE + "#build(I)I SPLICED"), b.report);
 		assertTrue(b.report.contains("lambdas-kept-as-one-on-both-sides=0"), b.report);
+		assertFalse(keptAsOne(b).contains(MINE + "#lambda$build$1()V"), b.report);
 		assertEquals(7, call(b.load(MINE), null, "build", 7));
-		assertEquals(List.of(1, 100, 200, 2, 2), CALLS, "each of NeoForge's captures runs vanilla's lambda of its place");
+		assertEquals(List.of(1, 100, 200), CALLS.subList(0, 3), "MinecraftForge's own button, then NeoForge's mark");
+		assertEquals(List.of(2), CALLS.subList(CALLS.size() - 1, CALLS.size()), "NeoForge's second capture runs vanilla's second lambda");
+		assertNotEquals(101, CALLS.get(CALLS.size() - 2), "MinecraftForge's guard belongs to vanilla's first lambda, not its second");
+		// MinecraftForge's guard in vanilla's first lambda either runs at NeoForge's first capture, or its loss is named.
+		boolean atItsPlace = CALLS.equals(List.of(1, 100, 200, 101, 2, 2));
+		assertTrue(atItsPlace || (CALLS.equals(List.of(1, 100, 200, 2, 2))
+				&& b.report.contains(MINE + "#lambda$build$1()V (forge hook lost)")), CALLS + "\n" + b.report);
+		assertFalse(b.report.contains(MINE + "#lambda$build$0()V (forge hook lost)"),
+				"MinecraftForge's own lambda runs under the fresh name its spliced capturer carried: " + b.report);
+		assertFalse(b.report.contains(MINE + "#lambda$build$2()V (forge hook lost)"),
+				"MinecraftForge's lambda$build$2 is vanilla's second lambda as vanilla wrote it, so nothing of its is lost: " + b.report);
 	}
 
 	/**
-	 * Negative control for the lambda's own code: a collision whose capture the alignment places at the wrong vanilla
-	 * capture. MinecraftForge deleted vanilla's first capture, so its only lambda, {@code lambda$build$0}, is vanilla's
-	 * SECOND lambda with a MinecraftForge guard added. Its capture instruction looks exactly like vanilla's first (both
-	 * capture a lambda of {@code build} through the same interface), so matching MinecraftForge's body with vanilla's
-	 * pairs it with vanilla's first capture, the same one NeoForge's {@code lambda$build$0} is captured at. Only the
-	 * lambdas' own code shows that MinecraftForge's is not vanilla's first lambda, and NeoForge's first capture must
-	 * run vanilla's first lambda.
+	 * Negative control: a collision whose capture the alignment pairs with the wrong vanilla capture. MinecraftForge
+	 * deleted vanilla's first capture, so its only lambda, {@code lambda$build$0}, is vanilla's SECOND lambda with a
+	 * MinecraftForge guard added. Its capture instruction looks exactly like vanilla's first (both capture a lambda of
+	 * {@code build} through the same interface), so matching MinecraftForge's body with vanilla's pairs it with
+	 * vanilla's first capture, the same one NeoForge's {@code lambda$build$0} is captured at. That pairing is the
+	 * alignment's choice, not a fact, since MinecraftForge's patch took one of the two look-alike captures away; the
+	 * lambdas' own code shows it too. NeoForge's first capture must run vanilla's first lambda, and the guard the
+	 * displaced body carried is named as lost.
 	 */
 	@Test
-	void aCollisionTheCaptureAlignmentCannotTellApartIsForcedBackByTheLambdasOwnCode() throws Exception {
+	void aCollisionWhoseCaptureTheAlignmentPairsWithTheWrongVanillaCaptureIsForcedBack() throws Exception {
 		int st = Opcodes.ACC_PUBLIC | Opcodes.ACC_STATIC;
 		ClassNode vanilla = type(MINE, new M(MINE, st, "build", "(I)I").line(10, rec(1)).line(11, runStatic(MINE, "lambda$build$0"))
 				.line(12, runStatic(MINE, "lambda$build$1")).line(13, returnX(false)).done(),
@@ -443,7 +456,123 @@ public class EditSpliceClassChecksTest {
 		Build b = build(vanilla, forge, neo, forgePatch, patch(hunk(10, 10, "N", "A", "B", "C", "R")));
 		assertTrue(b.report.contains("lambdas-kept-as-one-on-both-sides=0"), b.report);
 		assertEquals(7, call(b.load(MINE), null, "build", 7));
-		assertEquals(List.of(1, 200, 2, 3), CALLS, "NeoForge's first capture runs vanilla's first lambda");
+		assertEquals(List.of(1, 200, 2), CALLS.subList(0, 3), "NeoForge's first capture runs vanilla's first lambda");
+		assertTrue(CALLS.equals(List.of(1, 200, 2, 101, 3))
+				|| (CALLS.equals(List.of(1, 200, 2, 3)) && b.report.contains(MINE + "#lambda$build$0()V (forge hook lost)")),
+				"MinecraftForge's guard runs in front of vanilla's second lambda, or its loss is named: " + CALLS + "\n" + b.report);
+	}
+
+	/**
+	 * Negative control for the capture site alone: the same collision with lambdas whose code is the same. Vanilla's
+	 * two lambdas do one thing, so MinecraftForge's {@code lambda$build$0} (vanilla's SECOND lambda with its guard,
+	 * the first capture removed by its patch) has all of vanilla's first lambda's code too, and only the capture shows
+	 * that it is not that lambda: the alignment pairs it with vanilla's first capture by choice, because one of the two
+	 * look-alike captures is gone on MinecraftForge's side. Keeping it as one lambda put MinecraftForge's guard in front
+	 * of NeoForge's FIRST capture, a button the guard was never on.
+	 */
+	@Test
+	void aCollisionOfLambdasWithTheSameCodeWhoseLookAlikeCaptureWasRemovedIsForcedBack() throws Exception {
+		int st = Opcodes.ACC_PUBLIC | Opcodes.ACC_STATIC;
+		ClassNode vanilla = type(MINE, new M(MINE, st, "build", "(I)I").line(10, rec(1)).line(11, runStatic(MINE, "lambda$build$0"))
+				.line(12, runStatic(MINE, "lambda$build$1")).line(13, returnX(false)).done(),
+				lineLambda("lambda$build$0", 20, rec(2), 21, ret()), lineLambda("lambda$build$1", 30, rec(2), 31, ret()));
+		ClassNode neo = type(MINE, new M(MINE, st, "build", "(I)I").line(10, rec(1)).line(11, mark(NEO, 200))
+				.line(12, runStatic(MINE, "lambda$build$0")).line(13, runStatic(MINE, "lambda$build$1")).line(14, returnX(false)).done(),
+				lineLambda("lambda$build$0", 21, rec(2), 22, ret()), lineLambda("lambda$build$1", 31, rec(2), 32, ret()));
+		ClassNode forge = type(MINE, new M(MINE, st, "build", "(I)I").line(10, rec(1)).line(11, runStatic(MINE, "lambda$build$0"))
+				.line(12, returnX(false)).done(), lineLambda("lambda$build$0", 29, mark(FORGE, 101), 30, rec(2), 31, ret()));
+		String forgePatch = patch("@@ -10,3 +10,2 @@\n A\n-B\n C\n", "@@ -29,3 +28,4 @@\n H\n+G\n L\n E\n");
+		Build b = build(vanilla, forge, neo, forgePatch, patch(hunk(10, 10, "N", "A", "B", "C", "R")));
+		assertTrue(b.report.contains("lambdas-kept-as-one-on-both-sides=0"), b.report);
+		assertFalse(keptAsOne(b).contains(MINE + "#lambda$build$0()V"), b.report);
+		assertEquals(7, call(b.load(MINE), null, "build", 7));
+		assertEquals(List.of(1, 200, 2), CALLS.subList(0, 3), "NeoForge's first capture runs vanilla's first lambda, unguarded");
+		assertTrue(CALLS.equals(List.of(1, 200, 2, 101, 2))
+				|| (CALLS.equals(List.of(1, 200, 2, 2)) && b.report.contains(MINE + "#lambda$build$0()V (forge hook lost)")),
+				"MinecraftForge's guard runs in front of vanilla's second lambda, or its loss is named: " + CALLS + "\n" + b.report);
+	}
+
+	/**
+	 * The control for that rule: look-alike captures that are all still there on both sides, in order, pair as a fact.
+	 * Vanilla captures two lambdas that do one thing; MinecraftForge guards the second and leaves both captures alone,
+	 * NeoForge marks {@code build}. MinecraftForge's {@code lambda$build$1} is vanilla's second lambda on both sides, and
+	 * its guard runs at NeoForge's second capture.
+	 */
+	@Test
+	void aLambdaOnlyTheOtherSideEditedAmongLookAlikeCapturesKeepsTheEdit() throws Exception {
+		int st = Opcodes.ACC_PUBLIC | Opcodes.ACC_STATIC;
+		ClassNode vanilla = type(MINE, new M(MINE, st, "build", "(I)I").line(10, rec(1)).line(11, runStatic(MINE, "lambda$build$0"))
+				.line(12, runStatic(MINE, "lambda$build$1")).line(13, returnX(false)).done(),
+				lineLambda("lambda$build$0", 20, rec(2), 21, ret()), lineLambda("lambda$build$1", 30, rec(2), 31, ret()));
+		ClassNode neo = type(MINE, new M(MINE, st, "build", "(I)I").line(10, rec(1)).line(11, mark(NEO, 200))
+				.line(12, runStatic(MINE, "lambda$build$0")).line(13, runStatic(MINE, "lambda$build$1")).line(14, returnX(false)).done(),
+				lineLambda("lambda$build$0", 21, rec(2), 22, ret()), lineLambda("lambda$build$1", 31, rec(2), 32, ret()));
+		ClassNode forge = type(MINE, new M(MINE, st, "build", "(I)I").line(10, rec(1)).line(11, runStatic(MINE, "lambda$build$0"))
+				.line(12, runStatic(MINE, "lambda$build$1")).line(13, returnX(false)).done(),
+				lineLambda("lambda$build$0", 20, rec(2), 21, ret()), lineLambda("lambda$build$1", 30, mark(FORGE, 101), 31, rec(2), 32, ret()));
+		Build b = build(vanilla, forge, neo, patch(hunk(29, 29, "G", "H", "L", "E")), patch(hunk(10, 10, "N", "A", "B", "C", "R")));
+		assertTrue(b.report.contains("lambdas-realigned-to-their-capturer=0 lambdas-kept-as-one-on-both-sides=1"), b.report);
+		assertEquals(List.of(MINE + "#lambda$build$1()V"), keptAsOne(b), b.report);
+		assertFalse(b.report.contains(MINE + "#lambda$build$1()V (forge hook lost)"), b.report);
+		assertEquals(7, call(b.load(MINE), null, "build", 7));
+		assertEquals(List.of(1, 200, 2, 101, 2), CALLS, "MinecraftForge's guard runs at NeoForge's second capture");
+	}
+
+	/**
+	 * Negative control for the lambda's own code: one capture, paired as a fact, but MinecraftForge rewrote vanilla's
+	 * statement in the lambda instead of adding to it, so its body is not vanilla's code with code added. It is forced
+	 * back onto NeoForge's capturer, and the edit it carried is named as lost, not only counted.
+	 */
+	@Test
+	void aLambdaTheOtherSideRewroteIsForcedBackAndItsLossIsNamed() throws Exception {
+		int st = Opcodes.ACC_PUBLIC | Opcodes.ACC_STATIC;
+		ClassNode vanilla = type(MINE, new M(MINE, st, "mine", "(I)I").line(10, rec(1)).line(11, runStatic(MINE, "lambda$mine$0"))
+				.line(12, returnX(false)).done(), lineLambda("lambda$mine$0", 20, rec(2), 21, ret()));
+		ClassNode neo = type(MINE, new M(MINE, st, "mine", "(I)I").line(10, rec(1)).line(11, mark(NEO, 200))
+				.line(12, runStatic(MINE, "lambda$mine$0")).line(13, returnX(false)).done(), lineLambda("lambda$mine$0", 21, rec(2), 22, ret()));
+		ClassNode forge = type(MINE, new M(MINE, st, "mine", "(I)I").line(10, rec(1)).line(11, runStatic(MINE, "lambda$mine$0"))
+				.line(12, returnX(false)).done(), lineLambda("lambda$mine$0", 20, mark(FORGE, 5), 21, ret()));
+		Build b = build(vanilla, forge, neo, patch("@@ -19,3 +19,3 @@\n H\n-L\n+X\n E\n"), patch(hunk(10, 10, "N", "A", "B", "R")));
+		assertTrue(b.report.contains("lambdas-realigned-to-their-capturer=1 lambdas-kept-as-one-on-both-sides=0"), b.report);
+		assertTrue(b.report.contains(MINE + "#lambda$mine$0()V (forge hook lost)"), b.report);
+		assertEquals(7, call(b.load(MINE), null, "mine", 7));
+		assertEquals(List.of(1, 200, 2), CALLS, "NeoForge's capturer runs NeoForge's (vanilla's) lambda");
+	}
+
+	/**
+	 * A displaced body whose edit still runs is no lost hook. MinecraftForge adds a button whose lambda (code its patch
+	 * added) takes {@code lambda$build$0}, so vanilla's lambda becomes its {@code lambda$build$1}; NeoForge marks
+	 * {@code build}. MinecraftForge's {@code lambda$build$0} is displaced from NeoForge's capturer, but the spliced
+	 * capturer carried it under a fresh name, so its button still runs it and the report must not call it lost.
+	 */
+	@Test
+	void aDisplacedBodyASplicedCapturerCarriedIsNoLostHook() throws Exception {
+		int st = Opcodes.ACC_PUBLIC | Opcodes.ACC_STATIC;
+		ClassNode vanilla = type(MINE, new M(MINE, st, "build", "(I)I").line(10, rec(1)).line(11, runStatic(MINE, "lambda$build$0"))
+				.line(12, returnX(false)).done(), lineLambda("lambda$build$0", 20, rec(2), 21, ret()));
+		ClassNode neo = type(MINE, new M(MINE, st, "build", "(I)I").line(10, rec(1)).line(11, mark(NEO, 200))
+				.line(12, runStatic(MINE, "lambda$build$0")).line(13, returnX(false)).done(), lineLambda("lambda$build$0", 21, rec(2), 22, ret()));
+		ClassNode forge = type(MINE, new M(MINE, st, "build", "(I)I").line(10, rec(1)).line(11, runStatic(MINE, "lambda$build$0"))
+				.line(12, runStatic(MINE, "lambda$build$1")).line(13, returnX(false)).done(),
+				lineLambda("lambda$build$0", 42, mark(FORGE, 100), 43, ret()), lineLambda("lambda$build$1", 21, rec(2), 22, ret()));
+		Build b = build(vanilla, forge, neo, patch(hunk(10, 10, "F", "A", "B", "R"), "@@ -40,1 +41,3 @@\n Z\n+P\n+Q\n"),
+				patch(hunk(10, 10, "N", "A", "B", "R")));
+		assertTrue(b.report.contains(MINE + "#build(I)I SPLICED"), b.report);
+		assertTrue(b.report.contains("lambdas-realigned-to-their-capturer=1 lambdas-kept-as-one-on-both-sides=0"), b.report);
+		assertFalse(b.report.contains("hook lost"), b.report);
+		assertEquals(7, call(b.load(MINE), null, "build", 7));
+		assertEquals(List.of(1, 100, 200, 2), CALLS, "MinecraftForge's button runs its lambda, NeoForge's runs vanilla's");
+	}
+
+	/** The lambdas the report lists as one vanilla lambda on both sides. */
+	private static List<String> keptAsOne(Build b) {
+		List<String> out = new ArrayList<>();
+		boolean in = false;
+		for (String line : b.report.lines().toList()) {
+			if (line.startsWith("===")) { in = line.startsWith(MergedBaseBuilder.KEPT_AS_ONE_SECTION); continue; }
+			if (in && !line.isBlank()) out.add(line);
+		}
+		return out;
 	}
 
 	// ---- a carried read of a field nothing writes ----------------------------------------------------------------

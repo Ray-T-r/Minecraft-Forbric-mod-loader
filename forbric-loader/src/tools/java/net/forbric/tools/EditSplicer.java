@@ -2245,11 +2245,26 @@ final class EditSplicer {
 	 * vanilla method: every instruction its own patch did not add (by provenance) paired with its counterpart in the
 	 * vanilla method where the alignment finds one. {@code unmatchedPatched} counts the patched body's vanilla-origin
 	 * instructions with no counterpart, {@code unmatchedVanilla} the vanilla method's instructions nothing pairs with.
+	 * {@code chosen} holds the vanilla instructions whose pairing the alignment chose rather than found ({@link #certain}).
 	 */
-	record VanillaMatch(Map<AbstractInsnNode, AbstractInsnNode> counterparts, int unmatchedPatched, int unmatchedVanilla) {
+	record VanillaMatch(Map<AbstractInsnNode, AbstractInsnNode> counterparts, int unmatchedPatched, int unmatchedVanilla,
+			Set<AbstractInsnNode> chosen) {
 		/** The vanilla method's code, all of it and nothing else, is the patched body's vanilla code: its patch only added. */
 		boolean whole() {
 			return !counterparts.isEmpty() && unmatchedPatched == 0 && unmatchedVanilla == 0;
+		}
+
+		/**
+		 * Whether the vanilla instruction's pairing is a fact. The alignment pairs instructions that look the same (the
+		 * same key: a lambda capture without its lambda's number), and when the vanilla method has several that look
+		 * like one another, or the patched body has, it pairs them in order. That order is the truth only when each of
+		 * the vanilla method's look-alikes has its counterpart and the patched body's vanilla code has no other: then the
+		 * n-th is paired with the n-th. When the patch removed one of them, moved one onto a line of its own or
+		 * rewrote its line, the alignment still pairs the rest in order and cannot tell which one went, so a pairing
+		 * among them is only the alignment's choice.
+		 */
+		boolean certain(AbstractInsnNode vanillaInstruction) {
+			return !chosen.contains(vanillaInstruction);
 		}
 	}
 
@@ -2268,10 +2283,27 @@ final class EditSplicer {
 		for (AbstractInsnNode n : p.code) p.key.add(key(n, patched, p));
 		Annotated v = annotateVanilla(null, vanilla);
 		Map<AbstractInsnNode, AbstractInsnNode> counterparts = new IdentityHashMap<>();
-		align(p, v).forEach((pi, vi) -> counterparts.put(p.code.get(pi), v.code.get(vi)));
+		Map<Integer, Integer> pairs = align(p, v);
+		pairs.forEach((pi, vi) -> counterparts.put(p.code.get(pi), v.code.get(vi)));
 		int vanillaOrigin = 0;
-		for (int i = 0; i < p.code.size(); i++) if (!p.added(i)) vanillaOrigin++;
-		return new VanillaMatch(counterparts, vanillaOrigin - counterparts.size(), v.code.size() - counterparts.size());
+		Map<String, List<Integer>> vanillaAlike = new HashMap<>(), patchedAlike = new HashMap<>();
+		for (int i = 0; i < p.code.size(); i++) {
+			if (p.added(i)) continue;
+			vanillaOrigin++;
+			patchedAlike.computeIfAbsent(p.key.get(i), k -> new ArrayList<>()).add(i);
+		}
+		for (int i = 0; i < v.code.size(); i++) vanillaAlike.computeIfAbsent(v.key.get(i), k -> new ArrayList<>()).add(i);
+		Set<Integer> paired = new HashSet<>(pairs.values());
+		Set<AbstractInsnNode> chosen = java.util.Collections.newSetFromMap(new IdentityHashMap<>());
+		for (Map.Entry<String, List<Integer>> alike : vanillaAlike.entrySet()) {
+			List<Integer> inVanilla = alike.getValue(), inPatched = patchedAlike.getOrDefault(alike.getKey(), List.of());
+			if (inVanilla.size() <= 1 && inPatched.size() <= 1) continue;
+			// Pairs join equal keys only, one to one: every vanilla look-alike paired, and as many as the patched body
+			// has, is the n-th with the n-th.
+			if (inVanilla.size() == inPatched.size() && paired.containsAll(inVanilla)) continue;
+			for (int i : inVanilla) chosen.add(v.code.get(i));
+		}
+		return new VanillaMatch(counterparts, vanillaOrigin - counterparts.size(), v.code.size() - counterparts.size(), chosen);
 	}
 
 	/**
