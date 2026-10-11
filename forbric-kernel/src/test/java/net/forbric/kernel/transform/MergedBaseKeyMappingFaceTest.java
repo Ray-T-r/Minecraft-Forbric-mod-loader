@@ -244,10 +244,93 @@ class MergedBaseKeyMappingFaceTest {
 			// the result as an EnumMap key straight away — computeIfAbsent on a null bucket, which is an NPE
 			// raised inside Forge's code and blamed on whichever mod was constructing a key binding. There is no
 			// such thing as a null modifier in either family: unmodified IS NONE, which is what the field starts
-			// as. Null still passes through unchanged on the way IN, where nothing dereferences it.
+			// as. Null still passes through unchanged on the way IN: the field mirror stores it as it is, and the
+			// adapted setter, whose NeoForge target does dereference it, resolves it first (toNeoModifierFor).
 			assertEquals("NONE", name(toForge.invoke(null, new Object[] {null})),
 					"a null modifier must adapt to NONE, or MinecraftForge's own lookup NPEs on it");
 			assertEquals(null, toNeo.invoke(null, new Object[] {null}), "null stays null going the other way");
+		}
+	}
+
+	/**
+	 * MinecraftForge's two-argument setter takes a null modifier and means "the modifier the binding's current key is,
+	 * else NONE"; its own Controls screen passes one on every click that starts rebinding a key. The adapted setter
+	 * hands the call to NeoForge's, which dereferences the modifier at once, so it must hand over the modifier
+	 * MinecraftForge's setter would have stored, worked out from the binding's current key.
+	 */
+	@Test
+	void theForgeModifierSetterResolvesANullModifierFromTheBindingsCurrentKey() throws IOException {
+		MethodNode setter = find(repaired(), "setKeyModifierAndCode",
+				"(" + MF_MODIFIER + "Lcom/mojang/blaze3d/platform/InputConstants$Key;)V");
+		assertTrue(setter != null);
+		List<String> steps = new ArrayList<>();
+		for (AbstractInsnNode insn : setter.instructions) {
+			if (insn instanceof FieldInsnNode f && f.getOpcode() == Opcodes.GETFIELD) steps.add("read " + f.name);
+			if (insn instanceof MethodInsnNode call) steps.add(call.name + call.desc);
+		}
+		assertEquals(List.of("read key", "toNeoModifierFor(Ljava/lang/Object;Ljava/lang/Object;Ljava/lang/Object;)Ljava/lang/Object;",
+				"setKeyModifierAndCode(" + NEO_MODIFIER + "Lcom/mojang/blaze3d/platform/InputConstants$Key;)V"), steps,
+				"the modifier must be resolved the way MinecraftForge's setter resolves it, from the binding's current key");
+	}
+
+	/** MinecraftForge's rule for the modifier its setter stores, driven for real through the adapter. */
+	@Test
+	void theModifierTheForgeSetterStoresFollowsMinecraftForgesRule() throws Exception {
+		try (java.net.URLClassLoader cl = gameSideLoader()) {
+			Class<?> bridge = Class.forName("net.forbric.kernel.runtime.KernelForgeKeyBindings", true, cl);
+			java.lang.reflect.Method resolve = bridge.getMethod("toNeoModifierFor", Object.class, Object.class, Object.class);
+			Class<?> mfMod = Class.forName("net.minecraftforge.client.settings.KeyModifier", true, cl);
+			Class<?> keys = Class.forName("com.mojang.blaze3d.platform.InputConstants", true, cl);
+			Object unknown = keys.getField("UNKNOWN").get(null);
+			java.lang.reflect.Method key = keys.getMethod("getKey", String.class);
+			Object a = key.invoke(null, "key.keyboard.a"), b = key.invoke(null, "key.keyboard.b");
+			// Shift, because it is the same key on every platform; MinecraftForge's CONTROL is the command key on macOS.
+			Object leftShift = key.invoke(null, "key.keyboard.left.shift");
+			Object shift = enumConstant(mfMod, "SHIFT");
+			assertEquals("NONE", name(resolve.invoke(null, null, a, unknown)), "a null modifier for an unbound key is NONE");
+			assertEquals("NONE", name(resolve.invoke(null, null, a, b)), "a null modifier for a binding on a plain key is NONE");
+			assertEquals("SHIFT", name(resolve.invoke(null, null, leftShift, b)),
+					"a null modifier is the modifier the binding's current key is");
+			assertEquals("SHIFT", name(resolve.invoke(null, shift, a, b)), "a given modifier is kept");
+			assertEquals("NONE", name(resolve.invoke(null, shift, a, unknown)), "an unbound key carries no modifier");
+			assertEquals("NONE", name(resolve.invoke(null, shift, a, leftShift)), "a modifier key carries no modifier of its own");
+		}
+	}
+
+	/**
+	 * The click that starts rebinding a key, end to end: MinecraftForge's {@code setKeyModifierAndCode(null, UNKNOWN)}
+	 * on the repaired class, which hands it to NeoForge's own setter and lookup.
+	 */
+	@Test
+	void theForgeSetterTakesTheNullModifierItsControlsScreenPasses() throws Exception {
+		byte[] repaired = new ForbricMergedBaseCompatTransformer().transform("net.minecraft.client.KeyMapping", original(), null);
+		try (java.net.URLClassLoader game = gameSideLoader()) {
+			class Repaired extends java.net.URLClassLoader {
+				Repaired() {
+					super(game.getURLs(), ClassLoader.getPlatformClassLoader());
+				}
+
+				@Override
+				protected Class<?> findClass(String name) throws ClassNotFoundException {
+					if (name.equals("net.minecraft.client.KeyMapping")) return defineClass(name, repaired, 0, repaired.length);
+					return super.findClass(name);
+				}
+			}
+			try (Repaired cl = new Repaired()) {
+				Class<?> mapping = Class.forName("net.minecraft.client.KeyMapping", true, cl);
+				Class<?> category = Class.forName("net.minecraft.client.KeyMapping$Category", true, cl);
+				Class<?> keys = Class.forName("com.mojang.blaze3d.platform.InputConstants", true, cl);
+				Class<?> key = Class.forName("com.mojang.blaze3d.platform.InputConstants$Key", true, cl);
+				Class<?> mfMod = Class.forName("net.minecraftforge.client.settings.KeyModifier", true, cl);
+				Object binding = mapping.getConstructor(String.class, int.class, category)
+						.newInstance("key.forbric.rebind", 66, category.getField("MISC").get(null));
+				Object unknown = keys.getField("UNKNOWN").get(null);
+				mapping.getMethod("setKeyModifierAndCode", mfMod, key).invoke(binding, null, unknown);
+				assertSame(unknown, mapping.getMethod("getKey").invoke(binding), "the binding is unbound while it waits for a key");
+				java.lang.reflect.Method forgeFace = java.util.Arrays.stream(mapping.getMethods())
+						.filter(m -> m.getName().equals("getKeyModifier") && m.getReturnType() == mfMod).findFirst().orElseThrow();
+				assertEquals("NONE", name(forgeFace.invoke(binding)), "and carries no modifier, in MinecraftForge's face");
+			}
 		}
 	}
 

@@ -2559,7 +2559,11 @@ public final class ForbricMergedBaseCompatTransformer implements ClassTransforme
 		node.methods.add(m);
 	}
 
-	/** The two-argument setter, whose second argument passes through untouched. */
+	/**
+	 * The two-argument setter. Its key passes through untouched; its modifier is the one MinecraftForge's own setter
+	 * would store ({@code KernelForgeKeyBindings.toNeoModifierFor}), which needs the binding's current key: a null
+	 * modifier means the modifier that key is, and NeoForge's setter cannot take a null.
+	 */
 	private static void addSetKeyModifierAndCode(ClassNode node) {
 		String forgeDesc = "(" + MF_MODIFIER + INPUT_KEY + ")V";
 		String neoDesc = "(" + NEO_MODIFIER + INPUT_KEY + ")V";
@@ -2569,13 +2573,20 @@ public final class ForbricMergedBaseCompatTransformer implements ClassTransforme
 		MethodNode m = new MethodNode(Opcodes.ACC_PUBLIC, "setKeyModifierAndCode", forgeDesc, null, null);
 		m.visitVarInsn(Opcodes.ALOAD, 0);
 		m.visitVarInsn(Opcodes.ALOAD, 1);
-		m.visitMethodInsn(Opcodes.INVOKESTATIC, KERNEL_KEYS, "toNeoModifier",
-				"(Ljava/lang/Object;)Ljava/lang/Object;", false);
+		if (hasField(node, "key", INPUT_KEY)) {
+			m.visitVarInsn(Opcodes.ALOAD, 0);
+			m.visitFieldInsn(Opcodes.GETFIELD, node.name, "key", INPUT_KEY);
+		} else {
+			m.visitInsn(Opcodes.ACONST_NULL);
+		}
+		m.visitVarInsn(Opcodes.ALOAD, 2);
+		m.visitMethodInsn(Opcodes.INVOKESTATIC, KERNEL_KEYS, "toNeoModifierFor",
+				"(Ljava/lang/Object;Ljava/lang/Object;Ljava/lang/Object;)Ljava/lang/Object;", false);
 		m.visitTypeInsn(Opcodes.CHECKCAST, internal(NEO_MODIFIER));
 		m.visitVarInsn(Opcodes.ALOAD, 2);
 		m.visitMethodInsn(Opcodes.INVOKEVIRTUAL, node.name, "setKeyModifierAndCode", neoDesc, false);
 		m.visitInsn(Opcodes.RETURN);
-		m.maxStack = 3;
+		m.maxStack = 5;
 		m.maxLocals = 3;
 		node.methods.add(m);
 	}

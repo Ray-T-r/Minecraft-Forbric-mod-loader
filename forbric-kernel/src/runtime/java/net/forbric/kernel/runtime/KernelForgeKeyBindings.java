@@ -96,6 +96,28 @@ public final class KernelForgeKeyBindings {
 	}
 
 	/**
+	 * The NeoForge modifier MinecraftForge's own {@code setKeyModifierAndCode(modifier, key)} would store, for the
+	 * adapted setter that hands the call to NeoForge's.
+	 *
+	 * <p>MinecraftForge's setter takes a null modifier and means something by it: the modifier the binding's current
+	 * key is ({@code KeyModifier.getModifier}), and NONE when that is nothing, when the new key is unbound, or when
+	 * the new key is itself a modifier key. Its own Controls screen relies on that — clicking a binding to change it
+	 * calls {@code setKeyModifierAndCode(null, InputConstants.UNKNOWN)}. NeoForge's setter dereferences its modifier
+	 * at once ({@code modifier.matches(key)}), so passing the null on was a NullPointerException in the first click.
+	 */
+	public static Object toNeoModifierFor(Object forge, Object currentKey, Object newKey) {
+		KeyModifier modifier = (KeyModifier) forge;
+		if (modifier == null && currentKey != null) {
+			modifier = KeyModifier.getModifier((com.mojang.blaze3d.platform.InputConstants.Key) currentKey);
+		}
+		com.mojang.blaze3d.platform.InputConstants.Key key = (com.mojang.blaze3d.platform.InputConstants.Key) newKey;
+		if (modifier == null || key == com.mojang.blaze3d.platform.InputConstants.UNKNOWN || KeyModifier.isKeyCodeModifier(key)) {
+			modifier = KeyModifier.NONE;
+		}
+		return toNeoModifier(modifier);
+	}
+
+	/**
 	 * The reverse. {@code CONTROL_OR_COMMAND} has no MinecraftForge constant and becomes {@code CONTROL}: that is
 	 * what it means on every platform MinecraftForge's own CONTROL covers, and the alternative — NONE — would
 	 * silently drop a modifier the player had bound.
