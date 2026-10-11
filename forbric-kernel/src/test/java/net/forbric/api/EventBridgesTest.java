@@ -81,7 +81,14 @@ class EventBridgesTest {
 		assertTrue(EventBridges.verify(GameEventBridge.Pass.CLIENT_INIT), "delivered natively is delivered");
 		assertFalse(EventBridges.installed().contains(GameEventBridge.PARTICLE_PROVIDERS), "but it was not installed");
 		assertTrue(EventBridges.satisfied().contains(GameEventBridge.PARTICLE_PROVIDERS));
+		// No other pass is credited with it: with every REGISTRATION bridge in but one, a native delivery of another
+		// pass's bridge must not fill the gap (a count of satisfied bridges, or a lookup by anything but the bridge,
+		// would let it).
+		java.util.List<GameEventBridge> registration = new java.util.ArrayList<>(bridgesOf(GameEventBridge.Pass.REGISTRATION));
+		for (GameEventBridge b : registration.subList(1, registration.size())) EventBridges.installed(b);
 		assertFalse(EventBridges.verify(GameEventBridge.Pass.REGISTRATION), "and no other pass is credited with it");
+		EventBridges.installed(registration.get(0));
+		assertTrue(EventBridges.verify(GameEventBridge.Pass.REGISTRATION), "the pass verifies with its own bridges in");
 	}
 
 	/** The two passes run at different times; the client one must not be credited to the game-bus one. */

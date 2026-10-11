@@ -216,8 +216,8 @@ class DeadEventAuditTest {
 
 	/**
 	 * What the stand-down looks for: the MinecraftForge events a bridge on NeoForge's game bus re-posts. A row landed by
-	 * a class transformer forwards from no NeoForge event and the NeoForge tooltip row is the other direction, so neither
-	 * is in it; entity tracking is, now that its two bridges are rows.
+	 * a class transformer forwards from no NeoForge event, so it is not in it; entity tracking and the level tick are,
+	 * now that their bridges are rows.
 	 */
 	@Test
 	void theForwardedSetIsTheGameBusBridgesMinecraftForgeEvents() {
@@ -225,7 +225,7 @@ class DeadEventAuditTest {
 		assertTrue(forwarded.contains(DEATH));
 		assertTrue(forwarded.contains("net/minecraftforge/event/entity/player/PlayerEvent$StartTracking"));
 		assertTrue(forwarded.contains("net/minecraftforge/event/entity/player/PlayerEvent$StopTracking"));
-		assertFalse(forwarded.contains(NEO_TOOLTIP), "the tooltip row is NeoForge's event, delivered by a repair");
+		assertTrue(forwarded.contains("net/minecraftforge/event/TickEvent$LevelTickEvent$Pre"));
 		assertFalse(forwarded.contains(KEYS), "client-init rows are landed by a transformer, not forwarded from NeoForge");
 		assertFalse(forwarded.contains(TABS), "registration rows likewise");
 		for (String event : forwarded) {
