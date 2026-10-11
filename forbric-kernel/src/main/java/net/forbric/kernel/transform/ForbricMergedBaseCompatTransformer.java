@@ -4050,14 +4050,14 @@ public final class ForbricMergedBaseCompatTransformer implements ClassTransforme
 	 * from the entity-loading data flow; without it, the legacy entry reports the missing input rather than
 	 * inventing a null Forge argument or pretending an already-finalized mob can be changed retroactively.
 	 *
-	 * <p>A method that already calls MinecraftForge's own finalize hook is left alone: the kernel entry would post
-	 * that event a second time. SpawnerFinalizeInjector reports such a caller.
+	 * <p>A method that already calls MinecraftForge's own finalize hook for the same mob, on the same path, is left
+	 * alone: the kernel entry would post that event a second time. SpawnerFinalizeInjector reports such a caller.
 	 */
 	private static boolean letMinecraftForgeSeeSpawnerMobs(ClassNode node) {
 		if (!BASE_SPAWNER.equals(node.name)) return false;
 		int redirected = 0;
 		for (MethodNode method : node.methods) {
-			if (method.instructions == null || SpawnerFinalizeInjector.carriesForgeFinalize(method)) continue;
+			if (method.instructions == null || SpawnerFinalizeInjector.carriesForgeFinalize(node.name, method)) continue;
 			for (AbstractInsnNode insn = method.instructions.getFirst(); insn != null; insn = insn.getNext()) {
 				if (!(insn instanceof MethodInsnNode call) || call.getOpcode() != Opcodes.INVOKESTATIC
 						|| !NEO_EVENT_HOOKS.equals(call.owner)
@@ -4082,9 +4082,11 @@ public final class ForbricMergedBaseCompatTransformer implements ClassTransforme
 	 * to anchor on — hence a scanned claim rather than a fixed one. MinecraftForge's own call site is gone from
 	 * all of them and NeoForge's survived, so a Forge-family mod contributing a data pack is never asked.
 	 *
-	 * <p>A method that already asks MinecraftForge itself — a merge that keeps both sides' edits writes
+	 * <p>A call site whose method already asks MinecraftForge itself — a merge that keeps both sides' edits writes
 	 * {@code ForgeEventFactory.addPackFinders*} back into {@code CreateWorldScreen.openCreateWorldScreen} — is left
-	 * alone there: the kernel would ask MinecraftForge's mods for their finders a second time.
+	 * alone there: the kernel would ask MinecraftForge's mods for their finders a second time. The MinecraftForge call
+	 * counts only when it adds to the repository NeoForge populates there and runs on that call's path
+	 * ({@link NativeCallPairing}); one handed another repository, or on another branch, leaves the site redirected.
 	 */
 	private static boolean letMinecraftForgeAddPackFinders(ClassNode node) {
 		// Not the redirect TARGET itself. Its whole body is a call to the method being redirected, so rewriting
@@ -4094,13 +4096,18 @@ public final class ForbricMergedBaseCompatTransformer implements ClassTransforme
 		if (KERNEL_PACK_FINDERS.equals(node.name)) return false;
 		int redirected = 0;
 		for (MethodNode method : node.methods) {
-			if (method.instructions == null || asksMinecraftForgeForPackFinders(method)) continue;
+			if (method.instructions == null) continue;
+			List<MethodInsnNode> sites = new ArrayList<>();
 			for (AbstractInsnNode insn = method.instructions.getFirst(); insn != null; insn = insn.getNext()) {
 				if (!(insn instanceof MethodInsnNode call) || call.getOpcode() != Opcodes.INVOKESTATIC
 						|| !NEO_RESOURCE_PACK_LOADER.equals(call.owner)
 						|| !"populatePackRepository".equals(call.name)) {
 					continue;
 				}
+				sites.add(call);
+			}
+			for (MethodInsnNode call : sites) {
+				if (asksMinecraftForgeForPackFinders(node.name, method, call)) continue;
 				call.owner = KERNEL_PACK_FINDERS;
 				redirected++;
 			}
@@ -4112,11 +4119,14 @@ public final class ForbricMergedBaseCompatTransformer implements ClassTransforme
 		return true;
 	}
 
-	/** Whether {@code method} asks MinecraftForge's mods for pack finders itself. */
-	private static boolean asksMinecraftForgeForPackFinders(MethodNode method) {
+	/**
+	 * Whether {@code method} asks MinecraftForge's mods for pack finders itself for the repository NeoForge's
+	 * {@code populate} call fills, on that call's path.
+	 */
+	private static boolean asksMinecraftForgeForPackFinders(String owner, MethodNode method, MethodInsnNode populate) {
 		for (AbstractInsnNode insn = method.instructions.getFirst(); insn != null; insn = insn.getNext()) {
 			if (insn instanceof MethodInsnNode call && "net/minecraftforge/event/ForgeEventFactory".equals(call.owner)
-					&& call.name.startsWith("addPackFinders")) return true;
+					&& call.name.startsWith("addPackFinders") && NativeCallPairing.pairs(owner, method, call, populate, 0, populate)) return true;
 		}
 		return false;
 	}

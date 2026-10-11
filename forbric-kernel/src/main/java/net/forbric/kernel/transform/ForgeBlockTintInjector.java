@@ -13,14 +13,18 @@ import org.objectweb.asm.Opcodes;
 import org.objectweb.asm.tree.AbstractInsnNode;
 import org.objectweb.asm.tree.ClassNode;
 import org.objectweb.asm.tree.MethodInsnNode;
+import org.objectweb.asm.tree.MethodNode;
 
 /**
  * Redirect one post call without changing the event object, descriptor or surrounding instructions.
  *
  * <p>A {@code createDefault} that already hands its BlockColors to MinecraftForge itself — a merge that keeps both sides'
  * edits writes {@code ForgeHooksClient.onBlockColorsInit(colors)} right before NeoForge's post — is left alone: the funnel
- * would register every MinecraftForge mod's block tints a second time. The outcome is judged by {@link #CLAIM}: the live
- * BlockColors reaches MinecraftForge's registration, through the funnel or natively.
+ * would register every MinecraftForge mod's block tints a second time. That call counts only when it is handed the very
+ * BlockColors NeoForge's event is built with and runs on the same path as NeoForge's post ({@link NativeCallPairing}); a
+ * call handed another object, or one on another branch, is not MinecraftForge's registration of the live colors. The
+ * outcome is judged by {@link #CLAIM}: the live BlockColors reaches MinecraftForge's registration, through the funnel or
+ * natively.
  */
 public final class ForgeBlockTintInjector implements ClassTransformer {
 	static final String TARGET = "net.minecraft.client.color.block.BlockColors";
@@ -54,9 +58,9 @@ public final class ForgeBlockTintInjector implements ClassTransformer {
 		try { new ClassReader(bytes).accept(node, 0); } catch (RuntimeException unreadable) { return false; }
 		for (var method : node.methods) {
 			if (!method.name.equals("createDefault")) continue;
+			if (registersNatively(node.name, method)) return true;
 			for (var instruction : method.instructions) {
-				if (instruction instanceof MethodInsnNode call && (call.owner.equals(HOOK) && call.name.equals("postBlockTintSources")
-						|| isForgeRegistration(call))) return true;
+				if (instruction instanceof MethodInsnNode call && call.owner.equals(HOOK) && call.name.equals("postBlockTintSources")) return true;
 			}
 		}
 		return false;
@@ -66,19 +70,43 @@ public final class ForgeBlockTintInjector implements ClassTransformer {
 		return call.owner.equals(ForeignType.CLIENT_HOOKS.internal(Ecosystem.FORGE)) && call.name.equals("onBlockColorsInit");
 	}
 
+	/**
+	 * Whether {@code method} hands MinecraftForge the BlockColors NeoForge's event carries, on the path of NeoForge's post:
+	 * a MinecraftForge registration paired ({@link NativeCallPairing}) with NeoForge's post of a BlockTintEvent built
+	 * from those colors.
+	 */
+	static boolean registersNatively(String owner, MethodNode method) {
+		List<MethodInsnNode> forge = new ArrayList<>();
+		for (var instruction : method.instructions) if (instruction instanceof MethodInsnNode call && isForgeRegistration(call)) forge.add(call);
+		if (forge.isEmpty()) return false;
+		for (var instruction : method.instructions) {
+			if (!(instruction instanceof MethodInsnNode post) || post.getOpcode() != Opcodes.INVOKESTATIC || !post.desc.equals(POST)
+					|| !post.name.equals("postEvent") && !post.name.equals("postBlockTintSources")) continue;
+			MethodInsnNode constructor = eventConstructor(post);
+			if (constructor == null) continue;
+			for (MethodInsnNode call : forge) if (NativeCallPairing.pairs(owner, method, call, constructor, 0, post)) return true;
+		}
+		return false;
+	}
+
+	/** The BlockTintEvent constructor right before a post, or null. */
+	private static MethodInsnNode eventConstructor(MethodInsnNode post) {
+		AbstractInsnNode previous = post.getPrevious();
+		while (previous != null && previous.getOpcode() < 0) previous = previous.getPrevious();
+		return previous instanceof MethodInsnNode constructor && constructor.getOpcode() == Opcodes.INVOKESPECIAL && constructor.name.equals("<init>")
+				&& constructor.owner.equals(ForeignType.BLOCK_TINT_EVENT.internal(Ecosystem.NEOFORGE))
+				&& constructor.desc.equals("(Lnet/minecraft/client/color/block/BlockColors;)V") ? constructor : null;
+	}
+
 	@Override public byte[] transform(String name, byte[] bytes, TransformContext context) {
 		if (!TARGET.equals(name) || !enabled()) return bytes;
 		ClassNode node = new ClassNode();
 		new ClassReader(bytes).accept(node, 0);
 		for (var method : node.methods) {
-			if (!method.name.equals("createDefault")) continue;
-			for (var instruction : method.instructions) {
-				if (instruction instanceof MethodInsnNode call && isForgeRegistration(call)) {
-					// The body delivers what the bridge stands for; record it so the client-init audit does not name it missing.
-					EventBridges.installed(GameEventBridge.BLOCK_TINT_SOURCES);
-					return bytes;
-				}
-			}
+			if (!method.name.equals("createDefault") || !registersNatively(node.name, method)) continue;
+			// The body delivers what the bridge stands for; record it so the client-init audit does not name it missing.
+			EventBridges.installed(GameEventBridge.BLOCK_TINT_SOURCES);
+			return bytes;
 		}
 		List<MethodInsnNode> candidates = new ArrayList<>();
 		int repaired = 0;

@@ -252,7 +252,7 @@ public final class NativeCoremodParity {
 		int routed = 0, native_ = 0;
 		for (MethodNode method : node.methods) {
 			if (method.instructions == null) continue;
-			if (SpawnerFinalizeInjector.carriesForgeFinalize(method)) {
+			if (SpawnerFinalizeInjector.carriesForgeFinalize(node.name, method)) {
 				native_++;
 				continue;
 			}

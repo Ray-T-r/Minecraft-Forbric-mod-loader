@@ -93,17 +93,34 @@ class SpawnerFinalizeInjectorTest {
 		}
 	}
 
-	@Test void aCallerThatAlreadyCarriesMinecraftForgesFinalizeHookIsNotRedirectedASecondTime() throws Exception {
+	/**
+	 * The staged BaseSpawner with MinecraftForge's own finalize hook restored right after NeoForge's, as a merge that keeps
+	 * both sides' edits writes it: handed the mob and level NeoForge's call gets ({@code sameMob}), or handed no mob.
+	 */
+	private static byte[] restoredSpawner(boolean sameMob) throws Exception {
 		ClassNode restored = parse(staged("merged-base/patched-mc-merged-26.2.jar", "net/minecraft/world/level/BaseSpawner"));
 		MethodNode tick = host(restored);
+		var frames = new org.objectweb.asm.tree.analysis.Analyzer<>(new org.objectweb.asm.tree.analysis.SourceInterpreter()).analyze(restored.name, tick);
+		var frame = frames[tick.instructions.indexOf(hook(tick))];
+		int args = org.objectweb.asm.Type.getArgumentTypes(hook(tick).desc).length;
+		AbstractInsnNode mob = frame.getStack(frame.getStackSize() - args).insns.iterator().next();
+		AbstractInsnNode level = frame.getStack(frame.getStackSize() - args + 1).insns.iterator().next();
+		assertTrue(mob instanceof VarInsnNode && level instanceof VarInsnNode, "premise: NeoForge's call takes the mob and level from locals");
 		InsnList forge = new InsnList();
-		for (int i = 0; i < 5; i++) forge.add(new InsnNode(Opcodes.ACONST_NULL));
+		forge.add(sameMob ? mob.clone(java.util.Map.of()) : new InsnNode(Opcodes.ACONST_NULL));
+		forge.add(level.clone(java.util.Map.of()));
+		for (int i = 0; i < 3; i++) forge.add(new InsnNode(Opcodes.ACONST_NULL));
 		forge.add(new VarInsnNode(Opcodes.ALOAD, 0));
 		forge.add(new MethodInsnNode(Opcodes.INVOKESTATIC, SpawnerFinalizeInjector.FORGE, SpawnerFinalizeInjector.FORGE_HOOK,
 				SpawnerFinalizeInjector.FORGE_DESC, false));
 		forge.add(new InsnNode(Opcodes.POP));
 		tick.instructions.insert(nextReal(hook(tick)), forge); tick.maxStack += 6;
-		byte[] bytes = write(restored);
+		return write(restored);
+	}
+
+	@Test void aCallerThatAlreadyCarriesMinecraftForgesFinalizeHookIsNotRedirectedASecondTime() throws Exception {
+		byte[] bytes = restoredSpawner(true);
+		ClassNode restored = parse(bytes);
 		new Analyzer<>(new BasicVerifier()).analyze(restored.name, host(parse(bytes)));
 
 		byte[] legacy = new ForbricMergedBaseCompatTransformer().transform(SpawnerFinalizeInjector.TARGET, bytes, context);
@@ -126,6 +143,13 @@ class SpawnerFinalizeInjectorTest {
 				new ForbricMergedBaseCompatTransformer().transform(SpawnerFinalizeInjector.TARGET, plain, context), context);
 		assertEquals(SpawnerFinalizeInjector.RUNTIME, hook(host(parse(routed))).owner);
 		assertTrue(CompatibilityFindings.all().isEmpty());
+
+		// Near miss: a MinecraftForge call handed no mob finalizes nothing NeoForge's call does, so the caller is routed.
+		CompatibilityFindings.reset();
+		byte[] noMob = restoredSpawner(false);
+		byte[] routedAnyway = injector.transform(SpawnerFinalizeInjector.TARGET,
+				new ForbricMergedBaseCompatTransformer().transform(SpawnerFinalizeInjector.TARGET, noMob, context), context);
+		assertEquals(SpawnerFinalizeInjector.RUNTIME, hook(host(parse(routedAnyway))).owner);
 	}
 
 	@Test void unknownSignaturesOrPartiallyChangedCallersAreNotGuessed() throws Exception {

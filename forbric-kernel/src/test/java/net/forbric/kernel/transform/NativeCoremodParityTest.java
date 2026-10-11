@@ -98,18 +98,54 @@ class NativeCoremodParityTest {
 		verify(rewritten);
 	}
 
-	/** A trial spawner method that already calls MinecraftForge's own spawner hook keeps NeoForge's, not posting Forge's twice. */
-	@Test void aTrialSpawnerThatAlreadyPostsMinecraftForgesFinalizationIsLeftNative() throws Exception {
+	/** How {@link #trialSpawnerAsking} puts MinecraftForge's spawner hook beside NeoForge's. */
+	private enum Ask { SAME_MOB, NULL_MOB, OTHER_BRANCH }
+
+	/**
+	 * The staged trial spawner with MinecraftForge's own {@code onFinalizeSpawnSpawner} inserted in front of the statement
+	 * that calls NeoForge's hook: handed the mob NeoForge's call finalizes, handed null, or only on a branch.
+	 */
+	private static ClassNode trialSpawnerAsking(Ask ask) throws Exception {
 		ClassNode node = new ClassNode();
 		new ClassReader(read(MERGED, NativeCoremodParity.TRIAL_SPAWNER)).accept(node, 0);
 		for (MethodNode method : node.methods) for (AbstractInsnNode insn : method.instructions.toArray()) {
-			if (insn instanceof MethodInsnNode call && call.owner.equals(NativeCoremodParity.NEO_HOOKS) && call.name.equals(NativeCoremodParity.NEO_SPAWNER_HOOK)) {
-				method.instructions.insert(new MethodInsnNode(Opcodes.INVOKESTATIC, SpawnerFinalizeInjector.FORGE, SpawnerFinalizeInjector.FORGE_HOOK,
-						SpawnerFinalizeInjector.FORGE_DESC, false));
-			}
+			if (!(insn instanceof MethodInsnNode call) || !call.owner.equals(NativeCoremodParity.NEO_HOOKS)
+					|| !call.name.equals(NativeCoremodParity.NEO_SPAWNER_HOOK)) continue;
+			var frames = new org.objectweb.asm.tree.analysis.Analyzer<>(new org.objectweb.asm.tree.analysis.SourceInterpreter()).analyze(node.name, method);
+			var frame = frames[method.instructions.indexOf(call)];
+			int args = org.objectweb.asm.Type.getArgumentTypes(call.desc).length;
+			AbstractInsnNode mob = frame.getStack(frame.getStackSize() - args).insns.iterator().next();
+			AbstractInsnNode level = frame.getStack(frame.getStackSize() - args + 1).insns.iterator().next();
+			assertTrue(mob instanceof VarInsnNode && level instanceof VarInsnNode, "premise: NeoForge's call takes the mob and level from locals");
+			InsnList forge = new InsnList();
+			LabelNode skip = new LabelNode();
+			if (ask == Ask.OTHER_BRANCH) { forge.add(new InsnNode(Opcodes.ICONST_0)); forge.add(new JumpInsnNode(Opcodes.IFEQ, skip)); }
+			forge.add(ask == Ask.NULL_MOB ? new InsnNode(Opcodes.ACONST_NULL) : mob.clone(Map.of()));
+			forge.add(level.clone(Map.of()));
+			for (int i = 0; i < 4; i++) forge.add(new InsnNode(Opcodes.ACONST_NULL));
+			forge.add(new MethodInsnNode(Opcodes.INVOKESTATIC, SpawnerFinalizeInjector.FORGE, SpawnerFinalizeInjector.FORGE_HOOK,
+					SpawnerFinalizeInjector.FORGE_DESC, false));
+			forge.add(new InsnNode(Opcodes.POP));
+			if (ask == Ask.OTHER_BRANCH) forge.add(skip);
+			method.instructions.insertBefore(mob, forge);
 		}
+		return node;
+	}
+
+	/** A trial spawner method that already calls MinecraftForge's own spawner hook for the same mob keeps NeoForge's, not posting Forge's twice. */
+	@Test void aTrialSpawnerThatAlreadyPostsMinecraftForgesFinalizationIsLeftNative() throws Exception {
+		ClassNode node = trialSpawnerAsking(Ask.SAME_MOB);
 		assertEquals(0, NativeCoremodParity.routeTrialSpawner(node));
 		assertEquals(1, calls(node, NativeCoremodParity.NEO_HOOKS, NativeCoremodParity.NEO_SPAWNER_HOOK));
+	}
+
+	/** Near misses: MinecraftForge's hook handed another mob, or only on a branch, finalizes nothing NeoForge's does: routed. */
+	@Test void aTrialSpawnerWhoseMinecraftForgeCallFinalizesSomethingElseIsStillRouted() throws Exception {
+		for (Ask ask : List.of(Ask.NULL_MOB, Ask.OTHER_BRANCH)) {
+			ClassNode node = trialSpawnerAsking(ask);
+			assertEquals(1, NativeCoremodParity.routeTrialSpawner(node), ask.name());
+			assertEquals(0, calls(node, NativeCoremodParity.NEO_HOOKS, NativeCoremodParity.NEO_SPAWNER_HOOK), ask.name());
+		}
 	}
 
 	@Test void theTargetListIsNeoForgesAndMinecraftForgesLessTheTrialSpawner() throws Exception {

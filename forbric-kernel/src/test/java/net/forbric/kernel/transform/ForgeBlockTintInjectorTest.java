@@ -73,7 +73,11 @@ class ForgeBlockTintInjectorTest {
 			if (nativeForge > 0) {
 				assertEquals(1, nativeForge, "MinecraftForge's registration, once");
 				assertSame(before, after, "funnelling NeoForge's post too would register MinecraftForge's tints twice");
-				return;
+				// The funnel itself, on the real class: the same body with its MinecraftForge registration taken out.
+				before = withoutForgeRegistration(before);
+				hits.clear();
+				after = INJECTOR.transform(ForgeBlockTintInjector.TARGET, before, null, hits::add);
+				assertEquals(java.util.Set.of(ForgeBlockTintInjector.CLAIM), hits);
 			}
 			assertNotSame(before, after);
 			assertEquals(opcodes(createDefault(before)), opcodes(createDefault(after)));
@@ -82,9 +86,79 @@ class ForgeBlockTintInjectorTest {
 		}
 	}
 
-	/** A body that hands its colors to MinecraftForge before NeoForge's post is never funnelled, and satisfies the claim. */
+	/** How a createDefault written by {@link #colors} asks MinecraftForge, if it does. */
+	private enum Ask { NOT, SAME_COLORS, NULL, OTHER_BRANCH }
+
+	/**
+	 * {@code BlockColors colors = new BlockColors(); [ask]; ModLoader.postEvent(new BlockTintEvent(colors)); return colors;}
+	 * where the ask is MinecraftForge's {@code onBlockColorsInit} handed the same colors, handed null, or handed the same
+	 * colors only when a static flag says so.
+	 */
+	private static byte[] colors(Ask ask) {
+		ClassWriter out = new ClassWriter(ClassWriter.COMPUTE_MAXS | ClassWriter.COMPUTE_FRAMES) {
+			@Override protected String getCommonSuperClass(String a, String b) { return "java/lang/Object"; }
+		};
+		String target = ForgeBlockTintInjector.TARGET.replace('.', '/'), event = ForeignType.BLOCK_TINT_EVENT.internal(Ecosystem.NEOFORGE);
+		out.visit(Opcodes.V21, Opcodes.ACC_PUBLIC, target, null, "java/lang/Object", null);
+		out.visitField(Opcodes.ACC_PUBLIC | Opcodes.ACC_STATIC, "flag", "Z", null, null).visitEnd();
+		var init = out.visitMethod(Opcodes.ACC_PUBLIC, "<init>", "()V", null, null);
+		init.visitCode(); init.visitVarInsn(Opcodes.ALOAD, 0); init.visitMethodInsn(Opcodes.INVOKESPECIAL, "java/lang/Object", "<init>", "()V", false);
+		init.visitInsn(Opcodes.RETURN); init.visitMaxs(0, 0); init.visitEnd();
+		var method = out.visitMethod(Opcodes.ACC_PUBLIC | Opcodes.ACC_STATIC, "createDefault", "()L" + target + ";", null, null);
+		method.visitCode();
+		method.visitTypeInsn(Opcodes.NEW, target); method.visitInsn(Opcodes.DUP);
+		method.visitMethodInsn(Opcodes.INVOKESPECIAL, target, "<init>", "()V", false);
+		method.visitVarInsn(Opcodes.ASTORE, 0);
+		org.objectweb.asm.Label skip = new org.objectweb.asm.Label();
+		if (ask == Ask.OTHER_BRANCH) {
+			method.visitFieldInsn(Opcodes.GETSTATIC, target, "flag", "Z");
+			method.visitJumpInsn(Opcodes.IFEQ, skip);
+		}
+		if (ask != Ask.NOT) {
+			if (ask == Ask.NULL) method.visitInsn(Opcodes.ACONST_NULL); else method.visitVarInsn(Opcodes.ALOAD, 0);
+			method.visitMethodInsn(Opcodes.INVOKESTATIC, ForeignType.CLIENT_HOOKS.internal(Ecosystem.FORGE), "onBlockColorsInit", "(L" + target + ";)V", false);
+		}
+		if (ask == Ask.OTHER_BRANCH) method.visitLabel(skip);
+		method.visitTypeInsn(Opcodes.NEW, event); method.visitInsn(Opcodes.DUP); method.visitVarInsn(Opcodes.ALOAD, 0);
+		method.visitMethodInsn(Opcodes.INVOKESPECIAL, event, "<init>", "(L" + target + ";)V", false);
+		method.visitMethodInsn(Opcodes.INVOKESTATIC, ForeignType.FML_MOD_LOADER.internal(Ecosystem.NEOFORGE), "postEvent", ForgeBlockTintInjector.POST, false);
+		method.visitVarInsn(Opcodes.ALOAD, 0); method.visitInsn(Opcodes.ARETURN);
+		method.visitMaxs(0, 0); method.visitEnd();
+		out.visitEnd();
+		return out.toByteArray();
+	}
+
+	/** A body that hands its own colors to MinecraftForge on the path of NeoForge's post is never funnelled, and satisfies the claim. */
 	@Test void aBodyThatAlreadyAsksMinecraftForgeStandsDown() {
-		ClassNode node = parse(fixture(1, true));
+		byte[] bytes = colors(Ask.SAME_COLORS);
+		java.util.Set<String> hits = new java.util.HashSet<>();
+		assertSame(bytes, INJECTOR.transform(ForgeBlockTintInjector.TARGET, bytes, null, hits::add));
+		assertEquals(java.util.Set.of(ForgeBlockTintInjector.CLAIM), hits);
+		hits.clear();
+		INJECTOR.transform(ForgeBlockTintInjector.TARGET, fixture(2, true), null, hits::add);
+		assertEquals(java.util.Set.of(), hits, "an ambiguous body neither funnelled nor asking MinecraftForge is a miss");
+	}
+
+	/**
+	 * Near misses: MinecraftForge's call handed something else, or on a branch NeoForge's post does not share, is not
+	 * MinecraftForge registering the live colors. The funnel goes in, and the claim lands through it.
+	 */
+	@Test void aMinecraftForgeCallOnOtherColorsOrAnotherBranchIsFunnelledAnyway() {
+		for (Ask ask : List.of(Ask.NULL, Ask.OTHER_BRANCH)) {
+			byte[] bytes = colors(ask);
+			java.util.Set<String> hits = new java.util.HashSet<>();
+			byte[] after = INJECTOR.transform(ForgeBlockTintInjector.TARGET, bytes, null, hits::add);
+			assertNotSame(bytes, after, ask + ": not a stand-down");
+			assertEquals(1, posts(createDefault(after), ForgeBlockTintInjector.HOOK), ask + ": NeoForge's post goes through the funnel");
+			assertEquals(java.util.Set.of(ForgeBlockTintInjector.CLAIM), hits, ask + ": through the funnel");
+		}
+		// Negative control: with no MinecraftForge call at all the same body is funnelled the same way.
+		assertNotSame(colors(Ask.NOT), INJECTOR.transform(ForgeBlockTintInjector.TARGET, colors(Ask.NOT), null));
+	}
+
+	/** An ambiguous body (two posts, so never funnelled) with a MinecraftForge call on other colors does not land the claim. */
+	@Test void aMinecraftForgeCallOnOtherColorsDoesNotLandTheClaim() {
+		ClassNode node = parse(fixture(2, true));
 		MethodNode method = createDefault(node);
 		InsnList forge = new InsnList();
 		forge.add(new InsnNode(Opcodes.ACONST_NULL));
@@ -95,10 +169,7 @@ class ForgeBlockTintInjectorTest {
 		byte[] bytes = out.toByteArray();
 		java.util.Set<String> hits = new java.util.HashSet<>();
 		assertSame(bytes, INJECTOR.transform(ForgeBlockTintInjector.TARGET, bytes, null, hits::add));
-		assertEquals(java.util.Set.of(ForgeBlockTintInjector.CLAIM), hits);
-		hits.clear();
-		INJECTOR.transform(ForgeBlockTintInjector.TARGET, fixture(2, true), null, hits::add);
-		assertEquals(java.util.Set.of(), hits, "an ambiguous body neither funnelled nor asking MinecraftForge is a miss");
+		assertEquals(java.util.Set.of(), hits, "a null handed to MinecraftForge is not the live colors reaching it");
 	}
 
 	@Test void typedFunnelPostsNeoBeforeAskingForgeWithTheEventsBlockColors() throws Exception {
@@ -118,6 +189,22 @@ class ForgeBlockTintInjectorTest {
 	}
 
 	private static ClassNode parse(byte[] bytes) { ClassNode n = new ClassNode(); new ClassReader(bytes).accept(n, 0); return n; }
+
+	/** createDefault with MinecraftForge's own registration (its colors load and the call) taken out. */
+	private static byte[] withoutForgeRegistration(byte[] bytes) {
+		ClassNode node = parse(bytes);
+		MethodNode method = createDefault(node);
+		for (var insn : method.instructions.toArray()) {
+			if (!(insn instanceof MethodInsnNode call) || !call.owner.equals(ForeignType.CLIENT_HOOKS.internal(Ecosystem.FORGE))
+					|| !call.name.equals("onBlockColorsInit")) continue;
+			var load = call.getPrevious();
+			while (load.getOpcode() < 0) load = load.getPrevious();
+			method.instructions.remove(load);
+			method.instructions.remove(call);
+		}
+		ClassWriter out = new ClassWriter(0); node.accept(out);
+		return out.toByteArray();
+	}
 	private static MethodNode createDefault(byte[] bytes) {
 		return createDefault(parse(bytes));
 	}

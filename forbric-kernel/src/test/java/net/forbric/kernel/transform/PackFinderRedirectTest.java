@@ -52,31 +52,67 @@ class PackFinderRedirectTest {
 				"the redirect target must still call NeoForge, or it recurses into itself");
 	}
 
+	/** How a method written by {@link #packMethod} asks MinecraftForge for finders, if it does. */
+	private enum Ask { NOT, SAME_REPOSITORY, NULL, OTHER_REPOSITORY, OTHER_BRANCH }
+
+	private static final String DESC_TWO =
+			"(Lnet/minecraft/server/packs/repository/PackRepository;Lnet/minecraft/server/packs/PackType;ZLnet/minecraft/server/packs/repository/PackRepository;)V";
+
 	/**
-	 * A method that already asks MinecraftForge's mods for pack finders itself — a merge that keeps both sides' edits
-	 * writes ForgeEventFactory.addPackFindersServer back next to NeoForge's call — keeps NeoForge's call: through the
-	 * kernel MinecraftForge's mods would be asked twice. A method beside it that does not is still redirected.
+	 * {@code ResourcePackLoader.populatePackRepository(repository, type, flag); [ask]} where the ask is
+	 * {@code ForgeEventFactory.addPackFindersServer(r::addPackFinder)} for this repository, for another one (the fourth
+	 * parameter), with null, or for this repository only when the flag says so.
+	 */
+	private static void packMethod(ClassWriter cw, String name, Ask ask) {
+		MethodVisitor mv = cw.visitMethod(Opcodes.ACC_PUBLIC | Opcodes.ACC_STATIC, name, DESC_TWO, null, null);
+		mv.visitCode();
+		mv.visitVarInsn(Opcodes.ALOAD, 0);
+		mv.visitVarInsn(Opcodes.ALOAD, 1);
+		mv.visitVarInsn(Opcodes.ILOAD, 2);
+		mv.visitMethodInsn(Opcodes.INVOKESTATIC, NEO_LOADER, "populatePackRepository", DESC, false);
+		org.objectweb.asm.Label skip = new org.objectweb.asm.Label();
+		if (ask == Ask.OTHER_BRANCH) {
+			mv.visitVarInsn(Opcodes.ILOAD, 2);
+			mv.visitJumpInsn(Opcodes.IFEQ, skip);
+		}
+		if (ask != Ask.NOT) {
+			if (ask == Ask.NULL) {
+				mv.visitInsn(Opcodes.ACONST_NULL);
+			} else {
+				mv.visitVarInsn(Opcodes.ALOAD, ask == Ask.OTHER_REPOSITORY ? 3 : 0);
+				String repository = "net/minecraft/server/packs/repository/PackRepository";
+				mv.visitInvokeDynamicInsn("accept", "(L" + repository + ";)Ljava/util/function/Consumer;",
+						new org.objectweb.asm.Handle(Opcodes.H_INVOKESTATIC, "java/lang/invoke/LambdaMetafactory", "metafactory",
+								"(Ljava/lang/invoke/MethodHandles$Lookup;Ljava/lang/String;Ljava/lang/invoke/MethodType;Ljava/lang/invoke/MethodType;"
+										+ "Ljava/lang/invoke/MethodHandle;Ljava/lang/invoke/MethodType;)Ljava/lang/invoke/CallSite;", false),
+						org.objectweb.asm.Type.getType("(Ljava/lang/Object;)V"),
+						new org.objectweb.asm.Handle(Opcodes.H_INVOKEVIRTUAL, repository, "addPackFinder",
+								"(Lnet/minecraft/server/packs/repository/RepositorySource;)V", false),
+						org.objectweb.asm.Type.getType("(Lnet/minecraft/server/packs/repository/RepositorySource;)V"));
+			}
+			mv.visitMethodInsn(Opcodes.INVOKESTATIC, "net/minecraftforge/event/ForgeEventFactory", "addPackFindersServer",
+					"(Ljava/util/function/Consumer;)V", false);
+		}
+		if (ask == Ask.OTHER_BRANCH) mv.visitLabel(skip);
+		mv.visitInsn(Opcodes.RETURN);
+		mv.visitMaxs(0, 0);
+		mv.visitEnd();
+	}
+
+	/**
+	 * A method that already asks MinecraftForge's mods for pack finders for the same repository, on the path of NeoForge's
+	 * call — a merge that keeps both sides' edits writes ForgeEventFactory.addPackFindersServer back next to NeoForge's
+	 * call — keeps NeoForge's call: through the kernel MinecraftForge's mods would be asked twice. A method beside it
+	 * that does not ask is still redirected, and so is each near miss: MinecraftForge asked for another repository, for
+	 * none, or only on a branch NeoForge's call does not share.
 	 */
 	@Test
 	void aMethodThatAlreadyAsksMinecraftForgeIsLeftAlone() {
-		ClassWriter cw = new ClassWriter(0);
+		ClassWriter cw = new ClassWriter(ClassWriter.COMPUTE_MAXS | ClassWriter.COMPUTE_FRAMES) {
+			@Override protected String getCommonSuperClass(String a, String b) { return "java/lang/Object"; }
+		};
 		cw.visit(Opcodes.V17, Opcodes.ACC_PUBLIC, "net/minecraft/client/gui/screens/worldselection/CreateWorldScreen", null, "java/lang/Object", null);
-		for (boolean asksForge : List.of(true, false)) {
-			MethodVisitor mv = cw.visitMethod(Opcodes.ACC_PUBLIC | Opcodes.ACC_STATIC, asksForge ? "open" : "settings", DESC, null, null);
-			mv.visitCode();
-			mv.visitVarInsn(Opcodes.ALOAD, 0);
-			mv.visitVarInsn(Opcodes.ALOAD, 1);
-			mv.visitVarInsn(Opcodes.ILOAD, 2);
-			mv.visitMethodInsn(Opcodes.INVOKESTATIC, NEO_LOADER, "populatePackRepository", DESC, false);
-			if (asksForge) {
-				mv.visitInsn(Opcodes.ACONST_NULL);
-				mv.visitMethodInsn(Opcodes.INVOKESTATIC, "net/minecraftforge/event/ForgeEventFactory", "addPackFindersServer",
-						"(Ljava/util/function/Consumer;)V", false);
-			}
-			mv.visitInsn(Opcodes.RETURN);
-			mv.visitMaxs(4, 4);
-			mv.visitEnd();
-		}
+		for (Ask ask : Ask.values()) packMethod(cw, ask.name().toLowerCase(java.util.Locale.ROOT), ask);
 		cw.visitEnd();
 		byte[] before = cw.toByteArray();
 		byte[] out = new ForbricMergedBaseCompatTransformer(name -> null)
@@ -88,7 +124,7 @@ class PackFinderRedirectTest {
 			for (AbstractInsnNode insn = m.instructions.getFirst(); insn != null; insn = insn.getNext()) {
 				if (insn instanceof MethodInsnNode mi && mi.name.equals("populatePackRepository")) calls.add(mi.owner);
 			}
-			assertEquals(List.of(m.name.equals("open") ? NEO_LOADER : KERNEL), calls, m.name);
+			assertEquals(List.of(m.name.equals("same_repository") ? NEO_LOADER : KERNEL), calls, m.name);
 		}
 	}
 

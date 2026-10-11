@@ -66,7 +66,7 @@ public final class SpawnerFinalizeInjector implements ClassTransformer {
 		if (methods.size() != 1) return declined(bytes, "serverTick declaration is missing or ambiguous");
 		MethodNode host = methods.getFirst();
 		if ((host.access & (Opcodes.ACC_STATIC | Opcodes.ACC_ABSTRACT | Opcodes.ACC_NATIVE)) != 0) return declined(bytes, "serverTick is not a concrete instance method");
-		if (carriesForgeFinalize(host)) return standDown(bytes);
+		if (carriesForgeFinalize(node.name, host)) return standDown(bytes);
 		MethodInsnNode target = null;
 		int count = 0;
 		for (AbstractInsnNode instruction : host.instructions) {
@@ -94,11 +94,17 @@ public final class SpawnerFinalizeInjector implements ClassTransformer {
 	 * Whether the caller already posts MinecraftForge's finalize event itself, as a base that restored the call
 	 * would. The kernel entry dispatches Forge and finalizes the mob once; routing NeoForge's call there as well
 	 * would post Forge's event a second time and could finalize twice. The legacy repair asks the same question.
+	 * MinecraftForge's call counts only when it finalizes the very mob NeoForge's call does, on that call's path
+	 * ({@link NativeCallPairing}): one handed another mob, or on another branch, finalizes nothing NeoForge's does.
 	 */
-	static boolean carriesForgeFinalize(MethodNode host) {
+	static boolean carriesForgeFinalize(String owner, MethodNode host) {
+		java.util.List<MethodInsnNode> forge = new java.util.ArrayList<>(), neo = new java.util.ArrayList<>();
 		for (AbstractInsnNode instruction : host.instructions) {
-			if (instruction instanceof MethodInsnNode call && call.owner.equals(FORGE) && call.name.equals(FORGE_HOOK)) return true;
+			if (!(instruction instanceof MethodInsnNode call)) continue;
+			if (call.owner.equals(FORGE) && call.name.equals(FORGE_HOOK)) forge.add(call);
+			if (call.name.equals("finalizeMobSpawnSpawner") && (call.owner.equals(NEO) || call.owner.equals(RUNTIME))) neo.add(call);
 		}
+		for (MethodInsnNode call : forge) for (MethodInsnNode native_ : neo) if (NativeCallPairing.pairs(owner, host, call, native_, 0, native_)) return true;
 		return false;
 	}
 
