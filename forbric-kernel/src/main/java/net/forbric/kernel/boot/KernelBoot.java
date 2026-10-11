@@ -1279,7 +1279,24 @@ public final class KernelBoot {
 			// the kernel gets the live PackRepository at the one correctly-timed point (Minecraft.<init>, pre-reload)
 			// and serves the ecosystem jars' assets itself. Neutering it threw that handle away.
 		}
+		// MinecraftForge's own begin is not the no-arg one above: it takes the game, its pack repository and its
+		// resource manager, and genuine MinecraftForge calls it from Minecraft.<init> -- one of the LATER calls, not
+		// the Main.main trigger. Its body IS the MinecraftForge lifecycle: gatherAndInitializeMods, its own mod
+		// resource packs and AddPackFindersEvent, its reload listeners. A merge that keeps both ecosystems' edits to
+		// Minecraft.<init> keeps this call too, and run there it died on FMLLoader's background scan, which nothing
+		// started. Everything it would do the kernel does at its own points (onClientEntrypoints constructs the held
+		// MinecraftForge mods where this would, KernelClientPacks serves the packs), so the body goes, exactly as on a
+		// base that never called it.
+		neuter.add(new MethodBodyNeuter.Target(ForeignType.CLIENT_MOD_LOADER.binary(Ecosystem.FORGE), BEGIN,
+				FORGE_CLIENT_BEGIN_DESC, "kernel owns client mod loading (MinecraftForge's Minecraft.<init> window is "
+						+ "onClientEntrypoints)"));
 	}
+
+	/** MinecraftForge's {@code ClientModLoader.begin}: {@code (Minecraft, PackRepository, ReloadableResourceManager)V}. */
+	static final String FORGE_CLIENT_BEGIN_DESC = "(Lnet/minecraft/client/Minecraft;"
+			+ "Lnet/minecraft/server/packs/repository/PackRepository;"
+			+ "Lnet/minecraft/server/packs/resources/ReloadableResourceManager;)V";
+	private static final String BEGIN = "begin";
 
 	/** The game version, read from the base jar's {@code version.json} (vanilla ships it at the jar root). */
 	private static String detectGameVersion(Path gameJar) {
