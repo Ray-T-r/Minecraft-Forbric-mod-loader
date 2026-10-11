@@ -15,14 +15,15 @@ import net.forbric.kernel.util.ForbricLog;
 
 /**
  * NeoForge joins {@code KeyboardHandler.keyPress}'s exits into one {@code ClientHooks.onKeyInput(event, action)} call just
- * before its final return, so a guest's {@code @Inject} at a native {@code RETURN} ordinal names a return the merged
+ * before its final return (the merged body keeps MinecraftForge's own {@code ForgeHooksClient.onKeyInput} in the same
+ * join, in front of it), so a guest's {@code @Inject} at a native {@code RETURN} ordinal names a return the merged
  * body no longer has, and its {@code TAIL} also runs on the paths whose native returns came earlier.
  *
  * <p>Which native return a handler names is read off the native body the guest was compiled against
  * ({@link JoinedReturnExits}); no ordinal is assumed:
  * <ul>
  *   <li>a native return the carrier joined into the hook, proved by its own run and the action values reaching it,
- *       moves to just before the hook and runs only for those action values (in 26.2 vanilla: the key-release exit,
+ *       moves to just before the join's first hook call and runs only for those action values (in 26.2 vanilla: the key-release exit,
  *       native {@code RETURN} ordinal 4, action {@code 0});</li>
  *   <li>the native final return ({@code TAIL}, or a {@code RETURN} ordinal naming the last native return — ordinal 5
  *       in 26.2 vanilla) stays the final return, which the hook now precedes, and runs only for the action values that
@@ -106,10 +107,11 @@ public final class MixinKeyActionAdapter {
 			guard = exits.joined(ordinal);
 			// Before the hook, a cancelled callback would also cancel the carrier's event, which the native return never had.
 			if (guard == null || Boolean.TRUE.equals(MixinFit.value(injector, "cancellable"))) return false;
+			// Just before the join's first call: the hook, or another ecosystem's twin the merge kept in front of it.
 			MixinPlayerWorldCallbackAdapter.set(at, "value", "INVOKE");
-			MixinPlayerWorldCallbackAdapter.set(at, "target", LIVE);
-			MixinPlayerWorldCallbackAdapter.set(at, "ordinal", 0);
-			placed = "the merged ClientHooks.onKeyInput call that joined it";
+			MixinPlayerWorldCallbackAdapter.set(at, "target", exits.entry());
+			MixinPlayerWorldCallbackAdapter.set(at, "ordinal", exits.entryOrdinal());
+			placed = "the merged " + exits.entry() + " call that begins the join";
 			if (guard.all()) guard = null;
 		}
 		MethodNode marked = guard == null ? handler : guarded(mixin, handler, guard);

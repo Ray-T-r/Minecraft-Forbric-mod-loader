@@ -29,6 +29,11 @@ import org.objectweb.asm.tree.analysis.SourceValue;
  * {@code ClientHooks.onKeyInput(event, action)}. A guest's {@code RETURN} ordinal counts the native returns, so it names
  * a return the current body may no longer have, or a different one.
  *
+ * <p>The joined exits arrive at the JOIN: the straight-line run that ends in the hook, entered only at its first
+ * instruction. Besides the hook's own operand loads it may hold other void calls fed by operand loads alone — another
+ * ecosystem's twin of the hook that a merge kept in front of it — so the join may begin before the hook itself; its
+ * first call ({@link #entry()}) is where "before the hook" now starts.
+ *
  * <p>Everything here is read off the two bodies; no ordinal is assumed. The int parameter the hook receives is the
  * discriminator. A forward analysis of each body records, for every instruction, which of the constants that
  * parameter is compared with — or none of them — it can still equal there.
@@ -73,9 +78,11 @@ final class JoinedReturnExits {
 	private final BitSet finalValues;
 	private final boolean finalBounded;
 	private final Map<Integer, BitSet> joined;
+	private final String entry;
+	private final int entryOrdinal;
 
 	private JoinedReturnExits(int parameter, int[] constants, int nativeReturns, int currentReturns, BitSet finalValues,
-			boolean finalBounded, Map<Integer, BitSet> joined) {
+			boolean finalBounded, Map<Integer, BitSet> joined, String entry, int entryOrdinal) {
 		this.parameter = parameter;
 		this.constants = constants;
 		this.nativeReturns = nativeReturns;
@@ -83,6 +90,21 @@ final class JoinedReturnExits {
 		this.finalValues = finalValues;
 		this.finalBounded = finalBounded;
 		this.joined = joined;
+		this.entry = entry;
+		this.entryOrdinal = entryOrdinal;
+	}
+
+	/**
+	 * The member ({@code Lowner;name(desc)}) of the join's first call: the hook itself, or a call the merge kept in front
+	 * of it in the same join. A joined exit runs just before it.
+	 */
+	String entry() {
+		return entry;
+	}
+
+	/** Which occurrence of {@link #entry()} in the current body the join's first call is (an {@code INVOKE} ordinal). */
+	int entryOrdinal() {
+		return entryOrdinal;
 	}
 
 	/** How many returns the native body has: the count a guest's {@code RETURN} ordinal was written against. */
@@ -121,8 +143,9 @@ final class JoinedReturnExits {
 
 	/**
 	 * Reads both bodies of one method. Null unless the current body calls {@code hook} once, immediately before its final
-	 * return, with exactly one int argument loaded from a parameter neither body writes, and the native body does not
-	 * call {@code hook} (a guest compiled against the joined body counts its returns already).
+	 * return, with exactly one int argument loaded from a parameter neither body writes, the join ending in it holds
+	 * nothing but operand loads and void calls they alone feed, and the native body does not call {@code hook} (a guest
+	 * compiled against the joined body counts its returns already).
 	 */
 	static JoinedReturnExits of(ClassNode originalOwner, MethodNode original, ClassNode currentOwner, MethodNode current,
 			String hook) {
@@ -147,9 +170,12 @@ final class JoinedReturnExits {
 			int[] constants = universe.stream().mapToInt(Integer::intValue).toArray();
 			Flow before = new Flow(original, originalFrames, slot, constants), after = new Flow(current, currentFrames, slot, constants);
 
-			// The hook's own run: the pure operand loads in front of it, entered only at its first instruction.
+			// The join: the run in front of the hook, entered only at its first instruction, holding operand loads and
+			// void calls fed by them alone — nothing that computes a value or touches state before the hook but calls.
 			List<AbstractInsnNode> hookRun = run(current, call, false);
-			for (AbstractInsnNode operand : hookRun) if (!(operand instanceof VarInsnNode load && load.getOpcode() <= Opcodes.ALOAD)) return null;
+			MethodInsnNode first = joinEntry(hookRun, call);
+			if (first == null) return null;
+			int entryOrdinal = calls(current, CallOccurrenceAlignment.member(first)).indexOf(first);
 			AbstractInsnNode hookEntry = hookRun.isEmpty() ? call : hookRun.getFirst();
 			Set<AbstractInsnNode> inside = Collections.newSetFromMap(new IdentityHashMap<>());
 			inside.addAll(hookRun);
@@ -185,10 +211,32 @@ final class JoinedReturnExits {
 			BitSet finalValues = before.at(originalReturns.getLast()), currentFinal = (BitSet) after.at(currentReturns.getLast()).clone();
 			currentFinal.andNot(finalValues);
 			return new JoinedReturnExits(parameter, constants, originalReturns.size(), currentReturns.size(), finalValues,
-					currentFinal.isEmpty(), joined);
+					currentFinal.isEmpty(), joined, CallOccurrenceAlignment.member(first), entryOrdinal);
 		} catch (AnalyzerException | RuntimeException unanalysable) {
 			return null;
 		}
+	}
+
+	/**
+	 * The first call of the join whose run in front of {@code hook} is {@code run}: {@code hook} itself when the run is its
+	 * operand loads alone; else the earliest of the void calls in it, each consuming exactly the loads in front of it.
+	 * Null when the run holds anything else.
+	 */
+	private static MethodInsnNode joinEntry(List<AbstractInsnNode> run, MethodInsnNode hook) {
+		MethodInsnNode first = null;
+		int pending = 0;
+		for (AbstractInsnNode instruction : run) {
+			if (instruction instanceof VarInsnNode load && load.getOpcode() <= Opcodes.ALOAD) {
+				pending++;
+			} else if (instruction instanceof MethodInsnNode call && Type.getReturnType(call.desc) == Type.VOID_TYPE
+					&& pending == Type.getArgumentTypes(call.desc).length + (call.getOpcode() == Opcodes.INVOKESTATIC ? 0 : 1)) {
+				if (first == null) first = call;
+				pending = 0;
+			} else {
+				return null;
+			}
+		}
+		return first == null ? hook : first;
 	}
 
 	/** The local slot of the hook's one int argument that is a parameter load, or -1. */

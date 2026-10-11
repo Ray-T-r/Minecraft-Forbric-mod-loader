@@ -49,6 +49,16 @@ class KeyActionExitsTest {
 			import net.minecraft.client.input.KeyEvent;
 			public final class ClientHooks { public static void onKeyInput(KeyEvent event, int action) { } }
 			""";
+	/** Another ecosystem's twin of the hook, which a merge can keep in the same join in front of it. */
+	private static final String TWIN = "Lnet/minecraftforge/client/ForgeHooksClient;onKeyInput(Lnet/minecraft/client/input/KeyEvent;I)V";
+	private static final String TWIN_HOOKS = """
+			package net.minecraftforge.client;
+			import net.minecraft.client.input.KeyEvent;
+			public final class ForgeHooksClient {
+				public static void onKeyInput(KeyEvent event, int action) { }
+				public static boolean onKeyInputChecked(KeyEvent event, int action) { return false; }
+			}
+			""";
 	private static final String HEAD = """
 			package net.minecraft.client;
 			import net.minecraft.client.input.KeyEvent;
@@ -122,6 +132,9 @@ class KeyActionExitsTest {
 				}
 			}
 			""";
+	/** The joined body as an edit-spliced merge leaves it: MinecraftForge's own hook kept in the join, in front. */
+	private static final String JOINED_SIX_TWIN = JOINED_SIX.replace("ClientHooks.onKeyInput(event, action);",
+			"net.minecraftforge.client.ForgeHooksClient.onKeyInput(event, action); ClientHooks.onKeyInput(event, action);");
 	private static final String JOINED_FOUR = HEAD + """
 				private void keyPress(long handle, int action, KeyEvent event) {
 					if (handle != window) return;
@@ -177,6 +190,43 @@ class KeyActionExitsTest {
 		assertEquals(0, MixinKeyActionAdapter.adapt(mixin, n -> current, (family, n) -> original), "idempotent");
 		ClassNode reread = MixinFit.parse(bytes(mixin));
 		assertEquals(0, MixinKeyActionAdapter.adapt(reread, n -> current, (family, n) -> original), "idempotent after a round trip");
+	}
+
+	/**
+	 * A merge that keeps both ecosystems' hooks leaves two calls in the join; the joined release still runs where the
+	 * native return ran — before every hook, so in front of the twin the merge kept first — and only for a release.
+	 */
+	@Test void aJoinOfTwoHooksPlacesTheJoinedExitInFrontOfBoth() throws Exception {
+		ClassNode original = handler("native", NATIVE_SIX), current = handler("joined-twin", JOINED_SIX_TWIN);
+		JoinedReturnExits exits = exits(original, current);
+		assertEquals(TWIN, exits.entry(), "the join begins at the twin the merge kept in front of the hook");
+		assertEquals(0, exits.entryOrdinal());
+		assertEquals("0", exits.joined(4).toString());
+		for (int ordinal = 0; ordinal < 4; ordinal++) assertNull(exits.joined(ordinal), "ordinal " + ordinal);
+		assertEquals("1, 2, any other", exits.finalGuard().toString());
+
+		ClassNode guest = guest(4, 5);
+		assertEquals(3, MixinKeyActionAdapter.adapt(guest, n -> current, (family, n) -> original));
+		assertPoint(guest, "heardRelease", "INVOKE", TWIN, 0);
+		assertPoint(guest, "heardFinal", "TAIL", null, null);
+		assertPoint(guest, "heardTail", "TAIL", null, null);
+		CarpetMixinAdapterTest.verify(guest);
+		Map<String, List<Integer>> heard = heard(guest, "heardRelease", "heardFinal", "heardTail");
+		assertEquals(List.of(0), heard.get("heardRelease"));
+		assertEquals(List.of(1, 2, 7), heard.get("heardFinal"));
+		assertEquals(List.of(1, 2, 7), heard.get("heardTail"));
+
+		// Not a join: something in front of the hook that computes a value (here a call whose result is dropped).
+		String computing = JOINED_SIX.replace("ClientHooks.onKeyInput(event, action);",
+				"net.minecraftforge.client.ForgeHooksClient.onKeyInputChecked(event, action); ClientHooks.onKeyInput(event, action);");
+		assertNotEquals(JOINED_SIX, computing);
+		ClassNode notJoined = handler("joined-computing", computing);
+		assertNull(JoinedReturnExits.of(original, MixinPlayerWorldCallbackAdapter.selector(original, MixinKeyActionAdapter.HOST),
+				notJoined, MixinPlayerWorldCallbackAdapter.selector(notJoined, MixinKeyActionAdapter.HOST), MixinKeyActionAdapter.LIVE));
+		ClassNode untouched = guest(4, 5);
+		byte[] before = bytes(untouched);
+		assertEquals(0, MixinKeyActionAdapter.adapt(untouched, n -> notJoined, (family, n) -> original));
+		assertArrayEquals(before, bytes(untouched));
 	}
 
 	/** In a native body whose release is ordinal 2, ordinal 2 is joined, 3 is final and 4 names nothing. */
@@ -260,10 +310,18 @@ class KeyActionExitsTest {
 		assertTrue(exits.isFinal(5));
 		assertEquals("1, 2, any other", exits.finalGuard().toString(), "the final return is never reached on a release");
 
+		// The release runs where the join begins: in front of every hook the merged body joined its exits into. The
+		// join ends in NeoForge's hook; whatever runs in front of it there is nothing but hook calls on parameter loads.
+		MethodNode host = MixinPlayerWorldCallbackAdapter.selector(current, MixinKeyActionAdapter.HOST);
+		List<AbstractInsnNode> join = joinRun(host, exits.entry(), exits.entryOrdinal());
+		assertTrue(join.stream().anyMatch(i -> i instanceof MethodInsnNode call
+				&& CallOccurrenceAlignment.member(call).equals(MixinKeyActionAdapter.LIVE)), "NeoForge's hook is in the join");
+		for (AbstractInsnNode instruction : join) assertTrue(instruction instanceof VarInsnNode
+				|| instruction instanceof MethodInsnNode call && call.name.equals("onKeyInput"), "only hook calls in the join");
 		ClassNode guest = guest(4, 5);
 		MixinStubRebind.noteEcosystem(guest.name, Ecosystem.FABRIC);
 		assertEquals(3, MixinKeyActionAdapter.adapt(guest, n -> current, (family, n) -> family == Ecosystem.FABRIC ? original : null));
-		assertPoint(guest, "heardRelease", "INVOKE", MixinKeyActionAdapter.LIVE, 0);
+		assertPoint(guest, "heardRelease", "INVOKE", exits.entry(), exits.entryOrdinal());
 		assertPoint(guest, "heardFinal", "TAIL", null, null);
 		assertPoint(guest, "heardTail", "TAIL", null, null);
 		CarpetMixinAdapterTest.verify(guest);
@@ -378,9 +436,26 @@ class KeyActionExitsTest {
 		}
 	}
 
+	/** From the {@code ordinal}-th call of {@code member} in {@code method} to its final return, the return excluded. */
+	private static List<AbstractInsnNode> joinRun(MethodNode method, String member, int ordinal) {
+		List<AbstractInsnNode> run = new ArrayList<>();
+		int seen = 0;
+		boolean inside = false;
+		for (AbstractInsnNode instruction : method.instructions) {
+			if (!inside && instruction instanceof MethodInsnNode call && CallOccurrenceAlignment.member(call).equals(member)) inside = seen++ == ordinal;
+			if (!inside || instruction.getOpcode() < 0) continue;
+			if (instruction.getOpcode() == Opcodes.RETURN) break;
+			assertFalse(instruction instanceof JumpInsnNode, "the join is straight-line");
+			run.add(instruction);
+		}
+		assertFalse(run.isEmpty(), member + " #" + ordinal);
+		return run;
+	}
+
 	private ClassNode handler(String label, String source) throws Exception {
 		Path classes = compile(label, Map.of("net/minecraft/client/input/KeyEvent.java", EVENT,
-				"net/neoforged/neoforge/client/ClientHooks.java", HOOKS, "net/minecraft/client/KeyboardHandler.java", source));
+				"net/neoforged/neoforge/client/ClientHooks.java", HOOKS,
+				"net/minecraftforge/client/ForgeHooksClient.java", TWIN_HOOKS, "net/minecraft/client/KeyboardHandler.java", source));
 		return MixinFit.parse(Files.readAllBytes(classes.resolve("net/minecraft/client/KeyboardHandler.class")));
 	}
 
