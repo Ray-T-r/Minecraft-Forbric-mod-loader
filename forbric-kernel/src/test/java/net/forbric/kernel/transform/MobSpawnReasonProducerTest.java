@@ -70,14 +70,15 @@ class MobSpawnReasonProducerTest {
 		load.visitEnd();
 		MethodVisitor fin = cw.visitMethod(Opcodes.ACC_PUBLIC, "finalizeSpawn", "(" + REASON + REASON + ")V", null, null);
 		fin.visitCode();
-		if (producer == Producer.REASSIGNED) {
-			fin.visitVarInsn(Opcodes.ALOAD, 2);
-			fin.visitVarInsn(Opcodes.ASTORE, 1);
-		}
 		if (producer != Producer.NONE) {
 			fin.visitVarInsn(Opcodes.ALOAD, 0);
 			fin.visitVarInsn(Opcodes.ALOAD, producer == Producer.ITS_OWN ? 2 : 1);
 			fin.visitFieldInsn(Opcodes.PUTFIELD, MOB, "spawnReason", REASON);
+		}
+		// The same local, but reassigned between the two stores: spawnType then receives a different value.
+		if (producer == Producer.REASSIGNED) {
+			fin.visitVarInsn(Opcodes.ALOAD, 2);
+			fin.visitVarInsn(Opcodes.ASTORE, 1);
 		}
 		fin.visitVarInsn(Opcodes.ALOAD, 0);
 		fin.visitVarInsn(Opcodes.ALOAD, 1);
