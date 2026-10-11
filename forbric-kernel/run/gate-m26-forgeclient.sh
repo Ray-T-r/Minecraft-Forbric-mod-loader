@@ -84,6 +84,17 @@ step "a MinecraftForge fluid's client extensions are asked on the render path (H
 check "the canary placed its water source" 'ForbricLive/FLUID\] water at -?[0-9]+ -?[0-9]+ -?[0-9]+: Block\{minecraft:water\}' "$LOG"
 check "MinecraftForge fluid extensions were consulted while rendering" 'Forbric/Fluids\] MinecraftForge client extensions consulted for [1-9][0-9]* fluid' "$LOG"
 
+# Whether the merged Hud names MinecraftForge's overlay tree (a both-edits base builds and draws it there itself),
+# for the HUD assertion below.
+HUD_MERGED="${MERGED:-$RUN_OLD/merged-base/patched-mc-merged-26.2.jar}"
+if ! javap -cp "$HUD_MERGED" net.minecraft.client.gui.Hud >/dev/null 2>&1; then
+  echo "[kernel] FAIL cannot read Hud from the merged base ($HUD_MERGED)"; FAIL=1; HUD_TREE=unread
+elif javap -c -p -cp "$HUD_MERGED" net.minecraft.client.gui.Hud 2>/dev/null | grep -aq 'Method net/minecraftforge/client/gui/overlay/ForgeLayeredDraw\.'; then
+  HUD_TREE=kept
+else
+  HUD_TREE=absent
+fi
+
 # M26_ASSERTIONS_BEGIN — exercised against synthetic logs without launching the game.
 step "the canary subscribed, entered its save and completed real consumer observations"
 # The thread name is the assertion: "main" is the pre-Minecraft window, "Render thread" is Minecraft.<init>.
@@ -153,12 +164,10 @@ check "and its layer drew real frames" \
   'ForbricLive/CLIENT\] overlay layer DREW 20 frames' "$LOG"
 check "the stack is on NeoForge's layer manager" \
   "Forbric/HudBridge\] MinecraftForge's overlay stack is on NeoForge's layer manager" "$LOG"
-# Read from the base this run booted, exact both ways: a Hud that names ForgeLayeredDraw must have had its own build
-# and draw dropped, and one that does not must have had nothing to drop.
-HUD_MERGED="${MERGED:-$RUN_OLD/merged-base/patched-mc-merged-26.2.jar}"
-if ! javap -cp "$HUD_MERGED" net.minecraft.client.gui.Hud >/dev/null 2>&1; then
-  echo "[kernel] FAIL cannot read Hud from the merged base ($HUD_MERGED)"; FAIL=1
-elif javap -c -p -cp "$HUD_MERGED" net.minecraft.client.gui.Hud 2>/dev/null | grep -aq 'Method net/minecraftforge/client/gui/overlay/ForgeLayeredDraw\.'; then
+# Exact both ways against the base this run booted (HUD_TREE, read before these assertions so they stay a function
+# of the log): a Hud that kept MinecraftForge's tree must have had its own build and draw dropped, and one that did not
+# must have had nothing to drop.
+if [ "${HUD_TREE:-absent}" = kept ]; then
   check "the merged Hud's own MinecraftForge build and draw were dropped" \
     "Forbric/HudBridge\] net.minecraft.client.gui.Hud kept MinecraftForge's own overlay tree \(built in 1 place\(s\), drawn instead of NeoForge's layer manager in 1\)" "$LOG"
 else

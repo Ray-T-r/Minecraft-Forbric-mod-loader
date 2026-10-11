@@ -205,6 +205,23 @@ class ForgeRegistrationA2ContractTest {
                 + CLIENT + "setup resource ABSENT: forbriclive:setup_probe.txt\n", 0).exit());
     }
 
+    /**
+     * The HUD drop row follows the base the gate read before its assertions: where the merged Hud kept MinecraftForge's
+     * overlay tree the kernel's drop line is required, and where it did not the same line is red.
+     */
+    @Test
+    void theHudDropRowFollowsTheBaseTheGateRead() throws Exception {
+        String dropped = "[Forbric/HudBridge] net.minecraft.client.gui.Hud kept MinecraftForge's own overlay tree (built in 1 "
+                + "place(s), drawn instead of NeoForge's layer manager in 1) — dropped: the kernel builds that tree once "
+                + "every mod is loaded and puts it on NeoForge's manager, the one HUD pipeline\n";
+        assertEquals(0, gate(M26, "M26_ASSERTIONS", clientGreen() + dropped, 0, "HUD_TREE=kept").exit());
+        assertEquals(1, gate(M26, "M26_ASSERTIONS", clientGreen(), 0, "HUD_TREE=kept").exit(),
+                "a base that kept the tree and no drop: both pipelines still run");
+        assertEquals(0, gate(M26, "M26_ASSERTIONS", clientGreen(), 0, "HUD_TREE=absent").exit());
+        assertEquals(1, gate(M26, "M26_ASSERTIONS", clientGreen() + dropped, 0, "HUD_TREE=absent").exit(),
+                "a drop on a base that never carried the tree is a drop of something else");
+    }
+
     @Test
     void clientControlFailuresEmptyLogsAndDuplicateReloadsAreOrdinaryRed() throws Exception {
         for (String log : List.of("", clientGreen().replace("registration observations completed at world tick 100", "lost probe"),
@@ -244,9 +261,14 @@ class ForgeRegistrationA2ContractTest {
     }
 
     private Result gate(Path gate, String fragment, String log, int precedingFailure) throws Exception {
+        return gate(gate, fragment, log, precedingFailure, "");
+    }
+
+    /** {@code preamble}: what the gate computes before the fragment, from the base rather than the log. */
+    private Result gate(Path gate, String fragment, String log, int precedingFailure, String preamble) throws Exception {
         Path input = temporary.resolve("input.log");
         Files.writeString(input, log);
-        String program = ". \"$1\"\nLOG=\"$2\"\nFAIL=" + precedingFailure + "\n"
+        String program = ". \"$1\"\nLOG=\"$2\"\nFAIL=" + precedingFailure + "\n" + preamble + "\n"
                 + section(Files.readString(gate), fragment);
         return execute(new ProcessBuilder("bash", "-c", program, "a2-contract",
                 Path.of("run/lib.sh").toAbsolutePath().toString(), input.toString()), temporary.resolve("result.log"));
