@@ -15,7 +15,7 @@
 #   1. positive — STRICT, every case passes, zero confirmed required findings.
 #   2. adapter-off — -Dforbric.forgeBrewingRecipes=off: only the brewing case fails (the recipe arrives and throws).
 #   3. off — -Dforbric.unifiedEvents=off -Dforbric.forgeBrewingRecipes=off: exactly the repaired cases fail and the
-#      controls hold.
+#      controls hold — less the cases whose MinecraftForge hook the merged base calls itself, read from the base.
 # GATE-PARALLEL: rundirs=server-events-m48 mem=2000
 set -uo pipefail
 . "$(cd "$(dirname "$0")" && pwd)/lib.sh"
@@ -81,8 +81,17 @@ run_server adapter-off continue "-Dforbric.forgeBrewingRecipes=off"
 judge adapter-off "failed == {'brewing.forge'} and 'ClassCastException' in cases['brewing.forge']['detail']" "only the brewing case fails, on the unconverted recipe"
 
 step "3. off: the same server with the bridges and the wrap switched off"
+# A merge that keeps both families' edits may call some of MinecraftForge's hooks at these sites itself (the respawn
+# copy in ServerPlayer.restoreFrom does). With the bridges off, the cases those calls decide still hold: the base
+# delivers them, the kernel did not repair them. So they leave the expectation, read from the base this run booted.
+# Both directions stay exact. The experience cases are driven through NeoForge's own hook, and the brewing case is the
+# wrap's, so no call in the base can decide those.
+merged_delivers clone.forge net.minecraft.server.level.ServerPlayer restoreFrom net/minecraftforge/event/ForgeEventFactory.onPlayerClone
+merged_delivers detonate.spare net.minecraft.world.level.ServerExplosion hurtEntities net/minecraftforge/event/ForgeEventFactory.onExplosionDetonate
+NATIVE="set([${MERGED_NATIVE%, }])"
+echo "[kernel] off: cases the merged base delivers itself: $NATIVE"
 run_server off continue "-Dforbric.unifiedEvents=off -Dforbric.forgeBrewingRecipes=off"
-judge off "failed == $REPAIRED" "exactly the repaired cases fail; the controls hold"
+judge off "failed == $REPAIRED - $NATIVE" "exactly the repaired cases the base does not deliver itself fail; the controls hold"
 
 if [ "$FAIL" -eq 0 ]; then
   echo "[kernel] ✅ M48 SERVER EVENTS GATE GREEN — respawn copy, experience drop, explosion and brewing reach MinecraftForge mods"

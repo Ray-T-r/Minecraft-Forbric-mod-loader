@@ -109,6 +109,33 @@ check_exactly() {
   else printf '[kernel] FAIL %s (want exactly %s got %s)\n' "$what" "$want" "${got:-0}"; FAIL=1; fi
 }
 
+# merged_calls <class> <method> <ref>... — does the merged base this run boots make one of these calls (or
+# constructions) in <class>.<method>, any overload, or in a lambda that method captures? 0 yes, 1 no, 2 unreadable.
+# Reads $MERGED, else the staged base. Grammar and the reason only CAPTURED lambdas count are in merged_calls.py: a
+# merge that keeps both families' compiles of a lambda can leave the losing body behind with nothing calling it.
+# A leading --every asks whether EACH overload makes it (a constructor handing over to this(...) left out).
+merged_calls() {
+  local every=""
+  if [ "${1:-}" = "--every" ]; then every="--every"; shift; fi
+  python3 "$KERNEL/run/merged_calls.py" $every "${MERGED:-$RUN_OLD/merged-base/patched-mc-merged-26.2.jar}" "$@"
+}
+
+# merged_delivers <case> [--every] <class> <method> <ref>... — for a gate whose off phase expects exactly the repaired cases
+# to fail: when the merged base makes the call that decides <case> itself, append 'case' to $MERGED_NATIVE (a
+# python set body), because with the kernel's repair switched off the base still delivers it. FAILS when the base
+# cannot be read: an expectation computed from a base nobody read is no expectation.
+MERGED_NATIVE=""
+merged_delivers() {
+  local name="$1" site; shift
+  if [ "${1:-}" = "--every" ]; then site="$2.$3"; else site="$1.$2"; fi
+  merged_calls "$@"
+  case $? in
+    0) MERGED_NATIVE="$MERGED_NATIVE'$name', " ;;
+    1) ;;
+    *) printf '[kernel] FAIL cannot read %s from the merged base, so whether it delivers %s is unknown\n' "$site" "$name"; FAIL=1 ;;
+  esac
+}
+
 # check_kept_up <what> <server-log> — the one performance assertion this project has.
 #
 # WHY IT IS TWO ASSERTIONS. "Can't keep up! Is the server overloaded?" is vanilla's own line, and it is the only
