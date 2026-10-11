@@ -82,8 +82,12 @@ class LiquidBlockFluidInjectorExecutionTest {
 	@Test void vanillaWaterAnswersAndASupplierBuiltLiquidStillDoes(@TempDir Path work) throws Throwable {
 		Map<String, byte[]> original = InjectorExecution.compile(work, STAND_INS);
 		String internal = LiquidBlockFluidInjector.OWNER;
-		byte[] repaired = InjectorExecution.transform(new LiquidBlockFluidInjector(), LiquidBlockFluidInjector.TARGET,
-				original.get(internal), EnvType.SERVER);
+		java.util.List<String> hits = new java.util.ArrayList<>();
+		byte[] repaired = new LiquidBlockFluidInjector().transform(LiquidBlockFluidInjector.TARGET, original.get(internal), null,
+				hits::add);
+		assertNotSame(original.get(internal), repaired,
+				"vanilla's constructor stores null into the supplier: the getter throws for it, so the repair does not stand by");
+		assertEquals(java.util.List.of(LiquidBlockFluidInjector.CLAIM), hits);
 		Map<String, byte[]> classes = new HashMap<>(original);
 		classes.put(internal, repaired);
 		ClassLoader loader = InjectorExecution.load(classes);
@@ -105,6 +109,27 @@ class LiquidBlockFluidInjectorExecutionTest {
 				"premise: as merged, asking vanilla water for its fluid throws");
 		assertSame(repaired, InjectorExecution.transform(new LiquidBlockFluidInjector(), LiquidBlockFluidInjector.TARGET,
 				repaired, EnvType.SERVER), "a getter that already reads the field is left alone");
+	}
+
+	/**
+	 * A base that keeps both families' constructor edits fills the supplier in vanilla's constructor as well: there the
+	 * merged getter already answers for water, and the repair stands by — the class untouched, the claim met.
+	 */
+	@Test void aBaseWhoseConstructorsAllFillTheSupplierNeedsNoRepair(@TempDir Path work) throws Throwable {
+		Map<String, String> sources = new HashMap<>(STAND_INS);
+		sources.put(LiquidBlockFluidInjector.TARGET, STAND_INS.get(LiquidBlockFluidInjector.TARGET)
+				.replace("this.supplier = null;", "this.supplier = () -> fluid;"));
+		assertNotEquals(STAND_INS.get(LiquidBlockFluidInjector.TARGET), sources.get(LiquidBlockFluidInjector.TARGET));
+		Map<String, byte[]> original = InjectorExecution.compile(work, sources);
+		byte[] bytes = original.get(LiquidBlockFluidInjector.OWNER);
+		java.util.List<String> hits = new java.util.ArrayList<>();
+		assertSame(bytes, new LiquidBlockFluidInjector().transform(LiquidBlockFluidInjector.TARGET, bytes, null, hits::add));
+		assertEquals(java.util.List.of(LiquidBlockFluidInjector.CLAIM), hits, "the getter answers as merged, so the claim is met");
+
+		ClassLoader loader = InjectorExecution.load(original);
+		Object water = fluid(loader, "minecraft:water");
+		assertSame(water, InjectorExecution.invoke(InjectorExecution.construct(loader.loadClass(LiquidBlockFluidInjector.TARGET),
+				water, new Object()), "getFluid"), "as merged, vanilla water answers");
 	}
 
 	@Test void switchedOffTheGetterIsLeftAsMerged(@TempDir Path work) throws Exception {

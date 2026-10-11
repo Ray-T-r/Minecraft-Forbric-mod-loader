@@ -13,7 +13,7 @@
 #
 #   1. positive — STRICT, every case passes, zero confirmed required findings.
 #   2. off — -Dforbric.coremodParity=off: every repaired case fails, and only the two Fabric climates (read raw) still
-#      hold, so each case is shown to depend on the repair.
+#      hold, so each case is shown to depend on the repair — less the cases the merged base decides itself, read from it.
 #   3. rebase-off — -Dforbric.biomeRebase=off: everything passes except the two Fabric climates, so the pass
 #      bookkeeping (rebase and pass-time record) is what keeps them.
 # Not covered here: the trial spawner (its helper is unit-tested, KernelFinalizeSpawnTest; no trial spawner runs in
@@ -75,8 +75,14 @@ then echo "[kernel] PASS positive: zero confirmed required findings under STRICT
 else echo "[kernel] FAIL positive: STRICT report missing or has confirmed required findings"; FAIL=1; fi
 
 step "2. off: the same server with the repairs switched off"
+# A merge that keeps both families' edits of LiquidBlock's constructors fills the supplier MinecraftForge's getter
+# reads in vanilla's constructor too, so water answers its fluid with the repair off: the base decides that case, the
+# kernel did not repair it. Read from the base this run booted, by every constructor's store; exact both ways.
+merged_delivers fluid.water --every net.minecraft.world.level.block.LiquidBlock '<init>' put:net/minecraft/world/level/block/LiquidBlock.supplier
+NATIVE="set([${MERGED_NATIVE%, }])"
+echo "[kernel] off: cases the merged base decides itself: $NATIVE"
 run_server off continue "-Dforbric.coremodParity=off"
-judge off "failed == set(cases) - {'biome.fabric.keep', 'biome.late.keep'}" "every repaired case fails, and only the raw Fabric climates hold"
+judge off "failed == set(cases) - {'biome.fabric.keep', 'biome.late.keep'} - $NATIVE" "every repaired case the base does not decide itself fails, and only the raw Fabric climates hold"
 
 step "3. rebase-off: NeoForge's pass from the biome's original info"
 run_server rebase-off continue "-Dforbric.biomeRebase=off"

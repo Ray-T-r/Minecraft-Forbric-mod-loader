@@ -61,9 +61,30 @@ class CoremodRepairInjectorsTest {
 		assertSame(merged, new FlowerPotRepairInjector().transform(FlowerPotRepairInjector.TARGET, merged, null));
 	}
 
+	/**
+	 * Read from the staged base, exact both ways: where one of its constructors leaves the supplier unfilled the getter
+	 * is repaired to read the field first; where every constructor fills it (a both-edits merge) the repair stands by.
+	 * Either way the claim is met, and the stand-by is only taken where this test's own reading agrees.
+	 */
 	@Test void theLiquidBlocksGetterReadsTheFieldBeforeTheSupplier() throws Exception {
 		byte[] original = NativeCoremodParityTest.read(MERGED, LiquidBlockFluidInjector.OWNER);
-		byte[] out = new LiquidBlockFluidInjector().transform(LiquidBlockFluidInjector.TARGET, original, null);
+		List<String> hits = new java.util.ArrayList<>();
+		byte[] out = new LiquidBlockFluidInjector().transform(LiquidBlockFluidInjector.TARGET, original, null, hits::add);
+		assertEquals(List.of(LiquidBlockFluidInjector.CLAIM), hits, "the getter answers every liquid once through");
+		boolean everyConstructorFills = true;
+		for (MethodNode init : node(original).methods) {
+			if (!init.name.equals("<init>")) continue;
+			boolean delegates = find(init, MethodInsnNode.class, c -> c.getOpcode() == Opcodes.INVOKESPECIAL
+					&& c.owner.equals(LiquidBlockFluidInjector.OWNER) && c.name.equals("<init>")) != null;
+			FieldInsnNode put = find(init, FieldInsnNode.class, f -> f.getOpcode() == Opcodes.PUTFIELD && f.name.equals("supplier"));
+			AbstractInsnNode value = put == null ? null : put.getPrevious();
+			while (value != null && value.getOpcode() < 0) value = value.getPrevious();
+			if (!delegates && (put == null || value.getOpcode() == Opcodes.ACONST_NULL)) everyConstructorFills = false;
+		}
+		if (everyConstructorFills) {
+			assertSame(original, out, "every constructor of the staged LiquidBlock fills the supplier: nothing to repair");
+			return;
+		}
 		assertNotSame(original, out);
 		MethodNode getter = method(node(out), "getFluid", "()L" + LiquidBlockFluidInjector.FLUID + ";");
 		List<AbstractInsnNode> real = java.util.Arrays.stream(getter.instructions.toArray()).filter(i -> i.getOpcode() >= 0).toList();
