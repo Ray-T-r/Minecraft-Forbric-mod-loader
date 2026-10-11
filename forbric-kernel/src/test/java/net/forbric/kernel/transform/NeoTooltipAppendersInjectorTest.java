@@ -94,6 +94,26 @@ class NeoTooltipAppendersInjectorTest {
 				"a second pass changes nothing");
 	}
 
+	/**
+	 * NativeDualEventInjector instruments every NeoForge hook that posts, a mod-bus post included: the event init built
+	 * is reported and the post bracketed. That bookkeeping is the kernel's, so init still posts through the delivery.
+	 */
+	@Test void theKernelsDeliveryBookkeepingIsNotTheMethodsCode() throws Exception {
+		byte[] original = NativeCoremodParityTest.read(NEO_RT, HANDLER);
+		byte[] instrumented = new NativeDualEventInjector(path -> null, java.util.Set.of("net/minecraftforge/event/Unused"))
+				.transform(NeoTooltipAppendersInjector.HANDLER, original, null);
+		assertNotSame(original, instrumented, "premise: the delivery bookkeeping brackets init's mod-bus post");
+		ClassNode bracketed = node(instrumented);
+		MethodInsnNode post = calls(bracketed, "net/neoforged/fml/ModLoader", "postEvent").get(0);
+		assertTrue(post.getPrevious() instanceof MethodInsnNode mark && mark.owner.equals(NativeDualEventInjector.API), "premise");
+		byte[] out = new NeoTooltipAppendersInjector().transform(NeoTooltipAppendersInjector.HANDLER, instrumented, null);
+		ClassNode handler = node(out);
+		assertTrue(calls(handler, "net/neoforged/fml/ModLoader", "postEvent").isEmpty());
+		assertEquals(1, calls(handler, NeoTooltipAppendersInjector.RUNTIME, "postRegisterAppenders").size());
+		MethodNode init = handler.methods.stream().filter(m -> m.name.equals("init")).findFirst().orElseThrow();
+		new Analyzer<>(new BasicVerifier()).analyze(HANDLER, init);
+	}
+
 	@Test void theSwitchLeavesTheHandlerAlone() throws Exception {
 		System.setProperty(KernelLifecycle.NEO_TOOLTIP_APPENDERS, "off");
 		byte[] original = NativeCoremodParityTest.read(NEO_RT, HANDLER);

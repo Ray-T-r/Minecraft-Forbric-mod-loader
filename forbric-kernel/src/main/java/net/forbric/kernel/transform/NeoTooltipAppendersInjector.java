@@ -23,7 +23,8 @@ import org.objectweb.asm.tree.VarInsnNode;
  * tooltip lines — and posts nothing at all once any mod has failed to load. The one call goes to
  * {@code KernelNeoTooltips.postRegisterAppenders}, the kernel's per-container delivery; the event is the one
  * {@code init} just built, so nothing else in the method moves. Applied only when {@code init} posts exactly one event
- * and it is that one. {@code -Dforbric.neoTooltipAppenders=off} leaves the class as shipped (and the kernel does not
+ * and it is that one (the kernel's own delivery bookkeeping around a mod-bus post, NativeDualEventInjector's, is not
+ * the method's code and is stepped over). {@code -Dforbric.neoTooltipAppenders=off} leaves the class as shipped (and the kernel does not
  * build the appenders at all).
  *
  * <p>Fabric's component tooltip providers ({@code ItemComponentTooltipProviderRegistry}) are placed first, last, and
@@ -125,6 +126,21 @@ public final class NeoTooltipAppendersInjector implements ClassTransformer {
 		return false;
 	}
 
+	/**
+	 * The instruction before {@code insn} once the kernel's own delivery bookkeeping is stepped over: a mod-bus post in a
+	 * NeoForge hook is bracketed by NativeDualEventInjector (it reports the event it constructed, a {@code DUP} and a
+	 * static call to {@code NativeEventDelivery}, and marks its dispatch), and none of that is the method's code.
+	 */
+	private static AbstractInsnNode beforeBookkeeping(AbstractInsnNode insn) {
+		insn = real(insn);
+		while (insn instanceof MethodInsnNode call && call.getOpcode() == Opcodes.INVOKESTATIC && call.owner.equals(NativeDualEventInjector.API)) {
+			boolean report = call.desc.equals("(Ljava/lang/Object;)V");
+			insn = real(call.getPrevious());
+			if (report && insn != null && insn.getOpcode() == Opcodes.DUP) insn = real(insn.getPrevious());
+		}
+		return insn;
+	}
+
 	private static AbstractInsnNode real(AbstractInsnNode insn) {
 		while (insn != null && insn.getOpcode() < 0) insn = insn.getPrevious();
 		return insn;
@@ -145,8 +161,7 @@ public final class NeoTooltipAppendersInjector implements ClassTransformer {
 				}
 			}
 			if (posts != 1) return false;
-			AbstractInsnNode previous = post.getPrevious();
-			while (previous != null && previous.getOpcode() < 0) previous = previous.getPrevious();
+			AbstractInsnNode previous = beforeBookkeeping(post.getPrevious());
 			if (!(previous instanceof MethodInsnNode built) || built.getOpcode() != Opcodes.INVOKESPECIAL
 					|| !built.owner.equals(EVENT) || !built.name.equals("<init>")) return false;
 			post.owner = RUNTIME;
