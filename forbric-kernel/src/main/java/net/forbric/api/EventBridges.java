@@ -44,6 +44,7 @@ public final class EventBridges {
 	public static final String SWITCH_NAME = "forbric.unifiedEvents";
 
 	private static final Set<GameEventBridge> INSTALLED = EnumSet.noneOf(GameEventBridge.class);
+	private static final Set<GameEventBridge> NATIVE = EnumSet.noneOf(GameEventBridge.class);
 
 	private EventBridges() {
 	}
@@ -63,9 +64,30 @@ public final class EventBridges {
 		return EnumSet.copyOf(INSTALLED);
 	}
 
+	/**
+	 * Records that the merged game delivers {@code bridge}'s event itself, so the kernel's repair or forward for it stood
+	 * down instead of delivering it a second time. Such a bridge is not missing: its event arrives, natively.
+	 */
+	public static synchronized void deliveredNatively(GameEventBridge bridge) {
+		if (bridge != null) NATIVE.add(bridge);
+	}
+
+	/** The bridges recorded by {@link #deliveredNatively(GameEventBridge)}. */
+	public static synchronized Set<GameEventBridge> deliveredNatively() {
+		return NATIVE.isEmpty() ? EnumSet.noneOf(GameEventBridge.class) : EnumSet.copyOf(NATIVE);
+	}
+
+	/** The bridges whose event arrives: installed, or delivered natively by the merged game. */
+	public static synchronized Set<GameEventBridge> satisfied() {
+		Set<GameEventBridge> out = installed();
+		out.addAll(NATIVE);
+		return out;
+	}
+
 	/** Forgets everything. For tests, which install different sets in one JVM. */
 	static synchronized void reset() {
 		INSTALLED.clear();
+		NATIVE.clear();
 	}
 
 	/**
@@ -79,11 +101,19 @@ public final class EventBridges {
 	 */
 	public static boolean verify(GameEventBridge.Pass pass) {
 		Set<GameEventBridge> missing = EnumSet.noneOf(GameEventBridge.class);
+		Set<GameEventBridge> nativeOnes = EnumSet.noneOf(GameEventBridge.class);
 		int declared = 0;
+		Set<GameEventBridge> installed = installed(), delivered = deliveredNatively();
 		for (GameEventBridge bridge : GameEventBridge.values()) {
 			if (bridge.pass() != pass) continue;
 			declared++;
-			if (!installed().contains(bridge)) missing.add(bridge);
+			// A bridge that stood down because the merged game delivers its event itself is satisfied, not lost.
+			if (!installed.contains(bridge) && delivered.contains(bridge)) nativeOnes.add(bridge);
+			else if (!installed.contains(bridge)) missing.add(bridge);
+		}
+		if (!nativeOnes.isEmpty()) {
+			ForbricLog.info("[Forbric/EventMux] %d %s bridge(s) stood down — the merged game delivers their event itself: %s",
+					nativeOnes.size(), pass, nativeOnes);
 		}
 
 		if (missing.isEmpty()) {

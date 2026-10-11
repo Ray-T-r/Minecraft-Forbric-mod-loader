@@ -2,11 +2,15 @@ package net.forbric.kernel.boot;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
+import java.util.ArrayDeque;
+import java.util.HashMap;
+import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -16,6 +20,7 @@ import java.util.TreeSet;
 
 import net.forbric.kernel.TestFixtures;
 import net.forbric.kernel.TestFixtures.Fixture;
+import net.forbric.kernel.transform.NativeDualEventInjector;
 import org.junit.jupiter.api.Test;
 import org.objectweb.asm.ClassReader;
 import org.objectweb.asm.ClassWriter;
@@ -24,9 +29,14 @@ import org.objectweb.asm.tree.AbstractInsnNode;
 import org.objectweb.asm.tree.ClassNode;
 import org.objectweb.asm.tree.InsnList;
 import org.objectweb.asm.tree.InsnNode;
+import org.objectweb.asm.tree.LdcInsnNode;
 import org.objectweb.asm.tree.MethodInsnNode;
 import org.objectweb.asm.tree.MethodNode;
+import org.objectweb.asm.tree.TypeInsnNode;
 import org.objectweb.asm.tree.VarInsnNode;
+import org.objectweb.asm.tree.analysis.Analyzer;
+import org.objectweb.asm.tree.analysis.BasicInterpreter;
+import org.objectweb.asm.tree.analysis.BasicValue;
 
 /**
  * Re-derives, from the staged bytecode, the hook census this project had only ever done by hand.
@@ -188,24 +198,46 @@ class HookCallSiteCensusStagedTest {
 		assertEquals(Set.of(), both, "listed as never posted AND as partly posted: " + both);
 	}
 
+	/**
+	 * A method that posts through both families can hand one subscriber a bridged event twice: the native
+	 * MinecraftForge call, and the bridge forwarding the NeoForge one. Every such pair that can run in one invocation
+	 * must be stood down by the kernel, which this checks on what the kernel actually writes: the NeoForge call is
+	 * wrapped in a scope that names the MinecraftForge event — proved from the caller's bytecode, or recorded from a
+	 * MinecraftForge call the kernel also wrapped — and both families' hooks report the events they construct.
+	 *
+	 * <p>The pairs are found independently of the kernel's proof: a MinecraftForge hook whose carrier body constructs a
+	 * forwarded event, a NeoForge hook whose carrier body constructs the event of the same name under NeoForge's event
+	 * package, and a path from one call to the other. Pairs on branches that never meet cannot deliver twice.
+	 */
 	@Test
 	void noSinglePathPostsABridgedEventTwice() throws Exception {
 		TestFixtures.require(Fixture.STAGED, Files.isRegularFile(base()), "staged merged base absent");
 		List<String> both = HookCallSiteCensus.methodsCallingBothFamilies(List.of(base()));
 		System.out.println("[Forbric/Hooks] methods calling both ecosystems' event hooks: " + both.size());
+		Set<String> forwarded = DeadEventAudit.forwardedForgeEvents();
+		NativeDualEventInjector injector = new NativeDualEventInjector(HookCallSiteCensusStagedTest::protocolBytes, forwarded);
 		List<String> unproved = new ArrayList<>();
-        net.forbric.kernel.interop.protocol.NativeEventProtocols.register();
-        int bridged=0;
-        for(String method:both){
-            byte[] bytes=classBytes(method.substring(0,method.indexOf('#')));
-            if(!postsRegisteredBridgePair(method,bytes))continue;
-            bridged++;
-            if(!bridgeStandsDown(method,bytes))unproved.add(method);
-        }
-        assertTrue(bridged>0,"actual installed forward protocols must be measured");
+		int risks = 0;
+		for (String method : both) {
+			String owner = method.substring(0, method.indexOf('#'));
+			byte[] bytes = classBytes(owner);
+			if (method.equals(PORTAL_OWNER + "#" + PORTAL_METHOD)) {
+				// The portal's bridge carries a result and is composed by PortalSpawnInjector, not by this scope.
+				risks++;
+				if (!portalStandsDown(bytes)) unproved.add(method);
+				continue;
+			}
+			for (Risk risk : risks(method, bytes, forwarded)) {
+				risks++;
+				if (!standsDown(injector, method, bytes, risk)) unproved.add(method + " " + risk);
+			}
+		}
+		System.out.println("[Forbric/Hooks] single-path pairs of a forwarded event: " + risks);
+		// The denominator: a scan that matched nothing would make the assertion below vacuous.
+		assertTrue(risks > 0, "no method delivers a forwarded event through both families — verify the scan");
 		assertEquals(List.of(), unproved,
 				"a method that posts through both families can deliver a bridged event twice to one subscriber, unless "
-						+ "the kernel proves the pair from its bytecode and stands its legacy forward down: " + unproved);
+						+ "the kernel scopes the NeoForge delivery with the MinecraftForge one: " + unproved);
 	}
 
 	@Test
@@ -226,10 +258,46 @@ class HookCallSiteCensusStagedTest {
 		ClassWriter writer = new ClassWriter(0);
 		node.accept(writer);
 		try {
-			assertFalse(bridgeStandsDown(PORTAL_OWNER + "#" + PORTAL_METHOD, writer.toByteArray()));
+			assertFalse(portalStandsDown(writer.toByteArray()));
 		} finally {
 			net.forbric.api.CompatibilityFindings.reset();
 		}
+	}
+
+	/**
+	 * The negative control for the general stand-down: a stood-down pair whose MinecraftForge call is taken out of the
+	 * family (the same instruction, to an owner outside MinecraftForge's namespace) is no longer stood down, so the
+	 * check above can fail.
+	 */
+	@Test
+	void aPairWithoutItsNativeDeliveryIsNotStoodDown() throws Exception {
+		TestFixtures.require(Fixture.STAGED, Files.isRegularFile(base()), "staged merged base absent");
+		Set<String> forwarded = DeadEventAudit.forwardedForgeEvents();
+		NativeDualEventInjector injector = new NativeDualEventInjector(HookCallSiteCensusStagedTest::protocolBytes, forwarded);
+		String found = null;
+		Risk pair = null;
+		for (String method : HookCallSiteCensus.methodsCallingBothFamilies(List.of(base()))) {
+			if (method.startsWith(PORTAL_OWNER + "#")) continue;
+			byte[] bytes = classBytes(method.substring(0, method.indexOf('#')));
+			for (Risk risk : risks(method, bytes, forwarded)) {
+				if (found == null && standsDown(injector, method, bytes, risk)) {
+					found = method;
+					pair = risk;
+				}
+			}
+		}
+		assertNotNull(found, "no stood-down pair to break");
+		String owner = found.substring(0, found.indexOf('#'));
+		ClassNode node = new ClassNode();
+		new ClassReader(classBytes(owner)).accept(node, 0);
+		for (MethodNode m : node.methods) {
+			if (!(m.name + m.desc).equals(found.substring(found.indexOf('#') + 1))) continue;
+			((MethodInsnNode) m.instructions.get(pair.forge())).owner = "test/elsewhere/Factory";
+		}
+		ClassWriter writer = new ClassWriter(0);
+		node.accept(writer);
+		assertFalse(standsDown(new NativeDualEventInjector(HookCallSiteCensusStagedTest::protocolBytes, forwarded), found,
+				writer.toByteArray(), pair), found + " " + pair + " with its MinecraftForge call gone");
 	}
 
 	private static final String PORTAL_OWNER = "net/minecraft/world/level/block/BaseFireBlock";
@@ -237,20 +305,11 @@ class HookCallSiteCensusStagedTest {
 			+ "Lnet/minecraft/world/level/Level;Lnet/minecraft/core/BlockPos;Lnet/minecraft/world/level/block/state/BlockState;Z)V";
 
 	/**
-	 * Whether the kernel proves this dual-family caller from its bytecode and confines the legacy forward to one
-	 * family. Only the portal caller has such a proof: PortalSpawnInjector accepts the reviewed composition and
-	 * scopes the NeoForge call, and leaves anything else unchanged.
+	 * Whether the kernel proves the portal caller from its bytecode and confines the legacy forward to one family:
+	 * PortalSpawnInjector accepts the reviewed composition and scopes the NeoForge call, and leaves anything else
+	 * unchanged.
 	 */
-	private static boolean bridgeStandsDown(String method, byte[] bytes) {
-        if(!method.equals(PORTAL_OWNER+"#"+PORTAL_METHOD)){
-            var transformer=new net.forbric.kernel.transform.NativeDualEventInjector(HookCallSiteCensusStagedTest::protocolBytes);
-            byte[] adapted=transformer.transform(method.substring(0,method.indexOf('#')).replace('/','.'),bytes,null);
-            if(adapted==bytes)return false;ClassNode node=new ClassNode();new ClassReader(adapted).accept(node,0);
-            String selector=method.substring(method.indexOf('#')+1);
-            for(MethodNode host:node.methods)if((host.name+host.desc).equals(selector))for(AbstractInsnNode instruction:host.instructions)
-                if(instruction instanceof MethodInsnNode call&&call.owner.equals(node.name)&&call.name.startsWith("forbric$nativeDelivery$"))return true;
-            return false;
-        }
+	private static boolean portalStandsDown(byte[] bytes) {
 		byte[] adapted = new net.forbric.kernel.transform.PortalSpawnInjector()
 				.transform(PORTAL_OWNER.replace('/', '.'), bytes, null);
 		if (adapted == bytes) return false;
@@ -266,24 +325,170 @@ class HookCallSiteCensusStagedTest {
 		return false;
 	}
 
-    /** A dual hook method is a duplicate-forward risk only when it posts a protocol the kernel really forwards. */
-    private static boolean postsRegisteredBridgePair(String method,byte[] bytes){
-        if(method.equals(PORTAL_OWNER+"#"+PORTAL_METHOD))return true;
-        ClassNode node=new ClassNode();new ClassReader(bytes).accept(node,0);String selector=method.substring(method.indexOf('#')+1);
-        for(MethodNode host:node.methods)if((host.name+host.desc).equals(selector))for(var contract:net.forbric.api.NativeEventDelivery.contracts()){
-            boolean source=false,target=false;
-            for(AbstractInsnNode instruction:host.instructions)if(instruction instanceof MethodInsnNode call){
-                if(call.owner.equals(contract.source().owner())&&call.name.equals(contract.source().name())&&call.desc.equals(contract.source().descriptor()))source=true;
-                if(call.owner.equals(contract.counterpart().owner())&&call.name.equals(contract.counterpart().name())&&call.desc.equals(contract.counterpart().descriptor()))target=true;
-            }
-            if(source&&target)return true;
-        }return false;
-    }
-    private static byte[] protocolBytes(String path){
-        for(Path jar:List.of(base(),root().resolve("merged-base/forge-runtime-interop.jar"),root().resolve("neoforge-runtime/neoforge-runtime.jar")))try(var zip=new java.util.zip.ZipFile(jar.toFile())){
-            var entry=zip.getEntry(path);if(entry!=null)try(var input=zip.getInputStream(entry)){return input.readAllBytes();}
-        }catch(Exception unavailable){return null;}return null;
-    }
+	/** One MinecraftForge call and one NeoForge call of a method, by instruction index, and the forwarded event. */
+	private record Risk(int forge, int neo, String event) {
+		@Override public String toString() {
+			return event.substring(event.lastIndexOf('/') + 1) + " @" + forge + "/" + neo;
+		}
+	}
+
+	/** The event's path below its family's event package, which names the two families' counterparts alike. */
+	private static String namesake(String event) {
+		for (String root : List.of("net/minecraftforge/event/", "net/minecraftforge/client/event/",
+				"net/neoforged/neoforge/event/", "net/neoforged/neoforge/client/event/")) {
+			if (event.startsWith(root)) return event.substring(root.length());
+		}
+		return event;
+	}
+
+	private static List<Risk> risks(String method, byte[] bytes, Set<String> forwarded) throws Exception {
+		ClassNode node = new ClassNode();
+		new ClassReader(bytes).accept(node, 0);
+		String selector = method.substring(method.indexOf('#') + 1);
+		List<Risk> out = new ArrayList<>();
+		for (MethodNode m : node.methods) {
+			if (!(m.name + m.desc).equals(selector)) continue;
+			List<Integer> forgeCalls = new ArrayList<>(), neoCalls = new ArrayList<>();
+			for (int i = 0; i < m.instructions.size(); i++) {
+				if (!(m.instructions.get(i) instanceof MethodInsnNode call) || call.getOpcode() != Opcodes.INVOKESTATIC) continue;
+				if (HookCallSiteCensus.isHookClass(call.owner, "net/minecraftforge/")) forgeCalls.add(i);
+				if (HookCallSiteCensus.isHookClass(call.owner, "net/neoforged/")) neoCalls.add(i);
+			}
+			Map<Integer, Set<Integer>> edges = edges(node.name, m);
+			for (int f : forgeCalls) {
+				for (String event : constructed((MethodInsnNode) m.instructions.get(f), "net/minecraftforge/")) {
+					if (!forwarded.contains(event)) continue;
+					for (int n : neoCalls) {
+						if (!constructed((MethodInsnNode) m.instructions.get(n), "net/neoforged/").stream()
+								.anyMatch(neo -> namesake(neo).equals(namesake(event)))) continue;
+						if (reach(edges, f, n) || reach(edges, n, f)) out.add(new Risk(f, n, event));
+					}
+				}
+			}
+		}
+		return out;
+	}
+
+	/** The family's types the hook's own body, in its carrier, constructs. */
+	private static Set<String> constructed(MethodInsnNode call, String family) {
+		byte[] bytes = protocolBytes(call.owner + ".class");
+		Set<String> out = new TreeSet<>();
+		if (bytes == null) return out;
+		ClassNode hook = new ClassNode();
+		new ClassReader(bytes).accept(hook, ClassReader.SKIP_FRAMES);
+		for (MethodNode m : hook.methods) {
+			if (!m.name.equals(call.name) || !m.desc.equals(call.desc)) continue;
+			for (AbstractInsnNode i : m.instructions) {
+				if (i instanceof TypeInsnNode type && type.getOpcode() == Opcodes.NEW && type.desc.startsWith(family)) out.add(type.desc);
+			}
+		}
+		return out;
+	}
+
+	private static Map<Integer, Set<Integer>> edges(String owner, MethodNode method) throws Exception {
+		Map<Integer, Set<Integer>> edges = new HashMap<>();
+		new Analyzer<BasicValue>(new BasicInterpreter()) {
+			@Override protected void newControlFlowEdge(int from, int to) {
+				edges.computeIfAbsent(from, k -> new HashSet<>()).add(to);
+			}
+
+			@Override protected boolean newControlFlowExceptionEdge(int from, int to) {
+				newControlFlowEdge(from, to);
+				return true;
+			}
+		}.analyze(owner, method);
+		return edges;
+	}
+
+	private static boolean reach(Map<Integer, Set<Integer>> edges, int from, int to) {
+		Set<Integer> seen = new HashSet<>();
+		ArrayDeque<Integer> work = new ArrayDeque<>(edges.getOrDefault(from, Set.of()));
+		while (!work.isEmpty()) {
+			int at = work.removeFirst();
+			if (at == to) return true;
+			if (seen.add(at)) work.addAll(edges.getOrDefault(at, Set.of()));
+		}
+		return false;
+	}
+
+	/**
+	 * Whether what the kernel writes stands the pair down: the NeoForge call goes through a scope naming the event —
+	 * proved, or recorded from a MinecraftForge call the kernel wrapped for that — and both families' hooks report the
+	 * events they construct, without which a scope or a recording would capture nothing.
+	 */
+	private static boolean standsDown(NativeDualEventInjector injector, String method, byte[] bytes, Risk risk) {
+		String owner = method.substring(0, method.indexOf('#')), selector = method.substring(method.indexOf('#') + 1);
+		byte[] adapted = injector.transform(owner.replace('/', '.'), bytes, null);
+		if (adapted == bytes) return false;
+		ClassNode before = new ClassNode(), node = new ClassNode();
+		new ClassReader(bytes).accept(before, 0);
+		new ClassReader(adapted).accept(node, 0);
+		MethodInsnNode neoCall = null, forgeCall = null;
+		for (MethodNode m : before.methods) {
+			if (!(m.name + m.desc).equals(selector)) continue;
+			neoCall = (MethodInsnNode) m.instructions.get(risk.neo());
+			forgeCall = (MethodInsnNode) m.instructions.get(risk.forge());
+		}
+		for (MethodNode host : node.methods) {
+			if (!(host.name + host.desc).equals(selector)) continue;
+			// The method's own entry record clear, when the kernel inserted one, is the only thing ahead of its code.
+			int offset = host.instructions.size() > 1 && host.instructions.get(1) instanceof MethodInsnNode enter
+					&& enter.name.equals("enterNative") ? 2 : 0;
+			if (!(host.instructions.get(risk.neo() + offset) instanceof MethodInsnNode wrapped)
+					|| !wrapped.name.startsWith(NativeDualEventInjector.WRAPPER_PREFIX)) return false;
+			List<String> scope = strings(node, wrapped);
+			if (scope.size() < 3 || !reports(injector, neoCall.owner, "constructed")) return false;
+			if (List.of(scope.get(0).split(";")).contains(risk.event())) return true;
+			if (!List.of(scope.get(2).split(";")).contains(risk.event())) return false;
+			if (!(host.instructions.get(risk.forge() + offset) instanceof MethodInsnNode recorded)
+					|| !recorded.name.startsWith(NativeDualEventInjector.SOURCE_PREFIX)) return false;
+			List<String> recording = strings(node, recorded);
+			return recording.size() >= 2 && List.of(recording.get(1).split(";")).contains(risk.event())
+					&& reports(injector, forgeCall.owner, "nativeConstructed");
+		}
+		return false;
+	}
+
+	/** The string constants of the wrapper {@code call} names, in order. */
+	private static List<String> strings(ClassNode node, MethodInsnNode call) {
+		List<String> out = new ArrayList<>();
+		for (MethodNode wrapper : node.methods) {
+			if (!wrapper.name.equals(call.name) || !wrapper.desc.equals(call.desc)) continue;
+			for (AbstractInsnNode i : wrapper.instructions) if (i instanceof LdcInsnNode ldc && ldc.cst instanceof String s) out.add(s);
+		}
+		return out;
+	}
+
+	/** Whether the injector, run over the hook class from its carrier, makes it report its constructions. */
+	private static boolean reports(NativeDualEventInjector injector, String hookOwner, String report) {
+		byte[] hook = protocolBytes(hookOwner + ".class");
+		if (hook == null) return false;
+		byte[] adapted = injector.transform(hookOwner.replace('/', '.'), hook, null);
+		ClassNode node = new ClassNode();
+		new ClassReader(adapted).accept(node, 0);
+		for (MethodNode m : node.methods) {
+			for (AbstractInsnNode i : m.instructions) {
+				if (i instanceof MethodInsnNode call && call.owner.equals("net/forbric/api/NativeEventDelivery") && call.name.equals(report)) return true;
+			}
+		}
+		return false;
+	}
+
+	private static byte[] protocolBytes(String path) {
+		for (Path jar : List.of(base(), root().resolve("forge-runtime/forge-runtime.jar"),
+				root().resolve("merged-base/forge-runtime-interop.jar"), root().resolve("neoforge-runtime/neoforge-runtime.jar"))) {
+			if (!Files.isRegularFile(jar)) continue;
+			try (var zip = new java.util.zip.ZipFile(jar.toFile())) {
+				var entry = zip.getEntry(path);
+				if (entry != null) try (var input = zip.getInputStream(entry)) {
+					return input.readAllBytes();
+				}
+			} catch (Exception unavailable) {
+				return null;
+			}
+		}
+		return null;
+	}
 
 	private static byte[] classBytes(String owner) throws Exception {
 		try (java.util.zip.ZipFile zip = new java.util.zip.ZipFile(base().toFile())) {

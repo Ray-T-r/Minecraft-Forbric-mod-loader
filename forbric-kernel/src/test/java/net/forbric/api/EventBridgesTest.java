@@ -67,6 +67,23 @@ class EventBridgesTest {
 		assertTrue(EventBridges.verify(GameEventBridge.Pass.GAME_BUS));
 	}
 
+	/**
+	 * A repair that stood down because the merged game delivers its event itself is not missing: its event arrives.
+	 * Only that bridge is credited, and only as delivered natively — it is not reported installed.
+	 */
+	@Test
+	void aBridgeTheMergedGameDeliversItselfIsNotMissing() {
+		for (GameEventBridge b : bridgesOf(GameEventBridge.Pass.CLIENT_INIT)) {
+			if (b != GameEventBridge.PARTICLE_PROVIDERS) EventBridges.installed(b);
+		}
+		assertFalse(EventBridges.verify(GameEventBridge.Pass.CLIENT_INIT), "one of three is still missing");
+		EventBridges.deliveredNatively(GameEventBridge.PARTICLE_PROVIDERS);
+		assertTrue(EventBridges.verify(GameEventBridge.Pass.CLIENT_INIT), "delivered natively is delivered");
+		assertFalse(EventBridges.installed().contains(GameEventBridge.PARTICLE_PROVIDERS), "but it was not installed");
+		assertTrue(EventBridges.satisfied().contains(GameEventBridge.PARTICLE_PROVIDERS));
+		assertFalse(EventBridges.verify(GameEventBridge.Pass.REGISTRATION), "and no other pass is credited with it");
+	}
+
 	/** The two passes run at different times; the client one must not be credited to the game-bus one. */
 	@Test
 	void thePassesAreAccountedSeparately() {

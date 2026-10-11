@@ -273,6 +273,11 @@ public final class DeadEventAudit {
 		map.put("net/minecraftforge/client/event/AddGuiOverlayLayersEvent", GameEventBridge.GUI_OVERLAY_LAYERS);
 		map.put("net/minecraftforge/event/level/BlockEvent$EntityPlaceEvent",
 				GameEventBridge.ENTITY_PLACE_BLOCK);
+		// Entity tracking is bridged too (KernelGamePlayerTrackingEvents). Rows here because this table is also what
+		// NativeDualEventInjector and the bridge guard read: a bridge whose events are not listed can never stand
+		// down where the merged game tracks natively, and these two were the first to need it.
+		map.put("net/minecraftforge/event/entity/player/PlayerEvent$StartTracking", GameEventBridge.START_TRACKING);
+		map.put("net/minecraftforge/event/entity/player/PlayerEvent$StopTracking", GameEventBridge.STOP_TRACKING);
 		// The registration events lifted by the Phase 1 A repairs. ForgeHooksClient.initClientHooks posts the
 		// first eleven (three directly, eight through the Forge managers' init()); the merged Minecraft.<init>
 		// now calls it through KernelForgeClientInit. The next three have one redirect each.
@@ -290,6 +295,36 @@ public final class DeadEventAudit {
 		map.put("net/minecraftforge/event/entity/SpawnPlacementRegisterEvent", GameEventBridge.SPAWN_PLACEMENTS);
 		return Map.copyOf(map);
 	}
+
+	/**
+	 * The MinecraftForge events a bridge re-posts from a NeoForge event on the game bus: every {@link #BRIDGED} key in
+	 * MinecraftForge's namespace whose bridge {@link GameEventMultiplexer} installs, and therefore guards. What
+	 * {@code NativeDualEventInjector} looks for on a path that also posts NeoForge's. The rows landed by class
+	 * transformers (client init, registration, the HUD, tooltips) forward from no NeoForge event and are left out.
+	 */
+	public static Set<String> forwardedForgeEvents() {
+		Set<String> out = new java.util.TreeSet<>();
+		for (Map.Entry<String, GameEventBridge> row : BRIDGED.entrySet()) {
+			if (row.getKey().startsWith(FORGE) && forwards(row.getValue())) out.add(row.getKey());
+		}
+		return Set.copyOf(out);
+	}
+
+	/** Whether {@code bridge} is installed on NeoForge's game bus by {@link GameEventMultiplexer}. */
+	private static boolean forwards(GameEventBridge bridge) {
+		return bridge.pass() == GameEventBridge.Pass.GAME_BUS || bridge.pass() == GameEventBridge.Pass.CLIENT_GAME_BUS;
+	}
+
+	/** The MinecraftForge events {@code bridge} re-posts, none when it is not a {@link #BRIDGED} row. */
+	static Set<String> forgeEventsOf(GameEventBridge bridge) {
+		Set<String> out = new java.util.TreeSet<>();
+		for (Map.Entry<String, GameEventBridge> row : BRIDGED.entrySet()) {
+			if (row.getValue() == bridge && row.getKey().startsWith(FORGE) && forwards(bridge)) out.add(row.getKey());
+		}
+		return Set.copyOf(out);
+	}
+
+	private static final String FORGE = "net/minecraftforge/";
 
 	private DeadEventAudit() {
 	}
@@ -373,7 +408,7 @@ public final class DeadEventAudit {
 			ForbricLog.info("[Forbric/DeadEvents] %d mod(s) listen for bridged Forge-family events; judged once the server is up",
 					bridgeable.size());
 		}
-		report(audit(deadNow, EventBridges.installed()));
+		report(audit(deadNow, EventBridges.satisfied()));
 	}
 
 	/** mod id → the bridgeable events it listens for, judged by {@link #judgePending()}. */
@@ -381,7 +416,7 @@ public final class DeadEventAudit {
 
 	/** The deferred judgement: a bridgeable event whose bridge is STILL not installed once the server is up. */
 	public static void judgePending() {
-		judgePending(EventBridges.installed());
+		judgePending(EventBridges.satisfied());
 	}
 
 	static List<Finding> judgePending(Set<GameEventBridge> installed) {

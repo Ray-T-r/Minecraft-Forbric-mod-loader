@@ -17,6 +17,7 @@
 package net.forbric.kernel.boot;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.util.EnumSet;
@@ -210,6 +211,27 @@ class DeadEventAuditTest {
 		assertEquals(1, findings.size());
 		assertEquals("hudmod", findings.get(0).modId());
 		assertTrue(findings.get(0).cost().contains("never run"), findings.get(0).cost());
+	}
+
+	/**
+	 * What the stand-down looks for: the MinecraftForge events a bridge on NeoForge's game bus re-posts. A row landed by
+	 * a class transformer forwards from no NeoForge event and the NeoForge tooltip row is the other direction, so neither
+	 * is in it; entity tracking is, now that its two bridges are rows.
+	 */
+	@Test
+	void theForwardedSetIsTheGameBusBridgesMinecraftForgeEvents() {
+		Set<String> forwarded = DeadEventAudit.forwardedForgeEvents();
+		assertTrue(forwarded.contains(DEATH));
+		assertTrue(forwarded.contains("net/minecraftforge/event/entity/player/PlayerEvent$StartTracking"));
+		assertTrue(forwarded.contains("net/minecraftforge/event/entity/player/PlayerEvent$StopTracking"));
+		assertFalse(forwarded.contains(NEO_TOOLTIP), "the tooltip row is NeoForge's event, delivered by a repair");
+		assertFalse(forwarded.contains(KEYS), "client-init rows are landed by a transformer, not forwarded from NeoForge");
+		assertFalse(forwarded.contains(TABS), "registration rows likewise");
+		for (String event : forwarded) {
+			GameEventBridge bridge = DeadEventAudit.BRIDGED.get(event);
+			assertTrue(DeadEventAudit.forgeEventsOf(bridge).contains(event), event + " must be guarded on " + bridge);
+		}
+		assertEquals(Set.of(), DeadEventAudit.forgeEventsOf(GameEventBridge.SERVER_TICK_PRE), "an unlisted bridge is not guarded");
 	}
 
 	/** The two fluid events the fluid-rendering repair deliberately does not bridge: a listener is told, per event. */

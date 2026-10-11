@@ -125,8 +125,26 @@ public final class ByteScan {
 		return false;
 	}
 
-	/** Marks {@code found}; false when the pool cannot be read. With {@code first}, returns at the first match. */
+	/**
+	 * Which of {@code prefixes} ({@link #poolEntry} encodings) begin at least one of the class file's
+	 * {@code CONSTANT_Utf8} entries: the question "does this class name anything in that package at all", asked of the
+	 * same pool walk as {@link #constantPoolNames}, with the same answer (every prefix present) for a class it cannot
+	 * read.
+	 */
+	public static boolean[] constantPoolPrefixes(byte[] classBytes, byte[][] prefixes) {
+		boolean[] found = new boolean[prefixes.length];
+		return walk(classBytes, prefixes, found, false, true) ? found : everything(found);
+	}
+
 	private static boolean walk(byte[] classBytes, byte[][] entries, boolean[] found, boolean first) {
+		return walk(classBytes, entries, found, first, false);
+	}
+
+	/**
+	 * Marks {@code found}; false when the pool cannot be read. With {@code first}, returns at the first match. With
+	 * {@code prefix}, an entry matches every needle it begins with rather than only the one it equals.
+	 */
+	private static boolean walk(byte[] classBytes, byte[][] entries, boolean[] found, boolean first, boolean prefix) {
 		if (classBytes == null || classBytes.length < 10 || u4(classBytes, 0) != 0xCAFEBABE) return false;
 		try {
 			int count = u2(classBytes, 8), at = 10;
@@ -137,7 +155,8 @@ public final class ByteScan {
 						int length = u2(classBytes, at + 1), start = at + 3;
 						if (start + length > classBytes.length) return false;
 						for (int n = 0; n < entries.length; n++) {
-							if (!found[n] && entries[n].length == length && matchesAt(classBytes, start, entries[n])) {
+							boolean fits = prefix ? entries[n].length <= length : entries[n].length == length;
+							if (!found[n] && fits && matchesAt(classBytes, start, entries[n])) {
 								found[n] = true;
 								if (first) return true;
 							}

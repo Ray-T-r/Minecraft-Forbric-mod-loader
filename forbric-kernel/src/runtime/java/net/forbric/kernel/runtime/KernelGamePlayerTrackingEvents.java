@@ -19,8 +19,6 @@ package net.forbric.kernel.runtime;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.function.Consumer;
 
-import net.forbric.api.NativeEventDelivery;
-import net.forbric.kernel.interop.protocol.NativeEventProtocols;
 import net.forbric.kernel.util.ForbricLog;
 import net.forbric.kernel.util.Reflect;
 import net.minecraft.world.entity.Entity;
@@ -66,7 +64,7 @@ public final class KernelGamePlayerTrackingEvents {
 
 	/** NeoForge {@code PlayerEvent.StartTracking} → MinecraftForge {@code onStartEntityTracking}. */
 	public static void installStartTracking(Object neoBus) {
-		forward((IEventBus) neoBus, PlayerEvent.StartTracking.class, NativeEventProtocols.START_TRACKING, "PlayerEvent.StartTracking",
+		forward((IEventBus) neoBus, PlayerEvent.StartTracking.class, "PlayerEvent.StartTracking",
 				"a MinecraftForge mod is never told a player began tracking an entity, so anything it builds "
 						+ "per viewer — nameplate state, per-player entity data, sync on first sight — is never "
 						+ "built and the entity simply behaves as though that mod were not installed",
@@ -75,7 +73,7 @@ public final class KernelGamePlayerTrackingEvents {
 
 	/** NeoForge {@code PlayerEvent.StopTracking} → MinecraftForge {@code onStopEntityTracking}. */
 	public static void installStopTracking(Object neoBus) {
-		forward((IEventBus) neoBus, PlayerEvent.StopTracking.class, NativeEventProtocols.STOP_TRACKING, "PlayerEvent.StopTracking",
+		forward((IEventBus) neoBus, PlayerEvent.StopTracking.class, "PlayerEvent.StopTracking",
 				"a MinecraftForge mod is never told a player stopped tracking an entity, so whatever it built "
 						+ "per viewer is never torn down — a leak that grows for as long as the session lasts",
 				event -> ForgeEventFactory.onStopEntityTracking(target(event), player(event)));
@@ -103,13 +101,15 @@ public final class KernelGamePlayerTrackingEvents {
 	 * are once-only: a per-event line here would be the loudest thing in the log and the first thing switched
 	 * off.
 	 */
-	private static <E extends PlayerEvent> void forward(IEventBus bus, Class<E> event, String nativeContract, String name, String cost,
+	private static <E extends PlayerEvent> void forward(IEventBus bus, Class<E> event, String name, String cost,
 			ForgeForward<E> forge) {
 		AtomicBoolean warned = new AtomicBoolean();
 		AtomicBoolean proved = new AtomicBoolean();
 		Consumer<E> listener = neoEvent -> {
 			try {
-				if (neoEvent.getEntity() == null || NativeEventDelivery.covered(nativeContract, neoEvent)) return;
+				// Where the merged game tracks natively on this event's path, GameEventMultiplexer hands this a bus whose
+				// listener stands down for that event (NativeDualEventInjector proves the path).
+				if (neoEvent.getEntity() == null) return;
 				forge.fire(neoEvent);
 				if (proved.compareAndSet(false, true)) {
 					ForbricLog.info("[Forbric/EventMux] bridged the first %s to MinecraftForge — a Forge-family "

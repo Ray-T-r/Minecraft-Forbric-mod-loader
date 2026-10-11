@@ -105,10 +105,9 @@ public final class KernelGameWorldEvents {
 	 */
 	public static void installConversionPost(Object neoBus) {
 		KernelGameServerEvents.forward((IEventBus) neoBus, LivingConversionEvent.Post.class, "LivingConversionEvent.Post",
-				event -> {
-                    if (!net.forbric.api.NativeEventDelivery.covered(net.forbric.kernel.interop.protocol.NativeEventProtocols.CONVERSION_POST,event))
-                        ForgeEventFactory.onLivingConvert(event.getEntity(), event.getOutcome());
-                });
+				// A conversion the merged game also announces to MinecraftForge natively on this path stands down in
+				// GameEventMultiplexer's guard, before this runs.
+				event -> ForgeEventFactory.onLivingConvert(event.getEntity(), event.getOutcome()));
 	}
 
 	// ---- cancels carried back ----
