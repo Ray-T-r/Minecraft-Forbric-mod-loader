@@ -1242,6 +1242,15 @@ public final class KernelBoot {
 					+ "neoforged FluidType) → AbstractMethodError on WaterFluid.getFluidType during worldgen fluid "
 					+ "ticking. Return false so vanilla fluid behavior proceeds (Forge/Neo FluidType ABI split)"));
 		}
+		// MinecraftForge's own biome/structure modifier pass, on every side. Its modifiers ride inside NeoForge's single
+		// pass (ForgeWorldModifierInjector appends them to NeoForge's lists, KernelForgeWorldgen loads them), and two
+		// passes are two sources of truth. On a base whose initServer calls only NeoForge's about-to-start nothing
+		// reaches this method; a merge that keeps MinecraftForge's handleServerAboutToStart too runs it before its
+		// own event, and there it looks forge:biome_modifier up with lookupOrThrow -- which a world that loaded
+		// Fabric's registry list does not have, so the integrated server died before the first tick.
+		neuter.add(new MethodBodyNeuter.Target(ForeignType.SERVER_LIFECYCLE_HOOKS.binary(Ecosystem.FORGE),
+				FORGE_RUN_MODIFIERS, FORGE_RUN_MODIFIERS_DESC, "MinecraftForge's modifiers run inside NeoForge's "
+						+ "single pass (KernelForgeWorldgen); its own pass would be a second one"));
 		addSideNeuters(side, neuter);
 		return neuter;
 	}
@@ -1291,6 +1300,10 @@ public final class KernelBoot {
 				FORGE_CLIENT_BEGIN_DESC, "kernel owns client mod loading (MinecraftForge's Minecraft.<init> window is "
 						+ "onClientEntrypoints)"));
 	}
+
+	/** MinecraftForge's {@code ServerLifecycleHooks.runModifiers(MinecraftServer)}. */
+	static final String FORGE_RUN_MODIFIERS = "runModifiers";
+	static final String FORGE_RUN_MODIFIERS_DESC = "(Lnet/minecraft/server/MinecraftServer;)V";
 
 	/** MinecraftForge's {@code ClientModLoader.begin}: {@code (Minecraft, PackRepository, ReloadableResourceManager)V}. */
 	static final String FORGE_CLIENT_BEGIN_DESC = "(Lnet/minecraft/client/Minecraft;"

@@ -80,6 +80,27 @@ class KernelBootNeutersTest {
 				"NeoForge's begin is the Main.main trigger the lifecycle injector redirects; its body stays whole");
 	}
 
+	/**
+	 * MinecraftForge's own modifier pass is emptied on both sides, because its modifiers run inside NeoForge's: a merged
+	 * initServer that keeps MinecraftForge's about-to-start reached it, and on an integrated server whose world loaded
+	 * Fabric's registry list its lookupOrThrow of forge:biome_modifier killed the server. The rest of about-to-start —
+	 * the recorded server, the SERVER configs, the event — stays whole.
+	 */
+	@Test void onEverySideMinecraftForgesOwnModifierPassIsEmptiedAndItsAboutToStartIsNot() throws Exception {
+		String hooks = ForeignType.SERVER_LIFECYCLE_HOOKS.binary(Ecosystem.FORGE);
+		byte[] original = read(FORGE_CARRIER, hooks.replace('.', '/'));
+		String aboutToStart = "(Lnet/minecraft/server/MinecraftServer;)Z";
+		assertTrue(real(method(original, KernelBoot.FORGE_RUN_MODIFIERS, KernelBoot.FORGE_RUN_MODIFIERS_DESC)).size() > 2,
+				"premise: the carrier's runModifiers walks the modifier registries");
+		for (KernelBoot.Side side : KernelBoot.Side.values()) {
+			byte[] served = KernelBoot.neuters(side, true).transform(hooks, original, null);
+			assertEquals(List.of(Opcodes.RETURN),
+					real(method(served, KernelBoot.FORGE_RUN_MODIFIERS, KernelBoot.FORGE_RUN_MODIFIERS_DESC)), side.toString());
+			assertEquals(real(method(original, "handleServerAboutToStart", aboutToStart)),
+					real(method(served, "handleServerAboutToStart", aboutToStart)), side + ": about-to-start stays whole");
+		}
+	}
+
 	private static MethodNode method(byte[] bytes, String name, String desc) {
 		ClassNode node = new ClassNode();
 		new ClassReader(bytes).accept(node, 0);
