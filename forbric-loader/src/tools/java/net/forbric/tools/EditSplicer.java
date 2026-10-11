@@ -247,7 +247,7 @@ final class EditSplicer {
 		}
 	}
 
-	private record Plan(Run run, AbstractInsnNode insertBefore, List<AbstractInsnNode> removeFromBase,
+	private record Plan(String kind, Run run, AbstractInsnNode insertBefore, List<AbstractInsnNode> removeFromBase,
 			Map<LabelNode, LabelNode> labels, LabelNode anchorLabel, Map<AbstractInsnNode, Integer> slotFor,
 			List<JumpRetarget> entryRetargets, Map<String, String> lambdaRenames) { }
 
@@ -328,8 +328,7 @@ final class EditSplicer {
 		} catch (AnalyzerException e) {
 			return new Result(null, List.of(), List.of(), conflicts, refused, "spliced body does not analyze: " + e.getMessage());
 		}
-		for (Plan p : plans) spliced.add(new Outcome(p.run().replacement() ? "replace" : "insert",
-				o.line.get(p.run().start()), o.line.get(p.run().end()), "carried over"));
+		for (Plan p : plans) spliced.add(new Outcome(p.kind(), o.line.get(p.run().start()), o.line.get(p.run().end()), "carried over"));
 		for (var e : declared.entrySet()) {
 			LocalVariableNode lv = e.getKey();
 			// Declared locals keep their names for debuggers and @Local captures; their scope is the whole method,
@@ -418,6 +417,7 @@ final class EditSplicer {
 
 		AbstractInsnNode insertBefore;
 		int anchor;
+		String kind = run.replacement() ? "replace" : "insert";
 		List<AbstractInsnNode> remove = new ArrayList<>();
 		if (!run.replacement()) {
 			if (!baseAdded.isEmpty() && containsSequence(baseKeys, runKeys)) {
@@ -437,8 +437,11 @@ final class EditSplicer {
 		} else {
 			// The base's own edits in this stretch: an insertion next to the replaced lines is the base's and stays;
 			// a base edit that removed any of the same vanilla lines is a competing rewrite of them.
+			// The two decompiles number vanilla lines independently (their headers differ), so the other side's removed
+			// lines are moved into the base's numbering by the offset the aligned vanilla instructions around the run show.
+			int shift = lineShift(o, b, match, prevM, nextM);
 			Set<Integer> replacedLines = new java.util.HashSet<>();
-			for (PatchLineProvenance.Block block : run.blocks()) replacedLines.addAll(block.removedVanilla());
+			for (PatchLineProvenance.Block block : run.blocks()) for (int line : block.removedVanilla()) replacedLines.add(line + shift);
 			List<Integer> competing = new ArrayList<>();
 			for (int i : baseAdded) {
 				PatchLineProvenance.Block block = b.origin.get(i).block();
@@ -449,45 +452,51 @@ final class EditSplicer {
 					conflicts.add(new Outcome("same-edit", first, last, "the base made the same replacement"));
 					return null;
 				}
-				conflicts.add(new Outcome("both-changed", first, last, "the base changed the same vanilla lines differently"));
+				// Not composed, even when the two rewrites differ only in the hook they call: each hook computes the
+				// vanilla default itself (a game rule, a vanilla predicate) and may override it either way, so neither
+				// chaining the checks as AND nor as OR keeps both families' overrides. The base's rewrite stands.
+				conflicts.add(new Outcome("both-changed", first, last, "the base changed the same vanilla lines differently; lost "
+						+ calls(o, run.start(), run.end()) + ", kept " + calls(b, competing)));
 				return null;
-			}
-			if (baseVanilla.isEmpty()) {
-				conflicts.add(new Outcome("base-deleted", first, last, "the base removed the vanilla lines this run replaces"));
-				return null;
-			}
-			// Only the vanilla lines the run replaced may go: every removed base instruction must come from one of
-			// them, and they must be one contiguous stretch of the base body.
-			for (int i : baseVanilla) {
-				PatchLineProvenance.Origin origin = b.origin.get(i);
-				if (origin == null || !replacedLines.contains(origin.vanilla()))
-					throw new Refusal("the base lines in place of the run are not the lines it replaced");
-			}
-			if (baseVanilla.get(baseVanilla.size() - 1) - baseVanilla.get(0) + 1 != baseVanilla.size())
-				throw new Refusal("the replaced base lines are interleaved with base edits");
-			for (int i : baseVanilla) remove.add(b.code.get(i));
-			int s = baseVanilla.get(0), e = baseVanilla.get(baseVanilla.size() - 1);
-			if (b.stack(s) != 0 || (bNext < b.code.size() && b.stack(bNext) != 0)) throw new Refusal("replaced base lines are not a statement");
-			// Nothing may jump into the middle of what is removed, and no exception region may start/end inside it.
-			for (AbstractInsnNode n : b.method.instructions) {
-				for (LabelNode target : targets(n)) {
-					int t = b.at(target);
-					if (t > s && t <= e) throw new Refusal("a base jump lands inside the replaced lines");
+			} else {
+				if (baseVanilla.isEmpty()) {
+					conflicts.add(new Outcome("base-deleted", first, last, "the base removed the vanilla lines this run replaces"));
+					return null;
 				}
-			}
-			for (TryCatchBlockNode tcb : b.method.tryCatchBlocks) {
-				for (LabelNode l : List.of(tcb.start, tcb.end, tcb.handler)) {
-					int t = b.at(l);
-					if (t > s && t <= e) throw new Refusal("an exception region boundary lies inside the replaced lines");
+				// Only the vanilla lines the run replaced may go: every removed base instruction must come from one of
+				// them, and they must be one contiguous stretch of the base body.
+				for (int i : baseVanilla) {
+					PatchLineProvenance.Origin origin = b.origin.get(i);
+					if (origin == null || !replacedLines.contains(origin.vanilla()))
+						throw new Refusal("the base lines in place of the run are not the lines it replaced");
 				}
+				if (baseVanilla.get(baseVanilla.size() - 1) - baseVanilla.get(0) + 1 != baseVanilla.size())
+					throw new Refusal("the replaced base lines are interleaved with base edits");
+				for (int i : baseVanilla) remove.add(b.code.get(i));
+				int s = baseVanilla.get(0), e = baseVanilla.get(baseVanilla.size() - 1);
+				if (b.stack(s) != 0 || (bNext < b.code.size() && b.stack(bNext) != 0)) throw new Refusal("replaced base lines are not a statement");
+				// Nothing may jump into the middle of what is removed, and no exception region may start/end inside it.
+				for (AbstractInsnNode n : b.method.instructions) {
+					for (LabelNode target : targets(n)) {
+						int t = b.at(target);
+						if (t > s && t <= e) throw new Refusal("a base jump lands inside the replaced lines");
+					}
+				}
+				for (TryCatchBlockNode tcb : b.method.tryCatchBlocks) {
+					for (LabelNode l : List.of(tcb.start, tcb.end, tcb.handler)) {
+						int t = b.at(l);
+						if (t > s && t <= e) throw new Refusal("an exception region boundary lies inside the replaced lines");
+					}
+				}
+				insertBefore = b.code.get(s);
+				anchor = s;
 			}
-			insertBefore = b.code.get(s);
-			anchor = s;
 		}
 		// Statement boundaries.
 		if (o.stack(run.start()) != 0 || (nextV < o.code.size() && o.stack(nextV) != 0))
 			throw new Refusal("run is not a statement in the other body");
-		if (!run.replacement() && b.stack(anchor) != 0) throw new Refusal("insertion point is not a statement boundary");
+		if (!run.replacement() && b.stack(anchor) != 0)
+			throw new Refusal("insertion point is not a statement boundary");
 
 		// Control flow of the run.
 		Map<LabelNode, LabelNode> labels = new HashMap<>();
@@ -581,7 +590,7 @@ final class EditSplicer {
 		for (AbstractInsnNode n : remove) if (!claimed.add(n)) throw new Refusal("base lines already replaced by another run");
 		nextSlot[0] = cursor[0];
 		declared.putAll(declaredHere);
-		return new Plan(run, insertBefore, remove, labels, anchorLabel, slotFor, entries, lambdaRenames);
+		return new Plan(kind, run, insertBefore, remove, labels, anchorLabel, slotFor, entries, lambdaRenames);
 	}
 
 	/**
@@ -677,6 +686,39 @@ final class EditSplicer {
 		}
 		if (m.localVariables != null) for (LocalVariableNode lv : m.localVariables) max = Math.max(max, lv.index + Type.getType(lv.desc).getSize() - 1);
 		return max;
+	}
+
+	/**
+	 * base vanilla line minus other vanilla line, read off the aligned instructions next to the run. Both neighbours
+	 * must agree when both exist; a run with neither is refused.
+	 */
+	private static int lineShift(Annotated o, Annotated b, Map<Integer, Integer> match, int prevM, int nextM) {
+		Integer before = prevM >= 0 ? shiftAt(o, b, prevM, match.get(prevM)) : null;
+		Integer after = nextM < o.code.size() && match.containsKey(nextM) ? shiftAt(o, b, nextM, match.get(nextM)) : null;
+		if (before != null && after != null && !before.equals(after)) throw new Refusal("the two decompiles number this stretch differently");
+		if (before == null && after == null) throw new Refusal("no aligned vanilla line next to the run");
+		return before != null ? before : after;
+	}
+
+	private static Integer shiftAt(Annotated o, Annotated b, int oi, int bi) {
+		PatchLineProvenance.Origin x = o.origin.get(oi), y = b.origin.get(bi);
+		if (x == null || y == null || x.added() || y.added()) return null;
+		return y.vanilla() - x.vanilla();
+	}
+
+	/** The calls an edit makes, for the report: what a conflict lost and what it kept. */
+	private static String calls(Annotated a, int from, int to) {
+		List<Integer> range = new ArrayList<>();
+		for (int i = from; i <= to; i++) range.add(i);
+		return calls(a, range);
+	}
+
+	private static String calls(Annotated a, List<Integer> indices) {
+		Set<String> out = new LinkedHashSet<>();
+		for (int i : indices) {
+			if (a.code.get(i) instanceof MethodInsnNode c) out.add(c.owner.substring(c.owner.lastIndexOf('/') + 1) + "." + c.name);
+		}
+		return out.isEmpty() ? "[no calls]" : out.toString();
 	}
 
 	private static boolean containsSequence(List<String> haystack, List<String> needle) {
