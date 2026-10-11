@@ -40,6 +40,11 @@ class ForgeClientConsumersInjectorTest {
     private static final List<String> SWITCHES = List.of("forbric.forgeClientConsumers", "forbric.forgeClientInit");
     private final ForgeClientConsumersInjector injector = new ForgeClientConsumersInjector();
 
+    /**
+     * Each real merged consumer asks NeoForge's table once. One that does not ask MinecraftForge's is redirected to the
+     * funnel with no instruction added; one whose merged body already asks MinecraftForge's itself (a merge that keeps
+     * both sides' edits) is handed back untouched. Either way its claim lands.
+     */
     @Test
     void fourRealMergedConsumersRedirectWithoutChangingDescriptorsOrInstructionCounts() throws Exception {
         for (var rule : ForgeClientConsumersInjector.RULES) {
@@ -47,7 +52,16 @@ class ForgeClientConsumersInjectorTest {
             ClassNode before = node(original);
             MethodNode source = target(before, rule);
             assertEquals(1, refs(source, rule.owner(Ecosystem.NEOFORGE), rule.call(), rule.descriptor(), rule.handle()), rule.host());
-            assertEquals(0, refs(source, rule.owner(Ecosystem.FORGE), rule.call(), rule.descriptor(), rule.handle()));
+            int forge = refs(source, rule.owner(Ecosystem.FORGE), rule.call(), rule.descriptor(), false)
+                    + refs(source, rule.owner(Ecosystem.FORGE), rule.call(), rule.descriptor(), true);
+            java.util.Set<String> hits = new java.util.HashSet<>();
+            byte[] judged = injector.transform(rule.host(), original, null, hits::add);
+            assertEquals(java.util.Set.of(ForgeClientConsumersInjector.claimId(rule)), hits, rule.host());
+            if (forge > 0) {
+                assertEquals(1, forge, rule.host() + " asks MinecraftForge's table once, itself");
+                assertSame(original, judged, "a consumer that already asks both families is not funnelled to ask MinecraftForge's again: " + rule.host());
+                continue;
+            }
             byte[] changed = injector.transform(rule.host(), original, null);
             assertNotSame(original, changed, rule.host());
             ClassNode after = node(changed);
@@ -99,13 +113,16 @@ class ForgeClientConsumersInjectorTest {
             try {
                 System.setProperty(property, "off");
                 assertTrue(injector.anchors().anchors().isEmpty());
+                assertTrue(injector.claims().isEmpty());
                 for (var rule : ForgeClientConsumersInjector.RULES) {
                     byte[] original = bytes(MERGED, rule.host().replace('.', '/') + ".class");
                     assertSame(original, injector.transform(rule.host(), original, null), property);
                 }
             } finally { restore(property, old); }
         }
-        assertEquals(4, injector.anchors().anchors().size());
+        assertTrue(injector.anchors().anchors().isEmpty(), "each consumer is judged by its own claim");
+        assertEquals(4, injector.claims().size());
+        for (var claim : injector.claims()) assertEquals(AnchorSet.Severity.REQUIRED, claim.anchors().anchors().getFirst().severity());
     }
 
     @Test

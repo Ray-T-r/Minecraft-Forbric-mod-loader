@@ -31,7 +31,14 @@ import net.forbric.api.Ecosystem;
 import net.forbric.api.ForeignType;
 import net.forbric.kernel.util.ForbricLog;
 
-/** Redirects the four Neo-only client consumers without inserting instructions or rebuilding frames. */
+/**
+ * Redirects the four Neo-only client consumers without inserting instructions or rebuilding frames.
+ *
+ * <p>A consumer whose merged body already asks MinecraftForge's table itself — a merge that keeps both sides' edits
+ * calls both families' hooks in {@code LayerDefinitions.createRoots} and the block-tint lambda — is left as it is: the
+ * funnel would ask MinecraftForge's a second time. Each consumer is judged by its own claim, on the class handed back:
+ * both families consulted, through the funnel or natively.
+ */
 public final class ForgeClientConsumersInjector implements ClassTransformer {
 	static final String RUNTIME = "net/forbric/kernel/runtime/KernelForgeClientConsumers";
 	static final List<Rule> RULES = List.of(
@@ -66,8 +73,35 @@ public final class ForgeClientConsumersInjector implements ClassTransformer {
 
 	@Override public AnchorSet anchors() {
 		if (!enabled()) return AnchorSet.scanned("Forge client consumers or their registration initialization are disabled");
-		return AnchorSet.of(RULES.stream().map(rule -> new AnchorSet.Anchor(rule.host(), AnchorSet.Severity.REQUIRED,
-				"traditional Forge client registrations would not reach " + rule.method())).toArray(AnchorSet.Anchor[]::new));
+		return AnchorSet.scanned("the four client consumers, each judged by its own claim: both families consulted, "
+				+ "through the funnel or natively");
+	}
+
+	static String claimId(Rule rule) { return "forbric-forge-client-consumers#" + rule.runtimeCall(); }
+
+	@Override public List<Claim> claims() {
+		if (!enabled()) return List.of();
+		return RULES.stream().map(rule -> new Claim(claimId(rule), AnchorSet.of(new AnchorSet.Anchor(rule.host(),
+				AnchorSet.Severity.REQUIRED, "traditional Forge client registrations would not reach " + rule.method())))).toList();
+	}
+
+	@Override
+	public byte[] transform(String className, byte[] original, TransformContext context, ClaimReporter reporter) {
+		byte[] result = transform(className, original, context);
+		if (!enabled() || result == null || result.length == 0) return result;
+		for (Rule rule : RULES) if (rule.host().equals(className) && consultsBoth(rule, result)) reporter.hit(claimId(rule));
+		return result;
+	}
+
+	/** Whether the rule's consumer in {@code bytes} reaches MinecraftForge's table: through the funnel, or itself. */
+	static boolean consultsBoth(Rule rule, byte[] bytes) {
+		ClassNode node = new ClassNode();
+		try { new ClassReader(bytes).accept(node, 0); } catch (RuntimeException unreadable) { return false; }
+		MethodNode method = node.methods.stream().filter(candidate -> candidate.name.equals(rule.method())
+				&& candidate.desc.equals(rule.methodDescriptor())).findFirst().orElse(null);
+		return method != null && (references(method, rule, RUNTIME, rule.runtimeCall(), rule.handle()) > 0
+				|| references(method, rule, rule.owner(Ecosystem.FORGE), rule.call(), false) > 0
+				|| references(method, rule, rule.owner(Ecosystem.FORGE), rule.call(), true) > 0);
 	}
 
 	@Override
