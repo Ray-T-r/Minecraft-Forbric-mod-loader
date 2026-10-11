@@ -42,7 +42,12 @@ import org.objectweb.asm.tree.VarInsnNode;
  *       seam is in, so players are asked here and only here.</li>
  * </ul>
  *
- * <p>Each seam is placed only when its proof holds and no MinecraftForge call is already there.
+ * <p>Each seam is placed only when its proof holds and no MinecraftForge call is already there — each on its own: a
+ * merge that keeps both sides' edits may already call some of MinecraftForge's hooks natively (the edit-spliced base
+ * calls {@code onLivingHurt} in both bodies, {@code onLivingDamage} in {@code LivingEntity}'s and {@code onPlayerAttack}
+ * at the head of {@code hurtServer}) and lose another, and only the lost ones get a seam. A native player attack is
+ * still told to the attack forward, which otherwise asks players a second time. The outcome is judged by {@link #CLAIM}
+ * on the class this hands back — every hook asked, natively or through a seam — not by whether it edited.
  * {@code -Dforbric.forgeDamageSeams=off} leaves both classes as merged (the attack forward then asks every entity).
  */
 public final class ForgeDamageSeamsInjector implements ClassTransformer {
@@ -54,6 +59,9 @@ public final class ForgeDamageSeamsInjector implements ClassTransformer {
 	static final String SOURCE = "Lnet/minecraft/world/damagesource/DamageSource;";
 	static final String HURT_DESC = "(Lnet/minecraft/server/level/ServerLevel;" + SOURCE + "F)V";
 	static final String SERVER_DESC = "(Lnet/minecraft/server/level/ServerLevel;" + SOURCE + "F)Z";
+	static final String FORGE_HOOKS = "net/minecraftforge/common/ForgeHooks";
+	static final String NEO_COMMON_HOOKS = "net/neoforged/neoforge/common/CommonHooks";
+	static final String CLAIM = "forbric-forge-damage-seams#minecraftForgesDamageHooksAsked";
 
 	static boolean enabled() {
 		return !"off".equalsIgnoreCase(System.getProperty(PROPERTY, "on"));
@@ -64,10 +72,24 @@ public final class ForgeDamageSeamsInjector implements ClassTransformer {
 	@Override public AnchorSet anchors() {
 		if (!enabled()) return AnchorSet.scanned("MinecraftForge's Hurt, Damage and player-Attack events left undelivered "
 				+ "with -D" + PROPERTY + "=off");
+		return AnchorSet.scanned("LivingEntity and Player, judged by the " + CLAIM + " claim: each MinecraftForge damage hook "
+				+ "asked, natively or through a seam");
+	}
+
+	@Override public List<Claim> claims() {
+		if (!enabled()) return List.of();
 		String cost = "MinecraftForge's LivingHurtEvent and LivingDamageEvent never fire — damage perks, immunity and "
 				+ "death-prevention in MinecraftForge mods do nothing";
-		return AnchorSet.of(new AnchorSet.Anchor(LIVING.replace('/', '.'), AnchorSet.Severity.REQUIRED, cost),
-				new AnchorSet.Anchor(PLAYER.replace('/', '.'), AnchorSet.Severity.REQUIRED, cost));
+		return List.of(new Claim(CLAIM, AnchorSet.of(new AnchorSet.Anchor(LIVING.replace('/', '.'), AnchorSet.Severity.REQUIRED, cost),
+				new AnchorSet.Anchor(PLAYER.replace('/', '.'), AnchorSet.Severity.REQUIRED, cost))));
+	}
+
+	@Override public byte[] transform(String className, byte[] bytes, TransformContext context, ClaimReporter reporter) {
+		byte[] result = transform(className, bytes, context);
+		if (enabled() && result != null && result.length > 0
+				&& (className.equals(LIVING.replace('/', '.')) || className.equals(PLAYER.replace('/', '.')))
+				&& asksEveryHook(result)) reporter.hit(CLAIM);
+		return result;
 	}
 
 	@Override public byte[] transform(String className, byte[] bytes, TransformContext context) {
@@ -76,6 +98,11 @@ public final class ForgeDamageSeamsInjector implements ClassTransformer {
 		if (!player && !className.equals(LIVING.replace('/', '.'))) return bytes;
 		ClassNode node = new ClassNode();
 		new ClassReader(bytes).accept(node, 0);
+		List<String> asked = nativelyAsked(node);
+		if (!asked.isEmpty()) {
+			ForbricLog.info("[Forbric/Damage] %s: MinecraftForge's %s already asked by the merged body itself — no seam for it",
+					className, String.join(", ", asked));
+		}
 		List<String> placed = repair(node);
 		if (placed.isEmpty()) return bytes;
 		ClassWriter writer = new ClassWriter(ClassWriter.COMPUTE_MAXS);
@@ -85,32 +112,77 @@ public final class ForgeDamageSeamsInjector implements ClassTransformer {
 		return writer.toByteArray();
 	}
 
+	/**
+	 * Whether {@code bytes} asks every MinecraftForge damage hook its class owes, natively or through a seam: Hurt and
+	 * Damage in {@code actuallyHurt}, and for {@code Player} the attack at {@code hurtServer} with the forward told.
+	 */
+	static boolean asksEveryHook(byte[] bytes) {
+		ClassNode node = new ClassNode();
+		try { new ClassReader(bytes).accept(node, 0); } catch (RuntimeException unreadable) { return false; }
+		MethodNode hurt = own(node, "actuallyHurt", HURT_DESC);
+		if (hurt == null || calls(hurt, FORGE_HOOKS, "onLivingHurt") + calls(hurt, RUNTIME, "hurt") == 0
+				|| calls(hurt, FORGE_HOOKS, "onLivingDamage") + calls(hurt, RUNTIME, "damage") == 0) return false;
+		if (!node.name.equals(PLAYER)) return true;
+		MethodNode server = own(node, "hurtServer", SERVER_DESC);
+		MethodNode clinit = own(node, "<clinit>", "()V");
+		return server != null && clinit != null && calls(server, FORGE_HOOKS, "onPlayerAttack") + calls(server, RUNTIME, "playerAttack") > 0
+				&& calls(clinit, RUNTIME, "notePlayerSeam") > 0;
+	}
+
+	/** The MinecraftForge hooks the merged body already calls itself, for the log. */
+	private static List<String> nativelyAsked(ClassNode node) {
+		List<String> asked = new ArrayList<>();
+		MethodNode hurt = own(node, "actuallyHurt", HURT_DESC);
+		if (hurt != null && calls(hurt, FORGE_HOOKS, "onLivingHurt") != 0) asked.add("Hurt");
+		if (hurt != null && calls(hurt, FORGE_HOOKS, "onLivingDamage") != 0) asked.add("Damage");
+		MethodNode server = node.name.equals(PLAYER) ? own(node, "hurtServer", SERVER_DESC) : null;
+		if (server != null && calls(server, FORGE_HOOKS, "onPlayerAttack") != 0) asked.add("player Attack");
+		return asked;
+	}
+
 	/** Places every seam whose proof holds; the names placed. */
 	static List<String> repair(ClassNode node) {
 		List<String> placed = new ArrayList<>();
 		MethodNode hurt = own(node, "actuallyHurt", HURT_DESC);
-		if (hurt != null && hurtSeams(hurt)) placed.add("Hurt and Damage in actuallyHurt");
+		if (hurt != null) {
+			String seams = hurtSeams(hurt);
+			if (seams != null) placed.add(seams);
+		}
 		if (node.name.equals(PLAYER)) {
 			MethodNode server = own(node, "hurtServer", SERVER_DESC);
-			if (server != null && attackSeam(server) && noteSeam(node)) placed.add("player Attack in hurtServer");
+			if (server != null && calls(server, FORGE_HOOKS, "onPlayerAttack") != 0) {
+				// Asked natively, at MinecraftForge's own position; the forward off NeoForge's incoming-damage event must
+				// still leave players to it, or a player is attacked twice. Only a NeoForge pipeline has that forward.
+				if (hurt != null && calls(hurt, NEO_COMMON_HOOKS, "onLivingDamagePre") == 1 && noteSeam(node)) {
+					placed.add("player Attack forward told the merged hurtServer asks players itself");
+				}
+			} else if (server != null && attackSeam(server) && noteSeam(node)) placed.add("player Attack in hurtServer");
 		}
 		return placed;
 	}
 
-	/** Hurt after the invulnerability check, Damage after the health damage is read back. */
-	static boolean hurtSeams(MethodNode method) {
-		if ((method.access & (Opcodes.ACC_STATIC | Opcodes.ACC_ABSTRACT)) != 0) return false;
-		if (calls(method, "net/minecraftforge/common/ForgeHooks", "onLivingHurt") != 0
-				|| calls(method, "net/minecraftforge/common/ForgeHooks", "onLivingDamage") != 0
-				|| calls(method, RUNTIME, "hurt") != 0) return false;
+	/**
+	 * Hurt after the invulnerability check, Damage after the health damage is read back — each unless the body
+	 * already asks it, natively or through this repair. The Hurt seam records the zero-damage hits Damage must then
+	 * skip, so it goes in only where Damage is this repair's too.
+	 *
+	 * @return what was placed ("Hurt and Damage in actuallyHurt", or one of them), or null when nothing was
+	 */
+	static String hurtSeams(MethodNode method) {
+		if ((method.access & (Opcodes.ACC_STATIC | Opcodes.ACC_ABSTRACT)) != 0) return null;
+		boolean nativeHurt = calls(method, FORGE_HOOKS, "onLivingHurt") != 0, nativeDamage = calls(method, FORGE_HOOKS, "onLivingDamage") != 0;
+		boolean seamedHurt = calls(method, RUNTIME, "hurt") != 0, seamedDamage = calls(method, RUNTIME, "damage") != 0;
+		boolean wantHurt = !nativeHurt && !seamedHurt, wantDamage = !nativeDamage && !seamedDamage;
+		if (!wantHurt && !wantDamage) return null;
+		if (wantHurt && nativeDamage) return null;
 		List<AbstractInsnNode> code = code(method);
 		// aload0 aload1 aload2 invokevirtual isInvulnerableTo; ifne <end>
 		if (code.size() < 5 || !load(code.get(0), Opcodes.ALOAD, 0) || !load(code.get(1), Opcodes.ALOAD, 1)
 				|| !load(code.get(2), Opcodes.ALOAD, 2)
 				|| !(code.get(3) instanceof MethodInsnNode invulnerable) || !invulnerable.name.equals("isInvulnerableTo")
-				|| code.get(4).getOpcode() != Opcodes.IFNE) return false;
-		if (calls(method, "net/neoforged/neoforge/common/CommonHooks", "onLivingDamagePre") != 1
-				|| calls(method, "com/google/common/base/Preconditions", "checkArgument") != 1) return false;
+				|| code.get(4).getOpcode() != Opcodes.IFNE) return null;
+		if (calls(method, NEO_COMMON_HOOKS, "onLivingDamagePre") != 1
+				|| calls(method, "com/google/common/base/Preconditions", "checkArgument") != 1) return null;
 		// The one `getNewDamage(); fstore 3` after NeoForge's Pre: the health damage the method goes on to apply.
 		AbstractInsnNode pre = null, store = null;
 		int stores = 0;
@@ -123,8 +195,14 @@ public final class ForgeDamageSeamsInjector implements ClassTransformer {
 				stores++;
 			}
 		}
-		if (stores != 1) return false;
+		if (stores != 1) return null;
+		if (wantHurt) hurtSeam(method, code.get(4));
+		if (wantDamage) damageSeam(method, store);
+		return wantHurt && wantDamage ? "Hurt and Damage in actuallyHurt" : wantHurt ? "Hurt in actuallyHurt" : "Damage in actuallyHurt";
+	}
 
+	/** Right after the invulnerability check's {@code ifne}: ask Hurt, and end the hit on its answer. */
+	private static void hurtSeam(MethodNode method, AbstractInsnNode check) {
 		LabelNode end = new LabelNode(), go = new LabelNode();
 		InsnList hurt = new InsnList();
 		hurt.add(new VarInsnNode(Opcodes.ALOAD, 0));
@@ -141,8 +219,11 @@ public final class ForgeDamageSeamsInjector implements ClassTransformer {
 		hurt.add(new InsnNode(Opcodes.RETURN));
 		hurt.add(go);
 		hurt.add(new FrameNode(Opcodes.F_SAME, 0, null, 0, null));
-		method.instructions.insert(code.get(4), hurt);
+		method.instructions.insert(check, hurt);
+	}
 
+	/** Right after the health damage is read back: Damage's answer replaces it. */
+	private static void damageSeam(MethodNode method, AbstractInsnNode store) {
 		InsnList damage = new InsnList();
 		damage.add(new VarInsnNode(Opcodes.ALOAD, 0));
 		container(damage);
@@ -152,14 +233,12 @@ public final class ForgeDamageSeamsInjector implements ClassTransformer {
 				"(L" + LIVING + ";L" + CONTAINER + ";" + SOURCE + "F)F", false));
 		damage.add(new VarInsnNode(Opcodes.FSTORE, 3));
 		method.instructions.insert(store, damage);
-		return true;
 	}
 
 	/** {@code if (!KernelLivingDamage.playerAttack(this, source, amount)) return false;} at the head. */
 	static boolean attackSeam(MethodNode method) {
 		if ((method.access & (Opcodes.ACC_STATIC | Opcodes.ACC_ABSTRACT)) != 0) return false;
-		if (calls(method, "net/minecraftforge/common/ForgeHooks", "onPlayerAttack") != 0
-				|| calls(method, RUNTIME, "playerAttack") != 0) return false;
+		if (calls(method, FORGE_HOOKS, "onPlayerAttack") != 0 || calls(method, RUNTIME, "playerAttack") != 0) return false;
 		// Nothing jumps back to the first instruction: the seam's F_SAME frames are then relative to the entry frame.
 		for (AbstractInsnNode insn = method.instructions.getFirst(); insn != null && insn.getOpcode() < 0; insn = insn.getNext()) {
 			if (insn instanceof FrameNode) return false;
@@ -180,10 +259,10 @@ public final class ForgeDamageSeamsInjector implements ClassTransformer {
 		return true;
 	}
 
-	/** {@code KernelLivingDamage.notePlayerSeam()} first thing in {@code Player.<clinit>}. */
+	/** {@code KernelLivingDamage.notePlayerSeam()} first thing in {@code Player.<clinit>}, once. */
 	static boolean noteSeam(ClassNode node) {
 		MethodNode clinit = own(node, "<clinit>", "()V");
-		if (clinit == null) return false;
+		if (clinit == null || calls(clinit, RUNTIME, "notePlayerSeam") != 0) return false;
 		clinit.instructions.insert(new MethodInsnNode(Opcodes.INVOKESTATIC, RUNTIME, "notePlayerSeam", "()V", false));
 		return true;
 	}
