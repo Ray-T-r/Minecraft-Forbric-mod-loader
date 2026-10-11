@@ -173,7 +173,8 @@ public final class DeadEventAudit {
 		// both patched: PlayerDestroyItemEvent, NeighborNotifyEvent, BlockFeatureGrowEvent and MobEffectEvent
 		// $Applicable got every call site back and left; four that had lost all of theirs (LivingConversionEvent$Pre,
 		// EntityLeaveLevelEvent, LevelEvent$Unload, PlayLevelSoundEvent$AtEntity) got some back and joined, and
-		// LivingConversionEvent$Post went from 3 of 7 to 4.
+		// LivingConversionEvent$Post went from 3 of 7 to 4. Regenerated again once the splice carried an insertion
+		// statement by statement: ClientLevel's tracking end now posts EntityLeaveLevelEvent too (2 of 2), so it left.
 		partial.put("net/minecraftforge/event/entity/living/LivingConversionEvent$Post",
 				"a completed conversion is announced on 4 of its 7 paths — not for pigs, hoglins or piglins — so a "
 						+ "mod reacting to one will react to some conversions and not others");
@@ -185,9 +186,6 @@ public final class DeadEventAudit {
 						+ "take, so this reads as a mod that works for horses and llamas only");
 		partial.put("net/minecraftforge/event/level/BlockEvent$EntityPlaceEvent",
 				"placement by an entity is announced on 1 of its 2 paths");
-		partial.put("net/minecraftforge/event/entity/EntityLeaveLevelEvent",
-				"an entity leaving a level is announced on 1 of its 2 paths, the server's: a mod is never told on "
-						+ "the client");
 		partial.put("net/minecraftforge/event/level/LevelEvent$Unload",
 				"a level going away is announced on 2 of its 3 paths — not when a server stops — so what a mod "
 						+ "releases on unload is kept at shutdown");
