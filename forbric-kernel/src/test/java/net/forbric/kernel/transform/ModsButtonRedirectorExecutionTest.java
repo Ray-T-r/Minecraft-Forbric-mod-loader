@@ -196,6 +196,21 @@ class ModsButtonRedirectorExecutionTest {
 				"a second pass finds one button and nothing left to re-point");
 	}
 
+	/**
+	 * What the pass says it re-pointed is what a player can press. The dropped button's lambda is left in the class with
+	 * nothing referring to it, so a construction in it is no re-pointed button: the one report of a re-pointed
+	 * construction is the kept button's, in its widget class, and the menu reports only the drop.
+	 */
+	@Test void onlyAConstructionAPlayerCanStillReachIsReportedAsRePointed(@TempDir Path work) throws Throwable {
+		Map<String, byte[]> original = InjectorExecution.compile(work, standIns(BACK, NEO_ICON, FRIENDS, OPTIONS, FORGE_ROW, QUIT));
+		String log = capture(() -> transformed(original, lookup(original)));
+		List<String> rePointed = new ArrayList<>();
+		for (String line : log.split("\\R")) if (line.contains("now opens the unified list")) rePointed.add(line);
+		assertEquals(1, rePointed.size(), log);
+		assertTrue(rePointed.get(0).contains("fixture/widget/ModsWidget's mods button"), rePointed.get(0));
+		assertTrue(log.contains("fixture/Menu.build added 2 mods buttons"), log);
+	}
+
 	@Test void whicheverFamilysButtonComesFirstIsTheOneKept(@TempDir Path work) throws Throwable {
 		Map<String, byte[]> original = InjectorExecution.compile(work, standIns(BACK, FORGE_ROW, OPTIONS, NEO_ICON, QUIT));
 		Map<String, byte[]> classes = transformed(original, lookup(original));
@@ -258,11 +273,18 @@ class ModsButtonRedirectorExecutionTest {
 			}
 		};
 		ClassNode before = parse(in);
-		ClassNode after = parse(new ModsButtonRedirector(classes).transform(pause.replace('/', '.'), in, null));
+		byte[][] out = new byte[1][];
+		String log = capture(() -> out[0] = new ModsButtonRedirector(classes).transform(pause.replace('/', '.'), in, null));
+		ClassNode after = parse(out[0]);
 		int was = modsButtons(before, "createPauseMenu", classes);
 		assertTrue(was >= 1, "the staged pause menu builds a mods button at all");
 		assertEquals(1, modsButtons(after, "createPauseMenu", classes),
 				"transformed, the pause menu builds exactly one (the base built " + was + ")");
+		// The kept button is NeoForge's factory, whose screen is built in its own class; a dropped one's lambda is left
+		// with nothing referring to it. So the pause menu itself re-points no construction a player can reach, on a base
+		// that kept one button and on one that kept both, and its report says only what it dropped.
+		assertFalse(log.contains(pause + "'s mods button now opens the unified list"), log);
+		assertEquals(was > 1, log.contains(pause + ".createPauseMenu added " + was + " mods buttons"), log);
 		for (MethodNode m : after.methods) new Analyzer<>(new BasicVerifier()).analyze(after.name, m);
 	}
 

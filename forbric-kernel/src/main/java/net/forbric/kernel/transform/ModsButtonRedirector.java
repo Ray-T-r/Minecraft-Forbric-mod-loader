@@ -264,6 +264,9 @@ public final class ModsButtonRedirector implements ClassTransformer {
 	 * provided that span holds no branch, switch, return, throw, local store and no label anything refers to — so
 	 * the stack and the locals after it are exactly what they were before it and no frame changes. A span that
 	 * fails any of that is left in place and reported: a second button is a cosmetic fault, a broken method is not.
+	 *
+	 * <p>The lambda body a dropped statement built stays in the class with nothing referring to it
+	 * ({@link #unreferencedLambdaBodies}): no button presses it, so nothing in it is a mods button anyone can reach.
 	 */
 	private int keepOneModsButtonPerMethod(ClassNode node) {
 		int dropped = 0;
@@ -310,6 +313,40 @@ public final class ModsButtonRedirector implements ClassTransformer {
 			}
 		}
 		return dropped;
+	}
+
+	/**
+	 * The private synthetic methods (the bodies lambdas compile to) that nothing in the class refers to: no call, no
+	 * method handle. Nothing can run them, so a construction in one is no button a player can press.
+	 */
+	private static Set<MethodNode> unreferencedLambdaBodies(ClassNode node) {
+		Set<MethodNode> out = new HashSet<>();
+		int lambda = Opcodes.ACC_PRIVATE | Opcodes.ACC_SYNTHETIC;
+		for (MethodNode method : node.methods) {
+			if ((method.access & lambda) == lambda && !referenced(node, method)) out.add(method);
+		}
+		return out;
+	}
+
+	/** Whether anything in the class still refers to {@code body}: a call, or a method handle in an indy or a constant. */
+	private static boolean referenced(ClassNode node, MethodNode body) {
+		for (MethodNode method : node.methods) {
+			if (method.instructions == null) continue;
+			for (AbstractInsnNode insn : method.instructions) {
+				if (insn instanceof MethodInsnNode call && call.owner.equals(node.name) && call.name.equals(body.name)
+						&& call.desc.equals(body.desc)) return true;
+				if (insn instanceof InvokeDynamicInsnNode indy) {
+					if (handles(node, body, indy.bsm)) return true;
+					for (Object arg : indy.bsmArgs) if (arg instanceof Handle handle && handles(node, body, handle)) return true;
+				}
+				if (insn instanceof LdcInsnNode ldc && ldc.cst instanceof Handle handle && handles(node, body, handle)) return true;
+			}
+		}
+		return false;
+	}
+
+	private static boolean handles(ClassNode node, MethodNode body, Handle handle) {
+		return handle.getOwner().equals(node.name) && handle.getName().equals(body.name) && handle.getDesc().equals(body.desc);
 	}
 
 	/** The instructions in {@code method} that build a mods button, in instruction order. */
@@ -458,11 +495,14 @@ public final class ModsButtonRedirector implements ClassTransformer {
 		try {
 			ClassNode node = new ClassNode();
 			new ClassReader(classBytes).accept(node, 0);
-			// Before the redirect: a dropped duplicate's label and construction are then not counted as landed.
+			// Before the redirect: a dropped duplicate's label and construction are then not counted as landed, and
+			// neither is a construction in the lambda the dropped statement built, which nothing refers to any more
+			// (on this pass or a later one).
 			int dropped = keepOneModsButtonPerMethod(node);
+			Set<MethodNode> orphaned = unreferencedLambdaBodies(node);
 			int redirected = 0;
 			for (MethodNode method : node.methods) {
-				if (method.instructions == null) continue;
+				if (method.instructions == null || orphaned.contains(method)) continue;
 				for (AbstractInsnNode insn : method.instructions) {
 					if (insn instanceof TypeInsnNode type && type.getOpcode() == Opcodes.NEW
 							&& REPLACED.contains(type.desc)) {
