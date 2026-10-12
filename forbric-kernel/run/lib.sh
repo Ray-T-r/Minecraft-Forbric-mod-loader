@@ -224,10 +224,10 @@ record_server_pid() { echo "$2" > "$(_pidfile "$1")"; }
 # await_server <pid> <log> [limit-seconds] [grace-seconds] — wait for a clean stop, then guarantee it is gone.
 # Bounded on purpose: a hung server costs the timeout, not the afternoon.
 await_server() {
-  local pid="$1" log="$2" limit="${3:-90}" grace="${4:-20}" i
+  local pid="$1" log="$2" limit="${3:-90}" grace="${4:-20}" i announced=0
   for i in $(seq 1 "$limit"); do
     kill -0 "$pid" 2>/dev/null || { wait "$pid" 2>/dev/null; port_was_free "$log"; return 0; }
-    grep -qE 'Stopping server|Failed to start the minecraft server' "$log" 2>/dev/null && break
+    grep -qE 'Stopping server|Failed to start the minecraft server' "$log" 2>/dev/null && { announced=1; break; }
     sleep 1
   done
   # "Stopping server" is printed when shutdown BEGINS, not when it ends — saving chunks and flushing the log come
@@ -241,7 +241,13 @@ await_server() {
   if kill -0 "$pid" 2>/dev/null; then
     # A dedicated server has no System.exit: once "Stopping server" is out, only a leaked non-daemon thread keeps
     # the JVM alive. That is a defect, not a slow save — count it.
-    echo "[kernel] FAIL server still alive ${grace}s after announcing its stop — killing it (a leaked non-daemon thread looks exactly like this)"
+    # Only after an announced stop: a server that never announced one within the limit (a "stop" it never read, a
+    # boot slower than the limit) is a different failure, and saying "leaked thread" sent a reader the wrong way.
+    if [ "$announced" -eq 1 ]; then
+      echo "[kernel] FAIL server still alive ${grace}s after announcing its stop — killing it (a leaked non-daemon thread looks exactly like this)"
+    else
+      echo "[kernel] FAIL server never announced a stop within ${limit}s — killing it (a stop it never read, or a boot slower than that)"
+    fi
     FAIL=1
   fi
   kill_tree "$pid"

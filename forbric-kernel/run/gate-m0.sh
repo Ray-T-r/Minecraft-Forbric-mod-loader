@@ -1,12 +1,13 @@
 #!/usr/bin/env bash
 # M0 gate — kernel scaffold + ported libs + oracle harness.
 #   1. offline build (boot jar) succeeds
-#   2. ported unit tests green (transform / access / mapping / metadata / discovery)
+#   1b. capture what the kernel defines with fabric-api installed (the one opt-in unit-test fixture)
+#   2. ported unit tests green (transform / access / mapping / metadata / discovery), with nothing skipped
 #   3. kernel --scan produces well-formed JSON discovering mods across all 3 ecosystems (both merged sets)
 #   4. differential oracle: kernel parser ≡ independent ground-truth parser on the real mod sets
 #   6. the evidence, soak and link-gate tools' own tests, and the transfer-engine suite, all actually executed
 # This is the differential-oracle foundation every later milestone builds on.
-# GATE-PARALLEL: mem=2000  (builds and runs the unit suite; owns no rundir)
+# GATE-PARALLEL: rundirs=server-m0-definitions mem=2000  (builds and runs the unit suite)
 set -uo pipefail
 . "$(cd "$(dirname "$0")" && pwd)/lib.sh"
 
@@ -53,6 +54,38 @@ else
   echo "[kernel] FAIL build — see $BUILD/gate-m0-build.log"; FAIL=1
 fi
 
+step "1b. capture the final definitions the opt-in replay test reads"
+# SharedFinalSourceActualTest replays fabric-content-registries' Entity source bodies against Entity as the kernel
+# DEFINES it with fabric-api installed -- bytes only a running game has, so the test is [fixture:opt-in] and skips
+# without them. Step 2 counts every skip as a failure, and nothing here produced the capture, so this gate was red on
+# every machine for two tests nobody could run. It is produced here instead: a dedicated server with fabric-api
+# alone, recording every class its loader defines (-Dforbric.definedClassEvidence).
+DEFINED="$BUILD/gate-m0-definitions"
+DRUN="$KERNEL/run/server-m0-definitions"
+DLOG="$BUILD/gate-m0-definitions.log"
+reap_stale_server "$DRUN"
+rm -rf "$DEFINED" "$DRUN"
+mkdir -p "$DRUN/mods"
+cp "$KERNEL/run/client-merged-pack/mods/fabric-api-0.155.2+26.2.jar" "$DRUN/mods/" 2>/dev/null \
+  || echo "[kernel] FAIL no fabric-api 0.155.2 under run/client-merged-pack/mods to capture with"
+seed_server_properties "$DRUN"
+# Recording every definition makes this boot slow (a minute or more), and a "stop" fed before the console reads
+# anything is lost -- the server then runs until await_server kills it. So the feeder waits for Done, in a log
+# emptied first: the previous run's "Done (" would release it at once.
+: > "$DLOG"
+( for _ in $(seq 1 240); do grep -aq 'Done (' "$DLOG" 2>/dev/null && break; sleep 1; done; sleep 2; echo stop ) \
+  | RUNDIR="$DRUN" FORBRIC_JVM="${FORBRIC_JVM:-} -Dforbric.definedClassEvidence=$DEFINED" \
+  "$KERNEL/run/launch-kernel-server.sh" > "$DLOG" 2>&1 &
+DPID=$!
+record_server_pid "$DRUN" "$DPID"
+await_server "$DPID" "$DLOG" 300
+if grep -aqE "^net/minecraft/world/entity/Entity	" "$DEFINED"/definitions-*/definitions.tsv 2>/dev/null \
+   && [ -f "$(ls -d "$DEFINED"/definitions-* 2>/dev/null | head -1)/intact" ]; then
+  echo "[kernel] PASS the kernel's final Entity was captured, and every definition recorded ($DEFINED)"
+else
+  echo "[kernel] FAIL no complete capture with Entity in it — see $DLOG"; FAIL=1
+fi
+
 # The verdict comes from the JUnit XML, not from gradle's exit code, and the task is forced to RUN.
 #
 # Both halves were wrong. `[0-9]+ tests completed` is a string gradle prints only when tests FAIL, so `n` was
@@ -67,7 +100,7 @@ fi
 step "2. ported unit tests"
 TESTLOG="$BUILD/gate-m0-test.log"
 RESULTS="$KERNEL/build/test-results/test"
-"$KERNEL/gradlew" --offline -p "$KERNEL" cleanTest test >"$TESTLOG" 2>&1
+"$KERNEL/gradlew" --offline -p "$KERNEL" cleanTest test -Pforbric.sharedFinalDefined="$DEFINED" >"$TESTLOG" 2>&1
 rc=$?
 read -r xmls tests skipped failures errors <<<"$(junit_summary "$RESULTS")"
 if [ "$rc" -ne 0 ]; then
