@@ -122,9 +122,17 @@ class CoremodRepairInjectorsTest {
 		assertSame(original, new BiomeLateWriteInjector().transform(BiomeLateWriteInjector.TARGET, original, null));
 	}
 
-	@Test void theMasterSwitchCoversTheLiquidRepairToo() throws Exception {
+	/**
+	 * The coremod master switch leaves the liquid repair on; only its own switch turns it off. It is a merge repair, not
+	 * one of NeoForge's coremods, and the game cannot start without it: Blocks.<clinit> asks a liquid block for its
+	 * fluid, so -Dforbric.coremodParity=off used to take the whole boot down with it, and gate-m42's off phase -- which
+	 * exists to show every coremod repair failing -- had no server to show it on.
+	 */
+	@Test void theMasterSwitchLeavesTheLiquidRepairOnAndOnlyItsOwnSwitchTurnsItOff() throws Exception {
 		byte[] original = NativeCoremodParityTest.read(MERGED, LiquidBlockFluidInjector.OWNER);
 		System.setProperty(NativeCoremodParity.PROPERTY, "off");
+		assertNotSame(original, new LiquidBlockFluidInjector().transform(LiquidBlockFluidInjector.TARGET, original, null));
+		System.setProperty(LiquidBlockFluidInjector.PROPERTY, "off");
 		assertSame(original, new LiquidBlockFluidInjector().transform(LiquidBlockFluidInjector.TARGET, original, null));
 	}
 
