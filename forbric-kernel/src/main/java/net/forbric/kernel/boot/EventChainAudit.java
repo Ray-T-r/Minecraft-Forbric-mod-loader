@@ -55,7 +55,10 @@ import net.forbric.kernel.util.ForbricLog;
  * settled where the game bypasses it: {@code excused} where MinecraftForge's own body bypasses its call there too, and a
  * {@code deferred} forward where only the merged game does. So every stand-down ends one of three ways — observed beside
  * the game's own dispatch, excused, or forwarded late — and a deferred forward's MinecraftForge dispatch counts as a
- * forward, not as one of the game's.
+ * forward, not as one of the game's. A deferred forward is the kernel's word that it owed one, so its dispatch is
+ * observed too: each MinecraftForge dispatch a late forward makes of the event it was owed for is counted on that pair
+ * ({@code deferredDispatched}, and {@code deferredFailed} / {@code deferredCancelled} for how it ended), and a late
+ * forward that dispatched it other than once, or whose dispatch threw, is a violation.
  *
  * <p>A mod-bus post fans one event out to every mod's bus, one dispatch each from the same call site: those dispatches
  * are one post ({@code distinct}), and pair with the game's own MinecraftForge dispatch as one. And two dispatches that
@@ -96,6 +99,8 @@ public final class EventChainAudit {
 		List<Sibling> forwards;
 		/** Entered as the root of a deferred forward: a kernel forward made after the dispatch it was owed for. */
 		boolean deferredRoot;
+		/** The deferred forward this is the root of, for crediting its dispatch to the pair it was owed for. */
+		Deferring deferredFor;
 		Frame(boolean neo, Object event) { this.neo = neo; this.event = event; this.type = event.getClass(); }
 	}
 
@@ -166,7 +171,12 @@ public final class EventChainAudit {
 		final LongAdder outerPosts = new LongAdder(), observed = new LongAdder(), alsoForwarded = new LongAdder();
 		/** Stand-downs settled where the game bypassed the native call: excused as MinecraftForge's own body does, or forwarded late. */
 		final LongAdder excused = new LongAdder(), deferred = new LongAdder();
+		/** The MinecraftForge dispatches the late forwards made of this pair's event, and how many of them threw or were cancelled. */
+		final LongAdder deferredDispatched = new LongAdder(), deferredFailed = new LongAdder(), deferredCancelled = new LongAdder();
 	}
+
+	/** A deferred forward running on this thread: the stack depth it runs at, and what it was owed for. */
+	private record Deferring(int depth, Object neoEvent, Set<String> forgeEvents) { }
 
 	static final class Outer {
 		final LongAdder posts = new LongAdder(), withoutForward = new LongAdder(), withoutForwardCancelled = new LongAdder(),
@@ -176,8 +186,8 @@ public final class EventChainAudit {
 	}
 
 	private static final ThreadLocal<ArrayDeque<Frame>> STACK = ThreadLocal.withInitial(ArrayDeque::new);
-	/** Per thread: the stack depth a deferred forward runs at, or -1 when none is running. */
-	private static final ThreadLocal<int[]> DEFERRING = ThreadLocal.withInitial(() -> new int[] {-1});
+	/** Per thread: the deferred forward running now, or null. */
+	private static final ThreadLocal<Deferring> DEFERRING = new ThreadLocal<>();
 	/** Per thread: dispatches that finished outside any other dispatch, most recent first. */
 	private static final ThreadLocal<ArrayDeque<Sibling>> ROOT_SIBLINGS = ThreadLocal.withInitial(ArrayDeque::new);
 	private static final Map<String, Pair> PAIRS = new ConcurrentHashMap<>();
@@ -245,11 +255,14 @@ public final class EventChainAudit {
 	 */
 	public static void deferredForward(Object neoEvent, Set<String> forgeEvents, Runnable forward) {
 		if (neoEvent == null || forgeEvents == null || !enabled()) { forward.run(); return; }
-		for (String name : forgeEvents) nativePairOf(neoEvent, name).deferred.increment();
-		int[] deferring = DEFERRING.get();
-		int before = deferring[0];
-		deferring[0] = STACK.get().size();
-		try { forward.run(); } finally { deferring[0] = before; }
+		Set<String> names = new HashSet<>();
+		for (String name : forgeEvents) {
+			names.add(name.replace('/', '.'));
+			nativePairOf(neoEvent, name).deferred.increment();
+		}
+		Deferring before = DEFERRING.get();
+		DEFERRING.set(new Deferring(STACK.get().size(), neoEvent, Set.copyOf(names)));
+		try { forward.run(); } finally { if (before == null) DEFERRING.remove(); else DEFERRING.set(before); }
 	}
 
 	private static NativePair nativePairOf(Object neoEvent, String forge) {
@@ -264,7 +277,9 @@ public final class EventChainAudit {
 		Frame frame = new Frame(neo, event), parent = stack.peek();
 		boolean kernel = poster(frame);
 		if (parent != null && parent.neo != neo) { frame.kernelPoster = kernel; frame.parentListener = parent.listener; }
-		frame.deferredRoot = !neo && kernel && DEFERRING.get()[0] == stack.size();
+		Deferring deferring = DEFERRING.get();
+		frame.deferredRoot = !neo && kernel && deferring != null && deferring.depth() == stack.size();
+		if (frame.deferredRoot) frame.deferredFor = deferring;
 		stack.push(frame);
 	}
 
@@ -375,8 +390,15 @@ public final class EventChainAudit {
 			return;
 		}
 		if (frame.deferredRoot) {
-			// A forward owed for a dispatch that has finished: the kernel's, not the game's own MinecraftForge dispatch.
+			// A forward owed for a dispatch that has finished: the kernel's, not the game's own MinecraftForge dispatch, and
+			// what the pair it was owed for sees of it.
 			outer.asForward.increment();
+			if (frame.deferredFor.forgeEvents().contains(frame.type.getName())) {
+				NativePair owed = nativePairOf(frame.deferredFor.neoEvent(), frame.type.getName());
+				owed.deferredDispatched.increment();
+				if (failure != null) owed.deferredFailed.increment();
+				if (cancelled) owed.deferredCancelled.increment();
+			}
 			return;
 		}
 		if (parent != null && parent.neo != neo) parent.incidental.merge(frame.type, 1, Integer::sum);
@@ -507,23 +529,31 @@ public final class EventChainAudit {
 		return all;
 	}
 
-	/** Totals over every pair: the numbers a gate asserts are zero. */
+	/**
+	 * Totals over every pair: the numbers a gate asserts are zero. {@code deferredUnmatched} counts late forwards that did
+	 * not dispatch the event they were owed for exactly once (none, or more), and {@code deferredFailures} the dispatches
+	 * of a late forward that threw.
+	 */
 	public record Violations(long duplicated, long multiplicityDrift, long cancelLost, long innerFailures, long unbalanced,
-			long nativeAndForwarded) {
+			long nativeAndForwarded, long deferredUnmatched, long deferredFailures) {
 		public boolean clean() {
 			return duplicated == 0 && multiplicityDrift == 0 && cancelLost == 0 && innerFailures == 0 && unbalanced == 0
-					&& nativeAndForwarded == 0;
+					&& nativeAndForwarded == 0 && deferredUnmatched == 0 && deferredFailures == 0;
 		}
 	}
 
 	public static Violations violations() {
-		long duplicated = 0, drift = 0, lost = 0, failures = 0, twice = 0;
+		long duplicated = 0, drift = 0, lost = 0, failures = 0, twice = 0, unmatched = 0, lateFailures = 0;
 		for (Pair pair : PAIRS.values()) {
 			duplicated += pair.duplicated.sum(); drift += pair.drift(); lost += pair.cancelLost.sum(); failures += pair.innerFailures.sum();
 			twice += pair.withNative.sum();
 		}
-		for (NativePair pair : NATIVES.values()) twice += pair.alsoForwarded.sum();
-		return new Violations(duplicated, drift, lost, failures, UNBALANCED.sum(), twice);
+		for (NativePair pair : NATIVES.values()) {
+			twice += pair.alsoForwarded.sum();
+			unmatched += Math.abs(pair.deferred.sum() - pair.deferredDispatched.sum());
+			lateFailures += pair.deferredFailed.sum();
+		}
+		return new Violations(duplicated, drift, lost, failures, UNBALANCED.sum(), twice, unmatched, lateFailures);
 	}
 
 	static int pairCount() { return PAIRS.size(); }
@@ -547,7 +577,9 @@ public final class EventChainAudit {
 		out.append("  \"violations\": {\"duplicated\": ").append(v.duplicated()).append(", \"multiplicityDrift\": ").append(v.multiplicityDrift())
 				.append(", \"cancelLost\": ").append(v.cancelLost())
 				.append(", \"innerFailures\": ").append(v.innerFailures()).append(", \"unbalanced\": ").append(v.unbalanced())
-				.append(", \"nativeAndForwarded\": ").append(v.nativeAndForwarded()).append("},\n");
+				.append(", \"nativeAndForwarded\": ").append(v.nativeAndForwarded())
+				.append(", \"deferredUnmatched\": ").append(v.deferredUnmatched()).append(", \"deferredFailures\": ").append(v.deferredFailures())
+				.append("},\n");
 		out.append("  \"pairs\": [");
 		List<String> keys = new ArrayList<>(PAIRS.keySet()); Collections.sort(keys);
 		for (int i = 0; i < keys.size(); i++) {
@@ -570,7 +602,9 @@ public final class EventChainAudit {
 			out.append(i == 0 ? "\n" : ",\n").append("    {\"outer\": ").append(quote(ends[0])).append(", \"inner\": ").append(quote(ends[1]))
 					.append(", \"outerPosts\": ").append(p.outerPosts.sum()).append(", \"observed\": ").append(p.observed.sum())
 					.append(", \"alsoForwarded\": ").append(p.alsoForwarded.sum()).append(", \"excused\": ").append(p.excused.sum())
-					.append(", \"deferred\": ").append(p.deferred.sum()).append('}');
+					.append(", \"deferred\": ").append(p.deferred.sum()).append(", \"deferredDispatched\": ").append(p.deferredDispatched.sum())
+					.append(", \"deferredFailed\": ").append(p.deferredFailed.sum()).append(", \"deferredCancelled\": ")
+					.append(p.deferredCancelled.sum()).append('}');
 		}
 		out.append(natives.isEmpty() ? "],\n" : "\n  ],\n").append("  \"outers\": [");
 		// Every dispatch of every event either bus saw, so a gate can put a pair's counts against all of its outer
@@ -608,9 +642,9 @@ public final class EventChainAudit {
 			if (target.getParent() != null) Files.createDirectories(target.getParent());
 			Files.writeString(target, json(), StandardCharsets.UTF_8);
 			Violations v = violations();
-			ForbricLog.info("[Forbric/EventChain] %d cross-bus pair(s) observed, %d delivered natively; duplicated=%d multiplicityDrift=%d cancelLost=%d innerFailures=%d unbalanced=%d nativeAndForwarded=%d -> %s",
+			ForbricLog.info("[Forbric/EventChain] %d cross-bus pair(s) observed, %d delivered natively; duplicated=%d multiplicityDrift=%d cancelLost=%d innerFailures=%d unbalanced=%d nativeAndForwarded=%d deferredUnmatched=%d deferredFailures=%d -> %s",
 					pairCount(), NATIVES.size(), v.duplicated(), v.multiplicityDrift(), v.cancelLost(), v.innerFailures(), v.unbalanced(),
-					v.nativeAndForwarded(), target);
+					v.nativeAndForwarded(), v.deferredUnmatched(), v.deferredFailures(), target);
 		} catch (IOException | RuntimeException failed) {
 			ForbricLog.warn("[Forbric/EventChain] could not write the event-chain report: %s", String.valueOf(failed));
 		}

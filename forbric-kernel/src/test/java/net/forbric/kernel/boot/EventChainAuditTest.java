@@ -143,7 +143,8 @@ class EventChainAuditTest {
 				"no MinecraftForge dispatch of the event happened beside it: the stand-down is the bridge's word only");
 		assertTrue(EventChainAudit.violations().clean(), EventChainAudit.json());
 		assertTrue(EventChainAudit.json().contains("\"natives\": [\n    {\"outer\": \"NEO:" + NEO_PROBE + "\", \"inner\": \"FORGE:"
-				+ FORGE_PROBE + "\", \"outerPosts\": 1, \"observed\": 0, \"alsoForwarded\": 0, \"excused\": 0, \"deferred\": 0}"), EventChainAudit.json());
+				+ FORGE_PROBE + "\", \"outerPosts\": 1, \"observed\": 0, \"alsoForwarded\": 0, \"excused\": 0, \"deferred\": 0, "
+				+ "\"deferredDispatched\": 0, \"deferredFailed\": 0, \"deferredCancelled\": 0}"), EventChainAudit.json());
 
 		postNeo();
 		assertEquals(1, pair().forwardedOnce.sum(), "outside the scope the same bridge forwards");
@@ -296,8 +297,50 @@ class EventChainAuditTest {
 		assertEquals(1, forge.asForward.sum(), "the late dispatch is the kernel's forward: " + EventChainAudit.json());
 		assertEquals(2, natively.outerPosts.sum());
 		assertEquals(0, natively.observed.sum());
+		assertEquals(1, natively.deferredDispatched.sum(), "the late forward's own dispatch is seen on the pair it was owed for");
 		assertTrue(EventChainAudit.violations().clean(), EventChainAudit.json());
-		assertTrue(EventChainAudit.json().contains("\"alsoForwarded\": 0, \"excused\": 1, \"deferred\": 1}"), EventChainAudit.json());
+		assertTrue(EventChainAudit.json().contains("\"alsoForwarded\": 0, \"excused\": 1, \"deferred\": 1, \"deferredDispatched\": 1, "
+				+ "\"deferredFailed\": 0, \"deferredCancelled\": 0}"), EventChainAudit.json());
+	}
+
+	/**
+	 * A late forward is the kernel's word that it owed one; what it dispatched is what counts. One that dispatches
+	 * nothing, one that dispatches twice, and one whose dispatch throws are each a violation, though each counts as
+	 * settled by the kernel's own account.
+	 */
+	@Test void aLateForwardThatDispatchesOtherThanOnceOrThrowsIsAViolation() throws Exception {
+		for (String shape : List.of("nothing", "twice", "throws")) {
+			EventChainAudit.reset();
+			Consumer<Object> forward = switch (shape) {
+				case "nothing" -> event -> { };
+				case "twice" -> event -> { invoke(post, forgeBus, forgeEvent()); invoke(post, forgeBus, forgeEvent()); };
+				default -> event -> invoke(post, forgeBus, forgeEvent());
+			};
+			if (shape.equals("throws")) {
+				Predicate<Object> thrower = event -> { throw new IllegalStateException("listener failed"); };
+				forgeBus.getClass().getMethod("addListener", Predicate.class).invoke(forgeBus, thrower);
+			}
+			addNeo(new GameEventMultiplexer.StandDownListener(forward, Set.of(FORGE_INTERNAL)));
+			Object event = neoProbe.getConstructor().newInstance();
+			var caller = net.forbric.api.NativeEventDelivery.enterNative("caller");
+			try (net.forbric.api.NativeEventDelivery.Scope scope = net.forbric.api.NativeEventDelivery.begin("", caller, "", FORGE_INTERNAL)) {
+				scope.capture(event);
+				postNeo(event);
+			}
+			net.forbric.api.NativeEventDelivery.bypassed(caller, FORGE_INTERNAL, false);
+			var natively = EventChainAudit.nativePair("NEO:" + NEO_PROBE, "FORGE:" + FORGE_PROBE);
+			assertEquals(1, natively.deferred.sum(), shape + ": the kernel's account says one was owed and forwarded: " + EventChainAudit.json());
+			var v = EventChainAudit.violations();
+			assertFalse(v.clean(), shape + ": " + EventChainAudit.json());
+			if (shape.equals("throws")) {
+				assertEquals(1, v.deferredFailures(), EventChainAudit.json());
+				assertEquals(0, v.deferredUnmatched(), "it did dispatch, once: " + EventChainAudit.json());
+			} else {
+				assertEquals(1, v.deferredUnmatched(), shape + ": " + EventChainAudit.json());
+				assertEquals(0, v.deferredFailures(), EventChainAudit.json());
+			}
+			buses();
+		}
 	}
 
 	/**

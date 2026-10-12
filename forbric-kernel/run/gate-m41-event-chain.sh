@@ -10,14 +10,19 @@
 # native delivery, pairs it with the game's own MinecraftForge dispatch beside it (observed), and counts a forward the
 # game delivered natively as well as a violation (nativeAndForwarded). A stand-down for a native call the game then
 # bypasses is settled where it does: excused where MinecraftForge's own body bypasses its call too, forwarded late
-# (deferred) where only the merged game does. Every stand-down must end one of those three ways. A mod-bus post is one
+# (deferred) where only the merged game does. Every stand-down must end one of those three ways, and the two that rest
+# on the kernel's own account are checked against the buses: a late forward must dispatch the event it was owed once and
+# cleanly (deferredDispatched, deferredFailed), and no run here takes a way out MinecraftForge's own body also skips, so
+# a required bridge's stand-downs are never excused. A mod-bus post is one
 # post however many mods' buses it is dispatched to (distinct), and what each family's own listeners post inside a
 # delivery pairs with the other family's (a cascade), so a cascade forwarded beside the native one is red too.
 #
 #   1. breadth — the 97-mod client enters a world, drives a container screen with the mouse, and leaves: every post
 #      of every tick, level, entity, tracking, lifecycle, screen-mouse, system-chat, client-command and mod-bus (atlas,
 #      model bake) bridge's NeoForge event must be forwarded exactly once or stood down for and settled, and nothing may
-#      violate the rules above — including a forward the game also delivered natively.
+#      violate the rules above — including a forward the game also delivered natively. And by count on the buses alone,
+#      apart from any pairing and any account of the kernel's: MinecraftForge's bus dispatched each required bridge's
+#      event at least once per NeoForge post that was not cancelled.
 #   2. cancel — a dedicated server with a NeoForge mod whose MinecraftForge listener vetoes one tagged entity
 #      joining the level: the entity must stay out, an untagged one must get in, and the audit must see the veto
 #      carried back from MinecraftForge's event to NeoForge's.
@@ -64,15 +69,17 @@ if python3 - "$RESULTS/client.json" <<'PY'
 import json, sys
 report = json.load(open(sys.argv[1]))
 v = report['violations']
-assert all(v[k] == 0 for k in ('duplicated', 'multiplicityDrift', 'cancelLost', 'innerFailures', 'unbalanced', 'nativeAndForwarded')), v
+assert all(v[k] == 0 for k in ('duplicated', 'multiplicityDrift', 'cancelLost', 'innerFailures', 'unbalanced', 'nativeAndForwarded',
+                               'deferredUnmatched', 'deferredFailures')), v
 outers = {o['event']: o for o in report['outers']}
 simple = lambda key: key.rsplit('.', 1)[-1]
 seen, native, observed, keys = {}, {}, {}, {}
-settled = {}
+settled, excused, inners = {}, {}, {}
 for pair in report['pairs']:
     assert pair['outer'].startswith('NEO:') and pair['inner'].startswith('FORGE:'), pair
     seen[simple(pair['outer'])] = seen.get(simple(pair['outer']), 0) + pair['forwardedOnce']
     keys.setdefault(simple(pair['outer']), set()).add(pair['outer'])
+    inners.setdefault(simple(pair['outer']), set()).add(pair['inner'])
 # A merge that keeps both families' edits delivers some of these MinecraftForge events from the game itself, and the
 # bridge then stands down for exactly those posts (PlayerList.placeNewPlayer, Commands.<init>, initServer and
 # runServer, ServerEntity's pairing). A stand-down is the bridge's own word, so the audit pairs each one with the game's
@@ -84,13 +91,18 @@ for pair in report['natives']:
     native[simple(pair['outer'])] = native.get(simple(pair['outer']), 0) + pair['outerPosts']
     observed[simple(pair['outer'])] = observed.get(simple(pair['outer']), 0) + pair['observed']
     settled[simple(pair['outer'])] = settled.get(simple(pair['outer']), 0) + pair['observed'] + pair['excused'] + pair['deferred']
+    excused[simple(pair['outer'])] = excused.get(simple(pair['outer']), 0) + pair['excused']
     keys.setdefault(simple(pair['outer']), set()).add(pair['outer'])
+    inners.setdefault(simple(pair['outer']), set()).add(pair['inner'])
     nativeInner.setdefault(pair['inner'], []).append(pair)
     # Every stand-down, required or not, ends one way: the game's own dispatch seen beside it, excused where
-    # MinecraftForge's own body bypasses its call too, or forwarded late where only the merged game does.
-    if pair['observed'] + pair['excused'] + pair['deferred'] != pair['outerPosts']:
+    # MinecraftForge's own body bypasses its call too, or forwarded late where only the merged game does — and a late
+    # forward is seen dispatching the event it was owed, once and cleanly.
+    if pair['observed'] + pair['excused'] + pair['deferred'] != pair['outerPosts'] \
+            or pair['deferredDispatched'] != pair['deferred'] or pair['deferredFailed'] != 0:
         unsettled.append(pair)
-assert not unsettled, ('stand-downs neither observed beside the game\'s own dispatch, nor excused, nor forwarded late', unsettled)
+assert not unsettled, ('stand-downs neither observed beside the game\'s own dispatch, nor excused, nor forwarded late and seen '
+                       'dispatching once', unsettled)
 required = ['ServerTickEvent$Pre', 'ServerTickEvent$Post', 'LevelTickEvent$Pre', 'LevelTickEvent$Post',
             'PlayerTickEvent$Pre', 'PlayerTickEvent$Post', 'ClientTickEvent$Pre', 'ClientTickEvent$Post',
             'RenderFrameEvent$Pre', 'RenderFrameEvent$Post', 'EntityJoinLevelEvent', 'LevelEvent$Load',
@@ -114,12 +126,28 @@ for name in required:
         unaccounted[name] = {'posts': posts, 'forwardedOnce': seen.get(name, 0), 'stoodDown': native.get(name, 0),
                              'observed': observed.get(name, 0), 'settled': settled.get(name, 0), 'cancelled': cancelled}
 assert not unaccounted, ('required bridges whose posts are not each forwarded once or stood down for a seen native dispatch', unaccounted)
-# And by count, independent of the pairing: no MinecraftForge event is credited with more native deliveries than it
-# had dispatches that were not kernel forwards (an excused stand-down claims none, a late forward is a kernel forward).
-for inner, pairs in nativeInner.items():
-    dispatched = outers.get(inner, {'posts': 0, 'asForward': 0})
-    stood = sum(p['outerPosts'] - p['excused'] - p['deferred'] for p in pairs)
-    assert dispatched['posts'] - dispatched['asForward'] >= stood, ('stand-downs outnumber the native dispatches', inner, dispatched, stood)
+# An excused stand-down rests on the kernel's verdict alone (MinecraftForge's own body skips its call on that way out
+# too), and nothing on the buses can confirm it. No run here takes such a way out, so a required bridge has none: one
+# that shows up is a verdict to check, not a settled post.
+excusedRequired = {name: excused[name] for name in required if excused.get(name, 0)}
+assert not excusedRequired, ('required bridges with excused stand-downs this run does not drive', excusedRequired)
+# And by count on the buses alone, apart from the pairing and from any account of the kernel's: each NeoForge post of a
+# required bridge that was not cancelled was answered by at least one dispatch of its MinecraftForge event on
+# MinecraftForge's bus — the game's own, a forward, or a late forward. Bridges that answer on the same MinecraftForge
+# events are summed together; MinecraftForge's bus may dispatch the event more often (a mod-bus event once per mod, or
+# from elsewhere), never less.
+answered = {}
+for name in required:
+    group = frozenset(inners.get(name, ()))
+    entry = answered.setdefault(group, {'names': [], 'neo': 0})
+    entry['names'].append(name)
+    entry['neo'] += sum(outers[k]['distinct'] - outers[k]['withoutForwardCancelled'] for k in keys[name])
+short = []
+for group, entry in answered.items():
+    forge = sum(outers.get(inner, {'posts': 0})['posts'] for inner in group)
+    if not group or forge < entry['neo']:
+        short.append({'bridges': entry['names'], 'forgeEvents': sorted(group), 'neoPostsNotCancelled': entry['neo'], 'forgeDispatches': forge})
+assert not short, ('MinecraftForge\'s bus dispatched a required bridge\'s event fewer times than NeoForge posted it uncancelled', short)
 natively = sorted(name for name in required if seen.get(name, 0) < 1)
 print(f"[kernel] {len(report['pairs'])} forwarding pairs, {len(required)} required bridges accounted for post by post "
       f"({len(natively)} only standing down for the game's own delivery: {natively}), violations {v}; "
@@ -155,8 +183,10 @@ report, probe = json.load(open(sys.argv[1])), json.load(open(sys.argv[2]))
 # addFreshEntity's answer is the outcome: an accepted entity is not always found by UUID the same tick.
 assert probe['forgeVetoes'] >= 1 and probe['vetoedAdded'] is False and probe['controlAdded'] is True, probe
 v = report['violations']
-assert all(v[k] == 0 for k in ('duplicated', 'multiplicityDrift', 'cancelLost', 'innerFailures', 'unbalanced', 'nativeAndForwarded')), v
-unsettled = [p for p in report['natives'] if p['alsoForwarded'] != 0 or p['observed'] + p['excused'] + p['deferred'] != p['outerPosts']]
+assert all(v[k] == 0 for k in ('duplicated', 'multiplicityDrift', 'cancelLost', 'innerFailures', 'unbalanced', 'nativeAndForwarded',
+                               'deferredUnmatched', 'deferredFailures')), v
+unsettled = [p for p in report['natives'] if p['alsoForwarded'] != 0 or p['observed'] + p['excused'] + p['deferred'] != p['outerPosts']
+             or p['deferredDispatched'] != p['deferred'] or p['deferredFailed'] != 0]
 assert not unsettled, ('dedicated server stand-downs not settled', unsettled)
 join = [p for p in report['pairs'] if p['outer'].endswith('.EntityJoinLevelEvent') and p['inner'].endswith('.EntityJoinLevelEvent')]
 assert len(join) == 1, report['pairs']
