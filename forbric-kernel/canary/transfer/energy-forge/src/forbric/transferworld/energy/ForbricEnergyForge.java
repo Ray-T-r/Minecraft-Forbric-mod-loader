@@ -33,8 +33,11 @@ public final class ForbricEnergyForge {
 		BLOCKS.register(context.getModBusGroup()); TYPES.register(context.getModBusGroup());
 		AttachCapabilitiesEvent.BlockEntities.BUS.addListener(event -> {
 			if (!(event.getObject() instanceof EnergyMachines.Cell cell)) return;
+			// MinecraftForge fires this from BlockEntity's own constructor, before the subclass has assigned a single
+			// field: only what BlockEntity itself set (type, position, state) can be read here. The cell's state is
+			// read later, when a capability is asked for.
 			boolean own = event.getObject().getType() == CELL.get() || event.getObject().getType() == BATTERY.get();
-			boolean fabric = cell.family().equals(EnergyMachines.FABRIC);
+			boolean fabric = EnergyMachines.FABRIC.equals(EnergyMachines.owner(event.getObject().getType()));
 			if (!own && !fabric) return;
 			LazyOptional<IEnergyStorage> standard = LazyOptional.of(cell::forgeStore);
 			LazyOptional<IEnergyStorage> rogue = LazyOptional.of(() -> new Rogue());

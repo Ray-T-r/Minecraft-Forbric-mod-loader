@@ -154,7 +154,12 @@ public final class EnergyMachines {
 	/** The owning mod of the block entity at {@code pos}, as its registry namespace says. */
 	public static String owner(ServerLevel level, BlockPos pos) {
 		BlockEntity entity = level.getBlockEntity(pos);
-		return entity == null ? null : BuiltInRegistries.BLOCK_ENTITY_TYPE.getKey(entity.getType()).getNamespace();
+		return entity == null ? null : owner(entity.getType());
+	}
+	/** The owning mod of a block-entity type, as its registry namespace says; null for an unregistered type. */
+	public static String owner(BlockEntityType<?> type) {
+		Identifier key = BuiltInRegistries.BLOCK_ENTITY_TYPE.getKey(type);
+		return key == null ? null : key.getNamespace();
 	}
 
 	/**
