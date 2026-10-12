@@ -15,9 +15,16 @@
 #      written down, so a world or feature-flag change moves both sides at once.
 #   1. repaired — the canary's refresh ran, and the search tab finds exactly the baseline's stacks for "stone"
 #      (minecraft:stone first), a namespaced id and a # tag, twice and again after a language-change rebuild.
-#   2. off — -Dforbric.creativeSearchTrees=off: the same canary, and every one of those searches finds nothing in
-#      both passes. The negative control: it proves the canary reproduces the bug, so the green in phase 1 is the
-#      repair's.
+#   2. withheld — the same canary rebuilds the tabs and leaves the refresh out (-Dforbric.creativeSearchCanaryRefresh=off):
+#      every one of those searches finds nothing in both passes. The negative control: the screen, finding the tabs
+#      unchanged, builds no trees of its own, which is exactly what it met on the merged game when the vanilla-way
+#      refresh filed its trees where it does not read. So the probe can see that failure, and phase 1's counts are
+#      the refresh reaching the store the screen reads.
+#
+# The control used to be -Dforbric.creativeSearchTrees=off, the repair switched off. It cannot fail any more: since the
+# hc base the merged SessionSearchTrees keeps NeoForge's bodies of vanilla's two producers, which already file in the
+# screen's store, and CreativeSearchTreesInjector rewrites only MinecraftForge's own reader, getSearchTree, which the
+# screen never calls. Off, the screen found every item -- a control that can only pass proves nothing.
 # GATE-PARALLEL: rundirs=client-creative-search-m55 mem=3000
 set -uo pipefail
 . "$(cd "$(dirname "$0")" && pwd)/lib.sh"
@@ -104,14 +111,16 @@ expect_grid repaired "after the language rebuild" stone "$(base stone)"
 check "repaired: 'stone' lists minecraft:stone first" "creative search pass 2: 'stone' -> [0-9]+ item\(s\) \[minecraft:stone," "$RESULTS/repaired.log"
 check_absent "repaired: no crash report" 'Preparing crash report' "$RESULTS/repaired.log"
 
-step "2. off: the same canary with -Dforbric.creativeSearchTrees=off finds nothing (negative control)"
-run_client off "-Dforbric.creativeSearchTrees=off"
-check "off: the canary ran here too" 'ForbricCreativeSearchCanary\] rebuilt the creative tabs \(changed=true\)' "$RESULTS/off.log"
-check "off: the switch is announced" 'CreativeSearch\] -Dforbric.creativeSearchTrees=off' "$RESULTS/off.log"
+step "2. withheld: the same rebuild with the refresh left out finds nothing (negative control)"
+run_client withheld "-Dforbric.creativeSearchCanaryRefresh=off"
+check "withheld: the canary rebuilt the tabs and left the refresh out" \
+  'ForbricCreativeSearchCanary\] rebuilt the creative tabs \(changed=true\) and withheld the creative search refresh' "$RESULTS/withheld.log"
+check "withheld: the creative screen opened in creative mode" \
+  'creative search: opened CreativeModeInventoryScreen \(client creative=true\)' "$RESULTS/withheld.log"
 for label in "pass 1" "pass 2"; do
-  for query in "${QUERIES[@]}"; do expect_grid off "$label" "$query" zero; done
+  for query in "${QUERIES[@]}"; do expect_grid withheld "$label" "$query" zero; done
 done
-check_absent "off: no crash report" 'Preparing crash report' "$RESULTS/off.log"
+check_absent "withheld: no crash report" 'Preparing crash report' "$RESULTS/withheld.log"
 
 step "M55 result"
 if [ "$FAIL" -eq 0 ]; then
