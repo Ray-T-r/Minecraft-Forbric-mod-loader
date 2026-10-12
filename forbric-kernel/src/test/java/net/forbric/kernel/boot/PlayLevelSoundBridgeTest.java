@@ -201,12 +201,9 @@ class PlayLevelSoundBridgeTest {
 		new ClassReader(callers).accept(node, 0);
 		Map<String, Boolean> scoped = new HashMap<>();
 		for (MethodNode method : node.methods) {
-			if (method.name.startsWith("forbric$")) continue;
-			boolean wrapped = false;
-			for (var insn : method.instructions) {
-				if (insn instanceof org.objectweb.asm.tree.MethodInsnNode call && call.name.startsWith(NativeDualEventInjector.WRAPPER_PREFIX)) wrapped = true;
-			}
-			scoped.put(method.name, wrapped);
+			boolean bracketed = false;
+			for (NativeDualEventInjector.Bracket bracket : NativeDualEventInjector.brackets(method)) bracketed |= bracket.scope();
+			scoped.put(method.name, bracketed);
 		}
 		assertEquals(Boolean.TRUE, scoped.get("bothAtEntity"));
 		assertEquals(Boolean.TRUE, scoped.get("bothAtPosition"));

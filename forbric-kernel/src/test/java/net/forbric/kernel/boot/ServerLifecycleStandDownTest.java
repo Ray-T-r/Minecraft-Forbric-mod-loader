@@ -183,31 +183,19 @@ class ServerLifecycleStandDownTest {
 			Map<String, java.util.Set<String>> named) {
 		ClassNode node = new ClassNode();
 		new ClassReader(adapted).accept(node, 0);
-		Map<String, MethodNode> wrappers = new HashMap<>();
-		for (MethodNode m : node.methods) if (m.name.startsWith(NativeDualEventInjector.WRAPPER_PREFIX)) wrappers.put(m.name + m.desc, m);
 		for (MethodNode m : node.methods) {
-			if (m.name.startsWith("forbric$")) continue;
+			Map<AbstractInsnNode, NativeDualEventInjector.Bracket> brackets = new HashMap<>();
+			for (NativeDualEventInjector.Bracket bracket : NativeDualEventInjector.brackets(m)) if (bracket.scope()) brackets.put(bracket.call(), bracket);
 			for (AbstractInsnNode insn : m.instructions) {
-				if (!(insn instanceof MethodInsnNode call)) continue;
-				String hook = null;
-				List<String> strings = new ArrayList<>();
-				if (call.owner.equals(NEO_HOOKS) && call.name.startsWith("handleServer")) {
-					hook = call.name;
-				} else if (call.name.startsWith(NativeDualEventInjector.WRAPPER_PREFIX)) {
-					for (AbstractInsnNode w : wrappers.get(call.name + call.desc).instructions) {
-						if (w instanceof LdcInsnNode ldc && ldc.cst instanceof String text) strings.add(text);
-						if (w instanceof MethodInsnNode inner && inner.owner.equals(NEO_HOOKS) && inner.name.startsWith("handleServer")) hook = inner.name;
-					}
-				}
-				if (hook == null) continue;
-				String key = owner + "#" + m.name + m.desc + " " + hook;
+				if (!(insn instanceof MethodInsnNode call) || !call.owner.equals(NEO_HOOKS) || !call.name.startsWith("handleServer")) continue;
+				String key = owner + "#" + m.name + m.desc + " " + call.name;
 				java.util.Set<String> p = proved.computeIfAbsent(key, k -> new java.util.TreeSet<>());
 				java.util.Set<String> n = named.computeIfAbsent(key, k -> new java.util.TreeSet<>());
-				// The wrapper's scope opens with (proved, group, candidates), each a ';'-joined list.
-				if (strings.size() >= 3) {
-					for (String e : strings.get(0).split(";")) if (!e.isEmpty()) { p.add(e); n.add(e); }
-					for (String e : strings.get(2).split(";")) if (!e.isEmpty()) n.add(e);
-				}
+				// The scope bracketing the call opens with (proved, invocation, candidates, faithful), each a ';'-joined list.
+				NativeDualEventInjector.Bracket scope = brackets.get(call);
+				if (scope == null) continue;
+				for (String e : scope.natively().split(";")) if (!e.isEmpty()) { p.add(e); n.add(e); }
+				for (String e : scope.candidates().split(";")) if (!e.isEmpty()) n.add(e);
 			}
 		}
 	}

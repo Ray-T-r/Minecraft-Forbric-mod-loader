@@ -14,7 +14,7 @@ import java.util.concurrent.atomic.AtomicInteger;
  *
  * <p>A bridge listens to a NeoForge event and posts the MinecraftForge one, because the merge used to keep only one
  * family's hook at a site. Where a merged method now calls BOTH families' hooks on one path, the MinecraftForge event
- * is posted natively and forwarded as well. {@code NativeDualEventInjector} wraps the NeoForge call on such a path in a
+ * is posted natively and forwarded as well. {@code NativeDualEventInjector} brackets the NeoForge call on such a path in a
  * {@link Scope} naming the MinecraftForge events delivered natively there, and the NeoForge events the call constructs
  * are captured into the scope by identity; a bridge's listener asks {@link #covered} with the event it was handed.
  *
@@ -22,18 +22,21 @@ import java.util.concurrent.atomic.AtomicInteger;
  * proved from the caller's control flow and named in the scope directly. One that ran EARLIER in the same invocation
  * is recorded as it happens ({@link #record}): what the MinecraftForge hook actually constructed, so a hook that posts
  * only under a condition, or a call both families guard with the same test, covers exactly the times it delivered.
- * The record is per caller method and per thread, cleared when the method is entered ({@link #enterNative}), and
- * spent when a bridge stands down on its account, so a NeoForge post repeated without a new MinecraftForge one is
- * forwarded again.
+ * The record belongs to one invocation of the caller ({@link Invocation}, which the caller opens at its entry with
+ * {@link #enterNative} and keeps in a local of its own), and is spent when a bridge stands down on its account, so a
+ * NeoForge post repeated without a new MinecraftForge one is forwarded again. Per invocation, not per method: a caller
+ * re-entered from inside its own NeoForge dispatch (a listener that cancels a message and shows a replacement through the
+ * same method) has two invocations on the stack, and neither reads, clears or settles the other's.
  *
  * <p>A third source is a MinecraftForge delivery that comes AFTER the NeoForge one but not on every path: one the
  * caller may bypass. Where the injector could tell, from MinecraftForge's own patched body of the same method, that
  * every way the caller bypasses that call is a way MinecraftForge's own body bypasses it too (a guard both bodies
  * have), the native call is the faithful delivery and the scope names it as such ({@code faithful}); a way out of the
  * caller that MinecraftForge's own body does not have (an exit NeoForge's patch added) is where the event would be
- * lost. A bridge that stands down for such an event leaves what it owes ({@link Deferred}) with the caller, and the
- * caller settles it where it leaves the native delivery's path ({@link #bypassed}): delivered there on a NeoForge-only
- * way out, excused on a shared one, and never asked for once the native call has run.
+ * lost. A bridge that stands down for such an event leaves what it owes ({@link Deferred}) with the caller's invocation,
+ * and the invocation settles it where it leaves the native delivery's path ({@link #bypassed}): delivered there on a
+ * NeoForge-only way out, excused on a shared one. Once the native call has run no bypass is left on the way out (the
+ * call is the last delivery of its event on any path), so what was owed goes with the invocation unasked.
  *
  * <p>And a cascade: what each family's OWN code posts while its event is being dispatched. MinecraftForge's own listener of
  * its login event registers client commands by posting their event, and NeoForge's own listener of its login event does
@@ -45,25 +48,20 @@ import java.util.concurrent.atomic.AtomicInteger;
  * as it does on MinecraftForge.
  *
  * <p>Identity, not class: a listener of the outer event may post another event of the same class, and that one has no
- * native counterpart. Construction inside a wrapped hook is captured only while that hook is not itself dispatching
+ * native counterpart. Construction inside a scoped hook is captured only while that hook is not itself dispatching
  * ({@link #dispatching}), so an event a listener constructs is never taken for the hook's own. Caller and mod names
  * never enter into it.
+ *
+ * <p>The caller keeps its own calls: a scope or a recording opens right before the hook call or post it is for and
+ * closes right after it (and on an exception out of it), around the very instruction the game had there, so a guest
+ * mixin that targets that call still finds it.
  */
 public final class NativeEventDelivery {
 	private static final ThreadLocal<ArrayDeque<Scope>> SCOPES = new ThreadLocal<>();
 	private static final ThreadLocal<ArrayDeque<Recording>> RECORDINGS = new ThreadLocal<>();
-	/** Per thread: caller group → the MinecraftForge events recorded as delivered since that caller was entered. */
-	private static final ThreadLocal<Map<String, Set<String>>> PENDING = new ThreadLocal<>();
-	/** Per thread: caller group → what bridges that stood down for a faithful native delivery still owe. */
-	private static final ThreadLocal<Map<String, List<Owed>>> OWED = new ThreadLocal<>();
-	/**
-	 * Per thread: caller group → MinecraftForge event a recorded delivery dispatched → the MinecraftForge events
-	 * MinecraftForge's own classes constructed inside that dispatch (its cascade).
-	 */
-	private static final ThreadLocal<Map<String, Map<String, Set<String>>>> CASCADED = new ThreadLocal<>();
 	/** Scopes and recordings open on any thread: the hot paths read these volatiles and return while nothing is open. */
 	private static final AtomicInteger OPEN = new AtomicInteger(), RECORDING = new AtomicInteger();
-	/** The {@code ;}-joined event lists wrappers pass, parsed once each. */
+	/** The {@code ;}-joined event lists the callers pass, parsed once each. */
 	private static final Map<String, Set<String>> LISTS = new ConcurrentHashMap<>();
 	/** NeoForge hook owners whose event constructions and dispatches report here. */
 	private static final Set<String> INSTRUMENTED = ConcurrentHashMap.newKeySet();
@@ -93,16 +91,32 @@ public final class NativeEventDelivery {
 	// ------------------------------------------------------------------ the caller's native MinecraftForge deliveries
 
 	/**
-	 * Inserted at the entry of a caller with recorded or faithful deliveries: nothing an earlier invocation recorded, and
-	 * nothing a stand-down owed in it, carries over. An invocation that ran the native call leaves its debt unasked.
+	 * One invocation of a caller with recorded or faithful deliveries: what its MinecraftForge calls recorded, what
+	 * stand-downs on its NeoForge calls still owe, and what its recorded deliveries cascaded. The caller opens it at its
+	 * entry ({@link #enterNative}) and keeps it in a local, so nothing an earlier invocation left carries over, and an
+	 * invocation nested in this one (the method re-entered from a listener) has its own. Used on the caller's thread only.
 	 */
-	public static void enterNative(String group) {
-		Map<String, Set<String>> pending = PENDING.get();
-		if (pending != null && pending.remove(group) != null && pending.isEmpty()) PENDING.remove();
-		Map<String, List<Owed>> owed = OWED.get();
-		if (owed != null && owed.remove(group) != null && owed.isEmpty()) OWED.remove();
-		Map<String, Map<String, Set<String>>> cascaded = CASCADED.get();
-		if (cascaded != null && cascaded.remove(group) != null && cascaded.isEmpty()) CASCADED.remove();
+	public static final class Invocation {
+		private final String group;
+		/** The MinecraftForge events recorded as delivered and not yet spent by a stand-down. */
+		private Set<String> pending = Set.of();
+		/** What bridges that stood down for a faithful native delivery in this invocation still owe. */
+		private List<Owed> owed = List.of();
+		/** MinecraftForge event a recorded delivery dispatched → what MinecraftForge's own classes constructed inside it. */
+		private Map<String, Set<String>> cascaded = Map.of();
+
+		private Invocation(String group) {
+			this.group = group;
+		}
+
+		@Override public String toString() {
+			return "invocation of " + group;
+		}
+	}
+
+	/** Inserted at the entry of a caller with recorded or faithful deliveries: this invocation's own state. */
+	public static Invocation enterNative(String group) {
+		return new Invocation(Objects.requireNonNull(group));
 	}
 
 	/**
@@ -121,25 +135,19 @@ public final class NativeEventDelivery {
 
 	/**
 	 * Inserted on each edge where the caller bypasses a faithful native delivery of {@code events} ({@code ;}-joined
-	 * MinecraftForge event internal names): what a stand-down owes for any of them is delivered when MinecraftForge's own
-	 * body would have made the call on this way ({@code forgeBypassesToo} false), and excused when it bypasses it too.
-	 * A deferred delivery that throws costs only itself; the bridges report their own failures.
+	 * MinecraftForge event internal names): what a stand-down in this {@code invocation} owes for any of them is delivered
+	 * when MinecraftForge's own body would have made the call on this way ({@code forgeBypassesToo} false), and excused
+	 * when it bypasses it too. A deferred delivery that throws costs only itself; the bridges report their own failures.
 	 */
-	public static void bypassed(String group, String events, boolean forgeBypassesToo) {
-		Map<String, List<Owed>> owed = OWED.get();
-		List<Owed> due = owed == null ? null : owed.get(group);
-		if (due == null) return;
+	public static void bypassed(Invocation invocation, String events, boolean forgeBypassesToo) {
+		if (invocation == null || invocation.owed.isEmpty()) return;
 		Set<String> names = list(events);
-		List<Owed> settled = new ArrayList<>(due.size());
-		for (Iterator<Owed> it = due.iterator(); it.hasNext(); ) {
+		List<Owed> settled = new ArrayList<>(invocation.owed.size());
+		for (Iterator<Owed> it = invocation.owed.iterator(); it.hasNext(); ) {
 			Owed one = it.next();
 			if (Collections.disjoint(one.events(), names)) continue;
 			it.remove();
 			settled.add(one);
-		}
-		if (due.isEmpty()) {
-			owed.remove(group);
-			if (owed.isEmpty()) OWED.remove();
 		}
 		for (Owed one : settled) {
 			try {
@@ -151,13 +159,13 @@ public final class NativeEventDelivery {
 	}
 
 	/**
-	 * Opens a recording around one MinecraftForge delivery in caller {@code group}: which of {@code candidates} the call
-	 * actually constructs (at its own level, not its listeners') is what {@link Recording#close} commits.
+	 * Opens a recording around one MinecraftForge delivery in {@code invocation}: which of {@code candidates} the call
+	 * actually constructs (at its own level, not its listeners') is what {@link Recording#close} commits to it.
 	 */
-	public static Recording record(String group, String candidates) {
+	public static Recording record(Invocation invocation, String candidates) {
 		ArrayDeque<Recording> recordings = RECORDINGS.get();
 		if (recordings == null) RECORDINGS.set(recordings = new ArrayDeque<>());
-		Recording recording = new Recording(group, list(candidates), Thread.currentThread());
+		Recording recording = new Recording(invocation, list(candidates), Thread.currentThread());
 		recordings.addLast(recording);
 		RECORDING.incrementAndGet();
 		return recording;
@@ -194,7 +202,7 @@ public final class NativeEventDelivery {
 
 	/** One MinecraftForge delivery being recorded. */
 	public static final class Recording implements AutoCloseable {
-		private final String group;
+		private final Invocation invocation;
 		private final Set<String> candidates;
 		private final Thread thread;
 		private Set<String> delivered = Set.of();
@@ -204,8 +212,8 @@ public final class NativeEventDelivery {
 		private int depth;
 		private boolean closed;
 
-		private Recording(String group, Set<String> candidates, Thread thread) {
-			this.group = group;
+		private Recording(Invocation invocation, Set<String> candidates, Thread thread) {
+			this.invocation = invocation;
 			this.candidates = candidates;
 			this.thread = thread;
 		}
@@ -242,17 +250,15 @@ public final class NativeEventDelivery {
 			closed = true;
 			RECORDING.decrementAndGet();
 			if (recordings.isEmpty()) RECORDINGS.remove();
+			if (invocation == null) return;
 			if (!cascades.isEmpty()) {
-				Map<String, Map<String, Set<String>>> cascaded = CASCADED.get();
-				if (cascaded == null) CASCADED.set(cascaded = new HashMap<>());
-				Map<String, Set<String>> mine = cascaded.computeIfAbsent(group, k -> new HashMap<>());
+				if (invocation.cascaded.isEmpty()) invocation.cascaded = new HashMap<>();
 				// The latest delivery of an event is the one a NeoForge call after it pairs with.
-				mine.putAll(cascades);
+				invocation.cascaded.putAll(cascades);
 			}
 			if (delivered.isEmpty()) return;
-			Map<String, Set<String>> pending = PENDING.get();
-			if (pending == null) PENDING.set(pending = new HashMap<>());
-			pending.computeIfAbsent(group, k -> new HashSet<>(2)).addAll(delivered);
+			if (invocation.pending.isEmpty()) invocation.pending = new HashSet<>(2);
+			invocation.pending.addAll(delivered);
 		}
 	}
 
@@ -263,39 +269,33 @@ public final class NativeEventDelivery {
 	 * reports.
 	 *
 	 * @param natively   MinecraftForge events a delivery proved to follow on every path delivers, {@code ;}-joined
-	 * @param group      the caller whose recorded deliveries this may consume
+	 * @param invocation the caller's invocation, whose recorded deliveries this may consume, or null for none
 	 * @param candidates the recorded MinecraftForge events that may cover this delivery, {@code ;}-joined
-	 * @param hook       the class the wrapped call goes to; loading it here is what lets an instrumentation that has
+	 * @param faithful   the MinecraftForge events delivered natively after this call on every way MinecraftForge's own
+	 *                   body would deliver them, {@code ;}-joined: a stand-down for one of them leaves what it owes with
+	 *                   {@code invocation} ({@link Deferred}), settled where the caller bypasses that call
+	 *                   ({@link #bypassed})
+	 * @param hook       the class the scoped call goes to; loading it here is what lets an instrumentation that has
 	 *                   not run be told apart from one that has
 	 */
-	public static Scope begin(String natively, String group, String candidates, Class<?> hook) {
-		return begin(natively, group, candidates, "", hook);
-	}
-
-	/**
-	 * The same with the MinecraftForge events {@code faithful} ({@code ;}-joined) delivers natively after this call on
-	 * every way MinecraftForge's own body would deliver them: a stand-down for one of them leaves what it owes with the
-	 * caller ({@link Deferred}), settled where the caller bypasses that call ({@link #bypassed}).
-	 */
-	public static Scope begin(String natively, String group, String candidates, String faithful, Class<?> hook) {
+	public static Scope begin(String natively, Invocation invocation, String candidates, String faithful, Class<?> hook) {
 		boolean live = hook != null && INSTRUMENTED.contains(hook.getName().replace('.', '/'));
-		return live ? open(list(natively), group, candidates, list(faithful)) : open(Set.of(), null, "", Set.of());
+		return live ? open(list(natively), invocation, candidates, list(faithful)) : open(Set.of(), null, "", Set.of());
 	}
 
-	/** The same for an inline post, whose event the wrapper hands over itself with {@link Scope#capture}. */
-	public static Scope begin(String natively, String group, String candidates) {
-		return begin(natively, group, candidates, "");
+	/** The same for an inline post, whose event the caller hands over itself with {@link Scope#capture}. */
+	public static Scope begin(String natively, Invocation invocation, String candidates) {
+		return begin(natively, invocation, candidates, "");
 	}
 
 	/** An inline post with faithful deliveries after it. */
-	public static Scope begin(String natively, String group, String candidates, String faithful) {
-		return open(list(natively), group, candidates, list(faithful));
+	public static Scope begin(String natively, Invocation invocation, String candidates, String faithful) {
+		return open(list(natively), invocation, candidates, list(faithful));
 	}
 
-	private static Scope open(Set<String> proved, String group, String candidates, Set<String> faithful) {
+	private static Scope open(Set<String> proved, Invocation invocation, String candidates, Set<String> faithful) {
 		Set<String> recorded = Set.of();
-		Map<String, Set<String>> pending = group == null ? null : PENDING.get();
-		Set<String> delivered = pending == null ? null : pending.get(group);
+		Set<String> delivered = invocation == null ? null : invocation.pending;
 		if (delivered != null && !delivered.isEmpty()) {
 			Set<String> taken = new HashSet<>(list(candidates));
 			taken.retainAll(delivered);
@@ -312,8 +312,7 @@ public final class NativeEventDelivery {
 			covers.addAll(faithful);
 		}
 		Set<String> cascade = Set.of();
-		Map<String, Map<String, Set<String>>> cascaded = group == null ? null : CASCADED.get();
-		Map<String, Set<String>> mine = cascaded == null ? null : cascaded.get(group);
+		Map<String, Set<String>> mine = invocation == null || invocation.cascaded.isEmpty() ? null : invocation.cascaded;
 		if (mine != null) {
 			for (String covered : covers) {
 				Set<String> under = mine.get(covered);
@@ -324,7 +323,7 @@ public final class NativeEventDelivery {
 		}
 		ArrayDeque<Scope> scopes = SCOPES.get();
 		if (scopes == null) SCOPES.set(scopes = new ArrayDeque<>());
-		Scope scope = new Scope(covers, definite, group, recorded, cascade, Thread.currentThread());
+		Scope scope = new Scope(covers, definite, invocation, recorded, cascade, Thread.currentThread());
 		scopes.addLast(scope);
 		OPEN.incrementAndGet();
 		return scope;
@@ -404,12 +403,12 @@ public final class NativeEventDelivery {
 		return Collections.unmodifiableSet(out);
 	}
 
-	/** One wrapped NeoForge call: the MinecraftForge events its path delivers natively, and the events it posted. */
+	/** One scoped NeoForge call: the MinecraftForge events its path delivers natively, and the events it posted. */
 	public static final class Scope implements AutoCloseable {
 		private final Set<String> covers;
 		/** The covered events delivered for certain: proved on every path, or recorded as delivered. */
 		private final Set<String> definite;
-		private final String group;
+		private final Invocation invocation;
 		private final Set<String> recorded;
 		private final Thread thread;
 		/** The MinecraftForge events the native delivery before this call cascaded, and NeoForge's own cascade here. */
@@ -421,10 +420,11 @@ public final class NativeEventDelivery {
 		private int depth;
 		private boolean closed;
 
-		private Scope(Set<String> covers, Set<String> definite, String group, Set<String> recorded, Set<String> cascade, Thread thread) {
+		private Scope(Set<String> covers, Set<String> definite, Invocation invocation, Set<String> recorded, Set<String> cascade,
+				Thread thread) {
 			this.covers = covers;
 			this.definite = definite;
-			this.group = group;
+			this.invocation = invocation;
 			this.recorded = recorded;
 			this.cascade = cascade;
 			this.thread = thread;
@@ -448,7 +448,7 @@ public final class NativeEventDelivery {
 		 * delivers faithfully.
 		 */
 		private void owe(Set<String> forgeEvents, Deferred deferred) {
-			if (group == null || !Collections.disjoint(definite, forgeEvents)) return;
+			if (invocation == null || !Collections.disjoint(definite, forgeEvents)) return;
 			Set<String> faithful = new HashSet<>(forgeEvents);
 			faithful.retainAll(covers);
 			if (faithful.isEmpty()) return;
@@ -506,20 +506,12 @@ public final class NativeEventDelivery {
 			closed = true;
 			OPEN.decrementAndGet();
 			if (scopes.isEmpty()) SCOPES.remove();
+			if (invocation == null) return;
 			if (!owed.isEmpty()) {
-				Map<String, List<Owed>> debts = OWED.get();
-				if (debts == null) OWED.set(debts = new HashMap<>());
-				debts.computeIfAbsent(group, k -> new ArrayList<>(1)).addAll(owed);
+				if (invocation.owed.isEmpty()) invocation.owed = new ArrayList<>(1);
+				invocation.owed.addAll(owed);
 			}
-			if (used.isEmpty()) return;
-			Map<String, Set<String>> pending = PENDING.get();
-			Set<String> delivered = pending == null ? null : pending.get(group);
-			if (delivered == null) return;
-			delivered.removeAll(used);
-			if (delivered.isEmpty()) {
-				pending.remove(group);
-				if (pending.isEmpty()) PENDING.remove();
-			}
+			if (!used.isEmpty() && !invocation.pending.isEmpty()) invocation.pending.removeAll(used);
 		}
 	}
 }

@@ -70,6 +70,8 @@ class NativeDualEventInjectorExecutionTest {
 						        POSTED.merge(((late.neo.Stitched) event).who, 1, Integer::sum);
 						        for (List<Consumer<Object>> mod : MODS) for (Consumer<Object> listener : List.copyOf(mod)) listener.accept(event);
 						    }
+						    /** A dispatcher whose event is not its last argument. */
+						    public static void postEventAt(Event event, long when) { postEvent(event); }
 						}
 						""",
 				"late.neo.Stitched", "package late.neo; public class Stitched extends late.neo.bus.Event { public final Object who; public Stitched(Object who){this.who=who;} }",
@@ -208,6 +210,24 @@ class NativeDualEventInjectorExecutionTest {
 						    public static void stitchedNeoOnly(Object who) { Hooks.stitched(who); }
 						    public static void loginBoth(Object who) { Factory.login(who); Hooks.login(who); }
 						    public static void loginNeoOnly(Object who) { Hooks.login(who); }
+						    public static Runnable between = () -> { };
+						    public static void reenteredBetween(Object who, boolean flag) { Hooks.touch(who); between.run(); if (flag) { System.identityHashCode(who); return; } Factory.touch(who); }
+						    public static int caught;
+						    public static void caught(Object who) { try { Factory.touch(who); Hooks.touch(who); } catch (IllegalStateException e) { caught++; } }
+						    public static int stacked(Object who, long l, double d) { long x = l + 1; double y = d * 2; return java.util.Objects.hash(who, Factory.touch(who), x, Hooks.touch(who), y); }
+						    public static void synced(Object who) { synchronized (who) { Factory.touch(who); Hooks.touch(who); } }
+						    public static void stitchedLate(Object who) { Factory.stitched(who); late.neo.bus.Loader.postEventAt(new late.neo.Stitched(who), 7L); }
+						}
+						""",
+				"late.game.Built", """
+						package late.game;
+						import late.forge.Factory;
+						import late.neo.Hooks;
+						public final class Built {
+						    public final Object who;
+						    public Built(Object who) { this.who = who; Factory.touch(who); Hooks.touch(who); }
+						    /** Both calls before this(...): the object is not constructed yet where they run. */
+						    public Built(Object who, boolean early) { this(Factory.touch(who) | Hooks.touch(who) ? new Object() : new Object()); }
 						}
 						""");
 	}
@@ -225,6 +245,8 @@ class NativeDualEventInjectorExecutionTest {
 				    public static void guardedAfter(Object who, Object gate, boolean neoExit) { if (gate == null) return; Factory.touch(who); }
 				    public static void vanillaTurnedExit(Object who, boolean flag) { if (flag) { System.identityHashCode(who); } Factory.touch(who); }
 				    public static void cancelledExit(Object who, Object gate) { if (gate == null) return; Factory.touch(who); }
+				    public static Runnable between = () -> { };
+				    public static void reenteredBetween(Object who, boolean flag) { between.run(); if (flag) { System.identityHashCode(who); } Factory.touch(who); }
 				}
 				""");
 		byte[] callers = InjectorExecution.compile(work.resolve("forge-body"), sources,
@@ -263,7 +285,10 @@ class NativeDualEventInjectorExecutionTest {
 			System.arraycopy(rest, 0, args, 1, rest.length);
 			Class<?>[] types = new Class<?>[args.length];
 			types[0] = Object.class;
-			for (int i = 1; i < args.length; i++) types[i] = args[i] instanceof Boolean ? boolean.class : Object.class;
+			for (int i = 1; i < args.length; i++) {
+				types[i] = args[i] instanceof Boolean ? boolean.class : args[i] instanceof Long ? long.class
+						: args[i] instanceof Double ? double.class : Object.class;
+			}
 			type("late/game/Callers").getMethod(method, types).invoke(null, args);
 			return new int[] {count("late/forge/Factory", who), count("late/neo/Hooks", who)};
 		}
@@ -429,6 +454,61 @@ class NativeDualEventInjectorExecutionTest {
 	}
 
 	/**
+	 * A caller re-entered from inside its own NeoForge dispatch — a NeoForge mod cancels a system message and shows a
+	 * replacement, which goes through the same listener — settles only what its own invocation owes. The nested
+	 * invocation ran the native call for the replacement; the outer one leaves on NeoForge's own cancel exit, where it
+	 * owes nothing. The replacement reaches MinecraftForge's listeners once.
+	 */
+	@Test
+	void aReenteredCallerSettlesOnlyWhatItsOwnInvocationOwes(@TempDir Path work) throws Exception {
+		World after = world(classes(work), true, forgeBodies(work));
+		Object original = new Object(), replacement = new Object(), gate = new Object();
+		java.lang.reflect.Method cancelledExit = after.type("late/game/Callers").getMethod("cancelledExit", Object.class, Object.class);
+		after.listeners("late/neo/Hooks").add(0, event -> {
+			try {
+				if (event.getClass().getField("who").get(event) != original) return;
+				event.getClass().getField("canceled").setBoolean(event, true);
+				cancelledExit.invoke(null, replacement, gate);
+			} catch (ReflectiveOperationException failure) {
+				throw new RuntimeException(failure);
+			}
+		});
+		after.runFor(original, "cancelledExit", gate);
+		after.listeners("late/neo/Hooks").remove(0);
+		assertEquals(0, after.count("late/forge/Factory", original), "the cancelled message reaches MinecraftForge's listeners on no way out");
+		assertEquals(1, after.count("late/forge/Factory", replacement),
+				"the replacement had its native delivery in its own invocation; the outer one's cancel exit owes it nothing");
+		assertArrayEquals(new int[] {1, 1}, after.run("cancelledExit", gate), "and a plain message afterwards, once");
+	}
+
+	/**
+	 * The other order: the caller is re-entered after its NeoForge call returned and before it leaves. What the outer
+	 * invocation owes survives the nested one (which settles its own by running the native call), and is delivered on
+	 * the outer one's way out that only the merged game has, once.
+	 */
+	@Test
+	void aCallerReenteredBetweenItsNeoForgeCallAndItsWayOutKeepsItsOwnDebt(@TempDir Path work) throws Exception {
+		World after = world(classes(work), true, forgeBodies(work));
+		Object outer = new Object(), inner = new Object();
+		Class<?> callers = after.type("late/game/Callers");
+		boolean[] once = {false};
+		callers.getField("between").set(null, (Runnable) () -> {
+			if (once[0]) return;
+			once[0] = true;
+			try {
+				callers.getMethod("reenteredBetween", Object.class, boolean.class).invoke(null, inner, false);
+			} catch (ReflectiveOperationException failure) {
+				throw new RuntimeException(failure);
+			}
+		});
+		after.runFor(outer, "reenteredBetween", true);
+		callers.getField("between").set(null, (Runnable) () -> { });
+		assertEquals(1, after.count("late/forge/Factory", inner), "the nested invocation's native call is its one delivery");
+		assertEquals(1, after.count("late/forge/Factory", outer),
+				"the outer invocation's stand-down is still owed after the nested one, and delivered on its own way out");
+	}
+
+	/**
 	 * NeoForge's mod-bus dispatcher is a NeoForge post too: one event fanned out to every mod's bus. Where the caller
 	 * calls MinecraftForge's hook beside it, the bridge on one mod's bus stands down for that post across the fan-out,
 	 * through a NeoForge hook or posted inline; without the native call it still forwards, once.
@@ -495,10 +575,102 @@ class NativeDualEventInjectorExecutionTest {
 		for (MethodNode method : node.methods) {
 			if (!method.name.equals("branches") && !method.name.equals("neoOnly")) continue;
 			for (AbstractInsnNode instruction : method.instructions) {
-				assertFalse(instruction instanceof MethodInsnNode call && call.name.startsWith("forbric$native"),
-						method.name + " has no MinecraftForge delivery on the NeoForge one's path, so nothing is wrapped");
+				assertFalse(instruction instanceof MethodInsnNode call && call.owner.startsWith("net/forbric/"),
+						method.name + " has no MinecraftForge delivery on the NeoForge one's path, so nothing is bracketed");
 			}
 		}
+	}
+
+	/**
+	 * A guest mixin written against either family targets the hook calls and posts a game method makes, by owner, name
+	 * and descriptor ({@code @At(value = "INVOKE", target = ...)}). Every one the caller made before the injector is still
+	 * the caller's own instruction after it, in the same order — recorded, proved, faithful or scoped — so such an
+	 * injection point matches what it matched before.
+	 */
+	@Test
+	void everyHookCallAndPostTheCallerMadeIsStillItsOwnInstructionAfterwards(@TempDir Path work) throws Exception {
+		Map<String, byte[]> classes = classes(work);
+		byte[] original = classes.get("late/game/Callers");
+		byte[] after = injector(classes, forgeBodies(work)).transform("late.game.Callers", original, null);
+		assertNotSame(original, after);
+		Map<String, List<String>> before = familyCalls(original), now = familyCalls(after);
+		assertTrue(before.get("forgeFirst(Ljava/lang/Object;)V").contains("late/forge/Factory.touch(Ljava/lang/Object;)Z"), "premise: " + before);
+		assertEquals(before, now, "the families' calls of each caller method, in order");
+	}
+
+	private static Map<String, List<String>> familyCalls(byte[] bytes) {
+		ClassNode node = new ClassNode();
+		new ClassReader(bytes).accept(node, 0);
+		Map<String, List<String>> out = new TreeMap<>();
+		for (MethodNode method : node.methods) {
+			List<String> calls = new ArrayList<>();
+			for (AbstractInsnNode instruction : method.instructions) {
+				if (instruction instanceof MethodInsnNode call && (call.owner.startsWith("late/forge/") || call.owner.startsWith("late/neo/"))) {
+					calls.add(call.owner + "." + call.name + call.desc);
+				}
+			}
+			out.put(method.name + method.desc, calls);
+		}
+		return out;
+	}
+
+	/**
+	 * A bracket is straight-line code around the game's own call plus a handler after the method's end: it must keep
+	 * every shape a call can stand in. Values on the stack below the call's arguments, long and double locals, the
+	 * method's own try block and a synchronized block (an exception out of the hook still reaches the method's own
+	 * handler, and the monitor is released), a mod-bus post whose event is not its last argument, and a constructor —
+	 * where a call before {@code this(...)} runs on an object not constructed yet, so it is left as it is and keeps its
+	 * forward.
+	 */
+	@Test
+	void aBracketKeepsTheShapesACallStandsIn(@TempDir Path work) throws Exception {
+		Map<String, byte[]> classes = classes(work);
+		NativeDualEventInjector injector = injector(classes);
+		Map<String, Integer> bracketed = new TreeMap<>();
+		for (String owner : List.of("late/game/Callers", "late/game/Built")) {
+			ClassNode node = new ClassNode();
+			new ClassReader(injector.transform(owner.replace('/', '.'), classes.get(owner), null)).accept(node, 0);
+			for (MethodNode method : node.methods) bracketed.put(owner.substring(10) + "." + method.name + method.desc, NativeDualEventInjector.brackets(method).size());
+		}
+		for (String method : List.of("Callers.stacked(Ljava/lang/Object;JD)I", "Callers.synced(Ljava/lang/Object;)V",
+				"Callers.caught(Ljava/lang/Object;)V", "Callers.stitchedLate(Ljava/lang/Object;)V", "Built.<init>(Ljava/lang/Object;)V")) {
+			assertEquals(2, bracketed.get(method), "premise: both calls of " + method + " are bracketed: " + bracketed);
+		}
+		assertEquals(0, bracketed.get("Built.<init>(Ljava/lang/Object;Z)V"), bracketed.toString());
+		World after = world(classes, true);
+		assertArrayEquals(new int[] {1, 1}, after.run("stacked", 5L, 2.5), "values below the arguments, long and double locals");
+		assertArrayEquals(new int[] {1, 1}, after.run("synced"));
+		assertArrayEquals(new int[] {1, 1}, after.run("caught"));
+		Object stitched = new Object();
+		after.runFor(stitched, "stitchedLate");
+		assertEquals(1, after.typed("late/forge/Factory", "ForgeStitched", stitched), "the event handed over from below the top");
+		assertEquals(1, after.count("late/neo/bus/Loader", stitched));
+
+		Class<?> callers = after.type("late/game/Callers");
+		int caught = callers.getField("caught").getInt(null);
+		IllegalStateException failure = new IllegalStateException("listener failure");
+		after.listeners("late/neo/Hooks").add(0, event -> { throw failure; });
+		after.run("caught");
+		assertEquals(caught + 1, callers.getField("caught").getInt(null), "the method's own handler caught what the hook threw");
+		Object locked = new Object();
+		InvocationTargetException thrown = assertThrows(InvocationTargetException.class, () -> after.runFor(locked, "synced"));
+		assertSame(failure, thrown.getCause());
+		assertFalse(Thread.holdsLock(locked), "the synchronized block released its monitor on the way out");
+		after.listeners("late/neo/Hooks").remove(0);
+		after.listeners("late/forge/Factory").add(0, event -> { throw failure; });
+		after.run("caught");
+		assertEquals(caught + 2, callers.getField("caught").getInt(null), "and what a recorded MinecraftForge hook threw");
+		after.listeners("late/forge/Factory").remove(0);
+		assertArrayEquals(new int[] {1, 1}, after.run("neoOnly"), "no scope or recording was left open by either");
+		assertArrayEquals(new int[] {1, 1}, after.run("conditional", false));
+
+		Class<?> built = after.type("late/game/Built");
+		Object constructed = new Object(), early = new Object();
+		built.getConstructor(Object.class).newInstance(constructed);
+		assertEquals(1, after.count("late/forge/Factory", constructed), "a constructor's calls after super(): bracketed");
+		built.getConstructor(Object.class, boolean.class).newInstance(early, true);
+		assertEquals(2, after.count("late/forge/Factory", early), "before this(...): left as they are, so the forward stays");
+		assertEquals(1, after.count("late/neo/Hooks", early));
 	}
 
 	@Test

@@ -12,7 +12,6 @@ import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.LongAdder;
 import net.forbric.api.Ecosystem;
 import net.forbric.api.ForeignType;
-import net.forbric.kernel.transform.NativeDualEventInjector;
 import net.forbric.kernel.util.ForbricLog;
 
 /**
@@ -289,10 +288,9 @@ public final class EventChainAudit {
 				if (!belowTheBus(name)) continue;
 				if (kernel == null) kernel = name.startsWith("net.forbric.kernel.");
 				if (name.startsWith("net.minecraftforge.") || name.startsWith("net.neoforged.")) continue;
-				// The kernel's own wrapper around one call of a game method (NativeDualEventInjector's scope or recording)
-				// sits between the hook and that method; the call is the method's, at the site the wrapper replaced.
+				// NativeDualEventInjector brackets a game method's hook call where it stands, so the hook's caller is the
+				// game method itself, at the call's own offset.
 				String method = f.getMethodName();
-				if (method.startsWith(NativeDualEventInjector.WRAPPER_PREFIX) || method.startsWith(NativeDualEventInjector.SOURCE_PREFIX)) continue;
 				// By name: the descriptor needs a walker that retains class references. Overloads of one name share it,
 				// and the call-site order in pairWithSiblings still keeps their turns apart.
 				frame.caller = name + "#" + method;

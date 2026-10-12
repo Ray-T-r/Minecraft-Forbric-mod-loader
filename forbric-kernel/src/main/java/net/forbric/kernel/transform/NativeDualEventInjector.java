@@ -8,6 +8,7 @@ import java.util.function.Function;
 import net.forbric.api.NativeEventDelivery;
 import net.forbric.kernel.util.ByteScan;
 import org.objectweb.asm.*;
+import org.objectweb.asm.commons.AnalyzerAdapter;
 import org.objectweb.asm.tree.*;
 import org.objectweb.asm.tree.analysis.*;
 
@@ -46,11 +47,11 @@ import org.objectweb.asm.tree.analysis.*;
  *       is recorded as well, for its cascade (what MinecraftForge's own listeners post inside its dispatch): a NeoForge
  *       event NeoForge's own listeners post inside the NeoForge call, whose MinecraftForge counterpart that cascade
  *       holds, is delivered natively too.</li>
- *   <li>Recorded, for any other F-site that can run BEFORE the N-site: its call is wrapped so that what the
+ *   <li>Recorded, for any other F-site that can run BEFORE the N-site: its call is bracketed so that what the
  *       MinecraftForge hook actually constructs (at its own level, not its listeners') is committed for the caller,
  *       and the N-site's scope covers it. A hook that posts only under a condition, or a pair of calls both families
  *       guard with the same test, covers exactly the invocations in which the MinecraftForge event was delivered. The
- *       record is cleared when the caller is entered, and spent when a bridge stands down on it.</li>
+ *       record belongs to that invocation of the caller, and is spent when a bridge stands down on it.</li>
  *   <li>Faithful, for an F-site after the N-site that the caller may bypass, judged from MinecraftForge's own patched
  *       body of the same method ({@link NativeDeliveryPaths}): every edge on which the caller commits to bypassing the
  *       F-site is classified as one MinecraftForge's body bypasses its call on as well (a guard both bodies have), or
@@ -60,6 +61,12 @@ import org.objectweb.asm.tree.analysis.*;
  *       only the merged game has, excused on a shared one. A body that cannot be judged keeps its forward.</li>
  * </ul>
  *
+ * <p>The caller's own calls stay where they are: a scope (or a recording) opens in front of the very hook call or post
+ * it is for and closes right behind it, and an exception out of the call closes it on the way through the method's own
+ * handlers, so a guest mixin that targets one of those calls ({@code @At("INVOKE")}) finds the instruction it targeted.
+ * What a caller records, and what its stand-downs owe, belongs to one invocation of it, kept in a local of its own
+ * ({@link NativeEventDelivery.Invocation}): a caller re-entered from inside its own NeoForge dispatch settles only its own.
+ *
  * <p>Different branches, an F-site the caller may bypass where MinecraftForge's own body cannot be read, or a NeoForge
  * post repeated in a loop keep their forward. The NeoForge hook classes are instrumented to report each event they construct and to mark their
  * own dispatch, so a scope captures the hook's events by identity and never one a listener constructs; the
@@ -67,11 +74,14 @@ import org.objectweb.asm.tree.analysis.*;
  * anything: the ecosystems' namespaces and bus types are the whole vocabulary, and both are parameters.
  */
 public final class NativeDualEventInjector implements ClassTransformer {
-	static final String API = "net/forbric/api/NativeEventDelivery", SCOPE = API + "$Scope", RECORDING = API + "$Recording";
-	/** Every NeoForge-delivery wrapper this writes starts with this. */
-	public static final String WRAPPER_PREFIX = "forbric$nativeDelivery$";
-	/** Every recorded MinecraftForge-delivery wrapper this writes starts with this. */
-	public static final String SOURCE_PREFIX = "forbric$nativeSource$";
+	static final String API = "net/forbric/api/NativeEventDelivery", SCOPE = API + "$Scope", RECORDING = API + "$Recording",
+			INVOCATION = API + "$Invocation";
+	/** {@code begin(natively, invocation, candidates, faithful, hook)}: a scope around a call into a NeoForge hook. */
+	static final String BEGIN_HOOK = "(Ljava/lang/String;L" + INVOCATION + ";Ljava/lang/String;Ljava/lang/String;Ljava/lang/Class;)L" + SCOPE + ";";
+	/** {@code begin(natively, invocation, candidates, faithful)}: a scope around an inline NeoForge post. */
+	static final String BEGIN_POST = "(Ljava/lang/String;L" + INVOCATION + ";Ljava/lang/String;Ljava/lang/String;)L" + SCOPE + ";";
+	/** {@code record(invocation, candidates)}: a recording around one MinecraftForge delivery. */
+	static final String RECORD = "(L" + INVOCATION + ";Ljava/lang/String;)L" + RECORDING + ";";
 	/** Deepest hook-to-hook delegation followed when reading what a hook delivers. */
 	private static final int DEPTH = 3;
 
@@ -181,14 +191,13 @@ public final class NativeDualEventInjector implements ClassTransformer {
 		ClassNode node = new ClassNode();
 		new ClassReader(input).accept(node, ClassReader.EXPAND_FRAMES);
 		callersParsed.increment();
-		boolean itf = (node.access & Opcodes.ACC_INTERFACE) != 0;
-		if (itf && (node.version & 0xFFFF) < Opcodes.V9) return input;
+		// Without stack map frames a bracket's handler could not be described.
+		if ((node.version & 0xFFFF) < Opcodes.V1_7) return input;
 		int changes = 0;
 		Map<String, Optional<ClassNode>> read = new HashMap<>();
 		for (MethodNode method : List.copyOf(node.methods)) {
 			if ((method.access & (Opcodes.ACC_ABSTRACT | Opcodes.ACC_NATIVE)) != 0) continue;
-			if (method.name.startsWith(WRAPPER_PREFIX) || method.name.startsWith(SOURCE_PREFIX)) continue;
-			changes += standDown(node, method, itf, read);
+			changes += standDown(node, method, read);
 		}
 		if (changes == 0) return input;
 		ClassWriter writer = new ClassWriter(ClassWriter.COMPUTE_MAXS);
@@ -254,7 +263,12 @@ public final class NativeDualEventInjector implements ClassTransformer {
 	 */
 	private record Site(MethodInsnNode call, int index, boolean inline, Set<String> maybe, Set<String> always) { }
 
-	private int standDown(ClassNode owner, MethodNode method, boolean itf, Map<String, Optional<ClassNode>> read) {
+	/** One NeoForge call to scope: the MinecraftForge events proved, recorded as candidates, and faithful on its path. */
+	private record ScopePlan(Site site, String proved, String candidates, Set<String> faithful) { }
+
+	private int standDown(ClassNode owner, MethodNode method, Map<String, Optional<ClassNode>> read) {
+		// A second pass over a class this already instrumented changes nothing.
+		if (calls(method, API, null)) return 0;
 		List<MethodInsnNode> forgeCalls = new ArrayList<>(), neoCalls = new ArrayList<>();
 		for (AbstractInsnNode instruction : method.instructions) {
 			if (!(instruction instanceof MethodInsnNode call)) continue;
@@ -265,7 +279,7 @@ public final class NativeDualEventInjector implements ClassTransformer {
 		List<Site> neoSites = new ArrayList<>();
 		for (MethodInsnNode call : neoCalls) {
 			boolean inline = neoPost(call.owner, call.name, call.desc);
-			if (inline ? handedOver(call) >= 0 : neoDelivers(call.owner, call.name, call.desc, 0)) {
+			if (inline ? eventPosition(call) >= 0 : neoDelivers(call.owner, call.name, call.desc, 0)) {
 				neoSites.add(new Site(call, method.instructions.indexOf(call), inline, Set.of(), Set.of()));
 			}
 		}
@@ -283,7 +297,7 @@ public final class NativeDualEventInjector implements ClassTransformer {
 			Set<String> maybe, always;
 			boolean inline = forgePost(call.owner, call.name);
 			if (inline) {
-				String event = handedOver(call) >= 0 ? postedEvent(method, flow, call) : null;
+				String event = eventPosition(call) >= 0 ? postedEvent(method, flow, call) : null;
 				maybe = always = event != null && bridged.contains(event) ? Set.of(event) : Set.of();
 			} else {
 				maybe = bridgedOf(forgeMaybe(call.owner, call.name, call.desc, 0));
@@ -297,7 +311,7 @@ public final class NativeDualEventInjector implements ClassTransformer {
 		Set<Site> recorded = new LinkedHashSet<>();
 		Bypasses bypasses = new Bypasses();
 		Reference reference = null;
-		int changes = 0;
+		List<ScopePlan> scopes = new ArrayList<>();
 		for (Site neo : neoSites) {
 			if (flow.frames[neo.index()] == null) continue;
 			Set<String> proved = new TreeSet<>(), candidates = new TreeSet<>(), faithful = new TreeSet<>();
@@ -331,23 +345,66 @@ public final class NativeDualEventInjector implements ClassTransformer {
 				}
 			}
 			if (proved.isEmpty() && candidates.isEmpty() && faithful.isEmpty()) continue;
-			if (wrapNeo(owner, neo, String.join(";", proved), group, String.join(";", candidates), String.join(";", faithful), itf)) {
-				changes++;
-			} else {
-				bypasses.drop(faithful);
-			}
+			scopes.add(new ScopePlan(neo, String.join(";", proved), String.join(";", candidates), faithful));
 		}
-		if (changes == 0) return 0;
-		boolean recording = false;
-		for (Site forge : recorded) recording |= wrapForge(owner, forge, group, itf);
-		recording |= bypasses.apply(method, group);
-		if (recording) {
+		if (scopes.isEmpty()) return 0;
+
+		// Every bracket's handler carries the locals at its call, read before anything is inserted.
+		Set<AbstractInsnNode> bracketed = new HashSet<>();
+		for (ScopePlan plan : scopes) bracketed.add(plan.site().call());
+		for (Site forge : recorded) bracketed.add(forge.call());
+		Map<AbstractInsnNode, List<Object>> locals = localsAt(owner.name, method, bracketed);
+		Map<AbstractInsnNode, List<TryCatchBlockNode>> covering = covering(method, bracketed);
+		List<ScopePlan> live = new ArrayList<>();
+		for (ScopePlan plan : scopes) {
+			if (locals.get(plan.site().call()) != null) live.add(plan);
+			else bypasses.drop(plan.faithful());
+		}
+		if (live.isEmpty()) return 0;
+		List<Site> recording = new ArrayList<>();
+		// A recording whose call cannot be bracketed records nothing, and the scopes it was for forward: never a loss.
+		for (Site forge : recorded) if (locals.get(forge.call()) != null) recording.add(forge);
+		boolean faithfulLive = false;
+		for (ScopePlan plan : live) faithfulLive |= !plan.faithful().isEmpty();
+		boolean invocation = !recording.isEmpty() || faithfulLive;
+		int base = method.maxLocals, own = invocation ? base : -1;
+		int scopeSlot = invocation ? base + 1 : base, recordSlot = scopeSlot + 1, temps = recordSlot + 1;
+		for (ScopePlan plan : live) {
+			MethodInsnNode call = plan.site().call();
+			InsnList open = new InsnList();
+			open.add(new LdcInsnNode(plan.proved()));
+			open.add(own >= 0 ? new VarInsnNode(Opcodes.ALOAD, own) : new InsnNode(Opcodes.ACONST_NULL));
+			open.add(new LdcInsnNode(plan.candidates()));
+			open.add(new LdcInsnNode(String.join(";", plan.faithful())));
+			if (plan.site().inline()) {
+				open.add(new MethodInsnNode(Opcodes.INVOKESTATIC, API, "begin", BEGIN_POST, false));
+			} else {
+				open.add(new LdcInsnNode(Type.getObjectType(call.owner)));
+				open.add(new MethodInsnNode(Opcodes.INVOKESTATIC, API, "begin", BEGIN_HOOK, false));
+			}
+			bracket(method, call, open, SCOPE, plan.site().inline() ? "capture" : null, scopeSlot, temps, locals.get(call), covering.get(call));
+		}
+		for (Site forge : recording) {
+			MethodInsnNode call = forge.call();
+			InsnList open = new InsnList();
+			open.add(new VarInsnNode(Opcodes.ALOAD, own));
+			open.add(new LdcInsnNode(String.join(";", forge.maybe())));
+			open.add(new MethodInsnNode(Opcodes.INVOKESTATIC, API, "record", RECORD, false));
+			bracket(method, call, open, RECORDING, forge.inline() ? "delivered" : null, recordSlot, temps, locals.get(call), covering.get(call));
+		}
+		if (invocation) {
+			bypasses.apply(method, own);
 			InsnList enter = new InsnList();
 			enter.add(new LdcInsnNode(group));
-			enter.add(new MethodInsnNode(Opcodes.INVOKESTATIC, API, "enterNative", "(Ljava/lang/String;)V", false));
+			enter.add(new MethodInsnNode(Opcodes.INVOKESTATIC, API, "enterNative", "(Ljava/lang/String;)L" + INVOCATION + ";", false));
+			enter.add(new VarInsnNode(Opcodes.ASTORE, own));
 			method.instructions.insert(enter);
+			// Assigned before anything else runs, so every frame of the method holds it.
+			for (AbstractInsnNode instruction : method.instructions) {
+				if (instruction instanceof FrameNode frame) frame.local = declare(frame.local, own, INVOCATION);
+			}
 		}
-		return changes;
+		return live.size();
 	}
 
 	private Set<String> bridgedOf(Set<String> events) {
@@ -395,150 +452,224 @@ public final class NativeDualEventInjector implements ClassTransformer {
 	}
 
 	/**
-	 * Which of an inline post's wrapper parameters is the event it posts, or -1 when none can be handed over: a bus's
-	 * {@code post} takes it last (after the receiver, the wrapper's first parameter), the mod-bus dispatcher takes it as
-	 * its event-typed argument.
+	 * Which of a post's own arguments (the receiver not counted) is the event it posts, or -1 when none can be handed
+	 * over: a bus's {@code post} takes it last, the mod-bus dispatcher takes it as its event-typed argument.
 	 */
-	private int handedOver(MethodInsnNode call) {
+	private int eventPosition(MethodInsnNode call) {
 		Type[] args = Type.getArgumentTypes(call.desc);
 		if (call.getOpcode() == Opcodes.INVOKEINTERFACE || call.getOpcode() == Opcodes.INVOKEVIRTUAL) {
-			return args.length > 0 && args[args.length - 1].getSort() == Type.OBJECT ? args.length : -1;
+			return args.length > 0 && args[args.length - 1].getSort() == Type.OBJECT ? args.length - 1 : -1;
 		}
 		return call.getOpcode() == Opcodes.INVOKESTATIC && neoPost(call.owner, call.name, call.desc) ? eventArgument(call.desc) : -1;
 	}
 
-	/** A wrapper's descriptor: the call's own, with an inline post's receiver, if it has one, as its first parameter. */
-	private static String wrapperDesc(MethodInsnNode call, boolean inline) {
-		return inline && call.getOpcode() != Opcodes.INVOKESTATIC ? "(L" + call.owner + ";" + call.desc.substring(1) : call.desc;
-	}
-
-	private boolean wrapNeo(ClassNode owner, Site site, String proved, String group, String candidates, String faithful, boolean itf) {
-		MethodInsnNode call = site.call();
-		String desc = wrapperDesc(call, site.inline());
-		String name = WRAPPER_PREFIX + identity((site.inline() ? "post " : "hook ") + call.owner + "." + call.name + call.desc
-				+ " " + proved + " " + group + " " + candidates + (faithful.isEmpty() ? "" : " " + faithful));
-		MethodNode existing = find(owner, name, desc);
-		if (existing == null) {
-			InsnList open = new InsnList();
-			open.add(new LdcInsnNode(proved));
-			open.add(new LdcInsnNode(group));
-			open.add(new LdcInsnNode(candidates));
-			String strings = "Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;";
-			if (!faithful.isEmpty()) {
-				open.add(new LdcInsnNode(faithful));
-				strings += "Ljava/lang/String;";
+	/**
+	 * Brackets {@code call} where it stands: {@code open} (leaving a scope or recording of {@code guardType}) is stored in
+	 * {@code slot} right before the call, the post's event is handed over ({@code handOver}, for an inline post), and the
+	 * guard is closed right after the call and on any exception out of it. The call instruction itself is the game's,
+	 * untouched. The exception path is a handler after the method's last instruction, described by {@code locals} (the
+	 * frame's locals at the call) and covered, in their order, by the method's own handlers that cover the call
+	 * ({@code covering}), so its rethrow reaches exactly the handler the call's own exception would have.
+	 *
+	 * @param temps the first local free for the arguments stored while an event below the top is handed over
+	 */
+	private void bracket(MethodNode method, MethodInsnNode call, InsnList open, String guardType, String handOver, int slot, int temps,
+			List<Object> locals, List<TryCatchBlockNode> covering) {
+		InsnList before = new InsnList();
+		before.add(open);
+		before.add(new VarInsnNode(Opcodes.ASTORE, slot));
+		if (handOver != null) {
+			// The arguments above the event go into locals, the event is handed over, and they come back as they were.
+			Type[] args = Type.getArgumentTypes(call.desc);
+			int position = eventPosition(call);
+			int[] stored = new int[args.length];
+			for (int i = args.length - 1, next = temps; i > position; i--) {
+				stored[i] = next;
+				before.add(new VarInsnNode(args[i].getOpcode(Opcodes.ISTORE), next));
+				next += args[i].getSize();
 			}
-			if (site.inline()) {
-				open.add(new MethodInsnNode(Opcodes.INVOKESTATIC, API, "begin", "(" + strings + ")L" + SCOPE + ";", false));
-			} else {
-				open.add(new LdcInsnNode(Type.getObjectType(call.owner)));
-				open.add(new MethodInsnNode(Opcodes.INVOKESTATIC, API, "begin", "(" + strings + "Ljava/lang/Class;)L" + SCOPE + ";", false));
+			before.add(new InsnNode(Opcodes.DUP));
+			before.add(new VarInsnNode(Opcodes.ALOAD, slot));
+			before.add(new InsnNode(Opcodes.SWAP));
+			before.add(new MethodInsnNode(Opcodes.INVOKEVIRTUAL, guardType, handOver, "(Ljava/lang/Object;)V", false));
+			for (int i = position + 1; i < args.length; i++) before.add(new VarInsnNode(args[i].getOpcode(Opcodes.ILOAD), stored[i]));
+		}
+		LabelNode start = new LabelNode(), end = new LabelNode();
+		before.add(start);
+		method.instructions.insertBefore(call, before);
+		InsnList after = new InsnList();
+		after.add(end);
+		after.add(new VarInsnNode(Opcodes.ALOAD, slot));
+		after.add(new MethodInsnNode(Opcodes.INVOKEVIRTUAL, guardType, "close", "()V", false));
+		method.instructions.insert(call, after);
+
+		LabelNode handler = new LabelNode(), handled = new LabelNode();
+		List<Object> frame = declare(locals, slot, guardType);
+		method.instructions.add(handler);
+		method.instructions.add(new FrameNode(Opcodes.F_NEW, frame.size(), frame.toArray(), 1, new Object[] {"java/lang/Throwable"}));
+		method.instructions.add(new VarInsnNode(Opcodes.ALOAD, slot));
+		method.instructions.add(new MethodInsnNode(Opcodes.INVOKEVIRTUAL, guardType, "close", "()V", false));
+		method.instructions.add(new InsnNode(Opcodes.ATHROW));
+		method.instructions.add(handled);
+		// Innermost first: the call's own exception is caught here before any handler of the method's.
+		method.tryCatchBlocks.add(0, new TryCatchBlockNode(start, end, handler, null));
+		for (TryCatchBlockNode outer : covering) method.tryCatchBlocks.add(new TryCatchBlockNode(handler, handled, outer.handler, outer.type));
+	}
+
+	/** The method's handlers whose range covers each of {@code calls}, in exception-table order. */
+	private static Map<AbstractInsnNode, List<TryCatchBlockNode>> covering(MethodNode method, Set<AbstractInsnNode> calls) {
+		Map<AbstractInsnNode, List<TryCatchBlockNode>> out = new HashMap<>();
+		for (AbstractInsnNode call : calls) {
+			int at = method.instructions.indexOf(call);
+			List<TryCatchBlockNode> blocks = new ArrayList<>();
+			if (method.tryCatchBlocks != null) {
+				for (TryCatchBlockNode block : method.tryCatchBlocks) {
+					if (method.instructions.indexOf(block.start) <= at && at < method.instructions.indexOf(block.end)) blocks.add(block);
+				}
 			}
-			owner.methods.add(wrapper(name, desc, call, open, SCOPE, site.inline() ? "capture" : null, handedOver(call)));
-		} else if (!calls(existing, API, "begin")) {
-			return false;
+			out.put(call, blocks);
 		}
-		redirect(call, owner.name, name, desc, itf);
-		return true;
-	}
-
-	private boolean wrapForge(ClassNode owner, Site site, String group, boolean itf) {
-		MethodInsnNode call = site.call();
-		String candidates = String.join(";", site.maybe());
-		String desc = wrapperDesc(call, site.inline());
-		String name = SOURCE_PREFIX + identity((site.inline() ? "post " : "hook ") + call.owner + "." + call.name + call.desc
-				+ " " + group + " " + candidates);
-		MethodNode existing = find(owner, name, desc);
-		if (existing == null) {
-			InsnList open = new InsnList();
-			open.add(new LdcInsnNode(group));
-			open.add(new LdcInsnNode(candidates));
-			open.add(new MethodInsnNode(Opcodes.INVOKESTATIC, API, "record",
-					"(Ljava/lang/String;Ljava/lang/String;)L" + RECORDING + ";", false));
-			owner.methods.add(wrapper(name, desc, call, open, RECORDING, site.inline() ? "delivered" : null, handedOver(call)));
-		} else if (!calls(existing, API, "record")) {
-			return false;
-		}
-		redirect(call, owner.name, name, desc, itf);
-		return true;
-	}
-
-	private static MethodNode find(ClassNode owner, String name, String desc) {
-		for (MethodNode m : owner.methods) if (m.name.equals(name) && m.desc.equals(desc)) return m;
-		return null;
-	}
-
-	private static void redirect(MethodInsnNode call, String owner, String name, String desc, boolean itf) {
-		call.setOpcode(Opcodes.INVOKESTATIC);
-		call.owner = owner;
-		call.name = name;
-		call.desc = desc;
-		call.itf = itf;
+		return out;
 	}
 
 	/**
-	 * {@code static ret name(args) { T guard = <open>; [guard.<handOver>(event);] try { return call(args); } finally {
-	 * guard.close(); } }}, with {@code T} the scope or recording type {@code open} leaves on the stack and {@code event}
-	 * the wrapper's parameter {@code handOverParameter}.
+	 * The locals at each of {@code calls}, in a frame's form (one element for a long or a double), read from the method's
+	 * own frames and the instructions between them; null for a call where they are unknown (no frame reaches it) or hold
+	 * an object not yet constructed (a handler could not be described there).
 	 */
-	private static MethodNode wrapper(String name, String desc, MethodInsnNode call, InsnList open, String guardType, String handOver,
-			int handOverParameter) {
-		MethodNode method = new MethodNode(Opcodes.ACC_PRIVATE | Opcodes.ACC_STATIC | Opcodes.ACC_SYNTHETIC, name, desc, null, null);
-		Type[] args = Type.getArgumentTypes(desc);
-		Type result = Type.getReturnType(desc);
-		List<Object> locals = new ArrayList<>();
-		int slot = 0, last = 0;
-		for (int i = 0; i < args.length; i++) {
-			locals.add(frameType(args[i]));
-			if (i == handOverParameter) last = slot;
-			slot += args[i].getSize();
+	static Map<AbstractInsnNode, List<Object>> localsAt(String owner, MethodNode method, Set<AbstractInsnNode> calls) {
+		Map<AbstractInsnNode, List<Object>> out = new HashMap<>();
+		AnalyzerAdapter adapter = new AnalyzerAdapter(owner, method.access, method.name, method.desc, null);
+		try {
+			for (AbstractInsnNode instruction : method.instructions) {
+				if (calls.contains(instruction)) out.put(instruction, frameLocals(adapter.locals));
+				instruction.accept(adapter);
+			}
+		} catch (RuntimeException unreadable) {
+			// Frames this cannot follow: nothing is bracketed where the locals were not read.
 		}
-		int guard = slot, value = guard + 1;
-		locals.add(guardType);
-		InsnList code = method.instructions;
-		code.add(open);
-		code.add(new VarInsnNode(Opcodes.ASTORE, guard));
-		LabelNode start = new LabelNode(), end = new LabelNode(), handler = new LabelNode();
-		code.add(start);
-		if (handOver != null) {
-			code.add(new VarInsnNode(Opcodes.ALOAD, guard));
-			code.add(new VarInsnNode(Opcodes.ALOAD, last));
-			code.add(new MethodInsnNode(Opcodes.INVOKEVIRTUAL, guardType, handOver, "(Ljava/lang/Object;)V", false));
-		}
-		slot = 0;
-		for (Type arg : args) {
-			code.add(new VarInsnNode(arg.getOpcode(Opcodes.ILOAD), slot));
-			slot += arg.getSize();
-		}
-		code.add(new MethodInsnNode(call.getOpcode(), call.owner, call.name, call.desc, call.itf));
-		code.add(end);
-		if (result.getSort() != Type.VOID) code.add(new VarInsnNode(result.getOpcode(Opcodes.ISTORE), value));
-		code.add(new VarInsnNode(Opcodes.ALOAD, guard));
-		code.add(new MethodInsnNode(Opcodes.INVOKEVIRTUAL, guardType, "close", "()V", false));
-		if (result.getSort() != Type.VOID) code.add(new VarInsnNode(result.getOpcode(Opcodes.ILOAD), value));
-		code.add(new InsnNode(result.getOpcode(Opcodes.IRETURN)));
-		code.add(handler);
-		code.add(new FrameNode(Opcodes.F_NEW, locals.size(), locals.toArray(), 1, new Object[] {"java/lang/Throwable"}));
-		code.add(new VarInsnNode(Opcodes.ASTORE, value));
-		code.add(new VarInsnNode(Opcodes.ALOAD, guard));
-		code.add(new MethodInsnNode(Opcodes.INVOKEVIRTUAL, guardType, "close", "()V", false));
-		code.add(new VarInsnNode(Opcodes.ALOAD, value));
-		code.add(new InsnNode(Opcodes.ATHROW));
-		method.tryCatchBlocks.add(new TryCatchBlockNode(start, end, handler, null));
-		method.maxLocals = value + Math.max(1, result.getSize());
-		method.maxStack = Math.max(4, slot + 1);
-		return method;
+		return out;
 	}
 
-	private static Object frameType(Type type) {
-		return switch (type.getSort()) {
-			case Type.LONG -> Opcodes.LONG;
-			case Type.DOUBLE -> Opcodes.DOUBLE;
-			case Type.FLOAT -> Opcodes.FLOAT;
-			case Type.ARRAY -> type.getDescriptor();
-			case Type.OBJECT -> type.getInternalName();
-			default -> Opcodes.INTEGER;
-		};
+	private static List<Object> frameLocals(List<Object> slots) {
+		if (slots == null) return null;
+		List<Object> out = new ArrayList<>(slots.size());
+		for (int i = 0; i < slots.size(); i++) {
+			Object type = slots.get(i);
+			if (type instanceof Label || type == Opcodes.UNINITIALIZED_THIS) return null;
+			out.add(type);
+			if (type == Opcodes.LONG || type == Opcodes.DOUBLE) i++;
+		}
+		return out;
+	}
+
+	/**
+	 * {@code local} (a frame's locals, one element for a long or a double) with {@code type} in slot {@code slot}: the
+	 * slot's single-slot entry replaced, or the list padded with {@code TOP} to reach it. Never splits a long or double.
+	 */
+	static List<Object> declare(List<Object> local, int slot, Object type) {
+		List<Object> out = new ArrayList<>(local == null ? List.of() : local);
+		int at = 0, i = 0;
+		for (; i < out.size() && at < slot; i++) at += out.get(i) == Opcodes.LONG || out.get(i) == Opcodes.DOUBLE ? 2 : 1;
+		if (at > slot) throw new IllegalStateException("slot " + slot + " is the second half of a long or double");
+		if (at < slot) {
+			while (at++ < slot) out.add(Opcodes.TOP);
+			out.add(type);
+		} else if (i < out.size()) {
+			Object was = out.get(i);
+			out.set(i, type);
+			if (was == Opcodes.LONG || was == Opcodes.DOUBLE) out.add(i + 1, Opcodes.TOP);
+		} else {
+			out.add(type);
+		}
+		return out;
+	}
+
+	/**
+	 * One scope or recording the injector bracketed around a call of the game's: what tests and audits read back.
+	 *
+	 * @param call       the bracketed call, the game's own instruction
+	 * @param scope      a scope around a NeoForge call (else a recording around a MinecraftForge one)
+	 * @param natively   a scope's proved MinecraftForge events, {@code ;}-joined (a recording's: null)
+	 * @param candidates the recorded events a scope may consume, or the events a recording records
+	 * @param faithful   a scope's faithful events (a recording's: null)
+	 * @param invocation whether it belongs to the caller's invocation (else it is a proved-only scope)
+	 */
+	public record Bracket(MethodInsnNode call, boolean scope, String natively, String candidates, String faithful, boolean invocation) { }
+
+	/** The brackets of {@code method}, as {@link #standDown} writes them, in instruction order. */
+	public static List<Bracket> brackets(MethodNode method) {
+		List<Bracket> out = new ArrayList<>();
+		for (AbstractInsnNode instruction : method.instructions) {
+			if (!(instruction instanceof MethodInsnNode open) || open.getOpcode() != Opcodes.INVOKESTATIC || !open.owner.equals(API)) continue;
+			boolean scope = open.name.equals("begin");
+			if (!scope && !open.name.equals("record")) continue;
+			List<AbstractInsnNode> args = new ArrayList<>();
+			AbstractInsnNode at = open.getPrevious();
+			for (int n = Type.getArgumentTypes(open.desc).length; n > 0 && at != null; at = at.getPrevious()) {
+				if (at.getOpcode() < 0) continue;
+				args.add(0, at);
+				n--;
+			}
+			AbstractInsnNode call = open.getNext();
+			while (call != null && !(call instanceof MethodInsnNode game && !game.owner.equals(API) && !game.owner.equals(SCOPE)
+					&& !game.owner.equals(RECORDING) && call.getOpcode() >= 0 && !(call instanceof VarInsnNode))) {
+				call = call.getNext();
+			}
+			if (!(call instanceof MethodInsnNode bracketedCall) || args.size() < 2) continue;
+			if (scope) {
+				out.add(new Bracket(bracketedCall, true, string(args.get(0)), string(args.get(2)), string(args.get(3)),
+						args.get(1).getOpcode() == Opcodes.ALOAD));
+			} else {
+				out.add(new Bracket(bracketedCall, false, null, string(args.get(1)), null, true));
+			}
+		}
+		return out;
+	}
+
+	private static String string(AbstractInsnNode instruction) {
+		return instruction instanceof LdcInsnNode ldc && ldc.cst instanceof String text ? text : null;
+	}
+
+	/**
+	 * One settlement the injector wrote on a bypass edge.
+	 *
+	 * @param branch           the branch the edge leaves
+	 * @param jump             whether it is the branch's jump (or a switch case) rather than its fall-through
+	 * @param events           the MinecraftForge events settled there, {@code ;}-joined
+	 * @param forgeBypassesToo the verdict: MinecraftForge's own body bypasses its call on this way too
+	 */
+	public record Settlement(AbstractInsnNode branch, boolean jump, String events, boolean forgeBypassesToo) { }
+
+	/** The settlements of {@code method}, as {@link #standDown} writes them. */
+	public static List<Settlement> settlements(MethodNode method) {
+		List<Settlement> out = new ArrayList<>();
+		for (AbstractInsnNode instruction : method.instructions) {
+			if (!(instruction instanceof MethodInsnNode call) || !call.owner.equals(API) || !call.name.equals("bypassed")) continue;
+			AbstractInsnNode verdict = call.getPrevious(), events = verdict.getPrevious(), invocation = events.getPrevious();
+			// Either right after its branch (a fall-through), or in a trampoline: label, frame, settlements, then on.
+			AbstractInsnNode first = invocation;
+			while (first.getPrevious() instanceof MethodInsnNode earlier && earlier.owner.equals(API) && earlier.name.equals("bypassed")) {
+				first = earlier.getPrevious().getPrevious().getPrevious();
+			}
+			AbstractInsnNode before = first.getPrevious();
+			AbstractInsnNode branch = null;
+			boolean jump = false;
+			if (before instanceof FrameNode && before.getPrevious() instanceof LabelNode trampoline) {
+				for (AbstractInsnNode candidate : method.instructions) {
+					if (candidate instanceof JumpInsnNode j && j.label == trampoline
+							|| candidate instanceof TableSwitchInsnNode t && (t.dflt == trampoline || t.labels.contains(trampoline))
+							|| candidate instanceof LookupSwitchInsnNode l && (l.dflt == trampoline || l.labels.contains(trampoline))) {
+						branch = candidate;
+						jump = true;
+					}
+				}
+			} else {
+				branch = before;
+			}
+			out.add(new Settlement(branch, jump, string(events), verdict.getOpcode() == Opcodes.ICONST_1));
+		}
+		return out;
 	}
 
 	// ---------------------------------------------------------------- faithful deliveries
@@ -548,7 +679,7 @@ public final class NativeDualEventInjector implements ClassTransformer {
 		final MethodNode merged, forge;
 		final Flow forgeFlow;
 		final Map<String, Set<Integer>> sites = new HashMap<>();
-		/** The two bodies aligned, read before any of the caller's calls is redirected. */
+		/** The two bodies aligned, read before anything is inserted into the caller. */
 		int[] match;
 		boolean aligned;
 
@@ -589,7 +720,7 @@ public final class NativeDualEventInjector implements ClassTransformer {
 				if (!(forge.instructions.get(i) instanceof MethodInsnNode call) || forgeFlow.frames[i] == null) continue;
 				if (!forgeCandidate(call.getOpcode(), call.owner, call.name)) continue;
 				boolean delivers = forgePost(call.owner, call.name)
-						? handedOver(call) >= 0 && event.equals(postedEvent(forge, forgeFlow, call))
+						? eventPosition(call) >= 0 && event.equals(postedEvent(forge, forgeFlow, call))
 						: forgeMaybe(call.owner, call.name, call.desc, 0).contains(event);
 				if (delivers) out.add(i);
 			}
@@ -628,7 +759,7 @@ public final class NativeDualEventInjector implements ClassTransformer {
 
 	/**
 	 * The bypass edges of one caller, collected over its N-sites and events, and written into it once every NeoForge
-	 * call is wrapped: per edge, a {@link NativeEventDelivery#bypassed} call for the events MinecraftForge's own body
+	 * call is scoped: per edge, a {@link NativeEventDelivery#bypassed} call for the events MinecraftForge's own body
 	 * bypasses there too, and one for those it does not.
 	 */
 	private static final class Bypasses {
@@ -642,13 +773,13 @@ public final class NativeDualEventInjector implements ClassTransformer {
 			}
 		}
 
-		/** Events whose N-site could not be wrapped: nothing would be owed for them, so nothing settles them. */
+		/** Events whose N-site could not be scoped: nothing would be owed for them, so nothing settles them. */
 		void drop(Set<String> events) {
 			for (Map<Boolean, Set<String>> verdicts : edges.values()) for (Set<String> names : verdicts.values()) names.removeAll(events);
 		}
 
-		/** Writes the calls; whether any was written (the caller then needs its entry reset). */
-		boolean apply(MethodNode method, String group) {
+		/** Writes the calls, each settling what the invocation in local {@code invocation} owes; whether any was written. */
+		boolean apply(MethodNode method, int invocation) {
 			boolean any = false;
 			for (var entry : edges.entrySet()) {
 				AbstractInsnNode branch = (AbstractInsnNode) entry.getKey().get(0);
@@ -657,10 +788,10 @@ public final class NativeDualEventInjector implements ClassTransformer {
 				InsnList calls = new InsnList();
 				for (var verdict : entry.getValue().entrySet()) {
 					if (verdict.getValue().isEmpty()) continue;
-					calls.add(new LdcInsnNode(group));
+					calls.add(new VarInsnNode(Opcodes.ALOAD, invocation));
 					calls.add(new LdcInsnNode(String.join(";", verdict.getValue())));
 					calls.add(new InsnNode(verdict.getKey() ? Opcodes.ICONST_1 : Opcodes.ICONST_0));
-					calls.add(new MethodInsnNode(Opcodes.INVOKESTATIC, API, "bypassed", "(Ljava/lang/String;Ljava/lang/String;Z)V", false));
+					calls.add(new MethodInsnNode(Opcodes.INVOKESTATIC, API, "bypassed", "(L" + INVOCATION + ";Ljava/lang/String;Z)V", false));
 				}
 				if (calls.size() == 0) continue;
 				any = true;
@@ -917,7 +1048,7 @@ public final class NativeDualEventInjector implements ClassTransformer {
 			}
 			reporting = edited = true;
 		}
-		// Recorded before the class is defined, so a wrapper never opens a live scope around an unreported hook.
+		// Recorded before the class is defined, so a caller never opens a live scope around an unreported hook.
 		if (reporting && neo) NativeEventDelivery.instrumented(node.name);
 		if (!edited) return input;
 		ClassWriter writer = new ClassWriter(ClassWriter.COMPUTE_MAXS);
@@ -1039,9 +1170,10 @@ public final class NativeDualEventInjector implements ClassTransformer {
 		}
 	}
 
+	/** Whether {@code method} calls {@code owner}'s {@code name} (any of its methods for null). */
 	private static boolean calls(MethodNode method, String owner, String name) {
 		for (AbstractInsnNode i : method.instructions) {
-			if (i instanceof MethodInsnNode call && call.owner.equals(owner) && call.name.equals(name)) return true;
+			if (i instanceof MethodInsnNode call && call.owner.equals(owner) && (name == null || call.name.equals(name))) return true;
 		}
 		return false;
 	}

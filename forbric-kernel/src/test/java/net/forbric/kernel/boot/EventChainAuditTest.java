@@ -199,17 +199,6 @@ class EventChainAuditTest {
 				"the report carries the inner event's dispatches that were not kernel forwards: " + EventChainAudit.json());
 	}
 
-	/**
-	 * Where the kernel wrapped the NeoForge call in a scope (a synthetic method of the game class around it), the call
-	 * is still the game method's: a dispatch through the wrapper pairs with the native one beside the wrapper's call.
-	 */
-	@Test void aDispatchThroughTheKernelsWrapperIsTheGameMethodsOwn() throws Exception {
-		forgeListener(false);
-		addNeo(standDown());
-		game("wrappedNeoThenForge", covered(), forgeEvent());
-		assertEquals(1, EventChainAudit.nativePair("NEO:" + NEO_PROBE, "FORGE:" + FORGE_PROBE).observed.sum(), EventChainAudit.json());
-	}
-
 	/** The same where MinecraftForge's call comes first in the method — a delivery recorded as it happened. */
 	@Test void aStandDownAfterTheGamesOwnDispatchIsObserved() throws Exception {
 		forgeListener(false);
@@ -283,22 +272,24 @@ class EventChainAuditTest {
 		forgeListener(false);
 		addNeo(standDown());
 		Object shared = neoProbe.getConstructor().newInstance();
-		try (net.forbric.api.NativeEventDelivery.Scope scope = net.forbric.api.NativeEventDelivery.begin("", "caller", "", FORGE_INTERNAL)) {
+		var caller = net.forbric.api.NativeEventDelivery.enterNative("caller");
+		try (net.forbric.api.NativeEventDelivery.Scope scope = net.forbric.api.NativeEventDelivery.begin("", caller, "", FORGE_INTERNAL)) {
 			scope.capture(shared);
 			postNeo(shared);
 		}
-		net.forbric.api.NativeEventDelivery.bypassed("caller", FORGE_INTERNAL, true);
+		net.forbric.api.NativeEventDelivery.bypassed(caller, FORGE_INTERNAL, true);
 		var natively = EventChainAudit.nativePair("NEO:" + NEO_PROBE, "FORGE:" + FORGE_PROBE);
 		assertEquals(1, natively.excused.sum(), EventChainAudit.json());
 		assertNull(EventChainAudit.outer("FORGE:" + FORGE_PROBE), "nothing was delivered on the shared way out");
 
 		Object neoOnly = neoProbe.getConstructor().newInstance();
-		try (net.forbric.api.NativeEventDelivery.Scope scope = net.forbric.api.NativeEventDelivery.begin("", "caller", "", FORGE_INTERNAL)) {
+		caller = net.forbric.api.NativeEventDelivery.enterNative("caller");
+		try (net.forbric.api.NativeEventDelivery.Scope scope = net.forbric.api.NativeEventDelivery.begin("", caller, "", FORGE_INTERNAL)) {
 			scope.capture(neoOnly);
 			postNeo(neoOnly);
 		}
-		net.forbric.api.NativeEventDelivery.bypassed("caller", FORGE_INTERNAL, false);
-		net.forbric.api.NativeEventDelivery.bypassed("caller", FORGE_INTERNAL, false);
+		net.forbric.api.NativeEventDelivery.bypassed(caller, FORGE_INTERNAL, false);
+		net.forbric.api.NativeEventDelivery.bypassed(caller, FORGE_INTERNAL, false);
 		assertEquals(1, natively.deferred.sum(), "forwarded once on the NeoForge-only way out: " + EventChainAudit.json());
 		var forge = EventChainAudit.outer("FORGE:" + FORGE_PROBE);
 		assertEquals(1, forge.posts.sum());
@@ -552,25 +543,6 @@ class EventChainAuditTest {
 			ClassWriter writer = new ClassWriter(ClassWriter.COMPUTE_MAXS);
 			writer.visit(Opcodes.V21, Opcodes.ACC_PUBLIC, "probe/GameCode", null, "java/lang/Object", null);
 			String desc = "(Ljava/lang/Object;Ljava/lang/Object;Ljava/lang/Object;Ljava/lang/Object;)V";
-			// The kernel's own wrapper around one NeoForge call of a game method, as NativeDualEventInjector writes it.
-			String wrapper = net.forbric.kernel.transform.NativeDualEventInjector.WRAPPER_PREFIX + "probe";
-			MethodVisitor wrap = writer.visitMethod(Opcodes.ACC_PRIVATE | Opcodes.ACC_STATIC | Opcodes.ACC_SYNTHETIC, wrapper,
-					"(Ljava/lang/Object;Ljava/lang/Object;)V", null, null);
-			wrap.visitCode();
-			wrap.visitVarInsn(Opcodes.ALOAD, 0); wrap.visitTypeInsn(Opcodes.CHECKCAST, "net/neoforged/bus/api/IEventBus");
-			wrap.visitVarInsn(Opcodes.ALOAD, 1); wrap.visitTypeInsn(Opcodes.CHECKCAST, "net/neoforged/bus/api/Event");
-			wrap.visitMethodInsn(Opcodes.INVOKEINTERFACE, "net/neoforged/bus/api/IEventBus", "post",
-					"(Lnet/neoforged/bus/api/Event;)Lnet/neoforged/bus/api/Event;", true);
-			wrap.visitInsn(Opcodes.POP); wrap.visitInsn(Opcodes.RETURN); wrap.visitMaxs(0, 0); wrap.visitEnd();
-			MethodVisitor wrapped = writer.visitMethod(Opcodes.ACC_PUBLIC | Opcodes.ACC_STATIC, "wrappedNeoThenForge", desc, null, null);
-			wrapped.visitCode();
-			wrapped.visitVarInsn(Opcodes.ALOAD, 0); wrapped.visitVarInsn(Opcodes.ALOAD, 1);
-			wrapped.visitMethodInsn(Opcodes.INVOKESTATIC, "probe/GameCode", wrapper, "(Ljava/lang/Object;Ljava/lang/Object;)V", false);
-			wrapped.visitVarInsn(Opcodes.ALOAD, 2); wrapped.visitTypeInsn(Opcodes.CHECKCAST, "net/minecraftforge/eventbus/api/bus/CancellableEventBus");
-			wrapped.visitVarInsn(Opcodes.ALOAD, 3); wrapped.visitTypeInsn(Opcodes.CHECKCAST, "net/minecraftforge/eventbus/internal/Event");
-			wrapped.visitMethodInsn(Opcodes.INVOKEINTERFACE, "net/minecraftforge/eventbus/api/bus/CancellableEventBus", "post",
-					"(Lnet/minecraftforge/eventbus/internal/Event;)Z", true);
-			wrapped.visitInsn(Opcodes.POP); wrapped.visitInsn(Opcodes.RETURN); wrapped.visitMaxs(0, 0); wrapped.visitEnd();
 			// A mod-bus post: one NeoForge event to every mod's bus from one call site, then MinecraftForge's own dispatch.
 			MethodVisitor fan = writer.visitMethod(Opcodes.ACC_PUBLIC | Opcodes.ACC_STATIC, "fanOutThenForge",
 					"([Ljava/lang/Object;Ljava/lang/Object;Ljava/lang/Object;Ljava/lang/Object;)V", null, null);

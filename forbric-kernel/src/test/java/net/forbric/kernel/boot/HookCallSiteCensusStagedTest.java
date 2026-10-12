@@ -542,10 +542,11 @@ class HookCallSiteCensusStagedTest {
 	}
 
 	/**
-	 * How what the kernel writes stands the pair down: "proved" when the NeoForge delivery goes through a scope naming
-	 * the event, "recorded" when that scope covers what a MinecraftForge call the kernel wrapped for it records, and
+	 * How what the kernel writes stands the pair down: "proved" when the NeoForge delivery is bracketed by a scope naming
+	 * the event, "recorded" when that scope covers what the MinecraftForge call the kernel bracketed for it records, and
 	 * null when neither (or when a hook that must report what it constructs does not, without which a scope or a
-	 * recording would capture nothing).
+	 * recording would capture nothing). The bracketed calls are the game's own instructions, found again by their turn
+	 * among the method's calls of the same target.
 	 */
 	private static String standsDown(NativeDualEventInjector injector, String method, byte[] bytes, Risk risk) {
 		String owner = method.substring(0, method.indexOf('#')), selector = method.substring(method.indexOf('#') + 1);
@@ -554,41 +555,44 @@ class HookCallSiteCensusStagedTest {
 		ClassNode before = new ClassNode(), node = new ClassNode();
 		new ClassReader(bytes).accept(before, 0);
 		new ClassReader(adapted).accept(node, 0);
-		MethodInsnNode neoCall = null, forgeCall = null;
-		for (MethodNode m : before.methods) {
-			if (!(m.name + m.desc).equals(selector)) continue;
-			neoCall = (MethodInsnNode) m.instructions.get(risk.neo());
-			forgeCall = (MethodInsnNode) m.instructions.get(risk.forge());
-		}
+		MethodNode original = null;
+		for (MethodNode m : before.methods) if ((m.name + m.desc).equals(selector)) original = m;
+		if (original == null) return null;
+		MethodInsnNode neoCall = (MethodInsnNode) original.instructions.get(risk.neo());
+		MethodInsnNode forgeCall = (MethodInsnNode) original.instructions.get(risk.forge());
 		for (MethodNode host : node.methods) {
 			if (!(host.name + host.desc).equals(selector)) continue;
-			// The method's own entry record clear, when the kernel inserted one, is the only thing ahead of its code.
-			int offset = host.instructions.size() > 1 && host.instructions.get(1) instanceof MethodInsnNode enter
-					&& enter.name.equals("enterNative") ? 2 : 0;
-			if (!(host.instructions.get(risk.neo() + offset) instanceof MethodInsnNode wrapped)
-					|| !wrapped.name.startsWith(NativeDualEventInjector.WRAPPER_PREFIX)) return null;
-			List<String> scope = strings(node, wrapped);
+			MethodInsnNode neoNow = sameTurn(original, neoCall, host), forgeNow = sameTurn(original, forgeCall, host);
+			NativeDualEventInjector.Bracket scope = null, recording = null;
+			for (NativeDualEventInjector.Bracket bracket : NativeDualEventInjector.brackets(host)) {
+				if (bracket.scope() && bracket.call() == neoNow) scope = bracket;
+				if (!bracket.scope() && bracket.call() == forgeNow) recording = bracket;
+			}
 			// A static NeoForge hook reports its constructions from its own class; an inline post's event is the caller's.
-			if (scope.size() < 3 || (!risk.kind().equals("inline") && !reports(injector, neoCall.owner, "constructed"))) return null;
-			if (List.of(scope.get(0).split(";")).contains(risk.event())) return "proved";
-			if (!List.of(scope.get(2).split(";")).contains(risk.event())) return null;
-			if (!(host.instructions.get(risk.forge() + offset) instanceof MethodInsnNode recorded)
-					|| !recorded.name.startsWith(NativeDualEventInjector.SOURCE_PREFIX)) return null;
-			List<String> recording = strings(node, recorded);
-			return recording.size() >= 2 && List.of(recording.get(1).split(";")).contains(risk.event())
+			if (scope == null || (!risk.kind().equals("inline") && !reports(injector, neoCall.owner, "constructed"))) return null;
+			if (List.of(scope.natively().split(";")).contains(risk.event())) return "proved";
+			if (!List.of(scope.candidates().split(";")).contains(risk.event()) || recording == null) return null;
+			return List.of(recording.candidates().split(";")).contains(risk.event())
 					&& reports(injector, forgeCall.owner, "nativeConstructed") ? "recorded" : null;
 		}
 		return null;
 	}
 
-	/** The string constants of the wrapper {@code call} names, in order. */
-	private static List<String> strings(ClassNode node, MethodInsnNode call) {
-		List<String> out = new ArrayList<>();
-		for (MethodNode wrapper : node.methods) {
-			if (!wrapper.name.equals(call.name) || !wrapper.desc.equals(call.desc)) continue;
-			for (AbstractInsnNode i : wrapper.instructions) if (i instanceof LdcInsnNode ldc && ldc.cst instanceof String s) out.add(s);
+	/** The call in {@code now} that is {@code call}'s turn among {@code was}'s calls of the same target. */
+	private static MethodInsnNode sameTurn(MethodNode was, MethodInsnNode call, MethodNode now) {
+		int turn = 0;
+		for (AbstractInsnNode i : was.instructions) {
+			if (i == call) break;
+			if (i instanceof MethodInsnNode other && sameTarget(other, call)) turn++;
 		}
-		return out;
+		for (AbstractInsnNode i : now.instructions) {
+			if (i instanceof MethodInsnNode other && sameTarget(other, call) && turn-- == 0) return other;
+		}
+		return null;
+	}
+
+	private static boolean sameTarget(MethodInsnNode a, MethodInsnNode b) {
+		return a.owner.equals(b.owner) && a.name.equals(b.name) && a.desc.equals(b.desc);
 	}
 
 	/** Whether the injector, run over the hook class from its carrier, makes it report its constructions. */
