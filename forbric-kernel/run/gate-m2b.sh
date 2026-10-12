@@ -83,9 +83,12 @@ check "Jade (real third-party mod) loaded"     "invoked main entrypoint of jade"
 check "Fabric's registry freeze point ran"     "Forbric/RegistrySync\] Fabric's registry freeze point \(HEAD\): ran [1-9]" "$LOG"
 
 step "the server actually works (must PASS)"
-# F3: fabric-loot-api-v3's LootTableEvents fire from NeoForge's LootTableLoadEvent seam (the mixin is pinned).
+# F3: fabric-loot-api-v3's LootTableEvents fire from NeoForge's LootTableLoadEvent seam (the mixin is pinned), and
+# what runs there is fabric-loot-api's OWN callback group, proved and projected onto the seam (LootSourceCallbacks).
+# The kernel's public-API fallback prints the same count in other words and is red here: it is the unproved path.
 # RED with FORBRIC_JVM=-Dforbric.lootBridge=off (no 'offered' line; the audit then names the canary DEGRADED).
-check "kernel offered the loot tables to fabric" "Forbric/LootBridge\] offered [1-9][0-9]* loot table" "$LOG"
+# LootTableEventDispatchTest runs this pattern against both paths' real output.
+check "kernel offered the loot tables to fabric" "Forbric/LootBridge\] offered [1-9][0-9]* loot table\(s\) to fabric-loot-api-v3's own callbacks" "$LOG"
 check "the loot seams were routed"             "Forbric/LootBridge\] routed 1 loot-table load site\(s\) and 1 tag-load site" "$LOG"
 # F5: the canary's own listeners, registered like balm-fabric's. Both KINDS of line are asserted: the kernel's
 # 'offered' count proves the bridge ran, the canary's lines prove a mod's listener was actually called.
@@ -141,13 +144,14 @@ SUPPRESSED=$(grep -aoE 'suppressed mixin .*' "$LOG" | sort -u)
 [ -n "$SUPPRESSED" ] && echo "$SUPPRESSED" | sed 's/^/[kernel]   /'
 # RegistryDataLoaderMixin is restored by FabricRegistryLoaderMixinAdapter; BootstrapMixin/MainMixin are
 # restored by FabricRegistryInitializationMixinAdapter. ForbricMixinService.suppressedMixinsFor removes those
-# pins only while the adapters are enabled (covered by ForbricMixinServiceTest). Loot remains kernel-owned, and so
-# do resource conditions: fabric-resource-conditions-api's SimpleJsonResourceReloadListenerMixin binds a lambda its
-# handler was not written for, which Mixin rejects outright, and KernelFabricConditions judges the conditions at
-# ConditionalOps' funnel (SupersededMixins), so it is left out whole.
+# pins only while the adapters are enabled (covered by ForbricMixinServiceTest). Loot remains kernel-owned: its
+# callbacks run on NeoForge's seam (above). fabric-resource-conditions-api's SimpleJsonResourceReloadListenerMixin
+# is no longer on this list: it bound a lambda its handler was not written for, and since MixinDecodeScopeAdapter
+# (2b9c8baa) carries its source decode guard into the native parse scope it is judged FIT and applies whole, so
+# Fabric's own guard judges those files and KernelFabricConditions' ConditionalOps funnel stands aside for them.
+# RED with FORBRIC_JVM=-Dforbric.decodeSourceScopes=off, which leaves it out again.
 assert_eq "suppressed mixins are the documented set" \
-  "suppressed mixin ReloadableServerRegistriesMixin from fabric-loot-api-v3 (fabric-loot-api-v3.mixins.json)
-suppressed mixin SimpleJsonResourceReloadListenerMixin from fabric-resource-conditions-api-v1 (fabric-resource-conditions-api-v1.mixins.json)" \
+  "suppressed mixin ReloadableServerRegistriesMixin from fabric-loot-api-v3 (fabric-loot-api-v3.mixins.json)" \
   "$SUPPRESSED"
 # DISABLED_CONFIGS ships EMPTY on purpose (a whole-config entry hides which single mixin is at fault) and this
 # gate passes no -Dforbric.disableMixinConfigs, so zero is the only correct answer and a count was never the

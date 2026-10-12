@@ -168,26 +168,36 @@ class KernelMixinErrorHandlerTest {
 	 * gate-m9's superseded-mixin block, run against what the handler and the proof actually log.
 	 *
 	 * <p>The gate once asserted the wording of the name-only resolution after the handler had stopped printing it,
-	 * so a run in which the repair WAS seen went red, and nothing printed when the proof resolved the failure. The
-	 * block is executed here, not copied: green once the repair is seen in the defined ConditionalOps, in either
-	 * order, and red while it is not, or when either switch turns the repair off.
+	 * so a run in which the repair WAS seen went red, and nothing printed when the proof resolved the failure. Then
+	 * the mixin stopped failing at all (MixinDecodeScopeAdapter keeps its source decode guard, so it applies whole),
+	 * and the block's "resolved as superseded" went red on every healthy run. The block is executed here, not copied:
+	 * green when the mixin never failed, even beside another mod's failure, and red the moment it fails -- whether
+	 * the proof then resolves it as superseded, in either order, or leaves it marked.
 	 */
 	@Test
-	void gateM9PassesOnlyWhenTheRepairIsSeenInTheDefinedClass(@org.junit.jupiter.api.io.TempDir Path temporary)
+	void gateM9PassesOnlyWhenTheConditionsMixinNeverFailed(@org.junit.jupiter.api.io.TempDir Path temporary)
 			throws Exception {
 		String superseded = "net.fabricmc.fabric.mixin.resource.conditions.SimpleJsonResourceReloadListenerMixin";
-		MixinConfigOwners.publish(List.of(new MixinConfigOwners.Owned("s.mixins.json", "xmod", Ecosystem.FABRIC)));
+		MixinConfigOwners.publish(List.of(new MixinConfigOwners.Owned("s.mixins.json", "xmod", Ecosystem.FABRIC),
+				new MixinConfigOwners.Owned("o.mixins.json", "omod", Ecosystem.FABRIC)));
 		Runnable fail = () -> new KernelMixinErrorHandler().onApplyError(
 				"net.minecraft.server.packs.resources.SimpleJsonResourceReloadListener",
 				new RuntimeException("InvalidInjectionException"), info("s.mixins.json", superseded),
 				IMixinErrorHandler.ErrorAction.WARN);
+		Runnable other = () -> new KernelMixinErrorHandler().onApplyError("net.minecraft.Foo",
+				new RuntimeException("InvalidInjectionException"), info("o.mixins.json", "org.example.other.FooMixin"),
+				IMixinErrorHandler.ErrorAction.WARN);
 		Runnable wrapped = () -> SupersededMixins.observeDefinition(CONDITIONAL_OPS, conditionalOps(true));
 		Runnable unwrapped = () -> SupersededMixins.observeDefinition(CONDITIONAL_OPS, conditionalOps(false));
 
-		GateRun seen = gateM9(temporary, null, fail, wrapped);
-		assertEquals(0, seen.exit(), seen.output());
-		GateRun seenFirst = gateM9(temporary, null, wrapped, fail);
-		assertEquals(0, seenFirst.exit(), seenFirst.output());
+		GateRun applied = gateM9(temporary, null, other, wrapped);
+		assertEquals(0, applied.exit(), applied.output());
+		assertTrue(applied.output().contains("is marked"), "premise: the log is real, with another mod's failure in it: " + applied.output());
+		GateRun supersededAfter = gateM9(temporary, null, fail, wrapped);
+		assertTrue(supersededAfter.exit() != 0 && supersededAfter.output().contains("FAIL"), supersededAfter.output());
+		assertTrue(supersededAfter.output().contains("is superseded"), "premise: the proof resolved it: " + supersededAfter.output());
+		GateRun supersededFirst = gateM9(temporary, null, wrapped, fail);
+		assertTrue(supersededFirst.exit() != 0, supersededFirst.output());
 		GateRun notSeen = gateM9(temporary, null, fail, unwrapped);
 		assertTrue(notSeen.exit() != 0 && notSeen.output().contains("FAIL"), notSeen.output());
 		GateRun neverDefined = gateM9(temporary, null, fail);
