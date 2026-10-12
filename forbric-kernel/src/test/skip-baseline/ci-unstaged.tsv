@@ -1584,6 +1584,7 @@ test	net.forbric.kernel.runtime.KernelForgeClientInitRuntimeTest	disablingTheFun
 test	net.forbric.kernel.runtime.KernelForgeClientInitRuntimeTest	forgeCaptureFlowsThroughTheInstalledLowestBridgeAndTheSameListenerReloadsOnce()	skipped without a message (a class-level abort, e.g. in @BeforeAll)
 test	net.forbric.kernel.runtime.KernelForgeClientInitRuntimeTest	geometryRunsOnEveryCallAndTheFeatureSwitchAlsoControlsForgeParticleDispatch()	skipped without a message (a class-level abort, e.g. in @BeforeAll)
 test	net.forbric.kernel.runtime.KernelForgeClientInitRuntimeTest	neoFailuresBeforeAndAfterBridgeDispatchPropagateAndClearTheCapture()	skipped without a message (a class-level abort, e.g. in @BeforeAll)
+test	net.forbric.kernel.runtime.KernelForgeConditionFunnelTest	aForgeConditionIsJudgedBeforeNeoForgeDecodes(Path)	[fixture:staged] the staged artifacts are absent
 test	net.forbric.kernel.runtime.KernelForgeConfigLoadTest	acceptLoadingAndSaveFailuresWithPublishedDataAreNotRetriedByLateLoading()	[fixture:game-side] runtime helper not compiled
 test	net.forbric.kernel.runtime.KernelForgeConfigLoadTest	actualCarrierHasOnlyTheThreeForgeTypesAndThePrivateStaticTwoArgumentOpen()	[fixture:staged] staged Forge carrier absent
 test	net.forbric.kernel.runtime.KernelForgeConfigLoadTest	actualTomlFailureOnlyDegradesItsOwnerAndTheFollowingConfigStillLoads()	[fixture:game-side] runtime helper not compiled
@@ -2019,7 +2020,9 @@ test	net.forbric.kernel.transform.MergedBaseForgeClientInitTest	geometryInitiali
 test	net.forbric.kernel.transform.MergedBaseForgeClientInitTest	missingDuplicateWrongDescriptorAndSplitConstructorAnchorsStandDownAtomically()	[fixture:staged] staged jar absent: $ROOT/forbric-loader/run/merged-base/patched-mc-merged-26.2.jar
 test	net.forbric.kernel.transform.MergedBaseForgeClientInitTest	runtimeCallsLinkAgainstBothActualCarriersAndMergedOptions()	[fixture:staged] staged jar absent: $ROOT/forbric-loader/run/forge-runtime/forge-runtime.jar
 test	net.forbric.kernel.transform.MergedBaseForgeClientInitTest	twoRealMinecraftCallsKeepTheirDescriptorsAndInstructionCounts()	[fixture:staged] staged jar absent: $ROOT/forbric-loader/run/merged-base/patched-mc-merged-26.2.jar
+test	net.forbric.kernel.transform.MergedBaseForgeConditionsTest	aFactoryFabricAlreadyWrapsGetsMinecraftForgesWrapInFrontOfIt()	[fixture:staged] $ROOT/forbric-loader/run/neoforge-runtime/neoforge-runtime.jar absent (reading net/neoforged/neoforge/common/conditions/ConditionalOps.class)
 test	net.forbric.kernel.transform.MergedBaseForgeConditionsTest	aSecondPassDoesNotWrapItTwice()	[fixture:staged] staged MinecraftForge carrier absent
+test	net.forbric.kernel.transform.MergedBaseForgeConditionsTest	minecraftForgeIsAskedBeforeFabricAtTheOnlyExit()	[fixture:staged] $ROOT/forbric-loader/run/neoforge-runtime/neoforge-runtime.jar absent (reading net/neoforged/neoforge/common/conditions/ConditionalOps.class)
 test	net.forbric.kernel.transform.MergedBaseForgeConditionsTest	minecraftForgesEvaluatorIsStillOnTheDatapackPathAtAll()	[fixture:staged] staged merged base absent
 test	net.forbric.kernel.transform.MergedBaseForgeConditionsTest	safeCodecIsNotTheAnswerBecauseItDropsWhatItCannotParse()	[fixture:staged] staged MinecraftForge carrier absent
 test	net.forbric.kernel.transform.MergedBaseForgeConditionsTest	theCodecIsWrappedBeforeItIsStoredAndBeforeTheOtherTwoAreDerivedFromIt()	[fixture:staged] staged MinecraftForge carrier absent
