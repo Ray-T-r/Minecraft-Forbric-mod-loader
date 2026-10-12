@@ -19,7 +19,14 @@ final class FieldContractReconciler {
             for(MethodNode constructor:new ArrayList<>(merged.methods))if(constructor.name.equals("<init>")){
                 MethodNode chosen=ContractGraph.ownMethod(canonical,constructor.name,constructor.desc),alternative=ContractGraph.ownMethod(other,constructor.name,constructor.desc);
                 if(chosen==null||alternative==null||!functionalFactory(chosen,selected.name)||!functionalFactory(alternative,selected.name))continue;
-                if(!sameConstruction(canonical,chosen,other,alternative,selected.name,graph))throw new IllegalStateException("Incompatible initializer dependency on "+merged.name+"#"+selected.name+": "+chosen.desc);
+                graph.takeMisses();
+                if(!sameConstruction(canonical,chosen,other,alternative,selected.name,graph)){
+                    // A class the proof could not read is not a difference it found: name it, or a merge run without
+                    // the vanilla libraries reads as two incompatible carriers.
+                    Set<String> unread=graph.takeMisses();
+                    if(!unread.isEmpty())throw new IllegalStateException("Cannot judge the initializer of "+merged.name+"#"+selected.name+": the proof needed "+unread+", not on the merge's library path (the merge reads the vanilla libraries; are they there?)");
+                    throw new IllegalStateException("Incompatible initializer dependency on "+merged.name+"#"+selected.name+": "+chosen.desc);
+                }
                 if(List.of(a,canonical).stream().flatMap(source->source.methods.stream()).filter(method->!method.name.equals("<init>")).anyMatch(method->ContractGraph.code(method).stream().anyMatch(i->i instanceof FieldInsnNode field&&field.getOpcode()==Opcodes.PUTFIELD&&field.owner.equals(merged.name)&&field.name.equals(selected.name))))throw new IllegalStateException("Mutable provider field cannot share a coherent cell: "+merged.name+"#"+selected.name);
                 MethodInsnNode nativeFactory=factory(chosen,selected.name),peerFactory=factory(alternative,selected.name);String nativeProvider=allocation(nativeFactory,graph),peerProvider=allocation(peerFactory,graph);
                 ClassNode provider=graph.node(nativeProvider),peer=graph.node(peerProvider);MemoizedSupplierContract.Proof nativeProof=provider==null?null:MemoizedSupplierContract.prove(provider,graph),peerProof=peer==null?null:MemoizedSupplierContract.prove(peer,graph);

@@ -20,12 +20,15 @@ final class ContractGraph {
         else this.libraries=libraries!=null&&Files.isRegularFile(libraries)?List.of(libraries):List.of();
     }
 
+    /** Classes asked for and not found anywhere since the last {@link #takeMisses}: what a failed proof could not read. */
+    private final Set<String> misses=new LinkedHashSet<>();
+    Set<String> takeMisses(){Set<String> out=new LinkedHashSet<>(misses);misses.clear();return out;}
     ClassNode node(String name){
-        if(name==null)return null;if(nodes.containsKey(name))return nodes.get(name);
+        if(name==null)return null;if(nodes.containsKey(name)){ClassNode cached=nodes.get(name);if(cached==null)misses.add(name);return cached;}
         byte[] data=bytes.get(name);
         if(data==null)try(InputStream stream=ClassLoader.getSystemResourceAsStream(name+".class")){if(stream!=null)data=stream.readAllBytes();}catch(IOException ignored){}
         if(data==null)for(Path jar:libraries)try(ZipFile zip=new ZipFile(jar.toFile())){ZipEntry entry=zip.getEntry(name+".class");if(entry!=null){data=zip.getInputStream(entry).readAllBytes();break;}}catch(IOException ignored){}
-        ClassNode node=null;if(data!=null){node=new ClassNode();new ClassReader(data).accept(node,0);}nodes.put(name,node);return node;
+        ClassNode node=null;if(data!=null){node=new ClassNode();new ClassReader(data).accept(node,0);}else misses.add(name);nodes.put(name,node);return node;
     }
     void replace(ClassNode node){nodes.put(node.name,node);}
     boolean assignable(String from,String to){return assignable(Type.getType(from),Type.getType(to));}

@@ -101,7 +101,7 @@ def linkGateClasses = tasks.register('compileLinkGateTest', JavaCompile) {
 	// every runner of linkGateTest (CI, the kernel's linkToolTest) exercises them too.
 	source = fileTree('src/test/java') {
 		include '**/MergedBaseLinkGateTest.java', '**/SuppliedArtifactContentTest.java',
-				'**/InstallerWindowInputTest.java'
+				'**/InstallerWindowInputTest.java', '**/MinecraftLibrariesTest.java'
 	}
 	classpath = files(sourceSets.main.output.classesDirs)
 	destinationDirectory = layout.buildDirectory.dir('link-gate-classes')
