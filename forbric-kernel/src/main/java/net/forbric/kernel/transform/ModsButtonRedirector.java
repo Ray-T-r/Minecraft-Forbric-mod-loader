@@ -16,20 +16,41 @@
 
 package net.forbric.kernel.transform;
 
+import java.util.ArrayList;
+import java.util.HashSet;
+import java.util.List;
 import java.util.Set;
+import java.util.function.Function;
 
 import org.objectweb.asm.ClassReader;
 import org.objectweb.asm.ClassWriter;
+import org.objectweb.asm.Handle;
 import org.objectweb.asm.Opcodes;
+import org.objectweb.asm.Type;
 import org.objectweb.asm.tree.AbstractInsnNode;
 import org.objectweb.asm.tree.ClassNode;
+import org.objectweb.asm.tree.FrameNode;
+import org.objectweb.asm.tree.IincInsnNode;
+import org.objectweb.asm.tree.InvokeDynamicInsnNode;
+import org.objectweb.asm.tree.JumpInsnNode;
+import org.objectweb.asm.tree.LabelNode;
 import org.objectweb.asm.tree.LdcInsnNode;
+import org.objectweb.asm.tree.LookupSwitchInsnNode;
 import org.objectweb.asm.tree.MethodInsnNode;
 import org.objectweb.asm.tree.MethodNode;
+import org.objectweb.asm.tree.TableSwitchInsnNode;
+import org.objectweb.asm.tree.TryCatchBlockNode;
 import org.objectweb.asm.tree.TypeInsnNode;
+import org.objectweb.asm.tree.VarInsnNode;
+import org.objectweb.asm.tree.analysis.Analyzer;
+import org.objectweb.asm.tree.analysis.AnalyzerException;
+import org.objectweb.asm.tree.analysis.BasicInterpreter;
+import org.objectweb.asm.tree.analysis.BasicValue;
+import org.objectweb.asm.tree.analysis.Frame;
 
 import net.forbric.api.Ecosystem;
 import net.forbric.api.ForeignType;
+import net.forbric.kernel.mixin.NativeGameReferences;
 import net.forbric.kernel.util.ByteScan;
 import net.forbric.kernel.util.ForbricLog;
 
@@ -136,6 +157,20 @@ public final class ModsButtonRedirector implements ClassTransformer {
 			NEOFORGE_PRE_88_MOD_LIST_SCREEN);
 
 	/**
+	 * Another class as the chain defines it, without defining it: what tells a widget factory's own class opens a
+	 * mod list. Null for a class the loader cannot find, which leaves that call unrecognised and its menu as it is.
+	 */
+	private final Function<String, ClassNode> classes;
+
+	public ModsButtonRedirector() {
+		this(NativeGameReferences::current);
+	}
+
+	ModsButtonRedirector(Function<String, ClassNode> classes) {
+		this.classes = classes;
+	}
+
+	/**
 	 * Points the button at the kernel's own icon.
 	 *
 	 * <p>The label alone left two identical squares on the pause menu, one of them wearing NeoForge's logo while
@@ -213,6 +248,193 @@ public final class ModsButtonRedirector implements ClassTransformer {
 		return renamed;
 	}
 
+	/**
+	 * Keeps one mods button in a menu that adds one per family.
+	 *
+	 * <p>A base that keeps both families' edits of one menu method carries both families' mods buttons in it. The
+	 * merged {@code PauseScreen.createPauseMenu} adds NeoForge's ({@code ModsButton.create(this)} in the icon row)
+	 * AND MinecraftForge's (a full-width {@code fml.menu.mods} button under Options), where each family's own body
+	 * adds one. Once this pass points every family's button at the one unified list they are the same button
+	 * twice: a player saw "Mods (Forbric)" as an icon and again as a row of its own.
+	 *
+	 * <p>A mods button is recognised by what pressing it does, never by whose it is: a lambda of this class whose
+	 * body opens a family's mod list (or the unified one), or a static factory {@code X f(Screen)} whose own class
+	 * {@code X} opens one. In a method with two or more, the first in instruction order stays, and each later one's
+	 * whole statement goes: from the last instruction before it where the operand stack is empty up to the next,
+	 * provided that span holds no branch, switch, return, throw, local store and no label anything refers to — so
+	 * the stack and the locals after it are exactly what they were before it and no frame changes. A span that
+	 * fails any of that is left in place and reported: a second button is a cosmetic fault, a broken method is not.
+	 */
+	private int keepOneModsButtonPerMethod(ClassNode node) {
+		int dropped = 0;
+		for (MethodNode method : node.methods) {
+			if (method.instructions == null || method.instructions.size() == 0) continue;
+			List<AbstractInsnNode> sites = modsButtonSites(node, method);
+			if (sites.size() < 2) continue;
+			Frame<BasicValue>[] frames;
+			try {
+				frames = new Analyzer<>(new BasicInterpreter()).analyze(node.name, method);
+			} catch (AnalyzerException unreadable) {
+				ForbricLog.warn("[Forbric/ModsButton] %s.%s adds %d mods buttons, but its stack could not be read (%s) "
+						+ "— left as it is, and the menu shows its mods button more than once", node.name, method.name,
+						sites.size(), unreadable.getMessage());
+				continue;
+			}
+			AbstractInsnNode[] insns = method.instructions.toArray();
+			Set<LabelNode> referenced = referencedLabels(method);
+			int first = indexOf(insns, sites.get(0));
+			List<int[]> spans = new ArrayList<>();
+			for (int i = 1; i < sites.size(); i++) {
+				int[] span = statement(insns, frames, referenced, indexOf(insns, sites.get(i)));
+				if (span == null || (span[0] <= first && first < span[1])) continue;
+				boolean overlaps = false;
+				for (int[] other : spans) overlaps |= span[0] < other[1] && other[0] < span[1];
+				if (!overlaps) spans.add(span);
+			}
+			for (int[] span : spans) {
+				for (int k = span[0]; k < span[1]; k++) {
+					if (insns[k].getOpcode() >= 0) method.instructions.remove(insns[k]);
+				}
+			}
+			dropped += spans.size();
+			int left = sites.size() - 1 - spans.size();
+			if (!spans.isEmpty()) {
+				ForbricLog.info("[Forbric/ModsButton] %s.%s added %d mods buttons — the merge kept each family's, and "
+						+ "every one opens the same unified list — kept the first and dropped %d, so the menu shows it "
+						+ "once", node.name, method.name, sites.size(), spans.size());
+			}
+			if (left > 0) {
+				ForbricLog.warn("[Forbric/ModsButton] %s.%s adds %d mods buttons and %d of the extra ones could not be "
+						+ "dropped safely (their statement branches, stores a local or holds a jump target) — the menu "
+						+ "shows its mods button more than once", node.name, method.name, sites.size(), left);
+			}
+		}
+		return dropped;
+	}
+
+	/** The instructions in {@code method} that build a mods button, in instruction order. */
+	private List<AbstractInsnNode> modsButtonSites(ClassNode node, MethodNode method) {
+		List<AbstractInsnNode> sites = new ArrayList<>();
+		List<MethodInsnNode> factories = new ArrayList<>();
+		for (AbstractInsnNode insn : method.instructions) {
+			if (insn instanceof InvokeDynamicInsnNode indy) {
+				MethodNode body = lambdaBody(node, indy);
+				if (body != null && body != method && opensAModList(body)) sites.add(insn);
+			} else if (insn instanceof MethodInsnNode call && isWidgetFactory(node, call)) {
+				factories.add(call);
+			}
+		}
+		// The factory's class is read only where it could make a second button: the common case is a method with
+		// none, and reading a class runs the transform chain over it.
+		if (sites.size() + factories.size() < 2) return List.of();
+		for (MethodInsnNode call : factories) {
+			ClassNode owner = classes == null ? null : classes.apply(call.owner);
+			if (owner != null && opensAModList(owner)) sites.add(call);
+		}
+		if (sites.size() < 2) return List.of();
+		sites.sort((a, b) -> Integer.compare(method.instructions.indexOf(a), method.instructions.indexOf(b)));
+		return sites;
+	}
+
+	/** {@code X f(Screen)} on another class {@code X}: a widget built for the screen it sits on. */
+	private static boolean isWidgetFactory(ClassNode node, MethodInsnNode call) {
+		if (call.getOpcode() != Opcodes.INVOKESTATIC || call.owner.equals(node.name)
+				|| REPLACED.contains(call.owner) || KERNEL_SCREEN.equals(call.owner)) return false;
+		Type[] args = Type.getArgumentTypes(call.desc);
+		Type result = Type.getReturnType(call.desc);
+		return args.length == 1 && SCREEN.equals(args[0].getDescriptor()) && result.getSort() == Type.OBJECT
+				&& call.owner.equals(result.getInternalName());
+	}
+
+	/** The synthetic body a lambda of this class runs, or null when it is not a lambda of this class. */
+	private static MethodNode lambdaBody(ClassNode node, InvokeDynamicInsnNode indy) {
+		if (!"java/lang/invoke/LambdaMetafactory".equals(indy.bsm.getOwner()) || indy.bsmArgs.length < 2
+				|| !(indy.bsmArgs[1] instanceof Handle impl) || !node.name.equals(impl.getOwner())) return null;
+		for (MethodNode candidate : node.methods) {
+			if (candidate.name.equals(impl.getName()) && candidate.desc.equals(impl.getDesc())) return candidate;
+		}
+		return null;
+	}
+
+	private static boolean opensAModList(ClassNode node) {
+		for (MethodNode method : node.methods) {
+			if (method.instructions != null && opensAModList(method)) return true;
+		}
+		return false;
+	}
+
+	/** Whether the method constructs a family's mod list or the unified one, by either shape. */
+	private static boolean opensAModList(MethodNode method) {
+		for (AbstractInsnNode insn : method.instructions) {
+			if (insn instanceof TypeInsnNode type && type.getOpcode() == Opcodes.NEW
+					&& (REPLACED.contains(type.desc) || KERNEL_SCREEN.equals(type.desc))) return true;
+			if (insn instanceof MethodInsnNode call && call.getOpcode() == Opcodes.INVOKESTATIC
+					&& FACTORY.equals(call.name) && call.desc.startsWith("(" + SCREEN + ")")
+					&& (REPLACED.contains(call.owner) || KERNEL_SCREEN.equals(call.owner))) return true;
+		}
+		return false;
+	}
+
+	/**
+	 * The statement around instruction {@code at}, as {@code [start, end)} indexes: from the last instruction at or
+	 * before it entered with an empty operand stack to the first one after it that is. Null when no such span exists
+	 * or when removing it could change anything but the widget it builds.
+	 */
+	private static int[] statement(AbstractInsnNode[] insns, Frame<BasicValue>[] frames, Set<LabelNode> referenced, int at) {
+		int start = at;
+		while (start >= 0 && !emptyStackAt(insns, frames, start)) start--;
+		int end = at + 1;
+		while (end < insns.length && !emptyStackAt(insns, frames, end)) end++;
+		if (start < 0 || end >= insns.length) return null;
+		for (int k = start; k < end; k++) {
+			AbstractInsnNode insn = insns[k];
+			if (insn instanceof LabelNode label && referenced.contains(label)) return null;
+			if (insn instanceof FrameNode) return null;
+			int op = insn.getOpcode();
+			if (op < 0) continue;
+			if (frames[k] == null || insn instanceof JumpInsnNode || insn instanceof TableSwitchInsnNode
+					|| insn instanceof LookupSwitchInsnNode || insn instanceof IincInsnNode) return null;
+			if ((op >= Opcodes.IRETURN && op <= Opcodes.RETURN) || op == Opcodes.ATHROW || op == Opcodes.RET
+					|| op == Opcodes.MONITORENTER || op == Opcodes.MONITOREXIT) return null;
+			if (insn instanceof VarInsnNode && op >= Opcodes.ISTORE && op <= Opcodes.ASTORE) return null;
+		}
+		return new int[] {start, end};
+	}
+
+	private static boolean emptyStackAt(AbstractInsnNode[] insns, Frame<BasicValue>[] frames, int k) {
+		return insns[k].getOpcode() >= 0 && frames[k] != null && frames[k].getStackSize() == 0;
+	}
+
+	/** Every label a branch, a switch or an exception range refers to. */
+	private static Set<LabelNode> referencedLabels(MethodNode method) {
+		Set<LabelNode> out = new HashSet<>();
+		for (AbstractInsnNode insn : method.instructions) {
+			if (insn instanceof JumpInsnNode jump) out.add(jump.label);
+			else if (insn instanceof TableSwitchInsnNode table) {
+				out.add(table.dflt);
+				out.addAll(table.labels);
+			} else if (insn instanceof LookupSwitchInsnNode lookup) {
+				out.add(lookup.dflt);
+				out.addAll(lookup.labels);
+			}
+		}
+		if (method.tryCatchBlocks != null) {
+			for (TryCatchBlockNode block : method.tryCatchBlocks) {
+				out.add(block.start);
+				out.add(block.end);
+				out.add(block.handler);
+			}
+		}
+		return out;
+	}
+
+	private static int indexOf(AbstractInsnNode[] insns, AbstractInsnNode target) {
+		for (int i = 0; i < insns.length; i++) {
+			if (insns[i] == target) return i;
+		}
+		return -1;
+	}
+
 	@Override
 	public String name() {
 		return "forbric-mods-button";
@@ -236,6 +458,8 @@ public final class ModsButtonRedirector implements ClassTransformer {
 		try {
 			ClassNode node = new ClassNode();
 			new ClassReader(classBytes).accept(node, 0);
+			// Before the redirect: a dropped duplicate's label and construction are then not counted as landed.
+			int dropped = keepOneModsButtonPerMethod(node);
 			int redirected = 0;
 			for (MethodNode method : node.methods) {
 				if (method.instructions == null) continue;
@@ -259,9 +483,10 @@ public final class ModsButtonRedirector implements ClassTransformer {
 			}
 			int renamed = renameTheButton(node);
 			renamed += reskinTheButton(node);
-			if (redirected == 0 && renamed == 0) return classBytes;
+			if (redirected == 0 && renamed == 0 && dropped == 0) return classBytes;
 			ClassWriter writer = new ClassWriter(0);
 			node.accept(writer);
+			if (redirected == 0 && renamed == 0) return writer.toByteArray();
 			// The two halves are reported separately because they are separate claims, and conflating them is
 			// how this line came to say something false. "Opens the unified list" is true only when a
 			// construction site was re-pointed; a class that carries the label but builds its screen elsewhere --

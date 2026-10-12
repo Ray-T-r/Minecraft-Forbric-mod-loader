@@ -80,11 +80,11 @@ class ModsButtonRedirectorTest {
 		assertTrue(opened.values().stream().flatMap(List::stream).anyMatch(NEO::equals),
 				"something in the staged jars must still open NeoForge's own ModListScreen — if nothing does, the "
 						+ "button moved again and this redirect needs re-deriving. Carriers found: " + opened);
-		// MinecraftForge's own site is NOT required. On the merged base NeoForge's createPauseMenu is the body
-		// that wins, so the pause menu carries NeoForge's button and MinecraftForge's construction site survives
-		// only as dead code — and once the builder started putting captured lambdas back on their capturer's
-		// side, that dead body stopped existing at all. One live Forge-family button, re-pointed, is the whole
-		// claim; requiring two was describing a merge artefact.
+		// MinecraftForge's own site is NOT required. Whether the merged createPauseMenu carries it depends on the
+		// base: one where NeoForge's body wins keeps only NeoForge's button, one that keeps both families' edits
+		// carries both — and then the redirector keeps the first and drops the other (ModsButtonRedirectorExecution
+		// Test). One live Forge-family button, re-pointed, is the whole claim; requiring two was describing a merge
+		// outcome.
 	}
 
 	/**

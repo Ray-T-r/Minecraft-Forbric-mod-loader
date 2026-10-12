@@ -528,6 +528,14 @@ check_absent "and pressing it did not fail" "could not press the title screen's 
 # here is what a player reads off the button; which class draws it is upstream's business.
 check "the Forge-family mods button is labelled as ours" \
   "pause-menu button: [^ ]+ \"Mods \(Forbric\)\"" "$LOG"
+# And exactly once, on each screen. A base that keeps both families' edits of createPauseMenu carries both families'
+# mods buttons, and once both open the unified list the pause menu showed "Mods (Forbric)" twice, as an icon and as a
+# full-width row under Options. That was seen on screen, never in a log line: the check above is ">= 1" and stayed
+# green. Counted in the game log alone, because $LOG carries every line of it twice.
+PAUSE_OURS=$(grep -acE 'pause-menu button: [^ ]+ "Mods \(Forbric\)"' "$GAMELOG" 2>/dev/null)
+TITLE_OURS=$(grep -acE 'title-screen button #[0-9]+: [^ ]+ "Mods \(Forbric\)"' "$GAMELOG" 2>/dev/null)
+assert_eq "the pause menu shows the unified mods button once" "1" "${PAUSE_OURS:-0}"
+assert_eq "and so does the title screen" "1" "${TITLE_OURS:-0}"
 check "pressing it opens the unified list" \
   "the mods button opened: net\.forbric\.kernel\.runtime\.KernelModListScreen"   "$LOG"
 check_absent "and pressing it did not fail" "could not press the pause menu's mods button" "$LOG"
