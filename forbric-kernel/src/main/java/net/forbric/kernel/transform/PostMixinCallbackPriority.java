@@ -2,7 +2,7 @@
 package net.forbric.kernel.transform;
 import net.forbric.kernel.util.ForbricLog;
 import org.objectweb.asm.*;import org.objectweb.asm.tree.*;
-/** Old fallback seams stand down only when the final woven source callback and its helpers are proved present. */
+/** Old fallback seams stand down, at each call, for as long as the final woven source callback is permitted to run. */
 public final class PostMixinCallbackPriority implements ClassTransformer {
  @Override public AnchorSet anchors(){return AnchorSet.scanned("final source callback ownership of previously inserted fallback seams");}
  @Override public byte[] transform(String name,byte[]bytes,TransformContext context){
@@ -11,7 +11,7 @@ public final class PostMixinCallbackPriority implements ClassTransformer {
   net.forbric.kernel.mixin.MixinNullableCompositeCallback.certify(node);
   net.forbric.kernel.mixin.MixinDecodeScopeAdapter.certify(node);if(changed==0)return bytes;
   ClassWriter writer=new ClassWriter(ClassWriter.COMPUTE_MAXS);node.accept(writer);
-  ForbricLog.info("[Forbric/Mixin] %s stands down %d older fallback(s); the final source callback, arguments and helper bodies own their original operation",name,changed);
+  ForbricLog.info("[Forbric/Mixin] %s stands down %d older fallback(s) while the final source callback's contract holds; each asks at its call, so whichever is permitted owns the original operation",name,changed);
   return writer.toByteArray();
  }
 }

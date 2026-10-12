@@ -166,29 +166,47 @@ public final class HopperFabricStorageInjector implements ClassTransformer {
 		return next;
 	}
 
-	/** Final-Mixin only: an actually installed original callback owns this fallback now. Native routes remain. */
+	/**
+	 * Final-Mixin only: where fabric-transfer's own callback is proved installed in the final host, the fallback in that
+	 * host asks at every call whether the callback is permitted to run ({@code KernelCompositeCallbacks.owns}) and does
+	 * nothing while it is. Native routes remain.
+	 *
+	 * <p>It used to be deleted here instead. The installed callback runs only while its whole composite contract holds,
+	 * helper bodies included, and that is decided at the call: lithium's own hopper mixin redirects the lookup inside
+	 * {@code getSourceContainerOrHandler}, so the callback was refused at every call -- and with the fallback gone,
+	 * nothing pulled items out of an unslotted or block-only Fabric storage at all (gate-m52's lithium phase). Asking
+	 * the same question the callback's own guard asks is what keeps exactly one of the two in charge.
+	 */
 	public static int standDownMigratedCallbacks(ClassNode node) {
 		int changed=0;
 		for(MethodNode method:node.methods){
-			if(!net.forbric.kernel.mixin.MixinNullableCompositeCallback.installedOnFinalHost(node,method))continue;
+			String contract=net.forbric.kernel.mixin.MixinNullableCompositeCallback.contractOnFinalHost(node,method);
+			if(contract==null)continue;
 			for(AbstractInsnNode instruction:method.instructions.toArray()){
 				if(!(instruction instanceof MethodInsnNode call)||call.getOpcode()!=Opcodes.INVOKESTATIC||!call.owner.equals(RUNTIME))continue;
 				if(call.name.equals("insert")&&call.desc.equals("(Ljava/lang/Object;Ljava/lang/Object;Ljava/lang/Object;)Z")){
 					AbstractInsnNode c=previous(call),b=previous(c),a=previous(b);
 					if(!argument(a,0)||!argument(b,1)||!argument(c,2))continue;
-					method.instructions.insertBefore(a,new InsnNode(Opcodes.ICONST_0));
-					method.instructions.remove(a);method.instructions.remove(b);method.instructions.remove(c);method.instructions.remove(call);changed++;
+					ownedBy(method,call,contract,node.name,"insertUnlessOwned","(Ljava/lang/Object;Ljava/lang/Object;Ljava/lang/Object;Ljava/lang/String;Ljava/lang/Class;)Z");changed++;
 				}else if(call.name.equals("extract")&&call.desc.equals("(Ljava/lang/Object;Ljava/lang/Object;)I")){
 					AbstractInsnNode b=previous(call),a=previous(b),dup=next(call),branch=next(dup),exit=next(branch),pop=next(exit);
 					if(!argument(a,0)||!argument(b,1)||dup==null||dup.getOpcode()!=Opcodes.DUP||!(branch instanceof JumpInsnNode jump)||jump.getOpcode()!=Opcodes.IFLT
 							||exit==null||exit.getOpcode()!=Opcodes.IRETURN||pop==null||pop.getOpcode()!=Opcodes.POP||next(jump.label)!=pop)continue;
 					long references=java.util.Arrays.stream(method.instructions.toArray()).filter(i->i instanceof JumpInsnNode other&&other.label==jump.label).count();
 					if(references!=1)continue;
-					for(AbstractInsnNode remove=a;remove!=null;){AbstractInsnNode following=remove.getNext();method.instructions.remove(remove);if(remove==pop)break;remove=following;}changed++;
+					ownedBy(method,call,contract,node.name,"extractUnlessOwned","(Ljava/lang/Object;Ljava/lang/Object;Ljava/lang/String;Ljava/lang/Class;)I");changed++;
 				}
 			}
 		}
 		return changed;
+	}
+	/** The fallback call, given the contract key and the host class it stands down for: same arguments first, same result. */
+	private static void ownedBy(MethodNode method,MethodInsnNode call,String contract,String host,String name,String desc){
+		InsnList owner=new InsnList();
+		owner.add(new org.objectweb.asm.tree.LdcInsnNode(contract));
+		owner.add(new org.objectweb.asm.tree.LdcInsnNode(org.objectweb.asm.Type.getObjectType(host)));
+		method.instructions.insertBefore(call,owner);
+		call.name=name;call.desc=desc;
 	}
 	private static boolean argument(AbstractInsnNode instruction,int slot){return instruction instanceof VarInsnNode load&&load.getOpcode()==Opcodes.ALOAD&&load.var==slot;}
 	private static AbstractInsnNode previous(AbstractInsnNode instruction){if(instruction==null)return null;for(var before=instruction.getPrevious();before!=null;before=before.getPrevious())if(before.getOpcode()>=0)return before;return null;}

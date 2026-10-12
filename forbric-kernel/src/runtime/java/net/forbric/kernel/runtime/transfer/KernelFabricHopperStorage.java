@@ -9,6 +9,7 @@ import net.fabricmc.fabric.api.transfer.v1.item.ItemStorage;
 import net.fabricmc.fabric.api.transfer.v1.item.ItemVariant;
 import net.fabricmc.fabric.api.transfer.v1.storage.Storage;
 import net.fabricmc.fabric.api.transfer.v1.storage.StorageUtil;
+import net.forbric.kernel.boot.KernelCompositeCallbacks;
 import net.forbric.kernel.util.ForbricLog;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
@@ -62,6 +63,20 @@ public final class KernelFabricHopperStorage {
 		if (source == null) return NOT_FOUND;
 		note("extracted from", source);
 		return moveOne(source, ContainerStorage.of(container, Direction.UP));
+	}
+
+	/**
+	 * {@link #insert}, unless fabric-transfer's own callback in {@code host} is permitted to run this branch right now
+	 * (its composite contract still holds): it then owns it, as on Fabric, and this answers false. See
+	 * HopperFabricStorageInjector.standDownMigratedCallbacks.
+	 */
+	public static boolean insertUnlessOwned(Object level, Object pos, Object hopper, String contract, Class<?> host) {
+		return !KernelCompositeCallbacks.owns(contract, host) && insert(level, pos, hopper);
+	}
+
+	/** {@link #extract}, unless fabric-transfer's own callback owns this branch right now; then {@link #NOT_FOUND}. */
+	public static int extractUnlessOwned(Object level, Object hopper, String contract, Class<?> host) {
+		return KernelCompositeCallbacks.owns(contract, host) ? NOT_FOUND : extract(level, hopper);
 	}
 
 	/** Fabric's move of one unit, outside any transaction: 1, 0, or {@link #NOT_FOUND} without a source. */
