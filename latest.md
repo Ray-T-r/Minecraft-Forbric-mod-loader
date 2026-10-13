@@ -1,15 +1,15 @@
-Latest nightly: [results/2026-10-12/summary.md](results/2026-10-12/summary.md)
+Latest nightly: [results/2026-10-14/summary.md](results/2026-10-14/summary.md)
 
-# Forbric nightly 2026-10-12: FAIL
+# Forbric nightly 2026-10-14: FAIL
 
 | | |
 | --- | --- |
 | commit | [`6d1dd0f287f8`](https://github.com/Ray-T-r/Minecraft-Forbric-mod-loader/commit/6d1dd0f287f89b3da13d9c9fc2aa75a27e90d02e) Leave the model reader pair out whole when the pruner is off, as main did |
 | tested | `origin/main` on the developer's Mac (commit status `nightly/dev-mac`) |
-| started | 2026-10-12 02:30 +0800 |
+| started | 2026-10-14 02:30 +0800 |
 | soak (`gate-m34-soak.sh`) | skipped: it runs on Sundays |
 | integration | FAILED (exit 1) in 4 min |
-| gates | FAILED (exit 1) in 32 min: 26 GREEN, 31 RED, 1 SKIP |
+| gates | FAILED (exit 1) in 30 min: 31 GREEN, 26 RED, 1 SKIP |
 
 ## Integration: `python3 tools/dev.py integration`
 
@@ -78,26 +78,20 @@ Did not execute (no results): `transferTest`
 - `gate-m0.sh` RED (exit=1)
 - `gate-m2.sh` RED (exit=1)
 - `gate-m2b.sh` RED (exit=1)
-- `gate-m3.sh` RED (exit=1)
 - `gate-m4.sh` RED (exit=1)
-- `gate-m4-canary.sh` RED (exit=1)
 - `gate-m8-packmeta.sh` RED (exit=1)
 - `gate-m9-client.sh` RED (exit=1)
 - `gate-m10-overlay.sh` RED (exit=1)
 - `gate-m12-multiplayer.sh` RED (exit=1)
 - `gate-m13-anticheat.sh` RED (exit=1)
 - `gate-m14-fabric-server.sh` RED (exit=1)
-- `gate-m15-forge-network.sh` RED (exit=1)
 - `gate-m17-installer.sh` RED (exit=1)
-- `gate-m18-presence.sh` RED (exit=1)
 - `gate-m19-nesteddupe.sh` RED (exit=1)
 - `gate-m22-exitswap.sh` RED (exit=1)
 - `gate-m23-elytra.sh` RED (exit=1)
-- `gate-m24-brokenmod.sh` RED (exit=1)
 - `gate-m24b-badmetadata.sh` RED (exit=1)
 - `gate-m27-frame.sh` RED (exit=1)
 - `gate-m29-forgecaps.sh` RED (exit=1)
-- `gate-m30-attribution.sh` RED (exit=1)
 - `gate-m32-savedrop.sh` RED (exit=1)
 - `gate-m33-transfer.sh` RED (exit=1)
 - `gate-m34-soak.sh` SKIP (explicit --skip)
@@ -107,6 +101,7 @@ Did not execute (no results): `transferTest`
 - `gate-m45-everyday-actions.sh` RED (exit=1)
 - `gate-m52-hopper-fabric-storage.sh` RED (exit=1)
 - `gate-m54-carry.sh` RED (exit=3)
+- `gate-m55-creative-search.sh` RED (exit=1)
 
 <details><summary>All 58 RESULT lines</summary>
 
@@ -115,9 +110,9 @@ RESULT gate-m0.sh RED (exit=1)
 RESULT gate-m1.sh GREEN (exit=0)
 RESULT gate-m2.sh RED (exit=1)
 RESULT gate-m2b.sh RED (exit=1)
-RESULT gate-m3.sh RED (exit=1)
+RESULT gate-m3.sh GREEN (exit=0)
 RESULT gate-m4.sh RED (exit=1)
-RESULT gate-m4-canary.sh RED (exit=1)
+RESULT gate-m4-canary.sh GREEN (exit=0)
 RESULT gate-m7-neo.sh GREEN (exit=0)
 RESULT gate-m8-packmeta.sh RED (exit=1)
 RESULT gate-m9-client.sh RED (exit=1)
@@ -126,16 +121,16 @@ RESULT gate-m11-serverconfig.sh GREEN (exit=0)
 RESULT gate-m12-multiplayer.sh RED (exit=1)
 RESULT gate-m13-anticheat.sh RED (exit=1)
 RESULT gate-m14-fabric-server.sh RED (exit=1)
-RESULT gate-m15-forge-network.sh RED (exit=1)
+RESULT gate-m15-forge-network.sh GREEN (exit=0)
 RESULT gate-m16-forge-handshake.sh GREEN (exit=0)
 RESULT gate-m17-installer.sh RED (exit=1)
-RESULT gate-m18-presence.sh RED (exit=1)
+RESULT gate-m18-presence.sh GREEN (exit=0)
 RESULT gate-m19-nesteddupe.sh RED (exit=1)
 RESULT gate-m20-depdialog.sh GREEN (exit=0)
 RESULT gate-m21-forgesetup.sh GREEN (exit=0)
 RESULT gate-m22-exitswap.sh RED (exit=1)
 RESULT gate-m23-elytra.sh RED (exit=1)
-RESULT gate-m24-brokenmod.sh RED (exit=1)
+RESULT gate-m24-brokenmod.sh GREEN (exit=0)
 RESULT gate-m24b-badmetadata.sh RED (exit=1)
 RESULT gate-m24c-disabled.sh GREEN (exit=0)
 RESULT gate-m25-worldgen.sh GREEN (exit=0)
@@ -143,7 +138,7 @@ RESULT gate-m26-forgeclient.sh GREEN (exit=0)
 RESULT gate-m27-frame.sh RED (exit=1)
 RESULT gate-m28-forgeconfig.sh GREEN (exit=0)
 RESULT gate-m29-forgecaps.sh RED (exit=1)
-RESULT gate-m30-attribution.sh RED (exit=1)
+RESULT gate-m30-attribution.sh GREEN (exit=0)
 RESULT gate-m31-vanilla-parity.sh GREEN (exit=0)
 RESULT gate-m32-savedrop.sh RED (exit=1)
 RESULT gate-m33-transfer.sh RED (exit=1)
@@ -168,7 +163,7 @@ RESULT gate-m51-tooltips.sh GREEN (exit=0)
 RESULT gate-m52-hopper-fabric-storage.sh RED (exit=1)
 RESULT gate-m53-widened-new.sh GREEN (exit=0)
 RESULT gate-m54-carry.sh RED (exit=3)
-RESULT gate-m55-creative-search.sh GREEN (exit=0)
+RESULT gate-m55-creative-search.sh RED (exit=1)
 ```
 
 </details>
