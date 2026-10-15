@@ -310,6 +310,9 @@ public final class ForbricMixinService
 		// …and a single-point injector compiled with an array-valued `at` (another Mixin fork's shape) is given the
 		// shape this Mixin declares, before MixinExtras' pre-apply transformer casts it.
 		MixinAtShape.normalise(node);
+		// …and an expression definition naming a method that the class now references through the kernel's thunk names
+		// the thunk too, so a method-reference expression (this::m) still finds the reference.
+		MixinExpressionThunks.adapt(node, this::mergedBaseNodeWithCode);
 		MixinCarrierCallbackAdapters.adapt(node, this::mergedBaseGameCode);
 		MixinBlockQueryAdapters.adapt(node, this::mergedBaseNodeWithCode);
 		MixinBlockInteractionAdapters.adapt(node, this::mergedBaseNodeWithCode);
