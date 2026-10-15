@@ -307,6 +307,44 @@ class MixinStubRebindTest {
 	}
 
 	/**
+	 * How Mixin sizes each frame between a by-type {@code @Local}'s last access and the anchor decides whether it still
+	 * holds it there: an {@code APPEND} frame (a loop head adding its index) keeps every local above it, a {@code CHOP}
+	 * frame is sized as removing at least the method's arguments' worth. C2ME's watchdog report reads the dump's
+	 * {@code StringBuilder} by type at a call inside the thread loop: natively and on the merged body the builder was
+	 * stored before the loop and is held through its head, so the handler moves to the body with the rest of its mixin.
+	 */
+	@Test void aByTypeLocalHeldThroughALoopHeadIsDecidedAndOneAChopMayDropIsNot() throws Exception {
+		ClassNode shapes = new ClassNode();
+		try (java.io.InputStream in = LoopLocals.class.getResourceAsStream("MixinStubRebindTest$LoopLocals.class")) {
+			new ClassReader(in).accept(shapes, 0);
+		}
+		List<AnnotationNode> yield = List.of(at("INVOKE", "target", "Ljava/lang/Thread;yield()V"));
+		Type list = Type.getType(List.class);
+		java.util.Map<String, Boolean> decided = new java.util.TreeMap<>();
+		java.util.Map<String, java.util.Set<Integer>> frames = new java.util.TreeMap<>();
+		for (MethodNode shape : shapes.methods) {
+			if (shape.name.startsWith("<")) continue;
+			decided.put(shape.name, MixinStubRebind.theOnlyLocalOfItsType(shapes, shape, list, yield));
+			java.util.Set<Integer> types = new java.util.TreeSet<>();
+			for (var insn : shape.instructions) if (insn instanceof org.objectweb.asm.tree.FrameNode frame) types.add(frame.type);
+			frames.put(shape.name, types);
+		}
+		assertTrue(frames.get("insideALoop").contains(Opcodes.F_APPEND), "javac writes the loop head as an APPEND frame: " + frames);
+		assertTrue(frames.get("afterALoopWithArguments").contains(Opcodes.F_CHOP), "and the loop's exit as a CHOP frame: " + frames);
+		assertTrue(frames.get("insideAnArrayLoop").contains(Opcodes.F_FULL), "an array loop's head is a FULL frame listing the List: " + frames);
+		assertEquals(java.util.Map.of("insideALoop", true, "insideAnArrayLoop", true, "afterALoopWithArguments", false, "afterALoopReadAgain", true), decided);
+	}
+
+	/** javac's loop shapes around a {@code Thread.yield()} anchor, for a by-type {@code @Local List}. */
+	@SuppressWarnings({"rawtypes", "unused"})
+	private static final class LoopLocals {
+		static void insideALoop(int n) { List y = List.of(); for (int i = 0; i < n; i++) { Thread.yield(); } y.size(); }
+		static void insideAnArrayLoop(Object[] all) { List y = List.of(); for (Object o : all) { Thread.yield(); o.hashCode(); } y.size(); }
+		static void afterALoopWithArguments(Object a, Object b, Object c) { List y = List.of(); for (int i = 0; i < 3; i++) { a.hashCode(); } Thread.yield(); y.size(); }
+		static void afterALoopReadAgain(Object a, Object b, Object c) { List y = List.of(); for (int i = 0; i < 3; i++) { a.hashCode(); } y.size(); Thread.yield(); y.size(); }
+	}
+
+	/**
 	 * Mixin's walk can lose a live slot at a frame: right after Player.doSweepAttack's entity loop it holds no
 	 * ServerLevel, though {@code serverLevel} is live and the table names it, so MixinExtras finds none at that
 	 * getYRot and fails the injection. In the loop, and past the next read of it, Mixin holds it again.

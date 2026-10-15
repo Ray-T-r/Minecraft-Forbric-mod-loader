@@ -1122,12 +1122,16 @@ public final class MixinStubRebind {
 	}
 
 	/**
-	 * Whether {@code slot} is loaded or stored between the last frame before {@code anchor} and it. Mixin's walk can
-	 * lose a slot at a frame: it sizes a {@code CHOP} or {@code APPEND} frame as at least the method's arguments, so
-	 * the {@code CHOP} a loop's exit leaves drops every local past them (Player.doSweepAttack's {@code serverLevel}
-	 * right after its entity loop), and MixinExtras then finds none. Only an access after it is sure to bring the slot
-	 * back. A frame stands wherever one must — a jump, switch or handler target — so this reads the same with frames
-	 * skipped (MixinFit's read) as with them. An argument's slot is never lost: no frame is sized below them.
+	 * Whether Mixin's walk down the method still holds {@code slot} at {@code anchor}: some access to it comes before the
+	 * anchor, and no frame in between can drop it. Mixin sizes each frame by the type the class file gives it (its
+	 * {@code ClassInfo.FrameData}): a {@code SAME} frame keeps the locals, an {@code APPEND} one adds to them, a
+	 * {@code FULL} one lists them — but a {@code CHOP} is sized as removing at least the method's arguments' worth, so
+	 * the {@code CHOP} a loop's exit leaves can drop every local past them (Player.doSweepAttack's {@code serverLevel}
+	 * right after its entity loop), and MixinExtras then finds none; only an access after it is sure to bring the slot
+	 * back. A frame stands wherever one must — a jump, switch or handler target — so a target whose frame was not read
+	 * (MixinFit's read skips frames) is a frame of unknown type, which may drop it. An argument's slot is never lost: no
+	 * frame is sized below them. C2ME's watchdog report takes the dump's {@code StringBuilder} that way inside the thread
+	 * loop, whose head is an {@code APPEND} frame: Mixin keeps the builder there, natively and on the merged body.
 	 */
 	private static boolean loadedOrStoredSinceAFrame(MethodNode method, int slot, AbstractInsnNode anchor) {
 		if (slot < (Type.getArgumentsAndReturnSizes(method.desc) >> 2) - ((method.access & Opcodes.ACC_STATIC) != 0 ? 1 : 0)) return true;
@@ -1140,9 +1144,34 @@ public final class MixinStubRebind {
 		if (method.tryCatchBlocks != null) for (var block : method.tryCatchBlocks) targets.add(block.handler);
 		for (AbstractInsnNode insn = anchor.getPrevious(); insn != null; insn = insn.getPrevious()) {
 			if (insn instanceof VarInsnNode access && access.var == slot) return true;
-			if (insn instanceof org.objectweb.asm.tree.FrameNode || targets.contains(insn)) return false;
+			if (insn instanceof org.objectweb.asm.tree.FrameNode frame) {
+				if (!keeps(frame, slot)) return false;
+			} else if (insn instanceof org.objectweb.asm.tree.LabelNode label && targets.contains(label)) {
+				// Its frame follows it, and was judged on the way here; a target without one is a frame of unknown type.
+				AbstractInsnNode next = label.getNext();
+				while (next instanceof org.objectweb.asm.tree.LabelNode || next instanceof org.objectweb.asm.tree.LineNumberNode) next = next.getNext();
+				if (!(next instanceof org.objectweb.asm.tree.FrameNode)) return false;
+			}
 		}
 		return false;
+	}
+
+	/** Whether a frame of this type, as Mixin sizes it, keeps a reference local in {@code slot} that was held before it. */
+	private static boolean keeps(org.objectweb.asm.tree.FrameNode frame, int slot) {
+		switch (frame.type) {
+			case Opcodes.F_SAME, Opcodes.F_SAME1, Opcodes.F_APPEND:
+				return true;
+			case Opcodes.F_FULL, Opcodes.F_NEW: {
+				int at = 0;
+				for (Object type : frame.local == null ? List.<Object>of() : frame.local) {
+					if (at == slot) return type instanceof String;
+					at += type == Opcodes.LONG || type == Opcodes.DOUBLE ? 2 : 1;
+				}
+				return false;
+			}
+			default:
+				return false;
+		}
 	}
 
 	/**
