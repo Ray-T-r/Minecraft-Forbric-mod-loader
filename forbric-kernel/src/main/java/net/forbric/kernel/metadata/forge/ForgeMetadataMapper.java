@@ -76,6 +76,20 @@ public final class ForgeMetadataMapper {
 	public static List<DiscoveredMod> toDiscoveredMods(ForgeModsToml toml, String jarVersion, String source,
 			List<String> accessTransformers, List<String> extraMixinConfigs,
 			java.util.function.Predicate<String> mixinConfigPresent, Ecosystem ecosystem) {
+		return toDiscoveredMods(toml, jarVersion, source, accessTransformers, extraMixinConfigs, mixinConfigPresent, config -> false,
+				ecosystem);
+	}
+
+	/**
+	 * @param carriedByNested tests whether a declared config the jar lacks is carried by a jar it nests: a wrapper jar
+	 *                        (sodium-neoforge's) declares the same mod as the jar it ships in {@code META-INF/jarjar},
+	 *                        whose own manifest declares the configs it carries. Dropped from the wrapper either way;
+	 *                        only an absence nothing accounts for is warned about.
+	 */
+	public static List<DiscoveredMod> toDiscoveredMods(ForgeModsToml toml, String jarVersion, String source,
+			List<String> accessTransformers, List<String> extraMixinConfigs,
+			java.util.function.Predicate<String> mixinConfigPresent, java.util.function.Predicate<String> carriedByNested,
+			Ecosystem ecosystem) {
 		List<String> declared = new ArrayList<>(toml.getMixinConfigs());
 		for (String config : extraMixinConfigs) {
 			if (!declared.contains(config)) declared.add(config);
@@ -85,6 +99,9 @@ public final class ForgeMetadataMapper {
 		for (String config : declared) {
 			if (mixinConfigPresent.test(config)) {
 				mixinConfigs.add(config);
+			} else if (carriedByNested.test(config)) {
+				ForbricLog.debug("[Forbric] mixin config '%s' declared by %s is carried by a jar it nests, which declares it itself",
+						config, source);
 			} else {
 				ForbricLog.warn("[Forbric] dropping declared mixin config '%s' - not present in %s%n", config, source);
 			}

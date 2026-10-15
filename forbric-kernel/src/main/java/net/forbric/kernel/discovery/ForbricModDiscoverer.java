@@ -210,8 +210,26 @@ public final class ForbricModDiscoverer {
 					+ "is a MinecraftForge convention; NeoForge declares mixins in [[mixins]]", attr, ecosystem, source);
 		}
 
+		// Read only when a declared config is missing: most jars carry every config they declare.
+		java.util.Set<String>[] nested = new java.util.Set[1];
 		return ForgeMetadataMapper.toDiscoveredMods(toml, jarVersion, source, accessTransformers,
-				manifestMixins, config -> jar.getEntry(config) != null, ecosystem);
+				manifestMixins, config -> jar.getEntry(config) != null,
+				config -> (nested[0] == null ? nested[0] = nestedEntries(jar) : nested[0]).contains(config), ecosystem);
+	}
+
+	/** The entry names of the jars a jar nests in {@code META-INF/jarjar/}, read without extracting them. */
+	private static java.util.Set<String> nestedEntries(JarFile jar) {
+		java.util.Set<String> names = new java.util.HashSet<>();
+		for (var entries = jar.entries(); entries.hasMoreElements(); ) {
+			ZipEntry entry = entries.nextElement();
+			if (!entry.getName().startsWith("META-INF/jarjar/") || !entry.getName().endsWith(".jar")) continue;
+			try (java.util.zip.ZipInputStream in = new java.util.zip.ZipInputStream(jar.getInputStream(entry))) {
+				for (ZipEntry inner; (inner = in.getNextEntry()) != null; ) names.add(inner.getName());
+			} catch (IOException unreadable) {
+				// A nested jar that cannot be read accounts for nothing; its configs are warned about as before.
+			}
+		}
+		return names;
 	}
 
 	private static String manifestVersion(Manifest manifest) {

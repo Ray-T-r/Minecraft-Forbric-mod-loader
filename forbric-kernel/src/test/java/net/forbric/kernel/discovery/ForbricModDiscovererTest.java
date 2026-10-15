@@ -209,6 +209,33 @@ class ForbricModDiscovererTest {
 	}
 
 	/**
+	 * A wrapper jar (sodium-neoforge's) declares the same mod as the jar it nests in META-INF/jarjar, whose own manifest
+	 * declares the configs it carries. The wrapper lacks them, and drops them, without a word: they are accounted for.
+	 * Every boot with such a mod used to print a "dropping declared mixin config" WARN per config while all of them applied.
+	 */
+	@org.junit.jupiter.api.Test
+	void aConfigTheWrapperDeclaresAndItsNestedJarCarriesIsDroppedSilently(@TempDir Path dir) throws Exception {
+		String toml = "modLoader=\"javafml\"\nloaderVersion=\"[4,)\"\nlicense=\"MIT\"\n\n[[mods]]\nmodId=\"wrapped\"\nversion=\"1.0\"\n\n"
+				+ "[[mixins]]\nconfig=\"wrapped.mixins.json\"\n\n[[mixins]]\nconfig=\"nowhere.mixins.json\"\n";
+		Path inner = writeJar(dir, "inner.jar", Map.of("META-INF/neoforge.mods.toml", toml, "wrapped.mixins.json", "{}"), null);
+		Path outer = dir.resolve("wrapper.jar");
+		try (JarOutputStream jos = new JarOutputStream(Files.newOutputStream(outer))) {
+			jos.putNextEntry(new ZipEntry("META-INF/neoforge.mods.toml"));
+			jos.write(toml.getBytes(StandardCharsets.UTF_8));
+			jos.closeEntry();
+			jos.putNextEntry(new ZipEntry("META-INF/jarjar/inner.jar"));
+			jos.write(Files.readAllBytes(inner));
+			jos.closeEntry();
+		}
+		String[] out = new String[1];
+		DiscoveredMod wrapper = net.forbric.kernel.GateLogContract.capture(() -> byId(new ForbricModDiscoverer().discoverJar(outer), "wrapped"), out);
+		assertNotNull(wrapper);
+		assertTrue(wrapper.getMixinConfigs().isEmpty(), "neither config is the wrapper's to register: " + wrapper.getMixinConfigs());
+		assertFalse(out[0].contains("'wrapped.mixins.json'"), "the nested jar carries it: " + out[0]);
+		assertTrue(out[0].contains("dropping declared mixin config 'nowhere.mixins.json'"), "an absence nothing accounts for still warns: " + out[0]);
+	}
+
+	/**
 	 * Seven passes ask about the same jar during one boot — discovery, the dependency audit, the seeder, the
 	 * merge report, the enum-extension loader, duplicate arbitration and the boot list. Each ask used to open the
 	 * zip, re-read every metadata file and re-run the parse, and re-emit the warnings with it: one jar's
