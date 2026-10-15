@@ -310,7 +310,7 @@ public final class ForbricMixinService
 		// …and a single-point injector compiled with an array-valued `at` (another Mixin fork's shape) is given the
 		// shape this Mixin declares, before MixinExtras' pre-apply transformer casts it.
 		MixinAtShape.normalise(node);
-		MixinCarrierCallbackAdapters.adapt(node, this::mergedBaseNodeWithCode);
+		MixinCarrierCallbackAdapters.adapt(node, this::mergedBaseGameCode);
 		MixinBlockQueryAdapters.adapt(node, this::mergedBaseNodeWithCode);
 		MixinBlockInteractionAdapters.adapt(node, this::mergedBaseNodeWithCode);
 		MixinBreathingCallbackAdapter.adapt(node, this::mergedBaseNodeWithCode);
@@ -398,7 +398,7 @@ public final class ForbricMixinService
 		MixinSpriteLoaderCallbackAdapter.adapt(node, this::mergedBaseNodeWithCode);
 		FabricFluidFlowMixinAdapter.adapt(node, this::mergedBaseNodeWithCode);
 		MixinFluidInteractionAdapter.adapt(node, this::mergedBaseNodeWithCode);
-		MixinKeyActionAdapter.adapt(node, this::mergedBaseNodeWithCode);
+		MixinKeyActionAdapter.adapt(node, this::mergedBaseGameCode);
 		MixinStructurePlacementAdapter.adapt(node, this::mergedBaseNodeWithCode);
 		FabricSectionCompilerMixinAdapter.adapt(node, this::mergedBaseNodeWithCode);
 		FabricBlockStateCodecMixinAdapter.adapt(node, this::mergedBaseNodeWithCode);
@@ -420,7 +420,7 @@ public final class ForbricMixinService
 		// …and a RETURN ordinal counted on the native body names the return of the merged body that is the same way out
 		// (the last stays the last; an early one is the one the same test decides), when the merge added or dropped exits.
 		// After the rebind: it reads the injector's final target. Before the native tail: that one reads a TAIL as written.
-		MixinReturnOrdinals.adapt(node, this::mergedBaseNodeWithCode);
+		MixinReturnOrdinals.adapt(node, this::mergedBaseGameCode);
 		// …and a NeoForge or MinecraftForge mod's TAIL on a method whose early returns the kernel restored keeps every
 		// return its own loader's folded body sent there. After the rebind: it reads the injector's final target.
 		MixinNativeTail.adapt(node, this::mergedBaseNodeWithCode);
@@ -466,7 +466,6 @@ public final class ForbricMixinService
 		try {
 			byte[] bytes = loader().getPreMixinClassBytes(internalName.replace('/', '.'));
 			if (bytes == null) return null;
-			if ((flags & ClassReader.SKIP_CODE) == 0) return codeView(bytes);
 			ClassNode target = new ClassNode();
 			new ClassReader(bytes).accept(target, flags);
 			return target;
@@ -476,8 +475,22 @@ public final class ForbricMixinService
 	}
 
 	/**
-	 * A target's pre-mixin bytes, with code, as the adapters read them: the game's own instructions, without the delivery
-	 * bookkeeping the kernel's stand-down writes around the hook calls of a method that calls both families' hooks
+	 * The same node WITH instructions, as the game's own code reads: {@link #codeView}. For the adapters that only read a
+	 * target to decide where a guest's point lands — a call occurrence, a return ordinal, a local's slot. Never for one
+	 * that records a fingerprint or a contract of a target method to compare with the bytes later defined: those are the
+	 * instrumented bytes, so it reads those ({@link #mergedBaseNodeWithCode}).
+	 */
+	private ClassNode mergedBaseGameCode(String internalName) {
+		try {
+			return codeView(loader().getPreMixinClassBytes(internalName.replace('/', '.')));
+		} catch (Throwable absent) {
+			return null;
+		}
+	}
+
+	/**
+	 * A target's pre-mixin bytes, with code, as the game's own instructions: without the delivery bookkeeping the kernel's
+	 * stand-down writes around the hook calls of a method that calls both families' hooks
 	 * ({@link net.forbric.kernel.transform.DeliveryBookkeeping}). The bookkeeping never moves, removes or repeats a game
 	 * instruction, so every point decided on this view — a call and its occurrence, a return and its ordinal, a local's
 	 * slot — is the same point in the bytes Mixin applies to; read with it in the way, the run in front of a hook, the
