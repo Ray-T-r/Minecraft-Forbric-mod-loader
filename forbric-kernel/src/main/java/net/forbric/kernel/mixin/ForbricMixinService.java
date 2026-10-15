@@ -329,6 +329,9 @@ public final class ForbricMixinService
 		// …and a redirect of a vanilla call the carrier replaced at the same place, whose handler only conditions it,
 		// forwards the carrier's call there instead.
 		ReplacedCallRedirects.adapt(node, this::mergedBaseNodeWithCode);
+		// …and a locals capture reads, as @Locals, the native locals where the merged body keeps them (before the points are
+		// renumbered below: it reads the point as the native body counts it).
+		MixinCapturedLocals.adapt(node, this::mergedBaseGameCode);
 		// …and an ordinal counted on a vanilla call the carrier makes fewer times names the occurrence it kept.
 		ThinnedCallOrdinals.adapt(node, this::mergedBaseNodeWithCode);
 		// …and an unnumbered call point counts only the native occurrences where the carrier added more of that call.
