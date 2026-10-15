@@ -121,7 +121,9 @@ class PluginAddedMixinRetargetWeaveTest {
 		fixture = NativeWeaveReferences.with(work, current, Map.of(TARGET, NativeWeaveReferences.classes(nativeFixture).get(TARGET)));
 		nativeRun = run("native", nativeFixture, Map.of());
 		moved = run("moved", fixture, Map.of());
-		off = run("off", fixture, Map.of(KernelGuestMixinAdapter.LATE_PROPERTY, "off"));
+		// MixinBuilderStubRebind would move this wrap on its own (its own weave test covers that): off too, so the control
+		// shows the plugin-added mixin unjudged.
+		off = run("off", fixture, Map.of(KernelGuestMixinAdapter.LATE_PROPERTY, "off", net.forbric.kernel.mixin.MixinBuilderStubRebind.PROPERTY, "off"));
 	}
 
 	@Test void everyQuadIsWrappedAsItIsNatively() throws Exception {
