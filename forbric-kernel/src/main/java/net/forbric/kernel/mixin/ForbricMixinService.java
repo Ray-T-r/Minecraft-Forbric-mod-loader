@@ -432,6 +432,9 @@ public final class ForbricMixinService
 		// runs without passing through that method, edges the renamed body (ALLOW_LOAD on players' addEntityWithoutEvent).
 		MixinRenamedBodyEdges.adapt(node, this::mergedBaseNodeWithCode);
 		MixinStubRebind.adapt(node, this::mergedBaseNodeWithCode);
+		// …and an injector anchored in a body a carrier moved behind a builder stub (new builder, hand it over, build) moves
+		// to the overload that makes its calls.
+		MixinBuilderStubRebind.adapt(node, this::mergedBaseGameCode);
 		// …and a RETURN ordinal counted on the native body names the return of the merged body that is the same way out
 		// (the last stays the last; an early one is the one the same test decides), when the merge added or dropped exits.
 		// After the rebind: it reads the injector's final target. Before the native tail: that one reads a TAIL as written.
