@@ -98,6 +98,10 @@ class WeaveCoverageCensusTest {
 			Map.entry("ReplacedCallRedirects", Switch.own("forbric.replacedCallRedirects")), // ReplacedCallRedirectsWeaveTest
 			Map.entry("MixinTwinRebind", Switch.own("forbric.mixinTwinRebind")), // MixinTwinRebindWeaveTest
 			Map.entry("ThinnedCallOrdinals", Switch.own("forbric.thinnedCallOrdinals")), // ThinnedCallOrdinalsWeaveTest
+			Map.entry("AddedCallOccurrences", Switch.own("forbric.addedCallOccurrences")), // AddedCallOccurrencesWeaveTest
+			Map.entry("MixinExpressionThunks", Switch.own("forbric.expressionThunks")), // MixinExpressionThunksWeaveTest
+			Map.entry("MixinRenamedBodyEdges", Switch.own("forbric.renamedBodyEdges")), // MixinRenamedBodyEdgesWeaveTest
+			Map.entry("MixinReturnOrdinals", Switch.own("forbric.returnOrdinals")), // MixinReturnOrdinalsWeaveTest
 			Map.entry("MixinGuiItemCaptureAdapter", Switch.own("forbric.guiItemCaptureAnchor")),
 			Map.entry("KernelClientHookMixinAnchors", Switch.own("forbric.clientHookMixinAnchors")),
 			Map.entry("MixinShearsRelay", Switch.own("forbric.shearsRelay")),

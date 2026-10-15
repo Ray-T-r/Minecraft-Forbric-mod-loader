@@ -62,7 +62,9 @@ class KeyActionExitsWeaveTest {
 		fixture = WeaveHarness.fixture(work, "keyexits", game, withNativeReference(work, nativeFixture, TARGET, CONFIG, SOURCES.resolve(CONFIG)));
 		nativeRun = run("native", nativeFixture, Map.of());
 		adapted = run("adapted", fixture, Map.of());
-		off = run("adapter-off", fixture, Map.of(MixinKeyActionAdapter.PROPERTY, "off"));
+		// MixinReturnOrdinals would re-count the final RETURN by its way out on its own: off too, or the control shows
+		// what one adapter without the other does, not the ordinals as compiled.
+		off = run("adapter-off", fixture, Map.of(MixinKeyActionAdapter.PROPERTY, "off", net.forbric.kernel.mixin.MixinReturnOrdinals.PROPERTY, "off"));
 	}
 
 	@Test void theGameHearsEachActionWhereTheNativeBodyDoes() throws Exception {

@@ -95,10 +95,8 @@ class MixinFitLivenessCensusStagedTest {
 	 */
 	private static final Set<String> EXPECTED = Set.of(
 			"apoli.mixins.json:legacy.hud_power.HudMixin FIT -> PARTIAL",
-			"architectury.mixins.json:MixinServerExplosion PARTIAL -> PARTIAL",
 			"balm.fabric.mixins.json:FabricCropBlockMixin PARTIAL -> PARTIAL",
 			"bettermounthud.mixins.json:HudMixin FIT -> FIT",
-			"configapi-fabric.mixins.json:event.ServerExplosionMixin PARTIAL -> PARTIAL",
 			"fabric-block-api-v1.mixins.json:LivingEntityMixin FIT -> PARTIAL",
 			"fabric-renderer-api-v1.mixins.json:block.particle.ScreenEffectRendererMixin FIT -> PARTIAL",
 			"fabric-rendering-v1.mixins.json:HudMixin PARTIAL -> PARTIAL",
@@ -108,8 +106,12 @@ class MixinFitLivenessCensusStagedTest {
 			"puzzleslib.fabric.mixins.json:client.EffectsInInventoryFabricMixin PARTIAL -> PARTIAL",
 			"sodium-fabric.mixins.json:features.render.model.ItemModelGeneratorMixin FIT -> PARTIAL",
 			"trinkets.fabric.mixins.json:ItemStackMixin FIT -> PARTIAL");
-	/** The same, counted per pack: one mixin changes in every pack that carries it. */
-	private static final int EXPECTED_IN_PACKS = 30;
+	/**
+	 * The same, counted per pack: one mixin changes in every pack that carries it. Architectury's and Forge Config API
+	 * Port's explosion hooks left the list (30 → 28): with their by-type {@code @Local} pinned beside the arguments the
+	 * carrier added, they move off the dead {@code hurtEntities()} onto NeoForge's overload, so liveness has nothing to add.
+	 */
+	private static final int EXPECTED_IN_PACKS = 28;
 
 	@AfterEach
 	void reset() {
