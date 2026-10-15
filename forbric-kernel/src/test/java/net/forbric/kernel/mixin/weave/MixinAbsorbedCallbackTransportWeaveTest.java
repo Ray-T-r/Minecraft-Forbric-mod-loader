@@ -125,6 +125,39 @@ class MixinAbsorbedCallbackTransportWeaveTest implements Opcodes {
 
 
  }
+ /**
+  * A transported handler whose body creates a lambda, or calls one of its own mixin's helpers: Mixin merges both into
+  * the host under its own names (a lambda becomes md...$mod$lambda$...$n), and the witness that the handler reached the
+  * host unchanged must compare against those names, or the callback is declined at every call (PuzzlesLib's Fabric
+  * fog-colour callback absorbed into NeoForge's getFogColor: FOG_COLOR never fired).
+  */
+ @Test void aTransportedHandlerWithALambdaAndAHelperOfItsOwnStillRuns()throws Exception {
+  Map<String,String> code=new LinkedHashMap<>();
+  code.put("audit.SeamProbe","""
+   package audit;public class SeamProbe{public static java.util.List<String>log=new java.util.ArrayList<>();public void run(){
+    for(int value:new int[]{1,2}){log.clear();unknown.Processor.process(new unknown.Box(),2L,value);System.out.println("[Seam] "+value+" "+log);}}}
+   """);
+  code.put("unknown.Box","""
+   package unknown;public class Box{public int value;public void set(long seed,int value){audit.SeamProbe.log.add("set:"+seed+":"+value);this.value=value;if(seed>0)Carrier.apply(this,0L,value+10);}public void post(){audit.SeamProbe.log.add("event:"+value);}}
+   """);
+  code.put("unknown.Carrier","package unknown;public class Carrier{public static void apply(Box box,long seed,int value){box.set(seed,value);box.post();}}");
+  code.put("unknown.Processor","package unknown;public class Processor{public static void process(Box box,long seed,int value){if(value==-1)return;Carrier.apply(box,seed,value);}}");
+  code.put("guest.Subscriber","""
+   package guest;import unknown.*;@org.spongepowered.asm.mixin.Mixin(Processor.class)public class Subscriber{
+    @org.spongepowered.asm.mixin.injection.Inject(method="process",at=@org.spongepowered.asm.mixin.injection.At(value="INVOKE",target="Lunknown/Box;set(JI)V",shift=org.spongepowered.asm.mixin.injection.At.Shift.AFTER))
+    private static void after(Box box,long seed,int value,org.spongepowered.asm.mixin.injection.callback.CallbackInfo ci){
+     java.util.function.IntUnaryOperator add=v->v+100;audit.SeamProbe.log.add("callback:"+seed+":"+value+":"+box.value);box.value=add.applyAsInt(box.value);mark(box);}
+    @org.spongepowered.asm.mixin.Unique private static void mark(Box box){audit.SeamProbe.log.add("mark:"+box.value);}}
+   """);
+  List<Path> files=new ArrayList<>();for(var entry:code.entrySet()){Path file=work.resolve("src").resolve(entry.getKey().replace('.','/')+".java");Files.createDirectories(file.getParent());Files.writeString(file,entry.getValue());files.add(file);}
+  byte[] source=source();Path binary=work.resolve("source.bin"),index=work.resolve("index.tsv"),config=work.resolve("seam.mixins.json");Files.write(binary,source);Files.writeString(index,"# forbric-native-reference-v1\nunknown/Processor\t"+HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256").digest(source))+"\n");Files.writeString(config,"{\"required\":true,\"compatibilityLevel\":\"JAVA_25\",\"package\":\"guest\",\"mixins\":[\"Subscriber\"],\"injectors\":{\"defaultRequire\":1}}");
+  Path fixture=WeaveHarness.fixture(work,"lambda-handler",files,Map.of("seam.mixins.json",config,"META-INF/forbric/native-reference/FABRIC/index.tsv",index,"META-INF/forbric/native-reference/FABRIC/unknown/Processor.class.bin",binary),List.of("-g"));
+  var result=WeaveHarness.run(work,"lambda",fixture,List.of(new WeaveHarness.Config("seam.mixins.json","unknown-callback",Ecosystem.FABRIC)),List.of(),EnvType.SERVER,"audit.SeamProbe","run",Map.of());
+  assertTrue(result.printed("[Seam] 1 [set:2:1, set:0:11, event:11, callback:2:1:11, mark:111, event:111]"),result.describe());
+  assertTrue(result.printed("[Seam] 2 [set:2:2, set:0:12, event:12, callback:2:2:12, mark:112, event:112]"),result.describe());
+  assertNotDeclined(result);
+  WeaveHarness.assertWovenAndVerified(result,"unknown/Processor",fixture);
+ }
  /** One warning and one CONFIRMED, not-required finding for the transported handler's site, naming what broke it. */
  private static void assertDeclinedOnce(WeaveHarness.Result run,String breaker){
   List<String> warnings=run.output().lines().filter(line->line.contains("source callback skipped at")).toList();

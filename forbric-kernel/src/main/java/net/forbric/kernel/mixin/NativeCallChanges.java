@@ -57,10 +57,19 @@ final class NativeCallChanges {
         return owner == null ? null : owner.methods.stream().filter(m -> (m.name + m.desc).equals(signature)).findFirst().orElse(null);
     }
     static List<Site> sites(ClassNode owner, MethodNode method) {
+        return sites(owner, method, false);
+    }
+    /**
+     * {@link #sites(ClassNode, MethodNode)}, with {@code opaqueJoins}: a value several paths produce (a local assigned
+     * on more than one branch) is the token of those producers instead of no expression, so a call whose operands carry
+     * one is still a site. The token is equal only to itself: the same producers, in the same method, are the same value.
+     * For a proof that only needs operands to be passed on unchanged, never for one that compares two bodies.
+     */
+    static List<Site> sites(ClassNode owner, MethodNode method, boolean opaqueJoins) {
         if (owner == null || method == null) return List.of();
         try {
             Origins origins = new Origins(); Frame<SourceValue>[] frames = new Analyzer<>(origins).analyze(owner.name, method);
-            Evidence evidence = new Evidence(method, frames, origins.parameters); Map<String, Integer> ordinals = new HashMap<>(); List<Site> result = new ArrayList<>();
+            Evidence evidence = new Evidence(method, frames, origins.parameters); evidence.opaqueJoins = opaqueJoins; Map<String, Integer> ordinals = new HashMap<>(); List<Site> result = new ArrayList<>();
             for (AbstractInsnNode i : method.instructions) if (i instanceof MethodInsnNode call) {
                 int ordinal = ordinals.merge(member(call), 1, Integer::sum) - 1;
                 List<Expr> operands = evidence.operands(call);
@@ -128,13 +137,14 @@ final class NativeCallChanges {
     private static final class Evidence {
         final MethodNode method; final Frame<SourceValue>[] frames; final Set<AbstractInsnNode> parameters;
         final Map<AbstractInsnNode, Expr> cache = new IdentityHashMap<>(); final Set<AbstractInsnNode> visiting = Collections.newSetFromMap(new IdentityHashMap<>());
+        boolean opaqueJoins;
         Evidence(MethodNode method, Frame<SourceValue>[] frames, Set<AbstractInsnNode> parameters) { this.method = method; this.frames = frames; this.parameters = parameters; }
         Expr value(SourceValue value) {
             if (value == null) return null;
             if (value.insns.size() == 1) return producer(value.insns.iterator().next());
             // A counted array traversal is identified by its birth, increment and tested bound, not its local slot.
             List<IincInsnNode> increments = value.insns.stream().filter(IincInsnNode.class::isInstance).map(IincInsnNode.class::cast).toList();
-            if (increments.size() != 1 || value.insns.size() != 2) return null;
+            if (increments.size() != 1 || value.insns.size() != 2) return opaqueJoins ? join(value) : null;
             IincInsnNode step = increments.getFirst(); AbstractInsnNode initial = value.insns.stream().filter(i -> i != step).findFirst().orElse(null);
             Expr beginning = initial == null ? null : producer(initial); if (beginning == null) return null;
             for (AbstractInsnNode instruction : method.instructions) if (instruction instanceof JumpInsnNode branch
@@ -152,7 +162,12 @@ final class NativeCallChanges {
                 Expr limit = backedge ? value(bound) : null;
                 if (limit != null) return new Expr("iteration", step.incr + ":" + branch.getOpcode() + ":" + left.insns.equals(value.insns), List.of(beginning, limit));
             }
-            return null;
+            return opaqueJoins ? join(value) : null;
+        }
+        /** The token of a value several instructions produce: their positions in the method, in order. */
+        Expr join(SourceValue value) {
+            int[] at = value.insns.stream().mapToInt(i -> method.instructions.indexOf(i)).sorted().toArray();
+            return new Expr("join", Arrays.toString(at));
         }
         Expr producer(AbstractInsnNode i) {
             if (cache.containsKey(i)) return cache.get(i); if (!visiting.add(i)) return null; Expr result = null;

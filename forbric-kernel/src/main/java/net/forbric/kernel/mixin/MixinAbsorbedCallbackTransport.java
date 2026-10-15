@@ -166,6 +166,7 @@ public final class MixinAbsorbedCallbackTransport implements Opcodes {
         for(Installed plan:plans){List<MethodContract> witnesses=new ArrayList<>();Map<String,String> renamed=new HashMap<>();
             List<MethodNode> expected=List.of(plan.handler,plan.bridge,plan.wrapper);boolean valid=true;
             for(MethodNode original:expected){List<MethodNode> found=node.methods.stream().filter(m->m.desc.equals(original.desc)&&m.name.contains(original.name)&&merged(m,plan.source)).toList();if(found.size()!=1||(found.getFirst().access&(ACC_STATIC|ACC_PRIVATE))!=(ACC_PRIVATE|(original.access&ACC_STATIC))){valid=false;break;}renamed.put(original.name,found.getFirst().name);}
+            if(valid)MergedSourceRenames.addReferenced(expected,plan.source,node,renamed,MixinAbsorbedCallbackTransport::merged);
             if(valid)for(MethodNode original:expected){MethodNode actual=node.methods.stream().filter(m->m.name.equals(renamed.get(original.name))&&m.desc.equals(original.desc)).findFirst().orElseThrow(), normalized=copy(original);normalize(normalized,plan.source,node.name,renamed);
                 if(!MixinInstructionFingerprint.hash(normalized).equals(MixinInstructionFingerprint.hash(actual))){valid=false;break;}witnesses.add(contract(node.name,actual));}
             if(valid)plan.host=List.copyOf(witnesses);

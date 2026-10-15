@@ -11,7 +11,7 @@ final class CallbackOperationProof implements Opcodes {
  private CallbackOperationProof(ClassNode owner,String helper,String helperMethod,Set<Wrapper> wrappers){this.owner=owner;this.helper=helper;this.helperMethod=helperMethod;this.wrappers=wrappers;}
  static List<MethodContract> prove(ClassNode owner,String hostMethod,String helper,String helperMethod,Set<Wrapper> wrappers){
   CallbackOperationProof proof=new CallbackOperationProof(owner,helper,helperMethod,wrappers);MethodNode caller=NativeCallChanges.method(owner,hostMethod);if(caller==null)return List.of();
-  List<NativeCallChanges.Site> roots=NativeCallChanges.sites(owner,caller).stream().filter(site->proof.wrapper(site.call())!=null).toList();if(roots.size()!=1)return List.of();var root=roots.getFirst();
+  List<NativeCallChanges.Site> roots=NativeCallChanges.sites(owner,caller,true).stream().filter(site->proof.wrapper(site.call())!=null).toList();if(roots.size()!=1)return List.of();var root=roots.getFirst();
   List<NativeCallChanges.Expr> host=NativeCallChanges.argumentValuesAt(owner,caller,root.call());if(host==null)return List.of();
   int count=Type.getArgumentTypes(helperMethod.substring(helperMethod.indexOf('('))).length,base=root.call().getOpcode()==INVOKESTATIC?0:1;
   if(root.operands().size()!=base+count+1+host.size()||!root.operands().subList(base+count+1,root.operands().size()).equals(host))return List.of();
