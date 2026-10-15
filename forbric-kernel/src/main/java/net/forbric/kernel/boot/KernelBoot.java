@@ -1137,8 +1137,8 @@ public final class KernelBoot {
 		// WHERE THE RACE ACTUALLY IS, because it is not where it looks: the transformer goes in inside
 		// KernelMixinBootstrap.init, but gotoPhase(INIT)/gotoPhase(DEFAULT) there does NOT prepare configs. Mixin
 		// prepares them, and constructs every IMixinConfigPlugin, on the FIRST class that passes through the
-		// transformer — which is KernelRuntimeClasses.verify(loader) below, not the init call. `initialize=false`
-		// is no help either: a class is transformed when it is DEFINED.
+		// transformer — the first class the boot defines after the init call below, not the init call itself.
+		// `initialize=false` is no help either: a class is transformed when it is DEFINED.
 		PassiveSeeder.seedNeoForgePaths(loader, gameDir);
 		// The mods dir is passed explicitly (not re-derived inside the seeder) because the LoadingModList seeded here
 		// must describe the SAME jars this boot decided to load — see discoverForgeFamilyModJars above, which walks
@@ -1196,13 +1196,6 @@ public final class KernelBoot {
 		// inside the seeder. It always read an empty list, so that section of the dialog had never once appeared.
 		PassiveSeeder.reportDependencies();
 
-		// The kernel's OWN game-side half, proven here rather than assumed: loaded through the finished pipeline,
-		// checked to have landed on the game loader. Deliberately not earlier -- these classes should take exactly
-		// the path every game class takes, and before this point the transformer and Mixin are not yet installed.
-		// Deliberately not later either: the next line starts seeding the ecosystems, and a kernel missing its own
-		// game side should say so before it touches theirs. See KernelRuntimeClasses.
-		KernelRuntimeClasses.verify(loader);
-
 		// Seed the minimum genuine-loader identity the merged base's patched <clinit>s read (no lifecycle). The
 		// Dist must match the side — a client seeded as DEDICATED_SERVER makes NeoForge reject the local player's
 		// integrated-server connection ("Server is still starting").
@@ -1222,6 +1215,17 @@ public final class KernelBoot {
 
 		// Fabric preLaunch entrypoints, after Mixin is up and before any game class loads (their contract).
 		KernelFabricEcosystem.runPreLaunch();
+
+		// The kernel's OWN game-side half, proven here rather than assumed: loaded through the finished pipeline,
+		// checked to have landed on the game loader. Not before Mixin -- these classes should take exactly the path
+		// every game class takes. And not before preLaunch, though it used to run right after Mixin: proving that
+		// a class links resolves every type its public methods name, so it defined ~40 Minecraft classes
+		// (MinecraftServer, Screen, Component, CompoundTag, Registry...) before any preLaunch entrypoint ran. A mod
+		// that registers its mixin config from preLaunch, as Fabric allows (Mixins.addConfiguration), then found
+		// its targets already defined: Mixin threw MixinTargetAlreadyLoadedException for Essential's
+		// BlockableEventLoop mixin and the boot died. On Fabric nothing loads a game class before preLaunch has run.
+		// It only reports, so running it later costs nothing but its place in the log. See KernelRuntimeClasses.
+		KernelRuntimeClasses.verify(loader);
 
 		Class<?> mainClass = Class.forName(side.entryClass, false, loader);
 		if (lifecycleHook.missedRequiredExcision()) {

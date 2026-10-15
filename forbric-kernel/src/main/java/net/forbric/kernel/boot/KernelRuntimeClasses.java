@@ -595,7 +595,9 @@ public final class KernelRuntimeClasses {
 	 *
 	 * <p>Runs after the transform chain and Mixin are installed, so these classes take exactly the path every game
 	 * class takes. Nothing targets them, but a self-check that skipped the pipeline would not be checking the
-	 * thing that can break.
+	 * thing that can break. And after the Fabric {@code preLaunch} entrypoints: resolving the signatures defines the
+	 * game types they name, and a mixin config a mod registers from {@code preLaunch} must still find its targets
+	 * undefined.
 	 *
 	 * <p>{@code initialize = false}: proving the class links is the point; running its static initialiser at boot
 	 * is not, and for a class that one day holds game state it would be actively wrong.
