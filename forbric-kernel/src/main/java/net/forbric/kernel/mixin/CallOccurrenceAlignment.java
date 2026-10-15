@@ -141,6 +141,46 @@ final class CallOccurrenceAlignment {
     }
 
     /**
+     * The other direction of {@link #retainedOrdinal}: the current body makes the call MORE often than the native one,
+     * because the carrier added occurrences. For each native occurrence, in order, the current occurrence that is the same
+     * call — the same operand origins and the same next operation, and no other native occurrence like it — or null when
+     * any occurrence is unanalysable, a native one has no unique counterpart, the counterparts are out of order, or nothing
+     * was added. The current occurrences left over are the carrier's.
+     */
+    static int[] nativeAmongAdded(ClassNode originalOwner, MethodNode original, ClassNode currentOwner,
+            MethodNode current, String member) {
+        if (originalOwner == null || currentOwner == null || original == null || current == null
+                || !original.desc.equals(current.desc) || ((original.access ^ current.access) & Opcodes.ACC_STATIC) != 0) return null;
+        List<Occurrence> before = occurrences(originalOwner.name, original, member);
+        List<Occurrence> after = occurrences(currentOwner.name, current, member);
+        if (before == null || after == null || before.isEmpty() || after.size() <= before.size()) return null;
+        for (Occurrence occurrence : before) if (occurrence.operands() == null || occurrence.continuation() == null) return null;
+        for (Occurrence occurrence : after) if (occurrence.operands() == null || occurrence.continuation() == null) return null;
+        int[] counterparts = new int[before.size()];
+        int previous = -1;
+        for (int source = 0; source < before.size(); source++) {
+            Occurrence old = before.get(source);
+            int match = -1;
+            for (int index = 0; index < after.size(); index++) {
+                Occurrence live = after.get(index);
+                if (!live.operands().equals(old.operands()) || !live.continuation().equals(old.continuation())) continue;
+                if (match >= 0) return null;
+                match = index;
+            }
+            if (match <= previous) return null;
+            previous = match;
+            counterparts[source] = match;
+        }
+        // A current occurrence two native ones would both describe is not told apart by this evidence.
+        for (Occurrence live : after) {
+            int alike = 0;
+            for (Occurrence old : before) if (live.operands().equals(old.operands()) && live.continuation().equals(old.continuation())) alike++;
+            if (alike > 1) return null;
+        }
+        return counterparts;
+    }
+
+    /**
      * Describes each side effect of a straight-line run of {@code method} — a call, a field write, a local store — by
      * its operation and the origins of its operands, never by local slot numbers: two bodies that keep a temporary in
      * different locals describe the same run identically. Operand producers (loads, constants, arithmetic, reads) are
