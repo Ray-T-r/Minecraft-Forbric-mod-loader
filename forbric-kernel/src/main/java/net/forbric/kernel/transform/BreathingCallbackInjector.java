@@ -12,7 +12,13 @@ public final class BreathingCallbackInjector implements ClassTransformer {
 		MethodNode method=node.methods.stream().filter(m->m.name.equals("onLivingBreathe")&&m.desc.equals("(Lnet/minecraft/world/entity/LivingEntity;Lnet/minecraft/server/level/ServerLevel;II)V")).findFirst().orElse(null);if(method==null)return bytes;
 		java.util.List<MethodInsnNode> water=new java.util.ArrayList<>();for(var i:method.instructions)if(i instanceof MethodInsnNode call){if(call.owner.equals(HOOK))return bytes;if(call.owner.equals("net/minecraft/world/effect/MobEffectUtil")&&call.name.equals("hasWaterBreathing")&&call.desc.equals("(Lnet/minecraft/world/entity/LivingEntity;)Z"))water.add(call);}
 		if(water.size()!=1)return bytes;InsnList start=new InsnList();start.add(new VarInsnNode(Opcodes.ALOAD,0));start.add(new VarInsnNode(Opcodes.ALOAD,1));start.add(new MethodInsnNode(Opcodes.INVOKESTATIC,HOOK,"lava","(Ljava/lang/Object;Ljava/lang/Object;)V",false));method.instructions.insert(start);
-		MethodInsnNode call=water.getFirst();method.instructions.insertBefore(call,new InsnNode(Opcodes.DUP));InsnList after=new InsnList();after.add(new VarInsnNode(Opcodes.ALOAD,1));after.add(new MethodInsnNode(Opcodes.INVOKESTATIC,HOOK,"water","(Ljava/lang/Object;ZLjava/lang/Object;)Z",false));method.instructions.insert(call,after);
+		// Vanilla's baseTick asks hasWaterBreathing only with the eye in water and an entity that cannot breathe there; NeoForge's
+		// calculation asks it with the eye in any fluid but air (lava too). The scope hears both facts and consults a guest's
+		// water callback only where vanilla would have asked it, leaving NeoForge's own answer everywhere else.
+		MethodInsnNode call=water.getFirst();method.instructions.insertBefore(call,new InsnNode(Opcodes.DUP));InsnList after=new InsnList();after.add(new VarInsnNode(Opcodes.ALOAD,1));
+		after.add(new VarInsnNode(Opcodes.ALOAD,0));after.add(new FieldInsnNode(Opcodes.GETSTATIC,"net/minecraft/tags/FluidTags","WATER","Lnet/minecraft/tags/TagKey;"));after.add(new MethodInsnNode(Opcodes.INVOKEVIRTUAL,"net/minecraft/world/entity/LivingEntity","isEyeInFluid","(Lnet/minecraft/tags/TagKey;)Z",false));
+		after.add(new VarInsnNode(Opcodes.ALOAD,0));after.add(new MethodInsnNode(Opcodes.INVOKEVIRTUAL,"net/minecraft/world/entity/LivingEntity","canBreatheUnderwater","()Z",false));
+		after.add(new MethodInsnNode(Opcodes.INVOKESTATIC,HOOK,"water","(Ljava/lang/Object;ZLjava/lang/Object;ZZ)Z",false));method.instructions.insert(call,after);
 		ClassWriter writer=new ClassWriter(ClassWriter.COMPUTE_MAXS);node.accept(writer);return writer.toByteArray();
 	}
 }

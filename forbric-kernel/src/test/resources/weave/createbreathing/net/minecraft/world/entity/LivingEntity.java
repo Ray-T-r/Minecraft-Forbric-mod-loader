@@ -30,6 +30,14 @@ public class LivingEntity {
 		return tag.name().equals(fluid);
 	}
 
+	public boolean isEyeInAnyFluid() {
+		return !fluid.equals("air");
+	}
+
+	public boolean canBreatheUnderwater() {
+		return false;
+	}
+
 	public boolean isInLava() {
 		return fluid.equals("lava");
 	}

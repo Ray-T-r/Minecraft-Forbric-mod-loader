@@ -22,6 +22,16 @@ public final class BreathingCallbackScope {
 		Object open=FRAMES.suspend();
 		try{for(Callbacks frame:frames)frame.lava().apply(new Object[]{entity,level});}finally{FRAMES.leave(open);}
 	}
+	/**
+	 * NeoForge's water-breathing check, where vanilla's baseTick would ask it only with the entity's eye in water and the
+	 * entity unable to breathe there ({@code canBreatheUnderwater}): only then are the guests' water callbacks consulted.
+	 * Anywhere else (the eye in lava, an entity that breathes water) the native answer stands, as no vanilla call was made
+	 * there for a guest's wrap to see — Create's backtank paid air for a diver in lava.
+	 */
+	public static boolean water(Object entity,boolean nativeResult,Object level,boolean eyeInWater,boolean breathesUnderwater){
+		return eyeInWater&&!breathesUnderwater?water(entity,nativeResult,level):nativeResult;
+	}
+	/** The guests' water callbacks over NeoForge's answer, at a check vanilla would have made. */
 	public static boolean water(Object entity,boolean nativeResult,Object level){
 		List<Callbacks> frames=FRAMES.outermostFirst().stream().filter(frame->frame.water()!=null).toList();if(frames.isEmpty())return nativeResult;
 		Object open=FRAMES.suspend();

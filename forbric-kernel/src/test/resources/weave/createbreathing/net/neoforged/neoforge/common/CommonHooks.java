@@ -11,7 +11,9 @@ public final class CommonHooks {
 	}
 
 	public static void onLivingBreathe(LivingEntity entity, ServerLevel level, int consumeAirAmount, int refillAirAmount) {
-		boolean canBreathe = !entity.isEyeInFluid(FluidTags.WATER) || MobEffectUtil.hasWaterBreathing(entity);
+		// NeoForge's shape: the water-breathing check is asked with the eye in ANY fluid but air (vanilla asks it in water
+		// alone), and only a drowning fluid (water here) then costs air.
+		boolean canBreathe = !entity.isEyeInAnyFluid() || MobEffectUtil.hasWaterBreathing(entity) || !entity.isEyeInFluid(FluidTags.WATER);
 		int air = entity.getAirSupply();
 		entity.setAirSupply(canBreathe ? Math.min(10, air + refillAirAmount) : air - consumeAirAmount);
 	}

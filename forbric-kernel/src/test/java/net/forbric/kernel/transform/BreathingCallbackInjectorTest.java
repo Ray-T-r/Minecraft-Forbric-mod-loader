@@ -36,8 +36,29 @@ class BreathingCallbackInjectorTest {
 
 					public class LivingEntity {
 						public boolean underWater;
+						public boolean inLava;
+						public boolean gills;
 						public boolean waterBreathingEffect;
 						public int air = 100;
+						public boolean isEyeInFluid(net.minecraft.tags.TagKey tag) {
+							return tag == net.minecraft.tags.FluidTags.WATER ? underWater : inLava;
+						}
+						public boolean canBreatheUnderwater() {
+							return gills;
+						}
+					}
+					""",
+			"net.minecraft.tags.TagKey", """
+					package net.minecraft.tags;
+
+					public class TagKey {
+					}
+					""",
+			"net.minecraft.tags.FluidTags", """
+					package net.minecraft.tags;
+
+					public class FluidTags {
+						public static final TagKey WATER = new TagKey(), LAVA = new TagKey();
 					}
 					""",
 			"net.minecraft.server.level.ServerLevel", """
@@ -66,7 +87,9 @@ class BreathingCallbackInjectorTest {
 
 					public class CommonHooks {
 						public static void onLivingBreathe(LivingEntity entity, ServerLevel level, int consume, int refill) {
-							boolean canBreathe = !entity.underWater || MobEffectUtil.hasWaterBreathing(entity);
+							// NeoForge's shape: the water-breathing check is asked with the eye in any fluid but air.
+							boolean inFluid = entity.underWater || entity.inLava;
+							boolean canBreathe = !inFluid || MobEffectUtil.hasWaterBreathing(entity) || !entity.underWater || entity.gills;
 							entity.air = canBreathe ? Math.min(entity.air + refill, 300) : entity.air - consume;
 						}
 					}
@@ -121,6 +144,34 @@ class BreathingCallbackInjectorTest {
 			BreathingCallbackScope.leave(previous);
 		}
 		assertEquals(List.of("lava true ServerLevel", "water true native=false ServerLevel"), seen);
+	}
+
+	/**
+	 * NeoForge asks its water-breathing check with the eye in any fluid, vanilla only with the eye in water and an entity
+	 * that cannot breathe there. Create's backtank, which does not look at the fluid itself, paid air for a diver in lava;
+	 * the callback is now consulted only where vanilla asked, and the native answer stands elsewhere.
+	 */
+	@Test void theWaterCallbackIsAskedOnlyWhereVanillaAsks(@TempDir Path work) throws Throwable {
+		ClassLoader loader = transformed(InjectorExecution.compile(work, STAND_INS));
+		List<String> asked = new ArrayList<>();
+		Object previous = BreathingCallbackScope.enter(null, args -> {
+			asked.add("water");
+			return Boolean.TRUE;
+		});
+		try {
+			Object lava = InjectorExecution.construct(loader.loadClass(ENTITY));
+			lava.getClass().getField("inLava").setBoolean(lava, true);
+			assertEquals(110, breathe(loader, lava), "lava does not drown: refilled, as natively");
+			assertEquals(List.of(), asked, "vanilla never asks the water check with the eye in lava");
+			Object fish = diver(loader);
+			fish.getClass().getField("gills").setBoolean(fish, true);
+			assertEquals(110, breathe(loader, fish));
+			assertEquals(List.of(), asked, "nor for an entity that breathes water");
+			assertEquals(110, breathe(loader, diver(loader)), "a diver under water: the callback's answer");
+			assertEquals(List.of("water"), asked);
+		} finally {
+			BreathingCallbackScope.leave(previous);
+		}
 	}
 
 	/** Outside any Create call the native answer stands, both ways. */
