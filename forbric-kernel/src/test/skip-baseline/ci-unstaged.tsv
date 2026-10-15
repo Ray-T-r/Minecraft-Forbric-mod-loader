@@ -49,6 +49,7 @@ test	net.forbric.kernel.boot.EventChainAuditTest	dispatchesThatAreNotOneDelivery
 test	net.forbric.kernel.boot.EventChainAuditTest	nothingCrossesWhenNoBridgeIsInstalled()	[fixture:staged] staged carriers: $ROOT/forbric-loader/run/neoforge-runtime/neoforge-runtime.jar
 test	net.forbric.kernel.boot.EventChainAuditTest	onceForwardedAnUnforwardedPostIsCounted()	[fixture:staged] staged carriers: $ROOT/forbric-loader/run/neoforge-runtime/neoforge-runtime.jar
 test	net.forbric.kernel.boot.EventChainAuditTest	standingDownForACascadeTheGamesOwnDispatchDeliveredIsObserved()	[fixture:staged] staged carriers: $ROOT/forbric-loader/run/neoforge-runtime/neoforge-runtime.jar
+test	net.forbric.kernel.boot.FabricGameInstanceTest	aDedicatedServerBecomesTheGameInstanceAsItStarts()	[fixture:game-side] compiled game side absent: $ROOT/forbric-kernel/build/classes/java/runtime/net/forbric/kernel/runtime/KernelGameServerLifecycle.class
 test	net.forbric.kernel.boot.FmlTomlShapeOracleTest	configElementsAnswerEveryPathTheWayNeoForgesWrapperDoes()	[fixture:staged] staged neoforge-runtime.jar absent
 test	net.forbric.kernel.boot.FmlTomlShapeOracleTest	everyPropertyShapeMatchesBothFmls()	[fixture:staged] staged neoforge-runtime.jar absent
 test	net.forbric.kernel.boot.FmlTomlShapeOracleTest	fileConfigElementsAnswerEveryPathTheWayBothFmlsDo()	[fixture:staged] staged neoforge-runtime.jar absent
@@ -101,8 +102,8 @@ test	net.forbric.kernel.boot.KernelTransferInteropTest	aBuiltGameSideAlwaysCarri
 test	net.forbric.kernel.boot.KernelTransferInteropTest	onlyTheRebornHalfOfTheGameSideNamesTeamRebornEnergy()	[fixture:game-side] no staged game jars, so no game side was built
 test	net.forbric.kernel.boot.LaunchInputCheckTest	theStagedMergedBaseAndBothStagedCarrierSpellingsPass()	[fixture:staged] staged game artifacts absent: $ROOT/forbric-loader/run
 test	net.forbric.kernel.boot.MergedLambdaCaptureTest	noCapturedLambdaComesFromTheOtherSideOfTheMerge()	[fixture:staged] the merged base and both patched sides must be staged
-test	net.forbric.kernel.boot.ModMenuApiStandInShapeTest	everyPublicMemberMatchesModMenu()	[fixture:game-side] the Mod Menu API stand-in is compiled before the tests: build/classes/java/modMenuApi/com/terraformersmc/modmenu/api/ConfigScreenFactory.class
-test	net.forbric.kernel.boot.ModMenuApiStandInShapeTest	everyTypeIsTheSameKindOfType()	[fixture:game-side] the Mod Menu API stand-in is compiled before the tests: build/classes/java/modMenuApi/com/terraformersmc/modmenu/api/ConfigScreenFactory.class
+test	net.forbric.kernel.boot.ModMenuApiStandInShapeTest	everyPublicMemberMatchesModMenu()	[fixture:game-side] the Mod Menu API stand-in is compiled before the tests: build/classes/java/modMenuApi/com/terraformersmc/modmenu/api/ModMenuApi.class
+test	net.forbric.kernel.boot.ModMenuApiStandInShapeTest	everyTypeIsTheSameKindOfType()	[fixture:game-side] the Mod Menu API stand-in is compiled before the tests: build/classes/java/modMenuApi/com/terraformersmc/modmenu/api/ModMenuApi.class
 test	net.forbric.kernel.boot.ModMenuApiStandInShapeTest	theNullScreenFactoryMatchesModMenu()	[fixture:game-side] the Mod Menu API stand-in is compiled before the tests: build/classes/java/modMenuApi/com/terraformersmc/modmenu/util/NullScreenFactory.class
 test	net.forbric.kernel.boot.ModMenuApiStandInShapeTest	theStandInIsTheWholeApiPackageAndOnlyIt()	[fixture:game-side] the Mod Menu API stand-in is compiled before the tests: build/classes/java/modMenuApi/com/terraformersmc/modmenu/api/ModMenuApi.class
 test	net.forbric.kernel.boot.MultiLoaderEntrypointsTest	actualBisonAquariusAndBannerstoneUseTheirExecutableFamilies()	[fixture:third-party] requires the prepared random baseline jars
@@ -468,6 +469,12 @@ test	net.forbric.kernel.mixin.AdapterPointSpellingTest	shears TripWireBlock / no
 test	net.forbric.kernel.mixin.AdapterPointSpellingTest	shears TripWireBlock / owner-qualified selector	[fixture:third-party] build/compat-inputs/sweep90/mods/bclib-26.201.2.jar absent
 test	net.forbric.kernel.mixin.AdapterPointSpellingTest	shears TripWireBlock / selector in two spellings	[fixture:third-party] build/compat-inputs/sweep90/mods/bclib-26.201.2.jar absent
 test	net.forbric.kernel.mixin.AdapterPointSpellingTest	shears TripWireBlock / with whitespace	[fixture:third-party] build/compat-inputs/sweep90/mods/bclib-26.201.2.jar absent
+test	net.forbric.kernel.mixin.AddedCallOccurrencesTest	anOrdinalPickedLocalCountsVanillasStoreOnly()	[fixture:staged] game jar
+test	net.forbric.kernel.mixin.AddedCallOccurrencesTest	architecturysRightClickAirKeepsVanillasIsEmptyByNumber()	[fixture:staged] game jar
+test	net.forbric.kernel.mixin.AddedCallOccurrencesTest	createsCommandsHookCountsVanillasAssignmentOnly()	[fixture:staged] actual game required
+test	net.forbric.kernel.mixin.AddedCallOccurrencesTest	createsUseItemOnInjectorCountsVanillasMainHandCallOnly()	[fixture:staged] actual game required
+test	net.forbric.kernel.mixin.AddedCallOccurrencesTest	onVanillaOrSwitchedOffNothingIsNumbered()	[fixture:staged] actual game required
+test	net.forbric.kernel.mixin.AddedCallOccurrencesTest	puzzleslibsBreedingHookCountsVanillasStoreOnly()	[fixture:staged] game jar
 test	net.forbric.kernel.mixin.BalmEffectVetoTest	aBalmThatAsksAnythingElseIsNotReimplemented()	[fixture:staged] actual game required
 test	net.forbric.kernel.mixin.BalmEffectVetoTest	itsOwnSwitchAndTheAdaptersSwitchBothLeaveItAlone()	[fixture:staged] actual game required
 test	net.forbric.kernel.mixin.BalmEffectVetoTest	modifiedCollectionFlowAndCleanupAreNotGuessed()	[fixture:third-party] sweep pack absent
@@ -481,6 +488,8 @@ test	net.forbric.kernel.mixin.BlockBreakCallbackShapesTest	capturesVanillaCannot
 test	net.forbric.kernel.mixin.BlockBreakCallbackShapesTest	thePremiseSlotsAreTheProducersStores()	[fixture:staged] current callback target declarations: $ROOT/forbric-loader/run/merged-base/patched-mc-merged-26.2.jar
 test	net.forbric.kernel.mixin.BlockQueryNativeEvidenceTest	apolisFirstFrictionHookMovesWithItsOrdinalOnlyBesideTheVanillaBody()	[fixture:third-party] real fixture required: build/compat-inputs/popular/mods/Origins-Legacy-1.12.18+26.2.jar
 test	net.forbric.kernel.mixin.BlockQueryNativeEvidenceTest	createsReleasedWrapsPairWithTheVanillaBodies()	[fixture:third-party] real fixture required: $ROOT/forbric-kernel/build/compat-inputs/create-fly/create-fly.jar
+test	net.forbric.kernel.mixin.BracketedTargetAdaptersStagedTest	createsReleasedKeyHooksLandOnlyWhereTheAdapterReadsTheGamesCode()	[fixture:staged] staged jar absent: $ROOT/forbric-loader/run/merged-base/patched-mc-merged-26.2.jar
+test	net.forbric.kernel.mixin.BracketedTargetAdaptersStagedTest	createsSectionHookLocalIsPinnedOnlyWhereTheAdapterReadsTheGamesCode()	[fixture:staged] staged jar absent: $ROOT/forbric-loader/run/merged-base/patched-mc-merged-26.2.jar
 test	net.forbric.kernel.mixin.BridgedLootDispatchPolicyTest	aDispatchElsewhereOrWithTheBridgeOffStays()	[fixture:staged] actual game required
 test	net.forbric.kernel.mixin.BridgedLootDispatchPolicyTest	aListenerRegistrationIsNotADispatch()	[fixture:staged] actual game required
 test	net.forbric.kernel.mixin.BridgedLootDispatchPolicyTest	aRebuiltFabricLootSourceIsStillLeftOut()	[fixture:staged] fabric-api fixture: $ROOT/forbric-kernel/run/client-merged-pack/mods/fabric-api-0.155.2+26.2.jar
@@ -679,6 +688,8 @@ test	net.forbric.kernel.mixin.MixinBreathingCallbackGeneralTest	aWrapThatWantsAL
 test	net.forbric.kernel.mixin.MixinBreathingCallbackGeneralTest	anEyeWrapThatChangesTheAnswerIsLeftAsCompiledNotKeptWithItsAnswerDropped()	[fixture:staged] current callback target declarations: $ROOT/forbric-loader/run/merged-base/patched-mc-merged-26.2.jar
 test	net.forbric.kernel.mixin.MixinBreathingCallbackGeneralTest	bothWrapsWrittenInAnotherMixinAreKeptTogether()	[fixture:staged] current callback target declarations: $ROOT/forbric-loader/run/merged-base/patched-mc-merged-26.2.jar
 test	net.forbric.kernel.mixin.MixinBreathingCallbackGeneralTest	twoWrapsOfOneCallAreLeftAloneForTheOneSlotScope()	[fixture:staged] current callback target declarations: $ROOT/forbric-loader/run/merged-base/patched-mc-merged-26.2.jar
+test	net.forbric.kernel.mixin.MixinBuilderStubRebindTest	createsNormalsWrapMovesToTheOverloadThatBakesTheQuads()	[fixture:staged] game jar
+test	net.forbric.kernel.mixin.MixinBuilderStubRebindTest	onVanillaOrSwitchedOffNothingMoves()	[fixture:staged] game jar
 test	net.forbric.kernel.mixin.MixinCallbackContractsTest	GUI item / MixinGuiItemCaptureAdapter	[fixture:third-party] real fixture required: build/sweep80-mac/v020-rounds/r3/mods/itemglintrelight-fabric-26.2-0.3.0+26.2.jar
 test	net.forbric.kernel.mixin.MixinCallbackContractsTest	GUI item / unsafe source	[fixture:third-party] real fixture required: build/sweep80-mac/v020-rounds/r3/mods/itemglintrelight-fabric-26.2-0.3.0+26.2.jar
 test	net.forbric.kernel.mixin.MixinCallbackContractsTest	Level_fillUpdatesMixin / player/world and fluid reactions	[fixture:third-party] real fixture required: build/compat-inputs/carpet/mods/fabric-carpet-26.2+v260616.jar
@@ -1024,6 +1035,8 @@ test	net.forbric.kernel.mixin.MixinCallbackTargetArgumentTest	theHudPointIsReadA
 test	net.forbric.kernel.mixin.MixinCallbackTargetArgumentTest	twoBuilderCallbacksAtTheCallAreOnePointHoweverEachIsWritten()	[fixture:staged] current callback target declarations: $ROOT/forbric-loader/run/merged-base/patched-mc-merged-26.2.jar
 test	net.forbric.kernel.mixin.MixinCallbackTargetArgumentTest	twoWrapsAtOneCallAreOnePointHoweverEachIsWritten()	[fixture:staged] current callback target declarations: $ROOT/forbric-loader/run/merged-base/patched-mc-merged-26.2.jar
 test	net.forbric.kernel.mixin.MixinCallbackTargetArgumentTest	twoWrapsAtTwoCallsEachMove()	[fixture:staged] current callback target declarations: $ROOT/forbric-loader/run/merged-base/patched-mc-merged-26.2.jar
+test	net.forbric.kernel.mixin.MixinCapturedLocalsTest	architecturysRightClickAirReadsTheHeldItemPastNeoForgesEvent()	[fixture:staged] game jar
+test	net.forbric.kernel.mixin.MixinCapturedLocalsTest	onVanillaTheCaptureStaysAsWritten()	[fixture:staged] game jar
 test	net.forbric.kernel.mixin.MixinCarrierCallbackGeneralTest	aCallbackAtACallTheLiveBodyNoLongerMakesStays()	[fixture:staged] current callback target declarations: $ROOT/forbric-loader/run/merged-base/patched-mc-merged-26.2.jar
 test	net.forbric.kernel.mixin.MixinCarrierCallbackGeneralTest	aCallbackCapturingMoreLocalsThanCreateIsProvedSlotBySlot()	[fixture:staged] current callback target declarations: $ROOT/forbric-loader/run/merged-base/patched-mc-merged-26.2.jar
 test	net.forbric.kernel.mixin.MixinCarrierCallbackGeneralTest	aCallbackThatReadsTheBooleanStays()	[fixture:staged] current callback target declarations: $ROOT/forbric-loader/run/merged-base/patched-mc-merged-26.2.jar
@@ -1109,6 +1122,8 @@ test	net.forbric.kernel.mixin.MixinEquivalentImplementationsTest	unknownHandlerB
 test	net.forbric.kernel.mixin.MixinExecutionPathRetargetTest	actualHudFragmentsMoveIntoReachedPrivateHelpersAndRetainTheOriginalOperationBodies()	[fixture:staged] actual Fabric API fixture required
 test	net.forbric.kernel.mixin.MixinExecutionPathRetargetTest	actualModelGenerationAndFluidTravelFollowTheirExplicitHelperEdges()	[fixture:staged] actual Fabric API fixture required
 test	net.forbric.kernel.mixin.MixinExecutionPathRetargetTest	fuelCapturesThatExistOnlyOnTheForwarderAreNotDiscarded()	[fixture:staged] actual Fabric API fixture required
+test	net.forbric.kernel.mixin.MixinExpressionThunksTest	aProjectileThatOnlyInheritsTheMethodOrHasNoThunkKeepsItsDefinition()	[fixture:staged] staged merged base
+test	net.forbric.kernel.mixin.MixinExpressionThunksTest	theArrowsMethodReferenceExpressionAlsoNamesTheThunkItNowGoesThrough()	[fixture:staged] staged merged base
 test	net.forbric.kernel.mixin.MixinFallbackCaptureDiscriminatorTest	aChipNamingTheOldStateAndBlockReadsTheVariablesOfThoseNames()	[fixture:staged] current callback target declarations: $ROOT/forbric-loader/run/merged-base/patched-mc-merged-26.2.jar
 test	net.forbric.kernel.mixin.MixinFallbackCaptureDiscriminatorTest	aChipNamingTheOldStateByVanillaSlotOrASecondOrdinalStaysWithoutVanilla()	[fixture:staged] current callback target declarations: $ROOT/forbric-loader/run/merged-base/patched-mc-merged-26.2.jar
 test	net.forbric.kernel.mixin.MixinFallbackCaptureDiscriminatorTest	aChiselNamingAStateTheMergedBodyCannotPlaceStaysAsWritten()	[fixture:staged] current callback target declarations: $ROOT/forbric-loader/run/merged-base/patched-mc-merged-26.2.jar
@@ -1235,6 +1250,10 @@ test	net.forbric.kernel.mixin.MixinRelocatedCallTest	anInjectAtTheCallStaysPut()
 test	net.forbric.kernel.mixin.MixinRelocatedCallTest	fabricsUseOnWrapSelectsTheRelayAndItsUseWrapStays()	[fixture:staged] actual Fabric API fixture required
 test	net.forbric.kernel.mixin.MixinRelocatedCallTest	nothingMovesWithoutTheRelay()	[fixture:staged] actual Fabric API fixture required
 test	net.forbric.kernel.mixin.MixinRelocatedCallTest	theSwitchLeavesItAlone()	[fixture:staged] actual Fabric API fixture required
+test	net.forbric.kernel.mixin.MixinRenamedBodyEdgesTest	aMethodThatLeavesTheBodyToALaterContinuationKeepsItsEdge()	[fixture:staged] actual game required
+test	net.forbric.kernel.mixin.MixinRenamedBodyEdgesTest	aRenamedBodyOnlyTheNamedMethodReachesKeepsTheEdgeWhereItWas()	[fixture:staged] actual game required
+test	net.forbric.kernel.mixin.MixinRenamedBodyEdgesTest	allowLoadEdgesTheRenamedBodyEveryPlayerIsAddedThrough()	[fixture:staged] actual game required
+test	net.forbric.kernel.mixin.MixinRenamedBodyEdgesTest	onVanillaOrWithTheSwitchOffNothingMoves()	[fixture:mc-libraries] actual game required
 test	net.forbric.kernel.mixin.MixinResourceContinuationAdapterTest	bothActualSourceCallbacksRetainNamespacedAndDefaultResourcesWithoutDoublePrefix()	[fixture:staged] actual resource inputs required
 test	net.forbric.kernel.mixin.MixinResourceContinuationAdapterTest	changedPathRecipeOperationInputOrAmbiguousContinuationIsRejected()	[fixture:staged] actual resource inputs required
 test	net.forbric.kernel.mixin.MixinResourceContinuationAdapterTest	changedPrefixPartialOrFinalApiBodyRetainsTheActualNativeContinuationOnce()	[fixture:staged] actual resource inputs required
@@ -1278,6 +1297,9 @@ test	net.forbric.kernel.mixin.MixinReturnDecorationSpellingTest	aSelectorBinding
 test	net.forbric.kernel.mixin.MixinReturnDecorationSpellingTest	aSelectorNamingAnotherOwnersMethodIsLeftAlone()	[fixture:staged] native-indexed merged base and the actual Fabric API: $ROOT/forbric-loader/run/merged-base/patched-mc-merged-26.2.jar
 test	net.forbric.kernel.mixin.MixinReturnDecorationSpellingTest	selectorsWrittenAnotherWayFollowTheSameReturn()	[fixture:staged] native-indexed merged base and the actual Fabric API: $ROOT/forbric-loader/run/merged-base/patched-mc-merged-26.2.jar
 test	net.forbric.kernel.mixin.MixinReturnDecorationSpellingTest	theReleasedCallbackUnderOtherNamesFollowsTheReturn()	[fixture:staged] native-indexed merged base and the actual Fabric API: $ROOT/forbric-loader/run/merged-base/patched-mc-merged-26.2.jar
+test	net.forbric.kernel.mixin.MixinReturnOrdinalsTest	apolisLastReturnOfDestroyBlockIsTheMergedLastReturn()	[fixture:staged] actual game required
+test	net.forbric.kernel.mixin.MixinReturnOrdinalsTest	onTheNativeBodyItselfNothingMoves()	[fixture:mc-libraries] actual game required
+test	net.forbric.kernel.mixin.MixinReturnOrdinalsTest	theSwitchLeavesTheOrdinalAsCompiled()	[fixture:staged] actual game required
 test	net.forbric.kernel.mixin.MixinSharedPredicateSeamSpellingTest	aGroundSelectorBindingAnotherMethodLeavesThePair()	[fixture:staged] actual native pair: $ROOT/forbric-loader/run/merged-base/patched-mc-merged-26.2.jar
 test	net.forbric.kernel.mixin.MixinSharedPredicateSeamSpellingTest	anAnchorNamingAnotherOwnersMemberLeavesThePair()	[fixture:staged] actual native pair: $ROOT/forbric-loader/run/merged-base/patched-mc-merged-26.2.jar
 test	net.forbric.kernel.mixin.MixinSharedPredicateSeamSpellingTest	another overload / dotted owner, no descriptor	[fixture:staged] actual native pair: $ROOT/forbric-loader/run/merged-base/patched-mc-merged-26.2.jar
@@ -1341,6 +1363,7 @@ test	net.forbric.kernel.mixin.MixinStubRebindSpellingTest	the stub's descriptor,
 test	net.forbric.kernel.mixin.MixinStubRebindSpellingTest	the stub's descriptor, with whitespace	[fixture:staged] actual Fabric API fixture required
 test	net.forbric.kernel.mixin.MixinStubRebindSpellingTest	theReleasedCheckUnderOtherNamesMovesOntoTheBody()	[fixture:staged] actual Fabric API fixture required
 test	net.forbric.kernel.mixin.MixinStubRebindTest	aBareNameThePinPointsAtAStubThenMovesOntoTheBody()	[fixture:staged] actual game required
+test	net.forbric.kernel.mixin.MixinStubRebindTest	aByTypeLocalDecidedOnlyBesideTheCarriersAddedArgumentIsPinned()	[fixture:staged] actual game required
 test	net.forbric.kernel.mixin.MixinStubRebindTest	aByTypeLocalIsLeftWhereTheBodyDoesNotDecideIt()	[fixture:staged] actual game required
 test	net.forbric.kernel.mixin.MixinStubRebindTest	aByTypeLocalMixinLosesAtALoopsExitIsLeft()	[fixture:staged] actual game required
 test	net.forbric.kernel.mixin.MixinStubRebindTest	aCaptureTheStubPassesThroughInPlaceStillMoves()	[fixture:staged] actual game required
@@ -1440,6 +1463,7 @@ test	net.forbric.kernel.mixin.PerEffectClearVetoTest	kotlincsShapeWithTwoCapture
 test	net.forbric.kernel.mixin.PerEffectClearVetoTest	puttingBackSomethingElseIsLeftAlone()	[fixture:staged] actual game required
 test	net.forbric.kernel.mixin.PerEffectClearVetoTest	theSwitchLeavesAProvedVetoAlone()	[fixture:staged] actual game required
 test	net.forbric.kernel.mixin.PerEffectClearVetoTest	theWholeMapHandedToAnApiIsLeftAlone()	[fixture:staged] actual game required
+test	net.forbric.kernel.mixin.PluginAddedMixinEcosystemTest	createsPluginAddedModelMixinLandsOnNeoForgesParser()	[fixture:staged] game jar $ROOT/forbric-loader/run/merged-base/patched-mc-merged-26.2.jar
 test	net.forbric.kernel.mixin.PostMixinFixupsAliasTargetTest	everyShippedFabricRegistrySyncHasExactlyTheWarningsCheckRepaired()	[fixture:third-party] no fabric-registry-sync in the compatibility packs on this machine
 test	net.forbric.kernel.mixin.PrunerOffWholeMixinRefusalTest	theRealModelPairIsLeftOutWholeOnlyWhileThePrunerIsOff()	[fixture:staged] actual Fabric API fixture required
 test	net.forbric.kernel.mixin.RegistryLoaderCompanionBindingTest	aBareNameCompanionWrittenForALoaderTheMergeDroppedStillFollowsTheWrap()	[fixture:staged] the staged merged base: $ROOT/forbric-loader/run/merged-base/patched-mc-merged-26.2.jar
@@ -1533,6 +1557,7 @@ test	net.forbric.kernel.mixin.weave.LootSourceCallbacksWeaveTest	onlyTheActually
 test	net.forbric.kernel.mixin.weave.LootSourceCallbacksWeaveTest	originalCallbacksRunOnceThroughTheRealTypedBridgeAndKeepExceptionsAndNativePriority()	[fixture:staged] raw loot callback group: $ROOT/forbric-kernel/run/client-merged-pack/mods/fabric-api-0.155.2+26.2.jar
 test	net.forbric.kernel.mixin.weave.LootSourceCallbacksWeaveTest	thePrivateMemoIsClosedAndNoSourceNamesAdmitTheProjection()	[fixture:staged] raw loot callback group: $ROOT/forbric-kernel/run/client-merged-pack/mods/fabric-api-0.155.2+26.2.jar
 test	net.forbric.kernel.mixin.weave.LootSourceCallbacksWeaveTest	unrelatedDirectoryWeavesDoNotChangeTheRegistryKeyDomainButAKeyFactoryChangeDoes()	[fixture:staged] raw loot callback group: $ROOT/forbric-kernel/run/client-merged-pack/mods/fabric-api-0.155.2+26.2.jar
+test	net.forbric.kernel.mixin.weave.MixinAbsorbedCallbackTransportWeaveTest	aTransportedHandlerWithALambdaAndAHelperOfItsOwnStillRuns()	[fixture:java-25] the guest mixin configs declare compatibilityLevel JAVA_25, which Mixin sets only on Java 25
 test	net.forbric.kernel.mixin.weave.MixinAbsorbedCallbackTransportWeaveTest	arbitraryExtractedHelperRunsTheUnchangedHostCallbackBeforeEventsWithWideArgumentsAndScopedRecursion()	[fixture:java-25] the guest mixin configs declare compatibilityLevel JAVA_25, which Mixin sets only on Java 25
 test	net.forbric.kernel.mixin.weave.MixinCrossHostPredicateIslandWeaveTest	theWholeAdapterRunsTheOriginalModifierBeforeOneNativeEventAndKeepsItsOffControl()	[fixture:staged] upstream drowning whole adapter: $ROOT/forbric-kernel/run/client-merged-pack/mods/fabric-api-0.155.2+26.2.jar
 test	net.forbric.kernel.mixin.weave.MixinNativePredicateSeamWeaveTest	anActiveNativeScopeNeverSuppressesAnotherThreadsAdapterCallback()	skipped without a message (a class-level abort, e.g. in @BeforeAll)
@@ -1839,6 +1864,8 @@ test	net.forbric.kernel.transform.DeclarationReaderNameOfferTest	aKeyOneReaderRe
 test	net.forbric.kernel.transform.DeclarationReaderNameOfferTest	theNameIsWithdrawnOnceALaterReaderReadsTheKeyAsSomethingElse()	[fixture:game-side] the game side is not compiled
 test	net.forbric.kernel.transform.DeclarationReaderSodiumJarTest	sodiumNeoForgeRegistersTheFabricModsOptionsPage()	[fixture:third-party] no sodium-neoforge jar under build/compat-inputs/*/mods or run/client-merged-pack/mods
 test	net.forbric.kernel.transform.DeclarationReaderSodiumJarTest	switchedOffSodiumSeesOnlyItsOwnFamily()	[fixture:third-party] no sodium-neoforge jar under build/compat-inputs/*/mods or run/client-merged-pack/mods
+test	net.forbric.kernel.transform.DeliveryBookkeepingStagedTest	aMethodWithoutBookkeepingOrWithAShapeItDoesNotKnowIsLeftAlone()	[fixture:staged] staged jar absent: $ROOT/forbric-loader/run/merged-base/patched-mc-merged-26.2.jar
+test	net.forbric.kernel.transform.DeliveryBookkeepingStagedTest	everyMethodTheInjectorRewritesReadsAsTheGamesOwnCodeOnceTheBookkeepingIsOut()	[fixture:staged] staged jar absent: $ROOT/forbric-loader/run/merged-base/patched-mc-merged-26.2.jar
 test	net.forbric.kernel.transform.DragonPartsInjectorTest	bothNativeGetPartsMethodsKeepTheActualSubEntities()	[fixture:staged] $ROOT/forbric-loader/run/merged-base/patched-mc-merged-26.2.jar absent (reading net/minecraft/world/entity/boss/enderdragon/EnderDragon.class)
 test	net.forbric.kernel.transform.DragonPartsInjectorTest	theClientsTrackingCallbacksAreLeftToThePartTrackingRepairs()	[fixture:staged] $ROOT/forbric-loader/run/merged-base/patched-mc-merged-26.2.jar absent (reading net/minecraft/client/multiplayer/ClientLevel$EntityCallbacks.class)
 test	net.forbric.kernel.transform.DragonPartsInjectorTest	theDebugHitboxesKeepTheirNativePartApi()	[fixture:staged] $ROOT/forbric-loader/run/merged-base/patched-mc-merged-26.2.jar absent (reading net/minecraft/client/renderer/debug/EntityHitboxDebugRenderer.class)
@@ -2234,7 +2261,7 @@ test	net.forbric.kernel.transform.NativeConstructorFacadeRestorerTest	actualFuel
 test	net.forbric.kernel.transform.NativeCoremodParityTest	aTrialSpawnerThatAlreadyPostsMinecraftForgesFinalizationIsLeftNative()	[fixture:staged] $ROOT/forbric-loader/run/merged-base/patched-mc-merged-26.2.jar absent (reading net/minecraft/world/level/block/entity/trialspawner/TrialSpawner.class)
 test	net.forbric.kernel.transform.NativeCoremodParityTest	aTrialSpawnerWhoseMinecraftForgeCallFinalizesSomethingElseIsStillRouted()	[fixture:staged] $ROOT/forbric-loader/run/merged-base/patched-mc-merged-26.2.jar absent (reading net/minecraft/world/level/block/entity/trialspawner/TrialSpawner.class)
 test	net.forbric.kernel.transform.NativeCoremodParityTest	biomeAndStructureReadsGoThroughNeoForgesModifiedView()	[fixture:staged] $ROOT/forbric-loader/run/merged-base/patched-mc-merged-26.2.jar absent (reading net/minecraft/world/level/biome/Biome.class)
-test	net.forbric.kernel.transform.NativeCoremodParityTest	everyFinalizeSpawnInNeoForgesListIsRedirectedAndNothingElse()	[fixture:staged] $ROOT/forbric-loader/run/merged-base/patched-mc-merged-26.2.jar absent (reading net/minecraft/world/entity/monster/zombie/ZombieVillager.class)
+test	net.forbric.kernel.transform.NativeCoremodParityTest	everyFinalizeSpawnInNeoForgesListIsRedirectedAndNothingElse()	[fixture:staged] $ROOT/forbric-loader/run/merged-base/patched-mc-merged-26.2.jar absent (reading net/minecraft/server/commands/SummonCommand.class)
 test	net.forbric.kernel.transform.NativeCoremodParityTest	everyFlowerPotReadGoesThroughTheGetterExceptTheGetter()	[fixture:staged] $ROOT/forbric-loader/run/merged-base/patched-mc-merged-26.2.jar absent (reading net/minecraft/world/level/block/FlowerPotBlock.class)
 test	net.forbric.kernel.transform.NativeCoremodParityTest	theTargetListIsNeoForgesAndMinecraftForgesLessTheTrialSpawner()	[fixture:staged] staged MinecraftForge carrier: $ROOT/forbric-loader/run/merged-base/forge-runtime-interop.jar
 test	net.forbric.kernel.transform.NativeCoremodParityTest	theTrialSpawnersNeoForgeHookIsRoutedThroughBothFamilies()	[fixture:staged] $ROOT/forbric-loader/run/merged-base/patched-mc-merged-26.2.jar absent (reading net/minecraft/world/level/block/entity/trialspawner/TrialSpawner.class)
@@ -2305,6 +2332,7 @@ test	net.forbric.kernel.transform.SpawnerFinalizeInjectorTest	nativeNeoCallerAls
 test	net.forbric.kernel.transform.SpawnerFinalizeInjectorTest	realMergedCallerSuppliesTheSameInputThatLoadedItsMobAfterTheLegacyRepair()	[fixture:staged] staged artifact absent: $ROOT/forbric-loader/run/merged-base/patched-mc-merged-26.2.jar
 test	net.forbric.kernel.transform.SpawnerFinalizeInjectorTest	unknownSignaturesOrPartiallyChangedCallersAreNotGuessed()	[fixture:staged] staged artifact absent: $ROOT/forbric-loader/run/merged-base/patched-mc-merged-26.2.jar
 test	net.forbric.kernel.transform.SpawnerFinalizeInjectorTest	wrongEntityOriginOverwrittenInputAndAmbiguousReachingStoresAreRejected()	[fixture:staged] staged artifact absent: $ROOT/forbric-loader/run/merged-base/patched-mc-merged-26.2.jar
+test	net.forbric.kernel.transform.TailLocalsTest	theMergedRenderLayersTailHoldsVanillasNextOrderAgain()	[fixture:staged] $ROOT/forbric-loader/run/merged-base/patched-mc-merged-26.2.jar absent (reading net/minecraft/client/renderer/entity/layers/EquipmentLayerRenderer.class)
 test	net.forbric.kernel.transform.TransferTransactionHooksTest	allNativeTransactionHooksHaveValidBytecodeAndAreIdempotent()	[fixture:staged] $ROOT/forbric-loader/run/neoforge-runtime/neoforge-runtime.jar absent (reading net/neoforged/neoforge/transfer/transaction/Transaction.class)
 test	net.forbric.kernel.transform.TransferTransactionHooksTest	baseContainerItemQueryPassesTheOwnerFirstHook()	[fixture:staged] $ROOT/forbric-loader/run/merged-base/patched-mc-merged-26.2.jar absent (reading net/minecraft/world/level/block/entity/BaseContainerBlockEntity.class)
 test	net.forbric.kernel.transform.TransferTransactionHooksTest	capabilityFallbackChangesOnlyTheFinalAbsentResult()	[fixture:staged] $ROOT/forbric-loader/run/neoforge-runtime/neoforge-runtime.jar absent (reading net/neoforged/neoforge/capabilities/BlockCapability.class)
