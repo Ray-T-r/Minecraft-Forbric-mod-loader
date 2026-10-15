@@ -15,6 +15,8 @@ import org.objectweb.asm.tree.analysis.*;
 final class CallOccurrenceAlignment {
     private CallOccurrenceAlignment() { }
     record Occurrence(MethodInsnNode call, String operands, String continuation) { }
+    /** A call, field access or local store: its operand origins, what follows it, and the next call straight after it. */
+    record Access(AbstractInsnNode instruction, String operands, String continuation, String nextCall) { }
     record Match(MethodInsnNode call, int ordinal) { }
     /** Opaque primitive results can be paired when every executable operation up to their production is identical. */
     static Map<Integer,Integer> prefixLocals(MethodNode handler,String owner,MethodNode nativeMethod,AbstractInsnNode nativePoint,
@@ -143,41 +145,67 @@ final class CallOccurrenceAlignment {
     /**
      * The other direction of {@link #retainedOrdinal}: the current body makes the call MORE often than the native one,
      * because the carrier added occurrences. For each native occurrence, in order, the current occurrence that is the same
-     * call — the same operand origins and the same next operation, and no other native occurrence like it — or null when
-     * any occurrence is unanalysable, a native one has no unique counterpart, the counterparts are out of order, or nothing
-     * was added. The current occurrences left over are the carrier's.
+     * call — the same operand origins, the same next operation wherever both sides have one (and, where several share the
+     * operands, a next operation or else the next call straight after it that tells them apart), and no other native
+     * occurrence like it — or null when any
+     * occurrence's operands are unanalysable, a native one has no unique counterpart, the counterparts are out of order,
+     * or nothing was added. The current occurrences left over are the carrier's.
      */
     static int[] nativeAmongAdded(ClassNode originalOwner, MethodNode original, ClassNode currentOwner,
             MethodNode current, String member) {
+        return nativeAmongAdded(originalOwner, original, currentOwner, current,
+                instruction -> instruction instanceof MethodInsnNode call && member(call).equals(member));
+    }
+
+    /** {@link #nativeAmongAdded(ClassNode, MethodNode, ClassNode, MethodNode, String)} for the calls or field accesses {@code selects} takes. */
+    static int[] nativeAmongAdded(ClassNode originalOwner, MethodNode original, ClassNode currentOwner,
+            MethodNode current, java.util.function.Predicate<AbstractInsnNode> selects) {
         if (originalOwner == null || currentOwner == null || original == null || current == null
                 || !original.desc.equals(current.desc) || ((original.access ^ current.access) & Opcodes.ACC_STATIC) != 0) return null;
-        List<Occurrence> before = occurrences(originalOwner.name, original, member);
-        List<Occurrence> after = occurrences(currentOwner.name, current, member);
+        List<Access> before = accesses(originalOwner, original, selects);
+        List<Access> after = accesses(currentOwner, current, selects);
         if (before == null || after == null || before.isEmpty() || after.size() <= before.size()) return null;
-        for (Occurrence occurrence : before) if (occurrence.operands() == null || occurrence.continuation() == null) return null;
-        for (Occurrence occurrence : after) if (occurrence.operands() == null || occurrence.continuation() == null) return null;
+        // Every occurrence's operands must be known: one that is not could be any native occurrence's counterpart.
+        for (Access occurrence : before) if (occurrence.operands() == null) return null;
+        for (Access occurrence : after) if (occurrence.operands() == null) return null;
         int[] counterparts = new int[before.size()];
         int previous = -1;
         for (int source = 0; source < before.size(); source++) {
-            Occurrence old = before.get(source);
-            int match = -1;
+            Access old = before.get(source);
+            // The same operands, and the same next operation wherever both sides have one to compare.
+            List<Integer> alike = new ArrayList<>();
             for (int index = 0; index < after.size(); index++) {
-                Occurrence live = after.get(index);
-                if (!live.operands().equals(old.operands()) || !live.continuation().equals(old.continuation())) continue;
-                if (match >= 0) return null;
-                match = index;
+                Access live = after.get(index);
+                if (live.operands().equals(old.operands()) && agree(old.continuation(), live.continuation())) alike.add(index);
             }
+            if (alike.size() > 1 && old.continuation() != null) {
+                // Still more than one: a next operation known on both sides tells them apart.
+                alike.removeIf(index -> !old.continuation().equals(after.get(index).continuation()));
+            }
+            if (alike.size() > 1 && old.nextCall() != null) {
+                // Or the call each goes on to make, straight after it.
+                alike.removeIf(index -> !old.nextCall().equals(after.get(index).nextCall()));
+            }
+            if (alike.size() != 1) return null;
+            int match = alike.getFirst();
             if (match <= previous) return null;
             previous = match;
             counterparts[source] = match;
         }
         // A current occurrence two native ones would both describe is not told apart by this evidence.
-        for (Occurrence live : after) {
-            int alike = 0;
-            for (Occurrence old : before) if (live.operands().equals(old.operands()) && live.continuation().equals(old.continuation())) alike++;
-            if (alike > 1) return null;
+        for (int index : counterparts) {
+            Access live = after.get(index);
+            int describing = 0;
+            for (Access old : before) if (old.operands().equals(live.operands()) && agree(old.continuation(), live.continuation())
+                    && agree(old.nextCall(), live.nextCall())) describing++;
+            if (describing > 1) return null;
         }
         return counterparts;
+    }
+
+    /** Two descriptions that do not contradict each other: equal, or one side has none. */
+    private static boolean agree(String a, String b) {
+        return a == null || b == null || a.equals(b);
     }
 
     /**
@@ -241,6 +269,54 @@ final class CallOccurrenceAlignment {
         } catch (AnalyzerException | RuntimeException invalid) { return null; }
     }
 
+    /** Each instruction {@code selects} takes — a call, a field access or a local store — described by its operand origins and what follows it. */
+    private static List<Access> accesses(ClassNode ownerNode, MethodNode method, java.util.function.Predicate<AbstractInsnNode> selects) {
+        String owner = ownerNode.name;
+        try {
+            // A call's operands as NativeCallChanges reads them: it follows loop counters and array reads, which the
+            // occurrence of a call inside a for-each over an array needs (Minecraft.startUseItem's hand loop).
+            Map<AbstractInsnNode, String> callOperands = new IdentityHashMap<>();
+            for (NativeCallChanges.Site site : NativeCallChanges.sites(ownerNode, method)) callOperands.put(site.call(), site.operands().toString());
+            Origins origins = new Origins();
+            Frame<SourceValue>[] frames = new Analyzer<>(origins).analyze(owner, method);
+            Evidence evidence = new Evidence(method, frames, origins.parameters);
+            evidence.constructions = true;
+            List<Access> result = new ArrayList<>();
+            for (AbstractInsnNode instruction : method.instructions) {
+                if (!selects.test(instruction)) continue;
+                String operands;
+                if (instruction instanceof MethodInsnNode call) operands = callOperands.get(call);
+                else if (instruction instanceof FieldInsnNode field) operands = switch (field.getOpcode()) {
+                    case Opcodes.PUTFIELD -> { String in = evidence.inputs(field, 2); yield in == null ? null : "put:" + field.owner + "." + field.name + field.desc + in; }
+                    case Opcodes.PUTSTATIC -> { String in = evidence.inputs(field, 1); yield in == null ? null : "putstatic:" + field.owner + "." + field.name + field.desc + in; }
+                    default -> evidence.producer(field);
+                };
+                else if (instruction instanceof VarInsnNode store && store.getOpcode() >= Opcodes.ISTORE && store.getOpcode() <= Opcodes.ASTORE) {
+                    String in = evidence.inputs(store, 1);
+                    operands = in == null ? null : "store:" + store.getOpcode() + in;
+                }
+                else return null;
+                result.add(new Access(instruction, operands, evidence.continuation(instruction), nextCall(instruction)));
+            }
+            return result;
+        } catch (AnalyzerException | RuntimeException invalid) { return null; }
+    }
+
+    /**
+     * The member of the first call after {@code instruction} in the code as written, past loads, field reads and conditional
+     * branches; null where the straight path ends first (a return, a throw, an unconditional jump, a switch).
+     */
+    private static String nextCall(AbstractInsnNode instruction) {
+        for (AbstractInsnNode next = instruction.getNext(); next != null; next = next.getNext()) {
+            int opcode = next.getOpcode();
+            if (next instanceof MethodInsnNode call) return member(call);
+            if (opcode >= Opcodes.IRETURN && opcode <= Opcodes.RETURN || opcode == Opcodes.ATHROW || opcode == Opcodes.GOTO
+                    || opcode == Opcodes.JSR || next instanceof LookupSwitchInsnNode || next instanceof TableSwitchInsnNode
+                    || next instanceof InvokeDynamicInsnNode) return null;
+        }
+        return null;
+    }
+
     private static final class Origins extends SourceInterpreter {
         final Set<AbstractInsnNode> parameters = java.util.Collections.newSetFromMap(new IdentityHashMap<>());
         Origins() { super(Opcodes.ASM9); }
@@ -262,6 +338,8 @@ final class CallOccurrenceAlignment {
         /** Origins whose guards are being described: a loop makes a guard's operand a phi of the origin itself. */
         final Set<AbstractInsnNode> guarding = java.util.Collections.newSetFromMap(new IdentityHashMap<>());
         final Map<AbstractInsnNode, List<String>> guardCache = new IdentityHashMap<>();
+        /** Whether a constructed object is described by its class and constructor operands (else it is unprovable). */
+        boolean constructions;
         /** Deeper than this, a description is not evidence anyone can compare; it is answered as unprovable. */
         static final int MAX_GUARD_DEPTH = 32;
         Evidence(MethodNode method, Frame<SourceValue>[] frames, Set<AbstractInsnNode> parameters) {
@@ -301,6 +379,7 @@ final class CallOccurrenceAlignment {
                 result = projection(call);
                 if (result == null) result = call(call);
             }
+            else if (constructions && instruction instanceof TypeInsnNode created && created.getOpcode() == Opcodes.NEW) result = construction(created);
             else if (instruction instanceof TypeInsnNode cast && (cast.getOpcode() == Opcodes.CHECKCAST || cast.getOpcode() == Opcodes.INSTANCEOF)) {
                 String source = inputs(instruction, 1);
                 if (source != null) result = "type:" + cast.getOpcode() + ":" + cast.desc + source;
@@ -312,6 +391,24 @@ final class CallOccurrenceAlignment {
                 if (source != null) result = "binary:" + instruction.getOpcode() + source;
             }
             visiting.remove(instruction); cached.put(instruction, result); return result;
+        }
+        /** {@code new C(args)}: the class, the one constructor that initialises this allocation, and its operands. */
+        String construction(TypeInsnNode created) {
+            MethodInsnNode constructor = null;
+            for (AbstractInsnNode instruction : method.instructions) {
+                if (!(instruction instanceof MethodInsnNode call) || call.getOpcode() != Opcodes.INVOKESPECIAL || !call.name.equals("<init>")
+                        || !call.owner.equals(created.desc)) continue;
+                Frame<SourceValue> frame = frames[method.instructions.indexOf(call)];
+                int arguments = Type.getArgumentTypes(call.desc).length;
+                if (frame == null || frame.getStackSize() <= arguments) continue;
+                SourceValue receiver = frame.getStack(frame.getStackSize() - arguments - 1);
+                if (receiver.insns.size() != 1 || !receiver.insns.contains(created)) continue;
+                if (constructor != null) return null;
+                constructor = call;
+            }
+            if (constructor == null) return null;
+            String operands = inputs(constructor, Type.getArgumentTypes(constructor.desc).length);
+            return operands == null ? null : "new:" + created.desc + constructor.desc + operands;
         }
         String inputs(AbstractInsnNode instruction, int count) {
             int index = method.instructions.indexOf(instruction);
@@ -451,7 +548,7 @@ final class CallOccurrenceAlignment {
             }
             return false;
         }
-        String continuation(MethodInsnNode anchor) {
+        String continuation(AbstractInsnNode anchor) {
             List<String> steps = new ArrayList<>();
             for (AbstractInsnNode next = anchor.getNext(); next != null; next = next.getNext()) {
                 if (next.getOpcode() < 0) continue;
