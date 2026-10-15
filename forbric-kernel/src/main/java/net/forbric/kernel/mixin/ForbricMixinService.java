@@ -462,12 +462,30 @@ public final class ForbricMixinService
 		try {
 			byte[] bytes = loader().getPreMixinClassBytes(internalName.replace('/', '.'));
 			if (bytes == null) return null;
+			if ((flags & ClassReader.SKIP_CODE) == 0) return codeView(bytes);
 			ClassNode target = new ClassNode();
 			new ClassReader(bytes).accept(target, flags);
 			return target;
 		} catch (Throwable absent) {
 			return null;
 		}
+	}
+
+	/**
+	 * A target's pre-mixin bytes, with code, as the adapters read them: the game's own instructions, without the delivery
+	 * bookkeeping the kernel's stand-down writes around the hook calls of a method that calls both families' hooks
+	 * ({@link net.forbric.kernel.transform.DeliveryBookkeeping}). The bookkeeping never moves, removes or repeats a game
+	 * instruction, so every point decided on this view — a call and its occurrence, a return and its ordinal, a local's
+	 * slot — is the same point in the bytes Mixin applies to; read with it in the way, the run in front of a hook, the
+	 * locals at a call or the way a return is reached no longer read as the game's (Create's released-key hooks on
+	 * {@code keyPress} and its section-change hook on {@code onMove} landed nowhere). Null for null bytes.
+	 */
+	static ClassNode codeView(byte[] bytes) {
+		if (bytes == null) return null;
+		ClassNode target = new ClassNode();
+		new ClassReader(bytes).accept(target, 0);
+		net.forbric.kernel.transform.DeliveryBookkeeping.strip(target);
+		return target;
 	}
 
 	/** Whether the merged base (or any owned jar) carries {@code binary}. Bytes only — the class is not loaded. */
