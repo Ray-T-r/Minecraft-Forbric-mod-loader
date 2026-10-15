@@ -448,14 +448,27 @@ public final class KernelFabricLoader implements FabricLoader {
 		return entries != null && !entries.isEmpty();
 	}
 
+	/**
+	 * As Fabric Loader's: every entry is constructed, and the ones that fail are gathered into one
+	 * {@link net.fabricmc.loader.api.EntrypointException} for the key (the first failing mod named, the rest suppressed),
+	 * thrown once every other entry has been built.
+	 */
 	@Override
 	public <T> List<T> getEntrypoints(String key, Class<T> type) {
 		List<T> out = new ArrayList<>();
+		net.fabricmc.loader.api.EntrypointException failure = null;
 
 		for (EntrypointContainer<T> container : getEntrypointContainers(key, type)) {
-			out.add(container.getEntrypoint());
+			try {
+				out.add(container.getEntrypoint());
+			} catch (Throwable t) {
+				Throwable cause = t instanceof net.fabricmc.loader.api.EntrypointException wrapped && wrapped.getCause() != null ? wrapped.getCause() : t;
+				if (failure == null) failure = new net.fabricmc.loader.api.EntrypointException(key, container.getProvider().getMetadata().getId(), cause);
+				else failure.addSuppressed(cause);
+			}
 		}
 
+		if (failure != null) throw failure;
 		return out;
 	}
 
@@ -471,7 +484,7 @@ public final class KernelFabricLoader implements FabricLoader {
 			// own `main` key carries only ModInitializer, but custom keys are routinely polymorphic).
 			if (!entry.provides(type)) continue;
 
-			out.add(new TypedContainer<>(entry, type));
+			out.add(new TypedContainer<>(key, entry, type));
 		}
 
 		return out;
@@ -864,17 +877,27 @@ public final class KernelFabricLoader implements FabricLoader {
 
 	/** The mod-facing view of one resolved entrypoint. */
 	private final class TypedContainer<T> implements EntrypointContainer<T> {
+		private final String key;
 		private final Entrypoint entry;
 		private final Class<T> type;
 
-		TypedContainer(Entrypoint entry, Class<T> type) {
+		TypedContainer(String key, Entrypoint entry, Class<T> type) {
+			this.key = key;
 			this.entry = entry;
 			this.type = type;
 		}
 
+		/** As Fabric Loader's container: an entry that cannot be built is an EntrypointException naming its key and mod. */
 		@Override
 		public T getEntrypoint() {
-			return type.cast(entry.get(type));
+			try {
+				return type.cast(entry.get(type));
+			} catch (net.fabricmc.loader.api.EntrypointException own) {
+				throw own;
+			} catch (RuntimeException failed) {
+				throw new net.fabricmc.loader.api.EntrypointException(key, entry.provider().getMetadata().getId(),
+						failed.getCause() != null ? failed.getCause() : failed);
+			}
 		}
 
 		@Override
