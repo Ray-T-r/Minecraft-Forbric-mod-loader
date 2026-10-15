@@ -95,6 +95,9 @@ public final class Hooks {
 					+ "entrypoints already ran");
 			return;
 		}
+		// Fabric's startClient hands the Minecraft being constructed to prepareModInit before any entrypoint runs, and
+		// FabricLoader.getGameInstance() answers it from then on.
+		if (gameInstance != null) KernelFabricEcosystem.setGameInstance(gameInstance);
 		KernelLifecycle.onClientEntrypoints();
 	}
 }

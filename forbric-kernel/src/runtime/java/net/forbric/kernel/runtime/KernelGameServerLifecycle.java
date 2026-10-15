@@ -27,6 +27,7 @@ import net.minecraftforge.server.ServerLifecycleHooks;
 import net.neoforged.bus.api.EventPriority;
 import net.neoforged.bus.api.IEventBus;
 import net.neoforged.neoforge.event.server.ServerLifecycleEvent;
+import net.neoforged.neoforge.event.server.ServerAboutToStartEvent;
 import net.neoforged.neoforge.event.server.ServerStartedEvent;
 import net.neoforged.neoforge.event.server.ServerStartingEvent;
 import net.neoforged.neoforge.event.server.ServerStoppedEvent;
@@ -135,6 +136,20 @@ public final class KernelGameServerLifecycle {
 			}
 		};
 		((IEventBus) neoBus).addListener(EventPriority.LOWEST, false, ServerStartedEvent.class, listener);
+	}
+
+	/**
+	 * A dedicated server is Fabric Loader's game instance once it exists: Fabric sets it from the server's own
+	 * construction, and {@code FabricLoader.getGameInstance()} answers it from then on (a client's is the Minecraft
+	 * instance, set by {@code Hooks.startClient}; an integrated server never replaces it). NeoForge's
+	 * {@code ServerAboutToStartEvent}, first in, is the earliest event that carries the server.
+	 */
+	public static void installGameInstance(Object neoBus) {
+		Consumer<ServerAboutToStartEvent> listener = neoEvent -> {
+			MinecraftServer server = neoEvent.getServer();
+			if (server != null && server.isDedicatedServer()) net.forbric.kernel.boot.KernelFabricEcosystem.setGameInstance(server);
+		};
+		((IEventBus) neoBus).addListener(EventPriority.HIGHEST, false, ServerAboutToStartEvent.class, listener);
 	}
 
 	/** NeoForge {@code ServerStoppingEvent} → MinecraftForge {@code handleServerStopping}. */

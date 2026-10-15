@@ -250,6 +250,12 @@ public final class GameEventMultiplexer {
 			// The kernel's own work at server start is no forward, so it goes on NeoForge's bus itself, after the
 			// forward, and runs whether the forward ran or stood down.
 			try {
+				lifecycleBridge(cl, "installGameInstance").invoke(null, neoBus);
+			} catch (Throwable t) {
+				ForbricLog.warn("[Forbric/EventMux] the dedicated server will not be Fabric Loader's game instance — "
+						+ "FabricLoader.getGameInstance() stays null there", Reflect.unwrap(t));
+			}
+			try {
 				lifecycleBridge(cl, "installStartedDuties").invoke(null, neoBus);
 			} catch (Throwable t) {
 				ForbricLog.warn("[Forbric/EventMux] the kernel's server-started work did not install — no dead-event "
