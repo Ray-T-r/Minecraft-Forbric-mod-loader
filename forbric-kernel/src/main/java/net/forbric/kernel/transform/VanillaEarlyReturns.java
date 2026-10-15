@@ -174,7 +174,7 @@ public final class VanillaEarlyReturns implements ClassTransformer {
 		try {
 			ClassNode node = new ClassNode();
 			new ClassReader(classBytes).accept(node, 0);
-			int methods = restore(node, rows);
+			int methods = restore(node, rows, owner -> net.forbric.kernel.mixin.NativeGameReferences.reference(net.forbric.api.Ecosystem.FABRIC, owner));
 			if (methods == 0) return classBytes;
 			ClassWriter writer = new ClassWriter(0);
 			node.accept(writer);
@@ -188,6 +188,17 @@ public final class VanillaEarlyReturns implements ClassTransformer {
 
 	/** Splits every method of {@code node} that {@code rows} names; returns how many it changed. */
 	static int restore(ClassNode node, Map<String, Map<String, List<String>>> rows) {
+		return restore(node, rows, null);
+	}
+
+	/**
+	 * {@link #restore(ClassNode, Map)}, and each split tail gets back the primitive locals vanilla's holds
+	 * ({@link TailLocals}), read in {@code vanillaClasses} (the class as vanilla compiled it, by internal name; null, or answering
+	 * null: none given back).
+	 */
+	static int restore(ClassNode node, Map<String, Map<String, List<String>>> rows, java.util.function.Function<String, ClassNode> vanillaClasses) {
+		ClassNode vanillaNode = null;
+		boolean vanillaRead = false;
 		int changed = 0;
 		for (MethodNode method : node.methods) {
 			Map<String, List<String>> vanilla = rows.get(method.name + method.desc);
@@ -201,6 +212,19 @@ public final class VanillaEarlyReturns implements ClassTransformer {
 			int blocks = split(node.name, method, tail, edges, decisions);
 			if (blocks == 0) continue;
 			SPLITS.put(node.name + "#" + method.name + method.desc, new Split(inline, blocks));
+			if (vanillaClasses != null && TailLocals.enabled()) {
+				if (!vanillaRead) {
+					vanillaRead = true;
+					try {
+						vanillaNode = vanillaClasses.apply(node.name);
+					} catch (RuntimeException unavailable) {
+						vanillaNode = null;
+					}
+				}
+				int given = TailLocals.restore(node.name, method, vanillaNode);
+				if (given > 0) ForbricLog.debug("[Forbric/EarlyReturns] %s.%s%s: its tail holds %d of vanilla's locals again",
+						node.name, method.name, method.desc, given);
+			}
 			changed++;
 		}
 		return changed;
