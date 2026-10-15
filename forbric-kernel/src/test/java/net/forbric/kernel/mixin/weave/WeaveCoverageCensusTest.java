@@ -53,7 +53,7 @@ class WeaveCoverageCensusTest {
 	static final Map<String, Switch> WOVEN = Map.ofEntries(
 			// KernelGuestMixinAdapterWeaveTest; NativeAbsentTargetsWeaveTest flips NativeAbsentTargets' switch, which the
 			// adapter's verdict reads, and this one as its native control.
-			Map.entry("KernelGuestMixinAdapter", Switch.own("forbric.guestMixinAdapter")),
+			Map.entry("KernelGuestMixinAdapter", Switch.own("forbric.guestMixinAdapter", "forbric.lateMixinJudgment")), // + PluginAddedMixinRetargetWeaveTest
 			Map.entry("FinalMixinApplications", Switch.own()), // WeaveHarnessSelfTest, MixinOutcomeWeaveTest
 			// MixinOutcomeWeaveTest; the redirect of a widened static call in MixinAtWidenedRedirectWeaveTest.
 			Map.entry("MixinAtWidenedCall", Switch.own("forbric.mixinAtWiden", "forbric.mixinAtWidenRedirect")),

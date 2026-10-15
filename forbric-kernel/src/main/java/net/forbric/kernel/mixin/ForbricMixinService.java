@@ -303,7 +303,11 @@ public final class ForbricMixinService
 	public ClassNode getClassNode(String name, boolean runTransformers, int readerFlags)
 			throws ClassNotFoundException, IOException {
 		ClassNode node = new ClassNode();
-		new ClassReader(getClassBytes(name, runTransformers)).accept(node, readerFlags);
+		byte[] bytes = getClassBytes(name, runTransformers);
+		new ClassReader(bytes).accept(node, readerFlags);
+		// A mixin its config's plugin added is in no list the config-time pass read: judged here, where Mixin first reads
+		// it, so a carrier retarget is planned for it as for a listed one.
+		KernelGuestMixinAdapter.judgeLate(name.replace('.', '/'), bytes);
 		// The one seam MixinInfo.loadMixinClass reads a mixin through: a retarget plan the adapter remembered for
 		// this mixin is applied to the node Mixin receives, never to jar bytes.
 		MixinRetarget.applyRemembered(name, node);

@@ -136,6 +136,58 @@ public final class KernelGuestMixinAdapter {
 
 	/** {@code -Dforbric.guestMixinAdapter=off} turns the derived scan off (leaving only the hand list). */
 	static final String PROPERTY = "forbric.guestMixinAdapter";
+	/** {@code -Dforbric.lateMixinJudgment=off}: a mixin a config's plugin adds is not judged when Mixin reads it ({@link #judgeLate}). */
+	public static final String LATE_PROPERTY = "forbric.lateMixinJudgment";
+
+	/** The mixin classes a config listed, which the config-time pass has judged (or will): internal names. */
+	private static final java.util.Set<String> JUDGED = java.util.concurrent.ConcurrentHashMap.newKeySet();
+	/** A config with a plugin, by package: what the late judgment of a mixin its plugin adds needs. */
+	private record LateConfig(String configName, String pkg, String pluginClass, boolean required, Function<String, byte[]> resource,
+			int configMinimum, NativeAbsentTargets.Context nativeView) { }
+	private static final Map<String, LateConfig> LATE = new java.util.concurrent.ConcurrentHashMap<>();
+
+	/**
+	 * Judges a mixin a config's plugin added from {@code getMixins()} as the config-time pass judges a listed one, when
+	 * Mixin first reads it: such a mixin is in no list, so the pass never saw it, and no carrier retarget (MixinRetarget's
+	 * moves onto renamed, split, helper-carried or relocated bodies) was ever planned for it. Create's client config adds
+	 * its model-baking mixins that way when Fabric's renderer API is absent; its normals wrap on
+	 * {@code UnbakedCuboidGeometry.bake} stayed on the stub NeoForge forwards to the builder overload, and never ran.
+	 * Only the retarget is taken (a plan MixinRetarget would adopt for a listed mixin); Mixin already selected the mixin,
+	 * so nothing is left out. A class of no plugin config's package, or one already judged, is left alone.
+	 * {@code -Dforbric.lateMixinJudgment=off} leaves plugin-added mixins unjudged, as before.
+	 */
+	public static void judgeLate(String internalName, byte[] classBytes) {
+		if (!enabled() || "off".equalsIgnoreCase(System.getProperty(LATE_PROPERTY, "on")) || internalName == null || classBytes == null
+				|| JUDGED.contains(internalName) || LATE.isEmpty()) return;
+		LateConfig config = null;
+		for (String p = parentPackage(internalName); p != null && config == null; p = parentPackage(p)) config = LATE.get(p);
+		if (config == null || !JUDGED.add(internalName)) return;
+		String mixin = internalName.substring(config.pkg().replace('.', '/').length() + 1).replace('/', '.');
+		try {
+			if (isPureAccessorMixin(classBytes) || isExplicitlyKept(config.configName(), mixin)) return;
+			Function<String, byte[]> resource = config.resource();
+			MixinAddedMembers.View added = MixinAddedMembers.before(config.configName(), mixin, resource);
+			byte[] judged = adaptedSourceProtocols(classBytes, resource);
+			judged = ForbricMixinService.absorbedCallbacksAsLoaded(judged, resource);
+			judged = MixinDecodeScopeAdapter.asLoaded(ReplacedCallRedirects.asLoaded(MixinPlayerWorldCallbackAdapter.asLoaded(judged, resource),
+					resource), resource);
+			judged = MixinStructurePlacementAdapter.asLoaded(judged, resource);
+			MixinFit.Result fit = MixinFit.evaluate(judged, resource, net.forbric.kernel.classloading.DelegationPolicy::alwaysGame, added,
+					config.nativeView());
+			if (fit.verdict() != MixinFit.Verdict.PARTIAL && fit.verdict() != MixinFit.Verdict.UNFIT) return;
+			ForbricLog.info("[Forbric/Mixin] %s:%s was added by its config's plugin, so it is judged as Mixin reads it — %s (%s)",
+					MixinConfigOwners.describe(config.configName()), mixin, fit.verdict(), fit.reason());
+			retargeted(config.configName(), config.pkg(), mixin, config.pluginClass(), classBytes, config.required(), judged, fit, resource,
+					added, config.configMinimum(), new ArrayList<>(), config.nativeView());
+		} catch (RuntimeException perMixin) {
+			ForbricLog.debug("[Forbric/Mixin] could not judge plugin-added mixin %s — %s", internalName, String.valueOf(perMixin));
+		}
+	}
+
+	private static String parentPackage(String internalName) {
+		int slash = internalName.lastIndexOf('/');
+		return slash <= 0 ? null : internalName.substring(0, slash);
+	}
 
 	public static boolean enabled() {
 		return !"off".equalsIgnoreCase(System.getProperty(PROPERTY, "on"));
@@ -212,6 +264,16 @@ public final class KernelGuestMixinAdapter {
 		MixinStubRebind.notePackage(pkgPath, MixinConfigOwners.ecosystemOf(configName), configName);
 
 		LinkedHashSet<String> mixins = appliedEntries(config, side);
+		for (String listed : mixins) JUDGED.add(pkgPath + "/" + listed.replace('.', '/'));
+		String plugin = asString(config.get(List.of("plugin")));
+		if (plugin != null) {
+			net.forbric.api.Ecosystem owner = MixinConfigOwners.ecosystemOf(configName);
+			Object require = config.get(List.of("injectors", "defaultRequire"));
+			LATE.put(pkgPath, new LateConfig(configName, pkg, plugin, Boolean.TRUE.equals(config.get(List.of("required"))), resource,
+					require instanceof Number n ? Math.max(0, n.intValue()) : 0,
+					raw == null || base == null || owner == null ? NativeAbsentTargets.Context.NONE
+							: new NativeAbsentTargets.Context(raw, declaredDefaultRequire(config), owner, base, declaringMod(configName, owner))));
+		}
 		if (mixins.isEmpty()) return List.of();
 
 		// A config that declares a plugin can have switched a mixin off itself, and the plugin is never asked
