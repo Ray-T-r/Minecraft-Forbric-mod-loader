@@ -97,6 +97,31 @@ public final class KernelFabricLoader implements FabricLoader {
 
 	private final List<ModContainer> mods = new ArrayList<>();
 	private final Map<String, ModContainer> modsById = new LinkedHashMap<>();
+	/**
+	 * Fabric Loader's own names for its mod index, entrypoint storage and language adapters, which a mod that registers a
+	 * mod of its own at run time reads by reflection from {@code FabricLoader.getInstance()}'s class: Essential's loader
+	 * looks for {@code modMap}, {@code mods}, {@code entrypointStorage} and {@code adapterMap} together, adds each jar it
+	 * unpacked to {@code mods} and {@code modMap}, and its entrypoints to the storage. {@code modMap} is the index
+	 * {@code getModContainer}/{@code isModLoaded} read; the storage is the one the kernel takes back between phases
+	 * ({@link #adoptFabricStorage}), made live only once something is added to it; the adapters are the kernel's.
+	 */
+	private final Map<String, ModContainer> modMap = modsById;
+	private final EntrypointStorage entrypointStorage = EntrypointStorage.deferred();
+	private final Map<String, net.fabricmc.loader.api.LanguageAdapter> adapterMap = new java.util.AbstractMap<>() {
+		@Override public net.fabricmc.loader.api.LanguageAdapter get(Object name) {
+			try {
+				return name instanceof String adapter ? KernelLanguageAdapters.get(adapter) : null;
+			} catch (net.fabricmc.loader.api.LanguageAdapterException | RuntimeException unknown) {
+				return null;
+			}
+		}
+		@Override public boolean containsKey(Object name) {
+			return get(name) != null;
+		}
+		@Override public java.util.Set<Map.Entry<String, net.fabricmc.loader.api.LanguageAdapter>> entrySet() {
+			return java.util.Set.of();
+		}
+	};
 	private final Map<String, List<Entrypoint>> entrypointsByKey = new LinkedHashMap<>();
 
 	private volatile ClassLoader gameLoader;
@@ -287,6 +312,11 @@ public final class KernelFabricLoader implements FabricLoader {
 		return FABRIC_ENTRY_MAP;
 	}
 
+	/** {@link #fabricEntryMap()} without making it live: for a storage that marks it live only when something is added. */
+	public static Map<String, List<EntrypointStorage.Entry>> fabricEntryMapIfLive() {
+		return FABRIC_ENTRY_MAP;
+	}
+
 	/** Refills {@link #FABRIC_ENTRY_MAP} from this loader. Caller holds its lock. */
 	private void seedFabricStorage() {
 		FABRIC_ENTRY_MAP.clear();
@@ -404,6 +434,8 @@ public final class KernelFabricLoader implements FabricLoader {
 		} catch (Throwable unreadable) {
 			mod = null;
 		}
+		// A container a mod built itself (Essential's run-time mods) answers through the kernel container it stands for.
+		if (mod != null && !(mod instanceof KernelModContainer) && mod.kernelContainer() != null) mod = mod.kernelContainer();
 		if (!(mod instanceof KernelModContainer provider)) {
 			ForbricLog.warn("[Forbric/Fabric] an entry added to '%s' through Fabric Loader's internal EntrypointStorage "
 					+ "(%s) names no mod this loader knows — skipped", key, String.valueOf(stored));

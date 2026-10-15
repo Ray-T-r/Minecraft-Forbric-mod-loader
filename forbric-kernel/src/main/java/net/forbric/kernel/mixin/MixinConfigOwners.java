@@ -106,6 +106,17 @@ public final class MixinConfigOwners {
 		}
 	}
 
+	/**
+	 * Claims {@code config} for a mod registered at run time (a mod container another mod built, as Essential's loader does
+	 * for each jar it unpacks), unless a boot-time mod already owns it: the kernel's adapters then read it as that mod's.
+	 */
+	public static synchronized void claimLate(String config, String modId, net.forbric.api.Ecosystem ecosystem) {
+		if (config == null || owners.containsKey(config)) return;
+		Map<String, Owned> grown = new LinkedHashMap<>(owners);
+		grown.put(config, new Owned(config, modId, ecosystem));
+		owners = Map.copyOf(grown);
+	}
+
 	/** The owning mod's id, or null when nothing or more than one mod claims this config. */
 	public static String modIdOf(String config) {
 		Owned one = owners.get(config);

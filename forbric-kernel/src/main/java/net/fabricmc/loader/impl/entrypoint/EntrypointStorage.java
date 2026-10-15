@@ -45,6 +45,35 @@ public final class EntrypointStorage {
 		this.entryMap = KernelFabricLoader.fabricEntryMap();
 	}
 
+	private EntrypointStorage(Map<String, List<Entry>> entryMap) {
+		this.entryMap = entryMap;
+	}
+
+	/**
+	 * The storage the kernel's loader exposes as its own {@code entrypointStorage} field: the same entry map, made live
+	 * ({@link KernelFabricLoader#fabricEntryMap()}) only by the first {@link #add}, so a pack whose mods never reach for it
+	 * never has one.
+	 */
+	public static EntrypointStorage deferred() {
+		return new EntrypointStorage(KernelFabricLoader.fabricEntryMapIfLive());
+	}
+
+	/**
+	 * Adds {@code metadata}'s entrypoint of {@code mod} under {@code key}, built by its language adapter from
+	 * {@code adapterMap}: what Fabric Loader does for each declared entrypoint, and what Essential's loader does for each
+	 * mod it registers at run time. The kernel takes it back between phases ({@code KernelFabricLoader.adoptFabricStorage}).
+	 */
+	public void add(ModContainerImpl mod, String key, net.fabricmc.loader.impl.metadata.EntrypointMetadata metadata,
+			Map<String, LanguageAdapter> adapterMap) throws Exception {
+		LanguageAdapter adapter = adapterMap.get(metadata.getAdapter());
+		if (adapter == null) throw new IllegalArgumentException("Could not find adapter '" + metadata.getAdapter() + "' (mod "
+				+ mod.getMetadata().getId() + "!)");
+		Map<String, List<Entry>> live = KernelFabricLoader.fabricEntryMap();   // live from here on, seeded if the loader froze
+		synchronized (live) {
+			live.computeIfAbsent(key, k -> new java.util.ArrayList<>()).add(new NewEntry(mod, adapter, metadata.getValue()));
+		}
+	}
+
 	/**
 	 * One entrypoint as Fabric Loader stores it. Package-private in Fabric Loader; public here because the kernel's
 	 * own entrypoints are stored as implementations of it.

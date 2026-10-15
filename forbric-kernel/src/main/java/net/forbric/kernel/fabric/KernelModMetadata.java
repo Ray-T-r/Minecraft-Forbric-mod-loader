@@ -39,7 +39,7 @@ import net.fabricmc.loader.api.metadata.Person;
  * keeps those in a separate internal metadata type; the kernel has no split between public and internal
  * metadata, so they live here.
  */
-public final class KernelModMetadata implements ModMetadata {
+public final class KernelModMetadata implements ModMetadata, net.fabricmc.loader.impl.metadata.LoaderModMetadata {
 	private final String type;
 	private final String id;
 	private final Collection<String> provides;
@@ -143,6 +143,25 @@ public final class KernelModMetadata implements ModMetadata {
 	/** Declared mixin configs, each with the side it applies on. */
 	public List<MixinConfigDecl> getMixinConfigs() {
 		return mixinConfigs;
+	}
+
+	// --- Fabric Loader's internal view (LoaderModMetadata), for a mod that registers a mod of its own at run time ---
+
+	@Override
+	public Collection<String> getEntrypointKeys() {
+		return entrypoints.keySet();
+	}
+
+	@Override
+	public List<net.fabricmc.loader.impl.metadata.EntrypointMetadata> getEntrypoints(String type) {
+		return List.copyOf(entrypoints.getOrDefault(type, List.of()));
+	}
+
+	@Override
+	public Collection<String> getMixinConfigs(net.fabricmc.api.EnvType type) {
+		List<String> configs = new java.util.ArrayList<>();
+		for (MixinConfigDecl decl : mixinConfigs) if (decl.environment() == null || decl.environment().matches(type)) configs.add(decl.config());
+		return configs;
 	}
 
 	/**
@@ -272,9 +291,19 @@ public final class KernelModMetadata implements ModMetadata {
 	}
 
 	/** One entrypoint declaration: a value plus the language adapter that turns it into an instance. */
-	public record EntrypointDecl(String adapter, String value) {
+	public record EntrypointDecl(String adapter, String value) implements net.fabricmc.loader.impl.metadata.EntrypointMetadata {
 		public boolean isDefaultAdapter() {
 			return adapter == null || adapter.equals("default");
+		}
+
+		@Override
+		public String getAdapter() {
+			return adapter == null ? "default" : adapter;
+		}
+
+		@Override
+		public String getValue() {
+			return value;
 		}
 	}
 
