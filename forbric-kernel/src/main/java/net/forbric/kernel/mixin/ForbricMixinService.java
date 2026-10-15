@@ -581,6 +581,9 @@ public final class ForbricMixinService
 			}
 
 			if (relax) {
+				// A parent config is read right after its child names it, and gives the child every option the child
+				// leaves out: its injectors' defaultRequire among them. It belongs to the same mod, so it is relaxed too.
+				noteParent(json);
 				// Three independent relaxations, each for a different way a guest mixin meets the merged base:
 				//
 				//   injectors.defaultRequire -> 0   an injection point whose anchor the byte-merge removed
@@ -791,6 +794,22 @@ public final class ForbricMixinService
 	 */
 	private static volatile java.util.Set<String> guestConfigs = java.util.Set.of();
 
+	/**
+	 * Parent configs a relaxed config names ({@code "parent": "c2me.mixins.json"}). No mod declares a parent in its
+	 * metadata, yet Mixin reads it right after the child and the child inherits every option it does not set itself:
+	 * C2ME's 20 module configs leave their injectors' {@code defaultRequire} to {@code c2me.mixins.json}, which says 1,
+	 * so one injector of theirs that found nothing failed its whole target class (the dedicated server's watchdog, and
+	 * the server with it) although the child was relaxed.
+	 */
+	private static final java.util.Set<String> guestParents = java.util.concurrent.ConcurrentHashMap.newKeySet();
+	private static final Pattern PARENT = Pattern.compile("\"parent\"\\s*:\\s*\"([^\"]+)\"");
+
+	/** Records the parent config a relaxed config's JSON names, if any: that parent is relaxed in its turn. */
+	static void noteParent(String json) {
+		java.util.regex.Matcher parent = PARENT.matcher(json);
+		if (parent.find()) guestParents.add(parent.group(1));
+	}
+
 	/** Every registered mixin config name, relaxed or not — the input {@link ForeignMixinTargets} indexes. */
 	private static volatile java.util.Set<String> registeredConfigs = java.util.Set.of();
 
@@ -825,6 +844,7 @@ public final class ForbricMixinService
 			registeredConfigs = java.util.Collections.unmodifiableSet(all);
 		}
 
+		guestParents.clear();
 		if (configs == null || "off".equalsIgnoreCase(System.getProperty("forbric.relaxGuestMixins", "on"))) {
 			guestConfigs = java.util.Set.of();
 			return;
@@ -872,6 +892,7 @@ public final class ForbricMixinService
 
 	static boolean isRelaxedConfig(String name) {
 		if (guestConfigs.contains(name)) return true;
+		if (guestParents.contains(name) && !isInfrastructureConfig(name)) return true;
 
 		String csv = System.getProperty("forbric.relaxMixinOverwrites");
 		if (csv == null || csv.isEmpty()) return false;

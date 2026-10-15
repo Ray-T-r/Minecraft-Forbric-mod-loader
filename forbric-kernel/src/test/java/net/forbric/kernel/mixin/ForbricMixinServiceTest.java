@@ -212,6 +212,23 @@ class ForbricMixinServiceTest {
 		assertTrue(ForbricMixinService.isRelaxedConfig("geckolib.mixins.json"));
 	}
 
+	/**
+	 * A relaxed config's parent is relaxed too: Mixin reads it right after the child names it, and the child inherits
+	 * the options it leaves out — C2ME's module configs take their injectors' defaultRequire of 1 from
+	 * {@code c2me.mixins.json}, which no mod declares, and one injector that found nothing failed its whole target class.
+	 */
+	@Test
+	void aParentThatARelaxedConfigNamesIsRelaxedToo() {
+		ForbricMixinService.setGuestConfigs(List.of("c2me-base.mixins.json"));
+		assertFalse(ForbricMixinService.isRelaxedConfig("c2me.mixins.json"), "never declared by itself");
+		ForbricMixinService.noteParent("{ \"parent\" : \"c2me.mixins.json\", \"required\": true, \"package\": \"a.b\" }");
+		assertTrue(ForbricMixinService.isRelaxedConfig("c2me.mixins.json"));
+		ForbricMixinService.noteParent("{\"parent\":\"forbric-kernel.mixins.json\"}");
+		assertFalse(ForbricMixinService.isRelaxedConfig("forbric-kernel.mixins.json"), "the kernel's own stays strict");
+		ForbricMixinService.setGuestConfigs(List.of("c2me-base.mixins.json"));
+		assertFalse(ForbricMixinService.isRelaxedConfig("c2me.mixins.json"), "a new registration starts over");
+	}
+
 	@Test
 	void theKernelsOwnConfigIsNeverRelaxed() {
 		// The kernel authors no mixins today, but a failure in one it did author must crash loudly rather than be
