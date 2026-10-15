@@ -155,18 +155,47 @@ public final class InsertedLambdaArgumentShim {
      */
     private static String dropped(MethodNode handler, ClassNode target, Function<String, ClassNode> natives) {
         String member = MixinTargetSelectors.nativeMember(handler, null, target.name);
+        ClassNode nativeClass = null;
         if (member == null && natives != null) {
             // A bare name binds the live lambda in the merged class: only where the pruner dropped a lambda of the name
-            // it reaches there is the class the mod was compiled against worth reading.
+            // it reaches, or the class the mod was compiled against has that lambda in another shape, is that class worth
+            // reading.
             List<MixinTargetSelectors.Reach> reach = MixinTargetSelectors.reach(handler, target);
             boolean pruned = reach != null && !reach.isEmpty() && reach.stream().allMatch(r -> r.matched().stream()
                     .anyMatch(m -> !DuplicateLambdaPruneInjector.droppedDescriptors(target.name, m.name).isEmpty()));
-            if (pruned) member = MixinTargetSelectors.nativeMember(handler, natives.apply(target.name), target.name);
+            if (pruned || (reach != null && !reach.isEmpty() && nativeShapes())) {
+                nativeClass = natives.apply(target.name);
+                member = MixinTargetSelectors.nativeMember(handler, nativeClass, target.name);
+            }
         }
         if (member == null || !member.startsWith("lambda$")) return null;
         int split = member.indexOf('(');
-        return split > 0 && DuplicateLambdaPruneInjector.droppedDescriptors(target.name, member.substring(0, split))
-                .contains(member.substring(split)) ? member : null;
+        if (split <= 0) return null;
+        String name = member.substring(0, split), desc = member.substring(split);
+        if (DuplicateLambdaPruneInjector.droppedDescriptors(target.name, name).contains(desc)) return member;
+        // The second evidence: the class the mod was compiled against (its own platform's native game) declares the lambda
+        // in exactly the shape the selector names, and the merged class, whose one lambda of that name the selector binds,
+        // has it in no such shape. The pruner never saw that shape: the merge carried the name twice, both carriers'
+        // bodies with an argument vanilla's lacks, and dropped the other carrier's. Screenshot.grab's lambda$grab$3 is
+        // (NativeImage, File, ScreenshotEvent, Consumer) on both carriers and (NativeImage, File, Consumer) on Fabric;
+        // Essential's capture handler, written for Fabric's, failed its whole mixin on the descriptor.
+        // -Dforbric.insertedLambdaArguments.nativeShapes=off leaves this evidence out.
+        if (natives == null || !nativeShapes()) return null;
+        if (nativeClass == null) nativeClass = natives.apply(target.name);
+        if (nativeClass == null || nativeClass.methods == null || !declares(nativeClass, name, desc) || declares(target, name, desc)) return null;
+        return target.methods.stream().filter(m -> m.name.equals(name)).count() == 1 ? member : null;
+    }
+
+    /** {@code -Dforbric.insertedLambdaArguments.nativeShapes}: whether the native lambda's shape is evidence on its own. */
+    static final String NATIVE_SHAPES = PROPERTY + ".nativeShapes";
+
+    private static boolean nativeShapes() {
+        return !"off".equalsIgnoreCase(System.getProperty(NATIVE_SHAPES, "on"));
+    }
+
+    private static boolean declares(ClassNode owner, String name, String desc) {
+        for (MethodNode method : owner.methods) if (method.name.equals(name) && method.desc.equals(desc)) return true;
+        return false;
     }
 
     static int[] uniqueEmbedding(Type[] oldArgs, Type[] newArgs) {
