@@ -207,11 +207,13 @@ public final class KernelGuestMixinAdapter {
 
 		String pkg = asString(config.get(List.of("package")));
 		if (pkg == null || pkg.isEmpty()) return List.of();
+		String pkgPath = pkg.replace('.', '/');
+		// Before the lists: a config plugin can add every mixin the config has, and those are known only by its package.
+		MixinStubRebind.notePackage(pkgPath, MixinConfigOwners.ecosystemOf(configName), configName);
 
 		LinkedHashSet<String> mixins = appliedEntries(config, side);
 		if (mixins.isEmpty()) return List.of();
 
-		String pkgPath = pkg.replace('.', '/');
 		// A config that declares a plugin can have switched a mixin off itself, and the plugin is never asked
 		// about an entry this method removes. PluginDeclinedMixins holds the attribution back to ask it later.
 		String pluginClass = asString(config.get(List.of("plugin")));

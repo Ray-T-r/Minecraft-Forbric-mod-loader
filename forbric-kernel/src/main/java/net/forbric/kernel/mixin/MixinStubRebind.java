@@ -173,6 +173,16 @@ public final class MixinStubRebind {
 	private static final Map<String, Ecosystem> ECOSYSTEMS = new ConcurrentHashMap<>();
 	/** Mixin class (internal name) → the config that declares it, so a finding can name the mod. */
 	private static final Map<String, String> CONFIGS = new ConcurrentHashMap<>();
+	/**
+	 * A config's mixin package (internal name) → the ecosystem of the mod that owns the config, and → the config. Mixin
+	 * takes every mixin of a config from its package, the ones a config plugin adds from {@code getMixins()} too, and those
+	 * are in no list the kernel reads; the package is how they are known to be the config's.
+	 */
+	private static final Map<String, Ecosystem> PACKAGE_ECOSYSTEMS = new ConcurrentHashMap<>();
+	private static final Map<String, String> PACKAGE_CONFIGS = new ConcurrentHashMap<>();
+	/** Packages two configs of different ecosystems (or, for {@link #PACKAGE_CONFIGS}, any two configs) declare. */
+	private static final java.util.Set<String> SHARED_PACKAGES = ConcurrentHashMap.newKeySet();
+	private static final java.util.Set<String> SHARED_CONFIG_PACKAGES = ConcurrentHashMap.newKeySet();
 
 	private MixinStubRebind() {
 	}
@@ -201,16 +211,60 @@ public final class MixinStubRebind {
 		return !"off".equalsIgnoreCase(System.getProperty(SHARED_PROPERTY, "on"));
 	}
 
-    public static String configOf(String internalName){return CONFIGS.get(internalName);}
+    /** The config that declares {@code internalName}, or, for a mixin its config's plugin added, the one config of its package. */
+    public static String configOf(String internalName){
+        if(internalName==null)return null;
+        String direct=CONFIGS.get(internalName);
+        if(direct!=null)return direct;
+        for(String p=parent(internalName);p!=null;p=parent(p)){
+            if(SHARED_CONFIG_PACKAGES.contains(p))return null;
+            String config=PACKAGE_CONFIGS.get(p);
+            if(config!=null)return config;
+        }
+        return null;
+    }
 
 	/** Records which family's mod declared {@code mixinInternalName}; null when the config's owner is ambiguous. */
 	public static void noteEcosystem(String mixinInternalName, Ecosystem ecosystem) {
 		if (mixinInternalName != null && ecosystem != null) ECOSYSTEMS.put(mixinInternalName, ecosystem);
 	}
 
-	/** Which family's mod declared {@code mixinInternalName}; null when not recorded or the config's owner is ambiguous. */
+	/**
+	 * Records the package a config takes its mixins from, with the ecosystem of the mod that owns it: a mixin the config's
+	 * plugin adds is found in no list, only in that package.
+	 */
+	public static void notePackage(String packageInternalName, Ecosystem ecosystem, String configName) {
+		if (packageInternalName == null || packageInternalName.isEmpty()) return;
+		if (ecosystem != null) {
+			Ecosystem other = PACKAGE_ECOSYSTEMS.putIfAbsent(packageInternalName, ecosystem);
+			if (other != null && other != ecosystem) SHARED_PACKAGES.add(packageInternalName);
+		}
+		if (configName != null) {
+			String other = PACKAGE_CONFIGS.putIfAbsent(packageInternalName, configName);
+			if (other != null && !other.equals(configName)) SHARED_CONFIG_PACKAGES.add(packageInternalName);
+		}
+	}
+
+	/**
+	 * Which family's mod declared {@code mixinInternalName}: as its config listed it, else as the config whose package
+	 * holds it (the innermost one) — which is where Mixin took a plugin-added mixin from. Null when not recorded or the
+	 * owner is ambiguous.
+	 */
 	static Ecosystem ecosystemOf(String mixinInternalName) {
-		return mixinInternalName == null ? null : ECOSYSTEMS.get(mixinInternalName);
+		if (mixinInternalName == null) return null;
+		Ecosystem direct = ECOSYSTEMS.get(mixinInternalName);
+		if (direct != null) return direct;
+		for (String p = parent(mixinInternalName); p != null; p = parent(p)) {
+			if (SHARED_PACKAGES.contains(p)) return null;
+			Ecosystem ecosystem = PACKAGE_ECOSYSTEMS.get(p);
+			if (ecosystem != null) return ecosystem;
+		}
+		return null;
+	}
+
+	private static String parent(String internalName) {
+		int slash = internalName.lastIndexOf('/');
+		return slash <= 0 ? null : internalName.substring(0, slash);
 	}
 
 	/** {@link #noteEcosystem}, and the config that declared it, which is how a finding about it names the mod. */
@@ -223,6 +277,10 @@ public final class MixinStubRebind {
 	static void forget() {
 		ECOSYSTEMS.clear();
 		CONFIGS.clear();
+		PACKAGE_ECOSYSTEMS.clear();
+		PACKAGE_CONFIGS.clear();
+		SHARED_PACKAGES.clear();
+		SHARED_CONFIG_PACKAGES.clear();
 	}
 
 	/** Moves every eligible injector of {@code mixin}; returns how many. {@code targets} must return nodes WITH code. */
