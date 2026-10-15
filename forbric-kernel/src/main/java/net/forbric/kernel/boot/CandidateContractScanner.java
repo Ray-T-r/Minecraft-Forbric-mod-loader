@@ -301,7 +301,7 @@ final class CandidateContractScanner {
 			Map<String, Map<String, Set<String>>> mixinAdded, List<JointCandidateSelector.Rule> rules) {
 		try {
 			byte[] bytes = jar.read(name); if (bytes == null) { rules.add(unknown(source, "config:" + name, "mixin config not readable")); return; }
-			var config = com.electronwill.nightconfig.json.JsonFormat.fancyInstance().createParser().parse(new StringReader(new String(bytes, java.nio.charset.StandardCharsets.UTF_8)));
+			var config = net.forbric.kernel.mixin.MixinConfigJson.parse(bytes);
 			String pkg = config.get("package"); if (pkg == null) return;
 			boolean required = Boolean.TRUE.equals(config.get("required"));
 			boolean unconditional = config.get("plugin") == null;
@@ -683,8 +683,7 @@ final class CandidateContractScanner {
 		for (String configName : metadata.mixins()) {
 			try {
 				byte[] bytes = jar.read(configName); if (bytes == null) continue;
-				var config = com.electronwill.nightconfig.json.JsonFormat.fancyInstance().createParser().parse(
-						new StringReader(new String(bytes, java.nio.charset.StandardCharsets.UTF_8)));
+				var config = net.forbric.kernel.mixin.MixinConfigJson.parse(bytes);
 				String pkg = config.get("package"); if (pkg == null) continue;
 				for (String section : List.of("mixins", side == EnvType.SERVER ? "server" : "client")) {
 					Object raw = config.get(section); if (!(raw instanceof List<?> mixins)) continue;

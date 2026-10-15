@@ -20,8 +20,7 @@ public final class MixinCompatibility {
 	/** Keep the mod's declaration before Forbric relaxes required=true in the bytes handed to Mixin. */
 	static void rememberOriginalConfig(String config, byte[] bytes) {
 		try {
-			var parsed = com.electronwill.nightconfig.json.JsonFormat.fancyInstance().createParser().parse(
-					new java.io.StringReader(new String(bytes, java.nio.charset.StandardCharsets.UTF_8)));
+			var parsed = MixinConfigJson.parse(bytes);
 			ORIGINAL_REQUIRED.put(config, Boolean.TRUE.equals(parsed.get(java.util.List.of("required"))));
 			FinalMixinApplications.config(config, parsed);
 		} catch (RuntimeException invalid) {

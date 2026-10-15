@@ -9,7 +9,6 @@ import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.function.BiFunction;
 import java.util.function.Function;
 import com.electronwill.nightconfig.core.UnmodifiableConfig;
-import com.electronwill.nightconfig.json.JsonFormat;
 import org.objectweb.asm.tree.*;
 
 /** Source-discovered SDK protocol conflicts. A configuration, package or handler name never decides policy. */
@@ -38,7 +37,7 @@ public final class MergedBaseMixinCompat {
         REASONS.keySet().removeIf(entry->entry.startsWith(configName+":"));
         SOURCES.keySet().removeIf(entry->entry.startsWith(configName+":"));
         try(var reader=new InputStreamReader(new ByteArrayInputStream(configBytes),StandardCharsets.UTF_8)) {
-            UnmodifiableConfig config=JsonFormat.fancyInstance().createParser().parse(reader);
+            UnmodifiableConfig config=MixinConfigJson.parse(reader);
             Object packageValue=config.get(List.of("package"));if(!(packageValue instanceof String pkg))return;
             // The class each mixin was compiled against, where the adapters read a point written without its owner or
             // descriptor: the declaring mod's family, published before any config is read, since a mixin's own family is

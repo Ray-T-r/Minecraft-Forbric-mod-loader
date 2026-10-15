@@ -29,7 +29,6 @@ import java.util.Set;
 import java.util.function.Function;
 
 import com.electronwill.nightconfig.core.UnmodifiableConfig;
-import com.electronwill.nightconfig.json.JsonFormat;
 
 import net.forbric.kernel.util.ForbricLog;
 
@@ -123,7 +122,7 @@ public final class ForeignMixinTargets {
 	private static List<String> targetsOf(byte[] configJson, Function<String, byte[]> resource) {
 		UnmodifiableConfig config;
 		try (Reader reader = new InputStreamReader(new ByteArrayInputStream(configJson), StandardCharsets.UTF_8)) {
-			config = JsonFormat.fancyInstance().createParser().parse(reader);
+			config = MixinConfigJson.parse(reader);
 		} catch (RuntimeException | java.io.IOException notAMixinConfig) {
 			return List.of();
 		}

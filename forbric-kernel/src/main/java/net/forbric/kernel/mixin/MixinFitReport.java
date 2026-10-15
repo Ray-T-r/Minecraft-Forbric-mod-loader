@@ -35,7 +35,6 @@ import java.util.zip.ZipEntry;
 import java.util.zip.ZipInputStream;
 
 import com.electronwill.nightconfig.core.UnmodifiableConfig;
-import com.electronwill.nightconfig.json.JsonFormat;
 
 import net.forbric.api.DiscoveredMod;
 import net.forbric.api.Ecosystem;
@@ -155,7 +154,7 @@ public final class MixinFitReport {
 	static Parsed parseConfig(byte[] json) {
 		UnmodifiableConfig config;
 		try (Reader reader = new InputStreamReader(new ByteArrayInputStream(json), StandardCharsets.UTF_8)) {
-			config = JsonFormat.fancyInstance().createParser().parse(reader);
+			config = MixinConfigJson.parse(reader);
 		} catch (RuntimeException | IOException notAConfig) {
 			return null;
 		}

@@ -29,7 +29,6 @@ import java.util.Set;
 import java.util.function.Function;
 
 import com.electronwill.nightconfig.core.UnmodifiableConfig;
-import com.electronwill.nightconfig.json.JsonFormat;
 
 import org.objectweb.asm.ClassReader;
 import org.objectweb.asm.Opcodes;
@@ -252,7 +251,7 @@ public final class KernelGuestMixinAdapter {
 
 		UnmodifiableConfig config;
 		try (Reader reader = new InputStreamReader(new ByteArrayInputStream(configJson), StandardCharsets.UTF_8)) {
-			config = JsonFormat.fancyInstance().createParser().parse(reader);
+			config = MixinConfigJson.parse(reader);
 		} catch (RuntimeException | java.io.IOException notAMixinConfig) {
 			return List.of();
 		}
@@ -700,7 +699,7 @@ public final class KernelGuestMixinAdapter {
 		if (sources.isEmpty()) return;
 		UnmodifiableConfig config;
 		try (Reader reader = new InputStreamReader(new ByteArrayInputStream(configJson), StandardCharsets.UTF_8)) {
-			config = JsonFormat.fancyInstance().createParser().parse(reader);
+			config = MixinConfigJson.parse(reader);
 		} catch (RuntimeException | java.io.IOException notAMixinConfig) {
 			return;
 		}
