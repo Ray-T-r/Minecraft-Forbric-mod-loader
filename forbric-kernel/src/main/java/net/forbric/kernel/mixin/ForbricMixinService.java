@@ -419,6 +419,9 @@ public final class ForbricMixinService
 		// carrying the body — Mixin binds a name-only selector to the FIRST declared overload, which is that stub.
 		// Last so every specific adapter above has had its say: FabricEntityMixinAnchors moves fabric-api's elytra
 		// check onto NeoForge's gliding attribute read, and a rebind first would have changed the selector it matches.
+		// …and an injector at the start or end of a method whose whole body a carrier renamed, which the merged game also
+		// runs without passing through that method, edges the renamed body (ALLOW_LOAD on players' addEntityWithoutEvent).
+		MixinRenamedBodyEdges.adapt(node, this::mergedBaseNodeWithCode);
 		MixinStubRebind.adapt(node, this::mergedBaseNodeWithCode);
 		// …and a RETURN ordinal counted on the native body names the return of the merged body that is the same way out
 		// (the last stays the last; an early one is the one the same test decides), when the merge added or dropped exits.
