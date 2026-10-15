@@ -335,6 +335,33 @@ class MixinStubRebindTest {
 		assertEquals(java.util.Map.of("insideALoop", true, "insideAnArrayLoop", true, "afterALoopWithArguments", false, "afterALoopReadAgain", true), decided);
 	}
 
+	/**
+	 * Architectury's ExplosionEvent.DETONATE hook injects at the entity list's iterator in vanilla's
+	 * {@code ServerExplosion.hurtEntities()}, taking that list by type. On the merged base vanilla's signature is a stub
+	 * forwarding to NeoForge's {@code hurtEntities(List)}, whose new argument (the affected blocks) is a List too, so the
+	 * implicit pick is two Lists there and the handler stayed on the stub nothing calls: the event never fired. A value
+	 * the carrier added as an argument is never one of vanilla's locals, so beside it the entity list is decided, and the
+	 * handler moves with its @Local pinned to that slot.
+	 */
+	@Test void aByTypeLocalDecidedOnlyBesideTheCarriersAddedArgumentIsPinned() throws Exception {
+		ClassNode explosion = merged("net/minecraft/world/level/ServerExplosion");
+		ClassNode mixin = fromJar(POPULAR.resolve("architectury-fabric-21.1.10.jar"), "dev/architectury/mixin/fabric/MixinServerExplosion");
+		MixinStubRebind.noteEcosystem(mixin.name, Ecosystem.FABRIC);
+		MethodNode body = explosion.methods.stream().filter(m -> m.name.equals("hurtEntities") && m.desc.equals("(Ljava/util/List;)V")).findFirst().orElseThrow();
+		Type list = Type.getType(List.class);
+		List<AnnotationNode> iterator = List.of(at("INVOKE", "target", "Ljava/util/List;iterator()Ljava/util/Iterator;", "ordinal", 0));
+		assertFalse(MixinStubRebind.theOnlyLocalOfItsType(explosion, body, list, iterator), "two Lists to MixinExtras' implicit pick");
+		assertTrue(MixinStubRebind.adapt(mixin, name -> explosion) >= 1);
+		assertEquals(List.of("hurtEntities(Ljava/util/List;)V"), selectors(mixin, "explodePost"));
+		MethodNode handler = mixin.methods.stream().filter(m -> m.name.equals("explodePost")).findFirst().orElseThrow();
+		Object index = null;
+		for (AnnotationNode local : handler.invisibleParameterAnnotations[1]) if (local.desc.endsWith("sugar/Local;")) index = MixinFit.value(local, "index");
+		assertInstanceOf(Integer.class, index, "the @Local is pinned");
+		int slot = (Integer) index;
+		assertNotEquals(1, slot, "never the affected-blocks argument");
+		assertTrue(body.localVariables.stream().anyMatch(l -> l.index == slot && l.desc.equals("Ljava/util/List;")), "a List the body declares in that slot");
+	}
+
 	/** javac's loop shapes around a {@code Thread.yield()} anchor, for a by-type {@code @Local List}. */
 	@SuppressWarnings({"rawtypes", "unused"})
 	private static final class LoopLocals {

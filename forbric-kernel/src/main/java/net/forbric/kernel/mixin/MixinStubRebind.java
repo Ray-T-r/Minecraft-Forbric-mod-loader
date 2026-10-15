@@ -371,7 +371,12 @@ public final class MixinStubRebind {
 	 * What one move needs: the injector, the stub it is bound to, where that forwards, whether it captures the stub's
 	 * arguments, and the {@code @Share} keys it holds in its mixin's namespace.
 	 */
-	private record Plan(AnnotationNode injector, MethodNode stub, Delegation delegation, boolean captures, List<String> shares) {
+	/**
+	 * @param pins for a handler parameter whose by-type {@code @Local} the delegate decides only beside the arguments the
+	 *             carrier added: the slot it reads there, written into the annotation as its {@code index}
+	 */
+	private record Plan(AnnotationNode injector, MethodNode stub, Delegation delegation, boolean captures, List<String> shares,
+			Map<Integer, Integer> pins) {
 	}
 
 	/** Told which handler its captures keep on which stub, and the body it would have moved to. */
@@ -395,6 +400,17 @@ public final class MixinStubRebind {
 		}
 		for (int i = 0; i + 1 < injector.values.size(); i += 2) {
 			if ("method".equals(injector.values.get(i))) injector.values.set(i + 1, new ArrayList<>(List.of(selector)));
+		}
+		for (Map.Entry<Integer, Integer> pin : plan.pins().entrySet()) {
+			AnnotationNode local = local(handler, pin.getKey());
+			if (local == null) continue;
+			if (local.values == null) local.values = new ArrayList<>();
+			local.values.add("index");
+			local.values.add(pin.getValue());
+			ForbricLog.info("[Forbric/Mixin] %s: %s's @Local %s on %s.%s%s reads slot %d — the one of its type there that is not an "
+					+ "argument the carrier added", mixin.name.replace('/', '.'), handler.name,
+					Type.getArgumentTypes(handler.desc)[pin.getKey()].getClassName(), target.name.replace('/', '.'), delegate.name,
+					delegate.desc, pin.getValue());
 		}
 		ForbricLog.info("[Forbric/Mixin] %s: %s now targets %s.%s%s — Mixin bound its selector to the merge-added stub %s, "
 				+ "which only forwards to it%s%s", mixin.name.replace('/', '.'), handler.name, target.name.replace('/', '.'),
@@ -478,6 +494,7 @@ public final class MixinStubRebind {
 		}
 		for (int i = 0; i < plain; i++) if (trailingSugar(handler, i)) return null;
 		List<String> shares = new ArrayList<>();
+		Map<Integer, Integer> pins = new java.util.HashMap<>();
 		for (int i = plain; i < params.length; i++) {
 			AnnotationNode share = sugar(handler, i, SHARE);
 			if (share != null) {
@@ -504,7 +521,14 @@ public final class MixinStubRebind {
 				continue;
 			}
 			if (names.isEmpty() && byTypeOnly(local)) {
-				if (!typedLocalEnabled() || !theOnlyLocalOfItsType(target, delegate, params[i], points)) return null;
+				if (!typedLocalEnabled()) return null;
+				if (theOnlyLocalOfItsType(target, delegate, params[i], points)) continue;
+				// The stub's caller handed vanilla's arguments only: a value the carrier added as an argument is never one
+				// of vanilla's locals. Decided beside those, the one slot left is pinned (architectury's explosion hook
+				// takes the entity list by type in hurtEntities, where NeoForge's body also takes the affected blocks).
+				int slot = onlyLocalOfItsType(target, delegate, params[i], points, addedArgumentSlots(stub, delegation));
+				if (slot < 0) return null;
+				pins.put(i, slot);
 				continue;
 			}
 			if (names.size() != 1 || MixinFit.value(local, "argsOnly") != null || !hasLocal(delegate, names.getFirst(), params[i])) return null;
@@ -519,7 +543,7 @@ public final class MixinStubRebind {
 		if (captures) {
 			for (int i = 0; i < stubParams.length; i++) if (delegation.positions()[i] < 0) return null;
 		}
-		return new Plan(injector, stub, delegation, captures, List.copyOf(shares));
+		return new Plan(injector, stub, delegation, captures, List.copyOf(shares), Map.copyOf(pins));
 	}
 
 	/**
@@ -1084,41 +1108,70 @@ public final class MixinStubRebind {
 	 * ({@link #loadedOrStoredSinceAFrame}).
 	 */
 	static boolean theOnlyLocalOfItsType(ClassNode owner, MethodNode delegate, Type type, List<AnnotationNode> points) {
-		if (delegate.localVariables == null || delegate.instructions == null) return false;
-		if (type.getSort() != Type.OBJECT && type.getSort() != Type.ARRAY) return false;
+		return onlyLocalOfItsType(owner, delegate, type, points, new java.util.BitSet()) >= 0;
+	}
+
+	/** The delegate's parameter slots no stub argument reaches: the arguments the carrier added. */
+	static java.util.BitSet addedArgumentSlots(MethodNode stub, Delegation delegation) {
+		MethodNode delegate = delegation.delegate();
+		Type[] params = Type.getArgumentTypes(delegate.desc);
+		java.util.BitSet reached = new java.util.BitSet();
+		for (int position : delegation.positions()) if (position >= 0) reached.set(position);
+		java.util.BitSet slots = new java.util.BitSet();
+		int slot = (delegate.access & Opcodes.ACC_STATIC) != 0 ? 0 : 1;
+		for (int i = 0; i < params.length; i++) {
+			if (!reached.get(i)) slots.set(slot);
+			slot += params[i].getSize();
+		}
+		return slots;
+	}
+
+	/**
+	 * The one slot a by-type {@code @Local} of {@code type} reads on {@code delegate} at every anchor of {@code points}, the
+	 * slots in {@code excluded} aside — as {@link #theOnlyLocalOfItsType} decides it — or -1. With nothing excluded it
+	 * is MixinExtras' own implicit pick; with a slot excluded it is the pick an explicit {@code index} has to make.
+	 */
+	static int onlyLocalOfItsType(ClassNode owner, MethodNode delegate, Type type, List<AnnotationNode> points, java.util.BitSet excluded) {
+		if (delegate.localVariables == null || delegate.instructions == null) return -1;
+		if (type.getSort() != Type.OBJECT && type.getSort() != Type.ARRAY) return -1;
 		List<AbstractInsnNode> anchors = new ArrayList<>();
 		for (AnnotationNode at : points) {
 			String value = MixinFit.asString(MixinFit.value(at, "value"));
 			String member = MixinFit.asString(MixinFit.value(at, "target"));
-			if (!"INVOKE".equals(value) && !"FIELD".equals(value) || member == null) return false;
+			if (!"INVOKE".equals(value) && !"FIELD".equals(value) || member == null) return -1;
 			// BEFORE and AFTER one call or field access leave the locals as they are; BY walks past other instructions.
-			if (MixinFit.value(at, "shift") instanceof String[] shift && !"BEFORE".equals(shift[1]) && !"AFTER".equals(shift[1])) return false;
+			if (MixinFit.value(at, "shift") instanceof String[] shift && !"BEFORE".equals(shift[1]) && !"AFTER".equals(shift[1])) return -1;
 			List<AbstractInsnNode> found = anchors(delegate, value, member);
-			if (found == null || found.isEmpty()) return false;
+			if (found == null || found.isEmpty()) return -1;
 			anchors.addAll(found);
 		}
 		org.objectweb.asm.tree.analysis.Frame<org.objectweb.asm.tree.analysis.BasicValue>[] frames;
 		try {
 			frames = new org.objectweb.asm.tree.analysis.Analyzer<>(new TypedValues(type)).analyze(owner.name, delegate);
 		} catch (org.objectweb.asm.tree.analysis.AnalyzerException | RuntimeException unanalysable) {
-			return false;
+			return -1;
 		}
 		int base = (delegate.access & Opcodes.ACC_STATIC) != 0 ? 0 : 1;   // Mixin's baseArgIndex: never `this`
+		int decided = -1;
 		for (AbstractInsnNode anchor : anchors) {
 			int at = delegate.instructions.indexOf(anchor);
-			if (frames[at] == null) return false;   // unreachable: nothing to prove it by
+			if (frames[at] == null) return -1;   // unreachable: nothing to prove it by
 			java.util.BitSet candidates = typedAbove(delegate, frames, type, at);
 			candidates.clear(0, base);
-			if (candidates.cardinality() != 1) return false;   // none, or two: MixinExtras would refuse the injection
+			candidates.andNot(excluded);
+			if (candidates.cardinality() != 1) return -1;   // none, or two: MixinExtras would refuse the injection
 			int slot = candidates.nextSetBit(0);
+			// An explicit index is one slot at every anchor; MixinExtras' implicit pick may differ from anchor to anchor.
+			if (!excluded.isEmpty() && decided >= 0 && slot != decided) return -1;
+			decided = slot;
 			boolean named = false;
 			for (LocalVariableNode local : delegate.localVariables) {
 				if (local.index == slot && local.desc.equals(type.getDescriptor()) && delegate.instructions.indexOf(local.start) <= at
 						&& at < delegate.instructions.indexOf(local.end)) named = true;
 			}
-			if (!named || !loadedOrStoredSinceAFrame(delegate, slot, anchor)) return false;
+			if (!named || !loadedOrStoredSinceAFrame(delegate, slot, anchor)) return -1;
 		}
-		return true;
+		return decided;
 	}
 
 	/**
