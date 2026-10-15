@@ -21,6 +21,11 @@ import org.objectweb.asm.tree.*;
 class FabricGameInstanceTest {
 	private static ClassNode compiled(String sourceSet, String name) throws Exception {
 		Path file = Path.of(System.getProperty("user.dir"), "build", "classes", "java", sourceSet, name + ".class");
+		// The runtime source set (the game side) is compiled only when the staged game jars are present.
+		if ("runtime".equals(sourceSet)) {
+			net.forbric.kernel.TestFixtures.require(net.forbric.kernel.TestFixtures.Fixture.GAME_SIDE, Files.isRegularFile(file),
+					"compiled game side absent: " + file);
+		}
 		ClassNode node = new ClassNode();
 		new ClassReader(Files.readAllBytes(file)).accept(node, 0);
 		return node;
