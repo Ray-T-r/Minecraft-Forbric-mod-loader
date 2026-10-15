@@ -229,6 +229,25 @@ class ForbricMixinServiceTest {
 		assertFalse(ForbricMixinService.isRelaxedConfig("c2me.mixins.json"), "a new registration starts over");
 	}
 
+	/**
+	 * A config a mod registers after the boot ({@code Mixins.addConfiguration} from {@code preLaunch}) is a guest config:
+	 * Essential's loader registers fabric-networking's for the jar it injects, whose accessor met NeoForge's own
+	 * {@code getConnection} under the strict {@code @Overwrite} rule and failed the class.
+	 */
+	@Test
+	void aConfigAModRegistersAfterTheBootIsAGuestConfigToo() {
+		ForbricMixinService.setGuestConfigs(SAMPLE);
+		assertFalse(ForbricMixinService.isRelaxedConfig("fabric-networking-api-v1.mixins.json"));
+		ForbricMixinService.noteLateGuest("fabric-networking-api-v1.mixins.json");
+		assertTrue(ForbricMixinService.isRelaxedConfig("fabric-networking-api-v1.mixins.json"), "read through the service after the boot");
+		ForbricMixinService.noteLateGuest("forbric-kernel.mixins.json");
+		assertFalse(ForbricMixinService.isRelaxedConfig("forbric-kernel.mixins.json"), "the kernel's own stays strict");
+		ForbricMixinService.noteLateGuest("not-a-config.txt");
+		assertFalse(ForbricMixinService.isRelaxedConfig("not-a-config.txt"));
+		ForbricMixinService.setGuestConfigs(SAMPLE);
+		assertFalse(ForbricMixinService.isRelaxedConfig("fabric-networking-api-v1.mixins.json"), "a new registration starts over");
+	}
+
 	@Test
 	void theKernelsOwnConfigIsNeverRelaxed() {
 		// The kernel authors no mixins today, but a failure in one it did author must crash loudly rather than be

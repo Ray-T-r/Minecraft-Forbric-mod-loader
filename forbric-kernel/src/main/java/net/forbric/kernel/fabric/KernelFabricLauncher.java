@@ -44,6 +44,8 @@ import net.forbric.kernel.util.ForbricLog;
 public final class KernelFabricLauncher implements FabricLauncher {
 	/** {@code -Dforbric.envStrip.runtimeJars=off}: a jar added here is not recorded as Fabric's for the strip. */
 	public static final String RUNTIME_JARS_SWITCH = "forbric.envStrip.runtimeJars";
+	/** {@code -Dforbric.runtimeJarOwners=off}: the configs a jar added here declares are not claimed for its mod. */
+	public static final String RUNTIME_OWNERS_SWITCH = "forbric.runtimeJarOwners";
 
 	private final ForbricClassLoader loader;
 	private final EnvType envType;
@@ -68,6 +70,35 @@ public final class KernelFabricLauncher implements FabricLauncher {
 			ForbricLog.info("[Forbric/Fabric] a mod added %s to the classpath at runtime", path.getFileName());
 		} catch (Throwable t) {
 			throw new RuntimeException("could not add " + path + " to the classpath", t);
+		}
+		claimDeclaredConfigs(path, envType);
+	}
+
+	/**
+	 * The mixin configs a jar added here declares in its {@code fabric.mod.json} belong to that mod, in the Fabric
+	 * ecosystem, from the moment the jar is on the classpath. A mod that registers such a jar as a mod itself hands its
+	 * configs to Mixin before it builds the mod's container (Essential's loader does, for the 21 jars it unpacks), and
+	 * Mixin reads a config the moment it is added: judged then with no owner, a guest mixin had no ecosystem, so nothing
+	 * that reads the native game of its own platform could answer for it — fabric-networking's two {@code @WrapOperation}s
+	 * of {@code CustomPacketPayload.codec}, which the full fabric-api has moved onto NeoForge's widened call, stayed
+	 * unattached. A jar without a {@code fabric.mod.json}, or a config already claimed, is left as it is.
+	 * {@code -Dforbric.runtimeJarOwners=off} claims nothing here.
+	 */
+	static void claimDeclaredConfigs(Path path, EnvType envType) {
+		if ("off".equalsIgnoreCase(System.getProperty(RUNTIME_OWNERS_SWITCH, "on").trim())) return;
+		try (java.util.zip.ZipFile zip = new java.util.zip.ZipFile(path.toFile())) {
+			java.util.zip.ZipEntry entry = zip.getEntry("fabric.mod.json");
+			if (entry == null) return;
+			KernelModMetadata metadata;
+			try (java.io.InputStream in = zip.getInputStream(entry)) {
+				metadata = FabricModMetadataParser.read(in);
+			}
+			if (metadata == null || metadata.getId() == null) return;
+			for (String config : metadata.getMixinConfigs(envType)) {
+				net.forbric.kernel.mixin.MixinConfigOwners.claimLate(config, metadata.getId(), net.forbric.api.Ecosystem.FABRIC);
+			}
+		} catch (Throwable unreadable) {
+			// Not a jar, or no readable fabric.mod.json: it brings no configs to claim.
 		}
 	}
 

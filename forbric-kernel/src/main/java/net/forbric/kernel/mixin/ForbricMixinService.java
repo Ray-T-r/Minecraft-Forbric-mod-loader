@@ -572,6 +572,7 @@ public final class ForbricMixinService
 		if (in == null) return null;
 
 		if(isMixinConfigName(name))MergedBaseMixinCompat.discoverAll(ForbricMixinService::readGameResource);
+		noteLateGuest(name);
 		boolean relax = isRelaxedConfig(name);
 		List<String> named = suppressedMixinsFor(name);
 		List<String> drop = new ArrayList<>(named);
@@ -876,6 +877,7 @@ public final class ForbricMixinService
 		}
 
 		guestParents.clear();
+		lateGuests.clear();
 		if (configs == null || "off".equalsIgnoreCase(System.getProperty("forbric.relaxGuestMixins", "on"))) {
 			guestConfigs = java.util.Set.of();
 			return;
@@ -921,8 +923,25 @@ public final class ForbricMixinService
 		return !owners.isEmpty() && owners.stream().allMatch(ForbricMixinService::isRelaxedConfig);
 	}
 
+	/**
+	 * Mixin configs a mod registered after the boot did ({@code Mixins.addConfiguration} from {@code preLaunch}): Essential's
+	 * loader registers its own and those of every jar it injects as a mod. The kernel authors no mixins, so they are guest
+	 * configs like the ones it registered, and are relaxed the same way; strict, fabric-networking's accessor met NeoForge's
+	 * own {@code getConnection} under {@code @Overwrite}-required rules and failed the class, and the client's connection
+	 * with it.
+	 */
+	private static final java.util.Set<String> lateGuests = java.util.concurrent.ConcurrentHashMap.newKeySet();
+
+	/** Records {@code name} as a late guest config when it is a mixin config the boot did not register. */
+	static void noteLateGuest(String name) {
+		if (!isMixinConfigName(name) || registeredConfigs.isEmpty() || registeredConfigs.contains(name) || isInfrastructureConfig(name)
+				|| "off".equalsIgnoreCase(System.getProperty("forbric.relaxGuestMixins", "on"))) return;
+		lateGuests.add(name);
+	}
+
 	static boolean isRelaxedConfig(String name) {
 		if (guestConfigs.contains(name)) return true;
+		if (lateGuests.contains(name)) return true;
 		if (guestParents.contains(name) && !isInfrastructureConfig(name)) return true;
 
 		String csv = System.getProperty("forbric.relaxMixinOverwrites");
