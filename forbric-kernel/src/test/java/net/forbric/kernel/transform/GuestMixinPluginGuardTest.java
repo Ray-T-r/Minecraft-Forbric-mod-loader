@@ -16,7 +16,9 @@
 
 package net.forbric.kernel.transform;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotSame;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertSame;
@@ -105,6 +107,59 @@ class GuestMixinPluginGuardTest {
 	void aClassThatIsNotAPluginIsUntouched() {
 		byte[] in = pluginClass(true, false);
 		assertSame(in, guard.transform(NAME, in, ctx()));
+	}
+
+	/**
+	 * A plugin library's interface whose default methods are the plugin (cicada's {@code CompatMixinPlugin}; mods'
+	 * plugins only implement it): the guarded defaults still reach their own bodies. Before, the wrapper called the
+	 * interface's private alias through a plain method reference, every call threw IncompatibleClassChangeError, and
+	 * the guard answered for the plugin: a veto became an approval.
+	 */
+	@Test
+	void anInterfacePluginsDefaultMethodsKeepTheirAnswers() throws Exception {
+		for (boolean throwing : new boolean[] {false, true}) {
+			byte[] api = guard.transform(API.replace('/', '.'), interfacePlugin(throwing), ctx());
+			assertNotSame(interfacePlugin(throwing), api, "the interface's defaults are guarded");
+			Object plugin = defineWithApi(api);
+			Method should = plugin.getClass().getMethod("shouldApplyMixin", String.class, String.class);
+			assertEquals(throwing, (boolean) should.invoke(plugin, "target", "mixin"),
+					throwing ? "a throwing default fails open" : "a working default keeps its veto");
+		}
+	}
+
+	private static final String API = "com/example/GuestPluginApi", IMPL = "com/example/GuestPluginImpl";
+
+	/** {@code interface GuestPluginApi extends IMixinConfigPlugin} with a default {@code shouldApplyMixin} answering false or throwing. */
+	private static byte[] interfacePlugin(boolean throwing) {
+		ClassWriter cw = new ClassWriter(ClassWriter.COMPUTE_MAXS);
+		cw.visit(Opcodes.V21, Opcodes.ACC_PUBLIC | Opcodes.ACC_INTERFACE | Opcodes.ACC_ABSTRACT, API, null, "java/lang/Object",
+				new String[] {PLUGIN_INTERFACE});
+		body(cw, "shouldApplyMixin", "(Ljava/lang/String;Ljava/lang/String;)Z", throwing, Opcodes.ICONST_0, Opcodes.IRETURN);
+		cw.visitEnd();
+		return cw.toByteArray();
+	}
+
+	/** Defines the guarded interface and a class implementing it with nothing of its own, and instantiates that. */
+	private static Object defineWithApi(byte[] api) throws Exception {
+		ClassWriter cw = new ClassWriter(ClassWriter.COMPUTE_MAXS);
+		cw.visit(Opcodes.V21, Opcodes.ACC_PUBLIC, IMPL, null, "java/lang/Object", new String[] {API});
+		MethodVisitor ctor = cw.visitMethod(Opcodes.ACC_PUBLIC, "<init>", "()V", null, null);
+		ctor.visitCode();
+		ctor.visitVarInsn(Opcodes.ALOAD, 0);
+		ctor.visitMethodInsn(Opcodes.INVOKESPECIAL, "java/lang/Object", "<init>", "()V", false);
+		ctor.visitInsn(Opcodes.RETURN);
+		ctor.visitMaxs(0, 0);
+		ctor.visitEnd();
+		cw.visitEnd();
+		byte[] impl = cw.toByteArray();
+		ClassLoader loader = new ClassLoader(GuestMixinPluginGuardTest.class.getClassLoader()) {
+			@Override protected Class<?> findClass(String name) throws ClassNotFoundException {
+				byte[] b = name.equals(API.replace('/', '.')) ? api : name.equals(IMPL.replace('/', '.')) ? impl : null;
+				if (b == null) throw new ClassNotFoundException(name);
+				return defineClass(name, b, 0, b.length);
+			}
+		};
+		return Class.forName(IMPL.replace('/', '.'), true, loader).getDeclaredConstructor().newInstance();
 	}
 
 	// --- helpers ------------------------------------------------------------------------------------------------

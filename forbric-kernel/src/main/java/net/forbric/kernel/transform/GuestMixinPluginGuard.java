@@ -180,8 +180,11 @@ public final class GuestMixinPluginGuard implements ClassTransformer {
 			code.add(new VarInsnNode(arg.getOpcode(Opcodes.ILOAD), slot));
 			slot += arg.getSize();
 		}
-		// The alias is private, so invokespecial is both correct and immune to a subclass overriding it.
-		code.add(new MethodInsnNode(Opcodes.INVOKESPECIAL, owner.name, method.name, method.desc, false));
+		// The alias is private, so invokespecial is both correct and immune to a subclass overriding it. In an interface
+		// (a plugin library's default methods, cicada's CompatMixinPlugin) the call must name an interface method:
+		// a plain Methodref to an interface's private method is an IncompatibleClassChangeError on every call, which the
+		// handler below would swallow, so every answer of the plugin became the no-opinion fallback.
+		code.add(new MethodInsnNode(Opcodes.INVOKESPECIAL, owner.name, method.name, method.desc, (owner.access & Opcodes.ACC_INTERFACE) != 0));
 		if (observed) code.add(postApplyHook("afterPostApply"));
 		code.add(new InsnNode(returnType.getOpcode(Opcodes.IRETURN)));
 		code.add(end);
