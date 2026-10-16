@@ -70,7 +70,13 @@ unzip -p "$GRIM" punishments/en.yml | sed -E 's/"[0-9]+:[0-9]+ \[alert\]"/"1:1 [
 grep -q 'print-to-console: true' "$SRV/plugins/GrimAC/config.yml" && grep -q '"1:1 \[alert\]"' "$SRV/plugins/GrimAC/punishments.yml" \
   || { echo "[kernel] SKIP-FATAL: Grim's bundled config no longer has the keys this gate sensitises" >&2; exit 3; }
 printf 'eula=true\n' > "$SRV/eula.txt"
-printf 'server-port=%s\nonline-mode=false\nlevel-type=minecraft\\:flat\nlevel-name=AcWorld\ngamemode=survival\ndifficulty=peaceful\nspawn-monsters=false\nspawn-protection=0\nview-distance=6\nsimulation-distance=6\nenforce-secure-profile=false\nmax-players=5\nmotd=forbric-ac-gate\n' "$PORT" > "$SRV/server.properties"
+# No structures. A flat world is the classic preset, and that preset generates villages; the seed is random each
+# run, and for about 3% of seeds vanilla's placement puts a village start within 32 blocks of the drill's lane.
+# Walking into a house or a farm's raised edge is a horizontal collision that is not minor, and vanilla's
+# LocalPlayer.shouldStopRunSprinting ends the sprint on it: the sprint-jump line then reads sprinting=false, which
+# this gate saw once and which a seed with a village in the lane reproduces exactly. With structures off the arena
+# is the same bare plane every run, and a sprint that stops is the client's doing.
+printf 'generate-structures=false\nserver-port=%s\nonline-mode=false\nlevel-type=minecraft\\:flat\nlevel-name=AcWorld\ngamemode=survival\ndifficulty=peaceful\nspawn-monsters=false\nspawn-protection=0\nview-distance=6\nsimulation-distance=6\nenforce-secure-profile=false\nmax-players=5\nmotd=forbric-ac-gate\n' "$PORT" > "$SRV/server.properties"
 for m in "${MODS[@]}"; do cp "$m" "$CLI/mods/"; done
 cp "$KERNEL/run/client-merged-pack/options.txt" "$CLI/options.txt" 2>/dev/null \
   || printf 'version:4903\nonboardAccessibility:false\n' > "$CLI/options.txt"
@@ -198,17 +204,30 @@ check "the land phases were on land"  "drill phase (sprint|sprint-jump|turn|stra
 # model-data manager the merge had left it without. Zero here means the frame that used to crash was never drawn.
 check "the drill actually broke ground" "ClientSmoke\] mining: [1-9][0-9]* block\(s\) showing break progress" "$CGAME"
 check "the swim phase was in water"   "drill phase swim at .*inWater=true"                "$CGAME"
-# Sprinting is judged over every tick the sprint key was held, not the one the sprint-jump phase line samples: that
-# single sample read sprinting=false once while a rerun was green. Three quarters of the held ticks must have been
-# sprinting; each change of state is in the client log with onGround, horizontalCollision and food beside it.
+# The arena's premise, read back from the world the server saved: it generated without structures.
+WGS="$SRV/AcWorld/dimensions/minecraft/overworld/data/minecraft/world_gen_settings.dat"
+STRUCTURES=$(python3 - "$WGS" <<'PY' 2>/dev/null
+import gzip, re, sys
+m = re.search(rb'\x01\x00\x13generate_structures(.)', gzip.decompress(open(sys.argv[1], 'rb').read()), re.S)
+print(m.group(1)[0] if m else 'absent')
+PY
+)
+assert_eq "the arena generated no structures (generate_structures in $WGS)" "0" "${STRUCTURES:-unreadable}"
+# M13_SPRINT_BEGIN — executed verbatim by AntiCheatGateLogTest.
+# Sprinting must engage and hold: the sprint-jump phase line (drill tick 140) reads sprinting=true, and so does every
+# one of the 160 ticks the sprint key was held (61..220 read what 60..219 did). Each change of state is in the client
+# log with what vanilla's sprint rules read and with the screen, focus and key state, and a failure prints them —
+# so a stop names its rule. Nothing is excused: the arena has nothing to collide with (see the staging step).
+check "sprinting actually engaged"    "drill phase sprint-jump at .*sprinting=true"       "$CGAME"
 SPRINT=$(grep -aoE "drill sprint: sprinting on [0-9]+ of [0-9]+ tick" "$CGAME" | tail -1)
-if [ -n "$SPRINT" ] && awk -v s="$SPRINT" 'BEGIN{split(s,w," "); n=w[5]; m=w[7]; exit !(m >= 100 && n * 4 >= m * 3)}'; then
-  echo "[kernel] PASS sprinting actually engaged ($SPRINT)"
+if [ -n "$SPRINT" ] && awk -v s="$SPRINT" 'BEGIN{split(s,w," "); n=w[5]; m=w[7]; exit !(m == 160 && n == m)}'; then
+  echo "[kernel] PASS sprinting held on every tick the sprint key was held ($SPRINT)"
 else
-  echo "[kernel] FAIL sprinting actually engaged (${SPRINT:-no sprint count in $CGAME}); its changes:"
-  grep -a "drill sprint=" "$CGAME" | sed 's/^/[kernel]   /' | cut -c1-220
+  echo "[kernel] FAIL sprinting held on every tick the sprint key was held (${SPRINT:-no sprint count in $CGAME}); its changes:"
+  grep -a "drill sprint=" "$CGAME" | sed 's/^/[kernel]   /' | cut -c1-400
   FAIL=1
 fi
+# M13_SPRINT_END
 
 step "Grim's verdict: silent through the drill, loud at the control (must PASS)"
 # M13_LOG_ASSERTIONS_BEGIN — the same positive and negative controls run in AntiCheatGateLogTest.

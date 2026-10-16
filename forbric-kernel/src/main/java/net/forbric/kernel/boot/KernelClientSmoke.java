@@ -1990,9 +1990,10 @@ public final class KernelClientSmoke {
 		Object options = fieldValue(minecraft, "options");
 		if (options == null) return;
 		// Every tick the sprint key is held is sampled (61..220 read what 60..219 did), and each change of state is
-		// logged with what vanilla's sprint rules read. The gate used to judge one sample, the sprint-jump phase line at
-		// tick 140, and that one sample read sprinting=false once while a rerun was green.
-		if (t > 60 && t <= 220) sampleSprint(player, t);
+		// logged with what vanilla's sprint rules read, so a stop names its rule. The sprint-jump phase line at tick 140
+		// once read sprinting=false; a village in the drill's lane gives exactly that, logged as horizontalCollision=true
+		// minorHorizontalCollision=false, and gate-m13's arena now generates no structures.
+		if (t > 60 && t <= 220) sampleSprint(minecraft, options, player, t);
 		if (t == 220) ForbricLog.info("[Forbric/ClientSmoke] drill sprint: sprinting on %d of %d tick(s) the sprint key was "
 				+ "held", sprintTicks, sprintSamples);
 		if (t == 0) {
@@ -2066,15 +2067,38 @@ public final class KernelClientSmoke {
 	private static int sprintSamples, sprintTicks;
 	private static String lastSprint;
 
-	private static void sampleSprint(Object player, int t) {
+	/**
+	 * One sample of the sprint state. A change is logged with everything vanilla's sprint rules read on the tick before
+	 * (LocalPlayer.shouldStopRunSprinting: no forward impulse, a horizontal collision that is not minor, too little
+	 * food, shallow water, riding) and with what releases the drill's keys without a rule being involved: a screen
+	 * opened, or the window losing focus (KeyMapping.releaseAll), read here as the key mappings' own state.
+	 */
+	private static void sampleSprint(Object minecraft, Object options, Object player, int t) {
 		String now = flag(player, "isSprinting");
 		sprintSamples++;
 		if ("true".equals(now)) sprintTicks++;
 		if (!now.equals(lastSprint)) {
+			Object screen = null;
+			try { screen = currentScreen(minecraft); } catch (Exception unreadable) { }
+			Object input = fieldValue(player, "input");
 			ForbricLog.info("[Forbric/ClientSmoke] drill sprint=%s from drill tick %d pos=(%.1f %.1f %.1f) onGround=%s "
-					+ "horizontalCollision=%s food=%s", now, t, x(player), y(player), z(player), flag(player, "onGround"),
-					fieldValue(player, "horizontalCollision"), food(player));
+					+ "horizontalCollision=%s minorHorizontalCollision=%s forwardImpulse=%s keyUp=%s keySprint=%s "
+					+ "food=%s inWater=%s passenger=%s screen=%s windowActive=%s", now, t, x(player), y(player), z(player),
+					flag(player, "onGround"), fieldValue(player, "horizontalCollision"),
+					fieldValue(player, "minorHorizontalCollision"), publicFlag(input, "hasForwardImpulse"),
+					publicFlag(fieldValue(options, "keyUp"), "isDown"), publicFlag(fieldValue(options, "keySprint"), "isDown"),
+					food(player), flag(player, "isInWater"), flag(player, "isPassenger"),
+					screen == null ? "none" : screen.getClass().getSimpleName(), publicFlag(minecraft, "isWindowActive"));
 			lastSprint = now;
+		}
+	}
+
+	/** A public no-argument boolean method of any object, by name, or "?" (flag() reads Entity's getters only). */
+	private static String publicFlag(Object owner, String method) {
+		try {
+			return owner == null ? "?" : String.valueOf(owner.getClass().getMethod(method).invoke(owner));
+		} catch (ReflectiveOperationException | RuntimeException unreadable) {
+			return "?";
 		}
 	}
 

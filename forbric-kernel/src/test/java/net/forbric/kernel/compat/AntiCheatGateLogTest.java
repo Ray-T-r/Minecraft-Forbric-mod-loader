@@ -14,7 +14,10 @@ import java.util.concurrent.TimeUnit;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
-/** Exercise the production normalization, boundary split and both Grim assertions without starting a server. */
+/**
+ * Exercise the production normalization, boundary split, both Grim assertions and the sprint verdict without starting
+ * a server.
+ */
 class AntiCheatGateLogTest {
     private static final Path GATE = Path.of("run/gate-m13-anticheat.sh");
     private static final Path LIB = Path.of("run/lib.sh").toAbsolutePath();
@@ -63,6 +66,70 @@ class AntiCheatGateLogTest {
         assertTrue(result.output().contains("PASS no movement flag before the control (0)"), result.output());
     }
 
+    private static final String CLIENT = "[23:06:42] [Render thread/INFO]: [Forbric/ClientSmoke] ";
+    private static final String HELD = CLIENT + "drill sprint=true from drill tick 61 pos=(7.5 -60.0 18.4) onGround=true "
+            + "horizontalCollision=false minorHorizontalCollision=false forwardImpulse=true keyUp=true keySprint=true food=20 "
+            + "inWater=false passenger=false screen=none windowActive=true\n";
+    /** What a village in the lane does: vanilla's shouldStopRunSprinting on a collision that is not minor. */
+    private static final String WALL = CLIENT + "drill sprint=false from drill tick 75 pos=(7.5 -60.1 21.7) onGround=true "
+            + "horizontalCollision=true minorHorizontalCollision=false forwardImpulse=true keyUp=true keySprint=true food=20 "
+            + "inWater=false passenger=false screen=none windowActive=false\n";
+
+    private static String sprintJump(boolean sprinting) {
+        return CLIENT + "drill phase sprint-jump at world tick 200 pos=(7.5 -60.0 40.6) inWater=false sprinting=" + sprinting + "\n";
+    }
+
+    private static String count(int sprinting, int held) {
+        return CLIENT + "drill sprint: sprinting on " + sprinting + " of " + held + " tick(s) the sprint key was held\n";
+    }
+
+    @Test
+    void sprintHeldOnEveryHeldTickPasses() throws Exception {
+        Result result = sprint(HELD + sprintJump(true) + count(160, 160));
+        assertEquals(0, result.exit(), result.output());
+        assertTrue(result.output().contains("PASS sprinting held on every tick"), result.output());
+    }
+
+    /**
+     * The failure gate-m13 was seen to have: the sprint-jump line read sprinting=false. A sprint that broke off on a
+     * collision for 40 of its 160 ticks is that failure, and the three-quarters rule that replaced the line passed it.
+     */
+    @Test
+    void theObservedDropAtTheSprintJumpLineFails() throws Exception {
+        Result result = sprint(HELD + WALL + sprintJump(false) + count(120, 160));
+        assertEquals(1, result.exit(), result.output());
+        assertTrue(result.output().contains("FAIL sprinting actually engaged"), result.output());
+        assertTrue(result.output().contains("FAIL sprinting held on every tick"), result.output());
+        assertTrue(result.output().contains("horizontalCollision=true minorHorizontalCollision=false"),
+                "the failure names the rule that stopped it: " + result.output());
+    }
+
+    @Test
+    void aSprintThatBrokeOffForOneTickFails() throws Exception {
+        Result result = sprint(HELD + WALL + HELD + sprintJump(true) + count(159, 160));
+        assertEquals(1, result.exit(), result.output());
+        assertTrue(result.output().contains("FAIL sprinting held on every tick"), result.output());
+    }
+
+    @Test
+    void aDrillThatHeldTheKeyForFewerTicksFails() throws Exception {
+        Result result = sprint(HELD + sprintJump(true) + count(100, 100));
+        assertEquals(1, result.exit(), result.output());
+    }
+
+    @Test
+    void aDrillThatNeverCountedFails() throws Exception {
+        Result result = sprint(HELD + sprintJump(true));
+        assertEquals(1, result.exit(), result.output());
+        assertTrue(result.output().contains("no sprint count"), result.output());
+    }
+
+    private Result sprint(String client) throws Exception {
+        Path log = Files.writeString(temp.resolve("client-latest.log"), client);
+        String program = ". \"$1\"\nCGAME=\"$2\"\n" + section(Files.readString(GATE), "M13_SPRINT") + "\nexit \"$FAIL\"\n";
+        return bash(program, LIB.toString(), log.toString());
+    }
+
     private Result run(byte[] raw) throws Exception {
         Path input = temp.resolve("server-raw.log");
         Files.write(input, raw);
@@ -72,10 +139,14 @@ class AntiCheatGateLogTest {
                 + "\nprintf 'BEFORE=%s\\n' \"$(grep -ac \"$FLAG_RE\" \"$BUILD/gate-m13-before-control.log\")\""
                 + "\nprintf 'AFTER=%s\\n' \"$(grep -ac \"$FLAG_RE\" \"$BUILD/gate-m13-after-control.log\")\""
                 + "\nexit \"$FAIL\"\n";
+        return bash(program, LIB.toString(), temp.toString(), input.toString());
+    }
+
+    private Result bash(String program, String... args) throws Exception {
         Path log = temp.resolve("assertions.log");
-        Process process = new ProcessBuilder(List.of("bash", "-c", program, "m13-log-test",
-                LIB.toString(), temp.toString(), input.toString()))
-                .redirectErrorStream(true).redirectOutput(log.toFile()).start();
+        List<String> command = new java.util.ArrayList<>(List.of("bash", "-c", program, "m13-log-test"));
+        command.addAll(List.of(args));
+        Process process = new ProcessBuilder(command).redirectErrorStream(true).redirectOutput(log.toFile()).start();
         boolean ended = process.waitFor(15, TimeUnit.SECONDS);
         if (!ended) process.destroyForcibly();
         assertTrue(ended, "log-only gate fragment timed out");
