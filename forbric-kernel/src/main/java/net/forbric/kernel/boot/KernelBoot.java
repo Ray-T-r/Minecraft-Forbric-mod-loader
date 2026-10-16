@@ -644,6 +644,8 @@ public final class KernelBoot {
 		// Where the native method clears a field and the carrier removes only a computed subset of its keys, a Map.clear()
 		// on a view of that subset goes back in, so a guest's injector on the native clear lands and runs as natively.
 		chain.register(TransformPhase.COREMOD, new net.forbric.kernel.transform.ScopedClearRelayInjector());
+		// The creative tab order NeoForge publishes, with a Fabric mod's tabs placed by the Fabric pager's rule.
+		chain.register(TransformPhase.COREMOD, new net.forbric.kernel.transform.CreativeTabOrderInjector());
 		// Carrier callback seams are available to every structurally compatible guest mixin.
 		chain.register(TransformPhase.COREMOD, new net.forbric.kernel.transform.BreathingCallbackInjector());
 		chain.register(TransformPhase.COREMOD, new net.forbric.kernel.transform.BlockSoundQueryInjector());

@@ -327,6 +327,8 @@ public final class KernelRuntimeClasses {
 				new Call("installAtPosition", void.class, Object.class))));
 		// NeoForge's conversion Post (and MinecraftForge's, through the forward) from the merged Zombie's Forge lambdas.
 		CLASSES.put("net.forbric.kernel.runtime.KernelConversions", new Entry(Origin.COMPILED, List.of()));
+		// A Fabric mod's creative tabs placed by the Fabric pager's rule in NeoForge's order; CreativeTabOrderInjector calls place.
+		CLASSES.put("net.forbric.kernel.runtime.KernelCreativeTabOrder", new Entry(Origin.COMPILED, List.of()));
 		// fabric-content-registries' fuel events on NeoForge's fuel builder; FabricFuelValuesInjector calls apply.
 		CLASSES.put("net.forbric.kernel.runtime.KernelFabricFuel", new Entry(Origin.COMPILED, List.of()));
 		// Fabric's fluid models for NeoForge's completeness check; FabricFluidModelsInjector calls hasModel.
