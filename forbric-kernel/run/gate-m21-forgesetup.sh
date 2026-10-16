@@ -62,8 +62,18 @@ echo "[kernel] staged: $(ls -1 "$RUNDIR/mods" | tr '\n' ' ')"
 #                         own conditions, so its verdict (keep) stands and MinecraftForge is not asked
 #   dual_forge            neoforge:conditions naming a type NeoForge does not have, beside forge:condition forge:false:
 #                         NeoForge cannot judge it, so MinecraftForge decides (drop)
+#   neo_owned             forge:condition naming NeoForge's own neoforge:always: another ecosystem's type, not vetoed
+#   unowned               a condition type no ecosystem here registers (the mod that would is absent): a data file is
+#                         skipped and a forge:conditional variant passed over, as MinecraftForge's SAFE_CODEC reads it as
+#                         false; a datapack-registry element loads, because there MinecraftForge's own answer would fail
+#                         the whole registry load
+#   recipes               MinecraftForge's recipe conditions read the tags this reload loads: a shapeless recipe guarded
+#                         by forge:not(forge:tag_empty forbricm21:full) is there, one guarded by the same over the pack's
+#                         empty tag is not. No command lists recipes without a player, so a crafter crafts each one into
+#                         the chest below it and the probe asks the chest -- the recipe manager's own answer.
 PACK="$RUNDIR/world/datapacks/forbricm21"
-mkdir -p "$PACK/data/forbricm21/predicate" "$PACK/data/forbricm21/worldgen/configured_feature"
+mkdir -p "$PACK/data/forbricm21/predicate" "$PACK/data/forbricm21/worldgen/configured_feature" "$PACK/data/forbricm21/recipe" \
+  "$PACK/data/forbricm21/tags/item"
 printf '%s\n' '{"pack":{"description":"Forbric gate-m21 condition canary","min_format":107,"max_format":107}}' > "$PACK/pack.mcmeta"
 TRUE_PREDICATE='"condition":"minecraft:all_of","terms":[]'
 printf '{"forge:condition":{"type":"forge:true"},%s}\n'  "$TRUE_PREDICATE" > "$PACK/data/forbricm21/predicate/kept.json"
@@ -74,8 +84,21 @@ printf '{"neoforge:conditions":[{"type":"neoforge:always"}],"forge:condition":{"
   "$TRUE_PREDICATE" > "$PACK/data/forbricm21/predicate/dual_neo.json"
 printf '{"neoforge:conditions":[{"type":"forbricm21:no_such_condition"}],"forge:condition":{"type":"forge:false"},%s}\n' \
   "$TRUE_PREDICATE" > "$PACK/data/forbricm21/predicate/dual_forge.json"
+printf '{"forge:condition":{"type":"neoforge:always"},%s}\n' "$TRUE_PREDICATE" > "$PACK/data/forbricm21/predicate/neo_owned.json"
+printf '{"forge:condition":{"type":"forbricm21:registered_by_nobody"},%s}\n' "$TRUE_PREDICATE" > "$PACK/data/forbricm21/predicate/unowned.json"
+printf '{"forge:conditional":[{"forge:condition":{"type":"forbricm21:registered_by_nobody"},"condition":"minecraft:inverted","term":{%s}},{%s}]}\n' \
+  "$TRUE_PREDICATE" "$TRUE_PREDICATE" > "$PACK/data/forbricm21/predicate/variant_unowned.json"
 printf '{"forge:condition":{"type":"forge:true"},"type":"minecraft:no_op","config":{}}\n'  > "$PACK/data/forbricm21/worldgen/configured_feature/kept.json"
 printf '{"forge:condition":{"type":"forge:false"},"type":"minecraft:no_op","config":{}}\n' > "$PACK/data/forbricm21/worldgen/configured_feature/dropped.json"
+printf '{"forge:condition":{"type":"forbricm21:registered_by_nobody"},"type":"minecraft:no_op","config":{}}\n' \
+  > "$PACK/data/forbricm21/worldgen/configured_feature/unowned.json"
+printf '{"values":["minecraft:stone"]}\n' > "$PACK/data/forbricm21/tags/item/full.json"
+printf '{"values":[]}\n'                  > "$PACK/data/forbricm21/tags/item/empty.json"
+# A dead bush and a fern alone craft nothing in vanilla, so whatever lands in a chest came from these two recipes.
+printf '{"forge:condition":{"type":"forge:not","value":{"type":"forge:tag_empty","tag":"forbricm21:full"}},"type":"minecraft:crafting_shapeless","ingredients":["minecraft:dead_bush"],"result":{"id":"minecraft:diamond"}}\n' \
+  > "$PACK/data/forbricm21/recipe/full_tag.json"
+printf '{"forge:condition":{"type":"forge:not","value":{"type":"forge:tag_empty","tag":"forbricm21:empty"}},"type":"minecraft:crafting_shapeless","ingredients":["minecraft:fern"],"result":{"id":"minecraft:emerald"}}\n' \
+  > "$PACK/data/forbricm21/recipe/empty_tag.json"
 # Each probe is announced first, so what the log says after "[Server] M21PROBE <name>" is that command's own answer.
 M21_PROBES=(
   "predicate kept|execute if predicate forbricm21:kept"
@@ -83,15 +106,30 @@ M21_PROBES=(
   "predicate variant|execute if predicate forbricm21:variant"
   "predicate dual_neo|execute if predicate forbricm21:dual_neo"
   "predicate dual_forge|execute if predicate forbricm21:dual_forge"
+  "predicate neo_owned|execute if predicate forbricm21:neo_owned"
+  "predicate unowned|execute if predicate forbricm21:unowned"
+  "predicate variant_unowned|execute if predicate forbricm21:variant_unowned"
   "feature kept|place feature forbricm21:kept 0 100 0"
   "feature dropped|place feature forbricm21:dropped 0 100 0"
+  "feature unowned|place feature forbricm21:unowned 0 100 0"
+  "recipe full_tag|execute if items block 4 99 4 container.* minecraft:diamond"
+  "recipe empty_tag|execute if items block 8 99 8 container.* minecraft:emerald"
 )
+# craft_once <x> <z> <ingredient> — a crafter at y=100 facing down into a chest, the ingredient in its first slot, then
+# powered from above: it crafts once, through the recipe manager, into the chest the recipe probe asks.
+craft_once() {
+  printf 'setblock %s 99 %s minecraft:chest\nsetblock %s 100 %s minecraft:crafter[orientation=down_north]\n' "$1" "$2" "$1" "$2"
+  printf 'item replace block %s 100 %s container.0 with %s\nsetblock %s 101 %s minecraft:redstone_block\n' "$1" "$2" "$3" "$1" "$2"
+}
 probe_commands() {
   local probe
-  # The feature probes place at 0,100,0: force that chunk loaded first, so a feature that is there is PLACED rather
-  # than refused for an unloaded position.
+  # The feature probes place at 0,100,0 and the crafters stand in the same chunk: force it loaded first, so a feature
+  # that is there is PLACED rather than refused for an unloaded position, and the crafters tick.
   echo "forceload add 0 0"
   sleep 3
+  craft_once 4 4 minecraft:dead_bush
+  craft_once 8 8 minecraft:fern
+  sleep 2
   for probe in "${M21_PROBES[@]}"; do printf 'say M21PROBE %s\n%s\n' "${probe%%|*}" "${probe#*|}"; done
 }
 # probe_answer <name> — what the log says between that probe's announcement and the next one (or the stop).
@@ -268,18 +306,31 @@ step "MinecraftForge's resource conditions decide real data again, and only wher
 # above asks the live registries whether each element survived; a "kept" check that cannot see a rejection proves
 # nothing, so every element here is one whose absence or presence a command reports.
 # The NeoForge canary also ships forbricneolive:dual_dialect, a biome_modifier whose forge:condition is of type
-# neoforge:true: MinecraftForge does not know that type, so its leniency keeps the element instead of failing the whole
-# registry load. No command can list biome modifiers, so its survival is held by the exact rejection count: the three
-# false elements of the canary pack, and nothing else.
+# neoforge:true. No ecosystem registers that type (NeoForge's own true condition is neoforge:always), so on this
+# datapack-registry element MinecraftForge's own answer would fail the whole registry load; the element is kept instead
+# and the kernel names the type. No command can list biome modifiers, so its survival is held by the exact rejection
+# count: the five false elements of the canary pack, and nothing else. A type another ecosystem does register
+# (neo_owned's neoforge:always) is that ecosystem's to judge, so even on a data file it does not veto.
 # RED with M21_EXTRA_JVM=-Dforbric.forgeConditionFunnel=off: nothing asks MinecraftForge -- the transform line, the
-# funnel line and the leniency line are gone, the dropped predicate, the dropped feature and dual_forge are present, the
-# variant does not parse ("Can't find element"), and nothing is rejected (count 0). dual_neo and the kept elements stay.
+# funnel line and the leniency lines are gone, the dropped and unowned predicates, the dropped feature, dual_forge and
+# the empty-tag recipe are present, both variants fail to parse ("Can't find element"), and nothing is rejected (count
+# 0): thirteen checks, verified. dual_neo, neo_owned, the unowned feature and the kept elements stay.
 # RED with -Dforbric.forgeConditions=off: strict CODEC.parse error -> 'Failed to load registries due to errors' -> no Done.
-# RED with -Dforbric.forgeConditionContext=off: the recipe context line is gone (and "context=live" above).
+# RED with -Dforbric.forgeConditionContext=off: the recipe context line is gone (and "context=live" above), the full_tag
+# recipe is not there (the crafter crafts nothing), and it is a sixth rejection -- exactly those four checks, verified.
 # KernelForgeConditionFunnelTest greps the funnel's real output with the funnel pattern.
 check "the transform says MinecraftForge is asked at the funnel" "MergedBaseCompat\] forge:condition has an evaluator again" "$LOG"
+# The funnel judges only inside MinecraftForge's two readers -- the data-file scan and the datapack-registry loader -- so
+# both must be marked; an unmarked reader is a probe below that keeps what it should drop.
+check "the transform marks MinecraftForge's data-file reader" "MergedBaseCompat\] MinecraftForge's data-file reader is marked again: [1-9]" "$LOG"
+check "the transform marks MinecraftForge's datapack-registry reader" "MergedBaseCompat\] MinecraftForge's datapack-registry reader is marked again: [1-9]" "$LOG"
+check "and loadFromResource decodes the loads it announces as that reader" \
+  "MergedBaseCompat\] net/minecraft/resources/RegistryLoadTask\\\$PendingRegistration\.loadFromResource decodes a load ResourceManagerRegistryLoadTask announced" "$LOG"
 check "MinecraftForge judges forge:condition at the conditional-decode funnel" "Forbric/Conditions\] MinecraftForge's forge:condition is judged again" "$LOG"
-check "the MinecraftForge leniency fired on a real datapack element" "resource condition 'neoforge:true' is not in MinecraftForge's condition registry" "$LOG"
+check "the MinecraftForge leniency fired on a real datapack element" \
+  "resource condition 'neoforge:true' on a datapack-registry element is registered by no ecosystem on this instance" "$LOG"
+check "and a type another ecosystem registers is left to it" \
+  "resource condition 'neoforge:always' is not in MinecraftForge's condition registry; another ecosystem on this instance registers it" "$LOG"
 check_absent "registries loaded"                             "Failed to load registries due to errors" "$LOG"
 check "the canary pack was loaded" "data pack file/forbricm21" "$LOG"
 check_probe "a true forge:condition keeps a predicate"        "predicate kept"     'Test passed'
@@ -289,8 +340,16 @@ check_probe "a file NeoForge judges keeps NeoForge's verdict" "predicate dual_ne
 check_probe "MinecraftForge decides a file NeoForge cannot judge" "predicate dual_forge" "Can't find element 'forbricm21:dual_forge'"
 check_probe "a true forge:condition keeps a datapack-registry element" "feature kept" 'Placed "forbricm21:kept"'
 check_probe "a false forge:condition removes a datapack-registry element" "feature dropped" 'There is no feature with type "forbricm21:dropped"'
-check_exactly "exactly the canary pack's three false elements were rejected -- not the dual-dialect biome modifier" \
-  "\[Forbric/Conditions\] forge:condition(al)? said no to a data file" "$LOG" 3
+check_probe "a type NeoForge registers does not veto a data file" "predicate neo_owned" 'Test passed'
+check_probe "a type no ecosystem registers skips a data file, as MinecraftForge does" "predicate unowned" "Can't find element 'forbricm21:unowned'"
+check_probe "and passes over the forge:conditional variant it guards" "predicate variant_unowned" 'Test passed'
+check_probe "but does not lose a datapack-registry element" "feature unowned" 'Placed "forbricm21:unowned"'
+check "and the kernel names the type it ignored there" \
+  "resource condition 'forbricm21:registered_by_nobody' on a datapack-registry element is registered by no ecosystem on this instance" "$LOG"
+check_probe "a recipe whose tag has entries is there when forge:not(forge:tag_empty) guards it" "recipe full_tag" 'Test passed'
+check_probe "and one whose tag is empty is not" "recipe empty_tag" 'Test failed'
+check_exactly "exactly the canary pack's five false elements were rejected -- not the dual-dialect biome modifier" \
+  "\[Forbric/Conditions\] forge:condition(al)? said no to a data file" "$LOG" 5
 check "MinecraftForge's recipe conditions read this reload's tags" "MinecraftForge's recipe conditions read the tags this reload loads again" "$LOG"
 
 # M21_REGISTRATION_ASSERTIONS_BEGIN — the Phase 1 A registration hooks; green since A8 landed the bridge inventory.
