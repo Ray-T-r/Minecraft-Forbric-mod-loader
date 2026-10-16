@@ -88,8 +88,9 @@ else
 fi
 
 step "give the directory the vanilla libraries a launcher would have downloaded"
-# The installer stages only what it owns; the base version's own libraries are the launcher's job. Copying them
-# from the real install is what makes this a launcher simulation rather than a half-populated directory.
+# The base version's own libraries are the launcher's job. The installer fetches them too, but only when it has to
+# merge (the merge reads them) -- which from this empty directory it did, so this normally copies none. It stays so
+# the simulated launcher always has its full set, whatever the installer happened to need.
 COPIED=$(python3 - "$DEST" "$MC" <<'LIBS'
 import json, os, platform, shutil, sys
 dest, mc = sys.argv[1:3]
@@ -374,6 +375,49 @@ else
     "$BUILD/gate-m17-install-4.log"
   assert_eq "the stale tool is replaced by the bundled one" \
     "$(shasum -a 1 "$WANT" | cut -d' ' -f1)" "$(shasum -a 1 "$TOOLS" | cut -d' ' -f1)"
+fi
+
+step "an offline reinstall over that cache needs no network (must PASS)"
+# The libraries the merge reads are fetched only once the merge or the interop patch has found its output stale.
+# They used to be fetched ahead of the merge's own cache check, so a reinstall whose every artifact was cached still
+# went to libraries.minecraft.net for any library not in place, and failed offline for a file nothing would read.
+# "Offline" is a proxy on a port nothing listens on, for http and https alike; one library the base version lists for
+# this OS is removed first, so a download, if the installer attempted one, would be certain and would fail.
+DEAD_PORT="${M17_DEAD_PORT:-$(python3 -c 'import socket; s=socket.socket(); s.bind(("127.0.0.1", 0)); print(s.getsockname()[1]); s.close()')}"
+GONE=$(python3 - "$DEST" <<'GONE'
+import json, os, platform, sys
+dest = sys.argv[1]
+osname = {"Darwin": "osx", "Windows": "windows"}.get(platform.system(), "linux")
+with open(os.path.join(dest, "versions", "26.2", "26.2.json")) as f:
+    base = json.load(f)
+def allowed(lib):
+    ok = not lib.get("rules")
+    for rule in lib.get("rules") or []:
+        spec = rule.get("os")
+        if spec is not None and spec.get("name") != osname:
+            continue
+        ok = rule.get("action") == "allow"
+    return ok
+for lib in base.get("libraries", []):
+    path = ((lib.get("downloads") or {}).get("artifact") or {}).get("path")
+    if path and allowed(lib) and os.path.isfile(os.path.join(dest, "libraries", path)):
+        print(os.path.join(dest, "libraries", path))
+        break
+GONE
+)
+if [ -z "$GONE" ]; then
+  echo "[kernel] FAIL no library the base version lists is in the install to remove"; FAIL=$((FAIL+1))
+else
+  rm -f "$GONE"
+  echo "[kernel] removed $(basename "$GONE"); proxy 127.0.0.1:$DEAD_PORT (nothing listening)"
+  java -Dhttp.proxyHost=127.0.0.1 -Dhttp.proxyPort="$DEAD_PORT" -Dhttps.proxyHost=127.0.0.1 -Dhttps.proxyPort="$DEAD_PORT" \
+    -jar "$JAR" --dir "$DEST" --mc 26.2 > "$BUILD/gate-m17-install-5.log" 2>&1
+  assert_eq "the offline reinstall exited cleanly" "0" "$?"
+  REUSED=$(grep -acE "^\[(forge-runtime|patched|neoforge-runtime|neoform|merge|interop)\] up-to-date" "$BUILD/gate-m17-install-5.log")
+  assert_eq "every artifact came from the cache" "6" "$REUSED"
+  check_absent "it fetched no library" "downloaded [0-9]+ Minecraft librar" "$BUILD/gate-m17-install-5.log"
+  [ ! -e "$GONE" ] && echo "[kernel] PASS the removed library is still absent: nothing went to the network for it" \
+    || { echo "[kernel] FAIL the removed library came back: the install fetched it although nothing merged"; FAIL=$((FAIL+1)); }
 fi
 
 step "M17 result"
