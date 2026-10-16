@@ -385,8 +385,11 @@ public final class NativeCallInlining {
 		return null;
 	}
 
-	/** The branch conditions that decide whether each instruction of a method is reached. */
-	private static final class Conditions {
+	/**
+	 * The branch conditions that decide whether each instruction of a method is reached: the branches every path from the
+	 * method's entry to the instruction passes (exception edges included), of which exactly one way out reaches it.
+	 */
+	static final class Conditions {
 		private final MethodNode method;
 		private final Frame<SourceValue>[] frames;
 		private final List<AbstractInsnNode> real;
@@ -401,6 +404,13 @@ public final class NativeCallInlining {
 			this.real = new ArrayList<>();
 			for (AbstractInsnNode instruction : method.instructions) if (instruction.getOpcode() >= 0) { index.put(instruction, real.size()); real.add(instruction); }
 			for (int i = 0; i < real.size(); i++) successors.add(successors(real.get(i)));
+			// An instruction inside a try block may leave for its handler: that is a way in to the handler, and a way around
+			// every branch after it in the block.
+			if (method.tryCatchBlocks != null) for (TryCatchBlockNode block : method.tryCatchBlocks) {
+				int handler = target(block.handler), from = target(block.start), to = target(block.end);
+				if (handler < 0 || from < 0) continue;
+				for (int i = from; i < (to < 0 ? real.size() : to); i++) if (!successors.get(i).contains(handler)) successors.get(i).add(handler);
+			}
 		}
 
 		static Conditions of(String owner, MethodNode method, int fresh) {
@@ -437,12 +447,14 @@ public final class NativeCallInlining {
 			return -1;
 		}
 
-		private boolean reaches(int from, int to) {
+		/** Whether a path leads from {@code from} to {@code to} without passing {@code avoid} (-1: none). */
+		private boolean reaches(int from, int to, int avoid) {
 			java.util.BitSet seen = new java.util.BitSet();
 			java.util.ArrayDeque<Integer> work = new java.util.ArrayDeque<>();
 			work.add(from);
 			while (!work.isEmpty()) {
 				int at = work.poll();
+				if (at == avoid) continue;
 				if (at == to) return true;
 				if (seen.get(at)) continue;
 				seen.set(at);
@@ -455,12 +467,16 @@ public final class NativeCallInlining {
 		Set<String> of(AbstractInsnNode instruction) {
 			Set<String> out = new TreeSet<>();
 			Integer at = index.get(instruction);
-			if (at == null) return out;
-			for (int i = 0; i < at; i++) {
-				if (!(real.get(i) instanceof JumpInsnNode branch) || branch.getOpcode() == Opcodes.GOTO || branch.getOpcode() == Opcodes.JSR) continue;
-				List<Integer> ways = successors.get(i);
-				if (ways.size() != 2) continue;
-				boolean taken = reaches(ways.get(0), at), other = reaches(ways.get(1), at);
+			if (at == null || real.isEmpty()) return out;
+			for (int i = 0; i < real.size(); i++) {
+				if (i == at || !(real.get(i) instanceof JumpInsnNode branch) || branch.getOpcode() == Opcodes.GOTO || branch.getOpcode() == Opcodes.JSR) continue;
+				List<Integer> ways = List.of(target(branch.label), next(branch)); // its own two ways out, not the handlers'
+				if (ways.contains(-1) || ways.get(0).equals(ways.get(1))) continue;
+				// Only a branch every way to the instruction passes decides it: one that a path from the entry goes around
+				// holds on some ways in and not on others.
+				if (reaches(0, at, i)) continue;
+				// Each way is followed without coming back through the branch, which would only ask it again.
+				boolean taken = reaches(ways.get(0), at, i), other = reaches(ways.get(1), at, i);
 				if (taken == other) continue;
 				int opcode = branch.getOpcode();
 				boolean positive = taken;
