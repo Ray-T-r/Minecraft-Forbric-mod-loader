@@ -210,25 +210,51 @@ public final class KernelMixinBootstrap {
 				+ "could not be attributed and keep saying '(unknown)'", named, named + unnamed, unnamed);
 	}
 
-	/** {@code latest} leaves every Fabric mod on the bundled Mixin's newest behaviour, as before. */
+	/**
+	 * {@code fabric} (default): Fabric Loader's level, not below {@link #RELOCATION_FLOOR}; {@code exact}: Fabric Loader's
+	 * level, the floor too; {@code latest}: every Fabric mod on the bundled Mixin's newest behaviour, as before.
+	 */
 	static final String COMPATIBILITY_PROPERTY = "forbric.mixinCompat";
+
+	/**
+	 * The oldest level the kernel's own injector relocations are proven for. Below it (0.9.2, a mod declaring no Fabric
+	 * Loader lower bound) Mixin finds locals with its legacy walk ({@code Locals.getLocalsAt092}), and a capture the
+	 * kernel moved to where the merged method keeps the local — MixinGuiItemCaptureAdapter's, the folded-tail capture —
+	 * is refused as "LVT ... has incompatible changes" and skipped. The real-weave suite passes at 0.10.0 and 0.17.0
+	 * and loses exactly those captures at 0.9.2. Raising such a mod to 0.10.0 changes only that walk: it keeps the one
+	 * the kernel has always used, and every other behaviour 0.9.2 and 0.10.0 share.
+	 */
+	static final int RELOCATION_FLOOR = FabricUtil.COMPATIBILITY_0_10_0;
+
+	/**
+	 * The level a Fabric config is given under {@code mode}, or {@code null} to leave it undecorated (Mixin's newest).
+	 */
+	static Integer compatibilityLevel(java.util.Collection<? extends net.fabricmc.loader.api.metadata.ModDependency> dependencies,
+			String mode) {
+		if ("latest".equalsIgnoreCase(mode)) return null;
+		int fabric = FabricMixinCompat.levelFor(dependencies);
+		return "exact".equalsIgnoreCase(mode) ? fabric : Math.max(fabric, RELOCATION_FLOOR);
+	}
 
 	/**
 	 * Gives each Fabric mod's mixin configs the Mixin compatibility level Fabric Loader gives them
 	 * ({@link FabricMixinCompat}): the behaviour of the Mixin the mod was built against, read from the lowest Fabric
-	 * Loader version it accepts.
+	 * Loader version it accepts — not below {@link #RELOCATION_FLOOR}, under which the kernel's own relocations of
+	 * local captures do not hold.
 	 *
 	 * <p>Before this, nothing set it, and Mixin reads an undecorated config as its newest level — so every Fabric
 	 * mod ran with injector semantics newer than those it was tested with on Fabric: the order initialisers and
 	 * injectors are applied in, how a local variable is picked out, where a shifted point lands. About half the
 	 * Fabric mods in the test corpora declare a lower bound that Fabric answers with an older level.
 	 *
-	 * <p>Fabric-owned configs only. Fabric Loader decorates the configs of the mods it loads; the Forge-family configs
-	 * keep the level their own loaders leave them at, which is none. Before {@code gotoPhase(INIT)}, like the mod id:
-	 * Mixin reads the level while it prepares each mixin, and a level set afterwards is read by nobody.
+	 * <p>Fabric-owned configs only. The Forge-family configs are left as they were: NeoForge's FML decorates its own
+	 * with a declared {@code behaviorVersion}, and refuses one below 0.17.1 at load, so every level it can give behaves
+	 * as the bundled Mixin's newest, which an undecorated config already gets. Before {@code gotoPhase(INIT)}, like the
+	 * mod id: Mixin reads the level while it prepares each mixin, and a level set afterwards is read by nobody.
 	 */
 	private static void giveFabricConfigsTheirCompatibilityLevel() {
-		if ("latest".equalsIgnoreCase(System.getProperty(COMPATIBILITY_PROPERTY, "fabric"))) {
+		String mode = System.getProperty(COMPATIBILITY_PROPERTY, "fabric");
+		if ("latest".equalsIgnoreCase(mode)) {
 			ForbricLog.info("[Forbric/Mixin] -D%s=latest — every Fabric mod's mixins run with Mixin's newest "
 					+ "behaviour, not the level Fabric Loader would give them", COMPATIBILITY_PROPERTY);
 			return;
@@ -236,6 +262,7 @@ public final class KernelMixinBootstrap {
 		KernelFabricLoader fabric = KernelFabricLoader.getInstanceOrNull();
 		if (fabric == null) return;
 
+		int raised = 0;
 		java.util.Map<Integer, Integer> levels = new java.util.TreeMap<>();
 		for (Config registered : Mixins.getConfigs()) {
 			try {
@@ -245,7 +272,9 @@ public final class KernelMixinBootstrap {
 				IMixinConfig config = registered.getConfig();
 				if (mod == null || config == null || config.hasDecoration(FabricUtil.KEY_COMPATIBILITY)) continue;
 
-				int level = FabricMixinCompat.levelFor(mod.getMetadata().getDependencies());
+				Integer level = compatibilityLevel(mod.getMetadata().getDependencies(), mode);
+				if (level == null) continue;
+				if (level != FabricMixinCompat.levelFor(mod.getMetadata().getDependencies())) raised++;
 				config.decorate(FabricUtil.KEY_COMPATIBILITY, level);
 				levels.merge(level, 1, Integer::sum);
 			} catch (Throwable t) {
@@ -255,8 +284,9 @@ public final class KernelMixinBootstrap {
 			}
 		}
 		if (!levels.isEmpty()) {
-			ForbricLog.info("[Forbric/Mixin] Fabric mixin configs by the compatibility level Fabric Loader gives them "
-					+ "(level=configs): %s", levels);
+			ForbricLog.info("[Forbric/Mixin] Fabric mixin configs by compatibility level, Fabric Loader's per mod "
+					+ "(level=configs): %s; %d raised to %d, the oldest the kernel's capture relocations hold for "
+					+ "(-D%s=exact keeps Fabric's)", levels, raised, RELOCATION_FLOOR, COMPATIBILITY_PROPERTY);
 		}
 	}
 

@@ -560,6 +560,7 @@ test	net.forbric.kernel.mixin.FabricFreezeHookSpellingTest	createFlysObserversWi
 test	net.forbric.kernel.mixin.FabricFreezeHookSpellingTest	withoutTheNativeClassThePointIsReadWhereMixinInjects()	[fixture:staged] the staged merged base: $ROOT/forbric-loader/run/merged-base/patched-mc-merged-26.2.jar
 test	net.forbric.kernel.mixin.FabricMiningDecisionTest	nativeContinueNativeResetFabricOverrideAndDifferentItemsPreserveTheirDecisions()	[fixture:staged] actual Fabric API fixture required
 test	net.forbric.kernel.mixin.FabricMixinCompatTest	fabricLoaderItselfGivesTheSameLevels()	[fixture:third-party] Fabric Loader 0.19.3 in a local launcher's libraries absent
+test	net.forbric.kernel.mixin.FabricMixinCompatTest	versionsAreOrderedAsFabricLoaderOrdersThem()	[fixture:third-party] Fabric Loader 0.19.3 in a local launcher's libraries absent
 test	net.forbric.kernel.mixin.FabricRegistryInitializationMixinAdapterTest	bootstrapKeepsEveryNativeTrackerButDoesNotRedirectTheFreeze()	[fixture:third-party] build/compat-inputs/player-loading/api/fabric-registry-sync-v0-7.1.1+c7bd5b8e9e.jar absent
 test	net.forbric.kernel.mixin.FabricRegistryInitializationMixinAdapterTest	clientAndServerRetainPostFreezeWorkAndClientUnmap()	[fixture:third-party] build/compat-inputs/player-loading/api/fabric-registry-sync-v0-7.1.1+c7bd5b8e9e.jar absent
 test	net.forbric.kernel.mixin.FabricRegistryLoaderMixinAdapterTest	aVanillaLoaderKeepsTheOriginalHandlers()	[fixture:mc-libraries] actual game required

@@ -336,6 +336,18 @@ test {
 			?: 'build/compat-inputs/create-fly/create-fly.jar')
 	inputs.files(createFlyFixture).withPropertyName('createFlyFixture').optional()
 	systemProperty 'forbric.createFlyJar', createFlyFixture.absolutePath
+	// FabricMixinCompatTest compares the kernel with Fabric Loader 0.19.3 itself, from wherever a launcher keeps it
+	// (the test's own candidates, in its order); -Pforbric.fabricLoaderJar names one. Installing or replacing it must
+	// invalidate the tests, so every candidate is an optional input.
+	def fabricLoaderRelative = 'net/fabricmc/fabric-loader/0.19.3/fabric-loader-0.19.3.jar'
+	def fabricLoaderCandidates = [new File(mcLibraries, fabricLoaderRelative), new File(defaultMinecraft, 'libraries/' + fabricLoaderRelative),
+			new File(System.getProperty('user.home'), '.minecraft/libraries/' + fabricLoaderRelative)]
+	def fabricLoaderFixture = project.findProperty('forbric.fabricLoaderJar') ?: System.getProperty('forbric.fabricLoaderJar')
+	if (fabricLoaderFixture != null) {
+		inputs.files(file(fabricLoaderFixture)).withPropertyName('fabricLoaderFixture').optional()
+		systemProperty 'forbric.fabricLoaderJar', file(fabricLoaderFixture).absolutePath
+	}
+	inputs.files(fabricLoaderCandidates).withPropertyName('fabricLoaderCandidates').optional()
 	// Only EventChainAuditTest's own loader gets log4j (the real buses need it); the test classpath keeps none,
 	// because several tests assert ForbricLog's fallback when log4j is absent.
 	doFirst { systemProperty 'forbric.log4jApiForTests', configurations.compileClasspath.files.find { it.name.startsWith('log4j-api-') }?.absolutePath ?: '' }

@@ -49,7 +49,7 @@ class GuiItemCaptureMixinAdapterWeaveTest {
 
 	@TempDir static Path work;
 	private static Path fixture;
-	private static WeaveHarness.Result adapted, off;
+	private static WeaveHarness.Result adapted, off, legacyLocals;
 
 	@BeforeAll static void weaveBothWays() throws Exception {
 		List<Path> sources;
@@ -60,6 +60,21 @@ class GuiItemCaptureMixinAdapterWeaveTest {
 		fixture = WeaveHarness.fixture(work, "guiitemcapture", sources, Map.of(CONFIG, SOURCES.resolve(CONFIG)), List.of("-g"));
 		adapted = run("adapted", Map.of());
 		off = run("adapter-off", Map.of(MixinGuiItemCaptureAdapter.PROPERTY, "off"));
+		legacyLocals = run("exact-0.9.2", Map.of("forbric.mixinCompat", "exact"));
+	}
+
+	/**
+	 * Why the kernel does not give a Fabric mod a level below 0.10.0. The fixture mod declares no Fabric Loader lower
+	 * bound, which Fabric Loader answers with 0.9.2; at that level Mixin finds locals with its legacy walk, refuses the
+	 * relocated capture ("LVT ... has incompatible changes") and skips it, so the feature is gone without a crash. The
+	 * default run above is the same fixture at the kernel's floor, 0.10.0, and captures. If this starts capturing,
+	 * the relocation holds under the legacy walk too and the floor (KernelMixinBootstrap.RELOCATION_FLOOR) can go.
+	 */
+	@Test void atFabricsOwnLevelZeroNineTwoTheRelocatedCaptureIsSkipped() {
+		assertTrue(legacyLocals.printed("level=configs): {9002=1}"), legacyLocals.describe());
+		assertTrue(legacyLocals.printed("has incompatible changes"), legacyLocals.describe());
+		assertTrue(legacyLocals.printed(WeaveHarnessMain.DONE + " captured=[]"), legacyLocals.describe());
+		assertTrue(adapted.printed("level=configs): {10000=1}"), "the default run is at the floor: " + adapted.describe());
 	}
 
 	@Test void theDiamondIsCapturedWithTheStateTheGuiSubmitted() throws Exception {

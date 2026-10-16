@@ -16,6 +16,7 @@
 
 package net.forbric.kernel.mixin;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -83,6 +84,24 @@ class KernelMixinBootstrapDecorationTest {
 		assertFalse(keys.contains(org.spongepowered.asm.mixin.FabricUtil.KEY_COMPATIBILITY),
 				"KEY_COMPATIBILITY sets injector semantics; it has its own step and its own switch, not a seat on "
 						+ "a naming change");
+	}
+
+	/** The three modes: Fabric's level not below the floor (default), Fabric's level as is, and none at all. */
+	@Test
+	void theLevelIsFabricLoadersNotBelowTheFloorUnlessAskedForExactly() {
+		java.util.List<net.fabricmc.loader.api.metadata.ModDependency> none = java.util.List.of();
+		java.util.List<net.fabricmc.loader.api.metadata.ModDependency> modern = java.util.List.of(
+				new net.forbric.kernel.fabric.KernelMetadataSupport.SimpleModDependency(
+						net.fabricmc.loader.api.metadata.ModDependency.Kind.DEPENDS, "fabricloader", java.util.List.of(">=0.18.4")));
+		int legacy = org.spongepowered.asm.mixin.FabricUtil.COMPATIBILITY_0_9_2;
+
+		assertEquals(KernelMixinBootstrap.RELOCATION_FLOOR, KernelMixinBootstrap.compatibilityLevel(none, "fabric"));
+		assertEquals(legacy, KernelMixinBootstrap.compatibilityLevel(none, "exact"));
+		assertEquals(org.spongepowered.asm.mixin.FabricUtil.COMPATIBILITY_0_17_0,
+				KernelMixinBootstrap.compatibilityLevel(modern, "fabric"), "above the floor, Fabric's level unchanged");
+		assertEquals(null, KernelMixinBootstrap.compatibilityLevel(modern, "latest"));
+		assertTrue(KernelMixinBootstrap.RELOCATION_FLOOR > legacy && KernelMixinBootstrap.RELOCATION_FLOOR
+				<= org.spongepowered.asm.mixin.FabricUtil.COMPATIBILITY_0_10_0, "the floor only lifts 0.9.2");
 	}
 
 	/** The compatibility level is read while Mixin prepares each mixin; set after that, nobody reads it. */
