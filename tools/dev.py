@@ -182,6 +182,37 @@ def libraries(metadata, system=None, arch=None):
                 yield native
 
 
+def merge_libraries(metadata, root, system=None, arch=None):
+    """The base version's libraries as forbric-loader/run/build-merged-base.sh hands them to the merge tools.
+
+    Each jar libraries() picks for this platform -- the rule prepare() fetched by, so a directory prepared here, by
+    the installer or by a launcher has every one -- at the path the version JSON gives it under root, in the JSON's
+    order, and checked against the JSON's SHA-1. Exactly those: root also holds every other version any launcher
+    ever fetched there, and when the tools were given the folder, the first jar in sorted path order answered for a
+    class (guava-25.1-jre before 26.2's guava-33.6.0-jre). Nothing is downloaded.
+
+    Returns (jars, problems); each problem names a jar that is not in place as the JSON describes it.
+    """
+    root = Path(os.path.normpath(root))
+    jars, problems = [], []
+    for entry in libraries(metadata, system, arch):
+        relative = entry.get('path')
+        if not isinstance(relative, str) or not relative.endswith('.jar'):
+            continue
+        jar = Path(os.path.normpath(root / relative))
+        if jar == root or os.path.commonpath([root, jar]) != str(root):
+            problems.append('leaves the libraries directory: ' + relative)
+        elif not jar.is_file():
+            problems.append('missing: ' + str(jar))
+        elif isinstance(entry.get('sha1'), str) and digest(jar, 'sha1') != entry['sha1'].lower():
+            problems.append('SHA-1 differs from the version JSON: ' + str(jar))
+        elif not isinstance(entry.get('sha1'), str) and jar.stat().st_size == 0:
+            problems.append('empty: ' + str(jar))
+        else:
+            jars.append(jar)
+    return jars, problems
+
+
 NO_ASSETS = '.no-assets'
 
 

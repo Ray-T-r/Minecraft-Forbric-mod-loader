@@ -30,67 +30,33 @@ done
 # constructions into them (Guava's memoizing Supplier among them). Exactly these. This used to hand the tools the
 # whole $MC/libraries folder, where every version any launcher ever fetched sits beside 26.2's own, and the first
 # jar in sorted path order answered for a class (a player's guava-25.1-jre before 26.2's guava-33.6.0-jre); the
-# tools now refuse a directory (ContractGraph.libraries). The rule is the installer's
-# (Installer.minecraftLibraryArtifacts and MojangDownloader.downloadLibraries): each library the JSON allows on
-# this OS, at the path the JSON gives it, checked against the JSON's SHA-1. Nothing is downloaded here.
+# tools now refuse a directory (ContractGraph.libraries). The list is tools/dev.py's merge_libraries: each library
+# the JSON gives this platform by the rule tools/dev.py prepare fetches with, at the path the JSON gives it, checked
+# against the JSON's SHA-1. That rule is the installer's (Installer.minecraftLibraryArtifacts) except that it keeps
+# only this CPU's natives jars, which hold no class the merge reads -- so a directory prepared by tools/dev.py, by
+# the installer or by a launcher has every jar it names. Nothing is downloaded here.
 VERSION_JSON="${VERSION_JSON:-$MC/versions/26.2/26.2.json}"
 [ -f "$VERSION_JSON" ] || { echo "base version JSON not found: $VERSION_JSON" >&2; exit 2; }
+DEV_TOOLS="$(cd "$PROJECT/../tools" && pwd)"
 # A function rather than a heredoc inside $( ): bash 3.2, macOS's own, mis-parses quotes in that form.
 base_libraries() {
-python3 - "$@" <<'PY'
-import hashlib, json, os, platform, sys
-version_json, root = sys.argv[1:3]
-osname = {"Darwin": "osx", "Windows": "windows"}.get(platform.system(), "linux")
-
-def allowed(lib):
-    # Mojang's rule list, read the way a launcher reads it: last matching rule wins, default allow.
-    rules = lib.get("rules")
-    if not rules:
-        return True
-    ok = False
-    for rule in rules:
-        spec = rule.get("os")
-        if spec is not None and spec.get("name") != osname:
-            continue
-        ok = rule.get("action") == "allow"
-    return ok
-
-def sha1(path):
-    digest = hashlib.sha1()
-    with open(path, "rb") as f:
-        for block in iter(lambda: f.read(1 << 20), b""):
-            digest.update(block)
-    return digest.hexdigest()
+python3 -I - "$DEV_TOOLS" "$@" <<'PY'
+import json, os, sys
+tools, version_json, root = sys.argv[1:4]
+sys.path.insert(0, tools)
+import dev
 
 with open(version_json, encoding="utf-8") as f:
-    base = json.load(f)
-root = os.path.normpath(root)
-jars, problems = [], []
-for lib in base.get("libraries", []):
-    if not isinstance(lib, dict) or not allowed(lib):
-        continue
-    artifact = (lib.get("downloads") or {}).get("artifact")
-    if not isinstance(artifact, dict) or not isinstance(artifact.get("path"), str) or not isinstance(artifact.get("url"), str):
-        continue
-    jar = os.path.normpath(os.path.join(root, artifact["path"]))
-    if not jar.startswith(root + os.sep):
-        problems.append("leaves the libraries directory: " + artifact["path"])
-    elif not os.path.isfile(jar):
-        problems.append("missing: " + jar)
-    elif isinstance(artifact.get("sha1"), str) and sha1(jar).lower() != artifact["sha1"].lower():
-        problems.append("SHA-1 differs from the version JSON: " + jar)
-    elif not isinstance(artifact.get("sha1"), str) and os.path.getsize(jar) == 0:
-        problems.append("empty: " + jar)
-    else:
-        jars.append(jar)
+    metadata = json.load(f)
+jars, problems = dev.merge_libraries(metadata, root)
 if problems:
     print("[build-merged-base] %d of the libraries %s names are not in place under %s:" % (len(problems), version_json, root), file=sys.stderr)
     for problem in problems[:10]:
         print("  " + problem, file=sys.stderr)
-    print("  (start this version once in a launcher, or run the Forbric installer or tools/dev.py prepare on this directory)", file=sys.stderr)
+    print("  (start this version once in a launcher, or run tools/dev.py prepare --mc-dir on this directory)", file=sys.stderr)
     sys.exit(2)
-print("[build-merged-base] libraries: the %d jar(s) %s names for this OS" % (len(jars), os.path.basename(version_json)), file=sys.stderr)
-print(os.pathsep.join(jars))
+print("[build-merged-base] libraries: the %d jar(s) %s names for this platform" % (len(jars), os.path.basename(version_json)), file=sys.stderr)
+print(os.pathsep.join(str(jar) for jar in jars))
 PY
 }
 LIBRARIES="$(base_libraries "$VERSION_JSON" "$MC/libraries")" || exit 2

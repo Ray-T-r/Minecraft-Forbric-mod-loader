@@ -43,6 +43,51 @@ class DevelopmentWorkflowTest(unittest.TestCase):
         self.assertEqual([p['path'] for p in dev.libraries(metadata, 'osx', 'x86_64')], ['intel'])
         self.assertEqual(list(dev.libraries(metadata, 'windows', 'amd64')), [])
 
+    def test_merge_libraries_are_exactly_the_jars_the_version_json_names(self):
+        # build-merged-base.sh hands the merge tools this list. The folder also holds an older guava, sorting first:
+        # the tools once walked the folder and the first jar in path order answered for a class.
+        libraries = self.root / 'libraries'
+        listed = {'org/zlib/zlib/1/zlib-1.jar': b'zlib', 'com/google/guava/guava/33/guava-33.jar': b'guava 33',
+                  'org/lwjgl/lwjgl/3/lwjgl-3-natives-macos-arm64.jar': b'arm natives'}
+        for relative, content in listed.items():
+            (libraries / relative).parent.mkdir(parents=True, exist_ok=True)
+            (libraries / relative).write_bytes(content)
+        stale = libraries / 'com/google/guava/guava/25/guava-25.jar'
+        stale.parent.mkdir(parents=True)
+        stale.write_bytes(b'guava 25')
+
+        def library(relative, name=None, rules=None):
+            artifact = {'path': relative, 'url': 'https://fixture.invalid/' + relative,
+                        'sha1': hashlib.sha1(listed.get(relative, b'')).hexdigest()}
+            entry = {'name': name or relative, 'downloads': {'artifact': artifact}}
+            if rules:
+                entry['rules'] = rules
+            return entry
+        on_osx = [{'action': 'allow', 'os': {'name': 'osx'}}]
+        # Out of path order, so a list that sorts shows; the Intel natives are not in the folder, as in a directory
+        # tools/dev.py prepared on Apple silicon, and a Windows-only library is not either.
+        metadata = {'libraries': [
+            library('org/zlib/zlib/1/zlib-1.jar'),
+            library('com/google/guava/guava/33/guava-33.jar'),
+            library('org/lwjgl/lwjgl/3/lwjgl-3-natives-macos.jar', 'org.lwjgl:lwjgl:3:natives-macos', on_osx),
+            library('org/lwjgl/lwjgl/3/lwjgl-3-natives-macos-arm64.jar', 'org.lwjgl:lwjgl:3:natives-macos-arm64', on_osx),
+            library('org/win/win/1/win-1.jar', rules=[{'action': 'allow', 'os': {'name': 'windows'}}])]}
+
+        jars, problems = dev.merge_libraries(metadata, libraries, 'osx', 'aarch64')
+        self.assertEqual(problems, [])
+        self.assertEqual(jars, [libraries / 'org/zlib/zlib/1/zlib-1.jar', libraries / 'com/google/guava/guava/33/guava-33.jar',
+                                libraries / 'org/lwjgl/lwjgl/3/lwjgl-3-natives-macos-arm64.jar'])
+        self.assertNotIn(stale, jars)
+
+        # A jar the JSON names that is not what it says, or not there, or outside the folder, is refused by name.
+        (libraries / 'com/google/guava/guava/33/guava-33.jar').write_bytes(b'GUAVA 33')
+        metadata['libraries'].append(library('../escape/1/escape-1.jar'))
+        jars, problems = dev.merge_libraries(metadata, libraries, 'osx', 'x86_64')
+        self.assertEqual(jars, [libraries / 'org/zlib/zlib/1/zlib-1.jar'])
+        self.assertEqual(problems, ['SHA-1 differs from the version JSON: ' + str(libraries / 'com/google/guava/guava/33/guava-33.jar'),
+                                    'missing: ' + str(libraries / 'org/lwjgl/lwjgl/3/lwjgl-3-natives-macos.jar'),
+                                    'leaves the libraries directory: ../escape/1/escape-1.jar'])
+
     def test_native_caches_are_separate_for_jvms_with_different_architectures(self):
         args = argparse.Namespace(command='client', mc_dir=None, staged=None, instance=None, natives=None)
         with patch.dict(os.environ, {}, clear=True), patch.object(dev, 'system_name', return_value='osx'):
