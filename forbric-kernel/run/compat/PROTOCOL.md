@@ -60,6 +60,26 @@ FORBRIC-ONLY, BOTH, NATIVE-ONLY or NEITHER, and INCONCLUSIVE when an arm did not
 Run each with `--help` for its argument list. API usage must be proved from the downloaded candidate
 jar before treating the selection as final; metadata resolution alone cannot prove it.
 
+## Rename experiment
+
+A fix must not recognise a mod by name, so the same mod under other names must be treated exactly like the original.
+`rename-mod.py rename <mod.jar> --out-dir DIR [--dependent <probe.jar> ...]` writes that mod: every class under the
+mod's root packages moves to another package and class name (descriptors, signatures, annotations, Mixin targets,
+MixinExtras definitions, refmap entries and class-name strings follow), its mixin configs, refmaps, access widener and
+jar get other file names, and its mod ids (letters only) replace the old ones in `fabric.mod.json`, `mods.toml`,
+`neoforge.mods.toml`, the manifest, service files, jar-in-jar metadata, loader annotations and loader mod lookups.
+Minecraft, the loaders, Mixin, other mods, shaded libraries and resource namespaces keep their names; a name segment
+the mod's own code tests strings against (Iris' `contains("VKOnly")`) keeps its text. A probe compiled against the mod
+goes in `--dependent` so its references follow. `rename-mod.py verify` reads every class back with the old names put
+in again and must report 0 problems. `rename-mod.py compare --map DIR/<new>.jar.rename.json <original run> <renamed
+run> [--probe GLOB] [--image GLOB]` compares two runs of the same scenario: the Mixin export census
+(`-Dmixin.debug.export=true`), the `Mixing ... into ...` lines (`-Dmixin.debug.verbose=true`), warnings naming the
+mod, the kernel's `[Forbric/...]` lines, the compatibility report and probe files, with the renamed run's names put
+back. Run it on the genuine loader first (it must say SAME, or the rename itself changed the mod), then on Forbric:
+any difference there is a name-keyed defect. Run the original twice to see what differs between any two runs.
+`python3 -m unittest discover -s run/compat -p test_rename_mod.py` runs a synthetic mod through rename, verify, the
+JVM and compare.
+
 ## Carpet rule and event verification
 
 `carpet-gate.py --carpet <fabric-carpet-26.2+v260616.jar> --staged-root <forbric-loader/run>`

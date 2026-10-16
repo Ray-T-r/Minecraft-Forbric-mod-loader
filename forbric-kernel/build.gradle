@@ -573,6 +573,8 @@ tasks.register('toolTest', Exec) {
 	description = 'Run portable development and compatibility tooling self-tests without staged game jars.'
 	workingDir projectDir.parentFile
 	commandLine devPython, devDriver, 'tool-test'
+	// run/compat/rename-mod.py takes ASM from this classpath; without it its self-test would start a second build here.
+	doFirst { environment 'FORBRIC_KERNEL_CLASSPATH', sourceSets.main.runtimeClasspath.asPath }
 }
 tasks.named('check') { dependsOn 'toolTest' }
 tasks.register('linkToolTest', Exec) {
