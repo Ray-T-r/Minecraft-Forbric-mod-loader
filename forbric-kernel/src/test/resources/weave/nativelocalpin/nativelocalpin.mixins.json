@@ -1,0 +1,1 @@
+{"required": true, "package": "com.tallyman.count.mixin", "compatibilityLevel": "JAVA_21", "mixins": ["PierMixin"], "injectors": {"defaultRequire": 1}}
