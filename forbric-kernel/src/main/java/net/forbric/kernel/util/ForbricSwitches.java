@@ -42,7 +42,6 @@ public final class ForbricSwitches {
 			Map.entry("forbric.createBreathingMixin", "forbric.breathingCallbacks"),
 			Map.entry("forbric.createContextualBlocks", "forbric.blockQueryAdapters"),
 			Map.entry("forbric.createEntitySounds", "forbric.entitySoundCallbacks"),
-			Map.entry("forbric.createFluidMixins", "forbric.fluidInteractionCallbacks"),
 			Map.entry("forbric.createHudMixin", "forbric.hudContextCallbacks"),
 			Map.entry("forbric.createInjectionAdapters", "forbric.carrierCallbackAdapters"),
 			Map.entry("forbric.createInteractionMixins", "forbric.blockInteractionAdapters"),
@@ -58,7 +57,11 @@ public final class ForbricSwitches {
 	/** Retired name → why setting it changes nothing. */
 	static final Map<String, String> RETIRED = Map.of(
 			"forbric.dragonParts", "the multipart entity hierarchy is now proved by the merged base when it is built, "
-					+ "so there is no runtime rewrite left to switch off");
+					+ "so there is no runtime rewrite left to switch off",
+			"forbric.fluidInteractionCallbacks", "a fluid callback on vanilla's spread decision is no longer moved onto the carriers' "
+					+ "registry calls; the decision method is asked again where vanilla asks it (-Dforbric.nativeEntryRelay)",
+			"forbric.createFluidMixins", "a fluid callback on vanilla's spread decision is no longer moved onto the carriers' "
+					+ "registry calls; the decision method is asked again where vanilla asks it (-Dforbric.nativeEntryRelay)");
 
 	private static final ForbricSwitches SYSTEM =
 			new ForbricSwitches(RENAMED, RETIRED, System::getProperty, ForbricLog::warn);

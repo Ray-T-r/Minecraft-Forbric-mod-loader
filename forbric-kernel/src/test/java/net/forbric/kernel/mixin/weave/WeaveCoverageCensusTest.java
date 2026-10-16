@@ -111,6 +111,7 @@ class WeaveCoverageCensusTest {
 			Map.entry("NativeCallInlining", Switch.own("forbric.nativeCallInlining")), // NativeCallInliningWeaveTest
 			Map.entry("NativeLocalMaterialization", Switch.own("forbric.nativeLocalMaterialization")), // NativeLocalMaterializationWeaveTest
 			Map.entry("NativeLocalPins", Switch.own("forbric.nativeLocalPins")), // NativeLocalPinsWeaveTest
+			Map.entry("NativeEntryRelay", Switch.own("forbric.nativeEntryRelay")), // NativeEntryRelayWeaveTest, FluidPairMixinAdaptersWeaveTest
 			Map.entry("MixinGuiItemCaptureAdapter", Switch.own("forbric.guiItemCaptureAnchor")),
 			Map.entry("KernelClientHookMixinAnchors", Switch.own("forbric.clientHookMixinAnchors")),
 			Map.entry("MixinShearsRelay", Switch.own("forbric.shearsRelay")),
@@ -143,7 +144,6 @@ class WeaveCoverageCensusTest {
 			// repair, and MixinReturnOrdinals alone is not (the release still reaches the final hooks).
 			Map.entry("MixinKeyActionAdapter", Switch.own("forbric.keyActionCallbacks")),
 			Map.entry("MixinSpriteLoaderCallbackAdapter", Switch.own("forbric.spriteLoaderCallbacks")),
-			Map.entry("MixinFluidInteractionAdapter", Switch.own("forbric.fluidInteractionCallbacks")),
 			Map.entry("MixinCarrierCallbackAdapters", Switch.own("forbric.carrierCallbackAdapters")),
 			Map.entry("MixinBlockInteractionAdapters", Switch.own("forbric.blockInteractionAdapters")),
 			Map.entry("MixinBlockQueryAdapters", Switch.own("forbric.blockQueryAdapters")),

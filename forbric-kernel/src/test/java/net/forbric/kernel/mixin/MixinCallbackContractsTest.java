@@ -39,7 +39,6 @@ class MixinCallbackContractsTest {
         contracts.add(create("mixin/LivingEntityMixin","MixinEntitySoundCallbackAdapter",MixinEntitySoundCallbackAdapter::adapt,1));
         contracts.add(create("mixin/EntityMixin","MixinEntitySoundCallbackAdapter",MixinEntitySoundCallbackAdapter::adapt,1));
         contracts.add(create("client/mixin/HudMixin","MixinHudContextAdapter",MixinHudContextAdapter::adapt,1));
-        contracts.add(create("mixin/LiquidBlockMixin","MixinFluidInteractionAdapter",MixinFluidInteractionAdapter::adapt,2));
         contracts.add(create("client/mixin/KeyboardHandlerMixin","MixinKeyActionAdapter",(mixin,targets)->MixinKeyActionAdapter.adapt(mixin,targets,(family,name)->CreateInjectionAdaptersTest.nativeTarget(name)),2));
         contracts.add(create("mixin/StructureTemplateMixin","MixinStructurePlacementAdapter",MixinStructurePlacementAdapter::adapt,3));
         for (String entry : CarpetMixinAdapterTest.NAMES)

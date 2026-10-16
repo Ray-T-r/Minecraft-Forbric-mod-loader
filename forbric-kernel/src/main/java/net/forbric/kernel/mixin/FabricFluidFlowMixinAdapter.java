@@ -30,6 +30,14 @@ public final class FabricFluidFlowMixinAdapter {
 		MethodNode original = callbacks.getFirst();
 		ClassNode target = targets.apply(TARGET);
 		if (original == null || target == null || MixinFit.injectorOf(original) == null) return 0;
+		// Where the method the callback enters is called again (NativeEntryRelay asks it ahead of the carriers' decisions),
+		// the callback runs there as written, as on Fabric; wrapping the registries too would run it twice.
+		MethodNode bound = MixinTargetSelectors.one(original, target);
+		if (bound != null) for (MethodNode method : target.methods) for (AbstractInsnNode i : method.instructions)
+			if (i instanceof MethodInsnNode call && call.owner.equals(target.name) && call.name.equals(bound.name) && call.desc.equals(bound.desc)) {
+				ForbricLog.info("[Forbric/FluidFlow] Fabric's ALLOW callback runs at the entry of %s, which the merged game asks again", bound.name);
+				return 0;
+			}
 		List<MethodNode> hosts = new ArrayList<>(); List<MethodInsnNode> nativeCalls = new ArrayList<>();
 		for (String name : List.of("onPlace","neighborChanged")) {
 			MethodNode host = target.methods.stream().filter(m -> m.name.equals(name)).findFirst().orElse(null);

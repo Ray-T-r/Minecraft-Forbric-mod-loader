@@ -54,7 +54,6 @@ class MixinCallbackSelectorSpellingTest {
 		contracts.add(create("mixin/LivingEntityMixin", MixinEntitySoundCallbackAdapter::adapt, 1));
 		contracts.add(create("mixin/EntityMixin", MixinEntitySoundCallbackAdapter::adapt, 1));
 		contracts.add(create("client/mixin/HudMixin", MixinHudContextAdapter::adapt, 1));
-		contracts.add(create("mixin/LiquidBlockMixin", MixinFluidInteractionAdapter::adapt, 2));
 		contracts.add(create("client/mixin/KeyboardHandlerMixin", (mixin, targets) -> MixinKeyActionAdapter.adapt(mixin, targets, NATIVE), 2));
 		contracts.add(create("mixin/StructureTemplateMixin", (mixin, targets) -> MixinStructurePlacementAdapter.adapt(mixin, targets, NATIVE), 3));
 		for (String entry : CarpetMixinAdapterTest.NAMES)
