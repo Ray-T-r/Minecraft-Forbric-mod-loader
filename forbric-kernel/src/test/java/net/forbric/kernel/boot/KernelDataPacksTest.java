@@ -18,6 +18,7 @@ package net.forbric.kernel.boot;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.io.OutputStream;
@@ -264,6 +265,31 @@ class KernelDataPacksTest {
 		assertEquals(List.of(), KernelDataPacks.carriersWithData(List.of(neo)));
 		// ... and turning the carriers off must not turn the MOD packs off with them.
 		assertTrue(KernelDataPacks.enabled());
+	}
+
+	/**
+	 * A data pack the kernel serves is declared the known pack its own platform declares: NeoForge's form for a jar
+	 * NeoForge owns (every mod id and version of the file, NeoForge's own carrier included), none for MinecraftForge's
+	 * — an entry from an undeclared pack is experimental and puts the backup screen in front of every world load.
+	 */
+	@Test
+	void eachPackIsDeclaredTheKnownPackItsOwnPlatformDeclares() throws Exception {
+		assertEquals(List.of("neoforge", "mod/sprocket,cog", "1.2,3.4"),
+				KernelDataPacks.knownPack(net.forbric.api.Ecosystem.NEOFORGE, List.of("sprocket", "cog"), List.of("1.2", "3.4")));
+		assertNull(KernelDataPacks.knownPack(net.forbric.api.Ecosystem.FORGE, List.of("sprocket"), List.of("1.2")));
+		assertNull(KernelDataPacks.knownPack(net.forbric.api.Ecosystem.FABRIC, List.of("sprocket"), List.of("1.2")));
+		assertNull(KernelDataPacks.knownPack(net.forbric.api.Ecosystem.NEOFORGE, List.of(), List.of()));
+
+		Path neoCarrier = dir.resolve("loom-carrier.jar");
+		try (ZipOutputStream zip = new ZipOutputStream(Files.newOutputStream(neoCarrier))) {
+			put(zip, "META-INF/MANIFEST.MF", "Manifest-Version: 1.0\nImplementation-Version: 7.7.7\n");
+			put(zip, "META-INF/neoforge.mods.toml", "modLoader=\"javafml\"\nloaderVersion=\"[1,)\"\nlicense=\"x\"\n"
+					+ "[[mods]]\nmodId=\"spindle\"\nversion=\"${file.jarVersion}\"\n");
+			put(zip, "data/neoforge/damage_type/thread.json", "{}");
+		}
+		assertEquals(List.of("neoforge", "mod/spindle", "7.7.7"), KernelDataPacks.carrierKnownPack(neoCarrier));
+		Path forgeCarrier = jar("anvil-carrier.jar", null, "data/forge/tags/item/x.json");
+		assertNull(KernelDataPacks.carrierKnownPack(forgeCarrier));
 	}
 
 	private Path jar(String name, String manifest, String... entries) throws Exception {

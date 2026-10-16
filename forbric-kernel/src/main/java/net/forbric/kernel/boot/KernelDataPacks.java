@@ -123,10 +123,10 @@ public final class KernelDataPacks {
 		List<Object> packs = new ArrayList<>();
 		List<String> ids = new ArrayList<>();
 		int loaderPacks = collect(cl, packType, carriersWithData(runtimeJars), packs, ids,
-				KernelDataPacks::carrierPackId);
+				KernelDataPacks::carrierPackId, KernelDataPacks::carrierKnownPack);
 		Set<String> takenModIds = new java.util.LinkedHashSet<>();
 		int modPacks = collect(cl, packType, forgeFamilyJarsWithData(jars), packs, ids,
-				jar -> modPackId(jar, KernelDataPacks::firstModIdIn, takenModIds));
+				jar -> modPackId(jar, KernelDataPacks::firstModIdIn, takenModIds), KernelDataPacks::modKnownPack);
 		if (packs.isEmpty()) {
 			ForbricLog.debug("[Forbric/DataPacks] nothing carries data/ — no datapack to serve");
 			return;
@@ -148,11 +148,11 @@ public final class KernelDataPacks {
 
 	/** Builds a pack per jar, appending to {@code packs}/{@code ids}. Returns how many were built. */
 	private static int collect(ClassLoader cl, Object packType, List<Path> jars, List<Object> packs,
-			List<String> ids, Function<Path, String> idOf) {
+			List<String> ids, Function<Path, String> idOf, Function<Path, List<String>> knownPackOf) {
 		int built = 0;
 		for (Path jar : jars) {
 			String id = idOf.apply(jar);
-			Object pack = buildPack(cl, id, jar, packType);
+			Object pack = buildPack(cl, id, jar, packType, knownPackOf.apply(jar));
 			if (pack != null) {
 				packs.add(pack);
 				ids.add(id);
@@ -213,6 +213,65 @@ public final class KernelDataPacks {
 			return "forbric/data/" + modId;
 		}
 		return "forbric/data/" + stripExtension(jar.getFileName().toString());
+	}
+
+	/**
+	 * The known pack the genuine platform declares for a jar's data pack: {@code [namespace, id, version]}, or null
+	 * where it declares none.
+	 *
+	 * <p>A registry entry's lifecycle follows its pack: an entry loaded from a pack that is not a known pack is
+	 * {@code Lifecycle.experimental()}, and one such entry makes the whole world's lifecycle experimental — which is
+	 * the "Experimental Settings / Make a Backup" screen before every world load. NeoForge declares every mod file's pack
+	 * a known pack — {@code KnownPack("neoforge", "mod/" + its mod ids, their versions)}, NeoForge itself included, whose
+	 * {@code data/neoforge/damage_type} entry is one — so on a genuine instance that entry is stable and nothing is asked.
+	 * MinecraftForge declares none. The kernel serves these jars itself, so it declares what their own platform would:
+	 * NeoForge's form for a jar NeoForge owns, nothing for one MinecraftForge owns.
+	 */
+	static List<String> knownPack(Ecosystem owner, List<String> modIds, List<String> versions) {
+		if (owner != Ecosystem.NEOFORGE || modIds == null || modIds.isEmpty()) return null;
+		return List.of("neoforge", "mod/" + String.join(",", modIds), String.join(",", versions));
+	}
+
+	/** {@link #knownPack} for a Forge-family mod jar, from the mods discovery found in it, in discovery order. */
+	static List<String> modKnownPack(Path jar) {
+		if (jar == null) return null;
+		List<String> ids = new ArrayList<>(), versions = new ArrayList<>();
+		String source = jar.toString();
+		for (DiscoveredMod mod : ModPresence.forgeFamilyMods()) {
+			if (!source.equals(mod.getSource())) continue;
+			ids.add(mod.getId());
+			versions.add(String.valueOf(mod.getVersion()));
+		}
+		return knownPack(MultiLoaderArbiter.ownerOf(jar), ids, versions);
+	}
+
+	/**
+	 * {@link #knownPack} for a carrier: NeoForge's carrier is NeoForge's own mod file, read from its
+	 * {@code neoforge.mods.toml} as NeoForge reads it; MinecraftForge's declares none.
+	 */
+	static List<String> carrierKnownPack(Path jar) {
+		if (carrierRank(jar) != 2) return null;
+		try (FileSystem fs = FileSystems.newFileSystem(jar, (ClassLoader) null)) {
+			Path toml = fs.getPath("META-INF", "neoforge.mods.toml");
+			if (!Files.isRegularFile(toml)) return null;
+			String jarVersion = null;
+			Path manifest = fs.getPath("META-INF", "MANIFEST.MF");
+			if (Files.isRegularFile(manifest)) {
+				try (var in = Files.newInputStream(manifest)) {
+					jarVersion = new java.util.jar.Manifest(in).getMainAttributes().getValue("Implementation-Version");
+				}
+			}
+			List<String> ids = new ArrayList<>(), versions = new ArrayList<>();
+			try (var in = Files.newInputStream(toml)) {
+				for (var mod : net.forbric.kernel.metadata.forge.ModsTomlParser.parse(in).getMods()) {
+					ids.add(mod.getModId());
+					versions.add(net.forbric.kernel.metadata.forge.ModsTomlParser.resolveVersion(mod.getVersion(), jarVersion));
+				}
+			}
+			return knownPack(Ecosystem.NEOFORGE, ids, versions);
+		} catch (Throwable unreadable) {
+			return null;
+		}
 	}
 
 	/**
@@ -313,10 +372,11 @@ public final class KernelDataPacks {
 	}
 
 	/** One {@code Pack} over {@code jar}; the shape it is given is written down where it is built, game-side. */
-	private static Object buildPack(ClassLoader cl, String id, Path jar, Object packType) {
+	private static Object buildPack(ClassLoader cl, String id, Path jar, Object packType, List<String> knownPack) {
 		try {
-			return gameSide(cl).getMethod("buildPack", String.class, Path.class, Object.class)
-					.invoke(null, id, jar, packType);
+			return gameSide(cl).getMethod("buildPack", String.class, Path.class, Object.class, String.class, String.class, String.class)
+					.invoke(null, id, jar, packType, knownPack == null ? null : knownPack.get(0),
+							knownPack == null ? null : knownPack.get(1), knownPack == null ? null : knownPack.get(2));
 		} catch (Throwable t) {
 			ForbricLog.warn("[Forbric/DataPacks] could not build a datapack over %s — that mod's data/ will be "
 					+ "missing: %s", jar.getFileName(), String.valueOf(Reflect.unwrap(t)));

@@ -28,6 +28,7 @@ import net.minecraft.server.packs.FilePackResources;
 import net.minecraft.server.packs.PackLocationInfo;
 import net.minecraft.server.packs.PackSelectionConfig;
 import net.minecraft.server.packs.PackType;
+import net.minecraft.server.packs.repository.KnownPack;
 import net.minecraft.server.packs.repository.Pack;
 import net.minecraft.server.packs.repository.PackRepository;
 import net.minecraft.server.packs.repository.PackSource;
@@ -70,9 +71,20 @@ public final class KernelDataPackSource {
 	 * vanilla's while a user datapack added later still overrides the mod's.
 	 */
 	public static Object buildPack(String id, Path jar, Object packType) {
+		return buildPack(id, jar, packType, null, null, null);
+	}
+
+	/**
+	 * As above, declaring the pack a known pack {@code (knownNamespace, knownId, knownVersion)} — what the jar's own
+	 * platform declares for it (KernelDataPacks.knownPack) — or none when {@code knownNamespace} is null. A registry
+	 * entry from a pack that is not known is experimental, and makes the world's lifecycle experimental.
+	 */
+	public static Object buildPack(String id, Path jar, Object packType, String knownNamespace, String knownId, String knownVersion) {
 		try {
+			Optional<KnownPack> known = knownNamespace == null ? Optional.empty()
+					: Optional.of(new KnownPack(knownNamespace, knownId, knownVersion));
 			PackLocationInfo location = new PackLocationInfo(
-					id, Component.literal(id), PackSource.BUILT_IN, Optional.empty());
+					id, Component.literal(id), PackSource.BUILT_IN, known);
 			PackSelectionConfig selection = new PackSelectionConfig(false, Pack.Position.TOP, false);
 			return ResourcePackLoader.readWithOptionalMeta(location,
 					new FilePackResources.FileResourcesSupplier(jar), (PackType) packType, selection);

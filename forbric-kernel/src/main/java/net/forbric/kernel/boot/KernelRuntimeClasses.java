@@ -134,6 +134,7 @@ public final class KernelRuntimeClasses {
 		// KernelDataPacks, where it names no game type and is tested as such. See KernelDataPackSource.
 		CLASSES.put("net.forbric.kernel.runtime.KernelDataPackSource", new Entry(Origin.COMPILED, List.of(
 				new Call("buildPack", Object.class, String.class, Path.class, Object.class),
+				new Call("buildPack", Object.class, String.class, Path.class, Object.class, String.class, String.class, String.class),
 				new Call("addSource", void.class, Object.class, List.class, String.class))));
 		// Serving an ecosystem jar's assets/ to the CLIENT resource repository: every Pack, the visible parent
 		// that lets a player's own pack sit above mod textures, the overlay count and the RepositorySource. The
