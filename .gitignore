@@ -76,6 +76,7 @@ XaeroWaypoints_BACKUP*/
 
 # ---- Claude ----
 CLAUDE.md
+AGENTS.md
 
 # ---- Gradle's own download scratch ----
 # Two empty .lck/.part files from an interrupted wrapper download, tracked here for months.
