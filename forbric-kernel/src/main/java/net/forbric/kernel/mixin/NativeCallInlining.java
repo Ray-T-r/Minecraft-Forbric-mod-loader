@@ -496,6 +496,20 @@ public final class NativeCallInlining {
 			return out;
 		}
 
+		/**
+		 * What {@code call} is handed, operand by operand (receiver first), each as the expression that computes it over the
+		 * method's own values; null when the frame cannot be read.
+		 */
+		List<String> operands(MethodInsnNode call) {
+			Frame<SourceValue> frame = frames[method.instructions.indexOf(call)];
+			if (frame == null) return null;
+			int operands = Type.getArgumentTypes(call.desc).length + (call.getOpcode() == Opcodes.INVOKESTATIC ? 0 : 1);
+			if (operands > frame.getStackSize()) return null;
+			List<String> out = new ArrayList<>();
+			for (int k = operands - 1; k >= 0; k--) out.add(expression(frame.getStack(frame.getStackSize() - 1 - k), 0));
+			return out;
+		}
+
 		/** The leaves of the operands {@code call} is handed: see {@link NativeCallInlining#inputs}. */
 		Set<String> leaves(MethodInsnNode call) {
 			Set<String> out = new TreeSet<>();

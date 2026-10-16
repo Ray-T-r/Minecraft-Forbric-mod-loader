@@ -13,7 +13,7 @@ import org.objectweb.asm.tree.*;
 
 /**
  * {@link FabricClientMixinAnchors} resolves a target with its code only for a mixin that has a handler it could act on:
- * an empty {@code @Redirect} of a void call, or a {@code Map.remove} redirect on {@code LevelChunk}. Every other mixin —
+ * an empty {@code @Redirect} of a void call. Every other mixin —
  * almost all of them — costs no resolution. The positive control still resolves its target and moves its redirect.
  */
 class FabricClientMixinAnchorsResolutionTest {
@@ -34,7 +34,7 @@ class FabricClientMixinAnchorsResolutionTest {
 		assertEquals(List.of(), targets.asked, "no target resolved for a mixin with nothing to move");
 	}
 
-	/** A mixin on LevelChunk without a {@code Map.remove} redirect resolves nothing either. */
+	/** A mixin on LevelChunk without an empty redirect resolves nothing either. */
 	@Test void aChunkMixinWithoutTheRemovalRedirectResolvesNoTarget() {
 		ClassNode mixin = mixin("org/example/blocks/mixin/ChunkWatchMixin", List.of(CHUNK));
 		mixin.methods.add(injector("watch", "Lorg/spongepowered/asm/mixin/injection/Inject;", "getBlockEntity", "HEAD", null,

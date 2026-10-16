@@ -559,17 +559,14 @@ test	net.forbric.kernel.mixin.FabricClientMixinAnchorsTest	aLocalTheDrawDoesNotP
 test	net.forbric.kernel.mixin.FabricClientMixinAnchorsTest	aLocalWhoseOperandTheCarrierComputesDifferentlyIsRefused()	[fixture:staged] actual game required
 test	net.forbric.kernel.mixin.FabricClientMixinAnchorsTest	aScreenExtractHandlerThatDrawsTwiceIsCarriedAsWritten()	[fixture:staged] actual game required
 test	net.forbric.kernel.mixin.FabricClientMixinAnchorsTest	aSourceCallbackAtTheScreenDrawUsesTheActualInheritedGateway()	[fixture:staged] actual game required
-test	net.forbric.kernel.mixin.FabricClientMixinAnchorsTest	actualDedicatedServerRemovalUsesTheSameProvenMapWithoutChangingItsCallbackBody()	[fixture:staged] actual Fabric API fixture required
 test	net.forbric.kernel.mixin.FabricClientMixinAnchorsTest	nativeVanillaAndDisabledClientAdaptersRemainUnchanged()	[fixture:mc-libraries] actual game required
 test	net.forbric.kernel.mixin.FabricClientMixinAnchorsTest	onlyTheActualNoopRedirectCanSuppressTheContextExpandedRenderingCall()	[fixture:staged] actual Fabric API fixture required
 test	net.forbric.kernel.mixin.FabricClientMixinAnchorsTest	releasedLiquidBounceBuildDrawsItsMenuWithTheCanvasTheGatewayDraws()	[fixture:staged] actual game required
 test	net.forbric.kernel.mixin.FabricClientMixinAnchorsTest	releasedLiquidBounceDrawsItsMenuWithTheCanvasTheGatewayDraws()	[fixture:staged] actual game required
-test	net.forbric.kernel.mixin.FabricClientMixinAnchorsTest	removedBlockEntityTargetsItsActualMapAndNeverThePendingNbtMap()	[fixture:staged] actual Fabric API fixture required
 test	net.forbric.kernel.mixin.FabricClientMixinAnchorsTest	screenExtractIsLeftAloneWhereFabricsOwnAnchorExistsOrItsHandlerDoesNotVerify()	[fixture:mc-libraries] actual game required
 test	net.forbric.kernel.mixin.FabricClientMixinAnchorsTest	sourceScreenEventsKeepTheirEntireBodyAroundTheActualTopDraw()	[fixture:staged] actual Fabric API fixture required
 test	net.forbric.kernel.mixin.FabricClientMixinAnchorsTest	theActualMiningHandlerHasOneNativeDecisionAndOneExplicitFabricFallback()	[fixture:staged] actual Fabric API fixture required
 test	net.forbric.kernel.mixin.FabricClientMixinAnchorsTest	unmatchedSignaturesMissingNativePointsAndAVanillaHostRemainUnchanged()	[fixture:staged] actual game required
-test	net.forbric.kernel.mixin.FabricClientMixinAnchorsTest	wrongMapOrCallbackGroupCannotBorrowTheRemovalAnchor()	[fixture:staged] actual game required
 test	net.forbric.kernel.mixin.FabricCreativePagerMixinAdapterTest	keyboardKeepsItsExactBodyAndTheSecondPagerStateIsRemoved()	[fixture:third-party] build/compat-inputs/player-loading/api/fabric-creative-tab-api-v1-5.0.15+6468574f9e.jar absent
 test	net.forbric.kernel.mixin.FabricEnchantmentContractsTest	absentNativeApiDisabledAdapterAndUnknownDefaultBodyAreNotRewritten()	[fixture:staged] actual Fabric API fixture required
 test	net.forbric.kernel.mixin.FabricEnchantmentContractsTest	allFourActualFabricMixinsAttachToTheCorrespondingNativeDecision()	[fixture:staged] actual Fabric API fixture required
@@ -1432,6 +1429,10 @@ test	net.forbric.kernel.mixin.NativeOnlyMethodsCensusTest	noMethodAPlatformDecla
 test	net.forbric.kernel.mixin.NativeOnlyMethodsCensusTest	theNotEnoughCrashesShapeIsFitOnTheRealBaseAndAVanillaOnlyMethodStaysUnfit()	skipped without a message (a class-level abort, e.g. in @BeforeAll)
 test	net.forbric.kernel.mixin.NativeOnlyMethodsCensusTest	theRunningBaseIsTheOneTheTableSpeaksFor()	skipped without a message (a class-level abort, e.g. in @BeforeAll)
 test	net.forbric.kernel.mixin.NativeOnlyMethodsCensusTest	theShippedTableIsExactlyWhatTheArtifactsSay()	skipped without a message (a class-level abort, e.g. in @BeforeAll)
+test	net.forbric.kernel.mixin.NativeSliceOccurrencesTest	anotherMapOrAGroupLeavesThePointAlone()	[fixture:staged] actual game required
+test	net.forbric.kernel.mixin.NativeSliceOccurrencesTest	onTheClassItWasWrittenForNothingMoves()	[fixture:staged] actual Fabric API fixture required
+test	net.forbric.kernel.mixin.NativeSliceOccurrencesTest	switchedOffNothingMoves()	[fixture:staged] actual Fabric API fixture required
+test	net.forbric.kernel.mixin.NativeSliceOccurrencesTest	theClientRemovalNamesTheBlockEntityMapsRemovalAndNeverThePendingOne()	[fixture:staged] actual Fabric API fixture required
 test	net.forbric.kernel.mixin.NativeTagSourceFacadeInjectorTest	missingOriginalSourceOrContainerAndChangedTypedRecipeAreRejected()	[fixture:staged] whole predicate source/current/native: $ROOT/forbric-kernel/run/client-merged-pack/mods/fabric-api-0.155.2+26.2.jar
 test	net.forbric.kernel.mixin.NativeTagSourceFacadeInjectorTest	theCurrentMapperMustKeepItsActualStaticPublicBodyContract()	[fixture:staged] whole predicate source/current/native: $ROOT/forbric-kernel/run/client-merged-pack/mods/fabric-api-0.155.2+26.2.jar
 test	net.forbric.kernel.mixin.NativeTagSourceFacadeInjectorTest	theIndexedEntityEyeAndHeightFacadesRecoverTheirOriginalContainerTagOperand()	[fixture:staged] whole predicate source/current/native: $ROOT/forbric-kernel/run/client-merged-pack/mods/fabric-api-0.155.2+26.2.jar

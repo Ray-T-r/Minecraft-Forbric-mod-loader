@@ -113,6 +113,7 @@ class WeaveCoverageCensusTest {
 			Map.entry("NativeLocalPins", Switch.own("forbric.nativeLocalPins")), // NativeLocalPinsWeaveTest
 			Map.entry("NativeEntryRelay", Switch.own("forbric.nativeEntryRelay")), // NativeEntryRelayWeaveTest, FluidPairMixinAdaptersWeaveTest
 			Map.entry("ReplacedDecisionValues", Switch.own("forbric.replacedDecisionValues")), // ReplacedDecisionValuesWeaveTest
+			Map.entry("NativeSliceOccurrences", Switch.own("forbric.nativeSliceOccurrences")), // NativeSliceOccurrencesWeaveTest
 			Map.entry("MixinGuiItemCaptureAdapter", Switch.own("forbric.guiItemCaptureAnchor")),
 			Map.entry("KernelClientHookMixinAnchors", Switch.own("forbric.clientHookMixinAnchors")),
 			Map.entry("MixinShearsRelay", Switch.own("forbric.shearsRelay")),

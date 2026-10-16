@@ -120,6 +120,7 @@ public final class ForbricMixinService
 		changed+=NativeLocalPins.adapt(source,code,NativeGameReferences::reference);
 		changed+=NativeEntryRelay.adapt(source,code,NativeGameReferences::reference,loader());
 		changed+=ReplacedDecisionValues.adapt(source,code,NativeGameReferences::reference);
+		changed+=NativeSliceOccurrences.adapt(source,code,NativeGameReferences::reference);
 		changed+=MixinAbsorbedCallbackTransport.adapt(source,owner->{byte[] current=resource.apply(owner+".class");return current==null?null:MixinFit.parse(current);},
 			owner->NativeGameReferences.reference(MixinStubRebind.ecosystemOf(source.name),owner),
 			owner->NativeGameReferences.peers(MixinStubRebind.ecosystemOf(source.name),owner),loader());
@@ -337,6 +338,9 @@ public final class ForbricMixinService
 		// …and a value modifier of a vanilla decision the carrier replaced with its own call, deciding the same branch, names
 		// that call.
 		ReplacedDecisionValues.adapt(node, this::mergedBaseNodeWithCode, NativeGameReferences::reference);
+		// …and a sliced point whose one native call the carrier moved out of the slice names that call where the merged method
+		// makes it, with the same operands under the same conditions.
+		NativeSliceOccurrences.adapt(node, this::mergedBaseNodeWithCode, NativeGameReferences::reference);
 		// …and an expression definition naming a method that the class now references through the kernel's thunk names
 		// the thunk too, so a method-reference expression (this::m) still finds the reference.
 		MixinExpressionThunks.adapt(node, this::mergedBaseNodeWithCode);

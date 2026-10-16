@@ -1,0 +1,1 @@
+{"required": true, "package": "com.marten.audit.mixin", "compatibilityLevel": "JAVA_21", "mixins": ["LedgerMixin"], "injectors": {"defaultRequire": 1}}
