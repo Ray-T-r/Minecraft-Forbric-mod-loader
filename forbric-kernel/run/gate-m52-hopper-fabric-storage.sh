@@ -5,18 +5,28 @@
 # getSourceContainer; the merged hopper is NeoForge's, which calls neither, so it never attached. NeoForge sees a
 # Fabric storage only through the kernel's capability bridge, which exposes slotted storages on block entities: an
 # unslotted storage, one on a block with no block entity, or any with the bridge off, never met a hopper.
-# HopperFabricStorageInjector runs Fabric's own lookup on NeoForge's two found-nothing branches. A dedicated server
-# with the unmodified fabric-api and a Fabric mod (canary/hopper-storage) with three storages: into and out of each
-# (one step driven directly — one item, cooldown 8, the face Fabric asks — then left to the world's ticking), a face
-# the storage refuses, a hopper locked by redstone, a storage refilled later through Fabric's API, an empty
-# block-only storage that must stop the hopper picking up the item lying on it, and vanilla chests.
 #
-#   1. positive — STRICT, every case passes, zero confirmed required findings, fabric-transfer's hopper mixin superseded.
-#   2. off — -Dforbric.hopperFabricStorage=off: exactly the unslotted and block-only moves (and the pickup stop) fail;
-#      the slotted storage, refused faces, locked hoppers and vanilla chests hold.
-#   3. bridge-off — -Dforbric.transferBridge=off, STRICT: every case passes, the slotted one now through the fallback.
-#   4. lithium — positive with lithium-neoforge from the merged pack, whose own hopper mixins land on the same methods:
-#      every case passes and nothing fails to verify.
+# Two mechanisms close that, and since 2b9c8baa the first one owns it: MixinNullableCompositeCallback moves the
+# mixin's two callbacks onto NeoForge's ContainerOrHandler lookups, so fabric-transfer's OWN code asks Fabric's lookup,
+# but only while their composite contract (the record, the lookup's helper bodies) still holds at the call.
+# HopperFabricStorageInjector's fallback runs Fabric's lookup on NeoForge's two found-nothing branches; where the own
+# callback is installed it stands down, at each call, exactly while that callback is permitted -- so lithium, whose
+# own hopper mixin rewrites the lookup and makes the callback refuse, is served by the fallback, not by nothing.
+#
+# A dedicated server with the unmodified fabric-api and a Fabric mod (canary/hopper-storage) with three storages: into
+# and out of each (one step driven directly — one item, cooldown 8, the face Fabric asks — then left to the world's
+# ticking), a face the storage refuses, a hopper locked by redstone, a storage refilled later through Fabric's API, an
+# empty block-only storage that must stop the hopper picking up the item lying on it, and vanilla chests.
+#
+#   1. positive — STRICT, every case passes, zero confirmed required findings; fabric-transfer's own callbacks moved
+#      every item (the fallback stood down and moved nothing).
+#   2. fallback — -Dforbric.mixinNullableCompositeCallbacks=off, STRICT: the callbacks cannot attach, fabric-transfer's
+#      hopper mixin is superseded, and the kernel's fallback moves the unslotted and block-only items; all pass.
+#   3. off — both of those off: exactly the unslotted and block-only moves (and the pickup stop) fail; the slotted
+#      storage, refused faces, locked hoppers and vanilla chests hold.
+#   4. bridge-off — -Dforbric.transferBridge=off, STRICT: every case passes, the slotted one now through Fabric too.
+#   5. lithium — positive with lithium-neoforge from the merged pack, whose own hopper mixins land on the same methods
+#      and redirect the lookup: every case passes and nothing fails to verify.
 # GATE-PARALLEL: rundirs=server-hopper-m52 mem=2000
 set -uo pipefail
 . "$(cd "$(dirname "$0")" && pwd)/lib.sh"
@@ -92,31 +102,44 @@ step "1. positive: hoppers reach every Fabric storage, NeoForge-visible or not"
 run_server positive strict ""
 judge positive "not failed and premise['slotted.neoSees'] is True and premise['unslotted.neoSees'] is False and premise['blockonly.neoSees'] is False and premise['unslottedIsSlotted'] is False and premise['lithiumHopper'] is False" "all 24 cases pass; NeoForge sees only the slotted store"
 resolved positive
-check "positive: the hopper asks Fabric's lookup" 'Hopper\] HopperBlockEntity.ejectItems and suckInItems ask Fabric' "$RESULTS/positive.log"
-check "positive: fabric-transfer's hopper mixin is superseded" 'net.fabricmc.fabric.mixin.transfer.HopperBlockEntityMixin is superseded' "$RESULTS/positive.log"
-check "positive: an unslotted store went through Fabric's lookup" "Hopper\] a hopper .* Fabric storage net.fabricmc.fabric.api.transfer.v1.storage.base.CombinedStorage through Fabric's own lookup" "$RESULTS/positive.log"
-check "positive: a block-only store went through Fabric's lookup" "Hopper\] a hopper .* Fabric storage forbric.hopper.Stores\\\$BlockOnlyStore through Fabric's own lookup" "$RESULTS/positive.log"
-check_absent "positive: the slotted store went through the bridge, not the fallback" "Hopper\] a hopper .* Fabric storage forbric.hopper.Stores\\\$EntityStore through" "$RESULTS/positive.log"
+check "positive: the hopper's fallback seam is in place" 'Hopper\] HopperBlockEntity.ejectItems and suckInItems ask Fabric' "$RESULTS/positive.log"
+check "positive: both fallbacks stand down for fabric-transfer's own callbacks" 'Forbric/Mixin\] net.minecraft.world.level.block.entity.HopperBlockEntity stands down 2 older fallback' "$RESULTS/positive.log"
+check_absent "positive: fabric-transfer's own callbacks moved every item, the fallback none" "Hopper\] a hopper .* Fabric storage .* through Fabric's own lookup" "$RESULTS/positive.log"
+check_absent "positive: fabric-transfer's callbacks were never refused" 'composite lookup final contract is unavailable or changed' "$RESULTS/positive.log"
 check_absent "positive: no verifier error" 'VerifyError|Exception stopping' "$RESULTS/positive.log"
 
-step "2. off: the same server with the hopper left as merged"
-run_server off continue "-Dforbric.hopperFabricStorage=off"
+step "2. fallback: fabric-transfer's callbacks left where they cannot attach, the kernel's fallback alone"
+run_server fallback strict "-Dforbric.mixinNullableCompositeCallbacks=off"
+judge fallback "not failed and premise['slotted.neoSees'] is True and premise['unslotted.neoSees'] is False and premise['blockonly.neoSees'] is False" "all 24 cases pass through the fallback"
+resolved fallback
+check "fallback: fabric-transfer's hopper mixin is superseded" 'net.fabricmc.fabric.mixin.transfer.HopperBlockEntityMixin is superseded' "$RESULTS/fallback.log"
+check_absent "fallback: nothing stood down" 'HopperBlockEntity stands down' "$RESULTS/fallback.log"
+check "fallback: an unslotted store went through Fabric's lookup" "Hopper\] a hopper .* Fabric storage net.fabricmc.fabric.api.transfer.v1.storage.base.CombinedStorage through Fabric's own lookup" "$RESULTS/fallback.log"
+check "fallback: a block-only store went through Fabric's lookup" "Hopper\] a hopper .* Fabric storage forbric.hopper.Stores\\\$BlockOnlyStore through Fabric's own lookup" "$RESULTS/fallback.log"
+check_absent "fallback: the slotted store went through the bridge, not the fallback" "Hopper\] a hopper .* Fabric storage forbric.hopper.Stores\\\$EntityStore through" "$RESULTS/fallback.log"
+check_absent "fallback: no verifier error" 'VerifyError|Exception stopping' "$RESULTS/fallback.log"
+
+step "3. off: the same server with the hopper left as merged and fabric-transfer's callbacks unattached"
+run_server off continue "-Dforbric.hopperFabricStorage=off -Dforbric.mixinNullableCompositeCallbacks=off"
 judge off "failed == $LOST" "exactly the unslotted and block-only cases fail; slotted, refused faces, locked hoppers and chests hold"
 check_absent "off: nothing asks Fabric's lookup" 'Hopper\] HopperBlockEntity.ejectItems and suckInItems ask Fabric' "$RESULTS/off.log"
 check_absent "off: fabric-transfer's hopper mixin is not superseded" 'net.fabricmc.fabric.mixin.transfer.HopperBlockEntityMixin is superseded' "$RESULTS/off.log"
 
-step "3. bridge-off: every Fabric storage through the hopper's own fallback"
+step "4. bridge-off: every Fabric storage through Fabric's own lookup"
 run_server bridge-off strict "-Dforbric.transferBridge=off"
 judge bridge-off "not failed and premise['slotted.neoSees'] is False" "all 24 cases pass with NeoForge seeing none of the stores"
 resolved bridge-off
-check "bridge-off: the slotted store went through Fabric's lookup" "Hopper\] a hopper .* Fabric storage forbric.hopper.Stores\\\$EntityStore through Fabric's own lookup" "$RESULTS/bridge-off.log"
+check_absent "bridge-off: fabric-transfer's own callbacks moved every item, the slotted store's too" "Hopper\] a hopper .* Fabric storage .* through Fabric's own lookup" "$RESULTS/bridge-off.log"
 
-step "4. lithium: lithium-neoforge's hopper mixins on the same methods"
+step "5. lithium: lithium-neoforge's hopper mixins on the same methods"
 if [ -z "$LITHIUM" ]; then
   echo "[kernel] FAIL lithium: no lithium-neoforge jar in run/client-merged-pack/mods"; FAIL=1
 else
   run_server lithium continue "" "$LITHIUM"
   judge lithium "not failed and premise['lithiumHopper'] is True" "all 24 cases pass with lithium's hopper mixin woven into the hopper"
+  # lithium redirects the lookup inside getSourceContainerOrHandler, so fabric-transfer's extract callback is refused
+  # at its call (its helper body changed) and the fallback, asking the same question, extracts instead.
+  check "lithium: where fabric-transfer's callback is refused, the fallback extracts" "Hopper\] a hopper extracted from Fabric storage .* through Fabric's own lookup" "$RESULTS/lithium.log"
   check_absent "lithium: no verifier error" 'VerifyError|Exception stopping' "$RESULTS/lithium.log"
 fi
 

@@ -51,6 +51,8 @@ public final class MergedBaseLinkGateTest {
 		SuppliedArtifactContentTest.main(new String[] { work.resolve("content").toString() });
 		// And the window's way into the same install: what a player pastes into its path fields.
 		InstallerWindowInputTest.main(new String[] { work.resolve("window").toString() });
+		// And the libraries the merge reads, which a fresh directory does not have until the installer fetches them.
+		MinecraftLibrariesTest.main(new String[] { work.resolve("libraries").toString() });
 	}
 
 	/**

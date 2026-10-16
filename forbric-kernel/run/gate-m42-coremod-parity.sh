@@ -12,8 +12,14 @@
 #   pass; and a biome climate replaced after the pass, which must win over it as it would on Fabric.
 #
 #   1. positive — STRICT, every case passes, zero confirmed required findings.
-#   2. off — -Dforbric.coremodParity=off: every repaired case fails, and only the two Fabric climates (read raw) still
-#      hold, so each case is shown to depend on the repair — less the cases the merged base decides itself, read from it.
+#   2. off — -Dforbric.coremodParity=off: every repaired case fails, and only the two Fabric climates (read raw) and
+#      the liquid block's getter still hold, so each case is shown to depend on the repair. The liquid getter is a merge
+#      repair with its own switch, not under this one: on a base that needs it, Blocks.<clinit> throws without it and
+#      there is no server at all.
+#   2b. liquid-off — -Dforbric.liquidBlockFluid=off, judged by what the booted base does, read from it: a base whose
+#      LiquidBlock constructors all fill the supplier answers the getter itself (the repair stood by in phase 1, and
+#      with it off every case still passes); on any other base the game cannot bootstrap -- LiquidBlock.getFluid
+#      throws from Blocks.<clinit> -- so the repair is shown to be needed by the only evidence there is.
 #   3. rebase-off — -Dforbric.biomeRebase=off: everything passes except the two Fabric climates, so the pass
 #      bookkeeping (rebase and pass-time record) is what keeps them.
 # Not covered here: the trial spawner (its helper is unit-tested, KernelFinalizeSpawnTest; no trial spawner runs in
@@ -76,13 +82,28 @@ else echo "[kernel] FAIL positive: STRICT report missing or has confirmed requir
 
 step "2. off: the same server with the repairs switched off"
 # A merge that keeps both families' edits of LiquidBlock's constructors fills the supplier MinecraftForge's getter
-# reads in vanilla's constructor too, so water answers its fluid with the repair off: the base decides that case, the
-# kernel did not repair it. Read from the base this run booted, by every constructor's store; exact both ways.
+# reads in vanilla's constructor too, so water answers its fluid with the getter repair off: the base decides that
+# case, the kernel did not repair it. Read from the base this run booted, by every constructor's store; exact both
+# ways. The repair has its own switch, so this reading decides phase 2b, not this one.
 merged_delivers fluid.water --every net.minecraft.world.level.block.LiquidBlock '<init>' put:net/minecraft/world/level/block/LiquidBlock.supplier
-NATIVE="set([${MERGED_NATIVE%, }])"
-echo "[kernel] off: cases the merged base decides itself: $NATIVE"
+NATIVE_FLUID="${MERGED_NATIVE%, }"
+echo "[kernel] cases the merged base decides itself: set([$NATIVE_FLUID])"
 run_server off continue "-Dforbric.coremodParity=off"
-judge off "failed == set(cases) - {'biome.fabric.keep', 'biome.late.keep'} - $NATIVE" "every repaired case the base does not decide itself fails, and only the raw Fabric climates hold"
+judge off "failed == set(cases) - {'biome.fabric.keep', 'biome.late.keep', 'fluid.water'}" "every repaired case fails; only the raw Fabric climates and the liquid getter (its own switch) hold"
+
+step "2b. liquid-off: the liquid getter's own switch"
+run_server liquid-off continue "-Dforbric.liquidBlockFluid=off"
+if [ -n "$NATIVE_FLUID" ]; then
+  # The base fills the supplier in every constructor: the repair stood by in phase 1 and the getter answers as merged.
+  check "positive: the liquid getter repair stood by, as the base read says" '\[Forbric/Fluid\] LiquidBlock.s constructors all fill the supplier its getter reads' "$RESULTS/positive.log"
+  judge liquid-off "not failed" "the base answers the getter itself: with the repair off every case still passes"
+else
+  # The frames carry the defining loader's name ("at forbric//net.minecraft..."), so the patterns allow one.
+  check "liquid-off: the getter has no supplier to ask" 'NullPointerException: Cannot invoke "java\.util\.function\.Supplier\.get\(\)" because "this\.supplier" is null' "$RESULTS/liquid-off.log"
+  check "liquid-off: ...in LiquidBlock.getFluid" 'at ([A-Za-z0-9_.-]+//)?net\.minecraft\.world\.level\.block\.LiquidBlock\.getFluid\(' "$RESULTS/liquid-off.log"
+  check "liquid-off: ...asked from the block bootstrap" 'at ([A-Za-z0-9_.-]+//)?net\.minecraft\.world\.level\.block\.Blocks\.<clinit>' "$RESULTS/liquid-off.log"
+  check_absent "liquid-off: and no server came up" 'Done \(' "$RESULTS/liquid-off.log"
+fi
 
 step "3. rebase-off: NeoForge's pass from the biome's original info"
 run_server rebase-off continue "-Dforbric.biomeRebase=off"

@@ -93,7 +93,7 @@ public final class ForbricMergedBaseCompatTransformer implements ClassTransforme
 	}
 
 	/** The repairs {@link #transform} runs, in its order; a test pins the two lists against each other. */
-	static final List<String> REPAIRS = List.of("repairLambdaBootstrapHandles", "addBlockStateModelConflictResolvers", "addBlockStateAppearanceResolver", "addMissingForgeFluidTypeBridge", "addMissingForgeKeyMappingLookupInitializer", "routeKeyMappingClickToPopulatedLookup", "giveKeyMappingItsMinecraftForgeFace", "giveKeyMappingItsVanillaMap", "giveTheVanillaParticleMapAViewOfTheLiveOne", "letDungeonsGenerateWithoutTheDataMap", "restoreDoublePrecisionToTheRandomSources", "convertRadiansWithVanillasFoldedConstant", "callVanillasWriteByteAgain", "saveTheHeightmapsVanillaSaves", "guardNeoForgesWorldModifierPass", "letForeignResourceConditionsThrough", "letForeignResourceConditionsThroughMinecraftForge", "letFabricResourceConditionsDecide", "translateAGuestsPrivateSkipMarker", "serveDefaultAttributesBothEcosystems", "restoreForgeClientInit", "restoreForgeGeometryReload", "nameTheReloadListenersNeoForgeRefusesToName", "dropInterfaceDefaultShadowingOverrides", "tolerateEmptyCreativeTabStacks", "routePlaceItemHookToNeoForge", "bridgeOrphanedPipRenderers", "keepForgeOutboundProtocolCurrent", "surviveTheMissingForgeModelDataManager", "dropTheWindowTitlesLoaderBrand", "keepTheSaveOffTheTeardownsFailurePath", "postNeoForgesItemTooltipEvent", "askNeoForgeWhatAnItemsAttributesAre", "readTheSpawnReasonThatIsActuallyWritten", "giveTheUnwrittenLoggerAValue", "addTheMissingCapabilityLifecycleStubs", "addTheMissingNbtBuilderFactory", "postMinecraftForgesReloadListenerEvent", "giveMinecraftForgesReloadEventItsConditionContext", "letMinecraftForgeIngredientTypesDecode", "letMinecraftForgeFluidsChooseTheirModel", "giveMinecraftForgesParticleLookupItsFirstVariant", "dropStubsThatBypassARealSuperclassMethod", "inlineTheSwitchMapTheMergeLost", "vetoUnjudgeableOverlayConditions", "hideTheLegacyLootModifierIndexFromTheDirectoryScan", "letModdedFeatureFlagsRegister", "dropTheKeyModifierSuffixBeforeParsingAKeyName", "letTheAtlasLowerItsMipLevelLikeVanilla", "wrapTheStreamsVanillaWraps", "returnFromANestedBootstrapBeforeItsTail", "letBothEcosystemsSetBurnTime", "letMinecraftForgeSeeSpawnerMobs", "letMinecraftForgeAddPackFinders");
+	static final List<String> REPAIRS = List.of("repairLambdaBootstrapHandles", "addBlockStateModelConflictResolvers", "addBlockStateAppearanceResolver", "addMissingForgeFluidTypeBridge", "addMissingForgeKeyMappingLookupInitializer", "routeKeyMappingClickToPopulatedLookup", "giveKeyMappingItsMinecraftForgeFace", "giveKeyMappingItsVanillaMap", "giveTheVanillaParticleMapAViewOfTheLiveOne", "letDungeonsGenerateWithoutTheDataMap", "restoreDoublePrecisionToTheRandomSources", "convertRadiansWithVanillasFoldedConstant", "callVanillasWriteByteAgain", "saveTheHeightmapsVanillaSaves", "guardNeoForgesWorldModifierPass", "letForeignResourceConditionsThrough", "letForeignResourceConditionsThroughMinecraftForge", "letFabricResourceConditionsDecide", "letMinecraftForgeResourceConditionsDecide", "translateAGuestsPrivateSkipMarker", "serveDefaultAttributesBothEcosystems", "restoreForgeClientInit", "restoreForgeGeometryReload", "nameTheReloadListenersNeoForgeRefusesToName", "dropInterfaceDefaultShadowingOverrides", "tolerateEmptyCreativeTabStacks", "routePlaceItemHookToNeoForge", "bridgeOrphanedPipRenderers", "keepForgeOutboundProtocolCurrent", "surviveTheMissingForgeModelDataManager", "dropTheWindowTitlesLoaderBrand", "keepTheSaveOffTheTeardownsFailurePath", "postNeoForgesItemTooltipEvent", "askNeoForgeWhatAnItemsAttributesAre", "readTheSpawnReasonThatIsActuallyWritten", "giveTheUnwrittenLoggerAValue", "addTheMissingCapabilityLifecycleStubs", "addTheMissingNbtBuilderFactory", "postMinecraftForgesReloadListenerEvent", "giveMinecraftForgesReloadEventItsConditionContext", "letMinecraftForgeIngredientTypesDecode", "letMinecraftForgeFluidsChooseTheirModel", "giveMinecraftForgesParticleLookupItsFirstVariant", "dropStubsThatBypassARealSuperclassMethod", "inlineTheSwitchMapTheMergeLost", "vetoUnjudgeableOverlayConditions", "hideTheLegacyLootModifierIndexFromTheDirectoryScan", "letModdedFeatureFlagsRegister", "dropTheKeyModifierSuffixBeforeParsingAKeyName", "letTheAtlasLowerItsMipLevelLikeVanilla", "wrapTheStreamsVanillaWraps", "returnFromANestedBootstrapBeforeItsTail", "letBothEcosystemsSetBurnTime", "letMinecraftForgeSeeSpawnerMobs", "letMinecraftForgeAddPackFinders");
 
 	private static final String NEO_EVENT_HOOKS_BINARY = "net.neoforged.neoforge.event.EventHooks";
 
@@ -159,6 +159,8 @@ public final class ForbricMergedBaseCompatTransformer implements ClassTransforme
 				"another ecosystem's condition type fails MinecraftForge's evaluator and the whole registry load with it"));
 		out.add(fixed("letFabricResourceConditionsDecide", CONDITIONAL_OPS,
 				"fabric:load_conditions has no evaluator — a Fabric mod's conditional data files all load"));
+		out.add(fixed("letMinecraftForgeResourceConditionsDecide", CONDITIONAL_OPS,
+				"forge:condition has no evaluator — a MinecraftForge mod's conditional registry elements and data files all load"));
 		out.add(fixed("translateAGuestsPrivateSkipMarker", JSON_RELOAD_LISTENER,
 				"fabric-api's skip marker reaches the merged reader's cast — the datapack load dies (\"can't proceed with server load\")"));
 		out.add(fixed("serveDefaultAttributesBothEcosystems", DEFAULT_ATTRIBUTES,
@@ -306,6 +308,7 @@ public final class ForbricMergedBaseCompatTransformer implements ClassTransforme
 			changed |= claim(reporter, "letForeignResourceConditionsThrough", letForeignResourceConditionsThrough(node));
 			changed |= claim(reporter, "letForeignResourceConditionsThroughMinecraftForge", letForeignResourceConditionsThroughMinecraftForge(node));
 			changed |= claim(reporter, "letFabricResourceConditionsDecide", letFabricResourceConditionsDecide(node));
+			changed |= claim(reporter, "letMinecraftForgeResourceConditionsDecide", letMinecraftForgeResourceConditionsDecide(node));
 			changed |= claim(reporter, "translateAGuestsPrivateSkipMarker", translateAGuestsPrivateSkipMarker(node));
 			changed |= claim(reporter, "serveDefaultAttributesBothEcosystems", serveDefaultAttributesBothEcosystems(node));
 			changed |= claim(reporter, "restoreForgeClientInit", restoreForgeClientInit(node));
@@ -1818,6 +1821,49 @@ public final class ForbricMergedBaseCompatTransformer implements ClassTransforme
 				+ "one codec factory is wrapped and %d other public entry point(s) funnel through it — datapack "
 				+ "registries, recipes, loot tables and advancements all decode through it. fabric-api's own two "
 				+ "mixins for this cannot apply on the merged base", funnelled);
+		return true;
+	}
+
+	/**
+	 * Gives {@code forge:condition} an evaluator again, at the funnel {@link #letFabricResourceConditionsDecide} uses.
+	 *
+	 * <p>MinecraftForge judges that key in its own patches of {@code ResourceManagerRegistryLoadTask.load}
+	 * ({@code ConditionCodec.wrap} around every datapack-registry element decoder) and of
+	 * {@code SimpleJsonResourceReloadListener.scanDirectory} ({@code ForgeHooks.readConditional} on every data file).
+	 * The merge kept NeoForge's bodies of both and left MinecraftForge's lambdas in the class uncalled, so nothing
+	 * judged the key: a Forge mod's conditional biome modifier, recipe or loot table always loaded. Both NeoForge bodies
+	 * decode through ConditionalOps' one codec factory, and {@code KernelForgeConditions.alsoAskForge} asks
+	 * MinecraftForge's own {@code ConditionCodec} there.
+	 *
+	 * <p>Inserted before the factory's single {@code ARETURN} -- and before {@code alsoAskFabric} when that is already
+	 * there, so the Fabric wrap stays the instruction right before the exit, which is how SupersededMixins sees its
+	 * repair in the defined class. A {@code Codec} in, a {@code Codec} out: nothing moves, no frame to recompute.
+	 */
+	private static boolean letMinecraftForgeResourceConditionsDecide(ClassNode node) {
+		if (!CONDITIONAL_OPS.equals(node.name)) return false;
+		MethodNode factory = findMethod(node, "createConditionalCodecWithConditions", CONDITIONAL_FACTORY);
+		if (factory == null) return false;
+		AbstractInsnNode exit = null;
+		for (AbstractInsnNode insn = factory.instructions.getFirst(); insn != null; insn = insn.getNext()) {
+			if (insn instanceof MethodInsnNode call && KERNEL_FORGE_CONDITIONS.equals(call.owner) && "alsoAskForge".equals(call.name)) {
+				return false;                   // already wrapped: idempotent
+			}
+			if (insn.getOpcode() != Opcodes.ARETURN) continue;
+			if (exit != null) {
+				ForbricLog.warn("[Forbric/MergedBaseCompat] ConditionalOps' codec factory has more than one exit — not "
+						+ "asking MinecraftForge there, because one exit would judge forge:condition and another not");
+				return false;
+			}
+			exit = insn;
+		}
+		if (exit == null) return false;
+		AbstractInsnNode at = exit.getPrevious() instanceof MethodInsnNode fabric
+				&& KERNEL_FABRIC_CONDITIONS.equals(fabric.owner) && "alsoAskFabric".equals(fabric.name) ? fabric : exit;
+		factory.instructions.insertBefore(at, new MethodInsnNode(Opcodes.INVOKESTATIC, KERNEL_FORGE_CONDITIONS,
+				"alsoAskForge", "(Lcom/mojang/serialization/Codec;)Lcom/mojang/serialization/Codec;", false));
+		ForbricLog.info("[Forbric/MergedBaseCompat] forge:condition has an evaluator again: ConditionalOps' one codec "
+				+ "factory asks MinecraftForge's own ConditionCodec, which the merged registry and data-file loaders "
+				+ "(NeoForge's) never call");
 		return true;
 	}
 

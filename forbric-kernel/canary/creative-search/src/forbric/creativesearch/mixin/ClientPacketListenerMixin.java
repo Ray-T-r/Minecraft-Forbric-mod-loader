@@ -37,6 +37,13 @@ public abstract class ClientPacketListenerMixin {
 		boolean operator = minecraft.options.operatorItemsTab().get() && player.canUseGameMasterBlocks();
 		boolean rebuilt = CreativeModeTabs.tryRebuildTabContents(level.enabledFeatures(), operator, level.registryAccess());
 		List<ItemStack> items = List.copyOf(CreativeModeTabs.searchTab().getDisplayItems());
+		// gate-m55's negative control: the same rebuild with the refresh left out, which is what the creative screen
+		// saw on the merged game when the refresh went somewhere it does not read.
+		if ("off".equals(System.getProperty("forbric.creativeSearchCanaryRefresh"))) {
+			System.out.println("[ForbricCreativeSearchCanary] rebuilt the creative tabs (changed=" + rebuilt
+					+ ") and withheld the creative search refresh (" + items.size() + " item(s) not filed)");
+			return;
+		}
 		SessionSearchTrees trees = ((ClientPacketListener) (Object) this).searchTrees();
 		trees.updateCreativeTooltips(level.registryAccess(), items);
 		trees.updateCreativeTags(items);

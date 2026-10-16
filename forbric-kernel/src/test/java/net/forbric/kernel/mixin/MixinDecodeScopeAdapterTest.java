@@ -67,6 +67,19 @@ class MixinDecodeScopeAdapterTest {
    String previous=System.getProperty(MixinDecodeScopeAdapter.PROPERTY);System.setProperty(MixinDecodeScopeAdapter.PROPERTY,"off");try{assertEquals(0,MixinDecodeScopeAdapter.adapt(json,classes));}finally{if(previous==null)System.clearProperty(MixinDecodeScopeAdapter.PROPERTY);else System.setProperty(MixinDecodeScopeAdapter.PROPERTY,previous);}
   });
  }
+ /** gate-m9 asserts the adapter kept the real mixin's guard by the line it prints; this is that line, from the real adapter on the real mixin. */
+ @Test void whatTheAdapterPrintsForTheRealMixinIsWhatGateM9Reads(@org.junit.jupiter.api.io.TempDir Path scratch)throws Exception{
+  String pattern=net.forbric.kernel.GateLogContract.pattern(Path.of("run/gate-m9-client.sh"),"its source decode guard is kept as it is handed to Mixin");
+  withBase((api,classes)->{
+   String[] out=new String[1];
+   assertEquals(2,(int)net.forbric.kernel.GateLogContract.capture(()->MixinDecodeScopeAdapter.adapt(guest(api,"SimpleJsonResourceReloadListenerMixin"),classes),out));
+   assertEquals(1,net.forbric.kernel.GateLogContract.count(scratch,pattern,out[0]),out[0]);
+   // The sibling mixin the adapter also keeps prints the same sentence under its own name, and is not the one the gate means.
+   String[] other=new String[1];
+   assertEquals(1,(int)net.forbric.kernel.GateLogContract.capture(()->MixinDecodeScopeAdapter.adapt(guest(api,"RegistryLoadTaskPendingRegistrationMixin"),classes),other));
+   assertEquals(0,net.forbric.kernel.GateLogContract.count(scratch,pattern,other[0]),other[0]);
+  });
+ }
  private interface Check{void run(Path api,java.util.function.Function<String,ClassNode>classes)throws Exception;}
  private void withBase(Check check)throws Exception{
   Path api=Path.of(System.getProperty("forbric.fabricApi",TestFixtures.fabricApi().toString())),base=Path.of(System.getProperty("forbric.predicateBase","../forbric-loader/run/merged-base/patched-mc-merged-26.2.jar"));

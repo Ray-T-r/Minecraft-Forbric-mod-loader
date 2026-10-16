@@ -58,10 +58,13 @@ public final class ForgeTransferShapeAudit {
 			Map.entry("net.minecraftforge.fluids.FluidStack", "87cd29310cdb4e2ec664585e20361e48d66945847eda6f7c8e6f86d4f3c57262"),
 			Map.entry("net.minecraftforge.common.capabilities.CapabilityProvider", "caea2630c926db9524090cef952d2e31925f68297e23022ca9c62087e4b65ddb"),
 			Map.entry("net.minecraftforge.common.capabilities.CapabilityProvider$ItemStacks", "a8819ec238eacbeda5c62d3f0674f2e9dc5389d651348b743c32039ae77f042d"),
-			Map.entry("net.minecraft.world.item.ItemStack", "430a01cec3588807d3e0726e60dddfd21c0c6076157d2f9306e6a298697ed718"),
+			// ItemStack and PatchedDataComponentMap digest their interface-default delegates as the inherited default
+			// (foldKernelRewrites). The reviewed bytes did not change: the same merged classes digested 430a01ce… and
+			// ec5db24d… before that fold, and their early-return shapes below 7691152c… and f9504ecc….
+			Map.entry("net.minecraft.world.item.ItemStack", "1f199aa1e2cb6ce66e1e6e57a3432191f613fd2ac29a3de01bc65b534d5d0feb"),
 			Map.entry("net.minecraft.world.item.Item", "8c056287f55105172282acf6b74bfd94055060e8acfb0bf2fa4788bb4bd9fb1e"),
 			Map.entry("net.minecraft.core.NonNullList", "366927e03949e7622b9484fb23c9d20dc2db0d75d1886b9ebe067c209d91e326"),
-			Map.entry("net.minecraft.core.component.PatchedDataComponentMap", "ec5db24df9dc4efa43a4aa2eca90cb80fc3e22c3efceaa7958de8aca2855d8a4"),
+			Map.entry("net.minecraft.core.component.PatchedDataComponentMap", "659faf217f004fb3f94cda06868284e252005998cb4fb03ab7e5d56216e3144a"),
 			Map.entry("net.minecraft.core.component.DataComponentPatch", "f928a3dd368d608ab5a2eb36299cee1d2395010dffa62b7acacf4392140905fd"),
 			Map.entry("net.minecraft.core.component.DataComponentHolder", "0fd6a2b373f4eda5cc83153ab696a5e7a7427c932166545d143798d3ded301b2"),
 			Map.entry("net.minecraft.core.component.DataComponentGetter", "e86a858ee320a0b6bfc583fdb9dfd747d58d5176109ddb24725092da528a2d6c"),
@@ -85,10 +88,10 @@ public final class ForgeTransferShapeAudit {
 	 * class through the transform, so an early-returns table that changes one of them again fails a unit test.
 	 */
 	private static final Map<String, String> RESTORED = Map.of(
-			"net.minecraft.world.item.ItemStack", "7691152cbf8ceef53ef202305334c0f6d4686f604a76afd9226886c251e6576c",
+			"net.minecraft.world.item.ItemStack", "d7f8b465d06eae9ea87eec45430173ff04b5ec8c60ebf97d4946dde6fa810860",
 			"net.minecraft.nbt.CompoundTag", "200c28e227152d6567380e20fe8bf495a759e44f731e3af6379db7b434456ab6",
 			"net.minecraft.core.component.DataComponentPatch", "bbec2f432717e44284906718cd4cbaaaef31f7fe822d9084ce90cd7e06126042",
-			"net.minecraft.core.component.PatchedDataComponentMap", "f9504eccc8157e81a162d48500554303bd306db7b5efde16f5664d1491124b0d");
+			"net.minecraft.core.component.PatchedDataComponentMap", "4320a06730bec2ee0db725a94766179a7a880cfa8eb1cfe48b193bd31b58048b");
 	public static final List<String> ITEM_HELPERS = List.of("net.minecraftforge.items.ItemHandlerHelper", "net.minecraft.world.item.ItemStack", "net.minecraft.world.item.Item", "net.minecraft.core.NonNullList", "net.minecraft.core.component.PatchedDataComponentMap", "net.minecraft.core.component.DataComponentPatch", "net.minecraft.core.component.DataComponentHolder", "net.minecraft.core.component.DataComponentGetter", "net.minecraftforge.common.capabilities.CapabilityProvider", "net.minecraftforge.common.capabilities.CapabilityProvider$ItemStacks", "net.neoforged.neoforge.transfer.item.ItemResource", "net.neoforged.neoforge.transfer.resource.DataComponentHolderResource", "net.neoforged.neoforge.common.MutableDataComponentHolder", "net.neoforged.neoforge.common.extensions.IItemExtension");
 	public static final List<String> FLUID_HELPERS = List.of("net.minecraftforge.fluids.FluidStack", "net.minecraft.nbt.CompoundTag", "net.minecraft.core.component.DataComponentPatch", "net.minecraft.core.component.DataComponentHolder", "net.minecraft.core.component.DataComponentGetter", "net.neoforged.neoforge.transfer.fluid.FluidResource", "net.neoforged.neoforge.transfer.resource.DataComponentHolderResource");
 	/** ForgeEnergyAdapters writes only through this class's own code and restores only its energy field. */
@@ -134,6 +137,7 @@ public final class ForgeTransferShapeAudit {
 	static String fingerprint(byte[] bytes) {
 		ClassNode node = new ClassNode(); new ClassReader(bytes).accept(node, ClassReader.SKIP_DEBUG | ClassReader.SKIP_FRAMES);
 		node.methods.removeIf(method -> method.name.equals(MARKER));
+		foldKernelRewrites(node);
 		canonicalizeErasedClassSignature(node);
 		normalizeKnownNonTransferRepair(node);
 		Set<String> roots = ROOTS.get(node.name.replace('/', '.'));
@@ -156,6 +160,87 @@ public final class ForgeTransferShapeAudit {
 		ClassWriter writer = new ClassWriter(0); node.accept(writer);
 		try { return HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256").digest(writer.toByteArray())); }
 		catch (NoSuchAlgorithmException impossible) { throw new AssertionError(impossible); }
+	}
+	/**
+	 * The kernel's own behaviour-preserving rewrites, folded back to the shape they were made from. The audit pins the
+	 * class Mixin hands to defineClass, and three of the kernel's transformers rewrite audited classes on the way
+	 * there without changing what any of their code does; each one alone made the defined ItemStack, FluidStack,
+	 * PatchedDataComponentMap, ItemResource or FluidResource a shape nobody had reviewed, so every ItemStackHandler and
+	 * FluidTank was refused in game (gate-m33, gate-m39). Each fold undoes one exact shape and nothing near it:
+	 * <ul>
+	 * <li>{@link LambdaInvocationThunkInjector}: a method reference {@code this::m} names a private synthetic thunk
+	 * whose whole body is {@code return this.m(args)}. Its handle folds back to the method the thunk calls, and the
+	 * thunk goes once nothing else names it. A thunk that forwards anywhere else folds to THAT method, so a changed
+	 * target still changes the digest.</li>
+	 * <li>{@link PredicateGetterResultRecorder}: {@code DUP; ALOAD 0; LDC site; INVOKESTATIC capture} right before
+	 * an ARETURN hands the kernel a copy of the value being returned and leaves the value as it was. Stripped, and the
+	 * method's max stack computed again, since the recorder computed it again.</li>
+	 * <li>An interface-default delegate, {@code public R m(A a) { return I.super.m(a); }} for a direct interface
+	 * {@code I}: it and the inherited default are one dispatch target, and {@link NativeMergeShapeRepair} drops the
+	 * delegates the merge introduced once the hierarchy proves it. Both shapes digest as the inherited default.</li>
+	 * </ul>
+	 */
+	static void foldKernelRewrites(ClassNode node) {
+		foldLambdaThunks(node);
+		stripPredicateGetterRecords(node);
+		node.methods.removeIf(method -> {
+			MethodInsnNode call = NativeMergeShapeRepair.delegate(method);
+			return call != null && node.interfaces.contains(call.owner);
+		});
+	}
+	private static void foldLambdaThunks(ClassNode node) {
+		Map<String, MethodInsnNode> thunks = new java.util.HashMap<>();
+		for (MethodNode method : node.methods)
+			if (method.name.startsWith(LambdaInvocationThunkInjector.PREFIX) && LambdaInvocationThunkInjector.isThunk(node.name, method))
+				thunks.put(method.name + method.desc, LambdaInvocationThunkInjector.invocation(method));
+		if (thunks.isEmpty()) return;
+		for (MethodNode method : node.methods) for (var instruction : method.instructions) {
+			if (!(instruction instanceof InvokeDynamicInsnNode dynamic) || !dynamic.bsm.getOwner().equals("java/lang/invoke/LambdaMetafactory")
+					|| dynamic.bsmArgs.length < 2 || !(dynamic.bsmArgs[1] instanceof Handle handle) || handle.getTag() != Opcodes.H_INVOKEVIRTUAL
+					|| handle.isInterface() || !handle.getOwner().equals(node.name)) continue;
+			MethodInsnNode target = thunks.get(handle.getName() + handle.getDesc());
+			if (target != null) dynamic.bsmArgs[1] = new Handle(Opcodes.H_INVOKEVIRTUAL, target.owner, target.name, target.desc, false);
+		}
+		Set<String> named = new HashSet<>();
+		for (MethodNode method : node.methods) for (var instruction : method.instructions) {
+			if (instruction instanceof MethodInsnNode call && call.owner.equals(node.name)) named.add(call.name + call.desc);
+			if (instruction instanceof InvokeDynamicInsnNode dynamic) for (Object argument : dynamic.bsmArgs)
+				if (argument instanceof Handle handle && handle.getOwner().equals(node.name)) named.add(handle.getName() + handle.getDesc());
+			if (instruction instanceof org.objectweb.asm.tree.LdcInsnNode constant && constant.cst instanceof Handle handle
+					&& handle.getOwner().equals(node.name)) named.add(handle.getName() + handle.getDesc());
+		}
+		node.methods.removeIf(method -> thunks.containsKey(method.name + method.desc) && !named.contains(method.name + method.desc));
+	}
+	private static void stripPredicateGetterRecords(ClassNode node) {
+		for (MethodNode method : node.methods) {
+			boolean stripped = false;
+			for (var instruction : method.instructions.toArray()) {
+				if (!(instruction instanceof MethodInsnNode call) || call.getOpcode() != Opcodes.INVOKESTATIC
+						|| !call.owner.equals(PredicateGetterResultRecorder.RUNTIME) || !call.name.equals("capture")
+						|| !call.desc.equals(PredicateGetterResultRecorder.DESCRIPTOR)) continue;
+				var site = call.getPrevious(); var self = site == null ? null : site.getPrevious(); var copy = self == null ? null : self.getPrevious();
+				if (!(site instanceof org.objectweb.asm.tree.LdcInsnNode constant) || !(constant.cst instanceof String)
+						|| !(self instanceof VarInsnNode load) || load.getOpcode() != Opcodes.ALOAD || load.var != 0
+						|| copy == null || copy.getOpcode() != Opcodes.DUP || call.getNext() == null || call.getNext().getOpcode() != Opcodes.ARETURN) continue;
+				for (var recorded : List.of(copy, self, site, call)) method.instructions.remove(recorded);
+				stripped = true;
+			}
+			if (stripped) method.maxStack = computedMaxStack(node, method);
+		}
+	}
+	/** What ASM's COMPUTE_MAXS gives {@code method} alone; it reads the code only, not the hierarchy. */
+	private static int computedMaxStack(ClassNode owner, MethodNode method) {
+		ClassNode alone = new ClassNode();
+		alone.visit(owner.version, Opcodes.ACC_PUBLIC | Opcodes.ACC_SUPER, owner.name, null, "java/lang/Object", null);
+		MethodNode copy = new MethodNode(method.access, method.name, method.desc, method.signature,
+				method.exceptions == null ? null : method.exceptions.toArray(String[]::new));
+		method.accept(copy);
+		alone.methods.add(copy);
+		ClassWriter writer = new ClassWriter(ClassWriter.COMPUTE_MAXS);
+		alone.accept(writer);
+		ClassNode read = new ClassNode();
+		new ClassReader(writer.toByteArray()).accept(read, ClassReader.SKIP_DEBUG);
+		return read.methods.getFirst().maxStack;
 	}
 	/**
 	 * The fixture adds a cache interface to Item, not to ItemStack. Its sole method reads an already-initialized

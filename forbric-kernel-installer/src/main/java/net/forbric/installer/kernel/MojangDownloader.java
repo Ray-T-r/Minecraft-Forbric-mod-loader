@@ -118,6 +118,48 @@ final class MojangDownloader {
 		}
 	}
 
+	/**
+	 * Every library a version JSON lists for this platform, downloaded and verified (size + SHA-1) into
+	 * {@code libraries} at the path the JSON gives it -- the same files, at the same paths, a launcher fetches on the
+	 * first launch -- skipping each already there with the right SHA-1.
+	 *
+	 * <p>The installer needs them before the launcher does: the merge reads them. Proving that both carriers build a
+	 * merged field the same way follows each construction into library code (Guava's memoizing Supplier among it),
+	 * and a fresh Minecraft directory, which no launcher has started this version in yet, has no libraries at all --
+	 * so the merge could prove nothing and refused ("Incompatible initializer dependency").
+	 *
+	 * @param artifacts each library's {@code downloads.artifact}: {@code path}, {@code url}, {@code sha1}, {@code size}
+	 * @return how many were downloaded
+	 */
+	int downloadLibraries(List<Map<String, Object>> artifacts, Path libraries) throws IOException {
+		int fetched = 0;
+		for (Map<String, Object> artifact : artifacts) {
+			Object path = artifact.get("path"), url = artifact.get("url");
+			if (!(path instanceof String relative) || !(url instanceof String from)) continue;
+			String sha1 = artifact.get("sha1") instanceof String s ? s : null;
+			long size = artifact.get("size") instanceof Number n ? n.longValue() : -1L;
+			Path dest = libraries.resolve(relative).normalize();
+			if (!dest.startsWith(libraries.normalize())) throw new IOException("library path leaves the libraries directory: " + relative);
+			if (Files.isRegularFile(dest) && (sha1 == null ? Files.size(dest) > 0 : sha1.equalsIgnoreCase(Util.sha1(dest)))) continue;
+			Files.createDirectories(dest.getParent());
+			Path part = dest.resolveSibling(dest.getFileName() + ".part");
+			try {
+				http.downloadToFile(from, part);
+				if (size >= 0 && Files.size(part) != size) {
+					throw new IOException("size mismatch on " + relative + " (expected " + size + ", got " + Files.size(part) + ")");
+				}
+				if (sha1 != null) verifySha1(part, sha1, relative);
+				move(part, dest);
+				fetched++;
+			} catch (IOException | RuntimeException e) {
+				deleteQuietly(part);
+				throw e;
+			}
+		}
+		if (fetched > 0) log.accept("downloaded " + fetched + " Minecraft librar" + (fetched == 1 ? "y" : "ies") + " into " + libraries);
+		return fetched;
+	}
+
 	// ---- helpers ----
 
 	private static Object parseJson(String text, String where) throws IOException {

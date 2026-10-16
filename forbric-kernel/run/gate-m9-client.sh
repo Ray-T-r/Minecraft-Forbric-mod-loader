@@ -751,31 +751,30 @@ PY_DEDUP
 [ $? -eq 0 ] || FAIL=1
 # M9_LOAD_REPORT_DEDUP_END
 
-step "a mixin the kernel took over does not report a loss that did not happen (must PASS)"
-# fabric-resource-conditions' SimpleJsonResourceReloadListenerMixin cannot apply here: NeoForge's patch of
-# scanDirectory made the value Optional and reordered the lambda's captures, so the descriptor Mixin expects is
-# not the one the mod was built against. BOTH of that mixin's members are the fabric:load_conditions evaluator,
-# and the kernel does that job one level down on ConditionalOps' own funnel — covering every consumer instead of
-# this one call site.
+step "fabric-resource-conditions' reload-listener mixin applies, so nothing has to take it over (must PASS)"
+# fabric-resource-conditions' SimpleJsonResourceReloadListenerMixin could not apply here for a long time: NeoForge's
+# patch of scanDirectory made the value Optional and reordered the lambda's captures, so the descriptor Mixin expects
+# was not the one the mod was built against. The kernel then did that job one level down, on ConditionalOps' own
+# funnel, and SupersededMixins resolved the failure so the mod was not marked for a loss that did not happen.
 #
-# So the mod lost nothing, and marking it reports a loss that did not happen. A report that cries wolf is worse
-# than no report: the next real one is read the same way. RED with M9_EXTRA_JVM=-Dforbric.supersededMixins=off,
-# which turns it back into an ordinary marked failure — that is how the claim gets checked against the game.
-#
-# The failure is recorded like any other and resolved only when ConditionalOps is DEFINED with the kernel's wrap
-# in its bytes (SupersededMixins), so the line asserted is the resolution, not the handler's "stays marked until
-# that repair is seen" -- the table naming a repair is a claim. Also RED with -Dforbric.fabricConditions=off.
-# KernelMixinErrorHandlerTest runs this block against the handler's and the proof's own output.
+# Since MixinDecodeScopeAdapter (2b9c8baa) carries the mixin's source decode guard and its closed marker consumer
+# into the native parse scope, it is judged FIT and applies whole: Fabric's own guard judges those files, and the
+# kernel's funnel stands aside for any input a completed source guard already judged. So the line asserted is the
+# adapter keeping the guard, and the superseded resolution is now a regression, not a pass -- it means the mixin
+# failed and fell back. RED with M9_EXTRA_JVM=-Dforbric.decodeSourceScopes=off (the mixin fails and is superseded
+# again). MixinDecodeScopeAdapterTest greps the adapter's real output with the first pattern;
+# KernelMixinErrorHandlerTest runs the block between the markers against the handler's and the proof's own output.
+check "its source decode guard is kept as it is handed to Mixin" \
+  "Forbric/Mixin\] net\.fabricmc\.fabric\.mixin\.resource\.conditions\.SimpleJsonResourceReloadListenerMixin retains source decode guards" "$LOG"
 # M9_SUPERSEDED_MIXIN_BEGIN
-check "the failure is resolved as superseded, by the repair seen in the defined ConditionalOps" \
-  "Forbric/Mixin\].*SimpleJsonResourceReloadListenerMixin is superseded.*seen in the defined net\.neoforged\.neoforge\.common\.conditions\.ConditionalOps, so its mod is not marked" "$LOG"
+check_absent "it applied: it never failed, and no repair had to supersede it" \
+  "Forbric/Mixin\].*SimpleJsonResourceReloadListenerMixin (failed to apply|is superseded)" "$LOG"
 check_absent "and its mod is not marked" \
   "Forbric/Mixin\].*SimpleJsonResourceReloadListenerMixin.*is marked" "$LOG"
 # M9_SUPERSEDED_MIXIN_END
-# KernelFabricConditions.ask announces its first verdict once; 2b9c8baa reworded that line (it used to read
-# "Fabric's own resource-condition evaluator is live") and this check went on asking for the old words, so it was
-# red on every run since. Same line, same call site, the current wording.
-check "and the conditions are still judged by someone" \
+# A decode no source guard owns -- a datapack registry element through ConditionalOps -- is still judged, by the
+# kernel asking Fabric's own evaluator. RED with M9_EXTRA_JVM=-Dforbric.fabricConditions=off.
+check "and the conditions no source guard owns are still judged" \
   "Forbric/Conditions\] a native decode without a completed source guard asks Fabric's resource-condition evaluator directly" "$LOG"
 
 step "each carrier's own screens have their own text (must PASS)"

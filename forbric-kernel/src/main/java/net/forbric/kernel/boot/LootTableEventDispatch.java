@@ -97,6 +97,19 @@ public final class LootTableEventDispatch {
 		}
 	}
 
+	/** Test seam: a proved original callback group, as {@link LootSourceCallbacks#callbacks} links it in game. */
+	static void bindOriginalForTest(LootSourceCallbacks.Callbacks original) {
+		synchronized (LootTableEventDispatch.class) {
+			guestLoader = null;
+			handles = null;
+			sourceCallbacks = original;
+			state = original == null ? State.ABSENT : State.PRESENT;
+			OFFERED.set(0);
+			REPLACE_TOOK.set(0);
+			MODIFY_FIRED.set(0);
+		}
+	}
+
 	/** Test seam: fabric-api is on no test classpath, so the handles have to be substitutable. */
 	static void bindForTest(Handles substitute) {
 		synchronized (LootTableEventDispatch.class) {
@@ -152,7 +165,15 @@ public final class LootTableEventDispatch {
 	public static void allLoaded(Object resourceManager, Object registry) {
 		if (!enabled() || !resolve()) return;
 		LootSourceCallbacks.Callbacks original=sourceCallbacks;
-		if(original!=null){try{original.allLoaded().invoke(resourceManager,registry);OFFERED.set(0);return;}catch(Throwable failure){throw propagate(failure);}}
+		if(original!=null){
+			try{original.allLoaded().invoke(resourceManager,registry);}catch(Throwable failure){throw propagate(failure);}
+			// The same summary the fallback below prints, naming the path that ran: a reload that offered nothing to
+			// a mod's loot listeners and one that offered every table look identical otherwise.
+			ForbricLog.info("[Forbric/LootBridge] offered %d loot table(s) to fabric-loot-api-v3's own callbacks, run "
+					+ "on NeoForge's LootTableLoadEvent seam: ALL_LOADED fired with %d entries", OFFERED.getAndSet(0),
+					sizeOf(registry));
+			return;
+		}
 		Handles h = handles;
 		try {
 			h.loaded().invoke(resourceManager, registry);

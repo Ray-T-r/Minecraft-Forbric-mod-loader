@@ -9,7 +9,7 @@
 #                                     GameEventMultiplexer (Neo→Forge 1:1 re-emission)
 #
 # Both tick canaries firing in the same server loop is the B-5 shape: the merged tick hook reaches BOTH families,
-# once each, no double-fire. This is past all public prior art (Connector/Kilt/ReForged are 2-ecosystem).
+# once each, no double-fire.
 # GATE-PARALLEL: rundirs=server-tri mem=1500
 set -uo pipefail
 . "$(cd "$(dirname "$0")" && pwd)/lib.sh"

@@ -143,10 +143,24 @@ class CoremodRepairInjectorsTest {
 		assertSame(original, new BiomeLateWriteInjector().transform(BiomeLateWriteInjector.TARGET, original, null));
 	}
 
-	@Test void theMasterSwitchCoversTheLiquidRepairToo() throws Exception {
+	/**
+	 * The coremod master switch leaves the liquid repair on; only its own switch turns it off. It is a merge repair, not
+	 * one of NeoForge's coremods, and on a base that needs it the game cannot start without it: Blocks.<clinit> asks a
+	 * liquid block for its fluid, so -Dforbric.coremodParity=off used to take the whole boot down with it, and
+	 * gate-m42's off phase -- which exists to show every coremod repair failing -- had no server to show it on.
+	 */
+	@Test void theMasterSwitchLeavesTheLiquidRepairOnAndOnlyItsOwnSwitchTurnsItOff() throws Exception {
 		byte[] original = NativeCoremodParityTest.read(MERGED, LiquidBlockFluidInjector.OWNER);
 		System.setProperty(NativeCoremodParity.PROPERTY, "off");
-		assertSame(original, new LiquidBlockFluidInjector().transform(LiquidBlockFluidInjector.TARGET, original, null));
+		// Judged by the claim, not by changed bytes: on a base whose constructors all fill the supplier the repair still
+		// runs and stands by (theLiquidBlocksGetterReadsTheFieldBeforeTheSupplier holds which one this base is).
+		List<String> hits = new java.util.ArrayList<>();
+		new LiquidBlockFluidInjector().transform(LiquidBlockFluidInjector.TARGET, original, null, hits::add);
+		assertEquals(List.of(LiquidBlockFluidInjector.CLAIM), hits, "the master switch does not reach the liquid repair");
+		System.setProperty(LiquidBlockFluidInjector.PROPERTY, "off");
+		hits.clear();
+		assertSame(original, new LiquidBlockFluidInjector().transform(LiquidBlockFluidInjector.TARGET, original, null, hits::add));
+		assertEquals(List.of(), hits, "its own switch turns it off");
 	}
 
 	private static <T extends AbstractInsnNode> T find(MethodNode m, Class<T> type, java.util.function.Predicate<T> test) {

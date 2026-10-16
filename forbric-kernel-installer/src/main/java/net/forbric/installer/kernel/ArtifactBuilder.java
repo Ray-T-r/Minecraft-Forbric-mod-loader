@@ -69,6 +69,15 @@ final class ArtifactBuilder {
 	 * @param jvm       the JVM the build tools run under
 	 * @return coordinate (without version) to the finished file, in the shape {@link GameArtifacts#all()} returns
 	 */
+	/** {@code versions/<mc>/<mc>.json}, which lists the libraries a launcher fetches for it. */
+	@SuppressWarnings("unchecked")
+	private static Map<String, Object> baseJson(Path mcDir, String mcVersion) throws IOException {
+		Path json = mcDir.resolve("versions").resolve(mcVersion).resolve(mcVersion + ".json");
+		Object parsed = Json.parse(Files.readString(json, java.nio.charset.StandardCharsets.UTF_8));
+		if (!(parsed instanceof Map)) throw new IOException(json + " is not a version JSON");
+		return (Map<String, Object>) parsed;
+	}
+
 	Map<String, Path> build(Path mcDir, String mcVersion, JdkLocator.Jvm jvm) throws IOException {
 		Path build = mcDir.resolve(".forbric-build");
 		Path dl = build.resolve("dl");
@@ -124,14 +133,19 @@ final class ArtifactBuilder {
 		// ---- the merge, and the interop patch the merge makes necessary ----
 		log.accept("");
 		log.accept("== merging ==");
+		// The merge reads the vanilla libraries (proving a merged field is built the same way on both sides follows
+		// the construction into them). A launcher fetches them on the first launch, and that has not happened in a
+		// directory a launcher never started this version in, so they are fetched here first, where it would put them.
+		Path libraries = mcDir.resolve("libraries");
+		new MojangDownloader(log).downloadLibraries(Installer.minecraftLibraryArtifacts(baseJson(mcDir, mcVersion)), libraries);
 		MergedBaseTool merge = new MergedBaseTool(tools, log);
 		ArtifactResult merged = merge.merge(jvm, vanilla, forgePatched.file, neoPatched.file,
 				forgeRuntime.file, neoRuntime.file,
 				out.resolve("patched-mc-merged-" + mcVersion + ".jar"),
 				out.resolve("merge-conflicts.txt"),
-				MERGED + ":" + mcVersion, mcDir.resolve("libraries"), forgeUserdev, neoUserdev);
+				MERGED + ":" + mcVersion, libraries, forgeUserdev, neoUserdev);
 		ArtifactResult interop = merge.interop(jvm, forgeRuntime.file,
-				out.resolve("forge-runtime-interop.jar"), FORGE_RUNTIME + ":" + mcVersion, merged.file, neoRuntime.file, mcDir.resolve("libraries"));
+				out.resolve("forge-runtime-interop.jar"), FORGE_RUNTIME + ":" + mcVersion, merged.file, neoRuntime.file, libraries);
 		// After the interop patch, not before: the check resolves against what actually gets staged.
 		merge.linkCheck(jvm, merged.file, neoRuntime.file, interop.file);
 

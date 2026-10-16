@@ -211,6 +211,19 @@ public final class Installer {
 		return paths;
 	}
 
+	/** Each library's {@code downloads.artifact} the base version lists for this platform: what a launcher downloads. */
+	@SuppressWarnings("unchecked")
+	static List<Map<String, Object>> minecraftLibraryArtifacts(Map<String, Object> baseJson) {
+		List<Map<String, Object>> artifacts = new ArrayList<>();
+		if (!(baseJson.get("libraries") instanceof List<?> list)) return artifacts;
+		for (Object entry : list) {
+			if (!(entry instanceof Map<?, ?> lib) || !appliesToThisPlatform((Map<String, Object>) lib)) continue;
+			Map<String, Object> downloads = (Map<String, Object>) lib.get("downloads");
+			if (downloads != null && downloads.get("artifact") instanceof Map<?, ?> artifact) artifacts.add((Map<String, Object>) artifact);
+		}
+		return artifacts;
+	}
+
 	/** Mojang's rule list, read the way a launcher reads it: last matching rule wins, default allow. */
 	@SuppressWarnings("unchecked")
 	private static boolean appliesToThisPlatform(Map<String, Object> lib) {

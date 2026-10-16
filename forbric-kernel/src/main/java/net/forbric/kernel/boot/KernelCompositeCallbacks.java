@@ -27,11 +27,35 @@ public final class KernelCompositeCallbacks {
  public static void certify(String key,DefinedMethodContracts.MethodContract outer,DefinedMethodContracts.MethodContract host,List<DefinedMethodContracts.MethodContract>guest){if(PLANS.containsKey(key))CALLERS.computeIfAbsent(key,ignored->ConcurrentHashMap.newKeySet()).add(new Caller(outer,host,List.copyOf(guest)));}
  public static boolean permits(Object record,String key){
   Plan plan=PLANS.get(key);boolean valid=record!=null&&plan!=null&&record.getClass().getName().equals(plan.owner)&&record.getClass().isRecord()&&Modifier.isFinal(record.getClass().getModifiers());
-  if(valid&&!plan.helpers.isEmpty()){var frame=WALKER.walk(frames->frames.skip(1).findFirst()).orElseThrow();valid=CALLERS.getOrDefault(key,Set.of()).stream().anyMatch(c->c.outer.owner().equals(frame.getDeclaringClass().getName())&&c.outer.name().equals(frame.getMethodName())&&c.outer.descriptor().equals(frame.getDescriptor())&&DefinedMethodContracts.observed(frame.getDeclaringClass().getClassLoader(),c.outer)&&DefinedMethodContracts.observed(frame.getDeclaringClass().getClassLoader(),c.host)&&c.guest.stream().allMatch(g->DefinedMethodContracts.observed(frame.getDeclaringClass().getClassLoader(),g)));}
-  if(valid)for(var method:plan.methods)if(!DefinedMethodContracts.observed(record.getClass().getClassLoader(),method)){valid=false;break;}
-  if(valid)for(var helper:plan.helpers){try{Class<?> owner=Class.forName(helper.owner(),false,record.getClass().getClassLoader());if(!DefinedMethodContracts.observed(owner.getClassLoader(),helper)){valid=false;break;}}catch(ReflectiveOperationException|RuntimeException|LinkageError unproved){valid=false;break;}}
-  if(valid)for(String binary:plan.fields.stream().map(FieldContract::owner).distinct().toList()){try{Class<?> owner=Class.forName(binary,false,record.getClass().getClassLoader());List<FieldContract> actual=Arrays.stream(owner.getDeclaredFields()).map(f->new FieldContract(binary,f.getName(),org.objectweb.asm.Type.getDescriptor(f.getType()),f.getModifiers())).sorted(Comparator.comparing(FieldContract::name).thenComparing(FieldContract::descriptor)).toList();List<FieldContract> expected=plan.fields.stream().filter(f->f.owner.equals(binary)).sorted(Comparator.comparing(FieldContract::name).thenComparing(FieldContract::descriptor)).toList();if(!actual.equals(expected)){valid=false;break;}}catch(ReflectiveOperationException|RuntimeException|LinkageError unproved){valid=false;break;}}
+  if(valid&&!plan.helpers.isEmpty()){var frame=WALKER.walk(frames->frames.skip(1).findFirst()).orElseThrow();valid=certifiedCaller(key,frame.getDeclaringClass(),c->c.outer.name().equals(frame.getMethodName())&&c.outer.descriptor().equals(frame.getDescriptor()));}
+  if(valid)valid=contractHolds(plan,record.getClass().getClassLoader());
   if(!valid&&record!=null&&REPORTED.get(record.getClass()).add(key))ForbricLog.warn("[Forbric/Mixin] composite lookup final contract is unavailable or changed; the source fallback callback was not executed and the native operation is retained (%s)",record.getClass().getName());
   return valid;
+ }
+ /**
+  * Whether a source callback certified for {@code key} in {@code host} is permitted now: {@link #permits}' own test,
+  * for any of host's certified callers, with no record in hand. An older fallback that stood down for that callback
+  * asks this at every call, so the two never stand aside together: a mod whose mixin changes one of the lookup's
+  * helper bodies (lithium's cached hopper lookup) makes permits refuse the source callback, and the fallback then
+  * does the work instead of nothing doing it.
+  */
+ public static boolean owns(String key,Class<?> host){
+  Plan plan=PLANS.get(key);if(plan==null||host==null)return false;
+  try{Class<?> record=Class.forName(plan.owner,false,host.getClassLoader());
+   if(!record.isRecord()||!Modifier.isFinal(record.getModifiers()))return false;
+   return (plan.helpers.isEmpty()||certifiedCaller(key,host,caller->true))&&contractHolds(plan,record.getClassLoader());}
+  catch(ReflectiveOperationException|RuntimeException|LinkageError unproved){return false;}
+ }
+ /** A caller certified for {@code key} whose outer is in {@code host}, matches {@code outer}, and whose outer, host and guest bodies are still the defined ones. */
+ private static boolean certifiedCaller(String key,Class<?> host,java.util.function.Predicate<Caller> outer){
+  ClassLoader loader=host.getClassLoader();
+  return CALLERS.getOrDefault(key,Set.of()).stream().anyMatch(c->c.outer.owner().equals(host.getName())&&outer.test(c)&&DefinedMethodContracts.observed(loader,c.outer)&&DefinedMethodContracts.observed(loader,c.host)&&c.guest.stream().allMatch(g->DefinedMethodContracts.observed(loader,g)));
+ }
+ /** The record's methods, the lookup's helper bodies and the fields they read, all still as the proof saw them. */
+ private static boolean contractHolds(Plan plan,ClassLoader loader){
+  for(var method:plan.methods)if(!DefinedMethodContracts.observed(loader,method))return false;
+  for(var helper:plan.helpers){try{Class<?> owner=Class.forName(helper.owner(),false,loader);if(!DefinedMethodContracts.observed(owner.getClassLoader(),helper))return false;}catch(ReflectiveOperationException|RuntimeException|LinkageError unproved){return false;}}
+  for(String binary:plan.fields.stream().map(FieldContract::owner).distinct().toList()){try{Class<?> owner=Class.forName(binary,false,loader);List<FieldContract> actual=Arrays.stream(owner.getDeclaredFields()).map(f->new FieldContract(binary,f.getName(),org.objectweb.asm.Type.getDescriptor(f.getType()),f.getModifiers())).sorted(Comparator.comparing(FieldContract::name).thenComparing(FieldContract::descriptor)).toList();List<FieldContract> expected=plan.fields.stream().filter(f->f.owner.equals(binary)).sorted(Comparator.comparing(FieldContract::name).thenComparing(FieldContract::descriptor)).toList();if(!actual.equals(expected))return false;}catch(ReflectiveOperationException|RuntimeException|LinkageError unproved){return false;}}
+  return true;
  }
 }

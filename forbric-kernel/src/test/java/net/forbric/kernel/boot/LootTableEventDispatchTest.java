@@ -170,6 +170,58 @@ class LootTableEventDispatchTest {
 		assertNull(replaceGotTable);
 	}
 
+	static Object originalAfterLoad(Object provider, Object id, Object table) {
+		CALLS.add("original afterLoad " + id);
+		return "original(" + table + ")";
+	}
+
+	static void originalAllLoaded(Object rm, Object registry) {
+		CALLS.add("original allLoaded");
+	}
+
+	/**
+	 * gate-m2b asserts the loot bridge ran by its summary line, and once fabric-loot-api's own callbacks became the
+	 * path that runs (the proved source group), that path printed nothing: the gate went red on a reload that had
+	 * offered every table. Both paths report; the gate's pattern is the proved one's, so the unproved fallback
+	 * running instead is still red there.
+	 */
+	@Test
+	void theOriginalCallbacksReportWhatTheyWereOfferedInTheLineGateM2bReads(@org.junit.jupiter.api.io.TempDir java.nio.file.Path scratch)
+			throws Exception {
+		String pattern = net.forbric.kernel.GateLogContract.pattern(java.nio.file.Path.of("run/gate-m2b.sh"), "kernel offered the loot tables to fabric");
+		MethodHandles.Lookup l = MethodHandles.lookup();
+		Class<?> me = LootTableEventDispatchTest.class;
+		LootTableEventDispatch.bindOriginalForTest(new LootSourceCallbacks.Callbacks(
+				l.findStatic(me, "originalAfterLoad", MethodType.methodType(Object.class, Object.class, Object.class, Object.class)),
+				l.findStatic(me, "originalAllLoaded", MethodType.methodType(void.class, Object.class, Object.class))));
+		String[] original = new String[1];
+		net.forbric.kernel.GateLogContract.capture(() -> {
+			assertEquals("original(t1)", LootTableEventDispatch.afterLoad("provider", "key", "a", "t1"));
+			assertEquals("original(t2)", LootTableEventDispatch.afterLoad("provider", "key", "b", "t2"));
+			LootTableEventDispatch.allLoaded("rm", "registry");
+			return null;
+		}, original);
+		assertEquals(List.of("original afterLoad a", "original afterLoad b", "original allLoaded"), CALLS);
+		assertEquals(1, net.forbric.kernel.GateLogContract.count(scratch, pattern, original[0]), original[0]);
+		assertTrue(original[0].contains("offered 2 loot table(s)"), original[0]);
+
+		// The next reload counts from zero, and one that offered nothing does not read as one that did.
+		String[] empty = new String[1];
+		net.forbric.kernel.GateLogContract.capture(() -> { LootTableEventDispatch.allLoaded("rm", "registry"); return null; }, empty);
+		assertEquals(0, net.forbric.kernel.GateLogContract.count(scratch, pattern, empty[0]), empty[0]);
+
+		// The fallback reports too, but it is not the proved path, and the gate's line is the proved path's.
+		fakes();
+		String[] fallback = new String[1];
+		net.forbric.kernel.GateLogContract.capture(() -> {
+			LootTableEventDispatch.afterLoad("provider", "key", "a", "t1");
+			LootTableEventDispatch.allLoaded("rm", "registry");
+			return null;
+		}, fallback);
+		assertTrue(fallback[0].contains("[Forbric/LootBridge] offered 1 loot table(s)"), fallback[0]);
+		assertEquals(0, net.forbric.kernel.GateLogContract.count(scratch, pattern, fallback[0]), fallback[0]);
+	}
+
 	/** Pins that a substituted handle is really what afterLoad calls — not a cached resolution from a real loader. */
 	@Test
 	void theHandlesAreTheSeam() throws Exception {

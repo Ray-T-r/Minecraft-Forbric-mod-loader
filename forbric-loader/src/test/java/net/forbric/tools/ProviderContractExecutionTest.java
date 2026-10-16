@@ -42,11 +42,18 @@ class ProviderContractExecutionTest {
     }
     @Test void nullableComputationCannotEraseTheTwoOriginalNullContracts(){assertThrows(IllegalStateException.class,()->fixture(true,false));}
     @Test void sameProviderAbiWithOpaqueGetterBehaviorCannotBeShared(){assertThrows(IllegalStateException.class,()->fixture(false,true));}
-    private static Fixture fixture(boolean nullable,boolean opaque)throws Exception{
+    /** A factory the merge cannot read -- the vanilla libraries absent, as in a fresh install -- is named, not called a difference. */
+    @Test void anUnreadableFactoryIsNamedRatherThanCalledIncompatible(){
+        IllegalStateException refused=assertThrows(IllegalStateException.class,()->fixture(false,false,true));
+        assertTrue(refused.getMessage().contains("not on the merge's library path"),refused.getMessage());
+        assertTrue(refused.getMessage().contains(CANONICAL)||refused.getMessage().contains(PEER),refused.getMessage());
+    }
+    private static Fixture fixture(boolean nullable,boolean opaque)throws Exception{return fixture(nullable,opaque,false);}
+    private static Fixture fixture(boolean nullable,boolean opaque,boolean librariesMissing)throws Exception{
         ClassNode contract=node(STRONG);contract.access=Opcodes.ACC_PUBLIC|Opcodes.ACC_INTERFACE|Opcodes.ACC_ABSTRACT;contract.interfaces.add("java/util/function/Supplier");contract.methods.add(new MethodNode(Opcodes.ACC_PUBLIC|Opcodes.ACC_ABSTRACT,"clear","()V",null,null));
         ClassNode nativeProvider=provider(CANONICAL,"java/util/function/Supplier",false),peer=provider(PEER,STRONG,opaque);
         ClassNode nativeGame=host("Ljava/util/function/Supplier;",CANONICAL,nullable),otherGame=host("L"+STRONG+";",PEER,nullable),merged=clone(nativeGame);merged.fields.add(new FieldNode(Opcodes.ACC_PRIVATE,"cache","L"+STRONG+";",null,null));merged.methods.add(read("otherRead","L"+STRONG+";",STRONG));merged.methods.add(clear("otherClear","L"+STRONG+";",STRONG,true));
-        Map<String,byte[]> original=new LinkedHashMap<>();for(ClassNode node:List.of(contract,nativeProvider,peer,nativeGame))original.put(node.name,bytes(node));ContractGraph graph=new ContractGraph(List.of(original));Map<String,ClassNode> carriers=new LinkedHashMap<>();assertEquals(1,FieldContractReconciler.reconcile(merged,otherGame,nativeGame,graph,carriers));
+        Map<String,byte[]> original=new LinkedHashMap<>();for(ClassNode node:librariesMissing?List.of(contract,nativeGame):List.of(contract,nativeProvider,peer,nativeGame))original.put(node.name,bytes(node));ContractGraph graph=new ContractGraph(List.of(original));Map<String,ClassNode> carriers=new LinkedHashMap<>();assertEquals(1,FieldContractReconciler.reconcile(merged,otherGame,nativeGame,graph,carriers));
         for(FieldNode field:merged.fields)if(field.desc.equals("Ljava/util/function/Supplier;"))field.access=(field.access&~(Opcodes.ACC_PRIVATE|Opcodes.ACC_FINAL))|Opcodes.ACC_PUBLIC;
         ClassNode writer=node("unrelated/mod/Writer");MethodNode install=new MethodNode(Opcodes.ACC_PUBLIC|Opcodes.ACC_STATIC,"install","(L"+GAME+";Ljava/util/function/Supplier;)V",null,null);install.instructions.add(new VarInsnNode(Opcodes.ALOAD,0));install.instructions.add(new VarInsnNode(Opcodes.ALOAD,1));install.instructions.add(new FieldInsnNode(Opcodes.PUTFIELD,GAME,"cache","Ljava/util/function/Supplier;"));install.instructions.add(new InsnNode(Opcodes.RETURN));writer.methods.add(install);original.put(writer.name,bytes(writer));original.put(peer.name,bytes(peer));
         original.put(GAME,generatedBytes(merged));for(ClassNode carrier:carriers.values())original.put(carrier.name,generatedBytes(carrier));ClassLoader loader=new ClassLoader(ProviderContractExecutionTest.class.getClassLoader()){@Override protected Class<?> findClass(String name)throws ClassNotFoundException{byte[] data=original.get(name.replace('.','/'));if(data==null)return super.findClass(name);return defineClass(name,data,0,data.length);}};return new Fixture(loader.loadClass(GAME.replace('/','.')));

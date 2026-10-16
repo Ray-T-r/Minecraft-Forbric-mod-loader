@@ -21,15 +21,18 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.atomic.AtomicInteger;
 
 import com.mojang.datafixers.util.Pair;
 import com.mojang.serialization.Codec;
 import com.mojang.serialization.DataResult;
+import com.mojang.serialization.Decoder;
 import com.mojang.serialization.DynamicOps;
 import com.mojang.serialization.MapCodec;
 
 import net.minecraft.resources.Identifier;
 import net.minecraft.world.level.storage.loot.LootPool;
+import net.minecraftforge.common.crafting.conditions.ConditionCodec;
 import net.minecraftforge.common.crafting.conditions.ICondition;
 import net.minecraftforge.registries.ForgeRegistries;
 
@@ -237,6 +240,89 @@ public final class KernelForgeConditions {
 			}
 			return ICondition.IContext.EMPTY;
 		}
+	}
+
+	/** {@code -Dforbric.forgeConditionFunnel=off}: ConditionalOps decodes without asking MinecraftForge. Read per decode. */
+	public static final String FUNNEL_PROPERTY = "forbric.forgeConditionFunnel";
+	private static final String KEY = "forge:condition";
+	private static final AtomicInteger JUDGED = new AtomicInteger();
+	private static final AtomicInteger REJECTED = new AtomicInteger();
+	private static volatile boolean announced;
+
+	/** The element, untouched: what MinecraftForge's own decoder reads once its condition lets the element through. */
+	private static final Decoder<Boolean> LET_THROUGH = new Decoder<>() {
+		@Override
+		public <T> DataResult<Pair<Boolean, T>> decode(DynamicOps<T> ops, T input) {
+			return DataResult.success(Pair.of(Boolean.TRUE, input));
+		}
+	};
+
+	/**
+	 * Wraps {@code ConditionalOps}' one codec factory so a {@code forge:condition} is judged before NeoForge decodes.
+	 *
+	 * <p>MinecraftForge judges that key in two of its own patches, and the merge kept NeoForge's side of both:
+	 * {@code ResourceManagerRegistryLoadTask.load} wraps every datapack-registry element decoder in
+	 * {@code ConditionCodec.wrap}, and {@code SimpleJsonResourceReloadListener.scanDirectory} hands every data file to
+	 * {@code ForgeHooks.readConditional}. The merged bodies are NeoForge's; MinecraftForge's lambdas are left in the
+	 * class with nothing calling them. So a Forge mod's conditional biome modifier, recipe or loot table always loaded.
+	 * Both NeoForge bodies decode through this one factory, which is where the judgement is asked again.
+	 *
+	 * <p>MinecraftForge's own decoder judges it, {@code ConditionCodec.wrap}, not a reimplementation: a condition
+	 * that does not hold skips the element exactly as NeoForge's own skip does (an empty result), one MinecraftForge
+	 * cannot parse fails it as MinecraftForge would, and a type another ecosystem owns is let through by
+	 * {@link #lenient} -- the condition codec this decoder reads with.
+	 */
+	@SuppressWarnings({"rawtypes"})
+	public static Codec alsoAskForge(Codec conditional) {
+		return alsoAsk(conditional, ConditionCodec.wrap(LET_THROUGH));
+	}
+
+	/** {@link #alsoAskForge} with the judge given: empty means the condition does not hold. The unit test's seam. */
+	@SuppressWarnings({"unchecked", "rawtypes"})
+	static Codec alsoAsk(Codec conditional, Decoder<Optional<Boolean>> forge) {
+		return new Codec<Object>() {
+			@Override
+			public <T> DataResult<Pair<Object, T>> decode(DynamicOps<T> ops, T input) {
+				if (!"off".equalsIgnoreCase(System.getProperty(FUNNEL_PROPERTY, "on")) && ops.get(input, KEY).result().isPresent()) {
+					DataResult<Pair<Optional<Boolean>, T>> verdict = forge.decode(ops, input);
+					var failed = verdict.error();
+					if (failed.isPresent()) return DataResult.error(failed.get().messageSupplier());
+					boolean keep = verdict.result().orElseThrow().getFirst().isPresent();
+					judged(keep);
+					if (!keep) return DataResult.success(Pair.of((Object) Optional.empty(), ops.empty()));
+				}
+				return ((Codec<Object>) conditional).decode(ops, input);
+			}
+
+			@Override
+			public <T> DataResult<T> encode(Object value, DynamicOps<T> ops, T prefix) {
+				return ((Codec<Object>) conditional).encode(value, ops, prefix);
+			}
+
+			@Override
+			public String toString() {
+				return "Forbric/MinecraftForge(" + conditional + ")";
+			}
+		};
+	}
+
+	private static void judged(boolean keep) {
+		int judged = JUDGED.incrementAndGet();
+		if (!announced) {
+			announced = true;
+			ForbricLog.info("[Forbric/Conditions] MinecraftForge's %s is judged again, by its own ConditionCodec, where "
+					+ "every conditional decode funnels (ConditionalOps): the merged datapack-registry and data-file "
+					+ "loaders are NeoForge's, which never ask it", KEY);
+		}
+		if (!keep) {
+			ForbricLog.info("[Forbric/Conditions] %s said no to a data file — %d of %d element(s) carrying the key "
+					+ "have been rejected", KEY, REJECTED.incrementAndGet(), judged);
+		}
+	}
+
+	/** Test seam: how many elements carrying the key were judged, and how many of them were rejected. */
+	static int[] funnelCountsForTest() {
+		return new int[] {JUDGED.get(), REJECTED.get()};
 	}
 
 	private static void report(String type) {

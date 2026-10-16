@@ -68,7 +68,13 @@ public final class MixinNullableCompositeCallback {
 	}
 	/** A caller can stand an older kernel fallback down only after this precise migrated outer is in the final host. */
 	public static void certify(ClassNode target){for(MethodNode host:target.methods)installedOnFinalHost(target,host);}
-	public static boolean installedOnFinalHost(ClassNode target,MethodNode host){
+	public static boolean installedOnFinalHost(ClassNode target,MethodNode host){return contractOnFinalHost(target,host)!=null;}
+	/**
+	 * The composite contract key of the migrated outer proved in {@code host}, certified for {@link
+	 * net.forbric.kernel.boot.KernelCompositeCallbacks#permits}; null when none is. An older fallback standing down for
+	 * it asks {@link net.forbric.kernel.boot.KernelCompositeCallbacks#owns} with this key at every call.
+	 */
+	public static String contractOnFinalHost(ClassNode target,MethodNode host){
 		for(Evidence evidence:INSTALLED.values()){
 			Installed plan=evidence.installed;
 			if(!plan.owner.equals(target.name)||!plan.host.equals(host.name)||!plan.descriptor.equals(host.desc))continue;
@@ -78,9 +84,9 @@ public final class MixinNullableCompositeCallback {
 				List<MethodInsnNode> originals=Arrays.stream(outer.instructions.toArray()).filter(i->i instanceof MethodInsnNode c&&c.owner.equals(target.name)&&c.desc.equals(plan.innerDescriptor)&&c.name.contains(SUFFIX)).map(MethodInsnNode.class::cast).toList();
 				if(entries!=1||originals.size()!=1||!outerContract(outer,originals.getFirst(),evidence.shape)||!captureFromLookup(target,host,outer,evidence.lookup))continue;
 				MethodNode inner=target.methods.stream().filter(m->m.name.equals(originals.getFirst().name)&&m.desc.equals(plan.innerDescriptor)).findFirst().orElse(null);
-				if(inner!=null&&originalBody(target,inner,evidence)){var key=(LdcInsnNode)DefaultMethodOverloadBridge.real(outer).get(1);var guest=target.methods.stream().filter(m->mergedFrom(m,evidence.installed.mixin)).map(m->new net.forbric.kernel.boot.DefinedMethodContracts.MethodContract(target.name,m.name,m.desc,MixinInstructionFingerprint.hash(m))).toList();net.forbric.kernel.boot.KernelCompositeCallbacks.certify((String)key.cst,new net.forbric.kernel.boot.DefinedMethodContracts.MethodContract(target.name,outer.name,outer.desc,MixinInstructionFingerprint.hash(outer)),new net.forbric.kernel.boot.DefinedMethodContracts.MethodContract(target.name,host.name,host.desc,MixinInstructionFingerprint.hash(host)),guest);return true;}
+				if(inner!=null&&originalBody(target,inner,evidence)){var key=(LdcInsnNode)DefaultMethodOverloadBridge.real(outer).get(1);var guest=target.methods.stream().filter(m->mergedFrom(m,evidence.installed.mixin)).map(m->new net.forbric.kernel.boot.DefinedMethodContracts.MethodContract(target.name,m.name,m.desc,MixinInstructionFingerprint.hash(m))).toList();net.forbric.kernel.boot.KernelCompositeCallbacks.certify((String)key.cst,new net.forbric.kernel.boot.DefinedMethodContracts.MethodContract(target.name,outer.name,outer.desc,MixinInstructionFingerprint.hash(outer)),new net.forbric.kernel.boot.DefinedMethodContracts.MethodContract(target.name,host.name,host.desc,MixinInstructionFingerprint.hash(host)),guest);return (String)key.cst;}
 			}
-		}return false;
+		}return null;
 	}
 	private static boolean captureFromLookup(ClassNode target,MethodNode host,MethodNode outer,String lookup){
 		try{Frame<SourceValue>[] frames=new Analyzer<>(new SourceInterpreter()).analyze(target.name,host);for(var instruction:host.instructions)if(instruction instanceof MethodInsnNode call&&call.owner.equals(target.name)&&call.name.equals(outer.name)&&call.desc.equals(outer.desc)){Frame<SourceValue> at=frames[host.instructions.indexOf(call)];return at!=null&&at.getStackSize()>0&&lookupOrigin(host,frames,at.getStack(at.getStackSize()-1),lookup,new HashSet<>());}return false;}

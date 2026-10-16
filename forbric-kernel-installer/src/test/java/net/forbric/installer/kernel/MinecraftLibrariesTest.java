@@ -1,0 +1,103 @@
+package net.forbric.installer.kernel;
+
+import java.io.IOException;
+import java.io.OutputStream;
+import java.net.InetSocketAddress;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.util.ArrayList;
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.concurrent.atomic.AtomicInteger;
+
+import com.sun.net.httpserver.HttpServer;
+
+/**
+ * The installer fetches the base version's libraries itself before the merge, which reads them: a launcher fetches
+ * them only on the first launch, and a directory no launcher has started the version in has none -- the merge then
+ * proved nothing and refused (gate-m17). Served from a local HTTP server: what the version JSON lists for this
+ * platform lands at its own path and is verified, a file already there with the right SHA-1 is not fetched again, and
+ * one that does not verify is refused without a partial file left behind.
+ */
+public final class MinecraftLibrariesTest {
+	public static void main(String[] args) throws Exception {
+		Path work = Files.createDirectories(Path.of(args[0]));
+		Path libraries = work.resolve("libraries");
+		byte[] guava = "a library jar".getBytes(StandardCharsets.UTF_8), natives = "not for this platform".getBytes(StandardCharsets.UTF_8);
+		AtomicInteger requests = new AtomicInteger();
+		HttpServer server = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
+		server.createContext("/", exchange -> {
+			requests.incrementAndGet();
+			byte[] body = exchange.getRequestURI().getPath().endsWith("natives.jar") ? natives : guava;
+			exchange.sendResponseHeaders(200, body.length);
+			try (OutputStream out = exchange.getResponseBody()) { out.write(body); }
+		});
+		server.start();
+		int checks = 0;
+		try {
+			String base = "http://127.0.0.1:" + server.getAddress().getPort() + "/";
+			Map<String, Object> json = new LinkedHashMap<>();
+			List<Object> list = new ArrayList<>();
+			list.add(library("com/google/guava/guava/33/guava-33.jar", base + "guava.jar", sha1(guava), guava.length, null));
+			String other = osName().equals("windows") ? "osx" : "windows";
+			list.add(library("org/lwjgl/lwjgl/3/lwjgl-natives.jar", base + "natives.jar", sha1(natives), natives.length, other));
+			json.put("libraries", list);
+
+			List<Map<String, Object>> artifacts = Installer.minecraftLibraryArtifacts(json);
+			require(artifacts.size() == 1, "only this platform's libraries are fetched: " + artifacts);
+			checks++;
+
+			MojangDownloader downloader = new MojangDownloader(line -> { });
+			require(downloader.downloadLibraries(artifacts, libraries) == 1, "the library was not downloaded");
+			Path jar = libraries.resolve("com/google/guava/guava/33/guava-33.jar");
+			require(Files.isRegularFile(jar) && java.util.Arrays.equals(Files.readAllBytes(jar), guava), "the library is not at its own path");
+			require(!Files.exists(libraries.resolve("org/lwjgl")), "another platform's library was fetched");
+			checks += 2;
+
+			int before = requests.get();
+			require(downloader.downloadLibraries(artifacts, libraries) == 0 && requests.get() == before, "a verified library was fetched again");
+			checks++;
+
+			List<Object> wrong = new ArrayList<>();
+			wrong.add(library("com/example/bad/1/bad-1.jar", base + "bad.jar", "0000000000000000000000000000000000000000", guava.length, null));
+			json.put("libraries", wrong);
+			try {
+				downloader.downloadLibraries(Installer.minecraftLibraryArtifacts(json), libraries);
+				throw new AssertionError("a library that does not verify was accepted");
+			} catch (IOException expected) {
+				require(expected.getMessage().contains("sha1 mismatch"), "the refusal does not say why: " + expected.getMessage());
+			}
+			require(!Files.exists(libraries.resolve("com/example/bad/1/bad-1.jar"))
+					&& !Files.exists(libraries.resolve("com/example/bad/1/bad-1.jar.part")), "a library that does not verify left a file");
+			checks += 2;
+		} finally {
+			server.stop(0);
+		}
+		System.out.println("PASS Minecraft libraries before the merge: " + checks + " checks (platform rules, verified download, cache hit, refusal)");
+	}
+
+	private static Map<String, Object> library(String path, String url, String sha1, long size, String onlyOn) {
+		Map<String, Object> artifact = new LinkedHashMap<>();
+		artifact.put("path", path); artifact.put("url", url); artifact.put("sha1", sha1); artifact.put("size", size);
+		Map<String, Object> lib = new LinkedHashMap<>();
+		lib.put("name", path);
+		lib.put("downloads", Map.of("artifact", artifact));
+		if (onlyOn != null) lib.put("rules", List.of(Map.of("action", "allow", "os", Map.of("name", onlyOn))));
+		return lib;
+	}
+
+	private static String sha1(byte[] bytes) throws Exception {
+		return java.util.HexFormat.of().formatHex(java.security.MessageDigest.getInstance("SHA-1").digest(bytes));
+	}
+
+	private static String osName() {
+		String os = System.getProperty("os.name", "").toLowerCase(java.util.Locale.ROOT);
+		return os.contains("win") ? "windows" : os.contains("mac") ? "osx" : "linux";
+	}
+
+	private static void require(boolean condition, String message) {
+		if (!condition) throw new AssertionError(message);
+	}
+}

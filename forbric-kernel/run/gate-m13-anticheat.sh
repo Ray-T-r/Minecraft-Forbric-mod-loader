@@ -198,7 +198,17 @@ check "the land phases were on land"  "drill phase (sprint|sprint-jump|turn|stra
 # model-data manager the merge had left it without. Zero here means the frame that used to crash was never drawn.
 check "the drill actually broke ground" "ClientSmoke\] mining: [1-9][0-9]* block\(s\) showing break progress" "$CGAME"
 check "the swim phase was in water"   "drill phase swim at .*inWater=true"                "$CGAME"
-check "sprinting actually engaged"    "drill phase sprint-jump at .*sprinting=true"       "$CGAME"
+# Sprinting is judged over every tick the sprint key was held, not the one the sprint-jump phase line samples: that
+# single sample read sprinting=false once while a rerun was green. Three quarters of the held ticks must have been
+# sprinting; each change of state is in the client log with onGround, horizontalCollision and food beside it.
+SPRINT=$(grep -aoE "drill sprint: sprinting on [0-9]+ of [0-9]+ tick" "$CGAME" | tail -1)
+if [ -n "$SPRINT" ] && awk -v s="$SPRINT" 'BEGIN{split(s,w," "); n=w[5]; m=w[7]; exit !(m >= 100 && n * 4 >= m * 3)}'; then
+  echo "[kernel] PASS sprinting actually engaged ($SPRINT)"
+else
+  echo "[kernel] FAIL sprinting actually engaged (${SPRINT:-no sprint count in $CGAME}); its changes:"
+  grep -a "drill sprint=" "$CGAME" | sed 's/^/[kernel]   /' | cut -c1-220
+  FAIL=1
+fi
 
 step "Grim's verdict: silent through the drill, loud at the control (must PASS)"
 # M13_LOG_ASSERTIONS_BEGIN — the same positive and negative controls run in AntiCheatGateLogTest.

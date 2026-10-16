@@ -99,7 +99,7 @@ class KernelConditionKillSwitchesTest {
 		}
 	}
 
-	private static URLClassLoader gameSideLoader() throws Exception {
+	static URLClassLoader gameSideLoader() throws Exception {
 		Path compiled = Path.of(System.getProperty("user.dir"), "build", "classes", "java", "runtime").normalize();
 		Path run = TestFixtures.stagedRoot();
 		Path forgeRt = run.resolve("forge-runtime/forge-runtime.jar");

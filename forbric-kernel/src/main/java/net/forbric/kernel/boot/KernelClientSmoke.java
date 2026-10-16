@@ -1989,6 +1989,12 @@ public final class KernelClientSmoke {
 		drillPlayer = player;
 		Object options = fieldValue(minecraft, "options");
 		if (options == null) return;
+		// Every tick the sprint key is held is sampled (61..220 read what 60..219 did), and each change of state is
+		// logged with what vanilla's sprint rules read. The gate used to judge one sample, the sprint-jump phase line at
+		// tick 140, and that one sample read sprinting=false once while a rerun was green.
+		if (t > 60 && t <= 220) sampleSprint(player, t);
+		if (t == 220) ForbricLog.info("[Forbric/ClientSmoke] drill sprint: sprinting on %d of %d tick(s) the sprint key was "
+				+ "held", sprintTicks, sprintSamples);
 		if (t == 0) {
 			setRotation(player, 0f, 0f);
 			phase("walk");
@@ -2056,6 +2062,30 @@ public final class KernelClientSmoke {
 
 	private static Object drillPlayer;
 	private static Object lastPlayer;
+	/** Ticks sampled while the sprint key was held, how many of them sprinting, and the last state seen. */
+	private static int sprintSamples, sprintTicks;
+	private static String lastSprint;
+
+	private static void sampleSprint(Object player, int t) {
+		String now = flag(player, "isSprinting");
+		sprintSamples++;
+		if ("true".equals(now)) sprintTicks++;
+		if (!now.equals(lastSprint)) {
+			ForbricLog.info("[Forbric/ClientSmoke] drill sprint=%s from drill tick %d pos=(%.1f %.1f %.1f) onGround=%s "
+					+ "horizontalCollision=%s food=%s", now, t, x(player), y(player), z(player), flag(player, "onGround"),
+					fieldValue(player, "horizontalCollision"), food(player));
+			lastSprint = now;
+		}
+	}
+
+	private static Object food(Object player) {
+		try {
+			Object data = player.getClass().getMethod("getFoodData").invoke(player);
+			return data.getClass().getMethod("getFoodLevel").invoke(data);
+		} catch (ReflectiveOperationException | RuntimeException unreadable) {
+			return "?";
+		}
+	}
 
 	/**
 	 * One line per phase, with where the player is and what state it is in. The line is what makes "Grim had
@@ -2269,6 +2299,9 @@ public final class KernelClientSmoke {
 		drillDone = false;
 		drillPlayer = null;
 		lastPlayer = null;
+		sprintSamples = 0;
+		sprintTicks = 0;
+		lastSprint = null;
 		probed = false;
 		idsLoggedBeforeConnect = false;
 		screenMouseStage = 0;

@@ -201,12 +201,16 @@ check "the forge:intersection recipe is present"    '\[ForbricLive/RECIPE\] forb
 check "the kernel counted the Forge ingredient type" 'MinecraftForge ingredient type forge:intersection decoded' "$LOG"
 check_absent "no parse failure for the canary recipe" "Couldn't parse data file 'forbriclive:forge_intersection'" "$LOG"
 
-step "a dual-dialect datapack element is kept by the MinecraftForge condition leniency (I8)"
+step "a dual-dialect datapack element is judged by MinecraftForge and kept by its condition leniency (I8)"
 # The NeoForge canary ships forbricneolive:dual_dialect — an Architectury-style biome_modifier carrying a
-# `forge:condition` of type neoforge:true. NeoForge ignores the key; MinecraftForge's ConditionCodec reads it on the
-# merged datapack-registry path and does not know that type, so KernelForgeConditions keeps the element instead of
-# failing the whole registry load. RED with M21_EXTRA_JVM=-Dforbric.forgeConditions=off (strict CODEC.parse error
-# → 'Failed to load registries due to errors' → no Done).
+# `forge:condition` of type neoforge:true. NeoForge ignores the key. MinecraftForge judges it with its own ConditionCodec,
+# which the merged datapack-registry loader (NeoForge's body; MinecraftForge's wrap is an uncalled orphan) never calls,
+# so the kernel asks it where every conditional decode funnels (ConditionalOps -> KernelForgeConditions.alsoAskForge).
+# It does not know that type, so KernelForgeConditions keeps the element instead of failing the whole registry load.
+# RED with M21_EXTRA_JVM=-Dforbric.forgeConditionFunnel=off (nothing asks MinecraftForge: neither line), and with
+# -Dforbric.forgeConditions=off (strict CODEC.parse error → 'Failed to load registries due to errors' → no Done).
+# KernelForgeConditionFunnelTest greps the funnel's real output with the first pattern.
+check "MinecraftForge judges forge:condition at the conditional-decode funnel" "Forbric/Conditions\] MinecraftForge's forge:condition is judged again" "$LOG"
 check "the MinecraftForge leniency fired on a real datapack element" "resource condition 'neoforge:true' is not in MinecraftForge's condition registry" "$LOG"
 check_absent "registries loaded"                             "Failed to load registries due to errors" "$LOG"
 

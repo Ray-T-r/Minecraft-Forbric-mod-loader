@@ -115,7 +115,8 @@ public final class NativeMergeShapeRepair {
         }
         visiting.remove(owner.name); result.put(owner.name, owner); return true;
     }
-    private static MethodInsnNode delegate(MethodNode method) {
+    /** The call a pure delegate {@code public R m(A a) { return Owner.super.m(a); }} makes to an interface, or null. */
+    static MethodInsnNode delegate(MethodNode method) {
         if ((method.access & (Opcodes.ACC_PUBLIC | Opcodes.ACC_STATIC | Opcodes.ACC_ABSTRACT | Opcodes.ACC_NATIVE | Opcodes.ACC_SYNCHRONIZED)) != Opcodes.ACC_PUBLIC
                 || !method.tryCatchBlocks.isEmpty()) return null;
         List<AbstractInsnNode> code = code(method); Type[] args = Type.getArgumentTypes(method.desc);
