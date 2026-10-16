@@ -69,15 +69,6 @@ final class ArtifactBuilder {
 	 * @param jvm       the JVM the build tools run under
 	 * @return coordinate (without version) to the finished file, in the shape {@link GameArtifacts#all()} returns
 	 */
-	/** {@code versions/<mc>/<mc>.json}, which lists the libraries a launcher fetches for it. */
-	@SuppressWarnings("unchecked")
-	private static Map<String, Object> baseJson(Path mcDir, String mcVersion) throws IOException {
-		Path json = mcDir.resolve("versions").resolve(mcVersion).resolve(mcVersion + ".json");
-		Object parsed = Json.parse(Files.readString(json, java.nio.charset.StandardCharsets.UTF_8));
-		if (!(parsed instanceof Map)) throw new IOException(json + " is not a version JSON");
-		return (Map<String, Object>) parsed;
-	}
-
 	Map<String, Path> build(Path mcDir, String mcVersion, JdkLocator.Jvm jvm) throws IOException {
 		Path build = mcDir.resolve(".forbric-build");
 		Path dl = build.resolve("dl");
@@ -163,5 +154,14 @@ final class ArtifactBuilder {
 					+ " (" + (Files.size(e.getValue()) / (1024 * 1024)) + " MB)");
 		}
 		return result;
+	}
+
+	/** {@code versions/<mc>/<mc>.json}, which lists the libraries a launcher fetches for it. */
+	@SuppressWarnings("unchecked")
+	private static Map<String, Object> baseJson(Path mcDir, String mcVersion) throws IOException {
+		Path json = mcDir.resolve("versions").resolve(mcVersion).resolve(mcVersion + ".json");
+		Object parsed = Json.parse(Files.readString(json, java.nio.charset.StandardCharsets.UTF_8));
+		if (!(parsed instanceof Map)) throw new IOException(json + " is not a version JSON");
+		return (Map<String, Object>) parsed;
 	}
 }

@@ -27,17 +27,19 @@ import java.util.Map;
 import java.util.function.Consumer;
 
 /**
- * Dependency-free downloader for the vanilla Minecraft client, using only {@code java.net.http} (JDK 11+).
+ * Dependency-free downloader for Mojang's files, using only {@code java.net.http} (JDK 11+).
  *
- * <p>It follows the standard Mojang chain: the version manifest → the per-version JSON → the client jar. It
- * downloads only {@code versions/<v>/<v>.json} and {@code <v>.jar}; the launcher itself resolves the base's
- * libraries/assets/natives on first launch from the {@code <v>.json} written here (that is what makes the
- * Forbric profile's {@code inheritsFrom:<v>} resolvable).
+ * <p>Two jobs. {@link #downloadClient} follows the standard Mojang chain -- the version manifest → the per-version
+ * JSON → the client jar -- and writes {@code versions/<v>/<v>.json} and {@code <v>.jar}; that JSON is what makes the
+ * Forbric profile's {@code inheritsFrom:<v>} resolvable. {@link #downloadLibraries} fetches the libraries that JSON
+ * lists for this platform into {@code libraries/}, because the merge reads them before any launcher has run the
+ * version (see {@link ArtifactBuilder}); a launcher finds them already in place. Assets and native extraction stay
+ * the launcher's job on first launch.
  *
  * <p>Safety: every artifact is written to a {@code .part} temp beside its target and verified (size + SHA-1)
- * before an atomic move into place; the {@code <v>.json} is committed only after the jar verifies, so a crash
- * never leaves a {@code <v>.json} without a matching {@code <v>.jar} — the exact half-state
- * {@link Installer#discoverBaseVersions} guards against.
+ * before an atomic move into place. The client's two files are moved only after both verified, and a directory
+ * holding one without the other counts as not having the version ({@code Installer.ensureBaseVersion} checks for
+ * both), so an interrupted download is fetched again rather than half used.
  */
 final class MojangDownloader {
 
