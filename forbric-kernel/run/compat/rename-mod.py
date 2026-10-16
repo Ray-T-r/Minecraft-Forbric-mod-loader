@@ -1234,9 +1234,10 @@ def javap_classes(root, entries):
         text = subprocess.run([javap, '-v', '-p', '-c'] + [str(root / e) for e in chunk], check=True,
                               capture_output=True, text=True).stdout
         parts = re.split(r'^Classfile (.*)$', text, flags=re.M)
-        for index in range(1, len(parts), 2):
-            path = Path(parts[index].strip())
-            entry = path.relative_to(root).as_posix() if path.is_absolute() else parts[index].strip()
+        if (len(parts) - 1) // 2 != len(chunk):
+            raise RuntimeError(f'javap printed {(len(parts) - 1) // 2} classes for {len(chunk)} files')
+        # javap prints the classes in argument order; the path it echoes may be spelled differently (8.3 names).
+        for entry, index in zip(chunk, range(1, len(parts), 2)):
             lines, in_pool, bootstrap, methods = [], False, False, []
             for line in parts[index + 1].splitlines():
                 if line.startswith('Constant pool:'):
