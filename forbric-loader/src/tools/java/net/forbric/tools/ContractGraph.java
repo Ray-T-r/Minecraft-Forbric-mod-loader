@@ -13,11 +13,36 @@ final class ContractGraph {
     private final Map<String,byte[]> bytes=new LinkedHashMap<>();
     private final Map<String,ClassNode> nodes=new HashMap<>();
     private final List<Path> libraries;
-    ContractGraph(List<Map<String,byte[]>> sets){for(Map<String,byte[]> set:sets)set.forEach(bytes::putIfAbsent);libraries=List.of();}
-    ContractGraph(List<Map<String,byte[]>> sets,Path libraries)throws IOException{
+    ContractGraph(List<Map<String,byte[]>> sets){this(sets,List.of());}
+    /** {@code libraries}: exactly the jars a class outside the supplied sets and the JDK may come from, in the order
+     * they answer -- the base version's own libraries, as {@link #libraries(String)} reads them; null for none. */
+    ContractGraph(List<Map<String,byte[]>> sets,List<Path> libraries){
         for(Map<String,byte[]> set:sets)set.forEach(bytes::putIfAbsent);
-        if(libraries!=null&&Files.isDirectory(libraries))try(var walk=Files.walk(libraries)){this.libraries=walk.filter(p->p.toString().endsWith(".jar")).sorted().toList();}
-        else this.libraries=libraries!=null&&Files.isRegularFile(libraries)?List.of(libraries):List.of();
+        this.libraries=libraries==null?List.of():List.copyOf(libraries);
+    }
+
+    /**
+     * The library argument every merge tool takes: the base version's libraries, each jar named, joined with the
+     * platform's path separator, in the order its version JSON lists them. Exactly those, and nothing else.
+     *
+     * <p>It used to be a directory, walked, with the first jar in sorted path order answering for a class. A player's
+     * {@code libraries} folder holds every version any launcher ever fetched there, so the proof read whatever
+     * sorted first -- measured: {@code guava-25.1-jre} answering for {@code ImmutableList} in a folder that also had
+     * 26.2's own {@code guava-33.6.0-jre} -- and a merge's verdict depended on what else happened to be installed.
+     * A directory is therefore refused rather than walked, and a named jar that is not there is an error, not a
+     * class the proof quietly cannot read.
+     */
+    static List<Path> libraries(String argument){
+        if(argument==null||argument.isEmpty())return List.of();
+        List<Path> jars=new ArrayList<>();
+        for(String entry:argument.split(java.util.regex.Pattern.quote(File.pathSeparator))){
+            if(entry.isEmpty())continue;
+            Path jar=Path.of(entry);
+            if(Files.isDirectory(jar))throw new IllegalArgumentException("a library directory is not a library list: "+jar+" (name each jar the base version's JSON lists, joined with '"+File.pathSeparator+"')");
+            if(!Files.isRegularFile(jar))throw new IllegalArgumentException("library not found: "+jar);
+            jars.add(jar);
+        }
+        return List.copyOf(jars);
     }
 
     /** Classes asked for and not found anywhere since the last {@link #takeMisses}: what a failed proof could not read. */
@@ -27,7 +52,8 @@ final class ContractGraph {
         if(name==null)return null;if(nodes.containsKey(name)){ClassNode cached=nodes.get(name);if(cached==null)misses.add(name);return cached;}
         byte[] data=bytes.get(name);
         if(data==null)try(InputStream stream=ClassLoader.getSystemResourceAsStream(name+".class")){if(stream!=null)data=stream.readAllBytes();}catch(IOException ignored){}
-        if(data==null)for(Path jar:libraries)try(ZipFile zip=new ZipFile(jar.toFile())){ZipEntry entry=zip.getEntry(name+".class");if(entry!=null){data=zip.getInputStream(entry).readAllBytes();break;}}catch(IOException ignored){}
+        // A named library that cannot be read is a broken input, not a class the proof may go without.
+        if(data==null)for(Path jar:libraries)try(ZipFile zip=new ZipFile(jar.toFile())){ZipEntry entry=zip.getEntry(name+".class");if(entry!=null){data=zip.getInputStream(entry).readAllBytes();break;}}catch(IOException unreadable){throw new UncheckedIOException("cannot read library "+jar,unreadable);}
         ClassNode node=null;if(data!=null){node=new ClassNode();new ClassReader(data).accept(node,0);}else misses.add(name);nodes.put(name,node);return node;
     }
     void replace(ClassNode node){nodes.put(node.name,node);}

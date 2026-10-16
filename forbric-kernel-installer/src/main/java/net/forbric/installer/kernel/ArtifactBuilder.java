@@ -20,6 +20,7 @@ import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.function.Consumer;
 
@@ -127,8 +128,10 @@ final class ArtifactBuilder {
 		// The merge reads the vanilla libraries (proving a merged field is built the same way on both sides follows
 		// the construction into them). A launcher fetches them on the first launch, and that has not happened in a
 		// directory a launcher never started this version in, so they are fetched here first, where it would put them.
-		Path libraries = mcDir.resolve("libraries");
-		new MojangDownloader(log).downloadLibraries(Installer.minecraftLibraryArtifacts(baseJson(mcDir, mcVersion)), libraries);
+		// The tools get exactly the jars the version JSON names, as verified here -- not the folder, where whatever
+		// other version sorted first used to answer.
+		List<Path> libraries = new MojangDownloader(log).downloadLibraries(
+				Installer.minecraftLibraryArtifacts(baseJson(mcDir, mcVersion)), mcDir.resolve("libraries"));
 		MergedBaseTool merge = new MergedBaseTool(tools, log);
 		ArtifactResult merged = merge.merge(jvm, vanilla, forgePatched.file, neoPatched.file,
 				forgeRuntime.file, neoRuntime.file,
@@ -136,7 +139,8 @@ final class ArtifactBuilder {
 				out.resolve("merge-conflicts.txt"),
 				MERGED + ":" + mcVersion, libraries, forgeUserdev, neoUserdev);
 		ArtifactResult interop = merge.interop(jvm, forgeRuntime.file,
-				out.resolve("forge-runtime-interop.jar"), FORGE_RUNTIME + ":" + mcVersion, merged.file, neoRuntime.file, libraries);
+				out.resolve("forge-runtime-interop.jar"), FORGE_RUNTIME + ":" + mcVersion, merged.file, neoRuntime.file,
+				libraries);
 		// After the interop patch, not before: the check resolves against what actually gets staged.
 		merge.linkCheck(jvm, merged.file, neoRuntime.file, interop.file);
 

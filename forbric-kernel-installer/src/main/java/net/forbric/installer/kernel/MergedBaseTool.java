@@ -16,6 +16,7 @@
 
 package net.forbric.installer.kernel;
 
+import java.io.File;
 import java.io.IOException;
 import java.io.InputStream;
 import java.nio.file.Files;
@@ -73,6 +74,16 @@ final class MergedBaseTool {
 	}
 
 	/**
+	 * The libraries as the one argument the merge and the interop patch take: the base version's own jars, each
+	 * named, joined with the platform's path separator, in classpath order. The tools take exactly these and refuse
+	 * a directory (forbric-loader's {@code ContractGraph.libraries}): a whole {@code libraries} folder answered with
+	 * whichever jar sorted first, so the proof depended on every other version a launcher had ever put there.
+	 */
+	static String classpath(List<Path> jars) {
+		return String.join(File.pathSeparator, jars.stream().map(Path::toString).toList());
+	}
+
+	/**
 	 * Merges the three bases.
 	 *
 	 * @param report where the conflict report goes — kept rather than discarded, because a change in its contents
@@ -80,10 +91,11 @@ final class MergedBaseTool {
 	 * @param forgeUserdev the MinecraftForge userdev artifact; its source patches tell the merge which instructions
 	 *               of a patched method are Forge's edit, so a method both ecosystems patched keeps both edits
 	 * @param neoUserdev the NeoForge userdev artifact, for the same reason
+	 * @param libraries the base version's libraries, each jar named, in the order its version JSON lists them
 	 */
 	ArtifactResult merge(JdkLocator.Jvm jvm, Path vanilla, Path forgePatched, Path neoPatched,
 	                     Path forgeRuntime, Path neoforgeRuntime, Path outJar, Path report,
-	                     String coordinate, Path libraries, Path forgeUserdev, Path neoUserdev) throws IOException {
+	                     String coordinate, List<Path> libraries, Path forgeUserdev, Path neoUserdev) throws IOException {
 		if (BuildStamp.isFresh(outJar)) {
 			log.accept("[merge] up-to-date: " + outJar.getFileName());
 			return new ArtifactResult(coordinate, outJar, Util.sha1(outJar), Files.size(outJar));
@@ -97,7 +109,7 @@ final class MergedBaseTool {
 				"-cp", tools.toString(), MERGE_MAIN,
 				vanilla.toString(), forgePatched.toString(), neoPatched.toString(),
 				outJar.toString(), report.toString(),
-				forgeRuntime.toString(), neoforgeRuntime.toString(), libraries.toString(),
+				forgeRuntime.toString(), neoforgeRuntime.toString(), classpath(libraries),
 				forgeUserdev.toString(), neoUserdev.toString()), "merged base");
 
 		if (!Files.isRegularFile(outJar) || Files.size(outJar) == 0) {
@@ -112,9 +124,11 @@ final class MergedBaseTool {
 	/**
 	 * Patches {@code forge-runtime.jar}'s own classes so they still satisfy the interfaces the merged base
 	 * widened on NeoForge's behalf. The result is what gets staged; the input is left alone.
+	 *
+	 * @param libraries the base version's libraries, as {@link #merge} takes them
 	 */
-	ArtifactResult interop(JdkLocator.Jvm jvm, Path forgeRuntime, Path outJar, String coordinate, Path mergedGame, Path neoRuntime, Path libraries)
-			throws IOException {
+	ArtifactResult interop(JdkLocator.Jvm jvm, Path forgeRuntime, Path outJar, String coordinate, Path mergedGame,
+			Path neoRuntime, List<Path> libraries) throws IOException {
 		if (BuildStamp.isFresh(outJar)) {
 			log.accept("[interop] up-to-date: " + outJar.getFileName());
 			return new ArtifactResult(coordinate, outJar, Util.sha1(outJar), Files.size(outJar));
@@ -125,7 +139,8 @@ final class MergedBaseTool {
 		exec.runProcess(List.of(
 				jvm.javaBin().toString(),
 				"-cp", tools.toString(), INTEROP_MAIN,
-				forgeRuntime.toString(), outJar.toString(), mergedGame.toString(), neoRuntime.toString(), libraries.toString()), "cross-runtime interop");
+				forgeRuntime.toString(), outJar.toString(), mergedGame.toString(), neoRuntime.toString(), classpath(libraries)),
+				"cross-runtime interop");
 
 		if (!Files.isRegularFile(outJar) || Files.size(outJar) == 0) {
 			throw new IOException("the interop patch did not produce " + outJar);

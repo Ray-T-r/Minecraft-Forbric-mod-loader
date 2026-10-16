@@ -26,6 +26,75 @@ for f in "$VANILLA" "$FORGE" "$NEO" "$FORGE_RT" "$NEO_RT" "$FORGE_USERDEV" "$NEO
   [ -f "$f" ] || { echo "input jar not found: $f" >&2; exit 2; }
 done
 
+# The base version's libraries, each jar named, in the order its version JSON lists them: the merge's proofs follow
+# constructions into them (Guava's memoizing Supplier among them). Exactly these. This used to hand the tools the
+# whole $MC/libraries folder, where every version any launcher ever fetched sits beside 26.2's own, and the first
+# jar in sorted path order answered for a class (a player's guava-25.1-jre before 26.2's guava-33.6.0-jre); the
+# tools now refuse a directory (ContractGraph.libraries). The rule is the installer's
+# (Installer.minecraftLibraryArtifacts and MojangDownloader.downloadLibraries): each library the JSON allows on
+# this OS, at the path the JSON gives it, checked against the JSON's SHA-1. Nothing is downloaded here.
+VERSION_JSON="${VERSION_JSON:-$MC/versions/26.2/26.2.json}"
+[ -f "$VERSION_JSON" ] || { echo "base version JSON not found: $VERSION_JSON" >&2; exit 2; }
+# A function rather than a heredoc inside $( ): bash 3.2, macOS's own, mis-parses quotes in that form.
+base_libraries() {
+python3 - "$@" <<'PY'
+import hashlib, json, os, platform, sys
+version_json, root = sys.argv[1:3]
+osname = {"Darwin": "osx", "Windows": "windows"}.get(platform.system(), "linux")
+
+def allowed(lib):
+    # Mojang's rule list, read the way a launcher reads it: last matching rule wins, default allow.
+    rules = lib.get("rules")
+    if not rules:
+        return True
+    ok = False
+    for rule in rules:
+        spec = rule.get("os")
+        if spec is not None and spec.get("name") != osname:
+            continue
+        ok = rule.get("action") == "allow"
+    return ok
+
+def sha1(path):
+    digest = hashlib.sha1()
+    with open(path, "rb") as f:
+        for block in iter(lambda: f.read(1 << 20), b""):
+            digest.update(block)
+    return digest.hexdigest()
+
+with open(version_json, encoding="utf-8") as f:
+    base = json.load(f)
+root = os.path.normpath(root)
+jars, problems = [], []
+for lib in base.get("libraries", []):
+    if not isinstance(lib, dict) or not allowed(lib):
+        continue
+    artifact = (lib.get("downloads") or {}).get("artifact")
+    if not isinstance(artifact, dict) or not isinstance(artifact.get("path"), str) or not isinstance(artifact.get("url"), str):
+        continue
+    jar = os.path.normpath(os.path.join(root, artifact["path"]))
+    if not jar.startswith(root + os.sep):
+        problems.append("leaves the libraries directory: " + artifact["path"])
+    elif not os.path.isfile(jar):
+        problems.append("missing: " + jar)
+    elif isinstance(artifact.get("sha1"), str) and sha1(jar).lower() != artifact["sha1"].lower():
+        problems.append("SHA-1 differs from the version JSON: " + jar)
+    elif not isinstance(artifact.get("sha1"), str) and os.path.getsize(jar) == 0:
+        problems.append("empty: " + jar)
+    else:
+        jars.append(jar)
+if problems:
+    print("[build-merged-base] %d of the libraries %s names are not in place under %s:" % (len(problems), version_json, root), file=sys.stderr)
+    for problem in problems[:10]:
+        print("  " + problem, file=sys.stderr)
+    print("  (start this version once in a launcher, or run the Forbric installer or tools/dev.py prepare on this directory)", file=sys.stderr)
+    sys.exit(2)
+print("[build-merged-base] libraries: the %d jar(s) %s names for this OS" % (len(jars), os.path.basename(version_json)), file=sys.stderr)
+print(os.pathsep.join(jars))
+PY
+}
+LIBRARIES="$(base_libraries "$VERSION_JSON" "$MC/libraries")" || exit 2
+
 ASM="$(find "$HOME/.gradle/caches" -name 'asm-9*.jar' ! -name '*sources*' ! -name '*javadoc*' ! -name 'asm-tree*' ! -name 'asm-commons*' ! -name 'asm-analysis*' ! -name 'asm-util*' 2>/dev/null | sort -V | tail -1)"
 ASM_TREE="$(find "$HOME/.gradle/caches" -name 'asm-tree-9*.jar' ! -name '*sources*' ! -name '*javadoc*' 2>/dev/null | sort -V | tail -1)"
 # asm-commons: ClassRemapper/SimpleRemapper, used by the divergent-anonymous-sibling pass (PASS 5).
@@ -59,7 +128,7 @@ TOOL_SOURCES=(
 javac --release 17 -cp "$CP" -d "$BUILD" "${TOOL_SOURCES[@]}"
 
 echo "[build-merged-base] vanilla=$(basename "$VANILLA")  forge=$(basename "$FORGE")  neo=$(basename "$NEO")"
-java -Xmx4g -cp "$BUILD:$CP" net.forbric.tools.MergedBaseBuilder "$VANILLA" "$FORGE" "$NEO" "$OUT" "$REPORT" "$FORGE_RT" "$NEO_RT" "$MC/libraries" "$FORGE_USERDEV" "$NEO_USERDEV"
+java -Xmx4g -cp "$BUILD:$CP" net.forbric.tools.MergedBaseBuilder "$VANILLA" "$FORGE" "$NEO" "$OUT" "$REPORT" "$FORGE_RT" "$NEO_RT" "$LIBRARIES" "$FORGE_USERDEV" "$NEO_USERDEV"
 echo "[build-merged-base] merged base -> $OUT ($(du -h "$OUT" | cut -f1))"
 
 # Cross-runtime-jar interop: forge-runtime.jar's own compiled classes (wholesale, never touched by the merge
@@ -68,7 +137,7 @@ echo "[build-merged-base] merged base -> $OUT ($(du -h "$OUT" | cut -f1))"
 # single-ecosystem Forge deployment still uses standalone).
 FORGE_RT_PATCHED="${FORGE_RT_PATCHED:-$HERE/merged-base/forge-runtime-interop.jar}"
 echo "[build-merged-base] patching cross-runtime interop gaps into $FORGE_RT_PATCHED"
-java -cp "$BUILD:$CP" net.forbric.tools.RuntimeInteropPatcher "$FORGE_RT" "$FORGE_RT_PATCHED" "$OUT" "$NEO_RT" "$MC/libraries"
+java -cp "$BUILD:$CP" net.forbric.tools.RuntimeInteropPatcher "$FORGE_RT" "$FORGE_RT_PATCHED" "$OUT" "$NEO_RT" "$LIBRARIES"
 
 # What the merge left pointing at nothing. A reference into a merged class that resolves nowhere is a
 # NoSuchMethodError or NoSuchFieldError waiting for whichever mod reaches it first, named after the mod rather

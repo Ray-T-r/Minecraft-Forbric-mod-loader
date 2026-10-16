@@ -85,7 +85,7 @@ public final class MergedBaseBuilder {
 	public static void main(String[] args) throws IOException {
 		if (args.length < 4) {
 			System.err.println("usage: MergedBaseBuilder <vanilla> <forge-patched> <neo-patched> <out.jar> [report.txt]"
-					+ " [forge-runtime] [neo-runtime] [libraries] [forge-userdev] [neo-userdev]");
+					+ " [forge-runtime] [neo-runtime] [library.jar" + java.io.File.pathSeparator + "...] [forge-userdev] [neo-userdev]");
 			System.exit(2);
 		}
 		Path vanillaJar = Path.of(args[0]);
@@ -110,7 +110,9 @@ public final class MergedBaseBuilder {
 		} else {
 			System.out.println("[merge] edit splice: OFF (" + (args.length > 9 ? "-Dforbric.editSplice=off" : "no userdev patches supplied") + ")");
 		}
-		builder.run(vanillaJar, forgeJar, neoJar, outJar, report, forgeRuntimeJar, neoRuntimeJar, args.length > 7 ? Path.of(args[7]) : null);
+		// The base version's libraries, each jar named (ContractGraph.libraries): the proofs follow constructions into them.
+		builder.run(vanillaJar, forgeJar, neoJar, outJar, report, forgeRuntimeJar, neoRuntimeJar,
+				args.length > 7 ? ContractGraph.libraries(args[7]) : List.of());
 	}
 
 	private final List<String> conflicts = new ArrayList<>();
@@ -216,7 +218,7 @@ public final class MergedBaseBuilder {
 		run(vanillaJar, forgeJar, neoJar, outJar, report, forgeRuntimeJar, neoRuntimeJar, null);
 	}
 	void run(Path vanillaJar, Path forgeJar, Path neoJar, Path outJar, Path report,
-			Path forgeRuntimeJar, Path neoRuntimeJar, Path libraries) throws IOException {
+			Path forgeRuntimeJar, Path neoRuntimeJar, List<Path> libraries) throws IOException {
 		System.out.println("[merge] reading jars …");
 		Map<String, byte[]> vanilla = this.vanillaClasses = readClasses(vanillaJar);
 		Map<String, byte[]> forge = this.forgeClasses = readClasses(forgeJar);

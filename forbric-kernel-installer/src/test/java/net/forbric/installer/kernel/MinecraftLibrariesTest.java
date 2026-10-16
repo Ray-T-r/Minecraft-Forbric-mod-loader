@@ -1,5 +1,6 @@
 package net.forbric.installer.kernel;
 
+import java.io.File;
 import java.io.IOException;
 import java.io.OutputStream;
 import java.net.InetSocketAddress;
@@ -20,7 +21,8 @@ import com.sun.net.httpserver.HttpServer;
  * proved nothing and refused (gate-m17). Served from a local HTTP server: what the version JSON lists for this
  * platform lands at its own path and is verified, a file already there with the right SHA-1 is not fetched again, one
  * already there with the wrong SHA-1 is, and a download that does not verify is refused without a partial file left
- * behind.
+ * behind. And the merge is handed exactly the jars the JSON names, in its order -- not whatever else sits in the
+ * folder, where an older guava sorted first used to answer.
  */
 public final class MinecraftLibrariesTest {
 	public static void main(String[] args) throws Exception {
@@ -51,21 +53,23 @@ public final class MinecraftLibrariesTest {
 			checks++;
 
 			MojangDownloader downloader = new MojangDownloader(line -> { });
-			require(downloader.downloadLibraries(artifacts, libraries) == 1, "the library was not downloaded");
 			Path jar = libraries.resolve("com/google/guava/guava/33/guava-33.jar");
+			List<Path> got = downloader.downloadLibraries(artifacts, libraries);
+			require(requests.get() == 1 && got.equals(List.of(jar)), "the library was not downloaded: " + got);
 			require(Files.isRegularFile(jar) && java.util.Arrays.equals(Files.readAllBytes(jar), guava), "the library is not at its own path");
 			require(!Files.exists(libraries.resolve("org/lwjgl")), "another platform's library was fetched");
 			checks += 2;
 
 			int before = requests.get();
-			require(downloader.downloadLibraries(artifacts, libraries) == 0 && requests.get() == before, "a verified library was fetched again");
+			require(downloader.downloadLibraries(artifacts, libraries).equals(List.of(jar)) && requests.get() == before,
+					"a verified library was fetched again");
 			checks++;
 
 			// A file already there whose content is not what the JSON says -- same length, so only the SHA-1 can tell --
 			// is not the library. Taking it on its existence alone hands the merge the wrong bytes.
 			Files.write(jar, "A LIBRARY JAR".getBytes(StandardCharsets.UTF_8));
 			before = requests.get();
-			require(downloader.downloadLibraries(artifacts, libraries) == 1 && requests.get() == before + 1,
+			require(downloader.downloadLibraries(artifacts, libraries).equals(List.of(jar)) && requests.get() == before + 1,
 					"a library whose SHA-1 does not match was not fetched again");
 			require(java.util.Arrays.equals(Files.readAllBytes(jar), guava), "the mismatched library was not replaced by the verified one");
 			checks++;
@@ -82,11 +86,38 @@ public final class MinecraftLibrariesTest {
 			require(!Files.exists(libraries.resolve("com/example/bad/1/bad-1.jar"))
 					&& !Files.exists(libraries.resolve("com/example/bad/1/bad-1.jar.part")), "a library that does not verify left a file");
 			checks += 2;
+
+			checks += exactList(work.resolve("exact"), base, guava);
 		} finally {
 			server.stop(0);
 		}
 		System.out.println("PASS Minecraft libraries before the merge: " + checks + " checks (platform rules, verified download, cache hit,"
-				+ " mismatched file fetched again, refusal)");
+				+ " mismatched file fetched again, refusal, exactly the JSON's jars)");
+	}
+
+	/**
+	 * What the merge reads is the JSON's list, in its order, and nothing else in the folder: a player's libraries hold
+	 * every version any launcher fetched, and the old directory walk let the first in sorted path order answer.
+	 */
+	private static int exactList(Path work, String base, byte[] bytes) throws Exception {
+		Path libraries = work.resolve("libraries");
+		// Listed out of path order, so an answer that sorts instead of keeping the JSON's order shows.
+		String zlib = "org/zlib/zlib/1/zlib-1.jar", alib = "com/alib/alib/1/alib-1.jar";
+		Map<String, Object> json = new LinkedHashMap<>();
+		json.put("libraries", List.of(library(zlib, base + "z.jar", sha1(bytes), bytes.length, null),
+				library(alib, base + "a.jar", sha1(bytes), bytes.length, null)));
+		// What sits in the folder besides them: an older version of a listed library, sorting before everything.
+		Path stale = libraries.resolve("com/alib/alib/0.1/alib-0.1.jar");
+		Files.createDirectories(stale.getParent());
+		Files.write(stale, "an older version nobody listed".getBytes(StandardCharsets.UTF_8));
+
+		List<Path> jars = new MojangDownloader(line -> { }).downloadLibraries(Installer.minecraftLibraryArtifacts(json), libraries);
+		require(jars.equals(List.of(libraries.resolve(zlib), libraries.resolve(alib))),
+				"the merge is not handed exactly the JSON's jars in its order: " + jars);
+		require(!jars.contains(stale), "a jar the JSON does not name reached the merge: " + jars);
+		require(MergedBaseTool.classpath(jars).equals(libraries.resolve(zlib) + File.pathSeparator + libraries.resolve(alib)),
+				"the tools' argument is not the jars joined in order: " + MergedBaseTool.classpath(jars));
+		return 3;
 	}
 
 	private static Map<String, Object> library(String path, String url, String sha1, long size, String onlyOn) {

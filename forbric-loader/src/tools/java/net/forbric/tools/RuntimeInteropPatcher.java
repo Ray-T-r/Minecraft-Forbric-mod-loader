@@ -13,10 +13,10 @@ import org.objectweb.asm.tree.*;
  * immutable layout, constructor and public-behavior equivalence. No implementation or field name is pinned. */
 public final class RuntimeInteropPatcher {
     public static void main(String[] args)throws IOException{
-        if(args.length<4){System.err.println("usage: RuntimeInteropPatcher <runtime.jar> <out.jar> <merged-game.jar> <peer-runtime.jar> [libraries-dir]");System.exit(2);}
-        new RuntimeInteropPatcher().run(Path.of(args[0]),Path.of(args[1]),Path.of(args[2]),Path.of(args[3]),args.length>4?Path.of(args[4]):null);
+        if(args.length<4){System.err.println("usage: RuntimeInteropPatcher <runtime.jar> <out.jar> <merged-game.jar> <peer-runtime.jar> [library.jar"+File.pathSeparator+"...]");System.exit(2);}
+        new RuntimeInteropPatcher().run(Path.of(args[0]),Path.of(args[1]),Path.of(args[2]),Path.of(args[3]),args.length>4?ContractGraph.libraries(args[4]):List.of());
     }
-    void run(Path runtime,Path output,Path merged,Path peer,Path libraries)throws IOException{
+    void run(Path runtime,Path output,Path merged,Path peer,List<Path> libraries)throws IOException{
         Map<String,byte[]> own=classes(runtime),other=classes(peer),game=classes(merged);
         ContractGraph graph=new ContractGraph(List.of(own,other,game),libraries);
         Map<String,ClassNode> edited=new LinkedHashMap<>();
