@@ -435,6 +435,12 @@ public final class ForbricMixinService
 		// …and an injector anchored in a body a carrier moved behind a builder stub (new builder, hand it over, build) moves
 		// to the overload that makes its calls.
 		MixinBuilderStubRebind.adapt(node, this::mergedBaseGameCode);
+		// …and a point shifted BY a count of nodes lands on the instruction it lands on natively, where a carrier's code now
+		// stands in that stretch (Shoulder Surfing's TAIL-2 FOV override on Camera.calculateFov landed on MinecraftForge's
+		// event call, after the last read of the local it modifies). After the rebind: it reads the injector's final target.
+		// On the raw bytes, which are what Mixin counts nodes in. Before the return ordinals: a point it re-spells is counted
+		// over the merged body.
+		MixinShiftedPoints.adapt(node, this::mergedBaseNodeWithCode);
 		// …and a RETURN ordinal counted on the native body names the return of the merged body that is the same way out
 		// (the last stays the last; an early one is the one the same test decides), when the merge added or dropped exits.
 		// After the rebind: it reads the injector's final target. Before the native tail: that one reads a TAIL as written.
