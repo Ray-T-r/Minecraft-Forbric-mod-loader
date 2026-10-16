@@ -17,9 +17,6 @@
 package net.forbric.kernel.fabric;
 
 import java.io.File;
-import java.lang.invoke.MethodHandle;
-import java.lang.invoke.MethodHandleProxies;
-import java.lang.invoke.MethodHandles;
 import java.lang.reflect.Field;
 import java.lang.reflect.Method;
 import java.lang.reflect.Modifier;
@@ -675,8 +672,13 @@ public final class KernelFabricLoader implements FabricLoader {
 				}
 
 				// A method reference can satisfy any functional interface; the exact shape is checked on construction.
+				// Static or instance alike, and `::<init>` names the constructors, which getDeclaredMethods never lists:
+				// leaving that out here dropped such an entrypoint before construction was ever tried.
 				for (Method method : owner.getDeclaredMethods()) {
 					if (method.getName().equals(member)) return type.isInterface();
+				}
+				if (KernelLanguageAdapters.CONSTRUCTOR.equals(member)) {
+					return type.isInterface() && owner.getDeclaredConstructors().length > 0;
 				}
 
 				return false;
@@ -766,35 +768,8 @@ public final class KernelFabricLoader implements FabricLoader {
 				return KernelLanguageAdapters.get(decl.adapter()).create(provider, decl.value(), type);
 			}
 
-			String v = decl.value();
-			int sep = v.indexOf("::");
-
-			if (sep < 0) {
-				Class<?> cls = loadClass(v);
-				return cls.getDeclaredConstructor().newInstance();
-			}
-
-			Class<?> owner = loadClass(v.substring(0, sep));
-			String member = v.substring(sep + 2);
-
-			for (Field field : owner.getDeclaredFields()) {
-				if (field.getName().equals(member) && Modifier.isStatic(field.getModifiers())) {
-					field.setAccessible(true);
-					return field.get(null);
-				}
-			}
-
-			for (Method method : owner.getDeclaredMethods()) {
-				if (!method.getName().equals(member) || !Modifier.isStatic(method.getModifiers())) continue;
-
-				method.setAccessible(true);
-				MethodHandle handle = MethodHandles.lookup().unreflect(method);
-				// Binds the static method to the requested functional interface without generating a class in the
-				// mod's package (LambdaMetafactory would need a lookup inside the mod's own class).
-				return MethodHandleProxies.asInterfaceInstance(type, handle);
-			}
-
-			throw new NoSuchMethodException("no static member '" + member + "' on " + owner.getName());
+			// Fabric's DefaultLanguageAdapter, through the class this declaration already resolved for provides().
+			return KernelLanguageAdapters.resolveDefault(decl.value(), type, this::loadClass);
 		}
 
 		/**

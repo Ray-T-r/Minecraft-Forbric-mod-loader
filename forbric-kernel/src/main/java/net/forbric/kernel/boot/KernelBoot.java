@@ -1145,6 +1145,10 @@ public final class KernelBoot {
 		// most likely early asker is a guest mixin plugin during prepareConfigs, which is the next line but one.
 		PassiveSeeder.publishForgeLoadingList(loader, gameDir.resolve("mods"));
 
+		// Fabric Loader's freeze(): every declared language adapter is constructed before Mixin starts, named by an
+		// entrypoint or not. After the seeding above, so the Mods screen's rows exist for a failure to land on.
+		KernelFabricEcosystem.constructLanguageAdapters();
+
 		// Mixin LAST in the pipeline but FIRST in time: installed before anything defines a targeted class.
 		//
 		// Fabric first, Forge-family APPENDED. Within one environment Mixin selects by priority (the config's, then

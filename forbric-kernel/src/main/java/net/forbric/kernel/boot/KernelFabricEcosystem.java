@@ -46,6 +46,7 @@ import net.forbric.kernel.fabric.EntrypointDispatchScan;
 import net.forbric.kernel.fabric.FabricModDiscovery;
 import net.forbric.kernel.mixin.MixinConfigOwners;
 import net.forbric.kernel.fabric.KernelFabricLoader;
+import net.forbric.kernel.fabric.KernelLanguageAdapters;
 import net.forbric.kernel.fabric.KernelModContainer;
 import net.forbric.kernel.fabric.KernelCustomValue;
 import net.forbric.kernel.fabric.KernelModMetadata;
@@ -320,6 +321,49 @@ public final class KernelFabricEcosystem {
 	/** Points entrypoint resolution at the transforming loader. Must precede any entrypoint invocation. */
 	public static void bindGameLoader(ClassLoader gameLoader) {
 		if (loader != null) loader.setGameLoader(gameLoader);
+	}
+
+	/**
+	 * Constructs every language adapter a Fabric mod declares, in mod order, where Fabric Loader does: its
+	 * {@code freeze()} builds them all before Mixin starts and before {@code preLaunch}, whether or not any
+	 * entrypoint names them.
+	 *
+	 * <p>Some adapters exist for their constructor alone. Configured Defaults copies a pack's default config files
+	 * from {@code config/defaults} there and declares no entrypoint; built only when an entrypoint asked, it never
+	 * ran, and a pack's defaults never arrived — while the launch looked healthy. Before Mixin, as on Fabric, because
+	 * what such a constructor writes (config files) is read as early as a mixin config plugin.
+	 *
+	 * <p>Must follow {@link #bindGameLoader}: an adapter is a mod class and loads through the game loader. Classes
+	 * loaded here are defined before Mixin is installed and cannot be woven — the same as on Fabric, where they load
+	 * before {@code FabricMixinBootstrap.init}. An adapter that throws fails its mod and the entrypoints naming it; on
+	 * Fabric it ends the launch.
+	 */
+	public static void constructLanguageAdapters() {
+		if (loader == null) return;
+		if (!KernelLanguageAdapters.eager()) {
+			ForbricLog.info("[Forbric/Fabric] -D%s=off — language adapters are constructed when an entrypoint first "
+					+ "names them, so one that works in its constructor alone never runs", KernelLanguageAdapters.EAGER_PROPERTY);
+			return;
+		}
+
+		List<String> names = new ArrayList<>();
+		for (ModContainer mod : loader.getAllMods()) {
+			if (!(mod instanceof KernelModContainer kernel)) continue;
+			for (String name : kernel.getMetadata().getLanguageAdapters().keySet()) {
+				if (!names.contains(name)) names.add(name);
+			}
+		}
+		if (names.isEmpty()) return;
+
+		List<KernelLanguageAdapters.Failure> failures = KernelLanguageAdapters.constructAll(names);
+		for (KernelLanguageAdapters.Failure failure : failures) {
+			ForbricLog.error("[Forbric/Fabric] the language adapter '" + failure.name() + "' (" + failure.className()
+					+ ") of " + failure.modId() + " could not be constructed", failure.cause());
+			ModCatalog.mark(failure.modId(), ModCatalog.Status.FAILED,
+					"its language adapter '" + failure.name() + "' could not be constructed");
+		}
+		ForbricLog.info("[Forbric/Fabric] constructed %d of %d declared language adapter(s) before Mixin, as Fabric "
+				+ "Loader's freeze does", names.size() - failures.size(), names.size());
 	}
 
 	/**
