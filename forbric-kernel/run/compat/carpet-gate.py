@@ -14,7 +14,10 @@ import zipfile
 
 CHECKS = 27
 # Exactly these fail without the adapter (-Dforbric.playerWorldCallbacks=off): each needs a callback it restores.
-CARPET = {'fill.shape.false', 'fill.direct.lamp.false', 'fluid.blackstone.true', 'fluid.deepslate.true',
+# fill.direct.lamp.false is not one any more: MixinRetarget's helper-edge rule carries Level_fillUpdatesMixin's
+# updateNeighborsMaybe redirect from setBlock onto markAndNotifyBlock on its own, so it passes with the adapter off too
+# (measured on HEAD 4f83bc06 and after; native Fabric passes it as well).
+CARPET = {'fill.shape.false', 'fluid.blackstone.true', 'fluid.deepslate.true',
           'fluid.blackstone.neighbor', 'fluid.deepslate.neighbor',
           'swap.scarpetCancel.true', 'swap.scarpetCancel.false', 'swap.scarpetClearsMain', 'swap.nativeVeto',
           'break.creative.scarpetCancel.true', 'break.creative.scarpetCancel.false',
@@ -118,7 +121,9 @@ def main():
             if failed != CARPET:
                 raise RuntimeError(f'Negative control failed: unexpected {sorted(failed - CARPET)}, '
                                    f'did not fail {sorted(CARPET - failed)}')
-            if not {'Level_fillUpdatesMixin', 'ServerPlayerGameMode_scarpetEventsMixin'} <= set(lines) or not rows:
+            # Read off the compatibility report, not the console's wording (it no longer prints "applies only partially").
+            reported = {m for m in ADAPTED for r in rows if re.search(rf'\.{m}(#|$)', r)}
+            if not {'Level_fillUpdatesMixin', 'ServerPlayerGameMode_scarpetEventsMixin'} <= reported:
                 raise RuntimeError(f'Negative control failed: the unadapted census reported rows={rows} lines={lines}')
         else:
             confirmed = [f for f in compatibility['findings'] if f.get('modId') == 'carpet' and f.get('confidence') == 'CONFIRMED']
