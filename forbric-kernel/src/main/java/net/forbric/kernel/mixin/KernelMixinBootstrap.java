@@ -134,10 +134,19 @@ public final class KernelMixinBootstrap {
 		loader.knotDelegate().attach();
 		var codecReturns = new net.forbric.kernel.transform.PostMixinCodecReturnArbitration();
 		var callbackPriority = new net.forbric.kernel.transform.PostMixinCallbackPriority();
+		// The transfer audit proves an interface-default delegate against the same raw game classes the merged-base
+		// repair read when it dropped the ones it could prove (KernelBoot hands it this lookup).
+		java.util.function.Function<String, byte[]> gameClasses = path -> {
+			try (var in = loader.getGameResourceAsStream(path)) {
+				return in == null ? null : in.readAllBytes();
+			} catch (java.io.IOException unreadable) {
+				return null;
+			}
+		};
 		loader.setMixinTransformer((name, bytes) -> net.forbric.kernel.transform.ForgeTransferShapeAudit.certify(name,
 				callbackPriority.transform(name, codecReturns.transform(name, conflicts.transform(name, bytes, PostMixinFixups.apply(name,
 						net.forbric.kernel.transform.NativeCoremodParity.apply(name,
-								MixinWeaverSlot.currentOr(transformer).transformClassBytes(name, name, bytes)))), null), null)));
+								MixinWeaverSlot.currentOr(transformer).transformClassBytes(name, name, bytes)))), null), null), gameClasses));
 
 		// Leave PREINIT so the registered configs are prepared and their targets become weavable.
 		gotoPhase(MixinEnvironment.Phase.INIT);

@@ -17,6 +17,7 @@ import java.util.zip.ZipFile;
 import net.forbric.kernel.TestFixtures;
 import net.forbric.kernel.TestFixtures.Fixture;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.parallel.ResourceLock;
 import org.objectweb.asm.ClassReader;
 import org.objectweb.asm.ClassWriter;
 import org.objectweb.asm.Opcodes;
@@ -37,6 +38,7 @@ import org.objectweb.asm.tree.MethodNode;
  * behind the first. This test reads every class, so a regenerated early-returns table that touches an audited
  * class fails here, listing all of them.
  */
+@ResourceLock("native-game-references")
 class ForgeTransferShapeAuditStagedTest {
 	private static final VanillaEarlyReturns EARLY_RETURNS = new VanillaEarlyReturns();
 
@@ -64,12 +66,15 @@ class ForgeTransferShapeAuditStagedTest {
 		return found;
 	}
 
-	private static Map<String, String> unreviewed(Map<String, byte[]> classes) {
+	/** Each class's fingerprint as the game takes it: with the merged-base repair's proof over the staged jars. */
+	private static Map<String, String> unreviewed(Map<String, byte[]> classes) throws Exception {
 		Map<String, String> bad = new TreeMap<>();
-		classes.forEach((name, bytes) -> {
-			String fingerprint = ForgeTransferShapeAudit.fingerprint(bytes);
-			if (!ForgeTransferShapeAudit.reviewed(name, fingerprint)) bad.put(name, fingerprint);
-		});
+		try (StagedGameClasses game = StagedGameClasses.open()) {
+			classes.forEach((name, bytes) -> {
+				String fingerprint = ForgeTransferShapeAudit.fingerprint(bytes, game.proof());
+				if (!ForgeTransferShapeAudit.reviewed(name, fingerprint)) bad.put(name, fingerprint);
+			});
+		}
 		return bad;
 	}
 
@@ -80,7 +85,8 @@ class ForgeTransferShapeAuditStagedTest {
 	}
 
 	@Test void everyAuditedClassIsAReviewedShapeAsMerged() throws Exception {
-		// -Dforbric.vanillaEarlyReturns=off loads exactly these bytes.
+		// -Dforbric.vanillaEarlyReturns=off loads these bytes, less the merge delegates the merged-base repair proves
+		// are the inherited default, which the fingerprint folds by that same proof.
 		assertEquals(Map.of(), unreviewed(staged()), "class -> observed fingerprint");
 	}
 
@@ -98,25 +104,33 @@ class ForgeTransferShapeAuditStagedTest {
 		Map<String, byte[]> merged = staged();
 		Map<String, byte[]> restored = restored(merged);
 		TreeSet<String> edited = new TreeSet<>();
-		merged.forEach((name, bytes) -> {
-			if (!ForgeTransferShapeAudit.fingerprint(bytes).equals(ForgeTransferShapeAudit.fingerprint(restored.get(name))))
-				edited.add(name);
-		});
+		try (StagedGameClasses game = StagedGameClasses.open()) {
+			merged.forEach((name, bytes) -> {
+				if (!ForgeTransferShapeAudit.fingerprint(bytes, game.proof()).equals(ForgeTransferShapeAudit.fingerprint(restored.get(name), game.proof())))
+					edited.add(name);
+			});
+		}
 		assertEquals(new TreeSet<>(ForgeTransferShapeAudit.restoredClasses()), edited);
 	}
 
 	@Test void certifyMarksTheRestoredItemStackAndStillRefusesAChangedOne() throws Exception {
 		String name = "net.minecraft.world.item.ItemStack";
 		byte[] restored = restored(staged()).get(name);
+		try (StagedGameClasses game = StagedGameClasses.open()) {
+			certifyMarksTheRestoredItemStackAndStillRefusesAChangedOne(game, name, restored);
+		}
+	}
+
+	private static void certifyMarksTheRestoredItemStackAndStillRefusesAChangedOne(StagedGameClasses game, String name, byte[] restored) throws Exception {
 		Path dump = Files.createTempDirectory("transfer-shape-dump");
 		String previous = System.setProperty("forbric.transferShapeDump", dump.toString());
 		try {
-			assertTrue(marked(ForgeTransferShapeAudit.certify(name, restored)), "the restored ItemStack must be certified");
+			assertTrue(marked(ForgeTransferShapeAudit.certify(name, restored, game.resources())), "the restored ItemStack must be certified");
 		} finally {
 			if (previous == null) System.clearProperty("forbric.transferShapeDump"); else System.setProperty("forbric.transferShapeDump", previous);
 		}
 		// The dump is the audit's only local evidence, and reviewed != observed in it has always meant "refused".
-		String observed = ForgeTransferShapeAudit.fingerprint(restored);
+		String observed = ForgeTransferShapeAudit.fingerprint(restored, game.proof());
 		assertEquals(List.of("reviewed=" + observed, "observed=" + observed, "certified=true"),
 				Files.readAllLines(dump.resolve(name.replace('.', '/') + ".class.audit.txt")));
 
@@ -133,9 +147,9 @@ class ForgeTransferShapeAuditStagedTest {
 		ClassWriter writer = new ClassWriter(0);
 		node.accept(writer);
 		byte[] tampered = writer.toByteArray();
-		assertNotEquals(ForgeTransferShapeAudit.fingerprint(restored), ForgeTransferShapeAudit.fingerprint(tampered),
+		assertNotEquals(ForgeTransferShapeAudit.fingerprint(restored, game.proof()), ForgeTransferShapeAudit.fingerprint(tampered, game.proof()),
 				"the change did not reach anything the fingerprint covers, so this control proves nothing");
-		assertFalse(marked(ForgeTransferShapeAudit.certify(name, tampered)), "a changed transfer-critical body was certified");
+		assertFalse(marked(ForgeTransferShapeAudit.certify(name, tampered, game.resources())), "a changed transfer-critical body was certified");
 	}
 
 	private static boolean marked(byte[] bytes) {

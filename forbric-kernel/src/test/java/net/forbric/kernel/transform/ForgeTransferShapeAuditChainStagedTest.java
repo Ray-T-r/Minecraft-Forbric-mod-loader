@@ -7,11 +7,8 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import java.io.IOException;
 import java.io.InputStream;
 import java.lang.reflect.Constructor;
-import java.lang.reflect.Method;
 import java.lang.reflect.ParameterizedType;
 import java.lang.reflect.Type;
-import java.net.URL;
-import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -22,13 +19,8 @@ import java.util.TreeMap;
 import java.util.TreeSet;
 import java.util.function.Function;
 import java.util.function.Predicate;
-import java.util.zip.ZipFile;
 
 import net.fabricmc.api.EnvType;
-import net.forbric.kernel.TestFixtures;
-import net.forbric.kernel.TestFixtures.Fixture;
-import net.forbric.kernel.classloading.ForbricClassLoader;
-import net.forbric.kernel.mixin.NativeGameReferences;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.parallel.ResourceLock;
 import org.objectweb.asm.ClassReader;
@@ -68,37 +60,8 @@ class ForgeTransferShapeAuditChainStagedTest {
 	/** {@code chain.register(phase, new transformer(...), sortIndex)} at instruction {@code position} of KernelBoot. */
 	record Registration(String transformer, TransformPhase phase, int sortIndex, String constructor, long position) { }
 
-	private static List<Path> jars() {
-		Path root = TestFixtures.stagedRoot();
-		Path merged = root.resolve("merged-base/patched-mc-merged-26.2.jar").normalize();
-		Path interop = root.resolve("merged-base/forge-runtime-interop.jar").normalize();
-		Path forge = Files.isRegularFile(interop) ? interop : root.resolve("forge-runtime/forge-runtime.jar").normalize();
-		Path neo = root.resolve("neoforge-runtime/neoforge-runtime.jar").normalize();
-		TestFixtures.requireFiles(Fixture.STAGED, "the merged base and both carriers", merged, forge, neo);
-		return List.of(merged, forge, neo);
-	}
-
-	/**
-	 * A game resource, asked for as {@code a/b/C.class} or as a class name in either spelling: the staged jars first,
-	 * then the JDK and libraries, which the game loader serves too. Without the second, no hierarchy reaches
-	 * java/lang/Object and the merged-base repair can prove nothing.
-	 */
-	private static byte[] resource(List<Path> jars, String name) {
-		String entry = name.endsWith(".class") || name.contains("/") && name.contains(".") ? name : name.replace('.', '/') + ".class";
-		for (Path jar : jars) {
-			try (ZipFile zip = new ZipFile(jar.toFile())) {
-				var found = zip.getEntry(entry);
-				if (found != null) try (InputStream in = zip.getInputStream(found)) { return in.readAllBytes(); }
-			} catch (IOException unreadable) {
-				return null;
-			}
-		}
-		try (InputStream in = ForgeTransferShapeAuditChainStagedTest.class.getClassLoader().getResourceAsStream(entry)) {
-			return in == null ? null : in.readAllBytes();
-		} catch (IOException unreadable) {
-			return null;
-		}
-	}
+	private static List<Path> jars() { return StagedGameClasses.jars(); }
+	private static byte[] resource(List<Path> jars, String name) { return StagedGameClasses.resource(jars, name); }
 
 	/** Every direct {@code chain.register(PHASE, new X(...)[, n])} in KernelBoot, in registration order. */
 	static List<Registration> registrations() throws IOException {
@@ -166,13 +129,12 @@ class ForgeTransferShapeAuditChainStagedTest {
 	}
 
 	@Test void everyAuditedClassIsCertifiedAfterKernelBootsPreMixinChain() throws Exception {
-		List<Path> jars = jars();
 		Map<String, String> refused = new TreeMap<>();
 		TreeSet<String> rewritten = new TreeSet<>();
-		try (ForbricClassLoader loader = new ForbricClassLoader(jars.stream().map(ForgeTransferShapeAuditChainStagedTest::url).toArray(URL[]::new),
-				getClass().getClassLoader())) {
-			// The merged-base repair proves a dropped delegate against the merged base's native-reference index, as at boot.
-			bind(loader);
+		// The merged-base repair proves a dropped delegate against the merged base's native-reference index, as at boot,
+		// and the audit is handed the same raw game classes KernelMixinBootstrap hands it.
+		try (StagedGameClasses game = StagedGameClasses.open()) {
+			List<Path> jars = game.paths();
 			List<String> registered = new ArrayList<>(), skipped = new ArrayList<>();
 			TransformChain chain = chain(jars, registered, skipped);
 			System.out.println("[TransferAuditChain] " + registered.size() + " transformer(s) registered; not reproducible here: " + skipped);
@@ -183,12 +145,10 @@ class ForgeTransferShapeAuditChainStagedTest {
 					assertTrue(staged != null, name + " is not in the staged jars: the fixture has drifted");
 					byte[] defined = chain.applyBeforeMixin(name, staged, context);
 					if (!Arrays.equals(staged, defined)) rewritten.add(name);
-					if (!marked(ForgeTransferShapeAudit.certify(name, defined)))
-						refused.put(side + " " + name, ForgeTransferShapeAudit.fingerprint(defined));
+					if (!marked(ForgeTransferShapeAudit.certify(name, defined, game.resources())))
+						refused.put(side + " " + name, ForgeTransferShapeAudit.fingerprint(defined, game.proof()));
 				}
 			}
-		} finally {
-			bind(null);
 		}
 		// The chain must really have rewritten the classes the gates met, or this proves nothing about them.
 		assertTrue(rewritten.containsAll(List.of("net.minecraft.world.item.ItemStack", "net.minecraftforge.fluids.FluidStack")),
@@ -201,16 +161,8 @@ class ForgeTransferShapeAuditChainStagedTest {
 		// Folding the kernel's own thunks back to the handle they replaced must not make the audit blind to where a
 		// thunk really goes: the same chain output, with the thunk behind FluidStack's isFluidEqual method reference
 		// forwarding to isFluidStackIdentical instead, folds to a different handle and is refused.
-		List<Path> jars = jars();
 		String name = "net.minecraftforge.fluids.FluidStack";
-		byte[] defined;
-		try (ForbricClassLoader loader = new ForbricClassLoader(jars.stream().map(ForgeTransferShapeAuditChainStagedTest::url).toArray(URL[]::new),
-				getClass().getClassLoader())) {
-			bind(loader);
-			defined = chain(jars, new ArrayList<>(), new ArrayList<>()).applyBeforeMixin(name, resource(jars, name), new TransformContext(EnvType.SERVER, false, "named"));
-		} finally {
-			bind(null);
-		}
+		byte[] defined = defined(name);
 		assertTrue(marked(ForgeTransferShapeAudit.certify(name, defined)), "premise: the chain's own FluidStack is certified");
 		ClassNode node = new ClassNode();
 		new ClassReader(defined).accept(node, 0);
@@ -226,14 +178,63 @@ class ForgeTransferShapeAuditChainStagedTest {
 		assertFalse(marked(ForgeTransferShapeAudit.certify(name, writer.toByteArray())), "a thunk forwarding elsewhere was certified");
 	}
 
-	private static void bind(ForbricClassLoader loader) throws ReflectiveOperationException {
-		Method bind = NativeGameReferences.class.getDeclaredMethod("bind", ForbricClassLoader.class);
-		bind.setAccessible(true);
-		bind.invoke(null, loader);
+	/**
+	 * The fold of an interface-default delegate is the merged-base repair's own proof, and only that. ItemStack as the
+	 * chain defines it has had getOrDefault and has dropped, because the repair proved DataComponentHolder's defaults
+	 * are what every call reaches. The same class with a delegate the proof does NOT allow is a different class:
+	 * getOrDefault through ItemInstance runs DataComponentGetter's body, not DataComponentHolder's, and get through
+	 * ItemInstance reaches only an abstract declaration, so every call to that transfer root throws
+	 * AbstractMethodError. Both must be refused, though each is a pure {@code I.super.m()} to a direct interface.
+	 */
+	@Test void aDelegateTheRepairCannotProveIsRefusedOnTheRealItemStack() throws Exception {
+		String name = "net.minecraft.world.item.ItemStack";
+		byte[] merged, defined;
+		try (StagedGameClasses game = StagedGameClasses.open()) {
+			merged = game.bytes(name);
+			defined = chain(game.paths(), new ArrayList<>(), new ArrayList<>()).applyBeforeMixin(name, merged, new TransformContext(EnvType.SERVER, false, "named"));
+			assertTrue(marked(ForgeTransferShapeAudit.certify(name, defined, game.resources())), "premise: the chain's own ItemStack is certified");
+			// The positive fold: the merged class, its delegates still in place, digests as the class the repair leaves.
+			assertTrue(method(node(merged), "getOrDefault", GET_OR_DEFAULT) != null && method(node(defined), "getOrDefault", GET_OR_DEFAULT) == null,
+					"premise: the merge introduced getOrDefault and the chain's repair dropped it");
+			ClassNode repaired = node(merged);
+			assertTrue(game.proof().dropDefaultStubs(repaired) && method(repaired, "getOrDefault", GET_OR_DEFAULT) == null, "premise: the repair alone drops it");
+			org.objectweb.asm.ClassWriter repairedWriter = new org.objectweb.asm.ClassWriter(0);
+			repaired.accept(repairedWriter);
+			assertEquals(ForgeTransferShapeAudit.fingerprint(repairedWriter.toByteArray(), game.proof()), ForgeTransferShapeAudit.fingerprint(merged, game.proof()));
+			assertTrue(marked(ForgeTransferShapeAudit.certify(name, merged, game.resources())), "the merged ItemStack, proved, was refused");
+			for (String[] root : new String[][] { { "getOrDefault", GET_OR_DEFAULT }, { "get", "(Lnet/minecraft/core/component/DataComponentType;)Ljava/lang/Object;" } }) {
+				ClassNode added = node(defined);
+				assertTrue(method(added, root[0], root[1]) == null, "premise: the defined ItemStack inherits " + root[0]);
+				NativeMergeFixtures.delegate(added, "net/minecraft/world/item/ItemInstance", root[0], root[1]);
+				assertTrue(NativeMergeShapeRepair.delegate(method(added, root[0], root[1])) != null && added.interfaces.contains("net/minecraft/world/item/ItemInstance"),
+						"premise: " + root[0] + " is a pure delegate to a direct interface, the shape the old fold took on sight");
+				org.objectweb.asm.ClassWriter writer = new org.objectweb.asm.ClassWriter(0);
+				added.accept(writer);
+				assertFalse(marked(ForgeTransferShapeAudit.certify(name, writer.toByteArray(), game.resources())),
+						root[0] + " through ItemInstance.super was certified");
+			}
+		}
+		// No hierarchy, no proof: the merged class keeps its delegates in the digest and is not the reviewed shape.
+		assertFalse(marked(ForgeTransferShapeAudit.certify(name, merged)), "a delegate was folded without a hierarchy to prove it");
 	}
 
-	private static URL url(Path jar) {
-		try { return jar.toUri().toURL(); } catch (java.net.MalformedURLException impossible) { throw new AssertionError(impossible); }
+	private static final String GET_OR_DEFAULT = "(Lnet/minecraft/core/component/DataComponentType;Ljava/lang/Object;)Ljava/lang/Object;";
+
+	/** {@code name} from the staged jars, through KernelBoot's pre-Mixin chain, server side. */
+	private static byte[] defined(String name) throws Exception {
+		try (StagedGameClasses game = StagedGameClasses.open()) {
+			return chain(game.paths(), new ArrayList<>(), new ArrayList<>()).applyBeforeMixin(name, game.bytes(name), new TransformContext(EnvType.SERVER, false, "named"));
+		}
+	}
+
+	private static ClassNode node(byte[] bytes) {
+		ClassNode node = new ClassNode();
+		new ClassReader(bytes).accept(node, 0);
+		return node;
+	}
+
+	private static MethodNode method(ClassNode node, String name, String desc) {
+		return node.methods.stream().filter(m -> m.name.equals(name) && m.desc.equals(desc)).findFirst().orElse(null);
 	}
 
 	private static boolean marked(byte[] bytes) {

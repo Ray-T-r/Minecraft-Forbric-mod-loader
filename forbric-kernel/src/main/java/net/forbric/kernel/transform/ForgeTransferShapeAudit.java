@@ -12,6 +12,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.function.Function;
 
 import org.objectweb.asm.ClassReader;
 import org.objectweb.asm.ClassWriter;
@@ -58,9 +59,12 @@ public final class ForgeTransferShapeAudit {
 			Map.entry("net.minecraftforge.fluids.FluidStack", "87cd29310cdb4e2ec664585e20361e48d66945847eda6f7c8e6f86d4f3c57262"),
 			Map.entry("net.minecraftforge.common.capabilities.CapabilityProvider", "caea2630c926db9524090cef952d2e31925f68297e23022ca9c62087e4b65ddb"),
 			Map.entry("net.minecraftforge.common.capabilities.CapabilityProvider$ItemStacks", "a8819ec238eacbeda5c62d3f0674f2e9dc5389d651348b743c32039ae77f042d"),
-			// ItemStack and PatchedDataComponentMap digest their interface-default delegates as the inherited default
-			// (foldKernelRewrites). The reviewed bytes did not change: the same merged classes digested 430a01ce… and
-			// ec5db24d… before that fold, and their early-return shapes below 7691152c… and f9504ecc….
+			// ItemStack and PatchedDataComponentMap digest as the merged-base repair leaves them (foldKernelRewrites):
+			// without the delegates it proves are the inherited default, ItemStack's getOrDefault, has and getData and
+			// PatchedDataComponentMap's has. The reviewed bytes did not change: with those delegates in, the same merged
+			// classes digest 430a01ce… and ec5db24d…, and their early-return shapes below 7691152c… and f9504ecc….
+			// ItemStack's other sixteen delegates and Item's twenty-one settle a MinecraftForge/NeoForge default
+			// conflict, so nothing proves them and none folds; none is reachable from a root either.
 			Map.entry("net.minecraft.world.item.ItemStack", "1f199aa1e2cb6ce66e1e6e57a3432191f613fd2ac29a3de01bc65b534d5d0feb"),
 			Map.entry("net.minecraft.world.item.Item", "8c056287f55105172282acf6b74bfd94055060e8acfb0bf2fa4788bb4bd9fb1e"),
 			Map.entry("net.minecraft.core.NonNullList", "366927e03949e7622b9484fb23c9d20dc2db0d75d1886b9ebe067c209d91e326"),
@@ -106,9 +110,16 @@ public final class ForgeTransferShapeAudit {
 	static Set<String> auditedClasses() { return AUDITED.keySet(); }
 	static Set<String> restoredClasses() { return RESTORED.keySet(); }
 
-	public static byte[] certify(String name, byte[] bytes) {
+	/** {@link #certify(String, byte[], Function)} with no hierarchy to prove a delegate against, so none is folded. */
+	public static byte[] certify(String name, byte[] bytes) { return certify(name, bytes, null); }
+	/**
+	 * @param resources the game's raw class files by resource path ({@code a/b/C.class}), from which
+	 *                  {@link NativeMergeShapeRepair} proves which interface-default delegates fold; null proves none
+	 */
+	public static byte[] certify(String name, byte[] bytes, Function<String, byte[]> resources) {
 		String expected = AUDITED.get(name); if (expected == null || bytes == null) return bytes;
-		String actual = fingerprint(bytes); boolean approved = reviewed(name, actual);
+		String actual = fingerprint(bytes, resources == null ? null : NativeMergeShapeRepair.production(null, resources));
+		boolean approved = reviewed(name, actual);
 		dump(name, bytes, actual.equals(RESTORED.get(name)) ? actual : expected, actual, approved);
 		if (approved) DECLINED.remove(name); else DECLINED.put(name, "transfer-critical bytecode differs from the reviewed 26.2 shape (" + actual + ")");
 		ClassNode node = new ClassNode(); new ClassReader(bytes).accept(node, 0);
@@ -134,10 +145,13 @@ public final class ForgeTransferShapeAudit {
 			net.forbric.kernel.util.ForbricLog.warn("[Forbric/TransferAudit] could not dump %s: %s", name, failure.toString());
 		}
 	}
-	static String fingerprint(byte[] bytes) {
+	/** The fingerprint with no hierarchy to prove a delegate against, so none is folded. */
+	static String fingerprint(byte[] bytes) { return fingerprint(bytes, null); }
+	/** @param proof what proves an interface-default delegate is the inherited default; null proves none */
+	static String fingerprint(byte[] bytes, NativeMergeShapeRepair proof) {
 		ClassNode node = new ClassNode(); new ClassReader(bytes).accept(node, ClassReader.SKIP_DEBUG | ClassReader.SKIP_FRAMES);
 		node.methods.removeIf(method -> method.name.equals(MARKER));
-		foldKernelRewrites(node);
+		foldKernelRewrites(node, proof);
 		canonicalizeErasedClassSignature(node);
 		normalizeKnownNonTransferRepair(node);
 		Set<String> roots = ROOTS.get(node.name.replace('/', '.'));
@@ -175,18 +189,19 @@ public final class ForgeTransferShapeAudit {
 	 * <li>{@link PredicateGetterResultRecorder}: {@code DUP; ALOAD 0; LDC site; INVOKESTATIC capture} right before
 	 * an ARETURN hands the kernel a copy of the value being returned and leaves the value as it was. Stripped, and the
 	 * method's max stack computed again, since the recorder computed it again.</li>
-	 * <li>An interface-default delegate, {@code public R m(A a) { return I.super.m(a); }} for a direct interface
-	 * {@code I}: it and the inherited default are one dispatch target, and {@link NativeMergeShapeRepair} drops the
-	 * delegates the merge introduced once the hierarchy proves it. Both shapes digest as the inherited default.</li>
+	 * <li>{@link NativeMergeShapeRepair#dropDefaultStubs}: an interface-default delegate
+	 * {@code public R m(A a) { return I.super.m(a); }} the merge introduced, dropped once the hierarchy proves that
+	 * removing it leaves every call dispatching to the same default. The fold asks that same proof
+	 * ({@link NativeMergeShapeRepair#defaultStubs}) and removes exactly what it names, so the class with such a
+	 * delegate and the class without it digest alike. Nothing else that looks like a delegate folds: one that bypasses
+	 * a superclass implementation, picks a less specific or conflicting default, or reaches an abstract method is a
+	 * different dispatch target and stays in the digest. Without a hierarchy ({@code proof} null) none folds.</li>
 	 * </ul>
 	 */
-	static void foldKernelRewrites(ClassNode node) {
+	static void foldKernelRewrites(ClassNode node, NativeMergeShapeRepair proof) {
 		foldLambdaThunks(node);
 		stripPredicateGetterRecords(node);
-		node.methods.removeIf(method -> {
-			MethodInsnNode call = NativeMergeShapeRepair.delegate(method);
-			return call != null && node.interfaces.contains(call.owner);
-		});
+		if (proof != null) node.methods.removeAll(proof.defaultStubs(node));
 	}
 	private static void foldLambdaThunks(ClassNode node) {
 		Map<String, MethodInsnNode> thunks = new java.util.HashMap<>();

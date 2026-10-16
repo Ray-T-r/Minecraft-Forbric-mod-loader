@@ -5,6 +5,7 @@ import java.nio.file.Path;
 import java.util.List;
 
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.parallel.ResourceLock;
 import org.objectweb.asm.ClassReader;
 import org.objectweb.asm.ClassWriter;
 import org.objectweb.asm.tree.ClassNode;
@@ -135,16 +136,19 @@ class TransferTransactionHooksTest {
 					"even an existing marker cannot approve changed executable bytes");
 		}
 	}
-	@Test void everyRequiredHelperMatchesTheReviewedCarrierAndGameShapes() throws Exception {
+	@Test @ResourceLock("native-game-references") void everyRequiredHelperMatchesTheReviewedCarrierAndGameShapes() throws Exception {
 		Path stage = TestFixtures.stagedRoot();
 		var helpers = new java.util.LinkedHashSet<>(ForgeTransferShapeAudit.ITEM_HELPERS); helpers.addAll(ForgeTransferShapeAudit.FLUID_HELPERS);
 		helpers.addAll(ForgeTransferShapeAudit.ENERGY_HELPERS);
-		for (String name : helpers) {
-			Path jar = name.startsWith("net.minecraftforge.") ? stage.resolve("forge-runtime/forge-runtime.jar")
-					: name.startsWith("net.neoforged.") ? stage.resolve("neoforge-runtime/neoforge-runtime.jar")
-					: stage.resolve("merged-base/patched-mc-merged-26.2.jar");
-			byte[] approved = ForgeTransferShapeAudit.certify(name, bytes(jar, name));
-			assertTrue(node(approved).methods.stream().anyMatch(method -> method.name.equals(ForgeTransferShapeAudit.MARKER)), name);
+		// The game classes the audit proves a merge delegate against, as KernelMixinBootstrap hands them over.
+		try (StagedGameClasses game = StagedGameClasses.open()) {
+			for (String name : helpers) {
+				Path jar = name.startsWith("net.minecraftforge.") ? stage.resolve("forge-runtime/forge-runtime.jar")
+						: name.startsWith("net.neoforged.") ? stage.resolve("neoforge-runtime/neoforge-runtime.jar")
+						: stage.resolve("merged-base/patched-mc-merged-26.2.jar");
+				byte[] approved = ForgeTransferShapeAudit.certify(name, bytes(jar, name), game.resources());
+				assertTrue(node(approved).methods.stream().anyMatch(method -> method.name.equals(ForgeTransferShapeAudit.MARKER)), name);
+			}
 		}
 	}
 	/**
@@ -168,17 +172,19 @@ class TransferTransactionHooksTest {
 		ClassWriter writer = new ClassWriter(0); retyped.accept(writer);
 		assertFalse(node(ForgeTransferShapeAudit.certify(name, writer.toByteArray())).methods.stream().anyMatch(method -> method.name.equals(ForgeTransferShapeAudit.MARKER)), "energy field");
 	}
-	@Test void itemStackTooltipChangesRemainAllowedButCountMutationDoesNot() throws Exception {
+	@Test @ResourceLock("native-game-references") void itemStackTooltipChangesRemainAllowedButCountMutationDoesNot() throws Exception {
 		String name = "net.minecraft.world.item.ItemStack";
-		Path game = TestFixtures.stagedRoot().resolve("merged-base/patched-mc-merged-26.2.jar");
-		byte[] original = bytes(game, name);
-		for (String changedMethod : List.of("getTooltipLines", "setCount")) {
-			ClassNode changed = node(original);
-			var target = changed.methods.stream().filter(method -> method.name.equals(changedMethod)).findFirst().orElseThrow();
-			target.instructions.insert(new org.objectweb.asm.tree.InsnNode(org.objectweb.asm.Opcodes.NOP));
-			ClassWriter writer = new ClassWriter(0); changed.accept(writer);
-			boolean certified = node(ForgeTransferShapeAudit.certify(name, writer.toByteArray())).methods.stream().anyMatch(method -> method.name.equals(ForgeTransferShapeAudit.MARKER));
-			assertEquals(changedMethod.equals("getTooltipLines"), certified, changedMethod);
+		Path jar = TestFixtures.stagedRoot().resolve("merged-base/patched-mc-merged-26.2.jar");
+		byte[] original = bytes(jar, name);
+		try (StagedGameClasses game = StagedGameClasses.open()) {
+			for (String changedMethod : List.of("getTooltipLines", "setCount")) {
+				ClassNode changed = node(original);
+				var target = changed.methods.stream().filter(method -> method.name.equals(changedMethod)).findFirst().orElseThrow();
+				target.instructions.insert(new org.objectweb.asm.tree.InsnNode(org.objectweb.asm.Opcodes.NOP));
+				ClassWriter writer = new ClassWriter(0); changed.accept(writer);
+				boolean certified = node(ForgeTransferShapeAudit.certify(name, writer.toByteArray(), game.resources())).methods.stream().anyMatch(method -> method.name.equals(ForgeTransferShapeAudit.MARKER));
+				assertEquals(changedMethod.equals("getTooltipLines"), certified, changedMethod);
+			}
 		}
 	}
 	@Test void theRealNbtBuilderRepairIsOutsideTransferButCopyChangesAreNot() throws Exception {
