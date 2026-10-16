@@ -238,6 +238,10 @@ public final class MixinStubRebind {
 		if (ecosystem != null) {
 			Ecosystem other = PACKAGE_ECOSYSTEMS.putIfAbsent(packageInternalName, ecosystem);
 			if (other != null && other != ecosystem) SHARED_PACKAGES.add(packageInternalName);
+		} else {
+			// A config whose owner is ambiguous takes its mixins from here too: whatever this package holds may be its, so
+			// the package answers no family — the walk up stops here instead of reaching an outer config's.
+			SHARED_PACKAGES.add(packageInternalName);
 		}
 		if (configName != null) {
 			String other = PACKAGE_CONFIGS.putIfAbsent(packageInternalName, configName);
@@ -248,12 +252,16 @@ public final class MixinStubRebind {
 	/**
 	 * Which family's mod declared {@code mixinInternalName}: as its config listed it, else as the config whose package
 	 * holds it (the innermost one) — which is where Mixin took a plugin-added mixin from. Null when not recorded or the
-	 * owner is ambiguous.
+	 * owner is ambiguous: a listed mixin of an ambiguous config, or a package (or the package a walk passes) that an
+	 * ambiguous config or two families' configs take mixins from.
 	 */
 	static Ecosystem ecosystemOf(String mixinInternalName) {
 		if (mixinInternalName == null) return null;
 		Ecosystem direct = ECOSYSTEMS.get(mixinInternalName);
 		if (direct != null) return direct;
+		// Listed by a config, but no family recorded: that config's owner is ambiguous, and ambiguity is answered with
+		// silence. Only a mixin no config lists — one a plugin added — is placed by its package.
+		if (CONFIGS.containsKey(mixinInternalName)) return null;
 		for (String p = parent(mixinInternalName); p != null; p = parent(p)) {
 			if (SHARED_PACKAGES.contains(p)) return null;
 			Ecosystem ecosystem = PACKAGE_ECOSYSTEMS.get(p);

@@ -45,6 +45,35 @@ class PluginAddedMixinEcosystemTest {
 		assertNull(MixinStubRebind.configOf("c/mixin/Added"));
 	}
 
+	/**
+	 * A config two mods claim has no owner (MixinConfigOwners answers null): its listed mixins got no family, and every
+	 * adapter that compares against the native game skipped them. The package fallback must not hand them a family —
+	 * an outer config's, or another config's sharing the package — nor reach past the ambiguous config's package for a
+	 * plugin-added mixin in it.
+	 */
+	@Test void aMixinOfAConfigWithAnAmbiguousOwnerGetsNoFamilyFromAPackage() {
+		// Outer package of a Fabric config; the ambiguous config's package inside it.
+		MixinStubRebind.notePackage("com/example/mixin", Ecosystem.FABRIC, "lib.mixins.json");
+		MixinStubRebind.notePackage("com/example/mixin/common", null, "shared.mixins.json");
+		MixinStubRebind.noteEcosystem("com/example/mixin/common/ListedMixin", null, "shared.mixins.json");
+		assertNull(MixinStubRebind.ecosystemOf("com/example/mixin/common/ListedMixin"), "the outer config's family");
+		assertNull(MixinStubRebind.ecosystemOf("com/example/mixin/common/Added"), "nor for a plugin-added one in its package");
+		assertEquals(Ecosystem.FABRIC, MixinStubRebind.ecosystemOf("com/example/mixin/Added"), "the outer package still answers for its own");
+		// One package, an ambiguous config and a NeoForge one, in either order.
+		MixinStubRebind.notePackage("com/other/mixin", null, "ambiguous.mixins.json");
+		MixinStubRebind.noteEcosystem("com/other/mixin/A", null, "ambiguous.mixins.json");
+		MixinStubRebind.notePackage("com/other/mixin", Ecosystem.NEOFORGE, "client.mixins.json");
+		assertNull(MixinStubRebind.ecosystemOf("com/other/mixin/A"));
+		MixinStubRebind.notePackage("com/third/mixin", Ecosystem.NEOFORGE, "client.mixins.json");
+		MixinStubRebind.notePackage("com/third/mixin", null, "ambiguous.mixins.json");
+		MixinStubRebind.noteEcosystem("com/third/mixin/B", null, "ambiguous.mixins.json");
+		assertNull(MixinStubRebind.ecosystemOf("com/third/mixin/B"));
+		assertNull(MixinStubRebind.ecosystemOf("com/third/mixin/Added"), "the package may be the ambiguous config's");
+		// Control: the same listed mixin under a single-owner config keeps its own family.
+		MixinStubRebind.noteEcosystem("com/third/mixin/C", Ecosystem.NEOFORGE, "client.mixins.json");
+		assertEquals(Ecosystem.NEOFORGE, MixinStubRebind.ecosystemOf("com/third/mixin/C"));
+	}
+
 	@Test void createsPluginAddedModelMixinLandsOnNeoForgesParser() throws Exception {
 		ClassNode merged = full(TestFixtures.stagedRoot().resolve("merged-base/patched-mc-merged-26.2.jar"), MODELS);
 		ClassNode vanilla = full(TestFixtures.vanillaJar(), MODELS);
