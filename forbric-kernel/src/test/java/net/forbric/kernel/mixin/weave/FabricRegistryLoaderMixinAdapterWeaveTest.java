@@ -26,9 +26,10 @@ import net.forbric.kernel.mixin.FabricRegistryLoaderMixinAdapter;
  * hook both name vanilla's overloads. With the adapter they move onto the carrier's, the wrap is re-shaped so the
  * original handler still gets its four arguments while the flag goes through untouched (KernelWrapOperations, the
  * kernel's real game-side class, compiled into the fixture), and the task reports {@code server=true} with the
- * flag still {@code true}. With {@code -Dforbric.fabricRegistryLoader=off} both bind nothing and the task never hears
- * of the server; the audit reports the argument hook as a confirmed loss and the wrap, whose selector still finds
- * vanilla's stub, as a suspected one.
+ * flag still {@code true}. With {@code -Dforbric.fabricRegistryLoader=off} the wrap of the loader call the carrier left
+ * dead cannot be moved, so the refusal gate leaves the whole mixin out (one confirmed finding naming it) rather than let
+ * its other hook apply without it, and the task never hears of the server. The gate recognises the wrap by the call it
+ * wraps being dead in the merged class, not by how its handler is written: this fixture's handler is not fabric-api's.
  */
 class FabricRegistryLoaderMixinAdapterWeaveTest {
 	private static final Path SOURCES = Path.of("src/test/resources/weave/fabricregistryloader");
@@ -59,7 +60,7 @@ class FabricRegistryLoaderMixinAdapterWeaveTest {
 		WeaveHarness.assertWovenAndVerified(adapted, LOADER, fixture);
 	}
 
-	@Test void withTheSwitchOffBothHooksAreReportedLosses() throws Exception {
+	@Test void withTheSwitchOffTheMixinIsLeftOutWhole() throws Exception {
 		assertTrue(offHolds(off), off.describe() + "\nfindings: " + off.findings());
 		assertFalse(off.printed("[Forbric/RegistrySync]"), off.describe());
 		WeaveHarness.assertWovenAndVerified(off, LOADER, fixture);
@@ -76,10 +77,10 @@ class FabricRegistryLoaderMixinAdapterWeaveTest {
 	}
 
 	private static boolean offHolds(WeaveHarness.Result run) {
-		List<WeaveHarness.Finding> losses = losses(run);
-		return run.printed(WeaveHarnessMain.DONE + " " + UNMARKED + "\n") && losses.size() == 2
-				&& losses.stream().anyMatch(f -> f.id().contains("#wrapIsServerCall") && f.confidence().equals("SUSPECTED"))
-				&& losses.stream().anyMatch(f -> f.id().contains("#supplyAsync") && f.confidence().equals("CONFIRMED"));
+		List<WeaveHarness.Finding> leftOut = run.findings().stream().filter(f -> f.id().startsWith("mixin:") && f.modId().equals(MOD)
+				&& f.id().endsWith("RegistryDataLoaderMixin") && f.confidence().equals("CONFIRMED")).toList();
+		return run.printed(WeaveHarnessMain.DONE + " " + UNMARKED + "\n") && losses(run).isEmpty() && leftOut.size() == 1
+				&& run.printed("suppressed mixin RegistryDataLoaderMixin");
 	}
 
 	/** Every required injector of the mod the runtime audit reports, at any confidence. */

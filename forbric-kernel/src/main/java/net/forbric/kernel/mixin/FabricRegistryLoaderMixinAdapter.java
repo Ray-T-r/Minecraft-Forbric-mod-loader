@@ -50,26 +50,26 @@ public final class FabricRegistryLoaderMixinAdapter {
 	public static boolean enabled(){return !"off".equalsIgnoreCase(System.getProperty(PROPERTY,"on"));}
 
     /**
-     * Whether the mixin carries the ScopedValue propagation protocol around the private loader's call, its point read as
-     * {@link #adapt} reads it — one without its owner or descriptor in the method it was written for, in the class the
-     * mod was compiled against ({@link NativeGameReferences}) — so a gate refusing what cannot be adapted sees every
-     * spelling the adapter would serve.
+     * Whether the mixin wraps a call of the loader the carrier left dead — a call no live body of the merged class makes
+     * any more, which a widened overload replaced — with its point read as {@link #adapt} reads it (one without its owner
+     * or descriptor in the method it was written for, in the class the mod was compiled against). The gate refuses a mixin
+     * only when this holds and {@link #adapt} cannot move it: a wrap left on a dead call would never run, and the rest of
+     * the mixin would apply without it. Decided by what the wrap names and what the merged class still calls, never by the
+     * shape of the wrap's handler.
      */
-    static boolean matches(ClassNode mixin) {
-        return matches(mixin,NativeGameReferences::reference);
-    }
-    /** {@code references} gives the class the mod was compiled against; null (or a null answer): none at hand. */
-    static boolean matches(ClassNode mixin,java.util.function.BiFunction<net.forbric.api.Ecosystem,String,ClassNode> references) {
+    static boolean wrapsDeadCall(ClassNode mixin,Function<String,ClassNode> targets,java.util.function.BiFunction<net.forbric.api.Ecosystem,String,ClassNode> references) {
         if(!MixinCallbackShape.targets(mixin,TARGET))return false;
+        ClassNode target=targets==null?null:targets.apply(TARGET);if(target==null)return false;
         ClassNode source=references==null?null:references.apply(MixinStubRebind.ecosystemOf(mixin.name),TARGET);
-        return mixin.fields.stream().anyMatch(f->f.desc.equals("Ljava/lang/ScopedValue;"))
-                && mixin.methods.stream().anyMatch(m->m.desc.equals("(Ljava/lang/Object;"+ARGS+"L"+OP+";)"+FUTURE)
-                    && MixinCallbackShape.kind(m,"WrapOperation")
-                    && invokes(m,"java/lang/ScopedValue","where")&&invokes(m,"java/lang/ScopedValue$Carrier","call")
-                    && MixinCallbackShape.plainPoint(m,"INVOKE","L"+TARGET+";load("+FACTORY+ARGS+")"+FUTURE,MixinCallbackShape.written(m,source)));
+        for(MethodNode handler:mixin.methods){
+            if(!MixinCallbackShape.kind(handler,"WrapOperation"))continue;
+            String callee=invokeTarget(handler,source);if(callee==null)continue;
+            String key=callee.substring(callee.indexOf(';')+1);
+            if(!calledAnywhere(target,key)&&widenedLive(target,key)!=null)return true;
+        }
+        return false;
     }
 
-    private static boolean invokes(MethodNode method,String owner,String name){for(var instruction:method.instructions)if(instruction instanceof MethodInsnNode call&&call.owner.equals(owner)&&call.name.equals(name))return true;return false;}
 
 	/** One injector's move: the live method it now selects, and for a wrap the widened callee it now names. */
 	private record Move(MethodNode handler,AnnotationNode injector,MethodNode host,MethodNode callee,boolean wrap){}

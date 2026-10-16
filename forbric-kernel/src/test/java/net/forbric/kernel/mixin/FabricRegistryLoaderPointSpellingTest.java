@@ -16,7 +16,7 @@ import org.objectweb.asm.tree.*;
 
 /**
  * fabric-registry-sync's registry-loader wrap with its point written as Mixin also reads it — with whitespace, with the
- * owner dotted — is recognised ({@code matches}) and restored ({@code adapt}) exactly as the descriptor spelling is: a
+ * owner dotted — is recognised ({@code wrapsDeadCall}) and restored ({@code adapt}) exactly as the descriptor spelling is: a
  * mixin the kernel recognises but cannot adapt is refused outright (MergedBaseMixinCompat), so recognising a spelling
  * the adapter then misreads would cost the mod its whole mixin.
  */
@@ -48,7 +48,7 @@ class FabricRegistryLoaderPointSpellingTest {
 				}
 			}
 			assertTrue(respelled, "premise: the wrap names its call");
-			assertTrue(FabricRegistryLoaderMixinAdapter.matches(mixin));
+			assertTrue(FabricRegistryLoaderMixinAdapter.wrapsDeadCall(mixin, name -> target, null));
 			assertEquals(2, FabricRegistryLoaderMixinAdapter.adapt(mixin, name -> target));
 			CarpetMixinAdapterTest.verify(mixin);
 			assertEquals(0, FabricRegistryLoaderMixinAdapter.adapt(mixin, name -> target), "idempotence");

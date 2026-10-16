@@ -29,7 +29,7 @@ import net.forbric.kernel.TestFixtures.Fixture;
 /**
  * {@link MergedBaseMixinCompat}'s refusal gate recognises the registry protocols with the same reading of their points as
  * the adapters it guards ({@code FabricRegistryInitializationMixinAdapter.conflicts},
- * {@code FabricRegistryLoaderMixinAdapter.matches}), given the class the mod was compiled against: a point written without
+ * {@code FabricRegistryLoaderMixinAdapter.wrapsDeadCall}), given the class the mod was compiled against: a point written without
  * its owner or descriptor, with a dotted owner or with whitespace — wherever the method it was written for decides it —
  * is recognised exactly as the full spelling is, so a mixin the adapter cannot serve is refused whatever its spelling,
  * and one it can serve is let through. A shortened point that also names another call there is not the protocol: the gate
@@ -37,8 +37,9 @@ import net.forbric.kernel.TestFixtures.Fixture;
  *
  * <p>The mixins are fabric-registry-sync's released bootstrap and registry-loader mixins, under other names; the
  * bootstrap one is also cut down to what another mod might ship — the deferred freeze alone, without the tracker callback
- * the adapter needs — and the loader one is judged against vanilla's loader, where the call it wraps is live and its
- * propagation fits nothing. The family is read as at discovery, before the mixin's own family is noted.
+ * the adapter needs — and the loader one is judged against the merged loader, where the call it wraps is dead, both as
+ * released (adapted) and with its wrap made an instance method (which the widened overloads cannot take), and against
+ * vanilla's loader, where the call is live and the wrap binds as written. The family is read as at discovery, before the mixin's own family is noted.
  */
 @ResourceLock("system-properties")
 class MergedBaseGateSpellingTest {
@@ -48,7 +49,7 @@ class MergedBaseGateSpellingTest {
 	private static final String FREEZE = "Lnet/minecraft/core/registries/BuiltInRegistries;bootStrap()V";
 	private static final String LOAD = "L" + LOADER + ";load(L" + LOADER + "$LoaderFactory;Ljava/util/List;Ljava/util/List;Ljava/util/concurrent/Executor;)Ljava/util/concurrent/CompletableFuture;";
 	private static final String DEFERS = "source callback repeats or defers the kernel-owned registry freeze; its tracker protocol could not be adapted";
-	private static final String UNFIT = "registry-loader: source ScopedValue callback propagation does not fit the current registry-loader overloads";
+	private static final String UNFIT = "registry-loader: source wraps a loader call the carrier left dead, and the wrap does not fit the widened overloads that replaced it";
 	private static final BiFunction<Ecosystem, String, ClassNode> STAGED = NativeCallTestEvidence.staged();
 	/** As at discovery: the adapters ask with the mixin's family, not noted yet, and the config's family answers. */
 	private static final BiFunction<Ecosystem, String, ClassNode> NATIVES = (asked, owner) -> STAGED.apply(asked != null ? asked : Ecosystem.FABRIC, owner);
@@ -126,23 +127,37 @@ class MergedBaseGateSpellingTest {
 
 	// ---- the registry-loader propagation -----------------------------------------------------------------------------------
 
-	/** Against vanilla's loader the wrapped call is live and the propagation fits nothing: refused for every spelling. */
+	/**
+	 * Against the merged loader the wrapped call is dead; a wrap the widened overloads cannot take (made an instance method
+	 * here) is refused for every spelling — however its handler is written, by what it wraps.
+	 */
 	@TestFactory Stream<DynamicTest> aLoaderWrapWrittenAnotherWayIsRefusedWhenItCannotBeAdapted() {
 		return forms(LOAD).map(form -> DynamicTest.dynamicTest(form.id(), () -> {
 			ClassNode mixin = loader();
 			assertEquals(1, respell(mixin, LOAD, form, NATIVES), "premise");
-			assertTrue(FabricRegistryLoaderMixinAdapter.matches(mixin, NATIVES), form.id());
-			assertEquals(UNFIT, MergedBaseMixinCompat.refusal(mixin, vanilla(), NATIVES));
+			for (MethodNode m : mixin.methods) if (MixinCallbackShape.kind(m, "WrapOperation")) m.access &= ~org.objectweb.asm.Opcodes.ACC_STATIC;
+			assertTrue(FabricRegistryLoaderMixinAdapter.wrapsDeadCall(mixin, classes(merged()), NATIVES), form.id());
+			assertEquals(UNFIT, MergedBaseMixinCompat.refusal(mixin, merged(), NATIVES));
 		}));
 	}
 
-	/** Against the merged loader it is adapted: let through for every spelling. */
+	/** Against the merged loader the released wrap is adapted: let through for every spelling. */
 	@TestFactory Stream<DynamicTest> aLoaderWrapWrittenAnotherWayIsLetThroughWhenItCanBeAdapted() {
 		return forms(LOAD).map(form -> DynamicTest.dynamicTest(form.id(), () -> {
 			ClassNode mixin = loader();
 			assertEquals(1, respell(mixin, LOAD, form, NATIVES), "premise");
-			assertTrue(FabricRegistryLoaderMixinAdapter.matches(mixin, NATIVES), form.id());
+			assertTrue(FabricRegistryLoaderMixinAdapter.wrapsDeadCall(mixin, classes(merged()), NATIVES), form.id());
 			assertNull(MergedBaseMixinCompat.refusal(mixin, merged(), NATIVES));
+		}));
+	}
+
+	/** Against vanilla's loader the wrapped call is live: the wrap binds as written, and nothing is refused. */
+	@TestFactory Stream<DynamicTest> aLoaderWrapOfALiveCallIsLetThrough() {
+		return forms(LOAD).map(form -> DynamicTest.dynamicTest(form.id(), () -> {
+			ClassNode mixin = loader();
+			assertEquals(1, respell(mixin, LOAD, form, NATIVES), "premise");
+			assertFalse(FabricRegistryLoaderMixinAdapter.wrapsDeadCall(mixin, classes(vanilla()), NATIVES), form.id());
+			assertNull(MergedBaseMixinCompat.refusal(mixin, vanilla(), NATIVES));
 		}));
 	}
 
@@ -158,7 +173,7 @@ class MergedBaseGateSpellingTest {
 				tests.add(DynamicTest.dynamicTest((otherOwner ? "another owner / " : "another overload / ") + form.id(), () -> {
 					ClassNode mixin = loader();
 					MixinPlayerWorldCallbackAdapter.set(point(mixin, LOAD), "target", form.spell().apply(MixinFit.parseMember(LOAD)));
-					assertFalse(FabricRegistryLoaderMixinAdapter.matches(mixin, natives));
+					assertFalse(FabricRegistryLoaderMixinAdapter.wrapsDeadCall(mixin, classes(merged()), natives));
 					assertNull(MergedBaseMixinCompat.refusal(mixin, vanilla(), natives));
 				}));
 			}
@@ -234,7 +249,14 @@ class MergedBaseGateSpellingTest {
 		return jar(TestFixtures.stagedRoot().resolve("merged-base/patched-mc-merged-26.2.jar"), Fixture.STAGED);
 	}
 
-	/** Vanilla's classes in place of the merged base: a game whose loader the propagation does not fit. */
+	private static Function<String, ClassNode> classes(Function<String, byte[]> resources) {
+		return name -> {
+			byte[] bytes = resources.apply(name + ".class");
+			return bytes == null ? null : MixinFit.parse(bytes);
+		};
+	}
+
+	/** Vanilla's classes in place of the merged base: a game whose loader still makes the call the wrap names. */
 	private static Function<String, byte[]> vanilla() {
 		return jar(TestFixtures.vanillaJar(), Fixture.MC_LIBRARIES);
 	}

@@ -74,8 +74,8 @@ public final class MergedBaseMixinCompat {
             return "source has a closed consuming-Reader callback pair which cannot remain half-applied while pruning is disabled";
         if(FabricRegistryInitializationMixinAdapter.conflicts(node,natives)&&FabricRegistryInitializationMixinAdapter.adapt(copy(node),classes,natives)==0)
             return "source callback repeats or defers the kernel-owned registry freeze; its tracker protocol could not be adapted";
-        if(FabricRegistryLoaderMixinAdapter.matches(node,natives)&&FabricRegistryLoaderMixinAdapter.adapt(copy(node),classes,natives)==0)
-            return "registry-loader: source ScopedValue callback propagation does not fit the current registry-loader overloads";
+        if(FabricRegistryLoaderMixinAdapter.wrapsDeadCall(node,classes,natives)&&FabricRegistryLoaderMixinAdapter.adapt(copy(node),classes,natives)==0)
+            return "registry-loader: source wraps a loader call the carrier left dead, and the wrap does not fit the widened overloads that replaced it";
         if(FabricCreativePagerMixinAdapter.matches(node)&&FabricCreativePagerMixinAdapter.adapt(copy(node),name->parse(resources.apply(name+".class")))==0)
             return "source implements a second creative pager, and its keyboard callback could not share the carrier pager";
         if(ForbricMixinService.registerSourceCallbacks(node))
