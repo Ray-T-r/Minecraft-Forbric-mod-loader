@@ -641,6 +641,9 @@ public final class KernelBoot {
 			} catch (java.io.IOException absent) { return null; }
 		};
 		chain.register(TransformPhase.COREMOD, new net.forbric.kernel.transform.RegistryElementCallbackInjector(gameDeclarations));
+		// Where the native method clears a field and the carrier removes only a computed subset of its keys, a Map.clear()
+		// on a view of that subset goes back in, so a guest's injector on the native clear lands and runs as natively.
+		chain.register(TransformPhase.COREMOD, new net.forbric.kernel.transform.ScopedClearRelayInjector());
 		// Carrier callback seams are available to every structurally compatible guest mixin.
 		chain.register(TransformPhase.COREMOD, new net.forbric.kernel.transform.BreathingCallbackInjector());
 		chain.register(TransformPhase.COREMOD, new net.forbric.kernel.transform.BlockSoundQueryInjector());
