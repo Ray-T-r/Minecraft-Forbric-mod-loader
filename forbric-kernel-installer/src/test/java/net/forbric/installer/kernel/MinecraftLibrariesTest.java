@@ -18,8 +18,9 @@ import com.sun.net.httpserver.HttpServer;
  * The installer fetches the base version's libraries itself before the merge, which reads them: a launcher fetches
  * them only on the first launch, and a directory no launcher has started the version in has none -- the merge then
  * proved nothing and refused (gate-m17). Served from a local HTTP server: what the version JSON lists for this
- * platform lands at its own path and is verified, a file already there with the right SHA-1 is not fetched again, and
- * one that does not verify is refused without a partial file left behind.
+ * platform lands at its own path and is verified, a file already there with the right SHA-1 is not fetched again, one
+ * already there with the wrong SHA-1 is, and a download that does not verify is refused without a partial file left
+ * behind.
  */
 public final class MinecraftLibrariesTest {
 	public static void main(String[] args) throws Exception {
@@ -60,6 +61,15 @@ public final class MinecraftLibrariesTest {
 			require(downloader.downloadLibraries(artifacts, libraries) == 0 && requests.get() == before, "a verified library was fetched again");
 			checks++;
 
+			// A file already there whose content is not what the JSON says -- same length, so only the SHA-1 can tell --
+			// is not the library. Taking it on its existence alone hands the merge the wrong bytes.
+			Files.write(jar, "A LIBRARY JAR".getBytes(StandardCharsets.UTF_8));
+			before = requests.get();
+			require(downloader.downloadLibraries(artifacts, libraries) == 1 && requests.get() == before + 1,
+					"a library whose SHA-1 does not match was not fetched again");
+			require(java.util.Arrays.equals(Files.readAllBytes(jar), guava), "the mismatched library was not replaced by the verified one");
+			checks++;
+
 			List<Object> wrong = new ArrayList<>();
 			wrong.add(library("com/example/bad/1/bad-1.jar", base + "bad.jar", "0000000000000000000000000000000000000000", guava.length, null));
 			json.put("libraries", wrong);
@@ -75,7 +85,8 @@ public final class MinecraftLibrariesTest {
 		} finally {
 			server.stop(0);
 		}
-		System.out.println("PASS Minecraft libraries before the merge: " + checks + " checks (platform rules, verified download, cache hit, refusal)");
+		System.out.println("PASS Minecraft libraries before the merge: " + checks + " checks (platform rules, verified download, cache hit,"
+				+ " mismatched file fetched again, refusal)");
 	}
 
 	private static Map<String, Object> library(String path, String url, String sha1, long size, String onlyOn) {
