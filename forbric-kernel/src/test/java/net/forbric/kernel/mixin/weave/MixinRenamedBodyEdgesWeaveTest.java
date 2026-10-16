@@ -1,4 +1,3 @@
-/* Copyright 2026 The Forbric Project. Licensed under the Apache License, Version 2.0. */
 package net.forbric.kernel.mixin.weave;
 
 import static org.junit.jupiter.api.Assertions.*;
@@ -17,94 +16,99 @@ import net.forbric.api.Ecosystem;
 import net.forbric.kernel.mixin.MixinRenamedBodyEdges;
 
 /**
- * MixinRenamedBodyEdges through the real weave: a guest {@code HEAD} of {@code PersistentEntitySectionManager.addEntity}
- * (fabric-lifecycle's ServerEntityEvents.ALLOW_LOAD), on the merged shape where {@code addEntity} is a dispatcher in front
- * of {@code addEntityWithoutEvent} (the body, renamed: a carrier-renames.txt RENAME row) and players come in through
- * {@code addNewEntityWithoutEvent}, which calls the renamed body directly. On the renamed body the edge hears every entity;
- * with {@code -Dforbric.renamedBodyEdges=off} it hears none that comes in the direct way.
+ * MixinRenamedBodyEdges through the real weave, on a stand-in {@code PersistentEntitySectionManager} shaped like the
+ * merged one where the shipped carrier-renames.txt row reads it: {@code addEntity} (the dispatcher) runs the carrier's
+ * join listeners ({@code join:}) and then the renamed body {@code addEntityWithoutEvent} ({@code body:});
+ * {@code addNewEntityWithoutEvent} — how every player is added — forwards to the renamed body directly. A Fabric mod's
+ * cancellable HEAD of vanilla's {@code addEntity} ({@code allow:}, vetoing names starting with "vetoed") must, as on
+ * native Fabric, decide before anything else runs for every entity, and must also decide for the ones added through the
+ * forwarder — once each.
+ * <ul>
+ *   <li>on — the veto stays first on the dispatcher (a vetoed sheep is never offered to the join listeners) and the
+ *       forwarder's copy covers players (a vetoed player is never added);</li>
+ *   <li>off — {@code -Dforbric.renamedBodyEdges=off}: the dispatcher path is right but players are never offered to the
+ *       veto (the defect this rule was first written for).</li>
+ * </ul>
+ * The previous form of the rule moved the HEAD onto the renamed body: then the log would read
+ * {@code join:vetoedSheep, allow:vetoedSheep} — the order {@link #theVetoDecidesBeforeTheJoinListenersAndPlayersAreOfferedToIt}
+ * rules out.
  */
 class MixinRenamedBodyEdgesWeaveTest {
-	private static final String CONFIG = "renamededges.mixins.json";
-	private static final String MOD = "loadgate";
-	private static final String TARGET = "net/minecraft/world/level/entity/PersistentEntitySectionManager";
-	private static final String EVERY = "[RenamedEdge] allowed=[zombie, player] added=[zombie, player]";
-	private static final String DISPATCHED_ONLY = "[RenamedEdge] allowed=[zombie] added=[zombie, player]";
-	private static final String MOVED_LOG = "now edges addEntityWithoutEvent(Lnet/minecraft/world/level/entity/EntityAccess;Z)Z";
+	private static final String OWNER = "net/minecraft/world/level/entity/PersistentEntitySectionManager";
+	private static final String CONFIG = "edges.mixins.json";
+	private static final String NATIVE_ORDER = "[Edges] log=[allow:zombie, join:zombie, body:zombie, allow:vetoedSheep, allow:player, body:player, allow:vetoedPlayer]";
+	private static final String NATIVE_ADDED = "[Edges] added=true,false,true,false";
+	private static final String OFF_ORDER = "[Edges] log=[allow:zombie, join:zombie, body:zombie, allow:vetoedSheep, body:player, body:vetoedPlayer]";
+	private static final String OFF_ADDED = "[Edges] added=true,false,true,true";
+	private static final String EDGED = "also edges [addNewEntityWithoutEvent(Lnet/minecraft/world/level/entity/EntityAccess;)Z]";
 
 	@TempDir static Path work;
 	private static Path fixture;
-	private static WeaveHarness.Result moved, off;
+	private static WeaveHarness.Result on, off;
 
-	private static final String ACCESS = """
-			package net.minecraft.world.level.entity;
-			public interface EntityAccess { String name(); }
-			""";
-
-	/** The merged manager: addEntity posts its event and dispatches; the direct path skips it. */
-	private static final String MANAGER = """
-			package net.minecraft.world.level.entity;
-			import java.util.ArrayList;
-			import java.util.List;
-			public class PersistentEntitySectionManager<T extends EntityAccess> {
-			 public static final List<String> allowed=new ArrayList<>(), added=new ArrayList<>();
-			 public boolean addNewEntity(T entity){return addEntity(entity,false);}
-			 public boolean addNewEntityWithoutEvent(T entity){return addEntityWithoutEvent(entity,false);}
-			 private boolean addEntity(T entity,boolean worldGenSpawned){return addEntityWithoutEvent(entity,worldGenSpawned);}
-			 private boolean addEntityWithoutEvent(T entity,boolean worldGenSpawned){added.add(entity.name());return true;}
-			 public void run(){
-			  PersistentEntitySectionManager<EntityAccess> manager=new PersistentEntitySectionManager<>();
-			  manager.addNewEntity(()->"zombie");
-			  manager.addNewEntityWithoutEvent(()->"player");
-			  System.out.println("[RenamedEdge] allowed="+allowed+" added="+added);
-			 }
-			}
-			""";
-
-	private static final String MIXIN = """
-			package fixture.renamededges.mixin;
-			import net.minecraft.world.level.entity.EntityAccess;
-			import net.minecraft.world.level.entity.PersistentEntitySectionManager;
-			import org.spongepowered.asm.mixin.Mixin;
-			import org.spongepowered.asm.mixin.injection.At;
-			import org.spongepowered.asm.mixin.injection.Inject;
-			import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
-			@Mixin(PersistentEntitySectionManager.class)
-			public class LoadMixin {
-			 @Inject(method="addEntity",at=@At("HEAD"),cancellable=true)
-			 private void allow(EntityAccess entity,boolean worldGenSpawned,CallbackInfoReturnable<Boolean> cir){PersistentEntitySectionManager.allowed.add(entity.name());}
-			}
-			""";
-
-	@BeforeAll static void weaveBothWays() throws Exception {
-		Path json = work.resolve(CONFIG);
-		Files.writeString(json, "{\"required\":true,\"package\":\"fixture.renamededges.mixin\",\"mixins\":[\"LoadMixin\"],\"injectors\":{\"defaultRequire\":1}}");
-		fixture = WeaveHarness.fixture(work, "renamededges", List.of(source("EntityAccess.java", ACCESS),
-				source("PersistentEntitySectionManager.java", MANAGER), source("LoadMixin.java", MIXIN)), Map.of(CONFIG, json));
-		moved = run("moved", Map.of());
+	@BeforeAll static void weave() throws Exception {
+		Path access = source("EntityAccess.java", "package net.minecraft.world.level.entity;public interface EntityAccess{}");
+		Path manager = source("PersistentEntitySectionManager.java", """
+				package net.minecraft.world.level.entity;
+				public class PersistentEntitySectionManager<T extends EntityAccess> {
+				 public static final java.util.List<String> LOG = new java.util.ArrayList<>();
+				 public boolean addNewEntity(T entity) { return addEntity(entity, false); }
+				 private boolean addEntity(T entity, boolean worldGenSpawned) { LOG.add("join:" + entity); return addEntityWithoutEvent(entity, worldGenSpawned); }
+				 public boolean addNewEntityWithoutEvent(T entity) { return addEntityWithoutEvent(entity, false); }
+				 private boolean addEntityWithoutEvent(T entity, boolean worldGenSpawned) { LOG.add("body:" + entity); return true; }
+				}
+				""");
+		Path probe = source("Probe.java", """
+				package fixture.edges;
+				import net.minecraft.world.level.entity.*;
+				public class Probe {
+				 record Thing(String name) implements EntityAccess { public String toString() { return name; } }
+				 public static void probe() {
+				  PersistentEntitySectionManager<Thing> m = new PersistentEntitySectionManager<>();
+				  boolean a = m.addNewEntity(new Thing("zombie")), b = m.addNewEntity(new Thing("vetoedSheep"));
+				  boolean c = m.addNewEntityWithoutEvent(new Thing("player")), d = m.addNewEntityWithoutEvent(new Thing("vetoedPlayer"));
+				  System.out.println("[Edges] added=" + a + "," + b + "," + c + "," + d);
+				  System.out.println("[Edges] log=" + PersistentEntitySectionManager.LOG);
+				 }
+				}
+				""");
+		Path mixin = source("ManagerMixin.java", """
+				package fixture.edges.mixin;
+				import net.minecraft.world.level.entity.*;
+				import org.spongepowered.asm.mixin.Mixin;import org.spongepowered.asm.mixin.injection.*;
+				import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
+				@Mixin(PersistentEntitySectionManager.class)public class ManagerMixin {
+				 @Inject(method="addEntity",at=@At("HEAD"),cancellable=true)
+				 private <T extends EntityAccess> void beforeAddEntity(T entity, boolean worldGenSpawned, CallbackInfoReturnable<Boolean> cir) {
+				  PersistentEntitySectionManager.LOG.add("allow:" + entity);
+				  if (entity.toString().startsWith("vetoed")) cir.setReturnValue(false);
+				 }
+				}
+				""");
+		Path json = source(CONFIG, "{\"required\":true,\"package\":\"fixture.edges.mixin\",\"mixins\":[\"ManagerMixin\"],\"injectors\":{\"defaultRequire\":1}}");
+		fixture = WeaveHarness.fixture(work, "edges", List.of(access, manager, probe, mixin), Map.of(CONFIG, json));
+		on = run("on", Map.of());
 		off = run("off", Map.of(MixinRenamedBodyEdges.PROPERTY, "off"));
 	}
 
-	@Test void theEdgeHearsEveryEntityWhicheverWayItComesIn() throws Exception {
-		assertTrue(movedHolds(moved), moved.describe());
-		WeaveHarness.assertWovenAndVerified(moved, TARGET, fixture);
+	@Test void theVetoDecidesBeforeTheJoinListenersAndPlayersAreOfferedToIt() throws Exception {
+		assertTrue(on.printed(NATIVE_ADDED), on.describe());
+		assertTrue(on.printed(NATIVE_ORDER), "each entity meets the veto once, first: " + on.describe());
+		assertTrue(on.printed(EDGED), on.describe());
+		WeaveHarness.assertWovenAndVerified(on, OWNER, fixture);
 	}
 
-	@Test void switchedOffTheEdgeMissesTheDirectWay() {
-		assertTrue(offHolds(off), off.describe());
+	@Test void switchedOffPlayersNeverMeetTheVeto() throws Exception {
+		assertTrue(off.printed(OFF_ADDED), off.describe());
+		assertTrue(off.printed(OFF_ORDER), off.describe());
+		assertFalse(off.printed(EDGED), off.describe());
+		assertFalse(off.printed(NATIVE_ORDER), off.describe());
+		WeaveHarness.assertWovenAndVerified(off, OWNER, fixture);
 	}
 
-	/** The switch is the runs' only difference, so each run's predicate must reject the other. */
-	@Test void theControlFlipsEveryAssertion() {
-		assertTrue(movedHolds(moved) && !movedHolds(off), "the move predicate does not separate the runs");
-		assertTrue(offHolds(off) && !offHolds(moved), "the control predicate does not separate the runs");
-	}
-
-	private static boolean movedHolds(WeaveHarness.Result run) {
-		return run.printedLine(EVERY) && run.printed(MOVED_LOG) && run.findings().stream().noneMatch(WeaveHarness.Finding::confirmedRequired);
-	}
-
-	private static boolean offHolds(WeaveHarness.Result run) {
-		return run.printedLine(DISPATCHED_ONLY) && !run.printed(MOVED_LOG);
+	private static WeaveHarness.Result run(String label, Map<String, String> properties) throws Exception {
+		return WeaveHarness.run(work, label, fixture, CONFIG, "edgesprobe", Ecosystem.FABRIC, EnvType.SERVER, "fixture.edges.Probe", "probe",
+				properties);
 	}
 
 	private static Path source(String name, String text) throws Exception {
@@ -112,10 +116,5 @@ class MixinRenamedBodyEdgesWeaveTest {
 		Files.createDirectories(file.getParent());
 		Files.writeString(file, text);
 		return file;
-	}
-
-	private static WeaveHarness.Result run(String label, Map<String, String> properties) throws Exception {
-		return WeaveHarness.run(work, label, fixture, CONFIG, MOD, Ecosystem.FABRIC, EnvType.SERVER,
-				"net.minecraft.world.level.entity.PersistentEntitySectionManager", "run", properties);
 	}
 }

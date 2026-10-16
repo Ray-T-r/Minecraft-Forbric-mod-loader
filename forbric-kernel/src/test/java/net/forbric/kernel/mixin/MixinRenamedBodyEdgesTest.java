@@ -13,20 +13,31 @@ import org.objectweb.asm.tree.*;
  * fabric-lifecycle's ServerEntityEvents.ALLOW_LOAD is a cancellable HEAD of vanilla's
  * {@code PersistentEntitySectionManager.addEntity}. NeoForge renamed that whole body to {@code addEntityWithoutEvent},
  * left {@code addEntity} as the event-posting dispatcher, and adds every player through a new path that calls the
- * renamed body directly: the HEAD never saw a player. On the renamed body it sees every run of vanilla's body. A
- * method whose renamed body only it reaches keeps its edges.
+ * renamed body directly: the HEAD never saw a player. Moving the HEAD onto the renamed body saw every run, but after the
+ * dispatcher's join event — every non-player entity was offered to NeoForge's join listeners before Fabric's veto. So
+ * the HEAD stays on the dispatcher, and the forwarder that bypasses it ({@code addNewEntityWithoutEvent}) gets a copy.
+ * A method whose renamed body only it reaches keeps its edges as they are.
  */
 class MixinRenamedBodyEdgesTest {
 	private static final String MANAGER = "net/minecraft/world/level/entity/PersistentEntitySectionManager";
 
-	@Test void allowLoadEdgesTheRenamedBodyEveryPlayerIsAddedThrough() throws Exception {
+	@Test void allowLoadStaysOnTheDispatcherAndTheBypassingForwarderGetsACopy() throws Exception {
 		ClassNode merged = StagedFabricMixinFixture.game(MANAGER, false);
-		MethodNode dispatcher = method(merged, "addEntity"), renamed = method(merged, "addEntityWithoutEvent");
+		MethodNode dispatcher = method(merged, "addEntity"), renamed = method(merged, "addEntityWithoutEvent"),
+				forwarder = method(merged, "addNewEntityWithoutEvent");
 		assertTrue(MixinRenamedBodyEdges.runsWithoutPassingThrough(merged, renamed, dispatcher), "addNewEntityWithoutEvent calls the renamed body");
+		assertNotNull(MixinRenamedBodyEdges.forwarder(merged, forwarder, renamed), "it only forwards: its argument and false");
+		assertNull(MixinRenamedBodyEdges.forwarder(merged, dispatcher, renamed), "the dispatcher posts an event first");
 		ClassNode mixin = lifecycle();
 		assertEquals(1, MixinRenamedBodyEdges.adapt(mixin, name -> name.equals(MANAGER) ? merged : null));
-		AnnotationNode injector = MixinFit.injectorOf(mixin.methods.stream().filter(m -> MixinFit.injectorOf(m) != null).findFirst().orElseThrow());
-		assertEquals(List.of(renamed.name + renamed.desc), MixinFit.stringList(MixinFit.value(injector, "method")));
+		List<MethodNode> injectors = mixin.methods.stream().filter(m -> MixinFit.injectorOf(m) != null).toList();
+		assertEquals(2, injectors.size(), "the guest's own and the forwarder's copy");
+		assertEquals(List.of("addEntity"), MixinFit.stringList(MixinFit.value(MixinFit.injectorOf(method(mixin, "beforeAddEntity")), "method")),
+				"the veto stays in front of the join event");
+		MethodNode copy = injectors.stream().filter(m -> !m.name.equals("beforeAddEntity")).findFirst().orElseThrow();
+		assertEquals(List.of(forwarder.name + forwarder.desc), MixinFit.stringList(MixinFit.value(MixinFit.injectorOf(copy), "method")));
+		assertEquals("(Lnet/minecraft/world/level/entity/EntityAccess;Lorg/spongepowered/asm/mixin/injection/callback/CallbackInfoReturnable;)V", copy.desc);
+		assertEquals(Boolean.TRUE, MixinFit.value(MixinFit.injectorOf(copy), "cancellable"));
 	}
 
 	@Test void onVanillaOrWithTheSwitchOffNothingMoves() throws Exception {

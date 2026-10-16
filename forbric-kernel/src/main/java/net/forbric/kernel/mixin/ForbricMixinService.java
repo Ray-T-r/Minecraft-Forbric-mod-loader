@@ -429,7 +429,9 @@ public final class ForbricMixinService
 		// Last so every specific adapter above has had its say: FabricEntityMixinAnchors moves fabric-api's elytra
 		// check onto NeoForge's gliding attribute read, and a rebind first would have changed the selector it matches.
 		// …and an injector at the start or end of a method whose whole body a carrier renamed, which the merged game also
-		// runs without passing through that method, edges the renamed body (ALLOW_LOAD on players' addEntityWithoutEvent).
+		// runs without passing through that method, stays where it was written and also edges each method that only
+		// forwards to the renamed body (ALLOW_LOAD: on addEntity, before NeoForge's join event, and on players'
+		// addNewEntityWithoutEvent).
 		MixinRenamedBodyEdges.adapt(node, this::mergedBaseNodeWithCode);
 		MixinStubRebind.adapt(node, this::mergedBaseNodeWithCode);
 		// …and an injector anchored in a body a carrier moved behind a builder stub (new builder, hand it over, build) moves
