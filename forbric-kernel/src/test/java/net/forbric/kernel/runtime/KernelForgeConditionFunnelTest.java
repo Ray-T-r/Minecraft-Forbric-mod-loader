@@ -1,91 +1,272 @@
+/*
+ * Copyright 2026 The Forbric Project
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
 package net.forbric.kernel.runtime;
 
 import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.lang.reflect.Method;
 import java.lang.reflect.Proxy;
 import java.net.URLClassLoader;
 import java.nio.file.Path;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Optional;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.function.BiFunction;
+import java.util.function.BiPredicate;
 
 import net.forbric.kernel.GateLogContract;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
 /**
- * MinecraftForge's {@code forge:condition}, asked at ConditionalOps' funnel over the compiled game-side classes: an
- * element whose condition does not hold is skipped the way NeoForge skips one (an empty result, NeoForge's codec never
- * asked), one that holds or carries no condition is decoded by NeoForge as before, and one MinecraftForge cannot read
- * fails as it would on MinecraftForge. The judge is MinecraftForge's own decoder in game; here it is a stand-in, since
- * nothing has built MinecraftForge's condition registry in a unit test.
+ * Where ConditionalOps' funnel asks MinecraftForge, over the compiled game-side classes, with each judge a stand-in so
+ * that only the funnel's own decisions are under test (KernelForgeConditionsRealCodecTest runs MinecraftForge's and
+ * NeoForge's real codecs through the same funnel): an element whose {@code forge:condition} does not hold is skipped the
+ * way NeoForge skips one, one MinecraftForge cannot read fails, a {@code forge:conditional} element becomes its chosen
+ * variant -- and MinecraftForge is asked only at the outermost decode, never over an element NeoForge judges, and never
+ * around a codec that judges the key itself.
  */
 @org.junit.jupiter.api.parallel.ResourceLock("system-properties")
 class KernelForgeConditionFunnelTest {
+	private static final String NEO_KEY = "neoforge:conditions";
+
 	@Test void aForgeConditionIsJudgedBeforeNeoForgeDecodes(@TempDir Path scratch) throws Exception {
 		String pattern = GateLogContract.pattern(Path.of("run/gate-m21-forgesetup.sh"), "MinecraftForge judges forge:condition at the conditional-decode funnel");
-		try (URLClassLoader cl = KernelConditionKillSwitchesTest.gameSideLoader()) {
-			Class<?> helper = Class.forName("net.forbric.kernel.runtime.KernelForgeConditions", true, cl);
-			Class<?> codecClass = Class.forName("com.mojang.serialization.Codec", true, cl);
-			Class<?> decoderClass = Class.forName("com.mojang.serialization.Decoder", true, cl);
-			Class<?> dataResult = Class.forName("com.mojang.serialization.DataResult", true, cl);
-			Class<?> pairClass = Class.forName("com.mojang.datafixers.util.Pair", true, cl);
-			Class<?> ops = Class.forName("com.mojang.serialization.DynamicOps", true, cl);
-			Object json = Class.forName("com.mojang.serialization.JsonOps", true, cl).getField("INSTANCE").get(null);
-			Method parse = Class.forName("com.google.gson.JsonParser", true, cl).getMethod("parseString", String.class);
-			Method success = dataResult.getMethod("success", Object.class), error = dataResult.getMethod("error", java.util.function.Supplier.class);
-			Method pair = pairClass.getMethod("of", Object.class, Object.class);
-
-			// MinecraftForge's verdict per input: the value of its "forge:condition" type.
-			Object judge = Proxy.newProxyInstance(cl, new Class<?>[] { decoderClass }, (proxy, method, args) -> {
-				if (!"decode".equals(method.getName())) throw new UnsupportedOperationException(method.getName());
-				String type = String.valueOf(args[1]);
-				if (type.contains("broken")) return error.invoke(null, (java.util.function.Supplier<String>) () -> "unreadable condition");
-				return success.invoke(null, pair.invoke(null, type.contains("\"no\"") ? Optional.empty() : Optional.of(Boolean.TRUE), args[1]));
-			});
-			AtomicInteger neoforge = new AtomicInteger();
-			Object conditional = Proxy.newProxyInstance(cl, new Class<?>[] { codecClass }, (proxy, method, args) -> {
-				if ("decode".equals(method.getName())) { neoforge.incrementAndGet(); return success.invoke(null, pair.invoke(null, Optional.of("decoded"), args[1])); }
-				if ("toString".equals(method.getName())) return "neoforge";
-				throw new UnsupportedOperationException(method.getName());
-			});
-			Method alsoAsk = helper.getDeclaredMethod("alsoAsk", codecClass, decoderClass);
-			alsoAsk.setAccessible(true);
-			Object funnel = alsoAsk.invoke(null, conditional, judge);
-			Method decode = codecClass.getMethod("decode", ops, Object.class);
-			Method counts = helper.getDeclaredMethod("funnelCountsForTest");
-			counts.setAccessible(true);
-			int[] before = (int[]) counts.invoke(null);
-
+		try (Funnel funnel = new Funnel()) {
+			Object codec = funnel.wrap(funnel.neoforge(), (ops, conditions) -> true);
+			int[] before = funnel.counts();
 			String[] out = new String[1];
 			Object[] results = GateLogContract.capture(() -> new Object[] {
-					decode.invoke(funnel, json, parse.invoke(null, "{\"value\":1}")),
-					decode.invoke(funnel, json, parse.invoke(null, "{\"forge:condition\":{\"type\":\"no\"},\"value\":1}")),
-					decode.invoke(funnel, json, parse.invoke(null, "{\"forge:condition\":{\"type\":\"yes\"},\"value\":1}")),
-					decode.invoke(funnel, json, parse.invoke(null, "{\"forge:condition\":{\"type\":\"broken\"},\"value\":1}")),
-					decode.invoke(funnel, json, parse.invoke(null, "[1,2]")) }, out);
-			assertEquals(3, neoforge.get(), "NeoForge decodes the element without a condition, the one that holds and the list -- not the skipped or the failed one");
-			assertEquals(Optional.empty(), first(dataResult, results[1]), "a condition that does not hold is NeoForge's own skip: an empty result");
-			assertEquals(Optional.of("decoded"), first(dataResult, results[2]));
-			assertTrue(((Optional<?>) dataResult.getMethod("error").invoke(results[3])).isPresent(), "an unreadable condition fails the element, as on MinecraftForge");
-			int[] after = (int[]) counts.invoke(null);
+					funnel.decode(codec, "{\"value\":1}"),
+					funnel.decode(codec, "{\"forge:condition\":{\"type\":\"no\"},\"value\":1}"),
+					funnel.decode(codec, "{\"forge:condition\":{\"type\":\"yes\"},\"value\":1}"),
+					funnel.decode(codec, "{\"forge:condition\":{\"type\":\"broken\"},\"value\":1}"),
+					funnel.decode(codec, "[1,2]") }, out);
+			assertEquals(3, funnel.neoforge.get(), "NeoForge decodes the element without a condition, the one that holds and the list -- not the skipped or the failed one");
+			assertEquals(Optional.empty(), funnel.first(results[1]), "a condition that does not hold is NeoForge's own skip: an empty result");
+			assertEquals(Optional.of("decoded"), funnel.first(results[2]));
+			assertTrue(funnel.failed(results[3]), "an unreadable condition fails the element, as on MinecraftForge");
+			int[] after = funnel.counts();
 			assertArrayEquals(new int[] { 2, 1 }, new int[] { after[0] - before[0], after[1] - before[1] }, "judged the two readable conditions, rejected one");
 			if (before[0] == 0) assertEquals(1, GateLogContract.count(scratch, pattern, out[0]), out[0]);
 
 			System.setProperty("forbric.forgeConditionFunnel", "off");
 			try {
-				decode.invoke(funnel, json, parse.invoke(null, "{\"forge:condition\":{\"type\":\"no\"},\"value\":1}"));
-				assertEquals(4, neoforge.get(), "switched off, NeoForge decodes it unjudged");
+				funnel.decode(codec, "{\"forge:condition\":{\"type\":\"no\"},\"value\":1}");
+				assertEquals(4, funnel.neoforge.get(), "switched off, NeoForge decodes it unjudged");
 			} finally {
 				System.clearProperty("forbric.forgeConditionFunnel");
 			}
 		}
 	}
 
-	private static Object first(Class<?> dataResult, Object result) throws Exception {
-		Optional<?> pair = (Optional<?>) dataResult.getMethod("result").invoke(result);
-		return pair.orElseThrow().getClass().getMethod("getFirst").invoke(pair.orElseThrow());
+	@Test void onlyTheOutermostDecodeIsMinecraftForgesToJudge() throws Exception {
+		// MinecraftForge reads forge:condition at the top of a data file or registry element; NeoForge nests further
+		// conditional decodes inside an element, and those are not places MinecraftForge ever looked.
+		try (Funnel funnel = new Funnel()) {
+			Object nested = funnel.wrap(funnel.neoforge(), (ops, conditions) -> true);
+			Object outer = funnel.wrap(funnel.decodingAlso(nested, "{\"forge:condition\":{\"type\":\"no\"},\"value\":2}"), (ops, conditions) -> true);
+			Object result = funnel.decode(outer, "{\"value\":1}");
+			assertEquals(Optional.of("decoded"), funnel.first(result));
+			assertEquals(List.of(Optional.of("decoded")), funnel.nestedResults, "the nested element was decoded, not judged");
+			assertEquals(0, funnel.counts()[0], "MinecraftForge was not asked about the nested one");
+			// The negative control: the same element, decoded on its own, is judged and skipped.
+			assertEquals(Optional.empty(), funnel.first(funnel.decode(nested, "{\"forge:condition\":{\"type\":\"no\"},\"value\":2}")));
+		}
+	}
+
+	@Test void aCodecThatJudgesTheKeyItselfIsLeftAlone() throws Exception {
+		try (Funnel funnel = new Funnel()) {
+			Class<?> helper = funnel.type("net.forbric.kernel.runtime.KernelForgeConditions");
+			Class<?> codec = funnel.type("com.mojang.serialization.Codec");
+			Method alsoAskForge = helper.getMethod("alsoAskForge", codec, codec, String.class);
+			Object conditional = funnel.neoforge();
+			Object own = funnel.neoforge();
+			helper.getMethod("judgesForgeConditionItself", Object.class).invoke(null, own);
+			assertSame(conditional, alsoAskForge.invoke(null, conditional, own, NEO_KEY), "around a registered codec the factory's result is returned as it is");
+			Object other = funnel.neoforge();
+			assertTrue(alsoAskForge.invoke(null, conditional, other, NEO_KEY) != conditional, "around any other codec the funnel is wrapped");
+		}
+	}
+
+	@Test void anElementNeoForgeJudgesIsNotAskedAgainByMinecraftForge() throws Exception {
+		try (Funnel funnel = new Funnel()) {
+			List<String> askedNeoForge = new ArrayList<>();
+			Object codec = funnel.wrap(funnel.neoforge(), (ops, conditions) -> {
+				askedNeoForge.add(String.valueOf(conditions));
+				return !String.valueOf(conditions).contains("unknown");
+			});
+			String judged = "{\"neoforge:conditions\":[{\"type\":\"neoforge:always\"}],\"forge:condition\":{\"type\":\"no\"},\"value\":1}";
+			String unjudgeable = "{\"neoforge:conditions\":[{\"type\":\"unknown\"}],\"forge:condition\":{\"type\":\"no\"},\"value\":1}";
+			assertEquals(Optional.of("decoded"), funnel.first(funnel.decode(codec, judged)), "NeoForge judges its own conditions: its verdict stands");
+			assertEquals(0, funnel.counts()[0]);
+			assertEquals(Optional.empty(), funnel.first(funnel.decode(codec, unjudgeable)), "NeoForge cannot: MinecraftForge decides");
+			assertEquals(1, funnel.counts()[0]);
+			assertEquals(2, askedNeoForge.size(), "the dialect probe was handed the value under NeoForge's key both times: " + askedNeoForge);
+			assertEquals(Optional.empty(), funnel.first(funnel.decode(codec, "{\"forge:condition\":{\"type\":\"no\"},\"value\":1}")),
+					"no NeoForge conditions at all: MinecraftForge's alone");
+			assertEquals(2, askedNeoForge.size(), "nothing to probe when NeoForge's key is absent");
+		}
+	}
+
+	@Test void aForgeConditionalElementBecomesItsChosenVariant() throws Exception {
+		try (Funnel funnel = new Funnel()) {
+			List<String> decodedNeo = new ArrayList<>();
+			Object codec = funnel.wrap(funnel.neoforge(decodedNeo), (ops, conditions) -> true, (ops, json) -> {
+				String text = String.valueOf(json);
+				if (text.contains("broken")) throw new IllegalStateException("not an object");
+				return text.contains("pick") ? funnel.parse("{\"value\":\"picked\"}") : null;
+			});
+			assertEquals(Optional.of("decoded"), funnel.first(funnel.decode(codec, "{\"forge:conditional\":[\"pick\"]}")));
+			assertEquals(List.of("{\"value\":\"picked\"}"), decodedNeo, "NeoForge decodes the chosen variant, not the array");
+			assertEquals(Optional.empty(), funnel.first(funnel.decode(codec, "{\"forge:conditional\":[\"none\"]}")), "no variant holds: skipped");
+			assertTrue(funnel.failed(funnel.decode(codec, "{\"forge:conditional\":[\"broken\"]}")));
+			assertArrayEquals(new int[] {2, 1}, funnel.counts(), "two arrays judged, one rejected");
+		}
+	}
+
+	/** The game-side classes in their own loader, with stand-ins for NeoForge's decoder and both families' judges. */
+	private static final class Funnel implements AutoCloseable {
+		final AtomicInteger neoforge = new AtomicInteger();
+		final List<Object> nestedResults = new ArrayList<>();
+		private final URLClassLoader cl;
+		private final Class<?> codecClass;
+		private final Class<?> dataResult;
+		private final Method success;
+		private final Method error;
+		private final Method pair;
+		private final Object json;
+
+		Funnel() throws Exception {
+			cl = KernelConditionKillSwitchesTest.gameSideLoader();
+			codecClass = type("com.mojang.serialization.Codec");
+			dataResult = type("com.mojang.serialization.DataResult");
+			success = dataResult.getMethod("success", Object.class);
+			error = dataResult.getMethod("error", java.util.function.Supplier.class);
+			pair = type("com.mojang.datafixers.util.Pair").getMethod("of", Object.class, Object.class);
+			json = type("com.mojang.serialization.JsonOps").getField("INSTANCE").get(null);
+		}
+
+		@Override
+		public void close() throws Exception {
+			cl.close();
+		}
+
+		Class<?> type(String name) throws ClassNotFoundException {
+			return Class.forName(name, true, cl);
+		}
+
+		Object parse(String text) {
+			try {
+				return type("com.google.gson.JsonParser").getMethod("parseString", String.class).invoke(null, text);
+			} catch (ReflectiveOperationException e) {
+				throw new IllegalStateException(e);
+			}
+		}
+
+		/** NeoForge's conditional codec, reduced to "decoded" and a count. */
+		Object neoforge() {
+			return neoforge(new ArrayList<>());
+		}
+
+		Object neoforge(List<String> inputs) {
+			return Proxy.newProxyInstance(cl, new Class<?>[] { codecClass }, (proxy, method, args) -> {
+				if ("decode".equals(method.getName())) {
+					neoforge.incrementAndGet();
+					inputs.add(String.valueOf(args[1]));
+					return success.invoke(null, pair.invoke(null, Optional.of("decoded"), args[1]));
+				}
+				if ("toString".equals(method.getName())) return "neoforge";
+				if ("hashCode".equals(method.getName())) return System.identityHashCode(proxy);
+				if ("equals".equals(method.getName())) return proxy == args[0];
+				throw new UnsupportedOperationException(method.getName());
+			});
+		}
+
+		/** NeoForge's codec for an element that decodes a nested element through {@code nested} on the way. */
+		Object decodingAlso(Object nested, String nestedInput) {
+			return Proxy.newProxyInstance(cl, new Class<?>[] { codecClass }, (proxy, method, args) -> {
+				if ("decode".equals(method.getName())) {
+					nestedResults.add(first(decode(nested, nestedInput)));
+					return success.invoke(null, pair.invoke(null, Optional.of("decoded"), args[1]));
+				}
+				if ("toString".equals(method.getName())) return "outer";
+				throw new UnsupportedOperationException(method.getName());
+			});
+		}
+
+		/** MinecraftForge's verdict per input: the value of its "forge:condition" type. */
+		Object forgeJudge() {
+			return Proxy.newProxyInstance(cl, new Class<?>[] { type0("com.mojang.serialization.Decoder") }, (proxy, method, args) -> {
+				if (!"decode".equals(method.getName())) throw new UnsupportedOperationException(method.getName());
+				String type = String.valueOf(args[1]);
+				if (type.contains("broken")) return error.invoke(null, (java.util.function.Supplier<String>) () -> "unreadable condition");
+				return success.invoke(null, pair.invoke(null, type.contains("\"no\"") ? Optional.empty() : Optional.of(Boolean.TRUE), args[1]));
+			});
+		}
+
+		Object wrap(Object conditional, BiPredicate<Object, Object> neoForgeJudges) throws Exception {
+			return wrap(conditional, neoForgeJudges, (ops, element) -> { throw new AssertionError("no forge:conditional here"); });
+		}
+
+		Object wrap(Object conditional, BiPredicate<Object, Object> neoForgeJudges, BiFunction<Object, Object, Object> variants) throws Exception {
+			Class<?> helper = type("net.forbric.kernel.runtime.KernelForgeConditions");
+			Method alsoAsk = helper.getDeclaredMethod("alsoAsk", codecClass, String.class, BiPredicate.class, type("com.mojang.serialization.Decoder"), BiFunction.class);
+			alsoAsk.setAccessible(true);
+			return alsoAsk.invoke(null, conditional, NEO_KEY, neoForgeJudges, forgeJudge(), variants);
+		}
+
+		Object decode(Object codec, String input) {
+			try {
+				return codecClass.getMethod("decode", type("com.mojang.serialization.DynamicOps"), Object.class).invoke(codec, json, parse(input));
+			} catch (ReflectiveOperationException e) {
+				throw new IllegalStateException(e);
+			}
+		}
+
+		Object first(Object result) {
+			try {
+				Optional<?> value = (Optional<?>) dataResult.getMethod("result").invoke(result);
+				return value.orElseThrow().getClass().getMethod("getFirst").invoke(value.orElseThrow());
+			} catch (ReflectiveOperationException e) {
+				throw new IllegalStateException(e);
+			}
+		}
+
+		boolean failed(Object result) throws Exception {
+			return ((Optional<?>) dataResult.getMethod("error").invoke(result)).isPresent();
+		}
+
+		int[] counts() throws Exception {
+			Method counts = type("net.forbric.kernel.runtime.KernelForgeConditions").getDeclaredMethod("funnelCountsForTest");
+			counts.setAccessible(true);
+			return (int[]) counts.invoke(null);
+		}
+
+		private Class<?> type0(String name) {
+			try {
+				return type(name);
+			} catch (ClassNotFoundException e) {
+				throw new IllegalStateException(e);
+			}
+		}
 	}
 }

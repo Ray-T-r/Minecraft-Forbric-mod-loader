@@ -38,6 +38,11 @@ import org.objectweb.asm.tree.ClassNode;
 import org.objectweb.asm.tree.FieldInsnNode;
 import org.objectweb.asm.tree.MethodInsnNode;
 import org.objectweb.asm.tree.MethodNode;
+import org.objectweb.asm.tree.VarInsnNode;
+import org.objectweb.asm.tree.analysis.Analyzer;
+import org.objectweb.asm.tree.analysis.BasicVerifier;
+
+import net.forbric.kernel.GateLogContract;
 
 import net.forbric.kernel.TestFixtures;
 import net.forbric.kernel.TestFixtures.Fixture;
@@ -54,7 +59,13 @@ import net.forbric.kernel.TestFixtures.Fixture;
  * before Fabric's, so Fabric's stays the last thing before the exit (which is what SupersededMixins reads as its
  * repair being in the defined class). That wrap decodes through ICondition.CODEC, which is why the leniency above
  * still matters to it.
+ *
+ * <p>The rest are about the context MinecraftForge's evaluator is given. Genuine MinecraftForge hands its recipes a
+ * tag-aware {@code ConditionContext} and nothing else one: its datapack-registry loader decodes over plain
+ * {@code RegistryOps}, and its advancement manager takes the context and drops it. The merged RecipeManager is
+ * NeoForge's, so the recipe hand-off is put back there and nowhere else.
  */
+@org.junit.jupiter.api.parallel.ResourceLock("system-properties")
 class MergedBaseForgeConditionsTest {
 	private static final Path STAGED = TestFixtures.stagedRoot();
 	private static final Path FORGE_CARRIER = STAGED.resolve("forge-runtime/forge-runtime.jar");
@@ -67,6 +78,8 @@ class MergedBaseForgeConditionsTest {
 	private static final String CONDITIONAL_OPS_ENTRY = "net/neoforged/neoforge/common/conditions/ConditionalOps.class";
 	private static final String FACTORY = "createConditionalCodecWithConditions";
 	private static final String FACTORY_DESC = "(Lcom/mojang/serialization/Codec;Ljava/lang/String;)Lcom/mojang/serialization/Codec;";
+	private static final String RECIPE_MANAGER = "net/minecraft/world/item/crafting/RecipeManager";
+	private static final String FORGE_CONTEXT = "net/minecraftforge/common/crafting/conditions/ICondition$IContext";
 
 	@Test
 	void theCodecIsWrappedBeforeItIsStoredAndBeforeTheOtherTwoAreDerivedFromIt() throws Exception {
@@ -178,6 +191,119 @@ class MergedBaseForgeConditionsTest {
 		node.accept(writer);
 		byte[] repaired = new ForbricMergedBaseCompatTransformer().transform(CONDITIONAL_OPS_BINARY, writer.toByteArray(), null);
 		assertEquals(List.of("KernelForgeConditions.alsoAskForge", "KernelFabricConditions.alsoAskFabric"), wraps(repaired));
+	}
+
+	@Test
+	void theFunnelIsHandedTheFactorysOwnTwoArgumentsAndTheStackStillFits() throws Exception {
+		// The funnel stands aside around a codec that judges forge:condition itself and over an element NeoForge judges,
+		// so it must be handed the factory's own arguments -- slot 0, the codec NeoForge's conditional wraps, and slot 1,
+		// the key NeoForge judges -- on top of the finished codec, with maxStack raised to hold them.
+		byte[] repaired = new ForbricMergedBaseCompatTransformer().transform(CONDITIONAL_OPS_BINARY, conditionalOps(), null);
+		ClassNode node = parse(repaired);
+		MethodNode factory = node.methods.stream().filter(m -> m.name.equals(FACTORY) && m.desc.equals(FACTORY_DESC)).findFirst().orElseThrow();
+		MethodInsnNode ask = null;
+		for (AbstractInsnNode insn : factory.instructions) {
+			if (insn instanceof MethodInsnNode call && KERNEL.equals(call.owner) && "alsoAskForge".equals(call.name)) ask = call;
+		}
+		assertTrue(ask != null, "the funnel is not inserted");
+		assertEquals("(Lcom/mojang/serialization/Codec;Lcom/mojang/serialization/Codec;Ljava/lang/String;)Lcom/mojang/serialization/Codec;", ask.desc);
+		AbstractInsnNode key = ask.getPrevious(), inner = key.getPrevious();
+		assertTrue(inner instanceof VarInsnNode load && load.getOpcode() == Opcodes.ALOAD && load.var == 0, "the wrapped codec, the factory's first argument");
+		assertTrue(key instanceof VarInsnNode load && load.getOpcode() == Opcodes.ALOAD && load.var == 1, "NeoForge's key, the factory's second argument");
+		new Analyzer<>(new BasicVerifier()).analyze(node.name, factory);  // throws on a stack deeper than maxStack
+	}
+
+	@Test
+	void switchedOffTheTransformLogSaysNothingAsksMinecraftForge() throws Exception {
+		String[] on = new String[1];
+		GateLogContract.capture(() -> new ForbricMergedBaseCompatTransformer().transform(CONDITIONAL_OPS_BINARY, conditionalOps(), null), on);
+		assertTrue(on[0].contains("forge:condition has an evaluator again"), on[0]);
+		String[] off = new String[1];
+		System.setProperty("forbric.forgeConditionFunnel", "off");
+		try {
+			byte[] repaired = GateLogContract.capture(() -> new ForbricMergedBaseCompatTransformer().transform(CONDITIONAL_OPS_BINARY, conditionalOps(), null), off);
+			assertEquals(List.of("KernelForgeConditions.alsoAskForge", "KernelFabricConditions.alsoAskFabric"), wraps(repaired),
+					"the wrap is still inserted: the switch is read per decode");
+		} finally {
+			System.clearProperty("forbric.forgeConditionFunnel");
+		}
+		assertTrue(!off[0].contains("forge:condition has an evaluator again"), "switched off, the log must not claim MinecraftForge is asked: " + off[0]);
+		assertTrue(off[0].contains("nothing asks MinecraftForge about forge:condition"), off[0]);
+	}
+
+	@Test
+	void genuineMinecraftForgeHandsItsRecipesTheirContextAndItsAdvancementsNone() throws Exception {
+		// The premise both ways, read off genuine MinecraftForge's own game. RecipeManager.prepare wraps its ops in the
+		// context field before scanning; ServerAdvancementManager's two-argument constructor never loads the context it is
+		// given, and hands its super the three-argument constructor that builds plain ops.
+		Path genuine = TestFixtures.forgeMergeInput();
+		ClassNode recipes = parse(TestFixtures.requireEntry(Fixture.STAGED, genuine, RECIPE_MANAGER + ".class"));
+		MethodNode prepare = recipes.methods.stream().filter(m -> m.name.equals("prepare") && m.desc.startsWith("(Lnet/minecraft/server/packs/resources/ResourceManager;")
+				&& !m.desc.endsWith(")Ljava/lang/Object;")).findFirst().orElseThrow();
+		boolean readsContext = false, wraps = false;
+		for (AbstractInsnNode insn : prepare.instructions) {
+			if (insn instanceof FieldInsnNode field && field.getOpcode() == Opcodes.GETFIELD && field.desc.equals("L" + FORGE_CONTEXT + ";")) readsContext = true;
+			if (insn instanceof MethodInsnNode call && call.owner.equals(FORGE_CONTEXT) && call.name.equals("wrap")) wraps = true;
+		}
+		assertTrue(readsContext && wraps, "genuine RecipeManager.prepare no longer wraps its ops in its MinecraftForge context -- re-derive the hand-off");
+
+		ClassNode advancements = parse(TestFixtures.requireEntry(Fixture.STAGED, genuine, "net/minecraft/server/ServerAdvancementManager.class"));
+		MethodNode withContext = advancements.methods.stream().filter(m -> m.name.equals("<init>") && m.desc.contains(FORGE_CONTEXT)).findFirst().orElseThrow();
+		for (AbstractInsnNode insn : withContext.instructions) {
+			assertTrue(!(insn instanceof VarInsnNode load && load.var == 2),
+					"genuine ServerAdvancementManager now reads the context it is given -- advancements are no longer EMPTY there, re-derive");
+		}
+	}
+
+	@Test
+	void theMergedRecipeManagerHandsMinecraftForgeItsContextRightBeforeNeoForgesOpsAreBuilt() throws Exception {
+		byte[] merged = TestFixtures.requireEntry(Fixture.STAGED, MERGED_BASE, RECIPE_MANAGER + ".class");
+		ClassNode before = parse(merged);
+		assertTrue(before.fields.stream().anyMatch(f -> f.desc.equals("L" + FORGE_CONTEXT + ";")), "premise: MinecraftForge's context field is in the merged class");
+		for (MethodNode method : before.methods) {
+			for (AbstractInsnNode insn : method.instructions) {
+				assertTrue(!(insn instanceof FieldInsnNode field && field.getOpcode() == Opcodes.GETFIELD && field.desc.equals("L" + FORGE_CONTEXT + ";")),
+						"premise: nothing in the merged RecipeManager reads it (" + method.name + " does)");
+			}
+		}
+
+		byte[] repaired = new ForbricMergedBaseCompatTransformer().transform(RECIPE_MANAGER.replace('/', '.'), merged, null);
+		ClassNode node = parse(repaired);
+		MethodNode site = null;
+		MethodInsnNode hand = null;
+		for (MethodNode method : node.methods) {
+			for (AbstractInsnNode insn : method.instructions) {
+				if (insn instanceof MethodInsnNode call && KERNEL.equals(call.owner) && "giveMinecraftForgeItsContext".equals(call.name)) {
+					assertTrue(hand == null, "handed over twice");
+					site = method;
+					hand = call;
+				}
+			}
+		}
+		assertTrue(hand != null, "the merged RecipeManager never hands MinecraftForge its recipe context");
+		AbstractInsnNode next = hand.getNext();
+		while (next.getOpcode() < 0) next = next.getNext();
+		assertTrue(next instanceof MethodInsnNode init && init.owner.equals("net/neoforged/neoforge/common/conditions/ConditionalOps") && init.name.equals("<init>"),
+				"right before NeoForge's ConditionalOps is constructed, with its ops on the stack");
+		AbstractInsnNode field = hand.getPrevious(), self = field.getPrevious(), dup = self.getPrevious();
+		assertEquals(Opcodes.DUP2, dup.getOpcode(), "the ops and NeoForge's context, duplicated, so the constructor still gets them");
+		assertTrue(self instanceof VarInsnNode load && load.var == 0 && field instanceof FieldInsnNode read && read.desc.equals("L" + FORGE_CONTEXT + ";"),
+				"and the manager's own MinecraftForge context, for when MinecraftForge's constructor set it");
+		new Analyzer<>(new BasicVerifier()).analyze(node.name, site);
+		assertSame(repaired, new ForbricMergedBaseCompatTransformer().transform(RECIPE_MANAGER.replace('/', '.'), repaired, null), "a second pass hands nothing over twice");
+	}
+
+	@Test
+	void genuineMinecraftForgesRecipeManagerReadsItsOwnContextAndIsLeftAlone() throws Exception {
+		// The negative control: the repair is for a context field nothing reads. Where MinecraftForge's own prepare reads
+		// it, there is nothing to give back.
+		byte[] genuine = TestFixtures.requireEntry(Fixture.STAGED, TestFixtures.forgeMergeInput(), RECIPE_MANAGER + ".class");
+		byte[] out = new ForbricMergedBaseCompatTransformer().transform(RECIPE_MANAGER.replace('/', '.'), genuine, null);
+		for (MethodNode method : parse(out).methods) {
+			for (AbstractInsnNode insn : method.instructions) {
+				assertTrue(!(insn instanceof MethodInsnNode call && "giveMinecraftForgeItsContext".equals(call.name)), "handed over where MinecraftForge already reads it");
+			}
+		}
 	}
 
 	private static byte[] conditionalOps() throws Exception {

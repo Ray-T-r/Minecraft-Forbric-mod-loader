@@ -1649,7 +1649,23 @@ test	net.forbric.kernel.runtime.KernelForgeClientInitRuntimeTest	disablingTheFun
 test	net.forbric.kernel.runtime.KernelForgeClientInitRuntimeTest	forgeCaptureFlowsThroughTheInstalledLowestBridgeAndTheSameListenerReloadsOnce()	skipped without a message (a class-level abort, e.g. in @BeforeAll)
 test	net.forbric.kernel.runtime.KernelForgeClientInitRuntimeTest	geometryRunsOnEveryCallAndTheFeatureSwitchAlsoControlsForgeParticleDispatch()	skipped without a message (a class-level abort, e.g. in @BeforeAll)
 test	net.forbric.kernel.runtime.KernelForgeClientInitRuntimeTest	neoFailuresBeforeAndAfterBridgeDispatchPropagateAndClearTheCapture()	skipped without a message (a class-level abort, e.g. in @BeforeAll)
+test	net.forbric.kernel.runtime.KernelForgeConditionFunnelTest	aCodecThatJudgesTheKeyItselfIsLeftAlone()	[fixture:staged] the staged artifacts are absent
 test	net.forbric.kernel.runtime.KernelForgeConditionFunnelTest	aForgeConditionIsJudgedBeforeNeoForgeDecodes(Path)	[fixture:staged] the staged artifacts are absent
+test	net.forbric.kernel.runtime.KernelForgeConditionFunnelTest	aForgeConditionalElementBecomesItsChosenVariant()	[fixture:staged] the staged artifacts are absent
+test	net.forbric.kernel.runtime.KernelForgeConditionFunnelTest	anElementNeoForgeJudgesIsNotAskedAgainByMinecraftForge()	[fixture:staged] the staged artifacts are absent
+test	net.forbric.kernel.runtime.KernelForgeConditionFunnelTest	onlyTheOutermostDecodeIsMinecraftForgesToJudge()	[fixture:staged] the staged artifacts are absent
+test	net.forbric.kernel.runtime.KernelForgeConditionsRealCodecTest	aDatapackRegistryElementKeepsTheEmptyContextGenuineMinecraftForgeGivesIt()	[fixture:staged] the staged artifacts are absent
+test	net.forbric.kernel.runtime.KernelForgeConditionsRealCodecTest	aFalsePoolConditionLeavesMinecraftForgesEmptyPoolInPlaceAndIsJudgedOnce()	[fixture:staged] the staged artifacts are absent
+test	net.forbric.kernel.runtime.KernelForgeConditionsRealCodecTest	aFileWithOnlyMinecraftForgesDialectIsStillJudgedByIt()	[fixture:staged] the staged artifacts are absent
+test	net.forbric.kernel.runtime.KernelForgeConditionsRealCodecTest	aRecipeGuardedByNotTagEmptyLoadsExactlyWhenItsTagHasEntries()	[fixture:staged] the staged artifacts are absent
+test	net.forbric.kernel.runtime.KernelForgeConditionsRealCodecTest	aroundAnUnregisteredForgeDecoderTheFunnelDropsThePoolAndJudgesItTwice()	[fixture:staged] the staged artifacts are absent
+test	net.forbric.kernel.runtime.KernelForgeConditionsRealCodecTest	insideALootTableThePoolIsStillOnlyMinecraftForgesToJudge()	[fixture:staged] the staged artifacts are absent
+test	net.forbric.kernel.runtime.KernelForgeConditionsRealCodecTest	switchedOffNobodyReadsTheVariants()	[fixture:staged] the staged artifacts are absent
+test	net.forbric.kernel.runtime.KernelForgeConditionsRealCodecTest	theFirstVariantWhoseConditionHoldsIsTheFile()	[fixture:staged] the staged artifacts are absent
+test	net.forbric.kernel.runtime.KernelForgeConditionsRealCodecTest	theHandOffAnswersWhatGenuineMinecraftForgesConditionContextAnswers()	[fixture:staged] the staged artifacts are absent
+test	net.forbric.kernel.runtime.KernelForgeConditionsRealCodecTest	whereNeoForgeCannotJudgeItsConditionsTheFamilyThatOwnsThemDecides()	[fixture:staged] the staged artifacts are absent
+test	net.forbric.kernel.runtime.KernelForgeConditionsRealCodecTest	whereNeoForgeJudgesItsOwnConditionsMinecraftForgeIsNotAsked()	[fixture:staged] the staged artifacts are absent
+test	net.forbric.kernel.runtime.KernelForgeConditionsRealCodecTest	withoutTheHandOffTheMergedRecipeManagerDropsItWhileTheTagHasEntries()	[fixture:staged] the staged artifacts are absent
 test	net.forbric.kernel.runtime.KernelForgeConfigLoadTest	acceptLoadingAndSaveFailuresWithPublishedDataAreNotRetriedByLateLoading()	[fixture:game-side] runtime helper not compiled
 test	net.forbric.kernel.runtime.KernelForgeConfigLoadTest	actualCarrierHasOnlyTheThreeForgeTypesAndThePrivateStaticTwoArgumentOpen()	[fixture:staged] staged Forge carrier absent
 test	net.forbric.kernel.runtime.KernelForgeConfigLoadTest	actualTomlFailureOnlyDegradesItsOwnerAndTheFollowingConfigStillLoads()	[fixture:game-side] runtime helper not compiled
@@ -2096,10 +2112,15 @@ test	net.forbric.kernel.transform.MergedBaseForgeClientInitTest	runtimeCallsLink
 test	net.forbric.kernel.transform.MergedBaseForgeClientInitTest	twoRealMinecraftCallsKeepTheirDescriptorsAndInstructionCounts()	[fixture:staged] staged jar absent: $ROOT/forbric-loader/run/merged-base/patched-mc-merged-26.2.jar
 test	net.forbric.kernel.transform.MergedBaseForgeConditionsTest	aFactoryFabricAlreadyWrapsGetsMinecraftForgesWrapInFrontOfIt()	[fixture:staged] $ROOT/forbric-loader/run/neoforge-runtime/neoforge-runtime.jar absent (reading net/neoforged/neoforge/common/conditions/ConditionalOps.class)
 test	net.forbric.kernel.transform.MergedBaseForgeConditionsTest	aSecondPassDoesNotWrapItTwice()	[fixture:staged] staged MinecraftForge carrier absent
+test	net.forbric.kernel.transform.MergedBaseForgeConditionsTest	genuineMinecraftForgeHandsItsRecipesTheirContextAndItsAdvancementsNone()	[fixture:staged] ~/.minecraft/libraries/net/forbric/patched-mc-forge/26.2-65.0.1/patched-mc-forge-26.2-65.0.1.jar absent (reading net/minecraft/world/item/crafting/RecipeManager.class)
+test	net.forbric.kernel.transform.MergedBaseForgeConditionsTest	genuineMinecraftForgesRecipeManagerReadsItsOwnContextAndIsLeftAlone()	[fixture:staged] ~/.minecraft/libraries/net/forbric/patched-mc-forge/26.2-65.0.1/patched-mc-forge-26.2-65.0.1.jar absent (reading net/minecraft/world/item/crafting/RecipeManager.class)
 test	net.forbric.kernel.transform.MergedBaseForgeConditionsTest	minecraftForgeIsAskedBeforeFabricAtTheOnlyExit()	[fixture:staged] $ROOT/forbric-loader/run/neoforge-runtime/neoforge-runtime.jar absent (reading net/neoforged/neoforge/common/conditions/ConditionalOps.class)
 test	net.forbric.kernel.transform.MergedBaseForgeConditionsTest	minecraftForgesEvaluatorIsStillOnTheDatapackPathAtAll()	[fixture:staged] staged merged base absent
 test	net.forbric.kernel.transform.MergedBaseForgeConditionsTest	safeCodecIsNotTheAnswerBecauseItDropsWhatItCannotParse()	[fixture:staged] staged MinecraftForge carrier absent
+test	net.forbric.kernel.transform.MergedBaseForgeConditionsTest	switchedOffTheTransformLogSaysNothingAsksMinecraftForge()	[fixture:staged] $ROOT/forbric-loader/run/neoforge-runtime/neoforge-runtime.jar absent (reading net/neoforged/neoforge/common/conditions/ConditionalOps.class)
 test	net.forbric.kernel.transform.MergedBaseForgeConditionsTest	theCodecIsWrappedBeforeItIsStoredAndBeforeTheOtherTwoAreDerivedFromIt()	[fixture:staged] staged MinecraftForge carrier absent
+test	net.forbric.kernel.transform.MergedBaseForgeConditionsTest	theFunnelIsHandedTheFactorysOwnTwoArgumentsAndTheStackStillFits()	[fixture:staged] $ROOT/forbric-loader/run/neoforge-runtime/neoforge-runtime.jar absent (reading net/neoforged/neoforge/common/conditions/ConditionalOps.class)
+test	net.forbric.kernel.transform.MergedBaseForgeConditionsTest	theMergedRecipeManagerHandsMinecraftForgeItsContextRightBeforeNeoForgesOpsAreBuilt()	[fixture:staged] $ROOT/forbric-loader/run/merged-base/patched-mc-merged-26.2.jar absent (reading net/minecraft/world/item/crafting/RecipeManager.class)
 test	net.forbric.kernel.transform.MergedBaseForgeFluidModelsTest	aSecondPassChangesNothingFurther()	[fixture:staged] staged merged base absent
 test	net.forbric.kernel.transform.MergedBaseForgeFluidModelsTest	theModelFunnelSitsRightAfterTheLookupsStoreAndReloadsTheSameSlot()	[fixture:staged] staged merged base absent
 test	net.forbric.kernel.transform.MergedBaseForgeFluidModelsTest	thePremiseOneLookupAtMostForgesOwnModelAskAndAMinusOneTintArm()	[fixture:staged] staged merged base absent

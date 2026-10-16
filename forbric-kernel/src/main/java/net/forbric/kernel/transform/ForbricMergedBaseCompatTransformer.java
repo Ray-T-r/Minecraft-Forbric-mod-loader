@@ -93,7 +93,7 @@ public final class ForbricMergedBaseCompatTransformer implements ClassTransforme
 	}
 
 	/** The repairs {@link #transform} runs, in its order; a test pins the two lists against each other. */
-	static final List<String> REPAIRS = List.of("repairLambdaBootstrapHandles", "addBlockStateModelConflictResolvers", "addBlockStateAppearanceResolver", "addMissingForgeFluidTypeBridge", "addMissingForgeKeyMappingLookupInitializer", "routeKeyMappingClickToPopulatedLookup", "giveKeyMappingItsMinecraftForgeFace", "giveKeyMappingItsVanillaMap", "giveTheVanillaParticleMapAViewOfTheLiveOne", "letDungeonsGenerateWithoutTheDataMap", "restoreDoublePrecisionToTheRandomSources", "convertRadiansWithVanillasFoldedConstant", "callVanillasWriteByteAgain", "saveTheHeightmapsVanillaSaves", "guardNeoForgesWorldModifierPass", "letForeignResourceConditionsThrough", "letForeignResourceConditionsThroughMinecraftForge", "letFabricResourceConditionsDecide", "letMinecraftForgeResourceConditionsDecide", "translateAGuestsPrivateSkipMarker", "serveDefaultAttributesBothEcosystems", "restoreForgeClientInit", "restoreForgeGeometryReload", "nameTheReloadListenersNeoForgeRefusesToName", "dropInterfaceDefaultShadowingOverrides", "tolerateEmptyCreativeTabStacks", "routePlaceItemHookToNeoForge", "bridgeOrphanedPipRenderers", "keepForgeOutboundProtocolCurrent", "surviveTheMissingForgeModelDataManager", "dropTheWindowTitlesLoaderBrand", "keepTheSaveOffTheTeardownsFailurePath", "postNeoForgesItemTooltipEvent", "askNeoForgeWhatAnItemsAttributesAre", "readTheSpawnReasonThatIsActuallyWritten", "giveTheUnwrittenLoggerAValue", "addTheMissingCapabilityLifecycleStubs", "addTheMissingNbtBuilderFactory", "postMinecraftForgesReloadListenerEvent", "giveMinecraftForgesReloadEventItsConditionContext", "letMinecraftForgeIngredientTypesDecode", "letMinecraftForgeFluidsChooseTheirModel", "giveMinecraftForgesParticleLookupItsFirstVariant", "dropStubsThatBypassARealSuperclassMethod", "inlineTheSwitchMapTheMergeLost", "vetoUnjudgeableOverlayConditions", "hideTheLegacyLootModifierIndexFromTheDirectoryScan", "letModdedFeatureFlagsRegister", "dropTheKeyModifierSuffixBeforeParsingAKeyName", "letTheAtlasLowerItsMipLevelLikeVanilla", "wrapTheStreamsVanillaWraps", "returnFromANestedBootstrapBeforeItsTail", "letBothEcosystemsSetBurnTime", "letMinecraftForgeSeeSpawnerMobs", "letMinecraftForgeAddPackFinders");
+	static final List<String> REPAIRS = List.of("repairLambdaBootstrapHandles", "addBlockStateModelConflictResolvers", "addBlockStateAppearanceResolver", "addMissingForgeFluidTypeBridge", "addMissingForgeKeyMappingLookupInitializer", "routeKeyMappingClickToPopulatedLookup", "giveKeyMappingItsMinecraftForgeFace", "giveKeyMappingItsVanillaMap", "giveTheVanillaParticleMapAViewOfTheLiveOne", "letDungeonsGenerateWithoutTheDataMap", "restoreDoublePrecisionToTheRandomSources", "convertRadiansWithVanillasFoldedConstant", "callVanillasWriteByteAgain", "saveTheHeightmapsVanillaSaves", "guardNeoForgesWorldModifierPass", "letForeignResourceConditionsThrough", "letForeignResourceConditionsThroughMinecraftForge", "letFabricResourceConditionsDecide", "letMinecraftForgeResourceConditionsDecide", "giveMinecraftForgesRecipeConditionsTheirContext", "translateAGuestsPrivateSkipMarker", "serveDefaultAttributesBothEcosystems", "restoreForgeClientInit", "restoreForgeGeometryReload", "nameTheReloadListenersNeoForgeRefusesToName", "dropInterfaceDefaultShadowingOverrides", "tolerateEmptyCreativeTabStacks", "routePlaceItemHookToNeoForge", "bridgeOrphanedPipRenderers", "keepForgeOutboundProtocolCurrent", "surviveTheMissingForgeModelDataManager", "dropTheWindowTitlesLoaderBrand", "keepTheSaveOffTheTeardownsFailurePath", "postNeoForgesItemTooltipEvent", "askNeoForgeWhatAnItemsAttributesAre", "readTheSpawnReasonThatIsActuallyWritten", "giveTheUnwrittenLoggerAValue", "addTheMissingCapabilityLifecycleStubs", "addTheMissingNbtBuilderFactory", "postMinecraftForgesReloadListenerEvent", "giveMinecraftForgesReloadEventItsConditionContext", "letMinecraftForgeIngredientTypesDecode", "letMinecraftForgeFluidsChooseTheirModel", "giveMinecraftForgesParticleLookupItsFirstVariant", "dropStubsThatBypassARealSuperclassMethod", "inlineTheSwitchMapTheMergeLost", "vetoUnjudgeableOverlayConditions", "hideTheLegacyLootModifierIndexFromTheDirectoryScan", "letModdedFeatureFlagsRegister", "dropTheKeyModifierSuffixBeforeParsingAKeyName", "letTheAtlasLowerItsMipLevelLikeVanilla", "wrapTheStreamsVanillaWraps", "returnFromANestedBootstrapBeforeItsTail", "letBothEcosystemsSetBurnTime", "letMinecraftForgeSeeSpawnerMobs", "letMinecraftForgeAddPackFinders");
 
 	private static final String NEO_EVENT_HOOKS_BINARY = "net.neoforged.neoforge.event.EventHooks";
 
@@ -161,6 +161,8 @@ public final class ForbricMergedBaseCompatTransformer implements ClassTransforme
 				"fabric:load_conditions has no evaluator — a Fabric mod's conditional data files all load"));
 		out.add(fixed("letMinecraftForgeResourceConditionsDecide", CONDITIONAL_OPS,
 				"forge:condition has no evaluator — a MinecraftForge mod's conditional registry elements and data files all load"));
+		out.add(fixed("giveMinecraftForgesRecipeConditionsTheirContext", RECIPE_MANAGER,
+				"MinecraftForge's recipe conditions read every tag as empty — a recipe guarded by forge:not(forge:tag_empty) is dropped while its tag has entries"));
 		out.add(fixed("translateAGuestsPrivateSkipMarker", JSON_RELOAD_LISTENER,
 				"fabric-api's skip marker reaches the merged reader's cast — the datapack load dies (\"can't proceed with server load\")"));
 		out.add(fixed("serveDefaultAttributesBothEcosystems", DEFAULT_ATTRIBUTES,
@@ -309,6 +311,7 @@ public final class ForbricMergedBaseCompatTransformer implements ClassTransforme
 			changed |= claim(reporter, "letForeignResourceConditionsThroughMinecraftForge", letForeignResourceConditionsThroughMinecraftForge(node));
 			changed |= claim(reporter, "letFabricResourceConditionsDecide", letFabricResourceConditionsDecide(node));
 			changed |= claim(reporter, "letMinecraftForgeResourceConditionsDecide", letMinecraftForgeResourceConditionsDecide(node));
+			changed |= claim(reporter, "giveMinecraftForgesRecipeConditionsTheirContext", giveMinecraftForgesRecipeConditionsTheirContext(node));
 			changed |= claim(reporter, "translateAGuestsPrivateSkipMarker", translateAGuestsPrivateSkipMarker(node));
 			changed |= claim(reporter, "serveDefaultAttributesBothEcosystems", serveDefaultAttributesBothEcosystems(node));
 			changed |= claim(reporter, "restoreForgeClientInit", restoreForgeClientInit(node));
@@ -1833,11 +1836,17 @@ public final class ForbricMergedBaseCompatTransformer implements ClassTransforme
 	 * The merge kept NeoForge's bodies of both and left MinecraftForge's lambdas in the class uncalled, so nothing
 	 * judged the key: a Forge mod's conditional biome modifier, recipe or loot table always loaded. Both NeoForge bodies
 	 * decode through ConditionalOps' one codec factory, and {@code KernelForgeConditions.alsoAskForge} asks
-	 * MinecraftForge's own {@code ConditionCodec} there.
+	 * MinecraftForge's own readers there.
 	 *
 	 * <p>Inserted before the factory's single {@code ARETURN} -- and before {@code alsoAskFabric} when that is already
 	 * there, so the Fabric wrap stays the instruction right before the exit, which is how SupersededMixins sees its
-	 * repair in the defined class. A {@code Codec} in, a {@code Codec} out: nothing moves, no frame to recompute.
+	 * repair in the defined class. The factory's own two arguments go on top of the finished codec -- the codec
+	 * NeoForge's conditional wraps, so the funnel can stand aside around one that judges forge:condition itself, and
+	 * the key NeoForge judges, so an element whose NeoForge conditions NeoForge judges keeps NeoForge's verdict -- and
+	 * one {@code Codec} comes back. No branch, no frame; {@code maxStack} is raised from the depth the analyser finds
+	 * there. Stands down when the factory writes either argument slot, since the loads would then not read the
+	 * arguments. With {@code -Dforbric.forgeConditionFunnel=off} the wrap is still inserted (the switch is read per
+	 * decode) and the log says that nothing asks MinecraftForge.
 	 */
 	private static boolean letMinecraftForgeResourceConditionsDecide(ClassNode node) {
 		if (!CONDITIONAL_OPS.equals(node.name)) return false;
@@ -1847,6 +1856,12 @@ public final class ForbricMergedBaseCompatTransformer implements ClassTransforme
 		for (AbstractInsnNode insn = factory.instructions.getFirst(); insn != null; insn = insn.getNext()) {
 			if (insn instanceof MethodInsnNode call && KERNEL_FORGE_CONDITIONS.equals(call.owner) && "alsoAskForge".equals(call.name)) {
 				return false;                   // already wrapped: idempotent
+			}
+			if (insn instanceof VarInsnNode store && store.getOpcode() >= Opcodes.ISTORE && store.getOpcode() <= Opcodes.ASTORE
+					&& store.var <= 1) {
+				ForbricLog.warn("[Forbric/MergedBaseCompat] ConditionalOps' codec factory writes its argument slot %d — not "
+						+ "asking MinecraftForge there, because the funnel would not be handed the factory's arguments", store.var);
+				return false;
 			}
 			if (insn.getOpcode() != Opcodes.ARETURN) continue;
 			if (exit != null) {
@@ -1859,11 +1874,126 @@ public final class ForbricMergedBaseCompatTransformer implements ClassTransforme
 		if (exit == null) return false;
 		AbstractInsnNode at = exit.getPrevious() instanceof MethodInsnNode fabric
 				&& KERNEL_FABRIC_CONDITIONS.equals(fabric.owner) && "alsoAskFabric".equals(fabric.name) ? fabric : exit;
-		factory.instructions.insertBefore(at, new MethodInsnNode(Opcodes.INVOKESTATIC, KERNEL_FORGE_CONDITIONS,
-				"alsoAskForge", "(Lcom/mojang/serialization/Codec;)Lcom/mojang/serialization/Codec;", false));
-		ForbricLog.info("[Forbric/MergedBaseCompat] forge:condition has an evaluator again: ConditionalOps' one codec "
-				+ "factory asks MinecraftForge's own ConditionCodec, which the merged registry and data-file loaders "
-				+ "(NeoForge's) never call");
+		int depth = stackDepthAt(node, factory, at);
+		if (depth < 0) {
+			ForbricLog.warn("[Forbric/MergedBaseCompat] ConditionalOps' codec factory could not be analysed — not asking "
+					+ "MinecraftForge there");
+			return false;
+		}
+		InsnList ask = new InsnList();
+		ask.add(new VarInsnNode(Opcodes.ALOAD, 0));
+		ask.add(new VarInsnNode(Opcodes.ALOAD, 1));
+		ask.add(new MethodInsnNode(Opcodes.INVOKESTATIC, KERNEL_FORGE_CONDITIONS, "alsoAskForge",
+				"(Lcom/mojang/serialization/Codec;Lcom/mojang/serialization/Codec;Ljava/lang/String;)Lcom/mojang/serialization/Codec;", false));
+		factory.instructions.insertBefore(at, ask);
+		factory.maxStack = Math.max(factory.maxStack, depth + 2);
+		if ("off".equalsIgnoreCase(System.getProperty(FORGE_CONDITION_FUNNEL_PROPERTY, "on"))) {
+			ForbricLog.info("[Forbric/MergedBaseCompat] ConditionalOps' one codec factory carries the MinecraftForge "
+					+ "condition funnel, switched off with -D%s=off: nothing asks MinecraftForge about forge:condition",
+					FORGE_CONDITION_FUNNEL_PROPERTY);
+		} else {
+			ForbricLog.info("[Forbric/MergedBaseCompat] forge:condition has an evaluator again: ConditionalOps' one codec "
+					+ "factory asks MinecraftForge's own readers, which the merged registry and data-file loaders "
+					+ "(NeoForge's) never call");
+		}
+		return true;
+	}
+
+	/** {@code KernelForgeConditions.FUNNEL_PROPERTY}, which the boot side cannot name: the runtime class is game-side. */
+	private static final String FORGE_CONDITION_FUNNEL_PROPERTY = "forbric.forgeConditionFunnel";
+
+	/**
+	 * The operand stack depth right before {@code insn} runs, as ASM's analyser finds it; -1 when the method cannot be
+	 * analysed or {@code insn} is unreachable. The class is written without COMPUTE_MAXS, so an insertion that pushes
+	 * values raises {@code maxStack} from this, not from an assumed depth.
+	 */
+	private static int stackDepthAt(ClassNode owner, MethodNode method, AbstractInsnNode insn) {
+		try {
+			org.objectweb.asm.tree.analysis.Frame<org.objectweb.asm.tree.analysis.BasicValue>[] frames =
+					new org.objectweb.asm.tree.analysis.Analyzer<>(new org.objectweb.asm.tree.analysis.BasicInterpreter())
+							.analyze(owner.name, method);
+			org.objectweb.asm.tree.analysis.Frame<org.objectweb.asm.tree.analysis.BasicValue> at =
+					frames[method.instructions.indexOf(insn)];
+			return at == null ? -1 : at.getStackSize();
+		} catch (org.objectweb.asm.tree.analysis.AnalyzerException unreadable) {
+			return -1;
+		}
+	}
+
+	private static final String RECIPE_MANAGER = "net/minecraft/world/item/crafting/RecipeManager";
+	private static final String NEO_CONDITION_CONTEXT = ICONDITION + "$IContext";
+	private static final String FORGE_CONDITION_CONTEXT = FORGE_ICONDITION + "$IContext";
+
+	/**
+	 * Hands MinecraftForge's recipe conditions the context genuine MinecraftForge gives them.
+	 *
+	 * <p>Genuine MinecraftForge's {@code ReloadableServerResources} builds {@code ConditionContext(pendingTags)} and
+	 * passes it to {@code RecipeManager}'s constructor, and {@code RecipeManager.prepare} wraps the serialization ops
+	 * in it ({@code context.wrap(registries.createSerializationContext(JsonOps.INSTANCE))}), so a recipe's
+	 * {@code forge:tag_empty} reads the tags this reload loads. The merge kept NeoForge's {@code prepare}, which
+	 * builds NeoForge's {@code ConditionalOps} over those ops with NeoForge's context, and NeoForge's call of the
+	 * one-argument constructor: the class still declares MinecraftForge's context field, written only by
+	 * MinecraftForge's constructor and read by nothing. So MinecraftForge's evaluator, asked at ConditionalOps'
+	 * funnel, saw {@code EMPTY}: every tag empty, and a recipe guarded by {@code forge:not(forge:tag_empty ...)}
+	 * dropped while its tag had entries.
+	 *
+	 * <p>Recognised by that shape, not assumed: a MinecraftForge {@code ICondition$IContext} instance field no method
+	 * reads, and exactly one construction of {@code ConditionalOps(RegistryOps, ICondition$IContext)}. Right before
+	 * that constructor runs, with the ops and NeoForge's context on top of the stack, {@code DUP2; ALOAD 0;
+	 * GETFIELD <that field>; INVOKESTATIC KernelForgeConditions.giveMinecraftForgeItsContext} wraps the ops in place
+	 * (as {@code IContext.wrap} does) and leaves the stack as it was. No branch, no frame; the stack depth the
+	 * analyser finds at the site, plus three, bounds {@code maxStack}. A second pass finds the field read and stands
+	 * down. The other decodes stay {@code EMPTY}, as on genuine MinecraftForge: no other class carries such a field
+	 * (its advancement manager's constructor takes the context and drops it).
+	 */
+	private static boolean giveMinecraftForgesRecipeConditionsTheirContext(ClassNode node) {
+		if (!RECIPE_MANAGER.equals(node.name)) return false;
+		FieldNode own = null;
+		for (FieldNode field : node.fields) {
+			if ((field.access & Opcodes.ACC_STATIC) != 0 || !("L" + FORGE_CONDITION_CONTEXT + ";").equals(field.desc)) continue;
+			if (own != null) return false;          // two of them: not the shape this was checked against
+			own = field;
+		}
+		if (own == null) return false;
+		MethodNode site = null;
+		MethodInsnNode construct = null;
+		for (MethodNode method : node.methods) {
+			if (method.instructions == null) continue;
+			for (AbstractInsnNode insn = method.instructions.getFirst(); insn != null; insn = insn.getNext()) {
+				if (insn instanceof FieldInsnNode read && read.getOpcode() == Opcodes.GETFIELD && node.name.equals(read.owner)
+						&& own.name.equals(read.name) && own.desc.equals(read.desc)) {
+					return false;                   // MinecraftForge's own body reads it, or this pass already ran
+				}
+				if (insn instanceof MethodInsnNode call && call.getOpcode() == Opcodes.INVOKESPECIAL
+						&& CONDITIONAL_OPS.equals(call.owner) && "<init>".equals(call.name)
+						&& ("(Lnet/minecraft/resources/RegistryOps;L" + NEO_CONDITION_CONTEXT + ";)V").equals(call.desc)) {
+					if (construct != null) {
+						ForbricLog.warn("[Forbric/MergedBaseCompat] RecipeManager builds ConditionalOps more than once — not "
+								+ "handing MinecraftForge its recipe condition context at one of them and not the other");
+						return false;
+					}
+					site = method;
+					construct = call;
+				}
+			}
+		}
+		if (construct == null) return false;
+		int depth = stackDepthAt(node, site, construct);
+		if (depth < 0) {
+			ForbricLog.warn("[Forbric/MergedBaseCompat] RecipeManager.%s could not be analysed — not handing MinecraftForge "
+					+ "its recipe condition context", site.name);
+			return false;
+		}
+		InsnList hand = new InsnList();
+		hand.add(new InsnNode(Opcodes.DUP2));
+		hand.add(new VarInsnNode(Opcodes.ALOAD, 0));
+		hand.add(new FieldInsnNode(Opcodes.GETFIELD, node.name, own.name, own.desc));
+		hand.add(new MethodInsnNode(Opcodes.INVOKESTATIC, KERNEL_FORGE_CONDITIONS, "giveMinecraftForgeItsContext",
+				"(Lnet/minecraft/resources/RegistryOps;L" + NEO_CONDITION_CONTEXT + ";L" + FORGE_CONDITION_CONTEXT + ";)V", false));
+		site.instructions.insertBefore(construct, hand);
+		site.maxStack = Math.max(site.maxStack, depth + 3);
+		ForbricLog.info("[Forbric/MergedBaseCompat] RecipeManager.%s hands MinecraftForge's recipe conditions their context "
+				+ "again before NeoForge's ConditionalOps is built: its MinecraftForge context field had nothing reading it", site.name);
 		return true;
 	}
 

@@ -30,7 +30,9 @@ import org.objectweb.asm.tree.VarInsnNode;
  * as MinecraftForge's constructor would; and {@code lootPoolsCodec} takes its element codec from
  * KernelForgeConditions.poolElementCodec, which is MinecraftForge's {@code CONDITIONAL_CODEC}. It still sits inside
  * NeoForge's own conditional wrapper, so {@code neoforge:conditions} (and the kernel's {@code fabric:load_conditions})
- * are judged first and unchanged; a pool without the key decodes exactly as before. Like the kernel's other condition
+ * are judged first and unchanged; a pool without the key decodes exactly as before, and a pool whose NeoForge
+ * conditions NeoForge judged keeps that verdict without its {@code forge:condition} being asked as well (the rule for
+ * a file written in both dialects, KernelForgeConditions.judgedByNeoForge). Like the kernel's other condition
  * keys, {@code forge:condition} is judged for every mod's data, whichever family shipped it — the pool list codec does
  * not know which pack a table came from. {@code lootPoolsCodec} is NeoForge's public API; its only caller in the game
  * is {@code LootTable}. The codec is built once, so {@code -Dforbric.forgePoolConditions=off} is read at launch.
