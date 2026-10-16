@@ -649,6 +649,8 @@ public final class KernelBoot {
 		// A config watch's handler runs only for a change made after the watch: the carriers' own configs keep config/
 		// watched, so a config file the tracker creates there afterwards reached its new watch as a "change".
 		chain.register(TransformPhase.COREMOD, new net.forbric.kernel.transform.StaleWatchEventInjector());
+		// canGlide asks the equipment, as the native game does, while the carrier's cached gliding attribute lags behind it.
+		chain.register(TransformPhase.COREMOD, new net.forbric.kernel.transform.GlideFreshEquipmentInjector());
 		// Carrier callback seams are available to every structurally compatible guest mixin.
 		chain.register(TransformPhase.COREMOD, new net.forbric.kernel.transform.BreathingCallbackInjector());
 		chain.register(TransformPhase.COREMOD, new net.forbric.kernel.transform.BlockSoundQueryInjector());
