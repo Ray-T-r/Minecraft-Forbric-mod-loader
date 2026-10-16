@@ -506,6 +506,15 @@ public final class KernelBoot {
 		// issue #31). LAST in the coremod phase (the sort index): every kernel injector still matches the folded
 		// shape it was written against, and a method one of them edited at its tail has no frame-only tail run and
 		// is left folded — its hook keeps running on every path.
+		// Both sides: a merged local's variable-table range starts at its declaring store again where the merge spliced a
+		// carrier's reads of the local in front of the range, so a mod's @Local / @ModifyVariable finds it where vanilla's
+		// compiler had it in scope. Just before the early returns, which split tails by those ranges.
+		if (net.forbric.kernel.transform.LocalRanges.enabled()) {
+			chain.register(TransformPhase.COREMOD, new net.forbric.kernel.transform.LocalRanges(), Integer.MAX_VALUE - 1);
+		} else {
+			ForbricLog.warn("[Forbric/LocalRanges] -D%s=off — a merged local whose range the merge started after a carrier's "
+					+ "reads of it stays out of scope there for a mod's @Local", net.forbric.kernel.transform.LocalRanges.PROPERTY);
+		}
 		if (net.forbric.kernel.transform.VanillaEarlyReturns.enabled()) {
 			chain.register(TransformPhase.COREMOD, new net.forbric.kernel.transform.VanillaEarlyReturns(), Integer.MAX_VALUE);
 		} else {
