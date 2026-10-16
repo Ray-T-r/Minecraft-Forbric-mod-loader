@@ -76,6 +76,47 @@ class LifecycleHookInjectorTest {
 		assertTrue(main.instructions.size() > 0, "main still has a body");
 	}
 
+	/**
+	 * Fabric Loader patches {@code DUP; Hooks.setGameInstance} right after the dedicated server's constructor (the one
+	 * whose first parameter is a Thread, built in {@code MinecraftServer.spin}'s lambda), before the server thread runs:
+	 * {@code FabricLoader.getGameInstance()} answers the server from SERVER_STARTING on. The kernel set it only at
+	 * NeoForge's ServerAboutToStartEvent, after initServer had run. The real Main gets the call straight after the
+	 * constructor, in the lambda; with the Fabric hooks switched off it gets none.
+	 */
+	@Test
+	void theRealServerEntryHandsTheServerToFabricAsItIsConstructed() throws Exception {
+		byte[] original = TestFixtures.requireEntry(Fixture.STAGED, MERGED_BASE, "net/minecraft/server/Main.class");
+		ClassNode out = node(new LifecycleHookInjector().transform(LifecycleHookInjector.SERVER_MAIN, original, null));
+		int found = 0;
+		for (MethodNode m : out.methods) {
+			List<String> code = code(m);
+			for (int i = 0; i + 2 < code.size(); i++) {
+				if (!code.get(i).startsWith("INVOKESPECIAL ") || !code.get(i).contains(".<init>(Ljava/lang/Thread;")) continue;
+				assertEquals("DUP", code.get(i + 1), m.name + ": " + code);
+				assertEquals("INVOKESTATIC net/fabricmc/loader/impl/game/minecraft/Hooks.setGameInstance(Ljava/lang/Object;)V", code.get(i + 2),
+						m.name + ": " + code);
+				assertTrue(code.get(i).contains("net/minecraft/server/dedicated/DedicatedServer.<init>"), code.get(i));
+				found++;
+			}
+		}
+		assertEquals(1, found, "one capture, after the one server constructor");
+		String old = System.setProperty(LifecycleHookInjector.FABRIC_HOOKS_SWITCH, "off");
+		try {
+			ClassNode off = node(new LifecycleHookInjector().transform(LifecycleHookInjector.SERVER_MAIN, original, null));
+			for (MethodNode m : off.methods) assertFalse(code(m).stream().anyMatch(c -> c.contains("Hooks.setGameInstance")), m.name);
+		} finally {
+			if (old == null) System.clearProperty(LifecycleHookInjector.FABRIC_HOOKS_SWITCH); else System.setProperty(LifecycleHookInjector.FABRIC_HOOKS_SWITCH, old);
+		}
+	}
+
+	/** The client entry builds no server from a Thread, and is never given the server capture. */
+	@Test
+	void theClientEntryIsNotGivenTheServerCapture() {
+		byte[] client = entry(LifecycleHookInjector.CLIENT_MAIN, ForeignType.CLIENT_MOD_LOADER.internal(Ecosystem.NEOFORGE), "begin", "()V");
+		ClassNode out = node(LifecycleHookInjector.forClient().transform(LifecycleHookInjector.CLIENT_MAIN, client, null));
+		for (MethodNode m : out.methods) assertFalse(code(m).stream().anyMatch(c -> c.contains("Hooks.setGameInstance")), m.name);
+	}
+
 	@Test
 	void passesThroughNonEntryClasses() {
 		byte[] bogus = new byte[] {}; // never inspected — className gate short-circuits

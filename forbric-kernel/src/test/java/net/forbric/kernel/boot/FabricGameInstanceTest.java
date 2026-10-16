@@ -46,6 +46,14 @@ class FabricGameInstanceTest {
 		assertTrue(set >= 0 && entrypoints > set, "the instance first, then the entrypoints: " + calls);
 	}
 
+	/** The call the server entry makes after the server's constructor (LifecycleHookInjector) publishes it. */
+	@Test void setGameInstancePublishesWhatTheServerEntryHandsIt() throws Exception {
+		ClassNode hooks = compiled("main", "net/fabricmc/loader/impl/game/minecraft/Hooks");
+		MethodNode set = hooks.methods.stream().filter(m -> m.name.equals("setGameInstance") && m.desc.equals("(Ljava/lang/Object;)V"))
+				.findFirst().orElseThrow();
+		assertTrue(calls(set).contains("net/forbric/kernel/boot/KernelFabricEcosystem.setGameInstance"), calls(set).toString());
+	}
+
 	@Test void aDedicatedServerBecomesTheGameInstanceAsItStarts() throws Exception {
 		ClassNode lifecycle = compiled("runtime", "net/forbric/kernel/runtime/KernelGameServerLifecycle");
 		boolean sets = false;

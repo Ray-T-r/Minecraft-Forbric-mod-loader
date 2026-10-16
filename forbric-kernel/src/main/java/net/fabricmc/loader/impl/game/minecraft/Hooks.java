@@ -100,4 +100,16 @@ public final class Hooks {
 		if (gameInstance != null) KernelFabricEcosystem.setGameInstance(gameInstance);
 		KernelLifecycle.onClientEntrypoints();
 	}
+
+	/**
+	 * Publishes the dedicated server for {@code FabricLoader.getGameInstance()} the moment it is constructed: Fabric
+	 * Loader patches {@code DUP; invokestatic Hooks.setGameInstance} after the server's constructor in the server entry,
+	 * before the server thread starts, so a Fabric mod asking from {@code SERVER_STARTING} or a server-construction
+	 * mixin gets the server. The kernel emits the same call ({@link net.forbric.kernel.transform.LifecycleHookInjector}).
+	 *
+	 * @param gameInstance the {@code MinecraftServer} just constructed
+	 */
+	public static void setGameInstance(Object gameInstance) {
+		if (gameInstance != null) KernelFabricEcosystem.setGameInstance(gameInstance);
+	}
 }

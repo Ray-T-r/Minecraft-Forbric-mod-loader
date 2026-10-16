@@ -141,8 +141,10 @@ public final class KernelGameServerLifecycle {
 	/**
 	 * A dedicated server is Fabric Loader's game instance once it exists: Fabric sets it from the server's own
 	 * construction, and {@code FabricLoader.getGameInstance()} answers it from then on (a client's is the Minecraft
-	 * instance, set by {@code Hooks.startClient}; an integrated server never replaces it). NeoForge's
-	 * {@code ServerAboutToStartEvent}, first in, is the earliest event that carries the server.
+	 * instance, set by {@code Hooks.startClient}; an integrated server never replaces it). The server entry does that
+	 * itself, as Fabric patches it ({@code LifecycleHookInjector} emits {@code Hooks.setGameInstance} after the server's
+	 * constructor); this listener, on NeoForge's {@code ServerAboutToStartEvent} (the earliest event that carries the
+	 * server), is only the fallback for an entry where that constructor was not found or the Fabric hooks are off.
 	 */
 	public static void installGameInstance(Object neoBus) {
 		Consumer<ServerAboutToStartEvent> listener = neoEvent -> {

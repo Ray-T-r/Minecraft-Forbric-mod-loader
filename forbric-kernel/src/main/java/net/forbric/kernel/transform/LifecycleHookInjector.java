@@ -239,6 +239,7 @@ public final class LifecycleHookInjector implements ClassTransformer {
 		}
 
 		if (reportsEarlyFailures) reportEarlyFailures(node);
+		if (fabricHooks) captureServerInstance(node);
 
 		if (redirected == 0) {
 			ForbricLog.error("[Forbric/Lifecycle] %s.%s contained NO known genuine-loader trigger — the merged "
@@ -253,6 +254,36 @@ public final class LifecycleHookInjector implements ClassTransformer {
 		byte[] out = writer.toByteArray();
 
 		return out;
+	}
+
+	/**
+	 * Has the server entry hand the dedicated server to Fabric Loader's {@code Hooks.setGameInstance} right after its
+	 * constructor, as Fabric Loader patches it: the first constructor call in the entry class whose first parameter is a
+	 * {@code Thread} (the server built in {@code MinecraftServer.spin}'s lambda; Fabric finds it by the same shape), then
+	 * {@code DUP; invokestatic}. Before it, {@code FabricLoader.getGameInstance()} stayed null from the server's
+	 * construction until NeoForge's {@code ServerAboutToStartEvent}, after {@code initServer} had already run — Fabric's
+	 * {@code SERVER_STARTING} and every server-construction hook ran without it. One slot deeper, no branch moves.
+	 */
+	static boolean captureServerInstance(ClassNode node) {
+		for (MethodNode m : node.methods) {
+			for (var insn : m.instructions.toArray()) {
+				if (!(insn instanceof MethodInsnNode call) || call.getOpcode() != Opcodes.INVOKESPECIAL || !call.name.equals("<init>")) continue;
+				org.objectweb.asm.Type[] arguments = org.objectweb.asm.Type.getArgumentTypes(call.desc);
+				if (arguments.length == 0 || !arguments[0].getDescriptor().equals("Ljava/lang/Thread;")) continue;
+				InsnList capture = new InsnList();
+				capture.add(new InsnNode(Opcodes.DUP));
+				capture.add(new MethodInsnNode(Opcodes.INVOKESTATIC, FABRIC_HOOKS, "setGameInstance", "(Ljava/lang/Object;)V", false));
+				m.instructions.insert(call, capture);
+				m.maxStack += 1;
+				ForbricLog.info("[Forbric/Fabric] emitted Fabric Loader's Hooks.setGameInstance after %s's construction in %s.%s — "
+						+ "FabricLoader.getGameInstance() answers the dedicated server from then on, as on Fabric", call.owner.replace('/', '.'),
+						node.name.replace('/', '.'), m.name);
+				return true;
+			}
+		}
+		ForbricLog.debug("[Forbric/Fabric] %s constructs no server from a Thread; the game instance waits for ServerAboutToStartEvent",
+				node.name.replace('/', '.'));
+		return false;
 	}
 
 	/**
