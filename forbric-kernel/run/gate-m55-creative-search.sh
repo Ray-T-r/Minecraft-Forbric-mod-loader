@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # M55 — the creative search: a mod refreshing it the vanilla way reaches the creative screen, and a MinecraftForge mod
-# reading it through MinecraftForge's SessionSearchTrees.getSearchTree gets the search results back.
+# reading it through MinecraftForge's SessionSearchTrees.getSearchTree gets the search results back -- for the search
+# tab and for a searchable tab of its own.
 #
 # WHY THIS EXISTS. SessionSearchTrees came out of the byte merge with halves from both families.
 #   * Vanilla's two producers, updateCreativeTooltips(Provider, List) and updateCreativeTags(List). On the merge this
@@ -34,6 +35,14 @@
 #      waiting.
 #   3. unrepaired — phase 1's canaries with the repair off (-Dforbric.creativeSearchTrees=off): getSearchTree, as merged,
 #      does not answer within the reader's bound and never answers at all. The repair's negative control.
+#   4. own tab — the MinecraftForge canary alone, which registers a searchable tab of its own. Once the creative screen's
+#      own rebuild has filed every searchable tab's trees (under NeoForge's keys, where the screen reads), the canary
+#      asks getSearchTree with the keys MinecraftForge's CreativeModeTabSearchRegistry gives it for that tab: the name
+#      search finds every item the tab displays, the tag search every displayed item in the tag, and a key nobody handed
+#      out finds nothing. For the search tab both registries answer vanilla's shared constants, so phases 1-3 never see
+#      whether a MinecraftForge key is turned into NeoForge's; here each family makes its own key. RED (verified by
+#      mutation): KernelCreativeSearch.tree reading the key it was handed instead of NeoForge's key for the same tab
+#      -- the own-tab searches find 0.
 # GATE-PARALLEL: rundirs=client-creative-search-m55 mem=3000
 set -uo pipefail
 . "$(cd "$(dirname "$0")" && pwd)/lib.sh"
@@ -49,8 +58,8 @@ rm -rf "$RESULTS"; mkdir -p "$RESULTS"
 kernel_jar
 bash "$KERNEL/run/build-creative-search-canary.sh" > "$RESULTS/build.log" 2>&1 || { cat "$RESULTS/build.log"; exit 1; }
 
-# run_client <phase> <extra jvm flags> [nocanary] — a fresh copy of the world, the two canaries alone (or no mod at
-# all), one probe run. A flag in <extra> overrides the same flag set here: the JVM takes the last.
+# run_client <phase> <extra jvm flags> [nocanary|forgeonly] — a fresh copy of the world, the two canaries alone (or no
+# mod at all, or only the MinecraftForge one), one probe run. A flag in <extra> overrides the same flag set here: the JVM takes the last.
 run_client() {
   local phase="$1" extra="$2" canary="${3:-canary}" pid
   mkdir -p "$RUNDIR"
@@ -60,7 +69,11 @@ run_client() {
   # A clone on APFS, a copy elsewhere: the run writes to the world, and the fixture must not change.
   cp -cR "$FIXTURE" "$RUNDIR/saves/$WORLD" 2>/dev/null || cp -R "$FIXTURE" "$RUNDIR/saves/$WORLD"
   rm -f "$RUNDIR/saves/$WORLD/session.lock"
-  [ "$canary" = nocanary ] || cp "$KERNEL/run/canary/forbriccreativesearch.jar" "$KERNEL/run/canary/forbriccreativesearchforge.jar" "$RUNDIR/mods/"
+  case "$canary" in
+    nocanary) ;;
+    forgeonly) cp "$KERNEL/run/canary/forbriccreativesearchforge.jar" "$RUNDIR/mods/" ;;
+    *) cp "$KERNEL/run/canary/forbriccreativesearch.jar" "$KERNEL/run/canary/forbriccreativesearchforge.jar" "$RUNDIR/mods/" ;;
+  esac
   # Without onboardAccessibility:false a fresh client sits on the first-launch accessibility screen forever; without
   # pauseOnLostFocus:false another window taking focus opens the pause menu, and the probe's screen never gets in front.
   printf 'onboardAccessibility:false\npauseOnLostFocus:false\nlang:en_us\nguiScale:2\nnarrator:0\ntutorialStep:none\n' > "$RUNDIR/options.txt"
@@ -177,9 +190,42 @@ check_absent "unrepaired: getSearchTree never answered at all" "ForbricCreativeS
 check "unrepaired: the client stayed in the world past the bound and left on its own" 'ClientSmoke\] requesting clean disconnect after' "$RESULTS/unrepaired.log"
 check_absent "unrepaired: no crash report" 'Preparing crash report' "$RESULTS/unrepaired.log"
 
+step "4. own tab: the MinecraftForge canary alone reads its own searchable tab with MinecraftForge's keys"
+run_client owntab "" forgeonly
+check "own tab: the client entered the world" 'ClientSmoke\] client-ready after' "$RESULTS/owntab.log"
+check "own tab: the creative screen opened in creative mode" \
+  'creative search: opened CreativeModeInventoryScreen \(client creative=true\)' "$RESULTS/owntab.log"
+check "own tab: the repair rewrote MinecraftForge's reader" \
+  '\[Forbric/CreativeSearch\] net\.minecraft\.client\.multiplayer\.SessionSearchTrees\.getSearchTree now reads' "$RESULTS/owntab.log"
+# own <label> — the canary's count for that own-tab line, or "none".
+own() {
+  local n
+  n=$(grep -aoE "ForbricCreativeSearchForge\] $1 -> [0-9]+ item" "$RESULTS/owntab.log" 2>/dev/null | tail -1 | grep -oE -- '-> [0-9]+' | grep -oE '[0-9]+')
+  echo "${n:-none}"
+}
+SHOWN=$(grep -aoE 'ForbricCreativeSearchForge\] own tab displays [0-9]+ item\(s\), [0-9]+ in #minecraft:planks \(search bar: true\)' "$RESULTS/owntab.log" | tail -1)
+DISPLAYED=$(printf '%s' "$SHOWN" | sed -E 's/.*displays ([0-9]+) item.*/\1/')
+PLANKS=$(printf '%s' "$SHOWN" | sed -E 's/.*, ([0-9]+) in #minecraft:planks.*/\1/')
+if [ -n "$SHOWN" ] && [ "${DISPLAYED:-0}" -gt 0 ] && [ "${PLANKS:-0}" -gt 0 ]; then
+  echo "[kernel] PASS own tab: the canary's searchable tab displays $DISPLAYED item(s), $PLANKS of them in #minecraft:planks"
+else
+  echo "[kernel] FAIL own tab: the canary never reported a searchable tab with items in it (${SHOWN:-no report})"; FAIL=1
+fi
+got=$(own "own-tab search by name 'oak'")
+if [ "$got" = "${DISPLAYED:-x}" ]; then echo "[kernel] PASS own tab: getSearchTree with MinecraftForge's name key found all $got item(s) the tab displays"
+else echo "[kernel] FAIL own tab: getSearchTree with MinecraftForge's name key found ${got} item(s), the tab displays ${DISPLAYED:-?}"; FAIL=1; fi
+got=$(own "own-tab search by tag 'planks'")
+if [ "$got" = "${PLANKS:-x}" ]; then echo "[kernel] PASS own tab: getSearchTree with MinecraftForge's tag key found the $got displayed item(s) in #minecraft:planks"
+else echo "[kernel] FAIL own tab: getSearchTree with MinecraftForge's tag key found ${got} item(s), the tab displays ${PLANKS:-?} in #minecraft:planks"; FAIL=1; fi
+got=$(own "own-tab search with a key nobody handed out")
+if [ "$got" = 0 ]; then echo "[kernel] PASS own tab: a key nobody handed out finds nothing, so the counts above are the tab's own"
+else echo "[kernel] FAIL own tab: a key nobody handed out found ${got} item(s)"; FAIL=1; fi
+check_absent "own tab: the own-tab search did not fail" 'ForbricCreativeSearchForge\] own-tab search failed' "$RESULTS/owntab.log"
+check_absent "own tab: no crash report" 'Preparing crash report' "$RESULTS/owntab.log"
+
 step "M55 result"
 if [ "$FAIL" -eq 0 ]; then
-  echo "[kernel] ✅ M55 CREATIVE SEARCH GATE GREEN — the creative search finds items after a vanilla-way refresh, and MinecraftForge's getSearchTree answers"
+  echo "[kernel] ✅ M55 CREATIVE SEARCH GATE GREEN — the creative search finds items after a vanilla-way refresh, and MinecraftForge's getSearchTree answers, for its own tab too"
 else
   echo "[kernel] ❌ M55 GATE RED — inspect $RESULTS"
 fi
