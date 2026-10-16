@@ -80,7 +80,7 @@ class KernelForgeConditionsRealCodecTest {
 				Object neo = game.neoContext(Map.of("c:ingots/tin", entries));
 				Object ops = game.registryOps();
 				game.giveMinecraftForgeItsContext(ops, neo);                 // what the repaired RecipeManager.prepare does
-				Optional<?> recipe = game.parse(game.conditional(game.carrier()), game.conditionalOps(ops, neo), RECIPE);
+				Optional<?> recipe = game.parse(game.dataFile(game.carrier()), game.conditionalOps(ops, neo), RECIPE);
 				assertEquals(entries > 0 ? Optional.of(7) : Optional.empty(), recipe,
 						"forge:not(forge:tag_empty c:ingots/tin) with " + entries + " entr(ies) in the tag");
 			}
@@ -93,13 +93,13 @@ class KernelForgeConditionsRealCodecTest {
 		// no MinecraftForge context, so MinecraftForge reads EMPTY and every tag is empty. Also what the switch restores.
 		try (Game game = new Game()) {
 			Object neo = game.neoContext(Map.of("c:ingots/tin", 1));
-			assertEquals(Optional.empty(), game.parse(game.conditional(game.carrier()), game.conditionalOps(game.registryOps(), neo), RECIPE),
+			assertEquals(Optional.empty(), game.parse(game.dataFile(game.carrier()), game.conditionalOps(game.registryOps(), neo), RECIPE),
 					"the merged prepare as NeoForge left it");
 			System.setProperty("forbric.forgeConditionContext", "off");
 			try {
 				Object ops = game.registryOps();
 				game.giveMinecraftForgeItsContext(ops, neo);
-				assertEquals(Optional.empty(), game.parse(game.conditional(game.carrier()), game.conditionalOps(ops, neo), RECIPE),
+				assertEquals(Optional.empty(), game.parse(game.dataFile(game.carrier()), game.conditionalOps(ops, neo), RECIPE),
 						"-Dforbric.forgeConditionContext=off leaves MinecraftForge EMPTY");
 			} finally {
 				System.clearProperty("forbric.forgeConditionContext");
@@ -117,8 +117,8 @@ class KernelForgeConditionsRealCodecTest {
 				Object ours = game.registryOps();
 				Object neo = game.neoContext(Map.of("c:ingots/tin", entries));
 				game.giveMinecraftForgeItsContext(ours, neo);
-				assertEquals(game.parse(game.conditional(game.carrier()), game.conditionalOps(genuine, game.neoEmpty()), RECIPE),
-						game.parse(game.conditional(game.carrier()), game.conditionalOps(ours, neo), RECIPE),
+				assertEquals(game.parse(game.dataFile(game.carrier()), game.conditionalOps(genuine, game.neoEmpty()), RECIPE),
+						game.parse(game.dataFile(game.carrier()), game.conditionalOps(ours, neo), RECIPE),
 						"same verdict as genuine MinecraftForge with " + entries + " entr(ies)");
 			}
 		}
@@ -133,7 +133,7 @@ class KernelForgeConditionsRealCodecTest {
 			Object genuine = game.call(game.staticCall("net.minecraftforge.common.crafting.conditions.ConditionCodec", "wrap", game.carrier()),
 					"parse", game.registryOps(), game.json(RECIPE));
 			assertEquals(Optional.of(Optional.empty()), game.call(genuine, "result"), "genuine MinecraftForge drops it here");
-			assertEquals(Optional.empty(), game.parse(game.conditional(game.carrier()), game.conditionalOps(game.registryOps(), neo), RECIPE));
+			assertEquals(Optional.empty(), game.parse(game.registryElement(game.carrier()), game.conditionalOps(game.registryOps(), neo), RECIPE));
 		}
 	}
 
@@ -142,7 +142,7 @@ class KernelForgeConditionsRealCodecTest {
 	@Test
 	void aFalsePoolConditionLeavesMinecraftForgesEmptyPoolInPlaceAndIsJudgedOnce() throws Exception {
 		try (Game game = new Game()) {
-			Object pools = game.conditional(game.inPlacePool());
+			Object pools = game.dataFile(game.inPlacePool());
 			Object ops = game.conditionalOps(game.registryOps(), game.neoEmpty());
 			assertEquals(Optional.of(-1), game.parse(pools, ops, "{\"forge:condition\":{\"type\":\"forbrictest:no\"},\"carrier\":7}"),
 					"the empty pool, in place -- not a pool missing from the list");
@@ -157,7 +157,7 @@ class KernelForgeConditionsRealCodecTest {
 		// The negative control, and the defect it replaces: the same MinecraftForge decoder, not registered as one that
 		// judges forge:condition itself, so the funnel asks first -- the pool vanishes and a true one is asked twice.
 		try (Game game = new Game()) {
-			Object pools = game.conditional(game.forgeCheckingDecode());
+			Object pools = game.dataFile(game.forgeCheckingDecode());
 			Object ops = game.conditionalOps(game.registryOps(), game.neoEmpty());
 			assertEquals(Optional.empty(), game.parse(pools, ops, "{\"forge:condition\":{\"type\":\"forbrictest:no\"},\"carrier\":7}"));
 			game.forgeTests.set(0);
@@ -170,7 +170,7 @@ class KernelForgeConditionsRealCodecTest {
 	void insideALootTableThePoolIsStillOnlyMinecraftForgesToJudge() throws Exception {
 		// What the game decodes: the table file is the outermost conditional decode, its pools nested in it.
 		try (Game game = new Game()) {
-			Object table = game.conditional(game.fieldOf(game.listOf(game.conditional(game.forgeCheckingDecode())), "pools"));
+			Object table = game.dataFile(game.fieldOf(game.listOf(game.conditional(game.forgeCheckingDecode())), "pools"));
 			Object ops = game.conditionalOps(game.registryOps(), game.neoEmpty());
 			Optional<?> decoded = game.parse(table, ops, "{\"pools\":[{\"forge:condition\":{\"type\":\"forbrictest:no\"},\"carrier\":7}]}");
 			assertEquals(Optional.of(List.of(Optional.of(-1))), decoded, "the nested pool is not the funnel's: MinecraftForge's own decoder puts the empty pool in");
@@ -183,7 +183,7 @@ class KernelForgeConditionsRealCodecTest {
 	@Test
 	void theFirstVariantWhoseConditionHoldsIsTheFile() throws Exception {
 		try (Game game = new Game()) {
-			Object file = game.conditional(game.carrier());
+			Object file = game.dataFile(game.carrier());
 			Object ops = game.conditionalOps(game.registryOps(), game.neoEmpty());
 			assertEquals(Optional.of(2), game.parse(file, ops, "{\"forge:conditional\":["
 					+ "{\"forge:condition\":{\"type\":\"forbrictest:no\"},\"carrier\":1},"
@@ -202,7 +202,7 @@ class KernelForgeConditionsRealCodecTest {
 		try (Game game = new Game()) {
 			System.setProperty("forbric.forgeConditionFunnel", "off");
 			try {
-				String error = game.error(game.conditional(game.carrier()), game.conditionalOps(game.registryOps(), game.neoEmpty()),
+				String error = game.error(game.dataFile(game.carrier()), game.conditionalOps(game.registryOps(), game.neoEmpty()),
 						"{\"forge:conditional\":[{\"forge:condition\":{\"type\":\"forbrictest:yes\"},\"carrier\":2}]}");
 				assertTrue(error.contains("carrier"), error);
 				assertEquals(0, game.forgeTests.get());
@@ -217,7 +217,7 @@ class KernelForgeConditionsRealCodecTest {
 	@Test
 	void whereNeoForgeJudgesItsOwnConditionsMinecraftForgeIsNotAsked() throws Exception {
 		try (Game game = new Game()) {
-			Object file = game.conditional(game.carrier());
+			Object file = game.dataFile(game.carrier());
 			Object ops = game.conditionalOps(game.registryOps(), game.neoEmpty());
 			assertEquals(Optional.of(3), game.parse(file, ops,
 					"{\"neoforge:conditions\":[{\"type\":\"neoforge:always\"}],\"forge:condition\":{\"type\":\"forbrictest:no\"},\"carrier\":3}"),
@@ -232,7 +232,7 @@ class KernelForgeConditionsRealCodecTest {
 	@Test
 	void whereNeoForgeCannotJudgeItsConditionsTheFamilyThatOwnsThemDecides() throws Exception {
 		try (Game game = new Game()) {
-			Object file = game.conditional(game.carrier());
+			Object file = game.dataFile(game.carrier());
 			Object ops = game.conditionalOps(game.registryOps(), game.neoEmpty());
 			assertEquals(Optional.empty(), game.parse(file, ops,
 					"{\"neoforge:conditions\":[{\"type\":\"forbrictest:no\"}],\"forge:condition\":{\"type\":\"forbrictest:no\"},\"carrier\":3}"),
@@ -249,10 +249,202 @@ class KernelForgeConditionsRealCodecTest {
 		// The negative control for the two above: standing aside is about NeoForge's dialect being there, not about
 		// the funnel having stopped asking.
 		try (Game game = new Game()) {
-			Object file = game.conditional(game.carrier());
+			Object file = game.dataFile(game.carrier());
 			Object ops = game.conditionalOps(game.registryOps(), game.neoEmpty());
 			assertEquals(Optional.empty(), game.parse(file, ops, "{\"forge:condition\":{\"type\":\"forbrictest:no\"},\"carrier\":3}"));
 			assertEquals(1, game.forgeTests.get());
+		}
+	}
+
+	@Test
+	void aPoolWhoseNeoForgeConditionsNeoForgeJudgesKeepsThatVerdictAndIsNotAskedAgain() throws Exception {
+		// The pool codec's other branch: where NeoForge judged the pool on the way in, MinecraftForge's condition beside
+		// it is not asked a second, possibly contrary time -- over an empty context it would replace a kept pool with the
+		// empty one. Asking anyway turns the first into -1 and counts a test.
+		try (Game game = new Game()) {
+			Object pools = game.dataFile(game.inPlacePool());
+			Object ops = game.conditionalOps(game.registryOps(), game.neoEmpty());
+			assertEquals(Optional.of(7), game.parse(pools, ops,
+					"{\"neoforge:conditions\":[{\"type\":\"neoforge:always\"}],\"forge:condition\":{\"type\":\"forbrictest:no\"},\"carrier\":7}"),
+					"NeoForge kept the pool: the pool itself, not MinecraftForge's empty one");
+			assertEquals(Optional.empty(), game.parse(pools, ops,
+					"{\"neoforge:conditions\":[{\"type\":\"neoforge:never\"}],\"forge:condition\":{\"type\":\"forbrictest:yes\"},\"carrier\":7}"),
+					"NeoForge's no stands");
+			assertEquals(0, game.forgeTests.get(), "MinecraftForge was asked about neither pool");
+		}
+	}
+
+	@Test
+	void aPoolWhoseNeoForgeConditionsNeoForgeCannotJudgeIsMinecraftForgesInPlace() throws Exception {
+		// The other direction, and the control for the one above: a type only MinecraftForge has passes NeoForge's
+		// leniency unjudged, so MinecraftForge's pool codec decides -- once, leaving its empty pool in place.
+		try (Game game = new Game()) {
+			Object pools = game.dataFile(game.inPlacePool());
+			Object ops = game.conditionalOps(game.registryOps(), game.neoEmpty());
+			assertEquals(Optional.of(-1), game.parse(pools, ops,
+					"{\"neoforge:conditions\":[{\"type\":\"forbrictest:no\"}],\"forge:condition\":{\"type\":\"forbrictest:no\"},\"carrier\":7}"));
+			assertEquals(1, game.forgeTests.get(), "judged once, by MinecraftForge's own pool codec");
+		}
+	}
+
+	// --- (e) a condition type MinecraftForge's registry lacks: who owns it decides ------------------------------------
+
+	private static final String ABSENT = "{\"forge:condition\":{\"type\":\"absentmod:enabled\"},\"carrier\":7}";
+
+	@Test
+	void aTypeNoEcosystemRegistersSkipsADataFileAsGenuineMinecraftForgeDoes() throws Exception {
+		try (Game game = new Game()) {
+			Object ops = game.conditionalOps(game.registryOps(), game.neoEmpty());
+			assertEquals(Optional.empty(), game.parse(game.dataFile(game.carrier()), ops, ABSENT),
+					"skipped: no ecosystem here registers absentmod:enabled, and MinecraftForge reads such a type as false");
+			assertEquals(null, game.genuineReadConditional(ABSENT), "genuine MinecraftForge's readConditional skips it too");
+		}
+	}
+
+	@Test
+	void aTypeAnotherEcosystemRegistersIsLeftToThatEcosystem() throws Exception {
+		// NeoForge's own type and one only fabric-api registers: a multi-loader file's other dialect, which MinecraftForge
+		// does not veto. The test above is the control: the same file naming a type nobody registers is skipped.
+		try (Game game = new Game()) {
+			Object ops = game.conditionalOps(game.registryOps(), game.neoEmpty());
+			for (String type : List.of("neoforge:always", "fabrictest:owned")) {
+				assertEquals(Optional.of(7), game.parse(game.dataFile(game.carrier()), ops, "{\"forge:condition\":{\"type\":\"" + type + "\"},\"carrier\":7}"), type);
+			}
+		}
+	}
+
+	@Test
+	void aFileBothFamiliesWouldRejectIsNotLoaded() throws Exception {
+		// Both dialects name a type nobody registers. NeoForge's leniency lets its own through (it might be another
+		// family's), so MinecraftForge decides -- and like genuine MinecraftForge, and genuine NeoForge, does not load it.
+		String file = "{\"neoforge:conditions\":[{\"type\":\"absentmod:enabled\"}],\"forge:condition\":{\"type\":\"absentmod:enabled\"},\"carrier\":3}";
+		try (Game game = new Game()) {
+			assertEquals(Optional.empty(), game.parse(game.dataFile(game.carrier()), game.conditionalOps(game.registryOps(), game.neoEmpty()), file));
+			assertEquals(null, game.genuineReadConditional(file), "genuine MinecraftForge skips it");
+			System.setProperty("forbric.neoConditions", "off");
+			System.setProperty("forbric.forgeConditionFunnel", "off");
+			try {
+				assertTrue(game.error(game.dataFile(game.carrier()), game.conditionalOps(game.registryOps(), game.neoEmpty()), file).contains("absentmod:enabled"),
+						"genuine NeoForge fails it");
+			} finally {
+				System.clearProperty("forbric.neoConditions");
+				System.clearProperty("forbric.forgeConditionFunnel");
+			}
+		}
+	}
+
+	@Test
+	void aVariantGuardedByATypeNoEcosystemRegistersIsPassedOverAsOnMinecraftForge() throws Exception {
+		String file = "{\"forge:conditional\":[{\"forge:condition\":{\"type\":\"absentmod:enabled\"},\"carrier\":1},{\"carrier\":2}]}";
+		try (Game game = new Game()) {
+			assertEquals(Optional.of(2), game.parse(game.dataFile(game.carrier()), game.conditionalOps(game.registryOps(), game.neoEmpty()), file),
+					"the next variant, not the one an absent mod's condition guards");
+			assertEquals("{\"carrier\":2}", game.genuineReadConditional(file), "the variant genuine MinecraftForge's readConditional chooses");
+		}
+	}
+
+	@Test
+	void onADatapackRegistryElementATypeNoEcosystemRegistersIsIgnoredRatherThanLosingTheRegistry() throws Exception {
+		// The deliberate exception: there MinecraftForge's own answer is a parse failure, which fails the whole registry
+		// load. An element that fails like that on MinecraftForge is another family's build's file; it loads.
+		try (Game game = new Game()) {
+			Object ops = game.conditionalOps(game.registryOps(), game.neoEmpty());
+			assertEquals(Optional.of(7), game.parse(game.registryElement(game.carrier()), ops, ABSENT));
+			System.setProperty("forbric.forgeConditions", "off");
+			try {
+				assertTrue(game.error(game.registryElement(game.carrier()), ops, ABSENT).contains("absentmod:enabled"),
+						"MinecraftForge's own answer there: the element, and with it the registry, fails");
+			} finally {
+				System.clearProperty("forbric.forgeConditions");
+			}
+		}
+	}
+
+	// --- (f) only where MinecraftForge's two readers read ------------------------------------------------------------
+
+	private static final String NO = "{\"forge:condition\":{\"type\":\"forbrictest:no\"},\"carrier\":7}";
+
+	@Test
+	void outsideMinecraftForgesReadersNoForgeConditionIsJudged() throws Exception {
+		try (Game game = new Game()) {
+			Object ops = game.conditionalOps(game.registryOps(), game.neoEmpty());
+			assertEquals(Optional.of(7), game.parse(game.conditional(game.carrier()), ops, NO),
+					"a conditional decode neither reader makes -- a mod's own, the network registry path -- is NeoForge's alone");
+			Object jsonOps = game.type("com.mojang.serialization.JsonOps").getField("INSTANCE").get(null);
+			Object list = game.staticCall("net.neoforged.neoforge.common.conditions.ConditionalOps", "decodeListWithElementConditions", game.carrier());
+			Object decoded = game.call(game.call(list, "parse", jsonOps, game.json("[{\"carrier\":1}," + NO.replace("7", "2") + "]")), "result");
+			assertEquals(Optional.of(List.of(1, 2)), decoded, "NeoForge's element-conditional lists (overlay entries, sprite sources) keep every element");
+			assertEquals(0, game.forgeTests.get(), "MinecraftForge was asked about none of them");
+			// The negative control: the same element, read as a data file, is judged and skipped.
+			assertEquals(Optional.empty(), game.parse(game.dataFile(game.carrier()), ops, NO));
+			assertEquals(1, game.forgeTests.get());
+		}
+	}
+
+	@Test
+	void aPackMcmetaOverlayEntryIsNotDroppedOverAForgeCondition() throws Exception {
+		// The real overlay section codec, read as ResourceMetadata reads it: MinecraftForge's patches never look for a
+		// condition there, so an entry carrying one is mounted, exactly as NeoForge alone mounts it.
+		try (Game game = new Game()) {
+			Object jsonOps = game.type("com.mojang.serialization.JsonOps").getField("INSTANCE").get(null);
+			Object packType = game.type("net.minecraft.server.packs.PackType").getField("SERVER_DATA").get(null);
+			Object codec = game.staticCall("net.minecraft.server.packs.OverlayMetadataSection", "codecForPackType", packType);
+			String section = "{\"entries\":[{\"directory\":\"keep\",\"min_format\":90,\"max_format\":1000},"
+					+ "{\"directory\":\"judged\",\"min_format\":90,\"max_format\":1000,\"forge:condition\":{\"type\":\"forge:false\"}}]}";
+			String ours = String.valueOf(game.call(game.call(codec, "parse", jsonOps, game.json(section)), "result"));
+			assertTrue(ours.contains("overlay=keep") && ours.contains("overlay=judged"), ours);
+			System.setProperty("forbric.forgeConditionFunnel", "off");
+			try {
+				assertEquals(String.valueOf(game.call(game.call(codec, "parse", jsonOps, game.json(section)), "result")), ours, "NeoForge as shipped");
+			} finally {
+				System.clearProperty("forbric.forgeConditionFunnel");
+			}
+		}
+	}
+
+	@Test
+	void theMergedScanJudgesEachFileTheWayMinecraftForgesReaderDid() throws Exception {
+		// Genuine scanDirectory, with the transformer's mark on the codec it builds: readConditional's verdict per file.
+		Map<String, String> files = new LinkedHashMap<>();
+		files.put("kept", "{\"forge:condition\":{\"type\":\"forbrictest:yes\"},\"carrier\":1}");
+		files.put("dropped", "{\"forge:condition\":{\"type\":\"forbrictest:no\"},\"carrier\":2}");
+		files.put("plain", "{\"carrier\":3}");
+		files.put("absent", "{\"forge:condition\":{\"type\":\"absentmod:enabled\"},\"carrier\":4}");
+		files.put("variant", "{\"forge:conditional\":[{\"forge:condition\":{\"type\":\"absentmod:enabled\"},\"carrier\":5},{\"carrier\":6}]}");
+		try (Game game = new Game()) {
+			Object ops = game.conditionalOps(game.registryOps(), game.neoEmpty());
+			assertEquals(Map.of("kept", 1, "plain", 3, "variant", 6), game.scan(files, game.carrier(), ops));
+			// The negative control: with nothing asking MinecraftForge every file loads but the variant, which NeoForge
+			// cannot read.
+			System.setProperty("forbric.forgeConditionFunnel", "off");
+			try {
+				assertEquals(Map.of("kept", 1, "dropped", 2, "plain", 3, "absent", 4), game.scan(files, game.carrier(), ops));
+			} finally {
+				System.clearProperty("forbric.forgeConditionFunnel");
+			}
+		}
+	}
+
+	@Test
+	void aLoadTheRegistryLoaderAnnouncedIsJudgedAndNoOtherLoadIs() throws Exception {
+		// The merged loadFromResource, defined through the transformer: a load ResourceManagerRegistryLoadTask announced
+		// is MinecraftForge's registry reader; the network path and a mod's own call are not, as on MinecraftForge.
+		try (Game game = new Game()) {
+			Object ops = game.conditionalOps(game.registryOps(), game.neoEmpty());
+			assertEquals("skipped", game.load(game.carrier(), ops, NO, true), "announced: judged, and skipped the way RegistryLoadTask skips");
+			assertEquals(1, game.forgeTests.getAndSet(0));
+			assertEquals(7, game.load(game.carrier(), ops, NO, false), "not announced: NeoForge's alone");
+			assertEquals(0, game.forgeTests.get());
+			game.staticCall("net.forbric.kernel.runtime.KernelForgeConditions", "nextLoadIsMinecraftForgesRegistryElement", game.resource(NO));
+			assertEquals(7, game.load(game.carrier(), ops, NO, false), "an announcement names one resource: a load of another is not judged");
+			assertEquals(0, game.forgeTests.get());
+			assertEquals(7, game.load(game.carrier(), ops, ABSENT, true), "a type nobody registers does not lose the registry");
+			System.setProperty("forbric.forgeConditions", "off");
+			try {
+				assertTrue(String.valueOf(game.load(game.carrier(), ops, ABSENT, true)).startsWith("failed: "), "MinecraftForge's own answer: a failed element");
+			} finally {
+				System.clearProperty("forbric.forgeConditions");
+			}
 		}
 	}
 
@@ -263,6 +455,12 @@ class KernelForgeConditionsRealCodecTest {
 		private static final String FORGE_ICONDITION = "net.minecraftforge.common.crafting.conditions.ICondition";
 		private static final String NEO_ICONDITION = "net.neoforged.neoforge.common.conditions.ICondition";
 		private static final String CONDITIONAL_OPS = "net.neoforged.neoforge.common.conditions.ConditionalOps";
+		private static final String JSON_LISTENER = "net.minecraft.server.packs.resources.SimpleJsonResourceReloadListener";
+		private static final String PENDING_REGISTRATION = "net.minecraft.resources.RegistryLoadTask$PendingRegistration";
+		private static final String HELPER = "net.forbric.kernel.runtime.KernelForgeConditions";
+		/** Defined through the merged-base transformer, as the game defines them. */
+		private static final java.util.Set<String> TRANSFORMED = java.util.Set.of(CONDITIONAL_OPS, FORGE_ICONDITION, NEO_ICONDITION,
+				JSON_LISTENER, PENDING_REGISTRATION);
 
 		final AtomicInteger forgeTests = new AtomicInteger();
 		private final URLClassLoader loader;
@@ -278,11 +476,11 @@ class KernelForgeConditionsRealCodecTest {
 			loader = new URLClassLoader(urls.toArray(new URL[0]), KernelForgeConditionsRealCodecTest.class.getClassLoader()) {
 				@Override
 				protected Class<?> findClass(String name) throws ClassNotFoundException {
-					if (!name.equals(CONDITIONAL_OPS) && !name.equals(FORGE_ICONDITION) && !name.equals(NEO_ICONDITION)) return super.findClass(name);
+					if (!TRANSFORMED.contains(name)) return super.findClass(name);
 					try (InputStream in = getResourceAsStream(name.replace('.', '/') + ".class")) {
 						if (in == null) throw new ClassNotFoundException(name);
 						byte[] bytes = new ForbricMergedBaseCompatTransformer().transform(name, in.readAllBytes(), null);
-						if (!name.equals(CONDITIONAL_OPS)) bytes = standInRegistry(bytes);
+						if (name.equals(FORGE_ICONDITION) || name.equals(NEO_ICONDITION)) bytes = standInRegistry(bytes);
 						return defineClass(name, bytes, 0, bytes.length);
 					} catch (IOException e) {
 						throw new ClassNotFoundException(name, e);
@@ -306,6 +504,11 @@ class KernelForgeConditionsRealCodecTest {
 			ConditionRegistryStandIn.install(loader, "neoforge", registryCodec(neo));
 			bindKnown("net.forbric.kernel.runtime.KernelForgeConditions", forge);
 			bindKnown("net.forbric.kernel.runtime.KernelNeoConditions", neo);
+			// fabric-api is on no test classpath: its registry is reduced to the one type it registers here. MinecraftForge's
+			// leniency asks NeoForge's and fabric-api's registries through its production lookup, which is not replaced.
+			Method fabric = type("net.forbric.kernel.runtime.KernelFabricConditions").getDeclaredMethod("bindRegisteredTypesForTest", java.util.function.Predicate.class);
+			fabric.setAccessible(true);
+			fabric.invoke(null, (java.util.function.Predicate<String>) "fabrictest:owned"::equals);
 		}
 
 		@Override
@@ -382,19 +585,111 @@ class KernelForgeConditionsRealCodecTest {
 			return type(CONDITIONAL_OPS).getMethod("createConditionalCodec", codec).invoke(null, inner);
 		}
 
+		/** What a merged SimpleJsonResourceReloadListener scan parses each data file with: ConditionalOps' codec, marked. */
+		Object dataFile(Object inner) throws Exception {
+			return staticCall(HELPER, "readsDataFiles", conditional(inner));
+		}
+
+		/** What the merged loadFromResource decodes a load ResourceManagerRegistryLoadTask announced with. */
+		Object registryElement(Object inner) throws Exception {
+			return staticCall(HELPER, "readsRegistryElements", conditional(inner));
+		}
+
+		/** Genuine MinecraftForge's data-file reader over a file, strict: what readConditional hands the decoder, or null. */
+		Object genuineReadConditional(String file) throws Exception {
+			System.setProperty("forbric.forgeConditions", "off");
+			try {
+				Object read = staticCall("net.minecraftforge.common.ForgeHooks", "readConditional", registryOps(), json(file));
+				return read == null ? null : String.valueOf(read);
+			} finally {
+				System.clearProperty("forbric.forgeConditions");
+			}
+		}
+
+		Object id(String text) throws Exception {
+			return staticCall("net.minecraft.resources.Identifier", "parse", text);
+		}
+
+		/** A resource from one pack, holding {@code json}. */
+		Object resource(String json) throws Exception {
+			Object pack = Proxy.newProxyInstance(loader, new Class<?>[] {type("net.minecraft.server.packs.PackResources")}, (proxy, method, args) -> switch (method.getName()) {
+				case "packId" -> "forbrictest";
+				case "toString" -> "forbrictest pack";
+				case "hashCode" -> System.identityHashCode(proxy);
+				case "equals" -> proxy == args[0];
+				default -> throw new UnsupportedOperationException(method.getName());
+			});
+			Object stream = Proxy.newProxyInstance(loader, new Class<?>[] {type("net.minecraft.server.packs.resources.IoSupplier")}, (proxy, method, args) -> switch (method.getName()) {
+				case "get" -> new java.io.ByteArrayInputStream(json.getBytes(java.nio.charset.StandardCharsets.UTF_8));
+				case "hashCode" -> System.identityHashCode(proxy);
+				case "equals" -> proxy == args[0];
+				default -> throw new UnsupportedOperationException(method.getName());
+			});
+			return type("net.minecraft.server.packs.resources.Resource").getConstructor(type("net.minecraft.server.packs.PackResources"),
+					type("net.minecraft.server.packs.resources.IoSupplier")).newInstance(pack, stream);
+		}
+
+		/**
+		 * The merged {@code loadFromResource} over one resource, as {@code ResourceManagerRegistryLoadTask} calls it when
+		 * {@code announced} (the call it makes right before) and as the network path or a mod calls it otherwise: the
+		 * element, or {@code "skipped"} for RegistryLoadTask's own skip marker, or the failure's message.
+		 */
+		Object load(Object decoder, Object ops, String json, boolean announced) throws Exception {
+			Object resource = resource(json);
+			Object key = staticCall("net.minecraft.resources.ResourceKey", "create",
+					staticCall("net.minecraft.resources.ResourceKey", "createRegistryKey", id("forbrictest:elements")), id("forbrictest:probe"));
+			if (announced) staticCall(HELPER, "nextLoadIsMinecraftForgesRegistryElement", resource);
+			Object either = staticCall(PENDING_REGISTRATION, "loadFromResource", decoder, ops, key, resource);
+			Optional<?> left = (Optional<?>) call(either, "left");
+			if (left.isPresent()) return left.get();
+			Object right = ((Optional<?>) call(either, "right")).orElseThrow();
+			java.lang.reflect.Field marker = type("net.minecraft.resources.RegistryLoadTask").getDeclaredField("SKIPPED_ELEMENT_MARKER");
+			marker.setAccessible(true);
+			return right == marker.get(null) ? "skipped" : "failed: " + right;
+		}
+
+		/**
+		 * Genuine {@code SimpleJsonResourceReloadListener.scanDirectory} -- the merged class, defined through the transformer
+		 * as the game defines it -- over these files (name to json) under {@code probe/}: what each file that loaded became, by its id.
+		 */
+		Map<String, Object> scan(Map<String, String> files, Object codecInstance, Object ops) throws Exception {
+			Map<Object, Object> resources = new LinkedHashMap<>();
+			for (Map.Entry<String, String> file : files.entrySet()) resources.put(id("forbrictest:probe/" + file.getKey() + ".json"), resource(file.getValue()));
+			Object manager = Proxy.newProxyInstance(loader, new Class<?>[] {type("net.minecraft.server.packs.resources.ResourceManager")}, (proxy, method, args) -> switch (method.getName()) {
+				case "listResources" -> {
+					Map<Object, Object> matching = new LinkedHashMap<>();
+					@SuppressWarnings("unchecked") java.util.function.Predicate<Object> filter = (java.util.function.Predicate<Object>) args[1];
+					for (Map.Entry<Object, Object> entry : resources.entrySet()) {
+						if (String.valueOf(call(entry.getKey(), "getPath")).startsWith(args[0] + "/") && filter.test(entry.getKey())) matching.put(entry.getKey(), entry.getValue());
+					}
+					yield matching;
+				}
+				case "toString" -> "forbrictest resources";
+				case "hashCode" -> System.identityHashCode(proxy);
+				case "equals" -> proxy == args[0];
+				default -> throw new UnsupportedOperationException(method.getName());
+			});
+			Map<Object, Object> out = new LinkedHashMap<>();
+			staticCall(JSON_LISTENER, "scanDirectory", manager, staticCall("net.minecraft.resources.FileToIdConverter", "json", "probe"), ops, codecInstance, out);
+			Map<String, Object> named = new java.util.TreeMap<>();
+			for (Map.Entry<Object, Object> entry : out.entrySet()) named.put(String.valueOf(call(entry.getKey(), "getPath")), entry.getValue());
+			return named;
+		}
+
 		/** MinecraftForge's own in-place conditional decoder, which LootPool.CONDITIONAL_CODEC is one of: -1 is the empty pool. */
 		Object forgeCheckingDecode() throws Exception {
 			return staticCall("net.minecraftforge.common.crafting.conditions.ConditionCodec", "checkingDecode", carrier(), (Supplier<Integer>) () -> -1);
 		}
 
-		/** {@code KernelForgeConditions.poolElementCodec}'s body over that decoder, with NeoForge's own dialect probe. */
+		/**
+		 * {@code KernelForgeConditions.poolElementCodec}'s body over that decoder. NeoForge's own dialect probe is reached the
+		 * way the game reaches it: through the funnel the transformed ConditionalOps puts around a codec that judges
+		 * forge:condition itself.
+		 */
 		Object inPlacePool() throws Exception {
-			Class<?> helper = type("net.forbric.kernel.runtime.KernelForgeConditions");
-			java.lang.reflect.Field judges = helper.getDeclaredField("NEOFORGE_JUDGES");
-			judges.setAccessible(true);
-			Method inPlace = helper.getDeclaredMethod("inPlace", codec, codec, String.class, java.util.function.BiPredicate.class);
+			Method inPlace = type(HELPER).getDeclaredMethod("inPlace", codec, codec);
 			inPlace.setAccessible(true);
-			return inPlace.invoke(null, forgeCheckingDecode(), carrier(), "neoforge:conditions", judges.get(null));
+			return inPlace.invoke(null, forgeCheckingDecode(), carrier());
 		}
 
 		/** The decoded value, or a failure naming the decode error. */

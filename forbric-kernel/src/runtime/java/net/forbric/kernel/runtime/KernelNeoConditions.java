@@ -150,6 +150,14 @@ public final class KernelNeoConditions {
 	}
 
 	/**
+	 * Whether NeoForge's condition registry has this type id; an id that does not parse is registered by nobody. What
+	 * MinecraftForge's leniency asks to tell a type another ecosystem owns from one nobody here owns.
+	 */
+	static boolean registers(String id) {
+		return Identifier.tryParse(id) != null && known.test(id);
+	}
+
+	/**
 	 * Wraps NeoForge's own {@code ICondition} codec, which is what {@code ICondition.<clinit>} hands over.
 	 *
 	 * <p>Declared and returned as {@code Codec} so the rewritten {@code <clinit>} is one inserted instruction

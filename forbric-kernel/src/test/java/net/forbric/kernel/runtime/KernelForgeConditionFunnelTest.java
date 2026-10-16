@@ -40,9 +40,10 @@ import org.junit.jupiter.api.io.TempDir;
  * Where ConditionalOps' funnel asks MinecraftForge, over the compiled game-side classes, with each judge a stand-in so
  * that only the funnel's own decisions are under test (KernelForgeConditionsRealCodecTest runs MinecraftForge's and
  * NeoForge's real codecs through the same funnel): an element whose {@code forge:condition} does not hold is skipped the
- * way NeoForge skips one, one MinecraftForge cannot read fails, a {@code forge:conditional} element becomes its chosen
- * variant -- and MinecraftForge is asked only at the outermost decode, never over an element NeoForge judges, and never
- * around a codec that judges the key itself.
+ * way NeoForge skips one, one MinecraftForge cannot read fails a registry element, a data file goes through
+ * MinecraftForge's data-file reader and a {@code forge:conditional} one becomes its chosen variant -- and MinecraftForge
+ * is asked only inside one of its two readers, at that reader's first decode, never over an element NeoForge judges,
+ * and never around a codec that judges the key itself.
  */
 @org.junit.jupiter.api.parallel.ResourceLock("system-properties")
 class KernelForgeConditionFunnelTest {
@@ -51,7 +52,7 @@ class KernelForgeConditionFunnelTest {
 	@Test void aForgeConditionIsJudgedBeforeNeoForgeDecodes(@TempDir Path scratch) throws Exception {
 		String pattern = GateLogContract.pattern(Path.of("run/gate-m21-forgesetup.sh"), "MinecraftForge judges forge:condition at the conditional-decode funnel");
 		try (Funnel funnel = new Funnel()) {
-			Object codec = funnel.wrap(funnel.neoforge(), (ops, conditions) -> true);
+			Object codec = funnel.registryElement(funnel.wrap(funnel.neoforge(), (ops, conditions) -> true));
 			int[] before = funnel.counts();
 			String[] out = new String[1];
 			Object[] results = GateLogContract.capture(() -> new Object[] {
@@ -63,7 +64,7 @@ class KernelForgeConditionFunnelTest {
 			assertEquals(3, funnel.neoforge.get(), "NeoForge decodes the element without a condition, the one that holds and the list -- not the skipped or the failed one");
 			assertEquals(Optional.empty(), funnel.first(results[1]), "a condition that does not hold is NeoForge's own skip: an empty result");
 			assertEquals(Optional.of("decoded"), funnel.first(results[2]));
-			assertTrue(funnel.failed(results[3]), "an unreadable condition fails the element, as on MinecraftForge");
+			assertTrue(funnel.failed(results[3]), "an unreadable condition fails the registry element, as on MinecraftForge");
 			int[] after = funnel.counts();
 			assertArrayEquals(new int[] { 2, 1 }, new int[] { after[0] - before[0], after[1] - before[1] }, "judged the two readable conditions, rejected one");
 			if (before[0] == 0) assertEquals(1, GateLogContract.count(scratch, pattern, out[0]), out[0]);
@@ -83,37 +84,78 @@ class KernelForgeConditionFunnelTest {
 		// conditional decodes inside an element, and those are not places MinecraftForge ever looked.
 		try (Funnel funnel = new Funnel()) {
 			Object nested = funnel.wrap(funnel.neoforge(), (ops, conditions) -> true);
-			Object outer = funnel.wrap(funnel.decodingAlso(nested, "{\"forge:condition\":{\"type\":\"no\"},\"value\":2}"), (ops, conditions) -> true);
+			Object outer = funnel.registryElement(funnel.wrap(funnel.decodingAlso(nested, "{\"forge:condition\":{\"type\":\"no\"},\"value\":2}"), (ops, conditions) -> true));
 			Object result = funnel.decode(outer, "{\"value\":1}");
 			assertEquals(Optional.of("decoded"), funnel.first(result));
 			assertEquals(List.of(Optional.of("decoded")), funnel.nestedResults, "the nested element was decoded, not judged");
 			assertEquals(0, funnel.counts()[0], "MinecraftForge was not asked about the nested one");
-			// The negative control: the same element, decoded on its own, is judged and skipped.
-			assertEquals(Optional.empty(), funnel.first(funnel.decode(nested, "{\"forge:condition\":{\"type\":\"no\"},\"value\":2}")));
+			// The negative control: the same element, read on its own as a registry element, is judged and skipped.
+			assertEquals(Optional.empty(), funnel.first(funnel.decode(funnel.registryElement(nested), "{\"forge:condition\":{\"type\":\"no\"},\"value\":2}")));
 		}
 	}
 
-	@Test void aCodecThatJudgesTheKeyItselfIsLeftAlone() throws Exception {
+	@Test void nothingIsJudgedOutsideMinecraftForgesTwoReaders() throws Exception {
+		// The funnel serves every conditional decode NeoForge makes -- a pack.mcmeta overlay entry, an atlas sprite source,
+		// a client's network registry load, a mod's own. MinecraftForge read forge:condition in none of those.
+		try (Funnel funnel = new Funnel()) {
+			Object codec = funnel.wrap(funnel.neoforge(), (ops, conditions) -> true);
+			String no = "{\"forge:condition\":{\"type\":\"no\"},\"value\":1}";
+			assertEquals(Optional.of("decoded"), funnel.first(funnel.decode(codec, no)), "outside both readers NeoForge decodes it unjudged");
+			assertArrayEquals(new int[] {0, 0}, funnel.counts());
+			// The negative control: the same codec, read by either reader, judges it.
+			assertEquals(Optional.empty(), funnel.first(funnel.decode(funnel.registryElement(codec), no)));
+			assertEquals(Optional.empty(), funnel.first(funnel.decode(funnel.dataFile(codec), no)));
+			assertArrayEquals(new int[] {2, 2}, funnel.counts());
+		}
+	}
+
+	@Test void eachReaderJudgesWithItsOwnCode() throws Exception {
+		// A data file goes through readConditional (here: a stand-in that skips everything), a registry element through
+		// ConditionCodec (here: one that keeps "yes"); and only the data-file reader reads forge:conditional at all.
+		try (Funnel funnel = new Funnel()) {
+			List<String> asked = new ArrayList<>();
+			Object codec = funnel.wrap(funnel.neoforge(), (ops, conditions) -> true, (ops, json) -> {
+				asked.add(String.valueOf(json));
+				return null;
+			});
+			String yes = "{\"forge:condition\":{\"type\":\"yes\"},\"value\":1}";
+			assertEquals(Optional.empty(), funnel.first(funnel.decode(funnel.dataFile(codec), yes)), "readConditional's answer");
+			assertEquals(List.of(yes), asked);
+			assertEquals(Optional.of("decoded"), funnel.first(funnel.decode(funnel.registryElement(codec), yes)), "ConditionCodec's answer");
+			String variants = "{\"forge:conditional\":[{\"value\":1}]}";
+			assertEquals(Optional.of("decoded"), funnel.first(funnel.decode(funnel.registryElement(codec), variants)),
+					"MinecraftForge's registry reader never read forge:conditional: NeoForge decodes the element as it is");
+			assertEquals(List.of(yes), asked, "readConditional was not asked about the registry element");
+		}
+	}
+
+	@Test void aCodecThatJudgesTheKeyItselfIsNeverAskedAround() throws Exception {
 		try (Funnel funnel = new Funnel()) {
 			Class<?> helper = funnel.type("net.forbric.kernel.runtime.KernelForgeConditions");
 			Class<?> codec = funnel.type("com.mojang.serialization.Codec");
 			Method alsoAskForge = helper.getMethod("alsoAskForge", codec, codec, String.class);
-			Object conditional = funnel.neoforge();
 			Object own = funnel.neoforge();
 			helper.getMethod("judgesForgeConditionItself", Object.class).invoke(null, own);
-			assertSame(conditional, alsoAskForge.invoke(null, conditional, own, NEO_KEY), "around a registered codec the factory's result is returned as it is");
-			Object other = funnel.neoforge();
-			assertTrue(alsoAskForge.invoke(null, conditional, other, NEO_KEY) != conditional, "around any other codec the funnel is wrapped");
+			String no = "{\"forge:condition\":{\"type\":\"no\"},\"value\":1}";
+			Object around = funnel.registryElement(alsoAskForge.invoke(null, funnel.neoforge(), own, NEO_KEY));
+			assertEquals(Optional.of("decoded"), funnel.first(funnel.decode(around, no)), "around a registered codec NeoForge's wrapper decodes the element unjudged");
+			assertEquals(0, funnel.counts()[0], "MinecraftForge was not asked");
+			// The negative control: around any other codec the factory's result is the funnel itself (whose judging the
+			// tests above hold with stand-in judges; alsoAskForge's are MinecraftForge's real ones).
+			assertTrue(String.valueOf(alsoAskForge.invoke(null, funnel.neoforge(), funnel.neoforge(), NEO_KEY)).startsWith("Forbric/MinecraftForge("),
+					"around any other codec the funnel is wrapped");
+			assertTrue(String.valueOf(alsoAskForge.invoke(null, funnel.neoforge(), own, NEO_KEY)).startsWith("Forbric/NeoForgeVerdict("),
+					"around a registered codec only NeoForge's verdict is passed in");
 		}
 	}
 
 	@Test void anElementNeoForgeJudgesIsNotAskedAgainByMinecraftForge() throws Exception {
 		try (Funnel funnel = new Funnel()) {
 			List<String> askedNeoForge = new ArrayList<>();
-			Object codec = funnel.wrap(funnel.neoforge(), (ops, conditions) -> {
+			Object codec = funnel.registryElement(funnel.wrap(funnel.neoforge(), (ops, conditions) -> {
 				askedNeoForge.add(String.valueOf(conditions));
 				return !String.valueOf(conditions).contains("unknown");
-			});
+			}));
 			String judged = "{\"neoforge:conditions\":[{\"type\":\"neoforge:always\"}],\"forge:condition\":{\"type\":\"no\"},\"value\":1}";
 			String unjudgeable = "{\"neoforge:conditions\":[{\"type\":\"unknown\"}],\"forge:condition\":{\"type\":\"no\"},\"value\":1}";
 			assertEquals(Optional.of("decoded"), funnel.first(funnel.decode(codec, judged)), "NeoForge judges its own conditions: its verdict stands");
@@ -130,11 +172,11 @@ class KernelForgeConditionFunnelTest {
 	@Test void aForgeConditionalElementBecomesItsChosenVariant() throws Exception {
 		try (Funnel funnel = new Funnel()) {
 			List<String> decodedNeo = new ArrayList<>();
-			Object codec = funnel.wrap(funnel.neoforge(decodedNeo), (ops, conditions) -> true, (ops, json) -> {
+			Object codec = funnel.dataFile(funnel.wrap(funnel.neoforge(decodedNeo), (ops, conditions) -> true, (ops, json) -> {
 				String text = String.valueOf(json);
 				if (text.contains("broken")) throw new IllegalStateException("not an object");
 				return text.contains("pick") ? funnel.parse("{\"value\":\"picked\"}") : null;
-			});
+			}));
 			assertEquals(Optional.of("decoded"), funnel.first(funnel.decode(codec, "{\"forge:conditional\":[\"pick\"]}")));
 			assertEquals(List.of("{\"value\":\"picked\"}"), decodedNeo, "NeoForge decodes the chosen variant, not the array");
 			assertEquals(Optional.empty(), funnel.first(funnel.decode(codec, "{\"forge:conditional\":[\"none\"]}")), "no variant holds: skipped");
@@ -223,8 +265,14 @@ class KernelForgeConditionFunnelTest {
 			});
 		}
 
+		/** The funnel with a readConditional stand-in that answers a forge:condition as {@link #forgeJudge} does. */
 		Object wrap(Object conditional, BiPredicate<Object, Object> neoForgeJudges) throws Exception {
-			return wrap(conditional, neoForgeJudges, (ops, element) -> { throw new AssertionError("no forge:conditional here"); });
+			return wrap(conditional, neoForgeJudges, (ops, element) -> {
+				String text = String.valueOf(element);
+				if (text.contains("forge:conditional")) throw new AssertionError("no forge:conditional here");
+				if (text.contains("broken")) throw new IllegalStateException("unreadable condition");
+				return text.contains("\"no\"") ? null : element;
+			});
 		}
 
 		Object wrap(Object conditional, BiPredicate<Object, Object> neoForgeJudges, BiFunction<Object, Object, Object> variants) throws Exception {
@@ -232,6 +280,16 @@ class KernelForgeConditionFunnelTest {
 			Method alsoAsk = helper.getDeclaredMethod("alsoAsk", codecClass, String.class, BiPredicate.class, type("com.mojang.serialization.Decoder"), BiFunction.class);
 			alsoAsk.setAccessible(true);
 			return alsoAsk.invoke(null, conditional, NEO_KEY, neoForgeJudges, forgeJudge(), variants);
+		}
+
+		/** {@code codec} read by MinecraftForge's registry-element reader. */
+		Object registryElement(Object codec) throws Exception {
+			return type("net.forbric.kernel.runtime.KernelForgeConditions").getMethod("readsRegistryElements", codecClass).invoke(null, codec);
+		}
+
+		/** {@code codec} read by MinecraftForge's data-file reader. */
+		Object dataFile(Object codec) throws Exception {
+			return type("net.forbric.kernel.runtime.KernelForgeConditions").getMethod("readsDataFiles", codecClass).invoke(null, codec);
 		}
 
 		Object decode(Object codec, String input) {

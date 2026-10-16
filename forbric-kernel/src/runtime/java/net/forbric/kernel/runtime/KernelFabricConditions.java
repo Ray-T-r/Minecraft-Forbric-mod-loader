@@ -193,6 +193,60 @@ public final class KernelFabricConditions {
 		}
 	}
 
+	private static final String TYPES = "net.fabricmc.fabric.api.resource.conditions.v1.ResourceConditions";
+
+	/** fabric-api's own type lookup, {@code ResourceConditions.getConditionType}; substitutable for the tests. */
+	private static volatile java.util.function.Predicate<String> registeredTypes = KernelFabricConditions::askFabricApi;
+	private static volatile MethodHandle typeLookup;
+	private static volatile boolean typeLookupResolved;
+	private static volatile boolean typeLookupFailureReported;
+
+	/**
+	 * Whether fabric-api's resource-condition registry has this type id -- false without fabric-api, and for an id that
+	 * does not parse. What MinecraftForge's leniency asks to tell a type another ecosystem owns from one nobody here owns.
+	 */
+	static boolean registers(String id) {
+		return Identifier.tryParse(id) != null && registeredTypes.test(id);
+	}
+
+	private static boolean askFabricApi(String id) {
+		MethodHandle lookup = typeLookupHandle();
+		if (lookup == null) return false;
+		try {
+			Object type = lookup.invoke(Identifier.tryParse(id));
+			return type != null;
+		} catch (Throwable t) {
+			if (!typeLookupFailureReported) {
+				typeLookupFailureReported = true;
+				ForbricLog.warn("[Forbric/Conditions] could not ask fabric-api whether it registers a resource condition "
+						+ "type — read as not registered there", Reflect.unwrap(t));
+			}
+			return false;
+		}
+	}
+
+	private static MethodHandle typeLookupHandle() {
+		if (typeLookupResolved) return typeLookup;
+		synchronized (KernelFabricConditions.class) {
+			if (typeLookupResolved) return typeLookup;
+			try {
+				Class<?> types = Class.forName(TYPES, false, KernelFabricConditions.class.getClassLoader());
+				typeLookup = MethodHandles.lookup().findStatic(types, "getConditionType",
+						MethodType.methodType(Class.forName("net.fabricmc.fabric.api.resource.conditions.v1.ResourceConditionType",
+								false, KernelFabricConditions.class.getClassLoader()), Identifier.class));
+			} catch (Throwable absent) {
+				typeLookup = null;
+			}
+			typeLookupResolved = true;
+			return typeLookup;
+		}
+	}
+
+	/** Test seam: fabric-api's registered condition types, replaced. */
+	static void bindRegisteredTypesForTest(java.util.function.Predicate<String> types) {
+		registeredTypes = types;
+	}
+
 	/** Test seam: fabric-api is not on any test classpath, so the evaluator has to be substitutable. */
 	static void bindForTest(MethodHandle handle) {
 		synchronized (KernelFabricConditions.class) {

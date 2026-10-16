@@ -306,6 +306,98 @@ class MergedBaseForgeConditionsTest {
 		}
 	}
 
+	private static final String JSON_LISTENER = "net/minecraft/server/packs/resources/SimpleJsonResourceReloadListener";
+	private static final String REGISTRY_LOAD_TASK = "net/minecraft/resources/ResourceManagerRegistryLoadTask";
+	private static final String NETWORK_LOAD_TASK = "net/minecraft/resources/NetworkRegistryLoadTask";
+	private static final String PENDING_REGISTRATION = "net/minecraft/resources/RegistryLoadTask$PendingRegistration";
+	private static final String CREATE_CONDITIONAL = "createConditionalCodec";
+	private static final String CODEC_TO_CODEC = "(Lcom/mojang/serialization/Codec;)Lcom/mojang/serialization/Codec;";
+
+	@Test
+	void everyCodecTheMergedScansParseFilesWithIsMarkedAsMinecraftForgesDataFileReader() throws Exception {
+		// MinecraftForge's scan handed every file to readConditional; the merged scans build ConditionalOps' codec once and
+		// parse each file with it. That codec, and only a codec a method parses with, is marked.
+		byte[] merged = TestFixtures.requireEntry(Fixture.STAGED, MERGED_BASE, JSON_LISTENER + ".class");
+		byte[] repaired = new ForbricMergedBaseCompatTransformer().transform(JSON_LISTENER.replace('/', '.'), merged, null);
+		ClassNode node = parse(repaired);
+		List<String> marked = new ArrayList<>();
+		for (MethodNode method : node.methods) {
+			if (method.instructions == null) continue;
+			boolean parses = false;
+			for (AbstractInsnNode insn : method.instructions) {
+				if (insn instanceof MethodInsnNode call && call.owner.equals("com/mojang/serialization/Codec") && call.name.equals("parse")) parses = true;
+			}
+			for (AbstractInsnNode insn : method.instructions) {
+				if (!(insn instanceof MethodInsnNode call && (call.owner + ".class").equals(CONDITIONAL_OPS_ENTRY) && call.name.equals(CREATE_CONDITIONAL)
+						&& call.desc.equals(CODEC_TO_CODEC))) continue;
+				boolean mark = call.getNext() instanceof MethodInsnNode next && KERNEL.equals(next.owner) && "readsDataFiles".equals(next.name)
+						&& next.desc.equals(CODEC_TO_CODEC);
+				assertEquals(parses, mark, method.name + ": marked exactly where the codec it builds parses a file");
+				if (mark) marked.add(method.name);
+			}
+			new Analyzer<>(new BasicVerifier()).analyze(node.name, method);
+		}
+		assertEquals(List.of("scanDirectory", "scanDirectoryWithModifier"), marked.stream().sorted().toList(),
+				"the two merged scans -- the plain one and the one recipes use -- are MinecraftForge's data-file reader");
+		assertSame(repaired, new ForbricMergedBaseCompatTransformer().transform(JSON_LISTENER.replace('/', '.'), repaired, null), "a second pass marks nothing twice");
+	}
+
+	@Test
+	void theRegistryLoaderAnnouncesEachLoadAndLoadFromResourceMarksTheOneAnnounced() throws Exception {
+		byte[] task = TestFixtures.requireEntry(Fixture.STAGED, MERGED_BASE, REGISTRY_LOAD_TASK + ".class");
+		byte[] announcing = new ForbricMergedBaseCompatTransformer().transform(REGISTRY_LOAD_TASK.replace('/', '.'), task, null);
+		ClassNode node = parse(announcing);
+		int announced = 0;
+		for (MethodNode method : node.methods) {
+			if (method.instructions == null) continue;
+			for (AbstractInsnNode insn : method.instructions) {
+				if (!(insn instanceof MethodInsnNode call && call.owner.equals(PENDING_REGISTRATION) && call.name.equals("loadFromResource"))) continue;
+				AbstractInsnNode announce = call.getPrevious(), dup = announce.getPrevious();
+				assertTrue(announce instanceof MethodInsnNode a && KERNEL.equals(a.owner) && "nextLoadIsMinecraftForgesRegistryElement".equals(a.name)
+						&& a.desc.equals("(Lnet/minecraft/server/packs/resources/Resource;)V") && dup.getOpcode() == Opcodes.DUP,
+						method.name + ": the resource on top of the stack is announced right before the call, which stays where it is");
+				announced++;
+			}
+			new Analyzer<>(new BasicVerifier()).analyze(node.name, method);
+		}
+		assertTrue(announced >= 1, "the merged registry loader calls loadFromResource nowhere -- re-derive where its elements are decoded");
+		assertSame(announcing, new ForbricMergedBaseCompatTransformer().transform(REGISTRY_LOAD_TASK.replace('/', '.'), announcing, null), "a second pass announces nothing twice");
+
+		byte[] pending = TestFixtures.requireEntry(Fixture.STAGED, MERGED_BASE, PENDING_REGISTRATION + ".class");
+		byte[] marking = new ForbricMergedBaseCompatTransformer().transform(PENDING_REGISTRATION.replace('/', '.'), pending, null);
+		ClassNode registration = parse(marking);
+		MethodNode load = registration.methods.stream().filter(m -> m.name.equals("loadFromResource")).findFirst().orElseThrow();
+		MethodInsnNode build = null;
+		for (AbstractInsnNode insn : load.instructions) {
+			if (insn instanceof MethodInsnNode call && call.name.equals(CREATE_CONDITIONAL) && call.desc.equals(CODEC_TO_CODEC)) build = call;
+		}
+		assertTrue(build != null, "premise: the merged loadFromResource decodes through ConditionalOps");
+		AbstractInsnNode resource = build.getNext(), mark = resource.getNext();
+		assertTrue(resource instanceof VarInsnNode r && r.getOpcode() == Opcodes.ALOAD && r.var == 3, "the resource argument");
+		assertTrue(mark instanceof MethodInsnNode m && KERNEL.equals(m.owner) && "readerFor".equals(m.name)
+				&& m.desc.equals("(Lcom/mojang/serialization/Codec;Lnet/minecraft/server/packs/resources/Resource;)Lcom/mojang/serialization/Codec;"),
+				"marks the codec it built, for that resource");
+		new Analyzer<>(new BasicVerifier()).analyze(registration.name, load);
+		assertSame(marking, new ForbricMergedBaseCompatTransformer().transform(PENDING_REGISTRATION.replace('/', '.'), marking, null), "a second pass marks nothing twice");
+	}
+
+	@Test
+	void theNetworkRegistryPathIsNotAnnounced() throws Exception {
+		// The negative control: the client's network registry load reaches loadFromResource too (findAndLoadFromResource),
+		// and MinecraftForge never judged forge:condition there.
+		byte[] network = TestFixtures.requireEntry(Fixture.STAGED, MERGED_BASE, NETWORK_LOAD_TASK + ".class");
+		ClassNode before = parse(network);
+		assertTrue(before.methods.stream().anyMatch(m -> m.instructions != null && java.util.stream.StreamSupport.stream(m.instructions.spliterator(), false)
+				.anyMatch(i -> i instanceof MethodInsnNode c && c.owner.equals(PENDING_REGISTRATION) && c.name.equals("findAndLoadFromResource"))),
+				"premise: the network path loads through PendingRegistration");
+		for (MethodNode method : parse(new ForbricMergedBaseCompatTransformer().transform(NETWORK_LOAD_TASK.replace('/', '.'), network, null)).methods) {
+			if (method.instructions == null) continue;
+			for (AbstractInsnNode insn : method.instructions) {
+				assertTrue(!(insn instanceof MethodInsnNode call && KERNEL.equals(call.owner)), method.name + " announces a load as MinecraftForge's");
+			}
+		}
+	}
+
 	private static byte[] conditionalOps() throws Exception {
 		return TestFixtures.requireEntry(Fixture.STAGED, STAGED.resolve("neoforge-runtime/neoforge-runtime.jar"), CONDITIONAL_OPS_ENTRY);
 	}
