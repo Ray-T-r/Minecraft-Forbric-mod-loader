@@ -107,7 +107,7 @@ public final class MergedBaseFrameRecomputer implements ClassTransformer {
         String element = array.substring(1);
         return element.startsWith("[") ? element : element.startsWith("L") && element.endsWith(";") ? element.substring(1, element.length() - 1) : null;
     }
-    String commonSuperClass(String first, String second) {
+    public String commonSuperClass(String first, String second) {
         if (first.equals(second)) return first;
         if (first.startsWith("[") || second.startsWith("[")) {
             if (assignable(first, second)) return first;

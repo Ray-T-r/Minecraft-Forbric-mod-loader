@@ -94,7 +94,10 @@ class MixinExecutionPathWeaveTest {
 		WeaveHarness.assertWovenAndVerified(repaired, "net/minecraft/fixture/Paths", fixture);
 
 		WeaveHarness.Result control = WeaveHarness.run(work, "off", fixture, config, "executionpathprobe", Ecosystem.FABRIC,
-				EnvType.SERVER, "net.minecraft.fixture.Paths", "run", Map.of("forbric.mixinRetarget.executionPaths", "off"));
+				// NativeCallInlining puts the call back too (it inlines the private piece into dispatch): the control switches
+				// it off as well, so it shows what the execution-path retarget alone repairs.
+				EnvType.SERVER, "net.minecraft.fixture.Paths", "run", Map.of("forbric.mixinRetarget.executionPaths", "off",
+						net.forbric.kernel.mixin.NativeCallInlining.PROPERTY, "off"));
 		assertTrue(control.printed("[ExecutionPath] normal=7 cancelled=-3"), control.describe());
 		assertTrue(control.printed("[ExecutionPath] before=0 wrapped=0 native=2"), control.describe());
 		assertFalse(control.printed("[ExecutionPath] normal=19 cancelled=99"), control.describe());

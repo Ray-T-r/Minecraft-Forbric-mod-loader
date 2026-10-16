@@ -112,7 +112,13 @@ public final class ForbricMixinService
 	static byte[] absorbedCallbacksAsLoaded(byte[] bytes, java.util.function.Function<String,byte[]> resource) {
 		if(gameLoader==null||bytes==null)return bytes;
 		ClassNode source=new ClassNode();new ClassReader(bytes).accept(source,ClassReader.EXPAND_FRAMES);
-		int changed=MixinAbsorbedCallbackTransport.adapt(source,owner->{byte[] current=resource.apply(owner+".class");return current==null?null:MixinFit.parse(current);},
+		// The native shape first, as getClassNode does: a call put back into its method, a value kept in its local, a @Local
+		// pinned — so the transports below see a call that is there again and leave it to the mod's own injector.
+		java.util.function.Function<String,ClassNode> code=owner->{byte[] current=resource.apply(owner+".class");return current==null?null:MixinFit.parse(current);};
+		int changed=NativeCallInlining.adapt(source,code,NativeGameReferences::reference,loader());
+		changed+=NativeLocalMaterialization.adapt(source,code,NativeGameReferences::reference,loader());
+		changed+=NativeLocalPins.adapt(source,code,NativeGameReferences::reference);
+		changed+=MixinAbsorbedCallbackTransport.adapt(source,owner->{byte[] current=resource.apply(owner+".class");return current==null?null:MixinFit.parse(current);},
 			owner->NativeGameReferences.reference(MixinStubRebind.ecosystemOf(source.name),owner),
 			owner->NativeGameReferences.peers(MixinStubRebind.ecosystemOf(source.name),owner),loader());
 		changed+=MixinOperationSeamTransport.adapt(source,owner->{byte[] current=resource.apply(owner+".class");return current==null?null:MixinFit.parse(current);},NativeGameReferences::reference,loader());
@@ -314,6 +320,9 @@ public final class ForbricMixinService
 		// …and a single-point injector compiled with an array-valued `at` (another Mixin fork's shape) is given the
 		// shape this Mixin declares, before MixinExtras' pre-apply transformer casts it.
 		MixinAtShape.normalise(node);
+		// …and a call an injector anchors on, which the surviving carrier now makes inside a helper of its own, is made in the
+		// method again: the helper is inlined there before any adapter below, or Mixin, reads the target.
+		NativeCallInlining.adapt(node, this::mergedBaseNodeWithCode, NativeGameReferences::reference, loader());
 		// …and a value a @Local asks for at a call, which the merged method hands that call straight from the stack, is also
 		// kept in the local the native method keeps it in.
 		NativeLocalMaterialization.adapt(node, this::mergedBaseNodeWithCode, NativeGameReferences::reference, loader());

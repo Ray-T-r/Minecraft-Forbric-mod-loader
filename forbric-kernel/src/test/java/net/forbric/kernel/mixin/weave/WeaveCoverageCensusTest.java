@@ -108,6 +108,7 @@ class WeaveCoverageCensusTest {
 			Map.entry("MixinRenamedBodyEdges", Switch.own("forbric.renamedBodyEdges")), // MixinRenamedBodyEdgesWeaveTest
 			Map.entry("MixinReturnOrdinals", Switch.own("forbric.returnOrdinals")), // MixinReturnOrdinalsWeaveTest
 			Map.entry("MixinShiftedPoints", Switch.own("forbric.shiftedPoints")), // MixinShiftedPointsWeaveTest
+			Map.entry("NativeCallInlining", Switch.own("forbric.nativeCallInlining")), // NativeCallInliningWeaveTest
 			Map.entry("NativeLocalMaterialization", Switch.own("forbric.nativeLocalMaterialization")), // NativeLocalMaterializationWeaveTest
 			Map.entry("NativeLocalPins", Switch.own("forbric.nativeLocalPins")), // NativeLocalPinsWeaveTest
 			Map.entry("MixinGuiItemCaptureAdapter", Switch.own("forbric.guiItemCaptureAnchor")),

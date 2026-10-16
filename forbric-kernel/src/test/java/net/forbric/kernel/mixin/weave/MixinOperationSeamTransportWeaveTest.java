@@ -1,10 +1,16 @@
 package net.forbric.kernel.mixin.weave;
+import net.forbric.kernel.mixin.NativeCallInlining;
 import static org.junit.jupiter.api.Assertions.*;
 import java.nio.file.*;import java.util.*;
 import org.junit.jupiter.api.Test;import org.junit.jupiter.api.io.TempDir;
 import org.objectweb.asm.*;
 import net.fabricmc.api.EnvType;import net.forbric.api.Ecosystem;import net.forbric.kernel.mixin.MixinOperationSeamTransport;
 
+/**
+ * Every run switches {@link NativeCallInlining} off: where that applies it puts the moved call back into the host and the
+ * mod's own injector binds there natively, so this transport stands down; these runs keep the transport, the fallback for
+ * the inlines that are declined, covered.
+ */
 class MixinOperationSeamTransportWeaveTest implements Opcodes {
     @TempDir Path work;
     /** The guest mixin configs declare compatibilityLevel JAVA_25, which Mixin refuses to set on an older runtime. */
@@ -30,7 +36,7 @@ class MixinOperationSeamTransportWeaveTest implements Opcodes {
         Path config=work.resolve("operation.mixins.json");Files.writeString(config,"{\"required\":true,\"compatibilityLevel\":\"JAVA_25\",\"package\":\"unrelated\",\"mixins\":[\"Subscriber\"],\"injectors\":{\"defaultRequire\":1}}");
         Path current=WeaveHarness.fixture(work,"operations",files,Map.of("operation.mixins.json",config),List.of("-g"));Path fixture=NativeWeaveReferences.with(work,current,Map.of("unknown/Dispatch",source()));
         var configs=List.of(new WeaveHarness.Config("operation.mixins.json","unknown-operation",Ecosystem.FABRIC));
-        var on=WeaveHarness.run(work,"on",fixture,configs,List.of(),EnvType.SERVER,"audit.OperationProbe","run",Map.of());
+        var on=WeaveHarness.run(work,"on",fixture,configs,List.of(),EnvType.SERVER,"audit.OperationProbe","run",Map.of(NativeCallInlining.PROPERTY,"off"));
         assertTrue(on.printed("[Operation] 1 [pre:layer, draw:layer:99, post:layer, pre:top, before:top:1, draw:replacement:11, after:top, post:top]"),on.describe());
         assertTrue(on.printed("[Operation] 2 [pre:layer, draw:layer:99, post:layer, pre:top, before:top:2, after:top, post:top]"),on.describe());
         assertTrue(on.printed("[Operation] 3 [pre:layer, draw:layer:99, post:layer, pre:top, before:top:3, draw:replacement:13, draw:replacement:23, after:top, post:top]"),on.describe());
@@ -46,16 +52,16 @@ class MixinOperationSeamTransportWeaveTest implements Opcodes {
             private void another(Widget receiver,Context context,int value,Operation<Void> original){audit.OperationProbe.log.add("second.before:"+receiver.name+":"+value);original.call(receiver,context,value);audit.OperationProbe.log.add("second.after:"+receiver.name);}}
             """);files.add(second);Path secondConfig=work.resolve("second.mixins.json");Files.writeString(secondConfig,"{\"required\":true,\"compatibilityLevel\":\"JAVA_25\",\"package\":\"second\",\"mixins\":[\"Listener\"]}");
         Path multiple=WeaveHarness.fixture(work,"multiple",files,Map.of("operation.mixins.json",config,"second.mixins.json",secondConfig),List.of("-g"));multiple=NativeWeaveReferences.with(work,multiple,Map.of("unknown/Dispatch",source()));
-        var both=WeaveHarness.run(work,"both",multiple,List.of(configs.getFirst(),new WeaveHarness.Config("second.mixins.json","second-operation",Ecosystem.FABRIC)),List.of(),EnvType.SERVER,"audit.OperationProbe","run",Map.of());
+        var both=WeaveHarness.run(work,"both",multiple,List.of(configs.getFirst(),new WeaveHarness.Config("second.mixins.json","second-operation",Ecosystem.FABRIC)),List.of(),EnvType.SERVER,"audit.OperationProbe","run",Map.of(NativeCallInlining.PROPERTY,"off"));
         assertTrue(both.printed("second.before:"),both.describe());assertTrue(both.printed("draw:replacement:11"),both.describe());assertFalse(both.output().contains("injection warning"),both.describe());
         Path dispatch=work.resolve("src/unknown/Dispatch.java");Files.writeString(dispatch,sources.get("unknown.Dispatch").replace("gateway(context,value)","widget.present(context,value)"));
         Path nativeFixture=WeaveHarness.fixture(work,"native-operation-order",files,Map.of("operation.mixins.json",config,"second.mixins.json",secondConfig),List.of("-g"));nativeFixture=NativeWeaveReferences.with(work,nativeFixture,Map.of("unknown/Dispatch",source()));
-        var nativeRun=WeaveHarness.run(work,"native-order",nativeFixture,List.of(configs.getFirst(),new WeaveHarness.Config("second.mixins.json","second-operation",Ecosystem.FABRIC)),List.of(),EnvType.SERVER,"audit.OperationProbe","run",Map.of());
+        var nativeRun=WeaveHarness.run(work,"native-order",nativeFixture,List.of(configs.getFirst(),new WeaveHarness.Config("second.mixins.json","second-operation",Ecosystem.FABRIC)),List.of(),EnvType.SERVER,"audit.OperationProbe","run",Map.of(NativeCallInlining.PROPERTY,"off"));
         String transported=both.output().lines().filter(line->line.startsWith("[Operation] 1 ")).findFirst().orElseThrow();String originalOrder=nativeRun.output().lines().filter(line->line.startsWith("[Operation] 1 ")).findFirst().orElseThrow();
         assertEquals(originalOrder,transported.replace("pre:layer, draw:layer:99, post:layer, pre:top, ","").replace(", post:top", ""),"source wrappers retain the actual native Mixin priority order");
         Files.writeString(dispatch,sources.get("unknown.Dispatch"));
         files.remove(second);
-        var off=WeaveHarness.run(work,"off",fixture,configs,List.of(),EnvType.SERVER,"audit.OperationProbe","run",Map.of(MixinOperationSeamTransport.PROPERTY,"off"));
+        var off=WeaveHarness.run(work,"off",fixture,configs,List.of(),EnvType.SERVER,"audit.OperationProbe","run",Map.of(MixinOperationSeamTransport.PROPERTY,"off",NativeCallInlining.PROPERTY,"off"));
         assertTrue(off.printed("[Operation] 1 [pre:layer, draw:layer:99, post:layer, pre:top, draw:top:1, post:top]"),off.describe());assertFalse(off.printed("before:top"),off.describe());
         Path subscriber=work.resolve("src/unrelated/Subscriber.java");Files.writeString(subscriber,"""
             package unrelated;import unknown.*;import org.spongepowered.asm.mixin.*;import org.spongepowered.asm.mixin.injection.*;import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
@@ -64,7 +70,7 @@ class MixinOperationSeamTransportWeaveTest implements Opcodes {
             private void originalAfter(int value,CallbackInfo ci){if(!ci.getId().equals("custom:point")||ci.isCancellable()||!widget.name.equals("top"))throw new AssertionError("callback metadata/host changed");audit.OperationProbe.log.add("injected:"+value);}}
             """);
         Path injected=WeaveHarness.fixture(work,"inject",files,Map.of("operation.mixins.json",config),List.of("-g"));injected=NativeWeaveReferences.with(work,injected,Map.of("unknown/Dispatch",source()));
-        var inject=WeaveHarness.run(work,"inject",injected,configs,List.of(),EnvType.SERVER,"audit.OperationProbe","run",Map.of());
+        var inject=WeaveHarness.run(work,"inject",injected,configs,List.of(),EnvType.SERVER,"audit.OperationProbe","run",Map.of(NativeCallInlining.PROPERTY,"off"));
         assertTrue(inject.printed("[Operation] 1 [pre:layer, draw:layer:99, post:layer, pre:top, draw:top:1, injected:1, post:top]"),inject.describe());assertTrue(inject.printed("[Operation] -1 [pre:layer, draw:layer:99, post:layer, pre:top, cancel:top]"),inject.describe());assertFalse(inject.output().contains("injection warning"),inject.describe());
         Files.writeString(subscriber,sources.get("unrelated.Subscriber"));
         Path observer=work.resolve("src/observer/Changed.java");Files.createDirectories(observer.getParent());Files.writeString(observer,"""
@@ -72,7 +78,7 @@ class MixinOperationSeamTransportWeaveTest implements Opcodes {
             @Mixin(Gateway.class)public class Changed{@Inject(method="once",at=@At("HEAD"))private static void altered(Widget widget,Context context,int value,CallbackInfo ci){audit.OperationProbe.log.add("observer:"+widget.name);}}
             """);files.add(observer);Path changedConfig=work.resolve("changed.mixins.json");Files.writeString(changedConfig,"{\"required\":true,\"compatibilityLevel\":\"JAVA_25\",\"package\":\"observer\",\"mixins\":[\"Changed\"]}");
         Path changed=WeaveHarness.fixture(work,"changed-helper",files,Map.of("operation.mixins.json",config,"changed.mixins.json",changedConfig),List.of("-g"));changed=NativeWeaveReferences.with(work,changed,Map.of("unknown/Dispatch",source()));
-        var mutated=WeaveHarness.run(work,"changed-helper",changed,List.of(configs.getFirst(),new WeaveHarness.Config("changed.mixins.json","changed-operation",Ecosystem.FABRIC)),List.of(),EnvType.SERVER,"audit.OperationProbe","run",Map.of());
+        var mutated=WeaveHarness.run(work,"changed-helper",changed,List.of(configs.getFirst(),new WeaveHarness.Config("changed.mixins.json","changed-operation",Ecosystem.FABRIC)),List.of(),EnvType.SERVER,"audit.OperationProbe","run",Map.of(NativeCallInlining.PROPERTY,"off"));
         // Another mod's mixin into the carrier helper coexists natively: the host still draws, the gateway and helper
         // run as written (with that mixin), and only the transported operation is skipped -- reported once, naming it.
         assertTrue(mutated.printed("[Operation] 1 [observer:layer, pre:layer, draw:layer:99, post:layer, observer:top, pre:top, draw:top:1, post:top]"),mutated.describe());
@@ -94,7 +100,7 @@ class MixinOperationSeamTransportWeaveTest implements Opcodes {
             @Mixin(Gateway.class)public class Neighbour{@Inject(method="direct",at=@At("HEAD"))private void beside(Context context,int value,CallbackInfo ci){audit.OperationProbe.log.add("neighbour");}}
             """);files.add(neighbour);Path neighbourConfig=work.resolve("neighbour.mixins.json");Files.writeString(neighbourConfig,"{\"required\":true,\"compatibilityLevel\":\"JAVA_25\",\"package\":\"observer\",\"mixins\":[\"Neighbour\"]}");
         Path alike=WeaveHarness.fixture(work,"look-alike",files,Map.of("operation.mixins.json",config,"neighbour.mixins.json",neighbourConfig),List.of("-g"));alike=NativeWeaveReferences.with(work,alike,Map.of("unknown/Dispatch",source()));
-        var alikeRun=WeaveHarness.run(work,"look-alike",alike,List.of(configs.getFirst(),new WeaveHarness.Config("neighbour.mixins.json","neighbour-operation",Ecosystem.NEOFORGE)),List.of(),EnvType.SERVER,"audit.OperationProbe","run",Map.of());
+        var alikeRun=WeaveHarness.run(work,"look-alike",alike,List.of(configs.getFirst(),new WeaveHarness.Config("neighbour.mixins.json","neighbour-operation",Ecosystem.NEOFORGE)),List.of(),EnvType.SERVER,"audit.OperationProbe","run",Map.of(NativeCallInlining.PROPERTY,"off"));
         assertTrue(alikeRun.printed("[Operation] 1 [pre:layer, draw:layer:99, post:layer, pre:top, before:top:1, draw:replacement:11, after:top, post:top]"),alikeRun.describe());
         assertTrue(alikeRun.printed("[Operation] direct [neighbour, pre:top, draw:top:7, post:top]"),alikeRun.describe());
         assertFalse(alikeRun.printed("skipped at"),alikeRun.describe());assertTrue(alikeRun.findings().stream().noneMatch(f->f.id().startsWith("mixin-seam:")),alikeRun.findings().toString());
@@ -131,17 +137,17 @@ class MixinOperationSeamTransportWeaveTest implements Opcodes {
         Path config=work.resolve("paint.mixins.json");Files.writeString(config,"{\"required\":true,\"compatibilityLevel\":\"JAVA_25\",\"package\":\"painters\",\"mixins\":[\"Overpaint\"],\"injectors\":{\"defaultRequire\":1}}");
         Path wrapConfig=work.resolve("underpaint.mixins.json");Files.writeString(wrapConfig,"{\"required\":true,\"compatibilityLevel\":\"JAVA_25\",\"package\":\"painters\",\"mixins\":[\"Underpaint\"],\"injectors\":{\"defaultRequire\":1}}");
         Path current=WeaveHarness.fixture(work,"paint",files,Map.of("paint.mixins.json",config,"underpaint.mixins.json",wrapConfig),List.of("-g"));Path fixture=NativeWeaveReferences.with(work,current,Map.of("unseen/Board",paintSource()));
-        var wrapped=WeaveHarness.run(work,"paint-wrap",fixture,List.of(new WeaveHarness.Config("underpaint.mixins.json","unseen-underpaint",Ecosystem.FABRIC)),List.of(),EnvType.SERVER,"audit.PaintProbe","run",Map.of());
+        var wrapped=WeaveHarness.run(work,"paint-wrap",fixture,List.of(new WeaveHarness.Config("underpaint.mixins.json","unseen-underpaint",Ecosystem.FABRIC)),List.of(),EnvType.SERVER,"audit.PaintProbe","run",Map.of(NativeCallInlining.PROPERTY,"off"));
         assertTrue(wrapped.printed("[Paint] 1 [pre:layer, draw:layer:99:#1, post:layer, pre:top, under:#1:#1, draw:top:1:#1, post:top]"),wrapped.describe());
         assertFalse(wrapped.output().contains("injection warning"),wrapped.describe());
         var configs=List.of(new WeaveHarness.Config("paint.mixins.json","unseen-paint",Ecosystem.FABRIC));
-        var on=WeaveHarness.run(work,"paint-on",fixture,configs,List.of(),EnvType.SERVER,"audit.PaintProbe","run",Map.of());
+        var on=WeaveHarness.run(work,"paint-on",fixture,configs,List.of(),EnvType.SERVER,"audit.PaintProbe","run",Map.of(NativeCallInlining.PROPERTY,"off"));
         assertTrue(on.printed("[Paint] 1 [pre:layer, draw:layer:99:#1, post:layer, pre:top, draw:top:1:#1, over:#1:1:1, post:top]"),on.describe());
         assertTrue(on.printed("[Paint] -1 [pre:layer, draw:layer:99:#2, post:layer, pre:top, cancel:top]"),on.describe());
         assertTrue(on.printed("[Paint] 2 [pre:layer, draw:layer:99:#3, post:layer, pre:top, draw:top:2:#3, over:#3:2:2, post:top]"),on.describe());
         assertFalse(on.output().contains("injection warning"),on.describe());
         WeaveHarness.assertWovenAndVerified(on,"unseen/Board",fixture);
-        var off=WeaveHarness.run(work,"paint-off",fixture,configs,List.of(),EnvType.SERVER,"audit.PaintProbe","run",Map.of(MixinOperationSeamTransport.LOCALS_PROPERTY,"off"));
+        var off=WeaveHarness.run(work,"paint-off",fixture,configs,List.of(),EnvType.SERVER,"audit.PaintProbe","run",Map.of(MixinOperationSeamTransport.LOCALS_PROPERTY,"off",NativeCallInlining.PROPERTY,"off"));
         assertTrue(off.printed("[Paint] 1 [pre:layer, draw:layer:99:#1, post:layer, pre:top, draw:top:1:#1, post:top]"),off.describe());assertFalse(off.printed("over:"),off.describe());
     }
     /** The source Board: {@code Canvas canvas=new Canvas(); brush.present(canvas,value);} with its debug scope, as javac -g writes it. */

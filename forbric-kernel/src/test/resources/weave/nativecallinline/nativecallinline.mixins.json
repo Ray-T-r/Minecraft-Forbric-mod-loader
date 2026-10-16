@@ -1,0 +1,1 @@
+{"required": true, "package": "com.hollow.tint.mixin", "compatibilityLevel": "JAVA_21", "mixins": ["StageMixin", "FieldMixin"], "injectors": {"defaultRequire": 1}}

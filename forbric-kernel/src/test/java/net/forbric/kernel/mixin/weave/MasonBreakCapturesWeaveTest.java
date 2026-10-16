@@ -65,7 +65,9 @@ class MasonBreakCapturesWeaveTest {
 		vanilla = run(vanillaFixture, "vanilla", Map.of());
 		unrecorded = run(merged, "merged-unrecorded", Map.of());
 		proved = run(indexed, "merged-proved", Map.of());
-		off = run(indexed, "adapter-off", Map.of(MixinBlockInteractionAdapters.PROPERTY, "off"));
+		// NativeCallInlining also puts level.removeBlock back (it inlines the merged body's private helper), so the control
+		// switches it off too.
+		off = run(indexed, "adapter-off", Map.of(MixinBlockInteractionAdapters.PROPERTY, "off", net.forbric.kernel.mixin.NativeCallInlining.PROPERTY, "off"));
 	}
 
 	@Test void onVanillaTheMasonKeepsTheChiselledWall() {

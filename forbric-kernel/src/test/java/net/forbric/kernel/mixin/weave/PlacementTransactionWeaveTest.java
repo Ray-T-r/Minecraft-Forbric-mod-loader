@@ -65,7 +65,9 @@ class PlacementTransactionWeaveTest {
 		fixture = NativeWeaveReferences.with(work, fixture, NativeWeaveReferences.classes(original));
 		adapted = WeaveHarness.run(work, "adapted", fixture, CONFIG, MOD, Ecosystem.FABRIC, EnvType.SERVER, "fixture.placementsingle.Probe", "probe", Map.of());
 		off = WeaveHarness.run(work, "adapter-off", fixture, CONFIG, MOD, Ecosystem.FABRIC, EnvType.SERVER, "fixture.placementsingle.Probe", "probe",
-				Map.of(MixinCarrierCallbackAdapters.PROPERTY, "off"));
+				// NativeCallInlining also puts Item.useOn back, by inlining MinecraftForge's placement hook: the control
+				// switches it off too, so it shows what this adapter alone repairs.
+				Map.of(MixinCarrierCallbackAdapters.PROPERTY, "off", net.forbric.kernel.mixin.NativeCallInlining.PROPERTY, "off"));
 	}
 
 	@Test void eachHandlerRunsWhereVanillaWouldHaveRunIt() {

@@ -85,7 +85,8 @@ class FabricClientMixinAnchorsWeaveTest {
 				new WeaveHarness.Config(SCREEN_CONFIG, SCREEN_MOD, Ecosystem.FABRIC),
 				new WeaveHarness.Config(RENDER_CONFIG, RENDER_MOD, Ecosystem.FABRIC)),
 				List.of(), EnvType.CLIENT, "fixture.fabricclientanchors.Probe", "run",
-				Map.of(FabricClientMixinAnchors.PROPERTY, adapter,MixinOperationSeamTransport.PROPERTY,adapter));
+				Map.of(FabricClientMixinAnchors.PROPERTY, adapter, MixinOperationSeamTransport.PROPERTY, adapter,
+						net.forbric.kernel.mixin.NativeCallInlining.PROPERTY, adapter));
 	}
     private static byte[] originalGui(){ClassWriter writer=new ClassWriter(ClassWriter.COMPUTE_FRAMES|ClassWriter.COMPUTE_MAXS);writer.visit(Opcodes.V21,Opcodes.ACC_PUBLIC,GUI,null,"java/lang/Object",null);writer.visitField(Opcodes.ACC_PUBLIC,"screen","Lnet/minecraft/client/gui/screens/Screen;",null,null).visitEnd();MethodVisitor method=writer.visitMethod(Opcodes.ACC_PUBLIC,"extractRenderState","(Lnet/minecraft/client/gui/GuiGraphicsExtractor;IIF)V",null,null);method.visitCode();method.visitTypeInsn(Opcodes.NEW,"net/minecraft/client/gui/GuiGraphicsExtractor");method.visitInsn(Opcodes.DUP);method.visitMethodInsn(Opcodes.INVOKESPECIAL,"net/minecraft/client/gui/GuiGraphicsExtractor","<init>","()V",false);method.visitVarInsn(Opcodes.ASTORE,1);method.visitVarInsn(Opcodes.ALOAD,0);method.visitFieldInsn(Opcodes.GETFIELD,GUI,"screen","Lnet/minecraft/client/gui/screens/Screen;");method.visitVarInsn(Opcodes.ALOAD,1);method.visitVarInsn(Opcodes.ILOAD,2);method.visitVarInsn(Opcodes.ILOAD,3);method.visitVarInsn(Opcodes.FLOAD,4);method.visitMethodInsn(Opcodes.INVOKEVIRTUAL,"net/minecraft/client/gui/screens/Screen","extractRenderStateWithTooltipAndSubtitles","(Lnet/minecraft/client/gui/GuiGraphicsExtractor;IIF)V",false);method.visitInsn(Opcodes.RETURN);method.visitMaxs(0,0);method.visitEnd();writer.visitEnd();return writer.toByteArray();}
 
