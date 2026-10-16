@@ -204,7 +204,9 @@ server rejects `--gameDir`, so `KernelBoot` strips it on that side. The game ver
     `seedForgeFmlLoader`, `publishForgeLoadingList`. This must precede the first class that passes through the
     Mixin transformer, because Mixin constructs every guest `IMixinConfigPlugin` then, and plugins read
     `FMLPaths`/`FMLLoader` in their `<clinit>`. MinecraftForge's `FMLEnvironment` caches `dist` into
-    `static final` fields in a one-shot `<clinit>`; whoever touches it first decides it forever.
+    `static final` fields in a one-shot `<clinit>`; whoever touches it first decides it forever. Then
+    `KernelFabricEcosystem.constructLanguageAdapters()`: every language adapter a Fabric mod declares is built
+    here, as Fabric Loader's `freeze()` builds them before `FabricMixinBootstrap.init` (§5.1).
 14. **Mixin** — Fabric configs first, Forge-family configs appended (§7.1); `MixinConfigOwners.publish` before
     registration; `KernelMixinBootstrap.init`.
 15. `PassiveSeeder.reportDependencies()` — after Mixin, because half of what it reports (mixins meant for another
@@ -406,6 +408,12 @@ classpath (first-URL-wins would otherwise let it shadow the winner and contribut
   (identity only — no entrypoints, mixins or assets), so `FabricLoader.isModLoaded` answers; and the Forge-family
   lists are seeded with the Fabric mods (`-Dforbric.crossEcosystemPresence=off` restores single-loader answers).
   `net.forbric.api.ModIds` maps ids the ecosystems spell differently (`cloth-config` / `cloth_config`).
+- A mod's own id outranks another mod's `provides` alias for it, whatever order they arrive in —
+  `KernelFabricLoader.register`, `ModConstructionOrder` and `ModPresence`'s index all take every real id before any
+  alias, as `DuplicateModArbiter` never lets an alias claim an id. owo-sentinel, nested in mods that need owo-lib,
+  provides `owo` and depends on nothing installed, so it registered first and owo-lib itself was dropped as a
+  "duplicate" (with its `owo-impl` alias); the sentinel then stays loaded beside it, where Fabric Loader's resolver
+  would leave it out (nested `provides` arbitration is not applied — `NestedFabricRequirements`).
 - `ModConstructionOrder` orders Forge-family construction topologically — a mod after everything it requires or
   declares `AFTER`; ties alphabetical; cycles named, not broken silently (`-Dforbric.modOrder=name` restores
   file-name order). Fabric mods initialise in Fabric Loader's own order, by mod id (`FabricLoadOrder`;
@@ -419,6 +427,15 @@ classpath (first-URL-wins would otherwise let it shadow the winner and contribut
   index frozen before mod code runs. `KernelModContainer` exposes each jar through a zip `FileSystem`;
   `KernelLanguageAdapters` honours `languageAdapters` (fabric-language-kotlin); `KernelObjectShare`,
   `KernelVersion`, `KernelMappingResolver` (identity) complete the API.
+- Language adapters are built before Mixin, all of them, named by an entrypoint or not (§3.2 step 13), because
+  Fabric Loader's `freeze()` does: Configured Defaults copies a pack's default configs in its adapter's constructor
+  and names it from no entrypoint. A constructor that throws fails its mod; it is not run again.
+  `-Dforbric.eagerLanguageAdapters=off` builds each on first use instead.
+- Entrypoint values resolve as Fabric's `DefaultLanguageAdapter` resolves them (`KernelLanguageAdapters.resolveDefault`,
+  one implementation for an adapter-less entrypoint and for `LanguageAdapter.getDefault()`): a class, a static
+  field, the one method of that name — static, or an instance method bound to a fresh instance — and `::<init>`,
+  the constructor. Where Fabric refuses a value (several methods of one name, a private member) the kernel stays
+  lenient: it opens the member, or takes the first static method.
 - The mod-facing API is vendored under its own names: `src/main/java/net/fabricmc/api` (7 files) and
   `src/main/java/net/fabricmc/loader` (30 files: `loader.api.*` plus the narrow internals mods actually link against
   — `FabricLoaderImpl`, `ModContainerImpl`, `EntrypointStorage`, `Hooks`, `FabricLauncher`/`FabricLauncherBase`,
@@ -567,6 +584,29 @@ game build — the question a carrier bump asks.
 `KernelMixinBootstrap.init` binds the service, registers every config, installs `KernelMixinErrorHandler`, installs
 the weaver as the last pipeline stage, then moves the environment to `INIT` and `DEFAULT`. Configs are prepared —
 and plugins constructed — on the first class through the transformer, which is `KernelRuntimeClasses.verify`.
+
+Before the phase moves, each config is decorated as Fabric Loader's `MixinConfigDecorator` decorates it: the owning
+mod's id (`KEY_MOD_ID`, so Mixin's own messages name it) and, for a Fabric-owned config, the Mixin compatibility level
+Fabric Loader gives that mod (`KEY_COMPATIBILITY`, `FabricMixinCompat`). The level comes from the lowest Fabric Loader
+version the mod's `depends`/`breaks` on `fabricloader` accept, compared in Fabric's own version order (a port of
+`SemanticVersionImpl.compareTo`, not the kernel's dependency comparator, which orders pre-releases differently) against
+Fabric Loader 0.19.3's `FabricMixinVersions` table (the version the kernel reports, and the table that matches the
+bundled Mixin's newest level); it decides the order initialisers and injectors are applied in, how locals are
+discriminated and where shifted points land. Undecorated, every Fabric mod ran at the newest level. On the local corpora
+(997 distinct `fabric.mod.json`) the port agrees with Fabric Loader 0.19.3 itself on every mod, and 323 of the 561 that
+carry mixins get an older level than before.
+
+The level is not set below 0.10.0 (`KernelMixinBootstrap.RELOCATION_FLOOR`). Below it — Fabric's answer for a mod that
+declares no `fabricloader` lower bound, 58 of those 561 — Mixin finds locals with its legacy walk
+(`Locals.getLocalsAt092`), and a local capture the kernel relocated (`MixinGuiItemCaptureAdapter`, the folded-tail
+capture) is refused as "LVT ... has incompatible changes" and skipped: the real-weave suite loses exactly those at
+0.9.2 and passes in full at 0.10.0 and at 0.17.0. Raised to 0.10.0, such a mod keeps the walk the kernel always used
+and gets Fabric's behaviour otherwise. On the pure-Fabric server pack (126 mods, 159 jars), weaving at Fabric's own
+levels instead of the newest changed only the order of field initialisers in six classes (exported classes, against a
+second run at the same levels as the noise floor), and the pack runs to the same end.
+Forge-family configs are left as they were: NeoForge's FML decorates its own with a declared `behaviorVersion` and
+refuses one below 0.17.1, so every level it can give behaves as the bundled Mixin's newest.
+`-Dforbric.mixinCompat=exact` drops the floor; `latest` leaves every Fabric config at the newest level.
 
 Order: Fabric configs in Fabric Loader's order, Forge-family configs appended. Mixin orders by priority;
 registration order only breaks ties, so the least-proven set becomes the outer wrapper around a known-good stack.
@@ -1271,6 +1311,7 @@ developer reaches for:
 | `forbric.modOrder` | `name`: file-name construction order |
 | `forbric.fabricOrder` | `off`: Fabric mods follow the topological order instead of mod-id order |
 | `forbric.fabricMainInConstructor` | `off`: client Fabric `main` entrypoints run in the pre-`Minecraft` window |
+| `forbric.eagerLanguageAdapters` | `off`: a Fabric language adapter is built when an entrypoint first names it, not before Mixin |
 | `forbric.loaderProbes`, `forbric.crossEcosystemPresence` | `off`: platform probes / presence answer as a single loader would |
 
 **Mixin**
@@ -1278,6 +1319,7 @@ developer reaches for:
 | Property | Effect |
 | --- | --- |
 | `forbric.relaxGuestMixins` | `off`: guest configs are not relaxed |
+| `forbric.mixinCompat` | `exact`: Fabric Loader's per-mod level without the 0.10.0 floor; `latest`: every Fabric config at Mixin's newest level (§7.1) |
 | `forbric.relaxMixinOverwrites` | csv (`*` glob) of configs to relax |
 | `forbric.mixinDiagnostics` | keep injection requirements strict to surface every misfit |
 | `forbric.mixinFit` | `strict`: also drop `PARTIAL` mixins |
