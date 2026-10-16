@@ -236,6 +236,49 @@ class ForbricModDiscovererTest {
 	}
 
 	/**
+	 * Only a nested jar that declares a config itself registers it. A nested plain library that merely carries a file of
+	 * that name registers nothing, so the wrapper's config is dropped with no one applying it — that must stay a WARN,
+	 * not turn silent. A nested jar declaring it through its fabric.mod.json or its manifest's MixinConfigs accounts for
+	 * it like a nested mods.toml does.
+	 */
+	@org.junit.jupiter.api.Test
+	void aConfigANestedJarOnlyCarriesWithoutDeclaringItIsStillWarnedAbout(@TempDir Path dir) throws Exception {
+		String toml = "modLoader=\"javafml\"\nloaderVersion=\"[4,)\"\nlicense=\"MIT\"\n\n[[mods]]\nmodId=\"wrapped\"\nversion=\"1.0\"\n\n"
+				+ "[[mixins]]\nconfig=\"common.mixins.json\"\n\n[[mixins]]\nconfig=\"fabric.side.mixins.json\"\n\n[[mixins]]\nconfig=\"manifest.side.mixins.json\"\n";
+		Path library = writeJar(dir, "library.jar", Map.of("common.mixins.json", "{}", "com/example/Lib.class", ""), null);
+		Path fabric = writeJar(dir, "fabric.jar", Map.of("fabric.side.mixins.json", "{}", "fabric.mod.json",
+				"{\"schemaVersion\":1,\"id\":\"inner_fabric\",\"version\":\"1.0\",\"mixins\":[\"fabric.side.mixins.json\"]}"), null);
+		Path manifestDeclared = dir.resolve("manifest.jar");
+		Manifest manifest = new Manifest();
+		manifest.getMainAttributes().put(Attributes.Name.MANIFEST_VERSION, "1.0");
+		manifest.getMainAttributes().putValue("MixinConfigs", "manifest.side.mixins.json");
+		try (JarOutputStream jos = new JarOutputStream(Files.newOutputStream(manifestDeclared), manifest)) {
+			jos.putNextEntry(new ZipEntry("manifest.side.mixins.json"));
+			jos.write("{}".getBytes(StandardCharsets.UTF_8));
+			jos.closeEntry();
+		}
+		Path outer = dir.resolve("wrapper.jar");
+		try (JarOutputStream jos = new JarOutputStream(Files.newOutputStream(outer))) {
+			jos.putNextEntry(new ZipEntry("META-INF/neoforge.mods.toml"));
+			jos.write(toml.getBytes(StandardCharsets.UTF_8));
+			jos.closeEntry();
+			for (Path nested : List.of(library, fabric, manifestDeclared)) {
+				jos.putNextEntry(new ZipEntry("META-INF/jarjar/" + nested.getFileName()));
+				jos.write(Files.readAllBytes(nested));
+				jos.closeEntry();
+			}
+		}
+		String[] out = new String[1];
+		DiscoveredMod wrapper = net.forbric.kernel.GateLogContract.capture(() -> byId(new ForbricModDiscoverer().discoverJar(outer), "wrapped"), out);
+		assertNotNull(wrapper);
+		assertTrue(wrapper.getMixinConfigs().isEmpty(), wrapper.getMixinConfigs().toString());
+		assertTrue(out[0].contains("dropping declared mixin config 'common.mixins.json'"),
+				"a nested library carries the file but registers nothing: " + out[0]);
+		assertFalse(out[0].contains("'fabric.side.mixins.json' - not present"), "the nested fabric.mod.json declares it: " + out[0]);
+		assertFalse(out[0].contains("'manifest.side.mixins.json' - not present"), "the nested manifest declares it: " + out[0]);
+	}
+
+	/**
 	 * Seven passes ask about the same jar during one boot — discovery, the dependency audit, the seeder, the
 	 * merge report, the enum-extension loader, duplicate arbitration and the boot list. Each ask used to open the
 	 * zip, re-read every metadata file and re-run the parse, and re-emit the warnings with it: one jar's
