@@ -589,9 +589,9 @@ public final class MixinStubRebind {
 			if (names.isEmpty() && byTypeOnly(local)) {
 				if (!typedLocalEnabled()) return null;
 				if (theOnlyLocalOfItsType(target, delegate, params[i], points)) continue;
-				// The stub's caller handed vanilla's arguments only: a value the carrier added as an argument is never one
-				// of vanilla's locals. Decided beside those, the one slot left is pinned (architectury's explosion hook
-				// takes the entity list by type in hurtEntities, where NeoForge's body also takes the affected blocks).
+				// A value the stub hands the delegate from constants alone is never one of vanilla's locals. Decided beside
+				// those, the one slot left is pinned (architectury's explosion hook takes the entity list by type in
+				// hurtEntities, where NeoForge's body also takes the affected blocks, handed List.of() by the stub).
 				int slot = onlyLocalOfItsType(target, delegate, params[i], points, addedArgumentSlots(stub, delegation));
 				if (slot < 0) return null;
 				pins.put(i, slot);
@@ -1049,8 +1049,23 @@ public final class MixinStubRebind {
 	 * never stood for — NeoForge's registry snapshot calls {@code MappedRegistry.register(int, …)} directly, where
 	 * fabric-registry-sync's add-entry callback on {@code register(ResourceKey, …)} has no business firing.
 	 */
-	record Delegation(MethodNode delegate, int[] positions, boolean computed) {
+	/**
+	 * @param sources for each argument of the delegate, what the stub hands it: the stub's argument of that index, or
+	 *                {@link #CONSTANT} — a value built from constants alone (a literal, {@code null}, a static field, a
+	 *                zero-argument static factory such as {@code List.of()}, a lambda capturing nothing, a construction from
+	 *                such values) — or {@link #COMPUTED}, anything worked out from the stub's arguments or fields; null when
+	 *                not recorded
+	 */
+	record Delegation(MethodNode delegate, int[] positions, boolean computed, int[] sources) {
+		Delegation(MethodNode delegate, int[] positions, boolean computed) {
+			this(delegate, positions, computed, null);
+		}
 	}
+
+	/** {@link Delegation#sources}: a value of constants alone. */
+	static final int CONSTANT = -3;
+	/** {@link Delegation#sources}: a value worked out from the stub's arguments, its receiver or its fields. */
+	static final int COMPUTED = -1;
 
 	/**
 	 * The one same-name overload {@code stub} forwards to, with the argument mapping, when {@code stub} is nothing else:
@@ -1071,7 +1086,7 @@ public final class MixinStubRebind {
 		boolean computed = false;
 		MethodInsnNode call = null;
 		MethodNode found = null;
-		int[] mapping = null;
+		int[] mapping = null, sources = null;
 		AbstractInsnNode after = null;
 		for (AbstractInsnNode insn = stub.instructions.getFirst(); insn != null; insn = insn.getNext()) {
 			int op = insn.getOpcode();
@@ -1081,11 +1096,11 @@ public final class MixinStubRebind {
 				stack.add(load.var < 256 ? paramBySlot[load.var] : -1);
 				if (!isStatic && load.var == 0) stack.set(stack.size() - 1, -2);
 			} else if (insn instanceof LdcInsnNode || (op >= Opcodes.ACONST_NULL && op <= Opcodes.DCONST_1) || op == Opcodes.BIPUSH || op == Opcodes.SIPUSH) {
-				stack.add(-1);
+				stack.add(CONSTANT);
 			} else if (insn instanceof FieldInsnNode get && op == Opcodes.GETSTATIC) {
-				stack.add(-1);
+				stack.add(CONSTANT);
 			} else if (insn instanceof TypeInsnNode type && op == Opcodes.NEW) {
-				stack.add(-1);
+				stack.add(CONSTANT);   // stays one only if its constructor is handed constants alone
 			} else if (insn instanceof InvokeDynamicInsnNode indy
 					&& "java/lang/invoke/LambdaMetafactory".equals(indy.bsm.getOwner())
 					&& ("metafactory".equals(indy.bsm.getName()) || "altMetafactory".equals(indy.bsm.getName()))) {
@@ -1094,7 +1109,7 @@ public final class MixinStubRebind {
 				int captured = Type.getArgumentTypes(indy.desc).length;
 				if (stack.size() < captured) return null;
 				for (int k = 0; k < captured; k++) stack.removeLast();
-				stack.add(-1);
+				stack.add(captured > 0 ? COMPUTED : CONSTANT);
 				computed |= captured > 0;
 			} else if (insn instanceof FieldInsnNode get && op == Opcodes.GETFIELD) {
 				if (stack.isEmpty()) return null;
@@ -1110,7 +1125,10 @@ public final class MixinStubRebind {
 				Type[] args = Type.getArgumentTypes(m.desc);
 				if (m.name.equals("<init>") && op == Opcodes.INVOKESPECIAL) {
 					if (stack.size() < args.length + 1) return null;
-					for (int k = 0; k <= args.length; k++) stack.removeLast();   // the args and the dup'd instance
+					boolean constants = true;
+					for (int k = 0; k <= args.length; k++) constants &= stack.removeLast() == CONSTANT;   // the args and the dup'd instance
+					// The NEW's own entry is still below: a construction from anything but constants is computed.
+					if (!constants && !stack.isEmpty() && stack.getLast() == CONSTANT) stack.set(stack.size() - 1, COMPUTED);
 					continue;
 				}
 				boolean delegationCall = m.owner.equals(owner.name) && m.name.equals(stub.name) && !m.desc.equals(stub.desc)
@@ -1125,7 +1143,7 @@ public final class MixinStubRebind {
 					int consumed = args.length + (op == Opcodes.INVOKESTATIC ? 0 : 1);
 					if (stack.size() < consumed) return null;
 					for (int k = 0; k < consumed; k++) stack.removeLast();
-					stack.add(-1);
+					stack.add(consumed > 0 ? COMPUTED : CONSTANT);
 					computed |= consumed > 0;   // a zero-argument static factory is a constant
 					continue;
 				}
@@ -1134,8 +1152,10 @@ public final class MixinStubRebind {
 				if (!isStatic && stack.getFirst() != -2) return null;
 				int[] positions = new int[stubParams.length];
 				Arrays.fill(positions, -1);
+				sources = new int[args.length];
 				for (int j = 0; j < args.length; j++) {
 					int source = stack.get(receiver + j);
+					sources[j] = source >= 0 || source == CONSTANT ? source : COMPUTED;
 					if (source >= 0) {
 						if (positions[source] >= 0) return null;   // one stub argument passed twice: ambiguous
 						positions[source] = j;
@@ -1157,7 +1177,7 @@ public final class MixinStubRebind {
 		}
 		if (call == null || after == null || after.getOpcode() < Opcodes.IRETURN || after.getOpcode() > Opcodes.RETURN) return null;
 		for (AbstractInsnNode insn = after.getNext(); insn != null; insn = insn.getNext()) if (insn.getOpcode() >= 0) return null;
-		return new Delegation(found, mapping, computed);
+		return new Delegation(found, mapping, computed, sources);
 	}
 
 	/** A {@code @Local} that names nothing — no ordinal or index, not limited to the arguments: MixinExtras' implicit mode. */
@@ -1177,16 +1197,22 @@ public final class MixinStubRebind {
 		return onlyLocalOfItsType(owner, delegate, type, points, new java.util.BitSet()) >= 0;
 	}
 
-	/** The delegate's parameter slots no stub argument reaches: the arguments the carrier added. */
+	/**
+	 * The delegate's parameter slots that hold a value vanilla's body cannot have held in a local: the stub hands them a
+	 * value of constants alone ({@link #CONSTANT} — architectury's case, NeoForge's {@code hurtEntities()} passing
+	 * {@code List.of()} as the affected blocks). A value the stub works out from its own arguments or fields
+	 * ({@link #COMPUTED}) is not set aside: that is what vanilla's body computed inline, often into a local the carrier
+	 * hoisted into the stub (the stub-purity rule allows exactly that), and a by-type {@code @Local} may have read that
+	 * very local natively — setting it aside would pin the other one.
+	 */
 	static java.util.BitSet addedArgumentSlots(MethodNode stub, Delegation delegation) {
 		MethodNode delegate = delegation.delegate();
 		Type[] params = Type.getArgumentTypes(delegate.desc);
-		java.util.BitSet reached = new java.util.BitSet();
-		for (int position : delegation.positions()) if (position >= 0) reached.set(position);
 		java.util.BitSet slots = new java.util.BitSet();
+		if (delegation.sources() == null || delegation.sources().length != params.length) return slots;
 		int slot = (delegate.access & Opcodes.ACC_STATIC) != 0 ? 0 : 1;
 		for (int i = 0; i < params.length; i++) {
-			if (!reached.get(i)) slots.set(slot);
+			if (delegation.sources()[i] == CONSTANT) slots.set(slot);
 			slot += params[i].getSize();
 		}
 		return slots;
