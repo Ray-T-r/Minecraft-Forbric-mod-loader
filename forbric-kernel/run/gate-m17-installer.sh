@@ -383,7 +383,9 @@ step "an offline reinstall over that cache needs no network (must PASS)"
 # went to libraries.minecraft.net for any library not in place, and failed offline for a file nothing would read.
 # "Offline" is a proxy on a port nothing listens on, for http and https alike; one library the base version lists for
 # this OS is removed first, so a download, if the installer attempted one, would be certain and would fail.
-DEAD_PORT="${M17_DEAD_PORT:-$(python3 -c 'import socket; s=socket.socket(); s.bind(("127.0.0.1", 0)); print(s.getsockname()[1]); s.close()')}"
+# The port is one the system just handed out and took back, so nothing listens there; it is not a knob, because no
+# server binds it (gates-parallel.py hands out the ports servers bind).
+DEAD_PORT="$(python3 -c 'import socket; s=socket.socket(); s.bind(("127.0.0.1", 0)); print(s.getsockname()[1]); s.close()')"
 GONE=$(python3 - "$DEST" <<'GONE'
 import json, os, platform, sys
 dest = sys.argv[1]
