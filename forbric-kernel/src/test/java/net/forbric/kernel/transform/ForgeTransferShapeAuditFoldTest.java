@@ -115,7 +115,10 @@ class ForgeTransferShapeAuditFoldTest {
 		return NativeMergeFixtures.repair(current, NativeMergeFixtures.references(natives, natives));
 	}
 
-	/** What {@code leaf}'s {@code unusual()} answers when the JVM runs {@code bytes} among {@code classes}. */
+	/**
+	 * What {@code leaf}'s {@code unusual()} answers when the JVM runs {@code bytes} among {@code classes}: the value it
+	 * returns, or the simple name of the IncompatibleClassChangeError (or subclass) its call threw.
+	 */
 	private static Object run(Map<String, byte[]> classes, String leaf, byte[] bytes) throws Throwable {
 		Map<String, byte[]> loaded = new HashMap<>(classes);
 		loaded.put(leaf, bytes);
@@ -198,8 +201,13 @@ class ForgeTransferShapeAuditFoldTest {
 		ClassNode bare = node(classes.get("pair/Leaf"));
 		bare.methods.removeIf(m -> m.name.equals("unusual"));
 		byte[] unsettled = bytes(bare);
-		assertEquals(List.of(2, 5, "IncompatibleClassChangeError"),
-				List.of(run(classes, "pair/Leaf", left), run(classes, "pair/Leaf", right), run(classes, "pair/Leaf", unsettled)));
+		assertEquals(List.of(2, 5), List.of(run(classes, "pair/Leaf", left), run(classes, "pair/Leaf", right)));
+		// Without either delegate there is no dispatch target. The JVMS answers that with IncompatibleClassChangeError and
+		// lets the JVM throw any subclass of it: HotSpot 25 throws the class itself, HotSpot 21 (the CI runner's) its
+		// AbstractMethodError. run() names only errors of that family and returns what the call returned otherwise, so a
+		// name here means the call found no implementation, on either release.
+		Object bareAnswer = run(classes, "pair/Leaf", unsettled);
+		assertTrue(bareAnswer instanceof String, "premise: the class without a delegate has no dispatch target, got " + bareAnswer);
 		// As the merge would meet it: neither native class declares the method, so only the conflict decides.
 		Map<String, byte[]> natives = new HashMap<>(classes);
 		natives.put("pair/Leaf", unsettled);
