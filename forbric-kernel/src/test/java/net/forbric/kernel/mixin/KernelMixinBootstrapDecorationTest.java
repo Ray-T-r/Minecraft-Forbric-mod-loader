@@ -81,8 +81,46 @@ class KernelMixinBootstrapDecorationTest {
 		assertTrue(keys.contains(org.spongepowered.asm.mixin.FabricUtil.KEY_MOD_ID),
 				"the mod id is the whole point");
 		assertFalse(keys.contains(org.spongepowered.asm.mixin.FabricUtil.KEY_COMPATIBILITY),
-				"KEY_COMPATIBILITY sets injector semantics; changing it per mod is a separate decision with its "
-						+ "own evidence requirement, not a passenger on a naming change");
+				"KEY_COMPATIBILITY sets injector semantics; it has its own step and its own switch, not a seat on "
+						+ "a naming change");
+	}
+
+	/** The compatibility level is read while Mixin prepares each mixin; set after that, nobody reads it. */
+	@Test
+	void theCompatibilityLevelIsSetBeforeTheConfigsArePrepared() throws Exception {
+		MethodNode init = method("init");
+		assertTrue(init != null, "KernelMixinBootstrap.init not found in the compiled src/main classes");
+
+		int level = indexOf(init, call -> "giveFabricConfigsTheirCompatibilityLevel".equals(call.name));
+		int prepare = indexOf(init, call -> "gotoPhase".equals(call.name));
+
+		assertTrue(level >= 0, "init must give the Fabric configs Fabric Loader's compatibility level");
+		assertTrue(level < prepare, "a level set after gotoPhase(INIT) is a silent no-op");
+	}
+
+	@Test
+	void theCompatibilitySwitchIsReadBeforeAnythingIsDecorated() throws Exception {
+		MethodNode step = method("giveFabricConfigsTheirCompatibilityLevel");
+		assertTrue(step != null, "KernelMixinBootstrap.giveFabricConfigsTheirCompatibilityLevel not found");
+
+		int property = -1;
+		int decorate = -1;
+		boolean compatibilityKey = false;
+		AbstractInsnNode[] body = step.instructions.toArray();
+		for (int i = 0; i < body.length; i++) {
+			if (body[i] instanceof LdcInsnNode ldc && KernelMixinBootstrap.COMPATIBILITY_PROPERTY.equals(ldc.cst)) {
+				if (property < 0) property = i;
+			} else if (body[i] instanceof LdcInsnNode ldc
+					&& org.spongepowered.asm.mixin.FabricUtil.KEY_COMPATIBILITY.equals(ldc.cst)) {
+				compatibilityKey = true;
+			} else if (body[i] instanceof MethodInsnNode call && "decorate".equals(call.name) && decorate < 0) {
+				decorate = i;
+			}
+		}
+
+		assertTrue(compatibilityKey, "the step decorates KEY_COMPATIBILITY");
+		assertTrue(property >= 0, "the escape hatch must exist: this changes how injectors behave");
+		assertTrue(decorate < 0 || property < decorate, "and it has to be honoured before anything is decorated");
 	}
 
 	@Test
