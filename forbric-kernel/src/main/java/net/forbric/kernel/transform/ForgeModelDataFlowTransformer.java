@@ -80,16 +80,36 @@ public final class ForgeModelDataFlowTransformer implements ClassTransformer {
 		return "forbric-forge-model-data";
 	}
 
+	/** Three independent repairs behind one flag; each is its own claim, so one that stops applying is noticed alone. */
 	@Override public AnchorSet anchors() {
-		if (!enabled()) return AnchorSet.scanned("disabled by -D" + PROPERTY + "=off");
-		return AnchorSet.of(
-				new AnchorSet.Anchor(BLOCK_STATE_MODEL.replace('/', '.'), AnchorSet.Severity.REQUIRED,
-						"a MinecraftForge block model is never asked for its model data: connected textures never connect"),
-				new AnchorSet.Anchor(CLIENT_LEVEL.replace('/', '.'), AnchorSet.Severity.REQUIRED,
-						"the client level answers MinecraftForge's model-data manager with null: no block entity's model data is kept"));
+		return AnchorSet.scanned("3 independent repairs, each its own claim");
+	}
+
+	@Override public List<Claim> claims() {
+		if (!enabled()) {
+			return List.of(new Claim(claimId("askTheModelsMinecraftForgesQuestions"), AnchorSet.scanned("disabled by -D" + PROPERTY + "=off")),
+					new Claim(claimId("giveTheLevelMinecraftForgesManager"), AnchorSet.scanned("disabled by -D" + PROPERTY + "=off")),
+					new Claim(claimId("edgeTheModelDataOverloads"), AnchorSet.scanned("disabled by -D" + PROPERTY + "=off")));
+		}
+		return List.of(
+				new Claim(claimId("askTheModelsMinecraftForgesQuestions"), AnchorSet.of(new AnchorSet.Anchor(BLOCK_STATE_MODEL.replace('/', '.'),
+						AnchorSet.Severity.REQUIRED, "a MinecraftForge block model is never asked for its model data: connected textures never connect"))),
+				// Applied where the merge lost the manager, satisfied where the class keeps MinecraftForge's own.
+				new Claim(claimId("giveTheLevelMinecraftForgesManager"), AnchorSet.of(new AnchorSet.Anchor(CLIENT_LEVEL.replace('/', '.'),
+						AnchorSet.Severity.REQUIRED, "the client level answers MinecraftForge's model-data manager with null: no block entity's model data is kept"))),
+				new Claim(claimId("edgeTheModelDataOverloads"), AnchorSet.scanned(
+						"any game class keeping a carrier's model-data overload beside a vanilla signature that carries the live body")));
+	}
+
+	private String claimId(String repair) {
+		return name() + "#" + repair;
 	}
 
 	@Override public byte[] transform(String className, byte[] bytes, TransformContext context) {
+		return transform(className, bytes, context, ClaimReporter.NONE);
+	}
+
+	@Override public byte[] transform(String className, byte[] bytes, TransformContext context, ClaimReporter reporter) {
 		if (!enabled() || bytes == null || bytes.length == 0) return bytes;
 		String internal = className.replace('.', '/');
 		if (!internal.startsWith("net/minecraft/")) return bytes;
@@ -98,9 +118,19 @@ public final class ForgeModelDataFlowTransformer implements ClassTransformer {
 		ClassNode node = new ClassNode();
 		new ClassReader(bytes).accept(node, 0);
 		boolean changed = false;
-		if (internal.equals(BLOCK_STATE_MODEL)) changed |= askTheModelsMinecraftForgesQuestions(node);
-		if (internal.equals(CLIENT_LEVEL)) changed |= giveTheLevelMinecraftForgesManager(node);
-		changed |= edgeTheModelDataOverloads(node) > 0;
+		if (internal.equals(BLOCK_STATE_MODEL)) {
+			boolean asked = askTheModelsMinecraftForgesQuestions(node);
+			if (asked || answersMinecraftForgesQuestionsAlready(node)) reporter.hit(claimId("askTheModelsMinecraftForgesQuestions"));
+			changed |= asked;
+		}
+		if (internal.equals(CLIENT_LEVEL)) {
+			boolean given = giveTheLevelMinecraftForgesManager(node);
+			if (given || method(node, "getModelDataManager", MANAGER_GETTER) != null) reporter.hit(claimId("giveTheLevelMinecraftForgesManager"));
+			changed |= given;
+		}
+		int edged = edgeTheModelDataOverloads(node);
+		if (edged > 0) reporter.hit(claimId("edgeTheModelDataOverloads"));
+		changed |= edged > 0;
 		if (!changed) return bytes;
 		ClassWriter writer = new ClassWriter(0);
 		node.accept(writer);
@@ -167,6 +197,12 @@ public final class ForgeModelDataFlowTransformer implements ClassTransformer {
 					+ "its context on the merged client; any other model is asked exactly NeoForge's question");
 		}
 		return changed;
+	}
+
+	/** Already as this repair leaves it: both contextual answers declared, and the particle one is not the resolver's. */
+	private static boolean answersMinecraftForgesQuestionsAlready(ClassNode node) {
+		MethodNode particle = method(node, "particleMaterial", PARTICLE);
+		return method(node, "collectParts", COLLECT) != null && particle != null && !isResolversParticle(node, particle);
 	}
 
 	/** {@code aload_0; invokeinterface particleMaterial()…; areturn}: the conflict resolver's body, nothing else. */

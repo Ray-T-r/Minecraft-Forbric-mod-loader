@@ -129,6 +129,20 @@ class MergedBaseForgeModelDataFlowTest {
 		verify(restored);
 	}
 
+	/** Each repair is its own claim: applied, or satisfied by a class that already carries it (this base's level). */
+	@Test void everyClaimIsReportedWhereItsTargetIsHandedOver() throws Exception {
+		ForgeModelDataFlowTransformer flow = new ForgeModelDataFlowTransformer();
+		assertTrue(flow.anchors().anchors().isEmpty() && flow.anchors().scanNote() != null, "the repairs are claimed one by one, not as one class-level anchor");
+		java.util.Set<String> declared = new java.util.TreeSet<>();
+		for (ClassTransformer.Claim claim : flow.claims()) declared.add(claim.id());
+		assertEquals(3, declared.size(), declared.toString());
+		java.util.Set<String> hit = new java.util.TreeSet<>();
+		for (String owner : List.of(ForgeModelDataFlowTransformer.BLOCK_STATE_MODEL, RENDERER, ForgeModelDataFlowTransformer.CLIENT_LEVEL)) {
+			flow.transform(owner.replace('/', '.'), merged(owner), null, hit::add);
+		}
+		assertEquals(declared, hit, "the level keeps MinecraftForge's own manager on this base: satisfied, not missed");
+	}
+
 	@Test void offLeavesEveryClassAsMerged() throws Exception {
 		System.setProperty(ForgeModelDataFlowTransformer.PROPERTY, "off");
 		for (String owner : List.of(ForgeModelDataFlowTransformer.BLOCK_STATE_MODEL, RENDERER, ForgeModelDataFlowTransformer.CLIENT_LEVEL)) {

@@ -2150,6 +2150,7 @@ test	net.forbric.kernel.transform.MergedBaseForgeIngredientsTest	aSecondPassChan
 test	net.forbric.kernel.transform.MergedBaseForgeIngredientsTest	everyOtherStoreInTheStaticInitializerIsUntouched()	[fixture:staged] staged merged base absent
 test	net.forbric.kernel.transform.MergedBaseForgeIngredientsTest	theKernelCallIsTheInstructionImmediatelyBeforeTheSingleCodecStore()	[fixture:staged] staged merged base absent
 test	net.forbric.kernel.transform.MergedBaseForgeIngredientsTest	thePremiseCodecIsStoredStraightFromNeoForgesFactoryAndNoForgeCodecIsNamed()	[fixture:staged] staged merged base absent
+test	net.forbric.kernel.transform.MergedBaseForgeModelDataFlowTest	everyClaimIsReportedWhereItsTargetIsHandedOver()	[fixture:staged] staged merged base absent
 test	net.forbric.kernel.transform.MergedBaseForgeModelDataFlowTest	offLeavesEveryClassAsMerged()	[fixture:staged] staged merged base absent
 test	net.forbric.kernel.transform.MergedBaseForgeModelDataFlowTest	theConflictResolversParticleAnswerIsReplacedWhicheverRunsFirst()	[fixture:staged] staged merged base absent
 test	net.forbric.kernel.transform.MergedBaseForgeModelDataFlowTest	theLevelKeepsMinecraftForgesManagerWhereTheMergeDroppedIt()	[fixture:staged] staged merged base absent
