@@ -314,6 +314,9 @@ public final class ForbricMixinService
 		// …and a single-point injector compiled with an array-valued `at` (another Mixin fork's shape) is given the
 		// shape this Mixin declares, before MixinExtras' pre-apply transformer casts it.
 		MixinAtShape.normalise(node);
+		// …and a value a @Local asks for at a call, which the merged method hands that call straight from the stack, is also
+		// kept in the local the native method keeps it in.
+		NativeLocalMaterialization.adapt(node, this::mergedBaseNodeWithCode, NativeGameReferences::reference, loader());
 		// …and a @Local that names one local at the native point but several at the merged one reads the local its own loader
 		// hands it.
 		NativeLocalPins.adapt(node, this::mergedBaseNodeWithCode, NativeGameReferences::reference);
