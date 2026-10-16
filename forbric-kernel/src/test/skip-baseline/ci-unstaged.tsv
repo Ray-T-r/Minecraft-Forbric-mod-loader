@@ -1252,7 +1252,7 @@ test	net.forbric.kernel.mixin.MixinRelocatedCallTest	nothingMovesWithoutTheRelay
 test	net.forbric.kernel.mixin.MixinRelocatedCallTest	theSwitchLeavesItAlone()	[fixture:staged] actual Fabric API fixture required
 test	net.forbric.kernel.mixin.MixinRenamedBodyEdgesTest	aMethodThatLeavesTheBodyToALaterContinuationKeepsItsEdge()	[fixture:staged] actual game required
 test	net.forbric.kernel.mixin.MixinRenamedBodyEdgesTest	aRenamedBodyOnlyTheNamedMethodReachesKeepsTheEdgeWhereItWas()	[fixture:staged] actual game required
-test	net.forbric.kernel.mixin.MixinRenamedBodyEdgesTest	allowLoadEdgesTheRenamedBodyEveryPlayerIsAddedThrough()	[fixture:staged] actual game required
+test	net.forbric.kernel.mixin.MixinRenamedBodyEdgesTest	allowLoadStaysOnTheDispatcherAndTheBypassingForwarderGetsACopy()	[fixture:staged] actual game required
 test	net.forbric.kernel.mixin.MixinRenamedBodyEdgesTest	onVanillaOrWithTheSwitchOffNothingMoves()	[fixture:mc-libraries] actual game required
 test	net.forbric.kernel.mixin.MixinResourceContinuationAdapterTest	bothActualSourceCallbacksRetainNamespacedAndDefaultResourcesWithoutDoublePrefix()	[fixture:staged] actual resource inputs required
 test	net.forbric.kernel.mixin.MixinResourceContinuationAdapterTest	changedPathRecipeOperationInputOrAmbiguousContinuationIsRejected()	[fixture:staged] actual resource inputs required
@@ -2038,6 +2038,7 @@ test	net.forbric.kernel.transform.ItemUseOnInjectorTest	useOnPostsNeoForgesAfter
 test	net.forbric.kernel.transform.LambdaInvocationThunkInjectorTest	theActualHudReferencesAcquireExactSingleCallThunks()	[fixture:staged] actual merged game required
 test	net.forbric.kernel.transform.LifecycleHookInjectorTest	excisesServerModLoaderFromRealMain()	[fixture:staged] $ROOT/forbric-loader/run/merged-base/patched-mc-merged-26.2.jar absent (reading net/minecraft/server/Main.class)
 test	net.forbric.kernel.transform.LifecycleHookInjectorTest	theRealClientMainReportsItsEarlyFailuresToTheKernelFirst()	[fixture:staged] $ROOT/forbric-loader/run/merged-base/patched-mc-merged-26.2.jar absent (reading net/minecraft/client/main/Main.class)
+test	net.forbric.kernel.transform.LifecycleHookInjectorTest	theRealServerEntryHandsTheServerToFabricAsItIsConstructed()	[fixture:staged] $ROOT/forbric-loader/run/merged-base/patched-mc-merged-26.2.jar absent (reading net/minecraft/server/Main.class)
 test	net.forbric.kernel.transform.LootPoolFieldsInjectorTest	bothConstructorsFillBothFamiliesFields()	[fixture:staged] staged merged base absent
 test	net.forbric.kernel.transform.LootPoolFieldsInjectorTest	theSwitchLeavesTheClassAlone()	[fixture:staged] staged merged base absent
 test	net.forbric.kernel.transform.LootTableEventBridgeInjectorTest	aSecondPassChangesNothingFurther()	[fixture:staged] staged merged base absent
