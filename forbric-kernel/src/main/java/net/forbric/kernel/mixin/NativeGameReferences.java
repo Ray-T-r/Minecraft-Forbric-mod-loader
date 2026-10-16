@@ -75,6 +75,28 @@ public final class NativeGameReferences {
 	}
 
 	public synchronized ClassNode get(Ecosystem ecosystem, String owner) {
+		return get(ecosystem, owner, ClassReader.SKIP_FRAMES);
+	}
+
+	/** Whether the index pins a native body of {@code owner} for {@code ecosystem}, without reading it. */
+	public static boolean has(Ecosystem ecosystem, String owner) {
+		NativeGameReferences reader = active;
+		if (reader == null || ecosystem == null || owner == null) return false;
+		synchronized (reader) {
+			return reader.indexes.computeIfAbsent(ecosystem, reader::index).containsKey(owner);
+		}
+	}
+
+	/**
+	 * {@code owner} as {@code ecosystem} compiled it natively, read with its frames expanded as Mixin reads a target —
+	 * for running Mixin's own injection-point code over the native body, which reads locals off those frames.
+	 */
+	public static ClassNode referenceWithFrames(Ecosystem ecosystem, String owner) {
+		NativeGameReferences reader = active;
+		return reader == null ? null : reader.get(ecosystem, owner, ClassReader.EXPAND_FRAMES);
+	}
+
+	private synchronized ClassNode get(Ecosystem ecosystem, String owner, int flags) {
 		if (ecosystem == null || owner == null) return null;
 		String expected = indexes.computeIfAbsent(ecosystem, this::index).get(owner);
 		if (expected == null) return null;
@@ -82,7 +104,7 @@ public final class NativeGameReferences {
 		if (bytes == null) bytes = resources.apply(owner + ".class");
 		if (bytes == null || !expected.equals(hash(bytes))) return null;
 		ClassNode node = new ClassNode();
-		new ClassReader(bytes).accept(node, ClassReader.SKIP_FRAMES);
+		new ClassReader(bytes).accept(node, flags);
 		return owner.equals(node.name) ? node : null;
 	}
 

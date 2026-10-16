@@ -86,7 +86,8 @@ class AddedCallOccurrencesWeaveTest {
 		fixture = NativeWeaveReferences.with(work, current, Map.of(TARGET, NativeWeaveReferences.classes(nativeFixture).get(TARGET)));
 		nativeRun = run("native", nativeFixture, Map.of());
 		numbered = run("numbered", fixture, Map.of());
-		off = run("off", fixture, Map.of(AddedCallOccurrences.PROPERTY, "off"));
+		// NativeOccurrences repairs the same shape from the native body; off too, so the control isolates this pass.
+		off = run("off", fixture, Map.of(AddedCallOccurrences.PROPERTY, "off", net.forbric.kernel.mixin.NativeOccurrences.PROPERTY, "off"));
 	}
 
 	@Test void theHookRunsOnceAsItDoesNatively() throws Exception {

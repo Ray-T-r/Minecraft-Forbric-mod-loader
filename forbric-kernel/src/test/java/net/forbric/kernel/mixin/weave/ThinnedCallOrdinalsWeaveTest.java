@@ -58,7 +58,8 @@ class ThinnedCallOrdinalsWeaveTest {
 		fixture = WeaveHarness.fixture(work, "thinnedcall", sources, Map.of(CONFIG, SOURCES.resolve(CONFIG), prefix + "index.tsv", index, prefix + TARGET + ".class.bin", binary));
 		nativeRun = WeaveHarness.run(work, "native", nativeFixture, CONFIG, MOD, Ecosystem.FABRIC, EnvType.CLIENT, "fixture.thinnedcall.Probe", "probe", Map.of());
 		moved = run("moved", Map.of());
-		off = run("off", Map.of(ThinnedCallOrdinals.PROPERTY, "off"));
+		// NativeOccurrences repairs the same shape from the native body; off too, so the control isolates this pass.
+		off = run("off", Map.of(ThinnedCallOrdinals.PROPERTY, "off", net.forbric.kernel.mixin.NativeOccurrences.PROPERTY, "off"));
 	}
 
 	@Test void theHookRunsBeforeTheStackInTheHandIsUsed() throws Exception {

@@ -68,7 +68,8 @@ class BarrelRollCameraAdapterWeaveTest {
                 "META-INF/forbric/native-reference/FABRIC/index.tsv",index,
                 "META-INF/forbric/native-reference/FABRIC/"+CAMERA+".class.bin",binary));
 		adapted = run("adapted", Map.of());
-		off = run("adapter-off", Map.of(MixinCameraRollAdapter.PROPERTY, "off"));
+		// NativeOccurrences also counts the vanilla ordinals over the native camera; off too, so the control isolates the adapter.
+		off = run("adapter-off", Map.of(MixinCameraRollAdapter.PROPERTY, "off", net.forbric.kernel.mixin.NativeOccurrences.PROPERTY, "off"));
 	}
 
 	@Test void everyViewRollsOnTopOfTheEventsRoll() throws Exception {

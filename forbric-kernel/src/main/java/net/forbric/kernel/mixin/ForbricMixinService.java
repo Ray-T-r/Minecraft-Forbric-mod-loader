@@ -463,6 +463,11 @@ public final class ForbricMixinService
 		// …and, after remember has the author's own counts, an injector-level require/allow on a relaxed guest mixin
 		// stops being able to abandon the whole target class: the mod is reported, the class is defined.
 		if (!DIAGNOSTICS) MixinLocalsCapture.softenRequirements(node, ForbricMixinService::allOwnersRelaxed);
+		// …and, last, every point that selects instructions by what they are counts its occurrences over the native body of
+		// its method and selects their counterparts in the merged one, at weave time (NativeOccurrencePoint): an injector runs
+		// once per native execution of its point however many occurrences a carrier added. Last, so the ledger above keeps the
+		// author's own points and every adapter before reads them as written.
+		NativeOccurrences.adapt(node, bytes);
 
 		return node;
 	}

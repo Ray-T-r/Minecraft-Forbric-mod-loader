@@ -101,6 +101,7 @@ class WeaveCoverageCensusTest {
 			Map.entry("MixinTwinRebind", Switch.own("forbric.mixinTwinRebind")), // MixinTwinRebindWeaveTest
 			Map.entry("ThinnedCallOrdinals", Switch.own("forbric.thinnedCallOrdinals")), // ThinnedCallOrdinalsWeaveTest
 			Map.entry("AddedCallOccurrences", Switch.own("forbric.addedCallOccurrences")), // AddedCallOccurrencesWeaveTest
+			Map.entry("NativeOccurrences", Switch.own("forbric.nativeOccurrences")), // NativeOccurrencePointWeaveTest
 			Map.entry("MixinCapturedLocals", Switch.own("forbric.capturedLocals")), // MixinCapturedLocalsWeaveTest
 			Map.entry("MixinBuilderStubRebind", Switch.own("forbric.builderStubRebind")), // MixinBuilderStubRebindWeaveTest
 			Map.entry("MixinExpressionThunks", Switch.own("forbric.expressionThunks")), // MixinExpressionThunksWeaveTest

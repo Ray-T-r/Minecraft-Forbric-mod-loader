@@ -97,6 +97,9 @@ public final class KernelMixinBootstrap {
 		// most of fabric-api's mixins use (@ModifyExpressionValue, MIXINEXTRAS:EXPRESSION, LocalRef sugar). Without
 		// it those configs fail to even parse their injection points.
 		initMixinExtras(loader);
+		// The kernel's injection point that counts a guest's point over its platform's own body (NativeOccurrences hands
+		// guest points to it); registered before any config is parsed, like MixinExtras' points.
+		org.spongepowered.asm.mixin.injection.InjectionPoint.register(NativeOccurrencePoint.class, NativeOccurrencePoint.NAMESPACE);
 
 		for (String config : configs) {
 			Mixins.addConfiguration(config);
