@@ -2095,7 +2095,11 @@ test	net.forbric.kernel.transform.MergedBaseForgeClientInitTest	missingDuplicate
 test	net.forbric.kernel.transform.MergedBaseForgeClientInitTest	runtimeCallsLinkAgainstBothActualCarriersAndMergedOptions()	[fixture:staged] staged jar absent: $ROOT/forbric-loader/run/forge-runtime/forge-runtime.jar
 test	net.forbric.kernel.transform.MergedBaseForgeClientInitTest	twoRealMinecraftCallsKeepTheirDescriptorsAndInstructionCounts()	[fixture:staged] staged jar absent: $ROOT/forbric-loader/run/merged-base/patched-mc-merged-26.2.jar
 test	net.forbric.kernel.transform.MergedBaseForgeConditionsTest	aFactoryFabricAlreadyWrapsGetsMinecraftForgesWrapInFrontOfIt()	[fixture:staged] $ROOT/forbric-loader/run/neoforge-runtime/neoforge-runtime.jar absent (reading net/neoforged/neoforge/common/conditions/ConditionalOps.class)
+test	net.forbric.kernel.transform.MergedBaseForgeConditionsTest	aSecondPassDoesNotWrapItTwice()	[fixture:staged] staged MinecraftForge carrier absent
 test	net.forbric.kernel.transform.MergedBaseForgeConditionsTest	minecraftForgeIsAskedBeforeFabricAtTheOnlyExit()	[fixture:staged] $ROOT/forbric-loader/run/neoforge-runtime/neoforge-runtime.jar absent (reading net/neoforged/neoforge/common/conditions/ConditionalOps.class)
+test	net.forbric.kernel.transform.MergedBaseForgeConditionsTest	minecraftForgesEvaluatorIsStillOnTheDatapackPathAtAll()	[fixture:staged] staged merged base absent
+test	net.forbric.kernel.transform.MergedBaseForgeConditionsTest	safeCodecIsNotTheAnswerBecauseItDropsWhatItCannotParse()	[fixture:staged] staged MinecraftForge carrier absent
+test	net.forbric.kernel.transform.MergedBaseForgeConditionsTest	theCodecIsWrappedBeforeItIsStoredAndBeforeTheOtherTwoAreDerivedFromIt()	[fixture:staged] staged MinecraftForge carrier absent
 test	net.forbric.kernel.transform.MergedBaseForgeFluidModelsTest	aSecondPassChangesNothingFurther()	[fixture:staged] staged merged base absent
 test	net.forbric.kernel.transform.MergedBaseForgeFluidModelsTest	theModelFunnelSitsRightAfterTheLookupsStoreAndReloadsTheSameSlot()	[fixture:staged] staged merged base absent
 test	net.forbric.kernel.transform.MergedBaseForgeFluidModelsTest	thePremiseOneLookupAtMostForgesOwnModelAskAndAMinusOneTintArm()	[fixture:staged] staged merged base absent
