@@ -1,6 +1,8 @@
 /* Copyright 2026 The Forbric Project. Licensed under the Apache License, Version 2.0. */
 package net.forbric.kernel.runtime;
 
+import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicBoolean;
 
 import net.forbric.kernel.util.ForbricLog;
@@ -54,7 +56,25 @@ public final class KernelFluidTypes {
 	}
 	/** Entered only at the actual SDK lookup's proved unsupported branch; namespace guesses are unnecessary. */
 	public static FluidType foreignNeoLookup(Fluid fluid){FluidType type=taggedType(fluid);return (FluidType)net.forbric.api.LookupOutcomes.foreign(fluid,FluidType.class,type);}
-	public static net.minecraftforge.fluids.FluidType foreignForgeLookup(Fluid fluid){var type=forgeType(fluid);return (net.minecraftforge.fluids.FluidType)net.forbric.api.LookupOutcomes.foreign(fluid,net.minecraftforge.fluids.FluidType.class,type);}
+	public static net.minecraftforge.fluids.FluidType foreignForgeLookup(Fluid fluid){var type=forgeType(fluid);if(fluid!=null)FORGE_STAND_INS.add(fluid);return (net.minecraftforge.fluids.FluidType)net.forbric.api.LookupOutcomes.foreign(fluid,net.minecraftforge.fluids.FluidType.class,type);}
+
+	/**
+	 * Fluids whose MinecraftForge type MinecraftForge's own lookup could not give — {@link #foreignForgeLookup} answered
+	 * them instead, from their tags. Such a type is a stand-in for entity physics (a Fabric fluid in
+	 * {@code minecraft:water} swims like water), not the fluid's own: its client extensions — water's tint, water's
+	 * model — describe some other fluid, and genuine MinecraftForge never asks a fluid it did not type. Registry
+	 * singletons, so the set is bounded by the fluid registry; a fluid's class decides, so the answer never changes.
+	 */
+	private static final Set<Fluid> FORGE_STAND_INS = ConcurrentHashMap.newKeySet();
+
+	/**
+	 * Whether {@code fluid}'s MinecraftForge type is {@link #foreignForgeLookup}'s stand-in rather than one MinecraftForge
+	 * itself gave it (vanilla's, or the fluid's own override). Read after the fluid's type was asked: MinecraftForge's
+	 * getter never caches a stand-in, so every ask of a stand-in fluid passes the fallback that records it.
+	 */
+	public static boolean forgeTypeIsStandIn(Fluid fluid) {
+		return fluid != null && FORGE_STAND_INS.contains(fluid);
+	}
 
 	/**
 	 * The merged {@code EntityFluidInteraction.getFluidTypeByTag} answer for a tag other than water and lava: the type

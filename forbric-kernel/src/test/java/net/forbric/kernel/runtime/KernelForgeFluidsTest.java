@@ -21,8 +21,9 @@ class KernelForgeFluidsTest {
 	@Test
 	void theDefaultExtensionShortCircuitsToTheModelByIdentity() throws Exception {
 		String m = model();
-		int shortCircuit = m.indexOf("if (extensions == IClientFluidTypeExtensions.DEFAULT) {");
-		assertTrue(shortCircuit > 0, "vanilla fluids must not pay for getModel, and must render byte-for-byte as before");
+		int shortCircuit = m.indexOf("if (extensions == IClientFluidTypeExtensions.DEFAULT || KernelFluidTypes.forgeTypeIsStandIn(fluid)) {");
+		assertTrue(shortCircuit > 0, "vanilla fluids must not pay for getModel, and must render byte-for-byte as before; a fluid holding"
+				+ " the kernel's stand-in type keeps its own model (ForeignFluidAppearanceExecutionTest runs it)");
 		assertTrue(m.substring(shortCircuit, m.indexOf("}", shortCircuit)).contains("return model;"));
 		assertTrue(shortCircuit < m.indexOf("extensions.getModel("));
 		assertTrue(m.indexOf("ASKED.add(fluid)") < shortCircuit, "a vanilla fluid in view is counted, so a gate can see the funnel");

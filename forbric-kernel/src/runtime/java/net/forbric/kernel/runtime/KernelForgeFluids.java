@@ -41,6 +41,11 @@ import net.minecraftforge.client.extensions.common.IClientFluidTypeExtensions;
  * model ask (the edit-splicing merge does) has that one call routed to {@link #modelFromExtensions} instead, so the
  * model is still asked once, counted, and switchable.
  *
+ * <p>Both asks are made of a fluid MinecraftForge typed itself — vanilla's, or one whose class gives its own type.
+ * A Fabric or NeoForge mod's fluid holds the kernel's tag-derived stand-in ({@link KernelFluidTypes#forgeTypeIsStandIn}),
+ * whose extensions belong to the fluid it stands in for; such a fluid keeps its own model and draws untinted where its
+ * model has no tint source, as on its own platform.
+ *
  * <p>Hot path: this runs once per fluid tesselation, the same cost genuine Forge pays. The count line is gated by
  * a contains-check before an add, and only the first sighting of a fluid logs. Forge's {@code DEFAULT} extension
  * (vanilla fluids, and any Forge fluid whose {@code initClient} never ran) short-circuits to the model by identity
@@ -87,7 +92,10 @@ public final class KernelForgeFluids {
 		// Counted before the DEFAULT short-circuit, so a vanilla fluid in view proves the funnel is on the render
 		// path even when no Forge fluid exists to answer; the contains-check keeps the hot path cheap.
 		boolean first = !ASKED.contains(fluid) && ASKED.add(fluid);
-		if (extensions == IClientFluidTypeExtensions.DEFAULT) {
+		// A fluid MinecraftForge did not type (a Fabric or NeoForge mod's) holds the kernel's tag-derived stand-in, and
+		// that type's extensions are some other fluid's — water's, for a fluid in minecraft:water. Its own platform
+		// never asks them: its model is the one NeoForge's set chose (the fluid's own registration).
+		if (extensions == IClientFluidTypeExtensions.DEFAULT || KernelFluidTypes.forgeTypeIsStandIn(fluid)) {
 			if (first) report(fluid);
 			return model;
 		}
@@ -113,11 +121,19 @@ public final class KernelForgeFluids {
 				+ "supplied their own model (%s)", ASKED.size(), ANSWERED.size(), fluid);
 	}
 
-	/** Site B: the tint for a model without a tint source — Forge's extension answer, or vanilla's -1. */
+	/**
+	 * Site B: the tint for a model without a tint source — the fluid's own MinecraftForge extension answer, or vanilla's
+	 * -1. Asked of a fluid MinecraftForge typed itself only: a Fabric or NeoForge fluid in {@code minecraft:water} holds
+	 * water's stand-in type, and water's tint multiplied Create's honey into green. Its own platform draws a model
+	 * without a tint source untinted ({@code -1}), as vanilla's tesselate does.
+	 */
 	public static int tintColor(FluidState state) {
 		if ("off".equalsIgnoreCase(System.getProperty(PROPERTY, "on"))) return -1;
 		try {
-			return IClientFluidTypeExtensions.of(state).getTintColor();
+			// The lookup first: it is what records a stand-in (MinecraftForge's getter never caches one).
+			IClientFluidTypeExtensions extensions = IClientFluidTypeExtensions.of(state);
+			if (KernelFluidTypes.forgeTypeIsStandIn(state.getType())) return -1;
+			return extensions.getTintColor();
 		} catch (Throwable t) {
 			return -1;
 		}
