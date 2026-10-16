@@ -60,31 +60,38 @@ step "1b. capture the final definitions the opt-in replay test reads"
 # without them. Step 2 counts every skip as a failure, and nothing here produced the capture, so this gate was red on
 # every machine for two tests nobody could run. It is produced here instead: a dedicated server with fabric-api
 # alone, recording every class its loader defines (-Dforbric.definedClassEvidence).
+# M0_CAPTURE_BEGIN (AntiCheatGateLogTest's way: GateM0CaptureStepTest runs this fragment against a stubbed server)
 DEFINED="$BUILD/gate-m0-definitions"
 DRUN="$KERNEL/run/server-m0-definitions"
 DLOG="$BUILD/gate-m0-definitions.log"
 reap_stale_server "$DRUN"
 rm -rf "$DEFINED" "$DRUN"
 mkdir -p "$DRUN/mods"
-cp "$KERNEL/run/client-merged-pack/mods/fabric-api-0.155.2+26.2.jar" "$DRUN/mods/" 2>/dev/null \
-  || echo "[kernel] FAIL no fabric-api 0.155.2 under run/client-merged-pack/mods to capture with"
-seed_server_properties "$DRUN"
-# Recording every definition makes this boot slow (a minute or more), and a "stop" fed before the console reads
-# anything is lost -- the server then runs until await_server kills it. So the feeder waits for Done, in a log
-# emptied first: the previous run's "Done (" would release it at once.
-: > "$DLOG"
-( for _ in $(seq 1 240); do grep -aq 'Done (' "$DLOG" 2>/dev/null && break; sleep 1; done; sleep 2; echo stop ) \
-  | RUNDIR="$DRUN" FORBRIC_JVM="${FORBRIC_JVM:-} -Dforbric.definedClassEvidence=$DEFINED" \
-  "$KERNEL/run/launch-kernel-server.sh" > "$DLOG" 2>&1 &
-DPID=$!
-record_server_pid "$DRUN" "$DPID"
-await_server "$DPID" "$DLOG" 300
-if grep -aqE "^net/minecraft/world/entity/Entity	" "$DEFINED"/definitions-*/definitions.tsv 2>/dev/null \
-   && [ -f "$(ls -d "$DEFINED"/definitions-* 2>/dev/null | head -1)/intact" ]; then
-  echo "[kernel] PASS the kernel's final Entity was captured, and every definition recorded ($DEFINED)"
+# Without fabric-api the capture is of the wrong Entity: a server still boots and defines one. So a copy that fails is
+# a verdict of its own, and the capture must also show that fabric-api's classes were defined.
+if ! cp "$KERNEL/run/client-merged-pack/mods/fabric-api-0.155.2+26.2.jar" "$DRUN/mods/" 2>/dev/null; then
+  echo "[kernel] FAIL no fabric-api 0.155.2 under run/client-merged-pack/mods to capture with"; FAIL=1
 else
-  echo "[kernel] FAIL no complete capture with Entity in it — see $DLOG"; FAIL=1
+  seed_server_properties "$DRUN"
+  # Recording every definition makes this boot slow (a minute or more), and a "stop" fed before the console reads
+  # anything is lost -- the server then runs until await_server kills it. So the feeder waits for Done, in a log
+  # emptied first: the previous run's "Done (" would release it at once.
+  : > "$DLOG"
+  ( for _ in $(seq 1 240); do grep -aq 'Done (' "$DLOG" 2>/dev/null && break; sleep 1; done; sleep 2; echo stop ) \
+    | RUNDIR="$DRUN" FORBRIC_JVM="${FORBRIC_JVM:-} -Dforbric.definedClassEvidence=$DEFINED" \
+    "$KERNEL/run/launch-kernel-server.sh" > "$DLOG" 2>&1 &
+  DPID=$!
+  record_server_pid "$DRUN" "$DPID"
+  await_server "$DPID" "$DLOG" 300
+  if grep -aqE "^net/minecraft/world/entity/Entity	" "$DEFINED"/definitions-*/definitions.tsv 2>/dev/null \
+     && grep -aqE "^net/fabricmc/fabric/" "$DEFINED"/definitions-*/definitions.tsv 2>/dev/null \
+     && [ -f "$(ls -d "$DEFINED"/definitions-* 2>/dev/null | head -1)/intact" ]; then
+    echo "[kernel] PASS the kernel's final Entity was captured with fabric-api's classes, and every definition recorded ($DEFINED)"
+  else
+    echo "[kernel] FAIL no complete capture with Entity and fabric-api's classes in it — see $DLOG"; FAIL=1
+  fi
 fi
+# M0_CAPTURE_END
 
 # The verdict comes from the JUnit XML, not from gradle's exit code, and the task is forced to RUN.
 #
