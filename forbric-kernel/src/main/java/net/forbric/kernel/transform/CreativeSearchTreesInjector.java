@@ -37,37 +37,42 @@ import net.forbric.api.ForeignType;
 import net.forbric.kernel.util.ForbricLog;
 
 /**
- * Files the creative search trees vanilla's methods build where the merged creative screen reads them.
+ * Gives every caller of {@code SessionSearchTrees} the one store of creative search trees the merged creative screen
+ * reads.
  *
  * <h2>The split</h2>
  *
  * <p>{@code SessionSearchTrees} came out of the byte merge with both families' halves. NeoForge's: the keyed
  * producers {@code updateCreativeTooltips(Provider, List, Key)} and {@code updateCreativeTags(List, Key)}, which file
  * each tree in NeoForge's {@code CreativeModeTabSearchRegistry}, and the keyed readers {@code creativeNameSearch(Key)}
- * and {@code creativeTagSearch(Key)}, which read it back — and the creative screen, which calls only these. MinecraftForge's:
- * vanilla's own two producers {@code updateCreativeTooltips(Provider, List)} and {@code updateCreativeTags(List)},
- * whose bodies loop over MinecraftForge's registry and put every tree in a private map, and the one reader of that map,
- * {@code getSearchTree(Key)}. On native NeoForge vanilla's two producers delegate to the keyed ones with the search
- * tab's keys; here they feed a map the screen never looks at.
+ * and {@code creativeTagSearch(Key)}, which read it back — and the creative screen, which calls only these.
+ * MinecraftForge's: a private map of trees, a default future for a key the map lacks, and the map's one reader,
+ * {@code getSearchTree(Key)}, which MinecraftForge's own creative screen reads every search through and a
+ * MinecraftForge mod calls the same way.
  *
- * <p>The screen builds its own trees, through the keyed producers, but only when
- * {@code CreativeModeTabs.tryRebuildTabContents} reports that the tabs changed. A mod that rebuilds the tabs itself and
- * then refreshes the search the vanilla way — TCDCommons, Better Stats' library, does exactly that on every join —
- * therefore leaves nothing for the screen: its trees went into the private map, and the screen, finding the tabs
- * unchanged, skips its rebuild and searches NeoForge's empty default. Every search finds nothing, for the whole session.
+ * <p>The current merged base keeps NeoForge's bodies for vanilla's two producers {@code updateCreativeTooltips(Provider,
+ * List)} and {@code updateCreativeTags(List)}: they delegate to the keyed producers with the search tab's keys, as on
+ * native NeoForge. Nothing fills MinecraftForge's map, then, and its default is a future the merged constructor creates
+ * and nothing completes (MinecraftForge's own is a completed empty tree), so {@code getSearchTree} as merged —
+ * {@code creativeSearch.getOrDefault(key, EMPTY).join()} — never returns, for any key. A MinecraftForge mod that reads
+ * a creative search tree hangs the thread it asks on; on the client thread, the game.
+ *
+ * <p>An earlier merge kept MinecraftForge's bodies for the two producers too, looping over MinecraftForge's registry
+ * into the private map. A mod that rebuilt the tabs itself and then refreshed the search the vanilla way — TCDCommons,
+ * Better Stats' library, on every join — filled a map nothing reads, and the screen, finding the tabs unchanged since,
+ * skipped its own rebuild: every creative search found nothing for the session.
  *
  * <h2>The repair</h2>
  *
- * <p>The three MinecraftForge bodies are replaced by calls into {@code KernelCreativeSearch}, which goes through the
- * keyed producers and readers — one store for every caller. A producer refreshes every tab with a search bar, as
- * MinecraftForge's body and the screen's own rebuild do. {@code getSearchTree} reads the same store and answers the
- * empty tree for a key nothing was built under; as merged it joined the map's default, which the merged constructor
- * creates incomplete (MinecraftForge's is a completed empty tree) — the join waits forever, or throws once a producer
- * has cancelled that shared default as the "previous" tree of a key it built for the first time.
+ * <p>Each method whose body still reads MinecraftForge's store (its registry, or the {@code creativeSearch} field) is
+ * handed to {@code KernelCreativeSearch}, which goes through the keyed producers and readers — one store for every
+ * caller. In {@code getSearchTree} only the map-and-join expression is replaced, by a read of that store that answers
+ * the empty tree for a key nothing was built under, as MinecraftForge's does. A producer, where one is still
+ * MinecraftForge's, refreshes every tab with a search bar, as MinecraftForge's body and the screen's own rebuild do. On
+ * the current base that rewrites {@code getSearchTree} alone.
  *
- * <p>Applied only where each body still reads MinecraftForge's store (its registry, or the {@code creativeSearch}
- * field) and the keyed methods the helper calls are present; a class already delegating — NeoForge's own — is left
- * alone. {@code -Dforbric.creativeSearchTrees=off} leaves the class as merged.
+ * <p>Applied only where the keyed methods the helper calls are present; a class already delegating and reading its own
+ * store — NeoForge's own — is left alone. {@code -Dforbric.creativeSearchTrees=off} leaves the class as merged.
  */
 public final class CreativeSearchTreesInjector implements ClassTransformer {
 	public static final String PROPERTY = "forbric.creativeSearchTrees";
@@ -115,8 +120,8 @@ public final class CreativeSearchTreesInjector implements ClassTransformer {
 	public AnchorSet anchors() {
 		if (!enabled()) return AnchorSet.scanned("switched off by -D" + PROPERTY);
 		return AnchorSet.of(new AnchorSet.Anchor(TARGET, AnchorSet.Severity.REQUIRED,
-				"a mod that refreshes the creative search through vanilla's methods leaves the creative screen's search "
-						+ "finding nothing for the whole session"));
+				"MinecraftForge's getSearchTree joins a future nothing completes, so a MinecraftForge mod reading a "
+						+ "creative search tree hangs the thread it asks on"));
 	}
 
 	@Override
@@ -128,9 +133,16 @@ public final class CreativeSearchTreesInjector implements ClassTransformer {
 		if (rewritten.isEmpty()) return classBytes;
 		ClassWriter writer = new ClassWriter(0);
 		node.accept(writer);
-		ForbricLog.info("[Forbric/CreativeSearch] %s.%s now file and read the creative search trees in NeoForge's "
-				+ "registry, where the creative screen reads them — as merged they used MinecraftForge's private map, so a "
-				+ "mod refreshing the search the vanilla way left every creative search empty", TARGET, rewritten);
+		for (String method : rewritten) {
+			if (method.equals(READ)) ForbricLog.info("[Forbric/CreativeSearch] %s.%s now reads the creative search "
+					+ "trees NeoForge's keyed producers file — as merged it joined a future from MinecraftForge's private "
+					+ "map that nothing completes, so a MinecraftForge mod reading a creative search tree through it "
+					+ "waited forever", TARGET, method);
+			else ForbricLog.info("[Forbric/CreativeSearch] %s.%s now files the creative search trees in NeoForge's "
+					+ "registry, where the creative screen reads them — as merged it filed them in MinecraftForge's "
+					+ "private map, so a mod refreshing the search the vanilla way left every creative search empty",
+					TARGET, method);
+		}
 		return writer.toByteArray();
 	}
 

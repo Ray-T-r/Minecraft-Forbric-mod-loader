@@ -31,16 +31,17 @@ import net.neoforged.neoforge.client.CreativeModeTabSearchRegistry;
 import net.forbric.kernel.util.ForbricLog;
 
 /**
- * The creative search trees, filed where the merged creative screen reads them.
+ * The creative search trees, filed and read where the merged creative screen reads them.
  *
- * <p>Called from the three {@code SessionSearchTrees} methods whose merged bodies are MinecraftForge's
- * ({@code CreativeSearchTreesInjector}): vanilla's two producers {@code updateCreativeTooltips(Provider, List)} and
- * {@code updateCreativeTags(List)}, and MinecraftForge's reader {@code getSearchTree(Key)}. As merged, those three
- * kept their trees in the class's private MinecraftForge map, while the creative screen — NeoForge's — reads
- * NeoForge's {@link CreativeModeTabSearchRegistry}. A mod that rebuilt the creative tabs itself and then refreshed the
- * search through vanilla's methods (TCDCommons does it on every join) filled a map nothing reads, and took the
- * screen's own rebuild with it: the tabs had not changed since, so the screen skipped its rebuild and searched an
- * empty tree.
+ * <p>Called from the {@code SessionSearchTrees} methods whose merged bodies are MinecraftForge's
+ * ({@code CreativeSearchTreesInjector}). On the current base that is MinecraftForge's reader {@code getSearchTree(Key)}
+ * alone, which as merged joined a future from the class's private MinecraftForge map — a map nothing fills, defaulting
+ * to a future nothing completes — so a MinecraftForge mod reading a search tree waited forever. On a merge that also
+ * kept MinecraftForge's bodies for vanilla's two producers {@code updateCreativeTooltips(Provider, List)} and
+ * {@code updateCreativeTags(List)}, they filled that map while the creative screen — NeoForge's — reads NeoForge's
+ * {@link CreativeModeTabSearchRegistry}: a mod that rebuilt the creative tabs itself and then refreshed the search
+ * through vanilla's methods (TCDCommons does it on every join) filled a map nothing reads, and took the screen's own
+ * rebuild with it, since the tabs had not changed and the screen skipped its rebuild and searched an empty tree.
  *
  * <p>Each producer refreshes every tab that has a search bar, the search tab from the list it was given and every
  * other from its own contents. That is what MinecraftForge's body did and what the screen's own rebuild does — a

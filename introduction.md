@@ -537,14 +537,17 @@ Notable repairs by family (read each class's javadoc for the case that motivated
   `RegistryDirectoryOwnerInjector`, `RegistryAliasParityInjector` (§9).
 - **UI** — `ModsButtonRedirector` (both families' pause-menu lambdas open `KernelModListScreen`),
   `HudElementBridgeInjector`, `CreativePagerBridgeInjector`, `EarlyKeyMappingRegistrationInjector`,
-  `CreativeSearchTreesInjector`. The last is a producer/consumer split: the merged `SessionSearchTrees` kept
-  MinecraftForge's bodies for vanilla's `updateCreativeTooltips(Provider, List)` / `updateCreativeTags(List)` (and
-  for `getSearchTree`), which keep the trees in a private map, while the creative screen is NeoForge's and reads
-  `CreativeModeTabSearchRegistry`. The screen only rebuilds its own trees when `CreativeModeTabs.tryRebuildTabContents`
-  reports a change, so a mod that rebuilds the tabs itself and refreshes the search the vanilla way (TCDCommons, on
-  every join) left every creative search empty. The three bodies now call `KernelCreativeSearch`, which goes
-  through NeoForge's keyed methods for every tab with a search bar; `-Dforbric.creativeSearchTrees=off`.
-  `-Dforbric.clientSmokeCreativeSearch=<tick>[,query…]` types into the real creative screen and logs the grid.
+  `CreativeSearchTreesInjector`. The last is a producer/consumer split: the merged `SessionSearchTrees` keeps
+  MinecraftForge's `getSearchTree(Key)`, which joins a future from a private map nothing fills, defaulting to a future
+  nothing completes, while the creative screen is NeoForge's and reads `CreativeModeTabSearchRegistry`. A
+  MinecraftForge mod reading a search tree through it (as MinecraftForge's own creative screen does) waited forever.
+  An earlier merge also kept MinecraftForge's bodies for vanilla's `updateCreativeTooltips(Provider, List)` /
+  `updateCreativeTags(List)`, so a mod that rebuilds the tabs itself and refreshes the search the vanilla way
+  (TCDCommons, on every join) left every creative search empty; the current base keeps NeoForge's delegating bodies
+  for those two. Whichever bodies still read MinecraftForge's store now call `KernelCreativeSearch`, which goes
+  through NeoForge's keyed methods (for a producer, for every tab with a search bar); on the current base that is
+  `getSearchTree` alone. `-Dforbric.creativeSearchTrees=off`. gate-m55 calls `getSearchTree` from a MinecraftForge
+  canary. `-Dforbric.clientSmokeCreativeSearch=<tick>[,query…]` types into the real creative screen and logs the grid.
 - **Instrumentation** — `ClientSmokeTickInjector` (inert unless `-Dforbric.clientSmoke=true`),
   `EventChainAuditInjector` (inert unless `-Dforbric.eventChainAudit=<report>`), `ServerTickSamplerInjector`,
   `CompatibilityPromptTickInjector`, `ServerCompatibilityTickInjector`.

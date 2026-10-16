@@ -235,7 +235,8 @@ public enum ForeignType {
 			"net.neoforged.neoforge.common.loot.LootModifierManager"),
 	/**
 	 * Each family's per-tab creative search keys. The merged creative screen reads NeoForge's, which also holds the
-	 * trees; the merged class's MinecraftForge bodies looped over MinecraftForge's (CreativeSearchTreesInjector).
+	 * trees; a MinecraftForge caller's key is turned into NeoForge's for the same tab (KernelCreativeSearch), and a
+	 * merged MinecraftForge producer body loops over MinecraftForge's (CreativeSearchTreesInjector).
 	 */
 	CREATIVE_SEARCH_REGISTRY("net.minecraftforge.client.CreativeModeTabSearchRegistry",
 			"net.neoforged.neoforge.client.CreativeModeTabSearchRegistry");
