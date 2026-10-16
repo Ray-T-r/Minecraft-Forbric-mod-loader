@@ -95,9 +95,15 @@ public final class ModConstructionOrder {
 		Map<String, DiscoveredMod> byName = new LinkedHashMap<>();
 		List<String> ids = new ArrayList<>();
 
+		// Every real id first, then the aliases into what is left: a mod's own id outranks another mod's alias for it
+		// whatever the input order, as an alias never claims an id (see KernelFabricLoader.register). Reading them in one
+		// pass let an alias taken earlier hide the real mod, which then never became a node and sorted last.
 		for (DiscoveredMod mod : mods) {
 			if (mod == null || mod.getId() == null || mod.getId().isBlank()) continue;
 			if (byName.putIfAbsent(mod.getId(), mod) == null) ids.add(mod.getId());
+		}
+		for (DiscoveredMod mod : mods) {
+			if (mod == null || mod.getId() == null || mod.getId().isBlank()) continue;
 			for (String alias : mod.getAliases()) {
 				if (alias != null && !alias.isBlank()) byName.putIfAbsent(alias, mod);
 			}

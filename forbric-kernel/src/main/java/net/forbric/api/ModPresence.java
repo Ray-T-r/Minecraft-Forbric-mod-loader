@@ -234,10 +234,13 @@ public final class ModPresence {
 		for (String id : merged) keys.add(spellingKey(id));
 		spellings = Set.copyOf(keys);
 
-		// First publish wins, so a presence alias cannot overwrite the real mod's own metadata.
+		// First publish wins, so a presence alias cannot overwrite the real mod's own metadata. Every own id goes in before
+		// any provides alias, so another mod's alias cannot take a name from the mod whose id it is (KernelFabricLoader.register).
 		Map<String, DiscoveredMod> index = new LinkedHashMap<>();
-		for (DiscoveredMod mod : forgeFamily) index(index, mod);
-		for (DiscoveredMod mod : fabric) index(index, mod);
+		for (DiscoveredMod mod : forgeFamily) indexId(index, mod);
+		for (DiscoveredMod mod : fabric) indexId(index, mod);
+		for (DiscoveredMod mod : forgeFamily) indexAliases(index, mod);
+		for (DiscoveredMod mod : fabric) indexAliases(index, mod);
 		byId = Map.copyOf(index);
 
 		// Each list is one family by construction, whatever an entry's own field says: the Fabric list is FABRIC,
@@ -265,9 +268,12 @@ public final class ModPresence {
 		}
 	}
 
-	private static void index(Map<String, DiscoveredMod> into, DiscoveredMod mod) {
+	private static void indexId(Map<String, DiscoveredMod> into, DiscoveredMod mod) {
+		if (mod != null && mod.getId() != null && !mod.getId().isBlank()) into.putIfAbsent(mod.getId(), mod);
+	}
+
+	private static void indexAliases(Map<String, DiscoveredMod> into, DiscoveredMod mod) {
 		if (mod == null) return;
-		if (mod.getId() != null && !mod.getId().isBlank()) into.putIfAbsent(mod.getId(), mod);
 		for (String alias : mod.getAliases()) {
 			if (alias != null && !alias.isBlank()) into.putIfAbsent(alias, mod);
 		}

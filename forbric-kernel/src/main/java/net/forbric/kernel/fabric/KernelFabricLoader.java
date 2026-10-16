@@ -176,17 +176,29 @@ public final class KernelFabricLoader implements FabricLoader {
 		this.gameInstance = gameInstance;
 	}
 
-	/** Adds a discovered mod. Its id and every {@code provides} alias become resolvable. */
+	/**
+	 * Adds a discovered mod. Its id and every {@code provides} alias become resolvable.
+	 *
+	 * <p>A mod's own id outranks another mod's alias for it, whichever registers first. An alias never claims an id in
+	 * the kernel's cross-jar arbitration ({@code DuplicateModArbiter}), and Fabric Loader keeps the mod whose id it is:
+	 * owo-sentinel, nested in mods that need owo-lib, {@code provides} {@code owo}, registers before owo-lib (it depends on
+	 * nothing installed), and used to take the name, so owo-lib itself was dropped as a "duplicate" and its own aliases
+	 * ({@code owo-impl}) never existed. The sentinel's adapter then found owo missing and ended the process.
+	 */
 	public synchronized void register(KernelModContainer container) {
 		if (frozen) throw new IllegalStateException("mods registered after freeze");
 
 		KernelModMetadata metadata = container.getMetadata();
 		ModContainer existing = modsById.get(metadata.getId());
 
-		if (existing != null) {
+		if (existing != null && metadata.getId().equals(existing.getMetadata().getId())) {
 			ForbricLog.warn("[Forbric/Fabric] duplicate mod id '%s' (%s and %s) — keeping the first",
 					metadata.getId(), existing, container);
 			return;
+		}
+		if (existing != null) {
+			ForbricLog.info("[Forbric/Fabric] '%s' was only an alias %s provides; %s, whose own id it is, takes it",
+					metadata.getId(), existing, container);
 		}
 
 		mods.add(container);
