@@ -1,0 +1,1 @@
+{"required": true, "package": "fixture.pebble.mixin", "compatibilityLevel": "JAVA_21", "mixins": ["PebbleMesherMixin"], "injectors": {"defaultRequire": 1}}

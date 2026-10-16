@@ -193,8 +193,13 @@ public final class ForbricMergedBaseCompatTransformer implements ClassTransforme
 				"a picture-in-picture renderer registered the vanilla way never draws"));
 		out.add(fixed("keepForgeOutboundProtocolCurrent", "net/minecraft/network/Connection",
 				"MinecraftForge's channels pick their packet type from a protocol field nothing writes — Forge networking sends the wrong packet type"));
-		out.add(fixed("surviveTheMissingForgeModelDataManager", "net/minecraft/client/renderer/extract/LevelExtractor",
-				"the block-breaking overlay crashes the render frame on MinecraftForge's absent model-data manager"));
+		// Stands down while ForgeModelDataFlowTransformer gives the level MinecraftForge's manager back: the overlay's own
+		// lookup then answers what MinecraftForge's does, so there is nothing to replace.
+		out.add(ForgeModelDataFlowTransformer.enabled()
+				? scanned("surviveTheMissingForgeModelDataManager", "stands down: the client level keeps MinecraftForge's "
+						+ "model-data manager (" + ForgeModelDataFlowTransformer.PROPERTY + ")")
+				: fixed("surviveTheMissingForgeModelDataManager", "net/minecraft/client/renderer/extract/LevelExtractor",
+						"the block-breaking overlay crashes the render frame on MinecraftForge's absent model-data manager"));
 		out.add(fixed("dropTheWindowTitlesLoaderBrand", "net/minecraft/client/Minecraft",
 				"the window title carries another loader's brand"));
 		out.add(fixed("keepTheSaveOffTheTeardownsFailurePath", INTEGRATED_SERVER,
@@ -3240,14 +3245,19 @@ public final class ForbricMergedBaseCompatTransformer implements ClassTransforme
 	 * then dies with "Description: Render Frame", which is why this only showed up once, in a run where a break
 	 * animation happened to be on screen.
 	 *
-	 * <p>There is nothing to route it to: no path on this base ever builds a Forge-typed manager, so no Forge-typed
-	 * model data exists to find. The call therefore becomes the value Forge's own lookup returns for a position it
+	 * <p>There is nothing to route it to while no path on this base builds a Forge-typed manager, so no Forge-typed
+	 * model data exists to find. {@link ForgeModelDataFlowTransformer} builds one (the level keeps MinecraftForge's own),
+	 * and then this repair stands down and the overlay asks the manager as on MinecraftForge; it acts only with
+	 * {@code -Dforbric.forgeModelData=off}. The call therefore becomes the value Forge's own lookup returns for a position it
 	 * is not tracking — {@code ModelData.EMPTY} — which is what the overlay would have drawn with anyway. A mod's
 	 * dynamic model data still reaches the block itself through NeoForge's manager, which the level does have; only
 	 * the break overlay draws with defaults.
 	 */
 	private static boolean surviveTheMissingForgeModelDataManager(ClassNode node) {
 		if (!"net/minecraft/client/renderer/extract/LevelExtractor".equals(node.name)) return false;
+		// With MinecraftForge's manager back on the level (ForgeModelDataFlowTransformer), the lookup answers the block
+		// entity's model data, or EMPTY where none is tracked — what MinecraftForge's own overlay draws with.
+		if (ForgeModelDataFlowTransformer.enabled()) return false;
 
 		boolean changed = false;
 		for (MethodNode m : node.methods) {

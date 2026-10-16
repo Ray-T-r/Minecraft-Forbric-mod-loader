@@ -501,6 +501,10 @@ public final class KernelBoot {
 				return null;
 			}
 		}));
+		// MinecraftForge's block-model data on the merged client, whose model questions, section compiler and renderers are
+		// NeoForge's: the model contract, the level's ModelDataManager and the tessellation entry's edge (fusion's
+		// connected textures never connected; Physics Mod's vine hook never ran).
+		chain.register(TransformPhase.COREMOD, new net.forbric.kernel.transform.ForgeModelDataFlowTransformer());
 		// Both sides: the early returns the carriers' decompile-recompile folded into each method's last return, so a
 		// Fabric mod's TAIL handler runs only where vanilla's does (TaCZ's Camera.update hook ran on the title screen,
 		// issue #31). LAST in the coremod phase (the sort index): every kernel injector still matches the folded

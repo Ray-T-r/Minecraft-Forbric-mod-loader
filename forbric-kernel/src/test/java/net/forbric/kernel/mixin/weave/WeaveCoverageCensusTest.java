@@ -60,6 +60,7 @@ class WeaveCoverageCensusTest {
 			// MixinOutcomeWeaveTest; the redirect of a widened static call in MixinAtWidenedRedirectWeaveTest.
 			Map.entry("MixinAtWidenedCall", Switch.own("forbric.mixinAtWiden", "forbric.mixinAtWidenRedirect")),
 			Map.entry("MixinStubRebind", Switch.own("forbric.mixinStubRebind")),
+			Map.entry("MixinForgeModelDataEdge", Switch.own("forbric.forgeModelDataEdge")), // ForgeModelDataFlowWeaveTest
 			// The whole retarget, and R3's census of carrier renames: MixinRetargetWeaveTest; its left exit:
 			// MixinRetargetSleepPieceWeaveTest; its move into a renamed body nothing calls: MixinRetargetUncalledBodyWeaveTest;
 			// R7 (a vanilla method the carrier replaced): MixinRetargetReplacedCallWeaveTest.

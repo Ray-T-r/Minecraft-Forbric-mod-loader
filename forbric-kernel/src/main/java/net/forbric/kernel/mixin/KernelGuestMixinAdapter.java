@@ -171,6 +171,8 @@ public final class KernelGuestMixinAdapter {
 			judged = MixinDecodeScopeAdapter.asLoaded(ReplacedCallRedirects.asLoaded(MixinPlayerWorldCallbackAdapter.asLoaded(judged, resource),
 					resource), resource);
 			judged = MixinStructurePlacementAdapter.asLoaded(judged, resource);
+			// …and an injector at the start of a model-data overload nothing calls, judged with the edge twin it is given.
+			judged = MixinForgeModelDataEdge.asLoaded(judged, resource);
 			MixinFit.Result fit = MixinFit.evaluate(judged, resource, net.forbric.kernel.classloading.DelegationPolicy::alwaysGame, added,
 					config.nativeView());
 			if (fit.verdict() != MixinFit.Verdict.PARTIAL && fit.verdict() != MixinFit.Verdict.UNFIT) return;
@@ -333,6 +335,8 @@ public final class KernelGuestMixinAdapter {
 				// …and a callback on a vanilla method the merged class no longer declares (StructureTemplate.placeEntities),
 				// which binds nothing as compiled, is judged where the adapter moves it.
 				judged = MixinStructurePlacementAdapter.asLoaded(judged, resource);
+				// …and an injector at the start of a model-data overload nothing calls, judged with the edge twin it is given.
+				judged = MixinForgeModelDataEdge.asLoaded(judged, resource);
 				MixinFit.Result fit = MixinFit.evaluate(judged, resource,
 						net.forbric.kernel.classloading.DelegationPolicy::alwaysGame, added, nativeView);
 				List<String> groupFailures = MixinGroupConstraints.failures(MixinFit.parse(judged), resource, added);

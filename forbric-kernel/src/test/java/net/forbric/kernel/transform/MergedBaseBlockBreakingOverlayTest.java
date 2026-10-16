@@ -28,7 +28,9 @@ import java.nio.file.Path;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipFile;
 
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.parallel.ResourceLock;
 import org.objectweb.asm.ClassReader;
 import org.objectweb.asm.Opcodes;
 import org.objectweb.asm.tree.AbstractInsnNode;
@@ -47,7 +49,12 @@ import net.forbric.kernel.TestFixtures.Fixture;
  * manager, so MinecraftForge's accessor falls through to an interface default that returns null and the render
  * frame dies the moment any block is being broken. The lookup must be gone, and what it produced must be
  * MinecraftForge's own empty model data.
+ *
+ * <p>That holds only while nothing gives the level MinecraftForge's manager: {@link ForgeModelDataFlowTransformer} does
+ * (and the edit-splicing merge keeps MinecraftForge's own), so with it on the repair stands down and the overlay asks the
+ * manager as MinecraftForge does. The repair's own assertions run with {@code -Dforbric.forgeModelData=off}.
  */
+@ResourceLock("system-properties")
 class MergedBaseBlockBreakingOverlayTest {
 	private static final Path MERGED_BASE = TestFixtures.stagedRoot().resolve("merged-base/patched-mc-merged-26.2.jar");
 
@@ -55,8 +62,21 @@ class MergedBaseBlockBreakingOverlayTest {
 	private static final String FORGE_MANAGER = "net/minecraftforge/client/model/data/ModelDataManager";
 	private static final String FORGE_MODEL_DATA = "net/minecraftforge/client/model/data/ModelData";
 
+	@AfterEach
+	void restore() {
+		System.clearProperty(ForgeModelDataFlowTransformer.PROPERTY);
+	}
+
+	@Test
+	void withTheManagerRestoredTheOverlayAsksItAsMinecraftForgeDoes() throws Exception {
+		TestFixtures.require(Fixture.STAGED, Files.isRegularFile(MERGED_BASE), "staged merged base absent — skipping real-bytecode check");
+		byte[] in = readClass(EXTRACTOR + ".class");
+		assertTrue(callsForgeManager(parse(transform(in))), "the overlay's own lookup stays: the level answers it");
+	}
+
 	@Test
 	void theOverlayNoLongerAsksForAManagerThatIsAlwaysNull() throws Exception {
+		System.setProperty(ForgeModelDataFlowTransformer.PROPERTY, "off");
 		TestFixtures.require(Fixture.STAGED, Files.isRegularFile(MERGED_BASE), "staged merged base absent — skipping real-bytecode check");
 		byte[] in = readClass(EXTRACTOR + ".class");
 		assertTrue(callsForgeManager(parse(in)), "the merged base must still carry the crash — if not, re-derive this");
@@ -80,6 +100,7 @@ class MergedBaseBlockBreakingOverlayTest {
 
 	@Test
 	void aSecondPassLeavesTheRepairedClassAlone() throws Exception {
+		System.setProperty(ForgeModelDataFlowTransformer.PROPERTY, "off");
 		TestFixtures.require(Fixture.STAGED, Files.isRegularFile(MERGED_BASE), "staged merged base absent — skipping real-bytecode check");
 		byte[] once = transform(readClass(EXTRACTOR + ".class"));
 		assertSame(once, transform(once), "a class with no such lookup left is coherent and must not be touched");

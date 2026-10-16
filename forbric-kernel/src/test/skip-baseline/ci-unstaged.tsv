@@ -2086,6 +2086,7 @@ test	net.forbric.kernel.transform.LootTableEventBridgeInjectorTest	theLootCallSt
 test	net.forbric.kernel.transform.MergedBaseAnonymousDriftTest	theThreeBucketsAreExactlyThePinnedConstants()	[fixture:staged] staged merged base absent
 test	net.forbric.kernel.transform.MergedBaseBlockBreakingOverlayTest	aSecondPassLeavesTheRepairedClassAlone()	[fixture:staged] staged merged base absent — skipping real-bytecode check
 test	net.forbric.kernel.transform.MergedBaseBlockBreakingOverlayTest	theOverlayNoLongerAsksForAManagerThatIsAlwaysNull()	[fixture:staged] staged merged base absent — skipping real-bytecode check
+test	net.forbric.kernel.transform.MergedBaseBlockBreakingOverlayTest	withTheManagerRestoredTheOverlayAsksItAsMinecraftForgeDoes()	[fixture:staged] staged merged base absent — skipping real-bytecode check
 test	net.forbric.kernel.transform.MergedBaseCalleeSwapTest	everyAdmittedSwapIsEitherRewrittenOrExplained()	[fixture:staged] staged merged base or carriers absent
 test	net.forbric.kernel.transform.MergedBaseCalleeSwapTest	everyReplacementIsOneCallWhoseVanillaArgumentsAreReadOffTheReplacements()	[fixture:staged] $ROOT/forbric-loader/run/merged-base/patched-mc-merged-26.2.jar absent
 test	net.forbric.kernel.transform.MergedBaseCalleeSwapTest	everySubstitutionIsOneCallInAnOtherwiseUnchangedBody()	[fixture:staged] $ROOT/forbric-loader/run/merged-base/patched-mc-merged-26.2.jar absent
@@ -2149,6 +2150,11 @@ test	net.forbric.kernel.transform.MergedBaseForgeIngredientsTest	aSecondPassChan
 test	net.forbric.kernel.transform.MergedBaseForgeIngredientsTest	everyOtherStoreInTheStaticInitializerIsUntouched()	[fixture:staged] staged merged base absent
 test	net.forbric.kernel.transform.MergedBaseForgeIngredientsTest	theKernelCallIsTheInstructionImmediatelyBeforeTheSingleCodecStore()	[fixture:staged] staged merged base absent
 test	net.forbric.kernel.transform.MergedBaseForgeIngredientsTest	thePremiseCodecIsStoredStraightFromNeoForgesFactoryAndNoForgeCodecIsNamed()	[fixture:staged] staged merged base absent
+test	net.forbric.kernel.transform.MergedBaseForgeModelDataFlowTest	offLeavesEveryClassAsMerged()	[fixture:staged] staged merged base absent
+test	net.forbric.kernel.transform.MergedBaseForgeModelDataFlowTest	theConflictResolversParticleAnswerIsReplacedWhicheverRunsFirst()	[fixture:staged] staged merged base absent
+test	net.forbric.kernel.transform.MergedBaseForgeModelDataFlowTest	theLevelKeepsMinecraftForgesManagerWhereTheMergeDroppedIt()	[fixture:staged] staged merged base absent
+test	net.forbric.kernel.transform.MergedBaseForgeModelDataFlowTest	theMergedModelAnswersNeoForgesContextualQuestionsThroughMinecraftForgesContract()	[fixture:staged] staged merged base absent
+test	net.forbric.kernel.transform.MergedBaseForgeModelDataFlowTest	theRendererEntersTheOverloadsEdgeTwinFirst()	[fixture:staged] staged merged base absent
 test	net.forbric.kernel.transform.MergedBaseForgeReloadContextTest	aSecondPassChangesNothingFurther()	[fixture:staged] staged artifact absent: $ROOT/forbric-loader/run/forge-runtime/forge-runtime.jar
 test	net.forbric.kernel.transform.MergedBaseForgeReloadContextTest	theAdapterExistsWithThatExactDescriptorInTheCompiledRuntime()	[fixture:game-side] runtime helper not compiled
 test	net.forbric.kernel.transform.MergedBaseForgeReloadContextTest	theCarrierAndBothPublicContextDescriptorsAreRetained()	[fixture:staged] staged artifact absent: $ROOT/forbric-loader/run/forge-runtime/forge-runtime.jar

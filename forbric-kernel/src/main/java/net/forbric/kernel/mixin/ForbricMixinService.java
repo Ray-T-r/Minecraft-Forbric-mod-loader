@@ -375,6 +375,9 @@ public final class ForbricMixinService
 		// …and an injection point on a call the kernel relocated out of its method (MinecraftForge's ItemStack.useOn)
 		// selects the one-call relay that now makes it.
 		MixinRelocatedCall.adapt(node, this::mergedBaseNodeWithCode);
+		// …and an @Inject at the start of a carrier's model-data overload nothing calls (MinecraftForge's tesselateBlock(…,
+		// ModelData)) also starts the overload's edge twin, which the merged vanilla signature now enters first.
+		MixinForgeModelDataEdge.adapt(node, this::mergedBaseNodeWithCode);
 		// …and any structurally proven @WrapOperation whose call the carrier reordered or widened is wrapped, so it binds
 		// to the merged call and its handler still receives the arguments it was written for (never a @Redirect: it
 		// would replace the carrier's call).
