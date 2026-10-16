@@ -51,9 +51,68 @@ done
 seed_server_properties "$RUNDIR"
 echo "[kernel] staged: $(ls -1 "$RUNDIR/mods" | tr '\n' ' ')"
 
+# The conditions canary: a world datapack whose elements MinecraftForge's evaluator has to judge, each with a
+# console command below that asks the live registry whether it is there. Written here rather than shipped in a mod
+# jar so the gate needs nothing rebuilt; a world pack is loaded by vanilla's own repository, from no ecosystem.
+#   kept / dropped        forge:true / forge:false, one predicate (reloadable registry) and one configured feature
+#                         (datapack registry) each -- the two loader bodies the funnel is asked from
+#   variant               a forge:conditional array, the other half of ForgeHooks.readConditional: the first variant's
+#                         condition is false and it would answer "Test failed"; the second holds and answers "passed"
+#   dual_neo              neoforge:conditions [neoforge:always] beside forge:condition forge:false: NeoForge judges its
+#                         own conditions, so its verdict (keep) stands and MinecraftForge is not asked
+#   dual_forge            neoforge:conditions naming a type NeoForge does not have, beside forge:condition forge:false:
+#                         NeoForge cannot judge it, so MinecraftForge decides (drop)
+PACK="$RUNDIR/world/datapacks/forbricm21"
+mkdir -p "$PACK/data/forbricm21/predicate" "$PACK/data/forbricm21/worldgen/configured_feature"
+printf '%s\n' '{"pack":{"description":"Forbric gate-m21 condition canary","min_format":107,"max_format":107}}' > "$PACK/pack.mcmeta"
+TRUE_PREDICATE='"condition":"minecraft:all_of","terms":[]'
+printf '{"forge:condition":{"type":"forge:true"},%s}\n'  "$TRUE_PREDICATE" > "$PACK/data/forbricm21/predicate/kept.json"
+printf '{"forge:condition":{"type":"forge:false"},%s}\n' "$TRUE_PREDICATE" > "$PACK/data/forbricm21/predicate/dropped.json"
+printf '{"forge:conditional":[{"forge:condition":{"type":"forge:false"},"condition":"minecraft:inverted","term":{%s}},{"forge:condition":{"type":"forge:true"},%s}]}\n' \
+  "$TRUE_PREDICATE" "$TRUE_PREDICATE" > "$PACK/data/forbricm21/predicate/variant.json"
+printf '{"neoforge:conditions":[{"type":"neoforge:always"}],"forge:condition":{"type":"forge:false"},%s}\n' \
+  "$TRUE_PREDICATE" > "$PACK/data/forbricm21/predicate/dual_neo.json"
+printf '{"neoforge:conditions":[{"type":"forbricm21:no_such_condition"}],"forge:condition":{"type":"forge:false"},%s}\n' \
+  "$TRUE_PREDICATE" > "$PACK/data/forbricm21/predicate/dual_forge.json"
+printf '{"forge:condition":{"type":"forge:true"},"type":"minecraft:no_op","config":{}}\n'  > "$PACK/data/forbricm21/worldgen/configured_feature/kept.json"
+printf '{"forge:condition":{"type":"forge:false"},"type":"minecraft:no_op","config":{}}\n' > "$PACK/data/forbricm21/worldgen/configured_feature/dropped.json"
+# Each probe is announced first, so what the log says after "[Server] M21PROBE <name>" is that command's own answer.
+M21_PROBES=(
+  "predicate kept|execute if predicate forbricm21:kept"
+  "predicate dropped|execute if predicate forbricm21:dropped"
+  "predicate variant|execute if predicate forbricm21:variant"
+  "predicate dual_neo|execute if predicate forbricm21:dual_neo"
+  "predicate dual_forge|execute if predicate forbricm21:dual_forge"
+  "feature kept|place feature forbricm21:kept 0 100 0"
+  "feature dropped|place feature forbricm21:dropped 0 100 0"
+)
+probe_commands() {
+  local probe
+  # The feature probes place at 0,100,0: force that chunk loaded first, so a feature that is there is PLACED rather
+  # than refused for an unloaded position.
+  echo "forceload add 0 0"
+  sleep 3
+  for probe in "${M21_PROBES[@]}"; do printf 'say M21PROBE %s\n%s\n' "${probe%%|*}" "${probe#*|}"; done
+}
+# probe_answer <name> — what the log says between that probe's announcement and the next one (or the stop).
+probe_answer() {
+  awk -v marker="[Server] M21PROBE $1" '
+    inside && (index($0, "[Server] M21PROBE ") || index($0, "Stopping server")) { exit }
+    inside { print }
+    { n = length($0); m = length(marker); if (n >= m && substr($0, n - m + 1) == marker) inside = 1 }' "$LOG"
+}
+# check_probe <what> <name> <regex> — PASS when that probe's answer matches.
+check_probe() {
+  local answer
+  answer=$(probe_answer "$2")
+  if [ -n "$answer" ] && printf '%s\n' "$answer" | grep -qE "$3"; then
+    printf '[kernel] PASS %s (%s)\n' "$1" "$(printf '%s\n' "$answer" | grep -E "$3" | head -1 | sed 's/^.*INFO\]: //')"
+  else printf '[kernel] FAIL %s (answered: %s)\n' "$1" "$(printf '%s' "${answer:-nothing}" | tr '\n' ' ' | cut -c1-300)"; FAIL=1; fi
+}
+
 step "boot both Forge families in one instance"
 : > "$LOG"
-( sleep 30; echo stop ) | FORBRIC_JVM="${FORBRIC_JVM:-} ${M21_EXTRA_JVM:-}" RUNDIR="$RUNDIR" "$KERNEL/run/launch-kernel-server.sh" > "$LOG" 2>&1 &
+( sleep 30; probe_commands; sleep 3; echo stop ) | FORBRIC_JVM="${FORBRIC_JVM:-} ${M21_EXTRA_JVM:-}" RUNDIR="$RUNDIR" "$KERNEL/run/launch-kernel-server.sh" > "$LOG" 2>&1 &
 BOOTPID=$!
 record_server_pid "$RUNDIR" "$BOOTPID"
 await_server "$BOOTPID" "$LOG" 130
@@ -201,18 +260,38 @@ check "the forge:intersection recipe is present"    '\[ForbricLive/RECIPE\] forb
 check "the kernel counted the Forge ingredient type" 'MinecraftForge ingredient type forge:intersection decoded' "$LOG"
 check_absent "no parse failure for the canary recipe" "Couldn't parse data file 'forbriclive:forge_intersection'" "$LOG"
 
-step "a dual-dialect datapack element is judged by MinecraftForge and kept by its condition leniency (I8)"
-# The NeoForge canary ships forbricneolive:dual_dialect — an Architectury-style biome_modifier carrying a
-# `forge:condition` of type neoforge:true. NeoForge ignores the key. MinecraftForge judges it with its own ConditionCodec,
-# which the merged datapack-registry loader (NeoForge's body; MinecraftForge's wrap is an uncalled orphan) never calls,
-# so the kernel asks it where every conditional decode funnels (ConditionalOps -> KernelForgeConditions.alsoAskForge).
-# It does not know that type, so KernelForgeConditions keeps the element instead of failing the whole registry load.
-# RED with M21_EXTRA_JVM=-Dforbric.forgeConditionFunnel=off (nothing asks MinecraftForge: neither line), and with
-# -Dforbric.forgeConditions=off (strict CODEC.parse error → 'Failed to load registries due to errors' → no Done).
-# KernelForgeConditionFunnelTest greps the funnel's real output with the first pattern.
+step "MinecraftForge's resource conditions decide real data again, and only where MinecraftForge would (I8)"
+# MinecraftForge judges forge:condition in its own ResourceManagerRegistryLoadTask.load (ConditionCodec.wrap) and
+# SimpleJsonResourceReloadListener.scanDirectory (ForgeHooks.readConditional, which also reads a forge:conditional
+# array). The merged bodies are NeoForge's and MinecraftForge's are uncalled orphans, so the kernel asks MinecraftForge
+# where every conditional decode funnels (ConditionalOps -> KernelForgeConditions.alsoAskForge). The canary pack staged
+# above asks the live registries whether each element survived; a "kept" check that cannot see a rejection proves
+# nothing, so every element here is one whose absence or presence a command reports.
+# The NeoForge canary also ships forbricneolive:dual_dialect, a biome_modifier whose forge:condition is of type
+# neoforge:true: MinecraftForge does not know that type, so its leniency keeps the element instead of failing the whole
+# registry load. No command can list biome modifiers, so its survival is held by the exact rejection count: the three
+# false elements of the canary pack, and nothing else.
+# RED with M21_EXTRA_JVM=-Dforbric.forgeConditionFunnel=off: nothing asks MinecraftForge -- the transform line, the
+# funnel line and the leniency line are gone, the dropped predicate, the dropped feature and dual_forge are present, the
+# variant does not parse ("Can't find element"), and nothing is rejected (count 0). dual_neo and the kept elements stay.
+# RED with -Dforbric.forgeConditions=off: strict CODEC.parse error -> 'Failed to load registries due to errors' -> no Done.
+# RED with -Dforbric.forgeConditionContext=off: the recipe context line is gone (and "context=live" above).
+# KernelForgeConditionFunnelTest greps the funnel's real output with the funnel pattern.
+check "the transform says MinecraftForge is asked at the funnel" "MergedBaseCompat\] forge:condition has an evaluator again" "$LOG"
 check "MinecraftForge judges forge:condition at the conditional-decode funnel" "Forbric/Conditions\] MinecraftForge's forge:condition is judged again" "$LOG"
 check "the MinecraftForge leniency fired on a real datapack element" "resource condition 'neoforge:true' is not in MinecraftForge's condition registry" "$LOG"
 check_absent "registries loaded"                             "Failed to load registries due to errors" "$LOG"
+check "the canary pack was loaded" "data pack file/forbricm21" "$LOG"
+check_probe "a true forge:condition keeps a predicate"        "predicate kept"     'Test passed'
+check_probe "a false forge:condition removes a predicate"     "predicate dropped"  "Can't find element 'forbricm21:dropped'"
+check_probe "the first forge:conditional variant that holds is the file" "predicate variant" 'Test passed'
+check_probe "a file NeoForge judges keeps NeoForge's verdict" "predicate dual_neo" 'Test passed'
+check_probe "MinecraftForge decides a file NeoForge cannot judge" "predicate dual_forge" "Can't find element 'forbricm21:dual_forge'"
+check_probe "a true forge:condition keeps a datapack-registry element" "feature kept" 'Placed "forbricm21:kept"'
+check_probe "a false forge:condition removes a datapack-registry element" "feature dropped" 'There is no feature with type "forbricm21:dropped"'
+check_exactly "exactly the canary pack's three false elements were rejected -- not the dual-dialect biome modifier" \
+  "\[Forbric/Conditions\] forge:condition(al)? said no to a data file" "$LOG" 3
+check "MinecraftForge's recipe conditions read this reload's tags" "MinecraftForge's recipe conditions read the tags this reload loads again" "$LOG"
 
 # M21_REGISTRATION_ASSERTIONS_BEGIN — the Phase 1 A registration hooks; green since A8 landed the bridge inventory.
 check "common registration canary subscribed" 'ForbricLive/REGISTRATION\] subscribed to Forge spawn and creative registration events' "$LOG"
