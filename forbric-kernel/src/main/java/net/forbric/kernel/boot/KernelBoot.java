@@ -633,16 +633,14 @@ public final class KernelBoot {
 		chain.register(TransformPhase.COREMOD, new RegistryAliasParityInjector());
 		chain.register(TransformPhase.COREMOD, new net.forbric.kernel.transform.SoundRegistryIdentityInjector());
 		chain.register(TransformPhase.COREMOD, new net.forbric.kernel.transform.ServerReloadListenerNamesInjector());
-		java.util.function.Function<String, org.objectweb.asm.tree.ClassNode> workerDeclarations = internal -> {
+		java.util.function.Function<String, org.objectweb.asm.tree.ClassNode> gameDeclarations = internal -> {
 			try (var input = loader.getGameResourceAsStream(internal.replace('.', '/') + ".class")) {
 				if (input == null) return null;
 				var declaration = new org.objectweb.asm.tree.ClassNode();
 				new org.objectweb.asm.ClassReader(input.readAllBytes()).accept(declaration, 0); return declaration;
 			} catch (java.io.IOException absent) { return null; }
 		};
-		chain.register(TransformPhase.COREMOD, new net.forbric.kernel.transform.WorkerNotificationInjector(workerDeclarations));
-		chain.register(TransformPhase.COREMOD, new net.forbric.kernel.transform.WorkerResourceLifecycleInjector(workerDeclarations));
-		chain.register(TransformPhase.COREMOD, new net.forbric.kernel.transform.RegistryElementCallbackInjector(workerDeclarations));
+		chain.register(TransformPhase.COREMOD, new net.forbric.kernel.transform.RegistryElementCallbackInjector(gameDeclarations));
 		// Carrier callback seams are available to every structurally compatible guest mixin.
 		chain.register(TransformPhase.COREMOD, new net.forbric.kernel.transform.BreathingCallbackInjector());
 		chain.register(TransformPhase.COREMOD, new net.forbric.kernel.transform.BlockSoundQueryInjector());

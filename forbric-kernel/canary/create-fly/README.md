@@ -8,7 +8,7 @@ SHA-512：`2879187dcb1aa494710b71e4d967ac8f12d38e5f4b800652d38c484c1db3a38a72bf6
 
 ```sh
 ./gradlew --offline -Pforbric.createFlyJar=/绝对路径/create-fly-26.2-rc-2-6.0.9-1.jar \
-  test --tests '*Create*MixinAdapterTest' --tests '*CreateWorkerShutdownTest' \
+  test --tests '*Create*MixinAdapterTest' --tests '*ExitGuardParkedOrphansTest' \
        --tests '*CreateTaskWaitTest' --tests '*FabricFreezeHookMixinAdapterTest' \
        --tests '*CreateInjectionAdaptersTest' --tests '*CreateCallbackScopesTest' \
        --tests '*CreateCarrierHooksTest' --tests '*FinalMixinApplicationsTest' \

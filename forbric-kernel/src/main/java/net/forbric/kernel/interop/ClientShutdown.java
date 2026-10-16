@@ -56,6 +56,12 @@ import net.forbric.kernel.util.ForbricLog;
  * deadline passes with threads still alive it names them, so the next hang is diagnosable from the log rather than
  * only from the watchdog's crash report.
  *
+ * <p>Config watchers are the leak the kernel itself causes, by not running FML's shutdown; a mod can leave the same
+ * thing behind on its own — a worker pool it never stops (Create Fly's Flywheel pool is one: natively its client ends
+ * with vanilla's watchdog crash). The guard does not know or ask what such threads are. Once the side's own exiting
+ * thread has ended and every non-daemon thread still alive is parked without a timeout, with nothing running that
+ * could wake it, it ends the JVM ({@link #runExitGuard}).
+ *
  * <p>Reflection-only (no compile/runtime dep on night-config or either loader); every piece is a no-op where its
  * class is absent, and everything is idempotent.
  */
@@ -66,9 +72,16 @@ public final class ClientShutdown {
 	private static final long GUARD_PERIOD_MS = 200L;
 	private static final long STOP_WAIT_MS = Long.getLong("forbric.watcherStopMillis", 1_500L);
 	/**
-	 * When the deadline passes and the ONLY non-daemon threads left are idle scheduled-executor workers — an
-	 * orphan from the stop-versus-addWatch race, unreachable by design — end the JVM ourselves instead of letting
-	 * vanilla's watchdog crash it. {@code -Dforbric.exitGuardHalt=false} keeps the crash for diagnosis.
+	 * How many consecutive polls the leaked threads must stay parked, every one of them, after the side's own exiting
+	 * thread has ended, before the guard ends the JVM: one second at the usual period. A thread something is about to
+	 * wake shows up as RUNNABLE, or the set changes, within that window.
+	 */
+	static final int IDLE_POLLS = Integer.getInteger("forbric.exitGuardIdlePolls", 5);
+	/**
+	 * When the ONLY non-daemon threads left are parked ones nothing that is still running can reach — an orphan
+	 * executor from the stop-versus-addWatch race, a mod's worker pool nobody stops, a worker that missed its last
+	 * notification — end the JVM ourselves instead of letting vanilla's watchdog crash it (client) or the process sit
+	 * there forever (dedicated server). {@code -Dforbric.exitGuardHalt=false} keeps the hang for diagnosis.
 	 */
 	private static final boolean HALT_ON_ORPHAN_WORKERS = !"false".equals(System.getProperty("forbric.exitGuardHalt"));
 
@@ -89,10 +102,9 @@ public final class ClientShutdown {
 		if (ran) return;
 		ran = true;
 		List<String> stopped = sweep(cl);
-		ManagedWorkerResources.close(cl);
 		ForbricLog.info("[Forbric/Shutdown] stopped %d config file-watcher(s) at exit so the JVM can end: %s",
 				stopped.size(), stopped);
-		startExitGuard(cl);
+		startExitGuard(cl, Thread.currentThread());
 	}
 
 
@@ -208,16 +220,42 @@ public final class ClientShutdown {
 
 	/**
 	 * A daemon thread that repeats the sweep until nothing non-daemon is left (the normal case within a few
-	 * hundred milliseconds) or the deadline passes, and reports either way.
+	 * hundred milliseconds), or until every non-daemon thread left is parked with nothing running to wake it, or the
+	 * deadline passes; it reports either way.
 	 */
-	private static void startExitGuard(ClassLoader cl) {
-		Thread guard = new Thread(() -> runExitGuard(cl), "Forbric exit guard");
+	private static void startExitGuard(ClassLoader cl, Thread exiting) {
+		Thread guard = new Thread(() -> runExitGuard(cl, exiting, ClientShutdown::leakedNonDaemonThreads,
+				GUARD_DEADLINE_MS, GUARD_PERIOD_MS, () -> System.exit(0)), "Forbric exit guard");
 		guard.setDaemon(true);
 		guard.start();
 	}
 
-	static void runExitGuard(ClassLoader cl) {
-		long deadline = System.nanoTime() + GUARD_DEADLINE_MS * 1_000_000L;
+	/** What one run of the exit guard ended with. */
+	enum GuardOutcome { ALL_ENDED, ENDED_PARKED_ORPHANS, GAVE_UP }
+
+	/**
+	 * The guard's loop, with its inputs passed in so a test can drive it on threads of its own.
+	 *
+	 * <p>A non-daemon thread a mod started and never stopped keeps the JVM alive after the game's own exiting thread
+	 * is gone: natively a client then waits for vanilla's 15-second shutdown watchdog to file a "Client shutdown from
+	 * post-main" crash and halt, and a dedicated server never ends at all. When every such thread is
+	 * {@link Thread.State#WAITING parked without a timeout} and stays so, and the side's own {@code exiting} thread has
+	 * ended, nothing that is still running can wake them — only another non-daemon thread could, and there is none —
+	 * so the guard ends the JVM there. What a thread is, whose pool it belongs to or which mod started it plays no
+	 * part: an idle executor worker, a pool worker parked on its own monitor and a worker that missed its last
+	 * notification are the same case. A thread that is running, blocked on a monitor, or parked with a timeout is
+	 * left to finish until the deadline; at the deadline the guard ends the JVM only when every one left is parked
+	 * (with or without a timeout), and otherwise names them and leaves the hang to vanilla's watchdog.
+	 *
+	 * @param exiting the side's exiting thread (the client's render thread, the dedicated server's thread), or null
+	 * @param leaked  the non-daemon threads that would hold the JVM open
+	 * @param exit    what ends the JVM ({@code System.exit(0)} in the game)
+	 */
+	static GuardOutcome runExitGuard(ClassLoader cl, Thread exiting, java.util.function.Supplier<List<Thread>> leaked,
+			long deadlineMillis, long periodMillis, Runnable exit) {
+		long deadline = System.nanoTime() + deadlineMillis * 1_000_000L;
+		List<Thread> previous = List.of();
+		int parkedPolls = 0;
 		while (System.nanoTime() < deadline) {
 			List<String> late = sweep(cl);
 			if (!late.isEmpty()) {
@@ -225,37 +263,62 @@ public final class ClientShutdown {
 						+ "had already stopped the earlier ones — a config was loaded while the game was exiting: %s",
 						late.size(), late);
 			}
-			List<Thread> alive = leakedNonDaemonThreads();
-			if (alive.isEmpty()) return;
+			List<Thread> alive = leaked.get();
+			if (alive.isEmpty()) return GuardOutcome.ALL_ENDED;
+			boolean parked = (exiting == null || !exiting.isAlive()) && sameThreads(alive, previous)
+					&& alive.stream().allMatch(t -> t.getState() == Thread.State.WAITING);
+			parkedPolls = parked ? parkedPolls + 1 : 0;
+			previous = alive;
+			if (parkedPolls >= IDLE_POLLS && HALT_ON_ORPHAN_WORKERS) {
+				ForbricLog.info("[Forbric/Shutdown] %d non-daemon thread(s) a mod left behind are parked with nothing "
+						+ "running to wake them, and the game's own exiting thread has ended — ending the JVM now "
+						+ "instead of leaving it to vanilla's shutdown watchdog:%s", alive.size(), describe(alive));
+				exit.run();
+				return GuardOutcome.ENDED_PARKED_ORPHANS;
+			}
 			try {
-				Thread.sleep(GUARD_PERIOD_MS);
+				Thread.sleep(periodMillis);
 			} catch (InterruptedException interrupted) {
-				return;
+				return GuardOutcome.GAVE_UP;
 			}
 		}
-		List<Thread> alive = leakedNonDaemonThreads();
-		if (alive.isEmpty()) return;
+		List<Thread> alive = leaked.get();
+		if (alive.isEmpty()) return GuardOutcome.ALL_ENDED;
+		boolean onlyParked = alive.stream().allMatch(ClientShutdown::isParked);
+		ForbricLog.warn("[Forbric/Shutdown] %d non-daemon thread(s) still alive %d ms after the exit sweep — the JVM "
+				+ "cannot end until they do; %s:%s", alive.size(), deadlineMillis,
+				onlyParked && HALT_ON_ORPHAN_WORKERS ? "all are parked threads nothing can reach, exiting now"
+						: "on a client vanilla's shutdown watchdog will crash it, a dedicated server just never exits",
+				describe(alive));
+		if (onlyParked && HALT_ON_ORPHAN_WORKERS) {
+			exit.run();
+			return GuardOutcome.ENDED_PARKED_ORPHANS;
+		}
+		return GuardOutcome.GAVE_UP;
+	}
+
+	/** The same threads, by identity, as the previous poll saw. */
+	private static boolean sameThreads(List<Thread> now, List<Thread> before) {
+		if (now.size() != before.size()) return false;
+		Set<Thread> seen = java.util.Collections.newSetFromMap(new IdentityHashMap<>());
+		seen.addAll(before);
+		return seen.containsAll(now);
+	}
+
+	/** Parked in a JDK wait, with or without a timeout: not running, not contending for a monitor. */
+	static boolean isParked(Thread t) {
+		Thread.State state = t.getState();
+		return state == Thread.State.WAITING || state == Thread.State.TIMED_WAITING;
+	}
+
+	private static String describe(List<Thread> threads) {
 		StringBuilder report = new StringBuilder();
-		for (Thread t : alive) {
+		for (Thread t : threads) {
 			report.append("\n  ").append(t.getName()).append(" (").append(t.getState()).append(')');
 			StackTraceElement[] frames = t.getStackTrace();
 			for (int i = 0; i < Math.min(6, frames.length); i++) report.append("\n      at ").append(frames[i]);
 		}
-		boolean onlyIdleWorkers = alive.stream().allMatch(ClientShutdown::isIdleExecutorWorker);
-		ForbricLog.warn("[Forbric/Shutdown] %d non-daemon thread(s) still alive %d ms after the exit sweep — the JVM "
-				+ "cannot end until they do; %s:%s", alive.size(), GUARD_DEADLINE_MS,
-				onlyIdleWorkers && HALT_ON_ORPHAN_WORKERS ? "all are idle executor workers nothing can reach, exiting now"
-						: "on a client vanilla's shutdown watchdog will crash it, a dedicated server just never exits", report);
-		if (onlyIdleWorkers && HALT_ON_ORPHAN_WORKERS) System.exit(0);
-	}
-
-	/** A thread-pool worker with nothing to do: parked in its work queue's take(). */
-	static boolean isIdleExecutorWorker(Thread t) {
-		if (!t.getName().startsWith("pool-")) return false;
-		for (StackTraceElement frame : t.getStackTrace()) {
-			if (frame.getClassName().startsWith("java.util.concurrent.") && frame.getMethodName().equals("take")) return true;
-		}
-		return false;
+		return report.toString();
 	}
 
 	/** Non-daemon threads that would hold the JVM open, excluding the thread that is itself exiting. */
