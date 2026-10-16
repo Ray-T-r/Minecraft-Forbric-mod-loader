@@ -41,12 +41,15 @@ class KeyActionExitsWeaveTest {
 			+ " keyecho tail] | 0=[keyecho release G]";
 	private static final String ADAPTED = WeaveHarnessMain.DONE + " 1=[neoforge G1, keyecho final G, keyecho tail]"
 			+ " | 2=[neoforge G2, keyecho final G, keyecho tail] | 0=[keyecho release G, neoforge G0]";
+	/** MixinReturnOrdinals on its own: the final return re-counted, the release hook lost, the release heard at the final return. */
+	private static final String RETURN_ORDINALS_ONLY = WeaveHarnessMain.DONE + " 1=[neoforge G1, keyecho final G, keyecho tail]"
+			+ " | 2=[neoforge G2, keyecho final G, keyecho tail] | 0=[neoforge G0, keyecho final G, keyecho tail]";
 	private static final String UNADAPTED = WeaveHarnessMain.DONE + " 1=[neoforge G1, keyecho tail]"
 			+ " | 2=[neoforge G2, keyecho tail] | 0=[neoforge G0, keyecho tail]";
 
 	@TempDir static Path work;
 	private static Path fixture;
-	private static WeaveHarness.Result nativeRun, adapted, off;
+	private static WeaveHarness.Result nativeRun, adapted, off, keyOnlyOff, ordinalsOnlyOff;
 
 	@BeforeAll static void weave() throws Exception {
 		List<Path> sources;
@@ -65,6 +68,25 @@ class KeyActionExitsWeaveTest {
 		// MixinReturnOrdinals would re-count the final RETURN by its way out on its own: off too, or the control shows
 		// what one adapter without the other does, not the ordinals as compiled.
 		off = run("adapter-off", fixture, Map.of(MixinKeyActionAdapter.PROPERTY, "off", net.forbric.kernel.mixin.MixinReturnOrdinals.PROPERTY, "off"));
+		keyOnlyOff = run("key-only-off", fixture, Map.of(MixinKeyActionAdapter.PROPERTY, "off"));
+		ordinalsOnlyOff = run("ordinals-only-off", fixture, Map.of(net.forbric.kernel.mixin.MixinReturnOrdinals.PROPERTY, "off"));
+	}
+
+	/**
+	 * What each of the two stages does alone, so neither control hides the other. MixinKeyActionAdapter alone is the whole
+	 * repair: it places the release on NeoForge's join and gates the final return and TAIL by action, and marks the points
+	 * counted, so MixinReturnOrdinals has nothing left to do here. MixinReturnOrdinals alone re-counts the final RETURN by
+	 * its way out, but cannot place the release (no merged return is the native release) nor keep the final return and
+	 * TAIL from hearing it: the release hook is lost and a release reaches the final hooks.
+	 */
+	@Test void theKeyActionAdapterIsTheRepairAndReturnOrdinalsAloneIsNot() {
+		assertTrue(ordinalsOnlyOff.printedLine(ADAPTED) && losses(ordinalsOnlyOff).isEmpty(),
+				"the key-action adapter alone must be the whole repair — " + ordinalsOnlyOff.describe());
+		assertTrue(keyOnlyOff.printedLine(RETURN_ORDINALS_ONLY), keyOnlyOff.describe());
+		List<WeaveHarness.Finding> lost = losses(keyOnlyOff);
+		assertEquals(1, lost.size(), lost.toString());
+		assertTrue(lost.getFirst().id().contains("#heardRelease("), lost.toString());
+		assertFalse(adaptedHolds(keyOnlyOff), "without the key-action adapter the adapted trail must not hold");
 	}
 
 	@Test void theGameHearsEachActionWhereTheNativeBodyDoes() throws Exception {

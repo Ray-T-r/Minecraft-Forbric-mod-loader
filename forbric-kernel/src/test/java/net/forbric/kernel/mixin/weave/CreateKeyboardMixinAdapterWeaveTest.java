@@ -35,6 +35,9 @@ class CreateKeyboardMixinAdapterWeaveTest {
 			+ " | 2=[create release G, create press G] | 0=[]";
 	private static final String ADAPTED = WeaveHarnessMain.DONE + " 1=[neoforge G1, create release G, create press G]"
 			+ " | 2=[neoforge G2, create release G, create press G] | 0=[neoforge G0]";
+	/** MixinReturnOrdinals on its own: both hooks bound, and both hear the release. */
+	private static final String RETURN_ORDINALS_ONLY = WeaveHarnessMain.DONE + " 1=[neoforge G1, create release G, create press G]"
+			+ " | 2=[neoforge G2, create release G, create press G] | 0=[neoforge G0, create release G, create press G]";
 	private static final String UNADAPTED = WeaveHarnessMain.DONE + " 1=[neoforge G1, create press G]"
 			+ " | 2=[neoforge G2, create press G] | 0=[neoforge G0, create press G]";
 
@@ -43,6 +46,7 @@ class CreateKeyboardMixinAdapterWeaveTest {
 	private static WeaveHarness.Result nativeRun;
 	private static WeaveHarness.Result adapted;
 	private static WeaveHarness.Result off;
+	private static WeaveHarness.Result keyOnlyOff, ordinalsOnlyOff;
 
 	@BeforeAll static void weave() throws Exception {
 		List<Path> shared = List.of(
@@ -62,6 +66,19 @@ class CreateKeyboardMixinAdapterWeaveTest {
 		// MixinReturnOrdinals would re-count the final RETURN by its way out on its own: off too, or the control shows
 		// what one adapter without the other does, not the ordinals as compiled.
 		off = run("adapter-off", fixture, Map.of(MixinKeyActionAdapter.PROPERTY, "off", net.forbric.kernel.mixin.MixinReturnOrdinals.PROPERTY, "off"));
+		keyOnlyOff = run("key-only-off", fixture, Map.of(MixinKeyActionAdapter.PROPERTY, "off"));
+		ordinalsOnlyOff = run("ordinals-only-off", fixture, Map.of(net.forbric.kernel.mixin.MixinReturnOrdinals.PROPERTY, "off"));
+	}
+
+	/**
+	 * What each of the two stages does alone, so neither control hides the other. MixinKeyActionAdapter alone is the whole
+	 * repair. MixinReturnOrdinals alone binds the ordinal-5 hook to the merged final return — no loss — but nothing keeps
+	 * the release from reaching it: both hooks hear the release as one more press.
+	 */
+	@Test void theKeyActionAdapterIsTheRepairAndReturnOrdinalsAloneIsNot() {
+		assertTrue(adaptedHolds(ordinalsOnlyOff), "the key-action adapter alone must be the whole repair — " + ordinalsOnlyOff.describe());
+		assertTrue(keyOnlyOff.printedLine(RETURN_ORDINALS_ONLY) && losses(keyOnlyOff).isEmpty(), keyOnlyOff.describe());
+		assertFalse(adaptedHolds(keyOnlyOff), "without the key-action adapter the adapted trail must not hold");
 	}
 
 	@Test void eachActionReachesTheModAsItDoesNatively() throws Exception {

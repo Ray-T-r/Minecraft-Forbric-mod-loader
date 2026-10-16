@@ -53,6 +53,8 @@ class WeaveCoverageCensusTest {
 	static final Map<String, Switch> WOVEN = Map.ofEntries(
 			// KernelGuestMixinAdapterWeaveTest; NativeAbsentTargetsWeaveTest flips NativeAbsentTargets' switch, which the
 			// adapter's verdict reads, and this one as its native control.
+			// The late judgment alone, by behaviour: PluginAddedRenameRetargetWeaveTest (a repair only MixinRetarget's plan makes);
+			// PluginAddedMixinRetargetWeaveTest's builder-stubbed wrap is moved by MixinBuilderStubRebind too.
 			Map.entry("KernelGuestMixinAdapter", Switch.own("forbric.guestMixinAdapter", "forbric.lateMixinJudgment")), // + PluginAddedMixinRetargetWeaveTest
 			Map.entry("FinalMixinApplications", Switch.own()), // WeaveHarnessSelfTest, MixinOutcomeWeaveTest
 			// MixinOutcomeWeaveTest; the redirect of a widened static call in MixinAtWidenedRedirectWeaveTest.
@@ -133,6 +135,8 @@ class WeaveCoverageCensusTest {
 			Map.entry("FabricBlockBreakMixinAdapter", Switch.own("forbric.fabricBlockBreak")),
 			Map.entry("FabricSectionCompilerMixinAdapter", Switch.own("forbric.fabricChunkRendering")),
 			Map.entry("MixinStructurePlacementAdapter", Switch.own("forbric.structurePlacementCallbacks")),
+			// KeyActionExitsWeaveTest and CreateKeyboardMixinAdapterWeaveTest switch it off alone too: it alone is the whole
+			// repair, and MixinReturnOrdinals alone is not (the release still reaches the final hooks).
 			Map.entry("MixinKeyActionAdapter", Switch.own("forbric.keyActionCallbacks")),
 			Map.entry("MixinSpriteLoaderCallbackAdapter", Switch.own("forbric.spriteLoaderCallbacks")),
 			Map.entry("MixinFluidInteractionAdapter", Switch.own("forbric.fluidInteractionCallbacks")),

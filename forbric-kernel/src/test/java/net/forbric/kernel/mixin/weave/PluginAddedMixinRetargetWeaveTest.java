@@ -122,7 +122,8 @@ class PluginAddedMixinRetargetWeaveTest {
 		nativeRun = run("native", nativeFixture, Map.of());
 		moved = run("moved", fixture, Map.of());
 		// MixinBuilderStubRebind would move this wrap on its own (its own weave test covers that): off too, so the control
-		// shows the plugin-added mixin unjudged.
+		// shows the plugin-added mixin unjudged. The late judgment's own effect, by behaviour and with only its switch
+		// flipped, is PluginAddedRenameRetargetWeaveTest's: a repair only MixinRetarget's plan makes.
 		off = run("off", fixture, Map.of(KernelGuestMixinAdapter.LATE_PROPERTY, "off", net.forbric.kernel.mixin.MixinBuilderStubRebind.PROPERTY, "off"));
 	}
 
