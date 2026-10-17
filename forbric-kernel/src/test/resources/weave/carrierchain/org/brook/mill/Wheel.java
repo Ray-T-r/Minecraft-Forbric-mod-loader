@@ -18,4 +18,8 @@ public class Wheel {
 		return chaff.blownBy(this.stones);
 	}
 
+
+	public double dip(Bucket bucket) {
+		return bucket.dipped();
+	}
 }

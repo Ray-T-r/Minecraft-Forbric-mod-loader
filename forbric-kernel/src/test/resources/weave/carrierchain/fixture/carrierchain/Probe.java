@@ -1,6 +1,8 @@
 package fixture.carrierchain;
 
 import org.brook.carrier.CustomGrain;
+import org.brook.carrier.DeepBucket;
+import org.brook.mill.Bucket;
 import org.brook.carrier.ThornStalk;
 import org.brook.mill.Chaff;
 import org.brook.mill.Ear;
@@ -18,6 +20,8 @@ public class Probe {
 		record(out, "harvest plain", () -> new Wheel().harvest(new Ear(new Stalk(), "barley"), 3));
 		record(out, "harvest thorn", () -> new Wheel().harvest(new Ear(new ThornStalk(), "oat"), 4));
 		record(out, "sift", () -> Trace.add("got " + new Wheel().sift(new Chaff("husk"))));
+		record(out, "dip plain", () -> Trace.add("got " + new Wheel().dip(new Bucket())));
+		record(out, "dip deep", () -> Trace.add("got " + new Wheel().dip(new DeepBucket())));
 		return out.toString();
 	}
 

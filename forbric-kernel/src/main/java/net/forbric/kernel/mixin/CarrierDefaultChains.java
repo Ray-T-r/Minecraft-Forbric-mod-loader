@@ -59,12 +59,18 @@ import net.forbric.kernel.util.ForbricLog;
  * with the mod's handler, as written, in place of the vanilla call; if the receiver overrides it (a carrier mod's block,
  * sound, item), or is null, it makes the carrier's call untouched, as the game would without the mod.
  *
+ * <p>A constant is treated the same way: vanilla's {@code goDownInWater} pushes its sinking step itself; NeoForge calls
+ * {@code sinkInFluid}, whose default pushes the same constant (and scales it by its own swim-speed attribute). A
+ * {@code @ModifyExpressionValue} of that {@code CONSTANT}, or a {@code @ModifyConstant} of it, becomes a redirect of the
+ * carrier's call that runs the default with the mod's modifier handed the constant where the default pushes it.
+ *
  * <p>It moves only where all of this is read off the classes, never off a name:
  * <ul>
- *   <li>the redirect has one {@code INVOKE} point, no slice and no {@code @Group}; its handler takes the vanilla call's
- *       values and, after them, only arguments of the method it targets, with no parameter annotations;</li>
- *   <li>the native method (the mod's loader's) makes the vanilla call once, or the occurrence the ordinal names, and the
- *       merged method never makes it;</li>
+ *   <li>the redirect has one {@code INVOKE} point (the modifier one constant, nothing else said about it), no slice and no
+ *       {@code @Group}; its handler takes the vanilla call's values (or the constant) and, after them, only arguments of the
+ *       method it targets, with no parameter annotations;</li>
+ *   <li>the native method (the mod's loader's) makes the vanilla call once (or the occurrence the ordinal names), or pushes
+ *       the constant once, and the merged method never does;</li>
  *   <li>the merged method makes exactly one virtual call the native method never makes whose selected implementation leads
  *       to the vanilla call: makes it exactly once, or makes exactly one call that leads to it, at most four levels down,
  *       with no loop, handler, lambda or monitor on the way (so it is made at most once per call);</li>
@@ -104,7 +110,7 @@ public final class CarrierDefaultChains {
 	 * One level: the call into it, the implementation it selects (guarded: by virtual dispatch, asked at run time), and the
 	 * instruction in that implementation the chain goes on at — the next level's call, or the vanilla call itself.
 	 */
-	record Link(MethodInsnNode call, Body body, boolean guarded, MethodInsnNode site, Link next) {
+	record Link(MethodInsnNode call, Body body, boolean guarded, AbstractInsnNode site, Link next) {
 	}
 
 	/** Moves every eligible redirect of {@code mixin}; returns how many. {@code code} must return nodes WITH code. */
@@ -120,34 +126,45 @@ public final class CarrierDefaultChains {
 			if (original == null) continue;
 			for (MethodNode handler : List.copyOf(mixin.methods)) {
 				AnnotationNode injector = MixinFit.injectorOf(handler);
-				if (injector == null || !REDIRECT.equals(injector.desc) || annotated(handler, CarrierDecisions.GROUP) || MixinFit.value(injector, "slice") != null)
-					continue;
+				if (injector == null || annotated(handler, CarrierDecisions.GROUP) || MixinFit.value(injector, "slice") != null) continue;
+				Object constant = REDIRECT.equals(injector.desc) ? null : constantOf(injector);
+				if (!REDIRECT.equals(injector.desc) && constant == null) continue;
 				List<AnnotationNode> points = MixinFit.atNodes(injector);
-				if (points.size() != 1 || !"INVOKE".equals(MixinFit.asString(MixinFit.value(points.getFirst(), "value")))) continue;
-				AnnotationNode at = points.getFirst();
+				AnnotationNode at = points.size() == 1 ? points.getFirst() : null;
+				if (constant == null && (at == null || !"INVOKE".equals(MixinFit.asString(MixinFit.value(at, "value"))))) continue;
 				if (merged == null) merged = classes.apply(target);
 				if (merged == null) break;
 				MethodNode was = MixinTargetSelectors.one(handler, original), selected = MixinTargetSelectors.one(handler, merged);
 				if (was == null || selected == null || !was.name.equals(selected.name) || !was.desc.equals(selected.desc)) continue;
-				if (!MixinCallbackShape.calls(at, selected).isEmpty()) continue;
-				List<MethodInsnNode> nativeCalls = MixinCallbackShape.calls(at, was);
-				int ordinal = MixinFit.value(at, "ordinal") instanceof Number number ? number.intValue() : -1;
-				MethodInsnNode call = ordinal >= 0 ? (ordinal < nativeCalls.size() ? nativeCalls.get(ordinal) : null)
-						: nativeCalls.size() == 1 ? nativeCalls.getFirst() : null;
-				if (call == null || call.getOpcode() == Opcodes.INVOKESPECIAL) continue;
-				Link chain = standIn(was, selected, call, classes);
+				AbstractInsnNode vanilla;
+				if (constant != null) {
+					// A constant the native method pushes once and the merged method never.
+					if (!pushes(selected, constant).isEmpty() || pushes(was, constant).size() != 1) continue;
+					vanilla = pushes(was, constant).getFirst();
+				} else {
+					if (!MixinCallbackShape.calls(at, selected).isEmpty()) continue;
+					List<MethodInsnNode> nativeCalls = MixinCallbackShape.calls(at, was);
+					int ordinal = MixinFit.value(at, "ordinal") instanceof Number number ? number.intValue() : -1;
+					MethodInsnNode call = ordinal >= 0 ? (ordinal < nativeCalls.size() ? nativeCalls.get(ordinal) : null)
+							: nativeCalls.size() == 1 ? nativeCalls.getFirst() : null;
+					if (call == null || call.getOpcode() == Opcodes.INVOKESPECIAL) continue;
+					vanilla = call;
+				}
+				Link chain = standIn(was, selected, vanilla, classes);
 				if (chain == null) continue;
 				// A helper the carrier added to the target class itself is NativeCallInlining's (it inlines it at its call, in the
 				// class, where every other mixin is checked); only an implementation of another class is inlined here.
 				if (chain.body().declarer().equals(merged.name)) continue;
-				MethodNode wrapper = relocate(mixin, handler, injector, at, call, chain, selected, classes);
+				MethodNode wrapper = relocate(mixin, handler, injector, at, vanilla, chain, selected, classes);
 				if (wrapper == null) continue;
 				CurrentBodyOrdinals.mark(wrapper);
 				moved++;
-				ForbricLog.info("[Forbric/Mixin] %s.%s: %s is no longer called in %s; the carrier calls %s there, whose inherited implementation makes that call%s"
-						+ " — the redirect moves onto it and runs that implementation with the mod's handler wherever the receiver inherits it",
-						mixin.name.replace('/', '.'), wrapper.name, call.owner.replace('/', '.') + "." + call.name, target.replace('/', '.') + "." + selected.name,
-						chain.call().owner.replace('/', '.') + "." + chain.call().name, path(chain));
+				ForbricLog.info("[Forbric/Mixin] %s.%s: %s in %s; the carrier calls %s there, whose inherited implementation %s%s"
+						+ " — the %s moves onto it and runs that implementation with the mod's handler wherever the receiver inherits it",
+						mixin.name.replace('/', '.'), wrapper.name, vanilla instanceof MethodInsnNode call ? call.owner.replace('/', '.') + "." + call.name + " is no longer called"
+								: "the constant " + constant + " is no longer pushed", target.replace('/', '.') + "." + selected.name,
+						chain.call().owner.replace('/', '.') + "." + chain.call().name, vanilla instanceof MethodInsnNode ? "makes that call" : "pushes it", path(chain),
+						vanilla instanceof MethodInsnNode ? "redirect" : "constant's modifier");
 			}
 		}
 		return moved;
@@ -163,7 +180,7 @@ public final class CarrierDefaultChains {
 	// The chain
 
 	/** The one virtual call of {@code selected} the native method never makes whose implementation leads to {@code call}. */
-	static Link standIn(MethodNode was, MethodNode selected, MethodInsnNode call, Function<String, ClassNode> code) {
+	static Link standIn(MethodNode was, MethodNode selected, AbstractInsnNode call, Function<String, ClassNode> code) {
 		Set<String> nativeMembers = new HashSet<>();
 		for (AbstractInsnNode instruction : was.instructions) if (instruction instanceof MethodInsnNode other) nativeMembers.add(other.name + other.desc);
 		Map<String, Integer> occurrences = new HashMap<>();
@@ -184,14 +201,14 @@ public final class CarrierDefaultChains {
 
 	/** Finds the levels that lead to one vanilla call, each implementation read once, within a budget. */
 	static final class Search {
-		private final MethodInsnNode call;
+		private final AbstractInsnNode call;
 		private final Function<String, ClassNode> code;
 		private final Map<String, Link> known = new HashMap<>();
 		private final Set<String> failed = new HashSet<>();
 		private int budget = 400;
 		boolean exhausted;
 
-		Search(MethodInsnNode call, Function<String, ClassNode> code) {
+		Search(AbstractInsnNode call, Function<String, ClassNode> code) {
 			this.call = call;
 			this.code = code;
 		}
@@ -219,16 +236,16 @@ public final class CarrierDefaultChains {
 		private Link find(MethodInsnNode into, boolean guarded, int depth) {
 			Body body = resolve(into, code);
 			if (body == null || !simple(body.method())) return null;
-			MethodInsnNode site = null;
+			AbstractInsnNode site = null;
 			Link next = null;
 			int leads = 0;
 			for (AbstractInsnNode instruction : body.method().instructions) {
-				if (!(instruction instanceof MethodInsnNode made) || made.name.startsWith("<")) continue;
-				if (made.owner.equals(call.owner) && made.name.equals(call.name) && made.desc.equals(call.desc) && made.getOpcode() == call.getOpcode()) {
-					site = made;
+				if (same(instruction, call)) {
+					site = instruction;
 					leads++;
 					continue;
 				}
+				if (!(instruction instanceof MethodInsnNode made) || made.name.startsWith("<")) continue;
 				boolean virtual = (made.getOpcode() == Opcodes.INVOKEVIRTUAL || made.getOpcode() == Opcodes.INVOKEINTERFACE) && !ownPrivate(made, body, code);
 				Link deeper = link(made, virtual, depth + 1);
 				if (exhausted) return null;
@@ -248,7 +265,8 @@ public final class CarrierDefaultChains {
 	 */
 	static Body resolve(MethodInsnNode call, Function<String, ClassNode> code) {
 		Set<String> seen = new HashSet<>();
-		for (String owner = call.owner; owner != null && seen.add(owner);) {
+		// The platform's classes (Object at the top of every chain) declare nothing a game call resolves to here.
+		for (String owner = call.owner; owner != null && !owner.startsWith("java/") && seen.add(owner);) {
 			ClassNode type = code.apply(owner);
 			if (type == null) return null;
 			MethodNode own = declared(type, call.name, call.desc);
@@ -265,7 +283,7 @@ public final class CarrierDefaultChains {
 		Map<String, ClassNode> interfaces = new HashMap<>();
 		List<String> pending = new ArrayList<>();
 		Set<String> classes = new HashSet<>();
-		for (String owner = call.owner; owner != null && classes.add(owner);) {
+		for (String owner = call.owner; owner != null && !owner.startsWith("java/") && classes.add(owner);) {
 			ClassNode type = code.apply(owner);
 			if (type == null) return null;
 			if ((type.access & Opcodes.ACC_INTERFACE) != 0) {
@@ -277,7 +295,7 @@ public final class CarrierDefaultChains {
 		}
 		while (!pending.isEmpty()) {
 			String name = pending.removeFirst();
-			if (interfaces.containsKey(name)) continue;
+			if (interfaces.containsKey(name) || name.startsWith("java/")) continue;
 			ClassNode type = code.apply(name);
 			if (type == null) return null;
 			interfaces.put(name, type);
@@ -362,7 +380,7 @@ public final class CarrierDefaultChains {
 		return true;
 	}
 
-	private static boolean accessible(Body body, MethodInsnNode site, Function<String, ClassNode> code, int depth) {
+	private static boolean accessible(Body body, AbstractInsnNode site, Function<String, ClassNode> code, int depth) {
 		if (depth > DEPTH) return false;
 		for (AbstractInsnNode instruction : body.method().instructions) {
 			if (instruction == site) continue;
@@ -455,15 +473,18 @@ public final class CarrierDefaultChains {
 	// ---------------------------------------------------------------------------------------------------------------
 	// The move
 
-	private static MethodNode relocate(ClassNode mixin, MethodNode handler, AnnotationNode injector, AnnotationNode at, MethodInsnNode call, Link chain,
+	private static MethodNode relocate(ClassNode mixin, MethodNode handler, AnnotationNode injector, AnnotationNode at, AbstractInsnNode vanilla, Link chain,
 			MethodNode selected, Function<String, ClassNode> code) {
 		if (!accessible(chain, code)) return null;
 		for (List<AnnotationNode>[] table : Arrays.asList(handler.visibleParameterAnnotations, handler.invisibleParameterAnnotations))
 			if (table != null) for (List<AnnotationNode> annotations : table) if (annotations != null && !annotations.isEmpty()) return null;
 		boolean isStatic = (handler.access & Opcodes.ACC_STATIC) != 0;
-		List<Type> nativeOperands = CarrierDecisions.operandTypes(call), carrierOperands = CarrierDecisions.operandTypes(chain.call());
+		// What the handler is handed in place of the vanilla value: the call's operands, or the constant itself.
+		List<Type> nativeOperands = vanilla instanceof MethodInsnNode call ? CarrierDecisions.operandTypes(call) : List.of(constantType(vanilla));
+		List<Type> carrierOperands = CarrierDecisions.operandTypes(chain.call());
 		Type[] parameters = Type.getArgumentTypes(handler.desc);
-		Type answer = Type.getReturnType(call.desc), carrierAnswer = Type.getReturnType(chain.call().desc);
+		Type answer = vanilla instanceof MethodInsnNode call ? Type.getReturnType(call.desc) : constantType(vanilla), carrierAnswer = Type.getReturnType(chain.call().desc);
+		if (answer == null) return null;
 		if (!Type.getReturnType(handler.desc).equals(answer) || parameters.length < nativeOperands.size()) return null;
 		for (int i = 0; i < nativeOperands.size(); i++) if (!parameters[i].equals(nativeOperands.get(i))) return null;
 		List<Type> captured = List.of(parameters).subList(nativeOperands.size(), parameters.length);
@@ -502,12 +523,115 @@ public final class CarrierDefaultChains {
 		handler.name = original;
 		boolean visible = handler.visibleAnnotations != null && handler.visibleAnnotations.remove(injector);
 		if (!visible && handler.invisibleAnnotations != null) handler.invisibleAnnotations.remove(injector);
-		if (visible) wrapper.visibleAnnotations = new ArrayList<>(List.of(injector));
-		else wrapper.invisibleAnnotations = new ArrayList<>(List.of(injector));
-		set(at, "target", member(chain.call()));
-		remove(at, "ordinal");
+		AnnotationNode moved = injector;
+		if (vanilla instanceof MethodInsnNode) {
+			set(at, "target", member(chain.call()));
+			remove(at, "ordinal");
+		} else {
+			// The constant's modifier becomes a redirect of the carrier's call, with the same selectors and require counts.
+			moved = new AnnotationNode(REDIRECT);
+			AnnotationNode point = new AnnotationNode("Lorg/spongepowered/asm/mixin/injection/At;");
+			point.values = new ArrayList<>(List.of("value", "INVOKE", "target", member(chain.call())));
+			moved.values = new ArrayList<>(List.of("method", MixinFit.value(injector, "method"), "at", point));
+			for (String key : List.of("require", "expect", "allow")) if (MixinFit.value(injector, key) != null) set(moved, key, MixinFit.value(injector, key));
+		}
+		if (visible) wrapper.visibleAnnotations = new ArrayList<>(List.of(moved));
+		else wrapper.invisibleAnnotations = new ArrayList<>(List.of(moved));
 		mixin.methods.add(wrapper);
 		return wrapper;
+	}
+
+	// ---------------------------------------------------------------------------------------------------------------
+	// Constants
+
+	static final String MODIFY_EXPRESSION_VALUE = "Lcom/llamalad7/mixinextras/injector/ModifyExpressionValue;";
+	static final String MODIFY_CONSTANT = "Lorg/spongepowered/asm/mixin/injection/ModifyConstant;";
+
+	/**
+	 * The one constant a {@code @ModifyExpressionValue(at = @At(value = "CONSTANT", args = "<kind>Value=..."))} or a
+	 * {@code @ModifyConstant(constant = @Constant(<kind>Value = ...))} modifies, with nothing else said about it (no
+	 * ordinal, no zero-condition expansion); null for anything else.
+	 */
+	static Object constantOf(AnnotationNode injector) {
+		if (MODIFY_EXPRESSION_VALUE.equals(injector.desc)) {
+			List<AnnotationNode> points = MixinFit.atNodes(injector);
+			if (points.size() != 1 || !"CONSTANT".equals(MixinFit.asString(MixinFit.value(points.getFirst(), "value")))) return null;
+			AnnotationNode at = points.getFirst();
+			for (String key : List.of("ordinal", "opcode", "shift", "by", "target")) if (MixinFit.value(at, key) != null) return null;
+			List<String> args = MixinFit.stringList(MixinFit.value(at, "args"));
+			if (args.size() != 1) return null;
+			int equals = args.getFirst().indexOf('=');
+			return equals < 0 ? null : parse(args.getFirst().substring(0, equals).strip(), args.getFirst().substring(equals + 1).strip());
+		}
+		if (MODIFY_CONSTANT.equals(injector.desc)) {
+			Object constants = MixinFit.value(injector, "constant");
+			List<?> list = constants instanceof List<?> l ? l : constants == null ? List.of() : List.of(constants);
+			if (list.size() != 1 || !(list.getFirst() instanceof AnnotationNode constant) || constant.values == null || constant.values.size() != 2) return null;
+			Object value = constant.values.get(1);
+			return switch (String.valueOf(constant.values.getFirst())) {
+				case "intValue", "floatValue", "longValue", "doubleValue", "stringValue", "classValue" -> value instanceof org.objectweb.asm.Type || value instanceof Number || value instanceof String ? value : null;
+				default -> null;
+			};
+		}
+		return null;
+	}
+
+	/** A CONSTANT point's {@code <kind>Value=text}, as Mixin reads it; null for a kind it does not have. */
+	private static Object parse(String key, String text) {
+		try {
+			String plain = text.replaceAll("[dDfFlL]$", "");
+			return switch (key) {
+				case "intValue" -> Integer.parseInt(plain);
+				case "floatValue" -> Float.parseFloat(plain);
+				case "longValue" -> Long.parseLong(plain);
+				case "doubleValue" -> Double.parseDouble(plain);
+				case "stringValue" -> text;
+				case "classValue" -> Type.getObjectType(text.replace('.', '/'));
+				default -> null;
+			};
+		} catch (NumberFormatException unreadable) {
+			return null;
+		}
+	}
+
+	/** The instructions of {@code method} that push {@code constant}. */
+	static List<AbstractInsnNode> pushes(MethodNode method, Object constant) {
+		List<AbstractInsnNode> out = new ArrayList<>();
+		for (AbstractInsnNode instruction : method.instructions) if (constant.equals(pushed(instruction))) out.add(instruction);
+		return out;
+	}
+
+	/** The constant {@code instruction} pushes; null when it pushes none. */
+	static Object pushed(AbstractInsnNode instruction) {
+		int opcode = instruction.getOpcode();
+		if (instruction instanceof LdcInsnNode ldc) return ldc.cst;
+		if (opcode >= Opcodes.ICONST_M1 && opcode <= Opcodes.ICONST_5) return opcode - Opcodes.ICONST_0;
+		if (opcode == Opcodes.LCONST_0 || opcode == Opcodes.LCONST_1) return (long) (opcode - Opcodes.LCONST_0);
+		if (opcode >= Opcodes.FCONST_0 && opcode <= Opcodes.FCONST_2) return (float) (opcode - Opcodes.FCONST_0);
+		if (opcode == Opcodes.DCONST_0 || opcode == Opcodes.DCONST_1) return (double) (opcode - Opcodes.DCONST_0);
+		if ((opcode == Opcodes.BIPUSH || opcode == Opcodes.SIPUSH) && instruction instanceof org.objectweb.asm.tree.IntInsnNode number) return number.operand;
+		return null;
+	}
+
+	private static Type constantType(AbstractInsnNode instruction) {
+		return switch (pushed(instruction)) {
+			case Integer ignored -> Type.INT_TYPE;
+			case Long ignored -> Type.LONG_TYPE;
+			case Float ignored -> Type.FLOAT_TYPE;
+			case Double ignored -> Type.DOUBLE_TYPE;
+			case String ignored -> Type.getType(String.class);
+			case Type ignored -> Type.getType(Class.class);
+			case null, default -> null;
+		};
+	}
+
+	/** Whether {@code instruction} is the vanilla operation {@code vanilla} is: the same call, or the same constant pushed. */
+	private static boolean same(AbstractInsnNode instruction, AbstractInsnNode vanilla) {
+		if (vanilla instanceof MethodInsnNode call)
+			return instruction instanceof MethodInsnNode made && made.owner.equals(call.owner) && made.name.equals(call.name) && made.desc.equals(call.desc)
+					&& made.getOpcode() == call.getOpcode();
+		Object constant = pushed(vanilla);
+		return constant != null && constant.equals(pushed(instruction));
 	}
 
 	/** Writes the inlined chain: each level's implementation, guarded where it is selected at run time. */
@@ -618,10 +742,16 @@ public final class CarrierDefaultChains {
 		}
 
 		/** The vanilla call's operands are on the stack: hands them, and the captured arguments, to the mod's handler. */
-		void handler(MethodInsnNode call) {
-			int[] temps = store(call);
-			if (!isStatic) out.add(new VarInsnNode(Opcodes.ALOAD, 0));
-			load(call, temps);
+		void handler(AbstractInsnNode site) {
+			if (site instanceof MethodInsnNode call) {
+				int[] temps = store(call);
+				if (!isStatic) out.add(new VarInsnNode(Opcodes.ALOAD, 0));
+				load(call, temps);
+			} else {
+				// The constant: the mod's modifier is handed it, and its answer stands where the constant stood.
+				if (!isStatic) out.add(new VarInsnNode(Opcodes.ALOAD, 0));
+				out.add(site.clone(Map.of()));
+			}
 			for (AbstractInsnNode argument : captured) out.add(argument.clone(Map.of()));
 			out.add(MixinHandlerShim.callOwn(mixin, isStatic, original, originalDesc));
 		}

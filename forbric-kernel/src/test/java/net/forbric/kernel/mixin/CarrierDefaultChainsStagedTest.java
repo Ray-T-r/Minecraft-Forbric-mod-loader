@@ -6,6 +6,7 @@ import static org.junit.jupiter.api.Assertions.*;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.function.BiFunction;
 import java.util.function.Function;
@@ -52,20 +53,25 @@ class CarrierDefaultChainsStagedTest {
 		return jar;
 	}
 
-	/** Every class of the merged base, as the mixin service hands them to the adapters. */
+	/** Every class of the merged base and both carriers, as the mixin service hands them to the adapters. */
 	private static Function<String, ClassNode> game() {
-		Path jar = merged();
+		List<Path> jars = List.of(merged(), TestFixtures.stagedRoot().resolve("neoforge-runtime/neoforge-runtime.jar"),
+				TestFixtures.stagedRoot().resolve("merged-base/forge-runtime-interop.jar"));
 		Map<String, ClassNode> read = new HashMap<>();
 		return owner -> read.computeIfAbsent(owner, name -> {
-			try (ZipFile zip = new ZipFile(jar.toFile())) {
-				var entry = zip.getEntry(name + ".class");
-				if (entry == null) return null;
-				ClassNode node = new ClassNode();
-				new ClassReader(zip.getInputStream(entry).readAllBytes()).accept(node, 0);
-				return node;
-			} catch (Exception unreadable) {
-				return null;
+			for (Path jar : jars) {
+				if (!Files.isRegularFile(jar)) continue;
+				try (ZipFile zip = new ZipFile(jar.toFile())) {
+					var entry = zip.getEntry(name + ".class");
+					if (entry == null) continue;
+					ClassNode node = new ClassNode();
+					new ClassReader(zip.getInputStream(entry).readAllBytes()).accept(node, 0);
+					return node;
+				} catch (Exception unreadable) {
+					return null;
+				}
 			}
+			return null;
 		});
 	}
 
@@ -151,6 +157,45 @@ class CarrierDefaultChainsStagedTest {
 	/** fabric-api's bed redirect binds two methods (the sleep start and the wake-up lambda): not this mechanism's to move. */
 	@Test void theBedRedirectBoundToTwoMethodsIsNotMoved() throws Exception {
 		assertEquals(0, adapt(fabric("fabric-entity-events-v1", "net/fabricmc/fabric/mixin/entity/event/LivingEntityMixin")));
+	}
+
+	/**
+	 * Additional Entity Attributes (nested in Origins Legacy) modifies vanilla's sinking constant in goDownInWater; NeoForge
+	 * pushes it in ILivingEntityExtension.sinkInFluid's default (scaled by its swim-speed attribute) and goDownInWater calls
+	 * that. The modifier moves onto the call, as a redirect running the default with the modifier at the constant.
+	 */
+	@Test void aConstantsModifierMovesOntoTheCallWhoseDefaultPushesIt() throws Exception {
+		TestFixtures.require(TestFixtures.Fixture.STAGED, Files.isRegularFile(TestFixtures.stagedRoot().resolve("neoforge-runtime/neoforge-runtime.jar")),
+				"the NeoForge carrier declares the default");
+		ClassNode mixin = aea();
+		MixinStubRebind.noteEcosystem(mixin.name, Ecosystem.FABRIC);
+		assertEquals(1, adapt(mixin), "the sinking constant, and not the rising one the merged body still pushes");
+		MethodNode wrapper = StagedFabricMixinFixture.method(mixin, "additionalEntityAttributes$knockDownwards");
+		AnnotationNode redirect = MixinFit.injectorOf(wrapper);
+		assertEquals(CarrierDecisions.REDIRECT, redirect.desc);
+		assertEquals("Lnet/minecraft/world/entity/LivingEntity;sinkInFluid(Lnet/neoforged/neoforge/fluids/FluidType;)V",
+				MixinFit.value(MixinFit.atNodes(redirect).getFirst(), "target"));
+		assertEquals(1, calls(wrapper, mixin.name, "additionalEntityAttributes$knockDownwards" + CarrierDecisions.SUFFIX), "the modifier, at the constant");
+		assertEquals(1, calls(wrapper, "net/minecraft/world/entity/LivingEntity", "sinkInFluid"), "an entity that overrides the method keeps its override");
+		new Analyzer<>(new BasicVerifier()).analyze(mixin.name, wrapper);
+	}
+
+	private static ClassNode aea() throws Exception {
+		Path jar = Path.of("run/client-popular/mods/Origins-Legacy-1.12.18+26.2.jar");
+		TestFixtures.require(TestFixtures.Fixture.THIRD_PARTY, Files.isRegularFile(jar), "popular-pack Origins fixture absent");
+		byte[] apoli, aea;
+		try (ZipFile zip = new ZipFile(jar.toFile())) {
+			apoli = zip.getInputStream(zip.getEntry("META-INF/jars/Apoli-Legacy-2.12.12+26.2.jar")).readAllBytes();
+		}
+		aea = nested(apoli, "META-INF/jars/additionalentityattributes-2.2.4+26.2.jar");
+		return MixinFit.parse(nested(aea, "de/dafuqs/additionalentityattributes/mixin/fabric/LivingEntityMixin.class"));
+	}
+
+	private static byte[] nested(byte[] jar, String entry) throws Exception {
+		try (var in = new java.util.zip.ZipInputStream(new java.io.ByteArrayInputStream(jar))) {
+			for (var each = in.getNextEntry(); each != null; each = in.getNextEntry()) if (each.getName().equals(entry)) return in.readAllBytes();
+		}
+		throw new AssertionError(entry + " absent");
 	}
 
 	private static int calls(MethodNode method, String owner, String name) {

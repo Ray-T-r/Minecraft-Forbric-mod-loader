@@ -17,4 +17,8 @@ public class Wheel {
 		return this.stones.grind(chaff.lift(), false);
 	}
 
+
+	public double dip(Bucket bucket) {
+		return bucket.depth() + 0.25;
+	}
 }
