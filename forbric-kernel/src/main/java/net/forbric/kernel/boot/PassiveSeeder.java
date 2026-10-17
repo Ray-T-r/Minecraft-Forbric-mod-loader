@@ -647,14 +647,18 @@ public final class PassiveSeeder {
 			aliases.put(id.replace('-', '_'), entry.getValue());
 		}
 		int added = 0;
+		String example = null;
 		for (Map.Entry<String, Object> alias : aliases.entrySet()) {
-			if (fileById.putIfAbsent(alias.getKey(), alias.getValue()) == null) added++;
+			if (fileById.putIfAbsent(alias.getKey(), alias.getValue()) == null) {
+				added++;
+				if (example == null) example = alias.getKey();
+			}
 		}
 		if (added > 0) {
+			// The example is the first alias this boot added, read from the list itself: the line names no mod of its own.
 			ForbricLog.info("[Forbric/Seed] LoadingModList.getModFileById also answers for %d underscored mod id(s) "
-					+ "— NeoForge ids cannot contain '-', so a NeoForge-side mod probing for a Fabric module asks "
-					+ "with underscores (Sodium asks for fabric_renderer_api_v1 before it will register its FRAPI "
-					+ "renderer); the dashed spelling alone told it no", added);
+					+ "(e.g. %s) — NeoForge ids cannot contain '-', so a NeoForge-side mod probing for a Fabric mod "
+					+ "asks with underscores; the dashed spelling alone told it no", added, example);
 		}
 	}
 
