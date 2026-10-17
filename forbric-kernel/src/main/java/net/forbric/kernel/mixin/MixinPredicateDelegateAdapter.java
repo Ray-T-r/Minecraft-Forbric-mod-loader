@@ -31,7 +31,7 @@ public final class MixinPredicateDelegateAdapter {
         if(current==null||original==null)return 0;
         List<MethodNode> added=new ArrayList<>();int changed=0;
         for(MethodNode handler:new ArrayList<>(mixin.methods)) {
-            Source source=source(handler);if(source==null)continue;
+            Source source=source(mixin.name,handler);if(source==null)continue;
             // The host natively and in the merged class, as Mixin binds the handler's selectors however they are spelled.
             MethodNode before=MixinTargetSelectors.one(handler,original),after=MixinTargetSelectors.one(handler,current);
             if(before==null||after==null||!before.name.equals(after.name)||!before.desc.equals(after.desc)||!before.desc.equals("(Ljava/lang/String;)V"))continue;
@@ -52,7 +52,15 @@ public final class MixinPredicateDelegateAdapter {
         }
         mixin.methods.addAll(added);return changed;
     }
-    private static Source source(MethodNode method) {
+    /**
+     * The handler, admitted by its data flow ({@link HandlerFlow}) rather than by its instructions: a {@code (String,
+     * CharSequence, Operation, @Local Map.Entry)Z} wrap whose Operation is only ever called with its own two arguments,
+     * unchanged; whose receiver string is used for nothing else (the lifted call hands it a placeholder); whose entry is read
+     * only through {@code getKey()}, and the key only through argument-less getters of one key type (the lifted call hands
+     * it an entry with the key alone); and which otherwise calls only String, CharSequence and Boolean members, writes
+     * nothing and throws nothing — a pure decorator of the native answer, however it is compiled.
+     */
+    private static Source source(String owner,MethodNode method) {
         AnnotationNode injection=MixinFit.injectorOf(method);Type[] args=Type.getArgumentTypes(method.desc);
         if(injection==null||!WRAP.equals(injection.desc)||(method.access&(Opcodes.ACC_STATIC|Opcodes.ACC_SYNCHRONIZED))!=0
                 ||!method.tryCatchBlocks.isEmpty()||MixinFit.value(injection,"slice")!=null||args.length!=4
@@ -64,23 +72,57 @@ public final class MixinPredicateDelegateAdapter {
                 ||all.stream().anyMatch(a->a.desc.equals("Lorg/spongepowered/asm/mixin/injection/Group;")))return null;
         List<AnnotationNode> ats=MixinFit.atNodes(injection);if(ats.size()!=1||!"INVOKE".equals(MixinFit.value(ats.getFirst(),"value"))
                 ||MixinFit.value(ats.getFirst(),"ordinal")!=null||MixinFit.value(ats.getFirst(),"shift")!=null)return null;
-        List<AbstractInsnNode> c=code(method);
-        if(c.size()!=32||!load(c.get(0),4)||!call(c.get(1),Opcodes.INVOKEINTERFACE,ENTRY,"getKey","()Ljava/lang/Object;")
-                ||!(c.get(2)instanceof TypeInsnNode key)||key.getOpcode()!=Opcodes.CHECKCAST||!(c.get(3)instanceof MethodInsnNode getter)
-                ||getter.getOpcode()!=Opcodes.INVOKEVIRTUAL||!getter.owner.equals(key.desc)||!getter.desc.equals("()Ljava/lang/String;")
-                ||!variable(c.get(4),Opcodes.ASTORE,5)||!load(c.get(5),3)||c.get(6).getOpcode()!=Opcodes.ICONST_2
-                ||!(c.get(7)instanceof TypeInsnNode array)||array.getOpcode()!=Opcodes.ANEWARRAY||!array.desc.equals("java/lang/Object")
-                ||c.get(8).getOpcode()!=Opcodes.DUP||c.get(9).getOpcode()!=Opcodes.ICONST_0||!load(c.get(10),1)||c.get(11).getOpcode()!=Opcodes.AASTORE
-                ||c.get(12).getOpcode()!=Opcodes.DUP||c.get(13).getOpcode()!=Opcodes.ICONST_1||!load(c.get(14),2)||c.get(15).getOpcode()!=Opcodes.AASTORE
-                ||!call(c.get(16),Opcodes.INVOKEINTERFACE,OP,"call","([Ljava/lang/Object;)Ljava/lang/Object;")
-                ||!(c.get(17)instanceof TypeInsnNode box)||box.getOpcode()!=Opcodes.CHECKCAST||!box.desc.equals("java/lang/Boolean")
-                ||!call(c.get(18),Opcodes.INVOKEVIRTUAL,"java/lang/Boolean","booleanValue","()Z")||!jump(c.get(19),Opcodes.IFNE,c.get(28))
-                ||!(c.get(20)instanceof LdcInsnNode literal)||!(literal.cst instanceof String)||!load(c.get(21),5)
-                ||!call(c.get(22),Opcodes.INVOKEVIRTUAL,"java/lang/String","equals","(Ljava/lang/Object;)Z")||!jump(c.get(23),Opcodes.IFNE,c.get(30))
-                ||!load(c.get(24),5)||!load(c.get(25),2)||!call(c.get(26),Opcodes.INVOKEVIRTUAL,"java/lang/String","contains","(Ljava/lang/CharSequence;)Z")
-                ||!jump(c.get(27),Opcodes.IFEQ,c.get(30))||c.get(28).getOpcode()!=Opcodes.ICONST_1||!jump(c.get(29),Opcodes.GOTO,c.get(31))
-                ||c.get(30).getOpcode()!=Opcodes.ICONST_0||c.get(31).getOpcode()!=Opcodes.IRETURN)return null;
-        return new Source(method,injection,getter,key.desc);
+        HandlerFlow flow=HandlerFlow.of(owner,method);if(flow==null)return null;
+        // Slots: this 0, receiver string 1, query 2, Operation 3, entry 4.
+        java.util.function.Predicate<MethodInsnNode> operation=c->c.owner.equals(OP)&&c.name.equals("call")&&c.desc.equals("([Ljava/lang/Object;)Ljava/lang/Object;");
+        java.util.function.Predicate<MethodInsnNode> keyRead=c->c.owner.equals(ENTRY)&&c.name.equals("getKey")&&c.desc.equals("()Ljava/lang/Object;");
+        List<MethodInsnNode> keys=flow.calls(keyRead);if(keys.isEmpty())return null;
+        for(MethodInsnNode key:keys)if(!HandlerFlow.onlyParameter(flow.argument(key,0),4))return null;
+        // The key getters: argument-less, String-valued, on what getKey returned (past its cast), all of one owner.
+        List<MethodInsnNode> getters=flow.calls(c->c.getOpcode()==Opcodes.INVOKEVIRTUAL&&c.desc.equals("()Ljava/lang/String;")
+                &&flow.argument(c,0).stream().anyMatch(keys::contains));
+        if(getters.isEmpty()||getters.stream().map(g->g.owner).distinct().count()!=1)return null;
+        for(MethodInsnNode getter:getters)if(!keys.containsAll(flow.argument(getter,0))||flow.argument(getter,0).isEmpty())return null;
+        MethodInsnNode getter=getters.getFirst();
+        if(!flow.onlyCalls(c->operation.test(c)||keyRead.test(c)||getters.contains(c)
+                ||c.owner.equals("java/lang/String")||c.owner.equals("java/lang/CharSequence")
+                ||c.owner.equals("java/lang/Boolean")&&(c.name.equals("booleanValue")||c.name.equals("valueOf"))))return null;
+        List<MethodInsnNode> calls=flow.calls(operation);if(calls.isEmpty())return null;
+        for(MethodInsnNode call:calls)if(!flow.passesParameters(call,3,new int[]{1,2}))return null;
+        // What the lifted call cannot hand over: the receiver string beyond those calls, the entry beyond getKey, the key
+        // beyond its getters, the Operation beyond being called.
+        for(int i=0;i<method.instructions.size();i++) {
+            AbstractInsnNode instruction=method.instructions.get(i);int count=consumed(instruction);
+            for(int k=0;k<count;k++) {
+                Set<AbstractInsnNode> operand=flow.operand(instruction,k,count);
+                boolean intoTheCall=instruction.getOpcode()==Opcodes.AASTORE&&k==2&&flow.uses(instruction).isEmpty()
+                        &&operandFlowsToACall(flow,instruction,calls);
+                if(operand.stream().anyMatch(o->HandlerFlow.isParameter(o,1))&&!intoTheCall)return null;
+                if(operand.stream().anyMatch(o->HandlerFlow.isParameter(o,4))&&!(keys.contains(instruction)&&k==0))return null;
+                if(operand.stream().anyMatch(o->HandlerFlow.isParameter(o,3))&&!(calls.contains(instruction)&&k==0))return null;
+                if(operand.stream().anyMatch(keys::contains)&&!(getters.contains(instruction)&&k==0))return null;
+            }
+        }
+        return new Source(method,injection,getter,getter.owner);
+    }
+    /** Whether the array {@code store} fills is the array operand of one of {@code calls}. */
+    private static boolean operandFlowsToACall(HandlerFlow flow,AbstractInsnNode store,List<MethodInsnNode> calls) {
+        Set<AbstractInsnNode> array=flow.operand(store,0,3);
+        return calls.stream().anyMatch(call->flow.argument(call,1).equals(array));
+    }
+    /** The values an instruction takes off the stack for good, a store into an array or a field, a return or a cast included. */
+    private static int consumed(AbstractInsnNode instruction) {
+        int opcode=instruction.getOpcode();
+        if(instruction instanceof MethodInsnNode call)return Type.getArgumentTypes(call.desc).length+(opcode==Opcodes.INVOKESTATIC?0:1);
+        if(instruction instanceof InvokeDynamicInsnNode dynamic)return Type.getArgumentTypes(dynamic.desc).length;
+        if(instruction instanceof FieldInsnNode)return opcode==Opcodes.PUTFIELD?2:opcode==Opcodes.PUTSTATIC||opcode==Opcodes.GETFIELD?1:0;
+        return switch(opcode){
+            case Opcodes.ARETURN,Opcodes.IRETURN,Opcodes.ATHROW,Opcodes.MONITORENTER,Opcodes.MONITOREXIT,Opcodes.IFNULL,Opcodes.IFNONNULL,Opcodes.INSTANCEOF,
+                    Opcodes.IFEQ,Opcodes.IFNE -> 1;
+            case Opcodes.IF_ACMPEQ,Opcodes.IF_ACMPNE -> 2;
+            case Opcodes.AASTORE -> 3;
+            default -> 0;
+        };
     }
     private static boolean captureAtOriginal(Source source,MethodNode original,MethodInsnNode call) {
         AnnotationNode local=parameter(source.handler(),3);if(local==null||!LOCAL.equals(local.desc))return false;

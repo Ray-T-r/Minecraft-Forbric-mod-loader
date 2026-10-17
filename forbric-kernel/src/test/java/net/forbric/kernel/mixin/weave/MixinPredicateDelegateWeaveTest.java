@@ -5,7 +5,7 @@ import org.junit.jupiter.api.*;import org.junit.jupiter.api.io.TempDir;
 import net.fabricmc.api.EnvType;import net.forbric.api.Ecosystem;import net.forbric.kernel.mixin.MixinPredicateDelegateAdapter;
 
 class MixinPredicateDelegateWeaveTest {
-    @TempDir static Path work;private static Path fixture;private static WeaveHarness.Result on,off,mutated;
+    @TempDir static Path work;private static Path fixture;private static WeaveHarness.Result on,off,mutated,respelled,peeking;
     @BeforeAll static void weave()throws Exception {
         Path dir=Files.createDirectories(work.resolve("source"));List<Path> common=new ArrayList<>();
         common.add(write(dir,"Id.java","""
@@ -58,13 +58,45 @@ class MixinPredicateDelegateWeaveTest {
             """);
         Path config=write(dir,"delegate.mixins.json","{\"required\":true,\"package\":\"fixture.delegate.mixin\",\"compatibilityLevel\":\"JAVA_21\",\"mixins\":[\"Guest\"],\"injectors\":{\"defaultRequire\":0}}");
         Path nativeConfig=write(dir,"native.mixins.json","{\"required\":true,\"package\":\"fixture.delegate.mutation\",\"compatibilityLevel\":\"JAVA_21\",\"mixins\":[\"NativeMutation\"]}");
-        List<Path> sources=new ArrayList<>(common);sources.addAll(List.of(current,guest,other));
-        fixture=WeaveHarness.fixture(work,"delegate",sources,Map.of("delegate.mixins.json",config,"native.mixins.json",nativeConfig,"META-INF/forbric/native-reference/FABRIC/index.tsv",index,"META-INF/forbric/native-reference/FABRIC/fixture/delegate/Menu.class.bin",bytes),List.of("-g"));
+        // The same decorator written another way under other names: the native answer kept in a local and tested first, the
+        // namespace compared with equals and matched case-blind through toLowerCase/toString. A pure decorator still.
+        Path respelledGuest=write(dir.resolve("qzx"),"QzxFilter.java","""
+            package fixture.delegate.qzx;import java.util.*;import fixture.delegate.*;
+            import org.spongepowered.asm.mixin.Mixin;import org.spongepowered.asm.mixin.injection.*;
+            import com.llamalad7.mixinextras.injector.wrapoperation.*;import com.llamalad7.mixinextras.sugar.Local;
+            @Mixin(Menu.class) public class QzxFilter {
+              @WrapOperation(method="refresh(Ljava/lang/String;)V",at=@At(value="INVOKE",target="Ljava/lang/String;contains(Ljava/lang/CharSequence;)Z"),require=0)
+              private boolean qzxMatches(String hay,CharSequence needle,Operation<Boolean> then,@Local(name="entry") Map.Entry<Id,Value> row){
+                boolean hit=then.call(hay,needle);if(hit)return true;String ns=row.getKey().namespace();if(ns.equals("default"))return false;
+                return ns.toLowerCase().contains(needle.toString().toLowerCase());}}
+            """);
+        // A decorator that also reads the entry's value: the lifted call hands it an entry with the key alone, so it stays put.
+        Path peekingGuest=write(dir.resolve("qzxpeek"),"QzxPeek.java","""
+            package fixture.delegate.qzxpeek;import java.util.*;import fixture.delegate.*;
+            import org.spongepowered.asm.mixin.Mixin;import org.spongepowered.asm.mixin.injection.*;
+            import com.llamalad7.mixinextras.injector.wrapoperation.*;import com.llamalad7.mixinextras.sugar.Local;
+            @Mixin(Menu.class) public class QzxPeek {
+              @WrapOperation(method="refresh",at=@At(value="INVOKE",target="Ljava/lang/String;contains(Ljava/lang/CharSequence;)Z"),require=0)
+              private boolean qzxPeek(String hay,CharSequence needle,Operation<Boolean> then,@Local(name="entry") Map.Entry<Id,Value> row){
+                return then.call(hay,needle)||row.getValue()!=null&&row.getKey().namespace().contains(needle);}}
+            """);
+        Path respelledConfig=write(dir,"qzx.mixins.json","{\"required\":true,\"package\":\"fixture.delegate.qzx\",\"compatibilityLevel\":\"JAVA_21\",\"mixins\":[\"QzxFilter\"],\"injectors\":{\"defaultRequire\":0}}");
+        Path peekingConfig=write(dir,"qzxpeek.mixins.json","{\"required\":true,\"package\":\"fixture.delegate.qzxpeek\",\"compatibilityLevel\":\"JAVA_21\",\"mixins\":[\"QzxPeek\"],\"injectors\":{\"defaultRequire\":0}}");
+        List<Path> sources=new ArrayList<>(common);sources.addAll(List.of(current,guest,other,respelledGuest,peekingGuest));
+        fixture=WeaveHarness.fixture(work,"delegate",sources,Map.of("delegate.mixins.json",config,"native.mixins.json",nativeConfig,"qzx.mixins.json",respelledConfig,"qzxpeek.mixins.json",peekingConfig,"META-INF/forbric/native-reference/FABRIC/index.tsv",index,"META-INF/forbric/native-reference/FABRIC/fixture/delegate/Menu.class.bin",bytes),List.of("-g"));
+        respelled=WeaveHarness.run(work,"respelled",fixture,"qzx.mixins.json","qzx",Ecosystem.FABRIC,EnvType.SERVER,"fixture.delegate.Menu","probe",Map.of());
+        peeking=WeaveHarness.run(work,"peeking",fixture,"qzxpeek.mixins.json","qzxpeek",Ecosystem.FABRIC,EnvType.SERVER,"fixture.delegate.Menu","probe",Map.of());
         on=run("on",Map.of());off=run("off",Map.of(MixinPredicateDelegateAdapter.PROPERTY,"off"));
         mutated=WeaveHarness.run(work,"mutated",fixture,List.of(new WeaveHarness.Config("delegate.mixins.json","delegate",Ecosystem.FABRIC),new WeaveHarness.Config("native.mixins.json","native",Ecosystem.NEOFORGE)),List.of(),EnvType.SERVER,"fixture.delegate.Menu","probe",Map.of());
     }
     @Test void sourceDecoratorNativePredicateAndConsumersExecuteOnceWithTheNewNamespaceHit()throws Exception {
         assertTrue(on.printedLine(WeaveHarnessMain.DONE+" [category, my_mod:some_metric]|native=1|predicate=1|namespaceReads=2|other=0"),on.describe());WeaveHarness.assertWovenAndVerified(on,"fixture/delegate/Menu",fixture);
+    }
+    @Test void theSameDecoratorWrittenAnotherWayUnderOtherNamesExecutesAlike()throws Exception {
+        assertTrue(respelled.printedLine(WeaveHarnessMain.DONE+" [category, my_mod:some_metric]|native=1|predicate=1|namespaceReads=2|other=0"),respelled.describe());WeaveHarness.assertWovenAndVerified(respelled,"fixture/delegate/Menu",fixture);
+    }
+    @Test void aDecoratorReadingTheEntrysValueIsNotLifted()throws Exception {
+        assertTrue(peeking.printedLine(WeaveHarnessMain.DONE+" []|native=1|predicate=1|namespaceReads=1|other=0"),peeking.describe());WeaveHarness.assertWovenAndVerified(peeking,"fixture/delegate/Menu",fixture);
     }
     @Test void offRetainsTheOriginalNativeNegativeResult()throws Exception {
         assertTrue(off.printedLine(WeaveHarnessMain.DONE+" []|native=1|predicate=1|namespaceReads=1|other=0"),off.describe());WeaveHarness.assertWovenAndVerified(off,"fixture/delegate/Menu",fixture);
