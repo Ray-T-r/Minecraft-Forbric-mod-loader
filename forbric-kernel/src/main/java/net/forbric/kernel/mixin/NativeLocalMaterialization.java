@@ -63,6 +63,16 @@ import net.forbric.kernel.util.ForbricLog;
  * The merged method then also stores that result, right where it is computed, into a new local named and typed as the
  * native one, visible from there to just after the call. The stack, and what the method does, are unchanged.
  *
+ * <p>The local need not be handed to the injector's own call. Vanilla's {@code ScreenEffectRenderer.submit} keeps the
+ * view-blocking {@code BlockState} in a local, hands it to {@code getParticleMaterial} and then draws the sprite with
+ * {@code submitBlockSprite}; NeoForge's body reads the state off a {@code Pair} for each use instead
+ * ({@code (BlockState) pair.getLeft()}), so a mod's {@code @Local BlockState} at the sprite call has nothing to read.
+ * When the native local is not one of the call's operands, the nearest call before it in the same straight stretch that
+ * is handed the local — with no store to the slot between it and the injector's call — stands in: the merged method's
+ * one call of the same member in its own straight stretch before the injector's call is handed the same operand as the
+ * result of one instruction there (a call returning the local's type, or a cast to it), and that result gets the local,
+ * visible to just after the injector's call.
+ *
  * <p>The plan is registered before the target is defined, so later adapters and Mixin read the method with the local. {@code -Dforbric.nativeLocalMaterialization=off} plans nothing.
  */
 public final class NativeLocalMaterialization {
@@ -70,7 +80,12 @@ public final class NativeLocalMaterialization {
 
 	/** In {@code method}, the {@code occurrence}-th call of {@code member}: its operand {@code operand} gets a local. */
 	record Plan(String host, String method, String member, int opcode, int occurrence, int operand, String name, String desc,
-			String source, String handler) {
+			String source, String handler, String untilMember, int untilOpcode, int untilOccurrence) {
+		Plan(String host, String method, String member, int opcode, int occurrence, int operand, String name, String desc,
+				String source, String handler) {
+			this(host, method, member, opcode, occurrence, operand, name, desc, source, handler, member, opcode, occurrence);
+		}
+
 		boolean same(Plan other) {
 			return host.equals(other.host) && method.equals(other.method) && member.equals(other.member) && opcode == other.opcode
 					&& occurrence == other.occurrence && operand == other.operand;
@@ -169,22 +184,78 @@ public final class NativeLocalMaterialization {
 		int nativeAt = was.instructions.indexOf(nativeCall), mergedAt = host.instructions.indexOf(mergedCall);
 		int slot = MixinLocalOriginProof.slot(local, type, was, nativeAt);
 		if (slot < 0 || MixinLocalOriginProof.slot(local, type, host, mergedAt) >= 0) return null;
-		MixinLocalOriginProof.CallValue value = MixinLocalOriginProof.atCall(nativeOwner, was, nativeCall, slot);
-		if (value == null || value.operand() < 0) return null;
 		LocalVariableNode declared = declared(was, slot, nativeAt);
 		if (declared == null || !Type.getType(declared.desc).equals(type)) return null;
+		MixinLocalOriginProof.CallValue value = MixinLocalOriginProof.atCall(nativeOwner, was, nativeCall, slot);
+		MethodInsnNode handedTo = mergedCall;
+		if (value == null || value.operand() < 0) {
+			// Not one of the call's operands: the nearest earlier call of the straight stretch that is handed the local.
+			if (!siblingsEnabled()) return null;
+			MethodInsnNode sibling = nearestCallHanded(nativeOwner, was, nativeCall, slot);
+			if (sibling == null) return null;
+			value = MixinLocalOriginProof.atCall(nativeOwner, was, sibling, slot);
+			handedTo = sameCallInStretch(host, mergedCall, sibling);
+			if (value == null || value.operand() < 0 || handedTo == null || sameCallInStretch(was, nativeCall, sibling) != sibling) return null;
+		}
 		Frame<SourceValue>[] frames = frames(owner, host);
-		Frame<SourceValue> frame = frames == null ? null : frames[mergedAt];
-		int operands = Type.getArgumentTypes(mergedCall.desc).length + (mergedCall.getOpcode() == Opcodes.INVOKESTATIC ? 0 : 1);
+		int handedAt = host.instructions.indexOf(handedTo);
+		Frame<SourceValue> frame = frames == null ? null : frames[handedAt];
+		int operands = Type.getArgumentTypes(handedTo.desc).length + (handedTo.getOpcode() == Opcodes.INVOKESTATIC ? 0 : 1);
 		if (frame == null || frame.getStackSize() < operands) return null;
 		SourceValue handed = frame.getStack(frame.getStackSize() - operands + value.operand());
 		if (handed.insns.size() != 1) return null;
 		AbstractInsnNode producer = handed.insns.iterator().next();
 		if (producer instanceof VarInsnNode || producer.getOpcode() == Opcodes.DUP) return null;
-		if (!(producer instanceof MethodInsnNode made) || !Type.getReturnType(made.desc).equals(type)) return null;
-		if (!straight(host, producer, mergedCall)) return null;
-		return new Plan(owner, host.name + host.desc, member(mergedCall), mergedCall.getOpcode(), occurrence(host, mergedCall), value.operand(),
-				declared.name, declared.desc, source, handler);
+		if (!yields(producer, type)) return null;
+		if (!straight(host, producer, handedTo) || handedTo != mergedCall && !straight(host, handedTo, mergedCall)) return null;
+		return new Plan(owner, host.name + host.desc, member(handedTo), handedTo.getOpcode(), occurrence(host, handedTo), value.operand(),
+				declared.name, declared.desc, source, handler, member(mergedCall), mergedCall.getOpcode(), occurrence(host, mergedCall));
+	}
+
+	/** {@code -Dforbric.nativeLocalMaterialization.siblings=off}: only a local the injector's own call is handed. */
+	public static final String SIBLINGS_PROPERTY = "forbric.nativeLocalMaterialization.siblings";
+
+	private static boolean siblingsEnabled() {
+		return !"off".equalsIgnoreCase(System.getProperty(SIBLINGS_PROPERTY, "on"));
+	}
+
+	/** Whether {@code producer}'s result is of {@code type}: a call returning it, or a cast to it. */
+	private static boolean yields(AbstractInsnNode producer, Type type) {
+		if (producer instanceof MethodInsnNode made) return Type.getReturnType(made.desc).equals(type);
+		return producer instanceof org.objectweb.asm.tree.TypeInsnNode cast && cast.getOpcode() == Opcodes.CHECKCAST
+				&& type.getSort() == Type.OBJECT && cast.desc.equals(type.getInternalName());
+	}
+
+	/**
+	 * The nearest call before {@code anchor}, in the straight stretch that leads to it, handed {@code slot}'s value as an
+	 * operand loaded from it, with no store to the slot between that call and {@code anchor}; null when there is none.
+	 */
+	private static MethodInsnNode nearestCallHanded(String owner, MethodNode method, MethodInsnNode anchor, int slot) {
+		for (AbstractInsnNode at = anchor.getPrevious(); at != null; at = at.getPrevious()) {
+			if (!straight(method, at, anchor)) return null;
+			if (at instanceof VarInsnNode store && store.var == slot && store.getOpcode() >= Opcodes.ISTORE && store.getOpcode() <= Opcodes.ASTORE) return null;
+			if (at instanceof MethodInsnNode call) {
+				MixinLocalOriginProof.CallValue value = MixinLocalOriginProof.atCall(owner, method, call, slot);
+				if (value != null && value.operand() >= 0) return call;
+			}
+		}
+		return null;
+	}
+
+	/**
+	 * The one call of {@code like}'s member and opcode before {@code anchor} in {@code method}'s straight stretch leading to
+	 * it; null when there is none, or more than one.
+	 */
+	private static MethodInsnNode sameCallInStretch(MethodNode method, MethodInsnNode anchor, MethodInsnNode like) {
+		MethodInsnNode found = null;
+		for (AbstractInsnNode at = anchor.getPrevious(); at != null; at = at.getPrevious()) {
+			if (!straight(method, at, anchor)) break;
+			if (at instanceof MethodInsnNode call && call.getOpcode() == like.getOpcode() && member(call).equals(member(like))) {
+				if (found != null) return null;
+				found = call;
+			}
+		}
+		return found;
 	}
 
 	private static LocalVariableNode declared(MethodNode method, int slot, int at) {
@@ -235,7 +306,8 @@ public final class NativeLocalMaterialization {
 		for (Plan plan : mine) {
 			MethodNode method = method(node, plan.method());
 			MethodInsnNode call = method == null ? null : nth(method, plan.member(), plan.opcode(), plan.occurrence());
-			if (call == null || !keep(node.name, method, call, plan)) {
+			MethodInsnNode until = method == null ? null : nth(method, plan.untilMember(), plan.untilOpcode(), plan.untilOccurrence());
+			if (call == null || until == null || !keep(node.name, method, call, until, plan)) {
 				ForbricLog.warn("[Forbric/Mixin] %s.%s: %s.%s no longer hands %s its operand %d as planned; no local is kept",
 						plan.source().replace('/', '.'), plan.handler(), binary, plan.method(), plan.member(), plan.operand());
 				continue;
@@ -248,15 +320,17 @@ public final class NativeLocalMaterialization {
 		return writer.toByteArray();
 	}
 
-	private static boolean keep(String owner, MethodNode method, MethodInsnNode call, Plan plan) {
+	private static boolean keep(String owner, MethodNode method, MethodInsnNode call, MethodInsnNode until, Plan plan) {
 		Frame<SourceValue>[] frames = frames(owner, method);
 		int at = method.instructions.indexOf(call);
 		Frame<SourceValue> frame = frames == null || at < 0 ? null : frames[at];
 		int operands = Type.getArgumentTypes(call.desc).length + (call.getOpcode() == Opcodes.INVOKESTATIC ? 0 : 1);
 		if (frame == null || frame.getStackSize() < operands) return false;
 		SourceValue handed = frame.getStack(frame.getStackSize() - operands + plan.operand());
-		if (handed.insns.size() != 1 || !(handed.insns.iterator().next() instanceof MethodInsnNode producer)
-				|| !Type.getReturnType(producer.desc).equals(Type.getType(plan.desc())) || !straight(method, producer, call)) return false;
+		if (handed.insns.size() != 1) return false;
+		AbstractInsnNode producer = handed.insns.iterator().next();
+		if (!yields(producer, Type.getType(plan.desc())) || !straight(method, producer, call)
+				|| until != call && !straight(method, call, until)) return false;
 		int slot = method.maxLocals;
 		LabelNode start = new LabelNode(), end = new LabelNode();
 		InsnList store = new InsnList();
@@ -264,7 +338,7 @@ public final class NativeLocalMaterialization {
 		store.add(new VarInsnNode(Opcodes.ASTORE, slot));
 		store.add(start);
 		method.instructions.insert(producer, store);
-		method.instructions.insert(call, end);
+		method.instructions.insert(until, end);
 		if (method.localVariables == null) method.localVariables = new ArrayList<>();
 		method.localVariables.add(new LocalVariableNode(plan.name(), plan.desc(), null, start, end, slot));
 		method.maxLocals = slot + 1;
