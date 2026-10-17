@@ -248,9 +248,10 @@ public final class FabricMixinCompat {
 	 * Fabric's order to the letter: a pre-release sorts below its release ({@code 0.16.0-0 < 0.16.0}), a shorter core is
 	 * padded with zeros before the pre-release is looked at ({@code 0.12- == 0.12.0-}), and pre-release identifiers
 	 * compare numeric-below-alphanumeric. The kernel's {@code VersionPredicate.compare}, which matches dependencies,
-	 * decides those three cases differently, and each one moved a mod to a neighbouring level.
+	 * decides those three cases differently, and each one moved a mod to a neighbouring level. Also the order
+	 * {@code FabricUniqueIds} ranks rival mods in, as Fabric Loader's {@code ModPrioSorter} does.
 	 */
-	static int compare(String a, String b) {
+	public static int compare(String a, String b) {
 		Semantic x = Semantic.parse(a);
 		Semantic y = Semantic.parse(b);
 		if (x == null || y == null) return a.compareTo(b);

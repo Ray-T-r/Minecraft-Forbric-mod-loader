@@ -149,6 +149,19 @@ public final class FabricModDiscovery {
 					root ? List.of() : List.of(mod.parent()), mod.metadata(), NestedFabricRequirements.requirementsOf(mod.metadata())));
 		}
 		var resolution = NestedFabricRequirements.resolve(candidates, leftOut, requiredElsewhere);
+		// Then one mod per id, provides included, among what still loads (FabricUniqueIds). Parents come before their
+		// nested mods in found, so one pass sees whether each parent loads. No arbitration runs here: of two copies of
+		// one id KernelFabricLoader.register keeps the first it is given, which is the first found, so only that copy
+		// can answer to the id (the other's nested mods still load).
+		boolean[] loads = new boolean[found.size()];
+		java.util.Set<String> registered = new java.util.HashSet<>();
+		List<NestedFabricRequirements.Candidate<Integer>> loading = new ArrayList<>();
+		for (int i = 0; i < found.size(); i++) {
+			int parent = found.get(i).parent();
+			loads[i] = !resolution.leftOut().containsKey(i) && (parent < 0 || loads[parent]);
+			if (loads[i] && registered.add(found.get(i).metadata().getId())) loading.add(candidates.get(i));
+		}
+		var unique = FabricUniqueIds.resolve(loading, requiredElsewhere);
 
 		KernelModContainer[] built = new KernelModContainer[found.size()];
 		for (int i = 0; i < found.size(); i++) {
@@ -158,8 +171,15 @@ public final class FabricModDiscovery {
 				NestedFabricRequirements.log(mod.metadata(), parentJar, resolution.leftOut().get(i));
 				continue;
 			}
+			if (unique.leftOut().containsKey(i)) {
+				NestedFabricRequirements.log(mod.metadata(), parentJar, unique.leftOut().get(i));
+				continue;
+			}
 			if (resolution.keptBack().containsKey(i)) {
 				NestedFabricRequirements.logKeptBack(mod.metadata(), parentJar, resolution.keptBack().get(i));
+			}
+			if (unique.keptBack().containsKey(i)) {
+				NestedFabricRequirements.logKeptBack(mod.metadata(), parentJar, unique.keptBack().get(i));
 			}
 			KernelModContainer parent = mod.parent() < 0 ? null : built[mod.parent()];
 			if (mod.parent() >= 0 && parent == null) continue;

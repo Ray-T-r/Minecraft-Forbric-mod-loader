@@ -10,13 +10,22 @@ import net.forbric.api.CompatibilityFindings;
 public final class NestedCandidatePlan {
 	private final NestedCandidateInventory inventory;
 	private final JointCandidateSelector.Result selection;
+	private final net.forbric.kernel.fabric.NestedFabricRequirements.Resolution<Path> oneModPerId;
 
-	NestedCandidatePlan(NestedCandidateInventory inventory, JointCandidateSelector.Result selection) {
-		this.inventory = inventory; this.selection = selection;
+	NestedCandidatePlan(NestedCandidateInventory inventory, JointCandidateSelector.Result selection,
+			net.forbric.kernel.fabric.NestedFabricRequirements.Resolution<Path> oneModPerId) {
+		this.inventory = inventory; this.selection = selection; this.oneModPerId = oneModPerId;
 	}
 	public NestedCandidateInventory inventory() { return inventory; }
 	public Set<Path> selected() { return selection.selected(); }
 	public JointCandidateSelector.Result selection() { return selection; }
+	/**
+	 * The nested Fabric mods arbitration selected that Fabric Loader's one mod per id leaves out, with what then goes
+	 * with them (what only they bundle, what only they satisfied), over every arbitration round (none of it is in
+	 * {@link #selected}); and those it would leave out but an anchored mod keeps back (still selected).
+	 * {@code FabricUniqueIds}.
+	 */
+	public net.forbric.kernel.fabric.NestedFabricRequirements.Resolution<Path> oneModPerId() { return oneModPerId; }
 	/** Uses selected parent edges, never the digest directory's name, as display provenance. */
 	Optional<String> bundledBy(Path file) {
 		Path path = file.toAbsolutePath().normalize();

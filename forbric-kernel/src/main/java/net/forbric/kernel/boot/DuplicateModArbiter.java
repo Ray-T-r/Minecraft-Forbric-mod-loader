@@ -214,16 +214,42 @@ public final class DuplicateModArbiter {
 			wholeInstancePlan = null;
 			decision = new Decision(Set.of(), Map.of(), List.copyOf(universalAliases));
 		} else {
-			NestedCandidateInventory inventory = NestedCandidateInventory.scan(claims,
+			NestedCandidateInventory scanned = NestedCandidateInventory.scan(claims,
 					rundir.resolve(".forbric-kernel").resolve("candidates"), envType,
 					net.forbric.kernel.fabric.NestedFabricRequirements.Platform.running(minecraftVersion));
-			List<Claim> all = inventory.claims();
+			List<Claim> all = scanned.claims();
 			Map<String, Ecosystem> overrides = new LinkedHashMap<>();
 			for (Claim claim : all) for (String id : claim.modIds()) { Ecosystem forced = overrideFor(id); if (forced != null) overrides.put(id, forced); }
-			List<JointCandidateSelector.Rule> contracts = CandidateContractScanner.scanPhysical(all, envType, inventory.symbolOwners());
-			var result = ReachableCandidateSelector.solve(inventory, contracts, preference(), nestedPreference(), overrides,
-					Math.max(1, Math.min(1_000_000, Integer.getInteger("forbric.arbitrationMaxNodes", 100_000))));
-			wholeInstancePlan = new NestedCandidatePlan(inventory, result);
+			int limit = Math.max(1, Math.min(1_000_000, Integer.getInteger("forbric.arbitrationMaxNodes", 100_000)));
+			// Fabric Loader's one mod per id, provides included, among what arbitration chose (FabricUniqueIds); deciding
+			// it before the selection let a build arbitration then dropped push its rival out. A Fabric mod it leaves
+			// out is then excluded and arbitration runs again, so that another build of the loser's own id, or a
+			// library only it met, can still be chosen, and the contracts are judged on what really loads. Bounded:
+			// each round excludes more, and a loser stays out once excluded.
+			NestedCandidateInventory inventory = scanned;
+			Set<Path> outForIds = new LinkedHashSet<>();
+			Map<Path, String> idLeftOut = new LinkedHashMap<>();
+			JointCandidateSelector.Result selection;
+			net.forbric.kernel.fabric.NestedFabricRequirements.Resolution<Path> unique;
+			for (int round = 1; ; round++) {
+				List<JointCandidateSelector.Rule> contracts = CandidateContractScanner.scanPhysical(inventory.claims(), envType,
+						inventory.symbolOwners());
+				selection = ReachableCandidateSelector.solve(inventory, contracts, preference(), nestedPreference(), overrides, limit);
+				unique = inventory.oneModPerId(selection.selected());
+				unique.leftOut().forEach(idLeftOut::putIfAbsent);
+				Set<Path> losers = new LinkedHashSet<>();
+				for (Path path : unique.leftOut().keySet()) if (inventory.fabricMod(path)) losers.add(path);
+				if (losers.isEmpty()) break;
+				if (round == ONE_MOD_PER_ID_ROUNDS) {
+					ForbricLog.warn("[Forbric/JiJ] one mod per id still left mods out after %d arbitration rounds; using the last", round);
+					break;
+				}
+				outForIds.addAll(losers);
+				inventory = scanned.withExcluded(outForIds);
+			}
+			var result = unique.leftOut().isEmpty() ? selection : withoutLeftOut(selection, unique.leftOut().keySet());
+			wholeInstancePlan = new NestedCandidatePlan(inventory, result,
+					new net.forbric.kernel.fabric.NestedFabricRequirements.Resolution<>(idLeftOut, unique.keptBack()));
 			reportSelection(all, result, overrides);
 			// A parent the scan stopped inside has nested jars nobody examined, and both discoveries read only
 			// this plan, so they will not load. That must stop or prompt, not pass as a quiet suspicion.
@@ -661,6 +687,18 @@ public final class DuplicateModArbiter {
 		JointCandidateSelector.Result result = JointCandidateSelector.solve(claims, rules, preference(), overrides, limit);
 		reportSelection(claims, result, overrides);
 		return decisionFromSelection(claims, universalAliases, pass, result);
+	}
+
+	/** Arbitration rounds with Fabric's one mod per id in between; a real pack needs two at most (owo-sentinel). */
+	static final int ONE_MOD_PER_ID_ROUNDS = 8;
+
+	/** {@code selection} with {@code leftOut} taken out of what it selects; every verdict on its contracts is kept. */
+	private static JointCandidateSelector.Result withoutLeftOut(JointCandidateSelector.Result selection, Set<Path> leftOut) {
+		Set<Path> kept = new LinkedHashSet<>(selection.selected());
+		kept.removeAll(leftOut);
+		return new JointCandidateSelector.Result(selection.status(), Set.copyOf(kept), selection.unsatisfied(),
+				selection.uncertain(), selection.visited(), selection.unavoidable(), selection.refusedOverrides(),
+				selection.impossibleOverrides());
 	}
 
 	private static Decision decisionFromSelection(List<Claim> claims, List<Alias> universalAliases, String pass,

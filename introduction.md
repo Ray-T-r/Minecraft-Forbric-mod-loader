@@ -321,8 +321,9 @@ Fabric and NeoForge need opposite states in the constructor, so the kernel has t
   or `java` that excludes the running version, or a `breaks` that includes it, leaves it out, and with it any nested
   mod that hard-depends only on left-out ones or that only they bundle. ViaFabric is the case: it nests
   `viafabric-mc26-1` (`minecraft >=26.1 <=26.1.2`) beside `viafabric-mc26-2`, and native loads only
-  `viafabric-mc26-2`. Only what a Fabric mod declares in its `jars` is judged. A NeoForge/MinecraftForge mod's nested
-  jar is not, even if all it carries is a `fabric.mod.json`, because Fabric Loader never opens a jar without one. A
+  `viafabric-mc26-2`. (Fabric's one mod per id, `provides` included, is decided after arbitration: next item.) Only
+  what a Fabric mod declares in its `jars` is judged. A NeoForge/MinecraftForge mod's nested jar is not, even if all
+  it carries is a `fabric.mod.json`, because Fabric Loader never opens a jar without one. A
   child the parent's `META-INF/jarjar/metadata.json` declares is FML's, which loads it as the parent's library; a jar
   that only sits in `META-INF/jars/` or `META-INF/jarjar/` with no entry in that file is loaded by no native loader,
   and the kernel keeps it because its Forge-family walk has always taken both directories. A jar reached both ways is
@@ -342,6 +343,32 @@ Fabric and NeoForge need opposite states in the constructor, so the kernel has t
   does not read hard-require: the Forge-family mods, and the Fabric manifests of the jars their JarJar carries (no
   Fabric container there, but on the classpath). `-Dforbric.nestedRequirements=off` loads every nested mod again;
   `off:<id>,<id>` exempts only those ids (the kernel does not read Fabric's `config/fabric_loader_dependencies.json`).
+- One Fabric mod per id, `provides` included (`fabric.FabricUniqueIds`, on the selection: `DuplicateModArbiter` after
+  `ReachableCandidateSelector`, and `FabricModDiscovery` without a plan). Fabric Loader indexes every candidate under
+  its id and each id it provides (`ModPrioSorter.sort`) and lets at most one of each load (`UNIQUE_ID`); a jar in
+  `mods/` is forced, and a nested one is weighted `-2^(n - priority)`, so its choice is the lexicographic optimum over
+  `ModPrioSorter`'s order (jars in `mods/` first, then by id, then the higher version, with a mod moved ahead of the
+  ones it shares an id with and has the higher version against): each nested mod loads if it can, given the ones
+  before it, its parent and its hard dependencies included. The kernel takes the same optimum with a SAT solver.
+  owo-sentinel is the case: mods that need owo-lib nest it so that it can ask for owo-lib when it is missing, and it
+  provides `owo` and `owo-lib`; next to owo-lib native never loads it, and the kernel loaded both. Of two nested mods
+  that share an id the one Fabric orders first usually wins, but a mod ordered before both that bundles or depends
+  on the other keeps that one. It is decided among what arbitration selected, never before: a build arbitration
+  drops (another ecosystem's preferred copy, a newer copy elsewhere, a copy only a losing library bundles) cannot push
+  its rival out, and a dependency on the shared id cannot steer which build of a mod arbitration keeps. Builds of one
+  mod are never rivals, also when they share only an alias (every `mixinextras-fabric` copy provides
+  `com_github_llamalad7_mixinextras`); only Fabric mods count. A loser is left out with what only it bundles and what
+  then has no provider for a hard dependency, each with a `left out: it answers to '<id>', as <winner> <version> [in
+  mods/] does, and Fabric Loader loads one mod per id, provides included` line. Where the kernel stays more lenient
+  than native: jars in `mods/` all load (native drops one of two that share an id when one is not forced on its own
+  id, e.g. Indium next to a Sodium that provides `indium`, and refuses to start otherwise); a nested mod with a hard
+  dependency nothing that loads meets, which native switches off, only yields, weighed after every other mod, so it
+  gives a shared id to a rival that can load and still loads where nothing contests it; and a mod that loads
+  regardless (in `mods/`, or a Forge-family mod) and needs a would-be loser, by its id or one it provides, with
+  nothing else that loads meeting that, keeps it back with the same `loaded although Fabric Loader would leave it out`
+  WARN (native refuses to start). The `forbric.nestedRequirements` switches apply. On the local corpora (70 `mods/`
+  folders) the only shapes are owo-sentinel beside owo-lib and voxy's `dummyprovider` (server-only, providing
+  `sodium`, which is client-only, so they never meet).
 - `discovery.ModAnnotationScanner` finds `@Mod` classes by bytecode descriptor; `ModFileScanner` builds a full
   `ModFileScanData` (NeoForge and MinecraftForge shapes differ: `EnumHolder` vs `EnumData`) because JEI, Jade,
   Sophisticated Core and Sodium find their plugins through `ModList.getAllScanData()`.
@@ -412,8 +439,9 @@ classpath (first-URL-wins would otherwise let it shadow the winner and contribut
   `KernelFabricLoader.register`, `ModConstructionOrder` and `ModPresence`'s index all take every real id before any
   alias, as `DuplicateModArbiter` never lets an alias claim an id. owo-sentinel, nested in mods that need owo-lib,
   provides `owo` and depends on nothing installed, so it registered first and owo-lib itself was dropped as a
-  "duplicate" (with its `owo-impl` alias); the sentinel then stays loaded beside it, where Fabric Loader's resolver
-  would leave it out (nested `provides` arbitration is not applied — `NestedFabricRequirements`).
+  "duplicate" (with its `owo-impl` alias). The sentinel itself is now left out next to owo-lib, as Fabric Loader's
+  resolver leaves it out (one mod per id, provides included, above); the real-id order still
+  decides wherever both stay, two jars in `mods/` or a nested mod kept back.
 - `ModConstructionOrder` orders Forge-family construction topologically — a mod after everything it requires or
   declares `AFTER`; ties alphabetical; cycles named, not broken silently (`-Dforbric.modOrder=name` restores
   file-name order). Fabric mods initialise in Fabric Loader's own order, by mod id (`FabricLoadOrder`;
@@ -1306,7 +1334,7 @@ developer reaches for:
 | `forbric.dupeIdPreference`, `forbric.nestedDupePreference` | cross-jar order for top-level / nested duplicates |
 | `forbric.modOwner` | `id=loader,…` pins; also `<rundir>/forbric-mods.txt` |
 | `forbric.crossJarArbitration` | `off`: two jars with one id both load |
-| `forbric.nestedRequirements` | `off`: a nested Fabric mod whose `minecraft`/`java` range excludes this game loads anyway; `off:<id>,…`: only those ids do |
+| `forbric.nestedRequirements` | `off`: a nested Fabric mod whose `minecraft`/`java` range excludes this game, or that shares an id (provides included) with a mod Fabric Loader prefers, loads anyway; `off:<id>,…`: only those ids do |
 | `forbric.arbitrationMaxNodes` | selector work bound (default 100 000, capped at 1 000 000) |
 | `forbric.modOrder` | `name`: file-name construction order |
 | `forbric.fabricOrder` | `off`: Fabric mods follow the topological order instead of mod-id order |
