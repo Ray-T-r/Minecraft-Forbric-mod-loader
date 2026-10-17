@@ -61,7 +61,9 @@ public final class ForbricSwitches {
 			"forbric.fluidInteractionCallbacks", "a fluid callback on vanilla's spread decision is no longer moved onto the carriers' "
 					+ "registry calls; the decision method is asked again where vanilla asks it (-Dforbric.nativeEntryRelay)",
 			"forbric.createFluidMixins", "a fluid callback on vanilla's spread decision is no longer moved onto the carriers' "
-					+ "registry calls; the decision method is asked again where vanilla asks it (-Dforbric.nativeEntryRelay)");
+					+ "registry calls; the decision method is asked again where vanilla asks it (-Dforbric.nativeEntryRelay)",
+			"forbric.fabricPlayChannels", "the kernel no longer records a client's Fabric PLAY channels itself: Fabric's own "
+					+ "c:register receiver runs on the payload as Fabric reads it and records them (-Dforbric.commonNetworkInterop)");
 
 	private static final ForbricSwitches SYSTEM =
 			new ForbricSwitches(RENAMED, RETIRED, System::getProperty, ForbricLog::warn);

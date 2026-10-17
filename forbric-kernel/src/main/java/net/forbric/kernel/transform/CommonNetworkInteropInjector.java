@@ -52,14 +52,15 @@ import net.forbric.api.ForeignType;
  *
  * <p>The translation logic lives in {@link net.forbric.kernel.interop.PayloadInterop} — boot-side, purely
  * reflective, and a kernel class since the interop hooks were brought over from the previous-generation loader:
- * given the addon and the incoming payload it runs the negotiation for BOTH stacks
- * — extracting the version, feeding Fabric's {@code onCommonVersionPacket} and NeoForge's {@code checkCommonVersion}
- * — and reports whether it fully handled the packet. This injector installs the two call sites the old loader
- * reached via mixins, but as kernel-native head injections (the kernel authors no mixins of its own):
+ * given a Fabric payload receiver and the incoming payload it tells NeoForge's stack, then hands the receiver the
+ * payload as Fabric's own codec reads the same bytes, so the receiver's own code handles it. This injector installs
+ * the two call sites the old loader reached via mixins, but as kernel-native injections (the kernel authors no
+ * mixins of its own):
  * <ul>
- *   <li>{@code AbstractChanneledNetworkAddon.handle(CustomPacketPayload)} — a guest Fabric class the kernel's
- *       transforming loader also defines. If the interop reports the packet handled, return its verdict before
- *       Fabric's {@code receive} can miscast it. This is the one that stops the client CCE.</li>
+ *   <li>{@code handle(CustomPacketPayload)Z} of every class that implements fabric-api's public {@code PacketSender}
+ *       (itself or through a superclass) and declares that method: its receivers, whatever their implementation calls
+ *       them. Its payload is replaced at the head by the one the interop hands back, and the interop is told before
+ *       each return. This is the one that stops the client CCE.</li>
  *   <li>{@code ServerConfigurationPacketListenerImpl.finishCurrentTask(ConfigurationTask.Type)} — the two stacks
  *       expose different {@code ConfigurationTask.Type}s for the same handshake, so accept either owner at the
  *       task-completion boundary.</li>
@@ -73,29 +74,42 @@ public final class CommonNetworkInteropInjector implements ClassTransformer {
 	private static final String INTEROP = "net/forbric/kernel/interop/PayloadInterop";
 
 	/**
-	 * Every Fabric addon class that DECLARES its own {@code handle(CustomPacketPayload)}.
+	 * The public interface every Fabric payload receiver implements: fabric-api's {@code PacketSender}, the contract its
+	 * networking hands mods. A class that implements it, itself or through a superclass, and DECLARES its own
+	 * {@code handle(CustomPacketPayload)Z} is a receiver whose {@code handle} the interop goes in front of.
 	 *
-	 * <p>It was originally just {@code AbstractChanneledNetworkAddon}, on the reasonable assumption that one
-	 * injection into the base class covers every addon. It does not. The play addons inherit {@code handle} and so
-	 * were covered; both CONFIGURATION addons override it, and an override is not reached by a prologue spliced
-	 * into the superclass — so the whole configuration phase ran with no cross-ecosystem translation at all.
-	 *
-	 * <p>Nothing caught it because the symptom this shim was written for ("invalid packet" right after reaching the
-	 * world) is a PLAY-phase symptom, and until gate-m12 no test ever reached the configuration phase over a
-	 * socket: singleplayer negotiates in memory, and {@code RegistrySyncManager.configureClient} returns early for
-	 * the singleplayer owner. The configuration-phase cost was a server kicking its own client with "This server
-	 * requires Fabric Loader and Fabric API installed on your client!" — because the server's
-	 * {@code minecraft:register} reached the client as NeoForge's payload type, the client's Fabric addon did not
-	 * recognise it, never replied, and Fabric scored the peer NOT_RECEIVED.
+	 * <p>Declares, not inherits: the play receivers inherit {@code handle} and are covered by the class that declares it;
+	 * both CONFIGURATION receivers override it, and an override is not reached by a prologue spliced into the
+	 * superclass — so it was once the case that the whole configuration phase ran with no cross-ecosystem translation,
+	 * and a server kicked its own client with "This server requires Fabric Loader and Fabric API installed on your
+	 * client!" because the server's {@code minecraft:register} reached the client as NeoForge's payload type.
 	 */
-	private static final Set<String> FABRIC_ADDONS = Set.of(
-			"net.fabricmc.fabric.impl.networking.AbstractChanneledNetworkAddon",
-			"net.fabricmc.fabric.impl.networking.client.ClientConfigurationNetworkAddon",
-			"net.fabricmc.fabric.impl.networking.server.ServerConfigurationNetworkAddon");
+	static final String PACKET_SENDER = "net/fabricmc/fabric/api/networking/v1/PacketSender";
+	private static final byte[] HANDLE_NEEDLE = net.forbric.kernel.util.ByteScan.needle(
+			"(Lnet/minecraft/network/protocol/common/custom/CustomPacketPayload;)Z");
+	/** Class bytes by internal name, for the superclass walk; null reads only the class itself. */
+	private final java.util.function.Function<String, byte[]> classBytes;
+
+	public CommonNetworkInteropInjector() {
+		this(null);
+	}
+
+	/** @param classBytes a class's bytes by internal name (a mod's included), or null; read to walk a receiver's superclasses */
+	public CommonNetworkInteropInjector(java.util.function.Function<String, byte[]> classBytes) {
+		this.classBytes = classBytes;
+	}
+
 	private static final String HANDLE = "handle";
 	private static final String HANDLE_DESC = "(Lnet/minecraft/network/protocol/common/custom/CustomPacketPayload;)Z";
-	private static final String HANDLE_HOOK = "handleFabricChannelRegistrationAddon";
-	private static final String HANDLE_HOOK_DESC = "(Ljava/lang/Object;Ljava/lang/Object;)Ljava/lang/Boolean;";
+	private static final String HANDLE_HOOK = "fabricInbound";
+	private static final String HANDLE_HOOK_DESC = "(Ljava/lang/Object;Ljava/lang/Object;)Ljava/lang/Object;";
+	private static final String HANDLE_DONE_HOOK = "fabricInboundDone";
+	private static final String HANDLE_DONE_HOOK_DESC = "(Ljava/lang/Object;)V";
+	/** fabric-api's public {@code PacketSender.sendPacket(Packet, ChannelFutureListener)}: where a receiver's answers go out. */
+	private static final String SEND = "sendPacket";
+	private static final String SEND_DESC = "(Lnet/minecraft/network/protocol/Packet;Lio/netty/channel/ChannelFutureListener;)V";
+	private static final String SEND_HOOK = "fabricSendStandsAside";
+	private static final String SEND_HOOK_DESC = "(Ljava/lang/Object;Ljava/lang/Object;)Z";
 
 	private static final String CUSTOM_PAYLOAD = "net/minecraft/network/protocol/common/custom/CustomPacketPayload";
 
@@ -318,12 +332,9 @@ public final class CommonNetworkInteropInjector implements ClassTransformer {
 	 */
 	@Override
 	public List<Claim> claims() {
-		List<AnchorSet.Anchor> addons = new ArrayList<>();
-		for (String addon : FABRIC_ADDONS) {
-			addons.add(required(addon, "fabric-api's channel-registration addon miscasts a NeoForge payload before the cross-ecosystem negotiator sees it"));
-		}
 		return List.of(
-				new Claim(CLAIM_FABRIC_ADDON, new AnchorSet(addons, null)),
+				new Claim(CLAIM_FABRIC_ADDON, AnchorSet.scanned("every class implementing fabric-api's PacketSender that declares "
+						+ "handle(CustomPacketPayload): a Fabric receiver would miscast a NeoForge payload of a shared channel")),
 				new Claim(CLAIM_FINISH_TASK, AnchorSet.of(required(SERVER_CONFIG,
 						"Fabric and NeoForge common-networking configuration tasks are not treated as equivalent — one family's configuration never finishes"))),
 				new Claim(CLAIM_CLIENT_COMMON_PAYLOAD, AnchorSet.of(required(CLIENT_COMMON_LISTENER,
@@ -366,7 +377,7 @@ public final class CommonNetworkInteropInjector implements ClassTransformer {
 	@Override
 	public byte[] transform(String className, byte[] classBytes, TransformContext context, ClaimReporter reporter) {
 		if (classBytes == null || classBytes.length == 0) return classBytes;
-		boolean fabricAddon = FABRIC_ADDONS.contains(className);
+		boolean fabricAddon = receivesFabricPayloads(classBytes);
 		boolean serverConfig = SERVER_CONFIG.equals(className);
 		boolean clientConfig = CLIENT_CONFIG_LISTENER.equals(className);
 		boolean clientCommon = CLIENT_COMMON_LISTENER.equals(className);
@@ -386,13 +397,24 @@ public final class CommonNetworkInteropInjector implements ClassTransformer {
 
 		boolean changed = false;
 		for (MethodNode m : node.methods) {
-			if (fabricAddon && m.name.equals(HANDLE) && m.desc.equals(HANDLE_DESC)) {
-				m.instructions.insert(handleAddonPrologue(node.name));
+			if (fabricAddon && m.name.equals(HANDLE) && m.desc.equals(HANDLE_DESC)
+					&& (m.access & (Opcodes.ACC_STATIC | Opcodes.ACC_ABSTRACT)) == 0 && implementsPacketSender(node)) {
+				m.instructions.insert(handleAddonPrologue());
+				for (AbstractInsnNode insn : m.instructions.toArray()) {
+					if (insn.getOpcode() == Opcodes.IRETURN) m.instructions.insertBefore(insn, handleAddonEpilogue());
+				}
 				bumpStack(m, 2);
 				changed = true;
 				reporter.hit(CLAIM_FABRIC_ADDON);
-				ForbricLog.info("[Forbric/Net] arbitrating common-networking channel at %s.%s — Fabric addon defers to "
-						+ "the cross-ecosystem negotiator before it can miscast a NeoForge payload", className, HANDLE);
+				ForbricLog.info("[Forbric/Net] arbitrating shared channels at %s.%s — the Fabric receiver gets each "
+						+ "payload as Fabric's own codec reads it, after NeoForge has been told", className, HANDLE);
+			} else if (fabricAddon && m.name.equals(SEND) && m.desc.equals(SEND_DESC)
+					&& (m.access & (Opcodes.ACC_STATIC | Opcodes.ACC_ABSTRACT)) == 0 && implementsPacketSender(node)) {
+				m.instructions.insert(sendStandsAsidePrologue(node.name));
+				bumpStack(m, 2);
+				changed = true;
+				ForbricLog.info("[Forbric/Net] %s.%s lets a common-negotiation answer stand aside while NeoForge's handler "
+						+ "is the one to answer it", className, SEND);
 			} else if (serverConfig && m.name.equals(FINISH_TASK) && m.desc.equals(FINISH_TASK_DESC)) {
 				m.instructions.insert(finishTaskPrologue(node.name));
 				bumpStack(m, 2);
@@ -569,26 +591,67 @@ public final class CommonNetworkInteropInjector implements ClassTransformer {
 	}
 
 	/**
-	 * {@code Boolean r = interop.handleFabricChannelRegistrationAddon(this, payload); if (r != null) return
-	 * r.booleanValue();} — prepended so the negotiator sees the packet before Fabric's own {@code receive} casts it.
-	 * At the fall-through label the stack still holds the (null) Boolean and both params are live, so the frame is
-	 * locals=[this, CustomPacketPayload] / stack=[Boolean]; POP it and the original body runs at its entry frame.
+	 * {@code payload = (CustomPacketPayload) interop.fabricInbound(this, payload);} — prepended so NeoForge is told and the
+	 * receiver's own body goes on with the payload as Fabric reads it. Straight-line: no branch, no frame.
 	 */
-	private static InsnList handleAddonPrologue(String owner) {
+	private static InsnList handleAddonPrologue() {
 		InsnList body = new InsnList();
-		LabelNode notHandled = new LabelNode();
-		body.add(new VarInsnNode(Opcodes.ALOAD, 0)); // this (the addon)
+		body.add(new VarInsnNode(Opcodes.ALOAD, 0)); // this (the receiver)
 		body.add(new VarInsnNode(Opcodes.ALOAD, 1)); // the payload
 		body.add(new MethodInsnNode(Opcodes.INVOKESTATIC, INTEROP, HANDLE_HOOK, HANDLE_HOOK_DESC, false));
-		body.add(new InsnNode(Opcodes.DUP));                       // [Boolean, Boolean]
-		body.add(new JumpInsnNode(Opcodes.IFNULL, notHandled));    // null -> fall through to original body
-		body.add(new MethodInsnNode(Opcodes.INVOKEVIRTUAL, "java/lang/Boolean", "booleanValue", "()Z", false));
-		body.add(new InsnNode(Opcodes.IRETURN));
-		body.add(notHandled);
-		body.add(new FrameNode(Opcodes.F_NEW, 2, new Object[] {owner, CUSTOM_PAYLOAD}, 1,
-				new Object[] {"java/lang/Boolean"}));
-		body.add(new InsnNode(Opcodes.POP));                       // discard the null Boolean, run the original body
+		body.add(new org.objectweb.asm.tree.TypeInsnNode(Opcodes.CHECKCAST, CUSTOM_PAYLOAD));
+		body.add(new VarInsnNode(Opcodes.ASTORE, 1));
 		return body;
+	}
+
+	/**
+	 * {@code if (interop.fabricSendStandsAside(this, packet)) return;} at the head of a void {@code sendPacket}: the
+	 * fall-through frame is the entry frame — the receiver, its two parameters, an empty stack.
+	 */
+	private static InsnList sendStandsAsidePrologue(String owner) {
+		InsnList body = new InsnList();
+		LabelNode send = new LabelNode();
+		body.add(new VarInsnNode(Opcodes.ALOAD, 0));
+		body.add(new VarInsnNode(Opcodes.ALOAD, 1));
+		body.add(new MethodInsnNode(Opcodes.INVOKESTATIC, INTEROP, SEND_HOOK, SEND_HOOK_DESC, false));
+		body.add(new JumpInsnNode(Opcodes.IFEQ, send));
+		body.add(new InsnNode(Opcodes.RETURN));
+		body.add(send);
+		body.add(new FrameNode(Opcodes.F_NEW, 3, new Object[] {owner, "net/minecraft/network/protocol/Packet",
+				"io/netty/channel/ChannelFutureListener"}, 0, new Object[] {}));
+		return body;
+	}
+
+	/** {@code interop.fabricInboundDone(this);} in front of a return: the stack keeps the answer, untouched. */
+	private static InsnList handleAddonEpilogue() {
+		InsnList body = new InsnList();
+		body.add(new VarInsnNode(Opcodes.ALOAD, 0));
+		body.add(new MethodInsnNode(Opcodes.INVOKESTATIC, INTEROP, HANDLE_DONE_HOOK, HANDLE_DONE_HOOK_DESC, false));
+		return body;
+	}
+
+	/** Whether {@code bytes} may declare a receiver's {@code handle}: the descriptor is in its constant pool. */
+	private static boolean receivesFabricPayloads(byte[] bytes) {
+		return net.forbric.kernel.util.ByteScan.contains(bytes, HANDLE_NEEDLE);
+	}
+
+	/** Whether {@code node} implements fabric-api's {@code PacketSender}, itself or through its superclasses. */
+	boolean implementsPacketSender(ClassNode node) {
+		java.util.Set<String> seen = new java.util.HashSet<>();
+		java.util.ArrayDeque<String> pending = new java.util.ArrayDeque<>();
+		if (node.interfaces != null) pending.addAll(node.interfaces);
+		if (node.superName != null) pending.add(node.superName);
+		while (!pending.isEmpty()) {
+			String type = pending.pop();
+			if (!seen.add(type) || type.startsWith("java/")) continue;
+			if (PACKET_SENDER.equals(type)) return true;
+			byte[] bytes = classBytes == null ? null : classBytes.apply(type);
+			if (bytes == null) continue;
+			ClassReader reader = new ClassReader(bytes);
+			java.util.Collections.addAll(pending, reader.getInterfaces());
+			if (reader.getSuperName() != null) pending.add(reader.getSuperName());
+		}
+		return false;
 	}
 
 	/**

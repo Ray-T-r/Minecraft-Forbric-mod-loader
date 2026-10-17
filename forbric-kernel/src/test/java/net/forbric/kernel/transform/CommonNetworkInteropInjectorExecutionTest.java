@@ -16,11 +16,10 @@ import org.junit.jupiter.api.io.TempDir;
 import net.fabricmc.api.EnvType;
 
 /**
- * {@link CommonNetworkInteropInjector}'s output, run against the kernel's real boot-side {@code PayloadInterop}: six of
- * its repairs, each on stand-ins for the class it edits, each with the merged failure it prevents.
+ * {@link CommonNetworkInteropInjector}'s output, run against the kernel's real boot-side {@code PayloadInterop}: five of
+ * its repairs, each on stand-ins for the class it edits, each with the merged failure it prevents. (A Fabric receiver
+ * handed NeoForge's payload of a shared channel is {@code FabricReceiverArbitrationExecutionTest}'s.)
  * <ul>
- *   <li>fabric-api's channel addon handed NeoForge's {@code c:version} payload: the negotiation runs for both stacks
- *       and the addon never reaches its cast — as merged, {@code ClassCastException} and "invalid packet";</li>
  *   <li>the server finishing Fabric's {@code c:version} task while NeoForge's equivalent is current: the next task
  *       starts — as merged, "Unexpected request for task finish";</li>
  *   <li>the next task starting through MinecraftForge's task context, so a MinecraftForge task (which refuses the
@@ -41,14 +40,13 @@ import net.fabricmc.api.EnvType;
  */
 @ExecutesInjector(CommonNetworkInteropInjector.class)
 class CommonNetworkInteropInjectorExecutionTest {
-	private static final String ADDON = "net.fabricmc.fabric.impl.networking.AbstractChanneledNetworkAddon";
 	private static final String SERVER_CONFIG = "net.minecraft.server.network.ServerConfigurationPacketListenerImpl";
 	private static final String CLIENT_COMMON = "net.minecraft.client.multiplayer.ClientCommonPacketListenerImpl";
 	private static final String SERVER_COMMON = "net.minecraft.server.network.ServerCommonPacketListenerImpl";
 	private static final String CLIENT_CONFIG = "net.minecraft.client.multiplayer.ClientConfigurationPacketListenerImpl";
 	private static final String NEO_REGISTRY = "net.neoforged.neoforge.network.registration.NetworkRegistry";
 	private static final String SYNC_CONFIG = "net.minecraftforge.network.tasks.SyncConfigTask";
-	private static final List<String> TARGETS = List.of(ADDON, SERVER_CONFIG, CLIENT_COMMON, SERVER_COMMON, CLIENT_CONFIG,
+	private static final List<String> TARGETS = List.of(SERVER_CONFIG, CLIENT_COMMON, SERVER_COMMON, CLIENT_CONFIG,
 			NEO_REGISTRY, SYNC_CONFIG);
 
 	private static String payload(String binaryName, String fields, String id) {
@@ -152,9 +150,7 @@ class CommonNetworkInteropInjectorExecutionTest {
 			"fixture.ModPayload", payload("fixture.ModPayload", "String id", "new Identifier(id)"),
 			"net.neoforged.neoforge.network.payload.CommonVersionPayload",
 			payload("net.neoforged.neoforge.network.payload.CommonVersionPayload", "java.util.List<Integer> versions",
-					"new Identifier(\"c:version\")"),
-			"net.fabricmc.fabric.impl.networking.CommonVersionPayload",
-			payload("net.fabricmc.fabric.impl.networking.CommonVersionPayload", "int[] versions", "new Identifier(\"c:version\")")));
+					"new Identifier(\"c:version\")")));
 
 	static {
 		STAND_INS.put("net.neoforged.neoforge.network.payload.MinecraftRegisterPayload",
@@ -226,42 +222,6 @@ class CommonNetworkInteropInjectorExecutionTest {
 				public class ClientNetworkRegistry {
 					public static void sendInitialListeningChannels(ClientCommonPacketListenerImpl listener) {
 						listener.handled.add("neoforge");
-					}
-				}
-				""");
-		STAND_INS.put(ADDON, """
-				package net.fabricmc.fabric.impl.networking;
-
-				import net.minecraft.network.protocol.common.custom.CustomPacketPayload;
-
-				public abstract class AbstractChanneledNetworkAddon {
-					protected final Object listener;
-					public int negotiatedVersion = -1;
-
-					protected AbstractChanneledNetworkAddon(Object listener) {
-						this.listener = listener;
-					}
-
-					/** fabric-api's: a payload under a common-networking id is taken to be its own type. */
-					public boolean handle(CustomPacketPayload payload) {
-						if (payload.type().id().toString().equals("c:version")) {
-							onCommonVersionPacket(((CommonVersionPayload) payload).versions()[0]);
-							return true;
-						}
-						return false;
-					}
-
-					protected void onCommonVersionPacket(int version) {
-						negotiatedVersion = version;
-					}
-				}
-				""");
-		STAND_INS.put("fixture.PlayAddon", """
-				package fixture;
-
-				public class PlayAddon extends net.fabricmc.fabric.impl.networking.AbstractChanneledNetworkAddon {
-					public PlayAddon(Object listener) {
-						super(listener);
 					}
 				}
 				""");
@@ -518,24 +478,6 @@ class CommonNetworkInteropInjectorExecutionTest {
 
 	private static Object identifier(Class<?> type, String id) throws Throwable {
 		return InjectorExecution.construct(type, id);
-	}
-
-	@Test void fabricsAddonNeverCastsNeoForgesVersionPayload(@TempDir Path work) throws Throwable {
-		Game game = game(work);
-		Object listener = new Object();
-		Object addon = InjectorExecution.construct(game.repaired("fixture.PlayAddon"), listener);
-		Object neoVersion = InjectorExecution.construct(game.repaired("net.neoforged.neoforge.network.payload.CommonVersionPayload"), List.of(1));
-		assertEquals(true, InjectorExecution.invoke(addon, "handle", neoVersion), "the negotiator took it");
-		assertEquals(1, addon.getClass().getField("negotiatedVersion").get(addon), "Fabric's half was fed the version");
-		assertEquals(List.of(List.of(1)), InjectorExecution.getStatic(game.repaired(NEO_REGISTRY), "commonVersions"),
-				"and NeoForge's half checked the same payload");
-		Object other = InjectorExecution.construct(game.repaired("fixture.ModPayload"), "mod:other");
-		assertEquals(false, InjectorExecution.invoke(addon, "handle", other), "anything else runs the addon's own body");
-
-		Object stockAddon = InjectorExecution.construct(game.merged("fixture.PlayAddon"), listener);
-		Object stockVersion = InjectorExecution.construct(game.merged("net.neoforged.neoforge.network.payload.CommonVersionPayload"), List.of(1));
-		assertThrows(ClassCastException.class, () -> InjectorExecution.invoke(stockAddon, "handle", stockVersion),
-				"premise: as merged, fabric-api casts NeoForge's payload to its own");
 	}
 
 	@Test void finishingFabricsTaskFinishesNeoForgesAndAForgeTaskStarts(@TempDir Path work) throws Throwable {

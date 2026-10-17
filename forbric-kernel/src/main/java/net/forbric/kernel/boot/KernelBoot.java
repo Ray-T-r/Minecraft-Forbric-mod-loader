@@ -1024,7 +1024,11 @@ public final class KernelBoot {
 		// honest way to ask "is the arbitration the cause?" of a networking symptom.
 		// Declared configuration protocols are independent of network-channel arbitration.
 		if (!"off".equalsIgnoreCase(System.getProperty("forbric.commonNetworkInterop", "on"))) {
-			chain.register(TransformPhase.COREMOD, new CommonNetworkInteropInjector());
+			// Fabric's payload receivers are found by the public PacketSender they implement, through their superclasses.
+			chain.register(TransformPhase.COREMOD, new CommonNetworkInteropInjector(name -> {
+				try (var in = loader.getGameResourceAsStream(name + ".class")) { return in == null ? null : in.readAllBytes(); }
+				catch (java.io.IOException unavailable) { return null; }
+			}));
 			chain.register(TransformPhase.COREMOD, new ForgeOverlayNeuterInjector());
 		} else {
 			ForbricLog.warn("[Forbric/Net] common-networking arbitration DISABLED — a tri-in-one client will be "

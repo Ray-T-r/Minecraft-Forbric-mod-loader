@@ -90,8 +90,8 @@ step "boot the dedicated server and hold it open"
 # A FIFO, not a pipe with a fixed sleep: the server must outlive the client by exactly as long as the client
 # takes, which nothing knows in advance.
 FIFO="$SRV/.stdin"; rm -f "$FIFO"; mkfifo "$FIFO"
-# RED control: M12_EXTRA_JVM='-Dforbric.fabricPlayChannels=off' — verified RED, exactly 1 check
-# ("the client's Fabric PLAY channels are recorded on the connection").
+# The PLAY-channel check below had a switch of its own (-Dforbric.fabricPlayChannels, now retired): the kernel no
+# longer records those channels itself, Fabric's own c:register receiver does, on the payload as Fabric reads it.
 # M12_EXTRA_JVM reaches BOTH ends. It did not at first, and that cost a diagnostic round: a probe was added to
 # the server's networking path, the run produced zero lines, and "zero" was indistinguishable from "the code
 # never ran" when the truth was that the flag had only ever been passed to the client. A knob that silently
@@ -174,13 +174,13 @@ check "Forge-wrapped registries followed the server's ids" "Forge-wrapped regist
 check_absent "client applied every registry sync" "Failed to sync registries|Failed to handle registry sync"  "$CLOG"
 
 # Fabric declares a client's PLAY receivers during CONFIGURATION, through c:register — not through
-# minecraft:register, which carries only the current phase's. The kernel serves c:register itself (NeoForge's
-# negotiation rides on the same payload) and so must do BOTH halves of Fabric's own handler; it did only the
-# addon replay, so the connection's play-channel list stayed empty and ServerPlayNetworking.canSend answered
-# false for every Fabric PLAY channel, for the whole session. Cardinal Components does not check-and-skip, it
-# DISCONNECTS: joining a world ended with "This server requires Apoli: Legacy and Cardinal Components API".
+# minecraft:register, which carries only the current phase's. When the connection's play-channel list stayed empty,
+# ServerPlayNetworking.canSend answered false for every Fabric PLAY channel, for the whole session, and Cardinal
+# Components DISCONNECTS rather than skipping: joining a world ended with "This server requires Apoli: Legacy and
+# Cardinal Components API". Fabric's own c:register receiver now gets that payload, as Fabric reads it, and records
+# them; this line is the kernel handing it over with the PLAY channels in it.
 check "the client's Fabric PLAY channels are recorded on the connection" \
-  "Forbric/Net\] recorded [1-9][0-9]* Fabric PLAY channel\(s\) the client declared during configuration" "$SLOG"
+  "Forbric/Net\] handed [1-9][0-9]* Fabric PLAY channel\(s\) the client declared during configuration to Fabric.s own c:register receiver" "$SLOG"
 
 # The channel census, in the two-sentence shape the other censuses use: it ran (a denominator), and what it
 # found. The set it counts is the one that kicked a player out of a world a second after joining — a payload
