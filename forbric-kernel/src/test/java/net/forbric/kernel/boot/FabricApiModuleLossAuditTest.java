@@ -116,8 +116,13 @@ class FabricApiModuleLossAuditTest {
 	}
 
 	private static byte[] classNaming(String... types) {
+		return classDefining("com/example/Listener", types);
+	}
+
+	/** A class named {@code name} whose constant pool names {@code types}: the surface's own class when {@code name} is its needle. */
+	private static byte[] classDefining(String name, String... types) {
 		ClassWriter cw = new ClassWriter(0);
-		cw.visit(Opcodes.V17, Opcodes.ACC_PUBLIC, "com/example/Listener", null, "java/lang/Object", null);
+		cw.visit(Opcodes.V17, Opcodes.ACC_PUBLIC, name, null, "java/lang/Object", null);
 		MethodVisitor m = cw.visitMethod(Opcodes.ACC_PUBLIC, "init", "()V", null, null);
 		m.visitCode();
 		for (String type : types) {
@@ -270,10 +275,28 @@ class FabricApiModuleLossAuditTest {
 				entry("fabric-loot-api-v3", "fabric-loot-api-v3-3.0.17.jar", "fabric-api"));
 		System.setProperty(LootTableEventBridgeInjector.PROPERTY, "off");
 		FabricApiModuleLossAudit.note("balm.jar", classNaming(LOOT));
-		FabricApiModuleLossAudit.note("fabric-loot-api-v3-3.0.17.jar", classNaming(LOOT));
+		FabricApiModuleLossAudit.note("fabric-loot-api-v3-3.0.17.jar", classDefining(LOOT, LOOT));
 		FabricApiModuleLossAudit.report(Side.DEDICATED_SERVER);
 		assertTrue(degraded("balm") != null, "the third party is named");
 		assertTrue(degraded("fabric-loot-api-v3") == null, "the module that DEFINES the surface is not its user");
+	}
+
+	/**
+	 * Provider or user is decided by what the jar carries, not by its mod id or bundler: a defining module under any
+	 * other id is still the provider, and a sibling module of the same bundle that only calls the surface is a user.
+	 */
+	@Test
+	void theDefiningJarIsTheProviderUnderAnyNameAndASiblingThatOnlyCallsItIsAUser() {
+		publish(entry("qzxloot", "qzxloot.jar", "qzxbundle"), entry("qzxsibling", "qzxsibling.jar", "qzxbundle"),
+				entry("fabric-loot-api-v3", "caller.jar", ""));
+		System.setProperty(LootTableEventBridgeInjector.PROPERTY, "off");
+		FabricApiModuleLossAudit.note("qzxloot.jar", classDefining(LOOT, LOOT));
+		FabricApiModuleLossAudit.note("qzxsibling.jar", classNaming(LOOT));
+		FabricApiModuleLossAudit.note("caller.jar", classNaming(LOOT));
+		FabricApiModuleLossAudit.report(Side.DEDICATED_SERVER);
+		assertTrue(degraded("qzxloot") == null, "the jar defining the surface is its provider, whatever its id");
+		assertTrue(degraded("qzxsibling") != null, "a bundled sibling that only calls the surface is a user");
+		assertTrue(degraded("fabric-loot-api-v3") != null, "the module's id alone does not make a caller the provider");
 	}
 
 	@Test
@@ -290,7 +313,7 @@ class FabricApiModuleLossAuditTest {
 		try {
 		publish(entry("fabric-registry-sync-v0", "module.jar", ""), entry("consumer", "consumer.jar", ""));
         discoverRegistryProvider();
-		FabricApiModuleLossAudit.note("module.jar", classNaming(SETUP_CALLBACK));
+		FabricApiModuleLossAudit.note("module.jar", classDefining(SETUP_CALLBACK, SETUP_CALLBACK));
 		FabricApiModuleLossAudit.note("consumer.jar", classNaming(SETUP_CALLBACK));
 		FabricApiModuleLossAudit.report(Side.DEDICATED_SERVER);
 		assertTrue(degraded("fabric-registry-sync-v0") == null);
