@@ -142,6 +142,7 @@ class WeaveCoverageCensusTest {
 			Map.entry("FabricBlockStateCodecMixinAdapter", Switch.own("forbric.blockStateModelFormats")),
 			Map.entry("FabricClientMixinAnchors", Switch.own("forbric.fabricClientAnchors")),
 			Map.entry("CarrierHelperResults", Switch.own("forbric.carrierHelperResults")), // CarrierHelperResultsWeaveTest
+			Map.entry("CarrierMethodReferences", Switch.own("forbric.carrierMethodReferences")), // CarrierMethodReferencesWeaveTest
 			Map.entry("MixinStructurePlacementAdapter", Switch.own("forbric.structurePlacementCallbacks")),
 			// KeyActionExitsWeaveTest and CreateKeyboardMixinAdapterWeaveTest switch it off alone too: it alone is the whole
 			// repair, and MixinReturnOrdinals alone is not (the release still reaches the final hooks).
@@ -160,10 +161,7 @@ class WeaveCoverageCensusTest {
 
 	private static final String NO_SCENARIO = "no weave scenario yet; ClassNode-level tests only";
 	/** Only shrinks. Every row is a stage whose output no CI test has yet run through the real weave. */
-	static final Map<String, String> NOT_WOVEN_YET = notWovenYet(
-			// Its command, loot and anvil routes (the ones FabricEnchantmentMixinAdapterWeaveTest wove) went to CarrierDecisions
-			// and CarrierDecisionsWeaveTest; the enchanting table's route left has ClassNode-level tests only.
-			"FabricEnchantmentMixinAdapter");
+	static final Map<String, String> NOT_WOVEN_YET = notWovenYet();
 
 	@Test void everyPipelineStageIsWovenOrListedWithAReason() throws Exception {
 		Set<String> configTime = configTimeStages();
@@ -205,11 +203,10 @@ class WeaveCoverageCensusTest {
 		gone.remove("MixinShearsRelay");
 		assertEquals(List.of("woven but no longer a stage: MixinShearsRelay"), problems(gone, WOVEN.keySet(), NOT_WOVEN_YET.keySet()));
 
-		// Whichever row is still allowlisted: the list only shrinks, so a row named here would leave it one day.
-		String listed = NOT_WOVEN_YET.keySet().iterator().next();
-		Set<String> unlisted = new TreeSet<>(stages);
-		unlisted.remove(listed);
-		assertEquals(List.of("allowlisted but no longer a stage: " + listed), problems(unlisted, WOVEN.keySet(), NOT_WOVEN_YET.keySet()));
+		// An allowlist row whose stage is gone: the list only shrinks (it is empty now), so the row is one written for the check.
+		Set<String> allowlisted = new TreeSet<>(NOT_WOVEN_YET.keySet());
+		allowlisted.add("RetiredAdapter");
+		assertEquals(List.of("allowlisted but no longer a stage: RetiredAdapter"), problems(stages, WOVEN.keySet(), allowlisted));
 	}
 
 	static List<String> problems(Set<String> stages, Set<String> woven, Set<String> allowlisted) {

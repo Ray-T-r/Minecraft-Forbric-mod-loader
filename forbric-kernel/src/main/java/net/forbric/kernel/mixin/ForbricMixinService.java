@@ -126,6 +126,9 @@ public final class ForbricMixinService
 		changed+=CarrierDecisions.adapt(source,owner->{byte[] current=resource.apply(owner+".class");if(current==null)return null;ClassNode tables=new ClassNode();new ClassReader(current).accept(tables,0);return tables;},NativeGameReferences::reference);
 		changed+=CarrierReturnedCalls.adapt(source,owner->{byte[] current=resource.apply(owner+".class");if(current==null)return null;ClassNode tables=new ClassNode();new ClassReader(current).accept(tables,0);return tables;},NativeGameReferences::reference);
 		changed+=CarrierDefaultChains.adapt(source,owner->{byte[] current=resource.apply(owner+".class");return current==null?null:MixinFit.parse(current);},NativeGameReferences::reference);
+		// An injector these two move binds as moved, not as compiled: judged so, a mixin whose only injector they carry is not UNFIT.
+		changed+=CarrierHelperResults.adapt(source,owner->{byte[] current=resource.apply(owner+".class");if(current==null)return null;ClassNode tables=new ClassNode();new ClassReader(current).accept(tables,0);return tables;},NativeGameReferences::reference);
+		changed+=CarrierMethodReferences.adapt(source,owner->{byte[] current=resource.apply(owner+".class");if(current==null)return null;ClassNode tables=new ClassNode();new ClassReader(current).accept(tables,0);return tables;},NativeGameReferences::reference,loader());
 		changed+=NativeSliceOccurrences.adapt(source,code,NativeGameReferences::reference);
 		changed+=NativeConsumerStores.adapt(source,code,NativeGameReferences::reference);
 		changed+=MixinAbsorbedCallbackTransport.adapt(source,owner->{byte[] current=resource.apply(owner+".class");return current==null?null:MixinFit.parse(current);},
@@ -455,7 +458,10 @@ public final class ForbricMixinService
 		// …and an @Inject the carrier put behind a branch of its own moves ahead of that branch, where it runs on every way it
 		// runs natively. Before the rebind below: an injector on a stub that only forwards is read on the overload here.
 		CarrierGuardedPoints.adapt(node, this::mergedBaseGameCode, NativeGameReferences::reference);
-		FabricEnchantmentMixinAdapter.adapt(node, this::mergedBaseNodeWithCode);
+		// …and a redirect inside a native lambda the carrier replaced with a method reference whose inherited implementation folds in
+		// the lambda's leftover captured value moves onto the reference's call, made in a method the reference is pointed at, and
+		// runs the native lambda's body with the mod's handler at the call.
+		CarrierMethodReferences.adapt(node, this::mergedBaseGameCode, NativeGameReferences::reference, loader());
 		// …and an @Inject at a vanilla call the carrier now makes inside a helper of its own class, whose boolean answer is true
 		// exactly when it made the call, runs on that answer at each of the helper's calls, its @Locals read where the merged
 		// method keeps the same values.

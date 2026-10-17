@@ -560,6 +560,12 @@ test	net.forbric.kernel.mixin.CarrierHelperResultsStagedTest	theMergedLocalsAreF
 test	net.forbric.kernel.mixin.CarrierHelperResultsStagedTest	theMoveKnowsNoName()	[fixture:staged] actual Fabric API fixture required
 test	net.forbric.kernel.mixin.CarrierHelperResultsStagedTest	theSwitchLeavesFabricApisMixinAlone()	[fixture:staged] actual game required
 test	net.forbric.kernel.mixin.CarrierHelperResultsStagedTest	vanillasOwnBodyIsWhatBothWereWrittenFor()	[fixture:mc-libraries] actual game required
+test	net.forbric.kernel.mixin.CarrierMethodReferencesStagedTest	aGroupOrTheSwitchLeavesTheRedirectAsCompiled()	[fixture:staged] actual Fabric API fixture required
+test	net.forbric.kernel.mixin.CarrierMethodReferencesStagedTest	theMaterializedReferenceTakesTheLambdasParametersAndReadsTheFoldedValueFromItsLocal()	[fixture:staged] actual Fabric API fixture required
+test	net.forbric.kernel.mixin.CarrierMethodReferencesStagedTest	theMoveKnowsNoName()	[fixture:staged] actual Fabric API fixture required
+test	net.forbric.kernel.mixin.CarrierMethodReferencesStagedTest	theTablesRedirectMovesOntoTheMethodReferencesCallAndRunsTheNativeLambdaThere()	[fixture:staged] actual Fabric API fixture required
+test	net.forbric.kernel.mixin.CarrierMethodReferencesStagedTest	whereTheMergedClassStillHasTheLambdaNothingMoves()	[fixture:staged] actual game required
+test	net.forbric.kernel.mixin.CarrierMethodReferencesStagedTest	withoutTheFoldedDisjunctNothingMoves()	[fixture:staged] actual game required
 test	net.forbric.kernel.mixin.CarrierRenameCensusTest	onlyNeoForgesRenamedTooltipBodyIsUncalled()	[fixture:staged] $ROOT/forbric-loader/run/merged-base/patched-mc-merged-26.2.jar required
 test	net.forbric.kernel.mixin.CarrierRenameCensusTest	theShippedTableIsExactlyWhatTheArtifactsSay()	[fixture:staged] $ROOT/forbric-loader/run/merged-base/patched-mc-merged-26.2.jar required
 test	net.forbric.kernel.mixin.CarrierReturnedCallsStagedTest	aGroupTheSwitchOrAHandlerHandingItsOperationAnotherValueLeavesTheWrapAsCompiled()	[fixture:staged] actual Fabric API fixture required
@@ -604,12 +610,9 @@ test	net.forbric.kernel.mixin.FabricClientMixinAnchorsTest	screenExtractIsLeftAl
 test	net.forbric.kernel.mixin.FabricClientMixinAnchorsTest	sourceScreenEventsKeepTheirEntireBodyAroundTheActualTopDraw()	[fixture:staged] actual Fabric API fixture required
 test	net.forbric.kernel.mixin.FabricClientMixinAnchorsTest	unmatchedSignaturesMissingNativePointsAndAVanillaHostRemainUnchanged()	[fixture:staged] actual game required
 test	net.forbric.kernel.mixin.FabricCreativePagerMixinAdapterTest	keyboardKeepsItsExactBodyAndTheSecondPagerStateIsRemoved()	[fixture:third-party] build/compat-inputs/player-loading/api/fabric-creative-tab-api-v1-5.0.15+6468574f9e.jar absent
-test	net.forbric.kernel.mixin.FabricEnchantmentContractsTest	aModifiedTableHandlerOrAnAlternativeGroupKeepsItsOriginalContract()	[fixture:staged] actual game required
 test	net.forbric.kernel.mixin.FabricEnchantmentContractsTest	absentNativeApiDisabledAdapterAndUnknownDefaultBodyAreNotRewritten()	[fixture:staged] actual Fabric API fixture required
 test	net.forbric.kernel.mixin.FabricEnchantmentContractsTest	theActualDefaultFallsBackToBothNativeItemDecisions()	[fixture:staged] actual Fabric API fixture required
-test	net.forbric.kernel.mixin.FabricEnchantmentContractsTest	theRealMethodReferenceGetsOneTypedWrapperWithoutChangingCaptureOrder()	[fixture:staged] actual game required
 test	net.forbric.kernel.mixin.FabricEnchantmentContractsTest	theSameDecisionSpelledAnotherWayIsRewrittenAndAnotherDecisionIsNot()	[fixture:staged] actual Fabric API fixture required
-test	net.forbric.kernel.mixin.FabricEnchantmentContractsTest	theTablesPrimaryItemRouteAttachesToTheTransformersBridge()	[fixture:staged] actual Fabric API fixture required
 test	net.forbric.kernel.mixin.FabricFreezeHookMixinAdapterTest	releasedCreateFlyMovesOnInitializeToTheHeadHookAndAfterFreezeToTheTailHook()	[fixture:third-party] real fixture required: $ROOT/forbric-kernel/build/compat-inputs/create-fly/create-fly.jar
 test	net.forbric.kernel.mixin.FabricFreezeHookSpellingTest	aPointNamingAnotherOwnersFreezeStays()	[fixture:staged] the staged merged base: $ROOT/forbric-loader/run/merged-base/patched-mc-merged-26.2.jar
 test	net.forbric.kernel.mixin.FabricFreezeHookSpellingTest	aPointSelectingTwoCallsOfFreezeStays()	[fixture:staged] the staged merged base: $ROOT/forbric-loader/run/merged-base/patched-mc-merged-26.2.jar

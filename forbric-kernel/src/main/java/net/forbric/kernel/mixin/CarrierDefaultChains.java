@@ -450,7 +450,7 @@ public final class CarrierDefaultChains {
 		return true;
 	}
 
-	private static boolean publicType(String name, Function<String, ClassNode> code) {
+	static boolean publicType(String name, Function<String, ClassNode> code) {
 		if (name.startsWith("[")) {
 			Type element = Type.getType(name).getElementType();
 			return element.getSort() != Type.OBJECT || publicType(element.getInternalName(), code);
@@ -467,7 +467,7 @@ public final class CarrierDefaultChains {
 		return type != null && (type.access & Opcodes.ACC_PUBLIC) != 0;
 	}
 
-	private static boolean publicMember(String owner, String name, String desc, boolean field, Function<String, ClassNode> code) {
+	static boolean publicMember(String owner, String name, String desc, boolean field, Function<String, ClassNode> code) {
 		if (owner.startsWith("[")) return true;
 		if (!publicType(owner, code)) return false;
 		Set<String> seen = new HashSet<>();

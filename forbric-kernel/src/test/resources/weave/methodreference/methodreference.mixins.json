@@ -1,0 +1,1 @@
+{"required": true, "package": "io.wren.sift.mixin", "compatibilityLevel": "JAVA_21", "mixins": ["SieveMixin"], "injectors": {"defaultRequire": 1}}
