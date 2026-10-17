@@ -431,6 +431,8 @@ Fabric mod 的配置界面只在一个地方声明：一个实现 Mod Menu 的 `
 - `Caught.warn/error(t, format, args)` —— 内核吞下并继续运行的失败。以对应级别记录，带 `[Forbric/Caught]` 前缀和 catch 所在位置（`Class.method:line`）：某个位置第一次出现时打完整堆栈，之后每次一行。同一位置的同一条消息打印 20 次（`-Dforbric.caught.printedPerSite`）后只计数；该位置没说过的新消息总会打印（每个位置最多 100 种），所以一个转发函数仍然会点名每一个失败的事件。反射的 `InvocationTargetException` 会先剥掉再打印。
 - `Caught.expected(t)` —— 这个异常本身就是答案：可选类的存在性探测、识别器的“不是这个形状”、mod 写的文本不是合法值、作为值交给负责上报的代码的异常。只计数，只在 `-Dforbric.debug` 下记录。如果一个“expected”异常的 cause 链里有只有 bug 才会抛的异常（`NullPointerException`、`ClassCastException`、ASM 分析帧之外的越界……），就改按失败上报：ASM 的 `Analyzer` 会把解释器抛出的任何异常包进识别器本来就预期的那个 `AnalyzerException` 里。
 
+靠抛异常来放弃的识别器，要给“放弃”一个自己的异常类型（比如一个私有的 `Unproven` 类），先把它按 `expected` 接住，其余异常再走 `warn`：识别器故意抛的 `IllegalArgumentException` 和 bug 抛的，在同一个 catch 里分不出来。
+
 加载结束时和 JVM 退出时各记录一次汇总（`[Forbric/Caught] summary …`，每个失败位置一行，带次数）。用 `FORBRIC_CAUGHT_FILE`（或 `-Dforbric.caught.file`）指定一个文件后，每个失败位置第一次出现时也会追加写进去，退出时再写入次数。
 
 单测和闸门都会读它。`CaughtErrorsExtension`（通过 META-INF/services 对每个单测生效）会让测试期间内核吞下过失败的测试失败，除非测试用 `@ExpectCaught("<失败消息里的文字>")` 说明这是它故意造成的；标在方法上时，列出的每个失败还必须真的发生。`run/lib.sh` 给每个闸门分配自己的 `build/caught/<gate>.<pid>.tsv`，导出给闸门启动的每个 JVM，退出时打印 `[kernel] CAUGHT …`，列出每个位置、消息和次数；`FORBRIC_CAUGHT_STRICT=1` 会让其中任何一条把闸门变红。

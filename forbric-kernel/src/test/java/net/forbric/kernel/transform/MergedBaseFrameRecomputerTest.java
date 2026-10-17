@@ -32,6 +32,7 @@ import java.util.function.Function;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipFile;
 
+import net.forbric.kernel.ExpectCaught;
 import net.forbric.kernel.TestFixtures;
 import net.forbric.kernel.TestFixtures.Fixture;
 import org.junit.jupiter.api.AfterEach;
@@ -154,6 +155,7 @@ class MergedBaseFrameRecomputerTest {
 	}
 
 	/** An unwalkable hierarchy abstains: the original bytes come back, and nothing is guessed. */
+	@ExpectCaught("cannot prove a frame repair for org.anti_ad.mc.ipnext.item.ItemTypeExtensionsKt")
 	@Test
 	void anUnresolvableHierarchyLeavesTheClassAlone() throws Exception {
 		byte[] original = victimBytes();
