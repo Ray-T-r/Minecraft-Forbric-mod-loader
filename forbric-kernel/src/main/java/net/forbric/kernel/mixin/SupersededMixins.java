@@ -132,14 +132,18 @@ public final class SupersededMixins {
 		}
 	}
 
-	/** Test seam: what {@link #noteMixin} would record for a mixin fitting {@code kind}'s claim. */
+	/** Test seam: what {@link #noteMixin} would record for a mixin fitting {@code kind}'s claim, kept apart from discovery's. */
 	static void claimForTests(String mixinClass, String kind) {
-		CLAIMS.put(mixinClass, kind);
+		TEST_CLAIMS.put(mixinClass, kind);
 	}
+
+	/** Claims a test made with {@link #claimForTests}: discovery never forgets them, {@link #reset} does. */
+	private static final Map<String, String> TEST_CLAIMS = new ConcurrentHashMap<>();
 
 	private static Map<String,Replacement> replacements(){
 		Map<String,Replacement> all=new LinkedHashMap<>();
-		CLAIMS.forEach((mixin,kind)->KINDS.stream().filter(k->k.kind().equals(kind)).findFirst().ifPresent(k->all.put(mixin,k)));
+		Map<String,String> claims=new LinkedHashMap<>(TEST_CLAIMS);claims.putAll(CLAIMS);
+		claims.forEach((mixin,kind)->KINDS.stream().filter(k->k.kind().equals(kind)).findFirst().ifPresent(k->all.put(mixin,k)));
 		String source=net.forbric.kernel.boot.LootSourceCallbacks.sourceName();
 		if(source!=null&&net.forbric.kernel.boot.LootSourceCallbacks.whole(source))all.put(source,new Replacement("loot-source-callbacks","KernelLootBridge executes the original closed loot callback group through its generated helper and the native typed reload seam","forbric.lootBridge",net.forbric.kernel.boot.LootSourceCallbacks.targetName(),ignored->net.forbric.kernel.boot.LootSourceCallbacks.proved(source),(mixin,classes)->false));
 		return all;
@@ -242,6 +246,7 @@ public final class SupersededMixins {
 		PENDING.clear();
 		PROVED.clear();
 		CLAIMS.clear();
+		TEST_CLAIMS.clear();
 		net.forbric.kernel.boot.LootSourceCallbacks.reset();
 	}
 

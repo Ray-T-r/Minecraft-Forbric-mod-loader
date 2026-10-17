@@ -327,6 +327,8 @@ class KernelGuestMixinAdapterRejectionTest {
 	 * rest apply beside it -- and, as a kernel decision with a named repair, its row asks the player nothing.
 	 */
 	@Test void aSupersededMixinIsLeftOutWholeAndAsksNothing() {
+		// What config discovery notes for a mixin whose shape a repair's claim fits (SupersededMixinsTest reads the shapes).
+		SupersededMixins.claimForTests("net.fabricmc.fabric.mixin.resource.conditions.SimpleJsonResourceReloadListenerMixin", "resource-conditions");
 		Run run = run("fabric-resource-conditions-api-v1.mixins.json", "net/fabricmc/fabric/mixin/resource/conditions",
 				"SimpleJsonResourceReloadListenerMixin", null);
 		assertEquals(List.of("SimpleJsonResourceReloadListenerMixin"), run.dropped());
