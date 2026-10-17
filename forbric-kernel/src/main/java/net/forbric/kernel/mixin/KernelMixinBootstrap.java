@@ -228,9 +228,10 @@ public final class KernelMixinBootstrap {
 	/**
 	 * The level a Fabric config is given under {@code mode}, or {@code null} to leave it undecorated (Mixin's newest).
 	 *
-	 * <p>No floor. Down to 0.9.2, Fabric's answer for a mod declaring no {@code fabricloader} lower bound, the kernel's own
-	 * moves of locals captures hold: {@link MixinCaptureLanding} gives the one that 0.9.2's local walk read differently a
-	 * real instruction to land on.
+	 * <p>No floor. Fabric answers 0.9.2 when the lowest accepted {@code fabricloader} is older than 0.12.0 or there is no
+	 * lower bound at all, and the kernel's moved TAIL captures hold there too. That walk reads them differently, and
+	 * {@link MixinCaptureLanding} gives them a real instruction to land on. The exception is a method where another mixin
+	 * shifts a point {@code BY}, which keeps its body, so at 0.9.2 the capture is skipped there.
 	 */
 	static Integer compatibilityLevel(java.util.Collection<? extends net.fabricmc.loader.api.metadata.ModDependency> dependencies,
 			String mode) {

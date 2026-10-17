@@ -36,7 +36,8 @@ import net.forbric.kernel.mixin.MixinGuiItemCaptureAdapter;
  *
  * <p>At every level Fabric Loader gives a mod, 0.9.2 included: there the call falls straight into the join, AFTER is
  * the join's label, and Mixin's 0.9.2 local walk steps from it onto the join's frame, which does not declare the local.
- * MixinCaptureLanding gives the call a NOP to land on; switched off, Mixin skips the moved capture at 0.9.2 alone.
+ * MixinCaptureLanding gives the call a NOP to land on there, and only there; switched off, Mixin skips the moved capture
+ * at 0.9.2 alone.
  *
  * <p>The fixture compiles with {@code -g}: the local's scope in the LocalVariableTable is what Mixin reads to decide
  * what it can capture where.
@@ -99,19 +100,21 @@ class GuiItemCaptureMixinAdapterWeaveTest {
 		}
 	}
 
-	/** Where the capture landed: one NOP right after the submission, which the run without the landing does not have. */
-	@Test void theLandingIsOneNopAfterTheSubmission() throws Exception {
-		for (WeaveHarness.Result run : adapted.values()) assertEquals(List.of("NOP"), afterTheSubmission(run), run.describe());
+	/** Where the capture landed at 0.9.2: one NOP right after the submission. From 0.10.0 on there is none. */
+	@Test void theLandingIsOneNopAfterTheSubmissionAtZeroNineTwoAlone() throws Exception {
+		assertEquals(List.of("NOP"), afterTheSubmission(adapted.get("9002")), adapted.get("9002").describe());
+		assertEquals(List.of(), afterTheSubmission(adapted.get("10000")), adapted.get("10000").describe());
+		assertEquals(List.of(), afterTheSubmission(adapted.get("17001")), adapted.get("17001").describe());
 		assertEquals(List.of(), afterTheSubmission(landingOff), landingOff.describe());
 	}
 
 	/**
-	 * From 0.10.0 on, Mixin's walk stops before the join's frame and captured there without the landing too: the NOP is
-	 * then the woven method's one difference, and the capture is woven exactly where it was.
+	 * From 0.10.0 on, Mixin's walk stops before the join's frame and captures there without a landing, so none is placed:
+	 * the woven method is the one the run with the landing switched off weaves.
 	 */
-	@Test void fromZeroTenTheLandingChangesNothingButTheNop() throws Exception {
+	@Test void fromZeroTenTheWovenMethodIsAsWithoutTheLanding() throws Exception {
 		assertTrue(landingOffModern.printed(CAPTURED), landingOffModern.describe());
-		assertEquals(woven(landingOffModern, false), woven(adapted.get("10000"), true));
+		assertEquals(woven(landingOffModern), woven(adapted.get("10000")));
 	}
 
 	/**
@@ -153,20 +156,14 @@ class GuiItemCaptureMixinAdapterWeaveTest {
 		assertTrue(capturedHolds(at9002) && !capturedHolds(offLegacy), "the 0.9.2 control does not separate the runs");
 	}
 
-	/**
-	 * The woven {@code item}, one instruction per line, with Mixin's per-session names made equal: {@code withoutNops}
-	 * drops the NOPs.
-	 */
-	private static String woven(WeaveHarness.Result run, boolean withoutNops) throws Exception {
+	/** The woven {@code item}, one instruction per line, with Mixin's per-session names made equal. */
+	private static String woven(WeaveHarness.Result run) throws Exception {
 		ClassNode gui = new ClassNode();
 		new ClassReader(run.defined(GUI)).accept(gui, 0);
 		MethodNode item = gui.methods.stream().filter(m -> m.name.equals("item")).findFirst().orElseThrow();
 		org.objectweb.asm.util.Textifier text = new org.objectweb.asm.util.Textifier();
 		org.objectweb.asm.util.TraceMethodVisitor trace = new org.objectweb.asm.util.TraceMethodVisitor(text);
-		for (AbstractInsnNode insn : item.instructions) {
-			if (withoutNops && insn.getOpcode() == org.objectweb.asm.Opcodes.NOP) continue;
-			insn.accept(trace);
-		}
+		for (AbstractInsnNode insn : item.instructions) insn.accept(trace);
 		java.io.StringWriter out = new java.io.StringWriter();
 		text.print(new java.io.PrintWriter(out));
 		return out.toString().replaceAll("md[0-9a-f]{6}\\$", "md\\$").replaceAll("\\$[a-z]{3}\\d{3}\\$", "\\$uid\\$");

@@ -635,20 +635,37 @@ discriminated and where shifted points land. Undecorated, every Fabric mod ran a
 (997 distinct `fabric.mod.json`) the port agrees with Fabric Loader 0.19.3 itself on every mod, and 323 of the 561 that
 carry mixins get an older level than before.
 
-There is no floor. A mod that declares no `fabricloader` lower bound (58 of those 561) gets 0.9.2, as on Fabric, and
-with it Mixin's legacy local walk (`Locals.getLocalsAt092`). One difference between that walk and 0.10.0's meets a
-capture the kernel moved. To read the locals at a label or a line number, both first step forward over
+There is no floor. Fabric gives 0.9.2 to a mod whose lowest accepted `fabricloader` is older than 0.12.0, or that
+accepts every version downwards (no `fabricloader` dependency, `*`, or only an upper bound): 58 of those 561. Most
+declare no dependency on `fabricloader` or no lower bound on it. A few have one below 0.12.0, such as WorldEdit's
+`>=0.4.0`. A recount by mod id over the corpus's jar list, which counts differently, finds 620 mods with mixins, 112
+of them at 0.9.2: 55 with no dependency, 52 with no lower bound and 5 with a bound below 0.12.0.
+
+With 0.9.2 comes Mixin's legacy local walk (`Locals.getLocalsAt092`). One difference between that walk and 0.10.0's
+meets a capture the kernel moved. To read the locals at a label or a line number, both first step forward over
 pseudo-instructions. The 0.10.0 walk stops before a frame. The 0.9.2 walk steps up to three nodes and reads the frame
-it lands on. `MixinGuiItemCaptureAdapter` moves a TAIL capture to `INVOKE <the call that ends the body>, AFTER`. Where
-that call falls straight into the join the tail sits on, AFTER is the join's label, and the 0.9.2 walk steps onto the
-join's frame. The path that never stored the local reaches the join too, so the frame does not declare the local:
-Mixin refuses the capture as "LVT ... has incompatible changes" and skips it. Nothing crashes, and the feature is gone.
-`MixinCaptureLanding`, a Mixin extension, fixes that in `preApply`, as Mixin is about to apply the mixins. Where the
-node after such a call is a pseudo-instruction, it inserts a `NOP` right after the call. The `NOP` is still inside the
-local's scope and is not a pseudo-instruction, so neither walk steps, and both read the locals the body left. It
-matches no injection point and has no frame of its own. The real-weave suite passes in full at 0.9.2, 0.10.0 and
-0.17.0. The GUI-item fixture captures at 0.9.2, 0.10.0 and 0.17.1. At 0.10.0 the woven method differs from the weave
-without the landing by the `NOP` alone. With `-Dforbric.captureLanding=off`, the 0.9.2 weave skips the capture again.
+it lands on. `MixinGuiItemCaptureAdapter` moves a
+TAIL capture to `INVOKE <the call that ends the body>, AFTER`. Where that call falls straight into the join the tail
+sits on, AFTER is the join's label, and the 0.9.2 walk steps onto the join's frame. The path that never stored the
+local reaches the join too, so the frame does not declare the local: Mixin refuses the capture as "LVT ... has
+incompatible changes" and skips it. Nothing crashes, and the feature is gone.
+
+`MixinCaptureLanding`, a Mixin extension, fixes that in `preApply`, as Mixin is about to apply the mixins to a class.
+It acts only for a mixin below 0.10.0 that Mixin is applying to that class. That includes a merged twin the mixin
+reaches through `MixinMergedTwin`, and excludes a mixin its config plugin refused. It finds the call the moved point
+binds, read off the mixin as applied and matched as Mixin matches it. Where the node after that call is a
+pseudo-instruction, it inserts a `NOP` right after the call. The `NOP` is still inside the local's scope and is not a
+pseudo-instruction, so the walk does not step, and it reads the locals the body left. No point type selects a `NOP` by
+itself. Another AFTER on the same call now lands on the `NOP` instead of the label, which is the same place in the
+code. `Shift.BY` counts every node, so a `NOP` would move a BY point across the call. A method where any applied mixin
+shifts a point BY therefore keeps its body, and there the capture is still skipped at 0.9.2.
+
+The real-weave suite passes in full at 0.9.2, 0.10.0 and 0.17.0. The GUI-item fixture captures at 0.9.2, 0.10.0 and
+0.17.1, and only the 0.9.2 weave has a `NOP`. A twin fixture captures in both copies at 0.9.2. With a `by = 2` injector
+beside it, that injector stays after the join's label and runs on every path. With a `NOP` it would have moved before
+the label, which was measured with the BY check taken out. With `-Dforbric.captureLanding=off`, the 0.9.2 weave skips
+the capture again.
+
 Until this, the kernel raised such mods to 0.10.0 (`RELOCATION_FLOOR`). Without that floor, the pure-Fabric server A/B
 (130 mods alone, then the 159-jar pack for 1200 ticks) still matches native Fabric: 126 pass on both, the same 4 fail
 on both, none fails on Forbric alone. The 127 sessions that reached Mixin include the 12 with configs the floor
@@ -1374,7 +1391,7 @@ developer reaches for:
 | --- | --- |
 | `forbric.relaxGuestMixins` | `off`: guest configs are not relaxed |
 | `forbric.mixinCompat` | `latest`: every Fabric config at Mixin's newest level instead of the level Fabric Loader gives its mod (§7.1) |
-| `forbric.captureLanding` | `off`: a TAIL capture the kernel moved after a call that falls into the tail's join gets no `NOP` to land on, and at 0.9.2 Mixin skips it (§7.1) |
+| `forbric.captureLanding` | `off`: below 0.10.0, a TAIL capture the kernel moved after a call that falls into the tail's join gets no `NOP` to land on, and Mixin skips it (§7.1) |
 | `forbric.relaxMixinOverwrites` | csv (`*` glob) of configs to relax |
 | `forbric.mixinDiagnostics` | keep injection requirements strict to surface every misfit |
 | `forbric.mixinFit` | `strict`: also drop `PARTIAL` mixins |

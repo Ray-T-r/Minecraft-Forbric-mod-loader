@@ -37,7 +37,7 @@ import net.forbric.kernel.transform.VanillaEarlyReturns;
  * (with the ordinal that singles it out, counted over the merged body and marked so — {@link CurrentBodyOrdinals}),
  * still inside the locals' scope and still after everything the body did. A handler is moved only where it is the
  * mixin's one TAIL capture on that method. Where that call falls straight into the tail's join, {@link MixinCaptureLanding}
- * gives it a {@code NOP} to land on, so the capture holds under the 0.9.2 local walk too.
+ * gives it a {@code NOP} to land on for a mixin below 0.10.0, so the capture holds under the 0.9.2 local walk too.
  * {@code -Dforbric.guiItemCaptureAnchor=off} leaves every TAIL as compiled.
  */
 public final class MixinGuiItemCaptureAdapter {
@@ -86,8 +86,8 @@ public final class MixinGuiItemCaptureAdapter {
             // The call and its ordinal are counted over the merged body: no later pass may read them as a native count.
             CurrentBodyOrdinals.mark(handler);
             // Where the call falls straight into the tail's join, AFTER is a label, and Mixin's 0.9.2 walk steps from it
-            // onto the join's frame; the call gets a NOP to land on instead.
-            MixinCaptureLanding.after(target.name, capture.getKey(), point.member(), point.ordinal());
+            // onto the join's frame; the call gets a NOP to land on instead, in every class this mixin is applied to.
+            MixinCaptureLanding.moved(mixin, handler);
             changed++;
         }
         return changed;
