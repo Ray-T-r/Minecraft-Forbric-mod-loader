@@ -23,6 +23,56 @@ RUN_OLD="$OLD/run"
 BUILD="$KERNEL/build"
 FAIL=0
 
+# What the kernel caught and carried on from, in every JVM a gate starts. Caught.java appends each failure site to
+# $FORBRIC_CAUGHT_FILE the first time it is hit and its count at exit, and the game JVMs inherit the variable, so a
+# gate reports them whatever its own checks look at: a gate's checks are about its subject, and a bridge that threw
+# on every tick next to a green subject used to be a line in a log nobody opened. FORBRIC_CAUGHT_STRICT=1 makes any
+# of them fail the gate.
+#
+# Only a gate owns a file. Every other script sourcing this (the canary builders, the oracles) leaves an inherited
+# variable alone, so a builder a gate calls writes into the gate's file and does not report it a second time.
+case "$(basename "$0")" in
+  gate-*)
+    CAUGHT_OWNER=$$
+    mkdir -p "$BUILD/caught"
+    FORBRIC_CAUGHT_FILE="$BUILD/caught/$(basename "$0" .sh).$$.tsv"
+    : > "$FORBRIC_CAUGHT_FILE"
+    export FORBRIC_CAUGHT_FILE
+    ;;
+esac
+
+# caught_report — prints what the gate's JVMs caught; returns 1 when FORBRIC_CAUGHT_STRICT=1 and there was any.
+caught_report() {
+  [ "${CAUGHT_OWNER:-}" = "$$" ] || return 0
+  local file="$FORBRIC_CAUGHT_FILE" sites
+  sites=$(awk -F'\t' '$1=="FAILURE"{print $3}' "$file" 2>/dev/null | sort -u | wc -l | tr -d ' ')
+  if [ "${sites:-0}" -eq 0 ]; then
+    printf '[kernel] CAUGHT none: no JVM this gate started reported a failure it carried on from\n'
+    return 0
+  fi
+  printf '[kernel] CAUGHT %s failure site(s) the kernel carried on from (all of them: %s):\n' "$sites" "$file"
+  awk -F'\t' '
+    $1=="COUNT" { n[$3] += $4 }
+    $1=="FAILURE" && !seen[$3]++ { order[++k] = $3; what[$3] = $4 " — " $5 }
+    END {
+      for (i = 1; i <= k && i <= 30; i++) { w = order[i]; printf "[kernel]   %sx %s: %s\n", (w in n ? n[w] : "?"), w, what[w] }
+      if (k > 30) printf "[kernel]   ... and %d more\n", k - 30
+    }' "$file"
+  if [ "${FORBRIC_CAUGHT_STRICT:-0}" = 1 ]; then
+    printf '[kernel] FAIL the kernel carried on from failures, and FORBRIC_CAUGHT_STRICT=1\n'
+    return 1
+  fi
+}
+
+# _gate_exit [status] — the EXIT trap: report, and under strict turn a green exit red. A gate that sets its own EXIT
+# trap calls this from it (gate-m28, canary_scratch below), because a second `trap … EXIT` replaces the first.
+_gate_exit() {
+  local rc="${1:-$?}"
+  caught_report || { [ "$rc" -eq 0 ] && rc=1; }
+  exit "$rc"
+}
+trap '_gate_exit $?' EXIT
+
 # The port the single-server gates bind. They share one by default because they are meant to run one at a
 # time; give each concurrent run its own GATE_PORT and they stop fighting over 25565.
 #
@@ -287,7 +337,7 @@ port_was_free() {
 canary_scratch() {
   WORK="$BUILD/canary-$1.$$"
   rm -rf "$WORK"; mkdir -p "$WORK"
-  trap 'rm -rf "$WORK"' EXIT
+  trap 'rc=$?; rm -rf "$WORK"; _gate_exit "$rc"' EXIT
 }
 
 # publish_canary <staged-jar> <destination> — install a FINISHED jar with one rename, so no reader ever sees a

@@ -28,7 +28,7 @@ cleanup() {
   if [ -n "${SRVPID:-}" ]; then kill_tree "$SRVPID"; fi
   rm -f "$FIFO" "$(_pidfile "$RUNDIR")"
 }
-trap cleanup EXIT
+trap 'rc=$?; cleanup; _gate_exit "$rc"' EXIT
 trap 'exit 130' INT TERM
 : > "$WATCH_LOG"
 FORBRIC_JVM="${M28_EXTRA_JVM:-}" RUNDIR="$RUNDIR" \

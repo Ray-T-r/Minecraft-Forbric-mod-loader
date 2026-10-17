@@ -319,6 +319,9 @@ test {
 	// FurnaceTickCallsInjectorTest: 480-509 MB live, measured with -Xlog:gc), so the default left a few MB of headroom
 	// and a G1 humongous allocation after an unrelated test could end the worker with OutOfMemoryError.
 	maxHeapSize = '1g'
+	// A gate that runs this suite (m0) exports FORBRIC_CAUGHT_FILE for the game JVMs it starts. The failures these tests
+	// cause on purpose are not the game's, and CaughtErrorsExtension already judges every one of them per test.
+	environment 'FORBRIC_CAUGHT_FILE', ''
 	// Transport proofs need the new hash-indexed base; an old base is an explicit negative control.
 	def predicateBase = file(project.findProperty('forbric.predicateBase') ?: stagedMergedBase)
 	inputs.files(predicateBase).withPropertyName('predicateNativeBase').optional()
@@ -455,6 +458,7 @@ tasks.register('transferTest', Test) {
 	testClassesDirs = sourceSets.transferTest.output.classesDirs
 	classpath = sourceSets.transferTest.runtimeClasspath
 	useJUnitPlatform()
+	environment 'FORBRIC_CAUGHT_FILE', ''
 	// Resolved at execution, NOT configuration. The classpath includes the extracted API modules, and read at
 	// configuration time on a clean build directory that glob is still empty: every scenario then failed with
 	// NoClassDefFoundError on the first run after `clean` and passed on the second.
