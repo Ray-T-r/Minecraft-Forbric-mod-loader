@@ -4,7 +4,7 @@ import org.junit.jupiter.api.*;import org.junit.jupiter.api.io.TempDir;
 import net.fabricmc.api.EnvType;import net.forbric.api.Ecosystem;import net.forbric.kernel.mixin.MixinUnusedArgumentObserverAdapter;
 
 class MixinUnusedArgumentObserverWeaveTest {
-    @TempDir static Path work;private static Path fixture;private static WeaveHarness.Result on,off,override;
+    @TempDir static Path work;private static Path fixture;private static WeaveHarness.Result on,off,override,respelledOn,respelledOff,writingOn;
     @BeforeAll static void weave()throws Exception {
         Path source=Files.createDirectories(work.resolve("source"));List<Path> common=new ArrayList<>();
         common.add(write(source,"Tag.java","package fixture.observer;public final class Tag{}"));
@@ -41,18 +41,47 @@ class MixinUnusedArgumentObserverWeaveTest {
               @Definition(id="old",method="Lfixture/observer/Actor;legacy(Lfixture/observer/Tag;)V")
               @Expression("this.old(chosen)")private Tag observe(Tag input,@Share("picked")LocalRef<Tag> ref){Tag custom=ref.get();return custom!=null?custom:input;}}
             """);
+        // The same observer compiled another way (two reads, an early return, no local) under a call expression spelled
+        // with spaces and a wildcard receiver; and one whose handler also writes a field, which is no observer.
+        Path respelled=write(source,"Respelled.java","""
+            package fixture.observer.respelled;import fixture.observer.*;import org.spongepowered.asm.mixin.Mixin;
+            import org.spongepowered.asm.mixin.injection.*;import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
+            import com.llamalad7.mixinextras.sugar.*;import com.llamalad7.mixinextras.sugar.ref.*;import com.llamalad7.mixinextras.expression.*;
+            @Mixin(Actor.class)public class Respelled {
+              @Inject(method="step",at=@At("HEAD"))private void offer(CallbackInfo ci,@Share("kept")LocalRef<Tag> kept){kept.set(Constants.CUSTOM);}
+              @ModifyArg(method="step",at=@At("MIXINEXTRAS:EXPRESSION"))
+              @Definition(id="tag",field="Lfixture/observer/Constants;SECOND:Lfixture/observer/Tag;")
+              @Definition(id="retired",method="Lfixture/observer/Actor;legacy(Lfixture/observer/Tag;)V")
+              @Expression("?.retired( tag )")private Tag pick(Tag given,@Share("kept")LocalRef<Tag> kept){if(kept.get()==null)return given;return kept.get();}}
+            """);
+        Path writing=write(source,"Writing.java","""
+            package fixture.observer.writing;import fixture.observer.*;import org.spongepowered.asm.mixin.Mixin;
+            import org.spongepowered.asm.mixin.injection.*;import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
+            import com.llamalad7.mixinextras.sugar.*;import com.llamalad7.mixinextras.sugar.ref.*;import com.llamalad7.mixinextras.expression.*;
+            @Mixin(Actor.class)public class Writing {
+              @Inject(method="step",at=@At("HEAD"))private void share(CallbackInfo ci,@Share("picked")LocalRef<Tag> ref){ref.set(Constants.CUSTOM);}
+              @ModifyArg(method="step",at=@At("MIXINEXTRAS:EXPRESSION"))
+              @Definition(id="chosen",field="Lfixture/observer/Constants;SECOND:Lfixture/observer/Tag;")
+              @Definition(id="old",method="Lfixture/observer/Actor;legacy(Lfixture/observer/Tag;)V")
+              @Expression("this.old(chosen)")private Tag observe(Tag input,@Share("picked")LocalRef<Tag> ref){ProbeState.observerReads+=100;Tag custom=ref.get();return custom!=null?custom:input;}}
+            """);
         String observer="observe$forbricobserver$"+Integer.toHexString("fixture/observer/mixin/Guest".hashCode());
+        String respelledObserver="pick$forbricobserver$"+Integer.toHexString("fixture/observer/respelled/Respelled".hashCode());
         Path counter=write(source,"Counter.java","""
             package fixture.observer.counter;import fixture.observer.*;import org.spongepowered.asm.mixin.*;import org.spongepowered.asm.mixin.injection.*;import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;import com.llamalad7.mixinextras.sugar.ref.LocalRef;
             @Mixin(targets="fixture.observer.Actor")public class Counter {
-              @Inject(method="%s",at=@At("HEAD"),require=0)private void count(Tag input,LocalRef<Tag> ref,CallbackInfoReturnable<Tag> ci){ProbeState.observerReads++;} }
-            """.formatted(observer));
+              @Inject(method={"%s","%s"},at=@At("HEAD"),require=0)private void count(Tag input,LocalRef<Tag> ref,CallbackInfoReturnable<Tag> ci){ProbeState.observerReads++;} }
+            """.formatted(observer,respelledObserver));
         Path special=write(source,"Special.java","package fixture.observer;public class Special extends Actor {protected void legacy(Tag tag){throw new AssertionError(\"retired override must not run\");} public void typed(Kind kind){typedCalls++;last=\"override:\"+kind.name;}}" );
         Path specialProbe=write(source,"SpecialProbe.java","package fixture.observer;public class SpecialProbe {public String probe(){Special actor=new Special();return actor.probe();}}" );
         Path config=write(source,"observer.mixins.json","{\"required\":true,\"package\":\"fixture.observer.mixin\",\"compatibilityLevel\":\"JAVA_21\",\"mixins\":[\"Guest\"],\"mixinextras\":{\"minVersion\":\"0.5.4\"},\"injectors\":{\"defaultRequire\":0}}");
+        Path respelledConfig=write(source,"respelled.mixins.json","{\"required\":true,\"package\":\"fixture.observer.respelled\",\"compatibilityLevel\":\"JAVA_21\",\"mixins\":[\"Respelled\"],\"mixinextras\":{\"minVersion\":\"0.5.4\"},\"injectors\":{\"defaultRequire\":0}}");
+        Path writingConfig=write(source,"writing.mixins.json","{\"required\":true,\"package\":\"fixture.observer.writing\",\"compatibilityLevel\":\"JAVA_21\",\"mixins\":[\"Writing\"],\"mixinextras\":{\"minVersion\":\"0.5.4\"},\"injectors\":{\"defaultRequire\":0}}");
         Path counterConfig=write(source,"counter.mixins.json","{\"required\":true,\"package\":\"fixture.observer.counter\",\"compatibilityLevel\":\"JAVA_21\",\"mixins\":[\"Counter\"],\"injectors\":{\"defaultRequire\":0}}");
-        List<Path> sources=new ArrayList<>(common);sources.addAll(List.of(current,guest,counter,special,specialProbe));fixture=WeaveHarness.fixture(work,"observer",sources,Map.of("observer.mixins.json",config,"counter.mixins.json",counterConfig,"META-INF/forbric/native-reference/FABRIC/index.tsv",index,"META-INF/forbric/native-reference/FABRIC/fixture/observer/Actor.class.bin",bytes));
+        List<Path> sources=new ArrayList<>(common);sources.addAll(List.of(current,guest,respelled,writing,counter,special,specialProbe));fixture=WeaveHarness.fixture(work,"observer",sources,Map.of("observer.mixins.json",config,"respelled.mixins.json",respelledConfig,"writing.mixins.json",writingConfig,"counter.mixins.json",counterConfig,"META-INF/forbric/native-reference/FABRIC/index.tsv",index,"META-INF/forbric/native-reference/FABRIC/fixture/observer/Actor.class.bin",bytes));
         on=run("on","fixture.observer.Actor",Map.of());off=run("off","fixture.observer.Actor",Map.of(MixinUnusedArgumentObserverAdapter.PROPERTY,"off"));override=run("override","fixture.observer.SpecialProbe",Map.of());
+        respelledOn=run("respelled-on","respelled.mixins.json","fixture.observer.Actor",Map.of());respelledOff=run("respelled-off","respelled.mixins.json","fixture.observer.Actor",Map.of(MixinUnusedArgumentObserverAdapter.PROPERTY,"off"));
+        writingOn=run("writing-on","writing.mixins.json","fixture.observer.Actor",Map.of());
     }
     @Test void actualTypedArgumentAndVirtualOperationRemainOnce()throws Exception {
         assertTrue(on.printedLine(WeaveHarnessMain.DONE+" second|typed=1|base=0|observer=1"),on.describe());
@@ -65,6 +94,18 @@ class MixinUnusedArgumentObserverWeaveTest {
         assertTrue(override.printedLine(WeaveHarnessMain.DONE+" override:second|typed=1|base=0|observer=0"),override.describe());
         WeaveHarness.assertWovenAndVerified(override,"fixture/observer/Actor",fixture);
     }
-    private static WeaveHarness.Result run(String label,String type,Map<String,String> properties)throws Exception{return WeaveHarness.run(work,label,fixture,List.of(new WeaveHarness.Config("observer.mixins.json","observer",Ecosystem.FABRIC),new WeaveHarness.Config("counter.mixins.json","counter",Ecosystem.FABRIC)),List.of(),EnvType.SERVER,type,"probe",properties);}
+    /** The observer compiled another way, under an expression spelled another way, is carried the same. */
+    @Test void theObserverWrittenAnotherWayIsCarriedTheSame()throws Exception {
+        assertTrue(respelledOn.printedLine(WeaveHarnessMain.DONE+" second|typed=1|base=0|observer=1"),respelledOn.describe());
+        WeaveHarness.assertWovenAndVerified(respelledOn,"fixture/observer/Actor",fixture);
+        assertTrue(respelledOff.printedLine(WeaveHarnessMain.DONE+" second|typed=1|base=0|observer=0"),respelledOff.describe());
+    }
+    /** A handler that also writes a field is not a pure observer: it is left as written, and finds nothing to modify. */
+    @Test void aHandlerThatWritesIsNoObserver()throws Exception {
+        assertTrue(writingOn.printedLine(WeaveHarnessMain.DONE+" second|typed=1|base=0|observer=0"),writingOn.describe());
+        WeaveHarness.assertWovenAndVerified(writingOn,"fixture/observer/Actor",fixture);
+    }
+    private static WeaveHarness.Result run(String label,String type,Map<String,String> properties)throws Exception{return run(label,"observer.mixins.json",type,properties);}
+    private static WeaveHarness.Result run(String label,String guest,String type,Map<String,String> properties)throws Exception{return WeaveHarness.run(work,label,fixture,List.of(new WeaveHarness.Config(guest,"observer",Ecosystem.FABRIC),new WeaveHarness.Config("counter.mixins.json","counter",Ecosystem.FABRIC)),List.of(),EnvType.SERVER,type,"probe",properties);}
     private static Path write(Path directory,String name,String source)throws Exception{Files.createDirectories(directory);Path path=directory.resolve(name);Files.writeString(path,source);return path;}
 }

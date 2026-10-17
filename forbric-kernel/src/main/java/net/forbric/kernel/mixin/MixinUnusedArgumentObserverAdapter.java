@@ -5,13 +5,16 @@ import org.objectweb.asm.*;import org.objectweb.asm.tree.*;import org.objectweb.
 import net.forbric.api.Ecosystem;import net.forbric.kernel.boot.*;
 
 /** A pure shared-value modifier of a completely unused old parameter follows a proved typed constant branch.
- * Its result is observed then discarded. The carrier's actual typed argument and virtual operation remain intact. */
+ * Its result is observed then discarded. The carrier's actual typed argument and virtual operation remain intact.
+ * The handler is recognised by what its body computes ({@link HandlerFlow}) and its expression read as a call in any
+ * spelling; what is still matched by shape is the game side — the old and the carrier's guard of the call and the
+ * carrier's tag-to-type mapping — so this carries any observer of that one carrier rewrite, not of another rewrite. */
 public final class MixinUnusedArgumentObserverAdapter {
     public static final String PROPERTY="forbric.mixinUnusedArgumentObservers";
     private static final String MODIFY="Lorg/spongepowered/asm/mixin/injection/ModifyArg;",WRAP="Lcom/llamalad7/mixinextras/injector/wrapoperation/WrapOperation;";
     private static final String SHARE="Lcom/llamalad7/mixinextras/sugar/Share;",REF="com/llamalad7/mixinextras/sugar/ref/LocalRef",OP="com/llamalad7/mixinextras/injector/wrapoperation/Operation";
     private static final String EXPRESSION="Lcom/llamalad7/mixinextras/expression/Expression;",DEFINITIONS="Lcom/llamalad7/mixinextras/expression/Definitions;",DEFINITION="Lcom/llamalad7/mixinextras/expression/Definition;";
-    private record Source(MethodNode handler,AnnotationNode injection,FieldInsnNode constant,MethodInsnNode consumer,String share) { }
+    private record Source(MethodNode handler,AnnotationNode injection,FieldInsnNode constant,MethodInsnNode consumer,List<String> shares) { }
     private record Mapping(MethodNode method,ClassNode owner,FieldInsnNode constant,MethodInsnNode value,TypeInsnNode cast) { }
     private record Move(MethodInsnNode call,int ordinal,Mapping mapping,MethodNode consumer,String token) { }
     private MixinUnusedArgumentObserverAdapter() { }
@@ -20,16 +23,20 @@ public final class MixinUnusedArgumentObserverAdapter {
         if("off".equalsIgnoreCase(System.getProperty(PROPERTY,"on")))return 0;List<String> owners=MixinFit.mixinTargets(mixin);if(owners.size()!=1)return 0;
         ClassNode current=classes.apply(owners.getFirst()),old=references.apply(owners.getFirst());if(current==null||old==null)return 0;
         List<MethodNode> wrappers=new ArrayList<>();for(MethodNode handler:new ArrayList<>(mixin.methods)) {
-            Source source=source(handler);if(source==null)continue;
+            Source written=source(mixin.name,handler);if(written==null)continue;
             // The method the handler binds in the class it was written against and in the merged one, as Mixin binds its
             // selectors there, however they are spelled: one method of one name in both. Every sharer of its value must
             // bind that same merged method.
             MethodNode original=MixinTargetSelectors.one(handler,old),host=MixinTargetSelectors.one(handler,current);
-            if(original==null||host==null||!original.name.equals(host.name)||!typedShares(mixin,source,current,host))continue;
-            MethodNode originalConsumer=declared(old,source.consumer().name,source.consumer().desc),consumer=declared(current,source.consumer().name,source.consumer().desc);
+            if(original==null||host==null||!original.name.equals(host.name)||!typedShares(mixin,written,current,host))continue;
+            MethodNode originalConsumer=declared(old,written.consumer().name,written.consumer().desc),consumer=declared(current,written.consumer().name,written.consumer().desc);
             if(originalConsumer==null||consumer==null||!unused(originalConsumer)||!unused(consumer))continue;
-            List<MethodInsnNode> calls=calls(original).stream().filter(c->same(c,source.consumer())&&previous(c)instanceof FieldInsnNode f&&same(f,source.constant())).toList();
-            if(calls.size()!=1||calls(host).stream().anyMatch(c->same(c,source.consumer())))continue;
+            // The native calls the expression selects, by the constant each one's argument is (past locals and casts): with a
+            // definition field, those passing it; with any value, every call of the consumer, which must pass a constant.
+            HandlerFlow nativeFlow=HandlerFlow.of(old.name,original);if(nativeFlow==null)continue;
+            List<MethodInsnNode> selected=calls(original).stream().filter(c->same(c,written.consumer())&&(written.constant()==null||same(constantArgument(nativeFlow,c),written.constant()))).toList();
+            if(selected.size()!=1||constantArgument(nativeFlow,selected.getFirst())==null||calls(host).stream().anyMatch(c->same(c,written.consumer())))continue;
+            Source source=new Source(written.handler(),written.injection(),constantArgument(nativeFlow,selected.getFirst()),written.consumer(),written.shares());List<MethodInsnNode> calls=selected;
             List<AbstractInsnNode> before=code(original);int position=before.indexOf(calls.getFirst());if(position<12||!oldGuard(before,position,source))continue;
             MethodInsnNode shallow=(MethodInsnNode)before.get(position-4);Mapping mapping=mapping(shallow,source,classes,new HashSet<>());if(mapping==null)continue;
             List<Move> found=new ArrayList<>();for(MethodInsnNode candidate:calls(host)) {
@@ -42,21 +49,86 @@ public final class MixinUnusedArgumentObserverAdapter {
         }
         mixin.methods.addAll(wrappers);return wrappers.size();
     }
-    private static Source source(MethodNode method) {
-        AnnotationNode injection=MixinFit.injectorOf(method);Type[] args=Type.getArgumentTypes(method.desc);List<AbstractInsnNode> c=code(method);
-        if(injection==null||!MODIFY.equals(injection.desc)||(method.access&(Opcodes.ACC_STATIC|Opcodes.ACC_SYNCHRONIZED))!=0||!method.tryCatchBlocks.isEmpty()||MixinFit.value(injection,"slice")!=null||args.length!=2||args[0].getSort()!=Type.OBJECT||!args[1].equals(Type.getObjectType(REF))||!Type.getReturnType(method.desc).equals(args[0])||c.size()!=10)return null;
-        AnnotationNode share=parameter(method,1);if(share==null||!SHARE.equals(share.desc)||!(MixinFit.value(share,"value")instanceof String key)||MixinFit.value(share,"namespace")!=null)return null;
-        if(!load(c.get(0),2)||!call(c.get(1),Opcodes.INVOKEINTERFACE,REF,"get","()Ljava/lang/Object;")||!(c.get(2)instanceof TypeInsnNode cast)||cast.getOpcode()!=Opcodes.CHECKCAST||!cast.desc.equals(args[0].getInternalName())||!variable(c.get(3),Opcodes.ASTORE,3)||!load(c.get(4),3)||!jump(c.get(5),Opcodes.IFNULL,c.get(8))||!load(c.get(6),3)||!jump(c.get(7),Opcodes.GOTO,c.get(9))||!load(c.get(8),1)||c.get(9).getOpcode()!=Opcodes.ARETURN)return null;
+    /**
+     * The handler, read by what it computes and not by how it is compiled: a {@code @ModifyArg} instance handler of one
+     * argument {@code T} returning {@code T}, whose other parameters are all {@code @Share} references, and whose body only
+     * reads those references — it calls nothing but their {@code get()}, writes nothing, throws nothing, casts only to
+     * {@code T}, and returns the argument, a shared value or null. Its point is a MixinExtras expression calling one
+     * {@code @Definition} method with one {@code @Definition} field (or any value, then the native call's own constant),
+     * read as a call expression in any spacing, with {@code this} or any receiver.
+     */
+    private static Source source(String owner,MethodNode method) {
+        AnnotationNode injection=MixinFit.injectorOf(method);Type[] args=Type.getArgumentTypes(method.desc);
+        if(injection==null||!MODIFY.equals(injection.desc)||(method.access&(Opcodes.ACC_STATIC|Opcodes.ACC_SYNCHRONIZED))!=0||MixinFit.value(injection,"slice")!=null||args.length<2||args[0].getSort()!=Type.OBJECT||!Type.getReturnType(method.desc).equals(args[0]))return null;
+        if(MixinFit.value(injection,"index")instanceof Integer index&&index!=0)return null;
+        List<String> shares=new ArrayList<>();Set<Integer> shareSlots=new HashSet<>();
+        for(int index=1;index<args.length;index++) {
+            AnnotationNode share=parameter(method,index);
+            if(!args[index].equals(Type.getObjectType(REF))||share==null||!SHARE.equals(share.desc)||!(MixinFit.value(share,"value")instanceof String key)||MixinFit.value(share,"namespace")!=null||shares.contains(key))return null;
+            shares.add(key);shareSlots.add(index+1);
+        }
+        HandlerFlow flow=HandlerFlow.of(owner,method);
+        if(flow==null||!flow.onlyCalls(call->shareRead(flow,call,shareSlots))||!flow.returnsAValue())return null;
+        for(AbstractInsnNode instruction:method.instructions)if(instruction instanceof TypeInsnNode cast&&cast.getOpcode()==Opcodes.CHECKCAST&&!cast.desc.equals(args[0].getInternalName())&&!cast.desc.equals("java/lang/Object"))return null;
+        for(AbstractInsnNode origin:flow.returned())if(!HandlerFlow.isParameter(origin,1)&&origin.getOpcode()!=Opcodes.ACONST_NULL&&!(origin instanceof MethodInsnNode call&&shareRead(flow,call,shareSlots)))return null;
         List<AnnotationNode> all=annotations(method);if(all.stream().filter(a->FinalMixinApplications.isInjector(a.desc)).count()!=1||all.stream().anyMatch(a->a.desc.equals("Lorg/spongepowered/asm/mixin/injection/Group;")))return null;
         List<AnnotationNode> points=MixinFit.atNodes(injection);if(points.size()!=1||!"MIXINEXTRAS:EXPRESSION".equals(MixinFit.value(points.getFirst(),"value")))return null;
         AnnotationNode expression=all.stream().filter(a->EXPRESSION.equals(a.desc)).findFirst().orElse(null);List<String> values=expression==null?List.of():MixinFit.stringList(MixinFit.value(expression,"value"));if(values.size()!=1)return null;
-        java.util.regex.Matcher match=java.util.regex.Pattern.compile("this\\.([A-Za-z0-9_$]+)\\(([A-Za-z0-9_$]+)\\)").matcher(values.getFirst());if(!match.matches())return null;
+        CallExpression call=CallExpression.parse(values.getFirst());if(call==null||call.arguments().size()!=1)return null;
         Map<String,String> fields=new HashMap<>(),methods=new HashMap<>();for(AnnotationNode annotation:all) {
             List<AnnotationNode> definitions=annotation.desc.equals(DEFINITION)?List.of(annotation):annotation.desc.equals(DEFINITIONS)&&MixinFit.value(annotation,"value")instanceof List<?> list?list.stream().filter(AnnotationNode.class::isInstance).map(AnnotationNode.class::cast).toList():List.of();
             for(AnnotationNode definition:definitions){Object id=MixinFit.value(definition,"id");List<String> fs=MixinFit.stringList(MixinFit.value(definition,"field")),ms=MixinFit.stringList(MixinFit.value(definition,"method"));if(id instanceof String name){if(fs.size()==1)fields.put(name,fs.getFirst());if(ms.size()==1)methods.put(name,ms.getFirst());}}
         }
-        FieldInsnNode field=field(fields.get(match.group(2)));MethodInsnNode consumer=member(methods.get(match.group(1)));
-        return field!=null&&consumer!=null&&field.desc.equals(args[0].getDescriptor())&&consumer.desc.equals("("+args[0].getDescriptor()+")V")?new Source(method,injection,field,consumer,key):null;
+        MethodInsnNode consumer=member(methods.get(call.method()));String argument=call.arguments().getFirst();
+        FieldInsnNode field=argument.equals("?")?null:field(fields.get(argument));if(!argument.equals("?")&&field==null)return null;
+        return consumer!=null&&(field==null||field.desc.equals(args[0].getDescriptor()))&&consumer.desc.equals("("+args[0].getDescriptor()+")V")?new Source(method,injection,field,consumer,List.copyOf(shares)):null;
+    }
+    /** The static field {@code call}'s one argument always is, past locals and casts; null when it is anything else. */
+    private static FieldInsnNode constantArgument(HandlerFlow flow,MethodInsnNode call) {
+        Set<AbstractInsnNode> origins=flow.argument(call,1);
+        return origins.size()==1&&origins.iterator().next()instanceof FieldInsnNode field&&field.getOpcode()==Opcodes.GETSTATIC?field:null;
+    }
+    /** {@code call} is a {@code get()} of one of the handler's share references. */
+    private static boolean shareRead(HandlerFlow flow,MethodInsnNode call,Set<Integer> shareSlots) {
+        if(!call(call,Opcodes.INVOKEINTERFACE,REF,"get","()Ljava/lang/Object;"))return false;
+        Set<AbstractInsnNode> receiver=flow.argument(call,0);if(receiver.isEmpty())return false;
+        for(AbstractInsnNode origin:receiver)if(!(origin instanceof HandlerFlow.Parameter parameter&&shareSlots.contains(parameter.slot)))return false;
+        return true;
+    }
+    /**
+     * A MixinExtras expression read as a call: {@code receiver.method(arguments)}, the receiver {@code this} or {@code ?},
+     * each argument an identifier or {@code ?}, any of them inside {@code @(...)}, in any spacing. Null for anything else.
+     */
+    record CallExpression(String receiver,String method,List<String> arguments) {
+        static CallExpression parse(String text) {
+            List<String> tokens=new ArrayList<>();
+            for(int i=0;i<text.length();) {
+                char c=text.charAt(i);
+                if(Character.isWhitespace(c)){i++;continue;}
+                if(Character.isJavaIdentifierStart(c)){int start=i;while(i<text.length()&&Character.isJavaIdentifierPart(text.charAt(i)))i++;tokens.add(text.substring(start,i));continue;}
+                if("?.(),@".indexOf(c)<0)return null;
+                tokens.add(String.valueOf(c));i++;
+            }
+            int[] at={0};CallExpression call=call(tokens,at);return call!=null&&at[0]==tokens.size()?call:null;
+        }
+        private static CallExpression call(List<String> tokens,int[] at) {
+            if(accept(tokens,at,"@")){if(!accept(tokens,at,"("))return null;CallExpression inner=call(tokens,at);return inner!=null&&accept(tokens,at,")")?inner:null;}
+            String receiver=next(tokens,at);if(!"this".equals(receiver)&&!"?".equals(receiver)||!accept(tokens,at,"."))return null;
+            String method=next(tokens,at);if(!identifier(method)||!accept(tokens,at,"("))return null;
+            List<String> arguments=new ArrayList<>();
+            if(!accept(tokens,at,")")) {
+                do{String argument=argument(tokens,at);if(argument==null)return null;arguments.add(argument);}while(accept(tokens,at,","));
+                if(!accept(tokens,at,")"))return null;
+            }
+            return new CallExpression(receiver,method,List.copyOf(arguments));
+        }
+        private static String argument(List<String> tokens,int[] at) {
+            if(accept(tokens,at,"@")){if(!accept(tokens,at,"("))return null;String inner=argument(tokens,at);return inner!=null&&accept(tokens,at,")")?inner:null;}
+            String token=next(tokens,at);return "?".equals(token)||identifier(token)&&!"this".equals(token)?token:null;
+        }
+        private static boolean identifier(String token){return token!=null&&Character.isJavaIdentifierStart(token.charAt(0));}
+        private static String next(List<String> tokens,int[] at){return at[0]<tokens.size()?tokens.get(at[0]++):null;}
+        private static boolean accept(List<String> tokens,int[] at,String token){if(at[0]<tokens.size()&&tokens.get(at[0]).equals(token)){at[0]++;return true;}return false;}
     }
     private static boolean unused(MethodNode method){if((method.access&(Opcodes.ACC_STATIC|Opcodes.ACC_ABSTRACT|Opcodes.ACC_NATIVE|Opcodes.ACC_SYNCHRONIZED))!=0)return false;for(AbstractInsnNode instruction:method.instructions)if(instruction instanceof VarInsnNode var&&var.var==1&&(var.getOpcode()>=Opcodes.ILOAD&&var.getOpcode()<=Opcodes.ALOAD||var.getOpcode()==Opcodes.RET)||instruction instanceof IincInsnNode increment&&increment.var==1)return false;return true;}
     private static boolean oldGuard(List<AbstractInsnNode> c,int at,Source source) {
@@ -83,9 +155,14 @@ public final class MixinUnusedArgumentObserverAdapter {
      * source's host: its injector binds {@code host} of {@code current}, and nothing else, however its selectors are spelled.
      */
     private static boolean typedShares(ClassNode mixin,Source source,ClassNode current,MethodNode host) {
+        for(String key:source.shares())if(!typedShare(mixin,source,key,current,host))return false;
+        return true;
+    }
+    /** {@link #typedShares} for the share {@code key}: somebody writes it. */
+    private static boolean typedShare(ClassNode mixin,Source source,String key,ClassNode current,MethodNode host) {
         String tag=Type.getArgumentTypes(source.handler().desc)[0].getDescriptor();boolean writer=false;
         for(MethodNode method:mixin.methods)for(int index=0;index<Type.getArgumentTypes(method.desc).length;index++) {
-            AnnotationNode annotation=parameter(method,index);if(annotation==null||!SHARE.equals(annotation.desc)||!source.share().equals(MixinFit.value(annotation,"value")))continue;
+            AnnotationNode annotation=parameter(method,index);if(annotation==null||!SHARE.equals(annotation.desc)||!key.equals(MixinFit.value(annotation,"value")))continue;
             AnnotationNode injection=MixinFit.injectorOf(method);if(injection==null||MixinTargetSelectors.one(method,current)!=host||MixinFit.value(annotation,"namespace")!=null)return false;
             int[] slots=DefaultMethodOverloadBridge.slots(Type.getArgumentTypes(method.desc),(method.access&Opcodes.ACC_STATIC)!=0);int reference=slots[index];Sources interpreter=new Sources(method);Frame<SourceValue>[] frames;
             try{frames=new Analyzer<>(interpreter).analyze(mixin.name,method);}catch(AnalyzerException|RuntimeException invalid){return false;}
@@ -121,10 +198,10 @@ public final class MixinUnusedArgumentObserverAdapter {
     }
     private static MethodNode wrap(ClassNode mixin,Source source,Move move) {
         String old=source.handler().name,aside=MixinHandlerShim.asideName(mixin.name,old,"$forbricobserver");Type typed=Type.getArgumentTypes(move.call().desc)[0];String receiver="L"+move.call().owner+";";
-        MethodNode wrapper=new MethodNode(source.handler().access,old,"("+receiver+typed.getDescriptor()+"L"+OP+";L"+REF+";)V",null,null);
+        int shares=source.shares().size();MethodNode wrapper=new MethodNode(source.handler().access,old,"("+receiver+typed.getDescriptor()+"L"+OP+";"+("L"+REF+";").repeat(shares)+")V",null,null);
         AnnotationNode at=new AnnotationNode("Lorg/spongepowered/asm/mixin/injection/At;");at.values=new ArrayList<>(List.of("value","INVOKE","target",member(move.call()),"ordinal",move.ordinal()));AnnotationNode injection=new AnnotationNode(WRAP);injection.values=new ArrayList<>(List.of("method",MixinFit.value(source.injection(),"method"),"at",at));wrapper.visibleAnnotations=new ArrayList<>(List.of(injection));
-        @SuppressWarnings("unchecked")List<AnnotationNode>[] parameters=new List[4];parameters[3]=new ArrayList<>(List.of(parameter(source.handler(),1)));wrapper.invisibleParameterAnnotations=parameters;
-        LabelNode nativeCall=new LabelNode();InsnList c=wrapper.instructions;c.add(new VarInsnNode(Opcodes.ALOAD,1));c.add(new LdcInsnNode(move.token()));c.add(new MethodInsnNode(Opcodes.INVOKESTATIC,"net/forbric/kernel/boot/KernelUnusedArgumentObservers","permits","(Ljava/lang/Object;Ljava/lang/String;)Z",false));c.add(new JumpInsnNode(Opcodes.IFEQ,nativeCall));c.add(new VarInsnNode(Opcodes.ALOAD,0));c.add(new FieldInsnNode(Opcodes.GETSTATIC,source.constant().owner,source.constant().name,source.constant().desc));c.add(new VarInsnNode(Opcodes.ALOAD,4));c.add(MixinHandlerShim.callOwn(mixin,false,aside,source.handler().desc));c.add(new InsnNode(Opcodes.POP));c.add(nativeCall);c.add(new VarInsnNode(Opcodes.ALOAD,3));c.add(new InsnNode(Opcodes.ICONST_2));c.add(new TypeInsnNode(Opcodes.ANEWARRAY,"java/lang/Object"));for(int i=0;i<2;i++){c.add(new InsnNode(Opcodes.DUP));c.add(new InsnNode(Opcodes.ICONST_0+i));c.add(new VarInsnNode(Opcodes.ALOAD,1+i));c.add(new InsnNode(Opcodes.AASTORE));}c.add(new MethodInsnNode(Opcodes.INVOKEINTERFACE,OP,"call","([Ljava/lang/Object;)Ljava/lang/Object;",true));c.add(new InsnNode(Opcodes.POP));c.add(new InsnNode(Opcodes.RETURN));wrapper.maxLocals=5;wrapper.maxStack=5;
+        @SuppressWarnings("unchecked")List<AnnotationNode>[] parameters=new List[3+shares];for(int i=0;i<shares;i++)parameters[3+i]=new ArrayList<>(List.of(parameter(source.handler(),1+i)));wrapper.invisibleParameterAnnotations=parameters;
+        LabelNode nativeCall=new LabelNode();InsnList c=wrapper.instructions;c.add(new VarInsnNode(Opcodes.ALOAD,1));c.add(new LdcInsnNode(move.token()));c.add(new MethodInsnNode(Opcodes.INVOKESTATIC,"net/forbric/kernel/boot/KernelUnusedArgumentObservers","permits","(Ljava/lang/Object;Ljava/lang/String;)Z",false));c.add(new JumpInsnNode(Opcodes.IFEQ,nativeCall));c.add(new VarInsnNode(Opcodes.ALOAD,0));c.add(new FieldInsnNode(Opcodes.GETSTATIC,source.constant().owner,source.constant().name,source.constant().desc));for(int i=0;i<shares;i++)c.add(new VarInsnNode(Opcodes.ALOAD,4+i));c.add(MixinHandlerShim.callOwn(mixin,false,aside,source.handler().desc));c.add(new InsnNode(Opcodes.POP));c.add(nativeCall);c.add(new VarInsnNode(Opcodes.ALOAD,3));c.add(new InsnNode(Opcodes.ICONST_2));c.add(new TypeInsnNode(Opcodes.ANEWARRAY,"java/lang/Object"));for(int i=0;i<2;i++){c.add(new InsnNode(Opcodes.DUP));c.add(new InsnNode(Opcodes.ICONST_0+i));c.add(new VarInsnNode(Opcodes.ALOAD,1+i));c.add(new InsnNode(Opcodes.AASTORE));}c.add(new MethodInsnNode(Opcodes.INVOKEINTERFACE,OP,"call","([Ljava/lang/Object;)Ljava/lang/Object;",true));c.add(new InsnNode(Opcodes.POP));c.add(new InsnNode(Opcodes.RETURN));wrapper.maxLocals=4+shares;wrapper.maxStack=Math.max(5,2+shares);
         source.handler().visibleAnnotations=without(source.handler().visibleAnnotations,source.injection());source.handler().invisibleAnnotations=without(source.handler().invisibleAnnotations,source.injection());source.handler().name=aside;return wrapper;
     }
     private static List<AnnotationNode> without(List<AnnotationNode> input,AnnotationNode injection){if(input==null)return null;return new ArrayList<>(input.stream().filter(a->a!=injection&&!a.desc.equals(EXPRESSION)&&!a.desc.equals(DEFINITIONS)&&!a.desc.equals(DEFINITION)).toList());}
@@ -139,7 +216,7 @@ public final class MixinUnusedArgumentObserverAdapter {
     private static MethodInsnNode member(String value){MixinFit.Member m=MixinFit.parseMember(value);return m!=null&&m.owner()!=null&&m.desc()!=null&&m.desc().startsWith("(")?new MethodInsnNode(Opcodes.INVOKEVIRTUAL,m.owner(),m.name(),m.desc(),false):null;}
     private static String member(MethodInsnNode call){return "L"+call.owner+";"+call.name+call.desc;}
     private static boolean same(MethodInsnNode a,MethodInsnNode b){return a.getOpcode()==b.getOpcode()&&a.owner.equals(b.owner)&&a.name.equals(b.name)&&a.desc.equals(b.desc)&&a.itf==b.itf;}
-    private static boolean same(FieldInsnNode a,FieldInsnNode b){return a.getOpcode()==b.getOpcode()&&a.owner.equals(b.owner)&&a.name.equals(b.name)&&a.desc.equals(b.desc);}
+    private static boolean same(FieldInsnNode a,FieldInsnNode b){return a!=null&&b!=null&&a.getOpcode()==b.getOpcode()&&a.owner.equals(b.owner)&&a.name.equals(b.name)&&a.desc.equals(b.desc);}
     private static boolean variable(AbstractInsnNode instruction,int opcode,int slot){return instruction instanceof VarInsnNode var&&var.getOpcode()==opcode&&var.var==slot;}
     private static boolean load(AbstractInsnNode instruction,int slot){return variable(instruction,Opcodes.ALOAD,slot);}
     private static boolean call(AbstractInsnNode instruction,int opcode,String owner,String name,String desc){return instruction instanceof MethodInsnNode c&&c.getOpcode()==opcode&&c.owner.equals(owner)&&c.name.equals(name)&&c.desc.equals(desc);}
