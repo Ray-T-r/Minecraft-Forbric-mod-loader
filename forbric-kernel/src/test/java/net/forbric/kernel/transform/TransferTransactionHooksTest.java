@@ -10,6 +10,7 @@ import org.objectweb.asm.ClassReader;
 import org.objectweb.asm.ClassWriter;
 import org.objectweb.asm.tree.ClassNode;
 import org.objectweb.asm.tree.MethodInsnNode;
+import org.objectweb.asm.tree.MethodNode;
 import org.objectweb.asm.tree.analysis.Analyzer;
 import org.objectweb.asm.tree.analysis.BasicVerifier;
 
@@ -32,26 +33,83 @@ class TransferTransactionHooksTest {
 		return TestFixtures.requireEntry(NativeCoremodParityTest.fixtureOf(jar), jar, name.replace('.', '/') + ".class");
 	}
 	private static ClassNode node(byte[] bytes) { ClassNode node = new ClassNode(); new ClassReader(bytes).accept(node, 0); return node; }
+	/** Class bytes by internal name from the NeoForge runtime and Fabric's transfer module, null when in neither. */
+	private static java.util.function.Function<String, byte[]> classBytes() throws Exception {
+		List<Path> jars = List.of(neo(), fabric());
+		return name -> {
+			for (Path jar : jars) {
+				try (var zip = new java.util.zip.ZipFile(jar.toFile())) {
+					var entry = zip.getEntry(name + ".class");
+					if (entry != null) try (var in = zip.getInputStream(entry)) { return in.readAllBytes(); }
+				} catch (java.io.IOException unreadable) {
+					return null;
+				}
+			}
+			return null;
+		};
+	}
+	@Test void fabricsEngineIsFoundFromItsPublicTransaction() throws Exception {
+		var engine = TransferTransactionHooks.fabricEngine(classBytes());
+		assertNotNull(engine);
+		// The names are this build's, read here only to show the search lands where the engine is.
+		assertEquals("net/fabricmc/fabric/impl/transfer/transaction/TransactionManagerImpl", engine.manager());
+		assertEquals("net/fabricmc/fabric/impl/transfer/transaction/TransactionManagerImpl$TransactionImpl", engine.transaction());
+		assertNull(TransferTransactionHooks.fabricEngine(name -> null));
+	}
 	@Test void allNativeTransactionHooksHaveValidBytecodeAndAreIdempotent() throws Exception {
-		for (String name : List.of(TransferTransactionHooks.NEO, TransferTransactionHooks.NEO_MANAGER, TransferTransactionHooks.FABRIC, TransferTransactionHooks.FABRIC_MANAGER)) {
-			byte[] original = bytes(name.startsWith("net.fabricmc.") ? fabric() : neo(), name);
-			var transformer = new TransferTransactionHooks(); byte[] changed = transformer.transform(name, original, null);
+		var transformer = new TransferTransactionHooks(classBytes());
+		List<String> names = new java.util.ArrayList<>(List.of(TransferTransactionHooks.NEO, TransferTransactionHooks.NEO_MANAGER));
+		names.addAll(transformer.engine().classes());
+		assertEquals(4, names.size());
+		for (String name : names) {
+			assertTrue(transformer.targets(name), name);
+			byte[] original = bytes(name.startsWith("net.neoforged.") ? neo() : fabric(), name);
+			byte[] changed = transformer.transform(name, original, null);
 			assertNotSame(original, changed); assertSame(changed, transformer.transform(name, changed, null));
 			ClassNode parsed = node(changed);
-			assertTrue(parsed.methods.stream().anyMatch(m -> m.name.equals("forbric$transferHooks")));
+			assertTrue(parsed.methods.stream().anyMatch(m -> m.name.equals(TransferTransactionHooks.MARKER)));
 			for (var method : parsed.methods) if (method.name.equals("close") || method.name.startsWith("forbric$")) {
 				new Analyzer<>(new BasicVerifier()).analyze(parsed.name, method);
 			}
 		}
+		assertFalse(transformer.targets("net.minecraft.world.level.block.entity.HopperBlockEntity"));
 	}
-	@Test void changedNativeValidationRefusesTheHookInsteadOfClaimingCompatibility() throws Exception {
+	/** The wrapper validates with the native close's own leading checks; a close that opens with none is not hooked. */
+	@Test void aCloseThatDoesNotValidateFirstRefusesTheHookInsteadOfClaimingCompatibility() throws Exception {
+		var transformer = new TransferTransactionHooks(classBytes());
 		ClassNode changed = node(bytes(neo(), TransferTransactionHooks.NEO));
 		for (var method : changed.methods) if (method.name.equals("close") && method.desc.equals("(Z)V")) {
-			for (var instruction : method.instructions) if (instruction instanceof MethodInsnNode call && call.name.equals("validateOpen")) call.name = "changedValidation";
+			var first = method.instructions.getFirst();
+			while (!(first instanceof org.objectweb.asm.tree.MethodInsnNode call && call.name.equals("validateOpen"))) {
+				var next = first.getNext();
+				if (first.getOpcode() >= 0) method.instructions.remove(first);
+				first = next;
+			}
+			method.instructions.remove(first);
 		}
 		ClassWriter writer = new ClassWriter(0); changed.accept(writer); byte[] drift = writer.toByteArray();
-		assertSame(drift, new TransferTransactionHooks().transform(TransferTransactionHooks.NEO, drift, null));
+		assertSame(drift, transformer.transform(TransferTransactionHooks.NEO, drift, null));
 	}
+	/** A leading call that writes state is not a check: copying it before beforeClose would run it twice. */
+	@Test void aLeadingCallThatWritesStateIsNotCopiedAsAValidation() throws Exception {
+		var transformer = new TransferTransactionHooks(classBytes());
+		ClassNode changed = node(bytes(neo(), TransferTransactionHooks.NEO));
+		for (var method : changed.methods) if (method.name.equals("validateOpen")) {
+			var write = new org.objectweb.asm.tree.InsnList();
+			write.add(new org.objectweb.asm.tree.VarInsnNode(org.objectweb.asm.Opcodes.ALOAD, 0));
+			write.add(new org.objectweb.asm.tree.InsnNode(org.objectweb.asm.Opcodes.ICONST_1));
+			write.add(new org.objectweb.asm.tree.FieldInsnNode(org.objectweb.asm.Opcodes.PUTFIELD, changed.name, "open", "Z"));
+			method.instructions.insert(write);
+		}
+		ClassWriter writer = new ClassWriter(ClassWriter.COMPUTE_MAXS); changed.accept(writer); byte[] drift = writer.toByteArray();
+		byte[] hooked = transformer.transform(TransferTransactionHooks.NEO, drift, null);
+		assertNotSame(drift, hooked, "the manager's own check still leads the close");
+		MethodNode wrapper = node(hooked).methods.stream().filter(m -> m.name.equals("close") && m.desc.equals("(Z)V")).findFirst().orElseThrow();
+		for (var insn : wrapper.instructions) {
+			assertFalse(insn instanceof org.objectweb.asm.tree.MethodInsnNode call && call.name.equals("validateOpen"), "a writing call was copied");
+		}
+	}
+
 	@Test void capabilityFallbackChangesOnlyTheFinalAbsentResult() throws Exception {
 		byte[] original = bytes(neo(), TransferCapabilityFallback.TARGET);
 		var transformer = new TransferCapabilityFallback(); byte[] changed = transformer.transform(TransferCapabilityFallback.TARGET, original, null);
@@ -205,45 +263,111 @@ class TransferTransactionHooksTest {
 			assertFalse(node(ForgeTransferShapeAudit.certify(name, writer.toByteArray())).methods.stream().anyMatch(method -> method.name.equals(ForgeTransferShapeAudit.MARKER)), methodName);
 		}
 	}
-	@Test void redundantMixinHierarchySignatureIsIgnoredWithoutErasingNewGenericOrExecutableContracts() throws Exception {
+	/** An interface a mod's mixin could add: {@code methods} as name, descriptor, access triples (abstract unless default). */
+	private static byte[] contract(String name, String... methods) {
+		ClassWriter writer = new ClassWriter(0);
+		writer.visit(org.objectweb.asm.Opcodes.V21, org.objectweb.asm.Opcodes.ACC_PUBLIC | org.objectweb.asm.Opcodes.ACC_INTERFACE
+				| org.objectweb.asm.Opcodes.ACC_ABSTRACT, name, null, "java/lang/Object", null);
+		for (int i = 0; i < methods.length; i += 3) {
+			boolean body = !methods[i + 2].equals("abstract");
+			var method = writer.visitMethod(org.objectweb.asm.Opcodes.ACC_PUBLIC | (methods[i + 2].equals("static") ? org.objectweb.asm.Opcodes.ACC_STATIC : 0)
+					| (body ? 0 : org.objectweb.asm.Opcodes.ACC_ABSTRACT), methods[i], methods[i + 1], null, null);
+			if (body) {
+				method.visitCode();
+				org.objectweb.asm.Type returned = org.objectweb.asm.Type.getReturnType(methods[i + 1]);
+				if (returned.getSort() == org.objectweb.asm.Type.VOID) method.visitInsn(org.objectweb.asm.Opcodes.RETURN);
+				else if (returned.getSort() >= org.objectweb.asm.Type.ARRAY) { method.visitInsn(org.objectweb.asm.Opcodes.ACONST_NULL); method.visitInsn(org.objectweb.asm.Opcodes.ARETURN); }
+				else { method.visitInsn(org.objectweb.asm.Opcodes.ICONST_0); method.visitInsn(returned.getOpcode(org.objectweb.asm.Opcodes.IRETURN)); }
+				method.visitMaxs(1, 8);
+			}
+			method.visitEnd();
+		}
+		writer.visitEnd();
+		return writer.toByteArray();
+	}
+	/** The staged game's raw classes, plus {@code extra} (resource path to bytes) standing in for a mod's jar. */
+	private static java.util.function.Function<String, byte[]> withMod(StagedGameClasses game, java.util.Map<String, byte[]> extra) {
+		return path -> extra.containsKey(path) ? extra.get(path) : game.resources().apply(path);
+	}
+	@Test @ResourceLock("native-game-references") void redundantMixinHierarchySignatureIsIgnoredWithoutErasingNewGenericOrExecutableContracts() throws Exception {
 		String name = "net.minecraft.world.item.ItemStack";
 		Path game = TestFixtures.stagedRoot().resolve("merged-base/patched-mc-merged-26.2.jar");
 		byte[] original = bytes(game, name); ClassNode woven = node(original);
 		assertNull(woven.signature, "the real staged class has no generic signature");
-		woven.interfaces.add("net/fabricmc/fabric/api/item/v1/FabricItemStack");
-		woven.interfaces.add("net/fabricmc/fabric/mixin/transfer/ItemStackAccessor");
+		// A mod's two interfaces: one of default methods named like nothing the audit reviews, one with only a static.
+		var mod = java.util.Map.of("org/quarry/duck/Stamped.class", contract("org/quarry/duck/Stamped", "stampOf", "()Ljava/lang/String;", "default",
+						"stampWith", "(Ljava/lang/Object;)Z", "default"),
+				"org/quarry/duck/Peek.class", contract("org/quarry/duck/Peek", "check", "(Ljava/lang/Object;)Ljava/lang/Object;", "static"));
+		woven.interfaces.add("org/quarry/duck/Stamped");
+		woven.interfaces.add("org/quarry/duck/Peek");
 		StringBuilder erased = new StringBuilder("L").append(woven.superName).append(';');
 		for (String contract : woven.interfaces) erased.append('L').append(contract).append(';');
 		woven.signature = erased.toString();
-		ClassWriter writer = new ClassWriter(0); woven.accept(writer);
-		assertEquals(ForgeTransferShapeAudit.fingerprint(original), ForgeTransferShapeAudit.fingerprint(writer.toByteArray()));
-		woven.signature = "<T:Ljava/lang/Object;>" + erased;
-		writer = new ClassWriter(0); woven.accept(writer);
-		assertNotEquals(ForgeTransferShapeAudit.fingerprint(original), ForgeTransferShapeAudit.fingerprint(writer.toByteArray()), "real generic metadata is not erased");
-		woven.signature = erased.toString();
-		woven.methods.stream().filter(method -> method.name.equals("copy") && method.desc.equals("()Lnet/minecraft/world/item/ItemStack;")).findFirst().orElseThrow()
-				.instructions.insert(new org.objectweb.asm.tree.InsnNode(org.objectweb.asm.Opcodes.NOP));
-		writer = new ClassWriter(0); woven.accept(writer);
-		assertFalse(node(ForgeTransferShapeAudit.certify(name, writer.toByteArray())).methods.stream().anyMatch(method -> method.name.equals(ForgeTransferShapeAudit.MARKER)));
+		try (StagedGameClasses staged = StagedGameClasses.open()) {
+			var resources = withMod(staged, mod);
+			ClassWriter writer = new ClassWriter(0); woven.accept(writer);
+			assertEquals(ForgeTransferShapeAudit.fingerprint(original, null, resources), ForgeTransferShapeAudit.fingerprint(writer.toByteArray(), null, resources));
+			assertTrue(node(ForgeTransferShapeAudit.certify(name, writer.toByteArray(), resources)).methods.stream().anyMatch(method -> method.name.equals(ForgeTransferShapeAudit.MARKER)));
+			assertEquals(java.util.Set.of("org/quarry/duck/Stamped", "org/quarry/duck/Peek"), ForgeTransferShapeAudit.excludedInterfaces(name));
+			// Without the bytes to judge them by, added interfaces stay in the digest.
+			assertNotEquals(ForgeTransferShapeAudit.fingerprint(original), ForgeTransferShapeAudit.fingerprint(writer.toByteArray()));
+			woven.signature = "<T:Ljava/lang/Object;>" + erased;
+			writer = new ClassWriter(0); woven.accept(writer);
+			assertNotEquals(ForgeTransferShapeAudit.fingerprint(original, null, resources), ForgeTransferShapeAudit.fingerprint(writer.toByteArray(), null, resources), "real generic metadata is not erased");
+			woven.signature = erased.toString();
+			woven.methods.stream().filter(method -> method.name.equals("copy") && method.desc.equals("()Lnet/minecraft/world/item/ItemStack;")).findFirst().orElseThrow()
+					.instructions.insert(new org.objectweb.asm.tree.InsnNode(org.objectweb.asm.Opcodes.NOP));
+			writer = new ClassWriter(0); woven.accept(writer);
+			assertFalse(node(ForgeTransferShapeAudit.certify(name, writer.toByteArray(), resources)).methods.stream().anyMatch(method -> method.name.equals(ForgeTransferShapeAudit.MARKER)));
+			assertEquals(java.util.Set.of(), ForgeTransferShapeAudit.excludedInterfaces(name));
+		}
 	}
-	@Test void separateFabricItemInterfacesDoNotHideAnEffectfulVariantCacheGetter() throws Exception {
+	/**
+	 * Interfaces a mod adds to Item stay out of the digest only while what the class implements for them cannot change a
+	 * transfer: a value getter that reads a field of its own, setters, and defaults named like nothing reviewed. A getter
+	 * with a callback, or an interface named like a reviewed operation, puts its interface back in.
+	 */
+	@Test @ResourceLock("native-game-references") void addedItemInterfacesDoNotHideAnEffectfulGetterOrAReviewedName() throws Exception {
 		String name = "net.minecraft.world.item.Item";
 		Path game = TestFixtures.stagedRoot().resolve("merged-base/patched-mc-merged-26.2.jar");
-		byte[] original = bytes(game, name); ClassNode woven = node(original);
-		woven.interfaces.addAll(List.of("net/fabricmc/fabric/api/item/v1/FabricItem", "net/fabricmc/fabric/impl/item/ItemExtensions", "net/fabricmc/fabric/impl/transfer/item/ItemVariantCache"));
-		String type = "Lnet/fabricmc/fabric/api/transfer/v1/item/ItemVariant;";
-		woven.fields.add(new org.objectweb.asm.tree.FieldNode(org.objectweb.asm.Opcodes.ACC_PRIVATE, "cachedItemVariant", type, null, null));
-		var getter = new org.objectweb.asm.tree.MethodNode(org.objectweb.asm.Opcodes.ACC_PUBLIC, "fabric_getCachedItemVariant", "()" + type, null, null);
+		byte[] original = bytes(game, name);
+		var mod = java.util.Map.of(
+				"org/quarry/duck/Remembers.class", contract("org/quarry/duck/Remembers", "quarry$remembered", "()Ljava/lang/Object;", "abstract"),
+				"org/quarry/duck/Configured.class", contract("org/quarry/duck/Configured", "quarry$setHandler", "(Ljava/lang/Object;)V", "abstract",
+						"quarry$handler", "()Ljava/lang/Object;", "abstract"),
+				"org/quarry/duck/Defaults.class", contract("org/quarry/duck/Defaults", "allowsQuarry", "(Ljava/lang/Object;)Z", "default"),
+				"org/quarry/duck/Overrides.class", contract("org/quarry/duck/Overrides", "getDefaultMaxStackSize", "()I", "default"));
+		try (StagedGameClasses staged = StagedGameClasses.open()) {
+			var resources = withMod(staged, mod);
+			ClassNode woven = node(original);
+			woven.interfaces.addAll(List.of("org/quarry/duck/Remembers", "org/quarry/duck/Configured", "org/quarry/duck/Defaults"));
+			var memo = getter(woven, "quarry$remembered", "memo");
+			getter(woven, "quarry$handler", "handler");
+			var setter = new org.objectweb.asm.tree.MethodNode(org.objectweb.asm.Opcodes.ACC_PUBLIC, "quarry$setHandler", "(Ljava/lang/Object;)V", null, null);
+			setter.visitCode(); setter.visitVarInsn(org.objectweb.asm.Opcodes.ALOAD, 0); setter.visitVarInsn(org.objectweb.asm.Opcodes.ALOAD, 1);
+			setter.visitFieldInsn(org.objectweb.asm.Opcodes.PUTFIELD, woven.name, "handler", "Ljava/lang/Object;");
+			setter.visitInsn(org.objectweb.asm.Opcodes.RETURN); setter.visitMaxs(2, 2); setter.visitEnd(); woven.methods.add(setter);
+			StringBuilder erased = new StringBuilder("L").append(woven.superName).append(';');
+			for (String contract : woven.interfaces) erased.append('L').append(contract).append(';'); woven.signature = erased.toString();
+			ClassWriter writer = new ClassWriter(0); woven.accept(writer);
+			assertEquals(ForgeTransferShapeAudit.fingerprint(original, null, resources), ForgeTransferShapeAudit.fingerprint(writer.toByteArray(), null, resources));
+			memo.instructions.insert(new MethodInsnNode(org.objectweb.asm.Opcodes.INVOKESTATIC, "test/UnprovedSideEffect", "onRead", "()V", false));
+			writer = new ClassWriter(0); woven.accept(writer);
+			assertFalse(node(ForgeTransferShapeAudit.certify(name, writer.toByteArray(), resources)).methods.stream().anyMatch(method -> method.name.equals(ForgeTransferShapeAudit.MARKER)),
+					"a field accessor with an additional callback is not a plain read");
+			ClassNode overriding = node(original);
+			overriding.interfaces.add("org/quarry/duck/Overrides");
+			writer = new ClassWriter(0); overriding.accept(writer);
+			assertNotEquals(ForgeTransferShapeAudit.fingerprint(original, null, resources), ForgeTransferShapeAudit.fingerprint(writer.toByteArray(), null, resources),
+					"an interface naming a reviewed operation stays in the digest");
+		}
+	}
+	private static org.objectweb.asm.tree.MethodNode getter(ClassNode owner, String name, String field) {
+		owner.fields.add(new org.objectweb.asm.tree.FieldNode(org.objectweb.asm.Opcodes.ACC_PRIVATE, field, "Ljava/lang/Object;", null, null));
+		var getter = new org.objectweb.asm.tree.MethodNode(org.objectweb.asm.Opcodes.ACC_PUBLIC, name, "()Ljava/lang/Object;", null, null);
 		getter.visitCode(); getter.visitVarInsn(org.objectweb.asm.Opcodes.ALOAD, 0);
-		getter.visitFieldInsn(org.objectweb.asm.Opcodes.GETFIELD, woven.name, "cachedItemVariant", type);
-		getter.visitInsn(org.objectweb.asm.Opcodes.ARETURN); getter.visitMaxs(1, 1); getter.visitEnd(); woven.methods.add(getter);
-		StringBuilder erased = new StringBuilder("L").append(woven.superName).append(';');
-		for (String contract : woven.interfaces) erased.append('L').append(contract).append(';'); woven.signature = erased.toString();
-		ClassWriter writer = new ClassWriter(0); woven.accept(writer);
-		assertEquals(ForgeTransferShapeAudit.fingerprint(original), ForgeTransferShapeAudit.fingerprint(writer.toByteArray()));
-		getter.instructions.insert(new MethodInsnNode(org.objectweb.asm.Opcodes.INVOKESTATIC, "test/UnprovedSideEffect", "onRead", "()V", false));
-		writer = new ClassWriter(0); woven.accept(writer);
-		assertFalse(node(ForgeTransferShapeAudit.certify(name, writer.toByteArray())).methods.stream().anyMatch(method -> method.name.equals(ForgeTransferShapeAudit.MARKER)),
-				"a field accessor with an additional callback is not the reviewed read-only getter");
+		getter.visitFieldInsn(org.objectweb.asm.Opcodes.GETFIELD, owner.name, field, "Ljava/lang/Object;");
+		getter.visitInsn(org.objectweb.asm.Opcodes.ARETURN); getter.visitMaxs(1, 1); getter.visitEnd(); owner.methods.add(getter);
+		return getter;
 	}
 }

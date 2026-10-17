@@ -1,14 +1,15 @@
 package net.forbric.kernel.transfer;
 
-import java.io.File;
 import java.lang.reflect.InvocationTargetException;
 import java.net.URL;
 import java.net.URLClassLoader;
-import java.nio.file.Path;
+import java.util.List;
 
 import org.junit.jupiter.api.Test;
 
 import net.forbric.kernel.transform.TransferTransactionHooks;
+
+import static org.junit.jupiter.api.Assertions.*;
 
 /** Each scenario owns genuine, transformed native transaction engines, with no thread-local state shared across tests. */
 class TransferInteropTest {
@@ -41,16 +42,37 @@ class TransferInteropTest {
 	@Test void fabricOriginValidatesRootInvariantsOnce() throws Exception { scenario("fabricOriginCommitValidatesOnce", true); }
 	@Test void neoOriginNestedCommitValidatesOnceAndClosesItsPeer() throws Exception { scenario("neoOriginNestedCommitValidatesOnce", true); }
 
-	private void scenario(String method, boolean transform) throws Exception {
-		String[] entries = System.getProperty("forbric.transferTestClasspath").split(File.pathSeparator);
-		URL[] urls = new URL[entries.length];
-		for (int i = 0; i < entries.length; i++) urls[i] = Path.of(entries[i]).toUri().toURL();
+	/**
+	 * Fabric's transfer module with its implementation moved to other packages and simple names, and its private
+	 * methods renamed (TransferTestClasspath). The hooks find that engine from the public Transaction and pair it as the
+	 * original; without them the same transfer is refused before either side changes.
+	 */
+	@Test void aRelocatedFabricEngineIsPairedByWhatItDoes() throws Exception {
+		URL[] urls = TransferTestClasspath.urls(true);
+		try (URLClassLoader game = new URLClassLoader(urls, ClassLoader.getPlatformClassLoader())) {
+			var engine = TransferTestClasspath.hooks(game).engine();
+			assertNotNull(engine, "the relocated engine is not reachable from the public Transaction");
+			assertTrue(engine.manager().startsWith(TransferTestClasspath.HIDDEN) && engine.transaction().startsWith(TransferTestClasspath.HIDDEN), engine::toString);
+			for (URL url : urls) if (url.getPath().endsWith("fabric-transfer-api-relocated.jar")) {
+				assertTrue(TransferTestClasspath.classes(url).stream().noneMatch(name -> name.startsWith(TransferTestClasspath.IMPL)));
+			}
+		}
+		for (String method : List.of("fabricNestedRollback", "neoNestedRollback", "conservation", "notifications", "fabricCallbackOpensPeer", "fabricFinalCommitMayTransferAgain")) {
+			scenario(method, true, true);
+		}
+		scenario("missingHooks", false, true);
+	}
+
+	private void scenario(String method, boolean transform) throws Exception { scenario(method, transform, false); }
+
+	private void scenario(String method, boolean transform, boolean relocated) throws Exception {
+		URL[] urls = TransferTestClasspath.urls(relocated);
 		try (URLClassLoader game = new URLClassLoader(urls, ClassLoader.getPlatformClassLoader()) {
+			private final TransferTransactionHooks hooks = TransferTestClasspath.hooks(this);
 			@Override protected Class<?> findClass(String name) throws ClassNotFoundException {
-				if (!transform || !(name.equals(TransferTransactionHooks.NEO) || name.equals(TransferTransactionHooks.NEO_MANAGER)
-						|| name.equals(TransferTransactionHooks.FABRIC) || name.equals(TransferTransactionHooks.FABRIC_MANAGER))) return super.findClass(name);
+				if (!transform || !hooks.targets(name)) return super.findClass(name);
 				try (var in = findResource(name.replace('.', '/') + ".class").openStream()) {
-					byte[] bytes = new TransferTransactionHooks().transform(name, in.readAllBytes(), null);
+					byte[] bytes = hooks.transform(name, in.readAllBytes(), null);
 					return defineClass(name, bytes, 0, bytes.length);
 				} catch (Exception failure) { throw new ClassNotFoundException(name, failure); }
 			}

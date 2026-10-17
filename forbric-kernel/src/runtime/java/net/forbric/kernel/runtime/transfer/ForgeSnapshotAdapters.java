@@ -109,9 +109,11 @@ public final class ForgeSnapshotAdapters {
 	private static boolean safeAddedInterfaces(Class<?> owner) {
 		Set<String> critical = Set.of("get", "getOrDefault", "getComponents", "getComponentsPatch", "components", "builtInRegistryHolder", "computeDefaultResource", "getDefaultMaxStackSize", "getMaxStackSize", "getCount", "setCount", "grow", "shrink", "copy", "copyWithCount", "isEmpty", "typeHolder", "getItem", "gatherCapabilities");
 		for (Class<?> contract : owner.getInterfaces()) {
-			if (!ForgeTransferShapeAudit.NON_TRANSFER_FABRIC_INTERFACES.contains(contract.getName().replace('.', '/'))) continue;
-			boolean safe = contract.getInterfaces().length == 0;
-			for (var method : contract.getDeclaredMethods()) if (!java.lang.reflect.Modifier.isStatic(method.getModifiers()) && critical.contains(method.getName())) safe = false;
+			// The interfaces a mod added that the certified digest left out; every other one is in the digest.
+			if (!ForgeTransferShapeAudit.excludedInterfaces(owner.getName()).contains(contract.getName().replace('.', '/'))) continue;
+			boolean safe = true;
+			// Its own methods and every superinterface's: none may be named like a transfer-critical helper.
+			for (var method : contract.getMethods()) if (!java.lang.reflect.Modifier.isStatic(method.getModifiers()) && critical.contains(method.getName())) safe = false;
 			if (!safe) { TransferIssues.reportType("TRANSFER_HELPER_UNVERIFIED", contract.getName(), "an added interface can override a transfer-critical helper"); return false; }
 		}
 		return true;

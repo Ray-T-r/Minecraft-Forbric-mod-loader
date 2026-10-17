@@ -41,10 +41,8 @@ import org.objectweb.asm.tree.VarInsnNode;
 public final class ForgeTransferShapeAudit {
 	private ForgeTransferShapeAudit() { }
 	public static final String MARKER = "forbric$auditedTransferSnapshot";
-	public static final Set<String> NON_TRANSFER_FABRIC_INTERFACES = Set.of(
-			"net/fabricmc/fabric/api/item/v1/FabricItemStack", "net/fabricmc/fabric/api/item/v1/FabricItem",
-			"net/fabricmc/fabric/mixin/transfer/ItemStackAccessor", "net/fabricmc/fabric/impl/item/ItemExtensions",
-			"net/fabricmc/fabric/impl/transfer/item/ItemVariantCache");
+	/** Per audited class, the interfaces a mod added to it that its last certified digest left out (binary-slash names). */
+	private static final Map<String, Set<String>> EXCLUDED_INTERFACES = new ConcurrentHashMap<>();
 	private static final Map<String, Set<String>> ROOTS = Map.of(
 			"net.minecraft.world.item.ItemStack", Set.of("<init>", "isEmpty", "getCount", "getMaxStackSize", "grow", "shrink", "copy", "copyWithCount", "setCount", "getComponentsPatch", "isSameItemSameComponents", "getPopTime", "setPopTime", "typeHolder", "getItem", "getComponents", "getPrototype", "getOrDefault", "get"),
 			"net.minecraft.world.item.Item", Set.of("builtInRegistryHolder", "components", "getDefaultMaxStackSize", "computeDefaultResource"),
@@ -118,8 +116,10 @@ public final class ForgeTransferShapeAudit {
 	 */
 	public static byte[] certify(String name, byte[] bytes, Function<String, byte[]> resources) {
 		String expected = AUDITED.get(name); if (expected == null || bytes == null) return bytes;
-		String actual = fingerprint(bytes, resources == null ? null : NativeMergeShapeRepair.production(null, resources));
+		Digest digest = digest(bytes, resources == null ? null : NativeMergeShapeRepair.production(null, resources), resources);
+		String actual = digest.fingerprint();
 		boolean approved = reviewed(name, actual);
+		if (approved) EXCLUDED_INTERFACES.put(name, digest.excludedInterfaces()); else EXCLUDED_INTERFACES.remove(name);
 		dump(name, bytes, actual.equals(RESTORED.get(name)) ? actual : expected, actual, approved);
 		if (approved) DECLINED.remove(name); else DECLINED.put(name, "transfer-critical bytecode differs from the reviewed 26.2 shape (" + actual + ")");
 		ClassNode node = new ClassNode(); new ClassReader(bytes).accept(node, 0);
@@ -148,16 +148,35 @@ public final class ForgeTransferShapeAudit {
 	/** The fingerprint with no hierarchy to prove a delegate against, so none is folded. */
 	static String fingerprint(byte[] bytes) { return fingerprint(bytes, null); }
 	/** @param proof what proves an interface-default delegate is the inherited default; null proves none */
-	static String fingerprint(byte[] bytes, NativeMergeShapeRepair proof) {
+	static String fingerprint(byte[] bytes, NativeMergeShapeRepair proof) { return digest(bytes, proof, null).fingerprint(); }
+	/**
+	 * @param resources the game's raw class files by resource path, from which the class as compiled and the interfaces a
+	 *                  mod added to it are read; null keeps every interface in the digest
+	 */
+	static String fingerprint(byte[] bytes, NativeMergeShapeRepair proof, Function<String, byte[]> resources) {
+		return digest(bytes, proof, resources).fingerprint();
+	}
+	/**
+	 * The interfaces a mod added to the audited class {@code name} that its last certified digest left out, binary-slash
+	 * names; empty when none or when the class was not certified.
+	 */
+	public static Set<String> excludedInterfaces(String name) { return EXCLUDED_INTERFACES.getOrDefault(name, Set.of()); }
+
+	record Digest(String fingerprint, Set<String> excludedInterfaces) { }
+
+	private static Digest digest(byte[] bytes, NativeMergeShapeRepair proof, Function<String, byte[]> resources) {
 		ClassNode node = new ClassNode(); new ClassReader(bytes).accept(node, ClassReader.SKIP_DEBUG | ClassReader.SKIP_FRAMES);
 		node.methods.removeIf(method -> method.name.equals(MARKER));
 		foldKernelRewrites(node, proof);
 		canonicalizeErasedClassSignature(node);
 		normalizeKnownNonTransferRepair(node);
 		Set<String> roots = ROOTS.get(node.name.replace('/', '.'));
+		Set<String> excluded = Set.of();
 		if (roots != null) {
-			boolean cachedVariantRead = readsOnlyCachedVariant(node);
-			Set<String> selected = selected(node, roots); node.methods.removeIf(method -> !selected.contains(method.name + method.desc));
+			Set<String> selected = selected(node, roots);
+			// Judged BEFORE pruning: the methods the class implements for an added interface are read from the full class.
+			excluded = harmlessAddedInterfaces(node, selected, resources);
+			node.methods.removeIf(method -> !selected.contains(method.name + method.desc));
 			Set<String> fields = new HashSet<>();
 			for (var method : node.methods) for (var instruction : method.instructions)
 				if (instruction instanceof FieldInsnNode field && field.owner.equals(node.name)) fields.add(field.name + field.desc);
@@ -166,14 +185,69 @@ public final class ForgeTransferShapeAudit {
 			node.fields.sort(Comparator.comparing(field -> field.name + field.desc));
 			node.visibleAnnotations = null; node.invisibleAnnotations = null; node.innerClasses.clear();
 			if (node.nestMembers != null) node.nestMembers.clear();
-			// These fixture interfaces do not override the audited state operations. Check the cache getter
-			// BEFORE pruning methods/fields, and keep its interface in the hash if its read-only body drifted.
-			node.interfaces.removeIf(contract -> NON_TRANSFER_FABRIC_INTERFACES.contains(contract)
-					&& (!contract.equals("net/fabricmc/fabric/impl/transfer/item/ItemVariantCache") || cachedVariantRead));
+			Set<String> left = excluded;
+			node.interfaces.removeIf(left::contains);
 		}
 		ClassWriter writer = new ClassWriter(0); node.accept(writer);
-		try { return HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256").digest(writer.toByteArray())); }
+		try { return new Digest(HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256").digest(writer.toByteArray())), excluded); }
 		catch (NoSuchAlgorithmException impossible) { throw new AssertionError(impossible); }
+	}
+	/**
+	 * The interfaces a mod's mixins added to an audited root class (it has them, the class as compiled does not) that
+	 * cannot change a transfer, so the digest leaves them out. Such an interface, through all its superinterfaces,
+	 * declares no instance method named like one of the class's audited operations, so it cannot redeclare one; and every
+	 * value-returning, argument-free method the class implements for it is a plain read of one of the class's own
+	 * fields, so what a caller reads through it during a transfer is state, not a callback or a lazy mutation. Whose
+	 * interface it is plays no part. Unreadable bytes keep the interface in the digest.
+	 */
+	private static Set<String> harmlessAddedInterfaces(ClassNode node, Set<String> selected, Function<String, byte[]> resources) {
+		if (resources == null) return Set.of();
+		ClassNode compiled = read(resources, node.name);
+		if (compiled == null) return Set.of();
+		Set<String> audited = new HashSet<>();
+		for (String member : selected) audited.add(member.substring(0, member.indexOf('(')));
+		Set<String> out = new HashSet<>();
+		for (String contract : node.interfaces) {
+			if (compiled.interfaces.contains(contract)) continue;
+			if (harmless(node, contract, audited, resources, new HashSet<>())) out.add(contract);
+		}
+		return Set.copyOf(out);
+	}
+	private static boolean harmless(ClassNode node, String contract, Set<String> audited, Function<String, byte[]> resources, Set<String> seen) {
+		if (!seen.add(contract)) return true;
+		ClassNode declared = read(resources, contract);
+		if (declared == null || (declared.access & Opcodes.ACC_INTERFACE) == 0) return false;
+		for (MethodNode method : declared.methods) {
+			if ((method.access & Opcodes.ACC_STATIC) != 0 || method.name.startsWith("<")) continue;
+			if (audited.contains(method.name)) return false;
+			if ((method.access & Opcodes.ACC_ABSTRACT) == 0 || !method.desc.startsWith("()") || method.desc.endsWith(")V")) continue;
+			MethodNode implementation = node.methods.stream().filter(candidate -> candidate.name.equals(method.name) && candidate.desc.equals(method.desc)).findFirst().orElse(null);
+			if (implementation != null && !readsOwnField(node, implementation)) return false;
+		}
+		for (String parent : declared.interfaces) if (!harmless(node, parent, audited, resources, seen)) return false;
+		return true;
+	}
+	/** {@code return this.field;} on an instance field of {@code node}: a public, plain, single-read getter. */
+	private static boolean readsOwnField(ClassNode node, MethodNode getter) {
+		if ((getter.access & Opcodes.ACC_PUBLIC) == 0 || !getter.tryCatchBlocks.isEmpty()
+				|| (getter.access & (Opcodes.ACC_STATIC | Opcodes.ACC_ABSTRACT | Opcodes.ACC_NATIVE | Opcodes.ACC_SYNCHRONIZED)) != 0) return false;
+		var code = java.util.Arrays.stream(getter.instructions.toArray()).filter(instruction -> instruction.getOpcode() >= 0).toList();
+		if (code.size() != 3 || !(code.get(0) instanceof VarInsnNode self) || self.getOpcode() != Opcodes.ALOAD || self.var != 0
+				|| !(code.get(1) instanceof FieldInsnNode field) || field.getOpcode() != Opcodes.GETFIELD || !field.owner.equals(node.name)
+				|| code.get(2).getOpcode() < Opcodes.IRETURN || code.get(2).getOpcode() > Opcodes.ARETURN) return false;
+		return node.fields.stream().anyMatch(declared -> declared.name.equals(field.name) && declared.desc.equals(field.desc)
+				&& (declared.access & Opcodes.ACC_STATIC) == 0);
+	}
+	private static ClassNode read(Function<String, byte[]> resources, String internalName) {
+		try {
+			byte[] bytes = resources.apply(internalName + ".class");
+			if (bytes == null) return null;
+			ClassNode node = new ClassNode();
+			new ClassReader(bytes).accept(node, ClassReader.SKIP_CODE | ClassReader.SKIP_DEBUG | ClassReader.SKIP_FRAMES);
+			return node;
+		} catch (RuntimeException | LinkageError unreadable) {
+			return null;
+		}
 	}
 	/**
 	 * The kernel's own behaviour-preserving rewrites, folded back to the shape they were made from. The audit pins the
@@ -256,26 +330,6 @@ public final class ForgeTransferShapeAudit {
 		ClassNode read = new ClassNode();
 		new ClassReader(writer.toByteArray()).accept(read, ClassReader.SKIP_DEBUG);
 		return read.methods.getFirst().maxStack;
-	}
-	/**
-	 * The fixture adds a cache interface to Item, not to ItemStack. Its sole method reads an already-initialized
-	 * immutable variant. Neither Item construction (equipment/damage hooks) nor a cache getter is an override of
-	 * components/stack limits. Require the exact field read, so adding this interface cannot conceal a callback,
-	 * lazy mutation, or replacement of one of the critical operations behind an apparently harmless interface.
-	 */
-	private static boolean readsOnlyCachedVariant(ClassNode node) {
-		if (!node.name.equals("net/minecraft/world/item/Item")) return false;
-		String descriptor = "Lnet/fabricmc/fabric/api/transfer/v1/item/ItemVariant;";
-		MethodNode getter = node.methods.stream().filter(method -> method.name.equals("fabric_getCachedItemVariant")
-				&& method.desc.equals("()" + descriptor)).findFirst().orElse(null);
-		if (getter == null || (getter.access & Opcodes.ACC_PUBLIC) == 0 || !getter.tryCatchBlocks.isEmpty()
-				|| (getter.access & (Opcodes.ACC_STATIC | Opcodes.ACC_ABSTRACT | Opcodes.ACC_NATIVE | Opcodes.ACC_SYNCHRONIZED)) != 0) return false;
-		if (node.fields.stream().noneMatch(field -> field.name.equals("cachedItemVariant") && field.desc.equals(descriptor)
-				&& (field.access & Opcodes.ACC_STATIC) == 0)) return false;
-		var code = java.util.Arrays.stream(getter.instructions.toArray()).filter(instruction -> instruction.getOpcode() >= 0).toList();
-		return code.size() == 3 && code.get(0) instanceof VarInsnNode self && self.getOpcode() == Opcodes.ALOAD && self.var == 0
-				&& code.get(1) instanceof FieldInsnNode field && field.getOpcode() == Opcodes.GETFIELD && field.owner.equals(node.name)
-				&& field.name.equals("cachedItemVariant") && field.desc.equals(descriptor) && code.get(2).getOpcode() == Opcodes.ARETURN;
 	}
 	/**
 	 * Mixin materializes a Signature even on a non-generic class: Lsuper;Liface;... . It duplicates the erased

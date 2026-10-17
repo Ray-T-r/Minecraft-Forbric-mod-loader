@@ -131,18 +131,53 @@ public final class BlockTransferBridge {
 
 	/**
 	 * Fabric has no public way to run a fallback before its own, and its first two answer for every
-	 * SidedStorageBlockEntity and every Container. Its lookup exposes the live list; if that ever changes, the
-	 * provider is appended instead and a Fabric consumer sees Fabric's generic view first, as it did before.
-	 * BlockTransferBridgeTest pins both halves: this behaviour, and the list the real Fabric lookup hands out.
+	 * SidedStorageBlockEntity and every Container. The provider is registered through the public registerFallback, then
+	 * moved to the front of the list that call appended it to: the one list field of the lookup whose last element is
+	 * now this provider. Found by what registerFallback did, not by what the lookup's implementation calls the list, so
+	 * any implementation that keeps its fallbacks in a list is served. If no such list is found, or it cannot be
+	 * reordered, the provider stays appended and a Fabric consumer sees Fabric's generic view first, as it did before.
+	 * BlockTransferBridgeTest pins both halves, on a stand-in lookup and on the real Fabric one.
 	 */
-	@SuppressWarnings("unchecked")
 	static <A> void ahead(BlockApiLookup<A, Direction> lookup, BlockApiLookup.BlockApiProvider<A, Direction> provider) {
-		try {
-			((List<BlockApiLookup.BlockApiProvider<A, Direction>>) lookup.getClass().getMethod("getFallbackProviders").invoke(lookup)).add(0, provider);
-		} catch (ReflectiveOperationException | RuntimeException drift) {
-			lookup.registerFallback(provider);
-			TransferIssues.report("FABRIC_FALLBACK_ORDER", lookup, "Fabric's generic fallbacks answer before a Forge or NeoForge owner's provider");
+		lookup.registerFallback(provider);
+		List<Object> list = appendedTo(lookup, provider);
+		boolean moved = false;
+		if (list != null) {
+			try {
+				list.remove(list.size() - 1);
+				try {
+					list.add(0, provider);
+					moved = true;
+				} catch (RuntimeException refused) {
+					list.add(provider);
+				}
+			} catch (RuntimeException refused) {
+				// a list that cannot be reordered keeps the provider where registerFallback put it
+			}
 		}
+		if (!moved) TransferIssues.report("FABRIC_FALLBACK_ORDER", lookup, "Fabric's generic fallbacks answer before a Forge or NeoForge owner's provider");
+	}
+
+	/** The one instance list field of {@code lookup} whose last element is {@code provider}; null when none or several. */
+	@SuppressWarnings("unchecked")
+	private static List<Object> appendedTo(Object lookup, Object provider) {
+		List<Object> only = null;
+		for (Class<?> type = lookup.getClass(); type != null && type != Object.class; type = type.getSuperclass()) {
+			for (java.lang.reflect.Field field : type.getDeclaredFields()) {
+				if (java.lang.reflect.Modifier.isStatic(field.getModifiers()) || !List.class.isAssignableFrom(field.getType())) continue;
+				Object value;
+				try {
+					field.setAccessible(true);
+					value = field.get(lookup);
+				} catch (ReflectiveOperationException | RuntimeException unreadable) {
+					continue;
+				}
+				if (!(value instanceof List<?> list) || list.isEmpty() || list.get(list.size() - 1) != provider) continue;
+				if (only != null && only != list) return null;
+				only = (List<Object>) list;
+			}
+		}
+		return only;
 	}
 	private static Storage<ItemVariant> itemsBeforeGeneric(Level level, BlockPos pos, BlockState state, BlockEntity entity, Direction face) {
 		return entity != null && TransferPrecedence.fabricAsksBeforeGeneric(owner(entity)) ? fabricItems(level, pos, entity, face) : null;

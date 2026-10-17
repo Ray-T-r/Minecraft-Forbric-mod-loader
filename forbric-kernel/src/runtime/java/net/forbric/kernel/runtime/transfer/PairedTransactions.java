@@ -1,14 +1,18 @@
 package net.forbric.kernel.runtime.transfer;
 
+import java.io.IOException;
+import java.io.InputStream;
 import java.lang.reflect.Field;
 import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
 import java.util.ArrayDeque;
+import java.util.ArrayList;
 import java.util.IdentityHashMap;
 import java.util.List;
 
 import net.fabricmc.fabric.api.transfer.v1.transaction.Transaction;
 import net.fabricmc.fabric.api.transfer.v1.transaction.TransactionContext;
+import net.forbric.kernel.transform.TransferTransactionHooks;
 
 /**
  * Couples REAL Fabric and NeoForge transactions. No transaction context is simulated: NeoForge journals cast
@@ -222,15 +226,24 @@ public final class PairedTransactions {
 		throw new IllegalStateException(failure);
 	}
 
-	/** Refuse any transfer before mutation if even one of the required hooks failed to land. */
+	/**
+	 * Refuse any transfer before mutation if even one of the required hooks failed to land. fabric-api's engine classes
+	 * are the ones the hooks found from its public {@code Transaction} ({@link TransferTransactionHooks#fabricEngine}), read
+	 * here the same way from this loader, so whatever they are called, both must carry the marker.
+	 */
 	public static void checkHooks() {
 		if (hooksChecked) return;
-		for (String name : List.of("net.neoforged.neoforge.transfer.transaction.Transaction",
-				"net.neoforged.neoforge.transfer.transaction.TransactionManager",
-				"net.fabricmc.fabric.impl.transfer.transaction.TransactionManagerImpl$TransactionImpl",
-				"net.fabricmc.fabric.impl.transfer.transaction.TransactionManagerImpl")) {
+		ClassLoader loader = PairedTransactions.class.getClassLoader();
+		TransferTransactionHooks.FabricEngine engine = TransferTransactionHooks.fabricEngine(name -> {
+			try (InputStream in = loader.getResourceAsStream(name + ".class")) { return in == null ? null : in.readAllBytes(); }
+			catch (IOException unreadable) { return null; }
+		});
+		if (engine == null) throw new IllegalStateException("Fabric's transaction engine is not reachable from its public Transaction openers");
+		List<String> names = new ArrayList<>(List.of(TransferTransactionHooks.NEO, TransferTransactionHooks.NEO_MANAGER));
+		names.addAll(engine.classes());
+		for (String name : names) {
 			try {
-				Class.forName(name, false, PairedTransactions.class.getClassLoader()).getDeclaredMethod("forbric$transferHooks");
+				Class.forName(name, false, loader).getDeclaredMethod(TransferTransactionHooks.MARKER);
 			} catch (ReflectiveOperationException missingHook) {
 				throw new IllegalStateException("Transfer transaction hook is missing: " + name, missingHook);
 			}

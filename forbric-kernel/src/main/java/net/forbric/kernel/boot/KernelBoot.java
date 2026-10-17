@@ -447,7 +447,10 @@ public final class KernelBoot {
 			catch (java.io.IOException unavailable) { return false; }
 		}));
 		if (transferInterop) {
-			chain.register(TransformPhase.COREMOD, new net.forbric.kernel.transform.TransferTransactionHooks());
+			chain.register(TransformPhase.COREMOD, new net.forbric.kernel.transform.TransferTransactionHooks(name -> {
+				try (var in = loader.getGameResourceAsStream(name + ".class")) { return in == null ? null : in.readAllBytes(); }
+				catch (java.io.IOException unavailable) { return null; }
+			}));
 			chain.register(TransformPhase.COREMOD, new net.forbric.kernel.transform.TransferCapabilityFallback());
 		}
 		// Hoppers ask Fabric's item storage lookup where NeoForge's hopper found nothing, with or without the bridge.
