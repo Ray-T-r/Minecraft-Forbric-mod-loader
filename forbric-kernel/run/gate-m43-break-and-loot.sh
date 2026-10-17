@@ -2,8 +2,9 @@
 # M43 — Fabric's PlayerBlockBreakEvents.AFTER, and MinecraftForge loot pool conditions, on the merged base.
 #
 # fabric-api fires AFTER at vanilla's Block.destroy call in destroyBlock; NeoForge's body moved that call into its own
-# removeBlock, so AFTER never fired (FabricBlockBreakMixinAdapter now wraps fabric-api's handler on removeBlock's
-# result). MinecraftForge's LootPool.Builder.when(ICondition) was dropped by NeoForge's builder, and a pool-level
+# removeBlock, so AFTER never fired (CarrierHelperResults, which knows no mod, now runs fabric-api's handler on removeBlock's
+# answer: the helper answers true exactly when it called Block.destroy, and the handler's @Locals are read where the merged
+# destroyBlock keeps the same values). MinecraftForge's LootPool.Builder.when(ICondition) was dropped by NeoForge's builder, and a pool-level
 # forge:condition was parsed but never judged by NeoForge's pool list codec (ForgeLootPoolConditionsInjector). A
 # dedicated server with a probe mod (canary/break-and-loot) and the unmodified fabric-events-interaction-v0 breaks
 # blocks with a fake player and rolls a loot table:
@@ -16,7 +17,7 @@
 #   by MinecraftForge's own codec as an empty pool.
 #
 #   1. positive — STRICT, every case passes, zero confirmed required findings.
-#   2. off — -Dforbric.fabricBlockBreak=off -Dforbric.forgePoolConditions=off: exactly the repaired cases fail (AFTER
+#   2. off — -Dforbric.carrierHelperResults=off -Dforbric.forgePoolConditions=off: exactly the repaired cases fail (AFTER
 #      in survival, block entity, creative and nested; forge:condition false; the code-built condition, its encoding
 #      and round trip), and the controls (air, veto, NeoForge cancel, plain/true/NeoForge pools) still hold.
 # Not covered here: a native MinecraftForge or Fabric server as an oracle, and a rendered client.
@@ -78,7 +79,7 @@ then echo "[kernel] PASS positive: zero confirmed required findings under STRICT
 else echo "[kernel] FAIL positive: STRICT report missing or has confirmed required findings"; FAIL=1; fi
 
 step "2. off: the same server with both repairs switched off"
-run_server off continue "-Dforbric.fabricBlockBreak=off -Dforbric.forgePoolConditions=off"
+run_server off continue "-Dforbric.carrierHelperResults=off -Dforbric.forgePoolConditions=off"
 judge off "failed == $REPAIRED" "exactly the repaired cases fail; the controls hold"
 
 if [ "$FAIL" -eq 0 ]; then

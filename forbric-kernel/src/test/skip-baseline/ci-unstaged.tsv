@@ -550,6 +550,16 @@ test	net.forbric.kernel.mixin.CarrierGuardedPointsStagedTest	onTheNativeBodyAndS
 test	net.forbric.kernel.mixin.CarrierGuardedPointsStagedTest	theElytraVetoAndFlightTickGoAheadOfTheCarriersOwnBranches()	[fixture:staged] actual Fabric API fixture required
 test	net.forbric.kernel.mixin.CarrierGuardedPointsStagedTest	theMoveKnowsNoName()	[fixture:staged] actual Fabric API fixture required
 test	net.forbric.kernel.mixin.CarrierHelperCensusTest	theShippedTableIsExactlyWhatTheArtifactsSay()	[fixture:staged] $ROOT/forbric-loader/run/merged-base/patched-mc-merged-26.2.jar required
+test	net.forbric.kernel.mixin.CarrierHelperResultsStagedTest	aBooleanTheTableDeclaresBeforeItsSlotIsWrittenDoesNotMoveThePin()	[fixture:staged] actual game required
+test	net.forbric.kernel.mixin.CarrierHelperResultsStagedTest	aHandlerThatReadsItsCallbackIsHandedARealOne()	[fixture:staged] actual Fabric API fixture required
+test	net.forbric.kernel.mixin.CarrierHelperResultsStagedTest	apolisHarvestModifierIsPinnedToTheMergedLocalOfTheSameNameAndType()	[fixture:third-party] popular-pack Origins fixture absent
+test	net.forbric.kernel.mixin.CarrierHelperResultsStagedTest	architecturysBreakCaptureIsReadWhereTheMergedBodyKeepsEachLocal()	[fixture:third-party] popular-pack architectury fixture absent
+test	net.forbric.kernel.mixin.CarrierHelperResultsStagedTest	fabricApisAfterBreakIsLeftAloneWhereTheMergedBodyDoesNotProveIt()	[fixture:staged] actual game required
+test	net.forbric.kernel.mixin.CarrierHelperResultsStagedTest	fabricApisAfterBreakRunsOnTheHelpersAnswerWithItsLocalsReadByProducer()	[fixture:staged] actual Fabric API fixture required
+test	net.forbric.kernel.mixin.CarrierHelperResultsStagedTest	theMergedLocalsAreFoundByProducerNotByName()	[fixture:staged] actual game required
+test	net.forbric.kernel.mixin.CarrierHelperResultsStagedTest	theMoveKnowsNoName()	[fixture:staged] actual Fabric API fixture required
+test	net.forbric.kernel.mixin.CarrierHelperResultsStagedTest	theSwitchLeavesFabricApisMixinAlone()	[fixture:staged] actual game required
+test	net.forbric.kernel.mixin.CarrierHelperResultsStagedTest	vanillasOwnBodyIsWhatBothWereWrittenFor()	[fixture:mc-libraries] actual game required
 test	net.forbric.kernel.mixin.CarrierRenameCensusTest	onlyNeoForgesRenamedTooltipBodyIsUncalled()	[fixture:staged] $ROOT/forbric-loader/run/merged-base/patched-mc-merged-26.2.jar required
 test	net.forbric.kernel.mixin.CarrierRenameCensusTest	theShippedTableIsExactlyWhatTheArtifactsSay()	[fixture:staged] $ROOT/forbric-loader/run/merged-base/patched-mc-merged-26.2.jar required
 test	net.forbric.kernel.mixin.CarrierReturnedCallsStagedTest	aGroupTheSwitchOrAHandlerHandingItsOperationAnotherValueLeavesTheWrapAsCompiled()	[fixture:staged] actual Fabric API fixture required
@@ -576,13 +586,6 @@ test	net.forbric.kernel.mixin.EmptyRedirectWidenedCallTest	aBareNameRedirectCapt
 test	net.forbric.kernel.mixin.EmptyRedirectWidenedCallTest	aFullSelectorInAnotherClassSkipsTheWidenedCall()	[fixture:staged] actual game required
 test	net.forbric.kernel.mixin.EmptyRedirectWidenedCallTest	aHostThatStillMakesTheNamedCallIsLeftAlone()	[fixture:mc-libraries] actual game required
 test	net.forbric.kernel.mixin.EmptyRedirectWidenedCallTest	aRedirectWithABodyIsLeftAlone()	[fixture:staged] actual game required
-test	net.forbric.kernel.mixin.FabricBlockBreakMixinAdapterTest	aBooleanTheTableDeclaresBeforeItsSlotIsWrittenDoesNotMoveThePin()	[fixture:staged] actual game required
-test	net.forbric.kernel.mixin.FabricBlockBreakMixinAdapterTest	apolisHarvestModifierIsPinnedToTheMergedLocalOfTheSameNameAndType()	[fixture:third-party] popular-pack Origins fixture absent
-test	net.forbric.kernel.mixin.FabricBlockBreakMixinAdapterTest	architecturysBreakCaptureIsReadWhereTheMergedBodyKeepsEachLocal()	[fixture:third-party] popular-pack architectury fixture absent
-test	net.forbric.kernel.mixin.FabricBlockBreakMixinAdapterTest	fabricApisAfterBreakFiresOnNeoForgesRemovalResultWithTheSameValues()	[fixture:staged] actual Fabric API fixture required
-test	net.forbric.kernel.mixin.FabricBlockBreakMixinAdapterTest	fabricApisAfterBreakIsLeftAloneWhereTheMergedBodyDoesNotProveIt()	[fixture:mc-libraries] actual game required
-test	net.forbric.kernel.mixin.FabricBlockBreakMixinAdapterTest	theSwitchLeavesFabricApisMixinAlone()	[fixture:staged] actual game required
-test	net.forbric.kernel.mixin.FabricBlockBreakMixinAdapterTest	vanillasOwnBodyIsWhatBothWereWrittenFor()	[fixture:mc-libraries] actual game required
 test	net.forbric.kernel.mixin.FabricBlockStateCodecMixinAdapterTest	aHandlerThatDoesMoreThanReturnACodecFieldIsLeftAlone()	[fixture:staged] actual Fabric API fixture required
 test	net.forbric.kernel.mixin.FabricBlockStateCodecMixinAdapterTest	bothRedirectsMakeTheCallTheyReplaceAndHandBothCodecsToTheKernel()	[fixture:staged] actual Fabric API fixture required
 test	net.forbric.kernel.mixin.FabricBlockStateCodecMixinAdapterTest	theOffSwitchLeavesFabricsCodecsInPlace()	[fixture:staged] actual Fabric API fixture required

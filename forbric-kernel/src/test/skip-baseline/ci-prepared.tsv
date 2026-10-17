@@ -257,6 +257,10 @@ test	net.forbric.kernel.mixin.CarpetMixinAdapterTest	reshapedHostsRefuseTheWhole
 test	net.forbric.kernel.mixin.CarpetMixinAdapterTest	reshapedNativeFluidLocalRefusesTheWholeRetarget()	[fixture:third-party] real fixture required: build/compat-inputs/carpet/mods/fabric-carpet-26.2+v260616.jar
 test	net.forbric.kernel.mixin.CarpetMixinAdapterTest	vanillaAndDisabledRepairLeaveAllReleasedHandlersUntouched()	[fixture:third-party] real fixture required: build/compat-inputs/carpet/mods/fabric-carpet-26.2+v260616.jar
 test	net.forbric.kernel.mixin.CarrierDefaultChainsStagedTest	aConstantsModifierMovesOntoTheCallWhoseDefaultPushesIt()	[fixture:third-party] popular-pack Origins fixture absent
+test	net.forbric.kernel.mixin.CarrierHelperResultsStagedTest	aBooleanTheTableDeclaresBeforeItsSlotIsWrittenDoesNotMoveThePin()	[fixture:third-party] popular-pack Origins fixture absent
+test	net.forbric.kernel.mixin.CarrierHelperResultsStagedTest	apolisHarvestModifierIsPinnedToTheMergedLocalOfTheSameNameAndType()	[fixture:third-party] popular-pack Origins fixture absent
+test	net.forbric.kernel.mixin.CarrierHelperResultsStagedTest	architecturysBreakCaptureIsReadWhereTheMergedBodyKeepsEachLocal()	[fixture:third-party] popular-pack architectury fixture absent
+test	net.forbric.kernel.mixin.CarrierHelperResultsStagedTest	vanillasOwnBodyIsWhatBothWereWrittenFor()	[fixture:third-party] popular-pack architectury fixture absent
 test	net.forbric.kernel.mixin.ContinuitySpriteMixinAdapterTest	aChangedLocalMapLayoutIsRefused()	[fixture:third-party] actual Continuity fixture required
 test	net.forbric.kernel.mixin.ContinuitySpriteMixinAdapterTest	actualCallbacksMoveToTheLiveOverloadAndKeepTheOriginalLoaderMapArgument()	[fixture:third-party] actual Continuity fixture required
 test	net.forbric.kernel.mixin.ContinuitySpriteMixinAdapterTest	vanillaAndDisabledRepairKeepTheUpstreamMixin()	[fixture:third-party] actual Continuity fixture required
@@ -270,10 +274,6 @@ test	net.forbric.kernel.mixin.CreateKeyboardMixinAdapterTest	releasedHooksRunWhe
 test	net.forbric.kernel.mixin.CreateKeyboardMixinAdapterTest	vanillaKeepsTheOriginalReturnSelectors()	[fixture:third-party] real fixture required: $ROOT/forbric-kernel/build/compat-inputs/create-fly/create-fly.jar
 test	net.forbric.kernel.mixin.CreateStructureMixinAdapterTest	aMissingCallerRefusesAllThreeSelectorsTogether()	[fixture:third-party] real fixture required: $ROOT/forbric-kernel/build/compat-inputs/create-fly/create-fly.jar
 test	net.forbric.kernel.mixin.CreateStructureMixinAdapterTest	setupIterationAndCleanupMoveTogetherToTheCalledEntityPlacementBody()	[fixture:third-party] real fixture required: $ROOT/forbric-kernel/build/compat-inputs/create-fly/create-fly.jar
-test	net.forbric.kernel.mixin.FabricBlockBreakMixinAdapterTest	aBooleanTheTableDeclaresBeforeItsSlotIsWrittenDoesNotMoveThePin()	[fixture:third-party] popular-pack Origins fixture absent
-test	net.forbric.kernel.mixin.FabricBlockBreakMixinAdapterTest	apolisHarvestModifierIsPinnedToTheMergedLocalOfTheSameNameAndType()	[fixture:third-party] popular-pack Origins fixture absent
-test	net.forbric.kernel.mixin.FabricBlockBreakMixinAdapterTest	architecturysBreakCaptureIsReadWhereTheMergedBodyKeepsEachLocal()	[fixture:third-party] popular-pack architectury fixture absent
-test	net.forbric.kernel.mixin.FabricBlockBreakMixinAdapterTest	vanillasOwnBodyIsWhatBothWereWrittenFor()	[fixture:third-party] popular-pack architectury fixture absent
 test	net.forbric.kernel.mixin.FabricClientMixinAnchorsTest	releasedLiquidBounceBuildDrawsItsMenuWithTheCanvasTheGatewayDraws()	[fixture:third-party] ../build/lb-vfp/jars/liquidbounce-0.40.1+26.2-20260925.jar absent
 test	net.forbric.kernel.mixin.FabricClientMixinAnchorsTest	releasedLiquidBounceDrawsItsMenuWithTheCanvasTheGatewayDraws()	[fixture:third-party] ../build/lb-vfp/jars/liquidbounce-9889fe2.jar absent
 test	net.forbric.kernel.mixin.FabricCreativePagerMixinAdapterTest	keyboardKeepsItsExactBodyAndTheSecondPagerStateIsRemoved()	[fixture:third-party] build/compat-inputs/player-loading/api/fabric-creative-tab-api-v1-5.0.15+6468574f9e.jar absent

@@ -37,7 +37,7 @@ import net.forbric.kernel.transform.ItemUseOnInjector;
 
 /**
  * The adapters that used to compare an {@code @At} target or a {@code method} selector with one spelling — block break,
- * entity anchors, replaced-call redirects, the shears relay, the relocated {@code useOn} call, the client-hook anchors, the
+ * bed occupancy, replaced-call redirects, the shears relay, the relocated {@code useOn} call, the client-hook anchors, the
  * registry loader's companions and the registry bootstrap callback — given the released mixins they were built from, under
  * other class and handler names wherever the adapter does not key on a platform module's own mixin, with every point and
  * selector written another way Mixin reads as the same member: whitespace, a dotted owner, an owner-prefixed selector, a
@@ -85,8 +85,8 @@ class AdapterPointSpellingTest {
 
 	static List<Case> cases() {
 		List<Case> cases = new ArrayList<>();
-		// MixinCapturedLocals and NativeLocalPins: any mod's break callback capture and harvest modifier; FabricBlockBreakMixinAdapter:
-		// fabric-api's AFTER row.
+		// MixinCapturedLocals and NativeLocalPins: any mod's break callback capture and harvest modifier; CarrierHelperResults:
+		// fabric-api's AFTER row, under unrelated names.
 		cases.add(new Case("break locals", () -> jar(Fixture.THIRD_PARTY, POPULAR.resolve("architectury-fabric-21.1.10.jar"),
 				"dev/architectury/mixin/fabric/MixinServerPlayerGameMode"), true, Ecosystem.FABRIC, GAME_MODE, MixinCapturedLocals::adapt, 1,
 				List.of(STATE + "getBlock()Lnet/minecraft/world/level/block/Block;"),
@@ -97,9 +97,11 @@ class AdapterPointSpellingTest {
 						+ "Lnet/minecraft/core/BlockPos;Lnet/minecraft/world/entity/player/Player;)V"),
 				mixin -> assertTrue(mixin.methods.stream().anyMatch(m -> MixinFit.injectorOf(m) != null && m.desc.equals("(Z)Z")
 						&& Integer.valueOf(9).equals(MixinFit.value(MixinFit.injectorOf(m), "index"))), "pinned to the canDestroy local")));
-		cases.add(new Case("fabric-api AFTER break", () -> StagedFabricMixinFixture.mixin("fabric-events-interaction-v0", FabricBlockBreakMixinAdapter.FABRIC),
-				false, Ecosystem.FABRIC, GAME_MODE, FabricBlockBreakMixinAdapter::adapt, 1, List.of(FabricBlockBreakMixinAdapter.BLOCK_DESTROY),
-				mixin -> assertTrue(atTargets(mixin).contains("L" + GAME_MODE + ";removeBlock" + FabricBlockBreakMixinAdapter.REMOVE_BLOCK_DESC))));
+		cases.add(new Case("fabric-api AFTER break", () -> StagedFabricMixinFixture.mixin("fabric-events-interaction-v0", "net/fabricmc/fabric/mixin/event/interaction/ServerPlayerGameModeMixin"),
+				true, Ecosystem.FABRIC, GAME_MODE, CarrierHelperResults::adapt, 1,
+				List.of("Lnet/minecraft/world/level/block/Block;destroy(Lnet/minecraft/world/level/LevelAccessor;Lnet/minecraft/core/BlockPos;" + STATE + ")V"),
+				mixin -> assertTrue(atTargets(mixin).contains("L" + GAME_MODE + ";removeBlock(Lnet/minecraft/core/BlockPos;" + STATE + "ZLnet/minecraft/world/item/ItemStack;)Z"),
+						"the injector runs on the removal helper's answer")));
 		String root = "net/fabricmc/fabric/mixin/entity/event/";
 		// CarrierDecisions: fabric-api's effect injectors, mining redirect and command enchanting redirect, under unrelated names.
 		cases.add(new Case("fabric-api effects", () -> StagedFabricMixinFixture.mixin("fabric-entity-events-v1", root + "effect/LivingEntityMixin"), true,

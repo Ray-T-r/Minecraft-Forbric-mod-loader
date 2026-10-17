@@ -456,7 +456,10 @@ public final class ForbricMixinService
 		// runs natively. Before the rebind below: an injector on a stub that only forwards is read on the overload here.
 		CarrierGuardedPoints.adapt(node, this::mergedBaseGameCode, NativeGameReferences::reference);
 		FabricEnchantmentMixinAdapter.adapt(node, this::mergedBaseNodeWithCode);
-		FabricBlockBreakMixinAdapter.adapt(node, this::mergedBaseNodeWithCode);
+		// …and an @Inject at a vanilla call the carrier now makes inside a helper of its own class, whose boolean answer is true
+		// exactly when it made the call, runs on that answer at each of the helper's calls, its @Locals read where the merged
+		// method keeps the same values.
+		CarrierHelperResults.adapt(node, this::mergedBaseNodeWithCode, NativeGameReferences::reference);
 		FabricClientMixinAnchors.adapt(node, this::mergedBaseNodeWithCode);
 		// …and a redirect of a vanilla call the carrier now makes through a method of its own (its inherited implementation
 		// makes the vanilla call) moves onto that method, running its implementation with the handler where it is inherited —

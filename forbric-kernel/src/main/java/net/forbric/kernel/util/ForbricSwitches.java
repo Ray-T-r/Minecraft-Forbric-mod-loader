@@ -81,6 +81,8 @@ public final class ForbricSwitches {
 					+ "sound inherits it (-Dforbric.carrierDefaultChains)"),
 			Map.entry("forbric.fabricServerLanguage", "a mod's injector on a vanilla decision the carrier replaced is moved onto the carrier's decision by structure, not "
 					+ "by name (-Dforbric.carrierDecisions)"),
+			Map.entry("forbric.fabricBlockBreak", "fabric-api's AFTER break handler is no longer wrapped by name: an injector at a vanilla call the carrier makes "
+					+ "in a helper that answers whether it made it runs on that answer, by structure (-Dforbric.carrierHelperResults)"),
 			Map.entry("forbric.fabricEntityAnchors", "fabric-api's bed occupancy redirect is no longer replaced by a rewrite of its handler: it moves onto the state's "
 					+ "setBedOccupied and runs NeoForge's inherited default with fabric-api's own handler wherever a bed inherits it "
 					+ "(-Dforbric.carrierDefaultChains); a NeoForge bed that overrides the setter keeps its own and no longer asks Fabric's event"));
