@@ -104,8 +104,11 @@ import net.forbric.kernel.util.ForbricLog;
  *       local of that name and the delegate's table has it in one slot of the handler's type, accessed while live more
  *       times than the {@code @At}'s ordinal. torrential's Conduit Power mining bonus names {@code speed} in
  *       {@code Player.getDestroySpeed}; the merged stub has no {@code speed}, the body is the overload the game calls,
- *       and the bonus silently never applied. {@code -Dforbric.mixinStubRebind.modifyVariable=off} leaves these where
- *       they are.</li>
+ *       and the bonus silently never applied. One discriminated by {@code ordinal} alone moves only with the slot it
+ *       reads pinned as its {@code index}: the native method's ordinal-picked local and exactly one non-added local of
+ *       the delegate holding the same values ({@link #ordinalLocalPinned}) — puzzleslib's explosion hook spares entities
+ *       in vanilla's {@code hurtEntities()}, where on NeoForge's overload the same ordinal would pick the blocks.
+ *       {@code -Dforbric.mixinStubRebind.modifyVariable=off} leaves these where they are.</li>
  * </ul>
  * {@code -Dforbric.mixinStubRebind=off} leaves every selector as compiled.
  */
@@ -441,8 +444,12 @@ public final class MixinStubRebind {
 	 * @param pins for a handler parameter whose by-type {@code @Local} the delegate decides only beside the arguments the
 	 *             carrier added: the slot it reads there, written into the annotation as its {@code index}
 	 */
+	/**
+	 * @param variableIndex for a {@code @ModifyVariable} discriminated by ordinal alone, the delegate slot that holds the
+	 *                      native local it picks (written as its {@code index}, the ordinal dropped); -1 otherwise
+	 */
 	private record Plan(AnnotationNode injector, MethodNode stub, Delegation delegation, boolean captures, List<String> shares,
-			Map<Integer, Integer> pins) {
+			Map<Integer, Integer> pins, int variableIndex) {
 	}
 
 	/** Told which handler its captures keep on which stub, and the body it would have moved to. */
@@ -477,6 +484,16 @@ public final class MixinStubRebind {
 					+ "argument the carrier added", mixin.name.replace('/', '.'), handler.name,
 					Type.getArgumentTypes(handler.desc)[pin.getKey()].getClassName(), target.name.replace('/', '.'), delegate.name,
 					delegate.desc, pin.getValue());
+		}
+		if (plan.variableIndex() >= 0) {
+			for (int i = 0; i + 1 < injector.values.size(); i += 2)
+				if ("ordinal".equals(injector.values.get(i))) { injector.values.remove(i + 1); injector.values.remove(i); break; }
+			injector.values.add("index");
+			injector.values.add(plan.variableIndex());
+			ForbricLog.info("[Forbric/Mixin] %s: %s's @ModifyVariable on %s.%s%s takes slot %d — the local its ordinal picks in the method "
+					+ "it was written for, holding the same value there; counted by type on the body, the carrier's added argument "
+					+ "would come first", mixin.name.replace('/', '.'), handler.name, target.name.replace('/', '.'), delegate.name, delegate.desc,
+					plan.variableIndex());
 		}
 		ForbricLog.info("[Forbric/Mixin] %s: %s now targets %s.%s%s — Mixin bound its selector to the merge-added stub %s, "
 				+ "which only forwards to it%s%s", mixin.name.replace('/', '.'), handler.name, target.name.replace('/', '.'),
@@ -522,8 +539,12 @@ public final class MixinStubRebind {
 
 		List<AnnotationNode> points = MixinFit.atNodes(injector);
 		if (points.isEmpty()) return null;
+		int variableIndex = -1;
 		if (variable) {
-			if (!namedLocalMoved(injector, handler, stub, delegate)) return null;
+			if (!namedLocalMoved(injector, handler, stub, delegate)) {
+				variableIndex = ordinalLocalPinned(injector, handler, target, stub, delegation, ecosystem);
+				if (variableIndex < 0) return null;
+			}
 		} else {
 			for (AnnotationNode at : points) {
 				String value = MixinFit.asString(MixinFit.value(at, "value"));
@@ -609,7 +630,7 @@ public final class MixinStubRebind {
 		if (captures) {
 			for (int i = 0; i < stubParams.length; i++) if (delegation.positions()[i] < 0) return null;
 		}
-		return new Plan(injector, stub, delegation, captures, List.copyOf(shares), Map.copyOf(pins));
+		return new Plan(injector, stub, delegation, captures, List.copyOf(shares), Map.copyOf(pins), variableIndex);
 	}
 
 	/**
@@ -870,6 +891,104 @@ public final class MixinStubRebind {
 			if (!params[own + i].equals(stubParams[i]) || delegation.positions()[i] != i || !delegateParams[i].equals(stubParams[i])) return false;
 		}
 		return true;
+	}
+
+	/**
+	 * The delegate slot that holds the local a {@code @ModifyVariable} discriminated by {@code ordinal} alone picks in the
+	 * method the mod was compiled against, or -1.
+	 *
+	 * <p>Mixin counts that ordinal over every slot of the handler's type in the local variable table at the point, method
+	 * arguments included. On the delegate the carrier's added arguments come first, so the same ordinal picks another
+	 * value: NeoForge's {@code ServerExplosion.hurtEntities(List)} takes the exploded blocks ahead of the entity list a
+	 * mod's {@code @ModifyVariable(ordinal = 0)} on vanilla's {@code hurtEntities()} modifies. The local is pinned by
+	 * what it holds instead: one {@code LOAD}/{@code STORE} point, no slice, shift or target; in the native method the
+	 * ordinal picks the same slot at every point; the delegate, its added arguments ({@link #addedArgumentSlots}) aside,
+	 * has exactly one slot of that type whose stored values are the native slot's, each the same expression over the
+	 * method's own values ({@link NativeCallInlining.Conditions}), stored and accessed as often.
+	 */
+	static int ordinalLocalPinned(AnnotationNode injector, MethodNode handler, ClassNode target, MethodNode stub, Delegation delegation,
+			Ecosystem ecosystem) {
+		if (MixinFit.value(injector, "name") != null || MixinFit.value(injector, "index") != null
+				|| Boolean.TRUE.equals(MixinFit.value(injector, "argsOnly"))) return -1;
+		if (!(MixinFit.value(injector, "ordinal") instanceof Integer ordinal) || ordinal < 0) return -1;
+		Type[] params = Type.getArgumentTypes(handler.desc);
+		if (params.length == 0 || !params[0].equals(Type.getReturnType(handler.desc))) return -1;
+		Type type = params[0];
+		List<AnnotationNode> points = MixinFit.atNodes(injector);
+		if (points.size() != 1) return -1;
+		AnnotationNode at = points.getFirst();
+		String value = MixinFit.asString(MixinFit.value(at, "value"));
+		if (!LOCAL_POINTS.contains(value) || MixinFit.value(at, "slice") != null || MixinFit.value(at, "shift") != null
+				|| MixinFit.value(at, "target") != null || MixinFit.value(at, "ordinal") != null) return -1;
+		ClassNode reference = ecosystem == null ? null : NativeGameReferences.reference(ecosystem, target.name);
+		MethodNode was = reference == null ? null : reference.methods.stream()
+				.filter(m -> m.name.equals(stub.name) && m.desc.equals(stub.desc)).findFirst().orElse(null);
+		MethodNode delegate = delegation.delegate();
+		if (was == null || was.localVariables == null || delegate.localVariables == null) return -1;
+		int opcode = type.getOpcode("STORE".equals(value) ? Opcodes.ISTORE : Opcodes.ILOAD);
+		// The native slot: the ordinal-th of that type among the table's live entries at each access of it, `this` aside.
+		int nativeSlot = -1;
+		for (AbstractInsnNode insn : was.instructions) {
+			if (!(insn instanceof VarInsnNode access) || access.getOpcode() != opcode) continue;
+			List<Integer> live = liveSlots(was, insn, type, "STORE".equals(value));
+			if (!live.contains(access.var)) continue;
+			int picked = ordinal < live.size() ? live.get(ordinal) : -1;
+			if (picked != access.var) continue;
+			if (nativeSlot >= 0 && nativeSlot != picked) return -1;
+			nativeSlot = picked;
+		}
+		if (nativeSlot < 0) return -1;
+		NativeCallInlining.Conditions nativeValues = NativeCallInlining.Conditions.of(reference.name, was, Integer.MAX_VALUE);
+		NativeCallInlining.Conditions mergedValues = NativeCallInlining.Conditions.of(target.name, delegate, Integer.MAX_VALUE);
+		if (nativeValues == null || mergedValues == null) return -1;
+		List<String> wanted = stored(was, nativeSlot, type, nativeValues);
+		int wantedAccesses = accesses(was, nativeSlot, opcode);
+		if (wanted == null || wanted.isEmpty()) return -1;
+		java.util.BitSet added = addedArgumentSlots(stub, delegation);
+		int base = (delegate.access & Opcodes.ACC_STATIC) != 0 ? 0 : 1, found = -1;
+		java.util.Set<Integer> slots = new java.util.TreeSet<>();
+		for (LocalVariableNode local : delegate.localVariables) if (local.desc.equals(type.getDescriptor()) && local.index >= base && !added.get(local.index)) slots.add(local.index);
+		for (int slot : slots) {
+			if (!wanted.equals(stored(delegate, slot, type, mergedValues)) || accesses(delegate, slot, opcode) != wantedAccesses) continue;
+			if (found >= 0) return -1;
+			found = slot;
+		}
+		return found;
+	}
+
+	/** The slots of {@code type} the table names live at {@code insn} (just after it, for a store), `this` aside, in order. */
+	private static List<Integer> liveSlots(MethodNode method, AbstractInsnNode insn, Type type, boolean store) {
+		AbstractInsnNode live = insn;
+		if (store) {
+			live = insn.getNext();
+			while (live != null && live.getOpcode() < 0) live = live.getNext();
+		}
+		java.util.Set<Integer> out = new java.util.TreeSet<>();
+		if (live == null) return List.of();
+		int where = method.instructions.indexOf(live), base = (method.access & Opcodes.ACC_STATIC) != 0 ? 0 : 1;
+		for (LocalVariableNode local : method.localVariables)
+			if (local.index >= base && local.desc.equals(type.getDescriptor()) && method.instructions.indexOf(local.start) <= where
+					&& where < method.instructions.indexOf(local.end)) out.add(local.index);
+		return new ArrayList<>(out);
+	}
+
+	/** The expressions stored into {@code slot}, in order; null when one cannot be read. */
+	private static List<String> stored(MethodNode method, int slot, Type type, NativeCallInlining.Conditions values) {
+		List<String> out = new ArrayList<>();
+		int opcode = type.getOpcode(Opcodes.ISTORE);
+		for (AbstractInsnNode insn : method.instructions) {
+			if (!(insn instanceof VarInsnNode store) || store.getOpcode() != opcode || store.var != slot) continue;
+			String expression = values.stored(store);
+			if (expression == null || expression.contains("?") || expression.contains("join")) return null;
+			out.add(expression);
+		}
+		return out;
+	}
+
+	private static int accesses(MethodNode method, int slot, int opcode) {
+		int n = 0;
+		for (AbstractInsnNode insn : method.instructions) if (insn instanceof VarInsnNode access && access.getOpcode() == opcode && access.var == slot) n++;
+		return n;
 	}
 
 	/**

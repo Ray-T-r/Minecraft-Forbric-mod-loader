@@ -510,6 +510,13 @@ public final class NativeCallInlining {
 			return out;
 		}
 
+		/** The expression of the value {@code store} writes into its local; null when the frame cannot be read. */
+		String stored(AbstractInsnNode store) {
+			Frame<SourceValue> frame = frames[method.instructions.indexOf(store)];
+			if (frame == null || frame.getStackSize() == 0) return null;
+			return expression(frame.getStack(frame.getStackSize() - 1), 0);
+		}
+
 		/** The leaves of the operands {@code call} is handed: see {@link NativeCallInlining#inputs}. */
 		Set<String> leaves(MethodInsnNode call) {
 			Set<String> out = new TreeSet<>();
