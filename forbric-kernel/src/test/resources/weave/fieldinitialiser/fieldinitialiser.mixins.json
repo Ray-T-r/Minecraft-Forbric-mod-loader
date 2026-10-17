@@ -1,0 +1,1 @@
+{"required": true, "package": "com.tallyman.mark.mixin", "compatibilityLevel": "JAVA_21", "mixins": ["CrateMixin"], "injectors": {"defaultRequire": 1}}

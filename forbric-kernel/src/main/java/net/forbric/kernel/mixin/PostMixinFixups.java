@@ -42,29 +42,16 @@ import net.forbric.kernel.util.ForbricLog;
  * the target — the cases the pre-mixin adapter ({@link KernelGuestMixinAdapter}) cannot pre-empt because the damage
  * is done by Mixin's own weaving. Runs on the post-Mixin bytes, so it can see mixin-added members.
  *
- * <p>Currently one entry: {@code fabric-resource-loader-v1}'s {@code PackMixin} adds a {@code parentsPredicate} field
- * initialized to {@code DEFAULT_PARENT_PREDICATE}. Mixin injects a field initializer after the constructor's
- * super/this call — but NeoForge's merged {@code Pack} 5-arg constructor recursively calls {@code new Pack(...)}
- * inside its child-building loop, and Mixin placed the initializer after THAT recursive call, i.e. inside the loop.
- * The loop is skipped for any pack with an empty children list — every top-level pack from {@code readMetaAndCreate}
- * — so their {@code parentsPredicate} stays {@code null}. {@code fabric$isHidden()} is {@code parentsPredicate !=
- * DEFAULT}, so a null makes EVERY top-level pack (including the vanilla data pack) read as a hidden mod pack;
- * {@code refreshAutoEnabledPacks} then strips them from the selected set, the vanilla datapack never loads, and 13
- * dynamic registries come up empty. The repair re-adds the initializer where Mixin should have put it: immediately
- * after {@code super()}, so {@code parentsPredicate} is DEFAULT for every pack regardless of children (the stray
- * in-loop assignment becomes a harmless repeat).
+ * <p>A mixin's field initialiser that Mixin put after a merged constructor's own constructions of its class, instead of
+ * after {@code super()}, is moved back there by {@link MixinFieldInitialiserPlacement} — recognised by the woven class's
+ * shape and the mixin's native class, whichever mod's field it is.
  */
 public final class PostMixinFixups {
-	private static final String PACK = "net/minecraft/server/packs/repository/Pack";
 	private static final String GUI_RENDERER = "net/minecraft/client/gui/render/GuiRenderer";
 	private static final String PIP_RENDERERS = "pictureInPictureRenderers";
 	private static final String MAP_DESC = "Ljava/util/Map;";
 	/** Mixin names every injected callback {@code handler$<id>$<method>}. */
 	private static final String HANDLER_PREFIX = "handler$";
-	private static final String FABRIC_PACK = "net/fabricmc/fabric/impl/resource/pack/FabricPack";
-	private static final String PARENTS_PREDICATE = "parentsPredicate";
-	private static final String DEFAULT_PARENT_PREDICATE = "DEFAULT_PARENT_PREDICATE";
-	private static final String PREDICATE_DESC = "Ljava/util/function/Predicate;";
 
 	/**
 	 * Merged-base fields this class SEEDS, as {@code owner#field}. {@link MixinFit} consults this so it does not
@@ -92,7 +79,7 @@ public final class PostMixinFixups {
 	public static byte[] apply(String name, byte[] bytes) {
 		if (bytes == null || !enabled()) return bytes;
 		String internal = name.replace('.', '/');
-		if (PACK.equals(internal)) return repairPackParentsPredicate(bytes);
+		bytes = MixinFieldInitialiserPlacement.repair(bytes, NativeGameReferences::reference, MixinStubRebind::ecosystemOf);
 		if (GUI_RENDERER.equals(internal)) return seedOrphanedPipRenderers(bytes);
 		if (MAPPED_REGISTRY.equals(internal)) bytes = askTheRegistryWhetherAnAliasTargetExists(bytes);
 		return replayDelegatedConstructorInjections(internal, bytes);
@@ -468,47 +455,6 @@ public final class PostMixinFixups {
 		ForbricLog.info("[Forbric/Mixin] post-mixin repair: seeded GuiRenderer.%s with an empty map — NeoForge won the "
 				+ "byte-merge of the constructor and replaced it with pictureInPictureRendererPools, orphaning the "
 				+ "field that guest GUI mixins @Shadow", PIP_RENDERERS);
-		ClassWriter writer = new ClassWriter(ClassWriter.COMPUTE_MAXS);
-		node.accept(writer);
-		return writer.toByteArray();
-	}
-
-	private static byte[] repairPackParentsPredicate(byte[] bytes) {
-		ClassNode node = new ClassNode();
-		new ClassReader(bytes).accept(node, 0);
-
-		// Only if PackMixin actually applied (the field + the FabricPack interface are present).
-		boolean hasField = false;
-		if (node.fields != null) {
-			for (FieldNode f : node.fields) {
-				if (PARENTS_PREDICATE.equals(f.name) && PREDICATE_DESC.equals(f.desc)) {
-					hasField = true;
-					break;
-				}
-			}
-		}
-		boolean isFabricPack = node.interfaces != null && node.interfaces.contains(FABRIC_PACK);
-		if (!hasField || !isFabricPack) return bytes;
-
-		boolean changed = false;
-		for (MethodNode m : node.methods) {
-			if (!m.name.equals("<init>")) continue;
-			AbstractInsnNode superCall = superInitCall(m);
-			if (superCall == null) continue; // a this()-delegating ctor; the super()-calling one gets the init
-
-			InsnList init = new InsnList();
-			init.add(new VarInsnNode(Opcodes.ALOAD, 0));
-			init.add(new FieldInsnNode(Opcodes.GETSTATIC, PACK, DEFAULT_PARENT_PREDICATE, PREDICATE_DESC));
-			init.add(new FieldInsnNode(Opcodes.PUTFIELD, PACK, PARENTS_PREDICATE, PREDICATE_DESC));
-			m.instructions.insert(superCall, init);
-			m.maxStack = Math.max(m.maxStack, 2);
-			changed = true;
-		}
-		if (!changed) return bytes;
-
-		ForbricLog.info("[Forbric/Mixin] post-mixin repair: seeded Pack.parentsPredicate=DEFAULT after super() — "
-				+ "PackMixin's initializer was mis-woven into NeoForge's child-building loop, leaving top-level packs "
-				+ "(incl. the vanilla datapack) hidden");
 		ClassWriter writer = new ClassWriter(ClassWriter.COMPUTE_MAXS);
 		node.accept(writer);
 		return writer.toByteArray();
