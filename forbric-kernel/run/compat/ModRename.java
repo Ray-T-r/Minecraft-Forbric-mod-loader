@@ -533,10 +533,15 @@ public final class ModRename {
 			AbstractInsnNode next = real(insn.getNext());
 			if (next != null && next.getOpcode() == Opcodes.ALOAD) next = real(next.getNext());
 			if (isStringTest(next)) tests.add((EQUALITY.contains(((MethodInsnNode) next).name) ? "equal" : "substring") + "\t" + s);
+			// A pattern the code matches names against: name.replaceAll(".+\\.mixin\\.", "") (the replacement constant between).
+			AbstractInsnNode after = next instanceof LdcInsnNode replacement && replacement.cst instanceof String ? real(next.getNext()) : next;
+			if (after instanceof MethodInsnNode regex && regex.owner.equals("java/lang/String") && REGEX_TESTS.contains(regex.name))
+				tests.add("substring\t" + s);
 		}
 	}
 
 	private static final Set<String> EQUALITY = Set.of("equals", "equalsIgnoreCase", "contentEquals");
+	private static final Set<String> REGEX_TESTS = Set.of("replaceAll", "replaceFirst", "split");
 	private static final String MIXIN_PLUGIN = "org/spongepowered/asm/mixin/extensibility/IMixinConfigPlugin";
 	private static final Pattern RELATIVE_MIXIN = Pattern.compile("(?:[a-z_$][A-Za-z0-9_$]*\\.)*[A-Z][A-Za-z0-9_$]*");
 

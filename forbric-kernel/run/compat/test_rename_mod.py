@@ -100,6 +100,8 @@ public class GameMixin {
     'org/example/samplemod/mixin/ListingPlugin.java': 'package org.example.samplemod.mixin; public class ListingPlugin '
     'implements org.spongepowered.asm.mixin.extensibility.IMixinConfigPlugin { '
     'public java.util.List<String> getMixins() { return java.util.List.of("ListedMixin"); } }',
+    'org/example/samplemod/stash/Stashed.java': 'package org.example.samplemod.stash; public class Stashed { '
+    'public static String shortName(String name) { return name.replaceAll(".+\\\\.stash\\\\.", ""); } }',
     'org/example/samplemod/mixin/ListedMixin.java': 'package org.example.samplemod.mixin; '
     '@org.spongepowered.asm.mixin.Mixin(targets = "net.minecraft.client.Minecraft") public class ListedMixin { }',
 }
@@ -224,6 +226,12 @@ class RenameModTest(unittest.TestCase):
         self.assertEqual(listed.rsplit('/', 1)[0], self.cls_name('org/example/samplemod/mixin/TargetMixin').rsplit('/', 1)[0])
         self.assertFalse(listed.startswith('org/example/'), listed)
         self.assertIn('ListedMixin', self.mapping['keptNames'])
+
+    def test_a_package_segment_a_regex_strips_names_against_keeps_its_text(self):
+        # Stashed.shortName strips everything up to ".stash.": the segment must still read "stash" once moved.
+        stashed = self.cls_name('org/example/samplemod/stash/Stashed')
+        self.assertIn('/stash/', stashed)
+        self.assertFalse(stashed.startswith('org/example/'), stashed)
 
     def test_no_name_of_the_mod_is_left_in_entry_names(self):
         self.assertNotIn('samplemod', self.renamed.name)
