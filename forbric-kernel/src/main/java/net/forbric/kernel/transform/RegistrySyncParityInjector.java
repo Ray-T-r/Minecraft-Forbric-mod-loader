@@ -18,6 +18,10 @@ package net.forbric.kernel.transform;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.CopyOnWriteArrayList;
+import java.util.function.Function;
 import java.util.function.Predicate;
 
 import org.objectweb.asm.ClassReader;
@@ -26,6 +30,8 @@ import org.objectweb.asm.Opcodes;
 import org.objectweb.asm.Type;
 import org.objectweb.asm.tree.AbstractInsnNode;
 import org.objectweb.asm.tree.ClassNode;
+import org.objectweb.asm.tree.FieldInsnNode;
+import org.objectweb.asm.tree.FieldNode;
 import org.objectweb.asm.tree.InsnList;
 import org.objectweb.asm.tree.InsnNode;
 import org.objectweb.asm.tree.LdcInsnNode;
@@ -35,6 +41,8 @@ import org.objectweb.asm.tree.VarInsnNode;
 
 import net.forbric.api.Ecosystem;
 import net.forbric.api.ForeignType;
+import net.forbric.kernel.mixin.MixinFit;
+import net.forbric.kernel.util.ByteScan;
 import net.forbric.kernel.util.ForbricLog;
 
 /**
@@ -88,7 +96,6 @@ public final class RegistrySyncParityInjector implements ClassTransformer {
 	private static final String PENDING_BINDINGS = "val$newBindings";
 	private static final String IMMUTABLE_MAP = "Lcom/google/common/collect/ImmutableMap;";
 	private static final String NEO_REGISTRY_MANAGER = ForeignType.REGISTRY_MANAGER.binary(Ecosystem.NEOFORGE);
-	private static final String FABRIC_CLIENT_SYNC = "net.fabricmc.fabric.impl.client.registry.sync.ClientRegistrySyncHandler";
 
 	private static final String HOOK_OWNER = "net/forbric/kernel/boot/KernelForgeWrapperSync";
 	private static final String RESOURCE_KEY = "Lnet/minecraft/resources/ResourceKey;";
@@ -103,39 +110,156 @@ public final class RegistrySyncParityInjector implements ClassTransformer {
 	private static final String REVERT_TO_FROZEN = "revertToFrozen";
 	private static final String REVERT_OWNER = "net/forbric/kernel/boot/KernelRegistryRevert";
 
-	/** fabric-api's {@code RemappableRegistry.remap}, which its mixin adds to {@code MappedRegistry} and the wrapper inherits. */
-	private static final String REMAP = "remap";
-	private static final String REMAP_DESC =
-			"(Lit/unimi/dsi/fastutil/objects/Object2IntMap;Lnet/fabricmc/fabric/impl/registry/sync/RemappableRegistry$RemapMode;)V";
-	private static final String FABRIC_APPLY = "apply";
-	private static final String FABRIC_APPLY_DESC = "(Lnet/fabricmc/fabric/impl/registry/sync/packet/RegistrySyncPayload;)V";
+	/** The server's ids, by entry name, as a remap contract takes them. */
+	private static final String IDS = "Lit/unimi/dsi/fastutil/objects/Object2IntMap;";
+	private static final String SHADOW = "Lorg/spongepowered/asm/mixin/Shadow;";
+
+	/**
+	 * A remap a mod's mixin adds to a registry class: a public {@code void} method the mixin implements for one of its
+	 * interfaces ({@code owner}), that takes the server's ids as an {@code Object2IntMap} (argument {@code idsArgument})
+	 * and works on the registry's own entry storage through the mixin's {@code @Shadow} fields. fabric-api's registry
+	 * sync is one; whatever its interface and method are called, the wrapper that inherits it from {@code target} has
+	 * empty copies of those fields and needs its own. {@code undo}, when the same interface declares one, is the
+	 * argument-free {@code void} method the mixin implements over the same storage: what puts the registry back after a
+	 * remap (null when there is none, or several). Internal names.
+	 */
+	public record RemapContract(String target, String owner, String name, String desc, int idsArgument, String undo) {
+	}
+
+	private static final Map<RemapContract, byte[][]> NEEDLES = new ConcurrentHashMap<>();
+	/** Per mixin config, the remap contracts its mixins add, as the kernel's mixin discovery read them. */
+	private static final Map<String, List<RemapContract>> DISCOVERED = new ConcurrentHashMap<>();
 
 	/**
 	 * Whether the loader that defines the wrapper has a class, by internal name. Asked when the wrapper is
-	 * transformed, for the types fabric-api's {@code remap} names.
+	 * transformed, for the types each remap contract names.
 	 */
 	private final Predicate<String> gameHasClass;
+	/** The remap contracts mixins add to a class, by its internal name. */
+	private final Function<String, List<RemapContract>> remapContracts;
 
 	/**
 	 * The injector KernelBoot registers: {@code game} is the loader that defines the wrapper, and so the one that
 	 * resolves the types its methods name. It is asked for each type's {@code .class} resource when the wrapper is
-	 * transformed, and fabric-api's {@code remap} is added only when every type it names is there. The decision lives
-	 * here, not in KernelBoot, so that {@code RegistryWrapperAccessInjectorTest} runs the very predicate the game does.
-	 * See {@link #giveWrapperBothContracts}.
+	 * transformed, and a remap contract is added only when every type it names is there. The decision lives here, not
+	 * in KernelBoot, so that {@code RegistryWrapperAccessInjectorTest} runs the very predicate the game does. The
+	 * contracts are the ones the mixin configs were seen to add ({@link #noteMixin}). See {@link #giveWrapperBothContracts}.
 	 */
 	public static RegistrySyncParityInjector forGameLoader(ClassLoader game) {
 		if (game == null) throw new NullPointerException("game");
-		return new RegistrySyncParityInjector(type -> game.getResource(type + ".class") != null);
+		return new RegistrySyncParityInjector(type -> game.getResource(type + ".class") != null, RegistrySyncParityInjector::discovered);
 	}
 
 	/**
 	 * For tests that stand in for the game loader; the game's injector is {@link #forGameLoader}.
 	 *
-	 * @param gameHasClass whether the game loader has the class with this internal name
+	 * @param gameHasClass   whether the game loader has the class with this internal name
+	 * @param remapContracts the remap contracts mixins add to a class, by its internal name; every known one for {@code null}
 	 */
-	RegistrySyncParityInjector(Predicate<String> gameHasClass) {
+	RegistrySyncParityInjector(Predicate<String> gameHasClass, Function<String, List<RemapContract>> remapContracts) {
 		if (gameHasClass == null) throw new NullPointerException("gameHasClass");
+		if (remapContracts == null) throw new NullPointerException("remapContracts");
 		this.gameHasClass = gameHasClass;
+		this.remapContracts = remapContracts;
+	}
+
+	/** Records the remap contracts {@code mixin}, of {@code config}, adds; {@code resources} reads its interfaces. */
+	public static void noteMixin(String config, ClassNode mixin, Function<String, byte[]> resources) {
+		List<RemapContract> found = remapContracts(mixin, resources);
+		if (!found.isEmpty()) DISCOVERED.computeIfAbsent(config, ignored -> new CopyOnWriteArrayList<>()).addAll(found);
+	}
+
+	/** Forgets what {@code config}'s mixins were seen to add, before it is read again. */
+	public static void forgetMixins(String config) {
+		DISCOVERED.remove(config);
+	}
+
+	/** Every remap contract the kernel's mixin discovery noted, for whichever registry class. */
+	public static List<RemapContract> discoveredContracts() {
+		return discovered(null);
+	}
+
+	/** The discovered remap contracts mixins add to {@code target}; every one of them for {@code null}. */
+	static List<RemapContract> discovered(String target) {
+		List<RemapContract> out = new ArrayList<>();
+		for (List<RemapContract> contracts : DISCOVERED.values()) {
+			for (RemapContract contract : contracts) if (target == null || contract.target().equals(target)) out.add(contract);
+		}
+		return out;
+	}
+
+	/**
+	 * The remap contracts {@code mixin} adds to each of its targets (see {@link RemapContract}). Read off the mixin class
+	 * and the interfaces it implements ({@code resources}: class files by resource path); whose mixin it is plays no part.
+	 */
+	public static List<RemapContract> remapContracts(ClassNode mixin, Function<String, byte[]> resources) {
+		if (mixin == null || mixin.interfaces == null || mixin.interfaces.isEmpty() || resources == null) return List.of();
+		List<String> targets = MixinFit.mixinTargets(mixin);
+		if (targets.isEmpty()) return List.of();
+		java.util.Set<String> shadows = new java.util.HashSet<>();
+		for (FieldNode field : mixin.fields) {
+			if ((field.access & Opcodes.ACC_STATIC) == 0 && (annotated(field.visibleAnnotations) || annotated(field.invisibleAnnotations))) shadows.add(field.name);
+		}
+		if (shadows.isEmpty()) return List.of();
+		List<RemapContract> out = new ArrayList<>();
+		for (MethodNode method : mixin.methods) {
+			if ((method.access & (Opcodes.ACC_PUBLIC | Opcodes.ACC_STATIC | Opcodes.ACC_SYNTHETIC | Opcodes.ACC_BRIDGE)) != Opcodes.ACC_PUBLIC
+					|| method.name.startsWith("<") || !method.desc.endsWith(")V")) continue;
+			Type[] arguments = Type.getArgumentTypes(method.desc);
+			int ids = -1;
+			for (int i = 0; i < arguments.length; i++) {
+				if (!arguments[i].getDescriptor().equals(IDS)) continue;
+				if (ids >= 0) { ids = -2; break; }
+				ids = i;
+			}
+			if (ids < 0) continue;
+			if (!touchesShadows(mixin, method, shadows)) continue;
+			String owner = declaring(mixin.interfaces, method.name, method.desc, resources, new java.util.HashSet<>());
+			if (owner == null) continue;
+			String undo = null;
+			for (MethodNode other : mixin.methods) {
+				if ((other.access & (Opcodes.ACC_PUBLIC | Opcodes.ACC_STATIC | Opcodes.ACC_SYNTHETIC | Opcodes.ACC_BRIDGE)) != Opcodes.ACC_PUBLIC
+						|| !other.desc.equals("()V") || !touchesShadows(mixin, other, shadows)
+						|| !owner.equals(declaring(mixin.interfaces, other.name, other.desc, resources, new java.util.HashSet<>()))) continue;
+				undo = undo == null ? other.name : "";
+			}
+			if ("".equals(undo)) undo = null;
+			for (String target : targets) out.add(new RemapContract(target, owner, method.name, method.desc, ids, undo));
+		}
+		return out;
+	}
+
+	/** Whether {@code method} reads or writes one of {@code mixin}'s {@code @Shadow} instance fields. */
+	private static boolean touchesShadows(ClassNode mixin, MethodNode method, java.util.Set<String> shadows) {
+		for (AbstractInsnNode insn : method.instructions) {
+			if (insn instanceof FieldInsnNode field && field.owner.equals(mixin.name) && shadows.contains(field.name)) return true;
+		}
+		return false;
+	}
+
+	private static boolean annotated(List<org.objectweb.asm.tree.AnnotationNode> annotations) {
+		if (annotations == null) return false;
+		for (var annotation : annotations) if (SHADOW.equals(annotation.desc)) return true;
+		return false;
+	}
+
+	/** The interface among {@code interfaces} (or their superinterfaces) that declares {@code name desc}, or null. */
+	private static String declaring(List<String> interfaces, String name, String desc, Function<String, byte[]> resources, java.util.Set<String> seen) {
+		for (String contract : interfaces) {
+			if (!seen.add(contract)) continue;
+			byte[] bytes;
+			try { bytes = resources.apply(contract + ".class"); } catch (RuntimeException unreadable) { bytes = null; }
+			if (bytes == null) continue;
+			ClassNode node = new ClassNode();
+			new ClassReader(bytes).accept(node, ClassReader.SKIP_CODE | ClassReader.SKIP_DEBUG | ClassReader.SKIP_FRAMES);
+			if ((node.access & Opcodes.ACC_INTERFACE) == 0) continue;
+			for (MethodNode method : node.methods) {
+				if (method.name.equals(name) && method.desc.equals(desc) && (method.access & Opcodes.ACC_STATIC) == 0) return node.name;
+			}
+			String inherited = declaring(node.interfaces, name, desc, resources, seen);
+			if (inherited != null) return inherited;
+		}
+		return null;
 	}
 
 	@Override
@@ -166,17 +290,16 @@ public final class RegistrySyncParityInjector implements ClassTransformer {
 	@Override
 	public byte[] transform(String className, byte[] classBytes, TransformContext context) {
 		if (classBytes == null || classBytes.length == 0) return classBytes;
-		if (WRAPPER.equals(className)) return giveWrapperBothContracts(className, classBytes, missingRemapTypes());
+		if (WRAPPER.equals(className)) return giveWrapperBothContracts(className, classBytes);
 		if (WRAPPER_PENDING_TAGS.equals(className)) return giveWrapperPendingTagsItsContents(className, classBytes);
 		if (NEO_REGISTRY_MANAGER.equals(className)) return flushAroundApplySnapshot(className, classBytes);
-		if (FABRIC_CLIENT_SYNC.equals(className)) return flushAroundFabricApply(className, classBytes);
-		return classBytes;
+		return flushAroundRemapCalls(className, classBytes);
 	}
 
-	/** The reference types {@code remap}'s descriptor names that {@link #gameHasClass} does not find, by internal name. */
-	private List<String> missingRemapTypes() {
+	/** The reference types {@code contract}'s descriptor names that {@link #gameHasClass} does not find, by internal name. */
+	private List<String> missingTypes(RemapContract contract) {
 		List<String> missing = new ArrayList<>();
-		for (Type argument : Type.getArgumentTypes(REMAP_DESC)) {
+		for (Type argument : Type.getArgumentTypes(contract.desc())) {
 			if (argument.getSort() == Type.OBJECT && !gameHasClass.test(argument.getInternalName())) {
 				missing.add(argument.getInternalName());
 			}
@@ -230,43 +353,40 @@ public final class RegistrySyncParityInjector implements ClassTransformer {
 	}
 
 	/**
-	 * Adds NeoForge's {@code clear(Z)} / {@code registerIdMapping(ResourceKey, I)} and, when fabric-api is there,
-	 * fabric-api's {@code remap(Object2IntMap, RemapMode)} to the wrapper — unless it grew its own.
+	 * Adds NeoForge's {@code clear(Z)} / {@code registerIdMapping(ResourceKey, I)} and every remap contract a mixin adds
+	 * to the wrapper's superclass ({@link RemapContract}) to the wrapper — unless it grew its own.
 	 *
-	 * <p>fabric-api's half is the same disease with a quieter symptom: its {@code remap} is a mixin method that
-	 * rewrites the {@code MappedRegistry} fields it shadows, and on the wrapper those are the same empty fields —
-	 * so against a PURE Fabric server (where only fabric-api's sync runs) the wrapped registries kept their local
-	 * ids and nothing said so. With mod sets that differ between client and server, every block, item, entity type
-	 * and sound in those registries then decodes to the wrong one. The override stages the server's ids exactly as
-	 * the NeoForge one does, and {@code ClientRegistrySyncHandler.apply} flushes them.
+	 * <p>A remap contract is the same disease with a quieter symptom: the mixin method rewrites the {@code MappedRegistry}
+	 * fields it shadows, and on the wrapper those are the same empty fields — so against a PURE Fabric server (where only
+	 * fabric-api's sync, one such contract, runs) the wrapped registries kept their local ids and nothing said so. With
+	 * mod sets that differ between client and server, every block, item, entity type and sound in those registries then
+	 * decodes to the wrong one. The override stages the server's ids exactly as the NeoForge one does, and the method that
+	 * calls the contract flushes them when it returns ({@link #flushAroundRemapCalls}).
 	 *
-	 * <p><b>Only when its types are on the game loader.</b> The method is public and names
-	 * {@code RemappableRegistry$RemapMode}. {@code Class.getMethod} searches from the runtime class upwards, resolves
-	 * the parameter types of every public method each class it reaches declares, and stops at the first class that
-	 * declares a match; {@code getMethods} reaches every class. Without fabric-api that type is nowhere, so every
-	 * lookup that reaches {@code NamespacedWrapper} threw {@code NoClassDefFoundError}: {@code getMethods()}, any
-	 * {@code getMethod} on a plain wrapper, and on a {@code NamespacedDefaultedWrapper} (the class of
-	 * {@code BuiltInRegistries.BLOCK}) any name it does not declare itself — {@code getOptional}, {@code keySet}, …
-	 * — in every pack without fabric-api, pure NeoForge and MinecraftForge packs included. There nothing calls
-	 * {@code remap} (the interface it overrides is fabric-api's), so leaving it out costs nothing; with fabric-api it
-	 * is added as before. {@code clear} and {@code registerIdMapping} are protected, which {@code getMethod} does not
-	 * look at, and name only game types.
-	 *
-	 * @param missingRemapTypes the types {@code remap}'s descriptor names that the game loader does not have; empty
-	 *                          when fabric-api's remap can be added
+	 * <p><b>Only when its types are on the game loader.</b> The method is public and names the mod's own types.
+	 * {@code Class.getMethod} searches from the runtime class upwards, resolves the parameter types of every public
+	 * method each class it reaches declares, and stops at the first class that declares a match; {@code getMethods}
+	 * reaches every class. Were a type absent, every lookup that reaches {@code NamespacedWrapper} would throw
+	 * {@code NoClassDefFoundError}: {@code getMethods()}, any {@code getMethod} on a plain wrapper, and on a
+	 * {@code NamespacedDefaultedWrapper} (the class of {@code BuiltInRegistries.BLOCK}) any name it does not declare
+	 * itself. {@code clear} and {@code registerIdMapping} are protected, which {@code getMethod} does not look at, and
+	 * name only game types.
 	 */
-	private static byte[] giveWrapperBothContracts(String className, byte[] classBytes, List<String> missingRemapTypes) {
+	private byte[] giveWrapperBothContracts(String className, byte[] classBytes) {
 		ClassNode node = new ClassNode();
 		new ClassReader(classBytes).accept(node, 0);
 
+		List<RemapContract> contracts = new ArrayList<>();
+		java.util.Set<String> seen = new java.util.HashSet<>();
+		for (RemapContract contract : remapContracts.apply(node.superName)) if (seen.add(contract.name() + contract.desc())) contracts.add(contract);
 		for (MethodNode m : node.methods) {
+			boolean remap = contracts.stream().anyMatch(contract -> m.name.equals(contract.name()) && m.desc.equals(contract.desc()));
 			if ((m.name.equals(REGISTER_ID_MAPPING) && m.desc.equals(REGISTER_ID_MAPPING_DESC))
-					|| (m.name.equals(CLEAR) && m.desc.equals(CLEAR_DESC))
-					|| (m.name.equals(REMAP) && m.desc.equals(REMAP_DESC))) {
+					|| (m.name.equals(CLEAR) && m.desc.equals(CLEAR_DESC)) || remap) {
 				// A wrapper that overrides these itself has closed the gap natively; adding a second copy would
 				// be a duplicate-method ClassFormatError, so leave it be and say so.
 				ForbricLog.warn("[Forbric/RegistrySync] %s already declares %s%s — leaving Forge's own version in "
-						+ "charge of NeoForge's registry sync", className, m.name, m.desc);
+						+ "charge of the registry sync", className, m.name, m.desc);
 				return classBytes;
 			}
 		}
@@ -294,32 +414,46 @@ public final class RegistrySyncParityInjector implements ClassTransformer {
 		clear.maxLocals = 2;
 		node.methods.add(clear);
 
-		if (missingRemapTypes.isEmpty()) {
-			// public void remap(Object2IntMap<Identifier> ids, RemapMode mode) { KernelForgeWrapperSync.stageFabricRemap(this, ids, mode); }
-			MethodNode remap = new MethodNode(Opcodes.ACC_PUBLIC, REMAP, REMAP_DESC, null, null);
-			remap.instructions.add(new VarInsnNode(Opcodes.ALOAD, 0));
-			remap.instructions.add(new VarInsnNode(Opcodes.ALOAD, 1));
-			remap.instructions.add(new VarInsnNode(Opcodes.ALOAD, 2));
-			remap.instructions.add(new MethodInsnNode(Opcodes.INVOKESTATIC, HOOK_OWNER, "stageFabricRemap",
-					"(Ljava/lang/Object;Ljava/lang/Object;Ljava/lang/Object;)V", false));
-			remap.instructions.add(new InsnNode(Opcodes.RETURN));
-			remap.maxStack = 3;
-			remap.maxLocals = 3;
-			node.methods.add(remap);
-
-			ForbricLog.info("[Forbric/RegistrySync] gave %s NeoForge's id-remap contract (clear, registerIdMapping) and "
-					+ "fabric-api's (remap) — the server's ids are staged and applied through Forge's own injectSnapshot",
-					className);
-		} else {
-			ForbricLog.info("[Forbric/RegistrySync] gave %s NeoForge's id-remap contract (clear, registerIdMapping) — "
-					+ "the server's ids are staged and applied through Forge's own injectSnapshot; fabric-api's (remap) "
-					+ "left out, because the game has no %s, and a public method naming it would make getMethods() and "
-					+ "every getMethod lookup that reaches this class fail to link", className,
-					String.join(", ", missingRemapTypes));
+		List<String> added = new ArrayList<>(), left = new ArrayList<>();
+		for (RemapContract contract : contracts) {
+			List<String> missing = missingTypes(contract);
+			if (!missing.isEmpty()) {
+				left.add(contract.owner().replace('/', '.') + "." + contract.name() + " (the game has no " + String.join(", ", missing) + ")");
+				continue;
+			}
+			node.methods.add(stageRemap(contract));
+			added.add(contract.owner().replace('/', '.') + "." + contract.name());
 		}
+		ForbricLog.info("[Forbric/RegistrySync] gave %s NeoForge's id-remap contract (clear, registerIdMapping)%s — the server's "
+				+ "ids are staged and applied through Forge's own injectSnapshot%s", className,
+				added.isEmpty() ? "" : " and the remap contract(s) a mixin adds to its superclass: " + String.join(", ", added),
+				left.isEmpty() ? "" : "; left out, because a public method naming an absent type would make getMethods() and every "
+						+ "getMethod lookup that reaches this class fail to link: " + String.join(", ", left));
 		ClassWriter writer = new ClassWriter(ClassWriter.COMPUTE_MAXS);
 		node.accept(writer);
 		return writer.toByteArray();
+	}
+
+	/** {@code public void <contract>(..ids.., ..) { KernelForgeWrapperSync.stageFabricRemap(this, ids, <other argument or null>); }} */
+	private static MethodNode stageRemap(RemapContract contract) {
+		MethodNode remap = new MethodNode(Opcodes.ACC_PUBLIC, contract.name(), contract.desc(), null, null);
+		Type[] arguments = Type.getArgumentTypes(contract.desc());
+		int slot = 1, idsSlot = -1, otherSlot = -1, others = 0;
+		for (int i = 0; i < arguments.length; i++) {
+			if (i == contract.idsArgument()) idsSlot = slot;
+			else if (arguments[i].getSort() >= Type.ARRAY) { otherSlot = slot; others++; }
+			slot += arguments[i].getSize();
+		}
+		remap.instructions.add(new VarInsnNode(Opcodes.ALOAD, 0));
+		remap.instructions.add(new VarInsnNode(Opcodes.ALOAD, idsSlot));
+		if (others == 1) remap.instructions.add(new VarInsnNode(Opcodes.ALOAD, otherSlot));
+		else remap.instructions.add(new InsnNode(Opcodes.ACONST_NULL));
+		remap.instructions.add(new MethodInsnNode(Opcodes.INVOKESTATIC, HOOK_OWNER, "stageFabricRemap",
+				"(Ljava/lang/Object;Ljava/lang/Object;Ljava/lang/Object;)V", false));
+		remap.instructions.add(new InsnNode(Opcodes.RETURN));
+		remap.maxStack = 3;
+		remap.maxLocals = slot;
+		return remap;
 	}
 
 	/** Resets the staging at the head of {@code applySnapshot(Map, boolean)} and flushes it before every return. */
@@ -386,46 +520,55 @@ public final class RegistrySyncParityInjector implements ClassTransformer {
 	}
 
 	/**
-	 * The fabric-api twin of {@link #flushAroundApplySnapshot}: {@code ClientRegistrySyncHandler.apply(payload)} is
-	 * where the client calls {@code remap} on every synced registry, so its returns are where the wrapped ones get
-	 * theirs applied. {@code void}, so a bare call before each {@code RETURN}; an exception path leaves the staging
-	 * to the next {@code beginSnapshotApplication}.
+	 * The twin of {@link #flushAroundApplySnapshot} for the remap contracts: a method that calls one on the synced
+	 * registries — fabric-api's client sync, whatever it is called — is where the wrapped ones get theirs applied, when
+	 * it returns. The staging is reset at its head; a bare call goes before each return, so an exception path leaves the
+	 * staging to the next {@code beginSnapshotApplication}. Which methods those are is read from their calls, not their
+	 * names; a class that names no contract is handed back untouched after a constant-pool scan.
 	 */
-	private static byte[] flushAroundFabricApply(String className, byte[] classBytes) {
+	private byte[] flushAroundRemapCalls(String className, byte[] classBytes) {
+		List<RemapContract> contracts = allContracts();
+		if (contracts.isEmpty() || className.startsWith("net.forbric.")) return classBytes;
+		boolean named = false;
+		for (RemapContract contract : contracts) {
+			byte[][] needles = NEEDLES.computeIfAbsent(contract, c -> new byte[][] { ByteScan.needle(c.desc()), ByteScan.needle(c.owner()) });
+			named |= ByteScan.contains(classBytes, needles[0]) && ByteScan.contains(classBytes, needles[1]);
+		}
+		if (!named) return classBytes;
 		ClassNode node = new ClassNode();
 		new ClassReader(classBytes).accept(node, 0);
-
-		MethodNode target = null;
-		for (MethodNode m : node.methods) {
-			if (m.name.equals(FABRIC_APPLY) && m.desc.equals(FABRIC_APPLY_DESC) && (m.access & Opcodes.ACC_STATIC) != 0) {
-				target = m;
-				break;
+		List<String> hooked = new ArrayList<>();
+		for (MethodNode method : node.methods) {
+			boolean calls = false;
+			for (AbstractInsnNode insn : method.instructions) {
+				if (insn instanceof MethodInsnNode call) for (RemapContract contract : contracts) {
+					calls |= call.owner.equals(contract.owner()) && call.name.equals(contract.name()) && call.desc.equals(contract.desc());
+				}
 			}
+			if (!calls || method.name.startsWith("<")) continue;
+			InsnList head = new InsnList();
+			head.add(new LdcInsnNode(Type.getObjectType(node.name)));
+			head.add(new MethodInsnNode(Opcodes.INVOKESTATIC, HOOK_OWNER, "beginSnapshotApplication", "(Ljava/lang/Class;)V", false));
+			method.instructions.insert(head);
+			int returns = 0;
+			for (AbstractInsnNode insn = method.instructions.getFirst(); insn != null; insn = insn.getNext()) {
+				if (insn.getOpcode() < Opcodes.IRETURN || insn.getOpcode() > Opcodes.RETURN) continue;
+				method.instructions.insertBefore(insn, new MethodInsnNode(Opcodes.INVOKESTATIC, HOOK_OWNER, "finishFabricRemap", "()V", false));
+				returns++;
+			}
+			hooked.add(method.name + " (" + returns + " return(s))");
 		}
-		if (target == null) {
-			ForbricLog.warn("[Forbric/RegistrySync] %s has no static %s%s — fabric-api's registry sync will stage ids on "
-					+ "the Forge-wrapped registries and never apply them; re-derive RegistrySyncParityInjector",
-					className, FABRIC_APPLY, FABRIC_APPLY_DESC);
-			return classBytes;
-		}
-
-		InsnList head = new InsnList();
-		head.add(new LdcInsnNode(org.objectweb.asm.Type.getObjectType(node.name)));
-		head.add(new MethodInsnNode(Opcodes.INVOKESTATIC, HOOK_OWNER, "beginSnapshotApplication", "(Ljava/lang/Class;)V", false));
-		target.instructions.insert(head);
-		int returns = 0;
-		for (AbstractInsnNode insn = target.instructions.getFirst(); insn != null; insn = insn.getNext()) {
-			if (insn.getOpcode() != Opcodes.RETURN) continue;
-			InsnList flush = new InsnList();
-			flush.add(new MethodInsnNode(Opcodes.INVOKESTATIC, HOOK_OWNER, "finishFabricRemap", "()V", false));
-			target.instructions.insertBefore(insn, flush);
-			returns++;
-		}
-
-		ForbricLog.info("[Forbric/RegistrySync] flushing the Forge-wrapped registries' staged ids at %d return(s) of "
-				+ "%s.%s", returns, className, FABRIC_APPLY);
+		if (hooked.isEmpty()) return classBytes;
+		ForbricLog.info("[Forbric/RegistrySync] flushing the Forge-wrapped registries' staged ids at the returns of %s.%s, "
+				+ "which call(s) a remap contract", className, String.join(", ", hooked));
 		ClassWriter writer = new ClassWriter(ClassWriter.COMPUTE_MAXS);
 		node.accept(writer);
 		return writer.toByteArray();
+	}
+
+	/** Every remap contract this injector knows, for whichever registry class. */
+	private List<RemapContract> allContracts() {
+		List<RemapContract> all = remapContracts.apply(null);
+		return all == null ? List.of() : all;
 	}
 }

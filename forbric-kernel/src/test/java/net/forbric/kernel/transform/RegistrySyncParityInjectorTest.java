@@ -62,8 +62,74 @@ class RegistrySyncParityInjectorTest {
 	private static final String WRAPPER_PENDING_TAGS = WRAPPER + "$3";
 	private static final String PENDING_TAGS_INTERFACE = "net/minecraft/core/Registry$PendingTags";
 
-	/** A game with fabric-api installed: every type fabric-api's {@code remap} names is on the loader. */
-	private final RegistrySyncParityInjector injector = new RegistrySyncParityInjector(type -> true);
+	/** A mod's remap mixin under unrelated names (RemapContractSamples); every type its contract names is on the loader. */
+	private static final java.util.List<RegistrySyncParityInjector.RemapContract> CONTRACTS =
+			RemapContractSamples.contracts(java.util.Map.of(RemapContractSamples.INTERFACE, RemapContractSamples.rebinds()));
+	private final RegistrySyncParityInjector injector = new RegistrySyncParityInjector(type -> true, RemapContractSamples.lookup(CONTRACTS));
+
+	/** What makes a remap contract is the mixin's shape: a shadowed-storage method taking the ids, declared by its interface. */
+	@Test
+	void aRemapContractIsReadOffTheMixinNotItsNames() {
+		assertEquals(java.util.List.of(new RegistrySyncParityInjector.RemapContract(RemapContractSamples.TARGET, RemapContractSamples.INTERFACE,
+				RemapContractSamples.NAME, RemapContractSamples.DESC, 0, RemapContractSamples.UNDO)), CONTRACTS,
+				"rebind is one, forgetAll its undo; note, which touches no shadowed field, is not");
+		assertEquals(java.util.List.of(), RemapContractSamples.contracts(java.util.Map.of()), "an interface that cannot be read declares nothing");
+	}
+
+	/** fabric-api's own registry-sync mixin, read the same way: the sample the structural reading has to land on. */
+	@Test
+	void fabricApisRegistrySyncMixinCarriesOneRemapContract() throws Exception {
+		Path api = TestFixtures.fabricApi();
+		TestFixtures.require(Fixture.STAGED, java.nio.file.Files.isRegularFile(api), "the pinned Fabric API " + api + " absent");
+		java.util.Map<String, byte[]> entries = new java.util.HashMap<>();
+		try (java.util.zip.ZipFile zip = new java.util.zip.ZipFile(api.toFile())) {
+			var nested = zip.stream().filter(e -> e.getName().startsWith("META-INF/jars/fabric-registry-sync-v0-")).findFirst().orElseThrow();
+			try (var in = new java.util.zip.ZipInputStream(zip.getInputStream(nested))) {
+				for (java.util.zip.ZipEntry entry; (entry = in.getNextEntry()) != null; ) entries.put(entry.getName(), in.readAllBytes());
+			}
+		}
+		java.util.List<RegistrySyncParityInjector.RemapContract> found = new java.util.ArrayList<>();
+		for (var entry : entries.entrySet()) {
+			if (!entry.getKey().endsWith(".class")) continue;
+			ClassNode node = parse(entry.getValue());
+			if (net.forbric.kernel.mixin.MixinFit.mixinTargets(node).isEmpty()) continue;
+			found.addAll(RegistrySyncParityInjector.remapContracts(node, entries::get));
+		}
+		assertEquals(1, found.size(), found::toString);
+		assertEquals("net/minecraft/core/MappedRegistry", found.getFirst().target());
+		assertEquals("(Lit/unimi/dsi/fastutil/objects/Object2IntMap;Lnet/fabricmc/fabric/impl/registry/sync/RemappableRegistry$RemapMode;)V",
+				found.getFirst().desc());
+		assertEquals("unmap", found.getFirst().undo());
+	}
+
+	/** The caller of a contract is the flush point: begin at its head, finish before each return, nothing else touched. */
+	@Test
+	void theMethodThatCallsAContractFlushesTheStagedIdsWhenItReturns() {
+		ClassWriter cw = new ClassWriter(ClassWriter.COMPUTE_MAXS);
+		cw.visit(Opcodes.V21, Opcodes.ACC_PUBLIC, "org/quarry/registry/client/Handshake", null, "java/lang/Object", null);
+		var settle = cw.visitMethod(Opcodes.ACC_PUBLIC | Opcodes.ACC_STATIC, "settle", "(L" + RemapContractSamples.INTERFACE + ";)V", null, null);
+		settle.visitCode();
+		settle.visitVarInsn(Opcodes.ALOAD, 0);
+		settle.visitInsn(Opcodes.ACONST_NULL);
+		settle.visitInsn(Opcodes.ACONST_NULL);
+		settle.visitMethodInsn(Opcodes.INVOKEINTERFACE, RemapContractSamples.INTERFACE, RemapContractSamples.NAME, RemapContractSamples.DESC, true);
+		settle.visitInsn(Opcodes.RETURN);
+		settle.visitMaxs(0, 0);
+		settle.visitEnd();
+		var other = cw.visitMethod(Opcodes.ACC_PUBLIC | Opcodes.ACC_STATIC, "other", "()V", null, null);
+		other.visitCode(); other.visitInsn(Opcodes.RETURN); other.visitMaxs(0, 0); other.visitEnd();
+		cw.visitEnd();
+		byte[] in = cw.toByteArray();
+		ClassNode out = parse(injector.transform("org.quarry.registry.client.Handshake", in, ctx()));
+		java.util.List<String> calls = new java.util.ArrayList<>();
+		for (var insn : method(out, "settle", null).instructions) {
+			if (insn instanceof org.objectweb.asm.tree.MethodInsnNode call) calls.add(call.name);
+		}
+		assertEquals(java.util.List.of("beginSnapshotApplication", RemapContractSamples.NAME, "finishFabricRemap"), calls);
+		assertEquals(1, method(out, "other", null).instructions.size(), "a method that calls no contract is left alone");
+		assertSame(in, new RegistrySyncParityInjector(type -> true, RemapContractSamples.lookup(java.util.List.of()))
+				.transform("org.quarry.registry.client.Handshake", in, ctx()), "no contract known, nothing hooked");
+	}
 
 	/**
 	 * The ordinal guard. {@code $3} is only correct for as long as javac numbers that anonymous class third; if a
@@ -115,47 +181,42 @@ class RegistrySyncParityInjectorTest {
 		assertNotNull(method(out, "clear", "(Z)V"), "NeoForge calls clear(Z) on every registry it resyncs");
 		assertNotNull(method(out, "registerIdMapping", "(Lnet/minecraft/resources/ResourceKey;I)V"),
 				"this is the one that NPE'd on the wrapper's empty inherited byKey and dropped the client");
-		assertNotNull(method(out, "remap",
-				"(Lit/unimi/dsi/fastutil/objects/Object2IntMap;"
-						+ "Lnet/fabricmc/fabric/impl/registry/sync/RemappableRegistry$RemapMode;)V"),
-				"fabric-api's half — without it a pure-Fabric server's ids are accepted and silently not applied");
+		assertNotNull(method(out, RemapContractSamples.NAME, RemapContractSamples.DESC),
+				"the mod's remap — without it a server's ids sent through that contract are accepted and silently not applied");
 
-		for (String name : new String[] {"clear", "registerIdMapping", "remap"}) {
+		for (String name : new String[] {"clear", "registerIdMapping", RemapContractSamples.NAME}) {
 			new Analyzer<>(new BasicVerifier()).analyze(out.name, method(out, name, null));
 		}
 	}
 
 	/**
-	 * Without fabric-api, NeoForge's half only. {@code remap} is public and names fabric-api's {@code RemapMode}, and
-	 * {@code Class.getMethod} resolves the types of the public methods of each class it searches — so with it on the
-	 * wrapper, {@code getMethods()} and every lookup that reached {@code NamespacedWrapper} (a mod's
-	 * {@code BuiltInRegistries.BLOCK.getClass().getMethod("getOptional", ...)} among them) threw
-	 * {@code NoClassDefFoundError} in every pack without fabric-api. The loader is asked about exactly the types
-	 * {@code remap} names.
+	 * Without the mod's types on the game loader, NeoForge's half only. The contract's method is public and names the
+	 * mod's {@code Rebinds$Policy}, and {@code Class.getMethod} resolves the types of the public methods of each class it
+	 * searches — so with it on the wrapper, {@code getMethods()} and every lookup that reached {@code NamespacedWrapper}
+	 * would throw {@code NoClassDefFoundError}. The loader is asked about exactly the types the contract names.
 	 */
 	@Test
-	void withoutFabricApiTheRealWrapperGainsNeoForgesContractAndNoPublicMethodNamingFabricApi() throws Exception {
+	void withoutTheModsTypesTheRealWrapperGainsNeoForgesContractAndNoPublicMethodNamingThem() throws Exception {
 		java.util.List<String> asked = new java.util.ArrayList<>();
-		RegistrySyncParityInjector noFabricApi = new RegistrySyncParityInjector(type -> {
+		RegistrySyncParityInjector noMod = new RegistrySyncParityInjector(type -> {
 			asked.add(type);
-			return !type.startsWith("net/fabricmc/");
-		});
+			return !type.startsWith("org/quarry/");
+		}, RemapContractSamples.lookup(CONTRACTS));
 
-		ClassNode out = parse(noFabricApi.transform(WRAPPER, realBytes(WRAPPER), ctx()));
+		ClassNode out = parse(noMod.transform(WRAPPER, realBytes(WRAPPER), ctx()));
 
 		assertNotNull(method(out, "clear", "(Z)V"), "NeoForge's sync needs clear(Z) whatever else is installed");
 		assertNotNull(method(out, "registerIdMapping", "(Lnet/minecraft/resources/ResourceKey;I)V"),
 				"and registerIdMapping, the one that NPE'd");
-		assertNull(method(out, "remap", null), "remap overrides a fabric-api interface; without fabric-api nothing calls it");
+		assertNull(method(out, RemapContractSamples.NAME, null), "the contract overrides the mod's interface; without the mod nothing calls it");
 		for (MethodNode m : out.methods) {
 			if ((m.access & Opcodes.ACC_PUBLIC) != 0) {
-				assertTrue(!m.desc.contains("Lnet/fabricmc/"), "a public " + m.name + m.desc + " would make a getMethod that "
-						+ "reaches the wrapper throw NoClassDefFoundError without fabric-api");
+				assertTrue(!m.desc.contains("Lorg/quarry/"), "a public " + m.name + m.desc + " would make a getMethod that "
+						+ "reaches the wrapper throw NoClassDefFoundError without the mod");
 			}
 		}
-		assertEquals(java.util.List.of("it/unimi/dsi/fastutil/objects/Object2IntMap",
-				"net/fabricmc/fabric/impl/registry/sync/RemappableRegistry$RemapMode"), asked,
-				"the loader is asked about remap's own parameter types, once, when the wrapper is transformed");
+		assertEquals(java.util.List.of("it/unimi/dsi/fastutil/objects/Object2IntMap", RemapContractSamples.POLICY), asked,
+				"the loader is asked about the contract's own parameter types, once, when the wrapper is transformed");
 	}
 
 	/** Fail-soft, not fail-hard: a carrier that already declares the member keeps its own. */

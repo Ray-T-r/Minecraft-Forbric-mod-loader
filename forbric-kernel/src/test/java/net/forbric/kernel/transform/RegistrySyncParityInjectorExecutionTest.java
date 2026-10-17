@@ -25,14 +25,14 @@ import net.forbric.kernel.boot.KernelRegistryRevert;
  * and {@code KernelRegistryRevert}: a client joining a server takes the server's ids for a MinecraftForge-wrapped
  * registry through NeoForge's sync, and gets its own back on disconnect, where as merged NeoForge's
  * {@code registerIdMapping} threw on the wrapper's empty vanilla fields and the client was dropped with "Failed to sync
- * registries from the server". fabric-api's sync reaches the wrapper the same way, and MinecraftForge's pending tags
+ * registries from the server". A mod's remap mixin (fabric-api's sync is one) reaches the wrapper the same way, and MinecraftForge's pending tags
  * answer NeoForge's {@code contents()} instead of {@code AbstractMethodError}.
  *
  * <p>The stand-ins are the merged shapes: a {@code MappedRegistry} with NeoForge's protected id remapping over vanilla's
  * fields, MinecraftForge's {@code NamespacedWrapper} delegating every lookup to its {@code ForgeRegistry} (its third
  * anonymous class is the pending tags), MinecraftForge's {@code GameData.injectSnapshot} re-adding entries at the
- * snapshot's ids, NeoForge's {@code RegistryManager.applySnapshot} loop, and fabric-api's
- * {@code ClientRegistrySyncHandler.apply}. fastutil's {@code Object2IntMap} and Guava's {@code ImmutableMap} are not on
+ * snapshot's ids, NeoForge's {@code RegistryManager.applySnapshot} loop, and a mod's remap interface and client sync
+ * under names no loader knows ({@code org.quarry.registry}, its mixin in {@link RemapContractSamples}). fastutil's {@code Object2IntMap} and Guava's {@code ImmutableMap} are not on
  * the test classpath, so they are stand-ins too.
  */
 @ExecutesInjector(RegistrySyncParityInjector.class)
@@ -41,7 +41,7 @@ class RegistrySyncParityInjectorExecutionTest {
 	private static final String WRAPPER = "net.minecraftforge.registries.NamespacedWrapper";
 	private static final String PENDING = WRAPPER + "$3";
 	private static final String MANAGER = "net.neoforged.neoforge.registries.RegistryManager";
-	private static final String FABRIC = "net.fabricmc.fabric.impl.client.registry.sync.ClientRegistrySyncHandler";
+	private static final String FABRIC = "org.quarry.registry.client.Handshake";
 	private static final List<String> TARGETS = List.of(WRAPPER, PENDING, MANAGER, FABRIC);
 
 	private static final Map<String, String> STAND_INS = new HashMap<>(Map.of(
@@ -87,17 +87,20 @@ class RegistrySyncParityInjectorExecutionTest {
 						}
 					}
 					""",
-			"net.fabricmc.fabric.impl.registry.sync.RemappableRegistry", """
-					package net.fabricmc.fabric.impl.registry.sync;
+			"org.quarry.registry.Rebinds", """
+					package org.quarry.registry;
 
 					import it.unimi.dsi.fastutil.objects.Object2IntMap;
 
-					public interface RemappableRegistry {
-						enum RemapMode { AUTHORITATIVE, REMOTE, EXACT }
+					/** A mod's remap interface, under names no loader knows. */
+					public interface Rebinds {
+						enum Policy { WHOLE, REMOTE, EXACT }
 
-						void remap(Object2IntMap<?> ids, RemapMode mode);
+						void rebind(Object2IntMap<?> ids, Policy policy);
 
-						void unmap();
+						void note(Object2IntMap<?> ids);
+
+						void forgetAll();
 					}
 					""",
 			"net.neoforged.neoforge.registries.PendingTagsExtension", """
@@ -162,12 +165,12 @@ class RegistrySyncParityInjectorExecutionTest {
 				import java.util.Iterator;
 				import java.util.Map;
 				import it.unimi.dsi.fastutil.objects.Object2IntMap;
-				import net.fabricmc.fabric.impl.registry.sync.RemappableRegistry;
 				import net.minecraft.resources.Identifier;
 				import net.minecraft.resources.ResourceKey;
 				import net.neoforged.neoforge.registries.BaseMappedRegistry;
+				import org.quarry.registry.Rebinds;
 
-				public class MappedRegistry<T> extends BaseMappedRegistry implements Registry<T>, RemappableRegistry {
+				public class MappedRegistry<T> extends BaseMappedRegistry implements Registry<T>, Rebinds {
 					public record Holder<T>(T value) {
 					}
 
@@ -222,15 +225,18 @@ class RegistrySyncParityInjectorExecutionTest {
 						return byKey.containsKey(key.identifier());
 					}
 
-					/** fabric-api's mixin method: through the same fields. */
-					public void remap(Object2IntMap<?> ids, RemappableRegistry.RemapMode mode) {
+					/** The mod's mixin method (RemapContractSamples.mixin() is its mixin): through the same fields. */
+					public void rebind(Object2IntMap<?> ids, Rebinds.Policy policy) {
 						for (var entry : ids.entrySet()) {
 							Holder<T> holder = byKey.get((Identifier) entry.getKey());
 							if (holder != null) toId.put(holder.value(), entry.getValue());
 						}
 					}
 
-					public void unmap() {
+					public void note(Object2IntMap<?> ids) {
+					}
+
+					public void forgetAll() {
 					}
 				}
 				""");
@@ -434,31 +440,31 @@ class RegistrySyncParityInjectorExecutionTest {
 				}
 				""");
 		STAND_INS.put(FABRIC, """
-				package net.fabricmc.fabric.impl.client.registry.sync;
+				package org.quarry.registry.client;
 
 				import it.unimi.dsi.fastutil.objects.Object2IntLinkedOpenHashMap;
-				import net.fabricmc.fabric.impl.registry.sync.RemappableRegistry;
-				import net.fabricmc.fabric.impl.registry.sync.packet.RegistrySyncPayload;
 				import net.minecraft.resources.Identifier;
+				import org.quarry.registry.Rebinds;
+				import org.quarry.registry.packet.Envelope;
 
-				public class ClientRegistrySyncHandler {
-					/** fabric-api's client sync: remap every synced registry to the server's ids. */
-					public static void apply(RegistrySyncPayload payload) {
+				public class Handshake {
+					/** The mod's client sync: rebind every synced registry to the server's ids. */
+					public static void settle(Envelope payload) {
 						for (var registry : payload.ids().entrySet()) {
 							Object2IntLinkedOpenHashMap<Identifier> ids = new Object2IntLinkedOpenHashMap<>();
 							ids.putAll(registry.getValue());
-							((RemappableRegistry) payload.registries().get(registry.getKey())).remap(ids, RemappableRegistry.RemapMode.REMOTE);
+							((Rebinds) payload.registries().get(registry.getKey())).rebind(ids, Rebinds.Policy.REMOTE);
 						}
 					}
 				}
 				""");
-		STAND_INS.put("net.fabricmc.fabric.impl.registry.sync.packet.RegistrySyncPayload", """
-				package net.fabricmc.fabric.impl.registry.sync.packet;
+		STAND_INS.put("org.quarry.registry.packet.Envelope", """
+				package org.quarry.registry.packet;
 
 				import java.util.Map;
 				import net.minecraft.resources.Identifier;
 
-				public record RegistrySyncPayload(Map<Identifier, Map<Identifier, Integer>> ids, Map<Identifier, Object> registries) {
+				public record Envelope(Map<Identifier, Map<Identifier, Integer>> ids, Map<Identifier, Object> registries) {
 				}
 				""");
 		STAND_INS.put("fixture.Items", """
@@ -517,11 +523,18 @@ class RegistrySyncParityInjectorExecutionTest {
 		Map<String, byte[]> classes = new HashMap<>(original);
 		for (String target : TARGETS) {
 			String internal = target.replace('.', '/');
-			byte[] out = InjectorExecution.transform(new RegistrySyncParityInjector(gameHasClass), target, original.get(internal), EnvType.CLIENT);
+			byte[] out = InjectorExecution.transform(new RegistrySyncParityInjector(gameHasClass, contracts(original)), target, original.get(internal), EnvType.CLIENT);
 			assertNotSame(original.get(internal), out, target + " is the merged shape");
 			classes.put(internal, out);
 		}
 		return classes;
+	}
+
+	/** The remap contract the mod's mixin (RemapContractSamples.mixin()) adds, read against the compiled stand-ins. */
+	private static java.util.function.Function<String, List<RegistrySyncParityInjector.RemapContract>> contracts(Map<String, byte[]> classes) {
+		List<RegistrySyncParityInjector.RemapContract> found = RemapContractSamples.contracts(classes);
+		assertEquals(1, found.size(), "premise: the stand-in mixin carries one remap contract");
+		return RemapContractSamples.lookup(found);
 	}
 
 	private static Object identifier(ClassLoader loader, String id) throws Throwable {
@@ -578,84 +591,90 @@ class RegistrySyncParityInjectorExecutionTest {
 		assertInstanceOf(AbstractMethodError.class, missing, "premise: as merged, contents() is not implemented");
 		for (String target : List.of(WRAPPER, PENDING)) {
 			byte[] once = classes.get(target.replace('.', '/'));
-			assertSame(once, InjectorExecution.transform(new RegistrySyncParityInjector(classes::containsKey), target, once, EnvType.CLIENT),
+			assertSame(once, InjectorExecution.transform(new RegistrySyncParityInjector(classes::containsKey, contracts(original)), target, once, EnvType.CLIENT),
 					target + " already has the contract and is left alone");
 		}
 	}
 
-	@Test void fabricApisSyncReachesTheWrappedRegistryToo(@TempDir Path work) throws Throwable {
+	@Test void aModsRemapContractReachesTheWrappedRegistryToo(@TempDir Path work) throws Throwable {
 		Map<String, byte[]> original = merged(work);
 		ClassLoader loader = InjectorExecution.load(repaired(original));
-		assertEquals(List.of(1, 2, 0), fabricSync(loader), "fabric-api's remap is staged and applied when its apply returns");
+		assertEquals(List.of(1, 2, 0), modSync(loader), "the mod's rebind is staged and applied when the method calling it returns");
 		InjectorExecution.invokeStatic(loader.loadClass(MANAGER), "revertToFrozen");
 		assertEquals(List.of(0, 1, 2), ids(loader), "and disconnecting puts the client's own ids back");
-		assertEquals(List.of(0, 1, 2), fabricSync(InjectorExecution.load(original)),
-				"premise: as merged, fabric-api's remap writes the wrapper's unused vanilla fields and the ids never move");
+		assertEquals(List.of(0, 1, 2), modSync(InjectorExecution.load(original)),
+				"premise: as merged, the mod's rebind writes the wrapper's unused vanilla fields and the ids never move");
 	}
 
 	/**
-	 * A game without fabric-api's remap types gets a wrapper without fabric-api's {@code remap} (a public method naming an
-	 * absent class breaks {@code getMethods()} and every {@code getMethod} that reaches the wrapper), and NeoForge's sync
-	 * and the disconnect revert work exactly as with it.
+	 * A game without the mod's types gets a wrapper without the contract's method (a public method naming an absent
+	 * class breaks {@code getMethods()} and every {@code getMethod} that reaches the wrapper), and NeoForge's sync and
+	 * the disconnect revert work exactly as with it.
 	 */
-	@Test void withoutFabricApiTheWrapperKeepsNeoForgesSyncAndHasNoRemap(@TempDir Path work) throws Throwable {
+	@Test void withoutTheModTheWrapperKeepsNeoForgesSyncAndHasNoRemap(@TempDir Path work) throws Throwable {
 		Map<String, byte[]> original = merged(work);
-		Map<String, byte[]> classes = repaired(original, type -> !type.startsWith("net/fabricmc/") && original.containsKey(type));
+		Map<String, byte[]> classes = repaired(original, type -> !type.startsWith("org/quarry/") && original.containsKey(type));
 		ClassLoader loader = InjectorExecution.load(classes);
 		assertEquals("", InjectorExecution.verify(classes.get(WRAPPER.replace('.', '/')), loader), WRAPPER);
 		Class<?> wrapper = loader.loadClass(WRAPPER);
-		assertThrows(NoSuchMethodException.class, () -> wrapper.getDeclaredMethod("remap",
-				loader.loadClass("it.unimi.dsi.fastutil.objects.Object2IntMap"),
-				loader.loadClass("net.fabricmc.fabric.impl.registry.sync.RemappableRegistry$RemapMode")));
+		assertThrows(NoSuchMethodException.class, () -> wrapper.getDeclaredMethod(RemapContractSamples.NAME,
+				loader.loadClass("it.unimi.dsi.fastutil.objects.Object2IntMap"), loader.loadClass("org.quarry.registry.Rebinds$Policy")));
 		assertNotNull(wrapper.getDeclaredMethod("registerIdMapping", loader.loadClass("net.minecraft.resources.ResourceKey"), int.class));
 
 		assertEquals(List.of(0, 1, 2), ids(loader));
 		assertEquals(Set.of(), neoForgeSync(loader), "nothing missing");
-		assertEquals(List.of(2, 0, 1), ids(loader), "NeoForge's sync moves the wrapped registry's ids without fabric-api's half");
+		assertEquals(List.of(2, 0, 1), ids(loader), "NeoForge's sync moves the wrapped registry's ids without the mod's half");
 		InjectorExecution.invokeStatic(loader.loadClass(MANAGER), "revertToFrozen");
 		assertEquals(List.of(0, 1, 2), ids(loader), "and disconnecting puts the client's own ids back");
 	}
 
 	/**
-	 * The injector KernelBoot registers, {@link RegistrySyncParityInjector#forGameLoader}, decides from the class files
-	 * on the game's loader: one that has fabric-api's registry-sync types gets {@code remap}, one that does not gets no
-	 * {@code remap}, and NeoForge's half either way. No stand-in predicate between the test and the decision; the games
-	 * are directories of the stand-ins' class files, with and without {@code net/fabricmc/}.
+	 * The injector KernelBoot registers, {@link RegistrySyncParityInjector#forGameLoader}, takes its contracts from the
+	 * mixins the kernel's discovery noted, and decides from the class files on the game's loader: one that has the mod's
+	 * types gets the contract's method, one that does not gets none, and NeoForge's half either way. No stand-in
+	 * predicate between the test and the decision; the games are directories of the stand-ins' class files, with and
+	 * without {@code org/quarry/}.
 	 */
-	@Test void theInjectorKernelBootRegistersAsksTheGameLoaderForRemapsClassFiles(@TempDir Path work) throws Throwable {
+	@Test void theInjectorKernelBootRegistersAsksTheGameLoaderForTheContractsClassFiles(@TempDir Path work) throws Throwable {
 		Map<String, byte[]> original = merged(work.resolve("compiled"));
 		byte[] wrapper = original.get(WRAPPER.replace('.', '/'));
-		for (boolean fabricApi : List.of(true, false)) {
-			Path game = work.resolve(fabricApi ? "with-fabric-api" : "without-fabric-api");
-			for (var entry : original.entrySet()) {
-				if (!fabricApi && entry.getKey().startsWith("net/fabricmc/")) continue;
-				Path file = game.resolve(entry.getKey() + ".class");
-				Files.createDirectories(file.getParent());
-				Files.write(file, entry.getValue());
+		String config = "quarry-registry.mixins.json";
+		RegistrySyncParityInjector.noteMixin(config, RemapContractSamples.mixin(), path -> original.get(path.substring(0, path.length() - 6)));
+		try {
+			for (boolean mod : List.of(true, false)) {
+				Path game = work.resolve(mod ? "with-mod" : "without-mod");
+				for (var entry : original.entrySet()) {
+					if (!mod && entry.getKey().startsWith("org/quarry/")) continue;
+					Path file = game.resolve(entry.getKey() + ".class");
+					Files.createDirectories(file.getParent());
+					Files.write(file, entry.getValue());
+				}
+				try (URLClassLoader loader = new URLClassLoader(new URL[] {game.toUri().toURL()}, null)) {
+					assertEquals(mod, loader.getResource("org/quarry/registry/Rebinds$Policy.class") != null,
+							"premise: the game " + (mod ? "has" : "lacks") + " the mod's Rebinds$Policy");
+					org.objectweb.asm.tree.ClassNode out = new org.objectweb.asm.tree.ClassNode();
+					new org.objectweb.asm.ClassReader(InjectorExecution.transform(RegistrySyncParityInjector.forGameLoader(loader), WRAPPER,
+							wrapper, EnvType.CLIENT)).accept(out, 0);
+					Set<String> declared = new java.util.TreeSet<>();
+					for (org.objectweb.asm.tree.MethodNode m : out.methods) declared.add(m.name);
+					assertTrue(declared.containsAll(Set.of("clear", "registerIdMapping")), "NeoForge's sync contract either way: " + declared);
+					assertEquals(mod, declared.contains(RemapContractSamples.NAME), (mod ? "with" : "without")
+							+ " the mod's types on the game loader, its contract is " + (mod ? "added" : "left out") + ": " + declared);
+				}
 			}
-			try (URLClassLoader loader = new URLClassLoader(new URL[] {game.toUri().toURL()}, null)) {
-				assertEquals(fabricApi, loader.getResource("net/fabricmc/fabric/impl/registry/sync/RemappableRegistry$RemapMode.class") != null,
-						"premise: the game " + (fabricApi ? "has" : "lacks") + " fabric-api's RemapMode");
-				org.objectweb.asm.tree.ClassNode out = new org.objectweb.asm.tree.ClassNode();
-				new org.objectweb.asm.ClassReader(InjectorExecution.transform(RegistrySyncParityInjector.forGameLoader(loader), WRAPPER,
-						wrapper, EnvType.CLIENT)).accept(out, 0);
-				Set<String> declared = new java.util.TreeSet<>();
-				for (org.objectweb.asm.tree.MethodNode m : out.methods) declared.add(m.name);
-				assertTrue(declared.containsAll(Set.of("clear", "registerIdMapping")), "NeoForge's sync contract either way: " + declared);
-				assertEquals(fabricApi, declared.contains("remap"), (fabricApi ? "with" : "without")
-						+ " fabric-api's types on the game loader, fabric-api's remap is " + (fabricApi ? "added" : "left out") + ": " + declared);
-			}
+		} finally {
+			RegistrySyncParityInjector.forgetMixins(config);
 		}
 	}
 
-	/** fabric-api's sync, from a server whose ids are stone 1, dirt 2, gear 0: the item ids after it. */
-	private static List<Object> fabricSync(ClassLoader loader) throws Throwable {
+	/** The mod's sync, from a server whose ids are stone 1, dirt 2, gear 0: the item ids after it. */
+	private static List<Object> modSync(ClassLoader loader) throws Throwable {
 		Object item = identifier(loader, "minecraft:item");
 		Map<Object, Integer> server = Map.of(identifier(loader, "minecraft:stone"), 1, identifier(loader, "minecraft:dirt"), 2,
 				identifier(loader, "forgemod:gear"), 0);
-		Object payload = InjectorExecution.construct(loader.loadClass("net.fabricmc.fabric.impl.registry.sync.packet.RegistrySyncPayload"),
+		Object payload = InjectorExecution.construct(loader.loadClass("org.quarry.registry.packet.Envelope"),
 				Map.of(item, server), Map.of(item, InjectorExecution.getStatic(loader.loadClass("fixture.Items"), "ITEM")));
-		InjectorExecution.invokeStatic(loader.loadClass(FABRIC), "apply", payload);
+		InjectorExecution.invokeStatic(loader.loadClass(FABRIC), "settle", payload);
 		return ids(loader);
 	}
 }

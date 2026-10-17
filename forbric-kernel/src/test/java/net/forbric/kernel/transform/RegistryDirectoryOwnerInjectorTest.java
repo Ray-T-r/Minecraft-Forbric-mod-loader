@@ -95,8 +95,7 @@ class RegistryDirectoryOwnerInjectorTest {
 	private static final String FABRIC_MIXIN = "net/fabricmc/fabric/mixin/registry/sync/RegistriesMixin";
 	private static final String WOVER_MIXIN = "de/ambertation/wover/core/mixin/registry/RegistryDataLoaderMixinEarly";
 	private static final String WOVER_BUILDER = "de/ambertation/wover/core/impl/registry/DatapackRegistryBuilderImpl";
-	private static final String MIXIN_MERGED = "Lorg/spongepowered/asm/mixin/transformer/meta/MixinMerged;";
-	private static final String NOT_IN_REGISTRIES = "RegistriesMixin is not in Registries";
+	private static final String NOT_IN_REGISTRIES = "puts a Fabric registry's namespace back after the body";
 	private static final Set<String> DIR_METHODS = Set.of("registryDirPath", "elementsDirPath", "tagsDirPath",
 			"componentsDirPath");
 
@@ -240,7 +239,7 @@ class RegistryDirectoryOwnerInjectorTest {
 		ModPresence.publishFabric(List.of(mod(Ecosystem.FABRIC, "wover")));
 		Arm nativeFabric = arm(registries(VANILLA, false));
 		KernelRegistryDirectories.resetForTests(null);
-		Arm after = arm(withFabricsModifier(registries(MERGED_BASE, true)));
+		Arm after = arm(withFabricsModifier(registries(MERGED_BASE, true)), true);
 
 		String log = capture(() -> {
 			for (String registry : List.of(PRESET_INFO, BIOME_DATA)) {
@@ -297,7 +296,7 @@ class RegistryDirectoryOwnerInjectorTest {
 	// --- one arm: Registries' directory methods, plus the two mixins as Mixin lays them out on native Fabric ---
 
 	private record Arm(Class<?> registries, Class<?> identifier, Class<?> resourceKey, Method fabricElements,
-			Method fabricTags, Method wover) {
+			Method fabricTags, Method wover, boolean modifierInBody) {
 		Object key(String namespace, String path) throws Exception {
 			Object id = identifier.getConstructor(String.class, String.class).newInstance(namespace, path);
 			return resourceKey.getConstructor(identifier).newInstance(id);
@@ -314,7 +313,9 @@ class RegistryDirectoryOwnerInjectorTest {
 		 */
 		String elements(String namespace, String path) throws Exception {
 			Object key = key(namespace, path);
-			String body = (String) registries.getMethod("elementsDirPath", resourceKey).invoke(null, key);
+			// Where the modifier is already in elementsDirPath (withFabricsModifier), the body is registryDirPath's answer,
+			// which is all vanilla's elementsDirPath returns, and the two mixins are run here in their native order.
+			String body = (String) registries.getMethod(modifierInBody ? "registryDirPath" : "elementsDirPath", resourceKey).invoke(null, key);
 			CallbackInfoReturnable<String> callback = new CallbackInfoReturnable<>("elementsDirPath", true, body);
 			wover.invoke(null, key, callback);
 			if (callback.isCancelled()) return callback.getReturnValue();
@@ -330,6 +331,10 @@ class RegistryDirectoryOwnerInjectorTest {
 	}
 
 	private static Arm arm(byte[] registries) throws Exception {
+		return arm(registries, false);
+	}
+
+	private static Arm arm(byte[] registries, boolean modifierInBody) throws Exception {
 		Map<String, byte[]> classes = new HashMap<>();
 		classes.put(REGISTRIES, registries);
 		classes.put(IDENTIFIER, identifierStandIn());
@@ -361,7 +366,7 @@ class RegistryDirectoryOwnerInjectorTest {
 					.getMethod("prependDirectoryWithNamespace", key, CallbackInfoReturnable.class);
 		}
 		return new Arm(game.loadClass(REGISTRIES.replace('/', '.')), game.loadClass(IDENTIFIER.replace('/', '.')), key,
-				fabricElements, fabricTags, wover);
+				fabricElements, fabricTags, wover, modifierInBody);
 	}
 
 	/** {@code Registries} from {@code jar}, optionally through the injector, cut down to its directory methods. */
@@ -376,20 +381,27 @@ class RegistryDirectoryOwnerInjectorTest {
 	}
 
 	/**
-	 * {@code registries} as Mixin leaves it once fabric-registry-sync's mixin applied: the mixin's two handlers
-	 * merged in, each marked the way Mixin marks every method it merges. The arm still calls fabric's handlers
-	 * itself, where Mixin's injection would; the mark is what the hook reads.
+	 * {@code registries} as Mixin leaves it once fabric-registry-sync's mixin applied: the mixin's two handlers merged in
+	 * under names of no loader's, and each called in front of the return of the method it modifies. The hook asks the
+	 * class's own {@code elementsDirPath} whether the namespace comes back after the body; nothing names the mixin.
 	 */
 	private static byte[] withFabricsModifier(byte[] registries) throws IOException {
 		ClassNode target = node(registries);
 		ClassNode fabric = node(only(node(nestedClassBytes(FABRIC_API, "fabric-registry-sync-v0-", FABRIC_MIXIN)),
 				Set.of("prependDirectoryWithNamespace", "prependTagDirectoryWithNamespace")));
+		Map<String, String> renamed = Map.of("prependDirectoryWithNamespace", "quarry$elements", "prependTagDirectoryWithNamespace", "quarry$tags");
+		Map<String, String> modifies = Map.of("quarry$elements", "elementsDirPath", "quarry$tags", "tagsDirPath");
 		for (MethodNode handler : fabric.methods) {
-			AnnotationNode merged = new AnnotationNode(MIXIN_MERGED);
-			merged.values = new ArrayList<>(List.of("mixin", FABRIC_MIXIN.replace('/', '.'), "priority", 1000,
-					"sessionId", "test"));
-			handler.visibleAnnotations = new ArrayList<>(List.of(merged));
+			handler.name = renamed.get(handler.name);
+			handler.access = Opcodes.ACC_PRIVATE | Opcodes.ACC_STATIC;
 			target.methods.add(handler);
+			MethodNode modified = method(target, modifies.get(handler.name));
+			for (var insn : modified.instructions.toArray()) {
+				if (insn.getOpcode() != Opcodes.ARETURN) continue;
+				modified.instructions.insertBefore(insn, new org.objectweb.asm.tree.VarInsnNode(Opcodes.ALOAD, 0));
+				modified.instructions.insertBefore(insn, new MethodInsnNode(Opcodes.INVOKESTATIC, target.name, handler.name, handler.desc, false));
+			}
+			modified.maxStack = Math.max(modified.maxStack, 2);
 		}
 		ClassWriter writer = new ClassWriter(0);
 		target.accept(writer);
@@ -443,6 +455,17 @@ class RegistryDirectoryOwnerInjectorTest {
 		init.visitEnd();
 		getter(cw, IDENTIFIER, "getNamespace", "namespace", "Ljava/lang/String;");
 		getter(cw, IDENTIFIER, "getPath", "path", "Ljava/lang/String;");
+		MethodVisitor of = cw.visitMethod(Opcodes.ACC_PUBLIC | Opcodes.ACC_STATIC, "fromNamespaceAndPath",
+				"(Ljava/lang/String;Ljava/lang/String;)L" + IDENTIFIER + ";", null, null);
+		of.visitCode();
+		of.visitTypeInsn(Opcodes.NEW, IDENTIFIER);
+		of.visitInsn(Opcodes.DUP);
+		of.visitVarInsn(Opcodes.ALOAD, 0);
+		of.visitVarInsn(Opcodes.ALOAD, 1);
+		of.visitMethodInsn(Opcodes.INVOKESPECIAL, IDENTIFIER, "<init>", "(Ljava/lang/String;Ljava/lang/String;)V", false);
+		of.visitInsn(Opcodes.ARETURN);
+		of.visitMaxs(0, 0);
+		of.visitEnd();
 		cw.visitEnd();
 		return cw.toByteArray();
 	}
@@ -463,6 +486,17 @@ class RegistryDirectoryOwnerInjectorTest {
 		init.visitMaxs(0, 0);
 		init.visitEnd();
 		getter(cw, RESOURCE_KEY, "identifier", "id", "L" + IDENTIFIER + ";");
+		// The factory the hook builds its question's key with, as the game's ResourceKey has it.
+		MethodVisitor create = cw.visitMethod(Opcodes.ACC_PUBLIC | Opcodes.ACC_STATIC, "createRegistryKey",
+				"(L" + IDENTIFIER + ";)L" + RESOURCE_KEY + ";", null, null);
+		create.visitCode();
+		create.visitTypeInsn(Opcodes.NEW, RESOURCE_KEY);
+		create.visitInsn(Opcodes.DUP);
+		create.visitVarInsn(Opcodes.ALOAD, 0);
+		create.visitMethodInsn(Opcodes.INVOKESPECIAL, RESOURCE_KEY, "<init>", "(L" + IDENTIFIER + ";)V", false);
+		create.visitInsn(Opcodes.ARETURN);
+		create.visitMaxs(0, 0);
+		create.visitEnd();
 		cw.visitEnd();
 		return cw.toByteArray();
 	}

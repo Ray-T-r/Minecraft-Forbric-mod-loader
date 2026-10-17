@@ -22,6 +22,7 @@ import java.util.Set;
 
 import net.forbric.api.Ecosystem;
 import net.forbric.api.ForeignType;
+import net.forbric.kernel.transform.RegistrySyncParityInjector;
 import net.forbric.kernel.util.ForbricLog;
 
 /**
@@ -30,23 +31,22 @@ import net.forbric.kernel.util.ForbricLog;
  * <p>Both ecosystems mean to do this and neither could here. NeoForge's {@code Minecraft.disconnect} calls
  * {@code RegistryManager.revertToFrozen()}, which re-applies a snapshot that {@code GameData.freezeData} takes —
  * and the kernel owns the freeze, so that snapshot was never taken and the call was neutered. fabric-api's
- * {@code unmap()} runs from a mixin the kernel suppresses because its other injection re-runs the registry
- * bootstrap. So a client that left a server kept the server's ids: consistent within the JVM, and invisible
- * while the next world used the same mod set, but a client-only mod's entries sat wherever the last server put
- * them.
+ * {@code unmap()} runs from its client mixin's callback at the RETURN of {@code Minecraft.disconnect}, after
+ * {@code revertToFrozen()}, and restores only the ids its own sync replaced. So a client that left a server kept the
+ * server's ids: consistent within the JVM, and invisible while the next world used the same mod set, but a
+ * client-only mod's entries sat wherever the last server put them.
  *
  * <p>This class takes NeoForge's snapshot itself — {@code RegistryManager.takeSnapshot(SYNC_TO_CLIENT)}, the
  * public API the server uses to build the sync — the first time a connection's remap begins, and
  * {@code revertToFrozen()} now applies it back: plain registries through NeoForge's own {@code applySnapshot}
- * loop, the Forge-wrapped ones through the staged path that loop already goes through on connect, and
- * fabric-api's {@code unmap} first, so its own bookkeeping ({@code fabric_prevIndexedEntries}, its remap event)
- * is left the way it would leave it. A snapshot whose ids all still match is not applied at all — the common
+ * loop, the Forge-wrapped ones through the staged path that loop already goes through on connect, and a remap
+ * contract's undo (fabric-api's {@code unmap}) first, so the mod's own bookkeeping is left the way it would leave it
+ * and its own call at the end of the disconnect finds nothing left to undo. A snapshot whose ids all still match is not applied at all — the common
  * case, and one where every registry would otherwise be torn down and rebuilt for nothing.
  */
 public final class KernelRegistryRevert {
 	private static final String REGISTRY_MANAGER = ForeignType.REGISTRY_MANAGER.binary(Ecosystem.NEOFORGE);
 	private static final String SNAPSHOT_TYPE = REGISTRY_MANAGER + "$SnapshotType";
-	private static final String REMAPPABLE = "net.fabricmc.fabric.impl.registry.sync.RemappableRegistry";
 	private static final String WRAPPER = "net.minecraftforge.registries.NamespacedWrapper";
 
 	/** {@code Map<Identifier, RegistrySnapshot>} of every synced registry as it was before the connection remapped it. */
@@ -94,8 +94,8 @@ public final class KernelRegistryRevert {
 			Class<?> manager = Class.forName(REGISTRY_MANAGER, false, cl);
 			Object missing = manager.getMethod("applySnapshot", Map.class, boolean.class).invoke(null, snapshot, true);
 			int missingCount = missing instanceof Set<?> s ? s.size() : -1;
-			ForbricLog.info("[Forbric/RegistrySync] reverted %d synced registr(ies) to their pre-connection ids (fabric-api "
-					+ "unmapped %d plain one(s) first; %d entr(ies) NeoForge could not place)", snapshot.size(), unmapped,
+			ForbricLog.info("[Forbric/RegistrySync] reverted %d synced registr(ies) to their pre-connection ids (a mod's remap "
+					+ "contract unmapped %d plain one(s) first; %d entr(ies) NeoForge could not place)", snapshot.size(), unmapped,
 					missingCount);
 		} catch (Throwable t) {
 			ForbricLog.error("[Forbric/RegistrySync] could not revert the synced registries to their pre-connection ids "
@@ -126,17 +126,19 @@ public final class KernelRegistryRevert {
 	}
 
 	/**
-	 * fabric-api's {@code unmap()} on every plain registry that carries it — what its suppressed client mixin would
-	 * have done. The Forge-wrapped registries are skipped: their ids live in the delegate, and the NeoForge pass that
-	 * follows restores those through {@link KernelForgeWrapperSync}. Absent fabric-api, there is nothing to do.
+	 * The undo of every remap contract a mixin adds to the registries ({@link RegistrySyncParityInjector.RemapContract}:
+	 * fabric-api's {@code unmap()} is one) on every plain registry that carries it, so the mod's own bookkeeping is left
+	 * the way its disconnect would leave it before NeoForge's snapshot goes back. The Forge-wrapped registries are
+	 * skipped: their ids live in the delegate, and the NeoForge pass that follows restores those through
+	 * {@link KernelForgeWrapperSync}. Without such a contract there is nothing to do. The contract is found by what the
+	 * mixin does, so its interface and method are called whatever the mod calls them.
 	 */
 	private static int unmapFabricPlainRegistries(ClassLoader cl) {
-		Class<?> remappable;
-		try {
-			remappable = Class.forName(REMAPPABLE, false, cl);
-		} catch (ClassNotFoundException noFabricApi) {
-			return 0;
+		java.util.Map<String, String> undos = new java.util.LinkedHashMap<>();
+		for (var contract : RegistrySyncParityInjector.discoveredContracts()) {
+			if (contract.undo() != null) undos.putIfAbsent(contract.owner().replace('/', '.') + "." + contract.undo(), contract.owner());
 		}
+		if (undos.isEmpty()) return 0;
 		int done = 0;
 		try {
 			Class<?> wrapper = null;
@@ -146,18 +148,26 @@ public final class KernelRegistryRevert {
 				// no wrappers to skip
 			}
 			Object root = Class.forName("net.minecraft.core.registries.BuiltInRegistries", false, cl).getField("REGISTRY").get(null);
-			Method unmap = remappable.getMethod("unmap");
-			for (Object registry : (Iterable<?>) root) {
-				if (!remappable.isInstance(registry) || (wrapper != null && wrapper.isInstance(registry))) continue;
+			for (var undo : undos.entrySet()) {
+				Class<?> owner;
 				try {
-					unmap.invoke(registry);
-					done++;
-				} catch (Throwable t) {
-					ForbricLog.warn("[Forbric/RegistrySync] fabric-api could not unmap " + registry + ": " + unwrap(t));
+					owner = Class.forName(undo.getValue().replace('/', '.'), false, cl);
+				} catch (ClassNotFoundException absent) {
+					continue;
+				}
+				Method method = owner.getMethod(undo.getKey().substring(undo.getKey().lastIndexOf('.') + 1));
+				for (Object registry : (Iterable<?>) root) {
+					if (!owner.isInstance(registry) || (wrapper != null && wrapper.isInstance(registry))) continue;
+					try {
+						method.invoke(registry);
+						done++;
+					} catch (Throwable t) {
+						ForbricLog.warn("[Forbric/RegistrySync] " + undo.getKey() + " could not unmap " + registry + ": " + unwrap(t));
+					}
 				}
 			}
 		} catch (Throwable t) {
-			ForbricLog.warn("[Forbric/RegistrySync] fabric-api's unmap pass failed part-way", unwrap(t));
+			ForbricLog.warn("[Forbric/RegistrySync] the remap contracts' unmap pass failed part-way", unwrap(t));
 		}
 		return done;
 	}

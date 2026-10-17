@@ -23,7 +23,8 @@ import net.forbric.kernel.boot.KernelRegistryAliases;
  * alias recorded in fabric-api's map, by {@code Identifier} and by {@code ResourceKey}, where as merged its overrides
  * miss it ({@code waystones:waystone} failing to parse, and the tags that name it dropping).
  *
- * <p>The stand-in {@code MappedRegistry} carries the {@code aliases} map fabric-api's mixin adds; the wrapper overrides
+ * <p>The stand-in {@code MappedRegistry} carries an alias map as a mixin adds one ({@code @MixinMerged}, ids to ids, under
+ * a name no loader knows); the wrapper overrides
  * the lookups into its own entries, as {@code NamespacedWrapper} does. The hook is the kernel's real
  * {@link KernelRegistryAliases}.
  */
@@ -60,8 +61,8 @@ class RegistryAliasParityInjectorExecutionTest {
 					import net.minecraft.resources.ResourceKey;
 
 					public class MappedRegistry {
-						/** What fabric-registry-sync's mixin adds; addAlias is inherited by the wrapper and works. */
-						private final Map<Identifier, Identifier> aliases = new HashMap<>();
+						/** What an alias mixin adds (fabric-registry-sync's is one), here under a name of no loader's; marked merged below. */
+						private final Map<Identifier, Identifier> quarry$links = new HashMap<>();
 						private final ResourceKey key;
 
 						public MappedRegistry(ResourceKey key) {
@@ -73,7 +74,7 @@ class RegistryAliasParityInjectorExecutionTest {
 						}
 
 						public void addAlias(Identifier from, Identifier to) {
-							aliases.put(from, to);
+							quarry$links.put(from, to);
 						}
 					}
 					""",
@@ -168,8 +169,25 @@ class RegistryAliasParityInjectorExecutionTest {
 				id(loader, namespace, path));
 	}
 
+	/** The stand-ins, with the alias map marked as Mixin marks a field it merged. */
+	private static Map<String, byte[]> compiled(Path work) throws Exception {
+		Map<String, byte[]> classes = new HashMap<>(InjectorExecution.compile(work, STAND_INS));
+		org.objectweb.asm.tree.ClassNode registry = new org.objectweb.asm.tree.ClassNode();
+		new org.objectweb.asm.ClassReader(classes.get("net/minecraft/core/MappedRegistry")).accept(registry, 0);
+		for (org.objectweb.asm.tree.FieldNode field : registry.fields) {
+			if (!field.name.equals("quarry$links")) continue;
+			org.objectweb.asm.tree.AnnotationNode merged = new org.objectweb.asm.tree.AnnotationNode("Lorg/spongepowered/asm/mixin/transformer/meta/MixinMerged;");
+			merged.values = new java.util.ArrayList<>(List.of("mixin", "org.quarry.registry.mixin.LinksMixin", "priority", 1000, "sessionId", "test"));
+			field.visibleAnnotations = new java.util.ArrayList<>(List.of(merged));
+		}
+		org.objectweb.asm.ClassWriter writer = new org.objectweb.asm.ClassWriter(0);
+		registry.accept(writer);
+		classes.put("net/minecraft/core/MappedRegistry", writer.toByteArray());
+		return classes;
+	}
+
 	@Test void aForgeWrappedRegistryAnswersThroughAnAliasByIdAndByKey(@TempDir Path work) throws Throwable {
-		Map<String, byte[]> original = InjectorExecution.compile(work, STAND_INS);
+		Map<String, byte[]> original = compiled(work);
 		Map<String, byte[]> classes = new HashMap<>(original);
 		for (String target : List.of(WRAPPER, DEFAULTED)) {
 			String internal = target.replace('.', '/');

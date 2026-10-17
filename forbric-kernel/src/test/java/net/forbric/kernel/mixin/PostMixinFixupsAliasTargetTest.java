@@ -119,10 +119,10 @@ class PostMixinFixupsAliasTargetTest {
 		assertTrue(thrown.getCause() instanceof IllegalArgumentException);
 
 		ClassNode node = node(repaired());
-		MethodNode addAlias = node.methods.stream().filter(m -> m.name.equals("addAlias")).findFirst().orElseThrow();
+		MethodNode addAlias = node.methods.stream().filter(m -> m.name.equals("linkOldId")).findFirst().orElseThrow();
 		List<String> calls = new ArrayList<>();
 		for (AbstractInsnNode insn : addAlias.instructions) if (insn instanceof MethodInsnNode call) calls.add(call.name);
-		assertEquals(List.of("containsKey", "<init>", "keySet", "aliasTargetPresent", "put"), calls);
+		assertEquals(List.of("containsKey", "<init>", "keySet", "aliasTargetPresent", "warn", "put"), calls);
 	}
 
 	@Test
@@ -220,7 +220,7 @@ class PostMixinFixupsAliasTargetTest {
 		}
 
 		void addAlias(Object on, String alias, String target) throws Exception {
-			registry.getMethod("addAlias", Object.class, Object.class).invoke(on, alias, target);
+			registry.getMethod("linkOldId", Object.class, Object.class).invoke(on, alias, target);
 		}
 
 		void addEntries(Object on, String alias, String target) throws Exception {
@@ -233,7 +233,10 @@ class PostMixinFixupsAliasTargetTest {
 		}
 	}
 
-	/** fabric-registry-sync's addAlias as Mixin weaves it into MappedRegistry, reduced to its two byLocation checks. */
+	/**
+	 * An alias method as a mixin weaves one into MappedRegistry, reduced to its two byLocation checks, under names of no
+	 * loader's ({@code linkOldId}, a {@code warn} of its own): the repair keys on the check that only leads to a warning.
+	 */
 	private static byte[] registryClass() {
 		ClassWriter cw = new ClassWriter(ClassWriter.COMPUTE_FRAMES | ClassWriter.COMPUTE_MAXS);
 		cw.visit(Opcodes.V21, Opcodes.ACC_PUBLIC, REGISTRY, null, "java/lang/Object", null);
@@ -278,7 +281,17 @@ class PostMixinFixupsAliasTargetTest {
 		register.visitMaxs(0, 0);
 		register.visitEnd();
 
-		MethodVisitor alias = cw.visitMethod(Opcodes.ACC_PUBLIC, "addAlias", "(Ljava/lang/Object;Ljava/lang/Object;)V", null, null);
+		MethodVisitor warn = cw.visitMethod(Opcodes.ACC_PUBLIC | Opcodes.ACC_STATIC, "warn", "(Ljava/lang/String;)V", null, null);
+		warn.visitCode();
+		warn.visitFieldInsn(Opcodes.GETSTATIC, REGISTRY, "warnings", "I");
+		warn.visitInsn(Opcodes.ICONST_1);
+		warn.visitInsn(Opcodes.IADD);
+		warn.visitFieldInsn(Opcodes.PUTSTATIC, REGISTRY, "warnings", "I");
+		warn.visitInsn(Opcodes.RETURN);
+		warn.visitMaxs(0, 0);
+		warn.visitEnd();
+
+		MethodVisitor alias = cw.visitMethod(Opcodes.ACC_PUBLIC, "linkOldId", "(Ljava/lang/Object;Ljava/lang/Object;)V", null, null);
 		alias.visitCode();
 		Label notPresent = new Label(), exists = new Label();
 		// "Tried adding %s as an alias, but it is already present in registry %s" — reads the ALIAS, slot 1.
@@ -300,11 +313,7 @@ class PostMixinFixupsAliasTargetTest {
 		alias.visitMethodInsn(Opcodes.INVOKEINTERFACE, "java/util/Map", "containsKey", "(Ljava/lang/Object;)Z", true);
 		alias.visitJumpInsn(Opcodes.IFNE, exists);
 		alias.visitLdcInsn(WARNING);
-		alias.visitInsn(Opcodes.POP);
-		alias.visitFieldInsn(Opcodes.GETSTATIC, REGISTRY, "warnings", "I");
-		alias.visitInsn(Opcodes.ICONST_1);
-		alias.visitInsn(Opcodes.IADD);
-		alias.visitFieldInsn(Opcodes.PUTSTATIC, REGISTRY, "warnings", "I");
+		alias.visitMethodInsn(Opcodes.INVOKESTATIC, REGISTRY, "warn", "(Ljava/lang/String;)V", false);
 		alias.visitLabel(exists);
 		alias.visitVarInsn(Opcodes.ALOAD, 0);
 		alias.visitFieldInsn(Opcodes.GETFIELD, REGISTRY, "aliases", "Ljava/util/Map;");
@@ -367,7 +376,7 @@ class PostMixinFixupsAliasTargetTest {
 		add.visitVarInsn(Opcodes.ALOAD, 0);
 		add.visitVarInsn(Opcodes.ALOAD, 1);
 		add.visitVarInsn(Opcodes.ALOAD, 2);
-		add.visitMethodInsn(Opcodes.INVOKEVIRTUAL, REGISTRY, "addAlias", "(Ljava/lang/Object;Ljava/lang/Object;)V", false);
+		add.visitMethodInsn(Opcodes.INVOKEVIRTUAL, REGISTRY, "linkOldId", "(Ljava/lang/Object;Ljava/lang/Object;)V", false);
 		add.visitVarInsn(Opcodes.ALOAD, 0);
 		add.visitVarInsn(Opcodes.ALOAD, 2);
 		add.visitMethodInsn(Opcodes.INVOKEVIRTUAL, REGISTRY, "register", "(Ljava/lang/Object;)V", false);

@@ -34,6 +34,7 @@ public final class MergedBaseMixinCompat {
         if(configName==null||configBytes==null||resources==null)return;
         SUPPRESSED_MIXINS.removeIf(entry->entry.startsWith(configName+":"));
         FabricRegistryInitializationMixinAdapter.forgetDeferredFreezes(configName);
+        net.forbric.kernel.transform.RegistrySyncParityInjector.forgetMixins(configName);
         PINNED_CONTRACTS.removeIf(row->row.pin().startsWith(configName+":"));
         REASONS.keySet().removeIf(entry->entry.startsWith(configName+":"));
         SOURCES.keySet().removeIf(entry->entry.startsWith(configName+":"));
@@ -52,6 +53,7 @@ public final class MergedBaseMixinCompat {
                     ClassNode node=new ClassNode();new org.objectweb.asm.ClassReader(bytes).accept(node,org.objectweb.asm.ClassReader.EXPAND_FRAMES);
                     String identity=configName+":"+entry;SOURCES.put(identity,node.name.replace('/','.'));
                     FabricRegistryInitializationMixinAdapter.noteDeferredFreeze(configName,node,family,natives);
+                    net.forbric.kernel.transform.RegistrySyncParityInjector.noteMixin(configName,node,resources);
                     if(!enabled()||explicitlyKept(identity))continue;
                     String reason=refusal(node,resources,natives);
                     if(reason==null)continue;

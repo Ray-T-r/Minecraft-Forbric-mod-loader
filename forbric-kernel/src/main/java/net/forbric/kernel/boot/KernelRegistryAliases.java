@@ -183,9 +183,9 @@ public final class KernelRegistryAliases {
 	}
 
 	/**
-	 * fabric-api's mixin-added {@code aliases} map on this registry, or {@code null} when this build has none.
+	 * The alias map a mixin added to this registry's class (fabric-api's), or {@code null} when this build has none.
 	 *
-	 * <p>The field is added by {@code fabric-registry-sync-v0}'s mixin, so it exists only when fabric-api is
+	 * <p>The field is added by a mod's mixin ({@code fabric-registry-sync-v0}'s), so it exists only when that mod is
 	 * installed — and the kernel has to run without it. The result of that one lookup is cached, including the
 	 * negative, because this runs in front of every wrapped registry lookup.
 	 */
@@ -194,7 +194,7 @@ public final class KernelRegistryAliases {
 		Optional<Field> field = ALIASES.get(registry.getClass());
 		if (field.isEmpty()) {
 			if (REPORTED.compareAndSet(false, true)) {
-				ForbricLog.debug("[Forbric/Aliases] no fabric-api alias map on %s — registry aliases are whatever "
+				ForbricLog.debug("[Forbric/Aliases] no mixin-added alias map on %s — registry aliases are whatever "
 						+ "the Forge wrapper does natively", registry.getClass().getName());
 			}
 			return null;
@@ -207,18 +207,53 @@ public final class KernelRegistryAliases {
 		}
 	}
 
+	/**
+	 * The alias map a mixin merged into {@code type} or a superclass: the one instance field, nearest the class, that
+	 * Mixin marked {@code @MixinMerged} and whose declared type is {@code Map<Identifier, Identifier>} — an id to the id
+	 * it stands for. Whatever the mixin called it; a class with two such fields is not guessed at.
+	 */
 	private static Field findAliases(Class<?> type) {
 		for (Class<?> c = type; c != null; c = c.getSuperclass()) {
-			try {
-				Field f = c.getDeclaredField("aliases");
-				if (Map.class.isAssignableFrom(f.getType())) {
-					f.setAccessible(true);
-					return f;
+			Field only = null;
+			int found = 0;
+			for (Field f : c.getDeclaredFields()) {
+				if (java.lang.reflect.Modifier.isStatic(f.getModifiers()) || !Map.class.isAssignableFrom(f.getType())
+						|| !idToId(f.getGenericType()) || !Merged.by(f)) continue;
+				only = f;
+				found++;
+			}
+			if (found > 1) return null;
+			if (only != null) {
+				try {
+					only.setAccessible(true);
+					return only;
+				} catch (RuntimeException inaccessible) {
+					return null;
 				}
-			} catch (NoSuchFieldException keepLooking) {
-				// fabric-api adds it to MappedRegistry, so it is usually a superclass of the wrapper
 			}
 		}
 		return null;
+	}
+
+	/** {@code Map<Identifier, Identifier>}, by the declared type arguments. */
+	private static boolean idToId(java.lang.reflect.Type type) {
+		if (!(type instanceof java.lang.reflect.ParameterizedType generic) || generic.getActualTypeArguments().length != 2) return false;
+		for (java.lang.reflect.Type argument : generic.getActualTypeArguments()) {
+			if (!(argument instanceof Class<?> c) || !IDENTIFIER.equals(c.getName())) return false;
+		}
+		return true;
+	}
+
+	private static final String IDENTIFIER = "net.minecraft.resources.Identifier";
+
+	/** Mixin's annotation, in a class of its own: a loader without Mixin fails here, inside the caller's lookup. */
+	private static final class Merged {
+		static boolean by(Field field) {
+			try {
+				return field.getAnnotation(org.spongepowered.asm.mixin.transformer.meta.MixinMerged.class) != null;
+			} catch (LinkageError noMixin) {
+				return false;
+			}
+		}
 	}
 }

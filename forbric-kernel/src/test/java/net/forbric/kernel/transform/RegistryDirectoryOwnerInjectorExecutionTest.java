@@ -13,9 +13,6 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import org.junit.jupiter.api.parallel.ResourceLock;
-import org.objectweb.asm.ClassReader;
-import org.objectweb.asm.ClassWriter;
-import org.objectweb.asm.tree.ClassNode;
 
 import net.fabricmc.api.EnvType;
 import net.forbric.api.DiscoveredMod;
@@ -31,11 +28,10 @@ import net.forbric.kernel.boot.KernelRegistryDirectories;
  * nothing ships. A NeoForge mod's registry and vanilla's keep the merged answer, and so does every registry when
  * fabric-registry-sync's modifier is not in {@code Registries}.
  *
- * <p>The stand-in {@code Registries} has NeoForge's body (the namespace put in front by {@code CommonHooks}) and, as
- * Mixin leaves a merged member, a method marked {@code @MixinMerged} from fabric-registry-sync's
- * {@code RegistriesMixin} — the mark written into the class file, as Mixin writes it, since the annotation cannot be
- * applied in source: the hook reads that mark off the calling class. Mod ownership comes from {@code ModPresence},
- * published as a boot publishes it.
+ * <p>The stand-in {@code Registries} has NeoForge's body (the namespace put in front by {@code CommonHooks}) and an
+ * {@code elementsDirPath} whose return a merged return-value modifier, under a name of no loader's, prefixes with the
+ * namespace after the body — what fabric-registry-sync's mixin leaves. The hook asks {@code elementsDirPath} itself
+ * whether that happens. Mod ownership comes from {@code ModPresence}, published as a boot publishes it.
  */
 @ExecutesInjector(RegistryDirectoryOwnerInjector.class)
 @ResourceLock("system-properties")
@@ -63,6 +59,10 @@ class RegistryDirectoryOwnerInjectorExecutionTest {
 						public String getPath() {
 							return path;
 						}
+
+						public static Identifier fromNamespaceAndPath(String namespace, String path) {
+							return new Identifier(namespace, path);
+						}
 					}
 					""",
 			"net.minecraft.resources.ResourceKey", """
@@ -77,6 +77,10 @@ class RegistryDirectoryOwnerInjectorExecutionTest {
 
 						public Identifier identifier() {
 							return identifier;
+						}
+
+						public static <T> ResourceKey<T> createRegistryKey(Identifier identifier) {
+							return new ResourceKey<>(identifier);
 						}
 					}
 					""",
@@ -103,18 +107,42 @@ class RegistryDirectoryOwnerInjectorExecutionTest {
 							return CommonHooks.prefixNamespace(key.identifier());
 						}
 
-						/** fabric-registry-sync's return-value modifier as Mixin merges it; the @MixinMerged mark is added in the class file. */
-						private static String fabric_prefixDirectory(String path) {
-							return path;
+						public static String elementsDirPath(ResourceKey<?> key) {
+							return quarry$prependNamespace(registryDirPath(key), key);
+						}
+
+						/** A return-value modifier as Mixin merges one, after the body, under a name of no loader's. */
+						private static String quarry$prependNamespace(String path, ResourceKey<?> key) {
+							String namespace = key.identifier().getNamespace();
+							return namespace.equals("minecraft") ? path : namespace + "/" + path;
 						}
 					}
 					""");
+
+	/** The same Registries with nothing after the body: no modifier puts the namespace back. */
+	private static final String WITHOUT_MODIFIER = """
+			package net.minecraft.core.registries;
+
+			import net.minecraft.resources.ResourceKey;
+			import net.neoforged.neoforge.common.CommonHooks;
+
+			public class Registries {
+				/** NeoForge's body. */
+				public static String registryDirPath(ResourceKey<?> key) {
+					return CommonHooks.prefixNamespace(key.identifier());
+				}
+
+				public static String elementsDirPath(ResourceKey<?> key) {
+					return registryDirPath(key);
+				}
+			}
+			""";
 
 	@BeforeEach @AfterEach void reset() {
 		System.clearProperty(RegistryDirectoryOwnerInjector.PROPERTY);
 		ModPresence.publishForgeFamily(List.of());
 		ModPresence.publishFabric(List.of());
-		// Unknown, as on a fresh boot: the hook asks the calling Registries whether fabric-registry-sync's modifier is in it.
+		// Unknown, as on a fresh boot: the hook asks the calling Registries whether something puts the namespace back.
 		KernelRegistryDirectories.resetForTests(null);
 	}
 
@@ -126,22 +154,6 @@ class RegistryDirectoryOwnerInjectorExecutionTest {
 	private static void publish() {
 		ModPresence.publishFabric(List.of(mod(Ecosystem.FABRIC, "wover")));
 		ModPresence.publishForgeFamily(List.of(mod(Ecosystem.NEOFORGE, "examplemod")));
-	}
-
-	/** Registries as Mixin leaves it after fabric-registry-sync's modifier: the merged member carries {@code @MixinMerged}. */
-	private static Map<String, byte[]> withFabricModifier(Map<String, byte[]> compiled) {
-		String internal = REGISTRIES.replace('.', '/');
-		ClassNode node = new ClassNode();
-		new ClassReader(compiled.get(internal)).accept(node, 0);
-		org.objectweb.asm.tree.MethodNode merged = node.methods.stream().filter(m -> m.name.equals("fabric_prefixDirectory")).findFirst().orElseThrow();
-		org.objectweb.asm.tree.AnnotationNode mark = new org.objectweb.asm.tree.AnnotationNode("Lorg/spongepowered/asm/mixin/transformer/meta/MixinMerged;");
-		mark.values = List.of("mixin", "net.fabricmc.fabric.mixin.registry.sync.RegistriesMixin", "priority", 1000);
-		merged.visibleAnnotations = List.of(mark);
-		ClassWriter writer = new ClassWriter(0);
-		node.accept(writer);
-		Map<String, byte[]> classes = new HashMap<>(compiled);
-		classes.put(internal, writer.toByteArray());
-		return classes;
 	}
 
 	private static String dir(ClassLoader loader, String namespace, String path) throws Throwable {
@@ -160,7 +172,7 @@ class RegistryDirectoryOwnerInjectorExecutionTest {
 	}
 
 	@Test void aFabricRegistryGetsVanillasDirectoryForItsOwnersMixins(@TempDir Path work) throws Throwable {
-		Map<String, byte[]> original = withFabricModifier(InjectorExecution.compile(work, STAND_INS));
+		Map<String, byte[]> original = InjectorExecution.compile(work, STAND_INS);
 		Map<String, byte[]> classes = owned(original);
 		ClassLoader loader = InjectorExecution.load(classes);
 		assertEquals("", InjectorExecution.verify(classes.get(REGISTRIES.replace('.', '/')), loader));
@@ -177,9 +189,10 @@ class RegistryDirectoryOwnerInjectorExecutionTest {
 		assertSame(once, InjectorExecution.transform(new RegistryDirectoryOwnerInjector(), REGISTRIES, once, EnvType.SERVER), "edited once");
 	}
 
-	@Test void withoutFabricRegistrySyncsModifierEveryRegistryKeepsTheMergedDirectory(@TempDir Path work) throws Throwable {
-		// The same Registries, but nothing in it carries fabric-registry-sync's @MixinMerged mark.
-		Map<String, byte[]> without = InjectorExecution.compile(work, STAND_INS);
+	@Test void withoutAModifierAfterTheBodyEveryRegistryKeepsTheMergedDirectory(@TempDir Path work) throws Throwable {
+		Map<String, String> sources = new HashMap<>(STAND_INS);
+		sources.put(REGISTRIES, WITHOUT_MODIFIER);
+		Map<String, byte[]> without = InjectorExecution.compile(work, sources);
 		publish();
 		assertEquals("wover/worldgen/world_preset", dir(InjectorExecution.load(owned(without)), "wover", "worldgen/world_preset"),
 				"nothing would put the namespace back, so the hook keeps the merged answer");

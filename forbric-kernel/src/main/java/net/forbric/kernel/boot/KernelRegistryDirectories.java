@@ -54,9 +54,8 @@ import net.forbric.kernel.util.ForbricLog;
  * because fabric's modifier still runs after this and puts the namespace back exactly as it does natively — the
  * only registries whose directory moves are those a mod intercepted the way wover does, and they move to where
  * that mod put its data. {@code componentsDirPath} (datagen only) follows too; Fabric never prefixed it. That
- * leans on fabric-registry-sync's {@code RegistriesMixin} applying here as it does natively, so {@code Registries}
- * is asked first whether it took it ({@link #fabricPrefixes}): where it did not, every registry keeps the merged
- * answer.
+ * leans on a modifier after the body (fabric-registry-sync's) applying here as it does natively, so {@code Registries}
+ * is asked first whether one does ({@link #fabricPrefixes}): where none does, every registry keeps the merged answer.
  *
  * <p>Ownership is the namespace's: {@link ModPresence#soleEcosystem}. A namespace no mod claims — or that mods of
  * two ecosystems claim — keeps the merged answer, which is what every registry had before this existed. Called from
@@ -66,16 +65,17 @@ public final class KernelRegistryDirectories {
 	/** {@code RegistryDirectoryOwnerInjector.PROPERTY}; {@code force} skips {@link #fabricPrefixes}. */
 	private static final String OWNER_PROPERTY = "forbric.registryDirectoryOwner";
 
-	/** fabric-registry-sync's {@code @ModifyReturnValue} mixin, which puts the namespace back after the body. */
-	static final String FABRIC_PREFIXER = "net.fabricmc.fabric.mixin.registry.sync.RegistriesMixin";
-
-	/** The class the edit calls from, whose merged methods say whether {@link #FABRIC_PREFIXER} is in it. */
+	/** The class the edit calls from, whose {@code elementsDirPath} is asked whether something puts the namespace back. */
 	private static final String REGISTRIES = "net.minecraft.core.registries.Registries";
+	/** The path of the registry the question is asked about: a registry nothing ships and no mod intercepts. */
+	static final String PROBE_PATH = "forbric_directory_probe";
+	/** Set while the question is asked: the body then answers vanilla's path, whoever owns the namespace. */
+	private static final ThreadLocal<Boolean> PROBING = new ThreadLocal<>();
 
 	/** Namespaces already named in the debug log — one line per mod, not one per registry per reload. */
 	private static final Set<String> REPORTED = ConcurrentHashMap.newKeySet();
 
-	/** Whether {@link #FABRIC_PREFIXER} runs after the body here; null until the first Fabric registry asks. */
+	/** Whether something after the body puts the namespace back here; null until the first Fabric registry asks. */
 	private static volatile Boolean fabricPrefixer;
 
 	private KernelRegistryDirectories() {
@@ -90,9 +90,10 @@ public final class KernelRegistryDirectories {
 	 */
 	public static String registryDirPath(String merged, String namespace, String path) {
 		try {
+			if (PROBING.get() != null && path != null) return path;
 			if (namespace == null || path == null || "minecraft".equals(namespace)) return merged;
 			if (ModPresence.soleEcosystem(namespace) != Ecosystem.FABRIC) return merged;
-			if (!fabricPrefixes()) return merged;
+			if (!fabricPrefixes(namespace)) return merged;
 			// DEBUG: for almost every Fabric registry the modifier puts the namespace straight back, so the change is
 			// invisible there, and a line per mod at INFO would point triage at registries that read as before.
 			if (ForbricLog.debugEnabled() && !path.equals(merged) && REPORTED.add(namespace)) {
@@ -108,7 +109,8 @@ public final class KernelRegistryDirectories {
 	}
 
 	/**
-	 * Whether fabric-registry-sync's modifier is in {@code Registries} as the game defined it, decided once.
+	 * Whether something after the body of {@code Registries.elementsDirPath} puts a registry's namespace back — on a Fabric
+	 * game, fabric-registry-sync's {@code @ModifyReturnValue} — decided once.
 	 *
 	 * <p>Vanilla's path is only right for a Fabric registry because that modifier puts the namespace back after
 	 * the body. Before this hook the merged body made the modifier redundant, so losing it cost nothing; handing
@@ -118,15 +120,13 @@ public final class KernelRegistryDirectories {
 	 * merged answer, which is what they all had before this hook: WorldWeaver's two are empty again, and one WARN
 	 * says so.
 	 *
-	 * <p>Read off the class itself. Mixin marks every method it merges into a target with the runtime annotation
-	 * {@code @MixinMerged(mixin = <mixin class>)}, so {@code Registries}' own declared methods say which mixins it
-	 * really took — after the adapter, the pins and arbitration, in the class the game runs. It is complete on the
-	 * first call, because this runs inside it. Mixin's own record is no substitute: {@code MixinInfo.postApply} adds
-	 * an application to the MIXIN's {@code ClassInfo}, never the target's, so {@code Mixins.getMixinsForClass} on
-	 * {@code Registries} is empty however many it took, and the mixin's entry sits in a plain map the transformer
-	 * writes from other class-loading threads. {@code -Dforbric.registryDirectoryOwner=force} skips the question.
+	 * <p>Asked of the class the game runs, by what it does: {@code elementsDirPath} for a registry {@code namespace:}
+	 * {@value #PROBE_PATH} — nothing ships it and no mod intercepts it — with the body answering vanilla's path. A
+	 * directory that comes back with the namespace in front of that path had it put there after the body, whichever
+	 * mixin did it and whatever it is called. It is complete on the first call, because this runs inside
+	 * {@code Registries}, after every mixin it took. {@code -Dforbric.registryDirectoryOwner=force} skips the question.
 	 */
-	static boolean fabricPrefixes() {
+	static boolean fabricPrefixes(String namespace) {
 		Boolean known = fabricPrefixer;
 		if (known != null) return known;
 		synchronized (KernelRegistryDirectories.class) {
@@ -135,24 +135,42 @@ public final class KernelRegistryDirectories {
 			if ("force".equalsIgnoreCase(System.getProperty(OWNER_PROPERTY, "on"))) {
 				present = true;
 				ForbricLog.warn("[Forbric/Registries] -D%s=force — registries in Fabric namespaces get vanilla's data "
-						+ "directory without asking Registries whether fabric-registry-sync's %s is in it",
-						OWNER_PROPERTY, FABRIC_PREFIXER);
+						+ "directory without asking Registries whether anything puts the namespace back after the body",
+						OWNER_PROPERTY);
 			} else {
 				try {
-					present = Merged.into(registries(), FABRIC_PREFIXER);
+					present = namespaceAddedAfterBody(registries(), namespace);
 				} catch (Throwable t) {
 					present = false;
 				}
 				if (!present) {
-					ForbricLog.warn("[Forbric/Registries] fabric-registry-sync's %s is not in Registries, so nothing "
-							+ "puts a Fabric registry's namespace back after the body — every registry keeps the "
-							+ "merged (NeoForge) data directory, which is not where a mod that returns the body's "
-							+ "answer early (WorldWeaver's world presets and biome data) ships its data; -D%s=force "
-							+ "hands Fabric registries vanilla's directory anyway", FABRIC_PREFIXER, OWNER_PROPERTY);
+					ForbricLog.warn("[Forbric/Registries] nothing in Registries puts a Fabric registry's namespace back after "
+							+ "the body (fabric-registry-sync's modifier is not applied), so every registry keeps the "
+							+ "merged (NeoForge) data directory, which is not where a mod that returns the body's answer "
+							+ "early (WorldWeaver's world presets and biome data) ships its data; -D%s=force hands Fabric "
+							+ "registries vanilla's directory anyway", OWNER_PROPERTY);
 				}
 			}
 			fabricPrefixer = present;
 			return present;
+		}
+	}
+
+	/** {@code Registries.elementsDirPath(namespace:PROBE_PATH)} with the body answering vanilla's path: is the namespace back? */
+	static boolean namespaceAddedAfterBody(Class<?> registries, String namespace) throws ReflectiveOperationException {
+		if (registries == null || namespace == null) return false;
+		ClassLoader loader = registries.getClassLoader();
+		Class<?> identifier = Class.forName("net.minecraft.resources.Identifier", false, loader);
+		Class<?> resourceKey = Class.forName("net.minecraft.resources.ResourceKey", false, loader);
+		Object id = identifier.getMethod("fromNamespaceAndPath", String.class, String.class).invoke(null, namespace, PROBE_PATH);
+		Object key = resourceKey.getMethod("createRegistryKey", identifier).invoke(null, id);
+		java.lang.reflect.Method elements = registries.getMethod("elementsDirPath", resourceKey);
+		PROBING.set(Boolean.TRUE);
+		try {
+			Object dir = elements.invoke(null, key);
+			return dir instanceof String path && !path.equals(PROBE_PATH) && path.endsWith(PROBE_PATH) && path.startsWith(namespace);
+		} finally {
+			PROBING.remove();
 		}
 	}
 
@@ -164,22 +182,9 @@ public final class KernelRegistryDirectories {
 				.findFirst().orElse(null));
 	}
 
-	/** Mixin's annotation, in a class of its own: a loader without Mixin fails here, inside the caller's catch. */
-	private static final class Merged {
-		static boolean into(Class<?> target, String mixin) {
-			if (target == null) return false;
-			for (java.lang.reflect.Method method : target.getDeclaredMethods()) {
-				org.spongepowered.asm.mixin.transformer.meta.MixinMerged merged =
-						method.getAnnotation(org.spongepowered.asm.mixin.transformer.meta.MixinMerged.class);
-				if (merged != null && mixin.equals(merged.mixin().replace('/', '.'))) return true;
-			}
-			return false;
-		}
-	}
-
 	/**
 	 * Forgets what was logged and what {@code Registries} answered — for tests. {@code fabricPrefixer} stands in for
-	 * that answer (a test's {@code Registries} never passed through Mixin); null asks the calling class again.
+	 * that answer; null asks the calling class again.
 	 */
 	public static void resetForTests(Boolean fabricPrefixer) {
 		REPORTED.clear();
