@@ -76,7 +76,6 @@ class MixinCallbackPointSpellingTest {
 		carriers.forEach((entry, count) -> contracts.add(create("carrier " + entry, entry, (mixin, targets) -> MixinCarrierCallbackAdapters.adapt(mixin, targets, NATIVE), count)));
 		Map.of("mixin/SignalGetterMixin", 1, "mixin/EntityMixin", 1, "client/mixin/MultiPlayerGameModeMixin", 2, "mixin/ServerPlayerGameModeMixin", 1).forEach((entry, count) ->
 				contracts.add(create("interaction " + entry, entry, (mixin, targets) -> MixinBlockInteractionAdapters.adapt(mixin, targets, NATIVE), count)));
-		contracts.add(create("breathing", "mixin/LivingEntityMixin", (mixin, targets) -> MixinBreathingCallbackAdapter.adapt(mixin, targets, NATIVE), 2));
 		contracts.add(create("living step sound", "mixin/LivingEntityMixin", (mixin, targets) -> MixinEntitySoundCallbackAdapter.adapt(mixin, targets, NATIVE), 1));
 		contracts.add(create("entity step sound", "mixin/EntityMixin", (mixin, targets) -> MixinEntitySoundCallbackAdapter.adapt(mixin, targets, NATIVE), 1));
 		contracts.add(create("hud", "client/mixin/HudMixin", (mixin, targets) -> MixinHudContextAdapter.adapt(mixin, targets, NATIVE), 1));

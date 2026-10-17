@@ -38,7 +38,6 @@ public final class ForbricSwitches {
 			Map.entry("forbric.compatPluginPlatforms", "forbric.mixinPluginPlatforms"),
 			Map.entry("forbric.continuitySpriteSources", "forbric.spriteLoaderCallbacks"),
 			Map.entry("forbric.corpseNameTag", "forbric.zeroNameTagMigration"),
-			Map.entry("forbric.createBreathingMixin", "forbric.breathingCallbacks"),
 			Map.entry("forbric.createContextualBlocks", "forbric.blockQueryAdapters"),
 			Map.entry("forbric.createEntitySounds", "forbric.entitySoundCallbacks"),
 			Map.entry("forbric.createHudMixin", "forbric.hudContextCallbacks"),
@@ -67,6 +66,10 @@ public final class ForbricSwitches {
 					+ "c:register receiver runs on the payload as Fabric reads it and records them (-Dforbric.commonNetworkInterop)"),
 			Map.entry("forbric.fabricFluidFlow", "a fluid callback on vanilla's spread decision is no longer moved onto the carriers' "
 					+ "registry calls; the decision method is asked again where vanilla asks it (-Dforbric.nativeEntryRelay)"),
+			Map.entry("forbric.breathingCallbacks", "a mod's wrap of vanilla's breathing checks is no longer served by a kernel callback scope: "
+					+ "the native checks are asked again ahead of the carrier's breathing hook (-Dforbric.nativeDecisionIsland)"),
+			Map.entry("forbric.createBreathingMixin", "a mod's wrap of vanilla's breathing checks is no longer served by a kernel callback scope: "
+					+ "the native checks are asked again ahead of the carrier's breathing hook (-Dforbric.nativeDecisionIsland)"),
 			Map.entry("forbric.balmEffectVeto", "a clear-all veto is no longer re-hosted on the carrier's per-effect question: the native clear is put back on a view of "
 					+ "what the carrier lets go and the mod's own wrap runs on it (-Dforbric.scopedClearRelay)"),
 			Map.entry("forbric.effectClearVeto", "a clear-all veto is no longer re-hosted on the carrier's per-effect question: the native clear is put back on a view of "

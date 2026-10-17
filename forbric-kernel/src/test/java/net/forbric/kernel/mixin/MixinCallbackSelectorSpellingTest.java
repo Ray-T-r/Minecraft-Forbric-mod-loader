@@ -50,7 +50,6 @@ class MixinCallbackSelectorSpellingTest {
 			contracts.add(create("mixin/" + entry, MixinBlockQueryAdapters::adapt, entry.equals("LivingEntityMixin") ? 2 : 1));
 		for (var entry : Map.of("mixin/SignalGetterMixin", 1, "mixin/EntityMixin", 1, "client/mixin/MultiPlayerGameModeMixin", 2, "mixin/ServerPlayerGameModeMixin", 1).entrySet())
 			contracts.add(create(entry.getKey(), (mixin, targets) -> MixinBlockInteractionAdapters.adapt(mixin, targets, NATIVE), entry.getValue()));
-		contracts.add(create("mixin/LivingEntityMixin", MixinBreathingCallbackAdapter::adapt, 2));
 		contracts.add(create("mixin/LivingEntityMixin", MixinEntitySoundCallbackAdapter::adapt, 1));
 		contracts.add(create("mixin/EntityMixin", MixinEntitySoundCallbackAdapter::adapt, 1));
 		contracts.add(create("client/mixin/HudMixin", MixinHudContextAdapter::adapt, 1));
@@ -275,19 +274,6 @@ class MixinCallbackSelectorSpellingTest {
 	}
 
 	/**
-	 * A value appended unannotated after a wrap's {@code Operation} is the target's argument at its position — Mixin hands
-	 * it over only where the target has one. {@code baseTick()} has none, so Create's unannotated {@code ServerLevel} is no
-	 * argument and no {@code @Local}: Mixin refuses it, and the adapter leaves it so.
-	 */
-	@Test void anUnannotatedExtraIsNotTheLocalAnAdapterSupplies() throws Exception {
-		var contract = create("mixin/LivingEntityMixin", MixinBreathingCallbackAdapter::adapt, 2);
-		ClassNode mixin = withoutWrapAnnotations(unrelatedNames(contract.source().read()));
-		byte[] before = CarpetMixinAdapterTest.bytes(mixin);
-		assertEquals(0, contract.adapter().apply(mixin, MixinCallbackSelectorSpellingTest::target), contract.id());
-		assertArrayEquals(before, CarpetMixinAdapterTest.bytes(mixin));
-	}
-
-	/**
 	 * Create's HUD and step-sound wraps ask for their target's arguments with {@code @Local(argsOnly = true)}; the same
 	 * handlers written without the annotation take them as the arguments MixinExtras appends after the {@code Operation}
 	 * (WrapOperationInjector's captureTargetArgs) — the same values. Each adapter serves that form, and serves it exactly
@@ -314,10 +300,4 @@ class MixinCallbackSelectorSpellingTest {
 		}
 	}
 
-	private static ClassNode withoutWrapAnnotations(ClassNode mixin) {
-		for (MethodNode method : mixin.methods) if (MixinFit.injectorOf(method) != null && method.desc.contains(MixinHandlerShape.OPERATION)) {
-			method.invisibleParameterAnnotations = null; method.visibleParameterAnnotations = null;
-		}
-		return mixin;
-	}
 }

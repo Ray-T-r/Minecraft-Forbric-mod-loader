@@ -655,7 +655,6 @@ public final class KernelBoot {
 		// canGlide asks the equipment, as the native game does, while the carrier's cached gliding attribute lags behind it.
 		chain.register(TransformPhase.COREMOD, new net.forbric.kernel.transform.GlideFreshEquipmentInjector());
 		// Carrier callback seams are available to every structurally compatible guest mixin.
-		chain.register(TransformPhase.COREMOD, new net.forbric.kernel.transform.BreathingCallbackInjector());
 		chain.register(TransformPhase.COREMOD, new net.forbric.kernel.transform.BlockSoundQueryInjector());
 		if (side == Side.CLIENT) chain.register(TransformPhase.COREMOD, new net.forbric.kernel.transform.HudContextQueryInjector());
 

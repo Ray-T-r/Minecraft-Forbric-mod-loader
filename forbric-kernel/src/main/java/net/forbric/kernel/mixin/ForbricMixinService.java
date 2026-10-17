@@ -119,6 +119,7 @@ public final class ForbricMixinService
 		changed+=NativeLocalMaterialization.adapt(source,code,NativeGameReferences::reference,loader());
 		changed+=NativeLocalPins.adapt(source,code,NativeGameReferences::reference);
 		changed+=NativeEntryRelay.adapt(source,code,NativeGameReferences::reference,loader());
+		changed+=NativeDecisionIsland.adapt(source,code,NativeGameReferences::reference,loader());
 		changed+=ReplacedDecisionValues.adapt(source,code,NativeGameReferences::reference);
 		// With the local variable tables: the decisions are matched by the locals their answers are kept in.
 		changed+=CarrierDecisions.adapt(source,owner->{byte[] current=resource.apply(owner+".class");if(current==null)return null;ClassNode tables=new ClassNode();new ClassReader(current).accept(tables,0);return tables;},NativeGameReferences::reference);
@@ -341,6 +342,9 @@ public final class ForbricMixinService
 		// …and a native decision method an injector enters, whose calls the carrier replaced with its own decision, is asked
 		// again where it was, ahead of the carrier's.
 		NativeEntryRelay.adapt(node, this::mergedBaseNodeWithCode, NativeGameReferences::reference, loader());
+		// …and a stretch of native decisions the carrier replaced with a hook of its own is asked again ahead of the hook, so an
+		// injector on one of its calls binds there, and the hook is answered what the island answered.
+		NativeDecisionIsland.adapt(node, this::mergedBaseNodeWithCode, NativeGameReferences::reference, loader());
 		// …and a value modifier of a vanilla decision the carrier replaced with its own call, deciding the same branch, names
 		// that call.
 		ReplacedDecisionValues.adapt(node, this::mergedBaseNodeWithCode, NativeGameReferences::reference);
@@ -353,7 +357,6 @@ public final class ForbricMixinService
 		MixinCarrierCallbackAdapters.adapt(node, this::mergedBaseGameCode);
 		MixinBlockQueryAdapters.adapt(node, this::mergedBaseNodeWithCode);
 		MixinBlockInteractionAdapters.adapt(node, this::mergedBaseNodeWithCode);
-		MixinBreathingCallbackAdapter.adapt(node, this::mergedBaseNodeWithCode);
 		MixinEntitySoundCallbackAdapter.adapt(node, this::mergedBaseNodeWithCode);
 		MixinHudContextAdapter.adapt(node, this::mergedBaseNodeWithCode);
 		FabricRegistryLoaderMixinAdapter.adapt(node, this::mergedBaseNodeWithCode);

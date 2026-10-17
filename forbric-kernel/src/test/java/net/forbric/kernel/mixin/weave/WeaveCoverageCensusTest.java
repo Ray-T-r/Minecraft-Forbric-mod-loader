@@ -113,6 +113,7 @@ class WeaveCoverageCensusTest {
 			Map.entry("NativeLocalMaterialization", Switch.own("forbric.nativeLocalMaterialization")), // NativeLocalMaterializationWeaveTest
 			Map.entry("NativeLocalPins", Switch.own("forbric.nativeLocalPins")), // NativeLocalPinsWeaveTest
 			Map.entry("NativeEntryRelay", Switch.own("forbric.nativeEntryRelay")), // NativeEntryRelayWeaveTest, FluidPairMixinAdaptersWeaveTest
+			Map.entry("NativeDecisionIsland", Switch.own("forbric.nativeDecisionIsland")), // NativeDecisionIslandWeaveTest
 			Map.entry("ReplacedDecisionValues", Switch.own("forbric.replacedDecisionValues")), // ReplacedDecisionValuesWeaveTest
 			Map.entry("CarrierDecisions", Switch.own("forbric.carrierDecisions")), // CarrierDecisionsWeaveTest
 			Map.entry("CarrierGuardedPoints", Switch.own("forbric.carrierGuardedPoints")), // CarrierGuardedPointsWeaveTest
@@ -149,7 +150,6 @@ class WeaveCoverageCensusTest {
 			Map.entry("MixinBlockInteractionAdapters", Switch.own("forbric.blockInteractionAdapters")),
 			Map.entry("MixinBlockQueryAdapters", Switch.own("forbric.blockQueryAdapters")),
 			Map.entry("MixinEntitySoundCallbackAdapter", Switch.own("forbric.entitySoundCallbacks")),
-			Map.entry("MixinBreathingCallbackAdapter", Switch.own("forbric.breathingCallbacks")),
 			Map.entry("MixinHudContextAdapter", Switch.own("forbric.hudContextCallbacks")),
 			// The injectors Mixin rejects outright, taken out at the end of getClassNode: MixinRefusedBindingWeaveTest.
 			Map.entry("GuestInjectorPruner", Switch.own("forbric.guestInjectorPruner.refused")),

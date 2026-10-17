@@ -1,0 +1,1 @@
+{"required": true, "package": "com.heron.snorkel.mixin", "compatibilityLevel": "JAVA_21", "mixins": ["WaderMixin", "SlimeMixin"], "injectors": {"defaultRequire": 1}}

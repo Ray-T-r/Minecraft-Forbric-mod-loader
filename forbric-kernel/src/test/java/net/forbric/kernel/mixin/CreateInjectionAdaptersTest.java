@@ -65,10 +65,10 @@ class CreateInjectionAdaptersTest {
         return node.methods.stream().filter(method->MixinCallbackShape.kind(method,"WrapOperation")&&MixinCallbackShape.plainPoint(method,"INVOKE","Lnet/minecraft/client/multiplayer/MultiPlayerGameMode;destroyBlock(Lnet/minecraft/core/BlockPos;)Z")
                 &&MixinFit.stringList(MixinFit.value(MixinFit.injectorOf(method),"method")).stream().anyMatch(selector->selector.contains("(Lnet/minecraft/world/level/block/state/BlockState;"))).findFirst().orElseThrow();
     }
-	@Test void nativeBreathingSoundAndHudScopesPreserveTheOriginalCallbacks()throws Exception{
-		var living=CreateGuestMixinFixture.mixin("com/zurrtum/create/mixin/LivingEntityMixin");assertEquals(2,MixinBreathingCallbackAdapter.adapt(living,CarpetMixinAdapterTest::target));assertEquals(1,MixinEntitySoundCallbackAdapter.adapt(living,CarpetMixinAdapterTest::target));CarpetMixinAdapterTest.verify(living);
+	@Test void nativeSoundAndHudScopesPreserveTheOriginalCallbacks()throws Exception{
+		var living=CreateGuestMixinFixture.mixin("com/zurrtum/create/mixin/LivingEntityMixin");assertEquals(1,MixinEntitySoundCallbackAdapter.adapt(living,CarpetMixinAdapterTest::target));CarpetMixinAdapterTest.verify(living);
 		var entity=CreateGuestMixinFixture.mixin("com/zurrtum/create/mixin/EntityMixin");assertEquals(1,MixinEntitySoundCallbackAdapter.adapt(entity,CarpetMixinAdapterTest::target));CarpetMixinAdapterTest.verify(entity);
 		var hud=CreateGuestMixinFixture.mixin("com/zurrtum/create/client/mixin/HudMixin");assertEquals(1,MixinHudContextAdapter.adapt(hud,CarpetMixinAdapterTest::target));CarpetMixinAdapterTest.verify(hud);
-		assertEquals(0,MixinBreathingCallbackAdapter.adapt(living,CarpetMixinAdapterTest::target));assertEquals(0,MixinEntitySoundCallbackAdapter.adapt(entity,CarpetMixinAdapterTest::target));assertEquals(0,MixinHudContextAdapter.adapt(hud,CarpetMixinAdapterTest::target));
+		assertEquals(0,MixinEntitySoundCallbackAdapter.adapt(entity,CarpetMixinAdapterTest::target));assertEquals(0,MixinHudContextAdapter.adapt(hud,CarpetMixinAdapterTest::target));
 	}
 }

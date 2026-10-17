@@ -98,43 +98,4 @@ class CallbackFramesTest {
 			HudContextCallbackScope.leave(first);
 		}
 	}
-
-	@Test void everyBreathingFrameRunsItsLavaCallbackAndWaterComposesLazily() {
-		List<String> trace = new ArrayList<>();
-		Object entity = "diver", level = "level";
-		// Each callback is shaped as the adapter writes one: the native answer arrives as args[1], its original.
-		Function<Object[], Object> lavaA = args -> { trace.add("lava-a"); return null; }, lavaB = args -> { trace.add("lava-b"); return null; };
-		Function<Object[], Object> waterOuter = args -> {
-			trace.add("water-outer");
-			return !(Boolean) CallbackFrames.Deferred.resolve(args[1]);   // the handler calls its original, then negates it
-		};
-		Function<Object[], Object> waterInner = args -> {
-			trace.add("water-inner:" + args[1]);
-			assertInstanceOf(Boolean.class, args[1], "the innermost frame is handed the native answer itself");
-			return Boolean.TRUE.equals(args[1]) || entity.equals(args[0]);
-		};
-		Object first = BreathingCallbackScope.enter(lavaA, waterOuter);
-		Object second = BreathingCallbackScope.enter(lavaB, waterInner);
-		try {
-			BreathingCallbackScope.lava(entity, level);
-			assertEquals(List.of("lava-a", "lava-b"), trace, "every mod's lava callback runs, outermost first");
-			trace.clear();
-			assertFalse(BreathingCallbackScope.water(entity, false, level));
-			assertEquals(List.of("water-outer", "water-inner:false"), trace);
-		} finally {
-			BreathingCallbackScope.leave(second);
-			BreathingCallbackScope.leave(first);
-		}
-		trace.clear();
-		Object skipping = BreathingCallbackScope.enter(args -> null, args -> { trace.add("skips"); return Boolean.TRUE; });
-		Object inner = BreathingCallbackScope.enter(args -> null, args -> { trace.add("inner ran"); return Boolean.FALSE; });
-		try {
-			assertTrue(BreathingCallbackScope.water(entity, false, level));
-			assertEquals(List.of("skips"), trace, "an outer handler that never asks keeps the inner one from running");
-		} finally {
-			BreathingCallbackScope.leave(inner);
-			BreathingCallbackScope.leave(skipping);
-		}
-		assertTrue(BreathingCallbackScope.water(entity, true, level), "no frame: the native answer");
-	}
 }

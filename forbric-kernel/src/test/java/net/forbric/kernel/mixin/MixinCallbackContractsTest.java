@@ -35,7 +35,6 @@ class MixinCallbackContractsTest {
             contracts.add(create("mixin/"+entry, "MixinBlockQueryAdapters",MixinBlockQueryAdapters::adapt, entry.equals("LivingEntityMixin")?2:1));
         for (var entry : Map.of("mixin/SignalGetterMixin",1,"mixin/EntityMixin",1,"client/mixin/MultiPlayerGameModeMixin",2,"mixin/ServerPlayerGameModeMixin",1).entrySet())
             contracts.add(create(entry.getKey(), "MixinBlockInteractionAdapters",MixinBlockInteractionAdapters::adapt, entry.getValue()));
-        contracts.add(create("mixin/LivingEntityMixin","MixinBreathingCallbackAdapter",MixinBreathingCallbackAdapter::adapt,2));
         contracts.add(create("mixin/LivingEntityMixin","MixinEntitySoundCallbackAdapter",MixinEntitySoundCallbackAdapter::adapt,1));
         contracts.add(create("mixin/EntityMixin","MixinEntitySoundCallbackAdapter",MixinEntitySoundCallbackAdapter::adapt,1));
         contracts.add(create("client/mixin/HudMixin","MixinHudContextAdapter",MixinHudContextAdapter::adapt,1));
