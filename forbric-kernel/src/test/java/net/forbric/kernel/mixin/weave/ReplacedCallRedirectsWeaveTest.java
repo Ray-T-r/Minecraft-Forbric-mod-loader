@@ -28,8 +28,10 @@ import net.forbric.kernel.mixin.ReplacedCallRedirects;
  *   <li>moved, the mod letting the call through — NeoForge is asked, in its own order, and the item stays in use;</li>
  *   <li>moved, on an old server — the handler sees the two stacks where vanilla put them, and the item is no longer
  *       in use;</li>
- *   <li>with {@code -Dforbric.replacedCallRedirects=off}, on an old server — the redirect binds nothing, NeoForge's
- *       answer stands, and the mod's required injector is reported lost.</li>
+ *   <li>with {@code -Dforbric.replacedCallRedirects=off}, on an old server — CarrierDecisions, which reads no table, moves
+ *       the same redirect onto the carrier's decision by its shape, with the same outcome;</li>
+ *   <li>with both switched off, on an old server — the redirect binds nothing, NeoForge's answer stands, and the mod's
+ *       required injector is reported lost.</li>
  * </ul>
  */
 class ReplacedCallRedirectsWeaveTest {
@@ -46,7 +48,7 @@ class ReplacedCallRedirectsWeaveTest {
 
 	@TempDir static Path work;
 	private static Path fixture;
-	private static WeaveHarness.Result moved, movedOld, offOld;
+	private static WeaveHarness.Result moved, movedOld, decidedOld, offOld;
 
 	@BeforeAll static void weaveThreeWays() throws Exception {
 		List<Path> sources;
@@ -62,7 +64,8 @@ class ReplacedCallRedirectsWeaveTest {
         fixture=NativeWeaveReferences.with(work,fixture,NativeWeaveReferences.classes(original));
 		moved = run("moved", Map.of());
 		movedOld = run("moved-old", Map.of(OLD_SERVER, "true"));
-		offOld = run("off-old", Map.of(OLD_SERVER, "true", ReplacedCallRedirects.PROPERTY, "off"));
+		decidedOld = run("decided-old", Map.of(OLD_SERVER, "true", ReplacedCallRedirects.PROPERTY, "off"));
+		offOld = run("off-old", Map.of(OLD_SERVER, "true", ReplacedCallRedirects.PROPERTY, "off", net.forbric.kernel.mixin.CarrierDecisions.PROPERTY, "off"));
 	}
 
 	@Test void letThroughNeoForgeIsAskedInItsOwnOrder() throws Exception {
@@ -75,6 +78,16 @@ class ReplacedCallRedirectsWeaveTest {
 	@Test void onAnOldServerTheHandlerSeesVanillasOrderAndStopsTheUse() throws Exception {
 		assertTrue(movedOldHolds(movedOld), movedOld.describe() + "\nfindings: " + movedOld.findings());
 		WeaveHarness.assertWovenAndVerified(movedOld, TARGET, fixture);
+	}
+
+	/** Without the table, the redirect is still moved: CarrierDecisions reads the same correspondence off the two bodies. */
+	@Test void withoutTheTableCarrierDecisionsMovesTheSameRedirectWithTheSameOutcome() throws Exception {
+		assertTrue(decidedOld.printedLine(OLD), decidedOld.describe());
+		assertTrue(decidedOld.printed("[Forbric/Mixin] com.example.oldserver.mixin.ItemUseMixin.sameStack: net.minecraft.world.item.ItemStack.isSameItem is no longer called"
+				+ " in net.minecraft.world.entity.LivingEntity.updatingUsingItem; the carrier decides in its place with net.neoforged.neoforge.common.CommonHooks.canContinueUsing"),
+				decidedOld.describe());
+		assertEquals(List.of(), losses(decidedOld), decidedOld.describe());
+		WeaveHarness.assertWovenAndVerified(decidedOld, TARGET, fixture);
 	}
 
 	@Test void switchedOffTheRedirectBindsNothingAndIsReported() throws Exception {
