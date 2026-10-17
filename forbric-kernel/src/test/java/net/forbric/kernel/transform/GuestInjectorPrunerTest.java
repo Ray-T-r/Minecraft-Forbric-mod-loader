@@ -288,6 +288,79 @@ class GuestInjectorPrunerTest {
 		assertSame(drifted, pruner().transform(MODEL_MANAGER_MIXIN, drifted, null));
 	}
 
+	/**
+	 * The pair written another way is the same pair: the redirect drops the parse through a local, the argument modifier
+	 * keeps the deserialized model in two locals before returning it. Read by data flow, both are recognised and pruned.
+	 */
+	@Test
+	void thePairWrittenAnotherWayIsPrunedTheSame() throws Exception {
+		ClassNode node = read(realMixin());
+		rewrite(method(node, "cancelVanillaDeserialize"), code -> {
+			code.add(new org.objectweb.asm.tree.InsnNode(Opcodes.ACONST_NULL));
+			code.add(new org.objectweb.asm.tree.VarInsnNode(Opcodes.ASTORE, 1));
+			code.add(new org.objectweb.asm.tree.VarInsnNode(Opcodes.ALOAD, 1));
+			code.add(new org.objectweb.asm.tree.InsnNode(Opcodes.ARETURN));
+		});
+		org.objectweb.asm.tree.MethodInsnNode deserialize = firstCall(method(node, "actuallyDeserializeModel"));
+		rewrite(method(node, "actuallyDeserializeModel"), code -> {
+			code.add(new org.objectweb.asm.tree.VarInsnNode(Opcodes.ALOAD, 1));
+			code.add(new org.objectweb.asm.tree.MethodInsnNode(Opcodes.INVOKESTATIC, deserialize.owner, deserialize.name, deserialize.desc, false));
+			code.add(new org.objectweb.asm.tree.VarInsnNode(Opcodes.ASTORE, 2));
+			code.add(new org.objectweb.asm.tree.VarInsnNode(Opcodes.ALOAD, 2));
+			code.add(new org.objectweb.asm.tree.VarInsnNode(Opcodes.ASTORE, 3));
+			code.add(new org.objectweb.asm.tree.VarInsnNode(Opcodes.ALOAD, 3));
+			code.add(new org.objectweb.asm.tree.InsnNode(Opcodes.ARETURN));
+		});
+		byte[] rewritten = write(node);
+		ClassNode after = read(pruner().transform(MODEL_MANAGER_MIXIN, rewritten, null));
+		for (String gone : PRUNED) assertEquals(null, method(after, gone), gone + " written another way must still be pruned");
+	}
+
+	/** A redirect that does something besides dropping the parse is not the pair: both stay, as written. */
+	@Test
+	void aRedirectWithASideEffectIsNotThePair() throws Exception {
+		ClassNode node = read(realMixin());
+		rewrite(method(node, "cancelVanillaDeserialize"), code -> {
+			code.add(new org.objectweb.asm.tree.VarInsnNode(Opcodes.ALOAD, 0));
+			code.add(new org.objectweb.asm.tree.MethodInsnNode(Opcodes.INVOKEVIRTUAL, "java/io/Reader", "close", "()V", false));
+			code.add(new org.objectweb.asm.tree.InsnNode(Opcodes.ACONST_NULL));
+			code.add(new org.objectweb.asm.tree.InsnNode(Opcodes.ARETURN));
+		});
+		byte[] rewritten = write(node);
+		assertSame(rewritten, pruner().transform(MODEL_MANAGER_MIXIN, rewritten, null));
+	}
+
+	/** An argument modifier that deserializes some other Reader than the captured one is not the pair either. */
+	@Test
+	void aModifierDeserializingAnotherReaderIsNotThePair() throws Exception {
+		ClassNode node = read(realMixin());
+		org.objectweb.asm.tree.MethodInsnNode deserialize = firstCall(method(node, "actuallyDeserializeModel"));
+		rewrite(method(node, "actuallyDeserializeModel"), code -> {
+			code.add(new org.objectweb.asm.tree.TypeInsnNode(Opcodes.NEW, "java/io/StringReader"));
+			code.add(new org.objectweb.asm.tree.InsnNode(Opcodes.DUP));
+			code.add(new org.objectweb.asm.tree.LdcInsnNode("{}"));
+			code.add(new org.objectweb.asm.tree.MethodInsnNode(Opcodes.INVOKESPECIAL, "java/io/StringReader", "<init>", "(Ljava/lang/String;)V", false));
+			code.add(new org.objectweb.asm.tree.MethodInsnNode(Opcodes.INVOKESTATIC, deserialize.owner, deserialize.name, deserialize.desc, false));
+			code.add(new org.objectweb.asm.tree.InsnNode(Opcodes.ARETURN));
+		});
+		byte[] rewritten = write(node);
+		assertSame(rewritten, pruner().transform(MODEL_MANAGER_MIXIN, rewritten, null));
+	}
+
+	private static void rewrite(MethodNode method, java.util.function.Consumer<org.objectweb.asm.tree.InsnList> body) {
+		method.instructions.clear();
+		method.tryCatchBlocks.clear();
+		method.localVariables = null;
+		body.accept(method.instructions);
+		method.maxLocals = 6;
+		method.maxStack = 4;
+	}
+
+	private static org.objectweb.asm.tree.MethodInsnNode firstCall(MethodNode method) {
+		for (var instruction : method.instructions) if (instruction instanceof org.objectweb.asm.tree.MethodInsnNode call) return call;
+		throw new AssertionError(method.name + " calls nothing");
+	}
+
 	@Test
 	void aSecondPassChangesNothingFurther() throws Exception {
 		GuestInjectorPruner pruner = pruner();

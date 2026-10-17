@@ -150,17 +150,12 @@ public final class GuestInjectorPruner implements ClassTransformer {
         for(MethodNode method:node.methods) {
             AnnotationNode inject=net.forbric.kernel.mixin.MixinFit.injectorOf(method);if(inject==null)continue;
             if(allAnnotations(method).stream().anyMatch(annotation->annotation.desc.equals("Lorg/spongepowered/asm/mixin/injection/Group;")))continue;
-            List<org.objectweb.asm.tree.AbstractInsnNode> body=code(method);
             if(inject.desc.equals("Lorg/spongepowered/asm/mixin/injection/Redirect;") && method.desc.equals("(Ljava/io/Reader;)Lnet/minecraft/client/resources/model/cuboid/CuboidModel;")
-                    && body.size()==2&&body.get(0).getOpcode()==org.objectweb.asm.Opcodes.ACONST_NULL&&body.get(1).getOpcode()==org.objectweb.asm.Opcodes.ARETURN
-                    && point(inject,FROM_STREAM)) {
+                    && BodyFlow.returnsOnlyNull(node.name,method) && point(inject,FROM_STREAM)) {
                 if(redirect!=null)return null;redirect=method;
             }
             if(inject.desc.equals("Lorg/spongepowered/asm/mixin/injection/ModifyArg;")&&method.desc.equals("(Ljava/lang/Object;Ljava/io/Reader;)Ljava/lang/Object;")
-                    &&body.size()==3&&body.get(0) instanceof org.objectweb.asm.tree.VarInsnNode reader&&reader.getOpcode()==org.objectweb.asm.Opcodes.ALOAD&&reader.var==1
-                    &&body.get(1) instanceof org.objectweb.asm.tree.MethodInsnNode parse&&parse.getOpcode()==org.objectweb.asm.Opcodes.INVOKESTATIC
-                    &&parse.owner.equals(MODEL_DESERIALIZER)&&parse.name.equals("deserialize")
-                    &&parse.desc.equals("(Ljava/io/Reader;)Lnet/minecraft/client/resources/model/UnbakedModel;")&&body.get(2).getOpcode()==org.objectweb.asm.Opcodes.ARETURN
+                    &&BodyFlow.returnsOnlyCallOf(node.name,method,MODEL_DESERIALIZER,"deserialize","(Ljava/io/Reader;)Lnet/minecraft/client/resources/model/UnbakedModel;",1)
                     &&Integer.valueOf(1).equals(net.forbric.kernel.mixin.MixinFit.value(inject,"index"))
                     &&point(inject,PAIR_OF)) {
                 if(argument!=null)return null;argument=method;
@@ -172,6 +167,95 @@ public final class GuestInjectorPruner implements ClassTransformer {
                 ||!argument.invisibleParameterAnnotations[1].getFirst().desc.equals("Lcom/llamalad7/mixinextras/sugar/Local;"))return null;
         return new Group("reader-deserializer",List.of(redirect,argument));
     }
+    /**
+     * What a callback body does, read by its data flow rather than by its instruction count: so the same callback written
+     * another way (through a local, with a cast, split over branches) is the same callback, and one that also does anything
+     * else is not.
+     */
+    static final class BodyFlow {
+        private BodyFlow(){}
+        /** Every return yields the null constant, and the body calls nothing and writes no field or array. */
+        static boolean returnsOnlyNull(String owner,MethodNode method){
+            var frames=frames(owner,method);if(frames==null||!sideEffectFree(method,null))return false;
+            boolean returns=false;
+            for(int i=0;i<method.instructions.size();i++){
+                var instruction=method.instructions.get(i);
+                if(instruction.getOpcode()!=org.objectweb.asm.Opcodes.ARETURN)continue;returns=true;
+                var frame=frames[i];if(frame==null)continue;
+                for(var producer:origins(method,frames,frame.getStack(frame.getStackSize()-1)))
+                    if(producer.getOpcode()!=org.objectweb.asm.Opcodes.ACONST_NULL)return false;
+            }
+            return returns;
+        }
+        /**
+         * Every return yields the result of one static call of {@code owner.name desc} whose only argument is the method's
+         * parameter {@code parameter} untouched, and the body calls nothing else and writes no field or array.
+         */
+        static boolean returnsOnlyCallOf(String mixin,MethodNode method,String owner,String name,String desc,int parameter){
+            var frames=frames(mixin,method);
+            java.util.function.Predicate<org.objectweb.asm.tree.MethodInsnNode> allowed=call->call.getOpcode()==org.objectweb.asm.Opcodes.INVOKESTATIC
+                    &&call.owner.equals(owner)&&call.name.equals(name)&&call.desc.equals(desc);
+            if(frames==null||!sideEffectFree(method,allowed))return false;
+            boolean returns=false;
+            for(int i=0;i<method.instructions.size();i++){
+                var instruction=method.instructions.get(i);
+                if(instruction.getOpcode()!=org.objectweb.asm.Opcodes.ARETURN)continue;returns=true;
+                var frame=frames[i];if(frame==null)continue;
+                for(var producer:origins(method,frames,frame.getStack(frame.getStackSize()-1))){
+                    if(!(producer instanceof org.objectweb.asm.tree.MethodInsnNode call)||!allowed.test(call))return false;
+                    var at=frames[method.instructions.indexOf(call)];if(at==null)return false;
+                    for(var argument:origins(method,frames,at.getStack(at.getStackSize()-1)))
+                        if(!(argument instanceof Parameter p)||p.index!=parameter)return false;
+                }
+            }
+            return returns;
+        }
+        /** No call but the {@code allowed} ones (none when null), no field, array or monitor write, no throw. */
+        private static boolean sideEffectFree(MethodNode method,java.util.function.Predicate<org.objectweb.asm.tree.MethodInsnNode> allowed){
+            if(!method.tryCatchBlocks.isEmpty())return false;
+            for(var instruction:method.instructions){
+                int opcode=instruction.getOpcode();
+                if(instruction instanceof org.objectweb.asm.tree.MethodInsnNode call){if(allowed==null||!allowed.test(call))return false;}
+                else if(instruction instanceof org.objectweb.asm.tree.InvokeDynamicInsnNode)return false;
+                else if(opcode==org.objectweb.asm.Opcodes.PUTFIELD||opcode==org.objectweb.asm.Opcodes.PUTSTATIC||opcode>=org.objectweb.asm.Opcodes.IASTORE&&opcode<=org.objectweb.asm.Opcodes.SASTORE
+                        ||opcode==org.objectweb.asm.Opcodes.MONITORENTER||opcode==org.objectweb.asm.Opcodes.MONITOREXIT||opcode==org.objectweb.asm.Opcodes.ATHROW)return false;
+            }
+            return true;
+        }
+        /** The instructions that made a value, past local stores and loads, stack copies and casts; a parameter is a {@link Parameter}. */
+        private static java.util.Set<org.objectweb.asm.tree.AbstractInsnNode> origins(MethodNode method,
+                org.objectweb.asm.tree.analysis.Frame<org.objectweb.asm.tree.analysis.SourceValue>[] frames,org.objectweb.asm.tree.analysis.SourceValue value){
+            java.util.Set<org.objectweb.asm.tree.AbstractInsnNode> out=java.util.Collections.newSetFromMap(new java.util.IdentityHashMap<>());
+            java.util.Set<org.objectweb.asm.tree.AbstractInsnNode> seen=java.util.Collections.newSetFromMap(new java.util.IdentityHashMap<>());
+            java.util.ArrayDeque<org.objectweb.asm.tree.AbstractInsnNode> pending=new java.util.ArrayDeque<>(value.insns);
+            while(!pending.isEmpty()){
+                var producer=pending.pop();if(!seen.add(producer))continue;
+                int opcode=producer.getOpcode(),index=method.instructions.indexOf(producer);
+                var frame=index<0?null:frames[index];
+                if(producer instanceof Parameter){out.add(producer);continue;}
+                boolean copy=opcode>=org.objectweb.asm.Opcodes.ILOAD&&opcode<=org.objectweb.asm.Opcodes.ALOAD||opcode>=org.objectweb.asm.Opcodes.ISTORE&&opcode<=org.objectweb.asm.Opcodes.ASTORE
+                        ||opcode==org.objectweb.asm.Opcodes.DUP||opcode==org.objectweb.asm.Opcodes.CHECKCAST;
+                if(!copy||frame==null){out.add(producer);continue;}
+                if(producer instanceof org.objectweb.asm.tree.VarInsnNode load&&opcode<=org.objectweb.asm.Opcodes.ALOAD)pending.addAll(frame.getLocal(load.var).insns);
+                else pending.addAll(frame.getStack(frame.getStackSize()-1).insns);
+            }
+            return out;
+        }
+        /** A parameter's value, standing for itself in the data flow. */
+        private static final class Parameter extends org.objectweb.asm.tree.InsnNode {
+            final int index;Parameter(int index){super(org.objectweb.asm.Opcodes.NOP);this.index=index;}
+        }
+        private static org.objectweb.asm.tree.analysis.Frame<org.objectweb.asm.tree.analysis.SourceValue>[] frames(String owner,MethodNode method){
+            try{
+                return new org.objectweb.asm.tree.analysis.Analyzer<>(new org.objectweb.asm.tree.analysis.SourceInterpreter(org.objectweb.asm.Opcodes.ASM9){
+                    @Override public org.objectweb.asm.tree.analysis.SourceValue newParameterValue(boolean isInstance,int local,org.objectweb.asm.Type type){
+                        return new org.objectweb.asm.tree.analysis.SourceValue(type.getSize(),new Parameter(local));
+                    }
+                }).analyze(owner,method);
+            }catch(org.objectweb.asm.tree.analysis.AnalyzerException|RuntimeException unreadable){return null;}
+        }
+    }
+
     /** The injector's one {@code @At}. */
     private static AnnotationNode onlyAt(MethodNode method){return net.forbric.kernel.mixin.MixinFit.atNodes(net.forbric.kernel.mixin.MixinFit.injectorOf(method)).getFirst();}
     /** One unshifted INVOKE point, without a slice, whose target can name {@code member} however it is spelled. */
