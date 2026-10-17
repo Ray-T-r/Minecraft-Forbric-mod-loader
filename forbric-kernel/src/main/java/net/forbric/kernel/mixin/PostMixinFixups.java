@@ -82,6 +82,8 @@ public final class PostMixinFixups {
 		bytes = MixinFieldInitialiserPlacement.repair(bytes, NativeGameReferences::reference, MixinStubRebind::ecosystemOf);
 		if (GUI_RENDERER.equals(internal)) return seedOrphanedPipRenderers(bytes);
 		if (MAPPED_REGISTRY.equals(internal)) bytes = askTheRegistryWhetherAnAliasTargetExists(bytes);
+		// The fuel table a native build hands its caller, after every return hook (FabricFuelValuesInjector.afterMixin).
+		bytes = net.forbric.kernel.transform.FabricFuelValuesInjector.afterMixin(internal, bytes);
 		return replayDelegatedConstructorInjections(internal, bytes);
 	}
 

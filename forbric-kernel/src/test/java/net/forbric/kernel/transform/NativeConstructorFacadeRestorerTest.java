@@ -30,6 +30,8 @@ class NativeConstructorFacadeRestorerTest {
    MethodNode original=method(parse(z.getInputStream(z.getEntry("META-INF/forbric/native-reference/FABRIC/"+owner+".class.bin")).readAllBytes()),wrapper.name,wrapper.desc);assertEquals(MixinInstructionFingerprint.hash(original),MixinInstructionFingerprint.hash(wrapper));
    byte[] shorted=new FabricFuelValuesInjector().transform(owner.replace('/','.'),result,null);MethodNode scoped=method(parse(shorted),wrapper.name,wrapper.desc);assertTrue(Arrays.stream(scoped.instructions.toArray()).anyMatch(i->i instanceof MethodInsnNode c&&c.name.equals("takePending")));
    MethodNode closure=node.methods.stream().filter(m->m.name.equals(wrapper.name)&&Type.getArgumentTypes(m.desc).length==2&&m.desc.contains("$Builder;")).findFirst().orElseThrow();assertFalse(Arrays.stream(closure.instructions.toArray()).anyMatch(i->i instanceof MethodInsnNode c&&c.name.equals("takePending")));
+   // The carry brackets the native point in both copies of vanilla's body: the restored facade, where the guests bind, and the closure.
+   for(MethodNode copy:List.of(scoped,method(parse(shorted),closure.name,closure.desc)))assertTrue(Arrays.stream(copy.instructions.toArray()).anyMatch(i->i instanceof MethodInsnNode c&&c.name.equals("openNativePoint")),copy.name+copy.desc);
   }
  }
  private static Map<String,byte[]> resources(byte[] reference)throws Exception{return Map.of("META-INF/forbric/native-reference/FABRIC/index.tsv",("# forbric-native-reference-v1\nfixture/Facade\t"+HexFormat.of().formatHex(java.security.MessageDigest.getInstance("SHA-256").digest(reference))+"\n").getBytes(java.nio.charset.StandardCharsets.UTF_8),"META-INF/forbric/native-reference/FABRIC/fixture/Facade.class.bin",reference);}

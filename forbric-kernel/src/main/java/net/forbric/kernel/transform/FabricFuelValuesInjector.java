@@ -39,11 +39,32 @@ import org.objectweb.asm.tree.VarInsnNode;
  * only while it is a pure forward, and moves Fabric injectors into the body by that recognition. It jumps to the
  * body's single {@code areturn} rather than adding a return of its own, so a RETURN or TAIL injector there — whatever
  * its ordinal — runs on both paths. {@code -Dforbric.fabricFuel.returnHooks=off} leaves both methods without it.
+ *
+ * <p>The third half is the client's second table. A client on a NeoForge connection builds vanilla's table — where the
+ * guest's own wrap fires the fuel events and every return hook runs — and right after it NeoForge's from the synced data
+ * map, which it keeps; going through {@code populateFuelValues} there fired every listener and every return hook a
+ * second time per native build. So the native build reports what it did and the data-map table built from the same
+ * registries gets that instead ({@code KernelFabricFuel}'s class comment has the rule): the native point in vanilla's
+ * body — its {@code Builder.remove(TagKey)} right before {@code build()}, the call fabric-content-registries wraps — is
+ * bracketed by {@code openNativePoint}/{@code closeNativePoint}, the body's built table goes through
+ * {@code nativeBuilt}, every public mutator of {@code FuelValues.Builder} reports its call ({@code recordCall}) and its
+ * registries constructor the registries ({@code builderMade}); after weaving, the two-argument overload reports entering
+ * and the table it returns ({@link #afterMixin}). All of it is keyed on the platform classes' own shapes, not on any
+ * mod. {@code -Dforbric.fabricFuel.carry=off} leaves vanilla's body, the builder and the overload without it, and the
+ * data-map table is handed everything again.
  */
 public final class FabricFuelValuesInjector implements ClassTransformer {
 	public static final String PROPERTY = "forbric.fabricFuel";
 	/** Mirrors {@code KernelFabricFuel.RETURN_HOOKS}, which the game side reads; the boot side cannot name it. */
 	public static final String RETURN_HOOKS_PROPERTY = "forbric.fabricFuel.returnHooks";
+	/** Mirrors {@code KernelFabricFuel.CARRY}. */
+	public static final String CARRY_PROPERTY = "forbric.fabricFuel.carry";
+	static final String BUILDER_CLASS = "net.minecraft.world.level.block.entity.FuelValues$Builder";
+	static final String TAG_KEY = "net/minecraft/tags/TagKey";
+	static final String PROVIDER = "net/minecraft/core/HolderLookup$Provider";
+	/** The two-argument overload native clients and servers call; it forwards to the three-argument one. */
+	static final String OUTER_DESC = "(L" + PROVIDER + ";Lnet/minecraft/world/flag/FeatureFlagSet;)L"
+			+ "net/minecraft/world/level/block/entity/FuelValues;";
 	static final String HOOKS = "net.neoforged.neoforge.common.DataMapHooks";
 	static final String FUEL_VALUES_CLASS = "net.minecraft.world.level.block.entity.FuelValues";
 	static final String FUEL_VALUES = "net/minecraft/world/level/block/entity/FuelValues";
@@ -66,23 +87,33 @@ public final class FabricFuelValuesInjector implements ClassTransformer {
 		return enabled() && !"off".equalsIgnoreCase(System.getProperty(RETURN_HOOKS_PROPERTY, "on"));
 	}
 
+	static boolean carryEnabled() {
+		return enabled() && !"off".equalsIgnoreCase(System.getProperty(CARRY_PROPERTY, "on"));
+	}
+
 	@Override public String name() { return "forbric-fabric-fuel"; }
 
 	@Override public AnchorSet anchors() {
 		if (!enabled()) return AnchorSet.scanned("Fabric fuels left out of NeoForge's fuel values with -D" + PROPERTY + "=off");
 		List<AnchorSet.Anchor> anchors = new ArrayList<>(List.of(new AnchorSet.Anchor(HOOKS, AnchorSet.Severity.REQUIRED,
 				"a Fabric mod's fuels cannot go in a furnace")));
-		if (returnHooksEnabled()) {
+		if (returnHooksEnabled() || carryEnabled()) {
 			anchors.add(new AnchorSet.Anchor(FUEL_VALUES_CLASS, AnchorSet.Severity.REQUIRED,
 					"a mod's mixin on vanillaBurnTimes' return (torrential's Angling Table fuel) never reaches the fuel "
-							+ "values the merged server uses"));
+							+ "values the merged server uses, or runs twice per native build on a client"));
+		}
+		if (carryEnabled()) {
+			anchors.add(new AnchorSet.Anchor(BUILDER_CLASS, AnchorSet.Severity.REQUIRED,
+					"a client's data-map fuel table fires a Fabric mod's fuel events and return hooks a second time per "
+							+ "native build"));
 		}
 		return AnchorSet.of(anchors.toArray(new AnchorSet.Anchor[0]));
 	}
 
 	@Override public byte[] transform(String className, byte[] bytes, TransformContext context) {
 		if (!enabled() || bytes == null || bytes.length == 0) return bytes;
-		if (FUEL_VALUES_CLASS.equals(className)) return shortCircuitTheBody(bytes);
+		if (FUEL_VALUES_CLASS.equals(className)) return bracketTheNativePoint(shortCircuitTheBody(bytes));
+		if (BUILDER_CLASS.equals(className)) return reportTheBuildersCalls(bytes);
 		if (!HOOKS.equals(className)) return bytes;
 		ClassNode node = new ClassNode();
 		new ClassReader(bytes).accept(node, 0);
@@ -170,15 +201,18 @@ public final class FabricFuelValuesInjector implements ClassTransformer {
 		if (body == null || !forwarded && !fromEntry) return bytes;
 		AbstractInsnNode exit = null;
 		for (AbstractInsnNode insn : body.instructions) {
-			if (insn instanceof MethodInsnNode call && call.owner.equals(KERNEL_FUEL)) return bytes;   // already in
+			if (insn instanceof MethodInsnNode call && call.owner.equals(KERNEL_FUEL) && call.name.equals("takePending")) return bytes;   // already in
 			if (insn.getOpcode() == Opcodes.ARETURN) {
 				if (exit != null) return bytes;
 				exit = insn;
 			}
 			if (insn.getOpcode() >= Opcodes.IRETURN && insn.getOpcode() <= Opcodes.RETURN && insn.getOpcode() != Opcodes.ARETURN) return bytes;
 		}
-		if (exit == null || !(realPrevious(exit) instanceof MethodInsnNode built) || !built.owner.equals(BUILDER)
-				|| !built.name.equals("build")) return bytes;
+		AbstractInsnNode beforeExit = exit == null ? null : realPrevious(exit);
+		if (beforeExit instanceof MethodInsnNode reported && reported.owner.equals(KERNEL_FUEL) && reported.name.equals("nativeBuilt")) {
+			beforeExit = realPrevious(reported);   // the carry's report sits between the build and the return
+		}
+		if (!(beforeExit instanceof MethodInsnNode built) || !built.owner.equals(BUILDER) || !built.name.equals("build")) return bytes;
 
 		LabelNode join = new LabelNode();
 		InsnList head = new InsnList();
@@ -209,6 +243,172 @@ public final class FabricFuelValuesInjector implements ClassTransformer {
 				+ "hands it instead of rebuilding vanilla's, so the return hooks of both vanillaBurnTimes run on the table "
 				+ "the merged server uses", body.name, body.desc);
 		return writer.toByteArray();
+	}
+
+	/**
+	 * Brackets the native point in vanilla's body: {@code openNativePoint(builder, argument, member)} right before its one
+	 * {@code Builder.remove(TagKey)} that is followed straight by {@code build()}, {@code closeNativePoint} on what that
+	 * call returns, and {@code nativeBuilt} on what {@code build()} returns — before the body's return, so before any
+	 * return hook Mixin puts there, and before the short-circuit's join, so a pending table never goes through it.
+	 *
+	 * <p>The remove call itself stays exactly as shipped, so a guest's {@code @At(INVOKE)} on it — the wrap that fires the
+	 * fuel events — matches it as before; the bracket only duplicates its receiver and argument ahead of it. Every such
+	 * site is bracketed: where a native facade was restored ({@code NativeConstructorFacadeRestorer}) the class holds
+	 * vanilla's body twice — the facade, where the guests bind, and the merge-added closure — and which of them a guest's
+	 * wrap lands in is Mixin's business; each window lives for one call of the method it is in.
+	 */
+	static byte[] bracketTheNativePoint(byte[] bytes) {
+		if (!carryEnabled()) return bytes;
+		ClassNode node = new ClassNode();
+		new ClassReader(bytes).accept(node, 0);
+		String removeDesc = "(L" + TAG_KEY + ";)L" + BUILDER + ";";
+		List<MethodNode> sites = new ArrayList<>();
+		List<MethodInsnNode[]> calls = new ArrayList<>();
+		for (MethodNode method : node.methods) {
+			if ((method.access & Opcodes.ACC_STATIC) == 0) continue;
+			for (AbstractInsnNode insn : method.instructions) {
+				if (insn instanceof MethodInsnNode call && call.owner.equals(KERNEL_FUEL) && call.name.equals("openNativePoint")) return bytes;
+				if (!(insn instanceof MethodInsnNode call) || call.getOpcode() != Opcodes.INVOKEVIRTUAL || !call.owner.equals(BUILDER)
+						|| !call.name.equals("remove") || !call.desc.equals(removeDesc)) continue;
+				AbstractInsnNode next = realNext(call);
+				if (next instanceof MethodInsnNode built && built.getOpcode() == Opcodes.INVOKEVIRTUAL && built.owner.equals(BUILDER)
+						&& built.name.equals("build") && built.desc.equals("()L" + FUEL_VALUES + ";")) {
+					sites.add(method);
+					calls.add(new MethodInsnNode[] { call, built });
+				}
+			}
+		}
+		if (sites.isEmpty()) return bytes;
+		List<String> where = new ArrayList<>();
+		for (int i = 0; i < sites.size(); i++) {
+			MethodNode site = sites.get(i);
+			MethodInsnNode remove = calls.get(i)[0], build = calls.get(i)[1];
+			InsnList open = new InsnList();
+			open.add(new InsnNode(Opcodes.DUP2));
+			open.add(new org.objectweb.asm.tree.LdcInsnNode(remove.name + remove.desc));
+			open.add(new MethodInsnNode(Opcodes.INVOKESTATIC, KERNEL_FUEL, "openNativePoint",
+					"(L" + BUILDER + ";Ljava/lang/Object;Ljava/lang/String;)V", false));
+			site.instructions.insertBefore(remove, open);
+			site.instructions.insert(remove, new MethodInsnNode(Opcodes.INVOKESTATIC, KERNEL_FUEL, "closeNativePoint",
+					"(L" + BUILDER + ";)L" + BUILDER + ";", false));
+			site.instructions.insert(build, new MethodInsnNode(Opcodes.INVOKESTATIC, KERNEL_FUEL, "nativeBuilt",
+					"(L" + FUEL_VALUES + ";)L" + FUEL_VALUES + ";", false));
+			where.add(site.name + site.desc);
+		}
+		ClassWriter writer = new ClassWriter(ClassWriter.COMPUTE_MAXS);
+		node.accept(writer);
+		ForbricLog.info("[Forbric/Fuel] FuelValues reports the call at its native point (Builder.remove before build()) and the "
+				+ "table it builds in %s, so a client's data-map fuel table gets that build's fuel events and return hooks instead "
+				+ "of a second run", where);
+		return writer.toByteArray();
+	}
+
+	/**
+	 * Every public mutator of {@code FuelValues.Builder} — an instance method returning the builder — reports its call
+	 * ({@code recordCall(this, name + descriptor, arguments)}) at its head, and the constructor that takes the registries
+	 * reports them ({@code builderMade(this, registries)}) where it returns.
+	 */
+	static byte[] reportTheBuildersCalls(byte[] bytes) {
+		if (!carryEnabled()) return bytes;
+		ClassNode node = new ClassNode();
+		new ClassReader(bytes).accept(node, 0);
+		if (!node.name.equals(BUILDER)) return bytes;
+		int mutators = 0, constructors = 0;
+		for (MethodNode method : node.methods) {
+			for (AbstractInsnNode insn : method.instructions) {
+				if (insn instanceof MethodInsnNode call && call.owner.equals(KERNEL_FUEL)) return bytes;   // already in
+			}
+		}
+		for (MethodNode method : node.methods) {
+			if (method.name.equals("<init>") && method.desc.startsWith("(L" + PROVIDER + ";")) {
+				for (AbstractInsnNode insn : method.instructions.toArray()) {
+					if (insn.getOpcode() != Opcodes.RETURN) continue;
+					InsnList made = new InsnList();
+					made.add(new VarInsnNode(Opcodes.ALOAD, 0));
+					made.add(new VarInsnNode(Opcodes.ALOAD, 1));
+					made.add(new MethodInsnNode(Opcodes.INVOKESTATIC, KERNEL_FUEL, "builderMade", "(L" + BUILDER + ";Ljava/lang/Object;)V", false));
+					method.instructions.insertBefore(insn, made);
+				}
+				constructors++;
+				continue;
+			}
+			if ((method.access & (Opcodes.ACC_PUBLIC | Opcodes.ACC_STATIC | Opcodes.ACC_SYNTHETIC | Opcodes.ACC_BRIDGE)) != Opcodes.ACC_PUBLIC
+					|| method.name.startsWith("<") || !org.objectweb.asm.Type.getReturnType(method.desc).getDescriptor().equals("L" + BUILDER + ";")) continue;
+			org.objectweb.asm.Type[] arguments = org.objectweb.asm.Type.getArgumentTypes(method.desc);
+			InsnList report = new InsnList();
+			report.add(new VarInsnNode(Opcodes.ALOAD, 0));
+			report.add(new org.objectweb.asm.tree.LdcInsnNode(method.name + method.desc));
+			report.add(new org.objectweb.asm.tree.LdcInsnNode(arguments.length));
+			report.add(new TypeInsnNode(Opcodes.ANEWARRAY, "java/lang/Object"));
+			int slot = 1;
+			for (int i = 0; i < arguments.length; i++) {
+				report.add(new InsnNode(Opcodes.DUP));
+				report.add(new org.objectweb.asm.tree.LdcInsnNode(i));
+				report.add(new VarInsnNode(arguments[i].getOpcode(Opcodes.ILOAD), slot));
+				box(report, arguments[i]);
+				report.add(new InsnNode(Opcodes.AASTORE));
+				slot += arguments[i].getSize();
+			}
+			report.add(new MethodInsnNode(Opcodes.INVOKESTATIC, KERNEL_FUEL, "recordCall",
+					"(L" + BUILDER + ";Ljava/lang/String;[Ljava/lang/Object;)V", false));
+			method.instructions.insert(report);
+			mutators++;
+		}
+		if (constructors == 0 || mutators == 0) return bytes;
+		ClassWriter writer = new ClassWriter(ClassWriter.COMPUTE_MAXS);
+		node.accept(writer);
+		return writer.toByteArray();
+	}
+
+	/**
+	 * After weaving: the two-argument {@code vanillaBurnTimes} — what native clients and servers call — reports entering
+	 * at its head and the table it hands its caller right before each of its returns, so after every return hook Mixin put
+	 * in any of the three overloads. Called on the woven bytes of every class; edits only that method of
+	 * {@code FuelValues}.
+	 */
+	public static byte[] afterMixin(String internalName, byte[] bytes) {
+		if (bytes == null || !FUEL_VALUES.equals(internalName) || !carryEnabled()) return bytes;
+		ClassNode node = new ClassNode();
+		new ClassReader(bytes).accept(node, 0);
+		MethodNode outer = node.methods.stream().filter(m -> m.name.equals("vanillaBurnTimes") && m.desc.equals(OUTER_DESC)
+				&& (m.access & Opcodes.ACC_STATIC) != 0).findFirst().orElse(null);
+		if (outer == null) return bytes;
+		for (AbstractInsnNode insn : outer.instructions) {
+			if (insn instanceof MethodInsnNode call && call.owner.equals(KERNEL_FUEL) && call.name.equals("outerEntered")) return bytes;
+		}
+		int returns = 0;
+		for (AbstractInsnNode insn : outer.instructions.toArray()) {
+			if (insn.getOpcode() != Opcodes.ARETURN) continue;
+			outer.instructions.insertBefore(insn, new MethodInsnNode(Opcodes.INVOKESTATIC, KERNEL_FUEL, "outerReturned",
+					"(L" + FUEL_VALUES + ";)L" + FUEL_VALUES + ";", false));
+			returns++;
+		}
+		if (returns == 0) return bytes;
+		outer.instructions.insert(new MethodInsnNode(Opcodes.INVOKESTATIC, KERNEL_FUEL, "outerEntered", "()V", false));
+		ClassWriter writer = new ClassWriter(ClassWriter.COMPUTE_MAXS);
+		node.accept(writer);
+		return writer.toByteArray();
+	}
+
+	private static void box(InsnList list, org.objectweb.asm.Type type) {
+		String owner = switch (type.getSort()) {
+			case org.objectweb.asm.Type.BOOLEAN -> "java/lang/Boolean";
+			case org.objectweb.asm.Type.BYTE -> "java/lang/Byte";
+			case org.objectweb.asm.Type.CHAR -> "java/lang/Character";
+			case org.objectweb.asm.Type.SHORT -> "java/lang/Short";
+			case org.objectweb.asm.Type.INT -> "java/lang/Integer";
+			case org.objectweb.asm.Type.FLOAT -> "java/lang/Float";
+			case org.objectweb.asm.Type.LONG -> "java/lang/Long";
+			case org.objectweb.asm.Type.DOUBLE -> "java/lang/Double";
+			default -> null;
+		};
+		if (owner != null) list.add(new MethodInsnNode(Opcodes.INVOKESTATIC, owner, "valueOf", "(" + type.getDescriptor() + ")L" + owner + ";", false));
+	}
+
+	private static AbstractInsnNode realNext(AbstractInsnNode insn) {
+		AbstractInsnNode next = insn.getNext();
+		while (next != null && next.getOpcode() < 0) next = next.getNext();
+		return next;
 	}
 
 	/** Follow the actual native entry through its own unambiguous forwarding chain; a restored facade may

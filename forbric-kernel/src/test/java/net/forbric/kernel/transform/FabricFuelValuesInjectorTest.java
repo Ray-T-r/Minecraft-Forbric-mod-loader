@@ -49,6 +49,7 @@ class FabricFuelValuesInjectorTest {
 	@AfterEach void reset() {
 		System.clearProperty(FabricFuelValuesInjector.PROPERTY);
 		System.clearProperty(FabricFuelValuesInjector.RETURN_HOOKS_PROPERTY);
+		System.clearProperty(FabricFuelValuesInjector.CARRY_PROPERTY);
 	}
 
 	@Test void theBuilderGoesThroughFabricRightBeforeItIsBuiltAndTheTableThroughTheReturnHooksAfter() throws Exception {
@@ -71,7 +72,66 @@ class FabricFuelValuesInjectorTest {
 		assertEquals(List.of("apply", "build"), calls.subList(calls.size() - 2, calls.size()));
 		assertFalse(calls.contains("throughVanillaReturnHooks"));
 		byte[] fuel = NativeCoremodParityTest.read(MERGED, FUEL_VALUES);
+		byte[] bracketed = new FabricFuelValuesInjector().transform(FabricFuelValuesInjector.FUEL_VALUES_CLASS, fuel, null);
+		assertFalse(calls(method(node(bracketed), FabricFuelValuesInjector.BODY_DESC)).contains("takePending"),
+				"the body is not short-circuited; only the carry's bracket is in it");
+		System.setProperty(FabricFuelValuesInjector.CARRY_PROPERTY, "off");
 		assertSame(fuel, new FabricFuelValuesInjector().transform(FabricFuelValuesInjector.FUEL_VALUES_CLASS, fuel, null));
+	}
+
+	/**
+	 * The carry on the real merged classes: vanilla's body reports the native point — the remove before {@code build()},
+	 * kept exactly as shipped so a guest's {@code @At(INVOKE)} on it still matches — and the table it builds, before the
+	 * short-circuit's join; every public mutator of the builder reports its call and its registries constructor the
+	 * registries; after weaving, the two-argument overload reports entering and each return. Once only, and nothing with
+	 * the carry off.
+	 */
+	@Test void theNativePointTheBuilderAndTheOuterOverloadReportToTheCarry() throws Exception {
+		byte[] fuel = NativeCoremodParityTest.read(MERGED, FUEL_VALUES);
+		byte[] out = new FabricFuelValuesInjector().transform(FabricFuelValuesInjector.FUEL_VALUES_CLASS, fuel, null);
+		MethodNode body = method(node(out), FabricFuelValuesInjector.BODY_DESC);
+		List<String> calls = calls(body);
+		int remove = calls.lastIndexOf("remove");
+		assertEquals(List.of("openNativePoint", "remove", "closeNativePoint", "build", "nativeBuilt"),
+				calls.subList(remove - 1, remove + 4), "the bracket sits around the native point, the report after the build");
+		assertEquals("takePending", calls.getFirst(), "the short-circuit still opens the body");
+		new Analyzer<>(new BasicVerifier()).analyze(FUEL_VALUES, body);
+		assertSame(out, FabricFuelValuesInjector.bracketTheNativePoint(FabricFuelValuesInjector.shortCircuitTheBody(out)), "idempotent");
+
+		byte[] builder = NativeCoremodParityTest.read(MERGED, FabricFuelValuesInjector.BUILDER);
+		byte[] reported = new FabricFuelValuesInjector().transform(FabricFuelValuesInjector.BUILDER_CLASS, builder, null);
+		ClassNode builderNode = node(reported);
+		List<String> reporting = new ArrayList<>();
+		for (MethodNode method : builderNode.methods) {
+			List<String> made = calls(method);
+			if (made.contains("recordCall")) {
+				assertTrue(made.subList(0, made.indexOf("recordCall")).stream().allMatch("valueOf"::equals),
+						method.name + " reports at its head, boxing its arguments first: " + made);
+				reporting.add(method.name + method.desc);
+			}
+			if (made.contains("builderMade")) reporting.add(method.name + method.desc);
+			new Analyzer<>(new BasicVerifier()).analyze(builderNode.name, method);
+		}
+		String b = "Lnet/minecraft/world/level/block/entity/FuelValues$Builder;";
+		assertEquals(java.util.Set.of("<init>(Lnet/minecraft/core/HolderLookup$Provider;Lnet/minecraft/world/flag/FeatureFlagSet;)V",
+				"remove(Lnet/minecraft/tags/TagKey;)" + b, "add(Lnet/minecraft/tags/TagKey;I)" + b, "add(Lnet/minecraft/world/level/ItemLike;I)" + b),
+				java.util.Set.copyOf(reporting), "the registries constructor and every public mutator, nothing else");
+		assertSame(reported, new FabricFuelValuesInjector().transform(FabricFuelValuesInjector.BUILDER_CLASS, reported, null), "idempotent");
+
+		byte[] woven = FabricFuelValuesInjector.afterMixin(FUEL_VALUES, out);
+		MethodNode outer = method(node(woven), OUTER_DESC);
+		List<String> outerCalls = calls(outer);
+		assertEquals("outerEntered", outerCalls.getFirst());
+		assertEquals("outerReturned", outerCalls.getLast(), "right before the return, after anything Mixin put there");
+		assertEquals(opcodes(method(node(out), STUB_DESC)), opcodes(method(node(woven), STUB_DESC)), "the forwarding stub is untouched");
+		assertSame(woven, FabricFuelValuesInjector.afterMixin(FUEL_VALUES, woven), "idempotent");
+		assertSame(builder, FabricFuelValuesInjector.afterMixin(FabricFuelValuesInjector.BUILDER, builder), "only FuelValues");
+
+		System.setProperty(FabricFuelValuesInjector.CARRY_PROPERTY, "off");
+		assertSame(builder, new FabricFuelValuesInjector().transform(FabricFuelValuesInjector.BUILDER_CLASS, builder, null));
+		assertFalse(calls(method(node(new FabricFuelValuesInjector().transform(FabricFuelValuesInjector.FUEL_VALUES_CLASS, fuel, null)),
+				FabricFuelValuesInjector.BODY_DESC)).contains("openNativePoint"));
+		assertSame(out, FabricFuelValuesInjector.afterMixin(FUEL_VALUES, out));
 	}
 
 	/**
