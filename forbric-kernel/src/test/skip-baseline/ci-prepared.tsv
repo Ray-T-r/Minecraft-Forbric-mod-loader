@@ -18,7 +18,6 @@ test	net.forbric.kernel.boot.MultiLoaderEntrypointsTest	actualBisonAquariusAndBa
 test	net.forbric.kernel.boot.PassiveSeederFileConfigTest	theRealLithiumFindsUnlitCampfiresOverride()	[fixture:third-party] the player's pack is not here
 test	net.forbric.kernel.classloading.VerifierTypeDeferralTest	theRealProviderBehindAModsTwoConfigPluginsDefinesNoGameTypeInsideTheWeave(Path)	[fixture:third-party] a mod whose config plugins reach its platform provider: build/compat-inputs/player-loading/mods/iris-neoforge-1.11.4+mc26.2.jar
 test	net.forbric.kernel.interop.ExitGuardParkedOrphansTest	realFlywheelWorkersLeftRunningAreEndedByTheGuard()	[fixture:third-party] Create Fly jar absent: $ROOT/forbric-kernel/build/compat-inputs/create-fly/create-fly.jar
-test	net.forbric.kernel.interop.PayloadInteropPlayChannelsTest	everyNameTheRecordingSpellsExistsWhereItIsSpelled()	[fixture:third-party] fabric-api's networking module absent
 test	net.forbric.kernel.metadata.forge.ModsTomlParserTest	theFixtureIsTheManifestLibjfShips()	[fixture:third-party] the sweep's LibJF jar is not staged here
 test	net.forbric.kernel.mixin.AdapterPointSpellingTest	 net.minecraft.server.Bootstrap . bootStrap ()V	[fixture:third-party] build/compat-inputs/player-loading/api/fabric-registry-sync-v0-7.1.1+c7bd5b8e9e.jar absent
 test	net.forbric.kernel.mixin.AdapterPointSpellingTest	Lnet/minecraft/server/Bootstrap;bootStrap	[fixture:third-party] build/compat-inputs/player-loading/api/fabric-registry-sync-v0-7.1.1+c7bd5b8e9e.jar absent
@@ -288,8 +287,6 @@ test	net.forbric.kernel.mixin.FabricBlockBreakMixinAdapterTest	vanillasOwnBodyIs
 test	net.forbric.kernel.mixin.FabricClientMixinAnchorsTest	releasedLiquidBounceBuildDrawsItsMenuWithTheCanvasTheGatewayDraws()	[fixture:third-party] ../build/lb-vfp/jars/liquidbounce-0.40.1+26.2-20260925.jar absent
 test	net.forbric.kernel.mixin.FabricClientMixinAnchorsTest	releasedLiquidBounceDrawsItsMenuWithTheCanvasTheGatewayDraws()	[fixture:third-party] ../build/lb-vfp/jars/liquidbounce-9889fe2.jar absent
 test	net.forbric.kernel.mixin.FabricCreativePagerMixinAdapterTest	keyboardKeepsItsExactBodyAndTheSecondPagerStateIsRemoved()	[fixture:third-party] build/compat-inputs/player-loading/api/fabric-creative-tab-api-v1-5.0.15+6468574f9e.jar absent
-test	net.forbric.kernel.mixin.FabricFluidFlowMixinAdapterTest	bothLiveCarrierPathsCallTheOriginalFabricVetoAndKeepTheirNativeOperations()	[fixture:third-party] actual current Fabric Block API fixture required
-test	net.forbric.kernel.mixin.FabricFluidFlowMixinAdapterTest	changedOrVanillaCarrierIsNotRewritten()	[fixture:third-party] actual current Fabric Block API fixture required
 test	net.forbric.kernel.mixin.FabricFreezeHookMixinAdapterTest	releasedCreateFlyMovesOnInitializeToTheHeadHookAndAfterFreezeToTheTailHook()	[fixture:third-party] real fixture required: $ROOT/forbric-kernel/build/compat-inputs/create-fly/create-fly.jar
 test	net.forbric.kernel.mixin.FabricFreezeHookSpellingTest	bare name	[fixture:third-party] real fixture required: $ROOT/forbric-kernel/build/compat-inputs/create-fly/create-fly.jar
 test	net.forbric.kernel.mixin.FabricFreezeHookSpellingTest	createFlyUnderOtherNamesMovesAsReleased()	[fixture:third-party] real fixture required: $ROOT/forbric-kernel/build/compat-inputs/create-fly/create-fly.jar
