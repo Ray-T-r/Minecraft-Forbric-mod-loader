@@ -14,19 +14,17 @@ import net.forbric.kernel.util.ForbricLog;
  * {@code RegistryEntryAddedCallback} for an entry a MinecraftForge-wrapped registry has just registered.
  *
  * <p>What Fabric's injection at the return of {@code MappedRegistry.register} does: the registry's own add-object event,
- * which fabric-registry-sync's {@code MappedRegistryMixin} gives every {@code MappedRegistry} (the wrapper included, it is
- * one), invoked with the entry's raw id, its id and the entry. The raw id is the wrapper's {@code getId}, the id its
- * {@code ForgeRegistry} just assigned; the {@code toId} map Fabric reads stays empty on a wrapper.
+ * which fabric-api's public {@code RegistryEntryAddedCallback.event(registry)} hands out for every {@code MappedRegistry}
+ * (the wrapper included, it is one), invoked with the entry's raw id, its id and the entry. The raw id is the wrapper's
+ * {@code getId}, the id its {@code ForgeRegistry} just assigned; the {@code toId} map Fabric reads stays empty on a wrapper.
  *
  * <p>Reflective, as the wrapper's other boot-side hook {@link KernelForgeWrapperSync} is, and resolved once per wrapper
  * class on the public types that declare each member — {@code NamespacedWrapper} itself ships package-private, and stays
- * so with {@code -Dforbric.publicRegistryWrappers=off}. A registry
- * class fabric-registry-sync never touched (no fabric-api installed) has no event, and is left alone. A listener's own
- * exception is the registration's, exactly as on a plain registry: fabric-registry-sync refuses an id that is already an
- * alias by throwing from its listener.
+ * so with {@code -Dforbric.publicRegistryWrappers=off}. Without fabric-api's public event API nothing listens, and the
+ * registry is left alone. A listener's own exception is the registration's, exactly as on a plain registry: a listener may
+ * refuse an id that is already an alias by throwing.
  */
 public final class KernelWrapperEntryEvents {
-	private static final String LISTENABLE = "net.fabricmc.fabric.impl.registry.sync.ListenableRegistry";
 	private static final String EVENT = "net.fabricmc.fabric.api.event.Event";
 	private static final String CALLBACK = "net.fabricmc.fabric.api.event.registry.RegistryEntryAddedCallback";
 
@@ -45,10 +43,19 @@ public final class KernelWrapperEntryEvents {
 		if (resolved == null) HOOKS.putIfAbsent(registry.getClass(), resolved = resolve(registry.getClass()));
 		Hooks hooks = resolved.orElse(null);
 		if (hooks == null) return;
+		Object event;
 		try {
-			// Null only before fabric-registry-sync's constructor injection has run, and nothing can listen yet then.
-			Object event = hooks.event().invoke(registry);
-			if (event == null) return;
+			// Null only before fabric-api has given the registry its event, and nothing can listen yet then.
+			event = hooks.event().invoke(null, registry);
+		} catch (InvocationTargetException | IllegalAccessException | RuntimeException noEvent) {
+			// The public API has no event for this registry class (fabric-api's mixin did not give it one): nothing listens.
+			HOOKS.put(registry.getClass(), Optional.empty());
+			ForbricLog.debug("[Forbric/Registries] %s has no Fabric entry-added event: %s", registry.getClass().getName(),
+					String.valueOf(noEvent instanceof InvocationTargetException ite ? ite.getCause() : noEvent));
+			return;
+		}
+		if (event == null) return;
+		try {
 			Object invoker = hooks.invoker().invoke(event);
 			hooks.onEntryAdded().invoke(invoker, hooks.rawId().invoke(registry, value), hooks.identifier().invoke(key), value);
 		} catch (InvocationTargetException e) {
@@ -58,7 +65,7 @@ public final class KernelWrapperEntryEvents {
 			throw new UndeclaredThrowableException(cause);
 		} catch (IllegalAccessException e) {
 			HOOKS.put(registry.getClass(), Optional.empty());
-			ForbricLog.warn("[Forbric/Registries] could not fire fabric-registry-sync's RegistryEntryAddedCallback for "
+			ForbricLog.warn("[Forbric/Registries] could not fire fabric-api's RegistryEntryAddedCallback for "
 					+ registry.getClass().getName() + " — a Fabric listener misses what it registers", e);
 		}
 	}
@@ -66,15 +73,15 @@ public final class KernelWrapperEntryEvents {
 	private static Optional<Hooks> resolve(Class<?> wrapper) {
 		ClassLoader loader = wrapper.getClassLoader();
 		try {
-			Class<?> listenable = Class.forName(LISTENABLE, false, loader);
-			if (!listenable.isAssignableFrom(wrapper)) return Optional.empty();
+			Class<?> callback = Class.forName(CALLBACK, false, loader);
+			Method event = callback.getMethod("event", Class.forName("net.minecraft.core.Registry", false, loader));
 			Method identifier = Class.forName("net.minecraft.resources.ResourceKey", false, loader).getMethod("identifier");
-			return Optional.of(new Hooks(listenable.getMethod("fabric_getAddObjectEvent"),
+			return Optional.of(new Hooks(event,
 					Class.forName(EVENT, false, loader).getMethod("invoker"),
 					Class.forName(CALLBACK, false, loader).getMethod("onEntryAdded", int.class, identifier.getReturnType(), Object.class),
 					Class.forName("net.minecraft.core.IdMap", false, loader).getMethod("getId", Object.class), identifier));
 		} catch (ClassNotFoundException absent) {
-			return Optional.empty(); // no fabric-registry-sync: nothing listens
+			return Optional.empty(); // no fabric-api event API: nothing listens
 		} catch (ReflectiveOperationException | LinkageError e) {
 			ForbricLog.warn("[Forbric/Registries] fabric-registry-sync's RegistryEntryAddedCallback has changed shape; "
 					+ wrapper.getName() + " registers without firing it — a Fabric listener misses what it registers", e);

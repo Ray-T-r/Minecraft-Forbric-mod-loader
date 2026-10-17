@@ -267,21 +267,17 @@ public final class KernelForgeWrapperSync {
 	/**
 	 * Fires fabric-api's {@code RegistryIdRemapCallback} for a wrapper whose ids moved — the event its own
 	 * {@code remap} would have fired, and what fabric-api's block/fluid state-id trackers and any mod caching raw
-	 * ids listen to. Built from the before/after maps, in the shape fabric-api's {@code RemapStateImpl} expects.
+	 * ids listen to. Built from the before/after maps, as fabric-api's public {@code RemapState} reads them.
 	 * Best-effort: a fabric-api that changed the shape costs the notification, not the remap.
 	 */
-	private static void announceRemapToFabric(ClassLoader cl, Object wrapper, Map<Object, Integer> before,
+	static void announceRemapToFabric(ClassLoader cl, Object wrapper, Map<Object, Integer> before,
 			Map<Object, Integer> after) {
 		try {
-			Object oldIdMap = Class.forName("it.unimi.dsi.fastutil.ints.Int2ObjectOpenHashMap", false, cl)
-					.getConstructor().newInstance();
 			Object changes = Class.forName("it.unimi.dsi.fastutil.ints.Int2IntOpenHashMap", false, cl)
 					.getConstructor().newInstance();
-			Method putOld = oldIdMap.getClass().getMethod("put", int.class, Object.class);
 			Method putChange = changes.getClass().getMethod("put", int.class, int.class);
 			int changed = 0;
 			for (Map.Entry<Object, Integer> e : before.entrySet()) {
-				putOld.invoke(oldIdMap, e.getValue(), e.getKey());
 				Integer now = after.get(e.getKey());
 				if (now != null && !now.equals(e.getValue())) {
 					putChange.invoke(changes, e.getValue(), now);
@@ -290,24 +286,31 @@ public final class KernelForgeWrapperSync {
 			}
 			if (changed == 0) return;
 
-			Class<?> stateCls = Class.forName("net.fabricmc.fabric.impl.registry.sync.RemapStateImpl", false, cl);
-			Class<?> registryCls = Class.forName("net.minecraft.core.Registry", false, cl);
-			Object state = stateCls.getConstructor(registryCls,
-					Class.forName("it.unimi.dsi.fastutil.ints.Int2ObjectMap", false, cl),
-					Class.forName("it.unimi.dsi.fastutil.ints.Int2IntMap", false, cl)).newInstance(wrapper, oldIdMap, changes);
-			// fabric_getRemapEvent is mixin-added to MappedRegistry; the wrapper inherits it. Event.invoker() hands
-			// back a RegistryIdRemapCallback whose onRemap(RemapState) fans out to every listener.
-			Method getEvent = wrapper.getClass().getMethod("fabric_getRemapEvent");
-			getEvent.setAccessible(true);
-			Object event = getEvent.invoke(wrapper);
-			Object invoker = event.getClass().getMethod("invoker").invoke(event);
-			Method onRemap = null;
-			for (Method m : invoker.getClass().getMethods()) {
-				if (m.getName().equals("onRemap") && m.getParameterCount() == 1) { onRemap = m; break; }
+			// The state the listeners read, as fabric-api's public RemapState interface: the change map, and each changed
+			// entry's id under its old and its new raw id. Asked of the public RegistryIdRemapCallback.event(registry), so
+			// nothing names how fabric-api implements either.
+			Map<Integer, Object> oldIds = new java.util.HashMap<>(), newIds = new java.util.HashMap<>();
+			for (Map.Entry<Object, Integer> e : before.entrySet()) oldIds.put(e.getValue(), e.getKey());
+			for (Map.Entry<Object, Integer> e : after.entrySet()) {
+				Integer was = before.get(e.getKey());
+				if (was != null && !was.equals(e.getValue())) newIds.put(e.getValue(), e.getKey());
 			}
-			if (onRemap == null) return;
-			onRemap.setAccessible(true);
-			onRemap.invoke(invoker, state);
+			Class<?> stateApi = Class.forName("net.fabricmc.fabric.api.event.registry.RegistryIdRemapCallback$RemapState", false, cl);
+			Class<?> callbackApi = Class.forName("net.fabricmc.fabric.api.event.registry.RegistryIdRemapCallback", false, cl);
+			Class<?> registryCls = Class.forName("net.minecraft.core.Registry", false, cl);
+			Object state = java.lang.reflect.Proxy.newProxyInstance(cl, new Class<?>[] {stateApi}, (proxy, method, args) -> switch (method.getName()) {
+				case "getRawIdChangeMap" -> changes;
+				case "getIdFromOld" -> oldIds.get((Integer) args[0]);
+				case "getIdFromNew" -> newIds.get((Integer) args[0]);
+				case "hashCode" -> System.identityHashCode(proxy);
+				case "equals" -> proxy == args[0];
+				case "toString" -> "RemapState[" + describe(wrapper) + ", " + newIds.size() + " moved]";
+				default -> throw new UnsupportedOperationException(method.getName());
+			});
+			Object event = callbackApi.getMethod("event", registryCls).invoke(null, wrapper);
+			if (event == null) return;
+			Object invoker = Class.forName("net.fabricmc.fabric.api.event.Event", false, cl).getMethod("invoker").invoke(event);
+			callbackApi.getMethod("onRemap", stateApi).invoke(invoker, state);
 			ForbricLog.info("[Forbric/RegistrySync] told fabric-api's remap listeners about %d moved id(s) in %s",
 					changed, describe(wrapper));
 		} catch (Throwable t) {

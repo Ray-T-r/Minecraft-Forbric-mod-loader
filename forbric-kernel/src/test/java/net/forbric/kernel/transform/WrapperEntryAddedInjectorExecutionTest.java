@@ -24,8 +24,9 @@ import net.fabricmc.api.EnvType;
  * menu registered after its own entrypoint (Farmer's Delight's cooking pot).
  *
  * <p>{@code WrapperEntryAddedInjectorTest} runs the real merged wrapper with fabric-api from staged jars. Here the
- * wrapper and the three fabric-api types the kernel's real {@code KernelWrapperEntryEvents} resolves are stand-ins
- * compiled under their names, so the edit runs on a checkout without them.
+ * wrapper and fabric-api's public event types are stand-ins compiled under their names, and what gives a registry its
+ * event — fabric-api's implementation — is a duck interface of another name ({@code org.relay.registry.Listens}): the
+ * kernel asks only the public {@code RegistryEntryAddedCallback.event(registry)}.
  */
 @ExecutesInjector(WrapperEntryAddedInjector.class)
 @ResourceLock("system-properties")
@@ -58,6 +59,7 @@ class WrapperEntryAddedInjectorExecutionTest {
 					}
 					""",
 			"net.minecraft.core.RegistrationInfo", "package net.minecraft.core; public record RegistrationInfo(String lifecycle) { }",
+			"net.minecraft.core.Registry", "package net.minecraft.core; public interface Registry<T> extends IdMap<T> { }",
 			"net.minecraft.core.Holder", """
 					package net.minecraft.core;
 
@@ -91,16 +93,22 @@ class WrapperEntryAddedInjectorExecutionTest {
 
 					public interface RegistryEntryAddedCallback<T> {
 						void onEntryAdded(int rawId, Identifier id, T object);
+
+						/** The public accessor: what the implementation gave the registry, under its own name. */
+						@SuppressWarnings("unchecked")
+						static <T> net.fabricmc.fabric.api.event.Event<RegistryEntryAddedCallback<T>> event(net.minecraft.core.Registry<T> registry) {
+							return ((org.relay.registry.Listens<T>) registry).relay$entryAdded();
+						}
 					}
 					""",
-			"net.fabricmc.fabric.impl.registry.sync.ListenableRegistry", """
-					package net.fabricmc.fabric.impl.registry.sync;
+			"org.relay.registry.Listens", """
+					package org.relay.registry;
 
 					import net.fabricmc.fabric.api.event.Event;
 					import net.fabricmc.fabric.api.event.registry.RegistryEntryAddedCallback;
 
-					public interface ListenableRegistry<T> {
-						Event<RegistryEntryAddedCallback<T>> fabric_getAddObjectEvent();
+					public interface Listens<T> {
+						Event<RegistryEntryAddedCallback<T>> relay$entryAdded();
 					}
 					""");
 
@@ -114,10 +122,11 @@ class WrapperEntryAddedInjectorExecutionTest {
 				import net.minecraft.core.Holder;
 				import net.minecraft.core.IdMap;
 				import net.minecraft.core.RegistrationInfo;
+				import net.minecraft.core.Registry;
 				import net.minecraft.resources.ResourceKey;
 				%s
 
-				public class NamespacedWrapper implements IdMap<Object>%s {
+				public class NamespacedWrapper implements Registry<Object>%s {
 					private final List<Object> forgeRegistry = new ArrayList<>();
 				%s
 
@@ -135,9 +144,9 @@ class WrapperEntryAddedInjectorExecutionTest {
 				fabric ? """
 						import net.fabricmc.fabric.api.event.Event;
 						import net.fabricmc.fabric.api.event.registry.RegistryEntryAddedCallback;
-						import net.fabricmc.fabric.impl.registry.sync.ListenableRegistry;
+						import org.relay.registry.Listens;
 						""" : "",
-				fabric ? ", ListenableRegistry<Object>" : "",
+				fabric ? ", Listens<Object>" : "",
 				fabric ? """
 							private final List<RegistryEntryAddedCallback<Object>> listeners = new ArrayList<>();
 							private final Event<RegistryEntryAddedCallback<Object>> addObject = new Event<>() {
@@ -155,7 +164,7 @@ class WrapperEntryAddedInjectorExecutionTest {
 							};
 
 							@Override
-							public Event<RegistryEntryAddedCallback<Object>> fabric_getAddObjectEvent() {
+							public Event<RegistryEntryAddedCallback<Object>> relay$entryAdded() {
 								return addObject;
 							}
 						""" : "");
@@ -197,9 +206,9 @@ class WrapperEntryAddedInjectorExecutionTest {
 			heard.add(args[0] + " " + args[1] + " " + args[2]);
 			return null;
 		});
-		// Through Event's own public method: the wrapper's event is an anonymous subclass with a bridge.
-		loader.loadClass("net.fabricmc.fabric.api.event.Event").getMethod("register", Object.class)
-				.invoke(InjectorExecution.invoke(wrapper, "fabric_getAddObjectEvent"), listener);
+		// Through the public accessor and Event's own public method: the event is an anonymous subclass with a bridge.
+		Object event = callback.getMethod("event", loader.loadClass("net.minecraft.core.Registry")).invoke(null, wrapper);
+		loader.loadClass("net.fabricmc.fabric.api.event.Event").getMethod("register", Object.class).invoke(event, listener);
 	}
 
 	@Test void anEntryRegisteredAfterAListenerSubscribedReachesItWithItsRawId(@TempDir Path work) throws Throwable {
