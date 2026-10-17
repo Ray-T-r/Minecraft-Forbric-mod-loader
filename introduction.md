@@ -1062,6 +1062,36 @@ native Minecraft screen (`KernelCompatibilityPrompts`, `KernelCompatibilityScree
 JVM arguments, so players get `ask`; `run/launch-kernel-{client,server}.sh` default to `strict` (and the client
 script to `-Dforbric.dependencyDialog=off`).
 
+### 12.5 Failures the kernel carried on from — `util.Caught`
+
+The kernel is fail-soft: a repair that does not fit declines, a bridge whose other side is missing stands down, a
+mod's listener that throws does not take the other mods' listeners with it. Every one of those is a `catch`, and
+every `catch` in `src/main` and `src/runtime` either rethrows or reports to `Caught`, as a statement of its own body
+(not under an `if`). `EveryCatchIsVisibleTest` scans the sources and fails on any other catch; there is no allowlist.
+
+- `Caught.warn/error(t, format, args)` — a failure the kernel carried on from. Logged at that level with the
+  `[Forbric/Caught]` prefix and the catch site (`Class.method:line`): the full stack trace the first time a site is
+  hit, then one line per occurrence. The same message at the same site is printed 20 times
+  (`-Dforbric.caught.printedPerSite`) and then counted; a message the site has not said before is always printed (up
+  to 100 per site), so one forwarding helper still names every event that failed. Reflection's
+  `InvocationTargetException` is unwrapped before printing.
+- `Caught.expected(t)` — the exception is the answer: a presence probe for an optional class, a recogniser's "not
+  this shape", text a mod wrote that is not a valid value, an exception handed on as a value to code that reports
+  it. Counted, logged only under `-Dforbric.debug`. When the cause chain of an "expected" exception holds an
+  exception only a bug throws (`NullPointerException`, `ClassCastException`, an index out of bounds outside ASM's
+  analysis frames, …), it is reported as a failure instead: ASM's `Analyzer` wraps whatever its interpreter threw
+  in the very `AnalyzerException` a recogniser expects.
+
+A summary (`[Forbric/Caught] summary …`, one line per failure site with its count) is logged when loading
+finishes and again at JVM exit. With `FORBRIC_CAUGHT_FILE` (or `-Dforbric.caught.file`) naming a file, each failure
+site is also appended there on first hit, and its count at exit.
+
+Tests and gates both read it. `CaughtErrorsExtension` (loaded for every unit test through META-INF/services) fails
+a test during which the kernel caught a failure, unless the test says it causes it with `@ExpectCaught("<what the
+failure says>")`; on a method, every named failure must also happen. `run/lib.sh` gives each gate its own
+`build/caught/<gate>.<pid>.tsv`, exports it to every JVM the gate starts, and at exit prints `[kernel] CAUGHT …` with
+each site, its message and its count; `FORBRIC_CAUGHT_STRICT=1` turns any of them into a red gate.
+
 ## 13. The installer — `forbric-kernel-installer/`
 
 Pure JDK, no dependencies, bytecode release 17, version `0.3.1-beta2`.
@@ -1205,7 +1235,8 @@ See [the development guide](forbric-kernel/run/README.md) for commands and confi
 `integrationTest` requires the staged game and transfer suites and rejects any skipped test; ordinary `test`
 still permits absent local fixtures and prints its executed/skipped counts. The complete integration suite
 requires its named mod fixtures in addition to the base game; preparing the game is not a claim that every
-compatibility pack or real-instance gate has run.
+compatibility pack or real-instance gate has run. A unit test during which the kernel catches a failure and carries
+on fails unless it is marked `@ExpectCaught`, and every gate ends with a `[kernel] CAUGHT` line (§12.5).
 
 ```sh
 cd forbric-kernel
@@ -1296,7 +1327,9 @@ developer reaches for:
 | `forbric.dialogLanguage` | force the dialog's language (e.g. `ja`) |
 | `forbric.loadReportRewrite` | `off`: first write of `load-report.txt` wins |
 | `forbric.crashAnalysis` | `off`: no `crash-analysis.txt` |
-| `forbric.debug` | enable `ForbricLog.debug` lines |
+| `forbric.debug` | enable `ForbricLog.debug` lines (and the first `Caught.expected` line of each site) |
+| `forbric.caught.printedPerSite` | how often the same caught failure is printed at one site before it is only counted (default 20, §12.5) |
+| `forbric.caught.file` | also append each caught failure site and its count to this file; `FORBRIC_CAUGHT_FILE` does the same and is what the gates set |
 
 **Arbitration and order**
 
@@ -1370,6 +1403,8 @@ Break one and the failure usually surfaces far from the cause.
    failure are left as they were. `CompatibilityDecision` never exits the JVM; only the launch boundary does.
 10. **Nothing carrying Mojang, MinecraftForge or NeoForge bytes is committed or shipped.** The game side links
     against staged jars `compileOnly`; the installer builds them on the player's machine.
+11. **No catch is silent.** Every catch rethrows or reports to `Caught` (§12.5), and a unit test that makes the
+    kernel carry on from a failure fails unless it says so with `@ExpectCaught`.
 
 ## 19. Current state and known boundaries
 

@@ -423,6 +423,17 @@ Fabric mod 的配置界面只在一个地方声明：一个实现 Mod Menu 的 `
 
 这个决定会在进入游戏前的边界处询问一次（§3.2 第 18 步），加载结束时再问一次（服务端在 §3.4 第 3b 步，客户端在 `fireClientSetupLifecycle`），专用服务器还会在 `ServerStartedEvent` 时再问一次（世界加载期间出现的必要功能失败会让服务器按正常流程停机）。拒绝时抛出 `CompatibilityDecision.LaunchStopped`；`CompatibilityLaunchBoundary` 把它转成退出码 **78** 并打印报告路径；在 `Minecraft.<init>` 内部则通过 `SilentInitException` 退出，因此不会作为崩溃上报。启动之后才出现的检出项从不派生 Swing 进程，也不会退出 JVM：在服务端，它们在一个 tick 完成后的边界处处理（`LateServerCompatibility`）；在客户端，则在渲染线程的某个 tick 上由一个原生 Minecraft 界面处理（`KernelCompatibilityPrompts`、`KernelCompatibilityScreen`）。安装好的版本配置不传任何 JVM 参数，所以玩家得到的是 `ask`；`run/launch-kernel-{client,server}.sh` 默认用 `strict`（客户端脚本还默认 `-Dforbric.dependencyDialog=off`）。
 
+### 12.5 内核吞下继续运行的失败 —— `util.Caught`
+
+内核是容错设计：形状对不上的修复会放弃，另一侧缺失的桥会停用，一个 mod 的监听器抛异常不会连累其他 mod 的监听器。这些都是 `catch`，而 `src/main` 和 `src/runtime` 里的每个 `catch` 要么重新抛出，要么上报给 `Caught`，并且上报必须是 catch 体自己的一条语句（不能放在 `if` 下面）。`EveryCatchIsVisibleTest` 扫描源码，遇到任何其他写法就失败，没有白名单。
+
+- `Caught.warn/error(t, format, args)` —— 内核吞下并继续运行的失败。以对应级别记录，带 `[Forbric/Caught]` 前缀和 catch 所在位置（`Class.method:line`）：某个位置第一次出现时打完整堆栈，之后每次一行。同一位置的同一条消息打印 20 次（`-Dforbric.caught.printedPerSite`）后只计数；该位置没说过的新消息总会打印（每个位置最多 100 种），所以一个转发函数仍然会点名每一个失败的事件。反射的 `InvocationTargetException` 会先剥掉再打印。
+- `Caught.expected(t)` —— 这个异常本身就是答案：可选类的存在性探测、识别器的“不是这个形状”、mod 写的文本不是合法值、作为值交给负责上报的代码的异常。只计数，只在 `-Dforbric.debug` 下记录。如果一个“expected”异常的 cause 链里有只有 bug 才会抛的异常（`NullPointerException`、`ClassCastException`、ASM 分析帧之外的越界……），就改按失败上报：ASM 的 `Analyzer` 会把解释器抛出的任何异常包进识别器本来就预期的那个 `AnalyzerException` 里。
+
+加载结束时和 JVM 退出时各记录一次汇总（`[Forbric/Caught] summary …`，每个失败位置一行，带次数）。用 `FORBRIC_CAUGHT_FILE`（或 `-Dforbric.caught.file`）指定一个文件后，每个失败位置第一次出现时也会追加写进去，退出时再写入次数。
+
+单测和闸门都会读它。`CaughtErrorsExtension`（通过 META-INF/services 对每个单测生效）会让测试期间内核吞下过失败的测试失败，除非测试用 `@ExpectCaught("<失败消息里的文字>")` 说明这是它故意造成的；标在方法上时，列出的每个失败还必须真的发生。`run/lib.sh` 给每个闸门分配自己的 `build/caught/<gate>.<pid>.tsv`，导出给闸门启动的每个 JVM，退出时打印 `[kernel] CAUGHT …`，列出每个位置、消息和次数；`FORBRIC_CAUGHT_STRICT=1` 会让其中任何一条把闸门变红。
+
 ## 13. 安装器 —— `forbric-kernel-installer/`
 
 纯 JDK 实现，没有依赖，字节码 release 17，版本 `0.3.1-beta2`。
@@ -519,7 +530,7 @@ Forbric/
 
 目前的开发入口是 `python3 tools/dev.py client`（Windows 上用 `py tools/dev.py client`）。它借用安装器的产物流水线，在 `forbric-kernel/.dev/` 下准备一套隔离的游戏输入，解析库/资源和锁定的编译 API，然后构建并启动当前的内核。需要 JDK 25+ 和 Python 3.9+。Gradle 提供 `prepareDev`、`runClient`、`runServer` 和 `devDoctor`；准备和启动必须分成两次 Gradle 调用，因为游戏侧的接线在任务运行之前就已配置完毕。命令和配置见[开发指南](forbric-kernel/run/README.md)。
 
-`check` 还会运行开发/证据工具的自测，以及打包链接闸门的合成控制。`integrationTest` 要求暂存好的游戏和传输测试套件齐备，并且不允许任何测试被跳过；普通的 `test` 仍允许本地测试夹具缺失，并打印已执行/已跳过的数量。完整的集成测试套件除了基础游戏，还需要它指名的那些 mod 测试夹具；游戏准备好了，并不等于宣称每个兼容性包或真实实例闸门都已经跑过。
+`check` 还会运行开发/证据工具的自测，以及打包链接闸门的合成控制。`integrationTest` 要求暂存好的游戏和传输测试套件齐备，并且不允许任何测试被跳过；普通的 `test` 仍允许本地测试夹具缺失，并打印已执行/已跳过的数量。完整的集成测试套件除了基础游戏，还需要它指名的那些 mod 测试夹具；游戏准备好了，并不等于宣称每个兼容性包或真实实例闸门都已经跑过。测试期间内核吞下失败继续运行的单测会失败，除非标了 `@ExpectCaught`；每个闸门结束时都会打印一行 `[kernel] CAUGHT`（§12.5）。
 
 ```sh
 cd forbric-kernel
@@ -573,7 +584,9 @@ java -cp <boot-cp> net.forbric.kernel.boot.Main --scan --mods <dir> --report out
 | `forbric.dialogLanguage` | 强制指定对话框的语言（如 `ja`） |
 | `forbric.loadReportRewrite` | `off`：以第一次写入的 `load-report.txt` 为准 |
 | `forbric.crashAnalysis` | `off`：不生成 `crash-analysis.txt` |
-| `forbric.debug` | 启用 `ForbricLog.debug` 的日志行 |
+| `forbric.debug` | 启用 `ForbricLog.debug` 的日志行（以及每个位置第一条 `Caught.expected` 日志） |
+| `forbric.caught.printedPerSite` | 同一位置的同一个被吞下的失败打印多少次后只计数（默认 20，§12.5） |
+| `forbric.caught.file` | 把每个被吞下的失败位置及其次数也追加写进这个文件；`FORBRIC_CAUGHT_FILE` 作用相同，闸门设的就是它 |
 
 **仲裁与顺序**
 
@@ -635,6 +648,7 @@ java -cp <boot-cp> net.forbric.kernel.boot.Main --scan --mods <dir> --report out
 8. **修复一旦停用，就会明说** —— `AnchorSet`/`AnchorLedger`、`EventBridges.verify`、每个开关一条 WARN。
 9. **归因从不改变结果。** 错误处理器和报告只做记录；Mixin 的决定和 mod 的失败都保持原样。`CompatibilityDecision` 从不退出 JVM；只有启动边界才会退出。
 10. **任何带有 Mojang、MinecraftForge 或 NeoForge 字节的东西都不提交、不分发。** 游戏侧以 `compileOnly` 方式链接暂存的 jar；这些 jar 由安装器在玩家的机器上构建。
+11. **没有静默的 catch。** 每个 catch 要么重新抛出，要么上报给 `Caught`（§12.5）；让内核吞下失败继续运行的单测会失败，除非它用 `@ExpectCaught` 说明。
 
 ## 19. 现状与已知边界
 
