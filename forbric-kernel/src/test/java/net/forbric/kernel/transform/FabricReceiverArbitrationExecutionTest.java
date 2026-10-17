@@ -17,6 +17,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
 import net.fabricmc.api.EnvType;
+import net.forbric.kernel.ExpectCaught;
 
 /**
  * {@link CommonNetworkInteropInjector}'s Fabric receiver arbitration, run against the kernel's real boot-side
@@ -425,6 +426,8 @@ class FabricReceiverArbitrationExecutionTest {
 		return (List<String>) InjectorExecution.getStatic(loader.loadClass("fixture.Trace"), "LINES");
 	}
 
+	// The stub custom-payload packets have no GAMEPLAY_STREAM_CODEC for the packet census to read.
+	@ExpectCaught("GAMEPLAY_STREAM_CODEC")
 	@Test void theCourierAgreesTheVersionInItsOwnClassAndNeoForgeAnswersOnceAfterIt() throws Throwable {
 		Object courier = courier(repaired);
 		Object neoVersion = InjectorExecution.construct(repaired.loadClass("net.neoforged.neoforge.network.payload.CommonVersionPayload"), List.of(1));
@@ -435,6 +438,8 @@ class FabricReceiverArbitrationExecutionTest {
 				"the courier first, NeoForge's handler once, after it — the override handing it on arbitrated nothing twice");
 	}
 
+	// The stub custom-payload packets have no GAMEPLAY_STREAM_CODEC for the packet census to read.
+	@ExpectCaught("GAMEPLAY_STREAM_CODEC")
 	@Test void aChannelDeclarationTellsNeoForgeFirstTheCourierSecondAndForgeLast() throws Throwable {
 		Object courier = courier(repaired);
 		Object channel = InjectorExecution.construct(repaired.loadClass("net.minecraft.resources.Identifier"), "mod:sync");
@@ -444,6 +449,8 @@ class FabricReceiverArbitrationExecutionTest {
 		assertEquals(List.of("neoforge register [mod:sync]", "relay", "courier joins [mod:sync]", "forge declares"), trace(repaired));
 	}
 
+	// The stub custom-payload packets have no GAMEPLAY_STREAM_CODEC for the packet census to read.
+	@ExpectCaught("GAMEPLAY_STREAM_CODEC")
 	@Test void anyOtherPayloadReachesTheCourierUntouched() throws Throwable {
 		Object courier = courier(repaired);
 		Object other = InjectorExecution.construct(repaired.loadClass("fixture.OtherPayload"), "x");

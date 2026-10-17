@@ -18,6 +18,7 @@ import org.junit.jupiter.api.parallel.ResourceLock;
 import org.objectweb.asm.ClassWriter;
 import org.objectweb.asm.MethodVisitor;
 import org.objectweb.asm.Opcodes;
+import net.forbric.kernel.ExpectCaught;
 
 /**
  * The audit on the REAL buses: NeoForge's EventBus and MinecraftForge's bus records from the staged runtime jars,
@@ -308,6 +309,8 @@ class EventChainAuditTest {
 	 * nothing, one that dispatches twice, and one whose dispatch throws are each a violation, though each counts as
 	 * settled by the kernel's own account.
 	 */
+	// The "throws" shape's forward is the test's own, not a bridge that reports its failure: NativeEventDelivery does.
+	@ExpectCaught("listener failed")
 	@Test void aLateForwardThatDispatchesOtherThanOnceOrThrowsIsAViolation() throws Exception {
 		for (String shape : List.of("nothing", "twice", "throws")) {
 			EventChainAudit.reset();

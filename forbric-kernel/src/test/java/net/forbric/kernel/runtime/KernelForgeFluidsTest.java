@@ -4,6 +4,7 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.nio.charset.StandardCharsets;
+import java.util.List;
 import java.nio.file.Files;
 import java.nio.file.Path;
 
@@ -46,8 +47,13 @@ class KernelForgeFluidsTest {
 		String routed = s.substring(s.indexOf("public static FluidModel modelFromExtensions("), s.indexOf("private static FluidModel ask("));
 		assertTrue(routed.indexOf("return model;") > 0 && routed.indexOf("return model;") < routed.indexOf("try {"),
 				"off-switch answers the model before the routed Forge ask");
-		assertTrue(routed.contains("catch (Throwable t)") && routed.substring(routed.indexOf("catch (Throwable t)")).contains("failed(t, model)"));
-		assertTrue(s.substring(s.indexOf("private static FluidModel failed(")).contains("return model;"), "a failure answers the model");
+		assertTrue(routed.contains("catch (Throwable t)"));
+		// A failure at either entry is reported and answers the model.
+		for (String entry : List.of(m, routed)) {
+			String handler = entry.substring(entry.indexOf("catch (Throwable t)"));
+			assertTrue(handler.contains("Caught.warn(t,") && handler.indexOf("Caught.warn(t,") < handler.indexOf("return model;"),
+					"a failure is reported and answers the model: " + handler);
+		}
 		String tint = s.substring(s.indexOf("public static int tintColor("));
 		assertTrue(tint.contains("return -1;"));
 		assertTrue(tint.indexOf("return -1;") < tint.indexOf("try {"));

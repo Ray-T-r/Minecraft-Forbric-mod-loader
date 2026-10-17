@@ -73,6 +73,13 @@ class KernelConditionKillSwitchesTest {
 			Method bind = helper.getDeclaredMethod("bindKnownTypesForTest", Predicate.class);
 			bind.setAccessible(true);
 			bind.invoke(null, (Predicate<String>) id -> false);
+			// A helper that asks who owns a type its registry lacks is told another ecosystem does: "foreign" is that, and
+			// the real registries are not on this loader (asking them would fail, and a failed lookup is not the subject).
+			for (Method owned : helper.getDeclaredMethods()) {
+				if (!owned.getName().equals("bindOwnedElsewhereForTest")) continue;
+				owned.setAccessible(true);
+				owned.invoke(null, (Predicate<String>) id -> true);
+			}
 
 			AtomicInteger strictCalls = new AtomicInteger();
 			Method error = dataResult.getMethod("error", java.util.function.Supplier.class);

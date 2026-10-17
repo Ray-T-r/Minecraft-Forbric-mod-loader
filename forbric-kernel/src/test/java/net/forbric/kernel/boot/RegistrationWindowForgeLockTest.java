@@ -40,6 +40,7 @@ import org.junit.jupiter.api.parallel.ResourceLock;
 
 import net.forbric.api.Ecosystem;
 import net.forbric.api.ForeignType;
+import net.forbric.kernel.ExpectCaught;
 
 /**
  * The main registration window takes registrations through a MinecraftForge wrapper that something locked before it
@@ -64,6 +65,8 @@ class RegistrationWindowForgeLockTest {
 	private static final String LOCKED = "Can not register to a locked registry";
 
 	/** What the merged Bootstrap leaves: the wrapper locked, the ForgeRegistry not frozen. */
+	// The stand-in game has no kernel runtime: the window's other closing steps find no KernelRegistryContent to call.
+	@ExpectCaught("KernelRegistryContent")
 	@Test
 	void aWrapperLockedBeforeTheWindowTakesRegistrationsInsideItAndIsLockedAgainAfter(@TempDir Path dir)
 			throws Exception {
@@ -93,6 +96,8 @@ class RegistrationWindowForgeLockTest {
 	 * A base whose Bootstrap runs only NeoForge's snapshot leaves nothing locked, and the window then clears and puts
 	 * back nothing: the opening is a no-op where it used to be enough.
 	 */
+	// The stand-in game has no kernel runtime: the window's other closing steps find no KernelRegistryContent to call.
+	@ExpectCaught("KernelRegistryContent")
 	@Test
 	void aWindowThatFindsNothingClosedClearsNothing(@TempDir Path dir) throws Exception {
 		try (URLClassLoader cl = carriers(dir)) {

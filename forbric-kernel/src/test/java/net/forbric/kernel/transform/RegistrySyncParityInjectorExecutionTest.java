@@ -13,13 +13,13 @@ import java.util.Map;
 import java.util.Set;
 
 import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import org.junit.jupiter.api.parallel.ResourceLock;
 
 import net.fabricmc.api.EnvType;
 import net.forbric.kernel.boot.KernelRegistryRevert;
-import net.forbric.kernel.ExpectCaught;
 
 /**
  * {@link RegistrySyncParityInjector}'s output, run against the kernel's real boot-side {@code KernelForgeWrapperSync}
@@ -499,6 +499,27 @@ class RegistrySyncParityInjectorExecutionTest {
 			state.setAccessible(true);
 			state.set(null, field.equals("reverting") ? Boolean.FALSE : null);
 		}
+		discovered().clear();
+		discovered().putAll(discoveredElsewhere);
+	}
+
+	/**
+	 * The remap contracts the kernel's mixin discovery noted are JVM-wide too, and the disconnect revert undoes every one
+	 * of them: a contract another test class's real mixins left noted would make this stub game's revert walk registries
+	 * it does not have. Each test here starts with none but its own.
+	 */
+	private final Map<String, Object> discoveredElsewhere = new HashMap<>();
+
+	@BeforeEach void startWithNoDiscoveredContracts() throws ReflectiveOperationException {
+		discoveredElsewhere.putAll(discovered());
+		discovered().clear();
+	}
+
+	@SuppressWarnings("unchecked")
+	private static Map<String, Object> discovered() throws ReflectiveOperationException {
+		java.lang.reflect.Field field = RegistrySyncParityInjector.class.getDeclaredField("DISCOVERED");
+		field.setAccessible(true);
+		return (Map<String, Object>) field.get(null);
 	}
 
 	/** The pending-tags class's own contents() exists only to make it compile; the merged one has none. */
@@ -561,8 +582,6 @@ class RegistrySyncParityInjectorExecutionTest {
 		return InjectorExecution.invokeStatic(manager, "applySnapshot", snapshots, false);
 	}
 
-	// The stub game has no BuiltInRegistries for fabric-api's unmap pass to walk.
-	@ExpectCaught("fabric-api's unmap pass failed part-way")
 	@Test void aClientTakesTheServersIdsForAWrappedRegistryAndGetsItsOwnBack(@TempDir Path work) throws Throwable {
 		Map<String, byte[]> original = merged(work);
 		Map<String, byte[]> classes = repaired(original);
