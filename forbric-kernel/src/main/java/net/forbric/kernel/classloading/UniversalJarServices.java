@@ -57,12 +57,18 @@ import net.forbric.kernel.util.ForbricLog;
  * Fabric half is suppressed), and the first read in {@code Minecraft.<init>} throws "Cannot get config value before
  * config is loaded".
  *
- * <p>So for a universal jar, a provider whose class — or a supertype in the same jar — names another loader's
- * namespace is left out of the file the jar's {@code ServiceLoader} reads, which is the list its own loader would have
- * ended up with. For a NeoForge or MinecraftForge owner that namespace is {@code net/fabricmc/} (and the other Forge
- * family's packages); for a Fabric owner only the Forge families' loading packages, {@code ModList} and
- * {@code ModContainer}, because a Fabric port (ForgeConfigAPIPort) legitimately supplies NeoForge's config types on
- * Fabric.
+ * <p>So for a universal jar, a provider whose class — or a supertype in the same jar — names a type its own loader would
+ * not have is left out of the file the jar's {@code ServiceLoader} reads, which is the list its own loader would have
+ * ended up with. Such a type is one of two things, each read off where the class comes from rather than off a mod's name:
+ * <ul>
+ *   <li>another loader's own platform: for a NeoForge or MinecraftForge owner, Fabric Loader's packages
+ *       ({@code net/fabricmc/loader/}, {@code net/fabricmc/api/}) and the other Forge family's; for a Fabric owner only the
+ *       Forge families' loading packages, {@code ModList} and {@code ModContainer}, because a Fabric port
+ *       (ForgeConfigAPIPort) legitimately supplies NeoForge's config types on Fabric;</li>
+ *   <li>a class outside every platform's packages that this class loader reads from a mod jar of another loader's family:
+ *       a Fabric mod's class — fabric-api's included, which is a mod like any other — for a NeoForge owner, a NeoForge
+ *       mod's for a Fabric owner. No such class exists on the owner's own loader.</li>
+ * </ul>
  *
  * <p>Only disambiguates, never empties: a file is rewritten only when it lists two or more providers and at least one
  * survives; a provider whose bytes cannot be read is kept. Single-loader jars and everything unowned (the game, the
@@ -81,11 +87,15 @@ public final class UniversalJarServices {
 		return !"off".equalsIgnoreCase(System.getProperty(PROPERTY, "on"));
 	}
 
-	/** Internal-name prefixes a provider must not name to be usable by {@code owner}'s loader natively. */
+	/**
+	 * Internal-name prefixes of another loader's own platform, which a provider must not name to be usable by
+	 * {@code owner}'s loader natively. Fabric Loader's packages only: fabric-api's classes are a mod's, judged by the jar
+	 * they come from ({@link #usable}).
+	 */
 	static List<String> foreign(LoaderProbePolicy.Family owner) {
 		return switch (owner) {
-			case NEOFORGE -> List.of("net/fabricmc/", "net/minecraftforge/");
-			case FORGE -> List.of("net/fabricmc/", "net/neoforged/");
+			case NEOFORGE -> List.of("net/fabricmc/loader/", "net/fabricmc/api/", "net/minecraftforge/");
+			case FORGE -> List.of("net/fabricmc/loader/", "net/fabricmc/api/", "net/neoforged/");
 			case FABRIC -> List.of("net/neoforged/fml/loading/", "net/minecraftforge/fml/loading/",
 					ForeignType.MOD_LIST.internal(Ecosystem.NEOFORGE), ForeignType.MOD_LIST.internal(Ecosystem.FORGE),
 					ForeignType.MOD_CONTAINER.internal(Ecosystem.NEOFORGE), ForeignType.MOD_CONTAINER.internal(Ecosystem.FORGE));
@@ -97,19 +107,30 @@ public final class UniversalJarServices {
 	 * fewer than two are listed, or dropping would leave none.
 	 *
 	 * @param classInJar the bytes of a class (internal name) from the SAME jar, or null when it has none
+	 * @param definingFamily the loader family of the mod jar this class loader reads a class (internal name) from, or null
+	 *        when it is no mod's (the game, a carrier, a library, the kernel) or absent
 	 */
-	static List<String> usable(LoaderProbePolicy.Family owner, List<String> providers, Function<String, byte[]> classInJar) {
+	static List<String> usable(LoaderProbePolicy.Family owner, List<String> providers, Function<String, byte[]> classInJar,
+			Function<String, LoaderProbePolicy.Family> definingFamily) {
 		if (owner == null || providers.size() < 2) return providers;
 		List<String> prefixes = foreign(owner);
+		java.util.function.Predicate<String> foreign = type -> {
+			for (String prefix : prefixes) if (type.startsWith(prefix)) return true;
+			String binary = type.replace('/', '.');
+			// A platform's class is judged by the table above alone; any other class by the mod jar it is read from.
+			if (DelegationPolicy.alwaysGame(binary) || DelegationPolicy.alwaysParent(binary) || definingFamily == null) return false;
+			LoaderProbePolicy.Family family = definingFamily.apply(type);
+			return family != null && family != owner;
+		};
 		List<String> kept = new ArrayList<>();
 		for (String provider : providers) {
-			if (!namesAny(provider.replace('.', '/'), prefixes, classInJar, new HashSet<>())) kept.add(provider);
+			if (!namesAny(provider.replace('.', '/'), foreign, classInJar, new HashSet<>())) kept.add(provider);
 		}
 		return kept.isEmpty() || kept.size() == providers.size() ? providers : kept;
 	}
 
-	/** Whether {@code internal} or a supertype of it found in the same jar names a type under one of {@code prefixes}. */
-	private static boolean namesAny(String internal, List<String> prefixes, Function<String, byte[]> classInJar, Set<String> seen) {
+	/** Whether {@code internal} or a supertype of it found in the same jar names a type {@code foreign} says the owner lacks. */
+	private static boolean namesAny(String internal, java.util.function.Predicate<String> foreign, Function<String, byte[]> classInJar, Set<String> seen) {
 		if (!seen.add(internal) || seen.size() > 32) return false;
 		byte[] bytes = classInJar.apply(internal);
 		if (bytes == null) return false;
@@ -121,10 +142,8 @@ public final class UniversalJarServices {
 			Caught.warn(unreadable, "[Forbric/Services] could not read service provider class %s; kept as usable", internal);
 			return false;
 		}
-		for (String type : named) {
-			for (String prefix : prefixes) if (type.startsWith(prefix)) return true;
-		}
-		for (String supertype : supertypes) if (namesAny(supertype, prefixes, classInJar, seen)) return true;
+		for (String type : named) if (!type.equals(internal) && foreign.test(type)) return true;
+		for (String supertype : supertypes) if (namesAny(supertype, foreign, classInJar, seen)) return true;
 		return false;
 	}
 
@@ -132,7 +151,8 @@ public final class UniversalJarServices {
 	 * The services file at {@code resource} as {@code owner}'s loader would read it: {@code resource} itself, or an
 	 * in-memory URL serving the filtered list.
 	 */
-	static URL serve(URL resource, String serviceFile, LoaderProbePolicy.Family owner, Function<String, byte[]> classInJar) {
+	static URL serve(URL resource, String serviceFile, LoaderProbePolicy.Family owner, Function<String, byte[]> classInJar,
+			Function<String, LoaderProbePolicy.Family> definingFamily) {
 		String text;
 		try (InputStream in = resource.openStream()) {
 			text = new String(in.readAllBytes(), StandardCharsets.UTF_8);
@@ -141,7 +161,7 @@ public final class UniversalJarServices {
 			return resource;
 		}
 		List<String> providers = providers(text);
-		List<String> kept = usable(owner, providers, classInJar);
+		List<String> kept = usable(owner, providers, classInJar, definingFamily);
 		if (kept == providers) return resource;
 
 		String jar = ForbricClassLoader.jarUrlOf(resource);

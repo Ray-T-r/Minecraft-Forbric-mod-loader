@@ -34,6 +34,8 @@ import java.util.WeakHashMap;
 
 import net.forbric.api.Ecosystem;
 import net.forbric.api.ForeignType;
+import net.forbric.kernel.classloading.ForbricClassLoader;
+import net.forbric.kernel.classloading.LoaderProbePolicy;
 import net.forbric.kernel.util.Caught;
 import net.forbric.kernel.util.ForbricLog;
 
@@ -801,6 +803,25 @@ public final class PayloadInterop {
 		}
 	}
 
+	/**
+	 * Whose codec writes a payload of this class first: the carrier whose own package the class is in (NeoForge's or
+	 * MinecraftForge's platform payloads), or the family of the mod jar the class was defined from — a Fabric mod's payload,
+	 * fabric-api's own payloads included (fabric-api is a mod jar of the Fabric family, whatever its packages are called), is
+	 * Fabric's to write. {@code null} for anything else: a payload of the game, a library, or a mod of another family, whose
+	 * codec is chosen by the registry entries below.
+	 */
+	static LoaderProbePolicy.Family encoderFamily(String payloadClass, LoaderProbePolicy.Family definingFamily) {
+		if (payloadClass.startsWith("net.neoforged.")) return LoaderProbePolicy.Family.NEOFORGE;
+		if (definingFamily == LoaderProbePolicy.Family.FABRIC) return LoaderProbePolicy.Family.FABRIC;
+		if (payloadClass.startsWith("net.minecraftforge.")) return LoaderProbePolicy.Family.FORGE;
+		return null;
+	}
+
+	/** The loader family of the mod jar {@code type} was defined from; null for the game, a carrier, a library or the kernel. */
+	private static LoaderProbePolicy.Family definingFamily(Class<?> type) {
+		return type.getClassLoader() instanceof ForbricClassLoader forbric ? forbric.familyOfClass(type.getName()) : null;
+	}
+
 	private static final class CandidateSet {
 		private final Object id;
 		private final Object local;
@@ -824,11 +845,12 @@ public final class PayloadInterop {
 		private Object selectEncode(Object payload) {
 			if (payload != null) {
 				String payloadClass = payload.getClass().getName();
-				if (payloadClass.startsWith("net.neoforged.")) return firstNonNull(neo, local, fabric, guest, fallback);
-				if (payloadClass.startsWith("net.fabricmc.")) return firstNonNull(fabric, local, neo, guest, fallback);
+				LoaderProbePolicy.Family writer = encoderFamily(payloadClass, definingFamily(payload.getClass()));
+				if (writer == LoaderProbePolicy.Family.NEOFORGE) return firstNonNull(neo, local, fabric, guest, fallback);
+				if (writer == LoaderProbePolicy.Family.FABRIC) return firstNonNull(fabric, local, neo, guest, fallback);
 				// A ForgePayload is Forge's own envelope for every channel it owns, minecraft:register included
 				// (ChannelListManager speaks it) — only Forge's codec knows how to write one.
-				if (payloadClass.startsWith("net.minecraftforge.")) return firstNonNull(forge, guest, fallback);
+				if (writer == LoaderProbePolicy.Family.FORGE) return firstNonNull(forge, guest, fallback);
 				// An unknown guest payload may share an id with a known registry type. Its original chosen codec
 				// is retained rather than sending that Java object unconditionally into Fabric's encoder.
 				if (guest != null) return guest;

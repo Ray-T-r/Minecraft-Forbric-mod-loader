@@ -8,6 +8,7 @@ import org.objectweb.asm.Opcodes;
 import org.objectweb.asm.Type;
 import org.objectweb.asm.tree.*;
 import org.objectweb.asm.tree.analysis.*;
+import net.forbric.kernel.classloading.DelegationPolicy;
 import net.forbric.kernel.util.Caught;
 
 /**
@@ -42,8 +43,9 @@ import net.forbric.kernel.util.Caught;
  * <p>What is recognised, by platform facts only; anything else is left exactly as the mod wrote it:
  * <ul>
  * <li>The registry: a {@code net/minecraft/core} registry type read, in the walking method, straight from a static
- *     field of a platform class (Minecraft, NeoForge, MinecraftForge, Fabric), possibly through locals and casts. A
- *     registry the mod cached in a field of its own, or was handed as a parameter, is not recognised.</li>
+ *     field of a class the class loader defines as the platform's ({@link DelegationPolicy#alwaysGame}: the game and the
+ *     carriers), possibly through locals and casts. A registry a mod keeps in a field of its own — fabric-api's included,
+ *     whose classes are a mod's to the class loader — or was handed as a parameter, is not recognised.</li>
  * <li>The callback: a call ON THE ELEMENT of a public no-argument member of a public interface (an
  *     {@code invokeinterface} whose receiver is the element, its result discarded), the way a mixin-added contract is
  *     called. The replay invokes exactly that member on each late element and nothing else, so a static helper the
@@ -80,7 +82,6 @@ final class RegistryWalkProof {
     static final Set<String> REGISTRY_TYPES = Set.of("Lnet/minecraft/core/IdMapper;", "Lnet/minecraft/core/IdMap;",
             "Lnet/minecraft/core/Registry;", "Lnet/minecraft/core/DefaultedRegistry;", "Lnet/minecraft/core/WritableRegistry;",
             "Lnet/minecraft/core/MappedRegistry;", "Lnet/minecraft/core/DefaultedMappedRegistry;");
-    private static final List<String> PLATFORM = List.of("net/minecraft/", "net/neoforged/", "net/minecraftforge/", "net/fabricmc/");
     /** Calls that start a walk; a method naming none of them, or no registry field, is not analysed at all. */
     static final Set<String> WALK_CALLS = Set.of("iterator()Ljava/util/Iterator;", "forEach(Ljava/util/function/Consumer;)V",
             "forEachOrdered(Ljava/util/function/Consumer;)V", "byId(I)Ljava/lang/Object;", "byIdOrThrow(I)Ljava/lang/Object;");
@@ -479,7 +480,7 @@ final class RegistryWalkProof {
 
     static boolean registryRead(AbstractInsnNode insn) {
         return insn instanceof FieldInsnNode field && field.getOpcode() == Opcodes.GETSTATIC && REGISTRY_TYPES.contains(field.desc)
-                && PLATFORM.stream().anyMatch(field.owner::startsWith);
+                && DelegationPolicy.alwaysGame(field.owner.replace('/', '.'));
     }
 
     private static boolean isReturn(AbstractInsnNode insn) {

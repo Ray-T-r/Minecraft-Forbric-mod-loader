@@ -771,7 +771,7 @@ public final class ForbricClassLoader extends URLClassLoader {
 					Caught.expected(absent);
 					return null;
 				}
-			}));
+			}, internal -> familyOfResource(internal.replace('/', '.'))));
 		}
 		return java.util.Collections.enumeration(served);
 	}

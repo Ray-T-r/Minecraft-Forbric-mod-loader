@@ -36,6 +36,9 @@ class UniversalJarServicesTest {
 	private static final String FABRIC_BASE = "fixture/fabric/FabricBase";
 	private static final String VIA_BASE = "fixture/fabric/ViaBaseImpl";
 
+	/** No class is read from another mod's jar. */
+	private static final java.util.function.Function<String, LoaderProbePolicy.Family> NO_MOD_JAR = type -> null;
+
 	@TempDir
 	Path directory;
 
@@ -49,32 +52,62 @@ class UniversalJarServicesTest {
 	void aNeoForgeOwnerDropsTheProviderThatLinksFabric() {
 		List<String> listed = List.of(dotted(FABRIC_IMPL), dotted(FALLBACK_IMPL), dotted(NEO_IMPL));
 		assertEquals(List.of(dotted(FALLBACK_IMPL), dotted(NEO_IMPL)),
-				UniversalJarServices.usable(LoaderProbePolicy.Family.NEOFORGE, listed, classes()::get));
+				UniversalJarServices.usable(LoaderProbePolicy.Family.NEOFORGE, listed, classes()::get, NO_MOD_JAR));
 	}
 
 	@Test
 	void aFabricOwnerKeepsItAndDropsNothingThatOnlyNamesNeoForgesConfigTypes() {
 		// NeoForgeConfigImpl names ModConfigSpec, which ForgeConfigAPIPort supplies on Fabric: still usable there.
 		List<String> listed = List.of(dotted(FABRIC_IMPL), dotted(FALLBACK_IMPL), dotted(NEO_IMPL));
-		assertSame(listed, UniversalJarServices.usable(LoaderProbePolicy.Family.FABRIC, listed, classes()::get));
+		assertSame(listed, UniversalJarServices.usable(LoaderProbePolicy.Family.FABRIC, listed, classes()::get, NO_MOD_JAR));
 	}
 
 	@Test
 	void aSupertypeInTheSameJarCounts() {
 		List<String> listed = List.of(dotted(VIA_BASE), dotted(NEO_IMPL));
-		assertEquals(List.of(dotted(NEO_IMPL)), UniversalJarServices.usable(LoaderProbePolicy.Family.NEOFORGE, listed, classes()::get));
+		assertEquals(List.of(dotted(NEO_IMPL)), UniversalJarServices.usable(LoaderProbePolicy.Family.NEOFORGE, listed, classes()::get, NO_MOD_JAR));
 	}
 
 	@Test
 	void itOnlyDisambiguatesNeverEmpties() {
 		List<String> alone = List.of(dotted(FABRIC_IMPL));
-		assertSame(alone, UniversalJarServices.usable(LoaderProbePolicy.Family.NEOFORGE, alone, classes()::get), "one provider: untouched");
+		assertSame(alone, UniversalJarServices.usable(LoaderProbePolicy.Family.NEOFORGE, alone, classes()::get, NO_MOD_JAR), "one provider: untouched");
 		List<String> allFabric = List.of(dotted(FABRIC_IMPL), dotted(VIA_BASE));
-		assertSame(allFabric, UniversalJarServices.usable(LoaderProbePolicy.Family.NEOFORGE, allFabric, classes()::get),
+		assertSame(allFabric, UniversalJarServices.usable(LoaderProbePolicy.Family.NEOFORGE, allFabric, classes()::get, NO_MOD_JAR),
 				"every provider would go: untouched");
 		List<String> unreadable = List.of("fixture.Missing", dotted(NEO_IMPL));
-		assertSame(unreadable, UniversalJarServices.usable(LoaderProbePolicy.Family.NEOFORGE, unreadable, classes()::get),
+		assertSame(unreadable, UniversalJarServices.usable(LoaderProbePolicy.Family.NEOFORGE, unreadable, classes()::get, NO_MOD_JAR),
 				"a provider whose bytes cannot be read is kept");
+	}
+
+	/**
+	 * A class a provider names that the class loader reads from another loader's mod jar is one its own loader lacks — the
+	 * same verdict for fabric-api's package and for an unrelated Fabric mod's, since fabric-api is a mod like any other — and
+	 * a class under fabric-api's package that no Fabric mod jar supplies is not Fabric Loader's, so it does not count.
+	 */
+	@Test
+	void aClassFromAnotherFamilysModJarCountsWhateverItsPackage() {
+		for (String type : List.of("net/fabricmc/fabric/api/qzx/Widget", "org/qzx/fabricmod/Widget")) {
+			Map<String, byte[]> classes = classes();
+			String impl = "fixture/fabric/WidgetConfigImpl";
+			classes.put(impl, impl(impl, "java/lang/Object", type, "make", "()V"));
+			List<String> listed = List.of(dotted(impl), dotted(NEO_IMPL));
+			assertEquals(List.of(dotted(NEO_IMPL)), UniversalJarServices.usable(LoaderProbePolicy.Family.NEOFORGE, listed, classes::get,
+					named -> named.equals(type) ? LoaderProbePolicy.Family.FABRIC : null), type);
+			assertSame(listed, UniversalJarServices.usable(LoaderProbePolicy.Family.NEOFORGE, listed, classes::get, NO_MOD_JAR),
+					type + " read from no mod jar is no loader's");
+		}
+	}
+
+	/** For a Fabric owner, a NeoForge mod's class is missing natively; NeoForge's own config types stay usable (a port supplies them). */
+	@Test
+	void aFabricOwnerDropsAProviderThatNamesANeoForgeModsClass() {
+		Map<String, byte[]> classes = classes();
+		String impl = "fixture/neoforge/ModdedConfigImpl", type = "org/qzx/neomod/Settings";
+		classes.put(impl, impl(impl, "java/lang/Object", type, "load", "()V"));
+		List<String> listed = List.of(dotted(FALLBACK_IMPL), dotted(impl), dotted(NEO_IMPL));
+		assertEquals(List.of(dotted(FALLBACK_IMPL), dotted(NEO_IMPL)), UniversalJarServices.usable(LoaderProbePolicy.Family.FABRIC, listed, classes::get,
+				named -> named.equals(type) ? LoaderProbePolicy.Family.NEOFORGE : named.startsWith("net/neoforged/") ? LoaderProbePolicy.Family.FABRIC : null));
 	}
 
 	@Test

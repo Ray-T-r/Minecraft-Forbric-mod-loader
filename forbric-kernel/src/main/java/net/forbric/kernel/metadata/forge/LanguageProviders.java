@@ -37,23 +37,25 @@ import net.forbric.kernel.util.ForbricLog;
  *
  * <h2>What is and is not handled</h2>
  *
+ * <p>{@code modLoader} is a contract value: the name a language provider registers with FML, which a manifest names.
+ * FML itself provides two, and only those are the platform's; every other name is a provider some mod ships, which the
+ * kernel does not run — it is not told apart by which mod ships it.
+ *
  * <ul>
  *   <li>{@code javafml} — a Java {@code @Mod} class, constructed by reflection. The default and the normal case.</li>
- *   <li>{@code kotlinforforge} — on genuine Forge the provider reads the Kotlin {@code object}'s
- *       {@code INSTANCE} field instead of calling a constructor. The kernel now does the same when a mod class
- *       has no public constructor, so the common shape works; anything the provider does BEYOND that does not.</li>
  *   <li>{@code lowcodefml} — a manifest-only mod with no mod class at all. Nothing to construct, and nothing
  *       here goes wrong; it is named so that "this pack contains one" is a fact in the log rather than a
  *       surprise later.</li>
- *   <li>anything else — unknown, and said so by name.</li>
+ *   <li>any other name — a mod's own language provider (KotlinForForge's {@code kotlinforforge} is the common one),
+ *       said so by name. The kernel takes a mod class with no public constructor from its {@code INSTANCE} field where
+ *       there is one, by that structure alone (a Kotlin {@code object}'s shape); anything else such a provider does is
+ *       not here.</li>
  * </ul>
  */
 public final class LanguageProviders {
 
 	/** The one this kernel implements outright. */
 	public static final String JAVA = "javafml";
-	/** Handled as far as the {@code INSTANCE} shape goes. */
-	public static final String KOTLIN = "kotlinforforge";
 	/** No mod class to construct, so nothing to provide. */
 	public static final String LOW_CODE = "lowcodefml";
 
@@ -67,32 +69,30 @@ public final class LanguageProviders {
 		return declared.strip().toLowerCase(Locale.ROOT);
 	}
 
-	/** Whether the kernel constructs mods of this language at all. */
-	public static boolean isSupported(String provider) {
-		return JAVA.equals(provider) || KOTLIN.equals(provider) || LOW_CODE.equals(provider);
+	/** Whether {@code provider} is one of FML's own language providers, the platform's, rather than one a mod ships. */
+	public static boolean isPlatforms(String provider) {
+		return JAVA.equals(provider) || LOW_CODE.equals(provider);
 	}
 
 	/**
 	 * Says, once per manifest, when a mod is not a plain Java one.
 	 *
-	 * <p>Deliberately a log line and not a {@code DEGRADED} mark: a Kotlin mod whose object shape the kernel can
-	 * take does work, and a {@code lowcodefml} data mod has nothing to construct in the first place. Marking
-	 * either would be the false accusation this project has already made once, from the other direction.
+	 * <p>Deliberately a log line and not a {@code DEGRADED} mark: a mod whose class the kernel can take (a Kotlin
+	 * {@code object}'s {@code INSTANCE}) does work, and a {@code lowcodefml} data mod has nothing to construct in the first
+	 * place. Marking either would be the false accusation this project has already made once, from the other direction.
+	 * Every provider that is not FML's own is said the same way, whichever mod ships it.
 	 */
 	public static void audit(ForgeModsToml toml, String source) {
 		String provider = of(toml);
 		if (JAVA.equals(provider)) return;
 
-		if (KOTLIN.equals(provider)) {
-			ForbricLog.info("[Forbric/Language] %s declares modLoader=%s — the kernel has no Kotlin language "
-					+ "provider and will take the mod class's INSTANCE where there is one, which covers a Kotlin "
-					+ "`object`; anything the real provider does beyond that is not here", source, provider);
-		} else if (LOW_CODE.equals(provider)) {
+		if (LOW_CODE.equals(provider)) {
 			ForbricLog.debug("[Forbric/Language] %s declares modLoader=%s — no mod class to construct", source, provider);
 		} else {
-			ForbricLog.warn("[Forbric/Language] %s declares modLoader=%s, which this kernel does not implement. "
-					+ "If it ships a mod class, construction will fail on it and the reason is this line, not "
-					+ "whatever the failure says", source, provider);
+			ForbricLog.info("[Forbric/Language] %s declares modLoader=%s, a language provider a mod ships, which this kernel "
+					+ "does not run. A mod class with no public constructor is taken from its INSTANCE field where there is one "
+					+ "(a Kotlin `object`'s shape); if its class has neither, construction fails and the reason is this line, "
+					+ "not whatever the failure says", source, provider);
 		}
 	}
 }

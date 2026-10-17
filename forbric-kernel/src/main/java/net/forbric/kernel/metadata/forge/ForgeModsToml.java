@@ -60,7 +60,7 @@ public final class ForgeModsToml {
 		return configElements;
 	}
 
-	/** The declared mod-loading language, e.g. {@code "javafml"} (or {@code "lowcodefml"} / {@code "kotlinforforge"}). */
+	/** The declared mod-loading language provider, e.g. {@code "javafml"} or {@code "lowcodefml"} (FML's own) or one a mod ships. */
 	public String getModLoader() {
 		return modLoader;
 	}

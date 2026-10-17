@@ -18,18 +18,19 @@ class LanguageProvidersTest {
 	}
 
 	@Test void theDeclaredProviderIsNormalisedNotGuessedAt() {
-		assertEquals(LanguageProviders.KOTLIN, LanguageProviders.of(toml(" KotlinForForge ")));
+		assertEquals("kotlinforforge", LanguageProviders.of(toml(" KotlinForForge ")));
 		assertEquals(LanguageProviders.LOW_CODE, LanguageProviders.of(toml("lowcodefml")));
 		// Not remapped to something known: an unrecognised provider has to stay unrecognised, because the whole
 		// value of this field is that it names a gap by its own name.
 		assertEquals("somethingelse", LanguageProviders.of(toml("SomethingElse")));
 	}
 
-	@Test void onlyTheThreeThisKernelHasAnAnswerForAreSupported() {
-		assertTrue(LanguageProviders.isSupported(LanguageProviders.JAVA));
-		assertTrue(LanguageProviders.isSupported(LanguageProviders.KOTLIN));
-		assertTrue(LanguageProviders.isSupported(LanguageProviders.LOW_CODE));
-		assertFalse(LanguageProviders.isSupported("somethingelse"));
+	/** FML's own two are the platform's; every other provider is one a mod ships, told apart by no mod's name. */
+	@Test void onlyFmlsOwnProvidersAreThePlatforms() {
+		assertTrue(LanguageProviders.isPlatforms(LanguageProviders.JAVA));
+		assertTrue(LanguageProviders.isPlatforms(LanguageProviders.LOW_CODE));
+		assertFalse(LanguageProviders.isPlatforms("kotlinforforge"));
+		assertFalse(LanguageProviders.isPlatforms("somethingelse"));
 	}
 
 	@Test void auditingNeverThrowsOnAnythingItIsHanded() {
