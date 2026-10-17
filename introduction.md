@@ -635,17 +635,32 @@ discriminated and where shifted points land. Undecorated, every Fabric mod ran a
 (997 distinct `fabric.mod.json`) the port agrees with Fabric Loader 0.19.3 itself on every mod, and 323 of the 561 that
 carry mixins get an older level than before.
 
-The level is not set below 0.10.0 (`KernelMixinBootstrap.RELOCATION_FLOOR`). Below it — Fabric's answer for a mod that
-declares no `fabricloader` lower bound, 58 of those 561 — Mixin finds locals with its legacy walk
-(`Locals.getLocalsAt092`), and a local capture the kernel relocated (`MixinGuiItemCaptureAdapter`, the folded-tail
-capture) is refused as "LVT ... has incompatible changes" and skipped: the real-weave suite loses exactly those at
-0.9.2 and passes in full at 0.10.0 and at 0.17.0. Raised to 0.10.0, such a mod keeps the walk the kernel always used
-and gets Fabric's behaviour otherwise. On the pure-Fabric server pack (126 mods, 159 jars), weaving at Fabric's own
+There is no floor. A mod that declares no `fabricloader` lower bound (58 of those 561) gets 0.9.2, as on Fabric, and
+with it Mixin's legacy local walk (`Locals.getLocalsAt092`). One difference between that walk and 0.10.0's meets a
+capture the kernel moved. To read the locals at a label or a line number, both first step forward over
+pseudo-instructions. The 0.10.0 walk stops before a frame. The 0.9.2 walk steps up to three nodes and reads the frame
+it lands on. `MixinGuiItemCaptureAdapter` moves a TAIL capture to `INVOKE <the call that ends the body>, AFTER`. Where
+that call falls straight into the join the tail sits on, AFTER is the join's label, and the 0.9.2 walk steps onto the
+join's frame. The path that never stored the local reaches the join too, so the frame does not declare the local:
+Mixin refuses the capture as "LVT ... has incompatible changes" and skips it. Nothing crashes, and the feature is gone.
+`MixinCaptureLanding`, a Mixin extension, fixes that in `preApply`, as Mixin is about to apply the mixins. Where the
+node after such a call is a pseudo-instruction, it inserts a `NOP` right after the call. The `NOP` is still inside the
+local's scope and is not a pseudo-instruction, so neither walk steps, and both read the locals the body left. It
+matches no injection point and has no frame of its own. The real-weave suite passes in full at 0.9.2, 0.10.0 and
+0.17.0. The GUI-item fixture captures at 0.9.2, 0.10.0 and 0.17.1. At 0.10.0 the woven method differs from the weave
+without the landing by the `NOP` alone. With `-Dforbric.captureLanding=off`, the 0.9.2 weave skips the capture again.
+Until this, the kernel raised such mods to 0.10.0 (`RELOCATION_FLOOR`). Without that floor, the pure-Fabric server A/B
+(130 mods alone, then the 159-jar pack for 1200 ticks) still matches native Fabric: 126 pass on both, the same 4 fail
+on both, none fails on Forbric alone. The 127 sessions that reached Mixin include the 12 with configs the floor
+raised, and each logs the same Mixin warnings and the same unattached injectors as with the floor. The client
+gate (gate-m9, 13 of its configs now at 0.9.2) gives the same result as before. No Fabric mod in the local corpus
+that gets 0.9.2 has a TAIL locals capture at all, so the landing is for the shape rather than for a mod seen so far.
+On the pure-Fabric server pack (126 mods, 159 jars), weaving at Fabric's own
 levels instead of the newest changed only the order of field initialisers in six classes (exported classes, against a
 second run at the same levels as the noise floor), and the pack runs to the same end.
 Forge-family configs are left as they were: NeoForge's FML decorates its own with a declared `behaviorVersion` and
 refuses one below 0.17.1, so every level it can give behaves as the bundled Mixin's newest.
-`-Dforbric.mixinCompat=exact` drops the floor; `latest` leaves every Fabric config at the newest level.
+`-Dforbric.mixinCompat=latest` leaves every Fabric config at the newest level.
 
 Order: Fabric configs in Fabric Loader's order, Forge-family configs appended. Mixin orders by priority;
 registration order only breaks ties, so the least-proven set becomes the outer wrapper around a known-good stack.
@@ -1358,7 +1373,8 @@ developer reaches for:
 | Property | Effect |
 | --- | --- |
 | `forbric.relaxGuestMixins` | `off`: guest configs are not relaxed |
-| `forbric.mixinCompat` | `exact`: Fabric Loader's per-mod level without the 0.10.0 floor; `latest`: every Fabric config at Mixin's newest level (§7.1) |
+| `forbric.mixinCompat` | `latest`: every Fabric config at Mixin's newest level instead of the level Fabric Loader gives its mod (§7.1) |
+| `forbric.captureLanding` | `off`: a TAIL capture the kernel moved after a call that falls into the tail's join gets no `NOP` to land on, and at 0.9.2 Mixin skips it (§7.1) |
 | `forbric.relaxMixinOverwrites` | csv (`*` glob) of configs to relax |
 | `forbric.mixinDiagnostics` | keep injection requirements strict to surface every misfit |
 | `forbric.mixinFit` | `strict`: also drop `PARTIAL` mixins |

@@ -281,7 +281,7 @@ Mixin (via MixinWeaverSlot) → NativeCoremodParity → PostMixinFixups → Inte
 
 推进阶段之前，每个配置都按 Fabric Loader 的 `MixinConfigDecorator` 的方式打上标记：所属 mod 的 id（`KEY_MOD_ID`，让 Mixin 自己的消息能说出是哪个 mod），以及对 Fabric 拥有的配置，Fabric Loader 会给这个 mod 的 Mixin 兼容级别（`KEY_COMPATIBILITY`，`FabricMixinCompat`）。级别取自该 mod 对 `fabricloader` 的 `depends`/`breaks` 所接受的最低 Fabric Loader 版本，按 Fabric 自己的版本顺序比较（移植自 `SemanticVersionImpl.compareTo`，不用内核做依赖判断的比较器，那个对预发布版本的排序不同），再查 Fabric Loader 0.19.3 的 `FabricMixinVersions` 表（这是内核对外报告的版本，这张表的最高级别也正好是内置 Mixin 的最新级别）。它决定初始化器和注入器的应用顺序、局部变量怎么判别、平移后的注入点落在哪里。之前没有这个标记，所有 Fabric mod 都按最新级别运行。在本地语料（997 个不同的 `fabric.mod.json`）上，这份移植和 Fabric Loader 0.19.3 本身对每个 mod 的结果都一致；带 mixin 的 561 个 mod 里有 323 个得到比之前更旧的级别。
 
-级别不会低于 0.10.0（`KernelMixinBootstrap.RELOCATION_FLOOR`）。低于它的情况是：mod 没有声明 `fabricloader` 下界时，Fabric 给 0.9.2，这样的 mod 在那 561 个里有 58 个。在 0.9.2 下，Mixin 用旧的局部变量查找（`Locals.getLocalsAt092`），内核搬过位置的局部变量捕获（`MixinGuiItemCaptureAdapter`、折叠尾部的捕获）会被判为 "LVT ... has incompatible changes" 并跳过。真实织入测试在 0.9.2 下恰好丢掉这几个，在 0.10.0 和 0.17.0 下全部通过。提到 0.10.0 后，这类 mod 沿用内核一直用的查找方式，其余行为和 Fabric 一致。在纯 Fabric 服务端整包（126 个 mod、159 个 jar）上，按 Fabric 自己的级别织入、而不是全按最新级别，只改变了 6 个类里字段初始化的顺序（比较的是导出的类，并用同级别的第二次运行作噪声对照），整包运行结果相同。Forge 系的配置保持原样：NeoForge 的 FML 会按声明的 `behaviorVersion` 给自己的配置打标记，低于 0.17.1 直接拒绝加载，所以它能给出的任何级别在内置 Mixin 下都和最新级别表现一样。`-Dforbric.mixinCompat=exact` 去掉这个下限，`latest` 让所有 Fabric 配置保持最新级别。
+不设下限。mod 没有声明 `fabricloader` 下界时（那 561 个里有 58 个），和在 Fabric 上一样得到 0.9.2，也就用上 Mixin 旧的局部变量查找（`Locals.getLocalsAt092`）。这套查找和 0.10.0 的有一处差别，会碰上内核搬过位置的捕获。两套查找在 label 或行号处读局部变量之前，都会先往前跳过伪指令：0.10.0 的遇到帧就停；0.9.2 的最多走三个节点，走到帧上就把帧读进去。`MixinGuiItemCaptureAdapter` 会把 TAIL 捕获搬到 `INVOKE <结束方法体的那个调用>, AFTER`。如果那个调用直接落进尾部所在的汇合点，AFTER 就是汇合点的 label，0.9.2 的查找会走到汇合点的帧上。没存过这个局部变量的那条路径也会到达汇合点，所以这个帧里没有它：Mixin 判 "LVT ... has incompatible changes"，跳过这个捕获。不会崩，但功能没了。`MixinCaptureLanding` 是一个 Mixin 扩展，在 Mixin 即将应用 mixin 时（`preApply`）处理这件事：这种调用后面的节点是伪指令时，在调用后面紧接着插一个 `NOP`。`NOP` 仍在这个局部变量的作用域内，又不是伪指令，所以两套查找都不用往前走，读到的都是方法体留下的局部变量。它不匹配任何注入点，也没有自己的帧。真实织入测试套在 0.9.2、0.10.0 和 0.17.0 下全部通过；GUI 物品那个 fixture 在 0.9.2、0.10.0 和 0.17.1 下都能捕获；在 0.10.0 下，织入后的方法和不加落点时的织入只差这一个 `NOP`；`-Dforbric.captureLanding=off` 时，0.9.2 的织入又会跳过这个捕获。在此之前，内核把这类 mod 抬到 0.10.0（`RELOCATION_FLOOR`）。去掉这个下限后，纯 Fabric 服务端 A/B（130 个 mod 各自单跑，再把 159 个 jar 放进一个整包跑 1200 tick）的结果仍和原生 Fabric 一致：两边都通过的 126 个，两边都失败的还是那 4 个，没有只在 Forbric 上失败的。走到 Mixin 的 127 次会话里包括 12 次带有曾被下限抬高的配置，每一次记下的 Mixin 警告和没挂上的注入器都和有下限时完全相同。客户端门禁（gate-m9，其中 13 个配置现在是 0.9.2）的结果和之前一样。本地语料里，得到 0.9.2 的 Fabric mod 没有一个带 TAIL 局部变量捕获，所以这个落点针对的是这种形状，而不是目前见过的某个 mod。在纯 Fabric 服务端整包（126 个 mod、159 个 jar）上，按 Fabric 自己的级别织入、而不是全按最新级别，只改变了 6 个类里字段初始化的顺序（比较的是导出的类，并用同级别的第二次运行作噪声对照），整包运行结果相同。Forge 系的配置保持原样：NeoForge 的 FML 会按声明的 `behaviorVersion` 给自己的配置打标记，低于 0.17.1 直接拒绝加载，所以它能给出的任何级别在内置 Mixin 下都和最新级别表现一样。`-Dforbric.mixinCompat=latest` 让所有 Fabric 配置保持最新级别。
 
 顺序：Fabric 配置按 Fabric Loader 的顺序，Forge 系配置追加在后面。Mixin 按优先级排序，注册顺序只用来决定同优先级的先后，所以验证最少的那一组会成为最外层，包在已知可靠的栈外面。`MixinWeaverSlot` 让第三方 mod 能按 NeoForge 允许的方式替换织入器（LibJF 包装了 `FMLMixinClassProcessor.transformer`）。
 
@@ -597,7 +597,8 @@ java -cp <boot-cp> net.forbric.kernel.boot.Main --scan --mods <dir> --report out
 | 属性 | 作用 |
 | --- | --- |
 | `forbric.relaxGuestMixins` | `off`：不放宽第三方配置 |
-| `forbric.mixinCompat` | `exact`：按 Fabric Loader 给每个 mod 的级别，不设 0.10.0 下限；`latest`：所有 Fabric 配置按 Mixin 的最新级别运行（§7.1） |
+| `forbric.mixinCompat` | `latest`：所有 Fabric 配置按 Mixin 的最新级别运行，而不是 Fabric Loader 给其 mod 的级别（§7.1） |
+| `forbric.captureLanding` | `off`：内核搬到"落进尾部汇合点的调用"之后的 TAIL 捕获不再得到落脚的 `NOP`，在 0.9.2 下 Mixin 会跳过它（§7.1） |
 | `forbric.relaxMixinOverwrites` | 要放宽的配置，csv（支持 `*` 通配） |
 | `forbric.mixinDiagnostics` | 保持注入要求严格，让每一处不适配都暴露出来 |
 | `forbric.mixinFit` | `strict`：连 `PARTIAL` 的 mixin 也丢弃 |
