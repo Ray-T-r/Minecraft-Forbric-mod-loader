@@ -1607,6 +1607,7 @@ test	net.forbric.kernel.runtime.KernelCreativePagerTest	neoForgesPageButtonsKeep
 test	net.forbric.kernel.runtime.KernelCreativePagerTest	theBridgeAnswersEveryCallFromNeoForgesPager()	[fixture:game-side] compile the staged runtime source set before this test: build/classes/java/runtime/net/forbric/kernel/runtime/KernelCreativePager.class
 test	net.forbric.kernel.runtime.KernelCreativePagerTest	withoutTheBridgeOwosCallOnTheCreativeScreenThrowsAssertionError()	[fixture:game-side] compile the staged runtime source set before this test: build/classes/java/runtime/net/forbric/kernel/runtime/KernelCreativePager.class
 test	net.forbric.kernel.runtime.KernelFabricConditionsGateLineTest	theFirstJudgementPrintsTheLineGateM9Reads(Path)	[fixture:staged] the staged artifacts are absent
+test	net.forbric.kernel.runtime.KernelFabricConditionsPublicApiTest	theKeyIsJudgedByThePublicCodecAndTest(Path)	[fixture:staged] the staged artifacts are absent
 test	net.forbric.kernel.runtime.KernelFabricFluidBehaviorsTest	aLookupThatBreaksAnswersNoBehaviourType()	[fixture:third-party] sweep pack absent
 test	net.forbric.kernel.runtime.KernelFabricFluidBehaviorsTest	aQuestionDuringTheFirstResolveWaitsForIt()	[fixture:third-party] sweep pack absent
 test	net.forbric.kernel.runtime.KernelFabricFluidBehaviorsTest	aRegisteredTagAnswersNeoForgesQuestionsFromItsBehaviour()	[fixture:third-party] sweep pack absent
