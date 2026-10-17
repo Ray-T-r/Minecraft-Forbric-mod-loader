@@ -34,10 +34,10 @@ public final class KernelSourceDecodeScopes {
   catch(ReflectiveOperationException|RuntimeException|LinkageError unproved){ForbricLog.warn("[Forbric/Conditions] source predicate evaluation ownership could not be recorded; native condition fallback remains active",unproved);}
   return result;
  }
- static boolean alreadyJudged(Object input,MethodHandle evaluator){
-  Scope scope=ACTIVE.get();if(scope==null||evaluator==null)return false;
-  try { var info=MethodHandles.lookup().revealDirect(evaluator);return scope.judged.stream().anyMatch(j->j.input==input&&j.owner==info.getDeclaringClass()&&j.name.equals(info.getName())&&j.type.equals(info.getMethodType())); }
-  catch(RuntimeException unproved){return false;}
+ /** Whether a source guard of the active decode scope has already judged this very input: its verdict stands. */
+ static boolean alreadyJudged(Object input){
+  Scope scope=ACTIVE.get();if(scope==null)return false;
+  return scope.judged.stream().anyMatch(j->j.input==input);
  }
  /** Only a transported original cancellation callback creates this consumer. Its delegate is called unchanged. */
  public static final class OwnedConsumer implements Consumer<Object> {
