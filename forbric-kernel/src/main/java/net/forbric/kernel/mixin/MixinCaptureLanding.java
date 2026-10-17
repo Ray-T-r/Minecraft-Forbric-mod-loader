@@ -35,7 +35,8 @@ import net.forbric.kernel.util.ForbricLog;
  * forward over pseudo-instructions, and its two walks step differently. Since 0.10.0 ({@code Locals.getLocalsAt}) it
  * stops before a frame. The 0.9.2 walk ({@code getLocalsAt092}) steps up to three nodes, onto the join's frame, and
  * reads it. Fabric Loader gives that walk to a mod whose lowest accepted {@code fabricloader} is older than 0.12.0, or
- * that accepts every version, as one declaring no lower bound does. The frame belongs to the join, and the join is also
+ * that sets no lower bound at all (no {@code fabricloader} dependency, {@code *}, or only an upper bound). The frame
+ * belongs to the join, and the join is also
  * reached by the path that never stored the local, so the frame does not declare it: Mixin reports "LVT ... has
  * incompatible changes" and skips the handler. Nothing crashes, and the capture is gone.
  *
