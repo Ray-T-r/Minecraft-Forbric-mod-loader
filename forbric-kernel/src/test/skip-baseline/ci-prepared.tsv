@@ -229,12 +229,6 @@ test	net.forbric.kernel.mixin.AddedCallOccurrencesTest	createsCommandsHookCounts
 test	net.forbric.kernel.mixin.AddedCallOccurrencesTest	createsUseItemOnInjectorCountsVanillasMainHandCallOnly()	[fixture:third-party] real fixture required: $ROOT/forbric-kernel/build/compat-inputs/create-fly/create-fly.jar
 test	net.forbric.kernel.mixin.AddedCallOccurrencesTest	onVanillaOrSwitchedOffNothingIsNumbered()	[fixture:third-party] real fixture required: $ROOT/forbric-kernel/build/compat-inputs/create-fly/create-fly.jar
 test	net.forbric.kernel.mixin.AddedCallOccurrencesTest	puzzleslibsBreedingHookCountsVanillasStoreOnly()	[fixture:third-party] sweep PuzzlesLib fixture
-test	net.forbric.kernel.mixin.BalmEffectVetoTest	aBalmThatAsksAnythingElseIsNotReimplemented()	[fixture:third-party] sweep pack absent
-test	net.forbric.kernel.mixin.BalmEffectVetoTest	itsOwnSwitchAndTheAdaptersSwitchBothLeaveItAlone()	[fixture:third-party] sweep pack absent
-test	net.forbric.kernel.mixin.BalmEffectVetoTest	modifiedCollectionFlowAndCleanupAreNotGuessed()	[fixture:third-party] sweep pack absent
-test	net.forbric.kernel.mixin.BalmEffectVetoTest	onlyWhenNeoForgeAsksOncePerEffect()	[fixture:third-party] sweep pack absent
-test	net.forbric.kernel.mixin.BalmEffectVetoTest	renamedProviderAndPredicateStillRetainTheirOriginalQuestion()	[fixture:third-party] sweep pack absent
-test	net.forbric.kernel.mixin.BalmEffectVetoTest	theDeadClearWrapBecomesAWrapOfNeoForgesPerEffectQuestion()	[fixture:third-party] sweep pack absent
 test	net.forbric.kernel.mixin.BarrelRollCameraAdapterTest	actualModBindsOrdinaryMirroredAndBedCallsAndKeepsShareSlotValid()	[fixture:third-party] build/compat-inputs/c2me-barrel-20261001/do_a_barrel_roll-fabric-3.8.4+26.2.jar absent
 test	net.forbric.kernel.mixin.BarrelRollCameraAdapterTest	vanillaShapeOffSwitchAndUnexpectedCarrierShapeRemainUntouched()	[fixture:third-party] build/compat-inputs/c2me-barrel-20261001/do_a_barrel_roll-fabric-3.8.4+26.2.jar absent
 test	net.forbric.kernel.mixin.BlockBreakCallbackShapesTest	aShorterCaptureNoneOrLocalsByTypeAreServed()	[fixture:third-party] real fixture required: build/compat-inputs/carpet/mods/fabric-carpet-26.2+v260616.jar
@@ -262,7 +256,7 @@ test	net.forbric.kernel.mixin.CarpetMixinAdapterTest	handSwapRunsBeforeTheNative
 test	net.forbric.kernel.mixin.CarpetMixinAdapterTest	reshapedHostsRefuseTheWholeRetarget()	[fixture:third-party] real fixture required: build/compat-inputs/carpet/mods/fabric-carpet-26.2+v260616.jar
 test	net.forbric.kernel.mixin.CarpetMixinAdapterTest	reshapedNativeFluidLocalRefusesTheWholeRetarget()	[fixture:third-party] real fixture required: build/compat-inputs/carpet/mods/fabric-carpet-26.2+v260616.jar
 test	net.forbric.kernel.mixin.CarpetMixinAdapterTest	vanillaAndDisabledRepairLeaveAllReleasedHandlersUntouched()	[fixture:third-party] real fixture required: build/compat-inputs/carpet/mods/fabric-carpet-26.2+v260616.jar
-test	net.forbric.kernel.mixin.ClearRestoreVetoExecutionTest	nativeAndGuestVetoesKeepTheirOrderAndOriginalArguments()	[fixture:third-party] Balm fixture absent
+test	net.forbric.kernel.mixin.CarrierDefaultChainsStagedTest	aConstantsModifierMovesOntoTheCallWhoseDefaultPushesIt()	[fixture:third-party] popular-pack Origins fixture absent
 test	net.forbric.kernel.mixin.ContinuitySpriteMixinAdapterTest	aChangedLocalMapLayoutIsRefused()	[fixture:third-party] actual Continuity fixture required
 test	net.forbric.kernel.mixin.ContinuitySpriteMixinAdapterTest	actualCallbacksMoveToTheLiveOverloadAndKeepTheOriginalLoaderMapArgument()	[fixture:third-party] actual Continuity fixture required
 test	net.forbric.kernel.mixin.ContinuitySpriteMixinAdapterTest	vanillaAndDisabledRepairKeepTheUpstreamMixin()	[fixture:third-party] actual Continuity fixture required
@@ -276,13 +270,9 @@ test	net.forbric.kernel.mixin.CreateKeyboardMixinAdapterTest	releasedHooksRunWhe
 test	net.forbric.kernel.mixin.CreateKeyboardMixinAdapterTest	vanillaKeepsTheOriginalReturnSelectors()	[fixture:third-party] real fixture required: $ROOT/forbric-kernel/build/compat-inputs/create-fly/create-fly.jar
 test	net.forbric.kernel.mixin.CreateStructureMixinAdapterTest	aMissingCallerRefusesAllThreeSelectorsTogether()	[fixture:third-party] real fixture required: $ROOT/forbric-kernel/build/compat-inputs/create-fly/create-fly.jar
 test	net.forbric.kernel.mixin.CreateStructureMixinAdapterTest	setupIterationAndCleanupMoveTogetherToTheCalledEntityPlacementBody()	[fixture:third-party] real fixture required: $ROOT/forbric-kernel/build/compat-inputs/create-fly/create-fly.jar
-test	net.forbric.kernel.mixin.FabricBlockBreakMixinAdapterTest	aBooleanTheTableDeclaresBeforeItsSlotIsWrittenIsNoSecondBoolean()	[fixture:third-party] popular-pack Origins fixture absent
-test	net.forbric.kernel.mixin.FabricBlockBreakMixinAdapterTest	aSecondBooleanOrAnotherProducerLeavesTheOrdinalAlone()	[fixture:third-party] popular-pack Origins fixture absent
-test	net.forbric.kernel.mixin.FabricBlockBreakMixinAdapterTest	aStateThatIsNotTheOneReadFromTheLevelIsNotHandedOver()	[fixture:third-party] popular-pack architectury fixture absent
-test	net.forbric.kernel.mixin.FabricBlockBreakMixinAdapterTest	anotherModsHarvestHandlerUsesTheSameProvenProducer()	[fixture:third-party] popular-pack Origins fixture absent
-test	net.forbric.kernel.mixin.FabricBlockBreakMixinAdapterTest	apolisHarvestModifierMovesToTheOnlyBooleanNeoForgeHasAtMineBlock()	[fixture:third-party] popular-pack Origins fixture absent
-test	net.forbric.kernel.mixin.FabricBlockBreakMixinAdapterTest	architecturysBreakHandlerCapturesNeoForgesFrameAndStillGetsItsTwoValues()	[fixture:third-party] popular-pack architectury fixture absent
-test	net.forbric.kernel.mixin.FabricBlockBreakMixinAdapterTest	theSwitchAndOtherMixinsAreLeftAlone()	[fixture:third-party] popular-pack architectury fixture absent
+test	net.forbric.kernel.mixin.FabricBlockBreakMixinAdapterTest	aBooleanTheTableDeclaresBeforeItsSlotIsWrittenDoesNotMoveThePin()	[fixture:third-party] popular-pack Origins fixture absent
+test	net.forbric.kernel.mixin.FabricBlockBreakMixinAdapterTest	apolisHarvestModifierIsPinnedToTheMergedLocalOfTheSameNameAndType()	[fixture:third-party] popular-pack Origins fixture absent
+test	net.forbric.kernel.mixin.FabricBlockBreakMixinAdapterTest	architecturysBreakCaptureIsReadWhereTheMergedBodyKeepsEachLocal()	[fixture:third-party] popular-pack architectury fixture absent
 test	net.forbric.kernel.mixin.FabricBlockBreakMixinAdapterTest	vanillasOwnBodyIsWhatBothWereWrittenFor()	[fixture:third-party] popular-pack architectury fixture absent
 test	net.forbric.kernel.mixin.FabricClientMixinAnchorsTest	releasedLiquidBounceBuildDrawsItsMenuWithTheCanvasTheGatewayDraws()	[fixture:third-party] ../build/lb-vfp/jars/liquidbounce-0.40.1+26.2-20260925.jar absent
 test	net.forbric.kernel.mixin.FabricClientMixinAnchorsTest	releasedLiquidBounceDrawsItsMenuWithTheCanvasTheGatewayDraws()	[fixture:third-party] ../build/lb-vfp/jars/liquidbounce-9889fe2.jar absent
@@ -778,6 +768,7 @@ test	net.forbric.kernel.transform.RegistryDirectoryOwnerInjectorTest	forceHandsF
 test	net.forbric.kernel.transform.RegistryDirectoryOwnerInjectorTest	withoutFabricsModifierInRegistriesEveryRegistryKeepsTheMergedDirectory()	[fixture:third-party] build/compat-inputs/sweep90/mods/fabric-api-0.161.0+26.2.jar absent — skipping real-bytes check
 test	net.forbric.kernel.transform.RegistryDirectoryOwnerInjectorTest	woversRegistriesReadTheDirectoryWoverShipsAsOnNativeFabric()	[fixture:third-party] build/compat-inputs/sweep90/mods/fabric-api-0.161.0+26.2.jar absent — skipping real-bytes check
 test	net.forbric.kernel.transform.RegistryElementCallbackInjectorTest	theActualTwoInterfaceInitializerMatchesWithoutModNamesOrVersionHashes()	[fixture:third-party] Lithium fixture absent
+test	net.forbric.kernel.transform.ScopedClearRelayStagedTest	balmsClearAllVetoHasTheOneClearToWrap()	[fixture:third-party] sweep pack absent
 test	net.forbric.kernel.transform.SpawnPositionCallsInjectorTest	architecturysChunkGenerationRedirectFitsTheRewrittenNaturalSpawner()	[fixture:third-party] popular-pack architectury fixture absent
 test	net.forbric.kernel.transform.SpawnPositionCallsInjectorTest	architecturysRedirectsFitTheRewrittenSpawnerAndMissedTheMergedOne()	[fixture:third-party] popular-pack architectury fixture absent
 test	net.forbric.kernel.transform.ZeroNameTagMigrationInjectorTest	actualReviewedConstructorMovesOneReadAndKeepsTheOriginalJarAndOtherInstructions()	[fixture:third-party] local merged mod pack: run/client-merged-pack/mods/corpse-neoforge-1.1.17+26.2.jar

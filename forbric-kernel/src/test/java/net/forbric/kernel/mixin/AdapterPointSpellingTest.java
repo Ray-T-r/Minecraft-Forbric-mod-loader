@@ -377,8 +377,8 @@ class AdapterPointSpellingTest {
 
 	/** The shorter target, against a written method that also accesses another owner's member of that name (or another overload). */
 	private static void crowded(Case c, PointRespelling.Form form, boolean otherOwner) throws Exception {
-		if (READ_AS_SELECTED.contains(c.id())) return;
 		ClassNode mixin = read(c), natives = NATIVES.apply(c.family(), c.owner()), crowd = PointRespelling.copy(natives);
+		if (READ_AS_SELECTED.contains(c.id())) return;
 		Set<MethodNode> key = key(c, mixin);
 		assertTrue(PointRespelling.crowd(mixin, key::contains, crowd, otherOwner) > 0, "premise: the written methods are crowded");
 		assertTrue(PointRespelling.points(mixin, key::contains, form, m -> PointRespelling.bound(m, natives)) > 0
