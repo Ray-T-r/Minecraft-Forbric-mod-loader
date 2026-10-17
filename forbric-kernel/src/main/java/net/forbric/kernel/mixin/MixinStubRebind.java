@@ -136,12 +136,25 @@ public final class MixinStubRebind {
 	public static final String SHARED_PROPERTY = "forbric.mixinStubRebind.shared";
 	/** {@code -Dforbric.mixinStubRebind.allow=off}: an injector moves whatever its {@code allow} says, as before (A/B only). */
 	public static final String ALLOW_PROPERTY = "forbric.mixinStubRebind.allow";
+	/** {@code -Dforbric.mixinStubRebind.cancellable=off}: a handler with a {@code @Cancellable} callback stays on the stub. */
+	public static final String CANCELLABLE_PROPERTY = "forbric.mixinStubRebind.cancellable";
+	/** {@code -Dforbric.mixinStubRebind.slice=off}: a {@code @ModifyVariable} with a slice stays on the stub. */
+	public static final String SLICE_PROPERTY = "forbric.mixinStubRebind.slice";
+
+	private static boolean cancellableEnabled() {
+		return !"off".equalsIgnoreCase(System.getProperty(CANCELLABLE_PROPERTY, "on"));
+	}
+
+	private static boolean sliceEnabled() {
+		return !"off".equalsIgnoreCase(System.getProperty(SLICE_PROPERTY, "on"));
+	}
 
 	private static final String INJECT = "Lorg/spongepowered/asm/mixin/injection/Inject;";
 	private static final String CALLBACK_INFO = "Lorg/spongepowered/asm/mixin/injection/callback/CallbackInfo;";
 	private static final String CALLBACK_INFO_RETURNABLE = "Lorg/spongepowered/asm/mixin/injection/callback/CallbackInfoReturnable;";
 	private static final String LOCAL = "Lcom/llamalad7/mixinextras/sugar/Local;";
 	private static final String SHARE = "Lcom/llamalad7/mixinextras/sugar/Share;";
+	private static final String CANCELLABLE = "Lcom/llamalad7/mixinextras/sugar/Cancellable;";
 	private static final String REDIRECT = "Lorg/spongepowered/asm/mixin/injection/Redirect;";
 	private static final String GROUP = "Lorg/spongepowered/asm/mixin/injection/Group;";
 	private static final String DEFINITION = "Lcom/llamalad7/mixinextras/expression/Definition;";
@@ -519,7 +532,9 @@ public final class MixinStubRebind {
 		boolean variable = MODIFY_VARIABLE.equals(injector.desc);
 		if (variable && !modifyVariableEnabled()) return null;
 		if (!inject && !variable && !MixinRetarget.AT_DRIVEN.contains(injector.desc)) return null;
-		if (MixinFit.value(injector, "locals") != null || MixinFit.value(injector, "slice") != null) return null;
+		if (MixinFit.value(injector, "locals") != null) return null;
+		// A slice only on a @ModifyVariable whose local is pinned by value (ordinalLocalPinned proves the slice too).
+		if (MixinFit.value(injector, "slice") != null && !variable) return null;
 		// One selector, of the two forms a row is about: a name alone (bound to the first declared overload) or with its
 		// descriptor. Which it is, and the method it binds, are read as Mixin reads them, however it is spelled.
 		List<String> selectors = MixinFit.stringList(MixinFit.value(injector, "method"));
@@ -598,6 +613,12 @@ public final class MixinStubRebind {
 				// geometry is drawn by calls of its own the redirect does not name.
 				if (REDIRECT.equals(injector.desc) && !replacesOnlyNativeCalls(points, target, stub, delegate, ecosystem)) return null;
 				shares.add(key);
+				continue;
+			}
+			if (sugar(handler, i, CANCELLABLE) != null) {
+				// MixinExtras' @Cancellable: a callback for the target method. On the delegate, cancelling returns from it and
+				// the pure stub returns at once with what it returned, as cancelling the stub would have.
+				if (!cancellableEnabled()) return null;
 				continue;
 			}
 			AnnotationNode local = local(handler, i);
@@ -923,10 +944,19 @@ public final class MixinStubRebind {
 	 * arguments included. On the delegate the carrier's added arguments come first, so the same ordinal picks another
 	 * value: NeoForge's {@code ServerExplosion.hurtEntities(List)} takes the exploded blocks ahead of the entity list a
 	 * mod's {@code @ModifyVariable(ordinal = 0)} on vanilla's {@code hurtEntities()} modifies. The local is pinned by
-	 * what it holds instead: one {@code LOAD}/{@code STORE} point, no slice, shift or target; in the native method the
+	 * what it holds instead: one {@code LOAD}/{@code STORE} point, no shift or target; in the native method the
 	 * ordinal picks the same slot at every point; the delegate, its added arguments ({@link #addedArgumentSlots}) aside,
 	 * has exactly one slot of that type whose stored values are the native slot's, each the same expression over the
-	 * method's own values ({@link NativeCallInlining.Conditions}), stored and accessed as often.
+	 * method's own values ({@link NativeCallInlining.Conditions}), stored and accessed as often. A value joined on two
+	 * paths ({@code cond ? 1 : 0}, a flag set on either branch) compares as each path's value under the conditions that
+	 * reach it ({@code storedDecided}).
+	 *
+	 * <p>A slice is kept, and judged in both methods: each of its {@code from}/{@code to} points an {@code INVOKE} or
+	 * {@code FIELD} of one member, found exactly once in the native method and once in the delegate (and not in the stub),
+	 * so it cuts both at the same statement; the slot is picked, and its stores and accesses compared, inside that cut.
+	 * puzzleslib's effect-tooltip hook forces vanilla's "show the tooltip" flag in {@code EffectsInInventory.extractText}
+	 * from {@code clipText} on; NeoForge's overload holds the same flag, one slot further on, behind the added argument.
+	 * {@code -Dforbric.mixinStubRebind.slice=off} leaves a sliced one on the stub.
 	 */
 	static int ordinalLocalPinned(AnnotationNode injector, MethodNode handler, ClassNode target, MethodNode stub, Delegation delegation,
 			Ecosystem ecosystem) {
@@ -947,10 +977,15 @@ public final class MixinStubRebind {
 				.filter(m -> m.name.equals(stub.name) && m.desc.equals(stub.desc)).findFirst().orElse(null);
 		MethodNode delegate = delegation.delegate();
 		if (was == null || was.localVariables == null || delegate.localVariables == null) return -1;
+		Object slice = MixinFit.value(injector, "slice");
+		if (slice != null && !sliceEnabled()) return -1;
+		Cut nativeCut = Cut.of(slice, was), mergedCut = Cut.of(slice, delegate);
+		if (nativeCut == null || mergedCut == null || slice != null && Cut.of(slice, stub) != Cut.ABSENT) return -1;
 		int opcode = type.getOpcode("STORE".equals(value) ? Opcodes.ISTORE : Opcodes.ILOAD);
 		// The native slot: the ordinal-th of that type among the table's live entries at each access of it, `this` aside.
 		int nativeSlot = -1;
 		for (AbstractInsnNode insn : was.instructions) {
+			if (!nativeCut.contains(was, insn)) continue;
 			if (!(insn instanceof VarInsnNode access) || access.getOpcode() != opcode) continue;
 			List<Integer> live = liveSlots(was, insn, type, "STORE".equals(value));
 			if (!live.contains(access.var)) continue;
@@ -963,19 +998,62 @@ public final class MixinStubRebind {
 		NativeCallInlining.Conditions nativeValues = NativeCallInlining.Conditions.of(reference.name, was, Integer.MAX_VALUE);
 		NativeCallInlining.Conditions mergedValues = NativeCallInlining.Conditions.of(target.name, delegate, Integer.MAX_VALUE);
 		if (nativeValues == null || mergedValues == null) return -1;
-		List<String> wanted = stored(was, nativeSlot, type, nativeValues);
-		int wantedAccesses = accesses(was, nativeSlot, opcode);
+		List<String> wanted = stored(was, nativeSlot, type, nativeValues, nativeCut);
+		int wantedAccesses = accesses(was, nativeSlot, opcode, nativeCut);
 		if (wanted == null || wanted.isEmpty()) return -1;
 		java.util.BitSet added = addedArgumentSlots(stub, delegation);
 		int base = (delegate.access & Opcodes.ACC_STATIC) != 0 ? 0 : 1, found = -1;
 		java.util.Set<Integer> slots = new java.util.TreeSet<>();
 		for (LocalVariableNode local : delegate.localVariables) if (local.desc.equals(type.getDescriptor()) && local.index >= base && !added.get(local.index)) slots.add(local.index);
 		for (int slot : slots) {
-			if (!wanted.equals(stored(delegate, slot, type, mergedValues)) || accesses(delegate, slot, opcode) != wantedAccesses) continue;
+			if (!wanted.equals(stored(delegate, slot, type, mergedValues, mergedCut)) || accesses(delegate, slot, opcode, mergedCut) != wantedAccesses) continue;
 			if (found >= 0) return -1;
 			found = slot;
 		}
 		return found;
+	}
+
+	/**
+	 * Where a {@code @Slice} cuts a method: from its {@code from} point to its {@code to} point, both inclusive, as Mixin
+	 * cuts it; the whole method without one. Only points this can find again in another method are read — an
+	 * {@code INVOKE} or {@code FIELD} of one member, without ordinal or shift, found exactly once.
+	 */
+	record Cut(AbstractInsnNode from, AbstractInsnNode to) {
+		/** A slice whose points are not in the method at all (the stub, for a body the slice is about). */
+		static final Cut ABSENT = new Cut(null, null);
+		private static final Cut WHOLE = new Cut(null, null);
+
+		/** The cut {@code slice} makes in {@code method}: {@link #WHOLE} without one, {@link #ABSENT}, or null when unreadable. */
+		static Cut of(Object slice, MethodNode method) {
+			if (slice == null) return WHOLE;
+			if (!(slice instanceof AnnotationNode node) || MixinFit.value(node, "id") != null) return null;
+			Object from = MixinFit.value(node, "from"), to = MixinFit.value(node, "to");
+			if (from == null && to == null) return WHOLE;
+			AbstractInsnNode start = null, end = null;
+			int absent = 0;
+			for (Object point : java.util.Arrays.asList(from, to)) {
+				if (point == null) continue;
+				if (!(point instanceof AnnotationNode at)) return null;
+				String kind = MixinFit.asString(MixinFit.value(at, "value"));
+				String member = MixinFit.asString(MixinFit.value(at, "target"));
+				if (member == null || !("INVOKE".equals(kind) || "FIELD".equals(kind)) || MixinFit.value(at, "ordinal") != null
+						|| MixinFit.value(at, "shift") != null || MixinFit.value(at, "by") != null) return null;
+				List<AbstractInsnNode> hits = anchors(method, kind, member);
+				if (hits == null || hits.size() > 1) return null;
+				if (hits.isEmpty()) { absent++; continue; }
+				if (point == from) start = hits.getFirst();
+				else end = hits.getFirst();
+			}
+			if (absent > 0) return absent == (from == null ? 0 : 1) + (to == null ? 0 : 1) ? ABSENT : null;
+			return new Cut(start, end);
+		}
+
+		boolean contains(MethodNode method, AbstractInsnNode insn) {
+			if (this == WHOLE) return true;
+			if (this == ABSENT) return false;
+			int at = method.instructions.indexOf(insn);
+			return (from == null || method.instructions.indexOf(from) <= at) && (to == null || at <= method.instructions.indexOf(to));
+		}
 	}
 
 	/** The slots of {@code type} the table names live at {@code insn} (just after it, for a store), `this` aside, in order. */
@@ -994,22 +1072,26 @@ public final class MixinStubRebind {
 		return new ArrayList<>(out);
 	}
 
-	/** The expressions stored into {@code slot}, in order; null when one cannot be read. */
-	private static List<String> stored(MethodNode method, int slot, Type type, NativeCallInlining.Conditions values) {
+	/** The expressions stored into {@code slot} inside {@code cut}, in order; null when one cannot be read. */
+	private static List<String> stored(MethodNode method, int slot, Type type, NativeCallInlining.Conditions values, Cut cut) {
 		List<String> out = new ArrayList<>();
 		int opcode = type.getOpcode(Opcodes.ISTORE);
 		for (AbstractInsnNode insn : method.instructions) {
-			if (!(insn instanceof VarInsnNode store) || store.getOpcode() != opcode || store.var != slot) continue;
-			String expression = values.stored(store);
-			if (expression == null || expression.contains("?") || expression.contains("join")) return null;
+			if (!(insn instanceof VarInsnNode store) || store.getOpcode() != opcode || store.var != slot || !cut.contains(method, insn)) continue;
+			String expression = values.storedDecided(store);
+			if (expression == null || expression.contains("?") || UNRESOLVED_JOIN.matcher(expression).find()) return null;
 			out.add(expression);
 		}
 		return out;
 	}
 
-	private static int accesses(MethodNode method, int slot, int opcode) {
+	/** A join {@code storedDecided} could not write out: one inside an operand rather than a stored value or a local's. */
+	private static final java.util.regex.Pattern UNRESOLVED_JOIN = java.util.regex.Pattern.compile("\\bjoin(?!\\[)");
+
+	private static int accesses(MethodNode method, int slot, int opcode, Cut cut) {
 		int n = 0;
-		for (AbstractInsnNode insn : method.instructions) if (insn instanceof VarInsnNode access && access.getOpcode() == opcode && access.var == slot) n++;
+		for (AbstractInsnNode insn : method.instructions)
+			if (insn instanceof VarInsnNode access && access.getOpcode() == opcode && access.var == slot && cut.contains(method, insn)) n++;
 		return n;
 	}
 
@@ -1022,7 +1104,7 @@ public final class MixinStubRebind {
 	private static boolean namedLocalMoved(AnnotationNode injector, MethodNode handler, MethodNode stub, MethodNode delegate) {
 		List<String> names = MixinFit.stringList(MixinFit.value(injector, "name"));
 		if (names.size() != 1 || MixinFit.value(injector, "index") != null || MixinFit.value(injector, "ordinal") != null
-				|| Boolean.TRUE.equals(MixinFit.value(injector, "argsOnly"))) return false;
+				|| Boolean.TRUE.equals(MixinFit.value(injector, "argsOnly")) || MixinFit.value(injector, "slice") != null) return false;
 		Type[] params = Type.getArgumentTypes(handler.desc);
 		if (params.length == 0 || !params[0].equals(Type.getReturnType(handler.desc))) return false;
 		String name = names.getFirst();

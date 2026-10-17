@@ -526,6 +526,39 @@ public final class NativeCallInlining {
 			return expression(frame.getStack(frame.getStackSize() - 1), 0);
 		}
 
+		/**
+		 * As {@link #stored}, but a value joined from several producers — a local written on two paths, a boolean computed
+		 * as {@code cond ? 1 : 0} — is written as each producer's value under the branch conditions that decide whether it
+		 * is reached ({@link #of}), sorted, instead of {@code join}; a load follows a local's one store into such a value.
+		 * Comparable across methods as {@link #stored} is. Null when a frame cannot be read.
+		 */
+		String storedDecided(AbstractInsnNode store) {
+			Frame<SourceValue> frame = frames[method.instructions.indexOf(store)];
+			if (frame == null || frame.getStackSize() == 0) return null;
+			return decided(frame.getStack(frame.getStackSize() - 1), 0);
+		}
+
+		private String decided(SourceValue value, int depth) {
+			if (value == null || depth > 8) return "?";
+			if (value.insns.size() > 1) {
+				List<String> arms = new ArrayList<>();
+				for (AbstractInsnNode producer : value.insns) arms.add(of(producer) + "=>" + decided(new SourceValue(value.size, producer), depth + 1));
+				Collections.sort(arms);
+				return "join" + arms;
+			}
+			if (value.insns.size() == 1 && value.insns.iterator().next() instanceof VarInsnNode load
+					&& load.getOpcode() >= Opcodes.ILOAD && load.getOpcode() <= Opcodes.ALOAD) {
+				Frame<SourceValue> frame = frames[method.instructions.indexOf(load)];
+				SourceValue local = frame == null ? null : frame.getLocal(load.var);
+				if (local != null && local.insns.size() == 1 && local.insns.iterator().next() instanceof VarInsnNode store
+						&& store.getOpcode() >= Opcodes.ISTORE && store.getOpcode() <= Opcodes.ASTORE) {
+					Frame<SourceValue> before = frames[method.instructions.indexOf(store)];
+					if (before != null) return decided(before.getStack(before.getStackSize() - 1), depth + 1);
+				}
+			}
+			return expression(value, depth);
+		}
+
 		/** The leaves of the operands {@code call} is handed: see {@link NativeCallInlining#inputs}. */
 		Set<String> leaves(MethodInsnNode call) {
 			Set<String> out = new TreeSet<>();
