@@ -11,7 +11,7 @@ import net.forbric.kernel.mixin.MixinDefaultCallbackTransport;
 
 class MixinDefaultCallbackTransportWeaveTest {
     @TempDir static Path work;
-    private static Path fixture; private static WeaveHarness.Result on, off;
+    private static Path fixture; private static WeaveHarness.Result on, off, respelled, effectful;
     private static Path ordinaryFixture, serialFixture; private static WeaveHarness.Result ordinary, serial;
     private static final String CAPABILITY = "fixture/capability/Capability";
     @BeforeAll static void weave() throws Exception {
@@ -81,10 +81,40 @@ class MixinDefaultCallbackTransportWeaveTest {
             """);
         Path config = work.resolve("capability.mixins.json");
         Files.writeString(config, "{\"required\":true,\"package\":\"fixture.capability.mixin\",\"compatibilityLevel\":\"JAVA_21\",\"mixins\":[\"SourceMixin\"],\"injectors\":{\"defaultRequire\":0}}");
-        List<Path> sources = new ArrayList<>(common); sources.addAll(List.of(current,mixin,probe));
-        fixture=WeaveHarness.fixture(work,"capability",sources,Map.of("capability.mixins.json",config,
+        // The same callback written another way under other names: early returns on its own tests, the decision in locals,
+        // the answer boxed through Boolean.TRUE, the selector in full. Admitted by its data flow, it must act alike.
+        Path respelledMixin = write(source.resolve("qzx"), "QzxClimb.java", """
+            package fixture.capability.qzx;
+            import fixture.capability.*;import org.spongepowered.asm.mixin.Mixin;import org.spongepowered.asm.mixin.injection.*;
+            import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;import com.llamalad7.mixinextras.sugar.Local;
+            @Mixin(Actor.class) public abstract class QzxClimb {
+              @Inject(method="gate(Lfixture/capability/Point;Lfixture/capability/Cell;)Z",at=@At(value="INVOKE_ASSIGN",target="Lfixture/capability/Realm;lookup(Lfixture/capability/Point;)Lfixture/capability/Cell;"),cancellable=true)
+              private void qzxAllow(Point where,Cell hatch,CallbackInfoReturnable<Boolean> cir,@Local(name="below") Cell under){
+                boolean special=under.marked(Tags.SPECIAL);if(!special)return;
+                boolean rung=under.block() instanceof Rung;if(rung&&under.property(Rung.DIRECTION)!=hatch.property(Hatch.DIRECTION))return;
+                cir.setReturnValue(Boolean.TRUE);}
+            }
+            """);
+        // A callback that also does something else (a static call it counts on) is not a pure read: not transported.
+        Path effectfulMixin = write(source.resolve("qzxeffect"), "QzxCount.java", """
+            package fixture.capability.qzxeffect;
+            import fixture.capability.*;import org.spongepowered.asm.mixin.Mixin;import org.spongepowered.asm.mixin.injection.*;
+            import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;import com.llamalad7.mixinextras.sugar.Local;
+            @Mixin(Actor.class) public abstract class QzxCount {
+              @Inject(method="gate",at=@At(value="INVOKE_ASSIGN",target="Lfixture/capability/Realm;lookup(Lfixture/capability/Point;)Lfixture/capability/Cell;"),cancellable=true)
+              private void qzxCount(Point where,Cell hatch,CallbackInfoReturnable<Boolean> cir,@Local(name="below") Cell under){
+                Thread.yield();if(under.marked(Tags.SPECIAL))cir.setReturnValue(true);}
+            }
+            """);
+        Path respelledConfig = work.resolve("qzx.mixins.json"), effectfulConfig = work.resolve("qzxeffect.mixins.json");
+        Files.writeString(respelledConfig, "{\"required\":true,\"package\":\"fixture.capability.qzx\",\"compatibilityLevel\":\"JAVA_21\",\"mixins\":[\"QzxClimb\"],\"injectors\":{\"defaultRequire\":0}}");
+        Files.writeString(effectfulConfig, "{\"required\":true,\"package\":\"fixture.capability.qzxeffect\",\"compatibilityLevel\":\"JAVA_21\",\"mixins\":[\"QzxCount\"],\"injectors\":{\"defaultRequire\":0}}");
+        List<Path> sources = new ArrayList<>(common); sources.addAll(List.of(current,mixin,probe,respelledMixin,effectfulMixin));
+        fixture=WeaveHarness.fixture(work,"capability",sources,Map.of("capability.mixins.json",config,"qzx.mixins.json",respelledConfig,"qzxeffect.mixins.json",effectfulConfig,
                 "META-INF/forbric/native-reference/FABRIC/index.tsv",index,"META-INF/forbric/native-reference/FABRIC/"+actor+".class.bin",bytes),List.of("-g"));
         on=run("on",Map.of());off=run("off",Map.of(MixinDefaultCallbackTransport.PROPERTY,"off"));
+        respelled=WeaveHarness.run(work,"respelled",fixture,"qzx.mixins.json","qzx",Ecosystem.FABRIC,EnvType.SERVER,"fixture.capability.Probe","probe",Map.of());
+        effectful=WeaveHarness.run(work,"effectful",fixture,"qzxeffect.mixins.json","qzxeffect",Ecosystem.FABRIC,EnvType.SERVER,"fixture.capability.Probe","probe",Map.of());
         for (boolean serialized : List.of(false, true)) {
             Path variant = Files.createDirectories(work.resolve(serialized ? "serial-source" : "ordinary-source"));
             String reference = serialized ? "(java.util.function.BiPredicate<Point,Cell>&java.io.Serializable)this::gate" : "this::gate";
@@ -105,6 +135,14 @@ class MixinDefaultCallbackTransportWeaveTest {
     @Test void realDefaultHeadInvokesSourceCallbackAndNativeOverridesStayAuthoritative() throws Exception {
         assertTrue(on.printedLine(WeaveHarnessMain.DONE+" true|false|true|false|false:1:0|true:1:0|tagReads=1"),on.describe());
         WeaveHarness.assertWovenAndVerified(on,CAPABILITY,fixture);
+    }
+    @Test void theSameCallbackWrittenAnotherWayUnderOtherNamesActsAlike() throws Exception {
+        assertTrue(respelled.printedLine(WeaveHarnessMain.DONE+" true|false|true|false|false:1:0|true:1:0|tagReads=1"),respelled.describe());
+        WeaveHarness.assertWovenAndVerified(respelled,CAPABILITY,fixture);
+    }
+    @Test void aCallbackWithAnotherEffectIsNotTransported() throws Exception {
+        assertTrue(effectful.printedLine(WeaveHarnessMain.DONE+" false|false|true|false|false:1:0|true:1:0|tagReads=0"),effectful.describe());
+        WeaveHarness.assertWovenAndVerified(effectful,CAPABILITY,fixture);
     }
     @Test void offProvesTheTagExtensionWasMissingWhileNativeCapabilitiesStillWork() throws Exception {
         assertTrue(off.printedLine(WeaveHarnessMain.DONE+" false|false|true|false|false:1:0|true:1:0|tagReads=0"),off.describe());
