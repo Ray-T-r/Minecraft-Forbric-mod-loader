@@ -1,7 +1,6 @@
 /* Copyright 2026 The Forbric Project. Licensed under the Apache License, Version 2.0. */
 package net.forbric.kernel.runtime;
 
-import java.lang.reflect.Constructor;
 import java.lang.reflect.Field;
 import java.lang.reflect.Method;
 import java.util.HashSet;
@@ -65,7 +64,8 @@ public final class KernelFabricFuel {
 	private static volatile boolean resolved;
 	private static Object build, exclusions;
 	private static Method invoker, buildMethod, exclusionsMethod;
-	private static Constructor<?> context;
+	/** fabric-api's public {@code FuelValueEvents.Context}, which the kernel implements for the events it fires. */
+	private static Class<?> contextApi;
 	private static Field values;
 
 	private KernelFabricFuel() {
@@ -75,7 +75,7 @@ public final class KernelFabricFuel {
 	public static FuelValues.Builder apply(FuelValues.Builder builder, HolderLookup.Provider registries, FeatureFlagSet features) {
 		try {
 			if (!resolve(builder.getClass().getClassLoader())) return builder;
-			Object ctx = context.newInstance(registries, features, 200);
+			Object ctx = context(registries, features, 200);
 			@SuppressWarnings("unchecked")
 			Map<Item, Integer> map = (Map<Item, Integer>) values.get(builder);
 			Set<Item> before = new HashSet<>(map.keySet());
@@ -150,6 +150,24 @@ public final class KernelFabricFuel {
 		else ForbricLog.warn(message, cause);
 	}
 
+	/**
+	 * The context the fuel events are handed, as fabric-api's public {@code FuelValueEvents.Context} describes it: the
+	 * registries, the enabled features and the base smelt time. Implemented here, so no class of fabric-api's own
+	 * implementation is named.
+	 */
+	private static Object context(HolderLookup.Provider registries, FeatureFlagSet features, int baseSmeltTime) {
+		return java.lang.reflect.Proxy.newProxyInstance(contextApi.getClassLoader(), new Class<?>[] {contextApi},
+				(proxy, method, args) -> switch (method.getName()) {
+					case "registries" -> registries;
+					case "enabledFeatures" -> features;
+					case "baseSmeltTime" -> baseSmeltTime;
+					case "hashCode" -> System.identityHashCode(proxy);
+					case "equals" -> proxy == args[0];
+					case "toString" -> "FuelValueEvents.Context[baseSmeltTime=" + baseSmeltTime + "]";
+					default -> throw new UnsupportedOperationException(method.getName());
+				});
+	}
+
 	/** fabric-content-registries, once; false (for good) when it is not installed. */
 	private static synchronized boolean resolve(ClassLoader loader) throws ReflectiveOperationException {
 		if (resolved) return build != null;
@@ -168,8 +186,7 @@ public final class KernelFabricFuel {
 				.getMethod("build", FuelValues.Builder.class, ctx);
 		exclusionsMethod = Class.forName("net.fabricmc.fabric.api.registry.FuelValueEvents$ExclusionsCallback", false, fabric)
 				.getMethod("buildExclusions", FuelValues.Builder.class, ctx);
-		context = Class.forName("net.fabricmc.fabric.impl.content.registry.FuelRegistryEventsContextImpl", false, fabric)
-				.getConstructor(HolderLookup.Provider.class, FeatureFlagSet.class, int.class);
+		contextApi = ctx;
 		values = FuelValues.Builder.class.getDeclaredField("values");
 		values.setAccessible(true);
 		build = events.getField("BUILD").get(null);

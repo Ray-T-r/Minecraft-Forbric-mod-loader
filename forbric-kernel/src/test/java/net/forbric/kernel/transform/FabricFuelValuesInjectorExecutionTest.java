@@ -233,17 +233,8 @@ class FabricFuelValuesInjectorExecutionTest {
 					});
 				}
 				""");
-		STAND_INS.put("net.fabricmc.fabric.impl.content.registry.FuelRegistryEventsContextImpl", """
-				package net.fabricmc.fabric.impl.content.registry;
-
-				import net.fabricmc.fabric.api.registry.FuelValueEvents;
-				import net.minecraft.core.HolderLookup;
-				import net.minecraft.world.flag.FeatureFlagSet;
-
-				public record FuelRegistryEventsContextImpl(HolderLookup.Provider registries, FeatureFlagSet enabledFeatures, int baseSmeltTime)
-						implements FuelValueEvents.Context {
-				}
-				""");
+		// No class of fabric-api's own implementation: the kernel hands the events a context of its own, implementing the
+		// public FuelValueEvents.Context.
 		STAND_INS.put("fixture.FabricFuels", """
 				package fixture;
 
