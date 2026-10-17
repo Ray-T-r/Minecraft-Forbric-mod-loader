@@ -64,8 +64,9 @@ public final class FabricModDiscovery {
 
 	/**
 	 * Hard requirements of jars this discovery does not read (the Forge-family mods and the Fabric jars their JarJar
-	 * carries), so that a nested Fabric mod one of them needs is kept back from Fabric's rule as it would be for a
-	 * Fabric dependent.
+	 * carries), so that a nested Fabric mod one of them needs is kept back from Fabric's platform rule as it would be
+	 * for a Fabric dependent; for one mod per id they are needs Fabric never sees (FabricUniqueIds), which keep a
+	 * would-be loser back after Fabric's choice instead of changing it.
 	 */
 	private List<NestedFabricRequirements.Requirement> requiredElsewhere = List.of();
 
@@ -151,26 +152,33 @@ public final class FabricModDiscovery {
 		var resolution = NestedFabricRequirements.resolve(candidates, leftOut, requiredElsewhere);
 		// Then one mod per id, provides included, among what still loads (FabricUniqueIds). Parents come before their
 		// nested mods in found, so one pass sees whether each parent loads. No arbitration runs here: of two copies of
-		// one id KernelFabricLoader.register keeps the first it is given, so the first found is the one weighed (the
-		// other's nested mods still load), and a copy that loses takes the later copies that would lose the same way.
+		// one id KernelFabricLoader.register keeps the first it is given, so the first found that still loads is the
+		// one weighed. A copy that loses a rivalry goes, and the next copy of its id is weighed in its place, until no
+		// weighed copy loses one.
 		boolean[] loads = new boolean[found.size()];
-		java.util.Set<String> registered = new java.util.HashSet<>();
-		List<NestedFabricRequirements.Candidate<Integer>> loading = new ArrayList<>();
+		Map<Integer, String> idLeftOut = new LinkedHashMap<>();
+		FabricUniqueIds.Outcome<Integer> unique;
+		while (true) {
+			java.util.Set<String> registered = new java.util.HashSet<>();
+			List<NestedFabricRequirements.Candidate<Integer>> loading = new ArrayList<>();
+			List<NestedFabricRequirements.Candidate<Integer>> outvoted = new ArrayList<>();
+			for (int i = 0; i < found.size(); i++) {
+				int parent = found.get(i).parent();
+				loads[i] = !resolution.leftOut().containsKey(i) && !idLeftOut.containsKey(i) && (parent < 0 || loads[parent]);
+				if (loads[i] && registered.add(found.get(i).metadata().getId())) loading.add(candidates.get(i));
+				if (idLeftOut.containsKey(i)) outvoted.add(candidates.get(i));
+			}
+			unique = FabricUniqueIds.resolve(loading, requiredElsewhere, outvoted);
+			boolean grew = false;
+			for (Integer lost : unique.lost().keySet()) grew |= idLeftOut.putIfAbsent(lost, unique.leftOut().get(lost)) == null;
+			if (!grew) break;
+		}
+		unique.leftOut().forEach(idLeftOut::putIfAbsent);
+		// What only a left-out copy bundles goes with it, with its own line.
 		for (int i = 0; i < found.size(); i++) {
 			int parent = found.get(i).parent();
-			loads[i] = !resolution.leftOut().containsKey(i) && (parent < 0 || loads[parent]);
-			if (loads[i] && registered.add(found.get(i).metadata().getId())) loading.add(candidates.get(i));
-		}
-		var unique = FabricUniqueIds.resolve(loading, requiredElsewhere);
-		// A copy that lost goes with every later copy of its id that answers to the id it lost: with the first copy out,
-		// the next would register in its place and answer to that id after all.
-		Map<Integer, String> idLeftOut = new LinkedHashMap<>(unique.leftOut());
-		for (var lost : unique.lost().entrySet()) {
-			String reason = unique.leftOut().get(lost.getKey());
-			String id = found.get(lost.getKey()).metadata().getId();
-			for (int j = 0; j < found.size(); j++) {
-				if (j == lost.getKey() || !loads[j] || !id.equals(found.get(j).metadata().getId())) continue;
-				if (FabricUniqueIds.answersTo(candidates.get(j)).contains(lost.getValue().id())) idLeftOut.putIfAbsent(j, reason);
+			if (parent >= 0 && idLeftOut.containsKey(parent) && !resolution.leftOut().containsKey(i)) {
+				idLeftOut.putIfAbsent(i, "only mods left out bundle it");
 			}
 		}
 

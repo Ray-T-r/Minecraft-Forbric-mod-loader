@@ -82,6 +82,11 @@ public final class NestedCandidateInventory {
 	 * {@link #logOneModPerId} does, once arbitration is done with every round.
 	 */
 	FabricUniqueIds.Outcome<Path> oneModPerId(Set<Path> selected) {
+		return oneModPerId(selected, Set.of());
+	}
+
+	/** As above, with {@code outvoted}: the Fabric mods earlier rounds left out for losing a rivalry. */
+	FabricUniqueIds.Outcome<Path> oneModPerId(Set<Path> selected, Set<Path> outvoted) {
 		Map<Path, List<Path>> parentsOf = new HashMap<>();
 		for (Edge edge : edges) {
 			if (!selected.contains(edge.parent()) || !selected.contains(edge.child())) continue;
@@ -94,7 +99,7 @@ public final class NestedCandidateInventory {
 			if (!selected.contains(node.path()) || node.claim() == null || node.claim().ecosystem() != Ecosystem.FABRIC) continue;
 			fabric.add(candidate(node, parentsOf.getOrDefault(node.path(), List.of()), judged(node), manifestOf(node.path()), null, null));
 		}
-		if (!FabricUniqueIds.contested(fabric)) return new FabricUniqueIds.Outcome<>(Map.of(), Map.of(), Map.of());
+		if (!FabricUniqueIds.contested(fabric) && outvoted.isEmpty()) return new FabricUniqueIds.Outcome<>(Map.of(), Map.of(), Map.of());
 		net.forbric.api.Side physical = physical(side);
 		ForbricModDiscoverer discoverer = new ForbricModDiscoverer();
 		List<NestedFabricRequirements.Candidate<Path>> loading = new ArrayList<>();
@@ -104,7 +109,14 @@ public final class NestedCandidateInventory {
 			loading.add(candidate(node, parentsOf.getOrDefault(node.path(), List.of()), judged(node),
 					isFabric ? manifestOf(node.path()) : null, discoverer, physical));
 		}
-		return FabricUniqueIds.resolve(loading, List.of());
+		List<NestedFabricRequirements.Candidate<Path>> out = new ArrayList<>();
+		for (Path path : outvoted) {
+			Node node = nodes.get(path);
+			if (node != null && node.claim() != null && node.claim().ecosystem() == Ecosystem.FABRIC) {
+				out.add(candidate(node, List.of(), judged(node), manifestOf(path), null, null));
+			}
+		}
+		return FabricUniqueIds.resolve(loading, List.of(), out);
 	}
 
 	/**
@@ -132,15 +144,20 @@ public final class NestedCandidateInventory {
 		return out;
 	}
 
-	/** Whether a build of some mod in {@code excluded} is still left, by its declared id, to take that mod's place. */
-	boolean anotherBuildOf(Set<Path> excluded) {
+	/**
+	 * Whether this round left out a jar (a loser, or what went with one) whose declared id another build could still
+	 * take: one that is neither selected, nor left out, nor {@code excluded}. Only then can another arbitration round
+	 * change what loads.
+	 */
+	boolean anotherBuildOf(Set<Path> leftOut, Set<Path> excluded, Set<Path> selected) {
 		Set<String> ids = new HashSet<>();
-		for (Path path : excluded) {
+		for (Path path : leftOut) {
 			Node node = nodes.get(path);
 			if (node != null && node.claim() != null) for (String id : node.claim().modIds()) ids.add(JointCandidateSelector.key(id));
 		}
 		for (Node node : nodes.values()) {
-			if (node.excluded() || excluded.contains(node.path()) || node.claim() == null) continue;
+			if (node.excluded() || excluded.contains(node.path()) || leftOut.contains(node.path()) || selected.contains(node.path())
+					|| node.claim() == null) continue;
 			for (String id : node.claim().modIds()) if (ids.contains(JointCandidateSelector.key(id))) return true;
 		}
 		return false;

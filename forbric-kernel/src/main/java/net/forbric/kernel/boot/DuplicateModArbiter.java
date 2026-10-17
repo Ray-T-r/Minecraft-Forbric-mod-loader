@@ -223,34 +223,39 @@ public final class DuplicateModArbiter {
 			int limit = Math.max(1, Math.min(1_000_000, Integer.getInteger("forbric.arbitrationMaxNodes", 100_000)));
 			// Fabric Loader's one mod per id, provides included, among what arbitration chose (FabricUniqueIds); deciding
 			// it before the selection let a build arbitration then dropped push its rival out. Each mod that loses a
-			// rivalry is excluded (with the other builds of its id that lose the same way to a jar in mods/), and only
-			// where another build of a loser's id is left to take its place does arbitration run again; what merely
-			// went with a loser is decided afresh each round. Bounded: each round excludes more.
+			// rivalry is excluded (with the other builds of its id that lose the same way to a jar in mods/), and
+			// arbitration runs again only where another build of something left out is there to take its place; what
+			// merely went with a loser is decided afresh each round. Bounded: each round excludes more.
 			NestedCandidateInventory inventory = scanned;
 			Set<Path> outForIds = new LinkedHashSet<>();
-			Map<Path, String> idLeftOut = new LinkedHashMap<>();
+			Map<Path, String> everLeftOut = new LinkedHashMap<>();
 			JointCandidateSelector.Result selection;
 			net.forbric.kernel.fabric.FabricUniqueIds.Outcome<Path> unique;
+			int rounds = 0;
 			for (int round = 1; ; round++) {
+				rounds = round;
 				List<JointCandidateSelector.Rule> contracts = CandidateContractScanner.scanPhysical(inventory.claims(), envType,
 						inventory.symbolOwners());
 				selection = ReachableCandidateSelector.solve(inventory, contracts, preference(), nestedPreference(), overrides, limit);
-				unique = inventory.oneModPerId(selection.selected());
+				unique = inventory.oneModPerId(selection.selected(), outForIds);
+				unique.leftOut().forEach(everLeftOut::putIfAbsent);
 				Map<Path, String> outvoted = inventory.outvoted(unique, outForIds);
 				if (outvoted.isEmpty()) break;
-				// Reported for what arbitration had selected; the other builds would not have loaded anyway.
-				for (var loser : outvoted.entrySet()) if (selection.selected().contains(loser.getKey())) idLeftOut.putIfAbsent(loser.getKey(), loser.getValue());
 				outForIds.addAll(outvoted.keySet());
-				if (!scanned.anotherBuildOf(outForIds)) break;
+				if (!scanned.anotherBuildOf(unique.leftOut().keySet(), outForIds, selection.selected())) break;
 				if (round == ONE_MOD_PER_ID_ROUNDS) {
 					ForbricLog.warn("[Forbric/JiJ] one mod per id still left mods out after %d arbitration rounds; using the last", round);
 					break;
 				}
 				inventory = scanned.withExcluded(outForIds);
 			}
-			Map<Path, String> idOut = new LinkedHashMap<>(idLeftOut);
-			unique.leftOut().forEach(idOut::putIfAbsent);
-			var result = idOut.keySet().stream().anyMatch(selection.selected()::contains) ? withoutLeftOut(selection, idOut.keySet()) : selection;
+			var result = unique.leftOut().isEmpty() ? selection : withoutLeftOut(selection, unique.leftOut().keySet());
+			// Every round's verdicts, once, for what did not load in the end.
+			Map<Path, String> idOut = new LinkedHashMap<>();
+			everLeftOut.forEach((path, why) -> { if (!result.selected().contains(path)) idOut.put(path, why); });
+			if (!idOut.isEmpty() || !unique.keptBack().isEmpty()) {
+				ForbricLog.info("[Forbric/JiJ] one mod per id: decided in %d arbitration round(s)", rounds);
+			}
 			inventory.logOneModPerId(idOut, unique.keptBack());
 			wholeInstancePlan = new NestedCandidatePlan(inventory, result,
 					new net.forbric.kernel.fabric.NestedFabricRequirements.Resolution<>(idOut, unique.keptBack()));
@@ -694,9 +699,10 @@ public final class DuplicateModArbiter {
 	}
 
 	/**
-	 * Arbitration rounds with Fabric's one mod per id in between. One when no loser's id has a build left to take its
-	 * place (owo-sentinel beside owo-lib: every sentinel build loses to the owo-lib jar in mods/, and goes at once); one
-	 * more for each time a replacement build loses in its turn.
+	 * At most this many arbitration rounds with Fabric's one mod per id in between. One when nothing a round leaves out
+	 * has another build left to take its place (owo-sentinel beside the owo-lib jar in mods/: every sentinel build
+	 * loses the same way and goes at once); another for each round that does leave such a build, whether or not it then
+	 * loads. A winner nested rather than in mods/ takes one build of the loser's id per round.
 	 */
 	static final int ONE_MOD_PER_ID_ROUNDS = 8;
 

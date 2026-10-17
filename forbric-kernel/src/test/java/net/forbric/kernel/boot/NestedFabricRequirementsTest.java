@@ -759,7 +759,7 @@ class NestedFabricRequirementsTest {
 		var plan = DuplicateModArbiter.currentPlan();
 		assertEquals(Set.of(), nestedIds(plan));
 		assertEquals(1, jijLines(log).size(), log);
-		assertFalse(log.contains("arbitration rounds"), log);
+		assertTrue(log.contains("one mod per id: decided in 1 arbitration round(s)"), log);
 	}
 
 	/**
@@ -802,6 +802,108 @@ class NestedFabricRequirementsTest {
 		discovery.setPlatform(NestedFabricRequirements.Platform.running(GAME));
 		discovery.discover(mods());
 		assertEquals(Set.of("owo", "fishing", "other"), ids(discovery));
+	}
+	/**
+	 * A mod kept back for a need Fabric never sees comes with what it brings: bbb's own nested library q (which bbb
+	 * does not list in depends, as Loom's include does not) and r, which needs bbb, load with it. And a need for a mod
+	 * nested in a loser keeps back the loser that bundles it, with that said in the WARN.
+	 */
+	@Test void whatAKeptBackModBringsComesWithIt() throws Exception {
+		install("neoreq.jar", neo("neoreq", Map.of(), List.of(), "[[dependencies.neoreq]]\nmodId=\"bbb\"\ntype=\"required\"\nversionRange=\"[1,)\"\n"));
+		install("host.jar", fabric("host", "1", Map.of(
+				"META-INF/jars/aaa.jar", fabric("aaa", "2.0.0", Map.of(), ",\"provides\":[\"x\"]"),
+				"META-INF/jars/bbb.jar", fabric("bbb", "1.0.0", Map.of("META-INF/jars/q.jar", fabric("q", "1", Map.of(), "")), ",\"provides\":[\"x\"]"),
+				"META-INF/jars/r.jar", fabric("r", "1", Map.of(), ",\"depends\":{\"bbb\":\"*\"}")), ""));
+		DuplicateModArbiter.arbitrate(mods(), EnvType.SERVER, GAME);
+		assertEquals(Set.of("aaa", "bbb", "q", "r"), nestedIds(DuplicateModArbiter.currentPlan()));
+
+		reset();
+		try (var files = Files.list(mods())) { for (Path file : files.toList()) Files.delete(file); }
+		install("owo.jar", fabric("owo", "0.13.1", Map.of(), ",\"provides\":[\"owo-lib\"]"));
+		install("fishing.jar", fabric("fishing", "1", Map.of("META-INF/jars/owo-sentinel.jar", fabric("owo-sentinel", "0.13.1",
+				Map.of("META-INF/jars/zlib.jar", fabric("zlib", "1", Map.of(), "")), ",\"provides\":[\"owo\",\"owo-lib\"]")), ""));
+		install("neoreq.jar", neo("neoreq", Map.of(), List.of(), "[[dependencies.neoreq]]\nmodId=\"zlib\"\ntype=\"required\"\nversionRange=\"[1,)\"\n"));
+		String log = capture(() -> DuplicateModArbiter.arbitrate(mods(), EnvType.SERVER, GAME));
+		var plan = DuplicateModArbiter.currentPlan();
+		assertEquals(Set.of("owo-sentinel", "zlib"), nestedIds(plan));
+		assertTrue(plan.oneModPerId().keptBack().get(only(plan, "owo-sentinel")).because().startsWith("it bundles zlib (neoreq requires zlib"),
+				String.valueOf(plan.oneModPerId().keptBack()));
+		assertTrue(log.contains("nested owo-sentinel 0.13.1 in fishing.jar loaded although Fabric Loader would leave it out"), log);
+	}
+
+	/**
+	 * What goes with a loser is not a loser. c is nested in p 2, which loses x to a; c goes with it, but it did not
+	 * lose y to d, so when p 1 (which bundles the same c) replaces p 2, c comes back and, ordered before d, takes y.
+	 */
+	@Test void aModThatOnlyWentWithALoserIsNotOutvotedForGood() throws Exception {
+		byte[] c = fabric("c", "1", Map.of(), ",\"provides\":[\"y\"]");
+		install("a.jar", fabric("a", "1", Map.of(), ",\"provides\":[\"x\"]"));
+		install("host1.jar", fabric("host1", "1", Map.of("META-INF/jars/p.jar", fabric("p", "2", Map.of("META-INF/jars/c.jar", c),
+				",\"provides\":[\"x\"]")), ""));
+		install("host2.jar", fabric("host2", "1", Map.of("META-INF/jars/p.jar", fabric("p", "1", Map.of("META-INF/jars/c.jar", c), "")), ""));
+		install("host3.jar", fabric("host3", "1", Map.of("META-INF/jars/d.jar", fabric("d", "1", Map.of(), ",\"provides\":[\"y\"]")), ""));
+		DuplicateModArbiter.arbitrate(mods(), EnvType.SERVER, GAME);
+		assertEquals(Set.of("p", "c"), nestedIds(DuplicateModArbiter.currentPlan()));
+	}
+
+	/**
+	 * Arbitration runs again for what went with a loser, too: lib 2 is nested only in l, which loses x to a, and
+	 * another build, lib 1, is there to take its place, so lib loads.
+	 */
+	@Test void anotherBuildOfWhatWentWithALoserTakesItsPlace() throws Exception {
+		install("a.jar", fabric("a", "1", Map.of(), ",\"provides\":[\"x\"]"));
+		install("p.jar", fabric("p", "1", Map.of("META-INF/jars/l.jar", fabric("l", "1", Map.of("META-INF/jars/lib.jar",
+				fabric("lib", "2", Map.of(), "")), ",\"provides\":[\"x\"]")), ""));
+		install("q.jar", fabric("q", "1", Map.of("META-INF/jars/lib.jar", fabric("lib", "1", Map.of(), "")), ""));
+		DuplicateModArbiter.arbitrate(mods(), EnvType.SERVER, GAME);
+		var plan = DuplicateModArbiter.currentPlan();
+		assertEquals(List.of("1"), plan.nestedFiles().stream().filter(p -> plan.inventory().nodes().get(p).claim().modIds().contains("lib"))
+				.map(p -> plan.inventory().nodes().get(p).claim().versionOf("lib")).toList());
+	}
+
+	/**
+	 * A mod that needs a loser stays out in a later round too, when the loser is no longer weighed: d needs l, which
+	 * loses x to a, and a second round runs because k 2 loses y to b and k 1 can replace it.
+	 */
+	@Test void aModThatNeedsAnOutvotedLoserStaysOutInLaterRounds() throws Exception {
+		install("a.jar", fabric("a", "1", Map.of(), ",\"provides\":[\"x\"]"));
+		install("b.jar", fabric("b", "1", Map.of(), ",\"provides\":[\"y\"]"));
+		install("p.jar", fabric("p", "1", Map.of("META-INF/jars/l.jar", fabric("l", "1", Map.of(), ",\"provides\":[\"x\"]")), ""));
+		install("q.jar", fabric("q", "1", Map.of("META-INF/jars/d.jar", fabric("d", "1", Map.of(), ",\"depends\":{\"l\":\"*\"}")), ""));
+		install("host1.jar", fabric("host1", "1", Map.of("META-INF/jars/k.jar", fabric("k", "2", Map.of(), ",\"provides\":[\"y\"]")), ""));
+		install("host2.jar", fabric("host2", "1", Map.of("META-INF/jars/k.jar", fabric("k", "1", Map.of(), "")), ""));
+		String log = capture(() -> DuplicateModArbiter.arbitrate(mods(), EnvType.SERVER, GAME));
+		var plan = DuplicateModArbiter.currentPlan();
+		assertEquals(Set.of("k"), nestedIds(plan));
+		assertEquals("it requires l *, and every installed build of that is left out", plan.oneModPerId().leftOut().get(only(plan, "d")));
+		assertTrue(log.contains("one mod per id: decided in 2 arbitration round(s)"), log);
+	}
+
+	/**
+	 * Without a plan the copies are weighed one at a time, the first found first: a copy that loses goes and the next
+	 * is weighed in its place. zzz 1 loses x to x 2, zzz 3 then beats x 2, as Fabric orders them; and a copy in mods/
+	 * always loads.
+	 */
+	@Test void withoutAPlanEachCopyIsWeighedInTurn() throws Exception {
+		install("p1.jar", fabric("p1", "1", Map.of("META-INF/jars/zzz.jar", fabric("zzz", "1", Map.of(), ",\"provides\":[\"x\"]")), ""));
+		install("p2.jar", fabric("p2", "1", Map.of("META-INF/jars/zzz.jar", fabric("zzz", "3", Map.of(), ",\"provides\":[\"x\"]")), ""));
+		install("p3.jar", fabric("p3", "1", Map.of("META-INF/jars/x.jar", fabric("x", "2", Map.of(), "")), ""));
+		System.setProperty("forbric.crossJarArbitration", "off");
+		FabricModDiscovery discovery = new FabricModDiscovery(EnvType.SERVER, root.resolve("jij"));
+		discovery.setPlatform(NestedFabricRequirements.Platform.running(GAME));
+		discovery.discover(mods());
+		assertEquals(List.of("3"), discovery.getContainers().stream().filter(c -> c.getMetadata().getId().equals("zzz"))
+				.map(c -> c.getMetadata().getVersion().getFriendlyString()).toList());
+		assertFalse(ids(discovery).contains("x"));
+
+		try (var files = Files.list(mods())) { for (Path file : files.toList()) Files.delete(file); }
+		installOwoShape();
+		install("zzz-owo-sentinel.jar", fabric("owo-sentinel", "0.13.0", Map.of(), ",\"provides\":[\"owo\",\"owo-lib\"]"));
+		FabricModDiscovery second = new FabricModDiscovery(EnvType.SERVER, root.resolve("jij2"));
+		second.setPlatform(NestedFabricRequirements.Platform.running(GAME));
+		second.discover(mods());
+		assertEquals(List.of("0.13.0"), second.getContainers().stream().filter(c -> c.getMetadata().getId().equals("owo-sentinel"))
+				.map(c -> c.getMetadata().getVersion().getFriendlyString()).toList());
 	}
 	private void installOwoShape() throws Exception {
 		install("owo.jar", fabric("owo", "0.13.1", Map.of(), ",\"provides\":[\"owo-impl\",\"owo-lib\"]"));

@@ -359,14 +359,17 @@ Fabric and NeoForge need opposite states in the constructor, so the kernel has t
   drops (another ecosystem's preferred copy, a newer copy elsewhere, a copy only a losing library bundles) cannot push
   its rival out, and a dependency on the shared id cannot steer which build of a mod arbitration keeps. Each mod that
   loses a rivalry is then excluded, with every other build of its id that loses the same way to a jar in `mods/` (all
-  owo-sentinel builds at once), and arbitration runs again only where another build of such an id is left to take its
-  place; what merely went with a loser is decided afresh. Builds of one mod are never rivals, also when they share only
-  an alias (every `mixinextras-fabric` copy provides `com_github_llamalad7_mixinextras`). Only Fabric Loader's own
-  index takes part, the Fabric jars in `mods/` and the nested Fabric mods it reaches itself that `off:<id>` does not
-  exempt, and their hard dependencies shape the choice as on Fabric. Everything else (a Forge-family mod, a Fabric mod
-  a JarJar declaration or a Forge-family walk brought in, an exempted one, a library without `fabric.mod.json`) loads
-  whenever a parent of it loads, goes with its parents, and never decides a rivalry; its needs, which Fabric Loader
-  never sees, are met only after Fabric's choice, by keeping a would-be loser back. The loser is logged `left out: it
+  owo-sentinel builds at once), and arbitration runs again only where another build of something left out (a loser,
+  or what went with it) is there to take its place: one round for owo-sentinel beside owo-lib, logged `one mod per
+  id: decided in <n> arbitration round(s)`. What merely went with a loser is decided afresh each round, and a mod
+  that needs a loser stays out in later rounds too. Builds of one mod are never rivals, also when they share only an
+  alias (every `mixinextras-fabric` copy provides `com_github_llamalad7_mixinextras`). Only Fabric Loader's own index
+  takes part, the Fabric jars in `mods/` and the nested Fabric mods it reaches itself that `off:<id>` does not exempt,
+  and their hard dependencies, met by what is in that index, shape the choice as on Fabric. Everything else (a
+  Forge-family mod, a Fabric mod a JarJar declaration or a Forge-family walk brought in, an exempted one, a library
+  without `fabric.mod.json`) loads whenever a parent of it loads, goes with its parents, never decides a rivalry and
+  never meets a dependency for Fabric's choice; its own needs, which Fabric Loader never sees, are met only after
+  that choice, by keeping a would-be loser back. The loser is logged `left out: it
   answers to '<id>', as <winner> <version> [in mods/] does, and Fabric Loader loads one mod per id, provides
   included`; what goes with it `left out: only mods left out bundle it`, and a mod whose dependency only the loser met
   `left out: it requires <id> <range>, and every installed build of that is left out`. Where the kernel stays more
@@ -374,15 +377,20 @@ Fabric and NeoForge need opposite states in the constructor, so the kernel has t
   takes its ids, e.g. Indium next to a Sodium that provides `indium`, and refuses to start when two forced jars
   collide); a nested mod whose hard dependency nothing that loads meets is taken as switched off for native's choice,
   and then comes back, with what goes with it, wherever it takes nothing native loads, so it yields every id it shares
-  and still loads where nothing contests it; and a mod that needs a would-be loser, by its id or one it provides, with
-  nothing else that loads meeting that, keeps it back with a `loaded although Fabric Loader would leave it out (<why>):
-  <mod> requires <id> <range>, and nothing else that loads meets that` WARN, the winner loading too (for a jar in
-  `mods/` native drops the winning jar in `mods/` instead if no id of its own forces it, and refuses to start
-  otherwise; a need from outside Fabric's index native never sees). The build kept back is the one arbitration chose
-  for its id; another installed build that would not need keeping back is not tried. Not weighed: `recommends` and
-  `breaks` between mods, and a mod listing its own id or an alias twice among its `provides` (native never loads it).
-  Without a plan nothing arbitrates, so of two copies of one id the first found is weighed, the one
-  `KernelFabricLoader.register` keeps, and a copy that loses takes every later copy that would lose the same way. The
+  and still loads where nothing contests it; and a Fabric jar in `mods/`, or a mod outside Fabric's index, that needs a
+  would-be loser (by its id or one it provides, or a mod nested in it), with nothing else that loads meeting that,
+  keeps it back with a `loaded although Fabric Loader would leave it out (<why>): <mod> requires <id> <range>, and
+  nothing else that loads meets that` WARN (`it bundles <mod> (...)` for a loser kept for what it bundles), together
+  with what bundles it on the way to a parent that loads and what it brings with it (its nested mods, what needs it),
+  the winner loading too (for a jar in `mods/` native drops the winning jar in `mods/` instead if no id of its own
+  forces it, and refuses to start otherwise; a need from outside Fabric's index native never sees). A nested Fabric
+  mod Fabric judges keeps nothing back: like native, it goes itself. The build kept back is the one arbitration chose
+  for its id; another installed build that would not need keeping back is not tried, and where the winner is nested
+  rather than in `mods/`, each round excludes one build of the loser's id. Not weighed: `recommends` and `breaks`
+  between mods, and a mod listing its own id or an alias twice among its `provides` (native never loads it). Without
+  a plan nothing arbitrates: copies of one id are weighed one at a time, the first found first (the one
+  `KernelFabricLoader.register` keeps), and a copy that loses a rivalry goes, with what only it bundles, and the next
+  copy is weighed in its place. The
   `forbric.nestedRequirements` switches apply. On the local corpora (70 `mods/` folders) the only shapes are
   owo-sentinel beside owo-lib and voxy's `dummyprovider` (server-only, providing `sodium`, which is client-only, so
   they never meet).
