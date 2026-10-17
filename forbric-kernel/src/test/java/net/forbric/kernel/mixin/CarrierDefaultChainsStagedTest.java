@@ -34,8 +34,8 @@ import net.forbric.kernel.TestFixtures;
  * references it carries. Natively {@code SoundEngine.play} asks {@code soundBuffers.getStream(path, looping)} and fabric-api
  * redirects that; NeoForge asks the sound ({@code SoundInstance.getStream}), whose default asks the buffers. The redirect
  * moves onto the sound's call, its handler kept as written; the mechanism is given no name: the mixin renamed, with one more
- * instruction, still moves; a {@code @Group} or the switch leaves it as compiled. The bed redirect, bound to two methods, is
- * not this mechanism's.
+ * instruction, still moves; a {@code @Group} or the switch leaves it as compiled. The bed occupancy redirect, bound to two
+ * methods that each lost the write to the state's {@code setBedOccupied}, moves with one handler serving both.
  */
 @ResourceLock("system-properties")
 class CarrierDefaultChainsStagedTest {
@@ -154,9 +154,51 @@ class CarrierDefaultChainsStagedTest {
 		assertEquals(0, CarrierDefaultChains.adapt(mixin, owner -> owner.equals(ENGINE) ? nativeEngine : game.apply(owner), natives()));
 	}
 
-	/** fabric-api's bed redirect binds two methods (the sleep start and the wake-up lambda): not this mechanism's to move. */
-	@Test void theBedRedirectBoundToTwoMethodsIsNotMoved() throws Exception {
-		assertEquals(0, adapt(fabric("fabric-entity-events-v1", "net/fabricmc/fabric/mixin/entity/event/LivingEntityMixin")));
+	/**
+	 * fabric-api's bed occupancy redirect binds two methods, the sleep start and the wake-up lambda; natively each writes the
+	 * bed's OCCUPIED state with {@code Level.setBlock}, merged each asks the state's {@code setBedOccupied}, whose inherited
+	 * implementation (IBlockStateExtension's default, then IBlockExtension's) makes that write. One new handler, bound to both,
+	 * runs the defaults with fabric-api's handler at the write wherever the state and its block inherit them; a bed that
+	 * overrides {@code setBedOccupied} keeps its own setter.
+	 */
+	@Test void theBedRedirectBoundToTwoMethodsMovesOntoTheStatesSetterForBoth() throws Exception {
+		ClassNode mixin = fabric("fabric-entity-events-v1", "net/fabricmc/fabric/mixin/entity/event/LivingEntityMixin");
+		MethodNode handler = StagedFabricMixinFixture.method(mixin, "setOccupiedState");
+		String desc = handler.desc, written = MixinInstructionFingerprint.hash(handler);
+		assertEquals(1, adapt(mixin), "the occupancy redirect, and no other handler of the mixin");
+		MethodNode wrapper = StagedFabricMixinFixture.method(mixin, "setOccupiedState");
+		AnnotationNode redirect = MixinFit.injectorOf(wrapper);
+		assertEquals(CarrierDecisions.REDIRECT, redirect.desc);
+		assertEquals(List.of("lambda$stopSleeping$0", "startSleeping"), MixinFit.stringList(MixinFit.value(redirect, "method")), "still bound to both methods, as written");
+		assertEquals("Lnet/minecraft/world/level/block/state/BlockState;setBedOccupied(Lnet/minecraft/world/level/Level;Lnet/minecraft/core/BlockPos;"
+				+ "Lnet/minecraft/world/entity/LivingEntity;Z)V", MixinFit.value(MixinFit.atNodes(redirect).getFirst(), "target"));
+		assertEquals("(Lnet/minecraft/world/level/block/state/BlockState;Lnet/minecraft/world/level/Level;Lnet/minecraft/core/BlockPos;"
+				+ "Lnet/minecraft/world/entity/LivingEntity;Z)V", wrapper.desc, "the carrier's call, nothing captured");
+		MethodNode original = StagedFabricMixinFixture.method(mixin, "setOccupiedState" + CarrierDecisions.SUFFIX);
+		assertNull(MixinFit.injectorOf(original));
+		assertEquals(desc, original.desc);
+		assertEquals(written, MixinInstructionFingerprint.hash(original), "fabric-api's own handler, unchanged");
+		assertEquals(2, calls(wrapper, CarrierDefaultChains.DISPATCH, "inherits"), "asked for the state, then for its block");
+		assertEquals(1, calls(wrapper, mixin.name, original.name), "fabric-api's handler where the block's default writes the bed");
+		assertEquals(0, calls(wrapper, "net/minecraft/world/level/Level", "setBlock"), "the vanilla write is the handler's alone");
+		assertEquals(1, calls(wrapper, "net/minecraft/world/level/block/state/BlockState", "setBedOccupied"), "a state that overrides it keeps its own");
+		assertEquals(1, calls(wrapper, "net/minecraft/world/level/block/Block", "setBedOccupied"), "a bed that overrides it keeps its own setter");
+		new Analyzer<>(new BasicVerifier()).analyze(mixin.name, wrapper);
+		assertEquals(0, adapt(mixin), "a second pass changes nothing");
+	}
+
+	/** A redirect bound to two methods moves only when both lost the call to the same carrier call: one that still makes it stays. */
+	@Test void aRedirectBoundToTwoMethodsStaysWhenOneOfThemStillMakesTheVanillaCall() throws Exception {
+		ClassNode mixin = fabric("fabric-entity-events-v1", "net/fabricmc/fabric/mixin/entity/event/LivingEntityMixin");
+		String living = "net/minecraft/world/entity/LivingEntity";
+		ClassNode merged = game().apply(living), nativeLiving = natives().apply(Ecosystem.FABRIC, living);
+		MethodNode lambda = merged.methods.stream().filter(m -> m.name.equals("lambda$stopSleeping$0")).findFirst().orElseThrow();
+		MethodNode nativeLambda = nativeLiving.methods.stream().filter(m -> m.name.equals("lambda$stopSleeping$0")).findFirst().orElseThrow();
+		merged.methods.set(merged.methods.indexOf(lambda), nativeLambda);
+		Function<String, ClassNode> game = game();
+		byte[] before = StagedFabricMixinFixture.bytes(mixin);
+		assertEquals(0, CarrierDefaultChains.adapt(mixin, owner -> owner.equals(living) ? merged : game.apply(owner), natives()));
+		assertArrayEquals(before, StagedFabricMixinFixture.bytes(mixin), "the redirect is left exactly as written");
 	}
 
 	/**

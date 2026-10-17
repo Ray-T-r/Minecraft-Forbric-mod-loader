@@ -161,10 +161,6 @@ class WeaveCoverageCensusTest {
 	private static final String NO_SCENARIO = "no weave scenario yet; ClassNode-level tests only";
 	/** Only shrinks. Every row is a stage whose output no CI test has yet run through the real weave. */
 	static final Map<String, String> NOT_WOVEN_YET = notWovenYet(
-			// Its woven rows (effects, elytra, the sleeping direction, the clear-all veto) went to CarrierDecisions,
-			// CarrierGuardedPoints, CarrierReturnedCalls and the scoped clear relay; the bed occupancy row left has ClassNode-level
-			// tests only.
-			"FabricEntityMixinAnchors",
 			// Its command, loot and anvil routes (the ones FabricEnchantmentMixinAdapterWeaveTest wove) went to CarrierDecisions
 			// and CarrierDecisionsWeaveTest; the enchanting table's route left has ClassNode-level tests only.
 			"FabricEnchantmentMixinAdapter");

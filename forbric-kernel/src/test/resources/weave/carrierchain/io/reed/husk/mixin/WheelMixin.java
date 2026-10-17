@@ -28,6 +28,13 @@ public abstract class WheelMixin {
 		field.mark(day + 1, kernel);
 	}
 
+	/** Marks a rest, and a fallow's lambda, ten days later: one redirect bound to two methods. */
+	@Redirect(method = {"rest", "lambda$fallow$0"}, at = @At(value = "INVOKE", target = "Lorg/brook/mill/Field;mark(ILjava/lang/String;)V"))
+	private void husk$rest(Field field, int day, String kernel) {
+		Trace.add("husk-rest " + kernel);
+		field.mark(day + 10, kernel);
+	}
+
 	/** Husks a sift's grind. */
 	@Redirect(method = "sift", at = @At(value = "INVOKE", target = "Lorg/brook/mill/Stones;grind(Ljava/lang/String;Z)Ljava/lang/String;"))
 	private String husk$sift(Stones stones, String kind, boolean fine) {

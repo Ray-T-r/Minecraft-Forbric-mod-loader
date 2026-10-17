@@ -21,4 +21,12 @@ public class Wheel {
 	public double dip(Bucket bucket) {
 		return bucket.depth() + 0.25;
 	}
+
+	public void rest(Ear ear, int day) {
+		this.field.mark(day, ear.kernel(day));
+	}
+
+	public void fallow(java.util.Optional<Ear> ear, int day) {
+		ear.ifPresent(each -> this.field.mark(day, each.kernel(day)));
+	}
 }

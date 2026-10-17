@@ -22,4 +22,12 @@ public class Wheel {
 	public double dip(Bucket bucket) {
 		return bucket.dipped();
 	}
+
+	public void rest(Ear ear, int day) {
+		ear.ripen(this.field, day);
+	}
+
+	public void fallow(java.util.Optional<Ear> ear, int day) {
+		ear.ifPresent(each -> each.ripen(this.field, day));
+	}
 }

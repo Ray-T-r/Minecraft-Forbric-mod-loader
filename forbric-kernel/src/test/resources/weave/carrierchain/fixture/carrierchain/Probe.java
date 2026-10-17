@@ -22,6 +22,9 @@ public class Probe {
 		record(out, "sift", () -> Trace.add("got " + new Wheel().sift(new Chaff("husk"))));
 		record(out, "dip plain", () -> Trace.add("got " + new Wheel().dip(new Bucket())));
 		record(out, "dip deep", () -> Trace.add("got " + new Wheel().dip(new DeepBucket())));
+		record(out, "rest plain", () -> new Wheel().rest(new Ear(new Stalk(), "millet"), 5));
+		record(out, "fallow plain", () -> new Wheel().fallow(java.util.Optional.of(new Ear(new Stalk(), "spelt")), 6));
+		record(out, "rest thorn", () -> new Wheel().rest(new Ear(new ThornStalk(), "rice"), 7));
 		return out.toString();
 	}
 

@@ -540,7 +540,8 @@ test	net.forbric.kernel.mixin.CarrierDecisionsStagedTest	thePrimaryItemLambdaIsN
 test	net.forbric.kernel.mixin.CarrierDecisionsStagedTest	threeEnchantingRedirectsMoveOntoTheCarriersItemQuestionWithTheNativeValues()	[fixture:staged] actual Fabric API fixture required
 test	net.forbric.kernel.mixin.CarrierDefaultChainsStagedTest	aConstantsModifierMovesOntoTheCallWhoseDefaultPushesIt()	[fixture:staged] the NeoForge carrier declares the default
 test	net.forbric.kernel.mixin.CarrierDefaultChainsStagedTest	aGroupOrTheSwitchLeavesTheRedirectAsCompiled()	[fixture:staged] actual Fabric API fixture required
-test	net.forbric.kernel.mixin.CarrierDefaultChainsStagedTest	theBedRedirectBoundToTwoMethodsIsNotMoved()	[fixture:staged] actual Fabric API fixture required
+test	net.forbric.kernel.mixin.CarrierDefaultChainsStagedTest	aRedirectBoundToTwoMethodsStaysWhenOneOfThemStillMakesTheVanillaCall()	[fixture:staged] actual Fabric API fixture required
+test	net.forbric.kernel.mixin.CarrierDefaultChainsStagedTest	theBedRedirectBoundToTwoMethodsMovesOntoTheStatesSetterForBoth()	[fixture:staged] actual Fabric API fixture required
 test	net.forbric.kernel.mixin.CarrierDefaultChainsStagedTest	theMechanismKnowsNoNameTheSameRedirectRenamedAndChangedStillMoves()	[fixture:staged] actual Fabric API fixture required
 test	net.forbric.kernel.mixin.CarrierDefaultChainsStagedTest	theStreamRedirectMovesOntoTheSoundsOwnCallAndKeepsItsHandlerAsWritten()	[fixture:staged] actual Fabric API fixture required
 test	net.forbric.kernel.mixin.CarrierDefaultChainsStagedTest	whereTheMergedMethodStillMakesTheVanillaCallNothingMoves()	[fixture:staged] actual Fabric API fixture required
@@ -606,11 +607,6 @@ test	net.forbric.kernel.mixin.FabricEnchantmentContractsTest	theActualDefaultFal
 test	net.forbric.kernel.mixin.FabricEnchantmentContractsTest	theRealMethodReferenceGetsOneTypedWrapperWithoutChangingCaptureOrder()	[fixture:staged] actual game required
 test	net.forbric.kernel.mixin.FabricEnchantmentContractsTest	theSameDecisionSpelledAnotherWayIsRewrittenAndAnotherDecisionIsNot()	[fixture:staged] actual Fabric API fixture required
 test	net.forbric.kernel.mixin.FabricEnchantmentContractsTest	theTablesPrimaryItemRouteAttachesToTheTransformersBridge()	[fixture:staged] actual Fabric API fixture required
-test	net.forbric.kernel.mixin.FabricEntityMixinAnchorsTest	actualBedBridgePreservesNativeCustomBedsAndFabricHandledOccupation()	[fixture:staged] actual Fabric API fixture required
-test	net.forbric.kernel.mixin.FabricEntityMixinAnchorsTest	nativeVanillaBodiesAreUnchanged()	[fixture:mc-libraries] actual game required
-test	net.forbric.kernel.mixin.FabricEntityMixinAnchorsTest	sleepAndOccupationAlternativesKeepTheirGroupContract()	[fixture:staged] actual Fabric API fixture required
-test	net.forbric.kernel.mixin.FabricEntityMixinAnchorsTest	switchAndForeignMixinStayUntouched()	[fixture:staged] actual game required
-test	net.forbric.kernel.mixin.FabricEntityMixinAnchorsTest	unknownOccupationHandlerBodyIsNotReimplemented()	[fixture:staged] actual Fabric API fixture required
 test	net.forbric.kernel.mixin.FabricFreezeHookMixinAdapterTest	releasedCreateFlyMovesOnInitializeToTheHeadHookAndAfterFreezeToTheTailHook()	[fixture:third-party] real fixture required: $ROOT/forbric-kernel/build/compat-inputs/create-fly/create-fly.jar
 test	net.forbric.kernel.mixin.FabricFreezeHookSpellingTest	aPointNamingAnotherOwnersFreezeStays()	[fixture:staged] the staged merged base: $ROOT/forbric-loader/run/merged-base/patched-mc-merged-26.2.jar
 test	net.forbric.kernel.mixin.FabricFreezeHookSpellingTest	aPointSelectingTwoCallsOfFreezeStays()	[fixture:staged] the staged merged base: $ROOT/forbric-loader/run/merged-base/patched-mc-merged-26.2.jar
@@ -1585,6 +1581,10 @@ test	net.forbric.kernel.runtime.KernelCreativePagerMergedScreenTest	theBridgedMe
 test	net.forbric.kernel.runtime.KernelCreativePagerTest	neoForgesPageButtonsKeepTheSelectionUnlessAHookActs()	[fixture:game-side] compile the staged runtime source set before this test: build/classes/java/runtime/net/forbric/kernel/runtime/KernelCreativePager.class
 test	net.forbric.kernel.runtime.KernelCreativePagerTest	theBridgeAnswersEveryCallFromNeoForgesPager()	[fixture:game-side] compile the staged runtime source set before this test: build/classes/java/runtime/net/forbric/kernel/runtime/KernelCreativePager.class
 test	net.forbric.kernel.runtime.KernelCreativePagerTest	withoutTheBridgeOwosCallOnTheCreativeScreenThrowsAssertionError()	[fixture:game-side] compile the staged runtime source set before this test: build/classes/java/runtime/net/forbric/kernel/runtime/KernelCreativePager.class
+test	net.forbric.kernel.runtime.KernelDispatchTest	aClassDeclarerThatForwardsIsSelectedForItsSubclasses()	[fixture:game-side] game-side classes not compiled yet
+test	net.forbric.kernel.runtime.KernelDispatchTest	aDeclarationThatOnlyForwardsToTheSameDefaultIsNoOverride()	[fixture:game-side] game-side classes not compiled yet
+test	net.forbric.kernel.runtime.KernelDispatchTest	aForwarderToAnotherDefaultOrWithChangedArgumentsIsAnOverride()	[fixture:game-side] game-side classes not compiled yet
+test	net.forbric.kernel.runtime.KernelDispatchTest	anInheritedDefaultIsSelected()	[fixture:game-side] game-side classes not compiled yet
 test	net.forbric.kernel.runtime.KernelFabricConditionsGateLineTest	theFirstJudgementPrintsTheLineGateM9Reads(Path)	[fixture:staged] the staged artifacts are absent
 test	net.forbric.kernel.runtime.KernelFabricConditionsPublicApiTest	theKeyIsJudgedByThePublicCodecAndTest(Path)	[fixture:staged] the staged artifacts are absent
 test	net.forbric.kernel.runtime.KernelFabricFluidBehaviorsTest	aLookupThatBreaksAnswersNoBehaviourType()	[fixture:third-party] sweep pack absent

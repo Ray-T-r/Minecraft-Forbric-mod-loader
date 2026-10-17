@@ -35,6 +35,7 @@ import net.neoforged.neoforge.event.tick.ServerTickEvent;
 public final class EntityCallbacks {
  private static final net.neoforged.neoforge.registries.DeferredRegister<Block> BLOCKS=net.neoforged.neoforge.registries.DeferredRegister.create(net.minecraft.core.registries.Registries.BLOCK,"forbricentitycallbacks");
  private static final java.util.function.Supplier<NativeBed> NATIVE_BED=BLOCKS.register("native_bed",()->new NativeBed(net.minecraft.world.level.block.state.BlockBehaviour.Properties.of().setId(net.minecraft.resources.ResourceKey.create(net.minecraft.core.registries.Registries.BLOCK,net.minecraft.resources.Identifier.fromNamespaceAndPath("forbricentitycallbacks","native_bed")))));
+ private static final java.util.function.Supplier<InheritingBed> INHERITING_BED=BLOCKS.register("inheriting_bed",()->new InheritingBed(net.minecraft.world.level.block.state.BlockBehaviour.Properties.of().setId(net.minecraft.resources.ResourceKey.create(net.minecraft.core.registries.Registries.BLOCK,net.minecraft.resources.Identifier.fromNamespaceAndPath("forbricentitycallbacks","inheriting_bed")))));
  private static FakePlayer player; private static Zombie monster;
  private static MinecraftServer server; private static ServerLevel level;
  private static final BlockPos BED=new BlockPos(8,80,8);
@@ -53,7 +54,7 @@ public final class EntityCallbacks {
   EntityElytraEvents.ALLOW.register(entity->{if(entity!=player)return true;allow++;return !mode.equals("glide-deny");});
   EntityElytraEvents.CUSTOM.register((entity,tick)->{if(entity!=player)return false;custom++;if(tick)customTick++;return mode.startsWith("glide-custom")||mode.equals("glide-boolean")||mode.equals("glide-tick");});
   NeoForge.EVENT_BUS.addListener(VanillaGameEvent.class,e->{if(e.getCause()==player&&e.getVanillaEvent().is(GameEvent.ELYTRA_GLIDE.key()))glideEvents++;});
-  EntitySleepEvents.SET_BED_OCCUPATION_STATE.register((entity,pos,state,occupied)->{if(entity!=player)return false;occupation++;if(mode.equals("bed-nonbed"))originalStone=state.is(Blocks.STONE);return mode.equals("bed-handled")||mode.equals("bed-custom-handled");});
+  EntitySleepEvents.SET_BED_OCCUPATION_STATE.register((entity,pos,state,occupied)->{if(entity!=player)return false;occupation++;if(mode.equals("bed-nonbed"))originalStone=state.is(Blocks.STONE);return mode.equals("bed-handled")||mode.equals("bed-custom-handled")||mode.equals("bed-inherit-handled");});
   EntitySleepEvents.ALLOW_BED.register((entity,pos,state,vanilla)->entity==player&&(mode.equals("bed-nonbed")||mode.equals("direction-nonbed"))?EventResult.ALLOW:EventResult.PASS);
   EntitySleepEvents.MODIFY_SLEEPING_DIRECTION.register((entity,pos,direction)->{if(entity!=player||!mode.startsWith("direction-"))return direction;
    directions++;nativeDirection=direction;if(mode.equals("direction-veto"))return null;return direction==null?Direction.EAST:direction.getOpposite();});
@@ -99,8 +100,15 @@ public final class EntityCallbacks {
   test("bed-native",()->{bed();player.startSleeping(BED);require(occupation==1&&occupied(),"native bed occupation/callback");player.stopSleeping();require(occupation==2&&!occupied(),"native wake occupation/callback");});
   test("bed-handled",()->{bed();player.startSleeping(BED);require(occupation==1&&!occupied(),"handled callback did not prevent native bed write");player.stopSleeping();require(occupation==2&&!occupied(),"handled wake callback");});
   test("bed-nonbed",()->{level.setBlock(BED,Blocks.STONE.defaultBlockState(),2);player.startSleeping(BED);require(occupation==1&&originalStone&&level.getBlockState(BED).is(Blocks.STONE),"Fabric non-bed was overwritten or context differed");player.stopSleeping();require(occupation==2&&level.getBlockState(BED).is(Blocks.STONE),"non-bed wake was overwritten");});
-  test("bed-custom-native",()->{NativeBed block=NATIVE_BED.get();block.writes=0;level.setBlock(BED,block.defaultBlockState(),2);player.startSleeping(BED);require(occupation==1&&block.writes==1&&block.actor==player&&level.getBlockState(BED).getValue(NativeBed.ACTIVE),"native custom bed setter or actor lost");player.stopSleeping();require(occupation==2&&block.writes==2&&!level.getBlockState(BED).getValue(NativeBed.ACTIVE),"native custom wake setter lost");});
-  test("bed-custom-handled",()->{NativeBed block=NATIVE_BED.get();block.writes=0;level.setBlock(BED,block.defaultBlockState(),2);player.startSleeping(BED);require(occupation==1&&block.writes==0&&!level.getBlockState(BED).getValue(NativeBed.ACTIVE),"Fabric handled custom bed still wrote native state");player.stopSleeping();require(occupation==2&&block.writes==0&&!level.getBlockState(BED).getValue(NativeBed.ACTIVE),"Fabric handled custom wake still wrote native state");});
+  // A NeoForge bed that overrides setBedOccupied with its own property and no vanilla write has no counterpart in any native
+  // Fabric game, so Fabric's occupancy event is not asked for it (asking it would mean writing fabric-api's handler for it):
+  // its own setter runs, with its actor and its own state, whether or not a Fabric listener would have handled the write.
+  test("bed-custom-native",()->{NativeBed block=NATIVE_BED.get();block.writes=0;level.setBlock(BED,block.defaultBlockState(),2);player.startSleeping(BED);require(occupation==0&&block.writes==1&&block.actor==player&&level.getBlockState(BED).getValue(NativeBed.ACTIVE),"native custom bed setter or actor lost, or Fabric asked for a bed with no native counterpart");player.stopSleeping();require(occupation==0&&block.writes==2&&!level.getBlockState(BED).getValue(NativeBed.ACTIVE),"native custom wake setter lost");});
+  test("bed-custom-handled",()->{NativeBed block=NATIVE_BED.get();block.writes=0;level.setBlock(BED,block.defaultBlockState(),2);player.startSleeping(BED);require(occupation==0&&block.writes==1&&level.getBlockState(BED).getValue(NativeBed.ACTIVE),"a Fabric listener decided a bed with no native counterpart");player.stopSleeping();require(occupation==0&&block.writes==2&&!level.getBlockState(BED).getValue(NativeBed.ACTIVE),"native custom wake setter lost");});
+  // A mod's own bed that inherits NeoForge's default setter (vanilla's OCCUPIED write): Fabric's event is asked for it as for
+  // vanilla's bed, and a listener that handles the write keeps the bed unoccupied.
+  test("bed-inherit-native",()->{inheritingBed();player.startSleeping(BED);require(occupation==1&&level.getBlockState(BED).getValue(BedBlock.OCCUPIED),"inheriting custom bed occupation/callback");player.stopSleeping();require(occupation==2&&!level.getBlockState(BED).getValue(BedBlock.OCCUPIED),"inheriting custom bed wake occupation/callback");});
+  test("bed-inherit-handled",()->{inheritingBed();player.startSleeping(BED);require(occupation==1&&!level.getBlockState(BED).getValue(BedBlock.OCCUPIED),"handled callback did not prevent the inheriting bed's write");player.stopSleeping();require(occupation==2&&!level.getBlockState(BED).getValue(BedBlock.OCCUPIED),"handled wake callback on the inheriting bed");});
   // What the sleeping body is drawn and the camera faced by: Fabric's listener turns a bed around, and gives a non-bed
   // sleeping spot a direction. Asked only while there is a sleeping position, as vanilla asked.
   test("direction-bed",()->{bed();require(player.getBedOrientation()==null&&directions==0,"asked without a sleeping position");
@@ -122,10 +130,18 @@ public final class EntityCallbacks {
   var step=LivingEntity.class.getDeclaredMethod("updateFallFlying");step.setAccessible(true);step.invoke(player);
  }
  private static void flight(double nativeAttribute){player.stopFallFlying();player.setOnGround(false);player.setDeltaMovement(0,0,0);player.getAttribute(NeoForgeMod.GLIDING_FLIGHT).setBaseValue(nativeAttribute);}
+ /** Both halves cleared first, without shape updates: a bed half left by an earlier case would otherwise pull the new one down. */
+ private static void clearBed(){level.setBlock(BED,Blocks.AIR.defaultBlockState(),18);level.setBlock(BED.north(),Blocks.AIR.defaultBlockState(),18);}
  private static void bed(){
-  player.stopSleeping();occupation=0;player.stopFallFlying();player.snapTo(9,80,8);
+  player.stopSleeping();occupation=0;player.stopFallFlying();player.snapTo(9,80,8);clearBed();
   var state=Blocks.BED.red().defaultBlockState().setValue(BedBlock.FACING,Direction.NORTH).setValue(BedBlock.OCCUPIED,false);
   level.setBlock(BED,state.setValue(BedBlock.PART,BedPart.FOOT),2);level.setBlock(BED.north(),state.setValue(BedBlock.PART,BedPart.HEAD),2);
+ }
+ private static void inheritingBed(){
+  player.stopSleeping();occupation=0;player.stopFallFlying();player.snapTo(9,80,8);clearBed();
+  var state=INHERITING_BED.get().defaultBlockState().setValue(BedBlock.FACING,Direction.NORTH).setValue(BedBlock.OCCUPIED,false);
+  level.setBlock(BED,state.setValue(BedBlock.PART,BedPart.FOOT),2);level.setBlock(BED.north(),state.setValue(BedBlock.PART,BedPart.HEAD),2);
+  require(level.getBlockState(BED).is(INHERITING_BED.get()),"inheriting custom bed not placed");
  }
  private static boolean occupied(){return level.getBlockState(BED).getValue(BedBlock.OCCUPIED);}
  @FunctionalInterface private interface Probe{void run()throws Exception;}
@@ -138,7 +154,7 @@ public final class EntityCallbacks {
  private static void require(boolean condition,String detail){if(!condition)throw new IllegalStateException(detail);}
  private static void finish(){try{
   if(monster!=null)monster.discard();if(player!=null)level.removePlayerImmediately(player,Entity.RemovalReason.DISCARDED);if(level!=null)level.setChunkForced(0,0,false);
-  Map<String,Object> r=new LinkedHashMap<>();r.put("phase",phase);r.put("nonce",nonce);r.put("pass",cases.size()==17&&cases.stream().allMatch(c->Boolean.TRUE.equals(c.get("pass"))));r.put("cases",cases);r.put("ticks",ticks);
+  Map<String,Object> r=new LinkedHashMap<>();r.put("phase",phase);r.put("nonce",nonce);r.put("pass",cases.size()==19&&cases.stream().allMatch(c->Boolean.TRUE.equals(c.get("pass"))));r.put("cases",cases);r.put("ticks",ticks);
   Files.writeString(root.resolve("probe.json"),new GsonBuilder().setPrettyPrinting().create().toJson(r));
  }catch(Exception failure){failure.printStackTrace();}finally{MinecraftServer stop=server;server=null;if(stop!=null)stop.halt(false);}}
 }

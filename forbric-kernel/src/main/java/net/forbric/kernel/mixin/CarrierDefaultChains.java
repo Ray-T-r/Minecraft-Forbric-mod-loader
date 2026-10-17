@@ -71,7 +71,10 @@ import net.forbric.kernel.util.Caught;
  *       {@code @Group}; its handler takes the vanilla call's values (or the constant) and, after them, only arguments of the
  *       method it targets, with no parameter annotations;</li>
  *   <li>the native method (the mod's loader's) makes the vanilla call once (or the occurrence the ordinal names), or pushes
- *       the constant once, and the merged method never does;</li>
+ *       the constant once, and the merged method never does — for every method the selectors bind, natively and merged
+ *       alike: a redirect written for several methods (a method and the lambda it hands part of its work to) moves only when
+ *       each of them lost the operation to the same carrier call, leading to it through the same implementations, and its
+ *       captured arguments lead each method's; the one new handler is then bound to all of them, as written;</li>
  *   <li>the merged method makes exactly one virtual call the native method never makes whose selected implementation leads
  *       to the vanilla call: makes it exactly once, or makes exactly one call that leads to it, at most four levels down,
  *       with no loop, handler, lambda or monitor on the way (so it is made at most once per call);</li>
@@ -135,40 +138,76 @@ public final class CarrierDefaultChains {
 				if (constant == null && (at == null || !"INVOKE".equals(MixinFit.asString(MixinFit.value(at, "value"))))) continue;
 				if (merged == null) merged = classes.apply(target);
 				if (merged == null) break;
-				MethodNode was = MixinTargetSelectors.one(handler, original), selected = MixinTargetSelectors.one(handler, merged);
-				if (was == null || selected == null || !was.name.equals(selected.name) || !was.desc.equals(selected.desc)) continue;
-				AbstractInsnNode vanilla;
-				if (constant != null) {
-					// A constant the native method pushes once and the merged method never.
-					if (!pushes(selected, constant).isEmpty() || pushes(was, constant).size() != 1) continue;
-					vanilla = pushes(was, constant).getFirst();
-				} else {
-					if (!MixinCallbackShape.calls(at, selected).isEmpty()) continue;
-					List<MethodInsnNode> nativeCalls = MixinCallbackShape.calls(at, was);
-					int ordinal = MixinFit.value(at, "ordinal") instanceof Number number ? number.intValue() : -1;
-					MethodInsnNode call = ordinal >= 0 ? (ordinal < nativeCalls.size() ? nativeCalls.get(ordinal) : null)
-							: nativeCalls.size() == 1 ? nativeCalls.getFirst() : null;
-					if (call == null || call.getOpcode() == Opcodes.INVOKESPECIAL) continue;
-					vanilla = call;
+				// Every method the selectors bind, natively and merged, paired by name and descriptor: a redirect written for
+				// several methods (a method and the lambda it hands part of its work to) moves only when each of them lost the
+				// vanilla operation to the very same carrier call, so one new handler serves them all.
+				List<MethodNode> natively = MixinTargetSelectors.bound(handler, original), bound = MixinTargetSelectors.bound(handler, merged);
+				if (natively == null || bound == null || natively.isEmpty() || natively.size() != bound.size()) continue;
+				AbstractInsnNode vanilla = null;
+				Link chain = null;
+				List<MethodNode> selected = new ArrayList<>();
+				boolean fits = true;
+				for (MethodNode was : natively) {
+					MethodNode here = bound.stream().filter(m -> m.name.equals(was.name) && m.desc.equals(was.desc)).findFirst().orElse(null);
+					AbstractInsnNode operation = here == null ? null : vanillaOperation(was, here, at, constant);
+					Link link = operation == null ? null : standIn(was, here, operation, classes);
+					// A helper the carrier added to the target class itself is NativeCallInlining's (it inlines it at its call, in the
+					// class, where every other mixin is checked); only an implementation of another class is inlined here.
+					if (link == null || link.body().declarer().equals(merged.name) || chain != null && !sameChain(chain, link)) {
+						fits = false;
+						break;
+					}
+					if (chain == null) {
+						chain = link;
+						vanilla = operation;
+					}
+					selected.add(here);
 				}
-				Link chain = standIn(was, selected, vanilla, classes);
-				if (chain == null) continue;
-				// A helper the carrier added to the target class itself is NativeCallInlining's (it inlines it at its call, in the
-				// class, where every other mixin is checked); only an implementation of another class is inlined here.
-				if (chain.body().declarer().equals(merged.name)) continue;
+				if (!fits || chain == null) continue;
 				MethodNode wrapper = relocate(mixin, handler, injector, at, vanilla, chain, selected, classes);
 				if (wrapper == null) continue;
 				CurrentBodyOrdinals.mark(wrapper);
 				moved++;
+				String hosts = String.join(", ", selected.stream().map(m -> m.name).toList());
 				ForbricLog.info("[Forbric/Mixin] %s.%s: %s in %s; the carrier calls %s there, whose inherited implementation %s%s"
 						+ " — the %s moves onto it and runs that implementation with the mod's handler wherever the receiver inherits it",
 						mixin.name.replace('/', '.'), wrapper.name, vanilla instanceof MethodInsnNode call ? call.owner.replace('/', '.') + "." + call.name + " is no longer called"
-								: "the constant " + constant + " is no longer pushed", target.replace('/', '.') + "." + selected.name,
+								: "the constant " + constant + " is no longer pushed", target.replace('/', '.') + "." + hosts,
 						chain.call().owner.replace('/', '.') + "." + chain.call().name, vanilla instanceof MethodInsnNode ? "makes that call" : "pushes it", path(chain),
 						vanilla instanceof MethodInsnNode ? "redirect" : "constant's modifier");
 			}
 		}
 		return moved;
+	}
+
+	/**
+	 * The vanilla operation the injector names in the native method {@code was}, which the merged method {@code selected} no
+	 * longer performs: the constant pushed once natively and never merged, or the call (the occurrence the ordinal names, or
+	 * the only one) natively made and never merged. Null otherwise.
+	 */
+	private static AbstractInsnNode vanillaOperation(MethodNode was, MethodNode selected, AnnotationNode at, Object constant) {
+		if (constant != null) {
+			if (!pushes(selected, constant).isEmpty() || pushes(was, constant).size() != 1) return null;
+			return pushes(was, constant).getFirst();
+		}
+		if (!MixinCallbackShape.calls(at, selected).isEmpty()) return null;
+		List<MethodInsnNode> nativeCalls = MixinCallbackShape.calls(at, was);
+		int ordinal = MixinFit.value(at, "ordinal") instanceof Number number ? number.intValue() : -1;
+		MethodInsnNode call = ordinal >= 0 ? (ordinal < nativeCalls.size() ? nativeCalls.get(ordinal) : null)
+				: nativeCalls.size() == 1 ? nativeCalls.getFirst() : null;
+		return call == null || call.getOpcode() == Opcodes.INVOKESPECIAL ? null : call;
+	}
+
+	/**
+	 * Whether two chains found for two bound methods are one: the same carrier call into the same implementations, guarded
+	 * alike, going on at the same instruction of each — so the one handler written from either serves both.
+	 */
+	private static boolean sameChain(Link a, Link b) {
+		for (; a != null && b != null; a = a.next(), b = b.next()) {
+			if (!member(a.call()).equals(member(b.call())) || a.call().getOpcode() != b.call().getOpcode() || a.guarded() != b.guarded()
+					|| !a.body().declarer().equals(b.body().declarer()) || a.body().method() != b.body().method() || a.site() != b.site()) return false;
+		}
+		return a == null && b == null;
 	}
 
 	private static String path(Link chain) {
@@ -477,7 +516,7 @@ public final class CarrierDefaultChains {
 	// The move
 
 	private static MethodNode relocate(ClassNode mixin, MethodNode handler, AnnotationNode injector, AnnotationNode at, AbstractInsnNode vanilla, Link chain,
-			MethodNode selected, Function<String, ClassNode> code) {
+			List<MethodNode> selected, Function<String, ClassNode> code) {
 		if (!accessible(chain, code)) return null;
 		for (List<AnnotationNode>[] table : Arrays.asList(handler.visibleParameterAnnotations, handler.invisibleParameterAnnotations))
 			if (table != null) for (List<AnnotationNode> annotations : table) if (annotations != null && !annotations.isEmpty()) return null;
@@ -491,9 +530,12 @@ public final class CarrierDefaultChains {
 		if (!Type.getReturnType(handler.desc).equals(answer) || parameters.length < nativeOperands.size()) return null;
 		for (int i = 0; i < nativeOperands.size(); i++) if (!parameters[i].equals(nativeOperands.get(i))) return null;
 		List<Type> captured = List.of(parameters).subList(nativeOperands.size(), parameters.length);
-		Type[] targetArguments = Type.getArgumentTypes(selected.desc);
-		if (captured.size() > targetArguments.length) return null;
-		for (int i = 0; i < captured.size(); i++) if (!captured.get(i).equals(targetArguments[i])) return null;
+		// The arguments the handler captures must be the leading arguments of every method it is bound to.
+		for (MethodNode each : selected) {
+			Type[] targetArguments = Type.getArgumentTypes(each.desc);
+			if (captured.size() > targetArguments.length) return null;
+			for (int i = 0; i < captured.size(); i++) if (!captured.get(i).equals(targetArguments[i])) return null;
+		}
 		String name = handler.name;
 		for (MethodNode other : mixin.methods) if (other.name.equals(name + CarrierDecisions.SUFFIX)) return null;
 
@@ -766,7 +808,7 @@ public final class CarrierDefaultChains {
 	 * Gives {@code wrapper} stack map frames: written alone in a class of the mixin's name, the common supertypes read off the
 	 * game's classes. False when that cannot be done (the wrapper is then not used).
 	 */
-	private static boolean framed(ClassNode mixin, MethodNode wrapper, Function<String, ClassNode> code) {
+	static boolean framed(ClassNode mixin, MethodNode wrapper, Function<String, ClassNode> code) {
 		try {
 			ClassNode shell = new ClassNode();
 			shell.version = Math.max(mixin.version, Opcodes.V1_8) & 0xFFFF;

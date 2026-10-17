@@ -123,11 +123,13 @@ class AdapterPointSpellingTest {
 						"Lnet/minecraft/util/Util;getRandom(Ljava/util/List;Lnet/minecraft/util/RandomSource;)Ljava/lang/Object;"),
 				mixin -> assertTrue(atTargets(mixin).containsAll(List.of("Lnet/neoforged/neoforge/common/NeoForgeMod;GLIDING_FLIGHT:Lnet/minecraft/core/Holder;",
 						"Ljava/util/List;isEmpty()Z")))));
-		// FabricEntityMixinAnchors: fabric-api's bed occupancy row.
-		cases.add(new Case("fabric-api beds", () -> StagedFabricMixinFixture.mixin("fabric-entity-events-v1", root + "LivingEntityMixin"), false,
-				Ecosystem.FABRIC, LIVING, FabricEntityMixinAnchors::adapt, 1,
+		// CarrierDefaultChains: fabric-api's bed occupancy redirect, bound to the sleep start and the wake-up lambda, under
+		// unrelated names.
+		cases.add(new Case("fabric-api beds", () -> StagedFabricMixinFixture.mixin("fabric-entity-events-v1", root + "LivingEntityMixin"), true,
+				Ecosystem.FABRIC, LIVING, CarrierDefaultChains::adapt, 1,
 				List.of("Lnet/minecraft/world/level/Level;setBlock(Lnet/minecraft/core/BlockPos;" + STATE + "I)Z"),
-				mixin -> assertTrue(mixin.methods.stream().map(m -> m.name).toList().contains("forbric$setBedOccupied"))));
+				mixin -> assertTrue(atTargets(mixin).contains("Lnet/minecraft/world/level/block/state/BlockState;setBedOccupied(Lnet/minecraft/world/level/Level;"
+						+ "Lnet/minecraft/core/BlockPos;L" + LIVING + ";Z)V"), "the occupancy write moves onto the state's setBedOccupied")));
 		// CarrierReturnedCalls: fabric-api's sleeping direction wrap, under unrelated names.
 		cases.add(new Case("fabric-api sleeping direction", () -> StagedFabricMixinFixture.mixin("fabric-entity-events-v1", root + "LivingEntityMixin"), true,
 				Ecosystem.FABRIC, LIVING, CarrierReturnedCalls::adapt, 1,
@@ -446,20 +448,28 @@ class AdapterPointSpellingTest {
 
 	private static final Map<String, byte[]> MERGED = new HashMap<>();
 
-	/** The merged class with code and local variable tables, a fresh node each time, with the kernel's own pre-mixin relays. */
+	/**
+	 * The merged class with code and local variable tables, a fresh node each time, with the kernel's own pre-mixin relays; a
+	 * class the merged base does not hold is read from the carriers' runtimes (NeoForge's extension interfaces), as the game's
+	 * class loader serves it to the adapters.
+	 */
 	static ClassNode merged(String name) {
 		byte[] bytes = MERGED.computeIfAbsent(name, n -> {
-			Path jar = TestFixtures.stagedRoot().resolve("merged-base/patched-mc-merged-26.2.jar");
-			try (ZipFile zip = new ZipFile(jar.toFile())) {
-				ZipEntry entry = zip.getEntry(n + ".class");
-				if (entry == null) return null;
-				byte[] read = zip.getInputStream(entry).readAllBytes();
-				if (n.equals(STACK)) read = new ItemUseOnInjector().transform(n.replace('/', '.'), read, null);
-				if (n.equals(CLIENT)) read = new ForbricMergedBaseCompatTransformer().transform(n.replace('/', '.'), read, null);
-				return read;
-			} catch (Exception unreadable) {
-				return null;
+			for (String jarName : List.of("merged-base/patched-mc-merged-26.2.jar", "neoforge-runtime/neoforge-runtime.jar", "merged-base/forge-runtime-interop.jar")) {
+				Path jar = TestFixtures.stagedRoot().resolve(jarName);
+				if (!Files.isRegularFile(jar)) continue;
+				try (ZipFile zip = new ZipFile(jar.toFile())) {
+					ZipEntry entry = zip.getEntry(n + ".class");
+					if (entry == null) continue;
+					byte[] read = zip.getInputStream(entry).readAllBytes();
+					if (n.equals(STACK)) read = new ItemUseOnInjector().transform(n.replace('/', '.'), read, null);
+					if (n.equals(CLIENT)) read = new ForbricMergedBaseCompatTransformer().transform(n.replace('/', '.'), read, null);
+					return read;
+				} catch (Exception unreadable) {
+					return null;
+				}
 			}
+			return null;
 		});
 		if (bytes == null) return null;
 		ClassNode node = new ClassNode();

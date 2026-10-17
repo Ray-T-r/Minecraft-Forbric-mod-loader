@@ -455,13 +455,14 @@ public final class ForbricMixinService
 		// …and an @Inject the carrier put behind a branch of its own moves ahead of that branch, where it runs on every way it
 		// runs natively. Before the rebind below: an injector on a stub that only forwards is read on the overload here.
 		CarrierGuardedPoints.adapt(node, this::mergedBaseGameCode, NativeGameReferences::reference);
-		FabricEntityMixinAnchors.adapt(node, this::mergedBaseNodeWithCode);
 		FabricEnchantmentMixinAdapter.adapt(node, this::mergedBaseNodeWithCode);
 		FabricBlockBreakMixinAdapter.adapt(node, this::mergedBaseNodeWithCode);
 		FabricClientMixinAnchors.adapt(node, this::mergedBaseNodeWithCode);
 		// …and a redirect of a vanilla call the carrier now makes through a method of its own (its inherited implementation
-		// makes the vanilla call) moves onto that method, running its implementation with the handler where it is inherited.
-		// After the client anchors: an empty redirect they turn into skipping the carrier's call keeps that meaning.
+		// makes the vanilla call) moves onto that method, running its implementation with the handler where it is inherited —
+		// one handler for every method it is bound to, when each of them lost the call to the same carrier call (a bed's
+		// occupancy write in the sleep start and in the wake-up lambda). After the client anchors: an empty redirect they turn
+		// into skipping the carrier's call keeps that meaning.
 		CarrierDefaultChains.adapt(node, this::mergedBaseGameCode, NativeGameReferences::reference);
 		MixinSpriteLoaderCallbackAdapter.adapt(node, this::mergedBaseNodeWithCode);
 		MixinKeyActionAdapter.adapt(node, this::mergedBaseGameCode);
@@ -479,8 +480,8 @@ public final class ForbricMixinService
 		MixinTwinRebind.adapt(node, this::mergedBaseNodeWithCode);
 		// …and, LAST, a Fabric mod's injector that Mixin still binds to a carrier's delegating stub moves to the method
 		// carrying the body — Mixin binds a name-only selector to the FIRST declared overload, which is that stub.
-		// Last so every specific adapter above has had its say: FabricEntityMixinAnchors moves fabric-api's elytra
-		// check onto NeoForge's gliding attribute read, and a rebind first would have changed the selector it matches.
+		// Last so every adapter above has had its say: CarrierGuardedPoints moves an elytra check ahead of NeoForge's
+		// gliding guard, and a rebind first would have changed the selector it reads.
 		// …and an injector at the start or end of a method whose whole body a carrier renamed, which the merged game also
 		// runs without passing through that method, stays where it was written and also edges each method that only
 		// forwards to the renamed body (ALLOW_LOAD: on addEntity, before NeoForge's join event, and on players'

@@ -29,7 +29,8 @@ import net.forbric.kernel.mixin.CarrierDefaultChains;
  * constant a dip adds, which the carrier now pushes in its bucket's default (scaled by a factor of its own). Moved, each runs
  * where it runs natively, once, with every outcome the native one; a carrier mod's grain, stalk or bucket that overrides the
  * carrier's method keeps its override and the guest does not run for it. A sift, whose carrier method reads a member only its package
- * may, is not moved. Switched off, neither guest runs.
+ * may, is not moved. A rest and a fallow's lambda each mark the field natively and ask the ear to ripen merged; the guest's one
+ * redirect bound to both moves once, one handler serving both. Switched off, neither guest runs.
  */
 class CarrierDefaultChainsWeaveTest {
 	private static final Path SOURCES = Path.of("src/test/resources/weave/carrierchain");
@@ -62,14 +63,32 @@ class CarrierDefaultChainsWeaveTest {
 
 	@Test void everyMovedRedirectRunsOnceWhereItRunsNativelyWithTheNativeOutcome() throws Exception {
 		Map<String, String> movedSteps = steps(moved), nativeSteps = steps(natively);
-		for (String scenario : List.of("turn plain", "harvest plain", "dip plain"))
+		for (String scenario : List.of("turn plain", "harvest plain", "dip plain", "rest plain", "fallow plain"))
 			assertEquals(nativeSteps.get(scenario), movedSteps.get(scenario), scenario + "\n" + moved.describe() + "\n" + natively.describe());
 		assertEquals("husk-grind wheat of wheat, grind wheat fine, got husked ground wheat", movedSteps.get("turn plain"), moved.describe());
 		assertEquals("husk-mark barley@3, mark day 4 barley@3", movedSteps.get("harvest plain"), moved.describe());
 		assertEquals("husk-dip 0.25, got 1.5", movedSteps.get("dip plain"), "the constant's modifier, handed the constant where the carrier pushes it");
-		assertTrue(losses(moved).stream().noneMatch(f -> f.id().contains("husk$grind") || f.id().contains("husk$mark") || f.id().contains("husk$dip")),
+		assertTrue(losses(moved).stream().noneMatch(f -> f.id().contains("husk$grind") || f.id().contains("husk$mark") || f.id().contains("husk$dip")
+				|| f.id().contains("husk$rest")),
 				moved.findings().toString());
 		WeaveHarness.assertWovenAndVerified(moved, TARGET, fixture);
+	}
+
+	/**
+	 * One redirect bound to two methods, a method and a lambda of another, each of which lost the vanilla call to the same
+	 * carrier call: one new handler, bound to both as written, runs the inherited implementation with the guest's handler in
+	 * each, once, with the native outcome; a stalk that overrides the carrier's method keeps its own.
+	 */
+	@Test void aRedirectBoundToTwoMethodsMovesOnceForBoth() {
+		assertEquals("husk-rest millet@5, mark day 15 millet@5", steps(moved).get("rest plain"), moved.describe());
+		assertEquals("husk-rest spelt@6, mark day 16 spelt@6", steps(moved).get("fallow plain"), moved.describe());
+		assertEquals("thorn ripen rice@7", steps(moved).get("rest thorn"), moved.describe());
+		assertEquals(steps(natively).get("rest plain"), steps(moved).get("rest plain"));
+		assertEquals(steps(natively).get("fallow plain"), steps(moved).get("fallow plain"));
+		assertTrue(moved.printed("[Forbric/Mixin] io.reed.husk.mixin.WheelMixin.husk$rest: org.brook.mill.Field.mark is no longer called in org.brook.mill.Wheel.rest, lambda$fallow$0;"
+				+ " the carrier calls org.brook.mill.Ear.ripen there, whose inherited implementation makes that call (through org.brook.mill.Stalk.ripen)"), moved.describe());
+		assertEquals("mark day 5 millet@5", steps(off).get("rest plain"), off.describe());
+		assertEquals("mark day 6 spelt@6", steps(off).get("fallow plain"), off.describe());
 	}
 
 	/** A receiver that overrides the carrier's method gets its override, as the game would without the mod. */
@@ -102,7 +121,7 @@ class CarrierDefaultChainsWeaveTest {
 
 	@Test void switchedOffNoGuestRunsWhereTheCarrierRoutesTheCall() {
 		for (var entry : steps(off).entrySet()) assertFalse(entry.getValue().contains("husk-"), entry.getKey() + " " + off.describe());
-		assertEquals(4, losses(off).size(), off.findings().toString());
+		assertEquals(5, losses(off).size(), off.findings().toString());
 	}
 
 	@Test void theControlFlipsTheMainAssertion() {
