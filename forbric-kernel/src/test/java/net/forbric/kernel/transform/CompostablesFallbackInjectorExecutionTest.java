@@ -25,15 +25,16 @@ import net.fabricmc.api.EnvType;
  * <p>The hook is the kernel's real {@code KernelCompostables}, compiled from {@code src/runtime/java} against stand-ins:
  * fastutil's float maps (not on the test classpath), items and their registry, NeoForge's compostables data map, and the
  * three classes in the merged shapes the edits key on — the composter's {@code bootStrap} adds and its three
- * {@code getValue} sites, its {@code InputContainer}, and fabric-transfer's {@code TopStorage} reading
- * {@code COMPOSTABLES} once.
+ * {@code getValue} sites, its {@code InputContainer}, and a mod's pipe ({@code org.quarry.pipes.Chute}, as
+ * fabric-transfer's {@code TopStorage} does) reading {@code COMPOSTABLES} once.
  */
 @ExecutesInjector(CompostablesFallbackInjector.class)
 @ResourceLock("system-properties")
 class CompostablesFallbackInjectorExecutionTest {
 	private static final Path HOOK_SOURCE = Path.of("src/runtime/java/net/forbric/kernel/runtime/KernelCompostables.java");
-	private static final List<String> TARGETS = List.of(CompostablesFallbackInjector.COMPOSTER, CompostablesFallbackInjector.INPUT,
-			CompostablesFallbackInjector.TOP_STORAGE);
+	/** A mod's pipe that reads vanilla's map before it inserts, under a name of no loader's (fabric-transfer's TopStorage is one). */
+	private static final String CHUTE = "org.quarry.pipes.Chute";
+	private static final List<String> TARGETS = List.of(CompostablesFallbackInjector.COMPOSTER, CompostablesFallbackInjector.INPUT, CHUTE);
 
 	private static final Map<String, String> STAND_INS = new HashMap<>(Map.of(
 			"it.unimi.dsi.fastutil.objects.ObjectSet", "package it.unimi.dsi.fastutil.objects; public interface ObjectSet<E> extends java.util.Set<E> { }",
@@ -324,18 +325,16 @@ class CompostablesFallbackInjectorExecutionTest {
 					}
 				}
 				""");
-		STAND_INS.put("net/fabricmc/fabric/impl/transfer/item/ComposterWrapper.java", """
-				package net.fabricmc.fabric.impl.transfer.item;
+		STAND_INS.put(CHUTE, """
+				package org.quarry.pipes;
 
 				import net.minecraft.world.item.Item;
 				import net.minecraft.world.level.block.ComposterBlock;
 
-				public class ComposterWrapper {
-					/** fabric-transfer's: what a Fabric pipe asks before it inserts. */
-					public static class TopStorage {
-						public long insert(Item item, long amount) {
-							return ComposterBlock.COMPOSTABLES.getFloat(item) > 0 ? 1 : 0;
-						}
+				/** What a mod's pipe asks before it inserts. */
+				public class Chute {
+					public long insert(Item item, long amount) {
+						return ComposterBlock.COMPOSTABLES.getFloat(item) > 0 ? 1 : 0;
 					}
 				}
 				""");
@@ -383,7 +382,7 @@ class CompostablesFallbackInjectorExecutionTest {
 		List<Object> compost(String name) throws Throwable {
 			Object byHand = composter(), byDropper = composter(), byHopper = composter();
 			Object hopper = InjectorExecution.construct(loader.loadClass(CompostablesFallbackInjector.INPUT), byHopper);
-			Object pipe = InjectorExecution.construct(loader.loadClass(CompostablesFallbackInjector.TOP_STORAGE));
+			Object pipe = InjectorExecution.construct(loader.loadClass(CHUTE));
 			return List.of(InjectorExecution.invoke(byHand, "useItemOn", stack(name)), InjectorExecution.invoke(byDropper, "insertItem", stack(name)),
 					InjectorExecution.invoke(hopper, "canPlaceItemThroughFace", stack(name)), InjectorExecution.invoke(pipe, "insert", item(name), 1L),
 					byHand.getClass().getField("lastChance").get(byHand));
@@ -411,6 +410,9 @@ class CompostablesFallbackInjectorExecutionTest {
 			assertNotSame(original.get(internal), out, target + " is the reviewed shape");
 			classes.put(internal, out);
 		}
+		byte[] writes = original.get("fixture/FabricBerries");
+		assertSame(writes, InjectorExecution.transform(new CompostablesFallbackInjector(), "fixture.FabricBerries", writes, EnvType.SERVER),
+				"a mod that puts into the map still puts into the map");
 		Game game = game(classes);
 		for (String target : TARGETS) assertEquals("", InjectorExecution.verify(classes.get(target.replace('.', '/')), game.loader()), target);
 

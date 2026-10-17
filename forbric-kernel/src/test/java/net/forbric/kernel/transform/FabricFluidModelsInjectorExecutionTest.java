@@ -57,23 +57,45 @@ class FabricFluidModelsInjectorExecutionTest {
 					}
 					""");
 
-	private static final String FABRIC_REGISTRY = """
-			package net.fabricmc.fabric.impl.client.rendering.fluid;
+	/** A build of fabric-rendering-fluids: its public API, and where it keeps models under names of no loader's. */
+	private static final Map<String, String> FABRIC_RENDERING_FLUIDS = Map.of(
+			"net.minecraft.world.level.material.Fluid", "package net.minecraft.world.level.material; public class Fluid { }",
+			"net.minecraft.client.renderer.block.FluidModel", "package net.minecraft.client.renderer.block; public class FluidModel { public interface Unbaked { } }",
+			"net.fabricmc.fabric.api.client.render.fluid.v1.FluidRenderingRegistry", """
+					package net.fabricmc.fabric.api.client.render.fluid.v1;
 
-			import java.util.Map;
+					import net.minecraft.client.renderer.block.FluidModel;
+					import net.minecraft.world.level.material.Fluid;
 
-			public class FluidRenderingRegistryImpl {
-				public static Map<Object, Object> getUnbakedModels() {
-					return Map.of("travelersbackpack:potion_still", "fabric model", "travelersbackpack:potion_flowing", "fabric model");
-				}
-			}
-			""";
+					public final class FluidRenderingRegistry {
+						public static void register(Fluid fluid, FluidModel.Unbaked model) {
+							org.quarry.render.Shapes.add(fluid, model);
+						}
+					}
+					""",
+			"org.quarry.render.Shapes", """
+					package org.quarry.render;
+
+					import java.util.HashMap;
+					import java.util.Map;
+					import net.minecraft.client.renderer.block.FluidModel;
+					import net.minecraft.world.level.material.Fluid;
+
+					public final class Shapes {
+						private static final Map<Object, Object> SHAPES = new HashMap<>(Map.of("travelersbackpack:potion_still", "fabric model",
+								"travelersbackpack:potion_flowing", "fabric model"));
+
+						public static void add(Fluid fluid, FluidModel.Unbaked model) {
+							SHAPES.put(fluid, model);
+						}
+					}
+					""");
 
 	private static Map<String, byte[]> compile(Path work, boolean fabricRenderingFluids) throws Exception {
 		assertTrue(Files.isRegularFile(HOOK_SOURCE), "the game-side hook's source is part of the checkout: " + HOOK_SOURCE.toAbsolutePath());
 		Map<String, String> sources = new HashMap<>(STAND_INS);
 		sources.put("net/forbric/kernel/runtime/KernelFabricFluidModels.java", Files.readString(HOOK_SOURCE));
-		if (fabricRenderingFluids) sources.put("net.fabricmc.fabric.impl.client.rendering.fluid.FluidRenderingRegistryImpl", FABRIC_REGISTRY);
+		if (fabricRenderingFluids) sources.putAll(FABRIC_RENDERING_FLUIDS);
 		return InjectorExecution.compile(work, sources);
 	}
 

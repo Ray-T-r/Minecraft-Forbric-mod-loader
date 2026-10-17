@@ -5,6 +5,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 
+import net.forbric.kernel.util.ByteScan;
 import net.forbric.kernel.util.ForbricLog;
 import org.objectweb.asm.ClassReader;
 import org.objectweb.asm.ClassWriter;
@@ -43,21 +44,23 @@ import org.objectweb.asm.tree.MethodNode;
  * made, and an entry still holding vanilla's chance is hidden, so a datapack that removes a vanilla item from the data
  * map still keeps it out. A snapshot at the end of {@code bootStrap} would have called anything put in before it
  * vanilla; recording {@code add} from {@code bootStrap} alone does not count BCLib's {@code @Invoker} on the same
- * {@code add}. fabric-transfer's {@code ComposterWrapper} reads {@code COMPOSTABLES.getFloat} directly, so a Fabric pipe
- * and the block would disagree; its read goes to {@code KernelCompostables.effective()}, the block's own answer.
+ * {@code add}. A mod that reads {@code COMPOSTABLES} itself — fabric-transfer's {@code ComposterWrapper} asks
+ * {@code getFloat} before a pipe inserts — would disagree with the block, so a read of the map outside the game's own
+ * classes ({@code getFloat} or {@code containsKey} straight on the field) goes to {@code KernelCompostables.effective()},
+ * the block's own answer, as it is the block's answer on vanilla; writes still go to the map. Found by the read, not by
+ * which mod makes it.
  * What a NeoForge mod still puts in the vanilla map (GlitchCore's {@code registerCompostable} does) is read on a miss
  * too, where NeoForge alone ignores it. Not covered: a farmer villager, whose merged {@code WorkAtComposter} asks the
  * data map's {@code canVillagerCompost}, not fabric-api's villager-compostable list.
  *
  * <p>All or nothing per class, on the reviewed shape: exactly one {@code getValue} in each of the four methods, no
  * vanilla map call already there, and {@code add} calls in {@code bootStrap}. {@code -Dforbric.composterBridge=off}
- * leaves all three classes as merged.
+ * leaves every class as merged.
  */
 public final class CompostablesFallbackInjector implements ClassTransformer {
 	public static final String PROPERTY = "forbric.composterBridge";
 	static final String COMPOSTER = "net.minecraft.world.level.block.ComposterBlock";
 	static final String INPUT = "net.minecraft.world.level.block.ComposterBlock$InputContainer";
-	static final String TOP_STORAGE = "net.fabricmc.fabric.impl.transfer.item.ComposterWrapper$TopStorage";
 	static final String COMPOSTER_INTERNAL = "net/minecraft/world/level/block/ComposterBlock";
 	static final String RUNTIME = "net/forbric/kernel/runtime/KernelCompostables";
 	static final String MAP = "it/unimi/dsi/fastutil/objects/Object2FloatMap";
@@ -85,22 +88,26 @@ public final class CompostablesFallbackInjector implements ClassTransformer {
 				new AnchorSet.Anchor(COMPOSTER, AnchorSet.Severity.REQUIRED,
 						"a Fabric mod's compostables (CompostableRegistry, BCLib traits) cannot go in a composter by hand"),
 				new AnchorSet.Anchor(INPUT, AnchorSet.Severity.REQUIRED,
-						"a hopper or dropper cannot put a Fabric mod's compostables in a composter"),
-				new AnchorSet.Anchor(TOP_STORAGE, AnchorSet.Severity.REQUIRED,
-						"a Fabric pipe and the composter disagree about what is compostable"));
+						"a hopper or dropper cannot put a Fabric mod's compostables in a composter"));
 	}
 
 	@Override public byte[] transform(String className, byte[] bytes, TransformContext context) {
 		if (!enabled() || bytes == null || bytes.length == 0) return bytes;
-		if (!COMPOSTER.equals(className) && !INPUT.equals(className) && !TOP_STORAGE.equals(className)) return bytes;
+		boolean block = COMPOSTER.equals(className) || INPUT.equals(className);
+		if (!block && (platform(className) || !ByteScan.contains(bytes, COMPOSTABLES_NEEDLE) || !ByteScan.contains(bytes, COMPOSTER_NEEDLE))) return bytes;
 		ClassNode node = new ClassNode();
 		new ClassReader(bytes).accept(node, 0);
-		int edited = COMPOSTER.equals(className) ? repairComposter(node) : INPUT.equals(className) ? repairInput(node) : repairTopStorage(node);
+		int edited = COMPOSTER.equals(className) ? repairComposter(node) : INPUT.equals(className) ? repairInput(node) : repairMapReads(node);
 		if (edited <= 0) return bytes;
 		ClassWriter writer = new ClassWriter(ClassWriter.COMPUTE_MAXS);
 		node.accept(writer);
-		ForbricLog.info("[Forbric/Composter] %s asks vanilla's compostables map (entries added or changed after bootstrap) "
-				+ "where NeoForge's compostables data map has no answer — %d site(s)", className, edited);
+		if (block) {
+			ForbricLog.info("[Forbric/Composter] %s asks vanilla's compostables map (entries added or changed after bootstrap) "
+					+ "where NeoForge's compostables data map has no answer — %d site(s)", className, edited);
+		} else {
+			ForbricLog.info("[Forbric/Composter] %s's read(s) of vanilla's compostables map answer with the composter's own decision "
+					+ "(NeoForge's data map, then the vanilla map) — %d site(s)", className, edited);
+		}
 		return writer.toByteArray();
 	}
 
@@ -144,29 +151,51 @@ public final class CompostablesFallbackInjector implements ClassTransformer {
 		return 1;
 	}
 
-	/** fabric-transfer's one {@code COMPOSTABLES} read, in {@code TopStorage.insert}, reads the block's own answer instead. */
-	static int repairTopStorage(ClassNode storage) {
-		if (calls(storage, RUNTIME)) return 0;
-		MethodNode insert = null;
-		FieldInsnNode read = null;
-		int reads = 0;
-		for (MethodNode method : storage.methods) {
-			for (AbstractInsnNode insn : method.instructions) {
-				if (insn instanceof FieldInsnNode field && field.getOpcode() == Opcodes.GETSTATIC && field.owner.equals(COMPOSTER_INTERNAL)
-						&& field.name.equals("COMPOSTABLES")) {
-					reads++;
-					if (method.name.equals("insert") && field.desc.equals(MAP_DESC)) {
-						insert = method;
-						read = field;
-					}
-				}
+	private static final byte[] COMPOSTABLES_NEEDLE = ByteScan.needle("COMPOSTABLES");
+	private static final byte[] COMPOSTER_NEEDLE = ByteScan.needle(COMPOSTER_INTERNAL);
+
+	/** The game's own classes, which the merge compiled against the data map: their reads of the map are the platform's. */
+	static boolean platform(String className) {
+		return className.startsWith("net.minecraft.") || className.startsWith("com.mojang.") || className.startsWith("net.neoforged.")
+				|| className.startsWith("net.minecraftforge.") || className.startsWith("net.forbric.");
+	}
+
+	/**
+	 * A mod's reads of vanilla's {@code COMPOSTABLES} — {@code getFloat} or {@code containsKey} called straight on the
+	 * field — read the block's own answer instead ({@code KernelCompostables.effective()}). A field read whose value is
+	 * stored, duplicated or used for anything else (a {@code put} above all) stays the map.
+	 */
+	static int repairMapReads(ClassNode owner) {
+		if (calls(owner, RUNTIME)) return 0;
+		int edited = 0;
+		for (MethodNode method : owner.methods) {
+			if (method.instructions.size() == 0) continue;
+			org.objectweb.asm.tree.analysis.Frame<org.objectweb.asm.tree.analysis.SourceValue>[] frames;
+			try {
+				frames = new org.objectweb.asm.tree.analysis.Analyzer<>(new org.objectweb.asm.tree.analysis.SourceInterpreter()).analyze(owner.name, method);
+			} catch (org.objectweb.asm.tree.analysis.AnalyzerException | RuntimeException unreadable) {
+				continue;
+			}
+			List<FieldInsnNode> reads = new ArrayList<>();
+			for (int i = 0; i < method.instructions.size(); i++) {
+				if (!(method.instructions.get(i) instanceof MethodInsnNode call) || frames[i] == null || !call.owner.equals(MAP)
+						|| !(call.name.equals("getFloat") && call.desc.equals("(Ljava/lang/Object;)F")
+								|| call.name.equals("containsKey") && call.desc.equals("(Ljava/lang/Object;)Z"))) continue;
+				var receiver = frames[i].getStack(frames[i].getStackSize() - 2);
+				if (receiver.insns.size() != 1 || !(receiver.insns.iterator().next() instanceof FieldInsnNode field)
+						|| field.getOpcode() != Opcodes.GETSTATIC || !field.owner.equals(COMPOSTER_INTERNAL) || !field.name.equals("COMPOSTABLES")
+						|| !field.desc.equals(MAP_DESC)) continue;
+				AbstractInsnNode next = field.getNext();
+				while (next != null && next.getOpcode() < 0) next = next.getNext();
+				if (next == null || next.getOpcode() == Opcodes.DUP || next.getOpcode() == Opcodes.ASTORE) continue;
+				if (!reads.contains(field)) reads.add(field);
+			}
+			for (FieldInsnNode read : reads) {
+				method.instructions.set(read, new MethodInsnNode(Opcodes.INVOKESTATIC, RUNTIME, "effective", "()" + MAP_DESC, false));
+				edited++;
 			}
 		}
-		if (reads != 1 || read == null) {
-			return declined(TOP_STORAGE, "ComposterWrapper$TopStorage does not read COMPOSTABLES exactly once, in insert");
-		}
-		insert.instructions.set(read, new MethodInsnNode(Opcodes.INVOKESTATIC, RUNTIME, "effective", "()" + MAP_DESC, false));
-		return 1;
+		return edited;
 	}
 
 	/**

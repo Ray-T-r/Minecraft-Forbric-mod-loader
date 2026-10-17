@@ -34,7 +34,11 @@ class FabricFluidModelsInjectorTest {
 	private static final Path NEO_RT = TestFixtures.stagedRoot()
 			.resolve("neoforge-runtime/neoforge-runtime.jar");
 	private static final String HOOKS = "net/neoforged/neoforge/client/ClientHooks";
-	private static final String FABRIC_REGISTRY = "net/fabricmc/fabric/impl/client/rendering/fluid/FluidRenderingRegistryImpl";
+	/** fabric-rendering-fluids' public registration API, as a mod calls it. */
+	private static final String FABRIC_API = "net/fabricmc/fabric/api/client/render/fluid/v1/FluidRenderingRegistry";
+	/** Where a build of it keeps the models: a class and field of no loader's, found from the API. */
+	private static final String FABRIC_REGISTRY = "org/quarry/render/Shapes";
+	private static final String REGISTER_DESC = "(Lnet/minecraft/world/level/material/Fluid;Lnet/minecraft/client/renderer/block/FluidModel$Unbaked;)V";
 
 	@AfterEach void reset() { System.clearProperty(FabricFluidModelsInjector.PROPERTY); }
 
@@ -97,47 +101,81 @@ class FabricFluidModelsInjectorTest {
 				.getMethod("hasModel", Map.class, Object.class);
 	}
 
-	/** The compiled game-side hook, plus (when given) a Fabric registry, in a loader of their own. */
-	private static URLClassLoader runtimeLoader(byte[] registry) throws Exception {
+	/** The compiled game-side hook, plus (when given) a Fabric registry and its public API, in a loader of their own. */
+	private static URLClassLoader runtimeLoader(Map<String, byte[]> registry) throws Exception {
 		Path compiled = Path.of(System.getProperty("user.dir"), "build", "classes", "java", "runtime").normalize();
 		TestFixtures.require(Fixture.GAME_SIDE, Files.isDirectory(compiled), "the game-side set is not compiled");
+		Map<String, byte[]> classes = registry == null ? Map.of() : registry;
 		return new URLClassLoader(new URL[] { compiled.toUri().toURL() }, FabricFluidModelsInjectorTest.class.getClassLoader()) {
 			@Override
 			protected Class<?> findClass(String name) throws ClassNotFoundException {
-				if (registry != null && name.equals(FABRIC_REGISTRY.replace('/', '.'))) return defineClass(name, registry, 0, registry.length);
+				byte[] bytes = classes.get(name.replace('.', '/'));
+				if (bytes != null) return defineClass(name, bytes, 0, bytes.length);
 				return super.findClass(name);
+			}
+
+			@Override
+			public java.io.InputStream getResourceAsStream(String path) {
+				byte[] bytes = path.endsWith(".class") ? classes.get(path.substring(0, path.length() - 6)) : null;
+				return bytes != null ? new java.io.ByteArrayInputStream(bytes) : super.getResourceAsStream(path);
 			}
 		};
 	}
 
 	/**
-	 * {@code FluidRenderingRegistryImpl.getUnbakedModels()} answering one registered fluid; with {@code broken}, a
-	 * static initialiser that throws, so the first call fails its class initialisation instead.
+	 * The public {@code FluidRenderingRegistry.register(fluid, model)} handing both to {@code org.quarry.render.Shapes.add},
+	 * which puts them into its static map holding one registered fluid; with {@code broken}, a static initialiser that
+	 * throws, so the first read fails its class initialisation instead.
 	 */
-	private static byte[] fabricRegistry(boolean broken) {
+	private static Map<String, byte[]> fabricRegistry(boolean broken) {
+		ClassWriter api = new ClassWriter(ClassWriter.COMPUTE_MAXS);
+		api.visit(Opcodes.V21, Opcodes.ACC_PUBLIC | Opcodes.ACC_FINAL, FABRIC_API, null, "java/lang/Object", null);
+		MethodVisitor register = api.visitMethod(Opcodes.ACC_PUBLIC | Opcodes.ACC_STATIC, "register", REGISTER_DESC, null, null);
+		register.visitCode();
+		register.visitVarInsn(Opcodes.ALOAD, 0);
+		register.visitVarInsn(Opcodes.ALOAD, 1);
+		register.visitMethodInsn(Opcodes.INVOKESTATIC, FABRIC_REGISTRY, "add", REGISTER_DESC, false);
+		register.visitInsn(Opcodes.RETURN);
+		register.visitMaxs(0, 0);
+		register.visitEnd();
+		api.visitEnd();
+
 		ClassWriter cw = new ClassWriter(ClassWriter.COMPUTE_MAXS);
 		cw.visit(Opcodes.V21, Opcodes.ACC_PUBLIC | Opcodes.ACC_FINAL, FABRIC_REGISTRY, null, "java/lang/Object", null);
+		cw.visitField(Opcodes.ACC_PRIVATE | Opcodes.ACC_STATIC | Opcodes.ACC_FINAL, "SHAPES", "Ljava/util/Map;", null, null).visitEnd();
+		MethodVisitor clinit = cw.visitMethod(Opcodes.ACC_STATIC, "<clinit>", "()V", null, null);
+		clinit.visitCode();
 		if (broken) {
-			MethodVisitor clinit = cw.visitMethod(Opcodes.ACC_STATIC, "<clinit>", "()V", null, null);
-			clinit.visitCode();
 			clinit.visitTypeInsn(Opcodes.NEW, "java/lang/IllegalStateException");
 			clinit.visitInsn(Opcodes.DUP);
 			clinit.visitLdcInsn("a registry that cannot initialise");
 			clinit.visitMethodInsn(Opcodes.INVOKESPECIAL, "java/lang/IllegalStateException", "<init>", "(Ljava/lang/String;)V", false);
 			clinit.visitInsn(Opcodes.ATHROW);
-			clinit.visitMaxs(0, 0);
-			clinit.visitEnd();
+		} else {
+			clinit.visitTypeInsn(Opcodes.NEW, "java/util/HashMap");
+			clinit.visitInsn(Opcodes.DUP);
+			clinit.visitMethodInsn(Opcodes.INVOKESPECIAL, "java/util/HashMap", "<init>", "()V", false);
+			clinit.visitInsn(Opcodes.DUP);
+			clinit.visitLdcInsn("travelersbackpack:potion_still");
+			clinit.visitLdcInsn("unbaked");
+			clinit.visitMethodInsn(Opcodes.INVOKEINTERFACE, "java/util/Map", "put", "(Ljava/lang/Object;Ljava/lang/Object;)Ljava/lang/Object;", true);
+			clinit.visitInsn(Opcodes.POP);
+			clinit.visitFieldInsn(Opcodes.PUTSTATIC, FABRIC_REGISTRY, "SHAPES", "Ljava/util/Map;");
+			clinit.visitInsn(Opcodes.RETURN);
 		}
-		MethodVisitor models = cw.visitMethod(Opcodes.ACC_PUBLIC | Opcodes.ACC_STATIC, "getUnbakedModels", "()Ljava/util/Map;", null, null);
-		models.visitCode();
-		models.visitLdcInsn("travelersbackpack:potion_still");
-		models.visitLdcInsn("unbaked");
-		models.visitMethodInsn(Opcodes.INVOKESTATIC, "java/util/Map", "of",
-				"(Ljava/lang/Object;Ljava/lang/Object;)Ljava/util/Map;", true);
-		models.visitInsn(Opcodes.ARETURN);
-		models.visitMaxs(0, 0);
-		models.visitEnd();
+		clinit.visitMaxs(0, 0);
+		clinit.visitEnd();
+		MethodVisitor add = cw.visitMethod(Opcodes.ACC_PUBLIC | Opcodes.ACC_STATIC, "add", REGISTER_DESC, null, null);
+		add.visitCode();
+		add.visitFieldInsn(Opcodes.GETSTATIC, FABRIC_REGISTRY, "SHAPES", "Ljava/util/Map;");
+		add.visitVarInsn(Opcodes.ALOAD, 0);
+		add.visitVarInsn(Opcodes.ALOAD, 1);
+		add.visitMethodInsn(Opcodes.INVOKEINTERFACE, "java/util/Map", "put", "(Ljava/lang/Object;Ljava/lang/Object;)Ljava/lang/Object;", true);
+		add.visitInsn(Opcodes.POP);
+		add.visitInsn(Opcodes.RETURN);
+		add.visitMaxs(0, 0);
+		add.visitEnd();
 		cw.visitEnd();
-		return cw.toByteArray();
+		return Map.of(FABRIC_API, api.toByteArray(), FABRIC_REGISTRY, cw.toByteArray());
 	}
 }

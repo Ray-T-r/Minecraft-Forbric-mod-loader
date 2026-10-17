@@ -63,7 +63,8 @@ import net.minecraft.world.level.material.FluidState;
  */
 public final class KernelFabricFluidBehaviors {
 	public static final String PROPERTY = "forbric.fabricFluidBehavior";
-	private static final String REGISTRY = "net.fabricmc.fabric.impl.content.registry.fluid.EntityFluidInteractionRegistryImpl";
+	/** fabric-content-registries' public registry: the tags a Fabric mod gave a behaviour, and each tag's behaviour. */
+	private static final String REGISTRY = "net.fabricmc.fabric.api.registry.fluid.EntityFluidInteractionRegistry";
 	private static final String BEHAVIOR = "net.fabricmc.fabric.api.registry.fluid.FluidBehavior";
 
 	private static final Map<TagKey<Fluid>, NeoType> NEO = new ConcurrentHashMap<>();
@@ -188,7 +189,7 @@ public final class KernelFabricFluidBehaviors {
 		try {
 			MethodHandles.Lookup lookup = MethodHandles.publicLookup();
 			return new Handles(
-					lookup.findStatic(registry, "getTrackedFluids", MethodType.methodType(Collection.class)),
+					lookup.findStatic(registry, "getCustomInteractableFluids", MethodType.methodType(Collection.class)),
 					lookup.findStatic(registry, "getFluidBehavior", MethodType.methodType(behaviour, TagKey.class)),
 					lookup.findVirtual(behaviour, "canSwimInFluid", MethodType.methodType(boolean.class, TagKey.class, Entity.class)),
 					lookup.findVirtual(behaviour, "canDrownInFluid", MethodType.methodType(boolean.class, TagKey.class, LivingEntity.class)),

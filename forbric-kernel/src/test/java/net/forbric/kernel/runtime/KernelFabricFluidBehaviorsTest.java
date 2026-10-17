@@ -89,7 +89,7 @@ class KernelFabricFluidBehaviorsTest {
 				default -> null;
 			};
 		});
-		loader.loadClass("net.fabricmc.fabric.impl.content.registry.fluid.EntityFluidInteractionRegistryImpl")
+		loader.loadClass("net.fabricmc.fabric.api.registry.fluid.EntityFluidInteractionRegistry")
 				.getMethod("register", tagKey, behaviourType).invoke(null, tag, behaviour);
 	}
 
@@ -156,7 +156,7 @@ class KernelFabricFluidBehaviorsTest {
 		load(false);
 		ClassLoader broken = new ClassLoader(loader) {
 			@Override protected Class<?> loadClass(String name, boolean resolve) throws ClassNotFoundException {
-				if (name.equals("net.fabricmc.fabric.impl.content.registry.fluid.EntityFluidInteractionRegistryImpl")) {
+				if (name.equals("net.fabricmc.fabric.api.registry.fluid.EntityFluidInteractionRegistry")) {
 					throw new NoClassDefFoundError("net/minecraft/tags/TagKey");
 				}
 				return super.loadClass(name, resolve);
@@ -209,7 +209,7 @@ class KernelFabricFluidBehaviorsTest {
 		CountDownLatch inside = new CountDownLatch(1), release = new CountDownLatch(1);
 		ClassLoader slow = new ClassLoader(loader) {
 			@Override protected Class<?> loadClass(String name, boolean resolve) throws ClassNotFoundException {
-				if (name.equals("net.fabricmc.fabric.impl.content.registry.fluid.EntityFluidInteractionRegistryImpl")) {
+				if (name.equals("net.fabricmc.fabric.api.registry.fluid.EntityFluidInteractionRegistry")) {
 					inside.countDown();
 					try {
 						release.await();

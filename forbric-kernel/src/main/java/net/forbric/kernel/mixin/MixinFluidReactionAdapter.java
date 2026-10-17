@@ -80,7 +80,7 @@ public final class MixinFluidReactionAdapter {
 					||index(host,skip)>index(host,first(host,tick))||index(host,first(host,tick))>index(host,skip.label))return 0;
 			hosts.add(host);calls.add(found.getFirst());
 		}
-		FabricFluidFlowMixinAdapter.retainOriginal(original,inject);
+		retainOriginal(original,inject);
 		for(int i=0;i<hosts.size();i++) {
 			MethodNode host=hosts.get(i); MethodInsnNode call=calls.get(i);
 			MethodNode wrap = new MethodNode(Opcodes.ACC_PRIVATE, "forbric$unhandledFluidReaction$"+host.name,
@@ -177,7 +177,7 @@ public final class MixinFluidReactionAdapter {
 		// The class form and the string form name the same targets; the registries replace both.
 		set(declaration,"value",registries.stream().map(Type::getObjectType).toList());
 		remove(declaration,"targets");
-		FabricFluidFlowMixinAdapter.retainOriginal(original,inject);
+		retainOriginal(original,inject);
 		for(var call:calls.entrySet()) {
 			original.instructions.remove(call.getValue());
 			MethodInsnNode c=call.getKey();
@@ -309,5 +309,18 @@ public final class MixinFluidReactionAdapter {
 		AnnotationNode a=new AnnotationNode(kind.equals("Inject")?"Lorg/spongepowered/asm/mixin/injection/Inject;":"Lcom/llamalad7/mixinextras/injector/wrapoperation/WrapOperation;");
 		a.values=new ArrayList<>(List.of("method",List.of(method),"at",kind.equals("Inject")?ats:ats.getFirst(),"require",1));
 		if(cancel){a.values.add("cancellable");a.values.add(true);}return a;
+	}
+
+	/**
+	 * Keeps a mod's handler as a plain private method the wrappers call, under the kernel's {@code $forbricOriginal} name
+	 * and marked {@code @Unique}. Two mods can name their handler alike, and both renames then land on the same name in
+	 * the same target: as a plain method Mixin kept the first and skipped the second ("Method overwrite conflict"), and
+	 * the second mod's wrappers called the first mod's body. {@code @Unique} makes Mixin rename the later one and the calls
+	 * to it.
+	 */
+	static void retainOriginal(MethodNode original, AnnotationNode injector) {
+		original.visibleAnnotations.remove(injector);
+		original.name += "$forbricOriginal";
+		original.visibleAnnotations.add(new AnnotationNode("Lorg/spongepowered/asm/mixin/Unique;"));
 	}
 }

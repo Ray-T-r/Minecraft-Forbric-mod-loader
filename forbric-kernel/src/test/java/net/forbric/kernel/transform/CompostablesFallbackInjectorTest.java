@@ -127,9 +127,12 @@ class CompostablesFallbackInjectorTest {
 		assertEquals(MixinFit.Verdict.FIT, faceFit.verdict(), faceFit.reason());
 	}
 
+	/** fabric-transfer's pipe-side composter view, a sample of a mod reading the map: the injector keys on the read, not this name. */
+	private static final String TOP_STORAGE = "net.fabricmc.fabric.impl.transfer.item.ComposterWrapper$TopStorage";
+
 	@Test void fabricTransfersComposterReadsTheBlocksOwnAnswer() throws Exception {
 		byte[] original = fabricApi("fabric-transfer-api-v1", "net/fabricmc/fabric/impl/transfer/item/ComposterWrapper$TopStorage");
-		byte[] out = new CompostablesFallbackInjector().transform(CompostablesFallbackInjector.TOP_STORAGE, original, null);
+		byte[] out = new CompostablesFallbackInjector().transform(TOP_STORAGE, original, null);
 		ClassNode node = node(out);
 		MethodNode insert = node.methods.stream().filter(m -> m.name.equals("insert") && m.desc.contains("ItemVariant")).findFirst().orElseThrow();
 		for (AbstractInsnNode insn : insert.instructions) {
@@ -163,7 +166,7 @@ class CompostablesFallbackInjectorTest {
 			assertSame(original, new CompostablesFallbackInjector().transform(name.replace('/', '.'), original, null));
 		}
 		byte[] storage = fabricApi("fabric-transfer-api-v1", "net/fabricmc/fabric/impl/transfer/item/ComposterWrapper$TopStorage");
-		assertSame(storage, new CompostablesFallbackInjector().transform(CompostablesFallbackInjector.TOP_STORAGE, storage, null));
+		assertSame(storage, new CompostablesFallbackInjector().transform(TOP_STORAGE, storage, null));
 	}
 
 	private static List<String> around(MethodNode method) {
