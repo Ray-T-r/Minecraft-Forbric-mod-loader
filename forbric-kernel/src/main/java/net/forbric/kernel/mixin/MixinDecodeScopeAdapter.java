@@ -9,7 +9,10 @@ import org.objectweb.asm.tree.analysis.*;
 import net.forbric.kernel.util.ForbricLog;
 
 /** A completed source decode guard owns that same evaluator/input within its lexical parse operation.
- * A private result sentinel and its pure cancellation consumer are transported together. */
+ * A private result sentinel and its pure cancellation consumer are transported together.
+ * The producer's forwarding, its rejection and acceptance, and the consumer are read by data flow ({@link HandlerFlow}),
+ * not by instruction templates; what is still read by position is that the verdict is branched on right after the
+ * evaluator returns, and the callback guard's layout (its kept branch is the method's final return). */
 public final class MixinDecodeScopeAdapter {
  public static final String PROPERTY="forbric.decodeSourceScopes";
  private static final String SCOPES="net/forbric/kernel/runtime/KernelSourceDecodeScopes",OP="com/llamalad7/mixinextras/injector/wrapoperation/Operation";
@@ -35,8 +38,9 @@ public final class MixinDecodeScopeAdapter {
       ||!derived(method,frames,at.getStack(at.getStackSize()-args.length),input.var,new HashSet<>())
       ||!verdictFlow(owner,method,call,record,frames,true))continue;
     List<net.forbric.kernel.boot.DefinedMethodContracts.MethodContract> dependencies=new ArrayList<>();
-    if(code.get(index+2)instanceof FieldInsnNode marker){
-     MethodNode consumer=owner.methods.stream().filter(m->markerBody(m,owner.name,marker.name)).findFirst().orElseThrow();MethodNode predicate=markerPredicateIntact(owner,consumer);
+    FieldInsnNode marker=rejectionMarker(owner,method,record);
+    if(marker!=null){
+     MethodNode consumer=owner.methods.stream().filter(m->markerInput(m,owner.name,marker.name)>=0).findFirst().orElseThrow();MethodNode predicate=markerPredicateIntact(owner,consumer,marker.name);
      for(MethodNode dependency:List.of(consumer,predicate))dependencies.add(new net.forbric.kernel.boot.DefinedMethodContracts.MethodContract(owner.name,dependency.name,dependency.desc,MixinInstructionFingerprint.hash(dependency)));
     }
     net.forbric.kernel.boot.KernelDecodeGuardWitnesses.register(new net.forbric.kernel.boot.DefinedMethodContracts.MethodContract(owner.name,method.name,method.desc,MixinInstructionFingerprint.hash(method)),dependencies);
@@ -60,10 +64,14 @@ public final class MixinDecodeScopeAdapter {
    Type[] arguments=Type.getArgumentTypes(handler.desc);int input=-1;
    if(INJECT.equals(injection.desc)&&Boolean.TRUE.equals(MixinFit.value(injection,"cancellable"))){
     Type[] nativeArgs=Type.getArgumentTypes(host.desc);
-    if(Arrays.stream(nativeArgs).anyMatch(t->t.getSort()!=Type.OBJECT&&t.getSort()!=Type.ARRAY)||arguments.length!=nativeArgs.length+2||!Arrays.equals(nativeArgs,Arrays.copyOf(arguments,nativeArgs.length))||!arguments[nativeArgs.length].equals(Type.getObjectType("org/spongepowered/asm/mixin/injection/callback/CallbackInfoReturnable"))||Type.getReturnType(host.desc).getSort()!=Type.OBJECT||!Type.getReturnType(handler.desc).equals(Type.VOID_TYPE))continue;
-    if(!arguments[arguments.length-1].equals(Type.getObjectType(JSON))||MixinStubRebind.sugar(handler,arguments.length-1,LOCAL)==null)continue;input=arguments.length-1;
+    if(Arrays.stream(nativeArgs).anyMatch(t->t.getSort()!=Type.OBJECT&&t.getSort()!=Type.ARRAY)||arguments.length<nativeArgs.length+1||!Arrays.equals(nativeArgs,Arrays.copyOf(arguments,nativeArgs.length))||!arguments[nativeArgs.length].equals(Type.getObjectType("org/spongepowered/asm/mixin/injection/callback/CallbackInfoReturnable"))||Type.getReturnType(host.desc).getSort()!=Type.OBJECT||!Type.getReturnType(handler.desc).equals(Type.VOID_TYPE))continue;
+    // Every parameter after the callback is a captured local; the guard's input is whichever one parameter its evaluator
+    // judges (a captured local or one of the host's own), found by data flow.
+    boolean captured=true;for(int i=nativeArgs.length+1;i<arguments.length;i++)if(MixinStubRebind.sugar(handler,i,LOCAL)==null)captured=false;if(!captured)continue;
+    List<Integer> judged=new ArrayList<>();for(int i=0;i<arguments.length;i++)if(i!=nativeArgs.length&&(arguments[i].getSort()==Type.OBJECT||arguments[i].getSort()==Type.ARRAY)&&guard(mixin,handler,i)!=null)judged.add(i);
+    if(judged.size()!=1)continue;input=judged.getFirst();
    }else if(WRAP.equals(injection.desc)&&arguments.length>=4&&arguments[3].equals(Type.getObjectType(OP))&&Type.getReturnType(handler.desc).equals(Type.getObjectType(RESULT))){
-    if(!forwardedParse(handler))continue;input=2;
+    if(!forwardedParse(mixin.name,handler))continue;input=2;
    }else continue;
    Guard guard=guard(mixin,handler,input);if(guard==null)continue;
    if(INJECT.equals(injection.desc)){
@@ -71,10 +79,10 @@ public final class MixinDecodeScopeAdapter {
     if(added.stream().anyMatch(m->annotations(m).stream().anyMatch(a->a.desc.equals(WRAPMETHOD)&&MixinFit.stringList(MixinFit.value(a,"method")).contains(host.name+host.desc))))continue;
     instrument(handler,guard);added.add(methodScope(mixin,handler,host));changed++;
    }else{
-    MethodNode consumer=markerConsumer(mixin,handler);if(consumer==null)continue;
+    MarkerConsumer match=markerConsumer(mixin,handler);if(match==null)continue;MethodNode consumer=match.method();
     MethodInsnNode sink=consumerSink(target,host,consumer);if(sink==null)continue;
     String predicate=MixinHandlerShim.asideName(mixin.name,consumer.name,"$forbricmarkerpredicate");
-    added.add(markerPredicate(mixin,consumer,predicate));added.add(consumerWrapper(mixin,host,sink,predicate));removeInjector(consumer);
+    added.add(markerPredicate(mixin,consumer,match.input(),predicate));added.add(consumerWrapper(mixin,host,sink,predicate));removeInjector(consumer);
     instrument(handler,guard);added.add(operationScope(mixin,handler,injection));changed+=2;
    }
   }
@@ -115,14 +123,16 @@ public final class MixinDecodeScopeAdapter {
    }
    return true;
   }
-  if(!Type.getReturnType(method.desc).equals(Type.getObjectType(RESULT))||accepted!=rejected+3
-    ||!(code.get(rejected)instanceof FieldInsnNode marker)||marker.getOpcode()!=Opcodes.GETSTATIC||!marker.owner.equals(owner.name)||!marker.desc.equals("Ljava/lang/Object;")
-    ||!(code.get(rejected+1)instanceof MethodInsnNode success)||success.getOpcode()!=Opcodes.INVOKESTATIC||!success.owner.equals(RESULT)||!success.name.equals("success")||!success.desc.equals("(Ljava/lang/Object;)L"+RESULT+";")||code.get(rejected+2).getOpcode()!=Opcodes.ARETURN
-    ||!forwardedParse(method)||!parseTail(code.subList(accepted,code.size())))return false;
+  // Read by data flow, not by layout: the rejection returns DataResult.success of one own static marker and does nothing
+  // else; the acceptance forwards the original receiver, ops and input to the operation and returns what it returns.
+  if(!Type.getReturnType(method.desc).equals(Type.getObjectType(RESULT)))return false;
+  HandlerFlow flow=HandlerFlow.of(owner.name,method);if(flow==null)return false;
+  FieldInsnNode marker=rejection(flow,method.instructions.indexOf(keep)+1,method.instructions.indexOf(keep.label),owner.name);
+  if(marker==null||!forwardedParse(owner.name,method)||!acceptance(flow,method.instructions.indexOf(kept)))return false;
   // The producer's original cancellation consumer remains a closed role after transport. At initial
   // admission it still has @Inject; in the final class the immutable predicate must still call that body.
-  List<MethodNode> consumers=owner.methods.stream().filter(m->markerBody(m,owner.name,marker.name)).toList();
-  return consumers.size()==1&&(!finalBody||markerPredicateIntact(owner,consumers.getFirst())!=null);
+  List<MethodNode> consumers=owner.methods.stream().filter(m->markerInput(m,owner.name,marker.name)>=0).toList();
+  return consumers.size()==1&&(!finalBody||markerPredicateIntact(owner,consumers.getFirst(),marker.name)!=null);
  }
  private static boolean parameter(MethodNode method,Frame<SourceValue>[] frames,SourceValue value,int input,Set<AbstractInsnNode> active){
   if(value==null||value.insns.size()!=1)return false;var instruction=value.insns.iterator().next();if(!active.add(instruction))return false;
@@ -131,32 +141,98 @@ public final class MixinDecodeScopeAdapter {
    return false;
   }finally{active.remove(instruction);}
  }
- private static boolean parseTail(List<AbstractInsnNode> code){
-  if(code.size()!=18||!(code.get(15)instanceof MethodInsnNode call)||call.getOpcode()!=Opcodes.INVOKEINTERFACE||!call.owner.equals(OP)||!call.name.equals("call")||!call.desc.equals("([Ljava/lang/Object;)Ljava/lang/Object;")
-    ||!(code.get(16)instanceof TypeInsnNode cast)||cast.getOpcode()!=Opcodes.CHECKCAST||!cast.desc.equals(RESULT)||code.get(17).getOpcode()!=Opcodes.ARETURN)return false;
-  int p=0;if(!(code.get(p++)instanceof VarInsnNode op)||op.getOpcode()!=Opcodes.ALOAD||op.var!=3||integer(code.get(p++))!=3||!(code.get(p++)instanceof TypeInsnNode array)||array.getOpcode()!=Opcodes.ANEWARRAY||!array.desc.equals("java/lang/Object"))return false;
-  for(int i=0;i<3;i++)if(code.get(p++).getOpcode()!=Opcodes.DUP||integer(code.get(p++))!=i||!(code.get(p++)instanceof VarInsnNode input)||input.getOpcode()!=Opcodes.ALOAD||input.var!=i||code.get(p++).getOpcode()!=Opcodes.AASTORE)return false;
+ /** The marker a guard's rejection returns: the run after the verdict that {@code at} branches on, or null when it is not one. */
+ private static FieldInsnNode rejectionMarker(ClassNode owner,MethodNode method,MethodInsnNode at){
+  if(!Type.getReturnType(method.desc).equals(Type.getObjectType(RESULT)))return null;
+  AbstractInsnNode branch=next(at);if(!(branch instanceof JumpInsnNode keep)||keep.getOpcode()!=Opcodes.IFNE)return null;
+  HandlerFlow flow=HandlerFlow.of(owner.name,method);
+  return flow==null?null:rejection(flow,method.instructions.indexOf(keep)+1,method.instructions.indexOf(keep.label),owner.name);
+ }
+ /**
+  * The instructions from index {@code from} up to the label at {@code to}: one straight run whose only return returns
+  * {@code DataResult.success} of one static {@code Object} field of {@code owner}, calling nothing else, writing and
+  * throwing nothing. That field; null when the run is anything else.
+  */
+ private static FieldInsnNode rejection(HandlerFlow flow,int from,int to,String owner){
+  int last=lastReal(flow.method,from,to);if(last<0||flow.method.instructions.get(last).getOpcode()!=Opcodes.ARETURN||!flow.straight(from,last))return null;
+  AbstractInsnNode returned=HandlerFlow.only(flow.operand(flow.method.instructions.get(last),0,1));
+  if(!(returned instanceof MethodInsnNode success)||success.getOpcode()!=Opcodes.INVOKESTATIC||!success.owner.equals(RESULT)||!success.name.equals("success")||!success.desc.equals("(Ljava/lang/Object;)L"+RESULT+";"))return null;
+  if(!(HandlerFlow.only(flow.argument(success,0))instanceof FieldInsnNode marker)||marker.getOpcode()!=Opcodes.GETSTATIC||!marker.owner.equals(owner)||!marker.desc.equals("Ljava/lang/Object;"))return null;
+  for(int i=from;i<=last;i++){AbstractInsnNode instruction=flow.method.instructions.get(i);if(instruction instanceof MethodInsnNode call&&call!=success||writes(instruction))return null;}
+  return marker;
+ }
+ /**
+  * The instructions from index {@code from} to the end: one straight run whose only call is the operation's
+  * {@code call}, whose only return returns its result, and which writes nothing but the elements of an array it creates.
+  */
+ private static boolean acceptance(HandlerFlow flow,int from){
+  int last=lastReal(flow.method,from,flow.method.instructions.size()-1);if(last<0||flow.method.instructions.get(last).getOpcode()!=Opcodes.ARETURN||!flow.straight(from,last))return false;
+  if(!(HandlerFlow.only(flow.operand(flow.method.instructions.get(last),0,1))instanceof MethodInsnNode call)||!call.owner.equals(OP)||!call.name.equals("call"))return false;
+  for(int i=from;i<=last;i++){
+   AbstractInsnNode instruction=flow.method.instructions.get(i);if(instruction instanceof MethodInsnNode other&&other!=call)return false;
+   if(instruction.getOpcode()==Opcodes.AASTORE&&HandlerFlow.only(flow.operand(instruction,0,3))instanceof TypeInsnNode array&&array.getOpcode()==Opcodes.ANEWARRAY&&flow.method.instructions.indexOf(array)>=from)continue;
+   if(writes(instruction))return false;
+  }
   return true;
  }
- private static boolean markerBody(MethodNode method,String owner,String marker){
-  Type[] args=Type.getArgumentTypes(method.desc);if((method.access&Opcodes.ACC_STATIC)==0||args.length!=4||(args[0].getSort()!=Type.OBJECT&&args[0].getSort()!=Type.ARRAY)||(args[1].getSort()!=Type.OBJECT&&args[1].getSort()!=Type.ARRAY)||!args[2].equals(Type.getObjectType("java/lang/Object"))||!args[3].equals(Type.getObjectType(CI))||!Type.getReturnType(method.desc).equals(Type.VOID_TYPE)||!method.tryCatchBlocks.isEmpty())return false;
-  var code=DefaultMethodOverloadBridge.real(method);return code.size()==6&&code.get(0)instanceof VarInsnNode input&&input.getOpcode()==Opcodes.ALOAD&&input.var==2
-    &&code.get(1)instanceof FieldInsnNode field&&field.getOpcode()==Opcodes.GETSTATIC&&field.owner.equals(owner)&&field.name.equals(marker)&&field.desc.equals("Ljava/lang/Object;")
-    &&code.get(2)instanceof JumpInsnNode branch&&branch.getOpcode()==Opcodes.IF_ACMPNE&&next(branch.label)==code.getLast()
-    &&code.get(3)instanceof VarInsnNode ci&&ci.getOpcode()==Opcodes.ALOAD&&ci.var==3
-    &&code.get(4)instanceof MethodInsnNode cancel&&cancel.getOpcode()==Opcodes.INVOKEVIRTUAL&&cancel.owner.equals(CI)&&cancel.name.equals("cancel")&&cancel.desc.equals("()V")&&code.getLast().getOpcode()==Opcodes.RETURN;
+ /** Whether an instruction writes something other than a local, links a lambda, throws or takes a monitor. */
+ private static boolean writes(AbstractInsnNode instruction){
+  int opcode=instruction.getOpcode();
+  return instruction instanceof InvokeDynamicInsnNode||opcode==Opcodes.PUTFIELD||opcode==Opcodes.PUTSTATIC||opcode>=Opcodes.IASTORE&&opcode<=Opcodes.SASTORE
+    ||opcode==Opcodes.ATHROW||opcode==Opcodes.MONITORENTER||opcode==Opcodes.MONITOREXIT;
  }
- private static MethodNode markerPredicateIntact(ClassNode owner,MethodNode consumer){
+ /** The index of the last real instruction from {@code from} to {@code to}; -1 when there is none. */
+ private static int lastReal(MethodNode method,int from,int to){for(int i=Math.min(to,method.instructions.size()-1);i>=from&&i>=0;i--)if(method.instructions.get(i).getOpcode()>=0)return i;return -1;}
+ /**
+  * The parameter a marker consumer compares with {@code marker}, an own static field; -1 when the method is no such
+  * consumer. Read by data flow, not by layout: a static void handler whose last parameter is its callback and whose other
+  * parameters are references, which reads none of those but the compared one (an {@code Object}), calls nothing but its
+  * callback's {@code cancel()}, writes and throws nothing, never loops, and cancels exactly when that parameter is the
+  * marker: never before the comparison or on its unequal side, always on its equal side.
+  */
+ private static int markerInput(MethodNode method,String owner,String marker){
+  Type[] args=Type.getArgumentTypes(method.desc);int last=args.length-1;
+  if((method.access&Opcodes.ACC_STATIC)==0||last<1||!args[last].equals(Type.getObjectType(CI))||!Type.getReturnType(method.desc).equals(Type.VOID_TYPE)||!method.tryCatchBlocks.isEmpty())return -1;
+  for(int i=0;i<last;i++)if(args[i].getSort()!=Type.OBJECT&&args[i].getSort()!=Type.ARRAY)return -1;
+  int[] slots=DefaultMethodOverloadBridge.slots(args,true);HandlerFlow flow=HandlerFlow.of(owner,method);if(flow==null||!flow.acyclic())return -1;
+  if(!flow.onlyCalls(c->c.getOpcode()==Opcodes.INVOKEVIRTUAL&&c.owner.equals(CI)&&c.name.equals("cancel")&&c.desc.equals("()V")&&HandlerFlow.onlyParameter(flow.argument(c,0),slots[last])))return -1;
+  List<MethodInsnNode> cancels=flow.calls(c->true);if(cancels.size()!=1)return -1;MethodInsnNode cancel=cancels.getFirst();
+  JumpInsnNode test=null;int input=-1;
+  for(AbstractInsnNode instruction:method.instructions){
+   if(!(instruction instanceof JumpInsnNode jump)||jump.getOpcode()!=Opcodes.IF_ACMPEQ&&jump.getOpcode()!=Opcodes.IF_ACMPNE)continue;
+   for(int side=0;side<2;side++){
+    AbstractInsnNode value=HandlerFlow.only(flow.operand(jump,side,2)),other=HandlerFlow.only(flow.operand(jump,1-side,2));
+    if(!(other instanceof FieldInsnNode field)||field.getOpcode()!=Opcodes.GETSTATIC||!field.owner.equals(owner)||!field.name.equals(marker)||!field.desc.equals("Ljava/lang/Object;"))continue;
+    for(int i=0;i<last;i++)if(HandlerFlow.isParameter(value,slots[i])){if(test!=null)return -1;test=jump;input=i;}
+   }
+  }
+  if(test==null||!args[input].equals(Type.getObjectType("java/lang/Object")))return -1;
+  for(int i=0;i<last;i++)if(i!=input&&flow.reads(slots[i]))return -1;
+  int at=method.instructions.indexOf(test),label=method.instructions.indexOf(test.label);
+  int equal=test.getOpcode()==Opcodes.IF_ACMPEQ?label:at+1,unequal=test.getOpcode()==Opcodes.IF_ACMPEQ?at+1:label;
+  Set<AbstractInsnNode> none=Set.of(),pastTest=Collections.newSetFromMap(new IdentityHashMap<>()),pastCancel=Collections.newSetFromMap(new IdentityHashMap<>());pastTest.add(test);pastCancel.add(cancel);
+  if(flow.reaches(0,i->i==cancel,pastTest)||flow.reaches(unequal,i->i==cancel,none)||flow.reaches(equal,i->i.getOpcode()==Opcodes.RETURN,pastCancel))return -1;
+  return input;
+ }
+ /** The predicate this adapter generates for {@code consumer} ({@link #markerPredicate}), as it is in {@code owner}; null for none or several. */
+ private static MethodNode markerPredicateIntact(ClassNode owner,MethodNode consumer,String marker){
+  int input=markerInput(consumer,owner.name,marker);if(input<0)return null;
   MethodNode found=null;
   for(var method:owner.methods){if((method.access&Opcodes.ACC_STATIC)==0||!method.desc.equals("(Ljava/lang/Object;)Z")||!method.tryCatchBlocks.isEmpty())continue;
-   var code=DefaultMethodOverloadBridge.real(method);if(code.size()!=14)continue;
-   if(code.get(0)instanceof TypeInsnNode create&&create.getOpcode()==Opcodes.NEW&&create.desc.equals(CI)&&code.get(1).getOpcode()==Opcodes.DUP&&code.get(2)instanceof LdcInsnNode id&&id.cst instanceof String&&code.get(3).getOpcode()==Opcodes.ICONST_1
-     &&code.get(4)instanceof MethodInsnNode init&&init.getOpcode()==Opcodes.INVOKESPECIAL&&init.owner.equals(CI)&&init.name.equals("<init>")&&init.desc.equals("(Ljava/lang/String;Z)V")
-     &&code.get(5)instanceof VarInsnNode save&&save.getOpcode()==Opcodes.ASTORE&&save.var==1&&code.get(6).getOpcode()==Opcodes.ACONST_NULL&&code.get(7).getOpcode()==Opcodes.ACONST_NULL
-     &&code.get(8)instanceof VarInsnNode value&&value.getOpcode()==Opcodes.ALOAD&&value.var==0&&code.get(9)instanceof VarInsnNode ci&&ci.getOpcode()==Opcodes.ALOAD&&ci.var==1
-     &&code.get(10)instanceof MethodInsnNode call&&call.getOpcode()==Opcodes.INVOKESTATIC&&call.owner.equals(owner.name)&&call.name.equals(consumer.name)&&call.desc.equals(consumer.desc)
-     &&code.get(11)instanceof VarInsnNode read&&read.getOpcode()==Opcodes.ALOAD&&read.var==1&&code.get(12)instanceof MethodInsnNode verdict&&verdict.getOpcode()==Opcodes.INVOKEVIRTUAL&&verdict.owner.equals(CI)&&verdict.name.equals("isCancelled")&&verdict.desc.equals("()Z")&&code.get(13).getOpcode()==Opcodes.IRETURN){if(found!=null)return null;found=method;}
+   if(sameCode(method,markerPredicate(owner,consumer,input,method.name))){if(found!=null)return null;found=method;}
   }return found;
+ }
+ /** Whether two bodies are the same instructions, a string constant counting as any string. */
+ private static boolean sameCode(MethodNode a,MethodNode b){
+  var left=DefaultMethodOverloadBridge.real(a);var right=DefaultMethodOverloadBridge.real(b);if(left.size()!=right.size())return false;
+  for(int i=0;i<left.size();i++){
+   AbstractInsnNode x=left.get(i),y=right.get(i);if(x.getOpcode()!=y.getOpcode())return false;
+   if(x instanceof VarInsnNode v&&(!(y instanceof VarInsnNode w)||v.var!=w.var))return false;
+   if(x instanceof MethodInsnNode m&&(!(y instanceof MethodInsnNode n)||!m.owner.equals(n.owner)||!m.name.equals(n.name)||!m.desc.equals(n.desc)))return false;
+   if(x instanceof TypeInsnNode t&&(!(y instanceof TypeInsnNode u)||!t.desc.equals(u.desc)))return false;
+   if(x instanceof LdcInsnNode l&&(!(y instanceof LdcInsnNode m)||!(l.cst instanceof String&&m.cst instanceof String||l.cst.equals(m.cst))))return false;
+  }
+  return true;
  }
  private static boolean derived(MethodNode method,Frame<SourceValue>[]frames,SourceValue value,int input,Set<AbstractInsnNode> active){
   if(value==null)return false;if(value.insns.isEmpty())return false;if(value.insns.size()!=1)return false;var instruction=value.insns.iterator().next();if(!active.add(instruction))return false;
@@ -188,23 +264,30 @@ public final class MixinDecodeScopeAdapter {
   method.instructions.add(new InvokeDynamicInsnNode("get","(L"+OP+";[Ljava/lang/Object;)Ljava/util/function/Supplier;",LAMBDA,Type.getMethodType("()Ljava/lang/Object;"),new Handle(Opcodes.H_INVOKEINTERFACE,OP,"call","([Ljava/lang/Object;)Ljava/lang/Object;",true),Type.getMethodType("()Ljava/lang/Object;")));
  }
  private static void finishScope(MethodNode method,Type result){method.instructions.add(new MethodInsnNode(Opcodes.INVOKESTATIC,SCOPES,"call","(Ljava/util/function/Supplier;)Ljava/lang/Object;",false));method.instructions.add(new TypeInsnNode(Opcodes.CHECKCAST,result.getInternalName()));method.instructions.add(new InsnNode(Opcodes.ARETURN));method.maxLocals=Arrays.stream(Type.getArgumentTypes(method.desc)).mapToInt(Type::getSize).sum();method.maxStack=method.maxLocals+6;}
- private static boolean forwardedParse(MethodNode method){
-  Type[]args=Type.getArgumentTypes(method.desc);if(!args[0].equals(Type.getObjectType("com/mojang/serialization/Codec"))||!args[1].equals(Type.getObjectType("com/mojang/serialization/DynamicOps"))||!args[2].equals(Type.getObjectType("java/lang/Object")))return false;
+ /**
+  * Whether a {@code @WrapOperation} handler of {@code Codec.parse} forwards the original receiver, ops and input, in
+  * their order, to its one operation call — read by data flow ({@link HandlerFlow#passesParameters}), however the array
+  * is built — and never overwrites any of those parameters.
+  */
+ private static boolean forwardedParse(String owner,MethodNode method){
+  Type[]args=Type.getArgumentTypes(method.desc);if(args.length<4||!args[0].equals(Type.getObjectType("com/mojang/serialization/Codec"))||!args[1].equals(Type.getObjectType("com/mojang/serialization/DynamicOps"))||!args[2].equals(Type.getObjectType("java/lang/Object"))||!args[3].equals(Type.getObjectType(OP)))return false;
+  int[] slots=DefaultMethodOverloadBridge.slots(args,(method.access&Opcodes.ACC_STATIC)!=0);
   // Loading the right slot does not forward the original parameter if the handler overwrote that slot.
-  for(var instruction:method.instructions)if(instruction instanceof VarInsnNode v&&v.getOpcode()==Opcodes.ASTORE&&v.var>=0&&v.var<=3||instruction instanceof IincInsnNode i&&i.var>=0&&i.var<=3)return false;
-  var code=DefaultMethodOverloadBridge.real(method);List<MethodInsnNode>calls=code.stream().filter(i->i instanceof MethodInsnNode c&&c.owner.equals(OP)&&c.name.equals("call")).map(MethodInsnNode.class::cast).toList();if(calls.size()!=1)return false;
-  int end=code.indexOf(calls.getFirst()),start=end-15;if(start<0)return false;int p=start;
-  if(!(code.get(p++)instanceof VarInsnNode load)||load.getOpcode()!=Opcodes.ALOAD||load.var!=3||integer(code.get(p++))!=3||!(code.get(p++)instanceof TypeInsnNode array)||array.getOpcode()!=Opcodes.ANEWARRAY||!array.desc.equals("java/lang/Object"))return false;
-  for(int i=0;i<3;i++)if(code.get(p++).getOpcode()!=Opcodes.DUP||integer(code.get(p++))!=i||!(code.get(p++)instanceof VarInsnNode value)||value.getOpcode()!=Opcodes.ALOAD||value.var!=i||code.get(p++).getOpcode()!=Opcodes.AASTORE)return false;
-  // The original receiver, ops and input are forwarded in their original order.
-  return p==end;
+  for(var instruction:method.instructions)if(instruction instanceof VarInsnNode v&&v.getOpcode()>=Opcodes.ISTORE&&v.getOpcode()<=Opcodes.ASTORE&&v.var<=slots[3]||instruction instanceof IincInsnNode i&&i.var<=slots[3])return false;
+  HandlerFlow flow=HandlerFlow.of(owner,method);if(flow==null)return false;
+  List<MethodInsnNode> calls=flow.calls(c->c.owner.equals(OP)&&c.name.equals("call"));
+  return calls.size()==1&&flow.passesParameters(calls.getFirst(),slots[3],new int[]{slots[0],slots[1],slots[2]});
  }
- private static MethodNode markerConsumer(ClassNode owner,MethodNode producer){
-  Set<String> markers=new HashSet<>();for(var instruction:producer.instructions)if(instruction instanceof FieldInsnNode field&&field.getOpcode()==Opcodes.GETSTATIC&&field.owner.equals(owner.name)&&field.desc.equals("Ljava/lang/Object;")&&next(field)instanceof MethodInsnNode success&&success.getOpcode()==Opcodes.INVOKESTATIC&&success.owner.equals(RESULT)&&success.name.equals("success")&&success.desc.equals("(Ljava/lang/Object;)L"+RESULT+";")&&next(success).getOpcode()==Opcodes.ARETURN)markers.add(field.name);
-  if(markers.size()!=1)return null;String marker=markers.iterator().next();List<MethodNode>matches=new ArrayList<>();
+ /** The one cancellable {@code HEAD} consumer of the one marker {@code producer}'s rejections return ({@link #markerInput}); null otherwise. */
+ private record MarkerConsumer(MethodNode method,int input){ }
+ private static MarkerConsumer markerConsumer(ClassNode owner,MethodNode producer){
+  HandlerFlow flow=HandlerFlow.of(owner.name,producer);if(flow==null)return null;
+  Set<String> markers=new HashSet<>();
+  for(AbstractInsnNode returned:flow.returned())if(returned instanceof MethodInsnNode success&&success.getOpcode()==Opcodes.INVOKESTATIC&&success.owner.equals(RESULT)&&success.name.equals("success")&&success.desc.equals("(Ljava/lang/Object;)L"+RESULT+";")
+    &&HandlerFlow.only(flow.argument(success,0))instanceof FieldInsnNode field&&field.getOpcode()==Opcodes.GETSTATIC&&field.owner.equals(owner.name)&&field.desc.equals("Ljava/lang/Object;"))markers.add(field.name);
+  if(markers.size()!=1)return null;String marker=markers.iterator().next();List<MarkerConsumer>matches=new ArrayList<>();
   for(var method:owner.methods){AnnotationNode a=MixinFit.injectorOf(method);if(a==null||!INJECT.equals(a.desc)||!Boolean.TRUE.equals(MixinFit.value(a,"cancellable"))||(method.access&Opcodes.ACC_STATIC)==0)continue;var points=MixinFit.atNodes(a);if(points.size()!=1||!"HEAD".equals(MixinFit.value(points.getFirst(),"value")))continue;
-   Type[]args=Type.getArgumentTypes(method.desc);if(args.length!=4||(args[0].getSort()!=Type.OBJECT&&args[0].getSort()!=Type.ARRAY)||(args[1].getSort()!=Type.OBJECT&&args[1].getSort()!=Type.ARRAY)||!args[2].equals(Type.getObjectType("java/lang/Object"))||!args[3].equals(Type.getObjectType(CI))||!Type.getReturnType(method.desc).equals(Type.VOID_TYPE))continue;
-   var code=DefaultMethodOverloadBridge.real(method);if(code.size()!=6||!(code.get(0)instanceof VarInsnNode input)||input.getOpcode()!=Opcodes.ALOAD||input.var!=2||!(code.get(1)instanceof FieldInsnNode field)||field.getOpcode()!=Opcodes.GETSTATIC||!field.owner.equals(owner.name)||!field.name.equals(marker)||!field.desc.equals("Ljava/lang/Object;")||!(code.get(2)instanceof JumpInsnNode branch)||branch.getOpcode()!=Opcodes.IF_ACMPNE||next(branch.label)!=code.getLast()||!(code.get(3)instanceof VarInsnNode ci)||ci.getOpcode()!=Opcodes.ALOAD||ci.var!=3||!(code.get(4)instanceof MethodInsnNode cancel)||!cancel.owner.equals(CI)||!cancel.name.equals("cancel")||!cancel.desc.equals("()V")||code.getLast().getOpcode()!=Opcodes.RETURN)continue;matches.add(method);
+   int input=markerInput(method,owner.name,marker);if(input>=0)matches.add(new MarkerConsumer(method,input));
   }
   return matches.size()==1?matches.getFirst():null;
  }
@@ -218,9 +301,13 @@ public final class MixinDecodeScopeAdapter {
    return sink;
   }catch(AnalyzerException|RuntimeException unsupported){return null;}
  }
- private static MethodNode markerPredicate(ClassNode owner,MethodNode source,String name){
+ /** {@code (Object v) -> consumer(null, ..., v, ..., ci); ci.isCancelled()}, {@code v} in the compared parameter {@code input}. */
+ private static MethodNode markerPredicate(ClassNode owner,MethodNode source,int input,String name){
   MethodNode predicate=new MethodNode(Opcodes.ACC_PRIVATE|Opcodes.ACC_STATIC,name,"(Ljava/lang/Object;)Z",null,null);predicate.visibleAnnotations=new ArrayList<>(List.of(new AnnotationNode("Lorg/spongepowered/asm/mixin/Unique;")));
-  predicate.instructions.add(new TypeInsnNode(Opcodes.NEW,CI));predicate.instructions.add(new InsnNode(Opcodes.DUP));predicate.instructions.add(new LdcInsnNode(name));predicate.instructions.add(new InsnNode(Opcodes.ICONST_1));predicate.instructions.add(new MethodInsnNode(Opcodes.INVOKESPECIAL,CI,"<init>","(Ljava/lang/String;Z)V",false));predicate.instructions.add(new VarInsnNode(Opcodes.ASTORE,1));predicate.instructions.add(new InsnNode(Opcodes.ACONST_NULL));predicate.instructions.add(new InsnNode(Opcodes.ACONST_NULL));predicate.instructions.add(new VarInsnNode(Opcodes.ALOAD,0));predicate.instructions.add(new VarInsnNode(Opcodes.ALOAD,1));predicate.instructions.add(new MethodInsnNode(Opcodes.INVOKESTATIC,owner.name,source.name,source.desc,false));predicate.instructions.add(new VarInsnNode(Opcodes.ALOAD,1));predicate.instructions.add(new MethodInsnNode(Opcodes.INVOKEVIRTUAL,CI,"isCancelled","()Z",false));predicate.instructions.add(new InsnNode(Opcodes.IRETURN));predicate.maxLocals=2;predicate.maxStack=4;return predicate;
+  int passed=Type.getArgumentTypes(source.desc).length-1;
+  predicate.instructions.add(new TypeInsnNode(Opcodes.NEW,CI));predicate.instructions.add(new InsnNode(Opcodes.DUP));predicate.instructions.add(new LdcInsnNode(name));predicate.instructions.add(new InsnNode(Opcodes.ICONST_1));predicate.instructions.add(new MethodInsnNode(Opcodes.INVOKESPECIAL,CI,"<init>","(Ljava/lang/String;Z)V",false));predicate.instructions.add(new VarInsnNode(Opcodes.ASTORE,1));
+  for(int i=0;i<passed;i++)predicate.instructions.add(i==input?new VarInsnNode(Opcodes.ALOAD,0):new InsnNode(Opcodes.ACONST_NULL));
+  predicate.instructions.add(new VarInsnNode(Opcodes.ALOAD,1));predicate.instructions.add(new MethodInsnNode(Opcodes.INVOKESTATIC,owner.name,source.name,source.desc,false));predicate.instructions.add(new VarInsnNode(Opcodes.ALOAD,1));predicate.instructions.add(new MethodInsnNode(Opcodes.INVOKEVIRTUAL,CI,"isCancelled","()Z",false));predicate.instructions.add(new InsnNode(Opcodes.IRETURN));predicate.maxLocals=2;predicate.maxStack=Math.max(4,passed+1);return predicate;
  }
  private static MethodNode consumerWrapper(ClassNode owner,MethodNode host,MethodInsnNode sink,String predicate){
   boolean instance=sink.getOpcode()!=Opcodes.INVOKESTATIC;Type[]passed=Type.getArgumentTypes(sink.desc);Type[]args=instance?new Type[]{Type.getObjectType(RESULT),Type.getObjectType("java/util/function/Consumer"),Type.getObjectType(OP)}:Arrays.copyOf(passed,passed.length+1);if(!instance)args[args.length-1]=Type.getObjectType(OP);

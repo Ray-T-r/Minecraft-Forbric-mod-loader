@@ -167,6 +167,165 @@ final class HandlerFlow {
 		return out;
 	}
 
+	/** The single instruction in {@code origins}; null when there are none or several. */
+	static AbstractInsnNode only(Set<AbstractInsnNode> origins) {
+		return origins.size() == 1 ? origins.iterator().next() : null;
+	}
+
+	/** Whether {@code origins} is exactly the parameter in {@code slot}. */
+	static boolean onlyParameter(Set<AbstractInsnNode> origins, int slot) {
+		return isParameter(only(origins), slot);
+	}
+
+	/** The int an instruction pushes as a constant; null when it pushes anything else. */
+	static Integer intConstant(AbstractInsnNode instruction) {
+		if (instruction == null) return null;
+		int opcode = instruction.getOpcode();
+		if (opcode >= Opcodes.ICONST_M1 && opcode <= Opcodes.ICONST_5) return opcode - Opcodes.ICONST_0;
+		if (instruction instanceof org.objectweb.asm.tree.IntInsnNode push && (opcode == Opcodes.BIPUSH || opcode == Opcodes.SIPUSH)) return push.operand;
+		if (instruction instanceof org.objectweb.asm.tree.LdcInsnNode constant && constant.cst instanceof Integer value) return value;
+		return null;
+	}
+
+	/** One operand of one instruction: {@code operand} counts from the deepest of the values it consumes. */
+	record Use(AbstractInsnNode instruction, int operand) { }
+
+	/**
+	 * Every instruction that consumes a value {@code value} made, past the copies {@link #origins} looks through (local
+	 * stores and loads, stack copies, casts), and which of its operands it is.
+	 */
+	List<Use> uses(AbstractInsnNode value) {
+		List<Use> out = new ArrayList<>();
+		for (int i = 0; i < method.instructions.size(); i++) {
+			AbstractInsnNode instruction = method.instructions.get(i);
+			Frame<SourceValue> frame = frames[i];
+			int operands = consumed(instruction);
+			if (frame == null || operands == 0 || frame.getStackSize() < operands) continue;
+			for (int k = 0; k < operands; k++) {
+				if (origins(frame.getStack(frame.getStackSize() - operands + k)).contains(value)) out.add(new Use(instruction, k));
+			}
+		}
+		return out;
+	}
+
+	/** How many stack values an instruction consumes for good: copies (stores, stack shuffles, casts) consume none. */
+	private static int consumed(AbstractInsnNode instruction) {
+		int opcode = instruction.getOpcode();
+		if (instruction instanceof MethodInsnNode call) return Type.getArgumentTypes(call.desc).length + (opcode == Opcodes.INVOKESTATIC ? 0 : 1);
+		if (instruction instanceof InvokeDynamicInsnNode dynamic) return Type.getArgumentTypes(dynamic.desc).length;
+		if (instruction instanceof org.objectweb.asm.tree.MultiANewArrayInsnNode array) return array.dims;
+		return switch (opcode) {
+			case Opcodes.PUTSTATIC, Opcodes.GETFIELD, Opcodes.IRETURN, Opcodes.LRETURN, Opcodes.FRETURN, Opcodes.DRETURN, Opcodes.ARETURN,
+					Opcodes.ATHROW, Opcodes.MONITORENTER, Opcodes.MONITOREXIT, Opcodes.IFEQ, Opcodes.IFNE, Opcodes.IFLT, Opcodes.IFGE,
+					Opcodes.IFGT, Opcodes.IFLE, Opcodes.IFNULL, Opcodes.IFNONNULL, Opcodes.TABLESWITCH, Opcodes.LOOKUPSWITCH,
+					Opcodes.INSTANCEOF, Opcodes.ARRAYLENGTH, Opcodes.NEWARRAY, Opcodes.ANEWARRAY, Opcodes.POP -> 1;
+			case Opcodes.PUTFIELD, Opcodes.IF_ICMPEQ, Opcodes.IF_ICMPNE, Opcodes.IF_ICMPLT, Opcodes.IF_ICMPGE, Opcodes.IF_ICMPGT,
+					Opcodes.IF_ICMPLE, Opcodes.IF_ACMPEQ, Opcodes.IF_ACMPNE, Opcodes.IALOAD, Opcodes.LALOAD, Opcodes.FALOAD, Opcodes.DALOAD,
+					Opcodes.AALOAD, Opcodes.BALOAD, Opcodes.CALOAD, Opcodes.SALOAD -> 2;
+			case Opcodes.IASTORE, Opcodes.LASTORE, Opcodes.FASTORE, Opcodes.DASTORE, Opcodes.AASTORE, Opcodes.BASTORE, Opcodes.CASTORE,
+					Opcodes.SASTORE -> 3;
+			default -> 0;
+		};
+	}
+
+	/**
+	 * Whether {@code call} hands its receiver-operand the parameter in {@code receiver}, and as its array operand a fresh
+	 * {@code Object[]} of exactly {@code slots.length} elements, element {@code i} the parameter in {@code slots[i]}, filled
+	 * in one straight run between the array's creation and the call, and handed to nothing else.
+	 */
+	boolean passesParameters(MethodInsnNode call, int receiver, int[] slots) {
+		if (!onlyParameter(argument(call, 0), receiver)) return false;
+		AbstractInsnNode created = only(argument(call, 1));
+		if (!(created instanceof org.objectweb.asm.tree.TypeInsnNode array && array.getOpcode() == Opcodes.ANEWARRAY
+				&& array.desc.equals("java/lang/Object"))) return false;
+		Integer length = intConstant(only(operand(created, 0, 1)));
+		int from = method.instructions.indexOf(created), to = method.instructions.indexOf(call);
+		if (length == null || length != slots.length || !straight(from, to)) return false;
+		boolean[] filled = new boolean[slots.length];
+		for (Use use : uses(created)) {
+			if (use.instruction() == call && use.operand() == 1) continue;
+			int at = method.instructions.indexOf(use.instruction());
+			if (use.instruction().getOpcode() != Opcodes.AASTORE || use.operand() != 0 || at < from || at > to) return false;
+			Integer index = intConstant(only(operand(use.instruction(), 1, 3)));
+			if (index == null || index < 0 || index >= slots.length || filled[index]) return false;
+			if (!onlyParameter(operand(use.instruction(), 2, 3), slots[index])) return false;
+			filled[index] = true;
+		}
+		for (boolean element : filled) if (!element) return false;
+		return true;
+	}
+
+	/**
+	 * Whether the instructions from index {@code from} to {@code to} run as one straight line: nothing between them
+	 * branches, returns or throws, and nothing anywhere jumps into them past {@code from}.
+	 */
+	boolean straight(int from, int to) {
+		if (from < 0 || to < from) return false;
+		Set<AbstractInsnNode> targets = identitySet();
+		for (AbstractInsnNode instruction : method.instructions) {
+			if (instruction instanceof org.objectweb.asm.tree.JumpInsnNode jump) targets.add(jump.label);
+			if (instruction instanceof org.objectweb.asm.tree.TableSwitchInsnNode table) { targets.add(table.dflt); targets.addAll(table.labels); }
+			if (instruction instanceof org.objectweb.asm.tree.LookupSwitchInsnNode lookup) { targets.add(lookup.dflt); targets.addAll(lookup.labels); }
+		}
+		if (method.tryCatchBlocks != null) for (var block : method.tryCatchBlocks) targets.add(block.handler);
+		for (int i = from; i <= to; i++) {
+			AbstractInsnNode instruction = method.instructions.get(i);
+			if (i > from && targets.contains(instruction)) return false;
+			if (i < to && ends(instruction)) return false;
+		}
+		return true;
+	}
+
+	/** Whether the flow does not simply fall through {@code instruction}: a branch, a switch, a return or a throw. */
+	static boolean ends(AbstractInsnNode instruction) {
+		int opcode = instruction.getOpcode();
+		return instruction instanceof org.objectweb.asm.tree.JumpInsnNode || instruction instanceof org.objectweb.asm.tree.TableSwitchInsnNode
+				|| instruction instanceof org.objectweb.asm.tree.LookupSwitchInsnNode || opcode >= Opcodes.IRETURN && opcode <= Opcodes.RETURN
+				|| opcode == Opcodes.ATHROW;
+	}
+
+	/** The instruction indices control can go to next from index {@code i} (no exception edges: callers refuse try blocks). */
+	List<Integer> successors(int i) {
+		AbstractInsnNode instruction = method.instructions.get(i);
+		List<Integer> out = new ArrayList<>();
+		int opcode = instruction.getOpcode();
+		if (instruction instanceof org.objectweb.asm.tree.JumpInsnNode jump) {
+			out.add(method.instructions.indexOf(jump.label));
+			if (opcode != Opcodes.GOTO) out.add(i + 1);
+		} else if (instruction instanceof org.objectweb.asm.tree.TableSwitchInsnNode table) {
+			out.add(method.instructions.indexOf(table.dflt));
+			for (var label : table.labels) out.add(method.instructions.indexOf(label));
+		} else if (instruction instanceof org.objectweb.asm.tree.LookupSwitchInsnNode lookup) {
+			out.add(method.instructions.indexOf(lookup.dflt));
+			for (var label : lookup.labels) out.add(method.instructions.indexOf(label));
+		} else if (!(opcode >= Opcodes.IRETURN && opcode <= Opcodes.RETURN || opcode == Opcodes.ATHROW) && i + 1 < method.instructions.size()) {
+			out.add(i + 1);
+		}
+		return out;
+	}
+
+	/** Whether control can go from index {@code from} to an instruction {@code goal} accepts without passing {@code avoid}. */
+	boolean reaches(int from, Predicate<AbstractInsnNode> goal, Set<AbstractInsnNode> avoid) {
+		boolean[] seen = new boolean[method.instructions.size()];
+		ArrayDeque<Integer> pending = new ArrayDeque<>(List.of(from));
+		while (!pending.isEmpty()) {
+			int i = pending.pop();
+			if (i < 0 || i >= seen.length || seen[i]) continue;
+			seen[i] = true;
+			AbstractInsnNode instruction = method.instructions.get(i);
+			if (avoid.contains(instruction)) continue;
+			if (goal.test(instruction)) return true;
+			pending.addAll(successors(i));
+		}
+		return false;
+	}
+
+	/** Whether no jump goes backwards: every path runs each instruction at most once. */
+	boolean acyclic() {
+		for (int i = 0; i < method.instructions.size(); i++) for (int next : successors(i)) if (next <= i) return false;
+		return true;
+	}
+
 	private static Set<AbstractInsnNode> identitySet() {
 		return Collections.newSetFromMap(new IdentityHashMap<>());
 	}
