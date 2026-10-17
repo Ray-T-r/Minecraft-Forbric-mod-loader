@@ -36,7 +36,10 @@ for phase in ('positive','off','tick-off'):
    # The generic renamed-body retarget (MixinRetarget R3) also moves the sleep redirect into NeoForge's lambda, and the
    # carrier-stub rebind moves fabric-api's boolean elytra check off LivingEntity's delegating canGlide()Z stub onto
    # the body, so the negative control turns both off too: every repaired case must show it depends on a repair.
-   +(' -Dforbric.mixinRetarget=off -Dforbric.mixinStubRebind=off' if phase=='off' else '')
+   # The clear-all veto is repaired by the scoped-clear relay, which puts the native activeEffects.clear() back into
+   # NeoForge's removeAllEffects so fabric-api's own wrap lands there; the entity anchors' veto rewrite only runs where
+   # that clear is missing. The negative control turns the relay off too, or effect-clear-veto passes without anchors.
+   +(' -Dforbric.mixinRetarget=off -Dforbric.mixinStubRebind=off -Dforbric.scopedClearRelay=off' if phase=='off' else '')
    +(' -Dforbric.fabricElytraTickAnchor=off' if phase=='tick-off' else ''))
  for key,role in [('MERGED','merged'),('FORGE_RT','forge'),('NEO_RT','neo')]:env[key]=inputs[role]['path']
  command=['python3',str(kernel/'run/compat/evidence.py'),'run','--source',str(root),'--mods',str(run/'mods'),'--output',str(results/(phase+'.json'))]
@@ -68,6 +71,8 @@ for phase in ('positive','off','tick-off'):
  tick="fabric-api's elytra flight tick now runs before NeoForge's empty-glider guard"
  if phase=='positive':assert 'restored 2 '+elytra in text and tick in text,'positive: the gliding decision and the flight tick both restored'
  if phase=='tick-off':assert 'restored 1 '+elytra in text and tick not in text,'tick-off: only the gliding decision restored'
+ relay='[Forbric/ScopedClear] net.minecraft.world.entity.LivingEntity: [removeAllEffects()Z(activeEffects)]'
+ assert (relay in text)==(phase!='off'),(phase,'the scoped-clear relay runs in every phase but the negative control')
  print('[M37] PASS',phase,'seventeen actual entity callback cases with expected verdicts',flush=True)
 print('[M37] GATE GREEN')
 PY
