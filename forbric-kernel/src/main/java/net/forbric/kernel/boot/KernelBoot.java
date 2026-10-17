@@ -505,11 +505,6 @@ public final class KernelBoot {
 		// NeoForge's: the model contract, the level's ModelDataManager and the tessellation entry's edge (fusion's
 		// connected textures never connected; Physics Mod's vine hook never ran).
 		chain.register(TransformPhase.COREMOD, new net.forbric.kernel.transform.ForgeModelDataFlowTransformer());
-		// Both sides: the early returns the carriers' decompile-recompile folded into each method's last return, so a
-		// Fabric mod's TAIL handler runs only where vanilla's does (TaCZ's Camera.update hook ran on the title screen,
-		// issue #31). LAST in the coremod phase (the sort index): every kernel injector still matches the folded
-		// shape it was written against, and a method one of them edited at its tail has no frame-only tail run and
-		// is left folded — its hook keeps running on every path.
 		// Both sides: a merged local's variable-table range starts at its declaring store again where the merge spliced a
 		// carrier's reads of the local in front of the range, so a mod's @Local / @ModifyVariable finds it where vanilla's
 		// compiler had it in scope. Just before the early returns, which split tails by those ranges.
@@ -519,6 +514,11 @@ public final class KernelBoot {
 			ForbricLog.warn("[Forbric/LocalRanges] -D%s=off — a merged local whose range the merge started after a carrier's "
 					+ "reads of it stays out of scope there for a mod's @Local", net.forbric.kernel.transform.LocalRanges.PROPERTY);
 		}
+		// Both sides: the early returns the carriers' decompile-recompile folded into each method's last return, so a
+		// Fabric mod's TAIL handler runs only where vanilla's does (TaCZ's Camera.update hook ran on the title screen,
+		// issue #31). LAST in the coremod phase (the sort index): every kernel injector still matches the folded
+		// shape it was written against, and a method one of them edited at its tail has no frame-only tail run and
+		// is left folded — its hook keeps running on every path.
 		if (net.forbric.kernel.transform.VanillaEarlyReturns.enabled()) {
 			chain.register(TransformPhase.COREMOD, new net.forbric.kernel.transform.VanillaEarlyReturns(), Integer.MAX_VALUE);
 		} else {
