@@ -37,10 +37,36 @@ class LootSourceCallbacksWeaveTest implements Opcodes {
         ClassNode extraRead=source();MethodNode value=extraRead.methods.stream().filter(m->m.desc.startsWith("(Ljava/lang/Object;")).findFirst().orElseThrow();value.instructions.insert(new InsnNode(POP));value.instructions.insert(new VarInsnNode(ALOAD,2));assertNull(LootSourceCallbacks.plan(extraRead));
         ClassNode escaped=source();FieldNode memo=escaped.fields.getFirst();MethodNode escape=new MethodNode(ACC_PUBLIC|ACC_STATIC,"different","()Ljava/lang/Object;",null,null);escape.instructions.add(new FieldInsnNode(GETSTATIC,escaped.name,memo.name,memo.desc));escape.instructions.add(new InsnNode(ARETURN));escaped.methods.add(escape);assertNull(LootSourceCallbacks.plan(escaped));
     }
+    /**
+     * The group's roles are read by what they compute, and the mixin around them is not part of the claim: beside another
+     * injector, another method and another field, the same group is still bridged — as a partial group, whose four role
+     * injectors alone are taken out of the mixin so the rest applies — and the real source is the whole of its mixin.
+     */
+    @Test void theGroupBesideOtherMembersIsBridgedAndOnlyItsRolesAreTakenOut()throws Exception{
+        var whole=LootSourceCallbacks.plan(source());assertNotNull(whole);assertTrue(whole.whole(),"fabric-loot-api's source is the group and nothing else");
+        assertEquals(0,LootSourceCallbacks.strip(whole,source()),"a whole group's mixin is left out by the config policy, never stripped");
+        ClassNode wider=source();MethodNode injector=wider.methods.stream().filter(m->m.visibleAnnotations!=null&&m.visibleAnnotations.stream().anyMatch(a->a.desc.endsWith("/Inject;"))).findFirst().orElseThrow();
+        MethodNode added=new MethodNode(ACC_PRIVATE|ACC_STATIC,"qzxUnrelated",injector.desc,null,null);added.visibleAnnotations=injector.visibleAnnotations;added.instructions.add(new FieldInsnNode(GETSTATIC,wider.name,"qzxCount","I"));added.instructions.add(new InsnNode(POP));added.instructions.add(new InsnNode(RETURN));wider.methods.add(added);
+        wider.fields.add(new FieldNode(ACC_PRIVATE|ACC_STATIC,"qzxCount","I",null,null));
+        MethodNode helper=new MethodNode(ACC_PUBLIC|ACC_STATIC,"qzxHelper","()I",null,null);helper.instructions.add(new FieldInsnNode(GETSTATIC,wider.name,"qzxCount","I"));helper.instructions.add(new InsnNode(IRETURN));wider.methods.add(helper);
+        var partial=LootSourceCallbacks.plan(wider);assertNotNull(partial,"the group is still the same group");assertFalse(partial.whole());
+        assertEquals(4,partial.stripped().size());assertTrue(partial.stripped().stream().noneMatch(m->m.startsWith("qzx")),partial.stripped().toString());
+        assertArrayEquals(whole.helperBytes(),partial.helperBytes(),"the bridge runs the same callbacks either way");
+        int before=wider.methods.size();assertEquals(4,LootSourceCallbacks.strip(partial,wider));assertEquals(before-4,wider.methods.size());
+        assertTrue(wider.methods.stream().anyMatch(m->m.name.equals("qzxUnrelated"))&&wider.methods.stream().anyMatch(m->m.name.equals("qzxHelper")),"the rest stays");
+        // Another member calling a role injector directly would lose its callee: not bridged.
+        ClassNode calling=source();MethodNode role=calling.methods.stream().filter(m->m.desc.endsWith("Ljava/util/Map;)V")).findFirst().orElseThrow();
+        MethodNode caller=new MethodNode(ACC_PUBLIC|ACC_STATIC,"qzxCaller","()V",null,null);caller.instructions.add(new InsnNode(RETURN));
+        caller.instructions.insert(new MethodInsnNode(INVOKESTATIC,calling.name,"nonexistent","()V",false));calling.methods.add(caller);
+        for(AbstractInsnNode i:caller.instructions)if(i instanceof MethodInsnNode c){c.name=role.name;c.desc=role.desc;c.setOpcode((role.access&ACC_STATIC)!=0?INVOKESTATIC:INVOKESPECIAL);}
+        assertNull(LootSourceCallbacks.plan(calling));
+    }
     @Test void anAlteredMemoProducerCleanupOrAdditionalInjectorCannotBeDeclaredEquivalent()throws Exception{
         ClassNode producer=source();MethodNode store=producer.methods.stream().filter(m->Arrays.stream(m.instructions.toArray()).anyMatch(i->i instanceof MethodInsnNode c&&c.owner.equals("java/util/WeakHashMap")&&c.name.equals("put"))).findFirst().orElseThrow();store.instructions.insert(new MethodInsnNode(INVOKESTATIC,"java/lang/System","nanoTime","()J",false));store.instructions.insert(new InsnNode(POP2));assertNull(LootSourceCallbacks.plan(producer));
         ClassNode cleanup=source();for(MethodNode m:cleanup.methods)for(AbstractInsnNode i:m.instructions)if(i instanceof MethodInsnNode c&&c.owner.equals("java/util/WeakHashMap")&&c.name.equals("remove"))c.name="get";assertNull(LootSourceCallbacks.plan(cleanup));
-        ClassNode extra=source();MethodNode injector=extra.methods.stream().filter(m->m.visibleAnnotations!=null&&m.visibleAnnotations.stream().anyMatch(a->a.desc.endsWith("/Inject;"))).findFirst().orElseThrow();MethodNode added=new MethodNode(ACC_STATIC,"extra",injector.desc,null,null);added.visibleAnnotations=injector.visibleAnnotations;added.instructions.add(new InsnNode(RETURN));extra.methods.add(added);assertNull(LootSourceCallbacks.plan(extra));
+        // A second injector doing one role's job is ambiguous: no role can be told, nothing is bridged.
+        ClassNode extra=source();MethodNode injector=extra.methods.stream().filter(m->m.desc.equals("(Lnet/minecraft/world/level/storage/loot/LootDataType;Lnet/minecraft/server/packs/resources/ResourceManager;Lnet/minecraft/resources/RegistryOps;Lorg/spongepowered/asm/mixin/injection/callback/CallbackInfoReturnable;)V")).findFirst().orElseThrow();
+        MethodNode added=new MethodNode(ACC_STATIC,"extra",injector.desc,null,null);added.visibleAnnotations=injector.visibleAnnotations;added.instructions.add(new InsnNode(RETURN));extra.methods.add(added);assertNull(LootSourceCallbacks.plan(extra));
     }
     @Test void onlyTheActuallyDefinedHelperTypedBridgeAndHostClosureProveTheReplacement()throws Exception{
         var plan=LootSourceCallbacks.plan(source());assertNotNull(plan);

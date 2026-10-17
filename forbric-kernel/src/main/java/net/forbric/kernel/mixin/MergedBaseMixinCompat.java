@@ -83,7 +83,9 @@ public final class MergedBaseMixinCompat {
             return "registry-loader: source wraps a loader call the carrier left dead, and the wrap does not fit the widened overloads that replaced it";
         if(FabricCreativePagerMixinAdapter.matches(node)&&FabricCreativePagerMixinAdapter.adapt(copy(node),name->parse(resources.apply(name+".class")))==0)
             return "source implements a second creative pager, and its keyboard callback could not share the carrier pager";
-        if(ForbricMixinService.registerSourceCallbacks(node))
+        // A callback group that is all of its mixin supersedes the mixin; one that is only part of it has its role injectors
+        // taken out where Mixin reads the class (LootSourceCallbacks.stripPartialGroup), and the rest of the mixin applies.
+        if(ForbricMixinService.registerSourceCallbacks(node)&&net.forbric.kernel.boot.LootSourceCallbacks.whole(node.name))
             return "the complete original callback group is registered on its proved current caller/bridge contract; final definitions witness its retained bodies";
         String loot=bridgedLootDispatch(node,resources);
         if(loot!=null)return loot;

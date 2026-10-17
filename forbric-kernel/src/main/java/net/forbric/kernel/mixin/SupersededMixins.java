@@ -105,7 +105,7 @@ public final class SupersededMixins {
 	private static Map<String,Replacement> replacements(){
 		Map<String,Replacement> all=new LinkedHashMap<>(SUPERSEDED);
 		String source=net.forbric.kernel.boot.LootSourceCallbacks.sourceName();
-		if(source!=null)all.put(source,new Replacement("KernelLootBridge executes the original closed loot callback group through its generated helper and the native typed reload seam","forbric.lootBridge",net.forbric.kernel.boot.LootSourceCallbacks.targetName(),ignored->net.forbric.kernel.boot.LootSourceCallbacks.proved(source)));
+		if(source!=null&&net.forbric.kernel.boot.LootSourceCallbacks.whole(source))all.put(source,new Replacement("KernelLootBridge executes the original closed loot callback group through its generated helper and the native typed reload seam","forbric.lootBridge",net.forbric.kernel.boot.LootSourceCallbacks.targetName(),ignored->net.forbric.kernel.boot.LootSourceCallbacks.proved(source)));
 		return all;
 	}
 

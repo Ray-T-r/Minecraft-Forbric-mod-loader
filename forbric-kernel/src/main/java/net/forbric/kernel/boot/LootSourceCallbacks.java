@@ -30,8 +30,18 @@ public final class LootSourceCallbacks implements Opcodes {
     private static volatile ClassLoader gameLoader;
     private LootSourceCallbacks() {}
 
-    /** The only rewritten expression is the unique private WeakHashMap.get(ops) provider projection. */
-    public record Plan(String sourceName,String targetName,String helperName,byte[] helperBytes,Map<String,String> helperMethods, NativeInputs nativeInputs) {}
+    /**
+     * The only rewritten expression is the private WeakHashMap.get(ops) provider projection.
+     *
+     * @param whole    whether the source is the callback group and nothing else — then the whole mixin is superseded; else only
+     *                 its four role injectors ({@code stripped}, as name + descriptor) are taken out of it and the rest applies
+     */
+    public record Plan(String sourceName,String targetName,String helperName,byte[] helperBytes,Map<String,String> helperMethods, NativeInputs nativeInputs,
+                       boolean whole,Set<String> stripped) {
+        public Plan{stripped=Set.copyOf(stripped);}
+        public Plan(String sourceName,String targetName,String helperName,byte[] helperBytes,Map<String,String> helperMethods,NativeInputs nativeInputs){
+            this(sourceName,targetName,helperName,helperBytes,helperMethods,nativeInputs,true,Set.of());}
+    }
     /**
      * The four callbacks' hosts, as each injector names them: its {@code method} selectors and whether its handler is
      * static, which is what Mixin binds against a class. The producer and its cleanup share one host, and so do the
@@ -64,6 +74,23 @@ public final class LootSourceCallbacks implements Opcodes {
     }
     public static String targetName(){Plan p=offered;return p==null?null:p.targetName;}
     public static String sourceName(){Plan p=offered;return p==null?null:p.sourceName;}
+    /** Whether the offered group is all of its mixin, so the whole mixin is superseded; false for none or a partial group. */
+    public static boolean whole(String sourceName){Plan p=offered;return p!=null&&p.whole&&p.sourceName.equals(sourceName.replace('/','.'));}
+    /**
+     * Takes the offered group's four role injectors out of {@code mixin} when the group is only part of it, so the rest of
+     * the mixin applies as written while the bridge runs the group; returns how many it took. A whole group's mixin is left
+     * out by the config policy instead, and an unrelated mixin is untouched.
+     */
+    public static int stripPartialGroup(ClassNode mixin){return strip(offered,mixin);}
+    /** {@link #stripPartialGroup} for {@code p}: its role injectors out of {@code mixin} when it is its partial group. */
+    public static int strip(Plan p,ClassNode mixin){
+        if(p==null||p.whole||mixin==null||!p.sourceName.equals(mixin.name.replace('/','.')))return 0;
+        int before=mixin.methods.size();mixin.methods.removeIf(m->p.stripped.contains(m.name+m.desc));
+        int taken=before-mixin.methods.size();
+        if(taken>0)net.forbric.kernel.util.ForbricLog.info("[Forbric/LootBridge] took the closed loot callback group's %d injector(s) out of %s; the "
+                +"bridge runs them through its generated helper, and the mixin's other members apply as written",taken,p.sourceName);
+        return taken;
+    }
     public static boolean proved(String sourceName){Plan p=offered;return p!=null&&p.sourceName.equals(sourceName)&&LootSourceContracts.proved(gameLoader);}
     public static void observeDefinition(String name,byte[] bytes){LootSourceContracts.observeDefinition(name,bytes);}
     public static void observeDefinition(ClassLoader loader,String name,byte[] bytes){LootSourceContracts.observeDefinition(loader,name,bytes);}
@@ -85,9 +112,7 @@ public final class LootSourceCallbacks implements Opcodes {
     private static Plan planChecked(ClassNode input){
         if(input==null||!"java/lang/Object".equals(input.superName)||!input.interfaces.isEmpty())return null;
         String target=target(input);if(target==null)return null;
-        if(input.fields.size()!=1)return null;FieldNode memo=input.fields.getFirst();
-        if(!memo.desc.equals("Ljava/util/WeakHashMap;")||(memo.access&(ACC_PRIVATE|ACC_STATIC|ACC_FINAL))!=(ACC_PRIVATE|ACC_STATIC|ACC_FINAL))return null;
-        List<MethodNode> injectors=input.methods.stream().filter(LootSourceCallbacks::injector).toList();if(injectors.size()!=4)return null;
+        List<MethodNode> injectors=input.methods.stream().filter(LootSourceCallbacks::injector).toList();
         // Each role by what it computes, never by the events it fires or a name: the completion by its typed descriptor, the
         // value callback as the one method the consumer's lambda applies.
         MethodNode put=single(injectors,m->count(m,"java/util/WeakHashMap","put")==1);
@@ -97,34 +122,51 @@ public final class LootSourceCallbacks implements Opcodes {
         if((value.access&ACC_STATIC)==0||(all.access&ACC_STATIC)==0||!all.tryCatchBlocks.isEmpty())return null;
         MethodNode remove=single(injectors,m->count(m,"java/util/concurrent/CompletableFuture","thenApply")==1);
         if(put==null||consume==null||remove==null||Set.of(put,consume,remove,all).size()!=4)return null;
+        // The memo is the field the producer puts into: private, static, final, a WeakHashMap.
+        FieldNode memo=memoOf(input,put);if(memo==null)return null;
         NativeInputs inputs=new NativeInputs(Selection.of(put),Selection.of(remove),Selection.of(consume),Selection.of(all),localName(remove,4),localName(consume,4));if(selector(put)==null||selector(consume)==null||inputs.opsLocal==null||inputs.elementsLocal==null)return null;
         if(!memoProducer(input,put,memo)||!memoCleanup(input,remove,memo)||!mapConsumer(input,consume,value))return null;
         if(!allContext(all)||!anchor(consume,"INVOKE","Ljava/util/Map;forEach(Ljava/util/function/BiConsumer;)V")||!anchor(all,"RETURN",null))return null;
         if(!anchor(put,"INVOKE","L"+PROVIDER+";createSerializationContext(Lcom/mojang/serialization/DynamicOps;)L"+OPS+";")
                 ||!anchor(remove,"INVOKE","Ljava/util/concurrent/CompletableFuture;thenApplyAsync(Ljava/util/function/Function;Ljava/util/concurrent/Executor;)Ljava/util/concurrent/CompletableFuture;"))return null;
-        if(providerRead(value,input.name,memo)==null)return null;
-        int accesses=0;for(MethodNode m:input.methods)for(AbstractInsnNode i:m.instructions){
+        if(providerReads(value,input.name,memo)==null)return null;
+        // The memo is closed: read or written only by its initializer, the producer, the value callback and the cleanup's
+        // lambda — however often each does — and no method handle reaches a field of the class.
+        MethodNode cleanup=cleanupLambda(input,remove);boolean otherFields=false;
+        for(MethodNode m:input.methods)for(AbstractInsnNode i:m.instructions){
             if(i instanceof FieldInsnNode f&&f.owner.equals(input.name)){
-                if(!f.name.equals(memo.name)||!f.desc.equals(memo.desc))return null;accesses++;
-                if(!(m==value||m==put||m.name.equals("<clinit>")||cleanupLambda(input,remove)==m))return null;
+                if(!f.name.equals(memo.name)||!f.desc.equals(memo.desc)){otherFields=true;continue;}
+                if(!(m==value||m==put||m.name.equals("<clinit>")||cleanup==m))return null;
             }
             if(i instanceof InvokeDynamicInsnNode d)for(Object a:d.bsmArgs)if(a instanceof Handle h&&h.getOwner().equals(input.name)&&h.getTag()<=H_PUTSTATIC)return null;
         }
-        if(accesses!=4||!memoInitializer(input,memo))return null;
-        MethodNode constructor=single(input.methods,m->m.name.equals("<init>"));
-        if(!defaultConstructor(input,constructor))return null;
+        if(!memoStored(input,memo))return null;
         Set<MethodNode> closure=closure(input,Set.of(value,all));if(closure==null)return null;
-        Set<MethodNode> classified=new HashSet<>(closure);classified.addAll(injectors);classified.add(constructor);classified.add(cleanupLambda(input,remove));InvokeDynamicInsnNode mapIndy=singleIndy(consume);Handle mapHandle=implementation(mapIndy);classified.add(single(input.methods,m->m.name.equals(mapHandle.getName())&&m.desc.equals(mapHandle.getDesc())));
-        for(MethodNode m:input.methods)if(!m.name.equals("<clinit>")&&!classified.contains(m))return null;
-        for(MethodNode m:closure){if((m.access&ACC_STATIC)==0)return null;for(AbstractInsnNode i:m.instructions)if(i instanceof FieldInsnNode f&&f.owner.equals(input.name)&&m!=value)return null;}
+        for(MethodNode m:closure){if((m.access&ACC_STATIC)==0)return null;for(AbstractInsnNode i:m.instructions)if(i instanceof FieldInsnNode f&&f.owner.equals(input.name)&&(m!=value||!f.name.equals(memo.name)||!f.desc.equals(memo.desc)))return null;}
+        MethodNode constructor=single(input.methods,m->m.name.equals("<init>"));
+        Set<MethodNode> classified=new HashSet<>(closure);classified.addAll(injectors);classified.add(constructor);classified.add(cleanup);InvokeDynamicInsnNode mapIndy=singleIndy(consume);Handle mapHandle=implementation(mapIndy);classified.add(single(input.methods,m->m.name.equals(mapHandle.getName())&&m.desc.equals(mapHandle.getDesc())));
+        // The group is all of the mixin when nothing else is in it — no other injector, method or field use, a default
+        // constructor and an initializer that only makes the memo: then the whole mixin is superseded. Otherwise only the
+        // four role injectors are taken out, which nothing else in the mixin may call, and the rest applies as written.
+        Set<MethodNode> roles=Set.of(put,consume,remove,all);
+        boolean whole=!otherFields&&injectors.size()==roles.size()&&defaultConstructor(input,constructor)&&memoInitializer(input,memo)
+                &&input.methods.stream().allMatch(m->m.name.equals("<clinit>")||classified.contains(m));
+        if(!whole)for(MethodNode m:input.methods){
+            if(roles.contains(m))continue;
+            for(AbstractInsnNode i:m.instructions){
+                if(i instanceof MethodInsnNode c&&c.owner.equals(input.name)&&roles.stream().anyMatch(r->r.name.equals(c.name)&&r.desc.equals(c.desc)))return null;
+                if(i instanceof InvokeDynamicInsnNode d)for(Object a:d.bsmArgs)if(a instanceof Handle h&&h.getOwner().equals(input.name)&&roles.stream().anyMatch(r->r.name.equals(h.getName())&&r.desc.equals(h.getDesc())))return null;
+            }
+        }
+        Set<String> stripped=new LinkedHashSet<>();for(MethodNode r:List.of(put,consume,remove,all))stripped.add(r.name+r.desc);
 
         ClassNode generated=new ClassNode();generated.version=input.version;generated.access=ACC_PUBLIC|ACC_FINAL|ACC_SUPER;generated.name=input.name;generated.superName="java/lang/Object";
         for(MethodNode original:closure){MethodNode copy=copy(original);stripAnnotations(copy);generated.methods.add(copy);}
         MethodNode moved=single(generated.methods,m->m.name.equals(value.name)&&m.desc.equals(value.desc));
-        // (Provider) MEMO.get(ops) becomes (Provider) provider: the lookup's two operands go, and the lookup reads the parameter.
-        MethodInsnNode lookup=providerRead(moved,input.name,memo);HandlerFlow movedFlow=HandlerFlow.of(input.name,moved);
-        AbstractInsnNode memoRead=movedFlow.producer(lookup,0,2),opsRead=movedFlow.producer(lookup,1,2);
-        moved.instructions.remove(memoRead);moved.instructions.remove(opsRead);moved.instructions.set(lookup,new VarInsnNode(ALOAD,2));
+        // Each (Provider) MEMO.get(ops) becomes (Provider) provider: the lookup's two operands go, and the lookup reads the parameter.
+        List<MethodInsnNode> lookups=providerReads(moved,input.name,memo);HandlerFlow movedFlow=HandlerFlow.of(input.name,moved);
+        for(MethodInsnNode lookup:lookups){AbstractInsnNode memoRead=movedFlow.producer(lookup,0,2),opsRead=movedFlow.producer(lookup,1,2);
+            moved.instructions.remove(memoRead);moved.instructions.remove(opsRead);moved.instructions.set(lookup,new VarInsnNode(ALOAD,2));}
         moved.desc=VALUE_DESC.replace("L"+OPS+";","L"+PROVIDER+";");
         moved.signature=null;if(moved.localVariables!=null)for(LocalVariableNode l:moved.localVariables)if(l.index==2)l.desc="L"+PROVIDER+";";
         for(AbstractInsnNode i:moved.instructions)if(i instanceof FrameNode f&&f.local!=null&&f.local.size()>2)f.local.set(2,PROVIDER);
@@ -135,7 +177,7 @@ public final class LootSourceCallbacks implements Opcodes {
         ClassWriter writer=new ClassWriter(ClassWriter.COMPUTE_MAXS);mapped.accept(writer);byte[] bytes=writer.toByteArray();
         Map<String,String> methods=new LinkedHashMap<>();for(MethodNode m:mapped.methods)methods.put(m.name+m.desc,m.access+":"+MixinInstructionFingerprint.hash(m));
         methods.put("<shape>",shape(mapped));
-        return new Plan(input.name.replace('/','.'),target.replace('/','.'),helper,bytes,Map.copyOf(methods),inputs);
+        return new Plan(input.name.replace('/','.'),target.replace('/','.'),helper,bytes,Map.copyOf(methods),inputs,whole,stripped);
     }
 
     static String shape(ClassNode node){return node.name+"|"+node.superName+"|"+node.access+"|"+node.interfaces+"|"+node.fields.stream().map(f->f.name+f.desc+":"+f.access+":"+f.value).sorted().toList();}
@@ -214,11 +256,11 @@ public final class LootSourceCallbacks implements Opcodes {
     /** The static method of {@code n} a lambda links to; null for none, another owner, or anything but a static handle. */
     private static MethodNode lambdaOf(ClassNode n,InvokeDynamicInsnNode d){Handle h=d==null?null:implementation(d);return h==null||!h.getOwner().equals(n.name)||h.getTag()!=H_INVOKESTATIC?null:single(n.methods,x->x.name.equals(h.getName())&&x.desc.equals(h.getDesc()));}
     /**
-     * The value callback's memo lookup {@code MEMO.get(ops)}: its receiver pushed straight by a read of the memo and its key
-     * straight by the ops parameter, each read by nothing else (not even a copy), the memo read nowhere else in the method and the ops slot
-     * read nowhere else and never written. Null otherwise.
+     * The value callback's memo lookups {@code MEMO.get(ops)}, however many: each one's receiver pushed straight by a read of
+     * the memo and its key straight by the ops parameter, each read by nothing else (not even a copy); every read of the memo
+     * and every load of the ops slot is one of those, and the slot is never written. Null otherwise, or for none.
      */
-    private static MethodInsnNode providerRead(MethodNode m,String owner,FieldNode memo){
+    private static List<MethodInsnNode> providerReads(MethodNode m,String owner,FieldNode memo){
         HandlerFlow flow=HandlerFlow.of(owner,m);if(flow==null)return null;int loads=0,reads=0;
         for(AbstractInsnNode x:m.instructions){
             if(x instanceof VarInsnNode v&&v.var==2){if(v.getOpcode()!=ALOAD)return null;loads++;}
@@ -226,10 +268,30 @@ public final class LootSourceCallbacks implements Opcodes {
             if(x instanceof FieldInsnNode f&&f.owner.equals(owner)&&f.name.equals(memo.name)&&f.desc.equals(memo.desc))reads++;
         }
         List<MethodInsnNode> gets=flow.calls(c->c.getOpcode()==INVOKEVIRTUAL&&c.owner.equals("java/util/WeakHashMap")&&c.name.equals("get")&&c.desc.equals("(Ljava/lang/Object;)Ljava/lang/Object;"));
-        if(loads!=1||reads!=1||gets.size()!=1)return null;MethodInsnNode get=gets.getFirst();
-        AbstractInsnNode receiver=flow.producer(get,0,2),key=flow.producer(get,1,2);
-        if(!(receiver instanceof FieldInsnNode f&&f.getOpcode()==GETSTATIC&&f.owner.equals(owner)&&f.name.equals(memo.name)&&f.desc.equals(memo.desc))||!(key instanceof VarInsnNode k&&k.getOpcode()==ALOAD&&k.var==2))return null;
-        return flow.directUses(receiver)==1&&flow.directUses(key)==1?get:null;
+        if(gets.isEmpty()||loads!=gets.size()||reads!=gets.size())return null;
+        for(MethodInsnNode get:gets){
+            AbstractInsnNode receiver=flow.producer(get,0,2),key=flow.producer(get,1,2);
+            if(!(receiver instanceof FieldInsnNode f&&f.getOpcode()==GETSTATIC&&f.owner.equals(owner)&&f.name.equals(memo.name)&&f.desc.equals(memo.desc))||!(key instanceof VarInsnNode k&&k.getOpcode()==ALOAD&&k.var==2))return null;
+            if(flow.directUses(receiver)!=1||flow.directUses(key)!=1)return null;
+        }
+        return gets;
+    }
+    /** The field the producer's {@code WeakHashMap.put} is called on: a private static final WeakHashMap of the class, or null. */
+    private static FieldNode memoOf(ClassNode n,MethodNode producer){
+        HandlerFlow flow=HandlerFlow.of(n.name,producer);if(flow==null)return null;
+        MethodInsnNode put=one(flow.calls(c->c.owner.equals("java/util/WeakHashMap")&&c.name.equals("put")&&c.desc.equals("(Ljava/lang/Object;Ljava/lang/Object;)Ljava/lang/Object;")));
+        if(put==null||!(HandlerFlow.only(flow.argument(put,0))instanceof FieldInsnNode read)||read.getOpcode()!=GETSTATIC||!read.owner.equals(n.name))return null;
+        FieldNode memo=n.fields.stream().filter(f->f.name.equals(read.name)&&f.desc.equals(read.desc)).findFirst().orElse(null);
+        return memo!=null&&memo.desc.equals("Ljava/util/WeakHashMap;")&&(memo.access&(ACC_PRIVATE|ACC_STATIC|ACC_FINAL))==(ACC_PRIVATE|ACC_STATIC|ACC_FINAL)?memo:null;
+    }
+    /** The class initializer stores one new {@code WeakHashMap} into the memo on every path (whatever else it does to other fields). */
+    private static boolean memoStored(ClassNode n,FieldNode f){
+        MethodNode m=single(n.methods,x->x.name.equals("<clinit>"));if(m==null||!m.tryCatchBlocks.isEmpty())return false;
+        HandlerFlow flow=HandlerFlow.of(n.name,m);if(flow==null||!flow.acyclic())return false;
+        FieldInsnNode store=null;
+        for(AbstractInsnNode i:m.instructions)if(i instanceof FieldInsnNode put&&put.getOpcode()==PUTSTATIC&&put.owner.equals(n.name)&&put.name.equals(f.name)&&put.desc.equals(f.desc)){if(store!=null)return false;store=put;}
+        if(store==null||!(HandlerFlow.only(flow.operand(store,0,1))instanceof TypeInsnNode created)||created.getOpcode()!=NEW||!created.desc.equals("java/util/WeakHashMap"))return false;
+        FieldInsnNode stored=store;return !flow.reaches(0,i->i.getOpcode()==RETURN,identity(stored));
     }
     private static boolean allContext(MethodNode m){
         List<AbstractInsnNode> c=code(m);if(c.size()<9)return false;
