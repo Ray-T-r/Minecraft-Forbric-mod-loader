@@ -17,6 +17,7 @@ import net.forbric.api.Ecosystem;
 import net.forbric.kernel.boot.DefinedMethodContracts;
 import net.forbric.kernel.boot.DefinedMethodContracts.MethodContract;
 import net.forbric.kernel.boot.KernelDefaultPredicates;
+import net.forbric.kernel.util.Caught;
 import net.forbric.kernel.util.ForbricLog;
 
 /** Transports an atomic expression modifier into an unchanged pure default behind a native virtual hook.
@@ -125,7 +126,7 @@ public final class MixinDefaultPredicateTransport {
 				matches.add(new Plan(candidate, KernelDefaultPredicates.register(contract)));
 			}
 			return matches.size() == 1 ? matches.getFirst() : null;
-		} catch (AnalyzerException | RuntimeException unavailable) { return null; }
+		} catch (AnalyzerException | RuntimeException unavailable) { Caught.expected(unavailable); return null; }
 	}
 
 	private static boolean sameGetter(Getter a, Getter b) { return a.declaration().contract().equals(b.declaration().contract())
@@ -171,7 +172,7 @@ public final class MixinDefaultPredicateTransport {
 					return result;
 				} else return null;
 			}
-		} catch (IndexOutOfBoundsException malformed) { return null; }
+		} catch (IndexOutOfBoundsException malformed) { Caught.expected(malformed); return null; }
 		return null;
 	}
 

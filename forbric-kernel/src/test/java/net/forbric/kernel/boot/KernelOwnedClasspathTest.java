@@ -37,6 +37,7 @@ import org.objectweb.asm.tree.TypeInsnNode;
 
 import net.forbric.kernel.classloading.ForbricClassLoader;
 import net.forbric.kernel.classloading.LoaderProbePolicy;
+import net.forbric.kernel.ExpectCaught;
 
 class KernelOwnedClasspathTest {
 	private static final String BOOTSTRAP = "com.llamalad7.mixinextras.MixinExtrasBootstrap";
@@ -49,6 +50,8 @@ class KernelOwnedClasspathTest {
 		System.clearProperty(KernelOwnedClasspath.SWITCH);
 	}
 
+	// The guest jar is a path that does not exist; only its place in the classpath is under test.
+	@ExpectCaught("could not read guest.jar for duplicate-version ordering")
 	@Test void preservesBaseCarriersLibrariesAndGuestOrder() throws Exception {
 		List<URL> foundation = List.of(url("base.jar"), url("forge.jar"), url("neo.jar"));
 		List<Path> libraries = List.of(path("mc-one.jar"), path("mc-two.jar"));

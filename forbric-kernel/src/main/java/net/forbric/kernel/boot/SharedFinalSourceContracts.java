@@ -8,6 +8,7 @@ import org.objectweb.asm.*;
 import org.objectweb.asm.tree.ClassNode;
 import net.forbric.kernel.mixin.SharedFinalSourceCertifier;
 import net.forbric.kernel.mixin.SharedFinalSourceCertifier.Witness;
+import net.forbric.kernel.util.Caught;
 
 /** Source continuation tokens are scoped to the actual successfully defined class, never a binary-name table. */
 public final class SharedFinalSourceContracts {
@@ -24,7 +25,10 @@ public final class SharedFinalSourceContracts {
             ClassNode node=new ClassNode();new ClassReader(bytes).accept(node,ClassReader.SKIP_DEBUG|ClassReader.SKIP_FRAMES);if(!node.name.equals(owner))return;
             Class<?> actual=Class.forName(binary.replace('/','.'),false,loader);if(actual.getClassLoader()!=loader)return;
             var ledger=WITNESSES.get(actual);ledger.clear();ledger.putAll(SharedFinalSourceCertifier.certify(node));
-        }catch(RuntimeException|ReflectiveOperationException|LinkageError declined){/* preserve the carrier path */}
+        }catch(RuntimeException|ReflectiveOperationException|LinkageError declined){
+            /* preserve the carrier path */
+            Caught.warn(declined,"[Forbric/SharedFinal] certifying %s failed; its shared-final source stays unproved",binary);
+        }
     }
     public static boolean permits(Object receiver,String key){
         if(receiver==null||key==null)return false;
@@ -36,7 +40,10 @@ public final class SharedFinalSourceContracts {
                     Method found=null;for(Method method:owner.getDeclaredMethods())if(method.getName().equals(contract.name())&&Type.getMethodDescriptor(method).equals(contract.descriptor())){if(found!=null)return false;found=method;}
                     if(found==null||(found.getModifiers()&FLAGS)!=witness.flags().get(contract))return false;
                 }return true;
-            }catch(RuntimeException|LinkageError unknown){return false;}
+            }catch(RuntimeException|LinkageError unknown){
+                Caught.warn(unknown,"[Forbric/SharedFinal] checking %s's witness %s failed; not permitted",owner.getName(),key);
+                return false;
+            }
         }return false;
     }
 }

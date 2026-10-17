@@ -30,6 +30,7 @@ import org.junit.jupiter.api.Test;
 
 import net.forbric.api.Ecosystem;
 import net.forbric.api.ModCatalog;
+import net.forbric.kernel.ExpectCaught;
 import org.objectweb.asm.AnnotationVisitor;
 import org.objectweb.asm.ClassWriter;
 import org.objectweb.asm.FieldVisitor;
@@ -767,6 +768,7 @@ class KernelGuestMixinAdapterTest {
 				"a field the repair pass seeds must not be reported as an orphan");
 	}
 
+	@ExpectCaught("could not parse mixin config x.json")
 	@Test
 	void returnsEmptyForNonMixinJsonOrMissingPackage() {
 		assertTrue(KernelGuestMixinAdapter.unfitMixins(

@@ -4,6 +4,7 @@ package net.forbric.kernel.runtime;
 import java.lang.reflect.Method;
 import java.util.Map;
 
+import net.forbric.kernel.util.Caught;
 import net.forbric.kernel.util.ForbricLog;
 
 /**
@@ -49,6 +50,7 @@ public final class KernelFabricFluidModels {
 						unbakedModels = Class.forName(REGISTRY, false, KernelFabricFluidModels.class.getClassLoader())
 								.getMethod("getUnbakedModels");
 					} catch (ClassNotFoundException | NoSuchMethodException | LinkageError absent) {
+						Caught.expected(absent);
 						unbakedModels = null;
 					}
 					resolved = true;
@@ -63,6 +65,8 @@ public final class KernelFabricFluidModels {
 			// Answering "no Fabric model" keeps NeoForge's warning, which is the behaviour before this existed. A
 			// LinkageError too (Method.invoke throws a failed class initialisation as it is, unwrapped): this runs in
 			// the model bake of a resource reload, where an Error makes Minecraft drop every pack and stay black.
+			Caught.warn(unreadable, "[Forbric/FluidModels] could not read fabric-rendering-fluids' unbaked models; answered as"
+					+ " no Fabric model");
 			return null;
 		}
 	}

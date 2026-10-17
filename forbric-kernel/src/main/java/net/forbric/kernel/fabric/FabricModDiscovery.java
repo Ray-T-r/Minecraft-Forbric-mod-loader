@@ -31,6 +31,7 @@ import java.util.zip.ZipEntry;
 
 import net.fabricmc.api.EnvType;
 
+import net.forbric.kernel.util.Caught;
 import net.forbric.kernel.util.ForbricLog;
 
 /**
@@ -120,7 +121,7 @@ public final class FabricModDiscovery {
 					.sorted()
 					.forEach(jars::add);
 		} catch (IOException e) {
-			ForbricLog.warn("[Forbric/Fabric] could not list %s: %s", modsDir, e.getMessage());
+			Caught.warn(e, "[Forbric/Fabric] could not list %s", modsDir);
 			return;
 		}
 
@@ -192,7 +193,7 @@ public final class FabricModDiscovery {
 						}
 					}
 				} catch (Exception failed) {
-					ForbricLog.warn("[Forbric/Fabric] could not read selected candidate %s: %s", node.path(), String.valueOf(failed));
+					Caught.warn(failed, "[Forbric/Fabric] could not read selected candidate %s", node.path());
 					recordUnreadable(node.path(), failed);
 				}
 				visited.add(node.path()); iterator.remove(); progress = true;
@@ -232,7 +233,7 @@ public final class FabricModDiscovery {
 				metadata = FabricModMetadataParser.read(in);
 			}
 		} catch (Exception e) {
-			ForbricLog.warn("[Forbric/Fabric] could not read %s: %s", jar.getFileName(), String.valueOf(e));
+			Caught.warn(e, "[Forbric/Fabric] could not read %s", jar.getFileName());
 			recordUnreadable(jar, e);
 			return;
 		}
@@ -283,8 +284,7 @@ public final class FabricModDiscovery {
 
 			return target;
 		} catch (IOException e) {
-			ForbricLog.warn("[Forbric/Fabric] could not extract '%s' from %s: %s", entryPath, jar.getFileName(),
-					String.valueOf(e));
+			Caught.warn(e, "[Forbric/Fabric] could not extract '%s' from %s", entryPath, jar.getFileName());
 			return null;
 		}
 	}

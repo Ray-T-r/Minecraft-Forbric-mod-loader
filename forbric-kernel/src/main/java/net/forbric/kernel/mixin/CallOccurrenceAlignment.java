@@ -6,6 +6,7 @@ import java.util.IdentityHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import net.forbric.kernel.util.Caught;
 import org.objectweb.asm.Opcodes;
 import org.objectweb.asm.Type;
 import org.objectweb.asm.tree.*;
@@ -52,7 +53,7 @@ final class CallOccurrenceAlignment {
                 if(match<0)return null;result.put(p,match);
             }
             return result;
-        }catch(AnalyzerException|RuntimeException invalid){return null;}
+        }catch(AnalyzerException|RuntimeException invalid){Caught.expected(invalid);return null;}
     }
     private static List<Integer> localSlots(Frame<BasicValue> frame,Type type) {
         List<Integer> slots=new ArrayList<>();if(frame==null)return slots;
@@ -107,7 +108,7 @@ final class CallOccurrenceAlignment {
                 found = new Match(call, ordinal);
             }
             return found;
-        } catch (AnalyzerException | RuntimeException invalid) { return null; }
+        } catch (AnalyzerException | RuntimeException invalid) { Caught.expected(invalid); return null; }
     }
 
     /** An ambiguous, unreachable, escaping or unsupported origin is deliberately not evidence. */
@@ -152,7 +153,7 @@ final class CallOccurrenceAlignment {
         try {
             Origins origins = new Origins();
             evidence = new Evidence(method, new Analyzer<>(origins).analyze(owner, method), origins.parameters);
-        } catch (AnalyzerException | RuntimeException invalid) { return run -> null; }
+        } catch (AnalyzerException | RuntimeException invalid) { Caught.expected(invalid); return run -> null; }
         return run -> effects(evidence, run);
     }
 
@@ -175,7 +176,11 @@ final class CallOccurrenceAlignment {
                 effects.add(effect);
             }
             return effects;
-        } catch (RuntimeException invalid) { return null; }
+        } catch (RuntimeException invalid) {
+            Caught.warn(invalid, "[Forbric/Mixin] could not describe a run of %s%s; it is not evidence", evidence.method.name,
+                    evidence.method.desc);
+            return null;
+        }
     }
 
     /** Operations whose only effect is a value on the stack (or a stack shuffle): their consumers describe them. */
@@ -198,7 +203,7 @@ final class CallOccurrenceAlignment {
                 result.add(new Occurrence(call, evidence.call(call), evidence.continuation(call)));
             }
             return result;
-        } catch (AnalyzerException | RuntimeException invalid) { return null; }
+        } catch (AnalyzerException | RuntimeException invalid) { Caught.expected(invalid); return null; }
     }
 
     private static final class Origins extends SourceInterpreter {
@@ -301,7 +306,11 @@ final class CallOccurrenceAlignment {
         }
         String projection(MethodInsnNode getter) {
             if (declarations == null || getter.getOpcode() == Opcodes.INVOKESTATIC || Type.getArgumentTypes(getter.desc).length != 0) return null;
-            ClassNode owner;try{owner=declarations.apply(getter.owner);}catch(RuntimeException unavailable){return null;}if(owner==null||!owner.name.equals(getter.owner))return null;
+            ClassNode owner;try{owner=declarations.apply(getter.owner);}catch(RuntimeException unavailable){
+                Caught.warn(unavailable,"[Forbric/Mixin] could not read the declaration of %s; %s.%s%s is not a projection",
+                        getter.owner,getter.owner,getter.name,getter.desc);
+                return null;
+            }if(owner==null||!owner.name.equals(getter.owner))return null;
             List<MethodNode> methods = owner.methods.stream().filter(m -> m.name.equals(getter.name) && m.desc.equals(getter.desc)).toList();
             if (methods.size() != 1) return null;
             List<AbstractInsnNode> body = real(methods.getFirst());

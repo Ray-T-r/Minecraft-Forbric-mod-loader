@@ -22,6 +22,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 
+import net.forbric.kernel.util.Caught;
 import net.forbric.kernel.util.ForbricLog;
 
 /**
@@ -150,6 +151,7 @@ public final class ModPresence {
 			// to impossible and which would at worst take a compatibility branch that then finds no classes.
 			return spellings.contains(spellingKey(id));
 		} catch (Throwable t) {
+			Caught.warn(t, "[Forbric/Presence] asking whether %s is loaded failed; answering no", id);
 			return false;
 		}
 	}
@@ -193,6 +195,7 @@ public final class ModPresence {
 		try {
 			return id == null ? null : byId.get(id);
 		} catch (Throwable t) {
+			Caught.warn(t, "[Forbric/Presence] looking up the metadata of %s failed; answering none", id);
 			return null;
 		}
 	}
@@ -220,6 +223,7 @@ public final class ModPresence {
 		try {
 			return id == null ? null : soleOwner.get(spellingKey(id));
 		} catch (Throwable t) {
+			Caught.warn(t, "[Forbric/Presence] looking up which ecosystem owns %s failed; answering none", id);
 			return null;
 		}
 	}

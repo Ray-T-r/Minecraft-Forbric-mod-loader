@@ -24,6 +24,7 @@ import org.objectweb.asm.tree.MethodInsnNode;
 import org.objectweb.asm.tree.VarInsnNode;
 
 import net.forbric.kernel.mixin.MixinInstructionFingerprint;
+import net.forbric.kernel.util.Caught;
 
 /**
  * Final-defined method contracts, scoped to the actual defining class loader. Raw jar bytes are not a runtime
@@ -75,6 +76,8 @@ public final class DefinedMethodContracts {
             }
             ledger.put(owner, new Observation(Set.copyOf(contracts),Map.copyOf(transparent)));
         } catch (RuntimeException malformed) {
+            Caught.warn(malformed, "[Forbric/MethodContracts] could not read the defined bytes of %s; none of its "
+                    + "method bodies count as observed", owner);
             ledger.remove(owner);
         }
     }
@@ -121,7 +124,11 @@ public final class DefinedMethodContracts {
                 return publicInstance(target)&&target.isDefault()&&observedMethod(target);
             }
             return source.kind()==2&&identity(receiver,actual,new HashSet<>());
-        }catch(RuntimeException|ReflectiveOperationException|LinkageError unknown){return false;}
+        }catch(RuntimeException|ReflectiveOperationException|LinkageError unknown){
+            Caught.warn(unknown,"[Forbric/MethodContracts] could not check the transparent dispatch of %s on %s; it counts "
+                    +"as unproven",contract,receiver.getClass().getName());
+            return false;
+        }
     }
 
     /** Opt-in only: an actual pure invokespecial interface-default forwarder may delegate to this exact
@@ -131,7 +138,11 @@ public final class DefinedMethodContracts {
             Class<?>source=Class.forName(expected.owner(),false,receiver.getClass().getClassLoader());if(!source.isInterface()||!source.isInstance(receiver)||!observed(source.getClassLoader(),expected))return false;Method original=declared(source,expected.name(),expected.descriptor());if(!publicInstance(original)||!original.isDefault())return false;Method actual=dispatch(receiver.getClass(),expected.name(),expected.descriptor());if(!publicInstance(actual))return false;if(actual.getDeclaringClass()==source)return true;
             Observation finalDefinition=observation(actual.getDeclaringClass().getClassLoader(),actual.getDeclaringClass().getName());if(finalDefinition==null)return false;TransparentShape forwarding=null;for(var entry:finalDefinition.transparent().entrySet()){var witness=entry.getKey();if(witness.name().equals(actual.getName())&&witness.descriptor().equals(Type.getMethodDescriptor(actual))&&observed(actual.getDeclaringClass().getClassLoader(),witness)){if(forwarding!=null)return false;forwarding=entry.getValue();}}
             if(forwarding==null||forwarding.kind()!=1||!forwarding.name().equals(expected.name())||!forwarding.descriptor().equals(expected.descriptor()))return false;Class<?>symbolicOwner=Class.forName(forwarding.owner().replace('/','.'),false,actual.getDeclaringClass().getClassLoader());if(!symbolicOwner.isInterface()||!symbolicOwner.isAssignableFrom(actual.getDeclaringClass()))return false;Method callee=symbolic(symbolicOwner,forwarding.name(),forwarding.descriptor());return publicInstance(callee)&&callee.isDefault()&&callee.getDeclaringClass()==source&&Type.getMethodDescriptor(callee).equals(expected.descriptor())&&observed(source.getClassLoader(),expected);
-        }catch(RuntimeException|ReflectiveOperationException|LinkageError unavailable){return false;}
+        }catch(RuntimeException|ReflectiveOperationException|LinkageError unavailable){
+            Caught.warn(unavailable,"[Forbric/MethodContracts] could not check the default dispatch of %s on %s; it counts "
+                    +"as unproven",expected,receiver.getClass().getName());
+            return false;
+        }
     }
 
     private static boolean identity(Object receiver,Method method,Set<String> active)throws ReflectiveOperationException{
@@ -191,6 +202,8 @@ public final class DefinedMethodContracts {
             return found != null && found.getDeclaringClass().getName().equals(contract.owner())
                     ? Optional.of(found.getDeclaringClass()) : Optional.empty();
         } catch (RuntimeException | LinkageError unavailable) {
+            Caught.warn(unavailable, "[Forbric/MethodContracts] could not list the methods of %s to find %s; it counts "
+                    + "as unproven", receiver.getName(), contract);
             return Optional.empty();
         }
     }

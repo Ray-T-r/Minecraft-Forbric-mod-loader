@@ -3,6 +3,7 @@ package net.forbric.api;
 import static org.junit.jupiter.api.Assertions.*;
 import java.util.*;import java.util.concurrent.atomic.*;
 import org.junit.jupiter.api.*;
+import net.forbric.kernel.ExpectCaught;
 class CallbackSeamsTest {
  static class Host{}static class Helper{}static class Other{}
  private final ClassLoader loader=Host.class.getClassLoader();
@@ -11,6 +12,7 @@ class CallbackSeamsTest {
  private static void invoke(Class<?> host,Class<?> helper,String key,Runnable callback){
   try(var scope=CallbackSeams.enter(host,helper,key,callback)){CallbackSeams.Token token=CallbackSeams.beginHelper(helper,key);token.fire();scope.complete();}
  }
+ @ExpectCaught("broken report")
  @Test void absentOrFailedFinalWitnessDeclinesEveryInvocationAndReportsTheSiteOnce(){
   invoke(Host.class,Helper.class,"missing",()->fail("unproved callback"));
   List<String> reports=new ArrayList<>();AtomicBoolean valid=new AtomicBoolean(false);

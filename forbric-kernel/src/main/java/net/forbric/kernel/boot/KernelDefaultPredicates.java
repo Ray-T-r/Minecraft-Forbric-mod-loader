@@ -14,6 +14,7 @@ import java.util.concurrent.ConcurrentHashMap;
 
 import org.objectweb.asm.Type;
 import net.forbric.kernel.boot.DefinedMethodContracts.MethodContract;
+import net.forbric.kernel.util.Caught;
 
 /** A native virtual override takes precedence over transport of a modifier of the proved default predicate. */
 public final class KernelDefaultPredicates {
@@ -65,6 +66,8 @@ public final class KernelDefaultPredicates {
 			boolean expected = first || Class.forName(binary(contract.secondType()), false, predicateLoader).isInstance(operand);
 			if (expected != nativeResult) return nativeResult;
 		} catch (ReflectiveOperationException | LinkageError unproved) {
+			Caught.warn(unproved, "[Forbric/Mixin] default predicate %s of %s could not be witnessed; the modifier is not "
+					+ "applied and native's result is kept", contract.entry(), state.getClass().getName());
 			return nativeResult;
 		}
 		// The guest body is preserved, including its exceptions; guard failure is not a catch-all around it.

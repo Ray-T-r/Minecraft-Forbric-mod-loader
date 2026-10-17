@@ -33,6 +33,7 @@ import net.minecraft.world.level.storage.loot.LootPool;
 import net.minecraftforge.common.crafting.conditions.ICondition;
 import net.minecraftforge.registries.ForgeRegistries;
 
+import net.forbric.kernel.util.Caught;
 import net.forbric.kernel.util.ForbricLog;
 
 /**
@@ -177,17 +178,12 @@ public final class KernelForgeConditions {
 			return known.test(name.get()) ? null : name.get();
 		} catch (Throwable t) {
 			// A judgement that cannot be made hands the input to the strict codec — but silently is how a leniency
-			// stops applying without anyone noticing, so the first failure is named.
-			if (!judgementFailureReported) {
-				judgementFailureReported = true;
-				ForbricLog.warn("[Forbric/Conditions] could not judge a resource condition's type against "
-						+ "MinecraftForge's registry — the strict codec decides this one and every later one", t);
-			}
+			// stops applying without anyone noticing, so the failure is named.
+			Caught.warn(t, "[Forbric/Conditions] could not judge a resource condition's type against "
+					+ "MinecraftForge's registry — the strict codec decides this one");
 			return null;
 		}
 	}
-
-	private static volatile boolean judgementFailureReported;
 
 	/** Launch-time switch for {@link #poolElementCodec}; the pool list codec that asks is built once. */
 	public static final String POOL_PROPERTY = "forbric.forgePoolConditions";
@@ -205,7 +201,6 @@ public final class KernelForgeConditions {
 
 	/** {@code -Dforbric.forgeConditionContext=off}: the Forge event answers {@code EMPTY} instead of adapting NeoForge's. */
 	public static final String CONTEXT_PROPERTY = "forbric.forgeConditionContext";
-	private static volatile boolean contextFailureReported;
 
 	/**
 	 * The condition context MinecraftForge's {@code AddReloadListenerEvent.getConditionContext()} hands a listener.
@@ -230,11 +225,8 @@ public final class KernelForgeConditions {
 				}
 			};
 		} catch (Throwable t) {
-			if (!contextFailureReported) {
-				contextFailureReported = true;
-				ForbricLog.warn("[Forbric/Conditions] could not adapt NeoForge's condition context for MinecraftForge's "
-						+ "AddReloadListenerEvent — Forge listeners get an EMPTY context", t);
-			}
+			Caught.warn(t, "[Forbric/Conditions] could not adapt NeoForge's condition context for MinecraftForge's "
+					+ "AddReloadListenerEvent — Forge listeners get an EMPTY context");
 			return ICondition.IContext.EMPTY;
 		}
 	}

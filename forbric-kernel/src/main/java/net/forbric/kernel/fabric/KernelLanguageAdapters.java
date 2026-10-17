@@ -34,6 +34,7 @@ import net.fabricmc.loader.api.LanguageAdapter;
 import net.fabricmc.loader.api.LanguageAdapterException;
 import net.fabricmc.loader.api.ModContainer;
 
+import net.forbric.kernel.util.Caught;
 import net.forbric.kernel.util.ForbricLog;
 
 /**
@@ -119,6 +120,7 @@ public final class KernelLanguageAdapters {
 			try {
 				get(name);
 			} catch (LanguageAdapterException e) {
+				Caught.expected(e);
 				failures.add(new Failure(name, OWNERS.get(name), DECLARED.get(name), e));
 			}
 		}

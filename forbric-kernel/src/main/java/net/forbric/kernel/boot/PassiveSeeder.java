@@ -42,6 +42,7 @@ import net.forbric.api.Side;
 import net.forbric.kernel.discovery.ForbricModDiscoverer;
 import net.forbric.kernel.discovery.ModFileScanner;
 import net.forbric.kernel.metadata.forge.FmlConfigElements;
+import net.forbric.kernel.util.Caught;
 import net.forbric.kernel.util.ForbricLog;
 
 /**
@@ -137,9 +138,9 @@ public final class PassiveSeeder {
 			load.invoke(null, gameDir.toAbsolutePath());
 			ForbricLog.debug("[Forbric/Seed] initialized NeoForge FMLPaths at %s", gameDir.toAbsolutePath());
 		} catch (ClassNotFoundException absent) {
-			ForbricLog.debug("[Forbric/Seed] NeoForge FMLPaths not present — skipping");
+			Caught.expected(absent);
 		} catch (Throwable t) {
-			ForbricLog.warn("[Forbric/Seed] could not init FMLPaths", unwrap(t));
+			Caught.warn(t, "[Forbric/Seed] could not init FMLPaths");
 		}
 	}
 
@@ -170,9 +171,9 @@ public final class PassiveSeeder {
 			setLoadedMods.invoke(instance, List.of());
 			ForbricLog.debug("[Forbric/Seed] seeded empty NeoForge ModList (zero mods)");
 		} catch (ClassNotFoundException absent) {
-			ForbricLog.debug("[Forbric/Seed] NeoForge ModList not present — skipping");
+			Caught.expected(absent);
 		} catch (Throwable t) {
-			ForbricLog.warn("[Forbric/Seed] could not seed empty ModList", unwrap(t));
+			Caught.warn(t, "[Forbric/Seed] could not seed empty ModList");
 		}
 	}
 
@@ -230,9 +231,9 @@ public final class PassiveSeeder {
 			ForbricLog.info("[Forbric/Seed] NeoForge FMLLoader seeded (dist=%s, production=%s) — "
 					+ "environment identity only, no lifecycle", distName, PRODUCTION);
 		} catch (ClassNotFoundException absent) {
-			ForbricLog.debug("[Forbric/Seed] NeoForge FMLLoader not present — skipping");
+			Caught.expected(absent);
 		} catch (Throwable t) {
-			ForbricLog.warn("[Forbric/Seed] could not seed NeoForge FMLLoader identity", unwrap(t));
+			Caught.warn(t, "[Forbric/Seed] could not seed NeoForge FMLLoader identity");
 		}
 	}
 
@@ -267,7 +268,7 @@ public final class PassiveSeeder {
 			field.set(loaderInstance, empty);
 			ForbricLog.debug("[Forbric/Seed] seeded empty NeoForge LoadingModList (zero mods)");
 		} catch (Throwable t) {
-			ForbricLog.warn("[Forbric/Seed] could not seed empty LoadingModList", unwrap(t));
+			Caught.warn(t, "[Forbric/Seed] could not seed empty LoadingModList");
 		}
 	}
 
@@ -336,8 +337,8 @@ public final class PassiveSeeder {
 			mods = arbitratedForgeFamilyMods(modsDir);
 			forgeFamilyMods = List.copyOf(mods);
 		} catch (Throwable t) {
-			ForbricLog.warn("[Forbric/Seed] could not discover Forge-family mods for the NeoForge LoadingModList — "
-					+ "falling back to the empty list", unwrap(t));
+			Caught.warn(t, "[Forbric/Seed] could not discover Forge-family mods for the NeoForge LoadingModList — "
+					+ "falling back to the empty list");
 			seedEmptyLoadingModList(gameLoader, fmlLoader, loaderInstance);
 			return;
 		}
@@ -377,8 +378,8 @@ public final class PassiveSeeder {
 		try {
 			KernelModCatalog.publish(presence, modsDir);
 		} catch (Throwable t) {
-			ForbricLog.warn("[Forbric/Catalog] could not build the unified mod list — the Mods screen will fall "
-					+ "back to whatever one family's own registry knows", unwrap(t));
+			Caught.warn(t, "[Forbric/Catalog] could not build the unified mod list — the Mods screen will fall "
+					+ "back to whatever one family's own registry knows");
 		}
 		// The audit itself is NOT run here, and that is a fix rather than a rearrangement. Its second section
 		// lists mixins that were written to attach to another mod and did not -- data that KernelGuestMixinAdapter
@@ -412,8 +413,8 @@ public final class PassiveSeeder {
 					+ "another mod's jar. [%s]", presence.size(), forgeFamily, presence.size() - forgeFamily,
 					nested.size(), ids);
 		} catch (Throwable t) {
-			ForbricLog.warn("[Forbric/Seed] could not seed a populated NeoForge LoadingModList — falling back to the "
-					+ "empty list; mods that look themselves up through it will not find themselves", unwrap(t));
+			Caught.warn(t, "[Forbric/Seed] could not seed a populated NeoForge LoadingModList — falling back to the "
+					+ "empty list; mods that look themselves up through it will not find themselves");
 			seedEmptyLoadingModList(gameLoader, fmlLoader, loaderInstance);
 		}
 	}
@@ -457,8 +458,8 @@ public final class PassiveSeeder {
 			try {
 				declared = discoverer.discoverJar(jar);
 			} catch (Throwable t) {
-				ForbricLog.debug("[Forbric/Seed] could not read %s for the NeoForge LoadingModList (%s) — skipping it",
-						jar.getFileName(), String.valueOf(t));
+				Caught.warn(t, "[Forbric/Seed] could not read %s for the NeoForge LoadingModList — skipping it",
+						jar.getFileName());
 				continue;
 			}
 
@@ -524,8 +525,8 @@ public final class PassiveSeeder {
 			try {
 				declared = discoverer.discoverJar(jar);
 			} catch (Throwable t) {
-				ForbricLog.debug("[Forbric/Seed] could not read nested %s for the NeoForge LoadingModList (%s) — "
-						+ "skipping it", jar.getFileName(), String.valueOf(t));
+				Caught.warn(t, "[Forbric/Seed] could not read nested %s for the NeoForge LoadingModList — skipping it",
+						jar.getFileName());
 				continue;
 			}
 			Ecosystem owner = MultiLoaderArbiter.ownerOf(jar);
@@ -776,7 +777,8 @@ public final class PassiveSeeder {
 			// evidence about the index a mod will actually read, and goes to zero the moment one stops being built.
 			annotations = ((Set<?>) scanData.getClass().getMethod("getAnnotations").invoke(scanData)).size();
 		} catch (Throwable t) {
-			ForbricLog.debug("[Forbric/Seed] could not give the seeded ModFile its scan data: %s", String.valueOf(unwrap(t)));
+			Caught.warn(t, "[Forbric/Seed] could not give the seeded MinecraftForge ModFile for %s its scan data; "
+					+ "its annotations are counted as 0", jar.getFileName());
 		}
 		fillForgeModFileJar(modFileCls, modFile, jar);
 		return annotations;
@@ -801,9 +803,9 @@ public final class PassiveSeeder {
 			Class<?> secureJar = Class.forName("cpw.mods.jarhandling.SecureJar", false, modFileCls.getClassLoader());
 			setInstanceField(modFileCls, "jar", modFile, ForgeSecureJarStandIn.create(secureJar, jar));
 		} catch (Throwable t) {
-			ForbricLog.warn("[Forbric/Seed] could not give the seeded MinecraftForge ModFile for " + jar.getFileName()
-					+ " its jar — getFilePath, getFileName, findResource and toString all read it, so a mod walking "
-					+ "ModList.getModFiles() will NPE inside MinecraftForge's own accessor", unwrap(t));
+			Caught.warn(t, "[Forbric/Seed] could not give the seeded MinecraftForge ModFile for %s its jar — "
+					+ "getFilePath, getFileName, findResource and toString all read it, so a mod walking "
+					+ "ModList.getModFiles() will NPE inside MinecraftForge's own accessor", jar.getFileName());
 		}
 		// Type.MOD, not null: a consumer filtering the list by type would otherwise drop every seeded file, and a
 		// null here reaches a switch in MinecraftForge's own code.
@@ -813,7 +815,8 @@ public final class PassiveSeeder {
 			setOptionalInstanceField(modFileCls, "modFileType", modFile,
 					Enum.valueOf(type.asSubclass(Enum.class), "MOD"));
 		} catch (Throwable t) {
-			ForbricLog.debug("[Forbric/Seed] could not set the seeded ModFile's type: %s", String.valueOf(unwrap(t)));
+			Caught.warn(t, "[Forbric/Seed] could not set the seeded MinecraftForge ModFile's type for %s; it stays null",
+					jar.getFileName());
 		}
 	}
 
@@ -1059,6 +1062,7 @@ public final class PassiveSeeder {
 		try {
 			copyOf = Class.forName("com.google.common.collect.ImmutableMap", false, gameLoader).getMethod("copyOf", Map.class);
 		} catch (ReflectiveOperationException | LinkageError absent) {
+			Caught.expected(absent);
 			return FmlConfigElements::unmodifiableCopy;
 		}
 		return entries -> {
@@ -1067,6 +1071,7 @@ public final class PassiveSeeder {
 				Map<String, Object> copy = (Map<String, Object>) copyOf.invoke(null, entries);
 				return copy;
 			} catch (ReflectiveOperationException | RuntimeException refused) {
+				Caught.expected(refused);
 				return FmlConfigElements.unmodifiableCopy(entries);
 			}
 		};
@@ -1103,8 +1108,12 @@ public final class PassiveSeeder {
 	private static void setOptionalInstanceField(Class<?> owner, String name, Object target, Object value) {
 		try {
 			setInstanceField(owner, name, target, value);
-		} catch (Exception absent) {
-			ForbricLog.debug("[Forbric/Seed] %s has no field %s — leaving it at its default", owner.getSimpleName(), name);
+		} catch (NoSuchFieldException absent) {
+			// a field a future carrier version may not have — leaving it at its default
+			Caught.expected(absent);
+		} catch (Exception unsettable) {
+			Caught.warn(unsettable, "[Forbric/Seed] could not set %s.%s — leaving it at its default",
+					owner.getSimpleName(), name);
 		}
 	}
 
@@ -1195,16 +1204,19 @@ public final class PassiveSeeder {
 				Class<?> attrs = Class.forName("net.neoforged.neoforgespi.locating.ModFileDiscoveryAttributes",
 						false, gameLoader);
 				setInstanceField(modFileCls, "discoveryAttributes", modFile, attrs.getField("DEFAULT").get(null));
-			} catch (Throwable optional) {
-				ForbricLog.debug("[Forbric/Seed] no ModFileDiscoveryAttributes.DEFAULT (%s) — leaving it null",
-						String.valueOf(optional));
+			} catch (ClassNotFoundException | NoSuchFieldException optional) {
+				// no ModFileDiscoveryAttributes.DEFAULT on this carrier — leaving it null
+				Caught.expected(optional);
+			} catch (Throwable unsettable) {
+				Caught.warn(unsettable, "[Forbric/Seed] could not set ModFileDiscoveryAttributes.DEFAULT on the "
+						+ "synthetic ModFile for '%s' — leaving it null", id);
 			}
 			seedScanResult(modFileCls, modFile, gameLoader, jar, indexed);
 			return modFile;
 		} catch (Throwable t) {
-			ForbricLog.warn("[Forbric/Seed] could not build a synthetic ModFile for '%s' (%s) — the ModFileInfo's "
+			Caught.warn(t, "[Forbric/Seed] could not build a synthetic ModFile for '%s' — the ModFileInfo's "
 					+ "file stays null, and a mod that walks FMLLoader.getLoadingModList().getModFiles() calling "
-					+ "getFile() on each entry will NPE on this one", id, String.valueOf(t));
+					+ "getFile() on each entry will NPE on this one", id);
 			return null;
 		}
 	}
@@ -1239,10 +1251,10 @@ public final class PassiveSeeder {
 		try {
 			setInstanceField(modFileCls, "futureScanResult", modFile, seededScan(gameLoader, jar, indexed));
 		} catch (Throwable t) {
-			ForbricLog.warn("[Forbric/Seed] could not give the seeded NeoForge ModFile for %s a scan result (%s) — "
+			Caught.warn(t, "[Forbric/Seed] could not give the seeded NeoForge ModFile for %s a scan result — "
 					+ "its getScanResult() throws \"Scanning of this mod file has not started yet.\", which kills "
 					+ "any mod that walks the LoadingModList's scan data from its constructor (RollingGate)",
-					jar.getFileName(), String.valueOf(unwrap(t)));
+					jar.getFileName());
 		}
 	}
 
@@ -1255,13 +1267,19 @@ public final class PassiveSeeder {
 				try {
 					real = ModFileScanner.scanShared(jar, gameLoader);
 				} catch (Throwable t) {
-					why = String.valueOf(t);
+					Caught.warn(t, "[Forbric/Seed] could not index %s for the seeded NeoForge LoadingModList — "
+							+ "it answers getScanResult() with an EMPTY index, so a mod that finds its own members by "
+							+ "walking that list (RollingGate's rule containers) finds nothing in this jar",
+							jar.getFileName());
+					why = null;
 				}
 				if (real != null) return real;
-				ForbricLog.warn("[Forbric/Seed] could not index %s for the seeded NeoForge LoadingModList (%s) — "
-						+ "it answers getScanResult() with an EMPTY index, so a mod that finds its own members by "
-						+ "walking that list (RollingGate's rule containers) finds nothing in this jar",
-						jar.getFileName(), why);
+				if (why != null) {
+					ForbricLog.warn("[Forbric/Seed] could not index %s for the seeded NeoForge LoadingModList (%s) — "
+							+ "it answers getScanResult() with an EMPTY index, so a mod that finds its own members by "
+							+ "walking that list (RollingGate's rule containers) finds nothing in this jar",
+							jar.getFileName(), why);
+				}
 			}
 			String empty = ForeignType.MOD_FILE_SCAN_DATA.binary(Ecosystem.NEOFORGE);
 			try {
@@ -1298,8 +1316,8 @@ public final class PassiveSeeder {
 				if (opened[0] == null) {
 					try { opened[0] = ofPath.invoke(null, path); }
 					catch (java.lang.reflect.InvocationTargetException unreadable) {
-						ForbricLog.warn("[Forbric/Seed] could not open %s for its mod's own file reads (%s) — it reads as empty",
-								path.getFileName(), String.valueOf(unreadable.getCause()));
+						Caught.warn(unreadable, "[Forbric/Seed] could not open %s for its mod's own file reads — it reads as empty",
+								path.getFileName());
 						opened[0] = empty.invoke(null, path);
 					}
 				}
@@ -1380,6 +1398,7 @@ public final class PassiveSeeder {
 			Class<?> unsafeHacks = Class.forName("net.minecraftforge.unsafe.UnsafeHacks", false, gameLoader);
 			return unsafeHacks.getMethod("newInstance", Class.class).invoke(null, type);
 		} catch (Throwable noForgeUnsafe) {
+			Caught.expected(noForgeUnsafe);
 			Object unsafe = jdkUnsafe;
 			if (unsafe == null) {
 				Class<?> unsafeCls = Class.forName("sun.misc.Unsafe");
@@ -1434,9 +1453,9 @@ public final class PassiveSeeder {
 
 			ForbricLog.info("[Forbric/Seed] registered NeoForge baseline registries into the root (native, no lifecycle)");
 		} catch (ClassNotFoundException absent) {
-			ForbricLog.debug("[Forbric/Seed] NeoForge registry setup not present — skipping");
+			Caught.expected(absent);
 		} catch (Throwable t) {
-			ForbricLog.warn("[Forbric/Seed] could not register NeoForge baseline registries", unwrap(t));
+			Caught.warn(t, "[Forbric/Seed] could not register NeoForge baseline registries");
 		}
 	}
 
@@ -1489,11 +1508,11 @@ public final class PassiveSeeder {
 					+ "client-syncing and the block/item/attribute/POI/attachment callbacks wired (native)");
 			return true;
 		} catch (ClassNotFoundException absent) {
-			ForbricLog.debug("[Forbric/Seed] NeoForge registry setup not present — skipping registry modifications");
+			Caught.expected(absent);
 			return false;
 		} catch (Throwable t) {
-			ForbricLog.warn("[Forbric/Seed] could not apply NeoForge registry modifications — falling back to the "
-					+ "sync-flags-only path; synced data attachments will not work", unwrap(t));
+			Caught.warn(t, "[Forbric/Seed] could not apply NeoForge registry modifications — falling back to the "
+					+ "sync-flags-only path; synced data attachments will not work");
 			return false;
 		}
 	}
@@ -1535,7 +1554,7 @@ public final class PassiveSeeder {
 			// transform never fires, and nobody will ever call ForgeLoadingList.
 			Class.forName("net.minecraftforge.fml.loading.LoadingModListImpl", false, gameLoader);
 		} catch (ClassNotFoundException absent) {
-			ForbricLog.debug("[Forbric/ForgeList] no MinecraftForge carrier — nothing to publish");
+			Caught.expected(absent);
 			return;
 		}
 		try {
@@ -1555,9 +1574,9 @@ public final class PassiveSeeder {
 			// Deliberately does NOT publish an empty list as a fallback. Reading an unpublished list throws with a
 			// stack naming the reader; publishing an empty one here would freeze "no mods" into a final field and
 			// put MinecraftForge's handshake on the wire saying this instance runs none.
-			ForbricLog.warn("[Forbric/ForgeList] could not build MinecraftForge's LoadingModList before Mixin — "
+			Caught.warn(t, "[Forbric/ForgeList] could not build MinecraftForge's LoadingModList before Mixin — "
 					+ "nothing published, so the first read of LoadingModList will throw instead of quietly "
-					+ "reporting zero mods", unwrap(t));
+					+ "reporting zero mods");
 		}
 	}
 
@@ -1584,10 +1603,11 @@ public final class PassiveSeeder {
 			}
 		} catch (ClassNotFoundException absent) {
 			// No carrier; the seed above already said so.
+			Caught.expected(absent);
 		} catch (Throwable t) {
-			ForbricLog.error("[Forbric/ForgeList] MinecraftForge's LoadingModList is UNREADABLE even though seeding "
+			Caught.error(t, "[Forbric/ForgeList] MinecraftForge's LoadingModList is UNREADABLE even though seeding "
 					+ "reported success — its lazy holder was poisoned by an earlier reader, so every mod list "
-					+ "query for the rest of this run fails and its handshake will say mods=[]", unwrap(t));
+					+ "query for the rest of this run fails and its handshake will say mods=[]");
 		}
 	}
 
@@ -1645,10 +1665,10 @@ public final class PassiveSeeder {
 						+ "handshake telling every peer it runs no mods. [%s]", mods.size(), ids);
 			}
 		} catch (ClassNotFoundException absent) {
-			ForbricLog.debug("[Forbric/Seed] traditional-Forge LoadingModListImpl not present — skipping");
+			Caught.expected(absent);
 		} catch (Throwable t) {
-			ForbricLog.warn("[Forbric/Seed] could not seed traditional-Forge LoadingModList — its ModList stays empty "
-					+ "and its mods tell every peer they are absent", unwrap(t));
+			Caught.warn(t, "[Forbric/Seed] could not seed traditional-Forge LoadingModList — its ModList stays empty "
+					+ "and its mods tell every peer they are absent");
 		}
 
 		// Traditional-Forge ModList keeps mods/indexedMods/sortedContainers as STATIC fields, null until mod
@@ -1660,9 +1680,9 @@ public final class PassiveSeeder {
 			setStaticIfNull(modList, "sortedContainers", List.of());
 			ForbricLog.debug("[Forbric/Seed] seeded empty traditional-Forge ModList collections (zero mods)");
 		} catch (ClassNotFoundException absent) {
-			ForbricLog.debug("[Forbric/Seed] traditional-Forge ModList not present — skipping");
+			Caught.expected(absent);
 		} catch (Throwable t) {
-			ForbricLog.warn("[Forbric/Seed] could not seed traditional-Forge ModList collections", unwrap(t));
+			Caught.warn(t, "[Forbric/Seed] could not seed traditional-Forge ModList collections");
 		}
 	}
 
@@ -1731,9 +1751,9 @@ public final class PassiveSeeder {
 			forgeIdentitySeeded = true;
 			ForbricLog.debug("[Forbric/Seed] seeded traditional-Forge FMLLoader identity + FMLPaths + FMLConfig");
 		} catch (ClassNotFoundException absent) {
-			ForbricLog.debug("[Forbric/Seed] traditional-Forge FMLLoader not present — skipping");
+			Caught.expected(absent);
 		} catch (Throwable t) {
-			ForbricLog.warn("[Forbric/Seed] could not seed traditional-Forge FMLLoader identity", unwrap(t));
+			Caught.warn(t, "[Forbric/Seed] could not seed traditional-Forge FMLLoader identity");
 		}
 	}
 
@@ -1768,9 +1788,9 @@ public final class PassiveSeeder {
 						seen, PRODUCTION);
 			}
 		} catch (ClassNotFoundException absent) {
-			ForbricLog.debug("[Forbric/Seed] traditional-Forge FMLEnvironment not present — nothing to decide");
+			Caught.expected(absent);
 		} catch (Throwable t) {
-			ForbricLog.error("[Forbric/Seed] could not read back MinecraftForge's FMLEnvironment", unwrap(t));
+			Caught.error(t, "[Forbric/Seed] could not read back MinecraftForge's FMLEnvironment");
 		}
 	}
 
@@ -1815,10 +1835,6 @@ public final class PassiveSeeder {
 		if (f.get(null) == null) f.set(null, value);
 	}
 
-	private static Throwable unwrap(Throwable t) {
-		return t instanceof java.lang.reflect.InvocationTargetException && t.getCause() != null ? t.getCause() : t;
-	}
-
 	/** The mods the audit will judge, held until Mixin has registered its configs. See above. */
 	private static volatile List<DiscoveredMod> pendingAudit = List.of();
 
@@ -1833,7 +1849,7 @@ public final class PassiveSeeder {
 		try {
 			DependencyAudit.report(present, KernelBoot.nestedJarJarJars(), KernelFabricEcosystem.physicalSide());
 		} catch (Throwable t) {
-			ForbricLog.debug("[Forbric/Deps] dependency audit failed, skipping it: %s", String.valueOf(t));
+			Caught.warn(t, "[Forbric/Deps] dependency audit failed, skipping it");
 		}
 	}
 }

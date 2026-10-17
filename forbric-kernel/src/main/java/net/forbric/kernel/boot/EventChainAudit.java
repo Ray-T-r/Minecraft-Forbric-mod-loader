@@ -12,6 +12,7 @@ import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.LongAdder;
 import net.forbric.api.Ecosystem;
 import net.forbric.api.ForeignType;
+import net.forbric.kernel.util.Caught;
 import net.forbric.kernel.util.ForbricLog;
 
 /**
@@ -203,14 +204,23 @@ public final class EventChainAudit {
 		Optional<Method> probe = probe(event.getClass());
 		if (probe.isEmpty()) return false;
 		try { return (boolean) probe.get().invoke(event); }
-		catch (ReflectiveOperationException | RuntimeException unreadable) { return false; }
+		catch (ReflectiveOperationException | RuntimeException unreadable) {
+			Caught.warn(unreadable, "[Forbric/EventChain] could not ask %s whether it is cancelled; it counts as not "
+					+ "cancelled", event.getClass().getName());
+			return false;
+		}
 	}
 
 	private static Optional<Method> probe(Class<?> type) {
 		return CANCEL_PROBES.computeIfAbsent(type, t -> {
 			for (Class<?> c = t; c != null; c = c.getSuperclass())
 				for (Class<?> i : allInterfaces(c)) if (i.getName().equals(NEO_CANCELLABLE)) {
-					try { return Optional.of(i.getMethod("isCanceled")); } catch (NoSuchMethodException none) { return Optional.empty(); }
+					try { return Optional.of(i.getMethod("isCanceled")); }
+					catch (NoSuchMethodException none) {
+						Caught.warn(none, "[Forbric/EventChain] %s has no isCanceled(); %s counts as not cancellable",
+								i.getName(), t.getName());
+						return Optional.empty();
+					}
 				}
 			return Optional.empty();
 		});
@@ -295,7 +305,7 @@ public final class EventChainAudit {
 			ForbricLog.info("[Forbric/EventChain] %d cross-bus pair(s) observed; duplicated=%d multiplicityDrift=%d cancelLost=%d innerFailures=%d unbalanced=%d -> %s",
 					pairCount(), v.duplicated(), v.multiplicityDrift(), v.cancelLost(), v.innerFailures(), v.unbalanced(), target);
 		} catch (IOException | RuntimeException failed) {
-			ForbricLog.warn("[Forbric/EventChain] could not write the event-chain report: %s", String.valueOf(failed));
+			Caught.warn(failed, "[Forbric/EventChain] could not write the event-chain report");
 		}
 	}
 

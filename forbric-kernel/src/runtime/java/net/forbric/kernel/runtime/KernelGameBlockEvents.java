@@ -19,8 +19,7 @@ package net.forbric.kernel.runtime;
 import java.lang.reflect.Constructor;
 import java.util.function.Consumer;
 
-import net.forbric.kernel.util.ForbricLog;
-import net.forbric.kernel.util.Reflect;
+import net.forbric.kernel.util.Caught;
 import net.minecraft.core.BlockPos;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.resources.ResourceKey;
@@ -122,8 +121,8 @@ public final class KernelGameBlockEvents {
 			return snapshotConstructor().newInstance(neo.getDimension(), neo.getLevel(), neo.getPos(),
 					neo.getState(), neo.getTag(), Block.UPDATE_ALL);
 		} catch (Throwable t) {
-			ForbricLog.warn("[Forbric/EventMux] could not translate a block snapshot — a MinecraftForge mod cannot "
-					+ "see or refuse this placement", Reflect.unwrap(t));
+			Caught.warn(t, "[Forbric/EventMux] could not translate a block snapshot — a MinecraftForge mod cannot "
+					+ "see or refuse this placement");
 			return null;
 		}
 	}

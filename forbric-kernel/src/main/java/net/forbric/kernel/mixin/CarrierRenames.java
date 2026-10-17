@@ -25,7 +25,7 @@ import org.objectweb.asm.tree.TypeInsnNode;
 import org.objectweb.asm.tree.VarInsnNode;
 
 import net.forbric.api.Ecosystem;
-import net.forbric.kernel.util.ForbricLog;
+import net.forbric.kernel.util.Caught;
 
 /**
  * Vanilla method bodies a carrier moved, whole or in pieces, into a method it added under another name with the same
@@ -140,6 +140,7 @@ public final class CarrierRenames {
 						columns[0].substring(arrow + 4, colon).trim(), columns[0].substring(colon + 3, times).trim(), count, kind,
 						Set.copyOf(ecosystems), exit, called);
 			} catch (IllegalArgumentException unknown) {
+				Caught.warn(unknown, "[Forbric/Mixin] unreadable row in %s, skipped: %s", TABLE, line);
 				return null;
 			}
 		}
@@ -171,7 +172,7 @@ public final class CarrierRenames {
 				}
 			}
 		} catch (IOException unreadable) {
-			ForbricLog.warn("[Forbric/Mixin] could not read %s; no injector follows a body a carrier renamed", TABLE);
+			Caught.warn(unreadable, "[Forbric/Mixin] could not read %s; no injector follows a body a carrier renamed", TABLE);
 		}
 		rows = List.copyOf(read);
 		return rows;

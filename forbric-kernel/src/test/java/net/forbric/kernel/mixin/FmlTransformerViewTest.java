@@ -49,6 +49,7 @@ import org.objectweb.asm.tree.MethodInsnNode;
 import org.objectweb.asm.tree.MethodNode;
 import org.spongepowered.asm.mixin.transformer.IMixinTransformer;
 
+import net.forbric.kernel.ExpectCaught;
 import net.forbric.kernel.TestFixtures;
 import net.forbric.kernel.TestFixtures.Fixture;
 import net.forbric.kernel.classloading.LoaderProbePolicy;
@@ -122,6 +123,7 @@ class FmlTransformerViewTest {
 		}
 	}
 
+	@ExpectCaught("could not build FML's TransformingClassLoader view")
 	@Test
 	void withoutTheInitialiserFixTheViewCannotExistAndTheCastFailsAsBefore() throws Exception {
 		// build.gradle starts the test JVM without NeoForge's --add-opens, which is the launch this case is about.

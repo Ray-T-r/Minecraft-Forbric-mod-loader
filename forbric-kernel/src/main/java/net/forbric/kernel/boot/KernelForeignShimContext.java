@@ -19,8 +19,8 @@ package net.forbric.kernel.boot;
 import java.util.LinkedHashMap;
 import java.util.Map;
 
+import net.forbric.kernel.util.Caught;
 import net.forbric.kernel.util.ForbricLog;
-import net.forbric.kernel.util.Reflect;
 
 /**
  * A NeoForge {@code ModContainer} for a mod that is NOT a NeoForge mod, so a Forge-family library it calls has a
@@ -65,10 +65,11 @@ final class KernelForeignShimContext {
 					.invoke(null, modId, bus, null);
 			identity = new KernelModLoader.NeoIdentity(bus, container);
 		} catch (ClassNotFoundException | NoClassDefFoundError absent) {
+			Caught.expected(absent);
 			ForbricLog.debug("[Forbric/ShimContext] no NeoForge runtime — '%s' gets no container", modId);
 		} catch (Throwable t) {
-			ForbricLog.debug("[Forbric/ShimContext] could not build a container for '%s': %s", modId,
-					String.valueOf(Reflect.unwrap(t)));
+			Caught.warn(t, "[Forbric/ShimContext] could not build a container for '%s'; it runs with NeoForge's "
+					+ "null-bus \"minecraft\" fallback", modId);
 		}
 		CONTAINERS.put(modId, identity);
 		return identity;
@@ -123,10 +124,10 @@ final class KernelForeignShimContext {
 			Class.forName("net.forbric.kernel.runtime.KernelForeignShimKeys", true, cl)
 					.getMethod("deliver", java.util.Collection.class).invoke(null, buses);
 		} catch (ClassNotFoundException | NoClassDefFoundError absent) {
+			Caught.expected(absent);
 			ForbricLog.debug("[Forbric/ShimContext] no runtime half — nothing to deliver");
 		} catch (Throwable t) {
-			ForbricLog.warn("[Forbric/ShimContext] could not deliver what the foreign mods registered",
-					Reflect.unwrap(t));
+			Caught.warn(t, "[Forbric/ShimContext] could not deliver what the foreign mods registered");
 		}
 	}
 

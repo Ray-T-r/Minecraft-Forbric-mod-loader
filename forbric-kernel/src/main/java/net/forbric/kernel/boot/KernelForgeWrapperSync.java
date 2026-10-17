@@ -27,6 +27,7 @@ import java.util.TreeMap;
 
 import net.forbric.api.Ecosystem;
 import net.forbric.api.ForeignType;
+import net.forbric.kernel.util.Caught;
 import net.forbric.kernel.util.ForbricLog;
 
 /**
@@ -105,7 +106,7 @@ public final class KernelForgeWrapperSync {
 		try {
 			name = key.getClass().getMethod("identifier").invoke(key);
 		} catch (Throwable t) {
-			ForbricLog.warn("[Forbric/RegistrySync] cannot read the id of registry key " + key, unwrap(t));
+			Caught.warn(t, "[Forbric/RegistrySync] cannot read the id of registry key %s; its server id is not staged", key);
 			return;
 		}
 		synchronized (STAGED) {
@@ -160,8 +161,8 @@ public final class KernelForgeWrapperSync {
 			// Loud, not fatal: the connection continues with every staged registry at its LOCAL ids. With an
 			// identical mod set on both ends those are the server's ids anyway; with a different set they are not,
 			// and the symptom downstream is wrong blocks and items, which is why this is an error and not a warning.
-			ForbricLog.error("[Forbric/RegistrySync] could not apply the server's ids to the Forge-wrapped registries "
-					+ "through GameData.injectSnapshot — they keep their local ids", unwrap(t));
+			Caught.error(t, "[Forbric/RegistrySync] could not apply the server's ids to the Forge-wrapped registries "
+					+ "through GameData.injectSnapshot — they keep their local ids");
 		}
 	}
 
@@ -232,6 +233,7 @@ public final class KernelForgeWrapperSync {
 			}
 		} catch (Throwable ignored) {
 			// A Multimap without isEmpty is not a thing; the summary line just goes without the detail.
+			Caught.expected(ignored);
 		}
 
 		// What actually changed, per wrapper — and the one thing that must not have: an entry disappearing. Forge's
@@ -272,6 +274,14 @@ public final class KernelForgeWrapperSync {
 	 */
 	private static void announceRemapToFabric(ClassLoader cl, Object wrapper, Map<Object, Integer> before,
 			Map<Object, Integer> after) {
+		Class<?> stateCls;
+		try {
+			stateCls = Class.forName("net.fabricmc.fabric.impl.registry.sync.RemapStateImpl", false, cl);
+		} catch (ClassNotFoundException noFabricApi) {
+			// No fabric-api, so no remap listener to tell.
+			Caught.expected(noFabricApi);
+			return;
+		}
 		try {
 			Object oldIdMap = Class.forName("it.unimi.dsi.fastutil.ints.Int2ObjectOpenHashMap", false, cl)
 					.getConstructor().newInstance();
@@ -290,7 +300,6 @@ public final class KernelForgeWrapperSync {
 			}
 			if (changed == 0) return;
 
-			Class<?> stateCls = Class.forName("net.fabricmc.fabric.impl.registry.sync.RemapStateImpl", false, cl);
 			Class<?> registryCls = Class.forName("net.minecraft.core.Registry", false, cl);
 			Object state = stateCls.getConstructor(registryCls,
 					Class.forName("it.unimi.dsi.fastutil.ints.Int2ObjectMap", false, cl),
@@ -311,8 +320,8 @@ public final class KernelForgeWrapperSync {
 			ForbricLog.info("[Forbric/RegistrySync] told fabric-api's remap listeners about %d moved id(s) in %s",
 					changed, describe(wrapper));
 		} catch (Throwable t) {
-			ForbricLog.warn("[Forbric/RegistrySync] could not fire fabric-api's RegistryIdRemapCallback for "
-					+ describe(wrapper) + " — listeners that cache raw ids were not told", unwrap(t));
+			Caught.warn(t, "[Forbric/RegistrySync] could not fire fabric-api's RegistryIdRemapCallback for %s — "
+					+ "listeners that cache raw ids were not told", describe(wrapper));
 		}
 	}
 
@@ -333,6 +342,7 @@ public final class KernelForgeWrapperSync {
 					clear = c.getDeclaredMethod("clear");
 				} catch (NoSuchMethodException keepLooking) {
 					// next superclass
+					Caught.expected(keepLooking);
 				}
 			}
 			if (clear == null) throw new NoSuchMethodException(idMap.getClass().getName() + ".clear()");
@@ -356,8 +366,8 @@ public final class KernelForgeWrapperSync {
 			ForbricLog.info("[Forbric/RegistrySync] re-numbered %d block state(s) to follow the remapped block registry",
 					states);
 		} catch (Throwable t) {
-			ForbricLog.error("[Forbric/RegistrySync] block ids moved but the block-state id map could not be rebuilt — "
-					+ "chunk and block_update packets will decode to the wrong blocks", unwrap(t));
+			Caught.error(t, "[Forbric/RegistrySync] block ids moved but the block-state id map could not be rebuilt — "
+					+ "chunk and block_update packets will decode to the wrong blocks");
 		}
 	}
 
@@ -373,11 +383,8 @@ public final class KernelForgeWrapperSync {
 		try {
 			return String.valueOf(registryName(wrapper));
 		} catch (Throwable t) {
+			Caught.expected(t);
 			return wrapper.getClass().getName();
 		}
-	}
-
-	private static Throwable unwrap(Throwable t) {
-		return t instanceof java.lang.reflect.InvocationTargetException ite && ite.getCause() != null ? ite.getCause() : t;
 	}
 }

@@ -32,6 +32,8 @@ import org.objectweb.asm.tree.analysis.Frame;
 import org.objectweb.asm.tree.analysis.SourceInterpreter;
 import org.objectweb.asm.tree.analysis.SourceValue;
 
+import net.forbric.kernel.util.Caught;
+
 /**
  * An {@code @Inject} anchored on a call the merged body now makes through another owner of the same method.
  *
@@ -371,6 +373,7 @@ public final class MixinSubtypeOwnerRetarget {
 		try {
 			return new Analyzer<>(new SourceInterpreter()).analyze(owner, host);
 		} catch (AnalyzerException | RuntimeException unanalysable) {
+			Caught.expected(unanalysable);
 			return null;
 		}
 	}

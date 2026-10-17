@@ -7,6 +7,7 @@ import net.forbric.api.NativeEventDelivery;
 import net.forbric.api.NativeEventDelivery.Contract;
 import net.forbric.api.NativeEventDelivery.Hook;
 import net.forbric.kernel.util.ByteScan;
+import net.forbric.kernel.util.Caught;
 import org.objectweb.asm.*;
 import org.objectweb.asm.tree.*;
 import org.objectweb.asm.tree.analysis.*;
@@ -113,7 +114,7 @@ public final class NativeDualEventInjector implements ClassTransformer {
                 if(instruction instanceof IincInsnNode increment&&locals.contains(increment.var))return null;
             }
             return source.getFirst();
-        }catch(AnalyzerException|IllegalArgumentException|ProofFailure unproved){return null;}
+        }catch(AnalyzerException|IllegalArgumentException|ProofFailure unproved){Caught.expected(unproved);return null;}
     }
     private record Expr(String kind,String symbol,List<Expr> inputs) { }
     private List<Expr> operands(ClassNode owner,MethodNode method,Flow flow,MethodInsnNode call,Set<Integer> locals){

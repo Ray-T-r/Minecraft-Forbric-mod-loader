@@ -13,6 +13,7 @@ import java.util.function.Consumer;
 import net.forbric.kernel.boot.KernelLifecycle;
 import net.forbric.kernel.transform.GuestInjectorPruner;
 import net.forbric.kernel.transform.NeoTooltipAppendersInjector;
+import net.forbric.kernel.util.Caught;
 import net.forbric.kernel.util.ForbricLog;
 import net.minecraft.core.component.DataComponentType;
 import net.minecraft.network.chat.Component;
@@ -50,7 +51,6 @@ import net.neoforged.neoforge.event.RegisterTooltipAppendersEvent;
  */
 public final class KernelNeoTooltips {
 	private static final String IMPL = "net.fabricmc.fabric.impl.item.ItemComponentTooltipProviderRegistryImpl";
-	private static final AtomicBoolean PROVIDER_FAILED = new AtomicBoolean();
 	private static final AtomicBoolean ORDER_CHECKED = new AtomicBoolean();
 	private static volatile Fabric fabric;
 	private static volatile boolean resolved;
@@ -121,6 +121,8 @@ public final class KernelNeoTooltips {
 		try {
 			modded = (boolean) bridge.hasModdedEntries().invokeExact();
 		} catch (Throwable t) {
+			Caught.warn(t, "[Forbric/Tooltips] fabric-item-api's hasModdedEntries threw — no Fabric component tooltip "
+					+ "provider is drawn on this tooltip");
 			return false;
 		}
 		if (modded && ORDER_CHECKED.compareAndSet(false, true)) warnOnOrderDrift();
@@ -139,10 +141,8 @@ public final class KernelNeoTooltips {
 				handle.invokeExact(stack, (DataComponentType<?>) type, context, display, out, flag, visited);
 			}
 		} catch (Throwable t) {
-			if (PROVIDER_FAILED.compareAndSet(false, true)) {
-				ForbricLog.warn("[Forbric/Tooltips] a Fabric component tooltip provider threw — its lines are left out of "
-						+ "this tooltip, the rest is drawn", t);
-			}
+			Caught.warn(t, "[Forbric/Tooltips] a Fabric component tooltip provider threw — its lines are left out of "
+					+ "this tooltip, the rest is drawn");
 		}
 	}
 
@@ -163,7 +163,13 @@ public final class KernelNeoTooltips {
 		try {
 			impl = Class.forName(IMPL, false, ItemStack.class.getClassLoader());
 		} catch (ClassNotFoundException | LinkageError absent) {
-			if (GuestInjectorPruner.fabricTooltipInjectorsPruned()) lost("its registry class is missing: " + absent);
+			if (GuestInjectorPruner.fabricTooltipInjectorsPruned()) {
+				String why = "its registry class is missing: " + absent;
+				Caught.warn(absent, "[Forbric/Tooltips] %s", lostDetail(why));
+				recordLost(why);
+				return null;
+			}
+			Caught.expected(absent);
 			return null;
 		}
 		if (!GuestInjectorPruner.fabricTooltipInjectorsPruned()) {
@@ -186,7 +192,9 @@ public final class KernelNeoTooltips {
 					lookup.findStatic(impl, "onBefore", sides), lookup.findStatic(impl, "onAfter", sides));
 			return found;
 		} catch (ReflectiveOperationException drifted) {
-			lost("its registry is not the one the kernel draws from: " + drifted);
+			String why = "its registry is not the one the kernel draws from: " + drifted;
+			Caught.warn(drifted, "[Forbric/Tooltips] %s", lostDetail(why));
+			recordLost(why);
 			return null;
 		}
 	}
@@ -196,12 +204,19 @@ public final class KernelNeoTooltips {
 	 * Fabric component tooltip provider is drawn nowhere. A loss on the owning module, not just a log line.
 	 */
 	private static void lost(String why) {
-		String detail = "fabric-item-api's tooltip injectors were removed for the kernel's bridge, and the bridge did not "
+		ForbricLog.warn("[Forbric/Tooltips] %s", lostDetail(why));
+		recordLost(why);
+	}
+
+	private static String lostDetail(String why) {
+		return "fabric-item-api's tooltip injectors were removed for the kernel's bridge, and the bridge did not "
 				+ "come up (" + why + "): a Fabric mod's component tooltip providers are not drawn";
-		ForbricLog.warn("[Forbric/Tooltips] %s", detail);
+	}
+
+	private static void recordLost(String why) {
 		net.forbric.api.CompatibilityFindings.record(new net.forbric.api.CompatibilityFinding("fabric-tooltip-bridge",
 				"fabric-item-api-v1", "Component tooltip providers", "KernelNeoTooltips",
-				net.forbric.api.CompatibilityFinding.Confidence.CONFIRMED, false, detail, List.of(why)));
+				net.forbric.api.CompatibilityFinding.Confidence.CONFIRMED, false, lostDetail(why), List.of(why)));
 	}
 
 	/** Fabric's anchors are its own scrape of vanilla's order; one NeoForge does not list never fires. */
@@ -217,7 +232,8 @@ public final class KernelNeoTooltips {
 						+ "provider anchored on a component NeoForge does not list is not drawn", order.size(), neo.size());
 			}
 		} catch (ReflectiveOperationException | LinkageError | RuntimeException unreadable) {
-			ForbricLog.debug("[Forbric/Tooltips] could not read Fabric's vanilla tooltip order: %s", unreadable);
+			Caught.warn(unreadable, "[Forbric/Tooltips] could not read Fabric's vanilla tooltip order — whether it "
+					+ "differs from NeoForge's is not checked");
 		}
 	}
 }

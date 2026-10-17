@@ -10,6 +10,7 @@ import java.util.Objects;
 import java.util.Set;
 
 import net.forbric.kernel.transform.ForgeTransferShapeAudit;
+import net.forbric.kernel.util.Caught;
 import net.minecraftforge.energy.EmptyEnergyStorage;
 import net.minecraftforge.energy.EnergyStorage;
 import net.minecraftforge.energy.IEnergyStorage;
@@ -54,7 +55,12 @@ public final class ForgeEnergyAdapters {
 	private static final ClassValue<Boolean> CERTIFIED = new ClassValue<>() {
 		protected Boolean computeValue(Class<?> type) {
 			try { type.getDeclaredMethod(ForgeTransferShapeAudit.MARKER); return true; }
-			catch (NoSuchMethodException | LinkageError unverified) { return false; }
+			catch (NoSuchMethodException unverified) { Caught.expected(unverified); return false; }
+			catch (LinkageError unreadable) {
+				Caught.warn(unreadable, "[Forbric/Transfer] could not look for the audit marker on %s; it is treated as "
+						+ "unaudited", type.getName());
+				return false;
+			}
 		}
 	};
 	private static final ClassValue<Boolean> STANDARD_SHAPE = new ClassValue<>() {
@@ -64,7 +70,11 @@ public final class ForgeEnergyAdapters {
 				for (Class<?> at = type; at != EnergyStorage.class; at = at.getSuperclass())
 					for (Method method : at.getDeclaredMethods()) if (CRITICAL.contains(method.getName())) return false;
 				return true;
-			} catch (LinkageError unreadable) { return false; }
+			} catch (LinkageError unreadable) {
+				Caught.warn(unreadable, "[Forbric/Transfer] could not read the methods of %s; its Forge energy store is "
+						+ "not written transactionally", type.getName());
+				return false;
+			}
 		}
 	};
 
@@ -156,7 +166,7 @@ public final class ForgeEnergyAdapters {
 			List<Runnable> callbacks = new ArrayList<>(notifications.values()); clear();
 			RuntimeException failure = null;
 			for (Runnable callback : callbacks) try { callback.run(); }
-			catch (RuntimeException thrown) { if (failure == null) failure = thrown; else failure.addSuppressed(thrown); }
+			catch (RuntimeException thrown) { Caught.expected(thrown); if (failure == null) failure = thrown; else failure.addSuppressed(thrown); }
 			if (failure != null) throw failure;
 		}
 		void clear() {
@@ -222,6 +232,7 @@ public final class ForgeEnergyAdapters {
 				// The endpoint went away during the operation (its block replaced, its capabilities invalidated). The
 				// scope above was closed uncommitted, so the provider's own engine rolled it back; a Forge caller, which
 				// has no transaction to abort, is told nothing moved, exactly as the Reborn and NeoForge views tell theirs.
+				Caught.expected(invalidated);
 				NativeTransferAdapters.requireSuccessfulRollback(invalidated, handler);
 				TransferIssues.report("ENDPOINT_INVALIDATED", handler, invalidated.getMessage() + "; the operation was rolled back");
 				return 0;

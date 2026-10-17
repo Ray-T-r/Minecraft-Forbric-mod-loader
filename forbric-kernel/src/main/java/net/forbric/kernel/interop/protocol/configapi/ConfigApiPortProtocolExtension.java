@@ -5,6 +5,7 @@ import java.lang.reflect.Method;
 import java.util.EnumMap;
 import java.util.concurrent.atomic.AtomicBoolean;
 import net.forbric.api.*;
+import net.forbric.kernel.util.Caught;
 import net.forbric.kernel.util.ForbricLog;
 import net.forbric.kernel.util.Reflect;
 
@@ -37,8 +38,9 @@ public final class ConfigApiPortProtocolExtension implements ProtocolExtension {
                 bind(api, invoker, config, ConfigEvent.UNLOADING, "unloading", "Unloading", "onModConfigUnloading");
             } catch (ClassNotFoundException absent) {
                 // This protocol is optional; no installed API means there is no subscriber to deliver to.
+                Caught.expected(absent);
             } catch (ReflectiveOperationException | LinkageError incompatible) {
-                ForbricLog.warn("[Forbric/ConfigApi] public config event contract is unavailable", incompatible);
+                Caught.warn(incompatible, "[Forbric/ConfigApi] public config event contract is unavailable");
             }
             looked = true;
         }
@@ -50,7 +52,7 @@ public final class ConfigApiPortProtocolExtension implements ProtocolExtension {
             sinks.put(event, new Sink(api.getMethod(accessor, String.class), invoker,
                 Class.forName(API + "$" + callbackType, false, api.getClassLoader()).getMethod(callbackMethod, config)));
         } catch (ReflectiveOperationException | LinkageError incompatible) {
-            ForbricLog.warn("[Forbric/ConfigApi] public " + event + " event contract is unavailable", incompatible);
+            Caught.warn(incompatible, "[Forbric/ConfigApi] public %s event contract is unavailable", event);
         }
     }
 }

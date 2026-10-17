@@ -14,6 +14,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
 import net.fabricmc.api.EnvType;
+import net.forbric.kernel.ExpectCaught;
 
 /**
  * {@link CommonNetworkInteropInjector}'s output, run against the kernel's real boot-side {@code PayloadInterop}: six of
@@ -520,6 +521,8 @@ class CommonNetworkInteropInjectorExecutionTest {
 		return InjectorExecution.construct(type, id);
 	}
 
+	// The stub ClientboundCustomPayloadPacket has no GAMEPLAY_STREAM_CODEC for the packet census to read.
+	@ExpectCaught("GAMEPLAY_STREAM_CODEC")
 	@Test void fabricsAddonNeverCastsNeoForgesVersionPayload(@TempDir Path work) throws Throwable {
 		Game game = game(work);
 		Object listener = new Object();
@@ -631,6 +634,7 @@ class CommonNetworkInteropInjectorExecutionTest {
 				"premise: as merged, a MinecraftForge mod's client cannot send on its own channel");
 	}
 
+	@ExpectCaught("was gone when MinecraftForge's SyncConfigTask read")
 	@Test void aMissingServerConfigIsWrittenBackInsteadOfDisconnecting(@TempDir Path work) throws Throwable {
 		Game game = game(work.resolve("classes"));
 		for (boolean repaired : new boolean[] {true, false}) {

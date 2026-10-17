@@ -26,6 +26,7 @@ import org.spongepowered.asm.mixin.FabricUtil;
 import net.fabricmc.loader.api.metadata.ModDependency;
 
 import net.forbric.kernel.fabric.KernelMetadataSupport;
+import net.forbric.kernel.util.Caught;
 
 /**
  * The Mixin compatibility level Fabric Loader gives a mod's mixin configs, worked out the way its
@@ -163,6 +164,7 @@ public final class FabricMixinCompat {
 			try {
 				components[i] = Long.parseLong(parts[i]);
 			} catch (NumberFormatException notSemantic) {
+				Caught.expected(notSemantic);
 				return new Interval(version, true, version, true);
 			}
 		}
@@ -324,6 +326,7 @@ public final class FabricMixinCompat {
 				try {
 					core[i] = Integer.parseInt(part.trim());
 				} catch (NumberFormatException notANumber) {
+					Caught.expected(notANumber);
 					return null;
 				}
 				if (part.trim().isEmpty() || core[i] < 0) return null;

@@ -7,7 +7,7 @@ import java.lang.reflect.UndeclaredThrowableException;
 import java.util.Optional;
 import java.util.concurrent.ConcurrentHashMap;
 
-import net.forbric.kernel.util.ForbricLog;
+import net.forbric.kernel.util.Caught;
 
 /**
  * The boot-side half of {@link net.forbric.kernel.transform.WrapperEntryAddedInjector}: fires fabric-registry-sync's
@@ -58,8 +58,8 @@ public final class KernelWrapperEntryEvents {
 			throw new UndeclaredThrowableException(cause);
 		} catch (IllegalAccessException e) {
 			HOOKS.put(registry.getClass(), Optional.empty());
-			ForbricLog.warn("[Forbric/Registries] could not fire fabric-registry-sync's RegistryEntryAddedCallback for "
-					+ registry.getClass().getName() + " — a Fabric listener misses what it registers", e);
+			Caught.warn(e, "[Forbric/Registries] could not fire fabric-registry-sync's RegistryEntryAddedCallback for "
+					+ "%s — a Fabric listener misses what it registers", registry.getClass().getName());
 		}
 	}
 
@@ -74,10 +74,11 @@ public final class KernelWrapperEntryEvents {
 					Class.forName(CALLBACK, false, loader).getMethod("onEntryAdded", int.class, identifier.getReturnType(), Object.class),
 					Class.forName("net.minecraft.core.IdMap", false, loader).getMethod("getId", Object.class), identifier));
 		} catch (ClassNotFoundException absent) {
+			Caught.expected(absent);
 			return Optional.empty(); // no fabric-registry-sync: nothing listens
 		} catch (ReflectiveOperationException | LinkageError e) {
-			ForbricLog.warn("[Forbric/Registries] fabric-registry-sync's RegistryEntryAddedCallback has changed shape; "
-					+ wrapper.getName() + " registers without firing it — a Fabric listener misses what it registers", e);
+			Caught.warn(e, "[Forbric/Registries] fabric-registry-sync's RegistryEntryAddedCallback has changed shape; "
+					+ "%s registers without firing it — a Fabric listener misses what it registers", wrapper.getName());
 			return Optional.empty();
 		}
 	}

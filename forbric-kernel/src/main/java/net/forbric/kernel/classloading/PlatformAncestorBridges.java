@@ -7,6 +7,7 @@ import java.util.Optional;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.function.Function;
 
+import net.forbric.kernel.util.Caught;
 import net.forbric.kernel.util.ForbricLog;
 import org.objectweb.asm.ClassReader;
 
@@ -50,7 +51,10 @@ final class PlatformAncestorBridges {
 		try {
 			reader = new ClassReader(definition);
 		} catch (RuntimeException unreadable) {
-			return null; // the JVM has already accepted these bytes; a reader that cannot is no evidence either way
+			// the JVM has already accepted these bytes; a reader that cannot is no evidence either way
+			Caught.warn(unreadable, "[Forbric/Hierarchy] could not read a class defined from the %s runtime; its "
+					+ "ancestor bridge is not checked", carrier);
+			return null;
 		}
 		String ancestor = reader.getSuperName();
 		if (ancestor == null) return null;

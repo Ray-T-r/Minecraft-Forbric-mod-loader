@@ -32,6 +32,7 @@ import java.util.zip.ZipEntry;
 import java.util.zip.ZipFile;
 
 import net.forbric.api.GameEventBridge;
+import net.forbric.kernel.util.Caught;
 
 /**
  * Joins {@link HookCallSiteCensus}'s dead events to the jars that are actually waiting on them.
@@ -155,6 +156,8 @@ public final class DeadHookWorklist {
 				} catch (RuntimeException unreadable) {
 					// A jar with one unparsable class still answers for its other classes; refusing the whole
 					// jar would silently drop a real consumer.
+					Caught.warn(unreadable, "[Forbric/Hooks] could not parse %s in %s; its references are not counted",
+							e.getName(), zf.getName());
 				}
 			} else if (e.getName().endsWith(".jar") && e.getName().startsWith("META-INF/jars/")) {
 				try (InputStream in = zf.getInputStream(e)) {

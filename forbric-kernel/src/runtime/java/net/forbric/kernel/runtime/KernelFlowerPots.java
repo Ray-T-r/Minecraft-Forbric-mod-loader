@@ -6,8 +6,8 @@ import java.util.Map;
 import java.util.function.Supplier;
 
 import com.google.common.collect.Table;
+import net.forbric.kernel.util.Caught;
 import net.forbric.kernel.util.ForbricLog;
-import net.forbric.kernel.util.Reflect;
 import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.resources.Identifier;
 import net.minecraft.world.level.block.Block;
@@ -76,6 +76,7 @@ public final class KernelFlowerPots {
 					table.put(empty, pot.getPotted(), pot);
 					entered++;
 				} catch (Throwable unresolved) {
+					Caught.expected(unresolved);
 					failed++;   // one mod's unbound supplier must not cost every other pot its entry
 				}
 			}
@@ -85,7 +86,7 @@ public final class KernelFlowerPots {
 					failed == 0 ? "" : " (" + failed + " pot(s) could not name their plant yet)");
 			return entered;
 		} catch (Throwable failure) {
-			ForbricLog.warn("[Forbric/FlowerPot] could not fill NeoForge's flower pot table", Reflect.unwrap(failure));
+			Caught.warn(failure, "[Forbric/FlowerPot] could not fill NeoForge's flower pot table");
 			return -1;
 		}
 	}
@@ -99,7 +100,7 @@ public final class KernelFlowerPots {
 			Object value = lazy.get(null);
 			value.getClass().getMethod("invalidate").invoke(value);
 		} catch (Throwable absent) {
-			ForbricLog.debug("[Forbric/FlowerPot] NeoForge's legacy pot view could not be invalidated: %s", absent);
+			Caught.warn(absent, "[Forbric/FlowerPot] NeoForge's legacy pot view could not be invalidated");
 		}
 	}
 }

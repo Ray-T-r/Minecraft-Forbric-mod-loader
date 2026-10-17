@@ -42,6 +42,7 @@ import org.objectweb.asm.MethodVisitor;
 import org.objectweb.asm.Opcodes;
 import org.objectweb.asm.Type;
 
+import net.forbric.kernel.ExpectCaught;
 import net.forbric.kernel.classloading.DelegationPolicy;
 import net.forbric.kernel.classloading.ForbricClassLoader;
 
@@ -213,6 +214,9 @@ class KernelRuntimeClassesTest {
 		return jar.toUri().toURL();
 	}
 
+	// Renaming every method to one name also gives the one class with two same-descriptor calls a duplicate method,
+	// which cannot define; every other class takes the renamed-method path this test is about.
+	@ExpectCaught("would not define")
 	@Test
 	void verifyFailsWhenAGameSideMethodWasRenamedWithoutItsCaller(@TempDir Path dir) throws Exception {
 		URL runtimeJar = jarWith(dir.resolve("forbric-kernel-runtime.jar"), KernelRuntimeClasses.compiled(),
@@ -320,6 +324,7 @@ class KernelRuntimeClassesTest {
 		}
 	}
 
+	@ExpectCaught("is in no owned jar")
 	@Test
 	void verifyFailsWhenTheBootJarWasBuiltWithoutStagedArtifacts(@TempDir Path dir) throws Exception {
 		// The jar is simply not there — exactly what a boot jar built with no staged artifacts produces.
@@ -333,6 +338,7 @@ class KernelRuntimeClassesTest {
 		}
 	}
 
+	@ExpectCaught("is present in an owned jar but would not define")
 	@Test
 	void verifyFailsWhenAGameSideClassIsPresentButWillNotDefine(@TempDir Path dir) throws Exception {
 		String victim = KernelRuntimeClasses.compiled().get(0);
@@ -357,6 +363,7 @@ class KernelRuntimeClassesTest {
 	 * which resolves EVERY public signature, not only the one asked for -- throws {@code NoClassDefFoundError}. That
 	 * escaped verify, and the boot, to stderr.
 	 */
+	@ExpectCaught("a game type its methods name cannot be loaded")
 	@Test
 	void verifyReportsAGameTypeItsMethodsNameThatThisLaunchDoesNotHaveInsteadOfThrowing(@TempDir Path dir)
 			throws Exception {

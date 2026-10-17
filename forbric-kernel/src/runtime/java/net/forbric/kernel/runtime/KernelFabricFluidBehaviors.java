@@ -13,6 +13,7 @@ import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.function.Function;
 
+import net.forbric.kernel.util.Caught;
 import net.forbric.kernel.util.ForbricLog;
 import net.minecraft.core.Holder;
 import net.minecraft.core.registries.BuiltInRegistries;
@@ -139,6 +140,7 @@ public final class KernelFabricFluidBehaviors {
 			}
 		} catch (RuntimeException unbound) {
 			// Tags not bound yet: asked again only when fabric-api's tracked set changes size.
+			Caught.expected(unbound);
 		}
 	}
 
@@ -179,10 +181,11 @@ public final class KernelFabricFluidBehaviors {
 			registry = Class.forName(REGISTRY, true, loader);
 			behaviour = Class.forName(BEHAVIOR, false, registry.getClassLoader());
 		} catch (ClassNotFoundException absent) {
+			Caught.expected(absent);
 			return null;
 		} catch (LinkageError broken) {
-			ForbricLog.warn("[Forbric/Fluid] fabric-content-registries' fluid behaviour registry does not load on this game — "
-					+ "a Fabric mod's fluid behaviour is not applied, and its fluid acts as its tags say", broken);
+			Caught.warn(broken, "[Forbric/Fluid] fabric-content-registries' fluid behaviour registry does not load on this game — "
+					+ "a Fabric mod's fluid behaviour is not applied, and its fluid acts as its tags say");
 			return null;
 		}
 		try {
@@ -194,8 +197,8 @@ public final class KernelFabricFluidBehaviors {
 					lookup.findVirtual(behaviour, "canDrownInFluid", MethodType.methodType(boolean.class, TagKey.class, LivingEntity.class)),
 					lookup.findVirtual(behaviour, "canSupportBoat", MethodType.methodType(boolean.class, TagKey.class, Entity.class)));
 		} catch (ReflectiveOperationException | RuntimeException | LinkageError drifted) {
-			ForbricLog.warn("[Forbric/Fluid] fabric-content-registries' fluid behaviour API is not the one this was written for — "
-					+ "a Fabric mod's fluid behaviour is not applied, and its fluid acts as its tags say", drifted);
+			Caught.warn(drifted, "[Forbric/Fluid] fabric-content-registries' fluid behaviour API is not the one this was written for — "
+					+ "a Fabric mod's fluid behaviour is not applied, and its fluid acts as its tags say");
 			return null;
 		}
 	}

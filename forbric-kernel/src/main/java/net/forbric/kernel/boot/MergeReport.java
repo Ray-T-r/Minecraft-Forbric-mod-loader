@@ -37,6 +37,7 @@ import net.forbric.kernel.discovery.ForbricModDiscoverer;
 import net.forbric.kernel.fabric.FabricModMetadataParser;
 import net.forbric.kernel.fabric.KernelModMetadata;
 import net.fabricmc.loader.api.metadata.ModDependency;
+import net.forbric.kernel.util.Caught;
 import net.forbric.kernel.util.ForbricLog;
 
 /**
@@ -116,7 +117,7 @@ public final class MergeReport {
 							+ "and %s to switch",
 					decision.ownerByModId().size(), dir.resolve(FILE), rundir.resolve(DuplicateModArbiter.OVERRIDE_FILE));
 		} catch (Throwable t) {
-			ForbricLog.debug("[Forbric/DupeId] could not write the merge report: %s", String.valueOf(t));
+			Caught.warn(t, "[Forbric/DupeId] could not write the merge report");
 		}
 	}
 
@@ -208,6 +209,7 @@ public final class MergeReport {
 			jars = entries.filter(p -> p.getFileName().toString().endsWith(".jar"))
 					.filter(Files::isRegularFile).sorted().toList();
 		} catch (Exception e) {
+			Caught.warn(e, "[Forbric/DupeId] could not list %s; the merge report names no jar from it", modsDir);
 			return byId;
 		}
 
@@ -239,6 +241,8 @@ public final class MergeReport {
 			}
 		} catch (Throwable ignored) {
 			// A jar the report cannot read simply does not appear in it.
+			Caught.warn(ignored, "[Forbric/DupeId] could not read %s for the merge report; it does not appear in it",
+					jar.getFileName());
 		}
 	}
 
@@ -253,6 +257,8 @@ public final class MergeReport {
 			}
 		} catch (Throwable ignored) {
 			// Same: unreadable means absent from the report, never a failed boot.
+			Caught.warn(ignored, "[Forbric/DupeId] could not read %s for the merge report; it does not appear in it",
+					jar.getFileName());
 		}
 	}
 }

@@ -19,8 +19,8 @@ package net.forbric.kernel.runtime;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 
+import net.forbric.kernel.util.Caught;
 import net.forbric.kernel.util.ForbricLog;
-import net.forbric.kernel.util.Reflect;
 import net.minecraft.client.renderer.block.BlockAndTintGetter;
 import net.minecraft.client.renderer.block.FluidModel;
 import net.minecraft.core.BlockPos;
@@ -49,7 +49,6 @@ public final class KernelForgeFluids {
 	public static final String PROPERTY = "forbric.forgeFluidModels";
 	private static final Set<Fluid> ASKED = ConcurrentHashMap.newKeySet();
 	private static final Set<Fluid> ANSWERED = ConcurrentHashMap.newKeySet();
-	private static volatile boolean failureReported;
 
 	private KernelForgeFluids() {
 	}
@@ -74,11 +73,8 @@ public final class KernelForgeFluids {
 			}
 			return own == null ? model : own;
 		} catch (Throwable t) {
-			if (!failureReported) {
-				failureReported = true;
-				ForbricLog.warn("[Forbric/Fluids] MinecraftForge fluid extensions threw while choosing a model — "
-						+ "NeoForge's model is used", Reflect.unwrap(t));
-			}
+			Caught.warn(t, "[Forbric/Fluids] MinecraftForge fluid extensions threw while choosing a model — "
+					+ "NeoForge's model is used");
 			return model;
 		}
 	}
@@ -94,6 +90,8 @@ public final class KernelForgeFluids {
 		try {
 			return IClientFluidTypeExtensions.of(state).getTintColor();
 		} catch (Throwable t) {
+			Caught.warn(t, "[Forbric/Fluids] MinecraftForge fluid extensions threw while choosing a tint for %s — "
+					+ "no tint (-1) is used", state);
 			return -1;
 		}
 	}

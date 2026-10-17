@@ -24,6 +24,7 @@ import java.util.List;
 import java.util.Map;
 
 import net.forbric.kernel.classloading.ForbricClassLoader;
+import net.forbric.kernel.util.Caught;
 import net.forbric.kernel.util.ForbricLog;
 
 /**
@@ -137,6 +138,7 @@ public final class ModMenuApiStandIn {
 		try (InputStream in = resource.openStream()) {
 			return in.readAllBytes();
 		} catch (IOException e) {
+			Caught.warn(e, "[Forbric/ModConfig] could not read %s", resource);
 			return null;
 		}
 	}

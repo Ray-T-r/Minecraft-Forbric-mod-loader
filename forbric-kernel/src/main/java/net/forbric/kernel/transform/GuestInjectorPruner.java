@@ -28,6 +28,7 @@ import org.objectweb.asm.tree.AnnotationNode;
 import org.objectweb.asm.tree.ClassNode;
 import org.objectweb.asm.tree.MethodNode;
 
+import net.forbric.kernel.util.Caught;
 import net.forbric.kernel.util.ForbricLog;
 
 /**
@@ -130,7 +131,7 @@ public final class GuestInjectorPruner implements ClassTransformer {
             if(consumed==null||at==null||consumed.getStackSize()==0||slot>=at.getLocals())return false;
             var reader=consumed.getStack(consumed.getStackSize()-1);var captured=at.getLocal(slot);
             return reader.insns.size()==1&&reader.insns.equals(captured.insns);
-        }catch(org.objectweb.asm.tree.analysis.AnalyzerException|RuntimeException unknown){return false;}
+        }catch(org.objectweb.asm.tree.analysis.AnalyzerException|RuntimeException unknown){Caught.expected(unknown);return false;}
     }
     private static final class ReaderOrigins extends org.objectweb.asm.tree.analysis.SourceInterpreter {
         ReaderOrigins(){super(org.objectweb.asm.Opcodes.ASM9);}

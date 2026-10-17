@@ -7,6 +7,7 @@ import java.util.function.Supplier;
 
 import net.fabricmc.fabric.api.transfer.v1.transaction.Transaction;
 import net.fabricmc.fabric.api.transfer.v1.transaction.TransactionContext;
+import net.forbric.kernel.util.Caught;
 import net.neoforged.neoforge.transfer.energy.EnergyHandler;
 import team.reborn.energy.api.EnergyStorage;
 
@@ -58,6 +59,7 @@ public final class RebornEnergyAdapters {
 				nested.commit();
 				return (int) moved;
 			} catch (LiveTransferEndpoints.Unavailable invalidated) {
+				Caught.expected(invalidated);
 				NativeTransferAdapters.requireSuccessfulRollback(invalidated, storage);
 				TransferIssues.report("ENDPOINT_INVALIDATED", storage, invalidated.getMessage() + "; the nested operation was rolled back");
 				return 0;
@@ -83,6 +85,7 @@ public final class RebornEnergyAdapters {
 				nested.commit();
 				return moved;
 			} catch (LiveTransferEndpoints.Unavailable invalidated) {
+				Caught.expected(invalidated);
 				NativeTransferAdapters.requireSuccessfulRollback(invalidated, handler);
 				TransferIssues.report("ENDPOINT_INVALIDATED", handler, invalidated.getMessage() + "; the nested operation was rolled back");
 				return 0;

@@ -25,6 +25,7 @@ import org.objectweb.asm.tree.ClassNode;
 
 import net.forbric.api.Ecosystem;
 import net.forbric.api.ForeignType;
+import net.forbric.kernel.util.Caught;
 import net.forbric.kernel.util.ForbricLog;
 
 /**
@@ -98,8 +99,8 @@ public final class ForgeEnumExtensionInjector implements ClassTransformer {
 					extenderCls.getMethod("processClassWithFlags", phase, ClassNode.class, Type.class, String.class),
 					Enum.valueOf(phase.asSubclass(Enum.class), "AFTER"));
 		} catch (Throwable t) {
-			ForbricLog.debug("[Forbric/EnumExt] no MinecraftForge RuntimeEnumExtender — Forge enum extension "
-					+ "injector not installed: %s", String.valueOf(t));
+			Caught.warn(t, "[Forbric/EnumExt] no MinecraftForge RuntimeEnumExtender — Forge enum extension "
+					+ "injector not installed");
 			return null;
 		}
 	}
@@ -127,8 +128,8 @@ public final class ForgeEnumExtensionInjector implements ClassTransformer {
 		} catch (Throwable t) {
 			// Leaving the enum alone is survivable — the mod that wanted the constant fails on its own call, with
 			// its own name in the message. Failing the class definition here would take down unrelated code.
-			ForbricLog.warn("[Forbric/EnumExt] could not make " + className
-					+ " extensible — a MinecraftForge mod adding a constant to it will fail", t);
+			Caught.warn(t, "[Forbric/EnumExt] could not make %s extensible — a MinecraftForge mod adding a constant to it"
+					+ " will fail", className);
 			return classBytes;
 		}
 	}
@@ -146,6 +147,8 @@ public final class ForgeEnumExtensionInjector implements ClassTransformer {
 			}
 		} catch (Throwable unreadable) {
 			// Not a class this transformer can speak about. Something else in the chain will say so.
+			Caught.warn(unreadable, "[Forbric/EnumExt] could not read a class header to check for the extensible-enum"
+					+ " marker; treated as not extensible");
 		}
 		return false;
 	}

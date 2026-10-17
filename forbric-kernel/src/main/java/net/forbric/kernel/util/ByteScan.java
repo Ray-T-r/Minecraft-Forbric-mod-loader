@@ -159,6 +159,7 @@ public final class ByteScan {
 			// access_flags, this_class, super_class and interfaces_count follow the pool in every class file.
 			return at + 8 <= classBytes.length;
 		} catch (IndexOutOfBoundsException unreadable) {
+			Caught.expected(unreadable);
 			return false;
 		}
 	}

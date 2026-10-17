@@ -12,6 +12,7 @@ import java.util.zip.ZipOutputStream;
 
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
+import net.forbric.kernel.ExpectCaught;
 
 /** Naming the mods that lose the feature when the bridge is off must not name NeoForge-only shippers. */
 class ForgeWorldgenShippersTest {
@@ -30,6 +31,7 @@ class ForgeWorldgenShippersTest {
 		assertEquals(Set.of("dg"), shippers.get(1).namespaces());
 	}
 
+	@ExpectCaught("could not read broken.jar; its forge modifier files are not counted")
 	@Test
 	void anUnreadableJarIsSkippedNotFatal() throws Exception {
 		Path broken = temporary.resolve("broken.jar");

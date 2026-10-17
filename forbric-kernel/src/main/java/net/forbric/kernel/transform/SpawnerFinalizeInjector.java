@@ -23,6 +23,7 @@ import org.objectweb.asm.tree.analysis.SourceValue;
 
 import net.forbric.api.CompatibilityFinding;
 import net.forbric.api.CompatibilityFindings;
+import net.forbric.kernel.util.Caught;
 import net.forbric.kernel.util.ForbricLog;
 
 /** Adds the caller's proven ValueInput to the spawner hook; register after the legacy merged-base repair. */
@@ -80,7 +81,7 @@ public final class SpawnerFinalizeInjector implements ClassTransformer {
 		if (nextReal(target) == null || nextReal(target).getOpcode() != Opcodes.POP) return declined(bytes, "the native event result is no longer discarded at this caller");
 		int inputSlot;
 		try { inputSlot = inputSlot(node.name, host, target); }
-		catch (AnalyzerException malformed) { return declined(bytes, "cannot establish the caller's data flow: " + malformed.getMessage()); }
+		catch (AnalyzerException malformed) { Caught.expected(malformed); return declined(bytes, "cannot establish the caller's data flow: " + malformed.getMessage()); }
 		if (inputSlot < 0) return declined(bytes, "no unique live ValueInput from TagValueInput.create reaches the hook");
 		host.instructions.insertBefore(target, new VarInsnNode(Opcodes.ALOAD, inputSlot));
 		target.owner = RUNTIME; target.desc = NEW_DESC;

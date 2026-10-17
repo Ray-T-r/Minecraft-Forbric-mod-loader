@@ -8,6 +8,7 @@ import org.objectweb.asm.Opcodes;
 import org.objectweb.asm.Type;
 import org.objectweb.asm.tree.*;
 import org.objectweb.asm.tree.analysis.*;
+import net.forbric.kernel.util.Caught;
 
 /**
  * Proves, from data flow and control flow rather than from the compiled shape, that a method walks a platform registry
@@ -659,7 +660,7 @@ final class RegistryWalkProof {
                 @Override protected boolean newControlFlowExceptionEdge(int from, int to) { succ.get(from).add(to); pred.get(to).add(from); return true; }
             };
             Frame<SourceValue>[] frames;
-            try { frames = analyzer.analyze(owner, method); } catch (AnalyzerException | RuntimeException unanalysable) { return null; }
+            try { frames = analyzer.analyze(owner, method); } catch (AnalyzerException | RuntimeException unanalysable) { Caught.expected(unanalysable); return null; }
             Flow flow = new Flow(method, frames, roots.parameters);
             flow.succ.addAll(succ); flow.pred.addAll(pred);
             Recorder recorder = new Recorder(flow.operands);
@@ -667,7 +668,7 @@ final class RegistryWalkProof {
                 AbstractInsnNode insn = flow.insns[i];
                 if (frames[i] == null || insn.getOpcode() < 0) continue;
                 recorder.current = insn;
-                try { new Frame<>(frames[i]).execute(insn, recorder); } catch (AnalyzerException | RuntimeException unanalysable) { return null; }
+                try { new Frame<>(frames[i]).execute(insn, recorder); } catch (AnalyzerException | RuntimeException unanalysable) { Caught.expected(unanalysable); return null; }
             }
             for (var entry : flow.operands.entrySet()) {
                 List<SourceValue> values = entry.getValue();

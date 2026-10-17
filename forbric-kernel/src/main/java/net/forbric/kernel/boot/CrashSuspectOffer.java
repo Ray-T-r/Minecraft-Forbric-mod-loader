@@ -31,6 +31,7 @@ import com.electronwill.nightconfig.json.JsonFormat;
 import net.forbric.kernel.ui.DependencyDialog;
 import net.forbric.kernel.ui.DependencyDialogMain;
 import net.forbric.kernel.ui.DependencyReport;
+import net.forbric.kernel.util.Caught;
 import net.forbric.kernel.util.ForbricLog;
 
 /**
@@ -81,7 +82,7 @@ public final class CrashSuspectOffer {
 			return offer(gameDir, noWindow, dialog, today);
 		} catch (Throwable t) {
 			// Nothing about a diagnostic from the last run may stop this one.
-			ForbricLog.warn("[Forbric/Crash] could not offer to start without the last crash's suspects: %s", String.valueOf(t));
+			Caught.warn(t, "[Forbric/Crash] could not offer to start without the last crash's suspects");
 			return true;
 		}
 	}
@@ -130,8 +131,7 @@ public final class CrashSuspectOffer {
 			answer = dialog.ask(new DependencyReport.Isolation(crash.report(), crash.kept(), without));
 		} catch (Exception failed) {
 			if (failed instanceof InterruptedException) Thread.currentThread().interrupt();
-			ForbricLog.warn("[Forbric/Crash] could not show the crash-suspects offer — starting with every mod: %s",
-					String.valueOf(failed));
+			Caught.warn(failed, "[Forbric/Crash] could not show the crash-suspects offer — starting with every mod");
 			answer = DependencyDialogMain.CONTINUE;
 		}
 		retire(pending, offered);
@@ -142,8 +142,7 @@ public final class CrashSuspectOffer {
 				ForbricLog.info("[Forbric/Crash] the player chose to start without %s — added %s to %s", names(without),
 						String.join(", ", jars), DisabledMods.FILE);
 			} catch (Exception failed) {
-				ForbricLog.warn("[Forbric/Crash] could not write %s — starting with every mod: %s", DisabledMods.FILE,
-						String.valueOf(failed));
+				Caught.warn(failed, "[Forbric/Crash] could not write %s — starting with every mod", DisabledMods.FILE);
 			}
 			return true;
 		}
@@ -179,6 +178,7 @@ public final class CrashSuspectOffer {
 			}
 			return new Pending(report, Boolean.TRUE.equals(json.get("clash")), List.copyOf(suspects));
 		} catch (Exception unreadable) {
+			Caught.warn(unreadable, "[Forbric/Crash] could not read %s", file);
 			return null;
 		}
 	}
@@ -207,6 +207,8 @@ public final class CrashSuspectOffer {
 		try {
 			return Files.isRegularFile(file) ? DisabledMods.parse(Files.readAllLines(file, StandardCharsets.UTF_8)) : List.of();
 		} catch (Exception unreadable) {
+			Caught.warn(unreadable, "[Forbric/Crash] could not read %s; the suspects already in it are offered again",
+					file);
 			return List.of();
 		}
 	}
@@ -219,7 +221,8 @@ public final class CrashSuspectOffer {
 		try {
 			Files.move(pending, offered, StandardCopyOption.REPLACE_EXISTING);
 		} catch (Exception failed) {
-			ForbricLog.debug("[Forbric/Crash] could not rename %s: %s", pending, String.valueOf(failed));
+			Caught.warn(failed, "[Forbric/Crash] could not rename %s; the same crash may be offered again next start",
+					pending);
 		}
 	}
 }

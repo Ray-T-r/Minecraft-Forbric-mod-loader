@@ -5,6 +5,8 @@ import java.lang.reflect.Field;
 import java.util.Deque;
 import java.util.concurrent.atomic.AtomicBoolean;
 
+import net.forbric.kernel.util.Caught;
+
 /** Rechecks a proved running/queued-work predicate under the notifier's monitor. */
 public final class WorkerPredicateWait {
 	private WorkerPredicateWait() { }
@@ -24,7 +26,10 @@ public final class WorkerPredicateWait {
 			synchronized (notifier) {
 				if (((AtomicBoolean) running.get(executor)).get() && ((Deque<?>) queue.get(executor)).isEmpty()) {
 					try { notifier.wait(); }
-					catch (InterruptedException interrupted) { if (restoreInterrupt) Thread.currentThread().interrupt(); }
+					catch (InterruptedException interrupted) {
+						Caught.expected(interrupted);
+						if (restoreInterrupt) Thread.currentThread().interrupt();
+					}
 				}
 			}
 		} catch (ReflectiveOperationException failure) {

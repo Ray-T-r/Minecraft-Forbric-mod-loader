@@ -4,7 +4,7 @@ package net.forbric.kernel.interop;
 import java.util.IdentityHashMap;
 import java.util.ArrayList;
 import java.util.Map;
-import net.forbric.kernel.util.ForbricLog;
+import net.forbric.kernel.util.Caught;
 
 /** A lifecycle registry usable by any mod; closing resources never touches a lazy singleton factory. */
 public final class ManagedWorkerResources {
@@ -28,10 +28,10 @@ public final class ManagedWorkerResources {
 		}
 		for (var entry : closing) {
 			try { entry.getValue().drain().run(); }
-			catch (Throwable failure) { ForbricLog.warn("[Forbric/Shutdown] could not drain registered worker resource " + entry.getKey().getClass().getName(), failure); }
+			catch (Throwable failure) { Caught.warn(failure, "[Forbric/Shutdown] could not drain registered worker resource %s", entry.getKey().getClass().getName()); }
 			finally {
 				try { entry.getValue().stop().run(); }
-				catch (Throwable failure) { ForbricLog.warn("[Forbric/Shutdown] could not stop registered worker resource " + entry.getKey().getClass().getName(), failure); }
+				catch (Throwable failure) { Caught.warn(failure, "[Forbric/Shutdown] could not stop registered worker resource %s", entry.getKey().getClass().getName()); }
 			}
 		}
 	}

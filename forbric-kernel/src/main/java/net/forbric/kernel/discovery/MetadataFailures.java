@@ -30,6 +30,7 @@ import java.util.concurrent.ConcurrentHashMap;
 import net.forbric.api.CompatibilityFinding;
 import net.forbric.api.CompatibilityFindings;
 import net.forbric.api.Ecosystem;
+import net.forbric.kernel.util.Caught;
 import net.forbric.kernel.util.ForbricLog;
 
 /**
@@ -118,6 +119,7 @@ public final class MetadataFailures {
 				new ForbricModDiscoverer().discoverJar(jar);
 			} catch (IOException unreadable) {
 				// The whole zip is unreadable; every pass reports that on its own.
+				Caught.expected(unreadable);
 			}
 		}
 		Set<Ecosystem> failed = java.util.EnumSet.noneOf(Ecosystem.class);

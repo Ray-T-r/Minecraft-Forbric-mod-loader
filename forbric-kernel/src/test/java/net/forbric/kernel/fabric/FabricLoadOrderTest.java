@@ -55,6 +55,7 @@ import net.fabricmc.loader.api.entrypoint.PreLaunchEntrypoint;
 
 import net.forbric.api.DiscoveredMod;
 import net.forbric.api.ModPresence;
+import net.forbric.kernel.ExpectCaught;
 import net.forbric.kernel.boot.DuplicateModArbiter;
 import net.forbric.kernel.boot.FabricLoadOrder;
 import net.forbric.kernel.boot.KernelFabricEcosystem;
@@ -288,6 +289,7 @@ class FabricLoadOrderTest {
 	 * Natively bclib's and OptiGUI's client entrypoints, which register their JOIN listeners, run before Pets Mod's.
 	 * So Pets Mod's throw skips neither of them.
 	 */
+	@ExpectCaught("cannot be loaded here")
 	@Test
 	void bclibAndOptiguiRegisterTheirJoinListenersBeforePetsModAsOnFabric() throws Exception {
 		realMods();
@@ -308,6 +310,7 @@ class FabricLoadOrderTest {
 	 * sweep (there pets-mod was client entrypoint 21–23, bclib 64 and OptiGUI 66–72), so its throw skipped both JOIN
 	 * listeners.
 	 */
+	@ExpectCaught("cannot be loaded here")
 	@Test
 	void switchedOffPetsModRunsBeforeBothAsItDidUnderTheDependencyOrder() throws Exception {
 		System.setProperty(FabricLoadOrder.SWITCH, "off");

@@ -23,7 +23,7 @@ import java.util.List;
 import java.util.Set;
 import java.util.concurrent.CompletableFuture;
 
-import net.forbric.kernel.util.ForbricLog;
+import net.forbric.kernel.util.Caught;
 
 /**
  * Which mods' deferred setup tasks threw, read off a carrier's own {@code DeferredWorkQueue} after
@@ -36,7 +36,7 @@ import net.forbric.kernel.util.ForbricLog;
  * failure and put the mod id only in their log line, never on the exception.
  *
  * <p>Any reflective failure — a renamed field, a container without {@code getModId} — answers an empty list and
- * one DEBUG line, so the callers' count-only report is the worst case; the staged carriers' field names are
+ * one warning, so the callers' count-only report is the worst case; the staged carriers' field names are
  * pinned by a test so a carrier bump goes red there rather than losing attribution silently.
  */
 public final class DeferredWorkFailures {
@@ -61,8 +61,8 @@ public final class DeferredWorkFailures {
 			}
 			return List.copyOf(new ArrayList<>(ids));
 		} catch (ReflectiveOperationException | RuntimeException unreadable) {
-			ForbricLog.debug("[Forbric/Lifecycle] could not read the failed deferred tasks' owners off %s — %s",
-					queue.getClass().getName(), String.valueOf(unreadable));
+			Caught.warn(unreadable, "[Forbric/Lifecycle] could not read the failed deferred tasks' owners off %s; the "
+					+ "failures are reported without their mods", queue.getClass().getName());
 			return List.of();
 		}
 	}
@@ -75,6 +75,7 @@ public final class DeferredWorkFailures {
 				field.setAccessible(true);
 				return field.get(target);
 			} catch (NoSuchFieldException next) {
+				Caught.expected(next);
 				type = type.getSuperclass();
 			}
 		}

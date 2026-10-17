@@ -25,6 +25,7 @@ import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.function.Function;
 
+import net.forbric.kernel.util.Caught;
 import net.forbric.kernel.util.ForbricLog;
 import org.objectweb.asm.ClassReader;
 import org.objectweb.asm.ClassWriter;
@@ -131,7 +132,7 @@ public final class InterfaceDefaultConflictRepair {
 		try {
 			return repair(className, original, woven);
 		} catch (Throwable t) {
-			ForbricLog.debug("[Forbric/DefaultConflict] %s left alone: %s", className, String.valueOf(t));
+			Caught.warn(t, "[Forbric/DefaultConflict] %s left alone", className);
 			return woven;
 		}
 	}
@@ -145,6 +146,8 @@ public final class InterfaceDefaultConflictRepair {
 			new ClassReader(original).accept(node,
 					ClassReader.SKIP_CODE | ClassReader.SKIP_DEBUG | ClassReader.SKIP_FRAMES);
 		} catch (Throwable unreadable) {
+			Caught.warn(unreadable, "[Forbric/DefaultConflict] could not read the pre-weave bytes of a class; its"
+					+ " earlier interfaces are taken as none");
 			return before;
 		}
 		if (node.interfaces == null) return before;
@@ -314,6 +317,8 @@ public final class InterfaceDefaultConflictRepair {
 		try {
 			new ClassReader(bytes).accept(node, ClassReader.SKIP_CODE | ClassReader.SKIP_DEBUG | ClassReader.SKIP_FRAMES);
 		} catch (Throwable unreadable) {
+			Caught.warn(unreadable, "[Forbric/DefaultConflict] could not read interface %s; its super-interfaces are"
+					+ " left out", iface);
 			return;
 		}
 		if (node.interfaces == null) return;
@@ -348,6 +353,8 @@ public final class InterfaceDefaultConflictRepair {
 		try {
 			new ClassReader(bytes).accept(node, ClassReader.SKIP_CODE | ClassReader.SKIP_DEBUG | ClassReader.SKIP_FRAMES);
 		} catch (Throwable unreadable) {
+			Caught.warn(unreadable, "[Forbric/DefaultConflict] could not read interface %s; its default methods are"
+					+ " left out", iface);
 			return;
 		}
 		if ((node.access & Opcodes.ACC_INTERFACE) == 0) return;

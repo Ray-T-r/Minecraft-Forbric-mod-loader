@@ -6,6 +6,7 @@ import net.forbric.api.Ecosystem;
 import org.objectweb.asm.*;
 import org.objectweb.asm.tree.*;
 import org.objectweb.asm.tree.analysis.*;
+import net.forbric.kernel.util.Caught;
 
 /** A no-result fallback callback follows an exactly absent composite lookup; native alternatives retain priority. */
 public final class MixinNullableCompositeCallback {
@@ -84,7 +85,7 @@ public final class MixinNullableCompositeCallback {
 	}
 	private static boolean captureFromLookup(ClassNode target,MethodNode host,MethodNode outer,String lookup){
 		try{Frame<SourceValue>[] frames=new Analyzer<>(new SourceInterpreter()).analyze(target.name,host);for(var instruction:host.instructions)if(instruction instanceof MethodInsnNode call&&call.owner.equals(target.name)&&call.name.equals(outer.name)&&call.desc.equals(outer.desc)){Frame<SourceValue> at=frames[host.instructions.indexOf(call)];return at!=null&&at.getStackSize()>0&&lookupOrigin(host,frames,at.getStack(at.getStackSize()-1),lookup,new HashSet<>());}return false;}
-		catch(AnalyzerException|RuntimeException unproved){return false;}
+		catch(AnalyzerException|RuntimeException unproved){Caught.expected(unproved);return false;}
 	}
 	private static boolean lookupOrigin(MethodNode host,Frame<SourceValue>[] frames,SourceValue value,String lookup,Set<AbstractInsnNode> active){if(value==null||value.insns.size()!=1)return false;var instruction=value.insns.iterator().next();if(!active.add(instruction))return false;try{Frame<SourceValue> at=frames[host.instructions.indexOf(instruction)];if(at==null)return false;
 		if(instruction instanceof MethodInsnNode call)return lookup.equals("L"+call.owner+";"+call.name+call.desc);
@@ -170,7 +171,7 @@ public final class MixinNullableCompositeCallback {
 			Map<Integer,String> parameters=new HashMap<>();int slot=0;Type[] args=Type.getArgumentTypes(helper.desc);for(int i=0;i<args.length;i++){parameters.put(slot,expected.get(i));slot+=args[i].getSize();}
 			Keys inside=new Keys(owner,helper,parameters);List<MethodInsnNode> matches=new ArrayList<>();for(var instruction:helper.instructions)if(instruction instanceof MethodInsnNode call&&call.getOpcode()==current.getOpcode()&&Type.getReturnType(call.desc).equals(Type.getReturnType(old.desc))&&prefix(Type.getArgumentTypes(call.desc),Type.getArgumentTypes(current.desc))&&actual!=null&&Objects.equals(inside.arguments(call),actual.subList(0,Type.getArgumentTypes(call.desc).length+(call.getOpcode()==Opcodes.INVOKESTATIC?0:1))))matches.add(call);
 			return actual!=null&&matches.size()==1;
-		}catch(AnalyzerException|RuntimeException unknown){return false;}
+		}catch(AnalyzerException|RuntimeException unknown){Caught.expected(unknown);return false;}
 	}
 	private static boolean prefix(Type[] original,Type[] current){return original.length<=current.length&&Arrays.equals(original,Arrays.copyOf(current,original.length));}
 		static final class Keys{

@@ -23,6 +23,7 @@ import org.objectweb.asm.tree.ClassNode;
 import org.objectweb.asm.tree.LdcInsnNode;
 import org.objectweb.asm.tree.MethodNode;
 
+import net.forbric.kernel.ExpectCaught;
 import net.forbric.kernel.TestFixtures;
 import net.forbric.kernel.TestFixtures.Fixture;
 
@@ -62,6 +63,7 @@ class ForgeCapabilityTokenInjectorTest {
 		assertEquals(0, unfinal.access & Opcodes.ACC_FINAL, "a subclass must be allowed to override it");
 	}
 
+	@ExpectCaught("could not read a class header to check for a capability token")
 	@Test
 	void everyOtherClassPassesByHeaderOnly() throws Exception {
 		ForgeCapabilityTokenInjector injector = injector();

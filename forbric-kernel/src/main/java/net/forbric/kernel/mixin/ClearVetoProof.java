@@ -15,6 +15,8 @@ import org.objectweb.asm.tree.analysis.Frame;
 import org.objectweb.asm.tree.analysis.Interpreter;
 import org.objectweb.asm.tree.analysis.Value;
 
+import net.forbric.kernel.util.Caught;
+
 /**
  * Proves, by abstract interpretation of the bytecode, that a wrap of vanilla's {@code activeEffects.clear()} in
  * {@code LivingEntity.removeAllEffects} is a per-effect veto: whatever the handler does to the map is, effect by effect,
@@ -230,6 +232,7 @@ final class ClearVetoProof {
 			for (int i = 2; i < params.length; i++) values.add(new V(K.SRC, 1, i + 1, null, Dom.SOURCE, List.of()));
 			new Analyzer<>(new Interp(facts, Ctx.MAIN, handler, values)).analyze(mixin.name, handler);
 		} catch (AnalyzerException | RuntimeException unreadable) {
+			Caught.expected(unreadable);
 			return new Verdict("unreadable: " + unreadable.getMessage(), null, List.of());
 		}
 		loops(facts, handler);
@@ -732,6 +735,7 @@ final class ClearVetoProof {
 					Type ret = Type.getReturnType(impl.desc);
 					return ret.getSort() == Type.VOID ? null : inner.returned == null ? V.of(K.TOP) : inner.returned;
 				} catch (AnalyzerException | RuntimeException unreadable) {
+					Caught.expected(unreadable);
 					f.no("has an unreadable lambda");
 					return V.of(K.TOP);
 				} finally {

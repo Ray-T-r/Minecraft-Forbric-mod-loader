@@ -1,11 +1,9 @@
 /* Copyright 2026 The Forbric Project. Licensed under the Apache License, Version 2.0. */
 package net.forbric.kernel.runtime;
 
-import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.function.Consumer;
 
-import net.forbric.kernel.util.ForbricLog;
-import net.forbric.kernel.util.Reflect;
+import net.forbric.kernel.util.Caught;
 import net.minecraftforge.client.event.ForgeEventFactoryClient;
 import net.neoforged.bus.api.Event;
 import net.neoforged.bus.api.EventPriority;
@@ -58,17 +56,14 @@ public final class KernelGameClientNetworkEvents {
 								event.getBuildContext())));
 	}
 
-	/** A LOWEST forward of one NeoForge event; one warning per event if it throws. */
+	/** A LOWEST forward of one NeoForge event; a warning each time it throws. */
 	static <E extends Event> void forward(IEventBus bus, Class<E> event, String name, Consumer<E> forward) {
-		AtomicBoolean warned = new AtomicBoolean();
 		bus.addListener(EventPriority.LOWEST, false, event, neoEvent -> {
 			try {
 				forward.accept(neoEvent);
 			} catch (Throwable t) {
-				if (warned.compareAndSet(false, true)) {
-					ForbricLog.warn("[Forbric/EventMux] " + name + " forward failed — MinecraftForge mods listening "
-							+ "for it are not told", Reflect.unwrap(t));
-				}
+				Caught.warn(t, "[Forbric/EventMux] %s forward failed — MinecraftForge mods listening for it are not told",
+						name);
 			}
 		});
 	}

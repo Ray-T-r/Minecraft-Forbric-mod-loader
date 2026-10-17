@@ -33,6 +33,7 @@ import org.objectweb.asm.ClassReader;
 
 import net.forbric.api.Ecosystem;
 import net.forbric.api.ForeignType;
+import net.forbric.kernel.util.Caught;
 import net.forbric.kernel.util.ForbricLog;
 
 /**
@@ -256,6 +257,7 @@ final class LaunchInputCheck {
 			}
 		} catch (IOException | RuntimeException unreadable) {
 			// ClassReader throws IllegalArgumentException / ArrayIndexOutOfBounds on bytes that are not a class.
+			Caught.expected(unreadable);
 			return name + " cannot be read as a game jar: " + unreadable + " (" + described(jar) + ")";
 		}
 
@@ -281,6 +283,7 @@ final class LaunchInputCheck {
 		try {
 			return jar + ", " + Files.size(jar) + " bytes";
 		} catch (IOException | RuntimeException unknown) {
+			Caught.expected(unknown);
 			return jar.toString();
 		}
 	}
@@ -329,6 +332,7 @@ final class LaunchInputCheck {
 				found.put(family, have);
 			}
 		} catch (IOException | RuntimeException unreadable) {
+			Caught.expected(unreadable);
 			return new Contents("cannot be opened as a jar: " + unreadable, Map.of(), Map.of());
 		}
 		return new Contents(null, missing, found);

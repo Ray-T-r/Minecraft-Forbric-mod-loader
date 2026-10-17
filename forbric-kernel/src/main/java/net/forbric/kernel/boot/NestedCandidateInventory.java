@@ -14,6 +14,7 @@ import net.forbric.kernel.fabric.FabricModMetadataParser;
 import net.forbric.kernel.fabric.KernelModMetadata;
 import net.forbric.kernel.fabric.KernelVersion;
 import net.forbric.kernel.fabric.NestedFabricRequirements;
+import net.forbric.kernel.util.Caught;
 import net.forbric.kernel.util.ForbricLog;
 
 /** Complete physical candidate inventory, before either ecosystem filters or registers a root jar. */
@@ -108,6 +109,7 @@ public final class NestedCandidateInventory {
 		try {
 			return KernelVersion.parse(nested).compareTo(KernelVersion.parse(kernelVersion)) <= 0;
 		} catch (Exception unparseable) {
+			Caught.expected(unparseable);
 			return false;
 		}
 	}
@@ -163,6 +165,7 @@ public final class NestedCandidateInventory {
 					content.putIfAbsent(digest, path);
 					work.add(new Work(path, 0, root.ecosystem().isForgeFamily()));
 				} catch (IOException unreadable) {
+					Caught.warn(unreadable, "[Forbric/JiJ] could not fingerprint %s; it stays a separate choice of unknown content", path);
 					nodes.put(path, new Node(path, "unreadable", root, true, false));
 					issues.add(new Issue(path, "root could not be fingerprinted: " + unreadable));
 				}
@@ -231,9 +234,18 @@ public final class NestedCandidateInventory {
 							// A left-out jar is opened too: a mod that loads may still need what it bundles (resolve).
 							if (!childNode.excluded() || leftOut.containsKey(child)) work.add(new Work(child, parent.depth() + 1,
 									parent.forgeWalk() || (childNode.claim() != null && childNode.claim().ecosystem().isForgeFamily())));
-						} catch (Exception failure) { issues.add(new Issue(parent.path(), entryName + ": " + failure.getMessage(), failure instanceof BoundReached)); }
+						} catch (BoundReached bound) {
+							Caught.expected(bound);
+							issues.add(new Issue(parent.path(), entryName + ": " + bound.getMessage(), true));
+						} catch (Exception failure) {
+							Caught.warn(failure, "[Forbric/JiJ] could not examine %s nested in %s", entryName, parent.path());
+							issues.add(new Issue(parent.path(), entryName + ": " + failure.getMessage(), false));
+						}
 					}
-				} catch (Exception failure) { issues.add(new Issue(parent.path(), "nested metadata could not be read: " + failure)); }
+				} catch (Exception failure) {
+					Caught.warn(failure, "[Forbric/JiJ] could not read the nested metadata of %s", parent.path());
+					issues.add(new Issue(parent.path(), "nested metadata could not be read: " + failure));
+				}
 			}
 			Map<Path, NestedFabricRequirements.KeptBack> keptBack = resolveLeftOut();
 			return new NestedCandidateInventory(nodes, edges, issues, aliases, leftOut, keptBack);
@@ -288,7 +300,10 @@ public final class NestedCandidateInventory {
 							for (var mod : discoverer.discoverJar(node.path())) {
 								if (mod.getEcosystem() == node.claim().ecosystem()) requires.addAll(NestedFabricRequirements.requirementsOf(mod, physical));
 							}
-						} catch (Exception unreadable) { /* its claim was read; an unreadable manifest now brings no requirement */ }
+						} catch (Exception unreadable) {
+							// its claim was read; an unreadable manifest now brings no requirement
+							Caught.warn(unreadable, "[Forbric/JiJ] could not re-read the manifest of %s; it brings no requirement", node.path());
+						}
 					}
 				}
 				// Only what Fabric Loader alone would have reached is its to leave out.
@@ -329,7 +344,10 @@ public final class NestedCandidateInventory {
 				try (InputStream in = zip.getInputStream(manifest)) {
 					KernelModMetadata metadata = FabricModMetadataParser.read(in); fabricManifests.put(jar, metadata); return metadata;
 				}
-			} catch (Exception unreadable) { return null; }
+			} catch (Exception unreadable) {
+				Caught.warn(unreadable, "[Forbric/JiJ] could not read fabric.mod.json of %s; it is taken to have none", jar);
+				return null;
+			}
 		}
 
 		/** Streams one nested entry through SHA-256; a large native bundle is never held in memory whole. */
@@ -365,9 +383,13 @@ public final class NestedCandidateInventory {
 				try (ZipFile ignored = new ZipFile(temporary.toFile())) { }
 				try {
 					try { Files.move(temporary, target, StandardCopyOption.ATOMIC_MOVE, StandardCopyOption.REPLACE_EXISTING); }
-					catch (AtomicMoveNotSupportedException unsupported) { Files.move(temporary, target, StandardCopyOption.REPLACE_EXISTING); }
+					catch (AtomicMoveNotSupportedException unsupported) {
+						Caught.expected(unsupported);
+						Files.move(temporary, target, StandardCopyOption.REPLACE_EXISTING);
+					}
 				} catch (IOException concurrentOrLocked) {
 					if (!Files.isRegularFile(target) || !hash.equals(digest(target))) throw concurrentOrLocked;
+					Caught.expected(concurrentOrLocked);
 				}
 				if (!hash.equals(digest(target))) throw new IOException("nested candidate changed while extracting: " + target);
 			} finally { Files.deleteIfExists(temporary); }
@@ -379,7 +401,10 @@ public final class NestedCandidateInventory {
 			try (ZipFile zip = new ZipFile(child.toFile())) {
 				ZipEntry manifest = zip.getEntry("fabric.mod.json"); if (manifest == null) return false;
 				try (InputStream in = zip.getInputStream(manifest)) { return !FabricModMetadataParser.read(in).getEnvironment().matches(side); }
-			} catch (Exception unreadable) { return false; }
+			} catch (Exception unreadable) {
+				Caught.warn(unreadable, "[Forbric/JiJ] could not read the environment of %s; it is not left out by side", child);
+				return false;
+			}
 		}
 
 		private static boolean sameIdentityPayload(DuplicateModArbiter.Claim parent, DuplicateModArbiter.Claim child) {

@@ -7,6 +7,7 @@ import java.util.function.Function;
 import net.forbric.api.Ecosystem;
 import org.objectweb.asm.*;
 import org.objectweb.asm.tree.*;
+import net.forbric.kernel.util.Caught;
 
 /** Atomic adaptations of structurally recognized callbacks to the live merged-game operations. */
 public final class MixinCarrierCallbackAdapters {
@@ -126,7 +127,8 @@ public final class MixinCarrierCallbackAdapters {
     }
     private static boolean pureDelegate(MethodInsnNode call,MixinFit.Member wanted,Function<String,ClassNode> targets) {
         if(!call.owner.equals(wanted.owner()))return false;
-        return delegateChain(call,wanted,name->{try{return targets.apply(name);}catch(RuntimeException unavailable){return null;}},new HashSet<>());
+        return delegateChain(call,wanted,name->{try{return targets.apply(name);}catch(RuntimeException unavailable){
+            Caught.warn(unavailable,"[Forbric/Mixin] could not read %s; taken as absent",name);return null;}},new HashSet<>());
     }
     private static boolean delegateChain(MethodInsnNode call,MixinFit.Member wanted,Function<String,ClassNode> targets,Set<String> seen) {
         if(!seen.add(call.owner+call.name+call.desc))return false;

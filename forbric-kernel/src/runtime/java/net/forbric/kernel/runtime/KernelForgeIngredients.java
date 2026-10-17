@@ -27,8 +27,8 @@ import com.mojang.serialization.Codec;
 import com.mojang.serialization.DataResult;
 import com.mojang.serialization.DynamicOps;
 
+import net.forbric.kernel.util.Caught;
 import net.forbric.kernel.util.ForbricLog;
-import net.forbric.kernel.util.Reflect;
 import net.minecraft.resources.Identifier;
 import net.minecraft.world.item.crafting.Ingredient;
 import net.minecraftforge.common.ForgeHooks;
@@ -60,7 +60,6 @@ import net.minecraftforge.registries.ForgeRegistries;
 public final class KernelForgeIngredients {
 	public static final String PROPERTY = "forbric.forgeIngredients";
 	private static final Set<String> REPORTED = Collections.newSetFromMap(new ConcurrentHashMap<>());
-	private static volatile boolean failureReported;
 
 	private KernelForgeIngredients() {
 	}
@@ -82,11 +81,8 @@ public final class KernelForgeIngredients {
 					}
 					return result;
 				} catch (Throwable t) {
-					if (!failureReported) {
-						failureReported = true;
-						ForbricLog.warn("[Forbric/Ingredients] MinecraftForge's ingredient codec threw — NeoForge's "
-								+ "answer is used for this value and Forge is asked again next time", Reflect.unwrap(t));
-					}
+					Caught.warn(t, "[Forbric/Ingredients] MinecraftForge's ingredient codec threw — NeoForge's "
+							+ "answer is used for this value and Forge is asked again next time");
 					return neo.decode(ops, input);
 				}
 			}
@@ -128,6 +124,8 @@ public final class KernelForgeIngredients {
 			if (id == null) return null;
 			return ForgeRegistries.INGREDIENT_SERIALIZERS.get().containsKey(id) ? name.get() : null;
 		} catch (Throwable t) {
+			Caught.warn(t, "[Forbric/Ingredients] could not tell whether an ingredient's type is MinecraftForge's — "
+					+ "it is not counted as one");
 			return null;
 		}
 	}

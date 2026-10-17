@@ -11,6 +11,7 @@ import org.objectweb.asm.tree.analysis.BasicValue;
 import org.objectweb.asm.tree.analysis.Frame;
 
 import net.forbric.api.Ecosystem;
+import net.forbric.kernel.util.Caught;
 
 /**
  * Keeps a mod's callbacks around vanilla's {@code Item.useOn} call in {@code ItemStack.useOn} once the merged game makes
@@ -61,7 +62,13 @@ final class MixinPlacementTransactionAdapter {
 		MethodNode vanilla = source == null ? null : MixinPlayerWorldCallbackAdapter.selector(source, USE_ON);
 		if (live == null || vanilla == null || MixinPlayerWorldCallbackAdapter.count(vanilla, CALL) != 1 || MixinPlayerWorldCallbackAdapter.count(live, CALL) != 0) return 0;
 		Set<String> repeated = new HashSet<>();
-		Function<String, ClassNode> classes = name -> { try { return targets.apply(name); } catch (RuntimeException unreadable) { return null; } };
+		Function<String, ClassNode> classes = name -> {
+			try { return targets.apply(name); }
+			catch (RuntimeException unreadable) {
+				Caught.warn(unreadable, "[Forbric/Mixin] could not read %s; taken as absent", name);
+				return null;
+			}
+		};
 		if (!MixinNativeReplay.reaches(target, live, CALL, classes, DEPTH, repeated)) return 0;
 		MethodInsnNode call = MixinPlayerWorldCallbackAdapter.first(vanilla, CALL);
 		int callAt = vanilla.instructions.indexOf(call);

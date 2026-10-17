@@ -35,6 +35,7 @@ import org.objectweb.asm.tree.MethodNode;
 
 import net.forbric.api.CompatibilityFinding;
 import net.forbric.api.CompatibilityFindings;
+import net.forbric.kernel.util.Caught;
 import net.forbric.kernel.util.ForbricLog;
 
 /**
@@ -171,7 +172,7 @@ final class RegistrationEventSteps {
 			init = events.getDeclaredMethod("init");
 			init.setAccessible(true);
 		} catch (ClassNotFoundException | NoSuchMethodException absent) {
-			ForbricLog.debug("[Forbric/Lifecycle] no RegistrationEvents.init to run: %s", String.valueOf(absent));
+			Caught.expected(absent);
 			return null;
 		}
 
@@ -182,6 +183,7 @@ final class RegistrationEventSteps {
 			try {
 				init.invoke(null);
 			} catch (Throwable t) {
+				Caught.expected(t);
 				failure = unwrap(t);
 			}
 			outcome = new Outcome(false, List.of(), Map.of(), failure, dataMapTypes(cl));
@@ -191,6 +193,7 @@ final class RegistrationEventSteps {
 				try {
 					resolve(step, events.getClassLoader()).invoke(null);
 				} catch (Throwable t) {
+					Caught.expected(t);
 					failures.put(step, unwrap(t));
 				}
 			}
@@ -212,6 +215,7 @@ final class RegistrationEventSteps {
 		try (InputStream in = cl.getResourceAsStream(EVENTS.replace('.', '/') + ".class")) {
 			bytes = in == null ? null : in.readAllBytes();
 		} catch (Exception unreadable) {
+			Caught.warn(unreadable, "[Forbric/Lifecycle] reading NeoForge's RegistrationEvents class file failed");
 			bytes = null;
 		}
 		if (bytes == null) {
@@ -223,6 +227,7 @@ final class RegistrationEventSteps {
 		try {
 			steps = plan(bytes);
 		} catch (RuntimeException unparsable) {
+			Caught.warn(unparsable, "[Forbric/Lifecycle] planning NeoForge's RegistrationEvents.init steps failed");
 			steps = null;
 		}
 		if (steps == null) {
@@ -241,6 +246,7 @@ final class RegistrationEventSteps {
 				}
 			}
 		} catch (Throwable unlinkable) {
+			Caught.warn(unlinkable, "[Forbric/Lifecycle] could not list RegistrationEvents' methods; calling init whole");
 			return null;
 		}
 		return steps;
@@ -259,6 +265,7 @@ final class RegistrationEventSteps {
 				return m;
 			} catch (NoSuchMethodException notHere) {
 				// keep walking, as the JVM's own resolution does
+				Caught.expected(notHere);
 			}
 		}
 		throw new NoSuchMethodError(step.owner() + "." + step.name() + "()V");
@@ -276,6 +283,7 @@ final class RegistrationEventSteps {
 			}
 			return n;
 		} catch (Throwable unknown) {
+			Caught.warn(unknown, "[Forbric/Lifecycle] could not count NeoForge's data map types");
 			return -1;
 		}
 	}

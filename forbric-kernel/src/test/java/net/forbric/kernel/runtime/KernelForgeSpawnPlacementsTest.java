@@ -18,6 +18,7 @@ import java.util.Map;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import net.forbric.kernel.ExpectCaught;
 
 class KernelForgeSpawnPlacementsTest {
 	@BeforeEach @AfterEach void reset() { System.clearProperty("forbric.forgeSpawnPlacements"); }
@@ -115,6 +116,7 @@ class KernelForgeSpawnPlacementsTest {
 		assertFalse(fixture.evaluate(fixture.eventMap(event).get(added)));
 	}
 
+	@ExpectCaught("fixture listener")
 	@Test void aForgeListenerFailureLeavesTheNeoMapIntactAndStillPostsNeo() throws Exception {
 		ForgeSpawnFixture fixture = new ForgeSpawnFixture(false);
 		Object type = fixture.entity(); fixture.seed(type, fixture.constant(true), fixture.placement(), fixture.heightmap());

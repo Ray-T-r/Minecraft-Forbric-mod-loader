@@ -31,6 +31,7 @@ import org.objectweb.asm.tree.TypeInsnNode;
 import net.forbric.api.Ecosystem;
 import net.forbric.api.ForeignType;
 import net.forbric.kernel.util.ByteScan;
+import net.forbric.kernel.util.Caught;
 import net.forbric.kernel.util.ForbricLog;
 
 /**
@@ -284,8 +285,8 @@ public final class ModsButtonRedirector implements ClassTransformer {
 			}
 			return writer.toByteArray();
 		} catch (RuntimeException e) {
-			ForbricLog.warn("[Forbric/ModsButton] could not re-point " + internal + "'s mods button — it will open "
-					+ "one family's list", e);
+			Caught.warn(e, "[Forbric/ModsButton] could not re-point %s's mods button — it will open one family's list",
+					internal);
 			return classBytes;
 		}
 	}

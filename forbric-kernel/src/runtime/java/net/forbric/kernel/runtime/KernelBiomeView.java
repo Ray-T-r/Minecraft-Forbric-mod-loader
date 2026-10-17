@@ -4,8 +4,8 @@ package net.forbric.kernel.runtime;
 import java.lang.reflect.Field;
 import java.lang.reflect.Method;
 
+import net.forbric.kernel.util.Caught;
 import net.forbric.kernel.util.ForbricLog;
-import net.forbric.kernel.util.Reflect;
 import net.minecraft.core.Holder;
 import net.minecraft.world.level.biome.Biome;
 import net.minecraft.world.level.biome.BiomeSpecialEffects;
@@ -46,8 +46,8 @@ public final class KernelBiomeView {
 					rawEffects == null ? original.effects() : rawEffects, original.generationSettings(),
 					original.mobSpawnSettings());
 		} catch (Throwable failure) {
-			ForbricLog.warn("[Forbric/Worldgen] could not read the current climate of a biome; NeoForge's modifiers start "
-					+ "from its original info (%s)", Reflect.unwrap(failure));
+			Caught.warn(failure, "[Forbric/Worldgen] could not read the current climate of a biome; NeoForge's "
+					+ "modifiers start from its original info");
 			return original;
 		}
 	}
@@ -66,8 +66,9 @@ public final class KernelBiomeView {
 			method.invoke(biome, climate, effects);
 		} catch (NoSuchMethodException absent) {
 			// the late-write half is not on this base; nothing to record
+			Caught.expected(absent);
 		} catch (Throwable failure) {
-			ForbricLog.debug("[Forbric/Worldgen] could not record a biome's pass-time climate: %s", failure);
+			Caught.warn(failure, "[Forbric/Worldgen] could not record a biome's pass-time climate");
 		}
 	}
 

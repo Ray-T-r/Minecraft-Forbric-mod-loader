@@ -5,6 +5,7 @@ import java.util.function.Function;
 import org.objectweb.asm.*;
 import org.objectweb.asm.tree.*;
 import org.objectweb.asm.tree.analysis.*;
+import net.forbric.kernel.util.Caught;
 /** Proved map removal, and any empty redirect of a call the carrier widened, discovered from source contracts without private SDK names. */
 public final class FabricClientMixinAnchors {
  public static final String PROPERTY="forbric.fabricClientAnchors";
@@ -35,7 +36,7 @@ public final class FabricClientMixinAnchors {
     ordinal++;
    }
    if(matches!=1||factories!=1||selectedInstruction>=factory)return 0;set(ats.getFirst(),"ordinal",selected);remove(injector,"slice");return 1;
-  }catch(AnalyzerException malformed){return 0;}
+  }catch(AnalyzerException malformed){Caught.expected(malformed);return 0;}
  }
  /**
   * A {@code @Redirect} whose handler is nothing but {@code return}, on a void call the surviving carrier widened.

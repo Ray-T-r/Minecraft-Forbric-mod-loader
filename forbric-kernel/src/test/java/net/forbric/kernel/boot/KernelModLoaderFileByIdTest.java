@@ -26,6 +26,7 @@ import java.util.List;
 import java.util.Map;
 
 import org.junit.jupiter.api.Test;
+import net.forbric.kernel.ExpectCaught;
 
 /**
  * Covers {@link KernelModLoader#fillFileById} — the write that makes {@code ModList.getModFileById(id)} answer.
@@ -140,6 +141,7 @@ class KernelModLoaderFileByIdTest {
 		assertTrue(before != list.fileById);
 	}
 
+	@ExpectCaught("no file here")
 	@Test
 	void oneBadContainerDoesNotCostTheOthersTheirEntry() throws Exception {
 		// The point of the per-container catch: a mod with a half-built container must not be what makes

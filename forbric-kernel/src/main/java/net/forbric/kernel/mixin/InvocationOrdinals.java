@@ -6,6 +6,7 @@ import org.objectweb.asm.Opcodes;
 import org.objectweb.asm.Type;
 import org.objectweb.asm.tree.*;
 import org.objectweb.asm.tree.analysis.*;
+import net.forbric.kernel.util.Caught;
 
 /** An ordinal follows its unique value sink in the indexed original method, never a guessed call order. */
 final class InvocationOrdinals {
@@ -39,7 +40,7 @@ final class InvocationOrdinals {
  private static Map<MethodInsnNode,String> sinks(String owner,MethodNode method,List<MethodInsnNode> candidates){
   Map<MethodInsnNode,String> result=new IdentityHashMap<>();Set<MethodInsnNode> invalid=Collections.newSetFromMap(new IdentityHashMap<>());
   Frame<SourceValue>[] frames;
-  try{frames=new Analyzer<>(new Dependencies()).analyze(owner,method);}catch(AnalyzerException|RuntimeException bad){return Map.of();}
+  try{frames=new Analyzer<>(new Dependencies()).analyze(owner,method);}catch(AnalyzerException|RuntimeException bad){Caught.expected(bad);return Map.of();}
   for(var op:method.instructions){
    if(!(op instanceof FieldInsnNode field)||field.getOpcode()!=Opcodes.PUTSTATIC)continue;
    Frame<SourceValue> frame=frames[method.instructions.indexOf(op)];if(frame==null||frame.getStackSize()==0)continue;

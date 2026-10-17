@@ -23,7 +23,7 @@ import net.forbric.api.ForeignType;
 import net.forbric.kernel.boot.KernelModLoader;
 import net.forbric.kernel.boot.NeoDeferredWork;
 import net.forbric.kernel.boot.DeferredWorkFailures;
-import net.forbric.kernel.util.ForbricLog;
+import net.forbric.kernel.util.Caught;
 import net.forbric.kernel.util.Reflect;
 import net.forbric.api.ModCatalog;
 import net.neoforged.bus.api.IEventBus;
@@ -76,8 +76,7 @@ public final class KernelNeoSetup {
 				post(event, (IEventBus) e.getValue().bus(), (ModContainer) e.getValue().container(), queue);
 				fired++;
 			} catch (Throwable perMod) {
-				ForbricLog.warn("[Forbric/Lifecycle] " + e.getKey() + " failed during " + label,
-						Reflect.unwrap(perMod));
+				Caught.warn(perMod, "[Forbric/Lifecycle] %s failed during %s", e.getKey(), label);
 				ModCatalog.mark(e.getKey(), ModCatalog.Status.DEGRADED, "it threw during " + label);
 			} finally {
 				KernelModLoader.setNeoActiveContainer(KernelNeoSetup.class.getClassLoader(), null);
@@ -104,10 +103,9 @@ public final class KernelNeoSetup {
 			for (String id : owners) {
 				ModCatalog.mark(id, ModCatalog.Status.DEGRADED, "one of its deferred setup tasks threw during " + label);
 			}
-			ForbricLog.warn("[Forbric/Lifecycle] " + (failures.length == 0 ? 1 : failures.length)
-					+ " deferred task(s) failed during " + label + " — "
-					+ (owners.isEmpty() ? "owner unknown" : String.join(", ", owners))
-					+ "; the other mods' " + label + " completed", Reflect.unwrap(drained));
+			Caught.warn(drained, "[Forbric/Lifecycle] %d deferred task(s) failed during %s — %s; the other mods' %s "
+					+ "completed", failures.length == 0 ? 1 : failures.length, label,
+					owners.isEmpty() ? "owner unknown" : String.join(", ", owners), label);
 		}
 		return fired;
 	}

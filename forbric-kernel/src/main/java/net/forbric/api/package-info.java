@@ -49,5 +49,9 @@
  * and resolving log4j reflectively. The leak is therefore cosmetic rather than a packaging or classloading
  * problem, and inventing a logging seam for four call sites would be churn. Revisit it if a public artifact is
  * ever actually cut, not before.
+ *
+ * <p>{@code net.forbric.kernel.util.Caught} is the second dependency, on the same terms (method bodies only, JDK
+ * types plus {@code ForbricLog}). Every catch here reports what it caught through it, as every catch in the
+ * kernel does, so that a failure this package carries on from is counted and a test can see it.
  */
 package net.forbric.api;

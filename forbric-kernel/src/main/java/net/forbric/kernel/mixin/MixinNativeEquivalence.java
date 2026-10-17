@@ -27,6 +27,8 @@ import org.objectweb.asm.tree.analysis.BasicInterpreter;
 import org.objectweb.asm.tree.analysis.BasicValue;
 import org.objectweb.asm.tree.analysis.Frame;
 
+import net.forbric.kernel.util.Caught;
+
 /**
  * A deliberately small, structural native-equivalence proof. The original handler must be one delegation
  * returning its result. The final selected method must contain that operation with the same receiver and
@@ -205,7 +207,7 @@ final class MixinNativeEquivalence {
         MethodInsnNode call = candidates.getFirst();
         Frame<BasicValue>[] frames;
         try { frames = new Analyzer<BasicValue>(new FlowInterpreter()).analyze(owner, method); }
-        catch (AnalyzerException | RuntimeException malformed) { return null; }
+        catch (AnalyzerException | RuntimeException malformed) { Caught.expected(malformed); return null; }
         int position = method.instructions.indexOf(call);
         Frame<BasicValue> frame = frames[position];
         if (frame == null) return null;
@@ -404,7 +406,7 @@ final class MixinNativeEquivalence {
                     stack.add(new Value(new Literal(opcode - Opcodes.ICONST_0), "I"));
                 else return null;
             }
-        } catch (IndexOutOfBoundsException unavailable) { return null; }
+        } catch (IndexOutOfBoundsException unavailable) { Caught.expected(unavailable); return null; }
         if (!returned || operation == null || result == null || !contains(result.expression(), operation)) return null;
         return new Body(result, operation, operationInstruction, Map.copyOf(operationLocals));
     }
@@ -472,7 +474,7 @@ final class MixinNativeEquivalence {
     private static boolean returns(String called, String handler) {
         try {
             return Type.getReturnType(called).equals(Type.getReturnType(handler));
-        } catch (IllegalArgumentException malformed) { return false; }
+        } catch (IllegalArgumentException malformed) { Caught.expected(malformed); return false; }
     }
 
     /**

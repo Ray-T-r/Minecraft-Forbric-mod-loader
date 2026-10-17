@@ -28,6 +28,7 @@ import org.objectweb.asm.tree.ClassNode;
 
 import net.forbric.api.Ecosystem;
 import net.forbric.api.ForeignType;
+import net.forbric.kernel.util.Caught;
 import net.forbric.kernel.util.ForbricLog;
 
 /**
@@ -82,8 +83,7 @@ public final class NeoEnumExtensionInjector implements ClassTransformer {
 					transformation.getConstructor(Type.class, ClassNode.class, boolean.class,
 							BiConsumer.class, Supplier.class));
 		} catch (Throwable t) {
-			ForbricLog.debug("[Forbric/EnumExt] no RuntimeEnumExtender SPI — enum extension injector not installed: %s",
-					String.valueOf(t));
+			Caught.warn(t, "[Forbric/EnumExt] no RuntimeEnumExtender SPI — enum extension injector not installed");
 			return null;
 		}
 	}
@@ -110,8 +110,7 @@ public final class NeoEnumExtensionInjector implements ClassTransformer {
 		} catch (Throwable t) {
 			// Leaving the enum alone is survivable — the mod that wanted the constant fails on its own lookup, with
 			// its own name in the message. Failing the class definition here would take down unrelated code.
-			ForbricLog.warn("[Forbric/EnumExt] could not extend " + className
-					+ " — a mod's added constant will be missing", t);
+			Caught.warn(t, "[Forbric/EnumExt] could not extend %s — a mod's added constant will be missing", className);
 			return classBytes;
 		}
 	}

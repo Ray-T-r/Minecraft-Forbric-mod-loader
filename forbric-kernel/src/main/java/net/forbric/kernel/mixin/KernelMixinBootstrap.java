@@ -34,6 +34,7 @@ import net.fabricmc.loader.api.ModContainer;
 import net.forbric.api.Ecosystem;
 import net.forbric.kernel.classloading.ForbricClassLoader;
 import net.forbric.kernel.fabric.KernelFabricLoader;
+import net.forbric.kernel.util.Caught;
 import net.forbric.kernel.util.ForbricLog;
 
 /**
@@ -124,6 +125,8 @@ public final class KernelMixinBootstrap {
 			try (var in = loader.getResourceAsStream(internalName + ".class")) {
 				return in == null ? null : in.readAllBytes();
 			} catch (Throwable unreadable) {
+				Caught.warn(unreadable, "[Forbric/Mixin] could not read %s; its interface default conflicts are not "
+						+ "settled", internalName);
 				return null;
 			}
 		});
@@ -202,8 +205,7 @@ public final class KernelMixinBootstrap {
 				// Naming a failure must never become one. A config that cannot be decorated simply keeps the
 				// placeholder it had.
 				unnamed++;
-				ForbricLog.debug("[Forbric/Mixin] could not name the mod behind %s: %s", registered.getName(),
-						String.valueOf(t));
+				Caught.warn(t, "[Forbric/Mixin] could not name the mod behind %s", registered.getName());
 			}
 		}
 		ForbricLog.info("[Forbric/Mixin] %d of %d mixin config(s) now name their mod in Mixin's own messages; %d "
@@ -279,8 +281,7 @@ public final class KernelMixinBootstrap {
 				levels.merge(level, 1, Integer::sum);
 			} catch (Throwable t) {
 				// The newest level is what an undecorated config already had: a config that cannot be read keeps it.
-				ForbricLog.debug("[Forbric/Mixin] could not give %s its Fabric compatibility level: %s",
-						registered.getName(), String.valueOf(t));
+				Caught.warn(t, "[Forbric/Mixin] could not give %s its Fabric compatibility level", registered.getName());
 			}
 		}
 		if (!levels.isEmpty()) {
@@ -323,7 +324,7 @@ public final class KernelMixinBootstrap {
 			String version = String.valueOf(bootstrap.getMethod("getVersion").invoke(null));
 			ForbricLog.info("[Forbric/Mixin] MixinExtras %s initialized (game-side)", version);
 		} catch (ClassNotFoundException e) {
-			ForbricLog.warn("[Forbric/Mixin] MixinExtras absent — mixins using @ModifyExpressionValue / LocalRef "
+			Caught.warn(e, "[Forbric/Mixin] MixinExtras absent — mixins using @ModifyExpressionValue / LocalRef "
 					+ "(most of fabric-api) will fail to parse their injection points");
 		} catch (Throwable t) {
 			throw new IllegalStateException("MixinExtras is present but failed to initialize", t);

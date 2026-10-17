@@ -42,6 +42,7 @@ import net.forbric.api.Ecosystem;
 import net.forbric.kernel.metadata.fabric.FabricModJsonReader;
 import net.forbric.kernel.metadata.forge.ForgeMetadataMapper;
 import net.forbric.kernel.metadata.forge.ModsTomlParser;
+import net.forbric.kernel.util.Caught;
 
 /**
  * Offline driver for {@link MixinFit}: reports what every guest mixin in a mods directory would be judged as,
@@ -114,6 +115,7 @@ public final class MixinFitReport {
 							r = MixinFit.evaluate(bytes, name -> merged.get(name), name -> true, MixinAddedMembers.View.NONE,
 									new NativeAbsentTargets.Context(merged::get, parsed.defaultRequire(), platform, base, mod));
 						} catch (RuntimeException e) {
+							Caught.warn(e, "[Forbric/MixinFit] could not evaluate %s:%s", cfg.getKey(), entry);
 							System.out.printf("  !! %s:%s — scan failed: %s%n", cfg.getKey(), entry, e);
 							continue;
 						}
@@ -157,6 +159,8 @@ public final class MixinFitReport {
 		try (Reader reader = new InputStreamReader(new ByteArrayInputStream(json), StandardCharsets.UTF_8)) {
 			config = JsonFormat.fancyInstance().createParser().parse(reader);
 		} catch (RuntimeException | IOException notAConfig) {
+			Caught.warn(notAConfig, "[Forbric/MixinFit] could not parse a mixin config of %d bytes; it is not scanned",
+					json == null ? -1 : json.length);
 			return null;
 		}
 		Object pkg = config.get(List.of("package"));
@@ -205,6 +209,8 @@ public final class MixinFitReport {
 					"0", source, List.of(), List.of(), config -> true, platform);
 			return mods.size() == 1 ? mods.get(0) : null;
 		} catch (RuntimeException unreadable) {
+			Caught.warn(unreadable, "[Forbric/MixinFit] could not read the %s manifest of %s; its mixins are judged without "
+					+ "it", platform, source);
 			return null;
 		}
 	}

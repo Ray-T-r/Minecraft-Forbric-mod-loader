@@ -3,6 +3,7 @@ package net.forbric.kernel.mixin;
 import java.util.*;import java.util.function.Function;
 import org.objectweb.asm.*;import org.objectweb.asm.tree.*;import org.objectweb.asm.tree.analysis.*;
 import net.forbric.api.Ecosystem;import net.forbric.kernel.boot.*;
+import net.forbric.kernel.util.Caught;
 
 /** A pure shared-value modifier of a completely unused old parameter follows a proved typed constant branch.
  * Its result is observed then discarded. The carrier's actual typed argument and virtual operation remain intact. */
@@ -88,7 +89,7 @@ public final class MixinUnusedArgumentObserverAdapter {
             AnnotationNode annotation=parameter(method,index);if(annotation==null||!SHARE.equals(annotation.desc)||!source.share().equals(MixinFit.value(annotation,"value")))continue;
             AnnotationNode injection=MixinFit.injectorOf(method);if(injection==null||MixinTargetSelectors.one(method,current)!=host||MixinFit.value(annotation,"namespace")!=null)return false;
             int[] slots=DefaultMethodOverloadBridge.slots(Type.getArgumentTypes(method.desc),(method.access&Opcodes.ACC_STATIC)!=0);int reference=slots[index];Sources interpreter=new Sources(method);Frame<SourceValue>[] frames;
-            try{frames=new Analyzer<>(interpreter).analyze(mixin.name,method);}catch(AnalyzerException|RuntimeException invalid){return false;}
+            try{frames=new Analyzer<>(interpreter).analyze(mixin.name,method);}catch(AnalyzerException|RuntimeException invalid){Caught.expected(invalid);return false;}
             AbstractInsnNode token=interpreter.parameters.get(reference);
             for(int n=0;n<method.instructions.size();n++)if(method.instructions.get(n)instanceof MethodInsnNode call) {
                 Frame<SourceValue> frame=frames[n];if(frame==null)continue;int inputs=Type.getArgumentTypes(call.desc).length+(call.getOpcode()==Opcodes.INVOKESTATIC?0:1);int start=frame.getStackSize()-inputs;

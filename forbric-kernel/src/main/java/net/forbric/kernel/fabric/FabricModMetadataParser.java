@@ -42,6 +42,7 @@ import net.forbric.kernel.fabric.KernelMetadataSupport.SimpleModDependency;
 import net.forbric.kernel.fabric.KernelMetadataSupport.SimplePerson;
 import net.forbric.kernel.fabric.KernelModMetadata.EntrypointDecl;
 import net.forbric.kernel.fabric.KernelModMetadata.MixinConfigDecl;
+import net.forbric.kernel.util.Caught;
 import net.forbric.kernel.util.ForbricLog;
 
 /**
@@ -277,6 +278,7 @@ public final class FabricModMetadataParser {
 					icons.put(Integer.parseInt(entry.getKey()), String.valueOf((Object) entry.getValue()));
 				} catch (NumberFormatException ignored) {
 					// A non-numeric icon key is not a size; skip it rather than fail the mod.
+					Caught.expected(ignored);
 				}
 			}
 		}

@@ -11,6 +11,7 @@ import org.objectweb.asm.tree.analysis.*;
 
 import net.forbric.api.Ecosystem;
 import net.forbric.kernel.transform.VanillaEarlyReturns;
+import net.forbric.kernel.util.Caught;
 
 /**
  * A TAIL handler that captures locals the merged tail no longer declares is moved to the end of the one path that still
@@ -109,6 +110,7 @@ public final class MixinGuiItemCaptureAdapter {
         try {
             frames = new Analyzer<>(new BasicInterpreter()).analyze(owner.name, method);
         } catch (AnalyzerException | RuntimeException unanalysable) {
+            Caught.expected(unanalysable);
             return false;
         }
         int at = method.instructions.indexOf(tail);
@@ -163,6 +165,7 @@ public final class MixinGuiItemCaptureAdapter {
                 @Override protected void newControlFlowEdge(int from, int to) { edges.add(((long) from << 32) | to); }
             }.analyze(owner.name, method);
         } catch (AnalyzerException | RuntimeException unanalysable) {
+            Caught.expected(unanalysable);
             return null;
         }
         AbstractInsnNode leaving = null;

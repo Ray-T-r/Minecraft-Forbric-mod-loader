@@ -42,6 +42,7 @@ import org.objectweb.asm.FieldVisitor;
 import org.objectweb.asm.MethodVisitor;
 import org.objectweb.asm.Opcodes;
 import org.objectweb.asm.Type;
+import net.forbric.kernel.ExpectCaught;
 
 /**
  * The member-name SHAPES the annotation index records.
@@ -255,6 +256,7 @@ class ModFileScannerTest {
 		assertEquals(0, classes.size());
 	}
 
+	@ExpectCaught("skipping com/example/Broken.class in mod.jar")
 	@Test
 	void oneUnreadableClassDoesNotCostTheJarItsIndex(@TempDir Path dir) throws Exception {
 		Path jar = dir.resolve("mod.jar");
@@ -274,6 +276,7 @@ class ModFileScannerTest {
 		assertEquals("com.example.Fine", found.get(0).memberName());
 	}
 
+	@ExpectCaught("could not scan mod.jar for NeoForge")
 	@Test
 	void scanReturnsNullRatherThanThrowingWhenTheSpiIsAbsent(@TempDir Path dir) throws Exception {
 		// This classloader has no net.neoforged.* at all. The caller falls back to an empty index; it must not die.

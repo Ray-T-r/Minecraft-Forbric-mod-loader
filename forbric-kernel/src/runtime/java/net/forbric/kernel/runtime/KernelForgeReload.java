@@ -19,8 +19,8 @@ package net.forbric.kernel.runtime;
 import java.util.List;
 import java.util.Map;
 
+import net.forbric.kernel.util.Caught;
 import net.forbric.kernel.util.ForbricLog;
-import net.forbric.kernel.util.Reflect;
 import net.minecraft.core.RegistryAccess;
 import net.minecraft.server.ReloadableServerResources;
 import net.minecraft.server.packs.resources.PreparableReloadListener;
@@ -78,8 +78,8 @@ public final class KernelForgeReload {
 			}
 			return all;
 		} catch (Throwable t) {
-			ForbricLog.warn("[Forbric/EventMux] could not post MinecraftForge's AddReloadListenerEvent — every "
-					+ "Forge reload listener is absent from this reload", Reflect.unwrap(t));
+			Caught.warn(t, "[Forbric/EventMux] could not post MinecraftForge's AddReloadListenerEvent — every "
+					+ "Forge reload listener is absent from this reload");
 			return neo;
 		}
 	}

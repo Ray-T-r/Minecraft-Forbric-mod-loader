@@ -11,6 +11,7 @@ import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.atomic.AtomicBoolean;
 
+import net.forbric.kernel.util.Caught;
 import net.forbric.kernel.util.ForbricLog;
 import net.minecraft.core.BlockPos;
 import net.minecraft.world.level.Level;
@@ -85,11 +86,10 @@ public final class KernelFluidInteractions {
 			}
 			return false;
 		} catch (LinkageError broken) {
-			if (BROKE.compareAndSet(false, true)) {
-				ForbricLog.warn("[Forbric/Fluid] MinecraftForge's FluidInteractionRegistry (or a rule in it) failed to link on the "
-						+ "merged game — MinecraftForge mods' fluid interactions are left out of neighbour changes from now on; "
-						+ "vanilla's and NeoForge mods' still run", broken);
-			}
+			BROKE.set(true);
+			Caught.warn(broken, "[Forbric/Fluid] MinecraftForge's FluidInteractionRegistry (or a rule in it) failed to link on the "
+					+ "merged game — MinecraftForge mods' fluid interactions are left out of neighbour changes from now on; "
+					+ "vanilla's and NeoForge mods' still run");
 			return false;
 		}
 	}

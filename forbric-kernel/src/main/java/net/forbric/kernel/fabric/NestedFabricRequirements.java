@@ -43,6 +43,7 @@ import net.forbric.api.Side;
 import net.forbric.api.UnifiedDependency;
 import net.forbric.api.VersionPredicate;
 import net.forbric.kernel.discovery.ForbricModDiscoverer;
+import net.forbric.kernel.util.Caught;
 import net.forbric.kernel.util.ForbricLog;
 
 /**
@@ -224,8 +225,8 @@ public final class NestedFabricRequirements {
 					}
 				}
 			} catch (Exception unreadable) {
-				ForbricLog.debug("[Forbric/JiJ] could not read the requirements of %s: %s", jar.getFileName(),
-						String.valueOf(unreadable));
+				Caught.warn(unreadable, "[Forbric/JiJ] could not read the requirements of %s; it adds none",
+						jar.getFileName());
 			}
 		}
 		return out;

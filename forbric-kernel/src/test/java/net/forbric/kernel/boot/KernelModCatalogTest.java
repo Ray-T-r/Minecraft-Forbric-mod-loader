@@ -35,6 +35,7 @@ import org.junit.jupiter.api.io.TempDir;
 import net.forbric.api.DiscoveredMod;
 import net.forbric.api.Ecosystem;
 import net.forbric.api.ModCatalog;
+import net.forbric.kernel.ExpectCaught;
 
 /**
  * Covers the unified mod catalogue: the list a player's Mods screen is built from, which is the only list on a
@@ -89,6 +90,7 @@ class KernelModCatalogTest {
 	 * <p>The whole point of the screen is "what is installed", and a mod dropping out of that answer because its
 	 * description would not parse is a worse failure than a missing sentence.
 	 */
+	@ExpectCaught("no display metadata from")
 	@Test
 	void anUnreadableJarCostsTheDescriptionAndNotTheMod(@TempDir Path dir) throws Exception {
 		Path jar = dir.resolve("broken.jar");

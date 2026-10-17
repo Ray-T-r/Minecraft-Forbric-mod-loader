@@ -23,6 +23,7 @@ import java.util.Map;
 import java.util.concurrent.atomic.AtomicInteger;
 
 import net.forbric.kernel.transform.LootTableEventBridgeInjector;
+import net.forbric.kernel.util.Caught;
 import net.forbric.kernel.util.ForbricLog;
 
 /** Runs a proved original closed loot callback group through the native typed loot seam.
@@ -177,6 +178,7 @@ public final class LootTableEventDispatch {
 		try {
 			return (Integer) registry.getClass().getMethod("size").invoke(registry);
 		} catch (Throwable absent) {
+			Caught.expected(absent);
 			return -1;
 		}
 	}
@@ -242,10 +244,14 @@ public final class LootTableEventDispatch {
 			handles = resolved;
 			state = State.PRESENT;
 			return true;
-		} catch (Throwable absent) {
+		} catch (ClassNotFoundException absent) {
 			// A normal instance without fabric-loot-api-v3 — not a defect, so debug rather than warn.
-			ForbricLog.debug("[Forbric/LootBridge] fabric-loot-api-v3 not present (%s) — loot tables load exactly as "
-					+ "NeoForge returns them", String.valueOf(absent));
+			Caught.expected(absent);
+			state = State.ABSENT;
+			return false;
+		} catch (Throwable broken) {
+			Caught.warn(broken, "[Forbric/LootBridge] fabric-loot-api-v3 could not be bound — loot tables load exactly as "
+					+ "NeoForge returns them");
 			state = State.ABSENT;
 			return false;
 		}

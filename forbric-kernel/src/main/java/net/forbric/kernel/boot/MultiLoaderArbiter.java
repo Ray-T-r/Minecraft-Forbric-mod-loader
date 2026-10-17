@@ -37,6 +37,7 @@ import net.forbric.kernel.discovery.ModAnnotationScanner;
 import net.forbric.kernel.fabric.FabricModMetadataParser;
 import net.forbric.kernel.fabric.KernelModMetadata;
 import net.forbric.kernel.metadata.forge.ModsTomlParser;
+import net.forbric.kernel.util.Caught;
 import net.forbric.kernel.util.ForbricLog;
 
 /**
@@ -164,7 +165,8 @@ public final class MultiLoaderArbiter {
 			}
 		} catch (Exception error) {
 			// Incomplete evidence must not suppress a possibly valid family. Discovery reports malformed metadata.
-			ForbricLog.debug("[Forbric/MultiLoader] could not inspect entrypoints in %s: %s", jar.getFileName(), error);
+			Caught.warn(error, "[Forbric/MultiLoader] could not inspect entrypoints in %s; no family of it is suppressed",
+					jar.getFileName());
 			return List.of();
 		}
 		return declared.stream().filter(found::contains).toList();
@@ -237,7 +239,8 @@ public final class MultiLoaderArbiter {
 			if (zip.getEntry(ForbricModDiscoverer.FORGE_MANIFEST) != null) declared.add(Ecosystem.FORGE);
 			if (zip.getEntry(ForbricModDiscoverer.FABRIC_MANIFEST) != null) declared.add(Ecosystem.FABRIC);
 		} catch (Throwable t) {
-			ForbricLog.debug("[Forbric/MultiLoader] could not read %s: %s", jar.getFileName(), String.valueOf(t));
+			Caught.warn(t, "[Forbric/MultiLoader] could not read %s; it is taken to declare %s", jar.getFileName(),
+					declared);
 		}
 		return declared;
 	}

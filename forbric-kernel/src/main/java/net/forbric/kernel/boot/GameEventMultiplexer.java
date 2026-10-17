@@ -20,8 +20,8 @@ import java.lang.reflect.Method;
 
 import net.forbric.api.EventBridges;
 import net.forbric.api.GameEventBridge;
+import net.forbric.kernel.util.Caught;
 import net.forbric.kernel.util.ForbricLog;
-import net.forbric.kernel.util.Reflect;
 
 /**
  * Re-emits game events the merged base's byte-merge left firing on only ONE ecosystem's hook, so the other
@@ -319,10 +319,10 @@ public final class GameEventMultiplexer {
 				EventBridges.verify(GameEventBridge.Pass.CLIENT_GAME_BUS);
 			}
 		} catch (ClassNotFoundException single) {
-			ForbricLog.debug("[Forbric/EventMux] only one Forge family present — no bridge needed");
+			// Only one Forge family present — no bridge needed.
+			Caught.expected(single);
 		} catch (Throwable t) {
-			ForbricLog.warn("[Forbric/EventMux] could not install Neo→Forge game-event bridge",
-					Reflect.unwrap(t));
+			Caught.warn(t, "[Forbric/EventMux] could not install Neo→Forge game-event bridge");
 		}
 	}
 
@@ -356,10 +356,11 @@ public final class GameEventMultiplexer {
 					.getMethod("installDataMapWatch", Object.class).invoke(null, neoBus);
 			ForbricLog.debug("[Forbric/EventMux] watching NeoForge's data-map reload path");
 		} catch (ClassNotFoundException absent) {
-			ForbricLog.debug("[Forbric/EventMux] no NeoForge bus — no data-map path to watch");
+			// No NeoForge bus — no data-map path to watch.
+			Caught.expected(absent);
 		} catch (Throwable t) {
-			ForbricLog.warn("[Forbric/EventMux] could not watch NeoForge's data-map reload path — the kernel's fallback "
-					+ "will load the data maps as before", Reflect.unwrap(t));
+			Caught.warn(t, "[Forbric/EventMux] could not watch NeoForge's data-map reload path — the kernel's fallback "
+					+ "will load the data maps as before");
 		}
 	}
 
@@ -385,10 +386,10 @@ public final class GameEventMultiplexer {
 			EventBridges.installed(GameEventBridge.MODELS_BAKED);
 			EventBridges.verify(GameEventBridge.Pass.CLIENT_MOD_BUS);
 		} catch (ClassNotFoundException single) {
-			ForbricLog.debug("[Forbric/EventMux] only one Forge family present — no reload-listener bridge needed");
+			// Only one Forge family present — no reload-listener bridge needed.
+			Caught.expected(single);
 		} catch (Throwable t) {
-			ForbricLog.warn("[Forbric/EventMux] could not install the client reload-listener bridge",
-					Reflect.unwrap(t));
+			Caught.warn(t, "[Forbric/EventMux] could not install the client reload-listener bridge");
 		}
 	}
 
@@ -532,8 +533,8 @@ public final class GameEventMultiplexer {
 			setup.run();
 			EventBridges.installed(bridge);
 		} catch (Throwable t) {
-			ForbricLog.warn("[Forbric/EventMux] bridge " + bridge + " (" + bridge.event() + ") did not install — "
-					+ bridge.cost(), Reflect.unwrap(t));
+			Caught.warn(t, "[Forbric/EventMux] bridge %s (%s) did not install — %s", bridge, bridge.event(),
+					bridge.cost());
 		}
 	}
 }

@@ -21,6 +21,7 @@ import java.util.concurrent.ConcurrentHashMap;
 
 import net.forbric.api.Ecosystem;
 import net.forbric.api.ModPresence;
+import net.forbric.kernel.util.Caught;
 import net.forbric.kernel.util.ForbricLog;
 
 /**
@@ -103,6 +104,8 @@ public final class KernelRegistryDirectories {
 			}
 			return path;
 		} catch (Throwable t) {
+			Caught.warn(t, "[Forbric/Registries] could not decide the data directory of registry %s:%s; it keeps the "
+					+ "merged one (%s)", namespace, path, merged);
 			return merged;
 		}
 	}
@@ -141,6 +144,8 @@ public final class KernelRegistryDirectories {
 				try {
 					present = Merged.into(registries(), FABRIC_PREFIXER);
 				} catch (Throwable t) {
+					Caught.warn(t, "[Forbric/Registries] could not ask Registries whether fabric-registry-sync's %s is "
+							+ "in it; treating it as absent", FABRIC_PREFIXER);
 					present = false;
 				}
 				if (!present) {

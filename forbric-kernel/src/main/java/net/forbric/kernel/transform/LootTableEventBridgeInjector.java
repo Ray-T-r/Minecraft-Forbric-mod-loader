@@ -43,6 +43,7 @@ import org.objectweb.asm.tree.analysis.SourceValue;
 
 import net.forbric.api.Ecosystem;
 import net.forbric.api.ForeignType;
+import net.forbric.kernel.util.Caught;
 import net.forbric.kernel.util.ForbricLog;
 
 /**
@@ -188,6 +189,7 @@ public final class LootTableEventBridgeInjector implements ClassTransformer {
 			try {
 				frames = new Analyzer<>(new Origins()).analyze(node.name, method);
 			} catch (AnalyzerException | RuntimeException unreadable) {
+				Caught.expected(unreadable);
 				continue;
 			}
 			for (AbstractInsnNode insn : method.instructions) {

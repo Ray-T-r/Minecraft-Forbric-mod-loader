@@ -37,6 +37,7 @@ import net.forbric.api.Ecosystem;
 import net.forbric.kernel.discovery.ForbricModDiscoverer;
 import net.forbric.kernel.fabric.FabricModMetadataParser;
 import net.forbric.kernel.fabric.KernelModMetadata;
+import net.forbric.kernel.util.Caught;
 import net.forbric.kernel.util.ForbricLog;
 
 /**
@@ -442,7 +443,11 @@ public final class DuplicateModArbiter {
 				zip.stream().map(java.util.zip.ZipEntry::getName).filter(name -> name.endsWith(".class"))
 						.forEach(name -> names.add(name.substring(0, name.length() - 6).replace('/', '.')));
 				return names;
-			} catch (IOException unreadable) { return null; }
+			} catch (IOException unreadable) {
+				Caught.warn(unreadable, "[Forbric/DupeId] could not list the classes of %s; its class comparison is "
+						+ "skipped", jar.getFileName());
+				return null;
+			}
 		}
 		if (!collectClasses(jar, names)) return null;
 		return names;
@@ -466,10 +471,14 @@ public final class DuplicateModArbiter {
 						}
 					} catch (java.io.IOException unreadableNested) {
 						// One unreadable bundle must not make the whole jar unreadable — it only widens the diff.
+						Caught.warn(unreadableNested, "[Forbric/DupeId] could not read bundled %s in %s; its classes "
+								+ "are left out of the comparison", name, jar.getFileName());
 					}
 				}
 			}
 		} catch (java.io.IOException unreadable) {
+			Caught.warn(unreadable, "[Forbric/DupeId] could not list the classes of %s; its class comparison is "
+					+ "skipped", jar.getFileName());
 			return false;
 		}
 		return true;
@@ -955,7 +964,7 @@ public final class DuplicateModArbiter {
 				if (eco != null) parsed.put(line.substring(0, eq).trim(), eco);
 			}
 		} catch (Throwable t) {
-			ForbricLog.warn("[Forbric/DupeId] could not read " + OVERRIDE_FILE + " — using the automatic choice", t);
+			Caught.warn(t, "[Forbric/DupeId] could not read %s — using the automatic choice", OVERRIDE_FILE);
 			return;
 		}
 		fileOverrides = Map.copyOf(parsed);
@@ -991,7 +1000,7 @@ public final class DuplicateModArbiter {
 			ForbricLog.info("[Forbric/DupeId] wrote %s — edit it to pick a different copy of any duplicated mod",
 					file);
 		} catch (IOException | RuntimeException e) {
-			ForbricLog.debug("[Forbric/DupeId] could not write %s: %s", OVERRIDE_FILE, String.valueOf(e));
+			Caught.warn(e, "[Forbric/DupeId] could not write %s; there is no template to edit", OVERRIDE_FILE);
 		}
 	}
 
@@ -1028,7 +1037,7 @@ public final class DuplicateModArbiter {
 			jars = entries.filter(p -> p.getFileName().toString().endsWith(".jar"))
 					.filter(Files::isRegularFile).sorted().toList();
 		} catch (Exception e) {
-			ForbricLog.warn("[Forbric/DupeId] could not list %s: %s", modsDir, String.valueOf(e));
+			Caught.warn(e, "[Forbric/DupeId] could not list %s", modsDir);
 			return claims;
 		}
 
@@ -1044,7 +1053,7 @@ public final class DuplicateModArbiter {
 						claim = new Claim(jar, Ecosystem.NEOFORGE, List.of(), Map.of());
 					}
 				} catch (Exception e) {
-					ForbricLog.warn("[Forbric/DupeId] could not inspect library bundle %s: %s", jar.getFileName(), String.valueOf(e));
+					Caught.warn(e, "[Forbric/DupeId] could not inspect library bundle %s", jar.getFileName());
 				}
 			}
 			if (claim != null) claims.add(claim);
@@ -1110,8 +1119,8 @@ public final class DuplicateModArbiter {
 				return List.of(metadata.getId());
 			}
 		} catch (Exception e) {
-			ForbricLog.debug("[Forbric/DupeId] could not read Fabric metadata from %s: %s", jar.getFileName(),
-					String.valueOf(e));
+			Caught.warn(e, "[Forbric/DupeId] could not read Fabric metadata from %s; it claims no Fabric mod id",
+					jar.getFileName());
 			return List.of();
 		}
 	}
@@ -1127,8 +1136,8 @@ public final class DuplicateModArbiter {
 				if (mod.getVersion() != null) versions.put(mod.getId(), mod.getVersion());
 			}
 		} catch (Exception e) {
-			ForbricLog.debug("[Forbric/DupeId] could not read Forge-family metadata from %s: %s", jar.getFileName(),
-					String.valueOf(e));
+			Caught.warn(e, "[Forbric/DupeId] could not read Forge-family metadata from %s; it claims no %s mod id",
+					jar.getFileName(), family);
 		}
 		return ids;
 	}

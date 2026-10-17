@@ -60,7 +60,7 @@ public final class MergedBaseMixinCompat {
                     }
                 }
             }
-        }catch(Exception unreadable){net.forbric.kernel.util.ForbricLog.debug("[Forbric/Mixin] cannot inspect source protocols in %s: %s",configName,unreadable.toString());}
+        }catch(Exception unreadable){net.forbric.kernel.util.Caught.warn(unreadable,"[Forbric/Mixin] cannot inspect source protocols in %s; its remaining mixins are not checked",configName);}
     }
     /**
      * Why the source mixin is refused, or null. {@code natives} gives the class the mod was compiled against: each gate

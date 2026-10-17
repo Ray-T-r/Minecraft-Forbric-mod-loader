@@ -128,7 +128,7 @@ public final class ForgeTransferShapeAudit {
 			Files.writeString(output.resolveSibling(output.getFileName() + ".audit.txt"),
 					"reviewed=" + expected + "\nobserved=" + actual + "\ncertified=" + approved + "\n");
 		} catch (IOException | RuntimeException failure) {
-			net.forbric.kernel.util.ForbricLog.warn("[Forbric/TransferAudit] could not dump %s: %s", name, failure.toString());
+			net.forbric.kernel.util.Caught.warn(failure, "[Forbric/TransferAudit] could not dump %s", name);
 		}
 	}
 	static String fingerprint(byte[] bytes) {

@@ -13,6 +13,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 
+import net.forbric.kernel.util.Caught;
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.world.level.Level;
 import net.minecraft.world.level.block.entity.BlockEntity;
@@ -44,7 +45,7 @@ final class NativeRetentionRelease {
 			if (split <= 0 || split == root.length() - 1) throw new IllegalArgumentException("invalid native retention root " + root);
 			Class<?> owner;
 			try { owner = Class.forName(root.substring(0, split), false, loader); }
-			catch (ClassNotFoundException absent) { row.put("present", false); rows.add(row); continue; }
+			catch (ClassNotFoundException absent) { Caught.expected(absent); row.put("present", false); rows.add(row); continue; }
 			row.put("present", true);
 			row.put("codeSource", codeSource(owner));
 			Collection<?> values;
@@ -79,6 +80,6 @@ final class NativeRetentionRelease {
 		try {
 			var source = owner.getProtectionDomain().getCodeSource();
 			return source == null || source.getLocation() == null ? null : Path.of(source.getLocation().toURI()).toString();
-		} catch (Exception unknown) { return null; }
+		} catch (Exception unknown) { Caught.expected(unknown); return null; }
 	}
 }

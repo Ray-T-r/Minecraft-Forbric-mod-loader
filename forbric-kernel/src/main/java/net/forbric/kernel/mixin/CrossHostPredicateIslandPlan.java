@@ -5,6 +5,7 @@ import java.util.*;
 import java.util.function.Function;
 import org.objectweb.asm.*;
 import org.objectweb.asm.tree.*;
+import net.forbric.kernel.util.Caught;
 import static net.forbric.kernel.mixin.PredicateDecisionGraph.*;
 
 /** Relates the native source short-circuit cluster to a typed host's pre-event predicate island. */
@@ -15,7 +16,8 @@ final class CrossHostPredicateIslandPlan implements Opcodes {
                 Member anyTypeQuestion,Member typedActorQuestion,Member protection,NativeSourcePredicateIsland.Extraction source){}
     private CrossHostPredicateIslandPlan(){}
     static Plan derive(String actorOwner,MethodNode caller,NativeSourcePredicateIsland.Extraction source,Function<String,ClassNode> classes){
-        try{return checked(actorOwner,caller,source,classes);}catch(RuntimeException unknown){return null;}
+        try{return checked(actorOwner,caller,source,classes);}catch(RuntimeException unknown){
+            Caught.warn(unknown,"[Forbric/Mixin] could not plan the cross-host predicate island of %s.%s%s; it is left as written",actorOwner,caller.name,caller.desc);return null;}
     }
     private static Plan checked(String actor,MethodNode caller,NativeSourcePredicateIsland.Extraction source,Function<String,ClassNode> classes){
         List<MethodInsnNode>candidates=new ArrayList<>();for(AbstractInsnNode i:caller.instructions)if(i instanceof MethodInsnNode call&&call.getOpcode()==INVOKESTATIC){Type[]args=Type.getArgumentTypes(call.desc);if(Type.getReturnType(call.desc)==Type.VOID_TYPE&&args.length==4&&args[0].getDescriptor().equals("L"+actor+";")&&args[1].getDescriptor().equals("L"+source.worldType()+";")&&args[2]==Type.INT_TYPE&&args[3]==Type.INT_TYPE)candidates.add(call);}

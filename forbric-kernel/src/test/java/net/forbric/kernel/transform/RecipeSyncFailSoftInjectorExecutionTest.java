@@ -14,6 +14,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
 import net.fabricmc.api.EnvType;
+import net.forbric.kernel.ExpectCaught;
 
 /**
  * {@link RecipeSyncFailSoftInjector}'s output, run: a recipe whose own serializer cannot network-encode it (Enchant
@@ -223,6 +224,7 @@ class RecipeSyncFailSoftInjectorExecutionTest {
 		return (List<?>) InjectorExecution.getStatic(loader.loadClass("net.neoforged.neoforge.network.PacketDistributor"), "sent");
 	}
 
+	@ExpectCaught("left recipe enchantcraft:apply_enchant")
 	@Test void aRecipeItsOwnSerializerCannotEncodeIsLeftOutAndTheRestAreSent(@TempDir Path work) throws Throwable {
 		assertTrue(Files.isRegularFile(HOOK_SOURCE), "the game-side hook's source is part of the checkout: " + HOOK_SOURCE.toAbsolutePath());
 		Map<String, String> sources = new HashMap<>(STAND_INS);

@@ -22,6 +22,8 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 import java.util.function.Supplier;
 
+import net.forbric.kernel.util.Caught;
+
 /**
  * A future whose value is computed the first time anyone looks at it, and which from then on is an ordinary
  * completed future.
@@ -75,6 +77,7 @@ final class LazyScanFuture extends CompletableFuture<Object> {
 			try {
 				complete(pending.get());
 			} catch (Throwable t) {
+				Caught.expected(t);
 				completeExceptionally(t);
 			} finally {
 				computing = null;

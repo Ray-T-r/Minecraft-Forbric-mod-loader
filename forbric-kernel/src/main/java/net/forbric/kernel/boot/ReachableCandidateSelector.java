@@ -6,6 +6,7 @@ import java.util.*;
 import net.forbric.api.Ecosystem;
 import net.forbric.api.VersionPredicate;
 import net.forbric.kernel.metadata.forge.ForgeVersionRangeTranslator;
+import net.forbric.kernel.util.Caught;
 import org.sat4j.core.VecInt;
 import org.sat4j.minisat.SolverFactory;
 import org.sat4j.specs.*;
@@ -76,7 +77,7 @@ final class ReachableCandidateSelector {
 			// Hand-written metadata.json can carry "[1.0" or "[]". The legacy extractor never parsed ranges and
 			// loaded such packs; one bad constraint must leave its choice unproved, not abort the whole boot.
 			try { predicate = ForgeVersionRangeTranslator.toFabricPredicate(range); }
-			catch (IllegalArgumentException unparseable) { predicate = "*"; malformed = true; }
+			catch (IllegalArgumentException unparseable) { Caught.expected(unparseable); predicate = "*"; malformed = true; }
 			boolean unreadable = malformed || "*".equals(predicate) && range != null && !range.isBlank()
 					&& !Set.of("*", "(,)", "[,)", "(,]", "[,]").contains(range);
 			String translated = predicate; boolean open = unreadable;
@@ -181,6 +182,7 @@ final class ReachableCandidateSelector {
 				clause(solver, proved);
 			}
 		} catch (ContradictionException contradiction) {
+			Caught.expected(contradiction);
 			return new Search(fallback(), JointCandidateSelector.Status.UNSATISFIABLE, Set.of(), Map.of(), impossible);
 		}
 		VecInt assumptions = new VecInt();
@@ -224,6 +226,7 @@ final class ReachableCandidateSelector {
 			return new Search(selected, conflict ? JointCandidateSelector.Status.UNSATISFIABLE : JointCandidateSelector.Status.SOLVED,
 					unavoidable, refused, impossible);
 		} catch (TimeoutException bounded) {
+			Caught.expected(bounded);
 			// The last model always satisfies everything accepted so far (the structure, the settled pins, the
 			// contracts and choices taken before the bound). Before the pins are settled it may be the first,
 			// purely structural model, which never saw a pin: the fallback then keeps every pinned build instead.

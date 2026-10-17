@@ -59,10 +59,9 @@ public final class VirtualProperties {
             MethodHandle write = MethodHandles.privateLookupIn(storage, MethodHandles.lookup()).findSetter(storage, field.name(), type);
             return value -> {
                 try { write.invoke(receiver, value); }
-                catch (Throwable failure) { VirtualProperties.<RuntimeException>raise(failure); }
+                catch (Throwable failure) { throw VirtualProperties.<RuntimeException>raise(failure); }
             };
-        } catch (Throwable failure) { VirtualProperties.<RuntimeException>raise(failure); }
-        throw new AssertionError("unreachable");
+        } catch (Throwable failure) { throw VirtualProperties.<RuntimeException>raise(failure); }
     }
-    @SuppressWarnings("unchecked") private static <E extends Throwable> void raise(Throwable failure) throws E { throw (E) failure; }
+    @SuppressWarnings("unchecked") private static <E extends Throwable> E raise(Throwable failure) throws E { throw (E) failure; }
 }

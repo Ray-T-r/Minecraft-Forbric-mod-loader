@@ -18,8 +18,8 @@ package net.forbric.kernel.runtime;
 
 import java.util.concurrent.atomic.AtomicBoolean;
 
+import net.forbric.kernel.util.Caught;
 import net.forbric.kernel.util.ForbricLog;
-import net.forbric.kernel.util.Reflect;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.crafting.RecipeType;
 import net.minecraft.world.level.block.entity.FuelValues;
@@ -51,7 +51,6 @@ import net.neoforged.neoforge.event.EventHooks;
  * receiver: its four-argument shape cannot be reached from MinecraftForge's three-argument one.
  */
 public final class KernelFuelValues {
-	private static final AtomicBoolean WARNED = new AtomicBoolean();
 	private static final AtomicBoolean PROVED = new AtomicBoolean();
 
 	private KernelFuelValues() {
@@ -68,7 +67,8 @@ public final class KernelFuelValues {
 		try {
 			value = ForgeEventFactory.getItemBurnTime(stack, value, type);
 		} catch (Throwable t) {
-			warnOnce("MinecraftForge", t);
+			Caught.warn(t, "[Forbric/Fuel] MinecraftForge's burn-time hook failed for %s — mods on that side cannot "
+					+ "change how long it burns", stack);
 		}
 		try {
 			value = EventHooks.getItemBurnTime(stack, value, type, fuel);
@@ -77,22 +77,10 @@ public final class KernelFuelValues {
 						+ "only MinecraftForge, so NeoForge's FurnaceFuelBurnTimeEvent was never posted");
 			}
 		} catch (Throwable t) {
-			warnOnce("NeoForge", t);
+			Caught.warn(t, "[Forbric/Fuel] NeoForge's burn-time hook failed for %s — mods on that side cannot "
+					+ "change how long it burns", stack);
 		}
 		return value;
 	}
 
-	/**
-	 * One line per side, ever.
-	 *
-	 * <p>This runs for every fuel lookup in every furnace, so a per-call line would be the loudest thing in the
-	 * log; and a throw here would take the smelt with it, which is a worse outcome than one ecosystem not being
-	 * asked. The value carried so far is returned either way.
-	 */
-	private static void warnOnce(String family, Throwable t) {
-		if (WARNED.compareAndSet(false, true)) {
-			ForbricLog.warn("[Forbric/Fuel] " + family + "'s burn-time hook failed — mods on that side cannot "
-					+ "change how long anything burns", Reflect.unwrap(t));
-		}
-	}
 }

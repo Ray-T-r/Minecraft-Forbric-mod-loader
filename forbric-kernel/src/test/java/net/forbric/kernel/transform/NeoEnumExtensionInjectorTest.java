@@ -32,6 +32,7 @@ import org.junit.jupiter.api.io.TempDir;
 import org.objectweb.asm.ClassWriter;
 
 import net.fabricmc.api.EnvType;
+import net.forbric.kernel.ExpectCaught;
 
 /**
  * Covers {@link NeoEnumExtensionInjector}'s decisions that are not NeoForge's compiled code: whether to install at
@@ -161,6 +162,7 @@ class NeoEnumExtensionInjectorTest {
 				"asked once, with the class's own type and its node");
 	}
 
+	@ExpectCaught("could not extend fixture.Pose")
 	@Test
 	void anUndeclaredEnumIsNeverHandedOverAndADeclinedOrFailedOneIsLeftAlone(@TempDir Path work) throws Throwable {
 		Map<String, byte[]> classes = InjectorExecution.compile(work, SOURCES);
@@ -185,6 +187,7 @@ class NeoEnumExtensionInjectorTest {
 		return List.copyOf((List<?>) InjectorExecution.getStatic(game.loadClass(EXTENDER), "calls"));
 	}
 
+	@ExpectCaught("no RuntimeEnumExtender SPI")
 	@Test
 	void isNotInstalledWhenTheSpiIsAbsent() {
 		// The test classpath has no net.neoforged.*, the same shape as a runtime without the enumextension package

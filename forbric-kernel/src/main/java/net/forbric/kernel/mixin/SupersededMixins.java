@@ -29,6 +29,7 @@ import org.objectweb.asm.tree.ClassNode;
 import org.objectweb.asm.tree.MethodInsnNode;
 import org.objectweb.asm.tree.MethodNode;
 
+import net.forbric.kernel.util.Caught;
 import net.forbric.kernel.util.ForbricLog;
 
 /**
@@ -179,6 +180,8 @@ public final class SupersededMixins {
 					continue;
 				}
 			} catch (RuntimeException unreadable) {
+				Caught.warn(unreadable, "[Forbric/Mixin] could not read %s to check the repair that supersedes %s;"
+						+ " not counted as proved", binaryName, entry.getKey());
 				continue;
 			}
 			PROVED.add(entry.getKey());

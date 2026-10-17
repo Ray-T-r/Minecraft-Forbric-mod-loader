@@ -21,6 +21,7 @@ import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.Set;
 import java.util.TreeSet;
+import net.forbric.kernel.util.Caught;
 
 /**
  * The events a MinecraftForge mod listens for that an annotation scan cannot see.
@@ -70,7 +71,7 @@ public final class ForgeBusSubscriptions {
 	/**
 	 * The event classes one bus group has buses for, as internal names.
 	 *
-	 * <p>Never throws and never logs: this runs inside an audit that exists to add information, and an audit
+	 * <p>Never throws: this runs inside an audit that exists to add information, and an audit
 	 * that can fail a boot is worse than one that is incomplete.
 	 */
 	public static Set<String> eventsOf(Object busGroup) {
@@ -86,6 +87,8 @@ public final class ForgeBusSubscriptions {
 				if (key instanceof Class<?> type) out.add(type.getName().replace('.', '/'));
 			}
 		} catch (Throwable unreadable) {
+			Caught.warn(unreadable, "[Forbric/ForgeBus] could not read the event buses of %s; its subscriptions are "
+					+ "left out of the audit", busGroup.getClass().getName());
 			return out;
 		}
 		return out;
@@ -97,6 +100,7 @@ public final class ForgeBusSubscriptions {
 				return c.getDeclaredField(name);
 			} catch (NoSuchFieldException keepLooking) {
 				// up the chain
+				Caught.expected(keepLooking);
 			}
 		}
 		return null;

@@ -9,8 +9,8 @@ import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.atomic.AtomicBoolean;
 
+import net.forbric.kernel.util.Caught;
 import net.forbric.kernel.util.ForbricLog;
-import net.forbric.kernel.util.Reflect;
 import net.minecraft.core.HolderLookup;
 import net.minecraft.tags.ItemTags;
 import net.minecraft.world.flag.FeatureFlagSet;
@@ -48,7 +48,6 @@ import net.minecraft.world.level.block.entity.FuelValues;
 public final class KernelFabricFuel {
 	/** {@code off} leaves the fuel table populateFuelValues builds out of vanillaBurnTimes' return hooks. */
 	public static final String RETURN_HOOKS = "forbric.fabricFuel.returnHooks";
-	private static final AtomicBoolean WARNED = new AtomicBoolean();
 	private static final AtomicBoolean HOOKS_WARNED = new AtomicBoolean();
 	private static final AtomicBoolean HOOKS_PROVED = new AtomicBoolean();
 	/** The table on its way through vanillaBurnTimes, for the one body call that takes it. */
@@ -83,10 +82,8 @@ public final class KernelFabricFuel {
 			map.keySet().removeIf(item -> !before.contains(item) && item.builtInRegistryHolder().is(ItemTags.NON_FLAMMABLE_WOOD));
 			exclusionsMethod.invoke(invoker.invoke(exclusions), builder, ctx);
 		} catch (Throwable t) {
-			if (WARNED.compareAndSet(false, true)) {
-				ForbricLog.warn("[Forbric/Fuel] fabric-content-registries' fuel events failed — Fabric mods' fuels are missing "
-						+ "from this game's fuel values", Reflect.unwrap(t));
-			}
+			Caught.warn(t, "[Forbric/Fuel] fabric-content-registries' fuel events failed — Fabric mods' fuels are missing "
+					+ "from this game's fuel values");
 		}
 		return builder;
 	}
@@ -112,7 +109,7 @@ public final class KernelFabricFuel {
 			FuelValues hooked = FuelValues.vanillaBurnTimes(registries, features);
 			if (!pending.taken) {
 				warnHooksOnce("vanillaBurnTimes returned without reaching the merge-added body the kernel short-circuits "
-						+ "(a HEAD cancel, or a carrier whose overload no longer forwards)", null);
+						+ "(a HEAD cancel, or a carrier whose overload no longer forwards)");
 				return built;
 			}
 			if (HOOKS_PROVED.compareAndSet(false, true)) {
@@ -122,7 +119,8 @@ public final class KernelFabricFuel {
 			}
 			return hooked == null ? built : hooked;
 		} catch (Throwable t) {
-			warnHooksOnce("vanillaBurnTimes threw on the way through its return hooks", Reflect.unwrap(t));
+			Caught.warn(t, "[Forbric/Fuel] vanillaBurnTimes threw on the way through its return hooks — the data map's fuel"
+					+ " table is kept as built, and a mod's mixin on vanillaBurnTimes' return does not change it");
 			return built;
 		} finally {
 			if (outer == null) PENDING.remove();
@@ -142,12 +140,10 @@ public final class KernelFabricFuel {
 		return pending.values;
 	}
 
-	private static void warnHooksOnce(String what, Throwable cause) {
+	private static void warnHooksOnce(String what) {
 		if (!HOOKS_WARNED.compareAndSet(false, true)) return;
-		String message = "[Forbric/Fuel] " + what + " — the data map's fuel table is kept as built, and a mod's mixin "
-				+ "on vanillaBurnTimes' return does not change it";
-		if (cause == null) ForbricLog.warn(message);
-		else ForbricLog.warn(message, cause);
+		ForbricLog.warn("[Forbric/Fuel] " + what + " — the data map's fuel table is kept as built, and a mod's mixin "
+				+ "on vanillaBurnTimes' return does not change it");
 	}
 
 	/** fabric-content-registries, once; false (for good) when it is not installed. */
@@ -158,6 +154,7 @@ public final class KernelFabricFuel {
 		try {
 			events = Class.forName("net.fabricmc.fabric.api.registry.FuelValueEvents", true, loader);
 		} catch (ClassNotFoundException absent) {
+			Caught.expected(absent);
 			return false;
 		}
 		ClassLoader fabric = events.getClassLoader();

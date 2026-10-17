@@ -26,6 +26,7 @@ import java.util.List;
 import java.util.concurrent.atomic.AtomicInteger;
 
 import org.junit.jupiter.api.Test;
+import net.forbric.kernel.ExpectCaught;
 
 /**
  * Covers the two halves of getting MinecraftForge's {@code ModList} right: WHEN it is written, and that an empty
@@ -128,6 +129,7 @@ class KernelModLoaderForgeModListTest {
 		assertTrue(handles.isEmpty());
 	}
 
+	@ExpectCaught("no javafmlmod")
 	@Test
 	void oneModsFailureDoesNotCostTheOthersTheirContainer() {
 		var handles = KernelModLoader.buildForgeHandles(

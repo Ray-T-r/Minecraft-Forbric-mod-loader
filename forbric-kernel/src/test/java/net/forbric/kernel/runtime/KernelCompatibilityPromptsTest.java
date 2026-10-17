@@ -1,5 +1,6 @@
 package net.forbric.kernel.runtime;
 
+import net.forbric.kernel.ExpectCaught;
 import net.forbric.kernel.TestFixtures;
 
 import static org.junit.jupiter.api.Assertions.*;
@@ -123,6 +124,7 @@ class KernelCompatibilityPromptsTest {
 		}
 	}
 
+	@ExpectCaught("confirmation could not be displayed")
 	@Test void failedScreenPresentationCannotBeMistakenForConsent() throws Exception {
 		try (Fixture fixture = fixture()) {
 			fixture.enterWorld(); fixture.gui.getClass().getField("fail").setBoolean(fixture.gui, true);

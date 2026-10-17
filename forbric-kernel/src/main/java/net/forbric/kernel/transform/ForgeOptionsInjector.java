@@ -3,6 +3,7 @@ package net.forbric.kernel.transform;
 import java.util.Arrays;
 import java.util.List;
 
+import net.forbric.kernel.util.Caught;
 import net.forbric.kernel.util.ForbricLog;
 import org.objectweb.asm.ClassReader;
 import org.objectweb.asm.ClassWriter;
@@ -44,7 +45,11 @@ public final class ForgeOptionsInjector implements ClassTransformer {
 	 */
 	static boolean keepsUnknownKeys(byte[] bytes) {
 		ClassNode node = new ClassNode();
-		try { new ClassReader(bytes).accept(node, ClassReader.SKIP_FRAMES); } catch (RuntimeException unreadable) { return false; }
+		try { new ClassReader(bytes).accept(node, ClassReader.SKIP_FRAMES); } catch (RuntimeException unreadable) {
+			Caught.warn(unreadable, "[Forbric/ForgeClient] could not read a class to check how it keeps unknown key"
+					+ " bindings; judged as not keeping them");
+			return false;
+		}
 		if (!OPTIONS.equals(node.name)) return false;
 		MethodNode load = method(node, "load", "()V"), save = method(node, "save", "()V");
 		if (load == null || save == null || method(node, "load", "(Z)V") == null) return false;

@@ -31,6 +31,7 @@ import net.forbric.kernel.fabric.FabricModDiscovery;
 import net.forbric.kernel.fabric.FabricModMetadataParser;
 import net.forbric.kernel.fabric.KernelModMetadata;
 import net.forbric.kernel.fabric.KernelVersion;
+import net.forbric.kernel.util.Caught;
 import net.forbric.kernel.util.ForbricLog;
 
 /** One owned order for class definition, Mixin's bytecode reads, and Mixin config resources. */
@@ -132,8 +133,8 @@ final class KernelOwnedClasspath {
 				return new String[] {id, String.valueOf(metadata.getVersion().getFriendlyString())};
 			}
 		} catch (Exception unreadable) {
-			ForbricLog.debug("[Forbric/Boot] could not read %s for duplicate-version ordering: %s",
-					jar.getFileName(), String.valueOf(unreadable));
+			Caught.warn(unreadable, "[Forbric/Boot] could not read %s for duplicate-version ordering; it keeps its place",
+					jar.getFileName());
 			return null;
 		}
 	}
@@ -144,6 +145,7 @@ final class KernelOwnedClasspath {
 		try {
 			return KernelVersion.parse(a).compareTo(KernelVersion.parse(b));
 		} catch (Exception unparseable) {
+			Caught.expected(unparseable);
 			return 0;
 		}
 	}

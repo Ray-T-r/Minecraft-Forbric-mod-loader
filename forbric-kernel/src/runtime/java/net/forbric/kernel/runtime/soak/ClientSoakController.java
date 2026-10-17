@@ -25,6 +25,7 @@ import net.forbric.kernel.soak.SoakStateMachine.Action;
 import net.forbric.kernel.soak.SoakStateMachine.Config;
 import net.forbric.kernel.soak.SoakStateMachine.Sample;
 import net.forbric.kernel.soak.SoakStateMachine.State;
+import net.forbric.kernel.util.Caught;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.server.IntegratedServer;
 import net.minecraft.server.MinecraftServer;
@@ -97,6 +98,7 @@ public final class ClientSoakController {
 			instance.tick(minecraft);
 		} catch (Throwable failure) {
 			if (instance == null) throw new IllegalStateException("soak ownership/configuration rejected", failure);
+			Caught.warn(failure, "[Forbric/ClientSoak] the soak failed; recording FAIL and stopping the client");
 			instance.fail(minecraft, failure);
 		}
 	}
@@ -143,7 +145,10 @@ public final class ClientSoakController {
 			IntegratedServer server = current; int id = serial; boolean preparing = joining;
 			server.execute(() -> {
 				try { pending.set(observe(server, id, preparing)); }
-				catch (Throwable failure) { asynchronousFailure.set("server observation failed: " + failure); }
+				catch (Throwable failure) {
+					Caught.warn(failure, "[Forbric/ClientSoak] server observation of session %d failed; the soak fails on the next client tick", id);
+					asynchronousFailure.set("server observation failed: " + failure);
+				}
 				finally { sampling.set(false); }
 			});
 		}
@@ -201,7 +206,10 @@ public final class ClientSoakController {
 						preparePlayer(player);
 						if (!player.teleportTo(level(server, point / 2), COORDINATES[point] + .5, 160, COORDINATES[point] + .5,
 								Set.of(), 0, 0, true)) throw new IllegalStateException("native dimension teleport refused point " + point);
-					} catch (Throwable failure) { asynchronousFailure.set("movement failed: " + failure); }
+					} catch (Throwable failure) {
+						Caught.warn(failure, "[Forbric/ClientSoak] moving the player to point %d failed; the soak fails on the next client tick", point);
+						asynchronousFailure.set("movement failed: " + failure);
+					}
 				});
 			}
 			case DISCONNECT -> { write("save-and-disconnect", fields("server", serial)); blocking("native save-and-disconnect", () -> minecraft.disconnectWithSavingScreen()); }
@@ -218,7 +226,10 @@ public final class ClientSoakController {
 		if (finished) return;
 		machine.fail(failure.toString());
 		try { finish(minecraft); }
-		catch (Throwable secondary) { failure.addSuppressed(secondary); failure.printStackTrace(); minecraft.stop(); }
+		catch (Throwable secondary) {
+			Caught.warn(secondary, "[Forbric/ClientSoak] finishing the failed soak failed too; stopping the client");
+			failure.addSuppressed(secondary); failure.printStackTrace(); minecraft.stop();
+		}
 	}
 	private void finish(Minecraft minecraft) throws Exception {
 		if (finished) return;
@@ -276,7 +287,7 @@ public final class ClientSoakController {
 	private void watch() {
 		long limit = config.timeoutSeconds() * 1_000_000_000L;
 		while (true) {
-			try { Thread.sleep(5_000); } catch (InterruptedException stop) { return; }
+			try { Thread.sleep(5_000); } catch (InterruptedException stop) { Caught.expected(stop); Thread.currentThread().interrupt(); return; }
 			long silent = System.nanoTime() - lastTick.get();
 			// finish() itself may be what is wedged (its save-and-disconnect), so only a written result stands us down.
 			if (resultWritten || silent <= limit) continue;
@@ -291,7 +302,7 @@ public final class ClientSoakController {
 							"failure", reason, "watchdog", true, "oldServers", weakEvidence());
 					write("watchdog", fields("reason", reason)); dumpThreads("watchdog");
 					writeResult(result);
-				} catch (Throwable evidence) { evidence.printStackTrace(); }
+				} catch (Throwable evidence) { Caught.warn(evidence, "[Forbric/ClientSoak] the watchdog could not write its evidence; halting anyway"); }
 				System.out.println("[Forbric/ClientSoak] FAIL " + reason);
 				Runtime.getRuntime().halt(75);
 			}

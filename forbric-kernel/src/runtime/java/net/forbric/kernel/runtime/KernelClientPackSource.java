@@ -25,8 +25,8 @@ import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.function.Consumer;
 
+import net.forbric.kernel.util.Caught;
 import net.forbric.kernel.util.ForbricLog;
-import net.forbric.kernel.util.Reflect;
 import net.minecraft.SharedConstants;
 import net.minecraft.network.chat.Component;
 import net.minecraft.server.packs.FilePackResources;
@@ -174,9 +174,8 @@ public final class KernelClientPackSource {
 			for (Object child : children) kids.add((Pack) child);
 			return parent.withChildren(List.copyOf(kids));
 		} catch (Throwable t) {
-			ForbricLog.warn("[Forbric/ClientPacks] could not build the parent asset pack; serving each mod's assets "
-					+ "on its own instead, which means a player's own resource pack cannot override a mod texture",
-					Reflect.unwrap(t));
+			Caught.warn(t, "[Forbric/ClientPacks] could not build the parent asset pack; serving each mod's assets "
+					+ "on its own instead, which means a player's own resource pack cannot override a mod texture");
 			return null;
 		}
 	}
@@ -201,8 +200,7 @@ public final class KernelClientPackSource {
 				if (metadata.get(pack) instanceof Pack.Metadata meta && !meta.overlays().isEmpty()) declaring++;
 			}
 		} catch (Throwable t) {
-			ForbricLog.debug("[Forbric/ClientPacks] could not count declared overlays: %s",
-					String.valueOf(Reflect.unwrap(t)));
+			Caught.warn(t, "[Forbric/ClientPacks] could not count declared overlays");
 		}
 		return declaring;
 	}
@@ -263,8 +261,8 @@ public final class KernelClientPackSource {
 					read.requestedFeatures(), read.overlays(), read.isHidden());
 			return new Pack(location, resources, compatible, selection);
 		} catch (Throwable t) {
-			ForbricLog.debug("[Forbric/ClientPacks] vanilla's pack reader could not read %s, using NeoForge's: %s",
-					location.id(), String.valueOf(Reflect.unwrap(t)));
+			Caught.warn(t, "[Forbric/ClientPacks] vanilla's pack reader could not read %s, using NeoForge's",
+					location.id());
 			return null;
 		}
 	}
@@ -283,8 +281,8 @@ public final class KernelClientPackSource {
 			return ResourcePackLoader.readWithOptionalMeta(
 					location, resources, PackType.CLIENT_RESOURCES, selection);
 		} catch (Throwable t) {
-			ForbricLog.debug("[Forbric/ClientPacks] could not read a pack's own metadata, synthesising it "
-					+ "(its overlays will not apply): %s", String.valueOf(Reflect.unwrap(t)));
+			Caught.warn(t, "[Forbric/ClientPacks] could not read %s's own metadata, synthesising it "
+					+ "(its overlays will not apply)", location.id());
 			return null;
 		}
 	}

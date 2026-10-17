@@ -5,6 +5,7 @@ import java.util.List;
 
 import net.forbric.api.Ecosystem;
 import net.forbric.api.ForeignType;
+import net.forbric.kernel.util.Caught;
 import net.forbric.kernel.util.ForbricLog;
 import org.objectweb.asm.ClassReader;
 import org.objectweb.asm.ClassWriter;
@@ -80,7 +81,11 @@ public final class ClientPartTrackingInjector implements ClassTransformer {
 	 */
 	static boolean tracksNeoForgeParts(byte[] bytes) {
 		ClassNode node = new ClassNode();
-		try { new ClassReader(bytes).accept(node, ClassReader.SKIP_FRAMES); } catch (RuntimeException unreadable) { return false; }
+		try { new ClassReader(bytes).accept(node, ClassReader.SKIP_FRAMES); } catch (RuntimeException unreadable) {
+			Caught.warn(unreadable, "[Forbric/Entity] could not read a class to check its part tracking; judged as"
+					+ " not tracking NeoForge's parts");
+			return false;
+		}
 		if (!CALLBACKS_INTERNAL.equals(node.name)) return false;
 		MethodNode start = method(node, "onTrackingStart", TRACKING_START_DESC);
 		return start != null && ClientPartTrackingFlow.tracksNeoForgeParts(node, start);

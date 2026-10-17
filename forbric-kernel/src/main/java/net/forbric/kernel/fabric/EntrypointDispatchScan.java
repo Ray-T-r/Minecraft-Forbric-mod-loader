@@ -42,6 +42,7 @@ import org.objectweb.asm.tree.analysis.Interpreter;
 import org.objectweb.asm.tree.analysis.Value;
 
 import net.forbric.kernel.util.ByteScan;
+import net.forbric.kernel.util.Caught;
 
 /**
  * Which custom entrypoint keys a jar's own code dispatches, and how: read from its bytecode, not from a list.
@@ -200,6 +201,8 @@ public final class EntrypointDispatchScan {
 						}
 					} catch (RuntimeException unreadable) {
 						// No phases then: what it dispatches is still worth knowing (a winner check needs only the keys).
+						Caught.warn(unreadable, "[Forbric/DupeId] could not read fabric.mod.json in %s; its entrypoint "
+								+ "phases are unknown", jar.getFileName());
 					}
 					continue;
 				}
@@ -265,6 +268,8 @@ public final class EntrypointDispatchScan {
 						}
 					} catch (IOException unreadableBundle) {
 						// One unreadable bundle cannot show the key is named; the rest of the jar still can.
+						Caught.warn(unreadableBundle, "[Forbric/DupeId] could not read %s bundled in %s; its constants "
+								+ "are not searched", name, jar.getFileName());
 					}
 				}
 				if (named.size() == wanted.size()) break;
@@ -431,6 +436,8 @@ public final class EntrypointDispatchScan {
 					nodes.put(node.name, node);
 				} catch (RuntimeException unreadable) {
 					// One class this cannot parse cannot be a dispatch it reports; the rest still count.
+					Caught.warn(unreadable, "[Forbric/DupeId] could not parse a class while tracing entrypoint dispatch; "
+							+ "it is left out");
 				}
 			}
 			for (ClassNode node : nodes.values()) {
@@ -540,6 +547,8 @@ public final class EntrypointDispatchScan {
 			try {
 				return new Analyzer<>(new Constants(method, statics)).analyze(owner, method);
 			} catch (AnalyzerException | RuntimeException unanalysable) {
+				Caught.warn(unanalysable, "[Forbric/DupeId] could not analyse %s.%s%s; its entrypoint queries are not "
+						+ "traced", owner, method.name, method.desc);
 				return null;
 			}
 		}

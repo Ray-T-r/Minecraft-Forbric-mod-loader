@@ -1,6 +1,7 @@
 package net.forbric.kernel.runtime.transfer;
 
 import net.fabricmc.fabric.api.transfer.v1.transaction.Transaction;
+import net.forbric.kernel.util.Caught;
 import net.minecraft.world.item.ItemStack;
 import net.minecraftforge.fluids.FluidStack;
 import net.minecraftforge.fluids.capability.IFluidHandler;
@@ -54,6 +55,7 @@ public final class ForgeLegacyFacades {
 				if (!simulate) transaction.commit();
 				return input.copyWithCount(maximum - moved);
 			} catch (LiveTransferEndpoints.Unavailable gone) {
+				Caught.expected(gone);
 				invalidated(gone, handler);
 				return input.copy();
 			}
@@ -73,6 +75,7 @@ public final class ForgeLegacyFacades {
 				if (!simulate) transaction.commit();
 				return resource.toStack(moved);
 			} catch (LiveTransferEndpoints.Unavailable gone) {
+				Caught.expected(gone);
 				invalidated(gone, handler);
 				return ItemStack.EMPTY;
 			}
@@ -99,6 +102,7 @@ public final class ForgeLegacyFacades {
 				if (action.execute()) transaction.commit();
 				return moved;
 			} catch (LiveTransferEndpoints.Unavailable gone) {
+				Caught.expected(gone);
 				invalidated(gone, handler);
 				return 0;
 			}
@@ -133,6 +137,7 @@ public final class ForgeLegacyFacades {
 				if (action.execute()) transaction.commit();
 				return result;
 			} catch (LiveTransferEndpoints.Unavailable gone) {
+				Caught.expected(gone);
 				invalidated(gone, handler);
 				return FluidStack.EMPTY;
 			}

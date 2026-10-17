@@ -41,6 +41,7 @@ import org.objectweb.asm.tree.MethodInsnNode;
 import org.objectweb.asm.tree.MethodNode;
 
 import net.forbric.kernel.classloading.ForbricClassLoader;
+import net.forbric.kernel.util.Caught;
 import net.forbric.kernel.util.ForbricLog;
 
 /**
@@ -205,8 +206,8 @@ public final class KernelHudBridge {
 						String.join(", ", owned));
 			}
 		} catch (RuntimeException unreadable) {
-			ForbricLog.debug("[Forbric/HudBridge] could not read the final Hud class (%s) — bridging every mapped root",
-					String.valueOf(unreadable));
+			Caught.warn(unreadable, "[Forbric/HudBridge] could not read the final Hud class — bridging every mapped "
+					+ "root");
 		}
 	}
 
@@ -266,10 +267,11 @@ public final class KernelHudBridge {
 					layerManager.getClass().getClassLoader())
 					.getMethod("install", Object.class).invoke(null, layerManager);
 		} catch (ClassNotFoundException single) {
+			Caught.expected(single);
 			ForbricLog.debug("[Forbric/HudBridge] no MinecraftForge overlay adapter on this loader");
 		} catch (Throwable t) {
-			ForbricLog.warn("[Forbric/HudBridge] could not install MinecraftForge's overlay layers — a mod's HUD "
-					+ "overlay will render nothing", t);
+			Caught.warn(t, "[Forbric/HudBridge] could not install MinecraftForge's overlay layers — a mod's HUD "
+					+ "overlay will render nothing");
 		}
 	}
 
@@ -303,8 +305,8 @@ public final class KernelHudBridge {
 				wrapped = generatedCtor.newInstance(root, wrapped);
 			}
 		} catch (Throwable t) {
-			ForbricLog.warn("[Forbric/HudBridge] could not bridge HUD layer " + identifier + " — Fabric HUD elements "
-					+ "attached to it will not render", t);
+			Caught.warn(t, "[Forbric/HudBridge] could not bridge HUD layer %s — Fabric HUD elements attached to it "
+					+ "will not render", identifier);
 			return layer;
 		}
 		synchronized (KernelHudBridge.class) {
@@ -349,10 +351,16 @@ public final class KernelHudBridge {
 
 			state = State.PRESENT;
 			return true;
-		} catch (Throwable absent) {
+		} catch (ClassNotFoundException absent) {
 			// A normal instance without fabric-rendering-v1 — not a defect, so debug rather than warn.
+			Caught.expected(absent);
 			ForbricLog.debug("[Forbric/HudBridge] Fabric HudElementRegistry not present (%s) — leaving the NeoForge "
 					+ "layer manager exactly as it is", String.valueOf(absent));
+			state = State.ABSENT;
+			return false;
+		} catch (Throwable t) {
+			Caught.warn(t, "[Forbric/HudBridge] fabric-rendering-v1 is present but its HUD layer bridge could not be "
+					+ "built — Fabric HUD elements on NeoForge-owned layers will not render");
 			state = State.ABSENT;
 			return false;
 		}

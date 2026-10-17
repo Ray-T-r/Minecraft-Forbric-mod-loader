@@ -14,6 +14,7 @@ import java.nio.file.Path;
 import java.util.List;
 import java.util.function.Predicate;
 
+import net.forbric.kernel.ExpectCaught;
 import net.forbric.kernel.TestFixtures;
 import net.forbric.kernel.TestFixtures.Fixture;
 import org.junit.jupiter.api.Test;
@@ -41,6 +42,7 @@ class KernelForgeWorldgenSeamsTest {
 		}
 	}
 
+	@ExpectCaught("registry not built")
 	@Test
 	void theLenientDecisionSkipsOnlyAParseableTypeTheRegistryLacks() throws Exception {
 		try (URLClassLoader loader = gameSideLoader()) {

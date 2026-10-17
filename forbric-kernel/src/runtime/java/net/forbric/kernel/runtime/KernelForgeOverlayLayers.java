@@ -25,6 +25,7 @@ import java.util.LinkedHashSet;
 
 import net.forbric.api.EventBridges;
 import net.forbric.api.GameEventBridge;
+import net.forbric.kernel.util.Caught;
 import net.forbric.kernel.util.ForbricLog;
 import net.forbric.kernel.util.Reflect;
 import net.minecraft.client.Minecraft;
@@ -117,6 +118,8 @@ public final class KernelForgeOverlayLayers {
 				refusal = NEUTERED.refusal();
 			}
 		} catch (Throwable t) {
+			Caught.warn(t, "[Forbric/HudBridge] MinecraftForge's own overlay tree builder threw — its overlay stack is "
+					+ "refused");
 			refusal = "MinecraftForge's own tree builder threw (" + Reflect.unwrap(t) + ")";
 		}
 
@@ -143,8 +146,8 @@ public final class KernelForgeOverlayLayers {
 			ForbricLog.info("[Forbric/HudBridge] MinecraftForge's overlay stack is on NeoForge's layer manager — %s",
 					NEUTERED.describe());
 		} catch (Throwable t) {
-			ForbricLog.warn("[Forbric/HudBridge] could not give MinecraftForge's overlay layers a place to draw — "
-					+ "a mod's HUD overlay will render nothing", Reflect.unwrap(t));
+			Caught.warn(t, "[Forbric/HudBridge] could not give MinecraftForge's overlay layers a place to draw — "
+					+ "a mod's HUD overlay will render nothing");
 		}
 		EventBridges.verify(GameEventBridge.Pass.CLIENT_HUD);
 	}
@@ -244,6 +247,8 @@ public final class KernelForgeOverlayLayers {
 
 			NEUTERED.succeeded(tree, replaced, stacks, reseeded, notPlaced);
 		} catch (Throwable t) {
+			Caught.warn(t, "[Forbric/HudBridge] neutering MinecraftForge's vanilla HUD leaves threw — its overlay stack "
+					+ "is refused");
 			NEUTERED.refuse("neutering MinecraftForge's vanilla leaves threw (" + Reflect.unwrap(t) + ")");
 		}
 	}
@@ -340,6 +345,7 @@ public final class KernelForgeOverlayLayers {
 				}
 				return stranded.isEmpty() ? "" : " — " + stranded.size() + " mod layer(s) stranded " + stranded;
 			} catch (Throwable unreadable) {
+				Caught.expected(unreadable);
 				return "";
 			}
 		}
@@ -392,6 +398,7 @@ public final class KernelForgeOverlayLayers {
 				}
 				return landed.isEmpty() ? "" : ", and " + landed.size() + " mod layer(s) landed " + landed;
 			} catch (Throwable unreadable) {
+				Caught.expected(unreadable);
 				return "";
 			}
 		}
@@ -417,7 +424,8 @@ public final class KernelForgeOverlayLayers {
 					names.add(id);
 				}
 			} catch (IllegalAccessException unreadable) {
-				ForbricLog.debug("[Forbric/HudBridge] could not read %s: %s", field.getName(), unreadable);
+				Caught.warn(unreadable, "[Forbric/HudBridge] could not read %s — that vanilla layer name is not known",
+						field.getName());
 			}
 		}
 		return names;

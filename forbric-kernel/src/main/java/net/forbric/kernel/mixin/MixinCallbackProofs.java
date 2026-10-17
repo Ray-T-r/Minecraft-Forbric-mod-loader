@@ -18,6 +18,8 @@ import org.objectweb.asm.Type;
 import org.objectweb.asm.tree.*;
 import org.objectweb.asm.tree.analysis.*;
 
+import net.forbric.kernel.util.Caught;
+
 /**
  * What a callback adapter proves about a handler, or about a native body and the live body it moves a handler to, in place
  * of matching the bytes of the one mod it was first written for.
@@ -283,6 +285,7 @@ final class MixinCallbackProofs {
 		try {
 			new Analyzer<>(uses).analyze(owner == null || owner.isEmpty() ? "java/lang/Object" : owner, handler);
 		} catch (AnalyzerException | RuntimeException invalid) {
+			Caught.expected(invalid);
 			return false;
 		}
 		if (uses.escaped) return false;
@@ -452,6 +455,7 @@ final class MixinCallbackProofs {
 				work.push(new State(state.index + 1, next, state.known));
 			}
 		} catch (AnalyzerException | RuntimeException invalid) {
+			Caught.expected(invalid);
 			return false;
 		}
 		return returned;
@@ -628,6 +632,7 @@ final class MixinCallbackProofs {
 			source = Type.getArgumentTypes(nativeDesc);
 			current = Type.getArgumentTypes(liveDesc);
 		} catch (RuntimeException invalid) {
+			Caught.expected(invalid);
 			return null;
 		}
 		int[] leftmost = new int[source.length], rightmost = new int[source.length];
@@ -1071,6 +1076,7 @@ final class MixinCallbackProofs {
 		try {
 			return new Analyzer<>(new SourceInterpreter()).analyze(owner == null || owner.isEmpty() ? "java/lang/Object" : owner, method);
 		} catch (AnalyzerException | RuntimeException invalid) {
+			Caught.expected(invalid);
 			return null;
 		}
 	}

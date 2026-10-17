@@ -23,6 +23,7 @@ import org.junit.jupiter.api.parallel.ResourceLock;
 
 import net.forbric.api.DiscoveredMod;
 import net.forbric.api.Ecosystem;
+import net.forbric.kernel.ExpectCaught;
 import net.forbric.kernel.fabric.KernelModMetadata.EntrypointDecl;
 
 /**
@@ -100,6 +101,7 @@ class ForgeFamilyClassDeclarationsTest {
 				CrossEcosystemDeclarations.fabricEntrypoints(mod(Ecosystem.NEOFORGE, jar.toString())));
 	}
 
+	@ExpectCaught("broken.jar to see which classes it defines")
 	@Test
 	void aJarThatCannotBeReadDefinesNothing() throws IOException {
 		assertEquals(Map.of(), CrossEcosystemDeclarations.fabricEntrypoints(

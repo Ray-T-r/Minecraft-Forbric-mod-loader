@@ -20,8 +20,8 @@ import java.util.List;
 import java.util.Locale;
 import java.util.function.Consumer;
 
+import net.forbric.kernel.util.Caught;
 import net.forbric.kernel.util.ForbricLog;
-import net.forbric.kernel.util.Reflect;
 import net.minecraft.resources.Identifier;
 import net.minecraft.server.packs.PackType;
 import net.minecraft.server.packs.resources.PreparableReloadListener;
@@ -77,8 +77,7 @@ public final class KernelGameClientReload {
 					register(event, scratch.getListeners());
 				}
 			} catch (Throwable t) {
-				ForbricLog.warn("[Forbric/EventMux] could not bridge Forge client reload listeners",
-						Reflect.unwrap(t));
+				Caught.warn(t, "[Forbric/EventMux] could not bridge Forge client reload listeners");
 			}
 		};
 

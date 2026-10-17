@@ -4,6 +4,7 @@ package net.forbric.kernel.transform;
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.function.Function;
+import net.forbric.kernel.util.Caught;
 import net.forbric.kernel.util.ForbricLog;
 import org.objectweb.asm.*;
 import org.objectweb.asm.tree.*;
@@ -47,7 +48,7 @@ public final class MergedBaseFrameRecomputer implements ClassTransformer {
             ForbricLog.info("[Forbric/Frames] recomputed %s: reference frames %s disagree with the actual hierarchy", className, incompatible);
             return computed;
         } catch (Throwable failure) {
-            ForbricLog.warn("[Forbric/Frames] cannot prove a frame repair for " + className + "; preserving its original bytes", failure);
+            Caught.warn(failure, "[Forbric/Frames] cannot prove a frame repair for %s; preserving its original bytes", className);
             return input;
         }
     }

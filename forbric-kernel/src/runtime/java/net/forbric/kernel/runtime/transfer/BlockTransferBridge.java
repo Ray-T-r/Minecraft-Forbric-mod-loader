@@ -28,6 +28,7 @@ import net.forbric.api.Ecosystem;
 import net.forbric.api.ModCatalog;
 import net.forbric.kernel.runtime.transfer.TransferPrecedence.Answer;
 import net.forbric.kernel.runtime.transfer.TransferPrecedence.ForgeAnswer;
+import net.forbric.kernel.util.Caught;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
 import net.minecraft.core.registries.BuiltInRegistries;
@@ -79,7 +80,7 @@ public final class BlockTransferBridge {
 	private static final ClassValue<Class<?>> FORGE_QUERY_OWNER = new ClassValue<>() {
 		protected Class<?> computeValue(Class<?> type) {
 			try { return type.getMethod("getCapability", Capability.class, Direction.class).getDeclaringClass(); }
-			catch (NoSuchMethodException absent) { return null; }
+			catch (NoSuchMethodException absent) { Caught.expected(absent); return null; }
 		}
 	};
 	private static final ClassValue<Boolean> VANILLA_WRITES = new ClassValue<>() {
@@ -123,8 +124,12 @@ public final class BlockTransferBridge {
 		ahead(ItemStorage.SIDED, BlockTransferBridge::itemsBeforeGeneric);
 		ahead(FluidStorage.SIDED, BlockTransferBridge::fluidsBeforeGeneric);
 		try { BlockEntity.class.getDeclaredMethod("forbric$forgeTransferFallback"); forgeEnabled = true; }
-		catch (NoSuchMethodException absent) { TransferIssues.report("FORGE_QUERY_HOOK_MISSING", null,
-				"Forge block transfer fallback is not installed; Fabric/NeoForge transfers remain available"); }
+		catch (NoSuchMethodException absent) {
+			Caught.warn(absent, "[Forbric/Transfer] Forge block transfer fallback is not installed; Fabric/NeoForge transfers "
+					+ "remain available");
+			TransferIssues.report("FORGE_QUERY_HOOK_MISSING", null,
+					"Forge block transfer fallback is not installed; Fabric/NeoForge transfers remain available");
+		}
 		// A failure registering either callback leaves both directions dormant, even if one callback was added.
 		enabled = true;
 	}
@@ -140,6 +145,8 @@ public final class BlockTransferBridge {
 		try {
 			((List<BlockApiLookup.BlockApiProvider<A, Direction>>) lookup.getClass().getMethod("getFallbackProviders").invoke(lookup)).add(0, provider);
 		} catch (ReflectiveOperationException | RuntimeException drift) {
+			Caught.warn(drift, "[Forbric/Transfer] could not put a fallback ahead of Fabric's generic ones in %s; it is "
+					+ "appended instead", lookup.getClass().getName());
 			lookup.registerFallback(provider);
 			TransferIssues.report("FABRIC_FALLBACK_ORDER", lookup, "Fabric's generic fallbacks answer before a Forge or NeoForge owner's provider");
 		}

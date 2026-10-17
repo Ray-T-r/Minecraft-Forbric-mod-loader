@@ -12,6 +12,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
 import net.fabricmc.api.EnvType;
+import net.forbric.kernel.ExpectCaught;
 
 /**
  * {@link ForgeCapabilityTokenInjector}'s output, run: a {@code ForgeCapabilities} built from anonymous capability
@@ -133,6 +134,7 @@ class ForgeCapabilityTokenInjectorExecutionTest {
 	}
 
 	/** The plugin throws on a token without a type argument: the class passes through, and the throw stays inside. */
+	@ExpectCaught("could not process capability token fixture.RawToken")
 	@Test void aTokenThePluginCannotReadPassesThroughUnchanged(@TempDir Path work) throws Throwable {
 		Map<String, byte[]> classes = InjectorExecution.compile(work, SOURCES);
 		ClassLoader game = InjectorExecution.load(classes);
@@ -142,6 +144,7 @@ class ForgeCapabilityTokenInjectorExecutionTest {
 		assertEquals(List.of("AFTER fixture/RawToken classloading"), calls(game));
 	}
 
+	@ExpectCaught("no MinecraftForge CapabilityTokenSubclass plugin")
 	@Test void nothingInstallsWithoutMinecraftForgesPlugin() {
 		assertNull(ForgeCapabilityTokenInjector.create(getClass().getClassLoader()));
 	}

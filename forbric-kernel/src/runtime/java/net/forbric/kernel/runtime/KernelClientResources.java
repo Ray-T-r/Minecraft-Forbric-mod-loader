@@ -19,8 +19,8 @@ package net.forbric.kernel.runtime;
 import java.lang.reflect.Field;
 import java.util.List;
 
+import net.forbric.kernel.util.Caught;
 import net.forbric.kernel.util.ForbricLog;
-import net.forbric.kernel.util.Reflect;
 import net.minecraft.client.Minecraft;
 import net.minecraft.server.packs.PackResources;
 import net.minecraft.server.packs.PackType;
@@ -104,8 +104,7 @@ public final class KernelClientResources {
 							.sorted().toList());
 			return packs.size();
 		} catch (Throwable t) {
-			ForbricLog.debug("[Forbric/ClientResources] could not preload the client resource manager: %s",
-					String.valueOf(Reflect.unwrap(t)));
+			Caught.warn(t, "[Forbric/ClientResources] could not preload the client resource manager");
 			return -2;
 		}
 	}

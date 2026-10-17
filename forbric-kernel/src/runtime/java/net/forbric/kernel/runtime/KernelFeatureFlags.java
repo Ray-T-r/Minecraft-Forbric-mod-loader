@@ -41,6 +41,7 @@ import net.minecraft.world.flag.FeatureFlagRegistry;
 import net.forbric.api.Ecosystem;
 import net.forbric.kernel.boot.KernelLifecycle;
 import net.forbric.kernel.boot.MultiLoaderArbiter;
+import net.forbric.kernel.util.Caught;
 import net.forbric.kernel.util.ForbricLog;
 
 /**
@@ -134,7 +135,7 @@ public final class KernelFeatureFlags {
 			}
 			return out;
 		} catch (Throwable t) {
-			ForbricLog.warn("[Forbric/FeatureFlags] could not read the feature flags of " + jar.getFileName(), t);
+			Caught.warn(t, "[Forbric/FeatureFlags] could not read the feature flags of %s", jar.getFileName());
 			return List.of();
 		}
 	}

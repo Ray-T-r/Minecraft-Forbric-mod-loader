@@ -36,6 +36,7 @@ import org.objectweb.asm.tree.MethodNode;
 import org.objectweb.asm.tree.TryCatchBlockNode;
 import org.objectweb.asm.tree.VarInsnNode;
 
+import net.forbric.kernel.util.Caught;
 import net.forbric.kernel.util.ForbricLog;
 
 /**
@@ -88,6 +89,8 @@ public final class GuestMixinPluginGuard implements ClassTransformer {
 				if (PLUGIN_INTERFACE.equals(iface)) return true;
 			}
 		} catch (Throwable unreadable) {
+			Caught.warn(unreadable, "[Forbric/Mixin] could not read a class header to check for a mixin config plugin;"
+					+ " treated as not one, so its plugin is not guarded");
 			return false;
 		}
 		return false;
@@ -238,7 +241,9 @@ public final class GuestMixinPluginGuard implements ClassTransformer {
 		try {
 			net.forbric.kernel.mixin.ContendedCallSites.before(plugin, target, targetClass, mixin);
 		} catch (Throwable ignored) {
-			// deliberately silent: an observation must not cost the guest its patch
+			// an observation must not cost the guest its patch
+			Caught.warn(ignored, "[Forbric/Mixin] could not observe %s's postApply of %s on %s; its contended call"
+					+ " sites go unrecorded", plugin == null ? null : plugin.getClass().getName(), mixin, target);
 		}
 	}
 
@@ -247,7 +252,10 @@ public final class GuestMixinPluginGuard implements ClassTransformer {
 		try {
 			net.forbric.kernel.mixin.ContendedCallSites.after(plugin, target, targetClass, mixin);
 		} catch (Throwable ignored) {
-			// deliberately silent: an observation must not cost the guest its patch
+			// an observation must not cost the guest its patch
+			Caught.warn(ignored, "[Forbric/Mixin] could not observe the end of %s's postApply of %s on %s; its"
+					+ " contended call sites go unrecorded", plugin == null ? null : plugin.getClass().getName(), mixin,
+					target);
 		}
 	}
 
@@ -257,6 +265,7 @@ public final class GuestMixinPluginGuard implements ClassTransformer {
 			net.forbric.kernel.mixin.ContendedCallSites.forget(targetClass);
 		} catch (Throwable ignored) {
 			// bookkeeping only
+			Caught.warn(ignored, "[Forbric/Mixin] could not drop the contended-call bookkeeping of a failed postApply");
 		}
 	}
 
@@ -284,7 +293,9 @@ public final class GuestMixinPluginGuard implements ClassTransformer {
 		try {
 			net.forbric.kernel.mixin.PluginDeclinedMixins.rememberPlugin(plugin);
 		} catch (Throwable ignored) {
-			// deliberately silent: this is bookkeeping for a report, on the boot path of every plugin
+			// bookkeeping for a report, on the boot path of every plugin
+			Caught.warn(ignored, "[Forbric/Mixin] could not remember mixin config plugin %s; its declines are"
+					+ " attributed without asking it", plugin == null ? null : plugin.getClass().getName());
 		}
 	}
 

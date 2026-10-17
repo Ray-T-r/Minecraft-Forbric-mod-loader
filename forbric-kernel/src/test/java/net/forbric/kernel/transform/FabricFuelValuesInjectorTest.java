@@ -14,6 +14,7 @@ import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
 
+import net.forbric.kernel.ExpectCaught;
 import net.forbric.kernel.TestFixtures;
 import net.forbric.kernel.TestFixtures.Fixture;
 import org.junit.jupiter.api.AfterEach;
@@ -166,6 +167,7 @@ class FabricFuelValuesInjectorTest {
 	}
 
 	/** Without the body's short-circuit the overload would rebuild vanilla's table; the data map's is kept instead. */
+	@ExpectCaught("vanillaBurnTimes threw on the way through its return hooks")
 	@Test void withoutTheShortCircuitTheDataMapsTableIsKept() throws Exception {
 		try (Game game = new Game(false)) {
 			Object table = game.table();

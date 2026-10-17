@@ -7,6 +7,7 @@ import java.util.function.Function;
 import org.objectweb.asm.*;
 import org.objectweb.asm.tree.*;
 import net.forbric.api.Ecosystem;
+import net.forbric.kernel.util.Caught;
 
 /**
  * Keeps authored wraps of a vanilla query bound where the native platform asks a richer object the same question.
@@ -137,7 +138,8 @@ public final class MixinBlockQueryAdapters {
 		Set<String> found=new LinkedHashSet<>();Deque<String> pending=new ArrayDeque<>(List.of(owner));Set<String> seen=new HashSet<>();
 		while(!pending.isEmpty()){
 			String name=pending.pop();if(name==null||!seen.add(name)||name.equals("java/lang/Object"))continue;
-			ClassNode node;try{node=targets.apply(name);}catch(RuntimeException unavailable){node=null;}
+			ClassNode node;try{node=targets.apply(name);}catch(RuntimeException unavailable){
+				Caught.warn(unavailable,"[Forbric/Mixin] could not read %s while looking for its %s getter; taken as absent",name,type);node=null;}
 			if(node==null)continue;
 			for(MethodNode method:node.methods)if((method.access&(Opcodes.ACC_STATIC|Opcodes.ACC_SYNTHETIC|Opcodes.ACC_PRIVATE))==0&&method.desc.equals("()L"+type+";"))found.add(method.name+method.desc);
 			pending.push(node.superName);if(node.interfaces!=null)for(String i:node.interfaces)pending.push(i);

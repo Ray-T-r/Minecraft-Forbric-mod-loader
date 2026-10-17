@@ -42,6 +42,8 @@ import javax.swing.JTextArea;
 import javax.swing.SwingUtilities;
 import javax.swing.UIManager;
 
+import net.forbric.kernel.util.Caught;
+
 /**
  * The dialog, as a separate process's {@code main}.
  *
@@ -187,6 +189,8 @@ public final class DependencyDialogMain {
 			mixins = DependencyReport.readMixins(Path.of(args[0]));
 			suspected = DependencyReport.readSuspected(Path.of(args[0]));
 		} catch (Throwable unreadable) {
+			Caught.warn(unreadable, "[Forbric/Deps] could not read the dependency report %s; continuing without the"
+					+ " dialog", args[0]);
 			System.exit(CONTINUE);
 			return;
 		}
@@ -197,6 +201,8 @@ public final class DependencyDialogMain {
 			UIManager.setLookAndFeel(UIManager.getSystemLookAndFeelClassName());
 		} catch (Throwable ignored) {
 			// The cross-platform look and feel is not worth failing a warning over.
+			Caught.warn(ignored, "[Forbric/Deps] could not set the system look and feel; the dialog uses the"
+					+ " cross-platform one");
 		}
 
 		int answer;
@@ -205,6 +211,7 @@ public final class DependencyDialogMain {
 		} catch (Throwable noDisplay) {
 			// The single net. See the class note: anything other than CONTINUE here would be the kernel quitting
 			// the game for a player who was never asked.
+			Caught.warn(noDisplay, "[Forbric/Deps] could not show the unmet-dependency dialog; continuing");
 			System.exit(CONTINUE);
 			return;
 		}
@@ -220,13 +227,18 @@ public final class DependencyDialogMain {
 			if (confirmation.required().isEmpty()) { System.exit(UNSHOWN); return; }
 			DialogLang lang = DialogLang.ofSystem();
 			try { UIManager.setLookAndFeel(UIManager.getSystemLookAndFeelClassName()); }
-			catch (Exception ignored) { }
+			catch (Exception ignored) {
+				Caught.warn(ignored, "[Forbric/Deps] could not set the system look and feel; the dialog uses the"
+						+ " cross-platform one");
+			}
 			int[] result = { QUIT };
 			SwingUtilities.invokeAndWait(() -> result[0] = showCompatibility(lang, confirmation));
 			answer = result[0] == CONTINUE ? CONTINUE : REFUSED;
 		} catch (Throwable unavailable) {
 			// Unlike the legacy dependency notice, no answer is never permission to continue -- and it is not the
 			// player's refusal either: UNSHOWN.
+			Caught.warn(unavailable, "[Forbric/Deps] the confirmation window for %s could not be shown; nobody answered",
+					report);
 		}
 		System.exit(answer);
 	}
@@ -243,7 +255,10 @@ public final class DependencyDialogMain {
 			if (isolation.without().isEmpty()) { System.exit(CONTINUE); return; }
 			DialogLang lang = DialogLang.ofSystem();
 			try { UIManager.setLookAndFeel(UIManager.getSystemLookAndFeelClassName()); }
-			catch (Exception ignored) { }
+			catch (Exception ignored) {
+				Caught.warn(ignored, "[Forbric/Deps] could not set the system look and feel; the dialog uses the"
+						+ " cross-platform one");
+			}
 			int[] result = { CONTINUE };
 			SwingUtilities.invokeAndWait(() -> result[0] = showContent(lang, isolationBlocks(lang, isolation),
 					isolationDetails(lang, isolation), lang.get("isolation.title"),
@@ -251,6 +266,8 @@ public final class DependencyDialogMain {
 			answer = result[0];
 		} catch (Throwable unavailable) {
 			// No answer switches nothing off: the game starts with every mod, as it would have without the offer.
+			Caught.warn(unavailable, "[Forbric/Deps] the crash-suspects offer for %s could not be shown; starting with"
+					+ " every mod", report);
 		}
 		System.exit(answer);
 	}

@@ -23,8 +23,8 @@ import java.util.List;
 import java.util.Set;
 
 import net.forbric.api.ModCatalog;
+import net.forbric.kernel.util.Caught;
 import net.forbric.kernel.util.ForbricLog;
-import net.forbric.kernel.util.Reflect;
 import net.neoforged.fml.config.ConfigTracker;
 import net.neoforged.fml.config.ModConfig;
 import net.neoforged.fml.config.ModConfigs;
@@ -81,7 +81,7 @@ public final class KernelConfigLoad {
 			ForbricLog.info("[Forbric/Lifecycle] loaded NeoForge configs (%s) from %s — opened %d of %d config(s), "
 					+ "%d already loaded", String.join("+", types), configDir, opened, all, alreadyLoaded);
 		} catch (Throwable t) {
-			ForbricLog.warn("[Forbric/Lifecycle] could not load NeoForge configs", Reflect.unwrap(t));
+			Caught.warn(t, "[Forbric/Lifecycle] could not load NeoForge configs");
 		}
 	}
 
@@ -105,8 +105,7 @@ public final class KernelConfigLoad {
 		try {
 			open(openConfig(), config, FMLPaths.CONFIGDIR.get(), config.getType().name(), "registration");
 		} catch (Throwable t) {
-			ForbricLog.warn("[Forbric/Lifecycle] could not open " + config.getModId() + "'s config at registration",
-					Reflect.unwrap(t));
+			Caught.warn(t, "[Forbric/Lifecycle] could not open %s's config at registration", config.getModId());
 		}
 	}
 
@@ -123,8 +122,8 @@ public final class KernelConfigLoad {
 			openConfig.invoke(null, config, configDir, null);
 			return true;
 		} catch (Throwable failed) {
-			ForbricLog.warn("[Forbric/Lifecycle] could not open " + config.getModId() + "'s " + type + " config ("
-					+ pass + " pass)", Reflect.unwrap(failed));
+			Caught.warn(failed, "[Forbric/Lifecycle] could not open %s's %s config (%s pass)", config.getModId(), type,
+					pass);
 			ModCatalog.mark(config.getModId(), ModCatalog.Status.DEGRADED, "its " + type + " config could not be opened");
 			return false;
 		}
@@ -159,8 +158,7 @@ public final class KernelConfigLoad {
 				}
 			}
 		} catch (Throwable t) {
-			ForbricLog.warn("[Forbric/Lifecycle] could not open late-registered NeoForge configs",
-					Reflect.unwrap(t));
+			Caught.warn(t, "[Forbric/Lifecycle] could not open late-registered NeoForge configs");
 		}
 		return opened;
 	}

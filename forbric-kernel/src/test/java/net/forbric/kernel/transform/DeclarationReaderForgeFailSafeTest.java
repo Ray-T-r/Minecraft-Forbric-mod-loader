@@ -31,6 +31,7 @@ import net.forbric.api.DiscoveredMod;
 import net.forbric.api.Ecosystem;
 import net.forbric.api.ForgeLoadingList;
 import net.forbric.api.ModPresence;
+import net.forbric.kernel.ExpectCaught;
 import net.forbric.kernel.TestFixtures;
 import net.forbric.kernel.TestFixtures.Fixture;
 import net.forbric.kernel.boot.CrossEcosystemDeclarations;
@@ -123,6 +124,7 @@ class DeclarationReaderForgeFailSafeTest {
 					}
 					""");
 
+	@ExpectCaught({"this declaration table cannot be read", "could not add the Fabric mods that declare"})
 	@Test
 	void aHookThatCannotAddTheFabricModsHandsTheReaderMinecraftForgesOwnAnswer() throws Throwable {
 		try (URLClassLoader game = forgeGameSide()) {
@@ -155,6 +157,7 @@ class DeclarationReaderForgeFailSafeTest {
 		}
 	}
 
+	@ExpectCaught("slip-tiles has no bus group")
 	@Test
 	void aCallbackThatCannotHandleAFabricModsContainerLeavesThatModOut() throws Throwable {
 		try (URLClassLoader game = forgeGameSide()) {

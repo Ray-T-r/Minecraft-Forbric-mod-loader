@@ -66,7 +66,13 @@ class KernelForgePipRenderersTest {
 						 public static void debug(String text) {}
 						}
 						""",
-				"net.forbric.kernel.util.Reflect", "public class Reflect { public static Throwable unwrap(Throwable t) { return t; } }");
+				"net.forbric.kernel.util.Reflect", "public class Reflect { public static Throwable unwrap(Throwable t) { return t; } }",
+				"net.forbric.kernel.util.Caught", """
+						public class Caught {
+						 public static void warn(Throwable failure, String text, Object... args) { throw new AssertionError(text, failure); }
+						 public static void expected(Throwable failure) {}
+						}
+						""");
 		List<String> args = new ArrayList<>(List.of("-d", temporary.toString()));
 		for (var entry : sources.entrySet()) {
 			Path source = temporary.resolve(entry.getKey().replace('.', '/') + ".java");

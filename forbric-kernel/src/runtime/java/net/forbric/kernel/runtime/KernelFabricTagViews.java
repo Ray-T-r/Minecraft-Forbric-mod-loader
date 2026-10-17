@@ -3,6 +3,7 @@ package net.forbric.kernel.runtime;
 
 import java.util.*;
 import net.forbric.kernel.boot.KernelTagSourceContracts;
+import net.forbric.kernel.util.Caught;
 import net.neoforged.neoforge.fluids.FluidType;
 
 /** Provenance gates only; the source map, selection and metric instructions remain copied native bytecode. */
@@ -13,11 +14,11 @@ public final class KernelFabricTagViews {
 		var schema=KernelTagSourceContracts.schema(key);try{Class<?>tracker=Class.forName(schema.tracker().replace('/','.'),false,interaction.getClass().getClassLoader());
 			for(Object tag:tags){Object value=existing.get(tag);if(value==null||value.getClass()!=tracker)return KernelTagSourceContracts.decline(interaction,key,"native concrete or missing constructor tag tracker takes precedence",true);}
 			return true;
-		}catch(ClassNotFoundException unknown){return KernelTagSourceContracts.decline(interaction,key,"constructor tracker definition is unavailable",false);}
+		}catch(ClassNotFoundException unknown){Caught.warn(unknown,"[Forbric/Mixin] could not load the constructor tag tracker for source %s",key);return KernelTagSourceContracts.decline(interaction,key,"constructor tracker definition is unavailable",false);}
 	}
 	public static boolean begin(Object interaction,String key){
 		if(!KernelFabricFluidBehaviors.enabled()||!KernelTagSourceContracts.validates(interaction,key))return false;
-		try{var schema=KernelTagSourceContracts.schema(key);Class<?>owner=Class.forName(schema.owner().replace('/','.'),false,interaction.getClass().getClassLoader());var field=owner.getDeclaredField(schema.mapField());field.setAccessible(true);return field.get(interaction)!=null;}catch(ReflectiveOperationException|RuntimeException unavailable){return false;}
+		try{var schema=KernelTagSourceContracts.schema(key);Class<?>owner=Class.forName(schema.owner().replace('/','.'),false,interaction.getClass().getClassLoader());var field=owner.getDeclaredField(schema.mapField());field.setAccessible(true);return field.get(interaction)!=null;}catch(ReflectiveOperationException|RuntimeException unavailable){Caught.warn(unavailable,"[Forbric/Mixin] could not read the source tag view of %s; native type queries retained",key);return false;}
 	}
 	public static boolean sample(Object interaction,Object fluid,FluidType type,String key){
 		if(!KernelFabricFluidBehaviors.ownsNeoType(type))return false;
@@ -27,5 +28,5 @@ public final class KernelFabricTagViews {
 	}
 	public static boolean owns(FluidType type){return KernelFabricFluidBehaviors.enabled()&&KernelFabricFluidBehaviors.ownsNeoType(type);}
 	public static boolean vector(Object interaction,Object vector,String key){boolean valid=KernelTagSourceContracts.validatesVector(interaction,vector,key);if(!valid)disable(interaction,key);return valid;}
-	private static void disable(Object interaction,String key){try{var schema=KernelTagSourceContracts.schema(key);Class<?>owner=Class.forName(schema.owner().replace('/','.'),false,interaction.getClass().getClassLoader());var field=owner.getDeclaredField(schema.readyField());field.setAccessible(true);field.setBoolean(interaction,false);}catch(ReflectiveOperationException|RuntimeException unavailable){/* the original proof decline already reports the unavailable view */}}
+	private static void disable(Object interaction,String key){try{var schema=KernelTagSourceContracts.schema(key);Class<?>owner=Class.forName(schema.owner().replace('/','.'),false,interaction.getClass().getClassLoader());var field=owner.getDeclaredField(schema.readyField());field.setAccessible(true);field.setBoolean(interaction,false);}catch(ReflectiveOperationException|RuntimeException unavailable){/* the original proof decline already reports the unavailable view */Caught.warn(unavailable,"[Forbric/Mixin] could not switch off the source tag view of %s",key);}}
 }

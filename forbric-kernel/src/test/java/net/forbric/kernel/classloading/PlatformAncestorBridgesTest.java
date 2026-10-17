@@ -13,6 +13,7 @@ import java.util.function.Function;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipOutputStream;
 
+import net.forbric.kernel.ExpectCaught;
 import net.forbric.kernel.classloading.LoaderProbePolicy.Family;
 import net.forbric.kernel.transform.InjectorExecution;
 import org.junit.jupiter.api.Test;
@@ -79,6 +80,7 @@ class PlatformAncestorBridgesTest {
 		}
 	}
 
+	@ExpectCaught("could not read a class defined from the FORGE runtime")
 	@Test void theDecisionReadsTheDefinitionAndTheServingCarrierOnly() throws Exception {
 		Map<String, byte[]> classes = InjectorExecution.compile(work, SOURCES);
 		Function<String, Family> carriers = internal -> internal.startsWith("unrelated/beta/") ? Family.NEOFORGE

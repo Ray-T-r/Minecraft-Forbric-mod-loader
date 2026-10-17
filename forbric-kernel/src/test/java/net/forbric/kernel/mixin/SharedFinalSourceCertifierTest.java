@@ -72,7 +72,7 @@ class SharedFinalSourceCertifierTest {
     private static void merged(MethodNode method){if(method.visibleAnnotations==null)method.visibleAnnotations=new ArrayList<>();AnnotationNode annotation=new AnnotationNode("Lorg/spongepowered/asm/mixin/transformer/meta/MixinMerged;");annotation.values=new ArrayList<>(List.of("mixin",SOURCE.replace('/','.')));method.visibleAnnotations.add(annotation);}
     private static MethodNode remap(MethodNode method){MethodNode result=new MethodNode(method.access,method.name,method.desc,null,null);method.accept(new MethodRemapper(result,new Remapper(){@Override public String map(String owner){return owner.equals(SOURCE)?HOST:owner;}}));return result;}
     private static MethodInsnNode call(MethodInsnNode node){return new MethodInsnNode(node.getOpcode(),node.owner,node.name,node.desc,node.itf);}
-    private static MethodNode copy(MethodNode method){MethodNode copy=new MethodNode();method.accept(copy);return copy;}
+    private static MethodNode copy(MethodNode method){MethodNode copy=new MethodNode(method.access,method.name,method.desc,method.signature,method.exceptions.toArray(String[]::new));method.accept(copy);return copy;}
     private static MethodNode find(ClassNode node,String name){return node.methods.stream().filter(m->m.name.equals(name)).findFirst().orElseThrow();}
     private static List<AbstractInsnNode> real(MethodNode method){return Arrays.stream(method.instructions.toArray()).filter(n->n.getOpcode()>=0).toList();}
     private static byte[] write(ClassNode node){ClassWriter writer=new ClassWriter(ClassWriter.COMPUTE_FRAMES|ClassWriter.COMPUTE_MAXS);node.accept(writer);return writer.toByteArray();}

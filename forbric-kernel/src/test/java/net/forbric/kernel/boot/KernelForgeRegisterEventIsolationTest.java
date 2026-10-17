@@ -23,6 +23,7 @@ import java.util.ArrayList;
 import java.util.List;
 
 import org.junit.jupiter.api.Test;
+import net.forbric.kernel.ExpectCaught;
 
 /**
  * One MinecraftForge mod's {@code RegisterEvent} listener must not cost every other mod its registration.
@@ -55,6 +56,7 @@ class KernelForgeRegisterEventIsolationTest {
 		return out;
 	}
 
+	@ExpectCaught("unbound RegistryObject")
 	@Test
 	void aModWhoseListenerThrowsCostsOnlyItself() {
 		List<Object[]> registries = rows(registry("minecraft:block"), registry("minecraft:item"),
@@ -113,6 +115,7 @@ class KernelForgeRegisterEventIsolationTest {
 	}
 
 	/** A mod that fails on one registry usually fails on the next twenty; the dispatch must not give up on it. */
+	@ExpectCaught("still broken")
 	@Test
 	void aModThatFailsEverywhereIsStillOfferedEveryRegistry() {
 		List<Object[]> registries = rows(registry("a"), registry("b"), registry("c"));

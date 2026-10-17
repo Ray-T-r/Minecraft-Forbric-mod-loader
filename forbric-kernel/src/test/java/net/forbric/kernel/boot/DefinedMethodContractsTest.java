@@ -15,6 +15,7 @@ import org.objectweb.asm.Opcodes;
 import org.objectweb.asm.tree.ClassNode;
 import org.objectweb.asm.tree.InsnNode;
 import org.objectweb.asm.tree.MethodNode;
+import net.forbric.kernel.ExpectCaught;
 
 @ResourceLock("DefinedMethodContracts")
 class DefinedMethodContractsTest {
@@ -68,6 +69,7 @@ class DefinedMethodContractsTest {
         assertTrue(DefinedMethodContracts.validates(cb.getConstructor().newInstance(), contract(second, "evaluate")));
     }
 
+    @ExpectCaught("could not read the defined bytes of")
     @Test void descriptorsAndMalformedObservationsFailClosed() throws Exception {
         byte[] bytes = bytes(DefaultRoute.class);
         var expected = contract(bytes, "evaluate");

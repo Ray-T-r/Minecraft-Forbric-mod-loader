@@ -17,6 +17,7 @@
 package net.forbric.api;
 
 import java.util.Locale;
+import net.forbric.kernel.util.Caught;
 
 /**
  * A mod dependency in Forbric's unified model, normalized from a Fabric {@code depends}/{@code recommends} entry
@@ -49,6 +50,7 @@ public final class UnifiedDependency {
 			try {
 				return valueOf(value.trim().toUpperCase(Locale.ROOT));
 			} catch (IllegalArgumentException notAnOrdering) {
+				Caught.expected(notAnOrdering);
 				return NONE;
 			}
 		}
@@ -71,6 +73,7 @@ public final class UnifiedDependency {
 			try {
 				return valueOf(value.trim().toUpperCase(Locale.ROOT));
 			} catch (IllegalArgumentException notASide) {
+				Caught.expected(notASide);
 				return BOTH;
 			}
 		}

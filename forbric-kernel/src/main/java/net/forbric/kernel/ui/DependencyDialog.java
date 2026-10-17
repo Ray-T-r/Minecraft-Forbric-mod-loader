@@ -21,6 +21,7 @@ import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
 
+import net.forbric.kernel.util.Caught;
 import net.forbric.kernel.util.ForbricLog;
 
 /**
@@ -215,8 +216,8 @@ public final class DependencyDialog {
 						SWITCH, findings, answer);
 			}
 		} catch (Throwable failed) {
-			ForbricLog.warn("[Forbric/Deps] could not show the unmet-dependency dialog — the warnings above are "
-					+ "the whole of it; launching anyway", failed);
+			Caught.warn(failed, "[Forbric/Deps] could not show the unmet-dependency dialog — the warnings above are "
+					+ "the whole of it; launching anyway");
 			return true;
 		}
 		if (answer == DependencyDialogMain.QUIT) {
@@ -255,7 +256,10 @@ public final class DependencyDialog {
 		} catch (java.io.IOException cannotStart) {
 			// FCL's java.home holds a bin/java that execve refuses (error 13): the launcher loads the JVM in its own
 			// process and never runs that file. Not the player saying no.
-			return unshown("its process could not be started: " + cannotStart.getMessage());
+			confirmationUnavailable = "its process could not be started: " + cannotStart.getMessage();
+			Caught.warn(cannotStart, "[Forbric/Deps] the confirmation window cannot be shown here: its process could not"
+					+ " be started");
+			return DependencyDialogMain.UNSHOWN;
 		}
 		if (dryRun) {
 			ForbricLog.info("[Forbric/Deps] -D%s=dryRun — forked the dialog for %d finding(s) with no display; it "
@@ -433,6 +437,7 @@ public final class DependencyDialog {
 					Runtime.getRuntime().removeShutdownHook(reaper);
 				} catch (IllegalStateException alreadyShuttingDown) {
 					// Removing a hook during shutdown is not allowed and not needed -- it is about to run.
+					Caught.expected(alreadyShuttingDown);
 				}
 			}
 		} finally {
@@ -440,6 +445,7 @@ public final class DependencyDialog {
 				Files.deleteIfExists(report);
 			} catch (Throwable ignored) {
 				// A leftover temp file is not worth a second failure on the way out of a warning.
+				Caught.expected(ignored);
 			}
 		}
 	}

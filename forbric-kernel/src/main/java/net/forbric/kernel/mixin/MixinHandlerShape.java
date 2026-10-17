@@ -16,6 +16,8 @@ import org.objectweb.asm.tree.FieldInsnNode;
 import org.objectweb.asm.tree.MethodInsnNode;
 import org.objectweb.asm.tree.MethodNode;
 
+import net.forbric.kernel.util.Caught;
+
 /**
  * A handler's parameters the way its injector reads them: first the operands the injector itself hands over — a wrapped
  * call's receiver and arguments then its {@code Operation}, a target's arguments then its {@code CallbackInfo}, a
@@ -267,6 +269,7 @@ final class MixinHandlerShape {
 		try {
 			return returns.equals(Type.getReturnType(descriptor)) && operands.equals(List.of(Type.getArgumentTypes(descriptor)));
 		} catch (RuntimeException notAMethodDescriptor) {
+			Caught.expected(notAMethodDescriptor);
 			return false;
 		}
 	}

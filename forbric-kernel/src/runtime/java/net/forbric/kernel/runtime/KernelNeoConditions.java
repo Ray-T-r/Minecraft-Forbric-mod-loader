@@ -35,6 +35,7 @@ import net.minecraft.resources.Identifier;
 import net.neoforged.neoforge.common.conditions.ICondition;
 import net.neoforged.neoforge.registries.NeoForgeRegistries;
 
+import net.forbric.kernel.util.Caught;
 import net.forbric.kernel.util.ForbricLog;
 
 /**
@@ -244,6 +245,8 @@ public final class KernelNeoConditions {
 				if (directory != null) asked.add(directory);
 			}));
 		} catch (Throwable ignored) {
+			Caught.warn(ignored, "[Forbric/Conditions] could not read a pack's overlay list — its conditional overlays "
+					+ "are not checked against the evaluators");
 			return;
 		}
 		Set<String> mounted = new LinkedHashSet<>();
@@ -253,6 +256,7 @@ public final class KernelNeoConditions {
 				if (overlay != null) mounted.add(overlay.toString());
 			} catch (Throwable ignored) {
 				// not the entry type we expect: nothing to name
+				Caught.expected(ignored);
 			}
 		}
 		String types = String.join(", ", foreignTypes);
@@ -278,6 +282,8 @@ public final class KernelNeoConditions {
 			}
 		} catch (Throwable ignored) {
 			// fall through
+			Caught.warn(ignored, "[Forbric/Conditions] could not read field '%s' of a condition map — answered none",
+					key);
 		}
 		return null;
 	}
@@ -300,6 +306,8 @@ public final class KernelNeoConditions {
 			if (name.isEmpty()) return null;
 			return known.test(name.get()) ? null : name.get();
 		} catch (Throwable t) {
+			Caught.warn(t, "[Forbric/Conditions] could not judge a resource condition's type against NeoForge's "
+					+ "registry — the strict codec decides this one");
 			return null;
 		}
 	}

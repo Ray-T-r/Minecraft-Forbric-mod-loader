@@ -26,7 +26,7 @@ import org.objectweb.asm.tree.TryCatchBlockNode;
 import org.objectweb.asm.tree.VarInsnNode;
 
 import net.forbric.api.Ecosystem;
-import net.forbric.kernel.util.ForbricLog;
+import net.forbric.kernel.util.Caught;
 
 /**
  * Calls a vanilla method made itself that the merged base makes in a helper the carrier added — the shipped table
@@ -79,6 +79,7 @@ public final class CarrierHelpers {
 						columns[0].substring(arrow + 4, colon), columns[0].substring(colon + 3).trim(),
 						Set.copyOf(shapes), Set.copyOf(ecosystems));
 			} catch (IllegalArgumentException unknown) {
+				Caught.warn(unknown, "[Forbric/Mixin] unreadable row in %s, skipped: %s", TABLE, line);
 				return null;
 			}
 		}
@@ -102,7 +103,7 @@ public final class CarrierHelpers {
 				}
 			}
 		} catch (IOException unreadable) {
-			ForbricLog.warn("[Forbric/Mixin] could not read %s; no injector follows a call into a carrier's helper", TABLE);
+			Caught.warn(unreadable, "[Forbric/Mixin] could not read %s; no injector follows a call into a carrier's helper", TABLE);
 		}
 		rows = List.copyOf(read);
 		return rows;

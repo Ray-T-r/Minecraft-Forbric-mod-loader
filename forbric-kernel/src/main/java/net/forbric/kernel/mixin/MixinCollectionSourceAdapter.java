@@ -16,6 +16,7 @@ import org.objectweb.asm.Type;
 import org.objectweb.asm.tree.*;
 import org.objectweb.asm.tree.analysis.*;
 
+import net.forbric.kernel.util.Caught;
 import net.forbric.kernel.util.ForbricLog;
 
 /** Migrates a static List field redirect to a proved copy-prefix/concat Stream getter.
@@ -142,7 +143,7 @@ public final class MixinCollectionSourceAdapter {
 					return s.fields();
 				} else return null;
 			}
-		} catch (IndexOutOfBoundsException malformed) { return null; }
+		} catch (IndexOutOfBoundsException malformed) { Caught.expected(malformed); return null; }
 		return null;
 	}
 	private static Object pop(List<Object> stack) { return stack.removeLast(); }
@@ -175,7 +176,7 @@ public final class MixinCollectionSourceAdapter {
 				Frame<SourceValue> frame = frames[initializer.instructions.indexOf(writers.getFirst())];
 				result = value(frame.getStack(frame.getStackSize() - 1), initializer, frames, new HashSet<>());
 				cached.put(source, result); return result;
-			} catch (AnalyzerException | RuntimeException invalid) { return Origin.UNKNOWN; }
+			} catch (AnalyzerException | RuntimeException invalid) { Caught.expected(invalid); return Origin.UNKNOWN; }
 			finally { visiting.remove(source); }
 		}
 		private Origin value(SourceValue source, MethodNode method, Frame<SourceValue>[] frames, Set<AbstractInsnNode> active) {

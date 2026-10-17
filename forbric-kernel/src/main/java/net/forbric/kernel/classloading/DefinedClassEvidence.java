@@ -11,6 +11,8 @@ import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.util.HexFormat;
 
+import net.forbric.kernel.util.Caught;
+
 /**
  * Optional acceptance evidence. Only bytes successfully defined by this loader are recorded.
  *
@@ -70,6 +72,8 @@ final class DefinedClassEvidence {
 			}
 			append(internal + "\t" + hash + "\n");
 		} catch (IOException | RuntimeException failure) {
+			Caught.warn(failure, "[Forbric/Evidence] could not record defined bytes for %s; this evidence session is"
+					+ " incomplete", internal);
 			incomplete(internal, failure);
 		} catch (NoSuchAlgorithmException impossible) { throw new AssertionError(impossible); }
 	}
@@ -82,27 +86,20 @@ final class DefinedClassEvidence {
 		String name = internal.replace('\t', ' ').replace('\n', ' ').replace('\r', ' ');
 		String reason = String.valueOf(failure).replace('\t', ' ').replace('\n', ' ').replace('\r', ' ');
 		// First the step that still works when nothing else does: the session stops vouching for itself.
-		boolean withdrawn;
 		try {
 			Files.deleteIfExists(directory.resolve(INTACT));
-			withdrawn = true;
 		} catch (IOException | RuntimeException undeletable) {
-			withdrawn = false;
+			// Only a session directory that refuses every change -- a volume gone read-only -- gets here, and then
+			// nothing on disk can carry the loss.
+			Caught.error(undeletable, "[Forbric/Evidence] could not record defined bytes for %s, and could not"
+					+ " withdraw %s either; discard this evidence session, it cannot say it is incomplete (%s)", name,
+					directory.resolve(INTACT), reason);
 		}
 		try {
 			append("#incomplete\t" + name + "\t" + reason + "\n");
 		} catch (IOException unwritable) {
 			// A full disk or a read-only manifest: the row is lost, and the missing marker is what refuses the session.
-		}
-		if (withdrawn) {
-			net.forbric.kernel.util.ForbricLog.warn("[Forbric/Evidence] could not record defined bytes for %s; this"
-					+ " evidence session is incomplete (%s)", name, reason);
-		} else {
-			// Only a session directory that refuses every change -- a volume gone read-only -- gets here, and then
-			// nothing on disk can carry the loss.
-			net.forbric.kernel.util.ForbricLog.error("[Forbric/Evidence] could not record defined bytes for %s, and"
-					+ " could not withdraw %s either; discard this evidence session, it cannot say it is"
-					+ " incomplete (%s)", name, directory.resolve(INTACT), reason);
+			Caught.warn(unwritable, "[Forbric/Evidence] could not write the #incomplete row for %s", name);
 		}
 	}
 }

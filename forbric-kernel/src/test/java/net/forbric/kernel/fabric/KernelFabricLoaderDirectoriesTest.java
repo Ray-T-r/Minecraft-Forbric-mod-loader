@@ -25,6 +25,7 @@ import java.nio.file.Path;
 
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
+import net.forbric.kernel.ExpectCaught;
 
 /**
  * The two directories a Fabric mod asks about before it writes anything.
@@ -75,6 +76,7 @@ class KernelFabricLoaderDirectoriesTest {
 		assertTrue(Files.exists(config.resolve("mod.json")), "creating must never disturb what is already there");
 	}
 
+	@ExpectCaught("could not create the config directory")
 	@Test
 	void aDirectoryThatCannotBeCreatedIsStillReturned(@TempDir Path dir) throws Exception {
 		// Failure here is not fatal: the mod's own write fails and says so with the mod's name on it, which beats

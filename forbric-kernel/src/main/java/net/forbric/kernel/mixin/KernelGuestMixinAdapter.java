@@ -41,6 +41,7 @@ import net.forbric.api.ModCatalog;
 import net.forbric.api.CompatibilityFinding;
 import net.forbric.kernel.boot.ArbitratedAwayClasses;
 import net.forbric.kernel.util.ByteScan;
+import net.forbric.kernel.util.Caught;
 import net.forbric.kernel.util.ForbricLog;
 
 /**
@@ -202,6 +203,8 @@ public final class KernelGuestMixinAdapter {
 		try (Reader reader = new InputStreamReader(new ByteArrayInputStream(configJson), StandardCharsets.UTF_8)) {
 			config = JsonFormat.fancyInstance().createParser().parse(reader);
 		} catch (RuntimeException | java.io.IOException notAMixinConfig) {
+			Caught.warn(notAMixinConfig, "[Forbric/Mixin] could not parse mixin config %s; none of its mixins is checked "
+					+ "against the merged base", configName);
 			return List.of();
 		}
 
@@ -410,8 +413,8 @@ public final class KernelGuestMixinAdapter {
 						"guest mixin " + mixin + " did not fit the merged game and was left out",
 						CompatibilityFinding.Confidence.CONFIRMED, required, List.of(fit.reason(), "kernel suppressed this mixin"));
 			} catch (RuntimeException perMixin) {
-				ForbricLog.debug("[Forbric/Mixin] could not scan guest mixin %s:%s — %s", MixinConfigOwners.describe(configName), mixin,
-						String.valueOf(perMixin));
+				Caught.warn(perMixin, "[Forbric/Mixin] could not scan guest mixin %s:%s; it is applied unchecked",
+						MixinConfigOwners.describe(configName), mixin);
 			}
 		}
 
@@ -638,6 +641,8 @@ public final class KernelGuestMixinAdapter {
 		try (Reader reader = new InputStreamReader(new ByteArrayInputStream(configJson), StandardCharsets.UTF_8)) {
 			config = JsonFormat.fancyInstance().createParser().parse(reader);
 		} catch (RuntimeException | java.io.IOException notAMixinConfig) {
+			Caught.warn(notAMixinConfig, "[Forbric/Mixin] could not parse mixin config %s; its named suppressions are not "
+					+ "reported", configName);
 			return;
 		}
 		String pkg = asString(config.get(List.of("package")));
@@ -654,6 +659,8 @@ public final class KernelGuestMixinAdapter {
 				if (classBytes != null) targets = dottedTargets(classBytes);
 			} catch (RuntimeException unreadable) {
 				// No targets means no question for the plugin, which records the row: the removal is certain.
+				Caught.warn(unreadable, "[Forbric/Mixin] could not read the targets of %s:%s; its removal is reported "
+						+ "without them", MixinConfigOwners.describe(configName), mixin);
 			}
 			report(MixinCompatibility.id(configName, pkg + "." + mixin), configName, pkg, mixin, pluginClass, targets,
 					"the kernel leaves out its mixin " + mixin + " on the merged game",
@@ -790,6 +797,8 @@ public final class KernelGuestMixinAdapter {
 		try {
 			return MixinFit.referencesAny(MixinFit.parse(mixin), Set.of(contract));
 		} catch (RuntimeException unreadable) {
+			Caught.warn(unreadable, "[Forbric/Mixin] could not read a mixin that names %s; taken as not relying on it",
+					contract);
 			return false;
 		}
 	}
@@ -831,6 +840,8 @@ public final class KernelGuestMixinAdapter {
 				try {
 					if (!MixinFit.referencesAny(MixinFit.parse(e.getValue()), contracts)) continue;
 				} catch (RuntimeException unreadable) {
+					Caught.warn(unreadable, "[Forbric/Mixin] could not read guest mixin %s; it is not checked for relying on "
+							+ "a suppressed mixin's interfaces %s", e.getKey(), contracts);
 					continue;
 				}
 				added.add(e.getKey());
@@ -966,6 +977,7 @@ public final class KernelGuestMixinAdapter {
 		try {
 			declared = config.get(List.of("injectors", "defaultRequire"));
 		} catch (RuntimeException notAnObject) {
+			Caught.expected(notAnObject);
 			return NativeAbsentTargets.UNKNOWN_DEFAULT_REQUIRE;
 		}
 		if (declared != null && !(declared instanceof Number)) return NativeAbsentTargets.UNKNOWN_DEFAULT_REQUIRE;

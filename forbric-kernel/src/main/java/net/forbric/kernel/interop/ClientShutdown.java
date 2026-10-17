@@ -25,6 +25,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 
+import net.forbric.kernel.util.Caught;
 import net.forbric.kernel.util.ForbricLog;
 
 /**
@@ -126,7 +127,7 @@ public final class ClientShutdown {
 			// would build one just for us to stop.
 			if (instance != null) stopWatcher(fileWatcher, instance, "night-config default instance", stopped);
 		} catch (Throwable t) {
-			ForbricLog.warn("[Forbric/Shutdown] could not inspect night-config's default file-watcher", t);
+			Caught.warn(t, "[Forbric/Shutdown] could not inspect night-config's default file-watcher");
 		}
 	}
 
@@ -160,7 +161,7 @@ public final class ClientShutdown {
 				}
 			}
 		} catch (Throwable t) {
-			ForbricLog.warn("[Forbric/Shutdown] could not inspect MinecraftForge's config file-watchers", t);
+			Caught.warn(t, "[Forbric/Shutdown] could not inspect MinecraftForge's config file-watchers");
 		}
 	}
 
@@ -181,10 +182,13 @@ public final class ClientShutdown {
 					try {
 						f.get(STOP_WAIT_MS, java.util.concurrent.TimeUnit.MILLISECONDS);
 					} catch (java.util.concurrent.TimeoutException slow) {
-						ForbricLog.warn("[Forbric/Shutdown] %s did not confirm its stop within %d ms; the exit guard keeps "
+						Caught.warn(slow, "[Forbric/Shutdown] %s did not confirm its stop within %d ms; the exit guard keeps "
 								+ "watching", owner, STOP_WAIT_MS);
 					} catch (java.util.concurrent.ExecutionException | InterruptedException failed) {
 						// stopped with an error, or we were interrupted: either way it is no longer ours to wait on
+						Caught.warn(failed, "[Forbric/Shutdown] %s stopped with an error, or the wait for it was "
+								+ "interrupted", owner);
+						if (failed instanceof InterruptedException) Thread.currentThread().interrupt();
 					}
 				}
 			} else {
@@ -192,6 +196,7 @@ public final class ClientShutdown {
 			}
 		} catch (java.lang.reflect.InvocationTargetException alreadyStopped) {
 			// night-config throws IllegalStateException on a watcher stopped by someone else; that is fine.
+			Caught.expected(alreadyStopped);
 			return false;
 		}
 		stopped.add(owner + " #" + System.identityHashCode(watcher));
@@ -202,6 +207,7 @@ public final class ClientShutdown {
 		try {
 			return owner.getMethod(name);
 		} catch (NoSuchMethodException absent) {
+			Caught.expected(absent);
 			return null;
 		}
 	}
@@ -230,6 +236,8 @@ public final class ClientShutdown {
 			try {
 				Thread.sleep(GUARD_PERIOD_MS);
 			} catch (InterruptedException interrupted) {
+				Caught.expected(interrupted);
+				Thread.currentThread().interrupt();
 				return;
 			}
 		}
@@ -277,6 +285,7 @@ public final class ClientShutdown {
 		try {
 			return Class.forName(name, false, cl);
 		} catch (ClassNotFoundException | LinkageError absent) {
+			Caught.expected(absent);
 			return null;
 		}
 	}

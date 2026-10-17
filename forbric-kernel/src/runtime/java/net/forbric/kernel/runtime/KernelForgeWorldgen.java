@@ -37,6 +37,7 @@ import com.mojang.serialization.JsonOps;
 import com.mojang.serialization.MapCodec;
 
 import net.forbric.api.ModCatalog;
+import net.forbric.kernel.util.Caught;
 import net.forbric.kernel.util.ForbricLog;
 import net.forbric.kernel.util.Reflect;
 import net.minecraft.core.Holder;
@@ -142,6 +143,8 @@ public final class KernelForgeWorldgen {
 		try {
 			return count.getAsInt();
 		} catch (Throwable t) {
+			Caught.warn(t, "[Forbric/Worldgen] could not count a MinecraftForge modifier serializer registry — reported "
+					+ "as -1");
 			return -1;
 		}
 	}
@@ -226,6 +229,8 @@ public final class KernelForgeWorldgen {
 		try {
 			return known.test(namespace + ":" + path) ? "STRICT" : "SKIP:" + namespace;
 		} catch (Throwable t) {
+			Caught.warn(t, "[Forbric/Worldgen] could not ask MinecraftForge's serializer registry about modifier type "
+					+ "%s:%s — Forge's own codec decides it", namespace, path);
 			return "STRICT";
 		}
 	}
@@ -243,6 +248,8 @@ public final class KernelForgeWorldgen {
 			}
 			return null;
 		} catch (Throwable t) {
+			Caught.warn(t, "[Forbric/Worldgen] could not read a MinecraftForge modifier's type — Forge's own codec "
+					+ "decides it");
 			return null;
 		}
 	}
@@ -344,7 +351,9 @@ public final class KernelForgeWorldgen {
 				map.put(phase, forgePhaseFor(phase.name()));
 			}
 		} catch (Throwable t) {
-			standDown("the two families' biome-modifier phases no longer share names: " + t);
+			String reason = "the two families' biome-modifier phases no longer share names: " + t;
+			Caught.warn(t, "[Forbric/Worldgen] MinecraftForge modifier bridge standing down: %s", reason);
+			markStandingDown(reason);
 		}
 		return map;
 	}
@@ -357,17 +366,25 @@ public final class KernelForgeWorldgen {
 				map.put(phase, net.minecraftforge.common.world.StructureModifier.Phase.valueOf(phase.name()));
 			}
 		} catch (Throwable t) {
-			standDown("the two families' structure-modifier phases no longer share names: " + t);
+			String reason = "the two families' structure-modifier phases no longer share names: " + t;
+			Caught.warn(t, "[Forbric/Worldgen] MinecraftForge modifier bridge standing down: %s", reason);
+			markStandingDown(reason);
 		}
 		return map;
 	}
 
 	private static void standDown(String reason) {
-		if (!standDown) {
-			standDown = true;
-			standDownReason = reason;
+		if (markStandingDown(reason)) {
 			ForbricLog.warn("[Forbric/Worldgen] MinecraftForge modifier bridge standing down: %s", reason);
 		}
+	}
+
+	/** Records the first reason; true when this call is the one that stood the bridge down. */
+	private static boolean markStandingDown(String reason) {
+		if (standDown) return false;
+		standDown = true;
+		standDownReason = reason;
+		return true;
 	}
 
 	/** NeoForge's builder has four private, non-final sub-builders; resolved once, any failure stands down. */
@@ -386,7 +403,9 @@ public final class KernelForgeWorldgen {
 			}
 			return fields;
 		} catch (Throwable t) {
-			standDown("NeoForge's " + builder.getSimpleName() + " no longer has the sub-builder fields the bridge writes back: " + t);
+			String reason = "NeoForge's " + builder.getSimpleName() + " no longer has the sub-builder fields the bridge writes back: " + t;
+			Caught.warn(t, "[Forbric/Worldgen] MinecraftForge modifier bridge standing down: %s", reason);
+			markStandingDown(reason);
 			return new Field[0];
 		}
 	}
@@ -449,9 +468,9 @@ public final class KernelForgeWorldgen {
 					} catch (Throwable t) {
 						dropped.add(entry.getKey());
 						String namespace = entry.getKey().identifier().getNamespace();
-						ForbricLog.warn("[Forbric/Worldgen] MinecraftForge biome modifier " + entry.getKey().identifier()
-								+ " threw during " + phase + " — dropped for the rest of this pass; " + namespace
-								+ " is marked DEGRADED", Reflect.unwrap(t));
+						Caught.warn(t, "[Forbric/Worldgen] MinecraftForge biome modifier %s threw during %s — dropped for "
+								+ "the rest of this pass; %s is marked DEGRADED", entry.getKey().identifier(), phase,
+								namespace);
 						ModCatalog.mark(namespace, ModCatalog.Status.DEGRADED, "its biome modifier "
 								+ entry.getKey().identifier() + " threw during " + phase + " and was dropped");
 					}
@@ -463,8 +482,10 @@ public final class KernelForgeWorldgen {
 				copyFields(NEO_BIOME_BUILDER_FIELDS, fresh, builder);
 				holder.unwrapKey().ifPresent(key -> CHANGED_BIOMES.add(key.identifier().toString()));
 			} catch (Throwable t) {
-				standDown("bridging biome " + holder.unwrapKey().map(k -> k.identifier().toString()).orElse("?")
-						+ " during " + phase + " failed: " + Reflect.unwrap(t));
+				String reason = "bridging biome " + holder.unwrapKey().map(k -> k.identifier().toString()).orElse("?")
+						+ " during " + phase + " failed: " + Reflect.unwrap(t);
+				Caught.warn(t, "[Forbric/Worldgen] MinecraftForge modifier bridge standing down: %s", reason);
+				markStandingDown(reason);
 			}
 		}
 
@@ -503,9 +524,9 @@ public final class KernelForgeWorldgen {
 					} catch (Throwable t) {
 						dropped.add(entry.getKey());
 						String namespace = entry.getKey().identifier().getNamespace();
-						ForbricLog.warn("[Forbric/Worldgen] MinecraftForge structure modifier " + entry.getKey().identifier()
-								+ " threw during " + phase + " — dropped for the rest of this pass; " + namespace
-								+ " is marked DEGRADED", Reflect.unwrap(t));
+						Caught.warn(t, "[Forbric/Worldgen] MinecraftForge structure modifier %s threw during %s — dropped for "
+								+ "the rest of this pass; %s is marked DEGRADED", entry.getKey().identifier(), phase,
+								namespace);
 						ModCatalog.mark(namespace, ModCatalog.Status.DEGRADED, "its structure modifier "
 								+ entry.getKey().identifier() + " threw during " + phase + " and was dropped");
 					}
@@ -518,8 +539,10 @@ public final class KernelForgeWorldgen {
 				copyFields(NEO_STRUCTURE_BUILDER_FIELDS, fresh, builder);
 				holder.unwrapKey().ifPresent(key -> CHANGED_STRUCTURES.add(key.identifier().toString()));
 			} catch (Throwable t) {
-				standDown("bridging structure " + holder.unwrapKey().map(k -> k.identifier().toString()).orElse("?")
-						+ " during " + phase + " failed: " + Reflect.unwrap(t));
+				String reason = "bridging structure " + holder.unwrapKey().map(k -> k.identifier().toString()).orElse("?")
+						+ " during " + phase + " failed: " + Reflect.unwrap(t);
+				Caught.warn(t, "[Forbric/Worldgen] MinecraftForge modifier bridge standing down: %s", reason);
+				markStandingDown(reason);
 			}
 		}
 
@@ -571,7 +594,9 @@ public final class KernelForgeWorldgen {
 				}
 			}
 		} catch (Throwable t) {
-			standDown("the round-trip audit itself failed: " + Reflect.unwrap(t));
+			String reason = "the round-trip audit itself failed: " + Reflect.unwrap(t);
+			Caught.warn(t, "[Forbric/Worldgen] MinecraftForge modifier bridge standing down: %s", reason);
+			markStandingDown(reason);
 			markAllDegraded(biomeModifiers, structureModifiers, "the MinecraftForge modifier bridge stood down before the world loaded");
 			return;
 		}

@@ -8,6 +8,7 @@ import net.forbric.api.CompatibilityFinding;
 import net.forbric.api.CompatibilityFindings;
 import net.forbric.api.ModCatalog;
 import net.forbric.kernel.classloading.ForbricClassLoader;
+import net.forbric.kernel.util.Caught;
 import net.forbric.kernel.util.ForbricLog;
 
 /**
@@ -83,7 +84,10 @@ public final class KernelTransferInterop {
 	static boolean optionalRuntimeActive(String name) { return ENERGY.equals(name) ? energy : HOPPER.equals(name) ? hopper : active; }
 	private static boolean present(ForbricClassLoader loader, String path) {
 		try (var stream = loader.getGameResourceAsStream(path)) { return stream != null; }
-		catch (java.io.IOException unreadable) { return false; }
+		catch (java.io.IOException unreadable) {
+			Caught.warn(unreadable, "[Forbric/Transfer] could not read game resource %s; treating it as absent", path);
+			return false;
+		}
 	}
 
 	/** After native providers have registered, before any world queries a foreign block inventory. */
@@ -101,7 +105,7 @@ public final class KernelTransferInterop {
 			CompatibilityFindings.record(new CompatibilityFinding("transfer-initialization", "forbric",
 					"Cross-ecosystem item and fluid transfer", "KernelTransferInterop", CompatibilityFinding.Confidence.CONFIRMED,
 					true, "The installed transfer APIs could not be connected; foreign storage is unavailable.", List.of(cause.toString())));
-			ForbricLog.error("[Forbric/Transfer] initialization failed; foreign storage will not be exposed", cause);
+			Caught.error(failure, "[Forbric/Transfer] initialization failed; foreign storage will not be exposed");
 			return;
 		}
 		if (!energy) return;
@@ -115,7 +119,7 @@ public final class KernelTransferInterop {
 					"Cross-ecosystem energy (Team Reborn Energy)", "KernelTransferInterop", CompatibilityFinding.Confidence.CONFIRMED,
 					false, "Team Reborn Energy could not be connected; Fabric energy stays unconnected, Forge/NeoForge energy is unaffected.",
 					List.of(cause.toString())));
-			ForbricLog.error("[Forbric/Transfer] Team Reborn Energy bridge failed; Fabric energy will not be exposed", cause);
+			Caught.error(failure, "[Forbric/Transfer] Team Reborn Energy bridge failed; Fabric energy will not be exposed");
 		}
 	}
 
@@ -129,7 +133,7 @@ public final class KernelTransferInterop {
 					false, detail, List.of(code, provider)));
 			ForbricLog.warn("[Forbric/Transfer] %s: %s — %s", code, provider, detail);
 		} catch (ReflectiveOperationException unreadable) {
-			ForbricLog.warn("[Forbric/Transfer] could not attribute transfer finding: %s", String.valueOf(issue));
+			Caught.warn(unreadable, "[Forbric/Transfer] could not attribute transfer finding: %s", String.valueOf(issue));
 		}
 	}
 
@@ -139,6 +143,10 @@ public final class KernelTransferInterop {
 			String file = Path.of(source.getLocation().toURI()).getFileName().toString();
 			return ModCatalog.everything().stream().filter(mod -> file.equals(mod.jar()))
 					.map(ModCatalog.Entry::modId).findFirst().orElse("forbric");
-		} catch (Exception | LinkageError unknown) { return "forbric"; }
+		} catch (Exception | LinkageError unknown) {
+			Caught.warn(unknown, "[Forbric/Transfer] could not tell which mod ships %s; its finding is attributed to forbric",
+					provider);
+			return "forbric";
+		}
 	}
 }

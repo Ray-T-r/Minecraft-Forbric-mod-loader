@@ -34,6 +34,7 @@ import org.objectweb.asm.tree.LocalVariableNode;
 import org.objectweb.asm.tree.TypeInsnNode;
 import org.objectweb.asm.tree.VarInsnNode;
 
+import net.forbric.kernel.util.Caught;
 import net.forbric.kernel.util.ForbricLog;
 
 /**
@@ -212,6 +213,7 @@ public final class MixinAtWidenedCall {
 		try {
 			method = Type.getMethodType(target);
 		} catch (RuntimeException malformed) {
+			Caught.expected(malformed);
 			return null;
 		}
 		if (method.getReturnType().getSort() != Type.OBJECT) return null;

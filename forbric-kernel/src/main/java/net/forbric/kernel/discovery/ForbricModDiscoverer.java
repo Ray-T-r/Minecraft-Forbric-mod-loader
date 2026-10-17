@@ -34,6 +34,7 @@ import net.forbric.kernel.metadata.forge.EcosystemVersions;
 import net.forbric.kernel.metadata.forge.ForgeMetadataMapper;
 import net.forbric.kernel.metadata.forge.ForgeModsToml;
 import net.forbric.kernel.metadata.forge.ModsTomlParser;
+import net.forbric.kernel.util.Caught;
 import net.forbric.kernel.util.ForbricLog;
 
 /**
@@ -136,6 +137,7 @@ public final class ForbricModDiscoverer {
 				try (InputStream in = jar.getInputStream(fabricEntry)) {
 					result.add(FabricModJsonReader.read(in, source));
 				} catch (IOException | RuntimeException unreadable) {
+					Caught.expected(unreadable);
 					failures.add(new MetadataFailures.Failure(jarPath, Ecosystem.FABRIC, FABRIC_MANIFEST, List.of(),
 							describe(unreadable)));
 				}
@@ -165,12 +167,14 @@ public final class ForbricModDiscoverer {
 		try (InputStream in = jar.getInputStream(entry)) {
 			toml = ModsTomlParser.parse(in);
 		} catch (IOException | RuntimeException unreadable) {
+			Caught.expected(unreadable);
 			failures.add(new MetadataFailures.Failure(jarPath, ecosystem, manifestPath, List.of(), describe(unreadable)));
 			return;
 		}
 		try {
 			sink.addAll(mapForgeFamily(jar, toml, ecosystem, jarVersion, source));
 		} catch (IOException | RuntimeException unreadable) {
+			Caught.expected(unreadable);
 			failures.add(new MetadataFailures.Failure(jarPath, ecosystem, manifestPath,
 					toml.getMods().stream().map(net.forbric.kernel.metadata.forge.ForgeModEntry::getModId).toList(),
 					describe(unreadable)));

@@ -5,6 +5,7 @@ import java.nio.file.Path;
 import java.util.*;
 import net.forbric.api.CompatibilityFinding;
 import net.forbric.api.CompatibilityFindings;
+import net.forbric.kernel.util.Caught;
 
 /** One selection, consumed by both actual discoveries; verification never chooses another winner. */
 public final class NestedCandidatePlan {
@@ -50,13 +51,13 @@ public final class NestedCandidatePlan {
 			var node = inventory.nodes().get(path); allSelected.add(node.digest());
 			if (!node.root()) expected.add(node.digest());
 			try { if (!node.digest().equals(NestedCandidateInventory.digest(path))) note(discrepancies, path, "selected jar changed: " + path); }
-			catch (Exception unavailable) { note(discrepancies, path, "selected jar unavailable: " + path); }
+			catch (Exception unavailable) { Caught.expected(unavailable); note(discrepancies, path, "selected jar unavailable: " + path); }
 		}
 		for (Path path : actualNested) {
 			try {
 				String digest = NestedCandidateInventory.digest(path); observed.add(digest);
 				if (!allSelected.contains(digest)) note(discrepancies, path, "unselected jar reached discovery: " + path);
-			} catch (Exception unavailable) { note(discrepancies, path, "discovered jar unreadable: " + path); }
+			} catch (Exception unavailable) { Caught.expected(unavailable); note(discrepancies, path, "discovered jar unreadable: " + path); }
 		}
 		for (String digest : expected) if (!observed.contains(digest)) {
 			Path missing = selected().stream().filter(p -> inventory.nodes().get(p).digest().equals(digest)).findFirst().orElse(null);

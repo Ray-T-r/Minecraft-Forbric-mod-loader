@@ -34,8 +34,8 @@ import com.mojang.serialization.DynamicOps;
 import net.minecraft.resources.Identifier;
 import net.minecraft.resources.RegistryOps;
 
+import net.forbric.kernel.util.Caught;
 import net.forbric.kernel.util.ForbricLog;
-import net.forbric.kernel.util.Reflect;
 
 /**
  * Gives {@code fabric:load_conditions} an evaluator again, because fabric-api's own two cannot run here.
@@ -170,8 +170,7 @@ public final class KernelFabricConditions {
 		} catch (Throwable t) {
 			// Keep the element. A judgement that could not be made is not a "no": the previous behaviour was to
 			// load everything, and failing closed here would delete content over a reflection problem.
-			ForbricLog.warn("[Forbric/Conditions] could not ask fabric-api about " + KEY + " — the element is kept",
-					Reflect.unwrap(t));
+			Caught.warn(t, "[Forbric/Conditions] could not ask fabric-api about %s — the element is kept", KEY);
 			return null;
 		}
 	}
@@ -186,6 +185,7 @@ public final class KernelFabricConditions {
 						MethodType.methodType(boolean.class, JsonObject.class, String.class, Identifier.class,
 								RegistryOps.RegistryInfoLookup.class));
 			} catch (Throwable absent) {
+				Caught.expected(absent);
 				evaluator = null;
 			}
 			evaluatorResolved = true;

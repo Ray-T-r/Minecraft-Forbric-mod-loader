@@ -37,6 +37,7 @@ import org.objectweb.asm.MethodVisitor;
 import org.objectweb.asm.Opcodes;
 import org.objectweb.asm.Type;
 
+import net.forbric.kernel.util.Caught;
 import net.forbric.kernel.util.ForbricLog;
 
 /**
@@ -252,6 +253,7 @@ public final class ModFileScanner {
 		try {
 			return jar.toRealPath();
 		} catch (java.io.IOException | SecurityException unresolvable) {
+			Caught.expected(unresolvable);
 			return spelled;
 		}
 	}
@@ -270,8 +272,8 @@ public final class ModFileScanner {
 					ecosystem, found.size(), classes.size());
 			return scanData;
 		} catch (Throwable t) {
-			ForbricLog.debug("[Forbric/Scan] could not scan %s for %s: %s", jar.getFileName(), ecosystem,
-					String.valueOf(t));
+			Caught.warn(t, "[Forbric/Scan] could not scan %s for %s; its mods get no scan data", jar.getFileName(),
+					ecosystem);
 			return null;
 		}
 	}
@@ -295,8 +297,8 @@ public final class ModFileScanner {
 				} catch (Throwable perClass) {
 					// One unreadable class (a newer class-file version, a shaded oddity) must not cost the jar its
 					// whole index — the mods that read it would then silently find nothing.
-					ForbricLog.debug("[Forbric/Scan] skipping %s in %s: %s", name, jar.getFileName(),
-							String.valueOf(perClass));
+					Caught.warn(perClass, "[Forbric/Scan] skipping %s in %s; its annotations are not indexed", name,
+							jar.getFileName());
 				}
 			}
 		}

@@ -6,6 +6,7 @@ import java.util.function.Function;
 import org.objectweb.asm.*;
 import org.objectweb.asm.tree.*;
 import org.objectweb.asm.tree.analysis.*;
+import net.forbric.kernel.util.Caught;
 import net.forbric.kernel.util.ForbricLog;
 
 /** A completed source decode guard owns that same evaluator/input within its lexical parse operation.
@@ -40,7 +41,7 @@ public final class MixinDecodeScopeAdapter {
      for(MethodNode dependency:List.of(consumer,predicate))dependencies.add(new net.forbric.kernel.boot.DefinedMethodContracts.MethodContract(owner.name,dependency.name,dependency.desc,MixinInstructionFingerprint.hash(dependency)));
     }
     net.forbric.kernel.boot.KernelDecodeGuardWitnesses.register(new net.forbric.kernel.boot.DefinedMethodContracts.MethodContract(owner.name,method.name,method.desc,MixinInstructionFingerprint.hash(method)),dependencies);
-   }catch(AnalyzerException|RuntimeException unproved){ }
+   }catch(AnalyzerException|RuntimeException unproved){Caught.expected(unproved);}
   }
  }
  public static byte[] asLoaded(byte[] bytes,Function<String,byte[]> resources){
@@ -90,7 +91,7 @@ public final class MixinDecodeScopeAdapter {
     var frame=frames[method.instructions.indexOf(call)];if(frame!=null&&derived(method,frames,frame.getStack(frame.getStackSize()-passed.length),slot,new HashSet<>())&&verdictFlow(owner,method,call,null,frames,false))found.add(call);
    }
    return found.size()==1?new Guard(found.getFirst(),slot):null;
-  }catch(AnalyzerException|RuntimeException unsupported){return null;}
+  }catch(AnalyzerException|RuntimeException unsupported){Caught.expected(unsupported);return null;}
  }
  /** A completed Boolean call owns decode only if false actually cancels it. Merely observing or discarding
   * a verdict cannot disable the native fallback. These closed suffixes also prohibit input mutation between
@@ -216,7 +217,7 @@ public final class MixinDecodeScopeAdapter {
   try{Frame<SourceValue>[]frames=new Analyzer<>(new SourceInterpreter()).analyze(target.name,host);var frame=frames[host.instructions.indexOf(sink)];if(frame==null||frame.getStackSize()<2)return null;var parsed=frame.getStack(frame.getStackSize()-2);if(parsed.insns.size()!=1||!parsed.insns.contains(parses.getFirst()))return null;var consumer=frame.getStack(frame.getStackSize()-1);if(consumer.insns.size()!=1||!(consumer.insns.iterator().next()instanceof InvokeDynamicInsnNode lambda))return null;
    List<Handle> handles=Arrays.stream(lambda.bsmArgs).filter(v->v instanceof Handle h&&h.getOwner().equals(target.name)&&h.getTag()==Opcodes.H_INVOKESTATIC).map(Handle.class::cast).toList();if(handles.size()!=1)return null;Handle implementation=handles.getFirst();MethodNode body=target.methods.stream().filter(m->m.name.equals(implementation.getName())&&m.desc.equals(implementation.getDesc())).findFirst().orElse(null);if(body==null||(body.access&Opcodes.ACC_PRIVATE)==0||body!=bound)return null;
    return sink;
-  }catch(AnalyzerException|RuntimeException unsupported){return null;}
+  }catch(AnalyzerException|RuntimeException unsupported){Caught.expected(unsupported);return null;}
  }
  private static MethodNode markerPredicate(ClassNode owner,MethodNode source,String name){
   MethodNode predicate=new MethodNode(Opcodes.ACC_PRIVATE|Opcodes.ACC_STATIC,name,"(Ljava/lang/Object;)Z",null,null);predicate.visibleAnnotations=new ArrayList<>(List.of(new AnnotationNode("Lorg/spongepowered/asm/mixin/Unique;")));

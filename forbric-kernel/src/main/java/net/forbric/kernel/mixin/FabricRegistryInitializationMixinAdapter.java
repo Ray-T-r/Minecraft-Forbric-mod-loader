@@ -7,6 +7,7 @@ import java.util.function.Function;
 import net.forbric.api.Ecosystem;
 import org.objectweb.asm.Opcodes;
 import org.objectweb.asm.tree.*;
+import net.forbric.kernel.util.Caught;
 import net.forbric.kernel.util.ForbricLog;
 
 /**
@@ -93,7 +94,8 @@ public final class FabricRegistryInitializationMixinAdapter {
     }
     private static int calls(MethodNode method,String owner,String name,String descriptor){int count=0;for(var instruction:method.instructions)if(instruction instanceof MethodInsnNode call&&call.owner.equals(owner)&&call.name.equals(name)&&call.desc.equals(descriptor))count++;return count;}
     private static ClassNode lookup(Function<String,ClassNode> classes,String name){
-        try{return classes.apply(name);}catch(RuntimeException unavailable){return null;}
+        try{return classes.apply(name);}catch(RuntimeException unavailable){
+            Caught.warn(unavailable,"[Forbric/RegistrySync] could not read %s; taken as absent",name);return null;}
     }
     private static AnnotationNode at(String value){AnnotationNode node=new AnnotationNode("Lorg/spongepowered/asm/mixin/injection/At;");node.values=new ArrayList<>(List.of("value",value));return node;}
     private static void set(AnnotationNode node,String key,Object value){for(int i=0;i<node.values.size();i+=2)if(node.values.get(i).equals(key)){node.values.set(i+1,value);return;}node.values.add(key);node.values.add(value);}

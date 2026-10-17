@@ -20,7 +20,6 @@ import java.lang.reflect.Constructor;
 import java.lang.reflect.Field;
 import java.lang.reflect.Method;
 import java.util.ArrayList;
-import java.util.Collections;
 import java.util.Comparator;
 import java.util.HashMap;
 import java.util.IdentityHashMap;
@@ -28,8 +27,8 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 
+import net.forbric.kernel.util.Caught;
 import net.forbric.kernel.util.ForbricLog;
-import net.forbric.kernel.util.Reflect;
 import net.minecraft.core.Registry;
 import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.resources.Identifier;
@@ -95,8 +94,8 @@ public final class KernelNeoRegistries {
 				if (reg != null && !containsIdentity(out, reg)) out.add(reg);
 			}
 		} catch (Throwable t) {
-			ForbricLog.warn("[Forbric/Lifecycle] could not read " + holder.getSimpleName()
-					+ " — RegisterEvent will not be posted for its registries", Reflect.unwrap(t));
+			Caught.warn(t, "[Forbric/Lifecycle] could not read %s — RegisterEvent will not be posted for its registries",
+					holder.getSimpleName());
 		}
 	}
 
@@ -119,8 +118,8 @@ public final class KernelNeoRegistries {
 						added);
 			}
 		} catch (Throwable t) {
-			ForbricLog.warn("[Forbric/Lifecycle] could not enumerate the root registry — a mod's own registry will "
-					+ "stay empty and its datapack entries will fail to parse", Reflect.unwrap(t));
+			Caught.warn(t, "[Forbric/Lifecycle] could not enumerate the root registry — a mod's own registry will "
+					+ "stay empty and its datapack entries will fail to parse");
 		}
 	}
 
@@ -169,9 +168,8 @@ public final class KernelNeoRegistries {
 			}
 			return sorted;
 		} catch (Throwable t) {
-			ForbricLog.warn("[Forbric/Lifecycle] no NeoForge registration order available — firing RegisterEvent in "
-					+ "collection order; a mod whose items read their own data components may lose them",
-					Reflect.unwrap(t));
+			Caught.warn(t, "[Forbric/Lifecycle] no NeoForge registration order available — firing RegisterEvent in "
+					+ "collection order; a mod whose items read their own data components may lose them");
 			return registries;
 		}
 	}
@@ -199,18 +197,15 @@ public final class KernelNeoRegistries {
 				ResourceKey.class, Registry.class);
 		ctor.setAccessible(true);
 
-		Set<Object> broken = Collections.newSetFromMap(new IdentityHashMap<>());
 		for (Object registry : registries) {
 			ResourceKey<? extends Registry<?>> key = ((Registry<?>) registry).key();
 			for (Object bus : buses) {
 				try {
 					((IEventBus) bus).post(ctor.newInstance(key, registry));
 				} catch (Throwable t) {
-					if (broken.add(bus)) {
-						ForbricLog.warn("[Forbric/Lifecycle] a NeoForge mod's RegisterEvent listener failed on %s — "
-								+ "that mod's remaining content is skipped, every other mod and the baseline still "
-								+ "register", key, Reflect.unwrap(t));
-					}
+					Caught.warn(t, "[Forbric/Lifecycle] a NeoForge mod's RegisterEvent listener failed on %s — "
+							+ "that mod's remaining content is skipped, every other mod and the baseline still "
+							+ "register", key);
 				}
 			}
 		}
@@ -245,8 +240,8 @@ public final class KernelNeoRegistries {
 				((IEventBus) bus).post(event);
 				delivered++;
 			} catch (Throwable perBus) {
-				ForbricLog.warn("[Forbric/Lifecycle] a NeoForge mod's NewRegistryEvent listener failed — that "
-						+ "mod's custom registries are skipped, the rest still register", Reflect.unwrap(perBus));
+				Caught.warn(perBus, "[Forbric/Lifecycle] a NeoForge mod's NewRegistryEvent listener failed — that "
+						+ "mod's custom registries are skipped, the rest still register");
 			}
 		}
 
@@ -258,8 +253,8 @@ public final class KernelNeoRegistries {
 			fill.setAccessible(true);
 			fill.invoke(event);
 		} catch (Throwable t) {
-			ForbricLog.warn("[Forbric/Lifecycle] NewRegistryEvent.fill failed — mod-declared custom registries "
-					+ "may be missing (delivery to the mod buses itself succeeded)", Reflect.unwrap(t));
+			Caught.warn(t, "[Forbric/Lifecycle] NewRegistryEvent.fill failed — mod-declared custom registries "
+					+ "may be missing (delivery to the mod buses itself succeeded)");
 		}
 		if (!"off".equalsIgnoreCase(System.getProperty("forbric.modifyRegistriesEvent", "on"))) {
 			Constructor<ModifyRegistriesEvent> modifyCtor = ModifyRegistriesEvent.class.getDeclaredConstructor();
@@ -268,7 +263,7 @@ public final class KernelNeoRegistries {
 			for (Object bus : buses) {
 				try { ((IEventBus) bus).post(modify); }
 				catch (Throwable failed) {
-					ForbricLog.warn("[Forbric/Lifecycle] a NeoForge ModifyRegistriesEvent listener failed", Reflect.unwrap(failed));
+					Caught.warn(failed, "[Forbric/Lifecycle] a NeoForge ModifyRegistriesEvent listener failed");
 				}
 			}
 			ForbricLog.info("[Forbric/Lifecycle] posted ModifyRegistriesEvent after registry creation, before content registration");

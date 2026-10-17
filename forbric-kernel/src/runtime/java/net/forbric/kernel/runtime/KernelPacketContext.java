@@ -20,6 +20,7 @@ import java.lang.reflect.Field;
 import java.lang.reflect.Method;
 
 
+import net.forbric.kernel.util.Caught;
 import net.forbric.kernel.util.ForbricLog;
 import net.minecraft.network.PacketEncoder;
 
@@ -68,7 +69,6 @@ public final class KernelPacketContext {
 	private static volatile Field encoderContext;
 	private static volatile boolean resolved;
 	private static volatile boolean announced;
-	private static volatile boolean warned;
 
 	private KernelPacketContext() {
 	}
@@ -103,6 +103,7 @@ public final class KernelPacketContext {
 			try {
 				invoke(body, splitter, ctx, packet, out);
 			} catch (Throwable t) {
+				Caught.expected(t);
 				thrown[0] = t;
 			}
 		});
@@ -128,7 +129,8 @@ public final class KernelPacketContext {
 			Object carrier = scoped.getMethod("where", scoped, Object.class).invoke(null, value, context);
 			carrier.getClass().getMethod("run", Runnable.class).invoke(carrier, body);
 		} catch (ReflectiveOperationException | RuntimeException e) {
-			warnOnce("could not bind the Fabric packet context around NeoForge's splitter", e);
+			Caught.warn(e, "[Forbric/Net] %s — a Fabric codec that reads it will see null there, as before this repair "
+					+ "existed", "could not bind the Fabric packet context around NeoForge's splitter");
 			body.run();
 		}
 	}
@@ -148,7 +150,8 @@ public final class KernelPacketContext {
 				return encoderContext.get(encoder);
 			}
 		} catch (ReflectiveOperationException | RuntimeException e) {
-			warnOnce("could not read the connection's Fabric packet context", e);
+			Caught.warn(e, "[Forbric/Net] %s — a Fabric codec that reads it will see null there, as before this repair "
+					+ "existed", "could not read the connection's Fabric packet context");
 		}
 		return null;
 	}
@@ -173,17 +176,10 @@ public final class KernelPacketContext {
 				}
 				if (encoderContext != null) scopedValue = value.get(null);
 			} catch (ReflectiveOperationException | RuntimeException absent) {
-				ForbricLog.debug("[Forbric/Net] no Fabric packet context on this instance — NeoForge's splitter "
-						+ "encodes exactly as it always did");
+				// No Fabric packet context on this instance: NeoForge's splitter encodes exactly as it always did.
+				Caught.expected(absent);
 			}
 		}
 		return scopedValue != null && encoderContext != null;
-	}
-
-	private static void warnOnce(String what, Throwable t) {
-		if (warned) return;
-		warned = true;
-		ForbricLog.warn("[Forbric/Net] " + what + " — a Fabric codec that reads it will see null there, as before "
-				+ "this repair existed", t);
 	}
 }

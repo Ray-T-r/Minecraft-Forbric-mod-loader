@@ -32,6 +32,7 @@ import java.util.List;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
+import net.forbric.kernel.ExpectCaught;
 import net.forbric.kernel.ui.DependencyReport.Row;
 
 /** The pipe between the two processes, and the words the player is shown. */
@@ -427,6 +428,7 @@ class DependencyDialogTest {
 	 * real fork runs; a directory stands in for the file, because executing one fails with exactly the error the issue
 	 * reported, 13. Nothing about it may read as the player's answer.
 	 */
+	@ExpectCaught("its process could not be started")
 	@Test
 	@org.junit.jupiter.api.parallel.ResourceLock("system-properties")
 	void aJavaTheSystemWillNotRunIsNobodyAnsweringNotARefusal() throws Exception {

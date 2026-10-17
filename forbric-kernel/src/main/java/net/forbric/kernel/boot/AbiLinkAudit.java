@@ -33,6 +33,7 @@ import org.objectweb.asm.ClassReader;
 
 import net.forbric.api.ModCatalog;
 import net.forbric.kernel.util.ByteScan;
+import net.forbric.kernel.util.Caught;
 import net.forbric.kernel.util.ForbricLog;
 
 /**
@@ -102,7 +103,8 @@ public final class AbiLinkAudit {
 					if (name.endsWith(".class")) present.add(name.substring(0, name.length() - 6));
 				}
 			} catch (IOException unreadable) {
-				ForbricLog.debug("[Forbric/AbiAudit] could not list %s: %s", jar.getFileName(), unreadable);
+				Caught.warn(unreadable, "[Forbric/AbiAudit] could not list %s; its classes count as absent to the audit",
+						jar.getFileName());
 			}
 		}
 		return present;
@@ -126,7 +128,7 @@ public final class AbiLinkAudit {
 					}
 				}
 			} catch (IOException | RuntimeException unreadable) {
-				ForbricLog.debug("[Forbric/AbiAudit] could not read %s: %s", jar.getFileName(), unreadable);
+				Caught.warn(unreadable, "[Forbric/AbiAudit] could not read %s; it is not audited", jar.getFileName());
 				continue;
 			}
 			if (missing.isEmpty()) continue;

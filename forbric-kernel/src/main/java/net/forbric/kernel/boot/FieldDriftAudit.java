@@ -37,6 +37,7 @@ import org.objectweb.asm.tree.MethodNode;
 import net.forbric.api.ModCatalog;
 import net.forbric.kernel.transform.MergedBaseFieldDrift;
 import net.forbric.kernel.util.ByteScan;
+import net.forbric.kernel.util.Caught;
 import net.forbric.kernel.util.ForbricLog;
 
 /**
@@ -89,7 +90,7 @@ public final class FieldDriftAudit {
 					}
 				}
 			} catch (IOException unreadable) {
-				ForbricLog.debug("[Forbric/FieldDrift] could not read %s: %s", name, unreadable);
+				Caught.warn(unreadable, "[Forbric/FieldDrift] could not read %s; it is not audited", name);
 			}
 		}
 	}
@@ -101,6 +102,7 @@ public final class FieldDriftAudit {
 		try {
 			new ClassReader(classBytes).accept(node, ClassReader.SKIP_DEBUG | ClassReader.SKIP_FRAMES);
 		} catch (RuntimeException unreadable) {
+			Caught.warn(unreadable, "[Forbric/FieldDrift] could not parse a class in %s; it is not audited", jarName);
 			return;
 		}
 		if (node.methods == null) return;

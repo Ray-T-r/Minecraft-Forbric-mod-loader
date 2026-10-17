@@ -17,7 +17,7 @@ public final class VirtualGetters {
         Key key = new Key(name, result);
         MethodHandle call = CACHE.get(declaration).computeIfAbsent(key, unused -> resolve(declaration, key));
         try { return (T) call.invokeExact(receiver); }
-        catch (Throwable failure) { return VirtualGetters.<T, RuntimeException>raise(failure); }
+        catch (Throwable failure) { throw VirtualGetters.<RuntimeException>raise(failure); }
     }
     private static MethodHandle resolve(Class<?> declaration, Key key) {
         try {
@@ -31,5 +31,5 @@ public final class VirtualGetters {
             error.initCause(inaccessible); throw error;
         }
     }
-    @SuppressWarnings("unchecked") private static <T, E extends Throwable> T raise(Throwable failure) throws E { throw (E) failure; }
+    @SuppressWarnings("unchecked") private static <E extends Throwable> E raise(Throwable failure) throws E { throw (E) failure; }
 }

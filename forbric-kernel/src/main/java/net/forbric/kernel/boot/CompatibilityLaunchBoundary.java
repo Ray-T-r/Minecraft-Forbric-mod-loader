@@ -4,6 +4,7 @@ package net.forbric.kernel.boot;
 import java.lang.reflect.InvocationTargetException;
 
 import net.forbric.kernel.ui.CompatibilityDecision;
+import net.forbric.kernel.util.Caught;
 import net.forbric.kernel.util.ForbricLog;
 
 /**
@@ -27,6 +28,7 @@ final class CompatibilityLaunchBoundary {
 				reportEscaping(failure);
 				throw failure;
 			}
+			Caught.expected(failure);
 			return stopped();
 		}
 		// A game main can catch the policy exception itself. Once it returns, retain the non-success result;
@@ -48,6 +50,8 @@ final class CompatibilityLaunchBoundary {
 			Class<?> silent = Class.forName("net.minecraft.client.main.SilentInitException", false, game);
 			return (RuntimeException) silent.getConstructor(String.class, Throwable.class).newInstance(stop.getMessage(), stop);
 		} catch (ReflectiveOperationException | ClassCastException | LinkageError unavailable) {
+			Caught.warn(unavailable, "[Forbric/Compatibility] could not create the game's SilentInitException; the "
+					+ "compatibility stop leaves the client as itself and may be reported as a crash");
 			stop.addSuppressed(unavailable);
 			return stop;
 		}
@@ -83,6 +87,7 @@ final class CompatibilityLaunchBoundary {
 			ForbricLog.error("[Forbric/Boot] the game stopped during startup on " + shown + " — this is the error that "
 					+ "ended it; the full trace follows. When reporting it, attach this whole log", failure);
 		} catch (Throwable unloggable) {
+			Caught.expected(unloggable);
 			failure.addSuppressed(unloggable);
 		}
 	}

@@ -26,6 +26,7 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.function.Supplier;
 
 import net.forbric.kernel.boot.KernelForgeModContext.Handle;
+import net.forbric.kernel.util.Caught;
 import net.minecraftforge.eventbus.api.bus.BusGroup;
 import net.minecraftforge.fml.ModContainer;
 import net.minecraftforge.fml.ModLoadingContext;
@@ -143,6 +144,7 @@ public final class KernelForgeContainers {
 			c.setAccessible(true);
 			mod = c.newInstance(handle.jctx());
 		} catch (NoSuchMethodException noCtxCtor) {
+			Caught.expected(noCtxCtor);
 			Constructor<?> c = modCls.getDeclaredConstructor();
 			c.setAccessible(true);
 			mod = c.newInstance();
@@ -168,8 +170,11 @@ public final class KernelForgeContainers {
 		try {
 			uset(owner, fieldName, target, value);
 		} catch (Throwable absent) {
-			net.forbric.kernel.util.ForbricLog.debug("[Forbric/ForgeCtx] %s has no %s field — skipped: %s",
-					owner.getSimpleName(), fieldName, String.valueOf(absent));
+			if (absent instanceof NoSuchFieldException) {
+				Caught.expected(absent);
+				return;
+			}
+			Caught.warn(absent, "[Forbric/ForgeCtx] could not write %s.%s — skipped", owner.getSimpleName(), fieldName);
 		}
 	}
 }

@@ -31,6 +31,7 @@ import org.objectweb.asm.tree.MethodInsnNode;
 import org.objectweb.asm.tree.MethodNode;
 import org.objectweb.asm.tree.VarInsnNode;
 
+import net.forbric.kernel.util.Caught;
 import net.forbric.kernel.util.ForbricLog;
 
 /**
@@ -264,6 +265,7 @@ public final class MixinHandlerShim {
 				}
 				return new Permutation(left.substring(0, hash), left.substring(hash + 1, paren), vanillaDesc, mergedDesc, perm);
 			} catch (RuntimeException malformed) {
+				Caught.expected(malformed);
 				return null;
 			}
 		}
@@ -276,7 +278,7 @@ public final class MixinHandlerShim {
 		try (java.io.InputStream in = MixinHandlerShim.class.getResourceAsStream(TABLE)) {
 			if (in != null) lines.addAll(List.of(new String(in.readAllBytes(), java.nio.charset.StandardCharsets.UTF_8).split("\n")));
 		} catch (java.io.IOException unreadable) {
-			ForbricLog.warn("[Forbric/Mixin] could not read %s; no handler is wrapped on its evidence", TABLE);
+			Caught.warn(unreadable, "[Forbric/Mixin] could not read %s; no handler is wrapped on its evidence", TABLE);
 		}
 		permutations = index(lines);
 		return permutations;

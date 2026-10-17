@@ -26,6 +26,7 @@ import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Set;
 
+import net.forbric.kernel.util.Caught;
 import net.forbric.kernel.util.ForbricLog;
 
 /**
@@ -82,7 +83,7 @@ public final class DisabledMods {
 		try {
 			names = parse(Files.readAllLines(file, StandardCharsets.UTF_8));
 		} catch (Throwable t) {
-			ForbricLog.warn("[Forbric/Disabled] could not read %s — nothing is switched off: %s", FILE, String.valueOf(t));
+			Caught.warn(t, "[Forbric/Disabled] could not read %s — nothing is switched off", FILE);
 			return Set.of();
 		}
 		if (names.isEmpty()) return Set.of();
@@ -93,7 +94,7 @@ public final class DisabledMods {
 				jars = entries.filter(p -> p.getFileName().toString().endsWith(".jar")).filter(Files::isRegularFile)
 						.sorted().toList();
 			} catch (Throwable t) {
-				ForbricLog.warn("[Forbric/Disabled] could not list %s — nothing is switched off: %s", modsDir, String.valueOf(t));
+				Caught.warn(t, "[Forbric/Disabled] could not list %s — nothing is switched off", modsDir);
 				return Set.of();
 			}
 		}

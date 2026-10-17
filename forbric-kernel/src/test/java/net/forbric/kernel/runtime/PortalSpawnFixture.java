@@ -159,6 +159,7 @@ final class PortalSpawnFixture implements AutoCloseable {
 		out.put("net.neoforged.neoforge.event.EventHooks", hookSource(false));
 		out.put("net.minecraftforge.event.ForgeEventFactory", hookSource(true));
 		out.put("net.forbric.kernel.util.ForbricLog", "package net.forbric.kernel.util; public class ForbricLog { public static void info(String s){} public static void info(String s,Object...a){} public static void warn(String s,Throwable t){} public static void warn(String s,Object...a){} }");
+		out.put("net.forbric.kernel.util.Caught", "package net.forbric.kernel.util; public class Caught { public static void warn(Throwable t,String f,Object...a){} public static void error(Throwable t,String f,Object...a){} public static void expected(Throwable t){} }");
 		out.put("net.forbric.kernel.util.Reflect", "package net.forbric.kernel.util; public class Reflect { public static Throwable unwrap(Throwable t){return t;} }");
 		out.put("fixture.PortalProbe", """
 			package fixture;

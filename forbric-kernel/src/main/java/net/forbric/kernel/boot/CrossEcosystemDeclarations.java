@@ -19,6 +19,7 @@ import net.fabricmc.loader.api.metadata.CustomValue;
 import net.forbric.api.DiscoveredMod;
 import net.forbric.api.Ecosystem;
 import net.forbric.kernel.fabric.KernelModMetadata.EntrypointDecl;
+import net.forbric.kernel.util.Caught;
 import net.forbric.kernel.util.ForbricLog;
 import net.forbric.kernel.util.ForbricSwitches;
 
@@ -220,10 +221,10 @@ public final class CrossEcosystemDeclarations {
 		try {
 			String reader = readerClass();
 			String id = "declaration-readers:" + hook + ":" + reader;
-			if (!REPORTED.add(id)) return;
 			String detail = reader + " reads mods' [modproperties] out of ModList." + hook + ", and adding the Fabric "
 					+ "mods that declare the same keys failed; it was given ModList's own answer, without them";
-			ForbricLog.warn("[Forbric/Declarations] %s: %s", detail, String.valueOf(failure));
+			Caught.warn(failure, "[Forbric/Declarations] %s", detail);
+			if (!REPORTED.add(id)) return;
 			net.forbric.api.CompatibilityFindings.record(new net.forbric.api.CompatibilityFinding(id, "forbric",
 					"Mod integration", "CrossEcosystemDeclarations",
 					net.forbric.api.CompatibilityFinding.Confidence.SUSPECTED, false, detail,
@@ -232,6 +233,8 @@ public final class CrossEcosystemDeclarations {
 			throw fatal;
 		} catch (Throwable unreported) {
 			// The reader already has its native answer; failing to report that must not take it away.
+			Caught.warn(unreported, "[Forbric/Declarations] could not report a declaration reader's failure at "
+					+ "ModList.%s", hook);
 		}
 	}
 
@@ -442,8 +445,8 @@ public final class CrossEcosystemDeclarations {
 				}
 			}
 		} catch (java.io.IOException | RuntimeException unreadable) {
-			ForbricLog.debug("[Forbric/Fabric] could not read %s to see which classes it defines: %s", source,
-					String.valueOf(unreadable));
+			Caught.warn(unreadable, "[Forbric/Fabric] could not read %s to see which classes it defines; its "
+					+ "[modproperties] class names are treated as naming none of its own", source);
 			return Set.of();
 		}
 		return found;

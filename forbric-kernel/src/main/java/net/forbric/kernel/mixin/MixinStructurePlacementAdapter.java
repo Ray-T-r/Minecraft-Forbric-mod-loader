@@ -13,6 +13,7 @@ import org.objectweb.asm.Type;
 import org.objectweb.asm.tree.*;
 
 import net.forbric.api.Ecosystem;
+import net.forbric.kernel.util.Caught;
 
 /**
  * Moves a mod's callbacks on vanilla's {@code StructureTemplate.placeEntities} to the method the merged game calls in its
@@ -147,6 +148,8 @@ public final class MixinStructurePlacementAdapter {
 			mixin.accept(out);
 			return out.toByteArray();
 		} catch (RuntimeException unreadable) {
+			Caught.warn(unreadable, "[Forbric/Mixin] could not judge a mixin of %d bytes as Mixin will load it; it is "
+					+ "judged as written", bytes == null ? -1 : bytes.length);
 			return bytes;
 		}
 	}

@@ -18,6 +18,7 @@ import net.forbric.api.Ecosystem;
 import net.forbric.api.ForeignType;
 import net.forbric.kernel.boot.CrossEcosystemDeclarations;
 import net.forbric.kernel.util.ByteScan;
+import net.forbric.kernel.util.Caught;
 import net.forbric.kernel.util.ForbricLog;
 
 /**
@@ -224,6 +225,7 @@ public final class DeclarationReaderModListInjector implements ClassTransformer 
 				frames = new org.objectweb.asm.tree.analysis.Analyzer<>(
 						new org.objectweb.asm.tree.analysis.SourceInterpreter()).analyze(node.name, method);
 			} catch (org.objectweb.asm.tree.analysis.AnalyzerException | RuntimeException unreadable) {
+				Caught.expected(unreadable);
 				continue;
 			}
 			AbstractInsnNode[] insns = method.instructions.toArray();

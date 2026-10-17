@@ -32,6 +32,7 @@ import java.util.Map;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipFile;
 
+import net.forbric.kernel.ExpectCaught;
 import net.forbric.kernel.TestFixtures;
 import net.forbric.kernel.TestFixtures.Fixture;
 import org.junit.jupiter.api.Test;
@@ -130,6 +131,7 @@ class CarrierLanguagesTest {
 						"table", "fml.menu.mods")));
 	}
 
+	@ExpectCaught("the stand-in carrier's built-in translations did not load")
 	@Test
 	void aLoaderThatThrowsDoesNotTakeTheBootWithIt() {
 		StandIn.reset();

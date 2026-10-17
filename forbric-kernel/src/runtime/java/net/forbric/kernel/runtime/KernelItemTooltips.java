@@ -20,6 +20,7 @@ import java.util.List;
 
 import net.forbric.api.EventBridges;
 import net.forbric.api.GameEventBridge;
+import net.forbric.kernel.util.Caught;
 import net.forbric.kernel.util.ForbricLog;
 import net.minecraft.network.chat.Component;
 import net.minecraft.world.entity.player.Player;
@@ -54,7 +55,6 @@ import net.neoforged.neoforge.event.entity.player.ItemTooltipEvent;
 public final class KernelItemTooltips {
 	static final String PROPERTY = "forbric.itemTooltipBridge";
 	private static volatile boolean announced;
-	private static volatile boolean warned;
 
 	private KernelItemTooltips() {
 	}
@@ -82,12 +82,8 @@ public final class KernelItemTooltips {
 						+ "so a NeoForge mod's tooltip lines went into a list nobody built");
 			}
 		} catch (Throwable t) {
-			if (!warned) {
-				warned = true;
-				ForbricLog.warn("[Forbric/Tooltips] a NeoForge ItemTooltipEvent listener failed — tooltips are drawn "
-						+ "every frame an item is hovered, so this is reported once and then swallowed rather than "
-						+ "replacing the tooltip with a crash", t);
-			}
+			Caught.warn(t, "[Forbric/Tooltips] a NeoForge ItemTooltipEvent listener failed — swallowed rather than "
+					+ "replacing the tooltip with a crash");
 		}
 	}
 

@@ -22,6 +22,7 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.concurrent.atomic.AtomicBoolean;
 
+import net.forbric.kernel.util.Caught;
 import net.forbric.kernel.util.ForbricLog;
 
 /**
@@ -151,6 +152,7 @@ public final class KernelRegistryAliases {
 			return create.invoke(null, registryKey, target);
 		} catch (Throwable t) {
 			// A rebuild we cannot do is a lookup that behaves exactly as it does today — never a failed boot.
+			Caught.warn(t, "[Forbric/Aliases] could not resolve the alias of %s; the lookup uses it as given", key);
 			return key;
 		}
 	}
@@ -203,6 +205,8 @@ public final class KernelRegistryAliases {
 			Object map = field.get().get(registry);
 			return map instanceof Map<?, ?> typed ? typed : null;
 		} catch (Throwable t) {
+			Caught.warn(t, "[Forbric/Aliases] could not read fabric-api's alias map on %s; its aliases are not followed",
+					registry.getClass().getName());
 			return null;
 		}
 	}
@@ -217,6 +221,7 @@ public final class KernelRegistryAliases {
 				}
 			} catch (NoSuchFieldException keepLooking) {
 				// fabric-api adds it to MappedRegistry, so it is usually a superclass of the wrapper
+				Caught.expected(keepLooking);
 			}
 		}
 		return null;

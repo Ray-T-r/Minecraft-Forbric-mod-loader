@@ -8,6 +8,7 @@ import net.forbric.api.CompatibilityFinding;
 import net.forbric.api.CompatibilityFindings;
 import net.forbric.kernel.boot.KernelLoadReport;
 import net.forbric.kernel.ui.CompatibilityDecision;
+import net.forbric.kernel.util.Caught;
 import net.forbric.kernel.util.ForbricLog;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.screens.Screen;
@@ -83,7 +84,11 @@ public final class KernelCompatibilityPrompts {
 					shown.size(), activeForLaunch ? " the launch could not ask about in a window" : "");
 		} catch (RuntimeException | LinkageError unavailable) {
 			prompt = null;
-			stopNormally(minecraft, "confirmation could not be displayed; continuation was not approved");
+			stopping = true;
+			CompatibilityDecision.recordPolicyStop();
+			Caught.error(unavailable, "[Forbric/Compatibility] FATAL: confirmation could not be displayed; continuation"
+					+ " was not approved; saving and stopping normally");
+			halt(minecraft);
 		}
 	}
 
@@ -142,6 +147,10 @@ public final class KernelCompatibilityPrompts {
 		// Recorded before the stop, so the launcher's boundary reports this policy stop as 78 once Main returns.
 		CompatibilityDecision.recordPolicyStop();
 		ForbricLog.error("[Forbric/Compatibility] FATAL: %s; saving and stopping normally", reason);
+		halt(minecraft);
+	}
+
+	private static void halt(Minecraft minecraft) {
 		if (minecraft.level != null) minecraft.disconnectWithSavingScreen();
 		minecraft.stop();
 	}

@@ -18,8 +18,8 @@ package net.forbric.kernel.runtime;
 
 import java.util.Collection;
 
+import net.forbric.kernel.util.Caught;
 import net.forbric.kernel.util.ForbricLog;
-import net.forbric.kernel.util.Reflect;
 import net.minecraft.client.KeyMapping;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.Options;
@@ -65,8 +65,7 @@ public final class KernelForeignShimKeys {
 				try {
 					((IEventBus) bus).post(event);
 				} catch (Throwable perBus) {
-					ForbricLog.warn("[Forbric/ShimContext] a foreign mod threw while registering key mappings",
-							Reflect.unwrap(perBus));
+					Caught.warn(perBus, "[Forbric/ShimContext] a foreign mod threw while registering key mappings");
 				}
 			}
 			int added = options.keyMappings.length - before;
@@ -81,7 +80,7 @@ public final class KernelForeignShimKeys {
 					added);
 			return added;
 		} catch (Throwable t) {
-			ForbricLog.warn("[Forbric/ShimContext] could not deliver foreign key mappings", Reflect.unwrap(t));
+			Caught.warn(t, "[Forbric/ShimContext] could not deliver foreign key mappings");
 			return -1;
 		}
 	}

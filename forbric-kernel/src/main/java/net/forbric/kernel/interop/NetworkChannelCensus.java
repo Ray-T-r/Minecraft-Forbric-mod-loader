@@ -27,6 +27,7 @@ import java.util.TreeSet;
 import java.util.concurrent.ConcurrentHashMap;
 
 import net.forbric.api.Ecosystem;
+import net.forbric.kernel.util.Caught;
 import net.forbric.kernel.util.ForbricLog;
 
 /**
@@ -88,6 +89,7 @@ public final class NetworkChannelCensus {
 			}
 		} catch (Throwable neverBreakAConnection) {
 			// Deliberately swallowed: see the class javadoc.
+			Caught.warn(neverBreakAConnection, "[Forbric/Net] could not record %s channels in the census", ecosystem);
 		}
 	}
 
@@ -183,6 +185,7 @@ public final class NetworkChannelCensus {
 			}
 		} catch (Throwable neverBreakAConnection) {
 			// As above.
+			Caught.warn(neverBreakAConnection, "[Forbric/Net] could not report the channel census");
 		}
 	}
 

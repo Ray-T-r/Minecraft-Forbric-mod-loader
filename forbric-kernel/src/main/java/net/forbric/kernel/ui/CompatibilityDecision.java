@@ -10,6 +10,7 @@ import java.util.function.Function;
 import net.forbric.api.CompatibilityFinding;
 import net.forbric.api.CompatibilityFindings;
 import net.forbric.api.ModCatalog;
+import net.forbric.kernel.util.Caught;
 import net.forbric.kernel.util.ForbricLog;
 
 /** Chooses whether to proceed; this class never exits a JVM or interrupts a game thread. */
@@ -124,7 +125,7 @@ public final class CompatibilityDecision {
 							// What DependencyDialog could not even attempt it reports as UNSHOWN; what is left here
 							// is the confirmation breaking part-way, which approves nothing.
 							if (failure instanceof InterruptedException) Thread.currentThread().interrupt();
-							ForbricLog.warn("[Forbric/Compatibility] confirmation unavailable; continuation was not approved", failure);
+							Caught.warn(failure, "[Forbric/Compatibility] confirmation unavailable; continuation was not approved");
 							return DependencyDialogMain.QUIT;
 						}
 					}
@@ -203,6 +204,7 @@ public final class CompatibilityDecision {
 			answer = windows.confirm(new DependencyReport.Confirmation(unanswered.stream().map(CompatibilityDecision::row).toList(),
 					suspected(notice), open, covered, notice.mixins()));
 		} catch (RuntimeException failure) {
+			Caught.warn(failure, "[Forbric/Compatibility] the confirmation broke part-way; continuation was not approved");
 			return false;
 		}
 		if (answer != null && answer == DependencyDialogMain.UNSHOWN && isClient) {

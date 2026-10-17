@@ -23,6 +23,7 @@ import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 
 import net.forbric.api.CompatibilityFinding;
+import net.forbric.kernel.util.Caught;
 import net.forbric.kernel.util.ForbricLog;
 
 /**
@@ -136,8 +137,8 @@ public final class PluginDeclinedMixins {
 				settle(p);
 			} catch (Throwable t) {
 				// The load report calls this; one bad entry must not cost the whole file. Mark and move on.
-				ForbricLog.debug("[Forbric/Mixin] could not settle the attribution for %s — %s", p.mixinClass(),
-						String.valueOf(t));
+				Caught.warn(t, "[Forbric/Mixin] could not settle the attribution for %s; recorded as first reported",
+						p.mixinClass());
 				MixinCompatibility.recordAs(p.id(), p.configName(), p.mixinClass(), p.detail(), p.confidence(),
 						p.required(), p.evidence());
 			}
@@ -198,8 +199,8 @@ public final class PluginDeclinedMixins {
 			Object answer = m.invoke(plugin, target, p.mixinClass());
 			return answer instanceof Boolean b ? b : null;
 		} catch (Throwable noAnswer) {
-			ForbricLog.debug("[Forbric/Mixin] could not ask %s about %s — %s", p.pluginClass(), p.mixinClass(),
-					String.valueOf(noAnswer));
+			Caught.warn(noAnswer, "[Forbric/Mixin] could not ask %s about %s; the decline stays attributed",
+					p.pluginClass(), p.mixinClass());
 			return null;
 		}
 	}

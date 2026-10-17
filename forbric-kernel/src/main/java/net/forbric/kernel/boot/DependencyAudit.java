@@ -30,6 +30,7 @@ import net.forbric.api.Side;
 import net.forbric.api.UnifiedDependency;
 import net.forbric.kernel.discovery.ForbricModDiscoverer;
 import net.forbric.kernel.metadata.forge.EcosystemVersions;
+import net.forbric.kernel.util.Caught;
 import net.forbric.kernel.util.ForbricLog;
 
 /**
@@ -259,7 +260,8 @@ public final class DependencyAudit {
 			}
 			net.forbric.kernel.ui.DependencyDialog.hold(rows, mixinRows);
 		} catch (Throwable t) {
-			ForbricLog.debug("[Forbric/Deps] could not hold the unmet-dependency findings for the dialog: %s", String.valueOf(t));
+			Caught.warn(t, "[Forbric/Deps] could not hold the unmet-dependency findings for the dialog; it will not show "
+					+ "them");
 		}
 	}
 
@@ -279,8 +281,8 @@ public final class DependencyAudit {
 			try {
 				out.addAll(discoverer.discoverJar(jar));
 			} catch (Throwable unreadable) {
-				ForbricLog.debug("[Forbric/Deps] could not read nested %s: %s", jar.getFileName(),
-						String.valueOf(unreadable));
+				Caught.warn(unreadable, "[Forbric/Deps] could not read nested %s; the mods it provides are missing from "
+						+ "the dependency index", jar.getFileName());
 			}
 		}
 		return out;

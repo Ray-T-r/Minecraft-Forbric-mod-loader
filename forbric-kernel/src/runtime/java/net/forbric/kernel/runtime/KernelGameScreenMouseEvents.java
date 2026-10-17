@@ -16,11 +16,10 @@
 
 package net.forbric.kernel.runtime;
 
-import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicLong;
 
+import net.forbric.kernel.util.Caught;
 import net.forbric.kernel.util.ForbricLog;
-import net.forbric.kernel.util.Reflect;
 import net.minecraftforge.client.event.ForgeEventFactoryClient;
 import net.minecraftforge.client.event.ScreenEvent;
 import net.neoforged.bus.api.EventPriority;
@@ -142,7 +141,6 @@ public final class KernelGameScreenMouseEvents {
 	 * half a scroll-wheel mod listens on — it moves items AFTER the screen has had its own chance to scroll.
 	 */
 	public static void installScrollPost(Object neoBus) {
-		AtomicBoolean warned = new AtomicBoolean();
 		AtomicLong scrolls = new AtomicLong();
 		// Four-argument overload with LOWEST, as everywhere in this package: the shorter overloads open with
 		// `getstatic EventPriority.NORMAL` and would silently promote the forward.
@@ -156,11 +154,8 @@ public final class KernelGameScreenMouseEvents {
 									+ "— MinecraftForge mods see the wheel inside a screen again", PROOF);
 						}
 					} catch (Throwable t) {
-						if (warned.compareAndSet(false, true)) {
-							ForbricLog.warn("[Forbric/EventMux] onScreenMouseScrollPost forward failed; a "
-									+ "MinecraftForge mod that moves items with the scroll wheel does nothing",
-									Reflect.unwrap(t));
-						}
+						Caught.warn(t, "[Forbric/EventMux] onScreenMouseScrollPost forward failed; a "
+								+ "MinecraftForge mod that moves items with the scroll wheel does nothing");
 					}
 				});
 	}

@@ -15,6 +15,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
+import net.forbric.kernel.util.Caught;
 import net.forbric.kernel.util.ForbricLog;
 import net.minecraft.world.entity.EntityType;
 import net.minecraft.world.entity.SpawnPlacementType;
@@ -54,8 +55,8 @@ public final class KernelForgeSpawnPlacements {
 			ForbricLog.info("[Forbric/SpawnPlacements] posted MinecraftForge spawn placement registration once its mods "
 					+ "were constructed — %d change(s) written to the spawn table", changed);
 		} catch (Throwable failure) {
-			ForbricLog.warn("[Forbric/SpawnPlacements] could not post MinecraftForge spawn registration for the mods "
-					+ "constructed in Minecraft.<init> — their mobs keep vanilla's (or no) spawn rules", failure);
+			Caught.warn(failure, "[Forbric/SpawnPlacements] could not post MinecraftForge spawn registration for the mods "
+					+ "constructed in Minecraft.<init> — their mobs keep vanilla's (or no) spawn rules");
 		}
 	}
 
@@ -69,8 +70,8 @@ public final class KernelForgeSpawnPlacements {
 			try {
 				Bridge.apply(registration);
 			} catch (Throwable failure) {
-				ForbricLog.warn("[Forbric/SpawnPlacements] could not bridge MinecraftForge spawn registration — "
-						+ "NeoForge registration continues with its existing entries", failure);
+				Caught.warn(failure, "[Forbric/SpawnPlacements] could not bridge MinecraftForge spawn registration — "
+						+ "NeoForge registration continues with its existing entries");
 			}
 		}
 		ModLoader.postEvent((Event & IModBusEvent) event);

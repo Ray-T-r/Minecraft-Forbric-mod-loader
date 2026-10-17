@@ -5,6 +5,7 @@ import java.lang.reflect.Method;
 import net.fabricmc.loader.api.FabricLoader;
 import net.forbric.api.*;
 import net.forbric.kernel.classloading.ForbricClassLoader;
+import net.forbric.kernel.util.Caught;
 import net.forbric.kernel.util.ForbricLog;
 import net.forbric.kernel.util.Reflect;
 
@@ -45,13 +46,15 @@ public final class ModMenuProtocolExtension implements ProtocolExtension {
             get = mm.getMethod("getConfigScreen", String.class, Class.forName("net.minecraft.client.gui.screens.Screen", false, game));
             ForbricLog.info("[Forbric/ModConfig] Fabric config screens come from installed Mod Menu");
         } catch (ReflectiveOperationException | LinkageError absent) {
+            Caught.expected(absent);
             has = null; get = null;
             if (ModMenuApiStandIn.enabled()) try {
                 Class<?> api = Class.forName(API, false, game);
                 entrypoints = ModMenuConfigFactories.read(FabricLoader.getInstance(), api);
                 ForbricLog.info("[Forbric/ModConfig] read %d declared Mod Menu entrypoint(s), %d broken", entrypoints.entrypoints(), entrypoints.broken());
             } catch (ReflectiveOperationException | RuntimeException | LinkageError unavailable) {
-                ForbricLog.debug("[Forbric/ModConfig] Mod Menu config contract is unavailable: %s", String.valueOf(unavailable));
+                Caught.warn(unavailable, "[Forbric/ModConfig] Mod Menu config contract is unavailable; Fabric mods get no "
+                        + "config screen");
             }
         }
         looked = true;

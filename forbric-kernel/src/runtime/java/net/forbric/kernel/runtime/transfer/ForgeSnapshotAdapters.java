@@ -23,6 +23,7 @@ import net.neoforged.neoforge.transfer.item.ItemResource;
 import net.neoforged.neoforge.transfer.transaction.SnapshotJournal;
 import net.neoforged.neoforge.transfer.transaction.TransactionContext;
 import net.forbric.kernel.transform.ForgeTransferShapeAudit;
+import net.forbric.kernel.util.Caught;
 
 /**
  * Reversible access to explicitly audited Forge implementations. One object-graph journal per native transaction
@@ -45,7 +46,12 @@ public final class ForgeSnapshotAdapters {
 	private static final ClassValue<Boolean> CERTIFIED = new ClassValue<>() {
 		protected Boolean computeValue(Class<?> type) {
 			try { type.getDeclaredMethod(ForgeTransferShapeAudit.MARKER); return true; }
-			catch (NoSuchMethodException | LinkageError unverified) { return false; }
+			catch (NoSuchMethodException unverified) { Caught.expected(unverified); return false; }
+			catch (LinkageError unreadable) {
+				Caught.warn(unreadable, "[Forbric/Transfer] could not look for the audit marker on %s; it is treated as "
+						+ "unaudited", type.getName());
+				return false;
+			}
 		}
 	};
 	private static final ClassValue<Boolean> PURE_ITEM = new ClassValue<>() {
@@ -55,7 +61,11 @@ public final class ForgeSnapshotAdapters {
 						&& type.getMethod("components").getDeclaringClass() == Item.class
 						&& type.getMethod("builtInRegistryHolder").getDeclaringClass() == Item.class
 						&& type.getMethod("computeDefaultResource", java.util.function.Function.class).getDeclaringClass() == Item.class;
-			} catch (ReflectiveOperationException | LinkageError unknown) { return false; }
+			} catch (ReflectiveOperationException | LinkageError unknown) {
+				Caught.warn(unknown, "[Forbric/Transfer] could not read the item methods of %s; it is treated as an "
+						+ "unverified item and not transferred transactionally", type.getName());
+				return false;
+			}
 		}
 	};
 
@@ -92,6 +102,7 @@ public final class ForgeSnapshotAdapters {
 		for (String name : names) try {
 			if (!audited(Class.forName(name, false, ForgeSnapshotAdapters.class.getClassLoader()))) return false;
 		} catch (ClassNotFoundException | LinkageError absent) {
+			Caught.warn(absent, "[Forbric/Transfer] required transfer helper %s is absent; Forge snapshot transfer stays off", name);
 			TransferIssues.reportType("TRANSFER_HELPER_UNVERIFIED", name, "required transfer helper is absent"); return false;
 		}
 		return true;
@@ -245,7 +256,7 @@ public final class ForgeSnapshotAdapters {
 			List<Runnable> callbacks = new ArrayList<>(notifications.values()); clear();
 			RuntimeException failure = null;
 			for (Runnable callback : callbacks) try { callback.run(); }
-			catch (RuntimeException thrown) { if (failure == null) failure = thrown; else failure.addSuppressed(thrown); }
+			catch (RuntimeException thrown) { Caught.expected(thrown); if (failure == null) failure = thrown; else failure.addSuppressed(thrown); }
 			if (failure != null) throw failure;
 		}
 		void clear() {

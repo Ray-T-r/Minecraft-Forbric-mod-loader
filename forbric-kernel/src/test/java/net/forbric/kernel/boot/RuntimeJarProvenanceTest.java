@@ -4,6 +4,7 @@ import static org.junit.jupiter.api.Assertions.*;
 import java.nio.file.*;
 import java.util.*;
 import java.util.zip.*;
+import net.forbric.kernel.ExpectCaught;
 import net.forbric.kernel.classloading.*;
 import net.forbric.kernel.transform.InjectorExecution;
 import org.junit.jupiter.api.Test;
@@ -14,6 +15,7 @@ class RuntimeJarProvenanceTest {
   assertEquals(LoaderProbePolicy.Family.NEOFORGE,RuntimeJarProvenance.family(jar(work,"unlisted-a",List.of("META-INF/neoforge.mods.toml","fabric.mod.json"),Map.of())));
   assertEquals(LoaderProbePolicy.Family.FORGE,RuntimeJarProvenance.family(jar(work,"unlisted-b",List.of("META-INF/mods.toml","fabric.mod.json"),Map.of())));
  }
+ @ExpectCaught("could not read absent.jar")
  @Test void plainAndAmbiguousCarriersDoNotGuess(@TempDir Path work)throws Exception{
   assertNull(RuntimeJarProvenance.family(jar(work,"library",List.of(),Map.of())));
   assertNull(RuntimeJarProvenance.family(jar(work,"ambiguous",List.of("META-INF/neoforge.mods.toml","META-INF/mods.toml","fabric.mod.json"),Map.of())));

@@ -37,6 +37,7 @@ import java.util.zip.ZipEntry;
 
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
+import net.forbric.kernel.ExpectCaught;
 
 /**
  * The seeded MinecraftForge {@code ModFile}'s jar, without either carrier on the classpath.
@@ -122,6 +123,7 @@ class ForgeSecureJarStandInTest {
 		assertNotNull(secure.getRootPath());
 	}
 
+	@ExpectCaught("has no nested Status")
 	@Test
 	void answersTheRestWithHonestEmpties(@TempDir Path dir) throws Exception {
 		Path jar = jarWith(dir, "collective-2.0.jar", "pack.mcmeta", "{}");

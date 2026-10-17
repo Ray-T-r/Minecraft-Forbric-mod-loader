@@ -36,8 +36,8 @@ import net.forbric.kernel.discovery.ForbricModDiscoverer;
 import net.forbric.kernel.discovery.ModAnnotationScanner;
 import net.forbric.kernel.metadata.forge.LanguageProviders;
 import net.forbric.kernel.metadata.forge.ModsTomlParser;
+import net.forbric.kernel.util.Caught;
 import net.forbric.kernel.util.ForbricLog;
-import net.forbric.kernel.util.Reflect;
 import net.forbric.api.ModCatalog;
 
 /**
@@ -166,7 +166,7 @@ public final class KernelModLoader {
 			try {
 				mods = ModAnnotationScanner.scan(jar);
 			} catch (Throwable t) {
-				ForbricLog.warn("[Forbric/ModLoader] could not scan %s for @Mod classes", jar.getFileName());
+				Caught.warn(t, "[Forbric/ModLoader] could not scan %s for @Mod classes", jar.getFileName());
 				continue;
 			}
 			for (ModAnnotationScanner.ModClassInfo info : mods) {
@@ -211,8 +211,7 @@ public final class KernelModLoader {
 				neo.put(modId, new NeoIdentity(bus,
 						KernelModContainerFactory.create(cl, modId, bus, jar, declaredIn(declared, modId, jar))));
 			} catch (Throwable t) {
-				ForbricLog.warn("[Forbric/ModLoader] could not build ModContainer for NeoForge mod " + modId,
-						Reflect.unwrap(t));
+				Caught.warn(t, "[Forbric/ModLoader] could not build ModContainer for NeoForge mod %s", modId);
 			}
 		}
 		// Presence aliases: a mod whose NeoForge jar lost cross-jar arbitration is still HERE — the winner's jar is
@@ -230,8 +229,7 @@ public final class KernelModLoader {
 				ForbricLog.info("[Forbric/ModLoader] presence alias '%s' — its NeoForge jar lost arbitration, but "
 						+ "the winning jar supplies the classes; ModList.isLoaded now answers", alias.modId());
 			} catch (Throwable t) {
-				ForbricLog.warn("[Forbric/ModLoader] could not alias " + alias.modId() + " into ModList",
-						Reflect.unwrap(t));
+				Caught.warn(t, "[Forbric/ModLoader] could not alias %s into ModList", alias.modId());
 			}
 		}
 		// Declared-only mods: a [[mods]] entry with no @Mod class behind it. That is a legal NeoForge mod — FML gives
@@ -258,8 +256,8 @@ public final class KernelModLoader {
 						KernelModContainerFactory.create(cl, modId, bus, entry.jar(), entry.mod())));
 				classlessJars.put(modId, entry.jar());
 			} catch (Throwable t) {
-				ForbricLog.warn("[Forbric/ModLoader] could not build a ModContainer for NeoForge mod " + modId
-						+ ", which declares no @Mod class", Reflect.unwrap(t));
+				Caught.warn(t, "[Forbric/ModLoader] could not build a ModContainer for NeoForge mod %s, which declares "
+						+ "no @Mod class", modId);
 			}
 		}
 		if (!classless.isEmpty()) {
@@ -305,8 +303,8 @@ public final class KernelModLoader {
 				try {
 					lowCode.put(modId, KernelForgeModContext.lowCode(cl, modId, entry.jar()));
 				} catch (Throwable t) {
-					ForbricLog.warn("[Forbric/ModLoader] could not build a LowCodeModContainer for MinecraftForge mod "
-							+ modId, Reflect.unwrap(t));
+					Caught.warn(t, "[Forbric/ModLoader] could not build a LowCodeModContainer for MinecraftForge mod %s",
+							modId);
 				}
 			}
 			if (!lowCode.isEmpty()) {
@@ -368,8 +366,7 @@ public final class KernelModLoader {
 				if (mod.forgeHandle() != null) constructed.add(mod.modId());
 			} catch (Throwable t) {
 				recordNeoOutcome(info, true, t, otherSide, failedNeo);
-				ForbricLog.warn("[Forbric/ModLoader] failed to construct @Mod " + info.className,
-						Reflect.unwrap(t));
+				Caught.warn(t, "[Forbric/ModLoader] failed to construct @Mod %s", info.className);
 			}
 		}
 		// A mod whose constructor threw must come back OUT. This cannot un-tell it anything it learned during its
@@ -561,9 +558,8 @@ public final class KernelModLoader {
 			try {
 				mods = discoverer.discoverJar(jar);
 			} catch (Throwable t) {
-				// The @Mod scan below reports an unreadable jar in its own words; one line per jar is enough.
-				ForbricLog.debug("[Forbric/ModLoader] could not read the manifest of %s: %s", jar.getFileName(),
-						String.valueOf(t));
+				Caught.warn(t, "[Forbric/ModLoader] could not read the manifest of %s; it describes no mod",
+						jar.getFileName());
 				continue;
 			}
 			for (DiscoveredMod mod : mods) {
@@ -622,6 +618,8 @@ public final class KernelModLoader {
 			return ModConstructionOrder.sort(out, entry -> entry.mod().getId(), ModConstructionOrder.of(mods));
 		} catch (Throwable t) {
 			// An order is an improvement, never a precondition — the same rule orderByDependency keeps.
+			Caught.warn(t, "[Forbric/Order] could not order the %s mods without an @Mod class by dependency; using "
+					+ "the order they were found in", family);
 			return out;
 		}
 	}
@@ -658,8 +656,8 @@ public final class KernelModLoader {
 				return LanguageProviders.of(ModsTomlParser.parse(in));
 			}
 		} catch (Exception unreadable) {
-			ForbricLog.debug("[Forbric/ModLoader] could not read the %s of %s: %s", manifest, jar.getFileName(),
-					String.valueOf(unreadable));
+			Caught.warn(unreadable, "[Forbric/ModLoader] could not read the %s of %s; its language is unknown",
+					manifest, jar.getFileName());
 			return null;
 		}
 	}
@@ -707,8 +705,7 @@ public final class KernelModLoader {
 			return sorted;
 		} catch (Throwable t) {
 			// An order is an improvement, never a precondition. Losing it must not cost the pack its mods.
-			ForbricLog.warn("[Forbric/Order] could not order mods by dependency; using the order they were found in",
-					Reflect.unwrap(t));
+			Caught.warn(t, "[Forbric/Order] could not order mods by dependency; using the order they were found in");
 			return claimed;
 		}
 	}
@@ -740,8 +737,7 @@ public final class KernelModLoader {
 			try {
 				forge.put(modId, factory.create(modId));
 			} catch (Throwable t) {
-				ForbricLog.warn("[Forbric/ModLoader] could not build the MinecraftForge loading context for "
-						+ modId, Reflect.unwrap(t));
+				Caught.warn(t, "[Forbric/ModLoader] could not build the MinecraftForge loading context for %s", modId);
 			}
 		}
 		return forge;
@@ -784,10 +780,11 @@ public final class KernelModLoader {
 					+ "isLoaded/getModContainerById answered \"absent\" for every one of them until now",
 					containers.size(), ids);
 		} catch (ClassNotFoundException absent) {
-			ForbricLog.debug("[Forbric/ModLoader] traditional-Forge ModList not present — nothing to publish");
+			// traditional-Forge ModList not present — nothing to publish
+			Caught.expected(absent);
 		} catch (Throwable t) {
-			ForbricLog.warn("[Forbric/ModLoader] could not publish into MinecraftForge's ModList — a Forge mod asking "
-					+ "whether another is loaded still gets no", Reflect.unwrap(t));
+			Caught.warn(t, "[Forbric/ModLoader] could not publish into MinecraftForge's ModList — a Forge mod asking "
+					+ "whether another is loaded still gets no");
 		}
 	}
 
@@ -870,10 +867,11 @@ public final class KernelModLoader {
 			ForbricLog.info("[Forbric/ModLoader] published %d NeoForge mod(s) into ModList %s — mods that resolve "
 					+ "their own container (event bus, config) now find themselves", containers.size(), neo.keySet());
 		} catch (ClassNotFoundException absent) {
-			ForbricLog.debug("[Forbric/ModLoader] NeoForge ModList not present — nothing to publish");
+			// NeoForge ModList not present — nothing to publish
+			Caught.expected(absent);
 		} catch (Throwable t) {
-			ForbricLog.warn("[Forbric/ModLoader] could not publish NeoForge ModList "
-					+ "(mods that look themselves up will fail)", Reflect.unwrap(t));
+			Caught.warn(t, "[Forbric/ModLoader] could not publish NeoForge ModList "
+					+ "(mods that look themselves up will fail)");
 		}
 	}
 
@@ -909,8 +907,8 @@ public final class KernelModLoader {
 			fillModInfos(modListCls, modList, containers, modContainerCls.getMethod("getModInfo"));
 			publishFileById(cl, modListCls, modList, containers);
 		} catch (Throwable t) {
-			ForbricLog.warn("[Forbric/ModLoader] could not fill ModList.getMods() — mods that ENUMERATE the mod list "
-					+ "(Sodium's config entry points, FlawlessFrames) will find nothing", Reflect.unwrap(t));
+			Caught.warn(t, "[Forbric/ModLoader] could not fill ModList.getMods() — mods that ENUMERATE the mod list "
+					+ "(Sodium's config entry points, FlawlessFrames) will find nothing");
 		}
 	}
 
@@ -967,8 +965,8 @@ public final class KernelModLoader {
 				if (!(id instanceof String modId) || modId.isEmpty()) continue;
 				if (merged.put(modId, file) == null) added++;
 			} catch (ReflectiveOperationException oneMod) {
-				ForbricLog.debug("[Forbric/ModLoader] a container could not name its mod file: %s",
-						String.valueOf(Reflect.unwrap(oneMod)));
+				Caught.warn(oneMod, "[Forbric/ModLoader] container %s could not name its mod file; getModFileById "
+						+ "does not answer for it", container);
 			}
 		}
 
@@ -1064,8 +1062,7 @@ public final class KernelModLoader {
 			Object mlc = mlcCls.getMethod("get").invoke(null);
 			mlcCls.getMethod("setActiveContainer", modContainer).invoke(mlc, container);
 		} catch (Throwable t) {
-			ForbricLog.debug("[Forbric/ModLoader] could not set NeoForge active container: %s",
-					String.valueOf(Reflect.unwrap(t)));
+			Caught.warn(t, "[Forbric/ModLoader] could not set NeoForge's active container to %s", container);
 		}
 	}
 
@@ -1143,7 +1140,12 @@ public final class KernelModLoader {
 			}
 			instance.setAccessible(true);
 			return instance.get(null);
-		} catch (NoSuchFieldException | IllegalAccessException | RuntimeException | ExceptionInInitializerError notOne) {
+		} catch (NoSuchFieldException notOne) {
+			Caught.expected(notOne);
+			return null;
+		} catch (IllegalAccessException | RuntimeException | ExceptionInInitializerError notOne) {
+			Caught.warn(notOne, "[Forbric/ModLoader] could not read %s.INSTANCE; the mod has no instance to use",
+					modCls.getName());
 			return null;
 		}
 	}
@@ -1221,8 +1223,8 @@ public final class KernelModLoader {
 				built.add(handle);
 			} catch (Throwable t) {
 				failed.add(modId);
-				ForbricLog.warn("[Forbric/ModLoader] failed to construct @Mod " + info.className
-						+ " in the Minecraft.<init> window", Reflect.unwrap(t));
+				Caught.warn(t, "[Forbric/ModLoader] failed to construct @Mod %s in the Minecraft.<init> window",
+						info.className);
 			}
 		}
 

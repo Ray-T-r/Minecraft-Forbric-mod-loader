@@ -29,6 +29,7 @@ import org.junit.jupiter.api.Test;
 
 import net.forbric.api.Ecosystem;
 import net.forbric.api.ModCatalog;
+import net.forbric.kernel.ExpectCaught;
 
 /**
  * A mod that switched a mixin off itself must not be marked for losing it.
@@ -174,6 +175,7 @@ class PluginDeclinedMixinsTest {
 		assertTrue(net.forbric.api.CompatibilityFindings.confirmedRequired().isEmpty());
 	}
 
+	@ExpectCaught("probed the wrong platform")
 	@Test
 	void aPluginThatThrowsMarksTheMod() {
 		PluginDeclinedMixins.rememberPlugin(new ThrowingPlugin());

@@ -34,6 +34,7 @@ import org.objectweb.asm.tree.analysis.BasicVerifier;
 
 import net.forbric.kernel.TestFixtures;
 import net.forbric.kernel.TestFixtures.Fixture;
+import net.forbric.kernel.ExpectCaught;
 
 /** The composition shim over the real staged roots, and every call site it re-creates. */
 class ForgeCapabilityCompositionTransformerTest {
@@ -416,12 +417,16 @@ class ForgeCapabilityCompositionTransformerTest {
 		}
 	}
 
+	// Not proved here: the recomputer does attempt Entity and declines only because the staged base it is given
+	// lacks NeoForge's AttachmentHolder. Before the resolver caught AssertionError it was interrupted instead.
+	@ExpectCaught("cannot prove a frame repair")
 	@Test
 	void theFrameRecomputerLeavesTheComposedRootsAlone() throws Exception {
 		MergedBaseFrameRecomputer recomputer = new MergedBaseFrameRecomputer(path -> {
 			try {
 				return bytesOf(path.replace(".class", ""));
-			} catch (Exception e) {
+			} catch (Exception | AssertionError notInTheBase) {
+				// bytesOf fails an assertion for a class the base lacks; to the recomputer that is "no bytes".
 				return null;
 			}
 		});

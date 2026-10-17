@@ -6,6 +6,7 @@ import java.util.List;
 import java.util.function.Function;
 import org.objectweb.asm.*;
 import org.objectweb.asm.tree.*;
+import net.forbric.kernel.util.Caught;
 
 /** Discovers a native executor's start/drain/join lifecycle from JDK operations, without singleton reflection. */
 public final class WorkerResourceLifecycleInjector implements ClassTransformer {
@@ -117,7 +118,7 @@ public final class WorkerResourceLifecycleInjector implements ClassTransformer {
                 constructors++;
             }
             return constructors==1;
-        }catch(org.objectweb.asm.tree.analysis.AnalyzerException invalid){return false;}
+        }catch(org.objectweb.asm.tree.analysis.AnalyzerException invalid){Caught.expected(invalid);return false;}
     }
     private static boolean capturesFirstArgument(MethodNode constructor,ClassNode worker,FieldNode parent) {
         int stores=0;

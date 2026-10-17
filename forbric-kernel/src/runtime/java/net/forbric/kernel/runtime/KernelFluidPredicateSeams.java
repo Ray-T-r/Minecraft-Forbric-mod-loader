@@ -8,6 +8,7 @@ import net.forbric.kernel.boot.DefinedMethodContracts.MethodContract;
 import net.forbric.kernel.boot.KernelPredicateSeams;
 import org.objectweb.asm.ClassReader;
 import org.objectweb.asm.tree.ClassNode;
+import net.forbric.kernel.util.Caught;
 import net.forbric.kernel.util.ForbricLog;
 
 /** Executes a current native query once, with an original source predicate only for witnessed adapter defaults. */
@@ -25,7 +26,7 @@ public final class KernelFluidPredicateSeams {
 				if(in==null)return java.util.Map.of();ClassNode node=new ClassNode();new ClassReader(in.readAllBytes()).accept(node,ClassReader.SKIP_DEBUG|ClassReader.SKIP_FRAMES);
 				if(!node.name.replace('/','.').equals(type.getName()))return java.util.Map.of();java.util.Map<String,MethodContract>map=new java.util.HashMap<>();
 				for(var method:node.methods)map.put(method.name+method.desc,new MethodContract(type.getName(),method.name,method.desc,DefinedMethodContracts.fingerprint(method)));return java.util.Map.copyOf(map);
-			}catch(java.io.IOException|RuntimeException unavailable){return java.util.Map.of();}
+			}catch(java.io.IOException|RuntimeException unavailable){Caught.warn(unavailable,"[Forbric/Mixin] could not read %s to fingerprint its predicate seams; it has no default contracts",type.getName());return java.util.Map.of();}
 		}
 	};
 	}

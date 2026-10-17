@@ -34,6 +34,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
 import net.forbric.api.Ecosystem;
+import net.forbric.kernel.ExpectCaught;
 import net.forbric.kernel.discovery.ForbricModDiscoverer;
 
 /**
@@ -68,6 +69,7 @@ class KernelDataPacksTest {
 		assertFalse(KernelDataPacks.carriesData(jar));
 	}
 
+	@ExpectCaught("could not read readme.txt to look for data/")
 	@Test
 	void somethingThatIsNotAJarIsNot() throws Exception {
 		Path notAJar = dir.resolve("readme.txt");
@@ -109,6 +111,8 @@ class KernelDataPacksTest {
 		assertEquals(List.of(neo, forge), served);
 	}
 
+	// The fixture's fabric.mod.json is a bare {}: the losing Fabric side of the universal jar cannot be inspected.
+	@ExpectCaught("fabric.mod.json has no 'id'")
 	@Test
 	void aUniversalJarIsServedWhenItsWinningClaimIsForgeFamily() throws Exception {
 		// Universal jars declare every loader; the arbiter picks NeoForge by default, so its data/ is ours to serve

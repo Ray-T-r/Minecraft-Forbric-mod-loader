@@ -37,6 +37,7 @@ import net.forbric.kernel.transform.GuestInjectorPruner;
 import net.forbric.kernel.transform.LootTableEventBridgeInjector;
 import net.forbric.kernel.transform.ModelFormatFunnelInjector;
 import net.forbric.kernel.util.ByteScan;
+import net.forbric.kernel.util.Caught;
 import net.forbric.kernel.util.ForbricLog;
 
 /**
@@ -140,7 +141,8 @@ public final class FabricApiModuleLossAudit {
 					}
 				}
 			} catch (IOException unreadable) {
-				ForbricLog.debug("[Forbric/FabricApi] could not read %s: %s", name, unreadable);
+				Caught.warn(unreadable, "[Forbric/FabricApi] could not read %s; its uses of switched-off modules are not "
+						+ "counted", name);
 			}
 		}
 	}
@@ -167,6 +169,8 @@ public final class FabricApiModuleLossAudit {
 			}
 		} catch (RuntimeException notAClass) {
 			// A constant pool that names the surface is still recorded as a use.
+			Caught.warn(notAClass, "[Forbric/FabricApi] could not read the interfaces of a class naming %s; it counts as "
+					+ "a use, not an implementation", needle);
 		}
 		return false;
 	}

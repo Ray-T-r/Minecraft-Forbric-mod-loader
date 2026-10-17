@@ -23,8 +23,8 @@ import java.util.Map;
 
 import net.forbric.api.Ecosystem;
 import net.forbric.api.ForeignType;
+import net.forbric.kernel.util.Caught;
 import net.forbric.kernel.util.ForbricLog;
-import net.forbric.kernel.util.Reflect;
 
 /**
  * Loads each carrier's OWN built-in translations, the way its client mod loader would have.
@@ -115,8 +115,8 @@ public final class CarrierLanguages {
 		try {
 			hook = Class.forName(carrier.hookClass(), false, cl);
 		} catch (ClassNotFoundException absent) {
-			ForbricLog.debug("[Forbric/Lang] no %s carrier on the classpath; its built-in translations are not needed",
-					carrier.label());
+			// No such carrier on the classpath; its built-in translations are not needed.
+			Caught.expected(absent);
 			return null;
 		}
 
@@ -128,8 +128,8 @@ public final class CarrierLanguages {
 			load.setAccessible(true);
 			load.invoke(null);
 		} catch (Throwable t) {
-			ForbricLog.warn(String.format("[Forbric/Lang] the %s carrier's built-in translations did not load; its "
-					+ "own screens will render their raw keys", carrier.label()), Reflect.unwrap(t));
+			Caught.warn(t, "[Forbric/Lang] the %s carrier's built-in translations did not load; its "
+					+ "own screens will render their raw keys", carrier.label());
 			return null;
 		} finally {
 			thread.setContextClassLoader(previous);
@@ -156,8 +156,8 @@ public final class CarrierLanguages {
 			field.setAccessible(true);
 			return field.get(null) instanceof Map<?, ?> map ? map : null;
 		} catch (Throwable t) {
-			ForbricLog.debug("[Forbric/Lang] could not read the %s carrier's translation table: %s", carrier.label(),
-					String.valueOf(Reflect.unwrap(t)));
+			Caught.warn(t, "[Forbric/Lang] could not read the %s carrier's translation table; it counts as empty",
+					carrier.label());
 			return null;
 		}
 	}

@@ -37,6 +37,7 @@ import net.forbric.api.DiscoveredMod;
 import net.forbric.api.Ecosystem;
 import net.forbric.api.UnifiedDependency;
 import net.forbric.api.VersionPredicate;
+import net.forbric.kernel.util.Caught;
 import net.forbric.kernel.util.ForbricLog;
 
 /**
@@ -366,7 +367,8 @@ public final class NativeAbsentTargets {
 			}
 			lines.addAll(List.of(new String(in.readAllBytes(), StandardCharsets.UTF_8).split("\n")));
 		} catch (IOException unreadable) {
-			ForbricLog.warn("[Forbric/Mixin] could not read %s; no injector target is judged absent from a mod's own platform", TABLE);
+			Caught.warn(unreadable, "[Forbric/Mixin] could not read %s; no injector target is judged absent from a mod's own "
+					+ "platform", TABLE);
 			shipped = Table.EMPTY;
 			return Table.EMPTY;
 		}
@@ -546,6 +548,8 @@ public final class NativeAbsentTargets {
 			if (bytes == null) return false;
 			new ClassReader(bytes).accept(declared, ClassReader.SKIP_CODE | ClassReader.SKIP_DEBUG | ClassReader.SKIP_FRAMES);
 		} catch (RuntimeException unreadable) {
+			Caught.warn(unreadable, "[Forbric/Mixin] could not read %s's own %s; it is not judged to lack %s%s", platform,
+					owner, name, desc);
 			return false;
 		}
 		if (declared.methods == null) return true;
@@ -570,6 +574,7 @@ public final class NativeAbsentTargets {
 		try {
 			running = context.base().apply(owner);
 		} catch (RuntimeException unreadable) {
+			Caught.warn(unreadable, "[Forbric/Mixin] could not tell which jar serves %s", owner);
 			running = null;
 		}
 		if (running != null && (running.equals(expected) || table.libraries().contains(running))) return true;
@@ -675,6 +680,7 @@ public final class NativeAbsentTargets {
 		try {
 			return Path.of(URI.create(file));
 		} catch (RuntimeException notAUri) {
+			Caught.expected(notAUri);
 			return file.startsWith("file:") ? Path.of(file.substring("file:".length())) : null;
 		}
 	}

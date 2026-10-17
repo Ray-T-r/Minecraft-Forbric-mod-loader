@@ -21,8 +21,7 @@ import java.util.List;
 import net.forbric.api.ForeignType;
 import net.forbric.kernel.boot.KernelForgeModContext.Handle;
 import net.forbric.kernel.boot.DeferredWorkFailures;
-import net.forbric.kernel.util.ForbricLog;
-import net.forbric.kernel.util.Reflect;
+import net.forbric.kernel.util.Caught;
 import net.forbric.api.ModCatalog;
 import net.minecraftforge.eventbus.api.bus.BusGroup;
 import net.minecraftforge.fml.DeferredWorkQueue;
@@ -98,8 +97,7 @@ public final class KernelForgeSetup {
 					post(event, (ModContainer) handle.container(), (BusGroup) handle.busGroup(), stage);
 					fired++;
 				} catch (Throwable t) {
-					ForbricLog.warn("[Forbric/Lifecycle] " + handle.modId() + " threw during traditional-Forge "
-							+ label, Reflect.unwrap(t));
+					Caught.warn(t, "[Forbric/Lifecycle] %s threw during traditional-Forge %s", handle.modId(), label);
 					ModCatalog.mark(handle.modId(), ModCatalog.Status.DEGRADED, "it threw during " + label);
 				}
 			}
@@ -107,9 +105,8 @@ public final class KernelForgeSetup {
 			try {
 				KernelForgeContainers.setActiveContainer(null);
 			} catch (Exception stuck) {
-				ForbricLog.warn("[Forbric/Lifecycle] could not clear the active MinecraftForge container after "
-						+ label + " — whatever registers next may be namespaced under the last mod",
-						Reflect.unwrap(stuck));
+				Caught.warn(stuck, "[Forbric/Lifecycle] could not clear the active MinecraftForge container after %s — "
+						+ "whatever registers next may be namespaced under the last mod", label);
 			}
 		}
 
@@ -123,10 +120,9 @@ public final class KernelForgeSetup {
 			for (String id : owners) {
 				ModCatalog.mark(id, ModCatalog.Status.DEGRADED, "one of its deferred setup tasks threw during " + label);
 			}
-			ForbricLog.warn("[Forbric/Lifecycle] traditional-Forge " + label + " was delivered but "
-					+ (owners.isEmpty() ? "its deferred work did not run — a mod that registers from enqueueWork has done nothing"
-							: "a deferred task threw — " + String.join(", ", owners) + "; the other tasks ran"),
-					Reflect.unwrap(t));
+			Caught.warn(t, "[Forbric/Lifecycle] traditional-Forge %s was delivered but %s", label,
+					owners.isEmpty() ? "its deferred work did not run — a mod that registers from enqueueWork has done nothing"
+							: "a deferred task threw — " + String.join(", ", owners) + "; the other tasks ran");
 		}
 		return fired;
 	}

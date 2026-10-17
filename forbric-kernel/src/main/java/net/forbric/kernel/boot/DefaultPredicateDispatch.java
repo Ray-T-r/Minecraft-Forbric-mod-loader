@@ -6,6 +6,7 @@ import java.util.Optional;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 
+import net.forbric.kernel.util.Caught;
 import net.forbric.kernel.util.ForbricLog;
 
 /**
@@ -60,6 +61,8 @@ public final class DefaultPredicateDispatch {
             for (var contract : contracts) classes.add(Class.forName(contract.owner(), false, loader));
             return Optional.of(List.copyOf(classes));
         } catch (ClassNotFoundException | RuntimeException | LinkageError unavailable) {
+            Caught.warn(unavailable, "[Forbric/DefaultDispatch] could not load the classes of the default-only transport "
+                    + "proof %s; the live native predicate is kept", contracts);
             return Optional.empty();
         }
     }

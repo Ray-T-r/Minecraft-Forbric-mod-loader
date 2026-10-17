@@ -45,6 +45,7 @@ import org.objectweb.asm.tree.MethodNode;
 
 import net.forbric.api.CompatibilityFinding;
 import net.forbric.api.CompatibilityFindings;
+import net.forbric.kernel.util.Caught;
 import net.forbric.kernel.util.ForbricLog;
 
 /**
@@ -270,6 +271,7 @@ public final class MixinOverlapLint {
 			new ClassReader(bytes).accept(node, ClassReader.SKIP_CODE | ClassReader.SKIP_DEBUG | ClassReader.SKIP_FRAMES);
 			return node;
 		} catch (RuntimeException unreadable) {
+			Caught.warn(unreadable, "[Forbric/MixinOverlap] could not read %s; taken as absent", target);
 			return null;
 		}
 	}
@@ -436,7 +438,7 @@ public final class MixinOverlapLint {
 				continue;
 			}
 			byte[] json = served.apply(config);
-			UnmodifiableConfig parsed = json == null ? null : parse(json);
+			UnmodifiableConfig parsed = json == null ? null : parse("mixin config " + config, json);
 			if (parsed == null) continue;
 			Object pkg = parsed.get(List.of("package"));
 			if (pkg == null || pkg.toString().isEmpty()) continue;
@@ -449,7 +451,8 @@ public final class MixinOverlapLint {
 				try {
 					claims.addAll(claims(modId, family.apply(modId), config, "mixins", bytes, resource));
 				} catch (RuntimeException unreadable) {
-					ForbricLog.debug("[Forbric/MixinOverlap] could not read %s:%s: %s", config, entry, unreadable);
+					Caught.warn(unreadable, "[Forbric/MixinOverlap] could not read %s:%s; its overlaps are not linted", config,
+							entry);
 				}
 			}
 		}
@@ -529,10 +532,11 @@ public final class MixinOverlapLint {
 		return (m.owner() == null ? "" : m.owner().substring(m.owner().lastIndexOf('/') + 1) + ".") + m.name();
 	}
 
-	private static UnmodifiableConfig parse(byte[] json) {
+	private static UnmodifiableConfig parse(String name, byte[] json) {
 		try (Reader reader = new InputStreamReader(new ByteArrayInputStream(json), StandardCharsets.UTF_8)) {
 			return JsonFormat.fancyInstance().createParser().parse(reader);
 		} catch (RuntimeException | IOException notAConfig) {
+			Caught.warn(notAConfig, "[Forbric/MixinOverlap] could not parse %s; taken as absent", name);
 			return null;
 		}
 	}
@@ -590,6 +594,7 @@ public final class MixinOverlapLint {
 							}
 						} catch (RuntimeException unreadable) {
 							// counted below, when claims() meets it again
+							Caught.expected(unreadable);
 						}
 					}
 				}
@@ -620,6 +625,7 @@ public final class MixinOverlapLint {
 			try {
 				claims.addAll(claims(p.modId(), p.jar(), p.config(), p.array(), p.bytes(), resolver));
 			} catch (RuntimeException e) {
+				Caught.warn(e, "[Forbric/MixinOverlap] could not read %s:%s of %s", p.config(), p.array(), p.modId());
 				failed++;
 			}
 		}
@@ -653,7 +659,7 @@ public final class MixinOverlapLint {
 	static String declaredModId(Map<String, byte[]> content, String unit) {
 		byte[] fabric = content.get("fabric.mod.json");
 		if (fabric != null) {
-			UnmodifiableConfig parsed = parse(fabric);
+			UnmodifiableConfig parsed = parse(unit + "!/fabric.mod.json", fabric);
 			Object id = parsed == null ? null : parsed.get(List.of("id"));
 			if (id != null && !id.toString().isBlank()) return id.toString();
 		}

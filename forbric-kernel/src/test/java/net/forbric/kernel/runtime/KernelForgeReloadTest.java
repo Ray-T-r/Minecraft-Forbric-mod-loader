@@ -42,7 +42,8 @@ class KernelForgeReloadTest {
 				"the carrier post must be inside a try whose catch follows it");
 		String handler = s.substring(catchBlock, s.indexOf('}', catchBlock));
 		assertTrue(handler.contains("return neo;"), "a failing Forge post must cost Forge's listeners, not the reload");
-		assertTrue(handler.contains("Reflect.unwrap(t)"));
+		// Reported with the listener's own exception: Caught unwraps reflection's wrapper before it prints.
+		assertTrue(handler.contains("Caught.warn(t,"), handler);
 	}
 
 	@Test

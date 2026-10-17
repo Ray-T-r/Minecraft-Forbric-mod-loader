@@ -29,7 +29,7 @@ import java.util.Set;
 
 import net.fabricmc.loader.api.FabricLoader;
 import net.fabricmc.loader.api.entrypoint.EntrypointContainer;
-import net.forbric.kernel.util.ForbricLog;
+import net.forbric.kernel.util.Caught;
 
 /**
  * Fabric mods' config screen factories, read from their {@code "modmenu"} entrypoints the way Mod Menu reads them.
@@ -119,7 +119,8 @@ public final class ModMenuConfigFactories {
 				implementers.add(modId);
 				definitions.add(definition);
 			} catch (Throwable t) {
-				if (failed.add(modId + " " + definition)) broken(modId, definition, "building it or asking it for its factory", t);
+				Caught.warn(t, BROKEN, modId, definition, "building it or asking it for its factory");
+				failed.add(modId + " " + definition);
 			}
 		}
 		// A null stored with put means "no screen" under Mod Menu too: it answers with a null check. Dropping it here
@@ -172,7 +173,8 @@ public final class ModMenuConfigFactories {
 					if (entry.getKey() instanceof String id && entry.getValue() != null) factories.putIfAbsent(id, entry.getValue());
 				}
 			} catch (Throwable t) {
-				if (failed.add(key)) broken(implementers.get(i), definitions.get(i), "asking it for the factories it provides", t);
+				Caught.warn(t, BROKEN, implementers.get(i), definitions.get(i), "asking it for the factories it provides");
+				failed.add(key);
 			}
 		}
 	}
@@ -204,6 +206,8 @@ public final class ModMenuConfigFactories {
 			Object factory = own.invoke(bare);
 			return factory == null ? null : factory.getClass();
 		} catch (ReflectiveOperationException | RuntimeException | LinkageError e) {
+			Caught.warn(e, "[Forbric/ModConfig] could not ask %s for its default config screen factory; each mod's own "
+					+ "override decides instead", api.getName());
 			return null;
 		}
 	}
@@ -220,6 +224,8 @@ public final class ModMenuConfigFactories {
 			Method found = type.getMethod(method.getName(), method.getParameterTypes());
 			return found.getDeclaringClass() != method.getDeclaringClass() && !Modifier.isAbstract(found.getModifiers());
 		} catch (NoSuchMethodException | SecurityException e) {
+			Caught.warn(e, "[Forbric/ModConfig] could not look up %s on %s; treated as not overridden", method.getName(),
+					type.getName());
 			return false;
 		}
 	}
@@ -239,13 +245,12 @@ public final class ModMenuConfigFactories {
 		try {
 			return container.getProvider().getMetadata().getId();
 		} catch (RuntimeException e) {
+			Caught.warn(e, "[Forbric/ModConfig] could not read the mod id of Mod Menu entrypoint %s",
+					container.getDefinition());
 			return "<unknown>";
 		}
 	}
 
-	private static void broken(String modId, String definition, String doing, Throwable t) {
-		Throwable cause = t instanceof InvocationTargetException wrapped && wrapped.getCause() != null ? wrapped.getCause() : t;
-		ForbricLog.warn("[Forbric/ModConfig] %s's Mod Menu entrypoint %s threw while %s (%s) — it is skipped, as Mod "
-				+ "Menu skips a broken one; no other mod's config is affected", modId, definition, doing, String.valueOf(cause));
-	}
+	private static final String BROKEN = "[Forbric/ModConfig] %s's Mod Menu entrypoint %s threw while %s — it is skipped, "
+			+ "as Mod Menu skips a broken one; no other mod's config is affected";
 }

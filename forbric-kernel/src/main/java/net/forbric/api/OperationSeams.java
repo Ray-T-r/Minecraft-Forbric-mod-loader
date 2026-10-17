@@ -4,6 +4,7 @@ package net.forbric.api;
 import java.lang.ref.*;
 import java.util.*;
 import java.util.function.Predicate;
+import net.forbric.kernel.util.Caught;
 import net.forbric.kernel.util.ForbricLog;
 
 /**
@@ -80,7 +81,10 @@ public final class OperationSeams {
     private static void report(ClassLoader loader,String key,Proof proof,String reason){
         if(proof!=null&&proof.declined!=null){
             try{proof.declined.report(loader,key,reason);return;}
-            catch(RuntimeException|LinkageError failed){reason=reason+"; its report failed: "+failed;}
+            catch(RuntimeException|LinkageError failed){
+                Caught.warn(failed,"[Forbric/Mixin] the decline report for operation site %s failed; logging the decline here instead",key);
+                reason=reason+"; its report failed: "+failed;
+            }
         }
         ForbricLog.warn("[Forbric/Mixin] source operation skipped at its proved site, the carrier gateway runs as written: %s (source=%s)",reason,key);
     }

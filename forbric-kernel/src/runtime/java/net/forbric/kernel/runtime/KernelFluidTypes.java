@@ -1,9 +1,7 @@
 /* Copyright 2026 The Forbric Project. Licensed under the Apache License, Version 2.0. */
 package net.forbric.kernel.runtime;
 
-import java.util.concurrent.atomic.AtomicBoolean;
-
-import net.forbric.kernel.util.ForbricLog;
+import net.forbric.kernel.util.Caught;
 import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.resources.Identifier;
 import net.minecraft.tags.FluidTags;
@@ -30,7 +28,6 @@ import net.neoforged.neoforge.fluids.FluidType;
  * rebound on every reload.
  */
 public final class KernelFluidTypes {
-	private static final AtomicBoolean LOOKUP_BROKE = new AtomicBoolean();
 
 	private KernelFluidTypes() {
 	}
@@ -49,6 +46,7 @@ public final class KernelFluidTypes {
 			if (behaviour != null) return behaviour;
 		} catch (IllegalStateException unbound) {
 			// Tags are not bound yet (registration): nothing touches a fluid in a world before they are.
+			Caught.expected(unbound);
 		}
 		return NeoForgeMod.EMPTY_TYPE.value();
 	}
@@ -88,6 +86,7 @@ public final class KernelFluidTypes {
 			if (behaviour != null) return behaviour;
 		} catch (IllegalStateException unbound) {
 			// Tags are not bound yet; see foreignType.
+			Caught.expected(unbound);
 		}
 		return net.minecraftforge.common.ForgeMod.EMPTY_TYPE.get();
 	}
@@ -104,7 +103,9 @@ public final class KernelFluidTypes {
 		} catch (IllegalStateException unbound) {
 			throw unbound;
 		} catch (RuntimeException | LinkageError broken) {
-			return lookupBroke(broken);
+			Caught.warn(broken, "[Forbric/Fluid] a Fabric fluid behaviour's type could not be looked up — a fluid it covers"
+					+ " acts as its tags say");
+			return null;
 		}
 	}
 
@@ -118,16 +119,10 @@ public final class KernelFluidTypes {
 		} catch (IllegalStateException unbound) {
 			throw unbound;
 		} catch (RuntimeException | LinkageError broken) {
-			return lookupBroke(broken);
+			Caught.warn(broken, "[Forbric/Fluid] a Fabric fluid behaviour's type could not be looked up — a fluid it covers"
+					+ " acts as its tags say");
+			return null;
 		}
-	}
-
-	private static <T> T lookupBroke(Throwable broken) {
-		if (LOOKUP_BROKE.compareAndSet(false, true)) {
-			ForbricLog.warn("[Forbric/Fluid] a Fabric fluid behaviour's type could not be looked up — "
-					+ "a fluid it covers acts as its tags say", broken);
-		}
-		return null;
 	}
 
 	/** Whether NeoForge's getVanillaFluidType knows this fluid: vanilla's own, and NeoForge's milk. */

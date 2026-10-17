@@ -25,6 +25,7 @@ import org.objectweb.asm.tree.analysis.AnalyzerException;
 import org.objectweb.asm.tree.analysis.Frame;
 import org.objectweb.asm.tree.analysis.Interpreter;
 import org.objectweb.asm.tree.analysis.Value;
+import net.forbric.kernel.util.Caught;
 
 /**
  * Where the values of a client {@code onTrackingStart} go, which is what {@link ClientPartTrackingInjector#CLAIM} is about.
@@ -65,6 +66,7 @@ final class ClientPartTrackingFlow {
 		try {
 			new FlowAnalyzer(flows).analyze(owner.name, start);
 		} catch (AnalyzerException | RuntimeException unreadable) {
+			Caught.expected(unreadable);
 			return false;
 		}
 		return flows.registers && !flows.unchecked;
@@ -371,6 +373,7 @@ final class ClientPartTrackingFlow {
 			try {
 				new FlowAnalyzer(inner).analyze(owner.name, body);
 			} catch (AnalyzerException | RuntimeException unreadable) {
+				Caught.expected(unreadable);
 				return false;
 			}
 			return inner.registers;

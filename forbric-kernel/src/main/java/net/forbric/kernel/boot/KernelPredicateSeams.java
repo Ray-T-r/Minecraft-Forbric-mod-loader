@@ -9,6 +9,7 @@ import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 import org.objectweb.asm.Type;
 import net.forbric.kernel.boot.DefinedMethodContracts.MethodContract;
+import net.forbric.kernel.util.Caught;
 
 /** Final-defined dispatch witnesses for a native-proved source predicate behind a current default query. */
 public final class KernelPredicateSeams {
@@ -43,7 +44,10 @@ public final class KernelPredicateSeams {
 				}else if(!DefinedMethodContracts.validates(object,guard.method()))return dispatchFailure(object,guard.method());
 			}
 			return new Validation(true,false,"proved");
-		}catch(ReflectiveOperationException|RuntimeException|LinkageError unproved){return declined(false,"dispatch/projection proof is unavailable: "+unproved.getClass().getSimpleName());}
+		}catch(ReflectiveOperationException|RuntimeException|LinkageError unproved){
+			Caught.warn(unproved,"[Forbric/PredicateSeam] the dispatch/projection proof of %s threw; the native operation stays authoritative",key);
+			return declined(false,"dispatch/projection proof is unavailable: "+unproved.getClass().getSimpleName());
+		}
 	}
 	/** Deferred dispatch on the owned type discovered by native; a getter is still never invoked by this guard. */
 	public static Validation ownedValidation(Object adapter,String key){

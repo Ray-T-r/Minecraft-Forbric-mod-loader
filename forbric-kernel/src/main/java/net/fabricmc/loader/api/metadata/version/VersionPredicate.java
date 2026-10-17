@@ -23,6 +23,7 @@ import java.util.function.Predicate;
 
 import net.fabricmc.loader.api.Version;
 import net.fabricmc.loader.api.VersionParsingException;
+import net.forbric.kernel.util.Caught;
 
 /**
  * A parsed Fabric version requirement, as mods call it.
@@ -128,6 +129,7 @@ public interface VersionPredicate extends Predicate<Version> {
 			try {
 				reference = Version.parse(rest.trim());
 			} catch (VersionParsingException unreadable) {
+				Caught.expected(unreadable);
 				return null;
 			}
 			return new PredicateTerm() {

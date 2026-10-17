@@ -14,6 +14,7 @@ import org.junit.jupiter.api.io.TempDir;
 import org.junit.jupiter.api.parallel.ResourceLock;
 
 import net.fabricmc.api.EnvType;
+import net.forbric.kernel.ExpectCaught;
 
 /**
  * {@link FlowerPotRepairInjector}'s output, run: a poppy goes into a flower pot, a MinecraftForge mod's plant added with
@@ -411,6 +412,8 @@ class FlowerPotRepairInjectorExecutionTest {
 		return InjectorExecution.invoke(InjectorExecution.invoke(pot, "getCloneItemStack"), "getItem");
 	}
 
+	// The stub game has no NeoForgeRegistryCallbacks$BlockCallbacks to invalidate.
+	@ExpectCaught("NeoForge's legacy pot view could not be invalidated")
 	@Test void aPlantGoesInAndPickBlockAnswers(@TempDir Path work) throws Throwable {
 		Map<String, byte[]> original = compile(work);
 		String internal = FlowerPotRepairInjector.OWNER;
@@ -446,6 +449,8 @@ class FlowerPotRepairInjectorExecutionTest {
 				"a repaired pot is left alone");
 	}
 
+    // The stub game has no NeoForgeRegistryCallbacks$BlockCallbacks to invalidate.
+    @ExpectCaught("NeoForge's legacy pot view could not be invalidated")
     @Test void theLivePublicSdkQueryRetainsNativeEffectsAndReportsBadExplicitSuppliers(@TempDir Path work)throws Throwable{
         Map<String,String> sources=new HashMap<>(STAND_INS);
         String pot=sources.get(POT);

@@ -6,6 +6,7 @@ import org.objectweb.asm.Handle;
 import org.objectweb.asm.Opcodes;
 import org.objectweb.asm.Type;
 import org.objectweb.asm.tree.*;
+import net.forbric.kernel.util.Caught;
 import net.forbric.kernel.util.ForbricLog;
 import net.forbric.kernel.transform.CreativePagerBridgeInjector;
 
@@ -108,7 +109,8 @@ public final class FabricCreativePagerMixinAdapter {
 
 	private static ClassNode lookup(Function<String,ClassNode> classes,String name){
 		if(classes==null)return null;
-		try{return classes.apply(name);}catch(RuntimeException unavailable){return null;}
+		try{return classes.apply(name);}catch(RuntimeException unavailable){
+			Caught.warn(unavailable,"[Forbric/CreativePager] could not read %s; taken as absent",name);return null;}
 	}
 	private static FieldNode field(ClassNode node,String name,String desc){for(FieldNode f:node.fields)if(f.name.equals(name)&&f.desc.equals(desc))return f;return null;}
 	private static boolean annotated(List<AnnotationNode> visible,List<AnnotationNode> invisible,String desc){

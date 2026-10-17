@@ -4,6 +4,7 @@ package net.forbric.kernel.mixin;
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 import net.forbric.kernel.boot.DefinedMethodContracts.MethodContract;
+import net.forbric.kernel.util.Caught;
 import org.objectweb.asm.*;
 import org.objectweb.asm.commons.MethodRemapper;
 import org.objectweb.asm.commons.Remapper;
@@ -37,7 +38,8 @@ public final class SharedFinalSourceCertifier {
         Map<String,Plan> plans=PLANS.get(target.name);if(plans==null)return Map.of();
         Map<String,Witness> result=new HashMap<>();for(var entry:plans.entrySet())try{
             Witness witness=certify(target,entry.getValue());if(witness!=null)result.put(entry.getKey(),witness);
-        }catch(RuntimeException unsupported){/* unknown final shape declines the source continuation */}
+        }catch(RuntimeException unsupported){/* unknown final shape declines the source continuation */
+            Caught.warn(unsupported,"[Forbric/Mixin] could not certify shared final source %s in %s; the source continuation is declined",entry.getKey(),target.name);}
         return Map.copyOf(result);
     }
     private static Witness certify(ClassNode target,Plan plan) {

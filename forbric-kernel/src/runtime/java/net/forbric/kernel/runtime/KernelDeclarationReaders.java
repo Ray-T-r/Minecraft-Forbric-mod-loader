@@ -14,6 +14,7 @@ import java.util.stream.Stream;
 import net.forbric.api.DiscoveredMod;
 import net.forbric.api.ModPresence;
 import net.forbric.kernel.boot.CrossEcosystemDeclarations;
+import net.forbric.kernel.util.Caught;
 import net.neoforged.fml.ModContainer;
 import net.neoforged.fml.ModList;
 import net.neoforged.neoforgespi.language.IModFileInfo;
@@ -72,6 +73,7 @@ public final class KernelDeclarationReaders {
 			for (Declarer declarer : extra) all.add(declarer.info());
 			return all;
 		} catch (Throwable failure) {
+			Caught.expected(failure);
 			CrossEcosystemDeclarations.readerFailed("getMods", failure);
 			return mods;
 		}
@@ -88,6 +90,7 @@ public final class KernelDeclarationReaders {
 			for (Declarer declarer : extra) all.add(declarer.container());
 			return all;
 		} catch (Throwable failure) {
+			Caught.expected(failure);
 			CrossEcosystemDeclarations.readerFailed("getSortedMods", failure);
 			return mods;
 		}
@@ -101,6 +104,7 @@ public final class KernelDeclarationReaders {
 			Declarer declarer = byId(id);
 			return declarer == null ? native_ : Optional.of(declarer.container());
 		} catch (Throwable failure) {
+			Caught.expected(failure);
 			CrossEcosystemDeclarations.readerFailed("getModContainerById", failure);
 			return native_;
 		}
@@ -115,6 +119,7 @@ public final class KernelDeclarationReaders {
 			Declarer declarer = byId(id);
 			return declarer == null ? native_ : declarer.info().getOwningFile();
 		} catch (Throwable failure) {
+			Caught.expected(failure);
 			CrossEcosystemDeclarations.readerFailed("getModFileById", failure);
 			return native_;
 		}
@@ -130,6 +135,7 @@ public final class KernelDeclarationReaders {
 			try {
 				action.accept(declarer.id(), declarer.container());
 			} catch (Throwable failure) {
+				Caught.expected(failure);
 				CrossEcosystemDeclarations.readerFailed("forEachModContainer", failure);
 			}
 		}
@@ -142,6 +148,7 @@ public final class KernelDeclarationReaders {
 			try {
 				action.accept(declarer.container());
 			} catch (Throwable failure) {
+				Caught.expected(failure);
 				CrossEcosystemDeclarations.readerFailed("forEachModInOrder", failure);
 			}
 		}
@@ -159,6 +166,7 @@ public final class KernelDeclarationReaders {
 			try {
 				return Stream.of(function.apply(declarer.container()));
 			} catch (Throwable failure) {
+				Caught.expected(failure);
 				CrossEcosystemDeclarations.readerFailed("applyForEachModContainer", failure);
 				return Stream.<T>empty();
 			}
@@ -170,6 +178,7 @@ public final class KernelDeclarationReaders {
 		try {
 			return absentFrom(list);
 		} catch (Throwable failure) {
+			Caught.expected(failure);
 			CrossEcosystemDeclarations.readerFailed(hook, failure);
 			return List.of();
 		}
@@ -224,6 +233,7 @@ public final class KernelDeclarationReaders {
 		try {
 			return list.getModContainerById(id).isPresent();
 		} catch (RuntimeException unindexed) {
+			Caught.expected(unindexed);
 			for (IModInfo info : list.getMods()) {
 				if (id.equals(info.getModId())) return true;
 			}
@@ -262,6 +272,7 @@ public final class KernelDeclarationReaders {
 			Path path = Path.of(mod.getSource());
 			return Files.isRegularFile(path) ? path : null;
 		} catch (RuntimeException notAPath) {
+			Caught.expected(notAPath);
 			return null;
 		}
 	}

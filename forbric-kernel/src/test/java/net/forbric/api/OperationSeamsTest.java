@@ -5,6 +5,7 @@ import static org.junit.jupiter.api.Assertions.*;
 import java.util.*;import java.util.concurrent.atomic.*;
 import org.junit.jupiter.api.*;
 import org.objectweb.asm.*;
+import net.forbric.kernel.ExpectCaught;
 
 /** Source operations preserve mutable operands while native gates and selection control their exact lifetime. */
 class OperationSeamsTest {
@@ -61,6 +62,7 @@ class OperationSeamsTest {
   AtomicInteger sourceCalls=new AtomicInteger(),nativeCalls=new AtomicInteger();AtomicReference<Throwable> failure=new AtomicReference<>();scoped("recursive",(operation,values)->{sourceCalls.incrementAndGet();return original(operation,values);},values->{Thread thread=new Thread(()->{try{selected(v->apply(a->{nativeCalls.incrementAndGet();return null;},v),new Object[]{"thread"});}catch(Throwable failed){failure.set(failed);}});thread.start();thread.join();return null;},"outer");assertNull(failure.get());assertEquals(0,sourceCalls.get());assertEquals(1,nativeCalls.get());
  }
  /** Declined, never refused: the native gateway runs exactly as written, the source is skipped, the site reports once. */
+ @ExpectCaught("broken report")
  @Test void missingChangedWrongHostAndDifferentLoaderWitnessesRunTheNativeGatewayAlone()throws Throwable{
   OperationSeams.Invocation source=(operation,values)->fail("unproved source");List<String> events=new ArrayList<>();
   OperationSeams.NativeOperation gateway=values->selected(v->apply(actual->{events.add("native:"+actual[0]);return "native";},v),values);
