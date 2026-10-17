@@ -65,6 +65,8 @@ class CreativePagerBridgeInjectorTest {
 		try {
 			return FabricCreativePagerMixinAdapter.selectionHooks(MixinFit.parse(
 					CreativePagerFixtures.creativeModule(CreativePagerFixtures.PINNED_MIXIN + ".class")));
+		} catch (RuntimeException absentOrBroken) {
+			throw absentOrBroken; // an absent fabric-api fixture aborts (skips) the test; it is not a failure
 		} catch (Exception unreadable) {
 			throw new AssertionError(unreadable);
 		}

@@ -75,6 +75,8 @@ public final class CreativePagerFixtures {
 	public static java.util.Set<String> pinnedPagerHooksUnchecked() {
 		try {
 			return pinnedPagerHooks();
+		} catch (RuntimeException absentOrBroken) {
+			throw absentOrBroken; // an absent fabric-api fixture aborts (skips) the test; it is not a failure
 		} catch (Exception unreadable) {
 			throw new AssertionError(unreadable);
 		}
