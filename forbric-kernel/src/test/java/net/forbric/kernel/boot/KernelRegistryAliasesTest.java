@@ -43,7 +43,8 @@ import net.forbric.kernel.transform.InjectorExecution;
  *
  * <p>The stand-ins mirror the runtime shape that matters: the alias map is a field a mixin merged into a SUPERCLASS
  * (fabric-api's mixin puts it on {@code MappedRegistry}, not on the wrapper the game actually holds), marked
- * {@code @MixinMerged} as Mixin marks every field it merges, and declared {@code Map<Identifier, Identifier>}. Here it
+ * {@code @MixinMerged} as Mixin marks every field it merges, and declared {@code Map<Identifier, Identifier>} — in the
+ * mixin: Mixin merges the field without its generic signature, so the class file of the mixin says what it holds. Here it
  * is called {@code quarry$links}, from a mixin no loader knows; beside it sit the registry's own (unmerged) id map and
  * a merged map of ids to numbers, neither of which is an alias map. Keys have {@code identifier()} plus a static
  * {@code create}.
@@ -74,6 +75,29 @@ class KernelRegistryAliasesTest {
 					public class Wrapper extends Base {
 						public Object key() {
 							return "minecraft:block";
+						}
+					}
+					""",
+			"quarry.PlatformBase", """
+					package quarry;
+
+					import java.util.HashMap;
+					import java.util.Map;
+					import net.minecraft.resources.Identifier;
+
+					/** The platform's own alias map on a superclass, as NeoForge's BaseMappedRegistry keeps it; no mixin merged it. */
+					public class PlatformBase {
+						public final Map<Identifier, Identifier> table = new HashMap<>();
+					}
+					""",
+			"quarry.PlatformRegistry", """
+					package quarry;
+
+					public class PlatformRegistry extends PlatformBase {
+						public final java.util.Map<net.minecraft.resources.Identifier, Object> byLocation = new java.util.HashMap<>();
+
+						public Object key() {
+							return "minecraft:item";
 						}
 					}
 					""",
@@ -122,12 +146,19 @@ class KernelRegistryAliasesTest {
 		Map<String, byte[]> classes = new HashMap<>(InjectorExecution.compile(work, STAND_INS));
 		ClassNode base = new ClassNode();
 		new ClassReader(classes.get("quarry/Base")).accept(base, 0);
+		// As Mixin merges them: marked @MixinMerged, and without their generic signature, which stays in the mixin.
+		ClassWriter mixin = new ClassWriter(0);
+		mixin.visit(org.objectweb.asm.Opcodes.V21, org.objectweb.asm.Opcodes.ACC_PUBLIC, "org/quarry/registry/mixin/LinksMixin", null, "java/lang/Object", null);
 		for (FieldNode field : base.fields) {
 			if (!field.name.startsWith("quarry$")) continue;
 			AnnotationNode merged = new AnnotationNode(MIXIN_MERGED);
 			merged.values = new java.util.ArrayList<>(List.of("mixin", "org.quarry.registry.mixin.LinksMixin", "priority", 1000, "sessionId", "test"));
 			field.visibleAnnotations = new java.util.ArrayList<>(List.of(merged));
+			mixin.visitField(org.objectweb.asm.Opcodes.ACC_PRIVATE, field.name, field.desc, field.signature, null).visitEnd();
+			field.signature = null;
 		}
+		mixin.visitEnd();
+		classes.put("org/quarry/registry/mixin/LinksMixin", mixin.toByteArray());
 		ClassWriter writer = new ClassWriter(0);
 		base.accept(writer);
 		classes.put("quarry/Base", writer.toByteArray());
@@ -186,6 +217,16 @@ class KernelRegistryAliasesTest {
 		assertSame(asked, KernelRegistryAliases.resolveId(registry, asked));
 		map(registry, "quarry$links").put(id("a:b"), id("a:c"));
 		assertEquals(id("a:c"), KernelRegistryAliases.resolveId(registry, asked));
+	}
+
+	/** On the merged base the alias map is the platform's own, inherited and never merged: it is still the alias map. */
+	@Test
+	void anInheritedPlatformAliasMapIsFoundToo() throws Throwable {
+		Object registry = InjectorExecution.construct(game.loadClass("quarry.PlatformRegistry"));
+		@SuppressWarnings("unchecked")
+		Map<Object, Object> table = (Map<Object, Object>) game.loadClass("quarry.PlatformBase").getField("table").get(registry);
+		table.put(id("waystones:mossy_waystone"), id("waystones:mossy_andesite_waystone"));
+		assertEquals(id("waystones:mossy_andesite_waystone"), KernelRegistryAliases.resolveId(registry, id("waystones:mossy_waystone")));
 	}
 
 	@Test
