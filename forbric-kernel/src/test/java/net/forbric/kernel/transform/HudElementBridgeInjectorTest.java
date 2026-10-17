@@ -43,48 +43,41 @@ import net.forbric.kernel.TestFixtures;
 import net.forbric.kernel.TestFixtures.Fixture;
 
 /**
- * Verifies in real {@code neoforge-runtime.jar} bytecode that every {@code GuiLayer} registered with NeoForge's
- * layer manager passes through the kernel, and that the overloads which merely delegate are left alone.
+ * Verifies in real {@code neoforge-runtime.jar} bytecode that {@code initModdedLayers} hands the manager to MinecraftForge's
+ * overlay stack before each of its returns, and that no {@code add} overload is routed any more.
  */
 class HudElementBridgeInjectorTest {
 	private static final Path NEOFORGE_RUNTIME = TestFixtures.stagedRoot().resolve("neoforge-runtime/neoforge-runtime.jar");
 
 	private static final String TARGET = "net.neoforged.neoforge.client.gui.GuiLayerManager";
 	private static final String ENTRY = "net/neoforged/neoforge/client/gui/GuiLayerManager.class";
-	private static final String LAYER = "Lnet/neoforged/neoforge/client/gui/GuiLayer;";
 	private static final String HOOK = "net/forbric/kernel/boot/KernelHudBridge";
 
 	@Test
-	void routesBothGuiLayerOverloads() throws Exception {
+	void initModdedLayersHandsTheManagerOverBeforeEachReturn() throws Exception {
 		ClassNode node = transformed();
-
-		int routed = 0;
-		for (MethodNode m : node.methods) {
-			if (!"add".equals(m.name)) continue;
-			Type[] args = Type.getArgumentTypes(m.desc);
-			boolean takesLayer = args.length >= 2 && LAYER.equals(args[1].getDescriptor());
-			if (!takesLayer) continue;
-
-			assertTrue(callsHook(m), "add" + m.desc + " must route its layer through KernelHudBridge.wrap");
-			assertPrologue(m);
-			routed++;
+		MethodNode init = node.methods.stream().filter(m -> m.name.equals("initModdedLayers") && m.desc.equals("()V")).findFirst()
+				.orElseThrow(() -> new AssertionError("initModdedLayers()V drifted away"));
+		int returns = 0, hooks = 0;
+		for (AbstractInsnNode insn : init.instructions) {
+			if (insn.getOpcode() == Opcodes.RETURN) {
+				returns++;
+				AbstractInsnNode before = insn.getPrevious();
+				assertTrue(before instanceof MethodInsnNode call && HOOK.equals(call.owner) && "addForgeOverlayLayers".equals(call.name),
+						"every return of initModdedLayers is preceded by the overlay hook");
+			}
+			if (insn instanceof MethodInsnNode call && HOOK.equals(call.owner)) hooks++;
 		}
-		assertEquals(2, routed, "expected the (Identifier, GuiLayer) and (Identifier, GuiLayer, BooleanSupplier) "
-				+ "overloads — the NeoForge API drifted");
+		assertTrue(returns > 0);
+		assertEquals(returns, hooks);
 	}
 
 	@Test
-	void leavesTheDelegatingOverloadsAlone() throws Exception {
+	void noAddOverloadIsRouted() throws Exception {
 		ClassNode node = transformed();
-
 		for (MethodNode m : node.methods) {
 			if (!"add".equals(m.name)) continue;
-			Type[] args = Type.getArgumentTypes(m.desc);
-			if (args.length >= 2 && LAYER.equals(args[1].getDescriptor())) continue;
-
-			// The Consumer overload and add(GuiLayerManager, BooleanSupplier) both funnel into the 3-arg one, so
-			// touching them here would wrap twice.
-			assertTrue(!callsHook(m), "add" + m.desc + " delegates and must not be routed a second time");
+			assertTrue(!callsHook(m), "add" + m.desc + " must be left as NeoForge wrote it");
 		}
 	}
 
@@ -102,7 +95,7 @@ class HudElementBridgeInjectorTest {
 
 		byte[] once = new HudElementBridgeInjector().transform(TARGET, readClass(), null);
 		assertSame(once, new HudElementBridgeInjector().transform(TARGET, once, null),
-				"an already-routed GuiLayerManager must be passed straight through");
+				"a GuiLayerManager that already hands itself over must be passed straight through");
 	}
 
 	@Test
@@ -123,23 +116,6 @@ class HudElementBridgeInjectorTest {
 		ClassNode node = new ClassNode();
 		new ClassReader(out).accept(node, 0);
 		return node;
-	}
-
-	/** ALOAD 1; ALOAD 2; INVOKESTATIC wrap; CHECKCAST GuiLayer; ASTORE 2 — and it must come FIRST. */
-	private static void assertPrologue(MethodNode m) {
-		AbstractInsnNode insn = m.instructions.getFirst();
-		while (insn != null && insn.getOpcode() == -1) insn = insn.getNext();
-
-		assertEquals(Opcodes.ALOAD, insn.getOpcode());
-		insn = next(insn);
-		assertEquals(Opcodes.ALOAD, insn.getOpcode());
-		insn = next(insn);
-		assertEquals(Opcodes.INVOKESTATIC, insn.getOpcode());
-		assertEquals(HOOK, ((MethodInsnNode) insn).owner);
-		insn = next(insn);
-		assertEquals(Opcodes.CHECKCAST, insn.getOpcode());
-		insn = next(insn);
-		assertEquals(Opcodes.ASTORE, insn.getOpcode());
 	}
 
 	private static AbstractInsnNode next(AbstractInsnNode insn) {

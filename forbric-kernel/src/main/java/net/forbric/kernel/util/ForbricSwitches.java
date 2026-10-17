@@ -62,6 +62,8 @@ public final class ForbricSwitches {
 					+ "registry calls; the decision method is asked again where vanilla asks it (-Dforbric.nativeEntryRelay)",
 			"forbric.createFluidMixins", "a fluid callback on vanilla's spread decision is no longer moved onto the carriers' "
 					+ "registry calls; the decision method is asked again where vanilla asks it (-Dforbric.nativeEntryRelay)",
+			"forbric.hudBridge", "fabric-api's HUD elements are no longer redrawn from NeoForge's layers: fabric-rendering-v1's "
+					+ "own HudMixin dispatches every root, each wrap landing in the body the kernel gives the method reference",
 			"forbric.fabricPlayChannels", "the kernel no longer records a client's Fabric PLAY channels itself: Fabric's own "
 					+ "c:register receiver runs on the payload as Fabric reads it and records them (-Dforbric.commonNetworkInterop)");
 

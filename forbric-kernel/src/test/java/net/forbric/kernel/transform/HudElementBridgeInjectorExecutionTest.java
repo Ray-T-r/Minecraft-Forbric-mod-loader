@@ -16,13 +16,11 @@ import org.junit.jupiter.api.io.TempDir;
 import net.fabricmc.api.EnvType;
 
 /**
- * {@link HudElementBridgeInjector}'s output, run: a layer added to NeoForge's {@code GuiLayerManager} is the one the
- * bridge hands back, inside the overload's {@code BooleanSupplier} gate, so a hidden vanilla layer hides the Fabric
- * elements attached to it too; and {@code initModdedLayers} hands the manager over once its own layers are in.
+ * {@link HudElementBridgeInjector}'s output, run: {@code initModdedLayers} hands the manager over to MinecraftForge's
+ * overlay stack once its own layers are in, and a layer added to NeoForge's {@code GuiLayerManager} is the one the mod
+ * added — no kernel wrapper redraws anything around it (fabric-rendering-v1's own handlers dispatch its roots).
  *
- * <p>The bridge is a recording stand-in under {@code KernelHudBridge}'s name, defined child-first: the real one
- * resolves fabric-rendering-v1 and generates a class through the kernel's game loader. Its stand-in wraps every layer
- * it is given so that the wrap shows in what the manager renders.
+ * <p>The bridge is a recording stand-in under {@code KernelHudBridge}'s name, defined child-first.
  */
 @ExecutesInjector(HudElementBridgeInjector.class)
 class HudElementBridgeInjectorExecutionTest {
@@ -91,15 +89,6 @@ class HudElementBridgeInjectorExecutionTest {
 					public final class KernelHudBridge {
 						public static final List<String> calls = new ArrayList<>();
 
-						public static Object wrap(Object identifier, Object layer) {
-							calls.add("wrap " + identifier);
-							GuiLayer vanilla = (GuiLayer) layer;
-							return (GuiLayer) drawn -> {
-								vanilla.render(drawn);
-								drawn.add("fabric elements on " + identifier);
-							};
-						}
-
 						public static void addForgeOverlayLayers(Object manager) {
 							calls.add("forge overlays after " + ((GuiLayerManager) manager).layers.size() + " layers");
 						}
@@ -131,7 +120,7 @@ class HudElementBridgeInjectorExecutionTest {
 		return (List<String>) InjectorExecution.invoke(manager, "render");
 	}
 
-	@Test void addedLayersCarryTheBridgeInsideTheirGateAndTheOverlayStackGoesOnLast(@TempDir Path work) throws Throwable {
+	@Test void theOverlayStackGoesOnLastAndAddedLayersAreLeftAsAdded(@TempDir Path work) throws Throwable {
 		Map<String, byte[]> original = InjectorExecution.compile(work, STAND_INS);
 		String internal = MANAGER.replace('.', '/');
 		byte[] routed = InjectorExecution.transform(new HudElementBridgeInjector(), MANAGER, original.get(internal), EnvType.CLIENT);
@@ -140,17 +129,15 @@ class HudElementBridgeInjectorExecutionTest {
 		ClassLoader loader = InjectorExecution.load(classes);
 		assertEquals("", InjectorExecution.verify(routed, loader));
 
-		assertEquals(List.of("hotbar", "fabric elements on Identifier[path=hotbar]", "boss bar",
-				"fabric elements on Identifier[path=boss_bar]", "a NeoForge mod's layer"), hud(loader),
-				"a hidden layer (chat) hides the Fabric elements attached to it too");
-		assertEquals(List.of("wrap Identifier[path=hotbar]", "wrap Identifier[path=boss_bar]", "wrap Identifier[path=chat]",
-				"forge overlays after 4 layers"), InjectorExecution.getStatic(loader.loadClass(BRIDGE), "calls"),
-				"both GuiLayer overloads are routed, and the overlay stack is handed the manager after its own layers");
+		assertEquals(List.of("hotbar", "boss bar", "a NeoForge mod's layer"), hud(loader), "the added layers, as added");
+		assertEquals(List.of("forge overlays after 4 layers"), InjectorExecution.getStatic(loader.loadClass(BRIDGE), "calls"),
+				"the overlay stack is handed the manager after its own layers, and nothing else is routed");
 
 		ClassLoader merged = InjectorExecution.load(original);
-		assertEquals(List.of("hotbar", "boss bar", "a NeoForge mod's layer"), hud(merged),
-				"premise: as merged, no Fabric element is drawn on any layer");
+		assertEquals(List.of("hotbar", "boss bar", "a NeoForge mod's layer"), hud(merged));
+		assertEquals(List.of(), InjectorExecution.getStatic(merged.loadClass(BRIDGE), "calls"),
+				"premise: as merged, MinecraftForge's overlay stack is never handed the manager");
 		assertSame(routed, InjectorExecution.transform(new HudElementBridgeInjector(), MANAGER, routed, EnvType.CLIENT),
-				"an already routed manager is left alone");
+				"a manager that already hands itself over is left alone");
 	}
 }

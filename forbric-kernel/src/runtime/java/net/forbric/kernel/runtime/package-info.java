@@ -42,9 +42,8 @@
  *       ({@code net.neoforged.fml.ModContainer}, {@code net.neoforged.neoforgespi.language.IModInfo},
  *       {@code net.neoforged.bus.api.IEventBus}, {@code net.minecraftforge.*} equivalents).
  *   <li><b>No:</b> anything from fabric-api. It is a mod the USER installs, not a staged artifact, so it is not
- *       on this classpath and never will be. A class that must implement a fabric-api interface (the HUD layer
- *       that is simultaneously a fabric-api {@code HudElement} and a NeoForge {@code GuiLayer}) still has to be
- *       synthesized with ASM — see {@code KernelHudBridge}. That is not technical debt, it is the boundary.
+ *       on this classpath and never will be. A class that must implement a fabric-api interface still has to be
+ *       synthesized with ASM. That is not technical debt, it is the boundary.
  *   <li><b>No:</b> package-private carrier types. {@code net.minecraftforge.registries.NamespacedWrapper} and
  *       {@code NamespacedDefaultedWrapper} carry no {@code public} modifier, so outside code cannot name them
  *       at all; the registry-parity work stays bytecode surgery for that reason.

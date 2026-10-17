@@ -382,7 +382,7 @@ class MixinFitLivenessCensusStagedTest {
 	/**
 	 * fabric-api's anchors that resolve on stock 26.2 and not on the merged base as the kernel's verdict judges it, as
 	 * {@code config:mixin | anchor} — 66 of them. Each is a loss the kernel replaces elsewhere (its networking codec and
-	 * configuration wraps are PayloadInterop's, its HUD layers KernelHudBridge's, its fuel, hopper, use-on and sound hooks
+	 * configuration wraps are PayloadInterop's, its fuel, hopper, use-on and sound hooks
 	 * bridges or adapters of their own that the verdict does not ask, its item tooltip hooks the Fabric tooltip bridge's
 	 * over NeoForge's appenders) or reports as the mixin's PARTIAL line. Four of item-api's tooltip anchors read as bound
 	 * only while R3 moved them, on the bytes alone, into NeoForge's addDetailsToTooltipComponents — a renamed tooltip body

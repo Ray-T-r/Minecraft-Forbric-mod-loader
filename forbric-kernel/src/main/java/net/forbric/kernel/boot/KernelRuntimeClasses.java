@@ -551,9 +551,6 @@ public final class KernelRuntimeClasses {
 		// (FmlContextLoaderRewriter): LibJF's ASM layer reaches the Mixin weaver through what it returns.
 		CLASSES.put("net.forbric.kernel.runtime.KernelFmlTransformerView", new Entry(Origin.COMPILED, List.of(
 				new Call("contextLoader", ClassLoader.class, ClassLoader.class))));
-		// Simultaneously a fabric-api HudElement and a NeoForge GuiLayer. It CANNOT be compiled: fabric-api is
-		// not on the game source set's classpath and will never be. See KernelHudBridge.
-		CLASSES.put("net.forbric.kernel.runtime.KernelHudLayer", new Entry(Origin.GENERATED, List.of()));
 		// Generated class family: the closed source group derives the suffix from its executable body digest.
 		// LootSourceCallbacks offers the actual bytes; LootSourceContracts checks every final helper method.
 		CLASSES.put("net.forbric.kernel.runtime.generated.LootCallbacks$", new Entry(Origin.GENERATED, List.of()));

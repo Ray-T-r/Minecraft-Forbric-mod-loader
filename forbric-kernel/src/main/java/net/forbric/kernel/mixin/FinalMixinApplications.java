@@ -24,8 +24,8 @@ public final class FinalMixinApplications {
   * each successful injection is a direct call to the merged handler too: zero references still proves the handler
   * did not attach. Left out, the kernel's defaultRequire relaxation made their misses silent. What zero references
   * does not settle is whether the feature is lost. Stock fabric-api misses this way on the merged base in many
-  * places, and the kernel supplies some of those features outside any mixin: eleven of HudMixin's @WrapOperation
-  * handlers attach nowhere, and KernelHudBridge draws what they would have. None of those replacements is a
+  * places, and the kernel supplies some of those features outside any mixin (a fuel or hopper bridge, a tooltip bridge
+  * over NeoForge's appenders). None of those replacements is a
   * structural proof here yet. Confirming them would stop every dedicated server carrying fabric-api at boot, so an
   * unproved miss stays SUSPECTED. */
  private static final Set<String> EXTRAS_INJECTORS = Set.of(
@@ -193,7 +193,7 @@ public final class FinalMixinApplications {
       List.of("target="+binary,"pending final helper="+WatchdogDumpEquivalence.HELPER)));
     // Proved from the final class and the merged game's census, not observed: a guest mod calling the dead method itself
     // is outside both. So it marks the mod's row and never asks the player to quit or stops a STRICT server; the author's
-    // requirement stays in the evidence. MixinExtras kinds stay SUSPECTED, as for MISSING (KernelHudBridge draws some).
+    // requirement stays in the evidence. MixinExtras kinds stay SUSPECTED, as for MISSING (a kernel bridge serves some).
     else if(state==Outcome.NEVER_RUNS)CompatibilityFindings.record(new CompatibilityFinding(id,mod,
       "Mixin injection "+injector.name(),"mixin-application:"+plan.config().name(),
       injector.audited()&&injector.understood()?CompatibilityFinding.Confidence.CONFIRMED:CompatibilityFinding.Confidence.SUSPECTED,
