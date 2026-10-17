@@ -24,6 +24,68 @@ class MixinSharedResultTransportTest {
         assertEquals("craft-component", result.component()); assertEquals(1, stack.projections); assertEquals(1, stack.reads);
     }
 
+    /**
+     * The same closed group compiled another way — the producer keeps its receiver and the original's answer in locals and
+     * builds its argument array through a local, the consumer keeps the shared value and its answer in locals — is the same
+     * group: read by data flow, it is transported, and runs as the released one does.
+     */
+    @Test void theCraftingGroupWrittenAnotherWayIsTransportedTheSame() throws Exception {
+        Inputs input = inputs("net/fabricmc/fabric/mixin/item/CraftingRecipeMixin", "net/minecraft/world/item/crafting/CraftingRecipe");
+        MethodNode producer = method(input.mixin, "captureStack"), consumer = method(input.mixin, "getStackRemainder");
+        String operation = "com/llamalad7/mixinextras/injector/wrapoperation/Operation", ref = "com/llamalad7/mixinextras/sugar/ref/LocalRef";
+        Type item = Type.getReturnType(producer.desc);
+        MethodInsnNode remainder = null;
+        for (var instruction : consumer.instructions) if (instruction instanceof MethodInsnNode call && !call.owner.equals(ref)) remainder = call;
+        MethodInsnNode remainderCall = remainder;
+        Type stack = Type.getObjectType(remainderCall.owner);
+        rewrite(producer, code -> {
+            code.add(new VarInsnNode(Opcodes.ALOAD, 0)); code.add(new VarInsnNode(Opcodes.ASTORE, 3));
+            code.add(new VarInsnNode(Opcodes.ALOAD, 2)); code.add(new VarInsnNode(Opcodes.ALOAD, 3));
+            code.add(new MethodInsnNode(Opcodes.INVOKEINTERFACE, ref, "set", "(Ljava/lang/Object;)V", true));
+            code.add(new InsnNode(Opcodes.ICONST_1)); code.add(new TypeInsnNode(Opcodes.ANEWARRAY, "java/lang/Object"));
+            code.add(new VarInsnNode(Opcodes.ASTORE, 4));
+            code.add(new VarInsnNode(Opcodes.ALOAD, 4)); code.add(new InsnNode(Opcodes.ICONST_0)); code.add(new VarInsnNode(Opcodes.ALOAD, 3));
+            code.add(new InsnNode(Opcodes.AASTORE));
+            code.add(new VarInsnNode(Opcodes.ALOAD, 1)); code.add(new VarInsnNode(Opcodes.ALOAD, 4));
+            code.add(new MethodInsnNode(Opcodes.INVOKEINTERFACE, operation, "call", "([Ljava/lang/Object;)Ljava/lang/Object;", true));
+            code.add(new TypeInsnNode(Opcodes.CHECKCAST, item.getInternalName())); code.add(new VarInsnNode(Opcodes.ASTORE, 5));
+            code.add(new VarInsnNode(Opcodes.ALOAD, 5)); code.add(new InsnNode(Opcodes.ARETURN));
+        });
+        rewrite(consumer, code -> {
+            code.add(new VarInsnNode(Opcodes.ALOAD, 1));
+            code.add(new MethodInsnNode(Opcodes.INVOKEINTERFACE, ref, "get", "()Ljava/lang/Object;", true));
+            code.add(new TypeInsnNode(Opcodes.CHECKCAST, stack.getInternalName())); code.add(new VarInsnNode(Opcodes.ASTORE, 2));
+            code.add(new VarInsnNode(Opcodes.ALOAD, 2));
+            code.add(new MethodInsnNode(remainderCall.getOpcode(), remainderCall.owner, remainderCall.name, remainderCall.desc, remainderCall.itf));
+            code.add(new VarInsnNode(Opcodes.ASTORE, 3)); code.add(new VarInsnNode(Opcodes.ALOAD, 3)); code.add(new InsnNode(Opcodes.ARETURN));
+        });
+        assertEquals(2, MixinSharedResultTransport.adapt(input.mixin, name -> input.current, name -> input.reference));
+        Runtime runtime = runtime(input.mixin, "captureStack", "getStackRemainder");
+        Snapshot shared = new Snapshot(5, "rewritten"); AtomicReference<Object> slot = new AtomicReference<>();
+        Remainder result = (Remainder) runtime.effect.invoke(null, shared, runtime.reference(slot));
+        assertSame(shared, slot.get()); assertSame(shared, result.receiver()); assertEquals(5, result.count());
+        assertEquals(1, shared.projections); assertEquals(1, shared.reads);
+    }
+
+    /** A producer that shares something other than its receiver is not a pass-through: nothing is transported. */
+    @Test void aProducerSharingAnotherValueIsNotAPassThrough() throws Exception {
+        Inputs input = inputs("net/fabricmc/fabric/mixin/item/CraftingRecipeMixin", "net/minecraft/world/item/crafting/CraftingRecipe");
+        MethodNode producer = method(input.mixin, "captureStack");
+        for (var instruction : producer.instructions) {
+            if (instruction instanceof MethodInsnNode call && call.name.equals("set")) {
+                AbstractInsnNode value = call.getPrevious();
+                producer.instructions.set(value, new InsnNode(Opcodes.ACONST_NULL));
+                break;
+            }
+        }
+        assertEquals(0, MixinSharedResultTransport.adapt(input.mixin, name -> input.current, name -> input.reference));
+    }
+
+    private static void rewrite(MethodNode method, java.util.function.Consumer<InsnList> body) {
+        method.instructions.clear(); method.tryCatchBlocks.clear(); method.localVariables = null;
+        body.accept(method.instructions); method.maxLocals = 8; method.maxStack = 6;
+    }
+
     @Test void transformedProducerReceiverOrAdditionalGroupSideEffectIsNotAccepted() throws Exception {
         Inputs input = inputs("net/fabricmc/fabric/mixin/item/CraftingRecipeMixin", "net/minecraft/world/item/crafting/CraftingRecipe");
         MethodNode producer = method(input.mixin, "captureStack");

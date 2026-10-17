@@ -62,7 +62,7 @@ public final class MixinSharedResultTransport {
             List<MethodInsnNode> originalCalls = MixinCallbackShape.calls(at, original);
             if (originalCalls.size() != 1 || !calls(host, target(originalCalls.getFirst())).isEmpty()) continue;
             MethodInsnNode originalCall = originalCalls.getFirst();
-            Source source = source(handler, originalCall);
+            Source source = source(mixin.name, handler, originalCall);
             if (source == null) continue;
             List<MethodInsnNode> candidates = calls(host, target(source.operation()));
             if (candidates.size() != 1 || candidates.getFirst().getOpcode() == Opcodes.INVOKESTATIC
@@ -106,14 +106,19 @@ public final class MixinSharedResultTransport {
             MethodInsnNode projection = projections.getFirst();
             if (projection.getOpcode() == Opcodes.INVOKESTATIC || Type.getArgumentTypes(projection.desc).length != 0
                     || !Type.getReturnType(projection.desc).equals(Type.getObjectType(originalConsumer.owner))
-                    || !projection.owner.equals(live.owner) || !pureProducer(producer, projection, source.share())) continue;
+                    || !projection.owner.equals(live.owner) || !pureProducer(mixin.name, producer, projection, source.share())) continue;
             if (!ConsumedResultRegions.closedReceiver(current.name, original, projection, originalConsumer, host, live)) continue;
             matches.add(new Closed(producer, injection, projection));
         }
         return matches.size() == 1 ? matches.getFirst() : null;
     }
 
-    private static boolean pureProducer(MethodNode method, MethodInsnNode projection, String key) {
+    /**
+     * The producer only shares what it wraps and passes it on: it stores its receiver in the share, and returns what the
+     * original operation returns for that same receiver, called once with nothing else — read by data flow, so the same
+     * producer written another way is the same producer, and one that also does anything else is not.
+     */
+    private static boolean pureProducer(String mixin, MethodNode method, MethodInsnNode projection, String key) {
         Type[] args = Type.getArgumentTypes(method.desc);
         if (args.length != 3 || !args[0].equals(Type.getObjectType(projection.owner))
                 || !args[1].equals(Type.getObjectType(OPERATION)) || !args[2].equals(Type.getObjectType(REF))
@@ -121,25 +126,52 @@ public final class MixinSharedResultTransport {
         AnnotationNode share = annotation(method.visibleParameterAnnotations, 2);
         if (share == null) share = annotation(method.invisibleParameterAnnotations, 2);
         if (share == null || !key.equals(MixinFit.value(share, "value"))) return false;
-        List<AbstractInsnNode> code = DefaultMethodOverloadBridge.real(method);
+        HandlerFlow flow = HandlerFlow.of(mixin, method);
+        if (flow == null) return false;
         int[] slots = DefaultMethodOverloadBridge.slots(args, (method.access & Opcodes.ACC_STATIC) != 0);
-        return code.size() == 13 && load(code.get(0), slots[2]) && load(code.get(1), slots[0])
-                && call(code.get(2), REF, "set", "(Ljava/lang/Object;)V") && load(code.get(3), slots[1])
-                && code.get(4).getOpcode() == Opcodes.ICONST_1
-                && code.get(5) instanceof TypeInsnNode array && array.getOpcode() == Opcodes.ANEWARRAY && array.desc.equals("java/lang/Object")
-                && code.get(6).getOpcode() == Opcodes.DUP && code.get(7).getOpcode() == Opcodes.ICONST_0
-                && load(code.get(8), slots[0]) && code.get(9).getOpcode() == Opcodes.AASTORE
-                && call(code.get(10), OPERATION, "call", "([Ljava/lang/Object;)Ljava/lang/Object;")
-                && code.get(11) instanceof TypeInsnNode cast && cast.getOpcode() == Opcodes.CHECKCAST
-                && cast.desc.equals(Type.getReturnType(projection.desc).getInternalName()) && code.get(12).getOpcode() == Opcodes.ARETURN;
+        java.util.function.Predicate<MethodInsnNode> set = c -> c.getOpcode() == Opcodes.INVOKEINTERFACE && c.owner.equals(REF)
+                && c.name.equals("set") && c.desc.equals("(Ljava/lang/Object;)V");
+        java.util.function.Predicate<MethodInsnNode> original = c -> c.getOpcode() == Opcodes.INVOKEINTERFACE && c.owner.equals(OPERATION)
+                && c.name.equals("call") && c.desc.equals("([Ljava/lang/Object;)Ljava/lang/Object;");
+        if (!flow.onlyCalls(set.or(original))) return false;
+        // The share holds the receiver, wherever it is set.
+        List<MethodInsnNode> sets = flow.calls(set);
+        if (sets.isEmpty()) return false;
+        for (MethodInsnNode write : sets) {
+            if (!onlyParameter(flow.argument(write, 0), slots[2]) || !onlyParameter(flow.argument(write, 1), slots[0])) return false;
+        }
+        // What it returns is the original operation's answer for the receiver alone.
+        java.util.Set<AbstractInsnNode> returned = flow.returned();
+        if (returned.isEmpty()) return false;
+        for (AbstractInsnNode origin : returned) {
+            if (!(origin instanceof MethodInsnNode call) || !original.test(call) || !onlyParameter(flow.argument(call, 0), slots[1])) return false;
+            java.util.Set<AbstractInsnNode> array = flow.argument(call, 1);
+            if (array.size() != 1 || !(array.iterator().next() instanceof TypeInsnNode allocation) || allocation.getOpcode() != Opcodes.ANEWARRAY
+                    || !onlyConstant(flow.operand(allocation, 0, 1), 1) || !holdsOnly(flow, allocation, slots[0])) return false;
+        }
+        return true;
     }
 
-    private static boolean load(AbstractInsnNode instruction, int slot) {
-        return instruction instanceof VarInsnNode load && load.getOpcode() == Opcodes.ALOAD && load.var == slot;
+    /** Whether every element store into the array {@code allocation} makes stores the parameter in {@code slot} at index 0, once. */
+    private static boolean holdsOnly(HandlerFlow flow, TypeInsnNode allocation, int slot) {
+        int stores = 0;
+        for (AbstractInsnNode instruction : flow.method.instructions) {
+            if (instruction.getOpcode() != Opcodes.AASTORE) continue;
+            java.util.Set<AbstractInsnNode> array = flow.operand(instruction, 0, 3);
+            if (!array.contains(allocation)) continue;
+            if (array.size() != 1 || !onlyConstant(flow.operand(instruction, 1, 3), 0) || !onlyParameter(flow.operand(instruction, 2, 3), slot)) return false;
+            stores++;
+        }
+        return stores == 1;
     }
-    private static boolean call(AbstractInsnNode instruction, String owner, String name, String descriptor) {
-        return instruction instanceof MethodInsnNode call && call.getOpcode() == Opcodes.INVOKEINTERFACE
-                && call.owner.equals(owner) && call.name.equals(name) && call.desc.equals(descriptor);
+
+    private static boolean onlyParameter(java.util.Set<AbstractInsnNode> origins, int slot) {
+        return !origins.isEmpty() && origins.stream().allMatch(origin -> HandlerFlow.isParameter(origin, slot));
+    }
+
+    private static boolean onlyConstant(java.util.Set<AbstractInsnNode> origins, int value) {
+        return !origins.isEmpty() && origins.stream().allMatch(origin -> origin.getOpcode() == Opcodes.ICONST_0 + value
+                || origin instanceof IntInsnNode push && push.getOpcode() != Opcodes.NEWARRAY && push.operand == value);
     }
 
     private static List<MethodNode> wrapClosed(ClassNode mixin, MethodNode consumer, AnnotationNode injection,
@@ -190,8 +222,12 @@ public final class MixinSharedResultTransport {
         return List.of(outer, projection);
     }
 
-    private static Source source(MethodNode handler, MethodInsnNode old) {
-        if (!handler.tryCatchBlocks.isEmpty()) return null;
+    /**
+     * The consumer computes its result from the share alone: it reads none of the call's own operands (the transported
+     * wrapper hands it placeholders for them), and returns the answer of one argument-less virtual operation on the shared
+     * value — read by data flow, so the same consumer written another way is the same consumer.
+     */
+    private static Source source(String mixin, MethodNode handler, MethodInsnNode old) {
         Type[] args = Type.getArgumentTypes(handler.desc), oldArgs = Type.getArgumentTypes(old.desc);
         int inputs = oldArgs.length + (old.getOpcode() == Opcodes.INVOKESTATIC ? 0 : 1);
         if (args.length != inputs + 1 || !Type.getReturnType(handler.desc).equals(Type.getReturnType(old.desc))) return null;
@@ -202,18 +238,32 @@ public final class MixinSharedResultTransport {
         AnnotationNode share = annotation(handler.visibleParameterAnnotations, inputs);
         if (share == null) share = annotation(handler.invisibleParameterAnnotations, inputs);
         if (share == null || !(MixinFit.value(share, "value") instanceof String key)) return null;
-        List<AbstractInsnNode> code = DefaultMethodOverloadBridge.real(handler);
+        HandlerFlow flow = HandlerFlow.of(mixin, handler);
+        if (flow == null) return null;
         int[] slots = DefaultMethodOverloadBridge.slots(args, (handler.access & Opcodes.ACC_STATIC) != 0);
-        if (code.size() != 5 || !(code.getFirst() instanceof VarInsnNode load) || load.getOpcode() != Opcodes.ALOAD
-                || load.var != slots[inputs] || !(code.get(1) instanceof MethodInsnNode read)
-                || !read.owner.equals(REF) || !read.name.equals("get") || !read.desc.equals("()Ljava/lang/Object;")
-                || !(code.get(2) instanceof TypeInsnNode cast) || cast.getOpcode() != Opcodes.CHECKCAST
-                || !(code.get(3) instanceof MethodInsnNode operation)
-                || operation.getOpcode() != Opcodes.INVOKEVIRTUAL && operation.getOpcode() != Opcodes.INVOKEINTERFACE
-                || !cast.desc.equals(operation.owner) || Type.getArgumentTypes(operation.desc).length != 0
-                || !Type.getReturnType(operation.desc).equals(Type.getReturnType(handler.desc))
-                || code.getLast().getOpcode() != Type.getReturnType(handler.desc).getOpcode(Opcodes.IRETURN)) return null;
-        // This exact body never loads any old operation argument. Null/zero placeholders cannot affect its result.
+        // None of the call's own operands is read: the placeholders standing for them cannot reach the result.
+        for (int index = 0; index < inputs; index++) if (flow.reads(slots[index])) return null;
+        java.util.function.Predicate<MethodInsnNode> get = c -> c.getOpcode() == Opcodes.INVOKEINTERFACE && c.owner.equals(REF)
+                && c.name.equals("get") && c.desc.equals("()Ljava/lang/Object;");
+        List<MethodInsnNode> operations = flow.calls(get.negate());
+        if (operations.isEmpty()) return null;
+        MethodInsnNode operation = operations.getFirst();
+        if (operation.getOpcode() != Opcodes.INVOKEVIRTUAL && operation.getOpcode() != Opcodes.INVOKEINTERFACE
+                || Type.getArgumentTypes(operation.desc).length != 0
+                || !Type.getReturnType(operation.desc).equals(Type.getReturnType(handler.desc))) return null;
+        java.util.function.Predicate<MethodInsnNode> same = c -> c.getOpcode() == operation.getOpcode() && target(c).equals(target(operation));
+        if (!flow.onlyCalls(get.or(same))) return null;
+        for (AbstractInsnNode instruction : handler.instructions) if (instruction.getOpcode() == Opcodes.AASTORE) return null;
+        java.util.Set<AbstractInsnNode> returned = flow.returned();
+        if (returned.isEmpty()) return null;
+        for (AbstractInsnNode origin : returned) {
+            if (!(origin instanceof MethodInsnNode call) || !same.test(call)) return null;
+            java.util.Set<AbstractInsnNode> receiver = flow.argument(call, 0);
+            if (receiver.isEmpty()) return null;
+            for (AbstractInsnNode value : receiver) {
+                if (!(value instanceof MethodInsnNode read) || !get.test(read) || !onlyParameter(flow.argument(read, 0), slots[inputs])) return null;
+            }
+        }
         return new Source(operation, inputs, key);
     }
 
