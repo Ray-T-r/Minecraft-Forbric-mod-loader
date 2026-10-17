@@ -1364,6 +1364,15 @@ public final class MixinFit {
 	record Member(String owner, String name, String desc) { // package-private for MixinFitTest
 	}
 
+	/**
+	 * Whether two member targets name the same owner, name and descriptor as Mixin reads a target ({@link #parseMember}:
+	 * any spacing, a descriptor or a dotted owner); false when either is not a full member.
+	 */
+	public static boolean sameMember(String a, String b) {
+		Member left = parseMember(a), right = parseMember(b);
+		return left != null && right != null && left.owner() != null && left.desc() != null && left.equals(right);
+	}
+
 	/** Parses {@code Lowner;name(args)ret} and {@code Lowner;name:Ldesc;}. Returns null when the shape is unfamiliar. */
 	/**
 	 * Splits a Mixin member target into owner/name/desc. Mixin accepts the owner in TWO forms and this used to

@@ -30,8 +30,8 @@ import org.objectweb.asm.tree.analysis.SourceValue;
  * its returns split — and refuses one that also does anything the contract does not allow; an adapter that compares
  * instruction counts accepts one spelling only.
  */
-final class HandlerFlow {
-	final MethodNode method;
+public final class HandlerFlow {
+	public final MethodNode method;
 	final Frame<SourceValue>[] frames;
 
 	private HandlerFlow(MethodNode method, Frame<SourceValue>[] frames) {
@@ -40,7 +40,7 @@ final class HandlerFlow {
 	}
 
 	/** The flow of {@code method} in {@code owner}; null when the body cannot be analysed. */
-	static HandlerFlow of(String owner, MethodNode method) {
+	public static HandlerFlow of(String owner, MethodNode method) {
 		if (method == null || method.instructions == null || method.instructions.size() == 0) return null;
 		try {
 			return new HandlerFlow(method, new Analyzer<>(new SourceInterpreter(Opcodes.ASM9) {
@@ -54,8 +54,8 @@ final class HandlerFlow {
 	}
 
 	/** A parameter's value (or {@code this}), standing for itself in the flow: {@link #slot} is its local slot. */
-	static final class Parameter extends InsnNode {
-		final int slot;
+	public static final class Parameter extends InsnNode {
+		public final int slot;
 
 		Parameter(int slot) {
 			super(Opcodes.NOP);
@@ -64,7 +64,7 @@ final class HandlerFlow {
 	}
 
 	/** Whether {@code origin} is the value of the parameter in {@code slot}. */
-	static boolean isParameter(AbstractInsnNode origin, int slot) {
+	public static boolean isParameter(AbstractInsnNode origin, int slot) {
 		return origin instanceof Parameter parameter && parameter.slot == slot;
 	}
 
@@ -72,14 +72,19 @@ final class HandlerFlow {
 	 * The calls it makes are all ones {@code allowed} accepts, and it writes no field, array element or monitor, throws
 	 * nothing, links no lambda and catches nothing.
 	 */
-	boolean onlyCalls(Predicate<MethodInsnNode> allowed) {
+	public boolean onlyCalls(Predicate<MethodInsnNode> allowed) {
+		return onlyCalls(allowed, dynamic -> false);
+	}
+
+	/** {@link #onlyCalls(Predicate)}, linking only the lambdas {@code dynamic} accepts. */
+	public boolean onlyCalls(Predicate<MethodInsnNode> allowed, Predicate<InvokeDynamicInsnNode> dynamic) {
 		if (method.tryCatchBlocks != null && !method.tryCatchBlocks.isEmpty()) return false;
 		for (AbstractInsnNode instruction : method.instructions) {
 			int opcode = instruction.getOpcode();
 			if (instruction instanceof MethodInsnNode call) {
 				if (!allowed.test(call)) return false;
-			} else if (instruction instanceof InvokeDynamicInsnNode) {
-				return false;
+			} else if (instruction instanceof InvokeDynamicInsnNode link) {
+				if (!dynamic.test(link)) return false;
 			} else if (opcode == Opcodes.PUTFIELD || opcode == Opcodes.PUTSTATIC || opcode >= Opcodes.IASTORE && opcode <= Opcodes.SASTORE
 					&& opcode != Opcodes.AASTORE || opcode == Opcodes.MONITORENTER || opcode == Opcodes.MONITOREXIT
 					|| opcode == Opcodes.ATHROW) {
@@ -90,14 +95,14 @@ final class HandlerFlow {
 	}
 
 	/** Every call instruction of the body that {@code which} accepts. */
-	List<MethodInsnNode> calls(Predicate<MethodInsnNode> which) {
+	public List<MethodInsnNode> calls(Predicate<MethodInsnNode> which) {
 		List<MethodInsnNode> out = new ArrayList<>();
 		for (AbstractInsnNode instruction : method.instructions) if (instruction instanceof MethodInsnNode call && which.test(call)) out.add(call);
 		return out;
 	}
 
 	/** The origins of every value the body returns; empty when it returns nothing or a return is unreachable. */
-	Set<AbstractInsnNode> returned() {
+	public Set<AbstractInsnNode> returned() {
 		Set<AbstractInsnNode> out = identitySet();
 		for (int i = 0; i < method.instructions.size(); i++) {
 			AbstractInsnNode instruction = method.instructions.get(i);
@@ -111,7 +116,7 @@ final class HandlerFlow {
 	}
 
 	/** Whether the body has a reachable value return at all. */
-	boolean returnsAValue() {
+	public boolean returnsAValue() {
 		for (int i = 0; i < method.instructions.size(); i++) {
 			int opcode = method.instructions.get(i).getOpcode();
 			if (opcode >= Opcodes.IRETURN && opcode <= Opcodes.ARETURN && frames[i] != null) return true;
@@ -120,7 +125,7 @@ final class HandlerFlow {
 	}
 
 	/** The origins of operand {@code k} of {@code instruction} (a call's receiver is operand 0 of an instance call). */
-	Set<AbstractInsnNode> operand(AbstractInsnNode instruction, int k, int operands) {
+	public Set<AbstractInsnNode> operand(AbstractInsnNode instruction, int k, int operands) {
 		int index = method.instructions.indexOf(instruction);
 		Frame<SourceValue> frame = index < 0 ? null : frames[index];
 		if (frame == null || frame.getStackSize() < operands) return identitySet();
@@ -128,12 +133,12 @@ final class HandlerFlow {
 	}
 
 	/** The origins of operand {@code k} of {@code call}, counting an instance call's receiver as operand 0. */
-	Set<AbstractInsnNode> argument(MethodInsnNode call, int k) {
+	public Set<AbstractInsnNode> argument(MethodInsnNode call, int k) {
 		return operand(call, k, Type.getArgumentTypes(call.desc).length + (call.getOpcode() == Opcodes.INVOKESTATIC ? 0 : 1));
 	}
 
 	/** Whether any instruction loads the local in {@code slot} (a parameter is read). */
-	boolean reads(int slot) {
+	public boolean reads(int slot) {
 		for (AbstractInsnNode instruction : method.instructions) {
 			if (instruction instanceof VarInsnNode variable && variable.var == slot && variable.getOpcode() >= Opcodes.ILOAD
 					&& variable.getOpcode() <= Opcodes.ALOAD) return true;
@@ -143,7 +148,7 @@ final class HandlerFlow {
 	}
 
 	/** The instructions that made {@code value}, past local stores and loads, stack copies and casts. */
-	Set<AbstractInsnNode> origins(SourceValue value) {
+	public Set<AbstractInsnNode> origins(SourceValue value) {
 		Set<AbstractInsnNode> out = identitySet(), seen = identitySet();
 		ArrayDeque<AbstractInsnNode> pending = new ArrayDeque<>(value.insns);
 		while (!pending.isEmpty()) {
@@ -168,17 +173,26 @@ final class HandlerFlow {
 	}
 
 	/** The single instruction in {@code origins}; null when there are none or several. */
-	static AbstractInsnNode only(Set<AbstractInsnNode> origins) {
+	public static AbstractInsnNode only(Set<AbstractInsnNode> origins) {
 		return origins.size() == 1 ? origins.iterator().next() : null;
 	}
 
 	/** Whether {@code origins} is exactly the parameter in {@code slot}. */
-	static boolean onlyParameter(Set<AbstractInsnNode> origins, int slot) {
+	public static boolean onlyParameter(Set<AbstractInsnNode> origins, int slot) {
 		return isParameter(only(origins), slot);
 	}
 
+	/** The one instruction that pushed operand {@code k} of {@code instruction} (not looking past copies); null for several. */
+	public AbstractInsnNode producer(AbstractInsnNode instruction, int k, int operands) {
+		int index = method.instructions.indexOf(instruction);
+		Frame<SourceValue> frame = index < 0 ? null : frames[index];
+		if (frame == null || frame.getStackSize() < operands) return null;
+		Set<AbstractInsnNode> direct = frame.getStack(frame.getStackSize() - operands + k).insns;
+		return direct.size() == 1 ? direct.iterator().next() : null;
+	}
+
 	/** The int an instruction pushes as a constant; null when it pushes anything else. */
-	static Integer intConstant(AbstractInsnNode instruction) {
+	public static Integer intConstant(AbstractInsnNode instruction) {
 		if (instruction == null) return null;
 		int opcode = instruction.getOpcode();
 		if (opcode >= Opcodes.ICONST_M1 && opcode <= Opcodes.ICONST_5) return opcode - Opcodes.ICONST_0;
@@ -188,13 +202,13 @@ final class HandlerFlow {
 	}
 
 	/** One operand of one instruction: {@code operand} counts from the deepest of the values it consumes. */
-	record Use(AbstractInsnNode instruction, int operand) { }
+	public record Use(AbstractInsnNode instruction, int operand) { }
 
 	/**
 	 * Every instruction that consumes a value {@code value} made, past the copies {@link #origins} looks through (local
 	 * stores and loads, stack copies, casts), and which of its operands it is.
 	 */
-	List<Use> uses(AbstractInsnNode value) {
+	public List<Use> uses(AbstractInsnNode value) {
 		List<Use> out = new ArrayList<>();
 		for (int i = 0; i < method.instructions.size(); i++) {
 			AbstractInsnNode instruction = method.instructions.get(i);
@@ -206,6 +220,28 @@ final class HandlerFlow {
 			}
 		}
 		return out;
+	}
+
+	/**
+	 * How many times the value {@code value} pushed is taken off the stack as it was pushed — by any instruction, copies
+	 * (stores, stack shuffles, casts) included. One means the instruction it is pushed for is its only reader.
+	 */
+	public int directUses(AbstractInsnNode value) {
+		int count = 0;
+		for (int i = 0; i < method.instructions.size(); i++) {
+			AbstractInsnNode instruction = method.instructions.get(i);
+			Frame<SourceValue> frame = frames[i];
+			int taken = consumed(instruction) + switch (instruction.getOpcode()) {
+				case Opcodes.DUP, Opcodes.CHECKCAST, Opcodes.ISTORE, Opcodes.LSTORE, Opcodes.FSTORE, Opcodes.DSTORE, Opcodes.ASTORE -> 1;
+				case Opcodes.DUP_X1, Opcodes.DUP2, Opcodes.SWAP, Opcodes.POP2 -> 2;
+				case Opcodes.DUP_X2, Opcodes.DUP2_X1 -> 3;
+				case Opcodes.DUP2_X2 -> 4;
+				default -> 0;
+			};
+			if (frame == null || taken == 0) continue;
+			for (int k = Math.max(0, frame.getStackSize() - taken); k < frame.getStackSize(); k++) if (frame.getStack(k).insns.contains(value)) count++;
+		}
+		return count;
 	}
 
 	/** How many stack values an instruction consumes for good: copies (stores, stack shuffles, casts) consume none. */
@@ -233,22 +269,32 @@ final class HandlerFlow {
 	 * {@code Object[]} of exactly {@code slots.length} elements, element {@code i} the parameter in {@code slots[i]}, filled
 	 * in one straight run between the array's creation and the call, and handed to nothing else.
 	 */
-	boolean passesParameters(MethodInsnNode call, int receiver, int[] slots) {
+	public boolean passesParameters(MethodInsnNode call, int receiver, int[] slots) {
+		List<Predicate<Set<AbstractInsnNode>>> elements = new ArrayList<>();
+		for (int slot : slots) elements.add(origins -> onlyParameter(origins, slot));
+		return passesArray(call, receiver, elements);
+	}
+
+	/**
+	 * {@link #passesParameters}, element {@code i} being any value {@code elements.get(i)} accepts the origins of: the
+	 * operation of a {@code WrapOperation} called with something else than its own parameters in some place.
+	 */
+	public boolean passesArray(MethodInsnNode call, int receiver, List<Predicate<Set<AbstractInsnNode>>> elements) {
 		if (!onlyParameter(argument(call, 0), receiver)) return false;
 		AbstractInsnNode created = only(argument(call, 1));
 		if (!(created instanceof org.objectweb.asm.tree.TypeInsnNode array && array.getOpcode() == Opcodes.ANEWARRAY
 				&& array.desc.equals("java/lang/Object"))) return false;
 		Integer length = intConstant(only(operand(created, 0, 1)));
 		int from = method.instructions.indexOf(created), to = method.instructions.indexOf(call);
-		if (length == null || length != slots.length || !straight(from, to)) return false;
-		boolean[] filled = new boolean[slots.length];
+		if (length == null || length != elements.size() || !straight(from, to)) return false;
+		boolean[] filled = new boolean[elements.size()];
 		for (Use use : uses(created)) {
 			if (use.instruction() == call && use.operand() == 1) continue;
 			int at = method.instructions.indexOf(use.instruction());
 			if (use.instruction().getOpcode() != Opcodes.AASTORE || use.operand() != 0 || at < from || at > to) return false;
 			Integer index = intConstant(only(operand(use.instruction(), 1, 3)));
-			if (index == null || index < 0 || index >= slots.length || filled[index]) return false;
-			if (!onlyParameter(operand(use.instruction(), 2, 3), slots[index])) return false;
+			if (index == null || index < 0 || index >= elements.size() || filled[index]) return false;
+			if (!elements.get(index).test(operand(use.instruction(), 2, 3))) return false;
 			filled[index] = true;
 		}
 		for (boolean element : filled) if (!element) return false;
@@ -259,7 +305,7 @@ final class HandlerFlow {
 	 * Whether the instructions from index {@code from} to {@code to} run as one straight line: nothing between them
 	 * branches, returns or throws, and nothing anywhere jumps into them past {@code from}.
 	 */
-	boolean straight(int from, int to) {
+	public boolean straight(int from, int to) {
 		if (from < 0 || to < from) return false;
 		Set<AbstractInsnNode> targets = identitySet();
 		for (AbstractInsnNode instruction : method.instructions) {
@@ -277,7 +323,7 @@ final class HandlerFlow {
 	}
 
 	/** Whether the flow does not simply fall through {@code instruction}: a branch, a switch, a return or a throw. */
-	static boolean ends(AbstractInsnNode instruction) {
+	public static boolean ends(AbstractInsnNode instruction) {
 		int opcode = instruction.getOpcode();
 		return instruction instanceof org.objectweb.asm.tree.JumpInsnNode || instruction instanceof org.objectweb.asm.tree.TableSwitchInsnNode
 				|| instruction instanceof org.objectweb.asm.tree.LookupSwitchInsnNode || opcode >= Opcodes.IRETURN && opcode <= Opcodes.RETURN
@@ -285,7 +331,7 @@ final class HandlerFlow {
 	}
 
 	/** The instruction indices control can go to next from index {@code i} (no exception edges: callers refuse try blocks). */
-	List<Integer> successors(int i) {
+	public List<Integer> successors(int i) {
 		AbstractInsnNode instruction = method.instructions.get(i);
 		List<Integer> out = new ArrayList<>();
 		int opcode = instruction.getOpcode();
@@ -305,7 +351,7 @@ final class HandlerFlow {
 	}
 
 	/** Whether control can go from index {@code from} to an instruction {@code goal} accepts without passing {@code avoid}. */
-	boolean reaches(int from, Predicate<AbstractInsnNode> goal, Set<AbstractInsnNode> avoid) {
+	public boolean reaches(int from, Predicate<AbstractInsnNode> goal, Set<AbstractInsnNode> avoid) {
 		boolean[] seen = new boolean[method.instructions.size()];
 		ArrayDeque<Integer> pending = new ArrayDeque<>(List.of(from));
 		while (!pending.isEmpty()) {
@@ -321,7 +367,7 @@ final class HandlerFlow {
 	}
 
 	/** Whether no jump goes backwards: every path runs each instruction at most once. */
-	boolean acyclic() {
+	public boolean acyclic() {
 		for (int i = 0; i < method.instructions.size(); i++) for (int next : successors(i)) if (next <= i) return false;
 		return true;
 	}

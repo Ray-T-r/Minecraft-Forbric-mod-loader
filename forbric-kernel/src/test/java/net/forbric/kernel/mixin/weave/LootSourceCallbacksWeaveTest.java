@@ -103,7 +103,51 @@ class LootSourceCallbacksWeaveTest implements Opcodes {
         }
     }
     @Test void originalCallbacksRunOnceThroughTheRealTypedBridgeAndKeepExceptionsAndNativePriority()throws Exception{
-        var plan=LootSourceCallbacks.plan(source());assertNotNull(plan);
+        runThroughTheTypedBridge(source());
+    }
+    /**
+     * The group compiled another way — the producer builds its argument array in a local, fills it out of order and keeps
+     * the ops in another local, the cleanup's lambda returns its list through a local, the constructor carries a no-op —
+     * is the same closed group, and its callbacks run exactly as the released ones do. The previous rule compared each
+     * body's instruction tokens and refused all three.
+     */
+    @Test void theGroupWrittenAnotherWayRunsTheSame()throws Exception{
+        runThroughTheTypedBridge(respelled(source()));
+    }
+    /** The event API under another name is still the one group: no role is told by the events it fires. */
+    @Test void theGroupFiringAnotherEventApiIsStillProjected()throws Exception{
+        ClassNode source=source(),renamed=new ClassNode();String events="net/fabricmc/fabric/api/loot/v3/LootTableEvents";
+        source.accept(new org.objectweb.asm.commons.ClassRemapper(renamed,new org.objectweb.asm.commons.Remapper(){@Override public String map(String name){return name.startsWith(events)?"arbitrary/Notices"+name.substring(events.length()):name;}}));
+        var plan=LootSourceCallbacks.plan(renamed);assertNotNull(plan);
+        assertTrue(node(plan.helperBytes()).methods.stream().flatMap(m->Arrays.stream(m.instructions.toArray())).anyMatch(i->i instanceof FieldInsnNode f&&f.owner.equals("arbitrary/Notices")),"the callbacks are copied, firing what they fire");
+    }
+    /** {@link #theGroupWrittenAnotherWayRunsTheSame}'s source: the released group with three bodies compiled another way. */
+    private static ClassNode respelled(ClassNode source){
+        FieldNode memo=source.fields.getFirst();
+        MethodNode producer=source.methods.stream().filter(m->Arrays.stream(m.instructions.toArray()).anyMatch(i->i instanceof MethodInsnNode c&&c.name.equals("put")&&c.owner.equals("java/util/WeakHashMap"))).findFirst().orElseThrow();
+        String operation="com/llamalad7/mixinextras/injector/wrapoperation/Operation",ops="net/minecraft/resources/RegistryOps";
+        InsnList code=new InsnList();
+        code.add(new InsnNode(ICONST_2));code.add(new TypeInsnNode(ANEWARRAY,"java/lang/Object"));code.add(new VarInsnNode(ASTORE,4));
+        code.add(new VarInsnNode(ALOAD,4));code.add(new InsnNode(ICONST_1));code.add(new VarInsnNode(ALOAD,1));code.add(new InsnNode(AASTORE));
+        code.add(new VarInsnNode(ALOAD,4));code.add(new InsnNode(ICONST_0));code.add(new VarInsnNode(ALOAD,0));code.add(new InsnNode(AASTORE));
+        code.add(new VarInsnNode(ALOAD,2));code.add(new VarInsnNode(ALOAD,4));code.add(new MethodInsnNode(INVOKEINTERFACE,operation,"call","([Ljava/lang/Object;)Ljava/lang/Object;",true));
+        code.add(new TypeInsnNode(CHECKCAST,ops));code.add(new VarInsnNode(ASTORE,5));
+        code.add(new FieldInsnNode(GETSTATIC,source.name,memo.name,memo.desc));code.add(new VarInsnNode(ALOAD,5));code.add(new VarInsnNode(ALOAD,0));
+        code.add(new MethodInsnNode(INVOKEVIRTUAL,"java/util/WeakHashMap","put","(Ljava/lang/Object;Ljava/lang/Object;)Ljava/lang/Object;",false));code.add(new InsnNode(POP));
+        code.add(new VarInsnNode(ALOAD,5));code.add(new InsnNode(ARETURN));
+        producer.instructions=code;producer.localVariables=null;producer.maxLocals=6;producer.maxStack=4;
+        MethodNode lambda=source.methods.stream().filter(m->Arrays.stream(m.instructions.toArray()).anyMatch(i->i instanceof MethodInsnNode c&&c.name.equals("remove")&&c.owner.equals("java/util/WeakHashMap"))).findFirst().orElseThrow();
+        InsnList cleanup=new InsnList();
+        cleanup.add(new VarInsnNode(ALOAD,1));cleanup.add(new VarInsnNode(ASTORE,2));
+        cleanup.add(new FieldInsnNode(GETSTATIC,source.name,memo.name,memo.desc));cleanup.add(new VarInsnNode(ALOAD,0));
+        cleanup.add(new MethodInsnNode(INVOKEVIRTUAL,"java/util/WeakHashMap","remove","(Ljava/lang/Object;)Ljava/lang/Object;",false));cleanup.add(new InsnNode(POP));
+        cleanup.add(new VarInsnNode(ALOAD,2));cleanup.add(new InsnNode(ARETURN));
+        lambda.instructions=cleanup;lambda.localVariables=null;lambda.maxLocals=3;lambda.maxStack=2;
+        MethodNode constructor=source.methods.stream().filter(m->m.name.equals("<init>")).findFirst().orElseThrow();constructor.instructions.insert(new InsnNode(NOP));
+        return source;
+    }
+    private void runThroughTheTypedBridge(ClassNode source)throws Exception{
+        var plan=LootSourceCallbacks.plan(source);assertNotNull(plan);
         Map<String,String> sources=new LinkedHashMap<>();
         sources.put("net.minecraft.resources.Identifier","package net.minecraft.resources;public record Identifier(String value){}");
         sources.put("net.minecraft.resources.ResourceKey","package net.minecraft.resources;public record ResourceKey(Object registry,Object id){public static ResourceKey create(ResourceKey registry,Identifier id){return new ResourceKey(registry,id);}}");
