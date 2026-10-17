@@ -33,18 +33,18 @@ import net.forbric.kernel.transform.VanillaDamageReadInjector;
 @net.forbric.kernel.transform.ExecutesInjector(VanillaDamageReadInjector.class)
 class AbsorbedDamageReadWeaveTest {
 	private static final Path SOURCES = Path.of("src/test/resources/weave/absorbeddamage");
-	private static final String CONFIG = "absorbeddamage.mixins.json";
+	private static final String CONFIG = "absorbeddamage.mixins.json", NEO = "absorbeddamage-tend.mixins.json";
 
 	@TempDir static Path work;
 	private static Path fixture;
-	private static WeaveHarness.Result natively, merged, off;
+	private static WeaveHarness.Result natively, merged, off, withNeo;
 
 	@BeforeAll static void weave() throws Exception {
 		List<Path> sources;
 		try (Stream<Path> walk = Files.walk(SOURCES)) {
 			sources = walk.filter(p -> p.toString().endsWith(".java") && !SOURCES.relativize(p).startsWith("native")).sorted().toList();
 		}
-		assertEquals(13, sources.size(), "the fixture's sources changed; update this test with it: " + sources);
+		assertEquals(14, sources.size(), "the fixture's sources changed; update this test with it: " + sources);
 		List<Path> current = new ArrayList<>(sources);
 		current.add(Path.of("src/runtime/java/net/forbric/kernel/runtime/KernelLivingDamage.java"));
 		List<Path> natives = new ArrayList<>(current);
@@ -53,11 +53,16 @@ class AbsorbedDamageReadWeaveTest {
 			natives.add(SOURCES.resolve("native").resolve(type));
 		}
 		Path nativeFixture = WeaveHarness.fixture(work, "absorbed-native", natives, Map.of(CONFIG, SOURCES.resolve(CONFIG)), List.of("-g"));
-		fixture = NativeWeaveReferences.with(work, WeaveHarness.fixture(work, "absorbed", current, Map.of(CONFIG, SOURCES.resolve(CONFIG)), List.of("-g")),
-				NativeWeaveReferences.classes(nativeFixture));
+		Path plain = WeaveHarness.fixture(work, "absorbed", current, Map.of(CONFIG, SOURCES.resolve(CONFIG), NEO, SOURCES.resolve(NEO)), List.of("-g"));
+		// Fabric's mods were compiled against the vanilla body, NeoForge's against NeoForge's — the merged one here.
+		fixture = NativeWeaveReferences.withEcosystems(work, plain, Map.of("FABRIC", NativeWeaveReferences.classes(nativeFixture),
+				"NEOFORGE", NativeWeaveReferences.classes(plain)));
 		natively = run(nativeFixture, "native", List.of(), Map.of());
 		merged = run(fixture, "merged", List.of(VanillaDamageReadInjector.class), Map.of());
 		off = run(fixture, "off", List.of(VanillaDamageReadInjector.class), Map.of(VanillaDamageReadInjector.ABSORBED_PROPERTY, "off"));
+		withNeo = WeaveHarness.run(work, "with-neo", fixture, List.of(new WeaveHarness.Config(CONFIG, "mend", Ecosystem.FABRIC),
+				new WeaveHarness.Config(NEO, "tend", Ecosystem.NEOFORGE)), List.of(VanillaDamageReadInjector.class), EnvType.SERVER,
+				"fixture.absorbeddamage.Probe", "probe", Map.of());
 	}
 
 	@Test void everyHitIsTheNativeOne() throws Exception {
@@ -70,6 +75,23 @@ class AbsorbedDamageReadWeaveTest {
 				"the player's override calls it once, natively and merged: " + hits(natively));
 		WeaveHarness.assertWovenAndVerified(merged, "net/minecraft/world/entity/LivingEntity", fixture);
 		WeaveHarness.assertWovenAndVerified(merged, "net/minecraft/world/entity/player/Player", fixture);
+	}
+
+	/**
+	 * A NeoForge mod's modifier at the same call was compiled against NeoForge's body, which makes the call once: it still runs
+	 * once per hit beside the Fabric one, which runs twice — the second call is not one NeoForge's mods ever saw.
+	 */
+	@Test void aNeoForgeModifierAtTheCallRunsOnceAsOnNeoForge() {
+		for (String hit : hits(withNeo)) {
+			if (hit.startsWith("player")) continue;
+			long tend = java.util.Arrays.stream(hit.split(", ")).filter(l -> l.contains("tend:")).count();
+			long mend = java.util.Arrays.stream(hit.split(", ")).filter(l -> l.contains("mend:")).count();
+			String name = hit.substring(0, hit.indexOf(':'));
+			long nativeMend = hits(natively).stream().filter(h -> h.startsWith(name + ":")).findFirst().map(h -> java.util.Arrays.stream(h.split(", "))
+					.filter(l -> l.contains("mend:")).count()).orElse(-1L);
+			assertEquals(1, tend, hit + "\n" + withNeo.describe());
+			assertEquals(nativeMend, mend, hit + "\n" + withNeo.describe());
+		}
 	}
 
 	@Test void theControlFlipsTheAssertions() {
