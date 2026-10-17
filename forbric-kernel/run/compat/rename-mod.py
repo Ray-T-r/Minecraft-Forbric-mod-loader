@@ -1362,6 +1362,14 @@ MERGED_NAME = [
     (re.compile(r'\$md\$([^$\s]+)\$[0-9a-f]+\$\d+'), r'$md$\1$#'),
     (re.compile(r'\$md\$[0-9a-f]{6,}\$\d+'), r'$md$#'),
     (re.compile(r'\bmd[0-9a-f]{6,8}\$'), 'md#$'),
+    # Mixin's unique-field prefix and its per-target counter on a renamed lambda depend on the order configs apply in,
+    # which follows their (renamed) names: the same member either way.
+    (re.compile(r'\bfd[0-9a-f]{6,8}\$'), 'fd#$'),
+    (re.compile(r'(\$lambda\$[\w]+\$\d+)\$\d+\b'), r'\1$#'),
+    # MixinExtras numbers its bridge and wrapped methods per target, and the kernel suffixes the members it generates with
+    # a hash of the mixin's (renamed) name: both follow the names, not the member.
+    (re.compile(r'(\$mixinextras\$(?:bridge|wrapped))\$\d+\b'), r'\1$#'),
+    (re.compile(r'(\$forbric[a-z]+)\$[0-9a-f]{6,7}\b'), r'\1$#hash'),
     (re.compile(r'\b([A-Za-z]+)\$[a-z]{3}\d{3}\$'), r'\1$###$'),
     (re.compile(r'\$[0-9a-f]{8,}\b'), '$#hash'),
 ]

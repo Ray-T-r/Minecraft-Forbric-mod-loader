@@ -359,6 +359,19 @@ class RenameModTest(unittest.TestCase):
         probe_meta = json.loads(read_jar(probe_out.read_bytes())['fabric.mod.json'])
         self.assertEqual({'probe': 'probe', 'deps': {self.new_id: '*'}}, {'probe': probe_meta['id'], 'deps': probe_meta['depends']})
 
+    def test_merged_member_numbers_that_follow_names_compare_alike(self):
+        same = [
+            ('fd1a2b3c4$field', 'fd9f8e7d6$field'),
+            ('md1a2b3c$x$lambda$init$0$3', 'md9f8e7d$x$lambda$init$0$7'),
+            ('wrapOperation$abc000$m$hookDamage$mixinextras$bridge$187', 'wrapOperation$xyz111$m$hookDamage$mixinextras$bridge$190'),
+            ('init$forbricresource$a36a0dd', 'init$forbricresource$1b2c3d4'),
+            ('md1a2b3c$m$init$forbriccontinuation$a36a0dd$1', 'md4d5e6f$m$init$forbriccontinuation$0f1e2d3$1'),
+        ]
+        for a, b in same:
+            self.assertEqual(rm.normalize_merged(a), rm.normalize_merged(b), (a, b))
+        self.assertNotEqual(rm.normalize_merged('init$forbricresource$a36a0dd'), rm.normalize_merged('init$forbriccontinuation$a36a0dd'))
+        self.assertNotEqual(rm.normalize_merged('m$mixinextras$bridge$1'), rm.normalize_merged('m$mixinextras$wrapped$1'))
+
     def test_compare_puts_names_back_and_still_sees_a_changed_count(self):
         stubs = self.t / 'stubs'
         handler_old = 'handler$zza000$samplemod$onHelp'
