@@ -61,12 +61,12 @@ class MixinDecodeMarkerWeaveTest {
 		files.put("com.mojang.serialization.DataResult", "package com.mojang.serialization;public final class DataResult<R>{private final R value;private DataResult(R value){this.value=value;}"
 				+ "public static <R> DataResult<R> success(R value){return new DataResult<>(value);}public DataResult<R> ifSuccess(java.util.function.Consumer<? super R> consumer){consumer.accept(value);return this;}}");
 		files.put("com.mojang.serialization.Codec", "package com.mojang.serialization;public interface Codec<A>{<T> DataResult<A> parse(DynamicOps<T> ops,T input);}");
-		files.put("fixture.marker.Gate", "package fixture.marker;import com.google.gson.*;public class Gate{public static int calls;public static boolean evaluate(JsonObject json){calls++;return json.keep;}}");
+		files.put("fixture.marker.Gate", "package fixture.marker;import com.google.gson.*;public class Gate{public static final String KEY=\"fixture:conditions\";public static int calls;public static boolean evaluate(JsonObject json){calls++;return json.keep;}}");
 		// The native parse judges the input itself unless the guest's guard already did inside this parse.
 		files.put("net.forbric.kernel.runtime.MarkerCodec", """
 				package net.forbric.kernel.runtime;import com.google.gson.*;import com.mojang.serialization.*;import java.lang.invoke.*;import fixture.marker.Gate;
 				public class MarkerCodec implements Codec<String>{private static final MethodHandle EVALUATOR;static{try{EVALUATOR=MethodHandles.lookup().findStatic(Gate.class,"evaluate",MethodType.methodType(boolean.class,JsonObject.class));}catch(Exception e){throw new AssertionError(e);}}
-				 public <T> DataResult<String> parse(DynamicOps<T> ops,T input){if(!KernelSourceDecodeScopes.alreadyJudged(input,EVALUATOR))Gate.evaluate(((JsonElement)input).getAsJsonObject());return DataResult.success("value");}}
+				 public <T> DataResult<String> parse(DynamicOps<T> ops,T input){if(!KernelSourceDecodeScopes.alreadyJudged(input,"fixture:conditions"))Gate.evaluate(((JsonElement)input).getAsJsonObject());return DataResult.success("value");}}
 				""");
 		files.put("fixture.marker.Loader", """
 				package fixture.marker;import com.google.gson.*;import com.mojang.serialization.*;import java.util.*;

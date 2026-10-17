@@ -11,13 +11,13 @@ class MixinDecodeScopeWeaveTest {
   Map<String,String> files=new LinkedHashMap<>();
   files.put("com.google.gson.JsonElement","package com.google.gson;public class JsonElement{public boolean isJsonObject(){return this instanceof JsonObject;}public JsonObject getAsJsonObject(){return (JsonObject)this;}}");
   files.put("com.google.gson.JsonObject","package com.google.gson;public final class JsonObject extends JsonElement{public final int mode;public JsonObject(int mode){this.mode=mode;}}");
-  files.put("fixture.decode.Gate","package fixture.decode;import com.google.gson.*;public class Gate{public static int calls;public static boolean evaluate(JsonObject json){calls++;if(json.mode==2)throw new IllegalStateException(\"source-error\");return json.mode!=0;}}");
+  files.put("fixture.decode.Gate","package fixture.decode;import com.google.gson.*;public class Gate{public static final String KEY=\"fixture:conditions\";public static int calls;public static boolean evaluate(JsonObject json){calls++;if(json.mode==2)throw new IllegalStateException(\"source-error\");return json.mode!=0;}}");
   files.put("net.forbric.kernel.runtime.ScopeBridge","""
    package net.forbric.kernel.runtime;import com.google.gson.*;import java.lang.invoke.*;import fixture.decode.Gate;
    public class ScopeBridge {private static MethodHandle evaluator;static{try{evaluator=MethodHandles.lookup().findStatic(Gate.class,"evaluate",MethodType.methodType(boolean.class,JsonObject.class));}catch(Exception e){throw new AssertionError(e);}}
-    public static String parse(JsonElement input){boolean owned=KernelSourceDecodeScopes.alreadyJudged(input,evaluator);if(!owned)Gate.evaluate(input.getAsJsonObject());int mode=input.getAsJsonObject().mode;
-     if(mode==3){fixture.decode.Target.load(new JsonObject(1));if(owned&&!KernelSourceDecodeScopes.alreadyJudged(input,evaluator))throw new AssertionError("parent scope lost");}
-     if(mode==4){Thread worker=new Thread(()->{if(KernelSourceDecodeScopes.alreadyJudged(input,evaluator))throw new AssertionError("scope crossed threads");Gate.evaluate(input.getAsJsonObject());});worker.start();try{worker.join();}catch(InterruptedException e){throw new AssertionError(e);}}
+    public static String parse(JsonElement input){boolean owned=KernelSourceDecodeScopes.alreadyJudged(input,"fixture:conditions");if(!owned)Gate.evaluate(input.getAsJsonObject());int mode=input.getAsJsonObject().mode;
+     if(mode==3){fixture.decode.Target.load(new JsonObject(1));if(owned&&!KernelSourceDecodeScopes.alreadyJudged(input,"fixture:conditions"))throw new AssertionError("parent scope lost");}
+     if(mode==4){Thread worker=new Thread(()->{if(KernelSourceDecodeScopes.alreadyJudged(input,"fixture:conditions"))throw new AssertionError("scope crossed threads");Gate.evaluate(input.getAsJsonObject());});worker.start();try{worker.join();}catch(InterruptedException e){throw new AssertionError(e);}}
      if(mode==5)throw new IllegalArgumentException("native-error");return "value";}}
    """);
   files.put("fixture.decode.Target","""
@@ -44,11 +44,11 @@ class MixinDecodeScopeWeaveTest {
    String scenario=inverted?"inverted":"ignored";Path directory=work.resolve(scenario);Map<String,String> files=new LinkedHashMap<>();
    files.put("com.google.gson.JsonElement","package com.google.gson;public class JsonElement{public boolean isJsonObject(){return this instanceof JsonObject;}public JsonObject getAsJsonObject(){return (JsonObject)this;}}");
    files.put("com.google.gson.JsonObject","package com.google.gson;public final class JsonObject extends JsonElement{public final boolean keep;public JsonObject(boolean keep){this.keep=keep;}}");
-   files.put("fixture.decode.Gate","package fixture.decode;import com.google.gson.*;public class Gate{public static int calls;public static boolean evaluate(JsonObject json){calls++;return json.keep;}}");
+   files.put("fixture.decode.Gate","package fixture.decode;import com.google.gson.*;public class Gate{public static final String KEY=\"fixture:conditions\";public static int calls;public static boolean evaluate(JsonObject json){calls++;return json.keep;}}");
    files.put("net.forbric.kernel.runtime.ScopeBridge","""
     package net.forbric.kernel.runtime;import com.google.gson.*;import java.lang.invoke.*;import fixture.decode.Gate;
     public class ScopeBridge {private static MethodHandle evaluator;static{try{evaluator=MethodHandles.lookup().findStatic(Gate.class,"evaluate",MethodType.methodType(boolean.class,JsonObject.class));}catch(Exception e){throw new AssertionError(e);}}
-     public static String parse(JsonElement input){if(!KernelSourceDecodeScopes.alreadyJudged(input,evaluator)&&!Gate.evaluate(input.getAsJsonObject()))return "native-disabled";return "value";}}
+     public static String parse(JsonElement input){if(!KernelSourceDecodeScopes.alreadyJudged(input,"fixture:conditions")&&!Gate.evaluate(input.getAsJsonObject()))return "native-disabled";return "value";}}
     """);
    files.put("fixture.decode.Target","""
     package fixture.decode;import com.google.gson.*;import net.forbric.kernel.runtime.ScopeBridge;

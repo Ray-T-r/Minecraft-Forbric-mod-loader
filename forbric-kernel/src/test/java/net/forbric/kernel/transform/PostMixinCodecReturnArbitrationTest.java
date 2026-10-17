@@ -19,7 +19,7 @@ public class PostMixinCodecReturnArbitrationTest {
 		Map.entry("net.minecraft.network.ConnectionProtocol", "package net.minecraft.network; public enum ConnectionProtocol { CONFIGURATION, PLAY }"),
 		Map.entry("net.minecraft.network.protocol.PacketFlow", "package net.minecraft.network.protocol; public enum PacketFlow { SERVERBOUND, CLIENTBOUND }"),
 		Map.entry("net.minecraft.network.codec.StreamCodec", "package net.minecraft.network.codec; public interface StreamCodec<B,V>{void encode(B buffer,V value);V decode(B buffer);}"),
-		Map.entry("net.fabricmc.fabric.impl.networking.RegistrationPayload", "package net.fabricmc.fabric.impl.networking; public class RegistrationPayload { public RegistrationPayload(){} }"),
+		Map.entry("org.quarry.net.Register", "package org.quarry.net; public class Register { public Register(){} }"),
 		Map.entry("net.minecraftforge.network.ForgePayload", "package net.minecraftforge.network; public class ForgePayload { public ForgePayload(){} }"),
 		Map.entry("net.neoforged.neoforge.network.payload.MinecraftRegisterPayload", "package net.neoforged.neoforge.network.payload; public class MinecraftRegisterPayload { public MinecraftRegisterPayload(){} }"),
 		Map.entry("fixture.UnknownPayload", "package fixture; public class UnknownPayload { public UnknownPayload(){} }"),
@@ -35,13 +35,33 @@ public class PostMixinCodecReturnArbitrationTest {
 			}
 			"""),
 		Map.entry("fixture.Fallback", "package fixture; public class Fallback { public int calls; public Object codec; public Object create(Object id){calls++;return codec;} }"),
-		Map.entry("net.fabricmc.fabric.impl.networking.PayloadTypeRegistryImpl", """
-			package net.fabricmc.fabric.impl.networking;
+		Map.entry("net.minecraft.network.protocol.common.custom.CustomPacketPayload", """
+			package net.minecraft.network.protocol.common.custom;
+			public interface CustomPacketPayload { record Type<T>(Object id) { } record TypeAndCodec<B,T>(Object type,Object codec) { } }
+			"""),
+		// fabric-api's public registry interface, as a mod reaches it; the registries behind it under names of no loader's.
+		Map.entry("net.fabricmc.fabric.api.networking.v1.PayloadTypeRegistry", """
+			package net.fabricmc.fabric.api.networking.v1;
+			public interface PayloadTypeRegistry<B> {
+			 static PayloadTypeRegistry<Object> configurationC2S(){return org.quarry.net.Channels.SERVERBOUND_CONFIGURATION;}
+			 static PayloadTypeRegistry<Object> configurationS2C(){return org.quarry.net.Channels.CLIENTBOUND_CONFIGURATION;}
+			 static PayloadTypeRegistry<Object> playC2S(){return org.quarry.net.Channels.SERVERBOUND_PLAY;}
+			 static PayloadTypeRegistry<Object> playS2C(){return org.quarry.net.Channels.CLIENTBOUND_PLAY;}
+			}
+			"""),
+		Map.entry("org.quarry.net.Channels", """
+			package org.quarry.net;
 			import java.util.*;
-			public class PayloadTypeRegistryImpl{
-			 public static final PayloadTypeRegistryImpl SERVERBOUND_CONFIGURATION=new PayloadTypeRegistryImpl(), CLIENTBOUND_CONFIGURATION=new PayloadTypeRegistryImpl(),SERVERBOUND_PLAY=new PayloadTypeRegistryImpl(),CLIENTBOUND_PLAY=new PayloadTypeRegistryImpl();
-			 public final Map<Object,Object> entries=new HashMap<>();public Object get(Object id){return entries.get(id);}
-			 public record Entry(Object type,Object codec){}
+			import net.minecraft.network.ConnectionProtocol;
+			import net.minecraft.network.protocol.PacketFlow;
+			import net.minecraft.network.protocol.common.custom.CustomPacketPayload;
+			public class Channels implements net.fabricmc.fabric.api.networking.v1.PayloadTypeRegistry<Object>{
+			 public static final Channels SERVERBOUND_CONFIGURATION=new Channels(ConnectionProtocol.CONFIGURATION,PacketFlow.SERVERBOUND),
+			   CLIENTBOUND_CONFIGURATION=new Channels(ConnectionProtocol.CONFIGURATION,PacketFlow.CLIENTBOUND),
+			   SERVERBOUND_PLAY=new Channels(ConnectionProtocol.PLAY,PacketFlow.SERVERBOUND),CLIENTBOUND_PLAY=new Channels(ConnectionProtocol.PLAY,PacketFlow.CLIENTBOUND);
+			 private final ConnectionProtocol phase;private final PacketFlow side;
+			 public final Map<Object,CustomPacketPayload.TypeAndCodec<Object,Object>> entries=new HashMap<>();
+			 Channels(ConnectionProtocol phase,PacketFlow side){this.phase=phase;this.side=side;}
 			}
 			"""),
 		Map.entry("net.neoforged.neoforge.network.registration.NetworkRegistry", "package net.neoforged.neoforge.network.registration; import java.util.*; public class NetworkRegistry{public static final Map<Object,Object> BUILTIN_PAYLOADS=new HashMap<>();}"),
@@ -76,12 +96,12 @@ public class PostMixinCodecReturnArbitrationTest {
 		byte[] input=classes.get(LOOKUP),output=InjectorExecution.transform(new PostMixinCodecReturnArbitration(),"fixture.Lookup",input,EnvType.CLIENT);
 		assertNotSame(input,output);classes.put(LOOKUP,output);ClassLoader loader=InjectorExecution.load(classes);
 		assertEquals("",InjectorExecution.verify(output,loader));
-		Object fabric=codec(loader,"fabric","net.fabricmc.fabric.impl.networking.RegistrationPayload"),neo=codec(loader,"neo","net.neoforged.neoforge.network.payload.MinecraftRegisterPayload"),forge=codec(loader,"forge","net.minecraftforge.network.ForgePayload");
+		Object fabric=codec(loader,"fabric","org.quarry.net.Register"),neo=codec(loader,"neo","net.neoforged.neoforge.network.payload.MinecraftRegisterPayload"),forge=codec(loader,"forge","net.minecraftforge.network.ForgePayload");
 		registries(loader,"minecraft:register",fabric,neo,forge);
 		Object lookup=lookup(loader,new HashMap<>()),fallback=lookup.getClass().getField("fallback").get(lookup);
 		lookup.getClass().getField("guest").set(lookup,fabric);
 		Object chosen=InjectorExecution.invoke(lookup,"lookup","minecraft:register");
-		for(var test:Map.of("fabric","net.fabricmc.fabric.impl.networking.RegistrationPayload","neo","net.neoforged.neoforge.network.payload.MinecraftRegisterPayload","forge","net.minecraftforge.network.ForgePayload").entrySet()){
+		for(var test:Map.of("fabric","org.quarry.net.Register","neo","net.neoforged.neoforge.network.payload.MinecraftRegisterPayload","forge","net.minecraftforge.network.ForgePayload").entrySet()){
 			Object buffer=InjectorExecution.construct(loader.loadClass("fixture.Buffer")),payload=InjectorExecution.construct(loader.loadClass(test.getValue()));
 			InjectorExecution.invoke(chosen,"encode",buffer,payload);assertEquals(test.getKey(),buffer.getClass().getField("by").get(buffer));
 		}
@@ -128,8 +148,8 @@ public class PostMixinCodecReturnArbitrationTest {
 	private static Object enumValue(ClassLoader loader,String type,String value)throws Exception{return loader.loadClass(type).getField(value).get(null);}
 	private static Object codec(ClassLoader loader,String by,String payload)throws Throwable{return InjectorExecution.construct(loader.loadClass("fixture.Codec"),by,loader.loadClass(payload));}
 	@SuppressWarnings("unchecked") private static void registries(ClassLoader loader,Object id,Object fabric,Object neo,Object forge)throws Throwable{
-		Class<?> registry=loader.loadClass("net.fabricmc.fabric.impl.networking.PayloadTypeRegistryImpl");Object owner=registry.getField("SERVERBOUND_CONFIGURATION").get(null);
-		((Map<Object,Object>)owner.getClass().getField("entries").get(owner)).put(id,InjectorExecution.construct(loader.loadClass("net.fabricmc.fabric.impl.networking.PayloadTypeRegistryImpl$Entry"),"fabric-type",fabric));
+		Class<?> registry=loader.loadClass("org.quarry.net.Channels");Object owner=registry.getField("SERVERBOUND_CONFIGURATION").get(null);
+		((Map<Object,Object>)owner.getClass().getField("entries").get(owner)).put(id,InjectorExecution.construct(loader.loadClass("net.minecraft.network.protocol.common.custom.CustomPacketPayload$TypeAndCodec"),"fabric-type",fabric));
 		((Map<Object,Object>)loader.loadClass("net.neoforged.neoforge.network.registration.NetworkRegistry").getField("BUILTIN_PAYLOADS").get(null)).put(id,neo);
 		((Map<Object,Object>)loader.loadClass("net.minecraftforge.network.NetworkRegistry").getField("CODECS").get(null)).put(id,forge);
 	}

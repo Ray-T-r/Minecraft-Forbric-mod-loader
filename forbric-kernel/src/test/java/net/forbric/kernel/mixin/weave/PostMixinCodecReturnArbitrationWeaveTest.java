@@ -20,12 +20,12 @@ class PostMixinCodecReturnArbitrationWeaveTest {
 				import net.minecraft.network.ConnectionProtocol;
 				import net.minecraft.network.protocol.PacketFlow;
 				import net.minecraft.network.codec.StreamCodec;
-				import net.fabricmc.fabric.impl.networking.*;
+				import org.quarry.net.*;
 				public class CodecProbe {
 				 public static int heads;
 				 public void run() {
-				  Codec fabric=new Codec("fabric",RegistrationPayload.class), forge=new Codec("forge",net.minecraftforge.network.ForgePayload.class);
-				  PayloadTypeRegistryImpl.SERVERBOUND_CONFIGURATION.entries.put("minecraft:register",new PayloadTypeRegistryImpl.Entry("type",fabric));
+				  Codec fabric=new Codec("fabric",Register.class), forge=new Codec("forge",net.minecraftforge.network.ForgePayload.class);
+				  Channels.SERVERBOUND_CONFIGURATION.entries.put("minecraft:register",new net.minecraft.network.protocol.common.custom.CustomPacketPayload.TypeAndCodec<>("type",fabric));
 				  net.minecraftforge.network.NetworkRegistry.CODECS.put("minecraft:register",forge);
 				  Fallback fallback=new Fallback();Lookup lookup=new Lookup(new HashMap<>(),ConnectionProtocol.CONFIGURATION,PacketFlow.SERVERBOUND,fallback);
 				  lookup.guest=fabric;StreamCodec<Object,Object> chosen=lookup.lookup("minecraft:register");Buffer buffer=new Buffer();
@@ -80,19 +80,19 @@ class PostMixinCodecReturnArbitrationWeaveTest {
 				import java.util.*;
 				import net.minecraft.network.ConnectionProtocol;
 				import net.minecraft.network.protocol.PacketFlow;
-				import net.fabricmc.fabric.impl.networking.*;
+				import org.quarry.net.*;
 				public class CodecProbe {
 				 public static int wraps;
 				 public void run() {
-				  Codec fabric=new Codec("fabric",RegistrationPayload.class), forge=new Codec("forge",net.minecraftforge.network.ForgePayload.class),neo=new Codec("neo",net.neoforged.neoforge.network.payload.MinecraftRegisterPayload.class);
-				  PayloadTypeRegistryImpl.SERVERBOUND_CONFIGURATION.entries.put("minecraft:register",new PayloadTypeRegistryImpl.Entry("type",fabric));
+				  Codec fabric=new Codec("fabric",Register.class), forge=new Codec("forge",net.minecraftforge.network.ForgePayload.class),neo=new Codec("neo",net.neoforged.neoforge.network.payload.MinecraftRegisterPayload.class);
+				  Channels.SERVERBOUND_CONFIGURATION.entries.put("minecraft:register",new net.minecraft.network.protocol.common.custom.CustomPacketPayload.TypeAndCodec<>("type",fabric));
 				  net.minecraftforge.network.NetworkRegistry.CODECS.put("minecraft:register",forge);
 				  net.neoforged.neoforge.network.registration.NetworkRegistry.BUILTIN_PAYLOADS.put("minecraft:register",neo);
 				  Fallback fallback=new Fallback();Map<Object,Object> locals=new HashMap<>();Lookup lookup=new Lookup(locals,ConnectionProtocol.CONFIGURATION,PacketFlow.SERVERBOUND,fallback);Buffer buffer=new Buffer();
 				  lookup.guest=fabric;
 				  try{lookup.write("minecraft:register",buffer,new net.minecraftforge.network.ForgePayload());System.out.println("[CodecWrap] forge="+buffer.by);}catch(ClassCastException expected){System.out.println("[CodecWrap] forge=wrong-guest-class");}
 				  try{lookup.write("minecraft:register",buffer,new net.neoforged.neoforge.network.payload.MinecraftRegisterPayload());System.out.println("[CodecWrap] neo="+buffer.by);}catch(ClassCastException expected){System.out.println("[CodecWrap] neo=wrong-guest-class");}
-				  lookup.write("minecraft:register",buffer,new RegistrationPayload());System.out.println("[CodecWrap] fabric="+buffer.by);
+				  lookup.write("minecraft:register",buffer,new Register());System.out.println("[CodecWrap] fabric="+buffer.by);
 				  System.out.println("[CodecWrap] decode="+lookup.read("minecraft:register",buffer).getClass().getName());
 				  Codec unknown=new Codec("guest",UnknownPayload.class);lookup.guest=unknown;lookup.write("guest:unknown",buffer,new UnknownPayload());System.out.println("[CodecWrap] unknown="+buffer.by+":"+lookup.read("guest:unknown",buffer).getClass().getName());
 				  lookup.guest=null;locals.put("local:id",unknown);lookup.write("local:id",buffer,new UnknownPayload());System.out.println("[CodecWrap] local="+buffer.by);
@@ -129,7 +129,7 @@ class PostMixinCodecReturnArbitrationWeaveTest {
 		WeaveHarness.assertWovenAndVerified(repaired,"fixture/Lookup",fixture);
 		WeaveHarness.Result control=WeaveHarness.run(work,"off",fixture,config,"codecoperationprobe",Ecosystem.FABRIC,EnvType.CLIENT,"fixture.CodecProbe","run",Map.of(PostMixinCodecReturnArbitration.PROPERTY,"off"));
 		assertTrue(control.printed("[CodecWrap] forge=wrong-guest-class"),control.describe());assertTrue(control.printed("[CodecWrap] neo=wrong-guest-class"),control.describe());
-		assertTrue(control.printed("[CodecWrap] decode=net.fabricmc.fabric.impl.networking.RegistrationPayload"),control.describe());
+		assertTrue(control.printed("[CodecWrap] decode=org.quarry.net.Register"),control.describe());
 		assertTrue(control.printed("[CodecWrap] wraps=8 body=2 fallbackCalls=2"),control.describe());
 		assertFalse(control.printed("[CodecWrap] forge=forge"),control.describe());
 	}
@@ -146,7 +146,7 @@ class PostMixinCodecReturnArbitrationWeaveTest {
 				public class CodecProbe {
 				 public static int wraps;
 				 public void run(){
-				  Map<Object,Object> locals=new HashMap<>();locals.put("guest:outer",new Codec("outer",net.fabricmc.fabric.impl.networking.RegistrationPayload.class));locals.put("guest:inner",new Codec("inner",UnknownPayload.class));
+				  Map<Object,Object> locals=new HashMap<>();locals.put("guest:outer",new Codec("outer",org.quarry.net.Register.class));locals.put("guest:inner",new Codec("inner",UnknownPayload.class));
 				  Fallback fallback=new Fallback();Lookup lookup=new Lookup(locals,ConnectionProtocol.CONFIGURATION,PacketFlow.SERVERBOUND,fallback);
 				  StreamCodec<Object,Object> chosen=lookup.fetch("guest:outer");Buffer buffer=new Buffer();chosen.encode(buffer,new UnknownPayload());
 				  System.out.println("[CodecChangedId] chosen="+chosen+" encode="+buffer.by+" decode="+chosen.decode(buffer).getClass().getName());

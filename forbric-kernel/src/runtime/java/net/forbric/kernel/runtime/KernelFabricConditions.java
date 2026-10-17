@@ -119,7 +119,7 @@ public final class KernelFabricConditions {
 		return new Codec<Object>() {
 			@Override
 			public <T> DataResult<Pair<Object, T>> decode(DynamicOps<T> ops, T input) {
-				if (input instanceof JsonObject json && json.has(KEY) && !KernelSourceDecodeScopes.alreadyJudged(input)) {
+				if (input instanceof JsonObject json && json.has(KEY) && !KernelSourceDecodeScopes.alreadyJudged(input, KEY)) {
 					Boolean keep = ask(json, ops);
 					if (Boolean.FALSE.equals(keep)) {
 						return DataResult.success(Pair.of((Object) Optional.empty(), ops.empty()));
