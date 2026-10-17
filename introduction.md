@@ -345,30 +345,41 @@ Fabric and NeoForge need opposite states in the constructor, so the kernel has t
   `off:<id>,<id>` exempts only those ids (the kernel does not read Fabric's `config/fabric_loader_dependencies.json`).
 - One Fabric mod per id, `provides` included (`fabric.FabricUniqueIds`, on the selection: `DuplicateModArbiter` after
   `ReachableCandidateSelector`, and `FabricModDiscovery` without a plan). Fabric Loader indexes every candidate under
-  its id and each id it provides (`ModPrioSorter.sort`) and lets at most one of each load (`UNIQUE_ID`); a jar in
-  `mods/` is forced, and a nested one is weighted `-2^(n - priority)`, so its choice is the lexicographic optimum over
-  `ModPrioSorter`'s order (jars in `mods/` first, then by id, then the higher version, with a mod moved ahead of the
-  ones it shares an id with and has the higher version against): each nested mod loads if it can, given the ones
-  before it, its parent and its hard dependencies included. The kernel takes the same optimum with a SAT solver.
-  owo-sentinel is the case: mods that need owo-lib nest it so that it can ask for owo-lib when it is missing, and it
-  provides `owo` and `owo-lib`; next to owo-lib native never loads it, and the kernel loaded both. Of two nested mods
-  that share an id the one Fabric orders first usually wins, but a mod ordered before both that bundles or depends
-  on the other keeps that one. It is decided among what arbitration selected, never before: a build arbitration
-  drops (another ecosystem's preferred copy, a newer copy elsewhere, a copy only a losing library bundles) cannot push
-  its rival out, and a dependency on the shared id cannot steer which build of a mod arbitration keeps. Builds of one
-  mod are never rivals, also when they share only an alias (every `mixinextras-fabric` copy provides
-  `com_github_llamalad7_mixinextras`); only Fabric mods count. A loser is left out with what only it bundles and what
-  then has no provider for a hard dependency, each with a `left out: it answers to '<id>', as <winner> <version> [in
-  mods/] does, and Fabric Loader loads one mod per id, provides included` line. Where the kernel stays more lenient
-  than native: jars in `mods/` all load (native drops one of two that share an id when one is not forced on its own
-  id, e.g. Indium next to a Sodium that provides `indium`, and refuses to start otherwise); a nested mod with a hard
-  dependency nothing that loads meets, which native switches off, only yields, weighed after every other mod, so it
-  gives a shared id to a rival that can load and still loads where nothing contests it; and a mod that loads
-  regardless (in `mods/`, or a Forge-family mod) and needs a would-be loser, by its id or one it provides, with
-  nothing else that loads meeting that, keeps it back with the same `loaded although Fabric Loader would leave it out`
-  WARN (native refuses to start). The `forbric.nestedRequirements` switches apply. On the local corpora (70 `mods/`
-  folders) the only shapes are owo-sentinel beside owo-lib and voxy's `dummyprovider` (server-only, providing
-  `sodium`, which is client-only, so they never meet).
+  its id and each id it provides (`ModPrioSorter.sort`) and lets at most one of each load (`UNIQUE_ID`). A jar in
+  `mods/` that alone answers to one of its ids is forced (`ROOT_FORCELOAD_SINGLE`); every other candidate is weighted
+  `-2^(n - priority)`, so the choice is the lexicographic optimum over `ModPrioSorter`'s order (jars in `mods/` first,
+  then by id, then the higher version, with a mod moved ahead of the ones it shares an id with and has the higher
+  version against): each mod in turn loads if it can, given the ones before it, a nested one needing a parent that
+  loads and a provider for each hard dependency, and one whose hard dependency nothing installed meets switched off
+  (`HARD_DEP_NO_CANDIDATE`). The kernel takes the same optimum with a SAT solver. owo-sentinel is the case: mods that
+  need owo-lib nest it so that it can ask for owo-lib when it is missing, and it provides `owo` and `owo-lib`; next to
+  owo-lib native never loads it, and the kernel loaded both. Of two nested mods that share an id the one Fabric orders
+  first usually wins, but a mod ordered before both that needs the other keeps that one: a mod nested in it, or one
+  that depends on it. It is decided among what arbitration selected, never before: a build arbitration drops
+  (another ecosystem's preferred copy, a newer copy elsewhere, a copy only a losing library bundles) cannot push its
+  rival out, and a dependency on the shared id cannot steer which build of a mod arbitration keeps. A Fabric mod it
+  leaves out is then excluded and arbitration runs again, so another build of the loser's own id can still take its
+  place. Builds of one mod are never rivals, also when they share only an alias (every `mixinextras-fabric` copy
+  provides `com_github_llamalad7_mixinextras`). Only what is in Fabric Loader's index takes part: Fabric jars in
+  `mods/`, and nested Fabric mods it reaches itself and `off:<id>` does not exempt. A Fabric mod a JarJar declaration
+  or a Forge-family walk brought in, an exempted one and a Forge-family mod load whenever their parent does, and
+  never decide a rivalry; a jar only a losing mod bundles (a library without `fabric.mod.json`, a Forge-family jar in
+  its `jars`) goes with it. The loser is logged `left out: it answers to '<id>', as <winner> <version> [in mods/] does,
+  and Fabric Loader loads one mod per id, provides included`; what goes with it `left out: only mods left out bundle
+  it`, and a mod whose dependency only the loser met `left out: it requires <id> <range>, and every installed build of
+  that is left out`. Where the kernel stays more lenient than native: jars in `mods/` all load (native drops one that
+  no id of its own singles out when a rival takes its ids, e.g. Indium next to a Sodium that provides `indium`, and
+  refuses to start when two forced jars collide); a nested mod whose hard dependency nothing that loads meets is taken
+  as switched off for native's choice, and then comes back, with what goes with it, wherever it takes nothing native
+  loads, so it yields every id it shares and still loads where nothing contests it; and an anchored mod (in `mods/`, a
+  Forge-family mod, or another mod outside the rule whose parent loads) that needs a would-be loser, by its id or one
+  it provides, with nothing else that loads meeting that, keeps it back with the same `loaded although Fabric Loader
+  would leave it out` WARN (native drops the winning jar in `mods/` if no id of its own forces it, and refuses to
+  start otherwise). Not weighed: `recommends` and `breaks` between mods, and a mod listing its own id or an alias twice
+  among its `provides` (native never loads it). Without a plan nothing arbitrates, so of two copies of one id only the
+  first found takes part, the one `KernelFabricLoader.register` keeps. The `forbric.nestedRequirements` switches
+  apply. On the local corpora (70 `mods/` folders) the only shapes are owo-sentinel beside owo-lib and voxy's
+  `dummyprovider` (server-only, providing `sodium`, which is client-only, so they never meet).
 - `discovery.ModAnnotationScanner` finds `@Mod` classes by bytecode descriptor; `ModFileScanner` builds a full
   `ModFileScanData` (NeoForge and MinecraftForge shapes differ: `EnumHolder` vs `EnumData`) because JEI, Jade,
   Sophisticated Core and Sodium find their plugins through `ModList.getAllScanData()`.
