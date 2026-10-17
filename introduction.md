@@ -1168,8 +1168,11 @@ every `catch` in `src/main` and `src/runtime` either rethrows or reports to `Cau
   this shape", text a mod wrote that is not a valid value, an exception handed on as a value to code that reports
   it. Counted, logged only under `-Dforbric.debug`. When the cause chain of an "expected" exception holds an
   exception only a bug throws (`NullPointerException`, `ClassCastException`, an index out of bounds outside ASM's
-  analysis frames, …), it is reported as a failure instead: ASM's `Analyzer` wraps whatever its interpreter threw
-  in the very `AnalyzerException` a recogniser expects.
+  analysis frames, …) thrown by Forbric's own code, it is reported as a failure instead: ASM's `Analyzer` wraps
+  whatever its interpreter threw in the very `AnalyzerException` a recogniser expects. The same holds for
+  `Caught.Invariant`, which every registry throws when it already holds a different value under the key it is
+  given (`RegistryConflictsAreInvariantsTest` keeps it so): repairs register from inside their "not this shape"
+  catch, so an ordinary `IllegalStateException` was declined there silently.
 
 A summary (`[Forbric/Caught] summary …`, one line per failure site with its count) is logged when loading
 finishes and again at JVM exit. With `FORBRIC_CAUGHT_FILE` (or `-Dforbric.caught.file`) naming a file, each failure

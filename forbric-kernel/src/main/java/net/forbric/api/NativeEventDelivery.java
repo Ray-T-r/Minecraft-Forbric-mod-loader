@@ -3,6 +3,7 @@ package net.forbric.api;
 
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
+import net.forbric.kernel.util.Caught;
 
 /** Published hook contracts whose native counterpart can satisfy an event forward. Any protocol adapter may register
  * a contract; caller class names never authorize delivery. A proved caller scopes one source invocation, and the
@@ -25,7 +26,7 @@ public final class NativeEventDelivery {
     private NativeEventDelivery() { }
     public static void register(Contract contract) {
         Contract old=CONTRACTS.putIfAbsent(contract.id(),contract);
-        if(old!=null&&!old.equals(contract))throw new IllegalArgumentException("Conflicting native delivery contract: "+contract.id());
+        if(old!=null&&!old.equals(contract))throw new Caught.Invariant("Conflicting native delivery contract: "+contract.id());
         if(old==null)refresh();
     }
     private static synchronized void refresh(){snapshot=CONTRACTS.values().stream().sorted(Comparator.comparing(Contract::id)).toList();}

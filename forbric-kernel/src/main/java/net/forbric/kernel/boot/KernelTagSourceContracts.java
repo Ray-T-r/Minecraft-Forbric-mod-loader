@@ -20,7 +20,7 @@ public final class KernelTagSourceContracts {
 	private static final Map<String,Schema>SCHEMAS=new ConcurrentHashMap<>();
 	private static final Set<String>DIAGNOSTICS=ConcurrentHashMap.newKeySet();
 	private KernelTagSourceContracts(){ }
-	public static void register(String key,Schema schema){Schema old=SCHEMAS.putIfAbsent(key,schema);if(old!=null&&!old.equals(schema))throw new IllegalStateException("Ambiguous native source tag schema "+key);}
+	public static void register(String key,Schema schema){Schema old=SCHEMAS.putIfAbsent(key,schema);if(old!=null&&!old.equals(schema))throw new Caught.Invariant("Ambiguous native source tag schema "+key);}
 	public static Schema schema(String key){return SCHEMAS.get(key);}
 	/** Constructor and update guards do not invoke a game query. */
 	public static boolean validates(Object receiver,String key){
