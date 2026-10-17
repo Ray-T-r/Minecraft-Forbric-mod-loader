@@ -1,0 +1,1 @@
+{"required": true, "package": "org.marsh.reed.mixin", "compatibilityLevel": "JAVA_21", "mixins": ["SoakMixin"], "injectors": {"defaultRequire": 1}}

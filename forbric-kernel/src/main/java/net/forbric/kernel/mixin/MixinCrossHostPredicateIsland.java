@@ -13,16 +13,30 @@ import net.forbric.kernel.boot.KernelCrossHostPredicateContracts.*;
 import net.forbric.kernel.transform.*;
 import net.forbric.kernel.util.Caught;
 
-/** An original boolean modifier can remain on its native atom while its whole predicate moves before a native event. */
+/**
+ * An original boolean modifier can remain on its native atom while its whole predicate moves before a native event.
+ *
+ * <p>The native predicate is copied into a helper the carrier's hook evaluates, for the fluid types the kernel owns, in front
+ * of its own decision. Where a native decision island can hold the modifier's call ({@link NativeDecisionIsland#heard}) — one
+ * another mod's injectors planned, or one planned for this modifier — the modifier stays on that call, runs there once per
+ * native run, and the helper reads what the call answered there (the modifier and every other injector on the call included)
+ * from the island's frame instead of making the call: the island and the hook then decide on the same answer, whichever mod's
+ * mixins were read first. A helper that finds no answer leaves the decision to the carrier. Only where no island can hold the
+ * call does the modifier move into the helper, which then makes the call itself.
+ */
 public final class MixinCrossHostPredicateIsland implements Opcodes {
     public static final String PROPERTY="forbric.crossHostPredicateIslands";
-    private static final String MODIFY="Lcom/llamalad7/mixinextras/injector/ModifyExpressionValue;",RUNTIME="net/forbric/kernel/runtime/KernelFluidPredicateIslands",OP="com/llamalad7/mixinextras/injector/wrapoperation/Operation";
+    /** {@code -Dforbric.crossHostPredicateIslands.reader=off}: the helper never reads a native decision island; a call an island holds is left to it, unheard. */
+    public static final String READER_PROPERTY="forbric.crossHostPredicateIslands.reader";
+    private static final String MODIFY="Lcom/llamalad7/mixinextras/injector/ModifyExpressionValue;",RUNTIME="net/forbric/kernel/runtime/KernelFluidPredicateIslands",OP="com/llamalad7/mixinextras/injector/wrapoperation/Operation",RELAY=NativeDecisionIsland.RELAY;
     private static final Handle LAMBDA=new Handle(H_INVOKESTATIC,"java/lang/invoke/LambdaMetafactory","metafactory","(Ljava/lang/invoke/MethodHandles$Lookup;Ljava/lang/String;Ljava/lang/invoke/MethodType;Ljava/lang/invoke/MethodType;Ljava/lang/invoke/MethodHandle;Ljava/lang/invoke/MethodType;)Ljava/lang/invoke/CallSite;",false);
-    record Installed(String key,String source,String target,String handler,MethodNode original,MethodNode helper,MethodNode wrapper,CrossHostPredicateIslandPlan.Plan plan,Function<String,ClassNode>classes,Schema schema){}
+    record Installed(String key,String source,String target,String handler,MethodNode original,MethodNode helper,MethodNode wrapper,CrossHostPredicateIslandPlan.Plan plan,Function<String,ClassNode>classes,Schema schema,boolean reader){}
     private static final Map<String,Installed>PLANS=new ConcurrentHashMap<>();
     private MixinCrossHostPredicateIsland(){}
     public static boolean enabled(){return !"off".equalsIgnoreCase(System.getProperty(PROPERTY,"on"));}
-    public static int adapt(ClassNode mixin,Function<String,ClassNode>classes,Function<String,ClassNode>originals,BiPredicate<String,Runnable>register){
+    public static int adapt(ClassNode mixin,Function<String,ClassNode>classes,Function<String,ClassNode>originals,BiPredicate<String,Runnable>register){return adapt(mixin,classes,originals,register,null);}
+    /** {@code hear}: whether a native decision island holds (or now holds) the modifier's call and offers its answer — {@link NativeDecisionIsland#heard}. */
+    public static int adapt(ClassNode mixin,Function<String,ClassNode>classes,Function<String,ClassNode>originals,BiPredicate<String,Runnable>register,BiPredicate<ClassNode,MethodNode>hear){
         if(!enabled())return 0;List<String>targets=MixinFit.mixinTargets(mixin);if(targets.size()!=1)return 0;ClassNode nativeType=originals.apply(targets.getFirst()),current=classes.apply(targets.getFirst());if(nativeType==null||current==null)return 0;
         for(MethodNode handler:new ArrayList<>(mixin.methods)){
             AnnotationNode annotation=MixinFit.injectorOf(handler);
@@ -33,13 +47,17 @@ public final class MixinCrossHostPredicateIsland implements Opcodes {
             // Its atom: the one call the point selects there, however its target is spelled.
             List<MethodInsnNode>anchors=new ArrayList<>();for(AbstractInsnNode instruction:MixinCallbackShape.pointSelected(ats.getFirst(),nativeMethod))if(instruction instanceof MethodInsnNode call)anchors.add(call);if(anchors.size()!=1)continue;
             // The merged method already makes the call (a native decision island put it back): Mixin binds the modifier there itself.
-            if(MixinCallbackShape.calls(ats.getFirst(),live).size()>=anchors.size())continue;boolean sourceClosed=true;for(var i:handler.instructions)if(i instanceof MethodInsnNode call&&call.owner.equals(mixin.name)){MethodNode member=CrossHostPredicateIslandPlan.find(mixin,call.name,call.desc);boolean shadow=member!=null&&member.visibleAnnotations!=null&&member.visibleAnnotations.stream().anyMatch(a->a.desc.equals("Lorg/spongepowered/asm/mixin/Shadow;"));boolean inherited=member==null&&Objects.equals(mixin.superName,current.superName);if((!shadow&&!inherited)||!call.name.equals(anchors.getFirst().name)||!call.desc.equals(anchors.getFirst().desc))sourceClosed=false;}if(!sourceClosed)continue;
+            boolean present=MixinCallbackShape.calls(ats.getFirst(),live).size()>=anchors.size();boolean sourceClosed=true;for(var i:handler.instructions)if(i instanceof MethodInsnNode call&&call.owner.equals(mixin.name)){MethodNode member=CrossHostPredicateIslandPlan.find(mixin,call.name,call.desc);boolean shadow=member!=null&&member.visibleAnnotations!=null&&member.visibleAnnotations.stream().anyMatch(a->a.desc.equals("Lorg/spongepowered/asm/mixin/Shadow;"));boolean inherited=member==null&&Objects.equals(mixin.superName,current.superName);if((!shadow&&!inherited)||!call.name.equals(anchors.getFirst().name)||!call.desc.equals(anchors.getFirst().desc))sourceClosed=false;}if(!sourceClosed)continue;
             String helperName=MixinHandlerShim.asideName(mixin.name,handler.name,"$forbricsourceisland");var extraction=NativeSourcePredicateIsland.extract(nativeType.name,nativeType.name,nativeMethod,anchors.getFirst(),helperName);if(extraction==null)continue;
             var plan=CrossHostPredicateIslandPlan.derive(current.name,live,extraction,classes);if(plan==null)continue;Schema schema=schema(plan,current,classes);if(schema==null)continue;
-            MethodNode original=copy(handler);String key=MixinInstructionFingerprint.hash(extraction.helper())+":"+MixinInstructionFingerprint.hash(plan.method())+":"+MixinInstructionFingerprint.hash(original)+":"+schemaKey(schema)+":"+mixin.name;
-            Installed installed=new Installed(key,mixin.name,current.name,handler.name,original,extraction.helper(),wrapper(mixin,live,plan,extraction.helper(),key),plan,classes,schema);
+            // The call is held by a native decision island (another mod's, or one planned now for this modifier): the modifier stays
+            // there and the helper reads its answer. Present for any other reason, it is left to Mixin, as before.
+            boolean reader=hear!=null&&!"off".equalsIgnoreCase(System.getProperty(READER_PROPERTY,"on"))&&hear.test(mixin,handler);if(present&&!reader)continue;
+            MethodNode helper=reader?reading(extraction.helper(),extraction.anchor()):extraction.helper();if(helper==null)continue;
+            MethodNode original=copy(handler);String key=MixinInstructionFingerprint.hash(helper)+":"+MixinInstructionFingerprint.hash(plan.method())+":"+MixinInstructionFingerprint.hash(original)+":"+schemaKey(schema)+":"+mixin.name+(reader?":reader":"");
+            Installed installed=new Installed(key,mixin.name,current.name,handler.name,original,helper,wrapper(mixin,live,plan,helper,key),plan,classes,schema,reader);
             if(!register.test(plan.owner(),()->{synchronized(PLANS){Installed oldPlan=PLANS.get(key);if(oldPlan!=null&&(!oldPlan.source.equals(installed.source)||!oldPlan.schema.equals(schema)))throw new IllegalStateException("ambiguous source predicate plan");KernelCrossHostPredicateContracts.register(key,schema);PLANS.putIfAbsent(key,installed);}}))continue;
-            set(annotation,"method",List.of(helperName+extraction.helper().desc));mixin.methods.add(extraction.helper());mixin.methods.add(installed.wrapper);return 1;
+            if(!reader)set(annotation,"method",List.of(helperName+helper.desc));mixin.methods.add(helper);mixin.methods.add(installed.wrapper);return 1;
         }return 0;
     }
     private static Schema schema(CrossHostPredicateIslandPlan.Plan plan,ClassNode actor,Function<String,ClassNode>classes){
@@ -80,6 +98,28 @@ public final class MixinCrossHostPredicateIsland implements Opcodes {
     private static FieldInsnNode identityFieldGetter(MethodNode method){List<AbstractInsnNode>code=code(method);return code.size()==3&&code.get(0)instanceof VarInsnNode self&&self.getOpcode()==ALOAD&&self.var==0&&code.get(1)instanceof FieldInsnNode field&&field.getOpcode()==GETFIELD&&code.get(2).getOpcode()==ARETURN?field:null;}
     private static boolean identityThis(MethodNode method,String target){List<AbstractInsnNode>c=code(method);return c.size()==3&&c.get(0)instanceof VarInsnNode self&&self.getOpcode()==ALOAD&&self.var==0&&c.get(1)instanceof TypeInsnNode cast&&cast.getOpcode()==CHECKCAST&&cast.desc.equals(target)&&c.get(2).getOpcode()==ARETURN;}
     private static boolean isActorOwner(ClassNode actor,String owner,Function<String,ClassNode>classes){if(actor.name.equals(owner))return true;return actor.superName!=null&&classes.apply(actor.superName)!=null&&isActorOwner(classes.apply(actor.superName),owner,classes);}
+    /**
+     * The native predicate {@code helper} with its {@code anchor} call answered by the open native decision island's frame: the
+     * answer the island's call gave, under the island's key for it ({@code Lowner;name(desc)}), on the same operands (the receiver
+     * first). No answer there — no island ran, or it gave none — and the helper answers -1: the carrier decides as it would alone.
+     */
+    static MethodNode reading(MethodNode helper,MethodInsnNode anchor){
+        MethodNode copy=copy(helper);MethodInsnNode call=null;int index=helper.instructions.indexOf(anchor);if(index<0)return null;
+        if(copy.instructions.get(index)instanceof MethodInsnNode found&&found.getOpcode()==anchor.getOpcode()&&found.owner.equals(anchor.owner)&&found.name.equals(anchor.name)&&found.desc.equals(anchor.desc))call=found;
+        if(call==null||call.getOpcode()==INVOKESTATIC||call.getOpcode()==INVOKESPECIAL||Type.getReturnType(call.desc).getSort()==Type.VOID)return null;
+        List<Type>operands=new ArrayList<>();operands.add(Type.getObjectType(call.owner));operands.addAll(List.of(Type.getArgumentTypes(call.desc)));
+        int[]slots=new int[operands.size()];int next=copy.maxLocals;for(int i=0;i<slots.length;i++){slots[i]=next;next+=operands.get(i).getSize();}
+        InsnList read=new InsnList();for(int i=slots.length-1;i>=0;i--)read.add(new VarInsnNode(operands.get(i).getOpcode(ISTORE),slots[i]));
+        read.add(new LdcInsnNode("L"+call.owner+";"+call.name+call.desc));read.add(new LdcInsnNode(slots.length));read.add(new TypeInsnNode(ANEWARRAY,"java/lang/Object"));
+        for(int i=0;i<slots.length;i++){read.add(new InsnNode(DUP));read.add(new LdcInsnNode(i));read.add(new VarInsnNode(operands.get(i).getOpcode(ILOAD),slots[i]));box(read,operands.get(i));read.add(new InsnNode(AASTORE));}
+        read.add(new MethodInsnNode(INVOKESTATIC,RELAY,"answer","(Ljava/lang/String;[Ljava/lang/Object;)Ljava/lang/Object;",false));
+        LabelNode unheard=new LabelNode(),heard=new LabelNode();read.add(new InsnNode(DUP));read.add(new FieldInsnNode(GETSTATIC,RELAY,"NONE","Ljava/lang/Object;"));read.add(new JumpInsnNode(IF_ACMPEQ,unheard));
+        unbox(read,Type.getReturnType(call.desc));read.add(new JumpInsnNode(GOTO,heard));read.add(unheard);read.add(new InsnNode(POP));read.add(new InsnNode(ICONST_M1));read.add(new InsnNode(IRETURN));read.add(heard);
+        copy.instructions.insert(call,read);copy.instructions.remove(call);copy.maxLocals=next;copy.maxStack=Math.max(copy.maxStack,8);return copy;
+    }
+    private static void box(InsnList out,Type type){String owner=switch(type.getSort()){case Type.BOOLEAN->"java/lang/Boolean";case Type.BYTE->"java/lang/Byte";case Type.CHAR->"java/lang/Character";case Type.SHORT->"java/lang/Short";case Type.INT->"java/lang/Integer";case Type.LONG->"java/lang/Long";case Type.FLOAT->"java/lang/Float";case Type.DOUBLE->"java/lang/Double";default->null;};if(owner!=null)out.add(new MethodInsnNode(INVOKESTATIC,owner,"valueOf","("+type.getDescriptor()+")L"+owner+";",false));}
+    private static void unbox(InsnList out,Type type){String owner=switch(type.getSort()){case Type.BOOLEAN->"java/lang/Boolean";case Type.BYTE->"java/lang/Byte";case Type.CHAR->"java/lang/Character";case Type.SHORT->"java/lang/Short";case Type.INT->"java/lang/Integer";case Type.LONG->"java/lang/Long";case Type.FLOAT->"java/lang/Float";case Type.DOUBLE->"java/lang/Double";default->null;};
+        if(owner==null){out.add(new TypeInsnNode(CHECKCAST,type.getInternalName()));return;}out.add(new TypeInsnNode(CHECKCAST,owner));out.add(new MethodInsnNode(INVOKEVIRTUAL,owner,type.getClassName()+"Value","()"+type.getDescriptor(),false));}
     private static MethodNode wrapper(ClassNode mixin,MethodNode caller,CrossHostPredicateIslandPlan.Plan plan,MethodNode helper,String key){
         Type[]args=Type.getArgumentTypes(plan.caller().desc);StringBuilder descriptor=new StringBuilder("(");for(Type arg:args)descriptor.append(arg.getDescriptor());descriptor.append('L').append(OP).append(";)V");MethodNode method=new MethodNode(ACC_PRIVATE,MixinHandlerShim.asideName(mixin.name,helper.name,"$forbricislandoffload"),descriptor.toString(),null,null);
         AnnotationNode wrap=new AnnotationNode("Lcom/llamalad7/mixinextras/injector/wrapoperation/WrapOperation;"),at=new AnnotationNode("Lorg/spongepowered/asm/mixin/injection/At;");at.values=new ArrayList<>(List.of("value","INVOKE","target","L"+plan.caller().owner+";"+plan.caller().name+plan.caller().desc));wrap.values=new ArrayList<>(List.of("method",List.of(caller.name+caller.desc),"at",at,"require",1));method.visibleAnnotations=new ArrayList<>(List.of(wrap));
@@ -88,11 +128,21 @@ public final class MixinCrossHostPredicateIsland implements Opcodes {
     }
     /** Called after the real weaver: copied native helper plus exactly one original modifier call must close. */
     public static void certify(ClassNode target){for(Installed plan:PLANS.values())if(plan.target.equals(target.name)){
+        if(plan.reader){certifyReader(target,plan);continue;}
         List<MethodNode>helpers=target.methods.stream().filter(m->m.name.equals(plan.helper.name)&&m.desc.equals(plan.helper.desc)).toList(),handlers=target.methods.stream().filter(m->m.desc.equals(plan.original.desc)&&m.name.contains(plan.handler)&&mergedFrom(m,plan.source)).toList();if(helpers.size()!=1||handlers.size()!=1)continue;MethodNode helper=helpers.getFirst(),handler=handlers.getFirst();
         MethodNode original=copy(plan.original),actual=copy(handler);normalizeSelf(original,plan.source,plan.target,plan.handler,handler.name);removeSelfCasts(original,plan.target);removeSelfCasts(actual,plan.target);if(!MixinInstructionFingerprint.hash(original).equals(MixinInstructionFingerprint.hash(actual)))continue;
         MethodNode cleaned=copy(helper);boolean removed=false;for(AbstractInsnNode i:cleaned.instructions.toArray())if(i instanceof MethodInsnNode call&&call.owner.equals(target.name)&&call.name.equals(handler.name)&&call.desc.equals(handler.desc)){AbstractInsnNode swap=previous(call),receiver=previous(swap);if(removed||swap==null||swap.getOpcode()!=SWAP||!(receiver instanceof VarInsnNode thisValue&&thisValue.getOpcode()==ALOAD&&thisValue.var==0))break;cleaned.instructions.remove(receiver);cleaned.instructions.remove(swap);cleaned.instructions.remove(call);removed=true;}
         if(removed&&MixinInstructionFingerprint.hash(cleaned).equals(MixinInstructionFingerprint.hash(plan.helper))){List<MethodNode>wrappers=target.methods.stream().filter(m->m.name.contains(plan.wrapper.name)&&m.desc.equals(plan.wrapper.desc)&&mergedFrom(m,plan.source)).toList();if(wrappers.size()!=1)continue;MethodNode wrapper=wrappers.getFirst(),expectedWrapper=copy(plan.wrapper);normalizeSelf(expectedWrapper,plan.source,plan.target,plan.handler,handler.name);if(!MixinInstructionFingerprint.hash(expectedWrapper).equals(MixinInstructionFingerprint.hash(wrapper)))continue;MethodContract helperContract=contract(new Decl(target.name,helper)),handlerContract=contract(new Decl(target.name,handler)),wrapperContract=contract(new Decl(target.name,wrapper));if((helper.access&(ACC_NATIVE|ACC_ABSTRACT|ACC_SYNCHRONIZED|ACC_STATIC))!=0||(helper.access&ACC_PRIVATE)==0||(handler.access&(ACC_NATIVE|ACC_ABSTRACT|ACC_SYNCHRONIZED|ACC_STATIC))!=0||(handler.access&ACC_PRIVATE)==0||(wrapper.access&(ACC_NATIVE|ACC_ABSTRACT|ACC_SYNCHRONIZED|ACC_STATIC))!=0||(wrapper.access&ACC_PRIVATE)==0)continue;KernelCrossHostPredicateContracts.source(plan.key,new Source(helperContract,List.of(handlerContract,wrapperContract),Map.of(helperContract,helper.access,handlerContract,handler.access,wrapperContract,wrapper.access)));}
     }}
+    /** A reading helper is woven as planned — no modifier in it — and so is its offload wrapper; the modifier stays on its native call. */
+    private static void certifyReader(ClassNode target,Installed plan){
+        List<MethodNode>helpers=target.methods.stream().filter(m->m.name.equals(plan.helper.name)&&m.desc.equals(plan.helper.desc)).toList();if(helpers.size()!=1)return;MethodNode helper=helpers.getFirst();
+        if(!MixinInstructionFingerprint.hash(copy(helper)).equals(MixinInstructionFingerprint.hash(plan.helper)))return;
+        List<MethodNode>wrappers=target.methods.stream().filter(m->m.name.contains(plan.wrapper.name)&&m.desc.equals(plan.wrapper.desc)&&mergedFrom(m,plan.source)).toList();if(wrappers.size()!=1)return;MethodNode wrapper=wrappers.getFirst(),expectedWrapper=copy(plan.wrapper);normalizeSelf(expectedWrapper,plan.source,plan.target,plan.handler,plan.handler);if(!MixinInstructionFingerprint.hash(expectedWrapper).equals(MixinInstructionFingerprint.hash(wrapper)))return;
+        if((helper.access&(ACC_NATIVE|ACC_ABSTRACT|ACC_SYNCHRONIZED|ACC_STATIC))!=0||(helper.access&ACC_PRIVATE)==0||(wrapper.access&(ACC_NATIVE|ACC_ABSTRACT|ACC_SYNCHRONIZED|ACC_STATIC))!=0||(wrapper.access&ACC_PRIVATE)==0)return;
+        MethodContract helperContract=contract(new Decl(target.name,helper)),wrapperContract=contract(new Decl(target.name,wrapper));
+        KernelCrossHostPredicateContracts.source(plan.key,new Source(helperContract,List.of(wrapperContract),Map.of(helperContract,helper.access,wrapperContract,wrapper.access),true));
+    }
     private static void removeSelfCasts(MethodNode method,String target){for(var i:method.instructions.toArray())if(i instanceof TypeInsnNode cast&&cast.getOpcode()==CHECKCAST&&cast.desc.equals(target)&&previous(cast)instanceof VarInsnNode self&&self.getOpcode()==ALOAD&&self.var==0)method.instructions.remove(cast);}
     private static String schemaKey(Schema s){List<String>parts=new ArrayList<>(List.of(s.actor(),s.interaction(),s.tracker(),s.collectorKey(),s.primaryMap().toString(),s.eyes().toString(),s.world().toString(),s.worldGetter().toString(),s.interactionGetter().toString(),s.query().toString(),s.airQuestion().toString(),s.ownedQuestion(),s.ownedDescriptor(),s.excluded().toString()));s.actorGuards().stream().map(c->"virtual:"+c).sorted().forEach(parts::add);s.definitions().stream().map(c->"direct:"+c).sorted().forEach(parts::add);s.flags().entrySet().stream().map(e->"flags:"+e.getKey()+":"+e.getValue()).sorted().forEach(parts::add);try{return HexFormat.of().formatHex(java.security.MessageDigest.getInstance("SHA-256").digest(String.join("\n",parts).getBytes(java.nio.charset.StandardCharsets.UTF_8)));}catch(java.security.NoSuchAlgorithmException impossible){throw new AssertionError(impossible);}}
     public static void observeDefinition(String binary,byte[]bytes){String owner=binary.replace('.','/');if(PLANS.values().stream().noneMatch(p->p.target.equals(owner)))return;try{ClassNode target=new ClassNode();new ClassReader(bytes).accept(target,0);certify(target);}catch(RuntimeException|LinkageError rejected){Caught.warn(rejected,"[Forbric/Mixin] final source predicate certification declined for %s",binary);}}

@@ -1,0 +1,1 @@
+package net.neoforged.neoforge.fluids;public class FluidType{public boolean isAir(){fixture.crosshostreader.Trace.add("nativeAny");return false;}public boolean canDrownIn(net.minecraft.world.entity.LivingEntity actor){fixture.crosshostreader.Trace.add("nativeDrown");return true;}}

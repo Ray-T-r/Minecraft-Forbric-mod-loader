@@ -1,0 +1,1 @@
+package net.forbric.kernel.runtime;public class KernelFabricFluidBehaviors{public static boolean enabled(){return true;}public static boolean ownsNeoType(net.neoforged.neoforge.fluids.FluidType type){return type instanceof net.neoforged.neoforge.fluids.OwnedType;}}

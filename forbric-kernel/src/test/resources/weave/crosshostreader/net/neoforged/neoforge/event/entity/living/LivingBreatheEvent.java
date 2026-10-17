@@ -1,0 +1,1 @@
+package net.neoforged.neoforge.event.entity.living;public class LivingBreatheEvent{public final boolean can;public final int consume;public LivingBreatheEvent(net.minecraft.world.entity.LivingEntity actor,boolean can,int refill,int consume){this.can=can;this.consume=consume;fixture.crosshostreader.Trace.add("event:"+can+":"+consume);}}

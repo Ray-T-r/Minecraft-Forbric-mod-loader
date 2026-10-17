@@ -110,6 +110,14 @@ import net.forbric.kernel.util.Caught;
  * which the carrier, computing its own, would never ask with); its class must not be defined yet (it is checked again when it
  * is). Every relayed method's class and the host must still be undefined when the plan is registered, or no island is planned
  * and the injector is left unbound, said once. {@code -Dforbric.nativeDecisionIsland=off} plans nothing.
+ *
+ * <p>A carrier that decides the same thing with questions of its own can still hear a changed answer through a copy of the
+ * native predicate that reads the island's answers ({@link #heard}): the cross-host predicate island evaluates the native
+ * predicate inside the carrier's hook, where the carrier's own question cannot express it (NeoForge asks a non-water fluid
+ * type whether an entity drowns in it; natively a drowning fluid takes water's branch, where breathing under water
+ * protects). For such a reader the island also offers, to its frame, what the injector's call answered — after the
+ * injector, with the receiver among the operands — and an injector that may change the answer gets its island although no
+ * carrier method asks the call again: the reader hears it, the injector itself runs once, at the native call.
  */
 public final class NativeDecisionIsland {
 	public static final String PROPERTY = "forbric.nativeDecisionIsland";
@@ -150,6 +158,8 @@ public final class NativeDecisionIsland {
 		final Map<String, Map<String, Relay>> relayable = new java.util.concurrent.ConcurrentHashMap<>();
 		/** Per island: every call it holds. */
 		final Map<String, Set<String>> members = new java.util.concurrent.ConcurrentHashMap<>();
+		/** Per island: the calls whose answers it offers for a reader of the native predicate ({@link #heard}). */
+		final Map<String, Set<String>> heard = new java.util.concurrent.ConcurrentHashMap<>();
 	}
 
 	private static String island(Plan plan) {
@@ -267,6 +277,79 @@ public final class NativeDecisionIsland {
 	}
 
 	/**
+	 * Lets a reader of the native predicate hear what {@code handler}'s call answers, for a {@code handler} whose answer no carrier
+	 * method asks again: the island that holds the call — one another injector planned, or one planned now for this injector —
+	 * offers that answer to its frame, after the injector. True when an island holds the call and offers its answer; false, with
+	 * nothing registered, when no island can hold it (the injector is then left to the adapters that move it, as before), when
+	 * the call is there for another reason than an island, or when the host is already defined.
+	 *
+	 * <p>The call must be the one native call the point selects, made on plain reads (a local, a constant, a final static
+	 * field), so the reader, making it on the same operands inside the frame, finds the answer.
+	 */
+	public static boolean heard(ClassNode mixin, MethodNode handler, Function<String, ClassNode> code, BiFunction<Ecosystem, String, ClassNode> natives,
+			ForbricClassLoader loader) {
+		if (!enabled() || mixin == null || handler == null || loader == null || code == null || natives == null) return false;
+		Ecosystem ecosystem = MixinStubRebind.ecosystemOf(mixin.name);
+		AnnotationNode injector = MixinFit.injectorOf(handler);
+		List<String> targets = MixinFit.mixinTargets(mixin);
+		if (ecosystem == null || injector == null || MixinFit.value(injector, "slice") != null || targets.size() != 1) return false;
+		List<AnnotationNode> ats = MixinFit.atNodes(injector);
+		if (ats.size() != 1 || !"INVOKE".equals(MixinFit.asString(MixinFit.value(ats.getFirst(), "value")))) return false;
+		String target = targets.getFirst();
+		ClassNode original = natives.apply(ecosystem, target), merged = code.apply(target);
+		if (original == null || merged == null) return false;
+		MethodNode was = MixinTargetSelectors.one(handler, original), host = MixinTargetSelectors.one(handler, merged);
+		if (was == null || host == null || !was.name.equals(host.name) || !was.desc.equals(host.desc) || host.instructions.size() == 0) return false;
+		List<MethodInsnNode> wanted = MixinCallbackShape.calls(ats.getFirst(), was);
+		String member = MixinCallbackShape.invoked(ats.getFirst(), was);
+		if (wanted.size() != 1 || member == null || Type.getReturnType(wanted.getFirst().desc) == Type.VOID_TYPE) return false;
+		Registry registry = registry(loader);
+		Plan plan = new Plan(target, host.name + host.desc, ecosystem, original.name, member, mixin.name, handler.name);
+		String key = island(plan);
+		Runnable hear = () -> {
+			if (!registry.plans.contains(plan)) registry.plans.add(plan);
+			registry.heard.computeIfAbsent(key, k -> java.util.concurrent.ConcurrentHashMap.newKeySet()).add(member);
+		};
+		if (MixinCallbackShape.calls(ats.getFirst(), host).size() >= wanted.size()) {
+			// Present: heard only where an island holds it, whose operands are plain reads the reader repeats.
+			if (!registry.members.getOrDefault(key, Set.of()).contains(member) || !plainOperands(was, wanted.getFirst(), code)) return false;
+			if (registry.heard.getOrDefault(key, Set.of()).contains(member) && registry.plans.contains(plan)) return true;
+			return registerAll(loader, List.of(target), 0, hear);
+		}
+		if (MergedBaseUncalledMethods.neverRuns(merged, host, ecosystem) != null || MixinStubRebind.isCarrierStub(merged, host)) return false;
+		Outcome outcome = derive(merged, host, original, was, union(registry, plan), code);
+		if (outcome.island() == null || outcome.island().relayable().get(member) == null && outcome.island().carried().contains(member)
+				|| !plainOperands(was, wanted.getFirst(), code)) return false;
+		if (!register(loader, registry, plan, outcome.island(), hear)) return false;
+		ForbricLog.info("[Forbric/Mixin] %s.%s: %s is asked in %s.%s again — the merged game decides that stretch in %s; the native decisions "
+				+ "run first, under %s's conditions, and what the call answered there is what the predicate the carrier decides with reads",
+				mixin.name.replace('/', '.'), handler.name, NativeCallInlining.readable(member), target.replace('/', '.'), host.name,
+				carrierOf(host, outcome.island()), ecosystem);
+		return true;
+	}
+
+	/** Every operand of {@code call} in {@code was} is one plain read: a local, a constant, or a final static field of a class at hand. */
+	private static boolean plainOperands(MethodNode was, MethodInsnNode call, Function<String, ClassNode> code) {
+		Frame<SourceValue>[] sources = sources("island", was);
+		if (sources == null) return false;
+		Frame<SourceValue> frame = sources[was.instructions.indexOf(call)];
+		if (frame == null) return false;
+		int count = Type.getArgumentTypes(call.desc).length + (call.getOpcode() == Opcodes.INVOKESTATIC ? 0 : 1);
+		for (int k = 0; k < count; k++) {
+			SourceValue value = frame.getStack(frame.getStackSize() - count + k);
+			if (value.insns.size() != 1) return false;
+			AbstractInsnNode producer = value.insns.iterator().next();
+			if (producer instanceof VarInsnNode load && load.getOpcode() >= Opcodes.ILOAD && load.getOpcode() <= Opcodes.ALOAD || constant(producer)) continue;
+			if (!(producer instanceof FieldInsnNode field && field.getOpcode() == Opcodes.GETSTATIC)) return false;
+			ClassNode owner;
+			try { owner = code.apply(field.owner); } catch (RuntimeException unreadable) { Caught.warn(unreadable, "[Forbric/Mixin] could not read %s to see whether %s is final; taken as not", field.owner, field.name); owner = null; }
+			if (owner == null || owner.fields.stream().noneMatch(f -> f.name.equals(field.name) && f.desc.equals(field.desc)
+					&& (f.access & (Opcodes.ACC_STATIC | Opcodes.ACC_FINAL)) == (Opcodes.ACC_STATIC | Opcodes.ACC_FINAL))) return false;
+		}
+		return true;
+	}
+
+	/**
 	 * Says so where an injector that may change a call's answer binds a call of the island that no carrier method asks again:
 	 * its answer steers the native decisions the island repeats, not the carrier's own decision, which the carrier makes with
 	 * calls of its own. A wrap proved to hand back what the call answered changes no answer and is not mentioned.
@@ -309,13 +392,21 @@ public final class NativeDecisionIsland {
 		return calls.isEmpty() ? "its own code" : String.join(", ", calls);
 	}
 
+	private static final Runnable NOTHING_ELSE = () -> { };
+
 	private static boolean register(ForbricClassLoader loader, Registry registry, Plan plan, Island island) {
-		for (Plan existing : registry.plans) if (existing.equals(plan)) return true;
+		return register(loader, registry, plan, island, NOTHING_ELSE);
+	}
+
+	/** Registers {@code plan} and its island, and runs {@code also} in the same registration (before any of their classes is defined). */
+	private static boolean register(ForbricClassLoader loader, Registry registry, Plan plan, Island island, Runnable also) {
+		for (Plan existing : registry.plans) if (existing.equals(plan)) return also == NOTHING_ELSE || registerAll(loader, List.of(plan.host()), 0, also);
 		List<String> owners = new ArrayList<>(new TreeSet<>(island.relays().values().stream().map(Relay::owner).toList()));
 		if (!owners.contains(plan.host())) owners.add(plan.host());
 		Collections.sort(owners);
 		return registerAll(loader, owners, 0, () -> {
-			registry.plans.add(plan);
+			also.run();
+			if (!registry.plans.contains(plan)) registry.plans.add(plan);
 			registry.relays.addAll(island.relays().values());
 			registry.members.merge(island(plan), island.members(), (a, b) -> {
 				Set<String> both = new LinkedHashSet<>(a);
@@ -492,6 +583,12 @@ public final class NativeDecisionIsland {
 
 	/** The instructions that hand {@code call} each operand, when every one is a single plain read in the island; else null. */
 	private static List<AbstractInsnNode> operands(Frame<SourceValue>[] sources, MethodNode was, MethodInsnNode call, List<AbstractInsnNode> n, int s) {
+		return operands(sources, was, call, n, s, false);
+	}
+
+	/** As above; with {@code statics}, a static field read in the island is a plain read too (its finality is checked when planned). */
+	private static List<AbstractInsnNode> operands(Frame<SourceValue>[] sources, MethodNode was, MethodInsnNode call, List<AbstractInsnNode> n, int s,
+			boolean statics) {
 		Frame<SourceValue> frame = sources[was.instructions.indexOf(call)];
 		if (frame == null) return null;
 		int count = Type.getArgumentTypes(call.desc).length + (call.getOpcode() == Opcodes.INVOKESTATIC ? 0 : 1);
@@ -501,7 +598,8 @@ public final class NativeDecisionIsland {
 			if (value.insns.size() != 1) return null;
 			AbstractInsnNode producer = value.insns.iterator().next();
 			int at = n.indexOf(producer);
-			if (at < s || !(producer instanceof VarInsnNode load && load.getOpcode() >= Opcodes.ILOAD && load.getOpcode() <= Opcodes.ALOAD || constant(producer))) return null;
+			if (at < s || !(producer instanceof VarInsnNode load && load.getOpcode() >= Opcodes.ILOAD && load.getOpcode() <= Opcodes.ALOAD || constant(producer)
+					|| statics && producer instanceof FieldInsnNode field && field.getOpcode() == Opcodes.GETSTATIC)) return null;
 			out.add(producer);
 		}
 		return out;
@@ -572,9 +670,10 @@ public final class NativeDecisionIsland {
 			Map<Integer, Relay> kept = new LinkedHashMap<>();
 			for (Map.Entry<Integer, Relay> relay : island.relays().entrySet()) if (registry.relays.contains(relay.getValue())) kept.put(relay.getKey(), relay.getValue());
 			MethodNode work = NativeCallInlining.copy(host);
+			Set<Integer> heardAt = heardCalls(was, island, registry.heard.getOrDefault(first.host() + "." + first.method() + "|" + first.ecosystem(), Set.of()), binary);
 			try {
 				apply(work, was, new Island(island.start(), island.end(), island.resume(), island.slots(), island.fresh(), kept, island.members(),
-						island.relayable(), island.carried()));
+						island.relayable(), island.carried()), heardAt);
 			} catch (RuntimeException unappliable) {
 				Caught.warn(unappliable, "[Forbric/Mixin] %s.%s: the native decision island for %s.%s could not be put in; the method stays as merged",
 						first.source().replace('/', '.'), first.handler(), binary, host.name);
@@ -608,8 +707,39 @@ public final class NativeDecisionIsland {
 		}
 	}
 
+	/**
+	 * The calls of {@code island} (indices among {@code was}'s real instructions) whose answers it offers a reader: each heard
+	 * member made exactly once in the island, on operands the offer can repeat. A member made more than once is not offered
+	 * (the reader could not tell the answers apart) and is said once; its reader then leaves the decision to the carrier.
+	 */
+	private static Set<Integer> heardCalls(MethodNode was, Island island, Set<String> heard, String binary) {
+		if (heard.isEmpty()) return Set.of();
+		List<AbstractInsnNode> n = real(was);
+		Map<String, List<Integer>> at = new LinkedHashMap<>();
+		for (int i = island.start(); i <= island.end() && i < n.size(); i++)
+			if (n.get(i) instanceof MethodInsnNode call && heard.contains(member(call))) at.computeIfAbsent(member(call), k -> new ArrayList<>()).add(i);
+		Frame<SourceValue>[] sources = sources("island", was);
+		Set<Integer> out = new LinkedHashSet<>();
+		for (Map.Entry<String, List<Integer>> entry : at.entrySet()) {
+			if (entry.getValue().size() != 1 || sources == null
+					|| operands(sources, was, (MethodInsnNode) n.get(entry.getValue().getFirst()), n, island.start(), true) == null) {
+				ForbricLog.warn("[Forbric/Mixin] %s: the native decision island does not offer what %s answered — %s", binary.replace('/', '.'),
+						NativeCallInlining.readable(entry.getKey()), entry.getValue().size() != 1 ? "it is asked " + entry.getValue().size() + " times there"
+								: "its operands are not plain reads");
+				continue;
+			}
+			out.add(entry.getValue().getFirst());
+		}
+		return out;
+	}
+
 	/** Puts {@code island} into {@code host}: the copied decisions before the stretch, the relay frame closed after it. */
 	static void apply(MethodNode host, MethodNode was, Island island) {
+		apply(host, was, island, Set.of());
+	}
+
+	/** As {@link #apply(MethodNode, MethodNode, Island)}, offering what the calls at {@code heard} answered, receiver among the operands. */
+	static void apply(MethodNode host, MethodNode was, Island island, Set<Integer> heard) {
 		List<AbstractInsnNode> n = real(was), m = real(host);
 		Map<LabelNode, Integer> nl = labels(was, n), ml = labels(host, m);
 		int token = island.fresh(), thrown = island.fresh() + 1;
@@ -635,6 +765,7 @@ public final class NativeDecisionIsland {
 				} else code.add(insn.clone(copies));
 				Relay relay = island.relays().get(at);
 				if (relay != null) code.add(offer((MethodInsnNode) insn, relay, was, n, island));
+				else if (heard.contains(at)) code.add(offer((MethodInsnNode) insn, member((MethodInsnNode) insn), was, n, island));
 			}
 			if (insn == last) break;
 		}
@@ -670,6 +801,35 @@ public final class NativeDecisionIsland {
 		int target = index(nl, label);
 		for (Map.Entry<LabelNode, LabelNode> entry : copies.entrySet()) if (index(nl, entry.getKey()) == target) return entry.getValue();
 		throw new IllegalStateException("island jump target not copied");
+	}
+
+	/**
+	 * After {@code call}, whose answer is on the stack — what any injector on the call made of it — offer it under {@code key},
+	 * with every operand the call was handed (its receiver first, if it has one), to the open frame.
+	 */
+	private static InsnList offer(MethodInsnNode call, String key, MethodNode was, List<AbstractInsnNode> n, Island island) {
+		InsnList out = new InsnList();
+		Type answer = Type.getReturnType(call.desc);
+		out.add(new InsnNode(answer.getSize() == 2 ? Opcodes.DUP2 : Opcodes.DUP));
+		box(out, answer);
+		out.add(new LdcInsnNode(key));
+		List<AbstractInsnNode> operands = operands(sources("island", was), was, call, n, island.start(), true);
+		List<Type> types = new ArrayList<>();
+		if (call.getOpcode() != Opcodes.INVOKESTATIC) types.add(Type.getObjectType(call.owner));
+		types.addAll(List.of(Type.getArgumentTypes(call.desc)));
+		push(out, types.size());
+		out.add(new TypeInsnNode(Opcodes.ANEWARRAY, "java/lang/Object"));
+		for (int i = 0; i < types.size(); i++) {
+			out.add(new InsnNode(Opcodes.DUP));
+			push(out, i);
+			AbstractInsnNode producer = operands.get(i);
+			if (producer instanceof VarInsnNode load) out.add(new VarInsnNode(load.getOpcode(), island.slots().get(load.var)));
+			else out.add(producer.clone(Map.of()));
+			box(out, types.get(i));
+			out.add(new InsnNode(Opcodes.AASTORE));
+		}
+		out.add(new MethodInsnNode(Opcodes.INVOKESTATIC, RELAY, "offer", "(Ljava/lang/Object;Ljava/lang/String;[Ljava/lang/Object;)V", false));
+		return out;
 	}
 
 	/** After {@code call}, whose answer is on the stack: offer it, with the operands the call was handed, to the open frame. */

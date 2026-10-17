@@ -1,0 +1,1 @@
+package org.marsh.reed;public final class Pools{public static final net.minecraft.tags.TagKey SOAK=new net.minecraft.tags.TagKey("soak");public static boolean drowns(net.minecraft.world.entity.LivingEntity body){fixture.crosshostreader.Trace.add("reed:drowns");return true;}private Pools(){}}

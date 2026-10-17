@@ -428,9 +428,12 @@ public final class ForbricMixinService
 					ClassNode original = NativeGameReferences.reference(net.forbric.api.Ecosystem.NEOFORGE, owner);
 					return original != null ? original : NativeGameReferences.runtime(net.forbric.api.Ecosystem.NEOFORGE, owner);
 				});
+		// The modifier stays on its native call where a native decision island can hold it, and the predicate copy the carrier's
+		// hook evaluates reads what the call answered there.
 		MixinCrossHostPredicateIsland.adapt(node, this::mergedBaseNodeWithCode,
 				owner -> NativeGameReferences.reference(MixinStubRebind.ecosystemOf(node.name), owner),
-				ForbricMixinService::registerBeforeDefinition);
+				ForbricMixinService::registerBeforeDefinition,
+				(mixin, handler) -> NativeDecisionIsland.heard(mixin, handler, this::mergedBaseNodeWithCode, NativeGameReferences::reference, loader()));
 		MixinPredicateDelegateAdapter.adapt(node, MixinStubRebind.ecosystemOf(node.name), this::mergedBaseNodeWithCode);
 		MixinResourceContinuationAdapter.adapt(node, MixinStubRebind.ecosystemOf(node.name), this::mergedBaseNodeWithCode);
 		MixinUnusedArgumentObserverAdapter.adapt(node, MixinStubRebind.ecosystemOf(node.name), this::mergedBaseNodeWithCode);

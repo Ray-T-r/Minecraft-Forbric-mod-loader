@@ -1,0 +1,4 @@
+package net.neoforged.neoforge.common;public class CommonHooks{public static void onLivingBreathe(net.minecraft.world.entity.LivingEntity actor,net.minecraft.server.level.ServerLevel world,int refill,int consume){
+ var interaction=actor.getFluidInteraction();boolean primary=!interaction.query(actor,(entity,type,height)->!type.isAir())||actor.level().getBlockState(net.minecraft.core.BlockPos.containing(actor.getX(),actor.getEyeY(),actor.getZ())).is(net.minecraft.world.level.block.Blocks.BUBBLE_COLUMN);boolean can=primary;
+ if(!primary){if(!net.minecraft.world.effect.MobEffectUtil.hasWaterBreathing(actor)&&interaction.query(actor,(entity,type,height)->entity.canDrownInFluidType(type))&&!(actor instanceof net.minecraft.world.entity.player.Player player&&player.getAbilities().invulnerable)){}else{can=true;consume=0;}}
+ var event=new net.neoforged.neoforge.event.entity.living.LivingBreatheEvent(actor,can,refill,consume);}}

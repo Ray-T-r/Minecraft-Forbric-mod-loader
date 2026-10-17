@@ -1,0 +1,1 @@
+package net.neoforged.neoforge.fluids;/** The kernel-owned type of a mod fluid whose behaviour says a body drowns in it. */public class OwnedType extends FluidType{public boolean canDrownIn(net.minecraft.world.entity.LivingEntity actor){fixture.crosshostreader.Trace.add("ownedDrown");return true;}}

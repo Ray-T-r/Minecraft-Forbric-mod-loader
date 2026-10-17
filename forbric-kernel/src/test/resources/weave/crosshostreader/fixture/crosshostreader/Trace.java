@@ -1,0 +1,1 @@
+package fixture.crosshostreader;public final class Trace{public static final java.util.List<String>LINES=new java.util.ArrayList<>();public static void add(String line){LINES.add(line);}private Trace(){}}

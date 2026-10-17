@@ -20,7 +20,12 @@ public final class KernelCrossHostPredicateContracts {
                          String ownedQuestion,String ownedDescriptor,Map<MethodContract,Integer>flags,List<SpecialType>excluded){
         public Schema{actorGuards=List.copyOf(actorGuards);definitions=List.copyOf(definitions);flags=Map.copyOf(flags);excluded=List.copyOf(excluded);}
     }
-    public record Source(MethodContract helper,List<MethodContract>guest,Map<MethodContract,Integer>flags){public Source{guest=List.copyOf(guest);flags=Map.copyOf(flags);}}
+    /**
+     * The final source helper and the guest methods around it. A {@code reader} helper makes no tag query of its own: it reads the
+     * modifier's answer from the native decision island, so the physical tag view the copied predicate would query is not its witness.
+     */
+    public record Source(MethodContract helper,List<MethodContract>guest,Map<MethodContract,Integer>flags,boolean reader){public Source{guest=List.copyOf(guest);flags=Map.copyOf(flags);}
+        public Source(MethodContract helper,List<MethodContract>guest,Map<MethodContract,Integer>flags){this(helper,guest,flags,false);}}
     private static final Map<String,Schema>schemas=new ConcurrentHashMap<>();
     private static final Map<String,Source>sources=new ConcurrentHashMap<>();
     private static final Map<String,MethodContract>hosts=new ConcurrentHashMap<>();
@@ -43,8 +48,8 @@ public final class KernelCrossHostPredicateContracts {
             for(MethodContract method:schema.actorGuards())if(!dispatch(actor,method))return decline(actor,key,"native concrete/changed actor predicate retained: "+method+" actual="+actualDispatch(actor,method),true);
             for(MethodContract method:schema.definitions()){Class<?> declaration=Class.forName(method.owner(),false,loader);if(declaration.getClassLoader()!=loader||!DefinedMethodContracts.observed(loader,method))return decline(actor,key,"final predicate dependency changed or missing",false);}
             Field worldField=field(schema.world(),loader);if(worldField.get(actor)!=world)return decline(actor,key,"captured source world differs from current default world",true);
-            var physical=KernelTagSourceContracts.schema(schema.collectorKey());if(physical==null||!KernelTagSourceContracts.validates(interaction,schema.collectorKey()))return decline(actor,key,"physical source tag view witness is unavailable",false);
-            Class<?> owner=Class.forName(physical.owner().replace('/','.'),false,loader);Field ready=owner.getDeclaredField(physical.readyField());ready.setAccessible(true);Field sourceMap=owner.getDeclaredField(physical.mapField());sourceMap.setAccessible(true);if(!ready.getBoolean(interaction)||sourceMap.get(interaction)==null)return decline(actor,key,"physical source view is not ready",false);
+if(!source.reader()){            var physical=KernelTagSourceContracts.schema(schema.collectorKey());if(physical==null||!KernelTagSourceContracts.validates(interaction,schema.collectorKey()))return decline(actor,key,"physical source tag view witness is unavailable",false);
+            Class<?> owner=Class.forName(physical.owner().replace('/','.'),false,loader);Field ready=owner.getDeclaredField(physical.readyField());ready.setAccessible(true);Field sourceMap=owner.getDeclaredField(physical.mapField());sourceMap.setAccessible(true);if(!ready.getBoolean(interaction)||sourceMap.get(interaction)==null)return decline(actor,key,"physical source view is not ready",false);}
             Map<?,?> primary=(Map<?,?>)field(schema.primaryMap(),loader).get(interaction);Class<?> tracker=Class.forName(schema.tracker().replace('/','.'),false,loader);Field eyes=field(schema.eyes(),loader);
             for(var entry:primary.entrySet()){Object value=entry.getValue();if(value==null||value.getClass()!=tracker)return decline(actor,key,"native concrete tracker retained",true);if(!eyes.getBoolean(value))continue;Object type=entry.getKey();int ownedStatus=owned.applyAsInt(type);if(ownedStatus==0)return decline(actor,key,"native concrete fluid type retained",true);if(ownedStatus<0)return decline(actor,key,"owned type default changed or missing",false);for(SpecialType special:schema.excluded()){Object holder=field(special.holder(),loader).get(null);Object excluded=pureProjection(holder,special.projection(),special.descriptor(),loader);if(excluded==null)return decline(actor,key,"native special type projection changed or missing: "+projectionIdentity(holder,special),false);if(type==excluded)return decline(actor,key,"native special fluid type retained",true);}
                 if(!DefinedMethodContracts.validates(type,schema.airQuestion()))return decline(actor,key,"native type default changed or missing",true);}

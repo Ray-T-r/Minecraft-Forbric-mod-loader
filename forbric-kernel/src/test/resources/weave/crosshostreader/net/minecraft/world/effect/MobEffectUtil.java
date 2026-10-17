@@ -1,0 +1,1 @@
+package net.minecraft.world.effect;public class MobEffectUtil{public static boolean hasWaterBreathing(net.minecraft.world.entity.LivingEntity actor){fixture.crosshostreader.Trace.add("effect");return false;}}

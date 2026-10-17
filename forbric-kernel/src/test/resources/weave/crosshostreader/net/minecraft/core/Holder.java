@@ -1,0 +1,1 @@
+package net.minecraft.core;public interface Holder{Object value();public static class Reference implements Holder{public Object value;public Reference(Object value){this.value=value;}public Object value(){if(value==null)throw new IllegalStateException("unbound holder");return value;}}}

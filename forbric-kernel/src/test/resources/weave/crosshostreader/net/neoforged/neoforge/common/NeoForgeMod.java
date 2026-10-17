@@ -1,0 +1,1 @@
+package net.neoforged.neoforge.common;public class NeoForgeMod{public static final net.minecraft.core.Holder.Reference REFERENCE=new net.minecraft.core.Holder.Reference(new net.neoforged.neoforge.fluids.FluidType());public static final net.minecraft.core.Holder WATER_TYPE=new net.neoforged.neoforge.registries.DeferredHolder(REFERENCE);}

@@ -1,0 +1,1 @@
+package net.minecraft.world.level;public class Level{public net.minecraft.world.level.block.state.BlockState getBlockState(net.minecraft.core.BlockPos pos){return new net.minecraft.world.level.block.state.BlockState();}}
