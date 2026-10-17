@@ -42,14 +42,14 @@ import org.objectweb.asm.tree.analysis.Analyzer;
 import org.objectweb.asm.tree.analysis.BasicVerifier;
 
 /**
- * fabric-api's key-mapping registry rejects registration that is too LATE by reading
- * {@code Minecraft.getInstance().options}, and so it also dies — on a {@code NullPointerException} — when
- * registration is too EARLY, which is the one case that is provably safe. Under Forbric a guest mixin that waits
- * for the first registry freeze wakes a mod's {@code <clinit>} before {@code Minecraft} exists, so the early case
- * is reachable here and was a whole-client crash in {@code Bootstrap} (Flashback).
+ * A mod's key-mapping registry rejects registration that is too LATE by reading {@code Minecraft.getInstance().options}
+ * (fabric-api's does), and so it also dies — on a {@code NullPointerException} — when registration is too EARLY, which
+ * is the one case that is provably safe. Under Forbric a guest mixin that waits for the first registry freeze wakes a
+ * mod's {@code <clinit>} before {@code Minecraft} exists, so the early case is reachable here and was a whole-client
+ * crash in {@code Bootstrap} (Flashback).
  *
- * <p>Behaviour runs on a stand-in with the real names, descriptors and instruction shape — loading the real
- * fabric-api module would drag in {@code KeyMapping}, {@code Options} and half the client. The three states that
+ * <p>Behaviour runs on a stand-in that shares no name with fabric-api ({@code org.tallyman.keys.Bindings}) but has its
+ * instruction shape: the rule is about the read, in any mod's class. The three states that
  * matter are all exercised through a real invocation of the transformed method, not asserted against bytecode
  * text: no instance at all, an instance whose options are not built, and an instance whose options ARE built —
  * the last one still has to throw, or the repair has traded one silent failure for another.
@@ -57,7 +57,7 @@ import org.objectweb.asm.tree.analysis.BasicVerifier;
 @ExecutesInjector(EarlyKeyMappingRegistrationInjector.class)
 @org.junit.jupiter.api.parallel.ResourceLock("system-properties")
 class EarlyKeyMappingRegistrationInjectorTest {
-	private static final String IMPL = "net.fabricmc.fabric.impl.client.keymapping.KeyMappingRegistryImpl";
+	private static final String IMPL = "org.tallyman.keys.Bindings";
 	private static final String IMPL_INTERNAL = IMPL.replace('.', '/');
 	private static final String MINECRAFT = "net/minecraft/client/Minecraft";
 	private static final String OPTIONS = "net/minecraft/client/Options";
@@ -140,10 +140,19 @@ class EarlyKeyMappingRegistrationInjectorTest {
 	}
 
 	@Test
-	void anotherClassIsNotTouched() {
+	void theGamesOwnClassesAreNotTouched() {
 		byte[] in = standIn();
-		assertSame(in, new EarlyKeyMappingRegistrationInjector()
-				.transform("net.minecraft.client.Minecraft", in, CTX));
+		for (String platform : List.of("net.minecraft.client.Minecraft", "net.neoforged.neoforge.client.Keys",
+				"net.minecraftforge.client.Keys", "com.mojang.blaze3d.Keys")) {
+			assertSame(in, new EarlyKeyMappingRegistrationInjector().transform(platform, in, CTX), platform);
+		}
+	}
+
+	@Test
+	void anyOtherModsClassWithTheReadIsGuardedToo() throws Exception {
+		Fixture f = new Fixture(new EarlyKeyMappingRegistrationInjector().transform("com.example.other.Registry", standIn(), CTX));
+		Object mapping = f.newMapping();
+		assertSame(mapping, f.register(mapping), "the same read in any mod's class, whatever it is called");
 	}
 
 	@Test
