@@ -235,6 +235,7 @@ public final class VanillaDamageReadInjector implements ClassTransformer {
 		// vanilla's argument while the absorption is spent and the current absorption otherwise (a NeoForge reduction may have
 		// left some), so it never changes state — and an injector at the call is asked there too, as natively.
 		MethodInsnNode absorption = (MethodInsnNode) code.get(call);
+		if (!secondAbsorptionCall(owner, method)) return true;
 		for (int i = store + 1; i + 5 < code.size(); i++) {
 			if (load(code.get(i), Opcodes.ALOAD, 0) && load(code.get(i + 1), Opcodes.ALOAD, 0)
 					&& code.get(i + 2) instanceof MethodInsnNode health && health.name.equals("getHealth") && health.desc.equals("()F")
@@ -251,6 +252,25 @@ public final class VanillaDamageReadInjector implements ClassTransformer {
 			}
 		}
 		return true;
+	}
+
+	/**
+	 * Whether the body Fabric's and MinecraftForge's mods were compiled against (the vanilla native reference) calls
+	 * setAbsorptionAmount again after setHealth in this method: LivingEntity's does, Player's override does not. Without that
+	 * reference at hand, no second call is made.
+	 */
+	static boolean secondAbsorptionCall(String owner, MethodNode method) {
+		org.objectweb.asm.tree.ClassNode vanilla = net.forbric.kernel.mixin.NativeGameReferences.reference(net.forbric.api.Ecosystem.FABRIC, owner);
+		MethodNode was = vanilla == null ? null : vanilla.methods.stream().filter(m -> m.name.equals(method.name) && m.desc.equals(method.desc)).findFirst().orElse(null);
+		if (was == null) return false;
+		int calls = 0, health = -1, last = -1, at = 0;
+		for (AbstractInsnNode insn : was.instructions) {
+			if (insn.getOpcode() < 0) continue;
+			if (insn instanceof MethodInsnNode m && m.name.equals("setAbsorptionAmount") && m.desc.equals("(F)V")) { calls++; last = at; }
+			if (insn instanceof MethodInsnNode m && m.name.equals("setHealth") && m.desc.equals("(F)V") && calls == 1) health = at;
+			at++;
+		}
+		return calls == 2 && health >= 0 && health < last;
 	}
 
 	/** {@code (DamageContainer) this.damageContainers.peek()}, the field spelt as the body spells it. */

@@ -44,14 +44,17 @@ class AbsorbedDamageReadWeaveTest {
 		try (Stream<Path> walk = Files.walk(SOURCES)) {
 			sources = walk.filter(p -> p.toString().endsWith(".java") && !SOURCES.relativize(p).startsWith("native")).sorted().toList();
 		}
-		assertEquals(11, sources.size(), "the fixture's sources changed; update this test with it: " + sources);
+		assertEquals(13, sources.size(), "the fixture's sources changed; update this test with it: " + sources);
 		List<Path> current = new ArrayList<>(sources);
 		current.add(Path.of("src/runtime/java/net/forbric/kernel/runtime/KernelLivingDamage.java"));
 		List<Path> natives = new ArrayList<>(current);
-		natives.remove(SOURCES.resolve("net/minecraft/world/entity/LivingEntity.java"));
-		natives.add(SOURCES.resolve("native/net/minecraft/world/entity/LivingEntity.java"));
+		for (String type : List.of("net/minecraft/world/entity/LivingEntity.java", "net/minecraft/world/entity/player/Player.java")) {
+			natives.remove(SOURCES.resolve(type));
+			natives.add(SOURCES.resolve("native").resolve(type));
+		}
 		Path nativeFixture = WeaveHarness.fixture(work, "absorbed-native", natives, Map.of(CONFIG, SOURCES.resolve(CONFIG)), List.of("-g"));
-		fixture = WeaveHarness.fixture(work, "absorbed", current, Map.of(CONFIG, SOURCES.resolve(CONFIG)), List.of("-g"));
+		fixture = NativeWeaveReferences.with(work, WeaveHarness.fixture(work, "absorbed", current, Map.of(CONFIG, SOURCES.resolve(CONFIG)), List.of("-g")),
+				NativeWeaveReferences.classes(nativeFixture));
 		natively = run(nativeFixture, "native", List.of(), Map.of());
 		merged = run(fixture, "merged", List.of(VanillaDamageReadInjector.class), Map.of());
 		off = run(fixture, "off", List.of(VanillaDamageReadInjector.class), Map.of(VanillaDamageReadInjector.ABSORBED_PROPERTY, "off"));
@@ -63,7 +66,10 @@ class AbsorbedDamageReadWeaveTest {
 		assertEquals(hits(natively), hits(merged), "native " + hits(natively) + "\nmerged " + hits(merged) + "\n" + merged.describe());
 		assertTrue(hits(natively).contains("halved: mend:4.0, absorption=0.0, mend:2.0, absorption=0.0, health=18.0, end health=18.0 absorption=0.0"),
 				hits(natively) + "\n" + natively.describe());
+		assertTrue(hits(natively).contains("player-halved: mend-player:4.0, absorption=0.0, health=18.0, end health=18.0 absorption=0.0"),
+				"the player's override calls it once, natively and merged: " + hits(natively));
 		WeaveHarness.assertWovenAndVerified(merged, "net/minecraft/world/entity/LivingEntity", fixture);
+		WeaveHarness.assertWovenAndVerified(merged, "net/minecraft/world/entity/player/Player", fixture);
 	}
 
 	@Test void theControlFlipsTheAssertions() {

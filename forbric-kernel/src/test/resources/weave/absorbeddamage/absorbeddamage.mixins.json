@@ -1,1 +1,1 @@
-{"required": true, "package": "org.quill.mend.mixin", "compatibilityLevel": "JAVA_21", "mixins": ["MendMixin"], "injectors": {"defaultRequire": 1}}
+{"required": true, "package": "org.quill.mend.mixin", "compatibilityLevel": "JAVA_21", "mixins": ["MendMixin", "MendPlayerMixin"], "injectors": {"defaultRequire": 1}}
