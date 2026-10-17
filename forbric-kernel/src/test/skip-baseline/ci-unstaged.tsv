@@ -653,6 +653,7 @@ test	net.forbric.kernel.mixin.MergedBaseDiscoveryFamilyTest	theFullSpellingIsRef
 test	net.forbric.kernel.mixin.MergedBaseDiscoveryFamilyTest	withNoDeclaringFamilyTheShortenedPointIsNotTheProtocol()	[fixture:staged] the staged merged base and its native-reference index: $ROOT/forbric-loader/run/merged-base/patched-mc-merged-26.2.jar
 test	net.forbric.kernel.mixin.MergedBaseGateSpellingTest	aDeferredFreezeWrittenAnotherWayIsLetThroughWhenItCanBeAdapted()	[fixture:staged] the staged merged base: $ROOT/forbric-loader/run/merged-base/patched-mc-merged-26.2.jar
 test	net.forbric.kernel.mixin.MergedBaseGateSpellingTest	aDeferredFreezeWrittenAnotherWayIsRefusedWhenItCannotBeAdapted()	[fixture:staged] the staged merged base: $ROOT/forbric-loader/run/merged-base/patched-mc-merged-26.2.jar
+test	net.forbric.kernel.mixin.MergedBaseGateSpellingTest	aLoaderWrapOfALiveCallIsLetThrough()	[fixture:staged] the staged merged base: $ROOT/forbric-loader/run/merged-base/patched-mc-merged-26.2.jar
 test	net.forbric.kernel.mixin.MergedBaseGateSpellingTest	aLoaderWrapWrittenAnotherWayIsLetThroughWhenItCanBeAdapted()	[fixture:staged] the staged merged base: $ROOT/forbric-loader/run/merged-base/patched-mc-merged-26.2.jar
 test	net.forbric.kernel.mixin.MergedBaseGateSpellingTest	aLoaderWrapWrittenAnotherWayIsRefusedWhenItCannotBeAdapted()	[fixture:staged] the staged merged base: $ROOT/forbric-loader/run/merged-base/patched-mc-merged-26.2.jar
 test	net.forbric.kernel.mixin.MergedBaseGateSpellingTest	aShortFreezePointThatAlsoNamesAnotherCallIsNotTheProtocol()	[fixture:staged] the staged merged base: $ROOT/forbric-loader/run/merged-base/patched-mc-merged-26.2.jar
@@ -1331,10 +1332,12 @@ test	net.forbric.kernel.mixin.MixinSharedResultTransportSpellingTest	aShortPoint
 test	net.forbric.kernel.mixin.MixinSharedResultTransportSpellingTest	eachPointWrittenAnotherWayNamesTheSameCall()	[fixture:staged] actual Fabric API required: $ROOT/forbric-kernel/run/client-merged-pack/mods/fabric-api-0.155.2+26.2.jar
 test	net.forbric.kernel.mixin.MixinSharedResultTransportSpellingTest	eitherSelectorWrittenAnotherWayBindsTheSameHost()	[fixture:staged] actual Fabric API required: $ROOT/forbric-kernel/run/client-merged-pack/mods/fabric-api-0.155.2+26.2.jar
 test	net.forbric.kernel.mixin.MixinSharedResultTransportSpellingTest	theRenamedGroupsTransportAsShipped()	[fixture:staged] actual Fabric API required: $ROOT/forbric-kernel/run/client-merged-pack/mods/fabric-api-0.155.2+26.2.jar
+test	net.forbric.kernel.mixin.MixinSharedResultTransportTest	aProducerSharingAnotherValueIsNotAPassThrough()	[fixture:staged] actual API and indexed base required
 test	net.forbric.kernel.mixin.MixinSharedResultTransportTest	actualCraftingClosedGroupPreservesBothSourceBodiesAndProjectionInvocation()	[fixture:staged] actual API and indexed base required
 test	net.forbric.kernel.mixin.MixinSharedResultTransportTest	actualSourceSharedSnapshotIsExecutedOnceAtTheConservedCarrierResultRegion()	[fixture:staged] actual API and indexed base required
 test	net.forbric.kernel.mixin.MixinSharedResultTransportTest	ambiguousResultCallAndChangedConsumerBranchAreRejected()	[fixture:staged] actual API and indexed base required
 test	net.forbric.kernel.mixin.MixinSharedResultTransportTest	closedGroupRequiresTheSameStackSourceAndNoPathBypassingItsProducer()	[fixture:staged] actual API and indexed base required
+test	net.forbric.kernel.mixin.MixinSharedResultTransportTest	theCraftingGroupWrittenAnotherWayIsTransportedTheSame()	[fixture:staged] actual API and indexed base required
 test	net.forbric.kernel.mixin.MixinSharedResultTransportTest	transformedProducerReceiverOrAdditionalGroupSideEffectIsNotAccepted()	[fixture:staged] actual API and indexed base required
 test	net.forbric.kernel.mixin.MixinSharedResultTransportTest	usedOldInputOrAdditionalSourceEffectCannotBeTransported()	[fixture:staged] actual API and indexed base required
 test	net.forbric.kernel.mixin.MixinShearsRelayTest	aWrapStillBoundToOtherIsCallsKeepsThemAndAnswersTheCarrierToo()	[fixture:third-party] sweep pack absent
@@ -1556,6 +1559,8 @@ test	net.forbric.kernel.mixin.weave.LootSourceCallbacksWeaveTest	anAlteredMemoPr
 test	net.forbric.kernel.mixin.weave.LootSourceCallbacksWeaveTest	finalEvidenceCannotBeBorrowedFromAnotherLoaderWithTheSameClassNames()	[fixture:staged] raw loot callback group: $ROOT/forbric-kernel/run/client-merged-pack/mods/fabric-api-0.155.2+26.2.jar
 test	net.forbric.kernel.mixin.weave.LootSourceCallbacksWeaveTest	onlyTheActuallyDefinedHelperTypedBridgeAndHostClosureProveTheReplacement()	[fixture:staged] raw loot callback group: $ROOT/forbric-kernel/run/client-merged-pack/mods/fabric-api-0.155.2+26.2.jar
 test	net.forbric.kernel.mixin.weave.LootSourceCallbacksWeaveTest	originalCallbacksRunOnceThroughTheRealTypedBridgeAndKeepExceptionsAndNativePriority()	[fixture:staged] raw loot callback group: $ROOT/forbric-kernel/run/client-merged-pack/mods/fabric-api-0.155.2+26.2.jar
+test	net.forbric.kernel.mixin.weave.LootSourceCallbacksWeaveTest	theGroupFiringAnotherEventApiIsStillProjected()	[fixture:staged] raw loot callback group: $ROOT/forbric-kernel/run/client-merged-pack/mods/fabric-api-0.155.2+26.2.jar
+test	net.forbric.kernel.mixin.weave.LootSourceCallbacksWeaveTest	theGroupWrittenAnotherWayRunsTheSame()	[fixture:staged] raw loot callback group: $ROOT/forbric-kernel/run/client-merged-pack/mods/fabric-api-0.155.2+26.2.jar
 test	net.forbric.kernel.mixin.weave.LootSourceCallbacksWeaveTest	thePrivateMemoIsClosedAndNoSourceNamesAdmitTheProjection()	[fixture:staged] raw loot callback group: $ROOT/forbric-kernel/run/client-merged-pack/mods/fabric-api-0.155.2+26.2.jar
 test	net.forbric.kernel.mixin.weave.LootSourceCallbacksWeaveTest	unrelatedDirectoryWeavesDoNotChangeTheRegistryKeyDomainButAKeyFactoryChangeDoes()	[fixture:staged] raw loot callback group: $ROOT/forbric-kernel/run/client-merged-pack/mods/fabric-api-0.155.2+26.2.jar
 test	net.forbric.kernel.mixin.weave.MixinAbsorbedCallbackTransportWeaveTest	aTransportedHandlerWithALambdaAndAHelperOfItsOwnStillRuns()	[fixture:java-25] the guest mixin configs declare compatibilityLevel JAVA_25, which Mixin sets only on Java 25
@@ -2044,6 +2049,8 @@ test	net.forbric.kernel.transform.GuestInjectorPrunerGateLinesTest	theRealItemMi
 test	net.forbric.kernel.transform.GuestInjectorPrunerGateLinesTest	theRealModelLoadingMixinPrintsTheLineTheGateReads()	[fixture:third-party] fabric-api jar absent from run/client-kernel/mods
 test	net.forbric.kernel.transform.GuestInjectorPrunerSpellingTest	theRealModelPairRespelledIsStillPrunedWhole()	[fixture:third-party] fabric-api jar absent: $ROOT/forbric-kernel/run/client-merged-pack/mods/fabric-api-0.155.2+26.2.jar
 test	net.forbric.kernel.transform.GuestInjectorPrunerSpellingTest	theRealTooltipGroupRespelledStillGoesTogether()	[fixture:third-party] fabric-api jar absent: $ROOT/forbric-kernel/run/client-merged-pack/mods/fabric-api-0.155.2+26.2.jar
+test	net.forbric.kernel.transform.GuestInjectorPrunerTest	aModifierDeserializingAnotherReaderIsNotThePair()	[fixture:third-party] fabric-api jar absent from run/client-kernel/mods
+test	net.forbric.kernel.transform.GuestInjectorPrunerTest	aRedirectWithASideEffectIsNotThePair()	[fixture:third-party] fabric-api jar absent from run/client-kernel/mods
 test	net.forbric.kernel.transform.GuestInjectorPrunerTest	aSecondPassChangesNothingFurther()	[fixture:third-party] fabric-api jar absent from run/client-kernel/mods
 test	net.forbric.kernel.transform.GuestInjectorPrunerTest	aTooltipInjectorAlreadyMovedOrWithoutItsSharedIndexIsNotGuessed()	[fixture:third-party] fabric-api jar absent from run/client-kernel/mods
 test	net.forbric.kernel.transform.GuestInjectorPrunerTest	anUnrelatedClassPassesThroughByIdentity()	[fixture:third-party] fabric-api jar absent from run/client-kernel/mods
@@ -2055,6 +2062,7 @@ test	net.forbric.kernel.transform.GuestInjectorPrunerTest	fabricItemApisTooltipI
 test	net.forbric.kernel.transform.GuestInjectorPrunerTest	fabricItemApisTooltipInjectorsStayWhileTheBridgeIsOff()	[fixture:third-party] fabric-api jar absent from run/client-kernel/mods
 test	net.forbric.kernel.transform.GuestInjectorPrunerTest	prunesExactlyTheTwoDeserializerInjectorsAndKeepsTheRest()	[fixture:third-party] fabric-api jar absent from run/client-kernel/mods
 test	net.forbric.kernel.transform.GuestInjectorPrunerTest	switchedOffItStandsDownAndTheCompatListPinsTheWholeMixin()	[fixture:third-party] fabric-api jar absent from run/client-kernel/mods
+test	net.forbric.kernel.transform.GuestInjectorPrunerTest	thePairWrittenAnotherWayIsPrunedTheSame()	[fixture:third-party] fabric-api jar absent from run/client-kernel/mods
 test	net.forbric.kernel.transform.GuestInjectorPrunerTest	thePrunedMixinFitsTheMergedModelManagerWhereTheOriginalWasPartial()	[fixture:staged] staged merged base absent
 test	net.forbric.kernel.transform.GuestInjectorPrunerTest	whileTheModelFormatFunnelIsOnThePrunedPairReportsNothing()	[fixture:third-party] fabric-api jar absent from run/client-kernel/mods
 test	net.forbric.kernel.transform.HopperFabricStorageInjectorTest	bothFoundNothingBranchesAskFabric()	[fixture:staged] $ROOT/forbric-loader/run/merged-base/patched-mc-merged-26.2.jar absent (reading net/minecraft/world/level/block/entity/HopperBlockEntity.class)
