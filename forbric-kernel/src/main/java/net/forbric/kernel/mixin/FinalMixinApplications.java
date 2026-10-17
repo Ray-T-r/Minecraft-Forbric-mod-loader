@@ -50,10 +50,8 @@ public final class FinalMixinApplications {
   * plugin config's preflight row is only written when the load report settles it, often after the definition. */
  private static final Set<String> DISCHARGED = ConcurrentHashMap.newKeySet();
  static final String DISCHARGE = "all modelled injectors are attached, originally optional or verified as replaced across all observed targets";
- private record DeferredDefinition(byte[] bytes,Renames names) { }
- private static volatile DeferredDefinition watchdog;
  private FinalMixinApplications() { }
- public static void reset() { CONFIGS.clear(); PLANS.clear(); TARGETS.clear(); OUTCOMES.clear(); DISCHARGED.clear(); watchdog=null;WatchdogDumpEquivalence.reset();MixinNativeEquivalence.reset(); }
+ public static void reset() { CONFIGS.clear(); PLANS.clear(); TARGETS.clear(); OUTCOMES.clear(); DISCHARGED.clear(); MixinNativeEquivalence.reset();MixinDelegationEquivalence.reset(); }
 
  /** Whether the final classes already discharged a whole-mixin preflight suspicion about {@code mixin}. */
  static boolean discharged(String mixin) { return DISCHARGED.contains(mixin); }
@@ -83,6 +81,7 @@ public final class FinalMixinApplications {
  /** Called on the final adapter output handed to Mixin; no guessed pre-adapter descriptors. */
  static void remember(ClassNode mixin) {
   MixinNativeEquivalence.remember(mixin);
+  MixinDelegationEquivalence.remember(mixin);
   String binary=mixin.name.replace('/','.');Set<Config> configs=CONFIGS.get(binary);
   if(configs==null || configs.size()!=1)return; // Dynamic/ambiguous ownership is not a proved contract.
   Config config=configs.iterator().next();List<String> targets=MixinFit.mixinTargets(mixin).stream().map(n->n.replace('/','.')).toList();
@@ -115,7 +114,7 @@ public final class FinalMixinApplications {
  }
 
  public static void onClassDefined(String binary,byte[] bytes) {
-  if(!TARGETS.containsKey(binary)&&!WatchdogDumpEquivalence.HELPER.equals(binary))return;
+  if(!TARGETS.containsKey(binary))return;
   try { observe(binary,bytes,FinalMixinApplications::renamed); }
   catch(RuntimeException|LinkageError unavailable) {
    for(String mixin:TARGETS.getOrDefault(binary,Set.of())) {
@@ -126,15 +125,7 @@ public final class FinalMixinApplications {
   }
  }
  static void observe(String binary,byte[] bytes,Renames names) {
-  if(WatchdogDumpEquivalence.HELPER.equals(binary)) {
-   ClassNode helper=new ClassNode();new ClassReader(bytes).accept(helper,ClassReader.SKIP_FRAMES|ClassReader.SKIP_DEBUG);
-   WatchdogDumpEquivalence.observeHelper(helper);
-   DeferredDefinition previous=watchdog;
-   if(previous!=null)observe(WatchdogDumpEquivalence.TARGET,previous.bytes(),previous.names());
-   return;
-  }
   if(!TARGETS.containsKey(binary))return;
-  if(WatchdogDumpEquivalence.TARGET.equals(binary))watchdog=new DeferredDefinition(bytes.clone(),names);
   ClassNode target=new ClassNode();new ClassReader(bytes).accept(target,ClassReader.SKIP_FRAMES);
   Map<String,List<MethodNode>> merged=new HashMap<>();
   for(MethodNode method:target.methods)for(AnnotationNode annotation:annotations(method))if(annotation.desc.equals(MERGED)) {
@@ -162,10 +153,6 @@ public final class FinalMixinApplications {
     boolean optionalMiss=injector.minimum()==0&&!injector.grouped()&&(references==0||dead!=null);
     String replacement=lost||optionalMiss||state==Outcome.UNKNOWN&&references==0
       ?MixinEquivalentImplementations.proof(mixin,injector.name(),injector.desc(),injector.bodyHash(),target):null;
-    boolean replacementPending=(lost||optionalMiss)&&WatchdogDumpEquivalence.helperUnknown()
-      &&WatchdogDumpEquivalence.candidate(mixin,injector.name(),injector.desc(),injector.bodyHash(),target);
-    boolean pending=lost&&replacementPending;
-    if(pending)state=Outcome.UNKNOWN;
     if(replacement!=null)state=Outcome.EQUIVALENT;
     // Attached, but only inside a forwarding stub the merge kept for vanilla's signature, where the mod's own platform
     // ran code: it runs only when something still calls that old signature. torrential's fuel hook stays on
@@ -179,7 +166,7 @@ public final class FinalMixinApplications {
     // replacement is seen; until then it is recorded as usual and resolved when SupersededMixins proves it.
     // An injector this does not model (sugar, a group) is still visibly unattached when nothing in the final class
     // calls its merged handler; that is the miss a superseding repair answers for, as much as a modelled one's.
-    boolean unattached=lost||optionalMiss||state==Outcome.UNKNOWN&&!pending&&references==0;
+    boolean unattached=lost||optionalMiss||state==Outcome.UNKNOWN&&references==0;
     String superseded=unattached?SupersededMixins.provedReplacement(mixin):null;
     // Natively an injector below its require/defaultRequire throws InjectionError, an Error no config-level
     // `required:false` catches: the author declared that injection mandatory whatever the config says.
@@ -187,10 +174,6 @@ public final class FinalMixinApplications {
     if(superseded!=null)CompatibilityFindings.record(new CompatibilityFinding(id,mod,
       "Mixin injection "+injector.name(),"mixin-application:"+plan.config().name(),CompatibilityFinding.Confidence.RESOLVED,
       plan.config().required()||injector.minimum()>=1,superseded,List.of("target="+binary,"handler="+injector.symbol(),superseded)));
-    else if(pending)CompatibilityFindings.record(new CompatibilityFinding(id,mod,
-      "Mixin injection "+injector.name(),"mixin-application:"+plan.config().name(),CompatibilityFinding.Confidence.SUSPECTED,
-      required,"The audited watchdog report uses a native replacement whose final renderer has not been defined yet",
-      List.of("target="+binary,"pending final helper="+WatchdogDumpEquivalence.HELPER)));
     // Proved from the final class and the merged game's census, not observed: a guest mod calling the dead method itself
     // is outside both. So it marks the mod's row and never asks the player to quit or stops a STRICT server; the author's
     // requirement stays in the evidence. MixinExtras kinds stay SUSPECTED, as for MISSING (a kernel bridge serves some).
@@ -230,7 +213,7 @@ public final class FinalMixinApplications {
     // Register after the finding exists: a replacement witness arriving here must resolve this observation,
     // rather than resolve nothing and then leave a newly recorded loss behind.
     if(unattached&&superseded==null&&SupersededMixins.replacementFor(mixin)!=null)SupersededMixins.awaitProof(plan.config().name(),mixin);
-    if(SupersededMixins.provedReplacement(mixin)==null&&replacement==null&&!replacementPending
+    if(SupersededMixins.provedReplacement(mixin)==null&&replacement==null
       &&(lost||optionalMiss||state==Outcome.UNKNOWN&&injector.minimum()>=1&&references<injector.minimum())) {
      String reason=dead!=null?"attached only in "+dead+", so the injector never runs"
        :references==0?"did not attach (final handler references=0)"

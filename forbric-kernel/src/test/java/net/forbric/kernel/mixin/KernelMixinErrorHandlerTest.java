@@ -47,7 +47,11 @@ import net.forbric.api.ModCatalog;
 class KernelMixinErrorHandlerTest {
 	@org.junit.jupiter.api.BeforeEach
 	@org.junit.jupiter.api.AfterEach
-	void clearCompatibilityEvidence() { net.forbric.api.CompatibilityFindings.reset(); SupersededMixins.reset(); }
+	void clearCompatibilityEvidence() {
+		net.forbric.api.CompatibilityFindings.reset(); SupersededMixins.reset();
+		// What config discovery notes for fabric-resource-conditions' mixin, whose shape the claim reads (SupersededMixinsTest).
+		SupersededMixins.claimForTests("net.fabricmc.fabric.mixin.resource.conditions.SimpleJsonResourceReloadListenerMixin", "resource-conditions");
+	}
 
 	private List<ModCatalog.Entry> previous;
 
@@ -243,6 +247,7 @@ class KernelMixinErrorHandlerTest {
 	private static GateRun gateM9(Path temporary, String switchOff, Runnable... steps) throws Exception {
 		net.forbric.api.CompatibilityFindings.reset();
 		SupersededMixins.reset();
+		SupersededMixins.claimForTests("net.fabricmc.fabric.mixin.resource.conditions.SimpleJsonResourceReloadListenerMixin", "resource-conditions");
 		String previous = switchOff == null ? null : System.getProperty(switchOff);
 		java.io.PrintStream out = System.out, err = System.err;
 		java.io.ByteArrayOutputStream buffer = new java.io.ByteArrayOutputStream();

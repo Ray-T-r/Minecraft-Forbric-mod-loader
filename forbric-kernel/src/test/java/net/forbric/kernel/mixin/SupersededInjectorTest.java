@@ -25,6 +25,7 @@ class SupersededInjectorTest {
 
 	@BeforeEach @AfterEach void reset() {
 		MixinCompatibility.reset(); CompatibilityFindings.reset(); SupersededMixins.reset();
+		SupersededMixins.claimForTests("net.fabricmc.fabric.mixin.resource.conditions.SimpleJsonResourceReloadListenerMixin", "resource-conditions");
 		MixinConfigOwners.publish(List.of(new MixinConfigOwners.Owned(CONFIG, "fabric-resource-conditions-api-v1", Ecosystem.FABRIC)));
 		String json = "{\"required\":true,\"package\":\"" + MIXIN.substring(0, MIXIN.lastIndexOf('.')) + "\",\"mixins\":[\""
 				+ MIXIN.substring(MIXIN.lastIndexOf('.') + 1) + "\"],\"injectors\":{\"defaultRequire\":1}}";
@@ -68,6 +69,7 @@ class SupersededInjectorTest {
 				.allMatch(f -> f.confidence() == CompatibilityFinding.Confidence.RESOLVED), CompatibilityFindings.all().toString());
 
 		CompatibilityFindings.reset(); SupersededMixins.reset();
+		SupersededMixins.claimForTests("net.fabricmc.fabric.mixin.resource.conditions.SimpleJsonResourceReloadListenerMixin", "resource-conditions");
 		SupersededMixins.observeDefinition(CONDITIONAL_OPS, conditionalOps(true));
 		observe(true);
 		assertTrue(CompatibilityFindings.all().stream().noneMatch(f -> f.id().startsWith("mixin-injector:")

@@ -43,8 +43,15 @@ class ForbricMixinLoggerTest {
 			+ "fabric-resource-conditions-api-v1.mixins.json:SimpleJsonResourceReloadListenerMixin -> "
 			+ "net.minecraft.server.packs.resources.SimpleJsonResourceReloadListener: InvalidInjectionException";
 
+	@org.junit.jupiter.api.BeforeEach
+	void claim() {
+		// What config discovery notes for fabric-resource-conditions' mixin, whose shape the claim reads (SupersededMixinsTest).
+		SupersededMixins.claimForTests(SUPERSEDED, "resource-conditions");
+	}
+
 	@AfterEach
 	void reset() {
+		SupersededMixins.reset();
 		for (String property : new String[] { ForbricMixinLogger.QUIET_PROPERTY, SupersededMixins.PROPERTY,
 				"forbric.fabricConditions", KernelMixinErrorHandler.PROPERTY }) {
 			System.clearProperty(property);

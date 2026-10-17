@@ -31,6 +31,11 @@ import java.util.regex.Pattern;
 import net.forbric.kernel.TestFixtures;
 import net.forbric.kernel.TestFixtures.Fixture;
 import org.junit.jupiter.api.Test;
+import org.objectweb.asm.tree.AbstractInsnNode;
+import org.objectweb.asm.tree.ClassNode;
+import org.objectweb.asm.tree.FieldInsnNode;
+import org.objectweb.asm.tree.MethodInsnNode;
+import org.objectweb.asm.tree.MethodNode;
 
 /**
  * Every entry in {@link SupersededMixins} claims a named kernel repair does a guest mixin's whole job.
@@ -48,7 +53,7 @@ class SupersededMixinsTest {
 		Path main = Path.of(System.getProperty("user.dir"), "src").normalize();
 		List<String> broken = new ArrayList<>();
 
-		for (Map.Entry<String, String> entry : SupersededMixins.all().entrySet()) {
+		for (Map.Entry<String, String> entry : SupersededMixins.kinds().entrySet()) {
 			List<String> named = new ArrayList<>();
 			Matcher matcher = KERNEL_CLASS.matcher(entry.getValue());
 			while (matcher.find()) named.add(matcher.group(1));
@@ -67,15 +72,80 @@ class SupersededMixinsTest {
 				+ "that is no longer there: " + broken);
 	}
 
-	/** An entry must name a mixin class, not a config or a partial name — the handler matches on it exactly. */
+	/**
+	 * Which mixin a repair takes over is read from the mixin: fabric-api's real conditions and hopper mixins fit their
+	 * repair's claim, and so do the same classes relocated to names that share nothing with them; a reshaped one, or a
+	 * mixin into the same class doing something else, does not, and nothing is claimed by name alone.
+	 */
 	@Test
-	void everyKeyIsAFullyQualifiedMixinClassName() {
-		List<String> wrong = new ArrayList<>();
-		for (String key : SupersededMixins.all().keySet()) {
-			if (!key.contains(".") || key.endsWith(".json") || key.contains("/")) wrong.add(key);
+	void theClaimsReadTheMixinNotItsName() throws Exception {
+		SupersededMixins.reset();
+		try {
+			ClassNode conditions = StagedFabricMixinFixture.mixin("fabric-resource-conditions-api-v1",
+					"net/fabricmc/fabric/mixin/resource/conditions/SimpleJsonResourceReloadListenerMixin");
+			ClassNode hopper = StagedFabricMixinFixture.mixin("fabric-transfer-api-v1", "net/fabricmc/fabric/mixin/transfer/HopperBlockEntityMixin");
+			java.util.function.Function<String, byte[]> classes = path -> {
+				try { return moduleEntry("fabric-resource-conditions-api-v1", path); } catch (Exception absent) { return null; }
+			};
+			for (boolean relocated : new boolean[] {false, true}) {
+				ClassNode c = relocated ? relocate(conditions, "org/qzx/data/QzxGate", classes) : conditions;
+				ClassNode h = relocated ? relocate(hopper, "org/qzx/flow/QzxFunnel", null) : hopper;
+				java.util.function.Function<String, byte[]> read = relocated ? relocatedClasses : classes;
+				SupersededMixins.noteMixin(c, read);
+				SupersededMixins.noteMixin(h, read);
+				assertTrue(SupersededMixins.replacementFor(c.name.replace('/', '.')) != null, c.name);
+				assertTrue(SupersededMixins.replacementFor(h.name.replace('/', '.')) != null, h.name);
+			}
+			assertNull(SupersededMixins.replacementFor("a.b.SomeOtherMixin"), "a name nothing noted is never claimed");
+			// The same hopper mixin with one injector that asks something else, and the conditions mixin with its guard's
+			// evaluator out of reach (no class holds the condition key), are not taken over.
+			ClassNode reshaped = StagedFabricMixinFixture.mixin("fabric-transfer-api-v1", "net/fabricmc/fabric/mixin/transfer/HopperBlockEntityMixin");
+			for (MethodNode m : reshaped.methods) for (AbstractInsnNode i : m.instructions)
+				if (i instanceof FieldInsnNode f && f.name.equals("SIDED")) f.name = "SIDED_ELSEWHERE";
+			SupersededMixins.noteMixin(reshaped, null);
+			assertNull(SupersededMixins.replacementFor(reshaped.name.replace('/', '.')));
+			ClassNode blind = StagedFabricMixinFixture.mixin("fabric-resource-conditions-api-v1",
+					"net/fabricmc/fabric/mixin/resource/conditions/SimpleJsonResourceReloadListenerMixin");
+			SupersededMixins.noteMixin(blind, path -> null);
+			assertNull(SupersededMixins.replacementFor(blind.name.replace('/', '.')));
+		} finally {
+			SupersededMixins.reset();
 		}
-		assertTrue(wrong.isEmpty(), "the handler compares these to IMixinInfo.getClassName(), which is a binary "
-				+ "class name: " + wrong);
+	}
+
+	private static java.util.function.Function<String, byte[]> relocatedClasses = path -> null;
+
+	/** {@code mixin} moved to {@code name}; the classes it calls into, when given, moved under org/qzx too and served by {@link #relocatedClasses}. */
+	private static ClassNode relocate(ClassNode mixin, String name, java.util.function.Function<String, byte[]> classes) {
+		Map<String, String> moved = new java.util.HashMap<>();
+		moved.put(mixin.name, name);
+		java.util.Map<String, byte[]> served = new java.util.HashMap<>();
+		if (classes != null) for (MethodNode m : mixin.methods) for (AbstractInsnNode i : m.instructions)
+			if (i instanceof MethodInsnNode c && c.owner.startsWith("net/fabricmc/fabric/impl/")) {
+				String to = "org/qzx/impl/" + c.owner.substring(c.owner.lastIndexOf('/') + 1);
+				moved.put(c.owner, to);
+				byte[] bytes = classes.apply(c.owner + ".class");
+				if (bytes != null) {
+					ClassNode callee = new ClassNode(); new org.objectweb.asm.ClassReader(bytes).accept(callee, 0);
+					ClassNode out = new ClassNode(); callee.accept(new org.objectweb.asm.commons.ClassRemapper(out, new org.objectweb.asm.commons.SimpleRemapper(moved)));
+					org.objectweb.asm.ClassWriter w = new org.objectweb.asm.ClassWriter(0); out.accept(w); served.put(to + ".class", w.toByteArray());
+				}
+			}
+		ClassNode out = new ClassNode();
+		mixin.accept(new org.objectweb.asm.commons.ClassRemapper(out, new org.objectweb.asm.commons.SimpleRemapper(moved)));
+		if (classes != null) relocatedClasses = served::get;
+		return out;
+	}
+
+	/** One entry of one of fabric-api's nested modules. */
+	private static byte[] moduleEntry(String module, String entry) throws Exception {
+		try (var api = new java.util.zip.ZipFile(TestFixtures.fabricApi().toFile())) {
+			var nested = api.stream().filter(e -> e.getName().startsWith("META-INF/jars/" + module + "-")).findFirst().orElseThrow();
+			try (var in = new java.util.zip.ZipInputStream(api.getInputStream(nested))) {
+				for (var e = in.getNextEntry(); e != null; e = in.getNextEntry()) if (e.getName().equals(entry)) return in.readAllBytes();
+			}
+		}
+		return null;
 	}
 
 	@Test
@@ -84,6 +154,7 @@ class SupersededMixinsTest {
 		try {
 			System.clearProperty(SupersededMixins.PROPERTY);
 			String any = "net.fabricmc.fabric.mixin.resource.conditions.SimpleJsonResourceReloadListenerMixin";
+			SupersededMixins.claimForTests(any, "resource-conditions");
 			assertTrue(SupersededMixins.enabled());
 			assertFalse(SupersededMixins.replacementFor(any) == null);
 
@@ -108,6 +179,7 @@ class SupersededMixinsTest {
 		String previous = System.getProperty("forbric.fabricConditions");
 		try {
 			String any = "net.fabricmc.fabric.mixin.resource.conditions.SimpleJsonResourceReloadListenerMixin";
+			SupersededMixins.claimForTests(any, "resource-conditions");
 			System.setProperty("forbric.fabricConditions", "off");
 			assertNull(SupersededMixins.replacementFor(any));
 			System.setProperty("forbric.fabricConditions", "on");
@@ -169,6 +241,7 @@ class SupersededMixinsTest {
 	@Test
 	void theHopperRepairsOwnSwitchAnswersNothing() {
 		String mixin = "net.fabricmc.fabric.mixin.transfer.HopperBlockEntityMixin";
+		SupersededMixins.claimForTests(mixin, "hopper-storage");
 		try {
 			System.setProperty("forbric.hopperFabricStorage", "off");
 			assertNull(SupersededMixins.replacementFor(mixin));

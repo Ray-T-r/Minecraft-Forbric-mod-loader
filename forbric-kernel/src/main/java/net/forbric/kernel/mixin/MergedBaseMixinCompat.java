@@ -55,6 +55,7 @@ public final class MergedBaseMixinCompat {
                     FabricRegistryInitializationMixinAdapter.noteDeferredFreeze(configName,node,family,natives);
                     net.forbric.kernel.transform.RegistrySyncParityInjector.noteMixin(configName,node,resources);
                     FabricCreativePagerMixinAdapter.noteSelectionHooks(node);
+                    SupersededMixins.noteMixin(node,resources);
                     if(!enabled()||explicitlyKept(identity))continue;
                     String reason=refusal(node,resources,natives);
                     if(reason==null)continue;
@@ -122,5 +123,5 @@ public final class MergedBaseMixinCompat {
     public static boolean contractSuppressed(String target,String contract){return PINNED_CONTRACTS.stream().anyMatch(row->row.target().equals(target)&&row.contract().equals(contract)&&pinInForce(row.pin()));}
     public static boolean targetSuppressed(String target){return SUPPRESSED_MIXINS.stream().anyMatch(pin->PINNED_CONTRACTS.stream().anyMatch(row->row.pin().equals(pin)&&row.target().equals(target))&&pinInForce(pin));}
     public static boolean protocolSuppressed(String protocol){return REASONS.entrySet().stream().anyMatch(entry->entry.getValue().startsWith(protocol+":")&&pinInForce(entry.getKey()));}
-    static void reset(){indexed=false;SUPPRESSED_MIXINS.clear();PINNED_CONTRACTS.clear();REASONS.clear();SOURCES.clear();}
+    static void reset(){indexed=false;SUPPRESSED_MIXINS.clear();PINNED_CONTRACTS.clear();REASONS.clear();SOURCES.clear();SupersededMixins.forgetClaims();}
 }
