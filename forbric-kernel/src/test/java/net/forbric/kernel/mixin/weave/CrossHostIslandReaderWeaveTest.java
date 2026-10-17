@@ -96,6 +96,9 @@ class CrossHostIslandReaderWeaveTest {
 	@Test void theHookReadsTheIslandsAnswer() throws Exception {
 		assertTrue(soakAlone.printed("[Forbric/Mixin] org.marsh.reed.mixin.SoakMixin.reed$soak: net.minecraft.world.entity.LivingEntity.isEyeInFluid is asked "
 				+ "in net.minecraft.world.entity.LivingEntity.baseTick again"), soakAlone.describe());
+		assertTrue(gillFirst.printed("[Forbric/Mixin] org.marsh.reed.mixin.SoakMixin.reed$soak: what net.minecraft.world.entity.LivingEntity.isEyeInFluid "
+				+ "answers in the native decision island of net.minecraft.world.entity.LivingEntity.baseTick is also what the predicate the carrier decides "
+				+ "with reads"), gillFirst.describe());
 		for (WeaveHarness.Result run : List.of(soakAlone, gillFirst, soakFirst)) {
 			assertTrue(run.printed(WeaveHarnessMain.DONE), run.describe());
 			WeaveHarness.assertWovenAndVerified(run, "net/minecraft/world/entity/LivingEntity", fixture);

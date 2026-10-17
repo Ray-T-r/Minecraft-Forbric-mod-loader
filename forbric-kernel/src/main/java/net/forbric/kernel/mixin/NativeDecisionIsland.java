@@ -314,7 +314,10 @@ public final class NativeDecisionIsland {
 			// Present: heard only where an island holds it, whose operands are plain reads the reader repeats.
 			if (!registry.members.getOrDefault(key, Set.of()).contains(member) || !plainOperands(was, wanted.getFirst(), code)) return false;
 			if (registry.heard.getOrDefault(key, Set.of()).contains(member) && registry.plans.contains(plan)) return true;
-			return registerAll(loader, List.of(target), 0, hear);
+			if (!registerAll(loader, List.of(target), 0, hear)) return false;
+			ForbricLog.info("[Forbric/Mixin] %s.%s: what %s answers in the native decision island of %s.%s is also what the predicate the carrier "
+					+ "decides with reads", mixin.name.replace('/', '.'), handler.name, NativeCallInlining.readable(member), target.replace('/', '.'), host.name);
+			return true;
 		}
 		if (MergedBaseUncalledMethods.neverRuns(merged, host, ecosystem) != null || MixinStubRebind.isCarrierStub(merged, host)) return false;
 		Outcome outcome = derive(merged, host, original, was, union(registry, plan), code);
@@ -357,7 +360,8 @@ public final class NativeDecisionIsland {
 	private static void answerNotice(ClassNode mixin, MethodNode handler, AnnotationNode injector, String member, String target, MethodNode host) {
 		if (answerKept(mixin, handler, injector)) return;
 		ForbricLog.info("[Forbric/Mixin] %s.%s may change what %s answers in %s.%s: that answer steers the native decisions the island "
-				+ "repeats there, but the carrier decides the same thing with calls of its own, which do not hear it", mixin.name.replace('/', '.'),
+				+ "repeats there, but the carrier decides the same thing with calls of its own, which do not hear it — unless a copy of the native "
+				+ "predicate the carrier decides with reads the island's answer, which is then said", mixin.name.replace('/', '.'),
 				handler.name, NativeCallInlining.readable(member), target.replace('/', '.'), host.name);
 	}
 
