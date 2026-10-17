@@ -33,7 +33,13 @@ import net.forbric.kernel.util.ForbricLog;
  * one at the merged point is pinned ({@code @Local(index)}) to the merged local that holds what the native one holds —
  * proved by the instruction that produced it ({@link MixinLocalOriginProof#prove}), or, where that proof is not
  * available, the one merged local with the native local's debug name and type live at the point. Where the point selects
- * several instructions, every one must agree on the slot. {@code -Dforbric.nativeLocalPins=off} pins nothing.
+ * several instructions, every one must agree on the slot.
+ *
+ * <p>The same holds for a {@code @ModifyVariable} that picks its local by ordinal among the locals of its type: where the
+ * ordinal picks another local at the merged point (or none) — NeoForge's {@code destroyBlock} stores the removal result
+ * after {@code mineBlock}, so vanilla's second boolean there is NeoForge's only one — it is pinned ({@code index}) to the one
+ * merged local live at the point with the debug name and type of the local the ordinal picks natively.
+ * {@code -Dforbric.nativeLocalPins=off} pins nothing.
  */
 public final class NativeLocalPins {
 	public static final String PROPERTY = "forbric.nativeLocalPins";
@@ -56,6 +62,20 @@ public final class NativeLocalPins {
 			if (original == null) continue;
 			for (MethodNode handler : mixin.methods) {
 				AnnotationNode injector = MixinFit.injectorOf(handler);
+				if (injector != null && MODIFY_VARIABLE.equals(injector.desc) && MixinFit.value(injector, "slice") == null) {
+					if (merged == null) merged = code.apply(target);
+					if (merged == null) break;
+					Integer slot = variable(original, merged, handler, injector);
+					if (slot != null) {
+						Object ordinal = MixinFit.value(injector, "ordinal");
+						MixinPlayerWorldCallbackAdapter.set(injector, "index", slot);
+						remove(injector, "ordinal");
+						pinned++;
+						ForbricLog.info("[Forbric/Mixin] %s.%s: the local its ordinal %s names at its point is another local in the merged %s; pinned to slot %d,"
+								+ " the local of the same name and type", mixin.name.replace('/', '.'), handler.name, ordinal, target.replace('/', '.'), slot);
+					}
+					continue;
+				}
 				if (injector == null || MixinFit.value(injector, "slice") != null || !hasLocal(handler)) continue;
 				if (merged == null) merged = code.apply(target);
 				if (merged == null) break;
@@ -74,6 +94,68 @@ public final class NativeLocalPins {
 	}
 
 	private record Pin(MethodNode host, AbstractInsnNode point, Map<Integer, Integer> slots) {
+	}
+
+	static final String MODIFY_VARIABLE = "Lorg/spongepowered/asm/mixin/injection/ModifyVariable;";
+
+	/**
+	 * A {@code @ModifyVariable} that picks its local by ordinal among the locals of its type: the merged slot of the local the
+	 * ordinal picks natively (the one merged local live at the point with its debug name and type), when the ordinal picks
+	 * another local there (or none). Every point the injector selects must agree; null when nothing needs pinning or it is
+	 * not proved. Only for a call or field point, one point, no slice, no {@code index}, {@code name} or {@code argsOnly}.
+	 */
+	static Integer variable(ClassNode original, ClassNode merged, MethodNode handler, AnnotationNode injector) {
+		if (!(MixinFit.value(injector, "ordinal") instanceof Number number) || MixinFit.value(injector, "index") != null
+				|| MixinFit.value(injector, "name") != null || Boolean.TRUE.equals(MixinFit.value(injector, "argsOnly"))) return null;
+		int ordinal = number.intValue();
+		List<AnnotationNode> points = MixinFit.atNodes(injector);
+		if (points.size() != 1 || MixinFit.value(points.getFirst(), "slice") != null) return null;
+		AnnotationNode at = points.getFirst();
+		String kind = MixinFit.asString(MixinFit.value(at, "value"));
+		if (kind == null || !(kind.equals("INVOKE") || kind.equals("FIELD"))) return null;
+		Type[] parameters = Type.getArgumentTypes(handler.desc);
+		if (parameters.length == 0) return null;
+		Type type = parameters[0];
+		MethodNode was = MixinTargetSelectors.one(handler, original), host = MixinTargetSelectors.one(handler, merged);
+		if (was == null || host == null || !was.name.equals(host.name) || !was.desc.equals(host.desc)) return null;
+		List<AbstractInsnNode> before = MixinCallbackShape.pointSelected(at, was), after = MixinCallbackShape.pointSelected(at, host);
+		if (before.isEmpty() || before.size() != after.size()) return null;
+		Integer agreed = null;
+		for (int i = 0; i < before.size(); i++) {
+			int nativeAt = was.instructions.indexOf(before.get(i)), mergedAt = host.instructions.indexOf(after.get(i));
+			List<LocalVariableNode> nativeLocals = ofType(was, nativeAt, type), mergedLocals = ofType(host, mergedAt, type);
+			if (nativeLocals == null || mergedLocals == null || ordinal >= nativeLocals.size()) return null;
+			Integer slot = byName(was, nativeLocals.get(ordinal).index, nativeAt, host, mergedAt, type);
+			if (slot == null || agreed != null && !agreed.equals(slot)) return null;
+			agreed = slot;
+			// Where the ordinal already picks that local, it binds as written.
+			if (ordinal < mergedLocals.size() && mergedLocals.get(ordinal).index == slot && before.size() == 1) return null;
+		}
+		return agreed;
+	}
+
+	/** The debug-named locals of {@code type} live at {@code at}, after the arguments, in slot order; null without a table. */
+	private static List<LocalVariableNode> ofType(MethodNode method, int at, Type type) {
+		if (method.localVariables == null) return null;
+		int arguments = (method.access & org.objectweb.asm.Opcodes.ACC_STATIC) != 0 ? 0 : 1;
+		for (Type argument : Type.getArgumentTypes(method.desc)) arguments += argument.getSize();
+		List<LocalVariableNode> out = new java.util.ArrayList<>();
+		for (LocalVariableNode local : method.localVariables) {
+			if (local.index < arguments || !Type.getType(local.desc).equals(type)) continue;
+			int start = method.instructions.indexOf(local.start), end = method.instructions.indexOf(local.end);
+			if (start <= at && at < end) out.add(local);
+		}
+		out.sort(java.util.Comparator.comparingInt(local -> local.index));
+		return out;
+	}
+
+	private static void remove(AnnotationNode annotation, String key) {
+		if (annotation.values == null) return;
+		for (int i = 0; i + 1 < annotation.values.size(); i += 2) if (key.equals(annotation.values.get(i))) {
+			annotation.values.remove(i + 1);
+			annotation.values.remove(i);
+			return;
+		}
 	}
 
 	private static boolean hasLocal(MethodNode handler) {

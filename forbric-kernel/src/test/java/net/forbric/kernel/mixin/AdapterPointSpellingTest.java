@@ -85,17 +85,18 @@ class AdapterPointSpellingTest {
 
 	static List<Case> cases() {
 		List<Case> cases = new ArrayList<>();
-		// FabricBlockBreakMixinAdapter: any mod's break callback and harvest modifier; fabric-api's AFTER row.
+		// MixinCapturedLocals and NativeLocalPins: any mod's break callback capture and harvest modifier; FabricBlockBreakMixinAdapter:
+		// fabric-api's AFTER row.
 		cases.add(new Case("break locals", () -> jar(Fixture.THIRD_PARTY, POPULAR.resolve("architectury-fabric-21.1.10.jar"),
-				"dev/architectury/mixin/fabric/MixinServerPlayerGameMode"), true, Ecosystem.FABRIC, GAME_MODE, FabricBlockBreakMixinAdapter::adapt, 1,
+				"dev/architectury/mixin/fabric/MixinServerPlayerGameMode"), true, Ecosystem.FABRIC, GAME_MODE, MixinCapturedLocals::adapt, 1,
 				List.of(STATE + "getBlock()Lnet/minecraft/world/level/block/Block;"),
 				mixin -> assertTrue(mixin.methods.stream().anyMatch(m -> MixinFit.injectorOf(m) != null && m.desc.equals("(Lnet/minecraft/core/BlockPos;"
-						+ CIR + STATE + "Lnet/neoforged/neoforge/event/level/block/BreakBlockEvent;" + ENTITY + ")V")), "the merged frame is captured")));
-		cases.add(new Case("harvest ordinal", AdapterPointSpellingTest::apoli, true, Ecosystem.FABRIC, GAME_MODE, FabricBlockBreakMixinAdapter::adapt, 1,
+						+ CIR + ENTITY + STATE + ")V") && MixinFit.value(MixinFit.injectorOf(m), "locals") == null), "each captured local read where the merged body keeps it")));
+		cases.add(new Case("harvest ordinal", AdapterPointSpellingTest::apoli, true, Ecosystem.FABRIC, GAME_MODE, NativeLocalPins::adapt, 1,
 				List.of("Lnet/minecraft/world/item/ItemStack;mineBlock(Lnet/minecraft/world/level/Level;" + STATE
 						+ "Lnet/minecraft/core/BlockPos;Lnet/minecraft/world/entity/player/Player;)V"),
 				mixin -> assertTrue(mixin.methods.stream().anyMatch(m -> MixinFit.injectorOf(m) != null && m.desc.equals("(Z)Z")
-						&& Integer.valueOf(0).equals(MixinFit.value(MixinFit.injectorOf(m), "ordinal"))), "ordinal 0")));
+						&& Integer.valueOf(9).equals(MixinFit.value(MixinFit.injectorOf(m), "index"))), "pinned to the canDestroy local")));
 		cases.add(new Case("fabric-api AFTER break", () -> StagedFabricMixinFixture.mixin("fabric-events-interaction-v0", FabricBlockBreakMixinAdapter.FABRIC),
 				false, Ecosystem.FABRIC, GAME_MODE, FabricBlockBreakMixinAdapter::adapt, 1, List.of(FabricBlockBreakMixinAdapter.BLOCK_DESTROY),
 				mixin -> assertTrue(atTargets(mixin).contains("L" + GAME_MODE + ";removeBlock" + FabricBlockBreakMixinAdapter.REMOVE_BLOCK_DESC))));
@@ -367,8 +368,16 @@ class AdapterPointSpellingTest {
 				})));
 	}
 
+	/**
+	 * Cases whose adapter reads the point exactly as Mixin selects it, ordinal included, rather than asking that the shorter
+	 * target name one member in the written method: architectury's capture is {@code ordinal = 0}, and the crowd is placed
+	 * after the method's last instruction, so Mixin (and MixinCapturedLocals) still select the first {@code getBlock()} there.
+	 */
+	private static final Set<String> READ_AS_SELECTED = Set.of("break locals");
+
 	/** The shorter target, against a written method that also accesses another owner's member of that name (or another overload). */
 	private static void crowded(Case c, PointRespelling.Form form, boolean otherOwner) throws Exception {
+		if (READ_AS_SELECTED.contains(c.id())) return;
 		ClassNode mixin = read(c), natives = NATIVES.apply(c.family(), c.owner()), crowd = PointRespelling.copy(natives);
 		Set<MethodNode> key = key(c, mixin);
 		assertTrue(PointRespelling.crowd(mixin, key::contains, crowd, otherOwner) > 0, "premise: the written methods are crowded");

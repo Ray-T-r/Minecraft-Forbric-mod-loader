@@ -22,7 +22,8 @@ import org.objectweb.asm.tree.analysis.BasicVerifier;
 
 /**
  * The three destroyBlock mixins as shipped — architectury's and apoli-legacy's from the popular pack, fabric-api's
- * onBlockBroken from the merged pack's fabric-api — against the real merged and vanilla bodies.
+ * onBlockBroken from the merged pack's fabric-api — against the real merged and vanilla bodies: the first two read by the
+ * general locals mechanisms (MixinCapturedLocals, NativeLocalPins), fabric-api's AFTER by this adapter.
  */
 @ResourceLock("system-properties")
 class FabricBlockBreakMixinAdapterTest {
@@ -34,119 +35,65 @@ class FabricBlockBreakMixinAdapterTest {
 		System.clearProperty(FabricBlockBreakMixinAdapter.PROPERTY);
 	}
 
-	@Test void architecturysBreakHandlerCapturesNeoForgesFrameAndStillGetsItsTwoValues() throws Exception {
+	/**
+	 * architectury's locals capture is the general mechanism's: MixinCapturedLocals (which runs before this adapter) reads each
+	 * captured local where the merged body keeps it, and this adapter then has nothing left to do with it.
+	 */
+	@Test void architecturysBreakCaptureIsReadWhereTheMergedBodyKeepsEachLocal() throws Exception {
 		ClassNode mixin = architectury(), target = merged();
-		assertEquals(1, FabricBlockBreakMixinAdapter.adapt(mixin, name -> target));
-
-		MethodNode outer = method(mixin, "onBreak");
-		assertEquals("(Lnet/minecraft/core/BlockPos;Lorg/spongepowered/asm/mixin/injection/callback/CallbackInfoReturnable;"
-				+ STATE + "Lnet/neoforged/neoforge/event/level/block/BreakBlockEvent;" + ENTITY + ")V", outer.desc,
-				"exactly the merged frame at the first getBlock(): state, event, block entity");
-		assertNotNull(MixinFit.injectorOf(outer));
-		MethodNode inner = method(mixin, "onBreak" + MixinHandlerShim.INNER_SUFFIX);
-		assertNull(MixinFit.injectorOf(inner), "the original handler is now only called");
-		List<Integer> loads = java.util.Arrays.stream(outer.instructions.toArray()).filter(VarInsnNode.class::isInstance).map(i -> ((VarInsnNode) i).var).toList();
-		assertEquals(List.of(0, 1, 2, 5, 3), loads, "this, pos, callback, then BlockEntity (slot 5) and BlockState (slot 3)");
-		new Analyzer<>(new BasicVerifier()).analyze(mixin.name, outer);
-		assertEquals(0, FabricBlockBreakMixinAdapter.adapt(mixin, name -> target), "a second pass changes nothing");
+		MixinStubRebind.noteEcosystem(mixin.name, net.forbric.api.Ecosystem.FABRIC);
+		assertEquals(1, MixinCapturedLocals.adapt(mixin, name -> target, natives()));
+		MethodNode handler = method(mixin, "onBreak");
+		assertNull(MixinFit.value(MixinFit.injectorOf(handler), "locals"), "the capture is gone");
+		assertEquals(List.of("index", 4), handler.invisibleParameterAnnotations[2].getFirst().values, "the block entity read from the level");
+		assertEquals(List.of("index", 2), handler.invisibleParameterAnnotations[3].getFirst().values, "the state read from the level");
+		assertEquals(0, FabricBlockBreakMixinAdapter.adapt(mixin, name -> target), "nothing left here");
 	}
 
-	@Test void apolisHarvestModifierMovesToTheOnlyBooleanNeoForgeHasAtMineBlock() throws Exception {
+	/**
+	 * apoli-legacy's harvest modifier is the general mechanism's too: its ordinal picks {@code canDestroy} natively, and
+	 * NativeLocalPins (before this adapter) pins it to the merged local of that name and type.
+	 */
+	@Test void apolisHarvestModifierIsPinnedToTheMergedLocalOfTheSameNameAndType() throws Exception {
 		ClassNode mixin = apoli(), target = merged();
-		assertEquals(1, FabricBlockBreakMixinAdapter.adapt(mixin, name -> target));
-		assertEquals(0, MixinFit.value(MixinFit.injectorOf(method(mixin, "modifyEffectiveTool")), "ordinal"));
-		assertEquals(0, FabricBlockBreakMixinAdapter.adapt(mixin, name -> target), "ordinal 0 is no longer the one it adapts");
+		MixinStubRebind.noteEcosystem(mixin.name, net.forbric.api.Ecosystem.FABRIC);
+		assertEquals(1, NativeLocalPins.adapt(mixin, name -> target, natives()));
+		AnnotationNode modify = MixinFit.injectorOf(method(mixin, "modifyEffectiveTool"));
+		assertEquals(9, MixinFit.value(modify, "index"));
+		assertNull(MixinFit.value(modify, "ordinal"));
+		assertEquals(0, FabricBlockBreakMixinAdapter.adapt(mixin, name -> target), "nothing left here");
+		assertEquals(0, NativeLocalPins.adapt(mixin, name -> target, natives()), "a second pass changes nothing");
+	}
+
+	/** A table that declares the removal result over the whole method changes nothing: the pin is by index, not by count. */
+	@Test void aBooleanTheTableDeclaresBeforeItsSlotIsWrittenDoesNotMoveThePin() throws Exception {
+		ClassNode target = merged();
+		MethodNode destroy = destroyBlock(target);
+		LocalVariableNode changed = destroy.localVariables.stream().filter(l -> l.index == 10).findFirst().orElseThrow();
+		changed.start = destroy.localVariables.stream().filter(l -> l.index == 0).findFirst().orElseThrow().start;
+		ClassNode mixin = apoli();
+		MixinStubRebind.noteEcosystem(mixin.name, net.forbric.api.Ecosystem.FABRIC);
+		assertEquals(1, NativeLocalPins.adapt(mixin, name -> target, natives()));
+		assertEquals(9, MixinFit.value(MixinFit.injectorOf(method(mixin, "modifyEffectiveTool")), "index"));
 	}
 
 	@Test void vanillasOwnBodyIsWhatBothWereWrittenFor() throws Exception {
 		ClassNode vanilla = vanilla();
 		for (ClassNode mixin : List.of(architectury(), apoli())) {
+			MixinStubRebind.noteEcosystem(mixin.name, net.forbric.api.Ecosystem.FABRIC);
 			byte[] before = StagedFabricMixinFixture.bytes(mixin);
 			assertEquals(0, FabricBlockBreakMixinAdapter.adapt(mixin, name -> vanilla), mixin.name);
+			assertEquals(0, NativeLocalPins.adapt(mixin, name -> vanilla, natives()), mixin.name);
 			assertArrayEquals(before, StagedFabricMixinFixture.bytes(mixin));
 		}
 	}
 
-	@Test void aStateThatIsNotTheOneReadFromTheLevelIsNotHandedOver() throws Exception {
-		ClassNode mixin = architectury(), target = merged();
-		MethodNode destroy = target.methods.stream().filter(m -> m.name.equals("destroyBlock")).findFirst().orElseThrow();
-		for (AbstractInsnNode insn : destroy.instructions) {
-			if (insn instanceof MethodInsnNode call && call.name.equals("getBlockState")) call.name = "getExistingBlockState";
-		}
-		assertEquals(0, FabricBlockBreakMixinAdapter.adapt(mixin, name -> target));
-		assertNotNull(MixinFit.injectorOf(method(mixin, "onBreak")));
-	}
-
-	@Test void aSecondBooleanOrAnotherProducerLeavesTheOrdinalAlone() throws Exception {
-		ClassNode target = merged();
-		MethodNode destroy = target.methods.stream().filter(m -> m.name.equals("destroyBlock")).findFirst().orElseThrow();
-		LocalVariableNode changed = destroy.localVariables.stream().filter(l -> l.index == 10).findFirst().orElseThrow();
-		LabelNode early = destroy.localVariables.stream().filter(l -> l.index == 9).findFirst().orElseThrow().start;
-		// The removal result now holds a value at mineBlock: two booleans in Mixin's frame there, as in vanilla.
-		destroy.instructions.insertBefore(early, new InsnNode(Opcodes.ICONST_1));
-		destroy.instructions.insertBefore(early, new VarInsnNode(Opcodes.ISTORE, 10));
-		changed.start = early;
-		ClassNode mixin = apoli();
-		assertEquals(0, FabricBlockBreakMixinAdapter.adapt(mixin, name -> target));
-		assertEquals(1, MixinFit.value(MixinFit.injectorOf(method(mixin, "modifyEffectiveTool")), "ordinal"));
-
-		ClassNode other = merged();
-		MethodNode body = other.methods.stream().filter(m -> m.name.equals("destroyBlock")).findFirst().orElseThrow();
-		for (AbstractInsnNode insn : body.instructions) {
-			if (insn instanceof MethodInsnNode call && call.name.equals("canHarvestBlock")) call.name = "isSignalSource";
-		}
-		assertEquals(0, FabricBlockBreakMixinAdapter.adapt(apoli(), name -> other));
-	}
-
-	/**
-	 * A boolean the table declares over the whole method, its slot written only after mineBlock — how the merge declares a
-	 * local it took from the other ecosystem's patch — is no second boolean there: Mixin's frame holds a slot from its first
-	 * store, so the harvest check is still the only boolean Mixin counts at mineBlock, and it is still ordinal 0.
-	 */
-	@Test void aBooleanTheTableDeclaresBeforeItsSlotIsWrittenIsNoSecondBoolean() throws Exception {
-		ClassNode target = merged();
-		MethodNode destroy = destroyBlock(target);
-		LocalVariableNode changed = destroy.localVariables.stream().filter(l -> l.index == 10).findFirst().orElseThrow();
-		LabelNode start = destroy.localVariables.stream().filter(l -> l.index == 0).findFirst().orElseThrow().start;
-		changed.start = start;    // in the table's scope at mineBlock; the removal result is still stored after it
-		ClassNode mixin = apoli();
-		assertEquals(1, FabricBlockBreakMixinAdapter.adapt(mixin, name -> target));
-		assertEquals(0, MixinFit.value(MixinFit.injectorOf(method(mixin, "modifyEffectiveTool")), "ordinal"));
-
-		// The same table with the slot written above mineBlock is the second boolean, and the ordinal is left alone.
-		ClassNode written = merged();
-		MethodNode body = destroyBlock(written);
-		LocalVariableNode early = body.localVariables.stream().filter(l -> l.index == 10).findFirst().orElseThrow();
-		LabelNode first = body.localVariables.stream().filter(l -> l.index == 0).findFirst().orElseThrow().start;
-		early.start = first;
-		AbstractInsnNode harvest = java.util.Arrays.stream(body.instructions.toArray())
-				.filter(i -> i instanceof VarInsnNode store && store.getOpcode() == Opcodes.ISTORE && store.var == 9).findFirst().orElseThrow();
-		body.instructions.insert(harvest, new VarInsnNode(Opcodes.ISTORE, 10));
-		body.instructions.insert(harvest, new InsnNode(Opcodes.ICONST_0));
-		ClassNode control = apoli();
-		assertEquals(0, FabricBlockBreakMixinAdapter.adapt(control, name -> written));
-		assertEquals(1, MixinFit.value(MixinFit.injectorOf(method(control, "modifyEffectiveTool")), "ordinal"));
-	}
-
-	@Test void theSwitchAndOtherMixinsAreLeftAlone() throws Exception {
-		ClassNode target = merged(), mixin = architectury();
+	@Test void theSwitchLeavesFabricApisMixinAlone() throws Exception {
+		ClassNode target = merged(), mixin = fabricInteraction();
 		byte[] before = StagedFabricMixinFixture.bytes(mixin);
 		System.setProperty(FabricBlockBreakMixinAdapter.PROPERTY, "off");
 		assertEquals(0, FabricBlockBreakMixinAdapter.adapt(mixin, name -> target));
 		assertArrayEquals(before, StagedFabricMixinFixture.bytes(mixin));
-		System.clearProperty(FabricBlockBreakMixinAdapter.PROPERTY);
-		mixin.name = "another/ServerPlayerGameModeMixin";
-		method(mixin, "onBreak").name = "other$blockCallback";
-		assertEquals(1, FabricBlockBreakMixinAdapter.adapt(mixin, name -> target), "same proven locals under another class and handler name");
-	}
-
-	@Test void anotherModsHarvestHandlerUsesTheSameProvenProducer() throws Exception {
-		ClassNode mixin = apoli();
-		mixin.name = "unrelated/HarvestMixin";
-		method(mixin, "modifyEffectiveTool").name = "other$toolDecision";
-		ClassNode target = merged();
-		assertEquals(1, FabricBlockBreakMixinAdapter.adapt(mixin, name -> target));
-		assertEquals(0, MixinFit.value(MixinFit.injectorOf(method(mixin, "other$toolDecision")), "ordinal"));
 	}
 
 	@Test void fabricApisAfterBreakFiresOnNeoForgesRemovalResultWithTheSameValues() throws Exception {
@@ -201,6 +148,21 @@ class FabricBlockBreakMixinAdapterTest {
 		method(callbackReader, "onBlockBroken").instructions.insert(new InsnNode(Opcodes.POP));
 		method(callbackReader, "onBlockBroken").instructions.insert(new VarInsnNode(Opcodes.ALOAD, 2));
 		assertEquals(0, FabricBlockBreakMixinAdapter.adapt(callbackReader, name -> target), "a handler that reads its callback cannot be handed null");
+	}
+
+	/** The class each ecosystem's mods were compiled against, from the staged merged base's native references. */
+	private static java.util.function.BiFunction<net.forbric.api.Ecosystem, String, ClassNode> natives() {
+		Path jar = TestFixtures.stagedRoot().resolve("merged-base/patched-mc-merged-26.2.jar");
+		TestFixtures.require(Fixture.STAGED, Files.isRegularFile(jar), "actual game required");
+		NativeGameReferences references = new NativeGameReferences(path -> {
+			try (ZipFile zip = new ZipFile(jar.toFile())) {
+				ZipEntry entry = zip.getEntry(path);
+				return entry == null ? null : zip.getInputStream(entry).readAllBytes();
+			} catch (Exception unreadable) {
+				return null;
+			}
+		});
+		return references::get;
 	}
 
 	private static MethodNode destroyBlock(ClassNode node) {

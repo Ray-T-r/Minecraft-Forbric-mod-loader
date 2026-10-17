@@ -45,48 +45,27 @@ import net.forbric.api.Ecosystem;
 import net.forbric.kernel.util.ForbricLog;
 
 /**
- * Points three Fabric {@code ServerPlayerGameMode.destroyBlock} injections at what NeoForge's body has.
+ * Points fabric-api's {@code onBlockBroken} (PlayerBlockBreakEvents.AFTER) at what NeoForge's {@code destroyBlock} has; see
+ * {@link #afterBreak}.
  *
- * <p>The merge kept NeoForge's {@code destroyBlock}. It posts {@code BreakBlockEvent} first and keeps the event in
- * a local, reads the state into slot 2 instead of vanilla's slot 5, and replaces vanilla's
- * {@code player.hasCorrectToolForDrops(state)} with {@code state.canHarvestBlock(level, pos, player)}, stored BEFORE
- * the block is removed instead of after. The values are the same values; only where they sit moved, and two
- * injections that name them by position found nothing:
+ * <p>This adapter once also repaired two injections that name {@code destroyBlock}'s locals by position. Both are now done by
+ * mechanisms that know no mod: architectury's {@code onBreak} locals capture by {@link MixinCapturedLocals} (each captured
+ * local is the merged slot holding the same value), apoli-legacy's {@code modifyEffectiveTool} ordinal by
+ * {@link NativeLocalPins} (the {@code @ModifyVariable}'s ordinal picks {@code canDestroy} natively, the merged local of the same
+ * name and type is pinned by index). Both run before this adapter, so those branches had become dead code here.
  *
- * <ul>
- *   <li>architectury's {@code onBreak} captures {@code (BlockEntity, BlockState)} at the first {@code getBlock()},
- *       vanilla's order. NeoForge's frame there is {@code (BlockState, BreakBlockEvent, BlockEntity)}. The handler
- *       is wrapped, as {@link MixinHandlerShim} does for arguments: a new one takes the merged frame, carries the
- *       annotation, and hands the original the two values it asked for. Without it architectury's
- *       {@code BlockEvent.BREAK} never fires on a server.</li>
- *   <li>apoli-legacy's {@code modifyEffectiveTool} is a {@code @ModifyVariable} of the SECOND boolean in scope at
- *       {@code mineBlock} — vanilla's first is "the block was removed", its second "the tool is right". In NeoForge's
- *       body the removal comes after {@code mineBlock}, so the harvest check is the only boolean there, and it
- *       becomes ordinal 0. Without it origins that allow or deny harvesting do nothing.</li>
- * </ul>
- *
- * <p>And fabric-api's {@code onBlockBroken} (PlayerBlockBreakEvents.AFTER), whose {@code Block.destroy} anchor NeoForge
- * moved into its own {@code removeBlock}; see {@link #afterBreak}.
- *
- * <p>None is a rule about locals in general — {@link MixinHandlerShim} refuses exactly that, because a mapping by
- * type can hand over a different value of the same type. Each fires only when the merged body PROVES the values:
- * the one {@code BlockState} in scope is the one read from {@code level.getBlockState(pos)}, the one
- * {@code BlockEntity} is {@code level.getBlockEntity(pos)}, the one boolean is stored straight from
- * {@code canHarvestBlock} and vanilla's harvest call is gone; the AFTER wrapper needs the two {@code removeBlock}
- * calls, the named block entity and adjusted state in scope at both, and the one {@code Block.destroy} inside. On
- * vanilla's own body each finds what it was written for and changes nothing.
- *
- * <p>Apoli's other {@code destroyBlock} handler, {@code actionOnBlockBreak}, reads both booleans by MixinExtras
- * {@code @Local} ordinal and gets them in the other order on the merged body. It binds, and it only ever ANDs the
- * two, so it is left alone.
+ * <p>Why AFTER is still named: vanilla calls {@code Block.destroy} once, in {@code destroyBlock}, only when the block was
+ * removed. NeoForge moved it into its own {@code removeBlock}, which {@code destroyBlock} calls on two exclusive paths
+ * (creative and survival) and which calls {@code Block.destroy} exactly when it returns true; fabric-api's handler reads the
+ * block entity and adjusted state by MixinExtras {@code @Local}, which exist only in {@code destroyBlock}. Inlining either
+ * call ({@link NativeCallInlining}) puts two calls where vanilla has one; following the helper's answer instead means proving
+ * that the helper returns true exactly on the path where it makes the call — a relation of the helper's result to an effect
+ * in its body that no general mechanism here reads yet. The repair stays pinned to fabric-api's mixin and handler.
  *
  * <p>Each injector is read as Mixin reads it, never by spelling: its selectors by the method they bind in the merged class
- * ({@link MixinCallbackShape#binds}), its point by the member it names ({@link MixinCallbackShape#names}) — whitespace and
- * a dotted owner are the same target, and one without its owner or descriptor names the member where {@code destroyBlock}
- * of the class the mod was compiled against decides it — and the instruction it picks in the merged body is the one
- * Mixin's reading of that target selects there.
+ * ({@link MixinCallbackShape#binds}), its point by the member it names ({@link MixinCallbackShape#names}).
  *
- * <p>{@code -Dforbric.fabricBlockBreak=off} leaves all three mixins as they were compiled.
+ * <p>{@code -Dforbric.fabricBlockBreak=off} leaves fabric-api's mixin as it was compiled.
  */
 public final class FabricBlockBreakMixinAdapter {
 	public static final String PROPERTY = "forbric.fabricBlockBreak";
@@ -106,11 +85,7 @@ public final class FabricBlockBreakMixinAdapter {
 	private static final String BLOCK_ENTITY = "net/minecraft/world/level/block/entity/BlockEntity";
 	private static final String CIR = "Lorg/spongepowered/asm/mixin/injection/callback/CallbackInfoReturnable;";
 	private static final String INJECT = "Lorg/spongepowered/asm/mixin/injection/Inject;";
-	private static final String MODIFY_VARIABLE = "Lorg/spongepowered/asm/mixin/injection/ModifyVariable;";
 	private static final String GROUP = "Lorg/spongepowered/asm/mixin/injection/Group;";
-	private static final String GET_BLOCK = "L" + STATE + ";getBlock()Lnet/minecraft/world/level/block/Block;";
-	private static final String MINE_BLOCK = "Lnet/minecraft/world/item/ItemStack;mineBlock(Lnet/minecraft/world/level/Level;"
-			+ "L" + STATE + ";Lnet/minecraft/core/BlockPos;Lnet/minecraft/world/entity/player/Player;)V";
 	private static final String ON_BREAK_DESC = "(Lnet/minecraft/core/BlockPos;" + CIR + "L" + BLOCK_ENTITY + ";L" + STATE + ";)V";
 
 	private FabricBlockBreakMixinAdapter() {
@@ -144,72 +119,7 @@ public final class FabricBlockBreakMixinAdapter {
 			}
 			return wrapped;
 		}
-		int changed = 0;
-		for (MethodNode handler : new ArrayList<>(mixin.methods)) {
-			changed += breakEventLocals(mixin, handler, target, destroy, source);
-			changed += harvestOrdinal(handler, target, destroy, source);
-		}
-		if (changed > 0) {
-			ForbricLog.info("[Forbric/Mixin] %s: its destroyBlock injection now reads the locals NeoForge's merged "
-					+ "destroyBlock keeps, not vanilla's slots", mixin.name.replace('/', '.'));
-		}
-		return changed;
-	}
-
-	/** Wrap a local-capturing break callback while preserving its requested (BlockEntity, BlockState) values. */
-	private static int breakEventLocals(ClassNode mixin, MethodNode handler, ClassNode target, MethodNode destroy, ClassNode source) {
-		if (!handler.desc.equals(ON_BREAK_DESC) || grouped(handler) || (handler.access & Opcodes.ACC_STATIC) != 0
-				|| method(mixin, handler.name + MixinHandlerShim.INNER_SUFFIX, handler.desc) != null || calledInside(mixin, handler)) return 0;
-		AnnotationNode inject = MixinFit.injectorOf(handler);
-		if (inject == null || !INJECT.equals(inject.desc) || !MixinCallbackShape.binds(handler, target, "destroyBlock" + DESTROY_DESC)
-				|| !capturesLocals(MixinFit.value(inject, "locals")) || MixinFit.value(inject, "slice") != null) return 0;
-		List<AnnotationNode> points = MixinFit.atNodes(inject);
-		if (points.size() != 1 || !"INVOKE".equals(MixinFit.value(points.getFirst(), "value"))
-				|| !MixinCallbackShape.names(points.getFirst(), GET_BLOCK, MixinCallbackShape.written(handler, source))
-				|| !Integer.valueOf(0).equals(MixinFit.value(points.getFirst(), "ordinal"))
-				|| !unshifted(points.getFirst())) return 0;
-
-		// The instruction the point picks in the merged body, as Mixin reads its target there: the first it selects.
-		List<AbstractInsnNode> selected = MixinCallbackShape.selected(points.getFirst(), destroy);
-		AbstractInsnNode point = selected.isEmpty() ? null : selected.getFirst();
-		if (!(point instanceof MethodInsnNode first) || !("L" + first.owner + ";" + first.name + first.desc).equals(GET_BLOCK)) return 0;
-		List<LocalVariableNode> frame = inScope(destroy, point);
-		if (frame == null) return 0;
-		List<Type> captured = new ArrayList<>();
-		for (LocalVariableNode local : frame) captured.add(Type.getType(local.desc));
-		List<Type> wanted = List.of(Type.getObjectType(BLOCK_ENTITY), Type.getObjectType(STATE));
-		if (captured.size() >= 2 && captured.subList(0, 2).equals(wanted)) return 0;    // vanilla's frame: it binds
-
-		LocalVariableNode entity = onlyOfType(frame, BLOCK_ENTITY), state = onlyOfType(frame, STATE);
-		if (entity == null || state == null || !readFromLevel(destroy, entity.index, "getBlockEntity")
-				|| !readFromLevel(destroy, state.index, "getBlockState")) return 0;
-		int last = Math.max(frame.indexOf(entity), frame.indexOf(state));
-		for (int i = 0; i <= last; i++) {
-			if (captured.get(i).getSize() != 1) return 0;    // wide locals would shift the slots below; none here
-		}
-
-		// The outer handler: pos, the callback, then the merged frame up to the last value the original wants.
-		List<Type> outerParams = new ArrayList<>(List.of(Type.getObjectType("net/minecraft/core/BlockPos"), Type.getType(CIR)));
-		outerParams.addAll(captured.subList(0, last + 1));
-		MethodNode outer = new MethodNode(Opcodes.ASM9, handler.access, handler.name,
-				Type.getMethodDescriptor(Type.VOID_TYPE, outerParams.toArray(Type[]::new)), null, null);
-		outer.visibleAnnotations = new ArrayList<>(List.of(inject));
-		outer.instructions.add(new VarInsnNode(Opcodes.ALOAD, 0));
-		outer.instructions.add(new VarInsnNode(Opcodes.ALOAD, 1));
-		outer.instructions.add(new VarInsnNode(Opcodes.ALOAD, 2));
-		outer.instructions.add(new VarInsnNode(Opcodes.ALOAD, 3 + frame.indexOf(entity)));
-		outer.instructions.add(new VarInsnNode(Opcodes.ALOAD, 3 + frame.indexOf(state)));
-		outer.instructions.add(MixinHandlerShim.callOwn(mixin, false, handler.name + MixinHandlerShim.INNER_SUFFIX,
-				handler.desc));
-		outer.instructions.add(new InsnNode(Opcodes.RETURN));
-		outer.maxStack = 5;
-		outer.maxLocals = outerParams.size() + 1;
-
-		handler.name = handler.name + MixinHandlerShim.INNER_SUFFIX;
-		handler.visibleAnnotations = without(handler.visibleAnnotations, INJECT);
-		handler.invisibleAnnotations = without(handler.invisibleAnnotations, INJECT);
-		mixin.methods.add(outer);
-		return 1;
+		return 0;
 	}
 
 	/**
@@ -326,42 +236,6 @@ public final class FabricBlockBreakMixinAdapter {
 		return calls;
 	}
 
-	/** The harvest check is the only boolean at {@code mineBlock} in NeoForge's body — ordinal 0. */
-	private static int harvestOrdinal(MethodNode handler, ClassNode target, MethodNode destroy, ClassNode source) {
-		if (!handler.desc.equals("(Z)Z") || grouped(handler)) return 0;
-		AnnotationNode modify = MixinFit.injectorOf(handler);
-		if (modify == null || !MODIFY_VARIABLE.equals(modify.desc) || !MixinCallbackShape.binds(handler, target, "destroyBlock" + DESTROY_DESC)
-				|| !Integer.valueOf(1).equals(MixinFit.value(modify, "ordinal"))
-				|| MixinFit.value(modify, "index") != null || MixinFit.value(modify, "name") != null
-				|| MixinFit.value(modify, "argsOnly") != null || MixinFit.value(modify, "slice") != null) return 0;
-		List<AnnotationNode> points = MixinFit.atNodes(modify);
-		if (points.size() != 1 || !"INVOKE".equals(MixinFit.value(points.getFirst(), "value"))
-				|| !MixinCallbackShape.names(points.getFirst(), MINE_BLOCK, MixinCallbackShape.written(handler, source))
-				|| MixinFit.value(points.getFirst(), "ordinal") != null || !unshifted(points.getFirst())) return 0;
-
-		AbstractInsnNode point = null;
-		for (AbstractInsnNode insn : destroy.instructions) {
-			if (!(insn instanceof MethodInsnNode call)) continue;
-			if (call.name.equals("hasCorrectToolForDrops")) return 0;    // vanilla's check is still here
-			if (call.name.equals("mineBlock") && ("L" + call.owner + ";" + call.name + call.desc).equals(MINE_BLOCK)) {
-				if (point != null) return 0;
-				point = insn;
-			}
-		}
-		// What the point selects in the merged body, as Mixin reads its target there, is that one call.
-		if (point == null || !MixinCallbackShape.selected(points.getFirst(), destroy).equals(List.of(point))) return 0;
-		List<LocalVariableNode> frame = inScope(destroy, point);
-		if (frame == null) return 0;
-		List<LocalVariableNode> booleans = frame.stream().filter(local -> local.desc.equals("Z")).toList();
-		if (booleans.size() != 1 || !storedFrom(destroy, booleans.getFirst().index, Opcodes.ISTORE, STATE, "canHarvestBlock",
-				"(Lnet/minecraft/world/level/BlockGetter;Lnet/minecraft/core/BlockPos;Lnet/minecraft/world/entity/player/Player;)Z")) return 0;
-
-		for (int i = 0; i + 1 < modify.values.size(); i += 2) {
-			if ("ordinal".equals(modify.values.get(i))) modify.values.set(i + 1, 0);
-		}
-		return 1;
-	}
-
 	/**
 	 * The method's locals after its arguments that Mixin's frame holds at {@code point}, by slot: those the local variable
 	 * table has in scope there, less any whose slot holds no value anywhere above it. Null when two entries claim one slot
@@ -414,15 +288,6 @@ public final class FabricBlockBreakMixinAdapter {
 		return held;
 	}
 
-	private static LocalVariableNode onlyOfType(List<LocalVariableNode> frame, String internalName) {
-		LocalVariableNode only = null;
-		for (LocalVariableNode local : frame) {
-			if (!local.desc.equals("L" + internalName + ";")) continue;
-			if (only != null) return null;
-			only = local;
-		}
-		return only;
-	}
 
 	/** Whether {@code slot} is written exactly once, from {@code this.level.<name>(pos)}. */
 	private static boolean readFromLevel(MethodNode method, int slot, String name) {
@@ -455,23 +320,6 @@ public final class FabricBlockBreakMixinAdapter {
 		return insn;
 	}
 
-	private static boolean capturesLocals(Object value) {
-		return value instanceof String[] mode && mode.length == 2
-				&& mode[0].equals("Lorg/spongepowered/asm/mixin/injection/callback/LocalCapture;")
-				&& List.of("CAPTURE_FAILHARD", "CAPTURE_FAILSOFT", "CAPTURE_FAILEXCEPTION").contains(mode[1]);
-	}
-	private static boolean unshifted(AnnotationNode at) {
-		for (String key : List.of("shift", "by", "opcode", "slice", "args")) if (MixinFit.value(at,key) != null) return false;
-		return true;
-	}
-	private static boolean calledInside(ClassNode mixin, MethodNode handler) {
-		for (MethodNode method : mixin.methods) for (AbstractInsnNode insn : method.instructions) {
-			if (insn instanceof MethodInsnNode call && call.owner.equals(mixin.name) && call.name.equals(handler.name) && call.desc.equals(handler.desc)) return true;
-			if (insn instanceof org.objectweb.asm.tree.InvokeDynamicInsnNode indy) for (Object value : indy.bsmArgs)
-				if (value instanceof org.objectweb.asm.Handle h && h.getOwner().equals(mixin.name) && h.getName().equals(handler.name) && h.getDesc().equals(handler.desc)) return true;
-		}
-		return false;
-	}
 
 	private static boolean grouped(MethodNode handler) {
 		for (List<AnnotationNode> annotations : java.util.Arrays.asList(handler.visibleAnnotations, handler.invisibleAnnotations)) {
