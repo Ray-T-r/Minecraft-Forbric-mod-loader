@@ -46,18 +46,17 @@ public final class GuestInjectorPruner implements ClassTransformer {
 
 	private static final String SHARED_INDEX = "Lcom/llamalad7/mixinextras/sugar/ref/LocalIntRef;";
 
-	/** The source API each closed protocol's callback calls: the reader-deserializer pair's model deserializer, and the
-	 * component-tooltip helper's provider registry. */
+	/** The public API the reader-deserializer pair's callback calls: fabric-model-loading's model deserializer. */
 	private static final String MODEL_DESERIALIZER = "net/fabricmc/fabric/api/client/model/loading/v1/UnbakedModelDeserializer";
-	private static final String TOOLTIP_PROVIDERS = "net/fabricmc/fabric/impl/item/ItemComponentTooltipProviderRegistryImpl";
 
 	/**
-	 * Neither protocol matches without a method call owned by its source API, and a call's owner is a CONSTANT_Utf8
-	 * entry of the class's constant pool. A class naming neither provably carries no prunable group, so it is handed
-	 * back before it is parsed: the pruner runs for every class the game loads.
+	 * Neither protocol matches without a CONSTANT_Utf8 entry its shape needs: the reader pair calls its public model
+	 * deserializer, and the component-tooltip group shares its index through MixinExtras' LocalIntRef. A class naming
+	 * neither provably carries no prunable group, so it is handed back before it is parsed: the pruner runs for every
+	 * class the game loads.
 	 */
 	private static final byte[][] PROTOCOL_OWNERS = {
-			net.forbric.kernel.util.ByteScan.poolEntry(MODEL_DESERIALIZER), net.forbric.kernel.util.ByteScan.poolEntry(TOOLTIP_PROVIDERS)};
+			net.forbric.kernel.util.ByteScan.poolEntry(MODEL_DESERIALIZER), net.forbric.kernel.util.ByteScan.poolEntry(TooltipDispatchRoles.INDEX)};
 
 	private final java.util.concurrent.atomic.LongAdder parsedClasses = new java.util.concurrent.atomic.LongAdder();
 
@@ -276,24 +275,11 @@ public final class GuestInjectorPruner implements ClassTransformer {
      */
     private static Group tooltipGroup(ClassNode node,java.util.function.Function<String,ClassNode> classes) {
         if(node==null)return null;
-        String protocol=TOOLTIP_PROVIDERS;
-        MethodNode helper=null;
+        MethodNode helper=null;TooltipDispatchRoles.Dispatch dispatch=null;
         for(MethodNode method:node.methods) {
             if(net.forbric.kernel.mixin.MixinFit.injectorOf(method)!=null||!method.desc.endsWith(SHARED_INDEX+")V"))continue;
-            Set<String> dispatch=new java.util.HashSet<>();boolean closed=true;
-            for(var instruction:method.instructions) {
-                if(instruction instanceof org.objectweb.asm.tree.FieldInsnNode)closed=false;
-                if(instruction instanceof org.objectweb.asm.tree.MethodInsnNode call) {
-                    if(call.owner.equals(protocol)&&Set.of("hasModdedEntries","onFirst","onLast","onBefore","onAfter").contains(call.name))dispatch.add(call.name);
-                    else if(!(call.owner.equals("net/fabricmc/fabric/impl/item/VanillaTooltipProviderOrder")&&call.name.equals("getVanillaOrder")
-                            ||call.owner.equals("com/llamalad7/mixinextras/sugar/ref/LocalIntRef")&&Set.of("get","set").contains(call.name)
-                            ||call.owner.equals("java/util/List")&&Set.of("size","get").contains(call.name)
-                            ||call.owner.equals("java/util/HashSet")&&Set.of("<init>","add").contains(call.name)))closed=false;
-                }
-            }
-            if(closed&&dispatch.equals(Set.of("hasModdedEntries","onFirst","onLast","onBefore","onAfter"))) {
-                if(helper!=null)return null;helper=method;
-            }
+            TooltipDispatchRoles.Dispatch roles=TooltipDispatchRoles.of(node.name,method);
+            if(roles!=null){if(helper!=null)return null;helper=method;dispatch=roles;}
         }
         if(helper==null)return null;
         List<MethodNode> group=new ArrayList<>();String share=null;
@@ -321,7 +307,9 @@ public final class GuestInjectorPruner implements ClassTransformer {
             if(!sugar.desc.equals("Lcom/llamalad7/mixinextras/sugar/Share;")||!(sharedValue instanceof String id)||share!=null&&!share.equals(id))return null;
             share=id;group.add(method);
         }
-        return group.isEmpty()||!oneHost(node,group,classes)?null:new Group("component-tooltip",List.copyOf(group));
+        if(group.isEmpty()||!oneHost(node,group,classes))return null;
+        pendingDispatch=dispatch;
+        return new Group("component-tooltip",List.copyOf(group));
     }
     /** Whether every callback binds the one same method of the mixin's one target, each as Mixin binds it. */
     private static boolean oneHost(ClassNode node,List<MethodNode> callbacks,java.util.function.Function<String,ClassNode> classes) {
@@ -332,16 +320,24 @@ public final class GuestInjectorPruner implements ClassTransformer {
         return true;
     }
 
-    private static boolean providerDeclarations(ClassNode providers) {
-        String ends="(Lnet/minecraft/world/item/ItemStack;Lnet/minecraft/world/item/Item$TooltipContext;Lnet/minecraft/world/item/component/TooltipDisplay;Ljava/util/function/Consumer;Lnet/minecraft/world/item/TooltipFlag;)V";
-        String sides="(Lnet/minecraft/world/item/ItemStack;Lnet/minecraft/core/component/DataComponentType;Lnet/minecraft/world/item/Item$TooltipContext;Lnet/minecraft/world/item/component/TooltipDisplay;Ljava/util/function/Consumer;Lnet/minecraft/world/item/TooltipFlag;Ljava/util/Set;)V";
-        for(String name:List.of("hasModdedEntries","onFirst","onLast","onBefore","onAfter")) {
-            String desc=name.equals("hasModdedEntries")?"()Z":name.equals("onFirst")||name.equals("onLast")?ends:sides;
-            if(providers.methods.stream().noneMatch(method->method.name.equals(name)&&method.desc.equals(desc)
+    /** The registry declares each of the dispatch's five moments public and static, under the descriptor the helper calls. */
+    private static boolean providerDeclarations(ClassNode providers,TooltipDispatchRoles.Dispatch dispatch) {
+        for(TooltipDispatchRoles.Member member:List.of(dispatch.guard(),dispatch.first(),dispatch.last(),dispatch.before(),dispatch.after())) {
+            if(providers.methods.stream().noneMatch(method->method.name.equals(member.name())&&method.desc.equals(member.desc())
                     &&(method.access&(org.objectweb.asm.Opcodes.ACC_STATIC|org.objectweb.asm.Opcodes.ACC_PUBLIC))==(org.objectweb.asm.Opcodes.ACC_STATIC|org.objectweb.asm.Opcodes.ACC_PUBLIC)))return false;
         }
         return true;
     }
+
+	/** The dispatch of the group the last tooltipGroup call found, until transform decides on it. */
+	private static volatile TooltipDispatchRoles.Dispatch pendingDispatch;
+	/** The dispatch of the tooltip group pruned on this boot: what the kernel's bridge calls in its place. */
+	private static volatile TooltipDispatchRoles.Dispatch prunedDispatch;
+
+	/** What the pruned component-tooltip group dispatched to, read from its own helper; null when none was pruned. */
+	public static TooltipDispatchRoles.Dispatch tooltipDispatch() {
+		return prunedDispatch;
+	}
 
 	private static volatile boolean fabricTooltipsPruned;
 
@@ -400,16 +396,17 @@ public final class GuestInjectorPruner implements ClassTransformer {
         if(group!=null&&!readerWasConsumed(node,group,classes,natives))return classBytes;
         if(group==null && fabricTooltipBridgeOn())group=tooltipGroup(node,classes);
         if(group==null)return classBytes;
+        TooltipDispatchRoles.Dispatch dispatch=pendingDispatch;
         if(group.protocol().equals("component-tooltip")) {
             ClassNode current=classes.apply("net/neoforged/neoforge/common/tooltip/ItemTooltipHandler");
-            ClassNode providers=classes.apply(TOOLTIP_PROVIDERS);
-            if(current==null||providers==null||!providerDeclarations(providers)||!NeoTooltipAppendersInjector.aroundSpliced()) {
+            ClassNode providers=dispatch==null?null:classes.apply(dispatch.registry());
+            if(current==null||providers==null||!providerDeclarations(providers,dispatch)||!NeoTooltipAppendersInjector.aroundSpliced()) {
                 ForbricLog.warn("[Forbric/GuestInjectorPruner] retained %s's original tooltip callbacks: the actual carrier appender replacement has not been proved",node.name);
                 return classBytes;
             }
         }
         node.methods.removeAll(group.methods());pruned+=group.methods().size();
-        if(group.protocol().equals("component-tooltip"))fabricTooltipsPruned=true;
+        if(group.protocol().equals("component-tooltip")){fabricTooltipsPruned=true;prunedDispatch=dispatch;}
         String loss=group.protocol().equals("reader-deserializer")&&!ModelFormatFunnelInjector.enabled()
                 ?"the original fabric:type custom model deserializer callback was removed while the model-format funnel is disabled":null;
         String config=net.forbric.kernel.mixin.MixinStubRebind.configOf(node.name);

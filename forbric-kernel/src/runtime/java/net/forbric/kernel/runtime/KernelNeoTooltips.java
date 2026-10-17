@@ -41,7 +41,9 @@ import net.neoforged.neoforge.event.RegisterTooltipAppendersEvent;
  *
  * <p>fabric-item-api's {@code ItemComponentTooltipProviderRegistry} places a mod's component lines first, last, or
  * before or after a vanilla component's. Its own injectors assume vanilla's single tooltip body and cannot work on
- * NeoForge's dispatcher, so the pruner removes them and they are drawn here instead, in the same places: first right
+ * NeoForge's dispatcher, so the pruner removes them and they are drawn here instead — through the very registry methods
+ * the pruned helper called, read from the helper itself ({@code GuestInjectorPruner.tooltipDispatch}), never by their
+ * names — in the same places: first right
  * after the item's own lines (ahead of NeoForge mods' there), last right above the advanced item id (after NeoForge
  * mods' there), and before/after each vanilla component around that component's own appender. Fabric's lists are
  * read on every tooltip, as Fabric reads them, so a provider registered after NeoForge's event — every client
@@ -49,7 +51,6 @@ import net.neoforged.neoforge.event.RegisterTooltipAppendersEvent;
  * does draw would draw the same lines a second time.
  */
 public final class KernelNeoTooltips {
-	private static final String IMPL = "net.fabricmc.fabric.impl.item.ItemComponentTooltipProviderRegistryImpl";
 	private static final AtomicBoolean PROVIDER_FAILED = new AtomicBoolean();
 	private static final AtomicBoolean ORDER_CHECKED = new AtomicBoolean();
 	private static volatile Fabric fabric;
@@ -58,9 +59,9 @@ public final class KernelNeoTooltips {
 	private KernelNeoTooltips() {
 	}
 
-	/** fabric-item-api's registry, as its own mixin calls it. */
+	/** The pruned helper's registry moments, as its own mixin called them. */
 	record Fabric(MethodHandle hasModdedEntries, MethodHandle onFirst, MethodHandle onLast, MethodHandle onBefore,
-			MethodHandle onAfter) {
+			MethodHandle onAfter, net.forbric.kernel.transform.TooltipDispatchRoles.Dispatch dispatch) {
 	}
 
 	/** Once per process: {@code init} adds to four static lists, so a second call would draw every line twice. */
@@ -159,16 +160,9 @@ public final class KernelNeoTooltips {
 
 	private static Fabric resolve() {
 		if (!GuestInjectorPruner.fabricTooltipBridgeOn()) return null;
-		Class<?> impl;
-		try {
-			impl = Class.forName(IMPL, false, ItemStack.class.getClassLoader());
-		} catch (ClassNotFoundException | LinkageError absent) {
-			if (GuestInjectorPruner.fabricTooltipInjectorsPruned()) lost("its registry class is missing: " + absent);
-			return null;
-		}
-		if (!GuestInjectorPruner.fabricTooltipInjectorsPruned()) {
-			ForbricLog.warn("[Forbric/Tooltips] fabric-item-api's tooltip injectors were not pruned — the kernel does not "
-					+ "draw its component tooltip providers, and on NeoForge's dispatcher its own injectors bind nowhere");
+		net.forbric.kernel.transform.TooltipDispatchRoles.Dispatch dispatch = GuestInjectorPruner.tooltipDispatch();
+		if (dispatch == null) {
+			if (GuestInjectorPruner.fabricTooltipInjectorsPruned()) lost("the pruned helper's registry was not recorded");
 			return null;
 		}
 		if (!NeoTooltipAppendersInjector.aroundSpliced()) {
@@ -176,19 +170,22 @@ public final class KernelNeoTooltips {
 			return null;
 		}
 		try {
+			ClassLoader loader = ItemStack.class.getClassLoader();
 			MethodHandles.Lookup lookup = MethodHandles.publicLookup();
-			MethodType ends = MethodType.methodType(void.class, ItemStack.class, Item.TooltipContext.class, TooltipDisplay.class,
-					Consumer.class, TooltipFlag.class);
-			MethodType sides = MethodType.methodType(void.class, ItemStack.class, DataComponentType.class, Item.TooltipContext.class,
-					TooltipDisplay.class, Consumer.class, TooltipFlag.class, Set.class);
-			Fabric found = new Fabric(lookup.findStatic(impl, "hasModdedEntries", MethodType.methodType(boolean.class)),
-					lookup.findStatic(impl, "onFirst", ends), lookup.findStatic(impl, "onLast", ends),
-					lookup.findStatic(impl, "onBefore", sides), lookup.findStatic(impl, "onAfter", sides));
-			return found;
-		} catch (ReflectiveOperationException drifted) {
+			return new Fabric(handle(lookup, loader, dispatch.guard()), handle(lookup, loader, dispatch.first()),
+					handle(lookup, loader, dispatch.last()), handle(lookup, loader, dispatch.before()), handle(lookup, loader, dispatch.after()),
+					dispatch);
+		} catch (ReflectiveOperationException | LinkageError | IllegalArgumentException drifted) {
 			lost("its registry is not the one the kernel draws from: " + drifted);
 			return null;
 		}
+	}
+
+	/** The static {@code member} as the game loader defines its owner. */
+	private static MethodHandle handle(MethodHandles.Lookup lookup, ClassLoader loader,
+			net.forbric.kernel.transform.TooltipDispatchRoles.Member member) throws ReflectiveOperationException {
+		Class<?> owner = Class.forName(member.owner().replace('/', '.'), false, loader);
+		return lookup.findStatic(owner, member.name(), MethodType.fromMethodDescriptorString(member.desc(), loader));
 	}
 
 	/**
@@ -207,16 +204,18 @@ public final class KernelNeoTooltips {
 	/** Fabric's anchors are its own scrape of vanilla's order; one NeoForge does not list never fires. */
 	private static void warnOnOrderDrift() {
 		try {
+			Fabric bridge = fabric();
+			if (bridge == null) return;
 			ClassLoader loader = ItemStack.class.getClassLoader();
+			var member = bridge.dispatch().order();
 			@SuppressWarnings("unchecked")
-			List<DataComponentType<?>> order = (List<DataComponentType<?>>) Class.forName(
-					"net.fabricmc.fabric.impl.item.VanillaTooltipProviderOrder", true, loader).getMethod("getVanillaOrder").invoke(null);
+			List<DataComponentType<?>> order = (List<DataComponentType<?>>) handle(MethodHandles.publicLookup(), loader, member).invoke();
 			List<DataComponentType<?>> neo = ItemTooltipHandler.getVanillaAppenderOrder();
 			if (!neo.isEmpty() && !order.equals(neo)) {
 				ForbricLog.warn("[Forbric/Tooltips] Fabric's vanilla tooltip order (%d) differs from NeoForge's (%d) — a "
 						+ "provider anchored on a component NeoForge does not list is not drawn", order.size(), neo.size());
 			}
-		} catch (ReflectiveOperationException | LinkageError | RuntimeException unreadable) {
+		} catch (Throwable unreadable) {
 			ForbricLog.debug("[Forbric/Tooltips] could not read Fabric's vanilla tooltip order: %s", unreadable);
 		}
 	}

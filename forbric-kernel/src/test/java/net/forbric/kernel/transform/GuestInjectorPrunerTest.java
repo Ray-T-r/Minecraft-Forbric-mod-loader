@@ -116,6 +116,72 @@ class GuestInjectorPrunerTest {
 				"a second pass changes nothing");
 	}
 
+	/**
+	 * What the bridge calls in the pruned injectors' place is read from the helper itself: on the real mixin the five
+	 * registry moments and the order are the ones its helper calls; relocated, its registry and order classes moved and
+	 * every one of their methods renamed, the group is pruned alike and the recorded dispatch follows the new names.
+	 */
+	@Test
+	void theDispatchIsReadFromTheHelperAndFollowsAnyNames() throws Exception {
+		byte[] original = realItemStackMixin();
+		pruner().transform(ITEM_STACK_MIXIN, original, null);
+		var dispatch = GuestInjectorPruner.tooltipDispatch();
+		assertNotNull(dispatch);
+		String registry = "net/fabricmc/fabric/impl/item/ItemComponentTooltipProviderRegistryImpl";
+		assertEquals(List.of(registry + ".hasModdedEntries", registry + ".onFirst", registry + ".onLast", registry + ".onBefore", registry + ".onAfter",
+				"net/fabricmc/fabric/impl/item/VanillaTooltipProviderOrder.getVanillaOrder"),
+				java.util.stream.Stream.of(dispatch.guard(), dispatch.first(), dispatch.last(), dispatch.before(), dispatch.after(), dispatch.order())
+						.map(m -> m.owner() + "." + m.name()).toList());
+
+		java.util.Map<String, String> classes = java.util.Map.of(registry, "org/qzx/tips/QzxTips",
+				"net/fabricmc/fabric/impl/item/VanillaTooltipProviderOrder", "org/qzx/tips/QzxOrder", ITEM_STACK_ENTRY.replace(".class", ""), "org/qzx/tips/QzxStackHooks");
+		java.util.Map<String, String> methods = java.util.Map.of("hasModdedEntries", "qzxAny", "onFirst", "qzxHead", "onLast", "qzxTail",
+				"onBefore", "qzxPre", "onAfter", "qzxPost", "getVanillaOrder", "qzxSequence");
+		org.objectweb.asm.commons.Remapper remapper = new org.objectweb.asm.commons.Remapper() {
+			@Override public String map(String name) { return classes.getOrDefault(name, name); }
+			@Override public String mapMethodName(String owner, String name, String desc) {
+				return classes.containsKey(owner) && !owner.equals(ITEM_STACK_ENTRY.replace(".class", "")) ? methods.getOrDefault(name, name) : name;
+			}
+		};
+		ClassNode moved = new ClassNode();
+		read(original).accept(new org.objectweb.asm.commons.ClassRemapper(moved, remapper));
+		ClassNode tips = new ClassNode();
+		read(readFromNestedJar(fabricApiJar(), "fabric-item-api-v1", registry + ".class")).accept(new org.objectweb.asm.commons.ClassRemapper(tips, remapper));
+		GuestInjectorPruner relocated = new GuestInjectorPruner(owner -> owner.equals("org/qzx/tips/QzxTips") ? tips : resolver().apply(owner));
+		byte[] movedBytes = write(moved);
+		byte[] pruned = relocated.transform("org.qzx.tips.QzxStackHooks", movedBytes, null);
+		assertNotSame(movedBytes, pruned, "the relocated group is pruned alike");
+		for (String name : TOOLTIP_INJECTORS) assertEquals(null, method(read(pruned), name), name + " must be pruned");
+		var followed = GuestInjectorPruner.tooltipDispatch();
+		assertEquals(List.of("org/qzx/tips/QzxTips.qzxAny", "org/qzx/tips/QzxTips.qzxHead", "org/qzx/tips/QzxTips.qzxTail",
+				"org/qzx/tips/QzxTips.qzxPre", "org/qzx/tips/QzxTips.qzxPost", "org/qzx/tips/QzxOrder.qzxSequence"),
+				java.util.stream.Stream.of(followed.guard(), followed.first(), followed.last(), followed.before(), followed.after(), followed.order())
+						.map(m -> m.owner() + "." + m.name()).toList());
+
+		// A helper that also asks its registry something else is not the dispatcher: nothing is pruned.
+		ClassNode wider = read(original);
+		MethodNode helper = method(wider, "preAppendTooltip");
+		helper.instructions.insert(new org.objectweb.asm.tree.InsnNode(org.objectweb.asm.Opcodes.POP));
+		helper.instructions.insert(new org.objectweb.asm.tree.MethodInsnNode(org.objectweb.asm.Opcodes.INVOKESTATIC, registry, "hasModdedEntries", "()Z", false));
+		byte[] widerBytes = write(wider);
+		assertSame(widerBytes, pruner().transform(ITEM_STACK_MIXIN, widerBytes, null));
+	}
+
+	/** The pruner's resolver as {@link #pruner()} builds it. */
+	private static java.util.function.Function<String, ClassNode> resolver() {
+		GuestInjectorPruner base = pruner();
+		return owner -> {
+			try {
+				java.lang.reflect.Field field = GuestInjectorPruner.class.getDeclaredField("classes");
+				field.setAccessible(true);
+				@SuppressWarnings("unchecked") var classes = (java.util.function.Function<String, ClassNode>) field.get(base);
+				return classes.apply(owner);
+			} catch (ReflectiveOperationException unavailable) {
+				return null;
+			}
+		};
+	}
+
 	@Test
 	void fabricItemApisTooltipInjectorsStayWhileTheBridgeIsOff() throws Exception {
 		byte[] original = realItemStackMixin();
