@@ -34,14 +34,15 @@ for phase in ('positive','off','guard-off'):
  for item in [inputs['mod'],*inputs['modules']]:source=pathlib.Path(item['path']);shutil.copy2(source,run/'mods'/source.name)
  env=os.environ.copy();env.update(RUNDIR=str(run),FORBRIC_COMPAT_POLICY='continue' if phase=='off' else 'strict',M37_RESULT_COMPATIBILITY=str(results/(phase+'-compatibility.json')),
    FORBRIC_JVM=f'-Dforbric.fabricEntityAnchors={"off" if phase=="off" else "on"} -Dforbric.entityPhase={phase} -Dforbric.entityNonce={nonce} -Dforbric.entityRoot={run}'
-   # Only the bed occupancy and the sleeping direction are still the entity anchors'. The rest is repaired by mechanisms
+   # Only the bed occupancy is still the entity anchors'. The rest is repaired by mechanisms
    # that know no mod, each with its own switch, so the negative control turns every one of them off: the generic
    # renamed-body retarget (MixinRetarget R3) moves the sleep redirect into NeoForge's lambda; the carrier-stub rebind
    # moves fabric-api's boolean elytra check off LivingEntity's delegating canGlide()Z stub onto the body; the scoped-clear
    # relay puts the native activeEffects.clear() back into NeoForge's removeAllEffects so fabric-api's own wrap lands
    # there; CarrierDecisions moves the effect injectors onto the carrier's applicability question and its copy; and
-   # CarrierGuardedPoints moves the elytra check and flight tick ahead of NeoForge's gliding guards.
-   +(' -Dforbric.mixinRetarget=off -Dforbric.mixinStubRebind=off -Dforbric.scopedClearRelay=off -Dforbric.carrierDecisions=off -Dforbric.carrierGuardedPoints=off' if phase=='off' else '')
+   # CarrierGuardedPoints moves the elytra check and flight tick ahead of NeoForge's gliding guards; CarrierReturnedCalls moves
+   # the sleeping direction wrap to NeoForge's answer.
+   +(' -Dforbric.mixinRetarget=off -Dforbric.mixinStubRebind=off -Dforbric.scopedClearRelay=off -Dforbric.carrierDecisions=off -Dforbric.carrierGuardedPoints=off -Dforbric.carrierReturnedCalls=off' if phase=='off' else '')
    +(' -Dforbric.carrierGuardedPoints=off' if phase=='guard-off' else ''))
  for key,role in [('MERGED','merged'),('FORGE_RT','forge'),('NEO_RT','neo')]:env[key]=inputs[role]['path']
  command=['python3',str(kernel/'run/compat/evidence.py'),'run','--source',str(root),'--mods',str(run/'mods'),'--output',str(results/(phase+'.json'))]
@@ -75,8 +76,10 @@ for phase in ('positive','off','guard-off'):
  effect='[Forbric/Mixin] net.fabricmc.fabric.mixin.entity.event.effect.LivingEntityMixin.'
  decided=[any(effect+handler+': ' in line and ' is no longer called in ' in line for line in text.splitlines()) for handler in ('beforeForceAddEffect','beforeRemoveAllEffects')]
  assert decided==[phase!='off']*2,(phase,'the effect injectors are moved onto the carrier\'s decisions in every phase but the negative control',decided)
- anchors='restored 2 entity callback anchor(s) in net.fabricmc.fabric.mixin.entity.event.LivingEntityMixin'
- assert (anchors in text)==(phase!='off'),(phase,'the bed occupancy and the sleeping direction stay the entity anchors\'')
+ anchors='restored 1 entity callback anchor(s) in net.fabricmc.fabric.mixin.entity.event.LivingEntityMixin'
+ assert (anchors in text)==(phase!='off'),(phase,'the bed occupancy stays the entity anchors\'')
+ direction='[Forbric/Mixin] net.fabricmc.fabric.mixin.entity.event.LivingEntityMixin.onGetSleepingDirection: net.minecraft.world.level.block.BedBlock.getBedOrientation is no longer called'
+ assert (direction in text)==(phase!='off'),(phase,'the sleeping direction wrap moves to the answer in every phase but the negative control')
  relay='[Forbric/ScopedClear] net.minecraft.world.entity.LivingEntity: [removeAllEffects()Z(activeEffects)]'
  assert (relay in text)==(phase!='off'),(phase,'the scoped-clear relay runs in every phase but the negative control')
  print('[M37] PASS',phase,'seventeen actual entity callback cases with expected verdicts',flush=True)
