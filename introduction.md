@@ -1174,6 +1174,10 @@ every `catch` in `src/main` and `src/runtime` either rethrows or reports to `Cau
   analysis frames, …), it is reported as a failure instead: ASM's `Analyzer` wraps whatever its interpreter threw
   in the very `AnalyzerException` a recogniser expects.
 
+A recogniser that declines by throwing gives the decline an exception type of its own (a private class such as
+`Unproven`) and catches that one as `expected`, ahead of the `warn` for everything else: to a single catch, an
+`IllegalArgumentException` the recogniser throws on purpose looks the same as one a bug throws.
+
 A summary (`[Forbric/Caught] summary …`, one line per failure site with its count) is logged when loading
 finishes and again at JVM exit. With `FORBRIC_CAUGHT_FILE` (or `-Dforbric.caught.file`) naming a file, each failure
 site is also appended there on first hit, and its count at exit.
