@@ -4,11 +4,16 @@ package net.forbric.kernel.transform;
 import java.util.function.Function;
 import org.objectweb.asm.*;
 import org.objectweb.asm.tree.*;
-import net.forbric.kernel.mixin.FabricSectionCompilerMixinAdapter;
 import net.forbric.kernel.util.ForbricLog;
 
-/** Keeps NeoForge's contextual model geometry when Fabric's renderer emits an otherwise native model. */
+/**
+ * Keeps NeoForge's contextual model geometry when Fabric's renderer emits an otherwise native model.
+ *
+ * <p>Keyed on the Fabric Rendering API's public {@code FabricBlockStateModel} default and NeoForge's model extension, never on
+ * a mod. {@code -Dforbric.fabricChunkRendering=off} leaves the default as written.
+ */
 public final class FabricModelContextTransformer implements ClassTransformer {
+	public static final String PROPERTY = "forbric.fabricChunkRendering";
 	static final String TARGET = "net/fabricmc/fabric/api/client/renderer/v1/model/FabricBlockStateModel";
 	static final String EXTENSION = "net/neoforged/neoforge/client/extensions/BlockStateModelExtension";
 	static final String MODEL = "net/minecraft/client/renderer/block/dispatch/BlockStateModel";
@@ -21,17 +26,21 @@ public final class FabricModelContextTransformer implements ClassTransformer {
 
 	public FabricModelContextTransformer(Function<String, byte[]> classes) { this.classes = classes; }
 
+	public static boolean enabled() {
+		return !"off".equalsIgnoreCase(System.getProperty(PROPERTY, "on"));
+	}
+
 	@Override public String name() { return "forbric-fabric-model-context"; }
 
 	@Override public AnchorSet anchors() {
-		return FabricSectionCompilerMixinAdapter.enabled()
+		return enabled()
 				? AnchorSet.of(new AnchorSet.Anchor(TARGET.replace('/', '.'), AnchorSet.Severity.REQUIRED,
 						"Fabric's default quad emission must retain NeoForge's level, position and state when collecting native geometry"))
-				: AnchorSet.scanned("disabled by " + FabricSectionCompilerMixinAdapter.PROPERTY);
+				: AnchorSet.scanned("disabled by " + PROPERTY);
 	}
 
 	@Override public byte[] transform(String className, byte[] bytes, TransformContext context) {
-		if (!FabricSectionCompilerMixinAdapter.enabled() || !TARGET.equals(className.replace('.', '/'))) return bytes;
+		if (!enabled() || !TARGET.equals(className.replace('.', '/'))) return bytes;
 		byte[] modelBytes = classes.apply(MODEL + ".class");
 		if (modelBytes == null) return bytes;
 		ClassNode model = new ClassNode();

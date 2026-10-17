@@ -589,13 +589,14 @@ public final class MixinStubRebind {
 				// this cannot see. Whether every sharer moves too is decided over the whole mixin (plans).
 				String key = MixinFit.asString(MixinFit.value(share, "value"));
 				if (!sharedEnabled() || key == null || MixinFit.value(share, "namespace") != null) return null;
-				// Not a @Redirect's: one that shares state with its siblings replaces the call as part of a takeover set up
-				// elsewhere in the method, and on the merged body that call can be a carrier's own pipeline.
-				// fabric-renderer-api's SectionCompilerMixin hands every block of a chunk section to the FRAPI renderer
-				// that way, and on NeoForge's compile overload the call it replaces is NeoForge's per-block renderer.
-				// FabricSectionCompilerMixinAdapter handles that reviewed pair atomically, together with the
-				// native-model context bridge. This generic pass must not move arbitrary renderer takeovers.
-				if (REDIRECT.equals(injector.desc)) return null;
+				// A @Redirect that shares state with its siblings replaces the call as part of a takeover set up elsewhere
+				// in the method; on the merged body that call could be a carrier's own pipeline. It moves only where the
+				// delegate makes each call it replaces exactly as often as the mod's own platform made it at that
+				// signature (replacesOnlyNativeCalls): the takeover then meets the calls it met natively, and none a
+				// carrier added. fabric-renderer-api's SectionCompilerMixin hands every block of a chunk section to the
+				// FRAPI renderer that way: vanilla's compile tessellates once, and so does NeoForge's overload, whose extra
+				// geometry is drawn by calls of its own the redirect does not name.
+				if (REDIRECT.equals(injector.desc) && !replacesOnlyNativeCalls(points, target, stub, delegate, ecosystem)) return null;
 				shares.add(key);
 				continue;
 			}
@@ -631,6 +632,27 @@ public final class MixinStubRebind {
 			for (int i = 0; i < stubParams.length; i++) if (delegation.positions()[i] < 0) return null;
 		}
 		return new Plan(injector, stub, delegation, captures, List.copyOf(shares), Map.copyOf(pins), variableIndex);
+	}
+
+	/**
+	 * Whether a {@code @Redirect}'s points name calls the delegate makes exactly as often as the method its selector bound
+	 * on the mod's own platform did — that platform's body at the stub's signature, read in its native reference — and at
+	 * least once, with no ordinal picking among them. A carrier that added a call of that member (its own pipeline) or
+	 * split one makes the counts differ, and the redirect stays where Mixin bound it. No reference, nothing moves.
+	 */
+	static boolean replacesOnlyNativeCalls(List<AnnotationNode> points, ClassNode target, MethodNode stub, MethodNode delegate,
+			Ecosystem ecosystem) {
+		ClassNode reference = ecosystem == null ? null : NativeGameReferences.reference(ecosystem, target.name);
+		MethodNode was = reference == null ? null : reference.methods.stream()
+				.filter(m -> m.name.equals(stub.name) && m.desc.equals(stub.desc)).findFirst().orElse(null);
+		if (was == null || points.isEmpty()) return false;
+		for (AnnotationNode at : points) {
+			if (MixinFit.value(at, "ordinal") != null) return false;
+			String value = MixinFit.asString(MixinFit.value(at, "value")), member = MixinFit.asString(MixinFit.value(at, "target"));
+			List<AbstractInsnNode> natively = anchors(was, value, member), merged = anchors(delegate, value, member);
+			if (natively == null || merged == null || natively.isEmpty() || natively.size() != merged.size()) return false;
+		}
+		return true;
 	}
 
 	/**

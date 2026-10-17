@@ -1,0 +1,1 @@
+{"required": true, "package": "fixture.qzxrender.hooks", "compatibilityLevel": "JAVA_21", "client": ["QzxChunkHooks"], "injectors": {"defaultRequire": 1}}
