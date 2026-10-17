@@ -46,6 +46,9 @@ final class NativeSharedPredicateTemplate {
   List<Guard>stateGuards=new ArrayList<>();proof.stateGetter(Member.of(stateType),new Root(0),stateGuards,new HashSet<>());proof.stateRead(ground,new Root(0),stateGuards,new HashSet<>());
   List<Integer>offsets=offsets(entry.lambda().method(),Member.of(q1));if(offsets.size()!=2)return null;String schema=null;Value interaction=entry.interaction();if(!(interaction instanceof Projection projection))return null;ClassNode control=classes.apply(Type.getType(projection.descriptor()).getInternalName());if(control==null)return null;for(MethodNode method:control.methods)for(var i:method.instructions)if(i instanceof MethodInsnNode call&&call.owner.equals("net/forbric/kernel/runtime/KernelFabricTagViews")&&call.name.equals("begin")&&previous(i)instanceof LdcInsnNode ldc&&ldc.cst instanceof String key){if(schema!=null&&!schema.equals(key))return null;schema=key;}if(schema==null)return null;
   return new Plan(old,live,first,guard,second,constant,query,ordinal,entry.lambda().method(),getter,List.copyOf(proof.roots),List.copyOf(proof.definitions),Map.copyOf(proof.flags),List.copyOf(stateGuards),question,proof.dispatchKey,new Leaf(entry.lambda().contract(),offsets.get(0)),new Leaf(entry.lambda().contract(),offsets.get(1)),getterSite,interaction,schema);
+ }catch(IllegalArgumentException refused){
+  // The proof's own answer: a body on the pair's path is not the closed shape the template may move.
+  Caught.expected(refused);return null;
  }catch(RuntimeException unsupported){
   Caught.warn(unsupported,"[Forbric/Mixin] could not derive the shared predicate template of %s.%s%s; it is left as written",current.name,written==null?"?":written.name,written==null?"":written.desc);return null;}}
  private record Entry(Decl lambda,Value interaction){ }
