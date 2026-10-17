@@ -73,7 +73,7 @@ for phase in ('positive','off','guard-off'):
  moved=[elytra+handler+': the carrier put' in text for handler in ('injectElytraCheck','injectElytraTick')]
  assert moved==[phase=='positive']*2,(phase,'the gliding decision and the flight tick are moved ahead of the guards in the positive phase only',moved)
  effect='[Forbric/Mixin] net.fabricmc.fabric.mixin.entity.event.effect.LivingEntityMixin.'
- decided=[effect+handler+': ' in text for handler in ('beforeForceAddEffect','beforeRemoveAllEffects')]
+ decided=[any(effect+handler+': ' in line and ' is no longer called in ' in line for line in text.splitlines()) for handler in ('beforeForceAddEffect','beforeRemoveAllEffects')]
  assert decided==[phase!='off']*2,(phase,'the effect injectors are moved onto the carrier\'s decisions in every phase but the negative control',decided)
  anchors='restored 2 entity callback anchor(s) in net.fabricmc.fabric.mixin.entity.event.LivingEntityMixin'
  assert (anchors in text)==(phase!='off'),(phase,'the bed occupancy and the sleeping direction stay the entity anchors\'')

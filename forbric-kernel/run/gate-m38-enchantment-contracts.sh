@@ -52,6 +52,9 @@ for phase in ('positive','off'):
  proof=json.loads((run/'probe.json').read_text());shutil.copy2(run/'probe.json',results/(phase+'-probe.json'))
  assert proof['nonce']==nonce and proof['phase']==phase and len(proof['cases'])==16,proof
  assert all(c['pass'] is (phase=='positive') for c in proof['cases']),proof
+ # The Fabric-only translation is CarrierDecisions' repair (fabric-api's server language copy, moved onto NeoForge's
+ # capture), so it is there in the positive phase only; vanilla's own language is there in both.
+ assert proof['vanillaLanguage'] is True and proof['fabricLanguage'] is (phase=='positive'),(phase,'language',proof['fabricLanguage'],proof['vanillaLanguage'])
  outcome=json.loads((results/(phase+'.result.json')).read_text());assert outcome['inputsUnchanged'] is True,outcome
  report=json.loads((results/(phase+'-compatibility.json')).read_text())
  if phase=='positive':assert report['confirmedRequired']==0,report

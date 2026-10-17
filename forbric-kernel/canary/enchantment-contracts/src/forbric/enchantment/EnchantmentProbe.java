@@ -33,6 +33,7 @@ public final class EnchantmentProbe {
  private static final java.util.function.Supplier<CustomItem> CUSTOM=ITEMS.register("custom",()->new CustomItem(properties("custom")));
  private static MinecraftServer server;private static FakePlayer player;private static Path root;private static String phase,nonce,mode,route;
  private static ItemStack current;private static Holder<Enchantment> enchantment;private static int events,supports,primary,custom;private static EnchantingContext observed;
+ private static boolean fabricLanguage,vanillaLanguage;
  private static final List<Map<String,Object>> cases=new ArrayList<>();
  private static Item.Properties properties(String name){return new Item.Properties().setId(ResourceKey.create(Registries.ITEM,Identifier.fromNamespaceAndPath("forbricenchantment",name))).enchantable(10);}
  public static class NativeItem extends Item {
@@ -51,8 +52,10 @@ public final class EnchantmentProbe {
   NeoForge.EVENT_BUS.addListener(ServerTickEvent.Post.class,e->{if(e.getServer()!=server)return;MinecraftServer running=server;server=null;run(running);});
  }
  private static void run(MinecraftServer running){try{
-  require(net.minecraft.locale.Language.getInstance().getOrDefault("forbric.lang.probe").equals("Fabric language probe"),"Fabric-only mod translation absent");
-  require(net.minecraft.locale.Language.getInstance().getOrDefault("item.minecraft.stick").equals("Stick"),"vanilla language resource absent");
+  // Recorded, not required: the Fabric-only translation is loaded by a repair the negative control switches off with the
+  // enchanting ones (CarrierDecisions), and the sixteen enchanting cases must still run there.
+  fabricLanguage=net.minecraft.locale.Language.getInstance().getOrDefault("forbric.lang.probe").equals("Fabric language probe");
+  vanillaLanguage=net.minecraft.locale.Language.getInstance().getOrDefault("item.minecraft.stick").equals("Stick");
   require(net.fabricmc.loader.api.FabricLoader.getInstance().getModContainer("minecraft").orElseThrow().findPath("version.json").isPresent(),"Minecraft container has no actual root");
   var level=running.overworld();player=new FakePlayer(level,new GameProfile(UUID.fromString("aa790f79-93fd-46fc-a615-e3ef8d29c146"),"EnchantProbe"));level.addNewPlayer(player);
   enchantment=level.registryAccess().lookupOrThrow(Registries.ENCHANTMENT).getOrThrow(Enchantments.SHARPNESS);
@@ -86,7 +89,7 @@ public final class EnchantmentProbe {
   }
  }catch(Throwable failure){failure.printStackTrace();}finally{try{
   if(player!=null)running.overworld().removePlayerImmediately(player,Entity.RemovalReason.DISCARDED);
-  Map<String,Object> result=new LinkedHashMap<>();result.put("nonce",nonce);result.put("phase",phase);result.put("cases",cases);result.put("pass",cases.size()==16&&cases.stream().allMatch(c->Boolean.TRUE.equals(c.get("pass"))));Files.writeString(root.resolve("probe.json"),new GsonBuilder().setPrettyPrinting().create().toJson(result));
+  Map<String,Object> result=new LinkedHashMap<>();result.put("nonce",nonce);result.put("phase",phase);result.put("cases",cases);result.put("fabricLanguage",fabricLanguage);result.put("vanillaLanguage",vanillaLanguage);result.put("pass",fabricLanguage&&vanillaLanguage&&cases.size()==16&&cases.stream().allMatch(c->Boolean.TRUE.equals(c.get("pass"))));Files.writeString(root.resolve("probe.json"),new GsonBuilder().setPrettyPrinting().create().toJson(result));
  }catch(Exception failure){failure.printStackTrace();}running.halt(false);}}
  private static void require(boolean ok,String message){if(!ok)throw new IllegalStateException(message);}
 }
