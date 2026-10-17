@@ -249,6 +249,20 @@ public final class CommonNetworkInteropInjector implements ClassTransformer {
 	 * handler vanilla rarely calls.
 	 */
 	private static final String CONNECTION = "net.minecraft.network.Connection";
+	/**
+	 * {@code Connection.sendPacket(Packet, ChannelFutureListener, boolean)}: every packet the connection puts on the wire
+	 * comes through it, a packet sent while connected straight from {@code send} and a queued one when the queue is
+	 * flushed, in the order they go out.
+	 */
+	private static final String CONNECTION_SEND = "sendPacket";
+	private static final String CONNECTION_SEND_DESC = "(Lnet/minecraft/network/protocol/Packet;Lio/netty/channel/ChannelFutureListener;Z)V";
+	private static final String DECLARATION_HOOK = "declarationAlreadyMade";
+	/** {@code off}: every channel declaration goes out as its ecosystem sends it, repeats included. */
+	public static final String DECLARATIONS_ONCE_PROPERTY = "forbric.channelDeclarationsOnce";
+
+	static boolean declarationsOnceEnabled() {
+		return !"off".equalsIgnoreCase(System.getProperty(DECLARATIONS_ONCE_PROPERTY, "on"));
+	}
 	private static final String CHANNEL_ACTIVE = "channelActive";
 	private static final String CHANNEL_ACTIVE_DESC = "(Lio/netty/channel/ChannelHandlerContext;)V";
 	private static final String DELAYED_DISCONNECT = "delayedDisconnect";
@@ -485,6 +499,14 @@ public final class CommonNetworkInteropInjector implements ClassTransformer {
 				changed = true;
 				reporter.hit(CLAIM_CHANNEL_REGISTRATION);
 				ForbricLog.info("[Forbric/Net] keeping MinecraftForge's channel bookkeeping in step at %s.%s", className, m.name);
+			} else if (connection && m.name.equals(CONNECTION_SEND) && m.desc.equals(CONNECTION_SEND_DESC) && declarationsOnceEnabled()) {
+				if (dropRepeatedDeclarations(node, m)) {
+					bumpStack(m, 2);
+					changed = true;
+					ForbricLog.info("[Forbric/Net] %s.%s now leaves out a channel declaration (minecraft:register) that names only "
+							+ "channels this side already declared on the connection in this phase — three ecosystems each declare, "
+							+ "and a peer's Fabric listeners heard the same channels again for every repeat", className, CONNECTION_SEND);
+				}
 			} else if (connection && m.name.equals(CHANNEL_ACTIVE) && m.desc.equals(CHANNEL_ACTIVE_DESC)) {
 				if (startForgeNetworkingOnActivation(m)) {
 					bumpStack(m, 1);
@@ -534,11 +556,15 @@ public final class CommonNetworkInteropInjector implements ClassTransformer {
 				}
 			}
 			if (clientConfig && m.name.equals(HANDLE_PAYLOAD) && m.desc.equals(HANDLE_PAYLOAD_DESC)) {
-				if (shareMinecraftRegisterWithSuper(m)) {
+				int shared = shareMinecraftRegisterWithSuper(m);
+				if (shared > 0) {
 					changed = true;
 					ForbricLog.info("[Forbric/Net] letting minecraft:register reach BOTH stacks at %s.%s, Fabric first — "
 							+ "NeoForge's override answered it alone and returned, and Fabric's server treats the first "
 							+ "register as the whole declaration", className, HANDLE_PAYLOAD);
+				} else if (shared == 0) {
+					ForbricLog.info("[Forbric/Net] %s.%s already hands minecraft:register to super ahead of NeoForge's reply "
+							+ "— both stacks see it once, Fabric first, as shipped", className, HANDLE_PAYLOAD);
 				} else {
 					ForbricLog.warn("[Forbric/Net] %s.%s no longer swallows minecraft:register the way this fix "
 							+ "expects; leaving it alone", className, HANDLE_PAYLOAD);
@@ -1050,8 +1076,15 @@ public final class CommonNetworkInteropInjector implements ClassTransformer {
 	 * and replies, then NeoForge replies, then the override returns as it always did. NeoForge's own guard stays
 	 * the condition — no duplicate of {@code initializedConnection} to drift — and no branch target is added, so
 	 * every original stack map frame stays valid.
+	 *
+	 * <p>A carrier that already hands the packet to super right before its reply (NeoForge 26.2.0.88 does) gets nothing:
+	 * a second super call there handed the same register to Fabric's addon twice, and every Fabric listener on the
+	 * client's configuration channel events heard each of the server's declarations twice.
+	 *
+	 * @return 1 when the super call was spliced in, 0 when every early exit already makes it ahead of the reply, -1 when
+	 *         the method is not the shape this repair knows
 	 */
-	private static boolean shareMinecraftRegisterWithSuper(MethodNode m) {
+	static int shareMinecraftRegisterWithSuper(MethodNode m) {
 		// Follow the method's OWN super call rather than naming the superclass, so this tracks a renamed base class.
 		MethodInsnNode superCall = null;
 		for (AbstractInsnNode insn = m.instructions.getFirst(); insn != null; insn = insn.getNext()) {
@@ -1062,9 +1095,9 @@ public final class CommonNetworkInteropInjector implements ClassTransformer {
 				break;
 			}
 		}
-		if (superCall == null) return false;
+		if (superCall == null) return -1;
 
-		boolean patched = false;
+		boolean patched = false, alreadyShared = false;
 		for (AbstractInsnNode insn = m.instructions.getFirst(); insn != null; insn = insn.getNext()) {
 			if (insn.getOpcode() != Opcodes.INVOKESTATIC) continue;
 			MethodInsnNode call = (MethodInsnNode) insn;
@@ -1072,6 +1105,10 @@ public final class CommonNetworkInteropInjector implements ClassTransformer {
 			// Only the early-exit branch: the NeoForge reply immediately followed by the return that skips super.
 			AbstractInsnNode exit = nextOpcode(call);
 			if (exit == null || exit.getOpcode() != Opcodes.RETURN) continue;
+			if (superCallAhead(call)) {
+				alreadyShared = true;
+				continue;
+			}
 			// Spliced between the argument push and the static call: the stack holds NeoForge's listener argument,
 			// we push two more and the invokespecial consumes exactly those two, leaving the argument in place.
 			InsnList first = new InsnList();
@@ -1082,7 +1119,55 @@ public final class CommonNetworkInteropInjector implements ClassTransformer {
 			patched = true;
 		}
 		if (patched) bumpStack(m, 3);
-		return patched;
+		return patched ? 1 : alreadyShared ? 0 : -1;
+	}
+
+	/**
+	 * Whether the straight-line run of code that ends in {@code reply} already passes the packet to super: walking back
+	 * from the reply, within its basic block (up to a merge point's frame, a jump or an exit; line-number labels are not
+	 * block boundaries), a {@code handleCustomPayload} {@code INVOKESPECIAL} comes first.
+	 */
+	private static boolean superCallAhead(MethodInsnNode reply) {
+		for (AbstractInsnNode insn = reply.getPrevious(); insn != null; insn = insn.getPrevious()) {
+			if (insn instanceof org.objectweb.asm.tree.FrameNode) return false;
+			int opcode = insn.getOpcode();
+			if (insn instanceof org.objectweb.asm.tree.JumpInsnNode || opcode == Opcodes.ATHROW
+					|| opcode >= Opcodes.IRETURN && opcode <= Opcodes.RETURN) return false;
+			if (opcode == Opcodes.INVOKESPECIAL && insn instanceof MethodInsnNode call && call.name.equals(HANDLE_PAYLOAD)
+					&& call.desc.equals(HANDLE_PAYLOAD_DESC)) return true;
+		}
+		return false;
+	}
+
+	/**
+	 * Puts {@code if (PayloadInterop.declarationAlreadyMade(this, packet)) return;} at the head of
+	 * {@code Connection.sendPacket(Packet, ChannelFutureListener, boolean)}, the method every packet the connection puts on
+	 * the wire reaches, in the order it goes out.
+	 *
+	 * <p>Fabric, NeoForge and MinecraftForge each declare the channels they listen on ({@code minecraft:register}) at
+	 * their own point of the handshake, and NeoForge's client answers every declaration a server makes before its own
+	 * network is set up with its full list again; the peer's Fabric addon fired its channel-registration event for each,
+	 * the same channels three times over. A declaration naming only channels this side has already declared on the
+	 * connection in the current phase tells no receiver anything (each keeps a set) and is left out; the first
+	 * declaration, any carrying a new channel, and every {@code unregister} still go out, in their order.
+	 */
+	static boolean dropRepeatedDeclarations(ClassNode owner, MethodNode m) {
+		for (AbstractInsnNode insn : m.instructions) {
+			if (insn instanceof MethodInsnNode call && call.owner.equals(INTEROP) && call.name.equals(DECLARATION_HOOK)) return false;
+		}
+		LabelNode send = new LabelNode();
+		InsnList head = new InsnList();
+		head.add(new VarInsnNode(Opcodes.ALOAD, 0));
+		head.add(new VarInsnNode(Opcodes.ALOAD, 1));
+		head.add(new MethodInsnNode(Opcodes.INVOKESTATIC, INTEROP, DECLARATION_HOOK, "(Ljava/lang/Object;Ljava/lang/Object;)Z", false));
+		head.add(new org.objectweb.asm.tree.JumpInsnNode(Opcodes.IFEQ, send));
+		head.add(new InsnNode(Opcodes.RETURN));
+		head.add(send);
+		// The class is read with EXPAND_FRAMES: the frame at the join is absolute, the method's own arguments.
+		head.add(new FrameNode(Opcodes.F_NEW, 4, new Object[] {owner.name, "net/minecraft/network/protocol/Packet",
+				"io/netty/channel/ChannelFutureListener", Opcodes.INTEGER}, 0, new Object[] {}));
+		m.instructions.insert(head);
+		return true;
 	}
 
 	/** The next node that is a real instruction — labels, frames and line numbers all report opcode -1. */

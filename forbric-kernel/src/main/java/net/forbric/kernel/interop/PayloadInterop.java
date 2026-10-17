@@ -295,6 +295,108 @@ public final class PayloadInterop {
 		return after != null && after.protocolMovesAreNeoForges;
 	}
 
+	/** What one connection has declared it listens on (minecraft:register less unregister), in the phase it was sent in. */
+	private static final class Declared {
+		String protocol;
+		final Set<String> channels = new LinkedHashSet<>();
+	}
+
+	private static final Map<Object, Declared> DECLARED = Collections.synchronizedMap(new WeakHashMap<>());
+
+	/**
+	 * Called at the head of {@code Connection.sendPacket(Packet, ChannelFutureListener, boolean)}: true when {@code packet} is a
+	 * channel declaration ({@code minecraft:register}) naming only channels this side already declared on {@code connection}
+	 * in the phase it is in, which no receiver learns anything from, so the send is left out. Every other packet, an
+	 * {@code unregister} included, goes out and keeps the record in step.
+	 *
+	 * <p>The channels are read as NeoForge's codec reads the declaration's bytes, whichever ecosystem's payload class it
+	 * is ({@link WirePayloads}); a declaration none of the three codecs can read goes out as it is.
+	 */
+	public static boolean declarationAlreadyMade(Object connection, Object packet) {
+		if (connection == null || packet == null) return false;
+		// A custom-payload packet (the client- or server-bound one), through the cached accessor; anything else at once.
+		if (!packet.getClass().getName().endsWith("CustomPayloadPacket")) return false;
+		Method accessor = payloadAccessor(packet.getClass());
+		if (accessor == null) return false;
+		Object payload;
+		try {
+			payload = accessor.invoke(packet);
+		} catch (ReflectiveOperationException | RuntimeException e) {
+			return false;
+		}
+		if (payload == null) return false;
+		String id = cachedPayloadId(payload);
+		if (!isDinnerboneChannelRegistration(id)) return false;
+		try {
+			Object listener = invokeNoArg(connection, "getPacketListener");
+			Object protocol = listener == null ? null : invokeNoArg(listener, "protocol");
+			Object flow = invokeNoArg(connection, "getSending");
+			if (protocol == null || flow == null) return false;
+			Object idValue = invokeNoArg(invokeNoArg(payload, "type"), "id");
+			Object neoCodec = neoCodec(idValue, protocol, flow);
+			Object neo = WirePayloads.decodedBy(neoCodec, payload, java.util.Arrays.asList(
+					typeAndCodecCodec(fabricTypeAndCodecOnly(idValue, protocol, flow)), forgeCodec(idValue, flow)));
+			Registration declared = registration(neo);
+			if (declared == null) return false;
+			Set<String> channels = new LinkedHashSet<>();
+			for (Object channel : declared.channels) channels.add(String.valueOf(channel));
+			if (!repeatsWhatWasDeclared(connection, String.valueOf(protocol), declared.register, channels)) return false;
+			probe(() -> "  left out a repeated " + id + " of " + channels.size() + " channel(s) already declared in " + protocol);
+			ForbricLog.debug("[Forbric/Net] left out a repeated channel declaration of %d channel(s) already declared on the connection in %s",
+					channels.size(), protocol);
+			return true;
+		} catch (RuntimeException unreadable) {
+			return false;
+		}
+	}
+
+	/** A no-argument accessor of a class, by name, looked up once per class: this runs for every custom payload sent. */
+	private static ClassValue<Method> accessor(String name) {
+		return new ClassValue<>() {
+			@Override
+			protected Method computeValue(Class<?> type) {
+				Method found = findMethod(type, name);
+				if (found != null) found.setAccessible(true);
+				return found;
+			}
+		};
+	}
+
+	private static final ClassValue<Method> PAYLOAD_TYPE = accessor("type"), TYPE_ID = accessor("id");
+
+	/** {@link #payloadId}, through accessors looked up once per class. */
+	private static String cachedPayloadId(Object payload) {
+		try {
+			Method typeAccessor = PAYLOAD_TYPE.get(payload.getClass());
+			Object type = typeAccessor == null ? null : typeAccessor.invoke(payload);
+			Method idAccessor = type == null ? null : TYPE_ID.get(type.getClass());
+			return idAccessor == null ? null : String.valueOf(idAccessor.invoke(type));
+		} catch (ReflectiveOperationException | RuntimeException e) {
+			return null;
+		}
+	}
+
+	/**
+	 * Keeps {@code connection}'s record of what it declared in {@code phase} — a new phase starts it afresh, a register
+	 * adds, an unregister takes away — and answers whether this register names only channels already declared there.
+	 */
+	static boolean repeatsWhatWasDeclared(Object connection, String phase, boolean register, Set<String> channels) {
+		synchronized (DECLARED) {
+			Declared record = DECLARED.computeIfAbsent(connection, ignored -> new Declared());
+			if (!phase.equals(record.protocol)) {
+				record.protocol = phase;
+				record.channels.clear();
+			}
+			if (!register) {
+				record.channels.removeAll(channels);
+				return false;
+			}
+			if (!channels.isEmpty() && record.channels.containsAll(channels)) return true;
+			record.channels.addAll(channels);
+			return false;
+		}
+	}
+
 	/**
 	 * Called at the head of a Fabric receiver's {@code sendPacket(Packet, ChannelFutureListener)} — fabric-api's public
 	 * {@code PacketSender} method: true when the packet is that receiver's own answer to a common negotiation it is

@@ -599,6 +599,35 @@ class CommonNetworkInteropInjectorExecutionTest {
 		}
 	}
 
+	/**
+	 * A carrier whose override already hands the server's register to super before its own reply (NeoForge 26.2.0.88's
+	 * shape) gets no second super call: fabric-api's addon hears each register once, ahead of NeoForge, as shipped.
+	 */
+	@Test void aCarrierThatAlreadySharesTheRegisterGetsNoSecondDelivery(@TempDir Path work) throws Throwable {
+		Map<String, String> sources = new HashMap<>(STAND_INS);
+		sources.put(CLIENT_CONFIG, sources.get(CLIENT_CONFIG).replace(
+				"if (!initializedConnection && packet.payload() instanceof MinecraftRegisterPayload) {\n",
+				"if (!initializedConnection && packet.payload() instanceof MinecraftRegisterPayload) {\n\t\t\t\t\t\t\tsuper.handleCustomPayload(packet);\n"));
+		assertNotEquals(STAND_INS.get(CLIENT_CONFIG), sources.get(CLIENT_CONFIG), "premise: the stand-in now shares the register itself");
+		Map<String, byte[]> original = InjectorExecution.compile(work, sources);
+		String internal = CLIENT_CONFIG.replace('.', '/');
+		byte[] out = InjectorExecution.transform(new CommonNetworkInteropInjector(), CLIENT_CONFIG, original.get(internal), EnvType.CLIENT);
+		Map<String, byte[]> classes = new HashMap<>(original);
+		classes.put(internal, out);
+		ClassLoader loader = InjectorExecution.load(classes);
+		Object listener = InjectorExecution.construct(loader.loadClass(CLIENT_CONFIG),
+				InjectorExecution.construct(loader.loadClass("net.minecraft.network.Connection")));
+		Object register = InjectorExecution.construct(loader.loadClass("net.neoforged.neoforge.network.payload.MinecraftRegisterPayload"), Set.of());
+		InjectorExecution.invoke(listener, "handleCustomPayload",
+				InjectorExecution.construct(loader.loadClass("net.minecraft.network.protocol.common.ClientboundCustomPayloadPacket"), register));
+		assertEquals(List.of("fabric", "neoforge"), listener.getClass().getField("handled").get(listener),
+				"fabric-api hears the register once, ahead of NeoForge's reply");
+		org.objectweb.asm.tree.ClassNode node = new org.objectweb.asm.tree.ClassNode();
+		new org.objectweb.asm.ClassReader(original.get(internal)).accept(node, 0);
+		org.objectweb.asm.tree.MethodNode handle = node.methods.stream().filter(m -> m.name.equals("handleCustomPayload")).findFirst().orElseThrow();
+		assertEquals(0, CommonNetworkInteropInjector.shareMinecraftRegisterWithSuper(handle), "recognised as already shared");
+	}
+
 	@Test void fabricAnswersTheServersRegisterBeforeNeoForge(@TempDir Path work) throws Throwable {
 		Game game = game(work);
 		for (boolean repaired : new boolean[] {true, false}) {
