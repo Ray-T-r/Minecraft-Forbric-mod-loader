@@ -37,16 +37,20 @@ import net.forbric.kernel.mixin.NativeDecisionIsland;
  * liquid; under water and in slime the carrier is answered what the guest answered, so the air is the native air too. In
  * lava the carrier asks its own charm question, unwrapped, as merged (its own line), and decides the air its own way — and
  * the tank is never consulted there, as natively. Switched off, the guest is never asked.
+ *
+ * <p>The value modifier alone (no wrap of the charm, so nothing the carrier asks again) gets no island: its answer would steer
+ * no decision anyone hears, so it is left unbound, as merged. Beside the wraps it binds the head check the island holds, and
+ * that is said: its answer steers the native decisions after it, not the carrier's own.
  */
 class NativeDecisionIslandWeaveTest {
 	private static final Path SOURCES = Path.of("src/test/resources/weave/decisionisland");
-	private static final String CONFIG = "decisionisland.mixins.json";
+	private static final String CONFIG = "decisionisland.mixins.json", SLIME = "decisionisland-slime.mixins.json";
 	private static final String MOD = "snorkel";
 	private static final String TARGET = "org/brook/fen/Wader";
 
 	@TempDir static Path work;
 	private static Path fixture;
-	private static WeaveHarness.Result island, off, natively;
+	private static WeaveHarness.Result island, off, natively, slimeAlone;
 
 	@BeforeAll static void weave() throws Exception {
 		List<Path> sources;
@@ -58,11 +62,13 @@ class NativeDecisionIslandWeaveTest {
 		nativeSources.remove(SOURCES.resolve("org/brook/fen/Wader.java"));
 		nativeSources.add(SOURCES.resolve("native/org/brook/fen/Wader.java"));
 		Path nativeFixture = WeaveHarness.fixture(work, "native", nativeSources, Map.of(CONFIG, SOURCES.resolve(CONFIG)), List.of("-g"));
-		fixture = NativeWeaveReferences.with(work, WeaveHarness.fixture(work, "decisionisland", sources, Map.of(CONFIG, SOURCES.resolve(CONFIG)),
-				List.of("-g")), NativeWeaveReferences.classes(nativeFixture));
+		fixture = NativeWeaveReferences.with(work, WeaveHarness.fixture(work, "decisionisland", sources, Map.of(CONFIG, SOURCES.resolve(CONFIG),
+				SLIME, SOURCES.resolve(SLIME)), List.of("-g")), NativeWeaveReferences.classes(nativeFixture));
 		island = run(fixture, "island", Map.of());
 		off = run(fixture, "off", Map.of(NativeDecisionIsland.PROPERTY, "off"));
 		natively = run(nativeFixture, "native", Map.of());
+		slimeAlone = WeaveHarness.run(work, "slime-alone", fixture, SLIME, MOD, Ecosystem.FABRIC, EnvType.SERVER, "fixture.decisionisland.Probe", "probe",
+				Map.of());
 	}
 
 	@Test void theGuestBindsTheNativeCallsAndTheClassVerifies() throws Exception {
@@ -77,6 +83,25 @@ class NativeDecisionIslandWeaveTest {
 		ClassNode node = new ClassNode();
 		new ClassReader(island.defined(TARGET)).accept(node, 0);
 		assertTrue(calls(node, "step", "snorkel$lava") && calls(node, "step", "snorkel$tank") && calls(node, "step", "breathe"), island.describe());
+	}
+
+	/** Beside the wraps, the value modifier binds the head check the island holds, and the log says whose decisions its answer steers. */
+	@Test void theValueModifierBesideTheWrapsIsToldWhoseDecisionsItSteers() throws Exception {
+		assertTrue(island.printed("[Forbric/Mixin] com.heron.snorkel.mixin.SlimeMixin.slime$drown may change what org.brook.fen.Wader.isSubmerged "
+				+ "answers in org.brook.fen.Wader.step: that answer steers the native decisions the island repeats there"), island.describe());
+		ClassNode node = new ClassNode();
+		new ClassReader(island.defined(TARGET)).accept(node, 0);
+		assertTrue(calls(node, "step", "slime$drown"), island.describe());
+	}
+
+	/** Alone, the value modifier's answer would steer nothing anyone hears: no island, and it binds nothing, as merged. */
+	@Test void theValueModifierAloneGetsNoIsland() throws Exception {
+		assertTrue(slimeAlone.printed(WeaveHarnessMain.DONE), slimeAlone.describe());
+		assertFalse(slimeAlone.output().contains("is asked in org.brook.fen.Wader.step again"), slimeAlone.describe());
+		ClassNode node = new ClassNode();
+		new ClassReader(slimeAlone.defined(TARGET)).accept(node, 0);
+		assertFalse(calls(node, "step", "slime$drown") || calls(node, "step", "isSubmerged"), slimeAlone.describe());
+		assertFalse(done(slimeAlone).contains("slime:"), slimeAlone.describe());
 	}
 
 	/** Under water, in open air and in slime, every line and every air value is the native run's, step by step. */

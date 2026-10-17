@@ -91,12 +91,24 @@ import net.forbric.kernel.util.ForbricLog;
  *       array or static write, no call without an answer, no allocation or lambda, no exception handler; whatever it shares
  *       with the merged body before the place is plain reads;</li>
  *   <li>the merged stretch leaves only by running on into the shared end, no instruction outside it jumps to that end or back
- *       into it, and nothing jumps back before the island.</li>
+ *       into it, and nothing jumps back before the island;</li>
+ *   <li>the injector leaves the call's answer as it is (an {@code @Inject}, or a wrap proved to hand back what the call
+ *       answered), or the carrier asks the call again and is relayed its answer: an answer the island would hand nobody is
+ *       left to the adapters that move the injector onto the carrier's own call (an overload the carrier calls instead, the
+ *       callee the call moved into), where the carrier hears it;</li>
+ *   <li>the carrier does not make the selected call itself (directly or in a static method it calls) with operands of its
+ *       own: such a call moved rather than went, and the injector is left to the adapters that bind it at the carrier's call,
+ *       the one whose answer counts — unless the carrier is relayed the island's answer;</li>
+ *   <li>the merged game runs the method, and it is not a carrier's forwarding stub — those are left to the adapters that move
+ *       the injector to the method that runs.</li>
  * </ul>
+ * An injector of another mod on a call an island already holds binds there as on any present call; where it may change the
+ * answer and no carrier method asks the call again, that is said once: its answer steers the native decisions after it.
  * A static method the island asks is relayed when the merged stretch asks it too, directly or in a static method it calls, and
- * the island hands it plain reads; its class must not be defined yet (it is checked again when it is). Every relayed method's
- * class and the host must still be undefined when the plan is registered, or no island is planned and the injector is left
- * unbound, said once. {@code -Dforbric.nativeDecisionIsland=off} plans nothing.
+ * the island hands it plain reads of what the method held when the island began (never a value the island computed itself,
+ * which the carrier, computing its own, would never ask with); its class must not be defined yet (it is checked again when it
+ * is). Every relayed method's class and the host must still be undefined when the plan is registered, or no island is planned
+ * and the injector is left unbound, said once. {@code -Dforbric.nativeDecisionIsland=off} plans nothing.
  */
 public final class NativeDecisionIsland {
 	public static final String PROPERTY = "forbric.nativeDecisionIsland";
@@ -117,9 +129,12 @@ public final class NativeDecisionIsland {
 	record Plan(String host, String method, Ecosystem ecosystem, String nativeOwner, String wanted, String source, String handler) {
 	}
 
-	/** Where an island goes in the host method and what it holds, as derived from one native body and one merged body. */
+	/**
+	 * Where an island goes in the host method and what it holds, as derived from one native body and one merged body; {@code
+	 * carried} are the members the merged stretch asks itself, directly or in a static method it calls.
+	 */
 	record Island(int start, int end, int resume, Map<Integer, Integer> slots, int fresh, Map<Integer, Relay> relays, Set<String> members,
-			Map<String, Relay> relayable) {
+			Map<String, Relay> relayable, Set<String> carried) {
 	}
 
 	/** The island, or why there is none (null for both when nothing is missing or the point is not one this reads). */
@@ -132,6 +147,8 @@ public final class NativeDecisionIsland {
 		final Set<Relay> relays = Collections.synchronizedSet(new LinkedHashSet<>());
 		/** Per island (host, method, ecosystem): the static calls it holds that the carrier's stretch asks again. */
 		final Map<String, Map<String, Relay>> relayable = new java.util.concurrent.ConcurrentHashMap<>();
+		/** Per island: every call it holds. */
+		final Map<String, Set<String>> members = new java.util.concurrent.ConcurrentHashMap<>();
 	}
 
 	private static String island(Plan plan) {
@@ -193,6 +210,8 @@ public final class NativeDecisionIsland {
 					if (MixinCallbackShape.calls(at, host).size() >= wanted.size()) {
 						// Present: perhaps only because an island another injector planned holds it — then its answer is relayed too.
 						Relay relay = registry.relayable.getOrDefault(island(plan), Map.of()).get(member);
+						if (relay == null && registry.members.getOrDefault(island(plan), Set.of()).contains(member))
+							answerNotice(mixin, handler, injector, member, target, host);
 						if (relay != null && !registry.plans.contains(plan)) {
 							if (registerAll(loader, List.of(relay.owner()), 0, () -> {
 								registry.plans.add(plan);
@@ -209,7 +228,18 @@ public final class NativeDecisionIsland {
 						}
 						continue;
 					}
+					// A method the merged game never runs, or a carrier's forwarding stub, is left to the adapters that move the injector
+					// to the method that runs (as NativeCallInlining leaves it).
+					if (MergedBaseUncalledMethods.neverRuns(merged, host, ecosystem) != null || MixinStubRebind.isCarrierStub(merged, host)) continue;
 					Outcome outcome = derive(merged, host, original, was, union(registry, plan), code);
+					// A call the carrier makes itself, with operands the island cannot hand it, moved rather than went: the injector is
+					// left to the adapters that bind it at the carrier's call, which is the one whose answer counts.
+					if (outcome.island() != null && outcome.island().relayable().get(member) == null && outcome.island().carried().contains(member))
+						outcome = new Outcome(null, "the carrier makes that call itself, with operands of its own, so the call moved rather than went");
+					// An answer the island hands nobody must not change: a wrap of a call no carrier method asks again either hands back
+					// what the call answered, or the injector is left to the adapters that move it onto the carrier's own call.
+					if (outcome.island() != null && outcome.island().relayable().get(member) == null && !answerKept(mixin, handler, injector))
+						outcome = new Outcome(null, "it may change what the call answers, and no carrier method asks the call again to hear it");
 					if (outcome.island() == null) {
 						if (outcome.declined() != null && DEBUG)
 							ForbricLog.info("[Forbric/Mixin] %s.%s: the merged %s.%s makes fewer calls of %s than %s does, and no native decision island "
@@ -220,6 +250,7 @@ public final class NativeDecisionIsland {
 					if (register(loader, registry, plan, outcome.island())) {
 						planned++;
 						merged = null;
+						if (outcome.island().relayable().get(member) == null) answerNotice(mixin, handler, injector, member, target, host);
 						ForbricLog.info("[Forbric/Mixin] %s.%s: %s is asked in %s.%s again — the merged game decides that stretch in %s, so "
 								+ "the native decisions run first, under %s's conditions%s", mixin.name.replace('/', '.'), handler.name,
 								NativeCallInlining.readable(member), target.replace('/', '.'), host.name, carrierOf(host, outcome.island()), ecosystem,
@@ -232,6 +263,28 @@ public final class NativeDecisionIsland {
 			}
 		}
 		return planned;
+	}
+
+	/**
+	 * Says so where an injector that may change a call's answer binds a call of the island that no carrier method asks again:
+	 * its answer steers the native decisions the island repeats, not the carrier's own decision, which the carrier makes with
+	 * calls of its own. A wrap proved to hand back what the call answered changes no answer and is not mentioned.
+	 */
+	private static void answerNotice(ClassNode mixin, MethodNode handler, AnnotationNode injector, String member, String target, MethodNode host) {
+		if (answerKept(mixin, handler, injector)) return;
+		ForbricLog.info("[Forbric/Mixin] %s.%s may change what %s answers in %s.%s: that answer steers the native decisions the island "
+				+ "repeats there, but the carrier decides the same thing with calls of its own, which do not hear it", mixin.name.replace('/', '.'),
+				handler.name, NativeCallInlining.readable(member), target.replace('/', '.'), host.name);
+	}
+
+	/** The injector leaves the call's answer as it is: an {@code @Inject}, or a wrap proved to hand back what the call answered. */
+	private static boolean answerKept(ClassNode mixin, MethodNode handler, AnnotationNode injector) {
+		String kind = injector.desc.substring(injector.desc.lastIndexOf('/') + 1, injector.desc.length() - 1);
+		return switch (kind) {
+			case "Inject" -> true;
+			case "WrapOperation" -> MixinCallbackProofs.returnsOriginal(mixin.name, handler);
+			default -> false;
+		};
 	}
 
 	private static Set<String> union(Registry registry, Plan plan) {
@@ -263,6 +316,11 @@ public final class NativeDecisionIsland {
 		return registerAll(loader, owners, 0, () -> {
 			registry.plans.add(plan);
 			registry.relays.addAll(island.relays().values());
+			registry.members.merge(island(plan), island.members(), (a, b) -> {
+				Set<String> both = new LinkedHashSet<>(a);
+				both.addAll(b);
+				return both;
+			});
 			registry.relayable.merge(island(plan), island.relayable(), (a, b) -> {
 				Map<String, Relay> both = new LinkedHashMap<>(a);
 				both.putAll(b);
@@ -389,16 +447,24 @@ public final class NativeDecisionIsland {
 		Set<String> members = new LinkedHashSet<>();
 		Set<String> reached = reached(m, p, mEnd, code);
 		Map<String, Relay> relayable = new LinkedHashMap<>();
+		Set<String> carried = new LinkedHashSet<>();
 		for (int i = s; i <= e; i++) {
 			if (!(n.get(i) instanceof MethodInsnNode call)) continue;
 			members.add(member(call));
+			if (reached.contains(member(call))) carried.add(member(call));
 			if (call.getOpcode() != Opcodes.INVOKESTATIC || !reached.contains(member(call))) continue;
-			if (operands(ns, was, call, n, s) == null) continue;
+			List<AbstractInsnNode> handed = operands(ns, was, call, n, s);
+			if (handed == null) continue;
+			// A value the island computed itself (a local it stores) is never the one the carrier computes again: the carrier's
+			// call, asked with its own, would never be answered. Only what the method held when the island began can match.
+			boolean own = false;
+			for (AbstractInsnNode operand : handed) own |= operand instanceof VarInsnNode load && stored.contains(load.var);
+			if (own) continue;
 			Relay relay = new Relay(call.owner, call.name, call.desc);
 			relayable.put(member(call), relay);
 			if (asked.contains(i)) relays.put(i, relay);
 		}
-		return new Outcome(new Island(s, e, mEnd, slots, fresh, relays, members, relayable), null);
+		return new Outcome(new Island(s, e, mEnd, slots, fresh, relays, members, relayable, carried), null);
 	}
 
 	/** Every member the merged stretch asks, directly or in a static method of a class at hand it calls, a few calls deep. */
@@ -489,7 +555,12 @@ public final class NativeDecisionIsland {
 			Set<String> wanted = new LinkedHashSet<>();
 			for (Plan plan : plans) wanted.add(plan.wanted());
 			Function<String, ClassNode> code = owner -> owner.equals(internal) ? node : current(loader, owner);
-			Outcome outcome = derive(node, host, nativeClass, was, wanted, code);
+			Outcome outcome;
+			try {
+				outcome = derive(node, host, nativeClass, was, wanted, code);
+			} catch (RuntimeException unreadable) {
+				outcome = new Outcome(null, "the bodies could not be read (" + unreadable + ")");
+			}
 			if (outcome.island() == null) {
 				ForbricLog.warn("[Forbric/Mixin] %s.%s: no native decision island in %s.%s — %s", first.source().replace('/', '.'), first.handler(),
 						binary, host.name, outcome.declined() == null ? "nothing is missing any more" : outcome.declined());
@@ -498,8 +569,16 @@ public final class NativeDecisionIsland {
 			Island island = outcome.island();
 			Map<Integer, Relay> kept = new LinkedHashMap<>();
 			for (Map.Entry<Integer, Relay> relay : island.relays().entrySet()) if (registry.relays.contains(relay.getValue())) kept.put(relay.getKey(), relay.getValue());
-			apply(host, was, new Island(island.start(), island.end(), island.resume(), island.slots(), island.fresh(), kept, island.members(),
-					island.relayable()));
+			MethodNode work = NativeCallInlining.copy(host);
+			try {
+				apply(work, was, new Island(island.start(), island.end(), island.resume(), island.slots(), island.fresh(), kept, island.members(),
+						island.relayable(), island.carried()));
+			} catch (RuntimeException unappliable) {
+				ForbricLog.warn("[Forbric/Mixin] %s.%s: the native decision island for %s.%s could not be put in (%s); the method stays as merged",
+						first.source().replace('/', '.'), first.handler(), binary, host.name, unappliable);
+				continue;
+			}
+			node.methods.set(node.methods.indexOf(host), work);
 			changed = true;
 		}
 		for (Relay relay : relays) {

@@ -90,10 +90,26 @@ class NativeDecisionIslandTest {
 		assertEquals(Map.of(4, new NativeDecisionIsland.Relay("org/quarry/Lore", "ask", "(Lorg/quarry/Pick;)Z")), outcome.island().relays());
 	}
 
+	/** The carrier's hook asks {@code ready()} itself, on a receiver of its own: carried, and not relayed (it is not static). */
+	@Test void aCallTheCarrierMakesItselfIsCarried() {
+		ClassNode mine = mine();
+		MethodNode strike = mine.methods.getFirst();
+		strike.instructions.insert(new InsnNode(Opcodes.POP));
+		strike.instructions.insert(new MethodInsnNode(Opcodes.INVOKEVIRTUAL, OWNER, "ready", "()Z", false));
+		strike.instructions.insert(new VarInsnNode(Opcodes.ALOAD, 0));
+		NativeDecisionIsland.Outcome outcome = NativeDecisionIsland.derive(owner(), mergedHook(), owner(), nativeDecisions(), Set.of(ASK),
+				name -> name.equals("org/quarry/Mine") ? mine : null);
+		assertNotNull(outcome.island(), String.valueOf(outcome.declined()));
+		assertEquals(Set.of("L" + OWNER + ";ready()Z", ASK), outcome.island().carried());
+		assertNull(outcome.island().relayable().get("L" + OWNER + ";ready()Z"), "a virtual call is never relayed");
+		assertNotNull(outcome.island().relayable().get(ASK));
+	}
+
 	@Test void aCallTheCarrierDoesNotAskAgainIsNotRelayed() {
 		NativeDecisionIsland.Outcome outcome = NativeDecisionIsland.derive(owner(), mergedHook(), owner(), nativeDecisions(), Set.of(ASK), name -> null);
 		assertNotNull(outcome.island(), String.valueOf(outcome.declined()));
 		assertTrue(outcome.island().relays().isEmpty(), "no carrier method is at hand that asks it");
+		assertEquals(Set.of(), outcome.island().carried());
 	}
 
 	@Test void aWantedCallAfterStateChangesIsRefused() {

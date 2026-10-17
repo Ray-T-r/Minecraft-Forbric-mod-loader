@@ -33,9 +33,10 @@ public final class NativeDecisionRelay {
 
 	private static final class Frame {
 		final Frame outer;
-		String[] keys = new String[2];
-		Object[][] operands = new Object[2][];
-		Object[] answers = new Object[2];
+		// Allocated on the first offer: most frames (an island that reached no relayed call) never hold an answer.
+		String[] keys;
+		Object[][] operands;
+		Object[] answers;
 		int size;
 
 		Frame(Frame outer) {
@@ -49,7 +50,11 @@ public final class NativeDecisionRelay {
 					return;
 				}
 			}
-			if (size == keys.length) {
+			if (keys == null) {
+				keys = new String[2];
+				operands = new Object[2][];
+				answers = new Object[2];
+			} else if (size == keys.length) {
 				keys = java.util.Arrays.copyOf(keys, size * 2);
 				operands = java.util.Arrays.copyOf(operands, size * 2);
 				answers = java.util.Arrays.copyOf(answers, size * 2);

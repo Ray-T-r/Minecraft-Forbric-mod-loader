@@ -64,6 +64,7 @@ class NativeDecisionIslandStagedTest {
 		assertTrue(island.members().containsAll(List.of(EYE, EFFECT, "L" + LIVING + ";canBreatheUnderwater()Z")), island.members().toString());
 		assertEquals(List.of(EFFECT), island.relays().values().stream().map(NativeDecisionIsland.Relay::key).toList(),
 				"only the static effect check is asked again by the carrier's hook");
+		assertFalse(island.carried().contains(EYE), "the hook never asks the eye-in-water check: " + island.carried());
 		for (String member : island.members())
 			assertFalse(member.contains("setAirSupply") || member.contains("hurtServer") || member.contains("decreaseAirSupply"),
 					"nothing that changes state is copied: " + member);
@@ -85,6 +86,28 @@ class NativeDecisionIslandStagedTest {
 		}
 		assertEquals(1, eyes, "one eye-in-water check, as vanilla's baseTick makes");
 		assertEquals(1, effects, "one water-breathing check, as vanilla's baseTick makes");
+	}
+
+	/**
+	 * Where the carrier moved the call rather than replaced it — the merged {@code SimpleModelWrapper.bake(baker, id, state)}
+	 * forwards to the overload taking the resolved model, which asks {@code findNonBlockSprites} on quads of its own — the
+	 * island would ask it a second time on quads the carrier never sees: the call is carried, not relayable, and planning
+	 * leaves the injector to the adapters that bind it at the carrier's call.
+	 */
+	@Test void aCallTheCarrierMovedIntoItsOwnStaticCalleeIsCarriedAndNotRelayed() throws Exception {
+		String owner = "net/minecraft/client/resources/model/SimpleModelWrapper";
+		String sprites = "L" + owner + ";findNonBlockSprites(Lnet/minecraft/client/resources/model/geometry/QuadCollection;)Lcom/google/common/collect/Multimap;";
+		ClassNode merged = staged("merged-base/patched-mc-merged-26.2.jar", owner + ".class");
+		ClassNode vanilla = staged("merged-base/patched-mc-merged-26.2.jar", "META-INF/forbric/native-reference/FABRIC/" + owner + ".class.bin");
+		String bake = "bake(Lnet/minecraft/client/resources/model/ModelBaker;Lnet/minecraft/resources/Identifier;"
+				+ "Lnet/minecraft/client/renderer/block/dispatch/ModelState;)Lnet/minecraft/client/renderer/block/dispatch/BlockStateModelPart;";
+		MethodNode host = NativeCallInlining.method(merged, bake), was = NativeCallInlining.method(vanilla, bake);
+		assertNotNull(host);
+		assertNotNull(was);
+		NativeDecisionIsland.Outcome outcome = NativeDecisionIsland.derive(merged, host, vanilla, was, Set.of(sprites), classes());
+		assertNotNull(outcome.island(), String.valueOf(outcome.declined()));
+		assertTrue(outcome.island().carried().contains(sprites), outcome.island().carried().toString());
+		assertNull(outcome.island().relayable().get(sprites), "its operand is quads the island computes itself");
 	}
 
 	@Test void theRelayedEffectCheckAnswersAnOpenFrameAndOtherwiseRunsAsAlways() throws Exception {
