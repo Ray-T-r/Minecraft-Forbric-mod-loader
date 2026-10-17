@@ -31,6 +31,8 @@ STUBS = {
     'static FabricLoader getInstance() { return null; } boolean isModLoaded(String id); }',
     'net/neoforged/fml/common/Mod.java': 'package net.neoforged.fml.common; import java.lang.annotation.*; '
     '@Retention(RetentionPolicy.RUNTIME) public @interface Mod { String value(); }',
+    'org/spongepowered/asm/mixin/extensibility/IMixinConfigPlugin.java': 'package org.spongepowered.asm.mixin.extensibility; '
+    'public interface IMixinConfigPlugin { java.util.List<String> getMixins(); }',
 }
 
 MOD = {
@@ -95,6 +97,11 @@ public class GameMixin {
     '@org.spongepowered.asm.mixin.Mixin(targets = "net.minecraft.client.Minecraft") public class ClientMixin { }',
     'org/example/samplemod/mixin/SamplePlugin.java': 'package org.example.samplemod.mixin; public class SamplePlugin { '
     'public boolean shouldApply(String mixin) { return mixin.startsWith("org.example.samplemod.mixin."); } }',
+    'org/example/samplemod/mixin/ListingPlugin.java': 'package org.example.samplemod.mixin; public class ListingPlugin '
+    'implements org.spongepowered.asm.mixin.extensibility.IMixinConfigPlugin { '
+    'public java.util.List<String> getMixins() { return java.util.List.of("ListedMixin"); } }',
+    'org/example/samplemod/mixin/ListedMixin.java': 'package org.example.samplemod.mixin; '
+    '@org.spongepowered.asm.mixin.Mixin(targets = "net.minecraft.client.Minecraft") public class ListedMixin { }',
 }
 
 EXTRA = {'org/example/samplemod/extra/Extra.java': 'package org.example.samplemod.extra; public class Extra { '
@@ -209,6 +216,14 @@ class RenameModTest(unittest.TestCase):
 
     def cls_name(self, old):
         return self.mapping['classes'][old]
+
+    def test_a_mixin_a_config_plugin_lists_by_name_keeps_that_name_in_the_moved_package(self):
+        # Mixin loads what getMixins() returns relative to the config's package: the name must still be there.
+        listed = self.cls_name('org/example/samplemod/mixin/ListedMixin')
+        self.assertTrue(listed.endswith('/ListedMixin'), listed)
+        self.assertEqual(listed.rsplit('/', 1)[0], self.cls_name('org/example/samplemod/mixin/TargetMixin').rsplit('/', 1)[0])
+        self.assertFalse(listed.startswith('org/example/'), listed)
+        self.assertIn('ListedMixin', self.mapping['keptNames'])
 
     def test_no_name_of_the_mod_is_left_in_entry_names(self):
         self.assertNotIn('samplemod', self.renamed.name)

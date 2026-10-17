@@ -511,6 +511,7 @@ public final class ModRename {
 			new ClassReader(Files.readAllBytes(Path.of(f[2]))).accept(cn, 0);
 			cn.accept(new ClassRemapper(new ClassVisitor(Opcodes.ASM9) { }, recorder));
 			for (MethodNode m : cn.methods) if (m.instructions != null) nameTests(m, tests);
+			if (cn.interfaces != null && cn.interfaces.contains(MIXIN_PLUGIN)) pluginMixinNames(cn, tests);
 		}
 		for (String name : found) System.out.println("REF\t" + name);
 		for (String test : tests) {
@@ -536,6 +537,22 @@ public final class ModRename {
 	}
 
 	private static final Set<String> EQUALITY = Set.of("equals", "equalsIgnoreCase", "contentEquals");
+	private static final String MIXIN_PLUGIN = "org/spongepowered/asm/mixin/extensibility/IMixinConfigPlugin";
+	private static final Pattern RELATIVE_MIXIN = Pattern.compile("(?:[a-z_$][A-Za-z0-9_$]*\\.)*[A-Z][A-Za-z0-9_$]*");
+
+	/**
+	 * Names a mixin config plugin spells as strings: {@code getMixins()} returns mixins relative to the config's package
+	 * ("RegistriesMixin", "client.FooMixin"), which Mixin then loads by that text. Each segment is kept as an equal-tested
+	 * name (the package still moves with the config), or the plugin would list classes that are no longer there.
+	 */
+	private static void pluginMixinNames(ClassNode cn, Set<String> tests) {
+		for (MethodNode m : cn.methods) {
+			if (m.instructions == null) continue;
+			for (AbstractInsnNode insn = m.instructions.getFirst(); insn != null; insn = insn.getNext())
+				if (insn instanceof LdcInsnNode ldc && ldc.cst instanceof String s && RELATIVE_MIXIN.matcher(s).matches())
+					for (String segment : s.split("\\.")) tests.add("equal\t" + segment);
+		}
+	}
 
 	private static AbstractInsnNode real(AbstractInsnNode insn) {
 		while (insn != null && insn.getOpcode() < 0) insn = insn.getNext();
