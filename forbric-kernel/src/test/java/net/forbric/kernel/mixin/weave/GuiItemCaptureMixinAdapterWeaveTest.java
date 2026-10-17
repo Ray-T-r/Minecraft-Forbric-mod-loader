@@ -20,6 +20,7 @@ import org.objectweb.asm.tree.MethodNode;
 
 import net.fabricmc.api.EnvType;
 import net.forbric.api.Ecosystem;
+import net.forbric.kernel.mixin.MixinCaptureLanding;
 import net.forbric.kernel.mixin.MixinGuiItemCaptureAdapter;
 
 /**
@@ -32,6 +33,10 @@ import net.forbric.kernel.mixin.MixinGuiItemCaptureAdapter;
  * {@code -Dforbric.guiItemCaptureAnchor=off} the capture is woven at the TAIL, on the join after the branch: Mixin
  * still reads the local as in scope there (its table entry ends on that join's label), loads a slot the empty-slot
  * path never wrote, and the first use of the GUI class throws {@code VerifyError}, which is how the mod crashed.
+ *
+ * <p>At every level Fabric Loader gives a mod, 0.9.2 included: there the call falls straight into the join, AFTER is
+ * the join's label, and Mixin's 0.9.2 local walk steps from it onto the join's frame, which does not declare the local.
+ * MixinCaptureLanding gives the call a NOP to land on; switched off, Mixin skips the moved capture at 0.9.2 alone.
  *
  * <p>The fixture compiles with {@code -g}: the local's scope in the LocalVariableTable is what Mixin reads to decide
  * what it can capture where.
@@ -47,43 +52,77 @@ class GuiItemCaptureMixinAdapterWeaveTest {
 	private static final String UNVERIFIABLE = WeaveHarnessMain.THREW + "java.lang.VerifyError: Bad local variable type";
 	private static final String AT_ITEM = "Location:\n    " + GUI + ".item(Lnet/minecraft/world/entity/LivingEntity;";
 
+	/** What the fixture mod declares in each run, so each level is the one Fabric Loader gives: declaring none is 0.9.2. */
+	private static final String REQUIRES = WeaveHarnessMain.REQUIRES;
+	private static final Map<String, String> LEVELS = Map.of(
+			"9002", "", "10000", "fabricloader=>=0.12", "17001", "fabricloader=>=0.19");
+
 	@TempDir static Path work;
 	private static Path fixture;
-	private static WeaveHarness.Result adapted, off, legacyLocals;
+	private static final Map<String, WeaveHarness.Result> adapted = new java.util.TreeMap<>();
+	private static WeaveHarness.Result off, offLegacy, landingOff, landingOffModern;
 
-	@BeforeAll static void weaveBothWays() throws Exception {
+	@BeforeAll static void weaveEveryWay() throws Exception {
 		List<Path> sources;
 		try (Stream<Path> walk = Files.walk(SOURCES)) {
 			sources = walk.filter(p -> p.toString().endsWith(".java")).sorted().toList();
 		}
 		assertEquals(11, sources.size(), "the fixture's sources changed; update this test with it: " + sources);
 		fixture = WeaveHarness.fixture(work, "guiitemcapture", sources, Map.of(CONFIG, SOURCES.resolve(CONFIG)), List.of("-g"));
-		adapted = run("adapted", Map.of());
-		off = run("adapter-off", Map.of(MixinGuiItemCaptureAdapter.PROPERTY, "off"));
-		legacyLocals = run("exact-0.9.2", Map.of("forbric.mixinCompat", "exact"));
+		for (var level : LEVELS.entrySet()) {
+			adapted.put(level.getKey(), run("adapted-" + level.getKey(), Map.of(REQUIRES, level.getValue())));
+		}
+		off = run("adapter-off", Map.of(MixinGuiItemCaptureAdapter.PROPERTY, "off", REQUIRES, LEVELS.get("10000")));
+		offLegacy = run("adapter-off-9002", Map.of(MixinGuiItemCaptureAdapter.PROPERTY, "off", REQUIRES, LEVELS.get("9002")));
+		landingOff = run("landing-off-9002", Map.of(MixinCaptureLanding.PROPERTY, "off", REQUIRES, LEVELS.get("9002")));
+		landingOffModern = run("landing-off-10000", Map.of(MixinCaptureLanding.PROPERTY, "off", REQUIRES, LEVELS.get("10000")));
+	}
+
+	@Test void eachRunIsAtTheLevelFabricLoaderGivesWhatTheFixtureDeclares() {
+		for (var run : adapted.entrySet()) {
+			assertTrue(run.getValue().printed("level=configs): {" + run.getKey() + "=1}"), run.getValue().describe());
+		}
+		assertTrue(landingOff.printed("level=configs): {9002=1}"), landingOff.describe());
+		assertTrue(offLegacy.printed("level=configs): {9002=1}"), offLegacy.describe());
+		assertTrue(off.printed("level=configs): {10000=1}"), off.describe());
+	}
+
+	@Test void theDiamondIsCapturedWithTheStateTheGuiSubmittedAtEveryLevel() throws Exception {
+		for (WeaveHarness.Result run : adapted.values()) {
+			assertTrue(run.printed(CAPTURED), run.describe());
+			assertFalse(run.printed("has incompatible changes"), run.describe());
+			assertEquals(List.of(), losses(run), run.findings() + "\n" + run.describe());
+			assertFalse(run.printed("VerifyError"), run.describe());
+			// Woven right after the submission, inside the branch the local lives in.
+			assertEquals(List.of(true), insideTheBranch(run), run.describe());
+			WeaveHarness.assertWovenAndVerified(run, GUI, fixture);
+		}
+	}
+
+	/** Where the capture landed: one NOP right after the submission, which the run without the landing does not have. */
+	@Test void theLandingIsOneNopAfterTheSubmission() throws Exception {
+		for (WeaveHarness.Result run : adapted.values()) assertEquals(List.of("NOP"), afterTheSubmission(run), run.describe());
+		assertEquals(List.of(), afterTheSubmission(landingOff), landingOff.describe());
 	}
 
 	/**
-	 * Why the kernel does not give a Fabric mod a level below 0.10.0. The fixture mod declares no Fabric Loader lower
-	 * bound, which Fabric Loader answers with 0.9.2; at that level Mixin finds locals with its legacy walk, refuses the
-	 * relocated capture ("LVT ... has incompatible changes") and skips it, so the feature is gone without a crash. The
-	 * default run above is the same fixture at the kernel's floor, 0.10.0, and captures. If this starts capturing,
-	 * the relocation holds under the legacy walk too and the floor (KernelMixinBootstrap.RELOCATION_FLOOR) can go.
+	 * From 0.10.0 on, Mixin's walk stops before the join's frame and captured there without the landing too: the NOP is
+	 * then the woven method's one difference, and the capture is woven exactly where it was.
 	 */
-	@Test void atFabricsOwnLevelZeroNineTwoTheRelocatedCaptureIsSkipped() {
-		assertTrue(legacyLocals.printed("level=configs): {9002=1}"), legacyLocals.describe());
-		assertTrue(legacyLocals.printed("has incompatible changes"), legacyLocals.describe());
-		assertTrue(legacyLocals.printed(WeaveHarnessMain.DONE + " captured=[]"), legacyLocals.describe());
-		assertTrue(adapted.printed("level=configs): {10000=1}"), "the default run is at the floor: " + adapted.describe());
+	@Test void fromZeroTenTheLandingChangesNothingButTheNop() throws Exception {
+		assertTrue(landingOffModern.printed(CAPTURED), landingOffModern.describe());
+		assertEquals(woven(landingOffModern, false), woven(adapted.get("10000"), true));
 	}
 
-	@Test void theDiamondIsCapturedWithTheStateTheGuiSubmitted() throws Exception {
-		assertTrue(adapted.printed(CAPTURED), adapted.describe());
-		assertEquals(List.of(), losses(adapted), adapted.findings() + "\n" + adapted.describe());
-		assertFalse(adapted.printed("VerifyError"), adapted.describe());
-		// Woven right after the submission, inside the branch the local lives in.
-		assertEquals(List.of(true), insideTheBranch(adapted), adapted.describe());
-		WeaveHarness.assertWovenAndVerified(adapted, GUI, fixture);
+	/**
+	 * Why the landing exists. Without it, at 0.9.2 — what Fabric Loader gives the fixture mod, which declares no Fabric
+	 * Loader lower bound — AFTER the submission is the join's label; Mixin's legacy walk steps from it onto the join's
+	 * frame, refuses the moved capture ("LVT ... has incompatible changes") and skips it: the feature is gone without a
+	 * crash.
+	 */
+	@Test void withoutTheLandingTheLegacyWalkSkipsTheMovedCapture() {
+		assertTrue(landingOff.printed("has incompatible changes"), landingOff.describe());
+		assertTrue(landingOff.printed(WeaveHarnessMain.DONE + " captured=[]" + SUBMITTED), landingOff.describe());
 	}
 
 	@Test void switchedOffTheTailCaptureLoadsADeadLocalAndTheGuiClassFailsVerification() throws Exception {
@@ -95,10 +134,58 @@ class GuiItemCaptureMixinAdapterWeaveTest {
 		assertFalse(verdict(off).isEmpty(), "ASM's verifier accepts the TAIL capture — " + off.describe());
 	}
 
-	/** The switch is the runs' only difference, so each run's predicate must reject the other. */
+	/**
+	 * At 0.9.2 the unmoved TAIL capture does not crash: the legacy walk reads the join's frame at the tail, finds no local
+	 * to capture and Mixin skips the handler, which is how it loses the feature instead.
+	 */
+	@Test void switchedOffAtZeroNineTwoTheTailCaptureIsSkipped() throws Exception {
+		assertTrue(offLegacy.printed("has incompatible changes"), offLegacy.describe());
+		assertTrue(offLegacy.printed(WeaveHarnessMain.DONE + " captured=[]" + SUBMITTED), offLegacy.describe());
+		assertEquals(List.of(), insideTheBranch(offLegacy), offLegacy.describe());
+	}
+
+	/** Each switch is its runs' only difference, so each run's predicate must reject the other. */
 	@Test void theControlFlipsEveryCaptureAssertion() throws Exception {
-		assertTrue(capturedHolds(adapted) && !capturedHolds(off), "the adapted predicate does not separate the runs");
-		assertTrue(crashedHolds(off) && !crashedHolds(adapted), "the control predicate does not separate the runs");
+		WeaveHarness.Result at10000 = adapted.get("10000"), at9002 = adapted.get("9002");
+		assertTrue(capturedHolds(at10000) && !capturedHolds(off), "the adapted predicate does not separate the runs");
+		assertTrue(crashedHolds(off) && !crashedHolds(at10000), "the control predicate does not separate the runs");
+		assertTrue(capturedHolds(at9002) && !capturedHolds(landingOff), "the landing predicate does not separate the runs");
+		assertTrue(capturedHolds(at9002) && !capturedHolds(offLegacy), "the 0.9.2 control does not separate the runs");
+	}
+
+	/**
+	 * The woven {@code item}, one instruction per line, with Mixin's per-session names made equal: {@code withoutNops}
+	 * drops the NOPs.
+	 */
+	private static String woven(WeaveHarness.Result run, boolean withoutNops) throws Exception {
+		ClassNode gui = new ClassNode();
+		new ClassReader(run.defined(GUI)).accept(gui, 0);
+		MethodNode item = gui.methods.stream().filter(m -> m.name.equals("item")).findFirst().orElseThrow();
+		org.objectweb.asm.util.Textifier text = new org.objectweb.asm.util.Textifier();
+		org.objectweb.asm.util.TraceMethodVisitor trace = new org.objectweb.asm.util.TraceMethodVisitor(text);
+		for (AbstractInsnNode insn : item.instructions) {
+			if (withoutNops && insn.getOpcode() == org.objectweb.asm.Opcodes.NOP) continue;
+			insn.accept(trace);
+		}
+		java.io.StringWriter out = new java.io.StringWriter();
+		text.print(new java.io.PrintWriter(out));
+		return out.toString().replaceAll("md[0-9a-f]{6}\\$", "md\\$").replaceAll("\\$[a-z]{3}\\d{3}\\$", "\\$uid\\$");
+	}
+
+	/** The NOPs between the woven submission call and the next label: the capture's call sits before the landing. */
+	private static List<String> afterTheSubmission(WeaveHarness.Result run) throws Exception {
+		ClassNode gui = new ClassNode();
+		new ClassReader(run.defined(GUI)).accept(gui, 0);
+		MethodNode item = gui.methods.stream().filter(m -> m.name.equals("item")).findFirst().orElseThrow();
+		List<String> between = new java.util.ArrayList<>();
+		boolean after = false;
+		for (AbstractInsnNode insn : item.instructions) {
+			if (insn instanceof MethodInsnNode call && call.name.equals("addItem")) { after = true; continue; }
+			if (!after) continue;
+			if (insn instanceof org.objectweb.asm.tree.LabelNode) break;
+			if (insn.getOpcode() == org.objectweb.asm.Opcodes.NOP) between.add("NOP");
+		}
+		return between;
 	}
 
 	private static boolean capturedHolds(WeaveHarness.Result run) throws Exception {
