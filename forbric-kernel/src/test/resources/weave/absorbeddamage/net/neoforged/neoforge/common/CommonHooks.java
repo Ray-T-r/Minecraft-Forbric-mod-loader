@@ -1,0 +1,1 @@
+package net.neoforged.neoforge.common;public class CommonHooks{public static float onLivingDamagePre(net.minecraft.world.entity.LivingEntity entity,net.neoforged.neoforge.common.damagesource.DamageContainer container){return container.getNewDamage();}}

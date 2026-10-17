@@ -59,10 +59,23 @@ import net.forbric.kernel.util.ForbricLog;
  * never reads again, so a mod rewriting that first read would still change nothing. Registered after
  * {@code ForgeDamageSeamsInjector}, and placed right after the invulnerability check, so the read lands ahead of
  * MinecraftForge's Hurt — the seam's or the merged body's own. {@code -Dforbric.vanillaDamageRead=off}.
+ *
+ * <p>The same for vanilla's value at the absorption call. Vanilla holds the damage left after absorption in the parameter
+ * when it calls {@code setAbsorptionAmount}, and goes on to the health with that value; NeoForge's body stores the
+ * container's amount into the parameter only after that call. A mod's {@code @ModifyVariable(argsOnly = true)} at the call
+ * — rewriting the damage before it reaches the health — rewrote a value nothing read: the next store overwrote it. So the
+ * container's amount (absorption already taken off it) is stored into the parameter at the start of the call's statement
+ * too, and the store after the call becomes {@code KernelLivingDamage.absorbedRead(this, container, damage, read)}: a
+ * rewrite moves the container to it, no rewrite changes nothing. Placed only where exactly one {@code setAbsorptionAmount}
+ * is followed by that store and the statement before it neither reads nor writes the parameter.
+ * {@code -Dforbric.vanillaDamageRead.absorbed=off}.
  */
 public final class VanillaDamageReadInjector implements ClassTransformer {
 	public static final String PROPERTY = "forbric.vanillaDamageRead";
+	/** {@code -Dforbric.vanillaDamageRead.absorbed=off}: no read at the absorption call. */
+	public static final String ABSORBED_PROPERTY = "forbric.vanillaDamageRead.absorbed";
 	static final String LIVING = "net/minecraft/world/entity/LivingEntity";
+	static final String ABSORBED_DESC = "(L" + LIVING + ";L" + ForgeDamageSeamsInjector.CONTAINER + ";FF)F";
 	static final List<String> TARGETS = List.of("net.minecraft.world.entity.LivingEntity", "net.minecraft.world.entity.player.Player");
 	static final String HURT_DESC = ForgeDamageSeamsInjector.HURT_DESC;
 	static final String HELPER = ForgeDamageSeamsInjector.RUNTIME;
@@ -96,11 +109,17 @@ public final class VanillaDamageReadInjector implements ClassTransformer {
 		new ClassReader(bytes).accept(node, 0);
 		MethodNode hurt = null;
 		for (MethodNode m : node.methods) if (m.name.equals("actuallyHurt") && m.desc.equals(HURT_DESC)) hurt = m;
-		if (hurt == null || !repair(hurt)) return bytes;
+		if (hurt == null) return bytes;
+		boolean read = repair(hurt);
+		boolean absorbed = !"off".equalsIgnoreCase(System.getProperty(ABSORBED_PROPERTY, "on")) && repairAbsorbed(node.name, hurt);
+		if (!read && !absorbed) return bytes;
 		ClassWriter writer = new ClassWriter(ClassWriter.COMPUTE_MAXS);
 		node.accept(writer);
-		ForbricLog.info("[Forbric/Damage] %s.actuallyHurt reads its damage before armour again, as vanilla does — a mod "
-				+ "changing it there now changes the damage NeoForge applies", className.substring(className.lastIndexOf('.') + 1));
+		String simple = className.substring(className.lastIndexOf('.') + 1);
+		if (read) ForbricLog.info("[Forbric/Damage] %s.actuallyHurt reads its damage before armour again, as vanilla does — a mod "
+				+ "changing it there now changes the damage NeoForge applies", simple);
+		if (absorbed) ForbricLog.info("[Forbric/Damage] %s.actuallyHurt holds the damage left after absorption when it calls "
+				+ "setAbsorptionAmount, as vanilla does — a mod changing it there now changes the damage the health takes", simple);
 		return writer.toByteArray();
 	}
 
@@ -139,6 +158,109 @@ public final class VanillaDamageReadInjector implements ClassTransformer {
 		read.add(new MethodInsnNode(Opcodes.INVOKESTATIC, HELPER, "vanillaRead", HELPER_DESC, false));
 		method.instructions.insert(code.get(4), read);
 		return true;
+	}
+
+	/** The absorption-call read (see the class comment); false where the body is not that shape or already has it. */
+	static boolean repairAbsorbed(String owner, MethodNode method) {
+		if ((method.access & (Opcodes.ACC_STATIC | Opcodes.ACC_ABSTRACT)) != 0) return false;
+		List<AbstractInsnNode> code = new ArrayList<>();
+		for (AbstractInsnNode insn : method.instructions) if (insn.getOpcode() >= 0) code.add(insn);
+		int call = -1;
+		for (int i = 0; i < code.size(); i++) {
+			AbstractInsnNode insn = code.get(i);
+			if (insn instanceof MethodInsnNode m && m.owner.equals(HELPER) && m.name.equals("absorbedRead")) return false;
+			if (insn instanceof MethodInsnNode m && m.getOpcode() == Opcodes.INVOKEVIRTUAL && m.name.equals("setAbsorptionAmount") && m.desc.equals("(F)V")) {
+				if (call >= 0) return false;
+				call = i;
+			}
+		}
+		if (call < 0) return false;
+		// Right after the call: the container's amount stored into the parameter — this.damageContainers.peek()[.cast].getNewDamage(); fstore 3.
+		FieldInsnNode containers = null;
+		int store = -1;
+		for (int i = call + 1; i < code.size() && i <= call + 6; i++) {
+			AbstractInsnNode insn = code.get(i);
+			if (insn instanceof FieldInsnNode field && field.getOpcode() == Opcodes.GETFIELD && field.name.equals("damageContainers")
+					&& field.desc.equals("Ljava/util/Stack;")) containers = field;
+			if (insn instanceof VarInsnNode v && v.getOpcode() == Opcodes.FSTORE && v.var == 3) {
+				store = i;
+				break;
+			}
+		}
+		if (containers == null || store < 0 || !(code.get(store - 1) instanceof MethodInsnNode amount)
+				|| !amount.owner.equals(ForgeDamageSeamsInjector.CONTAINER) || !amount.name.equals("getNewDamage") || !amount.desc.equals("()F")) return false;
+		for (int i = call + 1; i < store - 1; i++) if (code.get(i) instanceof MethodInsnNode || code.get(i) instanceof org.objectweb.asm.tree.JumpInsnNode
+				|| code.get(i) instanceof VarInsnNode v && v.var != 0) {
+			if (!(code.get(i) instanceof MethodInsnNode m && m.owner.equals("java/util/Stack") && m.name.equals("peek"))) return false;
+		}
+		// The call's statement: from the last point before it where nothing is on the stack. It must neither read nor write the parameter.
+		org.objectweb.asm.tree.analysis.Frame<org.objectweb.asm.tree.analysis.BasicValue>[] frames;
+		try {
+			frames = new org.objectweb.asm.tree.analysis.Analyzer<>(new org.objectweb.asm.tree.analysis.BasicInterpreter()).analyze(owner, method);
+		} catch (org.objectweb.asm.tree.analysis.AnalyzerException unreadable) {
+			net.forbric.kernel.util.Caught.expected(unreadable);
+			return false;
+		}
+		int start = call;
+		while (start > 0) {
+			var frame = frames[method.instructions.indexOf(code.get(start))];
+			if (frame != null && frame.getStackSize() == 0) break;
+			start--;
+		}
+		var first = frames[method.instructions.indexOf(code.get(start))];
+		if (first == null || first.getStackSize() != 0) return false;
+		for (int i = start; i < call; i++) {
+			if (code.get(i) instanceof VarInsnNode v && v.var == 3) return false;
+			if (code.get(i) instanceof org.objectweb.asm.tree.JumpInsnNode) return false;
+		}
+		int read = method.maxLocals;
+		method.maxLocals = read + 1;
+		InsnList before = new InsnList();
+		before.add(container(containers));
+		before.add(new MethodInsnNode(Opcodes.INVOKEVIRTUAL, ForgeDamageSeamsInjector.CONTAINER, "getNewDamage", "()F", false));
+		before.add(new org.objectweb.asm.tree.InsnNode(Opcodes.DUP));
+		before.add(new VarInsnNode(Opcodes.FSTORE, 3));
+		before.add(new VarInsnNode(Opcodes.FSTORE, read));
+		method.instructions.insertBefore(code.get(start), before);
+		InsnList after = new InsnList();
+		after.add(new org.objectweb.asm.tree.InsnNode(Opcodes.POP));
+		after.add(new VarInsnNode(Opcodes.ALOAD, 0));
+		after.add(container(containers));
+		after.add(new VarInsnNode(Opcodes.FLOAD, 3));
+		after.add(new VarInsnNode(Opcodes.FLOAD, read));
+		after.add(new MethodInsnNode(Opcodes.INVOKESTATIC, HELPER, "absorbedRead", ABSORBED_DESC, false));
+		method.instructions.insertBefore(code.get(store), after);
+		// Vanilla calls setAbsorptionAmount(getAbsorptionAmount() - damage) a second time right after the health takes the damage,
+		// when the absorption is already spent and the call changes nothing; NeoForge's body dropped it. Made again there, with
+		// vanilla's argument while the absorption is spent and the current absorption otherwise (a NeoForge reduction may have
+		// left some), so it never changes state — and an injector at the call is asked there too, as natively.
+		MethodInsnNode absorption = (MethodInsnNode) code.get(call);
+		for (int i = store + 1; i + 5 < code.size(); i++) {
+			if (load(code.get(i), Opcodes.ALOAD, 0) && load(code.get(i + 1), Opcodes.ALOAD, 0)
+					&& code.get(i + 2) instanceof MethodInsnNode health && health.name.equals("getHealth") && health.desc.equals("()F")
+					&& load(code.get(i + 3), Opcodes.FLOAD, 3) && code.get(i + 4).getOpcode() == Opcodes.FSUB
+					&& code.get(i + 5) instanceof MethodInsnNode set && set.name.equals("setHealth") && set.desc.equals("(F)V")) {
+				InsnList again = new InsnList();
+				again.add(new VarInsnNode(Opcodes.ALOAD, 0));
+				again.add(new VarInsnNode(Opcodes.ALOAD, 0));
+				again.add(new VarInsnNode(Opcodes.FLOAD, 3));
+				again.add(new MethodInsnNode(Opcodes.INVOKESTATIC, HELPER, "spentAbsorption", "(L" + LIVING + ";F)F", false));
+				again.add(new MethodInsnNode(Opcodes.INVOKEVIRTUAL, absorption.owner, absorption.name, absorption.desc, absorption.itf));
+				method.instructions.insert(set, again);
+				break;
+			}
+		}
+		return true;
+	}
+
+	/** {@code (DamageContainer) this.damageContainers.peek()}, the field spelt as the body spells it. */
+	private static InsnList container(FieldInsnNode containers) {
+		InsnList out = new InsnList();
+		out.add(new VarInsnNode(Opcodes.ALOAD, 0));
+		out.add(new FieldInsnNode(Opcodes.GETFIELD, containers.owner, "damageContainers", "Ljava/util/Stack;"));
+		out.add(new MethodInsnNode(Opcodes.INVOKEVIRTUAL, "java/util/Stack", "peek", "()Ljava/lang/Object;", false));
+		out.add(new TypeInsnNode(Opcodes.CHECKCAST, ForgeDamageSeamsInjector.CONTAINER));
+		return out;
 	}
 
 	private static boolean load(AbstractInsnNode insn, int opcode, int slot) {

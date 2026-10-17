@@ -106,6 +106,27 @@ public final class KernelLivingDamage {
 		container.setNewDamage(Math.max(0.0F, container.getNewDamage() + (read - param)));
 	}
 
+	/**
+	 * Vanilla's value at the absorption call, which a mod may have rewritten ({@code damage}), against what the container held
+	 * when it was read ({@code read}); VanillaDamageReadInjector places the read before {@code setAbsorptionAmount} and this
+	 * after it. A rewrite becomes the container's amount (never below zero, as NeoForge requires); no rewrite changes nothing.
+	 * Returns the container's amount, which the body goes on with.
+	 */
+	public static float absorbedRead(LivingEntity entity, DamageContainer container, float damage, float read) {
+		if (container == null) return damage;
+		if (Float.floatToIntBits(damage) != Float.floatToIntBits(read)) container.setNewDamage(Math.max(0.0F, damage));
+		return container.getNewDamage();
+	}
+
+	/**
+	 * The argument of vanilla's second {@code setAbsorptionAmount}, after the health: {@code getAbsorptionAmount() - damage}
+	 * while the absorption is spent (vanilla's case, where the call changes nothing), the current absorption otherwise.
+	 */
+	public static float spentAbsorption(LivingEntity entity, float damage) {
+		float absorption = entity.getAbsorptionAmount();
+		return absorption <= 0.0F ? absorption - damage : absorption;
+	}
+
 	/** The player-attack seam, at the head of {@code Player.hurtServer}: false ends the hit, as MinecraftForge's does. */
 	public static boolean playerAttack(LivingEntity player, DamageSource source, float amount) {
 		try {

@@ -135,6 +135,11 @@ class DamageSeamsExecutionTest {
 							return source.type().equals("void_immune");
 						}
 
+						/** Named by the hook (the second absorption call's argument); this stand-in has no absorption. */
+						public float getAbsorptionAmount() {
+							return 0;
+						}
+
 						protected float getDamageAfterArmorAbsorb(DamageSource source, float damage) {
 							Trace.events.add("armour " + damage);
 							return damage / 2;
