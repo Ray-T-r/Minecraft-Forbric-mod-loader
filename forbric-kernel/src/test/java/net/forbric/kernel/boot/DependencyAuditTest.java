@@ -113,6 +113,27 @@ class DependencyAuditTest {
 		assertFalse(log.contains("not installed"), log);
 	}
 
+	/**
+	 * The platform answers for what it registers or supplies, never for an id only a mod provides: {@code fabric}, the
+	 * alias older fabric-api builds provided, is met by an installed mod providing it and is reported missing otherwise,
+	 * as native Fabric Loader refuses such a pack. The platform's own ids stay unreported with nothing installed.
+	 */
+	@Test
+	void anIdOnlyAModProvidesIsNotThePlatformsToAnswerFor() {
+		String missing = capture(() -> DependencyAudit.report(List.of(
+				mod(Ecosystem.FABRIC, "oldaddon", "1.0.0", dep("fabric", "*", true), dep("fabricloader", ">=0.1", true),
+						dep("minecraft", "*", true), dep("java", ">=21", true), dep("mixinextras", "*", true))),
+				List.of(), Side.CLIENT));
+		assertTrue(missing.contains("fabric *") && missing.contains("not installed"), missing);
+		for (String platform : List.of("fabricloader", "minecraft ", "java ", "mixinextras"))
+			assertFalse(missing.contains(platform), platform + " is the platform's own: " + missing);
+
+		String met = capture(() -> DependencyAudit.report(List.of(
+				mod(Ecosystem.FABRIC, "oldaddon", "1.0.0", dep("fabric", "*", true)),
+				mod(Ecosystem.FABRIC, "qzxapi", "2.0.0").withAliases(List.of("fabric"))), List.of(), Side.CLIENT));
+		assertFalse(met.contains("not installed"), "a mod providing fabric meets it: " + met);
+	}
+
 	@Test
 	void anOptionalDependencyIsNeverReported() {
 		String log = capture(() -> DependencyAudit.report(List.of(

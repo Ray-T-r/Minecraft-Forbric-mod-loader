@@ -79,18 +79,16 @@ public final class DependencyAudit {
 	private DependencyAudit() {
 	}
 
-	/**
-	 * Ids that name the platform or the language runtime, never a mod in {@code mods/}.
+	/*
+	 * Ids that name the platform or the language runtime, never a mod in mods/, are PlatformIds.provides: what the
+	 * kernel registers or supplies and what a carrier declares, never an id only some mod provides.
 	 *
-	 * <p>{@link EcosystemVersions#provided} is asked as well, and the overlap is deliberate rather than sloppy:
-	 * the two answer different questions. This set is "no discovered mod will ever carry this id"; {@code provided}
-	 * is "this instance supplies it, at this version, and its range has already been audited". Relying only on the
-	 * second would make every mod's {@code minecraft} requirement read as MISSING in any boot where the provided
-	 * table had not been populated yet — a page of false accusations, which is the one failure mode a diagnostic
-	 * must not have.
+	 * EcosystemVersions.provided is asked as well, and the overlap is deliberate rather than sloppy: the two answer
+	 * different questions. PlatformIds is "no discovered mod will ever carry this id"; provided is "this instance
+	 * supplies it, at this version, and its range has already been audited". Relying only on the second would make
+	 * every mod's minecraft requirement read as MISSING in any boot where the provided table had not been populated
+	 * yet — a page of false accusations, which is the one failure mode a diagnostic must not have.
 	 */
-	private static final Set<String> NON_MOD_IDS = Set.of(
-			"java", "fml", "fabricloader", "fabric", "mixinextras", "minecraft", "forge", "neoforge");
 
 	/**
 	 * Indexes a mod under its id AND every {@code provides} alias.
@@ -149,7 +147,7 @@ public final class DependencyAudit {
 				if (!dep.isMandatory() || dep.getModId() == null) continue;
 
 				String wanted = dep.getModId().toLowerCase(Locale.ROOT);
-				if (NON_MOD_IDS.contains(wanted)) continue;
+				if (net.forbric.kernel.util.PlatformIds.provides(wanted)) continue;
 				if (EcosystemVersions.provided(wanted) != null) continue; // EcosystemVersions.audit owns these
 
 				if (dep.getSideScope() != UnifiedDependency.SideScope.BOTH) {

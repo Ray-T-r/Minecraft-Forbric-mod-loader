@@ -95,9 +95,6 @@ import net.forbric.kernel.util.ForbricLog;
 public final class NestedFabricRequirements {
 	public static final String SWITCH = "forbric.nestedRequirements";
 
-	/** Ids a carrier or the kernel answers for. Never a candidate, so never the reason a dependent goes too. */
-	private static final Set<String> PLATFORM = Set.of("java", "minecraft", "fabricloader", "mixinextras", "fabric",
-			"forge", "neoforge", "fml");
 
 	private NestedFabricRequirements() {
 	}
@@ -267,7 +264,7 @@ public final class NestedFabricRequirements {
 			for (Candidate<K> candidate : candidates) if (loadable.contains(candidate.key())) needed.addAll(candidate.requires());
 			boolean grew = false;
 			for (Requirement requirement : needed) {
-				if (requirement.id() == null || PLATFORM.contains(requirement.id().toLowerCase(Locale.ROOT))) continue;
+				if (requirement.id() == null || net.forbric.kernel.util.PlatformIds.provides(requirement.id())) continue;
 				String wanted = ModPresence.spellingKey(requirement.id());
 				List<Candidate<K>> providers = byId.getOrDefault(wanted, List.of());
 				if (providers.stream().anyMatch(p -> loadable.contains(p.key()) && requirement.accepts().test(p.provides().get(wanted)))) continue;
@@ -343,7 +340,7 @@ public final class NestedFabricRequirements {
 						? "only mods left out bundle it" : null;
 				for (ModDependency dependency : candidate.fabric().getDependencies()) {
 					if (reason != null) break;
-					if (dependency.getKind() != ModDependency.Kind.DEPENDS || PLATFORM.contains(dependency.getModId())) {
+					if (dependency.getKind() != ModDependency.Kind.DEPENDS || net.forbric.kernel.util.PlatformIds.provides(dependency.getModId())) {
 						continue;
 					}
 					List<String> ranges = ranges(dependency);
