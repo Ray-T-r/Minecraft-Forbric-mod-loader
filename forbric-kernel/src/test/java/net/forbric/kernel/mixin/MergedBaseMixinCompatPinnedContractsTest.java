@@ -5,6 +5,7 @@ import static org.junit.jupiter.api.Assertions.*;
 
 import java.io.ByteArrayInputStream;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
@@ -34,9 +35,16 @@ class MergedBaseMixinCompatPinnedContractsTest {
         System.setProperty(FabricRegistryInitializationMixinAdapter.PROPERTY,"off");
         System.setProperty(FabricRegistryLoaderMixinAdapter.PROPERTY,"off");
         System.setProperty(FabricCreativePagerMixinAdapter.PROPERTY,"off");
+        // The game's own classes beside each module's, as the service's resource reader serves them: a gate that reads
+        // the merged class a mixin targets (the registry loader's dead call) judges it against the class the game ships.
+        Path base = net.forbric.kernel.TestFixtures.stagedRoot().resolve("merged-base/patched-mc-merged-26.2.jar");
+        net.forbric.kernel.TestFixtures.requireFiles(net.forbric.kernel.TestFixtures.Fixture.STAGED, "the staged merged base", base);
+        try (ZipFile game = new ZipFile(base.toFile())) {
         for(byte[] module:modules.values()) {
             Map<String,byte[]> content=entries(module);
-            for(var entry:content.entrySet())if(entry.getKey().endsWith("mixins.json"))MergedBaseMixinCompat.discover(entry.getKey(),entry.getValue(),content::get);
+            java.util.function.Function<String,byte[]> resources=name->content.containsKey(name)?content.get(name):gameEntry(game,name);
+            for(var entry:content.entrySet())if(entry.getKey().endsWith("mixins.json"))MergedBaseMixinCompat.discover(entry.getKey(),entry.getValue(),resources);
+        }
         }
         System.clearProperty(FabricRegistryInitializationMixinAdapter.PROPERTY);
         System.clearProperty(FabricRegistryLoaderMixinAdapter.PROPERTY);
@@ -121,6 +129,15 @@ class MergedBaseMixinCompatPinnedContractsTest {
 		}
 		assertTrue(relying.contains(CreativePagerFixtures.OWO_MIXIN + ".class"), relying.toString());
 		assertTrue(turnedAway > classes.size() * 9 / 10, turnedAway + " of " + classes.size() + " never parsed");
+	}
+
+	private static byte[] gameEntry(ZipFile game, String name) {
+		try {
+			ZipEntry entry = game.getEntry(name);
+			return entry == null ? null : game.getInputStream(entry).readAllBytes();
+		} catch (java.io.IOException unreadable) {
+			return null;
+		}
 	}
 
 	/** fabric-api's nested module jars, by module id (the file name up to its version). */

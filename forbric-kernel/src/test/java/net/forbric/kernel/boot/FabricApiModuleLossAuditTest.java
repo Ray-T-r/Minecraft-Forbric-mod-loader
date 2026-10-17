@@ -77,7 +77,22 @@ class FabricApiModuleLossAuditTest {
         var invoke=new org.objectweb.asm.tree.MethodNode(Opcodes.ACC_PRIVATE|Opcodes.ACC_STATIC,"invokeOriginal",delegate,null,null);invoke.instructions.add(new org.objectweb.asm.tree.VarInsnNode(Opcodes.ALOAD,0));invoke.instructions.add(new org.objectweb.asm.tree.InsnNode(Opcodes.ICONST_4));invoke.instructions.add(new org.objectweb.asm.tree.TypeInsnNode(Opcodes.ANEWARRAY,"java/lang/Object"));for(int slot=1;slot<=4;slot++){invoke.instructions.add(new org.objectweb.asm.tree.InsnNode(Opcodes.DUP));invoke.instructions.add(new org.objectweb.asm.tree.InsnNode(Opcodes.ICONST_0+slot-1));invoke.instructions.add(new org.objectweb.asm.tree.VarInsnNode(Opcodes.ALOAD,slot));invoke.instructions.add(new org.objectweb.asm.tree.InsnNode(Opcodes.AASTORE));}invoke.instructions.add(new org.objectweb.asm.tree.MethodInsnNode(Opcodes.INVOKEINTERFACE,"com/llamalad7/mixinextras/injector/wrapoperation/Operation","call","([Ljava/lang/Object;)Ljava/lang/Object;",true));invoke.instructions.add(new org.objectweb.asm.tree.InsnNode(Opcodes.ARETURN));invoke.maxStack=6;invoke.maxLocals=5;source.methods.add(invoke);
         ClassWriter writer=new ClassWriter(0);source.accept(writer);byte[] bytes=writer.toByteArray();
         byte[] config="{\"package\":\"fixture\",\"mixins\":[\"RegistryContext\"]}".getBytes(java.nio.charset.StandardCharsets.UTF_8);
-        net.forbric.kernel.mixin.KernelGuestMixinAdapter.unfitMixins("source-context.mixins.json",config,path->path.equals(owner+".class")?bytes:null,net.fabricmc.api.EnvType.SERVER);
+        // The loader the game ships beside it, as the service's resource reader serves it: the wrapped load call is dead
+        // there, replaced by a widened overload something calls — what the registry-loader gate reads before it refuses.
+        byte[] loader=registryLoader();
+        net.forbric.kernel.mixin.KernelGuestMixinAdapter.unfitMixins("source-context.mixins.json",config,path->path.equals(owner+".class")?bytes:path.equals("net/minecraft/resources/RegistryDataLoader.class")?loader:null,net.fabricmc.api.EnvType.SERVER);
+    }
+
+    /** A registry loader whose four-argument {@code load} nothing calls any more, and whose widened {@code load} is called. */
+    private static byte[] registryLoader() {
+        String owner="net/minecraft/resources/RegistryDataLoader";
+        String widened="(Lnet/minecraft/resources/RegistryDataLoader$LoaderFactory;Ljava/util/List;Ljava/util/List;Ljava/util/concurrent/Executor;Ljava/lang/Object;)Ljava/util/concurrent/CompletableFuture;";
+        org.objectweb.asm.tree.ClassNode node=new org.objectweb.asm.tree.ClassNode();node.version=Opcodes.V21;node.access=Opcodes.ACC_PUBLIC;node.name=owner;node.superName="java/lang/Object";
+        var load=new org.objectweb.asm.tree.MethodNode(Opcodes.ACC_PUBLIC|Opcodes.ACC_STATIC,"load",widened,null,null);load.instructions.add(new org.objectweb.asm.tree.InsnNode(Opcodes.ACONST_NULL));load.instructions.add(new org.objectweb.asm.tree.InsnNode(Opcodes.ARETURN));load.maxStack=1;load.maxLocals=5;node.methods.add(load);
+        var caller=new org.objectweb.asm.tree.MethodNode(Opcodes.ACC_PUBLIC|Opcodes.ACC_STATIC,"reload","()V",null,null);
+        for(int i=0;i<5;i++)caller.instructions.add(new org.objectweb.asm.tree.InsnNode(Opcodes.ACONST_NULL));
+        caller.instructions.add(new org.objectweb.asm.tree.MethodInsnNode(Opcodes.INVOKESTATIC,owner,"load",widened,false));caller.instructions.add(new org.objectweb.asm.tree.InsnNode(Opcodes.POP));caller.instructions.add(new org.objectweb.asm.tree.InsnNode(Opcodes.RETURN));caller.maxStack=5;caller.maxLocals=0;node.methods.add(caller);
+        ClassWriter writer=new ClassWriter(0);node.accept(writer);return writer.toByteArray();
     }
 
 	@AfterEach
