@@ -252,6 +252,46 @@ final class MixinNativeReplay {
 		return found;
 	}
 
+	/**
+	 * The methods of {@code owner} in which {@code from} (directly, or through what it calls, {@code depth} calls deep) makes
+	 * the call {@code member}; empty when it makes it in a method of another class too, or not at all — a call made elsewhere
+	 * cannot be watched from a mixin of {@code owner}.
+	 */
+	static List<MethodNode> sites(ClassNode owner, MethodNode from, String member, Function<String, ClassNode> classes, int depth) {
+		Map<String, MethodNode> found = new LinkedHashMap<>();
+		boolean[] elsewhere = {false};
+		sites(owner, owner, from, member, classes, depth, new HashSet<>(), found, elsewhere);
+		return elsewhere[0] ? List.of() : List.copyOf(found.values());
+	}
+
+	private static void sites(ClassNode target, ClassNode owner, MethodNode from, String member, Function<String, ClassNode> classes, int depth,
+			Set<String> seen, Map<String, MethodNode> found, boolean[] elsewhere) {
+		if (from == null || from.instructions == null || !seen.add(owner.name + '.' + from.name + from.desc)) return;
+		for (AbstractInsnNode instruction : from.instructions) {
+			String calleeOwner = null, calleeName = null, calleeDesc = null;
+			if (instruction instanceof MethodInsnNode call) {
+				if (MixinPlayerWorldCallbackAdapter.member(call).equals(member)) {
+					if (owner.name.equals(target.name)) found.put(from.name + from.desc, from);
+					else elsewhere[0] = true;
+					continue;
+				}
+				calleeOwner = call.owner; calleeName = call.name; calleeDesc = call.desc;
+			} else if (instruction instanceof InvokeDynamicInsnNode dynamic && dynamic.bsm.getOwner().equals("java/lang/invoke/LambdaMetafactory")
+					&& dynamic.bsmArgs.length > 1 && dynamic.bsmArgs[1] instanceof Handle handle) {
+				calleeOwner = handle.getOwner(); calleeName = handle.getName(); calleeDesc = handle.getDesc();
+			}
+			if (calleeOwner == null || depth <= 0) continue;
+			ClassNode callee;
+			try {
+				callee = calleeOwner.equals(owner.name) ? owner : calleeOwner.equals(target.name) ? target : classes.apply(calleeOwner);
+			} catch (RuntimeException unreadable) {
+				callee = null;
+			}
+			if (callee == null || callee.methods == null) continue;
+			sites(target, callee, MixinPlayerWorldCallbackAdapter.selector(callee, calleeName + calleeDesc), member, classes, depth - 1, seen, found, elsewhere);
+		}
+	}
+
 	// ---- frames ------------------------------------------------------------------------------------------------------
 
 	/**

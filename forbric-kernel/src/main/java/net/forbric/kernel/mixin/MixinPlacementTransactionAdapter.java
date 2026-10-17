@@ -42,9 +42,13 @@ final class MixinPlacementTransactionAdapter {
 	private static final String USE_ON = "useOn(L" + CONTEXT + ";)Lnet/minecraft/world/InteractionResult;";
 	private static final String CALL = "Lnet/minecraft/world/item/Item;" + USE_ON;
 	private static final String CIR = "org/spongepowered/asm/mixin/injection/callback/CallbackInfoReturnable";
-	private static final String REF = "com/llamalad7/mixinextras/sugar/ref/LocalRef", FLAG = "com/llamalad7/mixinextras/sugar/ref/LocalBooleanRef";
+	private static final String REF = "com/llamalad7/mixinextras/sugar/ref/LocalRef", FLAG = "com/llamalad7/mixinextras/sugar/ref/LocalBooleanRef",
+			STAMP = "com/llamalad7/mixinextras/sugar/ref/LocalLongRef", WITNESS = "net/forbric/kernel/interop/CallWitness";
+	private static final String CI = "org/spongepowered/asm/mixin/injection/callback/CallbackInfo";
 	private static final String SHARE = "Lcom/llamalad7/mixinextras/sugar/Share;";
 	private static final String INJECT = "Lorg/spongepowered/asm/mixin/injection/Inject;", AT = "Lorg/spongepowered/asm/mixin/injection/At;";
+	/** {@code -Dforbric.placementCallWitness=off}: a replayed later handler is conditioned on vanilla reaching the call alone. */
+	static final String WITNESS_PROPERTY = "forbric.placementCallWitness";
 	/** How many calls deep the merged {@code useOn} is searched for the call it moved. */
 	private static final int DEPTH = 3;
 
@@ -63,6 +67,9 @@ final class MixinPlacementTransactionAdapter {
 		Set<String> repeated = new HashSet<>();
 		Function<String, ClassNode> classes = name -> { try { return targets.apply(name); } catch (RuntimeException unreadable) { return null; } };
 		if (!MixinNativeReplay.reaches(target, live, CALL, classes, DEPTH, repeated)) return 0;
+		// Where the merged useOn now makes the call: a handler replayed at its return runs only when one of them was reached.
+		List<MethodNode> sites = "off".equalsIgnoreCase(System.getProperty(WITNESS_PROPERTY, "on")) ? List.of()
+				: MixinNativeReplay.sites(target, live, CALL, classes, DEPTH);
 		MethodInsnNode call = MixinPlayerWorldCallbackAdapter.first(vanilla, CALL);
 		int callAt = vanilla.instructions.indexOf(call);
 		Proofs proofs = new Proofs(source.name, vanilla, call, callAt, repeated);
@@ -89,7 +96,7 @@ final class MixinPlacementTransactionAdapter {
 			if (!MixinCallbackProofs.unread(exit, slots[callback]) || MixinCallbackShape.instance(exit) && !MixinCallbackShape.noReceiver(exit)) continue;
 			Map<Integer, Type> stash = proofs.stash(at, locals);
 			if (stash == null) continue;
-			moves.add(() -> exit(mixin, exit, proofs, at, locals, stash, classes));
+			moves.add(() -> exit(mixin, exit, proofs, at, locals, stash, sites, classes));
 		}
 		moves.forEach(Runnable::run);
 		return moves.size();
@@ -237,18 +244,23 @@ final class MixinPlacementTransactionAdapter {
 	 * vanilla locals the replay needs.
 	 */
 	private static void exit(ClassNode mixin, MethodNode exit, Proofs proofs, int at, Map<Integer, Integer> locals, Map<Integer, Type> stash,
-			Function<String, ClassNode> classes) {
+			List<MethodNode> sites, Function<String, ClassNode> classes) {
 		AnnotationNode injector = MixinFit.injectorOf(exit);
 		String key = "forbric$" + Integer.toHexString((mixin.name + "." + exit.name + exit.desc).hashCode());
 		List<Integer> shares = shares(exit);
 		Type[] parameters = Type.getArgumentTypes(exit.desc);
 
 		// At the head: replay vanilla to the call, and there record that it was reached and the locals it had.
+		// The carrier can still refuse after the head (a cancelled event, a placement it rolls back): where every place the merged
+		// useOn makes the call is a method of the class itself, those places count each time they are reached
+		// (CallWitness), the head reads the count, and the return replays the handler only when it changed.
+		boolean witnessed = !sites.isEmpty();
 		List<Type> head = new ArrayList<>(List.of(Type.getObjectType(CONTEXT), Type.getObjectType(CIR), Type.getObjectType(FLAG)));
+		if (witnessed) head.add(Type.getObjectType(STAMP));
 		for (int i = 0; i < stash.size(); i++) head.add(Type.getObjectType(REF));
 		MethodNode reach = new MethodNode(Opcodes.ACC_PRIVATE, exit.name + "$forbricReach", Type.getMethodDescriptor(Type.VOID_TYPE, head.toArray(Type[]::new)), null, null);
 		reach.visibleAnnotations = new ArrayList<>(List.of(moved(injector, "HEAD", "cancellable")));
-		reach.invisibleParameterAnnotations = stashAnnotations(key, stash, head.size(), 2);
+		reach.invisibleParameterAnnotations = stashAnnotations(key, stash, head.size(), 2, witnessed);
 		MixinNativeReplay before = new MixinNativeReplay(proofs.owner, proofs.vanilla, slotsOf(head));
 		InsnList code = reach.instructions;
 		before.copy(code, 0, proofs.callAt);
@@ -257,6 +269,12 @@ final class MixinPlacementTransactionAdapter {
 		code.add(new InsnNode(Opcodes.ICONST_1));
 		code.add(new MethodInsnNode(Opcodes.INVOKEINTERFACE, FLAG, "set", "(Z)V", true));
 		int ref = 4;
+		if (witnessed) {
+			code.add(new VarInsnNode(Opcodes.ALOAD, ref++));
+			code.add(new LdcInsnNode(key));
+			code.add(new MethodInsnNode(Opcodes.INVOKESTATIC, WITNESS, "stamp", "(Ljava/lang/String;)J", false));
+			code.add(new MethodInsnNode(Opcodes.INVOKEINTERFACE, STAMP, "set", "(J)V", true));
+		}
 		for (int slot : stash.keySet()) {
 			code.add(new VarInsnNode(Opcodes.ALOAD, ref++));
 			code.add(new VarInsnNode(Opcodes.ALOAD, before.slot(slot)));
@@ -272,11 +290,12 @@ final class MixinPlacementTransactionAdapter {
 		for (int share : shares) tail.add(parameters[share]);
 		int flag = tail.size();
 		tail.add(Type.getObjectType(FLAG));
+		if (witnessed) tail.add(Type.getObjectType(STAMP));
 		for (int i = 0; i < stash.size(); i++) tail.add(Type.getObjectType(REF));
 		MethodNode wrapper = new MethodNode(Opcodes.ACC_PRIVATE, exit.name, Type.getMethodDescriptor(Type.VOID_TYPE, tail.toArray(Type[]::new)), null, null);
 		wrapper.visibleAnnotations = new ArrayList<>(List.of(moved(injector, "RETURN")));
 		List<AnnotationNode>[] annotations = parameterAnnotations(exit, shares, tail.size(), 2);
-		List<AnnotationNode>[] carried = stashAnnotations(key, stash, tail.size(), flag);
+		List<AnnotationNode>[] carried = stashAnnotations(key, stash, tail.size(), flag, witnessed);
 		for (int i = flag; i < tail.size(); i++) annotations[i] = carried[i];
 		wrapper.invisibleParameterAnnotations = annotations;
 		MixinNativeReplay after = new MixinNativeReplay(proofs.owner, proofs.vanilla, slotsOf(tail));
@@ -285,6 +304,13 @@ final class MixinPlacementTransactionAdapter {
 		code.add(new MethodInsnNode(Opcodes.INVOKEINTERFACE, FLAG, "get", "()Z", true));
 		code.add(new JumpInsnNode(Opcodes.IFEQ, after.skip));
 		ref = 2 + flag;
+		if (witnessed) {
+			code.add(new LdcInsnNode(key));
+			code.add(new VarInsnNode(Opcodes.ALOAD, ref++));
+			code.add(new MethodInsnNode(Opcodes.INVOKEINTERFACE, STAMP, "get", "()J", true));
+			code.add(new MethodInsnNode(Opcodes.INVOKESTATIC, WITNESS, "since", "(Ljava/lang/String;J)Z", false));
+			code.add(new JumpInsnNode(Opcodes.IFEQ, after.skip));
+		}
 		for (var entry : stash.entrySet()) {
 			code.add(new VarInsnNode(Opcodes.ALOAD, ref++));
 			code.add(new MethodInsnNode(Opcodes.INVOKEINTERFACE, REF, "get", "()Ljava/lang/Object;", true));
@@ -306,6 +332,28 @@ final class MixinPlacementTransactionAdapter {
 		mixin.methods.add(wrapper);
 		MixinNativeReplay.frames(mixin, reach, classes);
 		MixinNativeReplay.frames(mixin, wrapper, classes);
+		int n = 0;
+		for (MethodNode site : sites) mixin.methods.add(witness(mixin, injector, exit.name.replace("$forbricOriginal", "") + "$forbricReached" + n++, site, key));
+	}
+
+	/**
+	 * An {@code @Inject} at the call in {@code site}, the method of the class itself where the merged {@code useOn} now makes
+	 * it, that counts each time the call is reached ({@link net.forbric.kernel.interop.CallWitness}).
+	 */
+	private static MethodNode witness(ClassNode mixin, AnnotationNode injector, String name, MethodNode site, String key) {
+		boolean isStatic = (site.access & Opcodes.ACC_STATIC) != 0;
+		String callback = Type.getReturnType(site.desc) == Type.VOID_TYPE ? CI : CIR;
+		MethodNode method = new MethodNode(Opcodes.ACC_PRIVATE | (isStatic ? Opcodes.ACC_STATIC : 0), name, "(L" + callback + ";)V", null, null);
+		AnnotationNode inject = new AnnotationNode(INJECT), at = new AnnotationNode(AT);
+		at.values = new ArrayList<>(List.of("value", "INVOKE", "target", CALL));
+		inject.values = new ArrayList<>(List.of("method", new ArrayList<>(List.of(site.name + site.desc)), "at", new ArrayList<>(List.of(at)), "require", 1));
+		method.visibleAnnotations = new ArrayList<>(List.of(inject));
+		method.instructions.add(new LdcInsnNode(key));
+		method.instructions.add(new MethodInsnNode(Opcodes.INVOKESTATIC, WITNESS, "reached", "(Ljava/lang/String;)V", false));
+		method.instructions.add(new InsnNode(Opcodes.RETURN));
+		method.maxStack = 1;
+		method.maxLocals = isStatic ? 1 : 2;
+		return method;
 	}
 
 	// ---- shared --------------------------------------------------------------------------------------------------------
@@ -348,12 +396,16 @@ final class MixinPlacementTransactionAdapter {
 		return out;
 	}
 
-	/** {@code @Share}s for the reached flag at {@code first} and each carried local after it, named after {@code key}. */
+	/**
+	 * {@code @Share}s for the reached flag at {@code first}, the witness count after it where the call is witnessed, and each
+	 * carried local after them, named after {@code key}.
+	 */
 	@SuppressWarnings("unchecked")
-	private static List<AnnotationNode>[] stashAnnotations(String key, Map<Integer, Type> stash, int size, int first) {
+	private static List<AnnotationNode>[] stashAnnotations(String key, Map<Integer, Type> stash, int size, int first, boolean witnessed) {
 		List<AnnotationNode>[] out = new List[size];
 		out[first] = new ArrayList<>(List.of(share(key + "$reached")));
 		int i = first + 1;
+		if (witnessed) out[i++] = new ArrayList<>(List.of(share(key + "$stamp")));
 		for (int slot : stash.keySet()) out[i++] = new ArrayList<>(List.of(share(key + "$local" + slot)));
 		return out;
 	}
