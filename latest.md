@@ -1,15 +1,15 @@
-Latest nightly: [results/2026-10-17/summary.md](results/2026-10-17/summary.md)
+Latest nightly: [results/2026-10-18/summary.md](results/2026-10-18/summary.md)
 
-# Forbric nightly 2026-10-17: FAIL
+# Forbric nightly 2026-10-18: FAIL
 
 | | |
 | --- | --- |
-| commit | [`6d1dd0f287f8`](https://github.com/Ray-T-r/Minecraft-Forbric-mod-loader/commit/6d1dd0f287f89b3da13d9c9fc2aa75a27e90d02e) Leave the model reader pair out whole when the pruner is off, as main did |
+| commit | [`5accae8bdd24`](https://github.com/Ray-T-r/Minecraft-Forbric-mod-loader/commit/5accae8bdd24b06a2ad562f175a4a727fe8d0f11) Let the unstaged CI profile skip the new entry-shape decline test |
 | tested | `origin/main` on the developer's Mac (commit status `nightly/dev-mac`) |
-| started | 2026-10-17 02:30 +0800 |
-| soak (`gate-m34-soak.sh`) | skipped: it runs on Sundays |
-| integration | FAILED (exit 1) in 4 min |
-| gates | FAILED (exit 1) in 31 min: 28 GREEN, 29 RED, 1 SKIP |
+| started | 2026-10-18 02:30 +0800 |
+| soak (`gate-m34-soak.sh`) | run: a `--release` run, nothing skipped |
+| integration | FAILED (exit 1) in 6 min |
+| gates | FAILED (exit 1) in 47 min: 25 GREEN, 33 RED |
 
 ## Integration: `python3 tools/dev.py integration`
 
@@ -17,11 +17,11 @@ Latest nightly: [results/2026-10-17/summary.md](results/2026-10-17/summary.md)
 
 | suite | tests | executed | skipped | skip % | failed |
 | --- | ---: | ---: | ---: | ---: | ---: |
-| test | 5560 | 5560 | 0 | 0.0 | 197 |
+| test | 5932 | 5932 | 0 | 0.0 | 333 |
 
 Did not execute (no results): `transferTest`
 
-**Failed (197):**
+**Failed (333):**
 - `test` net.forbric.kernel.access.RestoredAccessTransformerTest.actualMergedFeatureFieldIsReconciledAfterItsDescriptorRepair() (org.opentest4j.AssertionFailedError)
 - `test` net.forbric.kernel.boot.HookCallSiteCensusStagedTest.thePartialTableIsExactlyWhatTheCallSitesSay() (org.opentest4j.AssertionFailedError)
 - `test` net.forbric.kernel.boot.KernelBundledMixinExtrasStagedTest.[1] true (org.opentest4j.AssertionFailedError)
@@ -73,7 +73,7 @@ Did not execute (no results): `transferTest`
 - `test` net.forbric.kernel.mixin.CarrierRenameCensusTest.theShippedTableIsExactlyWhatTheArtifactsSay() (org.opentest4j.AssertionFailedError)
 - `test` net.forbric.kernel.mixin.CarrierStubCensusTest.theShippedTableIsExactlyWhatTheArtifactsSay() (org.opentest4j.AssertionFailedError)
 
-## Gates: `bash forbric-kernel/run/compat/gates-all.sh -j auto --skip gate-m34-soak.sh`
+## Gates: `bash forbric-kernel/run/compat/gates-all.sh -j auto --release`
 
 - `gate-m0.sh` RED (exit=1)
 - `gate-m2.sh` RED (exit=1)
@@ -87,18 +87,21 @@ Did not execute (no results): `transferTest`
 - `gate-m12-multiplayer.sh` RED (exit=-13)
 - `gate-m13-anticheat.sh` RED (exit=1)
 - `gate-m14-fabric-server.sh` RED (exit=1)
+- `gate-m15-forge-network.sh` RED (exit=1)
 - `gate-m17-installer.sh` RED (exit=1)
 - `gate-m18-presence.sh` RED (exit=1)
 - `gate-m19-nesteddupe.sh` RED (exit=1)
+- `gate-m20-depdialog.sh` RED (exit=1)
 - `gate-m21-forgesetup.sh` RED (exit=1)
 - `gate-m22-exitswap.sh` RED (exit=1)
 - `gate-m23-elytra.sh` RED (exit=1)
 - `gate-m24-brokenmod.sh` RED (exit=1)
+- `gate-m24b-badmetadata.sh` RED (exit=1)
 - `gate-m27-frame.sh` RED (exit=1)
 - `gate-m29-forgecaps.sh` RED (exit=1)
 - `gate-m32-savedrop.sh` RED (exit=1)
 - `gate-m33-transfer.sh` RED (exit=1)
-- `gate-m34-soak.sh` SKIP (explicit --skip)
+- `gate-m34-soak.sh` RED (exit=1)
 - `gate-m39-transfer-core.sh` RED (exit=1)
 - `gate-m40-energy.sh` RED (exit=1)
 - `gate-m41-event-chain.sh` RED (exit=1)
@@ -124,17 +127,17 @@ RESULT gate-m11-serverconfig.sh GREEN (exit=0)
 RESULT gate-m12-multiplayer.sh RED (exit=-13)
 RESULT gate-m13-anticheat.sh RED (exit=1)
 RESULT gate-m14-fabric-server.sh RED (exit=1)
-RESULT gate-m15-forge-network.sh GREEN (exit=0)
+RESULT gate-m15-forge-network.sh RED (exit=1)
 RESULT gate-m16-forge-handshake.sh GREEN (exit=0)
 RESULT gate-m17-installer.sh RED (exit=1)
 RESULT gate-m18-presence.sh RED (exit=1)
 RESULT gate-m19-nesteddupe.sh RED (exit=1)
-RESULT gate-m20-depdialog.sh GREEN (exit=0)
+RESULT gate-m20-depdialog.sh RED (exit=1)
 RESULT gate-m21-forgesetup.sh RED (exit=1)
 RESULT gate-m22-exitswap.sh RED (exit=1)
 RESULT gate-m23-elytra.sh RED (exit=1)
 RESULT gate-m24-brokenmod.sh RED (exit=1)
-RESULT gate-m24b-badmetadata.sh GREEN (exit=0)
+RESULT gate-m24b-badmetadata.sh RED (exit=1)
 RESULT gate-m24c-disabled.sh GREEN (exit=0)
 RESULT gate-m25-worldgen.sh GREEN (exit=0)
 RESULT gate-m26-forgeclient.sh GREEN (exit=0)
@@ -145,7 +148,7 @@ RESULT gate-m30-attribution.sh GREEN (exit=0)
 RESULT gate-m31-vanilla-parity.sh GREEN (exit=0)
 RESULT gate-m32-savedrop.sh RED (exit=1)
 RESULT gate-m33-transfer.sh RED (exit=1)
-RESULT gate-m34-soak.sh SKIP (explicit --skip)
+RESULT gate-m34-soak.sh RED (exit=1)
 RESULT gate-m35-behavior.sh GREEN (exit=0)
 RESULT gate-m36-mixin-outcome.sh GREEN (exit=0)
 RESULT gate-m37-entity-callbacks.sh GREEN (exit=0)
