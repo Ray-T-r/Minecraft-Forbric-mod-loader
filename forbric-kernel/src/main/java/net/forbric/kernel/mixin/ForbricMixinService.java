@@ -122,6 +122,7 @@ public final class ForbricMixinService
 		changed+=ReplacedDecisionValues.adapt(source,code,NativeGameReferences::reference);
 		// With the local variable tables: the decisions are matched by the locals their answers are kept in.
 		changed+=CarrierDecisions.adapt(source,owner->{byte[] current=resource.apply(owner+".class");if(current==null)return null;ClassNode tables=new ClassNode();new ClassReader(current).accept(tables,0);return tables;},NativeGameReferences::reference);
+		changed+=CarrierReturnedCalls.adapt(source,owner->{byte[] current=resource.apply(owner+".class");if(current==null)return null;ClassNode tables=new ClassNode();new ClassReader(current).accept(tables,0);return tables;},NativeGameReferences::reference);
 		changed+=CarrierDefaultChains.adapt(source,owner->{byte[] current=resource.apply(owner+".class");return current==null?null:MixinFit.parse(current);},NativeGameReferences::reference);
 		changed+=NativeSliceOccurrences.adapt(source,code,NativeGameReferences::reference);
 		changed+=MixinAbsorbedCallbackTransport.adapt(source,owner->{byte[] current=resource.apply(owner+".class");return current==null?null:MixinFit.parse(current);},
@@ -366,6 +367,9 @@ public final class ForbricMixinService
 		// …and a redirect or injector at a vanilla decision the carrier replaced with a decision of its own (the same branch,
 		// the same way or the opposite one, or the same local) moves onto the carrier's decision, its answer mapped.
 		CarrierDecisions.adapt(node, this::mergedBaseGameCode, NativeGameReferences::reference);
+		// …and a wrap of a vanilla call whose answer was the method's answer, where the carrier answers its own way, moves to
+		// that answer on exactly the ways the call was made.
+		CarrierReturnedCalls.adapt(node, this::mergedBaseGameCode, NativeGameReferences::reference);
 		// …and a locals capture reads, as @Locals, the native locals where the merged body keeps them (before the points are
 		// renumbered below: it reads the point as the native body counts it).
 		MixinCapturedLocals.adapt(node, this::mergedBaseGameCode);

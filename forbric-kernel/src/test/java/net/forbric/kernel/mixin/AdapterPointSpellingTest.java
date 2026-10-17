@@ -122,12 +122,22 @@ class AdapterPointSpellingTest {
 						"Lnet/minecraft/util/Util;getRandom(Ljava/util/List;Lnet/minecraft/util/RandomSource;)Ljava/lang/Object;"),
 				mixin -> assertTrue(atTargets(mixin).containsAll(List.of("Lnet/neoforged/neoforge/common/NeoForgeMod;GLIDING_FLIGHT:Lnet/minecraft/core/Holder;",
 						"Ljava/util/List;isEmpty()Z")))));
-		// FabricEntityMixinAnchors: fabric-api's bed rows.
+		// FabricEntityMixinAnchors: fabric-api's bed occupancy row.
 		cases.add(new Case("fabric-api beds", () -> StagedFabricMixinFixture.mixin("fabric-entity-events-v1", root + "LivingEntityMixin"), false,
-				Ecosystem.FABRIC, LIVING, FabricEntityMixinAnchors::adapt, 2,
-				List.of("Lnet/minecraft/world/level/Level;setBlock(Lnet/minecraft/core/BlockPos;" + STATE + "I)Z",
-						"Lnet/minecraft/world/level/block/BedBlock;getBedOrientation(Lnet/minecraft/world/level/BlockGetter;Lnet/minecraft/core/BlockPos;)Lnet/minecraft/core/Direction;"),
-				mixin -> assertTrue(mixin.methods.stream().map(m -> m.name).toList().containsAll(List.of("forbric$setBedOccupied", "forbric$modifySleepingDirection")))));
+				Ecosystem.FABRIC, LIVING, FabricEntityMixinAnchors::adapt, 1,
+				List.of("Lnet/minecraft/world/level/Level;setBlock(Lnet/minecraft/core/BlockPos;" + STATE + "I)Z"),
+				mixin -> assertTrue(mixin.methods.stream().map(m -> m.name).toList().contains("forbric$setBedOccupied"))));
+		// CarrierReturnedCalls: fabric-api's sleeping direction wrap, under unrelated names.
+		cases.add(new Case("fabric-api sleeping direction", () -> StagedFabricMixinFixture.mixin("fabric-entity-events-v1", root + "LivingEntityMixin"), true,
+				Ecosystem.FABRIC, LIVING, CarrierReturnedCalls::adapt, 1,
+				List.of("Lnet/minecraft/world/level/block/BedBlock;getBedOrientation(Lnet/minecraft/world/level/BlockGetter;Lnet/minecraft/core/BlockPos;)Lnet/minecraft/core/Direction;"),
+				mixin -> assertTrue(mixin.methods.stream().anyMatch(m -> MixinFit.injectorOf(m) != null && MixinFit.injectorOf(m).desc.equals(CarrierReturnedCalls.MODIFY_RETURN)))));
+		// CarrierDefaultChains: fabric-api's sound stream redirect, under unrelated names.
+		cases.add(new Case("fabric-api sound stream", () -> StagedFabricMixinFixture.mixin("fabric-sound-api-v1", "net/fabricmc/fabric/mixin/client/sound/SoundEngineMixin"), true,
+				Ecosystem.FABRIC, "net/minecraft/client/sounds/SoundEngine", CarrierDefaultChains::adapt, 1,
+				List.of("Lnet/minecraft/client/sounds/SoundBufferLibrary;getStream(Lnet/minecraft/resources/Identifier;Z)Ljava/util/concurrent/CompletableFuture;"),
+				mixin -> assertTrue(atTargets(mixin).contains("Lnet/minecraft/client/resources/sounds/SoundInstance;getStream(Lnet/minecraft/client/sounds/SoundBufferLibrary;"
+						+ "Lnet/minecraft/client/resources/sounds/Sound;Z)Ljava/util/concurrent/CompletableFuture;"))));
 		// ReplacedCallRedirects: ViaFabricPlus' three, forwarding the carrier's call.
 		String via = "com/viaversion/viafabricplus/injection/mixin/features/";
 		cases.add(via("hotbar keys", via + "v1_4_2/MixinAbstractContainerScreen", "net/minecraft/client/gui/screens/inventory/AbstractContainerScreen",
