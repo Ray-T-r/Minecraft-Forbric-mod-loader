@@ -30,7 +30,7 @@ import net.forbric.kernel.util.ForbricLog;
  * alone answers to one of its ids is forced ({@code ROOT_FORCELOAD_SINGLE}); every other candidate is weighted
  * {@code -2^(n - priority)}, so the choice is the lexicographic optimum over {@code ModPrioSorter}'s order: each mod in
  * turn loads if it can, given the ones before it. A nested mod also needs a parent that loads
- * ({@code NESTED_REQ_PARENT}) and, for each hard dependency, a provider that loads ({@code HARD_DEP}); one with a hard
+ * ({@code NESTED_REQ_PARENT}) and every mod a provider for each hard dependency ({@code HARD_DEP}); one with a hard
  * dependency nothing installed meets is switched off ({@code HARD_DEP_NO_CANDIDATE}). So next to owo-lib,
  * owo-sentinel (nested in mods that need owo-lib so it can ask for it when it is missing; it {@code provides}
  * {@code owo} and {@code owo-lib}) never loads, and of two nested mods that share an id the one Fabric Loader orders
@@ -38,16 +38,17 @@ import net.forbric.kernel.util.ForbricLog;
  *
  * <p>Applied to the selection, never before it. Cross-jar arbitration ({@code ReachableCandidateSelector}) first picks
  * one build per declared id across ecosystems; only among what it selected does this decide which mods answering to a
- * shared id load, and the caller re-runs arbitration without the losers, so that another build of a loser's own id
- * can still take its place. Builds of one mod are never rivals here, also when they share an alias rather than their
- * id (every {@code mixinextras-fabric} copy provides {@code com_github_llamalad7_mixinextras}): that is arbitration's.
+ * shared id load ({@code DuplicateModArbiter} runs arbitration again where another build of a loser's id could take
+ * its place). Builds of one mod are never rivals here, also when they share an alias rather than their id (every
+ * {@code mixinextras-fabric} copy provides {@code com_github_llamalad7_mixinextras}): that is arbitration's.
  *
- * <p>What takes part. Only Fabric mods are rivals: a jar in {@code mods/}, and a nested Fabric mod Fabric Loader
- * reaches itself (a Fabric mod's {@code jars}) and that {@code -Dforbric.nestedRequirements=off:<id>} does not exempt.
- * Everything else is outside Fabric Loader's index and never decides a rivalry: a jar that is anchored (in
- * {@code mods/}, or a Forge-family mod, a Fabric mod a JarJar declaration or a Forge-family walk brought in, or an
- * exempted one, whose parent always loads) loads; a jar only a judged mod bundles (a library without
- * {@code fabric.mod.json}, a Forge-family jar in a Fabric mod's {@code jars}) follows its parent, and goes with it.
+ * <p>What takes part: Fabric Loader's own index, the Fabric jars in {@code mods/} and the nested Fabric mods it reaches
+ * itself (a Fabric mod's {@code jars}) that {@code -Dforbric.nestedRequirements=off:<id>} does not exempt. Their hard
+ * dependencies are Fabric's, so they shape the choice as on Fabric. Everything else is outside that index: a
+ * Forge-family mod, a Fabric mod a JarJar declaration or a Forge-family walk brought in, an exempted one, a library
+ * without {@code fabric.mod.json}. Such a jar loads whenever a parent of it loads, goes with its parents, never decides
+ * a rivalry, and its needs, which Fabric Loader never sees, are met only after Fabric's choice is made: by keeping a
+ * would-be loser back.
  *
  * <p>Where the kernel stays more lenient than native:
  * <ul>
@@ -57,9 +58,11 @@ import net.forbric.kernel.util.ForbricLog;
  *     bundles and what only it satisfies. Here native's choice is taken with that mod off, and then the mod, and what
  *     goes with it, comes back wherever it takes nothing native loads: it yields every id it shares, and still loads
  *     where nothing contests it ({@code DependencyAudit} reports the dependency).</li>
- * <li>An anchored mod that needs a would-be loser, by its id or one it provides, with nothing else that loads meeting
- *     the need, keeps it back, with a WARN. Native then drops the jar in {@code mods/} that won, if no id of its own
- *     forces it, or refuses to start.</li>
+ * <li>A mod that needs a would-be loser, by its id or one it provides, with nothing else that loads meeting the need,
+ *     keeps it back, with a WARN, and the winner loads too. For a jar in {@code mods/} native drops the winning jar in
+ *     {@code mods/} instead if no id of its own forces it, and refuses to start otherwise; for a mod outside Fabric's
+ *     index native knows nothing of the need. The build kept back is the one arbitration chose for its id; another
+ *     installed build that would not need keeping back is not tried.</li>
  * </ul>
  * Not weighed: {@code recommends} (native tries to meet each before its order) and {@code breaks} between mods, a mod
  * listing its own id or an alias twice (native then never loads it), and {@code minecraft}, {@code java},
@@ -71,6 +74,17 @@ public final class FabricUniqueIds {
 	static final int CONFLICT_BUDGET = 200_000;
 
 	private FabricUniqueIds() {
+	}
+
+	/**
+	 * {@link #resolve}'s answer: what is left out (with why), what is kept back, and which of the left-out mods lost a
+	 * rivalry themselves (rather than going with a loser), with the id they lost and whether a jar in {@code mods/} won it.
+	 */
+	public record Outcome<K>(Map<K, String> leftOut, Map<K, NestedFabricRequirements.KeptBack> keptBack, Map<K, Lost> lost) {
+	}
+
+	/** A rivalry lost: the id, and whether the winner is a jar in {@code mods/} (it loads whatever else is chosen). */
+	public record Lost(String id, boolean toRoot) {
 	}
 
 	/** Two Fabric mods that load, of different ids, both answering to {@code id}; at least one of them judged. */
@@ -87,28 +101,34 @@ public final class FabricUniqueIds {
 		return !rivals(loading).isEmpty();
 	}
 
+	/** Every id {@code candidate} answers to in Fabric Loader's index: its id and each it provides, or none. */
+	public static Set<String> answersTo(NestedFabricRequirements.Candidate<?> candidate) {
+		return candidate.fabric() == null || candidate.fabric().getId() == null ? Set.of() : ids(candidate);
+	}
+
 	/**
 	 * Which of the mods in {@code loading} (every candidate that loads: roots, and the nested ones whose parents load,
 	 * one build per declared id) Fabric Loader would leave out for sharing an id, with what then cannot load either; and
-	 * which of those an anchored mod keeps back. {@code requiredElsewhere}: requirements of mods that load but are not
-	 * candidates. Nothing is left out when nothing is contested, or when the search reaches its bound.
+	 * which would-be losers a mod keeps back. {@code requiredElsewhere}: requirements of mods that load but are not
+	 * candidates, outside Fabric's index. Nothing is left out when nothing is contested, or when the search reaches
+	 * its bound.
 	 */
-	public static <K> NestedFabricRequirements.Resolution<K> resolve(List<NestedFabricRequirements.Candidate<K>> loading,
+	public static <K> Outcome<K> resolve(List<NestedFabricRequirements.Candidate<K>> loading,
 			List<NestedFabricRequirements.Requirement> requiredElsewhere) {
-		NestedFabricRequirements.Resolution<K> none = new NestedFabricRequirements.Resolution<>(Map.of(), Map.of());
+		Outcome<K> none = new Outcome<>(Map.of(), Map.of(), Map.of());
 		if (!NestedFabricRequirements.enabled()) return none;
 		List<Rivals<K>> rivals = rivals(loading);
 		if (rivals.isEmpty()) return none;
 
 		Map<K, Integer> variable = new HashMap<>();
 		for (var candidate : loading) variable.put(candidate.key(), variable.size() + 1);
-		Set<K> anchored = anchored(loading, variable.keySet());
 		List<NestedFabricRequirements.Candidate<K>> order = priorityOrder(loading);
 		List<NestedFabricRequirements.Candidate<K>> judged = new ArrayList<>();
 		for (var candidate : order) if (judgeable(candidate)) judged.add(candidate);
 
-		// Hard dependencies of the judged mods (Fabric's HARD_DEP), and the needs of every other mod.
-		List<Need<K>> hard = new ArrayList<>(), soft = new ArrayList<>();
+		// Fabric's own hard dependencies: a judged mod's (HARD_DEP), and a Fabric jar in mods/ (forced, so a need).
+		// Everything else's needs Fabric never sees; they are met after its choice.
+		List<Need<K>> hard = new ArrayList<>(), forced = new ArrayList<>(), outside = new ArrayList<>();
 		Set<K> unmet = new HashSet<>();
 		for (var candidate : loading) {
 			for (var requirement : candidate.requires()) {
@@ -118,17 +138,20 @@ public final class FabricUniqueIds {
 					if (judgeable(candidate)) unmet.add(candidate.key());
 					continue;
 				}
-				(judgeable(candidate) ? hard : soft).add(new Need<>(candidate, requirement, providers));
+				Need<K> need = new Need<>(candidate, requirement, providers);
+				if (judgeable(candidate)) hard.add(need);
+				else if (candidate.root() && takesPart(candidate)) forced.add(need);
+				else outside.add(need);
 			}
 		}
 		for (var requirement : requiredElsewhere) {
 			List<NestedFabricRequirements.Candidate<K>> providers = providers(loading, requirement);
-			if (providers != null && !providers.isEmpty()) soft.add(new Need<>(null, requirement, providers));
+			if (providers != null && !providers.isEmpty()) outside.add(new Need<>(null, requirement, providers));
 		}
 
 		int next = loading.size();
-		Map<Need<K>, Integer> needLiterals = new LinkedHashMap<>();
-		for (var need : soft) needLiterals.put(need, ++next);
+		Map<Need<K>, Integer> forcedLiterals = new LinkedHashMap<>();
+		for (var need : forced) forcedLiterals.put(need, ++next);
 		// The rivalry whose loser comes last in Fabric Loader's order goes first, then by its winner, so that where a
 		// need keeps only some of them the mod Fabric Loader prefers is the one kept back, whatever the scan order.
 		List<Rivals<K>> byLoser = new ArrayList<>(rivals);
@@ -144,22 +167,28 @@ public final class FabricUniqueIds {
 		try {
 			for (var candidate : loading) {
 				int self = variable.get(candidate.key());
-				if (anchored.contains(candidate.key())) {
+				if (candidate.root()) {
 					clause(solver, self);
 					continue;
 				}
 				List<Integer> parents = new ArrayList<>(List.of(-self));
-				for (K parent : candidate.parents()) if (variable.containsKey(parent)) parents.add(variable.get(parent));
+				for (K parent : candidate.parents()) {
+					if (!variable.containsKey(parent)) continue;
+					parents.add(variable.get(parent));
+					// Outside Fabric's index a nested jar loads whenever a parent of it does, as the kernel loads it.
+					if (!judgeable(candidate)) clause(solver, -variable.get(parent), self);
+				}
+				// A candidate the caller says loads with no parent among them is taken as given.
 				if (parents.size() > 1) clause(solver, parents);
+				else if (!judgeable(candidate)) clause(solver, self);
 			}
 			for (var need : hard) {
 				List<Integer> met = new ArrayList<>(List.of(-variable.get(need.by().key())));
 				for (var provider : need.providers()) met.add(variable.get(provider.key()));
 				clause(solver, met);
 			}
-			for (var need : needLiterals.entrySet()) {
+			for (var need : forcedLiterals.entrySet()) {
 				List<Integer> met = new ArrayList<>(List.of(-need.getValue()));
-				if (need.getKey().by() != null) met.add(-variable.get(need.getKey().by().key()));
 				for (var provider : need.getKey().providers()) met.add(variable.get(provider.key()));
 				clause(solver, met);
 			}
@@ -173,11 +202,14 @@ public final class FabricUniqueIds {
 		}
 
 		Set<Integer> relaxed = new HashSet<>();
+		Map<K, String> keptFor = new LinkedHashMap<>();
+		VecInt assumptions = new VecInt();
 		try {
-			VecInt assumptions = new VecInt();
 			if (!satisfiable(solver, assumptions, model)) return none;
-			// What anchored mods need, then each rivalry.
-			accept(solver, assumptions, List.copyOf(needLiterals.values()), new HashSet<>(), model);
+			// What the forced jars need, then each rivalry; a rivalry a forced need cannot do without is relaxed.
+			Set<Integer> needsKept = new LinkedHashSet<>();
+			accept(solver, assumptions, List.copyOf(forcedLiterals.values()), new HashSet<>(), model);
+			for (int i = 0; i < assumptions.size(); i++) if (assumptions.get(i) > 0) needsKept.add(assumptions.get(i));
 			accept(solver, assumptions, List.copyOf(rivalLiterals.values()), relaxed, model);
 			// Native's choice: the judged mods in its order, with the ones whose dependency nothing meets switched off.
 			VecInt nativeChoice = copy(assumptions);
@@ -210,14 +242,41 @@ public final class FabricUniqueIds {
 				if (satisfiable(solver, attempt, model)) assumptions = attempt;
 				else assumptions.push(-self);
 			}
-			// Last, what only follows its parent.
-			for (var candidate : loading) {
-				if (anchored.contains(candidate.key()) || judgeable(candidate)) continue;
-				int self = variable.get(candidate.key());
-				VecInt attempt = copy(assumptions);
-				attempt.push(self);
-				if (satisfiable(solver, attempt, model)) assumptions = attempt;
-				else assumptions.push(-self);
+			if (!satisfiable(solver, assumptions, model)) return none;
+			// Last, the needs Fabric never sees: one nothing that loads meets keeps a would-be loser back, its rivalries
+			// relaxed, and everything that loads stays.
+			for (var need : outside) {
+				boolean[] now = model[0];
+				if (need.by() != null && !now[variable.get(need.by().key())]) continue;
+				if (need.providers().stream().anyMatch(p -> now[variable.get(p.key())])) continue;
+				List<NestedFabricRequirements.Candidate<K>> providers = new ArrayList<>(need.providers());
+				providers.sort(Comparator.comparingInt(p -> order.contains(p) ? order.indexOf(p) : Integer.MAX_VALUE));
+				for (var provider : providers) {
+					VecInt attempt = new VecInt();
+					for (int literal : needsKept) attempt.push(literal);
+					Set<Integer> released = new HashSet<>();
+					for (var pair : rivalLiterals.entrySet()) {
+						if (relaxed.contains(pair.getValue())) continue;
+						if (pair.getKey().a() == provider || pair.getKey().b() == provider) released.add(pair.getValue());
+						else attempt.push(pair.getValue());
+					}
+					for (var candidate : loading) if (now[variable.get(candidate.key())]) attempt.push(variable.get(candidate.key()));
+					attempt.push(variable.get(provider.key()));
+					if (!satisfiable(solver, attempt, model)) continue;
+					relaxed.addAll(released);
+					assumptions = attempt;
+					// Only what the kept mod brings with it changes: everything else that was out stays out where it can.
+					for (var candidate : loading) {
+						if (now[variable.get(candidate.key())] || candidate == provider) continue;
+						VecInt off = copy(assumptions);
+						off.push(-variable.get(candidate.key()));
+						if (satisfiable(solver, off, model)) assumptions = off;
+					}
+					keptFor.putIfAbsent(provider.key(), (need.by() == null ? need.requirement().by() : need.by().id())
+							+ " requires " + need.requirement().id() + " " + need.requirement().range()
+							+ ", and nothing else that loads meets that");
+					break;
+				}
 			}
 			if (!satisfiable(solver, assumptions, model)) return none;
 		} catch (TimeoutException bounded) {
@@ -227,24 +286,32 @@ public final class FabricUniqueIds {
 
 		boolean[] loads = model[0];
 		Map<K, String> leftOut = new LinkedHashMap<>();
+		Map<K, Lost> lost = new LinkedHashMap<>();
 		for (var candidate : loading) {
 			if (loads[variable.get(candidate.key())]) continue;
 			leftOut.put(candidate.key(), reason(candidate, rivalLiterals, relaxed, hard, variable, loads));
+			for (var pair : rivalLiterals.entrySet()) {
+				if (relaxed.contains(pair.getValue())) continue;
+				var other = pair.getKey().a() == candidate ? pair.getKey().b() : pair.getKey().b() == candidate ? pair.getKey().a() : null;
+				if (other == null || !loads[variable.get(other.key())]) continue;
+				lost.putIfAbsent(candidate.key(), new Lost(pair.getKey().id(), other.root()));
+			}
 		}
 		Map<K, NestedFabricRequirements.KeptBack> keptBack = new LinkedHashMap<>();
 		for (var pair : rivalLiterals.entrySet()) {
 			if (!relaxed.contains(pair.getValue())) continue;
 			Rivals<K> rivalry = pair.getKey();
 			if (!loads[variable.get(rivalry.a().key())] || !loads[variable.get(rivalry.b().key())]) continue;
-			// The one native would leave out: a judged mod against a jar in mods/, else the later in its order.
-			var kept = !judgeable(rivalry.a()) ? rivalry.b() : !judgeable(rivalry.b()) ? rivalry.a()
+			// The one native would leave out: what a need kept, else a judged mod against a jar in mods/, else the later.
+			var kept = keptFor.containsKey(rivalry.a().key()) ? rivalry.a() : keptFor.containsKey(rivalry.b().key()) ? rivalry.b()
+					: !judgeable(rivalry.a()) ? rivalry.b() : !judgeable(rivalry.b()) ? rivalry.a()
 					: order.indexOf(rivalry.a()) > order.indexOf(rivalry.b()) ? rivalry.a() : rivalry.b();
 			var other = kept == rivalry.a() ? rivalry.b() : rivalry.a();
 			if (keptBack.containsKey(kept.key())) continue;
-			keptBack.put(kept.key(), new NestedFabricRequirements.KeptBack(rivalReason(rivalry.id(), other),
-					because(kept, soft, variable, loads)));
+			String because = keptFor.containsKey(kept.key()) ? keptFor.get(kept.key()) : because(kept, forced, variable, loads);
+			keptBack.put(kept.key(), new NestedFabricRequirements.KeptBack(rivalReason(rivalry.id(), other), because));
 		}
-		return new NestedFabricRequirements.Resolution<>(leftOut, keptBack);
+		return new Outcome<>(leftOut, keptBack, lost);
 	}
 
 	/** Every pair of Fabric mods of different ids that answer to one id, both taking part, at least one of them judged. */
@@ -277,36 +344,6 @@ public final class FabricUniqueIds {
 	private static boolean judgeable(NestedFabricRequirements.Candidate<?> candidate) {
 		return !candidate.root() && candidate.judged() && candidate.fabric() != null && candidate.fabric().getId() != null
 				&& NestedFabricRequirements.judged(candidate.fabric().getId());
-	}
-
-	/**
-	 * What loads whatever this decides: the roots, and every jar outside the rule (a Forge-family mod, a Fabric mod
-	 * reached otherwise than by Fabric's {@code jars}, an exempted one) with a parent that does. A jar outside the rule
-	 * that only judged mods bundle is not anchored: it follows them.
-	 */
-	private static <K> Set<K> anchored(List<NestedFabricRequirements.Candidate<K>> loading, Set<K> present) {
-		Set<K> anchored = new HashSet<>();
-		for (var candidate : loading) if (candidate.root()) anchored.add(candidate.key());
-		for (boolean changed = true; changed;) {
-			changed = false;
-			for (var candidate : loading) {
-				if (anchored.contains(candidate.key()) || judgeable(candidate) || !isMod(candidate)) continue;
-				boolean parentLoads = false, anyParent = false;
-				for (K parent : candidate.parents()) {
-					if (!present.contains(parent)) continue;
-					anyParent = true;
-					parentLoads |= anchored.contains(parent);
-				}
-				// A candidate the caller says loads with no parent among them is taken as given.
-				if (parentLoads || !anyParent) changed |= anchored.add(candidate.key());
-			}
-		}
-		return anchored;
-	}
-
-	/** A mod in some ecosystem's sense (it declares an id), as opposed to a bundled library. */
-	private static boolean isMod(NestedFabricRequirements.Candidate<?> candidate) {
-		return candidate.fabric() != null || !candidate.provides().isEmpty();
 	}
 
 	/** A Fabric mod's id and each id it provides, as Fabric Loader indexes them (each once). */
@@ -528,17 +565,17 @@ public final class FabricUniqueIds {
 				+ (winner.root() ? " in mods/" : "") + " does, and Fabric Loader loads one mod per id, provides included";
 	}
 
-	/** The need that kept {@code kept} in: an anchored mod's, met by nothing else that loads. */
-	private static <K> String because(NestedFabricRequirements.Candidate<K> kept, List<Need<K>> soft, Map<K, Integer> variable,
+	/** The need that kept {@code kept} in: a forced jar's, met by nothing else that loads. */
+	private static <K> String because(NestedFabricRequirements.Candidate<K> kept, List<Need<K>> needs, Map<K, Integer> variable,
 			boolean[] loads) {
-		for (var need : soft) {
+		for (var need : needs) {
 			if (!need.providers().contains(kept)) continue;
 			if (need.providers().stream().filter(p -> p != kept).anyMatch(p -> loads[variable.get(p.key())])) continue;
 			String by = need.by() == null ? need.requirement().by() : need.by().id();
 			return by + " requires " + need.requirement().id() + " " + need.requirement().range()
-					+ ", and nothing else installed meets that";
+					+ ", and nothing else that loads meets that";
 		}
-		return "a mod that loads needs it, and nothing else installed meets that";
+		return "a mod that loads needs it, and nothing else that loads meets that";
 	}
 
 	/** Keeps each literal iff it is consistent with everything kept before it; one that is not goes to {@code relaxed}. */

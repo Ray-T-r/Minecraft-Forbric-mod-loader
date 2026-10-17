@@ -578,11 +578,11 @@ class NestedFabricRequirementsTest {
 			var kept = DuplicateModArbiter.currentPlan();
 			assertEquals(Set.of("owo-sentinel", "inner"), nestedIds(kept), need);
 			String because = need.startsWith("\"owo-sentinel\"") ? "user requires owo-sentinel *" : "user requires owo >=0.14";
-			assertEquals(because + ", and nothing else installed meets that",
+			assertEquals(because + ", and nothing else that loads meets that",
 					kept.oneModPerId().keptBack().get(only(kept, "owo-sentinel")).because());
 			assertTrue(jijLines(log).contains("[Forbric/JiJ] nested owo-sentinel 0.14.0 in fishing.jar loaded although Fabric "
 					+ "Loader would leave it out (it answers to 'owo', as owo 0.13.1 in mods/ does, and Fabric Loader loads one "
-					+ "mod per id, provides included): " + because + ", and nothing else installed meets that"), log);
+					+ "mod per id, provides included): " + because + ", and nothing else that loads meets that"), log);
 		}
 	}
 
@@ -723,6 +723,85 @@ class NestedFabricRequirementsTest {
 		discovery.setPlatform(NestedFabricRequirements.Platform.running(GAME));
 		discovery.discover(mods());
 		assertTrue(ids(discovery).contains("x"), String.valueOf(ids(discovery)));
+	}
+	/**
+	 * Only a mod that lost a rivalry stays excluded between arbitration rounds. lib 3 loses x to a and goes, and lib 2
+	 * takes its place; d (which needs lib) and inner (in both builds of lib) went with lib 3 in the first round and come
+	 * back with lib 2, as on Fabric.
+	 */
+	@Test void whatWentWithALoserComesBackWithTheBuildThatReplacesIt() throws Exception {
+		byte[] inner = fabric("inner", "1", Map.of(), "");
+		install("a.jar", fabric("a", "1", Map.of(), ",\"provides\":[\"x\"]"));
+		install("p.jar", fabric("p", "1", Map.of("META-INF/jars/lib.jar", fabric("lib", "3", Map.of("META-INF/jars/inner.jar", inner),
+				",\"provides\":[\"x\"]")), ""));
+		install("r.jar", fabric("r", "1", Map.of("META-INF/jars/lib.jar", fabric("lib", "2", Map.of("META-INF/jars/inner.jar", inner), "")), ""));
+		install("q.jar", fabric("q", "1", Map.of("META-INF/jars/d.jar", fabric("d", "1", Map.of(), ",\"depends\":{\"lib\":\"*\"}")), ""));
+		String log = capture(() -> DuplicateModArbiter.arbitrate(mods(), EnvType.SERVER, GAME));
+		var plan = DuplicateModArbiter.currentPlan();
+		assertEquals(Set.of("lib", "inner", "d"), nestedIds(plan));
+		assertEquals(List.of("2"), plan.nestedFiles().stream().filter(p -> plan.inventory().nodes().get(p).claim().modIds().contains("lib"))
+				.map(p -> plan.inventory().nodes().get(p).claim().versionOf("lib")).toList());
+		assertEquals(List.of("[Forbric/JiJ] nested lib 3 in p.jar left out: it answers to 'x', as a 1 in mods/ does, and Fabric Loader "
+				+ "loads one mod per id, provides included — Fabric Loader does not load it either"), jijLines(log));
+	}
+
+	/**
+	 * Every build of owo-sentinel loses to the owo jar in mods/, so all go in one arbitration round, and each mod that
+	 * was selected gets one line, however many mods nest their own sentinel.
+	 */
+	@Test void everyBuildThatLosesTheSameWayGoesAtOnce() throws Exception {
+		installOwoShape();
+		install("other.jar", fabric("other", "1", Map.of("META-INF/jars/owo-sentinel.jar", fabric("owo-sentinel", "0.13.0",
+				Map.of(), ",\"provides\":[\"owo\",\"owo-lib\"]")), ""));
+		install("third.jar", fabric("third", "1", Map.of("META-INF/jars/owo-sentinel.jar", fabric("owo-sentinel", "0.12.0",
+				Map.of(), ",\"provides\":[\"owo\",\"owo-lib\"]")), ""));
+		String log = capture(() -> DuplicateModArbiter.arbitrate(mods(), EnvType.SERVER, GAME));
+		var plan = DuplicateModArbiter.currentPlan();
+		assertEquals(Set.of(), nestedIds(plan));
+		assertEquals(1, jijLines(log).size(), log);
+		assertFalse(log.contains("arbitration rounds"), log);
+	}
+
+	/**
+	 * A need from outside Fabric's index does not change Fabric's choice; it keeps the loser back. aaa 2 and bbb 1 both
+	 * provide x, and Fabric loads aaa; a NeoForge mod that requires bbb (in mods/, or nested in a judged Fabric mod) keeps
+	 * bbb back with a WARN, and aaa still loads.
+	 */
+	@Test void aNeedFabricNeverSeesKeepsTheLoserBackAndLeavesTheWinner() throws Exception {
+		String requiresBbb = "[[dependencies.neoreq]]\nmodId=\"bbb\"\ntype=\"required\"\nversionRange=\"[1,)\"\n";
+		for (boolean nestedRequirer : List.of(false, true)) {
+			reset();
+			try (var files = Files.list(mods())) { for (Path file : files.toList()) Files.delete(file); }
+			Map<String, byte[]> host = new LinkedHashMap<>(Map.of(
+					"META-INF/jars/aaa.jar", fabric("aaa", "2.0.0", Map.of(), ",\"provides\":[\"x\"]"),
+					"META-INF/jars/bbb.jar", fabric("bbb", "1.0.0", Map.of(), ",\"provides\":[\"x\"]")));
+			if (nestedRequirer) {
+				host.put("META-INF/jars/pmod.jar", fabric("pmod", "1", Map.of("META-INF/jars/neoreq.jar",
+						neo("neoreq", Map.of(), List.of(), requiresBbb)), ""));
+			} else {
+				install("neoreq.jar", neo("neoreq", Map.of(), List.of(), requiresBbb));
+			}
+			install("host.jar", fabric("host", "1", host, ""));
+			String log = capture(() -> DuplicateModArbiter.arbitrate(mods(), EnvType.SERVER, GAME));
+			var plan = DuplicateModArbiter.currentPlan();
+			assertTrue(nestedIds(plan).containsAll(Set.of("aaa", "bbb")), nestedRequirer + " " + nestedIds(plan));
+			assertTrue(plan.oneModPerId().leftOut().isEmpty(), String.valueOf(plan.oneModPerId().leftOut()));
+			assertTrue(plan.oneModPerId().keptBack().get(only(plan, "bbb")).because().startsWith("neoreq requires bbb"),
+					String.valueOf(plan.oneModPerId().keptBack()));
+			assertTrue(jijLines(log).stream().anyMatch(line -> line.startsWith("[Forbric/JiJ] nested bbb 1.0.0 in host.jar loaded although")), log);
+		}
+	}
+
+	/** Without a plan, a copy that loses takes the later copies of its id that would lose the same way. */
+	@Test void withoutAPlanEveryCopyOfTheLoserGoes() throws Exception {
+		installOwoShape();
+		install("other.jar", fabric("other", "1", Map.of("META-INF/jars/owo-sentinel.jar", fabric("owo-sentinel", "0.13.0",
+				Map.of(), ",\"provides\":[\"owo\",\"owo-lib\"]")), ""));
+		System.setProperty("forbric.crossJarArbitration", "off");
+		FabricModDiscovery discovery = new FabricModDiscovery(EnvType.SERVER, root.resolve("jij"));
+		discovery.setPlatform(NestedFabricRequirements.Platform.running(GAME));
+		discovery.discover(mods());
+		assertEquals(Set.of("owo", "fishing", "other"), ids(discovery));
 	}
 	private void installOwoShape() throws Exception {
 		install("owo.jar", fabric("owo", "0.13.1", Map.of(), ",\"provides\":[\"owo-impl\",\"owo-lib\"]"));

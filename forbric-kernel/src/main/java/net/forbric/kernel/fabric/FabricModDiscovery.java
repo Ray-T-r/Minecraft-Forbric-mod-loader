@@ -151,8 +151,8 @@ public final class FabricModDiscovery {
 		var resolution = NestedFabricRequirements.resolve(candidates, leftOut, requiredElsewhere);
 		// Then one mod per id, provides included, among what still loads (FabricUniqueIds). Parents come before their
 		// nested mods in found, so one pass sees whether each parent loads. No arbitration runs here: of two copies of
-		// one id KernelFabricLoader.register keeps the first it is given, which is the first found, so only that copy
-		// can answer to the id (the other's nested mods still load).
+		// one id KernelFabricLoader.register keeps the first it is given, so the first found is the one weighed (the
+		// other's nested mods still load), and a copy that loses takes the later copies that would lose the same way.
 		boolean[] loads = new boolean[found.size()];
 		java.util.Set<String> registered = new java.util.HashSet<>();
 		List<NestedFabricRequirements.Candidate<Integer>> loading = new ArrayList<>();
@@ -162,6 +162,17 @@ public final class FabricModDiscovery {
 			if (loads[i] && registered.add(found.get(i).metadata().getId())) loading.add(candidates.get(i));
 		}
 		var unique = FabricUniqueIds.resolve(loading, requiredElsewhere);
+		// A copy that lost goes with every later copy of its id that answers to the id it lost: with the first copy out,
+		// the next would register in its place and answer to that id after all.
+		Map<Integer, String> idLeftOut = new LinkedHashMap<>(unique.leftOut());
+		for (var lost : unique.lost().entrySet()) {
+			String reason = unique.leftOut().get(lost.getKey());
+			String id = found.get(lost.getKey()).metadata().getId();
+			for (int j = 0; j < found.size(); j++) {
+				if (j == lost.getKey() || !loads[j] || !id.equals(found.get(j).metadata().getId())) continue;
+				if (FabricUniqueIds.answersTo(candidates.get(j)).contains(lost.getValue().id())) idLeftOut.putIfAbsent(j, reason);
+			}
+		}
 
 		KernelModContainer[] built = new KernelModContainer[found.size()];
 		for (int i = 0; i < found.size(); i++) {
@@ -171,8 +182,8 @@ public final class FabricModDiscovery {
 				NestedFabricRequirements.log(mod.metadata(), parentJar, resolution.leftOut().get(i));
 				continue;
 			}
-			if (unique.leftOut().containsKey(i)) {
-				NestedFabricRequirements.log(mod.metadata(), parentJar, unique.leftOut().get(i));
+			if (idLeftOut.containsKey(i)) {
+				NestedFabricRequirements.log(mod.metadata(), parentJar, idLeftOut.get(i));
 				continue;
 			}
 			if (resolution.keptBack().containsKey(i)) {
