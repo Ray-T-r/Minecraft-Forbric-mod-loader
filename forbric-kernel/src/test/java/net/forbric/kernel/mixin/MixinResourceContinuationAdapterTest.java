@@ -26,13 +26,29 @@ class MixinResourceContinuationAdapterTest {
         assertEquals("my_mod:"+run.prefix+"changed.png",run.invoke(changed,run.prefix).toString());assertEquals(1,run.nativeCalls.get());
         run=runtime(false,"my_mod:oak",true);assertEquals("my_mod:"+run.prefix+"oak.png",run.invoke(run.partial,run.prefix).toString());assertEquals(1,run.nativeCalls.get());
     }
-    @Test void changedPathRecipeOperationInputOrAmbiguousContinuationIsRejected()throws Exception {
-        Inputs input=inputs(false);MethodNode helper=input.source.methods.stream().filter(m->m.name.startsWith("lambda$")).findFirst().orElseThrow();
-        ((InvokeDynamicInsnNode)DefaultMethodOverloadBridge.real(helper).get(1)).bsmArgs=new Object[]{"wrong/\u0001.png"};
-        Inputs recipeChanged=input;
-        assertEquals(0,MixinResourceContinuationAdapter.adapt(recipeChanged.source,recipeChanged.nodes::get,n->recipeChanged.original));
-        input=inputs(false);MethodNode handler=method(input.source,"init");handler.instructions.set(DefaultMethodOverloadBridge.real(handler).get(21),new LdcInsnNode("changed-input"));Inputs changed=input;
+    /**
+     * The handler's own computation is its own: a path recipe of its own is admitted and runs as written on the argument the
+     * native call would have been handed — its namespaced texture uses its recipe, the default one still the native
+     * continuation. What is refused is an Operation called with anything but the handler's own argument, or escaping.
+     */
+    @Test void aHandlersOwnRecipeRunsAsWrittenAndAnOperationFedAnythingElseIsRejected()throws Exception {
+        java.util.function.Consumer<ClassNode> ownRecipe=guest->{MethodNode helper=guest.methods.stream().filter(m->m.name.startsWith("lambda$")).findFirst().orElseThrow();
+            ((InvokeDynamicInsnNode)DefaultMethodOverloadBridge.real(helper).get(1)).bsmArgs=new Object[]{"other/\u0001.png"};};
+        Runtime run=runtime(false,"my_mod:oak",false,ownRecipe);assertEquals("my_mod:other/oak.png",run.invoke(run.partial,run.prefix).toString());assertEquals(0,run.nativeCalls.get());
+        run=runtime(false,"oak",false,ownRecipe);assertEquals("minecraft:"+run.prefix+"oak.png",run.invoke(run.partial,run.prefix).toString());assertEquals(1,run.nativeCalls.get());
+        Inputs input=inputs(false);MethodNode handler=method(input.source,"init");handler.instructions.set(DefaultMethodOverloadBridge.real(handler).get(21),new LdcInsnNode("changed-input"));Inputs changed=input;
         assertEquals(0,MixinResourceContinuationAdapter.adapt(changed.source,changed.nodes::get,n->changed.original));
+        input=inputs(false);handler=method(input.source,"init");handler.instructions.insert(new InsnNode(Opcodes.POP));handler.instructions.insert(new MethodInsnNode(Opcodes.INVOKESTATIC,"java/util/Objects","requireNonNull","(Ljava/lang/Object;)Ljava/lang/Object;",false));
+        handler.instructions.insert(new VarInsnNode(Opcodes.ALOAD,2));Inputs escaping=input;
+        assertEquals(0,MixinResourceContinuationAdapter.adapt(escaping.source,escaping.nodes::get,n->escaping.original),"the Operation handed to another call");
+    }
+    /** The same handler compiled another way — its argument through a local, the array built through a variable — is admitted. */
+    @Test void theSameHandlerSpelledAnotherWayIsAdmitted()throws Exception {
+        java.util.function.Consumer<ClassNode> respelled=guest->{MethodNode handler=method(guest,"init");List<AbstractInsnNode> c=DefaultMethodOverloadBridge.real(handler);
+            InsnList prologue=new InsnList();prologue.add(new VarInsnNode(Opcodes.ALOAD,1));prologue.add(new VarInsnNode(Opcodes.ASTORE,5));prologue.add(new InsnNode(Opcodes.NOP));handler.instructions.insert(prologue);
+            handler.instructions.set(c.get(21),new VarInsnNode(Opcodes.ALOAD,5));handler.maxLocals=Math.max(handler.maxLocals,6);};
+        for(String name:List.of("oak","my_mod:oak")){Runtime run=runtime(false,name,false,respelled);String expected=(name.contains(":")?"my_mod:":"minecraft:")+run.prefix+"oak.png";
+            assertEquals(expected,run.invoke(run.partial,run.prefix).toString());assertEquals(name.contains(":")?0:1,run.nativeCalls.get());}
     }
     private record Inputs(ClassNode source,Map<String,ClassNode> nodes,ClassNode original) { }
     private record Runtime(Object receiver,Class<?> id,java.lang.reflect.Method method,Class<?> operation,Object partial,String prefix,AtomicInteger nativeCalls) {
@@ -42,11 +58,12 @@ class MixinResourceContinuationAdapterTest {
             });return method.invoke(receiver,partial,prefix,op);
         }
     }
-    private static Runtime runtime(boolean hanging,String name,boolean mutateApi)throws Exception {
+    private static Runtime runtime(boolean hanging,String name,boolean mutateApi)throws Exception {return runtime(hanging,name,mutateApi,guest->{});}
+    private static Runtime runtime(boolean hanging,String name,boolean mutateApi,java.util.function.Consumer<ClassNode> mutateGuest)throws Exception {
         Inputs input=inputs(hanging);String sourceName=input.source.name;Map<String,String> names=new HashMap<>();
         names.put(sourceName,"fixture/resource/Guest");names.put("net/minecraft/resources/Identifier","fixture/resource/Id");names.put("net/minecraft/world/level/block/state/properties/WoodType","fixture/resource/Wood");
         names.put("net/minecraft/client/gui/screens/inventory/AbstractSignEditScreen","fixture/resource/Base");names.put("net/minecraft/client/gui/screens/inventory/"+(hanging?"HangingSignEditScreen":"SignEditScreen"),"fixture/resource/Widget");names.put("net/minecraft/IdentifierException","fixture/resource/BadId");
-        Map<String,ClassNode> mapped=new HashMap<>();for(ClassNode node:input.nodes.values()){ClassNode copy=remap(node,names);mapped.put(copy.name,copy);}ClassNode guest=remap(input.source,names),original=remap(input.original,names);
+        Map<String,ClassNode> mapped=new HashMap<>();for(ClassNode node:input.nodes.values()){ClassNode copy=remap(node,names);mapped.put(copy.name,copy);}ClassNode guest=remap(input.source,names),original=remap(input.original,names);mutateGuest.accept(guest);
         AnnotationNode point=MixinFit.atNodes(MixinFit.injectorOf(method(guest,"init"))).getFirst();
         for(int i=0;i+1<point.values.size();i+=2)if(point.values.get(i).equals("target"))point.values.set(i+1,point.values.get(i+1).toString().replace("net/minecraft/resources/Identifier","fixture/resource/Id"));
         ClassNode base=node("fixture/resource/Base",false);base.fields.add(new FieldNode(Opcodes.ACC_PROTECTED|Opcodes.ACC_FINAL,"woodType","Lfixture/resource/Wood;",null,null));

@@ -4,7 +4,7 @@ import org.junit.jupiter.api.*;import org.junit.jupiter.api.io.TempDir;
 import net.fabricmc.api.EnvType;import net.forbric.api.Ecosystem;import net.forbric.kernel.mixin.MixinResourceContinuationAdapter;
 
 class MixinResourceContinuationWeaveTest {
-    @TempDir static Path work;private static Path fixture;private static WeaveHarness.Result on,off,changed;
+    @TempDir static Path work;private static Path fixture;private static WeaveHarness.Result on,off,changed,respelled,feeding;
     @BeforeAll static void weave()throws Exception {
         Path source=Files.createDirectories(work.resolve("source"));List<Path> common=new ArrayList<>();
         common.add(write(source,"Wood.java","package fixture.resource;public final class Wood {private final String name;public Wood(String name){this.name=name;}public String name(){return name;}}"));
@@ -57,12 +57,41 @@ class MixinResourceContinuationWeaveTest {
             """);
         Path config=write(source,"resource.mixins.json","{\"required\":true,\"package\":\"fixture.resource.mixin\",\"compatibilityLevel\":\"JAVA_21\",\"mixins\":[\"Guest\"],\"injectors\":{\"defaultRequire\":0}}");
         Path nativeConfig=write(source,"native.mixins.json","{\"required\":true,\"package\":\"fixture.resource.nativechange\",\"compatibilityLevel\":\"JAVA_21\",\"mixins\":[\"NativeMutation\"]}");
-        List<Path> sources=new ArrayList<>(common);sources.addAll(List.of(current,probe,guest,mutation));fixture=WeaveHarness.fixture(work,"resource",sources,Map.of("resource.mixins.json",config,"native.mixins.json",nativeConfig,"META-INF/forbric/native-reference/FABRIC/index.tsv",index,"META-INF/forbric/native-reference/FABRIC/fixture/resource/Widget.class.bin",bytes));
+        // The same wrap written another way, under other names: its own namespace test (contains, not indexOf), the argument
+        // handed on through a local, the answer kept in one before it is returned. Admitted by what it does with its
+        // Operation alone, it must behave as the first.
+        Path respelledGuest=write(source.resolve("other"),"QzxSkin.java","""
+            package fixture.resource.qzx;import fixture.resource.*;import org.spongepowered.asm.mixin.Mixin;import org.spongepowered.asm.mixin.injection.*;
+            import com.llamalad7.mixinextras.injector.wrapoperation.*;
+            @Mixin(Widget.class)public abstract class QzxSkin extends Base {private QzxSkin(Wood wood){super(wood);}
+              @WrapOperation(method="<init>(Lfixture/resource/Wood;)V",at=@At(value="INVOKE",target="Lfixture/resource/Key;defaultKey(Ljava/lang/String;)Lfixture/resource/Key;"),require=0)
+              private Key qzxSkinOf(String qzxPath,Operation<Key> qzxThen){String handed=qzxPath;Key out;
+                if(woodType.name().contains(":")){out=Key.decode(woodType.name()).path(p->"textures/gui/sheet/"+p+".png");}else{out=qzxThen.call(handed);}return out;}}
+            """);
+        // And a wrap that hands its Operation something else than its own argument: not admitted, so it keeps binding nothing.
+        Path feedingGuest=write(source.resolve("feeding"),"QzxFeed.java","""
+            package fixture.resource.qzxfeed;import fixture.resource.*;import org.spongepowered.asm.mixin.Mixin;import org.spongepowered.asm.mixin.injection.*;
+            import com.llamalad7.mixinextras.injector.wrapoperation.*;
+            @Mixin(Widget.class)public abstract class QzxFeed extends Base {private QzxFeed(Wood wood){super(wood);}
+              @WrapOperation(method="<init>",at=@At(value="INVOKE",target="Lfixture/resource/Key;defaultKey(Ljava/lang/String;)Lfixture/resource/Key;"),require=0)
+              private Key qzxFeed(String qzxPath,Operation<Key> qzxThen){if(woodType.name().indexOf(':')!=-1){return Key.decode(woodType.name()).path(p->"textures/gui/sheet/"+p+".png");}return qzxThen.call("textures/other.png");}}
+            """);
+        Path respelledConfig=write(source,"qzx.mixins.json","{\"required\":true,\"package\":\"fixture.resource.qzx\",\"compatibilityLevel\":\"JAVA_21\",\"mixins\":[\"QzxSkin\"],\"injectors\":{\"defaultRequire\":0}}");
+        Path feedingConfig=write(source,"qzxfeed.mixins.json","{\"required\":true,\"package\":\"fixture.resource.qzxfeed\",\"compatibilityLevel\":\"JAVA_21\",\"mixins\":[\"QzxFeed\"],\"injectors\":{\"defaultRequire\":0}}");
+        List<Path> sources=new ArrayList<>(common);sources.addAll(List.of(current,probe,guest,mutation,respelledGuest,feedingGuest));fixture=WeaveHarness.fixture(work,"resource",sources,Map.of("resource.mixins.json",config,"native.mixins.json",nativeConfig,"qzx.mixins.json",respelledConfig,"qzxfeed.mixins.json",feedingConfig,"META-INF/forbric/native-reference/FABRIC/index.tsv",index,"META-INF/forbric/native-reference/FABRIC/fixture/resource/Widget.class.bin",bytes));
+        respelled=WeaveHarness.run(work,"respelled",fixture,"qzx.mixins.json","qzx",Ecosystem.FABRIC,EnvType.SERVER,"fixture.resource.Probe","probe",Map.of());
+        feeding=WeaveHarness.run(work,"feeding",fixture,"qzxfeed.mixins.json","qzxfeed",Ecosystem.FABRIC,EnvType.SERVER,"fixture.resource.Probe","probe",Map.of());
         on=run("on",Map.of());off=run("off",Map.of(MixinResourceContinuationAdapter.PROPERTY,"off"));
         changed=WeaveHarness.run(work,"changed",fixture,List.of(new WeaveHarness.Config("resource.mixins.json","resource",Ecosystem.FABRIC),new WeaveHarness.Config("native.mixins.json","native",Ecosystem.NEOFORGE)),List.of(),EnvType.SERVER,"fixture.resource.Probe","probe",Map.of());
     }
     @Test void crossNamespaceTextureSourceCallbackAndNullFailureAreRestored()throws Exception {
         assertTrue(on.printedLine(WeaveHarnessMain.DONE+" my_mod:textures/gui/sheet/folder/oak.png|found=true|bare=minecraft:textures/gui/sheet/oak.png|null=source-npe|sourceParses=1|nativeChanges=0"),on.describe());WeaveHarness.assertWovenAndVerified(on,"fixture/resource/Widget",fixture);
+    }
+    @Test void theSameWrapSpelledAnotherWayUnderOtherNamesIsRestoredAlike()throws Exception {
+        assertTrue(respelled.printedLine(WeaveHarnessMain.DONE+" my_mod:textures/gui/sheet/folder/oak.png|found=true|bare=minecraft:textures/gui/sheet/oak.png|null=source-npe|sourceParses=1|nativeChanges=0"),respelled.describe());WeaveHarness.assertWovenAndVerified(respelled,"fixture/resource/Widget",fixture);
+    }
+    @Test void aWrapFeedingItsOperationAnotherArgumentIsNotMoved()throws Exception {
+        assertTrue(feeding.printedLine(WeaveHarnessMain.DONE+" my_mod:textures/gui/sheet/folder/oak.png|found=true|bare=minecraft:textures/gui/sheet/oak.png|null=minecraft:textures/gui/sheet/null.png|sourceParses=0|nativeChanges=0"),feeding.describe());WeaveHarness.assertWovenAndVerified(feeding,"fixture/resource/Widget",fixture);
     }
     @Test void offShowsCorrectNativeResourceButTheLostSourceCallbackAndNullContract()throws Exception {
         assertTrue(off.printedLine(WeaveHarnessMain.DONE+" my_mod:textures/gui/sheet/folder/oak.png|found=true|bare=minecraft:textures/gui/sheet/oak.png|null=minecraft:textures/gui/sheet/null.png|sourceParses=0|nativeChanges=0"),off.describe());WeaveHarness.assertWovenAndVerified(off,"fixture/resource/Widget",fixture);

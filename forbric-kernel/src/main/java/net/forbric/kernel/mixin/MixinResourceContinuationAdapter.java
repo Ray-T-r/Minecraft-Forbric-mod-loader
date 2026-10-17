@@ -4,15 +4,24 @@ import java.util.*;import java.util.function.Function;
 import net.forbric.api.Ecosystem;import net.forbric.kernel.boot.*;
 import org.objectweb.asm.*;import org.objectweb.asm.tree.*;
 
-/** A conditional namespace factory wrapper follows an exact suffix-parse/prefix continuation into its final sink.
- * The original body remains intact. Its fallback Operation receives the live resource and prefix unchanged. */
+/** A namespace factory wrapper whose wrapped factory call the merged host replaced follows the host's own suffix-parse/prefix
+ * continuation into its final sink. The original body remains intact. Its fallback Operation receives the live resource and
+ * prefix unchanged.
+ *
+ * <p>The guest handler is admitted by its data flow alone ({@link HandlerFlow}), never by its instructions: a
+ * {@code @WrapOperation} of one {@code (String)} call whose only use of its {@code Operation} is to call it with its own,
+ * unchanged {@code String}. Whatever else it computes — its own namespace test, its own path recipe — runs as written, on
+ * the argument the native call would have been handed. Everything the move needs about the call is read from the native
+ * host and the platform: the wrapped call is the platform's default-namespace factory, its argument a one-hole string recipe
+ * over a final field's name, and the merged host builds the same field's value as {@code parse(name + suffix)} followed by
+ * the platform's prefix continuation into the same sink. */
 public final class MixinResourceContinuationAdapter {
     public static final String PROPERTY="forbric.mixinResourceContinuations";
     private static final String WRAP="Lcom/llamalad7/mixinextras/injector/wrapoperation/WrapOperation;",OP="com/llamalad7/mixinextras/injector/wrapoperation/Operation";
     private static final String RUNTIME="net/forbric/kernel/boot/KernelResourceContinuations";
     private static final Handle LAMBDA=new Handle(Opcodes.H_INVOKESTATIC,"java/lang/invoke/LambdaMetafactory","metafactory","(Ljava/lang/invoke/MethodHandles$Lookup;Ljava/lang/String;Ljava/lang/invoke/MethodType;Ljava/lang/invoke/MethodType;Ljava/lang/invoke/MethodHandle;Ljava/lang/invoke/MethodType;)Ljava/lang/invoke/CallSite;",false);
-    private record Source(MethodNode handler,AnnotationNode injection,FieldInsnNode field,MethodInsnNode name,MethodInsnNode parse,MethodInsnNode transform,String recipe,int separator) { }
-    private record Move(MethodInsnNode continuation,KernelResourceContinuations.Plan plan,String token) { }
+    private record Source(MethodNode handler,AnnotationNode injection) { }
+    private record Move(MethodInsnNode continuation,KernelResourceContinuations.Plan plan,String token,String value,String recipe) { }
     private MixinResourceContinuationAdapter() { }
     public static int adapt(ClassNode mixin,Ecosystem ecosystem,Function<String,ClassNode> classes){return adapt(mixin,classes,n->NativeGameReferences.reference(ecosystem,n));}
     static int adapt(ClassNode mixin,Function<String,ClassNode> classes,Function<String,ClassNode> references) {
@@ -26,26 +35,53 @@ public final class MixinResourceContinuationAdapter {
         mixin.methods.addAll(added);return changed;
     }
     private static Source source(ClassNode mixin,MethodNode method) {
-        AnnotationNode injection=MixinFit.injectorOf(method);Type[] args=Type.getArgumentTypes(method.desc);List<AbstractInsnNode> c=code(method);
+        AnnotationNode injection=MixinFit.injectorOf(method);Type[] args=Type.getArgumentTypes(method.desc);
         if(injection==null||!WRAP.equals(injection.desc)||(method.access&(Opcodes.ACC_STATIC|Opcodes.ACC_SYNCHRONIZED))!=0||!method.tryCatchBlocks.isEmpty()
-                ||args.length!=2||!args[0].equals(Type.getType(String.class))||!args[1].equals(Type.getObjectType(OP))||c.size()!=26||MixinFit.value(injection,"slice")!=null)return null;
+                ||args.length!=2||!args[0].equals(Type.getType(String.class))||!args[1].equals(Type.getObjectType(OP))||MixinFit.value(injection,"slice")!=null)return null;
         if(annotations(method).stream().filter(a->FinalMixinApplications.isInjector(a.desc)).count()!=1||annotations(method).stream().anyMatch(a->a.desc.equals("Lorg/spongepowered/asm/mixin/injection/Group;")))return null;
         List<AnnotationNode> points=MixinFit.atNodes(injection);if(points.size()!=1||!"INVOKE".equals(MixinFit.value(points.getFirst(),"value"))||MixinFit.value(points.getFirst(),"ordinal")!=null||MixinFit.value(points.getFirst(),"shift")!=null)return null;
-        if(!load(c.get(0),0)||!(c.get(1)instanceof FieldInsnNode field)||field.getOpcode()!=Opcodes.GETFIELD||!field.owner.equals(mixin.name)
-                ||!(c.get(2)instanceof MethodInsnNode name)||name.getOpcode()!=Opcodes.INVOKEVIRTUAL||!name.desc.equals("()Ljava/lang/String;")
-                ||!(c.get(3)instanceof IntInsnNode separator)||separator.getOpcode()!=Opcodes.BIPUSH
-                ||!call(c.get(4),Opcodes.INVOKEVIRTUAL,"java/lang/String","indexOf","(I)I")||c.get(5).getOpcode()!=Opcodes.ICONST_M1||!jump(c.get(6),Opcodes.IF_ICMPEQ,c.get(16))
-                ||!load(c.get(7),0)||!(c.get(8)instanceof FieldInsnNode again)||!same(field,again)||!(c.get(9)instanceof MethodInsnNode getter)||!same(name,getter)
-                ||!(c.get(10)instanceof MethodInsnNode parse)||parse.getOpcode()!=Opcodes.INVOKESTATIC||!parse.desc.equals("(Ljava/lang/String;)L"+parse.owner+";")
-                ||!variable(c.get(11),Opcodes.ASTORE,3)||!load(c.get(12),3)||!(c.get(13)instanceof InvokeDynamicInsnNode lambda)
-                ||!(c.get(14)instanceof MethodInsnNode transform)||transform.getOpcode()!=Opcodes.INVOKEVIRTUAL||!transform.owner.equals(parse.owner)||!transform.desc.equals("(Ljava/util/function/UnaryOperator;)L"+parse.owner+";")
-                ||c.get(15).getOpcode()!=Opcodes.ARETURN||!load(c.get(16),2)||c.get(17).getOpcode()!=Opcodes.ICONST_1
-                ||!(c.get(18)instanceof TypeInsnNode array)||array.getOpcode()!=Opcodes.ANEWARRAY||!array.desc.equals("java/lang/Object")
-                ||c.get(19).getOpcode()!=Opcodes.DUP||c.get(20).getOpcode()!=Opcodes.ICONST_0||!load(c.get(21),1)||c.get(22).getOpcode()!=Opcodes.AASTORE
-                ||!call(c.get(23),Opcodes.INVOKEINTERFACE,OP,"call","([Ljava/lang/Object;)Ljava/lang/Object;")||!(c.get(24)instanceof TypeInsnNode cast)||!cast.desc.equals(parse.owner)||c.get(25).getOpcode()!=Opcodes.ARETURN)return null;
-        if(!lambda.bsm.getOwner().equals("java/lang/invoke/LambdaMetafactory")||!lambda.desc.equals("()Ljava/util/function/UnaryOperator;")||lambda.bsmArgs.length!=3||!(lambda.bsmArgs[1]instanceof Handle handle)||!handle.getOwner().equals(mixin.name)||handle.getTag()!=Opcodes.H_INVOKESTATIC)return null;
-        MethodNode helper=declared(mixin,handle.getName(),handle.getDesc());String recipe=helper==null?null:stringRecipe(helper);
-        return recipe!=null&&recipe.indexOf('\u0001')==recipe.lastIndexOf('\u0001')&&recipe.indexOf('\u0001')>=0?new Source(method,injection,field,name,parse,transform,recipe,separator.operand):null;
+        return forwardsItsOwnArgument(mixin.name,method)?new Source(method,injection):null;
+    }
+    /**
+     * Whether the handler's {@code Operation} (slot 2) is used only as the receiver of {@code call}s handed a fresh
+     * one-element array holding its own, unchanged {@code String} (slot 1): the wrapper may then answer every such call
+     * with the continuation the merged host makes, whatever else the handler computes around it.
+     */
+    static boolean forwardsItsOwnArgument(String owner,MethodNode handler) {
+        HandlerFlow flow=HandlerFlow.of(owner,handler);if(flow==null)return false;
+        AbstractInsnNode operation=null;
+        for(AbstractInsnNode instruction:handler.instructions)if(instruction instanceof VarInsnNode load&&load.var==2&&load.getOpcode()==Opcodes.ALOAD){operation=load;break;}
+        boolean called=false;
+        for(int i=0;i<handler.instructions.size();i++) {
+            AbstractInsnNode instruction=handler.instructions.get(i);
+            Set<AbstractInsnNode>[] operands=operandsOf(flow,instruction);
+            for(int k=0;k<operands.length;k++) {
+                if(!HandlerFlow.onlyParameter(operands[k],2)&&operands[k].stream().noneMatch(o->HandlerFlow.isParameter(o,2)))continue;
+                if(!(instruction instanceof MethodInsnNode call)||k!=0||!call.owner.equals(OP)||!call.name.equals("call")||!call.desc.equals("([Ljava/lang/Object;)Ljava/lang/Object;")
+                        ||!flow.passesParameters(call,2,new int[]{1}))return false;
+                called=true;
+            }
+        }
+        return operation==null||called;
+    }
+    @SuppressWarnings("unchecked")
+    private static Set<AbstractInsnNode>[] operandsOf(HandlerFlow flow,AbstractInsnNode instruction) {
+        int count=consumed(instruction);Set<AbstractInsnNode>[] out=new Set[count];
+        for(int k=0;k<count;k++)out[k]=flow.operand(instruction,k,count);
+        return out;
+    }
+    /** The values an instruction takes off the stack for good, a store or a return included: where an operand can escape. */
+    private static int consumed(AbstractInsnNode instruction) {
+        int opcode=instruction.getOpcode();
+        if(instruction instanceof MethodInsnNode call)return Type.getArgumentTypes(call.desc).length+(opcode==Opcodes.INVOKESTATIC?0:1);
+        if(instruction instanceof InvokeDynamicInsnNode dynamic)return Type.getArgumentTypes(dynamic.desc).length;
+        if(instruction instanceof FieldInsnNode)return opcode==Opcodes.PUTFIELD?2:opcode==Opcodes.PUTSTATIC||opcode==Opcodes.GETFIELD?1:0;
+        return switch(opcode){
+            case Opcodes.ARETURN,Opcodes.ATHROW,Opcodes.MONITORENTER,Opcodes.MONITOREXIT,Opcodes.IFNULL,Opcodes.IFNONNULL,Opcodes.INSTANCEOF,Opcodes.CHECKCAST -> 1;
+            case Opcodes.IF_ACMPEQ,Opcodes.IF_ACMPNE -> 2;
+            case Opcodes.AASTORE -> 3;
+            default -> 0;
+        };
     }
     private static Move move(Source source,ClassNode target,ClassNode reference,Function<String,ClassNode> classes) {
         // The host is the one method Mixin binds in the merged class, and the method the wrap was written for — the one it
@@ -54,39 +90,46 @@ public final class MixinResourceContinuationAdapter {
         MethodNode host=MixinTargetSelectors.one(source.handler(),target),old=MixinCallbackShape.written(source.handler(),reference);
         if(host==null||old==null||!host.name.equals(old.name)||!host.desc.equals(old.desc))return null;
         AnnotationNode point=MixinFit.atNodes(source.injection()).getFirst();List<Move> matches=new ArrayList<>();
-        int hole=source.recipe().indexOf('\u0001');String prefix=source.recipe().substring(0,hole),suffix=source.recipe().substring(hole+1);
-        ClassNode value=classes.apply(source.parse().owner),names=classes.apply(source.name().owner);if(value==null||names==null||(value.access&Opcodes.ACC_FINAL)==0||(names.access&Opcodes.ACC_FINAL)==0)return null;
-        MethodNode nameGetter=declared(names,source.name().name,source.name().desc);if(nameGetter==null||pureField(nameGetter,names)==null)return null;
-        MethodNode parse=declared(value,source.parse().name,source.parse().desc),transform=declared(value,source.transform().name,source.transform().desc);if(parse==null||transform==null)return null;
-        List<AbstractInsnNode> p=code(parse);if(p.size()!=4||!load(p.get(0),0)||!(p.get(1)instanceof IntInsnNode delimiter)||delimiter.operand!=source.separator()||!(p.get(2)instanceof MethodInsnNode split)||split.getOpcode()!=Opcodes.INVOKESTATIC||!split.owner.equals(value.name)||!split.desc.equals("(Ljava/lang/String;C)L"+value.name+";")||p.get(3).getOpcode()!=Opcodes.ARETURN)return null;
-        MethodNode splitter=declared(value,split.name,split.desc);MethodInsnNode defaultFactory=splitter==null?null:splitter(splitter,value.name);if(defaultFactory==null)return null;
+        // The point, however written, selects one (String) call in the written method — the platform's default-namespace
+        // factory — and the merged host no longer makes that call.
+        List<MethodInsnNode> olds=MixinCallbackShape.calls(point,old);if(olds.size()!=1)return null;MethodInsnNode defaultFactory=olds.getFirst();
+        String valueName=defaultFactory.owner;if(defaultFactory.getOpcode()!=Opcodes.INVOKESTATIC||!defaultFactory.desc.equals("(Ljava/lang/String;)L"+valueName+";"))return null;
+        String named=member(defaultFactory);if(calls(host).stream().anyMatch(c->member(c).equals(named)))return null;
+        ClassNode value=classes.apply(valueName);if(value==null||(value.access&Opcodes.ACC_FINAL)==0)return null;
         MethodNode defaultMethod=declared(value,defaultFactory.name,defaultFactory.desc);String defaultNamespace=defaultMethod==null?null:defaultNamespace(defaultMethod,value.name);if(defaultNamespace==null)return null;
-        FieldOwner sourceField=field(target,source.field().name,source.field().desc,classes,new HashSet<>());if(sourceField==null||(sourceField.field().access&Opcodes.ACC_FINAL)==0)return null;
-        // The point, however written, selects one call in the written method — the default factory the splitter
-        // falls back to — and the merged host no longer makes that call.
-        List<MethodInsnNode> olds=MixinCallbackShape.calls(point,old);String named=olds.size()==1?member(olds.getFirst()):null;
-        if(named==null||!named.equals(member(defaultFactory))||calls(host).stream().anyMatch(c->member(c).equals(named)))return null;
-        if(!(previous(olds.getFirst())instanceof InvokeDynamicInsnNode originalRecipe)||!source.recipe().equals(recipe(originalRecipe))||!sameNameProducer(previous(originalRecipe),source,target))return null;
-        AbstractInsnNode oldSink=next(olds.getFirst());if(!(oldSink instanceof FieldInsnNode oldField)||oldField.getOpcode()!=Opcodes.PUTFIELD)return null;
+        // Its argument natively: a one-hole string recipe over a final field's name, the result stored into a field.
+        if(!(previous(defaultFactory)instanceof InvokeDynamicInsnNode originalRecipe))return null;String recipe=recipe(originalRecipe);
+        if(recipe==null||recipe.indexOf('\u0001')<0||recipe.indexOf('\u0001')!=recipe.lastIndexOf('\u0001'))return null;
+        if(!(previous(originalRecipe)instanceof MethodInsnNode name)||name.getOpcode()!=Opcodes.INVOKEVIRTUAL||!name.desc.equals("()Ljava/lang/String;")
+                ||!(previous(name)instanceof FieldInsnNode field)||field.getOpcode()!=Opcodes.GETFIELD||!field.owner.equals(reference.name)||!load(previous(field),0))return null;
+        ClassNode names=classes.apply(name.owner);if(names==null||(names.access&Opcodes.ACC_FINAL)==0)return null;
+        MethodNode nameGetter=declared(names,name.name,name.desc);if(nameGetter==null||pureField(nameGetter,names)==null)return null;
+        FieldOwner sourceField=field(target,field.name,field.desc,classes,new HashSet<>());if(sourceField==null||(sourceField.field().access&Opcodes.ACC_FINAL)==0)return null;
+        AbstractInsnNode oldSink=next(defaultFactory);if(!(oldSink instanceof FieldInsnNode oldField)||oldField.getOpcode()!=Opcodes.PUTFIELD)return null;
+        int hole=recipe.indexOf('\u0001');String prefix=recipe.substring(0,hole),suffix=recipe.substring(hole+1);
         for(MethodInsnNode call:calls(host)) {
-            if(!same(call,source.parse())||!(previous(call)instanceof InvokeDynamicInsnNode input)||!("\u0001"+suffix).equals(recipe(input))||!sameNameProducer(previous(input),source,target))continue;
+            // The merged host's parse of name + suffix: a static (String) factory of the same type over the same producer.
+            if(call.getOpcode()!=Opcodes.INVOKESTATIC||!call.owner.equals(value.name)||!call.desc.equals("(Ljava/lang/String;)L"+value.name+";")
+                    ||!(previous(call)instanceof InvokeDynamicInsnNode input)||!("\u0001"+suffix).equals(recipe(input))||!sameNameProducer(previous(input),name,field,target))continue;
+            MethodNode parse=declared(value,call.name,call.desc);if(parse==null)continue;
+            List<AbstractInsnNode> p=code(parse);if(p.size()!=4||!load(p.get(0),0)||!(p.get(1)instanceof IntInsnNode delimiter)||delimiter.getOpcode()!=Opcodes.BIPUSH||!(p.get(2)instanceof MethodInsnNode split)||split.getOpcode()!=Opcodes.INVOKESTATIC||!split.owner.equals(value.name)||!split.desc.equals("(Ljava/lang/String;C)L"+value.name+";")||p.get(3).getOpcode()!=Opcodes.ARETURN)continue;
+            MethodNode splitter=declared(value,split.name,split.desc);MethodInsnNode fallback=splitter==null?null:splitter(splitter,value.name);if(fallback==null||!member(fallback).equals(named))continue;
             AbstractInsnNode literal=next(call),tail=literal==null?null:next(literal),sink=tail==null?null:next(tail);
             if(!(literal instanceof LdcInsnNode constant)||!prefix.equals(constant.cst)||!(tail instanceof MethodInsnNode continuation)||continuation.getOpcode()!=Opcodes.INVOKEVIRTUAL||!continuation.owner.equals(value.name)||!continuation.desc.equals("(Ljava/lang/String;)L"+value.name+";")||!(sink instanceof FieldInsnNode newField)||!same(oldField,newField))continue;
-            MethodNode updater=declared(value,continuation.name,continuation.desc);Properties properties=properties(value,updater,transform);if(properties==null)continue;
+            MethodNode updater=declared(value,continuation.name,continuation.desc);Properties properties=properties(value,updater);if(properties==null)continue;
             MethodNode namespaceGetter=fieldGetter(value,properties.namespace()),pathGetter=fieldGetter(value,properties.path());if(namespaceGetter==null||pathGetter==null)continue;
-            LinkedHashSet<MethodNode> closure=closure(value,List.of(parse,transform,updater,defaultMethod,namespaceGetter,pathGetter));if(closure==null)continue;
+            LinkedHashSet<MethodNode> closure=closure(value,List.of(parse,updater,defaultMethod,namespaceGetter,pathGetter));if(closure==null)continue;
             List<DefinedMethodContracts.MethodContract> bodies=new ArrayList<>();for(MethodNode method:closure)bodies.add(contract(value,method));bodies.add(contract(names,nameGetter));
-            var plan=new KernelResourceContinuations.Plan(new KernelResourceContinuations.FieldContract(sourceField.owner(),source.field().name,source.field().desc),contract(names,nameGetter),contract(value,namespaceGetter),contract(value,pathGetter),bodies,prefix,suffix,defaultNamespace,(char)source.separator());
-            matches.add(new Move(continuation,plan,KernelResourceContinuations.register(plan)));
+            var plan=new KernelResourceContinuations.Plan(new KernelResourceContinuations.FieldContract(sourceField.owner(),field.name,field.desc),contract(names,nameGetter),contract(value,namespaceGetter),contract(value,pathGetter),bodies,prefix,suffix,defaultNamespace,(char)delimiter.operand);
+            matches.add(new Move(continuation,plan,KernelResourceContinuations.register(plan),value.name,recipe));
         }
         return matches.size()==1?matches.getFirst():null;
     }
     private record FieldOwner(String owner,FieldNode field) { }
     private record Properties(FieldInsnNode namespace,FieldInsnNode path) { }
-    private static Properties properties(ClassNode value,MethodNode updater,MethodNode transform) {
-        if(updater==null)return null;List<AbstractInsnNode> c=code(updater),f=code(transform);
+    private static Properties properties(ClassNode value,MethodNode updater) {
+        if(updater==null)return null;List<AbstractInsnNode> c=code(updater);
         if(c.size()!=7||!load(c.get(0),0)||!load(c.get(1),1)||!load(c.get(2),0)||!(c.get(3)instanceof FieldInsnNode path)||path.getOpcode()!=Opcodes.GETFIELD||!(c.get(4)instanceof InvokeDynamicInsnNode concat)||!"\u0001\u0001".equals(recipe(concat))||!(c.get(5)instanceof MethodInsnNode setter)||c.get(6).getOpcode()!=Opcodes.ARETURN)return null;
-        if(f.size()!=8||!load(f.get(0),0)||!load(f.get(1),1)||!load(f.get(2),0)||!(f.get(3)instanceof FieldInsnNode samePath)||!same(path,samePath)||!call(f.get(4),Opcodes.INVOKEINTERFACE,"java/util/function/UnaryOperator","apply","(Ljava/lang/Object;)Ljava/lang/Object;")||!(f.get(5)instanceof TypeInsnNode cast)||!cast.desc.equals("java/lang/String")||!(f.get(6)instanceof MethodInsnNode sameSetter)||!same(setter,sameSetter)||f.get(7).getOpcode()!=Opcodes.ARETURN)return null;
         MethodNode changed=declared(value,setter.name,setter.desc);List<AbstractInsnNode> s=changed==null?List.of():code(changed);
         if(s.size()!=10||!(s.get(0)instanceof TypeInsnNode allocation)||allocation.getOpcode()!=Opcodes.NEW||!allocation.desc.equals(value.name)||s.get(1).getOpcode()!=Opcodes.DUP||!load(s.get(2),0)||!(s.get(3)instanceof FieldInsnNode namespace)||namespace.getOpcode()!=Opcodes.GETFIELD||!load(s.get(4),0)||!(s.get(5)instanceof FieldInsnNode sameNamespace)||!same(namespace,sameNamespace)||!load(s.get(6),1)||!(s.get(7)instanceof MethodInsnNode validate)||!validate.desc.equals("(Ljava/lang/String;Ljava/lang/String;)Ljava/lang/String;")||!(s.get(8)instanceof MethodInsnNode ctor)||!ctor.name.equals("<init>")||!ctor.desc.equals("(Ljava/lang/String;Ljava/lang/String;)V")||s.get(9).getOpcode()!=Opcodes.ARETURN)return null;
         return new Properties(namespace,path);
@@ -96,12 +139,12 @@ public final class MixinResourceContinuationAdapter {
     }
     private static String defaultNamespace(MethodNode method,String owner) {List<AbstractInsnNode> c=code(method);return c.size()==8&&c.get(0)instanceof TypeInsnNode allocation&&allocation.getOpcode()==Opcodes.NEW&&allocation.desc.equals(owner)&&c.get(1).getOpcode()==Opcodes.DUP&&c.get(2)instanceof LdcInsnNode a&&a.cst instanceof String&&c.get(3)instanceof LdcInsnNode b&&a.cst.equals(b.cst)&&load(c.get(4),0)&&c.get(5)instanceof MethodInsnNode validator&&validator.desc.equals("(Ljava/lang/String;Ljava/lang/String;)Ljava/lang/String;")&&c.get(6)instanceof MethodInsnNode ctor&&ctor.name.equals("<init>")&&ctor.desc.equals("(Ljava/lang/String;Ljava/lang/String;)V")&&c.get(7).getOpcode()==Opcodes.ARETURN?(String)a.cst:null;}
     private static List<MethodNode> wrap(ClassNode mixin,Source source,Move move) {
-        MethodNode original=source.handler();String name=original.name,aside=MixinHandlerShim.asideName(mixin.name,name,"$forbricresource"),delegate=MixinHandlerShim.asideName(mixin.name,name,"$forbriccontinuation");String value=source.parse().owner;
+        MethodNode original=source.handler();String name=original.name,aside=MixinHandlerShim.asideName(mixin.name,name,"$forbricresource"),delegate=MixinHandlerShim.asideName(mixin.name,name,"$forbriccontinuation");String value=move.value();
         String descriptor="(L"+value+";Ljava/lang/String;L"+OP+";)L"+value+";";MethodNode outer=new MethodNode(original.access,name,descriptor,null,null);
         boolean visible=original.visibleAnnotations!=null&&original.visibleAnnotations.remove(source.injection());if(!visible)original.invisibleAnnotations.remove(source.injection());if(visible)outer.visibleAnnotations=new ArrayList<>(List.of(source.injection()));else outer.invisibleAnnotations=new ArrayList<>(List.of(source.injection()));set(MixinFit.atNodes(source.injection()).getFirst(),"target",member(move.continuation()));
         LabelNode fallback=new LabelNode();InsnList c=outer.instructions;c.add(new VarInsnNode(Opcodes.ALOAD,0));c.add(new VarInsnNode(Opcodes.ALOAD,1));c.add(new VarInsnNode(Opcodes.ALOAD,2));c.add(new LdcInsnNode(move.token()));c.add(new MethodInsnNode(Opcodes.INVOKESTATIC,RUNTIME,"sourceName","(Ljava/lang/Object;Ljava/lang/Object;Ljava/lang/String;Ljava/lang/String;)[Ljava/lang/String;",false));c.add(new VarInsnNode(Opcodes.ASTORE,4));c.add(new VarInsnNode(Opcodes.ALOAD,4));c.add(new JumpInsnNode(Opcodes.IFNULL,fallback));
         c.add(new VarInsnNode(Opcodes.ALOAD,0));c.add(new VarInsnNode(Opcodes.ALOAD,4));c.add(new InsnNode(Opcodes.ICONST_0));c.add(new InsnNode(Opcodes.AALOAD));
-        c.add(new InvokeDynamicInsnNode("makeConcatWithConstants","(Ljava/lang/String;)Ljava/lang/String;",new Handle(Opcodes.H_INVOKESTATIC,"java/lang/invoke/StringConcatFactory","makeConcatWithConstants","(Ljava/lang/invoke/MethodHandles$Lookup;Ljava/lang/String;Ljava/lang/invoke/MethodType;Ljava/lang/String;[Ljava/lang/Object;)Ljava/lang/invoke/CallSite;",false),source.recipe()));
+        c.add(new InvokeDynamicInsnNode("makeConcatWithConstants","(Ljava/lang/String;)Ljava/lang/String;",new Handle(Opcodes.H_INVOKESTATIC,"java/lang/invoke/StringConcatFactory","makeConcatWithConstants","(Ljava/lang/invoke/MethodHandles$Lookup;Ljava/lang/String;Ljava/lang/invoke/MethodType;Ljava/lang/String;[Ljava/lang/Object;)Ljava/lang/invoke/CallSite;",false),move.recipe()));
         c.add(new VarInsnNode(Opcodes.ALOAD,3));c.add(new VarInsnNode(Opcodes.ALOAD,1));c.add(new VarInsnNode(Opcodes.ALOAD,2));
         String captured="(L"+OP+";L"+value+";Ljava/lang/String;)L"+OP+";",impl="(L"+OP+";L"+value+";Ljava/lang/String;[Ljava/lang/Object;)Ljava/lang/Object;";
         c.add(new InvokeDynamicInsnNode("call",captured,LAMBDA,Type.getMethodType("([Ljava/lang/Object;)Ljava/lang/Object;"),new Handle(Opcodes.H_INVOKESTATIC,mixin.name,delegate,impl,false),Type.getMethodType("([Ljava/lang/Object;)Ljava/lang/Object;")));
@@ -112,8 +155,7 @@ public final class MixinResourceContinuationAdapter {
     private static FieldInsnNode pureField(MethodNode method,ClassNode owner){List<AbstractInsnNode> c=code(method);return c.size()==3&&load(c.get(0),0)&&c.get(1)instanceof FieldInsnNode field&&field.getOpcode()==Opcodes.GETFIELD&&field.owner.equals(owner.name)&&field.desc.equals("Ljava/lang/String;")&&owner.fields.stream().anyMatch(f->f.name.equals(field.name)&&f.desc.equals(field.desc)&&(f.access&Opcodes.ACC_FINAL)!=0)&&c.get(2).getOpcode()==Opcodes.ARETURN?field:null;}
     private static MethodNode fieldGetter(ClassNode owner,FieldInsnNode field){List<MethodNode> matches=owner.methods.stream().filter(m->m.desc.equals("()Ljava/lang/String;")&&pureField(m,owner)!=null&&same(pureField(m,owner),field)).toList();return matches.size()==1?matches.getFirst():null;}
     private static FieldOwner field(ClassNode owner,String name,String desc,Function<String,ClassNode> classes,Set<String> seen){if(owner==null||!seen.add(owner.name))return null;for(FieldNode field:owner.fields)if(field.name.equals(name)&&field.desc.equals(desc))return new FieldOwner(owner.name,field);return field(owner.superName==null?null:classes.apply(owner.superName),name,desc,classes,seen);}
-    private static boolean sameNameProducer(AbstractInsnNode instruction,Source source,ClassNode target){if(!(instruction instanceof MethodInsnNode method)||!same(method,source.name()))return false;AbstractInsnNode previous=previous(method);return previous instanceof FieldInsnNode field&&field.getOpcode()==Opcodes.GETFIELD&&field.owner.equals(target.name)&&field.name.equals(source.field().name)&&field.desc.equals(source.field().desc)&&load(previous(field),0);}
-    private static String stringRecipe(MethodNode method){List<AbstractInsnNode> c=code(method);return(method.access&Opcodes.ACC_STATIC)!=0&&method.tryCatchBlocks.isEmpty()&&c.size()==3&&load(c.get(0),0)&&c.get(1)instanceof InvokeDynamicInsnNode dynamic&&c.get(2).getOpcode()==Opcodes.ARETURN?recipe(dynamic):null;}
+    private static boolean sameNameProducer(AbstractInsnNode instruction,MethodInsnNode name,FieldInsnNode field,ClassNode target){if(!(instruction instanceof MethodInsnNode method)||!same(method,name))return false;AbstractInsnNode previous=previous(method);return previous instanceof FieldInsnNode read&&read.getOpcode()==Opcodes.GETFIELD&&read.owner.equals(target.name)&&read.name.equals(field.name)&&read.desc.equals(field.desc)&&load(previous(read),0);}
     private static String recipe(InvokeDynamicInsnNode dynamic){return dynamic.bsm.getOwner().equals("java/lang/invoke/StringConcatFactory")&&dynamic.bsm.getName().equals("makeConcatWithConstants")&&dynamic.desc.equals("(Ljava/lang/String;)Ljava/lang/String;")&&dynamic.bsmArgs.length==1&&dynamic.bsmArgs[0]instanceof String text?text:dynamic.bsm.getOwner().equals("java/lang/invoke/StringConcatFactory")&&dynamic.desc.equals("(Ljava/lang/String;Ljava/lang/String;)Ljava/lang/String;")&&dynamic.bsmArgs.length==1&&dynamic.bsmArgs[0]instanceof String text?text:null;}
     private static DefinedMethodContracts.MethodContract contract(ClassNode owner,MethodNode method){return new DefinedMethodContracts.MethodContract(owner.name,method.name,method.desc,DefinedMethodContracts.fingerprint(method));}
     private static MethodNode declared(ClassNode owner,String name,String desc){return owner.methods.stream().filter(m->m.name.equals(name)&&m.desc.equals(desc)).findFirst().orElse(null);}
