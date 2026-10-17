@@ -48,8 +48,6 @@ class FrapiRendererEvidenceTest {
 	@Test void aDirectRegistrationInsideANestedJarKeepsThePromise() throws Exception {
 		byte[] inner = jar(Map.of("mod/Registrar.class", caller("mod/Registrar", "net/fabricmc/fabric/api/client/renderer/v1/Renderer", "register")));
 		assertTrue(FrapiRendererEvidence.registersRenderer(write("outer.jar", jar(Map.of("META-INF/jarjar/inner.jar", inner)))));
-		assertTrue(FrapiRendererEvidence.registersRenderer(write("impl.jar", jar(Map.of("mod/Impl.class",
-				caller("mod/Impl", "net/fabricmc/fabric/impl/client/renderer/RendererManager", "registerRenderer"))))));
 	}
 
 	@Test void onlyReadingTheRendererIsNotRegisteringOne() throws Exception {

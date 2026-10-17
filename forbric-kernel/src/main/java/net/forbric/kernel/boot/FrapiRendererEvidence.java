@@ -24,12 +24,12 @@ import org.objectweb.asm.Opcodes;
  * forwarding the promise leaves the slot empty and the first block drawn through FRAPI (a block in an item frame)
  * dies on "Attempted to retrieve active rendering plug-in before one was registered".
  *
- * <p>The evidence is a direct call to one of the two registration entry points, anywhere in the jar or the jars
- * nested in it. A reflective registrar would be missed; the caller keeps the promise when the jar cannot be read.
+ * <p>The evidence is a direct call to the API's public registration entry point, {@code Renderer.register}, anywhere in
+ * the jar or the jars nested in it. A reflective registrar would be missed; the caller keeps the promise when the jar
+ * cannot be read.
  */
 final class FrapiRendererEvidence {
 	private static final byte[] NEEDLE = "fabric/api/client/renderer/v1/Renderer".getBytes(StandardCharsets.UTF_8);
-	private static final byte[] IMPL_NEEDLE = "fabric/impl/client/renderer/RendererManager".getBytes(StandardCharsets.UTF_8);
 
 	private FrapiRendererEvidence() { }
 
@@ -49,7 +49,7 @@ final class FrapiRendererEvidence {
 		return false;
 	}
 	private static boolean registers(byte[] bytes) {
-		return (contains(bytes, NEEDLE) || contains(bytes, IMPL_NEEDLE)) && callsRegister(bytes);
+		return contains(bytes, NEEDLE) && callsRegister(bytes);
 	}
 
 	private static boolean scan(InputStream stream, int depth) throws IOException {
@@ -71,9 +71,7 @@ final class FrapiRendererEvidence {
 			@Override public MethodVisitor visitMethod(int access, String name, String descriptor, String signature, String[] exceptions) {
 				return new MethodVisitor(Opcodes.ASM9) {
 					@Override public void visitMethodInsn(int opcode, String owner, String method, String desc, boolean itf) {
-						if (owner.equals("net/fabricmc/fabric/api/client/renderer/v1/Renderer") && method.equals("register")
-								|| owner.equals("net/fabricmc/fabric/impl/client/renderer/RendererManager") && method.equals("registerRenderer"))
-							found[0] = true;
+						if (owner.equals("net/fabricmc/fabric/api/client/renderer/v1/Renderer") && method.equals("register")) found[0] = true;
 					}
 				};
 			}

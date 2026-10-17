@@ -660,26 +660,30 @@ public final class KernelFabricEcosystem {
 	 * MutableQuadViewImpl}, inside a mod, with no mention of a renderer. So the handover is stated out loud at the
 	 * one moment both candidates have had their say.
 	 *
-	 * <p>Reflective, and silent when FRAPI is not installed — most instances have no renderer slot at all.
+	 * <p>Asked through the API's own public {@code Renderer.get()}, which throws when the slot is empty. Reflective, and
+	 * silent when FRAPI is not installed — most instances have no renderer slot at all.
 	 */
 	private static void reportActiveRenderer() {
 		try {
-			if (loader == null || loader.getModContainer("fabric-renderer-api-v1").isEmpty()) return;
+			if (loader == null) return;
 			ClassLoader mods = Thread.currentThread().getContextClassLoader();
-			Class<?> manager = Class.forName("net.fabricmc.fabric.impl.client.renderer.RendererManager", false, mods);
-			java.lang.reflect.Field active = manager.getDeclaredField("activeRenderer");
-			active.setAccessible(true);
-			Object renderer = active.get(null);
-			if (renderer == null) {
-				ForbricLog.warn("[Forbric/Fabric] the Fabric Rendering API has NO renderer registered — the next "
-						+ "model that emits a mesh will die on \"Attempted to retrieve active rendering plug-in "
-						+ "before one was registered\"");
+			Class<?> api;
+			try {
+				api = Class.forName("net.fabricmc.fabric.api.client.renderer.v1.Renderer", true, mods);
+			} catch (ClassNotFoundException absent) {
 				return;
 			}
+			Object renderer;
+			try {
+				renderer = api.getMethod("get").invoke(null);
+			} catch (java.lang.reflect.InvocationTargetException empty) {
+				ForbricLog.warn("[Forbric/Fabric] the Fabric Rendering API has NO renderer registered — the next "
+						+ "model that emits a mesh will die on \"%s\"", String.valueOf(empty.getCause() == null ? empty : empty.getCause().getMessage()));
+				return;
+			}
+			if (renderer == null) return;
 			ForbricLog.info("[Forbric/Fabric] the Fabric Rendering API renderer is %s — the one slot is taken, and "
 					+ "whoever lost it must have stood down rather than registered", renderer.getClass().getName());
-		} catch (ClassNotFoundException | NoSuchFieldException absent) {
-			// A different FRAPI version keeps its renderer somewhere else; a diagnostic must not invent a finding.
 		} catch (Throwable t) {
 			ForbricLog.warn("[Forbric/Fabric] could not read the active Fabric renderer", t);
 		}
