@@ -111,6 +111,7 @@ public final class KernelMixinBootstrap {
 		}
 		nameTheModsBehindTheConfigs();
 		giveFabricConfigsTheirCompatibilityLevel();
+		configsRegistered = true;
 		// A mixin that fails to prepare or apply names its mod on the Mods screen and in load-report.txt. Mixin
 		// instantiates the handler by name through the service's class provider when the first error happens.
 		if (KernelMixinErrorHandler.enabled()) {
@@ -253,6 +254,46 @@ public final class KernelMixinBootstrap {
 			String mode) {
 		if ("latest".equalsIgnoreCase(mode)) return null;
 		return FabricMixinCompat.levelFor(dependencies);
+	}
+
+	/** Whether {@link #init} has registered and decorated every config with Mixin. */
+	private static volatile boolean configsRegistered;
+
+	/**
+	 * The Mixin compatibility level {@code configName}'s mixins are woven at: its decoration when Mixin has the config
+	 * decorated, else the level {@link #giveFabricConfigsTheirCompatibilityLevel} gives it (the same rule, so a judgement
+	 * made before Mixin's INIT agrees with the weave), else Mixin's newest — every Forge-family config, a config nobody
+	 * owns, and every config under {@code -Dforbric.mixinCompat=latest}.
+	 *
+	 * <p>For a mechanism that predicts what Mixin will do with an injector: what Mixin does at a point (which stores a
+	 * {@code @ModifyVariable} finds, which local an ordinal picks) changes with this level, mod by mod.
+	 */
+	public static int wovenLevel(String configName) {
+		if (configName == null) return FabricUtil.COMPATIBILITY_LATEST;
+		String mode = System.getProperty(COMPATIBILITY_PROPERTY, "fabric");
+		if ("latest".equalsIgnoreCase(mode)) return FabricUtil.COMPATIBILITY_LATEST;
+		try {
+			// Mixin's registry only once this bootstrap has filled it: before that (a judgement at config registration, a
+			// unit test without Mixin) asking it would start Mixin's services, and the decoration is not there yet anyway.
+			if (configsRegistered) for (Config registered : Mixins.getConfigs()) {
+				if (!configName.equals(registered.getName())) continue;
+				IMixinConfig config = registered.getConfig();
+				if (config == null) break;
+				// Undecorated, Mixin weaves it at its newest, whatever the metadata would have given it.
+				return config.hasDecoration(FabricUtil.KEY_COMPATIBILITY) ? FabricUtil.getCompatibility(config)
+						: FabricUtil.COMPATIBILITY_LATEST;
+			}
+			if (MixinConfigOwners.ecosystemOf(configName) != Ecosystem.FABRIC) return FabricUtil.COMPATIBILITY_LATEST;
+			KernelFabricLoader fabric = KernelFabricLoader.getInstanceOrNull();
+			String modId = MixinConfigOwners.modIdOf(configName);
+			ModContainer mod = fabric == null || modId == null ? null : fabric.getModContainer(modId).orElse(null);
+			Integer level = mod == null ? null : compatibilityLevel(mod.getMetadata().getDependencies(), mode);
+			return level == null ? FabricUtil.COMPATIBILITY_LATEST : level;
+		} catch (RuntimeException | LinkageError unreadable) {
+			Caught.warn(unreadable, "[Forbric/Mixin] could not tell which level %s is woven at; it is taken as Mixin's newest",
+					configName);
+			return FabricUtil.COMPATIBILITY_LATEST;
+		}
 	}
 
 	/**

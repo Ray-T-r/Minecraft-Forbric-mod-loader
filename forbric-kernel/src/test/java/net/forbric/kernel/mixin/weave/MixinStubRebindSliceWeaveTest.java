@@ -34,22 +34,43 @@ import net.forbric.kernel.mixin.MixinStubRebind;
  * holds in both methods, the slice judged in both — every scenario shows what it shows natively; with
  * {@code -Dforbric.mixinStubRebind.slice=off} or {@code .cancellable=off} both handlers stay on the stub nothing calls,
  * since one cannot move without its {@code @Share} partner.
+ *
+ * <p>At every level Fabric Loader gives a mod. The fixture mod declares no {@code fabricloader} floor, which is 0.9.2: there
+ * Mixin finds a {@code STORE} point in the whole method, slice or not, and picks the ordinal with its 0.9.2 local walk at
+ * each store, so natively the guest forces two flags (the clip test and the "show" flag) and the tooltip shows differently.
+ * A pin modelled on the newer walk would show the 0.10.0 tooltip there; the injector keeps its ordinal instead, because no
+ * argument the carrier added has its type and the delegate's locals of that type hold the native ones' values, and Mixin
+ * discriminates it on the delegate at 0.9.2 as it does natively. Declaring {@code fabricloader >= 0.19} (0.17.1) the slot
+ * is pinned, as before.
  */
 class MixinStubRebindSliceWeaveTest {
 	private static final String OWNER = "net/minecraft/client/gui/screens/inventory/EffectsInInventory";
 	private static final String CONFIG = "aura.mixins.json";
-	/** hovered+fits: the guest's line alone; hovered+clipped: name, duration and the guest's line; hovered+fits+nothing to add: cancelled. */
+	/**
+	 * From 0.10.0: hovered+fits: the guest's line alone; hovered+clipped: name, duration and the guest's line;
+	 * hovered+fits+nothing to add: cancelled.
+	 */
 	private static final String NATIVE = "[Aura] fits+hovered=[aura:glow] clipped+hovered=[Regeneration potion, 0:30, aura:glow] fits=[] "
 			+ "clipped=[Regeneration potion, 0:30] fits+hovered+silent=[] cancelled-before-tail=true";
+	/**
+	 * At 0.9.2: the slice does not limit the {@code STORE} points, so the guest also forces the clip test's flag, keeps the
+	 * name and duration it then shows, and never cancels.
+	 */
+	private static final String NATIVE_092 = "[Aura] fits+hovered=[Regeneration potion, 0:30, aura:glow] clipped+hovered=[Regeneration "
+			+ "potion, 0:30, aura:glow] fits=[] clipped=[Regeneration potion, 0:30] fits+hovered+silent=[Regeneration potion, 0:30] "
+			+ "cancelled-before-tail=false";
+	/** What each run's fixture mod declares, so its level is the one Fabric Loader gives: none is 0.9.2. */
+	private static final Map<String, String> MODERN = Map.of(WeaveHarnessMain.REQUIRES, "fabricloader=>=0.19");
 	/** What the carrier's body shows with the guest's handlers left on the stub. */
 	private static final String UNMOVED = "[Aura] fits+hovered=[] clipped+hovered=[Regeneration potion, 0:30] fits=[] "
 			+ "clipped=[Regeneration potion, 0:30] fits+hovered+silent=[] cancelled-before-tail=false";
 	private static final String MOVED = "now targets net.minecraft.client.gui.screens.inventory.EffectsInInventory.extractText(";
 	private static final String PINNED = "@ModifyVariable on net.minecraft.client.gui.screens.inventory.EffectsInInventory.extractText(";
+	private static final String KEPT = "keeps its ordinal on net.minecraft.client.gui.screens.inventory.EffectsInInventory.extractText(";
 
 	@TempDir static Path work;
 	private static Path mergedFixture;
-	private static WeaveHarness.Result natively, moved, sliceOff, cancellableOff;
+	private static WeaveHarness.Result natively, moved, sliceOff, cancellableOff, nativelyModern, movedModern, sliceOffModern;
 
 	private static final String PREFIX = """
 			  int textX = x0 + 32, textY = y0 + 7, maxWidth = width - 32 - 7;
@@ -100,28 +121,49 @@ class MixinStubRebindSliceWeaveTest {
 		moved = run("moved", mergedFixture, Map.of());
 		sliceOff = run("slice-off", mergedFixture, Map.of(MixinStubRebind.SLICE_PROPERTY, "off"));
 		cancellableOff = run("cancellable-off", mergedFixture, Map.of(MixinStubRebind.CANCELLABLE_PROPERTY, "off"));
+		nativelyModern = run("native-17001", nativeFixture, MODERN);
+		movedModern = run("moved-17001", mergedFixture, MODERN);
+		Map<String, String> sliceOffAtModern = new java.util.HashMap<>(MODERN);
+		sliceOffAtModern.put(MixinStubRebind.SLICE_PROPERTY, "off");
+		sliceOffModern = run("slice-off-17001", mergedFixture, sliceOffAtModern);
+	}
+
+	@Test void eachRunIsAtTheLevelItsModDeclares() {
+		for (WeaveHarness.Result run : List.of(natively, moved, sliceOff, cancellableOff)) {
+			assertTrue(run.printed("level=configs): {9002=1}"), run.describe());
+		}
+		for (WeaveHarness.Result run : List.of(nativelyModern, movedModern, sliceOffModern)) {
+			assertTrue(run.printed("level=configs): {17001=1}"), run.describe());
+		}
 	}
 
 	@Test void natively() {
-		assertTrue(natively.printedLine(WeaveHarnessMain.DONE + " " + NATIVE), natively.describe());
+		assertTrue(natively.printedLine(WeaveHarnessMain.DONE + " " + NATIVE_092), natively.describe());
+		assertTrue(nativelyModern.printedLine(WeaveHarnessMain.DONE + " " + NATIVE), nativelyModern.describe());
+		assertNotEquals(NATIVE, NATIVE_092, "premise: the level changes what the guest does natively");
 	}
 
 	@Test void movedTheGuestShowsWhatItShowsNatively() throws Exception {
-		assertTrue(movedHolds(moved), moved.describe() + "\nfindings: " + moved.findings());
+		assertTrue(movedHolds(moved, NATIVE_092, KEPT), moved.describe() + "\nfindings: " + moved.findings());
+		assertFalse(moved.printed(PINNED), "at 0.9.2 nothing is pinned: " + moved.describe());
 		WeaveHarness.assertWovenAndVerified(moved, OWNER, mergedFixture);
+		assertTrue(movedHolds(movedModern, NATIVE, PINNED), movedModern.describe() + "\nfindings: " + movedModern.findings());
+		assertFalse(movedModern.printed(KEPT), movedModern.describe());
+		WeaveHarness.assertWovenAndVerified(movedModern, OWNER, mergedFixture);
 	}
 
 	@Test void withTheSliceOrTheCallbackSwitchedOffBothStayOnTheStub() {
-		for (WeaveHarness.Result off : List.of(sliceOff, cancellableOff)) assertTrue(offHolds(off), off.describe());
+		for (WeaveHarness.Result off : List.of(sliceOff, cancellableOff, sliceOffModern)) assertTrue(offHolds(off), off.describe());
 	}
 
 	@Test void theControlFlipsEveryAssertion() {
-		assertTrue(movedHolds(moved) && !movedHolds(sliceOff) && !movedHolds(cancellableOff));
-		assertTrue(offHolds(sliceOff) && offHolds(cancellableOff) && !offHolds(moved));
+		assertTrue(movedHolds(moved, NATIVE_092, KEPT) && !movedHolds(sliceOff, NATIVE_092, KEPT) && !movedHolds(cancellableOff, NATIVE_092, KEPT));
+		assertTrue(movedHolds(movedModern, NATIVE, PINNED) && !movedHolds(sliceOffModern, NATIVE, PINNED));
+		assertTrue(offHolds(sliceOff) && offHolds(cancellableOff) && offHolds(sliceOffModern) && !offHolds(moved) && !offHolds(movedModern));
 	}
 
-	private static boolean movedHolds(WeaveHarness.Result run) {
-		return run.printedLine(WeaveHarnessMain.DONE + " " + NATIVE) && run.printed(MOVED) && run.printed(PINNED);
+	private static boolean movedHolds(WeaveHarness.Result run, String expected, String how) {
+		return run.printedLine(WeaveHarnessMain.DONE + " " + expected) && run.printed(MOVED) && run.printed(how);
 	}
 
 	private static boolean offHolds(WeaveHarness.Result run) {

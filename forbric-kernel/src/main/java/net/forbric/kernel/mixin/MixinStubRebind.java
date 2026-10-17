@@ -355,9 +355,11 @@ public final class MixinStubRebind {
 	private static Map<MethodNode, Plan> plans(ClassNode mixin, ClassNode target, Ecosystem ecosystem,
 			CapturesLost capturesLost) {
 		Map<MethodNode, Plan> plans = new java.util.LinkedHashMap<>();
+		// The level Mixin weaves this mixin at, which decides where it looks for a @ModifyVariable's points.
+		int level = KernelMixinBootstrap.wovenLevel(configOf(mixin.name));
 		for (MethodNode handler : new ArrayList<>(mixin.methods)) {
 			if (handler.name.endsWith(MixinHandlerShim.INNER_SUFFIX)) continue;
-			plans.put(handler, plan(handler, target, ecosystem, capturesLost == null ? null
+			plans.put(handler, plan(handler, target, ecosystem, level, capturesLost == null ? null
 					: (stub, delegate) -> capturesLost.accept(handler, stub, delegate)));
 		}
 		for (boolean dropped = true; dropped; ) {   // dropping one sharer can leave another group incomplete
@@ -460,11 +462,15 @@ public final class MixinStubRebind {
 	 */
 	/**
 	 * @param variableIndex for a {@code @ModifyVariable} discriminated by ordinal alone, the delegate slot that holds the
-	 *                      native local it picks (written as its {@code index}, the ordinal dropped); -1 otherwise
+	 *                      native local it picks (written as its {@code index}, the ordinal dropped), {@link #ORDINAL_KEPT}
+	 *                      when it moves with its ordinal; -1 otherwise
 	 */
 	private record Plan(AnnotationNode injector, MethodNode stub, Delegation delegation, boolean captures, List<String> shares,
-			Map<Integer, Integer> pins, int variableIndex) {
+			Map<Integer, Integer> pins, int variableIndex, int level) {
 	}
+
+	/** {@link #ordinalLocalPinned}'s answer for a {@code @ModifyVariable} that moves keeping its ordinal, unpinned. */
+	static final int ORDINAL_KEPT = -2;
 
 	/** Told which handler its captures keep on which stub, and the body it would have moved to. */
 	@FunctionalInterface
@@ -499,6 +505,13 @@ public final class MixinStubRebind {
 					Type.getArgumentTypes(handler.desc)[pin.getKey()].getClassName(), target.name.replace('/', '.'), delegate.name,
 					delegate.desc, pin.getValue());
 		}
+		if (plan.variableIndex() == ORDINAL_KEPT) {
+			ForbricLog.info("[Forbric/Mixin] %s: %s keeps its ordinal on %s.%s%s — woven at %d, below 0.10.0, where Mixin finds its "
+					+ "points in the whole method and picks the local with its 0.9.2 walk; no argument the carrier added has its "
+					+ "type and the delegate's locals of that type hold the native method's, so Mixin picks there as it does natively",
+					mixin.name.replace('/', '.'), handler.name, target.name.replace('/', '.'), delegate.name, delegate.desc,
+					plan.level());
+		}
 		if (plan.variableIndex() >= 0) {
 			for (int i = 0; i + 1 < injector.values.size(); i += 2)
 				if ("ordinal".equals(injector.values.get(i))) { injector.values.remove(i + 1); injector.values.remove(i); break; }
@@ -521,7 +534,7 @@ public final class MixinStubRebind {
 	 * @param capturesLost told {@code (stub, delegate)} when the handler would have moved but for its trailing captures
 	 *                     of the stub's arguments; {@code null} when the caller only wants the answer
 	 */
-	private static Plan plan(MethodNode handler, ClassNode target, Ecosystem ecosystem,
+	private static Plan plan(MethodNode handler, ClassNode target, Ecosystem ecosystem, int level,
 			BiConsumer<MethodNode, MethodNode> capturesLost) {
 		List<AnnotationNode> annotations = new ArrayList<>();
 		if (handler.visibleAnnotations != null) annotations.addAll(handler.visibleAnnotations);
@@ -558,8 +571,8 @@ public final class MixinStubRebind {
 		int variableIndex = -1;
 		if (variable) {
 			if (!namedLocalMoved(injector, handler, stub, delegate)) {
-				variableIndex = ordinalLocalPinned(injector, handler, target, stub, delegation, ecosystem);
-				if (variableIndex < 0) return null;
+				variableIndex = ordinalLocalPinned(injector, handler, target, stub, delegation, ecosystem, level);
+				if (variableIndex < 0 && variableIndex != ORDINAL_KEPT) return null;
 			}
 		} else {
 			for (AnnotationNode at : points) {
@@ -653,7 +666,7 @@ public final class MixinStubRebind {
 		if (captures) {
 			for (int i = 0; i < stubParams.length; i++) if (delegation.positions()[i] < 0) return null;
 		}
-		return new Plan(injector, stub, delegation, captures, List.copyOf(shares), Map.copyOf(pins), variableIndex);
+		return new Plan(injector, stub, delegation, captures, List.copyOf(shares), Map.copyOf(pins), variableIndex, level);
 	}
 
 	/**
@@ -959,9 +972,21 @@ public final class MixinStubRebind {
 	 * puzzleslib's effect-tooltip hook forces vanilla's "show the tooltip" flag in {@code EffectsInInventory.extractText}
 	 * from {@code clipText} on; NeoForge's overload holds the same flag, one slot further on, behind the added argument.
 	 * {@code -Dforbric.mixinStubRebind.slice=off} leaves a sliced one on the stub.
+	 *
+	 * <p>All of the above is how Mixin finds and picks from 0.10.0 on. Woven at {@code level} below 0.10.0 (Fabric Loader
+	 * gives that to a mod with no {@code fabricloader} floor), Mixin finds a {@code LOAD}/{@code STORE} point in the whole
+	 * method, slice or not, and picks the ordinal with its 0.9.2 local walk at each point, so the native ordinal can pick
+	 * different locals at different points. Where that is the native pick by construction, the injector keeps its
+	 * ordinal ({@link #ORDINAL_KEPT}): no argument the carrier added has the handler's type, and the delegate's other locals
+	 * of that type are the native method's, slot for slot in order, each stored the same values and accessed as often across
+	 * the whole method; Mixin then discriminates it on the delegate at that level as it does natively. Otherwise (an added
+	 * argument of that type, as in {@code hurtEntities}) it is pinned as above over the whole method, the slice set aside
+	 * as Mixin sets it aside, and the single native slot is still read with the newer walk's model. That model is not
+	 * proved to be the 0.9.2 walk at every point (that walk reads Mixin's class metadata and frames, which this judgement
+	 * does not have); MixinStubRebindOrdinalWeaveTest shows the two agreeing on that shape at 0.9.2.
 	 */
 	static int ordinalLocalPinned(AnnotationNode injector, MethodNode handler, ClassNode target, MethodNode stub, Delegation delegation,
-			Ecosystem ecosystem) {
+			Ecosystem ecosystem, int level) {
 		if (MixinFit.value(injector, "name") != null || MixinFit.value(injector, "index") != null
 				|| Boolean.TRUE.equals(MixinFit.value(injector, "argsOnly"))) return -1;
 		if (!(MixinFit.value(injector, "ordinal") instanceof Integer ordinal) || ordinal < 0) return -1;
@@ -981,6 +1006,10 @@ public final class MixinStubRebind {
 		if (was == null || was.localVariables == null || delegate.localVariables == null) return -1;
 		Object slice = MixinFit.value(injector, "slice");
 		if (slice != null && !sliceEnabled()) return -1;
+		if (level < org.spongepowered.asm.mixin.FabricUtil.COMPATIBILITY_0_10_0) {
+			if (sameLocalsOfType(reference, was, target, delegate, stub, delegation, type)) return ORDINAL_KEPT;
+			slice = null;   // Mixin looks in the whole method at this level, natively and on the delegate alike
+		}
 		Cut nativeCut = Cut.of(slice, was), mergedCut = Cut.of(slice, delegate);
 		if (nativeCut == null || mergedCut == null || slice != null && Cut.of(slice, stub) != Cut.ABSENT) return -1;
 		int opcode = type.getOpcode("STORE".equals(value) ? Opcodes.ISTORE : Opcodes.ILOAD);
@@ -1056,6 +1085,50 @@ public final class MixinStubRebind {
 			int at = method.instructions.indexOf(insn);
 			return (from == null || method.instructions.indexOf(from) <= at) && (to == null || at <= method.instructions.indexOf(to));
 		}
+	}
+
+	/**
+	 * Whether {@code delegate}'s locals of {@code type} are {@code was}'s, so that an ordinal counted over them picks the same
+	 * value in both at any point and by any of Mixin's walks: no argument the carrier added is of that type, and the other
+	 * slots of that type, `this` aside, pair up in slot order, each pair stored the same expressions, loaded and stored as
+	 * often, and named by as many table entries, across the whole method.
+	 */
+	private static boolean sameLocalsOfType(ClassNode reference, MethodNode was, ClassNode target, MethodNode delegate, MethodNode stub,
+			Delegation delegation, Type type) {
+		Type[] params = Type.getArgumentTypes(delegate.desc);
+		if (delegation.sources() == null || delegation.sources().length != params.length) return false;
+		for (int i = 0; i < params.length; i++) if (delegation.sources()[i] == CONSTANT && params[i].equals(type)) return false;
+		java.util.BitSet added = addedArgumentSlots(stub, delegation);
+		List<Integer> natives = slotsOfType(was, type, new java.util.BitSet()), merged = slotsOfType(delegate, type, added);
+		if (natives.isEmpty() || natives.size() != merged.size()) return false;
+		NativeCallInlining.Conditions nativeValues = NativeCallInlining.Conditions.of(reference.name, was, Integer.MAX_VALUE);
+		NativeCallInlining.Conditions mergedValues = NativeCallInlining.Conditions.of(target.name, delegate, Integer.MAX_VALUE);
+		if (nativeValues == null || mergedValues == null) return false;
+		int load = type.getOpcode(Opcodes.ILOAD), store = type.getOpcode(Opcodes.ISTORE);
+		for (int i = 0; i < natives.size(); i++) {
+			int n = natives.get(i), m = merged.get(i);
+			List<String> stores = stored(was, n, type, nativeValues, Cut.WHOLE);
+			if (stores == null || !stores.equals(stored(delegate, m, type, mergedValues, Cut.WHOLE))) return false;
+			if (accesses(was, n, load, Cut.WHOLE) != accesses(delegate, m, load, Cut.WHOLE)
+					|| accesses(was, n, store, Cut.WHOLE) != accesses(delegate, m, store, Cut.WHOLE)
+					|| entries(was, n, type) != entries(delegate, m, type)) return false;
+		}
+		return true;
+	}
+
+	/** The slots the table gives {@code type}, `this` and {@code excluded} aside, in order. */
+	private static List<Integer> slotsOfType(MethodNode method, Type type, java.util.BitSet excluded) {
+		java.util.Set<Integer> out = new java.util.TreeSet<>();
+		int base = (method.access & Opcodes.ACC_STATIC) != 0 ? 0 : 1;
+		for (LocalVariableNode local : method.localVariables)
+			if (local.index >= base && local.desc.equals(type.getDescriptor()) && !excluded.get(local.index)) out.add(local.index);
+		return new ArrayList<>(out);
+	}
+
+	private static int entries(MethodNode method, int slot, Type type) {
+		int n = 0;
+		for (LocalVariableNode local : method.localVariables) if (local.index == slot && local.desc.equals(type.getDescriptor())) n++;
+		return n;
 	}
 
 	/** The slots of {@code type} the table names live at {@code insn} (just after it, for a store), `this` aside, in order. */
