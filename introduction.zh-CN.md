@@ -234,9 +234,9 @@ Fabric 和 NeoForge 在构造函数里需要的状态正好相反，所以内核
 - **身份** —— `PassiveSeeder.seedForgeFmlLoader`（Mixin 前，§3.2）；`ForgeLoadingListHolderInjector` 让 `LoadingModListImpl$1LazyInit` 读取内核发布的列表（`net.forbric.api.ForgeLoadingList`），而不是一个只有真正的加载器才会填充的字段；`ForgeLauncherInfoInjector` 代为应答 `FMLLoader` 里三个依赖 ModLauncher 的方法；`ForgeBindingsLookupInjector` 在没有 FML 模块层的情况下解析 `Bindings`；`ForgeSecureJarStandIn` 在没有 ModLauncher 的情况下给预置的 `ModFile` 提供 `SecureJar`。
 - **构造** —— `KernelForgeModContext` 生成每个 Forge mod 构造函数都要接收的三件套：EventBus 7 的 `BusGroup` + `FMLModContainer` + `FMLJavaModLoadingContext`。在早期窗口里就去碰 `Minecraft` 的 mod 会推迟到 `onClientEntrypoints` 再构造，MinecraftForge 原本就在那里构造自己的 mod。
 - **加载状态** —— `KernelLifecycle.setForgeLoadingState` 翻转 `loadingStateValid`；`publishForgeGatherStates` 把 `VALIDATE … LOAD_REGISTRIES` 记为已完成，这样 `ModLoader.hasCompletedState` 给出的才是实情（`-Dforbric.forgeLoadingStates=off`）。
-- **Capability** —— 合并把 `Entity`/`BlockEntity`/`Level` 放到了 NeoForge 的附件继承体系之下，所以 `transform.ForgeCapabilityCompositionTransformer` 把 MinecraftForge 的 `CapabilityProvider` 组合进这些根类型，`ForgeCapabilityTokenInjector` 驱动 Forge 的 `CapabilityTokenSubclass` 插件（`-Dforbric.forgeCapabilities=off`）。这个开关只关掉分发：合并基底在 `required-ancestor-compositions.tsv` 里列了这三个根类型，没有组合的证明加载器就拒绝定义它们，所以关掉时仍然会组合，只是换成一个惰性的 provider——不发 `AttachCapabilitiesEvent`，任何查询都返回空。`CapabilityUseAudit` 列出使用 MinecraftForge capability 的 jar；如果分发被关掉，或者组合没有落到每一个根类型上，就把这些 jar 标为 DEGRADED。
+- **Capability** —— 合并把 `Entity`/`BlockEntity`/`Level` 放到了 NeoForge 的附件继承体系之下，所以 `transform.ForgeCapabilityCompositionTransformer` 把 MinecraftForge 的 `CapabilityProvider` 组合进这些根类型，`ForgeCapabilityTokenInjector` 驱动 Forge 的 `CapabilityTokenSubclass` 插件（`-Dforbric.forgeCapabilities=off`）。这个开关只关掉分发：合并基底在 `required-ancestor-compositions.tsv` 里列了这三个根类型，没有组合的证明加载器就拒绝定义它们，所以关掉时仍然会组合，只是换成一个惰性的 provider——不发 `AttachCapabilitiesEvent`，任何查询都返回空。关掉时也不注册 Forge 方块 transfer 回退，transfer 桥会收到这个决定，不再去找它。`CapabilityUseAudit` 列出使用 MinecraftForge capability 的 jar；如果分发被关掉，或者组合没有落到每一个根类型上，就把这些 jar 标为 DEGRADED。
 - **枚举扩展** —— `ForgeEnumExtensionInjector` 驱动 MinecraftForge 自己的处理器（无条件注册；除非 Forge 的 mod 列表里超过两个 mod，否则它什么都不处理）。
-- **配置** —— `KernelForgeConfigLoad` 逐个打开真正的 MinecraftForge 配置，保留 Forge 的读取器、事件、保存和文件监视器；退出时由 `interop.ClientShutdown` 停掉这些监视器（`ExitHookInjector`：客户端上是 `Minecraft.close`，服务端上是 `DedicatedServer.onServerExit`）。
+- **配置** —— `KernelForgeConfigLoad` 逐个打开真正的 MinecraftForge 配置，保留 Forge 的读取器、事件、保存和文件监视器；退出时由 `interop.ClientShutdown` 停掉这些监视器（`ExitHookInjector`：客户端上是 `Minecraft.close`，服务端上是 `DedicatedServer.onServerExit`）。监视器 1.5 秒内没确认停止不算失败；退出守护会继续扫，到期时还活着的非守护线程会被点名。
 
 ### 5.4 事件之外的跨生态服务
 
@@ -409,7 +409,7 @@ Fabric mod 的配置界面只在一个地方声明：一个实现 Mod Menu 的 `
 
 ### 12.3 依赖对话框
 
-`ui.DependencyDialog` 向玩家显示未满足的硬依赖和跨 mod 的 mixin 失效。这个窗口是一个**独立的 JVM**（`DependencyDialogMain`，启动时 classpath 里只有内核 jar 这一项），因为在 macOS 上游戏带着 `-XstartOnFirstThread` 运行，AWT 无法和 GLFW 共用第一个线程。父子进程之间只共享 `DependencyReport` 里的制表符分隔文件格式；文案在 `DialogLang` 里（跟随系统语言，`-Dforbric.dialogLanguage=<code>` 可强制指定一种）。`-Dforbric.dependencyDialog=on`（默认）| `off` | `dryRun`（派生真正的子进程，但禁用 AWT——闸门断言的就是它）。子进程 10 分钟后超时。确认窗口的退出码：`0` 继续，`4` 退出或关掉窗口，其他任何值（`3` 画不出窗口、启动器自己的 `1`）表示窗口没能让人回答。同一个子进程还有第三种窗口 `--isolation`，即 §12.2 的崩溃嫌疑提示：退出码 `2` 表示不加载它们启动；除了那两个明确的按钮，其他任何情况都按加载全部 mod 启动处理。
+`ui.DependencyDialog` 向玩家显示未满足的硬依赖和跨 mod 的 mixin 失效。这个窗口是一个**独立的 JVM**（`DependencyDialogMain`，启动时 classpath 里只有内核 jar 这一项），因为在 macOS 上游戏带着 `-XstartOnFirstThread` 运行，AWT 无法和 GLFW 共用第一个线程。父子进程之间只共享 `DependencyReport` 里的制表符分隔文件格式；文案在 `DialogLang` 里（跟随系统语言，`-Dforbric.dialogLanguage=<code>` 可强制指定一种）。`-Dforbric.dependencyDialog=on`（默认）| `off` | `dryRun`（派生真正的子进程，但禁用 AWT——闸门断言的就是它）。带 `-Djava.awt.headless=true` 启动的子进程画不出窗口，给出的正是它被启动来给的答案，不报失败；没被要求却处于 headless 的子进程（比如不在窗口会话里启动的 macOS 客户端）仍然报失败。子进程 10 分钟后超时。确认窗口的退出码：`0` 继续，`4` 退出或关掉窗口，其他任何值（`3` 画不出窗口、启动器自己的 `1`）表示窗口没能让人回答。同一个子进程还有第三种窗口 `--isolation`，即 §12.2 的崩溃嫌疑提示：退出码 `2` 表示不加载它们启动；除了那两个明确的按钮，其他任何情况都按加载全部 mod 启动处理。
 
 ### 12.4 策略 —— `-Dforbric.compatibilityPolicy`
 

@@ -140,6 +140,80 @@ class KernelTransferInteropTest {
 		for (String name : naming) assertTrue(name.startsWith("net/forbric/kernel/runtime/transfer/RebornEnergyAdapters")
 				|| name.startsWith("net/forbric/kernel/runtime/transfer/RebornEnergyBridge"), name + " names Team Reborn Energy");
 	}
+	/** The bridge is told what boot decided about the Forge fallback, and looks for it only when boot registered it. */
+	@Test void installHandsTheBridgeBootsForgeFallbackDecision() throws Exception {
+		try {
+			for (boolean registered : new boolean[] { false, true }) {
+				try (var loader = loader(true, true)) {
+					assertTrue(KernelTransferInterop.configure(loader));
+					KernelTransferInterop.forgeFallback(registered);
+					ClassLoader game = new GameSide();
+					KernelTransferInterop.install(game);
+					Class<?> bridge = Class.forName(KernelTransferInterop.BRIDGE, false, game);
+					assertEquals(1, bridge.getField("calls").getInt(null));
+					assertEquals(registered, bridge.getField("forgeFallback").getBoolean(null));
+				}
+			}
+		} finally {
+			KernelTransferInterop.forgeFallback(false);
+		}
+	}
+	/** A game side with only what install calls: TransferIssues.setReporter and a bridge that records its argument. */
+	private static final class GameSide extends ClassLoader {
+		GameSide() { super(KernelTransferInteropTest.class.getClassLoader()); }
+		@Override protected Class<?> loadClass(String name, boolean resolve) throws ClassNotFoundException {
+			if (!name.equals(KernelTransferInterop.BRIDGE) && !name.equals(KernelTransferInterop.ISSUES)) return super.loadClass(name, resolve);
+			synchronized (getClassLoadingLock(name)) {
+				Class<?> done = findLoadedClass(name);
+				if (done != null) return done;
+				byte[] bytes = name.equals(KernelTransferInterop.BRIDGE) ? recordingBridge() : silentIssues();
+				return defineClass(name, bytes, 0, bytes.length);
+			}
+		}
+		private static byte[] recordingBridge() {
+			String self = KernelTransferInterop.BRIDGE.replace('.', '/');
+			ClassWriter writer = new ClassWriter(ClassWriter.COMPUTE_MAXS);
+			writer.visit(Opcodes.V17, Opcodes.ACC_PUBLIC | Opcodes.ACC_SUPER, self, null, "java/lang/Object", null);
+			writer.visitField(Opcodes.ACC_PUBLIC | Opcodes.ACC_STATIC, "calls", "I", null, null).visitEnd();
+			writer.visitField(Opcodes.ACC_PUBLIC | Opcodes.ACC_STATIC, "forgeFallback", "Z", null, null).visitEnd();
+			var install = writer.visitMethod(Opcodes.ACC_PUBLIC | Opcodes.ACC_STATIC, "install", "(Z)V", null, null);
+			install.visitCode();
+			install.visitFieldInsn(Opcodes.GETSTATIC, self, "calls", "I");
+			install.visitInsn(Opcodes.ICONST_1);
+			install.visitInsn(Opcodes.IADD);
+			install.visitFieldInsn(Opcodes.PUTSTATIC, self, "calls", "I");
+			install.visitVarInsn(Opcodes.ILOAD, 0);
+			install.visitFieldInsn(Opcodes.PUTSTATIC, self, "forgeFallback", "Z");
+			install.visitInsn(Opcodes.RETURN);
+			install.visitMaxs(0, 0);
+			install.visitEnd();
+			writer.visitEnd();
+			return writer.toByteArray();
+		}
+		private static byte[] silentIssues() {
+			ClassWriter writer = new ClassWriter(ClassWriter.COMPUTE_MAXS);
+			writer.visit(Opcodes.V17, Opcodes.ACC_PUBLIC | Opcodes.ACC_SUPER, KernelTransferInterop.ISSUES.replace('.', '/'), null,
+					"java/lang/Object", null);
+			var reporter = writer.visitMethod(Opcodes.ACC_PUBLIC | Opcodes.ACC_STATIC, "setReporter", "(Ljava/util/function/Consumer;)V", null, null);
+			reporter.visitCode();
+			reporter.visitInsn(Opcodes.RETURN);
+			reporter.visitMaxs(0, 0);
+			reporter.visitEnd();
+			writer.visitEnd();
+			return writer.toByteArray();
+		}
+	}
+	/** TransferIssues.Issue's shape, which recordIssue reads by its accessors across the game loader boundary. */
+	record Issue(String code, String providerClass, String detail) { }
+	@Test void aFindingWithNoProviderIsTheKernelsOwnAndLooksUpNoClass() {
+		// A finding with no provider object (the Forge fallback hook missing) has no class to attribute. It used to be
+		// looked up as a class named "unknown", which never exists, so every such finding was also a failure.
+		KernelTransferInterop.recordIssue(getClass().getClassLoader(), new Issue("FORGE_QUERY_HOOK_MISSING", null, "detail"));
+		CompatibilityFinding finding = CompatibilityFindings.all().stream()
+				.filter(f -> f.id().equals("transfer:FORGE_QUERY_HOOK_MISSING:unknown")).findFirst().orElseThrow();
+		assertEquals("forbric", finding.modId());
+		assertEquals(List.of("FORGE_QUERY_HOOK_MISSING", "unknown"), finding.evidence());
+	}
 	/**
 	 * Hoppers ask Fabric's lookup whenever fabric-transfer-api and NeoForge's hopper are both present — with or without
 	 * the bridge, as Fabric's own mixin would — and the component is required only then.

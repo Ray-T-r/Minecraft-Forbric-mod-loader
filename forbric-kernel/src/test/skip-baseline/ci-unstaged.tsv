@@ -77,6 +77,7 @@ test	net.forbric.kernel.boot.KernelModContainerFactoryTest	unsafeHacksStillOffer
 test	net.forbric.kernel.boot.KernelModLoaderClasslessTest	aClasslessModIsInModListBesideTheModsWithAClass()	[fixture:staged] staged runtime classes/carriers absent
 test	net.forbric.kernel.boot.KernelModLoaderClasslessTest	switchedOffTheClasslessModIsAbsentAgain()	[fixture:staged] staged runtime classes/carriers absent
 test	net.forbric.kernel.boot.KernelModLoaderLowCodeForgeTest	theContainerIsMinecraftForgesOwnLowCodeModContainer()	[fixture:staged] compiled game side/carrier absent
+test	net.forbric.kernel.boot.KernelRuntimeClassesTest	everyRegisteredCallIsOnTheCompiledGameSideClass()	[fixture:game-side] no staged game jars, so no game side was built
 test	net.forbric.kernel.boot.KernelTransferInteropTest	aBuiltGameSideAlwaysCarriesTheTransferComponent()	[fixture:game-side] no staged game jars, so no game side was built
 test	net.forbric.kernel.boot.KernelTransferInteropTest	onlyTheRebornHalfOfTheGameSideNamesTeamRebornEnergy()	[fixture:game-side] no staged game jars, so no game side was built
 test	net.forbric.kernel.boot.LaunchInputCheckTest	theStagedMergedBaseAndBothStagedCarrierSpellingsPass()	[fixture:staged] staged game artifacts absent: $ROOT/forbric-loader/run
@@ -1264,6 +1265,7 @@ test	net.forbric.kernel.mixin.MixinSharedPredicateSeamTest	actualApiKeepsBothBod
 test	net.forbric.kernel.mixin.MixinSharedPredicateSeamTest	anEntryShapeTheProofDoesNotModelDeclinesInsteadOfFailing()	[fixture:staged] actual native pair: $ROOT/forbric-loader/run/merged-base/patched-mc-merged-26.2.jar
 test	net.forbric.kernel.mixin.MixinSharedPredicateSeamTest	changedCarrierContinuationQuestionAndGuardRefuseTheOriginalPair()	[fixture:staged] actual native pair: $ROOT/forbric-loader/run/merged-base/patched-mc-merged-26.2.jar
 test	net.forbric.kernel.mixin.MixinSharedPredicateSeamTest	missingRootsMissingRecordsAndOffLeaveTheOriginalHandlers()	[fixture:staged] actual native pair: $ROOT/forbric-loader/run/merged-base/patched-mc-merged-26.2.jar
+test	net.forbric.kernel.mixin.MixinSharedPredicateSeamTest	onlyABoundPairRegistersItsNativeDispatchPath()	[fixture:staged] actual native pair: $ROOT/forbric-loader/run/merged-base/patched-mc-merged-26.2.jar
 test	net.forbric.kernel.mixin.MixinSharedResultTransportSpellingTest	aBareNameBindsTheFirstMethodOfThatName()	[fixture:staged] actual Fabric API required: $ROOT/forbric-kernel/run/client-merged-pack/mods/fabric-api-0.155.2+26.2.jar
 test	net.forbric.kernel.mixin.MixinSharedResultTransportSpellingTest	aBareNameWhoseFirstMethodIsAnotherOverloadIsLeftAlone()	[fixture:staged] actual Fabric API required: $ROOT/forbric-kernel/run/client-merged-pack/mods/fabric-api-0.155.2+26.2.jar
 test	net.forbric.kernel.mixin.MixinSharedResultTransportSpellingTest	aConsumerWrittenForAnotherMethodOrOwnerIsLeftAlone()	[fixture:staged] actual Fabric API required: $ROOT/forbric-kernel/run/client-merged-pack/mods/fabric-api-0.155.2+26.2.jar

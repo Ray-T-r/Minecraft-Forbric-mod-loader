@@ -179,7 +179,7 @@ public final class KernelRuntimeClasses {
 		CLASSES.put("net.forbric.kernel.runtime.soak.ClientSoakController", new Entry(Origin.COMPILED,
 				List.of(new Call("onTick", void.class, Object.class))));
 		CLASSES.put("net.forbric.kernel.runtime.KernelPortalSpawn", new Entry(Origin.COMPILED, List.of()));
-		CLASSES.put(KernelTransferInterop.BRIDGE, new Entry(Origin.COMPILED, List.of(new Call("install", void.class))));
+		CLASSES.put(KernelTransferInterop.BRIDGE, new Entry(Origin.COMPILED, List.of(new Call("install", void.class, boolean.class))));
 		CLASSES.put(KernelTransferInterop.ISSUES, new Entry(Origin.COMPILED,
 				List.of(new Call("setReporter", void.class, java.util.function.Consumer.class))));
 		// Only required, loaded and verified when Team Reborn Energy is installed: its signatures stay free of Reborn

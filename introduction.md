@@ -539,13 +539,16 @@ classpath (first-URL-wins would otherwise let it shadow the winner and contribut
   (`-Dforbric.forgeCapabilities=off`). The switch turns off dispatch only: the merged base lists those three roots in
   `required-ancestor-compositions.tsv` and the loader refuses to define one without the composition's proof, so off
   still composes them, with an inert provider that fires no `AttachCapabilitiesEvent` and answers every ask empty.
+  Off also registers no Forge block transfer fallback, and the transfer bridge is told so and does not look for one.
   `CapabilityUseAudit` lists the jars that use MinecraftForge capabilities and marks them DEGRADED if dispatch is off
   or the composition did not land on every root type.
 - **Enum extensions** — `ForgeEnumExtensionInjector` drives MinecraftForge's own processor (unconditional; it
   declines everything unless Forge's mod list holds more than two mods).
 - **Configs** — `KernelForgeConfigLoad` opens genuine MinecraftForge configs one at a time, keeping Forge's reader,
   events, save and file watcher; the watchers are stopped on exit by `interop.ClientShutdown`
-  (`ExitHookInjector`: `Minecraft.close` on the client, `DedicatedServer.onServerExit` on the server).
+  (`ExitHookInjector`: `Minecraft.close` on the client, `DedicatedServer.onServerExit` on the server). A watcher
+  that does not confirm its stop within 1.5 s is not a failure; the exit guard keeps sweeping and names any
+  non-daemon thread still alive at its deadline.
 
 ### 5.4 Cross-ecosystem services that are not events
 
@@ -1124,7 +1127,9 @@ Working directories in the same place: `lib/` (extracted bundled jars), `jij/`, 
 the game runs with `-XstartOnFirstThread` and AWT cannot share thread one with GLFW. Parent and child share only
 the tab-separated file format in `DependencyReport`; strings are in `DialogLang` (system language,
 `-Dforbric.dialogLanguage=<code>` forces one). `-Dforbric.dependencyDialog=on` (default) | `off` | `dryRun` (forks
-the real child with AWT disabled — what gates assert on). The child times out after 10 minutes. The confirmation's
+the real child with AWT disabled — what gates assert on). A child started with `-Djava.awt.headless=true` that
+cannot draw has given the answer it was started for, and reports no failure; a child that is headless without being
+told so (a macOS client outside a window session) still does. The child times out after 10 minutes. The confirmation's
 exit code is `0` continue, `4` quit or closed, and anything else (`3` cannot draw, the launcher's own `1`) a window
 nobody could answer. The same child
 has a third window, `--isolation`: the crash-suspects offer of §12.2, whose exit code `2` means start without them;

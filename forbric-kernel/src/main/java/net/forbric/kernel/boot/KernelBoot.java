@@ -500,6 +500,7 @@ public final class KernelBoot {
 		// The fallback edits the composed getCapability; the composition's proof expects it exactly when it says so.
 		if (composition.transferFallback()) chain.register(TransformPhase.COREMOD,
 				new net.forbric.kernel.transform.ForgeTransferCapabilityFallback());
+		KernelTransferInterop.forgeFallback(composition.transferFallback());
 		if (!forgeCapabilities) {
 			ForbricLog.warn("[Forbric/Capabilities] -D%s=off — MinecraftForge capability dispatch is off: Entity, BlockEntity "
 					+ "and Level still carry the composed provider state their merged definition requires, but nothing is "

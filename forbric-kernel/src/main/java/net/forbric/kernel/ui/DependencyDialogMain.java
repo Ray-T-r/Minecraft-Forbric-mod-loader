@@ -22,6 +22,7 @@ import java.awt.Dimension;
 import java.awt.FlowLayout;
 import java.awt.Font;
 import java.awt.GraphicsEnvironment;
+import java.awt.HeadlessException;
 import java.awt.Rectangle;
 import java.awt.Window;
 import java.net.URLEncoder;
@@ -208,6 +209,10 @@ public final class DependencyDialogMain {
 		int answer;
 		try {
 			answer = askOnEventThread(lang, rows, mixins, suspected);
+		} catch (NoDisplayAsked cannotDraw) {
+			Caught.expected(cannotDraw);
+			System.exit(CONTINUE);
+			return;
 		} catch (Throwable noDisplay) {
 			// The single net. See the class note: anything other than CONTINUE here would be the kernel quitting
 			// the game for a player who was never asked.
@@ -232,8 +237,11 @@ public final class DependencyDialogMain {
 						+ " cross-platform one");
 			}
 			int[] result = { QUIT };
-			SwingUtilities.invokeAndWait(() -> result[0] = showCompatibility(lang, confirmation));
+			onEventThread(() -> result[0] = showCompatibility(lang, confirmation));
 			answer = result[0] == CONTINUE ? CONTINUE : REFUSED;
+		} catch (NoDisplayAsked cannotDraw) {
+			// Nobody answered: UNSHOWN, the answer such a child is started to give.
+			Caught.expected(cannotDraw);
 		} catch (Throwable unavailable) {
 			// Unlike the legacy dependency notice, no answer is never permission to continue -- and it is not the
 			// player's refusal either: UNSHOWN.
@@ -260,10 +268,13 @@ public final class DependencyDialogMain {
 						+ " cross-platform one");
 			}
 			int[] result = { CONTINUE };
-			SwingUtilities.invokeAndWait(() -> result[0] = showContent(lang, isolationBlocks(lang, isolation),
+			onEventThread(() -> result[0] = showContent(lang, isolationBlocks(lang, isolation),
 					isolationDetails(lang, isolation), lang.get("isolation.title"),
 					content -> isolationPane(lang, isolation, content), value -> isolationAnswerFrom(lang, isolation, value)));
 			answer = result[0];
+		} catch (NoDisplayAsked cannotDraw) {
+			// Nobody answered, so every mod starts: the answer such a child is started to give.
+			Caught.expected(cannotDraw);
 		} catch (Throwable unavailable) {
 			// No answer switches nothing off: the game starts with every mod, as it would have without the offer.
 			Caught.warn(unavailable, "[Forbric/Deps] the crash-suspects offer for %s could not be shown; starting with"
@@ -381,8 +392,35 @@ public final class DependencyDialogMain {
 	private static int askOnEventThread(DialogLang lang, List<DependencyReport.Row> rows,
 			List<DependencyReport.MixinRow> mixins, List<DependencyReport.CompatibilityRow> suspected) throws Exception {
 		int[] answer = { CONTINUE };
-		SwingUtilities.invokeAndWait(() -> answer[0] = show(lang, rows, mixins, suspected));
+		onEventThread(() -> answer[0] = show(lang, rows, mixins, suspected));
 		return answer[0];
+	}
+
+	/**
+	 * A child started with {@code -Djava.awt.headless=true} could not draw. Only dryRun and the tests start one so:
+	 * "it cannot draw" is the answer they want from it, not a failure. A child that is headless without being told
+	 * (a macOS client started outside a window session, a Linux one without a display) is a player who was not
+	 * asked, and stays a failure.
+	 */
+	private static final class NoDisplayAsked extends RuntimeException {
+		NoDisplayAsked(HeadlessException cause) {
+			super(cause);
+		}
+	}
+
+	/** Runs {@code work} on the event thread and throws what it threw, a requested no-display as {@link NoDisplayAsked}. */
+	private static void onEventThread(Runnable work) throws Exception {
+		try {
+			SwingUtilities.invokeAndWait(work);
+		} catch (java.lang.reflect.InvocationTargetException thrown) {
+			Throwable cause = thrown.getCause();
+			if (cause instanceof HeadlessException cannotDraw && Boolean.getBoolean("java.awt.headless")) {
+				throw new NoDisplayAsked(cannotDraw);
+			}
+			if (cause instanceof Exception exception) throw exception;
+			if (cause instanceof Error error) throw error;
+			throw thrown;
+		}
 	}
 
 	private static int show(DialogLang lang, List<DependencyReport.Row> rows,

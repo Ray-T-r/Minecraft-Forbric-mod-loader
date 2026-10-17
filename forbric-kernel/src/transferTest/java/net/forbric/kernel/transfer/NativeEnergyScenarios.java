@@ -60,7 +60,7 @@ public final class NativeEnergyScenarios {
 		List<TransferIssues.Issue> issues = new ArrayList<>(); TransferIssues.setReporter(issues::add); return issues;
 	}
 	private static long count(List<TransferIssues.Issue> issues, String code, Class<?> type) {
-		return issues.stream().filter(issue -> issue.code().equals(code) && issue.providerClass().equals(type.getName())).count();
+		return issues.stream().filter(issue -> issue.code().equals(code) && type.getName().equals(issue.providerClass())).count();
 	}
 
 	/** A Fabric (Reborn) consumer of a NeoForge handler: nested commit and abort, repeated simulation, limits, one final. */
