@@ -57,7 +57,7 @@ class FabricFreezeHookSpellingTest {
 	private static final String FREEZE_CALL = "L" + BIR + ";freeze()V";
 	private static final BiFunction<Ecosystem, String, ClassNode> STAGED = NativeCallTestEvidence.staged();
 
-	private Supplier<Boolean> registrySync;
+	private Supplier<java.util.Set<String>> registrySync;
 
 	/**
 	 * Every case reads the staged merged {@code BuiltInRegistries}, and its native classes through the merged base's
@@ -65,12 +65,12 @@ class FabricFreezeHookSpellingTest {
 	 */
 	@BeforeEach void registrySyncIsInTheGame() {
 		TestFixtures.requireFiles(Fixture.STAGED, "the staged merged base", TestFixtures.stagedRoot().resolve("merged-base/patched-mc-merged-26.2.jar"));
-		registrySync = FabricFreezeHookMixinAdapter.registrySyncPresent;
-		FabricFreezeHookMixinAdapter.registrySyncPresent = () -> true;
+		registrySync = FabricFreezeHookMixinAdapter.deferredFreezes;
+		FabricFreezeHookMixinAdapter.deferredFreezes = () -> java.util.Set.of("ledger.mixins.json:org.quarry.ledger.mixin.StartupMixin");
 	}
 
 	@AfterEach void reset() {
-		FabricFreezeHookMixinAdapter.registrySyncPresent = registrySync;
+		FabricFreezeHookMixinAdapter.deferredFreezes = registrySync;
 		MixinStubRebind.forget();
 	}
 

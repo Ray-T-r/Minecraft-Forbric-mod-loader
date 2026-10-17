@@ -33,7 +33,7 @@ import net.forbric.kernel.transform.InjectorExecution;
 /**
  * {@link FabricFreezeHookMixinAdapter} on the mixin's class node: a Fabric mod's HEAD and TAIL injectors on
  * {@code BuiltInRegistries.freeze()} move to the two hooks {@link FabricFreezePointInjector} adds, which the kernel calls
- * after the Fabric entrypoints — where fabric-registry-sync puts the freeze on a native Fabric game (issue #52).
+ * after the Fabric entrypoints — where a mod deferring the freeze (fabric-api's registry sync) puts it on a native Fabric game (issue #52).
  *
  * <p>The guest mixins are real {@code @Mixin} sources compiled here against sponge-mixin, so every annotation value is
  * in the form javac writes it (an enum is a {@code String[2]}, an array a list); {@code BuiltInRegistries} is a stand-in
@@ -163,7 +163,7 @@ class FabricFreezeHookMixinAdapterTest {
 	@TempDir static Path work;
 	private static Map<String, byte[]> classes;
 
-	private Supplier<Boolean> registrySync;
+	private Supplier<java.util.Set<String>> registrySync;
 
 	private record Moving(String injector, String hook) {
 	}
@@ -236,13 +236,13 @@ class FabricFreezeHookMixinAdapterTest {
 
 	@BeforeEach
 	void fabricRegistrySyncIsInTheGame() {
-		registrySync = FabricFreezeHookMixinAdapter.registrySyncPresent;
-		FabricFreezeHookMixinAdapter.registrySyncPresent = () -> true;
+		registrySync = FabricFreezeHookMixinAdapter.deferredFreezes;
+		FabricFreezeHookMixinAdapter.deferredFreezes = () -> java.util.Set.of("ledger.mixins.json:org.quarry.ledger.mixin.StartupMixin");
 	}
 
 	@AfterEach
 	void reset() {
-		FabricFreezeHookMixinAdapter.registrySyncPresent = registrySync;
+		FabricFreezeHookMixinAdapter.deferredFreezes = registrySync;
 		MixinStubRebind.forget();
 	}
 
@@ -314,11 +314,11 @@ class FabricFreezeHookMixinAdapterTest {
 		assertStays(mixin, hooked());
 	}
 
-	/** Without fabric-registry-sync a Fabric game freezes in Bootstrap too, and Create's HEAD injector relies on it. */
+	/** Without a mod deferring the freeze a Fabric game freezes in Bootstrap too, and Create's HEAD injector relies on it. */
 	@Test
-	void withoutFabricRegistrySyncNothingMoves() {
-		for (Supplier<Boolean> answer : List.<Supplier<Boolean>>of(() -> false, () -> null)) {
-			FabricFreezeHookMixinAdapter.registrySyncPresent = answer;
+	void withoutAModDeferringTheFreezeNothingMoves() {
+		for (Supplier<java.util.Set<String>> answer : List.<Supplier<java.util.Set<String>>>of(java.util.Set::of, () -> null)) {
+			FabricFreezeHookMixinAdapter.deferredFreezes = answer;
 			assertStays(fabric("NoRegistrySyncMixin"), hooked());
 		}
 	}

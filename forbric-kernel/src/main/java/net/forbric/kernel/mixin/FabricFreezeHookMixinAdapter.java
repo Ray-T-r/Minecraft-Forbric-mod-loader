@@ -23,17 +23,19 @@ import net.forbric.kernel.util.ForbricLog;
  * fabric-api freezes at: {@link FabricFreezePointInjector#HEAD_HOOK} and {@link FabricFreezePointInjector#TAIL_HOOK},
  * which the kernel calls after the Fabric main and client entrypoints, around the freeze that closes their window.
  *
- * <p>Native {@code fabric-registry-sync-v0} redirects the {@code BuiltInRegistries.bootStrap()} call out of
- * {@code Bootstrap} and makes it after mod initialisation; the kernel keeps the freeze in {@code Bootstrap}
- * ({@link FabricRegistryInitializationMixinAdapter}). Everything a Fabric mod hangs on that freeze therefore ran before
- * any Fabric mod had initialised — Create Fly's TAIL injector initialised {@code CreateRegistries} against a frozen root
- * and the game could not start (issue #52). Only the freeze's own observers move; the freeze stays where it is.
+ * <p>A Fabric mod can defer the freeze: its mixin redirects the {@code BuiltInRegistries.bootStrap()} call out of
+ * {@code Bootstrap} and a callback makes it after mod initialisation (fabric-api's registry sync does); the kernel keeps
+ * the freeze in {@code Bootstrap} ({@link FabricRegistryInitializationMixinAdapter}). Everything a Fabric mod hangs on
+ * that freeze therefore ran before any Fabric mod had initialised — Create Fly's TAIL injector initialised
+ * {@code CreateRegistries} against a frozen root and the game could not start (issue #52). Only the freeze's own
+ * observers move; the freeze stays where it is.
  *
  * <p>Moved only when all of these hold, so nothing else changes:
  * <ul>
- *   <li>fabric-registry-sync is in the game ({@code fabric-registry-sync-v0.mixins.json} registered). Without it,
- *       Fabric freezes in {@code Bootstrap} too, before every main, which is what the kernel already does — and Create
- *       Fly's HEAD injector depends on running there;</li>
+ *   <li>a Fabric mixin in the game defers the freeze — recognised by that redirect, whoever declares it
+ *       ({@link FabricRegistryInitializationMixinAdapter#deferredFreezes}). Without one, Fabric freezes in
+ *       {@code Bootstrap} too, before every main, which is what the kernel already does — and Create Fly's HEAD
+ *       injector depends on running there;</li>
  *   <li>the mixin is a Fabric mod's, and its only target is {@code BuiltInRegistries}. A NeoForge mod's injector there
  *       (text_styles) runs where NeoForge freezes, in {@code Bootstrap};</li>
  *   <li>the injector is an {@code @Inject} at {@code HEAD}, {@code TAIL} or {@code RETURN}, naming {@code freeze()} and
@@ -64,7 +66,6 @@ import net.forbric.kernel.util.ForbricLog;
  */
 public final class FabricFreezeHookMixinAdapter {
 	static final String BUILT_IN_REGISTRIES = "net/minecraft/core/registries/BuiltInRegistries";
-	static final String REGISTRY_SYNC_CONFIG = "fabric-registry-sync-v0.mixins.json";
 	private static final String INJECT = "Lorg/spongepowered/asm/mixin/injection/Inject;";
 	private static final String HANDLER_DESC = "(Lorg/spongepowered/asm/mixin/injection/callback/CallbackInfo;)V";
 	private static final String FREEZE = "freeze()V";
@@ -77,9 +78,11 @@ public final class FabricFreezeHookMixinAdapter {
 	/** {@code mixin#handler -> hook}, for the boot log and the tests. */
 	private static final Set<String> MOVED = ConcurrentHashMap.newKeySet();
 
-	/** Whether fabric-registry-sync is in this game; replaceable by tests that weave without one. */
-	static volatile Supplier<Boolean> registrySyncPresent =
-			() -> ForbricMixinService.registeredConfigNames().contains(REGISTRY_SYNC_CONFIG);
+	/**
+	 * The Fabric mixins in this game that defer the freeze out of the bootstrap, as {@code config:mixin} — none: a Fabric
+	 * game here freezes in the bootstrap. Replaceable by tests that weave without a config pass.
+	 */
+	static volatile Supplier<Set<String>> deferredFreezes = FabricRegistryInitializationMixinAdapter::deferredFreezes;
 
 	private FabricFreezeHookMixinAdapter() {
 	}
@@ -103,7 +106,8 @@ public final class FabricFreezeHookMixinAdapter {
 		if (!FabricFreezePointInjector.enabled() || mixin == null || mixin.methods == null || targets == null) return 0;
 		if (!List.of(BUILT_IN_REGISTRIES).equals(MixinFit.mixinTargets(mixin))) return 0;
 		if (MixinStubRebind.ecosystemOf(mixin.name) != Ecosystem.FABRIC) return 0;
-		if (!Boolean.TRUE.equals(registrySyncPresent.get())) return 0;
+		Set<String> deferring = deferredFreezes.get();
+		if (deferring == null || deferring.isEmpty()) return 0;
 		ClassNode target = targets.apply(BUILT_IN_REGISTRIES);
 		if (target == null || !hasHook(target, FabricFreezePointInjector.HEAD_HOOK)
 				|| !hasHook(target, FabricFreezePointInjector.TAIL_HOOK)) {
@@ -125,9 +129,8 @@ public final class FabricFreezeHookMixinAdapter {
 		for (MethodNode m : head) handlers.add(m.name + " (HEAD)");
 		for (MethodNode m : tail) handlers.add(m.name + " (TAIL)");
 		ForbricLog.info("[Forbric/RegistrySync] %s: injector(s) on BuiltInRegistries.freeze() or at bootStrap()'s call of "
-				+ "it wait for Fabric's registry freeze point after the Fabric entrypoints, where fabric-registry-sync puts "
-				+ "the freeze: %s",
-				mixin.name, String.join(", ", handlers));
+				+ "it wait for Fabric's registry freeze point after the Fabric entrypoints, where %s puts the freeze: %s",
+				mixin.name, String.join(", ", new java.util.TreeSet<>(deferring)), String.join(", ", handlers));
 		return head.size() + tail.size();
 	}
 

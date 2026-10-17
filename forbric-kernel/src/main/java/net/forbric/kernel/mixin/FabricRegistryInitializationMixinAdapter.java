@@ -12,6 +12,15 @@ import net.forbric.kernel.util.ForbricLog;
 /**
  * Keeps registry tracker callbacks while the kernel owns the single registration freeze.
  *
+ * <p>The protocol is recognised by what its injectors do to the freeze, never by whose they are. A Fabric game freezes
+ * its built-in registries late when a mixin on {@code Bootstrap} redirects the bootstrap's {@code BuiltInRegistries.bootStrap()}
+ * to {@code createContents()} alone (the deferred freeze) and a callback on {@code Main} or {@code Minecraft} later makes
+ * the {@code bootStrap()} call itself (the post-freeze callback). The kernel keeps the freeze in the bootstrap, so the
+ * deferring redirect is taken out, any other injector the deferring mixin hangs on the bootstrap's step after the freeze
+ * ({@code wrapStreams}, which the merged bootstrap no longer calls) runs at its end, and the post-freeze callback keeps
+ * everything but its second {@code bootStrap()} — a second freeze of frozen registries throws. What the callbacks call
+ * besides is theirs and stays as written.
+ *
  * <p>Injectors are read as Mixin reads them, never by spelling. A selector is the method it binds in the merged
  * {@code Bootstrap} ({@link MixinCallbackShape#selectsMember}); a caller with no class at hand gets the member every
  * selector, as Mixin parses it, can only name. A point is the member it names ({@link MixinCallbackShape#plainPoint}):
@@ -54,11 +63,11 @@ public final class FabricRegistryInitializationMixinAdapter {
         MethodNode delay=deferredFreeze(mixin,sources.apply(BOOTSTRAP));
         if(delay != null) {
             ClassNode merged=targets==null?null:lookup(targets,BOOTSTRAP),source=sources.apply(BOOTSTRAP);
+            // The deferring mixin's own callback at the bootstrap's step after the freeze: what it calls is its own.
             MethodNode after=MixinCallbackShape.unique(mixin,m -> MixinCallbackShape.kind(m,"Inject")
                     && MixinCallbackShape.selectsMember(m,merged,BOOTSTRAP,"bootStrap()V")
                     && MixinCallbackShape.plainPoint(m,"INVOKE","L"+BOOTSTRAP+";wrapStreams()V",MixinCallbackShape.written(m,source))
-                    && m.desc.equals("(Lorg/spongepowered/asm/mixin/injection/callback/CallbackInfo;)V")
-                    && calls(m,"net/fabricmc/fabric/impl/registry/sync/RegistrySyncManager","bootstrapRegistries","()V")==1);
+                    && m.desc.equals("(Lorg/spongepowered/asm/mixin/injection/callback/CallbackInfo;)V"));
             if(after==null)return 0;
             set(MixinFit.injectorOf(after),"at",List.of(at("TAIL")));
             MixinCarrierCallbackAdapters.removeInjector(delay,MixinFit.injectorOf(delay));
@@ -84,13 +93,33 @@ public final class FabricRegistryInitializationMixinAdapter {
                     && call.owner.equals(REGISTRIES) && call.name.equals("createContents") && call.desc.equals("()V") && body.get(1).getOpcode()==Opcodes.RETURN;
         });
     }
+    /**
+     * A callback on the game's start that makes the {@code BuiltInRegistries.bootStrap()} call a deferred freeze took out of
+     * the bootstrap: once, from a plain {@code (CallbackInfo)V} {@code @Inject} on {@code Main} or {@code Minecraft}.
+     * Whatever else it calls is the mod's post-freeze work and stays.
+     */
     private static MethodNode postFreeze(ClassNode mixin) {
         if(!MixinCallbackShape.targets(mixin,"net/minecraft/server/Main")&&!MixinCallbackShape.targets(mixin,"net/minecraft/client/Minecraft"))return null;
         return MixinCallbackShape.unique(mixin,m -> MixinCallbackShape.kind(m,"Inject")
                 && m.desc.equals("(Lorg/spongepowered/asm/mixin/injection/callback/CallbackInfo;)V")
-                && calls(m,REGISTRIES,"bootStrap","()V")==1
-                && calls(m,"net/fabricmc/fabric/impl/registry/sync/trackers/vanilla/BlockInitTracker","postFreeze","()V")==1);
+                && calls(m,REGISTRIES,"bootStrap","()V")==1);
     }
+    /** {@code config:mixin} of every Fabric mixin seen deferring the freeze out of the bootstrap, as configs are read. */
+    private static final Set<String> DEFERRED_FREEZES=java.util.concurrent.ConcurrentHashMap.newKeySet();
+    /**
+     * Notes whether {@code mixin}, of {@code config} and declared by a mod of {@code family}, defers the freeze out of the
+     * bootstrap: a Fabric game with such a mod freezes after its entrypoints. Read before any mixin is prepared
+     * ({@link MergedBaseMixinCompat#discover} visits every registered config first), whatever becomes of the mixin.
+     */
+    static void noteDeferredFreeze(String config,ClassNode mixin,Ecosystem family,BiFunction<Ecosystem,String,ClassNode> references){
+        if(mixin==null||family!=Ecosystem.FABRIC||!MixinCallbackShape.targets(mixin,BOOTSTRAP))return;
+        ClassNode source=references==null?null:references.apply(family,BOOTSTRAP);
+        if(deferredFreeze(mixin,source)!=null)DEFERRED_FREEZES.add(config+":"+mixin.name.replace('/','.'));
+    }
+    /** The Fabric mixins seen deferring the freeze (empty: a Fabric game here freezes in the bootstrap, as the kernel does). */
+    public static Set<String> deferredFreezes(){return Set.copyOf(DEFERRED_FREEZES);}
+    /** Forgets what {@code config} was seen to do, before it is read again. */
+    static void forgetDeferredFreezes(String config){DEFERRED_FREEZES.removeIf(entry->entry.startsWith(config+":"));}
     private static int calls(MethodNode method,String owner,String name,String descriptor){int count=0;for(var instruction:method.instructions)if(instruction instanceof MethodInsnNode call&&call.owner.equals(owner)&&call.name.equals(name)&&call.desc.equals(descriptor))count++;return count;}
     private static ClassNode lookup(Function<String,ClassNode> classes,String name){
         try{return classes.apply(name);}catch(RuntimeException unavailable){return null;}

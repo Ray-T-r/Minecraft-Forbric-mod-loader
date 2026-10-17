@@ -33,6 +33,7 @@ public final class MergedBaseMixinCompat {
     static synchronized void discover(String configName,byte[] configBytes,Function<String,byte[]> resources) {
         if(configName==null||configBytes==null||resources==null)return;
         SUPPRESSED_MIXINS.removeIf(entry->entry.startsWith(configName+":"));
+        FabricRegistryInitializationMixinAdapter.forgetDeferredFreezes(configName);
         PINNED_CONTRACTS.removeIf(row->row.pin().startsWith(configName+":"));
         REASONS.keySet().removeIf(entry->entry.startsWith(configName+":"));
         SOURCES.keySet().removeIf(entry->entry.startsWith(configName+":"));
@@ -50,6 +51,7 @@ public final class MergedBaseMixinCompat {
                     byte[] bytes=resources.apply(pkg.replace('.','/')+"/"+entry.replace('.','/')+".class");if(bytes==null)continue;
                     ClassNode node=new ClassNode();new org.objectweb.asm.ClassReader(bytes).accept(node,org.objectweb.asm.ClassReader.EXPAND_FRAMES);
                     String identity=configName+":"+entry;SOURCES.put(identity,node.name.replace('/','.'));
+                    FabricRegistryInitializationMixinAdapter.noteDeferredFreeze(configName,node,family,natives);
                     if(!enabled()||explicitlyKept(identity))continue;
                     String reason=refusal(node,resources,natives);
                     if(reason==null)continue;

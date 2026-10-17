@@ -22,7 +22,7 @@ import net.forbric.kernel.transform.FabricFreezePointInjector;
 
 /**
  * {@code FabricFreezeHookMixinAdapter} through the real weave: a Fabric mod's HEAD and TAIL injectors on
- * {@code BuiltInRegistries.freeze()} run where a Fabric game with fabric-registry-sync freezes — after the Fabric main
+ * {@code BuiltInRegistries.freeze()} run where a Fabric game with a mod deferring the freeze freezes — after the Fabric main
  * — while the freeze itself stays in the native bootstrap (issue #52).
  *
  * <p>The guest is Create Fly's shape: at HEAD it creates its registries unless fabric-api is loaded (then its main
@@ -33,11 +33,12 @@ import net.forbric.kernel.transform.FabricFreezePointInjector;
  * step writes to one trace. {@link FabricFreezePointInjector} is on the run's pre-Mixin chain as KernelBoot registers
  * it. Three runs:
  * <ul>
- *   <li>adapted — fabric-registry-sync's config registered, fabric-api loaded: both injectors move to the hooks, the
+ *   <li>adapted — a mod deferring the freeze registered (a ledger mod sharing no name with fabric-api: its mixin
+ *       redirects the bootstrap's {@code bootStrap()} to {@code createContents()}), fabric-api loaded: both injectors move to the hooks, the
  *       TAIL reads registries the main created, and the boot finishes;</li>
  *   <li>off — {@code -Dforbric.fabricFreezePoint=off}: no hooks, nothing moved, and the TAIL is the first touch of the
  *       holder, inside the bootstrap, against the frozen root. That is #52, and the probe dies with its message;</li>
- *   <li>without registry sync — the same switch on, but no fabric-registry-sync config: Fabric itself would freeze in
+ *   <li>without a deferring mod — the same switch on, but no mod deferring the freeze: Fabric itself would freeze in
  *       the bootstrap, so nothing moves and, fabric-api absent, the HEAD branch creates the registries there.</li>
  * </ul>
  */
@@ -45,11 +46,12 @@ class FabricFreezeHookMixinAdapterWeaveTest {
 	private static final Path SOURCES = Path.of("src/test/resources/weave/fabricfreezehook");
 	private static final String CONFIG = "fabricfreezehook.mixins.json";
 	private static final String MOD = "fabricfreezehook";
-	private static final String SYNC_CONFIG = "fabric-registry-sync-v0.mixins.json";
-	private static final String SYNC_MOD = "fabric-registry-sync-v0";
+	private static final String SYNC_CONFIG = "ledger.mixins.json";
+	private static final String SYNC_MOD = "ledger";
+	private static final String DEFERRING = "ledger.mixins.json:org.quarry.ledger.mixin.StartupMixin";
 	private static final String BUILT_IN_REGISTRIES = "net/minecraft/core/registries/BuiltInRegistries";
 	private static final String FABRIC_API = "fixture.fabricfreezehook.fabricApi";
-	private static final String MOVED = "bootstrap:start,createContents,freeze,bootstrap:end,registrySync,client:new,"
+	private static final String MOVED = "bootstrap:start,createContents,freeze,bootstrap:end,ledger,client:new,"
 			+ "kernel:open,main,create:register,minecraft:root+create:arm_interaction_point_type,hook:head,create:head,"
 			+ "tabs:client,kernel:freeze,hook:tail,create:tail,create:arm_interaction_point_type+create:depot";
 	private static final String KEPT = "bootstrap:start,createContents,tabs:no-client,create:head,create:register,"
@@ -60,11 +62,14 @@ class FabricFreezeHookMixinAdapterWeaveTest {
 			+ "ResourceKey[minecraft:root / create:arm_interaction_point_type])";
 	private static final String ADAPTED = "[Forbric/RegistrySync] fixture/fabricfreezehook/mixin/BuiltInRegistriesMixin: "
 			+ "injector(s) on BuiltInRegistries.freeze() or at bootStrap()'s call of it wait for Fabric's registry freeze "
-			+ "point after the Fabric entrypoints, where fabric-registry-sync puts the freeze: onInitialize (HEAD), "
+			+ "point after the Fabric entrypoints, where " + DEFERRING + " puts the freeze: onInitialize (HEAD), "
 			+ "afterFreeze (TAIL)";
 	private static final String ADAPTED_TABS = "[Forbric/RegistrySync] fixture/fabricfreezehook/mixin/CreativeTabsMixin: "
 			+ "injector(s) on BuiltInRegistries.freeze() or at bootStrap()'s call of it wait for Fabric's registry freeze "
-			+ "point after the Fabric entrypoints, where fabric-registry-sync puts the freeze: initializeTabs (HEAD)";
+			+ "point after the Fabric entrypoints, where " + DEFERRING + " puts the freeze: initializeTabs (HEAD)";
+	private static final String MOVE_PREFIX = "injector(s) on BuiltInRegistries.freeze() or at bootStrap()'s call of it wait";
+	private static final String DEFERRAL_ADAPTED = "[Forbric/RegistrySync] retained org/quarry/ledger/mixin/StartupMixin's "
+			+ "bootstrap tracker callback; the kernel owns its proved deferred freeze";
 	private static final String INSTALLED = "[WeaveHarness] pre-Mixin chain installed: COREMOD FabricFreezePointInjector "
 			+ "(behind its enabled())";
 	private static final String NOT_REGISTERED = "[WeaveHarness] pre-Mixin chain: FabricFreezePointInjector.enabled() is "
@@ -102,7 +107,9 @@ class FabricFreezeHookMixinAdapterWeaveTest {
 	@Test void withTheSwitchOffTheTailCreatesTheRegistriesInTheFrozenRootAndBootstrapDies() throws Exception {
 		assertTrue(offHolds(off), off.describe() + "\nfindings: " + off.findings());
 		assertTrue(off.printed(NOT_REGISTERED), off.describe());
-		assertFalse(off.printed("[Forbric/RegistrySync]"), off.describe());
+		// The deferring mod's own redirect is still taken out (the kernel keeps the freeze); only nothing waits for a hook.
+		assertTrue(off.printed(DEFERRAL_ADAPTED), off.describe());
+		assertFalse(off.printed(MOVE_PREFIX), off.describe());
 		assertTrue(off.printed("net.minecraft.server.Bootstrap.bootStrap(Bootstrap.java"),
 				"#52 dies in the bootstrap — " + off.describe());
 		assertEquals(List.of("onInitialize", "afterFreeze"), handlerCalls(off, "freeze"), off.describe());
@@ -112,7 +119,7 @@ class FabricFreezeHookMixinAdapterWeaveTest {
 
 	@Test void withoutRegistrySyncTheInjectorsStayInTheBootstrapAsOnFabric() throws Exception {
 		assertTrue(withoutSyncHolds(withoutSync), withoutSync.describe() + "\nfindings: " + withoutSync.findings());
-		assertTrue(withoutSync.printed(INSTALLED), "the hooks exist; only fabric-registry-sync is missing — "
+		assertTrue(withoutSync.printed(INSTALLED), "the hooks exist; only a mod deferring the freeze is missing — "
 				+ withoutSync.describe());
 		assertTrue(withoutSync.printed(WeaveHarnessMain.REGISTERED + CONFIG), withoutSync.describe());
 		assertFalse(withoutSync.printed(WeaveHarnessMain.REGISTERED + SYNC_CONFIG), withoutSync.describe());

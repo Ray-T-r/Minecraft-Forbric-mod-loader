@@ -17,14 +17,16 @@ import net.forbric.api.Ecosystem;
 import net.forbric.kernel.mixin.FabricRegistryInitializationMixinAdapter;
 
 /**
- * {@code FabricRegistryInitializationMixinAdapter} through the real weave: fabric-registry-sync's bootstrap and server
- * hooks keep their trackers while the native bootstrap keeps the one registration freeze.
+ * {@code FabricRegistryInitializationMixinAdapter} through the real weave: a mod that defers the registry freeze (as
+ * fabric-api's registry sync does, here a ledger mod sharing no name with it) keeps its bootstrap and server trackers while
+ * the native bootstrap keeps the one registration freeze. The protocol is recognised by what the injectors do to the
+ * freeze; what the trackers call is the mod's own.
  *
  * <p>The fixture boots a fake game the way a dedicated server does — {@code Bootstrap.bootStrap()}, then
  * {@code Main.main} — and every step writes to one trace. Both guest mixins bind cleanly with the switch on or off;
  * what differs is only what runs. With the adapter, the freeze stays in the bootstrap, Fabric's trackers run at its
  * end, and the server hook no longer freezes a second time. With {@code -Dforbric.fabricRegistryInitialization=off}
- * Fabric's redirect replaces the freeze with {@code createContents} and its server hook freezes again — nothing is
+ * the mod's redirect replaces the freeze with {@code createContents} and its server hook freezes again — nothing is
  * reported, which is why only the trace can tell the runs apart.
  */
 class FabricRegistryInitializationMixinAdapterWeaveTest {
@@ -51,9 +53,9 @@ class FabricRegistryInitializationMixinAdapterWeaveTest {
 
 	@Test void theKernelKeepsTheFreezeAndFabricKeepsItsTrackers() throws Exception {
 		assertTrue(adaptedHolds(adapted), adapted.describe() + "\nfindings: " + adapted.findings());
-		assertTrue(adapted.printed("[Forbric/RegistrySync] retained net/fabricmc/fabric/mixin/registry/sync/BootstrapMixin's bootstrap tracker callback"),
+		assertTrue(adapted.printed("[Forbric/RegistrySync] retained org/quarry/ledger/mixin/StartupMixin's bootstrap tracker callback"),
 				adapted.describe());
-		assertTrue(adapted.printed("[Forbric/RegistrySync] retained net/fabricmc/fabric/mixin/registry/sync/MainMixin's "
+		assertTrue(adapted.printed("[Forbric/RegistrySync] retained org/quarry/ledger/mixin/LaunchMixin's "
 				+ "post-freeze callback without repeating the registry bootstrap"), adapted.describe());
 		for (String target : List.of(BOOTSTRAP, MAIN)) {
 			assertTrue(WeaveHarness.hasMergedMethod(adapted.defined(target)), target + " was not woven — " + adapted.describe());
