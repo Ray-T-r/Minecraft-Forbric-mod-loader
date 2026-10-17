@@ -1,1 +1,0 @@
-{"required": true, "package": "org.example.effects.mixin", "compatibilityLevel": "JAVA_21", "mixins": ["RetainEffectsMixin"], "injectors": {"defaultRequire": 1}}

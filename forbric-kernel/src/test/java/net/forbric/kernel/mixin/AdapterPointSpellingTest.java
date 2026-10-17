@@ -99,31 +99,35 @@ class AdapterPointSpellingTest {
 		cases.add(new Case("fabric-api AFTER break", () -> StagedFabricMixinFixture.mixin("fabric-events-interaction-v0", FabricBlockBreakMixinAdapter.FABRIC),
 				false, Ecosystem.FABRIC, GAME_MODE, FabricBlockBreakMixinAdapter::adapt, 1, List.of(FabricBlockBreakMixinAdapter.BLOCK_DESTROY),
 				mixin -> assertTrue(atTargets(mixin).contains("L" + GAME_MODE + ";removeBlock" + FabricBlockBreakMixinAdapter.REMOVE_BLOCK_DESC))));
-		// FabricEntityMixinAnchors: any mod's per-effect clear veto; fabric-api's entity event rows.
-		cases.add(new Case("clear veto", AdapterPointSpellingTest::clearVeto, false, Ecosystem.FABRIC, LIVING, FabricEntityMixinAnchors::adapt, 1,
-				List.of("Ljava/util/Map;clear()V"), mixin -> assertTrue(mixin.methods.stream().anyMatch(m -> m.name.startsWith("forbric$clearVeto$")
-						&& MixinFit.injectorOf(m) != null), "re-hosted on NeoForge's per-effect question")));
 		String root = "net/fabricmc/fabric/mixin/entity/event/";
-		cases.add(new Case("fabric-api effects", () -> StagedFabricMixinFixture.mixin("fabric-entity-events-v1", root + "effect/LivingEntityMixin"), false,
-				Ecosystem.FABRIC, LIVING, FabricEntityMixinAnchors::adapt, 3,
+		// CarrierDecisions: fabric-api's effect injectors, mining redirect and command enchanting redirect, under unrelated names.
+		cases.add(new Case("fabric-api effects", () -> StagedFabricMixinFixture.mixin("fabric-entity-events-v1", root + "effect/LivingEntityMixin"), true,
+				Ecosystem.FABRIC, LIVING, CarrierDecisions::adapt, 2,
 				List.of("L" + LIVING + ";canBeAffected(Lnet/minecraft/world/effect/MobEffectInstance;)Z",
-						"Lcom/google/common/collect/Maps;newHashMap(Ljava/util/Map;)Ljava/util/HashMap;", "Ljava/util/Map;clear()V"),
+						"Lcom/google/common/collect/Maps;newHashMap(Ljava/util/Map;)Ljava/util/HashMap;"),
 				mixin -> assertTrue(atTargets(mixin).containsAll(List.of("java/util/HashMap",
-						"Lnet/neoforged/neoforge/event/EventHooks;onEffectRemoved(L" + LIVING + ";Lnet/minecraft/world/effect/MobEffectInstance;)Z")))));
-		cases.add(new Case("fabric-api elytra", () -> StagedFabricMixinFixture.mixin("fabric-entity-events-v1", root + "elytra/LivingEntityMixin"), false,
-				Ecosystem.FABRIC, LIVING, FabricEntityMixinAnchors::adapt, 2,
+						"Lnet/neoforged/neoforge/common/CommonHooks;canMobEffectBeApplied(L" + LIVING + ";Lnet/minecraft/world/effect/MobEffectInstance;Lnet/minecraft/world/entity/Entity;)Z")))));
+		cases.add(new Case("fabric-api mining", () -> StagedFabricMixinFixture.mixin("fabric-item-api-v1", "net/fabricmc/fabric/mixin/item/client/MultiPlayerGameModeMixin"),
+				true, Ecosystem.FABRIC, "net/minecraft/client/multiplayer/MultiPlayerGameMode", CarrierDecisions::adapt, 1,
+				List.of("L" + STACK + ";isSameItemSameComponents(L" + STACK + ";L" + STACK + ";)Z"),
+				mixin -> assertTrue(atTargets(mixin).contains("L" + STACK + ";shouldCauseBlockBreakReset(L" + STACK + ";)Z"))));
+		cases.add(new Case("fabric-api enchant command", () -> StagedFabricMixinFixture.mixin("fabric-item-api-v1", "net/fabricmc/fabric/mixin/item/EnchantCommandMixin"),
+				true, Ecosystem.FABRIC, "net/minecraft/server/commands/EnchantCommand", CarrierDecisions::adapt, 1,
+				List.of("Lnet/minecraft/world/item/enchantment/Enchantment;canEnchant(L" + STACK + ";)Z"),
+				mixin -> assertTrue(atTargets(mixin).contains("L" + STACK + ";supportsEnchantment(Lnet/minecraft/core/Holder;)Z"))));
+		// CarrierGuardedPoints: fabric-api's elytra veto and flight tick, under unrelated names.
+		cases.add(new Case("fabric-api elytra", () -> StagedFabricMixinFixture.mixin("fabric-entity-events-v1", root + "elytra/LivingEntityMixin"), true,
+				Ecosystem.FABRIC, LIVING, CarrierGuardedPoints::adapt, 2,
 				List.of("Lnet/minecraft/world/entity/EquipmentSlot;VALUES:Ljava/util/List;",
 						"Lnet/minecraft/util/Util;getRandom(Ljava/util/List;Lnet/minecraft/util/RandomSource;)Ljava/lang/Object;"),
 				mixin -> assertTrue(atTargets(mixin).containsAll(List.of("Lnet/neoforged/neoforge/common/NeoForgeMod;GLIDING_FLIGHT:Lnet/minecraft/core/Holder;",
 						"Ljava/util/List;isEmpty()Z")))));
+		// FabricEntityMixinAnchors: fabric-api's bed rows.
 		cases.add(new Case("fabric-api beds", () -> StagedFabricMixinFixture.mixin("fabric-entity-events-v1", root + "LivingEntityMixin"), false,
 				Ecosystem.FABRIC, LIVING, FabricEntityMixinAnchors::adapt, 2,
 				List.of("Lnet/minecraft/world/level/Level;setBlock(Lnet/minecraft/core/BlockPos;" + STATE + "I)Z",
 						"Lnet/minecraft/world/level/block/BedBlock;getBedOrientation(Lnet/minecraft/world/level/BlockGetter;Lnet/minecraft/core/BlockPos;)Lnet/minecraft/core/Direction;"),
 				mixin -> assertTrue(mixin.methods.stream().map(m -> m.name).toList().containsAll(List.of("forbric$setBedOccupied", "forbric$modifySleepingDirection")))));
-		cases.add(new Case("fabric-api sleep", () -> StagedFabricMixinFixture.mixin("fabric-entity-events-v1", root + "ServerPlayerMixin"), false,
-				Ecosystem.FABRIC, PLAYER, FabricEntityMixinAnchors::adapt, 1, List.of("Ljava/util/List;isEmpty()Z"),
-				mixin -> assertTrue(selectors(mixin).stream().anyMatch(s -> s.startsWith("lambda$startSleepInBed$")))));
 		// ReplacedCallRedirects: ViaFabricPlus' three, forwarding the carrier's call.
 		String via = "com/viaversion/viafabricplus/injection/mixin/features/";
 		cases.add(via("hotbar keys", via + "v1_4_2/MixinAbstractContainerScreen", "net/minecraft/client/gui/screens/inventory/AbstractContainerScreen",
@@ -461,14 +465,5 @@ class AdapterPointSpellingTest {
 			}
 		}
 		throw new AssertionError("apoli's mixin is not in the nested jar");
-	}
-
-	/** A per-effect clear veto that is not balm's: a loop over a snapshot ({@link PerEffectClearVetoTest#snapshotLoop}). */
-	private static ClassNode clearVeto() {
-		// Not a third-party jar, but adapted against the staged merged LivingEntity and its native-reference index.
-		TestFixtures.requireFiles(Fixture.STAGED, "the staged merged base", TestFixtures.stagedRoot().resolve("merged-base/patched-mc-merged-26.2.jar"));
-		ClassNode mixin = PerEffectClearVetoTest.mixin("org/example/effects/mixin/RespelledVetoMixin");
-		mixin.methods.add(PerEffectClearVetoTest.snapshotLoop("keepWarded", false, false));
-		return mixin;
 	}
 }

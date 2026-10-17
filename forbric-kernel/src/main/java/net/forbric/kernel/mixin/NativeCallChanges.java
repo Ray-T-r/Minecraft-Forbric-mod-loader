@@ -52,6 +52,13 @@ final class NativeCallChanges {
             return new Context(evidence.guards(point,normalize),List.copyOf(effects),consumer.getOpcode());
         }catch(AnalyzerException|RuntimeException unsupported){return null;}
     }
+    /** The values a conditional branch tests (one or two), as the expressions that compute them; null when unreadable. */
+    static List<Expr> argumentValuesOfBranch(String owner,MethodNode method,JumpInsnNode branch) {
+        try {Origins origins=new Origins();var frames=new Analyzer<>(origins).analyze(owner,method);Evidence evidence=new Evidence(method,frames,origins.parameters);
+            int opcode=branch.getOpcode();int count=opcode>=Opcodes.IF_ICMPEQ&&opcode<=Opcodes.IF_ACMPNE?2:1;
+            return evidence.inputs(branch,count);
+        }catch(AnalyzerException|RuntimeException invalid){return null;}
+    }
     static String member(MethodInsnNode call) { return "L" + call.owner + ";" + call.name + call.desc; }
     static MethodNode method(ClassNode owner, String signature) {
         return owner == null ? null : owner.methods.stream().filter(m -> (m.name + m.desc).equals(signature)).findFirst().orElse(null);

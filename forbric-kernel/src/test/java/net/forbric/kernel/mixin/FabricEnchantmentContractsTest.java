@@ -2,7 +2,6 @@ package net.forbric.kernel.mixin;
 import static org.junit.jupiter.api.Assertions.*;
 import java.util.*;
 import net.forbric.kernel.transform.FabricItemContractTransformer;
-import net.forbric.kernel.transform.DuplicateLambdaPruneInjector;
 import org.junit.jupiter.api.*;
 import org.junit.jupiter.api.parallel.ResourceLock;
 import org.objectweb.asm.*;
@@ -30,26 +29,6 @@ class FabricEnchantmentContractsTest {
   MethodNode bridge=StagedFabricMixinFixture.method(node,FabricItemContractTransformer.PRIMARY_HELPER);assertEquals(FabricItemContractTransformer.PRIMARY_DESC,bridge.desc);assertEquals(1,count(bridge,FabricItemContractTransformer.NATIVE,"isPrimaryItemFor"));
   int handles=0;for(var instruction:StagedFabricMixinFixture.method(node,"getAvailableEnchantmentResults").instructions)if(instruction instanceof InvokeDynamicInsnNode d)for(Object argument:d.bsmArgs)if(argument instanceof Handle h&&h.getName().equals(FabricItemContractTransformer.PRIMARY_HELPER)){handles++;assertEquals(Opcodes.H_INVOKESTATIC,h.getTag());assertEquals(FabricItemContractTransformer.PRIMARY_DESC,h.getDesc());}
   assertEquals(1,handles);byte[] bytes=StagedFabricMixinFixture.bytes(node);assertSame(bytes,transformer.transform(node.name.replace('/','.'),bytes,null));
- }
- @Test void allFourActualFabricMixinsAttachToTheCorrespondingNativeDecision()throws Exception{
-  for(String[] pair:List.of(new String[]{"EnchantCommandMixin","net/minecraft/server/commands/EnchantCommand"},new String[]{"EnchantRandomlyFunctionMixin","net/minecraft/world/level/storage/loot/functions/EnchantRandomlyFunction"},new String[]{"EnchantmentHelperMixin",FabricItemContractTransformer.HELPER},new String[]{"AnvilMenuMixin","net/minecraft/world/inventory/AnvilMenu"})){
-   ClassNode mixin=StagedFabricMixinFixture.mixin("fabric-item-api-v1","net/fabricmc/fabric/mixin/item/"+pair[0]);ClassNode target=StagedFabricMixinFixture.game(pair[1],false);
-   target=MixinFit.parse(new DuplicateLambdaPruneInjector().transform(pair[1].replace('/','.'),StagedFabricMixinFixture.bytes(target),null));
-   if(pair[1].equals(FabricItemContractTransformer.HELPER))target=transformed(pair[1],target);ClassNode finalTarget=target;
-   assertEquals(1,FabricEnchantmentMixinAdapter.adapt(mixin,n->finalTarget),pair[0]);
-   MethodNode handler=mixin.methods.stream().filter(m->MixinFit.injectorOf(m)!=null&&m.name.contains("Enchanting")).findFirst().orElseThrow();
-   assertEquals(2,Type.getArgumentTypes(handler.desc).length);assertEquals(1,count(handler,FabricItemContractTransformer.STACK,"canBeEnchantedWith"));
-   new org.objectweb.asm.tree.analysis.Analyzer<>(new org.objectweb.asm.tree.analysis.BasicVerifier()).analyze(mixin.name,handler);
-   assertEquals(0,FabricEnchantmentMixinAdapter.adapt(mixin,n->finalTarget));
-  }
- }
- @Test void modifiedHandlerAndAlternativeGroupKeepTheirOriginalContract()throws Exception{
-  for(boolean group:new boolean[]{false,true}){
-   ClassNode mixin=StagedFabricMixinFixture.mixin("fabric-item-api-v1","net/fabricmc/fabric/mixin/item/EnchantCommandMixin"),target=StagedFabricMixinFixture.game("net/minecraft/server/commands/EnchantCommand",false);
-   MethodNode method=StagedFabricMixinFixture.method(mixin,"callAllowEnchantingEvent");
-   if(group)method.visibleAnnotations.add(new AnnotationNode("Lorg/spongepowered/asm/mixin/injection/Group;"));else method.instructions.insert(new InsnNode(Opcodes.NOP));
-   assertEquals(0,FabricEnchantmentMixinAdapter.adapt(mixin,n->target));
-  }
  }
  private int count(MethodNode method,String owner,String name){int n=0;for(var i:method.instructions)if(i instanceof MethodInsnNode c&&c.owner.equals(owner)&&c.name.equals(name))n++;return n;}
 }

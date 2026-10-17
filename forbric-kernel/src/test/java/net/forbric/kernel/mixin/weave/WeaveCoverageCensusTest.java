@@ -114,6 +114,8 @@ class WeaveCoverageCensusTest {
 			Map.entry("NativeLocalPins", Switch.own("forbric.nativeLocalPins")), // NativeLocalPinsWeaveTest
 			Map.entry("NativeEntryRelay", Switch.own("forbric.nativeEntryRelay")), // NativeEntryRelayWeaveTest, FluidPairMixinAdaptersWeaveTest
 			Map.entry("ReplacedDecisionValues", Switch.own("forbric.replacedDecisionValues")), // ReplacedDecisionValuesWeaveTest
+			Map.entry("CarrierDecisions", Switch.own("forbric.carrierDecisions")), // CarrierDecisionsWeaveTest
+			Map.entry("CarrierGuardedPoints", Switch.own("forbric.carrierGuardedPoints")), // CarrierGuardedPointsWeaveTest
 			Map.entry("NativeSliceOccurrences", Switch.own("forbric.nativeSliceOccurrences")), // NativeSliceOccurrencesWeaveTest
 			Map.entry("MixinGuiItemCaptureAdapter", Switch.own("forbric.guiItemCaptureAnchor")),
 			Map.entry("KernelClientHookMixinAnchors", Switch.own("forbric.clientHookMixinAnchors")),
@@ -132,12 +134,9 @@ class WeaveCoverageCensusTest {
 			// FabricFreezeHookMixinAdapter stands down with FabricFreezePointInjector, whose hooks its test puts on the pre-Mixin chain.
 			Map.entry("FabricFreezeHookMixinAdapter", new Switch(List.of("forbric.fabricFreezePoint"), "net.forbric.kernel.transform.FabricFreezePointInjector")),
 			Map.entry("FabricCreativePagerMixinAdapter", Switch.own("forbric.fabricCreativeKeyboard")),
-			Map.entry("FabricServerLanguageMixinAdapter", Switch.own("forbric.fabricServerLanguage")),
 			Map.entry("FabricSoundMixinAdapter", new Switch(List.of("forbric.fabricSoundContracts"), "net.forbric.kernel.transform.FabricSoundContractTransformer")),
-			Map.entry("FabricEnchantmentMixinAdapter", new Switch(List.of("forbric.fabricItemContracts"), "net.forbric.kernel.transform.FabricItemContractTransformer")),
 			Map.entry("FabricRegistryLoaderMixinAdapter", Switch.own("forbric.fabricRegistryLoader")),
 			Map.entry("FabricBlockStateCodecMixinAdapter", Switch.own("forbric.blockStateModelFormats")),
-			Map.entry("FabricEntityMixinAnchors", Switch.own("forbric.fabricEntityAnchors")),
 			Map.entry("FabricClientMixinAnchors", Switch.own("forbric.fabricClientAnchors")),
 			Map.entry("FabricBlockBreakMixinAdapter", Switch.own("forbric.fabricBlockBreak")),
 			Map.entry("FabricSectionCompilerMixinAdapter", Switch.own("forbric.fabricChunkRendering")),
@@ -161,7 +160,9 @@ class WeaveCoverageCensusTest {
 	private static final String NO_SCENARIO = "no weave scenario yet; ClassNode-level tests only";
 	/** Only shrinks. Every row is a stage whose output no CI test has yet run through the real weave. */
 	static final Map<String, String> NOT_WOVEN_YET = notWovenYet(
-			"FabricMiningMixinAdapter");
+			// Its woven rows (effects, elytra, the clear-all veto) went to CarrierDecisions, CarrierGuardedPoints and the scoped
+			// clear relay; the bed occupancy and sleeping direction rows left have ClassNode-level tests only.
+			"FabricEntityMixinAnchors");
 
 	@Test void everyPipelineStageIsWovenOrListedWithAReason() throws Exception {
 		Set<String> configTime = configTimeStages();

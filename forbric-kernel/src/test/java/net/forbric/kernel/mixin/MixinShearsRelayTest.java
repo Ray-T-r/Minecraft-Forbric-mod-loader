@@ -79,7 +79,7 @@ class MixinShearsRelayTest {
 			assertEquals(MixinShearsRelay.carrierTarget(row), MixinFit.value(StagedFabricMixinFixture.at(mixin, HANDLER + MixinShearsRelay.ADDED_SUFFIX), "target"));
 			MethodNode copy = only(mixin, HANDLER + MixinShearsRelay.ADDED_SUFFIX + "$inner");
 			assertNull(MixinFit.injectorOf(copy));
-			assertEquals(FabricEntityMixinAnchors.bodyHash(only(mixin, HANDLER)), FabricEntityMixinAnchors.bodyHash(copy), "the same body");
+			assertEquals(MixinInstructionFingerprint.hash(only(mixin, HANDLER)), MixinInstructionFingerprint.hash(copy), "the same body");
 			new Analyzer<>(new BasicVerifier()).analyze(mixin.name, added);
 			new Analyzer<>(new BasicVerifier()).analyze(mixin.name, copy);
 			assertEquals(0, MixinShearsRelay.adapt(mixin, n -> target), name + ": second adaptation is a no-op");

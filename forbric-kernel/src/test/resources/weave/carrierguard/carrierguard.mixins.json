@@ -1,0 +1,1 @@
+{"required": true, "package": "io.sky.lift.mixin", "compatibilityLevel": "JAVA_21", "mixins": ["KiteMixin"], "injectors": {"defaultRequire": 1}}

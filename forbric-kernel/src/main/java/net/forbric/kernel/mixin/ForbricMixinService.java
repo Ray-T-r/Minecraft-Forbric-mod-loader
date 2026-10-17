@@ -120,6 +120,8 @@ public final class ForbricMixinService
 		changed+=NativeLocalPins.adapt(source,code,NativeGameReferences::reference);
 		changed+=NativeEntryRelay.adapt(source,code,NativeGameReferences::reference,loader());
 		changed+=ReplacedDecisionValues.adapt(source,code,NativeGameReferences::reference);
+		// With the local variable tables: the decisions are matched by the locals their answers are kept in.
+		changed+=CarrierDecisions.adapt(source,owner->{byte[] current=resource.apply(owner+".class");if(current==null)return null;ClassNode tables=new ClassNode();new ClassReader(current).accept(tables,0);return tables;},NativeGameReferences::reference);
 		changed+=NativeSliceOccurrences.adapt(source,code,NativeGameReferences::reference);
 		changed+=MixinAbsorbedCallbackTransport.adapt(source,owner->{byte[] current=resource.apply(owner+".class");return current==null?null:MixinFit.parse(current);},
 			owner->NativeGameReferences.reference(MixinStubRebind.ecosystemOf(source.name),owner),
@@ -360,6 +362,9 @@ public final class ForbricMixinService
 		// …and a redirect of a vanilla call the carrier replaced at the same place, whose handler only conditions it,
 		// forwards the carrier's call there instead.
 		ReplacedCallRedirects.adapt(node, this::mergedBaseNodeWithCode);
+		// …and a redirect or injector at a vanilla decision the carrier replaced with a decision of its own (the same branch,
+		// the same way or the opposite one, or the same local) moves onto the carrier's decision, its answer mapped.
+		CarrierDecisions.adapt(node, this::mergedBaseGameCode, NativeGameReferences::reference);
 		// …and a locals capture reads, as @Locals, the native locals where the merged body keeps them (before the points are
 		// renumbered below: it reads the point as the native body counts it).
 		MixinCapturedLocals.adapt(node, this::mergedBaseGameCode);
@@ -430,10 +435,10 @@ public final class ForbricMixinService
 		// whatever still cannot bind is explained rather than left as "Invalid descriptor". After the shim, never
 		// before it: a diagnosis for something that is about to be repaired is a false alarm.
 		MixinOverloadPin.pin(node, this::mergedBaseNode);
+		// …and an @Inject the carrier put behind a branch of its own moves ahead of that branch, where it runs on every way it
+		// runs natively. Before the rebind below: an injector on a stub that only forwards is read on the overload here.
+		CarrierGuardedPoints.adapt(node, this::mergedBaseGameCode, NativeGameReferences::reference);
 		FabricEntityMixinAnchors.adapt(node, this::mergedBaseNodeWithCode);
-		FabricEnchantmentMixinAdapter.adapt(node, this::mergedBaseNodeWithCode);
-		FabricServerLanguageMixinAdapter.adapt(node, this::mergedBaseNodeWithCode);
-		FabricMiningMixinAdapter.adapt(node, this::mergedBaseNodeWithCode);
 		FabricBlockBreakMixinAdapter.adapt(node, this::mergedBaseNodeWithCode);
 		FabricClientMixinAnchors.adapt(node, this::mergedBaseNodeWithCode);
 		FabricSoundMixinAdapter.adapt(node, this::mergedBaseNodeWithCode);
