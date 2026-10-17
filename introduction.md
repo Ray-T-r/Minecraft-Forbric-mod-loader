@@ -662,7 +662,10 @@ it lands on. `MixinGuiItemCaptureAdapter` moves a
 TAIL capture to `INVOKE <the call that ends the body>, AFTER`. Where that call falls straight into the join the tail
 sits on, AFTER is the join's label, and the 0.9.2 walk steps onto the join's frame. The path that never stored the
 local reaches the join too, so the frame does not declare the local: Mixin refuses the capture as "LVT ... has
-incompatible changes" and skips it. Nothing crashes, and the feature is gone.
+incompatible changes" and the feature is gone, skipped with a WARN, or, for `CAPTURE_FAILEXCEPTION`, woven as a method
+that throws `InjectionError` each time the point is reached. The adapter softens a capture it moves from
+`CAPTURE_FAILEXCEPTION` to `CAPTURE_FAILSOFT` (as `MixinLocalsCapture` does for `CAPTURE_FAILHARD`, under the same
+`forbric.localsFailSoft` switch), so where a moved capture still fails it is skipped, never thrown.
 
 `MixinCaptureLanding`, a Mixin extension, fixes that in `preApply`, as Mixin is about to apply the mixins to a class.
 It acts only for a mixin below 0.10.0 that Mixin is applying to that class. That includes a merged twin the mixin
@@ -672,7 +675,8 @@ pseudo-instruction, it inserts a `NOP` right after the call. The `NOP` is still 
 pseudo-instruction, so the walk does not step, and it reads the locals the body left. No point type selects a `NOP` by
 itself. Another AFTER on the same call now lands on the `NOP` instead of the label, which is the same place in the
 code. `Shift.BY` counts every node, so a `NOP` would move a BY point across the call. A method where any applied mixin
-shifts a point BY therefore keeps its body, and there the capture is still skipped at 0.9.2.
+shifts a point BY therefore keeps its body, and there the capture is still skipped at 0.9.2, with Mixin's WARN
+(while the 0.10.0 floor stood, such a mod was raised to 0.10.0 and the capture held).
 
 The real-weave suite passes in full at 0.9.2, 0.10.0 and 0.17.0. The GUI-item fixture captures at 0.9.2, 0.10.0 and
 0.17.1, and only the 0.9.2 weave has a `NOP`. A twin fixture captures in both copies at 0.9.2. With a `by = 2` injector
@@ -1391,7 +1395,7 @@ developer reaches for:
 | `forbric.dupeIdPreference`, `forbric.nestedDupePreference` | cross-jar order for top-level / nested duplicates |
 | `forbric.modOwner` | `id=loader,…` pins; also `<rundir>/forbric-mods.txt` |
 | `forbric.crossJarArbitration` | `off`: two jars with one id both load |
-| `forbric.nestedRequirements` | `off`: a nested Fabric mod whose `minecraft`/`java` range excludes this game, or that shares an id (provides included) with a mod Fabric Loader prefers, loads anyway; `off:<id>,…`: only those ids do |
+| `forbric.nestedRequirements` | `off`: a nested Fabric mod whose `minecraft`/`java` range excludes this game, or that shares an id (provides included) with a mod Fabric Loader prefers, loads anyway; `off:<id>,…`: only those ids are exempted: they load anyway, and no longer push a rival out |
 | `forbric.arbitrationMaxNodes` | selector work bound (default 100 000, capped at 1 000 000) |
 | `forbric.modOrder` | `name`: file-name construction order |
 | `forbric.fabricOrder` | `off`: Fabric mods follow the topological order instead of mod-id order |

@@ -231,7 +231,8 @@ public final class KernelMixinBootstrap {
 	 * <p>No floor. Fabric answers 0.9.2 when the lowest accepted {@code fabricloader} is older than 0.12.0 or there is no
 	 * lower bound at all, and the kernel's moved TAIL captures hold there too. That walk reads them differently, and
 	 * {@link MixinCaptureLanding} gives them a real instruction to land on. The exception is a method where another mixin
-	 * shifts a point {@code BY}, which keeps its body, so at 0.9.2 the capture is skipped there.
+	 * shifts a point {@code BY}, which keeps its body, so at 0.9.2 the capture is skipped there with a WARN (a moved
+	 * {@code CAPTURE_FAILEXCEPTION} is softened to that, not left to throw).
 	 */
 	static Integer compatibilityLevel(java.util.Collection<? extends net.fabricmc.loader.api.metadata.ModDependency> dependencies,
 			String mode) {

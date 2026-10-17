@@ -38,7 +38,9 @@ import net.forbric.kernel.util.ForbricLog;
  * that sets no lower bound at all (no {@code fabricloader} dependency, {@code *}, or only an upper bound). The frame
  * belongs to the join, and the join is also
  * reached by the path that never stored the local, so the frame does not declare it: Mixin reports "LVT ... has
- * incompatible changes" and skips the handler. Nothing crashes, and the capture is gone.
+ * incompatible changes" and the capture is gone: skipped with a WARN, or, for {@code CAPTURE_FAILEXCEPTION}, woven as
+ * a method that throws each time the point is reached (MixinGuiItemCaptureAdapter softens that to a skip for the
+ * captures it moves).
  *
  * <p>A {@code NOP} right after the call is still inside the locals' scope and is not a pseudo-instruction, so the 0.9.2
  * walk does not step: it reads the locals the body left, and the capture applies. Placed only where all of this holds,
@@ -53,7 +55,8 @@ import net.forbric.kernel.util.ForbricLog;
  * already gives Mixin a real instruction;
  * <li>no mixin applied to this class shifts a point {@code BY} in that method. {@code Shift.BY} counts every node, so a
  * {@code by = 2} on the same call would land one node earlier, before the join's label instead of after it. Such a
- * method keeps its body, and at 0.9.2 the moved capture is skipped as it was before this existed.
+ * method keeps its body, and at 0.9.2 the moved capture is skipped there, with Mixin's WARN (while the 0.10.0 floor
+ * stood, such a mod was raised to 0.10.0 and the capture held).
  * </ul>
  * The NOP is then the capture's own AFTER point. Any other point in the class lands where it did. Another AFTER on the
  * same call now resolves to the NOP instead of the join's label, which is the same place in the code; a 0.9.2 local walk
