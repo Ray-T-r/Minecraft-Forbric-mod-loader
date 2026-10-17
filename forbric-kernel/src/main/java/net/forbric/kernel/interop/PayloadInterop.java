@@ -522,6 +522,37 @@ public final class PayloadInterop {
 
 	private record MirrorRegistration(Object id, Object type, Object codec, Object protocol, Object flow,
 			String source) {
+		String version() {
+			return mirrorVersion(source, enumName(protocol));
+		}
+	}
+
+	/**
+	 * The version a mirror announces in NeoForge's negotiation, which both peers compare channel by channel: where the
+	 * channel came from ({@code fabric}, {@code local}) and its phase — never its direction. It named the direction once,
+	 * and a channel registered for both directions took the name of whichever was mirrored second; Fabric's registries are
+	 * found in {@code Class.getMethods()} order, which is not the same in the client's JVM and the server's, so one peer
+	 * announced {@code PLAY/SERVERBOUND} and the other {@code PLAY/CLIENTBOUND} for the same channel and NeoForge refused
+	 * the client ("Incompatible client!").
+	 */
+	static String mirrorVersion(String source, String protocol) {
+		int cut = source.indexOf('/');
+		return FORBRIC_MIRROR_VERSION + ":" + (cut < 0 ? source : source.substring(0, cut)) + "/" + protocol;
+	}
+
+	/**
+	 * The version of one registration standing for two: the same when both say the same, else every part of both in one
+	 * order, so which of the two came first never shows.
+	 */
+	static String mergedMirrorVersion(String existing, String mirrored) {
+		if (existing == null || existing.equals(mirrored)) return mirrored;
+		String prefix = FORBRIC_MIRROR_VERSION + ":";
+		java.util.TreeSet<String> parts = new java.util.TreeSet<>();
+		for (String version : List.of(existing, mirrored)) {
+			String bare = version.startsWith(prefix) ? version.substring(prefix.length()) : version;
+			parts.addAll(java.util.Arrays.asList(bare.split("\\+")));
+		}
+		return prefix + String.join("+", parts);
 	}
 
 	private static void mirrorMergedPayloadRegistries(ClassLoader loader) {
@@ -628,7 +659,7 @@ public final class PayloadInterop {
 					boolean.class);
 				Object payloadRegistration = ctor.newInstance(registration.type(), registration.codec(),
 						List.of(registration.protocol()), Optional.of(registration.flow()),
-						FORBRIC_MIRROR_VERSION + ":" + registration.source(), Boolean.TRUE);
+						registration.version(), Boolean.TRUE);
 				Object existing = protocolMap.get(registration.id());
 				if (existing != null) {
 					if (!mergeNeoPayloadFlowIfNeeded(protocolMap, registration, existing, ctor)) return false;
@@ -652,8 +683,9 @@ public final class PayloadInterop {
 		if (!(existingFlow instanceof Optional<?> optional) || optional.isEmpty()) return false;
 		if (optional.get() == registration.flow()) return false;
 
+		String existingVersion = invokeNoArg(existing, "version") instanceof String version ? version : null;
 		Object merged = ctor.newInstance(invokeNoArg(existing, "type"), invokeNoArg(existing, "codec"),
-				List.of(registration.protocol()), Optional.empty(), FORBRIC_MIRROR_VERSION + ":" + registration.source(),
+				List.of(registration.protocol()), Optional.empty(), mergedMirrorVersion(existingVersion, registration.version()),
 				Boolean.TRUE);
 		protocolMap.put(registration.id(), merged);
 		return true;

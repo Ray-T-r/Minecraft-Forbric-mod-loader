@@ -8,6 +8,7 @@ import java.lang.reflect.ParameterizedType;
 import java.lang.reflect.Type;
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
 import java.util.WeakHashMap;
@@ -87,7 +88,22 @@ final class FabricPayloadRegistries {
 				// one accessor that cannot be read costs that registry, not the others
 			}
 		}
+		out.sort(IN_ONE_ORDER);
 		return out;
+	}
+
+	/**
+	 * {@code Class.getMethods()} hands the accessors out in no particular order, and not in the same one in two JVMs — the
+	 * client's and the server's load other classes first — so the registries are put in one: configuration before play,
+	 * serverbound before clientbound, the order of fabric-api's own constants. What is built from them in turn (the
+	 * mirrors into NeoForge's registry, which codec a channel registered both ways keeps) then comes out the same on both
+	 * peers.
+	 */
+	static final Comparator<Registry> IN_ONE_ORDER = Comparator.comparing((Registry registry) -> name(registry.protocol()))
+			.thenComparing(registry -> name(registry.flow()), Comparator.reverseOrder());
+
+	private static String name(Object constant) {
+		return constant instanceof Enum<?> value ? value.name() : String.valueOf(constant);
 	}
 
 	/** The one instance field (this class or a superclass) holding a value of {@code type}; null when none or several. */
