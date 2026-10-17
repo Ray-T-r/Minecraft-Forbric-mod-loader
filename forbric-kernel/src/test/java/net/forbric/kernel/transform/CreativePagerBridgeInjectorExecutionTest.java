@@ -246,14 +246,24 @@ class CreativePagerBridgeInjectorExecutionTest {
 	}
 
 	private static CreativePagerBridgeInjector injector(Map<String, byte[]> classes, boolean pinned) {
-		return new CreativePagerBridgeInjector(classes::get, () -> pinned);
+		// The hook a pager's switchToPage calls, as config discovery would hand it (fabric-api's pager names updateSelection).
+		return injector(classes, pinned, "updateSelection");
+	}
+
+	private static CreativePagerBridgeInjector injector(Map<String, byte[]> classes, boolean pinned, String hook) {
+		return new CreativePagerBridgeInjector(classes::get, () -> pinned, () -> java.util.Set.of(hook + "()V"));
 	}
 
 	/** owo-lib's head injection on the updateSelection the bridge adds: what Mixin would weave there. */
 	private static byte[] withOwoHook(byte[] screen) {
+		return withOwoHook(screen, "updateSelection");
+	}
+
+	/** The same head injection on the hook the pager named {@code hook}. */
+	private static byte[] withOwoHook(byte[] screen, String hook) {
 		ClassNode node = new ClassNode();
 		new ClassReader(screen).accept(node, 0);
-		MethodNode update = node.methods.stream().filter(m -> m.name.equals("updateSelection") && m.desc.equals("()V")).findFirst().orElseThrow();
+		MethodNode update = node.methods.stream().filter(m -> m.name.equals(hook) && m.desc.equals("()V")).findFirst().orElseThrow();
 		InsnList head = new InsnList();
 		head.add(new VarInsnNode(Opcodes.ALOAD, 0));
 		head.add(new MethodInsnNode(Opcodes.INVOKESTATIC, "fixture/Owo", "updateSelectionHead", "(Ljava/lang/Object;)V", false));
@@ -343,6 +353,27 @@ class CreativePagerBridgeInjectorExecutionTest {
 				"premise: as merged, owo-lib's updateSelection hook has no method to attach to");
 		assertSame(bridged, InjectorExecution.transform(injector(classes, true), SCREEN, bridged, EnvType.CLIENT),
 				"a bridged screen is left alone");
+	}
+
+	/** The hook is the pager's by name too: a pager calling it qzxRefreshPage gets that method, and a hook there hears both kinds of turn. */
+	@Test void aHookUnderThePagersOwnNameHearsEveryTurn(@TempDir Path work) throws Throwable {
+		Map<String, byte[]> original = compile(work);
+		String internal = CreativePagerBridgeInjector.SCREEN;
+		byte[] bridged = InjectorExecution.transform(injector(original, true, "qzxRefreshPage"), SCREEN, original.get(internal), EnvType.CLIENT);
+		Map<String, byte[]> classes = new HashMap<>(original);
+		classes.put(internal, withOwoHook(bridged, "qzxRefreshPage"));
+		ClassLoader loader = InjectorExecution.load(classes);
+		assertEquals("", InjectorExecution.verify(bridged, loader));
+		Opened opened = open(loader);
+		Object screen = opened.screen();
+		assertThrows(NoSuchMethodException.class, () -> screen.getClass().getDeclaredMethod("updateSelection"), "no name of the bridge's own");
+		List<?> heard = (List<?>) InjectorExecution.getStatic(loader.loadClass("fixture.Owo"), "heard");
+		heard.clear();
+		assertEquals(true, fabric(screen, "switchToNextPage"));
+		assertEquals(List.of(screen), heard, "a Fabric API turn runs the hook");
+		InjectorExecution.invoke(screen.getClass().getField("previous").get(screen), "press");
+		assertEquals(0, InjectorExecution.invoke(screen, "shownPage"));
+		assertEquals(List.of(screen, screen), heard, "and so does NeoForge's own button");
 	}
 
 	@Test void theScreenIsLeftAsMergedWhenSwitchedOffUnpinnedOrWithoutTheApi(@TempDir Path work) throws Exception {

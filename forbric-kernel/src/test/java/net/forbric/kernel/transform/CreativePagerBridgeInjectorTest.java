@@ -12,11 +12,13 @@ import java.util.function.Function;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipFile;
 
+import net.forbric.kernel.mixin.FabricCreativePagerMixinAdapter;
 import net.forbric.kernel.mixin.MixinFit;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.parallel.ResourceLock;
 import org.objectweb.asm.ClassReader;
+import org.objectweb.asm.ClassWriter;
 import org.objectweb.asm.Opcodes;
 import org.objectweb.asm.tree.AbstractInsnNode;
 import org.objectweb.asm.tree.ClassNode;
@@ -43,6 +45,11 @@ class CreativePagerBridgeInjectorTest {
 
 	/** The bridge over fabric-api's real interface, installed or not, with Fabric's own mixin pinned or not. */
 	private static CreativePagerBridgeInjector bridge(boolean installed, boolean pinned) {
+		return bridge(installed, pinned, hooksOfThePinnedPager());
+	}
+
+	/** {@link #bridge(boolean, boolean)}, the selection hooks given as the guest pagers seen while configs were read. */
+	private static CreativePagerBridgeInjector bridge(boolean installed, boolean pinned, Set<String> hooks) {
 		return new CreativePagerBridgeInjector(name -> {
 			if (!installed || !name.equals(CreativePagerBridgeInjector.API)) return null;
 			try {
@@ -50,7 +57,17 @@ class CreativePagerBridgeInjectorTest {
 			} catch (Exception unreadable) {
 				throw new AssertionError(unreadable);
 			}
-		}, () -> pinned);
+		}, () -> pinned, () -> hooks);
+	}
+
+	/** The selection hook fabric-api's real pinned pager names, read from its own switchToPage — as discovery reads it. */
+	private static Set<String> hooksOfThePinnedPager() {
+		try {
+			return FabricCreativePagerMixinAdapter.selectionHooks(MixinFit.parse(
+					CreativePagerFixtures.creativeModule(CreativePagerFixtures.PINNED_MIXIN + ".class")));
+		} catch (Exception unreadable) {
+			throw new AssertionError(unreadable);
+		}
 	}
 
 	/** The screen as the COREMOD phase receives it on a client with fabric-api: merged, then class-tweaked. */
@@ -159,7 +176,7 @@ class CreativePagerBridgeInjectorTest {
 		assertEquals(3, CreativePagerBridgeInjector.pageButtonTurns(reshaped).size());
 
 		CreativePagerBridgeInjector.Repair done = CreativePagerBridgeInjector.repair(reshaped,
-				MixinFit.implementerSupplies(contract()));
+				MixinFit.implementerSupplies(contract()), hooksOfThePinnedPager());
 		assertNotNull(done, "the interface bodies do not depend on the buttons");
 		assertFalse(done.turnsAnnounced());
 		assertEquals(List.of(), MixinFit.unsupplied(contract(), reshaped), "no call through the interface throws");
@@ -182,7 +199,7 @@ class CreativePagerBridgeInjectorTest {
 		needed.remove("getSelectedTab()Lnet/minecraft/world/item/CreativeModeTab;"); // a working default there
 
 		ClassNode screen = node(tweakedScreen());
-		CreativePagerBridgeInjector.Repair done = CreativePagerBridgeInjector.repair(screen, needed);
+		CreativePagerBridgeInjector.Repair done = CreativePagerBridgeInjector.repair(screen, needed, hooksOfThePinnedPager());
 		assertNotNull(done);
 		assertEquals(List.of("scrollToTab(Lnet/minecraft/world/item/CreativeModeTab;)Z"), done.uncovered());
 		assertNull(method(screen, "getSelectedTab", "()Lnet/minecraft/world/item/CreativeModeTab;"),
@@ -213,6 +230,67 @@ class CreativePagerBridgeInjectorTest {
 		MixinFit.Result fit = MixinFit.evaluate(owo, resolver(backed));
 		assertEquals(MixinFit.Verdict.FIT, fit.verdict(), fit.unresolved().toString());
 		assertEquals(3, fit.total(), "@Shadow selectTab, @Inject selectTab, @Inject updateSelection");
+	}
+
+	/**
+	 * The hook's name is the pager's, read from its own code: with fabric-api's real pager and owo-lib's real mixin both
+	 * relocated to another hook name ({@code qzxRefreshPage}), the screen gets that name and owo's mixin fits on it; with
+	 * no pager seen, or two hooks named, the screen gets no hook and the Fabric API's turns still update the selection.
+	 */
+	@Test void theHookTakesTheNameThePagerGivesIt() throws Exception {
+		ClassNode pager = MixinFit.parse(CreativePagerFixtures.creativeModule(CreativePagerFixtures.PINNED_MIXIN + ".class"));
+		assertEquals(Set.of("updateSelection()V"), FabricCreativePagerMixinAdapter.selectionHooks(pager), "premise: fabric-api's own name");
+		ClassNode renamedPager = renamed(pager, "updateSelection", "qzxRefreshPage");
+		Set<String> hooks = FabricCreativePagerMixinAdapter.selectionHooks(renamedPager);
+		assertEquals(Set.of("qzxRefreshPage()V"), hooks);
+
+		byte[] tweaked = tweakedScreen();
+		ClassNode after = node(bridge(true, true, hooks).transform(CreativePagerBridgeInjector.SCREEN_BINARY, tweaked, null));
+		assertNotNull(method(after, "qzxRefreshPage", "()V"), "the pager's own name");
+		assertNull(method(after, "updateSelection", "()V"), "no name of the bridge's own");
+		ClassNode owo = renamed(node(CreativePagerFixtures.owoClass(CreativePagerFixtures.OWO_MIXIN)), "updateSelection", "qzxRefreshPage");
+		byte[] owoBytes = bytes(owo);
+		ClassWriter w = new ClassWriter(0);
+		after.accept(w);
+		MixinFit.Result fit = MixinFit.evaluate(owoBytes, resolver(w.toByteArray()));
+		assertEquals(MixinFit.Verdict.FIT, fit.verdict(), fit.unresolved().toString());
+		assertEquals(3, fit.total());
+
+		for (Set<String> none : List.of(Set.<String>of(), Set.of("qzxA()V", "qzxB()V"))) {
+			ClassNode screen = node(tweakedScreen());
+			CreativePagerBridgeInjector.Repair done = CreativePagerBridgeInjector.repair(screen, MixinFit.implementerSupplies(contract()), none);
+			assertNotNull(done);
+			assertNull(done.hook(), none.toString());
+			assertEquals(List.of(), MixinFit.unsupplied(contract(), screen), "the interface is still backed");
+			MethodNode trampoline = method(screen, "forbric$updateSelection", "()V");
+			assertNotNull(trampoline);
+			assertTrue(java.util.Arrays.stream(trampoline.instructions.toArray()).anyMatch(i -> i instanceof MethodInsnNode m
+					&& m.owner.equals(CreativePagerBridgeInjector.PAGER) && m.name.equals("updateSelection")), "the rule runs directly");
+			ClassWriter computed = new ClassWriter(ClassWriter.COMPUTE_MAXS);
+			screen.accept(computed);
+			for (MethodNode m : node(computed.toByteArray()).methods) new Analyzer<>(new BasicVerifier()).analyze(SCREEN, m);
+		}
+	}
+
+	/** {@code node} with every method named {@code from} — declarations, calls and injector selectors — named {@code to}. */
+	private static ClassNode renamed(ClassNode node, String from, String to) {
+		ClassNode out = new ClassNode();
+		node.accept(new org.objectweb.asm.commons.ClassRemapper(out, new org.objectweb.asm.commons.Remapper() {
+			@Override public String mapMethodName(String owner, String name, String descriptor) {
+				return name.equals(from) ? to : name;
+			}
+		}));
+		for (MethodNode m : out.methods) for (List<org.objectweb.asm.tree.AnnotationNode> list : java.util.Arrays.asList(m.visibleAnnotations, m.invisibleAnnotations))
+			if (list != null) for (org.objectweb.asm.tree.AnnotationNode a : list) if (a.values != null)
+				for (int i = 0; i + 1 < a.values.size(); i += 2) if ("method".equals(a.values.get(i)) && a.values.get(i + 1) instanceof List<?> selectors)
+					a.values.set(i + 1, selectors.stream().map(v -> v instanceof String t && t.startsWith(from) ? to + t.substring(from.length()) : v).toList());
+		return out;
+	}
+
+	private static byte[] bytes(ClassNode node) {
+		ClassWriter w = new ClassWriter(0);
+		node.accept(w);
+		return w.toByteArray();
 	}
 
 	private static Function<String, byte[]> resolver(byte[] screen) {

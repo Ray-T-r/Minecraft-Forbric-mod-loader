@@ -42,8 +42,11 @@ import org.objectweb.asm.tree.VarInsnNode;
  *       interface), delegating to {@code KernelCreativePager}, which answers from NeoForge's {@code pages}/
  *       {@code currentPage} — NeoForge's pager stays the only one drawn. One the bridge has no body for (a newer
  *       fabric-api) is named in a warning, never passed over in silence;</li>
- *   <li>a private {@code updateSelection()V} under Fabric's name, so owo's hook binds with Fabric's meaning;</li>
- *   <li>after each of NeoForge's two page buttons sets the page, a call that runs {@code updateSelection} for its
+ *   <li>the guest pager's selection hook, under the name the pager itself gives it — the private argument-less void
+ *       method its {@code switchToPage(int)} calls ({@code FabricCreativePagerMixinAdapter.selectionHooks}; fabric-api
+ *       calls it {@code updateSelection}) — so a hook another mod puts there (owo-lib's) binds with the pager's meaning.
+ *       The name is read from the pager seen while configs were read, never written here;</li>
+ *   <li>after each of NeoForge's two page buttons sets the page, a call that runs the selection hook for its
  *       hooks while its own body stands aside — NeoForge's buttons behave exactly as before unless a mod hooks it.
  *       A carrier whose buttons are shaped otherwise keeps the rest, and the warning says the turns go unannounced;</li>
  *   <li>{@code KernelCreativePagerScreen}, one-instruction trampolines to the private state the pager needs.</li>
@@ -72,9 +75,6 @@ public final class CreativePagerBridgeInjector implements ClassTransformer {
 	static final String BUTTON_HANDLER = "(Lnet/minecraft/client/gui/components/Button;)V";
 	static final String SCREEN_ARG = "L" + PAGER_SCREEN + ";";
 
-	/** Fabric's private hook point, kept under its own name so injectors written against Fabric bind. */
-	static final String UPDATE_SELECTION = "updateSelection";
-
 	/**
 	 * The interface methods the bridge can back, as {@code name, descriptor, pager method or null}: null reads the
 	 * static {@code selectedTab} directly. A row gets its body only while the installed interface leaves that method to
@@ -92,26 +92,33 @@ public final class CreativePagerBridgeInjector implements ClassTransformer {
 			{"setSelectedTab", "(" + TAB + ")Z", "setSelectedTab"}};
 
 	/**
-	 * Every member this bridge can give the screen, as {@code name + descriptor}: the interface rows and Fabric's private
-	 * {@code updateSelection()V}. A guest's own body for one of them is a second pager the bridge stands in for.
+	 * The interface members this bridge can give the screen, as {@code name + descriptor}. A guest's own body for one of
+	 * them, or for its pager's selection hook, is a second pager the bridge stands in for.
 	 */
-	public static Set<String> suppliedMembers() {
+	public static Set<String> interfaceMembers() {
 		Set<String> out = new LinkedHashSet<>();
 		for (String[] api : API_METHODS) out.add(api[0] + api[1]);
-		out.add(UPDATE_SELECTION + "()V");
 		return out;
 	}
 
 	private final Function<String, byte[]> gameClass;
 	private final BooleanSupplier pinInForce;
+	private final java.util.function.Supplier<Set<String>> hooks;
 
 	/**
 	 * @param gameClass  the bytes of a game resource by internal name, or null — the interface is a mod's, not the base's
 	 * @param pinInForce whether Fabric's own {@code CreativeModeInventoryScreenMixin} is left out on this boot
 	 */
 	public CreativePagerBridgeInjector(Function<String, byte[]> gameClass, BooleanSupplier pinInForce) {
+		this(gameClass, pinInForce, net.forbric.kernel.mixin.FabricCreativePagerMixinAdapter::notedSelectionHooks);
+	}
+
+	/** @param hooks the selection hooks of the guest pagers seen on this boot, as {@code name + descriptor} */
+	public CreativePagerBridgeInjector(Function<String, byte[]> gameClass, BooleanSupplier pinInForce,
+			java.util.function.Supplier<Set<String>> hooks) {
 		this.gameClass = gameClass;
 		this.pinInForce = pinInForce;
+		this.hooks = hooks;
 	}
 
 	public static boolean enabled() {
@@ -147,7 +154,7 @@ public final class CreativePagerBridgeInjector implements ClassTransformer {
 		}
 		ClassNode node = new ClassNode();
 		new ClassReader(bytes).accept(node, 0);
-		Repair done = repair(node, needed);
+		Repair done = repair(node, needed, hooks.get());
 		if (done == null) return bytes;
 		ClassWriter writer = new ClassWriter(ClassWriter.COMPUTE_MAXS);
 		node.accept(writer);
@@ -158,10 +165,13 @@ public final class CreativePagerBridgeInjector implements ClassTransformer {
 			ForbricLog.warn("[Forbric/CreativePager] FabricCreativeModeInventoryScreen also leaves %s to its implementer, and "
 					+ "the bridge has no body for it — a call to it still throws AssertionError", done.uncovered());
 		}
-		if (!done.turnsAnnounced()) {
+		if (done.hook() == null) {
+			ForbricLog.info("[Forbric/CreativePager] no guest pager names a selection hook (%s) — the screen gets none, and the "
+					+ "Fabric API's page turns update the selection directly", hooks.get().isEmpty() ? "none seen" : "several: " + hooks.get());
+		} else if (!done.turnsAnnounced()) {
 			ForbricLog.warn("[Forbric/CreativePager] NeoForge's page buttons on CreativeModeInventoryScreen are not the two the "
-					+ "bridge knows — a mod hooked on updateSelection (owo-lib's per-page tab memory) does not see their page "
-					+ "turns, only the Fabric API's");
+					+ "bridge knows — a mod hooked on the pager's %s does not see their page turns, only the Fabric API's",
+					done.hook());
 		}
 		return writer.toByteArray();
 	}
@@ -170,23 +180,28 @@ public final class CreativePagerBridgeInjector implements ClassTransformer {
 	 * What {@link #repair} did.
 	 *
 	 * @param uncovered      interface methods left to the implementer that the bridge has no body for
-	 * @param turnsAnnounced whether NeoForge's two page buttons now run {@code updateSelection}
+	 * @param turnsAnnounced whether NeoForge's two page buttons now run the selection hook
+	 * @param hook           the selection hook the screen got, as {@code name + descriptor}; null when no pager names one
 	 */
-	record Repair(List<String> uncovered, boolean turnsAnnounced) {
+	record Repair(List<String> uncovered, boolean turnsAnnounced, String hook) {
 	}
 
 	/**
 	 * Backs the interface on {@code screen}, or {@code null} when it is not the merged shape or already backed.
 	 *
 	 * @param needed the interface's {@link MixinFit#implementerSupplies}, as {@code name + descriptor}
+	 * @param hooks  the selection hooks the guest pagers name; exactly one is given to the screen, none when it is ambiguous
 	 */
-	static Repair repair(ClassNode screen, Set<String> needed) {
+	static Repair repair(ClassNode screen, Set<String> needed, Set<String> hooks) {
 		if (!SCREEN.equals(screen.name)) return null;
 		if (!field(screen, "pages", LIST, false) || !field(screen, "currentPage", PAGE, false)
 				|| !field(screen, "selectedTab", TAB, true)) return null;
 		if (!instanceMethod(screen, "setCurrentPage", "(" + PAGE + ")V") || !instanceMethod(screen, "selectTab", "(" + TAB + ")V")) return null;
 		// Once only, and never over a body something else already gave the screen.
-		if (method(screen, UPDATE_SELECTION, "()V") != null) return null;
+		if (method(screen, "forbric$updateSelection", "()V") != null) return null;
+		String hook = hooks.size() == 1 ? hooks.iterator().next() : null;
+		String hookName = hook == null ? null : hook.substring(0, hook.indexOf('('));
+		if (hook != null && (!hook.endsWith("()V") || method(screen, hookName, "()V") != null)) return null;
 		List<String[]> backed = new ArrayList<>();
 		Set<String> uncovered = new LinkedHashSet<>(needed);
 		for (String[] api : API_METHODS) {
@@ -215,18 +230,29 @@ public final class CreativePagerBridgeInjector implements ClassTransformer {
 			screen.methods.add(body);
 		}
 
-		MethodNode update = new MethodNode(Opcodes.ACC_PRIVATE, UPDATE_SELECTION, "()V", null, null);
-		update.instructions.add(new VarInsnNode(Opcodes.ALOAD, 0));
-		update.instructions.add(new MethodInsnNode(Opcodes.INVOKESTATIC, PAGER, "updateSelection", "(" + SCREEN_ARG + ")V", false));
-		update.instructions.add(new InsnNode(Opcodes.RETURN));
-		screen.methods.add(update);
+		if (hookName != null) {
+			MethodNode update = new MethodNode(Opcodes.ACC_PRIVATE, hookName, "()V", null, null);
+			update.instructions.add(new VarInsnNode(Opcodes.ALOAD, 0));
+			update.instructions.add(new MethodInsnNode(Opcodes.INVOKESTATIC, PAGER, "updateSelection", "(" + SCREEN_ARG + ")V", false));
+			update.instructions.add(new InsnNode(Opcodes.RETURN));
+			screen.methods.add(update);
+		}
 
 		trampoline(screen, "forbric$pages", "()" + LIST, Opcodes.GETFIELD, "pages", LIST);
 		trampoline(screen, "forbric$currentPage", "()" + PAGE, Opcodes.GETFIELD, "currentPage", PAGE);
 		trampoline(screen, "forbric$selectedTab", "()" + TAB, Opcodes.GETSTATIC, "selectedTab", TAB);
 		call(screen, "forbric$setCurrentPage", "(" + PAGE + ")V", "setCurrentPage");
 		call(screen, "forbric$selectTab", "(" + TAB + ")V", "selectTab");
-		call(screen, "forbric$updateSelection", "()V", UPDATE_SELECTION);
+		if (hookName != null) {
+			call(screen, "forbric$updateSelection", "()V", hookName);
+		} else {
+			// No hook to run: the trampoline is the pager's selection rule itself.
+			MethodNode direct = new MethodNode(Opcodes.ACC_PUBLIC | Opcodes.ACC_SYNTHETIC, "forbric$updateSelection", "()V", null, null);
+			direct.instructions.add(new VarInsnNode(Opcodes.ALOAD, 0));
+			direct.instructions.add(new MethodInsnNode(Opcodes.INVOKESTATIC, PAGER, "updateSelection", "(" + SCREEN_ARG + ")V", false));
+			direct.instructions.add(new InsnNode(Opcodes.RETURN));
+			screen.methods.add(direct);
+		}
 
 		// The buttons are the one part a reshaped carrier can take away; the interface bodies do not depend on them.
 		List<MethodInsnNode> turns = pageButtonTurns(screen);
@@ -240,7 +266,7 @@ public final class CreativePagerBridgeInjector implements ClassTransformer {
 				owner.instructions.insert(turn, announce);
 			}
 		}
-		return new Repair(List.copyOf(uncovered), announced);
+		return new Repair(List.copyOf(uncovered), announced, hook);
 	}
 
 	/**

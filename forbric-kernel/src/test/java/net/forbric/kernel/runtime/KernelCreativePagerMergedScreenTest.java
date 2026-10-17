@@ -193,7 +193,8 @@ class KernelCreativePagerMergedScreenTest {
 			bytes = zip.getInputStream(entry).readAllBytes();
 		}
 		byte[] tweaked = CreativePagerFixtures.classTweaked(SCREEN, bytes);
-		byte[] bridged = new CreativePagerBridgeInjector(name -> name.equals(CreativePagerFixtures.INTERFACE) ? api : null, () -> true)
+		byte[] bridged = new CreativePagerBridgeInjector(name -> name.equals(CreativePagerFixtures.INTERFACE) ? api : null, () -> true,
+					CreativePagerFixtures::pinnedPagerHooksUnchecked)
 				.transform(SCREEN, tweaked, null);
 		assertNotSame(tweaked, bridged, "the bridge took the merged screen");
 		ClassNode node = new ClassNode();

@@ -54,6 +54,7 @@ public final class MergedBaseMixinCompat {
                     String identity=configName+":"+entry;SOURCES.put(identity,node.name.replace('/','.'));
                     FabricRegistryInitializationMixinAdapter.noteDeferredFreeze(configName,node,family,natives);
                     net.forbric.kernel.transform.RegistrySyncParityInjector.noteMixin(configName,node,resources);
+                    FabricCreativePagerMixinAdapter.noteSelectionHooks(node);
                     if(!enabled()||explicitlyKept(identity))continue;
                     String reason=refusal(node,resources,natives);
                     if(reason==null)continue;

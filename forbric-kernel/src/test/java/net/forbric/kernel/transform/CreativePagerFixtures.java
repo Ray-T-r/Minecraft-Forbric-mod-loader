@@ -65,6 +65,21 @@ public final class CreativePagerFixtures {
 		throw new AssertionError(entry + " is not in fabric-api's creative-tab module");
 	}
 
+	/** The selection hooks fabric-api's real pinned pager names, read from its own code as config discovery reads them. */
+	public static java.util.Set<String> pinnedPagerHooks() throws Exception {
+		return net.forbric.kernel.mixin.FabricCreativePagerMixinAdapter.selectionHooks(
+				net.forbric.kernel.mixin.MixinFit.parse(creativeModule(PINNED_MIXIN + ".class")));
+	}
+
+	/** {@link #pinnedPagerHooks()} for a supplier. */
+	public static java.util.Set<String> pinnedPagerHooksUnchecked() {
+		try {
+			return pinnedPagerHooks();
+		} catch (Exception unreadable) {
+			throw new AssertionError(unreadable);
+		}
+	}
+
 	public static byte[] owoClass(String internalName) throws Exception {
 		try (ZipFile owo = new ZipFile(owo().toFile())) {
 			ZipEntry entry = owo.getEntry(internalName + ".class");

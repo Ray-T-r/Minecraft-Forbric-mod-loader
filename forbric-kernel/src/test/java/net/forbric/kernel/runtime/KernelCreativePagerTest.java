@@ -148,7 +148,8 @@ class KernelCreativePagerTest {
 				Files.readAllBytes(classes.resolve(SCREEN.replace('.', '/') + ".class")));
 		if (bridged) {
 			byte[] api = defined.get(API);
-			screen = new CreativePagerBridgeInjector(name -> name.equals(CreativePagerFixtures.INTERFACE) ? api : null, () -> true)
+			screen = new CreativePagerBridgeInjector(name -> name.equals(CreativePagerFixtures.INTERFACE) ? api : null, () -> true,
+					CreativePagerFixtures::pinnedPagerHooksUnchecked)
 					.transform(SCREEN, screen, null);
 		}
 		if (hooked) screen = hookUpdateSelection(screen);

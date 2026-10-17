@@ -16,7 +16,8 @@ import net.forbric.kernel.transform.CreativePagerBridgeInjector;
  * its own (the field its {@code getCurrentPage()} reads is the one its {@code switchToPage(int)} writes) fights the
  * carrier's pager, which {@link CreativePagerBridgeInjector} already puts behind that interface. What is removed is
  * decided by data flow, never by a member's name: the guest's bodies for members the carrier answers (the bridge's
- * interface rows and {@code updateSelection}, and every method the installed interface declares), the non-shadow fields
+ * interface rows, the pager's own selection hooks ({@link #selectionHooks}), and every method the installed interface
+ * declares), the non-shadow fields
  * those bodies read or write — the second page state — and, transitively, every member that touches that state or calls
  * a removed member nothing else answers. Everything else stays: an injector that only calls the interface (PageUp and
  * PageDown turning the page through {@code switchToPreviousPage}) now turns the carrier's page, and an unrelated
@@ -45,13 +46,41 @@ public final class FabricCreativePagerMixinAdapter {
         return false;
     }
 
+	/**
+	 * The pager's selection hooks, by the role its own code gives them: the private, argument-less, void instance methods
+	 * its {@code switchToPage(int)} — the public interface method that turns the page — calls on itself. Another mod's
+	 * mixin may name such a method to hear every turn (owo-lib's per-page tab memory sits at the head of fabric-api's
+	 * {@code updateSelection}); the name is read from the pager, never assumed. Empty for anything not a pager.
+	 */
+	public static Set<String> selectionHooks(ClassNode mixin){
+		if(mixin==null||!matches(mixin))return Set.of();
+		MethodNode turn=mixin.methods.stream().filter(m->m.name.equals("switchToPage")&&m.desc.equals("(I)Z")).findFirst().orElse(null);
+		Set<String> hooks=new LinkedHashSet<>();
+		for(AbstractInsnNode i:turn.instructions)if(i instanceof MethodInsnNode c&&c.owner.equals(mixin.name)&&c.desc.equals("()V")
+				&&(c.getOpcode()==Opcodes.INVOKESPECIAL||c.getOpcode()==Opcodes.INVOKEVIRTUAL)){
+			MethodNode hook=mixin.methods.stream().filter(m->m.name.equals(c.name)&&m.desc.equals(c.desc)).findFirst().orElse(null);
+			if(hook!=null&&(hook.access&Opcodes.ACC_PRIVATE)!=0&&(hook.access&Opcodes.ACC_STATIC)==0&&MixinFit.injectorOf(hook)==null)hooks.add(hook.name+hook.desc);
+		}
+		return Set.copyOf(hooks);
+	}
+
+	/** The selection hooks of every guest pager seen while configs were read (as {@code name + descriptor}). */
+	private static final Set<String> NOTED_HOOKS=java.util.concurrent.ConcurrentHashMap.newKeySet();
+	/** Records {@code mixin}'s selection hooks, when it is a pager: the creative pager bridge gives the screen these names. */
+	static void noteSelectionHooks(ClassNode mixin){NOTED_HOOKS.addAll(selectionHooks(mixin));}
+	/** What {@link #noteSelectionHooks} recorded on this boot. */
+	public static Set<String> notedSelectionHooks(){return Set.copyOf(NOTED_HOOKS);}
+	/** Test seam. */
+	public static void forgetSelectionHooks(){NOTED_HOOKS.clear();}
+
 	/** Without class lookup: the carrier's own rows decide what it answers. */
 	public static int adapt(ClassNode mixin){return adapt(mixin,name->null);}
 
 	/** @param classes the installed interface and the merged screen by internal name, or null for either */
 	public static int adapt(ClassNode mixin,Function<String,ClassNode> classes){
 		if(!enabled()||!matches(mixin))return 0;
-		Set<String> answered=new LinkedHashSet<>(CreativePagerBridgeInjector.suppliedMembers());
+		Set<String> answered=new LinkedHashSet<>(CreativePagerBridgeInjector.interfaceMembers());
+		answered.addAll(selectionHooks(mixin));
 		ClassNode api=lookup(classes,CreativePagerBridgeInjector.API);
 		if(api!=null)for(MethodNode m:api.methods)if((m.access&(Opcodes.ACC_STATIC|Opcodes.ACC_PRIVATE))==0&&!m.name.startsWith("<"))answered.add(m.name+m.desc);
 		// A call to one of these from a kept member still lands somewhere once the guest's body is gone.
