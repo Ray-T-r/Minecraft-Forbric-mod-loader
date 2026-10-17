@@ -22,8 +22,10 @@ python3 - <<'PY'
 import json, os, pathlib, shutil, subprocess, uuid, signal
 kernel=pathlib.Path(os.environ['KERNEL']);root=kernel.parent;results=kernel/'build/verification/m37-entity';results.mkdir(parents=True,exist_ok=True)
 inputs=json.loads((kernel/'run/canary/m37-build-inputs.json').read_text());port=os.environ['GATE_PORT']
-# guard-off is measured below; see the comment there.
-EXPECT_FAIL={'positive':set(),'guard-off':{'glide-tick'}}
+# guard-off: CarrierGuardedPoints alone switched off. Fabric's elytra check then stays behind NeoForge's gliding guard (the
+# carrier-stub rebind still moves it into canGlide(Z)Z, so its boolean case holds), where a Fabric veto or custom flight no
+# longer decides, and the flight tick stays behind the empty-glider guard: exactly those three fail.
+EXPECT_FAIL={'positive':set(),'guard-off':{'glide-deny','glide-custom','glide-tick'}}
 ALL={'effect-add','effect-remove','effect-clear-veto','glide-deny','glide-custom','glide-boolean','glide-tick','glide-tick-native','bed-native','bed-handled','bed-nonbed','bed-custom-native','bed-custom-handled','direction-bed','direction-nonbed','nearby-monsters','direction-veto'}
 # Fabric's flight tick anchors natively on the glider-slot choice, which a real elytra reaches: that control holds off.
 EXPECT_FAIL['off']=ALL-{'glide-tick-native'}
