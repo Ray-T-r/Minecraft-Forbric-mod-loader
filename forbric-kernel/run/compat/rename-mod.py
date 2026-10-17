@@ -22,7 +22,12 @@ against the mod) gets its references and dependency ids moved too, keeping its o
 The roots are found from the mod's own declarations (entrypoints, @Mod classes, mixin packages and plugins, service
 providers; also those of a declared jar-in-jar mod whose packages share the mod's): their longest common package, or
 each of them when they share none. --root replaces that guess and --keep exempts a package. A nested jar is the mod's
-own when it has classes under a root; any other nested jar is copied unchanged unless it refers to the mod. A name
+own when it has classes under a root; any other nested jar is copied unchanged unless it refers to the mod. A nested
+jar inside a package directory the rename moves moves with it under its own file name, as any other resource there,
+since the code finds it by that path. A nested jar the rename changes is pinned again wherever its parent pinned it:
+its old file name and its old MD5/SHA-1/SHA-256/SHA-512 digests (in a file name or in the parent's text files —
+properties, JSON, manifests) become the new ones, so a loader that unpacks a pinned jar at run time and checks its
+checksum (Essential's stages) unpacks the renamed one. A name
 segment the code compares strings against (s.contains("X"), "X".equals(s), as whole words) keeps its text, since the
 mod would otherwise behave differently; --rename-tested renames those too. New mod ids are letters only, because
 Forge's Mixin drops the digits of a mod id where it names merged members.
@@ -468,7 +473,10 @@ class Plan:
         self.ids = {}
         self.files = {}        # (jar label, entry) -> new entry, for renamed config/refmap/AW/nested files
         self.nested = {}       # jar label -> new entry name in its parent
+        self.pins = {}         # old -> new: a changed nested jar's file name and digests, where its parent pinned it
         self.new_root = {r: 'p' + namer.token('root', r) for r in roots}
+        self.all_classes = set()
+        self.simple_index = {}
         self.kept_classes = []
         self.test_fragments = set()
         self.test_equal = set()
@@ -516,16 +524,46 @@ class Plan:
                 return '/'.join(out)
         return None
 
+    def companion_base(self, internal):
+        """The class whose name this one's is plus a capitalised suffix (Name and NameImpl, side by side in a package): a
+        loader that finds the companion by Class.forName(base.getName() + "Impl") still finds it when both keep that
+        relation, so the companion is named after the base's new name plus the same suffix."""
+        package = package_of(internal)
+        simple = internal[len(package) + 1:] if package else internal
+        if '$' in simple:
+            return None
+        for cut in range(len(simple) - 1, 0, -1):
+            if not simple[cut].isupper():
+                continue
+            base = (package + '/' if package else '') + simple[:cut]
+            if base in self.all_classes and self.owned(base):
+                return base, simple[cut:]
+            # Or the one class of that simple name elsewhere under the roots (an api.Name beside an impl.NameImpl, found by
+            # swapping the package and appending the suffix).
+            elsewhere = [c for c in self.simple_index.get(simple[:cut], ()) if self.owned(c) and c != internal]
+            if len(elsewhere) == 1:
+                return elsewhere[0], simple[cut:]
+        return None
+
     def new_class(self, internal):
         package = package_of(internal)
         simple = internal[len(package) + 1:] if package else internal
         if simple in ('package-info', 'module-info'):
             return self.new_package(package) + '/' + simple
+        companion = self.companion_base(internal)
+        if companion and not self.kept_segment(simple):
+            base, suffix = companion
+            # Its own package's new name, and the base's new simple name with the same suffix.
+            return self.new_package(package) + '/' + self.new_class(base).rsplit('/', 1)[-1] + suffix
         segments = simple.split('$')
         out = []
         walked = package
         for index, segment in enumerate(segments):
             walked += ('/' if index == 0 else '$') + segment
+            if index == 0 and len(segments) > 1 and segment:
+                # A nested class keeps its outer class's new name, whatever named that (a companion's suffix included).
+                out.append(self.new_class(walked).rsplit('/', 1)[-1])
+                continue
             if segment == '' or segment.isdigit():
                 out.append(segment)
                 continue
@@ -537,6 +575,11 @@ class Plan:
         return self.new_package(package) + '/' + '$'.join(out)
 
     def plan_classes(self):
+        self.all_classes = {internal for unit in self.top.walk() if unit.own for _, internal in unit.classes()}
+        self.simple_index = collections.defaultdict(list)
+        for internal in self.all_classes:
+            if '$' not in internal.rsplit('/', 1)[-1]:
+                self.simple_index[internal.rsplit('/', 1)[-1]].append(internal)
         for unit in self.top.walk():
             if not unit.own:
                 continue
@@ -550,7 +593,7 @@ class Plan:
                 else:
                     self.kept_classes.append(f'{unit.label}:{internal}')
             for name in unit.files:
-                if name.endswith('.class') or name.endswith('/') or name.lower().endswith('.jar'):
+                if name.endswith('.class') or name.endswith('/'):
                     continue
                 directory = package_of(name)
                 if directory and self.owned(directory):
@@ -603,8 +646,18 @@ class Plan:
                         targets.append(at['file'])
             for target in dict.fromkeys(targets):
                 self.files[(unit.label, target)] = self.renamed_file(target)
+        self.plan_nested()
+
+    def plan_nested(self):
+        """Each nested jar's new entry name in its parent: beside moved classes it moves with their package, under its own
+        name, as the code looks it up; elsewhere an own jar gets a name of its new id. Planned again after name_tests."""
+        for unit in self.top.walk():
+            if not unit.own:
+                continue
             for name, child in unit.children.items():
-                if child.own:
+                if name in self.resources:
+                    self.nested[child.label] = self.resources[name]
+                elif child.own:
                     self.nested[child.label] = self.renamed_jar(child, name)
 
     def name_tests(self, tests):
@@ -625,6 +678,7 @@ class Plan:
             self.resources.clear()
             self.kept_classes.clear()
             self.plan_classes()
+            self.plan_nested()
 
     def kept_segment(self, segment):
         """A segment equal to a tested constant, or holding a substring-tested fragment as whole words."""
@@ -669,6 +723,9 @@ class Plan:
         lines += [f'C\t{k}\t{v}' for k, v in sorted(self.classes.items())]
         lines += [f'P\t{k}\t{v}' for k, v in sorted(self.packages.items())]
         lines += [f'R\t{k}\t{v}' for k, v in sorted(self.resources.items())]
+        # A renamed mixin config, refmap or access file the code names by its path (a loader adding its own mixin
+        # configs by name) follows the rename in the code's strings too.
+        lines += [f'R\t{old}\t{new}' for (_, old), new in sorted(self.files.items()) if old not in self.resources]
         lines += [f'I\t{k}\t{v}' for k, v in sorted(self.ids.items())]
         Path(path).write_text('\n'.join(lines) + '\n', encoding='utf-8')
 
@@ -824,6 +881,11 @@ def rewrite_manifest(unit, plan):
     for key in CLASS_ATTRIBUTES:
         if key in main:
             main[key] = plan.declared_class(main[key])
+    for key, value in list(main.items()):
+        # A package directory named in the manifest (a 'Name: a/b/' a loader reads its version under) follows the package.
+        path = value.strip()
+        if unit.own and path.endswith('/') and '/' in path.rstrip('/') and plan.owned(path.rstrip('/')):
+            main[key] = plan.relocate_package(path.rstrip('/')) + '/'
     if unit.own and 'Automatic-Module-Name' in main:
         ids = unit.mod_ids()
         module = plan.ids.get(ids[0]) if ids else None
@@ -924,10 +986,66 @@ def rewrite_jarjar(unit, plan):
 
 # ---------------------------------------------------------------- assembly
 
+DIGESTS = ('md5', 'sha1', 'sha256', 'sha512')
+
+
+def repin(unit, plan):
+    """A changed nested jar is pinned again where its parent pinned it: its old file name and digests become the new.
+
+    A loader that unpacks a nested jar at run time finds it by a name its parent's properties or JSON give and checks it
+    against a digest written there (or in the file name itself); both are rewritten to the renamed jar's, in file names and
+    in the parent's text files outside assets/ and data/."""
+    names, digests = {}, {}
+    for name, child in unit.children.items():
+        if child.result is None or child.result == child.data:
+            continue
+        for algorithm in DIGESTS:
+            old_digest = hashlib.new(algorithm, child.data).hexdigest()
+            new_digest = hashlib.new(algorithm, child.result).hexdigest()
+            digests[old_digest] = new_digest
+            digests[old_digest.upper()] = new_digest.upper()
+        new_name = plan.nested.get(child.label, name)
+        for old_digest, new_digest in digests.items():
+            if old_digest in new_name:
+                new_name = new_name.replace(old_digest, new_digest)
+        if new_name != plan.nested.get(child.label, name):
+            plan.nested[child.label] = new_name
+        if new_name != name:
+            names[name] = new_name
+    if not names and not digests:
+        return
+    for old, new in list(names.items()) + list(digests.items()):
+        if old != new:
+            plan.pins[old] = new
+    for name in unit.files:
+        if name.endswith('.class') or name.lower().endswith('.jar') or name.endswith('/') \
+                or name.startswith(('assets/', 'data/')):
+            continue
+        try:
+            text = unit.out.get(name, unit.files[name]).decode('utf-8')
+        except UnicodeDecodeError:
+            continue
+        new_text = text
+        # Whole entry names first (longest first), then whatever digest is left (a checksum property). A text file in a
+        # directory names the jars beside it by their path from there (a container skeleton kept in a subdirectory).
+        here = name.rpartition('/')[0] + '/' if '/' in name else ''
+        local = dict(names)
+        if here:
+            local.update({old[len(here):]: new[len(here):] for old, new in names.items()
+                          if old.startswith(here) and new.startswith(here)})
+        for old in sorted(local, key=len, reverse=True):
+            new_text = new_text.replace(old, local[old])
+        for old in sorted(digests, key=len, reverse=True):
+            new_text = new_text.replace(old, digests[old])
+        if new_text != text:
+            unit.out[name] = new_text.encode('utf-8')
+
+
 def assemble(unit, plan, class_out):
     """New bytes of the unit (children first); the original bytes when nothing in it changed."""
     for child in unit.children.values():
         assemble(child, plan, class_out)
+    repin(unit, plan)
     children_changed = any(c.changed for c in unit.children.values())
     classes_changed = any(class_out.get((unit.label, e), (None, False))[1] for e, _ in unit.classes())
     unit.changed = unit.own or children_changed or classes_changed or bool(unit.out) or bool(unit.rename)
@@ -1094,7 +1212,7 @@ def rename(args):
             'tool': 'rename-mod.py', 'source': source.name, 'output': output.name, 'seed': args.seed,
             'roots': {r: plan.new_root[r] for r in roots}, 'modIds': plan.ids,
             'files': {f'{label}:{old}': new for (label, old), new in sorted(plan.files.items())},
-            'nested': plan.nested, 'modidStrings': args.modid_strings,
+            'nested': plan.nested, 'pins': plan.pins, 'modidStrings': args.modid_strings,
             'dependents': [d.label for d in dependents],
             'ownUnits': [u.label for u in top.walk() if u.own],
             'keptUnits': [u.label for u in top.walk() if not u.own],
@@ -1155,6 +1273,8 @@ def reverse_map(mapping):
     for label, new in mapping['nested'].items():
         old = label.rsplit('!', 1)[-1].rsplit('/', 1)[-1]
         pairs.setdefault(new.rsplit('/', 1)[-1].removesuffix('.jar'), old.removesuffix('.jar'))
+    for old, new in mapping.get('pins', {}).items():
+        pairs.setdefault(new, old)
     for old, new in mapping['modIds'].items():
         pairs.setdefault(new, old)
     for old, new in mapping['roots'].items():

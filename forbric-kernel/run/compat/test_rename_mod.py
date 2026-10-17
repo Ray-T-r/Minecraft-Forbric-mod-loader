@@ -49,6 +49,7 @@ public class SampleMod implements Runnable {
     public static final String MOD_ID = "samplemod";
     public void run() { }
     public static boolean loaded() { return FabricLoader.getInstance().isModLoaded("samplemod"); }
+    public static String ownConfig() { return "samplemod.mixins.json"; }
     static class Inner { }
     public static String describe() throws Exception {
         StringBuilder sb = new StringBuilder();
@@ -327,6 +328,14 @@ class RenameModTest(unittest.TestCase):
         self.assertEqual(1, code)
         self.assertIn('DIFFERENT :org/example/samplemod/util/Helper.class', out.getvalue())
 
+    def test_a_mixin_config_the_code_names_by_path_follows_the_renamed_file(self):
+        run = compile_tree({'Run.java': RUN}, self.t / 'runner-config')
+        renamed = subprocess.run([rm.java(), '-cp', str(run), 'Run', str(self.renamed),
+                                  self.cls_name('org/example/samplemod/SampleMod').replace('/', '.'), 'ownConfig'],
+                                 check=True, capture_output=True, text=True).stdout.strip()
+        self.assertEqual(json.loads(self.files['fabric.mod.json'])['mixins'][0], renamed)
+        self.assertIn(renamed, self.files)
+
     def test_every_class_reads_back_as_the_original(self):
         out = io.StringIO()
         import contextlib
@@ -410,6 +419,131 @@ class RenameModTest(unittest.TestCase):
             different = rm.main(['compare', '--map', str(self.mapping_file), str(a), str(c)])
         self.assertEqual(1, different, out.getvalue())
         self.assertIn('0 same, 1 only in the original run, 1 only in the renamed run', out.getvalue())
+
+
+KILN = {
+    # A loader that unpacks its real code at run time: a pinned nested jar named by a properties file and checked against
+    # the MD5 written there, and a second jar it finds beside its own class by a relative name (Essential's stages).
+    'org/example/kiln/boot/Boot.java': """package org.example.kiln.boot;
+import java.io.InputStream;
+import java.net.URL;
+import java.net.URLClassLoader;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.security.MessageDigest;
+import java.util.HexFormat;
+import java.util.Properties;
+public class Boot {
+    public static String describe() throws Exception {
+        Properties pins = new Properties();
+        try (InputStream in = Boot.class.getResourceAsStream("/kiln-loader.properties")) { pins.load(in); }
+        byte[] pinned;
+        try (InputStream in = Boot.class.getResourceAsStream(pins.getProperty("pinnedFile"))) { pinned = in.readAllBytes(); }
+        if (!HexFormat.of().formatHex(MessageDigest.getInstance("MD5").digest(pinned)).equals(pins.getProperty("pinnedFileMd5"))) {
+            return "checksum mismatch";
+        }
+        byte[] stage;
+        try (InputStream in = Boot.class.getResourceAsStream("stage1.jar")) { stage = in == null ? null : in.readAllBytes(); }
+        if (stage == null) return "no stage1";
+        if (!"natives".contains("natives")) return "never";
+        // The version is read under the stage's package directory, named in its manifest.
+        String stagePackage = "org.example.kiln.stage.".replace('.', '/');
+        try (java.util.jar.JarInputStream in = new java.util.jar.JarInputStream(new java.io.ByteArrayInputStream(stage))) {
+            if (!stagePackage.equals(in.getManifest().getMainAttributes().getValue("Name"))) return "stage1 manifest names another package";
+        }
+        return "core=" + call(pinned, "org.example.kiln.core.Core") + " stage=" + call(stage, "org.example.kiln.stage.Stage");
+    }
+    static String call(byte[] jar, String name) throws Exception {
+        Path file = Files.createTempFile("kiln", ".jar");
+        Files.write(file, jar);
+        try (URLClassLoader loader = new URLClassLoader(new URL[] { file.toUri().toURL() }, Boot.class.getClassLoader())) {
+            return (String) loader.loadClass(name).getMethod("name").invoke(null);
+        } finally {
+            Files.delete(file);
+        }
+    }
+}
+""",
+}
+KILN_CORE = {'org/example/kiln/core/Core.java': 'package org.example.kiln.core; public class Core { public static String name() throws Exception { '
+             'return ((java.util.function.Supplier<?>) Class.forName(Core.class.getName() + "Impl").getConstructor().newInstance()).get().toString(); } }',
+             'org/example/kiln/core/CoreImpl.java': 'package org.example.kiln.core; public class CoreImpl implements java.util.function.Supplier<String> { '
+             'public String get() { return new Object() { public String toString() { return "core"; } }.toString(); } }'}
+KILN_STAGE = {'org/example/kiln/stage/Stage.java': 'package org.example.kiln.stage; public class Stage { public static String name() throws Exception { '
+              'String impl = Stage.class.getName().replace(".stage.", ".impl.") + "Impl"; '
+              'if (!".stage.".contains("stage") || !".impl.".contains("impl")) return "never"; '
+              'return ((java.util.function.Supplier<?>) Class.forName(impl).getConstructor().newInstance()).get().toString(); } }',
+              'org/example/kiln/impl/StageImpl.java': 'package org.example.kiln.impl; public class StageImpl implements java.util.function.Supplier<String> { '
+              'public String get() { return "stage"; } }'}
+
+
+class RenamePinnedJarTest(unittest.TestCase):
+    """A mod that unpacks its real code at run time: nested jars it pins by name and MD5, and one beside its class."""
+
+    @classmethod
+    def setUpClass(cls):
+        cls.temp = tempfile.TemporaryDirectory(prefix='rename-mod-pinned-')
+        t = cls.t = Path(cls.temp.name)
+        boot = compile_tree(KILN, t / 'boot')
+        core_jar = jar_bytes(classes_of(compile_tree(KILN_CORE, t / 'core')))
+        stage_jar = jar_bytes({'META-INF/MANIFEST.MF': 'Manifest-Version: 1.0\r\nName: org/example/kiln/stage/\r\n'
+                               'Implementation-Version: 13\r\n\r\n', **classes_of(compile_tree(KILN_STAGE, t / 'stage'))})
+        md5 = rm.hashlib.md5(core_jar).hexdigest()
+        cls.pinned = f'kiln-{md5}.jar'
+        fabric = {'schemaVersion': 1, 'id': 'kiln', 'version': '1.0', 'entrypoints': {'main': ['org.example.kiln.boot.Boot']}}
+        entries = {'fabric.mod.json': json.dumps(fabric),
+                   'kiln-loader.properties': f'pinnedFile=/{cls.pinned}\npinnedFileMd5={md5}\n',
+                   cls.pinned: core_jar, 'org/example/kiln/boot/stage1.jar': stage_jar,
+                   'org/example/kiln/natives/bundle.jar': stage_jar, **classes_of(boot)}
+        cls.source = t / 'kiln-1.0.jar'
+        cls.source.write_bytes(jar_bytes(entries))
+        cls.out = t / 'out'
+        rm.main(['rename', str(cls.source), '--out-dir', str(cls.out), '--root', 'org/example/kiln', '--seed', 'test'])
+        cls.mapping = json.loads(next(cls.out.glob('*.rename.json')).read_text(encoding='utf-8'))
+        cls.renamed = cls.out / cls.mapping['output']
+        cls.files = read_jar(cls.renamed.read_bytes())
+
+    @classmethod
+    def tearDownClass(cls):
+        cls.temp.cleanup()
+
+    def test_the_pinned_jar_is_pinned_again_by_its_new_name_and_digest(self):
+        properties = dict(line.split('=', 1) for line in self.files['kiln-loader.properties'].decode().split())
+        name = properties['pinnedFile'].lstrip('/')
+        self.assertIn(name, self.files, 'the properties name the renamed pinned jar')
+        self.assertNotIn(self.pinned, self.files)
+        self.assertEqual(rm.hashlib.md5(self.files[name]).hexdigest(), properties['pinnedFileMd5'])
+        self.assertNotIn('kiln', name.split('-', 1)[0])
+        self.assertIn(properties['pinnedFileMd5'], name, 'a digest in the file name follows the content too')
+
+    def test_a_nested_class_keeps_its_companion_outers_new_name(self):
+        outer = self.mapping['classes']['org/example/kiln/core/CoreImpl']
+        self.assertEqual(outer + '$1', self.mapping['classes']['org/example/kiln/core/CoreImpl$1'])
+
+    def test_a_jar_beside_a_moved_class_moves_with_it_under_its_own_name(self):
+        boot = self.mapping['classes']['org/example/kiln/boot/Boot']
+        self.assertIn(boot.rsplit('/', 1)[0] + '/stage1.jar', self.files)
+        self.assertNotIn('org/example/kiln/boot/stage1.jar', self.files)
+        # A package segment the code tests a string against keeps its text, and a jar in it lands where its classes do.
+        natives = self.mapping['packages']['org/example/kiln/natives']
+        self.assertTrue(natives.endswith('/natives'), natives)
+        self.assertIn(natives + '/bundle.jar', self.files)
+
+    def test_the_renamed_loader_unpacks_and_runs_its_renamed_code_as_the_original(self):
+        run = compile_tree({'Run.java': RUN}, self.t / 'runner')
+        java = rm.java()
+
+        def call(jar, cls):
+            return subprocess.run([java, '-cp', str(run), 'Run', str(jar), cls, 'describe'], check=True, capture_output=True,
+                                  text=True).stdout.strip()
+        self.assertEqual('core=core stage=stage', call(self.source, 'org.example.kiln.boot.Boot'))
+        renamed_boot = self.mapping['classes']['org/example/kiln/boot/Boot'].replace('/', '.')
+        self.assertEqual('core=core stage=stage', call(self.renamed, renamed_boot))
+        verify = io.StringIO()
+        import contextlib
+        with contextlib.redirect_stdout(verify):
+            code = rm.main(['verify', '--map', str(next(self.out.glob('*.rename.json'))), str(self.source), str(self.renamed)])
+        self.assertEqual(0, code, verify.getvalue())
 
 
 if __name__ == '__main__':
