@@ -1421,6 +1421,7 @@ test	net.forbric.kernel.mixin.MixinWrapOperationShimTest	theSwitchWrapsNothing()
 test	net.forbric.kernel.mixin.MixinWrapOperationShimTest	theVerdictFollowsTheReviewedWrap()	[fixture:staged] actual Fabric API fixture required
 test	net.forbric.kernel.mixin.MixinWrapOperationShimTest	vanillasBodyBindsAsWritten()	[fixture:staged] actual Fabric API fixture required
 test	net.forbric.kernel.mixin.NativeConsumerStoresStagedTest	theSoundModifierMovesToThePlaySoundRead()	[fixture:staged] $ROOT/forbric-loader/run/merged-base/patched-mc-merged-26.2.jar absent
+test	net.forbric.kernel.mixin.NativeDecisionIslandStagedTest	aCallTheCarrierMovedIntoItsOwnStaticCalleeIsCarriedAndNotRelayed()	[fixture:staged] $ROOT/forbric-loader/run/merged-base/patched-mc-merged-26.2.jar absent
 test	net.forbric.kernel.mixin.NativeDecisionIslandStagedTest	theRelayedEffectCheckAnswersAnOpenFrameAndOtherwiseRunsAsAlways()	[fixture:staged] $ROOT/forbric-loader/run/merged-base/patched-mc-merged-26.2.jar absent
 test	net.forbric.kernel.mixin.NativeDecisionIslandStagedTest	vanillasBreathingChecksComeBackInFrontOfTheCarriersHookWithTheEffectCheckRelayed()	[fixture:staged] $ROOT/forbric-loader/run/merged-base/patched-mc-merged-26.2.jar absent
 test	net.forbric.kernel.mixin.NativeOnlyMethodsCensusTest	aClassOnlyTheMergedBaseHasIsNeverAnsweredFor()	skipped without a message (a class-level abort, e.g. in @BeforeAll)
