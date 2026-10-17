@@ -11,6 +11,7 @@ import org.junit.jupiter.api.Test;
 
 import net.forbric.api.DiscoveredMod;
 import net.forbric.api.Ecosystem;
+import net.forbric.kernel.ExpectCaught;
 
 /**
  * The offline report asks {@link NativeAbsentTargets} about a unit's mod as the boot does: with what discovery reads from
@@ -37,6 +38,7 @@ class MixinFitReportManifestTest {
 				NativeAbsentTargets.shipped().of(Ecosystem.NEOFORGE), mod), "the game the table describes fails it");
 	}
 
+	@ExpectCaught("could not read the FABRIC manifest of broken.jar")
 	@Test void twoModsOrNoManifestGiveNoMod() {
 		String toml = "modLoader=\"javafml\"\nloaderVersion=\"[1,)\"\nlicense=\"MIT\"\n[[mods]]\nmodId=\"one\"\nversion=\"1\"\n"
 				+ "[[mods]]\nmodId=\"two\"\nversion=\"1\"\n";

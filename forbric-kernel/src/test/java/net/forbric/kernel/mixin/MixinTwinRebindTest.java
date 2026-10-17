@@ -24,6 +24,7 @@ import org.objectweb.asm.tree.MethodNode;
 import org.objectweb.asm.tree.VarInsnNode;
 
 import net.forbric.api.Ecosystem;
+import net.forbric.kernel.ExpectCaught;
 import net.forbric.kernel.TestFixtures;
 import net.forbric.kernel.TestFixtures.Fixture;
 
@@ -55,6 +56,7 @@ class MixinTwinRebindTest {
 		MixinStubRebind.forget();
 	}
 
+	@ExpectCaught("No enum constant net.forbric.api.Ecosystem.QUILT")
 	@Test void aRowParsesAndAMalformedOneIsRefused() {
 		MixinTwinRebind.Row row = MixinTwinRebind.Row.parse(RENDERER + "#shouldRenderFace" + VANILLA + " -> " + OVERLOAD
 				+ " | 0,2,3,4 | FABRIC,FORGE");

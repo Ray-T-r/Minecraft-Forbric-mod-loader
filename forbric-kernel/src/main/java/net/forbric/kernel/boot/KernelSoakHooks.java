@@ -1,7 +1,7 @@
 package net.forbric.kernel.boot;
 
 import java.lang.reflect.Method;
-import net.forbric.kernel.util.ForbricLog;
+import net.forbric.kernel.util.Caught;
 
 /** Optional game-side driver; no game type is linked from BOOT and ordinary sessions do not load it. */
 public final class KernelSoakHooks {
@@ -17,7 +17,7 @@ public final class KernelSoakHooks {
 			tick.invoke(null, minecraft);
 		} catch (Throwable failure) {
 			unavailable = true;
-			ForbricLog.error("[Forbric/ClientSoak] FATAL controller unavailable; no soak acceptance can be recorded", failure);
+			Caught.error(failure, "[Forbric/ClientSoak] FATAL controller unavailable; no soak acceptance can be recorded");
 			stop(minecraft);
 		}
 	}
@@ -27,7 +27,7 @@ public final class KernelSoakHooks {
 	static void stop(Object minecraft) {
 		try { minecraft.getClass().getMethod("stop").invoke(minecraft); }
 		catch (Throwable unstoppable) {
-			ForbricLog.error("[Forbric/ClientSoak] FATAL could not request a normal stop; halting the owned soak JVM", unstoppable);
+			Caught.error(unstoppable, "[Forbric/ClientSoak] FATAL could not request a normal stop; halting the owned soak JVM");
 			Runtime.getRuntime().halt(71);
 		}
 	}

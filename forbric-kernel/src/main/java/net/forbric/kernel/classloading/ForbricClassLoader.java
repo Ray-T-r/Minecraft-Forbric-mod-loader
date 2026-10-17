@@ -31,6 +31,7 @@ import java.util.jar.Attributes;
 import java.util.jar.JarFile;
 import java.util.jar.Manifest;
 
+import net.forbric.kernel.util.Caught;
 import net.forbric.kernel.util.ForbricLog;
 import net.forbric.api.DiscoveredMod;
 import net.forbric.api.Ecosystem;
@@ -140,6 +141,8 @@ public final class ForbricClassLoader extends URLClassLoader {
 				} else origins.put(source, origin);
 			} catch (java.net.MalformedURLException | java.nio.file.InvalidPathException ignored) {
 				// An unknown source remains unattributed; it must never be guessed from a class name.
+				Caught.warn(ignored, "[Forbric/Loader] %s's source %s is not a path; its classes stay unattributed",
+						mod.getId(), mod.getSource());
 			}
 		}
 		modOrigins = Map.copyOf(origins);
@@ -382,6 +385,7 @@ public final class ForbricClassLoader extends URLClassLoader {
 		try (InputStream in = parent.getResourceAsStream(path)) {
 			return in == null ? null : in.readAllBytes();
 		} catch (IOException e) {
+			Caught.warn(e, "[Forbric/Loader] could not read %s from the parent loader; Mixin sees no bytes for it", path);
 			return null;
 		}
 	}
@@ -401,6 +405,7 @@ public final class ForbricClassLoader extends URLClassLoader {
 			try {
 				return url.openStream();
 			} catch (IOException e) {
+				Caught.warn(e, "[Forbric/Loader] could not open %s; serving no stream for %s", url, name);
 				return null;
 			}
 		}
@@ -412,6 +417,7 @@ public final class ForbricClassLoader extends URLClassLoader {
 		try (InputStream in = resource.openStream()) {
 			return in.readAllBytes();
 		} catch (IOException e) {
+			Caught.warn(e, "[Forbric/Loader] could not read %s; treating it as absent", resource);
 			return null;
 		}
 	}
@@ -590,6 +596,8 @@ public final class ForbricClassLoader extends URLClassLoader {
 			System.arraycopy(interfaces, 0, all, 1, interfaces.length);
 			return all;
 		} catch (RuntimeException unreadable) {
+			Caught.warn(unreadable, "[Forbric/Loader] could not parse %s's class header; its supertypes are unknown",
+					internalName);
 			return null;
 		}
 	}
@@ -631,7 +639,10 @@ public final class ForbricClassLoader extends URLClassLoader {
 		traceDefine(name);
 		ancestorCompositions.verify(name, bytes, path -> {
 			try (InputStream input = getGameResourceAsStream(path)) { return input == null ? null : input.readAllBytes(); }
-			catch (IOException unavailable) { return null; }
+			catch (IOException unavailable) {
+				Caught.warn(unavailable, "[Forbric/Loader] could not read %s while verifying %s's ancestors", path, name);
+				return null;
+			}
 		});
 		try {
 			Class<?> defined = defineClass(name, bytes, 0, bytes.length, domain);
@@ -648,6 +659,7 @@ public final class ForbricClassLoader extends URLClassLoader {
 		} catch (LinkageError duplicate) {
 			Class<?> already = findLoadedClass(name);
 			if (already == null) throw duplicate; // a genuine linkage problem, not re-entrancy
+			Caught.expected(duplicate);
 			if (REENTRANT.add(name)) {
 				ForbricLog.debug("[Forbric/Loader] %s was defined re-entrantly (guest code loaded it from inside its "
 						+ "own transform, most likely a mixin config plugin's construction) — using the definition "
@@ -686,7 +698,7 @@ public final class ForbricClassLoader extends URLClassLoader {
 			return raced != null ? raced : built;
 		} catch (Throwable t) {
 			// A code source is a nicety; failing to build one must not cost the class its definition.
-			ForbricLog.debug("[Forbric/Loader] no code source for %s: %s", spelling, String.valueOf(t));
+			Caught.warn(t, "[Forbric/Loader] no code source for %s; its classes get no protection domain", spelling);
 			return null;
 		}
 	}
@@ -714,6 +726,7 @@ public final class ForbricClassLoader extends URLClassLoader {
 				jarFamilies.put("jar:" + jar.toUri().toURL(), family);   // same spelling findResource will produce
 			} catch (java.net.MalformedURLException impossible) {
 				// a jar already on this loader's URL list cannot fail to spell itself
+				Caught.warn(impossible, "[Forbric/Loader] could not spell %s as a URL; it gets no loader family", jar);
 			}
 		});
 	}
@@ -729,6 +742,8 @@ public final class ForbricClassLoader extends URLClassLoader {
 				universalJars.add("jar:" + jar.toUri().toURL());   // setJarFamilies' spelling
 			} catch (java.net.MalformedURLException impossible) {
 				// a jar already on this loader's URL list cannot fail to spell itself
+				Caught.warn(impossible, "[Forbric/Loader] could not spell %s as a URL; its services are served unfiltered",
+						jar);
 			}
 		}
 	}
@@ -753,6 +768,7 @@ public final class ForbricClassLoader extends URLClassLoader {
 				try (java.io.InputStream in = new URL(jar + "!/" + internal + ".class").openStream()) {
 					return in.readAllBytes();
 				} catch (IOException absent) {
+					Caught.expected(absent);
 					return null;
 				}
 			}));
@@ -809,6 +825,8 @@ public final class ForbricClassLoader extends URLClassLoader {
 			runtimeJarFamilies.put("jar:" + jar.toUri().toURL(), family);   // setJarFamilies' spelling
 		} catch (java.net.MalformedURLException impossible) {
 			// the caller has just added this same path as a URL
+			Caught.warn(impossible, "[Forbric/Loader] could not spell runtime jar %s as a URL; it gets no loader family",
+					jar);
 		}
 	}
 
@@ -921,6 +939,7 @@ public final class ForbricClassLoader extends URLClassLoader {
 					null);
 		} catch (IllegalArgumentException alreadyDefined) {
 			// race: another thread defined it — fine.
+			Caught.expected(alreadyDefined);
 		}
 	}
 
@@ -945,6 +964,7 @@ public final class ForbricClassLoader extends URLClassLoader {
 					return m == null ? NO_MANIFEST : m;
 				}
 			} catch (Exception e) {
+				Caught.warn(e, "[Forbric/Loader] could not read the manifest of %s; its packages get no version", js);
 				return NO_MANIFEST;
 			}
 		});

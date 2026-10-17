@@ -8,11 +8,15 @@ import java.util.jar.JarOutputStream;
 import java.util.zip.ZipEntry;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
+import net.forbric.kernel.ExpectCaught;
 import net.forbric.kernel.classloading.ForbricClassLoader;
 import net.forbric.kernel.transform.*;
 
 class ProtocolExtensionsTest {
     @TempDir Path work;
+    // The unit classpath has no Mod Menu stand-in, so the built-in Mod Menu extension says so; not what this test is
+    // about.
+    @ExpectCaught("Mod Menu config contract is unavailable")
     @Test void aPreviouslyUnknownServiceProviderGetsEveryHookThroughTheGameLoader() throws Exception {
         var sources = Map.of("unfamiliar.Protocol", """
             package unfamiliar;
@@ -73,6 +77,7 @@ class ProtocolExtensionsTest {
             ProtocolExtensions.release(game);
         }
     }
+    @ExpectCaught("provider failure")
     @Test void programmaticProvidersAlsoReceiveEventsAndOneFailureDoesNotHideAnotherProvider() {
         var registry = new ProtocolExtensions.Registry(new ProtocolExtension.Context(getClass().getClassLoader(), Side.CLIENT));
         registry.register(new ProtocolExtension() {

@@ -6,6 +6,7 @@ import java.util.function.BiFunction;
 import java.util.function.Function;
 import net.forbric.api.Ecosystem;
 import net.forbric.kernel.mixin.NativeGameReferences;
+import net.forbric.kernel.util.Caught;
 import org.objectweb.asm.*;
 import org.objectweb.asm.tree.*;
 import org.objectweb.asm.tree.analysis.*;
@@ -28,7 +29,9 @@ public final class NativeMergeShapeRepair {
             if (resources != null) try {
                 byte[] bytes = resources.apply(name + ".class");
                 if (bytes != null) { ClassNode parsed = new ClassNode(); new ClassReader(bytes).accept(parsed, 0); if (name.equals(parsed.name)) node = parsed; }
-            } catch (RuntimeException unavailable) { }
+            } catch (RuntimeException unavailable) {
+                Caught.warn(unavailable, "[Forbric/MergeShape] could not read %s.class; the merge-shape repair treats it as absent", name);
+            }
             cache.put(name, node); return node;
         }, NativeGameReferences::reference);
     }
@@ -272,7 +275,7 @@ public final class NativeMergeShapeRepair {
     private static boolean boundary(AbstractInsnNode start, AbstractInsnNode end) { for (AbstractInsnNode i = start.getNext(); i != end; i = i.getNext()) if (i == null || i instanceof LabelNode || i instanceof FrameNode) return true; return false; }
     private static boolean emptyStack(ClassNode owner, MethodNode method, AbstractInsnNode at) {
         try { Frame<BasicValue>[] frames = new Analyzer<>(new BasicInterpreter()).analyze(owner.name, method); Frame<BasicValue> frame = frames[method.instructions.indexOf(at)]; return frame != null && frame.getStackSize() == 0; }
-        catch (AnalyzerException | RuntimeException invalid) { return false; }
+        catch (AnalyzerException | RuntimeException invalid) { Caught.expected(invalid); return false; }
     }
     private static MethodNode method(ClassNode owner, String name, String desc) { return owner.methods.stream().filter(m -> m.name.equals(name) && m.desc.equals(desc)).findFirst().orElse(null); }
     private static List<AbstractInsnNode> code(MethodNode method) { List<AbstractInsnNode> result = new ArrayList<>(); for (AbstractInsnNode i : method.instructions) if (i.getOpcode() >= 0) result.add(i); return result; }

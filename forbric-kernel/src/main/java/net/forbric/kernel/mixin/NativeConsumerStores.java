@@ -25,6 +25,7 @@ import org.objectweb.asm.tree.analysis.Frame;
 
 import net.forbric.api.Ecosystem;
 import net.forbric.kernel.util.ForbricLog;
+import net.forbric.kernel.util.Caught;
 
 /**
  * Moves a value modifier written for the one store of a local, where the carrier stores that local several times on paths of
@@ -244,6 +245,7 @@ public final class NativeConsumerStores {
 		try {
 			return new Analyzer<>(new BasicInterpreter()).analyze(owner, method);
 		} catch (AnalyzerException | RuntimeException unanalysable) {
+			Caught.expected(unanalysable);
 			return null;
 		}
 	}

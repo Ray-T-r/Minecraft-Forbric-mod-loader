@@ -3,6 +3,7 @@ package net.forbric.kernel.runtime.transfer;
 import java.util.IdentityHashMap;
 import java.util.Map;
 
+import net.forbric.kernel.util.Caught;
 import net.minecraft.core.component.DataComponentPatch;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.world.level.material.Fluid;
@@ -39,7 +40,11 @@ public final class ForgeFluidMetadata {
 				DataComponentPatch patch = codec.toComponents(original.copy());
 				if (patch != null && !patch.isEmpty() && same(original, codec.toTag(patch))) return FluidResource.of(stack.getFluid(), patch);
 			}
-		} catch (RuntimeException invalid) { /* A codec that cannot round-trip this value grants no write capability. */ }
+		} catch (RuntimeException invalid) {
+			// A codec that cannot round-trip this value grants no write capability.
+			Caught.warn(invalid, "[Forbric/Transfer] the metadata codec for fluid %s threw converting a Forge tag; the fluid "
+					+ "was not transferred", stack.getFluid());
+		}
 		TransferIssues.report("FLUID_METADATA_UNREPRESENTABLE", stack,
 				"Forge fluid tag has no verified lossless component mapping; the fluid was not transferred");
 		return null;
@@ -58,7 +63,11 @@ public final class ForgeFluidMetadata {
 					return new FluidStack(resource.getFluid(), amount, tag.copy());
 				}
 			}
-		} catch (RuntimeException invalid) { /* Reject, never silently erase a component. */ }
+		} catch (RuntimeException invalid) {
+			// Reject, never silently erase a component.
+			Caught.warn(invalid, "[Forbric/Transfer] the metadata codec for fluid %s threw converting components; the fluid "
+					+ "was not transferred", resource.getFluid());
+		}
 		TransferIssues.report("FLUID_METADATA_UNREPRESENTABLE", resource,
 				"Fluid components have no verified lossless Forge tag mapping; the fluid was not transferred");
 		return null;

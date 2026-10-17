@@ -16,6 +16,7 @@
 
 package net.forbric.kernel.boot;
 
+import net.forbric.kernel.util.Caught;
 import net.forbric.kernel.util.ForbricLog;
 
 /**
@@ -53,10 +54,11 @@ public final class KernelHudBridge {
 					layerManager.getClass().getClassLoader())
 					.getMethod("install", Object.class).invoke(null, layerManager);
 		} catch (ClassNotFoundException single) {
+			Caught.expected(single);
 			ForbricLog.debug("[Forbric/HudBridge] no MinecraftForge overlay adapter on this loader");
 		} catch (Throwable t) {
-			ForbricLog.warn("[Forbric/HudBridge] could not install MinecraftForge's overlay layers — a mod's HUD "
-					+ "overlay will render nothing", t);
+			Caught.warn(t, "[Forbric/HudBridge] could not install MinecraftForge's overlay layers — a mod's HUD "
+					+ "overlay will render nothing");
 		}
 	}
 }

@@ -6,6 +6,7 @@ import java.security.MessageDigest;
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 import net.forbric.kernel.boot.DefinedMethodContracts.MethodContract;
+import net.forbric.kernel.util.Caught;
 import net.forbric.kernel.util.ForbricLog;
 
 /** Final-definition guards for an exact, closed static delegate graph lifted into its caller. */
@@ -32,10 +33,16 @@ public final class KernelPredicateDelegates {
                 Class<?> owner = Class.forName(contract.owner(), false, loader);
                 if (!DefinedMethodContracts.observed(owner.getClassLoader(), contract)) { proved = false; break; }
             }
-        } catch (ClassNotFoundException | LinkageError unavailable) { proved = false; }
+        } catch (ClassNotFoundException | LinkageError unavailable) {
+            Caught.warn(unavailable, "[Forbric/PredicateDelegate] a delegate/provider class of %s cannot be resolved; keeping the original native operation", key);
+            proved = false;
+        }
         // Initialization errors are the native call's own errors. Do not swallow one and retry an erroneous class.
         if (proved) try { Class.forName(plan.initializedOwner(), true, caller.getClass().getClassLoader()); }
-        catch (ClassNotFoundException unavailable) { proved = false; }
+        catch (ClassNotFoundException unavailable) {
+            Caught.warn(unavailable, "[Forbric/PredicateDelegate] %s is not loadable; keeping the original native operation (%s)", plan.initializedOwner(), key);
+            proved = false;
+        }
         if (!proved && caller != null && REPORTED.get(caller.getClass()).add(key))
             ForbricLog.warn("[Forbric/PredicateDelegate] keeping the original native operation: its delegate/provider final bodies do not match the closed graph proof; the guest predicate decorator is not called (%s)", key);
         return proved;

@@ -36,6 +36,7 @@ import net.minecraft.util.GsonHelper;
 import net.neoforged.neoforge.client.model.UnbakedModelParser;
 
 import net.forbric.kernel.transform.ModelFormatFunnelInjector;
+import net.forbric.kernel.util.Caught;
 import net.forbric.kernel.util.ForbricLog;
 import net.forbric.kernel.util.Reflect;
 
@@ -245,6 +246,7 @@ public final class KernelModelFormats {
 		try {
 			return UnbakedModelParser.get(id) != null;
 		} catch (RuntimeException notYetInitialised) {
+			Caught.expected(notYetInitialised);
 			return true;
 		}
 	}
@@ -280,6 +282,12 @@ public final class KernelModelFormats {
 						fabricDeserialize = lookup.findVirtual(api, "deserialize", MethodType.methodType(
 								UnbakedModel.class, JsonObject.class, JsonDeserializationContext.class));
 					} catch (Throwable absent) {
+						Caught.expected(absent);
+						if (!(absent instanceof ClassNotFoundException)) {
+							Caught.warn(absent, "[Forbric/ModelFormats] fabric-model-loading is installed but its "
+									+ "ModelLoadingPlugin entry points could not be resolved — its model formats parse "
+									+ "as plain models");
+						}
 						fabricLookup = null;
 						fabricDeserialize = null;
 					}

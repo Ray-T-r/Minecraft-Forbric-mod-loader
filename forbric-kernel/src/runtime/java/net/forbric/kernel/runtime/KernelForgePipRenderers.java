@@ -26,8 +26,8 @@ import java.util.Set;
 
 import com.google.common.collect.ImmutableMap;
 
+import net.forbric.kernel.util.Caught;
 import net.forbric.kernel.util.ForbricLog;
-import net.forbric.kernel.util.Reflect;
 import net.minecraft.client.gui.render.pip.PictureInPictureRenderer;
 import net.minecraft.client.renderer.state.gui.pip.PictureInPictureRenderState;
 import net.minecraftforge.client.event.RegisterPictureInPictureRendererEvent;
@@ -148,8 +148,8 @@ public final class KernelForgePipRenderers {
 			}
 			return registered;
 		} catch (Throwable t) {
-			ForbricLog.warn("[Forbric/PipRenderers] could not collect MinecraftForge's picture-in-picture renderers "
-					+ "— a mod's in-world preview or minimap element will draw nothing", Reflect.unwrap(t));
+			Caught.warn(t, "[Forbric/PipRenderers] could not collect MinecraftForge's picture-in-picture renderers "
+					+ "— a mod's in-world preview or minimap element will draw nothing");
 			return Map.of();
 		}
 	}

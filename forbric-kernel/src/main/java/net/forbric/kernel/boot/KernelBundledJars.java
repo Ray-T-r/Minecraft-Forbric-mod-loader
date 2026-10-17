@@ -24,6 +24,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.zip.ZipFile;
 
+import net.forbric.kernel.util.Caught;
 import net.forbric.kernel.util.ForbricLog;
 
 /**
@@ -88,7 +89,8 @@ public final class KernelBundledJars {
 				}
 			}
 		} catch (Exception unreadable) {
-			ForbricLog.debug("[Forbric/Boot] could not read the bundled MixinExtras version: %s", String.valueOf(unreadable));
+			Caught.warn(unreadable, "[Forbric/Boot] could not read the bundled MixinExtras version; it is reported as "
+					+ "unknown");
 		}
 		mixinExtrasVersion = known;
 		return known.isEmpty() ? null : known;
@@ -120,8 +122,7 @@ public final class KernelBundledJars {
 			} catch (Exception e) {
 				if (bundled.required()) throw new IllegalStateException("bundled jar " + name
 						+ " could not be materialized exactly — " + bundled.onMissing(), e);
-				ForbricLog.warn("[Forbric/Boot] could not extract bundled jar %s: %s — %s",
-						name, String.valueOf(e), bundled.onMissing());
+				Caught.warn(e, "[Forbric/Boot] could not extract bundled jar %s — %s", name, bundled.onMissing());
 			}
 		}
 
@@ -147,10 +148,12 @@ public final class KernelBundledJars {
 			try {
 				try { Files.move(temporary, target, StandardCopyOption.ATOMIC_MOVE, StandardCopyOption.REPLACE_EXISTING); }
 				catch (java.nio.file.AtomicMoveNotSupportedException unsupported) {
+					Caught.expected(unsupported);
 					Files.move(temporary, target, StandardCopyOption.REPLACE_EXISTING);
 				}
 			} catch (java.io.IOException concurrentOrLocked) {
 				if (!matches(target, hash)) throw concurrentOrLocked;
+				Caught.expected(concurrentOrLocked);
 			}
 			if (!matches(target, hash)) throw new java.io.IOException("bundled jar changed while extracting: " + target);
 			return target;

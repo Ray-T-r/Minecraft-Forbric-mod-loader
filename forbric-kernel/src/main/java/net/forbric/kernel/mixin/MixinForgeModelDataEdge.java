@@ -11,6 +11,7 @@ import org.objectweb.asm.tree.*;
 
 import net.forbric.kernel.transform.ForgeModelDataFlowTransformer;
 import net.forbric.kernel.util.ForbricLog;
+import net.forbric.kernel.util.Caught;
 
 /**
  * Gives an injector at the start of a carrier's model-data overload the overload's edge twin as a second target, so it
@@ -176,6 +177,7 @@ public final class MixinForgeModelDataEdge {
 			mixin.accept(out);
 			return out.toByteArray();
 		} catch (RuntimeException unreadable) {
+			Caught.warn(unreadable, "[Forbric/Mixin] could not judge a mixin of %d bytes against its targets' model-data edge twins; it is judged as written", bytes.length);
 			return bytes;
 		}
 	}

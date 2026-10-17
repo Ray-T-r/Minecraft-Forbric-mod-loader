@@ -25,6 +25,7 @@ import net.forbric.api.GameEventBridge;
 import net.forbric.api.EventBridges;
 import net.forbric.api.ForeignType;
 import net.forbric.kernel.util.ForbricLog;
+import net.forbric.kernel.util.Caught;
 
 /**
  * Preserves NeoForge's table construction/writeback and redirects only the intervening event post.
@@ -69,7 +70,7 @@ public final class ForgeSpawnPlacementsInjector implements ClassTransformer {
 	/** Whether {@code fireSpawnPlacementEvent} posts MinecraftForge's registration: through the bridge, or itself. */
 	static boolean servesMinecraftForge(byte[] bytes) {
 		ClassNode node = new ClassNode();
-		try { new ClassReader(bytes).accept(node, 0); } catch (RuntimeException unreadable) { return false; }
+		try { new ClassReader(bytes).accept(node, 0); } catch (RuntimeException unreadable) { Caught.warn(unreadable, "[Forbric/SpawnPlacements] could not read a class to check fireSpawnPlacementEvent; taken as not serving MinecraftForge"); return false; }
 		for (MethodNode method : node.methods) {
 			if (!method.name.equals("fireSpawnPlacementEvent") || !method.desc.equals("()V")) continue;
 			for (var instruction : method.instructions) {

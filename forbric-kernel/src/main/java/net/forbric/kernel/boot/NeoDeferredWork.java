@@ -20,7 +20,7 @@ import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CompletionException;
 import java.util.concurrent.Executor;
 
-import net.forbric.kernel.util.ForbricLog;
+import net.forbric.kernel.util.Caught;
 
 /**
  * Runs a NeoForge {@code DeferredWorkQueue} on the thread NeoForge runs it on.
@@ -73,10 +73,13 @@ public final class NeoDeferredWork {
 			Class<?> workManager = Class.forName(WORK_MANAGER, false, cl);
 			Object executor = workManager.getMethod("syncExecutor").invoke(null);
 			return executor instanceof Executor sync ? sync : null;
-		} catch (Throwable absent) {
-			ForbricLog.debug("[Forbric/Lifecycle] no usable %s.syncExecutor() on this carrier — deferred work will "
-					+ "run on the calling thread, so a mod that defers to the game loop runs inline instead: %s",
-					WORK_MANAGER, absent);
+		} catch (ClassNotFoundException absent) {
+			Caught.expected(absent);
+			return null;
+		} catch (Throwable unusable) {
+			Caught.warn(unusable, "[Forbric/Lifecycle] no usable %s.syncExecutor() on this carrier — deferred work will "
+					+ "run on the calling thread, so a mod that defers to the game loop runs inline instead",
+					WORK_MANAGER);
 			return null;
 		}
 	}

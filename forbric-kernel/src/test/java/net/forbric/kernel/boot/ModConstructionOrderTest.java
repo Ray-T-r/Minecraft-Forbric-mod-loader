@@ -56,6 +56,23 @@ class ModConstructionOrderTest {
 		assertTrue(order.indexOf("cloth-config") < order.indexOf("cpa"), order.toString());
 	}
 
+	/**
+	 * owo-sentinel's shape: nested beside owo-lib, it provides owo-lib's id and depends on nothing installed, so it comes
+	 * first. Its alias used to take the name, owo-lib never became a node, and it sorted after everything.
+	 */
+	@Test
+	void aModsOwnIdOutranksAnotherModsAliasForIt() {
+		List<String> order = ModConstructionOrder.of(List.of(
+				mod("lib-sentinel").withAliases(List.of("lib")),
+				mod("lib", requires("dep")),
+				mod("user", requires("lib")),
+				mod("dep")));
+
+		assertTrue(order.contains("lib"), order.toString());
+		assertTrue(order.indexOf("dep") < order.indexOf("lib"), order.toString());
+		assertTrue(order.indexOf("lib") < order.indexOf("user"), order.toString());
+	}
+
 	private static DiscoveredMod mod(String id, UnifiedDependency... deps) {
 		return new DiscoveredMod(Ecosystem.NEOFORGE, id, "1.0.0", id, List.of(deps), List.of(), null, id + ".jar");
 	}

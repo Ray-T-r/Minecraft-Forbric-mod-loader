@@ -4,6 +4,7 @@ import java.util.*;
 import java.util.function.Function;
 import org.objectweb.asm.*;
 import org.objectweb.asm.tree.*;
+import net.forbric.kernel.util.Caught;
 
 /** Exact source/current prefix and operand-wire proof for a final call extracted into a static helper. */
 final class NativeCallbackSeam {
@@ -162,7 +163,7 @@ final class NativeCallbackSeam {
         if (!own) { int[] none = new int[end]; Arrays.fill(none, -1); return none; }
         org.objectweb.asm.tree.analysis.Frame<org.objectweb.asm.tree.analysis.SourceValue>[] frames;
         try { frames = new org.objectweb.asm.tree.analysis.Analyzer<>(new org.objectweb.asm.tree.analysis.SourceInterpreter()).analyze("java/lang/Object", method); }
-        catch (org.objectweb.asm.tree.analysis.AnalyzerException | RuntimeException unanalysable) { return null; }
+        catch (org.objectweb.asm.tree.analysis.AnalyzerException | RuntimeException unanalysable) { Caught.expected(unanalysable); return null; }
         int[] parent = new int[end];
         for (int i = 0; i < end; i++) parent[i] = i;
         Map<AbstractInsnNode, Integer> at = new IdentityHashMap<>();

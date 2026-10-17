@@ -4,12 +4,16 @@ import net.forbric.api.ProtocolExtension;
 import net.forbric.kernel.interop.protocol.ProtocolTransformAdapters;
 import net.forbric.kernel.transform.ModifiableDataViewsTransformer;
 import net.forbric.kernel.classloading.ForbricClassLoader;
+import net.forbric.kernel.util.Caught;
 /** The public Forge/NeoForge mutable world-data protocol, independently discoverable. */
 public final class WorldDataProtocolExtension implements ProtocolExtension {
     @Override public String id(){return "forbric:world-data-views";}
     @Override public void registerTransformers(Context context,Transforms transforms){
         if(!(context.gameLoader()instanceof ForbricClassLoader loader))return;
-        var transformer=new ModifiableDataViewsTransformer(path->{try(var in=loader.getGameResourceAsStream(path)){return in==null?null:in.readAllBytes();}catch(java.io.IOException unavailable){return null;}});
+        var transformer=new ModifiableDataViewsTransformer(path->{try(var in=loader.getGameResourceAsStream(path)){return in==null?null:in.readAllBytes();}catch(java.io.IOException unavailable){
+            Caught.warn(unavailable,"[Forbric/WorldData] could not read %s for the mutable world-data views",path);
+            return null;
+        }});
         transforms.register("COREMOD",transformer.name(),ProtocolTransformAdapters.transform(transformer));
     }
 }

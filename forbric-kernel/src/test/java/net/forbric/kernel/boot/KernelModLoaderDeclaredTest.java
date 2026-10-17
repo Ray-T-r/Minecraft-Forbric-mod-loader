@@ -37,6 +37,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
 import net.forbric.api.Ecosystem;
+import net.forbric.kernel.ExpectCaught;
 
 /**
  * What {@link KernelModLoader#declaredMods} reads out of the jars it is handed — the description every NeoForge
@@ -105,6 +106,7 @@ class KernelModLoaderDeclaredTest {
 				"a jar handed to Fabric has no NeoForge mod here, and no NeoForge container may be described by it");
 	}
 
+	@ExpectCaught("could not read the manifest of broken.jar")
 	@Test
 	void anUnreadableJarCostsOnlyItself() throws Exception {
 		Path broken = Files.writeString(tmp.resolve("broken.jar"), "not a zip");

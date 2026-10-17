@@ -28,6 +28,7 @@ import java.util.zip.ZipEntry;
 import java.util.zip.ZipFile;
 
 import net.fabricmc.api.EnvType;
+import net.forbric.kernel.util.Caught;
 
 /**
  * Which of the compat transformer's repairs would stop applying against a DIFFERENT build of the game.
@@ -110,6 +111,8 @@ public final class RepairDriftCensus {
 					return in.readAllBytes();
 				}
 			} catch (IOException unreadable) {
+				Caught.warn(unreadable, "[Forbric/RepairDrift] could not read %s looking for %s; its repair counts as"
+						+ " absent", jar, binaryName);
 				return null;
 			}
 		}

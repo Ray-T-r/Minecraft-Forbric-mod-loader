@@ -30,6 +30,7 @@ import org.objectweb.asm.tree.ClassNode;
 import org.objectweb.asm.tree.MethodInsnNode;
 import org.objectweb.asm.tree.MethodNode;
 
+import net.forbric.kernel.util.Caught;
 import net.forbric.kernel.util.ForbricLog;
 
 /**
@@ -123,6 +124,7 @@ public final class SupersededMixins {
 			try {
 				fits = kind.claims().test(mixin, classes == null ? path -> null : classes);
 			} catch (RuntimeException unreadable) {
+				Caught.warn(unreadable, "[Forbric/Mixin] could not judge whether %s is a %s mixin; taken as not", binary, kind.kind());
 				fits = false;
 			}
 			if (fits) {
@@ -227,6 +229,8 @@ public final class SupersededMixins {
 					continue;
 				}
 			} catch (RuntimeException unreadable) {
+				Caught.warn(unreadable, "[Forbric/Mixin] could not read %s to check the repair that supersedes %s;"
+						+ " not counted as proved", binaryName, waiting);
 				continue;
 			}
 			PROVED.add(replacement.kind());

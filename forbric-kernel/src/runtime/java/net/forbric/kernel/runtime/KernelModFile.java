@@ -22,7 +22,7 @@ import java.util.Map;
 import java.util.function.Supplier;
 
 import net.forbric.kernel.discovery.ModFileScanner;
-import net.forbric.kernel.util.ForbricLog;
+import net.forbric.kernel.util.Caught;
 import net.neoforged.fml.jarcontents.JarContents;
 import net.neoforged.neoforgespi.language.IModInfo;
 import net.neoforged.neoforgespi.language.IModFileInfo;
@@ -83,8 +83,8 @@ public final class KernelModFile implements IModFile {
 		try {
 			return JarContents.ofPath(jar);
 		} catch (Throwable t) {
-			ForbricLog.debug("[Forbric/Container] no JarContents for %s: %s", jar.getFileName(),
-					String.valueOf(t));
+			Caught.warn(t, "[Forbric/Container] no JarContents for %s — a mod reading files out of its own jar gets "
+					+ "nothing", jar.getFileName());
 			return null;
 		}
 	}

@@ -38,8 +38,8 @@ import net.neoforged.neoforge.registries.DataMapLoader;
 import net.neoforged.neoforge.registries.NeoForgeRegistries;
 import net.neoforged.neoforge.server.ServerLifecycleHooks;
 
+import net.forbric.kernel.util.Caught;
 import net.forbric.kernel.util.ForbricLog;
-import net.forbric.kernel.util.Reflect;
 
 /**
  * The three NeoForge worldgen mechanisms the byte merge left with no driver, and their guards.
@@ -93,7 +93,6 @@ public final class KernelNeoWorldgen {
 	private static final Map<EntityType<?>, Integer> NEOFORGE_SHIPPED_MONSTER_ROOM_MOBS = Map.of(
 			EntityTypes.SKELETON, 100, EntityTypes.SPIDER, 100, EntityTypes.ZOMBIE, 200);
 
-	private static volatile boolean reportedFallback;
 	private static volatile boolean reportedVanillaDraw;
 	private static volatile boolean reportedDataMaps;
 
@@ -121,13 +120,9 @@ public final class KernelNeoWorldgen {
 				if (fromDataMap != null) return fromDataMap;
 			}
 		} catch (Throwable t) {
-			if (!reportedFallback) {
-				reportedFallback = true;
-				ForbricLog.warn("[Forbric/Worldgen] NeoForge's monster-room data map is not available (%s) — "
-						+ "dungeons are generating from vanilla's own mob set, which is the same distribution. "
-						+ "A NeoForge mod that ADDS to that data map will not be represented",
-						String.valueOf(Reflect.unwrap(t)));
-			}
+			Caught.warn(t, "[Forbric/Worldgen] NeoForge's monster-room data map is not available — dungeons are "
+					+ "generating from vanilla's own mob set, which is the same distribution. A NeoForge mod that ADDS "
+					+ "to that data map will not be represented");
 		}
 		return VANILLA_MONSTER_ROOM_MOBS[random.nextInt(VANILLA_MONSTER_ROOM_MOBS.length)];
 	}
@@ -172,6 +167,8 @@ public final class KernelNeoWorldgen {
 			}
 			return NEOFORGE_SHIPPED_MONSTER_ROOM_MOBS.equals(live_weights);
 		} catch (Throwable t) {
+			Caught.warn(t, "[Forbric/Worldgen] could not read NeoForge's monster-room mob list — the data map stays in "
+					+ "charge of dungeon mobs");
 			return false;
 		}
 	}
@@ -201,6 +198,8 @@ public final class KernelNeoWorldgen {
 			try {
 				context = net.forbric.api.VirtualGetters.get(net.minecraft.server.ReloadableServerResources.class, "getConditionContext", ICondition.IContext.class, server.getServerResources().managers());
 			} catch (Throwable noLiveContext) {
+				Caught.warn(noLiveContext, "[Forbric/Worldgen] no live condition context for the data-map fallback — "
+						+ "loading with an EMPTY one, so a tag-based condition reads no tags");
 				context = ICondition.IContext.EMPTY;
 			}
 			loader.injectContext(context, server.registryAccess());
@@ -229,9 +228,9 @@ public final class KernelNeoWorldgen {
 						+ "none. %d entity type(s) can spawn in a monster room", loaded, monsterRoom);
 			}
 		} catch (Throwable t) {
-			ForbricLog.warn("[Forbric/Worldgen] NeoForge's data maps did not load — its built-ins (furnace fuels, "
+			Caught.warn(t, "[Forbric/Worldgen] NeoForge's data maps did not load — its built-ins (furnace fuels, "
 					+ "compostables, oxidizables, monster-room mobs and the rest) and every mod's own data map "
-					+ "stay empty. Dungeons still generate, from vanilla's mob set", Reflect.unwrap(t));
+					+ "stay empty. Dungeons still generate, from vanilla's mob set");
 		}
 	}
 
@@ -277,9 +276,9 @@ public final class KernelNeoWorldgen {
 					+ "not declared", biome, structure);
 			KernelForgeWorldgen.summarize();
 		} catch (Throwable t) {
-			ForbricLog.warn("[Forbric/Worldgen] NeoForge's biome/structure modifiers did not apply — "
-					+ biome + " biome and " + structure + " structure modifier(s) were loaded and none of them "
-					+ "changed the world. The server start is unaffected", Reflect.unwrap(t));
+			Caught.warn(t, "[Forbric/Worldgen] NeoForge's biome/structure modifiers did not apply — %d biome and %d "
+					+ "structure modifier(s) were loaded and none of them changed the world. The server start is "
+					+ "unaffected", biome, structure);
 		}
 	}
 
@@ -287,6 +286,7 @@ public final class KernelNeoWorldgen {
 		try {
 			return server.registryAccess().lookupOrThrow(key).size();
 		} catch (Throwable t) {
+			Caught.warn(t, "[Forbric/Worldgen] could not count registry %s — reported as -1", key);
 			return -1;
 		}
 	}

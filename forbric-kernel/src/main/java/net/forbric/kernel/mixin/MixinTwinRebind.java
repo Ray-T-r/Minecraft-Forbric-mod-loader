@@ -26,6 +26,7 @@ import org.objectweb.asm.tree.MethodNode;
 import org.objectweb.asm.tree.VarInsnNode;
 
 import net.forbric.api.Ecosystem;
+import net.forbric.kernel.util.Caught;
 import net.forbric.kernel.util.ForbricLog;
 
 /**
@@ -105,6 +106,7 @@ public final class MixinTwinRebind {
 				return new Row(sides[0].substring(0, hash).trim(), sides[0].substring(hash + 1, paren).trim(), vanilla,
 						overload, positions, Set.copyOf(ecosystems));
 			} catch (IllegalArgumentException malformed) {
+				Caught.warn(malformed, "[Forbric/Mixin] unreadable row in %s, skipped: %s", TABLE, line);
 				return null;
 			}
 		}
@@ -133,7 +135,7 @@ public final class MixinTwinRebind {
 				}
 			}
 		} catch (IOException unreadable) {
-			ForbricLog.warn("[Forbric/Mixin] could not read %s; no injector moves off vanilla's uncalled signatures", TABLE);
+			Caught.warn(unreadable, "[Forbric/Mixin] could not read %s; no injector moves off vanilla's uncalled signatures", TABLE);
 		}
 		Map<String, List<Row>> frozen = new HashMap<>();
 		read.forEach((key, list) -> frozen.put(key, List.copyOf(list)));

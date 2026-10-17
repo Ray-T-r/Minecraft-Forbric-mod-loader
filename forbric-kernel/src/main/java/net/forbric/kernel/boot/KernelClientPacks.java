@@ -25,8 +25,8 @@ import java.util.Collection;
 import java.util.List;
 
 import net.forbric.api.Ecosystem;
+import net.forbric.kernel.util.Caught;
 import net.forbric.kernel.util.ForbricLog;
-import net.forbric.kernel.util.Reflect;
 
 /**
  * Serves the ecosystem jars' CLIENT ASSETS (shaders, textures, models, lang) to the real client
@@ -139,8 +139,8 @@ public final class KernelClientPacks {
 					+ "declaring overlays: %s", ids.size(), readByVanilla(cl, packs), routedToVanilla,
 					withOverlays(cl, packs), ids);
 		} catch (Throwable t) {
-			ForbricLog.warn("[Forbric/ClientPacks] could not serve ecosystem assets to the client PackRepository "
-					+ "(ecosystem shaders/textures will be missing)", Reflect.unwrap(t));
+			Caught.warn(t, "[Forbric/ClientPacks] could not serve ecosystem assets to the client PackRepository "
+					+ "(ecosystem shaders/textures will be missing)");
 		}
 	}
 
@@ -170,6 +170,8 @@ public final class KernelClientPacks {
 			}
 		} catch (Throwable ignored) {
 			// unreadable / not a zip — nothing to serve
+			Caught.warn(ignored, "[Forbric/ClientPacks] could not open %s to look for client assets; none are served "
+					+ "from it", jar.getFileName());
 		}
 		return false;
 	}
@@ -234,6 +236,8 @@ public final class KernelClientPacks {
 			}
 		} catch (Throwable ignored) {
 			// unreadable — NeoForge's reader, which is what it had before
+			Caught.warn(ignored, "[Forbric/ClientPacks] could not open %s to look for pack.mcmeta; its pack goes "
+					+ "through NeoForge's reader", jar.getFileName());
 		}
 		return false;
 	}
@@ -271,9 +275,8 @@ public final class KernelClientPacks {
 			return gameSide(cl).getMethod("buildParentPack", String.class, List.class)
 					.invoke(null, PARENT_ID, children);
 		} catch (Throwable t) {
-			ForbricLog.warn("[Forbric/ClientPacks] could not build the parent asset pack; serving each mod's assets "
-					+ "on its own instead, which means a player's own resource pack cannot override a mod texture",
-					Reflect.unwrap(t));
+			Caught.warn(t, "[Forbric/ClientPacks] could not build the parent asset pack; serving each mod's assets "
+					+ "on its own instead, which means a player's own resource pack cannot override a mod texture");
 			return null;
 		}
 	}
@@ -290,8 +293,7 @@ public final class KernelClientPacks {
 		try {
 			return (int) gameSide(cl).getMethod("withOverlays", List.class).invoke(null, packs);
 		} catch (Throwable t) {
-			ForbricLog.debug("[Forbric/ClientPacks] could not count declared overlays: %s",
-					String.valueOf(Reflect.unwrap(t)));
+			Caught.warn(t, "[Forbric/ClientPacks] could not count declared overlays; reported as 0");
 			return 0;
 		}
 	}
@@ -301,8 +303,7 @@ public final class KernelClientPacks {
 		try {
 			return (int) gameSide(cl).getMethod("readByVanilla", List.class).invoke(null, packs);
 		} catch (Throwable t) {
-			ForbricLog.debug("[Forbric/ClientPacks] could not count vanilla-read packs: %s",
-					String.valueOf(Reflect.unwrap(t)));
+			Caught.warn(t, "[Forbric/ClientPacks] could not count vanilla-read packs; reported as 0");
 			return 0;
 		}
 	}

@@ -22,6 +22,7 @@ import java.util.Optional;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 
+import net.forbric.kernel.util.Caught;
 import net.forbric.kernel.util.ForbricLog;
 
 /**
@@ -138,11 +139,13 @@ public final class KernelPackMetadata {
 					accessor.setAccessible(true);
 				} catch (RuntimeException notPermitted) {
 					// A public accessor on a public record; if the module system says otherwise, invoke() still works.
+					Caught.expected(notPermitted);
 				}
 				nameAccessor = accessor;
 			}
 			return accessor.invoke(sectionType) instanceof String name ? name : null;
 		} catch (Throwable unreadable) {
+			Caught.expected(unreadable);
 			return null;
 		}
 	}

@@ -20,6 +20,7 @@ import org.objectweb.asm.tree.MethodInsnNode;
 import org.objectweb.asm.tree.MethodNode;
 import org.objectweb.asm.tree.TypeInsnNode;
 import org.objectweb.asm.tree.VarInsnNode;
+import net.forbric.kernel.util.Caught;
 
 /**
  * MinecraftForge's Hurt, Damage and player-Attack events get their positions back in NeoForge's damage pipeline.
@@ -130,7 +131,7 @@ public final class ForgeDamageSeamsInjector implements ClassTransformer {
 	 */
 	static boolean asksEveryHook(byte[] bytes) {
 		ClassNode node = new ClassNode();
-		try { new ClassReader(bytes).accept(node, 0); } catch (RuntimeException unreadable) { return false; }
+		try { new ClassReader(bytes).accept(node, 0); } catch (RuntimeException unreadable) { Caught.warn(unreadable, "[Forbric/Damage] could not read a class to check its damage seams; taken as not asking every hook"); return false; }
 		MethodNode hurt = own(node, "actuallyHurt", HURT_DESC);
 		if (hurt == null || calls(hurt, FORGE_HOOKS, "onLivingHurt") + calls(hurt, RUNTIME, "hurt") == 0
 				|| calls(hurt, FORGE_HOOKS, "onLivingDamage") + calls(hurt, RUNTIME, "damage") == 0) return false;

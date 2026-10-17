@@ -17,9 +17,6 @@
 package net.forbric.kernel.fabric;
 
 import java.io.File;
-import java.lang.invoke.MethodHandle;
-import java.lang.invoke.MethodHandleProxies;
-import java.lang.invoke.MethodHandles;
 import java.lang.reflect.Field;
 import java.lang.reflect.Method;
 import java.lang.reflect.Modifier;
@@ -47,6 +44,7 @@ import net.fabricmc.loader.impl.entrypoint.EntrypointStorage;
 
 import net.forbric.kernel.classloading.FabricLoaderInternals;
 import net.forbric.kernel.fabric.KernelModMetadata.EntrypointDecl;
+import net.forbric.kernel.util.Caught;
 import net.forbric.kernel.util.ForbricLog;
 
 /**
@@ -112,6 +110,7 @@ public final class KernelFabricLoader implements FabricLoader {
 			try {
 				return name instanceof String adapter ? KernelLanguageAdapters.get(adapter) : null;
 			} catch (net.fabricmc.loader.api.LanguageAdapterException | RuntimeException unknown) {
+				Caught.expected(unknown);
 				return null;
 			}
 		}
@@ -157,6 +156,7 @@ public final class KernelFabricLoader implements FabricLoader {
 		try {
 			return path == null ? null : path.toAbsolutePath().normalize();
 		} catch (Throwable unresolvable) {
+			Caught.warn(unresolvable, "[Forbric/Fabric] could not make %s absolute; mods get it as given", path);
 			return path;
 		}
 	}
@@ -172,8 +172,7 @@ public final class KernelFabricLoader implements FabricLoader {
 		try {
 			if (dir != null) java.nio.file.Files.createDirectories(dir);
 		} catch (Throwable notCreated) {
-			ForbricLog.debug("[Forbric/Fabric] could not create the config directory %s: %s", dir,
-					String.valueOf(notCreated));
+			Caught.warn(notCreated, "[Forbric/Fabric] could not create the config directory %s", dir);
 		}
 		return dir;
 	}
@@ -204,17 +203,32 @@ public final class KernelFabricLoader implements FabricLoader {
 		this.gameInstance = gameInstance;
 	}
 
-	/** Adds a discovered mod. Its id and every {@code provides} alias become resolvable. */
+	/**
+	 * Adds a discovered mod. Its id and every {@code provides} alias become resolvable.
+	 *
+	 * <p>A mod's own id outranks another mod's alias for it, whichever registers first. An alias never claims an id in
+	 * the kernel's cross-jar arbitration ({@code DuplicateModArbiter}), and Fabric Loader keeps the mod whose id it is:
+	 * owo-sentinel, nested in mods that need owo-lib, {@code provides} {@code owo}, registers before owo-lib (it depends on
+	 * nothing installed), and used to take the name, so owo-lib itself was dropped as a "duplicate" and its own aliases
+	 * ({@code owo-impl}) never existed. The sentinel's adapter then found owo missing and ended the process. Next to
+	 * owo-lib the sentinel is no longer discovered at all ({@link FabricUniqueIds}: one mod per id, provides included);
+	 * this order still decides wherever both a real id and an alias for it register, as two jars in {@code mods/} or a
+	 * nested mod kept back because a mod needs it.
+	 */
 	public synchronized void register(KernelModContainer container) {
 		if (frozen) throw new IllegalStateException("mods registered after freeze");
 
 		KernelModMetadata metadata = container.getMetadata();
 		ModContainer existing = modsById.get(metadata.getId());
 
-		if (existing != null) {
+		if (existing != null && metadata.getId().equals(existing.getMetadata().getId())) {
 			ForbricLog.warn("[Forbric/Fabric] duplicate mod id '%s' (%s and %s) — keeping the first",
 					metadata.getId(), existing, container);
 			return;
+		}
+		if (existing != null) {
+			ForbricLog.info("[Forbric/Fabric] '%s' was only an alias %s provides; %s, whose own id it is, takes it",
+					metadata.getId(), existing, container);
 		}
 
 		mods.add(container);
@@ -432,6 +446,8 @@ public final class KernelFabricLoader implements FabricLoader {
 		try {
 			mod = stored.getModContainer();
 		} catch (Throwable unreadable) {
+			Caught.warn(unreadable, "[Forbric/Fabric] could not read the mod of an entry added to '%s' through Fabric "
+					+ "Loader's internal EntrypointStorage", key);
 			mod = null;
 		}
 		// A container a mod built itself (Essential's run-time mods) answers through the kernel container it stands for.
@@ -494,6 +510,7 @@ public final class KernelFabricLoader implements FabricLoader {
 			try {
 				out.add(container.getEntrypoint());
 			} catch (Throwable t) {
+				Caught.expected(t);
 				Throwable cause = t instanceof net.fabricmc.loader.api.EntrypointException wrapped && wrapped.getCause() != null ? wrapped.getCause() : t;
 				if (failure == null) failure = new net.fabricmc.loader.api.EntrypointException(key, container.getProvider().getMetadata().getId(), cause);
 				else failure.addSuppressed(cause);
@@ -531,6 +548,7 @@ public final class KernelFabricLoader implements FabricLoader {
 				invoker.accept(container.getEntrypoint());
 			} catch (Throwable t) {
 				// Contract: run every entrypoint, then report. One bad mod must not silently skip the rest.
+				Caught.expected(t);
 				if (failure == null) {
 					failure = new RuntimeException("failed to invoke entrypoint '" + key + "'", t);
 				} else {
@@ -720,12 +738,19 @@ public final class KernelFabricLoader implements FabricLoader {
 				}
 
 				// A method reference can satisfy any functional interface; the exact shape is checked on construction.
+				// Static or instance alike, and `::<init>` names the constructors, which getDeclaredMethods never lists:
+				// leaving that out here dropped such an entrypoint before construction was ever tried.
 				for (Method method : owner.getDeclaredMethods()) {
 					if (method.getName().equals(member)) return type.isInterface();
+				}
+				if (KernelLanguageAdapters.CONSTRUCTOR.equals(member)) {
+					return type.isInterface() && owner.getDeclaredConstructors().length > 0;
 				}
 
 				return false;
 			} catch (Throwable t) {
+				Caught.warn(t, "[Forbric/Fabric] %s: its '%s' entrypoint '%s' cannot be loaded here — %s",
+						provider.getMetadata().getId(), key, decl.value(), unresolvedOutcome());
 				return unresolvable(t);
 			}
 		}
@@ -750,22 +775,11 @@ public final class KernelFabricLoader implements FabricLoader {
 		 */
 		private boolean unresolvable(Throwable t) {
 			String id = provider.getMetadata().getId();
-			if ("warn".equalsIgnoreCase(System.getProperty(RESOLVE_FAILURE_PROPERTY, "fail"))) {
-				ForbricLog.warn("[Forbric/Fabric] %s: cannot resolve entrypoint '%s': %s", id, decl.value(), String.valueOf(t));
-				return false;
-			}
+			if (plainSkip()) return false;
 			boolean first = !unresolvableReported;
 			unresolvableReported = true;
-			if (LIFECYCLE_KEYS.contains(key)) {
-				if (first) {
-					ForbricLog.warn("[Forbric/Fabric] %s: %s entrypoint '%s' cannot be loaded here (%s) — it is handed to the "
-							+ "%s driver, which fails the mod as Fabric would", id, key, decl.value(), String.valueOf(t), key);
-				}
-				return true;
-			}
+			if (LIFECYCLE_KEYS.contains(key)) return true;
 			if (first) {
-				ForbricLog.warn("[Forbric/Fabric] %s: its '%s' entrypoint '%s' cannot be loaded here (%s) — whatever reads "
-						+ "'%s' goes without it", id, key, decl.value(), String.valueOf(t), key);
 				net.forbric.api.CompatibilityFindings.record(new net.forbric.api.CompatibilityFinding(
 						"entrypoint:" + key + ":" + decl.value(), id, "Mod integration",
 						"KernelFabricLoader entrypoint resolution", net.forbric.api.CompatibilityFinding.Confidence.SUSPECTED,
@@ -773,6 +787,17 @@ public final class KernelFabricLoader implements FabricLoader {
 								+ "' goes without it", List.of("key=" + key, "entrypoint=" + decl.value(), String.valueOf(t))));
 			}
 			return false;
+		}
+
+		private static boolean plainSkip() {
+			return "warn".equalsIgnoreCase(System.getProperty(RESOLVE_FAILURE_PROPERTY, "fail"));
+		}
+
+		/** What {@link #unresolvable} does with this entry, for its report. */
+		private String unresolvedOutcome() {
+			if (plainSkip()) return "skipped";
+			if (LIFECYCLE_KEYS.contains(key)) return "it is handed to the " + key + " driver, which fails the mod as Fabric would";
+			return "whatever reads '" + key + "' goes without it";
 		}
 
 		Object get(Class<?> type) {
@@ -811,35 +836,8 @@ public final class KernelFabricLoader implements FabricLoader {
 				return KernelLanguageAdapters.get(decl.adapter()).create(provider, decl.value(), type);
 			}
 
-			String v = decl.value();
-			int sep = v.indexOf("::");
-
-			if (sep < 0) {
-				Class<?> cls = loadClass(v);
-				return cls.getDeclaredConstructor().newInstance();
-			}
-
-			Class<?> owner = loadClass(v.substring(0, sep));
-			String member = v.substring(sep + 2);
-
-			for (Field field : owner.getDeclaredFields()) {
-				if (field.getName().equals(member) && Modifier.isStatic(field.getModifiers())) {
-					field.setAccessible(true);
-					return field.get(null);
-				}
-			}
-
-			for (Method method : owner.getDeclaredMethods()) {
-				if (!method.getName().equals(member) || !Modifier.isStatic(method.getModifiers())) continue;
-
-				method.setAccessible(true);
-				MethodHandle handle = MethodHandles.lookup().unreflect(method);
-				// Binds the static method to the requested functional interface without generating a class in the
-				// mod's package (LambdaMetafactory would need a lookup inside the mod's own class).
-				return MethodHandleProxies.asInterfaceInstance(type, handle);
-			}
-
-			throw new NoSuchMethodException("no static member '" + member + "' on " + owner.getName());
+			// Fabric's DefaultLanguageAdapter, through the class this declaration already resolved for provides().
+			return KernelLanguageAdapters.resolveDefault(decl.value(), type, this::loadClass);
 		}
 
 		/**

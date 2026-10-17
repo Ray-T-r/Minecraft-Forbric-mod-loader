@@ -35,6 +35,7 @@ import org.spongepowered.asm.mixin.transformer.ClassInfo;
 
 import net.forbric.api.Ecosystem;
 import net.forbric.kernel.util.ForbricLog;
+import net.forbric.kernel.util.Caught;
 
 /**
  * An injection point that selects, in the merged body, the occurrences of a guest's point that are the occurrences its
@@ -131,7 +132,7 @@ public final class NativeOccurrencePoint extends InjectionPoint {
 		try {
 			chosen = choose(desc, insns, merged, written);
 		} catch (Throwable unprovable) {
-			ForbricLog.debug("[Forbric/Mixin] %s: native occurrences of %s not compared (%s)", owner(), point, unprovable);
+			Caught.warn(unprovable, "[Forbric/Mixin] %s: native occurrences of %s not compared; the point is taken as written", owner(), point);
 		}
 		nodes.addAll(chosen);
 		return !chosen.isEmpty();
@@ -245,7 +246,7 @@ public final class NativeOccurrencePoint extends InjectionPoint {
 			java.nio.file.Files.createDirectories(file.getParent());
 			java.nio.file.Files.writeString(file, out);
 		} catch (Exception unwritable) {
-			ForbricLog.debug("[Forbric/Mixin] native occurrence dump failed: %s", unwritable);
+			Caught.warn(unwritable, "[Forbric/Mixin] native occurrence dump failed");
 		}
 	}
 
@@ -271,6 +272,7 @@ public final class NativeOccurrencePoint extends InjectionPoint {
 		try {
 			return context.getMixin().getClassName() + "." + context.getMethod().name;
 		} catch (RuntimeException unnamed) {
+			Caught.expected(unnamed);
 			return String.valueOf(context);
 		}
 	}
@@ -497,6 +499,7 @@ public final class NativeOccurrencePoint extends InjectionPoint {
 							return java.util.Optional.of(found);
 						}
 					} catch (NoSuchFieldException absent) {
+						Caught.expected(absent);
 						// keep looking up the hierarchy
 					}
 				}

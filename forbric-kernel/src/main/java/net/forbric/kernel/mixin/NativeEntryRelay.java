@@ -50,6 +50,7 @@ import net.forbric.api.Ecosystem;
 import net.forbric.kernel.classloading.ForbricClassLoader;
 import net.forbric.kernel.transform.MergedBaseFrameRecomputer;
 import net.forbric.kernel.util.ForbricLog;
+import net.forbric.kernel.util.Caught;
 
 /**
  * Calls a native decision method again where the surviving carrier replaced its call with a decision of its own, so a mod's
@@ -322,7 +323,7 @@ public final class NativeEntryRelay {
 			node.accept(writer);
 			return writer.toByteArray();
 		} catch (RuntimeException unwritable) {
-			ForbricLog.warn("[Forbric/Mixin] could not write " + binary + " with its native decisions asked again; it stays as merged", unwritable);
+			Caught.warn(unwritable, "[Forbric/Mixin] could not write %s with its native decisions asked again; it stays as merged", binary);
 			return bytes;
 		}
 	}
@@ -411,6 +412,7 @@ public final class NativeEntryRelay {
 				return in == null ? null : in.readAllBytes();
 			}
 		} catch (IOException unreadable) {
+			Caught.warn(unreadable, "[Forbric/Mixin] could not read resource %s; taken as absent", path);
 			return null;
 		}
 	}
@@ -420,6 +422,7 @@ public final class NativeEntryRelay {
 		try {
 			return new Analyzer<>(new SourceInterpreter()).analyze(owner, method);
 		} catch (AnalyzerException | RuntimeException unanalysable) {
+			Caught.expected(unanalysable);
 			return null;
 		}
 	}

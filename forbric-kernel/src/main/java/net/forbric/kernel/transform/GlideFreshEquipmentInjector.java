@@ -23,6 +23,7 @@ import org.objectweb.asm.tree.LabelNode;
 import org.objectweb.asm.tree.MethodInsnNode;
 import org.objectweb.asm.tree.MethodNode;
 import org.objectweb.asm.tree.VarInsnNode;
+import net.forbric.kernel.util.Caught;
 
 /**
  * Answers "can this entity glide" from its equipment, as the native game does, while the attribute the carrier caches
@@ -177,6 +178,7 @@ public final class GlideFreshEquipmentInjector implements ClassTransformer {
 			try {
 				reference = originals.apply(ecosystem, OWNER);
 			} catch (RuntimeException unavailable) {
+				Caught.warn(unavailable, "[Forbric/Glide] could not read the %s reference of %s; it is not compared", ecosystem, OWNER);
 				reference = null;
 			}
 			MethodNode plain = reference == null ? null : method(reference, "canGlide", "()Z");

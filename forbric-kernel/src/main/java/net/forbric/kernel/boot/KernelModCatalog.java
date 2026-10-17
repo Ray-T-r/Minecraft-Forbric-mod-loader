@@ -37,6 +37,7 @@ import net.forbric.kernel.metadata.forge.ForgeModEntry;
 import net.forbric.kernel.metadata.forge.ForgeModsToml;
 import net.forbric.kernel.metadata.forge.ModsTomlParser;
 import net.forbric.kernel.discovery.MetadataFailures;
+import net.forbric.kernel.util.Caught;
 import net.forbric.kernel.util.ForbricLog;
 
 /**
@@ -166,7 +167,7 @@ public final class KernelModCatalog {
 				readForgeFamily(zip, out);
 			}
 		} catch (Throwable t) {
-			ForbricLog.debug("[Forbric/Catalog] no display metadata from %s: %s", source, String.valueOf(t));
+			Caught.warn(t, "[Forbric/Catalog] no display metadata from %s", source);
 		}
 		return out;
 	}
@@ -230,6 +231,7 @@ public final class KernelModCatalog {
 				try {
 					size = Integer.parseInt(e.getKey());
 				} catch (NumberFormatException notASize) {
+					Caught.expected(notASize);
 					continue;
 				}
 				if (size > bestSize && e.getValue() instanceof String path) {

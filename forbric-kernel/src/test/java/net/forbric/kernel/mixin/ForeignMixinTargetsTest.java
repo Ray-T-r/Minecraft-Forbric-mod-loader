@@ -33,6 +33,7 @@ import org.objectweb.asm.AnnotationVisitor;
 import org.objectweb.asm.ClassWriter;
 import org.objectweb.asm.Opcodes;
 import org.objectweb.asm.Type;
+import net.forbric.kernel.ExpectCaught;
 
 /**
  * Tells a cross-mod compatibility mixin apart from genuine dead weight.
@@ -127,6 +128,7 @@ class ForeignMixinTargetsTest {
 	}
 
 	/** An unreadable or non-mixin resource must cost only itself, never the rest of the index. */
+	@ExpectCaught("could not parse mixin config broken.mixins.json")
 	@Test
 	void oneUnparseableConfigDoesNotCostTheOthers() {
 		Stage stage = new Stage();

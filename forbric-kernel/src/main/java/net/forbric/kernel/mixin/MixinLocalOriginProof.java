@@ -6,6 +6,7 @@ import org.objectweb.asm.Opcodes;
 import org.objectweb.asm.Type;
 import org.objectweb.asm.tree.*;
 import org.objectweb.asm.tree.analysis.*;
+import net.forbric.kernel.util.Caught;
 
 /** Matches a declared native local to one current caller slot by its actual producer, never by type alone. */
 final class MixinLocalOriginProof {
@@ -130,7 +131,7 @@ final class MixinLocalOriginProof {
 	static CallValue atCall(String owner, MethodNode method, MethodInsnNode call, int slot) {
 		Frame<SourceValue>[] frames;
 		try { frames = new Analyzer<>(new SourceInterpreter()).analyze(owner, method); }
-		catch (AnalyzerException | RuntimeException invalid) { return null; }
+		catch (AnalyzerException | RuntimeException invalid) { Caught.expected(invalid); return null; }
 		int at = method.instructions.indexOf(call);
 		Frame<SourceValue> frame = at < 0 ? null : frames[at];
 		if (frame == null || slot < 0 || slot >= frame.getLocals()) return null;
@@ -202,7 +203,7 @@ final class MixinLocalOriginProof {
 		}
 		static Origins create(String owner, MethodNode method) {
 			try { return new Origins(owner, method, new Analyzer<>(new SourceInterpreter()).analyze(owner, method)); }
-			catch (AnalyzerException | RuntimeException invalid) { return null; }
+			catch (AnalyzerException | RuntimeException invalid) { Caught.expected(invalid); return null; }
 		}
 		String local(int point, int slot) {
 			Frame<SourceValue> frame = frames[point];

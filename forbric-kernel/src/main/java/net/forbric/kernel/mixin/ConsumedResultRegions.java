@@ -6,6 +6,7 @@ import org.objectweb.asm.Opcodes;
 import org.objectweb.asm.Type;
 import org.objectweb.asm.tree.*;
 import org.objectweb.asm.tree.analysis.*;
+import net.forbric.kernel.util.Caught;
 
 /** The complete immediate result-consumer region, including its branches and non-result operand provenance. */
 final class ConsumedResultRegions {
@@ -53,7 +54,7 @@ final class ConsumedResultRegions {
             String oldKey = orderedBefore.key(orderedBefore.stack(projection, Type.getArgumentTypes(projection.desc).length));
             String newKey = orderedAfter.key(orderedAfter.stack(live, Type.getArgumentTypes(live.desc).length));
             return used.insns.equals(projected) && oldKey != null && oldKey.equals(newKey);
-        } catch (AnalyzerException | RuntimeException malformed) { return false; }
+        } catch (AnalyzerException | RuntimeException malformed) { Caught.expected(malformed); return false; }
     }
 
     private static boolean enters(MethodNode method, LabelNode label, int start, int end) {
@@ -68,7 +69,7 @@ final class ConsumedResultRegions {
         Producers ordered;
         Frame<SourceValue>[] frames;
         try { frames = new Analyzer<>(interpreter).analyze(owner, method); ordered = new Producers(owner, method, result); }
-        catch (AnalyzerException | RuntimeException unsupported) { return null; }
+        catch (AnalyzerException | RuntimeException unsupported) { Caught.expected(unsupported); return null; }
         int start = method.instructions.indexOf(result) + 1, end = -1;
         for (int index = start; index < method.instructions.size(); index++) {
             AbstractInsnNode instruction = method.instructions.get(index);

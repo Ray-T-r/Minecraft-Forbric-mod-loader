@@ -55,6 +55,7 @@ import net.forbric.api.Ecosystem;
 import net.forbric.kernel.classloading.ForbricClassLoader;
 import net.forbric.kernel.transform.MergedBaseFrameRecomputer;
 import net.forbric.kernel.util.ForbricLog;
+import net.forbric.kernel.util.Caught;
 
 /**
  * Puts a native method's decisions back in front of the carrier hook that replaced them, so a mod's injector on a native call
@@ -479,7 +480,7 @@ public final class NativeDecisionIsland {
 				out.add(member(call));
 				if (depth == REACH_DEPTH || call.getOpcode() != Opcodes.INVOKESTATIC || !seen.add(member(call))) continue;
 				ClassNode owner;
-				try { owner = code.apply(call.owner); } catch (RuntimeException unreadable) { owner = null; }
+				try { owner = code.apply(call.owner); } catch (RuntimeException unreadable) { Caught.warn(unreadable, "[Forbric/Mixin] could not read %s to follow its calls; taken as absent", call.owner); owner = null; }
 				MethodNode body = owner == null ? null : NativeCallInlining.method(owner, call.name + call.desc);
 				if (body == null || body.instructions == null) continue;
 				for (AbstractInsnNode insn : body.instructions) if (insn instanceof MethodInsnNode inner) next.add(inner);
@@ -559,6 +560,7 @@ public final class NativeDecisionIsland {
 			try {
 				outcome = derive(node, host, nativeClass, was, wanted, code);
 			} catch (RuntimeException unreadable) {
+				Caught.warn(unreadable, "[Forbric/Mixin] could not read the bodies a native decision island in %s.%s is derived from", binary, host.name);
 				outcome = new Outcome(null, "the bodies could not be read (" + unreadable + ")");
 			}
 			if (outcome.island() == null) {
@@ -574,8 +576,8 @@ public final class NativeDecisionIsland {
 				apply(work, was, new Island(island.start(), island.end(), island.resume(), island.slots(), island.fresh(), kept, island.members(),
 						island.relayable(), island.carried()));
 			} catch (RuntimeException unappliable) {
-				ForbricLog.warn("[Forbric/Mixin] %s.%s: the native decision island for %s.%s could not be put in (%s); the method stays as merged",
-						first.source().replace('/', '.'), first.handler(), binary, host.name, unappliable);
+				Caught.warn(unappliable, "[Forbric/Mixin] %s.%s: the native decision island for %s.%s could not be put in; the method stays as merged",
+						first.source().replace('/', '.'), first.handler(), binary, host.name);
 				continue;
 			}
 			node.methods.set(node.methods.indexOf(host), work);
@@ -601,7 +603,7 @@ public final class NativeDecisionIsland {
 			node.accept(writer);
 			return writer.toByteArray();
 		} catch (RuntimeException unwritable) {
-			ForbricLog.warn("[Forbric/Mixin] could not write " + binary + " with its native decisions put back; it stays as merged", unwritable);
+			Caught.warn(unwritable, "[Forbric/Mixin] could not write %s with its native decisions put back; it stays as merged", binary);
 			return bytes;
 		}
 	}
@@ -869,6 +871,7 @@ public final class NativeDecisionIsland {
 		try {
 			return new Analyzer<>(new BasicInterpreter()).analyze(owner, method);
 		} catch (AnalyzerException | RuntimeException unanalysable) {
+			Caught.expected(unanalysable);
 			return null;
 		}
 	}
@@ -878,6 +881,7 @@ public final class NativeDecisionIsland {
 		try {
 			return new Analyzer<>(new SourceInterpreter()).analyze(owner, method);
 		} catch (AnalyzerException | RuntimeException unanalysable) {
+			Caught.expected(unanalysable);
 			return null;
 		}
 	}
@@ -946,6 +950,7 @@ public final class NativeDecisionIsland {
 				return in == null ? null : in.readAllBytes();
 			}
 		} catch (IOException unreadable) {
+			Caught.warn(unreadable, "[Forbric/Mixin] could not read resource %s; taken as absent", path);
 			return null;
 		}
 	}

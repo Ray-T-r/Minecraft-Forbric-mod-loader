@@ -23,6 +23,7 @@ import java.util.Set;
 import net.forbric.api.Ecosystem;
 import net.forbric.api.ForeignType;
 import net.forbric.kernel.transform.RegistrySyncParityInjector;
+import net.forbric.kernel.util.Caught;
 import net.forbric.kernel.util.ForbricLog;
 
 /**
@@ -69,8 +70,8 @@ public final class KernelRegistryRevert {
 			ForbricLog.info("[Forbric/RegistrySync] captured the pre-connection ids of %d synced registr(ies) — the "
 					+ "disconnect puts them back", snapshot.size());
 		} catch (Throwable t) {
-			ForbricLog.warn("[Forbric/RegistrySync] could not capture the pre-connection registry ids — they will not "
-					+ "be restored on disconnect", unwrap(t));
+			Caught.warn(t, "[Forbric/RegistrySync] could not capture the pre-connection registry ids — they will not "
+					+ "be restored on disconnect");
 		}
 	}
 
@@ -98,8 +99,8 @@ public final class KernelRegistryRevert {
 					+ "contract unmapped %d plain one(s) first; %d entr(ies) NeoForge could not place)", snapshot.size(), unmapped,
 					missingCount);
 		} catch (Throwable t) {
-			ForbricLog.error("[Forbric/RegistrySync] could not revert the synced registries to their pre-connection ids "
-					+ "— they keep the last server's", unwrap(t));
+			Caught.error(t, "[Forbric/RegistrySync] could not revert the synced registries to their pre-connection ids "
+					+ "— they keep the last server's");
 		} finally {
 			reverting = false;
 			originals = null;
@@ -146,6 +147,7 @@ public final class KernelRegistryRevert {
 				wrapper = Class.forName(WRAPPER, false, cl);
 			} catch (ClassNotFoundException noForge) {
 				// no wrappers to skip
+				Caught.expected(noForge);
 			}
 			Object root = Class.forName("net.minecraft.core.registries.BuiltInRegistries", false, cl).getField("REGISTRY").get(null);
 			for (var undo : undos.entrySet()) {
@@ -153,6 +155,8 @@ public final class KernelRegistryRevert {
 				try {
 					owner = Class.forName(undo.getValue().replace('/', '.'), false, cl);
 				} catch (ClassNotFoundException absent) {
+					Caught.warn(absent, "[Forbric/RegistrySync] the remap contract %s names an owner this loader cannot "
+							+ "load; it is not undone", undo.getKey());
 					continue;
 				}
 				Method method = owner.getMethod(undo.getKey().substring(undo.getKey().lastIndexOf('.') + 1));
@@ -162,17 +166,13 @@ public final class KernelRegistryRevert {
 						method.invoke(registry);
 						done++;
 					} catch (Throwable t) {
-						ForbricLog.warn("[Forbric/RegistrySync] " + undo.getKey() + " could not unmap " + registry + ": " + unwrap(t));
+						Caught.warn(t, "[Forbric/RegistrySync] %s could not unmap %s", undo.getKey(), registry);
 					}
 				}
 			}
 		} catch (Throwable t) {
-			ForbricLog.warn("[Forbric/RegistrySync] the remap contracts' unmap pass failed part-way", unwrap(t));
+			Caught.warn(t, "[Forbric/RegistrySync] the remap contracts' unmap pass failed part-way");
 		}
 		return done;
-	}
-
-	private static Throwable unwrap(Throwable t) {
-		return t instanceof java.lang.reflect.InvocationTargetException ite && ite.getCause() != null ? ite.getCause() : t;
 	}
 }

@@ -39,6 +39,7 @@ import org.objectweb.asm.tree.analysis.SourceValue;
 import net.forbric.api.Ecosystem;
 import net.forbric.kernel.classloading.ForbricClassLoader;
 import net.forbric.kernel.util.ForbricLog;
+import net.forbric.kernel.util.Caught;
 
 /**
  * Gives a value the merged method computes on the stack the local the native method keeps it in, where a mod's
@@ -380,6 +381,7 @@ public final class NativeLocalMaterialization {
 		try {
 			return new Analyzer<>(new SourceInterpreter()).analyze(owner, method);
 		} catch (AnalyzerException | RuntimeException unanalysable) {
+			Caught.expected(unanalysable);
 			return null;
 		}
 	}

@@ -24,6 +24,8 @@ import net.fabricmc.loader.api.SemanticVersion;
 import net.fabricmc.loader.api.Version;
 import net.fabricmc.loader.api.VersionParsingException;
 
+import net.forbric.kernel.util.Caught;
+
 /**
  * The kernel's native {@link Version} parser — the sovereign replacement for Fabric Loader's
  * {@code impl.util.version.VersionParser}, which the kernel does not vendor.
@@ -44,6 +46,7 @@ public final class KernelVersion {
 		try {
 			return parseSemantic(s);
 		} catch (VersionParsingException notSemver) {
+			Caught.expected(notSemver);
 			return new StringVersion(s);
 		}
 	}

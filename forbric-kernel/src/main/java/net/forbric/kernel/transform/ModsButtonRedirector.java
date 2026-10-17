@@ -52,6 +52,7 @@ import net.forbric.api.Ecosystem;
 import net.forbric.api.ForeignType;
 import net.forbric.kernel.mixin.NativeGameReferences;
 import net.forbric.kernel.util.ByteScan;
+import net.forbric.kernel.util.Caught;
 import net.forbric.kernel.util.ForbricLog;
 
 /**
@@ -278,9 +279,9 @@ public final class ModsButtonRedirector implements ClassTransformer {
 			try {
 				frames = new Analyzer<>(new BasicInterpreter()).analyze(node.name, method);
 			} catch (AnalyzerException unreadable) {
-				ForbricLog.warn("[Forbric/ModsButton] %s.%s adds %d mods buttons, but its stack could not be read (%s) "
+				Caught.warn(unreadable, "[Forbric/ModsButton] %s.%s adds %d mods buttons, but its stack could not be read "
 						+ "— left as it is, and the menu shows its mods button more than once", node.name, method.name,
-						sites.size(), unreadable.getMessage());
+						sites.size());
 				continue;
 			}
 			AbstractInsnNode[] insns = method.instructions.toArray();
@@ -549,8 +550,8 @@ public final class ModsButtonRedirector implements ClassTransformer {
 			}
 			return writer.toByteArray();
 		} catch (RuntimeException e) {
-			ForbricLog.warn("[Forbric/ModsButton] could not re-point " + internal + "'s mods button — it will open "
-					+ "one family's list", e);
+			Caught.warn(e, "[Forbric/ModsButton] could not re-point %s's mods button — it will open one family's list",
+					internal);
 			return classBytes;
 		}
 	}

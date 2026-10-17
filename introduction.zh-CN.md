@@ -118,7 +118,7 @@ if (code != 0) System.exit(code);
 10. **类加载器** —— `new ForbricClassLoader(owned, bootLoader)`、备援 jar、jar 家族、`LoaderProbePolicy.bindGuestLoader`、`KernelFabricLauncher.install`（mod 的 `addToClassPath` 最终落到这里）。
 11. **转换链** —— 91 个 `chain.register(…)` 调用点（§6）。
 12. `loader.setTransformer((name, bytes) -> chain.applyBeforeMixin(name, bytes, ctx))`；上下文类加载器换成游戏类加载器；绑定 `KernelLifecycle`、`KernelHudBridge`、`LootTableEventDispatch`；`KernelLoadReport` 和 `CrashAttribution` 拿到运行目录（以及各自的关闭钩子）。
-13. **加载器身份，先于 Mixin** —— `PassiveSeeder.seedNeoForgePaths`、`seedNeoForgeLoader`、`seedForgeFmlLoader`、`publishForgeLoadingList`。这一步必须早于第一个经过 Mixin 转换器的类，因为 Mixin 会在那一刻构造所有第三方 `IMixinConfigPlugin`，而这些配置插件会在 `<clinit>` 里读取 `FMLPaths`/`FMLLoader`。MinecraftForge 的 `FMLEnvironment` 在一次性的 `<clinit>` 里把 `dist` 缓存进 `static final` 字段；谁先碰到它，它的值就永远由谁决定。
+13. **加载器身份，先于 Mixin** —— `PassiveSeeder.seedNeoForgePaths`、`seedNeoForgeLoader`、`seedForgeFmlLoader`、`publishForgeLoadingList`。这一步必须早于第一个经过 Mixin 转换器的类，因为 Mixin 会在那一刻构造所有第三方 `IMixinConfigPlugin`，而这些配置插件会在 `<clinit>` 里读取 `FMLPaths`/`FMLLoader`。MinecraftForge 的 `FMLEnvironment` 在一次性的 `<clinit>` 里把 `dist` 缓存进 `static final` 字段；谁先碰到它，它的值就永远由谁决定。随后是 `KernelFabricEcosystem.constructLanguageAdapters()`：Fabric mod 声明的每个语言适配器都在这里构造，和 Fabric Loader 的 `freeze()` 一样早于 `FabricMixinBootstrap.init`（§5.1）。
 14. **Mixin** —— 先放 Fabric 配置，再追加 Forge 系配置（§7.1）；注册之前先调用 `MixinConfigOwners.publish`；`KernelMixinBootstrap.init`。
 15. `PassiveSeeder.reportDependencies()` —— 放在 Mixin 之后，因为它要报告的内容有一半（写给另一个 mod、却没有挂上的 mixin）是在 Mixin 解析配置时才记录下来的。
 16. `KernelRuntimeClasses.verify(loader)` —— 让内核自己的游戏侧过一遍已经搭好的流水线。
@@ -180,7 +180,8 @@ Fabric 和 NeoForge 在构造函数里需要的状态正好相反，所以内核
 - `discovery.ForbricModDiscoverer` 按描述文件给 jar 分类 —— `fabric.mod.json`、`META-INF/mods.toml`、`META-INF/neoforge.mods.toml` —— 并报告一个 jar 携带的*每一份*清单。最终加载哪一份由策略决定（§4.2）。
 - `metadata.forge.ModsTomlParser`（净室实现；TOML 词法分析用 NightConfig），配合 `ForgeModsToml`、`ForgeModEntry`、`ForgeDependency`；`ForgeVersionRangeTranslator` 把 Maven 版本范围转成 Fabric 风格的谓词，所以 `net.forbric.api.UnifiedDependency` 只有一种写法（由 `VersionPredicate` 求值）。`UnifiedDependency` 还保留了 Fabric 里没有对应说法的两个维度：顺序（`BEFORE`/`AFTER`）和适用的侧。
 - `fabric.FabricModMetadataParser` 是完整的 `fabric.mod.json` v1 读取器（入口点，包括适配器形式；`jars`；按侧区分的 `mixins`；`accessWidener`；`custom`）。`fabric.FabricModDiscovery` 会顺着 Fabric JiJ 继续发现（解压缓存在 `.forbric-kernel/jij/`）；`environment` 排除了当前侧的 mod 会被跳过，和 Fabric 上一样。
-- 内嵌的 Fabric mod 按 fabric-loader 0.19.5 的 `ModSolver` 的规则决定加不加载（`fabric.NestedFabricRequirements`，由 `NestedCandidateInventory` 执行；没有选择计划时由 `FabricModDiscovery` 执行）：对 `minecraft` 或 `java` 的 `depends` 不包含当前版本，或者 `breaks` 包含当前版本，它就不加载；硬依赖只能由这些被排除的 mod 满足、或者只被它们内嵌的内嵌 mod 也一起不加载。实例是 ViaFabric：它在 `viafabric-mc26-2` 旁边还内嵌了 `viafabric-mc26-1`（`minecraft >=26.1 <=26.1.2`），原生只加载 `viafabric-mc26-2`。只判定 Fabric mod 在自己的 `jars` 里声明的 jar。NeoForge/MinecraftForge mod 内嵌的 jar 不判定，哪怕里面只有一个 `fabric.mod.json`，因为 Fabric Loader 从不打开没有 `fabric.mod.json` 的 jar。父 jar 的 `META-INF/jarjar/metadata.json` 声明过的子 jar 归 FML 管，FML 把它当成父 mod 的库加载；只是放在 `META-INF/jars/` 或 `META-INF/jarjar/` 里、在这个文件里没有条目的 jar，没有任何原生加载器会加载，内核保留它是因为内核对 Forge 系 mod 的遍历一直都会走这两个目录。两条路都能走到的 jar 保留，不管遍历先走了哪条。有一处和原生不同：内核要加载的某个 mod 硬依赖某个 id，而会加载的 mod 里没有一个满足这条要求时，被排除的副本中满足要求的那些会被留下，连同把它一路内嵌到某个已加载父 mod 的那些 jar，并打一行 WARN：`[Forbric/JiJ] nested <id> <version> in <parent> loaded although Fabric Loader would leave it out (<原因>): <依赖方> requires <id> <范围>, and nothing else installed meets that`。如果已安装的副本没有一个满足要求，而且会加载的 mod 里根本没有这个 id，就留下所有被排除的副本（规则加入之前内核本来就加载它们），WARN 的结尾换成 `<依赖方> requires <id> <范围>; no installed build meets that, and no other <id> would load`。依赖方在 `mods/` 里时原生会拒绝启动；内核在缺依赖时也照样加载这种 mod，所以把提供者排除掉只会让它少一个依赖。最终仍被排除的每个 mod 都打一行 `[Forbric/JiJ] nested <id> <version> in <parent> left out: <原因>`，它内嵌的 mod 也一样：被排除的 jar 仍会被打开，这样已加载的 mod 需要其中某个 jar 时才看得见。`mods/` 里的 jar 从不在这里判定；`fabricloader`/`mixinextras` 的范围、读不懂的范围、以及没有任何已安装 mod 能满足的依赖都不会让任何东西被排除。没有选择计划时（`-Dforbric.crossJarArbitration=off`），`FabricModDiscovery` 只走 `mods/` 和 Fabric 的 `jars`，所以 `KernelBoot.scanFabricMods` 把它读不到的 jar 的硬依赖交给它：Forge 系 mod 的，以及它们 JarJar 里那些 jar 的 Fabric 清单的（这些 jar 在这条路上不是 Fabric 容器，但在 classpath 上）。`-Dforbric.nestedRequirements=off` 恢复为全部加载；`off:<id>,<id>` 只放过这几个 id（内核不读 Fabric 的 `config/fabric_loader_dependencies.json`）。
+- 内嵌的 Fabric mod 按 fabric-loader 0.19.5 的 `ModSolver` 的规则决定加不加载（`fabric.NestedFabricRequirements`，由 `NestedCandidateInventory` 执行；没有选择计划时由 `FabricModDiscovery` 执行）：对 `minecraft` 或 `java` 的 `depends` 不包含当前版本，或者 `breaks` 包含当前版本，它就不加载；硬依赖只能由这些被排除的 mod 满足、或者只被它们内嵌的内嵌 mod 也一起不加载。实例是 ViaFabric：它在 `viafabric-mc26-2` 旁边还内嵌了 `viafabric-mc26-1`（`minecraft >=26.1 <=26.1.2`），原生只加载 `viafabric-mc26-2`。（Fabric 的"每个 id 只加载一个 mod，provides 也算"在仲裁之后决定，见下一条。）只判定 Fabric mod 在自己的 `jars` 里声明的 jar。NeoForge/MinecraftForge mod 内嵌的 jar 不判定，哪怕里面只有一个 `fabric.mod.json`，因为 Fabric Loader 从不打开没有 `fabric.mod.json` 的 jar。父 jar 的 `META-INF/jarjar/metadata.json` 声明过的子 jar 归 FML 管，FML 把它当成父 mod 的库加载；只是放在 `META-INF/jars/` 或 `META-INF/jarjar/` 里、在这个文件里没有条目的 jar，没有任何原生加载器会加载，内核保留它是因为内核对 Forge 系 mod 的遍历一直都会走这两个目录。两条路都能走到的 jar 保留，不管遍历先走了哪条。有一处和原生不同：内核要加载的某个 mod 硬依赖某个 id，而会加载的 mod 里没有一个满足这条要求时，被排除的副本中满足要求的那些会被留下，连同把它一路内嵌到某个已加载父 mod 的那些 jar，并打一行 WARN：`[Forbric/JiJ] nested <id> <version> in <parent> loaded although Fabric Loader would leave it out (<原因>): <依赖方> requires <id> <范围>, and nothing else installed meets that`。如果已安装的副本没有一个满足要求，而且会加载的 mod 里根本没有这个 id，就留下所有被排除的副本（规则加入之前内核本来就加载它们），WARN 的结尾换成 `<依赖方> requires <id> <范围>; no installed build meets that, and no other <id> would load`。依赖方在 `mods/` 里时原生会拒绝启动；内核在缺依赖时也照样加载这种 mod，所以把提供者排除掉只会让它少一个依赖。最终仍被排除的每个 mod 都打一行 `[Forbric/JiJ] nested <id> <version> in <parent> left out: <原因>`，它内嵌的 mod 也一样：被排除的 jar 仍会被打开，这样已加载的 mod 需要其中某个 jar 时才看得见。`mods/` 里的 jar 从不在这里判定；`fabricloader`/`mixinextras` 的范围、读不懂的范围、以及没有任何已安装 mod 能满足的依赖都不会让任何东西被排除。没有选择计划时（`-Dforbric.crossJarArbitration=off`），`FabricModDiscovery` 只走 `mods/` 和 Fabric 的 `jars`，所以 `KernelBoot.scanFabricMods` 把它读不到的 jar 的硬依赖交给它：Forge 系 mod 的，以及它们 JarJar 里那些 jar 的 Fabric 清单的（这些 jar 在这条路上不是 Fabric 容器，但在 classpath 上）。`-Dforbric.nestedRequirements=off` 恢复为全部加载；`off:<id>,<id>` 只放过这几个 id（内核不读 Fabric 的 `config/fabric_loader_dependencies.json`）。
+- 每个 id 只加载一个 Fabric mod，`provides` 也算（`fabric.FabricUniqueIds`，作用在选择结果上：`DuplicateModArbiter` 在 `ReachableCandidateSelector` 之后调用，没有选择计划时由 `FabricModDiscovery` 调用）。Fabric Loader 把每个候选按自己的 id 和它 provides 的每个 id 建索引（`ModPrioSorter.sort`），每个 id 最多加载一个（`UNIQUE_ID`）。`mods/` 里的 jar 只有在它是自己某个 id 的唯一持有者时才强制加载（`ROOT_FORCELOAD_SINGLE`）；其余候选的权重都是 `-2^(n - 优先级)`，所以选择结果是 `ModPrioSorter` 顺序上的字典序最优（`mods/` 里的 jar 在前，然后按 id，再按版本从高到低；和前面某个 mod 共用 id 且版本更高的会被挪到它前面）：按这个顺序，每个 mod 在前面的 mod 都定下之后能加载就加载；内嵌 mod 需要一个会加载的父 mod，每个 mod 的每条硬依赖都要有会加载的提供者；硬依赖没有任何已安装 mod 能满足的直接关掉（`HARD_DEP_NO_CANDIDATE`）。内核用 SAT 求解器求同一个最优解。实例是 owo-sentinel：需要 owo-lib 的 mod 会内嵌它，让它在缺 owo-lib 时提示玩家去装，它 provides `owo` 和 `owo-lib`；装了 owo-lib 时原生从不加载它，内核以前两个都加载。两个共用 id 的内嵌 mod 通常是 Fabric 排在前面的那个胜出，但如果有一个排在它们两个前面的 mod 需要另一个，就留下另一个：这个 mod 是另一个内嵌的，或者依赖另一个。这一步只在仲裁选中的 jar 之间决定，绝不提前：被仲裁丢掉的构建（另一个生态更优先的副本、别处更新的副本、只被一个落选的库内嵌的副本）不会把它的对手挤掉，对这个共用 id 的依赖也不会左右仲裁留下某个 mod 的哪个构建。之后每个在争夺中落选的 mod 都被排除，同 id 的其他构建如果也会以同样方式输给 `mods/` 里的 jar 就一起排除（所有 owo-sentinel 构建一次排完）；只有当被排除的东西（落选者，或跟着它走的）还有别的构建可以顶上时，仲裁才再跑一轮：owo-sentinel 和 owo-lib 同装时只跑一轮，日志是 `one mod per id: decided in <n> arbitration round(s)`。只是跟着落选者走的 mod 每轮重新判定；需要落选者的 mod 在后面的轮次里也照样不加载。同一个 mod 的多个构建永远不是对手，只共用一个别名时也一样（每个 `mixinextras-fabric` 副本都 provides `com_github_llamalad7_mixinextras`）。只有 Fabric Loader 自己的索引参与：`mods/` 里的 Fabric jar，以及 Fabric Loader 自己能走到、没有被 `off:<id>` 豁免的内嵌 Fabric mod；它们的硬依赖由索引里的 mod 满足，和在 Fabric 上一样左右选择。其余的（Forge 系 mod、被 JarJar 声明或 Forge 系遍历带进来的 Fabric mod、被豁免的 mod、没有 `fabric.mod.json` 的库）只要有一个父 mod 加载就加载，跟着父 mod 走，从不左右胜负，也不为 Fabric 的选择满足任何依赖；它们自己的需求 Fabric Loader 看不到，只在 Fabric 的选择定下之后，靠把本该落选的 mod 留下来满足。落选者打 `left out: it answers to '<id>', as <胜者> <版本> [in mods/] does, and Fabric Loader loads one mod per id, provides included`；跟着它走的打 `left out: only mods left out bundle it`；依赖只有落选者能满足的 mod 打 `left out: it requires <id> <范围>, and every installed build of that is left out`。内核比原生宽松的地方：`mods/` 里的 jar 全部加载（对手拿走了它的所有 id、而它没有任何一个 id 被自己独占时，原生会丢掉它，例如 Sodium provides `indium` 时旁边的 Indium；两个被强制加载的 jar 冲突时原生拒绝启动）；硬依赖没有任何会加载的 mod 能满足的内嵌 mod，在求原生的选择时当作已关掉，之后再连同跟着它的 mod 一起放回来，只要不挤掉原生会加载的任何 mod，所以它让出所有共用的 id，没人争时照样加载；`mods/` 里的 Fabric jar 或 Fabric 索引之外的 mod 需要某个本该落选的 mod（按它的 id 或它 provides 的 id，或者它内嵌的 mod），而会加载的 mod 里没有别的能满足时，这个落选者被留下，连同把它一路内嵌到某个会加载的父 mod 的那些 mod、以及它带来的（它内嵌的 mod、需要它的 mod），胜者也照样加载，打 `loaded although Fabric Loader would leave it out (<原因>): <mod> requires <id> <范围>, and nothing else that loads meets that` WARN（因为它内嵌的东西被需要而留下时是 `it bundles <mod> (...)`）（需要它的是 `mods/` 里的 jar 时，如果胜出的 `mods/` jar 没有被自己的某个 id 强制加载，原生会丢掉它，否则拒绝启动；来自 Fabric 索引之外的需求原生根本看不到）。Fabric 判定的内嵌 Fabric mod 不会让任何 mod 被留下：和原生一样，它自己不加载。被留下的是仲裁为这个 id 选中的那个构建；另一个不需要被留下的已安装构建不会被尝试；胜者是内嵌 mod 而不在 `mods/` 里时，每轮只排除落选者 id 的一个构建。不参与权衡的：mod 之间的 `recommends` 和 `breaks`，以及在 `provides` 里列出自己 id 或把某个别名写两次的 mod（原生永远不加载它）。没有选择计划时没有仲裁：同一个 id 的多个副本一次权衡一个，最先发现的先权衡（也就是 `KernelFabricLoader.register` 会保留的那个）；一个副本在争夺中落选，就连同只有它内嵌的 mod 一起不加载，再权衡下一个副本。`forbric.nestedRequirements` 的开关同样适用。在本地语料（70 个 `mods/` 目录）里只有两种情况：owo-sentinel 和 owo-lib 同装；voxy 的 `dummyprovider`（只在服务端，provides `sodium`，而 Sodium 只在客户端，两者永远不会同时出现）。
 - `discovery.ModAnnotationScanner` 按字节码描述符查找 `@Mod` 类；`ModFileScanner` 构建完整的 `ModFileScanData`（NeoForge 和 MinecraftForge 的形态不同：`EnumHolder` 与 `EnumData`），因为 JEI、Jade、Sophisticated Core 和 Sodium 都通过 `ModList.getAllScanData()` 找自己的插件。
 - `net.forbric.api.DiscoveredMod` 是唯一的 mod 模型。
 
@@ -206,6 +207,7 @@ Fabric 和 NeoForge 在构造函数里需要的状态正好相反，所以内核
 
 - `LoaderProbePolicy` + `transform.LoaderProbeRewriter`（COREMOD 阶段）改写单加载器第三方类里的 `Class.forName` 调用点，让平台探测（`FMLLoader`、`FabricLoader`）按该 jar 被仲裁到的生态作答（`-Dforbric.loaderProbes=off`）。
 - `net.forbric.api.ModPresence` 给出跨生态的答案。`transform.ForeignModPresenceInjector` 把它以逻辑或并入两个 Forge 系的 `ModList.isLoaded`；Fabric 侧把每个 Forge 系 mod 注册成仅在场的容器（只有身份 —— 没有入口点、mixin 或资源），让 `FabricLoader.isModLoaded` 能作答；Forge 系的列表也预置了 Fabric mod（`-Dforbric.crossEcosystemPresence=off` 恢复单加载器的答案）。`net.forbric.api.ModIds` 负责映射各生态拼写不同的 id（`cloth-config` / `cloth_config`）。
+- 一个 mod 自己的 id 优先于别的 mod 用 `provides` 声明的同名别名，不管谁先到：`KernelFabricLoader.register`、`ModConstructionOrder` 和 `ModPresence` 的索引都先收齐所有真实 id，再收别名，和 `DuplicateModArbiter` 从不让别名占用 id 的规则一致。owo-sentinel 嵌在需要 owo-lib 的 mod 里，它 provides `owo`，而且不依赖任何已安装的 mod，所以先注册；结果 owo-lib 本身被当成"重复 id"丢掉，连同它的别名 `owo-impl`。现在装了 owo-lib 时 sentinel 本身也不加载，和 Fabric Loader 的解析器一样（每个 id 只加载一个 mod，provides 也算，见上文）；两者都保留的情况下（`mods/` 里的两个 jar，或被留下的内嵌 mod），仍由真实 id 优先的顺序决定。
 - `ModConstructionOrder` 按拓扑顺序构造 Forge 系 mod —— 一个 mod 排在它依赖的、以及它声明 `AFTER` 的所有 mod 之后；并列时按字母序；遇到环会点名报出，不会悄悄拆开（`-Dforbric.modOrder=name` 恢复按文件名排序）。Fabric mod 按 Fabric Loader 自己的顺序初始化，即按 mod id 排序（`FabricLoadOrder`；`-Dforbric.fabricOrder=off` 让它们回到拓扑顺序）。
 
 ## 5. 由内核驱动的三个生态
@@ -213,6 +215,8 @@ Fabric 和 NeoForge 在构造函数里需要的状态正好相反，所以内核
 ### 5.1 Fabric —— 不运行任何 Fabric Loader 代码
 
 - `fabric.KernelFabricLoader` *就是* `FabricLoader` 单例：它是内核状态的一个视图，入口点索引在 mod 代码运行之前就已冻结。`KernelModContainer` 通过 zip `FileSystem` 暴露每个 jar；`KernelLanguageAdapters` 支持 `languageAdapters`（fabric-language-kotlin）；`KernelObjectShare`、`KernelVersion`、`KernelMappingResolver`（恒等映射）补齐了整套 API。
+- 语言适配器在 Mixin 之前全部构造，不管有没有入口点用到它（§3.2 第 13 步），因为 Fabric Loader 的 `freeze()` 就是这么做的：Configured Defaults 在适配器构造函数里复制整合包的默认配置，而且没有任何入口点用到这个适配器。构造时抛异常的适配器会让它所属的 mod 失败，并且不会再构造第二次。`-Dforbric.eagerLanguageAdapters=off` 改回第一次用到时才构造。
+- 入口点的值按 Fabric 的 `DefaultLanguageAdapter` 解析（`KernelLanguageAdapters.resolveDefault`，没有适配器的入口点和 `LanguageAdapter.getDefault()` 共用这一份实现）：一个类、一个静态字段、同名的唯一方法（静态方法，或者绑定到一个新实例上的实例方法），以及 `::<init>`（构造函数）。Fabric 拒绝的写法（同名方法有多个、成员是私有的），内核保持宽松：打开访问权限，或者取第一个静态方法。
 - 面向 mod 的 API 以原名内置：`src/main/java/net/fabricmc/api`（7 个文件）和 `src/main/java/net/fabricmc/loader`（30 个文件：`loader.api.*`，加上 mod 实际会链接到的那一小部分内部类——`FabricLoaderImpl`、`ModContainerImpl`、`EntrypointStorage`、`Hooks`、`FabricLauncher`/`FabricLauncherBase`、`DefaultLanguageAdapter`、`StringUtil`，以及旧版的 `net.fabricmc.loader.FabricLoader`）。`FabricLoaderInternals` 按确切名称把这些内部类固定交给父加载器；`-Dforbric.fabricImpl=off` 则不提供它们。报告的 API 级别是 `KernelFabricEcosystem.FABRIC_LOADER_API_LEVEL = "0.19.3"`。
 - 入口点：`preLaunch` 在 Mixin 之后（§3.2 第 19 步）；`main` 在注册窗口内（服务端）或在 `Minecraft.<init>` 里（客户端，默认）；`client` 在 `Minecraft.<init>` 里；`server` 在专用服务器上。每个 mod 的入口点都隔离调用——抛出异常的 mod 会记录下来并跳过——调用时该 mod 对应的 NeoForge `ModContainer` 处于激活状态（`KernelForeignShimContext`），因为 Fabric mod 可能持有某个多加载器库的 NeoForge 构建。
 - Fabric 的访问加宽器 / class tweaker 在 `ACCESS` 阶段运行（`access.ClassTweakerTransformer`）；`@Environment` 剥离在 `ENV_STRIP` 阶段（`EnvironmentStripTransformer`，只作用于仲裁归 Fabric 的 jar 里的类）。
@@ -274,6 +278,10 @@ Mixin (via MixinWeaverSlot) → NativeCoremodParity → PostMixinFixups → Inte
 ### 7.1 内核就是 Mixin 服务
 
 `mixin.ForbricMixinService` 通过 `META-INF/services/org.spongepowered.asm.service.IMixinService` 注册（连同 `ForbricMixinServiceBootstrap` 和 `ForbricGlobalPropertyService`）；Mixin 库用的是 Fabric 的分支（`net.fabricmc:sponge-mixin`，版本见 `gradle.properties` 里的 `mixin_version`），MixinExtras 则是内核自带的 `mixinextras-fabric`（放在游戏侧，因为它生成的 `LocalRef` 类必须和游戏共用同一个加载器）。`KernelMixinBootstrap.init` 绑定服务、注册每个配置、安装 `KernelMixinErrorHandler`、把织入器装成流水线的最后一级，然后把环境推进到 `INIT` 和 `DEFAULT`。配置的准备（以及插件的构造）发生在第一个经过转换器的类上，也就是 `KernelRuntimeClasses.verify`。
+
+推进阶段之前，每个配置都按 Fabric Loader 的 `MixinConfigDecorator` 的方式打上标记：所属 mod 的 id（`KEY_MOD_ID`，让 Mixin 自己的消息能说出是哪个 mod），以及对 Fabric 拥有的配置，Fabric Loader 会给这个 mod 的 Mixin 兼容级别（`KEY_COMPATIBILITY`，`FabricMixinCompat`）。级别取自该 mod 对 `fabricloader` 的 `depends`/`breaks` 所接受的最低 Fabric Loader 版本，按 Fabric 自己的版本顺序比较（移植自 `SemanticVersionImpl.compareTo`，不用内核做依赖判断的比较器，那个对预发布版本的排序不同），再查 Fabric Loader 0.19.3 的 `FabricMixinVersions` 表（这是内核对外报告的版本，这张表的最高级别也正好是内置 Mixin 的最新级别）。它决定初始化器和注入器的应用顺序、局部变量怎么判别、平移后的注入点落在哪里。之前没有这个标记，所有 Fabric mod 都按最新级别运行。在本地语料（997 个不同的 `fabric.mod.json`）上，这份移植和 Fabric Loader 0.19.3 本身对每个 mod 的结果都一致；带 mixin 的 561 个 mod 里有 323 个得到比之前更旧的级别。
+
+不设下限。Fabric 在两种情况下给 0.9.2：mod 能接受的最低 `fabricloader` 版本低于 0.12.0，或者往下不设限（没有 `fabricloader` 依赖、写 `*`、或只有上界）。那 561 个里有 58 个属于这类，大多数是没有声明 `fabricloader` 依赖或没有下界，少数下界低于 0.12.0，例如 WorldEdit 的 `>=0.4.0`。按 mod id 对语料的 jar 清单重新数了一遍（计数口径不同）：带 mixin 的有 620 个，其中 112 个是 0.9.2；这 112 个里，55 个没有依赖，52 个没有下界，5 个下界低于 0.12.0。0.9.2 用的是 Mixin 旧的局部变量查找（`Locals.getLocalsAt092`）。这套查找和 0.10.0 的有一处差别，会碰上内核搬过位置的捕获。两套查找在 label 或行号处读局部变量之前，都会先往前跳过伪指令：0.10.0 的遇到帧就停；0.9.2 的最多走三个节点，走到帧上就把帧读进去。`MixinGuiItemCaptureAdapter` 会把 TAIL 捕获搬到 `INVOKE <结束方法体的那个调用>, AFTER`。如果那个调用直接落进尾部所在的汇合点，AFTER 就是汇合点的 label，0.9.2 的查找会走到汇合点的帧上。没存过这个局部变量的那条路径也会到达汇合点，所以这个帧里没有它：Mixin 判 "LVT ... has incompatible changes"，跳过这个捕获。功能就没了：跳过并打 WARN；如果是 `CAPTURE_FAILEXCEPTION`，则织成一个每次执行到这里都抛 `InjectionError` 的方法。适配器会把自己搬过的捕获从 `CAPTURE_FAILEXCEPTION` 改成 `CAPTURE_FAILSOFT`（和 `MixinLocalsCapture` 对 `CAPTURE_FAILHARD` 的处理一样，受同一个 `forbric.localsFailSoft` 开关控制），所以搬过的捕获即使仍然失败，也只会被跳过，不会抛错。`MixinCaptureLanding` 是一个 Mixin 扩展，在 Mixin 即将把 mixin 应用到某个类时（`preApply`）处理这件事。它只管 Mixin 正在应用到这个类、且级别低于 0.10.0 的 mixin。这包括 mixin 经 `MixinMergedTwin` 追加的合并孪生类，但不包括被配置插件拒掉的 mixin。它从实际应用的 mixin 上读出被搬过的注入点，按 Mixin 的匹配方式找到这个点绑定的调用；如果调用后面的节点是伪指令，就在调用后面紧接着插一个 `NOP`。`NOP` 仍在这个局部变量的作用域内，又不是伪指令，所以查找不用往前走，读到的就是方法体留下的局部变量。任何注入点类型本身都不会选中 `NOP`。同一个调用上的其他 AFTER 现在落在 `NOP` 上而不是 label 上，在代码里是同一个位置。`Shift.BY` 会把每个节点都算进去，插 `NOP` 会让跨过这个调用的 BY 落点挪一位，所以只要有任何一个正在应用的 mixin 在这个方法里用了 BY，这个方法的方法体就保持原样，那里的捕获在 0.9.2 下仍会被跳过，并打 Mixin 的 WARN（0.10.0 下限还在时，这类 mod 会被抬到 0.10.0，捕获是成立的）。真实织入测试套在 0.9.2、0.10.0 和 0.17.0 下全部通过。GUI 物品那个 fixture 在 0.9.2、0.10.0 和 0.17.1 下都能捕获，只有 0.9.2 的织入里有 `NOP`。孪生类 fixture 在 0.9.2 下两份拷贝都能捕获；旁边放一个 `by = 2` 的注入器时，它仍在汇合点 label 之后、每条路径都执行。去掉 BY 检查实测过：插了 `NOP` 它会被挪到 label 之前。`-Dforbric.captureLanding=off` 时，0.9.2 的织入又会跳过这个捕获。在此之前，内核把这类 mod 抬到 0.10.0（`RELOCATION_FLOOR`）。去掉这个下限后，纯 Fabric 服务端 A/B（130 个 mod 各自单跑，再把 159 个 jar 放进一个整包跑 1200 tick）的结果仍和原生 Fabric 一致：两边都通过的 126 个，两边都失败的还是那 4 个，没有只在 Forbric 上失败的。走到 Mixin 的 127 次会话里包括 12 次带有曾被下限抬高的配置，每一次记下的 Mixin 警告和没挂上的注入器都和有下限时完全相同。客户端门禁（gate-m9，其中 13 个配置现在是 0.9.2）的结果和之前一样。本地语料里，得到 0.9.2 的 Fabric mod 没有一个带 TAIL 局部变量捕获，所以这个落点针对的是这种形状，而不是目前见过的某个 mod。在纯 Fabric 服务端整包（126 个 mod、159 个 jar）上，按 Fabric 自己的级别织入、而不是全按最新级别，只改变了 6 个类里字段初始化的顺序（比较的是导出的类，并用同级别的第二次运行作噪声对照），整包运行结果相同。Forge 系的配置保持原样：NeoForge 的 FML 会按声明的 `behaviorVersion` 给自己的配置打标记，低于 0.17.1 直接拒绝加载，所以它能给出的任何级别在内置 Mixin 下都和最新级别表现一样。`-Dforbric.mixinCompat=latest` 让所有 Fabric 配置保持最新级别。
 
 顺序：Fabric 配置按 Fabric Loader 的顺序，Forge 系配置追加在后面。Mixin 按优先级排序，注册顺序只用来决定同优先级的先后，所以验证最少的那一组会成为最外层，包在已知可靠的栈外面。`MixinWeaverSlot` 让第三方 mod 能按 NeoForge 允许的方式替换织入器（LibJF 包装了 `FMLMixinClassProcessor.transformer`）。
 
@@ -416,6 +424,17 @@ Fabric mod 的配置界面只在一个地方声明：一个实现 Mod Menu 的 `
 
 这个决定会在进入游戏前的边界处询问一次（§3.2 第 18 步），加载结束时再问一次（服务端在 §3.4 第 3b 步，客户端在 `fireClientSetupLifecycle`），专用服务器还会在 `ServerStartedEvent` 时再问一次（世界加载期间出现的必要功能失败会让服务器按正常流程停机）。拒绝时抛出 `CompatibilityDecision.LaunchStopped`；`CompatibilityLaunchBoundary` 把它转成退出码 **78** 并打印报告路径；在 `Minecraft.<init>` 内部则通过 `SilentInitException` 退出，因此不会作为崩溃上报。启动之后才出现的检出项从不派生 Swing 进程，也不会退出 JVM：在服务端，它们在一个 tick 完成后的边界处处理（`LateServerCompatibility`）；在客户端，则在渲染线程的某个 tick 上由一个原生 Minecraft 界面处理（`KernelCompatibilityPrompts`、`KernelCompatibilityScreen`）。安装好的版本配置不传任何 JVM 参数，所以玩家得到的是 `ask`；`run/launch-kernel-{client,server}.sh` 默认用 `strict`（客户端脚本还默认 `-Dforbric.dependencyDialog=off`）。
 
+### 12.5 内核吞下继续运行的失败 —— `util.Caught`
+
+内核是容错设计：形状对不上的修复会放弃，另一侧缺失的桥会停用，一个 mod 的监听器抛异常不会连累其他 mod 的监听器。这些都是 `catch`，而 `src/main` 和 `src/runtime` 里的每个 `catch` 要么重新抛出，要么上报给 `Caught`，并且上报必须是 catch 体自己的一条语句（不能放在 `if` 下面）。`EveryCatchIsVisibleTest` 扫描源码，遇到任何其他写法就失败，没有白名单。
+
+- `Caught.warn/error(t, format, args)` —— 内核吞下并继续运行的失败。以对应级别记录，带 `[Forbric/Caught]` 前缀和 catch 所在位置（`Class.method:line`）：某个位置第一次出现时打完整堆栈，之后每次一行。同一位置的同一条消息打印 20 次（`-Dforbric.caught.printedPerSite`）后只计数；该位置没说过的新消息总会打印（每个位置最多 100 种），所以一个转发函数仍然会点名每一个失败的事件。反射的 `InvocationTargetException` 会先剥掉再打印。
+- `Caught.expected(t)` —— 这个异常本身就是答案：可选类的存在性探测、识别器的“不是这个形状”、mod 写的文本不是合法值、作为值交给负责上报的代码的异常。只计数，只在 `-Dforbric.debug` 下记录。如果一个“expected”异常的 cause 链里有只有 bug 才会抛的异常（`NullPointerException`、`ClassCastException`、ASM 分析帧之外的越界……），就改按失败上报：ASM 的 `Analyzer` 会把解释器抛出的任何异常包进识别器本来就预期的那个 `AnalyzerException` 里。
+
+加载结束时和 JVM 退出时各记录一次汇总（`[Forbric/Caught] summary …`，每个失败位置一行，带次数）。用 `FORBRIC_CAUGHT_FILE`（或 `-Dforbric.caught.file`）指定一个文件后，每个失败位置第一次出现时也会追加写进去，退出时再写入次数。
+
+单测和闸门都会读它。`CaughtErrorsExtension`（通过 META-INF/services 对每个单测生效）会让测试期间内核吞下过失败的测试失败，除非测试用 `@ExpectCaught("<失败消息里的文字>")` 说明这是它故意造成的；标在方法上时，列出的每个失败还必须真的发生。`run/lib.sh` 给每个闸门分配自己的 `build/caught/<gate>.<pid>.tsv`，导出给闸门启动的每个 JVM，退出时打印 `[kernel] CAUGHT …`，列出每个位置、消息和次数；`FORBRIC_CAUGHT_STRICT=1` 会让其中任何一条把闸门变红。
+
 ## 13. 安装器 —— `forbric-kernel-installer/`
 
 纯 JDK 实现，没有依赖，字节码 release 17，版本 `0.3.1-beta2`。
@@ -512,7 +531,7 @@ Forbric/
 
 目前的开发入口是 `python3 tools/dev.py client`（Windows 上用 `py tools/dev.py client`）。它借用安装器的产物流水线，在 `forbric-kernel/.dev/` 下准备一套隔离的游戏输入，解析库/资源和锁定的编译 API，然后构建并启动当前的内核。需要 JDK 25+ 和 Python 3.9+。Gradle 提供 `prepareDev`、`runClient`、`runServer` 和 `devDoctor`；准备和启动必须分成两次 Gradle 调用，因为游戏侧的接线在任务运行之前就已配置完毕。命令和配置见[开发指南](forbric-kernel/run/README.md)。
 
-`check` 还会运行开发/证据工具的自测，以及打包链接闸门的合成控制。`integrationTest` 要求暂存好的游戏和传输测试套件齐备，并且不允许任何测试被跳过；普通的 `test` 仍允许本地测试夹具缺失，并打印已执行/已跳过的数量。完整的集成测试套件除了基础游戏，还需要它指名的那些 mod 测试夹具；游戏准备好了，并不等于宣称每个兼容性包或真实实例闸门都已经跑过。
+`check` 还会运行开发/证据工具的自测，以及打包链接闸门的合成控制。`integrationTest` 要求暂存好的游戏和传输测试套件齐备，并且不允许任何测试被跳过；普通的 `test` 仍允许本地测试夹具缺失，并打印已执行/已跳过的数量。完整的集成测试套件除了基础游戏，还需要它指名的那些 mod 测试夹具；游戏准备好了，并不等于宣称每个兼容性包或真实实例闸门都已经跑过。测试期间内核吞下失败继续运行的单测会失败，除非标了 `@ExpectCaught`；每个闸门结束时都会打印一行 `[kernel] CAUGHT`（§12.5）。
 
 ```sh
 cd forbric-kernel
@@ -566,7 +585,9 @@ java -cp <boot-cp> net.forbric.kernel.boot.Main --scan --mods <dir> --report out
 | `forbric.dialogLanguage` | 强制指定对话框的语言（如 `ja`） |
 | `forbric.loadReportRewrite` | `off`：以第一次写入的 `load-report.txt` 为准 |
 | `forbric.crashAnalysis` | `off`：不生成 `crash-analysis.txt` |
-| `forbric.debug` | 启用 `ForbricLog.debug` 的日志行 |
+| `forbric.debug` | 启用 `ForbricLog.debug` 的日志行（以及每个位置第一条 `Caught.expected` 日志） |
+| `forbric.caught.printedPerSite` | 同一位置的同一个被吞下的失败打印多少次后只计数（默认 20，§12.5） |
+| `forbric.caught.file` | 把每个被吞下的失败位置及其次数也追加写进这个文件；`FORBRIC_CAUGHT_FILE` 作用相同，闸门设的就是它 |
 
 **仲裁与顺序**
 
@@ -576,11 +597,12 @@ java -cp <boot-cp> net.forbric.kernel.boot.Main --scan --mods <dir> --report out
 | `forbric.dupeIdPreference`, `forbric.nestedDupePreference` | 顶层 / 内嵌重复项的跨 jar 优先顺序 |
 | `forbric.modOwner` | `id=loader,…` 形式的锁定；也可用 `<rundir>/forbric-mods.txt` |
 | `forbric.crossJarArbitration` | `off`：同一个 id 的两个 jar 都会加载 |
-| `forbric.nestedRequirements` | `off`：`minecraft`/`java` 范围不包含本游戏的内嵌 Fabric mod 照样加载；`off:<id>,…`：只有这几个照样加载 |
+| `forbric.nestedRequirements` | `off`：`minecraft`/`java` 范围不包含本游戏的内嵌 Fabric mod，或和 Fabric Loader 更优先的 mod 共用一个 id（provides 也算）的内嵌 Fabric mod，照样加载；`off:<id>,…`：只豁免这几个 id，它们照样加载，也不再把对手挤掉 |
 | `forbric.arbitrationMaxNodes` | 选择器的工作量上限（默认 100 000，封顶 1 000 000） |
 | `forbric.modOrder` | `name`：按文件名决定构造顺序 |
 | `forbric.fabricOrder` | `off`：Fabric mod 按拓扑顺序，而不是按 mod id 顺序 |
 | `forbric.fabricMainInConstructor` | `off`：客户端的 Fabric `main` 入口点在 `Minecraft` 之前的窗口里运行 |
+| `forbric.eagerLanguageAdapters` | `off`：Fabric 语言适配器在入口点第一次用到时才构造，而不是在 Mixin 之前 |
 | `forbric.loaderProbes`, `forbric.crossEcosystemPresence` | `off`：平台探测 / 在场查询按单一加载器的方式作答 |
 
 **Mixin**
@@ -588,6 +610,8 @@ java -cp <boot-cp> net.forbric.kernel.boot.Main --scan --mods <dir> --report out
 | 属性 | 作用 |
 | --- | --- |
 | `forbric.relaxGuestMixins` | `off`：不放宽第三方配置 |
+| `forbric.mixinCompat` | `latest`：所有 Fabric 配置按 Mixin 的最新级别运行，而不是 Fabric Loader 给其 mod 的级别（§7.1） |
+| `forbric.captureLanding` | `off`：内核搬到"落进尾部汇合点的调用"之后的 TAIL 捕获，在 0.10.0 以下不再得到落脚的 `NOP`，0.9.2 下 Mixin 会跳过它（§7.1） |
 | `forbric.relaxMixinOverwrites` | 要放宽的配置，csv（支持 `*` 通配） |
 | `forbric.mixinDiagnostics` | 保持注入要求严格，让每一处不适配都暴露出来 |
 | `forbric.mixinFit` | `strict`：连 `PARTIAL` 的 mixin 也丢弃 |
@@ -626,6 +650,7 @@ java -cp <boot-cp> net.forbric.kernel.boot.Main --scan --mods <dir> --report out
 8. **修复一旦停用，就会明说** —— `AnchorSet`/`AnchorLedger`、`EventBridges.verify`、每个开关一条 WARN。
 9. **归因从不改变结果。** 错误处理器和报告只做记录；Mixin 的决定和 mod 的失败都保持原样。`CompatibilityDecision` 从不退出 JVM；只有启动边界才会退出。
 10. **任何带有 Mojang、MinecraftForge 或 NeoForge 字节的东西都不提交、不分发。** 游戏侧以 `compileOnly` 方式链接暂存的 jar；这些 jar 由安装器在玩家的机器上构建。
+11. **没有静默的 catch。** 每个 catch 要么重新抛出，要么上报给 `Caught`（§12.5）；让内核吞下失败继续运行的单测会失败，除非它用 `@ExpectCaught` 说明。
 
 ## 19. 现状与已知边界
 

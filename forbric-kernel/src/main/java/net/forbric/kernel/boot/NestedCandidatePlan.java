@@ -5,18 +5,28 @@ import java.nio.file.Path;
 import java.util.*;
 import net.forbric.api.CompatibilityFinding;
 import net.forbric.api.CompatibilityFindings;
+import net.forbric.kernel.util.Caught;
 
 /** One selection, consumed by both actual discoveries; verification never chooses another winner. */
 public final class NestedCandidatePlan {
 	private final NestedCandidateInventory inventory;
 	private final JointCandidateSelector.Result selection;
+	private final net.forbric.kernel.fabric.NestedFabricRequirements.Resolution<Path> oneModPerId;
 
-	NestedCandidatePlan(NestedCandidateInventory inventory, JointCandidateSelector.Result selection) {
-		this.inventory = inventory; this.selection = selection;
+	NestedCandidatePlan(NestedCandidateInventory inventory, JointCandidateSelector.Result selection,
+			net.forbric.kernel.fabric.NestedFabricRequirements.Resolution<Path> oneModPerId) {
+		this.inventory = inventory; this.selection = selection; this.oneModPerId = oneModPerId;
 	}
 	public NestedCandidateInventory inventory() { return inventory; }
 	public Set<Path> selected() { return selection.selected(); }
 	public JointCandidateSelector.Result selection() { return selection; }
+	/**
+	 * The nested Fabric mods arbitration selected that Fabric Loader's one mod per id leaves out, with what then goes
+	 * with them (what only they bundle, what only they satisfied), over every arbitration round (none of it is in
+	 * {@link #selected}); and those it would leave out but an anchored mod keeps back (still selected).
+	 * {@code FabricUniqueIds}.
+	 */
+	public net.forbric.kernel.fabric.NestedFabricRequirements.Resolution<Path> oneModPerId() { return oneModPerId; }
 	/** Uses selected parent edges, never the digest directory's name, as display provenance. */
 	Optional<String> bundledBy(Path file) {
 		Path path = file.toAbsolutePath().normalize();
@@ -50,13 +60,13 @@ public final class NestedCandidatePlan {
 			var node = inventory.nodes().get(path); allSelected.add(node.digest());
 			if (!node.root()) expected.add(node.digest());
 			try { if (!node.digest().equals(NestedCandidateInventory.digest(path))) note(discrepancies, path, "selected jar changed: " + path); }
-			catch (Exception unavailable) { note(discrepancies, path, "selected jar unavailable: " + path); }
+			catch (Exception unavailable) { Caught.expected(unavailable); note(discrepancies, path, "selected jar unavailable: " + path); }
 		}
 		for (Path path : actualNested) {
 			try {
 				String digest = NestedCandidateInventory.digest(path); observed.add(digest);
 				if (!allSelected.contains(digest)) note(discrepancies, path, "unselected jar reached discovery: " + path);
-			} catch (Exception unavailable) { note(discrepancies, path, "discovered jar unreadable: " + path); }
+			} catch (Exception unavailable) { Caught.expected(unavailable); note(discrepancies, path, "discovered jar unreadable: " + path); }
 		}
 		for (String digest : expected) if (!observed.contains(digest)) {
 			Path missing = selected().stream().filter(p -> inventory.nodes().get(p).digest().equals(digest)).findFirst().orElse(null);

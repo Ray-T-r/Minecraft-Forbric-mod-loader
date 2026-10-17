@@ -4,6 +4,7 @@ package net.forbric.kernel.mixin;
 import java.util.*;
 import org.objectweb.asm.*;
 import org.objectweb.asm.tree.*;
+import net.forbric.kernel.util.Caught;
 
 /** A native short-circuit predicate region, copied with every call and exceptional exit intact. */
 public final class NativeSourcePredicateIsland implements Opcodes {
@@ -12,7 +13,8 @@ public final class NativeSourcePredicateIsland implements Opcodes {
     private NativeSourcePredicateIsland(){}
     /** Results: 0 = consume, 1 = protected/refill with zero consumption, 3 = outer gate skipped/refill. */
     public static Extraction extract(String sourceOwner,String destinationOwner,MethodNode method,MethodInsnNode atom,String helperName){
-        try{return checked(sourceOwner,destinationOwner,method,atom,helperName);}catch(RuntimeException unknown){return null;}
+        try{return checked(sourceOwner,destinationOwner,method,atom,helperName);}catch(RuntimeException unknown){
+            Caught.warn(unknown,"[Forbric/Mixin] could not extract the native predicate island of %s.%s%s; it is left as written",sourceOwner,method.name,method.desc);return null;}
     }
     private static Extraction checked(String owner,String destination,MethodNode method,MethodInsnNode atom,String name){
         if((method.access&ACC_STATIC)!=0||!method.desc.equals("()V")||!method.tryCatchBlocks.isEmpty()||Type.getReturnType(atom.desc)!=Type.BOOLEAN_TYPE)return null;

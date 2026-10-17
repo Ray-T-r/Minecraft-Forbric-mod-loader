@@ -21,6 +21,7 @@ import java.util.concurrent.ConcurrentHashMap;
 
 import net.forbric.api.Ecosystem;
 import net.forbric.api.ModPresence;
+import net.forbric.kernel.util.Caught;
 import net.forbric.kernel.util.ForbricLog;
 
 /**
@@ -104,6 +105,8 @@ public final class KernelRegistryDirectories {
 			}
 			return path;
 		} catch (Throwable t) {
+			Caught.warn(t, "[Forbric/Registries] could not decide the data directory of registry %s:%s; it keeps the "
+					+ "merged one (%s)", namespace, path, merged);
 			return merged;
 		}
 	}
@@ -141,6 +144,8 @@ public final class KernelRegistryDirectories {
 				try {
 					present = namespaceAddedAfterBody(registries(), namespace);
 				} catch (Throwable t) {
+					Caught.warn(t, "[Forbric/Registries] could not ask Registries whether anything puts the namespace of %s "
+							+ "back after the body; treating it as absent", namespace);
 					present = false;
 				}
 				if (!present) {

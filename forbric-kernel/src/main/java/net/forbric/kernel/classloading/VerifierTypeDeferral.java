@@ -13,6 +13,8 @@ import java.util.TreeSet;
 import java.util.function.Function;
 import java.util.function.Predicate;
 
+import net.forbric.kernel.util.Caught;
+
 import org.objectweb.asm.ClassReader;
 import org.objectweb.asm.ClassWriter;
 import org.objectweb.asm.ConstantDynamic;
@@ -110,6 +112,7 @@ public final class VerifierTypeDeferral {
 			if (reader.readUnsignedShort(6) <= Opcodes.V1_6) return unchanged; // no mandatory stack map frames
 			reader.accept(type, ClassReader.EXPAND_FRAMES);
 		} catch (RuntimeException unreadable) {
+			Caught.warn(unreadable, "[Forbric/Mixin] could not read a class to defer its verifier types; defined as is");
 			return unchanged;
 		}
 		Set<String> ancestry = ancestry(type, supertypes);
@@ -134,6 +137,7 @@ public final class VerifierTypeDeferral {
 			if (!structurallySound(out)) return unchanged;
 			return new Result(out, Collections.unmodifiableSet(deferred), methods, casts);
 		} catch (AnalyzerException | RuntimeException unsupported) {
+			Caught.expected(unsupported);
 			return unchanged;
 		}
 	}
@@ -164,6 +168,8 @@ public final class VerifierTypeDeferral {
 			try {
 				new Analyzer<>(new BasicVerifier()).analyze(check.name, method);
 			} catch (AnalyzerException broken) {
+				Caught.warn(broken, "[Forbric/Mixin] deferring verifier types broke %s.%s%s; %s is defined as is",
+						check.name, method.name, method.desc, check.name);
 				return false;
 			}
 		}

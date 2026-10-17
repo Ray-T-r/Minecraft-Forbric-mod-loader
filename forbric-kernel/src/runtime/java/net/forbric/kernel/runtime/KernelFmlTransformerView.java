@@ -32,6 +32,7 @@ import net.neoforged.neoforgespi.transformation.ClassProcessorIds;
 import net.neoforged.neoforgespi.transformation.ProcessorName;
 
 import net.forbric.kernel.mixin.MixinWeaverSlot;
+import net.forbric.kernel.util.Caught;
 import net.forbric.kernel.util.ForbricLog;
 
 /**
@@ -127,6 +128,8 @@ public final class KernelFmlTransformerView {
 					return transformer.get(processor);
 				} catch (IllegalAccessException impossible) {
 					// setAccessible(true) above; answering "no replacement" keeps the kernel's own weaver.
+					Caught.warn(impossible, "[Forbric/FmlView] could not read FML's Mixin processor transformer; the"
+							+ " kernel's own weaver is kept");
 					return null;
 				}
 			}, replacement -> {
@@ -134,6 +137,8 @@ public final class KernelFmlTransformerView {
 					transformer.set(processor, replacement);
 				} catch (IllegalAccessException impossible) {
 					// setAccessible(true) above; the view keeps what it held, and the slot still weaves the replacement.
+					Caught.warn(impossible, "[Forbric/FmlView] could not write FML's Mixin processor transformer; the"
+							+ " view keeps what it held");
 				}
 			});
 			view = loader;
@@ -143,9 +148,9 @@ public final class KernelFmlTransformerView {
 			return loader;
 		} catch (Throwable unbuildable) {
 			gaveUp = true;
-			ForbricLog.warn("[Forbric/FmlView] could not build FML's TransformingClassLoader view (%s) — a NeoForge "
+			Caught.warn(unbuildable, "[Forbric/FmlView] could not build FML's TransformingClassLoader view — a NeoForge "
 					+ "mod that reaches the Mixin weaver through it (LibJF's ASM layer) starts without its class "
-					+ "patches, as before", String.valueOf(cause(unbuildable)));
+					+ "patches, as before");
 			return null;
 		}
 	}
@@ -163,18 +168,5 @@ public final class KernelFmlTransformerView {
 		theUnsafe.setAccessible(true);
 		Object unsafe = theUnsafe.get(null);
 		return type.cast(unsafeType.getMethod("allocateInstance", Class.class).invoke(unsafe, type));
-	}
-
-	/**
-	 * What actually went wrong: allocation goes through {@code Method.invoke}, so a failed class initialisation
-	 * arrives as an {@code InvocationTargetException} around an {@code ExceptionInInitializerError}.
-	 */
-	private static Throwable cause(Throwable thrown) {
-		Throwable t = thrown;
-		while ((t instanceof java.lang.reflect.InvocationTargetException || t instanceof ExceptionInInitializerError)
-				&& t.getCause() != null) {
-			t = t.getCause();
-		}
-		return t;
 	}
 }

@@ -48,6 +48,7 @@ import net.forbric.api.Ecosystem;
 import net.forbric.api.EventBridges;
 import net.forbric.api.ForeignType;
 import net.forbric.api.GameEventBridge;
+import net.forbric.kernel.util.Caught;
 import net.forbric.kernel.util.ForbricLog;
 
 /**
@@ -383,7 +384,7 @@ public final class ForbricMergedBaseCompatTransformer implements ClassTransforme
 			}
 			return result;
 		} catch (RuntimeException e) {
-			ForbricLog.warn("[Forbric/MergedBaseCompat] could not inspect " + className, e);
+			Caught.warn(e, "[Forbric/MergedBaseCompat] could not inspect %s", className);
 			return classBytes;
 		}
 	}
@@ -1939,6 +1940,7 @@ public final class ForbricMergedBaseCompatTransformer implements ClassTransforme
 					frames[method.instructions.indexOf(insn)];
 			return at == null ? -1 : at.getStackSize();
 		} catch (org.objectweb.asm.tree.analysis.AnalyzerException unreadable) {
+			Caught.expected(unreadable);
 			return -1;
 		}
 	}

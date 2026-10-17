@@ -36,6 +36,7 @@ import net.forbric.api.ModCatalog;
 import net.forbric.api.ForeignType;
 import net.forbric.kernel.classloading.ForbricClassLoader;
 import net.forbric.kernel.discovery.ModAnnotationScanner;
+import net.forbric.kernel.util.Caught;
 import net.forbric.kernel.util.ForbricLog;
 import net.forbric.kernel.util.Reflect;
 
@@ -219,7 +220,9 @@ public final class KernelEventSubscribers {
 						neoMethods += wireNeoSubscriber(cl, sub.className(), modBus, neo);
 					}
 				} catch (Throwable t) {
-					registrationFailed(modId, sub.className(), Reflect.unwrap(t));
+					Throwable real = Reflect.unwrap(t);
+					Caught.warn(real, "[Forbric/EBS] could not register %s%s", sub.className(), causeChain(real));
+					registrationFailed(modId, sub.className(), real);
 				}
 			}
 		}
@@ -263,13 +266,16 @@ public final class KernelEventSubscribers {
 	 * (a jar with no mod class beside it) marks nobody — the log line is the whole report then.
 	 */
 	static void registrationFailed(String modId, String className, Throwable real) {
-		StringBuilder chain = new StringBuilder();
-		for (Throwable x = real; x != null; x = x.getCause()) chain.append("\n      caused by: ").append(x);
-		ForbricLog.warn("[Forbric/EBS] could not register " + className + chain, real);
 		if (modId != null && !modId.isBlank()) {
 			ModCatalog.mark(modId, ModCatalog.Status.DEGRADED, "its @EventBusSubscriber " + simpleName(className)
 					+ " could not be registered — its listeners will not run");
 		}
+	}
+
+	private static String causeChain(Throwable real) {
+		StringBuilder chain = new StringBuilder();
+		for (Throwable x = real; x != null; x = x.getCause()) chain.append("\n      caused by: ").append(x);
+		return chain.toString();
 	}
 
 	/** Whether the catalogue says {@code modId} is FAILED — its constructor or entrypoint threw. Unknown ids are not. */
@@ -388,6 +394,8 @@ public final class KernelEventSubscribers {
 		try {
 			return ModAnnotationScanner.scan(jar);
 		} catch (Throwable t) {
+			Caught.warn(t, "[Forbric/EBS] could not scan %s for @Mod classes; its subscribers get no owner from it",
+					jar.getFileName());
 			return List.of();
 		}
 	}
@@ -408,12 +416,17 @@ public final class KernelEventSubscribers {
 					fmlRegister = logic.getMethod("register", busGroup, Class.class);
 					fmlRegister.setAccessible(true);
 				} catch (Throwable t) {
-					ForbricLog.warn("[Forbric/EBS] %s absent — falling back to BusGroup.register(Lookup, Class), "
+					Caught.warn(t, "[Forbric/EBS] %s absent — falling back to BusGroup.register(Lookup, Class), "
 							+ "which rejects a subscriber class carrying exactly one listener", FML_EBS_LOGIC);
 				}
 				return new ForgeBusApi(defaultGroup, fmlRegister, busGroupRegister);
-			} catch (Throwable t) {
+			} catch (ClassNotFoundException absent) {
+				Caught.expected(absent);
 				ForbricLog.debug("[Forbric/EBS] MinecraftForge BusGroup absent");
+				return null;
+			} catch (Throwable t) {
+				Caught.warn(t, "[Forbric/EBS] MinecraftForge BusGroup is present but unusable; no MinecraftForge "
+						+ "@EventBusSubscriber class is registered");
 				return null;
 			}
 		}
@@ -432,8 +445,13 @@ public final class KernelEventSubscribers {
 						Class.forName("net.neoforged.bus.api.Event", false, cl),
 						Class.forName(ForeignType.MOD_BUS_EVENT.binary(Ecosystem.NEOFORGE), false, cl),
 						Class.forName("net.neoforged.bus.api.IEventBus", false, cl).getMethod("register", Object.class));
-			} catch (Throwable t) {
+			} catch (ClassNotFoundException absent) {
+				Caught.expected(absent);
 				ForbricLog.debug("[Forbric/EBS] NeoForge bus API absent");
+				return null;
+			} catch (Throwable t) {
+				Caught.warn(t, "[Forbric/EBS] NeoForge bus API is present but unusable; no NeoForge "
+						+ "@EventBusSubscriber is wired");
 				return null;
 			}
 		}
@@ -485,8 +503,8 @@ public final class KernelEventSubscribers {
 				try {
 					wired += wireNeoSubscriber(cl, sub.className(), modBus, api);
 				} catch (Throwable t) {
-					ForbricLog.debug("[Forbric/EBS] could not wire NeoForge-internal %s: %s", sub.className(),
-							String.valueOf(Reflect.unwrap(t)));
+					Caught.warn(t, "[Forbric/EBS] could not wire NeoForge-internal %s; its listeners will not run",
+							sub.className());
 				}
 			}
 		}
@@ -550,8 +568,8 @@ public final class KernelEventSubscribers {
 				}
 			}
 		} catch (Throwable t) {
-			ForbricLog.debug("[Forbric/EBS] could not scan %s: %s", jar.getFileName(),
-					String.valueOf(Reflect.unwrap(t)));
+			Caught.warn(t, "[Forbric/EBS] could not scan %s for @EventBusSubscriber classes; %d found before the "
+					+ "failure are kept", jar.getFileName(), found.size());
 		}
 		return found;
 	}
@@ -565,6 +583,8 @@ public final class KernelEventSubscribers {
 		try {
 			return Files.readAllBytes(classFile);
 		} catch (Throwable unreadable) {
+			Caught.warn(unreadable, "[Forbric/EBS] could not read %s; it is not scanned for @EventBusSubscriber",
+					classFile);
 			return null;
 		}
 	}
@@ -646,6 +666,7 @@ public final class KernelEventSubscribers {
 			return new Subscriber(name[0].replace('/', '.'), family[0], dists, modId[0],
 					bus[0] == null ? "BOTH" : bus[0], java.util.Set.copyOf(events));
 		} catch (Throwable t) {
+			Caught.warn(t, "[Forbric/EBS] could not parse a class for @EventBusSubscriber; it is skipped");
 			return null;
 		}
 	}

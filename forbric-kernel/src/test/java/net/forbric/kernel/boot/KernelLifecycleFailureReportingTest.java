@@ -150,6 +150,11 @@ class KernelLifecycleFailureReportingTest {
 					&& "net/forbric/kernel/util/ForbricLog".equals(call.owner)) {
 				levels.add(call.name);
 			}
+			// Caught.warn/error log at their level; Caught.expected is the "absent, nothing went wrong" answer,
+			// which is logged only under -Dforbric.debug, as these paths used to say it.
+			if (insn instanceof MethodInsnNode call && "net/forbric/kernel/util/Caught".equals(call.owner)) {
+				levels.add("expected".equals(call.name) ? "debug" : call.name);
+			}
 		}
 		return levels;
 	}

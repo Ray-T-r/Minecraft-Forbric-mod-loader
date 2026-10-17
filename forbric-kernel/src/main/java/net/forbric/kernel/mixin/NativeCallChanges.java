@@ -6,6 +6,7 @@ import java.util.function.Function;
 import org.objectweb.asm.*;
 import org.objectweb.asm.tree.*;
 import org.objectweb.asm.tree.analysis.*;
+import net.forbric.kernel.util.Caught;
 
 /** Source/current call correspondence from actual operand providers and executable control flow. */
 final class NativeCallChanges {
@@ -19,7 +20,7 @@ final class NativeCallChanges {
         try {Origins origins=new Origins();var frames=new Analyzer<>(origins).analyze(owner.name,method);Evidence evidence=new Evidence(method,frames,origins.parameters);Frame<SourceValue> frame=frames[method.instructions.indexOf(point)];if(frame==null)return null;
             List<Expr> values=new ArrayList<>();int slot=(method.access&Opcodes.ACC_STATIC)==0?1:0;
             for(Type type:Type.getArgumentTypes(method.desc)){Expr value=evidence.value(frame.getLocal(slot));if(value==null)return null;values.add(value);slot+=type.getSize();}return values;
-        }catch(AnalyzerException|RuntimeException invalid){return null;}
+        }catch(AnalyzerException|RuntimeException invalid){Caught.expected(invalid);return null;}
     }
     /**
      * What each local slot holds at {@code point}, as the expression that produced it (a parameter, a call on its inputs,
@@ -32,7 +33,7 @@ final class NativeCallChanges {
             Map<Integer,Expr> values=new LinkedHashMap<>();
             for(int slot=0;slot<frame.getLocals();slot++){SourceValue value=frame.getLocal(slot);if(value==null)continue;Expr expression=evidence.value(value);if(expression!=null)values.put(slot,expression);}
             return values;
-        }catch(AnalyzerException|RuntimeException invalid){return null;}
+        }catch(AnalyzerException|RuntimeException invalid){Caught.expected(invalid);return null;}
     }
     /** The actual effects leading to this occurrence, with argument-producing carrier conversions kept out of the operation census. */
     static Context context(ClassNode owner,MethodNode method,MethodInsnNode point,Function<Expr,Expr> normalize,Set<Expr> providers) {
@@ -50,14 +51,14 @@ final class NativeCallChanges {
             }
             AbstractInsnNode consumer=point.getNext();while(consumer!=null&&(consumer.getOpcode()<0||consumer.getOpcode()==Opcodes.CHECKCAST))consumer=consumer.getNext();if(consumer==null)return null;
             return new Context(evidence.guards(point,normalize),List.copyOf(effects),consumer.getOpcode());
-        }catch(AnalyzerException|RuntimeException unsupported){return null;}
+        }catch(AnalyzerException|RuntimeException unsupported){Caught.expected(unsupported);return null;}
     }
     /** The values a conditional branch tests (one or two), as the expressions that compute them; null when unreadable. */
     static List<Expr> argumentValuesOfBranch(String owner,MethodNode method,JumpInsnNode branch) {
         try {Origins origins=new Origins();var frames=new Analyzer<>(origins).analyze(owner,method);Evidence evidence=new Evidence(method,frames,origins.parameters);
             int opcode=branch.getOpcode();int count=opcode>=Opcodes.IF_ICMPEQ&&opcode<=Opcodes.IF_ACMPNE?2:1;
             return evidence.inputs(branch,count);
-        }catch(AnalyzerException|RuntimeException invalid){return null;}
+        }catch(AnalyzerException|RuntimeException invalid){ Caught.expected(invalid);return null;}
     }
     static String member(MethodInsnNode call) { return "L" + call.owner + ";" + call.name + call.desc; }
     static MethodNode method(ClassNode owner, String signature) {
@@ -83,7 +84,7 @@ final class NativeCallChanges {
                 if (operands != null) result.add(new Site(call, operands, evidence.continuation(call), evidence.guards(call), ordinal));
             }
             return result;
-        } catch (AnalyzerException | RuntimeException invalid) { return List.of(); }
+        } catch (AnalyzerException | RuntimeException invalid) { Caught.expected(invalid); return List.of(); }
     }
     /** Exactly one candidate at the same guarded operation, preserving each source input or its provider. */
     static Site match(Site source, List<Site> current, java.util.function.Predicate<MethodInsnNode> eligible) {

@@ -19,8 +19,8 @@ package net.forbric.kernel.runtime;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.function.Consumer;
 
+import net.forbric.kernel.util.Caught;
 import net.forbric.kernel.util.ForbricLog;
-import net.forbric.kernel.util.Reflect;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.player.Player;
 import net.minecraftforge.event.ForgeEventFactory;
@@ -95,15 +95,13 @@ public final class KernelGamePlayerTrackingEvents {
 	}
 
 	/**
-	 * Subscribes one observing forward at LOWEST, and says so once if it ever fails.
+	 * Subscribes one observing forward at LOWEST, and says so each time it fails.
 	 *
-	 * <p>Tracking fires many times a second on a busy server, so both the success note and the failure warning
-	 * are once-only: a per-event line here would be the loudest thing in the log and the first thing switched
-	 * off.
+	 * <p>Tracking fires many times a second on a busy server, so the success note is once-only: a per-event line
+	 * here would be the loudest thing in the log and the first thing switched off.
 	 */
 	private static <E extends PlayerEvent> void forward(IEventBus bus, Class<E> event, String name, String cost,
 			ForgeForward<E> forge) {
-		AtomicBoolean warned = new AtomicBoolean();
 		AtomicBoolean proved = new AtomicBoolean();
 		Consumer<E> listener = neoEvent -> {
 			try {
@@ -116,9 +114,7 @@ public final class KernelGamePlayerTrackingEvents {
 							+ "mod now sees entity tracking NeoForge won on the merged base", name);
 				}
 			} catch (Throwable t) {
-				if (warned.compareAndSet(false, true)) {
-					ForbricLog.warn("[Forbric/EventMux] " + name + " forward failed — " + cost, Reflect.unwrap(t));
-				}
+				Caught.warn(t, "[Forbric/EventMux] %s forward failed — %s", name, cost);
 			}
 		};
 		// The four-argument overload, ALWAYS: the shorter ones default to NORMAL, and LOWEST is what makes this

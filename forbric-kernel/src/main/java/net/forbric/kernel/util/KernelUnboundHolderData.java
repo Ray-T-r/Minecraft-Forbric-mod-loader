@@ -49,6 +49,8 @@ public final class KernelUnboundHolderData {
 						field.setAccessible(true);
 						flags.add(field);
 					} catch (RuntimeException unreadable) {
+						Caught.warn(unreadable, "[Forbric/DataMaps] could not open %s.frozen; whether its data-map"
+								+ " lookups came after it closed is not judged", c.getName());
 						return List.of();
 					}
 				}
@@ -106,6 +108,8 @@ public final class KernelUnboundHolderData {
 						describe(value), closed == null ? "not judged" : "open");
 			} catch (Throwable diagnosticsOnly) {
 				// The answer is already decided by the caller; a report that fails must not turn it into a throw.
+				Caught.warn(diagnosticsOnly, "[Forbric/DataMaps] could not report a data-map lookup on an unregistered"
+						+ " value");
 			}
 		}
 	}
@@ -119,6 +123,8 @@ public final class KernelUnboundHolderData {
 			for (Field flag : flags) if (flag.getBoolean(owner)) return Boolean.TRUE;
 			return Boolean.FALSE;
 		} catch (IllegalAccessException | RuntimeException unreadable) {
+			Caught.warn(unreadable, "[Forbric/DataMaps] could not read the frozen flag of %s; not judged",
+					owner.getClass().getName());
 			return null;
 		}
 	}
@@ -129,6 +135,7 @@ public final class KernelUnboundHolderData {
 		try {
 			text = String.valueOf(object);
 		} catch (Throwable unprintable) {
+			Caught.expected(unprintable);
 			text = "?";
 		}
 		return object.getClass().getName() + " '" + text + "'";

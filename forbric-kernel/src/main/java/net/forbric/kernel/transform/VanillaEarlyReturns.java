@@ -59,6 +59,7 @@ import org.objectweb.asm.tree.TryCatchBlockNode;
 import org.objectweb.asm.tree.TypeInsnNode;
 import org.objectweb.asm.tree.VarInsnNode;
 
+import net.forbric.kernel.util.Caught;
 import net.forbric.kernel.util.ForbricLog;
 
 /**
@@ -181,7 +182,7 @@ public final class VanillaEarlyReturns implements ClassTransformer {
 			ForbricLog.debug("[Forbric/EarlyReturns] %s: %d method(s) return early again where vanilla does", className, methods);
 			return writer.toByteArray();
 		} catch (RuntimeException e) {
-			ForbricLog.warn("[Forbric/EarlyReturns] could not restore " + className + "'s early returns; left as merged", e);
+			Caught.warn(e, "[Forbric/EarlyReturns] could not restore %s's early returns; left as merged", className);
 			return classBytes;
 		}
 	}
@@ -218,6 +219,7 @@ public final class VanillaEarlyReturns implements ClassTransformer {
 					try {
 						vanillaNode = vanillaClasses.apply(node.name);
 					} catch (RuntimeException unavailable) {
+						Caught.warn(unavailable, "[Forbric/EarlyReturns] could not read vanilla's %s; its tail locals are not restored", node.name);
 						vanillaNode = null;
 					}
 				}
@@ -253,7 +255,7 @@ public final class VanillaEarlyReturns implements ClassTransformer {
 				if (row != null) out.computeIfAbsent(row.owner(), o -> new HashMap<>()).put(row.method(), row.keys());
 			}
 		} catch (IOException unreadable) {
-			ForbricLog.warn("[Forbric/EarlyReturns] could not read " + TABLE, unreadable);
+			Caught.warn(unreadable, "[Forbric/EarlyReturns] could not read %s", TABLE);
 		}
 		int methods = out.values().stream().mapToInt(Map::size).sum();
 		ForbricLog.info("[Forbric/EarlyReturns] %d merged methods in %d classes get vanilla's early returns back as they load, "

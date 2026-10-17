@@ -61,6 +61,7 @@ import org.objectweb.asm.tree.TryCatchBlockNode;
 
 import net.fabricmc.api.EnvType;
 import net.forbric.api.Side;
+import net.forbric.kernel.ExpectCaught;
 import net.forbric.kernel.transform.ExecutesInjector;
 import net.forbric.kernel.transform.FabricFreezePointInjector;
 import net.forbric.kernel.transform.InjectorExecution;
@@ -251,6 +252,7 @@ class FabricFreezePointWindowTest {
 	 * wrapper — and not rethrown, the way a failing entrypoint in the same window is. Nor is it tried again: the
 	 * handlers before the one that threw have already run, and a second call would run them twice.
 	 */
+	@ExpectCaught("Registry is already frozen")
 	@Test
 	void aHookThatThrowsIsReportedAndNotRethrown(@TempDir Path dir) throws Throwable {
 		ClassLoader game = standIn(dir, THROWING);

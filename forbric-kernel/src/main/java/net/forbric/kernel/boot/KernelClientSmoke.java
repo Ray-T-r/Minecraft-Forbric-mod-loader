@@ -19,6 +19,7 @@ package net.forbric.kernel.boot;
 import java.lang.reflect.Field;
 import java.lang.reflect.Method;
 
+import net.forbric.kernel.util.Caught;
 import net.forbric.kernel.util.ForbricLog;
 
 /**
@@ -159,7 +160,7 @@ public final class KernelClientSmoke {
 		try {
 			tick(minecraft);
 		} catch (Throwable t) {
-			ForbricLog.debug("[Forbric/ClientSmoke] tick hook failed: %s", String.valueOf(t));
+			Caught.warn(t, "[Forbric/ClientSmoke] tick hook failed");
 		}
 	}
 
@@ -288,10 +289,11 @@ public final class KernelClientSmoke {
 			neoBus.getClass().getMethod("addListener", Class.class, java.util.function.Consumer.class).invoke(neoBus, neoEvent,
 					(java.util.function.Consumer) e -> register.accept(invoke(e, "getDispatcher"), "forbricsmokeneo"));
 		} catch (ClassNotFoundException absent) {
+			Caught.expected(absent);
 			ForbricLog.debug("[Forbric/ClientSmoke] not both families on this client — no connection probes");
 			connectionProbesArmed = false;
 		} catch (Throwable t) {
-			ForbricLog.warn("[Forbric/ClientSmoke] could not arm the connection probes", t);
+			Caught.warn(t, "[Forbric/ClientSmoke] could not arm the connection probes");
 			connectionProbesArmed = false;
 		}
 	}
@@ -306,6 +308,7 @@ public final class KernelClientSmoke {
 					api.getMethod("addListener", java.util.function.Consumer.class).invoke(bus, (java.util.function.Consumer) listener);
 					return;
 				} catch (NoSuchMethodException elsewhere) {
+					Caught.expected(elsewhere);
 					continue;
 				}
 			}
@@ -330,7 +333,7 @@ public final class KernelClientSmoke {
 			ForbricLog.info("[Forbric/ClientSmoke] client command tree after joining: forge=%s neo=%s",
 					child.invoke(root, "forbricsmokeforge") != null, child.invoke(root, "forbricsmokeneo") != null);
 		} catch (Throwable t) {
-			ForbricLog.warn("[Forbric/ClientSmoke] could not read the client command tree", t);
+			Caught.warn(t, "[Forbric/ClientSmoke] could not read the client command tree");
 		}
 	}
 
@@ -355,7 +358,7 @@ public final class KernelClientSmoke {
 					shown == null ? "no screen" : shown.getClass().getName());
 			setScreen(minecraft, null);
 		} catch (Throwable t) {
-			ForbricLog.warn("[Forbric/ClientSmoke] could not open vanilla's key binds screen", t);
+			Caught.warn(t, "[Forbric/ClientSmoke] could not open vanilla's key binds screen");
 		}
 	}
 
@@ -425,7 +428,7 @@ public final class KernelClientSmoke {
 			}
 		} catch (Throwable t) {
 			modsScreenClosed = true;
-			ForbricLog.warn("[Forbric/ClientSmoke] the unified Mods screen could not be opened", t);
+			Caught.warn(t, "[Forbric/ClientSmoke] the unified Mods screen could not be opened");
 		}
 	}
 
@@ -463,9 +466,10 @@ public final class KernelClientSmoke {
 			}
 			fabricScreenDrawsArmed = true;
 		} catch (ClassNotFoundException absent) {
+			Caught.expected(absent);
 			ForbricLog.debug("[Forbric/ClientSmoke] fabric-screen-api not installed — no screen draw events to count");
 		} catch (Throwable t) {
-			ForbricLog.warn("[Forbric/ClientSmoke] could not listen to Fabric's screen draw events", t);
+			Caught.warn(t, "[Forbric/ClientSmoke] could not listen to Fabric's screen draw events");
 		}
 	}
 
@@ -515,7 +519,7 @@ public final class KernelClientSmoke {
 			}
 		} catch (Throwable t) {
 			screenMouseStage = 9;
-			ForbricLog.warn("[Forbric/ClientSmoke] could not drive the mouse through a container screen", t);
+			Caught.warn(t, "[Forbric/ClientSmoke] could not drive the mouse through a container screen");
 		}
 	}
 
@@ -616,6 +620,7 @@ public final class KernelClientSmoke {
 			}
 			return out.length() == 0 ? "<all empty>" : out.toString();
 		} catch (Throwable t) {
+			Caught.expected(t);
 			return "<unreadable: " + t + ">";
 		}
 	}
@@ -651,7 +656,7 @@ public final class KernelClientSmoke {
 				return new double[] {guiX * wide, guiY * high};
 			}
 		} catch (Throwable t) {
-			ForbricLog.debug("[Forbric/ClientSmoke] cannot locate a stocked slot: %s", String.valueOf(t));
+			Caught.warn(t, "[Forbric/ClientSmoke] cannot locate a stocked slot");
 		}
 		return null;
 	}
@@ -671,6 +676,7 @@ public final class KernelClientSmoke {
 			Object stack = slot.getClass().getMethod("getItem").invoke(slot);
 			return fieldValue(slot, "index") + " holding " + stack;
 		} catch (Throwable t) {
+			Caught.expected(t);
 			return "<unaskable: " + t + ">";
 		}
 	}
@@ -746,9 +752,10 @@ public final class KernelClientSmoke {
 				field.set(owner, value);
 				return;
 			} catch (NoSuchFieldException keepLooking) {
+				Caught.expected(keepLooking);
 				continue;
 			} catch (ReflectiveOperationException | RuntimeException unwritable) {
-				ForbricLog.debug("[Forbric/ClientSmoke] cannot write %s: %s", name, String.valueOf(unwritable));
+				Caught.warn(unwritable, "[Forbric/ClientSmoke] cannot write %s", name);
 				return;
 			}
 		}
@@ -885,8 +892,7 @@ public final class KernelClientSmoke {
 			}
 		} catch (Throwable t) {
 			carryStage = CARRY_LAST_STEP + 1;
-			ForbricLog.warn("[Forbric/ClientSmoke] the carry drill could not run step " + step,
-					t instanceof java.lang.reflect.InvocationTargetException i && i.getCause() != null ? i.getCause() : t);
+			Caught.warn(t, "[Forbric/ClientSmoke] the carry drill could not run step " + step);
 		}
 	}
 
@@ -950,6 +956,7 @@ public final class KernelClientSmoke {
 		try {
 			return Class.forName("net.minecraft.world.entity.EntityTypes", true, cl).getField("PIG").get(null);
 		} catch (ClassNotFoundException | NoSuchFieldException older) {
+			Caught.expected(older);
 			return Class.forName("net.minecraft.world.entity.EntityType", true, cl).getField("PIG").get(null);
 		}
 	}
@@ -1022,6 +1029,7 @@ public final class KernelClientSmoke {
 		try {
 			return accessible(owner.getClass(), name).invoke(owner);
 		} catch (Throwable t) {
+			Caught.expected(t);
 			return null;
 		}
 	}
@@ -1058,7 +1066,7 @@ public final class KernelClientSmoke {
 			screenshot.getMethod("grab", minecraft.getClass(), boolean.class).invoke(null, minecraft, false);
 			ForbricLog.info("[Forbric/ClientSmoke] screenshot requested at world tick %d: %s", worldTicks, what);
 		} catch (Throwable t) {
-			ForbricLog.warn("[Forbric/ClientSmoke] could not take a screenshot (%s): %s", what, String.valueOf(t));
+			Caught.warn(t, "[Forbric/ClientSmoke] could not take a screenshot (%s)", what);
 		}
 	}
 
@@ -1085,6 +1093,7 @@ public final class KernelClientSmoke {
 					Object stack = accessible(chest.getClass(), "getItem", int.class).invoke(chest, 0);
 					slot0 = String.valueOf(stack);
 				} catch (NoSuchMethodException notAContainer) {
+					Caught.expected(notAContainer);
 					slot0 = "<not a container>";
 				}
 			}
@@ -1123,6 +1132,7 @@ public final class KernelClientSmoke {
 			carryKey = mapping == null ? "<never registered>" : String.valueOf(mapping.getClass().getMethod("isDown")
 					.invoke(mapping));
 		} catch (ClassNotFoundException absent) {
+			Caught.expected(absent);
 			carryKey = "<no Carry On>";
 		}
 		Object screen = currentScreen(minecraft);
@@ -1150,6 +1160,7 @@ public final class KernelClientSmoke {
 			return String.valueOf(Class.forName("net.minecraft.core.Registry", true, cl)
 					.getMethod("getKey", Object.class).invoke(blocks, block));
 		} catch (Throwable t) {
+			Caught.expected(t);
 			return "<unreadable: " + t + ">";
 		}
 	}
@@ -1164,8 +1175,10 @@ public final class KernelClientSmoke {
 					+ " type=" + accessible(data.getClass(), "getType").invoke(data)
 					+ " keyPressed=" + accessible(data.getClass(), "isKeyPressed").invoke(data);
 		} catch (ClassNotFoundException absent) {
+			Caught.expected(absent);
 			return "<no Carry On>";
 		} catch (Throwable t) {
+			Caught.expected(t);
 			return "<unreadable: " + (t instanceof java.lang.reflect.InvocationTargetException i && i.getCause() != null
 					? i.getCause() : t) + ">";
 		}
@@ -1314,7 +1327,7 @@ public final class KernelClientSmoke {
 			}
 		} catch (Throwable t) {
 			elytraStage = 4;
-			ForbricLog.warn("[Forbric/ClientSmoke] could not check elytra flight", t);
+			Caught.warn(t, "[Forbric/ClientSmoke] could not check elytra flight");
 		}
 	}
 
@@ -1325,7 +1338,7 @@ public final class KernelClientSmoke {
 			try {
 				body.run();
 			} catch (Throwable t) {
-				ForbricLog.warn("[Forbric/ClientSmoke] a drill step failed on the server thread", t);
+				Caught.warn(t, "[Forbric/ClientSmoke] a drill step failed on the server thread");
 			} finally {
 				done.countDown();
 			}
@@ -1344,6 +1357,7 @@ public final class KernelClientSmoke {
 			accessible(player.getClass(), name).invoke(player);
 			return "ok";
 		} catch (Throwable t) {
+			Caught.expected(t);
 			return String.valueOf(t instanceof java.lang.reflect.InvocationTargetException && t.getCause() != null
 					? t.getCause() : t);
 		}
@@ -1361,6 +1375,7 @@ public final class KernelClientSmoke {
 			accessible(player.getClass(), "collectEquipmentChanges", java.util.Map.class).invoke(player, previous);
 			return "ok";
 		} catch (Throwable t) {
+			Caught.expected(t);
 			return String.valueOf(t instanceof java.lang.reflect.InvocationTargetException && t.getCause() != null
 					? t.getCause() : t);
 		}
@@ -1385,6 +1400,7 @@ public final class KernelClientSmoke {
 			out.append("elytraModifiers=").append(((java.util.List<?>) list).size());
 			for (Object m : (java.util.List<?>) list) out.append(' ').append(m);
 		} catch (Throwable t) {
+			Caught.expected(t);
 			out.append("elytraModifiers=<").append(t).append('>');
 		}
 		try {
@@ -1395,6 +1411,7 @@ public final class KernelClientSmoke {
 			Object instance = accessible(map.getClass(), "getInstance", holderCls).invoke(map, holder);
 			out.append(" attributeOnPlayer=").append(instance != null);
 		} catch (Throwable t) {
+			Caught.expected(t);
 			out.append(" attributeOnPlayer=<").append(t).append('>');
 		}
 		// The method the repair actually rewrote, and the one collectEquipmentChanges calls. Proving
@@ -1409,6 +1426,7 @@ public final class KernelClientSmoke {
 					.invoke(stack, chest, sink);
 			out.append(" forEachModifierYields=").append(seen[0]);
 		} catch (Throwable t) {
+			Caught.expected(t);
 			out.append(" forEachModifierYields=<").append(t).append('>');
 		}
 		return out.toString();
@@ -1422,6 +1440,7 @@ public final class KernelClientSmoke {
 			Class<?> holderCls = Class.forName("net.minecraft.core.Holder", true, cl);
 			return (Double) player.getClass().getMethod("getAttributeValue", holderCls).invoke(player, holder);
 		} catch (Throwable t) {
+			Caught.expected(t);
 			return -1;
 		}
 	}
@@ -1481,8 +1500,10 @@ public final class KernelClientSmoke {
 				if (entry == null) return null;
 				return String.valueOf(entry.getClass().getMethod("getId").invoke(entry));
 			} catch (NoSuchFieldException keepLooking) {
+				Caught.expected(keepLooking);
 				continue;
 			} catch (Throwable t) {
+				Caught.warn(t, "[Forbric/ClientSmoke] could not read the pack id of a %s row", c.getName());
 				return null;
 			}
 		}
@@ -1523,7 +1544,7 @@ public final class KernelClientSmoke {
 					inRepository, listedIds);
 			setScreen(minecraft, null);
 		} catch (Throwable t) {
-			ForbricLog.warn("[Forbric/ClientSmoke] could not open the resource-pack screen", t);
+			Caught.warn(t, "[Forbric/ClientSmoke] could not open the resource-pack screen");
 		}
 	}
 
@@ -1541,6 +1562,7 @@ public final class KernelClientSmoke {
 		try {
 			children = node.getClass().getMethod("children");
 		} catch (NoSuchMethodException leaf) {
+			Caught.expected(leaf);
 			return;
 		}
 		for (Object child : (java.util.List<?>) children.invoke(node)) {
@@ -1597,7 +1619,7 @@ public final class KernelClientSmoke {
 					now == null ? "<none>" : now.getClass().getName());
 			setScreen(minecraft, null);
 		} catch (Throwable t) {
-			ForbricLog.warn("[Forbric/ClientSmoke] could not press the title screen's mods button", t);
+			Caught.warn(t, "[Forbric/ClientSmoke] could not press the title screen's mods button");
 		}
 	}
 
@@ -1658,7 +1680,7 @@ public final class KernelClientSmoke {
 					now == null ? "<none>" : now.getClass().getName());
 			setScreen(minecraft, null);
 		} catch (Throwable t) {
-			ForbricLog.warn("[Forbric/ClientSmoke] could not press the pause menu's mods button", t);
+			Caught.warn(t, "[Forbric/ClientSmoke] could not press the pause menu's mods button");
 		}
 	}
 
@@ -1711,7 +1733,7 @@ public final class KernelClientSmoke {
 					now == null ? "<none>" : now.getClass().getName());
 			setScreen(minecraft, screen);
 		} catch (Throwable t) {
-			ForbricLog.warn("[Forbric/ClientSmoke] could not double-click a row in the unified list", t);
+			Caught.warn(t, "[Forbric/ClientSmoke] could not double-click a row in the unified list");
 		}
 	}
 
@@ -1723,6 +1745,7 @@ public final class KernelClientSmoke {
 			try {
 				children = child.getClass().getMethod("children");
 			} catch (NoSuchMethodException leaf) {
+				Caught.expected(leaf);
 				continue;
 			}
 			for (Object row : (java.util.List<?>) children.invoke(child)) {
@@ -1782,7 +1805,7 @@ public final class KernelClientSmoke {
 			ForbricLog.info("[Forbric/ClientSmoke] opened %s's config screen from the unified list (%s): %s", modId,
 					from, now == null ? "<none>" : now.getClass().getName());
 		} catch (Throwable t) {
-			ForbricLog.warn("[Forbric/ClientSmoke] could not open a config screen from the unified list", t);
+			Caught.warn(t, "[Forbric/ClientSmoke] could not open a config screen from the unified list");
 		}
 	}
 
@@ -1845,7 +1868,7 @@ public final class KernelClientSmoke {
 			}
 		} catch (Throwable t) {
 			configScreensDone = true;
-			ForbricLog.warn("[Forbric/ClientSmoke] config screens: the walk stopped", t);
+			Caught.warn(t, "[Forbric/ClientSmoke] config screens: the walk stopped");
 		}
 	}
 
@@ -1905,6 +1928,7 @@ public final class KernelClientSmoke {
 			try {
 				children = child.getClass().getMethod("children");
 			} catch (NoSuchMethodException leaf) {
+				Caught.expected(leaf);
 				continue;
 			}
 			for (Object row : (java.util.List<?>) children.invoke(child)) {
@@ -1943,7 +1967,7 @@ public final class KernelClientSmoke {
 					.invoke(null, fieldValue(minecraft, "gameDirectory"), file, target, 1, done);
 			ForbricLog.info("[Forbric/ClientSmoke] screenshot %s requested at world tick %d", file, worldTicks);
 		} catch (Throwable t) {
-			ForbricLog.warn("[Forbric/ClientSmoke] could not take screenshot %s: %s", file, String.valueOf(t));
+			Caught.warn(t, "[Forbric/ClientSmoke] could not take screenshot %s", file);
 		}
 	}
 
@@ -1953,7 +1977,7 @@ public final class KernelClientSmoke {
 					.getMethod("grab", minecraft.getClass(), boolean.class).invoke(null, minecraft, false);
 			ForbricLog.info("[Forbric/ClientSmoke] screenshot of the pause menu's mods button requested");
 		} catch (Throwable t) {
-			ForbricLog.warn("[Forbric/ClientSmoke] could not screenshot the pause menu", t);
+			Caught.warn(t, "[Forbric/ClientSmoke] could not screenshot the pause menu");
 		}
 	}
 
@@ -2079,7 +2103,7 @@ public final class KernelClientSmoke {
 		if ("true".equals(now)) sprintTicks++;
 		if (!now.equals(lastSprint)) {
 			Object screen = null;
-			try { screen = currentScreen(minecraft); } catch (Exception unreadable) { }
+			try { screen = currentScreen(minecraft); } catch (Exception unreadable) { Caught.warn(unreadable, "[Forbric/ClientSmoke] cannot read the current screen"); }
 			Object input = fieldValue(player, "input");
 			ForbricLog.info("[Forbric/ClientSmoke] drill sprint=%s from drill tick %d pos=(%.1f %.1f %.1f) onGround=%s "
 					+ "horizontalCollision=%s minorHorizontalCollision=%s forwardImpulse=%s keyUp=%s keySprint=%s "
@@ -2098,6 +2122,7 @@ public final class KernelClientSmoke {
 		try {
 			return owner == null ? "?" : String.valueOf(owner.getClass().getMethod(method).invoke(owner));
 		} catch (ReflectiveOperationException | RuntimeException unreadable) {
+			Caught.warn(unreadable, "[Forbric/ClientSmoke] cannot read %s() of %s", method, owner.getClass().getName());
 			return "?";
 		}
 	}
@@ -2107,6 +2132,7 @@ public final class KernelClientSmoke {
 			Object data = player.getClass().getMethod("getFoodData").invoke(player);
 			return data.getClass().getMethod("getFoodLevel").invoke(data);
 		} catch (ReflectiveOperationException | RuntimeException unreadable) {
+			Caught.warn(unreadable, "[Forbric/ClientSmoke] cannot read the player's food level");
 			return "?";
 		}
 	}
@@ -2133,7 +2159,7 @@ public final class KernelClientSmoke {
 		try {
 			mapping.getClass().getMethod("setDown", boolean.class).invoke(mapping, down);
 		} catch (ReflectiveOperationException | RuntimeException e) {
-			ForbricLog.debug("[Forbric/ClientSmoke] cannot press %s: %s", name, String.valueOf(e));
+			Caught.warn(e, "[Forbric/ClientSmoke] cannot press %s", name);
 		}
 	}
 
@@ -2158,7 +2184,7 @@ public final class KernelClientSmoke {
 			entity.getMethod("setYRot", float.class).invoke(player, yRot);
 			entity.getMethod("setXRot", float.class).invoke(player, xRot);
 		} catch (ReflectiveOperationException | RuntimeException e) {
-			ForbricLog.debug("[Forbric/ClientSmoke] cannot rotate the player: %s", String.valueOf(e));
+			Caught.warn(e, "[Forbric/ClientSmoke] cannot rotate the player");
 		}
 	}
 
@@ -2166,7 +2192,7 @@ public final class KernelClientSmoke {
 		try {
 			entityClass(player).getMethod("setPos", double.class, double.class, double.class).invoke(player, x, y, z);
 		} catch (ReflectiveOperationException | RuntimeException e) {
-			ForbricLog.warn("[Forbric/ClientSmoke] the control move could not be made — the positive control is void: " + e);
+			Caught.warn(e, "[Forbric/ClientSmoke] the control move could not be made — the positive control is void");
 		}
 	}
 
@@ -2174,6 +2200,7 @@ public final class KernelClientSmoke {
 		try {
 			return entityClass(owner).getMethod(name).invoke(owner);
 		} catch (ReflectiveOperationException | RuntimeException e) {
+			Caught.warn(e, "[Forbric/ClientSmoke] cannot read %s() of %s", name, owner.getClass().getName());
 			return null;
 		}
 	}
@@ -2212,7 +2239,7 @@ public final class KernelClientSmoke {
 						c[1].trim(), c[2].trim(), getKey.invoke(blocks, block), getId.invoke(blocks, block), state);
 			}
 		} catch (Throwable t) {
-			ForbricLog.warn("[Forbric/ClientSmoke] block probe failed: " + t);
+			Caught.warn(t, "[Forbric/ClientSmoke] block probe failed");
 		}
 		probeHotbar(level);
 	}
@@ -2263,7 +2290,7 @@ public final class KernelClientSmoke {
 			ForbricLog.info("[Forbric/ClientSmoke] advanced tooltip of a damaged iron sword with lore: %d line(s), lore %s, "
 					+ "attributes %s, durability %s", lines.size(), loreShown, attributes, durability);
 		} catch (Throwable t) {
-			ForbricLog.warn("[Forbric/ClientSmoke] tooltip probe failed", t instanceof java.lang.reflect.InvocationTargetException i ? i.getCause() : t);
+			Caught.warn(t, "[Forbric/ClientSmoke] tooltip probe failed");
 		}
 	}
 
@@ -2281,7 +2308,7 @@ public final class KernelClientSmoke {
 			ForbricLog.info("[Forbric/ClientSmoke] hotbar slot 0 holds %s (registry id %s) x%s", getKey.invoke(items, item),
 					getId.invoke(items, item), stack.getClass().getMethod("getCount").invoke(stack));
 		} catch (Throwable t) {
-			ForbricLog.warn("[Forbric/ClientSmoke] hotbar probe failed: " + t);
+			Caught.warn(t, "[Forbric/ClientSmoke] hotbar probe failed");
 		}
 	}
 
@@ -2307,7 +2334,7 @@ public final class KernelClientSmoke {
 						name, moment, value == null ? "absent" : getId.invoke(reg, value));
 			}
 		} catch (Throwable t) {
-			ForbricLog.warn("[Forbric/ClientSmoke] registry id probe failed: " + t);
+			Caught.warn(t, "[Forbric/ClientSmoke] registry id probe failed");
 		}
 	}
 
@@ -2346,8 +2373,10 @@ public final class KernelClientSmoke {
 				field.setAccessible(true);
 				return field.get(owner);
 			} catch (NoSuchFieldException keepLooking) {
+				Caught.expected(keepLooking);
 				continue;
 			} catch (ReflectiveOperationException | RuntimeException unreadable) {
+				Caught.warn(unreadable, "[Forbric/ClientSmoke] cannot read %s of %s", name, owner.getClass().getName());
 				return null;
 			}
 		}
@@ -2370,8 +2399,7 @@ public final class KernelClientSmoke {
 			grab.invoke(null, minecraft, false);
 			ForbricLog.info("[Forbric/ClientSmoke] screenshot requested at world tick %d", worldTicks);
 		} catch (Throwable t) {
-			ForbricLog.warn("[Forbric/ClientSmoke] could not take a screenshot at world tick %d: %s", worldTicks,
-					String.valueOf(t));
+			Caught.warn(t, "[Forbric/ClientSmoke] could not take a screenshot at world tick %d", worldTicks);
 		}
 	}
 
@@ -2382,6 +2410,7 @@ public final class KernelClientSmoke {
 			try {
 				if (Integer.parseInt(tick.trim()) == worldTick) return true;
 			} catch (NumberFormatException malformed) {
+				Caught.expected(malformed);
 				// A malformed entry costs that entry, not the run or a later valid entry.
 			}
 		}
@@ -2420,6 +2449,7 @@ public final class KernelClientSmoke {
 		try {
 			due = Integer.parseInt(parts[0].trim());
 		} catch (NumberFormatException malformed) {
+			Caught.expected(malformed);
 			creativeStage = 9;
 			return;
 		}
@@ -2451,7 +2481,7 @@ public final class KernelClientSmoke {
 			}
 		} catch (Throwable t) {
 			creativeStage = 9;
-			ForbricLog.warn("[Forbric/ClientSmoke] creative search probe failed at step " + step, t);
+			Caught.warn(t, "[Forbric/ClientSmoke] creative search probe failed at step " + step);
 		}
 	}
 
@@ -2600,6 +2630,7 @@ public final class KernelClientSmoke {
 			Object forge = fieldValue(session, "creativeSearch");
 			if (forge instanceof java.util.Map<?, ?> map) out.append("; minecraftforge map=").append(map.size());
 		} catch (Throwable t) {
+			Caught.expected(t);
 			out.append("<census unreadable: ").append(t).append('>');
 		}
 		return out.toString();
@@ -2617,8 +2648,7 @@ public final class KernelClientSmoke {
 					.getMethod("grab", minecraft.getClass(), boolean.class).invoke(null, minecraft, false);
 			ForbricLog.info("[Forbric/ClientSmoke] creative search: screenshot requested %s", moment);
 		} catch (Throwable t) {
-			ForbricLog.warn("[Forbric/ClientSmoke] creative search: could not take a screenshot %s: %s", moment,
-					String.valueOf(t));
+			Caught.warn(t, "[Forbric/ClientSmoke] creative search: could not take a screenshot %s", moment);
 		}
 	}
 
@@ -2633,7 +2663,7 @@ public final class KernelClientSmoke {
 			createTitle.setAccessible(true);
 			ForbricLog.info("[Forbric/ClientSmoke] window title: %s", createTitle.invoke(minecraft));
 		} catch (ReflectiveOperationException | RuntimeException e) {
-			ForbricLog.debug("[Forbric/ClientSmoke] could not read the window title: %s", String.valueOf(e));
+			Caught.warn(e, "[Forbric/ClientSmoke] could not read the window title");
 		}
 	}
 
@@ -2645,7 +2675,7 @@ public final class KernelClientSmoke {
 			int showing = progress == null ? 0 : (int) progress.getClass().getMethod("size").invoke(progress);
 			ForbricLog.info("[Forbric/ClientSmoke] mining: %d block(s) showing break progress", showing);
 		} catch (ReflectiveOperationException | RuntimeException e) {
-			ForbricLog.debug("[Forbric/ClientSmoke] could not read the break-progress map: %s", String.valueOf(e));
+			Caught.warn(e, "[Forbric/ClientSmoke] could not read the break-progress map");
 		}
 	}
 
@@ -2656,7 +2686,7 @@ public final class KernelClientSmoke {
 			method.setAccessible(true);
 			method.invoke(owner, value);
 		} catch (ReflectiveOperationException | RuntimeException e) {
-			ForbricLog.debug("[Forbric/ClientSmoke] could not call %s(%s): %s", name, value, String.valueOf(e));
+			Caught.warn(e, "[Forbric/ClientSmoke] could not call %s(%s)", name, value);
 		}
 	}
 
@@ -2668,7 +2698,7 @@ public final class KernelClientSmoke {
 					method.setAccessible(true);
 					method.invoke(owner);
 				} catch (ReflectiveOperationException | RuntimeException e) {
-					ForbricLog.warn("[Forbric/ClientSmoke] could not invoke Minecraft." + name, e);
+					Caught.warn(e, "[Forbric/ClientSmoke] could not invoke Minecraft." + name);
 				}
 				return;
 			}

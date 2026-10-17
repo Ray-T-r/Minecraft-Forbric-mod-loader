@@ -7,6 +7,7 @@ import java.util.Set;
 
 import net.forbric.api.CompatibilityFinding;
 import net.forbric.api.CompatibilityFindings;
+import net.forbric.kernel.util.Caught;
 import net.forbric.kernel.util.ForbricLog;
 import org.objectweb.asm.ClassReader;
 import org.objectweb.asm.ClassWriter;
@@ -160,7 +161,7 @@ public final class NativeCoremodParity {
 					describe(reads, finalizes, trial));
 			return writer.toByteArray();
 		} catch (Throwable failure) {
-			ForbricLog.warn("[Forbric/Coremod] left %s as Mixin wove it: %s", internalName, failure);
+			Caught.warn(failure, "[Forbric/Coremod] left %s as Mixin wove it", internalName);
 			return bytes;
 		}
 	}
@@ -280,6 +281,8 @@ public final class NativeCoremodParity {
 					List.of(internalName.replace('/', '.'), detail)));
 		} catch (Throwable unavailable) {
 			// The findings ledger is optional here; the WARN above already said it.
+			Caught.warn(unavailable, "[Forbric/Coremod] could not record the %s finding for %s in the compatibility"
+					+ " report", id, internalName);
 		}
 	}
 }

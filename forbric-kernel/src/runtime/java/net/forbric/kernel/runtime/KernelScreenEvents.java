@@ -1,9 +1,7 @@
 /* Copyright 2026 The Forbric Project. Licensed under the Apache License, Version 2.0. */
 package net.forbric.kernel.runtime;
 
-import java.util.concurrent.atomic.AtomicBoolean;
-
-import net.forbric.kernel.util.ForbricLog;
+import net.forbric.kernel.util.Caught;
 import net.minecraft.client.gui.screens.Screen;
 import net.neoforged.neoforge.client.event.ScreenEvent;
 import net.neoforged.neoforge.common.NeoForge;
@@ -22,7 +20,6 @@ import net.neoforged.neoforge.common.NeoForge;
  */
 public final class KernelScreenEvents {
 	private static final Object NOTHING = new Object();
-	private static final AtomicBoolean WARNED = new AtomicBoolean();
 	private static Object replacement = NOTHING;
 
 	private KernelScreenEvents() {
@@ -38,7 +35,8 @@ public final class KernelScreenEvents {
 			if (event.isCanceled()) return null;
 			if (event.getNewScreen() != forgeChoice) replacement = event.getNewScreen();
 		} catch (Throwable t) {
-			warn("ScreenEvent.Opening", t);
+			Caught.warn(t, "[Forbric/Screens] NeoForge's ScreenEvent.Opening failed for %s — the screen change went on as "
+					+ "MinecraftForge decided", forgeChoice.getClass().getName());
 		}
 		return forgeChoice;
 	}
@@ -55,14 +53,8 @@ public final class KernelScreenEvents {
 		try {
 			NeoForge.EVENT_BUS.post(new ScreenEvent.Closing(closing));
 		} catch (Throwable t) {
-			warn("ScreenEvent.Closing", t);
-		}
-	}
-
-	private static void warn(String event, Throwable t) {
-		if (WARNED.compareAndSet(false, true)) {
-			ForbricLog.warn("[Forbric/Screens] NeoForge's " + event + " failed — the screen change went on as "
-					+ "MinecraftForge decided", t);
+			Caught.warn(t, "[Forbric/Screens] NeoForge's ScreenEvent.Closing failed for %s — the screen change went on as "
+					+ "MinecraftForge decided", closing == null ? null : closing.getClass().getName());
 		}
 	}
 }

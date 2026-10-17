@@ -2,11 +2,9 @@
 package net.forbric.kernel.runtime;
 
 import java.lang.reflect.Field;
-import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.function.Consumer;
 
-import net.forbric.kernel.util.ForbricLog;
-import net.forbric.kernel.util.Reflect;
+import net.forbric.kernel.util.Caught;
 import net.minecraft.world.flag.FeatureFlagSet;
 import net.minecraft.world.item.alchemy.PotionBrewing;
 import net.minecraftforge.event.ForgeEventFactory;
@@ -91,17 +89,14 @@ public final class KernelGameServerEvents {
 		void accept(E event) throws Throwable;
 	}
 
-	/** A LOWEST forward of one NeoForge event; one warning per event if it throws. */
+	/** A LOWEST forward of one NeoForge event; a warning each time it throws. */
 	static <E extends Event> void forward(IEventBus bus, Class<E> event, String name, Forward<E> forward) {
-		AtomicBoolean warned = new AtomicBoolean();
 		Consumer<E> listener = neoEvent -> {
 			try {
 				forward.accept(neoEvent);
 			} catch (Throwable t) {
-				if (warned.compareAndSet(false, true)) {
-					ForbricLog.warn("[Forbric/EventMux] " + name + " forward failed — MinecraftForge mods listening "
-							+ "for it are not told", Reflect.unwrap(t));
-				}
+				Caught.warn(t, "[Forbric/EventMux] %s forward failed — MinecraftForge mods listening for it are not told",
+						name);
 			}
 		};
 		bus.addListener(EventPriority.LOWEST, false, event, listener);

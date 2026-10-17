@@ -44,6 +44,7 @@ import net.forbric.api.ForeignType;
 import net.forbric.kernel.mixin.MixinFit;
 import net.forbric.kernel.util.ByteScan;
 import net.forbric.kernel.util.ForbricLog;
+import net.forbric.kernel.util.Caught;
 
 /**
  * Lets NeoForge's registry sync remap the registries that MinecraftForge wraps.
@@ -248,7 +249,7 @@ public final class RegistrySyncParityInjector implements ClassTransformer {
 		for (String contract : interfaces) {
 			if (!seen.add(contract)) continue;
 			byte[] bytes;
-			try { bytes = resources.apply(contract + ".class"); } catch (RuntimeException unreadable) { bytes = null; }
+			try { bytes = resources.apply(contract + ".class"); } catch (RuntimeException unreadable) { Caught.warn(unreadable, "[Forbric/RegistrySync] could not read %s; it is not checked as a remap contract", contract); bytes = null; }
 			if (bytes == null) continue;
 			ClassNode node = new ClassNode();
 			new ClassReader(bytes).accept(node, ClassReader.SKIP_CODE | ClassReader.SKIP_DEBUG | ClassReader.SKIP_FRAMES);

@@ -21,8 +21,7 @@ import java.util.List;
 import java.util.Optional;
 import java.util.function.Consumer;
 
-import net.forbric.kernel.util.ForbricLog;
-import net.forbric.kernel.util.Reflect;
+import net.forbric.kernel.util.Caught;
 import net.minecraft.network.chat.Component;
 import net.minecraft.server.packs.FilePackResources;
 import net.minecraft.server.packs.PackLocationInfo;
@@ -89,8 +88,8 @@ public final class KernelDataPackSource {
 			return ResourcePackLoader.readWithOptionalMeta(location,
 					new FilePackResources.FileResourcesSupplier(jar), (PackType) packType, selection);
 		} catch (Throwable t) {
-			ForbricLog.warn("[Forbric/DataPacks] could not build a datapack over %s — that mod's data/ will be "
-					+ "missing: %s", jar.getFileName(), String.valueOf(Reflect.unwrap(t)));
+			Caught.warn(t, "[Forbric/DataPacks] could not build a datapack over %s — that mod's data/ will be missing",
+					jar.getFileName());
 			return null;
 		}
 	}

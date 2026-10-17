@@ -23,6 +23,7 @@ import net.neoforged.neoforge.event.TagsUpdatedEvent;
 import net.neoforged.neoforge.registries.datamaps.DataMapsUpdatedEvent;
 import net.neoforged.neoforge.resource.NeoForgeReloadListeners;
 
+import net.forbric.kernel.util.Caught;
 import net.forbric.kernel.util.ForbricLog;
 
 /**
@@ -58,7 +59,7 @@ public final class KernelNeoDataMapWatch {
 			try {
 				event.getServerResources().getListener(NeoForgeReloadListeners.DATA_MAPS_KEY);
 			} catch (IllegalArgumentException absent) {
-				ForbricLog.warn("[Forbric/Worldgen] reload #%d: NeoForge's DataMapLoader is NOT registered — "
+				Caught.warn(absent, "[Forbric/Worldgen] reload #%d: NeoForge's DataMapLoader is NOT registered — "
 						+ "NeoForgeEventHandler.onResourceReload did not run on this bus; the kernel's about-to-start "
 						+ "fallback will load the data maps", generation);
 			}

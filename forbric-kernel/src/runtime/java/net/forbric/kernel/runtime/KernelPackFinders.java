@@ -18,8 +18,8 @@ package net.forbric.kernel.runtime;
 
 import java.util.concurrent.atomic.AtomicBoolean;
 
+import net.forbric.kernel.util.Caught;
 import net.forbric.kernel.util.ForbricLog;
-import net.forbric.kernel.util.Reflect;
 import net.minecraft.server.packs.PackType;
 import net.minecraft.server.packs.repository.PackRepository;
 import net.minecraftforge.event.ForgeEventFactory;
@@ -48,7 +48,6 @@ import net.neoforged.neoforge.resource.ResourcePackLoader;
  * the sources anyway.
  */
 public final class KernelPackFinders {
-	private static final AtomicBoolean WARNED = new AtomicBoolean();
 	private static final AtomicBoolean PROVED = new AtomicBoolean();
 
 	private KernelPackFinders() {
@@ -65,10 +64,8 @@ public final class KernelPackFinders {
 						+ "base asked only NeoForge, so a Forge-family mod's own data pack was never offered");
 			}
 		} catch (Throwable t) {
-			if (WARNED.compareAndSet(false, true)) {
-				ForbricLog.warn("[Forbric/Packs] MinecraftForge's pack-finder hook failed — a Forge-family mod's "
-						+ "own data pack will not be in this repository", Reflect.unwrap(t));
-			}
+			Caught.warn(t, "[Forbric/Packs] MinecraftForge's pack-finder hook failed — a Forge-family mod's "
+					+ "own data pack will not be in this repository");
 		}
 	}
 }

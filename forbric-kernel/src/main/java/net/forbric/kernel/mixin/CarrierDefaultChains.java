@@ -43,6 +43,7 @@ import org.objectweb.asm.tree.analysis.BasicVerifier;
 
 import net.forbric.api.Ecosystem;
 import net.forbric.kernel.util.ForbricLog;
+import net.forbric.kernel.util.Caught;
 
 /**
  * A redirect of a vanilla call the merged method no longer makes, moved onto the carrier's call that makes it for it.
@@ -419,6 +420,7 @@ public final class CarrierDefaultChains {
 			try {
 				return (Class.forName(name.replace('/', '.'), false, ClassLoader.getPlatformClassLoader()).getModifiers() & java.lang.reflect.Modifier.PUBLIC) != 0;
 			} catch (ClassNotFoundException | LinkageError unknown) {
+				Caught.expected(unknown);
 				return false;
 			}
 		}
@@ -466,6 +468,7 @@ public final class CarrierDefaultChains {
 			if (name.equals("<init>")) for (java.lang.reflect.Constructor<?> each : type.getConstructors()) if (Type.getConstructorDescriptor(each).equals(desc)) return true;
 			return false;
 		} catch (ClassNotFoundException | LinkageError unknown) {
+			Caught.expected(unknown);
 			return false;
 		}
 	}
@@ -516,6 +519,7 @@ public final class CarrierDefaultChains {
 		try {
 			new Analyzer<>(new BasicVerifier()).analyze(mixin.name, wrapper);
 		} catch (AnalyzerException | RuntimeException unverifiable) {
+			Caught.expected(unverifiable);
 			return null;
 		}
 		if (!framed(mixin, wrapper, code)) return null;
@@ -590,6 +594,7 @@ public final class CarrierDefaultChains {
 				default -> null;
 			};
 		} catch (NumberFormatException unreadable) {
+			Caught.expected(unreadable);
 			return null;
 		}
 	}
@@ -785,6 +790,7 @@ public final class CarrierDefaultChains {
 			wrapper.localVariables = null;
 			return true;
 		} catch (RuntimeException unframed) {
+			Caught.expected(unframed);
 			return false;
 		}
 	}

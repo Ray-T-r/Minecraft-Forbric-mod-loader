@@ -36,6 +36,8 @@ import org.objectweb.asm.tree.FieldNode;
 import org.objectweb.asm.tree.MethodInsnNode;
 import org.objectweb.asm.tree.MethodNode;
 
+import net.forbric.kernel.util.Caught;
+
 /**
  * Decides whether a guest mixin still FITS the merged base, by resolving every anchor it names against the merged
  * target's actual bytecode.
@@ -1176,6 +1178,7 @@ public final class MixinFit {
 				type = target.startsWith("L") && target.endsWith(";") ? target.substring(1, target.length() - 1) : target.replace('.', '/');
 			}
 		} catch (RuntimeException unreadable) {
+			Caught.expected(unreadable);
 			return 0;
 		}
 		int count = 0;

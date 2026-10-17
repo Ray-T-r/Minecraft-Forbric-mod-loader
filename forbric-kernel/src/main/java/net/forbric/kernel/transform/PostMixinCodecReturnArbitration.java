@@ -5,6 +5,7 @@ import java.util.*;
 import org.objectweb.asm.*;
 import org.objectweb.asm.tree.*;
 import org.objectweb.asm.tree.analysis.*;
+import net.forbric.kernel.util.Caught;
 
 /** Reconciles all returns around a proved existing heterogeneous-codec seam, including a guest's early return. */
 public final class PostMixinCodecReturnArbitration implements ClassTransformer {
@@ -61,7 +62,7 @@ public final class PostMixinCodecReturnArbitration implements ClassTransformer {
 		if (seams.size() != 1) return null;
 		Frame<SourceValue>[] frames;
 		try { frames = new Analyzer<>(new SourceInterpreter()).analyze(owner.name, method); }
-		catch (AnalyzerException | RuntimeException invalid) { return null; }
+		catch (AnalyzerException | RuntimeException invalid) { Caught.expected(invalid); return null; }
 		Frame<SourceValue> at = frames[method.instructions.indexOf(seams.getFirst())];
 		if (at == null || at.getStackSize() < 5) return null;
 		List<Recipe> context = new ArrayList<>();
@@ -237,7 +238,7 @@ public final class PostMixinCodecReturnArbitration implements ClassTransformer {
 			for (int i = 0; i < method.instructions.size(); i++) byInstruction.put(method.instructions.get(i), frames[i]);
 			return new Origins(byInstruction, interpreter);
 		}
-		catch (AnalyzerException | RuntimeException invalid) { return null; }
+		catch (AnalyzerException | RuntimeException invalid) { Caught.expected(invalid); return null; }
 	}
 
 	/** Only unmodified parameters and fields that this declaring class marks final; no arbitrary getters or phi values. */

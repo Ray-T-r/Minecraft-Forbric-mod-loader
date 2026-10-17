@@ -5,6 +5,7 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.util.List;
 import java.util.function.Function;
+import net.forbric.kernel.util.Caught;
 import net.forbric.kernel.util.ForbricLog;
 import org.objectweb.asm.ClassReader;
 import org.objectweb.asm.ClassWriter;
@@ -60,6 +61,8 @@ public final class SpawnPositionCallsInjector implements ClassTransformer {
 			try (InputStream in = ClassLoader.getSystemResourceAsStream(path)) {
 				return in == null ? null : in.readAllBytes();
 			} catch (IOException unreadable) {
+				Caught.warn(unreadable, "[Forbric/Spawner] could not read %s for frame computation; treated as unknown",
+						path);
 				return null;
 			}
 		});
@@ -108,7 +111,9 @@ public final class SpawnPositionCallsInjector implements ClassTransformer {
 					+ "PositionCheck event as its hook ran them, so a Fabric mixin redirecting them binds", className, restored);
 			return out;
 		} catch (Throwable unresolved) {
-			return declined(className, bytes, "its frames could not be recomputed: " + unresolved);
+			Caught.warn(unresolved, "[Forbric/Spawner] left %s's position checks inside NeoForge's hook: its frames could"
+					+ " not be recomputed", className);
+			return bytes;
 		}
 	}
 

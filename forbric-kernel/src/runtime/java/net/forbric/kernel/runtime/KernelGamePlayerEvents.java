@@ -16,11 +16,9 @@
 
 package net.forbric.kernel.runtime;
 
-import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.function.Consumer;
 
-import net.forbric.kernel.util.ForbricLog;
-import net.forbric.kernel.util.Reflect;
+import net.forbric.kernel.util.Caught;
 import net.minecraftforge.event.ForgeEventFactory;
 import net.neoforged.bus.api.Event;
 import net.neoforged.bus.api.EventPriority;
@@ -103,22 +101,18 @@ public final class KernelGamePlayerEvents {
 	}
 
 	/**
-	 * Subscribes one forward at LOWEST, reporting a failure once rather than per occurrence.
+	 * Subscribes one forward at LOWEST, reporting each failure.
 	 *
-	 * <p>Once, not per event: a forward that fails on the first login fails on every login, and filling the log
-	 * with one stack per player join buries whatever else went wrong. The cost sentence is in the warning because
-	 * the alternative — "forward failed" — leaves the reader to work out that the mod's commands are gone.
+	 * <p>The cost sentence is in the warning because the alternative — "forward failed" — leaves the reader to work
+	 * out that the mod's commands are gone.
 	 */
 	private static <E extends Event> void subscribe(IEventBus bus, Class<E> event, String name, String cost,
 			ForgeForward<E> forge) {
-		AtomicBoolean warned = new AtomicBoolean();
 		Consumer<E> listener = neoEvent -> {
 			try {
 				forge.fire(neoEvent);
 			} catch (Throwable t) {
-				if (warned.compareAndSet(false, true)) {
-					ForbricLog.warn("[Forbric/EventMux] " + name + " forward failed — " + cost, Reflect.unwrap(t));
-				}
+				Caught.warn(t, "[Forbric/EventMux] %s forward failed — %s", name, cost);
 			}
 		};
 		// Four-argument overload with LOWEST, as everywhere in this package: the shorter overloads open with

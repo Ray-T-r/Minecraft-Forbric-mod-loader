@@ -27,6 +27,7 @@ import java.util.TreeSet;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipFile;
 
+import net.forbric.kernel.util.Caught;
 import net.forbric.kernel.util.ForbricLog;
 
 import org.objectweb.asm.ClassReader;
@@ -102,7 +103,8 @@ public final class PortingLayerAudit {
 					if (skew != null) skews.add(skew);
 				}
 			} catch (IOException unreadable) {
-				ForbricLog.debug("[Forbric/PortAudit] could not read %s: %s", jar.getFileName(), unreadable);
+				Caught.warn(unreadable, "[Forbric/PortAudit] could not read %s; its shadowed classes are not audited",
+						jar.getFileName());
 			}
 		}
 		return new Report(shadowed, List.copyOf(skews));
@@ -115,7 +117,7 @@ public final class PortingLayerAudit {
 		try {
 			report = audit(modJars, runtimeJars);
 		} catch (Throwable t) {
-			ForbricLog.debug("[Forbric/PortAudit] audit failed: %s", String.valueOf(t));
+			Caught.warn(t, "[Forbric/PortAudit] audit failed; no shadowed Forge-family class is checked");
 			return;
 		}
 		if (report.clean()) {
@@ -145,6 +147,8 @@ public final class PortingLayerAudit {
 				}
 			} catch (IOException unreadable) {
 				// Next carrier; a carrier we cannot read is reported by whatever needed it.
+				Caught.warn(unreadable, "[Forbric/PortAudit] could not read carrier %s for %s; trying the next one",
+						jar.getFileName(), entryName);
 			}
 		}
 		return new byte[0];

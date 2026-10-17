@@ -6,6 +6,7 @@ import net.forbric.kernel.boot.DefinedMethodContracts;
 import org.objectweb.asm.*;
 import org.objectweb.asm.tree.*;
 import org.objectweb.asm.tree.analysis.*;
+import net.forbric.kernel.util.Caught;
 
 /** Structural relation between a nullable producer and the native record that represents its alternatives. */
 final class MixinNullableLookupContracts {
@@ -26,7 +27,7 @@ final class MixinNullableLookupContracts {
    ClassNode live=classes.apply(currentCall.owner);MethodNode producer=live==null?null:method(live,currentCall.name,currentCall.desc);if(producer==null||!proof.nativeClosure(new Context(live,producer,actual),new HashSet<>()))return decline("native producer closure");
    for(Context leaf:leaves)if(!proof.corresponds(leaf))return decline("unmatched nullable production "+leaf.method.name+leaf.inputs+" projected="+proof.projected+" primitives="+proof.originalNullableCalls);
    proof.fieldOwners.put(shape.type().name,shape.type());List<net.forbric.kernel.boot.KernelCompositeCallbacks.FieldContract> fields=new ArrayList<>();for(var owner:proof.fieldOwners.values())for(var field:owner.fields)fields.add(new net.forbric.kernel.boot.KernelCompositeCallbacks.FieldContract(owner.name,field.name,field.desc,field.access));return new LookupProof(List.copyOf(proof.contracts.values()),List.copyOf(fields));
-  }catch(AnalyzerException|RuntimeException unknown){return decline(unknown.toString());}
+  }catch(AnalyzerException|RuntimeException unknown){Caught.expected(unknown);return decline(unknown.toString());}
  }
  private static LookupProof decline(String reason){if(Boolean.getBoolean("forbric.mixinNullableCompositeDebug"))net.forbric.kernel.util.ForbricLog.debug("[Forbric/Mixin] nullable production proof declined: %s",reason);return null;}
  private static final class Proof{
@@ -118,7 +119,7 @@ final class MixinNullableLookupContracts {
    ClassNode oldType=proof.sourceReferences.apply(oldImplementation.getOwner()),newType=proof.classes.apply(newImplementation.getOwner());MethodNode oldBody=oldType==null?null:method(oldType,oldImplementation.getName(),oldImplementation.getDesc()),newBody=newType==null?null:method(newType,newImplementation.getName(),newImplementation.getDesc());if(oldBody==null||newBody==null||!predicateDomain(oldBody,newBody))return false;
    ClassNode currentOldType=proof.classes.apply(oldImplementation.getOwner());MethodNode currentOld=currentOldType==null?null:method(currentOldType,oldBody.name,oldBody.desc);if(currentOld==null||!MixinInstructionFingerprint.hash(oldBody).equals(MixinInstructionFingerprint.hash(currentOld)))return false;
    proof.contracts.put(currentSelector.name+currentInitializer.name+currentInitializer.desc,contract(currentSelector,currentInitializer));proof.contracts.put(currentOldType.name+currentOld.name+currentOld.desc,contract(currentOldType,currentOld));proof.fieldOwners.put(currentSelector.name,currentSelector);proof.fieldOwners.put(currentOldType.name,currentOldType);return true;
-  }catch(AnalyzerException|RuntimeException unknown){return false;}
+  }catch(AnalyzerException|RuntimeException unknown){Caught.expected(unknown);return false;}
  }
  private static boolean emptyConstant(ClassNode type,FieldInsnNode field){MethodNode init=method(type,"<clinit>","()V");if(init==null)return false;int writes=0;for(var instruction:init.instructions)if(instruction instanceof FieldInsnNode put&&put.getOpcode()==Opcodes.PUTSTATIC&&put.owner.equals(field.owner)&&put.name.equals(field.name)&&put.desc.equals(field.desc)){
    writes++;if(!(previous(put)instanceof MethodInsnNode constructor)||constructor.getOpcode()!=Opcodes.INVOKESPECIAL||!constructor.owner.equals(type.name)||!constructor.name.equals("<init>"))return false;var value=previous(constructor);for(Type argument:Type.getArgumentTypes(constructor.desc)){if(argument.getSort()!=Type.OBJECT&&argument.getSort()!=Type.ARRAY||value.getOpcode()!=Opcodes.ACONST_NULL)return false;value=previous(value);}if(value.getOpcode()!=Opcodes.DUP||!(previous(value)instanceof TypeInsnNode allocation)||allocation.getOpcode()!=Opcodes.NEW||!allocation.desc.equals(type.name))return false;

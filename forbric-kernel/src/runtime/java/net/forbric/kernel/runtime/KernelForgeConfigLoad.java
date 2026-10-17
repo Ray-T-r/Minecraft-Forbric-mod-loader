@@ -23,6 +23,7 @@ import java.util.List;
 import java.util.Set;
 
 import net.forbric.api.ModCatalog;
+import net.forbric.kernel.util.Caught;
 import net.forbric.kernel.util.ForbricLog;
 import net.forbric.kernel.util.Reflect;
 import net.minecraftforge.fml.config.ConfigTracker;
@@ -71,7 +72,7 @@ public final class KernelForgeConfigLoad {
                         String detail = "MinecraftForge " + type.name() + " config " + config.getFileName()
                                 + " could not be opened: " + cause;
                         ModCatalog.mark(config.getModId(), ModCatalog.Status.DEGRADED, detail);
-                        ForbricLog.warn("[Forbric/Lifecycle] " + config.getModId() + ": " + detail, cause);
+                        Caught.warn(failure, "[Forbric/Lifecycle] %s: %s", config.getModId(), detail);
                     }
                 }
             }

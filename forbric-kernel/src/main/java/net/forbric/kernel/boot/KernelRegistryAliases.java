@@ -22,6 +22,7 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.concurrent.atomic.AtomicBoolean;
 
+import net.forbric.kernel.util.Caught;
 import net.forbric.kernel.util.ForbricLog;
 
 /**
@@ -151,6 +152,7 @@ public final class KernelRegistryAliases {
 			return create.invoke(null, registryKey, target);
 		} catch (Throwable t) {
 			// A rebuild we cannot do is a lookup that behaves exactly as it does today — never a failed boot.
+			Caught.warn(t, "[Forbric/Aliases] could not resolve the alias of %s; the lookup uses it as given", key);
 			return key;
 		}
 	}
@@ -203,6 +205,8 @@ public final class KernelRegistryAliases {
 			Object map = field.get().get(registry);
 			return map instanceof Map<?, ?> typed ? typed : null;
 		} catch (Throwable t) {
+			Caught.warn(t, "[Forbric/Aliases] could not read fabric-api's alias map on %s; its aliases are not followed",
+					registry.getClass().getName());
 			return null;
 		}
 	}
@@ -228,6 +232,8 @@ public final class KernelRegistryAliases {
 				maps.getFirst().setAccessible(true);
 				return maps.getFirst();
 			} catch (RuntimeException inaccessible) {
+				Caught.warn(inaccessible, "[Forbric/Aliases] could not open the alias map %s.%s; its aliases are not followed",
+						c.getName(), maps.getFirst().getName());
 				return null;
 			}
 		}
@@ -244,6 +250,7 @@ public final class KernelRegistryAliases {
 		try {
 			type = field.getGenericType();
 		} catch (RuntimeException | LinkageError unresolvable) {
+			Caught.expected(unresolvable);
 			return false;
 		}
 		if (idToId(type)) return true;
@@ -264,6 +271,7 @@ public final class KernelRegistryAliases {
 			}, org.objectweb.asm.ClassReader.SKIP_CODE | org.objectweb.asm.ClassReader.SKIP_DEBUG | org.objectweb.asm.ClassReader.SKIP_FRAMES);
 			return wanted.equals(signature[0]);
 		} catch (java.io.IOException | RuntimeException unreadable) {
+			Caught.warn(unreadable, "[Forbric/Aliases] could not read mixin %s for the signature of %s; it is not taken as an alias map", mixin, field.getName());
 			return false;
 		}
 	}
@@ -295,6 +303,7 @@ public final class KernelRegistryAliases {
 						field.getAnnotation(org.spongepowered.asm.mixin.transformer.meta.MixinMerged.class);
 				return merged == null ? null : merged.mixin();
 			} catch (LinkageError noMixin) {
+				Caught.expected(noMixin);
 				return null;
 			}
 		}

@@ -34,6 +34,8 @@ import java.util.Set;
 import java.util.jar.JarFile;
 import java.util.jar.Manifest;
 
+import net.forbric.kernel.util.Caught;
+
 /**
  * A {@code cpw.mods.jarhandling.SecureJar} for a seeded MinecraftForge {@code ModFile}, built without ModLauncher.
  *
@@ -169,6 +171,7 @@ public final class ForgeSecureJarStandIn {
 			} catch (Throwable t) {
 				// The jar itself, not null: a caller resolving against this gets a path that does not exist rather
 				// than an NPE three frames away from anything that names the jar.
+				Caught.warn(t, "[Forbric/SecureJar] could not mount %s; its root path is the jar file itself", jar);
 				return jar;
 			}
 		}
@@ -180,6 +183,8 @@ public final class ForgeSecureJarStandIn {
 			try {
 				return fileSystem().getPath(first, more);
 			} catch (Throwable t) {
+				Caught.warn(t, "[Forbric/SecureJar] could not resolve %s inside %s; it resolves next to the jar instead",
+						first, jar);
 				return jar.resolve(first);
 			}
 		}
@@ -196,6 +201,8 @@ public final class ForgeSecureJarStandIn {
 				} catch (Throwable ignored) {
 					// An empty manifest, not a failure: every caller here reads attributes out of it and an absent
 					// manifest legitimately means "no attributes".
+					Caught.warn(ignored, "[Forbric/SecureJar] could not read the manifest of %s; it answers an empty one",
+							jar);
 				}
 				manifest = read;
 				return read;
@@ -207,6 +214,7 @@ public final class ForgeSecureJarStandIn {
 				Path in = path(args);
 				return Files.exists(in) ? Optional.of(in.toUri()) : Optional.empty();
 			} catch (Throwable t) {
+				Caught.warn(t, "[Forbric/SecureJar] could not look up a file in %s; it answers none", jar);
 				return Optional.empty();
 			}
 		}
@@ -216,6 +224,7 @@ public final class ForgeSecureJarStandIn {
 				Path in = path(args);
 				return Files.exists(in) ? Optional.of(Files.newInputStream(in)) : Optional.empty();
 			} catch (Throwable t) {
+				Caught.warn(t, "[Forbric/SecureJar] could not open a file in %s; it answers none", jar);
 				return Optional.empty();
 			}
 		}
@@ -241,6 +250,7 @@ public final class ForgeSecureJarStandIn {
 			try {
 				return Enum.valueOf(nested.asSubclass(Enum.class), "UNVERIFIED");
 			} catch (Throwable t) {
+				Caught.warn(t, "[Forbric/SecureJar] %s has no UNVERIFIED status; %s answers null", nested.getName(), jar);
 				return null;
 			}
 		}
@@ -249,6 +259,8 @@ public final class ForgeSecureJarStandIn {
 			try {
 				return Class.forName(iface.getName() + "$" + simpleName, false, iface.getClassLoader());
 			} catch (Throwable t) {
+				Caught.warn(t, "[Forbric/SecureJar] %s has no nested %s; what %s answers with it is null", iface.getName(),
+						simpleName, jar);
 				return null;
 			}
 		}
@@ -258,6 +270,7 @@ public final class ForgeSecureJarStandIn {
 		try {
 			return FileSystems.newFileSystem(jar);
 		} catch (FileSystemAlreadyExistsException already) {
+			Caught.expected(already);
 			// Someone else in this process mounted the same jar. Sharing theirs is right: two zip file systems over
 			// one file is exactly what the JDK refuses, and the paths are interchangeable.
 			return FileSystems.getFileSystem(URI.create("jar:" + jar.toUri()));

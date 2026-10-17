@@ -18,11 +18,9 @@ package net.forbric.kernel.runtime;
 
 import java.lang.reflect.Method;
 import java.nio.file.Path;
-import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.function.Consumer;
 
-import net.forbric.kernel.util.ForbricLog;
-import net.forbric.kernel.util.Reflect;
+import net.forbric.kernel.util.Caught;
 import net.minecraft.server.MinecraftServer;
 import net.minecraftforge.fml.config.ConfigTracker;
 import net.minecraftforge.fml.config.ModConfig;
@@ -82,16 +80,13 @@ public final class KernelGameServerAboutToStart {
 		// accessors the merged Biome/Structure do not declare, and its modifiers now ride inside NeoForge's single
 		// pass (KernelForgeWorldgen), phase-interleaved with NeoForge's — two passes would be two sources of truth.
 
-		AtomicBoolean warnedConfigs = new AtomicBoolean();
-		AtomicBoolean warnedEvent = new AtomicBoolean();
-
 		Consumer<ServerAboutToStartEvent> listener = neoEvent -> {
 			MinecraftServer server;
 			try {
 				server = neoEvent.getServer();
 			} catch (Throwable t) {
-				ForbricLog.warn("[Forbric/EventMux] NeoForge's about-to-start event carried no server; "
-						+ "MinecraftForge's server configs stay at their defaults", Reflect.unwrap(t));
+				Caught.warn(t, "[Forbric/EventMux] NeoForge's about-to-start event carried no server; "
+						+ "MinecraftForge's server configs stay at their defaults");
 				return;
 			}
 
@@ -108,21 +103,15 @@ public final class KernelGameServerAboutToStart {
 			try {
 				ConfigTracker.loadConfigs(ModConfig.Type.SERVER, (Path) configPath.invoke(null, server));
 			} catch (Throwable t) {
-				if (warnedConfigs.compareAndSet(false, true)) {
-					ForbricLog.warn("[Forbric/EventMux] could not load MinecraftForge's per-world SERVER configs — "
-							+ "its mods keep their defaults here and on every client that joins",
-							Reflect.unwrap(t));
-				}
+				Caught.warn(t, "[Forbric/EventMux] could not load MinecraftForge's per-world SERVER configs — "
+						+ "its mods keep their defaults here and on every client that joins");
 			}
 
 			try {
 				net.minecraftforge.event.server.ServerAboutToStartEvent.BUS.post(
 						new net.minecraftforge.event.server.ServerAboutToStartEvent(server));
 			} catch (Throwable t) {
-				if (warnedEvent.compareAndSet(false, true)) {
-					ForbricLog.warn("[Forbric/EventMux] MinecraftForge's ServerAboutToStartEvent did not reach its "
-							+ "mods", Reflect.unwrap(t));
-				}
+				Caught.warn(t, "[Forbric/EventMux] MinecraftForge's ServerAboutToStartEvent did not reach its mods");
 			}
 		};
 
@@ -138,7 +127,7 @@ public final class KernelGameServerAboutToStart {
 	 * {@link net.forbric.kernel.boot.KernelLifecycle} already installs a lazy one at boot, and this overwrites it
 	 * with one that answers THIS server directly, which is what Forge's own hook does.
 	 *
-	 * <p>Best-effort and reported once: a mod that never broadcasts will not notice, and one that does gets a
+	 * <p>Best-effort and reported: a mod that never broadcasts will not notice, and one that does gets a
 	 * line naming the cause instead of an NPE from inside Forge's packet dispatcher.
 	 */
 	private static void recordCurrentServer(MinecraftServer server) {
@@ -147,18 +136,15 @@ public final class KernelGameServerAboutToStart {
 			current.setAccessible(true);
 			current.set(null, server);
 		} catch (Throwable t) {
-			if (WARNED_CURRENT_SERVER.compareAndSet(false, true)) {
-				ForbricLog.warn("[Forbric/EventMux] could not publish the running server on MinecraftForge's "
-						+ "ServerLifecycleHooks.currentServer — getCurrentServer() stays null, so a Forge mod's "
-						+ "PacketDistributor.ALL/DIMENSION/NEAR broadcast NPEs inside Forge's own dispatcher",
-						Reflect.unwrap(t));
-			}
+			Caught.warn(t, "[Forbric/EventMux] could not publish the running server on MinecraftForge's "
+					+ "ServerLifecycleHooks.currentServer — getCurrentServer() stays null, so a Forge mod's "
+					+ "PacketDistributor.ALL/DIMENSION/NEAR broadcast NPEs inside Forge's own dispatcher");
 		}
 		try {
 			net.minecraftforge.common.util.LogicalSidedProvider.setServer(() -> server);
 		} catch (Throwable t) {
-			ForbricLog.debug("[Forbric/EventMux] could not point LogicalSidedProvider at this server: %s",
-					String.valueOf(Reflect.unwrap(t)));
+			Caught.warn(t, "[Forbric/EventMux] could not point MinecraftForge's LogicalSidedProvider at this server — "
+					+ "a Forge mod asking it for the server gets the previous answer");
 		}
 	}
 
@@ -170,10 +156,9 @@ public final class KernelGameServerAboutToStart {
 			current.set(null, null);
 			net.minecraftforge.common.util.LogicalSidedProvider.setServer(() -> null);
 		} catch (Throwable t) {
-			ForbricLog.debug("[Forbric/EventMux] could not clear MinecraftForge's currentServer: %s",
-					String.valueOf(Reflect.unwrap(t)));
+			Caught.warn(t, "[Forbric/EventMux] could not clear MinecraftForge's currentServer — it keeps pointing at "
+					+ "the stopped server");
 		}
 	}
 
-	private static final AtomicBoolean WARNED_CURRENT_SERVER = new AtomicBoolean();
 }

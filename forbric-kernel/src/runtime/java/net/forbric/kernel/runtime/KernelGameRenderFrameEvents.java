@@ -16,11 +16,10 @@
 
 package net.forbric.kernel.runtime;
 
-import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicLong;
 
+import net.forbric.kernel.util.Caught;
 import net.forbric.kernel.util.ForbricLog;
-import net.forbric.kernel.util.Reflect;
 import net.minecraft.client.DeltaTracker;
 import net.minecraftforge.client.event.ForgeEventFactoryClient;
 import net.neoforged.bus.api.EventPriority;
@@ -92,7 +91,6 @@ public final class KernelGameRenderFrameEvents {
 
 	private static <E extends RenderFrameEvent> void subscribe(IEventBus bus, Class<E> event, String kind,
 			ForgeRenderTick forge) {
-		AtomicBoolean warned = new AtomicBoolean();
 		AtomicLong frames = new AtomicLong();
 		// Four-argument overload with LOWEST, as everywhere in this package: the shorter overloads open with
 		// `getstatic EventPriority.NORMAL` and would silently promote the forward.
@@ -105,11 +103,9 @@ public final class KernelGameRenderFrameEvents {
 							kind, PROOF);
 				}
 			} catch (Throwable t) {
-				if (warned.compareAndSet(false, true)) {
-					ForbricLog.warn("[Forbric/EventMux] onRenderTick" + kind + " forward failed; a MinecraftForge "
-							+ "mod that builds anything from the render tick (a map mod's region upload) stays "
-							+ "empty and its vertex buffer grows without being drained", Reflect.unwrap(t));
-				}
+				Caught.warn(t, "[Forbric/EventMux] onRenderTick%s forward failed; a MinecraftForge mod that builds "
+						+ "anything from the render tick (a map mod's region upload) stays empty and its vertex buffer "
+						+ "grows without being drained", kind);
 			}
 		});
 	}

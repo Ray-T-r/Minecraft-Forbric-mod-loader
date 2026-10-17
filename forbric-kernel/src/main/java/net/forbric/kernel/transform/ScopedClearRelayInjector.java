@@ -21,6 +21,7 @@ import org.objectweb.asm.tree.InvokeDynamicInsnNode;
 import org.objectweb.asm.tree.MethodInsnNode;
 import org.objectweb.asm.tree.MethodNode;
 import org.objectweb.asm.tree.VarInsnNode;
+import net.forbric.kernel.util.Caught;
 
 /**
  * Puts a native {@code field.clear()} back where a carrier replaced it with removing a computed subset of the field's
@@ -171,6 +172,7 @@ public final class ScopedClearRelayInjector implements ClassTransformer {
 			try {
 				reference = originals.apply(ecosystem, owner);
 			} catch (RuntimeException unavailable) {
+				Caught.warn(unavailable, "[Forbric/ClearRelay] could not read the %s reference of %s; it is not compared", ecosystem, owner);
 				reference = null;
 			}
 			if (reference == null) continue;

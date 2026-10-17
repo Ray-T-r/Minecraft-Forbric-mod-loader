@@ -13,6 +13,7 @@ import org.objectweb.asm.tree.analysis.AnalyzerException;
 import org.objectweb.asm.tree.analysis.BasicInterpreter;
 import org.objectweb.asm.tree.analysis.BasicValue;
 import org.objectweb.asm.tree.analysis.Frame;
+import net.forbric.kernel.util.Caught;
 /**
  * Make the published MinecraftForge data field a view of NeoForge's live state, only from actual getter/constructor
  * evidence; target names are not policy.
@@ -106,7 +107,7 @@ public final class ModifiableDataViewsTransformer implements ClassTransformer {
     /** The straight-line statement ending at the single write of {@code field}: from where the stack is last empty. */
     private static List<AbstractInsnNode> statement(MethodNode method,String owner,FieldInsnNode field){
         List<FieldInsnNode> writes=fieldWrites(method,field);if(writes.size()!=1||!method.tryCatchBlocks.isEmpty())return null;
-        Frame<BasicValue>[] frames;try{frames=new Analyzer<>(new BasicInterpreter()).analyze(owner,method);}catch(AnalyzerException unanalyzable){return null;}
+        Frame<BasicValue>[] frames;try{frames=new Analyzer<>(new BasicInterpreter()).analyze(owner,method);}catch(AnalyzerException unanalyzable){ Caught.expected(unanalyzable);return null;}
         AbstractInsnNode[] all=method.instructions.toArray();int put=method.instructions.indexOf(writes.getFirst());
         for(int i=put;i>=0;i--){
             AbstractInsnNode at=all[i];if(at.getOpcode()<0)continue;

@@ -19,6 +19,7 @@ import org.junit.jupiter.api.parallel.ResourceLock;
 
 import net.fabricmc.api.EnvType;
 import net.forbric.kernel.boot.KernelRegistryRevert;
+import net.forbric.kernel.ExpectCaught;
 
 /**
  * {@link RegistrySyncParityInjector}'s output, run against the kernel's real boot-side {@code KernelForgeWrapperSync}
@@ -560,6 +561,8 @@ class RegistrySyncParityInjectorExecutionTest {
 		return InjectorExecution.invokeStatic(manager, "applySnapshot", snapshots, false);
 	}
 
+	// The stub game has no BuiltInRegistries for fabric-api's unmap pass to walk.
+	@ExpectCaught("fabric-api's unmap pass failed part-way")
 	@Test void aClientTakesTheServersIdsForAWrappedRegistryAndGetsItsOwnBack(@TempDir Path work) throws Throwable {
 		Map<String, byte[]> original = merged(work);
 		Map<String, byte[]> classes = repaired(original);

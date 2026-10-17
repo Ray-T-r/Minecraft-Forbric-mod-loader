@@ -11,6 +11,7 @@ import net.forbric.kernel.boot.DefinedMethodContracts;
 import net.forbric.kernel.boot.DefinedMethodContracts.MethodContract;
 import net.forbric.kernel.boot.KernelTagSourceContracts;
 import net.forbric.kernel.transform.*;
+import net.forbric.kernel.util.Caught;
 import net.forbric.kernel.util.ForbricLog;
 
 /** Restores a native constructor's tag view from the same current physical samples. No world scan is replayed. */
@@ -67,9 +68,9 @@ public final class NativeTagTrackerSourceInjector implements ClassTransformer{
 		for(MethodContract dependency:definitions){ClassNode declaration=dependency.owner().equals(current.name.replace('/','.'))?current:classes.apply(dependency.owner().replace('.','/'));MethodNode body=method(declaration,dependency.name(),dependency.descriptor());for(var instruction:body.instructions)if(instruction instanceof FieldInsnNode field){KernelTagSourceContracts.FieldShape shape=fieldShape(field,current,classes);if(shape==null)return false;if(fieldKeys.add(shape.owner()+"#"+shape.name()))fields.add(shape);}}
 		KernelTagSourceContracts.register(id,new KernelTagSourceContracts.Schema(current.name,sourceMap,ready,tracker,tag,contract(current.name,template.current()),definitions,vectorMethods,flags,fields,contract(fluid.name,queryBody),contract(fluid.name,typeBody)));
 		return true;
-	}catch(RuntimeException unsupported){return false;}}
+	}catch(RuntimeException unsupported){Caught.expected(unsupported);return false;}}
 	private static KernelTagSourceContracts.FieldShape fieldShape(FieldInsnNode instruction,ClassNode current,Function<String,ClassNode>classes){
-		String owner=instruction.owner;Set<String>seen=new HashSet<>();while(owner!=null&&seen.add(owner)){ClassNode declaration=owner.equals(current.name)?current:classes.apply(owner);if(declaration==null){try(var in=NativeTagTrackerSourceInjector.class.getClassLoader().getResourceAsStream(owner+".class")){if(in!=null)declaration=parse(in.readAllBytes());}catch(java.io.IOException unavailable){return null;}}if(declaration==null)return null;
+		String owner=instruction.owner;Set<String>seen=new HashSet<>();while(owner!=null&&seen.add(owner)){ClassNode declaration=owner.equals(current.name)?current:classes.apply(owner);if(declaration==null){try(var in=NativeTagTrackerSourceInjector.class.getClassLoader().getResourceAsStream(owner+".class")){if(in!=null)declaration=parse(in.readAllBytes());}catch(java.io.IOException unavailable){Caught.warn(unavailable,"[Forbric/Mixin] could not read %s.class while checking a tag-tracker field; the tag-source repair declines",owner);return null;}}if(declaration==null)return null;
 			for(FieldNode field:declaration.fields)if(field.name.equals(instruction.name)){boolean staticInsn=instruction.getOpcode()==Opcodes.GETSTATIC||instruction.getOpcode()==Opcodes.PUTSTATIC;if(!field.desc.equals(instruction.desc)||staticInsn!=((field.access&Opcodes.ACC_STATIC)!=0))return null;return new KernelTagSourceContracts.FieldShape(declaration.name,field.name,field.desc,field.access);}owner=declaration.superName;
 		}return null;
 	}
@@ -157,6 +158,6 @@ public final class NativeTagTrackerSourceInjector implements ClassTransformer{
 		final ClassNode owner;final Function<String,ClassNode>classes;Frames(ClassNode owner,Function<String,ClassNode>classes){super(COMPUTE_FRAMES|COMPUTE_MAXS);this.owner=owner;this.classes=classes;}
 		@Override protected String getCommonSuperClass(String a,String b){if(a.equals(b))return a;if(assignable(a,b,new HashSet<>()))return a;if(assignable(b,a,new HashSet<>()))return b;ClassNode node=read(a);while(node!=null&&node.superName!=null){if(assignable(node.superName,b,new HashSet<>()))return node.superName;node=read(node.superName);}return"java/lang/Object";}
 		boolean assignable(String target,String value,Set<String>seen){if(target.equals(value)||target.equals("java/lang/Object"))return true;if(!seen.add(value))return false;ClassNode node=read(value);if(node==null)return false;if(node.superName!=null&&assignable(target,node.superName,seen))return true;for(String iface:node.interfaces)if(assignable(target,iface,seen))return true;return false;}
-		ClassNode read(String name){if(name.equals(owner.name))return owner;ClassNode node=classes.apply(name);if(node!=null)return node;try(var in=NativeTagTrackerSourceInjector.class.getClassLoader().getResourceAsStream(name+".class")){return in==null?null:parse(in.readAllBytes());}catch(java.io.IOException unknown){return null;}}
+		ClassNode read(String name){if(name.equals(owner.name))return owner;ClassNode node=classes.apply(name);if(node!=null)return node;try(var in=NativeTagTrackerSourceInjector.class.getClassLoader().getResourceAsStream(name+".class")){return in==null?null:parse(in.readAllBytes());}catch(java.io.IOException unknown){Caught.warn(unknown,"[Forbric/Mixin] could not read %s.class for frame computation; treated as unknown",name);return null;}}
 	}
 }

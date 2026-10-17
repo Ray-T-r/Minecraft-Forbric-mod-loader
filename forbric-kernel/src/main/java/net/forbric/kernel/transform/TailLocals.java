@@ -24,6 +24,7 @@ import org.objectweb.asm.tree.analysis.AnalyzerException;
 import org.objectweb.asm.tree.analysis.BasicInterpreter;
 import org.objectweb.asm.tree.analysis.BasicValue;
 import org.objectweb.asm.tree.analysis.Frame;
+import net.forbric.kernel.util.Caught;
 
 /**
  * Gives a split method's tail back the primitive locals vanilla's tail holds.
@@ -88,6 +89,7 @@ final class TailLocals {
 				@Override protected void newControlFlowEdge(int from, int to) { edges.add(((long) from << 32) | to); }
 			}.analyze(owner, method);
 		} catch (AnalyzerException | RuntimeException unanalysable) {
+			Caught.expected(unanalysable);
 			return 0;
 		}
 		List<Integer> sources = new ArrayList<>();

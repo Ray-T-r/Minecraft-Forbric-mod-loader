@@ -8,6 +8,8 @@ import org.objectweb.asm.Type;
 import org.objectweb.asm.tree.*;
 import org.objectweb.asm.tree.analysis.*;
 
+import net.forbric.kernel.util.Caught;
+
 /**
  * Whether a {@code @WrapOperation} handler hands its original, at given operand positions, exactly the operands it was
  * itself handed — the proof an adapter needs before it gives the handler an original that takes those operands from the
@@ -43,6 +45,7 @@ final class MixinOperationPassThrough {
 		try {
 			frames = new Analyzer<>(uses).analyze(owner, handler);
 		} catch (AnalyzerException | RuntimeException unanalysable) {
+			Caught.expected(unanalysable);
 			return false;
 		}
 		int[] slots = new int[parameters.length];

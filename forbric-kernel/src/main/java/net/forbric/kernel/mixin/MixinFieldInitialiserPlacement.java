@@ -37,6 +37,7 @@ import org.objectweb.asm.tree.analysis.SourceValue;
 import net.forbric.api.Ecosystem;
 import net.forbric.kernel.util.ByteScan;
 import net.forbric.kernel.util.ForbricLog;
+import net.forbric.kernel.util.Caught;
 
 /**
  * Puts a mixin's field initialiser back right after the constructor's {@code super()} call, where the mixin's own loader
@@ -130,6 +131,7 @@ public final class MixinFieldInitialiserPlacement {
 		try {
 			frames = new Analyzer<>(new SourceInterpreter()).analyze(node.name, ctor);
 		} catch (AnalyzerException | RuntimeException unreadable) {
+			Caught.expected(unreadable);
 			return null;
 		}
 		MethodInsnNode chain = null;
@@ -200,6 +202,7 @@ public final class MixinFieldInitialiserPlacement {
 			Frame<SourceValue> last = frames[frames.length - 1];
 			return last != null && last.getStackSize() == 0;
 		} catch (AnalyzerException | RuntimeException unreadable) {
+			Caught.expected(unreadable);
 			return false;
 		}
 	}

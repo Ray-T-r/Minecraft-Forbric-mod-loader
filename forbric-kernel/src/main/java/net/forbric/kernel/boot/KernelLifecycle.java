@@ -31,8 +31,8 @@ import net.forbric.api.Ecosystem;
 import net.forbric.api.EventBridges;
 import net.forbric.api.GameEventBridge;
 import net.forbric.api.ForeignType;
+import net.forbric.kernel.util.Caught;
 import net.forbric.kernel.util.ForbricLog;
-import net.forbric.kernel.util.Reflect;
 import net.forbric.kernel.fabric.KernelFabricLoader;
 import net.forbric.kernel.transform.FabricFreezePointInjector;
 import net.forbric.api.ModCatalog;
@@ -363,7 +363,12 @@ public final class KernelLifecycle {
 			java.util.function.Supplier<Object> clientSupplier = () -> {
 				try {
 					return Class.forName("net.minecraft.client.Minecraft", false, cl).getMethod("getInstance").invoke(null);
+				} catch (ClassNotFoundException dedicatedServer) {
+					Caught.expected(dedicatedServer);
+					return null;
 				} catch (Throwable t) {
+					Caught.warn(t, "[Forbric/Lifecycle] LogicalSidedProvider could not reach Minecraft.getInstance(); "
+							+ "a Forge mod's client-side handler gets no client");
 					return null;
 				}
 			};
@@ -372,6 +377,8 @@ public final class KernelLifecycle {
 					return Class.forName(ForeignType.SERVER_LIFECYCLE_HOOKS.binary(Ecosystem.NEOFORGE), false, cl)
 							.getMethod("getCurrentServer").invoke(null);
 				} catch (Throwable t) {
+					Caught.warn(t, "[Forbric/Lifecycle] LogicalSidedProvider could not reach the current server; a "
+							+ "Forge mod's server-side handler gets no server");
 					return null;
 				}
 			};
@@ -380,10 +387,11 @@ public final class KernelLifecycle {
 			ForbricLog.info("[Forbric/Lifecycle] bridged traditional Forge's LogicalSidedProvider to the live client / "
 					+ "NeoForge's current server — Forge network handlers can enqueue onto the main thread");
 		} catch (ClassNotFoundException absent) {
+			Caught.expected(absent);
 			ForbricLog.debug("[Forbric/Lifecycle] no traditional-Forge LogicalSidedProvider to bridge");
 		} catch (Throwable t) {
-			ForbricLog.warn("[Forbric/Lifecycle] could not bridge Forge's LogicalSidedProvider — a Forge mod's main-thread "
-					+ "packet handler will NPE", unwrap(t));
+			Caught.warn(t, "[Forbric/Lifecycle] could not bridge Forge's LogicalSidedProvider — a Forge mod's main-thread "
+					+ "packet handler will NPE");
 		}
 	}
 
@@ -395,8 +403,8 @@ public final class KernelLifecycle {
 			ForbricLog.info("[Forbric/Lifecycle] %s.setup() — payload handlers registered%s",
 					registryClass.substring(registryClass.lastIndexOf('.') + 1), describePayloadRegistrations(registry));
 		} catch (Throwable t) {
-			ForbricLog.warn("[Forbric/Lifecycle] " + registryClass + ".setup() failed — NeoForge payloads incomplete "
-					+ "(join may fail 'No Handler for …')", unwrap(t));
+			Caught.warn(t, "[Forbric/Lifecycle] " + registryClass + ".setup() failed — NeoForge payloads incomplete "
+					+ "(join may fail 'No Handler for …')");
 		}
 	}
 
@@ -432,8 +440,11 @@ public final class KernelLifecycle {
 			return "; " + total + " payload type(s) registered " + counts + ", NeoForge's own included: "
 					+ (natives ? "yes" : "NO");
 		} catch (NoSuchFieldException clientRegistry) {
+			Caught.expected(clientRegistry);
 			return "";
 		} catch (Throwable t) {
+			Caught.warn(t, "[Forbric/Lifecycle] could not read %s.PAYLOAD_REGISTRATIONS; the channel census misses "
+					+ "its registrations", registry.getName());
 			return "; (could not read PAYLOAD_REGISTRATIONS: " + t + ")";
 		}
 	}
@@ -462,8 +473,7 @@ public final class KernelLifecycle {
 			}
 			ForbricLog.info("[Forbric/Lifecycle] marked %d vanilla registr(ies) client-syncing (doesSync=true)", n);
 		} catch (Throwable t) {
-			ForbricLog.warn("[Forbric/Lifecycle] could not mark vanilla registries synced (registry-ID sync may fail)",
-					unwrap(t));
+			Caught.warn(t, "[Forbric/Lifecycle] could not mark vanilla registries synced (registry-ID sync may fail)");
 		}
 	}
 
@@ -491,13 +501,13 @@ public final class KernelLifecycle {
 		try {
 			configClass(cl).getMethod("loadEarly", List.class).invoke(null, types);
 		} catch (Throwable t) {
-			ForbricLog.warn("[Forbric/Lifecycle] could not load NeoForge configs", unwrap(t));
+			Caught.warn(t, "[Forbric/Lifecycle] could not load NeoForge configs");
 		}
 		try {
 			Class<?> forge = forgeConfigClass(cl);
 			if (forge != null) forge.getMethod("loadEarly", List.class).invoke(null, forgeEarlyConfigTypes(side));
 		} catch (Throwable t) {
-			ForbricLog.warn("[Forbric/Lifecycle] could not load MinecraftForge configs", unwrap(t));
+			Caught.warn(t, "[Forbric/Lifecycle] could not load MinecraftForge configs");
 		}
 	}
 
@@ -521,8 +531,8 @@ public final class KernelLifecycle {
 					+ "annotation(s) in the mod scan data (lookups work without it; -1 = the index could not be read)",
 					count);
 		} catch (Throwable t) {
-			ForbricLog.warn("[Forbric/Capabilities] MinecraftForge's injectCapabilities threw — capability lookups still "
-					+ "work, isRegistered() answers false", unwrap(t));
+			Caught.warn(t, "[Forbric/Capabilities] MinecraftForge's injectCapabilities threw — capability lookups still "
+					+ "work, isRegistered() answers false");
 		}
 	}
 
@@ -531,6 +541,7 @@ public final class KernelLifecycle {
 		try {
 			Class.forName(ForeignType.CONFIG_TRACKER.binary(Ecosystem.FORGE), false, cl);
 		} catch (ClassNotFoundException absent) {
+			Caught.expected(absent);
 			return null;
 		}
 		return Class.forName("net.forbric.kernel.runtime.KernelForgeConfigLoad", true, cl);
@@ -570,7 +581,7 @@ public final class KernelLifecycle {
 						opened.size(), when, opened);
 			}
 		} catch (Throwable t) {
-			ForbricLog.warn("[Forbric/Lifecycle] could not open late-registered NeoForge configs", unwrap(t));
+			Caught.warn(t, "[Forbric/Lifecycle] could not open late-registered NeoForge configs");
 		}
 		try {
 			Class<?> forge = forgeConfigClass(cl);
@@ -581,7 +592,7 @@ public final class KernelLifecycle {
 						opened.size(), when, opened);
 			}
 		} catch (Throwable t) {
-			ForbricLog.warn("[Forbric/Lifecycle] could not open late-registered MinecraftForge configs", unwrap(t));
+			Caught.warn(t, "[Forbric/Lifecycle] could not open late-registered MinecraftForge configs");
 		}
 	}
 
@@ -633,19 +644,20 @@ public final class KernelLifecycle {
 		try {
 			bus = Class.forName(holder, false, cl).getField(field).get(null);
 		} catch (ClassNotFoundException | NoSuchFieldException | LinkageError absent) {
+			Caught.expected(absent);
 			ForbricLog.debug("[Forbric/Lifecycle] no %s on this runtime — nothing to start", label);
 			return;
 		} catch (Throwable t) {
-			ForbricLog.warn("[Forbric/Lifecycle] could not read " + label + " — every game-event listener of that "
-					+ "family is on a bus nothing will dispatch", unwrap(t));
+			Caught.warn(t, "[Forbric/Lifecycle] could not read " + label + " — every game-event listener of that "
+					+ "family is on a bus nothing will dispatch");
 			return;
 		}
 		try {
 			Class.forName(api, false, cl).getMethod(start).invoke(bus);
 			ForbricLog.info("[Forbric/Lifecycle] started %s (game events now dispatch)", label);
 		} catch (Throwable t) {
-			ForbricLog.warn("[Forbric/Lifecycle] " + label + " is present but did NOT start — every game-event "
-					+ "listener of that family, in every mod, is now on a bus nothing dispatches", unwrap(t));
+			Caught.warn(t, "[Forbric/Lifecycle] " + label + " is present but did NOT start — every game-event "
+					+ "listener of that family, in every mod, is now on a bus nothing dispatches");
 		}
 	}
 
@@ -742,8 +754,8 @@ public final class KernelLifecycle {
 			try {
 				KernelEventSubscribers.registerAll(cl, modJars, side);
 			} catch (Throwable t) {
-				ForbricLog.warn("[Forbric/Lifecycle] could not wire guest @EventBusSubscriber classes — mods that "
-						+ "declare their registry or attribute handlers there will not be reached", unwrap(t));
+				Caught.warn(t, "[Forbric/Lifecycle] could not wire guest @EventBusSubscriber classes — mods that "
+						+ "declare their registry or attribute handlers there will not be reached");
 			}
 
 			// FMLConstructModEvent, the phase genuine FML posts to each container the moment it is built. The
@@ -798,8 +810,7 @@ public final class KernelLifecycle {
 			try {
 				KernelFabricEcosystem.dispatchArbitratedAwayKeys(net.forbric.kernel.fabric.EntrypointDispatchScan.Phase.PRE_INIT);
 			} catch (Throwable t) {
-				ForbricLog.warn("[Forbric/Lifecycle] could not dispatch the entrypoint keys a superseded build dispatched",
-						unwrap(t));
+				Caught.warn(t, "[Forbric/Lifecycle] could not dispatch the entrypoint keys a superseded build dispatched");
 			}
 			// MOD buses only — buses.get(0) is the baseline, whose registries PassiveSeeder already registered at
 			// seed time; posting there re-collects them and fill() dies on "Attempted duplicate registration".
@@ -815,9 +826,9 @@ public final class KernelLifecycle {
 			try {
 				n = fireRegisterEvents(cl, buses);
 			} catch (Throwable t) {
-				ForbricLog.warn("[Forbric/Lifecycle] could not fire RegisterEvent — mods that register content "
+				Caught.warn(t, "[Forbric/Lifecycle] could not fire RegisterEvent — mods that register content "
 						+ "through DeferredRegister or RegisterEvent will have none of it. The rest of the "
-						+ "registration window below still runs", unwrap(t));
+						+ "registration window below still runs");
 			}
 			// Traditional-Forge baseline: construct ForgeMod + fire the 3-arg Forge RegisterEvent so ForgeMod's own
 			// DeferredRegisters (e.g. the empty forge:fluid_type read by EntityFluidInteraction) register. The real
@@ -919,7 +930,7 @@ public final class KernelLifecycle {
 			if (!side.isClient()) publishForgeGatherStates(cl);
 		} catch (Throwable t) {
 			setForgeLoadingState(cl, false);
-			ForbricLog.warn("[Forbric/Lifecycle] could not register ecosystem content", unwrap(t));
+			Caught.warn(t, "[Forbric/Lifecycle] could not register ecosystem content");
 		} finally {
 			// Only when the window was actually opened: before unfreeze there is nothing to put back, and freezing
 			// a registry the kernel never opened would close one the caller still owns.
@@ -938,9 +949,10 @@ public final class KernelLifecycle {
 			state.setBoolean(null, ready);
 			if (ready) ForbricLog.info("[Forbric/Lifecycle] MinecraftForge event delivery enabled after container construction");
 		} catch (ClassNotFoundException absent) {
+			Caught.expected(absent);
 			ForbricLog.debug("[Forbric/Lifecycle] no MinecraftForge loading state to publish");
 		} catch (ReflectiveOperationException failed) {
-			ForbricLog.warn("[Forbric/Lifecycle] could not publish MinecraftForge loading state", failed);
+			Caught.warn(failed, "[Forbric/Lifecycle] could not publish MinecraftForge loading state");
 		}
 	}
 
@@ -1005,11 +1017,12 @@ public final class KernelLifecycle {
 			}
 			return added;
 		} catch (ClassNotFoundException absent) {
+			Caught.expected(absent);
 			ForbricLog.debug("[Forbric/Lifecycle] no MinecraftForge loading states to record");
 			return 0;
 		} catch (ReflectiveOperationException | RuntimeException | LinkageError failed) {
-			ForbricLog.warn("[Forbric/Lifecycle] could not record MinecraftForge's gather states — Sheets will "
-					+ "report it was \"loaded too early\" although every registry event has run", failed);
+			Caught.warn(failed, "[Forbric/Lifecycle] could not record MinecraftForge's gather states — Sheets will "
+					+ "report it was \"loaded too early\" although every registry event has run");
 			return 0;
 		}
 	}
@@ -1070,32 +1083,32 @@ public final class KernelLifecycle {
 		try {
 			linkBlockItems(cl);
 		} catch (Throwable t) {
-			ForbricLog.warn("[Forbric/Lifecycle] could not link block->item mappings while closing the registration "
-					+ "window", unwrap(t));
+			Caught.warn(t, "[Forbric/Lifecycle] could not link block->item mappings while closing the registration "
+					+ "window");
 		}
 		try {
 			recloseForgeRegistries(cl, opened);
 		} catch (Throwable t) {
-			ForbricLog.warn("[Forbric/Lifecycle] could not put back the MinecraftForge registry gates the window "
-					+ "cleared", unwrap(t));
+			Caught.warn(t, "[Forbric/Lifecycle] could not put back the MinecraftForge registry gates the window "
+					+ "cleared");
 		}
 		try {
 			freeze(cl);
 		} catch (Throwable t) {
-			ForbricLog.warn("[Forbric/Lifecycle] could not re-freeze the registries — they stay writable for the "
-					+ "rest of this run", unwrap(t));
+			Caught.warn(t, "[Forbric/Lifecycle] could not re-freeze the registries — they stay writable for the "
+					+ "rest of this run");
 		}
 		try {
 			rebuildNeoForgeBlockStateIds(cl);
 		} catch (Throwable t) {
-			ForbricLog.warn("[Forbric/Lifecycle] could not rebuild the blockstate->id map — the first block update "
-					+ "will fail to encode", unwrap(t));
+			Caught.warn(t, "[Forbric/Lifecycle] could not rebuild the blockstate->id map — the first block update "
+					+ "will fail to encode");
 		}
 		try {
 			sortNeoCreativeTabs(cl);
 		} catch (Throwable t) {
-			ForbricLog.warn("[Forbric/Lifecycle] could not re-sort the creative tabs — a mod's tab may be missing "
-					+ "from the strip", unwrap(t));
+			Caught.warn(t, "[Forbric/Lifecycle] could not re-sort the creative tabs — a mod's tab may be missing "
+					+ "from the strip");
 		}
 		// After the sort, which is what it reports on.
 		if (Boolean.getBoolean("forbric.tabProbe")) startCreativeTabProbe(cl);
@@ -1178,7 +1191,7 @@ public final class KernelLifecycle {
 			Class.forName("net.forbric.kernel.runtime.KernelRegistryContent", true, cl)
 					.getMethod(method).invoke(null);
 		} catch (Throwable t) {
-			ForbricLog.warn("[Forbric/Lifecycle] could not " + what, unwrap(t));
+			Caught.warn(t, "[Forbric/Lifecycle] could not " + what);
 		}
 	}
 
@@ -1205,8 +1218,8 @@ public final class KernelLifecycle {
 			clientMod.getConstructor(iEventBus, modContainer).newInstance(baselineBus, baselineContainer);
 			ForbricLog.info("[Forbric/Lifecycle] constructed ClientNeoForgeMod on the baseline bus");
 		} catch (Throwable t) {
-			ForbricLog.warn("[Forbric/Lifecycle] could not register NeoForge client content — the client's mod-bus "
-					+ "events (reload listeners, renderers) will not reach NeoForge", unwrap(t));
+			Caught.warn(t, "[Forbric/Lifecycle] could not register NeoForge client content — the client's mod-bus "
+					+ "events (reload listeners, renderers) will not reach NeoForge");
 		}
 	}
 
@@ -1215,9 +1228,8 @@ public final class KernelLifecycle {
 		try {
 			publishModBusDelivery(cl);
 		} catch (Throwable t) {
-			ForbricLog.warn("[Forbric/Lifecycle] could not put the NeoForge baseline into ModList — NeoForge's own "
-					+ "mod-bus listeners (its payload types among them) will not receive the events NeoForge posts",
-					unwrap(t));
+			Caught.warn(t, "[Forbric/Lifecycle] could not put the NeoForge baseline into ModList — NeoForge's own "
+					+ "mod-bus listeners (its payload types among them) will not receive the events NeoForge posts");
 		}
 	}
 
@@ -1289,8 +1301,8 @@ public final class KernelLifecycle {
 			f.setAccessible(true);
 			f.set(modList, indexed);
 		} catch (Throwable t) {
-			ForbricLog.debug("[Forbric/Lifecycle] could not rebuild ModList.indexedMods: %s",
-					String.valueOf(unwrap(t)));
+			Caught.warn(t, "[Forbric/Lifecycle] could not rebuild ModList.indexedMods — getModContainerById answers "
+					+ "from the previous index");
 		}
 
 		// NeoForge's title-screen version-check overlay (NeoForgeVersionCheck.getStatus →
@@ -1302,8 +1314,7 @@ public final class KernelLifecycle {
 		try {
 			KernelModLoader.publishFileById(cl, modListCls, modList, containers);
 		} catch (Throwable t) {
-			ForbricLog.debug("[Forbric/Lifecycle] could not seed ModList.fileById (title version-check may NPE): %s",
-					String.valueOf(unwrap(t)));
+			Caught.warn(t, "[Forbric/Lifecycle] could not seed ModList.fileById (title version-check may NPE)");
 		}
 		ForbricLog.info("[Forbric/Lifecycle] NeoForge mod-bus delivery covers %d container(s) — baseline + every "
 				+ "loaded mod (ModLoader.postEvent fans out over this list, and the Mods screen lists it)",
@@ -1320,8 +1331,8 @@ public final class KernelLifecycle {
 		try {
 			return KernelModContainerFactory.minecraftContainer(cl);
 		} catch (Throwable t) {
-			ForbricLog.debug("[Forbric/Lifecycle] could not publish the 'minecraft' container: %s",
-					String.valueOf(unwrap(t)));
+			Caught.warn(t, "[Forbric/Lifecycle] could not publish the 'minecraft' container — a mod outside a "
+					+ "kernel window asking for the active container gets NeoForge's \"Where is minecraft???!\"");
 			return null;
 		}
 	}
@@ -1373,8 +1384,8 @@ public final class KernelLifecycle {
 					post.invoke(e.getValue().bus(), event);
 					posted++;
 				} catch (Throwable perMod) {
-					ForbricLog.warn("[Forbric/Lifecycle] " + e.getKey()
-							+ " failed declaring its datapack registries", unwrap(perMod));
+					Caught.warn(perMod, "[Forbric/Lifecycle] " + e.getKey()
+							+ " failed declaring its datapack registries");
 				} finally {
 					KernelModLoader.setNeoActiveContainer(cl, null);
 				}
@@ -1401,18 +1412,16 @@ public final class KernelLifecycle {
 			declareMinecraftForgeModifierRegistries(cl, eventCls, hooksCls);
 			reconcileSynchronizedRegistries(cl, hooksCls);
 		} catch (ClassNotFoundException absent) {
+			Caught.expected(absent);
 			ForbricLog.debug("[Forbric/Lifecycle] no NeoForge DataPackRegistryEvent — skipping");
 		} catch (Throwable t) {
 			// A class that failed to initialise is a different failure from a declaration that failed, and a far
 			// bigger one; it gets a finding, so the player hears it before the title screen and not at "Create".
 			CompatibilityFinding poisoned = DatapackRegistryDeclaration.poisonedLoader(t);
-			if (poisoned != null) {
-				CompatibilityFindings.record(poisoned);
-				ForbricLog.error("[Forbric/Lifecycle] " + poisoned.detail(), unwrap(t));
-			} else {
-				ForbricLog.warn("[Forbric/Lifecycle] could not declare mods' datapack registries — a mod with its own "
-						+ "worldgen registry will fail with \"Missing registry\" the moment a world loads", unwrap(t));
-			}
+			if (poisoned != null) CompatibilityFindings.record(poisoned);
+			Caught.error(t, "[Forbric/Lifecycle] %s", poisoned != null ? poisoned.detail()
+					: "could not declare mods' datapack registries — a mod with its own worldgen registry will fail "
+							+ "with \"Missing registry\" the moment a world loads");
 		}
 	}
 
@@ -1455,6 +1464,7 @@ public final class KernelLifecycle {
 			try {
 				synced.addAll(added);
 			} catch (UnsupportedOperationException unmodifiable) {
+				Caught.expected(unmodifiable);
 				syncedField.setAccessible(true);
 				syncedField.set(null, copy);
 			}
@@ -1465,9 +1475,9 @@ public final class KernelLifecycle {
 					+ "before NeoForge's declaration, so the server would not send them and the client would not build "
 					+ "them: %s", keys.size(), keys);
 		} catch (Throwable t) {
-			ForbricLog.warn("[Forbric/Lifecycle] could not check NeoForge's synced datapack registries against "
+			Caught.warn(t, "[Forbric/Lifecycle] could not check NeoForge's synced datapack registries against "
 					+ "RegistryDataLoader.SYNCHRONIZED_REGISTRIES — a NeoForge mod's synced registry may be missing on "
-					+ "the client", unwrap(t));
+					+ "the client");
 		}
 	}
 
@@ -1528,8 +1538,8 @@ public final class KernelLifecycle {
 						replaced);
 			}
 		} catch (Throwable t) {
-			ForbricLog.warn("[Forbric/Lifecycle] could not reconcile RegistryDataLoader's list with NeoForge's — a "
-					+ "registry a mixin added to the loader may be missing at world load", unwrap(t));
+			Caught.warn(t, "[Forbric/Lifecycle] could not reconcile RegistryDataLoader's list with NeoForge's — a "
+					+ "registry a mixin added to the loader may be missing at world load");
 		}
 	}
 
@@ -1595,10 +1605,11 @@ public final class KernelLifecycle {
 					+ "Fabric-declared registry is invisible at world load without this: %s",
 					mirrored.size(), mirrored);
 		} catch (ClassNotFoundException absent) {
+			Caught.expected(absent);
 			ForbricLog.debug("[Forbric/Lifecycle] fabric-api dynamic registries absent — nothing to mirror back");
 		} catch (Throwable t) {
-			ForbricLog.warn("[Forbric/Lifecycle] could not mirror Fabric's datapack registries into NeoForge's "
-					+ "list — a Fabric mod's worldgen registry may be missing at world load", unwrap(t));
+			Caught.warn(t, "[Forbric/Lifecycle] could not mirror Fabric's datapack registries into NeoForge's "
+					+ "list — a Fabric mod's worldgen registry may be missing at world load");
 		}
 	}
 
@@ -1615,13 +1626,15 @@ public final class KernelLifecycle {
 		try {
 			Class.forName(ForeignType.MODIFIER_REGISTRY_KEYS.binary(Ecosystem.FORGE), false, cl);
 		} catch (ClassNotFoundException absent) {
+			Caught.expected(absent);
 			return;
 		}
 		boolean enabled = !"off".equalsIgnoreCase(System.getProperty("forbric.forgeWorldgen", "on"));
 		try {
 			ForgeWorldgenShippers.report(modJars, enabled);
 		} catch (Throwable t) {
-			ForbricLog.debug("[Forbric/Worldgen] could not scan mod jars for forge modifier files: %s", String.valueOf(t));
+			Caught.warn(t, "[Forbric/Worldgen] could not scan mod jars for forge modifier files; the mods that ship "
+					+ "them are not named");
 		}
 		if (!enabled) return;
 		try {
@@ -1638,8 +1651,8 @@ public final class KernelLifecycle {
 			ForbricLog.info("[Forbric/Lifecycle] posted datapack-registry declaration for MinecraftForge's modifier "
 					+ "registries — %d declared (%s), %d total", now.size() - before, added, now.size());
 		} catch (Throwable t) {
-			ForbricLog.warn("[Forbric/Worldgen] could not declare MinecraftForge's biome/structure modifier registries — "
-					+ "a Forge mod's forge/biome_modifier files will not load", unwrap(t));
+			Caught.warn(t, "[Forbric/Worldgen] could not declare MinecraftForge's biome/structure modifier registries — "
+					+ "a Forge mod's forge/biome_modifier files will not load");
 		}
 	}
 
@@ -1702,10 +1715,11 @@ public final class KernelLifecycle {
 						mirrored.size(), mirrored);
 			}
 		} catch (ClassNotFoundException absent) {
+			Caught.expected(absent);
 			ForbricLog.debug("[Forbric/Lifecycle] fabric-api dynamic registries absent — NeoForge's list stands");
 		} catch (Throwable t) {
-			ForbricLog.warn("[Forbric/Lifecycle] could not mirror datapack registries into Fabric's list — a "
-					+ "NeoForge mod's worldgen registry may be missing at world load", unwrap(t));
+			Caught.warn(t, "[Forbric/Lifecycle] could not mirror datapack registries into Fabric's list — a "
+					+ "NeoForge mod's worldgen registry may be missing at world load");
 		}
 	}
 
@@ -1781,8 +1795,8 @@ public final class KernelLifecycle {
 		try {
 			outcome = RegistrationEventSteps.fire(cl);
 		} catch (Throwable t) {
-			ForbricLog.warn("[Forbric/Lifecycle] could not run NeoForge's registration events — capabilities and "
-					+ "data maps will be missing", unwrap(t));
+			Caught.warn(t, "[Forbric/Lifecycle] could not run NeoForge's registration events — capabilities and "
+					+ "data maps will be missing");
 			return;
 		}
 		if (outcome == null) return;
@@ -1836,10 +1850,11 @@ public final class KernelLifecycle {
 			event = eventCls.getConstructor().newInstance();
 			acceptEvent = modContainerClass(cl).getMethod("acceptEvent", baseEvent);
 		} catch (ClassNotFoundException | NoSuchMethodException absent) {
+			Caught.expected(absent);
 			ForbricLog.debug("[Forbric/Lifecycle] %s absent — skipping", eventClassName);
 			return;
 		} catch (Throwable t) {
-			ForbricLog.warn("[Forbric/Lifecycle] could not build " + eventClassName, unwrap(t));
+			Caught.warn(t, "[Forbric/Lifecycle] could not build " + eventClassName);
 			return;
 		}
 		deliverModBusEvent(cl, acceptEvent, event, eventClassName);
@@ -1856,8 +1871,8 @@ public final class KernelLifecycle {
 		try {
 			acceptEvent = modContainerClass(cl).getMethod("acceptEvent", Class.forName("net.neoforged.bus.api.Event", false, cl));
 		} catch (ReflectiveOperationException absent) {
-			ForbricLog.warn("[Forbric/Lifecycle] no NeoForge mod container to post " + event.getClass().getName() + " through",
-					absent);
+			Caught.warn(absent, "[Forbric/Lifecycle] no NeoForge mod container to post %s through",
+					event.getClass().getName());
 			return 0;
 		}
 		return deliverModBusEvent(cl, acceptEvent, event, event.getClass().getName());
@@ -1878,6 +1893,7 @@ public final class KernelLifecycle {
 			phased = modContainerClass(cl).getMethod("acceptEvent", priority, Class.forName("net.neoforged.bus.api.Event", false, cl));
 			phases = priority.getEnumConstants();
 		} catch (ReflectiveOperationException | LinkageError single) {
+			Caught.expected(single);
 			ForbricLog.debug("[Forbric/Lifecycle] no phased acceptEvent — %s goes to each container whole", eventClassName);
 		}
 		java.util.Set<String> failed = new java.util.HashSet<>();
@@ -1889,9 +1905,8 @@ public final class KernelLifecycle {
 					else phased.invoke(e.getValue(), phase, event);
 				} catch (Throwable perMod) {
 					failed.add(e.getKey());
-					ForbricLog.warn("[Forbric/Lifecycle] " + e.getKey() + " threw during " + eventClassName
-							+ " — its own registration from that event is lost, every other mod still gets it",
-							unwrap(perMod));
+					Caught.warn(perMod, "[Forbric/Lifecycle] " + e.getKey() + " threw during " + eventClassName
+							+ " — its own registration from that event is lost, every other mod still gets it");
 				}
 			}
 		}
@@ -2021,9 +2036,10 @@ public final class KernelLifecycle {
 		} catch (ClassNotFoundException | NoClassDefFoundError absent) {
 			// NoClassDefFoundError as well as CNFE: the event types are named game-side now, so a carrier without
 			// them fails when KernelForgeSetup links rather than when Class.forName is called.
+			Caught.expected(absent);
 			ForbricLog.debug("[Forbric/Lifecycle] no traditional-MinecraftForge %s on this carrier", label);
 		} catch (Throwable t) {
-			ForbricLog.warn("[Forbric/Lifecycle] could not post traditional-Forge " + label, Reflect.unwrap(t));
+			Caught.warn(t, "[Forbric/Lifecycle] could not post traditional-Forge " + label);
 		}
 	}
 
@@ -2042,9 +2058,10 @@ public final class KernelLifecycle {
 					.invoke(null, mods, event, label);
 			ForbricLog.info("[Forbric/Lifecycle] posted FML %s to %d NeoForge mod(s)", label, fired);
 		} catch (ClassNotFoundException | NoClassDefFoundError absent) {
+			Caught.expected(absent);
 			ForbricLog.debug("[Forbric/Lifecycle] %s absent — skipping %s", event, label);
 		} catch (Throwable t) {
-			ForbricLog.warn("[Forbric/Lifecycle] could not post FML " + label, unwrap(t));
+			Caught.warn(t, "[Forbric/Lifecycle] could not post FML " + label);
 		}
 	}
 
@@ -2119,8 +2136,8 @@ public final class KernelLifecycle {
 			}
 			return sorted;
 		} catch (Throwable t) {
-			ForbricLog.warn("[Forbric/Lifecycle] no NeoForge registration order available — firing RegisterEvent in "
-					+ "collection order; a mod whose items read their own data components may lose them", unwrap(t));
+			Caught.warn(t, "[Forbric/Lifecycle] no NeoForge registration order available — firing RegisterEvent in "
+					+ "collection order; a mod whose items read their own data components may lose them");
 			return registries;
 		}
 	}
@@ -2166,9 +2183,10 @@ public final class KernelLifecycle {
 			ForbricLog.info("[Forbric/Lifecycle] posted NewRegistryEvent to %d NeoForge mod bus(es) — mods create "
 					+ "their own registries (and do their earliest mod-bus setup) before RegisterEvent", delivered);
 		} catch (ClassNotFoundException | NoClassDefFoundError absent) {
+			Caught.expected(absent);
 			ForbricLog.debug("[Forbric/Lifecycle] no NewRegistryEvent type — skipping");
 		} catch (Throwable t) {
-			ForbricLog.warn("[Forbric/Lifecycle] could not post NeoForge NewRegistryEvent", unwrap(t));
+			Caught.warn(t, "[Forbric/Lifecycle] could not post NeoForge NewRegistryEvent");
 		}
 	}
 
@@ -2241,12 +2259,13 @@ public final class KernelLifecycle {
 						if (Boolean.TRUE.equals(named.getClass().getMethod("isBound").invoke(named))) bound++;
 					} catch (ReflectiveOperationException ignored) {
 						// an unexpected HolderSet shape: not counted, never fatal
+						Caught.expected(ignored);
 					}
 				}
 			}
 			boundText = Integer.toString(bound);
 		} catch (Throwable unreadable) {
-			ForbricLog.debug("[Forbric/Lifecycle] could not count the frozen registries: %s", String.valueOf(unreadable));
+			Caught.expected(unreadable);
 			if (registries == 0) return;
 			boundText = "?";
 		}
@@ -2283,11 +2302,12 @@ public final class KernelLifecycle {
 			ForbricLog.debug("[Forbric/Lifecycle] latched CommonModLoader.registriesLoaded — mods gating on "
 					+ "areRegistriesLoaded() can now register render layers and the like");
 		} catch (ClassNotFoundException | NoSuchFieldException absent) {
+			Caught.expected(absent);
 			ForbricLog.debug("[Forbric/Lifecycle] no CommonModLoader.registriesLoaded to latch: %s",
 					String.valueOf(absent));
 		} catch (Throwable t) {
-			ForbricLog.warn("[Forbric/Lifecycle] could not latch CommonModLoader.registriesLoaded — mods gating on "
-					+ "areRegistriesLoaded() will refuse to register", unwrap(t));
+			Caught.warn(t, "[Forbric/Lifecycle] could not latch CommonModLoader.registriesLoaded — mods gating on "
+					+ "areRegistriesLoaded() will refuse to register");
 		}
 	}
 
@@ -2318,6 +2338,7 @@ public final class KernelLifecycle {
 				try {
 					field = builtIn.getDeclaredField(fieldName);
 				} catch (NoSuchFieldException notOnThisVersion) {
+					Caught.expected(notOnThisVersion);
 					continue;
 				}
 				field.setAccessible(true);
@@ -2327,10 +2348,11 @@ public final class KernelLifecycle {
 				if (open) openRegistry(root); else root.getClass().getMethod("freeze").invoke(root);
 			}
 		} catch (ClassNotFoundException absent) {
+			Caught.expected(absent);
 			ForbricLog.debug("[Forbric/Lifecycle] no BuiltInRegistries to reopen — skipping");
 		} catch (Throwable t) {
-			ForbricLog.warn("[Forbric/Lifecycle] could not " + (open ? "unfreeze" : "freeze") + " the root registry "
-					+ "— a Fabric mod adding its own registry (FabricRegistryBuilder) may fail", unwrap(t));
+			Caught.warn(t, "[Forbric/Lifecycle] could not " + (open ? "unfreeze" : "freeze") + " the root registry "
+					+ "— a Fabric mod adding its own registry (FabricRegistryBuilder) may fail");
 		}
 	}
 
@@ -2347,6 +2369,7 @@ public final class KernelLifecycle {
 			return;
 		} catch (NoSuchMethodException vanilla) {
 			// falls through to the flag below
+			Caught.expected(vanilla);
 		}
 
 		Class<?> mapped = Class.forName("net.minecraft.core.MappedRegistry", false, registry.getClass()
@@ -2404,9 +2427,10 @@ public final class KernelLifecycle {
 				unlocked.add(registry);
 			}
 		} catch (ClassNotFoundException | NoSuchFieldException absent) {
+			Caught.expected(absent);
 			ForbricLog.debug("[Forbric/Lifecycle] no MinecraftForge registry lock to clear — skipping");
 		} catch (Throwable t) {
-			ForbricLog.warn("[Forbric/Lifecycle] could not clear the MinecraftForge registry lock", unwrap(t));
+			Caught.warn(t, "[Forbric/Lifecycle] could not clear the MinecraftForge registry lock");
 		}
 
 		try {
@@ -2421,9 +2445,10 @@ public final class KernelLifecycle {
 				unfrozen.add(registry);
 			}
 		} catch (ClassNotFoundException | NoSuchFieldException absent) {
+			Caught.expected(absent);
 			ForbricLog.debug("[Forbric/Lifecycle] no MinecraftForge ForgeRegistry to unfreeze — skipping");
 		} catch (Throwable t) {
-			ForbricLog.warn("[Forbric/Lifecycle] could not unfreeze the MinecraftForge registries", unwrap(t));
+			Caught.warn(t, "[Forbric/Lifecycle] could not unfreeze the MinecraftForge registries");
 		}
 
 		return new ReopenedRegistries(unlocked, unfrozen);
@@ -2463,9 +2488,8 @@ public final class KernelLifecycle {
 			}
 			ForbricLog.debug("[Forbric/Lifecycle] re-locked %d MinecraftForge registry wrapper(s)", wrappers.size());
 		} catch (Throwable t) {
-			ForbricLog.warn("[Forbric/Lifecycle] could not re-lock %d MinecraftForge registry wrapper(s) — late "
+			Caught.warn(t, "[Forbric/Lifecycle] could not re-lock %d MinecraftForge registry wrapper(s) — late "
 					+ "registration into them stays possible for the rest of this run", wrappers.size());
-			ForbricLog.debug("[Forbric/Lifecycle] re-lock failure", unwrap(t));
 		}
 	}
 
@@ -2473,7 +2497,7 @@ public final class KernelLifecycle {
 		try {
 			target.getClass().getMethod(method).invoke(target);
 		} catch (Throwable t) {
-			ForbricLog.warn("[Forbric/Lifecycle] could not " + what, unwrap(t));
+			Caught.warn(t, "[Forbric/Lifecycle] could not " + what);
 		}
 	}
 
@@ -2543,6 +2567,7 @@ public final class KernelLifecycle {
 		try {
 			owner = Class.forName(className, false, cl);
 		} catch (ClassNotFoundException | LinkageError absent) {
+			Caught.expected(absent);
 			ForbricLog.debug("[Forbric/Lifecycle] %s absent — skipping %s", className, method);
 			return;
 		}
@@ -2550,21 +2575,17 @@ public final class KernelLifecycle {
 		try {
 			hook = owner.getMethod(method);
 		} catch (NoSuchMethodException gone) {
-			ForbricLog.warn("[Forbric/Lifecycle] %s has no %s() — the kernel expected that hook on this carrier, and "
+			Caught.warn(gone, "[Forbric/Lifecycle] %s has no %s() — the kernel expected that hook on this carrier, and "
 					+ "whatever it does is now simply not done", className, method);
 			return;
 		}
 		try {
 			hook.invoke(null);
 		} catch (Throwable t) {
-			ForbricLog.warn("[Forbric/Lifecycle] " + className + "." + method + "() THREW — it exists and did not "
+			Caught.warn(t, "[Forbric/Lifecycle] " + className + "." + method + "() THREW — it exists and did not "
 					+ "finish, so whatever it drives is half-done (an attribute/spawn-placement event aborts at the "
-					+ "first failing mod, and every mod after it in the list is skipped)", unwrap(t));
+					+ "first failing mod, and every mod after it in the list is skipped)");
 		}
-	}
-
-	private static Throwable unwrap(Throwable t) {
-		return t instanceof java.lang.reflect.InvocationTargetException && t.getCause() != null ? t.getCause() : t;
 	}
 
 	/**
@@ -2670,8 +2691,8 @@ public final class KernelLifecycle {
 			ForbricLog.info("[Forbric/Lifecycle] registries reopened for the Fabric client entrypoints "
 					+ "(%d MinecraftForge gate(s) cleared)", opened.count());
 		} catch (Throwable t) {
-			ForbricLog.warn("[Forbric/Lifecycle] could not reopen the registries for the Fabric client "
-					+ "entrypoints — a mod registering content from onInitializeClient will fail", unwrap(t));
+			Caught.warn(t, "[Forbric/Lifecycle] could not reopen the registries for the Fabric client "
+					+ "entrypoints — a mod registering content from onInitializeClient will fail");
 		}
 
 		// Traditional-MinecraftForge constructs its own mods from ClientModLoader.begin(Minecraft, ...), i.e. in
@@ -2695,7 +2716,7 @@ public final class KernelLifecycle {
 			}
 			KernelFabricEcosystem.runClientEntrypoints();
 		} catch (Throwable t) {
-			ForbricLog.warn("[Forbric/Lifecycle] client entrypoints failed", unwrap(t));
+			Caught.warn(t, "[Forbric/Lifecycle] client entrypoints failed");
 		} finally {
 			// Fabric freezes here, after the main and client entrypoints: the Fabric injectors on
 			// BuiltInRegistries.freeze() that FabricFreezeHookMixinAdapter moved run around the freeze that closes
@@ -2760,8 +2781,8 @@ public final class KernelLifecycle {
 						late.size(), fired);
 			}
 		} catch (Throwable t) {
-			ForbricLog.warn("[Forbric/Lifecycle] could not construct the deferred traditional-Forge mods — they "
-					+ "stay unconstructed, which is where they were before", unwrap(t));
+			Caught.warn(t, "[Forbric/Lifecycle] could not construct the deferred traditional-Forge mods — they "
+					+ "stay unconstructed, which is where they were before");
 			return;
 		}
 		// The point MinecraftForge's own ClientModLoader.begin finishes gathering: every Forge mod is constructed
@@ -2824,7 +2845,7 @@ public final class KernelLifecycle {
 						+ "get() on it without checking");
 			}
 		} catch (Throwable t) {
-			ForbricLog.warn("[Forbric/ClientResources] client resource preload did not run", unwrap(t));
+			Caught.warn(t, "[Forbric/ClientResources] client resource preload did not run");
 		}
 	}
 
@@ -2861,11 +2882,12 @@ public final class KernelLifecycle {
 						String.join(", ", moved.stream().map(row -> row.substring(0, row.indexOf(" -> "))).toList()));
 			}
 		} catch (NoSuchMethodException | ClassNotFoundException absent) {
+			Caught.expected(absent);
 			ForbricLog.debug("[Forbric/RegistrySync] no %s on BuiltInRegistries — nothing waits for Fabric's freeze point", hook);
 		} catch (Throwable t) {
-			ForbricLog.warn("[Forbric/RegistrySync] a Fabric mod's injector on BuiltInRegistries.freeze() failed at Fabric's "
+			Caught.warn(t, "[Forbric/RegistrySync] a Fabric mod's injector on BuiltInRegistries.freeze() failed at Fabric's "
 					+ "registry freeze point (" + hook + "); every later one on that hook was skipped. Moved here: "
-					+ moved, unwrap(t));
+					+ moved);
 		}
 	}
 
@@ -2883,7 +2905,7 @@ public final class KernelLifecycle {
 			freeze(cl);
 			rebuildNeoForgeBlockStateIds(cl);
 		} catch (Throwable t) {
-			ForbricLog.warn("[Forbric/Lifecycle] could not re-close after the Fabric client entrypoints", unwrap(t));
+			Caught.warn(t, "[Forbric/Lifecycle] could not re-close after the Fabric client entrypoints");
 		}
 	}
 }

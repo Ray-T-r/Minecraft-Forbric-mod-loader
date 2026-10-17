@@ -9,6 +9,7 @@ import org.objectweb.asm.ClassReader;
 import org.objectweb.asm.Handle;
 import org.objectweb.asm.tree.*;
 import org.spongepowered.asm.mixin.transformer.ClassInfo;
+import net.forbric.kernel.util.Caught;
 
 /** Observes successful class definitions, after all adapters and Mixin. Zero standard-handler references
  * prove that handler was not attached. A reference proves attachment, not runtime execution of the feature. */
@@ -117,6 +118,7 @@ public final class FinalMixinApplications {
   if(!TARGETS.containsKey(binary))return;
   try { observe(binary,bytes,FinalMixinApplications::renamed); }
   catch(RuntimeException|LinkageError unavailable) {
+   Caught.warn(unavailable,"[Forbric/Mixin] could not check which final injections reached %s; its mixins are recorded as suspected",binary);
    for(String mixin:TARGETS.getOrDefault(binary,Set.of())) {
     Plan plan=PLANS.get(mixin);if(plan==null)continue;
     MixinCompatibility.record(plan.config().name(),mixin,"Final injection attachment could not be established",

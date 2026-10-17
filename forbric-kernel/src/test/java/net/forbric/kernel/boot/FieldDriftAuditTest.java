@@ -36,6 +36,7 @@ import org.objectweb.asm.Opcodes;
 
 import net.forbric.api.Ecosystem;
 import net.forbric.api.ModCatalog;
+import net.forbric.kernel.ExpectCaught;
 
 /** The needle hint, the ASM confirm, and the catalog mark — over synthetic jars. */
 @org.junit.jupiter.api.parallel.ResourceLock("ModCatalog")
@@ -104,6 +105,7 @@ class FieldDriftAuditTest {
 				+ "vanilla's KeyMapping.MAP is given back: " + FieldDriftAudit.hits());
 	}
 
+	@ExpectCaught("could not parse a class in junk.jar")
 	@Test
 	void unreadableBytesNameNobody() {
 		FieldDriftAudit.note("junk.jar", new byte[] { 1, 2, 3 });

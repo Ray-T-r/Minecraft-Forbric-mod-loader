@@ -17,6 +17,8 @@ import org.objectweb.asm.Type;
 import org.objectweb.asm.tree.*;
 import org.objectweb.asm.tree.analysis.*;
 
+import net.forbric.kernel.util.Caught;
+
 /**
  * Re-runs a stretch of a native method's own instructions inside a handler a mixin will merge into the same class: the
  * vanilla control flow that decided whether — and with which locals — a call was reached, where a carrier has moved that
@@ -208,6 +210,7 @@ final class MixinNativeReplay {
 		try {
 			return new Analyzer<>(new BasicInterpreter()).analyze(owner, method);
 		} catch (AnalyzerException | RuntimeException invalid) {
+			Caught.expected(invalid);
 			return null;
 		}
 	}
@@ -243,6 +246,8 @@ final class MixinNativeReplay {
 			try {
 				callee = calleeOwner.equals(owner.name) ? owner : classes.apply(calleeOwner);
 			} catch (RuntimeException unreadable) {
+				Caught.warn(unreadable, "[Forbric/Mixin] could not read %s to follow its %s%s; taken as absent",
+						calleeOwner, calleeName, calleeDesc);
 				callee = null;
 			}
 			if (callee == null || callee.methods == null) continue;
@@ -285,6 +290,7 @@ final class MixinNativeReplay {
 			try {
 				callee = calleeOwner.equals(owner.name) ? owner : calleeOwner.equals(target.name) ? target : classes.apply(calleeOwner);
 			} catch (RuntimeException unreadable) {
+				Caught.warn(unreadable, "[Forbric/Mixin] could not read %s to follow its %s%s; taken as absent", calleeOwner, calleeName, calleeDesc);
 				callee = null;
 			}
 			if (callee == null || callee.methods == null) continue;
@@ -340,7 +346,11 @@ final class MixinNativeReplay {
 			if (node != null) return (node.access & Opcodes.ACC_INTERFACE) != 0 ? "java/lang/Object" : node.superName;
 			Class<?> loaded = Class.forName(type.replace('/', '.'), false, ClassLoader.getPlatformClassLoader());
 			return loaded.isInterface() || loaded.getSuperclass() == null ? "java/lang/Object" : Type.getInternalName(loaded.getSuperclass());
+		} catch (ClassNotFoundException absent) {
+			Caught.expected(absent);
+			return "java/lang/Object";
 		} catch (Throwable unknown) {
+			Caught.warn(unknown, "[Forbric/Mixin] could not find the superclass of %s; taken as java/lang/Object", type);
 			return "java/lang/Object";
 		}
 	}

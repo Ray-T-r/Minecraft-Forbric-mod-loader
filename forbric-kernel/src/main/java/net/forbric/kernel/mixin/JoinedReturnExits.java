@@ -23,6 +23,8 @@ import org.objectweb.asm.tree.analysis.Frame;
 import org.objectweb.asm.tree.analysis.SourceInterpreter;
 import org.objectweb.asm.tree.analysis.SourceValue;
 
+import net.forbric.kernel.util.Caught;
+
 /**
  * Where a method's native returns went, when a carrier joined several of them into one hook call placed just before
  * the current body's final return — the shape NeoForge gives {@code KeyboardHandler.keyPress}, whose exits all reach
@@ -213,6 +215,7 @@ final class JoinedReturnExits {
 			return new JoinedReturnExits(parameter, constants, originalReturns.size(), currentReturns.size(), finalValues,
 					currentFinal.isEmpty(), joined, CallOccurrenceAlignment.member(first), entryOrdinal);
 		} catch (AnalyzerException | RuntimeException unanalysable) {
+			Caught.expected(unanalysable);
 			return null;
 		}
 	}

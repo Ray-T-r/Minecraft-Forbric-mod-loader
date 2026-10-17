@@ -11,6 +11,7 @@ import net.minecraft.util.RandomSource;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraftforge.client.model.data.ModelData;
 import net.minecraftforge.client.model.data.ModelDataManager;
+import net.forbric.kernel.util.Caught;
 
 /**
  * MinecraftForge's model-data contract, asked where the merged game asks NeoForge's contextual model questions
@@ -48,6 +49,7 @@ public final class KernelForgeModelData {
 					try {
 						declared = c.getDeclaredMethods();
 					} catch (LinkageError unresolvable) {
+						Caught.expected(unresolvable);
 						return true;    // a signature names a class that is not there: ask it the full contract, as Forge would
 					}
 					for (var method : declared) {

@@ -32,6 +32,7 @@ import org.objectweb.asm.MethodVisitor;
 import org.objectweb.asm.Opcodes;
 
 import net.fabricmc.api.EnvType;
+import net.forbric.kernel.ExpectCaught;
 
 /**
  * Proves {@link GuestMixinPluginGuard} actually contains a throwing plugin — by DEFINING the transformed class and
@@ -250,6 +251,7 @@ class GuestMixinPluginGuardTest {
 		assertTrue(GuestMixinPluginGuard.declaresThePluginInterface(cw.toByteArray()));
 	}
 
+	@ExpectCaught("could not read a class header to check for a mixin config plugin")
 	@org.junit.jupiter.api.Test
 	void bytesThatAreNotAClassAnswerNoRatherThanThrowing() {
 		// Something else in the chain will fail on these and say so properly; a guard is not the place to raise it.

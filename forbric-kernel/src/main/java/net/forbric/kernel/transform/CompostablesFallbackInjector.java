@@ -17,6 +17,7 @@ import org.objectweb.asm.tree.InsnList;
 import org.objectweb.asm.tree.InsnNode;
 import org.objectweb.asm.tree.MethodInsnNode;
 import org.objectweb.asm.tree.MethodNode;
+import net.forbric.kernel.util.Caught;
 
 /**
  * A Fabric mod's compostables go in a composter again: the merged composter asks vanilla's {@code COMPOSTABLES} map when
@@ -174,6 +175,7 @@ public final class CompostablesFallbackInjector implements ClassTransformer {
 			try {
 				frames = new org.objectweb.asm.tree.analysis.Analyzer<>(new org.objectweb.asm.tree.analysis.SourceInterpreter()).analyze(owner.name, method);
 			} catch (org.objectweb.asm.tree.analysis.AnalyzerException | RuntimeException unreadable) {
+				Caught.expected(unreadable);
 				continue;
 			}
 			List<FieldInsnNode> reads = new ArrayList<>();

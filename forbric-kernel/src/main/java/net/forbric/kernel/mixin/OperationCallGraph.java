@@ -9,6 +9,7 @@ import org.objectweb.asm.*;
 import org.objectweb.asm.tree.*;
 import org.objectweb.asm.tree.analysis.*;
 import net.forbric.kernel.boot.DefinedMethodContracts.MethodContract;
+import net.forbric.kernel.util.Caught;
 
 /** A source invocation's exact operands identify one call through two current gateways, including inherited ones. */
 final class OperationCallGraph implements Opcodes {
@@ -103,7 +104,7 @@ final class OperationCallGraph implements Opcodes {
         final MethodNode method;final Frame<SourceValue>[] frames;final Origins origins;final Function<String,ClassNode> classes;
         final Map<AbstractInsnNode,Expr> cache=new IdentityHashMap<>();final Set<AbstractInsnNode> visiting=Collections.newSetFromMap(new IdentityHashMap<>());final Set<MethodContract> getters=new LinkedHashSet<>();
         Evidence(MethodNode method,Frame<SourceValue>[] frames,Origins origins,Function<String,ClassNode> classes){this.method=method;this.frames=frames;this.origins=origins;this.classes=classes;}
-        static Evidence create(String owner,MethodNode method,Function<String,ClassNode> classes,Map<Integer,Expr> parameters){try{Origins origins=new Origins(owner,parameters);return new Evidence(method,new Analyzer<>(origins).analyze(owner,method),origins,classes);}catch(AnalyzerException|RuntimeException invalid){return null;}}
+        static Evidence create(String owner,MethodNode method,Function<String,ClassNode> classes,Map<Integer,Expr> parameters){try{Origins origins=new Origins(owner,parameters);return new Evidence(method,new Analyzer<>(origins).analyze(owner,method),origins,classes);}catch(AnalyzerException|RuntimeException invalid){Caught.expected(invalid);return null;}}
         List<Expr> operands(MethodInsnNode call){return inputs(call,Type.getArgumentTypes(call.desc).length+(call.getOpcode()==INVOKESTATIC?0:1));}
         List<Expr> inputs(AbstractInsnNode instruction,int count){int index=method.instructions.indexOf(instruction);Frame<SourceValue> frame=index<0?null:frames[index];if(frame==null||frame.getStackSize()<count)return null;List<Expr> values=new ArrayList<>();for(int i=frame.getStackSize()-count;i<frame.getStackSize();i++){Expr expression=value(frame.getStack(i));if(expression==null)return null;values.add(expression);}return List.copyOf(values);}
         Expr value(SourceValue value){return value!=null&&value.insns.size()==1?producer(value.insns.iterator().next()):null;}

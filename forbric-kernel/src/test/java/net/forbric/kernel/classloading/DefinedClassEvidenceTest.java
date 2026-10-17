@@ -11,6 +11,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import org.objectweb.asm.ClassWriter;
 import org.objectweb.asm.Opcodes;
+import net.forbric.kernel.ExpectCaught;
 import static org.junit.jupiter.api.Assertions.*;
 
 class DefinedClassEvidenceTest {
@@ -79,6 +80,7 @@ class DefinedClassEvidenceTest {
   } finally { if(old==null) System.clearProperty(DefinedClassEvidence.PROPERTY); else System.setProperty(DefinedClassEvidence.PROPERTY,old); }
  }
  /** A write that fails marks the session incomplete; it never turns a successful definition into an exception. */
+ @ExpectCaught("could not record defined bytes for game/Unrecorded")
  @Test void anUnwritableSessionIsMarkedIncompleteAndTheClassIsStillDefined() throws Exception {
   String old=System.getProperty(DefinedClassEvidence.PROPERTY);
   System.setProperty(DefinedClassEvidence.PROPERTY, temporary.toString());
@@ -99,6 +101,7 @@ class DefinedClassEvidenceTest {
   * marker away -- unlinking needs no free space and no writable manifest -- so the session stops vouching for
   * itself and the reader refuses it.
   */
+ @ExpectCaught({"could not record defined bytes for game/Lost", "could not write the #incomplete row for game/Lost"})
  @Test void aLossThatCannotEvenBeWrittenDownStillWithdrawsTheSession() throws Exception {
   String old=System.getProperty(DefinedClassEvidence.PROPERTY);
   System.setProperty(DefinedClassEvidence.PROPERTY, temporary.toString());
@@ -120,6 +123,7 @@ class DefinedClassEvidenceTest {
   * A session directory that refuses every change: nothing on disk can carry the loss, so the kernel says in the
   * log which session to discard -- and the definition still succeeds.
   */
+ @ExpectCaught({"could not record defined bytes for game/Frozen", "could not write the #incomplete row for game/Frozen", "and could not withdraw"})
  @Test void aSessionThatCannotEvenWithdrawItselfSaysSoAndStillDefines() throws Exception {
   String old=System.getProperty(DefinedClassEvidence.PROPERTY);
   System.setProperty(DefinedClassEvidence.PROPERTY, temporary.toString());

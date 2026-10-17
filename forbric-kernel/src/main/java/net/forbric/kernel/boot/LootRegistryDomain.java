@@ -6,6 +6,7 @@ import java.util.function.Function;
 import org.objectweb.asm.*;
 import org.objectweb.asm.tree.*;
 import org.objectweb.asm.tree.analysis.*;
+import net.forbric.kernel.util.Caught;
 
 /** Proves that the closed values domain contains exactly one datatype for the bridge's loot registry key. */
 final class LootRegistryDomain implements Opcodes {
@@ -38,7 +39,7 @@ final class LootRegistryDomain implements Opcodes {
             }
             Set<String> seen=new HashSet<>();for(String key:mapping.values()){String id=identifiers.get(key);if(id==null||!seen.add(id))return null;}
             return Map.of(DATA,scoped(data,List.of(values,getter,init),true),KEYS,scoped(keys,List.of(keyInit),false));
-        }catch(RuntimeException|AnalyzerException unknown){return null;}
+        }catch(RuntimeException|AnalyzerException unknown){Caught.warn(unknown,"[Forbric/Mixin] could not prove the loot registry domain (%s, %s); the loot callback group stays unclaimed",DATA,KEYS);return null;}
     }
     private static ClassNode scoped(ClassNode owner,List<MethodNode> roots,boolean constructors){
         Set<MethodNode> methods=new LinkedHashSet<>(roots);if(constructors)for(MethodNode method:owner.methods)if(method.name.equals("<init>"))methods.add(method);

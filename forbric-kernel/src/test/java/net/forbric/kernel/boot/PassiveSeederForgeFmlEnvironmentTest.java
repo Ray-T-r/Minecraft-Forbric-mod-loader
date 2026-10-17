@@ -28,6 +28,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 
 import net.forbric.api.Side;
+import net.forbric.kernel.ExpectCaught;
 import net.forbric.kernel.TestFixtures;
 import net.forbric.kernel.TestFixtures.Fixture;
 
@@ -65,6 +66,7 @@ class PassiveSeederForgeFmlEnvironmentTest {
 		PassiveSeeder.resetForgeIdentityForTests();
 	}
 
+	@ExpectCaught("could not seed traditional-Forge FMLLoader identity")
 	@Test
 	void theKernelDecidesDistOnTheClientSide() throws Exception {
 		ClassLoader cl = forgeLoader();
@@ -74,6 +76,7 @@ class PassiveSeederForgeFmlEnvironmentTest {
 		assertEquals(true, environment(cl).getField("production").get(null));
 	}
 
+	@ExpectCaught("could not seed traditional-Forge FMLLoader identity")
 	@Test
 	void andOnTheDedicatedServerSide() throws Exception {
 		ClassLoader cl = forgeLoader();
@@ -86,6 +89,7 @@ class PassiveSeederForgeFmlEnvironmentTest {
 	 * Mixin's {@code prepareConfigs} is exactly this: the initializer runs against an unseeded {@code FMLLoader},
 	 * {@code dist} is decided null, and no later seeding can move it.
 	 */
+	@ExpectCaught("could not seed traditional-Forge FMLLoader identity")
 	@Test
 	void anEarlyReaderPoisonsDistPermanently() throws Exception {
 		ClassLoader cl = forgeLoader();
@@ -109,6 +113,7 @@ class PassiveSeederForgeFmlEnvironmentTest {
 	 * early would turn {@code seedAll}'s repeat into a silent no-op and delete the retry. The dist is decided
 	 * either way, which is the half that cannot be retried.
 	 */
+	@ExpectCaught("could not seed traditional-Forge FMLLoader identity")
 	@Test
 	void aPartialSeedDoesNotArmTheGuardSoTheRepeatStillRetries() throws Exception {
 		ClassLoader cl = forgeLoader();

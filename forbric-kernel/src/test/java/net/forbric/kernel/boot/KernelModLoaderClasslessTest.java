@@ -50,6 +50,7 @@ import org.objectweb.asm.Opcodes;
 import net.forbric.api.DiscoveredMod;
 import net.forbric.api.Ecosystem;
 import net.forbric.api.Side;
+import net.forbric.kernel.ExpectCaught;
 import net.forbric.kernel.TestFixtures;
 import net.forbric.kernel.TestFixtures.Fixture;
 
@@ -124,6 +125,7 @@ class KernelModLoaderClasslessTest {
 				.isEmpty());
 	}
 
+	@ExpectCaught("could not read the META-INF/neoforge.mods.toml of junk.jar")
 	@Test
 	void theLanguageIsReadFromTheFamilysOwnManifest() throws Exception {
 		Path lowcode = KernelModLoaderDeclaredTest.neoJar(tmp.resolve("lowcode.jar"), "lowcodefml", "x", "1", "");

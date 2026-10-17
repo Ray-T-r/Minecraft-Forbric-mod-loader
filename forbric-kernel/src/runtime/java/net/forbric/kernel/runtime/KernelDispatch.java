@@ -11,6 +11,7 @@ import java.util.LinkedHashSet;
 import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
+import net.forbric.kernel.util.Caught;
 
 /**
  * Which implementation a virtual call selects for a receiver: whether it is still the one a given class or interface
@@ -76,6 +77,7 @@ public final class KernelDispatch {
 			return candidates.size() == 1 && candidates.iterator().next().getName().equals(declarer)
 					&& !Modifier.isAbstract(declared(candidates.iterator().next(), name, descriptor).getModifiers());
 		} catch (LinkageError | SecurityException unreadable) {
+			Caught.expected(unreadable);
 			return false;
 		}
 	}

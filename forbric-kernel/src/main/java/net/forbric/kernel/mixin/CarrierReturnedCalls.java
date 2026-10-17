@@ -30,6 +30,7 @@ import org.objectweb.asm.tree.analysis.SourceValue;
 
 import net.forbric.api.Ecosystem;
 import net.forbric.kernel.util.ForbricLog;
+import net.forbric.kernel.util.Caught;
 
 /**
  * A {@code @WrapOperation} of a vanilla call whose answer is the method's answer, moved to that answer where the carrier
@@ -291,6 +292,7 @@ public final class CarrierReturnedCalls {
 		try {
 			frames = new Analyzer<>(new SourceInterpreter()).analyze(mixin.name, handler);
 		} catch (AnalyzerException | RuntimeException unanalysable) {
+			Caught.expected(unanalysable);
 			return false;
 		}
 		int operation = slots[operands.size()];
@@ -421,6 +423,7 @@ public final class CarrierReturnedCalls {
 		try {
 			new Analyzer<>(new BasicVerifier()).analyze(mixin.name, wrapper);
 		} catch (AnalyzerException | RuntimeException unverifiable) {
+			Caught.expected(unverifiable);
 			handler.name = name;
 			return null;
 		}
@@ -456,6 +459,7 @@ public final class CarrierReturnedCalls {
 		try {
 			return new Analyzer<>(new SourceInterpreter()).analyze(owner, method);
 		} catch (AnalyzerException | RuntimeException unanalysable) {
+			Caught.expected(unanalysable);
 			return null;
 		}
 	}

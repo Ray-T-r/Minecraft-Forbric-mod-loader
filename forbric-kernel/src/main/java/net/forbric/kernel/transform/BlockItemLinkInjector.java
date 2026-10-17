@@ -4,6 +4,7 @@ package net.forbric.kernel.transform;
 import java.util.HashSet;
 import java.util.Set;
 
+import net.forbric.kernel.util.Caught;
 import net.forbric.kernel.util.ForbricLog;
 import org.objectweb.asm.ClassReader;
 import org.objectweb.asm.ClassWriter;
@@ -98,7 +99,9 @@ public final class BlockItemLinkInjector implements ClassTransformer {
 		try {
 			created = shareCreatedMap(node.name, onCreate, keys);
 		} catch (AnalyzerException e) {
-			return declined("onCreate does not analyze: " + e.getMessage(), bytes);
+			Caught.warn(e, "[Forbric/Registries] left MinecraftForge's item callbacks as merged: onCreate does not"
+					+ " analyze — Block.asItem() answers AIR until the registration window closes");
+			return bytes;
 		}
 		if (created == 0) return declined("onCreate installs no map under the key " + keys, bytes);
 		int cleared = onClear == null ? 0 : keepSharedMapOnClear(onClear, keys);

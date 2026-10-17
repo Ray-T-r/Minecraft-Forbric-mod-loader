@@ -6,6 +6,7 @@ import net.forbric.api.Ecosystem;
 import org.objectweb.asm.*;
 import org.objectweb.asm.tree.*;
 import org.objectweb.asm.tree.analysis.*;
+import net.forbric.kernel.util.Caught;
 
 /** A native widened body may add one context-dependent early exit while retaining the complete source body. */
 final class NativeOverloadBody implements Opcodes {
@@ -76,7 +77,7 @@ final class NativeOverloadBody implements Opcodes {
                         ||instruction.getOpcode()==MONITORENTER||instruction.getOpcode()==MONITOREXIT||instruction.getOpcode()>=IRETURN&&instruction.getOpcode()<=RETURN)return false;
             }
             return context&&exit&&conditional&&call;
-        }catch(AnalyzerException|RuntimeException invalid){return false;}
+        }catch(AnalyzerException|RuntimeException invalid){Caught.expected(invalid);return false;}
     }
     private static int position(List<AbstractInsnNode> code,LabelNode label){AbstractInsnNode real=label;while(real!=null&&real.getOpcode()<0)real=real.getNext();return code.indexOf(real);}
     private static int slots(MethodNode method){return ((method.access&ACC_STATIC)==0?1:0)+Arrays.stream(Type.getArgumentTypes(method.desc)).mapToInt(Type::getSize).sum();}

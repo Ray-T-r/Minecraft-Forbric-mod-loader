@@ -26,6 +26,7 @@ import org.objectweb.asm.tree.analysis.SourceValue;
 
 import net.forbric.api.Ecosystem;
 import net.forbric.kernel.util.ForbricLog;
+import net.forbric.kernel.util.Caught;
 
 /**
  * Turns a guest {@code @Inject(locals = CAPTURE_*)} into MixinExtras {@code @Local}s that read, in the merged body, the
@@ -272,6 +273,7 @@ public final class MixinCapturedLocals {
 				@Override public SourceValue copyOperation(AbstractInsnNode instruction, SourceValue value) { return value; }
 			}).analyze(owner, method);
 		} catch (AnalyzerException | RuntimeException invalid) {
+			Caught.expected(invalid);
 			return null;
 		}
 	}

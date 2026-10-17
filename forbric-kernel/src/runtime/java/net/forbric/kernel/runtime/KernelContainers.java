@@ -21,6 +21,7 @@ import java.nio.file.Path;
 import java.util.HashMap;
 
 import net.forbric.api.DiscoveredMod;
+import net.forbric.kernel.util.Caught;
 import net.forbric.kernel.util.ForbricLog;
 import net.minecraftforge.unsafe.UnsafeHacks;
 import net.neoforged.bus.api.IEventBus;
@@ -132,8 +133,8 @@ public final class KernelContainers {
 			ForbricLog.debug("[Forbric/Container] built genuine FMLModContainer for '%s'", modId);
 			return container;
 		} catch (Throwable t) {
-			ForbricLog.debug("[Forbric/Container] no genuine FMLModContainer for '%s' (%s) — using the kernel's "
-					+ "own subclass", modId, String.valueOf(t));
+			Caught.warn(t, "[Forbric/Container] no genuine FMLModContainer for '%s' — using the kernel's own subclass, which"
+					+ " fails a mod's instanceof FMLModContainer check", modId);
 			return null;
 		}
 	}

@@ -25,6 +25,7 @@ import org.objectweb.asm.tree.MethodInsnNode;
 import org.objectweb.asm.tree.MethodNode;
 
 import net.forbric.api.Ecosystem;
+import net.forbric.kernel.util.Caught;
 import net.forbric.kernel.util.ForbricLog;
 
 /**
@@ -77,6 +78,7 @@ public final class MergedBaseUncalledMethods {
 				return new Row(columns[0].substring(0, hash).trim(), columns[0].substring(hash + 1).trim(),
 						Set.copyOf(ecosystems), callers);
 			} catch (IllegalArgumentException unknown) {
+				Caught.warn(unknown, "[Forbric/Mixin] unreadable row in %s, skipped: %s", TABLE, line);
 				return null;
 			}
 		}
@@ -104,7 +106,7 @@ public final class MergedBaseUncalledMethods {
 				}
 			}
 		} catch (IOException unreadable) {
-			ForbricLog.warn("[Forbric/Mixin] could not read %s; every merged-base method reads as called", TABLE);
+			Caught.warn(unreadable, "[Forbric/Mixin] could not read %s; every merged-base method reads as called", TABLE);
 		}
 		rows = List.copyOf(read);
 		return rows;
@@ -152,8 +154,8 @@ public final class MergedBaseUncalledMethods {
 					}
 				}
 			} catch (IOException | RuntimeException unreadable) {
-				ForbricLog.debug("[Forbric/Mixin] could not read %s for calls into uncalled merged-base methods: %s",
-						jar.getFileName(), unreadable);
+				Caught.warn(unreadable, "[Forbric/Mixin] could not read %s for calls into uncalled merged-base methods; "
+						+ "what it calls reads as uncalled", jar.getFileName());
 			}
 		}
 		if (!GUEST_CALLED.isEmpty()) {
@@ -168,6 +170,8 @@ public final class MergedBaseUncalledMethods {
 		try {
 			reader = new ClassReader(classBytes);
 		} catch (RuntimeException notAClass) {
+			Caught.warn(notAClass, "[Forbric/Mixin] a .class entry of %d bytes is not a class ASM can read; its calls into "
+					+ "uncalled merged-base methods are not seen", classBytes == null ? -1 : classBytes.length);
 			return;
 		}
 		Set<String> wanted = keys();

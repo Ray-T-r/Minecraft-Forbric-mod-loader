@@ -21,6 +21,7 @@ import net.forbric.api.CompatibilityFinding;
 import net.forbric.api.CompatibilityFindings;
 import net.forbric.api.Ecosystem;
 import net.forbric.api.ModCatalog;
+import net.forbric.kernel.ExpectCaught;
 import net.forbric.kernel.fabric.FabricModMetadataParser;
 import net.forbric.kernel.fabric.KernelFabricLoader;
 import net.forbric.kernel.fabric.KernelModContainer;
@@ -47,6 +48,7 @@ class EntrypointResolveFailureTest {
 		healthyRuns = 0;
 	}
 
+	@ExpectCaught({"main entrypoint of brokennet failed", "brokennet: its 'main' entrypoint"})
 	@Test void aLifecycleEntrypointThatCannotLoadFailsItsModThroughTheDriver() throws Exception {
 		KernelFabricLoader loader = loader();
 		register(loader, "brokennet", "main", "probe.CommonPacketsImpl::init");
@@ -68,6 +70,7 @@ class EntrypointResolveFailureTest {
 	 * preLaunch is one of the keys the loader hands to its driver, so its driver must fail the mod too. It only logged
 	 * an ERROR: Core Lib's preLaunch died that way on every sweep and the Mods screen still called Core Lib loaded.
 	 */
+	@ExpectCaught({"preLaunch entrypoint of brokenpre failed", "brokenpre: its 'preLaunch' entrypoint"})
 	@Test void aPreLaunchEntrypointThatCannotLoadFailsItsModThroughTheDriver() throws Exception {
 		KernelFabricLoader loader = loader();
 		register(loader, "brokenpre", "preLaunch", "probe.PreLaunch");
@@ -84,6 +87,7 @@ class EntrypointResolveFailureTest {
 		assertEquals("initialization:entrypoint:preLaunch", finding.id());
 	}
 
+	@ExpectCaught({"preLaunch entrypoint of brokenpre failed", "brokenpre: its 'preLaunch' entrypoint"})
 	@Test void aPreLaunchFailureIsOnlyLoggedWithItsSwitch() throws Exception {
 		System.setProperty(KernelFabricEcosystem.PRELAUNCH_FAILURE_PROPERTY, "warn");
 		KernelFabricLoader loader = loader();
@@ -96,6 +100,7 @@ class EntrypointResolveFailureTest {
 		assertTrue(ModCatalog.failures().isEmpty(), "an ERROR line and nothing else, as it used to be");
 	}
 
+	@ExpectCaught("brokennet: its 'main' entrypoint")
 	@Test void theSwitchSkipsItAsBefore() throws Exception {
 		System.setProperty(KernelFabricLoader.RESOLVE_FAILURE_PROPERTY, "warn");
 		KernelFabricLoader loader = loader();
@@ -109,6 +114,7 @@ class EntrypointResolveFailureTest {
 	}
 
 	/** Another key is the reading mod's business: skipped, and a SUSPECTED finding names the key, once. */
+	@ExpectCaught("withplugin: its 'modmenu' entrypoint")
 	@Test void aPluginEntrypointThatCannotLoadIsSkippedAndSuspected() throws Exception {
 		KernelFabricLoader loader = loader();
 		register(loader, "withplugin", "modmenu", "probe.ModMenuIntegration");

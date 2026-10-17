@@ -21,6 +21,7 @@ import com.electronwill.nightconfig.core.CommentedConfig;
 import com.electronwill.nightconfig.toml.TomlParser;
 import net.forbric.api.Ecosystem;
 import net.forbric.api.ModCatalog;
+import net.forbric.kernel.ExpectCaught;
 import net.forbric.kernel.TestFixtures;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
@@ -79,6 +80,7 @@ class KernelForgeConfigLoadTest {
         }
     }
 
+    @ExpectCaught("broken-common.toml could not be opened")
     @Test
     void actualTomlFailureOnlyDegradesItsOwnerAndTheFollowingConfigStillLoads() throws Exception {
         try (Fixture f = fixture()) {
@@ -137,6 +139,7 @@ class KernelForgeConfigLoadTest {
         }
     }
 
+    @ExpectCaught("accept.toml could not be opened")
     @Test
     void acceptLoadingAndSaveFailuresWithPublishedDataAreNotRetriedByLateLoading() throws Exception {
         try (Fixture f = fixture()) {

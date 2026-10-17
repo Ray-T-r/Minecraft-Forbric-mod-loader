@@ -31,6 +31,7 @@ import org.objectweb.asm.tree.analysis.SourceInterpreter;
 import org.objectweb.asm.tree.analysis.SourceValue;
 
 import net.forbric.kernel.util.ForbricLog;
+import net.forbric.kernel.util.Caught;
 
 /**
  * Gives a merged method's local back the variable-table range that covers its own uses.
@@ -104,7 +105,7 @@ public final class LocalRanges implements ClassTransformer {
 			ForbricLog.debug("[Forbric/LocalRanges] %s: %d local range(s) now start at the local's declaring store", className, widened);
 			return writer.toByteArray();
 		} catch (RuntimeException unreadable) {
-			ForbricLog.debug("[Forbric/LocalRanges] %s left as merged (%s)", className, unreadable);
+			Caught.warn(unreadable, "[Forbric/LocalRanges] could not widen the local ranges of %s; it is left as merged", className);
 			return classBytes;
 		}
 	}
@@ -129,6 +130,7 @@ public final class LocalRanges implements ClassTransformer {
 				try {
 					frames = new Analyzer<>(new SourceInterpreter()).analyze(owner, method);
 				} catch (AnalyzerException unreadable) {
+					Caught.expected(unreadable);
 					return widened;
 				}
 			}

@@ -5,6 +5,7 @@ import java.util.*;
 import java.util.function.Function;
 import org.objectweb.asm.*;
 import org.objectweb.asm.tree.*;
+import net.forbric.kernel.util.Caught;
 
 /** Ordered short-circuit trees. Opaque calls are recorded as ordered operand recipes, never flattened into sets. */
 final class PredicateDecisionGraph implements Opcodes {
@@ -15,8 +16,8 @@ final class PredicateDecisionGraph implements Opcodes {
     record Value(Expr expression)implements Tree{}
     record State(List<Expr> stack,Map<Integer,Expr> locals){State copy(){return new State(new ArrayList<>(stack),new HashMap<>(locals));}}
     private PredicateDecisionGraph(){}
-    static Tree helper(MethodNode method,Function<Expr,Expr> normalize){Map<Integer,Expr>locals=new HashMap<>();locals.put(0,Expr.root(0));locals.put(1,Expr.root(1));try{return walk(method.instructions.getFirst(),new State(new ArrayList<>(),locals),null,-1,-1,normalize,new HashSet<>(),0);}catch(RuntimeException unknown){return null;}}
-    static Tree eventPredicate(MethodNode method,AbstractInsnNode stop,int canBreathe,int consume,Function<Expr,Expr> normalize){Map<Integer,Expr>locals=new HashMap<>();Type[]args=Type.getArgumentTypes(method.desc);int slot=0;for(int i=0;i<args.length;i++){locals.put(slot,Expr.root(i));slot+=args[i].getSize();}try{return walk(method.instructions.getFirst(),new State(new ArrayList<>(),locals),stop,canBreathe,consume,normalize,new HashSet<>(),0);}catch(RuntimeException unknown){return null;}}
+    static Tree helper(MethodNode method,Function<Expr,Expr> normalize){Map<Integer,Expr>locals=new HashMap<>();locals.put(0,Expr.root(0));locals.put(1,Expr.root(1));try{return walk(method.instructions.getFirst(),new State(new ArrayList<>(),locals),null,-1,-1,normalize,new HashSet<>(),0);}catch(RuntimeException unknown){Caught.expected(unknown);return null;}}
+    static Tree eventPredicate(MethodNode method,AbstractInsnNode stop,int canBreathe,int consume,Function<Expr,Expr> normalize){Map<Integer,Expr>locals=new HashMap<>();Type[]args=Type.getArgumentTypes(method.desc);int slot=0;for(int i=0;i<args.length;i++){locals.put(slot,Expr.root(i));slot+=args[i].getSize();}try{return walk(method.instructions.getFirst(),new State(new ArrayList<>(),locals),stop,canBreathe,consume,normalize,new HashSet<>(),0);}catch(RuntimeException unknown){Caught.expected(unknown);return null;}}
     private static Tree walk(AbstractInsnNode raw,State state,AbstractInsnNode stop,int breathe,int consume,Function<Expr,Expr> normalize,Set<AbstractInsnNode>path,int depth){
         if(depth>256)throw new IllegalArgumentException("deep predicate");for(AbstractInsnNode instruction=next(raw);instruction!=null;instruction=next(instruction.getNext())){
             if(instruction==stop){if(!state.stack.isEmpty())throw new IllegalArgumentException("nonempty event operand stack");Expr b=state.locals.get(breathe),amount=state.locals.get(consume);if(integer(b,0))return new Result(0);if(!integer(b,1))throw new IllegalArgumentException("unknown boolean output");if(integer(amount,0))return new Result(1);if(amount.equals(Expr.root(consume)))return new Result(3);throw new IllegalArgumentException("changed consumption recipe");}

@@ -13,6 +13,7 @@ import java.util.List;
 import net.fabricmc.fabric.api.transfer.v1.transaction.Transaction;
 import net.fabricmc.fabric.api.transfer.v1.transaction.TransactionContext;
 import net.forbric.kernel.transform.TransferTransactionHooks;
+import net.forbric.kernel.util.Caught;
 
 /**
  * Couples REAL Fabric and NeoForge transactions. No transaction context is simulated: NeoForge journals cast
@@ -174,6 +175,7 @@ public final class PairedTransactions {
 				if (pair.committed) pair.fabric.commit(); else pair.fabric.abort();
 			}
 		} catch (Throwable peerFailure) {
+			Caught.expected(peerFailure);
 			failure = combine(failure, peerFailure);
 		} finally {
 			pair.closingPeer = false;
@@ -188,7 +190,7 @@ public final class PairedTransactions {
 			try {
 				while (!state.finals.isEmpty()) {
 					try { state.finals.removeFirst().run(); }
-					catch (Throwable notificationFailure) { failure = combine(failure, notificationFailure); }
+					catch (Throwable notificationFailure) { Caught.expected(notificationFailure); failure = combine(failure, notificationFailure); }
 				}
 			} finally {
 				state.flushing = false;
@@ -236,7 +238,7 @@ public final class PairedTransactions {
 		ClassLoader loader = PairedTransactions.class.getClassLoader();
 		TransferTransactionHooks.FabricEngine engine = TransferTransactionHooks.fabricEngine(name -> {
 			try (InputStream in = loader.getResourceAsStream(name + ".class")) { return in == null ? null : in.readAllBytes(); }
-			catch (IOException unreadable) { return null; }
+			catch (IOException unreadable) { Caught.warn(unreadable, "[Forbric/Transfer] could not read %s; taken as absent", name); return null; }
 		});
 		if (engine == null) throw new IllegalStateException("Fabric's transaction engine is not reachable from its public Transaction openers");
 		List<String> names = new ArrayList<>(List.of(TransferTransactionHooks.NEO, TransferTransactionHooks.NEO_MANAGER));
@@ -272,7 +274,7 @@ public final class PairedTransactions {
 		}
 		static void finish(Object journal) {
 			try { FINISH.invoke(journal); }
-			catch (InvocationTargetException failure) { rethrow(failure.getCause()); }
+			catch (InvocationTargetException failure) { Caught.expected(failure); rethrow(failure.getCause()); }
 			catch (IllegalAccessException impossible) { throw new IllegalStateException(impossible); }
 		}
 	}

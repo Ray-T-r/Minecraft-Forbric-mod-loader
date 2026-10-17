@@ -36,6 +36,7 @@ import org.objectweb.asm.tree.analysis.SourceValue;
 
 import net.forbric.api.Ecosystem;
 import net.forbric.kernel.util.ForbricLog;
+import net.forbric.kernel.util.Caught;
 
 /**
  * Moves a mod's {@code @Inject} that the surviving carrier put behind a branch of its own back to where it runs natively:
@@ -252,6 +253,7 @@ public final class CarrierGuardedPoints {
 		try {
 			frames = new Analyzer<>(new SourceInterpreter()).analyze(owner, method);
 		} catch (AnalyzerException | RuntimeException unanalysable) {
+			Caught.expected(unanalysable);
 			return null;
 		}
 		Frame<SourceValue> at = frames[method.instructions.indexOf(point)];

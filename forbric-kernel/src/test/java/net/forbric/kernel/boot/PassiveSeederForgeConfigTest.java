@@ -46,6 +46,7 @@ import net.forbric.kernel.TestFixtures;
 import net.forbric.kernel.TestFixtures.Fixture;
 import net.forbric.kernel.discovery.ForbricModDiscoverer;
 import net.forbric.kernel.metadata.forge.FmlConfigElements;
+import net.forbric.kernel.ExpectCaught;
 
 /**
  * The seeded MinecraftForge {@code LoadingModList} — built with MinecraftForge's own {@code ModFile},
@@ -67,6 +68,9 @@ class PassiveSeederForgeConfigTest {
 		System.clearProperty(FmlConfigElements.SWITCH);
 	}
 
+	// The fixture's loader holds no game-side kernel classes, so the scan the seed also runs cannot; config elements
+	// are under test.
+	@ExpectCaught("could not scan wthit.jar for MinecraftForge")
 	@Test
 	void theSeededFileAndModsAnswerAsMinecraftForgeDoes() throws Exception {
 		String toml = fixture("wthit.mods.toml");
@@ -104,6 +108,9 @@ class PassiveSeederForgeConfigTest {
 		}
 	}
 
+	// The fixture's loader holds no game-side kernel classes, so the scan the seed also runs cannot; config elements
+	// are under test.
+	@ExpectCaught("could not scan wthit.jar for MinecraftForge")
 	@Test
 	void switchedOffTheyAnswerNothing() throws Exception {
 		System.setProperty(FmlConfigElements.SWITCH, "off");

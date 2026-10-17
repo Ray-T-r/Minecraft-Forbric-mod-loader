@@ -44,6 +44,7 @@ import org.objectweb.asm.tree.TypeInsnNode;
 import org.objectweb.asm.tree.VarInsnNode;
 
 import net.forbric.kernel.util.ForbricLog;
+import net.forbric.kernel.util.Caught;
 
 /**
  * Composes MinecraftForge's capability provider into the three root types the merge put under NeoForge's
@@ -246,6 +247,7 @@ public final class ForgeCapabilityCompositionTransformer implements ClassTransfo
 					new ClassReader(bytes).accept(base, ClassReader.SKIP_DEBUG | ClassReader.SKIP_FRAMES);
 				}
 			} catch (RuntimeException unreadable) {
+				Caught.warn(unreadable, "[Forbric/Capabilities] could not read %s; its anchor stays required", target);
 				base = null;
 			}
 		}

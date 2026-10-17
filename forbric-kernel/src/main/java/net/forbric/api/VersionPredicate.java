@@ -16,6 +16,8 @@
 
 package net.forbric.api;
 
+import net.forbric.kernel.util.Caught;
+
 /**
  * Forbric's one version vocabulary: compare two versions, and evaluate a Fabric-style predicate against one.
  *
@@ -255,6 +257,7 @@ public final class VersionPredicate {
 		try {
 			return Long.valueOf(part);
 		} catch (NumberFormatException tooBig) {
+			Caught.expected(tooBig);
 			return null;
 		}
 	}

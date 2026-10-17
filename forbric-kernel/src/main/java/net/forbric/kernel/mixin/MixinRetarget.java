@@ -44,6 +44,7 @@ import org.objectweb.asm.tree.TableSwitchInsnNode;
 import org.objectweb.asm.tree.TryCatchBlockNode;
 import org.objectweb.asm.tree.VarInsnNode;
 
+import net.forbric.kernel.util.Caught;
 import net.forbric.kernel.util.ForbricLog;
 
 /**
@@ -551,6 +552,7 @@ public final class MixinRetarget {
 		try {
 			new org.objectweb.asm.tree.analysis.Analyzer<>(uses).analyze(mixin.name, method);
 		} catch (org.objectweb.asm.tree.analysis.AnalyzerException unreadable) {
+			Caught.expected(unreadable);
 			return false;
 		}
 		if (uses.misused) return false;

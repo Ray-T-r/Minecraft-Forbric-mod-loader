@@ -14,6 +14,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
 import net.fabricmc.api.EnvType;
+import net.forbric.kernel.ExpectCaught;
 
 /**
  * {@link CommonNetworkInteropInjector}'s output, run against the kernel's real boot-side {@code PayloadInterop}: five of
@@ -573,6 +574,7 @@ class CommonNetworkInteropInjectorExecutionTest {
 				"premise: as merged, a MinecraftForge mod's client cannot send on its own channel");
 	}
 
+	@ExpectCaught("was gone when MinecraftForge's SyncConfigTask read")
 	@Test void aMissingServerConfigIsWrittenBackInsteadOfDisconnecting(@TempDir Path work) throws Throwable {
 		Game game = game(work.resolve("classes"));
 		for (boolean repaired : new boolean[] {true, false}) {

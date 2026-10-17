@@ -19,6 +19,7 @@ package net.forbric.kernel.boot;
 
 import net.forbric.api.Ecosystem;
 import net.forbric.api.ForeignType;
+import net.forbric.kernel.util.Caught;
 
 /** Shared reflective helpers for the kernel's native ecosystem-event plumbing. */
 final class KernelBusSupport {
@@ -41,11 +42,15 @@ final class KernelBusSupport {
 			builder = busBuilder.getMethod("markerType", Class.class).invoke(builder, modBusEvent);
 		} catch (Throwable ignored) {
 			// markerType is best-effort
+			Caught.warn(ignored, "[Forbric/EventBus] could not mark the kernel's NeoForge mod bus with IModBusEvent; it "
+					+ "accepts events of any type");
 		}
 		try {
 			builder = busBuilder.getMethod("allowPerPhasePost").invoke(builder);
 		} catch (Throwable ignored) {
 			// allowPerPhasePost is best-effort (older bus APIs lack it)
+			Caught.warn(ignored, "[Forbric/EventBus] could not allow phase-specific posts on the kernel's NeoForge mod "
+					+ "bus; phase-specific mod-bus events will be rejected");
 		}
 		return builder.getClass().getMethod("build").invoke(builder);
 	}

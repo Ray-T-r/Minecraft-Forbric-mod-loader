@@ -29,6 +29,7 @@ import net.forbric.api.CompatibilityFindings;
 import net.forbric.api.DiscoveredMod;
 import net.forbric.api.Ecosystem;
 import net.forbric.api.ModPresence;
+import net.forbric.kernel.ExpectCaught;
 import net.forbric.kernel.boot.CrossEcosystemDeclarations;
 
 /**
@@ -152,6 +153,7 @@ class DeclarationReaderFailSafeTest {
 		}
 	}
 
+	@ExpectCaught("this declaration table cannot be read")
 	@Test
 	void aHookThatCannotAddTheFabricModsHandsTheReaderTheNativeAnswer() throws Throwable {
 		try (URLClassLoader game = DeclarationReaderModListInjectorTest.neoGameSide()) {
@@ -198,6 +200,7 @@ class DeclarationReaderFailSafeTest {
 		}
 	}
 
+	@ExpectCaught("flare-addons has no event bus")
 	@Test
 	void aReaderCallbackThatCannotHandleAFabricModsContainerLeavesThatModOut() throws Throwable {
 		try (URLClassLoader game = DeclarationReaderModListInjectorTest.neoGameSide()) {

@@ -285,6 +285,18 @@ class ModPresenceTest {
 		}
 	}
 
+	/** Another mod's alias for an id never answers for it in place of the mod whose own id it is, whatever came first. */
+	@Test
+	void theModWhoseIdItIsAnswersForItNotAnAliasPublishedFirst() {
+		DiscoveredMod sentinel = new DiscoveredMod(Ecosystem.FABRIC, "lib-sentinel", "0.1", "lib-sentinel", List.of(),
+				List.of(), null, "sentinel.jar").withAliases(List.of("lib"));
+		DiscoveredMod lib = new DiscoveredMod(Ecosystem.FABRIC, "lib", "2.0", "lib", List.of(), List.of(), null, "lib.jar");
+		ModPresence.publishFabric(List.of(sentinel, lib));
+
+		assertEquals("2.0", ModPresence.metadata("lib").getVersion());
+		assertEquals("0.1", ModPresence.metadata("lib-sentinel").getVersion());
+	}
+
 	private static DiscoveredMod mod(Ecosystem ecosystem, String id) {
 		return new DiscoveredMod(ecosystem, id, "1.0.0", id, List.of(), List.of(), null, id + ".jar");
 	}

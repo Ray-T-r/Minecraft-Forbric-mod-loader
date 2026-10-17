@@ -3,6 +3,7 @@ package net.forbric.kernel.runtime;
 
 import java.util.Map;
 
+import net.forbric.kernel.util.Caught;
 import net.forbric.kernel.util.ForbricLog;
 import net.forbric.kernel.util.PublicApiStorage;
 
@@ -55,6 +56,9 @@ public final class KernelFabricFluidModels {
 						unbakedModels = PublicApiStorage.staticMapPutBy(KernelFabricFluidModels.class.getClassLoader(), API, "register",
 								REGISTER_DESC, 0, 1);
 					} catch (RuntimeException | LinkageError absent) {
+						// Absence is a null from the search; a throw is the search failing on what is installed.
+						Caught.warn(absent, "[Forbric/FluidModels] could not find where fabric-rendering-fluids keeps its "
+								+ "registered models; answered as none");
 						unbakedModels = null;
 					}
 					resolved = true;
@@ -69,6 +73,8 @@ public final class KernelFabricFluidModels {
 			// Answering "no Fabric model" keeps NeoForge's warning, which is the behaviour before this existed. A
 			// LinkageError too (Field.get throws a failed class initialisation as it is, unwrapped): this runs in
 			// the model bake of a resource reload, where an Error makes Minecraft drop every pack and stay black.
+			Caught.warn(unreadable, "[Forbric/FluidModels] could not read fabric-rendering-fluids' unbaked models; answered as"
+					+ " no Fabric model");
 			return null;
 		}
 	}

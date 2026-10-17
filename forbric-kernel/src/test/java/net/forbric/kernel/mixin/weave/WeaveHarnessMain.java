@@ -1,6 +1,7 @@
 package net.forbric.kernel.mixin.weave;
 
 import java.io.PrintStream;
+import java.io.StringReader;
 import java.net.URL;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
@@ -16,6 +17,9 @@ import net.forbric.api.Ecosystem;
 import net.forbric.api.ModPresence;
 import net.forbric.api.UnifiedDependency;
 import net.forbric.kernel.classloading.ForbricClassLoader;
+import net.forbric.kernel.fabric.FabricModMetadataParser;
+import net.forbric.kernel.fabric.KernelFabricLoader;
+import net.forbric.kernel.fabric.KernelModContainer;
 import net.forbric.kernel.mixin.KernelMixinBootstrap;
 import net.forbric.kernel.mixin.MixinConfigOwners;
 
@@ -76,6 +80,7 @@ public final class WeaveHarnessMain {
 		for (MixinConfigOwners.Owned one : ordered) if (!configs.contains(one.config())) configs.add(one.config());
 		MixinConfigOwners.publish(ordered);
 		publishPresence(ordered);
+		registerFabricOwners(ordered, side, out);
 		// Opt-in, so every other run keeps an unattributed fixture: the fixture jar is the configs' owners' own jar, as a
 		// boot records it for every selected mod (one ecosystem per run; two claiming it leave it unattributed).
 		if ("on".equals(System.getProperty(ORIGINS))) {
@@ -121,11 +126,7 @@ public final class WeaveHarnessMain {
 	 * mod, declaring what {@value #REQUIRES} says ({@code id=constraint,...}, mandatory) and nothing else.
 	 */
 	private static void publishPresence(List<MixinConfigOwners.Owned> owners) {
-		List<UnifiedDependency> requires = new ArrayList<>();
-		for (String one : System.getProperty(REQUIRES, "").split(",")) {
-			int eq = one.indexOf('=');
-			if (eq > 0) requires.add(new UnifiedDependency(one.substring(0, eq).strip(), one.substring(eq + 1).strip(), true));
-		}
+		List<UnifiedDependency> requires = requires();
 		List<DiscoveredMod> fabric = new ArrayList<>();
 		List<DiscoveredMod> forgeFamily = new ArrayList<>();
 		for (MixinConfigOwners.Owned one : owners) {
@@ -135,6 +136,43 @@ public final class WeaveHarnessMain {
 		}
 		ModPresence.publishFabric(fabric);
 		ModPresence.publishForgeFamily(forgeFamily);
+	}
+
+	/**
+	 * KernelBoot's Fabric Loader mod list, before Mixin: every Fabric config's owner a registered Fabric mod declaring
+	 * what {@value #REQUIRES} says. {@code KernelMixinBootstrap} reads each Fabric config's Mixin compatibility level off
+	 * that list, as Fabric Loader does; without it every Fabric fixture wove at Mixin's newest level, which production
+	 * gives only to a mod declaring {@code fabricloader >= 0.19}. A fixture declaring nothing gets what such a mod gets in
+	 * production, the oldest level; {@code -Dforbric.weaveHarness.requires=fabricloader=>=0.19} weaves at the newest.
+	 */
+	private static void registerFabricOwners(List<MixinConfigOwners.Owned> owners, EnvType side, Path out) {
+		List<String> ids = new ArrayList<>();
+		for (MixinConfigOwners.Owned one : owners) {
+			if (one.ecosystem() == Ecosystem.FABRIC && !ids.contains(one.modId())) ids.add(one.modId());
+		}
+		if (ids.isEmpty()) return;
+
+		StringBuilder depends = new StringBuilder("{");
+		for (UnifiedDependency one : requires()) {
+			if (depends.length() > 1) depends.append(',');
+			depends.append('"').append(one.getModId()).append("\":\"").append(one.getVersionConstraint()).append('"');
+		}
+		depends.append('}');
+		KernelFabricLoader fabric = KernelFabricLoader.create(side, out, out.resolve("config"), new String[0], "26.2");
+		for (String id : ids) {
+			String json = "{\"schemaVersion\":1,\"id\":\"" + id + "\",\"version\":\"1.0\",\"depends\":" + depends + "}";
+			fabric.register(new KernelModContainer(FabricModMetadataParser.read(new StringReader(json)), null, null));
+		}
+		fabric.freeze();
+	}
+
+	private static List<UnifiedDependency> requires() {
+		List<UnifiedDependency> requires = new ArrayList<>();
+		for (String one : System.getProperty(REQUIRES, "").split(",")) {
+			int eq = one.indexOf('=');
+			if (eq > 0) requires.add(new UnifiedDependency(one.substring(0, eq).strip(), one.substring(eq + 1).strip(), true));
+		}
+		return requires;
 	}
 
 	/** What every fixture mod's manifest requires: {@code id=constraint,...}. */

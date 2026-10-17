@@ -24,6 +24,7 @@ import net.forbric.kernel.fabric.EntrypointDispatchScan.Dispatch;
 import net.forbric.kernel.fabric.EntrypointDispatchScan.Phase;
 import net.forbric.kernel.fabric.FabricModMetadataParser;
 import net.forbric.kernel.fabric.KernelModMetadata;
+import net.forbric.kernel.util.Caught;
 import net.forbric.kernel.util.ForbricLog;
 
 /**
@@ -167,8 +168,8 @@ public final class ArbitratedAwayDispatchers {
 			try {
 				report = EntrypointDispatchScan.report(jar, custom);
 			} catch (IOException | RuntimeException unreadable) {
-				ForbricLog.warn("[Forbric/DupeId] could not read which entrypoint keys %s's losing build %s dispatches: %s",
-						metadata.getId(), jar.getFileName(), String.valueOf(unreadable));
+				Caught.warn(unreadable, "[Forbric/DupeId] could not read which entrypoint keys %s's losing build %s "
+						+ "dispatches", metadata.getId(), jar.getFileName());
 				continue;
 			}
 			List<Dispatch> dispatches = report.dispatches();
@@ -295,6 +296,8 @@ public final class ArbitratedAwayDispatchers {
 				return FabricModMetadataParser.read(in);
 			}
 		} catch (IOException | RuntimeException unreadable) {
+			Caught.warn(unreadable, "[Forbric/DupeId] could not read the fabric.mod.json of %s; it is not checked for "
+					+ "entrypoint keys lost to arbitration", jar.getFileName());
 			return null;
 		}
 	}
@@ -327,6 +330,8 @@ public final class ArbitratedAwayDispatchers {
 				if (reads) return true;
 			} catch (IOException | RuntimeException unreadable) {
 				// An unreadable winner cannot be shown to read it; the losing build's evidence stands.
+				Caught.warn(unreadable, "[Forbric/DupeId] could not scan winning build %s for entrypoint key %s",
+						jar.getFileName(), key);
 			}
 		}
 		return false;
@@ -339,6 +344,8 @@ public final class ArbitratedAwayDispatchers {
 				if (Files.isRegularFile(jar) && !EntrypointDispatchScan.scan(jar, Set.of(key)).isEmpty()) return true;
 			} catch (IOException | RuntimeException unreadable) {
 				// An unreadable winner cannot be shown to dispatch it.
+				Caught.warn(unreadable, "[Forbric/DupeId] could not scan winning build %s for a dispatch of entrypoint "
+						+ "key %s", jar.getFileName(), key);
 			}
 		}
 		return false;
@@ -351,6 +358,8 @@ public final class ArbitratedAwayDispatchers {
 				if (Files.isRegularFile(jar) && !EntrypointDispatchScan.namedIn(jar, Set.of(key)).isEmpty()) return true;
 			} catch (IOException | RuntimeException unreadable) {
 				// Nothing to add to the evidence.
+				Caught.warn(unreadable, "[Forbric/DupeId] could not scan winning build %s for the constant %s",
+						jar.getFileName(), key);
 			}
 		}
 		return false;

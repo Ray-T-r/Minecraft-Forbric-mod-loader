@@ -31,6 +31,7 @@ import java.util.zip.ZipEntry;
 
 import net.fabricmc.api.EnvType;
 
+import net.forbric.kernel.util.Caught;
 import net.forbric.kernel.util.ForbricLog;
 
 /**
@@ -64,8 +65,9 @@ public final class FabricModDiscovery {
 
 	/**
 	 * Hard requirements of jars this discovery does not read (the Forge-family mods and the Fabric jars their JarJar
-	 * carries), so that a nested Fabric mod one of them needs is kept back from Fabric's rule as it would be for a
-	 * Fabric dependent.
+	 * carries), so that a nested Fabric mod one of them needs is kept back from Fabric's platform rule as it would be
+	 * for a Fabric dependent; for one mod per id they are needs Fabric never sees (FabricUniqueIds), which keep a
+	 * would-be loser back after Fabric's choice instead of changing it.
 	 */
 	private List<NestedFabricRequirements.Requirement> requiredElsewhere = List.of();
 
@@ -120,7 +122,7 @@ public final class FabricModDiscovery {
 					.sorted()
 					.forEach(jars::add);
 		} catch (IOException e) {
-			ForbricLog.warn("[Forbric/Fabric] could not list %s: %s", modsDir, e.getMessage());
+			Caught.warn(e, "[Forbric/Fabric] could not list %s", modsDir);
 			return;
 		}
 
@@ -149,6 +151,37 @@ public final class FabricModDiscovery {
 					root ? List.of() : List.of(mod.parent()), mod.metadata(), NestedFabricRequirements.requirementsOf(mod.metadata())));
 		}
 		var resolution = NestedFabricRequirements.resolve(candidates, leftOut, requiredElsewhere);
+		// Then one mod per id, provides included, among what still loads (FabricUniqueIds). Parents come before their
+		// nested mods in found, so one pass sees whether each parent loads. No arbitration runs here: of two copies of
+		// one id KernelFabricLoader.register keeps the first it is given, so the first found that still loads is the
+		// one weighed. A copy that loses a rivalry goes, and the next copy of its id is weighed in its place, until no
+		// weighed copy loses one.
+		boolean[] loads = new boolean[found.size()];
+		Map<Integer, String> idLeftOut = new LinkedHashMap<>();
+		FabricUniqueIds.Outcome<Integer> unique;
+		while (true) {
+			java.util.Set<String> registered = new java.util.HashSet<>();
+			List<NestedFabricRequirements.Candidate<Integer>> loading = new ArrayList<>();
+			List<NestedFabricRequirements.Candidate<Integer>> outvoted = new ArrayList<>();
+			for (int i = 0; i < found.size(); i++) {
+				int parent = found.get(i).parent();
+				loads[i] = !resolution.leftOut().containsKey(i) && !idLeftOut.containsKey(i) && (parent < 0 || loads[parent]);
+				if (loads[i] && registered.add(found.get(i).metadata().getId())) loading.add(candidates.get(i));
+				if (idLeftOut.containsKey(i)) outvoted.add(candidates.get(i));
+			}
+			unique = FabricUniqueIds.resolve(loading, requiredElsewhere, outvoted);
+			boolean grew = false;
+			for (Integer lost : unique.lost().keySet()) grew |= idLeftOut.putIfAbsent(lost, unique.leftOut().get(lost)) == null;
+			if (!grew) break;
+		}
+		unique.leftOut().forEach(idLeftOut::putIfAbsent);
+		// What only a left-out copy bundles goes with it, with its own line.
+		for (int i = 0; i < found.size(); i++) {
+			int parent = found.get(i).parent();
+			if (parent >= 0 && idLeftOut.containsKey(parent) && !resolution.leftOut().containsKey(i)) {
+				idLeftOut.putIfAbsent(i, "only mods left out bundle it");
+			}
+		}
 
 		KernelModContainer[] built = new KernelModContainer[found.size()];
 		for (int i = 0; i < found.size(); i++) {
@@ -158,8 +191,15 @@ public final class FabricModDiscovery {
 				NestedFabricRequirements.log(mod.metadata(), parentJar, resolution.leftOut().get(i));
 				continue;
 			}
+			if (idLeftOut.containsKey(i)) {
+				NestedFabricRequirements.log(mod.metadata(), parentJar, idLeftOut.get(i));
+				continue;
+			}
 			if (resolution.keptBack().containsKey(i)) {
 				NestedFabricRequirements.logKeptBack(mod.metadata(), parentJar, resolution.keptBack().get(i));
+			}
+			if (unique.keptBack().containsKey(i)) {
+				NestedFabricRequirements.logKeptBack(mod.metadata(), parentJar, unique.keptBack().get(i));
 			}
 			KernelModContainer parent = mod.parent() < 0 ? null : built[mod.parent()];
 			if (mod.parent() >= 0 && parent == null) continue;
@@ -192,7 +232,7 @@ public final class FabricModDiscovery {
 						}
 					}
 				} catch (Exception failed) {
-					ForbricLog.warn("[Forbric/Fabric] could not read selected candidate %s: %s", node.path(), String.valueOf(failed));
+					Caught.warn(failed, "[Forbric/Fabric] could not read selected candidate %s", node.path());
 					recordUnreadable(node.path(), failed);
 				}
 				visited.add(node.path()); iterator.remove(); progress = true;
@@ -232,7 +272,7 @@ public final class FabricModDiscovery {
 				metadata = FabricModMetadataParser.read(in);
 			}
 		} catch (Exception e) {
-			ForbricLog.warn("[Forbric/Fabric] could not read %s: %s", jar.getFileName(), String.valueOf(e));
+			Caught.warn(e, "[Forbric/Fabric] could not read %s", jar.getFileName());
 			recordUnreadable(jar, e);
 			return;
 		}
@@ -283,8 +323,7 @@ public final class FabricModDiscovery {
 
 			return target;
 		} catch (IOException e) {
-			ForbricLog.warn("[Forbric/Fabric] could not extract '%s' from %s: %s", entryPath, jar.getFileName(),
-					String.valueOf(e));
+			Caught.warn(e, "[Forbric/Fabric] could not extract '%s' from %s", entryPath, jar.getFileName());
 			return null;
 		}
 	}

@@ -3,6 +3,7 @@ package net.forbric.kernel.mixin;
 import java.util.*;
 import org.objectweb.asm.*;import org.objectweb.asm.tree.*;
 import net.forbric.kernel.boot.DefinedMethodContracts.MethodContract;
+import net.forbric.kernel.util.Caught;
 /** Closes the real weaver's Operation graph: array extraction, boxing and nested certified scopes must preserve every operand. */
 final class CallbackOperationProof implements Opcodes {
  private static final String OP="com/llamalad7/mixinextras/injector/wrapoperation/Operation";
@@ -56,7 +57,7 @@ final class CallbackOperationProof implements Opcodes {
  private boolean isHelper(MethodInsnNode call){return call.getOpcode()==INVOKESTATIC&&call.owner.equals(helper)&&(call.name+call.desc).equals(helperMethod);}
  private static boolean unbox(MethodInsnNode call){String primitive=switch(call.owner){case"java/lang/Boolean"->"Z";case"java/lang/Byte"->"B";case"java/lang/Character"->"C";case"java/lang/Short"->"S";case"java/lang/Integer"->"I";case"java/lang/Float"->"F";case"java/lang/Long"->"J";case"java/lang/Double"->"D";default->null;};String name=switch(primitive==null?"":primitive){case"Z"->"booleanValue";case"B"->"byteValue";case"C"->"charValue";case"S"->"shortValue";case"I"->"intValue";case"F"->"floatValue";case"J"->"longValue";case"D"->"doubleValue";default->"";};return primitive!=null&&call.getOpcode()==INVOKEVIRTUAL&&call.name.equals(name)&&call.desc.equals("()"+primitive);}
  private static boolean argumentCheck(MethodInsnNode call){return call.getOpcode()==INVOKESTATIC&&call.owner.equals("com/llamalad7/mixinextras/injector/wrapoperation/WrapOperationRuntime")&&call.name.equals("checkArgumentCount")&&call.desc.equals("([Ljava/lang/Object;ILjava/lang/String;)V");}
- private static Integer integer(NativeCallChanges.Expr value){try{if(value.kind().equals("integer"))return Integer.valueOf(value.symbol());if(value.kind().equals("literal")&&value.symbol().startsWith("java.lang.Integer:"))return Integer.valueOf(value.symbol().substring(18));if(value.kind().equals("constant")){int opcode=Integer.parseInt(value.symbol());return opcode>=ICONST_M1&&opcode<=ICONST_5?opcode-ICONST_0:null;}}catch(NumberFormatException invalid){}return null;}
+ private static Integer integer(NativeCallChanges.Expr value){try{if(value.kind().equals("integer"))return Integer.valueOf(value.symbol());if(value.kind().equals("literal")&&value.symbol().startsWith("java.lang.Integer:"))return Integer.valueOf(value.symbol().substring(18));if(value.kind().equals("constant")){int opcode=Integer.parseInt(value.symbol());return opcode>=ICONST_M1&&opcode<=ICONST_5?opcode-ICONST_0:null;}}catch(NumberFormatException invalid){Caught.expected(invalid);}return null;}
  private static String symbol(InvokeDynamicInsnNode dynamic){return dynamic.name+dynamic.desc+dynamic.bsm+Arrays.toString(dynamic.bsmArgs);}
  private void record(MethodNode method){contracts.put(method.name+method.desc,new MethodContract(owner.name,method.name,method.desc,MixinInstructionFingerprint.hash(method)));}
 }

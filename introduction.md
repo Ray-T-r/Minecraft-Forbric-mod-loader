@@ -204,7 +204,9 @@ server rejects `--gameDir`, so `KernelBoot` strips it on that side. The game ver
     `seedForgeFmlLoader`, `publishForgeLoadingList`. This must precede the first class that passes through the
     Mixin transformer, because Mixin constructs every guest `IMixinConfigPlugin` then, and plugins read
     `FMLPaths`/`FMLLoader` in their `<clinit>`. MinecraftForge's `FMLEnvironment` caches `dist` into
-    `static final` fields in a one-shot `<clinit>`; whoever touches it first decides it forever.
+    `static final` fields in a one-shot `<clinit>`; whoever touches it first decides it forever. Then
+    `KernelFabricEcosystem.constructLanguageAdapters()`: every language adapter a Fabric mod declares is built
+    here, as Fabric Loader's `freeze()` builds them before `FabricMixinBootstrap.init` (§5.1).
 14. **Mixin** — Fabric configs first, Forge-family configs appended (§7.1); `MixinConfigOwners.publish` before
     registration; `KernelMixinBootstrap.init`.
 15. `PassiveSeeder.reportDependencies()` — after Mixin, because half of what it reports (mixins meant for another
@@ -319,8 +321,9 @@ Fabric and NeoForge need opposite states in the constructor, so the kernel has t
   or `java` that excludes the running version, or a `breaks` that includes it, leaves it out, and with it any nested
   mod that hard-depends only on left-out ones or that only they bundle. ViaFabric is the case: it nests
   `viafabric-mc26-1` (`minecraft >=26.1 <=26.1.2`) beside `viafabric-mc26-2`, and native loads only
-  `viafabric-mc26-2`. Only what a Fabric mod declares in its `jars` is judged. A NeoForge/MinecraftForge mod's nested
-  jar is not, even if all it carries is a `fabric.mod.json`, because Fabric Loader never opens a jar without one. A
+  `viafabric-mc26-2`. (Fabric's one mod per id, `provides` included, is decided after arbitration: next item.) Only
+  what a Fabric mod declares in its `jars` is judged. A NeoForge/MinecraftForge mod's nested jar is not, even if all
+  it carries is a `fabric.mod.json`, because Fabric Loader never opens a jar without one. A
   child the parent's `META-INF/jarjar/metadata.json` declares is FML's, which loads it as the parent's library; a jar
   that only sits in `META-INF/jars/` or `META-INF/jarjar/` with no entry in that file is loaded by no native loader,
   and the kernel keeps it because its Forge-family walk has always taken both directories. A jar reached both ways is
@@ -340,6 +343,57 @@ Fabric and NeoForge need opposite states in the constructor, so the kernel has t
   does not read hard-require: the Forge-family mods, and the Fabric manifests of the jars their JarJar carries (no
   Fabric container there, but on the classpath). `-Dforbric.nestedRequirements=off` loads every nested mod again;
   `off:<id>,<id>` exempts only those ids (the kernel does not read Fabric's `config/fabric_loader_dependencies.json`).
+- One Fabric mod per id, `provides` included (`fabric.FabricUniqueIds`, on the selection: `DuplicateModArbiter` after
+  `ReachableCandidateSelector`, and `FabricModDiscovery` without a plan). Fabric Loader indexes every candidate under
+  its id and each id it provides (`ModPrioSorter.sort`) and lets at most one of each load (`UNIQUE_ID`). A jar in
+  `mods/` that alone answers to one of its ids is forced (`ROOT_FORCELOAD_SINGLE`); every other candidate is weighted
+  `-2^(n - priority)`, so the choice is the lexicographic optimum over `ModPrioSorter`'s order (jars in `mods/` first,
+  then by id, then the higher version, with a mod moved ahead of the ones it shares an id with and has the higher
+  version against): each mod in turn loads if it can, given the ones before it, a nested one needing a parent that
+  loads, every mod a provider for each hard dependency, and one whose hard dependency nothing installed meets switched
+  off (`HARD_DEP_NO_CANDIDATE`). The kernel takes the same optimum with a SAT solver. owo-sentinel is the case: mods
+  that need owo-lib nest it so that it can ask for owo-lib when it is missing, and it provides `owo` and `owo-lib`;
+  next to owo-lib native never loads it, and the kernel loaded both. Of two nested mods that share an id the one
+  Fabric orders first usually wins, but a mod ordered before both that needs the other keeps that one: a mod nested in
+  it, or one that depends on it. It is decided among what arbitration selected, never before: a build arbitration
+  drops (another ecosystem's preferred copy, a newer copy elsewhere, a copy only a losing library bundles) cannot push
+  its rival out, and a dependency on the shared id cannot steer which build of a mod arbitration keeps. Each mod that
+  loses a rivalry is then excluded, with every other build of its id that loses the same way to a jar in `mods/` (all
+  owo-sentinel builds at once), and arbitration runs again only where another build of something left out (a loser,
+  or what went with it) is there to take its place: one round for owo-sentinel beside owo-lib, logged `one mod per
+  id: decided in <n> arbitration round(s)`. What merely went with a loser is decided afresh each round, and a mod
+  that needs a loser stays out in later rounds too. Builds of one mod are never rivals, also when they share only an
+  alias (every `mixinextras-fabric` copy provides `com_github_llamalad7_mixinextras`). Only Fabric Loader's own index
+  takes part, the Fabric jars in `mods/` and the nested Fabric mods it reaches itself that `off:<id>` does not exempt,
+  and their hard dependencies, met by what is in that index, shape the choice as on Fabric. Everything else (a
+  Forge-family mod, a Fabric mod a JarJar declaration or a Forge-family walk brought in, an exempted one, a library
+  without `fabric.mod.json`) loads whenever a parent of it loads, goes with its parents, never decides a rivalry and
+  never meets a dependency for Fabric's choice; its own needs, which Fabric Loader never sees, are met only after
+  that choice, by keeping a would-be loser back. The loser is logged `left out: it
+  answers to '<id>', as <winner> <version> [in mods/] does, and Fabric Loader loads one mod per id, provides
+  included`; what goes with it `left out: only mods left out bundle it`, and a mod whose dependency only the loser met
+  `left out: it requires <id> <range>, and every installed build of that is left out`. Where the kernel stays more
+  lenient than native: jars in `mods/` all load (native drops one that no id of its own singles out when a rival
+  takes its ids, e.g. Indium next to a Sodium that provides `indium`, and refuses to start when two forced jars
+  collide); a nested mod whose hard dependency nothing that loads meets is taken as switched off for native's choice,
+  and then comes back, with what goes with it, wherever it takes nothing native loads, so it yields every id it shares
+  and still loads where nothing contests it; and a Fabric jar in `mods/`, or a mod outside Fabric's index, that needs a
+  would-be loser (by its id or one it provides, or a mod nested in it), with nothing else that loads meeting that,
+  keeps it back with a `loaded although Fabric Loader would leave it out (<why>): <mod> requires <id> <range>, and
+  nothing else that loads meets that` WARN (`it bundles <mod> (...)` for a loser kept for what it bundles), together
+  with what bundles it on the way to a parent that loads and what it brings with it (its nested mods, what needs it),
+  the winner loading too (for a jar in `mods/` native drops the winning jar in `mods/` instead if no id of its own
+  forces it, and refuses to start otherwise; a need from outside Fabric's index native never sees). A nested Fabric
+  mod Fabric judges keeps nothing back: like native, it goes itself. The build kept back is the one arbitration chose
+  for its id; another installed build that would not need keeping back is not tried, and where the winner is nested
+  rather than in `mods/`, each round excludes one build of the loser's id. Not weighed: `recommends` and `breaks`
+  between mods, and a mod listing its own id or an alias twice among its `provides` (native never loads it). Without
+  a plan nothing arbitrates: copies of one id are weighed one at a time, the first found first (the one
+  `KernelFabricLoader.register` keeps), and a copy that loses a rivalry goes, with what only it bundles, and the next
+  copy is weighed in its place. The
+  `forbric.nestedRequirements` switches apply. On the local corpora (70 `mods/` folders) the only shapes are
+  owo-sentinel beside owo-lib and voxy's `dummyprovider` (server-only, providing `sodium`, which is client-only, so
+  they never meet).
 - `discovery.ModAnnotationScanner` finds `@Mod` classes by bytecode descriptor; `ModFileScanner` builds a full
   `ModFileScanData` (NeoForge and MinecraftForge shapes differ: `EnumHolder` vs `EnumData`) because JEI, Jade,
   Sophisticated Core and Sodium find their plugins through `ModList.getAllScanData()`.
@@ -406,6 +460,13 @@ classpath (first-URL-wins would otherwise let it shadow the winner and contribut
   (identity only — no entrypoints, mixins or assets), so `FabricLoader.isModLoaded` answers; and the Forge-family
   lists are seeded with the Fabric mods (`-Dforbric.crossEcosystemPresence=off` restores single-loader answers).
   `net.forbric.api.ModIds` maps ids the ecosystems spell differently (`cloth-config` / `cloth_config`).
+- A mod's own id outranks another mod's `provides` alias for it, whatever order they arrive in —
+  `KernelFabricLoader.register`, `ModConstructionOrder` and `ModPresence`'s index all take every real id before any
+  alias, as `DuplicateModArbiter` never lets an alias claim an id. owo-sentinel, nested in mods that need owo-lib,
+  provides `owo` and depends on nothing installed, so it registered first and owo-lib itself was dropped as a
+  "duplicate" (with its `owo-impl` alias). The sentinel itself is now left out next to owo-lib, as Fabric Loader's
+  resolver leaves it out (one mod per id, provides included, above); the real-id order still
+  decides wherever both stay, two jars in `mods/` or a nested mod kept back.
 - `ModConstructionOrder` orders Forge-family construction topologically — a mod after everything it requires or
   declares `AFTER`; ties alphabetical; cycles named, not broken silently (`-Dforbric.modOrder=name` restores
   file-name order). Fabric mods initialise in Fabric Loader's own order, by mod id (`FabricLoadOrder`;
@@ -419,6 +480,15 @@ classpath (first-URL-wins would otherwise let it shadow the winner and contribut
   index frozen before mod code runs. `KernelModContainer` exposes each jar through a zip `FileSystem`;
   `KernelLanguageAdapters` honours `languageAdapters` (fabric-language-kotlin); `KernelObjectShare`,
   `KernelVersion`, `KernelMappingResolver` (identity) complete the API.
+- Language adapters are built before Mixin, all of them, named by an entrypoint or not (§3.2 step 13), because
+  Fabric Loader's `freeze()` does: Configured Defaults copies a pack's default configs in its adapter's constructor
+  and names it from no entrypoint. A constructor that throws fails its mod; it is not run again.
+  `-Dforbric.eagerLanguageAdapters=off` builds each on first use instead.
+- Entrypoint values resolve as Fabric's `DefaultLanguageAdapter` resolves them (`KernelLanguageAdapters.resolveDefault`,
+  one implementation for an adapter-less entrypoint and for `LanguageAdapter.getDefault()`): a class, a static
+  field, the one method of that name — static, or an instance method bound to a fresh instance — and `::<init>`,
+  the constructor. Where Fabric refuses a value (several methods of one name, a private member) the kernel stays
+  lenient: it opens the member, or takes the first static method.
 - The mod-facing API is vendored under its own names: `src/main/java/net/fabricmc/api` (7 files) and
   `src/main/java/net/fabricmc/loader` (30 files: `loader.api.*` plus the narrow internals mods actually link against
   — `FabricLoaderImpl`, `ModContainerImpl`, `EntrypointStorage`, `Hooks`, `FabricLauncher`/`FabricLauncherBase`,
@@ -570,6 +640,65 @@ game build — the question a carrier bump asks.
 `KernelMixinBootstrap.init` binds the service, registers every config, installs `KernelMixinErrorHandler`, installs
 the weaver as the last pipeline stage, then moves the environment to `INIT` and `DEFAULT`. Configs are prepared —
 and plugins constructed — on the first class through the transformer, which is `KernelRuntimeClasses.verify`.
+
+Before the phase moves, each config is decorated as Fabric Loader's `MixinConfigDecorator` decorates it: the owning
+mod's id (`KEY_MOD_ID`, so Mixin's own messages name it) and, for a Fabric-owned config, the Mixin compatibility level
+Fabric Loader gives that mod (`KEY_COMPATIBILITY`, `FabricMixinCompat`). The level comes from the lowest Fabric Loader
+version the mod's `depends`/`breaks` on `fabricloader` accept, compared in Fabric's own version order (a port of
+`SemanticVersionImpl.compareTo`, not the kernel's dependency comparator, which orders pre-releases differently) against
+Fabric Loader 0.19.3's `FabricMixinVersions` table (the version the kernel reports, and the table that matches the
+bundled Mixin's newest level); it decides the order initialisers and injectors are applied in, how locals are
+discriminated and where shifted points land. Undecorated, every Fabric mod ran at the newest level. On the local corpora
+(997 distinct `fabric.mod.json`) the port agrees with Fabric Loader 0.19.3 itself on every mod, and 323 of the 561 that
+carry mixins get an older level than before.
+
+There is no floor. Fabric gives 0.9.2 to a mod whose lowest accepted `fabricloader` is older than 0.12.0, or that
+accepts every version downwards (no `fabricloader` dependency, `*`, or only an upper bound): 58 of those 561. Most
+declare no dependency on `fabricloader` or no lower bound on it. A few have one below 0.12.0, such as WorldEdit's
+`>=0.4.0`. A recount by mod id over the corpus's jar list, which counts differently, finds 620 mods with mixins, 112
+of them at 0.9.2: 55 with no dependency, 52 with no lower bound and 5 with a bound below 0.12.0.
+
+With 0.9.2 comes Mixin's legacy local walk (`Locals.getLocalsAt092`). One difference between that walk and 0.10.0's
+meets a capture the kernel moved. To read the locals at a label or a line number, both first step forward over
+pseudo-instructions. The 0.10.0 walk stops before a frame. The 0.9.2 walk steps up to three nodes and reads the frame
+it lands on. `MixinGuiItemCaptureAdapter` moves a
+TAIL capture to `INVOKE <the call that ends the body>, AFTER`. Where that call falls straight into the join the tail
+sits on, AFTER is the join's label, and the 0.9.2 walk steps onto the join's frame. The path that never stored the
+local reaches the join too, so the frame does not declare the local: Mixin refuses the capture as "LVT ... has
+incompatible changes" and the feature is gone, skipped with a WARN, or, for `CAPTURE_FAILEXCEPTION`, woven as a method
+that throws `InjectionError` each time the point is reached. The adapter softens a capture it moves from
+`CAPTURE_FAILEXCEPTION` to `CAPTURE_FAILSOFT` (as `MixinLocalsCapture` does for `CAPTURE_FAILHARD`, under the same
+`forbric.localsFailSoft` switch), so where a moved capture still fails it is skipped, never thrown.
+
+`MixinCaptureLanding`, a Mixin extension, fixes that in `preApply`, as Mixin is about to apply the mixins to a class.
+It acts only for a mixin below 0.10.0 that Mixin is applying to that class. That includes a merged twin the mixin
+reaches through `MixinMergedTwin`, and excludes a mixin its config plugin refused. It finds the call the moved point
+binds, read off the mixin as applied and matched as Mixin matches it. Where the node after that call is a
+pseudo-instruction, it inserts a `NOP` right after the call. The `NOP` is still inside the local's scope and is not a
+pseudo-instruction, so the walk does not step, and it reads the locals the body left. No point type selects a `NOP` by
+itself. Another AFTER on the same call now lands on the `NOP` instead of the label, which is the same place in the
+code. `Shift.BY` counts every node, so a `NOP` would move a BY point across the call. A method where any applied mixin
+shifts a point BY therefore keeps its body, and there the capture is still skipped at 0.9.2, with Mixin's WARN
+(while the 0.10.0 floor stood, such a mod was raised to 0.10.0 and the capture held).
+
+The real-weave suite passes in full at 0.9.2, 0.10.0 and 0.17.0. The GUI-item fixture captures at 0.9.2, 0.10.0 and
+0.17.1, and only the 0.9.2 weave has a `NOP`. A twin fixture captures in both copies at 0.9.2. With a `by = 2` injector
+beside it, that injector stays after the join's label and runs on every path. With a `NOP` it would have moved before
+the label, which was measured with the BY check taken out. With `-Dforbric.captureLanding=off`, the 0.9.2 weave skips
+the capture again.
+
+Until this, the kernel raised such mods to 0.10.0 (`RELOCATION_FLOOR`). Without that floor, the pure-Fabric server A/B
+(130 mods alone, then the 159-jar pack for 1200 ticks) still matches native Fabric: 126 pass on both, the same 4 fail
+on both, none fails on Forbric alone. The 127 sessions that reached Mixin include the 12 with configs the floor
+raised, and each logs the same Mixin warnings and the same unattached injectors as with the floor. The client
+gate (gate-m9, 13 of its configs now at 0.9.2) gives the same result as before. No Fabric mod in the local corpus
+that gets 0.9.2 has a TAIL locals capture at all, so the landing is for the shape rather than for a mod seen so far.
+On the pure-Fabric server pack (126 mods, 159 jars), weaving at Fabric's own
+levels instead of the newest changed only the order of field initialisers in six classes (exported classes, against a
+second run at the same levels as the noise floor), and the pack runs to the same end.
+Forge-family configs are left as they were: NeoForge's FML decorates its own with a declared `behaviorVersion` and
+refuses one below 0.17.1, so every level it can give behaves as the bundled Mixin's newest.
+`-Dforbric.mixinCompat=latest` leaves every Fabric config at the newest level.
 
 Order: Fabric configs in Fabric Loader's order, Forge-family configs appended. Mixin orders by priority;
 registration order only breaks ties, so the least-proven set becomes the outer wrapper around a known-good stack.
@@ -1025,6 +1154,36 @@ native Minecraft screen (`KernelCompatibilityPrompts`, `KernelCompatibilityScree
 JVM arguments, so players get `ask`; `run/launch-kernel-{client,server}.sh` default to `strict` (and the client
 script to `-Dforbric.dependencyDialog=off`).
 
+### 12.5 Failures the kernel carried on from — `util.Caught`
+
+The kernel is fail-soft: a repair that does not fit declines, a bridge whose other side is missing stands down, a
+mod's listener that throws does not take the other mods' listeners with it. Every one of those is a `catch`, and
+every `catch` in `src/main` and `src/runtime` either rethrows or reports to `Caught`, as a statement of its own body
+(not under an `if`). `EveryCatchIsVisibleTest` scans the sources and fails on any other catch; there is no allowlist.
+
+- `Caught.warn/error(t, format, args)` — a failure the kernel carried on from. Logged at that level with the
+  `[Forbric/Caught]` prefix and the catch site (`Class.method:line`): the full stack trace the first time a site is
+  hit, then one line per occurrence. The same message at the same site is printed 20 times
+  (`-Dforbric.caught.printedPerSite`) and then counted; a message the site has not said before is always printed (up
+  to 100 per site), so one forwarding helper still names every event that failed. Reflection's
+  `InvocationTargetException` is unwrapped before printing.
+- `Caught.expected(t)` — the exception is the answer: a presence probe for an optional class, a recogniser's "not
+  this shape", text a mod wrote that is not a valid value, an exception handed on as a value to code that reports
+  it. Counted, logged only under `-Dforbric.debug`. When the cause chain of an "expected" exception holds an
+  exception only a bug throws (`NullPointerException`, `ClassCastException`, an index out of bounds outside ASM's
+  analysis frames, …), it is reported as a failure instead: ASM's `Analyzer` wraps whatever its interpreter threw
+  in the very `AnalyzerException` a recogniser expects.
+
+A summary (`[Forbric/Caught] summary …`, one line per failure site with its count) is logged when loading
+finishes and again at JVM exit. With `FORBRIC_CAUGHT_FILE` (or `-Dforbric.caught.file`) naming a file, each failure
+site is also appended there on first hit, and its count at exit.
+
+Tests and gates both read it. `CaughtErrorsExtension` (loaded for every unit test through META-INF/services) fails
+a test during which the kernel caught a failure, unless the test says it causes it with `@ExpectCaught("<what the
+failure says>")`; on a method, every named failure must also happen. `run/lib.sh` gives each gate its own
+`build/caught/<gate>.<pid>.tsv`, exports it to every JVM the gate starts, and at exit prints `[kernel] CAUGHT …` with
+each site, its message and its count; `FORBRIC_CAUGHT_STRICT=1` turns any of them into a red gate.
+
 ## 13. The installer — `forbric-kernel-installer/`
 
 Pure JDK, no dependencies, bytecode release 17, version `0.3.1-beta2`.
@@ -1168,7 +1327,8 @@ See [the development guide](forbric-kernel/run/README.md) for commands and confi
 `integrationTest` requires the staged game and transfer suites and rejects any skipped test; ordinary `test`
 still permits absent local fixtures and prints its executed/skipped counts. The complete integration suite
 requires its named mod fixtures in addition to the base game; preparing the game is not a claim that every
-compatibility pack or real-instance gate has run.
+compatibility pack or real-instance gate has run. A unit test during which the kernel catches a failure and carries
+on fails unless it is marked `@ExpectCaught`, and every gate ends with a `[kernel] CAUGHT` line (§12.5).
 
 ```sh
 cd forbric-kernel
@@ -1259,7 +1419,9 @@ developer reaches for:
 | `forbric.dialogLanguage` | force the dialog's language (e.g. `ja`) |
 | `forbric.loadReportRewrite` | `off`: first write of `load-report.txt` wins |
 | `forbric.crashAnalysis` | `off`: no `crash-analysis.txt` |
-| `forbric.debug` | enable `ForbricLog.debug` lines |
+| `forbric.debug` | enable `ForbricLog.debug` lines (and the first `Caught.expected` line of each site) |
+| `forbric.caught.printedPerSite` | how often the same caught failure is printed at one site before it is only counted (default 20, §12.5) |
+| `forbric.caught.file` | also append each caught failure site and its count to this file; `FORBRIC_CAUGHT_FILE` does the same and is what the gates set |
 
 **Arbitration and order**
 
@@ -1269,11 +1431,12 @@ developer reaches for:
 | `forbric.dupeIdPreference`, `forbric.nestedDupePreference` | cross-jar order for top-level / nested duplicates |
 | `forbric.modOwner` | `id=loader,…` pins; also `<rundir>/forbric-mods.txt` |
 | `forbric.crossJarArbitration` | `off`: two jars with one id both load |
-| `forbric.nestedRequirements` | `off`: a nested Fabric mod whose `minecraft`/`java` range excludes this game loads anyway; `off:<id>,…`: only those ids do |
+| `forbric.nestedRequirements` | `off`: a nested Fabric mod whose `minecraft`/`java` range excludes this game, or that shares an id (provides included) with a mod Fabric Loader prefers, loads anyway; `off:<id>,…`: only those ids are exempted: they load anyway, and no longer push a rival out |
 | `forbric.arbitrationMaxNodes` | selector work bound (default 100 000, capped at 1 000 000) |
 | `forbric.modOrder` | `name`: file-name construction order |
 | `forbric.fabricOrder` | `off`: Fabric mods follow the topological order instead of mod-id order |
 | `forbric.fabricMainInConstructor` | `off`: client Fabric `main` entrypoints run in the pre-`Minecraft` window |
+| `forbric.eagerLanguageAdapters` | `off`: a Fabric language adapter is built when an entrypoint first names it, not before Mixin |
 | `forbric.loaderProbes`, `forbric.crossEcosystemPresence` | `off`: platform probes / presence answer as a single loader would |
 
 **Mixin**
@@ -1281,6 +1444,8 @@ developer reaches for:
 | Property | Effect |
 | --- | --- |
 | `forbric.relaxGuestMixins` | `off`: guest configs are not relaxed |
+| `forbric.mixinCompat` | `latest`: every Fabric config at Mixin's newest level instead of the level Fabric Loader gives its mod (§7.1) |
+| `forbric.captureLanding` | `off`: below 0.10.0, a TAIL capture the kernel moved after a call that falls into the tail's join gets no `NOP` to land on, and Mixin skips it (§7.1) |
 | `forbric.relaxMixinOverwrites` | csv (`*` glob) of configs to relax |
 | `forbric.mixinDiagnostics` | keep injection requirements strict to surface every misfit |
 | `forbric.mixinFit` | `strict`: also drop `PARTIAL` mixins |
@@ -1331,6 +1496,8 @@ Break one and the failure usually surfaces far from the cause.
    failure are left as they were. `CompatibilityDecision` never exits the JVM; only the launch boundary does.
 10. **Nothing carrying Mojang, MinecraftForge or NeoForge bytes is committed or shipped.** The game side links
     against staged jars `compileOnly`; the installer builds them on the player's machine.
+11. **No catch is silent.** Every catch rethrows or reports to `Caught` (§12.5), and a unit test that makes the
+    kernel carry on from a failure fails unless it says so with `@ExpectCaught`.
 
 ## 19. Current state and known boundaries
 

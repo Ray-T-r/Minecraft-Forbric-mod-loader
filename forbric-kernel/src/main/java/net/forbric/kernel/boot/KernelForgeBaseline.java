@@ -22,8 +22,8 @@ import java.util.List;
 
 import net.forbric.api.Ecosystem;
 import net.forbric.api.ForeignType;
+import net.forbric.kernel.util.Caught;
 import net.forbric.kernel.util.ForbricLog;
-import net.forbric.kernel.util.Reflect;
 
 /**
  * Constructs the traditional-MinecraftForge baseline mod ({@code net.minecraftforge.common.ForgeMod}) and fires
@@ -54,6 +54,7 @@ public final class KernelForgeBaseline {
 		try {
 			Class.forName(FORGE_MOD, false, cl);
 		} catch (ClassNotFoundException absent) {
+			Caught.expected(absent);
 			ForbricLog.debug("[Forbric/Forge] traditional-Forge ForgeMod not present — skipping");
 			return;
 		}
@@ -77,9 +78,9 @@ public final class KernelForgeBaseline {
 			KernelForgeModContext.startup(cl, baseline.busGroup());
 		} catch (Throwable t) {
 			baseline = null;
-			ForbricLog.warn("[Forbric/Forge] the traditional-Forge baseline mod (ForgeMod) did not come up — its own "
+			Caught.warn(t, "[Forbric/Forge] the traditional-Forge baseline mod (ForgeMod) did not come up — its own "
 					+ "content (forge:fluid_type and the rest) will be missing, but every real MinecraftForge mod "
-					+ "still gets its RegisterEvent", Reflect.unwrap(t));
+					+ "still gets its RegisterEvent");
 		}
 
 		try {
@@ -99,9 +100,9 @@ public final class KernelForgeBaseline {
 					+ "RegisterEvent x%d on %d bus(es) [%s + %d mod(s)]", created, n, all.size(),
 					baseline == null ? "NO baseline" : "baseline", modHandles.size());
 		} catch (Throwable t) {
-			ForbricLog.warn("[Forbric/Forge] the traditional-Forge RegisterEvent pass failed as a whole — this is "
+			Caught.warn(t, "[Forbric/Forge] the traditional-Forge RegisterEvent pass failed as a whole — this is "
 					+ "not one mod's listener throwing (those are isolated and named individually); nothing a "
-					+ "MinecraftForge mod declares through DeferredRegister has registered", Reflect.unwrap(t));
+					+ "MinecraftForge mod declares through DeferredRegister has registered");
 		}
 	}
 
@@ -134,9 +135,8 @@ public final class KernelForgeBaseline {
 				KernelForgeModContext.single(bus.getClass(), "post").invoke(bus, event);
 			} catch (Throwable t) {
 				posted = false;
-				ForbricLog.warn("[Forbric/Forge] a traditional-Forge mod's NewRegistryEvent listener failed — the "
-						+ "registries collected before it are still created below, the ones after it are not",
-						Reflect.unwrap(t));
+				Caught.warn(t, "[Forbric/Forge] a traditional-Forge mod's NewRegistryEvent listener failed — the "
+						+ "registries collected before it are still created below, the ones after it are not");
 			}
 
 			Method fill = newRegCls.getDeclaredMethod("fill");
@@ -149,8 +149,8 @@ public final class KernelForgeBaseline {
 			}
 			return created;
 		} catch (Throwable t) {
-			ForbricLog.warn("[Forbric/Forge] NewRegistryEvent failed — Forge custom registries (fluid_type etc.) "
-					+ "will not exist", Reflect.unwrap(t));
+			Caught.warn(t, "[Forbric/Forge] NewRegistryEvent failed — Forge custom registries (fluid_type etc.) "
+					+ "will not exist");
 			return 0;
 		}
 	}

@@ -28,6 +28,7 @@ import net.forbric.api.Ecosystem;
 import net.forbric.api.ModCatalog;
 import net.forbric.kernel.runtime.transfer.TransferPrecedence.Answer;
 import net.forbric.kernel.runtime.transfer.TransferPrecedence.ForgeAnswer;
+import net.forbric.kernel.util.Caught;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
 import net.minecraft.core.registries.BuiltInRegistries;
@@ -79,7 +80,7 @@ public final class BlockTransferBridge {
 	private static final ClassValue<Class<?>> FORGE_QUERY_OWNER = new ClassValue<>() {
 		protected Class<?> computeValue(Class<?> type) {
 			try { return type.getMethod("getCapability", Capability.class, Direction.class).getDeclaringClass(); }
-			catch (NoSuchMethodException absent) { return null; }
+			catch (NoSuchMethodException absent) { Caught.expected(absent); return null; }
 		}
 	};
 	private static final ClassValue<Boolean> VANILLA_WRITES = new ClassValue<>() {
@@ -123,8 +124,12 @@ public final class BlockTransferBridge {
 		ahead(ItemStorage.SIDED, BlockTransferBridge::itemsBeforeGeneric);
 		ahead(FluidStorage.SIDED, BlockTransferBridge::fluidsBeforeGeneric);
 		try { BlockEntity.class.getDeclaredMethod("forbric$forgeTransferFallback"); forgeEnabled = true; }
-		catch (NoSuchMethodException absent) { TransferIssues.report("FORGE_QUERY_HOOK_MISSING", null,
-				"Forge block transfer fallback is not installed; Fabric/NeoForge transfers remain available"); }
+		catch (NoSuchMethodException absent) {
+			Caught.warn(absent, "[Forbric/Transfer] Forge block transfer fallback is not installed; Fabric/NeoForge transfers "
+					+ "remain available");
+			TransferIssues.report("FORGE_QUERY_HOOK_MISSING", null,
+					"Forge block transfer fallback is not installed; Fabric/NeoForge transfers remain available");
+		}
 		// A failure registering either callback leaves both directions dormant, even if one callback was added.
 		enabled = true;
 	}
@@ -149,10 +154,14 @@ public final class BlockTransferBridge {
 					list.add(0, provider);
 					moved = true;
 				} catch (RuntimeException refused) {
+					Caught.warn(refused, "[Forbric/Transfer] %s would not take a fallback at its front; it is appended "
+							+ "again", lookup.getClass().getName());
 					list.add(provider);
 				}
 			} catch (RuntimeException refused) {
 				// a list that cannot be reordered keeps the provider where registerFallback put it
+				Caught.warn(refused, "[Forbric/Transfer] could not put a fallback ahead of Fabric's generic ones in %s; it "
+						+ "stays appended", lookup.getClass().getName());
 			}
 		}
 		if (!moved) TransferIssues.report("FABRIC_FALLBACK_ORDER", lookup, "Fabric's generic fallbacks answer before a Forge or NeoForge owner's provider");
@@ -170,6 +179,8 @@ public final class BlockTransferBridge {
 					field.setAccessible(true);
 					value = field.get(lookup);
 				} catch (ReflectiveOperationException | RuntimeException unreadable) {
+					Caught.warn(unreadable, "[Forbric/Transfer] could not read %s.%s while looking for the list a fallback "
+							+ "was appended to", type.getName(), field.getName());
 					continue;
 				}
 				if (!(value instanceof List<?> list) || list.isEmpty() || list.get(list.size() - 1) != provider) continue;

@@ -25,6 +25,7 @@ import org.objectweb.asm.tree.MethodInsnNode;
 import org.objectweb.asm.tree.MethodNode;
 import org.objectweb.asm.tree.TypeInsnNode;
 import org.objectweb.asm.tree.VarInsnNode;
+import net.forbric.kernel.util.Caught;
 
 /**
  * FINAL, post-Mixin certificates for the reviewed Forge implementations and their transfer-critical helpers.
@@ -142,7 +143,7 @@ public final class ForgeTransferShapeAudit {
 			Files.writeString(output.resolveSibling(output.getFileName() + ".audit.txt"),
 					"reviewed=" + expected + "\nobserved=" + actual + "\ncertified=" + approved + "\n");
 		} catch (IOException | RuntimeException failure) {
-			net.forbric.kernel.util.ForbricLog.warn("[Forbric/TransferAudit] could not dump %s: %s", name, failure.toString());
+			net.forbric.kernel.util.Caught.warn(failure, "[Forbric/TransferAudit] could not dump %s", name);
 		}
 	}
 	/** The fingerprint with no hierarchy to prove a delegate against, so none is folded. */
@@ -246,6 +247,7 @@ public final class ForgeTransferShapeAudit {
 			new ClassReader(bytes).accept(node, ClassReader.SKIP_CODE | ClassReader.SKIP_DEBUG | ClassReader.SKIP_FRAMES);
 			return node;
 		} catch (RuntimeException | LinkageError unreadable) {
+			Caught.warn(unreadable, "[Forbric/Transfer] could not read %s; taken as absent", internalName);
 			return null;
 		}
 	}

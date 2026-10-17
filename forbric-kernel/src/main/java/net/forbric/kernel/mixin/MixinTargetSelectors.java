@@ -17,6 +17,8 @@ import org.spongepowered.asm.mixin.injection.selectors.ITargetSelector;
 import org.spongepowered.asm.mixin.injection.selectors.MemberMatcher;
 import org.spongepowered.asm.mixin.injection.struct.MemberInfo;
 
+import net.forbric.kernel.util.Caught;
+
 /**
  * Which methods of a target class an injector's {@code method} selectors bind, decided the way Mixin decides it, never
  * by comparing how the selector is spelled. {@code "baseTick"}, {@code "baseTick()V"},
@@ -298,6 +300,7 @@ final class MixinTargetSelectors {
 			else parsed = MemberInfo.parse(trimmed, null);
 			parsed = parsed.validate();
 		} catch (Exception invalid) {
+			Caught.expected(invalid);
 			return null;
 		}
 		if (parsed instanceof MemberInfo info) {

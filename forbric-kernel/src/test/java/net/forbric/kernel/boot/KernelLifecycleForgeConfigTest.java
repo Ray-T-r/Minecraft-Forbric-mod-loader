@@ -20,6 +20,7 @@ import java.util.Set;
 import java.util.jar.JarFile;
 
 import net.forbric.api.Side;
+import net.forbric.kernel.ExpectCaught;
 import net.forbric.kernel.TestFixtures;
 import net.forbric.kernel.TestFixtures.Fixture;
 import org.junit.jupiter.api.AfterEach;
@@ -86,6 +87,7 @@ class KernelLifecycleForgeConfigTest {
 		assertTrue(loader.calls().isEmpty(), "asking for the type table must not call a runtime helper");
 	}
 
+	@ExpectCaught("could not load NeoForge configs")
 	@Test
 	void throwingNeoEarlyStillCallsForge() throws Exception {
 		ColdLoader loader = new ColdLoader(true);
@@ -94,6 +96,7 @@ class KernelLifecycleForgeConfigTest {
 		assertEquals(List.of("neo.early:[COMMON, CLIENT]", "forge.early:[CLIENT, COMMON]"), loader.calls());
 	}
 
+	@ExpectCaught("could not open late-registered NeoForge configs")
 	@Test
 	void throwingNeoLateStillCallsForge() throws Exception {
 		ColdLoader loader = new ColdLoader(true);
@@ -102,6 +105,7 @@ class KernelLifecycleForgeConfigTest {
 		assertEquals(List.of("neo.late:[STARTUP, COMMON, CLIENT]", "forge.late:[CLIENT, COMMON]"), loader.calls());
 	}
 
+	@ExpectCaught({"could not load MinecraftForge configs", "could not open late-registered MinecraftForge configs"})
 	@Test
 	void throwingForgeDoesNotEscapeOrCostNeoEitherPass() throws Exception {
 		ColdLoader loader = new ColdLoader(true);
@@ -113,6 +117,7 @@ class KernelLifecycleForgeConfigTest {
 				"neo.late:[STARTUP, COMMON]", "forge.late:[COMMON]"), loader.calls());
 	}
 
+	@ExpectCaught({"could not load NeoForge configs", "could not open late-registered NeoForge configs"})
 	@Test
 	void brokenNeoHelperLinkageStillAllowsForgeInBothPasses() throws Exception {
 		ColdLoader loader = new ColdLoader(true);
@@ -122,6 +127,7 @@ class KernelLifecycleForgeConfigTest {
 		assertEquals(List.of("forge.early:[CLIENT, COMMON]", "forge.late:[CLIENT, COMMON]"), loader.calls());
 	}
 
+	@ExpectCaught({"could not load MinecraftForge configs", "could not open late-registered MinecraftForge configs"})
 	@Test
 	void brokenForgeHelperLinkageLeavesBothNeoPassesIntact() throws Exception {
 		ColdLoader loader = new ColdLoader(true);

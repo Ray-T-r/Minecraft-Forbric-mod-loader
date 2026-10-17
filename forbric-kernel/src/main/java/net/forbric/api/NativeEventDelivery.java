@@ -4,6 +4,7 @@ package net.forbric.api;
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicInteger;
+import net.forbric.kernel.util.Caught;
 
 /**
  * Which MinecraftForge events the merged game is delivering ITSELF, on the path a NeoForge event is being posted from,
@@ -153,7 +154,9 @@ public final class NativeEventDelivery {
 			try {
 				if (forgeBypassesToo) one.deferred().excused(); else one.deferred().deliver();
 			} catch (RuntimeException failed) {
-				// The bridge's own forward catches and reports what it throws; this keeps the caller's way out intact.
+				// The bridges' own forwards catch and report what they throw, so one that reaches here was not reported;
+				// it costs only itself and keeps the caller's way out intact.
+				Caught.warn(failed, "[Forbric/NativeEvents] a deferred bridge delivery threw; the caller's way out is kept");
 			}
 		}
 	}

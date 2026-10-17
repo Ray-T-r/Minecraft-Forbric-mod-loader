@@ -18,6 +18,7 @@ package net.forbric.kernel.boot;
 
 import java.util.Locale;
 
+import net.forbric.kernel.util.Caught;
 import net.forbric.kernel.util.ForbricLog;
 
 /**
@@ -92,6 +93,7 @@ public final class KernelServerTicks {
 			if (!enabled) return;
 			sample(System.nanoTime());
 		} catch (Throwable neverStopTheServer) {
+			Caught.warn(neverStopTheServer, "[Forbric/Tick] the server tick sampler threw; it is off for the rest of the run");
 			enabled = false;
 		}
 	}

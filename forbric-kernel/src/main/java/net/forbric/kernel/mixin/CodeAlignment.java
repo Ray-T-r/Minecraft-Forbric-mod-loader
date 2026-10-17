@@ -18,6 +18,7 @@ import org.objectweb.asm.tree.MethodInsnNode;
 import org.objectweb.asm.tree.MethodNode;
 import org.objectweb.asm.tree.MultiANewArrayInsnNode;
 import org.objectweb.asm.tree.TypeInsnNode;
+import net.forbric.kernel.util.Caught;
 
 /**
  * Aligns the instructions of a method as one platform compiled it with the instructions of the same method as the game
@@ -95,6 +96,7 @@ final class CodeAlignment {
 				frames = new org.objectweb.asm.tree.analysis.Analyzer<>(new org.objectweb.asm.tree.analysis.SourceInterpreter())
 						.analyze(owner == null ? "java/lang/Object" : owner, method);
 			} catch (org.objectweb.asm.tree.analysis.AnalyzerException | RuntimeException unreadable) {
+				Caught.expected(unreadable);
 				return null;
 			}
 			Map<AbstractInsnNode, String> out = new IdentityHashMap<>();

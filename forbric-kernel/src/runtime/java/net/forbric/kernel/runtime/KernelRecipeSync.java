@@ -20,9 +20,7 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 import java.util.Map;
-import java.util.Set;
 import java.util.WeakHashMap;
-import java.util.concurrent.ConcurrentHashMap;
 
 import io.netty.buffer.ByteBuf;
 import io.netty.buffer.Unpooled;
@@ -32,7 +30,7 @@ import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.item.crafting.RecipeHolder;
 import net.neoforged.neoforge.network.payload.RecipeContentPayload;
 
-import net.forbric.kernel.util.ForbricLog;
+import net.forbric.kernel.util.Caught;
 
 /**
  * NeoForge's recipe sync without the recipes their own serializer cannot put on the wire.
@@ -46,7 +44,6 @@ import net.forbric.kernel.util.ForbricLog;
  */
 public final class KernelRecipeSync {
 	private static final Map<RecipeHolder<?>, Boolean> ENCODES = Collections.synchronizedMap(new WeakHashMap<>());
-	private static final Set<String> REPORTED = ConcurrentHashMap.newKeySet();
 
 	private KernelRecipeSync() {
 	}
@@ -76,7 +73,11 @@ public final class KernelRecipeSync {
 					player.connection.getConnectionType()), recipe);
 		} catch (RuntimeException | LinkageError refused) {
 			encodes = false;
-			report(recipe, refused);
+			Caught.warn(refused, "[Forbric/RecipeSync] left recipe %s (serializer %s) out of NeoForge's recipe sync — "
+					+ "its own stream codec cannot encode it (%s). On NeoForge alone this disconnects every player who "
+					+ "joins once any mod asks for that recipe type to be synced; here it still crafts on the server, "
+					+ "clients just do not receive it (-Dforbric.recipeSyncFailSoft=off to send it anyway)",
+					recipe.id().identifier(), serializerOf(recipe), refused);
 		} finally {
 			scratch.release();
 		}
@@ -84,18 +85,12 @@ public final class KernelRecipeSync {
 		return encodes;
 	}
 
-	private static void report(RecipeHolder<?> recipe, Throwable refused) {
-		String id = String.valueOf(recipe.id().identifier());
-		if (!REPORTED.add(id)) return;
-		Object serializer;
+	private static Object serializerOf(RecipeHolder<?> recipe) {
 		try {
-			serializer = BuiltInRegistries.RECIPE_SERIALIZER.getKey(recipe.value().getSerializer());
+			return BuiltInRegistries.RECIPE_SERIALIZER.getKey(recipe.value().getSerializer());
 		} catch (RuntimeException unknown) {
-			serializer = recipe.value().getClass().getName();
+			Caught.expected(unknown);
+			return recipe.value().getClass().getName();
 		}
-		ForbricLog.warn("[Forbric/RecipeSync] left recipe %s (serializer %s) out of NeoForge's recipe sync — its own stream "
-				+ "codec cannot encode it (%s). On NeoForge alone this disconnects every player who joins once any mod asks "
-				+ "for that recipe type to be synced; here it still crafts on the server, clients just do not receive it "
-				+ "(-Dforbric.recipeSyncFailSoft=off to send it anyway)", id, serializer, refused);
 	}
 }

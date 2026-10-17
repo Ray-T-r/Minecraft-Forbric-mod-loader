@@ -20,8 +20,8 @@ import java.lang.reflect.Method;
 
 import net.forbric.api.EventBridges;
 import net.forbric.api.GameEventBridge;
+import net.forbric.kernel.util.Caught;
 import net.forbric.kernel.util.ForbricLog;
-import net.forbric.kernel.util.Reflect;
 
 /**
  * Re-emits game events the merged base's byte-merge left firing on only ONE ecosystem's hook, so the other
@@ -252,14 +252,14 @@ public final class GameEventMultiplexer {
 			try {
 				lifecycleBridge(cl, "installGameInstance").invoke(null, neoBus);
 			} catch (Throwable t) {
-				ForbricLog.warn("[Forbric/EventMux] the dedicated server will not be Fabric Loader's game instance — "
-						+ "FabricLoader.getGameInstance() stays null there", Reflect.unwrap(t));
+				Caught.warn(t, "[Forbric/EventMux] the dedicated server will not be Fabric Loader's game instance — "
+						+ "FabricLoader.getGameInstance() stays null there");
 			}
 			try {
 				lifecycleBridge(cl, "installStartedDuties").invoke(null, neoBus);
 			} catch (Throwable t) {
-				ForbricLog.warn("[Forbric/EventMux] the kernel's server-started work did not install — no dead-event "
-						+ "judgement, load report or compatibility decision once a world is up", Reflect.unwrap(t));
+				Caught.warn(t, "[Forbric/EventMux] the kernel's server-started work did not install — no dead-event "
+						+ "judgement, load report or compatibility decision once a world is up");
 			}
 			install(cl, neoBus, GameEventBridge.SERVER_STOPPING,
 					bus -> lifecycleBridge(cl, "installStopping").invoke(null, bus));
@@ -342,10 +342,10 @@ public final class GameEventMultiplexer {
 				EventBridges.verify(GameEventBridge.Pass.CLIENT_GAME_BUS);
 			}
 		} catch (ClassNotFoundException single) {
-			ForbricLog.debug("[Forbric/EventMux] only one Forge family present — no bridge needed");
+			// Only one Forge family present — no bridge needed.
+			Caught.expected(single);
 		} catch (Throwable t) {
-			ForbricLog.warn("[Forbric/EventMux] could not install Neo→Forge game-event bridge",
-					Reflect.unwrap(t));
+			Caught.warn(t, "[Forbric/EventMux] could not install Neo→Forge game-event bridge");
 		}
 	}
 
@@ -379,10 +379,11 @@ public final class GameEventMultiplexer {
 					.getMethod("installDataMapWatch", Object.class).invoke(null, neoBus);
 			ForbricLog.debug("[Forbric/EventMux] watching NeoForge's data-map reload path");
 		} catch (ClassNotFoundException absent) {
-			ForbricLog.debug("[Forbric/EventMux] no NeoForge bus — no data-map path to watch");
+			// No NeoForge bus — no data-map path to watch.
+			Caught.expected(absent);
 		} catch (Throwable t) {
-			ForbricLog.warn("[Forbric/EventMux] could not watch NeoForge's data-map reload path — the kernel's fallback "
-					+ "will load the data maps as before", Reflect.unwrap(t));
+			Caught.warn(t, "[Forbric/EventMux] could not watch NeoForge's data-map reload path — the kernel's fallback "
+					+ "will load the data maps as before");
 		}
 	}
 
@@ -408,10 +409,10 @@ public final class GameEventMultiplexer {
 			install(cl, modBus, GameEventBridge.MODELS_BAKED, bus -> resourceBridge(cl, "installBaked").invoke(null, bus));
 			EventBridges.verify(GameEventBridge.Pass.CLIENT_MOD_BUS);
 		} catch (ClassNotFoundException single) {
-			ForbricLog.debug("[Forbric/EventMux] only one Forge family present — no reload-listener bridge needed");
+			// Only one Forge family present — no reload-listener bridge needed.
+			Caught.expected(single);
 		} catch (Throwable t) {
-			ForbricLog.warn("[Forbric/EventMux] could not install the client reload-listener bridge",
-					Reflect.unwrap(t));
+			Caught.warn(t, "[Forbric/EventMux] could not install the client reload-listener bridge");
 		}
 	}
 
@@ -570,8 +571,8 @@ public final class GameEventMultiplexer {
 			setup.run(guarded(cl, neoBus, bridge));
 			EventBridges.installed(bridge);
 		} catch (Throwable t) {
-			ForbricLog.warn("[Forbric/EventMux] bridge " + bridge + " (" + bridge.event() + ") did not install — "
-					+ bridge.cost(), Reflect.unwrap(t));
+			Caught.warn(t, "[Forbric/EventMux] bridge %s (%s) did not install — %s", bridge, bridge.event(),
+					bridge.cost());
 		}
 	}
 
@@ -598,8 +599,8 @@ public final class GameEventMultiplexer {
 			return java.lang.reflect.Proxy.newProxyInstance(cl, new Class<?>[] {busType}, new StandDownBus(neoBus, forgeEvents));
 		} catch (RuntimeException | LinkageError unproxyable) {
 			// The bridge itself matters more than its stand-down: it installs on the bus as before.
-			ForbricLog.warn("[Forbric/EventMux] bridge " + bridge + " installs unguarded — where the merged game also "
-					+ "delivers its MinecraftForge event natively, a mod may receive it twice", unproxyable);
+			Caught.warn(unproxyable, "[Forbric/EventMux] bridge %s installs unguarded — where the merged game also "
+					+ "delivers its MinecraftForge event natively, a mod may receive it twice", bridge);
 			return neoBus;
 		}
 	}

@@ -16,6 +16,7 @@
 
 package net.forbric.kernel.mixin;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -81,8 +82,85 @@ class KernelMixinBootstrapDecorationTest {
 		assertTrue(keys.contains(org.spongepowered.asm.mixin.FabricUtil.KEY_MOD_ID),
 				"the mod id is the whole point");
 		assertFalse(keys.contains(org.spongepowered.asm.mixin.FabricUtil.KEY_COMPATIBILITY),
-				"KEY_COMPATIBILITY sets injector semantics; changing it per mod is a separate decision with its "
-						+ "own evidence requirement, not a passenger on a naming change");
+				"KEY_COMPATIBILITY sets injector semantics; it has its own step and its own switch, not a seat on "
+						+ "a naming change");
+	}
+
+	/** Two modes: Fabric Loader's level as it gives it, 0.9.2 included (default), and none at all. */
+	@Test
+	void theLevelIsFabricLoadersUnlessTheNewestIsAskedFor() {
+		java.util.List<net.fabricmc.loader.api.metadata.ModDependency> none = java.util.List.of();
+		java.util.List<net.fabricmc.loader.api.metadata.ModDependency> modern = java.util.List.of(
+				new net.forbric.kernel.fabric.KernelMetadataSupport.SimpleModDependency(
+						net.fabricmc.loader.api.metadata.ModDependency.Kind.DEPENDS, "fabricloader", java.util.List.of(">=0.18.4")));
+
+		assertEquals(org.spongepowered.asm.mixin.FabricUtil.COMPATIBILITY_0_9_2, KernelMixinBootstrap.compatibilityLevel(none, "fabric"),
+				"a mod declaring no Fabric Loader lower bound gets 0.9.2, as on Fabric: there is no floor");
+		assertEquals(org.spongepowered.asm.mixin.FabricUtil.COMPATIBILITY_0_17_0,
+				KernelMixinBootstrap.compatibilityLevel(modern, "fabric"));
+		assertEquals(null, KernelMixinBootstrap.compatibilityLevel(none, "latest"));
+		assertEquals(null, KernelMixinBootstrap.compatibilityLevel(modern, "latest"));
+	}
+
+	/**
+	 * MixinCaptureLanding works in Mixin's preApply, and Mixin picks its active extensions when it first prepares the
+	 * configs: added after gotoPhase, it would sit out the first preparation and every class woven until the next.
+	 */
+	@Test
+	void theCaptureLandingIsAMixinExtensionBeforeTheConfigsArePrepared() throws Exception {
+		MethodNode init = method("init");
+		assertTrue(init != null, "KernelMixinBootstrap.init not found in the compiled src/main classes");
+
+		int added = indexOf(init, call -> "add".equals(call.name)
+				&& "org/spongepowered/asm/mixin/transformer/ext/Extensions".equals(call.owner));
+		int landing = -1;
+		AbstractInsnNode[] body = init.instructions.toArray();
+		for (int i = 0; i < body.length; i++) {
+			if (body[i] instanceof org.objectweb.asm.tree.TypeInsnNode type && type.getOpcode() == org.objectweb.asm.Opcodes.NEW
+					&& "net/forbric/kernel/mixin/MixinCaptureLanding".equals(type.desc)) landing = i;
+		}
+		int prepare = indexOf(init, call -> "gotoPhase".equals(call.name));
+
+		assertTrue(landing >= 0 && added > landing, "init must add a MixinCaptureLanding to Mixin's extensions");
+		assertTrue(added < prepare, "an extension added after gotoPhase(INIT) is not active when the first class weaves");
+	}
+
+	/** The compatibility level is read while Mixin prepares each mixin; set after that, nobody reads it. */
+	@Test
+	void theCompatibilityLevelIsSetBeforeTheConfigsArePrepared() throws Exception {
+		MethodNode init = method("init");
+		assertTrue(init != null, "KernelMixinBootstrap.init not found in the compiled src/main classes");
+
+		int level = indexOf(init, call -> "giveFabricConfigsTheirCompatibilityLevel".equals(call.name));
+		int prepare = indexOf(init, call -> "gotoPhase".equals(call.name));
+
+		assertTrue(level >= 0, "init must give the Fabric configs Fabric Loader's compatibility level");
+		assertTrue(level < prepare, "a level set after gotoPhase(INIT) is a silent no-op");
+	}
+
+	@Test
+	void theCompatibilitySwitchIsReadBeforeAnythingIsDecorated() throws Exception {
+		MethodNode step = method("giveFabricConfigsTheirCompatibilityLevel");
+		assertTrue(step != null, "KernelMixinBootstrap.giveFabricConfigsTheirCompatibilityLevel not found");
+
+		int property = -1;
+		int decorate = -1;
+		boolean compatibilityKey = false;
+		AbstractInsnNode[] body = step.instructions.toArray();
+		for (int i = 0; i < body.length; i++) {
+			if (body[i] instanceof LdcInsnNode ldc && KernelMixinBootstrap.COMPATIBILITY_PROPERTY.equals(ldc.cst)) {
+				if (property < 0) property = i;
+			} else if (body[i] instanceof LdcInsnNode ldc
+					&& org.spongepowered.asm.mixin.FabricUtil.KEY_COMPATIBILITY.equals(ldc.cst)) {
+				compatibilityKey = true;
+			} else if (body[i] instanceof MethodInsnNode call && "decorate".equals(call.name) && decorate < 0) {
+				decorate = i;
+			}
+		}
+
+		assertTrue(compatibilityKey, "the step decorates KEY_COMPATIBILITY");
+		assertTrue(property >= 0, "the escape hatch must exist: this changes how injectors behave");
+		assertTrue(decorate < 0 || property < decorate, "and it has to be honoured before anything is decorated");
 	}
 
 	@Test

@@ -5,6 +5,7 @@ import java.util.function.IntSupplier;
 import net.forbric.kernel.boot.DefinedMethodContracts;
 import net.forbric.kernel.boot.DefinedMethodContracts.MethodContract;
 import net.forbric.kernel.boot.KernelCrossHostPredicateContracts;
+import net.forbric.kernel.util.Caught;
 import org.objectweb.asm.*;
 import org.objectweb.asm.tree.*;
 
@@ -14,7 +15,7 @@ public final class KernelFluidPredicateIslands {
     private static final ThreadLocal<Scope> ACTIVE=new ThreadLocal<>();
     private static final StackWalker CALLER=StackWalker.getInstance(StackWalker.Option.RETAIN_CLASS_REFERENCE);
     private static final class DefaultContracts{static final ClassValue<java.util.Map<String,MethodContract>> DEFAULTS=new ClassValue<>(){
-        @Override protected java.util.Map<String,MethodContract>computeValue(Class<?>type){try(var input=type.getClassLoader()instanceof net.forbric.kernel.classloading.ForbricClassLoader loader?loader.getGameResourceAsStream(type.getName().replace('.','/')+".class"):type.getResourceAsStream("/"+type.getName().replace('.','/')+".class")){if(input==null)return java.util.Map.of();ClassNode node=new ClassNode();new ClassReader(input.readAllBytes()).accept(node,ClassReader.SKIP_DEBUG|ClassReader.SKIP_FRAMES);java.util.Map<String,MethodContract>out=new java.util.HashMap<>();for(MethodNode m:node.methods)out.put(m.name+m.desc,new MethodContract(type.getName(),m.name,m.desc,DefinedMethodContracts.fingerprint(m)));return java.util.Map.copyOf(out);}catch(java.io.IOException|RuntimeException unknown){return java.util.Map.of();}}
+        @Override protected java.util.Map<String,MethodContract>computeValue(Class<?>type){try(var input=type.getClassLoader()instanceof net.forbric.kernel.classloading.ForbricClassLoader loader?loader.getGameResourceAsStream(type.getName().replace('.','/')+".class"):type.getResourceAsStream("/"+type.getName().replace('.','/')+".class")){if(input==null)return java.util.Map.of();ClassNode node=new ClassNode();new ClassReader(input.readAllBytes()).accept(node,ClassReader.SKIP_DEBUG|ClassReader.SKIP_FRAMES);java.util.Map<String,MethodContract>out=new java.util.HashMap<>();for(MethodNode m:node.methods)out.put(m.name+m.desc,new MethodContract(type.getName(),m.name,m.desc,DefinedMethodContracts.fingerprint(m)));return java.util.Map.copyOf(out);}catch(java.io.IOException|RuntimeException unknown){Caught.warn(unknown,"[Forbric/Mixin] could not read %s to fingerprint its predicate hosts; it has no default contracts",type.getName());return java.util.Map.of();}}
     };}
     public static final class Scope implements AutoCloseable{final Scope previous;final Object actor,world;final String key;final IntSupplier source;boolean used;Scope(Object actor,Object world,String key,IntSupplier source){this.previous=ACTIVE.get();this.actor=actor;this.world=world;this.key=key;this.source=source;}@Override public void close(){if(previous==null)ACTIVE.remove();else ACTIVE.set(previous);}}
     private KernelFluidPredicateIslands(){}

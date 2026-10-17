@@ -34,6 +34,7 @@ import java.util.WeakHashMap;
 
 import net.forbric.api.Ecosystem;
 import net.forbric.api.ForeignType;
+import net.forbric.kernel.util.Caught;
 import net.forbric.kernel.util.ForbricLog;
 
 /**
@@ -96,7 +97,7 @@ public final class PayloadInterop {
 		try {
 			mirrorMergedPayloadRegistries(loader);
 		} catch (Throwable t) {
-			ForbricLog.warn("[Forbric] could not bootstrap merged custom-payload mirrors", unwrap(t));
+			Caught.warn(t, "[Forbric] could not bootstrap merged custom-payload mirrors");
 		} finally {
 			// Published even when the mirroring threw: the map already says "done for this loader", so the fast
 			// path and the slow path must agree, or every later packet pays the monitor for a retry that the map
@@ -322,6 +323,7 @@ public final class PayloadInterop {
 		try {
 			payload = accessor.invoke(packet);
 		} catch (ReflectiveOperationException | RuntimeException e) {
+			Caught.warn(e, "[Forbric/Net] could not read the payload of %s; it is sent as it is", packet.getClass().getName());
 			return false;
 		}
 		if (payload == null) return false;
@@ -346,6 +348,7 @@ public final class PayloadInterop {
 					channels.size(), protocol);
 			return true;
 		} catch (RuntimeException unreadable) {
+			Caught.warn(unreadable, "[Forbric/Net] could not read a channel declaration on its way out; it is sent as it is");
 			return false;
 		}
 	}
@@ -372,6 +375,7 @@ public final class PayloadInterop {
 			Method idAccessor = type == null ? null : TYPE_ID.get(type.getClass());
 			return idAccessor == null ? null : String.valueOf(idAccessor.invoke(type));
 		} catch (ReflectiveOperationException | RuntimeException e) {
+			Caught.warn(e, "[Forbric/Net] could not read the id of payload %s", payload.getClass().getName());
 			return null;
 		}
 	}
@@ -466,6 +470,7 @@ public final class PayloadInterop {
 					+ " remote id(s) vs " + localSize + " local key(s), MappedRegistry.byKey holds " + byKeySize
 					+ "; remote aliases=" + aliases + "; remote names that are not real local keys: " + notReal);
 		} catch (RuntimeException e) {
+			Caught.expected(e);
 			probe(() -> "  frozen registry probe failed: " + e);
 		}
 	}
@@ -514,8 +519,8 @@ public final class PayloadInterop {
 					+ " while vanilla current task was " + current);
 			return true;
 		} catch (ReflectiveOperationException | RuntimeException e) {
-			ForbricLog.warn("[Forbric] could not complete equivalent common-networking task " + requested
-					+ " while current task was " + current, e);
+			Caught.warn(e, "[Forbric] could not complete equivalent common-networking task %s while current task was %s",
+					requested, current);
 			return false;
 		}
 	}
@@ -597,7 +602,7 @@ public final class PayloadInterop {
 			streamCodec.setAccessible(true);
 			collectCodecRegistrations(streamCodec.get(null), "local/" + packetClass.getSimpleName() + "." + fieldName, out);
 		} catch (ReflectiveOperationException | RuntimeException e) {
-			ForbricLog.warn("[Forbric] could not inspect merged packet codec " + packetClassName + "::" + fieldName, e);
+			Caught.warn(e, "[Forbric] could not inspect merged packet codec %s::%s", packetClassName, fieldName);
 		}
 	}
 
@@ -670,9 +675,11 @@ public final class PayloadInterop {
 				mirrorNoopHandler(loader, clientboundHandlersField, serverboundHandlersField, registration);
 				return true;
 			} catch (UnsupportedOperationException e) {
+				Caught.warn(e, "[Forbric] NeoForge's payload registrations are read-only; payload %s is not mirrored into "
+						+ "NeoForge", registration.id());
 				return false;
 			} catch (ReflectiveOperationException | RuntimeException e) {
-				ForbricLog.warn("[Forbric] could not mirror payload " + registration.id() + " into NeoForge", e);
+				Caught.warn(e, "[Forbric] could not mirror payload %s into NeoForge", registration.id());
 				return false;
 		}
 	}
@@ -746,6 +753,7 @@ public final class PayloadInterop {
 			}
 			return registration;
 		} catch (ReflectiveOperationException | RuntimeException e) {
+			Caught.warn(e, "[Forbric] could not look up NeoForge's registration of payload %s", id);
 			probe(() -> "  neo: registry lookup threw " + e);
 			return null;
 		}
@@ -917,6 +925,8 @@ public final class PayloadInterop {
 					+ "connection with \"No Channel for " + id + "\")");
 			return false;
 		} catch (Throwable t) {
+			Caught.warn(t, "[Forbric] could not ask NeoForge whether it owns payload %s; not falling through",
+					payloadId(payload));
 			probe(() -> "  could not ask NeoForge whether it owns this payload (" + t + ") — not falling through");
 			return false;
 		}
@@ -976,7 +986,7 @@ public final class PayloadInterop {
 			}
 		} catch (Throwable t) {
 			// Loud: a Forge mod's packet that its own dispatcher rejects is a bug in this bridge or in the mod.
-			ForbricLog.warn("[Forbric] MinecraftForge's dispatcher threw on " + payloadId(payload) + " (" + where + ")", unwrap(t));
+			Caught.warn(t, "[Forbric] MinecraftForge's dispatcher threw on %s (%s)", payloadId(payload), where);
 		}
 		// A ForgePayload is Forge's whether or not a handler took it. Falling through would hand it to NeoForge's
 		// body, whose answer to a channel it never negotiated is to kick the client — a verdict Forge never gives.
@@ -999,6 +1009,8 @@ public final class PayloadInterop {
 			if (FORGE_PAYLOAD.equals(payload.getClass().getName())) return true;
 			return notNeoForgesToPolice(payload);
 		} catch (ReflectiveOperationException | RuntimeException e) {
+			Caught.warn(e, "[Forbric] could not read the payload of %s; not treated as a Forge payload",
+					packet.getClass().getName());
 			return false;
 		}
 	}
@@ -1066,6 +1078,8 @@ public final class PayloadInterop {
 			}
 			return true;
 		} catch (ReflectiveOperationException | RuntimeException e) {
+			Caught.warn(e, "[Forbric/Net] could not read NeoForge's payload registrations; %s is left to its channel "
+					+ "check", payloadId(payload));
 			return false;
 		}
 	}
@@ -1134,8 +1148,8 @@ public final class PayloadInterop {
 			registry.getMethod("onConnectionStart", connection.getClass()).invoke(null, connection);
 			probe(() -> "installed MinecraftForge's per-connection handler on the client connection");
 		} catch (ReflectiveOperationException | RuntimeException e) {
-			ForbricLog.warn("[Forbric] could not start MinecraftForge's networking for this connection — its "
-					+ "handshake will not run and Forge mods will see a vanilla peer", unwrap(e));
+			Caught.warn(e, "[Forbric] could not start MinecraftForge's networking for this connection — its "
+					+ "handshake will not run and Forge mods will see a vanilla peer");
 		}
 	}
 
@@ -1175,8 +1189,8 @@ public final class PayloadInterop {
 			factory.getMethod("gatherLoginConfigTasks", connection.getClass(), Consumer.class)
 					.invoke(null, connection, sink);
 		} catch (ReflectiveOperationException | RuntimeException e) {
-			ForbricLog.warn("[Forbric] could not gather MinecraftForge's configuration tasks — its handshake will not "
-					+ "run, so Forge mods see a vanilla peer and their server configs are not synced", unwrap(e));
+			Caught.warn(e, "[Forbric] could not gather MinecraftForge's configuration tasks — its handshake will not "
+					+ "run, so Forge mods see a vanilla peer and their server configs are not synced");
 			return;
 		}
 		if (added.isEmpty() && skipped.isEmpty()) return;
@@ -1221,7 +1235,7 @@ public final class PayloadInterop {
 					StackWalker.getInstance(StackWalker.Option.RETAIN_CLASS_REFERENCE)
 							.getCallerClass().getClassLoader());
 			if (rewritten == null) throw gone;
-			ForbricLog.warn("[Forbric/Net] %s was gone when MinecraftForge's SyncConfigTask read it; wrote it back "
+			Caught.warn(gone, "[Forbric/Net] %s was gone when MinecraftForge's SyncConfigTask read it; wrote it back "
 					+ "from the ModConfig the server holds and sent those %d byte(s). Unpatched, that read "
 					+ "disconnects the client with \"Failed to read config on server\" — which is how a Flashback "
 					+ "replay ended before it started", file, rewritten.length);
@@ -1256,8 +1270,7 @@ public final class PayloadInterop {
 			}
 			return null;
 		} catch (ReflectiveOperationException | java.io.IOException | RuntimeException cannot) {
-			ForbricLog.debug("[Forbric/Net] could not rewrite %s from MinecraftForge's ConfigTracker — %s", file,
-					String.valueOf(cannot));
+			Caught.warn(cannot, "[Forbric/Net] could not rewrite %s from MinecraftForge's ConfigTracker", file);
 			return null;
 		}
 	}
@@ -1282,8 +1295,8 @@ public final class PayloadInterop {
 		try {
 			hooks.getMethod("handleClientConfigurationComplete", connection.getClass()).invoke(null, connection);
 		} catch (ReflectiveOperationException | RuntimeException e) {
-			ForbricLog.warn("[Forbric] MinecraftForge's client-side configuration-complete hook failed — on a server "
-					+ "without Forge its mods keep unloaded server configs", unwrap(e));
+			Caught.warn(e, "[Forbric] MinecraftForge's client-side configuration-complete hook failed — on a server "
+					+ "without Forge its mods keep unloaded server configs");
 		}
 	}
 
@@ -1301,7 +1314,7 @@ public final class PayloadInterop {
 			// handleFabricChannelRegistrationAddon. Without fabric-api this hook is the only place, so send it now.
 			if (register && !DECLARATION_DEFERRED.get()) declareForgeChannels(connection);
 		} catch (RuntimeException e) {
-			ForbricLog.warn("[Forbric] could not keep MinecraftForge's channel list in step", e);
+			Caught.warn(e, "[Forbric] could not keep MinecraftForge's channel list in step");
 		}
 	}
 
@@ -1343,8 +1356,8 @@ public final class PayloadInterop {
 			manager.getMethod("addChannels", connectionCls).invoke(null, connection);
 			probe(() -> "declared Forge's channels to the peer");
 		} catch (Throwable t) {
-			ForbricLog.warn("[Forbric] could not declare MinecraftForge's channels to the peer — a mod that asks "
-					+ "Channel.isRemotePresent before sending will think they are absent", unwrap(t));
+			Caught.warn(t, "[Forbric] could not declare MinecraftForge's channels to the peer — a mod that asks "
+					+ "Channel.isRemotePresent before sending will think they are absent");
 		}
 	}
 
@@ -1357,6 +1370,7 @@ public final class PayloadInterop {
 				return found;
 			} catch (NoSuchMethodException keepLooking) {
 				// up one
+				Caught.expected(keepLooking);
 			}
 		}
 		return null;
@@ -1391,6 +1405,7 @@ public final class PayloadInterop {
 			Object builtins = builtinsField.get(null);
 			return builtins instanceof Map<?, ?> map ? map.get(id) : null;
 		} catch (ReflectiveOperationException | RuntimeException e) {
+			Caught.warn(e, "[Forbric] could not read NeoForge's built-in payload codecs for %s", id);
 			return null;
 		}
 	}
@@ -1444,7 +1459,7 @@ public final class PayloadInterop {
 				method.invoke(null, connection, set);
 				return;
 			} catch (ReflectiveOperationException | RuntimeException e) {
-				ForbricLog.warn("[Forbric] could not mirror channel-registration payload into NeoForge networking", e);
+				Caught.warn(e, "[Forbric] could not mirror channel-registration payload into NeoForge networking");
 				return;
 			}
 		}
@@ -1522,6 +1537,7 @@ public final class PayloadInterop {
 			field.setAccessible(true);
 			return field.get(null);
 		} catch (ReflectiveOperationException | RuntimeException e) {
+			Caught.warn(e, "[Forbric] could not read %s.%s", owner.getName(), name);
 			return null;
 		}
 	}
@@ -1534,7 +1550,9 @@ public final class PayloadInterop {
 				return field.get(owner);
 			} catch (NoSuchFieldException ignored) {
 				// try superclass
+				Caught.expected(ignored);
 			} catch (ReflectiveOperationException | RuntimeException e) {
+				Caught.warn(e, "[Forbric] could not read %s.%s", c.getName(), name);
 				return null;
 			}
 		}
@@ -1563,6 +1581,7 @@ public final class PayloadInterop {
 			only.setAccessible(true);
 			return only.get(owner);
 		} catch (ReflectiveOperationException | RuntimeException e) {
+			Caught.warn(e, "[Forbric] could not read %s.%s", only.getDeclaringClass().getName(), only.getName());
 			return null;
 		}
 	}
@@ -1573,6 +1592,7 @@ public final class PayloadInterop {
 				return c.getDeclaredField(name);
 			} catch (NoSuchFieldException ignored) {
 				// try superclass
+				Caught.expected(ignored);
 			}
 		}
 		return null;
@@ -1591,6 +1611,7 @@ public final class PayloadInterop {
 			method.setAccessible(true);
 			return method.invoke(target, args);
 		} catch (ReflectiveOperationException | RuntimeException e) {
+			Caught.warn(e, "[Forbric] %s.%s threw; answering null", method.getDeclaringClass().getName(), name);
 			return null;
 		}
 	}
@@ -1605,6 +1626,7 @@ public final class PayloadInterop {
 			method.setAccessible(true);
 			return method.invoke(null, args);
 		} catch (ReflectiveOperationException | RuntimeException e) {
+			Caught.warn(e, "[Forbric] %s.%s threw", owner.getName(), name);
 			return INVOKE_FAILED;
 		}
 	}
@@ -1615,6 +1637,7 @@ public final class PayloadInterop {
 				return c.getDeclaredMethod(name, params);
 			} catch (NoSuchMethodException ignored) {
 				// try superclass
+				Caught.expected(ignored);
 			}
 		}
 		for (Class<?> itf : owner.getInterfaces()) {
@@ -1622,6 +1645,7 @@ public final class PayloadInterop {
 				return itf.getMethod(name, params);
 			} catch (NoSuchMethodException ignored) {
 				// try next interface
+				Caught.expected(ignored);
 			}
 		}
 		return null;
@@ -1680,6 +1704,7 @@ public final class PayloadInterop {
 		try {
 			return Class.forName(name, false, loader);
 		} catch (ClassNotFoundException | LinkageError e) {
+			Caught.expected(e);
 			return null;
 		}
 	}

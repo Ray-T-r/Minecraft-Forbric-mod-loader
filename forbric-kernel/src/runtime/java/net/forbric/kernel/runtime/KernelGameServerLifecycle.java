@@ -20,8 +20,8 @@ import java.lang.reflect.Field;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.function.Consumer;
 
+import net.forbric.kernel.util.Caught;
 import net.forbric.kernel.util.ForbricLog;
-import net.forbric.kernel.util.Reflect;
 import net.minecraft.server.MinecraftServer;
 import net.minecraftforge.server.ServerLifecycleHooks;
 import net.neoforged.bus.api.EventPriority;
@@ -124,15 +124,12 @@ public final class KernelGameServerLifecycle {
 
 	/** {@link #installStartedDuties(Object)} with the kernel's own work handed in, so a test can see it run. */
 	static void installStartedDuties(Object neoBus, Consumer<MinecraftServer> duties) {
-		AtomicBoolean warned = new AtomicBoolean();
 		Consumer<ServerStartedEvent> listener = neoEvent -> {
 			forceAllowLogins();
 			try {
 				duties.accept(serverOf(neoEvent));
 			} catch (Throwable t) {
-				if (warned.compareAndSet(false, true)) {
-					ForbricLog.warn("[Forbric/EventMux] the kernel's own server-started work failed", Reflect.unwrap(t));
-				}
+				Caught.warn(t, "[Forbric/EventMux] the kernel's own server-started work failed");
 			}
 		};
 		((IEventBus) neoBus).addListener(EventPriority.LOWEST, false, ServerStartedEvent.class, listener);
@@ -210,7 +207,6 @@ public final class KernelGameServerLifecycle {
 	private static <E extends ServerLifecycleEvent> void subscribe(IEventBus bus, Class<E> event,
 			String hookName, boolean openLoginGate,
 			ForgeHook forge) {
-		AtomicBoolean warned = new AtomicBoolean();
 
 		Consumer<E> listener = neoEvent -> {
 			MinecraftServer server = serverOf(neoEvent);
@@ -222,10 +218,8 @@ public final class KernelGameServerLifecycle {
 			try {
 				forge.handle(server);
 			} catch (Throwable t) {
-				if (warned.compareAndSet(false, true)) {
-					ForbricLog.warn("[Forbric/EventMux] " + hookName + " forward failed; Forge-family mods won't "
-							+ "observe this server-lifecycle event", Reflect.unwrap(t));
-				}
+				Caught.warn(t, "[Forbric/EventMux] %s forward failed; Forge-family mods won't observe this "
+						+ "server-lifecycle event", hookName);
 			}
 		};
 
@@ -249,6 +243,8 @@ public final class KernelGameServerLifecycle {
 		try {
 			return neoEvent.getServer();
 		} catch (Throwable ignored) {
+			Caught.warn(ignored, "[Forbric/EventMux] %s carried no readable server — its Forge forward gets null",
+					neoEvent == null ? null : neoEvent.getClass().getSimpleName());
 			return null;
 		}
 	}
@@ -266,8 +262,8 @@ public final class KernelGameServerLifecycle {
 			f.setAccessible(true);
 			((AtomicBoolean) f.get(null)).set(true);
 		} catch (Throwable t) {
-			ForbricLog.debug("[Forbric/EventMux] could not pre-open Forge allowLogins gate: %s",
-					String.valueOf(Reflect.unwrap(t)));
+			Caught.warn(t, "[Forbric/EventMux] could not pre-open MinecraftForge's allowLogins gate — players may be "
+					+ "refused until Forge's own hook opens it");
 		}
 	}
 }

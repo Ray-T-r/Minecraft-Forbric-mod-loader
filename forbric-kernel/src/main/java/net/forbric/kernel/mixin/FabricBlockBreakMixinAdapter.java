@@ -43,6 +43,7 @@ import org.objectweb.asm.tree.analysis.Frame;
 
 import net.forbric.api.Ecosystem;
 import net.forbric.kernel.util.ForbricLog;
+import net.forbric.kernel.util.Caught;
 
 /**
  * Points fabric-api's {@code onBlockBroken} (PlayerBlockBreakEvents.AFTER) at what NeoForge's {@code destroyBlock} has; see
@@ -275,6 +276,7 @@ public final class FabricBlockBreakMixinAdapter {
 		try {
 			frames = new Analyzer<>(new BasicInterpreter()).analyze(TARGET, method);
 		} catch (AnalyzerException | RuntimeException unreadable) {
+			Caught.expected(unreadable);
 			return null;
 		}
 		BitSet held = new BitSet();

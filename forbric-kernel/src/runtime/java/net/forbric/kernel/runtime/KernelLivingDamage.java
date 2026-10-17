@@ -6,7 +6,7 @@ import java.util.IdentityHashMap;
 import java.util.Set;
 import java.util.concurrent.atomic.AtomicBoolean;
 
-import net.forbric.kernel.util.ForbricLog;
+import net.forbric.kernel.util.Caught;
 import net.minecraft.world.damagesource.DamageSource;
 import net.minecraft.world.entity.LivingEntity;
 import net.minecraftforge.common.ForgeHooks;
@@ -25,7 +25,6 @@ import net.neoforged.neoforge.common.damagesource.DamageContainer;
  */
 public final class KernelLivingDamage {
 	private static final AtomicBoolean PLAYER_SEAM = new AtomicBoolean();
-	private static final AtomicBoolean WARNED = new AtomicBoolean();
 	/** Hits whose Hurt ended at zero with nothing to take away: MinecraftForge never reaches Damage for them. */
 	private static final ThreadLocal<Set<DamageContainer>> NO_DAMAGE =
 			ThreadLocal.withInitial(() -> Collections.newSetFromMap(new IdentityHashMap<>()));
@@ -62,7 +61,8 @@ public final class KernelLivingDamage {
 			}
 			if (out != in) container.setNewDamage(out);
 		} catch (Throwable t) {
-			warn("LivingHurtEvent", t);
+			Caught.warn(t, "[Forbric/Damage] MinecraftForge's %s failed inside the damage pipeline — the hit went on "
+					+ "as NeoForge computed it", "LivingHurtEvent");
 		}
 		return false;
 	}
@@ -73,14 +73,16 @@ public final class KernelLivingDamage {
 		try {
 			float out = ForgeHooks.onLivingDamage(entity, source, amount);
 			if (Float.isNaN(out) || out < 0) {
-				warn("LivingDamageEvent", new IllegalArgumentException("a listener set " + out
-						+ "; NeoForge's damage cannot be negative, so it is taken as 0"));
+				Caught.warn(new IllegalArgumentException("a listener set " + out), "[Forbric/Damage] a MinecraftForge "
+						+ "LivingDamageEvent listener set %s; NeoForge's damage cannot be negative, so it is taken as 0",
+						out);
 				out = 0;
 			}
 			if (out != amount) container.setNewDamage(out);
 			return out;
 		} catch (Throwable t) {
-			warn("LivingDamageEvent", t);
+			Caught.warn(t, "[Forbric/Damage] MinecraftForge's %s failed inside the damage pipeline — the hit went on "
+					+ "as NeoForge computed it", "LivingDamageEvent");
 			return amount;
 		}
 	}
@@ -109,15 +111,9 @@ public final class KernelLivingDamage {
 		try {
 			return ForgeHooks.onPlayerAttack(player, source, amount);
 		} catch (Throwable t) {
-			warn("LivingAttackEvent", t);
+			Caught.warn(t, "[Forbric/Damage] MinecraftForge's %s failed inside the damage pipeline — the hit went on "
+					+ "as NeoForge computed it", "LivingAttackEvent");
 			return true;
-		}
-	}
-
-	private static void warn(String event, Throwable t) {
-		if (WARNED.compareAndSet(false, true)) {
-			ForbricLog.warn("[Forbric/Damage] MinecraftForge's " + event + " failed inside the damage pipeline — the hit "
-					+ "went on as NeoForge computed it", t);
 		}
 	}
 }

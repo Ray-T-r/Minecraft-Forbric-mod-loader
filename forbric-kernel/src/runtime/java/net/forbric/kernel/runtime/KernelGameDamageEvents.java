@@ -1,11 +1,9 @@
 /* Copyright 2026 The Forbric Project. Licensed under the Apache License, Version 2.0. */
 package net.forbric.kernel.runtime;
 
-import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.function.Consumer;
 
-import net.forbric.kernel.util.ForbricLog;
-import net.forbric.kernel.util.Reflect;
+import net.forbric.kernel.util.Caught;
 import net.minecraft.world.item.ItemStack;
 import net.minecraftforge.common.ForgeHooks;
 import net.minecraftforge.event.ForgeEventFactory;
@@ -111,17 +109,14 @@ public final class KernelGameDamageEvents {
 				});
 	}
 
-	/** A LOWEST forward that reads the MinecraftForge answer itself; one warning per event if it throws. */
+	/** A LOWEST forward that reads the MinecraftForge answer itself; a warning each time it throws. */
 	private static <E extends Event> void observe(IEventBus bus, Class<E> event, String name, String cost,
 			Consumer<E> forward) {
-		AtomicBoolean warned = new AtomicBoolean();
 		bus.addListener(EventPriority.LOWEST, false, event, neoEvent -> {
 			try {
 				forward.accept(neoEvent);
 			} catch (Throwable t) {
-				if (warned.compareAndSet(false, true)) {
-					ForbricLog.warn("[Forbric/EventMux] " + name + " forward failed — " + cost, Reflect.unwrap(t));
-				}
+				Caught.warn(t, "[Forbric/EventMux] %s forward failed — %s", name, cost);
 			}
 		});
 	}

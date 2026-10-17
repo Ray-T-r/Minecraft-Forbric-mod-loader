@@ -22,6 +22,7 @@ import org.objectweb.asm.tree.*;
 import org.objectweb.asm.tree.analysis.Analyzer;
 import org.objectweb.asm.tree.analysis.BasicVerifier;
 
+import net.forbric.kernel.ExpectCaught;
 import net.forbric.kernel.TestFixtures;
 import net.forbric.kernel.TestFixtures.Fixture;
 
@@ -88,6 +89,7 @@ class FabricFluidModelsInjectorTest {
 	 * drop every pack and sit on a black screen. A Fabric registry whose class initialisation fails reaches the hook
 	 * as an ExceptionInInitializerError, straight out of Method.invoke; the answer is then NeoForge's own.
 	 */
+	@ExpectCaught("a registry that cannot initialise")
 	@Test void aFabricRegistryThatCannotInitialiseLeavesTheCheckToNeoForge() throws Exception {
 		try (URLClassLoader cl = runtimeLoader(fabricRegistry(true))) {
 			Method hasModel = hook(cl);

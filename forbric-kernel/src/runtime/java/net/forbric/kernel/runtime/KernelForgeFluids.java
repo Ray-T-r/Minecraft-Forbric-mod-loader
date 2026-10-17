@@ -19,8 +19,8 @@ package net.forbric.kernel.runtime;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 
+import net.forbric.kernel.util.Caught;
 import net.forbric.kernel.util.ForbricLog;
-import net.forbric.kernel.util.Reflect;
 import net.minecraft.client.renderer.block.BlockAndTintGetter;
 import net.minecraft.client.renderer.block.FluidModel;
 import net.minecraft.core.BlockPos;
@@ -56,7 +56,6 @@ public final class KernelForgeFluids {
 	public static final String PROPERTY = "forbric.forgeFluidModels";
 	private static final Set<Fluid> ASKED = ConcurrentHashMap.newKeySet();
 	private static final Set<Fluid> ANSWERED = ConcurrentHashMap.newKeySet();
-	private static volatile boolean failureReported;
 
 	private KernelForgeFluids() {
 	}
@@ -67,7 +66,9 @@ public final class KernelForgeFluids {
 		try {
 			return ask(IClientFluidTypeExtensions.of(state), state, level, pos, model);
 		} catch (Throwable t) {
-			return failed(t, model);
+			Caught.warn(t, "[Forbric/Fluids] MinecraftForge fluid extensions threw while choosing a model — "
+					+ "NeoForge's model is used");
+			return model;
 		}
 	}
 
@@ -82,7 +83,9 @@ public final class KernelForgeFluids {
 		try {
 			return ask(extensions, state, level, pos, model);
 		} catch (Throwable t) {
-			return failed(t, model);
+			Caught.warn(t, "[Forbric/Fluids] MinecraftForge fluid extensions threw while choosing a model — "
+					+ "NeoForge's model is used");
+			return model;
 		}
 	}
 
@@ -107,15 +110,6 @@ public final class KernelForgeFluids {
 		return own == null ? model : own;
 	}
 
-	private static FluidModel failed(Throwable t, FluidModel model) {
-		if (!failureReported) {
-			failureReported = true;
-			ForbricLog.warn("[Forbric/Fluids] MinecraftForge fluid extensions threw while choosing a model — "
-					+ "NeoForge's model is used", Reflect.unwrap(t));
-		}
-		return model;
-	}
-
 	private static void report(Fluid fluid) {
 		ForbricLog.info("[Forbric/Fluids] MinecraftForge client extensions consulted for %d fluid(s) so far, %d "
 				+ "supplied their own model (%s)", ASKED.size(), ANSWERED.size(), fluid);
@@ -135,6 +129,8 @@ public final class KernelForgeFluids {
 			if (KernelFluidTypes.forgeTypeIsStandIn(state.getType())) return -1;
 			return extensions.getTintColor();
 		} catch (Throwable t) {
+			Caught.warn(t, "[Forbric/Fluids] MinecraftForge fluid extensions threw while choosing a tint for %s — "
+					+ "no tint (-1) is used", state);
 			return -1;
 		}
 	}

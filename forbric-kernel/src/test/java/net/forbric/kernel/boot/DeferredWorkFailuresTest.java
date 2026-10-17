@@ -24,6 +24,7 @@ import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentLinkedDeque;
 
 import org.junit.jupiter.api.Test;
+import net.forbric.kernel.ExpectCaught;
 
 /** The owners read off a queue shaped like both carriers' DeferredWorkQueue: failed tasks only, distinct, in order. */
 class DeferredWorkFailuresTest {
@@ -76,6 +77,7 @@ class DeferredWorkFailuresTest {
 		assertTrue(DeferredWorkFailures.owners(null).isEmpty());
 	}
 
+	@ExpectCaught("could not read the failed deferred tasks' owners")
 	@Test
 	void aQueueOfAnotherShapeAnswersEmptyAndDoesNotThrow() {
 		assertTrue(DeferredWorkFailures.owners(new Object()).isEmpty(), "no tasks field");

@@ -9,6 +9,8 @@ import org.objectweb.asm.Type;
 import org.objectweb.asm.tree.*;
 import org.objectweb.asm.tree.analysis.*;
 
+import net.forbric.kernel.util.Caught;
+
 /**
  * Follows explicit helper edges or an exact CFG fragment retained in an uncalled body. No mod, class or method
  * names authorize a move. The handler body, Operation, and invocation member remain the mod's own.
@@ -94,7 +96,7 @@ final class MixinExecutionPathRetarget {
 				|| (method.access & Opcodes.ACC_STATIC) != 0 || call.getOpcode() != Opcodes.INVOKEVIRTUAL) return false;
 		Frame<SourceValue> frame;
 		try { frame = new Analyzer<>(new SourceInterpreter()).analyze(owner, method)[method.instructions.indexOf(call)]; }
-		catch (AnalyzerException | RuntimeException invalid) { return false; }
+		catch (AnalyzerException | RuntimeException invalid) { Caught.expected(invalid); return false; }
 		Type[] arguments = Type.getArgumentTypes(method.desc); int start = frame == null ? -1 : frame.getStackSize() - arguments.length - 1;
 		if (start < 0) return false;
 		int slot = 0;
@@ -150,7 +152,7 @@ final class MixinExecutionPathRetarget {
 	private static boolean sameInvocationInputs(String owner, MethodNode original, MethodInsnNode nativeCall, MethodNode current, MethodInsnNode presentCall) {
 		Frame<SourceValue>[] before, after;
 		try { before = new Analyzer<>(new SourceInterpreter()).analyze(owner, original); after = new Analyzer<>(new SourceInterpreter()).analyze(owner, current); }
-		catch (AnalyzerException | RuntimeException invalid) { return false; }
+		catch (AnalyzerException | RuntimeException invalid) { Caught.expected(invalid); return false; }
 		Frame<SourceValue> a = before[original.instructions.indexOf(nativeCall)], b = after[current.instructions.indexOf(presentCall)];
 		int receiver = nativeCall.getOpcode() == Opcodes.INVOKESTATIC ? 0 : 1;
 		int nativeInputs = Type.getArgumentTypes(nativeCall.desc).length + receiver, currentInputs = Type.getArgumentTypes(presentCall.desc).length + receiver;
@@ -266,7 +268,7 @@ final class MixinExecutionPathRetarget {
 		Type[] parameters = Type.getArgumentTypes(handler.desc), from = Type.getArgumentTypes(selected.desc), to = Type.getArgumentTypes(helper.desc);
 		Frame<SourceValue> frame;
 		try { frame = new Analyzer<>(new SourceInterpreter()).analyze(owner.name, selected)[selected.instructions.indexOf(edge)]; }
-		catch (AnalyzerException | RuntimeException invalid) { return false; }
+		catch (AnalyzerException | RuntimeException invalid) { Caught.expected(invalid); return false; }
 		if (frame == null || frame.getStackSize() < to.length) return false;
 		int[] slots = slots(selected);
 		for (int p = 0; p < parameters.length; p++) {
@@ -325,7 +327,7 @@ final class MixinExecutionPathRetarget {
 		for (int slot = 0; slot < arguments; slot++) if (storedParameter(selected, slot)) return false;
 		Frame<BasicValue>[] frames;
 		try { frames = new Analyzer<>(new BasicInterpreter()).analyze(owner.name, selected); }
-		catch (AnalyzerException | RuntimeException invalid) { return false; }
+		catch (AnalyzerException | RuntimeException invalid) { Caught.expected(invalid); return false; }
 		int found = 0;
 		for (int start = 0; start + length <= source.size(); start++) {
 			int end = start + length;

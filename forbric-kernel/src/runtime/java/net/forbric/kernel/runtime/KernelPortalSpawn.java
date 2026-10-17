@@ -3,10 +3,8 @@ package net.forbric.kernel.runtime;
 
 import java.util.ArrayDeque;
 import java.util.Optional;
-import java.util.concurrent.atomic.AtomicBoolean;
 
-import net.forbric.kernel.util.ForbricLog;
-import net.forbric.kernel.util.Reflect;
+import net.forbric.kernel.util.Caught;
 import net.minecraft.core.BlockPos;
 import net.minecraft.world.level.LevelAccessor;
 import net.minecraft.world.level.portal.PortalShape;
@@ -31,7 +29,6 @@ import net.neoforged.neoforge.event.EventHooks;
 public final class KernelPortalSpawn {
 	/** The arguments of each NeoForge dispatch this wrapper has in progress on this thread, innermost last. */
 	private static final ThreadLocal<ArrayDeque<Dispatch>> NEO_DISPATCHES = new ThreadLocal<>();
-	private static final AtomicBoolean WARNED = new AtomicBoolean();
 
 	private record Dispatch(LevelAccessor level, BlockPos position, PortalShape shape) { }
 
@@ -71,10 +68,7 @@ public final class KernelPortalSpawn {
 			Optional<PortalShape> forge = ForgeEventFactory.onTrySpawnPortal(level, position, handed);
 			return forge == null ? Optional.empty() : forge;
 		} catch (Throwable failure) {
-			if (WARNED.compareAndSet(false, true)) {
-				ForbricLog.warn("[Forbric/PortalSpawn] MinecraftForge portal hook failed; retaining the result it was handed",
-						Reflect.unwrap(failure));
-			}
+			Caught.warn(failure, "[Forbric/PortalSpawn] MinecraftForge portal hook failed; retaining the result it was handed");
 			return handed;
 		}
 	}

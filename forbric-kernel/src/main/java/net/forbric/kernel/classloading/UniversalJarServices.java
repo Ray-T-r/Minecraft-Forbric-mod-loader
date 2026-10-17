@@ -40,6 +40,7 @@ import org.objectweb.asm.Type;
 
 import net.forbric.api.Ecosystem;
 import net.forbric.api.ForeignType;
+import net.forbric.kernel.util.Caught;
 import net.forbric.kernel.util.ForbricLog;
 
 /**
@@ -117,6 +118,7 @@ public final class UniversalJarServices {
 		try {
 			new ClassReader(bytes).accept(new Collector(named, supertypes), ClassReader.SKIP_DEBUG | ClassReader.SKIP_FRAMES);
 		} catch (RuntimeException unreadable) {
+			Caught.warn(unreadable, "[Forbric/Services] could not read service provider class %s; kept as usable", internal);
 			return false;
 		}
 		for (String type : named) {
@@ -135,6 +137,7 @@ public final class UniversalJarServices {
 		try (InputStream in = resource.openStream()) {
 			text = new String(in.readAllBytes(), StandardCharsets.UTF_8);
 		} catch (IOException unreadable) {
+			Caught.warn(unreadable, "[Forbric/Services] could not read %s; serving it unfiltered", resource);
 			return resource;
 		}
 		List<String> providers = providers(text);
@@ -167,6 +170,8 @@ public final class UniversalJarServices {
 				}
 			});
 		} catch (java.net.MalformedURLException impossible) {
+			Caught.warn(impossible, "[Forbric/Services] could not build the filtered URL for %s; serving it unfiltered",
+					resource);
 			return resource;
 		}
 	}

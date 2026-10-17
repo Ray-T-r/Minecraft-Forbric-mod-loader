@@ -12,6 +12,7 @@ import net.forbric.kernel.util.ForbricLog;
 import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.resources.Identifier;
 import net.minecraft.world.item.CreativeModeTab;
+import net.forbric.kernel.util.Caught;
 
 /**
  * Called at the head of NeoForge's {@code CreativeModeTabRegistry.setCreativeModeTabOrder} (CreativeTabOrderInjector)
@@ -44,8 +45,8 @@ public final class KernelCreativeTabOrder {
 			}
 			return placed;
 		} catch (Throwable t) {
-			ForbricLog.warn("[Forbric/CreativeTabs] could not place Fabric mods' creative tabs by their native rule — NeoForge's "
-					+ "order stands", t);
+			Caught.warn(t, "[Forbric/CreativeTabs] could not place Fabric mods' creative tabs by their native rule — NeoForge's "
+					+ "order stands");
 			return sorted;
 		}
 	}
@@ -65,6 +66,7 @@ public final class KernelCreativeTabOrder {
 				if (byCode != null) return byCode;
 			}
 		} catch (ReflectiveOperationException | RuntimeException unreadable) {
+			Caught.warn(unreadable, "[Forbric/CreativeTabs] could not read the generators of creative tab %s; its owner is judged by its namespace", tab);
 			// fall through to the namespace
 		}
 		Identifier key = key(tab);
@@ -77,6 +79,7 @@ public final class KernelCreativeTabOrder {
 		try {
 			type = type.getNestHost();   // a lambda's hidden class answers as the class that wrote it
 		} catch (RuntimeException | LinkageError unresolved) {
+			Caught.expected(unresolved);
 			// keep the class itself
 		}
 		return type.getClassLoader() instanceof ForbricClassLoader loader ? loader.ecosystemOfClass(type) : null;

@@ -29,6 +29,7 @@ import org.objectweb.asm.tree.MethodInsnNode;
 import org.objectweb.asm.tree.MethodNode;
 import org.objectweb.asm.tree.VarInsnNode;
 
+import net.forbric.kernel.util.Caught;
 import net.forbric.kernel.util.ForbricLog;
 
 /**
@@ -141,7 +142,7 @@ public final class PackScreenHiddenFilterInjector implements ClassTransformer {
 					+ "remove", LIST, UPDATE);
 			return writer.toByteArray();
 		} catch (RuntimeException e) {
-			ForbricLog.warn("[Forbric/PackScreen] could not restore the hidden-pack filter", e);
+			Caught.warn(e, "[Forbric/PackScreen] could not restore the hidden-pack filter");
 			return classBytes;
 		}
 	}

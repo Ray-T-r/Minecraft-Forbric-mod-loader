@@ -9,6 +9,7 @@ import net.forbric.api.*;
 import net.forbric.kernel.boot.DefinedMethodContracts;
 import net.forbric.kernel.boot.DefinedMethodContracts.MethodContract;
 import net.forbric.kernel.classloading.ForbricClassLoader;
+import net.forbric.kernel.util.Caught;
 
 /** Keep a guest's full source body and Operation at the proved top invocation inside inherited gateways. */
 public final class MixinOperationSeamTransport implements Opcodes {
@@ -89,7 +90,7 @@ public final class MixinOperationSeamTransport implements Opcodes {
         return changed;
     }
     private static boolean register(ForbricClassLoader loader,List<String> owners,int at,Runnable action){if(at==owners.size()){action.run();return true;}boolean[] result={false};return loader.registerBeforeDefinition(owners.get(at),()->result[0]=register(loader,owners,at+1,action))&&result[0];}
-    private static boolean verified(String owner,MethodNode method){try{new org.objectweb.asm.tree.analysis.Analyzer<>(new org.objectweb.asm.tree.analysis.BasicVerifier()).analyze(owner,method);return true;}catch(org.objectweb.asm.tree.analysis.AnalyzerException|RuntimeException invalid){return false;}}
+    private static boolean verified(String owner,MethodNode method){try{new org.objectweb.asm.tree.analysis.Analyzer<>(new org.objectweb.asm.tree.analysis.BasicVerifier()).analyze(owner,method);return true;}catch(org.objectweb.asm.tree.analysis.AnalyzerException|RuntimeException invalid){Caught.expected(invalid);return false;}}
     private static boolean compatible(Installed plan,Function<String,ClassNode> current){for(var pair:List.of(Map.entry(plan.graph.firstOwner(),plan.parentOriginal),Map.entry(plan.graph.helper(),plan.helperOriginal))){MethodNode actual=NativeCallChanges.method(current.apply(pair.getKey()),pair.getValue().name+pair.getValue().desc);if(actual==null)return false;String hash=MixinInstructionFingerprint.hash(actual);if(!hash.equals(MixinInstructionFingerprint.hash(pair.getValue()))&&plan.emitted.stream().noneMatch(value->value.owner().replace('.','/').equals(pair.getKey())&&value.name().equals(actual.name)&&value.descriptor().equals(actual.desc)&&value.fingerprint().equals(hash)))return false;}return plan.graph.getters().stream().allMatch(value->{MethodNode getter=NativeCallChanges.method(current.apply(value.owner().replace('.','/')),value.name()+value.descriptor());boolean valid=getter!=null&&MixinInstructionFingerprint.hash(getter).equals(value.fingerprint());return valid;});}
     /** An injector with a slice, a cancel, a locals capture, more than one injector or a group stays where it is; any
      * Mixin or MixinExtras parameter annotation but {@code @Local} does too. Other parameter annotations (Kotlin's

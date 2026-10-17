@@ -19,8 +19,8 @@ package net.forbric.kernel.runtime;
 import java.util.Optional;
 import java.util.concurrent.atomic.AtomicBoolean;
 
+import net.forbric.kernel.util.Caught;
 import net.forbric.kernel.util.ForbricLog;
-import net.forbric.kernel.util.Reflect;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.level.portal.PortalShape;
 import net.minecraftforge.event.ForgeEventFactory;
@@ -58,7 +58,6 @@ public final class KernelGameResultBridges {
 	 * that replaces what an item becomes — the case {@code nutritiousmilk} exists for — actually replaces it.
 	 */
 	public static void installItemUseFinish(Object neoBus) {
-		AtomicBoolean warned = new AtomicBoolean();
 		AtomicBoolean proved = new AtomicBoolean();
 		((IEventBus) neoBus).addListener(EventPriority.LOWEST, false, LivingEntityUseItemEvent.Finish.class,
 				event -> {
@@ -72,12 +71,9 @@ public final class KernelGameResultBridges {
 									+ "to MinecraftForge, result stack included");
 						}
 					} catch (Throwable t) {
-						if (warned.compareAndSet(false, true)) {
-							ForbricLog.warn("[Forbric/EventMux] LivingEntityUseItemEvent.Finish forward failed — a "
-									+ "MinecraftForge mod cannot change what an item becomes when it is finished, "
-									+ "so food that should leave a bowl or a bottle leaves nothing",
-									Reflect.unwrap(t));
-						}
+						Caught.warn(t, "[Forbric/EventMux] LivingEntityUseItemEvent.Finish forward failed — a "
+								+ "MinecraftForge mod cannot change what an item becomes when it is finished, "
+								+ "so food that should leave a bowl or a bottle leaves nothing");
 					}
 				});
 	}
@@ -92,7 +88,6 @@ public final class KernelGameResultBridges {
 	 * carry it through NeoForge's getter-only event; the BaseFireBlock wrapper can and handles its own forward.
 	 */
 	public static void installPortalSpawn(Object neoBus) {
-		AtomicBoolean warned = new AtomicBoolean();
 		AtomicBoolean proved = new AtomicBoolean();
 		AtomicBoolean saidReplacement = new AtomicBoolean();
 		((IEventBus) neoBus).addListener(EventPriority.LOWEST, false, BlockEvent.PortalSpawnEvent.class,
@@ -114,11 +109,8 @@ public final class KernelGameResultBridges {
 									+ "MinecraftForge — a refusal now carries");
 						}
 					} catch (Throwable t) {
-						if (warned.compareAndSet(false, true)) {
-							ForbricLog.warn("[Forbric/EventMux] BlockEvent.PortalSpawnEvent forward failed — a "
-									+ "MinecraftForge mod cannot prevent a nether portal lighting",
-									Reflect.unwrap(t));
-						}
+						Caught.warn(t, "[Forbric/EventMux] BlockEvent.PortalSpawnEvent forward failed — a "
+								+ "MinecraftForge mod cannot prevent a nether portal lighting");
 					}
 				});
 	}

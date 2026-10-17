@@ -1,7 +1,7 @@
 /* Copyright 2026 The Forbric Project. Licensed under the Apache License, Version 2.0. */
 package net.forbric.kernel.boot;
 import java.lang.reflect.*;import java.nio.charset.StandardCharsets;import java.security.MessageDigest;import java.util.*;import java.util.concurrent.ConcurrentHashMap;
-import org.objectweb.asm.Type;import net.forbric.kernel.boot.DefinedMethodContracts.MethodContract;import net.forbric.kernel.util.ForbricLog;
+import org.objectweb.asm.Type;import net.forbric.kernel.boot.DefinedMethodContracts.MethodContract;import net.forbric.kernel.util.Caught;import net.forbric.kernel.util.ForbricLog;
 
 /** Guards a missing factory wrapper lifted to the final, unchanged resource continuation. */
 public final class KernelResourceContinuations {
@@ -38,7 +38,7 @@ public final class KernelResourceContinuations {
                     }
                 }
             }
-        }catch(ReflectiveOperationException|LinkageError unavailable){proved=false;}
+        }catch(ReflectiveOperationException|LinkageError unavailable){Caught.warn(unavailable,"[Forbric/ResourceContinuation] the final-body/operand proof of %s threw; retaining the native resource continuation",key);proved=false;}
         if(!proved&&caller!=null&&REPORTED.get(caller.getClass()).add(key))ForbricLog.warn("[Forbric/ResourceContinuation] retaining the native resource continuation: its final bodies or actual source/prefix operands differ; the guest factory wrapper is not called (%s)",key);
         return null;
     }

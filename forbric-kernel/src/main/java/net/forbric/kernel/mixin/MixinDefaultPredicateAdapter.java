@@ -16,6 +16,7 @@ import org.objectweb.asm.tree.analysis.*;
 
 import net.forbric.kernel.boot.DefaultPredicateDispatch;
 import net.forbric.kernel.boot.DefinedMethodContracts;
+import net.forbric.kernel.util.Caught;
 
 /**
  * Transports a missing redirect between structurally identical default bitmask-predicate families. The guest
@@ -192,7 +193,7 @@ public final class MixinDefaultPredicateAdapter {
             int first = frame.getStackSize() - called.length - 1;
             int[] slots = DefaultMethodOverloadBridge.slots(arguments, (handler.access & Opcodes.ACC_STATIC) != 0);
             return parameter(frame.getStack(first)) == slots[0] && parameter(frame.getStack(first + mask + 1)) == slots[oldMask + 1];
-        } catch (AnalyzerException | RuntimeException invalid) { return false; }
+        } catch (AnalyzerException | RuntimeException invalid) { Caught.expected(invalid); return false; }
     }
 
     private static int parameter(BasicValue value) { return value instanceof Parameter parameter ? parameter.slot : -1; }
@@ -302,7 +303,7 @@ public final class MixinDefaultPredicateAdapter {
         try {
             Type.getMethodType(parsed.desc());
             return new DefaultMethodOverloadBridge.Member(Opcodes.INVOKEINTERFACE, parsed.owner(), parsed.name(), parsed.desc(), true);
-        } catch (RuntimeException invalid) { return null; }
+        } catch (RuntimeException invalid) { Caught.expected(invalid); return null; }
     }
     private static List<AnnotationNode> annotations(MethodNode method) {
         List<AnnotationNode> out = new ArrayList<>();

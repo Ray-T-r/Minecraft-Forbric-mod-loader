@@ -19,6 +19,7 @@ import org.objectweb.asm.tree.VarInsnNode;
 import org.objectweb.asm.tree.analysis.AnalyzerException;
 import org.objectweb.asm.tree.analysis.Frame;
 import org.objectweb.asm.tree.analysis.SourceValue;
+import net.forbric.kernel.util.Caught;
 
 /**
  * Whether a merged method's MinecraftForge call already does, on the same object and on the same path, what a repair
@@ -42,6 +43,7 @@ final class NativeCallPairing {
 		try {
 			flow = new Flow(owner, method);
 		} catch (AnalyzerException | RuntimeException unanalyzable) {
+			Caught.expected(unanalyzable);
 			return false;
 		}
 		int f = method.instructions.indexOf(forge), n = method.instructions.indexOf(neoPath);

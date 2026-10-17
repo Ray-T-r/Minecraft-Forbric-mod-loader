@@ -46,6 +46,7 @@ import org.objectweb.asm.tree.MethodInsnNode;
 
 import net.forbric.api.Ecosystem;
 import net.forbric.api.Side;
+import net.forbric.kernel.ExpectCaught;
 import net.forbric.kernel.TestFixtures;
 
 @ResourceLock("system-properties")
@@ -126,6 +127,7 @@ class KernelForgeInternalSubscribersTest {
         assertEquals(1, supplied.registered());
     }
 
+    @ExpectCaught("second listener failed")
     @Test
     void aFailedPartialNativeRegistrationIsNamedAndNeverRetriedWhileOtherClassesContinue() {
         Set<String> attempts = new LinkedHashSet<>();
@@ -184,6 +186,7 @@ class KernelForgeInternalSubscribersTest {
                 "a new game class loader has its own native buses and must not inherit old registrations");
     }
 
+    @ExpectCaught("native registration failed")
     @Test
     void nativeModBusAndAutoContextUseTheForgeBaselineAndRestoreTheOuterContext() throws Exception {
         for (boolean fail : List.of(false, true)) {

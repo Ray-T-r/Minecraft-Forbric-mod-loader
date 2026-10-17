@@ -17,11 +17,11 @@
 package net.forbric.kernel.interop;
 
 import java.lang.reflect.Field;
-import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 
+import net.forbric.kernel.util.Caught;
 import net.forbric.kernel.util.ForbricLog;
 
 /**
@@ -62,6 +62,7 @@ public final class ForgeRuntimeInterop {
 		try {
 			return Class.forName(className, false, cl).isInstance(value);
 		} catch (Throwable ignored) {
+			Caught.warn(ignored, "[Forbric/ForgeRuntime] could not test a fluid against %s; treated as not one", className);
 			return false;
 		}
 	}
@@ -76,18 +77,10 @@ public final class ForgeRuntimeInterop {
 				Method get = registryObject.getClass().getMethod("get");
 				return get.invoke(registryObject);
 			} catch (Throwable t) {
-				Throwable cause = unwrap(t);
-				ForbricLog.warn("[Forbric/ForgeRuntime] could not resolve ForgeMod.%s; fluid behavior may be degraded",
-						field, cause);
+				Caught.warn(t, "[Forbric/ForgeRuntime] could not resolve ForgeMod.%s; fluid behavior may be degraded",
+						field);
 				return null;
 			}
 		});
-	}
-
-	private static Throwable unwrap(Throwable t) {
-		while (t instanceof InvocationTargetException invocation && invocation.getCause() != null) {
-			t = invocation.getCause();
-		}
-		return t;
 	}
 }

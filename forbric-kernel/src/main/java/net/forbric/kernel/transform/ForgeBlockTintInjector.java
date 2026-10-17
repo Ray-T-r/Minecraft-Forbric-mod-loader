@@ -14,6 +14,7 @@ import org.objectweb.asm.tree.AbstractInsnNode;
 import org.objectweb.asm.tree.ClassNode;
 import org.objectweb.asm.tree.MethodInsnNode;
 import org.objectweb.asm.tree.MethodNode;
+import net.forbric.kernel.util.Caught;
 
 /**
  * Redirect one post call without changing the event object, descriptor or surrounding instructions.
@@ -55,7 +56,7 @@ public final class ForgeBlockTintInjector implements ClassTransformer {
 	/** Whether {@code createDefault} hands its BlockColors to MinecraftForge: through the funnel, or itself. */
 	static boolean reachesMinecraftForge(byte[] bytes) {
 		ClassNode node = new ClassNode();
-		try { new ClassReader(bytes).accept(node, 0); } catch (RuntimeException unreadable) { return false; }
+		try { new ClassReader(bytes).accept(node, 0); } catch (RuntimeException unreadable) { Caught.warn(unreadable, "[Forbric/BlockTint] could not read BlockColors; taken as not handing its colors to MinecraftForge"); return false; }
 		for (var method : node.methods) {
 			if (!method.name.equals("createDefault")) continue;
 			if (registersNatively(node.name, method)) return true;

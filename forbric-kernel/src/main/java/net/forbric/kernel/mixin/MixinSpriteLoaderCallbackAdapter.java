@@ -18,6 +18,7 @@ import org.objectweb.asm.tree.analysis.Frame;
 import org.objectweb.asm.tree.analysis.SourceInterpreter;
 import org.objectweb.asm.tree.analysis.SourceValue;
 
+import net.forbric.kernel.util.Caught;
 import net.forbric.kernel.util.ForbricLog;
 
 /**
@@ -127,6 +128,7 @@ public final class MixinSpriteLoaderCallbackAdapter {
 			all = new Analyzer<>(new SourceInterpreter()).analyze(owner, body);
 			sources = all[at];
 		} catch (AnalyzerException | RuntimeException unanalysable) {
+			Caught.expected(unanalysable);
 			return false;
 		}
 		if (held == null || sources == null) return false;
@@ -199,6 +201,7 @@ public final class MixinSpriteLoaderCallbackAdapter {
 			ClassLoader platform = ClassLoader.getPlatformClassLoader();
 			return Class.forName(wanted.getClassName(), false, platform).isAssignableFrom(Class.forName(made.getClassName(), false, platform));
 		} catch (ClassNotFoundException | LinkageError unknown) {
+			Caught.expected(unknown);
 			return false;
 		}
 	}

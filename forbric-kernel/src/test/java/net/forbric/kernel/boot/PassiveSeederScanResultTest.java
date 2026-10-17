@@ -45,6 +45,7 @@ import org.objectweb.asm.ClassWriter;
 import org.objectweb.asm.Opcodes;
 
 import net.forbric.api.ModPresence;
+import net.forbric.kernel.ExpectCaught;
 import net.forbric.kernel.TestFixtures;
 import net.forbric.kernel.TestFixtures.Fixture;
 import net.forbric.kernel.discovery.ForbricModDiscoverer;
@@ -152,6 +153,7 @@ class PassiveSeederScanResultTest {
 		}
 	}
 
+	@ExpectCaught("could not scan brokenprobe.jar for NeoForge")
 	@Test
 	void aJarThatCannotBeIndexedAnswersEmptyInsteadOfThrowing() throws Exception {
 		// A game loader without the kernel's game-side classes, so the index cannot be materialised: the one way

@@ -43,6 +43,7 @@ import net.forbric.api.Side;
 import net.forbric.api.UnifiedDependency;
 import net.forbric.api.VersionPredicate;
 import net.forbric.kernel.discovery.ForbricModDiscoverer;
+import net.forbric.kernel.util.Caught;
 import net.forbric.kernel.util.ForbricLog;
 
 /**
@@ -85,8 +86,9 @@ import net.forbric.kernel.util.ForbricLog;
  * loads that mod anyway, as it loads any mod with an unmet dependency, so leaving the provider out would only take its
  * dependency away; the provider is kept back instead, with a WARN naming both (see {@link #resolve}).
  *
- * <p>Fabric Loader also treats an id that two nested mods {@code provide} as one id, of which at most one loads.
- * That is not applied: cross-jar arbitration claims declared ids only (see {@code DuplicateModArbiter}).
+ * <p>Fabric Loader also loads one mod per id, {@code provides} included. That half is decided on the selection, after
+ * cross-jar arbitration has picked one build per declared id, by {@link FabricUniqueIds}; this class's rule runs
+ * before arbitration, on what a nested mod needs from the platform.
  *
  * <p>{@code -Dforbric.nestedRequirements=off} loads every nested Fabric mod again;
  * {@code -Dforbric.nestedRequirements=off:<id>,<id>} keeps only those ids out of the rule (the kernel does not read
@@ -129,6 +131,11 @@ public final class NestedFabricRequirements {
 
 	/** {@link #resolve}'s answer: what is left out (with why), and what was kept back from it. */
 	public record Resolution<K>(Map<K, String> leftOut, Map<K, KeptBack> keptBack) {
+	}
+
+	/** Whether a carrier or the kernel answers for {@code id}, so that no candidate is ever weighed for it. */
+	static boolean platform(String id) {
+		return net.forbric.kernel.util.PlatformIds.provides(id);
 	}
 
 	public static boolean enabled() {
@@ -221,8 +228,8 @@ public final class NestedFabricRequirements {
 					}
 				}
 			} catch (Exception unreadable) {
-				ForbricLog.debug("[Forbric/JiJ] could not read the requirements of %s: %s", jar.getFileName(),
-						String.valueOf(unreadable));
+				Caught.warn(unreadable, "[Forbric/JiJ] could not read the requirements of %s; it adds none",
+						jar.getFileName());
 			}
 		}
 		return out;

@@ -13,6 +13,7 @@ import java.util.function.Function;
 
 import net.forbric.api.Ecosystem;
 import net.forbric.kernel.classloading.ForbricClassLoader;
+import net.forbric.kernel.util.Caught;
 import org.objectweb.asm.ClassReader;
 import org.objectweb.asm.tree.ClassNode;
 
@@ -41,6 +42,7 @@ public final class NativeGameReferences {
 			try (var stream = loader.getGameResourceAsStream(path)) {
 				return stream == null ? null : stream.readAllBytes();
 			} catch (IOException unavailable) {
+				Caught.warn(unavailable, "[Forbric/Mixin] could not read game resource %s; taken as absent", path);
 				return null;
 			}
 		}, owner -> loader.getPreMixinClassBytes(owner.replace('/', '.')));

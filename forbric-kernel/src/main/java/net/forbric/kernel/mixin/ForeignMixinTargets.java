@@ -30,6 +30,7 @@ import java.util.function.Function;
 
 import com.electronwill.nightconfig.core.UnmodifiableConfig;
 
+import net.forbric.kernel.util.Caught;
 import net.forbric.kernel.util.ForbricLog;
 
 /**
@@ -106,7 +107,7 @@ public final class ForeignMixinTargets {
 				byte[] json = resource.apply(config);
 				if (json == null) continue;
 				configs++;
-				for (String target : targetsOf(json, resource)) {
+				for (String target : targetsOf(config, json, resource)) {
 					byTarget.computeIfAbsent(target, k -> new LinkedHashSet<>()).add(config);
 				}
 			}
@@ -119,11 +120,12 @@ public final class ForeignMixinTargets {
 	}
 
 	/** Every class the mixins declared by one config's JSON target. Best-effort: an unreadable entry is skipped. */
-	private static List<String> targetsOf(byte[] configJson, Function<String, byte[]> resource) {
+	private static List<String> targetsOf(String name, byte[] configJson, Function<String, byte[]> resource) {
 		UnmodifiableConfig config;
 		try (Reader reader = new InputStreamReader(new ByteArrayInputStream(configJson), StandardCharsets.UTF_8)) {
 			config = MixinConfigJson.parse(reader);
 		} catch (RuntimeException | java.io.IOException notAMixinConfig) {
+			Caught.warn(notAMixinConfig, "[Forbric/Mixin] could not parse mixin config %s; its targets are not indexed", name);
 			return List.of();
 		}
 
@@ -144,6 +146,8 @@ public final class ForeignMixinTargets {
 				targets.addAll(MixinFit.mixinTargets(MixinFit.parse(bytes)));
 			} catch (RuntimeException unreadable) {
 				// One unparseable mixin must not cost the whole config's contribution to the index.
+				Caught.warn(unreadable, "[Forbric/Mixin] could not read the targets of mixin %s.%s in %s; it is not indexed",
+						pkg, mixin, name);
 			}
 		}
 		return targets;

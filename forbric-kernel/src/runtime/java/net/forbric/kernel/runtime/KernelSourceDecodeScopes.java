@@ -6,6 +6,7 @@ import java.lang.invoke.MethodHandles;
 import java.lang.invoke.MethodType;
 import java.util.*;
 import java.util.function.*;
+import net.forbric.kernel.util.Caught;
 import net.forbric.kernel.util.ForbricLog;
 
 /** Lexical ownership of a source predicate evaluation and its closed result consumer. */
@@ -31,7 +32,7 @@ public final class KernelSourceDecodeScopes {
     ForbricLog.warn("[Forbric/Conditions] final source predicate/input witness is unavailable or changed; native condition fallback remains active");return result;
   }
   try { ClassLoader loader=KernelSourceDecodeScopes.class.getClassLoader();scope.judged.add(new Judgement(input,Class.forName(owner.replace('/','.'),false,loader),name,MethodType.fromMethodDescriptorString(descriptor,loader))); }
-  catch(ReflectiveOperationException|RuntimeException|LinkageError unproved){ForbricLog.warn("[Forbric/Conditions] source predicate evaluation ownership could not be recorded; native condition fallback remains active",unproved);}
+  catch(ReflectiveOperationException|RuntimeException|LinkageError unproved){Caught.warn(unproved,"[Forbric/Conditions] source predicate evaluation ownership could not be recorded for %s.%s%s; native condition fallback remains active",owner,name,descriptor);}
   return result;
  }
  /**
@@ -54,7 +55,7 @@ public final class KernelSourceDecodeScopes {
    ClassLoader loader=owner.getClassLoader();if(loader==null)return false;
    try(java.io.InputStream in=loader.getResourceAsStream(owner.getName().replace('.','/')+".class")){
     return in!=null&&net.forbric.kernel.util.ByteScan.constantPoolNames(in.readAllBytes(),new byte[][]{net.forbric.kernel.util.ByteScan.poolEntry(wanted)})[0];
-   }catch(java.io.IOException|RuntimeException unreadable){return false;}
+   }catch(java.io.IOException|RuntimeException unreadable){Caught.warn(unreadable,"[Forbric/Conditions] could not read %s to see whether it judges %s; its verdict is not taken as one",owner.getName(),wanted);return false;}
   });
  }
  /** Only a transported original cancellation callback creates this consumer. Its delegate is called unchanged. */

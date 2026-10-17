@@ -23,6 +23,7 @@ import org.objectweb.asm.ClassWriter;
 import org.objectweb.asm.Type;
 import org.objectweb.asm.tree.ClassNode;
 
+import net.forbric.kernel.util.Caught;
 import net.forbric.kernel.util.ForbricLog;
 
 /**
@@ -63,8 +64,8 @@ public final class ForgeCapabilityTokenInjector implements ClassTransformer {
 					pluginCls.getMethod("processClassWithFlags", phase, ClassNode.class, Type.class, String.class),
 					Enum.valueOf(phase.asSubclass(Enum.class), "AFTER"));
 		} catch (Throwable t) {
-			ForbricLog.debug("[Forbric/Capabilities] no MinecraftForge CapabilityTokenSubclass plugin — token injector not "
-					+ "installed: %s", String.valueOf(t));
+			Caught.warn(t, "[Forbric/Capabilities] no MinecraftForge CapabilityTokenSubclass plugin — token injector not "
+					+ "installed");
 			return null;
 		}
 	}
@@ -99,9 +100,8 @@ public final class ForgeCapabilityTokenInjector implements ClassTransformer {
 					+ "launch plugin", className);
 			return writer.toByteArray();
 		} catch (Throwable t) {
-			ForbricLog.warn("[Forbric/Capabilities] could not process capability token " + className
-					+ " — the capability built from it will throw on first use, as it would on Forge without its "
-					+ "generic signature", t);
+			Caught.warn(t, "[Forbric/Capabilities] could not process capability token %s — the capability built from it"
+					+ " will throw on first use, as it would on Forge without its generic signature", className);
 			return classBytes;
 		}
 	}
@@ -111,6 +111,8 @@ public final class ForgeCapabilityTokenInjector implements ClassTransformer {
 			ClassReader reader = new ClassReader(classBytes);
 			return TOKEN.equals(reader.getClassName()) || TOKEN.equals(reader.getSuperName());
 		} catch (Throwable unreadable) {
+			Caught.warn(unreadable, "[Forbric/Capabilities] could not read a class header to check for a capability"
+					+ " token; treated as not one");
 			return false;
 		}
 	}

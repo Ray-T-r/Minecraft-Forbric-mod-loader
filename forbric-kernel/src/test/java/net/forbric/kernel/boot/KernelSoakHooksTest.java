@@ -4,6 +4,7 @@ import static org.junit.jupiter.api.Assertions.*;
 
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
+import net.forbric.kernel.ExpectCaught;
 
 class KernelSoakHooksTest {
 	public static final class FakeMinecraft {
@@ -13,6 +14,7 @@ class KernelSoakHooksTest {
 
 	@AfterEach void clear() { System.clearProperty("forbric.clientSoak"); }
 
+	@ExpectCaught("controller unavailable; no soak acceptance can be recorded")
 	@Test void aControllerThatCannotStartStopsTheOwnedClientInsteadOfIdling() {
 		System.setProperty("forbric.clientSoak", "true");
 		FakeMinecraft minecraft = new FakeMinecraft();

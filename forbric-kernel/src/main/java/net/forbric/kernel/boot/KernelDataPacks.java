@@ -29,8 +29,8 @@ import java.util.function.Function;
 import net.forbric.api.DiscoveredMod;
 import net.forbric.api.Ecosystem;
 import net.forbric.api.ModPresence;
+import net.forbric.kernel.util.Caught;
 import net.forbric.kernel.util.ForbricLog;
-import net.forbric.kernel.util.Reflect;
 
 /**
  * Serves a Forge-family mod jar's own {@code data/} — its recipes, tags, loot tables, advancements and datapack
@@ -140,9 +140,8 @@ public final class KernelDataPacks {
 					+ "mod's own data/ is invisible otherwise, because ModList.modFiles is empty): %s",
 					ids.size(), loaderPacks, modPacks, ids);
 		} catch (Throwable t) {
-			ForbricLog.warn("[Forbric/DataPacks] could not serve datapacks (the c: convention tags and every "
-					+ "Forge-family mod's recipes, tags and worldgen data will be missing)",
-					Reflect.unwrap(t));
+			Caught.warn(t, "[Forbric/DataPacks] could not serve datapacks (the c: convention tags and every "
+					+ "Forge-family mod's recipes, tags and worldgen data will be missing)");
 		}
 	}
 
@@ -270,6 +269,7 @@ public final class KernelDataPacks {
 			}
 			return knownPack(Ecosystem.NEOFORGE, ids, versions);
 		} catch (Throwable unreadable) {
+			Caught.warn(unreadable, "[Forbric/DataPacks] could not read the NeoForge mods.toml of carrier %s; it declares no known pack", jar.getFileName());
 			return null;
 		}
 	}
@@ -304,6 +304,8 @@ public final class KernelDataPacks {
 			}
 		} catch (Throwable unreadable) {
 			// not a zip, or no permission — rank it lowest
+			Caught.warn(unreadable, "[Forbric/DataPacks] could not read %s to rank it as a carrier; ranked lowest",
+					jar.getFileName());
 		}
 		return false;
 	}
@@ -362,6 +364,8 @@ public final class KernelDataPacks {
 			}
 		} catch (Throwable unreadable) {
 			// not a zip, or no permission — nothing to serve
+			Caught.warn(unreadable, "[Forbric/DataPacks] could not read %s to look for data/; its data/ is not served",
+					jar.getFileName());
 		}
 		return false;
 	}
@@ -378,8 +382,8 @@ public final class KernelDataPacks {
 					.invoke(null, id, jar, packType, knownPack == null ? null : knownPack.get(0),
 							knownPack == null ? null : knownPack.get(1), knownPack == null ? null : knownPack.get(2));
 		} catch (Throwable t) {
-			ForbricLog.warn("[Forbric/DataPacks] could not build a datapack over %s — that mod's data/ will be "
-					+ "missing: %s", jar.getFileName(), String.valueOf(Reflect.unwrap(t)));
+			Caught.warn(t, "[Forbric/DataPacks] could not build a datapack over %s — that mod's data/ will be "
+					+ "missing", jar.getFileName());
 			return null;
 		}
 	}

@@ -16,8 +16,7 @@
 
 package net.forbric.kernel.runtime;
 
-import net.forbric.kernel.util.ForbricLog;
-import net.forbric.kernel.util.Reflect;
+import net.forbric.kernel.util.Caught;
 import net.minecraft.core.HolderLookup;
 import net.minecraft.core.RegistryAccess;
 import net.minecraft.nbt.CompoundTag;
@@ -212,7 +211,8 @@ public final class KernelForgeCapabilities {
 			CompoundTag tag = field.serializeInternal(lookupOf(owner));
 			if (tag != null) output.storeNullable("ForgeCaps", CompoundTag.CODEC, tag);
 		} catch (Throwable t) {
-			reportOnce("saving a block entity's MinecraftForge capabilities", t);
+			Caught.warn(t, "[Forbric/Capabilities] saving a block entity's MinecraftForge capabilities threw — "
+					+ "that data is skipped");
 		}
 	}
 
@@ -223,7 +223,8 @@ public final class KernelForgeCapabilities {
 			CompoundTag tag = field.serializeInternal(((Entity) owner).registryAccess());
 			if (tag != null) output.storeNullable("ForgeCaps", CompoundTag.CODEC, tag);
 		} catch (Throwable t) {
-			reportOnce("saving an entity's MinecraftForge capabilities", t);
+			Caught.warn(t, "[Forbric/Capabilities] saving an entity's MinecraftForge capabilities threw — "
+					+ "that data is skipped");
 		}
 	}
 
@@ -233,7 +234,8 @@ public final class KernelForgeCapabilities {
 		try {
 			input.read("ForgeCaps", CompoundTag.CODEC).ifPresent(tag -> field.deserializeInternal(input.lookup(), tag));
 		} catch (Throwable t) {
-			reportOnce("loading MinecraftForge capabilities from ForgeCaps", t);
+			Caught.warn(t, "[Forbric/Capabilities] loading MinecraftForge capabilities from ForgeCaps threw — "
+					+ "that data is skipped");
 		}
 	}
 
@@ -241,15 +243,6 @@ public final class KernelForgeCapabilities {
 	private static HolderLookup.Provider lookupOf(Object blockEntity) {
 		Level level = blockEntity instanceof BlockEntity be ? be.getLevel() : null;
 		return level != null ? level.registryAccess() : RegistryAccess.EMPTY;
-	}
-
-	private static volatile boolean reported;
-
-	private static void reportOnce(String what, Throwable t) {
-		if (reported) return;
-		reported = true;
-		ForbricLog.warn("[Forbric/Capabilities] " + what + " threw — that data is skipped; later failures of this "
-				+ "kind are not repeated", Reflect.unwrap(t));
 	}
 
 	// ---- registration stage
@@ -273,6 +266,8 @@ public final class KernelForgeCapabilities {
 				}
 			}
 		} catch (Throwable t) {
+			Caught.warn(t, "[Forbric/Capabilities] could not count @AutoRegisterCapability in the mods' scan data — "
+					+ "reported as -1");
 			return -1;
 		}
 		return annotated;

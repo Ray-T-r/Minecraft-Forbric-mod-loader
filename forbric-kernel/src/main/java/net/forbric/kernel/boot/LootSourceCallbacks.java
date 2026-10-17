@@ -15,6 +15,7 @@ import org.objectweb.asm.tree.*;
 import net.forbric.kernel.classloading.ForbricClassLoader;
 import net.forbric.kernel.mixin.HandlerFlow;
 import net.forbric.kernel.mixin.MixinInstructionFingerprint;
+import net.forbric.kernel.util.Caught;
 
 /** A closed private ops/provider memo permits projecting the original callbacks onto the typed reload seam.
  * Callback bodies, event invoker reads, exception regions and holder iteration are copied, never reimplemented. */
@@ -107,7 +108,7 @@ public final class LootSourceCallbacks implements Opcodes {
 
     /** No source class, mod id or handler name admits this rule. The four injector roles and every memo access close it. */
     public static Plan plan(ClassNode input){
-        try{if(input==null)return null;ClassWriter snapshot=new ClassWriter(0);input.accept(snapshot);ClassNode expanded=new ClassNode();new ClassReader(snapshot.toByteArray()).accept(expanded,ClassReader.EXPAND_FRAMES);return planChecked(expanded);}catch(RuntimeException unknown){return null;}
+        try{if(input==null)return null;ClassWriter snapshot=new ClassWriter(0);input.accept(snapshot);ClassNode expanded=new ClassNode();new ClassReader(snapshot.toByteArray()).accept(expanded,ClassReader.EXPAND_FRAMES);return planChecked(expanded);}catch(RuntimeException unknown){Caught.warn(unknown,"[Forbric/Mixin] could not plan the loot callback group of %s; it remains unclaimed",input==null?null:input.name);return null;}
     }
     private static Plan planChecked(ClassNode input){
         if(input==null||!"java/lang/Object".equals(input.superName)||!input.interfaces.isEmpty())return null;

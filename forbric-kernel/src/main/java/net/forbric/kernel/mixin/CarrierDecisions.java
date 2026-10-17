@@ -41,6 +41,7 @@ import org.objectweb.asm.tree.analysis.SourceValue;
 
 import net.forbric.api.Ecosystem;
 import net.forbric.kernel.util.ForbricLog;
+import net.forbric.kernel.util.Caught;
 
 /**
  * Moves a mod's injector at a vanilla decision onto the decision the surviving carrier makes in its place, with the
@@ -355,6 +356,7 @@ public final class CarrierDecisions {
 		try {
 			frames = new Analyzer<>(new SourceInterpreter()).analyze(original.name, was);
 		} catch (AnalyzerException | RuntimeException unanalysable) {
+			Caught.expected(unanalysable);
 			return null;
 		}
 		Frame<SourceValue> atCall = frames[was.instructions.indexOf(call)];
@@ -460,6 +462,7 @@ public final class CarrierDecisions {
 		try {
 			frames = new Analyzer<>(new SourceInterpreter()).analyze(owner.name, method);
 		} catch (AnalyzerException | RuntimeException unanalysable) {
+			Caught.expected(unanalysable);
 			return null;
 		}
 		Frame<SourceValue> frame = frames[method.instructions.indexOf(call)];
@@ -485,6 +488,7 @@ public final class CarrierDecisions {
 		try {
 			frames = new Analyzer<>(new SourceInterpreter()).analyze(owner, method);
 		} catch (AnalyzerException | RuntimeException unanalysable) {
+			Caught.expected(unanalysable);
 			return null;
 		}
 		Frame<SourceValue> frame = frames[method.instructions.indexOf(constructor)];
@@ -624,6 +628,7 @@ public final class CarrierDecisions {
 		try {
 			frames = new Analyzer<>(new SourceInterpreter()).analyze(merged.name, host);
 		} catch (AnalyzerException | RuntimeException unanalysable) {
+			Caught.expected(unanalysable);
 			return false;
 		}
 		for (AbstractInsnNode instruction : host.instructions) {
@@ -652,6 +657,7 @@ public final class CarrierDecisions {
 		try {
 			handlerFrames = new Analyzer<>(new SourceInterpreter()).analyze(mixin.name, handler);
 		} catch (AnalyzerException | RuntimeException unanalysable) {
+			Caught.expected(unanalysable);
 			return false;
 		}
 		int answers = 0;
@@ -875,6 +881,7 @@ public final class CarrierDecisions {
 		try {
 			frames = new Analyzer<>(new SourceInterpreter()).analyze(mixin.name, handler);
 		} catch (AnalyzerException | RuntimeException unanalysable) {
+			Caught.expected(unanalysable);
 			return;
 		}
 		boolean isStatic = (handler.access & Opcodes.ACC_STATIC) != 0;

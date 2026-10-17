@@ -30,6 +30,7 @@ import org.objectweb.asm.tree.MethodNode;
 import net.forbric.api.Ecosystem;
 import net.forbric.api.ForeignType;
 import net.forbric.kernel.util.ForbricLog;
+import net.forbric.kernel.util.Caught;
 
 /**
  * Redirects the four Neo-only client consumers without inserting instructions or rebuilding frames.
@@ -96,7 +97,7 @@ public final class ForgeClientConsumersInjector implements ClassTransformer {
 	/** Whether the rule's consumer in {@code bytes} reaches MinecraftForge's table: through the funnel, or itself. */
 	static boolean consultsBoth(Rule rule, byte[] bytes) {
 		ClassNode node = new ClassNode();
-		try { new ClassReader(bytes).accept(node, 0); } catch (RuntimeException unreadable) { return false; }
+		try { new ClassReader(bytes).accept(node, 0); } catch (RuntimeException unreadable) { Caught.warn(unreadable, "[Forbric/ClientConsumers] could not read %s; taken as not consulting MinecraftForge", rule.host()); return false; }
 		MethodNode method = node.methods.stream().filter(candidate -> candidate.name.equals(rule.method())
 				&& candidate.desc.equals(rule.methodDescriptor())).findFirst().orElse(null);
 		return method != null && (references(method, rule, RUNTIME, rule.runtimeCall(), rule.handle()) > 0

@@ -16,8 +16,8 @@ import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicBoolean;
 
+import net.forbric.kernel.util.Caught;
 import net.forbric.kernel.util.ForbricLog;
-import net.forbric.kernel.util.Reflect;
 import net.minecraft.core.HolderLookup;
 import net.minecraft.tags.ItemTags;
 import net.minecraft.tags.TagKey;
@@ -91,7 +91,6 @@ import net.minecraft.world.level.block.entity.FuelValues;
 public final class KernelFabricFuel {
 	/** {@code off} leaves the fuel table populateFuelValues builds out of vanillaBurnTimes' return hooks. */
 	public static final String RETURN_HOOKS = "forbric.fabricFuel.returnHooks";
-	private static final AtomicBoolean WARNED = new AtomicBoolean();
 	private static final AtomicBoolean HOOKS_WARNED = new AtomicBoolean();
 	private static final AtomicBoolean HOOKS_PROVED = new AtomicBoolean();
 	/** {@code off}: the client's data-map table has the fuel events fired on it again instead of the native dispatch's result. */
@@ -204,10 +203,8 @@ public final class KernelFabricFuel {
 			map.keySet().removeIf(item -> !before.contains(item) && item.builtInRegistryHolder().is(ItemTags.NON_FLAMMABLE_WOOD));
 			exclusionsMethod.invoke(invoker.invoke(exclusions), builder, ctx);
 		} catch (Throwable t) {
-			if (WARNED.compareAndSet(false, true)) {
-				ForbricLog.warn("[Forbric/Fuel] fabric-content-registries' fuel events failed — Fabric mods' fuels are missing "
-						+ "from this game's fuel values", Reflect.unwrap(t));
-			}
+			Caught.warn(t, "[Forbric/Fuel] fabric-content-registries' fuel events failed — Fabric mods' fuels are missing "
+					+ "from this game's fuel values");
 		}
 		return builder;
 	}
@@ -230,7 +227,8 @@ public final class KernelFabricFuel {
 			try {
 				return withDelta(built, carried.delta(), registries, features);
 			} catch (Throwable t) {
-				warnHooksOnce("the native return hooks' changes could not be put on the data-map table", Reflect.unwrap(t));
+				Caught.warn(t, "[Forbric/Fuel] the native return hooks' changes could not be put on the data-map table — the "
+						+ "data map's fuel table is kept as built, and a mod's mixin on vanillaBurnTimes' return does not change it");
 				return built;
 			}
 		}
@@ -242,7 +240,7 @@ public final class KernelFabricFuel {
 			FuelValues hooked = FuelValues.vanillaBurnTimes(registries, features);
 			if (!pending.taken) {
 				warnHooksOnce("vanillaBurnTimes returned without reaching the merge-added body the kernel short-circuits "
-						+ "(a HEAD cancel, or a carrier whose overload no longer forwards)", null);
+						+ "(a HEAD cancel, or a carrier whose overload no longer forwards)");
 				return built;
 			}
 			if (HOOKS_PROVED.compareAndSet(false, true)) {
@@ -252,7 +250,8 @@ public final class KernelFabricFuel {
 			}
 			return hooked == null ? built : hooked;
 		} catch (Throwable t) {
-			warnHooksOnce("vanillaBurnTimes threw on the way through its return hooks", Reflect.unwrap(t));
+			Caught.warn(t, "[Forbric/Fuel] vanillaBurnTimes threw on the way through its return hooks — the data map's fuel"
+					+ " table is kept as built, and a mod's mixin on vanillaBurnTimes' return does not change it");
 			return built;
 		} finally {
 			if (outer == null) PENDING.remove();
@@ -278,6 +277,7 @@ public final class KernelFabricFuel {
 		try {
 			resolve(builder.getClass().getClassLoader());   // the observers, before the guest's wrap fires anything
 		} catch (Throwable absent) {
+			Caught.warn(absent, "[Forbric/Fuel] could not resolve fabric-content-registries' fuel events; the return hooks are carried all the same");
 			// No fabric-content-registries events to observe; the return hooks are carried all the same.
 		}
 		try {
@@ -285,6 +285,7 @@ public final class KernelFabricFuel {
 			Object registries = made != null && made.builder().get() == builder ? made.registries().get() : null;
 			WINDOW.set(new Window(builder, registries, (FeatureFlagSet) featuresField().get(builder), member, argument, WINDOW.get()));
 		} catch (Throwable t) {
+			Caught.warn(t, "[Forbric/Fuel] could not open the fuel carry window; the data-map table is handed everything again");
 			// Without a window the data-map table is handed everything again, as without the carry.
 		}
 	}
@@ -325,6 +326,7 @@ public final class KernelFabricFuel {
 			try {
 				outer.built = snapshot(table);
 			} catch (Throwable t) {
+				Caught.warn(t, "[Forbric/Fuel] could not take the fuel table's baseline; the data-map table goes through the return hooks itself");
 				// No baseline: the data-map table goes through the return hooks itself.
 			}
 		}
@@ -359,6 +361,7 @@ public final class KernelFabricFuel {
 			removals.removeAll(after.keySet());
 			CARRIED.set(carried.withDelta(new Delta(puts, removals)));
 		} catch (Throwable t) {
+			Caught.warn(t, "[Forbric/Fuel] could not take the fuel table's delta; the data-map table goes through the return hooks itself");
 			// No delta: the data-map table goes through the return hooks itself.
 		}
 		return table;
@@ -486,12 +489,10 @@ public final class KernelFabricFuel {
 		return pending.values;
 	}
 
-	private static void warnHooksOnce(String what, Throwable cause) {
+	private static void warnHooksOnce(String what) {
 		if (!HOOKS_WARNED.compareAndSet(false, true)) return;
-		String message = "[Forbric/Fuel] " + what + " — the data map's fuel table is kept as built, and a mod's mixin "
-				+ "on vanillaBurnTimes' return does not change it";
-		if (cause == null) ForbricLog.warn(message);
-		else ForbricLog.warn(message, cause);
+		ForbricLog.warn("[Forbric/Fuel] " + what + " — the data map's fuel table is kept as built, and a mod's mixin "
+				+ "on vanillaBurnTimes' return does not change it");
 	}
 
 	private static Object observer(Class<?> callback, String method, boolean build) {
@@ -536,6 +537,7 @@ public final class KernelFabricFuel {
 		try {
 			events = Class.forName("net.fabricmc.fabric.api.registry.FuelValueEvents", true, loader);
 		} catch (ClassNotFoundException absent) {
+			Caught.expected(absent);
 			return false;
 		}
 		ClassLoader fabric = events.getClassLoader();

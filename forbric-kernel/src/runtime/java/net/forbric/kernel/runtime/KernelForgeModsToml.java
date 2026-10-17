@@ -31,6 +31,7 @@ import net.forbric.kernel.metadata.forge.FmlConfigElements;
 import net.forbric.kernel.metadata.forge.ForgeModEntry;
 import net.forbric.kernel.metadata.forge.ForgeModsToml;
 import net.forbric.kernel.metadata.forge.ModsTomlParser;
+import net.forbric.kernel.util.Caught;
 
 /**
  * A jar's {@code META-INF/mods.toml}, as what a traditional-Forge mod reads back through
@@ -77,6 +78,8 @@ final class KernelForgeModsToml {
 			if (entry == null) return empty();
 			return parse(new String(zip.getInputStream(entry).readAllBytes(), StandardCharsets.UTF_8));
 		} catch (Throwable unreadable) {
+			Caught.warn(unreadable, "[Forbric/ModsToml] could not read %s from %s — it is treated as having none",
+					PATH, jar);
 			return empty();
 		}
 	}
@@ -89,6 +92,7 @@ final class KernelForgeModsToml {
 				for (ForgeModEntry mod : toml.getMods()) mods.add(mod.getConfigElements());
 				return new KernelForgeModsToml(toml.getConfigElements(), List.copyOf(mods), true);
 			} catch (RuntimeException malformed) {
+				Caught.expected(malformed);
 				// Fall through: the strings-only reading tolerated what night-config refuses, and must stay no worse.
 			}
 		}

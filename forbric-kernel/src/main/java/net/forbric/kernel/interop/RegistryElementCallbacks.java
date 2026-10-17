@@ -4,6 +4,7 @@ package net.forbric.kernel.interop;
 import java.lang.reflect.*;
 import java.util.*;
 import java.util.function.Consumer;
+import net.forbric.kernel.util.Caught;
 import net.forbric.kernel.util.ForbricLog;
 
 /** Completes the original per-element callback for registrations made after a successful closed registry walk. */
@@ -91,8 +92,14 @@ public final class RegistryElementCallbacks {
         int count=0;RuntimeException runtime=null;Error error=null;
         for(Object registry:registries){
             try{count+=complete(registry);}
-            catch(RuntimeException failure){if(runtime==null&&error==null)runtime=failure;}
-            catch(Error failure){if(runtime==null&&error==null)error=failure;}
+            catch(RuntimeException failure){
+                Caught.warn(failure,"[Forbric/Lifecycle] a registry element callback for %s failed; the first failure is rethrown after the others ran",registry);
+                if(runtime==null&&error==null)runtime=failure;
+            }
+            catch(Error failure){
+                Caught.warn(failure,"[Forbric/Lifecycle] a registry element callback for %s failed; the first failure is rethrown after the others ran",registry);
+                if(runtime==null&&error==null)error=failure;
+            }
         }
         report(count);
         if(error!=null)throw error;

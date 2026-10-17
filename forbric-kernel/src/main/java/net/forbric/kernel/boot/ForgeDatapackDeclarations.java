@@ -3,6 +3,7 @@ package net.forbric.kernel.boot;
 
 import java.lang.reflect.*;
 import java.util.*;
+import net.forbric.kernel.util.Caught;
 import net.forbric.kernel.util.ForbricLog;
 import net.forbric.api.Ecosystem;
 import net.forbric.api.ForeignType;
@@ -16,7 +17,10 @@ final class ForgeDatapackDeclarations {
 		if ("off".equalsIgnoreCase(System.getProperty(PROPERTY, "on"))) return;
 		Class<?> eventClass;
 		try { eventClass = Class.forName(ForeignType.DATAPACK_NEW_REGISTRY_EVENT.binary(Ecosystem.FORGE), true, loader); }
-		catch (ClassNotFoundException absent) { return; }
+		catch (ClassNotFoundException absent) {
+			Caught.expected(absent);
+			return;
+		}
 		Object event = eventClass.getConstructor().newInstance();
 		Object bus = eventClass.getField("BUS").get(null);
 		Class.forName(ForeignType.EVENT_BUS.binary(Ecosystem.FORGE), false, loader)

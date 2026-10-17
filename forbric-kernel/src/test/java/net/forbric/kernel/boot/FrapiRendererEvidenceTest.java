@@ -12,6 +12,7 @@ import java.util.zip.ZipOutputStream;
 
 import net.forbric.api.DiscoveredMod;
 import net.forbric.api.Ecosystem;
+import net.forbric.kernel.ExpectCaught;
 import net.forbric.kernel.TestFixtures;
 import net.forbric.kernel.TestFixtures.Fixture;
 import org.junit.jupiter.api.Test;
@@ -56,6 +57,7 @@ class FrapiRendererEvidenceTest {
 		assertFalse(FrapiRendererEvidence.registersRenderer(write("empty.jar", jar(Map.of("a.txt", new byte[1])))));
 	}
 
+	@ExpectCaught("could not check whether sodium registers a Fabric renderer")
 	@Test void aBuildThatCannotRegisterDoesNotForwardTheDeclarationButAnUnreadableOneStillDoes() throws Exception {
 		Path none = write("none.jar", jar(Map.of("mod/Reader.class", caller("mod/Reader", "net/fabricmc/fabric/api/client/renderer/v1/Renderer", "get"))));
 		assertFalse(KernelFabricEcosystem.keepsRendererPromise(mod(none.toString())));

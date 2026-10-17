@@ -9,6 +9,7 @@ import java.util.Map;
 import java.util.Set;
 import java.util.function.Function;
 import net.forbric.kernel.util.ByteScan;
+import net.forbric.kernel.util.Caught;
 import org.objectweb.asm.*;
 import org.objectweb.asm.tree.*;
 import org.objectweb.asm.tree.analysis.*;
@@ -204,6 +205,6 @@ public final class ZeroNameTagMigrationInjector implements ClassTransformer {
                 }
             }
             return zeroed.size() == lookups.size();
-        } catch (AnalyzerException | RuntimeException invalid) { return false; }
+        } catch (AnalyzerException | RuntimeException invalid) { Caught.expected(invalid); return false; }
     }
 }

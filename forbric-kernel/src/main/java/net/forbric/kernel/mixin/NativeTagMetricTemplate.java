@@ -7,6 +7,7 @@ import org.objectweb.asm.tree.*;
 import org.objectweb.asm.tree.analysis.*;
 import net.forbric.api.Ecosystem;
 import net.forbric.api.ForeignType;
+import net.forbric.kernel.util.Caught;
 
 /** A closed native per-cell metric region with variable renaming proved against current eye/height/flow inputs. */
 final class NativeTagMetricTemplate {
@@ -58,7 +59,7 @@ final class NativeTagMetricTemplate {
 		AbstractInsnNode cellStart=null;for(var instruction:current.instructions)if(instruction instanceof MethodInsnNode getter&&Type.getReturnType(getter.desc).equals(Type.getObjectType(newFlow.owner))&&Type.getArgumentTypes(getter.desc).length==1){List<AbstractInsnNode>loads=back(getter,3);if(loads.size()!=3||!(loads.getFirst()instanceof VarInsnNode)||!(loads.get(1)instanceof VarInsnNode)||cellStart!=null)return null;cellStart=loads.getFirst();}
 		if(cellStart==null)return null;
 		return new Template(source,current,typeGetter,fluidGetter,newFlow,cellStart,newEnd,metric,List.copyOf(inputs),tracker,Type.getReturnType(fluidGetter.desc).getInternalName(),vector,newTracker.var,newBool.var);
-	}catch(RuntimeException|AnalyzerException malformed){return null;}}
+	}catch(RuntimeException|AnalyzerException malformed){Caught.expected(malformed);return null;}}
 	private static Map<Integer,Integer>inverse(Map<Integer,Integer>source){Map<Integer,Integer>result=new HashMap<>();source.forEach((a,b)->result.put(b,a));return result;}
 	private static final class Stable extends SourceInterpreter{
 		Stable(){super(Opcodes.ASM9);}

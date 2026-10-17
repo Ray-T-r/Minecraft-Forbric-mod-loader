@@ -27,6 +27,7 @@ import java.util.concurrent.atomic.AtomicBoolean;
 import net.forbric.api.CompatibilityFinding;
 import net.forbric.api.CompatibilityFindings;
 import net.forbric.api.ModCatalog;
+import net.forbric.kernel.util.Caught;
 import net.forbric.kernel.util.ForbricLog;
 
 /**
@@ -55,6 +56,8 @@ public final class KernelLoadReport {
 	private static volatile String lastRendered;
 	/** Whether anything was ever reported — the "every mod finished loading" line is said once, and only then. */
 	private static final AtomicBoolean reported = new AtomicBoolean();
+	/** Whether the end of loading has had its caught-failure summary. Once: the client rewrites the report during play. */
+	private static final AtomicBoolean summarised = new AtomicBoolean();
 	private static final AtomicBoolean hooked = new AtomicBoolean();
 	private static final java.util.concurrent.atomic.AtomicInteger writes = new java.util.concurrent.atomic.AtomicInteger();
 
@@ -125,6 +128,9 @@ public final class KernelLoadReport {
 			net.forbric.api.CompatibilityFindings.observeInitializationFailures();
 			writeCompatibility(file);
 			net.forbric.kernel.ui.CompatibilityDecision.queue();
+			// Where loading ends, every failure the kernel carried on from so far, by site and count. The same summary
+			// follows at exit; this one is in the log even when the game is killed rather than closed.
+			if (loadingFinished && summarised.compareAndSet(false, true)) Caught.logSummary("when loading finished");
 			List<ModCatalog.Entry> failures = ModCatalog.failures();
 			// The catalogue projection attaches a finding only to a row with the same id, so a confirmed loss owned
 			// by the kernel itself or by a config no single mod claims reaches the gate and the prompt and nothing a
@@ -176,7 +182,7 @@ public final class KernelLoadReport {
 				writes.incrementAndGet();
 			}
 		} catch (Throwable t) {
-			ForbricLog.debug("[Forbric/Load] could not write the load report: %s", String.valueOf(t));
+			Caught.warn(t, "[Forbric/Load] could not write the load report");
 		}
 	}
 
@@ -195,9 +201,9 @@ public final class KernelLoadReport {
 		} catch (Exception failed) {
 			// Keep the preceding complete snapshot if this filesystem cannot atomically replace it. Evidence
 			// collection checks freshness; publishing half a report could instead fabricate a clean verdict.
-			ForbricLog.warn("[Forbric/Compatibility] could not write compatibility-report.json", failed);
+			Caught.warn(failed, "[Forbric/Compatibility] could not write compatibility-report.json");
 		} finally {
-			if (temporary != null) try { Files.deleteIfExists(temporary); } catch (Exception ignored) { }
+			if (temporary != null) try { Files.deleteIfExists(temporary); } catch (Exception ignored) { Caught.expected(ignored); }
 		}
 	}
 

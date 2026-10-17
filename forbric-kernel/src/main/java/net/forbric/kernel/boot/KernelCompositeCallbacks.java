@@ -1,6 +1,7 @@
 /* Copyright 2026 The Forbric Project. Licensed under the Apache License, Version 2.0. */
 package net.forbric.kernel.boot;
 import java.util.*;import java.util.concurrent.ConcurrentHashMap;import java.lang.reflect.Modifier;
+import net.forbric.kernel.util.Caught;
 import net.forbric.kernel.util.ForbricLog;
 /** A source fallback can use a composite's absent result only while the final record contract is unchanged. */
 public final class KernelCompositeCallbacks {
@@ -44,7 +45,7 @@ public final class KernelCompositeCallbacks {
   try{Class<?> record=Class.forName(plan.owner,false,host.getClassLoader());
    if(!record.isRecord()||!Modifier.isFinal(record.getModifiers()))return false;
    return (plan.helpers.isEmpty()||certifiedCaller(key,host,caller->true))&&contractHolds(plan,record.getClassLoader());}
-  catch(ReflectiveOperationException|RuntimeException|LinkageError unproved){return false;}
+  catch(ReflectiveOperationException|RuntimeException|LinkageError unproved){Caught.warn(unproved,"[Forbric/Mixin] composite lookup record %s could not be checked from %s; the older fallback is not stood down for it",plan.owner,host.getName());return false;}
  }
  /** A caller certified for {@code key} whose outer is in {@code host}, matches {@code outer}, and whose outer, host and guest bodies are still the defined ones. */
  private static boolean certifiedCaller(String key,Class<?> host,java.util.function.Predicate<Caller> outer){
@@ -54,8 +55,8 @@ public final class KernelCompositeCallbacks {
  /** The record's methods, the lookup's helper bodies and the fields they read, all still as the proof saw them. */
  private static boolean contractHolds(Plan plan,ClassLoader loader){
   for(var method:plan.methods)if(!DefinedMethodContracts.observed(loader,method))return false;
-  for(var helper:plan.helpers){try{Class<?> owner=Class.forName(helper.owner(),false,loader);if(!DefinedMethodContracts.observed(owner.getClassLoader(),helper))return false;}catch(ReflectiveOperationException|RuntimeException|LinkageError unproved){return false;}}
-  for(String binary:plan.fields.stream().map(FieldContract::owner).distinct().toList()){try{Class<?> owner=Class.forName(binary,false,loader);List<FieldContract> actual=Arrays.stream(owner.getDeclaredFields()).map(f->new FieldContract(binary,f.getName(),org.objectweb.asm.Type.getDescriptor(f.getType()),f.getModifiers())).sorted(Comparator.comparing(FieldContract::name).thenComparing(FieldContract::descriptor)).toList();List<FieldContract> expected=plan.fields.stream().filter(f->f.owner.equals(binary)).sorted(Comparator.comparing(FieldContract::name).thenComparing(FieldContract::descriptor)).toList();if(!actual.equals(expected))return false;}catch(ReflectiveOperationException|RuntimeException|LinkageError unproved){return false;}}
+  for(var helper:plan.helpers){try{Class<?> owner=Class.forName(helper.owner(),false,loader);if(!DefinedMethodContracts.observed(owner.getClassLoader(),helper))return false;}catch(ReflectiveOperationException|RuntimeException|LinkageError unproved){Caught.warn(unproved,"[Forbric/Mixin] composite lookup helper %s of %s could not be checked; the source fallback callback is not executed",helper.owner(),plan.owner);return false;}}
+  for(String binary:plan.fields.stream().map(FieldContract::owner).distinct().toList()){try{Class<?> owner=Class.forName(binary,false,loader);List<FieldContract> actual=Arrays.stream(owner.getDeclaredFields()).map(f->new FieldContract(binary,f.getName(),org.objectweb.asm.Type.getDescriptor(f.getType()),f.getModifiers())).sorted(Comparator.comparing(FieldContract::name).thenComparing(FieldContract::descriptor)).toList();List<FieldContract> expected=plan.fields.stream().filter(f->f.owner.equals(binary)).sorted(Comparator.comparing(FieldContract::name).thenComparing(FieldContract::descriptor)).toList();if(!actual.equals(expected))return false;}catch(ReflectiveOperationException|RuntimeException|LinkageError unproved){Caught.warn(unproved,"[Forbric/Mixin] composite lookup field owner %s of %s could not be checked; the source fallback callback is not executed",binary,plan.owner);return false;}}
   return true;
  }
 }

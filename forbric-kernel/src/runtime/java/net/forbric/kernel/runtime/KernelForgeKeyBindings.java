@@ -16,6 +16,7 @@
 
 package net.forbric.kernel.runtime;
 
+import net.forbric.kernel.util.Caught;
 import net.minecraftforge.client.settings.IKeyConflictContext;
 import net.minecraftforge.client.settings.KeyModifier;
 
@@ -133,6 +134,7 @@ public final class KernelForgeKeyBindings {
 		try {
 			return KeyModifier.valueOf(name);
 		} catch (IllegalArgumentException added) {
+			Caught.expected(added);
 			// A constant NeoForge grows later: NONE is the only honest answer, and it is what an unmodified
 			// binding already means.
 			return KeyModifier.NONE;

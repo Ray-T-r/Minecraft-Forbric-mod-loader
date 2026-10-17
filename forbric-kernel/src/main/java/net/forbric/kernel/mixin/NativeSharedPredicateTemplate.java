@@ -10,6 +10,7 @@ import net.forbric.kernel.boot.DefinedMethodContracts.MethodContract;
 import net.forbric.kernel.boot.KernelPredicateSeams.*;
 import net.forbric.kernel.boot.KernelSharedPredicateContracts.*;
 import net.forbric.kernel.transform.PredicateGetterResultRecorder;
+import net.forbric.kernel.util.Caught;
 import org.objectweb.asm.*;
 import org.objectweb.asm.tree.*;
 
@@ -45,7 +46,8 @@ final class NativeSharedPredicateTemplate {
   List<Guard>stateGuards=new ArrayList<>();proof.stateGetter(Member.of(stateType),new Root(0),stateGuards,new HashSet<>());proof.stateRead(ground,new Root(0),stateGuards,new HashSet<>());
   List<Integer>offsets=offsets(entry.lambda().method(),Member.of(q1));if(offsets.size()!=2)return null;String schema=null;Value interaction=entry.interaction();if(!(interaction instanceof Projection projection))return null;ClassNode control=classes.apply(Type.getType(projection.descriptor()).getInternalName());if(control==null)return null;for(MethodNode method:control.methods)for(var i:method.instructions)if(i instanceof MethodInsnNode call&&call.owner.equals("net/forbric/kernel/runtime/KernelFabricTagViews")&&call.name.equals("begin")&&previous(i)instanceof LdcInsnNode ldc&&ldc.cst instanceof String key){if(schema!=null&&!schema.equals(key))return null;schema=key;}if(schema==null)return null;
   return new Plan(old,live,first,guard,second,constant,query,ordinal,entry.lambda().method(),getter,List.copyOf(proof.roots),List.copyOf(proof.definitions),Map.copyOf(proof.flags),List.copyOf(stateGuards),question,proof.dispatchKey,new Leaf(entry.lambda().contract(),offsets.get(0)),new Leaf(entry.lambda().contract(),offsets.get(1)),getterSite,interaction,schema);
- }catch(RuntimeException unsupported){return null;}}
+ }catch(RuntimeException unsupported){
+  Caught.warn(unsupported,"[Forbric/Mixin] could not derive the shared predicate template of %s.%s%s; it is left as written",current.name,written==null?"?":written.name,written==null?"":written.desc);return null;}}
  private record Entry(Decl lambda,Value interaction){ }
  private static final class Proof{
   final Function<String,ClassNode>classes,source,carrier;final String host;String dispatchKey;final List<Dispatch>roots=new ArrayList<>();final List<MethodContract>definitions=new ArrayList<>();final Map<String,Integer>flags=new HashMap<>();

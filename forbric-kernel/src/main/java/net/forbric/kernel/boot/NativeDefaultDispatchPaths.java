@@ -12,6 +12,7 @@ import org.objectweb.asm.*;
 import org.objectweb.asm.tree.*;
 import org.objectweb.asm.tree.analysis.*;
 import net.forbric.kernel.boot.DefinedMethodContracts.MethodContract;
+import net.forbric.kernel.util.Caught;
 
 /** Opt-in validation at an already reached native terminal. A conditional interface default is accepted only
  * at its witnessed fallback call; its other branches never grant a transported source evaluation. */
@@ -40,7 +41,7 @@ public final class NativeDefaultDispatchPaths {
     callee=caller;end=i;
    }
    Method actual=dispatch(subject.getClass(),factory.base.name(),factory.base.descriptor());return actual!=null&&actual.getDeclaringClass()==frames.get(end).getDeclaringClass();
-  }catch(ReflectiveOperationException|RuntimeException|LinkageError unknown){return false;}
+  }catch(ReflectiveOperationException|RuntimeException|LinkageError unknown){Caught.warn(unknown,"[Forbric/Mixin] the native default dispatch path proof of %s threw; the native path is not permitted",key);return false;}
  }
  private static boolean valid(StackFrame frame,Edge edge){Method method=declared(frame.getDeclaringClass(),frame.getMethodName(),frame.getDescriptor());return safe(method)&&method.getModifiers()==edge.flags&&DefinedMethodContracts.observed(frame.getDeclaringClass().getClassLoader(),edge.body);}
  private static Edge edge(Class<?>owner,String key,Factory factory){return EDGES.get(owner).computeIfAbsent(key,ignored->Optional.ofNullable(derive(owner,factory))).orElse(null);}
@@ -58,7 +59,7 @@ public final class NativeDefaultDispatchPaths {
    boolean forward=code.size()==4&&load(code.get(0),0)&&load(code.get(1),1);if(!forward){if(!actual.isInterface()||!readOnlyFallback(method,code,at))return null;}
   }
   int offset=offset(code,at);if(offset<0)return null;return new Edge(new MethodContract(owner,method.name,method.desc,DefinedMethodContracts.fingerprint(method)),method.access,new Member(call.owner,call.name,call.desc),offset,isBase,identity);
- }catch(AnalyzerException|RuntimeException unknown){return null;}}
+ }catch(AnalyzerException|RuntimeException unknown){Caught.expected(unknown);return null;}}
  /** A graft may only materialize the one default the original native class already inherited. A different
   * native superclass implementation, abstract mask, ambiguous default, or added interface is not equivalent. */
  private static boolean materialized(ClassNode raw,MethodNode method,Factory factory){List<AbstractInsnNode>code=code(method);if(code.size()!=4||!load(code.get(0),0)||!load(code.get(1),1)||!(code.get(2)instanceof MethodInsnNode call)||call.getOpcode()!=Opcodes.INVOKESPECIAL||!call.itf||!call.name.equals(method.name)||!call.desc.equals(method.desc)||code.get(3).getOpcode()!=Opcodes.IRETURN)return false;

@@ -16,10 +16,7 @@
 
 package net.forbric.kernel.runtime;
 
-import java.util.concurrent.atomic.AtomicBoolean;
-
-import net.forbric.kernel.util.ForbricLog;
-import net.forbric.kernel.util.Reflect;
+import net.forbric.kernel.util.Caught;
 import net.minecraftforge.event.ForgeEventFactory;
 import net.neoforged.bus.api.Event;
 import net.neoforged.bus.api.EventPriority;
@@ -113,14 +110,11 @@ public final class KernelGameEntityEvents {
 	 */
 	static <E extends Event & ICancellableEvent> void subscribe(IEventBus bus, Class<E> event, String name,
 			String cost, ForgeVeto<E> forge) {
-		AtomicBoolean warned = new AtomicBoolean();
 		bus.addListener(EventPriority.LOWEST, false, event, neoEvent -> {
 			try {
 				carryVeto(neoEvent.isCanceled(), forge.fire(neoEvent), neoEvent::setCanceled);
 			} catch (Throwable t) {
-				if (warned.compareAndSet(false, true)) {
-					ForbricLog.warn("[Forbric/EventMux] " + name + " forward failed — " + cost, Reflect.unwrap(t));
-				}
+				Caught.warn(t, "[Forbric/EventMux] %s forward failed — %s", name, cost);
 			}
 		});
 	}

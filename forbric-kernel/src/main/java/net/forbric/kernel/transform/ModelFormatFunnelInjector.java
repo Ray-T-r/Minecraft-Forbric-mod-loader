@@ -33,6 +33,7 @@ import org.objectweb.asm.tree.MethodInsnNode;
 import org.objectweb.asm.tree.MethodNode;
 import org.objectweb.asm.tree.VarInsnNode;
 
+import net.forbric.kernel.util.Caught;
 import net.forbric.kernel.util.ForbricLog;
 
 /**
@@ -161,7 +162,7 @@ public final class ModelFormatFunnelInjector implements ClassTransformer {
 					+ "read, instead of failing as \"Unknown loader\"");
 			return writer.toByteArray();
 		} catch (RuntimeException e) {
-			ForbricLog.warn("[Forbric/ModelFormats] could not funnel NeoForge's model deserializer", e);
+			Caught.warn(e, "[Forbric/ModelFormats] could not funnel NeoForge's model deserializer");
 			return classBytes;
 		}
 	}

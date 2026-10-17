@@ -10,6 +10,7 @@ import net.forbric.api.ForeignType;
 import net.forbric.kernel.boot.DefinedMethodContracts;
 import net.forbric.kernel.boot.KernelPredicateSeams;
 import net.forbric.kernel.boot.KernelPredicateSeams.*;
+import net.forbric.kernel.util.Caught;
 import net.forbric.kernel.util.ForbricLog;
 
 /** An exact native instruction/CFG substitution can expose a source atom behind a pure current type query.
@@ -106,7 +107,7 @@ public final class MixinNativePredicateSeam {
 		QueryChain(Function<String,ClassNode>classes,String type){this.classes=classes;this.type=type;}
 		Contract prove(Member entry){
 			try{types.put(new Root(0),entry.owner());types.put(new Root(1),Type.getArgumentTypes(entry.descriptor())[0].getInternalName());Object result=expand(entry,new Root(0),List.of(new Root(1)),false);if(!(result instanceof Terminal terminal)||!(terminal.receiver()instanceof Opaque))return null;
-				return new Contract(guards,terminal.name(),terminal.descriptor());}catch(RuntimeException invalid){return null;}
+				return new Contract(guards,terminal.name(),terminal.descriptor());}catch(RuntimeException invalid){Caught.expected(invalid);return null;}
 		}
 		Object expand(Member member,Value receiver,List<Value>arguments,boolean direct){
 			Decl declaration=resolve(member,classes,new HashSet<>());if(declaration==null||!active.add(member))throw new IllegalArgumentException();

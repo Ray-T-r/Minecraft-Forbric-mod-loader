@@ -21,6 +21,7 @@ import java.util.Collection;
 import java.util.List;
 import java.util.concurrent.atomic.AtomicBoolean;
 
+import net.forbric.kernel.util.Caught;
 import net.forbric.kernel.util.ForbricLog;
 
 /**
@@ -124,6 +125,7 @@ public final class KernelPackRepair {
 			Object id = location.getClass().getMethod("id").invoke(location);
 			return id == null ? "?" : id.toString();
 		} catch (Throwable unreadable) {
+			Caught.expected(unreadable);
 			return "?";
 		}
 	}

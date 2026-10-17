@@ -37,6 +37,7 @@ import org.objectweb.asm.tree.ClassNode;
 import org.objectweb.asm.tree.FieldNode;
 import org.objectweb.asm.tree.MethodNode;
 
+import net.forbric.kernel.util.Caught;
 import net.forbric.kernel.util.ForbricLog;
 
 /**
@@ -201,6 +202,8 @@ public final class MixinAddedMembers {
 					mixin = new ClassNode();
 					new ClassReader(bytes).accept(mixin, ClassReader.SKIP_CODE | ClassReader.SKIP_DEBUG | ClassReader.SKIP_FRAMES);
 				} catch (RuntimeException unreadable) {
+					Caught.warn(unreadable, "[Forbric/Mixin] could not read mixin %s of %s; the members it adds are not "
+							+ "indexed", entry, config.name());
 					continue; // one unparseable mixin must not cost the rest of the index
 				}
 				Slot slot = new Slot(config.name(), entry, priorityOf(mixin, config.mixinPriority()), order++);
@@ -225,6 +228,8 @@ public final class MixinAddedMembers {
 		try (Reader reader = new InputStreamReader(new ByteArrayInputStream(json), StandardCharsets.UTF_8)) {
 			config = MixinConfigJson.parse(reader);
 		} catch (RuntimeException | java.io.IOException notAMixinConfig) {
+			Caught.warn(notAMixinConfig, "[Forbric/Mixin] could not parse mixin config %s; the members its mixins add are "
+					+ "not indexed", name);
 			return null;
 		}
 		Object pkg = config.get(List.of("package"));

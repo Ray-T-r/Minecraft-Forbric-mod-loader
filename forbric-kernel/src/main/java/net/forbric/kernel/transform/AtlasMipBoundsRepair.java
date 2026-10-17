@@ -5,6 +5,7 @@ import java.util.*;
 import org.objectweb.asm.*;
 import org.objectweb.asm.tree.*;
 import org.objectweb.asm.tree.analysis.*;
+import net.forbric.kernel.util.Caught;
 import net.forbric.kernel.util.ForbricLog;
 
 /** Preserves the original configuration decision, then bounds the selected level by its proved image limit. */
@@ -103,7 +104,7 @@ final class AtlasMipBoundsRepair {
 				}
 				index++;
 			}
-		} catch (AnalyzerException invalid) { return Set.of(); }
+		} catch (AnalyzerException invalid) { Caught.expected(invalid); return Set.of(); }
 		return levels;
 	}
 	private static AbstractInsnNode previous(AbstractInsnNode node) { do { node = node.getPrevious(); } while (node != null && node.getOpcode() < 0); return node; }

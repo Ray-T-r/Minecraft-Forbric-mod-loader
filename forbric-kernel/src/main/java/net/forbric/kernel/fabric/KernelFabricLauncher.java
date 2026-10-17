@@ -25,6 +25,7 @@ import net.fabricmc.loader.impl.launch.FabricLauncherBase;
 import net.forbric.kernel.classloading.ForbricClassLoader;
 import net.forbric.kernel.classloading.LoaderProbePolicy;
 import net.forbric.kernel.util.ForbricLog;
+import net.forbric.kernel.util.Caught;
 
 /**
  * The kernel's answer to {@code FabricLauncherBase.getLauncher()} — what a mod reaches for when it needs to put a
@@ -97,8 +98,11 @@ public final class KernelFabricLauncher implements FabricLauncher {
 			for (String config : metadata.getMixinConfigs(envType)) {
 				net.forbric.kernel.mixin.MixinConfigOwners.claimLate(config, metadata.getId(), net.forbric.api.Ecosystem.FABRIC);
 			}
+		} catch (java.util.zip.ZipException notAJar) {
+			// Not a jar: it brings no configs to claim.
+			Caught.expected(notAJar);
 		} catch (Throwable unreadable) {
-			// Not a jar, or no readable fabric.mod.json: it brings no configs to claim.
+			Caught.warn(unreadable, "[Forbric/Fabric] could not read the fabric.mod.json of %s; it claims no mixin configs", path);
 		}
 	}
 

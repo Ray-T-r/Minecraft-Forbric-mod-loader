@@ -30,6 +30,7 @@ import net.fabricmc.classtweaker.api.ClassTweakerReader;
 
 import net.forbric.kernel.transform.ClassTransformer;
 import net.forbric.kernel.transform.TransformContext;
+import net.forbric.kernel.util.Caught;
 import net.forbric.kernel.util.ForbricLog;
 
 /**
@@ -108,7 +109,7 @@ public final class ClassTweakerTransformer implements ClassTransformer {
 				applied++;
 				if (sourced.source() != null) rememberSources(file, sourced.source(), sources);
 			} catch (Throwable t) {
-				ForbricLog.warn("[Forbric/Access] could not read a class tweaker: %s", String.valueOf(t));
+				Caught.warn(t, "[Forbric/Access] could not read a class tweaker (from %s)", sourced.source());
 			}
 		}
 
@@ -133,7 +134,8 @@ public final class ClassTweakerTransformer implements ClassTransformer {
 				}
 			}
 		} catch (Throwable t) {
-			ForbricLog.debug("[Forbric/Access] could not attribute the entries of a class tweaker from %s: %s", source, t);
+			Caught.warn(t, "[Forbric/Access] could not attribute the entries of a class tweaker from %s; its unmatched "
+					+ "entries are reported without a source", source);
 		}
 	}
 

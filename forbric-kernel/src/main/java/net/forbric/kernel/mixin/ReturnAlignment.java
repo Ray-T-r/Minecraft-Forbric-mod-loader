@@ -13,6 +13,7 @@ import org.objectweb.asm.tree.analysis.AnalyzerException;
 import org.objectweb.asm.tree.analysis.Frame;
 import org.objectweb.asm.tree.analysis.SourceInterpreter;
 import org.objectweb.asm.tree.analysis.SourceValue;
+import net.forbric.kernel.util.Caught;
 
 /**
  * Which return of a method's current body is which return of the native body a guest was compiled against.
@@ -48,6 +49,7 @@ final class ReturnAlignment {
 		try {
 			frames = new Analyzer<>(new SourceInterpreter()).analyze(owner, method);
 		} catch (AnalyzerException | RuntimeException unanalysable) {
+			Caught.expected(unanalysable);
 			return null;
 		}
 		Map<LabelNode, List<AbstractInsnNode>> into = new IdentityHashMap<>();

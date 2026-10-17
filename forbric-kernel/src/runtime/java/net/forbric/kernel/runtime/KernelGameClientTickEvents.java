@@ -16,10 +16,7 @@
 
 package net.forbric.kernel.runtime;
 
-import java.util.concurrent.atomic.AtomicBoolean;
-
-import net.forbric.kernel.util.ForbricLog;
-import net.forbric.kernel.util.Reflect;
+import net.forbric.kernel.util.Caught;
 import net.minecraftforge.event.ForgeEventFactory;
 import net.neoforged.bus.api.EventPriority;
 import net.neoforged.bus.api.IEventBus;
@@ -65,18 +62,14 @@ public final class KernelGameClientTickEvents {
 
 	private static <E extends ClientTickEvent> void subscribe(IEventBus bus, Class<E> event, String kind,
 			ForgeClientTick forge) {
-		AtomicBoolean warned = new AtomicBoolean();
 		// Four-argument overload with LOWEST, as everywhere in this package: the shorter overloads open with
 		// `getstatic EventPriority.NORMAL` and would silently promote the forward.
 		bus.addListener(EventPriority.LOWEST, false, event, neoEvent -> {
 			try {
 				forge.fire();
 			} catch (Throwable t) {
-				if (warned.compareAndSet(false, true)) {
-					ForbricLog.warn("[Forbric/EventMux] on" + kind + "ClientTick forward failed; a MinecraftForge "
-							+ "mod that polls its key bindings from the client tick will not respond to any key",
-							Reflect.unwrap(t));
-				}
+				Caught.warn(t, "[Forbric/EventMux] on%sClientTick forward failed; a MinecraftForge mod that polls its key "
+						+ "bindings from the client tick will not respond to any key", kind);
 			}
 		});
 	}

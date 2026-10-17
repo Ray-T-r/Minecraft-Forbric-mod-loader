@@ -31,7 +31,7 @@ import net.fabricmc.loader.api.ModContainer;
 import net.fabricmc.loader.api.metadata.ModOrigin;
 import net.fabricmc.loader.impl.ModContainerImpl;
 
-import net.forbric.kernel.util.ForbricLog;
+import net.forbric.kernel.util.Caught;
 
 /**
  * The kernel's {@link ModContainer} — one loaded Fabric mod, backed by its jar.
@@ -119,8 +119,7 @@ public final class KernelModContainer extends ModContainerImpl {
 					resolved = Collections.unmodifiableList(roots);
 				}
 			} catch (IOException e) {
-				ForbricLog.warn("[Forbric/Fabric] could not open %s for %s: %s", jar.getFileName(),
-						metadata.getId(), e.getMessage());
+				Caught.warn(e, "[Forbric/Fabric] could not open %s for %s", jar.getFileName(), metadata.getId());
 				resolved = List.of();
 			}
 

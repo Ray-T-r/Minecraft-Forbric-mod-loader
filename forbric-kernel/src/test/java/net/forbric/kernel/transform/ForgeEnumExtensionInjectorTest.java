@@ -27,6 +27,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
 import net.fabricmc.api.EnvType;
+import net.forbric.kernel.ExpectCaught;
 
 /**
  * {@link ForgeEnumExtensionInjector}'s output, run: an extensible enum whose {@code create(...)} was the throwing stub
@@ -191,6 +192,7 @@ class ForgeEnumExtensionInjectorTest {
 		assertEquals(2, values(stub).length);
 	}
 
+	@ExpectCaught("could not read a class header to check for the extensible-enum marker")
 	@Test void aClassWithoutTheMarkerIsNotOffered(@TempDir Path work) throws Throwable {
 		Map<String, byte[]> classes = InjectorExecution.compile(work, SOURCES);
 		ClassLoader game = InjectorExecution.load(classes);
@@ -206,6 +208,7 @@ class ForgeEnumExtensionInjectorTest {
 		assertThrows(IllegalStateException.class, () -> InjectorExecution.invokeStatic(loaded, "create", "WAVING"));
 	}
 
+	@ExpectCaught("could not make fixture.Pose extensible")
 	@Test void aDeclinedOrFailedRewriteLeavesTheClassAsItWas(@TempDir Path work) throws Throwable {
 		Map<String, byte[]> classes = InjectorExecution.compile(work, SOURCES);
 		ClassLoader game = InjectorExecution.load(classes);
@@ -224,6 +227,7 @@ class ForgeEnumExtensionInjectorTest {
 		assertEquals(List.of("AFTER fixture/Sealed classloading", "AFTER fixture/Pose classloading"), calls(game));
 	}
 
+	@ExpectCaught("no MinecraftForge RuntimeEnumExtender")
 	@Test void nothingInstallsWithoutMinecraftForgesExtender(@TempDir Path work) throws Exception {
 		// The kernel registers only a non-null injector, so this is how a runtime without MinecraftForge keeps its
 		// transform chain free of it. The test's own loader has neither class.

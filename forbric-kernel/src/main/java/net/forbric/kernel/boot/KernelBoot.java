@@ -68,6 +68,7 @@ import net.forbric.kernel.transform.RegistryHookRedirector;
 import net.forbric.kernel.transform.TransformChain;
 import net.forbric.kernel.transform.TransformContext;
 import net.forbric.kernel.transform.TransformPhase;
+import net.forbric.kernel.util.Caught;
 import net.forbric.kernel.util.ForbricLog;
 
 /**
@@ -231,8 +232,8 @@ public final class KernelBoot {
 		try {
 			ModPresence.publishForgeFamily(PassiveSeeder.arbitratedForgeFamilyMods(gameDir.resolve("mods")));
 		} catch (Throwable t) {
-			ForbricLog.warn("[Forbric/Presence] could not list the Forge-family mods for cross-ecosystem presence — a "
-					+ "Fabric mod asking whether one of them is installed will be told no: %s", String.valueOf(t));
+			Caught.warn(t, "[Forbric/Presence] could not list the Forge-family mods for cross-ecosystem presence — a "
+					+ "Fabric mod asking whether one of them is installed will be told no");
 		}
 		List<Path> modJars = new ArrayList<>(forgeFamily.jars());
 		// The pre-scan has already selected every root and nested candidate. Consume those exact files;
@@ -305,9 +306,8 @@ public final class KernelBoot {
 			ArbitratedAwayDispatchers.record(dupes, KernelFabricEcosystem.declaredEntrypointKeys(),
 					KernelFabricEcosystem.knownModIds());
 		} catch (Throwable t) {
-			ForbricLog.warn("[Forbric/DupeId] could not work out which entrypoint keys a superseded build dispatched — "
-					+ "a Fabric mod integrating with a library whose other build loaded may go uninitialised: %s",
-					String.valueOf(t));
+			Caught.warn(t, "[Forbric/DupeId] could not work out which entrypoint keys a superseded build dispatched — "
+					+ "a Fabric mod integrating with a library whose other build loaded may go uninitialised");
 		}
 
 		// Game-side bundled libraries (MixinExtras) and the kernel's own runtime jar. The latter also carries
@@ -436,16 +436,24 @@ public final class KernelBoot {
 					new org.objectweb.asm.ClassReader(in).accept(node, org.objectweb.asm.ClassReader.SKIP_CODE);
 					return node;
 				}
-			} catch (ReflectiveOperationException | java.io.IOException | LinkageError unavailable) { return null; }
+			} catch (ReflectiveOperationException | java.io.IOException | LinkageError unavailable) {
+				Caught.warn(unavailable, "[Forbric/Boot] could not read the declared fields of %s for the name-tag "
+						+ "migration; it reads as absent", name);
+				return null;
+			}
 		}));
 		chain.register(TransformPhase.COREMOD, new net.forbric.kernel.transform.FabricItemContractTransformer(name -> {
 			try (var in = loader.getGameResourceAsStream(name + ".class")) { return in != null; }
-			catch (java.io.IOException unavailable) { return false; }
+			catch (java.io.IOException unavailable) {
+				Caught.warn(unavailable, "[Forbric/Boot] could not read game class %s for the Fabric item contract;"
+						+ " it reads as absent", name);
+				return false;
+			}
 		}));
 		if (transferInterop) {
 			chain.register(TransformPhase.COREMOD, new net.forbric.kernel.transform.TransferTransactionHooks(name -> {
 				try (var in = loader.getGameResourceAsStream(name + ".class")) { return in == null ? null : in.readAllBytes(); }
-				catch (java.io.IOException unavailable) { return null; }
+				catch (java.io.IOException unavailable) { Caught.warn(unavailable, "[Forbric/Boot] could not read game class %s for the transfer transaction hooks; it reads as absent", name); return null; }
 			}));
 			chain.register(TransformPhase.COREMOD, new net.forbric.kernel.transform.TransferCapabilityFallback());
 		}
@@ -475,7 +483,11 @@ public final class KernelBoot {
 		// without a proof. -Dforbric.forgeCapabilities=off is read by the transformer and turns off only dispatch.
 		var composition = new net.forbric.kernel.transform.ForgeCapabilityCompositionTransformer(path -> {
 			try (var input = loader.getGameResourceAsStream(path)) { return input == null ? null : input.readAllBytes(); }
-			catch (java.io.IOException unavailable) { return null; }
+			catch (java.io.IOException unavailable) {
+				Caught.warn(unavailable, "[Forbric/Boot] could not read game class %s for the capability composition;"
+						+ " it reads as absent", path);
+				return null;
+			}
 		}, transferInterop);
 		loader.registerAncestorComposition(composition);
 		chain.register(TransformPhase.COREMOD, composition);
@@ -491,12 +503,18 @@ public final class KernelBoot {
 		}
 		chain.register(TransformPhase.COREMOD, new net.forbric.kernel.transform.FabricModelContextTransformer(path -> {
 			try (var in = loader.getGameResourceAsStream(path)) { return in == null ? null : in.readAllBytes(); }
-			catch (java.io.IOException unavailable) { return null; }
+			catch (java.io.IOException unavailable) {
+				Caught.warn(unavailable, "[Forbric/Boot] could not read game class %s for the Fabric model context;"
+						+ " it reads as absent", path);
+				return null;
+			}
 		}));
 		chain.register(TransformPhase.COREMOD, new ForbricMergedBaseCompatTransformer(path -> {
 			try (java.io.InputStream in = loader.getGameResourceAsStream(path)) {
 				return in == null ? null : in.readAllBytes();
 			} catch (java.io.IOException unreadable) {
+				Caught.warn(unreadable, "[Forbric/Boot] could not read game class %s for the merged-base compatibility;"
+						+ " it reads as absent", path);
 				return null;
 			}
 		}));
@@ -553,6 +571,8 @@ public final class KernelBoot {
 				try (java.io.InputStream in = loader.getGameResourceAsStream(path)) {
 					return in == null ? null : in.readAllBytes();
 				} catch (java.io.IOException unreadable) {
+					Caught.warn(unreadable, "[Forbric/Boot] could not read game class %s for the Snippet funnel;"
+							+ " it reads as absent", path);
 					return null;
 				}
 			}));
@@ -641,7 +661,11 @@ public final class KernelBoot {
 				if (input == null) return null;
 				var declaration = new org.objectweb.asm.tree.ClassNode();
 				new org.objectweb.asm.ClassReader(input.readAllBytes()).accept(declaration, 0); return declaration;
-			} catch (java.io.IOException absent) { return null; }
+			} catch (java.io.IOException absent) {
+				Caught.warn(absent, "[Forbric/Boot] could not read game class %s for its worker declarations;"
+						+ " it reads as absent", internal);
+				return null;
+			}
 		};
 		chain.register(TransformPhase.COREMOD, new net.forbric.kernel.transform.RegistryElementCallbackInjector(gameDeclarations));
 		// Where the native method clears a field and the carrier removes only a computed subset of its keys, a Map.clear()
@@ -754,7 +778,11 @@ public final class KernelBoot {
 		java.util.function.Function<String, byte[]> gameResources = path -> {
 			try (java.io.InputStream input = loader.getGameResourceAsStream(path)) {
 				return input == null ? null : input.readAllBytes();
-			} catch (java.io.IOException unavailable) { return null; }
+			} catch (java.io.IOException unavailable) {
+				Caught.warn(unavailable, "[Forbric/Boot] could not read game class %s for the native dual events;"
+						+ " it reads as absent", path);
+				return null;
+			}
 		};
 		net.forbric.kernel.mixin.NativeGameReferences forgeBodies = new net.forbric.kernel.mixin.NativeGameReferences(gameResources);
 		chain.register(TransformPhase.COREMOD, new net.forbric.kernel.transform.NativeDualEventInjector(gameResources,
@@ -769,6 +797,8 @@ public final class KernelBoot {
 			try (java.io.InputStream in = loader.getGameResourceAsStream(path)) {
 				return in == null ? null : in.readAllBytes();
 			} catch (java.io.IOException unreadable) {
+				Caught.warn(unreadable, "[Forbric/Boot] could not read game class %s for the spawn-position calls;"
+						+ " it reads as absent", path);
 				return null;
 			}
 		}));
@@ -791,7 +821,11 @@ public final class KernelBoot {
 		// removing it, threw. Its parts are tracked in MinecraftForge's partEntities, and Level.getEntities finds them there.
 		chain.register(TransformPhase.COREMOD, new net.forbric.kernel.transform.ForgePartTrackingInjector(name -> {
 			try (var in = loader.getGameResourceAsStream(name + ".class")) { return in == null ? null : in.readAllBytes(); }
-			catch (java.io.IOException unavailable) { return null; }
+			catch (java.io.IOException unavailable) {
+				Caught.warn(unavailable, "[Forbric/Boot] could not read game class %s for the Forge part tracking;"
+						+ " it reads as absent", name);
+				return null;
+			}
 		}));
 		// A Fabric or MinecraftForge mod's fluid has no NeoForge type; it gets the one its fluid tags imply.
 		chain.register(TransformPhase.COREMOD, new net.forbric.kernel.transform.ForeignFluidTypeInjector());
@@ -836,7 +870,10 @@ public final class KernelBoot {
 		if (side == Side.CLIENT) {
 			java.util.function.Function<String, byte[]> gameClass = name -> {
 				try (var in = loader.getGameResourceAsStream(name + ".class")) { return in == null ? null : in.readAllBytes(); }
-				catch (java.io.IOException unavailable) { return null; }
+				catch (java.io.IOException unavailable) {
+					Caught.warn(unavailable, "[Forbric/Boot] could not read game class %s; it reads as absent", name);
+					return null;
+				}
 			};
 			java.util.function.BooleanSupplier pinned = () -> net.forbric.kernel.mixin.FabricCreativePagerMixinAdapter.enabled()
 					|| net.forbric.kernel.mixin.MergedBaseMixinCompat.contractSuppressed(
@@ -856,7 +893,11 @@ public final class KernelBoot {
 		// The merged game builds its fuels from NeoForge's data map; Fabric's fuel events run on that builder too.
 		chain.register(TransformPhase.COREMOD, new net.forbric.kernel.transform.NativeConstructorFacadeRestorer(path -> {
 			try (var in = loader.getGameResourceAsStream(path)) { return in == null ? null : in.readAllBytes(); }
-			catch (java.io.IOException missing) { return null; }
+			catch (java.io.IOException missing) {
+				Caught.warn(missing, "[Forbric/Boot] could not read game class %s for the native constructor facades;"
+						+ " it reads as absent", path);
+				return null;
+			}
 		}));
 		chain.register(TransformPhase.COREMOD, new net.forbric.kernel.transform.FabricFuelValuesInjector());
 		// NeoForge's "Missing FluidModel" check runs inside the bake Fabric wraps, before Fabric adds its fluid models.
@@ -911,8 +952,8 @@ public final class KernelBoot {
 		try {
 			Class.forName(ExitHookInjector.HOOK_OWNER.replace('/', '.'), true, KernelBoot.class.getClassLoader());
 		} catch (Throwable t) {
-			ForbricLog.warn("[Forbric/Boot] could not preload the exit hook — a quit will still work, but if the "
-					+ "kernel jar becomes unreadable before then it will end as a crash report instead", t);
+			Caught.warn(t, "[Forbric/Boot] could not preload the exit hook — a quit will still work, but if the "
+					+ "kernel jar becomes unreadable before then it will end as a crash report instead");
 		}
 
 		// MinecraftForge's Bindings resolves its service provider through FML's module layer, which the kernel does
@@ -1025,7 +1066,7 @@ public final class KernelBoot {
 			// Fabric's payload receivers are found by the public PacketSender they implement, through their superclasses.
 			chain.register(TransformPhase.COREMOD, new CommonNetworkInteropInjector(name -> {
 				try (var in = loader.getGameResourceAsStream(name + ".class")) { return in == null ? null : in.readAllBytes(); }
-				catch (java.io.IOException unavailable) { return null; }
+				catch (java.io.IOException unavailable) { Caught.warn(unavailable, "[Forbric/Boot] could not read game class %s for the common-network interop; it reads as absent", name); return null; }
 			}));
 			chain.register(TransformPhase.COREMOD, new ForgeOverlayNeuterInjector());
 		} else {
@@ -1100,7 +1141,11 @@ public final class KernelBoot {
 		chain.register(TransformPhase.COREMOD, new net.forbric.kernel.transform.LambdaInvocationThunkInjector());
 		chain.register(TransformPhase.COREMOD, new net.forbric.kernel.transform.ContextualDefaultMethodInjector(path -> {
 			try (java.io.InputStream in = loader.getGameResourceAsStream(path)) { return in == null ? null : in.readAllBytes(); }
-			catch (java.io.IOException unavailable) { return null; }
+			catch (java.io.IOException unavailable) {
+				Caught.warn(unavailable, "[Forbric/Boot] could not read game class %s for the contextual default "
+						+ "methods; it reads as absent", path);
+				return null;
+			}
 		}));
 
 		// Extensions join the configured pipeline after the core probes and before final frame recomputation.
@@ -1118,6 +1163,8 @@ public final class KernelBoot {
 			try (java.io.InputStream in = loader.getGameResourceAsStream(path)) {
 				return in == null ? null : in.readAllBytes();
 			} catch (java.io.IOException unreadable) {
+				Caught.warn(unreadable, "[Forbric/Boot] could not read game class %s for the frame recomputation;"
+						+ " it reads as absent", path);
 				return null;
 			}
 		}));
@@ -1181,6 +1228,10 @@ public final class KernelBoot {
 		// its list is built by a one-shot class initializer, so the answer must exist before anything can ask. The
 		// most likely early asker is a guest mixin plugin during prepareConfigs, which is the next line but one.
 		PassiveSeeder.publishForgeLoadingList(loader, gameDir.resolve("mods"));
+
+		// Fabric Loader's freeze(): every declared language adapter is constructed before Mixin starts, named by an
+		// entrypoint or not. After the seeding above, so the Mods screen's rows exist for a failure to land on.
+		KernelFabricEcosystem.constructLanguageAdapters();
 
 		// Mixin LAST in the pipeline but FIRST in time: installed before anything defines a targeted class.
 		//
@@ -1380,8 +1431,8 @@ public final class KernelBoot {
 				if (value != null) return value.toString();
 			}
 		} catch (Exception e) {
-			ForbricLog.debug("[Forbric/Boot] could not read version.json from %s: %s", gameJar.getFileName(),
-					String.valueOf(e));
+			Caught.warn(e, "[Forbric/Boot] could not read version.json from %s; using the fallback game version %s",
+					gameJar.getFileName(), FALLBACK_GAME_VERSION);
 		}
 
 		return FALLBACK_GAME_VERSION;
@@ -1392,7 +1443,10 @@ public final class KernelBoot {
 			if (input == null) return null;
 			var node = new org.objectweb.asm.tree.ClassNode();
 			new org.objectweb.asm.ClassReader(input.readAllBytes()).accept(node, 0); return node;
-		} catch (java.io.IOException absent) { return null; }
+		} catch (java.io.IOException absent) {
+			Caught.warn(absent, "[Forbric/Boot] could not read the declaration of %s; it reads as absent", name);
+			return null;
+		}
 	}
 
 
@@ -1451,6 +1505,7 @@ public final class KernelBoot {
 					loader.findResource("mixinextras.init.mixins.json"), bootstrap.getClassLoader() == loader);
 		} catch (ClassNotFoundException absent) {
 			// KernelMixinBootstrap already reported the absent library and its consequence.
+			Caught.expected(absent);
 		}
 	}
 
@@ -1529,7 +1584,7 @@ public final class KernelBoot {
 				if (any) jarsWithAts++;
 				if (carrierJars.contains(jar)) carrierDirectives = directives.size();
 			} catch (Throwable t) {
-				ForbricLog.warn("[Forbric/AT] could not read access transformers from " + jar.getFileName(), t);
+				Caught.warn(t, "[Forbric/AT] could not read access transformers from %s", jar.getFileName());
 			}
 		}
 
@@ -1644,8 +1699,7 @@ public final class KernelBoot {
 							modJar.getFileName());
 				}
 			} catch (Exception e) {
-				ForbricLog.warn("[Forbric/Boot] could not read JarJar children of %s: %s", modJar.getFileName(),
-						String.valueOf(e));
+				Caught.warn(e, "[Forbric/Boot] could not read JarJar children of %s", modJar.getFileName());
 			}
 		}
 
@@ -1680,8 +1734,8 @@ public final class KernelBoot {
 						version == null ? "0.0.0" : version.getOrElse("artifactVersion", "0.0.0")});
 			}
 		} catch (Exception e) {
-			ForbricLog.debug("[Forbric/Boot] could not read JarJar metadata from %s: %s", zip.getName(),
-					String.valueOf(e));
+			Caught.warn(e, "[Forbric/Boot] could not read JarJar metadata from %s; its nested jars are matched by file "
+					+ "name", zip.getName());
 		}
 		return out;
 	}
@@ -1731,6 +1785,7 @@ public final class KernelBoot {
 			return net.forbric.kernel.fabric.KernelVersion.parse(candidate)
 					.compareTo(net.forbric.kernel.fabric.KernelVersion.parse(incumbent)) > 0;
 		} catch (Exception unparseable) {
+			Caught.expected(unparseable);
 			return false;
 		}
 	}
@@ -1764,7 +1819,7 @@ public final class KernelBoot {
 			try {
 				collectForgeFamily(discoverer, jar, ignored, configs);
 			} catch (IOException | RuntimeException e) {
-				ForbricLog.warn("could not inspect %s %s: %s", what, jar.getFileName(), String.valueOf(e));
+				Caught.warn(e, "could not inspect %s %s", what, jar.getFileName());
 			}
 		}
 		return configs;
@@ -1778,7 +1833,7 @@ public final class KernelBoot {
 			try {
 				urls.add(jar.toUri().toURL());
 			} catch (Exception e) {
-				ForbricLog.debug("[Forbric/DupeId] could not offer %s as a rescue jar: %s", jar, String.valueOf(e));
+				Caught.warn(e, "[Forbric/DupeId] could not offer %s as a rescue jar", jar);
 			}
 		}
 		return urls;
@@ -1806,11 +1861,11 @@ public final class KernelBoot {
 				try {
 					collectForgeFamily(discoverer, jar, jars, configs);
 				} catch (IOException | RuntimeException e) {
-					ForbricLog.warn("could not inspect mod jar %s: %s", jar.getFileName(), String.valueOf(e));
+					Caught.warn(e, "could not inspect mod jar %s", jar.getFileName());
 				}
 			}
 		} catch (IOException e) {
-			ForbricLog.warn("could not list mods dir %s: %s", modsDir, e.getMessage());
+			Caught.warn(e, "could not list mods dir %s", modsDir);
 		}
 		return new ForgeFamilyMods(jars, configs);
 	}
@@ -1833,6 +1888,7 @@ public final class KernelBoot {
 					tomls.put(family, net.forbric.kernel.metadata.forge.ModsTomlParser.parse(in));
 				} catch (RuntimeException unreadable) {
 					// Discovery below records this manifest's failure and yields no mods for its family.
+					Caught.expected(unreadable);
 				}
 			}
 		}

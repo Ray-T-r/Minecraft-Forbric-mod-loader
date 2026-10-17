@@ -5,6 +5,7 @@ import java.lang.reflect.*;
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 import net.forbric.kernel.boot.DefinedMethodContracts.MethodContract;
+import net.forbric.kernel.util.Caught;
 import net.forbric.kernel.util.ForbricLog;
 import org.objectweb.asm.Type;
 
@@ -39,7 +40,7 @@ public final class KernelTagSourceContracts {
 				if(!Type.getDescriptor(field.getType()).equals(shape.descriptor())||(field.getModifiers()&relevant)!=(shape.flags()&relevant))return decline(receiver,key,"source field shape changed: "+shape.owner()+"."+shape.name(),false);
 			}
 			return true;
-		}catch(ReflectiveOperationException|RuntimeException|LinkageError unknown){return decline(receiver,key,"source field/definition proof is unavailable",false);}
+		}catch(ReflectiveOperationException|RuntimeException|LinkageError unknown){Caught.warn(unknown,"[Forbric/Mixin] source tag view was not updated; native type queries retained: source field/definition proof is unavailable (source=%s)",key);return false;}
 	}
 	public static boolean validatesVector(Object receiver,Object vector,String key){
 		Schema schema=SCHEMAS.get(key);if(schema==null||vector==null)return vector==null;
@@ -58,7 +59,7 @@ public final class KernelTagSourceContracts {
 		if(!DefinedMethodContracts.validates(fluid,schema.fluidQuery())||!DefinedMethodContracts.validates(fluid,schema.fluidTypeGetter())){
 			try{Class<?>query=declaring(fluid,schema.fluidQuery()),getter=declaring(fluid,schema.fluidTypeGetter());boolean concrete=query!=null&&!query.getName().equals(schema.fluidQuery().owner())||getter!=null&&!getter.getName().equals(schema.fluidTypeGetter().owner());
 				return decline(receiver,key,concrete?"native concrete fluid dispatch takes precedence":"fluid dispatch/final hash is unavailable or changed",concrete);
-			}catch(RuntimeException|LinkageError unknown){return decline(receiver,key,"fluid dispatch proof is unavailable",false);}
+			}catch(RuntimeException|LinkageError unknown){Caught.warn(unknown,"[Forbric/Mixin] source tag view was not updated; native type queries retained: fluid dispatch proof is unavailable (source=%s)",key);return false;}
 		}return true;
 	}
 	private static Class<?>declaring(Object object,MethodContract contract){for(Method m:object.getClass().getMethods())if(m.getName().equals(contract.name())&&Type.getMethodDescriptor(m).equals(contract.descriptor())&&!Modifier.isStatic(m.getModifiers()))return m.getDeclaringClass();return null;}

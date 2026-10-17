@@ -12,6 +12,7 @@ import net.forbric.api.*;
 import net.forbric.kernel.discovery.ForbricModDiscoverer;
 import net.forbric.kernel.discovery.ModAnnotationScanner;
 import net.forbric.kernel.fabric.FabricModMetadataParser;
+import net.forbric.kernel.util.Caught;
 import org.objectweb.asm.ClassReader;
 import org.objectweb.asm.Opcodes;
 import org.objectweb.asm.Type;
@@ -101,6 +102,8 @@ final class CandidateContractScanner {
 				inventories.put(path, inventory);
 				metadata.put(path, readMetadata(claim, inventory, side));
 			} catch (Exception unreadable) {
+				Caught.warn(unreadable, "[Forbric/Arbitration] could not read the candidate contracts of %s; arbitration "
+						+ "treats it as uncertain", path.getFileName());
 				Map<String, String> knownProvides = new LinkedHashMap<>();
 				for (String id : claim.modIds()) knownProvides.put(JointCandidateSelector.key(id), claim.versionOf(id));
 				metadata.put(path, new Metadata(List.of(), knownProvides, List.of(), List.of(), List.of()));
@@ -275,7 +278,11 @@ final class CandidateContractScanner {
 		if (toml == null) return List.of();
 		com.electronwill.nightconfig.core.UnmodifiableConfig config;
 		try { config = new com.electronwill.nightconfig.toml.TomlParser().parse(new StringReader(new String(toml, java.nio.charset.StandardCharsets.UTF_8))); }
-		catch (RuntimeException malformed) { return List.of(); }
+		catch (RuntimeException malformed) {
+			Caught.warn(malformed, "[Forbric/Arbitration] could not parse the mods.toml of %s; its incompatible and "
+					+ "discouraged entries are not applied", jar.jar.getFileName());
+			return List.of();
+		}
 		List<Exclusion> exclusions = new ArrayList<>();
 		for (String id : claim.modIds()) {
 			Object declared = config.get(List.of("dependencies", id));
@@ -288,7 +295,11 @@ final class CandidateContractScanner {
 				if (!UnifiedDependency.SideScope.parse(dependency.getOrElse("side", (String) null)).includes(side == EnvType.SERVER ? Side.DEDICATED_SERVER : Side.CLIENT)) continue;
 				String constraint;
 				try { constraint = net.forbric.kernel.metadata.forge.ForgeVersionRangeTranslator.toFabricPredicate(dependency.getOrElse("versionRange", (String) null)); }
-				catch (IllegalArgumentException malformed) { constraint = null; }
+				catch (IllegalArgumentException malformed) {
+					Caught.warn(malformed, "[Forbric/Arbitration] %s's %s entry for %s has an unreadable versionRange; it "
+							+ "applies to every version", jar.jar.getFileName(), type.trim(), modId);
+					constraint = null;
+				}
 				exclusions.add(new Exclusion(modId, constraint, hard));
 			}
 		}
@@ -357,7 +368,11 @@ final class CandidateContractScanner {
 				}
 				scanMixinBody(source, mixin, node, targets, jar, dependencies, symbolOwners, inventories, transformedTargets, rules);
 			}
-		} catch (Exception malformed) { rules.add(unknown(source, "config:" + name, "could not verify mixin activation: " + malformed.getClass().getSimpleName())); }
+		} catch (Exception malformed) {
+			Caught.warn(malformed, "[Forbric/Arbitration] could not verify the activation of mixin config %s in %s; "
+					+ "arbitration treats it as uncertain", name, source.getFileName());
+			rules.add(unknown(source, "config:" + name, "could not verify mixin activation: " + malformed.getClass().getSimpleName()));
+		}
 	}
 
 	/**
@@ -667,7 +682,9 @@ final class CandidateContractScanner {
 		// A class served by the system libraries is available independently of which duplicate jar won.
 		try (InputStream external = ClassLoader.getSystemResourceAsStream(owner + ".class")) {
 			if (external != null) { uncertain.add(source); hard = false; }
-		} catch (IOException ignored) { }
+		} catch (IOException ignored) {
+			Caught.expected(ignored);
+		}
 		rules.add(new JointCandidateSelector.Rule(id, source, providers, uncertain, hard,
 				detail + (hard ? " (unconditional required contract)" : " (activation or member resolution not proved)")));
 	}
@@ -725,6 +742,8 @@ final class CandidateContractScanner {
 				}
 			} catch (IOException | RuntimeException ignored) {
 				// scanMixins keeps the unreadable declaration as its own uncertainty finding.
+				Caught.warn(ignored, "[Forbric/Arbitration] could not read mixin config %s in %s for the members it adds",
+						configName, jar.jar.getFileName());
 			}
 		}
 		return new Declared(targets, added);
@@ -770,7 +789,11 @@ final class CandidateContractScanner {
 					ClassNode node = nodes.get(owner);
 					if (node == null) {
 						try { node = new ClassNode(); new ClassReader(bytes).accept(node, ClassReader.SKIP_DEBUG | ClassReader.SKIP_FRAMES); }
-						catch (RuntimeException malformed) { node = null; }
+						catch (RuntimeException malformed) {
+							Caught.warn(malformed, "[Forbric/Arbitration] could not parse class %s in %s; it is skipped",
+									owner, jar.getFileName());
+							node = null;
+						}
 						nodes.put(owner, node);
 					}
 					if (node != null) found.add(node);
@@ -804,7 +827,10 @@ final class CandidateContractScanner {
 			if (nodes.containsKey(owner)) return nodes.get(owner);
 			ClassNode node = null;
 			try { byte[] bytes = read(owner + ".class"); if (bytes != null) { node = new ClassNode(); new ClassReader(bytes).accept(node, ClassReader.SKIP_DEBUG | ClassReader.SKIP_FRAMES); } }
-			catch (IOException | RuntimeException malformed) { }
+			catch (IOException | RuntimeException malformed) {
+				Caught.warn(malformed, "[Forbric/Arbitration] could not read class %s in %s; its members count as unknown",
+						owner, jar.getFileName());
+			}
 			nodes.put(owner, node); return node;
 		}
 		Match member(String owner, String name, String descriptor, MemberUse use, Set<String> transformedTargets) {

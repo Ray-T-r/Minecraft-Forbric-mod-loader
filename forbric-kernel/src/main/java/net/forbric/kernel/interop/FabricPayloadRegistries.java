@@ -12,6 +12,7 @@ import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
 import java.util.WeakHashMap;
+import net.forbric.kernel.util.Caught;
 
 /**
  * fabric-api's payload type registries, reached the way a mod reaches them: through the public
@@ -58,7 +59,13 @@ final class FabricPayloadRegistries {
 			Class<?> api = Class.forName(API, false, loader);
 			Method register = api.getMethod("register", Class.forName(TYPE, false, loader), Class.forName(STREAM_CODEC, false, loader));
 			return register.invoke(registry.instance(), type, codec);
-		} catch (ReflectiveOperationException | RuntimeException | LinkageError refused) {
+		} catch (java.lang.reflect.InvocationTargetException refused) {
+			// The registry said no (an id registered meanwhile): its answer, read again by the caller.
+			Caught.expected(refused);
+			return null;
+		} catch (ReflectiveOperationException | RuntimeException | LinkageError unreachable) {
+			Caught.warn(unreachable, "[Forbric/Net] could not register a payload through fabric-api's public registry %s",
+					registry.instance());
 			return null;
 		}
 	}
@@ -71,6 +78,7 @@ final class FabricPayloadRegistries {
 			flow = Class.forName(FLOW, false, loader);
 			typeAndCodec = Class.forName(TYPE_AND_CODEC, false, loader);
 		} catch (ClassNotFoundException | LinkageError absent) {
+			Caught.expected(absent);
 			return List.of();
 		}
 		List<Registry> out = new ArrayList<>();
@@ -85,6 +93,7 @@ final class FabricPayloadRegistries {
 				Map<?, ?> types = typesOf(instance, typeAndCodec);
 				if (servedProtocol != null && servedFlow != null && types != null) out.add(new Registry(instance, servedProtocol, servedFlow, types));
 			} catch (ReflectiveOperationException | RuntimeException | LinkageError unreadable) {
+				Caught.warn(unreadable, "[Forbric/Net] could not read fabric-api payload registry %s; it is left out", accessor.getName());
 				// one accessor that cannot be read costs that registry, not the others
 			}
 		}

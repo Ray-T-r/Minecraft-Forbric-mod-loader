@@ -44,6 +44,7 @@ import org.objectweb.asm.tree.VarInsnNode;
 
 import net.forbric.api.CompatibilityFinding;
 import net.forbric.api.CompatibilityFindings;
+import net.forbric.kernel.util.Caught;
 import net.forbric.kernel.util.ForbricLog;
 
 /**
@@ -175,7 +176,8 @@ public final class ContendedCallSites {
 			List<Candidate> found = candidates(targetNode, ownerOf(mixin));
 			if (!found.isEmpty()) pending.put(targetNode, found);
 		} catch (Throwable unexpected) {
-			ForbricLog.debug("[Forbric/CallSite] could not read %s before %s's postApply: %s", target, mixin, unexpected);
+			Caught.warn(unexpected, "[Forbric/CallSite] could not read %s before %s's postApply; its call sites are not "
+					+ "checked for contention", target, mixin);
 		}
 	}
 
@@ -208,7 +210,8 @@ public final class ContendedCallSites {
 				report(targetNode.name, candidate, patcher, patcherConfig, plugin.getClass().getName());
 			}
 		} catch (Throwable unexpected) {
-			ForbricLog.debug("[Forbric/CallSite] could not read %s after %s's postApply: %s", target, mixin, unexpected);
+			Caught.warn(unexpected, "[Forbric/CallSite] could not read %s after %s's postApply; its call sites are not "
+					+ "checked for contention", target, mixin);
 		}
 	}
 
@@ -218,6 +221,7 @@ public final class ContendedCallSites {
 			PENDING.get().remove(node);
 		} catch (Throwable ignored) {
 			// bookkeeping only
+			Caught.warn(ignored, "[Forbric/CallSite] could not drop the pending call sites of %s", node);
 		}
 	}
 
@@ -386,7 +390,7 @@ public final class ContendedCallSites {
 				}
 			}
 		} catch (IOException | RuntimeException unreadable) {
-			ForbricLog.debug("[Forbric/CallSite] could not read %s: %s", root, unreadable);
+			Caught.warn(unreadable, "[Forbric/CallSite] could not read %s; taken as not naming the call", root);
 		}
 		return false;
 	}
@@ -397,6 +401,8 @@ public final class ContendedCallSites {
 		try {
 			reader = new ClassReader(classBytes);
 		} catch (RuntimeException notAClass) {
+			Caught.warn(notAClass, "[Forbric/CallSite] a .class entry of %d bytes is not a class ASM can read; its strings "
+					+ "are not looked at", classBytes == null ? -1 : classBytes.length);
 			return;
 		}
 		char[] buffer = new char[reader.getMaxStringLength()];
@@ -419,6 +425,7 @@ public final class ContendedCallSites {
 			} catch (java.net.URISyntaxException | IllegalArgumentException unencoded) {
 				// A location spelled with raw spaces, brackets or non-ASCII (mod jars are named like that) is not a
 				// valid URI as it stands; quote its path rather than decode it, since '+' is literal in a file name.
+				Caught.expected(unencoded);
 				path = Path.of(new java.net.URI("file", null, location.getPath(), null));
 			}
 			String spelling = path.toString().replace('\\', '/');
@@ -427,6 +434,7 @@ public final class ContendedCallSites {
 			if (spelling.endsWith("/" + entry)) return Path.of(spelling.substring(0, spelling.length() - entry.length()));
 			return Files.exists(path) ? path : null;
 		} catch (Exception unreadable) {
+			Caught.warn(unreadable, "[Forbric/CallSite] could not find the jar or directory %s came from", type.getName());
 			return null;
 		}
 	}

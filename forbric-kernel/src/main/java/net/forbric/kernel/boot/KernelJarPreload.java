@@ -29,6 +29,7 @@ import java.util.zip.ZipFile;
 
 import net.forbric.kernel.classloading.DelegationPolicy;
 import net.forbric.kernel.classloading.FabricLoaderInternals;
+import net.forbric.kernel.util.Caught;
 import net.forbric.kernel.util.ForbricLog;
 
 /**
@@ -92,8 +93,8 @@ public final class KernelJarPreload {
 		try {
 			outcome = define(classNames(jar), anchor.getClassLoader());
 		} catch (IOException | RuntimeException unreadable) {
-			ForbricLog.warn("[Forbric/Boot] could not list the kernel jar's classes to define them up front — each is "
-					+ "read on first use instead, so a jar replaced mid-session can break that use: %s", unreadable);
+			Caught.warn(unreadable, "[Forbric/Boot] could not list the kernel jar's classes to define them up front — "
+					+ "each is read on first use instead, so a jar replaced mid-session can break that use");
 			return;
 		}
 		long millis = (System.nanoTime() - start) / 1_000_000L;
@@ -114,6 +115,7 @@ public final class KernelJarPreload {
 			Path path = Path.of(source.getLocation().toURI());
 			return Files.isRegularFile(path) ? path : null;
 		} catch (URISyntaxException | RuntimeException unknown) {
+			Caught.expected(unknown);
 			return null;
 		}
 	}
@@ -146,6 +148,7 @@ public final class KernelJarPreload {
 			try {
 				Class.forName(name, false, loader);
 			} catch (Throwable t) {
+				Caught.expected(t);
 				failed.add(name + " (" + t + ")");
 			}
 		}

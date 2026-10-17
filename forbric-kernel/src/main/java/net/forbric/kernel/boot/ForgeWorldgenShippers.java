@@ -31,6 +31,7 @@ import java.util.zip.ZipFile;
 
 import net.forbric.api.Ecosystem;
 import net.forbric.api.ModCatalog;
+import net.forbric.kernel.util.Caught;
 import net.forbric.kernel.util.ForbricLog;
 
 /**
@@ -63,6 +64,8 @@ public final class ForgeWorldgenShippers {
 					files++;
 				}
 			} catch (Exception unreadable) {
+				Caught.warn(unreadable, "[Forbric/Worldgen] could not read %s; its forge modifier files are not counted",
+						jar.getFileName());
 				continue;
 			}
 			if (files > 0) shippers.add(new Shipper(jar.getFileName().toString(), namespaces, files));

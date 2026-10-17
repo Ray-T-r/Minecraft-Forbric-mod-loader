@@ -28,8 +28,8 @@ import java.util.zip.ZipFile;
 
 import net.forbric.api.Ecosystem;
 import net.forbric.api.Side;
+import net.forbric.kernel.util.Caught;
 import net.forbric.kernel.util.ForbricLog;
-import net.forbric.kernel.util.Reflect;
 
 /** Registers the Forge carrier's own subscribers, without re-posting any client or gameplay event. */
 public final class KernelForgeInternalSubscribers {
@@ -82,7 +82,7 @@ public final class KernelForgeInternalSubscribers {
                     }
                 }
             } catch (Exception failure) {
-                ForbricLog.warn("[Forbric/EBS] could not scan Forge-internal subscribers in " + jar, failure);
+                Caught.warn(failure, "[Forbric/EBS] could not scan Forge-internal subscribers in %s", jar);
             }
         }
         return List.copyOf(unique.values());
@@ -120,8 +120,8 @@ public final class KernelForgeInternalSubscribers {
                     registered++;
                 } catch (Exception | LinkageError failure) {
                     failed++;
-                    ForbricLog.warn("[Forbric/EBS] could not register Forge-internal " + subscriber.className()
-                            + "; not retrying a possibly partial class registration", Reflect.unwrap(failure));
+                    Caught.warn(failure, "[Forbric/EBS] could not register Forge-internal %s; not retrying a possibly "
+                            + "partial class registration", subscriber.className());
                 }
             }
         }

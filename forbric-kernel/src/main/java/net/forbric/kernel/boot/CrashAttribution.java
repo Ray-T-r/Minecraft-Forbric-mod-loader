@@ -32,6 +32,7 @@ import java.util.stream.Stream;
 
 import net.forbric.api.ModCatalog;
 import net.forbric.kernel.mixin.MixinOverlapLint;
+import net.forbric.kernel.util.Caught;
 import net.forbric.kernel.util.ForbricLog;
 
 /**
@@ -206,7 +207,7 @@ public final class CrashAttribution {
 			ForbricLog.warn("[Forbric/Crash] %s — analysis in .forbric-kernel/%s",
 					suspects.isEmpty() ? "no mod could be named from the crash report" : summary(suspects), FILE);
 		} catch (Throwable t) {
-			ForbricLog.debug("[Forbric/Crash] could not analyse the crash report: %s", String.valueOf(t));
+			Caught.warn(t, "[Forbric/Crash] could not analyse the crash report; no mod is named for it");
 		}
 	}
 
@@ -281,6 +282,8 @@ public final class CrashAttribution {
 		try {
 			return Files.getLastModifiedTime(file).toInstant();
 		} catch (IOException unreadable) {
+			Caught.warn(unreadable, "[Forbric/Crash] could not read when %s was written; it counts as older than this boot",
+					file);
 			return java.time.Instant.EPOCH;
 		}
 	}

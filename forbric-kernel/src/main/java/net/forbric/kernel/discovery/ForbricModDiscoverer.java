@@ -34,6 +34,7 @@ import net.forbric.kernel.metadata.forge.EcosystemVersions;
 import net.forbric.kernel.metadata.forge.ForgeMetadataMapper;
 import net.forbric.kernel.metadata.forge.ForgeModsToml;
 import net.forbric.kernel.metadata.forge.ModsTomlParser;
+import net.forbric.kernel.util.Caught;
 import net.forbric.kernel.util.ForbricLog;
 
 /**
@@ -136,6 +137,7 @@ public final class ForbricModDiscoverer {
 				try (InputStream in = jar.getInputStream(fabricEntry)) {
 					result.add(FabricModJsonReader.read(in, source));
 				} catch (IOException | RuntimeException unreadable) {
+					Caught.expected(unreadable);
 					failures.add(new MetadataFailures.Failure(jarPath, Ecosystem.FABRIC, FABRIC_MANIFEST, List.of(),
 							describe(unreadable)));
 				}
@@ -165,12 +167,14 @@ public final class ForbricModDiscoverer {
 		try (InputStream in = jar.getInputStream(entry)) {
 			toml = ModsTomlParser.parse(in);
 		} catch (IOException | RuntimeException unreadable) {
+			Caught.expected(unreadable);
 			failures.add(new MetadataFailures.Failure(jarPath, ecosystem, manifestPath, List.of(), describe(unreadable)));
 			return;
 		}
 		try {
 			sink.addAll(mapForgeFamily(jar, toml, ecosystem, jarVersion, source));
 		} catch (IOException | RuntimeException unreadable) {
+			Caught.expected(unreadable);
 			failures.add(new MetadataFailures.Failure(jarPath, ecosystem, manifestPath,
 					toml.getMods().stream().map(net.forbric.kernel.metadata.forge.ForgeModEntry::getModId).toList(),
 					describe(unreadable)));
@@ -246,10 +250,12 @@ public final class ForbricModDiscoverer {
 							if (attr != null) for (String config : attr.split(",")) if (!config.isBlank()) declared.add(config.strip());
 						}
 					} catch (IOException | RuntimeException unreadableManifest) {
+						Caught.warn(unreadableManifest, "[Forbric/Discovery] could not read %s in nested jar %s; it declares no mixin configs", name, entry.getName());
 						// A manifest that cannot be read declares nothing.
 					}
 				}
 			} catch (IOException unreadable) {
+				Caught.warn(unreadable, "[Forbric/Discovery] could not read nested jar %s; it accounts for no mixin configs", entry.getName());
 				// A nested jar that cannot be read accounts for nothing; its configs are warned about as before.
 				continue;
 			}

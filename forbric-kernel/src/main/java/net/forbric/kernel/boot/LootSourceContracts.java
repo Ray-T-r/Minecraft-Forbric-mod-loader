@@ -8,6 +8,7 @@ import org.objectweb.asm.tree.*;
 import net.forbric.api.Ecosystem;
 import net.forbric.kernel.mixin.MixinInstructionFingerprint;
 import net.forbric.kernel.mixin.NativeGameReferences;
+import net.forbric.kernel.util.Caught;
 
 /** Source projection is insufficient: the actual helper, typed bridge, and complete host call closure must match. */
 public final class LootSourceContracts implements Opcodes {
@@ -44,12 +45,12 @@ public final class LootSourceContracts implements Opcodes {
             Map<String,Map<String,String>> domainHashes=new LinkedHashMap<>();domain.forEach((owner,node)->domainHashes.put(owner,fingerprints(node)));Contract candidate=new Contract(loader,plan,fingerprints(closure),fingerprints(bridge),Map.copyOf(domainHashes));
             Contract previous=contract;if(previous!=null&&(!previous.plan.sourceName().equals(plan.sourceName())||previous.loader!=loader))return false;
             contract=candidate;return true;
-        }catch(RuntimeException unreadable){return false;}
+        }catch(RuntimeException unreadable){Caught.warn(unreadable,"[Forbric/Mixin] could not prove the loot source contract of %s; the loot callback group stays unclaimed",plan.sourceName());return false;}
     }
     public static boolean isWitness(String name){Contract c=contract;if(c==null||name==null)return false;String internal=name.replace('.','/');return internal.equals(c.plan.targetName().replace('.','/'))||internal.equals(BRIDGE)||internal.equals(c.plan.helperName())||c.domain.containsKey(internal);}
     public static void observeDefinition(String name,byte[] bytes){observeDefinition(UNSCOPED_TEST_LOADER,name,bytes);}
     public static void observeDefinition(ClassLoader definingLoader,String name,byte[] bytes){if(bytes==null)return;String internal=name.replace('.','/');if(!internal.equals(BRIDGE)&&!internal.equals(LootRegistryDomain.DATA)&&!internal.equals(LootRegistryDomain.KEYS)&&!isWitness(name))return;
-        try{ledger(definingLoader,true).put(internal,fingerprints(read(bytes)));}catch(RuntimeException unreadable){ledger(definingLoader,true).remove(internal);}
+        try{ledger(definingLoader,true).put(internal,fingerprints(read(bytes)));}catch(RuntimeException unreadable){Caught.warn(unreadable,"[Forbric/Mixin] could not fingerprint %s as it was defined; it is no longer a proved loot witness",internal);ledger(definingLoader,true).remove(internal);}
     }
     public static boolean helperProved(){Contract c=contract;return c!=null&&matches(c.loader,c.plan.helperName(),c.plan.helperMethods());}
     public static boolean proved(){Contract c=contract;return c!=null&&proved(c.loader);}

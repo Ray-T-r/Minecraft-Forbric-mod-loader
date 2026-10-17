@@ -1,5 +1,6 @@
 /* Copyright 2026 The Forbric Project. Licensed under the Apache License, Version 2.0. */
 package net.forbric.kernel.interop.protocol.modmenu;
+import net.forbric.kernel.ExpectCaught;
 import net.forbric.kernel.fabric.FabricModMetadataParser;
 import net.forbric.kernel.fabric.KernelFabricLoader;
 import net.forbric.kernel.fabric.KernelModContainer;
@@ -205,6 +206,7 @@ class ModMenuConfigFactoriesTest {
 		assertFalse(read.has("configlib"), "the library itself overrides nothing");
 	}
 
+	@ExpectCaught("it is skipped, as Mod Menu skips a broken one")
 	@Test void aBrokenEntrypointIsSkippedAndCostsNoOtherMod() throws Exception {
 		KernelFabricLoader loader = loader();
 		register(loader, "ctor", ThrowsOnConstruction.class);

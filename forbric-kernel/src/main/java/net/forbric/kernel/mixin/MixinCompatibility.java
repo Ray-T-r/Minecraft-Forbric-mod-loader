@@ -5,6 +5,7 @@ import java.util.List;
 
 import net.forbric.api.CompatibilityFinding;
 import net.forbric.api.CompatibilityFindings;
+import net.forbric.kernel.util.Caught;
 import net.forbric.kernel.util.ForbricLog;
 
 /** One identity from preflight through application; prose is evidence, never the identity. */
@@ -25,6 +26,8 @@ public final class MixinCompatibility {
 			FinalMixinApplications.config(config, parsed);
 		} catch (RuntimeException invalid) {
 			// Mixin reports an unreadable config; diagnostics must not prevent that report.
+			Caught.warn(invalid, "[Forbric/Mixin] could not read mixin config %s as declared; its original required flag "
+					+ "and final injections are not tracked", config);
 		}
 	}
 

@@ -34,8 +34,8 @@ import com.mojang.serialization.DynamicOps;
 import net.minecraft.resources.Identifier;
 import net.minecraft.resources.RegistryOps;
 
+import net.forbric.kernel.util.Caught;
 import net.forbric.kernel.util.ForbricLog;
-import net.forbric.kernel.util.Reflect;
 
 /**
  * Gives {@code fabric:load_conditions} an evaluator again, because fabric-api's own two cannot run here.
@@ -177,8 +177,7 @@ public final class KernelFabricConditions {
 		} catch (Throwable t) {
 			// Keep the element. A judgement that could not be made is not a "no": the previous behaviour was to
 			// load everything, and failing closed here would delete content over a reflection problem.
-			ForbricLog.warn("[Forbric/Conditions] could not ask fabric-api about " + KEY + " — the element is kept",
-					Reflect.unwrap(t));
+			Caught.warn(t, "[Forbric/Conditions] could not ask fabric-api about %s — the element is kept", KEY);
 			return null;
 		}
 	}
@@ -217,7 +216,12 @@ public final class KernelFabricConditions {
 					throw thrown.getCause() != null ? thrown.getCause() : thrown;
 				}
 			};
-		} catch (Throwable absent) {
+		} catch (ClassNotFoundException absent) {
+			Caught.expected(absent);
+			return null;
+		} catch (Throwable t) {
+			Caught.warn(t, "[Forbric/Conditions] fabric-api's public condition API is there but could not be read; %s is "
+					+ "not judged", KEY);
 			return null;
 		}
 	}
@@ -228,7 +232,6 @@ public final class KernelFabricConditions {
 	private static volatile java.util.function.Predicate<String> registeredTypes = KernelFabricConditions::askFabricApi;
 	private static volatile MethodHandle typeLookup;
 	private static volatile boolean typeLookupResolved;
-	private static volatile boolean typeLookupFailureReported;
 
 	/**
 	 * Whether fabric-api's resource-condition registry has this type id -- false without fabric-api, and for an id that
@@ -245,11 +248,8 @@ public final class KernelFabricConditions {
 			Object type = lookup.invoke(Identifier.tryParse(id));
 			return type != null;
 		} catch (Throwable t) {
-			if (!typeLookupFailureReported) {
-				typeLookupFailureReported = true;
-				ForbricLog.warn("[Forbric/Conditions] could not ask fabric-api whether it registers a resource condition "
-						+ "type — read as not registered there", Reflect.unwrap(t));
-			}
+			Caught.warn(t, "[Forbric/Conditions] could not ask fabric-api whether it registers the resource condition "
+					+ "type %s — read as not registered there", id);
 			return false;
 		}
 	}
@@ -263,7 +263,12 @@ public final class KernelFabricConditions {
 				typeLookup = MethodHandles.lookup().findStatic(types, "getConditionType",
 						MethodType.methodType(Class.forName("net.fabricmc.fabric.api.resource.conditions.v1.ResourceConditionType",
 								false, KernelFabricConditions.class.getClassLoader()), Identifier.class));
-			} catch (Throwable absent) {
+			} catch (ClassNotFoundException absent) {
+				Caught.expected(absent);
+				typeLookup = null;
+			} catch (Throwable t) {
+				Caught.warn(t, "[Forbric/Conditions] fabric-api's public condition-type lookup is there but could not be "
+						+ "read; its types read as not registered");
 				typeLookup = null;
 			}
 			typeLookupResolved = true;

@@ -11,6 +11,7 @@ import net.forbric.api.CompatibilityFinding;
 import net.forbric.api.CompatibilityFindings;
 import net.forbric.api.ModCatalog;
 import net.forbric.api.Ecosystem;
+import net.forbric.kernel.ExpectCaught;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -65,6 +66,7 @@ class CompatibilityDecisionTest {
 		assertEquals(1, CompatibilityFindings.confirmedRequired().size(), "accepting never turns evidence green");
 	}
 
+	@ExpectCaught("the confirmation broke part-way")
 	@Test
 	void askWithoutDisplayCannotApproveAndOnlyExplicitContinueIsRemembered() {
 		assertFalse(CompatibilityDecision.decide(required(), CompatibilityDecision.Policy.ASK, false, rows -> fail()));

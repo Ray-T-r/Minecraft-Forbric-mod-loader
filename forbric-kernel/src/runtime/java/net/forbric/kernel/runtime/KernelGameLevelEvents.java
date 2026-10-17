@@ -19,8 +19,8 @@ package net.forbric.kernel.runtime;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.function.Consumer;
 
+import net.forbric.kernel.util.Caught;
 import net.forbric.kernel.util.ForbricLog;
-import net.forbric.kernel.util.Reflect;
 import net.minecraft.world.level.Level;
 import net.minecraftforge.event.ForgeEventFactory;
 import net.neoforged.bus.api.Event;
@@ -95,7 +95,7 @@ public final class KernelGameLevelEvents {
 	}
 
 	/**
-	 * Subscribes one observing forward at LOWEST, and says so once if it ever fails.
+	 * Subscribes one observing forward at LOWEST, and says so each time it fails.
 	 *
 	 * <p>The forward is skipped rather than passed null when the accessor is not a {@code Level}: the hooks
 	 * dereference their argument, so a null would turn "this bridge cannot express that level" into an NPE
@@ -103,7 +103,6 @@ public final class KernelGameLevelEvents {
 	 */
 	private static <E extends LevelEvent> void forward(IEventBus bus, Class<E> event, String name, String cost,
 			ForgeForward<E> forge) {
-		AtomicBoolean warned = new AtomicBoolean();
 		AtomicBoolean proved = new AtomicBoolean();
 		Consumer<E> listener = neoEvent -> {
 			try {
@@ -114,9 +113,7 @@ public final class KernelGameLevelEvents {
 							+ "mod now sees the level lifecycle NeoForge won on the merged base", name);
 				}
 			} catch (Throwable t) {
-				if (warned.compareAndSet(false, true)) {
-					ForbricLog.warn("[Forbric/EventMux] " + name + " forward failed — " + cost, Reflect.unwrap(t));
-				}
+				Caught.warn(t, "[Forbric/EventMux] %s forward failed — %s", name, cost);
 			}
 		};
 		// The four-argument overload, ALWAYS: the shorter ones default to NORMAL, and LOWEST is what makes this

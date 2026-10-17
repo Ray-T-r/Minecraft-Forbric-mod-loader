@@ -58,6 +58,7 @@ import net.forbric.api.Ecosystem;
 import net.forbric.kernel.classloading.ForbricClassLoader;
 import net.forbric.kernel.transform.MergedBaseFrameRecomputer;
 import net.forbric.kernel.util.ForbricLog;
+import net.forbric.kernel.util.Caught;
 
 /**
  * Puts a call back into the method a mod's injector names, where the surviving carrier moved it into a helper of its own:
@@ -831,6 +832,7 @@ public final class NativeCallInlining {
 		try {
 			return code.apply(name);
 		} catch (RuntimeException unreadable) {
+			Caught.warn(unreadable, "[Forbric/Mixin] could not read %s; taken as absent", name);
 			return null;
 		}
 	}
@@ -1327,7 +1329,7 @@ public final class NativeCallInlining {
 			node.accept(writer);
 			return writer.toByteArray();
 		} catch (RuntimeException unwritable) {
-			ForbricLog.warn("[Forbric/Mixin] could not write " + binary + " with its native calls put back; it stays as merged", unwritable);
+			Caught.warn(unwritable, "[Forbric/Mixin] could not write %s with its native calls put back; it stays as merged", binary);
 			return bytes;
 		}
 	}
@@ -1395,6 +1397,7 @@ public final class NativeCallInlining {
 			new ClassReader(in.readAllBytes()).accept(node, 0);
 			return node;
 		} catch (IOException | RuntimeException unreadable) {
+			Caught.warn(unreadable, "[Forbric/Mixin] could not read %s as its jar has it; taken as absent", owner);
 			return null;
 		}
 	}
@@ -1410,6 +1413,7 @@ public final class NativeCallInlining {
 				return in == null ? null : in.readAllBytes();
 			}
 		} catch (IOException unreadable) {
+			Caught.warn(unreadable, "[Forbric/Mixin] could not read resource %s; taken as absent", path);
 			return null;
 		}
 	}
@@ -1461,6 +1465,7 @@ public final class NativeCallInlining {
 		try {
 			return new Analyzer<>(new SourceInterpreter()).analyze(owner, method);
 		} catch (AnalyzerException | RuntimeException unanalysable) {
+			Caught.expected(unanalysable);
 			return null;
 		}
 	}

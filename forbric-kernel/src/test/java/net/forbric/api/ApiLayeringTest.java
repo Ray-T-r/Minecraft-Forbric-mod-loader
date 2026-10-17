@@ -48,8 +48,13 @@ class ApiLayeringTest {
 	 * nothing compiling against this package's surface needs it, and because it is self-contained — JDK types and
 	 * a reflective log4j lookup. This list existing is the point: a second entry has to be argued for in a diff
 	 * rather than appearing in an import block nobody reads.
+	 *
+	 * <p>{@code Caught} is the second, on the same terms: method bodies only, JDK types plus ForbricLog. Every catch
+	 * in the kernel reports through it (EveryCatchIsVisibleTest), and this package's catches are kernel catches —
+	 * left on ForbricLog alone they would be the ones no test can count.
 	 */
-	private static final Set<String> ALLOWED_KERNEL_IMPORTS = Set.of("net.forbric.kernel.util.ForbricLog");
+	private static final Set<String> ALLOWED_KERNEL_IMPORTS =
+			Set.of("net.forbric.kernel.util.ForbricLog", "net.forbric.kernel.util.Caught");
 
 	/** Prefixes that would make this package name a game type. */
 	private static final List<String> GAME_PACKAGES =

@@ -22,6 +22,7 @@ import org.objectweb.asm.tree.analysis.AnalyzerException;
 import org.objectweb.asm.tree.analysis.Frame;
 import org.objectweb.asm.tree.analysis.SourceInterpreter;
 import org.objectweb.asm.tree.analysis.SourceValue;
+import net.forbric.kernel.util.Caught;
 
 /**
  * What a handler's body computes, read by its data flow: where each returned value and each call operand comes from (past
@@ -49,6 +50,7 @@ public final class HandlerFlow {
 				}
 			}).analyze(owner, method));
 		} catch (AnalyzerException | RuntimeException unreadable) {
+			Caught.expected(unreadable);
 			return null;
 		}
 	}

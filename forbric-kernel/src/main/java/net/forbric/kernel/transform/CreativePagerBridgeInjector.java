@@ -9,6 +9,7 @@ import java.util.function.BooleanSupplier;
 import java.util.function.Function;
 
 import net.forbric.kernel.mixin.MixinFit;
+import net.forbric.kernel.util.Caught;
 import net.forbric.kernel.util.ForbricLog;
 import org.objectweb.asm.ClassReader;
 import org.objectweb.asm.ClassWriter;
@@ -148,8 +149,8 @@ public final class CreativePagerBridgeInjector implements ClassTransformer {
 		try {
 			needed = MixinFit.implementerSupplies(MixinFit.parse(api));
 		} catch (RuntimeException unreadable) { // the chain does not catch: a throw here would fail the screen's load
-			ForbricLog.warn("[Forbric/CreativePager] FabricCreativeModeInventoryScreen is unreadable (%s) — the creative screen "
-					+ "is left as merged", unreadable);
+			Caught.warn(unreadable, "[Forbric/CreativePager] FabricCreativeModeInventoryScreen is unreadable — the creative"
+					+ " screen is left as merged");
 			return bytes;
 		}
 		ClassNode node = new ClassNode();

@@ -16,6 +16,8 @@ import org.objectweb.asm.tree.analysis.Frame;
 import org.objectweb.asm.tree.analysis.SourceInterpreter;
 import org.objectweb.asm.tree.analysis.SourceValue;
 
+import net.forbric.kernel.util.Caught;
+
 /**
  * Injectors that follow setBlock's notification tail into markAndNotifyBlock.
  *
@@ -150,7 +152,7 @@ final class MixinChunkStatusRetarget {
 			List<String> args = MixinFit.stringList(MixinFit.value(at, "args"));
 			if (args.size() != 1 || !args.getFirst().startsWith("intValue=")) return null;
 			try { return new Anchor(null, Integer.valueOf(args.getFirst().substring("intValue=".length()).trim())); }
-			catch (NumberFormatException malformed) { return null; }
+			catch (NumberFormatException malformed) { Caught.expected(malformed); return null; }
 		}
 		return null;
 	}
@@ -257,7 +259,7 @@ final class MixinChunkStatusRetarget {
 		if (flags < 0 || call == null) return -1;
 		Frame<SourceValue> frame;
 		try { frame = new Analyzer<>(new SourceInterpreter()).analyze(owner, original)[original.instructions.indexOf(call)]; }
-		catch (AnalyzerException | RuntimeException unanalysable) { return -1; }
+		catch (AnalyzerException | RuntimeException unanalysable) { Caught.expected(unanalysable); return -1; }
 		if (frame == null) return -1;
 		Type[] arguments = Type.getArgumentTypes(call.desc);
 		int first = frame.getStackSize() - arguments.length, slot = 1, found = -1;

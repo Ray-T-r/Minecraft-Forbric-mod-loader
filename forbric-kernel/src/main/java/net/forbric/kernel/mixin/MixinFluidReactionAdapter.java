@@ -23,6 +23,7 @@ import org.objectweb.asm.tree.analysis.SourceValue;
 import net.forbric.api.Ecosystem;
 import net.forbric.api.ForeignType;
 import net.forbric.kernel.transform.FluidInteractionsInjector;
+import net.forbric.kernel.util.Caught;
 import net.forbric.kernel.util.ForbricLog;
 
 /** Restores fluid reaction callbacks without running vanilla's dead interaction loop beside the native registry. */
@@ -257,7 +258,7 @@ public final class MixinFluidReactionAdapter {
 	private static Map<MethodInsnNode,VarInsnNode> shadowCalls(String owner,MethodNode handler,Set<String> relocated) {
 		Frame<SourceValue>[] frames;
 		try { frames=new Analyzer<>(new SourceInterpreter()).analyze(owner,handler); }
-		catch(AnalyzerException|RuntimeException unanalysable){ return null; }
+		catch(AnalyzerException|RuntimeException unanalysable){ Caught.expected(unanalysable); return null; }
 		Map<MethodInsnNode,VarInsnNode> calls=new LinkedHashMap<>();
 		Set<AbstractInsnNode> receivers=Collections.newSetFromMap(new IdentityHashMap<>());
 		for(var i:handler.instructions) {

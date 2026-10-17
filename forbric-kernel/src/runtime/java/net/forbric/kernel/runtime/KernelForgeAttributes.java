@@ -27,8 +27,8 @@ import net.minecraft.world.entity.ai.attributes.AttributeSupplier;
 import net.minecraftforge.common.ForgeHooks;
 import net.neoforged.neoforge.common.CommonHooks;
 
+import net.forbric.kernel.util.Caught;
 import net.forbric.kernel.util.ForbricLog;
-import net.forbric.kernel.util.Reflect;
 
 /**
  * The producer and the consumer of mod entity attributes, which the byte merge put on opposite sides.
@@ -95,8 +95,8 @@ public final class KernelForgeAttributes {
 		try {
 			ForgeHooks.modifyAttributes();
 		} catch (Throwable t) {
-			ForbricLog.warn("[Forbric/Attributes] MinecraftForge's EntityAttributeCreationEvent did not finish — "
-					+ "its mods' living entities have no attributes and cannot exist", Reflect.unwrap(t));
+			Caught.warn(t, "[Forbric/Attributes] MinecraftForge's EntityAttributeCreationEvent did not finish — "
+					+ "its mods' living entities have no attributes and cannot exist");
 			return;
 		}
 		int after = size(forgeAttributes());
@@ -131,7 +131,7 @@ public final class KernelForgeAttributes {
 	}
 
 	/**
-	 * One ecosystem's map, or null with a reason said once.
+	 * One ecosystem's map, or null with a reason.
 	 *
 	 * <p>Silence here was the risk: a {@code catch} returning null with no log is indistinguishable from an
 	 * ecosystem that simply has no mods, and the difference is every one of that ecosystem's entities.
@@ -142,18 +142,12 @@ public final class KernelForgeAttributes {
 		try {
 			return source.get();
 		} catch (Throwable t) {
-			if (UNREACHABLE.add(ecosystem)) {
-				ForbricLog.warn("[Forbric/Attributes] " + ecosystem + "'s mod-attribute map could not be read — its "
-						+ "mods' living entities will be refused for having no attributes. Asked again on the next "
-						+ "lookup rather than remembered, so a load-order accident does not become permanent",
-						Reflect.unwrap(t));
-			}
+			Caught.warn(t, "[Forbric/Attributes] %s's mod-attribute map could not be read — its mods' living entities "
+					+ "will be refused for having no attributes. Asked again on the next lookup rather than remembered, "
+					+ "so a load-order accident does not become permanent", ecosystem);
 			return null;
 		}
 	}
-
-	private static final Set<String> UNREACHABLE =
-			java.util.Collections.newSetFromMap(new java.util.concurrent.ConcurrentHashMap<>());
 
 	private static Map<EntityType<? extends LivingEntity>, AttributeSupplier> neoAttributes() {
 		return attributesOf("NeoForge", CommonHooks::getAttributesView);

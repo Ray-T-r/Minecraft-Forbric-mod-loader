@@ -32,8 +32,8 @@ import net.forbric.api.DiscoveredMod;
 import net.forbric.api.Ecosystem;
 import net.forbric.api.ForeignType;
 import net.forbric.kernel.discovery.ForbricModDiscoverer;
+import net.forbric.kernel.util.Caught;
 import net.forbric.kernel.util.ForbricLog;
-import net.forbric.kernel.util.Reflect;
 
 /**
  * Feeds NeoForge's own {@code RuntimeEnumExtender} the {@code META-INF/enumextensions.json} of every Forge-family
@@ -116,11 +116,12 @@ public final class NeoEnumExtensions {
 					byMod.size(), byMod.keySet(), accepted == null ? "(count unavailable)" : accepted.keySet());
 			return byMod.size();
 		} catch (ClassNotFoundException absent) {
-			ForbricLog.debug("[Forbric/EnumExt] no NeoForge enumextension package — skipping");
+			// no NeoForge enumextension package — skipping
+			Caught.expected(absent);
 			return 0;
 		} catch (Throwable t) {
-			ForbricLog.warn("[Forbric/EnumExt] could not load enum extension declarations — mods that add vanilla "
-					+ "enum constants will fail on the first lookup", Reflect.unwrap(t));
+			Caught.warn(t, "[Forbric/EnumExt] could not load enum extension declarations — mods that add vanilla "
+					+ "enum constants will fail on the first lookup");
 			return 0;
 		}
 	}
@@ -132,7 +133,8 @@ public final class NeoEnumExtensions {
 			field.setAccessible(true);
 			return (Map<?, ?>) field.get(null);
 		} catch (Throwable t) {
-			ForbricLog.debug("[Forbric/EnumExt] could not read the accepted prototypes: %s", String.valueOf(t));
+			Caught.warn(t, "[Forbric/EnumExt] could not read the accepted prototypes of %s; their count is unavailable",
+					extender.getName());
 			return null;
 		}
 	}
@@ -200,7 +202,7 @@ public final class NeoEnumExtensions {
 			}
 			return result;
 		} catch (Throwable t) {
-			ForbricLog.debug("[Forbric/EnumExt] could not read declarations from %s: %s", jar, String.valueOf(t));
+			Caught.warn(t, "[Forbric/EnumExt] could not read enum extension declarations from %s; none of them load", jar);
 			return Map.of();
 		}
 	}
@@ -213,7 +215,7 @@ public final class NeoEnumExtensions {
 				return in.readAllBytes();
 			}
 		} catch (Throwable t) {
-			ForbricLog.debug("[Forbric/EnumExt] could not read %s from %s: %s", entry, jar, String.valueOf(t));
+			Caught.warn(t, "[Forbric/EnumExt] could not read %s from %s", entry, jar);
 			return null;
 		}
 	}

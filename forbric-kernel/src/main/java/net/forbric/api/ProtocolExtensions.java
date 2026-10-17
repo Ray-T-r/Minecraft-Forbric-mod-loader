@@ -6,7 +6,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.ServiceLoader;
-import net.forbric.kernel.util.ForbricLog;
+import net.forbric.kernel.util.Caught;
 
 /** One extensible protocol registry per game loader, shared by boot and game-side seams. */
 public final class ProtocolExtensions {
@@ -32,7 +32,6 @@ public final class ProtocolExtensions {
     public static final class Registry {
         private volatile ProtocolExtension.Context context;
         private final Map<String, ProtocolExtension> extensions = new LinkedHashMap<>();
-        private final java.util.Set<String> warned = java.util.concurrent.ConcurrentHashMap.newKeySet();
         public Registry(ProtocolExtension.Context context) { this.context = java.util.Objects.requireNonNull(context); }
         private synchronized void bindSide(Side side) {
             if (side == null) return;
@@ -54,22 +53,18 @@ public final class ProtocolExtensions {
         }
         public void beforeConfigurationLoading() {
             for (ProtocolExtension extension : snapshot()) try { extension.beforeConfigurationLoading(context); }
-            catch (Throwable failure) { failed(extension, "initializing configurations", failure); }
+            catch (Throwable failure) { Caught.warn(failure, "[Forbric/Protocols] %s failed while initializing configurations", extension.id()); }
         }
         public ProtocolExtension.ConfigurationScreen configurationScreen(ModCatalog.Entry mod) {
             for (ProtocolExtension extension : snapshot()) try {
                 ProtocolExtension.ConfigurationScreen screen = extension.configurationScreen(context, mod);
                 if (screen != null) return screen;
-            } catch (Throwable failure) { failed(extension, "reading configuration screen", failure); }
+            } catch (Throwable failure) { Caught.warn(failure, "[Forbric/Protocols] %s failed while reading configuration screen", extension.id()); }
             return null;
         }
         public void configEvent(ProtocolExtension.ConfigEvent event, Object config) {
             for (ProtocolExtension extension : snapshot()) try { extension.configEvent(context, event, config); }
-            catch (Throwable failure) { failed(extension, "delivering " + event, failure); }
-        }
-        private void failed(ProtocolExtension extension, String operation, Throwable failure) {
-            if (!warned.add(extension.id() + ":" + operation)) return;
-            ForbricLog.warn("[Forbric/Protocols] " + extension.id() + " failed while " + operation, failure);
+            catch (Throwable failure) { Caught.warn(failure, "[Forbric/Protocols] %s failed while delivering %s", extension.id(), event); }
         }
     }
 }

@@ -4,6 +4,7 @@ package net.forbric.kernel.interop;
 import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
 import java.util.Collection;
+import net.forbric.kernel.util.Caught;
 
 /**
  * A custom payload read again through the wire: what one codec of a channel makes of the bytes another codec of the same
@@ -58,8 +59,10 @@ final class WirePayloads {
 			encode.invoke(codec, buffer, payload);
 			return buffer;
 		} catch (InvocationTargetException refused) {
+			Caught.expected(refused);
 			return null;    // the codec cast the payload, or could not write it: not this codec's payload
 		} catch (ReflectiveOperationException | RuntimeException | LinkageError unavailable) {
+			Caught.warn(unavailable, "[Forbric/Net] could not run codec %s on %s; taken as not writing it", codec, payload.getClass().getName());
 			return null;
 		}
 	}
@@ -70,8 +73,10 @@ final class WirePayloads {
 					? codec.getClass().getClassLoader() : buffer.getClass().getClassLoader()).getMethod("decode", Object.class);
 			return decode.invoke(codec, buffer);
 		} catch (InvocationTargetException refused) {
+			Caught.expected(refused);
 			return null;
 		} catch (ReflectiveOperationException | RuntimeException | LinkageError unavailable) {
+			Caught.warn(unavailable, "[Forbric/Net] could not run codec %s on a buffer; taken as not reading it", codec);
 			return null;
 		}
 	}

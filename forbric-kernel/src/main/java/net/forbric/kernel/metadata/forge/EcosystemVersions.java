@@ -24,6 +24,7 @@ import java.util.Map;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipFile;
 
+import net.forbric.kernel.util.Caught;
 import net.forbric.kernel.util.ForbricLog;
 
 /**
@@ -116,6 +117,8 @@ public final class EcosystemVersions {
 	}
 
 	private static void readInto(Path jar, String manifestPath) {
+		// No file is nothing to read, not a failure to read one.
+		if (!java.nio.file.Files.isRegularFile(jar)) return;
 		try (ZipFile zip = new ZipFile(jar.toFile())) {
 			ZipEntry entry = zip.getEntry(manifestPath);
 			if (entry == null) return;
@@ -134,8 +137,8 @@ public final class EcosystemVersions {
 				}
 			}
 		} catch (Throwable unreadable) {
-			ForbricLog.debug("[Forbric/Versions] could not read %s from %s: %s", manifestPath, jar.getFileName(),
-					String.valueOf(unreadable));
+			Caught.warn(unreadable, "[Forbric/Versions] could not read %s from %s; the ecosystem versions it provides are "
+					+ "unknown", manifestPath, jar.getFileName());
 		}
 	}
 

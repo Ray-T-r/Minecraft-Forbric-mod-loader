@@ -23,6 +23,7 @@ import org.objectweb.asm.tree.MethodNode;
 import org.objectweb.asm.tree.VarInsnNode;
 
 import net.forbric.api.Ecosystem;
+import net.forbric.kernel.util.Caught;
 import net.forbric.kernel.util.ForbricLog;
 
 /**
@@ -249,6 +250,8 @@ public final class ReplacedCallRedirects {
 			mixin.accept(out);
 			return out.toByteArray();
 		} catch (RuntimeException unreadable) {
+			Caught.warn(unreadable, "[Forbric/Mixin] could not read a mixin to adapt its replaced-call redirects; Mixin"
+					+ " gets it unchanged");
 			return bytes;
 		}
 	}

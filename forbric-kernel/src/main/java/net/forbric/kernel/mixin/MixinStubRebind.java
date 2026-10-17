@@ -27,6 +27,7 @@ import org.objectweb.asm.tree.VarInsnNode;
 
 import net.forbric.api.CompatibilityFinding;
 import net.forbric.api.Ecosystem;
+import net.forbric.kernel.util.Caught;
 import net.forbric.kernel.util.ForbricLog;
 
 /**
@@ -885,6 +886,7 @@ public final class MixinStubRebind {
 			try {
 				return Type.getArgumentTypes(target).length;
 			} catch (RuntimeException malformed) {
+				Caught.expected(malformed);
 				return -1;
 			}
 		}
@@ -1246,7 +1248,7 @@ public final class MixinStubRebind {
 				}
 			}
 		} catch (java.io.IOException unreadable) {
-			ForbricLog.warn("[Forbric/Mixin] could not read %s; no injector moves off a stub", TABLE);
+			Caught.warn(unreadable, "[Forbric/Mixin] could not read %s; no injector moves off a stub", TABLE);
 		}
 		carrierStubs = Map.copyOf(loaded);
 		return carrierStubs;
@@ -1464,6 +1466,7 @@ public final class MixinStubRebind {
 		try {
 			frames = new org.objectweb.asm.tree.analysis.Analyzer<>(new TypedValues(type)).analyze(owner.name, delegate);
 		} catch (org.objectweb.asm.tree.analysis.AnalyzerException | RuntimeException unanalysable) {
+			Caught.expected(unanalysable);
 			return -1;
 		}
 		int base = (delegate.access & Opcodes.ACC_STATIC) != 0 ? 0 : 1;   // Mixin's baseArgIndex: never `this`

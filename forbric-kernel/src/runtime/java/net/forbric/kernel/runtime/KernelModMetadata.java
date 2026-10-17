@@ -19,6 +19,7 @@ package net.forbric.kernel.runtime;
 import java.util.Map;
 import net.forbric.api.DiscoveredMod;
 import net.forbric.api.ModPresence;
+import net.forbric.kernel.util.Caught;
 
 /**
  * What discovery learned about a mod, in the plainest form the two {@code IModInfo} implementations can share.
@@ -149,6 +150,7 @@ final class KernelModMetadata {
 			java.nio.file.Path path = java.nio.file.Path.of(String.valueOf(mod.getSource()));
 			return java.nio.file.Files.isRegularFile(path) ? path : null;
 		} catch (RuntimeException notAPath) {
+			Caught.expected(notAPath);
 			return null;
 		}
 	}
@@ -158,6 +160,7 @@ final class KernelModMetadata {
 			return ModPresence.metadata(modId);
 		} catch (Throwable t) {
 			// Metadata is a nicety; every caller here is on a path that must not fail because of it.
+			Caught.warn(t, "[Forbric/Metadata] could not look up the metadata of %s — answering none", modId);
 			return null;
 		}
 	}

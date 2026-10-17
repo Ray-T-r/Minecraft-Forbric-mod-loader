@@ -50,6 +50,7 @@ import org.spongepowered.asm.util.ReEntranceLock;
 import net.fabricmc.api.EnvType;
 
 import net.forbric.kernel.classloading.ForbricClassLoader;
+import net.forbric.kernel.util.Caught;
 import net.forbric.kernel.util.ForbricLog;
 
 /**
@@ -139,8 +140,10 @@ public final class ForbricMixinService
     /** Claims a complete original callback group against the actual current caller/bridge contract before config removal. */
     public static boolean registerSourceCallbacks(ClassNode source) {
         if(source==null||!MergedBaseMixinCompat.sourceMayBeClaimed(source.name))return false;
+        // Not bound: no game loader to read the callers from, so nothing can be claimed (only off-game callers see this).
+        if(gameLoader==null)return false;
         try { return net.forbric.kernel.boot.LootSourceCallbacks.offer(loader(),source,ForbricMixinService::readAdapterClass); }
-        catch(RuntimeException unavailable){ForbricLog.debug("[Forbric/Mixin] original callback group remains unclaimed: %s",unavailable.toString());return false;}
+        catch(RuntimeException unavailable){Caught.warn(unavailable,"[Forbric/Mixin] the original callback group of %s remains unclaimed",source.name);return false;}
     }
 
 	/**
@@ -551,6 +554,7 @@ public final class ForbricMixinService
 			new ClassReader(bytes).accept(target, flags);
 			return target;
 		} catch (Throwable absent) {
+			Caught.warn(absent, "[Forbric/Mixin] could not read the merged base's %s; taken as absent", internalName);
 			return null;
 		}
 	}
@@ -565,6 +569,7 @@ public final class ForbricMixinService
 		try {
 			return codeView(loader().getPreMixinClassBytes(internalName.replace('/', '.')));
 		} catch (Throwable absent) {
+			Caught.warn(absent, "[Forbric/Mixin] could not read the merged base's %s; taken as absent", internalName);
 			return null;
 		}
 	}
@@ -591,6 +596,7 @@ public final class ForbricMixinService
 		try {
 			return loader().getPreMixinClassBytes(binary) != null;
 		} catch (Throwable absent) {
+			Caught.warn(absent, "[Forbric/Mixin] could not read the merged base's %s; taken as absent", binary);
 			return false;
 		}
 	}
@@ -747,6 +753,7 @@ public final class ForbricMixinService
 		try (InputStream in = loader().getGameResourceAsStream(resourcePath)) {
 			return in == null ? null : in.readAllBytes();
 		} catch (IOException e) {
+			Caught.warn(e, "[Forbric/Mixin] could not read game resource %s; taken as absent", resourcePath);
 			return null;
 		}
 	}
@@ -765,6 +772,8 @@ public final class ForbricMixinService
 			try {
 				return NativeAbsentTargets.membersDigest(read);
 			} catch (IOException | RuntimeException unreadable) {
+				Caught.warn(unreadable, "[Forbric/Mixin] could not read the members of %s; %s is taken as served by no jar",
+						read, owner);
 				return "";
 			}
 		});
@@ -798,8 +807,10 @@ public final class ForbricMixinService
 			AdapterClass cached=ADAPTER_CLASS_CACHE.get(path);
 			if(cached!=null&&cached.loader==current&&java.util.Objects.equals(cached.generation,generation)&&current==gameLoader&&(className==null||current.isBytecodeGenerationCurrent(className,generation)))return cached.bytes==NOT_FOUND?null:cached.bytes;
 			byte[] bytes=null;
-			if(className!=null){try{bytes=current.getPreMixinClassBytes(className);}catch(Throwable notAGameClass){bytes=null;}}
-			if(bytes==null){try(InputStream input=current.getGameResourceAsStream(path)){bytes=input==null?null:input.readAllBytes();}catch(IOException unavailable){bytes=null;}}
+			if(className!=null){try{bytes=current.getPreMixinClassBytes(className);}catch(Throwable notAGameClass){
+				Caught.warn(notAGameClass,"[Forbric/Mixin] could not build the pre-mixin bytes of %s; reading its raw resource instead",className);bytes=null;}}
+			if(bytes==null){try(InputStream input=current.getGameResourceAsStream(path)){bytes=input==null?null:input.readAllBytes();}catch(IOException unavailable){
+				Caught.warn(unavailable,"[Forbric/Mixin] could not read game resource %s; taken as absent",path);bytes=null;}}
 			if(current!=gameLoader||className!=null&&!current.isBytecodeGenerationCurrent(className,generation))continue;
 			AdapterClass entry=new AdapterClass(current,generation,bytes==null?NOT_FOUND:bytes);ADAPTER_CLASS_CACHE.put(path,entry);
 			if(current!=gameLoader||className!=null&&!current.isBytecodeGenerationCurrent(className,generation)){ADAPTER_CLASS_CACHE.remove(path,entry);continue;}

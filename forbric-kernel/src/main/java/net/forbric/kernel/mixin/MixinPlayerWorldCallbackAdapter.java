@@ -8,6 +8,7 @@ import org.objectweb.asm.ClassReader;
 import org.objectweb.asm.ClassWriter;
 import org.objectweb.asm.Opcodes;
 import org.objectweb.asm.tree.*;
+import net.forbric.kernel.util.Caught;
 import net.forbric.kernel.util.ForbricLog;
 
 /** Restores Authored update and cancellable player callbacks at their merged-game equivalents. */
@@ -89,6 +90,8 @@ public final class MixinPlayerWorldCallbackAdapter {
 			if (repair(mixin, targets) + MixinFluidReactionAdapter.repair(mixin, targets) == 0) return bytes;
 			ClassWriter out = new ClassWriter(0); mixin.accept(out); return out.toByteArray();
 		} catch (RuntimeException unreadable) {
+			Caught.warn(unreadable, "[Forbric/Mixin] could not judge a mixin of %d bytes as Mixin will load it; it is "
+					+ "judged as written", bytes == null ? -1 : bytes.length);
 			return bytes;
 		}
 	}

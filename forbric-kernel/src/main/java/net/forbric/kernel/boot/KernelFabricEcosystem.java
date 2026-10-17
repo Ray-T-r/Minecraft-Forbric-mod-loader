@@ -46,11 +46,13 @@ import net.forbric.kernel.fabric.EntrypointDispatchScan;
 import net.forbric.kernel.fabric.FabricModDiscovery;
 import net.forbric.kernel.mixin.MixinConfigOwners;
 import net.forbric.kernel.fabric.KernelFabricLoader;
+import net.forbric.kernel.fabric.KernelLanguageAdapters;
 import net.forbric.kernel.fabric.KernelModContainer;
 import net.forbric.kernel.fabric.KernelCustomValue;
 import net.forbric.kernel.fabric.KernelModMetadata;
 import net.forbric.kernel.mixin.MergedBaseMixinCompat;
 import net.forbric.kernel.mixin.MixinConfigPolicy;
+import net.forbric.kernel.util.Caught;
 import net.forbric.kernel.util.ForbricLog;
 import net.forbric.api.UnifiedDependency;
 import net.forbric.kernel.fabric.KernelMetadataSupport;
@@ -323,6 +325,49 @@ public final class KernelFabricEcosystem {
 	}
 
 	/**
+	 * Constructs every language adapter a Fabric mod declares, in mod order, where Fabric Loader does: its
+	 * {@code freeze()} builds them all before Mixin starts and before {@code preLaunch}, whether or not any
+	 * entrypoint names them.
+	 *
+	 * <p>Some adapters exist for their constructor alone. Configured Defaults copies a pack's default config files
+	 * from {@code config/defaults} there and declares no entrypoint; built only when an entrypoint asked, it never
+	 * ran, and a pack's defaults never arrived — while the launch looked healthy. Before Mixin, as on Fabric, because
+	 * what such a constructor writes (config files) is read as early as a mixin config plugin.
+	 *
+	 * <p>Must follow {@link #bindGameLoader}: an adapter is a mod class and loads through the game loader. Classes
+	 * loaded here are defined before Mixin is installed and cannot be woven — the same as on Fabric, where they load
+	 * before {@code FabricMixinBootstrap.init}. An adapter that throws fails its mod and the entrypoints naming it; on
+	 * Fabric it ends the launch.
+	 */
+	public static void constructLanguageAdapters() {
+		if (loader == null) return;
+		if (!KernelLanguageAdapters.eager()) {
+			ForbricLog.info("[Forbric/Fabric] -D%s=off — language adapters are constructed when an entrypoint first "
+					+ "names them, so one that works in its constructor alone never runs", KernelLanguageAdapters.EAGER_PROPERTY);
+			return;
+		}
+
+		List<String> names = new ArrayList<>();
+		for (ModContainer mod : loader.getAllMods()) {
+			if (!(mod instanceof KernelModContainer kernel)) continue;
+			for (String name : kernel.getMetadata().getLanguageAdapters().keySet()) {
+				if (!names.contains(name)) names.add(name);
+			}
+		}
+		if (names.isEmpty()) return;
+
+		List<KernelLanguageAdapters.Failure> failures = KernelLanguageAdapters.constructAll(names);
+		for (KernelLanguageAdapters.Failure failure : failures) {
+			ForbricLog.error("[Forbric/Fabric] the language adapter '" + failure.name() + "' (" + failure.className()
+					+ ") of " + failure.modId() + " could not be constructed", failure.cause());
+			ModCatalog.mark(failure.modId(), ModCatalog.Status.FAILED,
+					"its language adapter '" + failure.name() + "' could not be constructed");
+		}
+		ForbricLog.info("[Forbric/Fabric] constructed %d of %d declared language adapter(s) before Mixin, as Fabric "
+				+ "Loader's freeze does", names.size() - failures.size(), names.size());
+	}
+
+	/**
 	 * Every discovered Fabric mod's declared access widener ({@code .classtweaker}) file contents, in mod order.
 	 *
 	 * <p>Read from each mod's own jar. A declared-but-missing file is a mod packaging error: warn and skip rather
@@ -361,8 +406,8 @@ public final class KernelFabricEcosystem {
 							container.getJar().getFileName().toString(), in.readAllBytes()));
 				}
 			} catch (Exception e) {
-				ForbricLog.warn("[Forbric/Access] could not read accessWidener of %s: %s",
-						container.getMetadata().getId(), String.valueOf(e));
+				Caught.warn(e, "[Forbric/Access] could not read accessWidener of %s",
+						container.getMetadata().getId());
 			}
 		}
 
@@ -435,7 +480,7 @@ public final class KernelFabricEcosystem {
 					c.getEntrypoint().onPreLaunch();
 					ForbricLog.info("[Forbric/Fabric] preLaunch entrypoint of %s", id);
 				} catch (Throwable t) {
-					ForbricLog.error("[Forbric/Fabric] preLaunch entrypoint of " + id + " failed", t);
+					Caught.error(t, "[Forbric/Fabric] preLaunch entrypoint of %s failed", id);
 					if (!"warn".equalsIgnoreCase(System.getProperty(PRELAUNCH_FAILURE_PROPERTY, "fail"))) {
 						ModCatalog.mark(id, ModCatalog.Status.FAILED, "its preLaunch entrypoint threw");
 					}
@@ -459,8 +504,8 @@ public final class KernelFabricEcosystem {
 		try {
 			current.adoptFabricStorage(PHASES_RAN);
 		} catch (Throwable t) {
-			ForbricLog.warn("[Forbric/Fabric] could not read back Fabric Loader's internal entrypoint storage — "
-					+ "entrypoints a mod added there will not run", t);
+			Caught.warn(t, "[Forbric/Fabric] could not read back Fabric Loader's internal entrypoint storage — "
+					+ "entrypoints a mod added there will not run");
 		}
 	}
 
@@ -543,8 +588,7 @@ public final class KernelFabricEcosystem {
 			}
 			return sorted;
 		} catch (Throwable t) {
-			ForbricLog.warn("[Forbric/Order] could not order Fabric mods by dependency; using discovery order",
-					t);
+			Caught.warn(t, "[Forbric/Order] could not order Fabric mods by dependency; using discovery order");
 			return containers;
 		}
 	}
@@ -580,8 +624,8 @@ public final class KernelFabricEcosystem {
 						FabricLoadOrder.SWITCH);
 			}
 		} catch (Throwable t) {
-			ForbricLog.warn("[Forbric/Order] could not put Fabric mods in Fabric Loader's order; they initialise in "
-					+ "the order they were registered in", t);
+			Caught.warn(t, "[Forbric/Order] could not put Fabric mods in Fabric Loader's order; they initialise in "
+					+ "the order they were registered in");
 		}
 	}
 
@@ -671,13 +715,15 @@ public final class KernelFabricEcosystem {
 			try {
 				api = Class.forName("net.fabricmc.fabric.api.client.renderer.v1.Renderer", true, mods);
 			} catch (ClassNotFoundException absent) {
+				// No Fabric Rendering API installed: there is no renderer slot to report on.
+				Caught.expected(absent);
 				return;
 			}
 			Object renderer;
 			try {
 				renderer = api.getMethod("get").invoke(null);
 			} catch (java.lang.reflect.InvocationTargetException empty) {
-				ForbricLog.warn("[Forbric/Fabric] the Fabric Rendering API has NO renderer registered — the next "
+				Caught.warn(empty, "[Forbric/Fabric] the Fabric Rendering API has NO renderer registered — the next "
 						+ "model that emits a mesh will die on \"%s\"", String.valueOf(empty.getCause() == null ? empty : empty.getCause().getMessage()));
 				return;
 			}
@@ -685,7 +731,7 @@ public final class KernelFabricEcosystem {
 			ForbricLog.info("[Forbric/Fabric] the Fabric Rendering API renderer is %s — the one slot is taken, and "
 					+ "whoever lost it must have stood down rather than registered", renderer.getClass().getName());
 		} catch (Throwable t) {
-			ForbricLog.warn("[Forbric/Fabric] could not read the active Fabric renderer", t);
+			Caught.warn(t, "[Forbric/Fabric] could not read the active Fabric renderer");
 		}
 	}
 
@@ -799,8 +845,8 @@ public final class KernelFabricEcosystem {
 			}
 		} catch (Throwable t) {
 			// Placing them is an improvement on running them last, never a reason for the phase not to run.
-			ForbricLog.warn("[Forbric/Fabric] could not work out where among the %s entrypoints a superseded build's keys "
-					+ "belong; they run after all of them: %s", key, String.valueOf(t));
+			Caught.warn(t, "[Forbric/Fabric] could not work out where among the %s entrypoints a superseded build's keys "
+					+ "belong; they run after all of them", key);
 			places.clear();
 			for (int j = 0; j < due.size(); j++) places.add(new ArbitratedAwayDispatchers.Place(containers.size(), "unplaced"));
 		}
@@ -814,8 +860,8 @@ public final class KernelFabricEcosystem {
 				try {
 					dispatchOrphan(current, due.get(j), " " + where);
 				} catch (Throwable t) {
-					ForbricLog.warn("[Forbric/Fabric] could not dispatch the '%s' entrypoints of %s's losing build: %s",
-							due.get(j).key(), due.get(j).library(), String.valueOf(t));
+					Caught.warn(t, "[Forbric/Fabric] could not dispatch the '%s' entrypoints of %s's losing build",
+							due.get(j).key(), due.get(j).library());
 				}
 			}
 			if (i < containers.size() && invokeOne(key, containers.get(i), action)) count++;
@@ -836,10 +882,11 @@ public final class KernelFabricEcosystem {
 				contract.setAccessible(true);
 			} catch (RuntimeException closed) {
 				// A public method of a public type needs none; anything else fails on invoke, per entrypoint.
+				Caught.expected(closed);
 			}
 		} catch (Throwable t) {
-			ForbricLog.warn("[Forbric/Fabric] could not dispatch the '%s' entrypoints %s's losing build dispatched: %s",
-					dispatch.key(), orphan.library(), String.valueOf(t));
+			Caught.warn(t, "[Forbric/Fabric] could not dispatch the '%s' entrypoints %s's losing build dispatched",
+					dispatch.key(), orphan.library());
 			return 0;
 		}
 		int count = invokeContract(dispatch.key(), type, contract);
@@ -903,7 +950,7 @@ public final class KernelFabricEcosystem {
 			ForbricLog.info("[Forbric/Fabric] invoked %s entrypoint of %s", key, id);
 			reportSwallowedFailure(key, id, entrypoint);
 		} catch (Throwable t) {
-			ForbricLog.error("[Forbric/Fabric] " + key + " entrypoint of " + id + " failed", t);
+			Caught.error(t, "[Forbric/Fabric] %s entrypoint of %s failed", key, id);
 			ModCatalog.mark(id, ModCatalog.Status.FAILED, "its " + key + " entrypoint threw");
 		}
 		return ran;
@@ -942,6 +989,7 @@ public final class KernelFabricEcosystem {
 				}
 			} catch (Throwable inaccessible) {
 				// A mod that hides the field from reflection simply keeps its secret; this is diagnostics only.
+				Caught.expected(inaccessible);
 			}
 		}
 	}
@@ -993,8 +1041,8 @@ public final class KernelFabricEcosystem {
 		try {
 			if (FrapiRendererEvidence.registersRenderer(Path.of(source))) return true;
 		} catch (IOException | RuntimeException unreadable) {
-			ForbricLog.warn("[Forbric/Fabric] could not check whether %s registers a Fabric renderer; keeping its "
-					+ "declaration", mod.getId(), unreadable);
+			Caught.warn(unreadable, "[Forbric/Fabric] could not check whether %s registers a Fabric renderer; keeping "
+					+ "its declaration", mod.getId());
 			return true;
 		}
 		ForbricLog.warn("[Forbric/Fabric] %s declares %s, but the build that loaded never registers a Fabric renderer "
@@ -1022,6 +1070,7 @@ public final class KernelFabricEcosystem {
 			Path source = mod.getSource() == null ? null : Path.of(mod.getSource());
 			return source != null && (Files.isRegularFile(source) || Files.isDirectory(source)) ? source : null;
 		} catch (RuntimeException unusable) {
+			Caught.expected(unusable);
 			return null;
 		}
 	}

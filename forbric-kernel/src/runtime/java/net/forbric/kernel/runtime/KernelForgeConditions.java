@@ -39,6 +39,7 @@ import net.minecraftforge.common.crafting.conditions.ConditionCodec;
 import net.minecraftforge.common.crafting.conditions.ICondition;
 import net.minecraftforge.registries.ForgeRegistries;
 
+import net.forbric.kernel.util.Caught;
 import net.forbric.kernel.util.ForbricLog;
 
 /**
@@ -210,35 +211,26 @@ public final class KernelForgeConditions {
 			return known.test(name.get()) ? null : name.get();
 		} catch (Throwable t) {
 			// A judgement that cannot be made hands the input to the strict codec — but silently is how a leniency
-			// stops applying without anyone noticing, so the first failure is named.
-			if (!judgementFailureReported) {
-				judgementFailureReported = true;
-				ForbricLog.warn("[Forbric/Conditions] could not judge a resource condition's type against "
-						+ "MinecraftForge's registry — the strict codec decides this one and every later one", t);
-			}
+			// stops applying without anyone noticing, so the failure is named.
+			Caught.warn(t, "[Forbric/Conditions] could not judge a resource condition's type against "
+					+ "MinecraftForge's registry — the strict codec decides this one");
 			return null;
 		}
 	}
 
 	/**
 	 * Whether another ecosystem registers {@code type}. A lookup that fails keeps the answer this class gave before it
-	 * asked at all -- not MinecraftForge's to judge -- and says so once: failing closed over a lookup would drop data.
+	 * asked at all -- not MinecraftForge's to judge -- and says so: failing closed over a lookup would drop data.
 	 */
 	private static boolean ownedElsewhere(String type) {
 		try {
 			return ownedElsewhere.test(type);
 		} catch (Throwable t) {
-			if (!ownershipFailureReported) {
-				ownershipFailureReported = true;
-				ForbricLog.warn("[Forbric/Conditions] could not ask the other ecosystems' condition registries who owns "
-						+ "'" + type + "' — a type MinecraftForge lacks is treated as theirs, this time and every later one", t);
-			}
+			Caught.warn(t, "[Forbric/Conditions] could not ask the other ecosystems' condition registries who owns "
+					+ "'%s' — a type MinecraftForge lacks is treated as theirs", type);
 			return true;
 		}
 	}
-
-	private static volatile boolean judgementFailureReported;
-	private static volatile boolean ownershipFailureReported;
 
 	/** Launch-time switch for {@link #poolElementCodec}; the pool list codec that asks is built once. */
 	public static final String POOL_PROPERTY = "forbric.forgePoolConditions";
@@ -377,7 +369,6 @@ public final class KernelForgeConditions {
 
 	/** {@code -Dforbric.forgeConditionContext=off}: the Forge event answers {@code EMPTY} instead of adapting NeoForge's. */
 	public static final String CONTEXT_PROPERTY = "forbric.forgeConditionContext";
-	private static volatile boolean contextFailureReported;
 
 	/**
 	 * The condition context MinecraftForge's {@code AddReloadListenerEvent.getConditionContext()} hands a listener.
@@ -397,11 +388,8 @@ public final class KernelForgeConditions {
 			if (neo == null) return ICondition.IContext.EMPTY;
 			return forgeViewOf(neo);
 		} catch (Throwable t) {
-			if (!contextFailureReported) {
-				contextFailureReported = true;
-				ForbricLog.warn("[Forbric/Conditions] could not adapt NeoForge's condition context for MinecraftForge's "
-						+ "AddReloadListenerEvent — Forge listeners get an EMPTY context", t);
-			}
+			Caught.warn(t, "[Forbric/Conditions] could not adapt NeoForge's condition context for MinecraftForge's "
+					+ "AddReloadListenerEvent — Forge listeners get an EMPTY context");
 			return ICondition.IContext.EMPTY;
 		}
 	}
@@ -459,11 +447,8 @@ public final class KernelForgeConditions {
 						+ "condition context (%s)", own != null ? "the manager's own" : "NeoForge's live one, seen through MinecraftForge's interface");
 			}
 		} catch (Throwable t) {
-			if (!contextFailureReported) {
-				contextFailureReported = true;
-				ForbricLog.warn("[Forbric/Conditions] could not hand MinecraftForge its recipe condition context — its tag "
-						+ "conditions read every tag as empty", t);
-			}
+			Caught.warn(t, "[Forbric/Conditions] could not hand MinecraftForge its recipe condition context — its tag "
+					+ "conditions read every tag as empty");
 		}
 	}
 
@@ -645,6 +630,7 @@ public final class KernelForgeConditions {
 								try {
 									chosen = dataFile.apply(ops, json);
 								} catch (RuntimeException unreadable) {
+									Caught.expected(unreadable);
 									return DataResult.error(() -> key + ": " + unreadable.getMessage());
 								}
 								judged(key, chosen != null);

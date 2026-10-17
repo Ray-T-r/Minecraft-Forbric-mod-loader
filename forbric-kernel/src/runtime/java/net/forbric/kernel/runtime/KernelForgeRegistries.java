@@ -26,8 +26,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 
-import net.forbric.kernel.util.ForbricLog;
-import net.forbric.kernel.util.Reflect;
+import net.forbric.kernel.util.Caught;
 import net.minecraft.core.Registry;
 import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.resources.ResourceKey;
@@ -133,16 +132,18 @@ public final class KernelForgeRegistries {
 						wrapper = getWrapper.invoke(forgeReg);
 					} catch (Throwable noWrapper) {
 						// leave null
+						Caught.warn(noWrapper, "[Forbric/Forge] %s's getWrapper threw — its RegisterEvent gets a null "
+								+ "Registry", forgeReg.getRegistryKey());
 					}
 					targets.add(new Object[] {forgeReg.getRegistryKey(), wrapper, forgeReg});
 				} catch (Throwable perReg) {
-					ForbricLog.debug("[Forbric/Forge] skip custom-registry RegisterEvent target: %s",
-							String.valueOf(Reflect.unwrap(perReg)));
+					Caught.warn(perReg, "[Forbric/Forge] skip custom-registry RegisterEvent target %s",
+							forgeReg.getRegistryKey());
 				}
 			}
 		} catch (Throwable t) {
-			ForbricLog.warn("[Forbric/Forge] could not enumerate custom Forge registries for RegisterEvent "
-					+ "(fluid_type etc. may stay unbound)", Reflect.unwrap(t));
+			Caught.warn(t, "[Forbric/Forge] could not enumerate custom Forge registries for RegisterEvent "
+					+ "(fluid_type etc. may stay unbound)");
 		}
 	}
 

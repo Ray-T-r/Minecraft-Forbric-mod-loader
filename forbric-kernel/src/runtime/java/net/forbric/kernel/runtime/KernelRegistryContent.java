@@ -25,9 +25,9 @@ import java.util.Set;
 import java.util.TreeMap;
 
 import net.forbric.kernel.transform.RegistryElementCallbackInjector;
+import net.forbric.kernel.util.Caught;
 import net.forbric.kernel.util.ForbricLog;
 import net.forbric.kernel.util.ForbricSwitches;
-import net.forbric.kernel.util.Reflect;
 import net.minecraft.core.IdMapper;
 import net.minecraft.core.Registry;
 import net.minecraft.core.registries.BuiltInRegistries;
@@ -113,8 +113,8 @@ public final class KernelRegistryContent {
 			}
 			return states;
 		} catch (Throwable t) {
-			ForbricLog.warn("[Forbric/Lifecycle] could not rebuild NeoForge blockstate→id map "
-					+ "(block_update packets will fail to encode)", Reflect.unwrap(t));
+			Caught.warn(t, "[Forbric/Lifecycle] could not rebuild NeoForge blockstate→id map "
+					+ "(block_update packets will fail to encode)");
 			return -1;
 		}
 	}
@@ -132,8 +132,8 @@ public final class KernelRegistryContent {
 			clear.invoke(idMap);
 			return true;
 		} catch (Throwable t) {
-			ForbricLog.warn("[Forbric/Lifecycle] NeoForge's blockstate→id map has no clear() to call — leaving "
-					+ "the ids it already holds rather than appending a second id for every state", Reflect.unwrap(t));
+			Caught.warn(t, "[Forbric/Lifecycle] NeoForge's blockstate→id map has no clear() to call — leaving "
+					+ "the ids it already holds rather than appending a second id for every state");
 			return false;
 		}
 	}
@@ -175,8 +175,8 @@ public final class KernelRegistryContent {
 					states);
 			return states;
 		} catch (Throwable t) {
-			ForbricLog.warn("[Forbric/Lifecycle] could not initialise the block state caches — a mod's block put "
-					+ "into a chunk can throw from inside another mod's optimisation", Reflect.unwrap(t));
+			Caught.warn(t, "[Forbric/Lifecycle] could not initialise the block state caches — a mod's block put "
+					+ "into a chunk can throw from inside another mod's optimisation");
 			return -1;
 		}
 	}
@@ -221,8 +221,8 @@ public final class KernelRegistryContent {
 					+ "predates the kernel's registration window, so window-registered tabs were searchable but "
 					+ "had no tab)", before, after.size(), defaults.size(), names);
 		} catch (Throwable t) {
-			ForbricLog.warn("[Forbric/Lifecycle] could not re-sort NeoForge creative tabs "
-					+ "(mod creative tabs may be missing from the tab strip)", Reflect.unwrap(t));
+			Caught.warn(t, "[Forbric/Lifecycle] could not re-sort NeoForge creative tabs "
+					+ "(mod creative tabs may be missing from the tab strip)");
 		}
 	}
 
@@ -258,7 +258,7 @@ public final class KernelRegistryContent {
 					Thread.sleep(3000);
 				}
 			} catch (Throwable t) {
-				ForbricLog.warn("[Forbric/TabProbe] probe died", Reflect.unwrap(t));
+				Caught.warn(t, "[Forbric/TabProbe] probe died");
 			}
 		}, "forbric-tab-probe");
 		probe.setDaemon(true);
@@ -313,8 +313,8 @@ public final class KernelRegistryContent {
 			}
 			return linked;
 		} catch (Throwable t) {
-			ForbricLog.warn("[Forbric/Lifecycle] could not link block->item mappings "
-					+ "(modded blocks may have no item form)", Reflect.unwrap(t));
+			Caught.warn(t, "[Forbric/Lifecycle] could not link block->item mappings "
+					+ "(modded blocks may have no item form)");
 			return 0;
 		}
 	}
@@ -358,7 +358,7 @@ public final class KernelRegistryContent {
 						e.getValue());
 			}
 		} catch (Throwable t) {
-			ForbricLog.warn("[Forbric/Lifecycle] could not summarise registered content", Reflect.unwrap(t));
+			Caught.warn(t, "[Forbric/Lifecycle] could not summarise registered content");
 		}
 	}
 }

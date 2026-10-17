@@ -21,7 +21,7 @@ import java.util.function.BiFunction;
 
 import net.forbric.api.Ecosystem;
 import net.forbric.api.ModCatalog;
-import net.forbric.kernel.util.ForbricLog;
+import net.forbric.kernel.util.Caught;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.screens.Screen;
 
@@ -29,9 +29,6 @@ import net.minecraft.client.gui.screens.Screen;
 public final class KernelModConfigScreens {
 	private KernelModConfigScreens() {
 	}
-
-	/** Mods whose config screen already threw on a press, so the warning is said once and not on every click. */
-	private static final java.util.Set<String> PRESS_FAILURES = java.util.concurrent.ConcurrentHashMap.newKeySet();
 
 	/** Whether {@link #open} would produce a screen. Cheap enough to ask per selection change. */
 	public static boolean has(ModCatalog.Entry entry) {
@@ -60,14 +57,13 @@ public final class KernelModConfigScreens {
 		} catch (Throwable t) {
 			// A family that is not present, or a mod whose factory throws. Neither may cost the screen the
 			// player is standing in. A probe failing is routine and stays at debug; a press that fails is the player
-			// clicking Config and seeing nothing, so it says which mod's factory threw, once per mod.
-			if (probe || !PRESS_FAILURES.add(entry.modId())) {
-				ForbricLog.debug("[Forbric/ModConfig] no config screen for %s (%s): %s", entry.modId(),
-						entry.ecosystem(), String.valueOf(t));
-			} else {
-				ForbricLog.warn("[Forbric/ModConfig] %s (%s) has a Config button, but its config screen threw when it "
-						+ "was opened: %s", entry.modId(), entry.ecosystem(), String.valueOf(t));
+			// clicking Config and seeing nothing, so it says which mod's factory threw.
+			if (probe) {
+				Caught.expected(t);
+				return null;
 			}
+			Caught.warn(t, "[Forbric/ModConfig] %s (%s) has a Config button, but its config screen threw when it was "
+					+ "opened", entry.modId(), entry.ecosystem());
 			return null;
 		}
 	}

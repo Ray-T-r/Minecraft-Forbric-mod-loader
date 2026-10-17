@@ -6,6 +6,7 @@ import java.util.*;
 import org.junit.jupiter.api.Test;
 import org.objectweb.asm.*;
 import org.objectweb.asm.tree.*;
+import net.forbric.kernel.ExpectCaught;
 
 /** An unknown hierarchy and its covariant arrays fail real linkage before repair and execute afterward. */
 class MergedBaseFrameShapeExecutionTest {
@@ -58,6 +59,7 @@ class MergedBaseFrameShapeExecutionTest {
             assertSame(repaired,repair.transform("future.protocol.Reader",repaired,null));
         }
     }
+    @ExpectCaught("cannot prove a frame repair for future.protocol.Reader")
     @Test void validUnknownFramesAndUnresolvedHierarchiesRetainTheOriginalBytes(){
         Map<String,byte[]> types=types();for(boolean array:List.of(false,true)){
             byte[] valid=choose(array,PREFIX+"Current");assertSame(valid,recomputer(types).transform("future.protocol.Reader",valid,null));

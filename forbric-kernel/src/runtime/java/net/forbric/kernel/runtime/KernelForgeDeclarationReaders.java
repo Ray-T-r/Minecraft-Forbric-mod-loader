@@ -14,6 +14,7 @@ import java.util.stream.Stream;
 import net.forbric.api.DiscoveredMod;
 import net.forbric.api.ModPresence;
 import net.forbric.kernel.boot.CrossEcosystemDeclarations;
+import net.forbric.kernel.util.Caught;
 import net.minecraftforge.fml.ModContainer;
 import net.minecraftforge.fml.ModList;
 import net.minecraftforge.forgespi.language.IModFileInfo;
@@ -51,6 +52,8 @@ public final class KernelForgeDeclarationReaders {
 			return all;
 		} catch (Throwable failure) {
 			CrossEcosystemDeclarations.readerFailed("getMods", failure);
+			Caught.warn(failure, "[Forbric/Declarations] ModList.%s could not add the Fabric mods that declare "
+					+ "its keys — the reader gets ModList's own answer", "getMods");
 			return mods;
 		}
 	}
@@ -67,6 +70,8 @@ public final class KernelForgeDeclarationReaders {
 			return all;
 		} catch (Throwable failure) {
 			CrossEcosystemDeclarations.readerFailed("getLoadedMods", failure);
+			Caught.warn(failure, "[Forbric/Declarations] ModList.%s could not add the Fabric mods that declare "
+					+ "its keys — the reader gets ModList's own answer", "getLoadedMods");
 			return mods;
 		}
 	}
@@ -80,6 +85,8 @@ public final class KernelForgeDeclarationReaders {
 			return declarer == null ? native_ : Optional.of(declarer.container());
 		} catch (Throwable failure) {
 			CrossEcosystemDeclarations.readerFailed("getModContainerById", failure);
+			Caught.warn(failure, "[Forbric/Declarations] ModList.%s could not add the Fabric mods that declare "
+					+ "its keys — the reader gets ModList's own answer", "getModContainerById");
 			return native_;
 		}
 	}
@@ -94,6 +101,8 @@ public final class KernelForgeDeclarationReaders {
 			return declarer == null ? native_ : declarer.info().getOwningFile();
 		} catch (Throwable failure) {
 			CrossEcosystemDeclarations.readerFailed("getModFileById", failure);
+			Caught.warn(failure, "[Forbric/Declarations] ModList.%s could not add the Fabric mods that declare "
+					+ "its keys — the reader gets ModList's own answer", "getModFileById");
 			return native_;
 		}
 	}
@@ -106,6 +115,8 @@ public final class KernelForgeDeclarationReaders {
 				action.accept(declarer.id(), declarer.container());
 			} catch (Throwable failure) {
 				CrossEcosystemDeclarations.readerFailed("forEachModContainer", failure);
+				Caught.warn(failure, "[Forbric/Declarations] ModList.%s could not add the Fabric mods that declare "
+						+ "its keys — the reader gets ModList's own answer", "forEachModContainer");
 			}
 		}
 	}
@@ -118,6 +129,8 @@ public final class KernelForgeDeclarationReaders {
 				action.accept(declarer.container());
 			} catch (Throwable failure) {
 				CrossEcosystemDeclarations.readerFailed("forEachModInOrder", failure);
+				Caught.warn(failure, "[Forbric/Declarations] ModList.%s could not add the Fabric mods that declare "
+						+ "its keys — the reader gets ModList's own answer", "forEachModInOrder");
 			}
 		}
 	}
@@ -132,6 +145,8 @@ public final class KernelForgeDeclarationReaders {
 				return Stream.of(function.apply(declarer.container()));
 			} catch (Throwable failure) {
 				CrossEcosystemDeclarations.readerFailed("applyForEachModContainer", failure);
+				Caught.warn(failure, "[Forbric/Declarations] ModList.%s could not add the Fabric mods that declare "
+						+ "its keys — the reader gets ModList's own answer", "applyForEachModContainer");
 				return Stream.<T>empty();
 			}
 		}));
@@ -143,6 +158,8 @@ public final class KernelForgeDeclarationReaders {
 			return absent();
 		} catch (Throwable failure) {
 			CrossEcosystemDeclarations.readerFailed(hook, failure);
+			Caught.warn(failure, "[Forbric/Declarations] ModList.%s could not add the Fabric mods that declare "
+					+ "its keys — the reader gets ModList's own answer", hook);
 			return List.of();
 		}
 	}
@@ -184,6 +201,7 @@ public final class KernelForgeDeclarationReaders {
 		try {
 			return ModList.getModContainerById(id).isPresent();
 		} catch (RuntimeException unindexed) {
+			Caught.expected(unindexed);
 			for (IModInfo info : ModList.getMods()) {
 				if (id.equals(info.getModId())) return true;
 			}
@@ -222,6 +240,7 @@ public final class KernelForgeDeclarationReaders {
 			Path path = Path.of(mod.getSource());
 			return Files.isRegularFile(path) ? path : null;
 		} catch (RuntimeException notAPath) {
+			Caught.expected(notAPath);
 			return null;
 		}
 	}

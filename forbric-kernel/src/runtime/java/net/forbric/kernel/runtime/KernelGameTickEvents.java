@@ -16,13 +16,12 @@
 
 package net.forbric.kernel.runtime;
 
-import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.BooleanSupplier;
 import java.util.function.Consumer;
 
+import net.forbric.kernel.util.Caught;
 import net.forbric.kernel.util.ForbricLog;
-import net.forbric.kernel.util.Reflect;
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.level.Level;
@@ -139,7 +138,6 @@ public final class KernelGameTickEvents {
 
 	private static <E extends LevelTickEvent> void subscribeLevel(IEventBus bus, Class<E> event, String kind,
 			ForgeLevelTick forge) {
-		AtomicBoolean warned = new AtomicBoolean();
 		bus.addListener(EventPriority.LOWEST, false, event, neoEvent -> {
 			try {
 				// Lazy and fail-OPEN, for the reasons spelled out in subscribe: "is there time left this tick" is
@@ -149,37 +147,33 @@ public final class KernelGameTickEvents {
 					try {
 						return neoEvent.hasTime();
 					} catch (Throwable t) {
+						Caught.warn(t, "[Forbric/EventMux] %s hasTime() threw — answered true so the other family's "
+								+ "deferred work still runs", neoEvent.getClass().getSimpleName());
 						return true;
 					}
 				};
 				forge.fire(neoEvent.getLevel(), haveTime);
 			} catch (Throwable t) {
-				if (warned.compareAndSet(false, true)) {
-					ForbricLog.warn("[Forbric/EventMux] on" + kind + "LevelTick forward failed; MinecraftForge mods "
-							+ "will not receive the level tick", Reflect.unwrap(t));
-				}
+				Caught.warn(t, "[Forbric/EventMux] on%sLevelTick forward failed; MinecraftForge mods will not receive the "
+						+ "level tick", kind);
 			}
 		});
 	}
 
 	private static <E extends PlayerTickEvent> void subscribePlayer(IEventBus bus, Class<E> event, String kind,
 			ForgePlayerTick forge) {
-		AtomicBoolean warned = new AtomicBoolean();
 		bus.addListener(EventPriority.LOWEST, false, event, neoEvent -> {
 			try {
 				forge.fire(neoEvent.getEntity());
 			} catch (Throwable t) {
-				if (warned.compareAndSet(false, true)) {
-					ForbricLog.warn("[Forbric/EventMux] onPlayer" + kind + "Tick forward failed; MinecraftForge mods "
-							+ "will not receive the player tick", Reflect.unwrap(t));
-				}
+				Caught.warn(t, "[Forbric/EventMux] onPlayer%sTick forward failed; MinecraftForge mods will not receive the "
+						+ "player tick", kind);
 			}
 		});
 	}
 
 	private static <E extends ServerTickEvent> void subscribe(IEventBus bus, Class<E> event, String kind,
 			ForgeTick forge) {
-		AtomicBoolean warned = new AtomicBoolean();
 		AtomicInteger forwarded = new AtomicInteger();
 
 		Consumer<E> listener = neoEvent -> {
@@ -193,12 +187,13 @@ public final class KernelGameTickEvents {
 				// of the tick, so they would either overrun their budget or never run.
 				//
 				// Fail-open, because this supplier is consulted from inside another family's code. Returning
-				// false on an unexpected failure would stop that family's deferred work with no exception and
-				// no log anywhere — this catch is deliberately silent, so fail-closed would be invisible.
+				// false on an unexpected failure would stop that family's deferred work with no exception.
 				BooleanSupplier haveTime = () -> {
 					try {
 						return neoEvent.hasTime();
 					} catch (Throwable t) {
+						Caught.warn(t, "[Forbric/EventMux] %s hasTime() threw — answered true so the other family's "
+								+ "deferred work still runs", neoEvent.getClass().getSimpleName());
 						return true;
 					}
 				};
@@ -212,11 +207,9 @@ public final class KernelGameTickEvents {
 							+ "NeoForge (both game-event families tick in one loop)", TICK_PROOF_THRESHOLD, kind);
 				}
 			} catch (Throwable t) {
-				// Once, not per tick: degrade to NeoForge-only ticks rather than fill the log.
-				if (warned.compareAndSet(false, true)) {
-					ForbricLog.warn("[Forbric/EventMux] on" + kind + "ServerTick forward failed; Forge-family mods "
-							+ "won't receive this tick event", Reflect.unwrap(t));
-				}
+				// Degrade to NeoForge-only ticks.
+				Caught.warn(t, "[Forbric/EventMux] on%sServerTick forward failed; Forge-family mods won't receive this "
+						+ "tick event", kind);
 			}
 		};
 

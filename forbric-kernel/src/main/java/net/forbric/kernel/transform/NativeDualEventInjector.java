@@ -11,6 +11,7 @@ import org.objectweb.asm.*;
 import org.objectweb.asm.commons.AnalyzerAdapter;
 import org.objectweb.asm.tree.*;
 import org.objectweb.asm.tree.analysis.*;
+import net.forbric.kernel.util.Caught;
 
 /**
  * Lets a bridge stand down wherever the merged game delivers its MinecraftForge event itself, on the same path as the
@@ -178,6 +179,7 @@ public final class NativeDualEventInjector implements ClassTransformer {
 			}
 			return standDown(input);
 		} catch (RuntimeException unprovable) {
+			Caught.warn(unprovable, "[Forbric/NativeEvents] could not prove the native deliveries of %s; its bridges keep forwarding", name);
 			// A shape this cannot read proves nothing; the bridges keep forwarding, as before this existed.
 			return input;
 		}
@@ -288,6 +290,7 @@ public final class NativeDualEventInjector implements ClassTransformer {
 		try {
 			flow = new Flow(owner.name, method);
 		} catch (AnalyzerException unanalysable) {
+			Caught.expected(unanalysable);
 			return 0;
 		}
 		List<Site> forgeSites = new ArrayList<>();
@@ -546,6 +549,7 @@ public final class NativeDualEventInjector implements ClassTransformer {
 				instruction.accept(adapter);
 			}
 		} catch (RuntimeException unreadable) {
+			Caught.expected(unreadable);
 			// Frames this cannot follow: nothing is bracketed where the locals were not read.
 		}
 		return out;
@@ -737,6 +741,7 @@ public final class NativeDualEventInjector implements ClassTransformer {
 			try {
 				return Optional.ofNullable(forgeReference.apply(name));
 			} catch (RuntimeException unreadable) {
+				Caught.warn(unreadable, "[Forbric/NativeEvents] could not read MinecraftForge's own %s; no bypass is judged against it", name);
 				return Optional.empty();
 			}
 		}).orElse(null);
@@ -751,6 +756,7 @@ public final class NativeDualEventInjector implements ClassTransformer {
 			try {
 				forgeFlow = new Flow(owner, forge);
 			} catch (AnalyzerException unanalysable) {
+				Caught.expected(unanalysable);
 				forge = null;
 			}
 		}
@@ -861,6 +867,7 @@ public final class NativeDualEventInjector implements ClassTransformer {
 		try {
 			flow = new Flow(owner, hook);
 		} catch (AnalyzerException unanalysable) {
+			Caught.expected(unanalysable);
 			return Set.of();
 		}
 		List<Integer> exits = new ArrayList<>();
@@ -1014,6 +1021,7 @@ public final class NativeDualEventInjector implements ClassTransformer {
 			try {
 				frames = new Analyzer<>(new SourceInterpreter()).analyze(node.name, method);
 			} catch (AnalyzerException unanalysable) {
+				Caught.expected(unanalysable);
 				continue;
 			}
 			List<MethodInsnNode> constructions = new ArrayList<>();

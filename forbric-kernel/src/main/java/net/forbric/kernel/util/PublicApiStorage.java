@@ -50,6 +50,7 @@ public final class PublicApiStorage {
 			field.setAccessible(true);
 			return field;
 		} catch (ReflectiveOperationException | RuntimeException | LinkageError unreachable) {
+			Caught.warn(unreachable, "[Forbric/PublicApi] could not open the static map %s.%s that %s.%s puts into; taken as none", found[0], found[1], api, name);
 			return null;
 		}
 	}
@@ -72,6 +73,7 @@ public final class PublicApiStorage {
 		try {
 			frames = new Analyzer<>(new SourceInterpreter()).analyze(node.name, method);
 		} catch (AnalyzerException unreadable) {
+			Caught.expected(unreadable);
 			return null;
 		}
 		Map<Integer, Integer> slots = new HashMap<>();   // local slot -> parameter index
@@ -130,6 +132,7 @@ public final class PublicApiStorage {
 				new ClassReader(in.readAllBytes()).accept(node, ClassReader.SKIP_DEBUG | ClassReader.SKIP_FRAMES);
 			}
 		} catch (IOException | RuntimeException unreadable) {
+			Caught.warn(unreadable, "[Forbric/PublicApi] could not read %s; taken as absent", owner);
 			node = null;
 		}
 		classes.put(owner, node);

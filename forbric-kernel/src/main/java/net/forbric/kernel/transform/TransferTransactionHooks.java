@@ -27,6 +27,7 @@ import org.objectweb.asm.tree.MethodInsnNode;
 import org.objectweb.asm.tree.MethodNode;
 import org.objectweb.asm.tree.TypeInsnNode;
 import org.objectweb.asm.tree.VarInsnNode;
+import net.forbric.kernel.util.Caught;
 
 /**
  * The pinned lifecycle seams needed to pair the real Fabric 8.x and NeoForge 26.2 transactions. Original
@@ -327,6 +328,7 @@ public final class TransferTransactionHooks implements ClassTransformer {
 				new ClassReader(bytes).accept(node, ClassReader.SKIP_DEBUG | ClassReader.SKIP_FRAMES);
 			}
 		} catch (RuntimeException | LinkageError unreadable) {
+			Caught.warn(unreadable, "[Forbric/Transfer] could not read %s; taken as absent", name);
 			node = null;
 		}
 		classes.put(name, node);

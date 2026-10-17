@@ -25,8 +25,7 @@ import java.util.Map;
 
 import net.forbric.api.Ecosystem;
 import net.forbric.api.ForeignType;
-import net.forbric.kernel.util.ForbricLog;
-import net.forbric.kernel.util.Reflect;
+import net.forbric.kernel.util.Caught;
 
 /**
  * The kernel's native traditional-MinecraftForge per-mod loading context: a {@code BusGroup} +
@@ -76,6 +75,7 @@ public final class KernelForgeModContext {
 			Class.forName(FML_JAVA_CTX, false, cl);
 			return true;
 		} catch (ClassNotFoundException absent) {
+			Caught.expected(absent);
 			return false;
 		}
 	}
@@ -258,13 +258,11 @@ public final class KernelForgeModContext {
 	 * <p>Registry-major / mod-minor is preserved: a {@code DeferredRegister}'s {@code RegistryObject}s bind during
 	 * their OWN registry's event, so every mod must fire for BLOCK before any fires for ITEM.
 	 *
-	 * <p>Stack once per mod. A mod that fails on one registry usually fails on the next twenty, and twenty identical
-	 * stacks bury the first one; every failure still gets a line naming both the mod and the registry.
+	 * <p>Every failure gets a line naming both the mod and the registry.
 	 *
 	 * @return how many (registry, mod) pairs were attempted
 	 */
 	static int dispatchIsolated(List<Object[]> targets, List<Object[]> mods, Activate activate, PostOne post) {
-		java.util.Set<String> reported = new java.util.LinkedHashSet<>();
 		int attempted = 0;
 		for (Object[] target : targets) {
 			for (Object[] mod : mods) {
@@ -274,14 +272,9 @@ public final class KernelForgeModContext {
 					activate.apply(mod);
 					post.apply(mod, target);
 				} catch (Throwable perMod) {
-					if (reported.add(modId)) {
-						ForbricLog.warn("[Forbric/Forge] " + modId + " threw handling RegisterEvent for " + target[0]
-								+ " — that registration is lost; every other MinecraftForge mod and the ForgeMod "
-								+ "baseline still register", Reflect.unwrap(perMod));
-					} else {
-						ForbricLog.warn("[Forbric/Forge] %s also threw handling RegisterEvent for %s", modId,
-								String.valueOf(target[0]));
-					}
+					Caught.warn(perMod, "[Forbric/Forge] %s threw handling RegisterEvent for %s — that registration is "
+							+ "lost; every other MinecraftForge mod and the ForgeMod baseline still register", modId,
+							String.valueOf(target[0]));
 				}
 			}
 		}

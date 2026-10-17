@@ -39,6 +39,7 @@ import org.junit.jupiter.api.io.TempDir;
 import net.fabricmc.api.EnvType;
 import net.forbric.api.Ecosystem;
 import net.forbric.api.ModCatalog;
+import net.forbric.kernel.ExpectCaught;
 import net.forbric.kernel.ui.DependencyDialogMain;
 import net.forbric.kernel.ui.DependencyReport;
 
@@ -162,6 +163,7 @@ class CrashSuspectOfferTest {
 		assertEquals(1, asked.size(), "the next launch is not asked about the same crash");
 	}
 
+	@ExpectCaught("could not show the crash-suspects offer")
 	@Test
 	void aDialogThatFailsStartsWithEveryMod() throws Exception {
 		fabricJar("sodium.jar", "sodium");
@@ -255,6 +257,7 @@ class CrashSuspectOfferTest {
 		assertEquals(List.of("cwb.jar"), DisabledMods.parse(Files.readAllLines(game.resolve(DisabledMods.FILE))));
 	}
 
+	@ExpectCaught("crash-suspects.json")
 	@Test
 	void aFileThisVersionCannotReadIsNotOffered() throws Exception {
 		fabricJar("sodium.jar", "sodium");

@@ -11,6 +11,7 @@ import java.util.Arrays;
 import java.util.concurrent.atomic.AtomicBoolean;
 
 import net.forbric.kernel.util.ForbricLog;
+import net.forbric.kernel.util.Caught;
 
 /**
  * A file watch's handler that runs only for a change made after the watch was registered.
@@ -77,6 +78,7 @@ public final class StaleWatchGuard implements Runnable {
 			digest.update(Files.readAllBytes(file));
 			return digest.digest();
 		} catch (IOException | NoSuchAlgorithmException unreadable) {
+			Caught.expected(unreadable);
 			// Unreadable now: never equal to a baseline, so the handler runs as it would have.
 			return new byte[] { 1, (byte) System.identityHashCode(unreadable) };
 		}
