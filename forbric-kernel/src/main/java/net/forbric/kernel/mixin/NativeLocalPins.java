@@ -133,7 +133,8 @@ public final class NativeLocalPins {
 			if (agreed != null && !agreed.equals(slots)) return null;
 			agreed = slots;
 		}
-		return agreed == null ? null : new Pin(host, after.get(from), Map.copyOf(agreed));
+		// In parameter order: Map.copyOf iterates in an order salted per JVM, which made the log line differ run to run.
+		return agreed == null ? null : new Pin(host, after.get(from), java.util.Collections.unmodifiableMap(new java.util.TreeMap<>(agreed)));
 	}
 
 	/** The one merged local live at the point with the native local's debug name and type. */

@@ -25,6 +25,14 @@ public class Diver {
 		}
 	}
 
+	public void dive(Tide tide) {
+		boolean under = this.isUnder(tide);
+		if (!under) {
+			this.lung.hold(this.name);
+		}
+		Trace.add("dived " + under);
+	}
+
 	public boolean isUnder(Tide tide) {
 		Trace.add("under:" + tide.name);
 		return tide.name.equals("deep");

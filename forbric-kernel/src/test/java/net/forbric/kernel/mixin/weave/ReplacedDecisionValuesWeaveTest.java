@@ -35,7 +35,9 @@ import net.forbric.kernel.mixin.ReplacedDecisionValues;
  *
  * <p>Moved, the guest changes the carrier's answer on {@code tick}, and the guest's lines and every breath held there are
  * those of the same guest on the native diver. On {@code surface} the block differs, so nothing is moved: the guest
- * binds nothing there. Switched off, the guest is not asked anywhere and the gilled diver holds its breath on land.
+ * binds nothing there. On {@code dive} the carrier's answer is kept in the native answer's local ({@code under}), so the
+ * guest changes the value every later read of that local sees. Switched off, the guest is not asked anywhere and the
+ * gilled diver holds its breath on land.
  */
 class ReplacedDecisionValuesWeaveTest {
 	private static final Path SOURCES = Path.of("src/test/resources/weave/replaceddecision");
@@ -44,12 +46,17 @@ class ReplacedDecisionValuesWeaveTest {
 	private static final String TARGET = "org/harbor/deck/Diver";
 	private static final String SURFACE = " | surface plain shallow: currents:shallow, gasp plain | surface plain deep: currents:deep"
 			+ " | surface gilled shallow: currents:shallow, gasp gilled | surface gilled deep: currents:deep";
+	private static final String DIVES = " | dive plain shallow: currents:shallow, gill-dive:false, hold plain, dived false"
+			+ " | dive plain deep: currents:deep, gill-dive:true, dived true | dive gilled shallow: currents:shallow, gill-dive:false, dived true"
+			+ " | dive gilled deep: currents:deep, gill-dive:true, dived true";
 	private static final String MOVED = WeaveHarnessMain.DONE + " tick plain shallow: tick, currents:shallow, gill:false, hold plain, tail"
 			+ " | tick plain deep: tick, currents:deep, gill:true, tail | tick gilled shallow: tick, currents:shallow, gill:false, tail"
-			+ " | tick gilled deep: tick, currents:deep, gill:true, tail" + SURFACE;
+			+ " | tick gilled deep: tick, currents:deep, gill:true, tail" + SURFACE + DIVES;
 	private static final String OFF = WeaveHarnessMain.DONE + " tick plain shallow: tick, currents:shallow, hold plain, tail"
 			+ " | tick plain deep: tick, currents:deep, tail | tick gilled shallow: tick, currents:shallow, hold gilled, tail"
-			+ " | tick gilled deep: tick, currents:deep, tail" + SURFACE;
+			+ " | tick gilled deep: tick, currents:deep, tail" + SURFACE
+			+ " | dive plain shallow: currents:shallow, hold plain, dived false | dive plain deep: currents:deep, dived true"
+			+ " | dive gilled shallow: currents:shallow, hold gilled, dived false | dive gilled deep: currents:deep, dived true";
 	private static final String LOGGED = "[Forbric/Mixin] com.kestrel.gill.mixin.DiverMixin.%s: org.harbor.deck.Diver.isUnder is no longer called in org.harbor.deck.Diver.%s;"
 			+ " the call the merged method makes in its place, deciding the same branch, is org.harbor.carrier.Currents.covers";
 
@@ -86,6 +93,13 @@ class ReplacedDecisionValuesWeaveTest {
 		assertEquals(guestAndBreaths(natively, "tick"), guestAndBreaths(moved, "tick"), natively.describe());
 	}
 
+	/** On {@code dive} the carrier's answer is kept in the native answer's local: every read of it is the native run's. */
+	@Test void theGuestAndEveryReadOfTheLocalOnDiveAreTheNativeOnes() throws Exception {
+		assertTrue(moved.printed(String.format(LOGGED, "gill$dive", "dive")), moved.describe());
+		assertTrue(callsGuestAfterCarrier(moved, "dive"), moved.describe());
+		assertEquals(guestAndBreaths(natively, "dive"), guestAndBreaths(moved, "dive"), natively.describe());
+	}
+
 	/** Where the carrier's answer skips another block, nothing says it is the native answer: the point stays unbound. */
 	@Test void whereTheCarrierSkipsAnotherBlockNothingIsMoved() throws Exception {
 		assertFalse(moved.printed(String.format(LOGGED, "gill$surface", "surface")), moved.describe());
@@ -108,7 +122,8 @@ class ReplacedDecisionValuesWeaveTest {
 		return Arrays.stream(line.substring(Math.min(line.length(), WeaveHarnessMain.DONE.length() + 1)).split(" \\| "))
 				.filter(entry -> entry.startsWith(update + " "))
 				.map(entry -> entry.substring(0, entry.indexOf(": ") + 2) + Arrays.stream(entry.substring(entry.indexOf(": ") + 2).split(", "))
-						.filter(step -> step.startsWith("gill") || step.startsWith("hold") || step.startsWith("gasp")).collect(Collectors.joining(", ")))
+						.filter(step -> step.startsWith("gill") || step.startsWith("hold") || step.startsWith("gasp") || step.startsWith("dived"))
+						.collect(Collectors.joining(", ")))
 				.toList();
 	}
 

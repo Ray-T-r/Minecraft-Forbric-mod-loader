@@ -34,7 +34,7 @@ import net.forbric.kernel.util.ForbricLog;
 
 /**
  * Moves a mod's {@code @ModifyExpressionValue} of a vanilla decision onto the call the surviving carrier makes in its
- * place, where that call decides the very same branch.
+ * place, where that call decides the very same branch or is kept in the very same local.
  *
  * <p>Vanilla's {@code Player.tick} asks {@code isEyeInFluid(FluidTags.WATER)} and, when the eye is not in water and a
  * turtle helmet is worn, ticks it; NeoForge asks {@code getFluidInteraction().isEyeInFluidMatching(this, predicate)}
@@ -46,7 +46,10 @@ import net.forbric.kernel.util.ForbricLog;
  * merged; the native method makes that call exactly where the point picks it (once, or the occurrence its ordinal names)
  * and the merged method never; the native call is followed by a conditional jump; and the merged method makes exactly
  * one call the native method never makes, of the same return type, followed by the same conditional jump over a block
- * identical, instruction for instruction, to the native one. The handler only changes that value (its first parameter
+ * identical, instruction for instruction, to the native one — or the native call is stored straight into a local the
+ * method stores only there, and the merged method stores exactly one such call, straight, into its one store of the local
+ * the table names alike (same debug name and type): every later read of that local reads it, as natively ({@code Hud}'s
+ * {@code isUnderWater} for the air bubbles). The handler only changes that value (its first parameter
  * and its return are the call's type), so on the carrier's call it changes the value the same branch reads. The point is
  * re-spelled to name the carrier's call. {@code -Dforbric.replacedDecisionValues=off} leaves every point as compiled.
  */
@@ -109,18 +112,66 @@ public final class ReplacedDecisionValues {
 		Type value = Type.getReturnType(call.desc);
 		Type[] parameters = Type.getArgumentTypes(handler.desc);
 		if (value.getSort() == Type.VOID || parameters.length == 0 || !parameters[0].equals(value) || !Type.getReturnType(handler.desc).equals(value)) return null;
-		if (!(nextReal(call) instanceof JumpInsnNode decided) || decided.getOpcode() == Opcodes.GOTO || decided.getOpcode() == Opcodes.JSR) return null;
-		List<String> block = block(was, decided);
-		if (block == null) return null;
 		Set<String> nativeMembers = new TreeSet<>();
 		for (AbstractInsnNode instruction : was.instructions) if (instruction instanceof MethodInsnNode other) nativeMembers.add(other.name + other.desc);
+		AbstractInsnNode after = nextReal(call);
+		if (after instanceof JumpInsnNode decided) {
+			if (decided.getOpcode() == Opcodes.GOTO || decided.getOpcode() == Opcodes.JSR) return null;
+			List<String> block = block(was, decided);
+			if (block == null) return null;
+			MethodInsnNode found = null;
+			for (MethodInsnNode candidate : novel(host, nativeMembers, value)) {
+				if (!(nextReal(candidate) instanceof JumpInsnNode jump) || jump.getOpcode() != decided.getOpcode() || !block.equals(block(host, jump))) continue;
+				if (found != null) return null;
+				found = candidate;
+			}
+			return found;
+		}
+		// The value kept in a local the method stores once: the carrier's call that the merged method keeps in that same local
+		// (its debug name and type), stored there once too, is the value every later read of the local reads.
+		if (!(after instanceof VarInsnNode kept) || kept.getOpcode() != value.getOpcode(Opcodes.ISTORE) || stores(was, kept.var) != 1) return null;
+		String name = localName(was, kept, value);
+		if (name == null) return null;
 		MethodInsnNode found = null;
-		for (AbstractInsnNode instruction : host.instructions) {
-			if (!(instruction instanceof MethodInsnNode candidate) || candidate.name.startsWith("<") || nativeMembers.contains(candidate.name + candidate.desc)
-					|| !Type.getReturnType(candidate.desc).equals(value)) continue;
-			if (!(nextReal(candidate) instanceof JumpInsnNode jump) || jump.getOpcode() != decided.getOpcode() || !block.equals(block(host, jump))) continue;
+		for (MethodInsnNode candidate : novel(host, nativeMembers, value)) {
+			if (!(nextReal(candidate) instanceof VarInsnNode store) || store.getOpcode() != kept.getOpcode() || stores(host, store.var) != 1
+					|| !name.equals(localName(host, store, value))) continue;
 			if (found != null) return null;
 			found = candidate;
+		}
+		return found;
+	}
+
+	/** The calls {@code host} makes that the native method never makes, returning {@code value}. */
+	private static List<MethodInsnNode> novel(MethodNode host, Set<String> nativeMembers, Type value) {
+		List<MethodInsnNode> out = new ArrayList<>();
+		for (AbstractInsnNode instruction : host.instructions)
+			if (instruction instanceof MethodInsnNode candidate && !candidate.name.startsWith("<") && !nativeMembers.contains(candidate.name + candidate.desc)
+					&& Type.getReturnType(candidate.desc).equals(value)) out.add(candidate);
+		return out;
+	}
+
+	private static int stores(MethodNode method, int slot) {
+		int n = 0;
+		for (AbstractInsnNode instruction : method.instructions)
+			if (instruction instanceof VarInsnNode store && store.var == slot && store.getOpcode() >= Opcodes.ISTORE && store.getOpcode() <= Opcodes.ASTORE) n++;
+			else if (instruction instanceof IincInsnNode increment && increment.var == slot) n++;
+		return n;
+	}
+
+	/** The debug name the table gives {@code store}'s local of {@code type} right after the store; null when none or unnamed. */
+	private static String localName(MethodNode method, VarInsnNode store, Type type) {
+		if (method.localVariables == null) return null;
+		AbstractInsnNode live = nextReal(store);
+		if (live == null) return null;
+		int at = method.instructions.indexOf(live);
+		String found = null;
+		for (var local : method.localVariables) {
+			if (local.index != store.var || !local.desc.equals(type.getDescriptor())) continue;
+			if (method.instructions.indexOf(local.start) <= at && at < method.instructions.indexOf(local.end)) {
+				if (found != null && !found.equals(local.name)) return null;
+				found = local.name;
+			}
 		}
 		return found;
 	}

@@ -15,6 +15,12 @@ public abstract class DiverMixin {
 		return under || ((Diver) (Object) this).name.equals("gilled");
 	}
 
+	@ModifyExpressionValue(method = "dive", at = @At(value = "INVOKE", target = "Lorg/harbor/deck/Diver;isUnder(Lorg/harbor/deck/Tide;)Z"))
+	private boolean gill$dive(boolean under) {
+		Trace.add("gill-dive:" + under);
+		return under || ((Diver) (Object) this).name.equals("gilled");
+	}
+
 	@ModifyExpressionValue(method = "surface", at = @At(value = "INVOKE", target = "Lorg/harbor/deck/Diver;isUnder(Lorg/harbor/deck/Tide;)Z"))
 	private boolean gill$surface(boolean under) {
 		Trace.add("gill-surface:" + under);

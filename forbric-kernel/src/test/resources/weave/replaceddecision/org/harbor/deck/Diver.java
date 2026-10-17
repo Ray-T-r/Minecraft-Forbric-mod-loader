@@ -3,8 +3,9 @@ package org.harbor.deck;
 import fixture.replaceddecision.Trace;
 
 /**
- * As merged: both updates ask a carrier's question where they asked the diver's own. On {@code tick} it decides the very
- * block the native question did; on {@code surface} the block it skips is another one (the diver gasps).
+ * As merged: every update asks a carrier's question where it asked the diver's own. On {@code tick} it decides the very
+ * block the native question did; on {@code surface} the block it skips is another one (the diver gasps); on {@code dive}
+ * it is kept in the same local, {@code under}, as the native answer was.
  */
 public class Diver {
 	public final String name;
@@ -26,6 +27,14 @@ public class Diver {
 		if (!org.harbor.carrier.Currents.covers(this, tide)) {
 			this.lung.gasp(this.name);
 		}
+	}
+
+	public void dive(Tide tide) {
+		boolean under = org.harbor.carrier.Currents.covers(this, tide);
+		if (!under) {
+			this.lung.hold(this.name);
+		}
+		Trace.add("dived " + under);
 	}
 
 	public boolean isUnder(Tide tide) {
