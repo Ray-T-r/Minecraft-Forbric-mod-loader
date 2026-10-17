@@ -32,10 +32,13 @@ package net.forbric.kernel.classloading;
  *       Fabric mod-facing API, the few Fabric Loader internals the kernel ships ({@link FabricLoaderInternals}, by
  *       exact name), and the kernel's BOOT packages (everything under {@code net.forbric.kernel} EXCEPT
  *       {@code net.forbric.kernel.runtime}, which is game-side).</li>
- *   <li><b>ALWAYS_GAME</b> — always define here (with transforms), because these are the game + ecosystems and
- *       the kernel's game-side runtime: {@code net.minecraft}, {@code com.mojang.blaze3d}, {@code net.minecraftforge},
- *       {@code net.neoforged}, {@code net.fabricmc.fabric}, {@code net.forbric.kernel.runtime}, and MixinExtras'
- *       generated-class package.</li>
+ *   <li><b>ALWAYS_GAME</b> — always define here (with transforms), because these are the platform's own packages —
+ *       the game, the carriers and the kernel's game-side runtime: {@code net.minecraft}, {@code com.mojang.blaze3d},
+ *       {@code net.minecraftforge}, {@code net.neoforged}, {@code net.forbric.kernel.runtime}, MixinExtras (which the
+ *       kernel bundles) and Mixin's generated-class package. A mod's package is never listed, fabric-api's included:
+ *       its classes are in a jar this loader owns, so the child-first rule below defines them here all the same, and
+ *       {@code MixinFit} — which asks this table whether a target is the platform's or another mod's — judges a mixin
+ *       into fabric-api as a mixin into any other mod.</li>
  *   <li><b>otherwise</b> — child-first: define here iff the class is present in one of this loader's own jars,
  *       else delegate to the parent (this catches game/mod classes without hardcoding every package, and lets MC
  *       libraries like DataFixerUpper / Brigadier / netty / guava stay parent-loaded).</li>
@@ -95,7 +98,6 @@ public final class DelegationPolicy {
 			"com.mojang.blaze3d.",
 			"net.minecraftforge.",
 			"net.neoforged.",
-			"net.fabricmc.fabric.",
 			"net.forbric.kernel.runtime.",
 			"com.llamalad7.mixinextras.",
 			// Mixin GENERATES these on demand (e.g. the @Args argument classes) and they must be defined by the

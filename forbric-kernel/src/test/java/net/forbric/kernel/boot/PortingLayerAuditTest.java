@@ -87,8 +87,8 @@ class PortingLayerAuditTest {
 	}
 
 	/**
-	 * fabric-api's own nested jars ship {@code net/fabricmc/fabric/**} and are its only legitimate source. That
-	 * package is ALWAYS_GAME like the other two, but no carrier provides it, so every hit would be a false one.
+	 * fabric-api's own nested jars ship {@code net/fabricmc/fabric/**} and are its only legitimate source. No carrier
+	 * provides that package, so every hit would be a false one.
 	 */
 	@Test
 	void fabricApisOwnPackageIsNotAuditedAtAll() throws Exception {

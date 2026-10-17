@@ -39,6 +39,15 @@ class DelegationPolicyTest {
 		assertFalse(DelegationPolicy.alwaysParent("net.minecraft.world.level.Level"));
 	}
 
+	/** A mod's package is never the platform's, fabric-api's included: child-first defines it from the mod's jar. */
+	@Test
+	void aModsPackageIsNotPinnedEitherWayFabricApisIncluded() {
+		for (String name : List.of("net.fabricmc.fabric.api.event.Event", "net.fabricmc.fabric.impl.base.Thing", "com.example.mod.Thing")) {
+			assertFalse(DelegationPolicy.alwaysGame(name), name);
+			assertFalse(DelegationPolicy.alwaysParent(name), name);
+		}
+	}
+
 	@Test
 	void transformMachineryStaysOnTheParent() {
 		assertTrue(DelegationPolicy.alwaysParent("org.objectweb.asm.tree.ClassNode"));

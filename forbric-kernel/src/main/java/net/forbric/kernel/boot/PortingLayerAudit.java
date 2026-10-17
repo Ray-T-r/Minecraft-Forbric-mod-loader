@@ -78,8 +78,8 @@ public final class PortingLayerAudit {
 	 * Compares every {@code net/neoforged/**} and {@code net/minecraftforge/**} class in {@code modJars} against
 	 * the carriers'.
 	 *
-	 * <p>Deliberately NOT {@code net/fabricmc/fabric/**}: that is {@code ALWAYS_GAME} too, but no carrier provides
-	 * it — fabric-api's own nested jars are its only and rightful source, so every hit would be a false one.
+	 * <p>Deliberately NOT {@code net/fabricmc/fabric/**}: no carrier provides it — fabric-api's own nested jars are
+	 * its only and rightful source, so every hit would be a false one.
 	 */
 	public static Report audit(List<Path> modJars, List<Path> runtimeJars) {
 		List<Skew> skews = new ArrayList<>();

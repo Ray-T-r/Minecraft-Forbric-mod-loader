@@ -20,6 +20,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.junit.jupiter.api.Assertions.assertNull;
 
+import java.util.List;
 import org.junit.jupiter.api.Test;
 
 /**
@@ -84,6 +85,23 @@ class MixinFitTest {
 		MixinFit.Result asMod = MixinFit.evaluate(shadowMixin(target), resolver, name -> false);
 		assertEquals(1, asMod.foreign().size(), "a miss on another mod's class is the signal");
 		assertTrue(asMod.foreign().get(0).contains("notThere"), asMod.foreign().toString());
+	}
+
+	/**
+	 * The production table names the platform's packages only: a miss on fabric-api's class is a miss on another mod's
+	 * class, exactly as one on any mod's — the same anchor on the same shape reads the same whichever mod's package it is.
+	 */
+	@Test
+	void fabricApisClassesAreAnotherModsToThePlatformTable() {
+		for (String target : List.of("net/fabricmc/fabric/impl/qzx/Widget", "net/qzx/othermod/Widget")) {
+			java.util.function.Function<String, byte[]> resolver = name -> (target + ".class").equals(name) ? emptyClass(target) : null;
+			MixinFit.Result fit = MixinFit.evaluate(shadowMixin(target), resolver, net.forbric.kernel.classloading.DelegationPolicy::alwaysGame);
+			assertEquals(1, fit.foreign().size(), target + " is a mod's class: " + fit.foreign());
+		}
+		String game = "net/minecraft/qzx/Widget";
+		MixinFit.Result platform = MixinFit.evaluate(shadowMixin(game), name -> (game + ".class").equals(name) ? emptyClass(game) : null,
+				net.forbric.kernel.classloading.DelegationPolicy::alwaysGame);
+		assertTrue(platform.foreign().isEmpty(), "the game's own class is the platform's: " + platform.foreign());
 	}
 
 	@Test
