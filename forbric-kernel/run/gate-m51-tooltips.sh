@@ -16,6 +16,9 @@
 #   2. bridge-off — -Dforbric.fabricTooltipBridge=off: exactly the Fabric cases fail; vanilla, NeoForge and controls hold.
 #   3. appenders-off — -Dforbric.neoTooltipAppenders=off: exactly the vanilla, NeoForge and Fabric cases fail; the
 #      name, the advanced id line, a plain stick and the hidden/absent providers hold.
+#   Both controls also pass -Dforbric.nativeCallInlining=off: the inliner puts NeoForge's addDetailsToTooltipTail back
+#   into addDetailsToTooltip, where fabric-item-api's advanced-tooltip injector then binds as on Fabric and draws three
+#   of the Fabric cases by itself — the controls measure the bridge and the appenders, not that.
 # GATE-PARALLEL: rundirs=server-tooltips-m51 mem=2000
 set -uo pipefail
 . "$(cd "$(dirname "$0")" && pwd)/lib.sh"
@@ -85,12 +88,12 @@ check_absent "positive: fabric-item-api's ItemStackMixin is not retargeted" 'ret
 check_absent "positive: no provider threw" 'a Fabric component tooltip provider threw' "$RESULTS/positive.log"
 
 step "2. bridge-off: the same server with fabric-item-api's injectors left in place, where they bind nowhere"
-run_server bridge-off continue "-Dforbric.fabricTooltipBridge=off"
+run_server bridge-off continue "-Dforbric.fabricTooltipBridge=off -Dforbric.nativeCallInlining=off"
 judge bridge-off "failed == $FABRIC" "exactly the Fabric cases fail; vanilla, NeoForge and the controls hold"
 check_absent "bridge-off: nothing pruned from ItemStackMixin" 'GuestInjectorPruner\] pruned .* from net.fabricmc.fabric.mixin.item.ItemStackMixin' "$RESULTS/bridge-off.log"
 
 step "3. appenders-off: the same server with NeoForge's appenders left unbuilt"
-run_server appenders-off continue "-Dforbric.neoTooltipAppenders=off"
+run_server appenders-off continue "-Dforbric.neoTooltipAppenders=off -Dforbric.nativeCallInlining=off"
 judge appenders-off "failed == $VANILLA_AND_NEO | $FABRIC" "exactly the vanilla, NeoForge and Fabric cases fail; the controls hold"
 
 if [ "$FAIL" -eq 0 ]; then
