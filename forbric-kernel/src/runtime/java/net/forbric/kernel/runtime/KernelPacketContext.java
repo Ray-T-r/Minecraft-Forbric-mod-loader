@@ -46,7 +46,6 @@ import net.minecraft.network.PacketEncoder;
 public final class KernelPacketContext {
 	static final String PROPERTY = "forbric.splitterPacketContext";
 	private static final String CONTEXT = "net.fabricmc.fabric.api.networking.v1.context.PacketContext";
-	private static final String CONTEXT_IMPL = "net.fabricmc.fabric.impl.networking.context.PacketContextImpl";
 	/** The body the transformer moved aside, resolved once per splitter class. */
 	private static final ClassValue<Method> BODY = new ClassValue<>() {
 		@Override
@@ -120,7 +119,7 @@ public final class KernelPacketContext {
 		}
 	}
 
-	/** {@code ScopedValue.where(PacketContextImpl.VALUE, context).run(body)}, reflectively. */
+	/** {@code ScopedValue.where(<the scoped value PacketContext.get() reads>, context).run(body)}, reflectively. */
 	private static void scope(Object context, Runnable body) {
 		try {
 			Object value = scopedValue;
@@ -153,7 +152,12 @@ public final class KernelPacketContext {
 		return null;
 	}
 
-	/** Resolves Fabric's two internals once. Absent means no Fabric networking here, which is not a failure. */
+	/**
+	 * Resolves, once, the two things the bind needs: the scoped value fabric-api's public {@code PacketContext.get()}
+	 * answers from — the {@code ScopedValue} static that method reads, found in its own bytecode, whatever the class that
+	 * holds it is called — and the encoder's field of the public {@code PacketContext} type. Absent means no Fabric
+	 * networking here, which is not a failure.
+	 */
 	private static boolean resolve(Object ctx) {
 		if (resolved) return scopedValue != null && encoderContext != null;
 		synchronized (KernelPacketContext.class) {
@@ -161,8 +165,8 @@ public final class KernelPacketContext {
 			resolved = true;
 			try {
 				ClassLoader loader = ctx.getClass().getClassLoader();
-				Class<?> impl = Class.forName(CONTEXT_IMPL, false, loader);
-				Field value = impl.getField("VALUE");
+				Field value = scopedValueReadBy(loader, CONTEXT, "get");
+				if (value == null) throw new NoSuchFieldException("no ScopedValue read by " + CONTEXT + ".get()");
 				value.setAccessible(true);
 				Class<?> context = Class.forName(CONTEXT, false, loader);
 				for (Field field : PacketEncoder.class.getDeclaredFields()) {
@@ -178,6 +182,34 @@ public final class KernelPacketContext {
 			}
 		}
 		return scopedValue != null && encoderContext != null;
+	}
+
+	/**
+	 * The static field holding a {@code ScopedValue} that the public no-argument static {@code method} of {@code owner}
+	 * reads first, read off that method's own bytecode and judged by the value it holds; null when there is none.
+	 */
+	static Field scopedValueReadBy(ClassLoader loader, String owner, String method) throws ReflectiveOperationException {
+		byte[] bytes;
+		try (java.io.InputStream in = loader.getResourceAsStream(owner.replace('.', '/') + ".class")) {
+			if (in == null) return null;
+			bytes = in.readAllBytes();
+		} catch (java.io.IOException unreadable) {
+			return null;
+		}
+		org.objectweb.asm.tree.ClassNode node = new org.objectweb.asm.tree.ClassNode();
+		new org.objectweb.asm.ClassReader(bytes).accept(node, org.objectweb.asm.ClassReader.SKIP_DEBUG | org.objectweb.asm.ClassReader.SKIP_FRAMES);
+		for (org.objectweb.asm.tree.MethodNode candidate : node.methods) {
+			if (!candidate.name.equals(method) || !candidate.desc.startsWith("()")
+					|| (candidate.access & org.objectweb.asm.Opcodes.ACC_STATIC) == 0) continue;
+			for (org.objectweb.asm.tree.AbstractInsnNode insn : candidate.instructions) {
+				if (!(insn instanceof org.objectweb.asm.tree.FieldInsnNode read) || read.getOpcode() != org.objectweb.asm.Opcodes.GETSTATIC
+						|| read.desc.startsWith("[") || read.desc.length() == 1) continue;
+				Field field = Class.forName(read.owner.replace('/', '.'), true, loader).getDeclaredField(read.name);
+				field.setAccessible(true);
+				if (Class.forName("java.lang.ScopedValue").isInstance(field.get(null))) return field;
+			}
+		}
+		return null;
 	}
 
 	private static void warnOnce(String what, Throwable t) {

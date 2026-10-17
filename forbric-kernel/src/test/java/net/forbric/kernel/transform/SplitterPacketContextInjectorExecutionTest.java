@@ -58,7 +58,7 @@ class SplitterPacketContextInjectorExecutionTest {
 			"net.fabricmc.fabric.api.networking.v1.context.PacketContext", """
 					package net.fabricmc.fabric.api.networking.v1.context;
 
-					import net.fabricmc.fabric.impl.networking.context.PacketContextImpl;
+					import org.relay.wire.Envelope;
 
 					public interface PacketContext {
 						String connection();
@@ -67,26 +67,27 @@ class SplitterPacketContextInjectorExecutionTest {
 						static PacketContext get() {
 							try {
 								Class<?> scoped = Class.forName("java.lang.ScopedValue");
-								boolean bound = (Boolean) scoped.getMethod("isBound").invoke(PacketContextImpl.VALUE);
-								return bound ? (PacketContext) scoped.getMethod("get").invoke(PacketContextImpl.VALUE) : null;
+								boolean bound = (Boolean) scoped.getMethod("isBound").invoke(Envelope.CURRENT);
+								return bound ? (PacketContext) scoped.getMethod("get").invoke(Envelope.CURRENT) : null;
 							} catch (ReflectiveOperationException e) {
 								throw new IllegalStateException(e);
 							}
 						}
 					}
 					""",
-			"net.fabricmc.fabric.impl.networking.context.PacketContextImpl", """
-					package net.fabricmc.fabric.impl.networking.context;
+			"org.relay.wire.Envelope", """
+					package org.relay.wire;
 
 					import net.fabricmc.fabric.api.networking.v1.context.PacketContext;
 
-					public record PacketContextImpl(String connection) implements PacketContext {
+					/** The context behind the public interface, under a name of its own: the kernel finds it by what get() reads. */
+					public record Envelope(String connection) implements PacketContext {
 						/** A java.lang.ScopedValue, made by reflection: it is a preview API on JDK 21. */
-						public static final Object VALUE;
+						public static final Object CURRENT;
 
 						static {
 							try {
-								VALUE = Class.forName("java.lang.ScopedValue").getMethod("newInstance").invoke(null);
+								CURRENT = Class.forName("java.lang.ScopedValue").getMethod("newInstance").invoke(null);
 							} catch (ReflectiveOperationException e) {
 								throw new ExceptionInInitializerError(e);
 							}
@@ -142,7 +143,7 @@ class SplitterPacketContextInjectorExecutionTest {
 					import java.util.Iterator;
 					import java.util.List;
 					import java.util.Map;
-					import net.fabricmc.fabric.impl.networking.context.PacketContextImpl;
+					import org.relay.wire.Envelope;
 					import net.minecraft.network.PacketEncoder;
 
 					/** A connection's pipeline: NeoForge's splitter, then vanilla's encoder holding Fabric's context. */
@@ -150,7 +151,7 @@ class SplitterPacketContextInjectorExecutionTest {
 						private final List<Map.Entry<String, Object>> handlers;
 
 						public Pipeline(Object splitter, String connection) {
-							handlers = List.of(Map.entry("splitter", splitter), Map.entry("encoder", new PacketEncoder<>(new PacketContextImpl(connection))));
+							handlers = List.of(Map.entry("splitter", splitter), Map.entry("encoder", new PacketEncoder<>(new Envelope(connection))));
 						}
 
 						public ChannelPipeline pipeline() {
