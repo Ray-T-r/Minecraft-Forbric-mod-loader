@@ -1,0 +1,1 @@
+{"required": true, "package": "fixture.qzxmodels.hooks", "compatibilityLevel": "JAVA_21", "client": ["QzxCodecHooks"], "injectors": {"defaultRequire": 1}}

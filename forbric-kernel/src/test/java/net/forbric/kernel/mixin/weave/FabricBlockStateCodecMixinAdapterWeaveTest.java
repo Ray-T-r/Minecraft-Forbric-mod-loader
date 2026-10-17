@@ -43,24 +43,33 @@ class FabricBlockStateCodecMixinAdapterWeaveTest {
 	private static Path fixture;
 	private static WeaveHarness.Result adapted;
 	private static WeaveHarness.Result off;
+	private static WeaveHarness.Result renamed;
 
 	@BeforeAll static void weaveBoth() throws Exception {
 		List<Path> sources = new ArrayList<>(sources());
 		// The redirects now call the kernel's game-side KernelBlockStateModelFormats, which ForbricClassLoader must define.
 		// It logs through and reads the switch of boot-side kernel classes: compiled against their sources, not packed.
 		sources.add(Path.of("src/runtime/java/net/forbric/kernel/runtime/KernelBlockStateModelFormats.java"));
-		fixture = WeaveHarness.fixture(work, MOD, sources, Map.of(CONFIG, SOURCES.resolve(CONFIG)),
-				List.of("-sourcepath", "src/main/java", "-implicit:none"));
+		fixture = WeaveHarness.fixture(work, MOD, sources, Map.of(CONFIG, SOURCES.resolve(CONFIG), "qzxmodels.mixins.json",
+				SOURCES.resolve("qzxmodels.mixins.json")), List.of("-sourcepath", "src/main/java", "-implicit:none"));
 		adapted = run("adapted", "on");
 		off = run("off", "off");
+		renamed = WeaveHarness.run(work, "renamed", fixture, "qzxmodels.mixins.json", "qzxmodels", Ecosystem.FABRIC, EnvType.CLIENT,
+				"fixture.fabricblockstatecodec.Probe", "run", Map.of());
 	}
 
 	@Test void eachDialectIsReadByItsOwnCodec() throws Exception {
 		assertTrue(adaptedHolds(adapted), adapted.describe() + "\nfindings: " + adapted.findings());
-		assertTrue(adapted.printed("[Forbric/ModelFormats] fabric-model-loading's block-state codec redirects keep NeoForge's codec"),
-				adapted.describe());
+		assertTrue(adapted.printed("block-state codec redirect(s) keep NeoForge's codec"), adapted.describe());
 		assertTrue(WeaveHarness.hasMergedMethod(adapted.defined(UNBAKED)), adapted.describe());
 		WeaveHarness.assertWovenAndVerified(adapted, UNBAKED, fixture);
+	}
+
+	/** The same redirects under names that share nothing with fabric-model-loading's keep NeoForge's codec alike. */
+	@Test void theSameRedirectsUnderUnrelatedNamesKeepBothDialects() throws Exception {
+		assertTrue(renamed.printed(WeaveHarnessMain.DONE + " " + BOTH_DIALECTS)
+				&& renamed.findings().stream().noneMatch(f -> f.modId().equals("qzxmodels") && f.required()), renamed.describe());
+		WeaveHarness.assertWovenAndVerified(renamed, UNBAKED, fixture);
 	}
 
 	@Test void withTheSwitchOffNeoForgesModelIsAnEmptyPlainVariant() throws Exception {
