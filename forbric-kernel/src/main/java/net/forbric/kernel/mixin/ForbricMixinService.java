@@ -439,6 +439,7 @@ public final class ForbricMixinService
 		// runs natively. Before the rebind below: an injector on a stub that only forwards is read on the overload here.
 		CarrierGuardedPoints.adapt(node, this::mergedBaseGameCode, NativeGameReferences::reference);
 		FabricEntityMixinAnchors.adapt(node, this::mergedBaseNodeWithCode);
+		FabricEnchantmentMixinAdapter.adapt(node, this::mergedBaseNodeWithCode);
 		FabricBlockBreakMixinAdapter.adapt(node, this::mergedBaseNodeWithCode);
 		FabricClientMixinAnchors.adapt(node, this::mergedBaseNodeWithCode);
 		FabricSoundMixinAdapter.adapt(node, this::mergedBaseNodeWithCode);

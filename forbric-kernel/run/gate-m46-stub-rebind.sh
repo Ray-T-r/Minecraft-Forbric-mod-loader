@@ -14,9 +14,9 @@
 #   dirt speed (control), sponge speed through the moved and wrapped injection; an untagged teleport (control), a tagged
 #   one cancelled through the moved injection; a language file read through vanilla's rewrite (control) and the mod's
 #   prefixed format kept through malilib's @ModifyArgs shape, whose stub passes a non-capturing lambda (a constant) to
-#   NeoForge's three-argument body, and an object entry still reaching the component consumer. Fabric API's elytra check has ONE owner: the rebind runs after every
-#   specific adapter, so FabricEntityMixinAnchors has already put it at NeoForge's gliding decision (M37 proves the
-#   callbacks) and the rebind must leave it alone — moving it too would bind it twice.
+#   NeoForge's three-argument body, and an object entry still reaching the component consumer. Fabric API's elytra check has ONE owner: the rebind runs after
+#   CarrierGuardedPoints, which has already put it ahead of NeoForge's gliding guard in the body its stub forwards to (M37
+#   proves the callbacks) and the rebind must leave it alone — moving it too would bind it twice.
 #
 #   1. positive — STRICT, every case passes, zero confirmed required findings.
 #   2. off — -Dforbric.mixinStubRebind=off: exactly the three moved cases fail and the controls hold.
@@ -81,7 +81,7 @@ if python3 -c "import json,sys; r=json.load(open(sys.argv[1])); sys.exit(0 if r[
 then echo "[kernel] PASS positive: zero confirmed required findings under STRICT"
 else echo "[kernel] FAIL positive: STRICT report missing or has confirmed required findings"; FAIL=1; fi
 check "positive: the probe's getDestroySpeed injection moved (wrapped)" 'forbric\$sevenfoldOnSponge.* now targets net.minecraft.world.entity.player.Player.getDestroySpeed\(Lnet/minecraft/world/level/block/state/BlockState;Lnet/minecraft/core/BlockPos;\)F' "$RESULTS/positive.log"
-check "positive: fabric-api's elytra check restored at NeoForge's gliding decision (and its flight tick)" 'restored 2 entity callback anchor\(s\) in net.fabricmc.fabric.mixin.entity.event.elytra.LivingEntityMixin' "$RESULTS/positive.log"
+check "positive: fabric-api's elytra check moved ahead of NeoForge's gliding guard" 'net.fabricmc.fabric.mixin.entity.event.elytra.LivingEntityMixin.injectElytraCheck: the carrier put' "$RESULTS/positive.log"
 check_absent "positive: the rebind leaves fabric-api's elytra check to that one owner" 'injectElytraCheck now targets' "$RESULTS/positive.log"
 check "positive: the probe's randomTeleport injection moved" 'forbric\$pinned now targets net.minecraft.world.entity.LivingEntity.randomTeleport\(DDDZLnet/minecraft/world/item/ItemStack;\)Z' "$RESULTS/positive.log"
 check "positive: the probe's language @ModifyArgs moved past the lambda stub" 'forbric\$keepFormat now targets net.minecraft.locale.Language.loadFromJson\(Ljava/io/InputStream;Ljava/util/function/BiConsumer;Ljava/util/function/BiConsumer;\)V' "$RESULTS/positive.log"

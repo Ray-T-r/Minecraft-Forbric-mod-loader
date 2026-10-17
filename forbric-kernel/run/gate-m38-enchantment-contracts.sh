@@ -28,7 +28,10 @@ for phase in ('positive','off'):
  (run/'server.properties').write_text(f'server-ip=127.0.0.1\nserver-port={port}\nonline-mode=false\nlevel-name=world\nlevel-type=minecraft:flat\nlevel-seed=8035262\nmax-tick-time=-1\npause-when-empty-seconds=0\nview-distance=2\nsimulation-distance=2\n')
  for item in [inputs['mod'],*inputs['modules']]:source=pathlib.Path(item['path']);shutil.copy2(source,run/'mods'/source.name)
  env=os.environ.copy();env.update(RUNDIR=str(run),FORBRIC_COMPAT_POLICY='strict' if phase=='positive' else 'continue',M38_RESULT_COMPATIBILITY=str(results/(phase+'-compatibility.json')),
-   FORBRIC_JVM=f'-Dforbric.fabricItemContracts={"on" if phase=="positive" else "off"} -Dforbric.enchantPhase={phase} -Dforbric.enchantNonce={nonce} -Dforbric.enchantRoot={run}')
+   FORBRIC_JVM=f'-Dforbric.fabricItemContracts={"on" if phase=="positive" else "off"} -Dforbric.enchantPhase={phase} -Dforbric.enchantNonce={nonce} -Dforbric.enchantRoot={run}'
+   # The command, loot and anvil redirects move onto the carrier's supportsEnchantment by CarrierDecisions, which knows no
+   # mod and has its own switch: the negative control turns it off too, or a deciding listener still lands without the contracts.
+   +(' -Dforbric.carrierDecisions=off' if phase=='off' else ''))
  for key,role in [('MERGED','merged'),('FORGE_RT','forge'),('NEO_RT','neo')]:env[key]=inputs[role]['path']
  command=['python3',str(kernel/'run/compat/evidence.py'),'run','--source',str(root),'--mods',str(run/'mods'),'--output',str(results/(phase+'.json'))]
  for role,path in [('merged',env['MERGED']),('forge-interop',env['FORGE_RT']),('neo-runtime',env['NEO_RT']),('fabric-api',inputs['fabricApi']['path']),('kernel',str(kernel/'build/libs/forbric-kernel-0.1.0-SNAPSHOT.jar')),('kernel-runtime',str(kernel/'build/libs/forbric-kernel-runtime-0.1.0-SNAPSHOT.jar'))]:command+=['--artifact',role+'='+path]

@@ -162,7 +162,10 @@ class WeaveCoverageCensusTest {
 	static final Map<String, String> NOT_WOVEN_YET = notWovenYet(
 			// Its woven rows (effects, elytra, the clear-all veto) went to CarrierDecisions, CarrierGuardedPoints and the scoped
 			// clear relay; the bed occupancy and sleeping direction rows left have ClassNode-level tests only.
-			"FabricEntityMixinAnchors");
+			"FabricEntityMixinAnchors",
+			// Its command, loot and anvil routes (the ones FabricEnchantmentMixinAdapterWeaveTest wove) went to CarrierDecisions
+			// and CarrierDecisionsWeaveTest; the enchanting table's route left has ClassNode-level tests only.
+			"FabricEnchantmentMixinAdapter");
 
 	@Test void everyPipelineStageIsWovenOrListedWithAReason() throws Exception {
 		Set<String> configTime = configTimeStages();
