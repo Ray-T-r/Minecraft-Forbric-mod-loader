@@ -488,6 +488,9 @@ public final class KernelRuntimeClasses {
 		// The reordering Operation a wrapped @WrapOperation handler receives; called from the outer handler
 		// MixinWrapOperationShim writes into a guest mixin, so there is no boot-side entry point.
 		CLASSES.put("net.forbric.kernel.runtime.KernelWrapOperations", new Entry(Origin.COMPILED, List.of()));
+		// Which implementation a virtual call selects for a receiver; asked by the redirect handlers CarrierDefaultChains
+		// writes into a guest mixin, so the inherited implementation runs with the mod's handler only where it is inherited.
+		CLASSES.put("net.forbric.kernel.runtime.KernelDispatch", new Entry(Origin.COMPILED, List.of()));
 		// The vanilla-shaped Operation a Fabric shears wrap is handed at the carrier's canPerformAction; called from the
 		// outer handler MixinShearsRelay writes into the guest mixin.
 		CLASSES.put("net.forbric.kernel.runtime.KernelShears", new Entry(Origin.COMPILED, List.of()));

@@ -122,6 +122,7 @@ public final class ForbricMixinService
 		changed+=ReplacedDecisionValues.adapt(source,code,NativeGameReferences::reference);
 		// With the local variable tables: the decisions are matched by the locals their answers are kept in.
 		changed+=CarrierDecisions.adapt(source,owner->{byte[] current=resource.apply(owner+".class");if(current==null)return null;ClassNode tables=new ClassNode();new ClassReader(current).accept(tables,0);return tables;},NativeGameReferences::reference);
+		changed+=CarrierDefaultChains.adapt(source,owner->{byte[] current=resource.apply(owner+".class");return current==null?null:MixinFit.parse(current);},NativeGameReferences::reference);
 		changed+=NativeSliceOccurrences.adapt(source,code,NativeGameReferences::reference);
 		changed+=MixinAbsorbedCallbackTransport.adapt(source,owner->{byte[] current=resource.apply(owner+".class");return current==null?null:MixinFit.parse(current);},
 			owner->NativeGameReferences.reference(MixinStubRebind.ecosystemOf(source.name),owner),
@@ -442,7 +443,10 @@ public final class ForbricMixinService
 		FabricEnchantmentMixinAdapter.adapt(node, this::mergedBaseNodeWithCode);
 		FabricBlockBreakMixinAdapter.adapt(node, this::mergedBaseNodeWithCode);
 		FabricClientMixinAnchors.adapt(node, this::mergedBaseNodeWithCode);
-		FabricSoundMixinAdapter.adapt(node, this::mergedBaseNodeWithCode);
+		// …and a redirect of a vanilla call the carrier now makes through a method of its own (its inherited implementation
+		// makes the vanilla call) moves onto that method, running its implementation with the handler where it is inherited.
+		// After the client anchors: an empty redirect they turn into skipping the carrier's call keeps that meaning.
+		CarrierDefaultChains.adapt(node, this::mergedBaseGameCode, NativeGameReferences::reference);
 		MixinSpriteLoaderCallbackAdapter.adapt(node, this::mergedBaseNodeWithCode);
 		MixinKeyActionAdapter.adapt(node, this::mergedBaseGameCode);
 		MixinStructurePlacementAdapter.adapt(node, this::mergedBaseNodeWithCode);

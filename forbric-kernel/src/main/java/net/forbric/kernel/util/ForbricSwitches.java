@@ -73,6 +73,9 @@ public final class ForbricSwitches {
 					+ "what the carrier lets go and the mod's own wrap runs on it (-Dforbric.scopedClearRelay)"),
 			Map.entry("forbric.fabricElytraTickAnchor", "a mod's cancellable injector behind a guard the carrier added is moved ahead of that guard by structure, not by name "
 					+ "(-Dforbric.carrierGuardedPoints)"),
+			Map.entry("forbric.fabricSoundContracts", "fabric-api's sound stream redirect is no longer neutralised and replaced by a rewrite of NeoForge's "
+					+ "default: it moves onto the carrier's SoundInstance.getStream and runs that default with fabric-api's own handler wherever a "
+					+ "sound inherits it (-Dforbric.carrierDefaultChains)"),
 			Map.entry("forbric.fabricServerLanguage", "a mod's injector on a vanilla decision the carrier replaced is moved onto the carrier's decision by structure, not "
 					+ "by name (-Dforbric.carrierDecisions)"));
 

@@ -1,0 +1,21 @@
+package org.brook.mill;
+
+/** As merged: the carrier routes each vanilla call through a method of its own. */
+public class Wheel {
+	public final Stones stones = new Stones();
+	public final Field field = new Field();
+
+	public String turn(Grain grain, Sack sack) {
+		Grain held = grain;
+		return held.milledBy(this.stones, sack, sack.fine());
+	}
+
+	public void harvest(Ear ear, int day) {
+		ear.ripen(this.field, day);
+	}
+
+	public String sift(Chaff chaff) {
+		return chaff.blownBy(this.stones);
+	}
+
+}

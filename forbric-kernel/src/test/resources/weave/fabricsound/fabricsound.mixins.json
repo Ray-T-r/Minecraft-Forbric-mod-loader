@@ -1,1 +1,0 @@
-{"required": true, "package": "net.fabricmc.fabric.mixin.client.sound", "compatibilityLevel": "JAVA_21", "client": ["SoundEngineMixin"], "injectors": {"defaultRequire": 1}}

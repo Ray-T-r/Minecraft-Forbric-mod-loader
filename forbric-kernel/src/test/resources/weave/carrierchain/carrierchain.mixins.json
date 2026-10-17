@@ -1,0 +1,1 @@
+{"required": true, "package": "io.reed.husk.mixin", "compatibilityLevel": "JAVA_21", "mixins": ["WheelMixin"], "injectors": {"defaultRequire": 1}}

@@ -116,6 +116,7 @@ class WeaveCoverageCensusTest {
 			Map.entry("ReplacedDecisionValues", Switch.own("forbric.replacedDecisionValues")), // ReplacedDecisionValuesWeaveTest
 			Map.entry("CarrierDecisions", Switch.own("forbric.carrierDecisions")), // CarrierDecisionsWeaveTest
 			Map.entry("CarrierGuardedPoints", Switch.own("forbric.carrierGuardedPoints")), // CarrierGuardedPointsWeaveTest
+			Map.entry("CarrierDefaultChains", Switch.own("forbric.carrierDefaultChains")), // CarrierDefaultChainsWeaveTest
 			Map.entry("NativeSliceOccurrences", Switch.own("forbric.nativeSliceOccurrences")), // NativeSliceOccurrencesWeaveTest
 			Map.entry("MixinGuiItemCaptureAdapter", Switch.own("forbric.guiItemCaptureAnchor")),
 			Map.entry("KernelClientHookMixinAnchors", Switch.own("forbric.clientHookMixinAnchors")),
@@ -134,7 +135,6 @@ class WeaveCoverageCensusTest {
 			// FabricFreezeHookMixinAdapter stands down with FabricFreezePointInjector, whose hooks its test puts on the pre-Mixin chain.
 			Map.entry("FabricFreezeHookMixinAdapter", new Switch(List.of("forbric.fabricFreezePoint"), "net.forbric.kernel.transform.FabricFreezePointInjector")),
 			Map.entry("FabricCreativePagerMixinAdapter", Switch.own("forbric.fabricCreativeKeyboard")),
-			Map.entry("FabricSoundMixinAdapter", new Switch(List.of("forbric.fabricSoundContracts"), "net.forbric.kernel.transform.FabricSoundContractTransformer")),
 			Map.entry("FabricRegistryLoaderMixinAdapter", Switch.own("forbric.fabricRegistryLoader")),
 			Map.entry("FabricBlockStateCodecMixinAdapter", Switch.own("forbric.blockStateModelFormats")),
 			Map.entry("FabricClientMixinAnchors", Switch.own("forbric.fabricClientAnchors")),
