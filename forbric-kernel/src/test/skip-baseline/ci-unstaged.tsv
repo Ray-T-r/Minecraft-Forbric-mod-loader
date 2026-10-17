@@ -183,20 +183,6 @@ test	net.forbric.kernel.mixin.AdapterPointSpellingTest	break locals / no owner, 
 test	net.forbric.kernel.mixin.AdapterPointSpellingTest	break locals / owner-qualified selector	[fixture:third-party] run/client-popular/mods/architectury-fabric-21.1.10.jar absent
 test	net.forbric.kernel.mixin.AdapterPointSpellingTest	break locals / selector in two spellings	[fixture:third-party] run/client-popular/mods/architectury-fabric-21.1.10.jar absent
 test	net.forbric.kernel.mixin.AdapterPointSpellingTest	break locals / with whitespace	[fixture:third-party] run/client-popular/mods/architectury-fabric-21.1.10.jar absent
-test	net.forbric.kernel.mixin.AdapterPointSpellingTest	clear veto	[fixture:staged] the staged merged base: $ROOT/forbric-loader/run/merged-base/patched-mc-merged-26.2.jar
-test	net.forbric.kernel.mixin.AdapterPointSpellingTest	clear veto / a selector binding another method	[fixture:staged] the staged merged base: $ROOT/forbric-loader/run/merged-base/patched-mc-merged-26.2.jar
-test	net.forbric.kernel.mixin.AdapterPointSpellingTest	clear veto / another owner	[fixture:staged] the staged merged base: $ROOT/forbric-loader/run/merged-base/patched-mc-merged-26.2.jar
-test	net.forbric.kernel.mixin.AdapterPointSpellingTest	clear veto / dotted owner	[fixture:staged] the staged merged base: $ROOT/forbric-loader/run/merged-base/patched-mc-merged-26.2.jar
-test	net.forbric.kernel.mixin.AdapterPointSpellingTest	clear veto / dotted owner, no descriptor	[fixture:staged] the staged merged base: $ROOT/forbric-loader/run/merged-base/patched-mc-merged-26.2.jar
-test	net.forbric.kernel.mixin.AdapterPointSpellingTest	clear veto / dotted-owner selector	[fixture:staged] the staged merged base: $ROOT/forbric-loader/run/merged-base/patched-mc-merged-26.2.jar
-test	net.forbric.kernel.mixin.AdapterPointSpellingTest	clear veto / no descriptor	[fixture:staged] the staged merged base: $ROOT/forbric-loader/run/merged-base/patched-mc-merged-26.2.jar
-test	net.forbric.kernel.mixin.AdapterPointSpellingTest	clear veto / no descriptor, another overload there too	[fixture:staged] the staged merged base: $ROOT/forbric-loader/run/merged-base/patched-mc-merged-26.2.jar
-test	net.forbric.kernel.mixin.AdapterPointSpellingTest	clear veto / no owner	[fixture:staged] the staged merged base: $ROOT/forbric-loader/run/merged-base/patched-mc-merged-26.2.jar
-test	net.forbric.kernel.mixin.AdapterPointSpellingTest	clear veto / no owner, another owner's member there too	[fixture:staged] the staged merged base: $ROOT/forbric-loader/run/merged-base/patched-mc-merged-26.2.jar
-test	net.forbric.kernel.mixin.AdapterPointSpellingTest	clear veto / no owner, without the class it was compiled against	[fixture:staged] the staged merged base: $ROOT/forbric-loader/run/merged-base/patched-mc-merged-26.2.jar
-test	net.forbric.kernel.mixin.AdapterPointSpellingTest	clear veto / owner-qualified selector	[fixture:staged] the staged merged base: $ROOT/forbric-loader/run/merged-base/patched-mc-merged-26.2.jar
-test	net.forbric.kernel.mixin.AdapterPointSpellingTest	clear veto / selector in two spellings	[fixture:staged] the staged merged base: $ROOT/forbric-loader/run/merged-base/patched-mc-merged-26.2.jar
-test	net.forbric.kernel.mixin.AdapterPointSpellingTest	clear veto / with whitespace	[fixture:staged] the staged merged base: $ROOT/forbric-loader/run/merged-base/patched-mc-merged-26.2.jar
 test	net.forbric.kernel.mixin.AdapterPointSpellingTest	client hooks	[fixture:third-party] build/sweep80-mac/v020-rounds/r1/mods/fancymenu_neoforge_3.9.12_MC_26.2.jar absent
 test	net.forbric.kernel.mixin.AdapterPointSpellingTest	client hooks / a selector binding another method	[fixture:third-party] build/sweep80-mac/v020-rounds/r1/mods/fancymenu_neoforge_3.9.12_MC_26.2.jar absent
 test	net.forbric.kernel.mixin.AdapterPointSpellingTest	client hooks / another owner	[fixture:third-party] build/sweep80-mac/v020-rounds/r1/mods/fancymenu_neoforge_3.9.12_MC_26.2.jar absent
@@ -267,20 +253,62 @@ test	net.forbric.kernel.mixin.AdapterPointSpellingTest	fabric-api elytra / no ow
 test	net.forbric.kernel.mixin.AdapterPointSpellingTest	fabric-api elytra / owner-qualified selector	[fixture:staged] actual Fabric API fixture required
 test	net.forbric.kernel.mixin.AdapterPointSpellingTest	fabric-api elytra / selector in two spellings	[fixture:staged] actual Fabric API fixture required
 test	net.forbric.kernel.mixin.AdapterPointSpellingTest	fabric-api elytra / with whitespace	[fixture:staged] actual Fabric API fixture required
-test	net.forbric.kernel.mixin.AdapterPointSpellingTest	fabric-api sleep	[fixture:staged] actual Fabric API fixture required
-test	net.forbric.kernel.mixin.AdapterPointSpellingTest	fabric-api sleep / a selector binding another method	[fixture:staged] actual Fabric API fixture required
-test	net.forbric.kernel.mixin.AdapterPointSpellingTest	fabric-api sleep / another owner	[fixture:staged] actual Fabric API fixture required
-test	net.forbric.kernel.mixin.AdapterPointSpellingTest	fabric-api sleep / dotted owner	[fixture:staged] actual Fabric API fixture required
-test	net.forbric.kernel.mixin.AdapterPointSpellingTest	fabric-api sleep / dotted owner, no descriptor	[fixture:staged] actual Fabric API fixture required
-test	net.forbric.kernel.mixin.AdapterPointSpellingTest	fabric-api sleep / dotted-owner selector	[fixture:staged] actual Fabric API fixture required
-test	net.forbric.kernel.mixin.AdapterPointSpellingTest	fabric-api sleep / no descriptor	[fixture:staged] actual Fabric API fixture required
-test	net.forbric.kernel.mixin.AdapterPointSpellingTest	fabric-api sleep / no descriptor, another overload there too	[fixture:staged] actual Fabric API fixture required
-test	net.forbric.kernel.mixin.AdapterPointSpellingTest	fabric-api sleep / no owner	[fixture:staged] actual Fabric API fixture required
-test	net.forbric.kernel.mixin.AdapterPointSpellingTest	fabric-api sleep / no owner, another owner's member there too	[fixture:staged] actual Fabric API fixture required
-test	net.forbric.kernel.mixin.AdapterPointSpellingTest	fabric-api sleep / no owner, without the class it was compiled against	[fixture:staged] actual Fabric API fixture required
-test	net.forbric.kernel.mixin.AdapterPointSpellingTest	fabric-api sleep / owner-qualified selector	[fixture:staged] actual Fabric API fixture required
-test	net.forbric.kernel.mixin.AdapterPointSpellingTest	fabric-api sleep / selector in two spellings	[fixture:staged] actual Fabric API fixture required
-test	net.forbric.kernel.mixin.AdapterPointSpellingTest	fabric-api sleep / with whitespace	[fixture:staged] actual Fabric API fixture required
+test	net.forbric.kernel.mixin.AdapterPointSpellingTest	fabric-api enchant command	[fixture:staged] actual Fabric API fixture required
+test	net.forbric.kernel.mixin.AdapterPointSpellingTest	fabric-api enchant command / a selector binding another method	[fixture:staged] actual Fabric API fixture required
+test	net.forbric.kernel.mixin.AdapterPointSpellingTest	fabric-api enchant command / another owner	[fixture:staged] actual Fabric API fixture required
+test	net.forbric.kernel.mixin.AdapterPointSpellingTest	fabric-api enchant command / dotted owner	[fixture:staged] actual Fabric API fixture required
+test	net.forbric.kernel.mixin.AdapterPointSpellingTest	fabric-api enchant command / dotted owner, no descriptor	[fixture:staged] actual Fabric API fixture required
+test	net.forbric.kernel.mixin.AdapterPointSpellingTest	fabric-api enchant command / dotted-owner selector	[fixture:staged] actual Fabric API fixture required
+test	net.forbric.kernel.mixin.AdapterPointSpellingTest	fabric-api enchant command / no descriptor	[fixture:staged] actual Fabric API fixture required
+test	net.forbric.kernel.mixin.AdapterPointSpellingTest	fabric-api enchant command / no descriptor, another overload there too	[fixture:staged] actual Fabric API fixture required
+test	net.forbric.kernel.mixin.AdapterPointSpellingTest	fabric-api enchant command / no owner	[fixture:staged] actual Fabric API fixture required
+test	net.forbric.kernel.mixin.AdapterPointSpellingTest	fabric-api enchant command / no owner, another owner's member there too	[fixture:staged] actual Fabric API fixture required
+test	net.forbric.kernel.mixin.AdapterPointSpellingTest	fabric-api enchant command / no owner, without the class it was compiled against	[fixture:staged] actual Fabric API fixture required
+test	net.forbric.kernel.mixin.AdapterPointSpellingTest	fabric-api enchant command / owner-qualified selector	[fixture:staged] actual Fabric API fixture required
+test	net.forbric.kernel.mixin.AdapterPointSpellingTest	fabric-api enchant command / selector in two spellings	[fixture:staged] actual Fabric API fixture required
+test	net.forbric.kernel.mixin.AdapterPointSpellingTest	fabric-api enchant command / with whitespace	[fixture:staged] actual Fabric API fixture required
+test	net.forbric.kernel.mixin.AdapterPointSpellingTest	fabric-api mining	[fixture:staged] actual Fabric API fixture required
+test	net.forbric.kernel.mixin.AdapterPointSpellingTest	fabric-api mining / a selector binding another method	[fixture:staged] actual Fabric API fixture required
+test	net.forbric.kernel.mixin.AdapterPointSpellingTest	fabric-api mining / another owner	[fixture:staged] actual Fabric API fixture required
+test	net.forbric.kernel.mixin.AdapterPointSpellingTest	fabric-api mining / dotted owner	[fixture:staged] actual Fabric API fixture required
+test	net.forbric.kernel.mixin.AdapterPointSpellingTest	fabric-api mining / dotted owner, no descriptor	[fixture:staged] actual Fabric API fixture required
+test	net.forbric.kernel.mixin.AdapterPointSpellingTest	fabric-api mining / dotted-owner selector	[fixture:staged] actual Fabric API fixture required
+test	net.forbric.kernel.mixin.AdapterPointSpellingTest	fabric-api mining / no descriptor	[fixture:staged] actual Fabric API fixture required
+test	net.forbric.kernel.mixin.AdapterPointSpellingTest	fabric-api mining / no descriptor, another overload there too	[fixture:staged] actual Fabric API fixture required
+test	net.forbric.kernel.mixin.AdapterPointSpellingTest	fabric-api mining / no owner	[fixture:staged] actual Fabric API fixture required
+test	net.forbric.kernel.mixin.AdapterPointSpellingTest	fabric-api mining / no owner, another owner's member there too	[fixture:staged] actual Fabric API fixture required
+test	net.forbric.kernel.mixin.AdapterPointSpellingTest	fabric-api mining / no owner, without the class it was compiled against	[fixture:staged] actual Fabric API fixture required
+test	net.forbric.kernel.mixin.AdapterPointSpellingTest	fabric-api mining / owner-qualified selector	[fixture:staged] actual Fabric API fixture required
+test	net.forbric.kernel.mixin.AdapterPointSpellingTest	fabric-api mining / selector in two spellings	[fixture:staged] actual Fabric API fixture required
+test	net.forbric.kernel.mixin.AdapterPointSpellingTest	fabric-api mining / with whitespace	[fixture:staged] actual Fabric API fixture required
+test	net.forbric.kernel.mixin.AdapterPointSpellingTest	fabric-api sleeping direction	[fixture:staged] actual Fabric API fixture required
+test	net.forbric.kernel.mixin.AdapterPointSpellingTest	fabric-api sleeping direction / a selector binding another method	[fixture:staged] actual Fabric API fixture required
+test	net.forbric.kernel.mixin.AdapterPointSpellingTest	fabric-api sleeping direction / another owner	[fixture:staged] actual Fabric API fixture required
+test	net.forbric.kernel.mixin.AdapterPointSpellingTest	fabric-api sleeping direction / dotted owner	[fixture:staged] actual Fabric API fixture required
+test	net.forbric.kernel.mixin.AdapterPointSpellingTest	fabric-api sleeping direction / dotted owner, no descriptor	[fixture:staged] actual Fabric API fixture required
+test	net.forbric.kernel.mixin.AdapterPointSpellingTest	fabric-api sleeping direction / dotted-owner selector	[fixture:staged] actual Fabric API fixture required
+test	net.forbric.kernel.mixin.AdapterPointSpellingTest	fabric-api sleeping direction / no descriptor	[fixture:staged] actual Fabric API fixture required
+test	net.forbric.kernel.mixin.AdapterPointSpellingTest	fabric-api sleeping direction / no descriptor, another overload there too	[fixture:staged] actual Fabric API fixture required
+test	net.forbric.kernel.mixin.AdapterPointSpellingTest	fabric-api sleeping direction / no owner	[fixture:staged] actual Fabric API fixture required
+test	net.forbric.kernel.mixin.AdapterPointSpellingTest	fabric-api sleeping direction / no owner, another owner's member there too	[fixture:staged] actual Fabric API fixture required
+test	net.forbric.kernel.mixin.AdapterPointSpellingTest	fabric-api sleeping direction / no owner, without the class it was compiled against	[fixture:staged] actual Fabric API fixture required
+test	net.forbric.kernel.mixin.AdapterPointSpellingTest	fabric-api sleeping direction / owner-qualified selector	[fixture:staged] actual Fabric API fixture required
+test	net.forbric.kernel.mixin.AdapterPointSpellingTest	fabric-api sleeping direction / selector in two spellings	[fixture:staged] actual Fabric API fixture required
+test	net.forbric.kernel.mixin.AdapterPointSpellingTest	fabric-api sleeping direction / with whitespace	[fixture:staged] actual Fabric API fixture required
+test	net.forbric.kernel.mixin.AdapterPointSpellingTest	fabric-api sound stream	[fixture:staged] actual Fabric API fixture required
+test	net.forbric.kernel.mixin.AdapterPointSpellingTest	fabric-api sound stream / a selector binding another method	[fixture:staged] actual Fabric API fixture required
+test	net.forbric.kernel.mixin.AdapterPointSpellingTest	fabric-api sound stream / another owner	[fixture:staged] actual Fabric API fixture required
+test	net.forbric.kernel.mixin.AdapterPointSpellingTest	fabric-api sound stream / dotted owner	[fixture:staged] actual Fabric API fixture required
+test	net.forbric.kernel.mixin.AdapterPointSpellingTest	fabric-api sound stream / dotted owner, no descriptor	[fixture:staged] actual Fabric API fixture required
+test	net.forbric.kernel.mixin.AdapterPointSpellingTest	fabric-api sound stream / dotted-owner selector	[fixture:staged] actual Fabric API fixture required
+test	net.forbric.kernel.mixin.AdapterPointSpellingTest	fabric-api sound stream / no descriptor	[fixture:staged] actual Fabric API fixture required
+test	net.forbric.kernel.mixin.AdapterPointSpellingTest	fabric-api sound stream / no descriptor, another overload there too	[fixture:staged] actual Fabric API fixture required
+test	net.forbric.kernel.mixin.AdapterPointSpellingTest	fabric-api sound stream / no owner	[fixture:staged] actual Fabric API fixture required
+test	net.forbric.kernel.mixin.AdapterPointSpellingTest	fabric-api sound stream / no owner, another owner's member there too	[fixture:staged] actual Fabric API fixture required
+test	net.forbric.kernel.mixin.AdapterPointSpellingTest	fabric-api sound stream / no owner, without the class it was compiled against	[fixture:staged] actual Fabric API fixture required
+test	net.forbric.kernel.mixin.AdapterPointSpellingTest	fabric-api sound stream / owner-qualified selector	[fixture:staged] actual Fabric API fixture required
+test	net.forbric.kernel.mixin.AdapterPointSpellingTest	fabric-api sound stream / selector in two spellings	[fixture:staged] actual Fabric API fixture required
+test	net.forbric.kernel.mixin.AdapterPointSpellingTest	fabric-api sound stream / with whitespace	[fixture:staged] actual Fabric API fixture required
 test	net.forbric.kernel.mixin.AdapterPointSpellingTest	harvest ordinal	[fixture:third-party] popular-pack Origins fixture absent
 test	net.forbric.kernel.mixin.AdapterPointSpellingTest	harvest ordinal / a selector binding another method	[fixture:third-party] popular-pack Origins fixture absent
 test	net.forbric.kernel.mixin.AdapterPointSpellingTest	harvest ordinal / another owner	[fixture:third-party] popular-pack Origins fixture absent
@@ -469,12 +497,6 @@ test	net.forbric.kernel.mixin.AddedCallOccurrencesTest	createsCommandsHookCounts
 test	net.forbric.kernel.mixin.AddedCallOccurrencesTest	createsUseItemOnInjectorCountsVanillasMainHandCallOnly()	[fixture:staged] actual game required
 test	net.forbric.kernel.mixin.AddedCallOccurrencesTest	onVanillaOrSwitchedOffNothingIsNumbered()	[fixture:staged] actual game required
 test	net.forbric.kernel.mixin.AddedCallOccurrencesTest	puzzleslibsBreedingHookCountsVanillasStoreOnly()	[fixture:staged] game jar
-test	net.forbric.kernel.mixin.BalmEffectVetoTest	aBalmThatAsksAnythingElseIsNotReimplemented()	[fixture:staged] actual game required
-test	net.forbric.kernel.mixin.BalmEffectVetoTest	itsOwnSwitchAndTheAdaptersSwitchBothLeaveItAlone()	[fixture:staged] actual game required
-test	net.forbric.kernel.mixin.BalmEffectVetoTest	modifiedCollectionFlowAndCleanupAreNotGuessed()	[fixture:third-party] sweep pack absent
-test	net.forbric.kernel.mixin.BalmEffectVetoTest	onlyWhenNeoForgeAsksOncePerEffect()	[fixture:third-party] sweep pack absent
-test	net.forbric.kernel.mixin.BalmEffectVetoTest	renamedProviderAndPredicateStillRetainTheirOriginalQuestion()	[fixture:third-party] sweep pack absent
-test	net.forbric.kernel.mixin.BalmEffectVetoTest	theDeadClearWrapBecomesAWrapOfNeoForgesPerEffectQuestion()	[fixture:third-party] sweep pack absent
 test	net.forbric.kernel.mixin.BarrelRollCameraAdapterTest	actualModBindsOrdinaryMirroredAndBedCallsAndKeepsShareSlotValid()	[fixture:third-party] build/compat-inputs/c2me-barrel-20261001/do_a_barrel_roll-fabric-3.8.4+26.2.jar absent
 test	net.forbric.kernel.mixin.BarrelRollCameraAdapterTest	vanillaShapeOffSwitchAndUnexpectedCarrierShapeRemainUntouched()	[fixture:third-party] build/compat-inputs/c2me-barrel-20261001/do_a_barrel_roll-fabric-3.8.4+26.2.jar absent
 test	net.forbric.kernel.mixin.BlockBreakCallbackShapesTest	aShorterCaptureNoneOrLocalsByTypeAreServed()	[fixture:third-party] real fixture required: build/compat-inputs/carpet/mods/fabric-carpet-26.2+v260616.jar
@@ -508,12 +530,33 @@ test	net.forbric.kernel.mixin.CarpetMixinAdapterTest	handSwapRunsBeforeTheNative
 test	net.forbric.kernel.mixin.CarpetMixinAdapterTest	reshapedHostsRefuseTheWholeRetarget()	[fixture:third-party] real fixture required: build/compat-inputs/carpet/mods/fabric-carpet-26.2+v260616.jar
 test	net.forbric.kernel.mixin.CarpetMixinAdapterTest	reshapedNativeFluidLocalRefusesTheWholeRetarget()	[fixture:third-party] real fixture required: build/compat-inputs/carpet/mods/fabric-carpet-26.2+v260616.jar
 test	net.forbric.kernel.mixin.CarpetMixinAdapterTest	vanillaAndDisabledRepairLeaveAllReleasedHandlersUntouched()	[fixture:third-party] real fixture required: build/compat-inputs/carpet/mods/fabric-carpet-26.2+v260616.jar
+test	net.forbric.kernel.mixin.CarrierDecisionsStagedTest	onTheNativeBodyNothingMoves()	[fixture:staged] actual Fabric API fixture required
+test	net.forbric.kernel.mixin.CarrierDecisionsStagedTest	theEffectInjectorsGoToTheCarriersApplicabilityQuestionAndItsCopy()	[fixture:staged] actual Fabric API fixture required
+test	net.forbric.kernel.mixin.CarrierDecisionsStagedTest	theLanguageCopyTheCarrierNoLongerMakesBecomesAnInjectorHandedTheMap()	[fixture:staged] actual Fabric API fixture required
+test	net.forbric.kernel.mixin.CarrierDecisionsStagedTest	theMiningRedirectMovesOntoTheCarriersOppositeQuestionAndItsOwnCallIsTurnedBack()	[fixture:staged] actual Fabric API fixture required
+test	net.forbric.kernel.mixin.CarrierDecisionsStagedTest	theMoveKnowsNoNameOrBodyAndStandsDownForAGroupOrTheSwitch()	[fixture:staged] actual Fabric API fixture required
+test	net.forbric.kernel.mixin.CarrierDecisionsStagedTest	theMovedMiningPairDecidesWithTheCarrierAndFabricsOverride()	[fixture:staged] actual Fabric API fixture required
+test	net.forbric.kernel.mixin.CarrierDecisionsStagedTest	thePrimaryItemLambdaIsNotMovedBecauseTheCarrierFoldedTheBookCheckIntoItsQuestion()	[fixture:staged] actual Fabric API fixture required
+test	net.forbric.kernel.mixin.CarrierDecisionsStagedTest	threeEnchantingRedirectsMoveOntoTheCarriersItemQuestionWithTheNativeValues()	[fixture:staged] actual Fabric API fixture required
+test	net.forbric.kernel.mixin.CarrierDefaultChainsStagedTest	aConstantsModifierMovesOntoTheCallWhoseDefaultPushesIt()	[fixture:staged] the NeoForge carrier declares the default
+test	net.forbric.kernel.mixin.CarrierDefaultChainsStagedTest	aGroupOrTheSwitchLeavesTheRedirectAsCompiled()	[fixture:staged] actual Fabric API fixture required
+test	net.forbric.kernel.mixin.CarrierDefaultChainsStagedTest	theBedRedirectBoundToTwoMethodsIsNotMoved()	[fixture:staged] actual Fabric API fixture required
+test	net.forbric.kernel.mixin.CarrierDefaultChainsStagedTest	theMechanismKnowsNoNameTheSameRedirectRenamedAndChangedStillMoves()	[fixture:staged] actual Fabric API fixture required
+test	net.forbric.kernel.mixin.CarrierDefaultChainsStagedTest	theStreamRedirectMovesOntoTheSoundsOwnCallAndKeepsItsHandlerAsWritten()	[fixture:staged] actual Fabric API fixture required
+test	net.forbric.kernel.mixin.CarrierDefaultChainsStagedTest	whereTheMergedMethodStillMakesTheVanillaCallNothingMoves()	[fixture:staged] actual Fabric API fixture required
+test	net.forbric.kernel.mixin.CarrierGuardedPointsStagedTest	anObserverIsLeftWhereItBinds()	[fixture:staged] actual Fabric API fixture required
+test	net.forbric.kernel.mixin.CarrierGuardedPointsStagedTest	onTheNativeBodyAndSwitchedOffNothingMoves()	[fixture:staged] actual game required
+test	net.forbric.kernel.mixin.CarrierGuardedPointsStagedTest	theElytraVetoAndFlightTickGoAheadOfTheCarriersOwnBranches()	[fixture:staged] actual Fabric API fixture required
+test	net.forbric.kernel.mixin.CarrierGuardedPointsStagedTest	theMoveKnowsNoName()	[fixture:staged] actual Fabric API fixture required
 test	net.forbric.kernel.mixin.CarrierHelperCensusTest	theShippedTableIsExactlyWhatTheArtifactsSay()	[fixture:staged] $ROOT/forbric-loader/run/merged-base/patched-mc-merged-26.2.jar required
 test	net.forbric.kernel.mixin.CarrierRenameCensusTest	onlyNeoForgesRenamedTooltipBodyIsUncalled()	[fixture:staged] $ROOT/forbric-loader/run/merged-base/patched-mc-merged-26.2.jar required
 test	net.forbric.kernel.mixin.CarrierRenameCensusTest	theShippedTableIsExactlyWhatTheArtifactsSay()	[fixture:staged] $ROOT/forbric-loader/run/merged-base/patched-mc-merged-26.2.jar required
+test	net.forbric.kernel.mixin.CarrierReturnedCallsStagedTest	aGroupTheSwitchOrAHandlerHandingItsOperationAnotherValueLeavesTheWrapAsCompiled()	[fixture:staged] actual Fabric API fixture required
+test	net.forbric.kernel.mixin.CarrierReturnedCallsStagedTest	theMechanismKnowsNoNameTheSameWrapRenamedAndChangedStillMoves()	[fixture:staged] actual Fabric API fixture required
+test	net.forbric.kernel.mixin.CarrierReturnedCallsStagedTest	theSleepingDirectionWrapMovesToTheAnswerReachedWithASleepingPosition()	[fixture:staged] actual Fabric API fixture required
+test	net.forbric.kernel.mixin.CarrierReturnedCallsStagedTest	whereTheMergedMethodStillMakesTheCallNothingMoves()	[fixture:staged] actual game required
 test	net.forbric.kernel.mixin.CarrierStubCensusTest	theShippedTableIsExactlyWhatTheArtifactsSay()	[fixture:staged] merged base and vanilla jar required
 test	net.forbric.kernel.mixin.CarrierTwinCensusTest	theShippedTableIsExactlyWhatTheArtifactsSay()	[fixture:staged] merged base required
-test	net.forbric.kernel.mixin.ClearRestoreVetoExecutionTest	nativeAndGuestVetoesKeepTheirOrderAndOriginalArguments()	[fixture:third-party] Balm fixture absent
 test	net.forbric.kernel.mixin.ContinuitySpriteMixinAdapterTest	aChangedLocalMapLayoutIsRefused()	[fixture:third-party] actual Continuity fixture required
 test	net.forbric.kernel.mixin.ContinuitySpriteMixinAdapterTest	actualCallbacksMoveToTheLiveOverloadAndKeepTheOriginalLoaderMapArgument()	[fixture:third-party] actual Continuity fixture required
 test	net.forbric.kernel.mixin.ContinuitySpriteMixinAdapterTest	vanillaAndDisabledRepairKeepTheUpstreamMixin()	[fixture:mc-libraries] actual game required
@@ -532,15 +575,12 @@ test	net.forbric.kernel.mixin.EmptyRedirectWidenedCallTest	aBareNameRedirectCapt
 test	net.forbric.kernel.mixin.EmptyRedirectWidenedCallTest	aFullSelectorInAnotherClassSkipsTheWidenedCall()	[fixture:staged] actual game required
 test	net.forbric.kernel.mixin.EmptyRedirectWidenedCallTest	aHostThatStillMakesTheNamedCallIsLeftAlone()	[fixture:mc-libraries] actual game required
 test	net.forbric.kernel.mixin.EmptyRedirectWidenedCallTest	aRedirectWithABodyIsLeftAlone()	[fixture:staged] actual game required
-test	net.forbric.kernel.mixin.FabricBlockBreakMixinAdapterTest	aBooleanTheTableDeclaresBeforeItsSlotIsWrittenIsNoSecondBoolean()	[fixture:staged] actual game required
-test	net.forbric.kernel.mixin.FabricBlockBreakMixinAdapterTest	aSecondBooleanOrAnotherProducerLeavesTheOrdinalAlone()	[fixture:staged] actual game required
-test	net.forbric.kernel.mixin.FabricBlockBreakMixinAdapterTest	aStateThatIsNotTheOneReadFromTheLevelIsNotHandedOver()	[fixture:third-party] popular-pack architectury fixture absent
-test	net.forbric.kernel.mixin.FabricBlockBreakMixinAdapterTest	anotherModsHarvestHandlerUsesTheSameProvenProducer()	[fixture:third-party] popular-pack Origins fixture absent
-test	net.forbric.kernel.mixin.FabricBlockBreakMixinAdapterTest	apolisHarvestModifierMovesToTheOnlyBooleanNeoForgeHasAtMineBlock()	[fixture:third-party] popular-pack Origins fixture absent
-test	net.forbric.kernel.mixin.FabricBlockBreakMixinAdapterTest	architecturysBreakHandlerCapturesNeoForgesFrameAndStillGetsItsTwoValues()	[fixture:third-party] popular-pack architectury fixture absent
+test	net.forbric.kernel.mixin.FabricBlockBreakMixinAdapterTest	aBooleanTheTableDeclaresBeforeItsSlotIsWrittenDoesNotMoveThePin()	[fixture:staged] actual game required
+test	net.forbric.kernel.mixin.FabricBlockBreakMixinAdapterTest	apolisHarvestModifierIsPinnedToTheMergedLocalOfTheSameNameAndType()	[fixture:third-party] popular-pack Origins fixture absent
+test	net.forbric.kernel.mixin.FabricBlockBreakMixinAdapterTest	architecturysBreakCaptureIsReadWhereTheMergedBodyKeepsEachLocal()	[fixture:third-party] popular-pack architectury fixture absent
 test	net.forbric.kernel.mixin.FabricBlockBreakMixinAdapterTest	fabricApisAfterBreakFiresOnNeoForgesRemovalResultWithTheSameValues()	[fixture:staged] actual Fabric API fixture required
 test	net.forbric.kernel.mixin.FabricBlockBreakMixinAdapterTest	fabricApisAfterBreakIsLeftAloneWhereTheMergedBodyDoesNotProveIt()	[fixture:mc-libraries] actual game required
-test	net.forbric.kernel.mixin.FabricBlockBreakMixinAdapterTest	theSwitchAndOtherMixinsAreLeftAlone()	[fixture:staged] actual game required
+test	net.forbric.kernel.mixin.FabricBlockBreakMixinAdapterTest	theSwitchLeavesFabricApisMixinAlone()	[fixture:staged] actual game required
 test	net.forbric.kernel.mixin.FabricBlockBreakMixinAdapterTest	vanillasOwnBodyIsWhatBothWereWrittenFor()	[fixture:mc-libraries] actual game required
 test	net.forbric.kernel.mixin.FabricBlockStateCodecMixinAdapterTest	aHandlerThatDoesMoreThanReturnTheRegistryCodecIsLeftAlone()	[fixture:staged] actual Fabric API fixture required
 test	net.forbric.kernel.mixin.FabricBlockStateCodecMixinAdapterTest	bothRedirectsMakeTheCallTheyReplaceAndHandBothCodecsToTheKernel()	[fixture:staged] actual Fabric API fixture required
@@ -557,32 +597,17 @@ test	net.forbric.kernel.mixin.FabricClientMixinAnchorsTest	releasedLiquidBounceB
 test	net.forbric.kernel.mixin.FabricClientMixinAnchorsTest	releasedLiquidBounceDrawsItsMenuWithTheCanvasTheGatewayDraws()	[fixture:staged] actual game required
 test	net.forbric.kernel.mixin.FabricClientMixinAnchorsTest	screenExtractIsLeftAloneWhereFabricsOwnAnchorExistsOrItsHandlerDoesNotVerify()	[fixture:mc-libraries] actual game required
 test	net.forbric.kernel.mixin.FabricClientMixinAnchorsTest	sourceScreenEventsKeepTheirEntireBodyAroundTheActualTopDraw()	[fixture:staged] actual Fabric API fixture required
-test	net.forbric.kernel.mixin.FabricClientMixinAnchorsTest	theActualMiningHandlerHasOneNativeDecisionAndOneExplicitFabricFallback()	[fixture:staged] actual Fabric API fixture required
 test	net.forbric.kernel.mixin.FabricClientMixinAnchorsTest	unmatchedSignaturesMissingNativePointsAndAVanillaHostRemainUnchanged()	[fixture:staged] actual game required
 test	net.forbric.kernel.mixin.FabricCreativePagerMixinAdapterTest	keyboardKeepsItsExactBodyAndTheSecondPagerStateIsRemoved()	[fixture:third-party] build/compat-inputs/player-loading/api/fabric-creative-tab-api-v1-5.0.15+6468574f9e.jar absent
+test	net.forbric.kernel.mixin.FabricEnchantmentContractsTest	aModifiedTableHandlerOrAnAlternativeGroupKeepsItsOriginalContract()	[fixture:staged] actual game required
 test	net.forbric.kernel.mixin.FabricEnchantmentContractsTest	absentNativeApiDisabledAdapterAndUnknownDefaultBodyAreNotRewritten()	[fixture:staged] actual Fabric API fixture required
-test	net.forbric.kernel.mixin.FabricEnchantmentContractsTest	allFourActualFabricMixinsAttachToTheCorrespondingNativeDecision()	[fixture:staged] actual Fabric API fixture required
-test	net.forbric.kernel.mixin.FabricEnchantmentContractsTest	modifiedHandlerAndAlternativeGroupKeepTheirOriginalContract()	[fixture:staged] actual Fabric API fixture required
 test	net.forbric.kernel.mixin.FabricEnchantmentContractsTest	theActualDefaultFallsBackToBothNativeItemDecisions()	[fixture:staged] actual Fabric API fixture required
 test	net.forbric.kernel.mixin.FabricEnchantmentContractsTest	theRealMethodReferenceGetsOneTypedWrapperWithoutChangingCaptureOrder()	[fixture:staged] actual game required
-test	net.forbric.kernel.mixin.FabricEntityMixinAnchorsTest	aChangedSleepDirectionHandlerOrASecondBedQuestionIsNotGuessed()	[fixture:staged] actual Fabric API fixture required
+test	net.forbric.kernel.mixin.FabricEnchantmentContractsTest	theTablesPrimaryItemRouteAttachesToTheTransformersBridge()	[fixture:staged] actual Fabric API fixture required
 test	net.forbric.kernel.mixin.FabricEntityMixinAnchorsTest	actualBedBridgePreservesNativeCustomBedsAndFabricHandledOccupation()	[fixture:staged] actual Fabric API fixture required
-test	net.forbric.kernel.mixin.FabricEntityMixinAnchorsTest	actualEffectHandlersMoveToNativeValidationAndPreRemovalSnapshotStages()	[fixture:staged] actual Fabric API fixture required
-test	net.forbric.kernel.mixin.FabricEntityMixinAnchorsTest	clearAllVetoNeedsExactlyOneNativeQuestionAndTheKnownHandler()	[fixture:staged] actual game required
-test	net.forbric.kernel.mixin.FabricEntityMixinAnchorsTest	clearAllVetoWrapsNeoForgesPerEffectQuestion()	[fixture:staged] actual Fabric API fixture required
-test	net.forbric.kernel.mixin.FabricEntityMixinAnchorsTest	elytraFlightTickPrecedesNeoForgesEmptyGliderGuard()	[fixture:staged] actual Fabric API fixture required
-test	net.forbric.kernel.mixin.FabricEntityMixinAnchorsTest	elytraVetoAndCustomFlightAreBeforeBothNativeAttributeAndEquipmentPaths()	[fixture:staged] actual Fabric API fixture required
-test	net.forbric.kernel.mixin.FabricEntityMixinAnchorsTest	explicitAlternativeGroupAndChangedConstructorPhaseAreNotGuessed()	[fixture:staged] actual game required
-test	net.forbric.kernel.mixin.FabricEntityMixinAnchorsTest	movedGlidingGuardOrAmbiguousRemovalAllocationIsRefused()	[fixture:staged] actual game required
 test	net.forbric.kernel.mixin.FabricEntityMixinAnchorsTest	nativeVanillaBodiesAreUnchanged()	[fixture:mc-libraries] actual game required
-test	net.forbric.kernel.mixin.FabricEntityMixinAnchorsTest	nearbyMonsterDecisionFollowsTheActuallyInvokedNativeLambda()	[fixture:staged] actual Fabric API fixture required
-test	net.forbric.kernel.mixin.FabricEntityMixinAnchorsTest	nearbyMonsterLambdaIsTheHostsOneImmediatelyCalledSupplierWhereverItStands()	[fixture:staged] actual game required
 test	net.forbric.kernel.mixin.FabricEntityMixinAnchorsTest	sleepAndOccupationAlternativesKeepTheirGroupContract()	[fixture:staged] actual Fabric API fixture required
-test	net.forbric.kernel.mixin.FabricEntityMixinAnchorsTest	sleepingDirectionModifiesNeoForgesBedAnswer()	[fixture:staged] actual Fabric API fixture required
 test	net.forbric.kernel.mixin.FabricEntityMixinAnchorsTest	switchAndForeignMixinStayUntouched()	[fixture:staged] actual game required
-test	net.forbric.kernel.mixin.FabricEntityMixinAnchorsTest	theMovedTickAnchorDominatesTheSlotChoiceAndIsReachedWithoutIt()	[fixture:staged] actual game required
-test	net.forbric.kernel.mixin.FabricEntityMixinAnchorsTest	tickGuardShapesThatAreNotProvenAreNotGuessed()	[fixture:staged] actual Fabric API fixture required
-test	net.forbric.kernel.mixin.FabricEntityMixinAnchorsTest	tickSwitchLeavesOnlyTheGlidingDecisionMoved()	[fixture:staged] actual Fabric API fixture required
 test	net.forbric.kernel.mixin.FabricEntityMixinAnchorsTest	unknownOccupationHandlerBodyIsNotReimplemented()	[fixture:staged] actual Fabric API fixture required
 test	net.forbric.kernel.mixin.FabricFreezeHookMixinAdapterTest	releasedCreateFlyMovesOnInitializeToTheHeadHookAndAfterFreezeToTheTailHook()	[fixture:third-party] real fixture required: $ROOT/forbric-kernel/build/compat-inputs/create-fly/create-fly.jar
 test	net.forbric.kernel.mixin.FabricFreezeHookSpellingTest	aPointNamingAnotherOwnersFreezeStays()	[fixture:staged] the staged merged base: $ROOT/forbric-loader/run/merged-base/patched-mc-merged-26.2.jar
@@ -593,7 +618,6 @@ test	net.forbric.kernel.mixin.FabricFreezeHookSpellingTest	anObserverOfTheCallWr
 test	net.forbric.kernel.mixin.FabricFreezeHookSpellingTest	createFlyUnderOtherNamesMovesAsReleased()	[fixture:staged] the staged merged base: $ROOT/forbric-loader/run/merged-base/patched-mc-merged-26.2.jar
 test	net.forbric.kernel.mixin.FabricFreezeHookSpellingTest	createFlysObserversWithTheirSelectorsWrittenAnotherWayMoveToTheirHooks()	[fixture:staged] the staged merged base: $ROOT/forbric-loader/run/merged-base/patched-mc-merged-26.2.jar
 test	net.forbric.kernel.mixin.FabricFreezeHookSpellingTest	withoutTheNativeClassThePointIsReadWhereMixinInjects()	[fixture:staged] the staged merged base: $ROOT/forbric-loader/run/merged-base/patched-mc-merged-26.2.jar
-test	net.forbric.kernel.mixin.FabricMiningDecisionTest	nativeContinueNativeResetFabricOverrideAndDifferentItemsPreserveTheirDecisions()	[fixture:staged] actual Fabric API fixture required
 test	net.forbric.kernel.mixin.FabricRegistryInitializationMixinAdapterTest	bootstrapKeepsEveryNativeTrackerButDoesNotRedirectTheFreeze()	[fixture:third-party] build/compat-inputs/player-loading/api/fabric-registry-sync-v0-7.1.1+c7bd5b8e9e.jar absent
 test	net.forbric.kernel.mixin.FabricRegistryInitializationMixinAdapterTest	clientAndServerRetainPostFreezeWorkAndClientUnmap()	[fixture:third-party] build/compat-inputs/player-loading/api/fabric-registry-sync-v0-7.1.1+c7bd5b8e9e.jar absent
 test	net.forbric.kernel.mixin.FabricRegistryLoaderMixinAdapterTest	aVanillaLoaderKeepsTheOriginalHandlers()	[fixture:mc-libraries] actual game required
@@ -603,13 +627,6 @@ test	net.forbric.kernel.mixin.FabricSectionCompilerMixinAdapterTest	aMissingDraw
 test	net.forbric.kernel.mixin.FabricSectionCompilerMixinAdapterTest	changedShareContractIsNotPartiallyRebound()	[fixture:staged] actual Fabric API fixture required
 test	net.forbric.kernel.mixin.FabricSectionCompilerMixinAdapterTest	movesBothHalvesWithTheirCapturedLayerMapAndSharedRendererIntact()	[fixture:staged] actual Fabric API fixture required
 test	net.forbric.kernel.mixin.FabricSectionCompilerMixinAdapterTest	vanillaAndTheDisabledPassLeaveTheOriginalContractAlone()	[fixture:mc-libraries] $ROOT/no-minecraft/versions/26.2/26.2.jar absent
-test	net.forbric.kernel.mixin.FabricServerLanguageMixinAdapterTest	actualAdapterKeepsTheNativeMutableMapAndComponentCapture()	[fixture:staged] actual Fabric API fixture required
-test	net.forbric.kernel.mixin.FabricServerLanguageMixinAdapterTest	nativeVanillaAndDisabledAdapterRemainUnchanged()	[fixture:staged] actual Fabric API fixture required
-test	net.forbric.kernel.mixin.FabricServerLanguageMixinAdapterTest	unknownMergeBodyOrAlternativeGroupDoesNotReplaceItsReturnContract()	[fixture:staged] actual Fabric API fixture required
-test	net.forbric.kernel.mixin.FabricSoundContractsTest	actualNativeDefaultAndOriginalRedirectComposeOnce()	[fixture:staged] actual game required
-test	net.forbric.kernel.mixin.FabricSoundContractsTest	executeActualAdaptedDefaultAndRedirectPreservingNativeOverridePriority()	[fixture:staged] actual game required
-test	net.forbric.kernel.mixin.FabricSoundContractsTest	missingGraftMissingApiUnknownBodyAndDisabledContractKeepNativeBytes()	[fixture:staged] actual game required
-test	net.forbric.kernel.mixin.FabricSoundContractsTest	redirectCannotMoveWithoutTheDefaultDispatchOrWithChangedHandler()	[fixture:staged] actual game required
 test	net.forbric.kernel.mixin.FinalMixinApplicationsTest	theStockFabricApiUseOnWrapThatMissesTheMergedBaseDoesNotStopTheLaunch()	[fixture:staged] actual Fabric API fixture required
 test	net.forbric.kernel.mixin.FmlTransformerViewTest	aNeoForgeModThatWrapsTheWeaverIsTheOneThatWeaves()	[fixture:staged] staged runtime classes/carrier absent
 test	net.forbric.kernel.mixin.FmlTransformerViewTest	beforeMixinIsUpTheKernelsLoaderComesBack()	[fixture:staged] staged runtime classes/carrier absent
@@ -1433,21 +1450,6 @@ test	net.forbric.kernel.mixin.NativeTagTrackerSourceInjectorTest	theActualCollec
 test	net.forbric.kernel.mixin.NativeTagTrackerSourceInjectorTest	theActualConstructorExtractionKeepsOrderAndReusesEveryAllocatedTracker(Path)	[fixture:staged] source-tag physical fixtures: $ROOT/forbric-loader/run/merged-base/patched-mc-merged-26.2.jar
 test	net.forbric.kernel.mixin.NestHostFieldWritesTest	actualC2meVolatileAndSynchronizedGuardsAreNotSuppressed()	[fixture:staged] $ROOT/forbric-loader/run/merged-base/patched-mc-merged-26.2.jar absent
 test	net.forbric.kernel.mixin.OperationCallGraphTest	actualScreenReceiverAndArgumentsIdentifyTheTopInvocationAcrossTheInheritedGateway()	[fixture:mc-libraries] actual game required
-test	net.forbric.kernel.mixin.PerEffectClearVetoExecutionTest	aRemoveIfDecidesEachEffectOnItsOwn()	[fixture:staged] actual game required
-test	net.forbric.kernel.mixin.PerEffectClearVetoExecutionTest	aSnapshotLoopDecidesEachEffectOnItsOwn()	[fixture:staged] actual game required
-test	net.forbric.kernel.mixin.PerEffectClearVetoExecutionTest	aStreamWithAnExtraCaptureDecidesEachEffectOnItsOwn()	[fixture:staged] actual game required
-test	net.forbric.kernel.mixin.PerEffectClearVetoExecutionTest	kotlincsShapeDecidesEachEffectOnItsOwn()	[fixture:staged] actual game required
-test	net.forbric.kernel.mixin.PerEffectClearVetoTest	aCountAcrossEffectsIsLeftAlone()	[fixture:staged] actual game required
-test	net.forbric.kernel.mixin.PerEffectClearVetoTest	aLoopOverASnapshotIsReplayedPerEffect()	[fixture:staged] actual game required
-test	net.forbric.kernel.mixin.PerEffectClearVetoTest	aRemoveIfThatNeverCallsTheOriginalIsReplayedPerEffect()	[fixture:staged] actual game required
-test	net.forbric.kernel.mixin.PerEffectClearVetoTest	aStreamFilterCapturingMoreThanTheEntityIsReplayed()	[fixture:staged] actual game required
-test	net.forbric.kernel.mixin.PerEffectClearVetoTest	aWholeClearVetoIsLeftAlone()	[fixture:staged] actual game required
-test	net.forbric.kernel.mixin.PerEffectClearVetoTest	anAggregateDecisionIsLeftAlone()	[fixture:staged] actual game required
-test	net.forbric.kernel.mixin.PerEffectClearVetoTest	anUnknownCallOverTheDecidedEffectsIsLeftAlone()	[fixture:staged] actual game required
-test	net.forbric.kernel.mixin.PerEffectClearVetoTest	kotlincsShapeWithTwoCapturedHostMapsIsReplayedPerEffect()	[fixture:staged] actual game required
-test	net.forbric.kernel.mixin.PerEffectClearVetoTest	puttingBackSomethingElseIsLeftAlone()	[fixture:staged] actual game required
-test	net.forbric.kernel.mixin.PerEffectClearVetoTest	theSwitchLeavesAProvedVetoAlone()	[fixture:staged] actual game required
-test	net.forbric.kernel.mixin.PerEffectClearVetoTest	theWholeMapHandedToAnApiIsLeftAlone()	[fixture:staged] actual game required
 test	net.forbric.kernel.mixin.PluginAddedMixinEcosystemTest	createsPluginAddedModelMixinLandsOnNeoForgesParser()	[fixture:staged] game jar $ROOT/forbric-loader/run/merged-base/patched-mc-merged-26.2.jar
 test	net.forbric.kernel.mixin.PostMixinFixupsAliasTargetTest	everyShippedFabricRegistrySyncHasExactlyTheWarningsCheckRepaired()	[fixture:third-party] no fabric-registry-sync in the compatibility packs on this machine
 test	net.forbric.kernel.mixin.PrunerOffWholeMixinRefusalTest	theRealModelPairIsLeftOutWholeOnlyWhileThePrunerIsOff()	[fixture:staged] actual Fabric API fixture required
@@ -1487,24 +1489,6 @@ test	net.forbric.kernel.mixin.StubLocalsCaptureTest	anUnrelatedInjectorOnTheSame
 test	net.forbric.kernel.mixin.StubLocalsCaptureTest	capturesTheBodyCannotServeStayAsCompiled()	[fixture:staged] actual game required
 test	net.forbric.kernel.mixin.SupersededMixinsTest	theHopperProofMatchesWhatTheRealRepairWritesIntoTheRealClass()	[fixture:staged] actual game required
 test	net.forbric.kernel.mixin.SupersededMixinsTest	theProofMatchesWhatTheRealRepairWritesIntoTheRealClass()	[fixture:staged] staged NeoForge carrier absent
-test	net.forbric.kernel.mixin.TakenEffectClearVetoTest	aBreakOutOfTheLoopIsLeftAlone()	[fixture:staged] actual game required
-test	net.forbric.kernel.mixin.TakenEffectClearVetoTest	aCountKeptInAnArrayAcrossEffectsIsLeftAlone()	[fixture:staged] actual game required
-test	net.forbric.kernel.mixin.TakenEffectClearVetoTest	aLoopTestedAtItsBottomIsReplayed()	[fixture:staged] actual game required
-test	net.forbric.kernel.mixin.TakenEffectClearVetoTest	aReturnOutOfTheLoopIsLeftAlone()	[fixture:staged] actual game required
-test	net.forbric.kernel.mixin.TakenEffectClearVetoTest	anArrayMadeEachRoundIsReplayed()	[fixture:staged] actual game required
-test	net.forbric.kernel.mixin.TakenEffectClearVetoTest	anIteratorAdvancedInsideTheQuestionIsLeftAlone()	[fixture:staged] actual game required
-test	net.forbric.kernel.mixin.TakenEffectClearVetoTest	kotlinsFirstIsLeftAlone()	[fixture:staged] actual game required
-test	net.forbric.kernel.mixin.TakenEffectClearVetoTest	removingEachLetGoEffectThroughItsIteratorIsReplayed()	[fixture:staged] actual game required
-test	net.forbric.kernel.mixin.TakenEffectClearVetoTest	removingTheFirstEffectThroughItsIteratorIsLeftAlone()	[fixture:staged] actual game required
-test	net.forbric.kernel.mixin.TakenEffectClearVetoTest	theFirstEffectAsAnArrayIndexIsLeftAlone()	[fixture:staged] actual game required
-test	net.forbric.kernel.mixin.TakenEffectClearVetoTest	theFirstEffectComparedWithObjectsEqualsIsLeftAlone()	[fixture:staged] actual game required
-test	net.forbric.kernel.mixin.TakenEffectClearVetoTest	theFirstEffectDecidingTheWholeClearIsLeftAlone()	[fixture:staged] actual game required
-test	net.forbric.kernel.mixin.TakenEffectClearVetoTest	theFirstEffectFromAStreamsFindFirstIsLeftAlone()	[fixture:staged] actual game required
-test	net.forbric.kernel.mixin.TakenEffectClearVetoTest	theLastEffectTreatedApartIsLeftAlone()	[fixture:staged] actual game required
-test	net.forbric.kernel.mixin.TakenEffectClearVetoTest	thePreviousEffectKeptInAnArrayIsLeftAlone()	[fixture:staged] actual game required
-test	net.forbric.kernel.mixin.TakenEffectClearVetoTest	theSameLoopGoingOnIsReplayed()	[fixture:staged] actual game required
-test	net.forbric.kernel.mixin.TakenEffectClearVetoTest	theSameTestMadeForEachEffectIsReplayed()	[fixture:staged] actual game required
-test	net.forbric.kernel.mixin.TakenEffectClearVetoTest	twoEffectsTakenInOneRoundAreLeftAlone()	[fixture:staged] actual game required
 test	net.forbric.kernel.mixin.ThinnedCallOrdinalsSpellingTest	aSelectorBindingAnotherMethodOrTwoKeepsItsOrdinal()	[fixture:staged] actual game required
 test	net.forbric.kernel.mixin.ThinnedCallOrdinalsSpellingTest	aShortTargetThatAlsoCountsAnotherCallInTheMergedBodyKeepsItsOrdinal()	[fixture:staged] actual game required
 test	net.forbric.kernel.mixin.ThinnedCallOrdinalsSpellingTest	aTargetNamingAnotherOwnerKeepsItsOrdinal()	[fixture:staged] actual game required
@@ -2366,6 +2350,9 @@ test	net.forbric.kernel.transform.RegistryWrapperAccessInjectorTest	theStagedWra
 test	net.forbric.kernel.transform.RegistryWrapperAccessInjectorTest	theWrappersAreTheOnlyNonPublicRegistriesInEitherCarrier()	[fixture:staged] $ROOT/forbric-loader/run/merged-base/patched-mc-merged-26.2.jar absent
 test	net.forbric.kernel.transform.RepairDriftCensusStagedTest	aCandidateThatMovesOneAnchorIsNamedBeforeItIsAdopted()	[fixture:staged] staged merged base or carriers absent
 test	net.forbric.kernel.transform.RepairDriftCensusStagedTest	theBuildThisTreeIsCalibratedAgainstMovesNoAnchor()	[fixture:staged] staged merged base or carriers absent
+test	net.forbric.kernel.transform.ScopedClearRelayStagedTest	balmsClearAllVetoHasTheOneClearToWrap()	[fixture:third-party] sweep pack absent
+test	net.forbric.kernel.transform.ScopedClearRelayStagedTest	fabricApisClearAllVetoHasTheOneClearToWrap()	[fixture:staged] actual Fabric API fixture required
+test	net.forbric.kernel.transform.ScopedClearRelayStagedTest	theMergedBodyHasNoClearUntilTheRelayPutsOneBack()	[fixture:staged] actual game required
 test	net.forbric.kernel.transform.ServerCompatibilityTickInjectorTest	everyNormalReturnInTheActualServerHasOneCheckAndSecondPassDoesNothing()	[fixture:staged] actual game fixture required
 test	net.forbric.kernel.transform.ServerReloadListenerNamesInjectorTest	realServerEventNamesForeignListenersButKeepsTheNativeGuardAndGraph()	[fixture:staged] $ROOT/forbric-loader/run/neoforge-runtime/neoforge-runtime.jar absent (reading net/neoforged/neoforge/event/AddServerReloadListenersEvent.class)
 test	net.forbric.kernel.transform.SoundRegistryIdentityInjectorTest	stagedForgeConstructorReplacesAllValueIndexesAndRemainsVerifiable()	[fixture:staged] $ROOT/forbric-loader/run/forge-runtime/forge-runtime.jar absent (reading net/minecraftforge/registries/ForgeRegistry.class)
