@@ -80,7 +80,7 @@ class NativeCallInliningWeaveTest {
 
 	@Test void everyInjectorRunsTheGuestsCodeWhereItsLoaderRunsIt() throws Exception {
 		assertTrue(inlined.printedLine(INLINED), inlined.describe());
-		assertTrue(inlined.printed("[Forbric/Mixin] com.hollow.tint.mixin.StageMixin.tint$gate: Lorg/atelier/scene/Panel;paint"), inlined.describe());
+		assertTrue(inlined.printed("[Forbric/Mixin] com.hollow.tint.mixin.StageMixin.tint$gate: org.atelier.scene.Panel.paint is made in org.atelier.scene.Stage."), inlined.describe());
 		// The preflight read the target before the inline existed; every injector then attached, so its suspicion resolves.
 		assertEquals(List.of(), inlined.findings().stream().filter(f -> f.modId().equals(MOD) && !f.confidence().equals("RESOLVED")).toList(),
 				inlined.describe());
@@ -98,7 +98,7 @@ class NativeCallInliningWeaveTest {
 
 	@Test void switchedOffNoneOfTheGuestsInjectorsRuns() throws Exception {
 		assertTrue(off.printedLine(OFF), off.describe());
-		assertFalse(off.printed("[Forbric/Mixin] com.hollow.tint.mixin.StageMixin.tint$gate: Lorg/atelier/scene/Panel;paint"), off.describe());
+		assertFalse(off.printed("[Forbric/Mixin] com.hollow.tint.mixin.StageMixin.tint$gate: org.atelier.scene.Panel.paint is made in org.atelier.scene.Stage."), off.describe());
 		assertFalse(callsGuest(defined(off), "drop"), off.describe());
 	}
 

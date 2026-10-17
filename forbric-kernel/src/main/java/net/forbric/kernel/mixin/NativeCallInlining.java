@@ -197,22 +197,31 @@ public final class NativeCallInlining {
 							merged = null;  // read again: the plan just changed what the class's methods hold
 							ForbricLog.info("[Forbric/Mixin] %s.%s: %s is made in %s.%s again — the merged game makes it inside %s, now "
 									+ "inlined at its call there, so the injector binds where %s binds it", mixin.name.replace('/', '.'),
-									handler.name, outcome.plan().anchor(), target.replace('/', '.'), outcome.plan().method(),
-									chain(outcome.plan()), ecosystem);
+									handler.name, readable(outcome.plan().anchor()), target.replace('/', '.'),
+									outcome.plan().method().substring(0, outcome.plan().method().indexOf('(')), chain(outcome.plan()), ecosystem);
 						} else {
 							ForbricLog.warn("[Forbric/Mixin] %s.%s: %s stays inside %s — a class it needs changed is already defined",
 									mixin.name.replace('/', '.'), handler.name, outcome.plan().anchor(), chain(outcome.plan()));
 						}
 					} else if (outcome.declined() != null) {
+						MethodNode host = MixinTargetSelectors.one(handler, merged);
 						ForbricLog.info("[Forbric/Mixin] %s.%s: the merged %s.%s makes fewer calls of %s than %s does, and none is "
 								+ "put back: %s", mixin.name.replace('/', '.'), handler.name, target.replace('/', '.'),
-								MixinFit.asString(MixinFit.value(at, "target")), MixinFit.asString(MixinFit.value(at, "target")),
-								ecosystem, outcome.declined());
+								host == null ? "?" : host.name, readable(MixinFit.asString(MixinFit.value(at, "target"))), ecosystem,
+								outcome.declined());
 					}
 				}
 			}
 		}
 		return planned;
+	}
+
+	/** {@code Lowner;name(desc)} as {@code owner.name}; anything else as written. */
+	static String readable(String target) {
+		if (target == null) return "?";
+		int semicolon = target.indexOf(';'), paren = target.indexOf('(');
+		if (!target.startsWith("L") || semicolon < 0 || paren < semicolon) return target;
+		return target.substring(1, semicolon).replace('/', '.') + "." + target.substring(semicolon + 1, paren);
 	}
 
 	private static String chain(Plan plan) {
