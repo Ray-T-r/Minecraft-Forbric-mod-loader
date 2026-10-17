@@ -25,7 +25,8 @@ import net.forbric.kernel.mixin.MixinGuiItemCaptureAdapter;
  *
  * <p>Repaired, the submit capture runs once, after the body wrote its line, with the values the body computed, and not
  * for the empty lectern; the label capture runs at the tail for both calls. Switched off, the submit capture is woven at
- * the join and the renderer fails verification.
+ * the join and the renderer fails verification — from 0.10.0 on; at 0.9.2, Fabric Loader's level for a mod declaring no
+ * lower bound on it, Mixin's legacy walk finds no local to capture there and skips the handler instead.
  */
 class MixinTailCaptureWeaveTest {
 	private static final Path SOURCES = Path.of("src/test/resources/weave/tailcapture");
@@ -36,7 +37,7 @@ class MixinTailCaptureWeaveTest {
 
 	@TempDir static Path work;
 	private static Path fixture;
-	private static WeaveHarness.Result repaired, off;
+	private static WeaveHarness.Result repaired, off, offLegacy;
 
 	@BeforeAll static void weaveBothWays() throws Exception {
 		List<Path> sources;
@@ -46,7 +47,8 @@ class MixinTailCaptureWeaveTest {
 		assertEquals(4, sources.size(), "the fixture's sources changed; update this test with it: " + sources);
 		fixture = WeaveHarness.fixture(work, "tailcapture", sources, Map.of(CONFIG, SOURCES.resolve(CONFIG)), List.of("-g"));
 		repaired = run("repaired", Map.of());
-		off = run("off", Map.of(MixinGuiItemCaptureAdapter.PROPERTY, "off"));
+		off = run("off", Map.of(MixinGuiItemCaptureAdapter.PROPERTY, "off", WeaveHarnessMain.REQUIRES, "fabricloader=>=0.12"));
+		offLegacy = run("off-9002", Map.of(MixinGuiItemCaptureAdapter.PROPERTY, "off", WeaveHarnessMain.REQUIRES, ""));
 	}
 
 	@Test void theBodysLocalsAreCapturedAfterTheBodyAndTheLabelStaysAtTheTail() throws Exception {
@@ -58,8 +60,18 @@ class MixinTailCaptureWeaveTest {
 	@Test void switchedOffTheFoldedTailCannotServeTheCapture() throws Exception {
 		// Woven at the join: Mixin types the body's slots from their earlier stores and loads them on the path that never
 		// wrote them, so the renderer fails verification on first use.
+		assertTrue(off.printed("level=configs): {10000=1}"), off.describe());
 		assertTrue(off.printed(WeaveHarnessMain.THREW + "java.lang.VerifyError: Bad local variable type"), off.describe());
 		assertFalse(off.printed(WeaveHarnessMain.DONE), off.describe());
+	}
+
+	@Test void switchedOffAtZeroNineTwoTheSubmitCaptureIsSkipped() {
+		// The legacy walk reads the join's frame at the tail, which declares neither local: Mixin refuses the capture,
+		// and the CAPTURE_FAILHARD the kernel softened skips it. The label capture still runs at the tail.
+		assertTrue(offLegacy.printed("level=configs): {9002=1}"), offLegacy.describe());
+		assertTrue(offLegacy.printed("has incompatible changes"), offLegacy.describe());
+		assertTrue(offLegacy.printed(WeaveHarnessMain.DONE + " seen=[label tag:x, label tag:null] out=[book:atlas/2, tag:x]"),
+				offLegacy.describe());
 	}
 
 	private static List<WeaveHarness.Finding> losses(WeaveHarness.Result run) {

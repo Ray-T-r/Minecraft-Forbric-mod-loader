@@ -37,7 +37,9 @@ import net.forbric.kernel.util.Caught;
  * its result's {@code pop}, or a {@code goto} right after one): the point becomes {@code INVOKE} that call, {@code AFTER}
  * (with the ordinal that singles it out, counted over the merged body and marked so — {@link CurrentBodyOrdinals}),
  * still inside the locals' scope and still after everything the body did. A handler is moved only where it is the
- * mixin's one TAIL capture on that method. {@code -Dforbric.guiItemCaptureAnchor=off} leaves every TAIL as compiled.
+ * mixin's one TAIL capture on that method. Where that call falls straight into the tail's join, {@link MixinCaptureLanding}
+ * gives it a {@code NOP} to land on for a mixin below 0.10.0, so the capture holds under the 0.9.2 local walk too.
+ * {@code -Dforbric.guiItemCaptureAnchor=off} leaves every TAIL as compiled.
  */
 public final class MixinGuiItemCaptureAdapter {
     public static final String PROPERTY = "forbric.guiItemCaptureAnchor";
@@ -84,6 +86,12 @@ public final class MixinGuiItemCaptureAdapter {
             if (point.ordinal() >= 0) { at.values.add("ordinal"); at.values.add(point.ordinal()); }
             // The call and its ordinal are counted over the merged body: no later pass may read them as a native count.
             CurrentBodyOrdinals.mark(handler);
+            // Where the call falls straight into the tail's join, AFTER is a label, and Mixin's 0.9.2 walk steps from it
+            // onto the join's frame; the call gets a NOP to land on instead, in every class this mixin is applied to.
+            MixinCaptureLanding.moved(mixin, handler);
+            // Where it cannot have one (a BY-shifted point in the method), the moved capture fails at 0.9.2; it is then
+            // skipped with a WARN, as a soft capture is, not woven into a method that throws on every call.
+            if (MixinLocalsCapture.enabled()) softenFailException(MixinFit.injectorOf(handler));
             changed++;
         }
         return changed;
@@ -115,6 +123,25 @@ public final class MixinGuiItemCaptureAdapter {
         }
         int at = method.instructions.indexOf(tail);
         return frames[at] != null && carries(method, frames[at], at, first, captured);
+    }
+
+    /**
+     * A moved capture's {@code CAPTURE_FAILEXCEPTION} becomes {@code CAPTURE_FAILSOFT}. Mixin answers a failed
+     * FAILEXCEPTION capture with an error method that throws {@code InjectionError} each time the point is reached; the
+     * kernel moved this capture and cannot promise that it holds at every level, so where it does not, the one injection
+     * is skipped with Mixin's WARN, as {@link MixinLocalsCapture} does for {@code CAPTURE_FAILHARD}. Where it holds,
+     * nothing changes. Returns whether it changed.
+     */
+    static boolean softenFailException(AnnotationNode inject) {
+        if (inject == null || inject.values == null) return false;
+        for (int i = 0; i + 1 < inject.values.size(); i += 2) {
+            if ("locals".equals(inject.values.get(i)) && inject.values.get(i + 1) instanceof String[] locals && locals.length == 2
+                    && "CAPTURE_FAILEXCEPTION".equals(locals[1])) {
+                inject.values.set(i + 1, new String[] {locals[0], "CAPTURE_FAILSOFT"});
+                return true;
+            }
+        }
+        return false;
     }
 
     /** The one method of {@code target} a TAIL locals-capture handler binds, when its operands are that method's; else null. */

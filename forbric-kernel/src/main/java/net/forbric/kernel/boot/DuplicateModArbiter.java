@@ -215,16 +215,51 @@ public final class DuplicateModArbiter {
 			wholeInstancePlan = null;
 			decision = new Decision(Set.of(), Map.of(), List.copyOf(universalAliases));
 		} else {
-			NestedCandidateInventory inventory = NestedCandidateInventory.scan(claims,
+			NestedCandidateInventory scanned = NestedCandidateInventory.scan(claims,
 					rundir.resolve(".forbric-kernel").resolve("candidates"), envType,
 					net.forbric.kernel.fabric.NestedFabricRequirements.Platform.running(minecraftVersion));
-			List<Claim> all = inventory.claims();
+			List<Claim> all = scanned.claims();
 			Map<String, Ecosystem> overrides = new LinkedHashMap<>();
 			for (Claim claim : all) for (String id : claim.modIds()) { Ecosystem forced = overrideFor(id); if (forced != null) overrides.put(id, forced); }
-			List<JointCandidateSelector.Rule> contracts = CandidateContractScanner.scanPhysical(all, envType, inventory.symbolOwners());
-			var result = ReachableCandidateSelector.solve(inventory, contracts, preference(), nestedPreference(), overrides,
-					Math.max(1, Math.min(1_000_000, Integer.getInteger("forbric.arbitrationMaxNodes", 100_000))));
-			wholeInstancePlan = new NestedCandidatePlan(inventory, result);
+			int limit = Math.max(1, Math.min(1_000_000, Integer.getInteger("forbric.arbitrationMaxNodes", 100_000)));
+			// Fabric Loader's one mod per id, provides included, among what arbitration chose (FabricUniqueIds); deciding
+			// it before the selection let a build arbitration then dropped push its rival out. Each mod that loses a
+			// rivalry is excluded (with the other builds of its id that lose the same way to a jar in mods/), and
+			// arbitration runs again only where another build of something left out is there to take its place; what
+			// merely went with a loser is decided afresh each round. Bounded: each round excludes more.
+			NestedCandidateInventory inventory = scanned;
+			Set<Path> outForIds = new LinkedHashSet<>();
+			Map<Path, String> everLeftOut = new LinkedHashMap<>();
+			JointCandidateSelector.Result selection;
+			net.forbric.kernel.fabric.FabricUniqueIds.Outcome<Path> unique;
+			int rounds = 0;
+			for (int round = 1; ; round++) {
+				rounds = round;
+				List<JointCandidateSelector.Rule> contracts = CandidateContractScanner.scanPhysical(inventory.claims(), envType,
+						inventory.symbolOwners());
+				selection = ReachableCandidateSelector.solve(inventory, contracts, preference(), nestedPreference(), overrides, limit);
+				unique = inventory.oneModPerId(selection.selected(), outForIds);
+				unique.leftOut().forEach(everLeftOut::putIfAbsent);
+				Map<Path, String> outvoted = inventory.outvoted(unique, outForIds);
+				if (outvoted.isEmpty()) break;
+				outForIds.addAll(outvoted.keySet());
+				if (!scanned.anotherBuildOf(unique.leftOut().keySet(), outForIds, selection.selected())) break;
+				if (round == ONE_MOD_PER_ID_ROUNDS) {
+					ForbricLog.warn("[Forbric/JiJ] one mod per id still left mods out after %d arbitration rounds; using the last", round);
+					break;
+				}
+				inventory = scanned.withExcluded(outForIds);
+			}
+			var result = unique.leftOut().isEmpty() ? selection : withoutLeftOut(selection, unique.leftOut().keySet());
+			// Every round's verdicts, once, for what did not load in the end.
+			Map<Path, String> idOut = new LinkedHashMap<>();
+			everLeftOut.forEach((path, why) -> { if (!result.selected().contains(path)) idOut.put(path, why); });
+			if (!idOut.isEmpty() || !unique.keptBack().isEmpty()) {
+				ForbricLog.info("[Forbric/JiJ] one mod per id: decided in %d arbitration round(s)", rounds);
+			}
+			inventory.logOneModPerId(idOut, unique.keptBack());
+			wholeInstancePlan = new NestedCandidatePlan(inventory, result,
+					new net.forbric.kernel.fabric.NestedFabricRequirements.Resolution<>(idOut, unique.keptBack()));
 			reportSelection(all, result, overrides);
 			// A parent the scan stopped inside has nested jars nobody examined, and both discoveries read only
 			// this plan, so they will not load. That must stop or prompt, not pass as a quiet suspicion.
@@ -670,6 +705,23 @@ public final class DuplicateModArbiter {
 		JointCandidateSelector.Result result = JointCandidateSelector.solve(claims, rules, preference(), overrides, limit);
 		reportSelection(claims, result, overrides);
 		return decisionFromSelection(claims, universalAliases, pass, result);
+	}
+
+	/**
+	 * At most this many arbitration rounds with Fabric's one mod per id in between. One when nothing a round leaves out
+	 * has another build left to take its place (owo-sentinel beside the owo-lib jar in mods/: every sentinel build
+	 * loses the same way and goes at once); another for each round that does leave such a build, whether or not it then
+	 * loads. A winner nested rather than in mods/ takes one build of the loser's id per round.
+	 */
+	static final int ONE_MOD_PER_ID_ROUNDS = 8;
+
+	/** {@code selection} with {@code leftOut} taken out of what it selects; every verdict on its contracts is kept. */
+	private static JointCandidateSelector.Result withoutLeftOut(JointCandidateSelector.Result selection, Set<Path> leftOut) {
+		Set<Path> kept = new LinkedHashSet<>(selection.selected());
+		kept.removeAll(leftOut);
+		return new JointCandidateSelector.Result(selection.status(), Set.copyOf(kept), selection.unsatisfied(),
+				selection.uncertain(), selection.visited(), selection.unavoidable(), selection.refusedOverrides(),
+				selection.impossibleOverrides());
 	}
 
 	private static Decision decisionFromSelection(List<Claim> claims, List<Alias> universalAliases, String pass,

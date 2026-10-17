@@ -1,0 +1,1 @@
+{"required": true, "package": "fixture.twincapture.mod.mixin", "compatibilityLevel": "JAVA_21", "mixins": ["RendererCaptureMixin"], "injectors": {"defaultRequire": 0}}

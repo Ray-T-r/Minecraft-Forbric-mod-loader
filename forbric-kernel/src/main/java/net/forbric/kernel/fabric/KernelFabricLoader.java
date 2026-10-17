@@ -184,7 +184,10 @@ public final class KernelFabricLoader implements FabricLoader {
 	 * the kernel's cross-jar arbitration ({@code DuplicateModArbiter}), and Fabric Loader keeps the mod whose id it is:
 	 * owo-sentinel, nested in mods that need owo-lib, {@code provides} {@code owo}, registers before owo-lib (it depends on
 	 * nothing installed), and used to take the name, so owo-lib itself was dropped as a "duplicate" and its own aliases
-	 * ({@code owo-impl}) never existed. The sentinel's adapter then found owo missing and ended the process.
+	 * ({@code owo-impl}) never existed. The sentinel's adapter then found owo missing and ended the process. Next to
+	 * owo-lib the sentinel is no longer discovered at all ({@link FabricUniqueIds}: one mod per id, provides included);
+	 * this order still decides wherever both a real id and an alias for it register, as two jars in {@code mods/} or a
+	 * nested mod kept back because a mod needs it.
 	 */
 	public synchronized void register(KernelModContainer container) {
 		if (frozen) throw new IllegalStateException("mods registered after freeze");

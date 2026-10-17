@@ -11,6 +11,7 @@ import net.fabricmc.api.EnvType;
 import net.forbric.api.Ecosystem;
 import net.forbric.kernel.discovery.ForbricModDiscoverer;
 import net.forbric.kernel.fabric.FabricModMetadataParser;
+import net.forbric.kernel.fabric.FabricUniqueIds;
 import net.forbric.kernel.fabric.KernelModMetadata;
 import net.forbric.kernel.fabric.KernelVersion;
 import net.forbric.kernel.fabric.NestedFabricRequirements;
@@ -37,14 +38,22 @@ public final class NestedCandidateInventory {
 	private final List<DuplicateModArbiter.Alias> universalAliases;
 	private final Map<Path, String> leftOut;
 	private final Map<Path, NestedFabricRequirements.KeptBack> keptBack;
+	/** Reached by something other than a Fabric mod's {@code jars} (see Builder): never Fabric Loader's to judge. */
+	private final Set<Path> reachedOutsideFabric;
+	private final Map<Path, KernelModMetadata> fabricManifests;
+	private final EnvType side;
 
 	private NestedCandidateInventory(Map<Path, Node> nodes, List<Edge> edges, List<Issue> issues,
 			List<DuplicateModArbiter.Alias> aliases, Map<Path, String> leftOut,
-			Map<Path, NestedFabricRequirements.KeptBack> keptBack) {
+			Map<Path, NestedFabricRequirements.KeptBack> keptBack, Set<Path> reachedOutsideFabric,
+			Map<Path, KernelModMetadata> fabricManifests, EnvType side) {
 		this.nodes = Collections.unmodifiableMap(new LinkedHashMap<>(nodes));
 		this.edges = List.copyOf(edges); this.issues = List.copyOf(issues); this.universalAliases = List.copyOf(aliases);
 		this.leftOut = Collections.unmodifiableMap(new LinkedHashMap<>(leftOut));
 		this.keptBack = Collections.unmodifiableMap(new LinkedHashMap<>(keptBack));
+		this.reachedOutsideFabric = Set.copyOf(reachedOutsideFabric);
+		this.fabricManifests = new HashMap<>(fabricManifests);
+		this.side = side;
 	}
 
 	public Map<Path, Node> nodes() { return nodes; }
@@ -55,6 +64,185 @@ public final class NestedCandidateInventory {
 	/** Nested Fabric mods Fabric Loader would leave out but that stay, because a mod that loads needs them. */
 	public Map<Path, NestedFabricRequirements.KeptBack> keptBack() { return keptBack; }
 	List<DuplicateModArbiter.Alias> universalAliases() { return universalAliases; }
+
+	/** This inventory with {@code out} excluded as well, as if the scan had left them out: arbitration can no longer pick them. */
+	NestedCandidateInventory withExcluded(Set<Path> out) {
+		Map<Path, Node> marked = new LinkedHashMap<>(nodes);
+		for (Path path : out) {
+			Node node = marked.get(path);
+			if (node != null && !node.excluded()) marked.put(path, new Node(node.path(), node.digest(), node.claim(), node.root(), true));
+		}
+		return new NestedCandidateInventory(marked, edges, issues, universalAliases, leftOut, keptBack, reachedOutsideFabric,
+				fabricManifests, side);
+	}
+
+	/**
+	 * Fabric Loader's one mod per id, {@code provides} included, among {@code selected}, the jars cross-jar arbitration
+	 * chose ({@link FabricUniqueIds}): which nested Fabric mods it leaves out, with what then cannot load either, which
+	 * of them lost a rivalry themselves, and which would-be losers a mod keeps back. Logs nothing:
+	 * {@link #logOneModPerId} does, once arbitration is done with every round.
+	 */
+	FabricUniqueIds.Outcome<Path> oneModPerId(Set<Path> selected) {
+		return oneModPerId(selected, Set.of());
+	}
+
+	/** As above, with {@code outvoted}: the Fabric mods earlier rounds left out for losing a rivalry. */
+	FabricUniqueIds.Outcome<Path> oneModPerId(Set<Path> selected, Set<Path> outvoted) {
+		Map<Path, List<Path>> parentsOf = new HashMap<>();
+		for (Edge edge : edges) {
+			if (!selected.contains(edge.parent()) || !selected.contains(edge.child())) continue;
+			List<Path> parents = parentsOf.computeIfAbsent(edge.child(), ignored -> new ArrayList<>());
+			if (!parents.contains(edge.parent())) parents.add(edge.parent());
+		}
+		// Only Fabric mods can contest an id, and their candidates need no Forge-family manifest read.
+		List<NestedFabricRequirements.Candidate<Path>> fabric = new ArrayList<>();
+		for (Node node : nodes.values()) {
+			if (!selected.contains(node.path()) || node.claim() == null || node.claim().ecosystem() != Ecosystem.FABRIC) continue;
+			fabric.add(candidate(node, parentsOf.getOrDefault(node.path(), List.of()), judged(node), manifestOf(node.path()), null, null));
+		}
+		if (!FabricUniqueIds.contested(fabric) && outvoted.isEmpty()) return new FabricUniqueIds.Outcome<>(Map.of(), Map.of(), Map.of());
+		net.forbric.api.Side physical = physical(side);
+		ForbricModDiscoverer discoverer = new ForbricModDiscoverer();
+		List<NestedFabricRequirements.Candidate<Path>> loading = new ArrayList<>();
+		for (Node node : nodes.values()) {
+			if (!selected.contains(node.path())) continue;
+			boolean isFabric = node.claim() != null && node.claim().ecosystem() == Ecosystem.FABRIC;
+			loading.add(candidate(node, parentsOf.getOrDefault(node.path(), List.of()), judged(node),
+					isFabric ? manifestOf(node.path()) : null, discoverer, physical));
+		}
+		List<NestedFabricRequirements.Candidate<Path>> out = new ArrayList<>();
+		for (Path path : outvoted) {
+			Node node = nodes.get(path);
+			if (node != null && node.claim() != null && node.claim().ecosystem() == Ecosystem.FABRIC) {
+				out.add(candidate(node, List.of(), judged(node), manifestOf(path), null, null));
+			}
+		}
+		return FabricUniqueIds.resolve(loading, List.of(), out);
+	}
+
+	/**
+	 * The Fabric mods to exclude before arbitration runs again, with why: each that lost a rivalry itself (not what only
+	 * went with one), and, where a jar in {@code mods/} won, every other build of the loser's id that Fabric Loader would
+	 * reach and that answers to the same id, which loses the same way whichever build arbitration picks next. Builds
+	 * {@code excluded} already are not repeated.
+	 */
+	Map<Path, String> outvoted(FabricUniqueIds.Outcome<Path> outcome, Set<Path> excluded) {
+		Map<Path, String> out = new LinkedHashMap<>();
+		for (var entry : outcome.lost().entrySet()) {
+			Path loser = entry.getKey();
+			out.put(loser, outcome.leftOut().get(loser));
+			KernelModMetadata manifest = manifestOf(loser);
+			if (!entry.getValue().toRoot() || manifest == null) continue;
+			String lostId = entry.getValue().id();
+			for (Node other : nodes.values()) {
+				if (other.excluded() || other.path().equals(loser) || excluded.contains(other.path()) || !judged(other)
+						|| other.claim() == null || other.claim().ecosystem() != Ecosystem.FABRIC) continue;
+				KernelModMetadata build = manifestOf(other.path());
+				if (build == null || !manifest.getId().equals(build.getId())) continue;
+				if (build.getId().equals(lostId) || build.getProvides().contains(lostId)) out.putIfAbsent(other.path(), out.get(loser));
+			}
+		}
+		return out;
+	}
+
+	/**
+	 * Whether this round left out a jar (a loser, or what went with one) whose declared id another build could still
+	 * take: one that is neither selected, nor left out, nor {@code excluded}. Only then can another arbitration round
+	 * change what loads.
+	 */
+	boolean anotherBuildOf(Set<Path> leftOut, Set<Path> excluded, Set<Path> selected) {
+		Set<String> ids = new HashSet<>();
+		for (Path path : leftOut) {
+			Node node = nodes.get(path);
+			if (node != null && node.claim() != null) for (String id : node.claim().modIds()) ids.add(JointCandidateSelector.key(id));
+		}
+		for (Node node : nodes.values()) {
+			if (node.excluded() || excluded.contains(node.path()) || leftOut.contains(node.path()) || selected.contains(node.path())
+					|| node.claim() == null) continue;
+			for (String id : node.claim().modIds()) if (ids.contains(JointCandidateSelector.key(id))) return true;
+		}
+		return false;
+	}
+
+	/** One line for each jar one mod per id leaves out and each it keeps back, as the platform rule gives its own. */
+	void logOneModPerId(Map<Path, String> leftOut, Map<Path, NestedFabricRequirements.KeptBack> keptBack) {
+		Map<Path, List<Path>> parentsOf = new HashMap<>();
+		for (Edge edge : edges) parentsOf.computeIfAbsent(edge.child(), ignored -> new ArrayList<>()).add(edge.parent());
+		for (var entry : leftOut.entrySet()) {
+			KernelModMetadata manifest = manifestOf(entry.getKey());
+			Path parent = firstParent(entry.getKey(), parentsOf);
+			// A library or another ecosystem's jar that only a left-out mod bundles goes with it; it has no Fabric id.
+			if (manifest != null) NestedFabricRequirements.log(manifest, parent, entry.getValue());
+			else ForbricLog.info("[Forbric/JiJ] nested %s in %s left out: %s", entry.getKey().getFileName(), parent, entry.getValue());
+		}
+		for (var entry : keptBack.entrySet()) {
+			NestedFabricRequirements.logKeptBack(manifestOf(entry.getKey()), firstParent(entry.getKey(), parentsOf), entry.getValue());
+		}
+	}
+
+	/** Only what Fabric Loader alone would have reached is its to leave out. */
+	private boolean judged(Node node) {
+		return !node.root() && !reachedOutsideFabric.contains(node.path());
+	}
+
+	private static net.forbric.api.Side physical(EnvType side) {
+		return side == null ? null : side == EnvType.SERVER ? net.forbric.api.Side.DEDICATED_SERVER : net.forbric.api.Side.CLIENT;
+	}
+
+	/**
+	 * {@code node} as Fabric's rule weighs it: the ids it answers to (declared, and a Fabric mod's {@code provides} from
+	 * {@code fabric}, its manifest), whether the rule may leave it out, and its hard requirements; a Forge-family
+	 * node's only with a {@code discoverer} to read them.
+	 */
+	private static NestedFabricRequirements.Candidate<Path> candidate(Node node, List<Path> parents, boolean judged,
+			KernelModMetadata fabric, ForbricModDiscoverer discoverer, net.forbric.api.Side physical) {
+		Map<String, String> provides = new HashMap<>();
+		KernelModMetadata manifest = null;
+		List<NestedFabricRequirements.Requirement> requires = new ArrayList<>();
+		String id = node.path().getFileName().toString();
+		if (node.claim() != null) {
+			id = node.claim().modIds().isEmpty() ? id : node.claim().modIds().getFirst();
+			for (String claimed : node.claim().modIds()) provides.put(JointCandidateSelector.key(claimed), node.claim().versionOf(claimed));
+			if (node.claim().ecosystem() == Ecosystem.FABRIC) {
+				manifest = fabric;
+				if (manifest != null && manifest.getVersion() != null) {
+					for (String alias : manifest.getProvides()) provides.putIfAbsent(JointCandidateSelector.key(alias), manifest.getVersion().getFriendlyString());
+				}
+				requires.addAll(NestedFabricRequirements.requirementsOf(manifest));
+			} else if (discoverer != null) {
+				try {
+					for (var mod : discoverer.discoverJar(node.path())) {
+						if (mod.getEcosystem() == node.claim().ecosystem()) requires.addAll(NestedFabricRequirements.requirementsOf(mod, physical));
+					}
+				} catch (Exception unreadable) {
+					// its claim was read; an unreadable manifest brings no requirement
+					Caught.warn(unreadable, "[Forbric/JiJ] could not re-read the manifest of %s; it brings no requirement", node.path());
+				}
+			}
+		}
+		return new NestedFabricRequirements.Candidate<>(node.path(), id, node.root(), judged, provides, parents, manifest, requires);
+	}
+
+	private KernelModMetadata manifestOf(Path jar) {
+		return fabricManifests.computeIfAbsent(jar, NestedCandidateInventory::readFabricManifest);
+	}
+
+	private static Path firstParent(Path child, Map<Path, List<Path>> parentsOf) {
+		return parentsOf.getOrDefault(child, List.of()).stream().findFirst().orElse(child).getFileName();
+	}
+
+	private static KernelModMetadata readFabricManifest(Path jar) {
+		try (ZipFile zip = new ZipFile(jar.toFile())) {
+			ZipEntry manifest = zip.getEntry("fabric.mod.json");
+			if (manifest == null) return null;
+			try (InputStream in = zip.getInputStream(manifest)) {
+				return FabricModMetadataParser.read(in);
+			}
+		} catch (Exception unreadable) {
+			Caught.warn(unreadable, "[Forbric/JiJ] could not read the fabric.mod.json of %s; it is taken to have none", jar);
+			return null;
+		}
+	}
 	List<DuplicateModArbiter.Claim> claims() {
 		return nodes.values().stream().filter(n -> !n.excluded()).map(n -> n.claim() != null ? n.claim()
 				: new DuplicateModArbiter.Claim(n.path(), null, List.of())).toList();
@@ -248,7 +436,8 @@ public final class NestedCandidateInventory {
 				}
 			}
 			Map<Path, NestedFabricRequirements.KeptBack> keptBack = resolveLeftOut();
-			return new NestedCandidateInventory(nodes, edges, issues, aliases, leftOut, keptBack);
+			return new NestedCandidateInventory(nodes, edges, issues, aliases, leftOut, keptBack, reachedOutsideFabric,
+					fabricManifests, side);
 		}
 
 		/**
@@ -276,40 +465,16 @@ public final class NestedCandidateInventory {
 				List<Path> parents = parentsOf.computeIfAbsent(edge.child(), ignored -> new ArrayList<>());
 				if (!parents.contains(edge.parent())) parents.add(edge.parent());
 			}
-			net.forbric.api.Side physical = side == null ? null
-					: side == EnvType.SERVER ? net.forbric.api.Side.DEDICATED_SERVER : net.forbric.api.Side.CLIENT;
+			net.forbric.api.Side physical = physical(side);
 			List<NestedFabricRequirements.Candidate<Path>> candidates = new ArrayList<>();
 			for (Node node : nodes.values()) {
 				// Excluded for another reason (side, a superseded MixinExtras): never opened, never loaded.
 				if (node.excluded() && !leftOut.containsKey(node.path())) continue;
-				Map<String, String> provides = new HashMap<>();
-				KernelModMetadata manifest = null;
-				List<NestedFabricRequirements.Requirement> requires = new ArrayList<>();
-				String id = node.path().getFileName().toString();
-				if (node.claim() != null) {
-					id = node.claim().modIds().isEmpty() ? id : node.claim().modIds().getFirst();
-					for (String claimed : node.claim().modIds()) provides.put(JointCandidateSelector.key(claimed), node.claim().versionOf(claimed));
-					if (node.claim().ecosystem() == Ecosystem.FABRIC) {
-						manifest = fabricManifest(node.path());
-						if (manifest != null && manifest.getVersion() != null) {
-							for (String alias : manifest.getProvides()) provides.putIfAbsent(JointCandidateSelector.key(alias), manifest.getVersion().getFriendlyString());
-						}
-						requires.addAll(NestedFabricRequirements.requirementsOf(manifest));
-					} else {
-						try {
-							for (var mod : discoverer.discoverJar(node.path())) {
-								if (mod.getEcosystem() == node.claim().ecosystem()) requires.addAll(NestedFabricRequirements.requirementsOf(mod, physical));
-							}
-						} catch (Exception unreadable) {
-							// its claim was read; an unreadable manifest now brings no requirement
-							Caught.warn(unreadable, "[Forbric/JiJ] could not re-read the manifest of %s; it brings no requirement", node.path());
-						}
-					}
-				}
+				boolean isFabric = node.claim() != null && node.claim().ecosystem() == Ecosystem.FABRIC;
 				// Only what Fabric Loader alone would have reached is its to leave out.
 				boolean judged = !node.root() && !reachedOutsideFabric.contains(node.path());
-				candidates.add(new NestedFabricRequirements.Candidate<>(node.path(), id, node.root(), judged, provides,
-						parentsOf.getOrDefault(node.path(), List.of()), manifest, requires));
+				candidates.add(candidate(node, parentsOf.getOrDefault(node.path(), List.of()), judged,
+						isFabric ? fabricManifest(node.path()) : null, discoverer, physical));
 			}
 			var resolution = NestedFabricRequirements.resolve(candidates, leftOut, List.of());
 			// Only Fabric's rule is settled here: a jar it left out is excluded, one it kept back is not.
