@@ -151,6 +151,9 @@ public final class CarrierMethodReferences {
 		if (!enabled() || mixin == null || mixin.methods == null || code == null || natives == null) return 0;
 		Ecosystem ecosystem = MixinStubRebind.ecosystemOf(mixin.name);
 		if (ecosystem == null) return 0;
+		// The proof reads the same classes many times over (every level of a chain, every call it names): each is read once here.
+		Map<String, java.util.Optional<ClassNode>> read = new HashMap<>();
+		Function<String, ClassNode> classes = name -> read.computeIfAbsent(name, n -> java.util.Optional.ofNullable(code.apply(n))).orElse(null);
 		int moved = 0;
 		for (String target : MixinFit.mixinTargets(mixin)) {
 			ClassNode original = natives.apply(ecosystem, target), merged = null;
@@ -161,14 +164,15 @@ public final class CarrierMethodReferences {
 						|| MixinFit.value(redirect, "slice") != null || (handler.access & Opcodes.ACC_STATIC) == 0) continue;
 				List<AnnotationNode> points = MixinFit.atNodes(redirect);
 				if (points.size() != 1 || !"INVOKE".equals(MixinFit.asString(MixinFit.value(points.getFirst(), "value")))) continue;
-				if (merged == null) merged = code.apply(target);
+				if (merged == null) merged = classes.apply(target);
 				if (merged == null) break;
-				Move move = plan(mixin, handler, redirect, points.getFirst(), original, merged, code);
+				Move move = plan(mixin, handler, redirect, points.getFirst(), original, merged, classes);
 				if (move == null || !register.test(move.plan())) continue;
 				String name = handler.name;
-				apply(mixin, handler, redirect, points.getFirst(), move, code);
+				apply(mixin, handler, redirect, points.getFirst(), move, classes);
 				moved++;
 				merged = null;
+				read.remove(target);   // read again: the reference is materialized there now
 				ForbricLog.info("[Forbric/Mixin] %s.%s: %s is no longer called in %s.%s, a lambda the carrier replaced with a method reference to %s.%s,"
 						+ " whose inherited implementation folds in the lambda's captured %s — the redirect moves onto that call, made in %s,"
 						+ " and runs the native lambda with the mod's handler at the call", mixin.name.replace('/', '.'), name,
