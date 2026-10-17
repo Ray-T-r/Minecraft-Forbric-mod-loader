@@ -87,8 +87,7 @@ class MixinFitLivenessCensusStagedTest {
 	 * .shouldSpreadLiquid} (both carriers' {@code FluidInteractionRegistry.canInteract} replaced it), {@code AxeItem
 	 * .getStripped} ({@code getToolModifiedState}), {@code LivingEntity.trapdoorUsableAsLadder} ({@code CommonHooks
 	 * .isLivingOnLadder}), and the vanilla-shaped forwarders the merge kept beside NeoForge's overloads, which the merged
-	 * callers skip ({@code ItemModelGenerator.bakeSideFaces}, {@code EffectsInInventory.extractText},
-	 * {@code CropBlock.getGrowthSpeed(Block, …)}); plus {@code Block.tryDropExperience} and
+	 * callers skip ({@code ItemModelGenerator.bakeSideFaces}, {@code CropBlock.getGrowthSpeed(Block, …)}); plus {@code Block.tryDropExperience} and
 	 * {@code ScreenEffectRenderer.getViewBlockingState}, which the merged callers replaced outright. And NeoForge's
 	 * renamed tooltip body {@code ItemStack.addDetailsToTooltipComponents}, which nothing calls: R3 moves malilib's last
 	 * tooltip hook and trinkets' attribute-line hook there (carrier-renames.txt marks it UNCALLED), where they bind and
@@ -98,7 +97,10 @@ class MixinFitLivenessCensusStagedTest {
 	 * {@code @ModifyVariable(ordinal = 0)} on the dead {@code ServerExplosion.hurtEntities()}) has its local pinned against
 	 * vanilla's body there and moves onto NeoForge's overload, and fabric-renderer-api's chunk takeover on the dead
 	 * four-argument {@code SectionCompiler.compile} moves with its shared state onto the live overload once its redirect is
-	 * counted against vanilla's compile; neither is left where it never runs.
+	 * counted against vanilla's compile; neither is left where it never runs. So is PuzzlesLib's effect-tooltip hook on the
+	 * dead {@code EffectsInInventory.extractText}: its sliced {@code @ModifyVariable} pair has the flag it modifies pinned
+	 * by value inside the slice, judged against vanilla's body there, and moves with its {@code @Share} partner onto
+	 * NeoForge's overload ({@code -Dforbric.mixinStubRebind.slice=off} puts it back on this list).
 	 */
 	private static final Set<String> EXPECTED = Set.of(
 			"apoli.mixins.json:legacy.hud_power.HudMixin FIT -> PARTIAL",
@@ -109,16 +111,16 @@ class MixinFitLivenessCensusStagedTest {
 			"fabric-rendering-v1.mixins.json:HudMixin PARTIAL -> PARTIAL",
 			"mixins.malilib.json:item.MixinItemStack FIT -> PARTIAL",
 			"puzzleslib.fabric.mixins.json:BlockFabricMixin FIT -> PARTIAL",
-			"puzzleslib.fabric.mixins.json:client.EffectsInInventoryFabricMixin PARTIAL -> PARTIAL",
 			"sodium-fabric.mixins.json:features.render.model.ItemModelGeneratorMixin FIT -> PARTIAL",
 			"trinkets.fabric.mixins.json:ItemStackMixin FIT -> PARTIAL");
 	/**
 	 * The same, counted per pack: one mixin changes in every pack that carries it. Architectury's and Forge Config API
 	 * Port's explosion hooks left the list (30 → 28): with their by-type {@code @Local} pinned beside the arguments the
 	 * carrier added, they move off the dead {@code hurtEntities()} onto NeoForge's overload, so liveness has nothing to add.
-	 * PuzzlesLib's left it the same way once the census bound the native references a boot binds (28 → 27).
+	 * PuzzlesLib's left it the same way once the census bound the native references a boot binds (28 → 27), and its
+	 * effect-tooltip hook, in the one pack that carries it, once a sliced pinned local moves too (27 → 26).
 	 */
-	private static final int EXPECTED_IN_PACKS = 27;
+	private static final int EXPECTED_IN_PACKS = 26;
 
 	/** The merged base's native references, bound for the census as ForbricMixinService.bind binds them before Mixin starts. */
 	private net.forbric.kernel.classloading.ForbricClassLoader references;
