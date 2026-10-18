@@ -1,1 +1,0 @@
-{"required": true, "package": "fixture.subtypeowner.mixin", "compatibilityLevel": "JAVA_21", "mixins": ["EntryLoaderMixin"], "injectors": {"defaultRequire": 1}}

@@ -1,1 +1,0 @@
-{"required": true, "package": "fixture.replacedcall.mixin", "compatibilityLevel": "JAVA_21", "mixins": ["StructureTemplateMixin"], "injectors": {"defaultRequire": 1}}

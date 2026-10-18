@@ -1,1 +1,0 @@
-{"required": true, "package": "fixture.fabricfreezehook.mixin", "compatibilityLevel": "JAVA_21", "mixins": ["BuiltInRegistriesMixin", "CreativeTabsMixin"], "injectors": {"defaultRequire": 1}}

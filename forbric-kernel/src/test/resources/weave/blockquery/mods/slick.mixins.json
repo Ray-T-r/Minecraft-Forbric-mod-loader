@@ -1,1 +1,0 @@
-{"required": true, "package": "org.example.slick.mixin", "compatibilityLevel": "JAVA_21", "mixins": ["SlideMixin"], "injectors": {"defaultRequire": 1}}

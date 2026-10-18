@@ -1,1 +1,0 @@
-{"required": true, "package": "org.example.builder.mixin", "compatibilityLevel": "JAVA_21", "mixins": ["BuilderMixin"], "injectors": {"defaultRequire": 1}}

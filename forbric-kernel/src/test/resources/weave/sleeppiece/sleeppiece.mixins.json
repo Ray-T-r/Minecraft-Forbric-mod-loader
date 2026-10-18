@@ -1,1 +1,0 @@
-{"required": true, "package": "fixture.sleeppiece.mixin", "compatibilityLevel": "JAVA_21", "mixins": ["ServerPlayerMixin"], "injectors": {"defaultRequire": 1}}

@@ -1,1 +1,0 @@
-{"required": true, "package": "com.example.tallypatch.mixin", "plugin": "com.example.tallypatch.TallyPlugin", "compatibilityLevel": "JAVA_21", "mixins": ["StageTallyMixin"], "injectors": {"defaultRequire": 1}}

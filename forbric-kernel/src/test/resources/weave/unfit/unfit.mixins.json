@@ -1,1 +1,0 @@
-{"required": true, "package": "fixture.unfit.mixin", "compatibilityLevel": "JAVA_21", "mixins": ["WidgetMixin", "StaleWidgetMixin"], "injectors": {"defaultRequire": 1}}

@@ -1,1 +1,0 @@
-{"required": true, "package": "org.example.magma.mixin", "compatibilityLevel": "JAVA_21", "mixins": ["MagmaReactionMixin"], "injectors": {"defaultRequire": 1}}

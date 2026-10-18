@@ -1,6 +1,0 @@
-{"policy":"continue","schemaVersion":1,"confirmedRequired":0,"findings":[],"catalogFailures":[],"mods":[
-{"modId":"chloride","version":"1.8.1","ecosystem":"NEOFORGE","jar":"chloride-NEOFORGE-mc26.2-v1.8.1.jar","bundledBy":"","status":"OK"},
-{"modId":"cwb","version":"4.1.0+26.2","ecosystem":"NEOFORGE","jar":"cwb-4.1.0+26.2.jar","bundledBy":"","status":"OK"},
-{"modId":"sodium","version":"0.9.2+mc26.2","ecosystem":"NEOFORGE","jar":"sodium-neoforge-0.9.2+mc26.2.jar","bundledBy":"","status":"OK"},
-{"modId":"mod07","version":"1.0","ecosystem":"FABRIC","jar":"mod-07-1.0.jar","bundledBy":"","status":"OK"}
-]}

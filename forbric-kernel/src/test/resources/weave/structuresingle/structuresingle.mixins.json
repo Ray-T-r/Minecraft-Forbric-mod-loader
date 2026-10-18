@@ -1,1 +1,0 @@
-{"required": true, "package": "org.example.ruins.mixin", "compatibilityLevel": "JAVA_21", "mixins": ["RuinsMixin"], "injectors": {"defaultRequire": 1}}

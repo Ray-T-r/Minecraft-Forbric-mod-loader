@@ -1,1 +1,0 @@
-{"required": true, "package": "carpet.mixins", "compatibilityLevel": "JAVA_21", "mixins": ["LiquidBlock_renewableBlackstoneMixin"], "injectors": {"defaultRequire": 1}}

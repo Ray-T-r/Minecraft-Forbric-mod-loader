@@ -1,1 +1,0 @@
-{"required": true, "package": "org.example.census.mixin", "compatibilityLevel": "JAVA_21", "mixins": ["HeadcountMixin"], "injectors": {"defaultRequire": 1}}

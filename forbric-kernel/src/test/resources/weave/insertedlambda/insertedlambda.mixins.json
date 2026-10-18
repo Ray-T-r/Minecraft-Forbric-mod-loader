@@ -1,1 +1,0 @@
-{"required": true, "package": "fi.dy.masa.litematica.mixin", "compatibilityLevel": "JAVA_21", "client": ["render.MixinLevelRenderer"], "injectors": {"defaultRequire": 1}}

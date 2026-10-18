@@ -1,1 +1,0 @@
-{"required": true, "package": "fixture.libraryplugin.mod.mixin", "compatibilityLevel": "JAVA_21", "plugin": "fixture.libraryplugin.mod.WidgetPlugin", "mixins": ["GearMixin"], "injectors": {"defaultRequire": 1}}

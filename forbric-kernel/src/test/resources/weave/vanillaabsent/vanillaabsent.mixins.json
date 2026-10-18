@@ -1,1 +1,0 @@
-{"required": true, "package": "fixture.vanillaabsent.mixin", "compatibilityLevel": "JAVA_21", "mixins": ["GadgetMixin"]}

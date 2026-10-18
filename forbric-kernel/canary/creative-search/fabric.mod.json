@@ -1,1 +1,0 @@
-{"schemaVersion":1,"id":"forbriccreativesearch","version":"1.0.0","name":"Creative search refreshed the vanilla way, for gate M54","environment":"client","mixins":["forbriccreativesearch.mixins.json"],"depends":{"fabricloader":"*"}}

@@ -1,1 +1,0 @@
-{"required": true, "package": "fixture.refusedbinding.mixin", "compatibilityLevel": "JAVA_21", "mixins": ["ClickServerMixin"], "injectors": {"defaultRequire": 1}}

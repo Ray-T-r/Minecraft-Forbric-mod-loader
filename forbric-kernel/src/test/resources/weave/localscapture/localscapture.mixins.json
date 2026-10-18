@@ -1,1 +1,0 @@
-{"required": true, "package": "fixture.localscapture.mixin", "compatibilityLevel": "JAVA_21", "mixins": ["BlockBreakerMixin"], "injectors": {"defaultRequire": 1}}

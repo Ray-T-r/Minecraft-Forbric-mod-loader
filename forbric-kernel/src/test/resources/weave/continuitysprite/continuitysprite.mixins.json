@@ -1,1 +1,0 @@
-{"required": true, "minVersion": "0.8", "package": "me.pepperbell.continuity.client.mixin", "compatibilityLevel": "JAVA_21", "client": ["SpriteSourceListMixin"], "injectors": {"defaultRequire": 1}}

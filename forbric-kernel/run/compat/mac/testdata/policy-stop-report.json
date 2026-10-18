@@ -1,6 +1,0 @@
-{"policy":"strict","schemaVersion":1,"confirmedRequired":2,"findings":[
-{"id":"mixin:zeta.mixins.json:ZetaMixin","modId":"zeta","feature":"mixin","source":"MixinAdapter","confidence":"CONFIRMED","required":true,"detail":"target method missing at 0x3f","evidence":[]},
-{"id":"initialization:alpha","modId":"alpha","feature":"init","source":"KernelLifecycle","confidence":"CONFIRMED","required":true,"detail":"constructor threw","evidence":[]},
-{"id":"mixin:alpha.mixins.json:Optional","modId":"alpha","feature":"mixin","source":"MixinAdapter","confidence":"CONFIRMED","required":false,"detail":"optional","evidence":[]},
-{"id":"metadata:beta","modId":"beta","feature":"metadata","source":"Discovery","confidence":"SUSPECTED","required":true,"detail":"suspected only","evidence":[]}
-],"catalogFailures":[],"mods":[]}

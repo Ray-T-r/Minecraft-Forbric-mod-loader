@@ -1,1 +1,0 @@
-{"required": true, "package": "forbric.outcome.mixin", "compatibilityLevel": "JAVA_21", "plugin": "forbric.outcome.OutcomePlugin", "mixins": ["RequiredMixin", "OptionalMixin", "WidenedArgumentMixin"], "injectors": {"defaultRequire": 1}}

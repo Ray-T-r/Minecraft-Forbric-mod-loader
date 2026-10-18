@@ -1,1 +1,0 @@
-{"required": true, "package": "fixture.anonretarget.mixin", "compatibilityLevel": "JAVA_21", "mixins": ["BoundedFloatFunctionMixin"], "injectors": {"defaultRequire": 1}}

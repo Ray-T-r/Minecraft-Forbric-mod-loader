@@ -1,1 +1,0 @@
-{"required": true, "package": "fixture.stubrebind.mixin", "compatibilityLevel": "JAVA_21", "mixins": ["RandomTeleportMixin"], "injectors": {"defaultRequire": 1}}

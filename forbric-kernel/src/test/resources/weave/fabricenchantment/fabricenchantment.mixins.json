@@ -1,1 +1,0 @@
-{"required": true, "package": "net.fabricmc.fabric.mixin.item", "compatibilityLevel": "JAVA_21", "mixins": ["AnvilMenuMixin", "EnchantCommandMixin"], "injectors": {"defaultRequire": 1}}

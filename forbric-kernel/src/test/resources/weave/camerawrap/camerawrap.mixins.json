@@ -1,1 +1,0 @@
-{"required": true, "package": "org.example.steadycam.mixin", "compatibilityLevel": "JAVA_21", "client": ["SteadyCameraMixin"], "injectors": {"defaultRequire": 1}}

@@ -1,1 +1,0 @@
-{"required": true, "package": "fixture.atshape.mixin", "compatibilityLevel": "JAVA_21", "mixins": ["SpawnerMixin"], "injectors": {"defaultRequire": 1}}

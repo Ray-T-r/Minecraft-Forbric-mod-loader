@@ -1,1 +1,0 @@
-{"required": true, "package": "fixture.overloadorder.mixin", "compatibilityLevel": "JAVA_21", "mixins": ["ClickServerMixin"], "injectors": {"defaultRequire": 1}}

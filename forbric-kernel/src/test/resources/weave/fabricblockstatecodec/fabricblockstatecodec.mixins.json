@@ -1,1 +1,0 @@
-{"required": true, "package": "net.fabricmc.fabric.mixin.client.model.loading", "compatibilityLevel": "JAVA_21", "client": ["BlockStateModelUnbakedMixin"], "injectors": {"defaultRequire": 1}}

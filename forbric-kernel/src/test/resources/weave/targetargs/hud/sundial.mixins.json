@@ -1,1 +1,0 @@
-{"required": true, "package": "org.example.sundial.mixin", "compatibilityLevel": "JAVA_21", "client": ["SundialMixin"], "injectors": {"defaultRequire": 1}}

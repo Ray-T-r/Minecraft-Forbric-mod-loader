@@ -1,1 +1,0 @@
-{"required": true, "package": "net.fabricmc.fabric.mixin.registry.sync", "compatibilityLevel": "JAVA_21", "mixins": ["BootstrapMixin", "MainMixin"], "injectors": {"defaultRequire": 1}}

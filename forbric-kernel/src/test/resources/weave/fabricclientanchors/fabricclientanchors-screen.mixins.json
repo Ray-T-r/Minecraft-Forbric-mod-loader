@@ -1,1 +1,0 @@
-{"required": true, "package": "net.fabricmc.fabric.mixin.screen", "compatibilityLevel": "JAVA_21", "client": ["GuiMixin"], "injectors": {"defaultRequire": 1}}

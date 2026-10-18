@@ -1,1 +1,0 @@
-{"required": true, "package": "com.zurrtum.create.client.mixin", "compatibilityLevel": "JAVA_21", "client": ["HudMixin"], "injectors": {"defaultRequire": 1}}

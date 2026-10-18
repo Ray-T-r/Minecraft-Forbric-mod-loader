@@ -1,1 +1,0 @@
-{"required": true, "package": "net.caffeinemc.mods.sodium.mixin", "compatibilityLevel": "JAVA_21", "client": ["core.model.BakedQuadMixin"], "injectors": {"defaultRequire": 1}}

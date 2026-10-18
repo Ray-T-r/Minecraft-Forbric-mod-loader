@@ -1,1 +1,0 @@
-{"required": true, "package": "org.example.frame.mixin", "compatibilityLevel": "JAVA_21", "client": ["FrameMixin"], "injectors": {"defaultRequire": 1}}

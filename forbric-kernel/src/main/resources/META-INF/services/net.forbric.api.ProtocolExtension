@@ -1,4 +1,0 @@
-net.forbric.kernel.interop.protocol.modmenu.ModMenuProtocolExtension
-net.forbric.kernel.interop.protocol.configapi.ConfigApiPortProtocolExtension
-
-net.forbric.kernel.interop.protocol.worlddata.WorldDataProtocolExtension

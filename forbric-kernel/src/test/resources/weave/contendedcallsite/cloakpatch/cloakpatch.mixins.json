@@ -1,1 +1,0 @@
-{"required": true, "package": "com.example.cloakpatch.mixin", "plugin": "com.example.cloakpatch.CloakPlugin", "compatibilityLevel": "JAVA_21", "mixins": ["StageAnchorMixin"], "injectors": {"defaultRequire": 1}}

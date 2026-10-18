@@ -1,9 +1,0 @@
-# Test sources that still skip by hand: a raw Assumptions/assume* call, an @Disabled/@Enabled*/@Disabled* condition,
-# or a hand-made TestAbortedException. Checked by net.forbric.kernel.NoRawAssumptionsTest, in both directions:
-# a file that skips by hand must be listed, and a listed file that no longer does must come off. So this list only
-# shrinks. Move a file off it by skipping through TestFixtures.require(Fixture, present, what) instead, which tags
-# the skip with its fixture and honours -Dforbric.requireFixtures.
-#
-# Paths are relative to forbric-kernel/, one per line, sorted. FixturePolicyExtensionTest stays for good: what the
-# extension does with a skip it did not make is the thing it tests.
-src/test/java/net/forbric/kernel/FixturePolicyExtensionTest.java

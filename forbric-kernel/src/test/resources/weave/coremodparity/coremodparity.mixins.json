@@ -1,1 +1,0 @@
-{"required": true, "package": "fixture.coremodparity.mixin", "compatibilityLevel": "JAVA_21", "mixins": ["FlowerPotBlockMixin"], "injectors": {"defaultRequire": 1}}

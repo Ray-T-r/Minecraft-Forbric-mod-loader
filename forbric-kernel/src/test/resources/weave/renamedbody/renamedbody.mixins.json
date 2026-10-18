@@ -1,1 +1,0 @@
-{"required": true, "package": "fixture.renamedbody.mixin", "compatibilityLevel": "JAVA_21", "mixins": ["EntityManagerMixin", "StyleMixin"], "injectors": {"defaultRequire": 1}}

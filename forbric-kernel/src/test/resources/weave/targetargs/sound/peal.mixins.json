@@ -1,1 +1,0 @@
-{"required": true, "package": "org.example.peal.mixin", "compatibilityLevel": "JAVA_21", "mixins": ["StepPealMixin"], "injectors": {"defaultRequire": 1}}

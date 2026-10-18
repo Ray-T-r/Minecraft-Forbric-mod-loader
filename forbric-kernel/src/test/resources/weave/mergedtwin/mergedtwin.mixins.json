@@ -1,1 +1,0 @@
-{"required": true, "package": "fixture.mergedtwin.mod.mixin", "compatibilityLevel": "JAVA_21", "mixins": ["PayloadsCodecMixin"], "injectors": {"defaultRequire": 1}}

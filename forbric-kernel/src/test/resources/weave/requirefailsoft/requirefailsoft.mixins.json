@@ -1,1 +1,0 @@
-{"required": true, "package": "fixture.requirefailsoft.mixin", "compatibilityLevel": "JAVA_21", "mixins": ["FurnaceMixin"], "injectors": {"defaultRequire": 1}}

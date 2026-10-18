@@ -1,1 +1,0 @@
-{"required": true, "package": "com.example.oldserver.mixin", "compatibilityLevel": "JAVA_21", "mixins": ["ItemUseMixin"], "injectors": {"defaultRequire": 1}}

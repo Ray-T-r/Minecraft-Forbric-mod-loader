@@ -1,1 +1,0 @@
-{"required": true, "package": "org.example.chime.mixin", "compatibilityLevel": "JAVA_21", "mixins": ["StepChimeMixin"], "injectors": {"defaultRequire": 1}}

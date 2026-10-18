@@ -1,1 +1,0 @@
-{"required": true, "package": "fixture.widenedredirect.mixin", "compatibilityLevel": "JAVA_21", "mixins": ["ConfigurationListenerMixin"], "injectors": {"defaultRequire": 1}}

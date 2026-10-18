@@ -1,1 +1,0 @@
-{"required": true, "package": "org.betterx.bclib.mixin.common.shears", "compatibilityLevel": "JAVA_21", "mixins": ["PumpkinBlockMixin"], "injectors": {"defaultRequire": 1}}

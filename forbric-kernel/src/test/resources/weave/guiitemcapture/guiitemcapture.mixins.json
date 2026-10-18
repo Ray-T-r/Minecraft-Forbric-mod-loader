@@ -1,1 +1,0 @@
-{"required": true, "package": "celia.adwadg.itemglintrelight.mixin.client", "compatibilityLevel": "JAVA_21", "client": ["GuiGraphicsItemOutlineMixin"], "injectors": {"defaultRequire": 1}}

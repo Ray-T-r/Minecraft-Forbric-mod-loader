@@ -1,1 +1,0 @@
-{"required": true, "package": "net.thud.mixin", "compatibilityLevel": "JAVA_21", "mixins": ["FallThudMixin"], "injectors": {"defaultRequire": 1}}

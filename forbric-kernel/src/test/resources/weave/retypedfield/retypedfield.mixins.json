@@ -1,1 +1,0 @@
-{"required": true, "package": "fixture.retypedfield.mixin", "compatibilityLevel": "JAVA_21", "mixins": ["RangedBowAttackGoalMixin"], "injectors": {"defaultRequire": 1}}

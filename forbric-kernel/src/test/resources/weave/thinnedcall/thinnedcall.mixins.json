@@ -1,1 +1,0 @@
-{"required": true, "package": "com.example.oldclient.mixin", "compatibilityLevel": "JAVA_21", "client": ["PlaceMixin"], "injectors": {"defaultRequire": 1}}

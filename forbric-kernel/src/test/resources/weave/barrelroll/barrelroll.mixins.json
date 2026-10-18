@@ -1,1 +1,0 @@
-{"required": true, "package": "nl.enjarai.doabarrelroll.mixin", "compatibilityLevel": "JAVA_21", "client": ["client.roll.CameraMixin"], "injectors": {"defaultRequire": 1}}

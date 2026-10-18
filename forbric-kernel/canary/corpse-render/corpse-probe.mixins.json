@@ -1,1 +1,0 @@
-{"required":true,"package":"forbric.corpseprobe","compatibilityLevel":"JAVA_21","client":["DummyProbe","RenderProbe"],"injectors":{"defaultRequire":1}}
