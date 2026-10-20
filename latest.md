@@ -1,15 +1,15 @@
-Latest nightly: [results/2026-10-19/summary.md](results/2026-10-19/summary.md)
+Latest nightly: [results/2026-10-21/summary.md](results/2026-10-21/summary.md)
 
-# Forbric nightly 2026-10-19: FAIL
+# Forbric nightly 2026-10-21: FAIL
 
 | | |
 | --- | --- |
 | commit | [`5accae8bdd24`](https://github.com/Ray-T-r/Minecraft-Forbric-mod-loader/commit/5accae8bdd24b06a2ad562f175a4a727fe8d0f11) Let the unstaged CI profile skip the new entry-shape decline test |
 | tested | `origin/main` on the developer's Mac (commit status `nightly/dev-mac`) |
-| started | 2026-10-19 02:30 +0800 |
+| started | 2026-10-21 02:30 +0800 |
 | soak (`gate-m34-soak.sh`) | skipped: it runs on Sundays |
 | integration | FAILED (exit 1) in 4 min |
-| gates | FAILED (exit 1) in 29 min: 35 GREEN, 22 RED, 1 SKIP |
+| gates | FAILED (exit 1) in 33 min: 34 GREEN, 23 RED, 1 SKIP |
 
 ## Integration: `python3 tools/dev.py integration`
 
@@ -85,6 +85,7 @@ Did not execute (no results): `transferTest`
 - `gate-m13-anticheat.sh` RED (exit=1)
 - `gate-m14-fabric-server.sh` RED (exit=1)
 - `gate-m17-installer.sh` RED (exit=1)
+- `gate-m19-nesteddupe.sh` RED (exit=1)
 - `gate-m22-exitswap.sh` RED (exit=1)
 - `gate-m23-elytra.sh` RED (exit=1)
 - `gate-m27-frame.sh` RED (exit=1)
@@ -121,7 +122,7 @@ RESULT gate-m15-forge-network.sh GREEN (exit=0)
 RESULT gate-m16-forge-handshake.sh GREEN (exit=0)
 RESULT gate-m17-installer.sh RED (exit=1)
 RESULT gate-m18-presence.sh GREEN (exit=0)
-RESULT gate-m19-nesteddupe.sh GREEN (exit=0)
+RESULT gate-m19-nesteddupe.sh RED (exit=1)
 RESULT gate-m20-depdialog.sh GREEN (exit=0)
 RESULT gate-m21-forgesetup.sh GREEN (exit=0)
 RESULT gate-m22-exitswap.sh RED (exit=1)
