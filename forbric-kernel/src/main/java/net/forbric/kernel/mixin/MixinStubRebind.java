@@ -108,7 +108,10 @@ import net.forbric.kernel.util.ForbricLog;
  *       and the bonus silently never applied. One discriminated by {@code ordinal} alone moves only with the slot it
  *       reads pinned as its {@code index}: the native method's ordinal-picked local and exactly one non-added local of
  *       the delegate holding the same values ({@link #ordinalLocalPinned}) — puzzleslib's explosion hook spares entities
- *       in vanilla's {@code hurtEntities()}, where on NeoForge's overload the same ordinal would pick the blocks.
+ *       in vanilla's {@code hurtEntities()}, where on NeoForge's overload the same ordinal would pick the blocks. An
+ *       {@code argsOnly} one at {@code HEAD}, by its ordinal among the arguments of its type, moves when the stub hands
+ *       that argument to the delegate unchanged as the one the same ordinal picks there ({@link #headArgumentMoved}):
+ *       architectury's tooltip position modifiers on vanilla's {@code tooltip}.
  *       {@code -Dforbric.mixinStubRebind.modifyVariable=off} leaves these where they are.</li>
  * </ul>
  * {@code -Dforbric.mixinStubRebind=off} leaves every selector as compiled.
@@ -323,7 +326,10 @@ public final class MixinStubRebind {
 			if (planned.getValue() == null) continue;
 			MethodNode handler = planned.getKey();
 			MethodNode outer = move(mixin, handler, target, ecosystem, planned.getValue());
-			if (outer != handler) mixin.methods.add(outer);
+			// The outer takes the handler's place: Mixin applies a class's injectors in declaration order, and at one point
+			// (two HEADs) that order is the order they run in. Appended, a moved HEAD callback ran after the argument
+			// modifiers declared below it, which natively read what it had just recorded.
+			if (outer != handler) mixin.methods.add(Math.max(0, mixin.methods.indexOf(handler)), outer);
 			moved++;
 		}
 		return moved;
@@ -570,7 +576,7 @@ public final class MixinStubRebind {
 		if (points.isEmpty()) return null;
 		int variableIndex = -1;
 		if (variable) {
-			if (!namedLocalMoved(injector, handler, stub, delegate)) {
+			if (!namedLocalMoved(injector, handler, stub, delegate) && !headArgumentMoved(injector, handler, stub, delegation)) {
 				variableIndex = ordinalLocalPinned(injector, handler, target, stub, delegation, ecosystem, level);
 				if (variableIndex < 0 && variableIndex != ORDINAL_KEPT) return null;
 			}
@@ -1168,6 +1174,35 @@ public final class MixinStubRebind {
 		for (AbstractInsnNode insn : method.instructions)
 			if (insn instanceof VarInsnNode access && access.getOpcode() == opcode && access.var == slot && cut.contains(method, insn)) n++;
 		return n;
+	}
+
+	/**
+	 * Whether a {@code @ModifyVariable} that changes one of the target's arguments where the method begins picks the same
+	 * argument on the delegate: {@code argsOnly}, one {@code @At("HEAD")} (no slice, shift or target), discriminated by its
+	 * {@code ordinal} among the arguments of the handler's type, or by being the only one — no {@code name} or
+	 * {@code index}, which read local tables and slots the carrier renumbered — and the stub argument that picks is handed
+	 * to the delegate unchanged, as the argument the same rule picks there ({@link #argumentSurvives}).
+	 *
+	 * <p>On the stub the modifier runs before the forwarding call and changes what the delegate receives, so a caller of the
+	 * stub sees it on the delegate as well; but a caller of the delegate itself — the merged game's own — never reaches it.
+	 * architectury's tooltip position event changes vanilla's {@code tooltip(Font, List, int, int, ClientTooltipPositioner,
+	 * Identifier)} x and y that way at its head, beside the HEAD callback that fires the event and fills the position the
+	 * modifiers read; that callback moved to the body, the modifiers stayed on the stub, and the deferred tooltip — drawn
+	 * through the body directly — never moved. Moved too, the three run in the one head in their native order.
+	 */
+	static boolean headArgumentMoved(AnnotationNode injector, MethodNode handler, MethodNode stub, Delegation delegation) {
+		if (!Boolean.TRUE.equals(MixinFit.value(injector, "argsOnly")) || MixinFit.value(injector, "index") != null
+				|| !MixinFit.stringList(MixinFit.value(injector, "name")).isEmpty() || MixinFit.value(injector, "slice") != null) return false;
+		Type[] params = Type.getArgumentTypes(handler.desc);
+		if (params.length == 0 || !params[0].equals(Type.getReturnType(handler.desc))) return false;
+		List<AnnotationNode> points = MixinFit.atNodes(injector);
+		if (points.size() != 1) return false;
+		AnnotationNode at = points.getFirst();
+		if (!"HEAD".equals(MixinFit.asString(MixinFit.value(at, "value"))) || MixinFit.value(at, "slice") != null
+				|| MixinFit.value(at, "shift") != null || MixinFit.value(at, "target") != null) return false;
+		Object ordinal = MixinFit.value(injector, "ordinal");
+		if (ordinal != null && !(ordinal instanceof Integer n && n >= 0)) return false;
+		return argumentSurvives(params[0], ordinal, stub, delegation);
 	}
 
 	/**
