@@ -166,7 +166,7 @@ public final class NativeSliceOccurrences {
 	}
 
 	/** The injector's one slice, unnamed; null when it has none, several, or one with an id. */
-	private static AnnotationNode slice(AnnotationNode injector) {
+	static AnnotationNode slice(AnnotationNode injector) {
 		Object value = MixinFit.value(injector, "slice");
 		AnnotationNode slice = value instanceof AnnotationNode single ? single
 				: value instanceof List<?> list && list.size() == 1 && list.getFirst() instanceof AnnotationNode only ? only : null;
