@@ -213,6 +213,21 @@ class ForbricMixinServiceTest {
 	}
 
 	/**
+	 * A config is a mixin config because a mod declared it, not because of how it is named: the boot's registration says
+	 * so whatever the file is called (a renamed Mod Menu's {@code modmenu_mixins.modmenu.json} was never read by the
+	 * guest-mixin adapter, so no pass knew which family wrote its mixins). An undeclared resource still needs the usual name.
+	 */
+	@Test
+	void aDeclaredConfigIsAMixinConfigWhateverItIsCalled() {
+		ForbricMixinService.setGuestConfigs(List.of("modmenu_mixins.modmenu.json"));
+		assertTrue(ForbricMixinService.isMixinConfigName("modmenu_mixins.modmenu.json"));
+		assertFalse(ForbricMixinService.isMixinConfigName("assets/modmenu/lang/en_us.json"));
+		assertTrue(ForbricMixinService.isMixinConfigName("other.mixins.json"), "a config registered later keeps the usual name");
+		ForbricMixinService.setGuestConfigs(List.of());
+		assertFalse(ForbricMixinService.isMixinConfigName("modmenu_mixins.modmenu.json"), "only while declared");
+	}
+
+	/**
 	 * A relaxed config's parent is relaxed too: Mixin reads it right after the child names it, and the child inherits
 	 * the options it leaves out — C2ME's module configs take their injectors' defaultRequire of 1 from
 	 * {@code c2me.mixins.json}, which no mod declares, and one injector that found nothing failed its whole target class.

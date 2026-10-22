@@ -842,7 +842,15 @@ public final class ForbricMixinService
 	}
 
 	/** Whether {@code name} looks like a mixin config file — the only resources the owned-target scan should read. */
-	private static boolean isMixinConfigName(String name) {
+	/**
+	 * Whether {@code name} is a mixin config: one the boot registered as such (what a mod declared, whatever it is called),
+	 * or a resource named the way configs usually are (a config registered later, by a mod at run time). By the name alone,
+	 * a mod whose config is called anything else — {@code modmenu_mixins.modmenu.json} — had none of its mixins read by
+	 * the guest-mixin adapter: no owner recorded, so every pass that asks which family wrote a mixin left that mod's alone.
+	 */
+	static boolean isMixinConfigName(String name) {
+		if (name == null) return false;
+		if (registeredConfigs.contains(name)) return true;
 		int slash = name.lastIndexOf('/');
 		String file = slash >= 0 ? name.substring(slash + 1) : name;
 		return file.endsWith(".mixins.json")
