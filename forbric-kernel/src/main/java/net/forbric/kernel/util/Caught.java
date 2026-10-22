@@ -98,6 +98,24 @@ public final class Caught {
 		}
 	}
 
+	/**
+	 * An invariant that does not hold: never an answer, whatever catch it lands in.
+	 *
+	 * <p>Throw it where a check finds the kernel contradicting itself — above all a registry that already holds a
+	 * different value under a key derived from the very thing being registered. Those checks sit inside repairs that
+	 * register from within the catch turning "not this shape" into "decline", so an ordinary
+	 * {@code IllegalStateException} was declined there as quietly as a shape that did not match. It is an
+	 * {@code IllegalStateException}, so every catch that handled one before handles this the same way; only
+	 * {@link #expected} treats it differently, and reports it as the failure it is.
+	 */
+	public static final class Invariant extends IllegalStateException {
+		private static final long serialVersionUID = 1L;
+
+		public Invariant(String message) {
+			super(message);
+		}
+	}
+
 	/** One catch site and what it has caught so far. */
 	public static final class Site {
 		private final String where;
@@ -178,6 +196,12 @@ public final class Caught {
 						+ "error (%s) — the kernel's own bug, reported as a failure", bug);
 				return;
 			}
+			Invariant broken = invariant(thrown);
+			if (broken != null) {
+				failure(Kind.WARN, thrown, "a catch that treats this exception as an answer caught a broken invariant "
+						+ "(%s) — reported as a failure", broken.getMessage());
+				return;
+			}
 			String where = where();
 			Site site = SITES.computeIfAbsent(key(where, Kind.EXPECTED), k -> new Site(where, Kind.EXPECTED, null, thrown));
 			long n = site.count.incrementAndGet();
@@ -246,6 +270,16 @@ public final class Caught {
 					|| t instanceof StackOverflowError) {
 				return t;
 			}
+			if (t.getCause() == t) break;
+		}
+		return null;
+	}
+
+	/** The {@link Invariant} in {@code thrown}'s cause chain, or null. */
+	static Invariant invariant(Throwable thrown) {
+		int depth = 0;
+		for (Throwable t = thrown; t != null && depth < 16; t = t.getCause(), depth++) {
+			if (t instanceof Invariant broken) return broken;
 			if (t.getCause() == t) break;
 		}
 		return null;

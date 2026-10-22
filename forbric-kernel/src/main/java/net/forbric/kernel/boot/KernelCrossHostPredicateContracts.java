@@ -26,9 +26,9 @@ public final class KernelCrossHostPredicateContracts {
     private static final Map<String,MethodContract>hosts=new ConcurrentHashMap<>();
     private static final Set<String>diagnostics=ConcurrentHashMap.newKeySet();
     private KernelCrossHostPredicateContracts(){}
-    public static void register(String key,Schema schema){Schema old=schemas.putIfAbsent(key,schema);if(old!=null&&!old.equals(schema))throw new IllegalStateException("ambiguous cross-host predicate schema");}
-    public static void source(String key,Source source){Source old=sources.putIfAbsent(key,source);if(old!=null&&!old.equals(source))throw new IllegalStateException("ambiguous final source predicate");}
-    public static void host(String key,MethodContract host){MethodContract old=hosts.putIfAbsent(key,host);if(old!=null&&!old.equals(host))throw new IllegalStateException("ambiguous final predicate host");}
+    public static void register(String key,Schema schema){Schema old=schemas.putIfAbsent(key,schema);if(old!=null&&!old.equals(schema))throw new Caught.Invariant("ambiguous cross-host predicate schema");}
+    public static void source(String key,Source source){Source old=sources.putIfAbsent(key,source);if(old!=null&&!old.equals(source))throw new Caught.Invariant("ambiguous final source predicate");}
+    public static void host(String key,MethodContract host){MethodContract old=hosts.putIfAbsent(key,host);if(old!=null&&!old.equals(host))throw new Caught.Invariant("ambiguous final predicate host");}
     public static Schema schema(String key){return schemas.get(key);}
     public static boolean validates(Object actor,Object world,Object interaction,String key,Class<?> caller,ToIntFunction<Object>owned){
         Schema schema=schemas.get(key);Source source=sources.get(key);MethodContract host=hosts.get(key);

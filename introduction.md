@@ -1180,8 +1180,11 @@ every `catch` in `src/main` and `src/runtime` either rethrows or reports to `Cau
   this shape", text a mod wrote that is not a valid value, an exception handed on as a value to code that reports
   it. Counted, logged only under `-Dforbric.debug`. When the cause chain of an "expected" exception holds an
   exception only a bug throws (`NullPointerException`, `ClassCastException`, an index out of bounds outside ASM's
-  analysis frames, …), it is reported as a failure instead: ASM's `Analyzer` wraps whatever its interpreter threw
-  in the very `AnalyzerException` a recogniser expects.
+  analysis frames, …) thrown by Forbric's own code, it is reported as a failure instead: ASM's `Analyzer` wraps
+  whatever its interpreter threw in the very `AnalyzerException` a recogniser expects. The same holds for
+  `Caught.Invariant`, which every registry throws when it already holds a different value under the key it is
+  given (`RegistryConflictsAreInvariantsTest` keeps it so): repairs register from inside their "not this shape"
+  catch, so an ordinary `IllegalStateException` was declined there silently.
 
 A recogniser that declines by throwing gives the decline an exception type of its own (a private class such as
 `Unproven`) and catches that one as `expected`, ahead of the `warn` for everything else: to a single catch, an

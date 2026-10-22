@@ -9,6 +9,7 @@ import net.forbric.api.CallbackSeams;
 import net.forbric.kernel.boot.DefinedMethodContracts;
 import net.forbric.kernel.boot.DefinedMethodContracts.MethodContract;
 import net.forbric.kernel.classloading.ForbricClassLoader;
+import net.forbric.kernel.util.Caught;
 
 /** Keeps an AFTER callback at the native operation, before the extracted helper's additional effects. */
 public final class MixinAbsorbedCallbackTransport implements Opcodes {
@@ -89,7 +90,7 @@ public final class MixinAbsorbedCallbackTransport implements Opcodes {
             if(!loader.registerBeforeDefinition(plan.helper(),()->{
                 synchronized(PLANS){Map<String,Installed> registry=PLANS.computeIfAbsent(loader,ignored->new LinkedHashMap<>());
                     if(registry.values().stream().anyMatch(p->p.plan.helper().equals(plan.helper())&&p.plan.helperMethod().equals(plan.helperMethod())&&!p.plan.helperHash().equals(plan.helperHash())))
-                        throw new IllegalStateException("Conflicting extracted callback source body");
+                        throw new Caught.Invariant("Conflicting extracted callback source body");
                     registry.putIfAbsent(key,installed);
                 }
                 CallbackSeams.register(loader,key,plan.host(),plan.helper(),installed::witnessed,installed::declined);
@@ -143,7 +144,7 @@ public final class MixinAbsorbedCallbackTransport implements Opcodes {
         if(plans.stream().allMatch(p->p.helper!=null&&p.helper.fingerprint().equals(hashes.get(p.plan.helperMethod()))))return bytes;
         Map<String,AbstractInsnNode> continuations=new HashMap<>();for(Installed plan:plans){MethodNode body=NativeCallChanges.method(owner,plan.plan.helperMethod());if(body!=null)for(AbstractInsnNode i:body.instructions)if(i instanceof MethodInsnNode call&&NativeCallChanges.member(call).equals(plan.plan.member()))continuations.putIfAbsent(plan.plan.helperMethod(),call.getNext());}
         for(Installed plan:plans){MethodNode body=NativeCallChanges.method(owner,plan.plan.helperMethod());
-            if(body==null||!Objects.equals(hashes.get(plan.plan.helperMethod()),plan.plan.helperHash()))throw new IllegalStateException("Extracted callback helper changed before weaving: "+binary);
+            if(body==null||!Objects.equals(hashes.get(plan.plan.helperMethod()),plan.plan.helperHash()))throw new Caught.Invariant("Extracted callback helper changed before weaving: "+binary);
             MethodInsnNode anchor=Arrays.stream(body.instructions.toArray()).filter(MethodInsnNode.class::isInstance).map(MethodInsnNode.class::cast).filter(c->NativeCallChanges.member(c).equals(plan.plan.member())).findFirst().orElseThrow();int token=body.maxLocals++;
             InsnList enter=new InsnList();enter.add(new LdcInsnNode(Type.getObjectType(owner.name)));enter.add(new LdcInsnNode(plan.key));enter.add(new MethodInsnNode(INVOKESTATIC,API,"beginHelper","(Ljava/lang/Class;Ljava/lang/String;)L"+API+"$Token;",false));enter.add(new VarInsnNode(ASTORE,token));body.instructions.insert(enter);
             InsnList fire=new InsnList();fire.add(new VarInsnNode(ALOAD,token));fire.add(new MethodInsnNode(INVOKEVIRTUAL,API+"$Token","fire","()V",false));body.instructions.insertBefore(continuations.get(plan.plan.helperMethod()),fire);

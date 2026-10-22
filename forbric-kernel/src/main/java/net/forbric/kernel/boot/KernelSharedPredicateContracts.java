@@ -25,7 +25,7 @@ public final class KernelSharedPredicateContracts {
  }
  private static final Map<String,Contract>CONTRACTS=new ConcurrentHashMap<>();
  private KernelSharedPredicateContracts(){ }
- public static String register(Contract contract){try{String key=HexFormat.of().formatHex(java.security.MessageDigest.getInstance("SHA-256").digest(contract.toString().getBytes(StandardCharsets.UTF_8)));Contract old=CONTRACTS.putIfAbsent(key,contract);if(old!=null&&!old.equals(contract))throw new IllegalStateException("Ambiguous shared predicate source");return key;}catch(java.security.NoSuchAlgorithmException impossible){throw new AssertionError(impossible);}}
+ public static String register(Contract contract){try{String key=HexFormat.of().formatHex(java.security.MessageDigest.getInstance("SHA-256").digest(contract.toString().getBytes(StandardCharsets.UTF_8)));Contract old=CONTRACTS.putIfAbsent(key,contract);if(old!=null&&!old.equals(contract))throw new Caught.Invariant("Ambiguous shared predicate source");return key;}catch(java.security.NoSuchAlgorithmException impossible){throw new AssertionError(impossible);}}
  public static Contract contract(String key){return CONTRACTS.get(key);}
  public static boolean roots(Object receiver,String key){Contract contract=CONTRACTS.get(key);if(contract==null||receiver==null)return false;try{
   for(Dispatch dispatch:contract.roots()){Guard guard=dispatch.guard();Object target=value(guard.receiver(),receiver);if(target==null)return decline(key,"root projection unavailable: "+guard.receiver());

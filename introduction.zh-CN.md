@@ -429,7 +429,7 @@ Fabric mod 的配置界面只在一个地方声明：一个实现 Mod Menu 的 `
 内核是容错设计：形状对不上的修复会放弃，另一侧缺失的桥会停用，一个 mod 的监听器抛异常不会连累其他 mod 的监听器。这些都是 `catch`，而 `src/main` 和 `src/runtime` 里的每个 `catch` 要么重新抛出，要么上报给 `Caught`，并且上报必须是 catch 体自己的一条语句（不能放在 `if` 下面）。`EveryCatchIsVisibleTest` 扫描源码，遇到任何其他写法就失败，没有白名单。
 
 - `Caught.warn/error(t, format, args)` —— 内核吞下并继续运行的失败。以对应级别记录，带 `[Forbric/Caught]` 前缀和 catch 所在位置（`Class.method:line`）：某个位置第一次出现时打完整堆栈，之后每次一行。同一位置的同一条消息打印 20 次（`-Dforbric.caught.printedPerSite`）后只计数；该位置没说过的新消息总会打印（每个位置最多 100 种），所以一个转发函数仍然会点名每一个失败的事件。反射的 `InvocationTargetException` 会先剥掉再打印。
-- `Caught.expected(t)` —— 这个异常本身就是答案：可选类的存在性探测、识别器的“不是这个形状”、mod 写的文本不是合法值、作为值交给负责上报的代码的异常。只计数，只在 `-Dforbric.debug` 下记录。如果一个“expected”异常的 cause 链里有只有 bug 才会抛的异常（`NullPointerException`、`ClassCastException`、ASM 分析帧之外的越界……），就改按失败上报：ASM 的 `Analyzer` 会把解释器抛出的任何异常包进识别器本来就预期的那个 `AnalyzerException` 里。
+- `Caught.expected(t)` —— 这个异常本身就是答案：可选类的存在性探测、识别器的“不是这个形状”、mod 写的文本不是合法值、作为值交给负责上报的代码的异常。只计数，只在 `-Dforbric.debug` 下记录。如果一个“expected”异常的 cause 链里有只有 bug 才会抛的异常（`NullPointerException`、`ClassCastException`、ASM 分析帧之外的越界……），且是 Forbric 自己的代码抛的，就改按失败上报：ASM 的 `Analyzer` 会把解释器抛出的任何异常包进识别器本来就预期的那个 `AnalyzerException` 里。`Caught.Invariant` 同理：注册表发现同一个 key 下已经有一份不同的值时，一律抛它（`RegistryConflictsAreInvariantsTest` 保证这一点）。修复是在自己那个“形状不符”的 catch 里注册的，普通的 `IllegalStateException` 在那里会被悄悄当成放弃。
 
 靠抛异常来放弃的识别器，要给“放弃”一个自己的异常类型（比如一个私有的 `Unproven` 类），先把它按 `expected` 接住，其余异常再走 `warn`：识别器故意抛的 `IllegalArgumentException` 和 bug 抛的，在同一个 catch 里分不出来。
 

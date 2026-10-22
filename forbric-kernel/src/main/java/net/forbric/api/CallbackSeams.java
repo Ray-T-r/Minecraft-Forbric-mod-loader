@@ -44,7 +44,7 @@ public final class CallbackSeams {
         synchronized (PROOFS) {
             expunge();Proof offered=new Proof(host.replace('/', '.'),helper.replace('/', '.'),Objects.requireNonNull(witness),declined);
             Proof before=PROOFS.computeIfAbsent(new LoaderKey(Objects.requireNonNull(loader)), ignored -> new HashMap<>()).putIfAbsent(key,offered);
-            if(before!=null&&(!before.host.equals(offered.host)||!before.helper.equals(offered.helper)))throw new IllegalStateException("Conflicting extracted callback source: "+key);
+            if(before!=null&&(!before.host.equals(offered.host)||!before.helper.equals(offered.helper)))throw new Caught.Invariant("Conflicting extracted callback source: "+key);
         }
     }
     private static void expunge(){for(Reference<? extends ClassLoader> key;(key=COLLECTED.poll())!=null;){PROOFS.remove(key);DECLINED.remove(key);}}
