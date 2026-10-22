@@ -1,0 +1,1 @@
+{"required": true, "package": "io.wren.soot.mixin", "compatibilityLevel": "JAVA_21", "mixins": ["FurnaceMixin"], "injectors": {"defaultRequire": 1}}

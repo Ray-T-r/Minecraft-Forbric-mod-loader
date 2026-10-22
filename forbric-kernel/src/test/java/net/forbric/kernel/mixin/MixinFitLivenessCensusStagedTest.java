@@ -102,12 +102,14 @@ class MixinFitLivenessCensusStagedTest {
 	 * counted against vanilla's compile; neither is left where it never runs. So is PuzzlesLib's effect-tooltip hook on the
 	 * dead {@code EffectsInInventory.extractText}: its sliced {@code @ModifyVariable} pair has the flag it modifies pinned
 	 * by value inside the slice, judged against vanilla's body there, and moves with its {@code @Share} partner onto
-	 * NeoForge's overload ({@code -Dforbric.mixinStubRebind.slice=off} puts it back on this list). Balm's health events
+	 * NeoForge's overload ({@code -Dforbric.mixinStubRebind.slice=off} puts it back on this list). Apoli's power bar at the
+	 * first {@code getPlayerMode()} of the dead {@code Hud.extractHotbarAndDecorations} moves with its occurrence onto the
+	 * verbatim piece NeoForge's hotbar layer runs ({@code extractHotbar}): FIT both ways, with the move. Balm's health events
 	 * at the start and end of {@code Hud.extractPlayerHealth}, whose four pieces NeoForge draws as layers, are judged where
 	 * MixinSplitBodyEdges moves them and are not on the list either ({@code -Dforbric.splitBodyEdges=off} puts them on it).
 	 */
 	private static final Set<String> EXPECTED = Set.of(
-			"apoli.mixins.json:legacy.hud_power.HudMixin FIT -> PARTIAL",
+			"apoli.mixins.json:legacy.hud_power.HudMixin FIT -> FIT",
 			"balm.fabric.mixins.json:FabricCropBlockMixin PARTIAL -> PARTIAL",
 			"bettermounthud.mixins.json:HudMixin FIT -> FIT",
 			"fabric-block-api-v1.mixins.json:LivingEntityMixin FIT -> PARTIAL",

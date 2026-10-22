@@ -30,13 +30,17 @@ final class MixinExecutionPathRetarget {
 		List<AnnotationNode> points = MixinFit.atNodes(injector);
 		if (points.isEmpty()) return List.of();
 		List<String> members = new ArrayList<>();
+		boolean numbered = false;
 		for (AnnotationNode at : points) {
 			String kind = MixinFit.asString(MixinFit.value(at, "value"));
 			String member = MixinFit.asString(MixinFit.value(at, "target"));
-			if (!"INVOKE".equals(kind) || member == null || MixinFit.value(at, "slice") != null
-					|| MixinFit.value(at, "ordinal") instanceof Number n && n.intValue() > 0) return List.of();
+			if (!"INVOKE".equals(kind) || member == null || MixinFit.value(at, "slice") != null) return List.of();
+			if (MixinFit.value(at, "ordinal") instanceof Number n && n.intValue() > 0) numbered = true;
 			members.add(member);
 		}
+		// A point numbered past the first names one occurrence of the native body: only an exact fragment of a retained uncalled
+		// body can say which occurrence of the live code that is, so the other rules, which count calls, leave it alone.
+		if (numbered) return liveFragment(mixin, handler, injector, selector, selected, members, target);
 		MethodNode original = reference == null ? null : MixinStubRebind.bound(reference, selector);
         if(original!=null&&MixinRetarget.AT_DRIVEN.contains(injector.desc)&&MixinRetarget.movableWhole(handler,injector,true,false)
                 &&!java.util.stream.IntStream.range(0,Type.getArgumentTypes(handler.desc).length).anyMatch(parameter->MixinFit.sugar(handler,parameter))) {
@@ -288,7 +292,13 @@ final class MixinExecutionPathRetarget {
 		return true;
 	}
 
-	/** The retained native-shaped body is the provenance; the destination must be an exact closed CFG fragment of it. */
+	/**
+	 * The retained native-shaped body is the provenance; the destination must be an exact closed CFG fragment of it. A point
+	 * moves with its occurrence: an unnumbered one only when every occurrence of its call lies in the fragment, a numbered
+	 * one when the occurrence it names does, renumbered to that occurrence's place among the fragment's (Apoli's power bar
+	 * at the first {@code getPlayerMode()} of {@code Hud.extractHotbarAndDecorations}, which NeoForge's hotbar layer opens
+	 * with, verbatim).
+	 */
 	private static List<MixinRetarget.Rewrite> liveFragment(ClassNode mixin, MethodNode handler, AnnotationNode injector,
 			String selector, MethodNode selected, List<String> members, ClassNode target) {
 		net.forbric.api.Ecosystem ecosystem = MixinStubRebind.ecosystemOf(mixin.name);
@@ -297,38 +307,83 @@ final class MixinExecutionPathRetarget {
 				|| !Type.VOID_TYPE.equals(Type.getReturnType(selected.desc))) return List.of();
 		Set<MethodNode> live = reachable(target, ecosystem);
 		List<MethodNode> candidates = new ArrayList<>();
+		Map<MethodNode, List<MixinRetarget.Rewrite>> renumbered = new IdentityHashMap<>();
 		for (MethodNode helper : target.methods) {
 			if (helper == selected || !live.contains(helper) || (helper.access & Opcodes.ACC_PRIVATE) == 0
 					|| !sameStatic(selected, helper) || !helper.desc.equals(selected.desc)) continue;
-			if (members.stream().anyMatch(m -> count(selected, m) != 1 || count(helper, m) != 1)) continue;
-			if (!MixinRetarget.handlerFits(handler, injector, target, selected, helper) || !fragment(target, selected, helper)) continue;
+			if (!MixinRetarget.handlerFits(handler, injector, target, selected, helper)) continue;
+			int start = fragmentStart(target, selected, helper);
+			if (start < 0) continue;
+			List<MixinRetarget.Rewrite> ordinals = occurrences(handler, injector, selected, helper, start);
+			if (ordinals == null) continue;
 			candidates.add(helper);
+			renumbered.put(helper, ordinals);
 		}
 		if (candidates.size() != 1) return List.of();
 		MethodNode helper = candidates.getFirst();
-		return List.of(new MixinRetarget.Rewrite(handler.name + handler.desc, MixinRetarget.Element.SELECTOR, selector,
+		List<MixinRetarget.Rewrite> result = new ArrayList<>();
+		result.add(new MixinRetarget.Rewrite(handler.name + handler.desc, MixinRetarget.Element.SELECTOR, selector,
 				helper.name + helper.desc, "an exact closed CFG fragment of the retained uncalled body is reached by the live direct/lambda graph"));
+		result.addAll(renumbered.get(helper));
+		return List.copyOf(result);
+	}
+
+	/**
+	 * For a fragment of {@code selected} starting at its real instruction {@code start}, the ordinal rewrites that keep every
+	 * point on its own occurrence; null when a point's occurrences do not all lie in the fragment (unnumbered) or the one it
+	 * names does not (numbered).
+	 */
+	private static List<MixinRetarget.Rewrite> occurrences(MethodNode handler, AnnotationNode injector, MethodNode selected,
+			MethodNode helper, int start) {
+		List<AbstractInsnNode> source = code(selected);
+		int end = start + code(helper).size() - 1;
+		List<MixinRetarget.Rewrite> out = new ArrayList<>();
+		for (AnnotationNode at : MixinFit.atNodes(injector)) {
+			String member = MixinFit.asString(MixinFit.value(at, "target"));
+			List<Integer> where = new ArrayList<>();
+			for (int i = 0; i < source.size(); i++) if (matches(source.get(i), member)) where.add(i);
+			if (where.isEmpty()) return null;
+			int inside = 0;
+			for (int position : where) if (position >= start && position < end) inside++;
+			if (inside != count(helper, member)) return null;
+			if (MixinFit.value(at, "ordinal") instanceof Number n && n.intValue() >= 0) {
+				int ordinal = n.intValue();
+				if (ordinal >= where.size() || where.get(ordinal) < start || where.get(ordinal) >= end) return null;
+				int moved = 0;
+				for (int k = 0; k < ordinal; k++) if (where.get(k) >= start) moved++;
+				if (moved != ordinal) out.add(new MixinRetarget.Rewrite(handler.name + handler.desc, MixinRetarget.Element.AT_ORDINAL,
+						member + "#" + ordinal, String.valueOf(moved), "the occurrence the point names is the fragment's " + (moved + 1) + ". of that call"));
+			} else if (inside != where.size()) {
+				return null;
+			}
+		}
+		return out;
 	}
 
 	static boolean fragment(ClassNode owner, MethodNode selected, MethodNode helper) {
+		return fragmentStart(owner, selected, helper) >= 0;
+	}
+
+	/** Where in {@code selected}'s real instructions the one exact closed fragment {@code helper} is starts; -1 when none, or two. */
+	static int fragmentStart(ClassNode owner, MethodNode selected, MethodNode helper) {
 		if (!selected.desc.equals(helper.desc) || !sameStatic(selected, helper)
 				|| !Type.VOID_TYPE.equals(Type.getReturnType(helper.desc))
-				|| !selected.tryCatchBlocks.isEmpty() || !helper.tryCatchBlocks.isEmpty()) return false;
+				|| !selected.tryCatchBlocks.isEmpty() || !helper.tryCatchBlocks.isEmpty()) return -1;
 		List<AbstractInsnNode> source = code(selected), destination = code(helper);
-		if (destination.size() < 2 || destination.getLast().getOpcode() != Opcodes.RETURN) return false;
+		if (destination.size() < 2 || destination.getLast().getOpcode() != Opcodes.RETURN) return -1;
 		int length = destination.size() - 1, arguments = parameterSlots(helper);
 		for (int i = 0; i < length; i++) {
 			AbstractInsnNode instruction = destination.get(i);
 			int opcode = instruction.getOpcode();
 			if (opcode >= Opcodes.IRETURN && opcode <= Opcodes.RETURN || opcode == Opcodes.ATHROW
 					|| instruction instanceof VarInsnNode v && (v.var >= arguments || opcode >= Opcodes.ISTORE && opcode <= Opcodes.ASTORE)
-					|| instruction instanceof IincInsnNode) return false;
+					|| instruction instanceof IincInsnNode) return -1;
 		}
-		for (int slot = 0; slot < arguments; slot++) if (storedParameter(selected, slot)) return false;
+		for (int slot = 0; slot < arguments; slot++) if (storedParameter(selected, slot)) return -1;
 		Frame<BasicValue>[] frames;
 		try { frames = new Analyzer<>(new BasicInterpreter()).analyze(owner.name, selected); }
-		catch (AnalyzerException | RuntimeException invalid) { Caught.expected(invalid); return false; }
-		int found = 0;
+		catch (AnalyzerException | RuntimeException invalid) { Caught.expected(invalid); return -1; }
+		int found = 0, at = -1;
 		for (int start = 0; start + length <= source.size(); start++) {
 			int end = start + length;
 			Frame<BasicValue> begin = frames[selected.instructions.indexOf(source.get(start))];
@@ -341,8 +396,9 @@ final class MixinExecutionPathRetarget {
 			for (int i = 0; i < length; i++) if (!same(destination.get(i), source.get(start + i), destination, source, start)) { same = false; break; }
 			if (!same || entersMiddle(source, start, end)) continue;
 			found++;
+			at = start;
 		}
-		return found == 1;
+		return found == 1 ? at : -1;
 	}
 
 	private static boolean entersMiddle(List<AbstractInsnNode> source, int start, int end) {

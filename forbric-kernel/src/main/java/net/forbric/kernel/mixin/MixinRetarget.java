@@ -143,7 +143,7 @@ public final class MixinRetarget {
 	 * (R6) put behind a guard, {@code from} the handler and {@code to} where its body moves; or (R7) given a method of its
 	 * name that takes the replacement's arguments, {@code from} the handler and {@code to} the replacement it selects.
 	 */
-	public enum Element { SELECTOR, AT_TARGET, GUARD, PROJECT, LOCAL_INDEX }
+	public enum Element { SELECTOR, AT_TARGET, GUARD, PROJECT, LOCAL_INDEX, AT_ORDINAL }
 
 	/** One rewrite inside one handler's injector annotation. */
 	public record Rewrite(String handler, Element element, String from, String to, String why) {
@@ -1343,6 +1343,25 @@ public final class MixinRetarget {
 						local.values.remove(i + 1); local.values.remove(i);
 					}
 					local.values.addAll(List.of("index", Integer.parseInt(rewrite.to()))); applied++;
+				}
+				continue;
+			}
+			if (rewrite.element() == Element.AT_ORDINAL) {
+				// from: "<@At target>#<ordinal as written>", to: the ordinal of the same occurrence in the new method
+				int hash = rewrite.from().lastIndexOf('#');
+				String member = rewrite.from().substring(0, hash);
+				int written = Integer.parseInt(rewrite.from().substring(hash + 1));
+				for (MethodNode m : node.methods) {
+					if (!(m.name + m.desc).equals(rewrite.handler())) continue;
+					AnnotationNode injector = MixinFit.injectorOf(m);
+					if (injector == null) continue;
+					for (AnnotationNode at : MixinFit.atNodes(injector)) {
+						if (at.values == null || !member.equals(MixinFit.asString(MixinFit.value(at, "target")))
+								|| !(MixinFit.value(at, "ordinal") instanceof Number n) || n.intValue() != written) continue;
+						for (int i = 0; i + 1 < at.values.size(); i += 2) {
+							if ("ordinal".equals(at.values.get(i))) { at.values.set(i + 1, Integer.parseInt(rewrite.to())); applied++; }
+						}
+					}
 				}
 				continue;
 			}
