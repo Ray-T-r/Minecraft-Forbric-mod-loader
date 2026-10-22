@@ -93,6 +93,12 @@ public final class KernelForgeAttributes {
 	public static void fireForgeAttributeEvents() {
 		int before = size(forgeAttributes());
 		try {
+			settleDefaultAttributes();
+		} catch (Throwable t) {
+			Caught.warn(t, "[Forbric/Attributes] DefaultAttributes could not initialise before the entity-attribute events — "
+					+ "they read it for every entity type and will fail on it too");
+		}
+		try {
 			ForgeHooks.modifyAttributes();
 		} catch (Throwable t) {
 			Caught.warn(t, "[Forbric/Attributes] MinecraftForge's EntityAttributeCreationEvent did not finish — "
@@ -104,6 +110,27 @@ public final class KernelForgeAttributes {
 				+ "got their attributes (%d before), next to NeoForge's %d. The merged DefaultAttributes reads "
 				+ "only NeoForge's map, so the kernel serves it both",
 				after, before, size(neoAttributes()));
+	}
+
+	/**
+	 * Runs {@code DefaultAttributes}' class initialisation to completion before either ecosystem's attribute events read it.
+	 *
+	 * <p>Both {@code EntityAttributeModificationEvent} constructors — MinecraftForge's over {@code ForgeRegistries.ENTITY_TYPES},
+	 * NeoForge's over {@code BuiltInRegistries.ENTITY_TYPE} — build their entity-type list by streaming the registry through
+	 * {@code DefaultAttributes::hasSupplier}. Whatever first touches {@code DefaultAttributes} runs its class initialiser, and
+	 * mods extend it: a Fabric mod that wraps the build of its supplier map with its own entities' attributes, whose classes
+	 * register entity types when they initialise, changes the registry under that stream. The iterator throws
+	 * {@code ConcurrentModificationException}, the event never finishes, and no entity gets either ecosystem's attributes — a
+	 * base that reads {@code forge:swim_speed} for every swimming entity then crashes the first time one moves in water.
+	 *
+	 * <p>Vanilla initialises it in {@code Bootstrap.validate()}, before any mod event iterates the entity types; the merged
+	 * {@code Bootstrap.validate} no longer does (NeoForge validates later), so the first touch had moved inside the iteration.
+	 * Initialised here, at the same moment and on the same thread, only no longer in the middle of a registry walk; a class
+	 * already initialised is left as it is.
+	 */
+	static void settleDefaultAttributes() throws ClassNotFoundException {
+		Class<?> attributes = net.minecraft.world.entity.ai.attributes.DefaultAttributes.class;
+		Class.forName(attributes.getName(), true, attributes.getClassLoader());
 	}
 
 	/**

@@ -58,6 +58,16 @@ caught_report() {
       for (i = 1; i <= k && i <= 30; i++) { w = order[i]; printf "[kernel]   %sx %s: %s\n", (w in n ? n[w] : "?"), w, what[w] }
       if (k > 30) printf "[kernel]   ... and %d more\n", k - 30
     }' "$file"
+  # Never carried on from, strict or not: an entity-attribute event that did not finish leaves every living entity of an
+  # ecosystem without its attributes, and a base that reads forge:swim_speed for every swimming entity then crashes on
+  # the first one in water. A gate in whose JVMs that happened is red whatever its own checks say.
+  local fatal
+  fatal=$(awk -F'\t' '$1=="FAILURE" && $4 ~ /Forbric\/Attributes/ && $4 ~ /did not finish|could not initialise/ {print $3}' \
+    "$file" 2>/dev/null | sort -u | wc -l | tr -d ' ')
+  if [ "${fatal:-0}" -gt 0 ]; then
+    printf '[kernel] FAIL %s entity-attribute event(s) did not finish — living entities are left without attributes\n' "$fatal"
+    return 1
+  fi
   if [ "${FORBRIC_CAUGHT_STRICT:-0}" = 1 ]; then
     printf '[kernel] FAIL the kernel carried on from failures, and FORBRIC_CAUGHT_STRICT=1\n'
     return 1
