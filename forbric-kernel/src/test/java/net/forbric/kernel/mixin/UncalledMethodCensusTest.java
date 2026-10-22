@@ -76,12 +76,13 @@ class UncalledMethodCensusTest {
 	/**
 	 * What one game's code names: for each method name+desc, and for each {@code owner#name+desc}, the methods naming it (a
 	 * call or a method handle; a bootstrap method by name only); every string it holds; for each class holding a string, the
-	 * strings it holds (prefixed with NUL), the classes it names, and whether it makes a reflective lookup (marked \1).
+	 * strings it holds (prefixed with NUL), the classes it names, and whether it makes a reflective lookup (marked \1); and
+	 * every name+desc a call or handle names other than an override's super call of itself.
 	 */
 	private record Names(Map<String, Set<String>> byKey, Map<String, Set<String>> byOwner, Set<String> strings,
-			Map<String, Set<String>> held) {
+			Map<String, Set<String>> held, Set<String> calledOtherwise) {
 		Names() {
-			this(new HashMap<>(), new HashMap<>(), new HashSet<>(), new HashMap<>());
+			this(new HashMap<>(), new HashMap<>(), new HashSet<>(), new HashMap<>(), new HashSet<>());
 		}
 
 		/**
@@ -107,6 +108,7 @@ class UncalledMethodCensusTest {
 		Names named = new Names();
 		scan(MERGED, (c, m) -> {}, game, mergedOnly, named);
 		for (Path code : List.of(INTEROP, NEO_RUNTIME, KERNEL_MAIN, KERNEL_RUNTIME)) scan(code, (c, m) -> {}, game, null, named);
+		Set<String> gameClasses = Set.copyOf(game.keySet());
 
 		// Code the kernel keeps from ever running: the leaves MinecraftForge's builder puts in its vanilla HUD tree, each
 		// replaced before the tree bakes (KernelForgeOverlayLayers.neuterVanillaLeaves).
@@ -118,7 +120,7 @@ class UncalledMethodCensusTest {
 		// and with it the only call of what that method alone calls). Only what the merged jar declares is a candidate; no
 		// string may spell it, and nothing outside the game may reach it through a supertype.
 		Map<String, Integer> candidates = new TreeMap<>();
-		Set<String> dead = fixpoint(mergedOnly, game, named, silenced, candidates);
+		Set<String> dead = fixpoint(mergedOnly, game, gameClasses, named, silenced, candidates);
 		Map<String, Map<String, Integer>> uncalled = new TreeMap<>();
 		for (String candidate : dead) {
 			int hash = candidate.indexOf('#');
@@ -144,17 +146,20 @@ class UncalledMethodCensusTest {
 						for (Call call : calls(c, m, insn)) {
 							String key = call.owner().substring(call.owner().indexOf('#') + 1);
 							if (!keys.contains(key)) continue;
+							// An override's super call runs only when the override runs: by itself it calls nothing, there either.
+							if (superSelf(m, insn, key)) continue;
 							calls.computeIfAbsent(key, k -> new ArrayList<>()).add(new Call(call.owner().substring(0, call.owner().indexOf('#')), call.caller()));
 						}
 					}
 				}, shapes, null, referenceNamed);
 			}
+			Set<String> referenceClasses = Set.copyOf(shapes.keySet());
 			// A caller that never runs in its own game does not make the method run there either: the same fixpoint over the
 			// reference. A method only such callers call runs natively no more than it does here, and is no loss — unless a mod
 			// can still make it run there and not here: a caller that is not private (a mod may call it), when the merged game
 			// does not keep that same caller calling the method (a mod calling it here would then reach it too).
-			Set<String> referenceDead = fixpoint(shapes, new HashMap<>(shapes), referenceNamed, Set.of(), new TreeMap<>());
-			Set<String> referencePrivateDead = fixpoint(privateOnly(shapes), new HashMap<>(shapes), referenceNamed, Set.of(), new TreeMap<>());
+			Set<String> referenceDead = fixpoint(shapes, new HashMap<>(shapes), referenceClasses, referenceNamed, Set.of(), new TreeMap<>());
+			Set<String> referencePrivateDead = fixpoint(privateOnly(shapes), new HashMap<>(shapes), referenceClasses, referenceNamed, Set.of(), new TreeMap<>());
 			for (Map.Entry<String, Map<String, Integer>> owner : uncalled.entrySet()) {
 				Shape declared = shapes.get(owner.getKey());
 				if (declared == null) continue;
@@ -225,14 +230,16 @@ class UncalledMethodCensusTest {
 	}
 
 	/**
-	 * The methods of {@code declared} ({@code class#name+desc}) that never run in a game whose code names methods as
-	 * {@code named} says: not constructors, abstract or native; no string of the game spells the name — for a private
-	 * method, no string a call to it can be made from ({@link #spelledForACall}); private, static or overriding nothing a
-	 * supertype declares (else the JDK, a library or reflection may reach it); and every place naming it
-	 * ({@link Names#sites}: for a private method, only a call naming its class) is itself one of these, or {@code silenced},
-	 * or the method itself. {@code candidates} receives every method that passed the first tests, with its access.
+	 * The methods of {@code declared} ({@code class#name+desc}) that never run in a game ({@code inside} its own classes)
+	 * whose code names methods as {@code named} says: not constructors, abstract or native; no string of the game spells the
+	 * name — for a private method, no string a call to it can be made from ({@link #spelledForACall}); private, static or
+	 * overriding nothing a supertype declares (else the JDK, a library or reflection may reach it) — and when nothing names
+	 * it but an override's super call of itself, nothing outside the game declares it (such calls run only when the
+	 * override runs, and no call in the game reaches either); and every place naming it ({@link Names#sites}: for a private
+	 * method, only a call naming its class) is itself one of these, or {@code silenced}, or the method itself.
+	 * {@code candidates} receives every method that passed the first tests, with its access.
 	 */
-	private static Set<String> fixpoint(Map<String, Shape> declared, Map<String, Shape> game, Names named,
+	private static Set<String> fixpoint(Map<String, Shape> declared, Map<String, Shape> game, Set<String> inside, Names named,
 			Set<String> silenced, Map<String, Integer> candidates) {
 		for (Map.Entry<String, Shape> e : declared.entrySet()) {
 			for (Map.Entry<String, Integer> m : e.getValue().methods().entrySet()) {
@@ -247,7 +254,11 @@ class UncalledMethodCensusTest {
 					// holds it can make the call from it.
 					if (spelledForACall(named.held(), e.getKey(), name, key.substring(name.length()))) continue;
 				} else if (named.strings().contains(name)) continue;
-				if ((access & (Opcodes.ACC_PRIVATE | Opcodes.ACC_STATIC)) == 0 && overrides(game, e.getKey(), key, new HashSet<>()) != 0) continue;
+				// Named only by overrides calling themselves through super: nothing calls any of them, unless a supertype outside
+				// the game declares it too (then the JDK or a library may).
+				boolean superChainOnly = named.byKey().containsKey(key) && !named.calledOtherwise().contains(key);
+				if ((access & (Opcodes.ACC_PRIVATE | Opcodes.ACC_STATIC)) == 0
+						&& overrides(game, superChainOnly ? inside : Set.of(), e.getKey(), key, new HashSet<>()) != 0) continue;
 				candidates.put(e.getKey() + "#" + key, access);
 			}
 		}
@@ -286,6 +297,11 @@ class UncalledMethodCensusTest {
 			if (held.contains(reflective) && (held.contains("\0" + owner) || held.contains("\0" + owner.replace('/', '.')) || held.contains(owner))) return true;
 		}
 		return false;
+	}
+
+	/** Whether {@code insn}, naming {@code key}, is {@code m}'s super call of itself: it runs only when {@code m} runs. */
+	private static boolean superSelf(MethodNode m, AbstractInsnNode insn, String key) {
+		return insn instanceof MethodInsnNode invoke && invoke.getOpcode() == Opcodes.INVOKESPECIAL && key.equals(m.name + m.desc);
 	}
 
 	/** One class of a jar, with code; null when the jar does not hold it. */
@@ -359,11 +375,13 @@ class UncalledMethodCensusTest {
 						String key = call.owner().substring(call.owner().indexOf('#') + 1);
 						named.byKey().computeIfAbsent(key, k -> new HashSet<>()).add(site);
 						named.byOwner().computeIfAbsent(call.owner(), k -> new HashSet<>()).add(site);
+						if (!superSelf(m, insn, key)) named.calledOtherwise().add(key);
 						held.add(call.owner().substring(0, call.owner().indexOf('#')));
 					}
 					if (insn instanceof InvokeDynamicInsnNode indy) {
 						String key = indy.bsm.getName() + indy.bsm.getDesc();
 						named.byKey().computeIfAbsent(key, k -> new HashSet<>()).add(site);
+						named.calledOtherwise().add(key);
 					}
 					if (insn instanceof LdcInsnNode ldc && ldc.cst instanceof String s) {
 						named.strings().add(s);
@@ -381,8 +399,11 @@ class UncalledMethodCensusTest {
 		}
 	}
 
-	/** 1 when a supertype declares {@code key} (non-private, non-static), 0 when none does, -1 when a supertype is unreadable. */
-	private static int overrides(Map<String, Shape> game, String name, String key, Set<String> seen) {
+	/**
+	 * 1 when a supertype outside {@code inside} declares {@code key} (non-private, non-static), 0 when none does, -1 when a
+	 * supertype is unreadable; with {@code inside} empty, any supertype.
+	 */
+	private static int overrides(Map<String, Shape> game, Set<String> inside, String name, String key, Set<String> seen) {
 		Shape shape = shape(game, name);
 		if (shape == null) return -1;
 		List<String> supers = new ArrayList<>();
@@ -394,8 +415,8 @@ class UncalledMethodCensusTest {
 			Shape sup = shape(game, s);
 			if (sup == null) { result = -1; continue; }
 			Integer access = sup.methods().get(key);
-			if (access != null && (access & (Opcodes.ACC_PRIVATE | Opcodes.ACC_STATIC)) == 0) return 1;
-			int deeper = overrides(game, s, key, seen);
+			if (!inside.contains(s) && access != null && (access & (Opcodes.ACC_PRIVATE | Opcodes.ACC_STATIC)) == 0) return 1;
+			int deeper = overrides(game, inside, s, key, seen);
 			if (deeper == 1) return 1;
 			if (deeper < 0) result = -1;
 		}
