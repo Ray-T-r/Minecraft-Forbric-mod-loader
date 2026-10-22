@@ -21,11 +21,15 @@
 # launch scripts relaxed only `fabric-*`, that was a FATAL MixinApplyError that aborted the boot; the kernel now
 # relaxes every discovered guest mod's configs, so it soft-skips with a warning and the mod still loads.
 #
-# Both game-event families ticking 1:1 in the same loop (the B-5 shape, past all public prior art) is proven by the
-# kernel's GameEventMultiplexer: it subscribes to NeoForge's ServerTickEvent and re-emits MinecraftForge's, logging
-# once at 20 forwards — so 20 forwards means both families ticked 20 times, once each. Real mods don't count ticks, so
-# this proof is kernel-instrumented rather than canary-emitted. On a base whose tickServer calls MinecraftForge's tick
-# hooks itself (one that keeps both families' edits), the bridges stand down for those ticks and say so instead.
+# Both game-event families ticking in the same loop (the B-5 shape, past all public prior art). On a base whose
+# tickServer posts only NeoForge's tick, the kernel's GameEventMultiplexer subscribes to NeoForge's ServerTickEvent and
+# re-emits MinecraftForge's, logging once at 20 forwards — so 20 forwards means both families ticked 20 times, once each:
+# 1:1, counted here. Real mods don't count ticks, so that proof is kernel-instrumented rather than canary-emitted. On a
+# base whose tickServer calls MinecraftForge's tick hooks itself (one that keeps both families' edits — the edit-splice
+# base does), the bridges stand down for those ticks and say so instead, and this gate proves only that: the game posts
+# MinecraftForge's ticks in the same loop and nothing forwards a second one. It does not count them; M41's breadth run
+# counts every post of ServerTickEvent.Pre/Post on both buses (each NeoForge post answered by MinecraftForge's own
+# dispatch, none forwarded as well), and that is where the 1:1 count lives on such a base.
 # GATE-PARALLEL: rundirs=server-tri-real mem=2000
 set -uo pipefail
 . "$(cd "$(dirname "$0")" && pwd)/lib.sh"
@@ -153,7 +157,7 @@ check "NeoForge baseline content (38)"         "registered content: neoforge: 38
 check "Fabric mod content (Jade)"              "registered content: jade: [1-9][0-9]* entr" "$LOG"
 check "Jade server plugins load"               "Start loading plugin from Jade" "$LOG"
 
-step "BOTH game-event families tick in the same loop (must PASS — the B-5 1:1 shape)"
+step "BOTH game-event families tick in the same loop (must PASS — the B-5 shape)"
 if [ "$TICK_NATIVE" = yes ]; then
   # The merged tickServer posts both families' ticks itself, once each per tick; the bridges stand down for them.
   check "MinecraftForge's Pre tick comes from the game, the bridge stands down"  "$STOOD_PRE" "$LOG"
@@ -214,8 +218,13 @@ check_absent "and MinecraftForge gets no forwarded Post tick" "bridged 20 Server
 check_absent "and no bridge is there to stand down"           "itself on the path of NeoForge" "$CONTROL"
 
 step "M4 result"
+if [ "$TICK_NATIVE" = yes ]; then
+  TICK_PROVEN="both families tick in one loop (the game posts MinecraftForge's ticks itself, nothing forwards a second; the 1:1 count is M41's)"
+else
+  TICK_PROVEN="both families tick 1:1"
+fi
 if [ "$FAIL" -eq 0 ]; then
-  echo "[kernel] ✅ M4 TRI-IN-ONE GATE GREEN — REAL third-party Fabric + MinecraftForge + NeoForge mods run in one instance, both families tick 1:1"
+  echo "[kernel] ✅ M4 TRI-IN-ONE GATE GREEN — REAL third-party Fabric + MinecraftForge + NeoForge mods run in one instance, $TICK_PROVEN"
 else
   echo "[kernel] ❌ GATE RED"
 fi

@@ -31,19 +31,35 @@ bed and inherits NeoForge's default setter. Nineteen cases execute through game 
 - Override the nearby-monster sleep check with an actual visible zombie. The game must return success and
   put the player to sleep, not merely deliver the event.
 
-The positive run is strict and must have zero confirmed required findings. Every case but the native flight-tick
-control and the two NeoForge-only bed cases fails with `forbric.carrierDefaultChains=off`, `forbric.mixinRetarget=off` and `forbric.mixinStubRebind=off`
-(Fabric's tick anchors natively on the glider-slot choice, which a real elytra reaches; the
-carrier-stub rebind would move the boolean elytra check on its own) — the generic renamed-body retarget moves
-the sleep redirects into NeoForge's `startSleepInBed` lambda on its own, before the entity anchors are asked, so
-with the anchors alone off the nearby-monster case still passes. That deliberate negative experiment explicitly
-uses continue, retains its confirmed missing-injector evidence, and has a failing inner command. Each phase binds sources, game,
-runtime and mod bytes. Startup failures, crashes, timeouts or missing cases cannot satisfy the gate. A third run,
-strict, turns off only `forbric.fabricElytraTickAnchor`: exactly the glider-less flight tick fails.
+The gate runs three phases, each in a fresh nonce-owned world, and each binds sources, game, runtime and mod bytes.
+Startup failures, crashes, timeouts or missing cases cannot satisfy any of them.
 
-The occupancy redirect is moved by `CarrierDefaultChains`, which knows no mod: bound to the sleep start and the wake-up
-lambda, it moves onto the state's `setBedOccupied` and runs NeoForge's inherited default with fabric-api's own handler, as
-written, at the vanilla write; a state or block that overrides the setter keeps its own. The clear-all veto and
-sleeping-direction adapters synthesize their own handler, which asks ALLOW_EARLY_REMOVE or MODIFY_SLEEPING_DIRECTION
-itself (each only after the original handler matches its audited shape); the remaining adapters move only proven
-annotation anchors.
+- **positive** (strict): all nineteen cases pass, with zero confirmed required findings.
+- **off** (continue): every mechanism the cases rest on is switched off — `forbric.carrierDefaultChains`,
+  `forbric.mixinRetarget`, `forbric.mixinStubRebind`, `forbric.scopedClearRelay`, `forbric.carrierDecisions`,
+  `forbric.carrierGuardedPoints` and `forbric.carrierReturnedCalls`. Every case fails but three: the native flight-tick
+  control (Fabric's tick anchors natively on the glider-slot choice, which a real elytra reaches) and the two cases of the
+  NeoForge-only bed, which assert that Fabric is not asked and the bed's own setter runs. This deliberate negative
+  experiment uses continue, retains its confirmed missing-injector evidence, and has a failing inner command.
+- **guard-off** (strict): only `forbric.carrierGuardedPoints` is off. Fabric's elytra check then stays behind NeoForge's
+  gliding guard and the flight tick behind the empty-glider guard, where a Fabric veto or custom flight no longer
+  decides: exactly `glide-deny`, `glide-custom` and `glide-tick` fail. The carrier-stub rebind still moves the elytra
+  check into `canGlide(Z)Z`, so its boolean case holds.
+
+Every case is repaired by a mechanism that knows no mod, each behind its own switch:
+
+- `CarrierDefaultChains` moves Fabric's occupancy redirect — bound to the sleep start and the wake-up lambda — onto the
+  state's `setBedOccupied`, and runs NeoForge's inherited default with fabric-api's own handler, as written, at the
+  vanilla write; a state or block that overrides the setter keeps its own.
+- The generic renamed-body retarget (`MixinRetarget`) moves the sleep redirects into NeoForge's `startSleepInBed` lambda.
+- The carrier-stub rebind (`MixinStubRebind`) moves fabric-api's boolean elytra check off `LivingEntity`'s delegating
+  `canGlide()Z` stub onto the body.
+- The scoped-clear relay puts the native `activeEffects.clear()` back into NeoForge's `removeAllEffects`, so fabric-api's
+  own wrap there asks its early-removal veto per effect.
+- `CarrierDecisions` moves the effect injectors onto the carrier's applicability question and its copy.
+- `CarrierGuardedPoints` moves the elytra check and the flight tick ahead of NeoForge's gliding guards.
+- `CarrierReturnedCalls` moves the sleeping-direction wrap onto NeoForge's answer.
+
+None of them asks a Fabric event itself: where a mechanism generates a wrapper (a moved redirect's new handler, a
+relocated point's guard), the wrapper only hands fabric-api's own handler the values it was written for, and that handler
+asks the event as written.
