@@ -56,7 +56,7 @@ public final class MixinCrossHostPredicateIsland implements Opcodes {
             MethodNode helper=reader?reading(extraction.helper(),extraction.anchor()):extraction.helper();if(helper==null)continue;
             MethodNode original=copy(handler);String key=MixinInstructionFingerprint.hash(helper)+":"+MixinInstructionFingerprint.hash(plan.method())+":"+MixinInstructionFingerprint.hash(original)+":"+schemaKey(schema)+":"+mixin.name+(reader?":reader":"");
             Installed installed=new Installed(key,mixin.name,current.name,handler.name,original,helper,wrapper(mixin,live,plan,helper,key),plan,classes,schema,reader);
-            if(!register.test(plan.owner(),()->{synchronized(PLANS){Installed oldPlan=PLANS.get(key);if(oldPlan!=null&&(!oldPlan.source.equals(installed.source)||!oldPlan.schema.equals(schema)))throw new IllegalStateException("ambiguous source predicate plan");KernelCrossHostPredicateContracts.register(key,schema);PLANS.putIfAbsent(key,installed);}}))continue;
+            if(!register.test(plan.owner(),()->{synchronized(PLANS){Installed oldPlan=PLANS.get(key);if(oldPlan!=null&&(!oldPlan.source.equals(installed.source)||!oldPlan.schema.equals(schema)))throw new Caught.Invariant("ambiguous source predicate plan");KernelCrossHostPredicateContracts.register(key,schema);PLANS.putIfAbsent(key,installed);}}))continue;
             if(!reader)set(annotation,"method",List.of(helperName+helper.desc));mixin.methods.add(helper);mixin.methods.add(installed.wrapper);return 1;
         }return 0;
     }

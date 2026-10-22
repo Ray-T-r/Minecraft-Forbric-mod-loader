@@ -53,7 +53,7 @@ public final class OperationSeams {
         if(gatewayInputs.length!=helperInputs.length)throw new IllegalArgumentException("Operation identity projection arity");
         expunge();Objects.requireNonNull(loader);Proof proof=new Proof(host.replace('/','.'),helper.replace('/','.'),Objects.requireNonNull(graph),Objects.requireNonNull(witness),gatewayInputs.clone(),helperInputs.clone(),declined);
         Proof before=PROOFS.computeIfAbsent(new LoaderKey(loader),ignored->new HashMap<>()).putIfAbsent(key,proof);
-        if(before!=null&&(!before.host.equals(proof.host)||!before.helper.equals(proof.helper)||!before.graph.equals(graph)))throw new IllegalStateException("Conflicting operation source: "+key);
+        if(before!=null&&(!before.host.equals(proof.host)||!before.helper.equals(proof.helper)||!before.graph.equals(graph)))throw new Caught.Invariant("Conflicting operation source: "+key);
     }
     public static synchronized void release(ClassLoader loader){expunge();LoaderKey key=new LoaderKey(loader);PROOFS.remove(key);DECLINED.remove(key);}
     private static synchronized Proof proof(ClassLoader loader,String key){expunge();Map<String,Proof> registry=PROOFS.get(new LoaderKey(loader));return registry==null?null:registry.get(key);}

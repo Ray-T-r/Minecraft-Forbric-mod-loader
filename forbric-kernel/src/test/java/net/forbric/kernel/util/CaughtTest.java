@@ -115,6 +115,20 @@ class CaughtTest {
 	}
 
 	@Test
+	void aBrokenInvariantIsNeverAnAnswer() throws Exception {
+		String[] out = new String[1];
+		GateLogContract.capture(() -> {
+			Caught.expected(new Caught.Invariant("Ambiguous schema k"));
+			Caught.expected(new RuntimeException("wrapped", new Caught.Invariant("Ambiguous plan k")));
+			Caught.expected(new IllegalStateException("not this shape"));
+			return null;
+		}, out);
+		assertEquals(2, Caught.errorCount(), Caught.sites().toString());
+		assertTrue(out[0].contains("broken invariant (Ambiguous schema k)"), out[0]);
+		assertTrue(out[0].contains("broken invariant (Ambiguous plan k)"), out[0]);
+	}
+
+	@Test
 	void aMessageThatIsNotAFormatIsKeptAsWritten() throws Exception {
 		String[] out = new String[1];
 		GateLogContract.capture(() -> {

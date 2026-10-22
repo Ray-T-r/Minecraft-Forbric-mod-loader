@@ -2,6 +2,7 @@
 package net.forbric.kernel.boot;
 import java.lang.reflect.*;import java.util.*;import java.util.concurrent.ConcurrentHashMap;
 import org.objectweb.asm.Type;import net.forbric.kernel.boot.DefinedMethodContracts.MethodContract;import net.forbric.kernel.util.Caught;import net.forbric.kernel.util.ForbricLog;
+import net.forbric.kernel.util.Caught;
 /** A legacy tag facade may use its original container only while the actual typed path keeps its exact default. */
 public final class KernelTagFacadeContracts{
  public record FieldShape(String owner,String name,String descriptor,int flags){}
@@ -9,7 +10,7 @@ public final class KernelTagFacadeContracts{
  public record Schema(String collector,FieldShape field,MethodShape facade,MethodShape mapper,MethodShape typedActor,MethodShape taggedContainer,MethodShape typedContainer){}
  private static final Map<String,Schema>SCHEMAS=new ConcurrentHashMap<>();private static final Set<String>DIAGNOSTICS=ConcurrentHashMap.newKeySet();
  private KernelTagFacadeContracts(){}
- public static void register(String key,Schema schema){Schema old=SCHEMAS.putIfAbsent(key,schema);if(old!=null&&!old.equals(schema))throw new IllegalStateException("ambiguous original tag facade");}
+ public static void register(String key,Schema schema){Schema old=SCHEMAS.putIfAbsent(key,schema);if(old!=null&&!old.equals(schema))throw new Caught.Invariant("ambiguous original tag facade");}
  public static boolean permits(Object actor,Object container,String key){Schema s=SCHEMAS.get(key);if(s==null||actor==null||container==null)return false;try{ClassLoader loader=actor.getClass().getClassLoader();if(container.getClass().getClassLoader()!=loader)return decline(key,"different source container loader",false);
   for(MethodShape method:List.of(s.facade(),s.mapper(),s.typedActor(),s.taggedContainer(),s.typedContainer()))if(!sameShape(loader,method))return decline(key,"final facade/container body or flags changed: "+method.method(),false);
   if(!DefinedMethodContracts.validates(actor,s.typedActor().method())||!DefinedMethodContracts.validates(container,s.typedContainer().method())||!DefinedMethodContracts.validates(container,s.taggedContainer().method()))return decline(key,"native concrete typed/container dispatch retained",true);
