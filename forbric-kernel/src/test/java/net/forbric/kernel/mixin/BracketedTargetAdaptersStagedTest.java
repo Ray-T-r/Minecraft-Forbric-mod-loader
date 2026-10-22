@@ -32,6 +32,8 @@ import org.objectweb.asm.tree.*;
  * {@link ForbricMixinService#codeView}, each lands exactly as on the plain merged base.
  */
 class BracketedTargetAdaptersStagedTest {
+	@org.junit.jupiter.api.io.TempDir Path scratch;
+
 	private static final class Resources implements Function<String, byte[]>, AutoCloseable {
 		private final List<ZipFile> zips = new ArrayList<>();
 
@@ -74,6 +76,19 @@ class BracketedTargetAdaptersStagedTest {
 		};
 	}
 
+	/**
+	 * Each target as the whole pre-mixin pass leaves it, in its run-time order: the stand-down's bookkeeping, then — last
+	 * in the coremod phase — the early returns vanilla compiled given back, each in a block placed in front of the tail.
+	 */
+	private static Function<String, byte[]> instrumentedAndSplit(Resources resources) {
+		Function<String, byte[]> instrumented = instrumented(resources);
+		net.forbric.kernel.transform.VanillaEarlyReturns split = new net.forbric.kernel.transform.VanillaEarlyReturns();
+		return name -> {
+			byte[] bytes = instrumented.apply(name);
+			return bytes == null ? null : split.transform(name.replace('/', '.'), bytes, null);
+		};
+	}
+
 	private static ClassNode raw(byte[] bytes) {
 		if (bytes == null) return null;
 		ClassNode node = new ClassNode();
@@ -107,6 +122,79 @@ class BracketedTargetAdaptersStagedTest {
 			var plain = CreateGuestMixinFixture.mixin("com/zurrtum/create/client/mixin/KeyboardHandlerMixin");
 			assertEquals(2, MixinKeyActionAdapter.adapt(plain, CarpetMixinAdapterTest::target, (family, name) -> CreateInjectionAdaptersTest.nativeTarget(name)));
 			assertArrayEquals(CarpetMixinAdapterTest.bytes(plain), CarpetMixinAdapterTest.bytes(node));
+		}
+	}
+
+	/**
+	 * The released-key hooks on a {@code keyPress} whose window guard has its early return back (a block in front of the
+	 * tail, which the join's run jumps over): Create Fly's two and Balm's TAIL land exactly as on the plain merged base, and
+	 * neither Create's handlers nor Balm's run on a release — natively the release returns before the final return.
+	 */
+	@Test
+	void releasedKeyHooksLandAfterTheEarlyReturnsAreGivenBack() throws Exception {
+		try (Resources resources = new Resources()) {
+			Function<String, byte[]> bytes = instrumentedAndSplit(resources);
+			MethodNode keyPress = ForbricMixinService.codeView(bytes.apply(MixinKeyActionAdapter.TARGET)).methods.stream()
+					.filter(m -> m.name.equals("keyPress")).findFirst().orElseThrow();
+			long returns = java.util.stream.StreamSupport.stream(keyPress.instructions.spliterator(), false)
+					.filter(i -> i.getOpcode() == org.objectweb.asm.Opcodes.RETURN).count();
+			MethodNode plainKeyPress = CarpetMixinAdapterTest.target(MixinKeyActionAdapter.TARGET).methods.stream()
+					.filter(m -> m.name.equals("keyPress")).findFirst().orElseThrow();
+			long plainReturns = java.util.stream.StreamSupport.stream(plainKeyPress.instructions.spliterator(), false)
+					.filter(i -> i.getOpcode() == org.objectweb.asm.Opcodes.RETURN).count();
+			assertEquals(plainReturns + 1, returns, "the window guard's early return is given back in front of the tail");
+
+			Function<String, ClassNode> runtime = java(name -> ForbricMixinService.codeView(bytes.apply(name)));
+			var create = CreateGuestMixinFixture.mixin("com/zurrtum/create/client/mixin/KeyboardHandlerMixin");
+			assertEquals(2, MixinKeyActionAdapter.adapt(create, runtime, (family, name) -> CreateInjectionAdaptersTest.nativeTarget(name)),
+					"both released-key hooks are read on the split body");
+			var plain = CreateGuestMixinFixture.mixin("com/zurrtum/create/client/mixin/KeyboardHandlerMixin");
+			assertEquals(2, MixinKeyActionAdapter.adapt(plain, CarpetMixinAdapterTest::target, (family, name) -> CreateInjectionAdaptersTest.nativeTarget(name)));
+			assertArrayEquals(CarpetMixinAdapterTest.bytes(plain), CarpetMixinAdapterTest.bytes(create));
+
+			var balm = CarpetMixinAdapterTest.from(Fixture.THIRD_PARTY, Path.of("build/sweep80-mac/mods/balm-fabric-26.2-26.2.0.9.jar"),
+					"net/blay09/mods/balm/fabric/internal/mixin/KeyboardHandlerMixin");
+			assertEquals(1, MixinKeyActionAdapter.adapt(balm, runtime, (family, name) -> CreateInjectionAdaptersTest.nativeTarget(name)),
+					"Balm's TAIL is read on the split body");
+			var balmPlain = CarpetMixinAdapterTest.from(Fixture.THIRD_PARTY, Path.of("build/sweep80-mac/mods/balm-fabric-26.2-26.2.0.9.jar"),
+					"net/blay09/mods/balm/fabric/internal/mixin/KeyboardHandlerMixin");
+			assertEquals(1, MixinKeyActionAdapter.adapt(balmPlain, CarpetMixinAdapterTest::target, (family, name) -> CreateInjectionAdaptersTest.nativeTarget(name)));
+			assertArrayEquals(CarpetMixinAdapterTest.bytes(balmPlain), CarpetMixinAdapterTest.bytes(balm));
+
+			// Executed: the guard each relocated handler now carries runs it on a press and a repeat, never on a release.
+			Map<String, String> sources = Map.of(
+					"com/zurrtum/create/client/mixin/KeyboardHandlerMixin.java", "package com.zurrtum.create.client.mixin; public class KeyboardHandlerMixin { public java.util.List<Boolean> calls=new java.util.ArrayList<>(); public Object event; private void onKey(net.minecraft.client.input.KeyEvent e,boolean p){event=e;calls.add(p);} }",
+					"net/minecraft/client/input/KeyEvent.java", "package net.minecraft.client.input; public class KeyEvent {}",
+					"org/spongepowered/asm/mixin/injection/callback/CallbackInfo.java", "package org.spongepowered.asm.mixin.injection.callback; public class CallbackInfo {}");
+			try (var loader = CreateGuestMixinFixture.executable(Files.createDirectories(scratch.resolve("create")), create, sources,
+					m -> m.desc.equals(MixinKeyActionAdapter.HANDLER))) {
+				Class<?> type = loader.loadClass(create.name.replace('/', '.')), eventType = loader.loadClass("net.minecraft.client.input.KeyEvent"),
+						callbackType = loader.loadClass("org.spongepowered.asm.mixin.injection.callback.CallbackInfo");
+				Object receiver = type.getConstructor().newInstance(), event = eventType.getConstructor().newInstance();
+				var released = type.getMethod("onKeyReleased", long.class, int.class, eventType, callbackType);
+				var pressed = type.getMethod("onKey", long.class, int.class, eventType, callbackType);
+				for (int action : new int[] {0, 1, 2}) {
+					((List<?>) type.getField("calls").get(receiver)).clear();
+					released.invoke(receiver, 0L, action, event, null);
+					pressed.invoke(receiver, 0L, action, event, null);
+					assertEquals(action == 0 ? List.of() : List.of(false, true), type.getField("calls").get(receiver), "Create, action " + action);
+				}
+			}
+			String inner = MixinHandlerShim.asideName(balm.name, "keyPress", MixinKeyActionAdapter.SUFFIX);
+			Map<String, String> balmSources = Map.of(
+					"net/blay09/mods/balm/fabric/internal/mixin/KeyboardHandlerMixin.java", "package net.blay09.mods.balm.fabric.internal.mixin; public class KeyboardHandlerMixin { public java.util.List<Integer> calls=new java.util.ArrayList<>(); private void "
+							+ inner + "(long w,int a,net.minecraft.client.input.KeyEvent e,org.spongepowered.asm.mixin.injection.callback.CallbackInfo c){calls.add(a);} }",
+					"net/minecraft/client/input/KeyEvent.java", "package net.minecraft.client.input; public class KeyEvent {}",
+					"org/spongepowered/asm/mixin/injection/callback/CallbackInfo.java", "package org.spongepowered.asm.mixin.injection.callback; public class CallbackInfo {}");
+			try (var loader = CreateGuestMixinFixture.executable(Files.createDirectories(scratch.resolve("balm")), balm, balmSources,
+					m -> m.name.equals("keyPress") && m.desc.equals(MixinKeyActionAdapter.HANDLER))) {
+				Class<?> type = loader.loadClass(balm.name.replace('/', '.')), eventType = loader.loadClass("net.minecraft.client.input.KeyEvent"),
+						callbackType = loader.loadClass("org.spongepowered.asm.mixin.injection.callback.CallbackInfo");
+				Object receiver = type.getConstructor().newInstance(), event = eventType.getConstructor().newInstance();
+				var tail = type.getMethod("keyPress", long.class, int.class, eventType, callbackType);
+				for (int action : new int[] {0, 1, 2}) tail.invoke(receiver, 0L, action, event, null);
+				assertEquals(List.of(1, 2), type.getField("calls").get(receiver), "Balm's TAIL: press and repeat, never release");
+			}
 		}
 	}
 

@@ -509,6 +509,7 @@ test	net.forbric.kernel.mixin.BlockQueryNativeEvidenceTest	apolisFirstFrictionHo
 test	net.forbric.kernel.mixin.BlockQueryNativeEvidenceTest	createsReleasedWrapsPairWithTheVanillaBodies()	[fixture:third-party] real fixture required: $ROOT/forbric-kernel/build/compat-inputs/create-fly/create-fly.jar
 test	net.forbric.kernel.mixin.BracketedTargetAdaptersStagedTest	createsReleasedKeyHooksLandOnlyWhereTheAdapterReadsTheGamesCode()	[fixture:staged] staged jar absent: $ROOT/forbric-loader/run/merged-base/patched-mc-merged-26.2.jar
 test	net.forbric.kernel.mixin.BracketedTargetAdaptersStagedTest	createsSectionHookLocalIsPinnedOnlyWhereTheAdapterReadsTheGamesCode()	[fixture:staged] staged jar absent: $ROOT/forbric-loader/run/merged-base/patched-mc-merged-26.2.jar
+test	net.forbric.kernel.mixin.BracketedTargetAdaptersStagedTest	releasedKeyHooksLandAfterTheEarlyReturnsAreGivenBack()	[fixture:staged] staged jar absent: $ROOT/forbric-loader/run/merged-base/patched-mc-merged-26.2.jar
 test	net.forbric.kernel.mixin.BridgedLootDispatchPolicyTest	aDispatchElsewhereOrWithTheBridgeOffStays()	[fixture:staged] actual game required
 test	net.forbric.kernel.mixin.BridgedLootDispatchPolicyTest	aListenerRegistrationIsNotADispatch()	[fixture:staged] actual game required
 test	net.forbric.kernel.mixin.BridgedLootDispatchPolicyTest	aRebuiltFabricLootSourceIsStillLeftOut()	[fixture:staged] fabric-api fixture: $ROOT/forbric-kernel/run/client-merged-pack/mods/fabric-api-0.155.2+26.2.jar

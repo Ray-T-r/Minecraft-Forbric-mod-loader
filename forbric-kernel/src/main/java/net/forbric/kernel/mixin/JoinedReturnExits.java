@@ -145,8 +145,9 @@ final class JoinedReturnExits {
 
 	/**
 	 * Reads both bodies of one method. Null unless the current body calls {@code hook} once, immediately before its final
-	 * return, with exactly one int argument loaded from a parameter neither body writes, the join ending in it holds
-	 * nothing but operand loads and void calls they alone feed, and the native body does not call {@code hook} (a guest
+	 * return (or a goto to it, over the return blocks a split placed in front of it), with exactly one int argument loaded
+	 * from a parameter neither body writes, the join ending in it holds nothing but operand loads and void calls they
+	 * alone feed, and the native body does not call {@code hook} (a guest
 	 * compiled against the joined body counts its returns already).
 	 */
 	static JoinedReturnExits of(ClassNode originalOwner, MethodNode original, ClassNode currentOwner, MethodNode current,
@@ -159,7 +160,9 @@ final class JoinedReturnExits {
 		MethodInsnNode call = hooks.getFirst();
 		int returnOpcode = Type.getReturnType(current.desc).getOpcode(Opcodes.IRETURN);
 		List<AbstractInsnNode> originalReturns = returns(original, returnOpcode), currentReturns = returns(current, returnOpcode);
-		if (originalReturns.isEmpty() || currentReturns.isEmpty() || executable(call.getNext()) != currentReturns.getLast()) return null;
+		// The hook precedes the final return: next to it, or across the blocks a split placed in front of the tail
+		// (VanillaEarlyReturns gives a folded early return its own block there, which the hook's run jumps over).
+		if (originalReturns.isEmpty() || currentReturns.isEmpty() || reached(call.getNext()) != currentReturns.getLast()) return null;
 		try {
 			Frame<SourceValue>[] currentFrames = new Analyzer<>(new SourceInterpreter()).analyze(currentOwner.name, current);
 			Frame<SourceValue>[] originalFrames = new Analyzer<>(new SourceInterpreter()).analyze(originalOwner.name, original);
@@ -304,6 +307,13 @@ final class JoinedReturnExits {
 	static AbstractInsnNode executable(AbstractInsnNode node) {
 		while (node != null && node.getOpcode() < 0) node = node.getNext();
 		return node;
+	}
+
+	/** The instruction straight-line execution reaches from {@code node}: past labels and frames, and through gotos. */
+	static AbstractInsnNode reached(AbstractInsnNode node) {
+		AbstractInsnNode at = executable(node);
+		for (int guard = 0; at instanceof JumpInsnNode jump && jump.getOpcode() == Opcodes.GOTO && guard < 16; guard++) at = executable(jump.label);
+		return at;
 	}
 
 	/** The run that feeds an arrival at the hook: what precedes a goto, a fall-through's own run, nothing for a branch. */
