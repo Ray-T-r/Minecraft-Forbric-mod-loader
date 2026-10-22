@@ -131,6 +131,7 @@ public final class ForbricMixinService
 		changed+=CarrierMethodReferences.adapt(source,owner->{byte[] current=resource.apply(owner+".class");if(current==null)return null;ClassNode tables=new ClassNode();new ClassReader(current).accept(tables,0);return tables;},NativeGameReferences::reference,loader());
 		changed+=NativeSliceOccurrences.adapt(source,code,NativeGameReferences::reference);
 		changed+=NativeConsumerStores.adapt(source,code,NativeGameReferences::reference);
+		changed+=NativeValueStores.adapt(source,code,NativeGameReferences::reference);
 		changed+=MixinAbsorbedCallbackTransport.adapt(source,owner->{byte[] current=resource.apply(owner+".class");return current==null?null:MixinFit.parse(current);},
 			owner->NativeGameReferences.reference(MixinStubRebind.ecosystemOf(source.name),owner),
 			owner->NativeGameReferences.peers(MixinStubRebind.ecosystemOf(source.name),owner),loader());
@@ -361,6 +362,9 @@ public final class ForbricMixinService
 		// …and a value modifier written for a local's one native store, which the carrier stores again on its own paths before the
 		// native read of it, modifies that read instead: once per call, on the value the read sees.
 		NativeConsumerStores.adapt(node, this::mergedBaseNodeWithCode, NativeGameReferences::reference);
+		// …and a value modifier at the store of a call's result, where a carrier first stores another value in the local its
+		// discriminator picks, names the local the merged method stores that result in (straight, or through the carrier's hook).
+		NativeValueStores.adapt(node, this::mergedBaseNodeWithCode, NativeGameReferences::reference);
 		// …and an expression definition naming a method that the class now references through the kernel's thunk names
 		// the thunk too, so a method-reference expression (this::m) still finds the reference.
 		MixinExpressionThunks.adapt(node, this::mergedBaseNodeWithCode);

@@ -115,6 +115,7 @@ class WeaveCoverageCensusTest {
 			Map.entry("NativeEntryRelay", Switch.own("forbric.nativeEntryRelay")), // NativeEntryRelayWeaveTest, FluidPairMixinAdaptersWeaveTest
 			Map.entry("NativeDecisionIsland", Switch.own("forbric.nativeDecisionIsland")), // NativeDecisionIslandWeaveTest
 			Map.entry("NativeConsumerStores", Switch.own("forbric.nativeConsumerStores")), // NativeConsumerStoresWeaveTest
+			Map.entry("NativeValueStores", Switch.own("forbric.nativeValueStores")), // NativeValueStoresWeaveTest
 			Map.entry("ReplacedDecisionValues", Switch.own("forbric.replacedDecisionValues")), // ReplacedDecisionValuesWeaveTest
 			Map.entry("CarrierDecisions", Switch.own("forbric.carrierDecisions")), // CarrierDecisionsWeaveTest
 			Map.entry("CarrierGuardedPoints", Switch.own("forbric.carrierGuardedPoints")), // CarrierGuardedPointsWeaveTest
