@@ -22,6 +22,14 @@ public class Slab {
 		Trace.add("shatter " + this + " at " + at);
 	}
 
+	public void settle(Yard yard, Point at) {
+		Trace.add("settle " + this + " at " + at);
+	}
+
+	public void seal(Point at) {
+		Trace.add("seal " + this);
+	}
+
 	@Override
 	public String toString() {
 		return name;

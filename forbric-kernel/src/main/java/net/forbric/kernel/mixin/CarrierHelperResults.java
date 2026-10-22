@@ -63,6 +63,11 @@ import net.forbric.kernel.util.ForbricLog;
  *   <li>the merged method calls exactly one method of its own class the native method never calls — private, static or final
  *       (or of a final class), answering a boolean — whose body makes the call exactly once, and no execution of the method
  *       passes two of those calls (none is reachable from another, or from itself);</li>
+ *   <li>the helper is not the native method's whole body under another name ({@link #carriesTheWholeBody}: the merged method's
+ *       descriptor, handed the method's own arguments, making every call and field access the native method makes). There the
+ *       native instruction still exists, inside the renamed body, and MixinRetarget's renamed-body rule puts the injector on it;
+ *       moving it onto the helper's answer would run it after the whole body — Carpet's entity-load hook on
+ *       {@code PersistentEntitySectionManager.addEntity} after {@code startTicking}, where it runs before it natively;</li>
  *   <li>the helper answers true on exactly the paths through it that make the call — the proof follows every path from its
  *       entry to a return, a test of a value already decided on the path taken only the way it was decided, and asks that each
  *       return hand back a constant or a value the path tested, true where the call was made and false where it was not; a
@@ -172,6 +177,14 @@ public final class CarrierHelperResults {
 			sites.add(made);
 		}
 		if (helper == null || sites.isEmpty()) return null;
+		// The helper is the native method's own body under another name — the carrier renamed it whole and left a dispatcher in
+		// its place — so the native instruction is in it, and the injector belongs on that instruction (MixinRetarget's
+		// renamed-body rule moves its selector there), not on the helper's answer, after the whole body has returned.
+		if (carriesTheWholeBody(merged, selected, helper, was)) {
+			ForbricLog.debug("[Forbric/Mixin] %s.%s: %s carries the whole native body of %s.%s; the injector is left for the renamed-body rule",
+					mixin.name.replace('/', '.'), handler.name, merged.name.replace('/', '.') + "." + helper.name, merged.name.replace('/', '.'), selected.name);
+			return null;
+		}
 		for (MethodInsnNode site : sites) if (reachable(selected, successors(selected, site), new HashSet<>(sites))) return null;
 		if (!answersWhetherItCalled(merged.name, helper, call)) return null;
 
@@ -457,6 +470,32 @@ public final class CarrierHelperResults {
 		for (AbstractInsnNode instruction : body.instructions)
 			if (instruction instanceof MethodInsnNode each && member(each).equals(member(call)) && each.getOpcode() == call.getOpcode()) made++;
 		return made;
+	}
+
+	/**
+	 * Whether {@code helper} is the native method's body renamed whole: it has the merged method's descriptor and static-ness,
+	 * the merged method hands it its own arguments unchanged ({@link CarrierRenames#handsOwnArguments}), and it makes every call
+	 * and field access the native method makes, at least as often (what {@link CarrierRenames} calls a RENAME). NeoForge's
+	 * {@code PersistentEntitySectionManager.addEntity} posts its join event and calls vanilla's body as
+	 * {@code addEntityWithoutEvent}; vanilla's {@code Visibility.isTicking} call is in that body, before {@code startTicking}.
+	 */
+	static boolean carriesTheWholeBody(ClassNode owner, MethodNode method, MethodNode helper, MethodNode reference) {
+		if (!helper.desc.equals(method.desc) || ((helper.access ^ method.access) & Opcodes.ACC_STATIC) != 0
+				|| !CarrierRenames.handsOwnArguments(owner, method, helper)) return false;
+		Map<String, Integer> made = members(helper);
+		for (Map.Entry<String, Integer> wanted : members(reference).entrySet())
+			if (made.getOrDefault(wanted.getKey(), 0) < wanted.getValue()) return false;
+		return true;
+	}
+
+	/** Every call and field access {@code method} makes, with how often. */
+	private static Map<String, Integer> members(MethodNode method) {
+		Map<String, Integer> out = new HashMap<>();
+		if (method.instructions != null) for (AbstractInsnNode instruction : method.instructions) {
+			String member = CarrierHelpers.member(instruction);
+			if (member != null) out.merge(member, 1, Integer::sum);
+		}
+		return out;
 	}
 
 	/** Whether {@code body}, called by {@code made}, is the code that runs: private, static or final, or of a final class. */

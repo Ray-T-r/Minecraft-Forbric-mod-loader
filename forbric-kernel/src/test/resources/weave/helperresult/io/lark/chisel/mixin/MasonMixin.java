@@ -21,6 +21,12 @@ abstract class MasonMixin {
 		Trace.add("chisel " + at + " " + relic + " " + shaped + " " + info.getId());
 	}
 
+	/** Written against the native lay body: it runs before the slab settles, so before it is sealed. */
+	@Inject(method = "lay", at = @At(value = "INVOKE", target = "Lorg/quarry/stone/Slab;settle(Lorg/quarry/stone/Yard;Lorg/quarry/stone/Point;)V"))
+	private void chisel$lay(Point at, CallbackInfoReturnable<Boolean> info) {
+		Trace.add("chisel-lay " + at);
+	}
+
 	@Inject(method = "split", at = @At(value = "INVOKE", target = "Lorg/quarry/stone/Slab;shatter(Lorg/quarry/stone/Yard;Lorg/quarry/stone/Point;Lorg/quarry/stone/Slab;)V"))
 	private void chisel$split(Point at, CallbackInfo info, @Local Slab slab) {
 		Trace.add("chisel-split " + at + " " + slab);

@@ -26,4 +26,12 @@ public class Mason {
 		if (this.yard.clear(at)) slab.shatter(this.yard, at, slab);
 		if (careful) return;
 	}
+
+	public boolean lay(Point at) {
+		if (!this.yard.clear(at)) return false;
+		Slab slab = this.yard.slabAt(at);
+		slab.settle(this.yard, at);
+		slab.seal(at);
+		return true;
+	}
 }

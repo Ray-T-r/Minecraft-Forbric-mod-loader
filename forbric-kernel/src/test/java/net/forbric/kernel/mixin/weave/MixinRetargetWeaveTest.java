@@ -36,6 +36,10 @@ import net.forbric.kernel.mixin.MixinRetarget;
  *       entity hook still moves, and the colour hook runs on the shadow colour;</li>
  *   <li>retarget-off — {@code -Dforbric.mixinRetarget=off}: nothing moves, both anchors are reported losses;</li>
  *   <li>neoforge — the row is Fabric's only: NeoForge's own addEntity is the dispatcher its mods were compiled against.</li>
+ *   <li>native — the same, with the Fabric game's own addEntity (the body) as the native reference, so every adapter that
+ *       compares the merged method with it is awake. CarrierHelperResults sees the renamed body as a boolean helper of the
+ *       class that makes the call and answers whether it did; it must leave the injector to R3, which puts it on the
+ *       native instruction — before the ticking call — and not run it on the helper's answer, after it.</li>
  * </ul>
  */
 class MixinRetargetWeaveTest {
@@ -46,16 +50,16 @@ class MixinRetargetWeaveTest {
 	private static final String STYLE = "net/minecraft/network/chat/Style";
 
 	/** The entity hook in the renamed body; the colour hook nowhere. */
-	private static final String RENAMED = "manager[head;event;body;added;] style[colorHead;color;shadow;]";
+	private static final String RENAMED = "manager[head;event;body;added;ticking;] style[colorHead;color;shadow;]";
 	/** Both on the bytes alone: the colour hook runs on the shadow colour, which no game ever did. */
-	private static final String BYTES_ALONE = "manager[head;event;body;added;] style[colorHead;color;shadow;colorChange;]";
+	private static final String BYTES_ALONE = "manager[head;event;body;added;ticking;] style[colorHead;color;shadow;colorChange;]";
 	/** Nothing moved. */
-	private static final String STAYED = "manager[head;event;body;] style[colorHead;color;shadow;]";
+	private static final String STAYED = "manager[head;event;body;ticking;] style[colorHead;color;shadow;]";
 	private static final String ENTITY_MOVED = "EntityManagerMixin — addEntity → addEntityWithoutEvent";
 	private static final String STYLE_MOVED = "StyleMixin — withColor(I)Lnet/minecraft/network/chat/Style; → withShadowColor";
 
 	@TempDir static Path work;
-	private static Path fixture;
+	private static Path fixture, withNative;
 	private static final Map<String, WeaveHarness.Result> RUNS = new LinkedHashMap<>();
 
 	@BeforeAll static void weave() throws Exception {
@@ -72,6 +76,32 @@ class MixinRetargetWeaveTest {
 		RUNS.put("census-off", run("census-off", Ecosystem.FABRIC, Map.of("forbric.mixinRetarget.renameCensus", "off")));
 		RUNS.put("retarget-off", run("retarget-off", Ecosystem.FABRIC, Map.of(MixinRetarget.PROPERTY, "off")));
 		RUNS.put("neoforge", run("neoforge", Ecosystem.NEOFORGE, Map.of()));
+		Path nativeFixture = WeaveHarness.fixture(work, "renamedbody-native", List.of(
+				SOURCES.resolve("net/minecraft/world/level/entity/EntityAccess.java"),
+				SOURCES.resolve("net/minecraft/world/level/entity/Visibility.java"),
+				SOURCES.resolve("native/net/minecraft/world/level/entity/PersistentEntitySectionManager.java"),
+				SOURCES.resolve("net/minecraft/network/chat/Style.java"),
+				SOURCES.resolve("fixture/renamedbody/Probe.java"),
+				SOURCES.resolve("fixture/renamedbody/mixin/EntityManagerMixin.java"),
+				SOURCES.resolve("fixture/renamedbody/mixin/StyleMixin.java")),
+				Map.of(CONFIG, SOURCES.resolve(CONFIG)));
+		Map<String, byte[]> natives = new LinkedHashMap<>();
+		natives.put(MANAGER, NativeWeaveReferences.classes(nativeFixture).get(MANAGER));
+		withNative = NativeWeaveReferences.with(work, fixture, natives);
+		RUNS.put("native", WeaveHarness.run(work, "native", withNative, CONFIG, MOD, Ecosystem.FABRIC, EnvType.SERVER,
+				"fixture.renamedbody.Probe", "run", Map.of()));
+	}
+
+	/**
+	 * With the native body known, the renamed body is still followed: the hook runs on the native instruction, before the
+	 * ticking call, and not on the helper's answer after the whole body (where CarrierHelperResults would have put it).
+	 */
+	@Test void withTheNativeBodyKnownTheHookStillLandsOnTheNativeInstruction() throws Exception {
+		WeaveHarness.Result run = RUNS.get("native");
+		assertTrue(renamedOnly(run), run.describe() + "\nfindings: " + run.findings());
+		assertFalse(run.printed("EntityManagerMixin.renamedbody$added: net.minecraft.world.level.entity.Visibility.isTicking is no longer called"),
+				run.describe());
+		WeaveHarness.assertWovenAndVerified(run, MANAGER, withNative);
 	}
 
 	@Test void theRenamedBodyIsFollowedAndTheLookAlikeIsNot() throws Exception {

@@ -11,6 +11,7 @@ public class Probe {
 		record(out, "chip careful", () -> Trace.add("chipped " + new Mason(true, true).chip(new Point(2))));
 		record(out, "chip stuck", () -> Trace.add("chipped " + new Mason(false, false).chip(new Point(3))));
 		record(out, "split", () -> new Mason(false, true).split(new Point(4)));
+		record(out, "lay", () -> Trace.add("laid " + new Mason(false, true).lay(new Point(5))));
 		return out.toString();
 	}
 

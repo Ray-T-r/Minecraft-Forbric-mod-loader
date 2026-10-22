@@ -19,4 +19,8 @@ public class Yard {
 	public boolean clear(Point at) {
 		return yields;
 	}
+
+	public boolean refuses(Point at) {
+		return false;
+	}
 }

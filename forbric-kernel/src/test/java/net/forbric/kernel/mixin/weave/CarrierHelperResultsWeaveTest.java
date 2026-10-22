@@ -32,6 +32,13 @@ import net.forbric.kernel.mixin.CarrierHelperResults;
  *
  * <p>{@code split}'s helper {@code shiver} answers true whether or not it shattered anything: no proof, no move, and the guest's
  * injector there is a reported loss. Switched off, neither moves.
+ *
+ * <p>{@code lay}'s helper {@code layUnheard} is the native body itself, renamed whole behind the yard's refusal: the native
+ * settle call is in it, so the move declines and the injector is left for MixinRetarget's renamed-body rule, which puts it on
+ * that very call — before the settle and the seal, as natively — where moving it onto the helper's answer would run it after
+ * the seal. That rule plans only for a game class along the census of the staged jars (carrier-renames.txt), which these
+ * classes are not; here the injector stays where it was written, a reported loss. MixinRetargetWeaveTest's {@code native} run
+ * shows the rule landing it, with this adapter awake.
  */
 class CarrierHelperResultsWeaveTest {
 	private static final Path SOURCES = Path.of("src/test/resources/weave/helperresult");
@@ -92,7 +99,16 @@ class CarrierHelperResultsWeaveTest {
 
 	@Test void switchedOffNeitherMoves() {
 		for (var entry : steps(off).entrySet()) assertFalse(entry.getValue().contains("chisel"), entry.getKey() + " " + off.describe());
-		assertEquals(2, losses(off).size(), off.findings().toString());
+		assertEquals(3, losses(off).size(), off.findings().toString());
+	}
+
+	/** A helper that is the native body renamed whole is not followed: the native instruction is in it. */
+	@Test void aHelperThatIsTheWholeNativeBodyIsLeftToTheRenamedBodyRule() {
+		assertEquals("chisel-lay p5, settle slab5 at p5, seal slab5, laid true", steps(natively).get("lay"), natively.describe());
+		assertFalse(moved.printed("MasonMixin.chisel$lay: org.quarry.stone.Slab.settle is no longer called"), moved.describe());
+		assertEquals("settle slab5 at p5, seal slab5, laid true", steps(moved).get("lay"),
+				"not on the helper's answer (after the seal); no census row here, so the injector stays, a reported loss\n" + moved.describe());
+		assertTrue(losses(moved).stream().anyMatch(f -> f.id().contains("chisel$lay")), moved.findings().toString());
 	}
 
 	@Test void theControlFlipsTheMainAssertion() {
