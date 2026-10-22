@@ -513,20 +513,20 @@ public final class KernelFabricFuel {
 
 	/**
 	 * The context the fuel events are handed, as fabric-api's public {@code FuelValueEvents.Context} describes it: the
-	 * registries, the enabled features and the base smelt time. Implemented here, so no class of fabric-api's own
-	 * implementation is named.
+	 * registries, the enabled features and the base smelt time — a {@link KernelFuelValueContext}, the kernel's own
+	 * record implementing that interface, so no class of fabric-api's own implementation is named and a listener gets a
+	 * real class, not a proxy. Reached only after {@link #resolve} found the interface, which the record's linkage needs.
 	 */
 	private static Object context(HolderLookup.Provider registries, FeatureFlagSet features, int baseSmeltTime) {
-		return java.lang.reflect.Proxy.newProxyInstance(contextApi.getClassLoader(), new Class<?>[] {contextApi},
-				(proxy, method, args) -> switch (method.getName()) {
-					case "registries" -> registries;
-					case "enabledFeatures" -> features;
-					case "baseSmeltTime" -> baseSmeltTime;
-					case "hashCode" -> System.identityHashCode(proxy);
-					case "equals" -> proxy == args[0];
-					case "toString" -> "FuelValueEvents.Context[baseSmeltTime=" + baseSmeltTime + "]";
-					default -> throw new UnsupportedOperationException(method.getName());
-				});
+		Object context = KernelFuelValueContext.of(registries, features, baseSmeltTime);
+		if (!contextApi.isInstance(context)) {
+			// The record's superinterface was resolved by another loader than the one the events take their context
+			// from: hand them nothing they cannot cast rather than a ClassCastException inside a mod's listener.
+			throw new IllegalStateException("the kernel's fuel context implements a FuelValueEvents.Context from "
+					+ context.getClass().getInterfaces()[0].getClassLoader() + ", the events take one from "
+					+ contextApi.getClassLoader());
+		}
+		return context;
 	}
 
 	/** fabric-content-registries, once; false (for good) when it is not installed. */

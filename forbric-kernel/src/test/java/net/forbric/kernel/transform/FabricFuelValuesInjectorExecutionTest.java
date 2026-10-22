@@ -39,6 +39,8 @@ import net.fabricmc.api.EnvType;
 @ResourceLock("system-properties")
 class FabricFuelValuesInjectorExecutionTest {
 	private static final Path HOOK_SOURCE = Path.of("src/runtime/java/net/forbric/kernel/runtime/KernelFabricFuel.java");
+	/** The context the hook hands the events: the kernel's own record of the public interface. */
+	private static final Path CONTEXT_SOURCE = Path.of("src/runtime/java/net/forbric/kernel/runtime/KernelFuelValueContext.java");
 	private static final String HOOKS = FabricFuelValuesInjector.HOOKS;
 	private static final String FUEL = FabricFuelValuesInjector.FUEL_VALUES_CLASS;
 
@@ -213,8 +215,13 @@ class FabricFuelValuesInjectorExecutionTest {
 				import net.minecraft.world.level.block.entity.FuelValues;
 
 				public final class FuelValueEvents {
+					/** The public interface, all three methods of it, as fabric-content-registries declares it. */
 					public interface Context {
 						int baseSmeltTime();
+
+						net.minecraft.core.HolderLookup.Provider registries();
+
+						net.minecraft.world.flag.FeatureFlagSet enabledFeatures();
 					}
 
 					public interface BuildCallback {
@@ -243,12 +250,19 @@ class FabricFuelValuesInjectorExecutionTest {
 
 				/** A Fabric mod: peat burns, and so would crimson planks; bamboo is excluded. */
 				public class FabricFuels {
+					/** Every context the events handed this mod, in order. */
+					public static final java.util.List<FuelValueEvents.Context> SEEN = new java.util.ArrayList<>();
+
 					public static void register() {
 						FuelValueEvents.BUILD.register((builder, context) -> {
+							SEEN.add(context);
 							builder.add(Items.PEAT, context.baseSmeltTime() * 4);
 							builder.add(Items.CRIMSON_PLANKS, 300);
 						});
-						FuelValueEvents.EXCLUSIONS.register((builder, context) -> builder.remove(Items.BAMBOO));
+						FuelValueEvents.EXCLUSIONS.register((builder, context) -> {
+							SEEN.add(context);
+							builder.remove(Items.BAMBOO);
+						});
 					}
 				}
 				""");
@@ -277,6 +291,7 @@ class FabricFuelValuesInjectorExecutionTest {
 		assertTrue(Files.isRegularFile(HOOK_SOURCE), "the game-side hook's source is part of the checkout: " + HOOK_SOURCE.toAbsolutePath());
 		Map<String, String> sources = new HashMap<>(STAND_INS);
 		sources.put("net/forbric/kernel/runtime/KernelFabricFuel.java", Files.readString(HOOK_SOURCE));
+		sources.put("net/forbric/kernel/runtime/KernelFuelValueContext.java", Files.readString(CONTEXT_SOURCE));
 		return InjectorExecution.compile(work, sources);
 	}
 
@@ -338,6 +353,32 @@ class FabricFuelValuesInjectorExecutionTest {
 			byte[] once = transformed(original, List.of(target)).get(target.replace('.', '/'));
 			assertSame(once, InjectorExecution.transform(new FabricFuelValuesInjector(), target, once, EnvType.SERVER), target + " is edited once");
 		}
+	}
+
+	/**
+	 * The context a listener is handed is a real class implementing the public {@code FuelValueEvents.Context}, never a
+	 * {@code java.lang.reflect.Proxy}, and a value as fabric-content-registries' own record is: the same registries,
+	 * features and smelt time on both events of one dispatch, and equal across them.
+	 */
+	@Test void theFuelEventsAreHandedARealContextNotAProxy(@TempDir Path work) throws Throwable {
+		Map<String, byte[]> classes = transformed(compile(work), List.of(HOOKS, FUEL));
+		ClassLoader loader = InjectorExecution.load(classes);
+		serverFuels(loader);
+		List<?> seen = (List<?>) loader.loadClass("fixture.FabricFuels").getField("SEEN").get(null);
+		assertEquals(2, seen.size(), "BUILD and EXCLUSIONS each handed one context: " + seen);
+		Class<?> api = loader.loadClass("net.fabricmc.fabric.api.registry.FuelValueEvents$Context");
+		for (Object context : seen) {
+			assertFalse(java.lang.reflect.Proxy.isProxyClass(context.getClass()), "a proxy: " + context.getClass());
+			assertTrue(api.isInstance(context), "implements the public interface");
+			assertTrue(context.getClass().isRecord(), "a value, as Fabric's own context is: " + context.getClass());
+			assertEquals("net.forbric.kernel.runtime.KernelFuelValueContext", context.getClass().getName(),
+					"the kernel's class, not one of fabric-api's implementation");
+			assertEquals(200, api.getMethod("baseSmeltTime").invoke(context));
+			assertNotNull(api.getMethod("registries").invoke(context), "the method's own registries");
+			assertNotNull(api.getMethod("enabledFeatures").invoke(context), "the method's own features");
+		}
+		assertEquals(seen.get(0), seen.get(1), "equal by value across the two events of one dispatch");
+		assertEquals(seen.get(0).hashCode(), seen.get(1).hashCode());
 	}
 
 	@Test void withoutTheReturnHooksTheFabricFuelsStillGoIn(@TempDir Path work) throws Throwable {

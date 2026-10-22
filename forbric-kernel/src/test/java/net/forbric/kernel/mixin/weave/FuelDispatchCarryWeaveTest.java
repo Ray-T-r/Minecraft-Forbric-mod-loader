@@ -287,6 +287,7 @@ class FuelDispatchCarryWeaveTest {
 			sources.add(file);
 		}
 		sources.add(Path.of("src/runtime/java/net/forbric/kernel/runtime/KernelFabricFuel.java"));
+		sources.add(Path.of("src/runtime/java/net/forbric/kernel/runtime/KernelFuelValueContext.java"));
 		Path json = work.resolve(CONFIG), noWrapJson = work.resolve(NO_WRAP_CONFIG);
 		Files.writeString(json, "{\"required\":true,\"package\":\"org.hearthkeep.mixin\",\"mixins\":[\"HearthMixin\",\"KilnMixin\"],"
 				+ "\"injectors\":{\"defaultRequire\":1}}");

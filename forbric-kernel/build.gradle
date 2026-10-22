@@ -49,7 +49,11 @@ def stagedGameJars = [stagedMergedBase, stagedForgeRuntime, stagedNeoRuntime].fi
 def devFabricApi = file('.dev/api/fabric-api-0.155.2+26.2.jar')
 def stagedFabricApi = file(project.findProperty('forbric.fabricApi') ?: (devFabricApi.isFile() ? devFabricApi
 		: new File(stagedRoot.parentFile.parentFile, 'forbric-kernel/run/client-merged-pack/mods/fabric-api-0.155.2+26.2.jar')))
-def transferApiModules = ['fabric-transfer-api-v1-', 'fabric-api-lookup-api-v1-', 'fabric-api-base-']
+// fabric-content-registries-v0 rides along for one public interface: FuelValueEvents.Context, which the game side's
+// KernelFuelValueContext implements so the fuel events get a real class instead of a proxy. Same rule: compiled
+// against, never bundled; at run time the installed fabric-api supplies it, and without fabric-api it is never loaded.
+def transferApiModules = ['fabric-transfer-api-v1-', 'fabric-api-lookup-api-v1-', 'fabric-api-base-',
+		'fabric-content-registries-v0-']
 def transferModulesDir = layout.buildDirectory.dir('transfer-api-compile')
 def extractTransferApis = tasks.register('extractTransferApis', Sync) {
 	onlyIf { !stagedGameJars.isEmpty() }
