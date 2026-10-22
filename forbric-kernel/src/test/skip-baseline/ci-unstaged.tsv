@@ -107,6 +107,8 @@ test	net.forbric.kernel.boot.NeoDeferredWorkTest	bothCarriersDeferredWorkQueuesS
 test	net.forbric.kernel.boot.NeoDeferredWorkTest	bothSetupPhasesAttributeAThrowingDeferredTask()	[fixture:game-side] KernelNeoSetup not compiled yet (no staged game jars)
 test	net.forbric.kernel.boot.NeoDeferredWorkTest	theCarrierStillOffersTheExecutorNeoForgeRunsDeferredWorkOn()	[fixture:staged] staged NeoForge carrier absent
 test	net.forbric.kernel.boot.NeoDeferredWorkTest	theNeoForgeSetupPhaseRunsItsQueueThroughThisHelper()	[fixture:game-side] KernelNeoSetup not compiled yet (no staged game jars)
+test	net.forbric.kernel.boot.NeoGraphicsBootstrappersTest	neoForgesConfigStopsPromisingAnEarlyWindowAndNothingElseChanges()	[fixture:staged] staged neoforge-runtime.jar absent
+test	net.forbric.kernel.boot.NeoGraphicsBootstrappersTest	theCarrierDeclaresTheSpiByThatNameAndShape()	[fixture:staged] $ROOT/forbric-loader/run/neoforge-runtime/neoforge-runtime.jar absent (reading net/neoforged/neoforgespi/earlywindow/GraphicsBootstrapper.class)
 test	net.forbric.kernel.boot.NeoPostRegisterTailCensusTest	everyStepAfterNeoForgesRegisterLoopIsOneTheKernelTakes()	[fixture:staged] $ROOT/forbric-loader/run/neoforge-runtime/neoforge-runtime.jar absent
 test	net.forbric.kernel.boot.NeoRegistryCreationPhaseTest	registryModificationFollowsCreationAsOnNativeNeoForge()	[fixture:staged] staged runtime absent
 test	net.forbric.kernel.boot.PassiveSeederFileConfigTest	theRealLithiumFindsUnlitCampfiresOverride()	[fixture:third-party] the player's pack is not here

@@ -123,6 +123,9 @@ public final class PassiveSeeder {
 		// Forge-patched window call dereferences. Here and not pre-Mixin: nothing reads it until the game builds its
 		// window, and loaded here the handler is weavable like any other game class.
 		seedForgeImmediateWindow(gameLoader);
+		// NeoForge's half of the same fact: no early window, so its config must not promise one. Before the kernel runs
+		// NeoForge's GraphicsBootstrapper services (NeoGraphicsBootstrappers), which read it.
+		if (side.isClient()) seedNeoForgeNoEarlyWindow(gameLoader);
 		// NOTE: NeoForge baseline-registry registration is NOT done here — NeoForgeRegistriesSetup.<clinit> touches
 		// game registries and throws "Not bootstrapped" pre-Main. It runs post-Bootstrap via KernelLifecycle
 		// (the redirected ServerModLoader.load window). See KernelLifecycle.onServerModLoading.
@@ -1754,7 +1757,7 @@ public final class PassiveSeeder {
 			// Handler.<clinit> NPEs if FMLConfig.load() hasn't populated its backing file config).
 			Class<?> fmlPaths = Class.forName(ForeignType.FML_PATHS.binary(Ecosystem.FORGE), false, gameLoader);
 			fmlPaths.getMethod("loadAbsolutePaths", Path.class).invoke(null, gameDir.toAbsolutePath());
-			Class<?> fmlConfig = Class.forName("net.minecraftforge.fml.loading.FMLConfig", false, gameLoader);
+			Class<?> fmlConfig = Class.forName(ForeignType.FML_CONFIG.binary(Ecosystem.FORGE), false, gameLoader);
 			fmlConfig.getMethod("load").invoke(null);
 			forgeIdentitySeeded = true;
 			ForbricLog.debug("[Forbric/Seed] seeded traditional-Forge FMLLoader identity + FMLPaths + FMLConfig");
@@ -1915,6 +1918,95 @@ public final class PassiveSeeder {
 			Caught.error(t, "[Forbric/Seed] could not give MinecraftForge's ImmediateWindowHandler a provider — the "
 					+ "first Forge-patched window call (Window.<init> on a merged base that keeps one) will throw");
 		}
+	}
+
+	/** NeoForge's FML config, whose {@code earlyWindowControl} says whether FML shows (and so controls) a window early. */
+	static final String NEO_FML_CONFIG = ForeignType.FML_CONFIG.binary(Ecosystem.NEOFORGE);
+	static final String NEO_EARLY_WINDOW_CONTROL = "EARLY_WINDOW_CONTROL";
+
+	/**
+	 * Makes NeoForge's {@code FMLConfig} answer {@code earlyWindowControl = false} on a client, because under the kernel
+	 * NeoForge's early window never exists: nothing calls {@code ImmediateWindowHandler.load}, its provider stays null,
+	 * and the game creates its own window in {@code Minecraft.<init>}.
+	 *
+	 * <p>The kernel never loads {@code fml.toml} into NeoForge's config (it is MinecraftForge's file too, and
+	 * MinecraftForge's FML loads it), so every value read the enum's default — {@code true} for this one, a promise of a
+	 * window that is never opened. Whatever trusts it plans around a window that does not come. Sodium's NeoForge
+	 * {@code GraphicsBootstrapper} is the reader that matters: on {@code true} it applies its driver environment changes
+	 * for FML's window and starts a thread that waits thirty seconds for FML's early renderer before it puts them back
+	 * with a warning; on {@code false} — genuine NeoForge's answer when the early window is switched off — it leaves them to
+	 * its own wrap of the game's {@code glfwCreateWindow}, which is the window Forbric actually opens.
+	 *
+	 * <p>Only that one answer changes. The config the enum reads is given every other entry at its own default value, so
+	 * each other getter — read back here before and after, and compared — answers exactly what it answered with no config
+	 * loaded. In memory only: nothing is written, and a config someone already loaded is left alone. Not on a dedicated
+	 * server, where genuine FML reads {@code earlyWindowControl} from the file and goes headless regardless, so the value
+	 * a reader sees there is the default, as here.
+	 */
+	static void seedNeoForgeNoEarlyWindow(ClassLoader gameLoader) {
+		try {
+			Class<?> config = Class.forName(NEO_FML_CONFIG, true, gameLoader);
+			Class<?> valueType = Class.forName(NEO_FML_CONFIG + "$ConfigValue", true, gameLoader);
+			Field instanceField = config.getDeclaredField("INSTANCE");
+			instanceField.setAccessible(true);
+			Object instance = instanceField.get(null);
+			Field data = config.getDeclaredField("configData");
+			data.setAccessible(true);
+			if (data.get(instance) != null) {
+				ForbricLog.info("[Forbric/Seed] NeoForge's FMLConfig was already loaded — its earlyWindowControl is left as "
+						+ "loaded (%s)", config.getMethod("getBoolConfigValue", valueType)
+								.invoke(null, enumConstant(valueType, NEO_EARLY_WINDOW_CONTROL)));
+				return;
+			}
+			Method read = valueType.getDeclaredMethod("getConfigValue", data.getType());
+			read.setAccessible(true);
+			Field entry = valueType.getDeclaredField("entry");
+			entry.setAccessible(true);
+			Field defaultValue = valueType.getDeclaredField("defaultValue");
+			defaultValue.setAccessible(true);
+			Object control = enumConstant(valueType, NEO_EARLY_WINDOW_CONTROL);
+
+			Object[] values = valueType.getEnumConstants();
+			Map<Object, Object> before = new LinkedHashMap<>();
+			for (Object value : values) before.put(value, read.invoke(value, (Object) null));
+
+			// CommentedConfig.inMemory(): the type of the field itself, so the config is the one NightConfig the carrier has.
+			Object seeded = data.getType().getMethod("inMemory").invoke(null);
+			Method set = data.getType().getMethod("set", String.class, Object.class);
+			for (Object value : values) {
+				set.invoke(seeded, entry.get(value), value == control ? Boolean.FALSE : defaultValue.get(value));
+			}
+			data.set(instance, seeded);
+
+			List<String> changed = new ArrayList<>();
+			for (Object value : values) {
+				Object now = read.invoke(value, seeded);
+				if (!java.util.Objects.equals(before.get(value), now)) changed.add(entry.get(value) + "=" + now);
+			}
+			if (!changed.equals(List.of(entry.get(control) + "=false"))) {
+				data.set(instance, null);
+				ForbricLog.error("[Forbric/Seed] seeding NeoForge's FMLConfig changed %s, not earlyWindowControl alone — put "
+						+ "back to no config", changed);
+				return;
+			}
+			ForbricLog.info("[Forbric/Seed] NeoForge's FMLConfig answers earlyWindowControl=false: the kernel never opens "
+					+ "NeoForge's early window (the game creates its own), so whatever plans around that window — a "
+					+ "GraphicsBootstrapper's driver workarounds — is told so; the other %d entries answer as before",
+					values.length - 1);
+		} catch (ClassNotFoundException absent) {
+			// No NeoForge carrier: no config to answer for.
+			Caught.expected(absent);
+		} catch (Throwable t) {
+			Caught.warn(t, "[Forbric/Seed] could not make NeoForge's FMLConfig say there is no early window — a "
+					+ "GraphicsBootstrapper reading earlyWindowControl plans for FML's early window, which never opens");
+		}
+	}
+
+	private static Object enumConstant(Class<?> enumType, String name) {
+		for (Object constant : enumType.getEnumConstants()) {
+			if (((Enum<?>) constant).name().equals(name)) return constant;
+		}
+		throw new IllegalArgumentException(enumType.getName() + " has no constant " + name);
 	}
 
 	private static String providerName(Object provider) {

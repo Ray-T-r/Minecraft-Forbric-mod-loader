@@ -236,6 +236,9 @@ public final class KernelBoot {
 					+ "Fabric mod asking whether one of them is installed will be told no");
 		}
 		List<Path> modJars = new ArrayList<>(forgeFamily.jars());
+		// The top-level ones alone, before the nested are added below: genuine FML looks for early services
+		// (NeoGraphicsBootstrappers) among the files of mods/ and never inside a JarJar.
+		final List<Path> topLevelForgeFamilyJars = List.copyOf(forgeFamily.jars());
 		// The pre-scan has already selected every root and nested candidate. Consume those exact files;
 		// the legacy extractor is only for the explicit arbitration-off mode.
 		NestedCandidatePlan candidatePlan = DuplicateModArbiter.currentPlan();
@@ -1288,6 +1291,12 @@ public final class KernelBoot {
 		KernelLoadReport.writeEvidence();
 		if (side.api().isClient()) net.forbric.kernel.ui.CompatibilityDecision.noteGameArguments(args);
 		net.forbric.kernel.ui.CompatibilityDecision.requireContinuation(side.api().isClient());
+
+		// NeoForge's GraphicsBootstrapper services: genuine FML runs them first of all, before its early window and long
+		// before the game builds its own. Here, with Mixin up and the FML identities seeded (NeoForge's config already
+		// says no early window is coming), and before any game class -- the window is made inside Minecraft.<init>.
+		NeoGraphicsBootstrappers.run(loader, topLevelForgeFamilyJars,
+				jar -> MultiLoaderArbiter.ownerOf(jar) == Ecosystem.NEOFORGE, gameArgs.toArray(new String[0]));
 
 		// Fabric preLaunch entrypoints, after Mixin is up and before any game class loads (their contract).
 		KernelFabricEcosystem.runPreLaunch();

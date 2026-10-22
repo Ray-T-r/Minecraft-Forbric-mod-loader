@@ -94,6 +94,12 @@ public enum ForeignType {
 			"net.neoforged.fml.event.lifecycle.FMLClientSetupEvent"),
 	FML_COMMON_SETUP_EVENT("net.minecraftforge.fml.event.lifecycle.FMLCommonSetupEvent",
 			"net.neoforged.fml.event.lifecycle.FMLCommonSetupEvent"),
+	/**
+	 * FML's own settings ({@code fml.toml}). MinecraftForge's is loaded by the kernel; NeoForge's never is, so the kernel
+	 * gives it the one answer that is not its default under Forbric: there is no NeoForge early window.
+	 */
+	FML_CONFIG("net.minecraftforge.fml.loading.FMLConfig",
+			"net.neoforged.fml.loading.FMLConfig"),
 	FML_DEDICATED_SERVER_SETUP_EVENT("net.minecraftforge.fml.event.lifecycle.FMLDedicatedServerSetupEvent",
 			"net.neoforged.fml.event.lifecycle.FMLDedicatedServerSetupEvent"),
 	FML_LOAD_COMPLETE_EVENT("net.minecraftforge.fml.event.lifecycle.FMLLoadCompleteEvent",
