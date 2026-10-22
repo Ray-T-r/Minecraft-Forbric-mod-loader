@@ -490,11 +490,18 @@ classpath (first-URL-wins would otherwise let it shadow the winner and contribut
   the constructor. Where Fabric refuses a value (several methods of one name, a private member) the kernel stays
   lenient: it opens the member, or takes the first static method.
 - The mod-facing API is vendored under its own names: `src/main/java/net/fabricmc/api` (7 files) and
-  `src/main/java/net/fabricmc/loader` (30 files: `loader.api.*` plus the narrow internals mods actually link against
+  `src/main/java/net/fabricmc/loader` (32 files: `loader.api.*` plus the narrow internals mods actually link against
   — `FabricLoaderImpl`, `ModContainerImpl`, `EntrypointStorage`, `Hooks`, `FabricLauncher`/`FabricLauncherBase`,
   `DefaultLanguageAdapter`, `StringUtil`, legacy `net.fabricmc.loader.FabricLoader`). `FabricLoaderInternals`
   pins those internals to the parent by exact name; `-Dforbric.fabricImpl=off` withholds them. The API level
-  reported is `KernelFabricEcosystem.FABRIC_LOADER_API_LEVEL = "0.19.3"`.
+  reported is `KernelFabricEcosystem.FABRIC_LOADER_API_LEVEL = "0.19.3"`. `FabricLoaderApiSurfaceTest` holds
+  `net.fabricmc.api` and `net.fabricmc.loader.api` to Fabric Loader 0.19.3's own jar (a local launcher's copy): every
+  public class, its supertypes, and every public or protected member by descriptor. The differences it accepts are
+  listed in the test (the interval algebra, which no mod in the local corpus calls); a new one is red. As on Fabric,
+  `getEntrypoints` builds every entry, leaves a null one out, and then throws one `EntrypointException` naming the
+  first failing mod; a container's `getEntrypoint()` throws one for its own entry, except for an Error construction
+  itself raised (a class that will not initialise), which leaves as it is. Unlike Fabric, the entries are those
+  that can be the asked type: one that cannot is left out rather than failing the key.
 - Entrypoints: `preLaunch` after Mixin (§3.2 step 19); `main` inside the registration window (server) or in
   `Minecraft.<init>` (client, default); `client` in `Minecraft.<init>`; `server` on the dedicated server. Each
   mod's entrypoint is invoked in isolation — one throwing mod is recorded and skipped — with a NeoForge
