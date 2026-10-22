@@ -188,7 +188,9 @@ public final class MixinTwinRebind {
 			Plan plan = plan(mixin, handler, target, ecosystem);
 			if (plan == null) continue;
 			MethodNode outer = move(mixin, handler, target, plan);
-			if (outer != handler) mixin.methods.add(outer);
+			// The outer takes the handler's place, as MixinStubRebind's does: Mixin applies a class's injectors in declaration
+			// order, and where two land on one point that order is the order they run in.
+			if (outer != handler) mixin.methods.add(Math.max(0, mixin.methods.indexOf(handler)), outer);
 			moved++;
 		}
 		return moved;

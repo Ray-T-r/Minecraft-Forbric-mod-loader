@@ -95,6 +95,23 @@ class MixinTwinRebindTest {
 		assertEquals(inner.name, call(outer).name);
 	}
 
+	/**
+	 * The outer handler takes the moved handler's place among the mixin's methods, as MixinStubRebind's does: Mixin applies
+	 * a class's injectors in declaration order, and where two land on one point that is the order they run in. Appended, it
+	 * would run after a handler declared below it.
+	 */
+	@Test void theOuterHandlerKeepsTheHandlersDeclarationSlot() {
+		ClassNode renderer = renderer(1, 1);
+		ClassNode mixin = mixin("com/example/xray/RendererMixin", "drawSide", "(Z" + GETTER + STATE + DIRECTION + POS + ")Z",
+				injector(MODIFY_RETURN, "shouldRenderFace", at("RETURN")));
+		MethodNode below = new MethodNode(Opcodes.ACC_PRIVATE, "declaredBelow", "()V", null, null);
+		mixin.methods.add(below);
+		assertEquals(1, MixinTwinRebind.adapt(mixin, name -> renderer));
+		MethodNode outer = method(mixin, "drawSide");
+		assertEquals(0, mixin.methods.indexOf(outer), "the outer sits where the handler was declared");
+		assertTrue(mixin.methods.indexOf(outer) < mixin.methods.indexOf(below));
+	}
+
 	/** An @Inject takes all of a method's arguments or none: the outer takes all five, and hands on the four and the callback. */
 	@Test void anInjectTakingVanillasArgumentsTakesAllOfTheOverloads() {
 		ClassNode renderer = renderer(1, 1);
