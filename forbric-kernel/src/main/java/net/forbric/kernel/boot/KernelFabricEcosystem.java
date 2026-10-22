@@ -225,8 +225,26 @@ public final class KernelFabricEcosystem {
 		// that gates an integration on that check silently disables it. Register the identity, nothing else: no
 		// entrypoints, no mixins, no assets, all of which the winner already provides.
 		for (DuplicateModArbiter.Alias alias : dupes.aliasesFor(Ecosystem.FABRIC)) {
+			// What the winner declares to Fabric mods, plus what only the losing Fabric build offered them under a key
+			// another mod reads (its modmenu plugin) where the winner can satisfy it: see ArbitratedAwayEntrypoints.
+			Map<String, List<KernelModMetadata.EntrypointDecl>> entrypoints = new LinkedHashMap<>(foreignEntrypoints(alias.modId()));
+			try {
+				// Only a mod's own jar: the game jar and the built-ins are no framework of anyone's.
+				java.util.Set<Path> modJars = new java.util.HashSet<>();
+				for (Path jar : discovery.getClasspathJars()) modJars.add(jar.toAbsolutePath().normalize());
+				java.util.function.Function<String, Path> loadedJarOf = id -> fabric.getModContainer(id)
+						.filter(found -> found instanceof KernelModContainer).map(found -> ((KernelModContainer) found).getJar())
+						.filter(jar -> modJars.contains(jar.toAbsolutePath().normalize())).orElse(null);
+				for (Map.Entry<String, List<KernelModMetadata.EntrypointDecl>> adopted
+						: ArbitratedAwayEntrypoints.adopted(alias.modId(), dupes, entrypoints, loadedJarOf).entrySet()) {
+					entrypoints.computeIfAbsent(adopted.getKey(), k -> new ArrayList<>()).addAll(adopted.getValue());
+				}
+			} catch (Throwable t) {
+				Caught.warn(t, "[Forbric/DupeId] could not work out which entrypoints %s's losing Fabric build offered other "
+						+ "mods — none of them is declared", alias.modId());
+			}
 			fabric.register(KernelModContainer.presence(KernelModMetadata.builtin(alias.modId(), alias.version(),
-					alias.modId(), foreignCustomValues(alias.modId()), foreignEntrypoints(alias.modId())),
+					alias.modId(), foreignCustomValues(alias.modId()), entrypoints),
 					presenceSource(alias.modId(), dupes)));
 			ForbricLog.info("[Forbric/Fabric] presence alias '%s' %s — its Fabric jar lost arbitration, but the "
 					+ "winning jar supplies the classes; isModLoaded now answers", alias.modId(), alias.version());
