@@ -1,0 +1,1 @@
+{"required": true, "package": "org.rockfall.mixin", "compatibilityLevel": "JAVA_21", "mixins": ["GameModeMixin"], "injectors": {"defaultRequire": 1}}

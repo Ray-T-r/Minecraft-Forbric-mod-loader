@@ -91,7 +91,9 @@ class MixinFitLivenessCensusStagedTest {
 	 * {@code ScreenEffectRenderer.getViewBlockingState}, which the merged callers replaced outright. And NeoForge's
 	 * renamed tooltip body {@code ItemStack.addDetailsToTooltipComponents}, which nothing calls: R3 moves malilib's last
 	 * tooltip hook and trinkets' attribute-line hook there (carrier-renames.txt marks it UNCALLED), where they bind and
-	 * never run.
+	 * never run. And vanilla's private four-argument {@code RegistryDataLoader.load}, which the merged class keeps beside
+	 * NeoForge's five-argument one and never calls: the census used to read any {@code load} of that descriptor, of any class,
+	 * as a call to it, and now reads a private method's callers by their owner (fabric-registry-sync's hook there).
 	 *
 	 * <p>Judged with the merged base's native references bound, as a boot judges: PuzzlesLib's explosion hook (an
 	 * {@code @ModifyVariable(ordinal = 0)} on the dead {@code ServerExplosion.hurtEntities()}) has its local pinned against
@@ -107,6 +109,7 @@ class MixinFitLivenessCensusStagedTest {
 			"balm.fabric.mixins.json:FabricCropBlockMixin PARTIAL -> PARTIAL",
 			"bettermounthud.mixins.json:HudMixin FIT -> FIT",
 			"fabric-block-api-v1.mixins.json:LivingEntityMixin FIT -> PARTIAL",
+			"fabric-registry-sync-v0.mixins.json:RegistryDataLoaderMixin PARTIAL -> PARTIAL",
 			"fabric-renderer-api-v1.mixins.json:block.particle.ScreenEffectRendererMixin FIT -> PARTIAL",
 			"fabric-rendering-v1.mixins.json:HudMixin PARTIAL -> PARTIAL",
 			"mixins.malilib.json:item.MixinItemStack FIT -> PARTIAL",
@@ -118,9 +121,11 @@ class MixinFitLivenessCensusStagedTest {
 	 * Port's explosion hooks left the list (30 → 28): with their by-type {@code @Local} pinned beside the arguments the
 	 * carrier added, they move off the dead {@code hurtEntities()} onto NeoForge's overload, so liveness has nothing to add.
 	 * PuzzlesLib's left it the same way once the census bound the native references a boot binds (28 → 27), and its
-	 * effect-tooltip hook, in the one pack that carries it, once a sliced pinned local moves too (27 → 26).
+	 * effect-tooltip hook, in the one pack that carries it, once a sliced pinned local moves too (27 → 26). fabric-registry-sync's
+	 * hook on the private, uncalled four-argument {@code RegistryDataLoader.load} joined it in the five packs that carry it once
+	 * private methods were read by owner (26 → 31).
 	 */
-	private static final int EXPECTED_IN_PACKS = 26;
+	private static final int EXPECTED_IN_PACKS = 31;
 
 	/** The merged base's native references, bound for the census as ForbricMixinService.bind binds them before Mixin starts. */
 	private net.forbric.kernel.classloading.ForbricClassLoader references;

@@ -83,8 +83,10 @@ class UncalledMethodCensusTest {
 		Map<String, Shape> mergedOnly = new LinkedHashMap<>();
 		Set<String> named = new HashSet<>();
 		Set<String> strings = new HashSet<>();
-		scan(MERGED, (c, m) -> {}, game, mergedOnly, named, strings);
-		for (Path code : List.of(INTEROP, NEO_RUNTIME, KERNEL_MAIN, KERNEL_RUNTIME)) scan(code, (c, m) -> {}, game, null, named, strings);
+		Set<String> owned = new HashSet<>();
+		Map<String, Set<String>> reflective = new HashMap<>();
+		scan(MERGED, (c, m) -> {}, game, mergedOnly, named, strings, owned, reflective);
+		for (Path code : List.of(INTEROP, NEO_RUNTIME, KERNEL_MAIN, KERNEL_RUNTIME)) scan(code, (c, m) -> {}, game, null, named, strings, owned, reflective);
 
 		Map<String, Map<String, Integer>> uncalled = new TreeMap<>();
 		for (Map.Entry<String, Shape> e : mergedOnly.entrySet()) {
@@ -92,7 +94,15 @@ class UncalledMethodCensusTest {
 				String key = m.getKey();
 				int access = m.getValue();
 				if (key.startsWith("<") || (access & (Opcodes.ACC_ABSTRACT | Opcodes.ACC_NATIVE)) != 0) continue;
-				if (named.contains(key) || strings.contains(key.substring(0, key.indexOf('(')))) continue;
+				String name = key.substring(0, key.indexOf('('));
+				if ((access & Opcodes.ACC_PRIVATE) != 0) {
+					// A private method is reached only through its own class (its nest calls it naming that class): a call or a
+					// handle naming another owner is another method — Level.removeBlock(BlockPos, boolean) is not
+					// ServerPlayerGameMode's private removeBlock(BlockPos, boolean). A string reaches it only when the class that
+					// holds it can make the call from it: with its descriptor too (a call a transformer synthesizes), as one
+					// owner-qualified target, or through a reflective lookup made by a class that also names the declaring class.
+					if (owned.contains(e.getKey() + "#" + key) || spelledForACall(reflective, e.getKey(), name, key.substring(name.length()))) continue;
+				} else if (named.contains(key) || strings.contains(name)) continue;
 				// Reached through a supertype it overrides — from the JDK, a library or reflection — or unknowable.
 				if ((access & (Opcodes.ACC_PRIVATE | Opcodes.ACC_STATIC)) == 0 && overrides(game, e.getKey(), key, new HashSet<>()) != 0) continue;
 				uncalled.computeIfAbsent(e.getKey(), k -> new HashMap<>()).put(key, access);
@@ -182,9 +192,39 @@ class UncalledMethodCensusTest {
 		void method(ClassNode c, MethodNode m);
 	}
 
-	/** Reads every class of a jar or class directory: shapes into {@code shapes} (and {@code merged}), names and strings. */
+	/** The methods a reflective lookup by name goes through: {@code Class}'s, {@code MethodHandles.Lookup}'s, the loaders' helpers. */
+	private static final Set<String> REFLECTIVE_LOOKUPS = Set.of("getDeclaredMethod", "getMethod", "findVirtual", "findSpecial", "findStatic",
+			"findMethod");
+
+	/**
+	 * Whether some class holds {@code name} as a string in a way a call to {@code owner}'s private {@code name + desc} can be made
+	 * from: beside its descriptor as a string (a transformer synthesizing the call), within one string that spells the owner,
+	 * the name and the descriptor together, or in a class that makes a reflective lookup and names {@code owner} — as a string
+	 * (internal or binary), a class constant, or the owner of an instruction. A bare name a class compares against does not.
+	 */
+	private static boolean spelledForACall(Map<String, Set<String>> classes, String owner, String name, String desc) {
+		String reflective = "\1";
+		for (Set<String> held : classes.values()) {
+			if (!held.contains("\0" + name)) continue;
+			if (held.contains("\0" + desc)) return true;
+			for (String string : held) if (string.startsWith("\0") && string.contains(name + desc) && string.contains(owner)) return true;
+			if (held.contains(reflective) && (held.contains("\0" + owner) || held.contains("\0" + owner.replace('/', '.')) || held.contains(owner))) return true;
+		}
+		return false;
+	}
+
 	private static void scan(Path code, Visitor visitor, Map<String, Shape> shapes, Map<String, Shape> merged, Set<String> named,
 			Set<String> strings) throws IOException {
+		scan(code, visitor, shapes, merged, named, strings, null, null);
+	}
+
+	/**
+	 * Reads every class of a jar or class directory: shapes into {@code shapes} (and {@code merged}), names and strings; and, when
+	 * asked, every call and handle by owner ({@code owned}) and, for each class holding a string, the strings it holds (prefixed
+	 * with NUL), the classes it names, and whether it makes a reflective lookup ({@code classes}).
+	 */
+	private static void scan(Path code, Visitor visitor, Map<String, Shape> shapes, Map<String, Shape> merged, Set<String> named,
+			Set<String> strings, Set<String> owned, Map<String, Set<String>> reflective) throws IOException {
 		List<byte[]> classes = new ArrayList<>();
 		if (Files.isDirectory(code)) {
 			try (Stream<Path> files = Files.walk(code)) {
@@ -208,15 +248,31 @@ class UncalledMethodCensusTest {
 			Shape shape = new Shape(c.superName, c.interfaces == null ? List.of() : List.copyOf(c.interfaces), methods);
 			shapes.putIfAbsent(c.name, shape);
 			if (merged != null) merged.put(c.name, shape);
+			Set<String> held = new HashSet<>();
+			boolean looksUp = false;
 			for (MethodNode m : c.methods) {
 				visitor.method(c, m);
 				if (named == null) continue;
 				for (AbstractInsnNode insn : m.instructions) {
-					for (Call call : calls(c, m, insn)) named.add(call.owner().substring(call.owner().indexOf('#') + 1));
+					for (Call call : calls(c, m, insn)) {
+						named.add(call.owner().substring(call.owner().indexOf('#') + 1));
+						if (owned != null) owned.add(call.owner());
+						held.add(call.owner().substring(0, call.owner().indexOf('#')));
+					}
 					if (insn instanceof InvokeDynamicInsnNode indy) named.add(indy.bsm.getName() + indy.bsm.getDesc());
-					if (insn instanceof LdcInsnNode ldc && ldc.cst instanceof String s) strings.add(s);
+					if (insn instanceof LdcInsnNode ldc && ldc.cst instanceof String s) {
+						strings.add(s);
+						held.add("\0" + s);
+					}
+					if (insn instanceof LdcInsnNode ldc && ldc.cst instanceof org.objectweb.asm.Type t && t.getSort() == org.objectweb.asm.Type.OBJECT)
+						held.add(t.getInternalName());
+					if (insn instanceof org.objectweb.asm.tree.TypeInsnNode type) held.add(type.desc);
+					if (insn instanceof org.objectweb.asm.tree.FieldInsnNode field) held.add(field.owner);
+					if (insn instanceof MethodInsnNode call && REFLECTIVE_LOOKUPS.contains(call.name)) looksUp = true;
 				}
 			}
+			if (looksUp) held.add("\1");
+			if (reflective != null && held.stream().anyMatch(h -> h.startsWith("\0"))) reflective.merge(c.name, held, (a, b) -> { a.addAll(b); return a; });
 		}
 	}
 

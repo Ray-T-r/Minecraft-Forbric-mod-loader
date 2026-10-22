@@ -42,7 +42,11 @@ import net.forbric.kernel.util.ForbricLog;
  * {@code forge-runtime-interop.jar}, {@code neoforge-runtime.jar} or the kernel's own classes names its name and
  * descriptor (whatever the owner, so a virtual call through any type counts), no supertype declares it (a call through
  * that type, from anywhere, would reach it), and no string constant in that code spells its name (a call the kernel
- * synthesizes, or a reflective lookup); and the listed ecosystems' own jars — vanilla for Fabric, the patched game plus
+ * synthesizes, or a reflective lookup) — except that a PRIVATE method is reached only through its own class, so only a call
+ * or handle naming that class counts, and only a string a call can be made from (beside its descriptor, inside one
+ * owner-qualified target, or in a class that looks methods up reflectively and names the class): {@code Level.removeBlock(
+ * BlockPos, boolean)}, called everywhere, had hidden that nothing calls {@code ServerPlayerGameMode}'s private method of
+ * the same name and descriptor, and Physics Mod's collapse hook bound there read as running; and the listed ecosystems' own jars — vanilla for Fabric, the patched game plus
  * its runtime for MinecraftForge and NeoForge — call it from the listed methods. A method no reference calls either is
  * not here: a mod targeting it expects a caller the census cannot see.
  *
@@ -50,8 +54,8 @@ import net.forbric.kernel.util.ForbricLog;
  * Collective all call {@code Language.loadFromJson(InputStream, BiConsumer)}, the stub the merged game no longer does, so
  * owo's mixin there runs. {@link #scanGuests} therefore reads every installed jar's constant pool at boot, beside the
  * other guest audits and before Mixin prepares a config, and a row whose name and descriptor any of them references is
- * live. The row is also re-checked against the live bytes: a transform that restores a call in the method's own class or
- * in a listed caller makes it live again. {@code -Dforbric.mixinFit.liveness=off} reads every row as live.
+ * live — for a private row, only a call naming its class, or an {@code @Invoker} that may name it. The row is also re-checked
+ * against the live bytes: a transform that restores a call in the method's own class or in a listed caller makes it live again. {@code -Dforbric.mixinFit.liveness=off} reads every row as live.
  */
 public final class MergedBaseUncalledMethods {
 	/** The shipped table; UncalledMethodCensusTest pins it to the staged artifacts. */
@@ -89,6 +93,11 @@ public final class MergedBaseUncalledMethods {
 	private static volatile Set<String> owners;
 	/** Table rows ({@code name + descriptor}) some installed mod's code references; see {@link #scanGuests}. */
 	private static final Set<String> GUEST_CALLED = ConcurrentHashMap.newKeySet();
+	/** The same, as {@code owner#name + descriptor}: the owner a call or handle names, which is all a private row heeds. */
+	private static final Set<String> GUEST_CALLED_OWNED = ConcurrentHashMap.newKeySet();
+	/** Row names an installed mod's {@code @Invoker} accessor may name: a private method it can call through its own class. */
+	private static final Set<String> GUEST_INVOKED = ConcurrentHashMap.newKeySet();
+	private static final String INVOKER = "Lorg/spongepowered/asm/mixin/gen/Invoker;";
 
 	private MergedBaseUncalledMethods() {
 	}
@@ -176,11 +185,33 @@ public final class MergedBaseUncalledMethods {
 		}
 		Set<String> wanted = keys();
 		char[] buf = new char[reader.getMaxStringLength()];
+		Set<String> utf8 = new java.util.HashSet<>();
 		for (int i = 1; i < reader.getItemCount(); i++) {
 			int offset = reader.getItem(i);
-			if (offset == 0 || reader.readByte(offset - 1) != 12) continue;    // CONSTANT_NameAndType
-			String key = reader.readUTF8(offset, buf) + reader.readUTF8(offset + 2, buf);
-			if (wanted.contains(key)) GUEST_CALLED.add(key);
+			if (offset == 0) continue;
+			int tag = reader.readByte(offset - 1);
+			if (tag == 1) {                                                       // CONSTANT_Utf8: u2 length, then the bytes
+				int length = reader.readUnsignedShort(offset);
+				@SuppressWarnings("deprecation")
+				byte[] bytes = reader.b;
+				utf8.add(new String(bytes, offset + 2, length, java.nio.charset.StandardCharsets.UTF_8));
+			} else if (tag == 12) {                                               // CONSTANT_NameAndType
+				String key = reader.readUTF8(offset, buf) + reader.readUTF8(offset + 2, buf);
+				if (wanted.contains(key)) GUEST_CALLED.add(key);
+			} else if (tag == 10 || tag == 11) {                                  // CONSTANT_(Interface)Methodref
+				String owner = reader.readClass(offset, buf);
+				int nameAndType = reader.getItem(reader.readUnsignedShort(offset + 2));
+				String key = reader.readUTF8(nameAndType, buf) + reader.readUTF8(nameAndType + 2, buf);
+				if (wanted.contains(key)) GUEST_CALLED_OWNED.add(owner + "#" + key);
+			}
+		}
+		// An @Invoker names its target by its value, or by its own name less "call"/"invoke": a private row of that name may be
+		// called through the accessor, whatever this class's constant pool says of its owner.
+		if (!utf8.contains(INVOKER)) return;
+		for (String key : wanted) {
+			String name = key.substring(0, key.indexOf('('));
+			String capitalised = name.isEmpty() ? name : Character.toUpperCase(name.charAt(0)) + name.substring(1);
+			if (utf8.contains(name) || utf8.contains("call" + capitalised) || utf8.contains("invoke" + capitalised)) GUEST_INVOKED.add(name);
 		}
 	}
 
@@ -189,9 +220,16 @@ public final class MergedBaseUncalledMethods {
 		return GUEST_CALLED.contains(nameAndDesc);
 	}
 
+	/** Whether an installed mod calls {@code owner#nameAndDesc} naming that owner, or may through an {@code @Invoker}; test seam. */
+	static boolean calledByGuest(String owner, String nameAndDesc) {
+		return GUEST_CALLED_OWNED.contains(owner + "#" + nameAndDesc) || GUEST_INVOKED.contains(nameAndDesc.substring(0, nameAndDesc.indexOf('(')));
+	}
+
 	/** Test and census seam: forgets what the installed mods reference. */
 	static void forgetGuests() {
 		GUEST_CALLED.clear();
+		GUEST_CALLED_OWNED.clear();
+		GUEST_INVOKED.clear();
 	}
 
 	/** The row for {@code owner#method} whose ecosystems include {@code ecosystem}; null when none, or the ecosystem is unknown. */
@@ -234,18 +272,27 @@ public final class MergedBaseUncalledMethods {
 	private static Row liveRow(ClassNode owner, MethodNode method, Ecosystem ecosystem) {
 		if (!MixinFit.asksLiveness() || owner == null || method == null) return null;
 		Row row = find(owner.name, method.name + method.desc, ecosystem);
-		if (row == null || GUEST_CALLED.contains(row.method()) || calledIn(owner, method)) return null;
-		return row;
+		if (row == null || calledIn(owner, method)) return null;
+		// A private method is reached only through its own class: a mod calling a method of another class with the same name
+		// and descriptor (Level.removeBlock(BlockPos, boolean)) does not reach ServerPlayerGameMode's private one.
+		boolean guest = (method.access & org.objectweb.asm.Opcodes.ACC_PRIVATE) != 0 ? calledByGuest(owner.name, row.method())
+				: GUEST_CALLED.contains(row.method());
+		return guest ? null : row;
 	}
 
-	/** Whether any method of {@code node} but {@code method} itself calls or takes a handle to {@code method}'s name and descriptor. */
+	/**
+	 * Whether any method of {@code node} but {@code method} itself calls or takes a handle to {@code method}'s name and descriptor
+	 * — for a private {@code method} of {@code node}, naming {@code node} as the owner, the only way to reach it.
+	 */
 	static boolean calledIn(ClassNode node, MethodNode method) {
 		if (node.methods == null) return false;
+		boolean ownerOnly = (method.access & org.objectweb.asm.Opcodes.ACC_PRIVATE) != 0
+				&& node.methods.stream().anyMatch(m -> m.name.equals(method.name) && m.desc.equals(method.desc));
 		for (MethodNode m : node.methods) {
 			if (m.instructions == null || (m.name.equals(method.name) && m.desc.equals(method.desc))) continue;
 			for (AbstractInsnNode insn : m.instructions) {
 				if (insn instanceof MethodInsnNode call) {
-					if (call.name.equals(method.name) && call.desc.equals(method.desc)) return true;
+					if (call.name.equals(method.name) && call.desc.equals(method.desc) && (!ownerOnly || call.owner.equals(node.name))) return true;
 				} else if (insn instanceof InvokeDynamicInsnNode indy) {
 					for (Object argument : indy.bsmArgs) if (argument instanceof Handle h && names(h, method)) return true;
 				} else if (insn instanceof LdcInsnNode ldc && ldc.cst instanceof Handle h && names(h, method)) {

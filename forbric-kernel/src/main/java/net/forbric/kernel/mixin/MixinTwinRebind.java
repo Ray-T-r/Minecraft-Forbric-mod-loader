@@ -21,6 +21,7 @@ import org.objectweb.asm.tree.AnnotationNode;
 import org.objectweb.asm.tree.ClassNode;
 import org.objectweb.asm.tree.FieldInsnNode;
 import org.objectweb.asm.tree.InsnNode;
+import org.objectweb.asm.tree.LocalVariableNode;
 import org.objectweb.asm.tree.MethodInsnNode;
 import org.objectweb.asm.tree.MethodNode;
 import org.objectweb.asm.tree.VarInsnNode;
@@ -58,6 +59,14 @@ import net.forbric.kernel.util.ForbricLog;
  *   <li>an {@code @Inject} taking vanilla's arguments or none, then its callback, capturing no locals; or an
  *       {@code @At}-driven kind whose own contract can be told ({@link MixinStubRebind#intrinsicArity}), then a prefix of
  *       vanilla's arguments. Never a {@code @ModifyVariable}: the overload's locals are not vanilla's;</li>
+ *   <li>or an {@code @Inject} that captures locals the old way ({@code locals = CAPTURE_*}) at one {@code INVOKE} point that
+ *       both methods make exactly once: each captured local — vanilla's locals live at that call, in slot order — is the one
+ *       of the overload's locals or arguments live there with its local variable name and type (the census's own evidence
+ *       for the arguments), and one the call itself is handed (an operand loaded straight from the slot) must be handed as
+ *       the same operand in the overload too. The outer handler reads them as MixinExtras {@code @Local}s by index.
+ *       Physics Mod's collapse hook captures MinecraftForge's {@code removeBlock(pos, canHarvest)}'s {@code state} and
+ *       {@code removed} before {@code Block.destroy}; NeoForge's {@code removeBlock(pos, state, canHarvest, tool)} — the one
+ *       the merged {@code destroyBlock} calls — hands that call its {@code state} argument and keeps {@code removed};</li>
  *   <li>every {@code @At} a {@code HEAD} or {@code TAIL}; a {@code RETURN}, held as often by both bodies when an ordinal or
  *       an {@code allow} counts them; or an {@code INVOKE}/{@code FIELD} point the overload holds exactly as often as
  *       vanilla's method, so an ordinal means what the mod wrote.</li>
@@ -203,7 +212,10 @@ public final class MixinTwinRebind {
 	 * whether the handler needs an outer one shaped for the overload.
 	 */
 	record Plan(AnnotationNode injector, Row row, MethodNode vanilla, MethodNode overload, int own, int captured,
-			boolean inject, boolean wrap) {
+			boolean inject, boolean wrap, int[] locals) {
+		Plan(AnnotationNode injector, Row row, MethodNode vanilla, MethodNode overload, int own, int captured, boolean inject, boolean wrap) {
+			this(injector, row, vanilla, overload, own, captured, inject, wrap, new int[0]);
+		}
 	}
 
 	static Plan plan(ClassNode mixin, MethodNode handler, ClassNode target, Ecosystem ecosystem) {
@@ -212,8 +224,9 @@ public final class MixinTwinRebind {
 		if (injector == null || MODIFY_VARIABLE.equals(injector.desc)) return null;
 		boolean inject = INJECT.equals(injector.desc);
 		if (!inject && !MixinRetarget.AT_DRIVEN.contains(injector.desc)) return null;
+		boolean capturing = capturesLocals(injector);
 		if (otherInjectionAnnotation(handler, injector) || sugar(handler) || MixinFit.value(injector, "slice") != null
-				|| MixinFit.value(injector, "locals") != null || MixinFit.value(injector, "target") != null) return null;
+				|| (capturing && !inject) || MixinFit.value(injector, "target") != null) return null;
 		// The one method the selectors bind, as Mixin binds them however they are written; and the descriptor they pin,
 		// where they pin one — the row is the one vanilla's descriptor heads, or for a name alone the only one.
 		MethodNode bound = MixinTargetSelectors.one(handler, target);
@@ -239,17 +252,22 @@ public final class MixinTwinRebind {
 		Type[] params = Type.getArgumentTypes(handler.desc);
 		Type[] vanillaArgs = Type.getArgumentTypes(row.vanilla());
 		int own, captured;
+		int[] locals = new int[0];
 		if (inject) {
 			int callback = -1;
 			for (int i = 0; i < params.length && callback < 0; i++) {
 				String d = params[i].getDescriptor();
 				if (CALLBACK_INFO.equals(d) || CALLBACK_INFO_RETURNABLE.equals(d)) callback = i;
 			}
-			if (callback < 0 || callback != params.length - 1) return null;   // no callback, or locals after it
+			if (callback < 0 || (!capturing && callback != params.length - 1)) return null;   // no callback, or locals after it
 			if (callback != 0 && (callback != vanillaArgs.length
 					|| !Arrays.equals(Arrays.copyOf(params, callback), vanillaArgs))) return null;
 			own = 0;
 			captured = callback;
+			if (capturing) {
+				locals = capturedLocals(injector, target.name, vanilla, overload, Arrays.copyOfRange(params, callback + 1, params.length));
+				if (locals == null) return null;
+			}
 		} else {
 			own = MixinStubRebind.intrinsicArity(injector, params, params.length, overload);
 			if (own < 0 || own > params.length) return null;
@@ -261,12 +279,107 @@ public final class MixinTwinRebind {
 
 		boolean identity = true;
 		for (int i = 0; i < captured; i++) identity &= row.positions()[i] == i;
-		// An @Inject takes all of the method's arguments or none, and the overload has more than vanilla's.
-		boolean wrap = captured > 0 && (inject || !identity);
+		// An @Inject takes all of the method's arguments or none, and the overload has more than vanilla's; a capture is read by
+		// the outer handler's @Locals.
+		boolean wrap = captured > 0 && (inject || !identity) || locals.length > 0;
 		// Bound to the overload already and taking what it is handed there: Mixin injects where the game runs.
 		if (bound == overload && !wrap) return null;
 		if (wrap && calledWithin(mixin, handler)) return null;   // the original is renamed; a caller of it would break
-		return new Plan(injector, row, vanilla, overload, own, captured, inject, wrap);
+		return new Plan(injector, row, vanilla, overload, own, captured, inject, wrap, locals);
+	}
+
+	/** Whether the injector captures locals the old way ({@code locals} set to anything but {@code NO_CAPTURE}). */
+	private static boolean capturesLocals(AnnotationNode injector) {
+		Object locals = MixinFit.value(injector, "locals");
+		return locals instanceof String[] e && e.length == 2 && !"NO_CAPTURE".equals(e[1]);
+	}
+
+	/**
+	 * The overload's slot for each local the handler captures in {@code vanilla}, or null when one is not proven: one
+	 * {@code INVOKE} point both methods make exactly once, at it (not after it); vanilla's locals live there, in slot order
+	 * from the first after the arguments, of the handler's types; each the one local or argument of the overload live at its
+	 * call with that local variable name and type; and one the call is handed straight from its slot handed as the same
+	 * operand there.
+	 */
+	static int[] capturedLocals(AnnotationNode injector, String owner, MethodNode vanilla, MethodNode overload, Type[] types) {
+		List<AnnotationNode> points = MixinFit.atNodes(injector);
+		if (points.size() != 1 || vanilla.localVariables == null || overload.localVariables == null) return null;
+		AnnotationNode at = points.getFirst();
+		Object shift = MixinFit.value(at, "shift");
+		if (!"INVOKE".equals(MixinFit.asString(MixinFit.value(at, "value"))) || MixinFit.value(at, "ordinal") != null
+				|| shift != null && !(shift instanceof String[] e && Set.of("NONE", "BEFORE").contains(e[1]))) return null;
+		MethodInsnNode here = only(vanilla, MixinFit.asString(MixinFit.value(at, "target")));
+		MethodInsnNode there = only(overload, MixinFit.asString(MixinFit.value(at, "target")));
+		if (here == null || there == null) return null;
+		int point = vanilla.instructions.indexOf(here), mergedPoint = overload.instructions.indexOf(there);
+		int first = (vanilla.access & Opcodes.ACC_STATIC) != 0 ? 0 : 1;
+		for (Type argument : Type.getArgumentTypes(vanilla.desc)) first += argument.getSize();
+		java.util.TreeMap<Integer, LocalVariableNode> live = new java.util.TreeMap<>();
+		for (LocalVariableNode local : vanilla.localVariables) {
+			if (local.index >= first && live(vanilla, local, point) && live.put(local.index, local) != null) return null;
+		}
+		if (live.size() < types.length) return null;
+		int[] slots = new int[types.length];
+		int j = 0;
+		for (LocalVariableNode local : live.values()) {
+			if (j == types.length) break;
+			if (!local.desc.equals(types[j].getDescriptor())) return null;
+			int found = -1;
+			for (LocalVariableNode candidate : overload.localVariables) {
+				if (!candidate.name.equals(local.name) || !candidate.desc.equals(local.desc) || !live(overload, candidate, mergedPoint)) continue;
+				if (found >= 0 && found != candidate.index) return null;
+				found = candidate.index;
+			}
+			if (found < 0) return null;
+			int handed = operand(owner, vanilla, here, local.index);
+			if (handed == -2 || handed >= 0 && handed != operand(owner, overload, there, found)) return null;
+			slots[j++] = found;
+		}
+		return j == types.length ? slots : null;
+	}
+
+	/** The one call to {@code member} in {@code body}; null when there is none or more. */
+	private static MethodInsnNode only(MethodNode body, String member) {
+		MixinFit.Member want = member == null ? null : MixinFit.parseMember(member);
+		if (want == null || want.name() == null) return null;
+		MethodInsnNode found = null;
+		for (AbstractInsnNode insn : body.instructions) {
+			if (!(insn instanceof MethodInsnNode call) || !call.name.equals(want.name()) || want.owner() != null && !call.owner.equals(want.owner())
+					|| want.desc() != null && !call.desc.equals(want.desc())) continue;
+			if (found != null) return null;
+			found = call;
+		}
+		return found;
+	}
+
+	private static boolean live(MethodNode method, LocalVariableNode local, int point) {
+		return method.instructions.indexOf(local.start) <= point && point < method.instructions.indexOf(local.end);
+	}
+
+	/**
+	 * Which operand of {@code call} (a receiver is 0) is loaded straight from {@code slot}; -1 when none is, -2 when several are
+	 * or the method cannot be read.
+	 */
+	private static int operand(String owner, MethodNode method, MethodInsnNode call, int slot) {
+		org.objectweb.asm.tree.analysis.Frame<org.objectweb.asm.tree.analysis.SourceValue>[] frames;
+		try {
+			frames = new org.objectweb.asm.tree.analysis.Analyzer<>(new org.objectweb.asm.tree.analysis.SourceInterpreter()).analyze(owner, method);
+		} catch (org.objectweb.asm.tree.analysis.AnalyzerException | RuntimeException unreadable) {
+			Caught.expected(unreadable);
+			return -2;
+		}
+		var frame = frames[method.instructions.indexOf(call)];
+		int operands = Type.getArgumentTypes(call.desc).length + (call.getOpcode() == Opcodes.INVOKESTATIC ? 0 : 1);
+		if (frame == null || frame.getStackSize() < operands) return -2;
+		int found = -1;
+		for (int k = 0; k < operands; k++) {
+			var value = frame.getStack(frame.getStackSize() - operands + k);
+			if (value.insns.size() != 1 || !(value.insns.iterator().next() instanceof VarInsnNode load) || load.var != slot
+					|| load.getOpcode() < Opcodes.ILOAD || load.getOpcode() > Opcodes.ALOAD) continue;
+			if (found >= 0) return -2;
+			found = k;
+		}
+		return found;
 	}
 
 	/** The row for {@code name} of {@code owner}: the one vanilla descriptor {@code desc} heads, or for a bare name the only one. */
@@ -374,7 +487,11 @@ public final class MixinTwinRebind {
 		List<Type> outerParams = new ArrayList<>(Arrays.asList(params).subList(0, own));
 		int firstArg = outerParams.size();
 		outerParams.addAll(Arrays.asList(overloadArgs).subList(0, reach));
-		if (plan.inject()) outerParams.add(params[params.length - 1]);   // the callback
+		int[] locals = plan.locals();
+		int callbackAt = plan.inject() ? params.length - 1 - locals.length : -1;
+		if (plan.inject()) outerParams.add(params[callbackAt]);   // the callback
+		int firstLocal = outerParams.size();
+		for (int i = 0; i < locals.length; i++) outerParams.add(params[callbackAt + 1 + i]);
 		MethodNode outer = new MethodNode(Opcodes.ASM9, handler.access, handler.name,
 				Type.getMethodDescriptor(Type.getReturnType(handler.desc), outerParams.toArray(Type[]::new)), null, null);
 		outer.visibleAnnotations = handler.visibleAnnotations == null ? null : new ArrayList<>(handler.visibleAnnotations);
@@ -388,7 +505,28 @@ public final class MixinTwinRebind {
 			int from = firstArg + positions[i];
 			outer.instructions.add(new VarInsnNode(outerParams.get(from).getOpcode(Opcodes.ILOAD), slots[from]));
 		}
-		if (plan.inject()) outer.instructions.add(new VarInsnNode(Opcodes.ALOAD, slots[outerParams.size() - 1]));
+		if (plan.inject()) outer.instructions.add(new VarInsnNode(Opcodes.ALOAD, slots[firstLocal - 1]));
+		for (int i = 0; i < locals.length; i++)
+			outer.instructions.add(new VarInsnNode(outerParams.get(firstLocal + i).getOpcode(Opcodes.ILOAD), slots[firstLocal + i]));
+		if (locals.length > 0) {
+			// The capture becomes MixinExtras @Locals by index, read where the overload keeps vanilla's locals.
+			@SuppressWarnings("unchecked")
+			List<AnnotationNode>[] table = new List[outerParams.size()];
+			for (int i = 0; i < locals.length; i++) {
+				AnnotationNode local = new AnnotationNode("Lcom/llamalad7/mixinextras/sugar/Local;");
+				local.values = new ArrayList<>(List.of("index", locals[i]));
+				table[firstLocal + i] = new ArrayList<>(List.of(local));
+			}
+			outer.invisibleParameterAnnotations = table;
+			outer.invisibleAnnotableParameterCount = table.length;
+			AnnotationNode injector = plan.injector();
+			for (int i = 0; i + 1 < injector.values.size(); i += 2) {
+				if (!"locals".equals(injector.values.get(i))) continue;
+				injector.values.remove(i);
+				injector.values.remove(i);
+				break;
+			}
+		}
 		outer.instructions.add(MixinHandlerShim.callOwn(mixin, handlerStatic, handler.name + MixinHandlerShim.INNER_SUFFIX,
 				handler.desc));
 		outer.instructions.add(new InsnNode(Type.getReturnType(handler.desc).getOpcode(Opcodes.IRETURN)));
