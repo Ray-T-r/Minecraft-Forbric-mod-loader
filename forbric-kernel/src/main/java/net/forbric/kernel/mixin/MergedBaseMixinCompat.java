@@ -55,6 +55,9 @@ public final class MergedBaseMixinCompat {
                     FabricRegistryInitializationMixinAdapter.noteDeferredFreeze(configName,node,family,natives);
                     net.forbric.kernel.transform.RegistrySyncParityInjector.noteMixin(configName,node,resources);
                     FabricCreativePagerMixinAdapter.noteSelectionHooks(node);
+                    if(FabricCreativePagerMixinAdapter.matches(node))FabricCreativePagerMixinAdapter.noteGuestControls(node,
+                            withCode(resources.apply(FabricCreativePagerMixinAdapter.TARGET+".class")),
+                            net.forbric.api.ModPresence.forgeFamilyMods().size());
                     SupersededMixins.noteMixin(node,resources);
                     if(!enabled()||explicitlyKept(identity))continue;
                     String reason=refusal(node,resources,natives);
@@ -72,6 +75,11 @@ public final class MergedBaseMixinCompat {
      * recognises a protocol with the same reading of its points as the adapter it guards, so a point written without its
      * owner or descriptor is recognised — and refused when it cannot be adapted — exactly where the adapter would serve it.
      */
+    /** A class with its code, from raw bytes, or null. */
+    private static ClassNode withCode(byte[] bytes) {
+        if(bytes==null)return null;
+        ClassNode node=new ClassNode();new org.objectweb.asm.ClassReader(bytes).accept(node,0);return node;
+    }
     static String refusal(ClassNode node,Function<String,byte[]> resources,BiFunction<net.forbric.api.Ecosystem,String,ClassNode> natives) {
         Function<String,ClassNode> classes=name->parse(resources.apply(name+".class"));
         // The pair is proved through the host's local variable table (the callback's @Local names the Reader), which

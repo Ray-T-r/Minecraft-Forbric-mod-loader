@@ -28,10 +28,21 @@ import net.forbric.kernel.transform.CreativePagerBridgeInjector;
  * pager would strand something: a non-private member outside the injectors that touches the state and that neither the
  * carrier nor the target answers — another interface's method, which would otherwise be an {@code AbstractMethodError}
  * — or a constructor or static initializer that reads the state. A write there is dropped with its value.
+ *
+ * <p><b>Whose page controls are drawn.</b> The page is always the carrier's; the controls a player clicks need not be.
+ * When the player's mods use no pager family but the guest's — no installed mod belongs to a Forge family, whose own
+ * platform draws the carrier's pager, so the guest's is the one every installed mod was built to be seen with — and the
+ * carrier's controls on the merged screen are exactly the two page buttons and the page label
+ * ({@code CreativePagerBridgeInjector.carrierControls}), the guest's are drawn and the carrier's stand aside. An injector
+ * of the guest pager that writes its page state and reads none of it — the one that adds its page buttons when the
+ * screen opens — is then kept with that write dropped, instead of removed with the rest; its buttons turn the page
+ * through the interface, so through the carrier's page. Decided once, when the configs are first read
+ * ({@link #noteGuestControls}), so the mixin and the screen are changed together. Any Forge-family mod, or a carrier
+ * whose controls are shaped otherwise, and the carrier's controls stay, as before.
  */
 public final class FabricCreativePagerMixinAdapter {
 	public static final String PROPERTY="forbric.fabricCreativeKeyboard";
-	private static final String TARGET="net/minecraft/client/gui/screens/inventory/CreativeModeInventoryScreen";
+	static final String TARGET="net/minecraft/client/gui/screens/inventory/CreativeModeInventoryScreen";
 	private static final String SHADOW="Lorg/spongepowered/asm/mixin/Shadow;";
 	private FabricCreativePagerMixinAdapter(){ }
 	public static boolean enabled(){return CreativePagerBridgeInjector.enabled()&&!"off".equalsIgnoreCase(System.getProperty(PROPERTY,"on"));}
@@ -72,14 +83,64 @@ public final class FabricCreativePagerMixinAdapter {
 	/** What {@link #noteSelectionHooks} recorded on this boot. */
 	public static Set<String> notedSelectionHooks(){return Set.copyOf(NOTED_HOOKS);}
 	/** Test seam. */
-	public static void forgetSelectionHooks(){NOTED_HOOKS.clear();}
+	public static void forgetSelectionHooks(){NOTED_HOOKS.clear();GUEST_CONTROLS.set(false);GUEST_CONTROLS_DECIDED.set(false);}
+
+	/** Whether the guest pager's own page controls are drawn on this boot (see the class comment). */
+	private static final java.util.concurrent.atomic.AtomicBoolean GUEST_CONTROLS=new java.util.concurrent.atomic.AtomicBoolean();
+	/** Whether {@link #noteGuestControls} has decided on this boot: configs are discovered more than once, the inputs never change. */
+	private static final java.util.concurrent.atomic.AtomicBoolean GUEST_CONTROLS_DECIDED=new java.util.concurrent.atomic.AtomicBoolean();
+	/** What {@link #noteGuestControls} decided: the creative pager bridge then keeps the carrier's controls from running. */
+	public static boolean guestControlsDrawn(){return GUEST_CONTROLS.get();}
+
+	/**
+	 * Decides, from a guest pager seen while configs are read, whether its controls are the ones drawn: no Forge-family mod
+	 * is installed, the carrier's controls are exactly the shape the bridge can stand aside ({@code screen}, the merged
+	 * screen with its code), and the pager has an injector to keep for them. Decided by the first guest pager seen, once
+	 * for the boot.
+	 *
+	 * @param forgeFamilyMods how many installed mods belong to a Forge family
+	 */
+	static boolean noteGuestControls(ClassNode mixin,ClassNode screen,int forgeFamilyMods){
+		if(!enabled()||mixin==null||!matches(mixin))return GUEST_CONTROLS.get();
+		if(!GUEST_CONTROLS_DECIDED.compareAndSet(false,true))return GUEST_CONTROLS.get();
+		if(forgeFamilyMods>0){
+			ForbricLog.info("[Forbric/CreativePager] %d Forge-family mod(s) are installed, and their platform draws the carrier's "
+					+ "pager — NeoForge's page controls stay on the creative screen",forgeFamilyMods);
+			return false;
+		}
+		if(screen==null||CreativePagerBridgeInjector.carrierControls(screen)==null){
+			ForbricLog.warn("[Forbric/CreativePager] only Fabric mods are installed, but NeoForge's page controls on the creative "
+					+ "screen are not the two buttons and the label the bridge can stand aside — they stay, and %s's own stay out",
+					mixin.name.replace('/','.'));
+			return false;
+		}
+		ClassNode trial=new ClassNode();mixin.accept(trial);
+		if(adapt(trial,name->name.equals(TARGET)?screen:null,true).keptWriters().isEmpty())return false;
+		GUEST_CONTROLS.set(true);
+		ForbricLog.info("[Forbric/CreativePager] only Fabric mods are installed: the creative screen draws %s's own page controls "
+				+ "and NeoForge's stand aside — the page itself stays NeoForge's, behind the Fabric interface",mixin.name.replace('/','.'));
+		return true;
+	}
 
 	/** Without class lookup: the carrier's own rows decide what it answers. */
 	public static int adapt(ClassNode mixin){return adapt(mixin,name->null);}
 
 	/** @param classes the installed interface and the merged screen by internal name, or null for either */
 	public static int adapt(ClassNode mixin,Function<String,ClassNode> classes){
-		if(!enabled()||!matches(mixin))return 0;
+		return adapt(mixin,classes,GUEST_CONTROLS.get()).changed();
+	}
+
+	/**
+	 * What one adaptation did.
+	 *
+	 * @param changed      1 when the second pager was taken out, 0 when the adapter declined
+	 * @param keptWriters  injectors kept with their write of the page state dropped (the guest's controls)
+	 */
+	record Result(int changed,List<String> keptWriters){}
+
+	/** @param guestControls whether the guest's own page controls are drawn: then its writer-only injectors are kept */
+	static Result adapt(ClassNode mixin,Function<String,ClassNode> classes,boolean guestControls){
+		if(!enabled()||!matches(mixin))return new Result(0,List.of());
 		Set<String> answered=new LinkedHashSet<>(CreativePagerBridgeInjector.interfaceMembers());
 		answered.addAll(selectionHooks(mixin));
 		ClassNode api=lookup(classes,CreativePagerBridgeInjector.API);
@@ -94,28 +155,36 @@ public final class FabricCreativePagerMixinAdapter {
 		Set<String> state=new LinkedHashSet<>();
 		for(MethodNode m:removed)for(AbstractInsnNode i:m.instructions)
 			if(i instanceof FieldInsnNode f&&f.owner.equals(mixin.name)){FieldNode field=field(mixin,f.name,f.desc);if(field!=null&&!annotated(field.visibleAnnotations,field.invisibleAnnotations,SHADOW))state.add(f.name+":"+f.desc);}
-		if(state.isEmpty())return 0;
+		if(state.isEmpty())return new Result(0,List.of());
+		// The guest's controls: an injector that writes the page state and reads none of it, kept with the write dropped.
+		Set<MethodNode> writers=new LinkedHashSet<>();
 		for(boolean grew=true;grew;){
 			grew=false;
 			for(MethodNode m:mixin.methods){
-				if(removed.contains(m)||m.name.equals("<init>")||m.name.equals("<clinit>"))continue;
-				if(touches(m,mixin.name,state)||callsGone(m,mixin.name,removed,resolvable)){removed.add(m);grew=true;}
+				if(removed.contains(m)||writers.contains(m)||m.name.equals("<init>")||m.name.equals("<clinit>"))continue;
+				if(callsGone(m,mixin.name,removed,resolvable)){removed.add(m);grew=true;continue;}
+				if(!touches(m,mixin.name,state))continue;
+				if(guestControls&&MixinFit.injectorOf(m)!=null&&!reads(m,mixin.name,state))writers.add(m);
+				else{removed.add(m);grew=true;}
 			}
+			for(MethodNode m:new ArrayList<>(writers))if(callsGone(m,mixin.name,removed,resolvable)){writers.remove(m);removed.add(m);grew=true;}
 		}
 		for(MethodNode m:mixin.methods){
 			if(!m.name.equals("<init>")&&!m.name.equals("<clinit>"))continue;
-			if(reads(m,mixin.name,state)||callsGone(m,mixin.name,removed,resolvable))return 0;
+			if(reads(m,mixin.name,state)||callsGone(m,mixin.name,removed,resolvable))return new Result(0,List.of());
 		}
 		for(MethodNode m:removed){
 			boolean contained=(m.access&Opcodes.ACC_PRIVATE)!=0||MixinFit.injectorOf(m)!=null||resolvable.contains(m.name+m.desc);
 			if(!contained){
 				ForbricLog.info("[Forbric/CreativePager] %s's %s%s uses its second page state and nothing else answers it — the pager is not "
 						+ "taken out of this mixin",mixin.name.replace('/','.'),m.name,m.desc);
-				return 0;
+				return new Result(0,List.of());
 			}
 		}
 
 		for(MethodNode m:mixin.methods)if(m.name.equals("<init>")||m.name.equals("<clinit>"))dropWrites(m,mixin.name,state);
+		List<String> keptWriters=new ArrayList<>();
+		for(MethodNode m:writers){dropWrites(m,mixin.name,state);keptWriters.add(m.name);}
 		List<String> gone=new ArrayList<>();
 		for(MethodNode m:removed)gone.add(m.name);
 		mixin.methods.removeAll(removed);
@@ -131,9 +200,10 @@ public final class FabricCreativePagerMixinAdapter {
 		}
 		if(turnsPages)ForbricLog.info("[Forbric/CreativePager] retained Fabric's PageUp/PageDown callback; its API and rendering "
 				+ "use the same carrier pager instead of creating a second page state");
-		ForbricLog.info("[Forbric/CreativePager] %s: took out its second pager (state %s; %s) and kept %s",
-				mixin.name.replace('/','.'),state,gone,kept.isEmpty()?"no injector":kept);
-		return 1;
+		ForbricLog.info("[Forbric/CreativePager] %s: took out its second pager (state %s; %s) and kept %s%s",
+				mixin.name.replace('/','.'),state,gone,kept.isEmpty()?"no injector":kept,
+				keptWriters.isEmpty()?"":" — "+keptWriters+" with its page-state write dropped, so its own page controls are drawn");
+		return new Result(1,List.copyOf(keptWriters));
 	}
 
 	private static ClassNode lookup(Function<String,ClassNode> classes,String name){
