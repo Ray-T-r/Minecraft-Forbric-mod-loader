@@ -74,9 +74,12 @@ import org.objectweb.asm.tree.TypeInsnNode;
  * <li><b>only an entrypoint the loaded build can satisfy</b>: its class is the loaded build's own, or exists only in the
  *     losing build (the class loader serves it from there as a last resort) and so do the classes it reaches, and every
  *     member that code uses on a class the loaded build ships exists there with that descriptor — and no field of a
- *     losing-build-only class it reads is written only by code that never runs (the losing build's own initialisation).
- *     One that cannot is named, with what it is missing, and not declared — a consumer then gets nothing instead of a
- *     {@code NoSuchMethodError} inside another mod.</li>
+ *     losing-build-only class that code reads is written only by code that never runs. What runs is read method by method
+ *     ({@link #reachable}): the entrypoint's own methods and what they call, initialise or instantiate — never the losing
+ *     build's lifecycle entry methods (its {@code onInitialize} and the like), which only Fabric Loader calls, even where
+ *     the entrypoint reads a field of that very class or calls another of its methods. One that cannot is named, with what
+ *     it is missing, and not declared — a consumer then gets nothing instead of a {@code NoSuchMethodError} or a
+ *     {@code NullPointerException} inside another mod.</li>
  * </ul>
  * The entrypoint is offered under the library's own id, as natively, so a reader keying on the provider's id (Mod Menu
  * does) sees the library. {@code -Dforbric.arbitratedAwayEntrypoints=off} declares none of them, as before.
@@ -166,6 +169,7 @@ public final class ArbitratedAwayEntrypoints {
 			KernelModMetadata metadata = fabricMetadata(jar);
 			if (metadata == null) continue;
 			try (Classes losing = new Classes(jar); Classes loaded = new Classes(winner, true)) {
+				Set<String> lifecycle = lifecycleMethods(metadata, losing);
 				Set<String> custom = new LinkedHashSet<>(metadata.getEntrypoints().keySet());
 				custom.removeAll(LIFECYCLE_KEYS);
 				custom.removeAll(alreadyDeclared);
@@ -187,7 +191,7 @@ public final class ArbitratedAwayEntrypoints {
 					String key = entry.getKey();
 					if (!custom.contains(key) || ownProtocol.contains(key) || frameworks.contains(key)) continue;
 					for (EntrypointDecl decl : entry.getValue()) {
-						out.add(new Decision(library, jar, key, decl, refusal(decl, losing, loaded)));
+						out.add(new Decision(library, jar, key, decl, refusal(decl, losing, loaded, lifecycle)));
 					}
 				}
 			} catch (IOException | RuntimeException unreadable) {
@@ -224,8 +228,16 @@ public final class ArbitratedAwayEntrypoints {
 		return List.copyOf(out);
 	}
 
-	/** Why {@code decl} cannot be satisfied by {@code loaded}, or null when it can. */
+	/** Why {@code decl} cannot be satisfied by {@code loaded}, with no lifecycle entrypoint of the losing build known; null when it can. */
 	static String refusal(EntrypointDecl decl, Classes losing, Classes loaded) throws IOException {
+		return refusal(decl, losing, loaded, Set.of());
+	}
+
+	/**
+	 * Why {@code decl} cannot be satisfied by {@code loaded}, or null when it can. {@code lifecycle} is the losing build's
+	 * lifecycle entry methods ({@code owner#name+desc}, or {@code owner#name} for a member reference), which never run here.
+	 */
+	static String refusal(EntrypointDecl decl, Classes losing, Classes loaded, Set<String> lifecycle) throws IOException {
 		if (!decl.isDefaultAdapter()) return "it goes through the '" + decl.getAdapter() + "' language adapter, whose resolution is not derived";
 		String value = decl.value();
 		String type = value.contains("::") ? value.substring(0, value.indexOf("::")) : value;
@@ -246,10 +258,14 @@ public final class ArbitratedAwayEntrypoints {
 				if (!own.contains(referenced) && losing.has(referenced) && !loaded.has(referenced)) queue.addLast(referenced);
 			}
 		}
+		// What of that code can run here: the entrypoint's own methods (a reader may call any of them), and what they reach —
+		// never the losing build's lifecycle entrypoints, which Fabric Loader would call and which do not run here.
+		Set<MethodNode> runs = reachable(nodes, start, value.contains("::") ? value.substring(value.indexOf("::") + 2) : null, lifecycle);
 		Set<String> written = new LinkedHashSet<>();
 		for (ClassNode node : nodes.values()) {
 			for (FieldNode field : node.fields) if (field.value != null) written.add(node.name + "." + field.name);
 			for (MethodNode method : node.methods) {
+				if (!runs.contains(method)) continue;
 				for (AbstractInsnNode insn : method.instructions) {
 					if (insn instanceof FieldInsnNode f && (f.getOpcode() == Opcodes.PUTFIELD || f.getOpcode() == Opcodes.PUTSTATIC)) {
 						written.add(f.owner + "." + f.name);
@@ -265,7 +281,7 @@ public final class ArbitratedAwayEntrypoints {
 						if (loaded.has(f.owner)) {
 							if (!loaded.hasField(f.owner, f.name, f.desc)) missing = "field " + f.owner.replace('/', '.') + "." + f.name + " " + f.desc;
 						} else if (own.contains(f.owner) && (f.getOpcode() == Opcodes.GETFIELD || f.getOpcode() == Opcodes.GETSTATIC)
-								&& !written.contains(f.owner + "." + f.name)) {
+								&& runs.contains(method) && !written.contains(f.owner + "." + f.name)) {
 							return node.name.replace('/', '.') + "." + method.name + " reads " + f.owner.replace('/', '.') + "." + f.name
 									+ ", which only code that never runs here writes (the losing build's own initialisation)";
 						}
@@ -289,6 +305,130 @@ public final class ArbitratedAwayEntrypoints {
 			}
 		}
 		return null;
+	}
+
+	/**
+	 * Fabric Loader's lifecycle entrypoint contracts: the interface a key's entrypoint implements and the method the loader
+	 * calls on it. A class declared under such a key runs that method only when Fabric Loader runs the build.
+	 */
+	private static final Map<String, String[]> LIFECYCLE_CONTRACTS = Map.of(
+			"main", new String[] {"net/fabricmc/api/ModInitializer", "onInitialize()V"},
+			"client", new String[] {"net/fabricmc/api/ClientModInitializer", "onInitializeClient()V"},
+			"server", new String[] {"net/fabricmc/api/DedicatedServerModInitializer", "onInitializeServer()V"},
+			"preLaunch", new String[] {"net/fabricmc/loader/api/entrypoint/PreLaunchEntrypoint", "onPreLaunch()V"});
+
+	/**
+	 * The losing build's lifecycle entry methods, {@code owner#name+desc}: what Fabric Loader would call on each class it
+	 * declares under {@code main}, {@code client}, {@code server} or {@code preLaunch} — the contract's method, wherever the
+	 * class or a super class of the build declares it — and, for a member reference ({@code Type::member}), that member
+	 * ({@code owner#name}, any descriptor).
+	 */
+	static Set<String> lifecycleMethods(KernelModMetadata metadata, Classes losing) throws IOException {
+		Set<String> out = new LinkedHashSet<>();
+		for (Map.Entry<String, List<EntrypointDecl>> entry : metadata.getEntrypoints().entrySet()) {
+			String[] contract = LIFECYCLE_CONTRACTS.get(entry.getKey());
+			if (contract == null) continue;
+			for (EntrypointDecl decl : entry.getValue()) {
+				String value = decl.value();
+				if (value.contains("::")) {
+					out.add(value.substring(0, value.indexOf("::")).replace('.', '/') + "#" + value.substring(value.indexOf("::") + 2));
+					continue;
+				}
+				for (String type = value.replace('.', '/'); type != null; ) {
+					ClassNode node = losing.has(type) ? losing.node(type) : null;
+					if (node == null) break;
+					for (MethodNode method : node.methods) {
+						if ((method.name + method.desc).equals(contract[1]) && (method.access & Opcodes.ACC_ABSTRACT) == 0) out.add(node.name + "#" + contract[1]);
+					}
+					type = node.superName;
+				}
+			}
+		}
+		return out;
+	}
+
+	/**
+	 * The methods of {@code nodes} (the losing-build-only classes the entrypoint reaches) that can run when a reader asks
+	 * for the entrypoint: every method of its class {@code start} (Fabric Loader instantiates it, and the reader may call
+	 * any of its methods) — or, for a member reference, that member — and what they reach in turn: a call or method handle
+	 * (a virtual one: any of these classes' methods of that name and descriptor), the static initialiser of a class whose
+	 * static member they use or that they instantiate, and every instance method of a class they instantiate (the object
+	 * may be handed to code that calls them). Never a lifecycle entry method ({@code lifecycle}) but through a call.
+	 */
+	static Set<MethodNode> reachable(Map<String, ClassNode> nodes, String start, String member, Set<String> lifecycle) {
+		Set<MethodNode> runs = java.util.Collections.newSetFromMap(new java.util.IdentityHashMap<>());
+		Deque<MethodNode> pending = new ArrayDeque<>();
+		Set<String> initialised = new LinkedHashSet<>(), instantiated = new LinkedHashSet<>();
+		ClassNode entry = nodes.get(start);
+		if (entry == null) return runs;
+		initialise(nodes, start, initialised, pending);
+		for (MethodNode method : entry.methods) {
+			boolean lifecycleOnly = lifecycle.contains(start + "#" + method.name + method.desc) || lifecycle.contains(start + "#" + method.name);
+			if (member != null ? method.name.equals(member) : !lifecycleOnly) pending.add(method);
+		}
+		if (member == null) instantiate(nodes, start, instantiated, initialised, pending, lifecycle);
+		while (!pending.isEmpty()) {
+			MethodNode method = pending.removeFirst();
+			if (!runs.add(method) || method.instructions == null) continue;
+			for (AbstractInsnNode insn : method.instructions) {
+				if (insn instanceof MethodInsnNode call) {
+					if (nodes.containsKey(call.owner) && (call.getOpcode() == Opcodes.INVOKESTATIC)) initialise(nodes, call.owner, initialised, pending);
+					called(nodes, call.owner, call.name, call.desc, call.getOpcode() == Opcodes.INVOKEVIRTUAL || call.getOpcode() == Opcodes.INVOKEINTERFACE, pending);
+				} else if (insn instanceof FieldInsnNode f && (f.getOpcode() == Opcodes.GETSTATIC || f.getOpcode() == Opcodes.PUTSTATIC)) {
+					initialise(nodes, f.owner, initialised, pending);
+				} else if (insn instanceof TypeInsnNode t && t.getOpcode() == Opcodes.NEW) {
+					instantiate(nodes, t.desc, instantiated, initialised, pending, lifecycle);
+				} else if (insn instanceof InvokeDynamicInsnNode indy) {
+					for (Object argument : indy.bsmArgs) {
+						if (argument instanceof Handle h && h.getTag() > Opcodes.H_PUTSTATIC) {
+							called(nodes, h.getOwner(), h.getName(), h.getDesc(), h.getTag() == Opcodes.H_INVOKEVIRTUAL || h.getTag() == Opcodes.H_INVOKEINTERFACE, pending);
+							if (h.getTag() == Opcodes.H_NEWINVOKESPECIAL) instantiate(nodes, h.getOwner(), instantiated, initialised, pending, lifecycle);
+						}
+					}
+				} else if (insn instanceof LdcInsnNode l && l.cst instanceof Handle h && h.getTag() > Opcodes.H_PUTSTATIC) {
+					called(nodes, h.getOwner(), h.getName(), h.getDesc(), h.getTag() == Opcodes.H_INVOKEVIRTUAL || h.getTag() == Opcodes.H_INVOKEINTERFACE, pending);
+				}
+			}
+		}
+		return runs;
+	}
+
+	/** A call of {@code owner.name+desc}: the method it resolves to among {@code nodes}, or for a virtual call each of theirs with that name and descriptor. */
+	private static void called(Map<String, ClassNode> nodes, String owner, String name, String desc, boolean virtual, Deque<MethodNode> pending) {
+		if (virtual) {
+			for (ClassNode node : nodes.values()) {
+				for (MethodNode method : node.methods) if (method.name.equals(name) && method.desc.equals(desc)) pending.add(method);
+			}
+			return;
+		}
+		for (String type = owner; type != null && nodes.containsKey(type); type = nodes.get(type).superName) {
+			for (MethodNode method : nodes.get(type).methods) {
+				if (method.name.equals(name) && method.desc.equals(desc)) {
+					pending.add(method);
+					return;
+				}
+			}
+		}
+	}
+
+	/** Class initialisation of {@code type} among {@code nodes}: its static initialiser and its super classes'. */
+	private static void initialise(Map<String, ClassNode> nodes, String type, Set<String> initialised, Deque<MethodNode> pending) {
+		for (String at = type; at != null && nodes.containsKey(at) && initialised.add(at); at = nodes.get(at).superName) {
+			for (MethodNode method : nodes.get(at).methods) if (method.name.equals("<clinit>")) pending.add(method);
+		}
+	}
+
+	/** An instance of {@code type} exists: it and its super classes are initialised, and their instance methods may be called. */
+	private static void instantiate(Map<String, ClassNode> nodes, String type, Set<String> instantiated, Set<String> initialised,
+			Deque<MethodNode> pending, Set<String> lifecycle) {
+		initialise(nodes, type, initialised, pending);
+		for (String at = type; at != null && nodes.containsKey(at) && instantiated.add(at); at = nodes.get(at).superName) {
+			for (MethodNode method : nodes.get(at).methods) {
+				if ((method.access & Opcodes.ACC_STATIC) != 0 || method.name.equals("<init>")) continue;
+				if (lifecycle.contains(at + "#" + method.name + method.desc) || lifecycle.contains(at + "#" + method.name)) continue;
+				pending.add(method);
+			}
+		}
 	}
 
 	private static String missingMethod(Classes loaded, String owner, String name, String desc) throws IOException {

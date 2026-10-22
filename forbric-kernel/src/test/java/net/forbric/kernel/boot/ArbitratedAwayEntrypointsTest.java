@@ -283,6 +283,99 @@ class ArbitratedAwayEntrypointsTest {
 		}
 	}
 
+	/**
+	 * What runs is read method by method: the library's Fabric initialisation never runs here, so a field only it writes is
+	 * unwritten even where the entrypoint reads that very class's field, or calls another of its methods — and a field the
+	 * entrypoint's own code writes (directly, through a static helper of the initialiser's class, or in a screen it creates
+	 * and the game later draws) is written. Each kept entrypoint is then asked, as a reader would: none throws.
+	 */
+	@Test void onlyWhatTheEntrypointReachesWritesAFieldItReads() throws Exception {
+		Map<String, String> sources = new HashMap<>(Map.of(
+				"org.tallow.fabric.TallowFabric", """
+						package org.tallow.fabric;
+						public class TallowFabric implements net.fabricmc.api.ModInitializer {
+							public static java.util.Map<String, String> SCREENS;
+							public static String name;
+							public void onInitialize() { SCREENS = new java.util.TreeMap<>(); Paths.gameDir = "set by main"; }
+							public static void touch() { }
+							public static String name() { if (name == null) name = "tallow"; return name; }
+						}
+						""",
+				"org.tallow.fabric.Paths", """
+						package org.tallow.fabric;
+						public final class Paths { public static String gameDir; }
+						""",
+				"org.tallow.compat.OwnField", """
+						package org.tallow.compat;
+						/** Reads the initialiser's own field, which only its onInitialize writes. */
+						public class OwnField implements java.util.function.Supplier<String> {
+							public String get() { return String.valueOf(org.tallow.fabric.TallowFabric.SCREENS.size()); }
+						}
+						""",
+				"org.tallow.compat.Touching", """
+						package org.tallow.compat;
+						/** ReachBack's shape, plus one call into the initialiser's class. */
+						public class Touching implements java.util.function.Supplier<String> {
+							public String get() { org.tallow.fabric.TallowFabric.touch(); return org.tallow.fabric.Paths.gameDir.trim(); }
+						}
+						""",
+				"org.tallow.compat.SelfServed", """
+						package org.tallow.compat;
+						/** Reads a field of the initialiser's class that a static helper it calls writes first. */
+						public class SelfServed implements java.util.function.Supplier<String> {
+							public String get() { org.tallow.fabric.TallowFabric.name(); return org.tallow.fabric.TallowFabric.name.trim(); }
+						}
+						""",
+				"org.tallow.compat.Drawn", """
+						package org.tallow.compat;
+						/** Hands out a screen; the game calls its init before it draws, which reads what init wrote. */
+						public class Drawn implements java.util.function.Supplier<Runnable> {
+							public Runnable get() { Screen screen = new Screen(); screen.init(); return screen; }
+						}
+						""",
+				"org.tallow.compat.Screen", """
+						package org.tallow.compat;
+						public class Screen implements Runnable {
+							private String title;
+							public void init() { title = "tallow"; }
+							public void run() { title.trim(); }
+						}
+						"""));
+		Map<String, byte[]> fabric = new TreeMap<>(compile("tallow-fabric", sources));
+		Map<String, List<String>> entrypoints = new LinkedHashMap<>();
+		entrypoints.put("main", List.of("org.tallow.fabric.TallowFabric"));
+		entrypoints.put("tallow:own", List.of("org.tallow.compat.OwnField"));
+		entrypoints.put("tallow:touching", List.of("org.tallow.compat.Touching"));
+		entrypoints.put("tallow:self", List.of("org.tallow.compat.SelfServed"));
+		entrypoints.put("tallow:drawn", List.of("org.tallow.compat.Drawn"));
+		fabric.put("fabric.mod.json", fabricModJson("tallowlib", entrypoints, "").getBytes(StandardCharsets.UTF_8));
+		Path losing = DispatchFixtures.write(dir.resolve("tallowlib-fabric.jar"), fabric);
+		Map<String, byte[]> neo = new TreeMap<>(compile("tallow-neo", Map.of("org.tallow.neoforge.TallowNeo",
+				"package org.tallow.neoforge; public class TallowNeo { }")));
+		neo.put("META-INF/neoforge.mods.toml", DispatchFixtures.neoForgeToml("tallowlib"));
+		Path winning = DispatchFixtures.write(dir.resolve("tallowlib-neoforge.jar"), neo);
+
+		Map<String, String> got = decisions(ArbitratedAwayEntrypoints.decide("tallowlib", List.of(losing), winning, Set.of()));
+		assertTrue(got.get("tallow:own").contains("org.tallow.fabric.TallowFabric.SCREENS"), got.get("tallow:own"));
+		assertTrue(got.get("tallow:touching").contains("org.tallow.fabric.Paths.gameDir"), got.get("tallow:touching"));
+		assertEquals("kept", got.get("tallow:self"), "the helper it calls writes the field: " + got);
+		assertEquals("kept", got.get("tallow:drawn"), "the screen it creates writes its own field: " + got);
+
+		// What a reader then meets: the losing build's onInitialize never runs, and neither kept entrypoint throws.
+		try (java.net.URLClassLoader game = new java.net.URLClassLoader(new URL[] {winning.toUri().toURL(), losing.toUri().toURL()},
+				getClass().getClassLoader())) {
+			for (String type : List.of("org.tallow.compat.SelfServed", "org.tallow.compat.Drawn")) {
+				Object answer = ((java.util.function.Supplier<?>) game.loadClass(type).getDeclaredConstructor().newInstance()).get();
+				if (answer instanceof Runnable screen) screen.run();
+			}
+			// …and the refused ones would have: the control for what the refusal spares the reader.
+			for (String type : List.of("org.tallow.compat.OwnField", "org.tallow.compat.Touching")) {
+				var entry = (java.util.function.Supplier<?>) game.loadClass(type).getDeclaredConstructor().newInstance();
+				assertThrows(NullPointerException.class, entry::get, type);
+			}
+		}
+	}
+
 	@Test void switchedOffNothingIsAdopted() throws Exception {
 		Path mods = Files.createDirectories(dir.resolve("mods"));
 		DispatchFixtures.write(mods.resolve("lanternlib-neoforge.jar"), neoForgeBuild());
