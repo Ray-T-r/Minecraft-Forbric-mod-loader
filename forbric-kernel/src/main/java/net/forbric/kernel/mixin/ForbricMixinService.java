@@ -503,6 +503,10 @@ public final class ForbricMixinService
 		// forwards to the renamed body (ALLOW_LOAD: on addEntity, before NeoForge's join event, and on players'
 		// addNewEntityWithoutEvent).
 		MixinRenamedBodyEdges.adapt(node, this::mergedBaseNodeWithCode);
+		// …and an injector at the start or end of a method a carrier split into pieces the merged game runs one by one, and never
+		// through the method (NeoForge's HUD layers draw Hud.extractPlayerHealth's four pieces), moves to the start of the first
+		// piece or the end of the last; a cancel at the start skips the later pieces of that run.
+		MixinSplitBodyEdges.adapt(node, this::mergedBaseNodeWithCode);
 		MixinStubRebind.adapt(node, this::mergedBaseNodeWithCode);
 		// …and an injector anchored in a body a carrier moved behind a builder stub (new builder, hand it over, build) moves
 		// to the overload that makes its calls.

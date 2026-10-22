@@ -1,0 +1,1 @@
+{"required": true, "package": "io.lark.hem.mixin", "compatibilityLevel": "JAVA_21", "mixins": ["TapestryMixin"], "injectors": {"defaultRequire": 1}}

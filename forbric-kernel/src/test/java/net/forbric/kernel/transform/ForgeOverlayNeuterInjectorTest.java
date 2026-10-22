@@ -183,6 +183,45 @@ class ForgeOverlayNeuterInjectorTest {
 				"net.minecraftforge.client.gui.overlay.OtherDraw", bytes, EnvType.CLIENT));
 	}
 
+	/**
+	 * The leaves the kernel silences, read off a builder whose names are unrelated to any game: every lambda of the class
+	 * registered under one of its own name constants in the static build method is a silenced leaf; the condition handed
+	 * beside it (a {@code java.*} type), a layer registered under a name built at run time, and a lambda of the build method
+	 * that is never registered are not.
+	 */
+	@Test void theSilencedLeavesAreTheLambdasRegisteredUnderTheTreesOwnNames(@TempDir Path work) throws Exception {
+		Map<String, byte[]> classes = InjectorExecution.compile(work, Map.of("org.tapis.Frame", """
+				package org.tapis;
+				public class Frame {
+					public interface Leaf { void paint(Object canvas); }
+					public record Name(String text) { }
+					public static final Name SKY = new Name("sky"), SEA = new Name("sea");
+					public Frame put(Name name, Leaf leaf) { return this; }
+					public Frame putWhen(Name name, Leaf leaf, java.util.function.BooleanSupplier when) { return this; }
+					public static void init(Object host) {
+						Frame root = new Frame();
+						root.put(SKY, canvas -> paintSky(host));
+						root.putWhen(SEA, canvas -> paintSea(host), () -> host != null);
+						root.put(new Name("mod"), canvas -> paintMod(host));
+						Leaf spare = canvas -> paintSpare(host);
+					}
+					static void paintSky(Object host) { }
+					static void paintSea(Object host) { }
+					static void paintMod(Object host) { }
+					static void paintSpare(Object host) { }
+				}
+				"""));
+		org.objectweb.asm.tree.ClassNode frame = new org.objectweb.asm.tree.ClassNode();
+		new org.objectweb.asm.ClassReader(classes.get("org/tapis/Frame")).accept(frame, 0);
+		java.util.Set<String> silenced = ForgeOverlayNeuterInjector.silencedLeafBodies(frame);
+		java.util.List<String> bodies = new java.util.ArrayList<>();
+		for (String key : silenced) {
+			org.objectweb.asm.tree.MethodNode body = frame.methods.stream().filter(m -> key.equals(frame.name + "#" + m.name + m.desc)).findFirst().orElseThrow();
+			for (var insn : body.instructions) if (insn instanceof org.objectweb.asm.tree.MethodInsnNode call) bodies.add(call.name);
+		}
+		assertEquals(List.of("paintSea", "paintSky"), bodies.stream().sorted().toList(), "silenced: " + silenced);
+	}
+
 	private static Map<String, byte[]> standIns(Path work) throws Exception {
 		return InjectorExecution.compile(work, Map.of(DRAW_BINARY, DRAW_SOURCE, HOOK_BINARY, HOOK_SOURCE));
 	}

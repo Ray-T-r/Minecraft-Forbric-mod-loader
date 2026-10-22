@@ -70,7 +70,7 @@ import net.forbric.kernel.util.ForbricLog;
  * on {@code ()V} matches nothing, loudly but uselessly.
  */
 public final class ForgeOverlayNeuterInjector implements ClassTransformer {
-	static final String TARGET = "net.minecraftforge.client.gui.overlay.ForgeLayeredDraw";
+	public static final String TARGET = "net.minecraftforge.client.gui.overlay.ForgeLayeredDraw";
 	static final String METHOD = "resolveLayers";
 	/** Returns {@code this}, for chaining. Getting this wrong is an anchor that can never match. */
 	static final String DESC = "()Lnet/minecraftforge/client/gui/overlay/ForgeLayeredDraw;";
@@ -130,6 +130,70 @@ public final class ForgeOverlayNeuterInjector implements ClassTransformer {
 		ClassWriter writer = new ClassWriter(ClassWriter.COMPUTE_MAXS);
 		node.accept(writer);
 		return writer.toByteArray();
+	}
+
+	/** The method that builds MinecraftForge's vanilla tree, which the kernel calls once ({@code KernelForgeOverlayLayers}). */
+	static final String BUILD = "init";
+
+	/**
+	 * The bodies of the leaves MinecraftForge's own builder puts in its vanilla tree, as {@code owner#name+desc}: every one
+	 * of them is replaced by {@code neuterVanillaLeaves} before the tree bakes, so none ever runs in the merged game — a
+	 * method only they call is called by nothing that runs (UncalledMethodCensusTest reads it so).
+	 *
+	 * <p>Read off the builder's bytes, never listed: in {@code tree}'s static build method, each call of one of the tree's
+	 * own instance methods whose every reference argument is either one of the tree's own static constants of that type
+	 * (its position names, which the neuter replaces by) or a lambda of the tree's own class; of those lambdas, the ones
+	 * implementing a type of the game or its carriers (the layer) — a {@code java.*} interface there is a condition, which
+	 * the neuter does not promise to drop and is left out. Empty when the class has no such method.
+	 */
+	public static java.util.Set<String> silencedLeafBodies(ClassNode tree) {
+		java.util.Set<String> out = new java.util.TreeSet<>();
+		if (tree == null || tree.methods == null) return out;
+		java.util.Set<String> constants = new java.util.HashSet<>();
+		if (tree.fields != null) {
+			for (org.objectweb.asm.tree.FieldNode field : tree.fields) {
+				if ((field.access & Opcodes.ACC_STATIC) != 0 && field.desc.startsWith("L")) constants.add(field.name + ":" + field.desc);
+			}
+		}
+		for (MethodNode build : tree.methods) {
+			if (!BUILD.equals(build.name) || (build.access & Opcodes.ACC_STATIC) == 0 || build.instructions == null) continue;
+			org.objectweb.asm.tree.analysis.Frame<org.objectweb.asm.tree.analysis.SourceValue>[] frames;
+			try {
+				frames = new org.objectweb.asm.tree.analysis.Analyzer<>(new org.objectweb.asm.tree.analysis.SourceInterpreter())
+						.analyze(tree.name, build);
+			} catch (org.objectweb.asm.tree.analysis.AnalyzerException unreadable) {
+				net.forbric.kernel.util.Caught.expected(unreadable);
+				continue;
+			}
+			for (AbstractInsnNode insn : build.instructions) {
+				if (!(insn instanceof MethodInsnNode call) || call.getOpcode() != Opcodes.INVOKEVIRTUAL || !call.owner.equals(tree.name)) continue;
+				org.objectweb.asm.tree.analysis.Frame<org.objectweb.asm.tree.analysis.SourceValue> frame = frames[build.instructions.indexOf(call)];
+				org.objectweb.asm.Type[] arguments = org.objectweb.asm.Type.getArgumentTypes(call.desc);
+				if (frame == null || frame.getStackSize() < arguments.length) continue;
+				java.util.List<String> leaves = new java.util.ArrayList<>();
+				boolean named = false, plain = true;
+				for (int i = 0; i < arguments.length && plain; i++) {
+					if (arguments[i].getSort() != org.objectweb.asm.Type.OBJECT) continue;
+					org.objectweb.asm.tree.analysis.SourceValue value = frame.getStack(frame.getStackSize() - arguments.length + i);
+					if (value.insns.size() != 1) { plain = false; break; }
+					AbstractInsnNode source = value.insns.iterator().next();
+					if (source instanceof org.objectweb.asm.tree.FieldInsnNode field && field.getOpcode() == Opcodes.GETSTATIC
+							&& field.owner.equals(tree.name) && constants.contains(field.name + ":" + field.desc)
+							&& field.desc.equals(arguments[i].getDescriptor())) {
+						named = true;
+					} else if (source instanceof org.objectweb.asm.tree.InvokeDynamicInsnNode lambda
+							&& lambda.bsm.getOwner().equals("java/lang/invoke/LambdaMetafactory") && lambda.bsmArgs.length >= 2
+							&& lambda.bsmArgs[1] instanceof org.objectweb.asm.Handle body && body.getOwner().equals(tree.name)) {
+						String type = org.objectweb.asm.Type.getReturnType(lambda.desc).getInternalName();
+						if (!type.startsWith("java/")) leaves.add(body.getOwner() + "#" + body.getName() + body.getDesc());
+					} else if (!(source instanceof VarInsnNode)) {
+						plain = false;    // a sub-stack held in a local is a branch of the same tree; anything else is not this shape
+					}
+				}
+				if (plain && named) out.addAll(leaves);
+			}
+		}
+		return out;
 	}
 
 	/** So a class offered twice — the pre-mixin read and the define — is not hooked twice. */

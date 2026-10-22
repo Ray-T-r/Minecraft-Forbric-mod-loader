@@ -713,6 +713,17 @@ public final class MixinFit {
 			if (locals != null) moved = MixinStubRebind.destination(mixin, m, locals);
 			if (moved != null) hits = new ArrayList<>(List.of(moved));
 		}
+		// The move MixinSplitBodyEdges will make for a start or end of a method a carrier split into pieces the merged game
+		// runs one by one (Balm's health events on Hud.extractPlayerHealth), judged here too so the verdict and the move
+		// cannot disagree: bound to the dispatcher it would read as never running.
+		if (selectors.size() == 1 && hits.size() == 1) {
+			ClassNode code = withLocals.get();
+			MethodNode piece = code == null ? null : MixinSplitBodyEdges.destination(mixin, m, code, NativeGameReferences::reference);
+			if (piece != null) {
+				MethodNode live = findMethod(target, piece.name, piece.desc, resolver);
+				hits = new ArrayList<>(List.of(live != null ? live : piece));
+			}
+		}
 		// Bound is not run. An injector whose every method is one nothing in the merged game calls attaches and
 		// never fires: Better Mount HUD's XP redirect in Hud.extractHotbarAndDecorations, whose vanilla caller
 		// NeoForge's HUD layers replaced, and malilib's tooltip hook in the renamed tooltip body R3 moves it to. Soft —

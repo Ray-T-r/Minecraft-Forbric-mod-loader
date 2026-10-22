@@ -38,40 +38,79 @@ import net.forbric.kernel.util.ForbricLog;
  * layers replaced that call, and no class in the merged jar, the carriers or the kernel calls it any more. The redirect
  * never runs; resolution alone called it FIT.
  *
- * <p>A row says: {@code owner#method} is declared in the merged base; no instruction or method handle in the merged jar,
- * {@code forge-runtime-interop.jar}, {@code neoforge-runtime.jar} or the kernel's own classes names its name and
- * descriptor (whatever the owner, so a virtual call through any type counts), no supertype declares it (a call through
- * that type, from anywhere, would reach it), and no string constant in that code spells its name (a call the kernel
- * synthesizes, or a reflective lookup) — except that a PRIVATE method is reached only through its own class, so only a call
- * or handle naming that class counts, and only a string a call can be made from (beside its descriptor, inside one
- * owner-qualified target, or in a class that looks methods up reflectively and names the class): {@code Level.removeBlock(
- * BlockPos, boolean)}, called everywhere, had hidden that nothing calls {@code ServerPlayerGameMode}'s private method of
- * the same name and descriptor, and Physics Mod's collapse hook bound there read as running; and the listed ecosystems' own jars — vanilla for Fabric, the patched game plus
- * its runtime for MinecraftForge and NeoForge — call it from the listed methods. A method no reference calls either is
- * not here: a mod targeting it expects a caller the census cannot see.
+ * <p>A row says: {@code owner#method} is declared in the merged base; every instruction or method handle in the merged jar,
+ * {@code forge-runtime-interop.jar}, {@code neoforge-runtime.jar} or the kernel's own classes that names its name and
+ * descriptor (whatever the owner, so a virtual call through any type counts) is in a method that is itself uncalled, or
+ * in code the kernel silences (the leaves MinecraftForge's builder puts in its vanilla HUD tree, each replaced before the
+ * tree bakes) — a fixpoint, listed as the row's last column; no supertype declares it (a call through that type, from
+ * anywhere, would reach it), and no string constant in that code spells its name (a call the kernel synthesizes, or a
+ * reflective lookup). A PRIVATE method is reached only through its own class, so only a call or handle naming that class
+ * counts, and only a string a call can be made from (beside its descriptor, inside one owner-qualified target, or in a
+ * class that looks methods up reflectively and names the class): {@code Level.removeBlock(BlockPos, boolean)}, called
+ * everywhere, had hidden that nothing calls {@code ServerPlayerGameMode}'s private method of the same name and
+ * descriptor, and Physics Mod's collapse hook bound there read as running. An override's super call of itself runs only
+ * when the override runs, so a method named by nothing else is uncalled unless a supertype outside the merged game
+ * declares it. And the listed ecosystems' own jars — vanilla for Fabric, the patched game plus its runtime for
+ * MinecraftForge and NeoForge — call it from the listed methods, each of which runs there (the same fixpoint, by the same
+ * rules, over the reference), or is one a mod may call and the merged game no longer makes the call from. A method no
+ * reference runs either is not here: a mod targeting it is promised nothing the merged game breaks. NeoForge drew the four
+ * pieces of {@code Hud.extractPlayerHealth} as layers of their own: vanilla still calls it only from the uncalled
+ * {@code extractHotbarAndDecorations}, MinecraftForge only from a silenced leaf, and Balm's health events there were read as
+ * running.
  *
  * <p>What the census cannot see is the installed mods, and they do call some of these: fabric-resource-loader, Iris and
  * Collective all call {@code Language.loadFromJson(InputStream, BiConsumer)}, the stub the merged game no longer does, so
  * owo's mixin there runs. {@link #scanGuests} therefore reads every installed jar's constant pool at boot, beside the
  * other guest audits and before Mixin prepares a config, and a row whose name and descriptor any of them references is
- * live — for a private row, only a call naming its class, or an {@code @Invoker} that may name it. The row is also re-checked
- * against the live bytes: a transform that restores a call in the method's own class or in a listed caller makes it live again. {@code -Dforbric.mixinFit.liveness=off} reads every row as live.
+ * live — for a private row, only a call naming its class, or an {@code @Invoker} that may name it — as is one an installed
+ * mod reaches through an uncalled place naming it. The row is also re-checked against the live bytes: a call from code
+ * that can run (not a row, not an uncalled place a row names), in the method's own class, a listed caller's or an
+ * uncalled place's, makes it live again — for a private method, a call naming its class. {@code -Dforbric.mixinFit.liveness=off}
+ * reads every row as live.
  */
 public final class MergedBaseUncalledMethods {
 	/** The shipped table; UncalledMethodCensusTest pins it to the staged artifacts. */
 	static final String TABLE = "/net/forbric/kernel/mixin/uncalled-methods.txt";
+	/** Marks a dead place that is code the kernel silences, in a row's last column. */
+	static final String SILENCED = "!";
+	/** {@code -Dforbric.uncalledMethods.extra=<file>}: more rows, in the table's format, for a base the shipped census did not read. */
+	public static final String EXTRA_PROPERTY = "forbric.uncalledMethods.extra";
 
 	/**
 	 * @param owner      the declaring class (internal name)
 	 * @param method     {@code name + descriptor}
 	 * @param ecosystems whose own game calls it — the mods that expect it to run
 	 * @param callers    where those games call it from, {@code class#name+descriptor}
+	 * @param deadSites  every place the merged game names it, {@code class#name+descriptor}, each itself uncalled or code the
+	 *                   kernel silences (MinecraftForge's vanilla HUD leaves, written with a leading {@value #SILENCED}): the
+	 *                   re-check against live bytes leaves these out, so a call from anywhere else still makes the method live
 	 */
-	record Row(String owner, String method, Set<Ecosystem> ecosystems, List<String> callers) {
-		/** {@code <class>#<method> | <ecosystems> | <caller> <caller> …}, as the census writes it; null when not that. */
+	record Row(String owner, String method, Set<Ecosystem> ecosystems, List<String> callers, Set<String> deadSites) {
+		Row(String owner, String method, Set<Ecosystem> ecosystems, List<String> callers) {
+			this(owner, method, ecosystems, callers, Set.of());
+		}
+
+		/** The dead places as {@code class#name+descriptor}, without the silenced mark. */
+		Set<String> deadPlaces() {
+			Set<String> out = new HashSet<>();
+			for (String site : deadSites) out.add(site.startsWith(SILENCED) ? site.substring(SILENCED.length()) : site);
+			return out;
+		}
+
+		/** The dead places the kernel silences: never run, however live code refers to them (it builds them, and replaces them). */
+		Set<String> silencedPlaces() {
+			Set<String> out = new HashSet<>();
+			for (String site : deadSites) if (site.startsWith(SILENCED)) out.add(site.substring(SILENCED.length()));
+			return out;
+		}
+
+		/**
+		 * {@code <class>#<method> | <ecosystems> | <caller> <caller> … [| <dead site> …]}, as the census writes it; null when
+		 * not that.
+		 */
 		static Row parse(String line) {
 			String[] columns = line.split(" \\| ");
-			if (columns.length != 3) return null;
+			if (columns.length != 3 && columns.length != 4) return null;
 			int hash = columns[0].indexOf('#');
 			if (hash <= 0 || columns[0].indexOf('(', hash) < 0) return null;
 			try {
@@ -79,8 +118,10 @@ public final class MergedBaseUncalledMethods {
 				for (String e : columns[1].trim().split(",")) ecosystems.add(Ecosystem.valueOf(e.trim()));
 				List<String> callers = List.of(columns[2].trim().split(" "));
 				for (String caller : callers) if (caller.indexOf('#') <= 0) return null;
+				Set<String> dead = columns.length == 4 ? Set.of(columns[3].trim().split(" ")) : Set.of();
+				for (String site : dead) if (site.indexOf('#') <= (site.startsWith(SILENCED) ? SILENCED.length() : 0)) return null;
 				return new Row(columns[0].substring(0, hash).trim(), columns[0].substring(hash + 1).trim(),
-						Set.copyOf(ecosystems), callers);
+						Set.copyOf(ecosystems), callers, dead);
 			} catch (IllegalArgumentException unknown) {
 				Caught.warn(unknown, "[Forbric/Mixin] unreadable row in %s, skipped: %s", TABLE, line);
 				return null;
@@ -90,6 +131,8 @@ public final class MergedBaseUncalledMethods {
 
 	private static volatile List<Row> rows;
 	private static volatile Set<String> keys;
+	private static volatile Set<String> dead;
+	private static volatile Set<String> silenced;
 	private static volatile Set<String> owners;
 	/** Table rows ({@code name + descriptor}) some installed mod's code references; see {@link #scanGuests}. */
 	private static final Set<String> GUEST_CALLED = ConcurrentHashMap.newKeySet();
@@ -117,6 +160,19 @@ public final class MergedBaseUncalledMethods {
 		} catch (IOException unreadable) {
 			Caught.warn(unreadable, "[Forbric/Mixin] could not read %s; every merged-base method reads as called", TABLE);
 		}
+		// Rows a census of another base (a weave test's own stand-in game) adds, in the same format.
+		String extra = System.getProperty(EXTRA_PROPERTY);
+		if (extra != null && !extra.isBlank()) {
+			try {
+				for (String line : java.nio.file.Files.readAllLines(Path.of(extra), StandardCharsets.UTF_8)) {
+					if (line.isBlank() || line.startsWith("#")) continue;
+					Row row = Row.parse(line.trim());
+					if (row != null) read.add(row);
+				}
+			} catch (IOException | RuntimeException unreadable) {
+				Caught.warn(unreadable, "[Forbric/Mixin] could not read the extra uncalled-method rows in %s", extra);
+			}
+		}
 		rows = List.copyOf(read);
 		return rows;
 	}
@@ -137,14 +193,53 @@ public final class MergedBaseUncalledMethods {
 		return keys().contains(name + desc);
 	}
 
-	/** Every row's {@code name + descriptor}. */
+	/**
+	 * What the census proved never runs in the merged game, {@code class#name+descriptor}: every row's method and every
+	 * uncalled or silenced place a row names. The live-bytes re-check starts only from code outside this set.
+	 */
+	static Set<String> dead() {
+		Set<String> loaded = dead;
+		if (loaded != null) return loaded;
+		Set<String> read = new HashSet<>();
+		for (Row row : rows()) {
+			read.add(row.owner() + "#" + row.method());
+			read.addAll(row.deadPlaces());
+		}
+		dead = Set.copyOf(read);
+		return dead;
+	}
+
+	/** The silenced places every row names: they never run, whatever names them. */
+	static Set<String> silenced() {
+		Set<String> loaded = silenced;
+		if (loaded != null) return loaded;
+		Set<String> read = new HashSet<>();
+		for (Row row : rows()) read.addAll(row.silencedPlaces());
+		silenced = Set.copyOf(read);
+		return silenced;
+	}
+
+	/** Every row's {@code name + descriptor}, and every dead place's: a mod calling one of those makes it run. */
 	private static Set<String> keys() {
 		Set<String> loaded = keys;
 		if (loaded != null) return loaded;
 		Set<String> read = new HashSet<>();
-		for (Row row : rows()) read.add(row.method());
+		for (Row row : rows()) {
+			read.add(row.method());
+			for (String site : row.deadPlaces()) read.add(site.substring(site.indexOf('#') + 1));
+		}
 		keys = Set.copyOf(read);
 		return keys;
+	}
+
+	/** {@link #dead()} without the places an installed mod calls (by name and descriptor): those run after all. */
+	private static Set<String> deadNow() {
+		if (GUEST_CALLED.isEmpty()) return dead();
+		Set<String> out = new HashSet<>();
+		for (String site : dead()) {
+			if (!GUEST_CALLED.contains(site.substring(site.indexOf('#') + 1)) || silenced().contains(site)) out.add(site);
+		}
+		return out;
 	}
 
 	/**
@@ -250,15 +345,19 @@ public final class MergedBaseUncalledMethods {
 		Row row = liveRow(owner, method, ecosystem);
 		if (row == null) return null;
 		if (resolver != null) {
-			for (String caller : row.callers()) {
-				int hash = caller.indexOf('#');
-				String callerOwner = caller.substring(0, hash);
-				if (callerOwner.equals(owner.name)) continue;    // already checked, in the bytes the caller handed us
+			Set<String> notRunning = deadNow();
+			Set<String> checked = new HashSet<>();
+			checked.add(owner.name);    // already checked, in the bytes the caller handed us
+			List<String> classes = new ArrayList<>();
+			for (String caller : row.callers()) classes.add(caller.substring(0, caller.indexOf('#')));
+			for (String site : row.deadPlaces()) classes.add(site.substring(0, site.indexOf('#')));
+			for (String callerOwner : classes) {
+				if (!checked.add(callerOwner)) continue;
 				byte[] bytes = resolver.apply(callerOwner + ".class");
 				if (bytes == null) continue;
 				ClassNode node = new ClassNode();
 				new ClassReader(bytes).accept(node, ClassReader.SKIP_DEBUG | ClassReader.SKIP_FRAMES);
-				if (calledIn(node, method)) return null;
+				if (calledIn(node, method, notRunning)) return null;
 			}
 		}
 		return describe(row);
@@ -272,7 +371,7 @@ public final class MergedBaseUncalledMethods {
 	private static Row liveRow(ClassNode owner, MethodNode method, Ecosystem ecosystem) {
 		if (!MixinFit.asksLiveness() || owner == null || method == null) return null;
 		Row row = find(owner.name, method.name + method.desc, ecosystem);
-		if (row == null || calledIn(owner, method)) return null;
+		if (row == null || calledIn(owner, method, deadNow())) return null;
 		// A private method is reached only through its own class: a mod calling a method of another class with the same name
 		// and descriptor (Level.removeBlock(BlockPos, boolean)) does not reach ServerPlayerGameMode's private one.
 		boolean guest = (method.access & org.objectweb.asm.Opcodes.ACC_PRIVATE) != 0 ? calledByGuest(owner.name, row.method())
@@ -285,26 +384,50 @@ public final class MergedBaseUncalledMethods {
 	 * — for a private {@code method} of {@code node}, naming {@code node} as the owner, the only way to reach it.
 	 */
 	static boolean calledIn(ClassNode node, MethodNode method) {
+		return calledIn(node, method, Set.of());
+	}
+
+	/**
+	 * {@link #calledIn(ClassNode, MethodNode)}, from code of {@code node} that can run: a method that is one of {@code dead}
+	 * (the census's uncalled or silenced places naming it, {@code class#name+descriptor}) calls nothing, unless a method of
+	 * {@code node} that can run reaches it in turn — a transform that calls one of them again makes what it calls live too.
+	 */
+	static boolean calledIn(ClassNode node, MethodNode method, Set<String> dead) {
 		if (node.methods == null) return false;
-		boolean ownerOnly = (method.access & org.objectweb.asm.Opcodes.ACC_PRIVATE) != 0
-				&& node.methods.stream().anyMatch(m -> m.name.equals(method.name) && m.desc.equals(method.desc));
+		java.util.Map<String, MethodNode> declared = new java.util.HashMap<>();
+		for (MethodNode m : node.methods) declared.put(m.name + m.desc, m);
+		boolean ownerOnly = (method.access & org.objectweb.asm.Opcodes.ACC_PRIVATE) != 0 && declared.containsKey(method.name + method.desc);
+		java.util.Deque<MethodNode> pending = new java.util.ArrayDeque<>();
+		Set<MethodNode> seen = java.util.Collections.newSetFromMap(new java.util.IdentityHashMap<>());
 		for (MethodNode m : node.methods) {
-			if (m.instructions == null || (m.name.equals(method.name) && m.desc.equals(method.desc))) continue;
+			if (m.name.equals(method.name) && m.desc.equals(method.desc)) continue;
+			if (!dead.contains(node.name + "#" + m.name + m.desc)) pending.add(m);
+		}
+		while (!pending.isEmpty()) {
+			MethodNode m = pending.removeFirst();
+			if (!seen.add(m) || m.instructions == null) continue;
 			for (AbstractInsnNode insn : m.instructions) {
-				if (insn instanceof MethodInsnNode call) {
-					if (call.name.equals(method.name) && call.desc.equals(method.desc) && (!ownerOnly || call.owner.equals(node.name))) return true;
-				} else if (insn instanceof InvokeDynamicInsnNode indy) {
-					for (Object argument : indy.bsmArgs) if (argument instanceof Handle h && names(h, method)) return true;
-				} else if (insn instanceof LdcInsnNode ldc && ldc.cst instanceof Handle h && names(h, method)) {
-					return true;
+				// what it names, owner first: a private method of this class is reached only by naming this class
+				List<String[]> named = new ArrayList<>(1);
+				if (insn instanceof MethodInsnNode call) named.add(new String[] {call.owner, call.name + call.desc});
+				else if (insn instanceof InvokeDynamicInsnNode indy) {
+					for (Object argument : indy.bsmArgs) if (argument instanceof Handle h) named.add(new String[] {h.getOwner(), h.getName() + h.getDesc()});
+				} else if (insn instanceof LdcInsnNode ldc && ldc.cst instanceof Handle h) named.add(new String[] {h.getOwner(), h.getName() + h.getDesc()});
+				for (String[] target : named) {
+					String key = target[1];
+					if (key.equals(method.name + method.desc)) {
+						if (!ownerOnly || target[0].equals(node.name)) return true;
+						continue;
+					}
+					// a dead site this live code reaches runs after all: what it names counts from here on — unless the kernel
+					// silences it, which it does exactly where live code builds it
+					MethodNode reached = declared.get(key);
+					if (reached == null || (reached.access & org.objectweb.asm.Opcodes.ACC_PRIVATE) != 0 && !target[0].equals(node.name)) continue;
+					if (!seen.contains(reached) && dead.contains(node.name + "#" + key) && !silenced().contains(node.name + "#" + key)) pending.add(reached);
 				}
 			}
 		}
 		return false;
-	}
-
-	private static boolean names(Handle handle, MethodNode method) {
-		return handle.getName().equals(method.name) && handle.getDesc().equals(method.desc);
 	}
 
 	/** "nothing in the merged game calls it; vanilla and MinecraftForge call it from Hud.extractRenderState" */

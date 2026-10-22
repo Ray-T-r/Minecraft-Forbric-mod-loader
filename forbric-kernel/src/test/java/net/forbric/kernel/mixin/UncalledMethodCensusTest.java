@@ -36,6 +36,7 @@ import org.objectweb.asm.tree.MethodInsnNode;
 import org.objectweb.asm.tree.MethodNode;
 
 import net.forbric.api.Ecosystem;
+import net.forbric.kernel.transform.ForgeOverlayNeuterInjector;
 
 /**
  * Re-derives {@code uncalled-methods.txt} — every merged-base method that an ecosystem's own game calls and nothing in the
@@ -72,41 +73,56 @@ class UncalledMethodCensusTest {
 	private record Call(String owner, String caller) {
 	}
 
+	/**
+	 * What one game's code names: for each method name+desc, and for each {@code owner#name+desc}, the methods naming it (a
+	 * call or a method handle; a bootstrap method by name only); every string it holds; for each class holding a string, the
+	 * strings it holds (prefixed with NUL), the classes it names, and whether it makes a reflective lookup (marked \1).
+	 */
+	private record Names(Map<String, Set<String>> byKey, Map<String, Set<String>> byOwner, Set<String> strings,
+			Map<String, Set<String>> held) {
+		Names() {
+			this(new HashMap<>(), new HashMap<>(), new HashSet<>(), new HashMap<>());
+		}
+
+		/**
+		 * The places naming {@code candidate} ({@code class#name+desc}, with its access): a private method is reached only
+		 * through its own class, so only a call or handle naming that class names it.
+		 */
+		Set<String> sites(String candidate, int access) {
+			return (access & Opcodes.ACC_PRIVATE) != 0 ? byOwner.getOrDefault(candidate, Set.of())
+					: byKey.getOrDefault(candidate.substring(candidate.indexOf('#') + 1), Set.of());
+		}
+	}
+
 	@Test void theShippedTableIsExactlyWhatTheArtifactsSay() throws Exception {
 		for (Path jar : List.of(MERGED, INTEROP, NEO_RUNTIME, FORGE_RUNTIME, VANILLA, FORGE, NEOFORGE)) {
 			TestFixtures.require(jar == VANILLA ? Fixture.MC_LIBRARIES : Fixture.STAGED, Files.isRegularFile(jar), jar + " required");
 		}
 		TestFixtures.require(Fixture.GAME_SIDE, Files.isDirectory(KERNEL_RUNTIME), "the game-side classes are compiled only with staged jars");
 
-		// The merged game: what it declares, what it names, and every string it holds.
+		// The merged game: what it declares, where it names each method (name+desc, and owner#name+desc → the methods naming
+		// it), and the strings it holds.
 		Map<String, Shape> game = new HashMap<>();
 		Map<String, Shape> mergedOnly = new LinkedHashMap<>();
-		Set<String> named = new HashSet<>();
-		Set<String> strings = new HashSet<>();
-		Set<String> owned = new HashSet<>();
-		Map<String, Set<String>> reflective = new HashMap<>();
-		scan(MERGED, (c, m) -> {}, game, mergedOnly, named, strings, owned, reflective);
-		for (Path code : List.of(INTEROP, NEO_RUNTIME, KERNEL_MAIN, KERNEL_RUNTIME)) scan(code, (c, m) -> {}, game, null, named, strings, owned, reflective);
+		Names named = new Names();
+		scan(MERGED, (c, m) -> {}, game, mergedOnly, named);
+		for (Path code : List.of(INTEROP, NEO_RUNTIME, KERNEL_MAIN, KERNEL_RUNTIME)) scan(code, (c, m) -> {}, game, null, named);
 
+		// Code the kernel keeps from ever running: the leaves MinecraftForge's builder puts in its vanilla HUD tree, each
+		// replaced before the tree bakes (KernelForgeOverlayLayers.neuterVanillaLeaves).
+		Set<String> silenced = ForgeOverlayNeuterInjector.silencedLeafBodies(node(INTEROP, ForgeOverlayNeuterInjector.TARGET));
+		assertFalse(silenced.isEmpty(), "MinecraftForge's vanilla HUD tree builder registers no leaf this census can read");
+
+		// Uncalled: every place the merged game names it is itself uncalled, or silenced — a fixpoint, so a method only an
+		// uncalled method calls is uncalled too (NeoForge's layers replaced vanilla's only call of extractHotbarAndDecorations,
+		// and with it the only call of what that method alone calls). Only what the merged jar declares is a candidate; no
+		// string may spell it, and nothing outside the game may reach it through a supertype.
+		Map<String, Integer> candidates = new TreeMap<>();
+		Set<String> dead = fixpoint(mergedOnly, game, named, silenced, candidates);
 		Map<String, Map<String, Integer>> uncalled = new TreeMap<>();
-		for (Map.Entry<String, Shape> e : mergedOnly.entrySet()) {
-			for (Map.Entry<String, Integer> m : e.getValue().methods().entrySet()) {
-				String key = m.getKey();
-				int access = m.getValue();
-				if (key.startsWith("<") || (access & (Opcodes.ACC_ABSTRACT | Opcodes.ACC_NATIVE)) != 0) continue;
-				String name = key.substring(0, key.indexOf('('));
-				if ((access & Opcodes.ACC_PRIVATE) != 0) {
-					// A private method is reached only through its own class (its nest calls it naming that class): a call or a
-					// handle naming another owner is another method — Level.removeBlock(BlockPos, boolean) is not
-					// ServerPlayerGameMode's private removeBlock(BlockPos, boolean). A string reaches it only when the class that
-					// holds it can make the call from it: with its descriptor too (a call a transformer synthesizes), as one
-					// owner-qualified target, or through a reflective lookup made by a class that also names the declaring class.
-					if (owned.contains(e.getKey() + "#" + key) || spelledForACall(reflective, e.getKey(), name, key.substring(name.length()))) continue;
-				} else if (named.contains(key) || strings.contains(name)) continue;
-				// Reached through a supertype it overrides — from the JDK, a library or reflection — or unknowable.
-				if ((access & (Opcodes.ACC_PRIVATE | Opcodes.ACC_STATIC)) == 0 && overrides(game, e.getKey(), key, new HashSet<>()) != 0) continue;
-				uncalled.computeIfAbsent(e.getKey(), k -> new HashMap<>()).put(key, access);
-			}
+		for (String candidate : dead) {
+			int hash = candidate.indexOf('#');
+			uncalled.computeIfAbsent(candidate.substring(0, hash), k -> new HashMap<>()).put(candidate.substring(hash + 1), candidates.get(candidate));
 		}
 		Set<String> keys = new HashSet<>();
 		uncalled.values().forEach(m -> keys.addAll(m.keySet()));
@@ -121,6 +137,7 @@ class UncalledMethodCensusTest {
 		for (Map.Entry<Ecosystem, List<Path>> reference : references.entrySet()) {
 			Map<String, Shape> shapes = new HashMap<>();
 			Map<String, List<Call>> calls = new HashMap<>();
+			Names referenceNamed = new Names();
 			for (Path jar : reference.getValue()) {
 				scan(jar, (c, m) -> {
 					for (AbstractInsnNode insn : m.instructions) {
@@ -130,16 +147,25 @@ class UncalledMethodCensusTest {
 							calls.computeIfAbsent(key, k -> new ArrayList<>()).add(new Call(call.owner().substring(0, call.owner().indexOf('#')), call.caller()));
 						}
 					}
-				}, shapes, null, null, null);
+				}, shapes, null, referenceNamed);
 			}
+			// A caller that never runs in its own game does not make the method run there either: the same fixpoint over the
+			// reference. A method only such callers call runs natively no more than it does here, and is no loss — unless a mod
+			// can still make it run there and not here: a caller that is not private (a mod may call it), when the merged game
+			// does not keep that same caller calling the method (a mod calling it here would then reach it too).
+			Set<String> referenceDead = fixpoint(shapes, new HashMap<>(shapes), referenceNamed, Set.of(), new TreeMap<>());
+			Set<String> referencePrivateDead = fixpoint(privateOnly(shapes), new HashMap<>(shapes), referenceNamed, Set.of(), new TreeMap<>());
 			for (Map.Entry<String, Map<String, Integer>> owner : uncalled.entrySet()) {
 				Shape declared = shapes.get(owner.getKey());
 				if (declared == null) continue;
 				for (String key : owner.getValue().keySet()) {
 					if (!declared.methods().containsKey(key)) continue;
 					String self = owner.getKey() + "#" + key;
+					Set<String> mergedSites = named.sites(self, owner.getValue().get(key));
 					for (Call call : calls.getOrDefault(key, List.of())) {
 						if (call.caller().equals(self) || !reaches(shapes, call.owner(), owner.getKey(), key)) continue;
+						if (referenceDead.contains(call.caller())
+								&& (referencePrivateDead.contains(call.caller()) || mergedSites.contains(call.caller()))) continue;
 						ecosystems.computeIfAbsent(self, k -> java.util.EnumSet.noneOf(Ecosystem.class)).add(reference.getKey());
 						callers.computeIfAbsent(self, k -> new TreeSet<>()).add(call.caller());
 					}
@@ -147,8 +173,16 @@ class UncalledMethodCensusTest {
 			}
 		}
 		TreeSet<String> rows = new TreeSet<>();
-		ecosystems.forEach((head, which) -> rows.add(head + " | " + String.join(",", which.stream().sorted().map(Enum::name).toList())
-				+ " | " + String.join(" ", callers.get(head))));
+		ecosystems.forEach((head, which) -> {
+			// The places the merged game names it, every one of them uncalled or silenced: the run-time re-check leaves exactly
+			// these out, and a call from anywhere else makes it live again.
+			TreeSet<String> sites = new TreeSet<>();
+			for (String site : named.sites(head, candidates.get(head))) {
+				if (!site.equals(head)) sites.add(silenced.contains(site) ? MergedBaseUncalledMethods.SILENCED + site : site);
+			}
+			rows.add(head + " | " + String.join(",", which.stream().sorted().map(Enum::name).toList())
+					+ " | " + String.join(" ", callers.get(head)) + (sites.isEmpty() ? "" : " | " + String.join(" ", sites)));
+		});
 
 		List<String> shipped = new ArrayList<>();
 		try (InputStream in = MergedBaseUncalledMethods.class.getResourceAsStream(MergedBaseUncalledMethods.TABLE)) {
@@ -162,7 +196,9 @@ class UncalledMethodCensusTest {
 					"# Generated by UncalledMethodCensusTest (FORBRIC_WRITE_UNCALLED_METHODS=1): a merged-base method nothing in the\n"
 					+ "# merged game (merged jar, carriers, kernel) calls or names, that each listed ecosystem's own game calls from the\n"
 					+ "# listed methods. MixinFit reads an injector bound only to one as never running, for a mod of a listed ecosystem.\n"
-					+ "# <class>#<method> | <ecosystems> | <callers in those games>\n"
+					+ "# The last column, when there is one, is every place the merged game names the method — each itself uncalled, or\n"
+					+ "# (marked !) code the kernel silences (MinecraftForge's vanilla HUD leaves): a call from anywhere else makes it live.\n"
+					+ "# <class>#<method> | <ecosystems> | <callers in those games> [| <uncalled or silenced places naming it>]\n"
 					+ String.join("\n", rows) + "\n");
 		}
 		assertEquals(rows, new TreeSet<>(shipped), "uncalled-methods.txt must equal what the staged jars and the kernel's own "
@@ -171,25 +207,64 @@ class UncalledMethodCensusTest {
 		for (String row : shipped) assertNotNull(MergedBaseUncalledMethods.Row.parse(row), "unreadable row: " + row);
 		assertTrue(shipped.stream().anyMatch(r -> r.startsWith("net/minecraft/client/gui/Hud#extractHotbarAndDecorations(")),
 				"the case this table exists for: NeoForge's HUD layers replaced vanilla's only call");
+		// …and what only that method calls, with MinecraftForge's own caller silenced by the kernel: the split health block.
+		assertTrue(shipped.stream().anyMatch(r -> r.startsWith("net/minecraft/client/gui/Hud#extractPlayerHealth(")),
+				"vanilla calls extractPlayerHealth only from the uncalled extractHotbarAndDecorations, MinecraftForge only from a "
+						+ "leaf of its vanilla tree, which the kernel silences");
 	}
 
-	/** Every call or method handle {@code insn} makes, as {@code (owner#name+desc, caller)}. */
-	private static List<Call> calls(ClassNode c, MethodNode m, AbstractInsnNode insn) {
-		String caller = c.name + "#" + m.name + m.desc;
-		List<Call> out = new ArrayList<>();
-		if (insn instanceof MethodInsnNode call) out.add(new Call(call.owner + "#" + call.name + call.desc, caller));
-		else if (insn instanceof InvokeDynamicInsnNode indy) {
-			for (Object argument : indy.bsmArgs) {
-				if (argument instanceof Handle h) out.add(new Call(h.getOwner() + "#" + h.getName() + h.getDesc(), caller));
-			}
-		} else if (insn instanceof LdcInsnNode ldc && ldc.cst instanceof Handle h) {
-			out.add(new Call(h.getOwner() + "#" + h.getName() + h.getDesc(), caller));
+	/** The same classes, each with only its private methods. */
+	private static Map<String, Shape> privateOnly(Map<String, Shape> shapes) {
+		Map<String, Shape> out = new HashMap<>();
+		for (Map.Entry<String, Shape> e : shapes.entrySet()) {
+			Map<String, Integer> methods = new LinkedHashMap<>();
+			e.getValue().methods().forEach((key, access) -> { if ((access & Opcodes.ACC_PRIVATE) != 0) methods.put(key, access); });
+			out.put(e.getKey(), new Shape(e.getValue().superName(), e.getValue().interfaces(), methods));
 		}
 		return out;
 	}
 
-	private interface Visitor {
-		void method(ClassNode c, MethodNode m);
+	/**
+	 * The methods of {@code declared} ({@code class#name+desc}) that never run in a game whose code names methods as
+	 * {@code named} says: not constructors, abstract or native; no string of the game spells the name — for a private
+	 * method, no string a call to it can be made from ({@link #spelledForACall}); private, static or overriding nothing a
+	 * supertype declares (else the JDK, a library or reflection may reach it); and every place naming it
+	 * ({@link Names#sites}: for a private method, only a call naming its class) is itself one of these, or {@code silenced},
+	 * or the method itself. {@code candidates} receives every method that passed the first tests, with its access.
+	 */
+	private static Set<String> fixpoint(Map<String, Shape> declared, Map<String, Shape> game, Names named,
+			Set<String> silenced, Map<String, Integer> candidates) {
+		for (Map.Entry<String, Shape> e : declared.entrySet()) {
+			for (Map.Entry<String, Integer> m : e.getValue().methods().entrySet()) {
+				String key = m.getKey();
+				int access = m.getValue();
+				if (key.startsWith("<") || (access & (Opcodes.ACC_ABSTRACT | Opcodes.ACC_NATIVE)) != 0) continue;
+				String name = key.substring(0, key.indexOf('('));
+				if ((access & Opcodes.ACC_PRIVATE) != 0) {
+					// A private method is reached only through its own class (its nest calls it naming that class): a call or a
+					// handle naming another owner is another method — Level.removeBlock(BlockPos, boolean) is not
+					// ServerPlayerGameMode's private removeBlock(BlockPos, boolean). A string reaches it only when the class that
+					// holds it can make the call from it.
+					if (spelledForACall(named.held(), e.getKey(), name, key.substring(name.length()))) continue;
+				} else if (named.strings().contains(name)) continue;
+				if ((access & (Opcodes.ACC_PRIVATE | Opcodes.ACC_STATIC)) == 0 && overrides(game, e.getKey(), key, new HashSet<>()) != 0) continue;
+				candidates.put(e.getKey() + "#" + key, access);
+			}
+		}
+		Set<String> dead = new HashSet<>();
+		for (boolean grew = true; grew; ) {
+			grew = false;
+			for (Map.Entry<String, Integer> entry : candidates.entrySet()) {
+				String candidate = entry.getKey();
+				if (dead.contains(candidate)) continue;
+				boolean live = false;
+				for (String site : named.sites(candidate, entry.getValue())) {
+					if (!site.equals(candidate) && !dead.contains(site) && !silenced.contains(site)) { live = true; break; }
+				}
+				if (!live) { dead.add(candidate); grew = true; }
+			}
+		}
+		return dead;
 	}
 
 	/** The methods a reflective lookup by name goes through: {@code Class}'s, {@code MethodHandles.Lookup}'s, the loaders' helpers. */
@@ -213,18 +288,43 @@ class UncalledMethodCensusTest {
 		return false;
 	}
 
-	private static void scan(Path code, Visitor visitor, Map<String, Shape> shapes, Map<String, Shape> merged, Set<String> named,
-			Set<String> strings) throws IOException {
-		scan(code, visitor, shapes, merged, named, strings, null, null);
+	/** One class of a jar, with code; null when the jar does not hold it. */
+	private static ClassNode node(Path jar, String binaryName) throws IOException {
+		try (ZipFile zip = new ZipFile(jar.toFile())) {
+			ZipEntry entry = zip.getEntry(binaryName.replace('.', '/') + ".class");
+			if (entry == null) return null;
+			try (InputStream in = zip.getInputStream(entry)) {
+				ClassNode c = new ClassNode();
+				new ClassReader(in.readAllBytes()).accept(c, ClassReader.SKIP_FRAMES);
+				return c;
+			}
+		}
+	}
+
+	/** Every call or method handle {@code insn} makes, as {@code (owner#name+desc, caller)}. */
+	private static List<Call> calls(ClassNode c, MethodNode m, AbstractInsnNode insn) {
+		String caller = c.name + "#" + m.name + m.desc;
+		List<Call> out = new ArrayList<>();
+		if (insn instanceof MethodInsnNode call) out.add(new Call(call.owner + "#" + call.name + call.desc, caller));
+		else if (insn instanceof InvokeDynamicInsnNode indy) {
+			for (Object argument : indy.bsmArgs) {
+				if (argument instanceof Handle h) out.add(new Call(h.getOwner() + "#" + h.getName() + h.getDesc(), caller));
+			}
+		} else if (insn instanceof LdcInsnNode ldc && ldc.cst instanceof Handle h) {
+			out.add(new Call(h.getOwner() + "#" + h.getName() + h.getDesc(), caller));
+		}
+		return out;
+	}
+
+	private interface Visitor {
+		void method(ClassNode c, MethodNode m);
 	}
 
 	/**
-	 * Reads every class of a jar or class directory: shapes into {@code shapes} (and {@code merged}), names and strings; and, when
-	 * asked, every call and handle by owner ({@code owned}) and, for each class holding a string, the strings it holds (prefixed
-	 * with NUL), the classes it names, and whether it makes a reflective lookup ({@code classes}).
+	 * Reads every class of a jar or class directory: shapes into {@code shapes} (and {@code merged}), and, when asked, what the
+	 * code names into {@code named}.
 	 */
-	private static void scan(Path code, Visitor visitor, Map<String, Shape> shapes, Map<String, Shape> merged, Set<String> named,
-			Set<String> strings, Set<String> owned, Map<String, Set<String>> reflective) throws IOException {
+	private static void scan(Path code, Visitor visitor, Map<String, Shape> shapes, Map<String, Shape> merged, Names named) throws IOException {
 		List<byte[]> classes = new ArrayList<>();
 		if (Files.isDirectory(code)) {
 			try (Stream<Path> files = Files.walk(code)) {
@@ -253,15 +353,20 @@ class UncalledMethodCensusTest {
 			for (MethodNode m : c.methods) {
 				visitor.method(c, m);
 				if (named == null) continue;
+				String site = c.name + "#" + m.name + m.desc;
 				for (AbstractInsnNode insn : m.instructions) {
 					for (Call call : calls(c, m, insn)) {
-						named.add(call.owner().substring(call.owner().indexOf('#') + 1));
-						if (owned != null) owned.add(call.owner());
+						String key = call.owner().substring(call.owner().indexOf('#') + 1);
+						named.byKey().computeIfAbsent(key, k -> new HashSet<>()).add(site);
+						named.byOwner().computeIfAbsent(call.owner(), k -> new HashSet<>()).add(site);
 						held.add(call.owner().substring(0, call.owner().indexOf('#')));
 					}
-					if (insn instanceof InvokeDynamicInsnNode indy) named.add(indy.bsm.getName() + indy.bsm.getDesc());
+					if (insn instanceof InvokeDynamicInsnNode indy) {
+						String key = indy.bsm.getName() + indy.bsm.getDesc();
+						named.byKey().computeIfAbsent(key, k -> new HashSet<>()).add(site);
+					}
 					if (insn instanceof LdcInsnNode ldc && ldc.cst instanceof String s) {
-						strings.add(s);
+						named.strings().add(s);
 						held.add("\0" + s);
 					}
 					if (insn instanceof LdcInsnNode ldc && ldc.cst instanceof org.objectweb.asm.Type t && t.getSort() == org.objectweb.asm.Type.OBJECT)
@@ -272,7 +377,7 @@ class UncalledMethodCensusTest {
 				}
 			}
 			if (looksUp) held.add("\1");
-			if (reflective != null && held.stream().anyMatch(h -> h.startsWith("\0"))) reflective.merge(c.name, held, (a, b) -> { a.addAll(b); return a; });
+			if (named != null && held.stream().anyMatch(h -> h.startsWith("\0"))) named.held().merge(c.name, held, (a, b) -> { a.addAll(b); return a; });
 		}
 	}
 
