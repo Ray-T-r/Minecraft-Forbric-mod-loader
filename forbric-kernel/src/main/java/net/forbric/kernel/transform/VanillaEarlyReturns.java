@@ -111,6 +111,8 @@ import net.forbric.kernel.util.ForbricLog;
  */
 public final class VanillaEarlyReturns implements ClassTransformer {
 	public static final String PROPERTY = "forbric.vanillaEarlyReturns";
+	/** {@code -Dforbric.vanillaEarlyReturns.extra=<file>}: more rows, in the table's format, for a base the shipped census did not read. */
+	public static final String EXTRA_PROPERTY = "forbric.vanillaEarlyReturns.extra";
 	static final String TABLE = "/net/forbric/kernel/transform/vanilla-early-returns.txt";
 	/** How many normalised instructions of the leaving block go into a key: 8 moves at least one edge in 3245 of 3633. */
 	static final int CONTEXT = 8;
@@ -142,6 +144,13 @@ public final class VanillaEarlyReturns implements ClassTransformer {
 	/** The split this boot made in {@code owner.name+desc} (internal owner), or null when it made none. */
 	public static Split splitOf(String owner, String name, String desc) {
 		return SPLITS.get(owner + "#" + name + desc);
+	}
+
+	/** Whether {@code owner#name+desc} is given back vanilla's early returns as it loads: switched on, and a row names it. */
+	public static boolean restores(String owner, String name, String desc) {
+		if (!enabled()) return false;
+		Map<String, Map<String, List<String>>> rows = table().get(owner);
+		return rows != null && rows.containsKey(name + desc);
 	}
 
 	/** Every method this boot split, by owner, as {@code name+desc}. */
@@ -232,6 +241,38 @@ public final class VanillaEarlyReturns implements ClassTransformer {
 		return changed;
 	}
 
+	/**
+	 * The rows that give the last piece of each body a carrier split into pieces ({@code CarrierHelpers.dispatchedHelpers}:
+	 * the merged method is nothing but calls to same-shaped helpers handed its own arguments) the early returns of the native
+	 * method: that piece ends where the native method ended, and the guard every piece repeats is the native method's early
+	 * return, so a {@code TAIL} moved onto the piece runs only where the native one runs. Keyed against the native method,
+	 * as every other row is keyed against vanilla's method of the same name; formatted as the table writes them.
+	 */
+	public static List<String> pieceRows(ClassNode merged, ClassNode vanilla) {
+		List<String> out = new ArrayList<>();
+		if (merged == null || vanilla == null) return out;
+		Map<String, MethodNode> mergedMethods = new HashMap<>(), vanillaMethods = new HashMap<>();
+		for (MethodNode m : merged.methods) mergedMethods.put(m.name + m.desc, m);
+		for (MethodNode m : vanilla.methods) vanillaMethods.put(m.name + m.desc, m);
+		for (MethodNode dispatcher : merged.methods) {
+			MethodNode original = vanillaMethods.get(dispatcher.name + dispatcher.desc);
+			if (original == null || original.instructions.size() == 0) continue;
+			List<MethodInsnNode> pieces = net.forbric.kernel.mixin.CarrierHelpers.dispatchedHelpers(merged, dispatcher);
+			if (pieces == null || pieces.size() < 2) continue;
+			MethodNode last = mergedMethods.get(pieces.getLast().name + pieces.getLast().desc);
+			if (last == null || vanillaMethods.containsKey(last.name + last.desc) || last.instructions.size() == 0) continue;
+			AbstractInsnNode tail = lastReturn(last);
+			if (tail == null) continue;
+			Map<String, List<String>> labels = labels(original);
+			Map<Edge, Integer> decisions = decide(last, edges(last), tail, labels);
+			if (decisions.isEmpty()) continue;
+			Map<String, List<String>> used = new LinkedHashMap<>();
+			for (Edge moved : decisions.keySet()) used.put(moved.key(), labels.get(moved.key()));
+			out.add(new Row(merged.name, last.name + last.desc, new TreeMap<>(used)).format());
+		}
+		return out;
+	}
+
 	// --- the shipped table ---
 
 	static Map<String, Map<String, Map<String, List<String>>>> table() {
@@ -256,6 +297,18 @@ public final class VanillaEarlyReturns implements ClassTransformer {
 			}
 		} catch (IOException unreadable) {
 			Caught.warn(unreadable, "[Forbric/EarlyReturns] could not read %s", TABLE);
+		}
+		// Rows a census of another base (a weave test's own stand-in game) adds, in the same format.
+		String extra = System.getProperty(EXTRA_PROPERTY);
+		if (extra != null && !extra.isBlank()) {
+			try {
+				for (String line : java.nio.file.Files.readAllLines(java.nio.file.Path.of(extra), StandardCharsets.UTF_8)) {
+					Row row = Row.parse(line);
+					if (row != null) out.computeIfAbsent(row.owner(), o -> new HashMap<>()).put(row.method(), row.keys());
+				}
+			} catch (IOException | RuntimeException unreadable) {
+				Caught.warn(unreadable, "[Forbric/EarlyReturns] could not read the extra rows in %s", extra);
+			}
 		}
 		int methods = out.values().stream().mapToInt(Map::size).sum();
 		ForbricLog.info("[Forbric/EarlyReturns] %d merged methods in %d classes get vanilla's early returns back as they load, "

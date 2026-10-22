@@ -161,7 +161,7 @@ public final class CarrierHelpers {
 	 * same descriptor and static-ness that has a body there, and at the end a {@code return}. The helpers therefore
 	 * take exactly the arguments the method was given, which is what lets a handler that captures them move.
 	 */
-	static List<MethodInsnNode> dispatchedHelpers(ClassNode owner, MethodNode method) {
+	public static List<MethodInsnNode> dispatchedHelpers(ClassNode owner, MethodNode method) {
 		if (method.instructions == null || !Type.getReturnType(method.desc).equals(Type.VOID_TYPE)) return null;
 		boolean isStatic = (method.access & Opcodes.ACC_STATIC) != 0;
 		Type[] params = Type.getArgumentTypes(method.desc);
