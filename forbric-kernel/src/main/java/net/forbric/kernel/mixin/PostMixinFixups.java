@@ -80,6 +80,8 @@ public final class PostMixinFixups {
 		if (bytes == null || !enabled()) return bytes;
 		String internal = name.replace('.', '/');
 		bytes = MixinFieldInitialiserPlacement.repair(bytes, NativeGameReferences::reference, MixinStubRebind::ecosystemOf);
+		// A value a guest changed, whose native consumer the carrier replaced: handed to the carrier's own consumer of it.
+		bytes = NativeDeadValueConsumers.apply(internal, bytes, NativeGameReferences::reference, MixinStubRebind::ecosystemOf);
 		if (GUI_RENDERER.equals(internal)) return seedOrphanedPipRenderers(bytes);
 		if (MAPPED_REGISTRY.equals(internal)) bytes = askTheRegistryWhetherAnAliasTargetExists(bytes);
 		// The fuel table a native build hands its caller, after every return hook (FabricFuelValuesInjector.afterMixin).
