@@ -70,7 +70,11 @@ class UncalledMethodCensusTest {
 	private record Shape(String superName, List<String> interfaces, Map<String, Integer> methods) {
 	}
 
-	private record Call(String owner, String caller) {
+	/** A call or method handle: {@code owner#name+desc}, the method making it, and whether it is a static call (or handle). */
+	private record Call(String owner, String caller, boolean isStatic) {
+		Call(String owner, String caller) {
+			this(owner, caller, false);
+		}
 	}
 
 	/**
@@ -80,18 +84,28 @@ class UncalledMethodCensusTest {
 	 * every name+desc a call or handle names other than an override's super call of itself.
 	 */
 	private record Names(Map<String, Set<String>> byKey, Map<String, Set<String>> byOwner, Set<String> strings,
-			Map<String, Set<String>> held, Set<String> calledOtherwise) {
+			Map<String, Set<String>> held, Set<String> calledOtherwise, Map<String, Set<String>> staticOwners) {
 		Names() {
-			this(new HashMap<>(), new HashMap<>(), new HashSet<>(), new HashMap<>(), new HashSet<>());
+			this(new HashMap<>(), new HashMap<>(), new HashSet<>(), new HashMap<>(), new HashSet<>(), new HashMap<>());
 		}
 
 		/**
-		 * The places naming {@code candidate} ({@code class#name+desc}, with its access): a private method is reached only
-		 * through its own class, so only a call or handle naming that class names it.
+		 * The places naming {@code candidate} ({@code class#name+desc}, with its access) in a game of {@code shapes}: a
+		 * private method is reached only through its own class, so only a call or handle naming that class names it; a static
+		 * one only by a static call or handle naming its class, or a subclass that does not declare it again — an instance
+		 * call of the same name and descriptor (TripWireBlock's shouldConnectTo(BlockState, Direction), beside
+		 * RedStoneWireBlock's static one) is another method.
 		 */
-		Set<String> sites(String candidate, int access) {
-			return (access & Opcodes.ACC_PRIVATE) != 0 ? byOwner.getOrDefault(candidate, Set.of())
-					: byKey.getOrDefault(candidate.substring(candidate.indexOf('#') + 1), Set.of());
+		Set<String> sites(String candidate, int access, Map<String, Shape> shapes) {
+			if ((access & Opcodes.ACC_PRIVATE) != 0) return byOwner.getOrDefault(candidate, Set.of());
+			int hash = candidate.indexOf('#');
+			String key = candidate.substring(hash + 1);
+			if ((access & Opcodes.ACC_STATIC) == 0) return byKey.getOrDefault(key, Set.of());
+			Set<String> out = new HashSet<>();
+			for (String owner : staticOwners.getOrDefault(key, Set.of())) {
+				if (reaches(shapes, owner, candidate.substring(0, hash), key)) out.addAll(byOwner.getOrDefault("\2" + owner + "#" + key, Set.of()));
+			}
+			return out;
 		}
 	}
 
@@ -148,7 +162,7 @@ class UncalledMethodCensusTest {
 							if (!keys.contains(key)) continue;
 							// An override's super call runs only when the override runs: by itself it calls nothing, there either.
 							if (superSelf(m, insn, key)) continue;
-							calls.computeIfAbsent(key, k -> new ArrayList<>()).add(new Call(call.owner().substring(0, call.owner().indexOf('#')), call.caller()));
+							calls.computeIfAbsent(key, k -> new ArrayList<>()).add(new Call(call.owner().substring(0, call.owner().indexOf('#')), call.caller(), call.isStatic()));
 						}
 					}
 				}, shapes, null, referenceNamed);
@@ -166,9 +180,13 @@ class UncalledMethodCensusTest {
 				for (String key : owner.getValue().keySet()) {
 					if (!declared.methods().containsKey(key)) continue;
 					String self = owner.getKey() + "#" + key;
-					Set<String> mergedSites = named.sites(self, owner.getValue().get(key));
+					int access = owner.getValue().get(key);
+					Set<String> mergedSites = named.sites(self, access, game);
 					for (Call call : calls.getOrDefault(key, List.of())) {
 						if (call.caller().equals(self) || !reaches(shapes, call.owner(), owner.getKey(), key)) continue;
+						// a static method is reached by a static call only, an instance method by an instance call only — the
+						// reference's own method, which the reference's call reaches
+						if (call.isStatic() != ((declared.methods().get(key) & Opcodes.ACC_STATIC) != 0)) continue;
 						if (referenceDead.contains(call.caller())
 								&& (referencePrivateDead.contains(call.caller()) || mergedSites.contains(call.caller()))) continue;
 						ecosystems.computeIfAbsent(self, k -> java.util.EnumSet.noneOf(Ecosystem.class)).add(reference.getKey());
@@ -182,7 +200,7 @@ class UncalledMethodCensusTest {
 			// The places the merged game names it, every one of them uncalled or silenced: the run-time re-check leaves exactly
 			// these out, and a call from anywhere else makes it live again.
 			TreeSet<String> sites = new TreeSet<>();
-			for (String site : named.sites(head, candidates.get(head))) {
+			for (String site : named.sites(head, candidates.get(head), game)) {
 				if (!site.equals(head)) sites.add(silenced.contains(site) ? MergedBaseUncalledMethods.SILENCED + site : site);
 			}
 			rows.add(head + " | " + String.join(",", which.stream().sorted().map(Enum::name).toList())
@@ -236,7 +254,8 @@ class UncalledMethodCensusTest {
 	 * overriding nothing a supertype declares (else the JDK, a library or reflection may reach it) — and when nothing names
 	 * it but an override's super call of itself, nothing outside the game declares it (such calls run only when the
 	 * override runs, and no call in the game reaches either); and every place naming it ({@link Names#sites}: for a private
-	 * method, only a call naming its class) is itself one of these, or {@code silenced}, or the method itself.
+	 * method, only a call naming its class; for a static one, only a static call naming its class or a subclass that does not
+	 * declare it again) is itself one of these, or {@code silenced}, or the method itself.
 	 * {@code candidates} receives every method that passed the first tests, with its access.
 	 */
 	private static Set<String> fixpoint(Map<String, Shape> declared, Map<String, Shape> game, Set<String> inside, Names named,
@@ -269,7 +288,7 @@ class UncalledMethodCensusTest {
 				String candidate = entry.getKey();
 				if (dead.contains(candidate)) continue;
 				boolean live = false;
-				for (String site : named.sites(candidate, entry.getValue())) {
+				for (String site : named.sites(candidate, entry.getValue(), game)) {
 					if (!site.equals(candidate) && !dead.contains(site) && !silenced.contains(site)) { live = true; break; }
 				}
 				if (!live) { dead.add(candidate); grew = true; }
@@ -321,13 +340,13 @@ class UncalledMethodCensusTest {
 	private static List<Call> calls(ClassNode c, MethodNode m, AbstractInsnNode insn) {
 		String caller = c.name + "#" + m.name + m.desc;
 		List<Call> out = new ArrayList<>();
-		if (insn instanceof MethodInsnNode call) out.add(new Call(call.owner + "#" + call.name + call.desc, caller));
+		if (insn instanceof MethodInsnNode call) out.add(new Call(call.owner + "#" + call.name + call.desc, caller, call.getOpcode() == Opcodes.INVOKESTATIC));
 		else if (insn instanceof InvokeDynamicInsnNode indy) {
 			for (Object argument : indy.bsmArgs) {
-				if (argument instanceof Handle h) out.add(new Call(h.getOwner() + "#" + h.getName() + h.getDesc(), caller));
+				if (argument instanceof Handle h) out.add(new Call(h.getOwner() + "#" + h.getName() + h.getDesc(), caller, h.getTag() == Opcodes.H_INVOKESTATIC));
 			}
 		} else if (insn instanceof LdcInsnNode ldc && ldc.cst instanceof Handle h) {
-			out.add(new Call(h.getOwner() + "#" + h.getName() + h.getDesc(), caller));
+			out.add(new Call(h.getOwner() + "#" + h.getName() + h.getDesc(), caller, h.getTag() == Opcodes.H_INVOKESTATIC));
 		}
 		return out;
 	}
@@ -375,6 +394,11 @@ class UncalledMethodCensusTest {
 						String key = call.owner().substring(call.owner().indexOf('#') + 1);
 						named.byKey().computeIfAbsent(key, k -> new HashSet<>()).add(site);
 						named.byOwner().computeIfAbsent(call.owner(), k -> new HashSet<>()).add(site);
+						if (call.isStatic()) {
+							// a static call, by the owner it names (marked \2): all that reaches a static method
+							named.byOwner().computeIfAbsent("\2" + call.owner(), k -> new HashSet<>()).add(site);
+							named.staticOwners().computeIfAbsent(key, k -> new HashSet<>()).add(call.owner().substring(0, call.owner().indexOf('#')));
+						}
 						if (!superSelf(m, insn, key)) named.calledOtherwise().add(key);
 						held.add(call.owner().substring(0, call.owner().indexOf('#')));
 					}

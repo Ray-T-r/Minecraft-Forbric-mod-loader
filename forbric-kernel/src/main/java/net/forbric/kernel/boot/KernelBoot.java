@@ -351,6 +351,15 @@ public final class KernelBoot {
 
 		ForbricClassLoader loader = new ForbricClassLoader(owned.toArray(new URL[0]),
 				KernelBoot.class.getClassLoader());
+		// How the liveness verdict follows a mod's static call naming a subclass up to the class that declares the method:
+		// the super class each class's bytes name, read as resources (nothing is loaded).
+		net.forbric.kernel.mixin.MergedBaseUncalledMethods.superclasses(internalName -> {
+			try (java.io.InputStream in = loader.getGameResourceAsStream(internalName + ".class")) {
+				return in == null ? null : new org.objectweb.asm.ClassReader(in.readAllBytes()).getSuperName();
+			} catch (java.io.IOException unreadable) {
+				throw new java.io.UncheckedIOException(unreadable);
+			}
+		});
 		// The jars cross-jar arbitration superseded, as a LAST RESORT only — a mod built against the other side's
 		// platform-only class would otherwise get a bare NoClassDefFoundError. See ForbricClassLoader.setRescueJars
 		// for why this cannot shadow the winner, and for what it deliberately does not fix.

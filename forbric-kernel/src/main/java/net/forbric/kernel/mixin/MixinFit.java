@@ -1763,7 +1763,7 @@ public final class MixinFit {
 	}
 
 	/** Mixin's implicit accessor naming: strip one of the prefixes and decapitalise. */
-	private static String derived(String method, String... prefixes) {
+	static String derived(String method, String... prefixes) {
 		for (String prefix : prefixes) {
 			if (method.length() > prefix.length() && method.startsWith(prefix)
 					&& Character.isUpperCase(method.charAt(prefix.length()))) {
@@ -1774,7 +1774,7 @@ public final class MixinFit {
 		return null;
 	}
 
-	private static AnnotationNode annotation(MethodNode m, String desc) {
+	static AnnotationNode annotation(MethodNode m, String desc) {
 		for (List<AnnotationNode> table : new List[] { m.visibleAnnotations, m.invisibleAnnotations }) {
 			if (table == null) continue;
 			for (AnnotationNode a : table) if (desc.equals(a.desc)) return a;

@@ -18,6 +18,7 @@ import java.util.zip.ZipFile;
 import org.objectweb.asm.ClassReader;
 import org.objectweb.asm.Handle;
 import org.objectweb.asm.tree.AbstractInsnNode;
+import org.objectweb.asm.tree.AnnotationNode;
 import org.objectweb.asm.tree.ClassNode;
 import org.objectweb.asm.tree.InvokeDynamicInsnNode;
 import org.objectweb.asm.tree.LdcInsnNode;
@@ -30,43 +31,52 @@ import net.forbric.kernel.util.ForbricLog;
 
 /**
  * Methods of the merged base that the game a mod was built against calls, and that nothing in the merged game calls —
- * the shipped table {@code uncalled-methods.txt}, which UncalledMethodCensusTest re-derives from the staged jars and pins.
+ * the shipped table {@code uncalled-methods.txt}, which UncalledMethodCensusTest re-derives from the staged jars and
+ * pins.
  *
- * <p>Better Mount HUD redirects {@code MultiPlayerGameMode.hasExperience()} inside {@code Hud.extractHotbarAndDecorations}
- * to hide the XP number over the jump bar. The merged base still has that method, with that call in it, so the anchor
- * resolves and the redirect attaches — but vanilla calls the method from {@code Hud.extractRenderState}, NeoForge's HUD
- * layers replaced that call, and no class in the merged jar, the carriers or the kernel calls it any more. The redirect
- * never runs; resolution alone called it FIT.
+ * <p>Better Mount HUD redirects {@code MultiPlayerGameMode.hasExperience()} inside {@code
+ * Hud.extractHotbarAndDecorations} to hide the XP number over the jump bar. The merged base still has that method, with
+ * that call in it, so the anchor resolves and the redirect attaches — but vanilla calls the method from {@code
+ * Hud.extractRenderState}, NeoForge's HUD layers replaced that call, and no class in the merged jar, the carriers or
+ * the kernel calls it any more. The redirect never runs; resolution alone called it FIT.
  *
- * <p>A row says: {@code owner#method} is declared in the merged base; every instruction or method handle in the merged jar,
- * {@code forge-runtime-interop.jar}, {@code neoforge-runtime.jar} or the kernel's own classes that names its name and
- * descriptor (whatever the owner, so a virtual call through any type counts) is in a method that is itself uncalled, or
- * in code the kernel silences (the leaves MinecraftForge's builder puts in its vanilla HUD tree, each replaced before the
- * tree bakes) — a fixpoint, listed as the row's last column; no supertype declares it (a call through that type, from
- * anywhere, would reach it), and no string constant in that code spells its name (a call the kernel synthesizes, or a
- * reflective lookup). A PRIVATE method is reached only through its own class, so only a call or handle naming that class
- * counts, and only a string a call can be made from (beside its descriptor, inside one owner-qualified target, or in a
- * class that looks methods up reflectively and names the class): {@code Level.removeBlock(BlockPos, boolean)}, called
- * everywhere, had hidden that nothing calls {@code ServerPlayerGameMode}'s private method of the same name and
- * descriptor, and Physics Mod's collapse hook bound there read as running. An override's super call of itself runs only
- * when the override runs, so a method named by nothing else is uncalled unless a supertype outside the merged game
- * declares it. And the listed ecosystems' own jars — vanilla for Fabric, the patched game plus its runtime for
- * MinecraftForge and NeoForge — call it from the listed methods, each of which runs there (the same fixpoint, by the same
- * rules, over the reference), or is one a mod may call and the merged game no longer makes the call from. A method no
- * reference runs either is not here: a mod targeting it is promised nothing the merged game breaks. NeoForge drew the four
- * pieces of {@code Hud.extractPlayerHealth} as layers of their own: vanilla still calls it only from the uncalled
- * {@code extractHotbarAndDecorations}, MinecraftForge only from a silenced leaf, and Balm's health events there were read as
- * running.
+ * <p>A row says: {@code owner#method} is declared in the merged base; every instruction or method handle in the merged
+ * jar, {@code forge-runtime-interop.jar}, {@code neoforge-runtime.jar} or the kernel's own classes that names its name
+ * and descriptor (whatever the owner, so a virtual call through any type counts) is in a method that is itself
+ * uncalled, or in code the kernel silences (the leaves MinecraftForge's builder puts in its vanilla HUD tree, each
+ * replaced before the tree bakes) — a fixpoint, listed as the row's last column; no supertype declares it (a call
+ * through that type, from anywhere, would reach it), and no string constant in that code spells its name (a call the
+ * kernel synthesizes, or a reflective lookup). A PRIVATE method is reached only through its own class, so only a call
+ * or handle naming that class counts, and only a string a call can be made from (beside its descriptor, inside one
+ * owner-qualified target, or in a class that looks methods up reflectively and names the class): {@code
+ * Level.removeBlock(BlockPos, boolean)}, called everywhere, had hidden that nothing calls {@code
+ * ServerPlayerGameMode}'s private method of the same name and descriptor, and Physics Mod's collapse hook bound there
+ * read as running. A STATIC method is reached only by a static call (or handle) naming its class or a subclass that
+ * does not declare it again: {@code TripWireBlock}'s instance {@code shouldConnectTo(BlockState, Direction)}, which
+ * runs, had hidden that nothing calls {@code RedStoneWireBlock}'s static method of that name and descriptor (NeoForge
+ * asks the block's {@code canConnectRedstone} there instead), and Create's redstone-connection hook read as running. An
+ * override's super call of itself runs only when the override runs, so a method named by nothing else is uncalled
+ * unless a supertype outside the merged game declares it. And the listed ecosystems' own jars — vanilla for Fabric, the
+ * patched game plus its runtime for MinecraftForge and NeoForge — call it from the listed methods, each of which runs
+ * there (the same fixpoint, by the same rules, over the reference), or is one a mod may call and the merged game no
+ * longer makes the call from. A method no reference runs either is not here: a mod targeting it is promised nothing the
+ * merged game breaks. NeoForge drew the four pieces of {@code Hud.extractPlayerHealth} as layers of their own: vanilla
+ * still calls it only from the uncalled {@code extractHotbarAndDecorations}, MinecraftForge only from a silenced leaf,
+ * and Balm's health events there were read as running.
  *
  * <p>What the census cannot see is the installed mods, and they do call some of these: fabric-resource-loader, Iris and
- * Collective all call {@code Language.loadFromJson(InputStream, BiConsumer)}, the stub the merged game no longer does, so
- * owo's mixin there runs. {@link #scanGuests} therefore reads every installed jar's constant pool at boot, beside the
- * other guest audits and before Mixin prepares a config, and a row whose name and descriptor any of them references is
- * live — for a private row, only a call naming its class, or an {@code @Invoker} that may name it — as is one an installed
- * mod reaches through an uncalled place naming it. The row is also re-checked against the live bytes: a call from code
- * that can run (not a row, not an uncalled place a row names), in the method's own class, a listed caller's or an
- * uncalled place's, makes it live again — for a private method, a call naming its class. {@code -Dforbric.mixinFit.liveness=off}
- * reads every row as live.
+ * Collective all call {@code Language.loadFromJson(InputStream, BiConsumer)}, the stub the merged game no longer does,
+ * so owo's mixin there runs. {@link #scanGuests} therefore reads every installed jar's constant pool at boot, beside
+ * the other guest audits and before Mixin prepares a config, by the census's own rules: a row any of them calls or
+ * takes a handle to is live — but not through an override's super call of itself; a private row only through a call
+ * naming its class (a mixin's call of its own class is made in the classes it targets) or an {@code @Invoker} of that
+ * class with its name and descriptor; a static row only through a static call naming its class or a subclass (followed
+ * through the game's class bytes) — as is one an installed mod reaches through an uncalled place naming it. The row is
+ * also re-checked against the live bytes: a call from code that can run (not a row, not an uncalled place a row names),
+ * in the method's own class, a listed caller's or an uncalled place's, makes it live again — for a private method, a
+ * call naming its class; for a static one, a static call. {@code -Dforbric.mixinFit.liveness=off} reads every row as
+ * live.
+ *
  */
 public final class MergedBaseUncalledMethods {
 	/** The shipped table; UncalledMethodCensusTest pins it to the staged artifacts. */
@@ -134,13 +144,26 @@ public final class MergedBaseUncalledMethods {
 	private static volatile Set<String> dead;
 	private static volatile Set<String> silenced;
 	private static volatile Set<String> owners;
-	/** Table rows ({@code name + descriptor}) some installed mod's code references; see {@link #scanGuests}. */
+	/** Table rows ({@code name + descriptor}) some installed mod's code calls or takes a handle to; see {@link #scanGuests}. */
 	private static final Set<String> GUEST_CALLED = ConcurrentHashMap.newKeySet();
-	/** The same, as {@code owner#name + descriptor}: the owner a call or handle names, which is all a private row heeds. */
+	/**
+	 * The same, as {@code owner#name + descriptor}: the owner a call or handle names (for a mixin's call of its own class, each
+	 * class it targets — Mixin makes the call there), which is all a private row heeds.
+	 */
 	private static final Set<String> GUEST_CALLED_OWNED = ConcurrentHashMap.newKeySet();
-	/** Row names an installed mod's {@code @Invoker} accessor may name: a private method it can call through its own class. */
+	/** The calls among those that are static ({@code invokestatic}, a static handle), by owner: all a static row heeds. */
+	private static final Set<String> GUEST_STATIC_OWNED = ConcurrentHashMap.newKeySet();
+	/** {@code owner#name + descriptor} an installed mod's {@code @Invoker} accessor binds: a private method it calls through its target. */
 	private static final Set<String> GUEST_INVOKED = ConcurrentHashMap.newKeySet();
+	/** Rows a class whose code could not be read names in its constant pool: called, through whatever owner. */
+	private static final Set<String> GUEST_ANY_OWNER = ConcurrentHashMap.newKeySet();
 	private static final String INVOKER = "Lorg/spongepowered/asm/mixin/gen/Invoker;";
+	/**
+	 * A class's super class by internal name ({@code null} when unreadable), as the game's class loader has the class — how a
+	 * static call naming a subclass is followed to the class that declares the method. The kernel sets it at boot; unset, a
+	 * static call naming another class counts as reaching it.
+	 */
+	private static volatile Function<String, String> superclasses;
 
 	private MergedBaseUncalledMethods() {
 	}
@@ -268,7 +291,19 @@ public final class MergedBaseUncalledMethods {
 		}
 	}
 
-	/** {@link #scanGuests} for one class's bytes. */
+	/**
+	 * {@link #scanGuests} for one class's bytes. The constant pool says cheaply whether the class names a row at all (a call
+	 * and a method handle both go through a {@code CONSTANT_NameAndType}) or holds an {@code @Invoker}; only then is its
+	 * code read, so a name the pool holds for another reason (a field, an enclosing method) is no call, and the census's
+	 * rules hold for the mods too:
+	 * <ul>
+	 *   <li>an override's super call of itself runs only when the override runs — it is no call; a call of the override
+	 *       would be one, by the same name and descriptor;</li>
+	 *   <li>a call names its owner, and a mixin's call of its own class is made in each class it targets;</li>
+	 *   <li>an {@code @Invoker} binds the method of its name (its value, or its own name less {@code call}/{@code invoke})
+	 *       and descriptor in the classes its {@code @Mixin} targets, and no other class's.</li>
+	 * </ul>
+	 */
 	static void noteGuest(byte[] classBytes) {
 		ClassReader reader;
 		try {
@@ -280,33 +315,95 @@ public final class MergedBaseUncalledMethods {
 		}
 		Set<String> wanted = keys();
 		char[] buf = new char[reader.getMaxStringLength()];
-		Set<String> utf8 = new java.util.HashSet<>();
+		boolean named = false, invoker = false;
 		for (int i = 1; i < reader.getItemCount(); i++) {
 			int offset = reader.getItem(i);
 			if (offset == 0) continue;
 			int tag = reader.readByte(offset - 1);
-			if (tag == 1) {                                                       // CONSTANT_Utf8: u2 length, then the bytes
-				int length = reader.readUnsignedShort(offset);
-				@SuppressWarnings("deprecation")
-				byte[] bytes = reader.b;
-				utf8.add(new String(bytes, offset + 2, length, java.nio.charset.StandardCharsets.UTF_8));
+			if (tag == 1) {                                                       // CONSTANT_Utf8
+				if (!invoker && INVOKER.equals(utf8At(reader, offset))) invoker = true;
 			} else if (tag == 12) {                                               // CONSTANT_NameAndType
-				String key = reader.readUTF8(offset, buf) + reader.readUTF8(offset + 2, buf);
-				if (wanted.contains(key)) GUEST_CALLED.add(key);
-			} else if (tag == 10 || tag == 11) {                                  // CONSTANT_(Interface)Methodref
-				String owner = reader.readClass(offset, buf);
-				int nameAndType = reader.getItem(reader.readUnsignedShort(offset + 2));
-				String key = reader.readUTF8(nameAndType, buf) + reader.readUTF8(nameAndType + 2, buf);
-				if (wanted.contains(key)) GUEST_CALLED_OWNED.add(owner + "#" + key);
+				if (wanted.contains(reader.readUTF8(offset, buf) + reader.readUTF8(offset + 2, buf))) named = true;
 			}
 		}
-		// An @Invoker names its target by its value, or by its own name less "call"/"invoke": a private row of that name may be
-		// called through the accessor, whatever this class's constant pool says of its owner.
-		if (!utf8.contains(INVOKER)) return;
-		for (String key : wanted) {
-			String name = key.substring(0, key.indexOf('('));
-			String capitalised = name.isEmpty() ? name : Character.toUpperCase(name.charAt(0)) + name.substring(1);
-			if (utf8.contains(name) || utf8.contains("call" + capitalised) || utf8.contains("invoke" + capitalised)) GUEST_INVOKED.add(name);
+		if (!named && !invoker) return;
+		ClassNode node = new ClassNode();
+		try {
+			reader.accept(node, ClassReader.SKIP_DEBUG | ClassReader.SKIP_FRAMES);
+		} catch (RuntimeException unreadable) {
+			// Its code cannot be read: what its pool names counts as called, whatever the owner, as it did before code was read.
+			Caught.warn(unreadable, "[Forbric/Mixin] could not read the code of %s; every uncalled merged-base method its "
+					+ "constant pool names counts as called by it", reader.getClassName());
+			notePool(reader, wanted, buf);
+			return;
+		}
+		List<String> targets = MixinFit.mixinTargets(node);
+		if (named) noteCalls(node, targets, wanted);
+		if (invoker) noteInvokers(node, targets, wanted);
+	}
+
+	/** The Utf8 constant at {@code offset} (its {@code u2} length first). */
+	private static String utf8At(ClassReader reader, int offset) {
+		int length = reader.readUnsignedShort(offset);
+		@SuppressWarnings("deprecation")
+		byte[] bytes = reader.b;
+		return new String(bytes, offset + 2, length, StandardCharsets.UTF_8);
+	}
+
+	/** The fallback for a class whose code is unreadable: every row its constant pool names, by any owner, is called. */
+	private static void notePool(ClassReader reader, Set<String> wanted, char[] buf) {
+		for (int i = 1; i < reader.getItemCount(); i++) {
+			int offset = reader.getItem(i);
+			if (offset == 0 || reader.readByte(offset - 1) != 12) continue;
+			String key = reader.readUTF8(offset, buf) + reader.readUTF8(offset + 2, buf);
+			if (!wanted.contains(key)) continue;
+			GUEST_CALLED.add(key);
+			GUEST_ANY_OWNER.add(key);
+		}
+	}
+
+	/** Every call and method handle of {@code node}'s code naming a row, but an override's super call of itself. */
+	private static void noteCalls(ClassNode node, List<String> targets, Set<String> wanted) {
+		for (MethodNode m : node.methods) {
+			if (m.instructions == null) continue;
+			for (AbstractInsnNode insn : m.instructions) {
+				if (insn instanceof MethodInsnNode call) {
+					if (call.getOpcode() == org.objectweb.asm.Opcodes.INVOKESPECIAL && call.name.equals(m.name) && call.desc.equals(m.desc)) continue;
+					noteCall(node, targets, wanted, call.owner, call.name + call.desc, call.getOpcode() == org.objectweb.asm.Opcodes.INVOKESTATIC);
+				} else if (insn instanceof InvokeDynamicInsnNode indy) {
+					noteHandle(node, targets, wanted, indy.bsm);
+					for (Object argument : indy.bsmArgs) if (argument instanceof Handle h) noteHandle(node, targets, wanted, h);
+				} else if (insn instanceof LdcInsnNode ldc && ldc.cst instanceof Handle h) {
+					noteHandle(node, targets, wanted, h);
+				}
+			}
+		}
+	}
+
+	private static void noteHandle(ClassNode node, List<String> targets, Set<String> wanted, Handle h) {
+		if (h.getTag() >= org.objectweb.asm.Opcodes.H_INVOKEVIRTUAL)
+			noteCall(node, targets, wanted, h.getOwner(), h.getName() + h.getDesc(), h.getTag() == org.objectweb.asm.Opcodes.H_INVOKESTATIC);
+	}
+
+	private static void noteCall(ClassNode node, List<String> targets, Set<String> wanted, String owner, String key, boolean isStatic) {
+		if (!wanted.contains(key)) return;
+		GUEST_CALLED.add(key);
+		for (String named : owner.equals(node.name) && !targets.isEmpty() ? targets : List.of(owner)) {
+			GUEST_CALLED_OWNED.add(named + "#" + key);
+			if (isStatic) GUEST_STATIC_OWNED.add(named + "#" + key);
+		}
+	}
+
+	/** Every {@code @Invoker} of a mixin naming a row: its target name and its own descriptor, in each class it targets. */
+	private static void noteInvokers(ClassNode node, List<String> targets, Set<String> wanted) {
+		if (targets.isEmpty()) return;
+		for (MethodNode m : node.methods) {
+			AnnotationNode invoker = MixinFit.annotation(m, INVOKER);
+			if (invoker == null) continue;
+			String name = MixinFit.asString(MixinFit.value(invoker, "value"));
+			if (name == null || name.isEmpty()) name = MixinFit.derived(m.name, "invoke", "call");
+			if (name == null || !wanted.contains(name + m.desc)) continue;
+			for (String target : targets) GUEST_INVOKED.add(target + "#" + name + m.desc);
 		}
 	}
 
@@ -315,16 +412,62 @@ public final class MergedBaseUncalledMethods {
 		return GUEST_CALLED.contains(nameAndDesc);
 	}
 
-	/** Whether an installed mod calls {@code owner#nameAndDesc} naming that owner, or may through an {@code @Invoker}; test seam. */
+	/** Whether an installed mod calls {@code owner#nameAndDesc} naming that owner, or binds it through an {@code @Invoker}; test seam. */
 	static boolean calledByGuest(String owner, String nameAndDesc) {
-		return GUEST_CALLED_OWNED.contains(owner + "#" + nameAndDesc) || GUEST_INVOKED.contains(nameAndDesc.substring(0, nameAndDesc.indexOf('(')));
+		return GUEST_CALLED_OWNED.contains(owner + "#" + nameAndDesc) || GUEST_INVOKED.contains(owner + "#" + nameAndDesc)
+				|| GUEST_ANY_OWNER.contains(nameAndDesc);
+	}
+
+	/**
+	 * Whether an installed mod makes a static call of {@code owner}'s static {@code nameAndDesc}: naming {@code owner}, or a
+	 * class whose super classes reach {@code owner} — or one the kernel cannot follow, which may.
+	 */
+	static boolean staticallyCalledByGuest(String owner, String nameAndDesc) {
+		if (GUEST_INVOKED.contains(owner + "#" + nameAndDesc) || GUEST_ANY_OWNER.contains(nameAndDesc)) return true;
+		if (!GUEST_CALLED.contains(nameAndDesc)) return false;
+		String suffix = "#" + nameAndDesc;
+		for (String call : GUEST_STATIC_OWNED) {
+			if (!call.endsWith(suffix)) continue;
+			String named = call.substring(0, call.length() - suffix.length());
+			if (named.equals(owner) || reachesThroughSupers(named, owner)) return true;
+		}
+		return false;
+	}
+
+	/** Whether {@code named}'s super classes reach {@code owner}; true when the chain cannot be followed (no way to know). */
+	private static boolean reachesThroughSupers(String named, String owner) {
+		Function<String, String> supers = superclasses;
+		if (supers == null) return true;
+		String at = named;
+		for (int guard = 0; guard < 64; guard++) {
+			String up;
+			try {
+				up = supers.apply(at);
+			} catch (RuntimeException unreadable) {
+				Caught.warn(unreadable, "[Forbric/Mixin] could not read the super class of %s; a static call naming it counts as "
+						+ "reaching %s", at, owner);
+				return true;
+			}
+			if (up == null) return !"java/lang/Object".equals(at);
+			if (up.equals(owner)) return true;
+			at = up;
+		}
+		return true;
+	}
+
+	/** Boot seam: how a class's super class is read (internal name to internal name, null at the top or when unreadable). */
+	public static void superclasses(Function<String, String> lookup) {
+		superclasses = lookup;
 	}
 
 	/** Test and census seam: forgets what the installed mods reference. */
 	static void forgetGuests() {
 		GUEST_CALLED.clear();
 		GUEST_CALLED_OWNED.clear();
+		GUEST_STATIC_OWNED.clear();
 		GUEST_INVOKED.clear();
+		GUEST_ANY_OWNER.clear();
+		superclasses = null;
 	}
 
 	/** The row for {@code owner#method} whose ecosystems include {@code ecosystem}; null when none, or the ecosystem is unknown. */
@@ -373,15 +516,19 @@ public final class MergedBaseUncalledMethods {
 		Row row = find(owner.name, method.name + method.desc, ecosystem);
 		if (row == null || calledIn(owner, method, deadNow())) return null;
 		// A private method is reached only through its own class: a mod calling a method of another class with the same name
-		// and descriptor (Level.removeBlock(BlockPos, boolean)) does not reach ServerPlayerGameMode's private one.
+		// and descriptor (Level.removeBlock(BlockPos, boolean)) does not reach ServerPlayerGameMode's private one. A static one
+		// only by a static call naming its class or a subclass: TripWireBlock's instance shouldConnectTo(BlockState, Direction)
+		// is not RedStoneWireBlock's static method of that name and descriptor.
 		boolean guest = (method.access & org.objectweb.asm.Opcodes.ACC_PRIVATE) != 0 ? calledByGuest(owner.name, row.method())
+				: (method.access & org.objectweb.asm.Opcodes.ACC_STATIC) != 0 ? staticallyCalledByGuest(owner.name, row.method())
 				: GUEST_CALLED.contains(row.method());
 		return guest ? null : row;
 	}
 
 	/**
 	 * Whether any method of {@code node} but {@code method} itself calls or takes a handle to {@code method}'s name and descriptor
-	 * — for a private {@code method} of {@code node}, naming {@code node} as the owner, the only way to reach it.
+	 * — for a private {@code method} of {@code node}, naming {@code node} as the owner, the only way to reach it; for a static
+	 * one, by a static call or handle, as an instance call of the same name and descriptor is another method.
 	 */
 	static boolean calledIn(ClassNode node, MethodNode method) {
 		return calledIn(node, method, Set.of());
@@ -397,6 +544,7 @@ public final class MergedBaseUncalledMethods {
 		java.util.Map<String, MethodNode> declared = new java.util.HashMap<>();
 		for (MethodNode m : node.methods) declared.put(m.name + m.desc, m);
 		boolean ownerOnly = (method.access & org.objectweb.asm.Opcodes.ACC_PRIVATE) != 0 && declared.containsKey(method.name + method.desc);
+		boolean isStatic = (method.access & org.objectweb.asm.Opcodes.ACC_STATIC) != 0;
 		java.util.Deque<MethodNode> pending = new java.util.ArrayDeque<>();
 		Set<MethodNode> seen = java.util.Collections.newSetFromMap(new java.util.IdentityHashMap<>());
 		for (MethodNode m : node.methods) {
@@ -407,15 +555,18 @@ public final class MergedBaseUncalledMethods {
 			MethodNode m = pending.removeFirst();
 			if (!seen.add(m) || m.instructions == null) continue;
 			for (AbstractInsnNode insn : m.instructions) {
-				// what it names, owner first: a private method of this class is reached only by naming this class
+				// what it names, owner first (a private method of this class is reached only by naming this class), and whether
+				// statically (a static method only by a static call or handle)
 				List<String[]> named = new ArrayList<>(1);
-				if (insn instanceof MethodInsnNode call) named.add(new String[] {call.owner, call.name + call.desc});
+				if (insn instanceof MethodInsnNode call) named.add(new String[] {call.owner, call.name + call.desc,
+						call.getOpcode() == org.objectweb.asm.Opcodes.INVOKESTATIC ? "s" : ""});
 				else if (insn instanceof InvokeDynamicInsnNode indy) {
-					for (Object argument : indy.bsmArgs) if (argument instanceof Handle h) named.add(new String[] {h.getOwner(), h.getName() + h.getDesc()});
-				} else if (insn instanceof LdcInsnNode ldc && ldc.cst instanceof Handle h) named.add(new String[] {h.getOwner(), h.getName() + h.getDesc()});
+					for (Object argument : indy.bsmArgs) if (argument instanceof Handle h) named.add(handle(h));
+				} else if (insn instanceof LdcInsnNode ldc && ldc.cst instanceof Handle h) named.add(handle(h));
 				for (String[] target : named) {
 					String key = target[1];
 					if (key.equals(method.name + method.desc)) {
+						if (isStatic != target[2].equals("s")) continue;
 						if (!ownerOnly || target[0].equals(node.name)) return true;
 						continue;
 					}
@@ -428,6 +579,11 @@ public final class MergedBaseUncalledMethods {
 			}
 		}
 		return false;
+	}
+
+	/** A handle as {@link #calledIn} reads it: owner, name + descriptor, and "s" when it is a static method's. */
+	private static String[] handle(Handle h) {
+		return new String[] {h.getOwner(), h.getName() + h.getDesc(), h.getTag() == org.objectweb.asm.Opcodes.H_INVOKESTATIC ? "s" : ""};
 	}
 
 	/** "nothing in the merged game calls it; vanilla and MinecraftForge call it from Hud.extractRenderState" */
