@@ -63,7 +63,6 @@
 # handler told it instead (the code before this gate) — phase 1 fails exactly its 8 "selected with the arrow keys"
 # checks (D, A, B, C, E, the universal canary, the game, the plain canary) and nothing else. The "back with the arrow
 # keys" checks stay green under that mutation, rightly: the button is still the clicked row's, which is that row's.
-# (Measured before the count and B/C/E double-click checks were added; neither depends on the arrow keys.)
 #
 # Not covered here: Mod Menu's own list screen (ModsScreen) and a real press of its Config button -- phase 3 asks its
 # API; a NeoForge or MinecraftForge mod other than the universal canary in Mod Menu; the kernel's log line for a provided

@@ -1785,9 +1785,11 @@ java -cp <boot-cp> net.forbric.kernel.boot.Main --scan --mods <dir> --report out
   Team Reborn Energy 5.0.0 pinned by SHA-256 (`run/energy-api/energy-5.0.0.jar` or `-Pforbric.rebornEnergy`).
   Without the staged jars `compileRuntimeJava` is skipped and `jar` produces a boot jar with no game side — which
   is what CI builds. `KernelRuntimeClasses.verify` is what catches such a jar at launch.
-- **Unit tests.** Counted from source: `src/test` has 5 459 `@Test` methods and 6 `@ParameterizedTest` methods in
-  1 032 `*Test.java` files; `src/transferTest` has 71 `@Test` methods in 6 files (annotations at line start, `grep`
-  over tracked files). A full run on the staged base executes 6 536 tests. Many tests read the staged jars; gate-m0
+- **Unit tests.** Counted from source: `src/test` has 5 449 `@Test` methods (23 of them spelled
+  `@org.junit.jupiter.api.Test`), 57 `@TestFactory` and 6 `@ParameterizedTest` methods in 1 034 `*Test.java` files;
+  `src/transferTest` has 71 `@Test` methods in 6 files (annotations at line start after indentation, `git grep` over
+  tracked files). A full run on the staged base (`forbric-loader/run` with its current merged base and report) reported
+  6 527 tests, 803 of them skipped for third-party or opt-in fixtures that run was not given. Many tests read the staged jars; gate-m0
   fails on *any* skipped test, because a skip there means the tests did not look at the real base. The weave tests
   (`mixin/weave/`) run synthetic mods with unrelated names through the real Mixin and MixinExtras, each with its
   mechanism switched off as the control. Tests must pass on JDK 21 as well as 25 (the CI unstaged job is JDK 21).
