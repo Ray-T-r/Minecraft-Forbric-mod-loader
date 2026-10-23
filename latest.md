@@ -1,15 +1,15 @@
-Latest nightly: [results/2026-10-23/summary.md](results/2026-10-23/summary.md)
+Latest nightly: [results/2026-10-24/summary.md](results/2026-10-24/summary.md)
 
-# Forbric nightly 2026-10-23: FAIL
+# Forbric nightly 2026-10-24: FAIL
 
 | | |
 | --- | --- |
-| commit | [`5accae8bdd24`](https://github.com/Ray-T-r/Minecraft-Forbric-mod-loader/commit/5accae8bdd24b06a2ad562f175a4a727fe8d0f11) Let the unstaged CI profile skip the new entry-shape decline test |
+| commit | [`f7f4ff92f67f`](https://github.com/Ray-T-r/Minecraft-Forbric-mod-loader/commit/f7f4ff92f67fe8de1a5957efda5cceb4c55d5057) Say the title screen's Forbric line stays, and what its count counts |
 | tested | `origin/main` on the developer's Mac (commit status `nightly/dev-mac`) |
-| started | 2026-10-23 02:30 +0800 |
+| started | 2026-10-24 02:30 +0800 |
 | soak (`gate-m34-soak.sh`) | skipped: it runs on Sundays |
-| integration | FAILED (exit 1) in 20 min |
-| gates | FAILED (exit 1) in 70 min: 24 GREEN, 33 RED, 1 SKIP |
+| integration | FAILED (exit 1) in 12 min |
+| gates | FAILED (exit 1) in 66 min: 42 GREEN, 15 RED, 1 SKIP |
 
 ## Integration: `python3 tools/dev.py integration`
 
@@ -17,16 +17,14 @@ Latest nightly: [results/2026-10-23/summary.md](results/2026-10-23/summary.md)
 
 | suite | tests | executed | skipped | skip % | failed |
 | --- | ---: | ---: | ---: | ---: | ---: |
-| test | 5932 | 5932 | 0 | 0.0 | 333 |
+| test | 6525 | 6525 | 0 | 0.0 | 73 |
 
 Did not execute (no results): `transferTest`
 
-**Failed (333):**
-- `test` net.forbric.kernel.access.RestoredAccessTransformerTest.actualMergedFeatureFieldIsReconciledAfterItsDescriptorRepair() (org.opentest4j.AssertionFailedError)
-- `test` net.forbric.kernel.boot.HookCallSiteCensusStagedTest.thePartialTableIsExactlyWhatTheCallSitesSay() (org.opentest4j.AssertionFailedError)
+**Failed (73):**
 - `test` net.forbric.kernel.boot.KernelBundledMixinExtrasStagedTest.[1] true (org.opentest4j.AssertionFailedError)
 - `test` net.forbric.kernel.boot.KernelBundledMixinExtrasStagedTest.[2] false (org.opentest4j.AssertionFailedError)
-- `test` net.forbric.kernel.compat.PrepareWorldTest.theCarrierReadsThisFlagAndUsesItToSuppressOnlyTheExperimentalBackupPrompt() (org.opentest4j.AssertionFailedError)
+- `test` net.forbric.kernel.boot.MergedLambdaCaptureTest.noCapturedLambdaComesFromTheOtherSideOfTheMerge() (org.opentest4j.AssertionFailedError)
 - `test` net.forbric.kernel.mixin.AdapterPointSpellingTest.redirect hotbar keys (org.opentest4j.AssertionFailedError)
 - `test` net.forbric.kernel.mixin.AdapterPointSpellingTest.redirect item use (org.opentest4j.AssertionFailedError)
 - `test` net.forbric.kernel.mixin.AdapterPointSpellingTest.redirect shovel path (org.opentest4j.AssertionFailedError)
@@ -70,8 +68,10 @@ Did not execute (no results): `transferTest`
 - `test` net.forbric.kernel.mixin.AdapterPointSpellingTest.redirect shovel path / no descriptor, another overload there too (org.opentest4j.AssertionFailedError)
 - `test` net.forbric.kernel.mixin.AdapterPointSpellingTest.redirect shovel path / no owner, without the class it was compiled against (org.opentest4j.AssertionFailedError)
 - `test` net.forbric.kernel.mixin.AdapterPointSpellingTest.redirect shovel path / a selector binding another method (org.opentest4j.AssertionFailedError)
-- `test` net.forbric.kernel.mixin.CarrierRenameCensusTest.theShippedTableIsExactlyWhatTheArtifactsSay() (org.opentest4j.AssertionFailedError)
-- `test` net.forbric.kernel.mixin.CarrierStubCensusTest.theShippedTableIsExactlyWhatTheArtifactsSay() (org.opentest4j.AssertionFailedError)
+- `test` net.forbric.kernel.mixin.FabricClientMixinAnchorsTest.releasedLiquidBounceBuildDrawsItsMenuWithTheCanvasTheGatewayDraws() (org.opentest4j.AssertionFailedError)
+- `test` net.forbric.kernel.mixin.FabricClientMixinAnchorsTest.releasedLiquidBounceDrawsItsMenuWithTheCanvasTheGatewayDraws() (org.opentest4j.AssertionFailedError)
+- `test` net.forbric.kernel.mixin.MixinRetargetRenamedBodyCorpusTest.r3MovesExactlyThePinnedInjectorsOverTheAuditCorpus() (org.opentest4j.AssertionFailedError)
+- `test` net.forbric.kernel.mixin.MixinTwinRebindTest.releasedLiquidBounceMovesItsFaceTestAndNothingElse() (org.opentest4j.AssertionFailedError)
 
 ## Gates: `bash forbric-kernel/run/compat/gates-all.sh -j auto --skip gate-m34-soak.sh`
 
@@ -81,33 +81,15 @@ Did not execute (no results): `transferTest`
 - `gate-m2b.sh` RED (exit=1)
 - `gate-m3.sh` RED (exit=1)
 - `gate-m4.sh` RED (exit=1)
-- `gate-m4-canary.sh` RED (exit=1)
-- `gate-m7-neo.sh` RED (exit=1)
 - `gate-m8-packmeta.sh` RED (exit=1)
-- `gate-m9-client.sh` RED (exit=1)
 - `gate-m10-overlay.sh` RED (exit=1)
 - `gate-m11-serverconfig.sh` RED (exit=1)
-- `gate-m12-multiplayer.sh` RED (exit=-13)
-- `gate-m13-anticheat.sh` RED (exit=1)
-- `gate-m14-fabric-server.sh` RED (exit=1)
-- `gate-m17-installer.sh` RED (exit=1)
+- `gate-m12-multiplayer.sh` RED (exit=1)
 - `gate-m18-presence.sh` RED (exit=1)
 - `gate-m19-nesteddupe.sh` RED (exit=1)
 - `gate-m21-forgesetup.sh` RED (exit=1)
 - `gate-m22-exitswap.sh` RED (exit=1)
-- `gate-m23-elytra.sh` RED (exit=1)
-- `gate-m24-brokenmod.sh` RED (exit=1)
-- `gate-m24b-badmetadata.sh` RED (exit=1)
-- `gate-m27-frame.sh` RED (exit=1)
-- `gate-m29-forgecaps.sh` RED (exit=1)
-- `gate-m32-savedrop.sh` RED (exit=1)
-- `gate-m33-transfer.sh` RED (exit=1)
 - `gate-m34-soak.sh` SKIP (explicit --skip)
-- `gate-m39-transfer-core.sh` RED (exit=1)
-- `gate-m40-energy.sh` RED (exit=1)
-- `gate-m41-event-chain.sh` RED (exit=1)
-- `gate-m45-everyday-actions.sh` RED (exit=1)
-- `gate-m52-hopper-fabric-storage.sh` RED (exit=1)
 - `gate-m54-carry.sh` RED (exit=3)
 
 <details><summary>All 58 RESULT lines</summary>
@@ -119,55 +101,55 @@ RESULT gate-m2.sh RED (exit=1)
 RESULT gate-m2b.sh RED (exit=1)
 RESULT gate-m3.sh RED (exit=1)
 RESULT gate-m4.sh RED (exit=1)
-RESULT gate-m4-canary.sh RED (exit=1)
-RESULT gate-m7-neo.sh RED (exit=1)
+RESULT gate-m4-canary.sh GREEN (exit=0)
+RESULT gate-m7-neo.sh GREEN (exit=0)
 RESULT gate-m8-packmeta.sh RED (exit=1)
-RESULT gate-m9-client.sh RED (exit=1)
+RESULT gate-m9-client.sh GREEN (exit=0)
 RESULT gate-m10-overlay.sh RED (exit=1)
 RESULT gate-m11-serverconfig.sh RED (exit=1)
-RESULT gate-m12-multiplayer.sh RED (exit=-13)
-RESULT gate-m13-anticheat.sh RED (exit=1)
-RESULT gate-m14-fabric-server.sh RED (exit=1)
+RESULT gate-m12-multiplayer.sh RED (exit=1)
+RESULT gate-m13-anticheat.sh GREEN (exit=0)
+RESULT gate-m14-fabric-server.sh GREEN (exit=0)
 RESULT gate-m15-forge-network.sh GREEN (exit=0)
 RESULT gate-m16-forge-handshake.sh GREEN (exit=0)
-RESULT gate-m17-installer.sh RED (exit=1)
+RESULT gate-m17-installer.sh GREEN (exit=0)
 RESULT gate-m18-presence.sh RED (exit=1)
 RESULT gate-m19-nesteddupe.sh RED (exit=1)
 RESULT gate-m20-depdialog.sh GREEN (exit=0)
 RESULT gate-m21-forgesetup.sh RED (exit=1)
 RESULT gate-m22-exitswap.sh RED (exit=1)
-RESULT gate-m23-elytra.sh RED (exit=1)
-RESULT gate-m24-brokenmod.sh RED (exit=1)
-RESULT gate-m24b-badmetadata.sh RED (exit=1)
+RESULT gate-m23-elytra.sh GREEN (exit=0)
+RESULT gate-m24-brokenmod.sh GREEN (exit=0)
+RESULT gate-m24b-badmetadata.sh GREEN (exit=0)
 RESULT gate-m24c-disabled.sh GREEN (exit=0)
 RESULT gate-m25-worldgen.sh GREEN (exit=0)
 RESULT gate-m26-forgeclient.sh GREEN (exit=0)
-RESULT gate-m27-frame.sh RED (exit=1)
+RESULT gate-m27-frame.sh GREEN (exit=0)
 RESULT gate-m28-forgeconfig.sh GREEN (exit=0)
-RESULT gate-m29-forgecaps.sh RED (exit=1)
+RESULT gate-m29-forgecaps.sh GREEN (exit=0)
 RESULT gate-m30-attribution.sh GREEN (exit=0)
 RESULT gate-m31-vanilla-parity.sh GREEN (exit=0)
-RESULT gate-m32-savedrop.sh RED (exit=1)
-RESULT gate-m33-transfer.sh RED (exit=1)
+RESULT gate-m32-savedrop.sh GREEN (exit=0)
+RESULT gate-m33-transfer.sh GREEN (exit=0)
 RESULT gate-m34-soak.sh SKIP (explicit --skip)
 RESULT gate-m35-behavior.sh GREEN (exit=0)
 RESULT gate-m36-mixin-outcome.sh GREEN (exit=0)
 RESULT gate-m37-entity-callbacks.sh GREEN (exit=0)
 RESULT gate-m38-enchantment-contracts.sh GREEN (exit=0)
-RESULT gate-m39-transfer-core.sh RED (exit=1)
-RESULT gate-m40-energy.sh RED (exit=1)
-RESULT gate-m41-event-chain.sh RED (exit=1)
+RESULT gate-m39-transfer-core.sh GREEN (exit=0)
+RESULT gate-m40-energy.sh GREEN (exit=0)
+RESULT gate-m41-event-chain.sh GREEN (exit=0)
 RESULT gate-m42-coremod-parity.sh GREEN (exit=0)
 RESULT gate-m43-break-and-loot.sh GREEN (exit=0)
 RESULT gate-m44-interaction-events.sh GREEN (exit=0)
-RESULT gate-m45-everyday-actions.sh RED (exit=1)
+RESULT gate-m45-everyday-actions.sh GREEN (exit=0)
 RESULT gate-m46-stub-rebind.sh GREEN (exit=0)
 RESULT gate-m47-damage-events.sh GREEN (exit=0)
 RESULT gate-m48-server-events.sh GREEN (exit=0)
 RESULT gate-m49-world-events.sh GREEN (exit=0)
 RESULT gate-m50-load-predicates.sh GREEN (exit=0)
 RESULT gate-m51-tooltips.sh GREEN (exit=0)
-RESULT gate-m52-hopper-fabric-storage.sh RED (exit=1)
+RESULT gate-m52-hopper-fabric-storage.sh GREEN (exit=0)
 RESULT gate-m53-widened-new.sh GREEN (exit=0)
 RESULT gate-m54-carry.sh RED (exit=3)
 RESULT gate-m55-creative-search.sh GREEN (exit=0)
