@@ -44,7 +44,8 @@
 #      RED (verified): phase 1 run with M56_EXTRA_JVM=-Dforbric.modMenuStandIn=off fails exactly 29 checks of phase 1
 #      and no other: the stand-in API line; the count of rows that opened (3, not 8); for each of A, B, C, D and E its
 #      two arrow-key checks, its click, its Config button and its double click; and the rows of C and D. The universal
-#      canary, the game, NeoForge's own row (all six of its checks) and the plain canary stay green.
+#      canary, the game, NeoForge's own row (all seven of its checks: the row, its name, two arrow-key checks, the
+#      click, the Config button, the double click) and the plain canary stay green.
 #   3. Mod Menu — Mod Menu installed (M56_MODMENU, default run/modmenu/modmenu-*.jar, e.g. modmenu-20.0.3.jar) with
 #      fabric-api (M56_FABRIC_API, default run/modmenu/fabric-api-*.jar, else the client-merged-pack's): both of Mod
 #      Menu's classes are defined from its jar. Mod Menu's API -- not its list screen, which this gate never opens --
@@ -69,9 +70,15 @@
 #      phase 3, with no extra flag; it costs one more short client.
 #
 # RED (verified by mutation): KernelModListScreen's list told the screen nothing from setSelected and the row's click
-# handler told it instead (the code before this gate) — phase 1 fails exactly its 8 "selected with the arrow keys"
-# checks (D, A, B, C, E, the universal canary, the game, the plain canary) and nothing else. The "back with the arrow
-# keys" checks stay green under that mutation, rightly: the button is still the clicked row's, which is that row's.
+# handler told it instead (the code before this gate) — phase 1 fails exactly its 9 "selected with the arrow keys"
+# checks (D, A, B, C, E, the universal canary, the game, the plain canary, NeoForge's row) and nothing else. The "back
+# with the arrow keys" checks stay green under that mutation, rightly: the button is still the clicked row's, which is
+# that row's.
+# RED (verified by mutation): ModListRows.serves answering true for every loader (NeoForge's row on every instance, as
+# before the rule) together with NeoForge's own container described from discovery again (KernelModContainerFactory
+# .create(cl, "neoforge", bus), as before CarrierOwnMod) — phase 4 fails exactly its three NeoForge checks (no
+# PLATFORM:neoforge, neoforge has no row, 1 of the 2) and phase 1 exactly its name check (the row reads "neoforge").
+# serves answering false — phase 1 fails exactly the seven checks of NeoForge's row and its count (7, not 8, of 9).
 #
 # Not covered here: Mod Menu's own list screen (ModsScreen) and a real press of its Config button -- phase 3 asks its
 # API; a NeoForge or MinecraftForge mod other than the universal canary in Mod Menu; the kernel's log line for a provided
