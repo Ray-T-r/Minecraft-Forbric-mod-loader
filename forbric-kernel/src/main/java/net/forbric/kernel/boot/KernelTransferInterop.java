@@ -31,6 +31,7 @@ public final class KernelTransferInterop {
 	private static volatile boolean active;
 	private static volatile boolean energy;
 	private static volatile boolean hopper;
+	private static volatile boolean forgeFallback;
 	private static boolean installed;
 	private KernelTransferInterop() { }
 
@@ -73,6 +74,8 @@ public final class KernelTransferInterop {
 		return active;
 	}
 	public static boolean active() { return active; }
+	/** Boot's decision whether the Forge block fallback is registered this run; the bridge looks for it only then. */
+	public static void forgeFallback(boolean registered) { forgeFallback = registered; }
 	/** Whether Team Reborn Energy is installed and its half of the bridge is required and will be installed. */
 	public static boolean energyActive() { return energy; }
 	/** Whether hoppers ask Fabric's item storage lookup where NeoForge's found nothing (HopperFabricStorageInjector). */
@@ -96,7 +99,7 @@ public final class KernelTransferInterop {
 		try {
 			Consumer<Object> reporter = issue -> recordIssue(loader, issue);
 			Class.forName(ISSUES, true, loader).getMethod("setReporter", Consumer.class).invoke(null, reporter);
-			Class.forName(BRIDGE, true, loader).getMethod("install").invoke(null);
+			Class.forName(BRIDGE, true, loader).getMethod("install", boolean.class).invoke(null, forgeFallback);
 			installed = true;
 			CompatibilityFindings.resolve("transfer-initialization", "forbric", "block transfer initialization completed");
 			ForbricLog.info("[Forbric/Transfer] initialized cross-ecosystem block transfer after native capability registration");
@@ -123,15 +126,20 @@ public final class KernelTransferInterop {
 		}
 	}
 
-	private static void recordIssue(ClassLoader loader, Object issue) {
+	/** Package-visible for a test; {@code issue} is a TransferIssues.Issue, read by its accessors across the loader boundary. */
+	static void recordIssue(ClassLoader loader, Object issue) {
 		try {
 			String code = (String) issue.getClass().getMethod("code").invoke(issue);
 			String provider = (String) issue.getClass().getMethod("providerClass").invoke(issue);
 			String detail = (String) issue.getClass().getMethod("detail").invoke(issue);
-			CompatibilityFindings.record(new CompatibilityFinding("transfer:" + code + ":" + provider, owner(loader, provider),
-					"Cross-ecosystem storage", "transfer:" + provider, CompatibilityFinding.Confidence.CONFIRMED,
-					false, detail, List.of(code, provider)));
-			ForbricLog.warn("[Forbric/Transfer] %s: %s — %s", code, provider, detail);
+			// A finding with no provider object has no class to look up: it is the kernel's own, attributed to forbric
+			// without asking a class loader for a class that does not exist.
+			String shown = provider == null ? "unknown" : provider;
+			CompatibilityFindings.record(new CompatibilityFinding("transfer:" + code + ":" + shown,
+					provider == null ? "forbric" : owner(loader, provider),
+					"Cross-ecosystem storage", "transfer:" + shown, CompatibilityFinding.Confidence.CONFIRMED,
+					false, detail, List.of(code, shown)));
+			ForbricLog.warn("[Forbric/Transfer] %s: %s — %s", code, shown, detail);
 		} catch (ReflectiveOperationException unreadable) {
 			Caught.warn(unreadable, "[Forbric/Transfer] could not attribute transfer finding: %s", String.valueOf(issue));
 		}

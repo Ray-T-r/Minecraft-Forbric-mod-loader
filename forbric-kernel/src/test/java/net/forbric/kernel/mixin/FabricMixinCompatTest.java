@@ -130,7 +130,7 @@ class FabricMixinCompatTest {
 	/** Every case through Fabric Loader 0.19.3's own predicate parser, interval algebra and table. */
 	@Test
 	void fabricLoaderItselfGivesTheSameLevels() throws Exception {
-		Path jar = fabricLoaderJar();
+		Path jar = TestFixtures.fabricLoaderJar();
 		TestFixtures.requireFiles(TestFixtures.Fixture.THIRD_PARTY, "Fabric Loader 0.19.3 in a local launcher's libraries",
 				jar);
 
@@ -154,7 +154,7 @@ class FabricMixinCompatTest {
 	/** The comparator the level is read with orders versions exactly as Fabric Loader 0.19.3's SemanticVersionImpl. */
 	@Test
 	void versionsAreOrderedAsFabricLoaderOrdersThem() throws Exception {
-		Path jar = fabricLoaderJar();
+		Path jar = TestFixtures.fabricLoaderJar();
 		TestFixtures.requireFiles(TestFixtures.Fixture.THIRD_PARTY, "Fabric Loader 0.19.3 in a local launcher's libraries",
 				jar);
 
@@ -171,28 +171,6 @@ class FabricMixinCompatTest {
 		}
 	}
 
-	/**
-	 * Fabric Loader 0.19.3 — the version the kernel reports, whose table it carries — where a launcher that installed a
-	 * Fabric profile keeps it: {@code -Pforbric.fabricLoaderJar} (Gradle hands the test JVM
-	 * {@code forbric.fabricLoaderJar}), the fixture Minecraft directory, or the launcher's
-	 * own directory. Vanilla's library list has no Fabric Loader, so this is a third-party jar, not part of the
-	 * Minecraft-libraries fixture.
-	 */
-	private static Path fabricLoaderJar() {
-		String explicit = System.getProperty("forbric.fabricLoaderJar");
-		if (explicit != null && !explicit.isBlank()) return Path.of(explicit);
-
-		String relative = "libraries/net/fabricmc/fabric-loader/0.19.3/fabric-loader-0.19.3.jar";
-		String home = System.getProperty("user.home");
-		List<Path> candidates = new ArrayList<>(List.of(TestFixtures.minecraftDir().resolve(relative),
-				Path.of(home, "Library/Application Support/minecraft").resolve(relative), Path.of(home, ".minecraft").resolve(relative)));
-		String appData = System.getenv("APPDATA");
-		if (appData != null) candidates.add(Path.of(appData, ".minecraft").resolve(relative));
-		for (Path candidate : candidates) {
-			if (java.nio.file.Files.isRegularFile(candidate)) return candidate;
-		}
-		return candidates.get(0);
-	}
 
 	/**
 	 * {@code spec}: each plain entry is one {@code depends} predicate of ONE dependency (an array, OR-joined); an

@@ -497,9 +497,11 @@ public final class KernelFabricLoader implements FabricLoader {
 	}
 
 	/**
-	 * As Fabric Loader's: every entry is constructed, and the ones that fail are gathered into one
-	 * {@link net.fabricmc.loader.api.EntrypointException} for the key (the first failing mod named, the rest suppressed),
-	 * thrown once every other entry has been built.
+	 * As Fabric Loader's: every entry is constructed, a null one is left out, and the ones that fail are gathered into
+	 * one {@link net.fabricmc.loader.api.EntrypointException} for the key (the first failing mod named, the rest
+	 * suppressed), thrown once every other entry has been built. Unlike Fabric's, the entries are the ones
+	 * {@link #getEntrypointContainers} lists for {@code type}: an entry whose class cannot be one is left out, where
+	 * Fabric would build it and fail the key.
 	 */
 	@Override
 	public <T> List<T> getEntrypoints(String key, Class<T> type) {
@@ -508,8 +510,11 @@ public final class KernelFabricLoader implements FabricLoader {
 
 		for (EntrypointContainer<T> container : getEntrypointContainers(key, type)) {
 			try {
-				out.add(container.getEntrypoint());
+				T instance = container.getEntrypoint();
+				if (instance != null) out.add(instance);
 			} catch (Throwable t) {
+				// Handed on, not dropped: it becomes the cause (or a suppressed one) of the exception thrown below, and the
+				// mod that asked for the key decides what a failed entry means, as it does on Fabric.
 				Caught.expected(t);
 				Throwable cause = t instanceof net.fabricmc.loader.api.EntrypointException wrapped && wrapped.getCause() != null ? wrapped.getCause() : t;
 				if (failure == null) failure = new net.fabricmc.loader.api.EntrypointException(key, container.getProvider().getMetadata().getId(), cause);
@@ -917,7 +922,13 @@ public final class KernelFabricLoader implements FabricLoader {
 			this.type = type;
 		}
 
-		/** As Fabric Loader's container: an entry that cannot be built is an EntrypointException naming its key and mod. */
+		/**
+		 * As Fabric Loader's container: an entry that cannot be built is an EntrypointException naming its key and mod,
+		 * caused by the kernel's account of which definition failed (where Fabric has its LanguageAdapterException). Fabric's
+		 * container catches only Exception, so an Error that construction itself raised (a class that will not initialise,
+		 * a link failure in reflection) leaves as it is; one the constructor body threw arrives inside an
+		 * InvocationTargetException and is wrapped, as there.
+		 */
 		@Override
 		public T getEntrypoint() {
 			try {
@@ -925,8 +936,8 @@ public final class KernelFabricLoader implements FabricLoader {
 			} catch (net.fabricmc.loader.api.EntrypointException own) {
 				throw own;
 			} catch (RuntimeException failed) {
-				throw new net.fabricmc.loader.api.EntrypointException(key, entry.provider().getMetadata().getId(),
-						failed.getCause() != null ? failed.getCause() : failed);
+				if (failed.getCause() instanceof Error raw) throw raw;
+				throw new net.fabricmc.loader.api.EntrypointException(key, entry.provider().getMetadata().getId(), failed);
 			}
 		}
 

@@ -112,8 +112,13 @@ public final class BlockTransferBridge {
 	private static volatile FabricEnergy fabricEnergy;
 	private static final ThreadLocal<Set<Query>> LOOKUPS = ThreadLocal.withInitial(HashSet::new);
 
-	/** After the mod registration window; only invoke when the selected Fabric transfer and NeoForge APIs exist. */
-	public static void install() {
+	/**
+	 * After the mod registration window; only invoke when the selected Fabric transfer and NeoForge APIs exist.
+	 *
+	 * @param forgeFallback whether the kernel registered the Forge block fallback this run (it does not under
+	 *                      {@code -Dforbric.forgeCapabilities=off}, and boot says so in the log)
+	 */
+	public static void install(boolean forgeFallback) {
 		if ("off".equalsIgnoreCase(System.getProperty("forbric.transferBridge", "on"))) return;
 		PairedTransactions.checkHooks();
 		try { BlockCapability.class.getDeclaredMethod("forbric$transferFallback"); }
@@ -123,15 +128,27 @@ public final class BlockTransferBridge {
 		FluidStorage.SIDED.registerFallback(BlockTransferBridge::fluidsAfterGeneric);
 		ahead(ItemStorage.SIDED, BlockTransferBridge::itemsBeforeGeneric);
 		ahead(FluidStorage.SIDED, BlockTransferBridge::fluidsBeforeGeneric);
-		try { BlockEntity.class.getDeclaredMethod("forbric$forgeTransferFallback"); forgeEnabled = true; }
-		catch (NoSuchMethodException absent) {
+		forgeEnabled = forgeFallback(BlockEntity.class, forgeFallback);
+		// A failure registering either callback leaves both directions dormant, even if one callback was added.
+		enabled = true;
+	}
+
+	/**
+	 * Whether {@code blockEntity} carries the Forge block fallback. Looked for only where the kernel registered it: a
+	 * run without it has nothing to find, and a registered one that is missing is the composition's defect.
+	 */
+	static boolean forgeFallback(Class<?> blockEntity, boolean registered) {
+		if (!registered) return false;
+		try {
+			blockEntity.getDeclaredMethod("forbric$forgeTransferFallback");
+			return true;
+		} catch (NoSuchMethodException absent) {
 			Caught.warn(absent, "[Forbric/Transfer] Forge block transfer fallback is not installed; Fabric/NeoForge transfers "
 					+ "remain available");
 			TransferIssues.report("FORGE_QUERY_HOOK_MISSING", null,
 					"Forge block transfer fallback is not installed; Fabric/NeoForge transfers remain available");
+			return false;
 		}
-		// A failure registering either callback leaves both directions dormant, even if one callback was added.
-		enabled = true;
 	}
 
 	/**

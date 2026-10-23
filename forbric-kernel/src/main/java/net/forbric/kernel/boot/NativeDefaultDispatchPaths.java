@@ -96,4 +96,5 @@ public final class NativeDefaultDispatchPaths {
  private static List<AbstractInsnNode>code(MethodNode method){List<AbstractInsnNode>code=new ArrayList<>();for(var i:method.instructions)if(i.getOpcode()>=0)code.add(i);return code;}
  private static AbstractInsnNode next(AbstractInsnNode instruction){for(var i=instruction.getNext();i!=null;i=i.getNext())if(i.getOpcode()>=0)return i;return null;}
  public static void resetForTests(){FACTORIES.clear();}
+ public static int factoriesForTests(){return FACTORIES.size();}
 }

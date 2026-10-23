@@ -423,4 +423,47 @@ class KernelRuntimeClassesTest {
 				"with nothing COMPILED the boot-time check verifies nothing and would pass on a kernel whose "
 						+ "game-side jar was never built");
 	}
+
+	/**
+	 * Every call the registry names is on the game-side class the build compiled. The registry is strings, so a
+	 * signature changed on the game side is otherwise found only by {@code verify} at boot, as an ERROR in a
+	 * player's log that says the kernel's own game-side half is broken.
+	 */
+	@Test
+	void everyRegisteredCallIsOnTheCompiledGameSideClass() throws Exception {
+		Path classes = Path.of("build/classes/java/runtime");
+		net.forbric.kernel.TestFixtures.require(net.forbric.kernel.TestFixtures.Fixture.GAME_SIDE,
+				Files.isRegularFile(classes.resolve(KernelTransferInterop.BRIDGE.replace('.', '/') + ".class")),
+				"no staged game jars, so no game side was built");
+		List<String> missing = new ArrayList<>();
+		int checked = 0;
+		for (var entry : KernelRuntimeClasses.all().entrySet()) {
+			if (entry.getValue() != KernelRuntimeClasses.Origin.COMPILED) continue;
+			for (KernelRuntimeClasses.Call call : KernelRuntimeClasses.callsOn(entry.getKey())) {
+				Type[] parameters = java.util.Arrays.stream(call.parameters()).map(Type::getType).toArray(Type[]::new);
+				String descriptor = Type.getMethodDescriptor(Type.getType(call.returns()), parameters);
+				if (!declares(classes, entry.getKey().replace('.', '/'), call.name(), descriptor)) {
+					missing.add(entry.getKey() + "." + call.name() + descriptor);
+				}
+				checked++;
+			}
+		}
+		assertTrue(checked > 0, "the registry names no call to check");
+		assertTrue(missing.isEmpty(), () -> "registered, but not public on the compiled game-side class: " + missing);
+	}
+
+	/** Whether {@code owner} or a game-side superclass declares a public {@code name} with this descriptor. */
+	private static boolean declares(Path classes, String owner, String name, String descriptor) throws Exception {
+		for (String type = owner; type != null; ) {
+			Path file = classes.resolve(type + ".class");
+			if (!Files.isRegularFile(file)) return false;
+			var node = new org.objectweb.asm.tree.ClassNode();
+			new org.objectweb.asm.ClassReader(Files.readAllBytes(file)).accept(node, org.objectweb.asm.ClassReader.SKIP_CODE);
+			for (var method : node.methods) {
+				if (method.name.equals(name) && method.desc.equals(descriptor) && (method.access & Opcodes.ACC_PUBLIC) != 0) return true;
+			}
+			type = node.superName;
+		}
+		return false;
+	}
 }

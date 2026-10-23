@@ -35,6 +35,27 @@ import net.minecraftforge.items.wrapper.InvWrapper;
  * InvWrapper, and which Containers NeoForge's own wrapper may write in its place.
  */
 class BlockTransferBridgeTest {
+	/** A class carrying the marker ForgeTransferCapabilityFallback adds to BlockEntity. */
+	static final class Composed { void forbric$forgeTransferFallback() { } }
+
+	@Test void theForgeFallbackIsLookedForOnlyWhereTheKernelRegisteredIt() {
+		List<TransferIssues.Issue> issues = new CopyOnWriteArrayList<>();
+		TransferIssues.resetForTests();
+		TransferIssues.setReporter(issues::add);
+		long failures = net.forbric.kernel.util.Caught.errorCount();
+		// -Dforbric.forgeCapabilities=off: the kernel registered no fallback, so its absence is the switch, not a defect.
+		assertFalse(BlockTransferBridge.forgeFallback(Object.class, false));
+		assertEquals(failures, net.forbric.kernel.util.Caught.errorCount(), "a fallback that was never registered is no failure");
+		assertTrue(issues.isEmpty(), issues::toString);
+		assertTrue(BlockTransferBridge.forgeFallback(Composed.class, true));
+		// Registered and missing is the composition's defect, and stays one.
+		assertFalse(BlockTransferBridge.forgeFallback(Object.class, true));
+		assertEquals(failures + 1, net.forbric.kernel.util.Caught.errorCount());
+		assertEquals(1, issues.size(), issues::toString);
+		assertEquals("FORGE_QUERY_HOOK_MISSING", issues.getFirst().code());
+		assertNull(issues.getFirst().providerClass(), "a finding with no provider object names no class");
+	}
+
 	@Test void theOwnersProviderGoesInFrontOfFabricsOwnFallbacks() {
 		List<String> issues = capture();
 		Lookup lookup = new Lookup(new CopyOnWriteArrayList<>());

@@ -596,14 +596,24 @@ classpath (first-URL-wins would otherwise let it shadow the winner and contribut
   as a Fabric mod: `ModMetadataParser`, `LoaderModMetadata`, `EntrypointMetadata`, `ModCandidateImpl`). A mixin config
   such a mod adds after the boot is held to the guest rules of §7.2 and owned by the mod whose jar declares it.
   `FabricLoaderInternals` pins those internals to the parent by exact name; `-Dforbric.fabricImpl=off` withholds them.
-  The API level reported is `KernelFabricEcosystem.FABRIC_LOADER_API_LEVEL = "0.19.3"`. `getGameInstance()` answers
+  The API level reported is `KernelFabricEcosystem.FABRIC_LOADER_API_LEVEL = "0.19.3"`. `FabricLoaderApiSurfaceTest`
+  holds `net.fabricmc.api` and `net.fabricmc.loader.api` to Fabric Loader 0.19.3's own jar (a local launcher's copy):
+  every public class, its supertypes, and every public or protected member by descriptor. The differences it accepts
+  are listed in the test (the interval algebra, which no mod in the local corpus calls); a new one is red. As on
+  Fabric, `getEntrypoints` builds every entry, leaves a null one out, and then throws one `EntrypointException` naming
+  the first failing mod; a container's `getEntrypoint()` throws one for its own entry, except for an Error
+  construction itself raised (a class that will not initialise), which leaves as it is. Unlike Fabric, the entries
+  are those that can be the asked type: one that cannot is left out rather than failing the key. `getGameInstance()` answers
   the `Minecraft` instance on a client (handed over by `Hooks.startClient` before the entrypoints) and the dedicated
   server from its construction, as Fabric Loader's patch of the server entry does.
-- The builtin mods are `minecraft`, `java` and `fabricloader`. `util.PlatformIds` is the one list of ids a
-  requirement is never held against: those three, the bundled `mixinextras`, and the carriers' `forge`, `neoforge`,
-  `fml` — never an id only some installed mod provides (`fabric`, which older fabric-api builds provided, is a mod's
-  like any other). Fabric Loader 0.19.5 also lists MixinExtras as a builtin mod and the kernel does not, so
-  `isModLoaded("mixinextras")` answers false here and a mod list counts one mod fewer than native (§19).
+- The builtin mods are `minecraft`, `java` and `fabricloader`. As Fabric Loader reads the jars nested in its own jar
+  as mods of `fabricloader` (0.19.5 nests MixinExtras), the kernel registers each kernel-bundled game-side jar that
+  carries a `fabric.mod.json` as a nested mod of `fabricloader` (`KernelFabricEcosystem.registerLoaderNested`): today
+  `mixinextras`, at the kernel's 0.5.4 where Fabric Loader 0.19.5 has 0.5.5. A guest copy of the same id or alias is
+  left out, as Fabric Loader leaves it out, and with `-Dforbric.kernelBundledFirst=off` the guest copy answers.
+  `util.PlatformIds` is the one list of ids a requirement is never held against: those three, the bundled
+  `mixinextras`, and the carriers' `forge`, `neoforge`, `fml` — never an id only some installed mod provides
+  (`fabric`, which older fabric-api builds provided, is a mod's like any other).
 - fabric-api is a mod like any other. The kernel reaches it only through its public API — `PayloadTypeRegistry`'s
   static accessors (`FabricPayloadRegistries`, read by type: protocol, flow and the map of `TypeAndCodec`s),
   `PacketContext.get()`, `Renderer.get()`/`Renderer.register`, `RegistryEntryAddedCallback.event`,
@@ -654,13 +664,16 @@ classpath (first-URL-wins would otherwise let it shadow the winner and contribut
   (`-Dforbric.forgeCapabilities=off`). The switch turns off dispatch only: the merged base lists those three roots in
   `required-ancestor-compositions.tsv` and the loader refuses to define one without the composition's proof, so off
   still composes them, with an inert provider that fires no `AttachCapabilitiesEvent` and answers every ask empty.
+  Off also registers no Forge block transfer fallback, and the transfer bridge is told so and does not look for one.
   `CapabilityUseAudit` lists the jars that use MinecraftForge capabilities and marks them DEGRADED if dispatch is off
   or the composition did not land on every root type.
 - **Enum extensions** — `ForgeEnumExtensionInjector` drives MinecraftForge's own processor (unconditional; it
   declines everything unless Forge's mod list holds more than two mods).
 - **Configs** — `KernelForgeConfigLoad` opens genuine MinecraftForge configs one at a time, keeping Forge's reader,
   events, save and file watcher; the watchers are stopped on exit by `interop.ClientShutdown`
-  (`ExitHookInjector`: `Minecraft.close` on the client, `DedicatedServer.onServerExit` on the server).
+  (`ExitHookInjector`: `Minecraft.close` on the client, `DedicatedServer.onServerExit` on the server). A watcher
+  that does not confirm its stop within 1.5 s is not a failure; the exit guard keeps sweeping and names any
+  non-daemon thread still alive at its deadline.
 
 ### 5.4 Cross-ecosystem services that are not events
 
@@ -1418,7 +1431,9 @@ Working directories in the same place: `lib/` (extracted bundled jars), `jij/`, 
 the game runs with `-XstartOnFirstThread` and AWT cannot share thread one with GLFW. Parent and child share only
 the tab-separated file format in `DependencyReport`; strings are in `DialogLang` (system language,
 `-Dforbric.dialogLanguage=<code>` forces one). `-Dforbric.dependencyDialog=on` (default) | `off` | `dryRun` (forks
-the real child with AWT disabled — what gates assert on). The child times out after 10 minutes. The confirmation's
+the real child with AWT disabled — what gates assert on). A child started with `-Djava.awt.headless=true` that
+cannot draw has given the answer it was started for, and reports no failure; a child that is headless without being
+told so (a macOS client outside a window session) still does. The child times out after 10 minutes. The confirmation's
 exit code is `0` continue, `4` quit or closed, and anything else (`3` cannot draw, the launcher's own `1`) a window
 nobody could answer. The same child
 has a third window, `--isolation`: the crash-suspects offer of §12.2, whose exit code `2` means start without them;

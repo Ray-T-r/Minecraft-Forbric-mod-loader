@@ -283,6 +283,29 @@ public final class TestFixtures {
 		return compiled.getFileName().toString().equals(FABRIC_API_JAR) ? compiled : pack;
 	}
 
+	/**
+	 * Fabric Loader 0.19.3 — the version the kernel reports, whose table it carries — where a launcher that installed a
+	 * Fabric profile keeps it: {@code -Pforbric.fabricLoaderJar} (Gradle hands the test JVM
+	 * {@code forbric.fabricLoaderJar}), the fixture Minecraft directory, or the launcher's
+	 * own directory. Vanilla's library list has no Fabric Loader, so this is a third-party jar, not part of the
+	 * Minecraft-libraries fixture.
+	 */
+	public static Path fabricLoaderJar() {
+		String explicit = System.getProperty("forbric.fabricLoaderJar");
+		if (explicit != null && !explicit.isBlank()) return Path.of(explicit);
+
+		String relative = "libraries/net/fabricmc/fabric-loader/0.19.3/fabric-loader-0.19.3.jar";
+		String home = System.getProperty("user.home");
+		List<Path> candidates = new ArrayList<>(List.of(minecraftDir().resolve(relative),
+				Path.of(home, "Library/Application Support/minecraft").resolve(relative), Path.of(home, ".minecraft").resolve(relative)));
+		String appData = System.getenv("APPDATA");
+		if (appData != null) candidates.add(Path.of(appData, ".minecraft").resolve(relative));
+		for (Path candidate : candidates) {
+			if (java.nio.file.Files.isRegularFile(candidate)) return candidate;
+		}
+		return candidates.get(0);
+	}
+
 	private static String ids() {
 		List<String> ids = new ArrayList<>();
 		for (Fixture fixture : Fixture.values()) ids.add(fixture.id());

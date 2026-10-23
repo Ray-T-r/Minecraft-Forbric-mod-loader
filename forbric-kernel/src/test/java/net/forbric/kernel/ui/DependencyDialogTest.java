@@ -357,6 +357,33 @@ class DependencyDialogTest {
 	}
 
 	@Test
+	void aChildStartedWithNoDisplayReportsNoFailure(@TempDir Path dir) throws Exception {
+		// dryRun and these tests start the child without a display on purpose; "it cannot draw" is the answer it was
+		// started for. It used to be a WARN in every such child, and so a [kernel] CAUGHT line in gate m20: a child
+		// writes its failures to the same file as the JVM that started it. Each window, and the large report whose
+		// dialog is built further before it throws, so that whatever else that building throws still counts.
+		Path caught = dir.resolve("caught.tsv");
+		List<String> noDisplay = List.of("-Djava.awt.headless=true", "-Dforbric.caught.file=" + caught);
+		List<Row> many = new ArrayList<>();
+		for (int i = 0; i < 40; i++) many.add(new Row("mod" + i, "Mod " + i, "FABRIC", "dep" + i, "*", null));
+		assertEquals(DependencyDialogMain.CONTINUE, DependencyDialog.ask(many, List.of(mixinBreak()), List.of(suspicion()), noDisplay));
+		var confirmation = new DependencyReport.Confirmation(List.of(requiredLoss()), List.of(suspicion()),
+				List.of(wrongVersion()), List.of(absent()), List.of(mixinBreak()));
+		assertEquals(DependencyDialogMain.UNSHOWN, DependencyDialog.askConfirmation(confirmation, noDisplay));
+		assertEquals(DependencyDialogMain.CONTINUE, DependencyDialog.askIsolation(isolation(""), noDisplay));
+		assertFalse(Files.exists(caught) && !Files.readString(caught).isBlank(),
+				() -> "a child that could not draw reported failures:\n" + read(caught));
+	}
+
+	private static String read(Path file) {
+		try {
+			return Files.readString(file);
+		} catch (java.io.IOException unreadable) {
+			return unreadable.toString();
+		}
+	}
+
+	@Test
 	void theCrashSuspectsOfferForkedWithNoDisplaySwitchesNothingOff() throws Exception {
 		// The real child, the real exit code: a child that cannot draw must start the game with every mod.
 		assertEquals(DependencyDialogMain.CONTINUE,

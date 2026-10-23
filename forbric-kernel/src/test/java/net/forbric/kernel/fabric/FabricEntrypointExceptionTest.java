@@ -39,6 +39,9 @@ class FabricEntrypointExceptionTest {
 		register("abroken", Broken.class.getName());
 		register("bhealthy", Healthy.class.getName());
 		register("cbroken", Broken.class.getName());
+		register("dinit", "init_plugin", BrokenInit.class.getName());
+		register("enull", "null_plugin", NullHolder.class.getName() + "::NONE");
+		register("fhealthy", "null_plugin", Healthy.class.getName());
 		loader.freeze();
 	}
 
@@ -50,6 +53,8 @@ class FabricEntrypointExceptionTest {
 		while (root != null && root.getCause() != null) root = root.getCause();
 		assertInstanceOf(IllegalStateException.class, root, "the entry's own failure is what it was caused by");
 		assertEquals(1, thrown.getSuppressed().length, "the second failing entry is suppressed into the first");
+		String cause = String.valueOf(thrown.getCause().getMessage());
+		assertTrue(cause.contains(Broken.class.getName()), "the cause names the definition that failed: " + cause);
 		assertEquals(List.of("healthy"), BUILT, "the healthy entry was still built");
 	}
 
@@ -60,6 +65,24 @@ class FabricEntrypointExceptionTest {
 		assertEquals("jei_plugin", thrown.getKey());
 		assertTrue(thrown.getMessage().endsWith("provided by 'cbroken'"), thrown.getMessage());
 		assertNotNull(containers.get(1).getEntrypoint());
+	}
+
+	/**
+	 * Fabric's container catches only Exception: a class whose static initialiser fails leaves getEntrypoint() as the
+	 * Error itself (JEI tells "a broken entrypoint" from "an invalid one" by exactly this), and getEntrypoints still
+	 * gathers it into the key's EntrypointException.
+	 */
+	@Test void anEntryWhoseClassWillNotInitialiseLeavesItsContainerAsTheErrorItself() {
+		EntrypointContainer<Runnable> container = loader.getEntrypointContainers("init_plugin", Runnable.class).getFirst();
+		Throwable thrown = assertThrows(LinkageError.class, container::getEntrypoint);
+		assertFalse(thrown instanceof EntrypointException);
+		EntrypointException gathered = assertThrows(EntrypointException.class, () -> loader.getEntrypoints("init_plugin", Runnable.class));
+		assertInstanceOf(LinkageError.class, gathered.getCause());
+	}
+
+	@Test void aNullEntryIsLeftOutAsFabricLeavesItOut() {
+		assertEquals(1, loader.getEntrypoints("null_plugin", Runnable.class).size());
+		assertEquals(List.of("healthy"), BUILT);
 	}
 
 	/** What a mod's catch of the type compiles to: the exception table names the class, so it links only if it exists. */
@@ -75,13 +98,27 @@ class FabricEntrypointExceptionTest {
 	}
 
 	private void register(String id, String type) {
-		String json = "{\"schemaVersion\":1,\"id\":\"" + id + "\",\"version\":\"1\",\"entrypoints\":{\"jei_plugin\":[\"" + type + "\"]}}";
+		register(id, "jei_plugin", type);
+	}
+
+	private void register(String id, String key, String type) {
+		String json = "{\"schemaVersion\":1,\"id\":\"" + id + "\",\"version\":\"1\",\"entrypoints\":{\"" + key + "\":[\"" + type + "\"]}}";
 		loader.register(new KernelModContainer(FabricModMetadataParser.read(new StringReader(json)), null, null));
 	}
 
 	public static final class Broken implements Runnable {
 		public Broken() { throw new IllegalStateException("plugin constructor failed"); }
 		@Override public void run() { }
+	}
+
+	public static final class BrokenInit implements Runnable {
+		static { fail(); }
+		private static void fail() { throw new IllegalStateException("static initialiser failed"); }
+		@Override public void run() { }
+	}
+
+	public static final class NullHolder {
+		public static final Runnable NONE = null;
 	}
 
 	public static final class Healthy implements Runnable {

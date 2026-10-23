@@ -194,7 +194,10 @@ public final class ClientShutdown {
 					try {
 						f.get(STOP_WAIT_MS, java.util.concurrent.TimeUnit.MILLISECONDS);
 					} catch (java.util.concurrent.TimeoutException slow) {
-						Caught.warn(slow, "[Forbric/Shutdown] %s did not confirm its stop within %d ms; the exit guard keeps "
+						// Not a failure: the watcher thread takes the poison message on its next poll, and the exit guard
+						// keeps sweeping until no non-daemon thread is left. A thread that never ends is what it reports.
+						Caught.expected(slow);
+						ForbricLog.info("[Forbric/Shutdown] %s did not confirm its stop within %d ms; the exit guard keeps "
 								+ "watching", owner, STOP_WAIT_MS);
 					} catch (java.util.concurrent.ExecutionException | InterruptedException failed) {
 						// stopped with an error, or we were interrupted: either way it is no longer ours to wait on
