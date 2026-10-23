@@ -1,0 +1,31 @@
+/* Copyright 2026 The Forbric Project. Licensed under the Apache License, Version 2.0. */
+package @PACKAGE@;
+
+import net.minecraft.client.gui.GuiGraphicsExtractor;
+import net.minecraft.client.gui.screens.Screen;
+import net.minecraft.network.chat.Component;
+
+/**
+ * A canary's settings screen: its title in the middle, and back to whatever opened it on close. Generated per canary
+ * from canary/modmenu-config/template/Screen.java.in (build-modmenu-config-canary.sh), so the class a gate sees in
+ * front of the player names the canary whose screen it is.
+ */
+public class @CLASS@ extends Screen {
+	private final Screen parent;
+
+	public @CLASS@(Screen parent) {
+		super(Component.literal("@TITLE@"));
+		this.parent = parent;
+	}
+
+	@Override
+	public void extractRenderState(GuiGraphicsExtractor g, int mouseX, int mouseY, float partialTick) {
+		super.extractRenderState(g, mouseX, mouseY, partialTick);
+		g.text(this.font, this.title, this.width / 2 - this.font.width(this.title) / 2, this.height / 2, 0xFFFFFFFF);
+	}
+
+	@Override
+	public void onClose() {
+		this.minecraft.gui.setScreen(this.parent);
+	}
+}

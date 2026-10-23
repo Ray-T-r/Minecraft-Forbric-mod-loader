@@ -1,0 +1,10 @@
+{
+  "schemaVersion": 1,
+  "id": "forbricmmcfgb",
+  "version": "1.0.0",
+  "name": "Forbric Config Canary B",
+  "description": "gate-m56: a second Fabric mod whose config screen is declared only through a Mod Menu entrypoint.",
+  "environment": "client",
+  "entrypoints": { "modmenu": ["forbric.mmcfg.b.Menu"] },
+  "depends": { "minecraft": "*" }
+}

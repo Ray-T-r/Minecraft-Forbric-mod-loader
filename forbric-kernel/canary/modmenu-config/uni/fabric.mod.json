@@ -1,0 +1,10 @@
+{
+  "schemaVersion": 1,
+  "id": "forbricmmuni",
+  "version": "1.0.0",
+  "name": "Forbric Universal Config Canary",
+  "description": "gate-m56: one jar for Fabric and NeoForge; NeoForge wins it, and its config screen is NeoForge's.",
+  "icon": "assets/forbricmmuni/icon.png",
+  "environment": "client",
+  "entrypoints": { "modmenu": ["forbric.mmcfg.uni.FabricMenu"] }
+}

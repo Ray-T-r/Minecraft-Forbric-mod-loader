@@ -1,0 +1,9 @@
+{
+  "schemaVersion": 1,
+  "id": "forbricmmcfgc",
+  "version": "1.0.0",
+  "name": "Forbric Config Canary C",
+  "description": "gate-m56: carried inside canary A, with a config screen of its own and no parent named.",
+  "environment": "client",
+  "entrypoints": { "modmenu": ["forbric.mmcfg.c.Menu"] }
+}

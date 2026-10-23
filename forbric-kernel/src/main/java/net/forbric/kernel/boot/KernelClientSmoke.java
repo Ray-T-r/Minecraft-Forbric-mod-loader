@@ -91,6 +91,13 @@ public final class KernelClientSmoke {
 	public static final String CONFIG_SCREENS = "forbric.clientSmokeConfigScreens";
 	/** World tick at which {@link #CONFIG_SCREENS} starts (default 100). */
 	public static final String CONFIG_SCREENS_AT = "forbric.clientSmokeConfigScreensAt";
+	/**
+	 * {@code modid[,modid…]}: when {@link #CONFIG_SCREENS} starts, ask an installed Mod Menu about each of these mods
+	 * the way its own list does -- {@code ModMenu.hasConfigScreen}, the name its list shows, and the class of the screen
+	 * {@code ModMenu.getConfigScreen} builds -- and log the answers. Mod Menu's list is a second Mods screen on an
+	 * instance that has it, and only Mod Menu can say what it shows.
+	 */
+	public static final String MOD_MENU_ASK = "forbric.clientSmokeModMenuAsk";
 	/** Ticks a config screen is left up before its screenshot: long enough for its own init and a few frames. */
 	private static final int CONFIG_SCREEN_HOLD = 12;
 	/** World tick at which vanilla's key binds screen is opened, to see which screen the game ends up showing. */
@@ -1838,9 +1845,11 @@ public final class KernelClientSmoke {
 				configModsScreen = Class.forName("net.forbric.kernel.runtime.KernelModListScreen", true, cl)
 						.getConstructor(screenType).newInstance((Object) null);
 				setScreen(minecraft, configModsScreen);
+				Class<?> configs = Class.forName("net.forbric.kernel.runtime.KernelModConfigScreens", true, cl);
 				ForbricLog.info("[Forbric/ClientSmoke] config screens: mods with a config screen, by ecosystem: %s",
-						Class.forName("net.forbric.kernel.runtime.KernelModConfigScreens", true, cl)
-								.getMethod("summary").invoke(null));
+						configs.getMethod("summary").invoke(null));
+				logListedRows(configs);
+				askModMenu(minecraft, cl);
 				configNextTick = worldTicks + 2;
 				return;
 			}
@@ -1872,35 +1881,123 @@ public final class KernelClientSmoke {
 		}
 	}
 
-	/** One step of {@link #configScreensIfDue}: select {@code modId}'s row, press Config. True when a screen opened. */
-	private static boolean pressConfigFor(Object minecraft, ClassLoader cl, String modId) throws Exception {
-		net.forbric.api.ModCatalog.Entry entry = null;
-		for (net.forbric.api.ModCatalog.Entry e : net.forbric.api.ModCatalog.all()) {
-			if (e.modId().equals(modId)) entry = e;
+	/**
+	 * Every row the Mods screen lists, in order, each as {@code KIND:id} -- a mod under a parent prefixed {@code >} --
+	 * so a gate can see where a row is, not only that it opens.
+	 */
+	@SuppressWarnings("unchecked")
+	private static void logListedRows(Class<?> configs) {
+		try {
+			java.util.List<String> spelled = new java.util.ArrayList<>();
+			for (net.forbric.kernel.ui.ModListRows.Row row
+					: (java.util.List<net.forbric.kernel.ui.ModListRows.Row>) configs.getMethod("rows").invoke(null)) {
+				String kind = row.game() ? "GAME" : row.kind().name();
+				spelled.add((row.depth() > 0 ? ">" : "") + kind + ":" + row.id());
+			}
+			ForbricLog.info("[Forbric/ClientSmoke] config screens: the Mods screen lists %d row(s): %s", spelled.size(),
+					spelled);
+		} catch (Throwable t) {
+			Caught.warn(t, "[Forbric/ClientSmoke] config screens: could not read the Mods screen's rows");
 		}
-		if (entry == null) {
-			ForbricLog.warn("[Forbric/ClientSmoke] config screen of %s: no such mod in the catalog", modId);
+	}
+
+	/** {@link #MOD_MENU_ASK}: Mod Menu's own answers, when it is installed. */
+	@SuppressWarnings("unchecked")
+	private static void askModMenu(Object minecraft, ClassLoader cl) {
+		String wanted = System.getProperty(MOD_MENU_ASK, "");
+		if (wanted.isBlank()) return;
+		Class<?> modMenu;
+		try {
+			modMenu = Class.forName("com.terraformersmc.modmenu.ModMenu", true, cl);
+		} catch (ClassNotFoundException absent) {
+			Caught.expected(absent);
+			ForbricLog.info("[Forbric/ClientSmoke] Mod Menu: not installed — nothing to ask");
+			return;
+		}
+		Class<?> screenType;
+		java.util.Map<String, Object> mods;
+		try {
+			screenType = Class.forName("net.minecraft.client.gui.screens.Screen", false, cl);
+			mods = (java.util.Map<String, Object>) modMenu.getField("MODS").get(null);
+		} catch (Throwable t) {
+			Caught.warn(t, "[Forbric/ClientSmoke] Mod Menu: its API is not the shape this probe reads");
+			return;
+		}
+		for (String id : wanted.split(",")) {
+			id = id.trim();
+			if (id.isEmpty()) continue;
+			try {
+				boolean has = (Boolean) modMenu.getMethod("hasConfigScreen", String.class).invoke(null, id);
+				Object listed = mods.get(id);
+				String name = listed == null ? "<not in its list>"
+						: String.valueOf(listed.getClass().getMethod("getName").invoke(listed));
+				Object screen = has ? modMenu.getMethod("getConfigScreen", String.class, screenType)
+						.invoke(null, id, currentScreen(minecraft)) : null;
+				ForbricLog.info("[Forbric/ClientSmoke] Mod Menu: %s hasConfigScreen=%s, its list names it \"%s\", "
+						+ "getConfigScreen builds %s", id, has, name, screen == null ? "nothing" : screen.getClass().getName());
+			} catch (Throwable t) {
+				Caught.warn(t, "[Forbric/ClientSmoke] Mod Menu: asking about %s failed", id);
+			}
+		}
+	}
+
+	/**
+	 * One step of {@link #configScreensIfDue}: select {@code modId}'s row, press Config. True when a screen opened.
+	 *
+	 * <p>The row is selected twice, the two ways a player moves the selection, and the Config button read after each:
+	 * with the keyboard (the list's own {@code setFocused}, which arrow keys and Tab come through), then with a click. Each
+	 * time the selection first goes to a row whose answer is the opposite one -- a mod with settings before one without,
+	 * and the other way round -- so a button left showing the previous row's answer is a wrong answer, not a lucky one.
+	 */
+	@SuppressWarnings("unchecked")
+	private static boolean pressConfigFor(Object minecraft, ClassLoader cl, String modId) throws Exception {
+		Class<?> configs = Class.forName("net.forbric.kernel.runtime.KernelModConfigScreens", true, cl);
+		net.forbric.kernel.ui.ModListRows.Row listed = (net.forbric.kernel.ui.ModListRows.Row) configs
+				.getMethod("listedRow", String.class).invoke(null, modId);
+		if (listed == null) {
+			ForbricLog.warn("[Forbric/ClientSmoke] config screen of %s: the Mods screen has no row for it", modId);
 			return false;
+		}
+		String kind = listed.game() ? "GAME" : listed.family() == null ? "GROUP" : listed.family().name();
+		java.lang.reflect.Method has = configs.getMethod("has", net.forbric.kernel.ui.ModListRows.Row.class);
+		boolean answer = (Boolean) has.invoke(null, listed);
+		net.forbric.kernel.ui.ModListRows.Row contrast = null;
+		for (net.forbric.kernel.ui.ModListRows.Row row
+				: (java.util.List<net.forbric.kernel.ui.ModListRows.Row>) configs.getMethod("rows").invoke(null)) {
+			if (!row.id().equals(modId) && (Boolean) has.invoke(null, row) != answer) {
+				contrast = row;
+				break;
+			}
 		}
 		Object screen = currentScreen(minecraft);
-		Object row = rowNamed(screen, entry.name());
+		Object row = rowNamed(screen, listed.name());
 		if (row == null) {
 			ForbricLog.warn("[Forbric/ClientSmoke] config screen of %s: no row named \"%s\" in the Mods screen", modId,
-					entry.name());
+					listed.name());
 			return false;
 		}
+		Object other = contrast == null ? null : rowNamed(screen, contrast.name());
 		Class<?> eventCls = Class.forName("net.minecraft.client.input.MouseButtonEvent", true, cl);
-		java.lang.reflect.Method click = row.getClass().getMethod("mouseClicked", eventCls, boolean.class);
-		click.setAccessible(true);
-		click.invoke(row, null, false);
 		Object button = buttonLabelled(screen, cl, "Config");
 		if (button == null) {
 			ForbricLog.warn("[Forbric/ClientSmoke] config screen of %s: the Mods screen has no Config button", modId);
 			return false;
 		}
-		if (!button.getClass().getField("visible").getBoolean(button)) {
+		java.lang.reflect.Field visible = button.getClass().getField("visible");
+		// The keyboard's way: vanilla's focus handling hands the row to the list's setFocused.
+		if (other != null) click(other, eventCls);
+		Object list = listOf(screen, row);
+		list.getClass().getMethod("setFocused",
+				Class.forName("net.minecraft.client.gui.components.events.GuiEventListener", true, cl)).invoke(list, row);
+		ForbricLog.info("[Forbric/ClientSmoke] config screen of %s (%s): selected with the keyboard after %s, the Config "
+				+ "button is %s", modId, kind, contrast == null ? "nothing else" : contrast.id(),
+				visible.getBoolean(button) ? "shown" : "hidden");
+		// The mouse's way: the row's own click handler.
+		if (other != null) click(other, eventCls);
+		click(row, eventCls);
+		if (!visible.getBoolean(button)) {
 			ForbricLog.info("[Forbric/ClientSmoke] config screen of %s (%s): the Config button is hidden — no config "
-					+ "screen to open", modId, entry.ecosystem());
+					+ "screen to open", modId, kind);
 			return false;
 		}
 		Class<?> input = Class.forName("net.minecraft.client.input.InputWithModifiers", true, cl);
@@ -1909,12 +2006,32 @@ public final class KernelClientSmoke {
 		Object now = currentScreen(minecraft);
 		if (now == null || now == screen) {
 			ForbricLog.warn("[Forbric/ClientSmoke] config screen of %s (%s): pressing Config left %s in front", modId,
-					entry.ecosystem(), now == null ? "no screen" : "the Mods screen");
+					kind, now == null ? "no screen" : "the Mods screen");
 			return false;
 		}
 		ForbricLog.info("[Forbric/ClientSmoke] config screen of %s (%s) through the Config button: %s", modId,
-				entry.ecosystem(), now.getClass().getName());
+				kind, now.getClass().getName());
 		return true;
+	}
+
+	/** A row's own click handler, as the list calls it for a single left click. */
+	private static void click(Object row, Class<?> eventCls) throws Exception {
+		java.lang.reflect.Method click = row.getClass().getMethod("mouseClicked", eventCls, boolean.class);
+		click.setAccessible(true);
+		click.invoke(row, null, false);
+	}
+
+	/** The widget of {@code screen} whose children include {@code row}: the list. */
+	private static Object listOf(Object screen, Object row) throws Exception {
+		for (Object child : (java.util.List<?>) screen.getClass().getMethod("children").invoke(screen)) {
+			if (child == null) continue;
+			try {
+				if (((java.util.List<?>) child.getClass().getMethod("children").invoke(child)).contains(row)) return child;
+			} catch (NoSuchMethodException leaf) {
+				Caught.expected(leaf);
+			}
+		}
+		throw new IllegalStateException("no widget of the Mods screen holds the row");
 	}
 
 	/**
