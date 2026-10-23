@@ -23,7 +23,9 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 
+import net.forbric.api.Ecosystem;
 import net.forbric.api.EventBridges;
+import net.forbric.api.ForeignType;
 import net.forbric.api.GameEventBridge;
 import net.forbric.api.ModCatalog;
 import net.forbric.kernel.util.ForbricLog;
@@ -279,6 +281,7 @@ public final class DeadEventAudit {
 		map.put("net/minecraftforge/event/entity/player/PlayerInteractEvent$EntityInteractSpecific", GameEventBridge.ENTITY_INTERACT_SPECIFIC);
 		map.put("net/minecraftforge/event/entity/living/LivingHealEvent", GameEventBridge.LIVING_HEAL);
 		map.put("net/minecraftforge/event/entity/living/LivingEvent$LivingVisibilityEvent", GameEventBridge.LIVING_VISIBILITY);
+		map.put(ForeignType.LIVING_BREATHE_EVENT.internal(Ecosystem.FORGE), GameEventBridge.LIVING_BREATHE);
 		map.put("net/minecraftforge/event/entity/player/CriticalHitEvent", GameEventBridge.CRITICAL_HIT);
 		map.put("net/minecraftforge/event/AnvilUpdateEvent", GameEventBridge.ANVIL_UPDATE);
 		map.put("net/minecraftforge/event/entity/player/AnvilRepairEvent", GameEventBridge.ANVIL_REPAIR);

@@ -79,6 +79,9 @@ public enum ForeignType {
 			"net.neoforged.neoforge.fluids.FluidInteractionRegistry"),
 	BLOCK_TINT_EVENT("net.minecraftforge.client.event.RegisterColorHandlersEvent$Block",
 			"net.neoforged.neoforge.client.event.RegisterColorHandlersEvent$BlockTintSources"),
+	/** Whether a body breathes and how much air it loses or regains: the merged game posts NeoForge's, the kernel bridges MinecraftForge's. */
+	LIVING_BREATHE_EVENT("net.minecraftforge.event.entity.living.LivingBreatheEvent",
+			"net.neoforged.neoforge.event.entity.living.LivingBreatheEvent"),
 	// The mod-lifecycle phases. Paired because the kernel posts each one at BOTH families and the two events are
 	// different classes on different bus shapes -- naming either half inline is how one family silently stops
 	// receiving a phase, which is exactly what happened to traditional MinecraftForge until 2026-09-13.
