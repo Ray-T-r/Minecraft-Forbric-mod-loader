@@ -31,6 +31,7 @@ import net.minecraft.world.level.Level;
 import net.minecraftforge.common.util.Result;
 import net.minecraftforge.event.level.BlockEvent;
 import net.neoforged.neoforge.event.entity.player.PlayerInteractEvent;
+import net.neoforged.neoforge.event.level.BlockDropsEvent;
 import net.neoforged.neoforge.event.level.block.BreakBlockEvent;
 
 /**
@@ -54,10 +55,17 @@ import net.neoforged.neoforge.event.level.block.BreakBlockEvent;
  * what the flag means at this point: the game has decided against the break. A mod reading {@code getResult()}
  * rather than cancelling — MinecraftForge's own hook writes the result the same way — then sees the truth.
  *
- * <p><b>Known limit, stated rather than hidden:</b> {@code setExpToDrop} does not cross back. NeoForge's event has
- * no experience field for it to be written into, and the merged base takes the drop from its own path, so a
- * MinecraftForge mod that only adjusts the experience of a break is observed and ignored. Cancelling — the part
- * protection mods depend on — does cross.
+ * <p><b>Experience.</b> MinecraftForge computes a break's experience in this event and pops it in its own
+ * {@code destroyBlock}; the merged {@code destroyBlock} is NeoForge's, whose experience comes out of
+ * {@code BlockDropsEvent} — computed there, open to NeoForge's listeners, and popped once by {@code handleBlockDrops}
+ * (the merged {@code playerDestroy} reaches it since the merge stopped routing it around NeoForge's
+ * {@code dropResources}). So the pop stays NeoForge's, once, and MinecraftForge's decision is handed to it: when a
+ * MinecraftForge listener changed {@code getExpToDrop()}, or when the block computes its experience only through
+ * MinecraftForge's {@code getExpDrop} (its class overrides that one and inherits NeoForge's default, which says 0),
+ * the same break's {@code BlockDropsEvent} starts from MinecraftForge's number, at {@code HIGHEST}, before any
+ * NeoForge listener. Otherwise NeoForge's own computation stands — the two are the same rule for a vanilla block, and
+ * a block that overrides NeoForge's is NeoForge's to answer. A vetoed or cancelled break hands nothing on.
+ * {@code -Dforbric.forgeBreakExperience=off} hands nothing on at all.
  *
  * <h2>Clicking a block</h2>
  *
@@ -251,12 +259,89 @@ public final class KernelGameBlockEvents {
 		write.accept(forgeValue.isDenied() ? TriState.FALSE : TriState.TRUE);
 	}
 
-	/** NeoForge {@code BreakBlockEvent} → MinecraftForge {@code BlockEvent.BreakEvent}, cancel carried back. */
+	/**
+	 * NeoForge {@code BreakBlockEvent} → MinecraftForge {@code BlockEvent.BreakEvent}, cancel carried back, and the
+	 * break's experience decision carried to the same break's {@code BlockDropsEvent}.
+	 */
 	public static void installBlockBreak(Object neoBus) {
-		KernelGameEntityEvents.subscribe((net.neoforged.bus.api.IEventBus) neoBus, BreakBlockEvent.class,
+		net.neoforged.bus.api.IEventBus bus = (net.neoforged.bus.api.IEventBus) neoBus;
+		KernelGameEntityEvents.subscribe(bus, BreakBlockEvent.class,
 				"BlockEvent.BreakEvent",
 				"a MinecraftForge claim or protection mod does not protect, and a block-logging mod records nothing",
 				KernelGameBlockEvents::fireBreak);
+		if (!experienceCarried()) return;
+		bus.addListener(net.neoforged.bus.api.EventPriority.HIGHEST, false, BlockDropsEvent.class, drops -> {
+			try {
+				applyForgeExperience(drops);
+			} catch (Throwable t) {
+				Caught.warn(t, "[Forbric/EventMux] BlockEvent.BreakEvent experience forward failed — a MinecraftForge mod's "
+						+ "experience for this break is not applied, NeoForge's stands");
+			}
+		});
+	}
+
+	/** {@code off}: a MinecraftForge break's experience decision is not handed to NeoForge's drops event. */
+	public static final String EXPERIENCE_PROPERTY = "forbric.forgeBreakExperience";
+
+	static boolean experienceCarried() {
+		return !"off".equalsIgnoreCase(System.getProperty(EXPERIENCE_PROPERTY, "on"));
+	}
+
+	/** One MinecraftForge break's experience, waiting for that break's {@code BlockDropsEvent} on this thread. */
+	private record PendingExperience(Object level, BlockPos pos, Object player, int experience) {
+	}
+
+	private static final ThreadLocal<PendingExperience> PENDING_EXPERIENCE = new ThreadLocal<>();
+
+	/**
+	 * The experience MinecraftForge decides for a break, or null when NeoForge's own computation stands: a listener's
+	 * change of {@code getExpToDrop()}, or the computed value itself when the block's experience is MinecraftForge's to
+	 * compute. Package-private so a test can drive the rule.
+	 */
+	static Integer forgeExperience(boolean forgeComputesIt, int computed, int decided) {
+		if (decided != computed || forgeComputesIt) return decided;
+		return null;
+	}
+
+	/**
+	 * Whether {@code block} computes its experience only through MinecraftForge's {@code getExpDrop}: the most derived
+	 * declaration of that method is a class's, and NeoForge's resolves to its interface default or to a class above it.
+	 * Read from the class hierarchy alone; a block that answers both (every vanilla block that drops experience, in the
+	 * merged base) or only NeoForge's is NeoForge's to answer.
+	 */
+	static boolean forgeComputesExperience(Class<?> block) {
+		return FORGE_COMPUTES.get(block);
+	}
+
+	private static final ClassValue<Boolean> FORGE_COMPUTES = new ClassValue<>() {
+		@Override protected Boolean computeValue(Class<?> type) {
+			Class<?> forge = declaring(type, "getExpDrop", BlockState.class, net.minecraft.world.level.LevelReader.class,
+					net.minecraft.util.RandomSource.class, BlockPos.class, int.class, int.class);
+			Class<?> neo = declaring(type, "getExpDrop", BlockState.class, LevelAccessor.class, BlockPos.class,
+					net.minecraft.world.level.block.entity.BlockEntity.class, net.minecraft.world.entity.Entity.class,
+					net.minecraft.world.item.ItemStack.class);
+			if (forge == null || forge.isInterface()) return false;
+			return neo == null || neo.isInterface() || (neo != forge && neo.isAssignableFrom(forge));
+		}
+	};
+
+	/** The class or interface whose declaration a call to {@code name(parameters)} on {@code type} resolves to. */
+	private static Class<?> declaring(Class<?> type, String name, Class<?>... parameters) {
+		try {
+			return type.getMethod(name, parameters).getDeclaringClass();
+		} catch (NoSuchMethodException absent) {
+			Caught.expected(absent);
+			return null;
+		}
+	}
+
+	/** Starts {@code drops} from the MinecraftForge decision this thread's last break left for it, if it is that break's. */
+	static void applyForgeExperience(BlockDropsEvent drops) {
+		PendingExperience pending = PENDING_EXPERIENCE.get();
+		if (pending == null) return;
+		if (drops.getLevel() != pending.level() || !drops.getPos().equals(pending.pos()) || drops.getBreaker() != pending.player()) return;
+		PENDING_EXPERIENCE.remove();
+		drops.setDroppedExperience(pending.experience());
 	}
 
 	/**
@@ -275,8 +360,19 @@ public final class KernelGameBlockEvents {
 		// event itself does not have to, and that throw would be charged to this bridge.
 		if (neoEvent.getPlayer() == null) return false;
 
-		return vetoed(new BlockEvent.BreakEvent(level, neoEvent.getPos(), neoEvent.getState(), neoEvent.getPlayer(),
-				seed(neoEvent.isCanceled())));
+		PENDING_EXPERIENCE.remove();
+		BlockEvent.BreakEvent forge = new BlockEvent.BreakEvent(level, neoEvent.getPos(), neoEvent.getState(), neoEvent.getPlayer(),
+				seed(neoEvent.isCanceled()));
+		int computed = forge.getExpToDrop();
+		boolean vetoed = vetoed(forge);
+		if (!vetoed && !neoEvent.isCanceled() && experienceCarried()) {
+			Integer decided = forgeExperience(forgeComputesExperience(neoEvent.getState().getBlock().getClass()), computed,
+					forge.getExpToDrop());
+			if (decided != null) {
+				PENDING_EXPERIENCE.set(new PendingExperience(level, neoEvent.getPos().immutable(), neoEvent.getPlayer(), decided));
+			}
+		}
+		return vetoed;
 	}
 
 	/**

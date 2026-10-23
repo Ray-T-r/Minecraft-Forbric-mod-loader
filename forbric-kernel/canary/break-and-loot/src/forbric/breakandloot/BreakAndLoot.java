@@ -30,7 +30,9 @@ import net.neoforged.bus.api.IEventBus;
 import net.neoforged.fml.common.Mod;
 import net.neoforged.neoforge.common.NeoForge;
 import net.neoforged.neoforge.common.util.FakePlayer;
+import net.neoforged.neoforge.event.level.BlockDropsEvent;
 import net.neoforged.neoforge.event.level.block.BreakBlockEvent;
+import net.neoforged.neoforge.registries.DeferredRegister;
 import net.neoforged.neoforge.event.server.ServerStartedEvent;
 import net.neoforged.neoforge.event.tick.ServerTickEvent;
 
@@ -41,14 +43,33 @@ public final class BreakAndLoot {
  private static final List<Map<String,Object>> CASES=new ArrayList<>();
  private static final List<String> EVENTS=new ArrayList<>();
  private static String mode=""; private static MinecraftServer server; private static int ticks;
+ private static final List<String> DROPS=new ArrayList<>();
+ private static final DeferredRegister<Block> BLOCKS=DeferredRegister.create(Registries.BLOCK,ID);
+ static{BLOCKS.register("forge_xp",()->new ForgeXpBlock(net.minecraft.world.level.block.state.BlockBehaviour.Properties.of()
+  .setId(ResourceKey.create(Registries.BLOCK,Identifier.fromNamespaceAndPath(ID,"forge_xp"))).strength(1)));}
+ /** A block whose experience only MinecraftForge's getExpDrop answers (7, or 0 under silk touch); it inherits NeoForge's default 0. */
+ public static final class ForgeXpBlock extends Block{
+  public ForgeXpBlock(net.minecraft.world.level.block.state.BlockBehaviour.Properties p){super(p);}
+  public int getExpDrop(BlockState state,net.minecraft.world.level.LevelReader level,net.minecraft.util.RandomSource random,BlockPos pos,int fortune,int silk){return silk==0?7:0;}
+ }
  public BreakAndLoot(IEventBus bus){
+  BLOCKS.register(bus);
+  // Experience from a player's break: NeoForge's drops event (its number at the end is what drops), and each family's
+  // listener changing it for one block of its own choosing.
+  NeoForge.EVENT_BUS.addListener(net.neoforged.bus.api.EventPriority.NORMAL,false,BlockDropsEvent.class,e->{if(mode.equals("xp")&&id(e.getState()).equals("minecraft:lapis_ore"))e.setDroppedExperience(50);});
+  NeoForge.EVENT_BUS.addListener(net.neoforged.bus.api.EventPriority.LOWEST,true,BlockDropsEvent.class,e->{if(e.getBreaker() instanceof FakePlayer)DROPS.add(id(e.getState())+"="+(e.isCanceled()?"canceled":e.getDroppedExperience()));});
+  net.minecraftforge.event.level.BlockEvent.BreakEvent.BUS.addListener((java.util.function.Consumer<net.minecraftforge.event.level.BlockEvent.BreakEvent>)e->{
+   if(mode.equals("xp")&&id(e.getState()).equals("minecraft:emerald_ore"))e.setExpToDrop(100);});
   PlayerBlockBreakEvents.BEFORE.register((level,player,pos,state,be)->{if(!(player instanceof FakePlayer))return true;EVENTS.add("before:"+id(state)+(be!=null?"+be":""));return !mode.equals("veto");});
   PlayerBlockBreakEvents.AFTER.register((level,player,pos,state,be)->{if(!(player instanceof FakePlayer fake))return;EVENTS.add("after:"+id(state)+(be!=null?"+be":""));
    if(mode.equals("nested")){mode="";fake.gameMode.destroyBlock(pos.above());}});
   NeoForge.EVENT_BUS.addListener(BreakBlockEvent.class,e->{if(mode.equals("neo-cancel"))e.setCanceled(true);});
   PlayerBlockBreakEvents.CANCELED.register((level,player,pos,state,be)->{if(player instanceof FakePlayer)EVENTS.add("canceled:"+id(state)+(be!=null?"+be":""));});
   NeoForge.EVENT_BUS.addListener(ServerStartedEvent.class,e->server=e.getServer());
-  NeoForge.EVENT_BUS.addListener(ServerTickEvent.Post.class,e->{if(e.getServer()!=server||++ticks!=20)return;try{run();}finally{finish();}});
+  NeoForge.EVENT_BUS.addListener(ServerTickEvent.Post.class,e->{if(e.getServer()!=server)return;++ticks;
+   // Entities (the experience orbs) are only found in a chunk that is loaded with entities: hold the probe's chunk.
+   if(ticks==5)server.overworld().setChunkForced(0,0,true);
+   if(ticks!=40)return;try{run();}finally{finish();}});
  }
  interface Case{String run()throws Throwable;}
  private static void test(String name,Case body){
@@ -80,6 +101,34 @@ public final class BreakAndLoot {
   test("break.neoCancel",()->{mode="neo-cancel";String r=breakIt.apply(Blocks.DIRT.defaultBlockState(),GameType.SURVIVAL);mode="";return expect(r.equals("broken=false now=minecraft:dirt events=[]"),r);});
   test("break.veto",()->{mode="veto";String r=breakIt.apply(Blocks.DIRT.defaultBlockState(),GameType.SURVIVAL);mode="";return expect(r.equals("broken=false now=minecraft:dirt events=[before:minecraft:dirt, canceled:minecraft:dirt]"),r);});
 
+  // Experience from mining. MinecraftForge moved it out of dropResources into its destroyBlock; NeoForge pops it from
+  // BlockDropsEvent; the merged destroyBlock is NeoForge's, so a player's break must reach NeoForge's dropResources.
+  // Each case breaks one block in survival with a tool and sums the experience orbs that appeared around it.
+  java.util.function.BiFunction<BlockState,ItemStack,String> mine=(state,tool)->{
+   DROPS.clear();player.setGameMode(GameType.SURVIVAL);player.setItemInHand(InteractionHand.MAIN_HAND,tool);
+   net.minecraft.world.phys.AABB box=new net.minecraft.world.phys.AABB(pos).inflate(4);
+   for(var orb:level.getEntitiesOfClass(net.minecraft.world.entity.ExperienceOrb.class,box))orb.discard();
+   level.setBlock(pos,state,3);boolean broken=player.gameMode.destroyBlock(pos);int xp=0;
+   for(var orb:level.getEntitiesOfClass(net.minecraft.world.entity.ExperienceOrb.class,box))xp+=orb.getValue()*orbCount(orb);
+   for(var orb:level.getEntitiesOfClass(net.minecraft.world.entity.ExperienceOrb.class,box))orb.discard();
+   return "broken="+broken+" xp="+xp+" drops="+DROPS;};
+  ItemStack pick=new ItemStack(Items.DIAMOND_PICKAXE);
+  test("xp.vanillaOre",()->{StringBuilder all=new StringBuilder();int total=0;
+   for(int i=0;i<6;i++){String r=mine.apply(Blocks.DIAMOND_ORE.defaultBlockState(),pick.copy());all.append(r).append("; ");
+    int xp=Integer.parseInt(r.replaceAll(".* xp=(-?\\d+) .*","$1"));total+=xp;
+    // Diamond ore drops 3..7; NeoForge's event fires once and its last number is exactly what dropped.
+    if(xp<3||xp>7||!r.endsWith("drops=[minecraft:diamond_ore="+xp+"]"))return "a diamond ore break: "+all;}
+   return null;});
+  test("xp.silkTouch",()->{ItemStack silk=pick.copy();silk.enchant(level.registryAccess().lookupOrThrow(Registries.ENCHANTMENT)
+    .getOrThrow(net.minecraft.world.item.enchantment.Enchantments.SILK_TOUCH),1);String r=mine.apply(Blocks.DIAMOND_ORE.defaultBlockState(),silk);
+   return expect(r.equals("broken=true xp=0 drops=[minecraft:diamond_ore=0]"),r);});
+  mode="xp";
+  test("xp.neoDecision",()->{String r=mine.apply(Blocks.LAPIS_ORE.defaultBlockState(),pick.copy());return expect(r.equals("broken=true xp=50 drops=[minecraft:lapis_ore=50]"),r);});
+  test("xp.forgeDecision",()->{String r=mine.apply(Blocks.EMERALD_ORE.defaultBlockState(),pick.copy());return expect(r.equals("broken=true xp=100 drops=[minecraft:emerald_ore=100]"),r);});
+  test("xp.forgeBlock",()->{Block forgeXp=BuiltInRegistries.BLOCK.getValue(Identifier.fromNamespaceAndPath(ID,"forge_xp"));
+   String r=mine.apply(forgeXp.defaultBlockState(),pick.copy());return expect(r.equals("broken=true xp=7 drops=["+ID+":forge_xp=7]"),r);});
+  mode="";
+
   // A loot table's pools, each with one item: which items a roll gives says which pools survived their conditions.
   LootTable table=server.reloadableRegistries().getLootTable(ResourceKey.create(Registries.LOOT_TABLE,Identifier.fromNamespaceAndPath(ID,"probe")));
   Set<String> rolled=new TreeSet<>();
@@ -106,6 +155,10 @@ public final class BreakAndLoot {
    LootPool decoded=forgeCodec.parse(ops,encoded[0]).getOrThrow();
    List<ItemStack> out=new ArrayList<>();decoded.addRandomItems(out::add,new net.minecraft.world.level.storage.loot.LootContext.Builder(new LootParams.Builder(level).create(LootContextParamSets.EMPTY)).create(Optional.empty()));
    return expect(out.isEmpty(),"MinecraftForge's own codec read the encoded pool back as one that still gives "+out);});
+ }
+ static int orbCount(net.minecraft.world.entity.ExperienceOrb orb){
+  try{java.lang.reflect.Field f=net.minecraft.world.entity.ExperienceOrb.class.getDeclaredField("count");f.setAccessible(true);return f.getInt(orb);}
+  catch(ReflectiveOperationException e){throw new IllegalStateException(e);}
  }
  private static void finish(){
   Map<String,Object> out=new LinkedHashMap<>();out.put("phase",System.getProperty("forbric.breakPhase"));out.put("cases",CASES);

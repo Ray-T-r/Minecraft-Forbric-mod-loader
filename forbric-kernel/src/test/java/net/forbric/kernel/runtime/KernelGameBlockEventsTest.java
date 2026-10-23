@@ -151,6 +151,74 @@ class KernelGameBlockEventsTest {
 		}
 	}
 
+	/**
+	 * The experience a MinecraftForge break hands to the same break's BlockDropsEvent: a listener's change, or the
+	 * computed number when the block's experience is MinecraftForge's to compute; nothing otherwise, so NeoForge's
+	 * own computation stands for every block that answers NeoForge's getExpDrop.
+	 */
+	@Test
+	void onlyAMinecraftForgeDecisionIsHandedToTheDropsEvent() throws Exception {
+		try (URLClassLoader cl = gameSideLoader()) {
+			Method rule = bridge(cl).getDeclaredMethod("forgeExperience", boolean.class, int.class, int.class);
+			rule.setAccessible(true);
+			assertEquals(null, rule.invoke(null, false, 5, 5), "nobody decided: NeoForge's computation stands");
+			assertEquals(100, rule.invoke(null, false, 5, 100), "a listener's setExpToDrop crosses");
+			assertEquals(0, rule.invoke(null, false, 5, 0), "a listener that takes the experience away crosses too");
+			assertEquals(7, rule.invoke(null, true, 7, 7), "a block only MinecraftForge's getExpDrop answers keeps its number");
+		}
+	}
+
+	/**
+	 * Which family answers a block's experience, read from where getExpDrop is declared: classes generated here with
+	 * names that mean nothing, extending the merged base's own Block and DropExperienceBlock.
+	 */
+	@Test
+	void theFamilyThatAnswersABlocksExperienceIsReadFromItsDeclarations() throws Exception {
+		try (URLClassLoader cl = gameSideLoader()) {
+			Method computes = bridge(cl).getDeclaredMethod("forgeComputesExperience", Class.class);
+			computes.setAccessible(true);
+			String block = "net/minecraft/world/level/block/Block", ore = "net/minecraft/world/level/block/DropExperienceBlock";
+			String forge = "(Lnet/minecraft/world/level/block/state/BlockState;Lnet/minecraft/world/level/LevelReader;"
+					+ "Lnet/minecraft/util/RandomSource;Lnet/minecraft/core/BlockPos;II)I";
+			String neo = "(Lnet/minecraft/world/level/block/state/BlockState;Lnet/minecraft/world/level/LevelAccessor;"
+					+ "Lnet/minecraft/core/BlockPos;Lnet/minecraft/world/level/block/entity/BlockEntity;"
+					+ "Lnet/minecraft/world/entity/Entity;Lnet/minecraft/world/item/ItemStack;)I";
+			Generated generated = new Generated(cl);
+			assertFalse((boolean) computes.invoke(null, Class.forName(block.replace('/', '.'), false, cl)), "Block answers neither");
+			assertFalse((boolean) computes.invoke(null, Class.forName(ore.replace('/', '.'), false, cl)),
+					"the merged experience block answers both: NeoForge's computation is the same rule");
+			assertTrue((boolean) computes.invoke(null, generated.subclass("fixture/amber/Shard", block, forge)),
+					"a block that answers only MinecraftForge's getExpDrop");
+			assertFalse((boolean) computes.invoke(null, generated.subclass("fixture/amber/Pebble", block, neo)),
+					"a block that answers only NeoForge's");
+			assertTrue((boolean) computes.invoke(null, generated.subclass("fixture/amber/Vein", ore, forge)),
+					"an experience block whose subclass re-answers MinecraftForge's alone");
+			assertFalse((boolean) computes.invoke(null, generated.subclass("fixture/amber/Seam", ore, neo)),
+					"an experience block whose subclass re-answers NeoForge's alone");
+		}
+	}
+
+	/** Defines classes extending a game class with one {@code getExpDrop} override returning a constant. */
+	private static final class Generated extends ClassLoader {
+		Generated(ClassLoader parent) {
+			super(parent);
+		}
+
+		Class<?> subclass(String name, String superName, String desc) {
+			org.objectweb.asm.ClassWriter cw = new org.objectweb.asm.ClassWriter(org.objectweb.asm.ClassWriter.COMPUTE_MAXS);
+			cw.visit(org.objectweb.asm.Opcodes.V21, org.objectweb.asm.Opcodes.ACC_PUBLIC, name, null, superName, null);
+			org.objectweb.asm.MethodVisitor m = cw.visitMethod(org.objectweb.asm.Opcodes.ACC_PUBLIC, "getExpDrop", desc, null, null);
+			m.visitCode();
+			m.visitIntInsn(org.objectweb.asm.Opcodes.BIPUSH, 7);
+			m.visitInsn(org.objectweb.asm.Opcodes.IRETURN);
+			m.visitMaxs(0, 0);
+			m.visitEnd();
+			cw.visitEnd();
+			byte[] bytes = cw.toByteArray();
+			return defineClass(name.replace('/', '.'), bytes, 0, bytes.length);
+		}
+	}
+
 	private static Object seed(ClassLoader cl, String triState) throws Exception {
 		Class<?> tri = Class.forName("net.minecraft.util.TriState", true, cl);
 		Method seed = bridge(cl).getDeclaredMethod("seed", tri);

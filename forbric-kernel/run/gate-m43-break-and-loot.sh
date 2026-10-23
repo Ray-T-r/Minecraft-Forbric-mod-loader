@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# M43 — Fabric's PlayerBlockBreakEvents.AFTER, and MinecraftForge loot pool conditions, on the merged base.
+# M43 — Fabric's PlayerBlockBreakEvents.AFTER, experience from mining, and MinecraftForge loot pool conditions, on the
+# merged base.
 #
 # fabric-api fires AFTER at vanilla's Block.destroy call in destroyBlock; NeoForge's body moved that call into its own
 # removeBlock, so AFTER never fired (CarrierHelperResults, which knows no mod, now runs fabric-api's handler on removeBlock's
@@ -11,15 +12,24 @@
 #   block breaking — survival, a block entity (the chest's block entity reaches AFTER), creative, a break inside an
 #   AFTER listener (exactly one AFTER per block, in order), breaking air (NeoForge's removal reports nothing removed:
 #   no AFTER), a Fabric BEFORE veto (CANCELED, no AFTER) and a NeoForge BreakBlockEvent cancel (no Fabric event at all);
+#   experience — six diamond ore breaks each drop 3..7 orbs' worth, exactly what NeoForge's BlockDropsEvent (fired once)
+#   ends with; silk touch drops none; a NeoForge listener's number (50 on lapis), a MinecraftForge BreakEvent listener's
+#   setExpToDrop (100 on emerald) and a block whose experience only MinecraftForge's getExpDrop answers (7) are what drop.
+#   The merged playerDestroy used to call MinecraftForge's dropResources(..., false) while destroyBlock is NeoForge's, so
+#   a player got no experience from mining at all; the merge now points it back at NeoForge's dropResources
+#   (DelegateTwinRoutes), and KernelGameBlockEvents hands MinecraftForge's decision to the drops event.
 #   loot — a plain pool, forge:condition false (an empty pool in its place) and true (kept), neoforge:conditions never
 #   (dropped), both
 #   families true (kept); a pool built in code with when(FalseCondition): kept in the pool, encoded, and read back
 #   by MinecraftForge's own codec as an empty pool.
 #
 #   1. positive — STRICT, every case passes, zero confirmed required findings.
-#   2. off — -Dforbric.carrierHelperResults=off -Dforbric.forgePoolConditions=off: exactly the repaired cases fail (AFTER
-#      in survival, block entity, creative and nested; forge:condition false; the code-built condition, its encoding
-#      and round trip), and the controls (air, veto, NeoForge cancel, plain/true/NeoForge pools) still hold.
+#   2. off — -Dforbric.carrierHelperResults=off -Dforbric.forgePoolConditions=off -Dforbric.forgeBreakExperience=off:
+#      exactly the repaired cases fail (AFTER in survival, block entity, creative and nested; forge:condition false; the
+#      code-built condition, its encoding and round trip; MinecraftForge's experience decision and its block), and the
+#      controls (air, veto, NeoForge cancel, plain/true/NeoForge pools, vanilla and NeoForge experience) still hold. The
+#      merge's own repair has no switch: on a base built before it, xp.vanillaOre, xp.silkTouch and every other xp case
+#      fail with no orbs and no drops event.
 # Not covered here: a native MinecraftForge or Fabric server as an oracle, and a rendered client.
 # GATE-PARALLEL: rundirs=server-break-m43 mem=2000
 set -uo pipefail
@@ -28,7 +38,7 @@ set -uo pipefail
 SERVER_DIR="$KERNEL/run/server-break-m43"
 RESULTS="$BUILD/verification/m43-break-and-loot"
 FAIL=0
-REPAIRED="{'break.survival.plain', 'break.survival.blockEntity', 'break.creative', 'break.nested', 'loot.json.forgeFalse', 'loot.code.condition', 'loot.code.encode', 'loot.code.roundtrip'}"
+REPAIRED="{'break.survival.plain', 'break.survival.blockEntity', 'break.creative', 'break.nested', 'xp.forgeDecision', 'xp.forgeBlock', 'loot.json.forgeFalse', 'loot.code.condition', 'loot.code.encode', 'loot.code.roundtrip'}"
 rm -rf "$RESULTS"; mkdir -p "$RESULTS"
 
 kernel_jar
@@ -62,7 +72,7 @@ import json, sys
 report, phase, rule = json.load(open(sys.argv[1])), sys.argv[2], sys.argv[3]
 assert report['phase'] == phase, report['phase']
 cases = {c['name']: c for c in report['cases']}
-assert len(cases) == 15, sorted(cases)
+assert len(cases) == 20, sorted(cases)
 failed = {name for name, c in cases.items() if not c['pass']}
 for name in sorted(failed): print(f"[kernel]   {phase}: {name} failed — {cases[name]['detail'][:240]}")
 assert eval(rule, {'failed': failed, 'cases': cases}), (phase, sorted(failed))
@@ -73,17 +83,17 @@ PY
 
 step "1. positive: Fabric's AFTER fires and MinecraftForge's pool conditions hold"
 run_server positive strict ""
-judge positive "not failed" "all 15 cases pass"
+judge positive "not failed" "all 20 cases pass"
 if python3 -c "import json,sys; r=json.load(open(sys.argv[1])); sys.exit(0 if r['confirmedRequired']==0 else 1)" "$RESULTS/positive-compatibility.json" 2>/dev/null
 then echo "[kernel] PASS positive: zero confirmed required findings under STRICT"
 else echo "[kernel] FAIL positive: STRICT report missing or has confirmed required findings"; FAIL=1; fi
 
 step "2. off: the same server with both repairs switched off"
-run_server off continue "-Dforbric.carrierHelperResults=off -Dforbric.forgePoolConditions=off"
+run_server off continue "-Dforbric.carrierHelperResults=off -Dforbric.forgePoolConditions=off -Dforbric.forgeBreakExperience=off"
 judge off "failed == $REPAIRED" "exactly the repaired cases fail; the controls hold"
 
 if [ "$FAIL" -eq 0 ]; then
-  echo "[kernel] ✅ M43 BREAK-AND-LOOT GATE GREEN — Fabric's AFTER and MinecraftForge pool conditions behave natively, each by its repair"
+  echo "[kernel] ✅ M43 BREAK-AND-LOOT GATE GREEN — Fabric's AFTER, experience from mining and MinecraftForge pool conditions behave natively, each by its repair"
 else
   echo "[kernel] ❌ M43 GATE RED — inspect $RESULTS"
 fi
