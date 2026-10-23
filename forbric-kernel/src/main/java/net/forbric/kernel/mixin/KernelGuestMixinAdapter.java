@@ -102,6 +102,61 @@ public final class KernelGuestMixinAdapter {
 	private static final java.util.Set<String> REJECTING =
 			java.util.Collections.synchronizedSet(new java.util.LinkedHashSet<>());
 
+	/**
+	 * A PARTIAL verdict as the config-time pass read it, kept to be read again on the mixin as Mixin is handed it
+	 * ({@link #judgeAsHanded}): the passes that move an injector off a body nothing calls run when Mixin loads the class,
+	 * after this verdict, so "never runs" here can be said of an injector that will land on a body that runs.
+	 */
+	private record Handed(String configName, String pkg, String mixin, Function<String, byte[]> resource, MixinAddedMembers.View added,
+			NativeAbsentTargets.Context nativeView, MixinFit.Result kept) {
+	}
+
+	/** Internal mixin name → its config-time PARTIAL verdict, until the mixin is handed to Mixin. */
+	private static final Map<String, Handed> HANDED = new java.util.concurrent.ConcurrentHashMap<>();
+
+	/**
+	 * Reads a mixin PARTIAL at config time again as it is handed to Mixin, once, after every adapter has had its say: an anchor
+	 * the config-time read missed — an injector said never to run, on a body nothing calls — that now lands where the merged
+	 * game runs it is withdrawn from what the boot says of the mixin, with where it landed. A mixin that now fits leaves the
+	 * partial count, and its preflight row is resolved; one still partial keeps its row (the final ledger decides each
+	 * injector), and the line names what is still missing. Says nothing when nothing changed.
+	 */
+	static void judgeAsHanded(ClassNode node) {
+		if (node == null) return;
+		Handed handed = HANDED.remove(node.name);
+		if (handed == null) return;
+		try {
+			org.objectweb.asm.ClassWriter writer = new org.objectweb.asm.ClassWriter(0);
+			node.accept(writer);
+			MixinFit.Result fit = MixinFit.evaluate(writer.toByteArray(), handed.resource(), net.forbric.kernel.classloading.DelegationPolicy::alwaysGame,
+					handed.added(), handed.nativeView());
+			List<String> landed = new ArrayList<>();
+			for (String missing : handed.kept().unresolved()) if (!fit.unresolved().contains(missing)) landed.add(missing);
+			if (landed.isEmpty()) return;
+			String key = handed.configName() + ":" + handed.mixin();
+			boolean fits = fit.verdict() == MixinFit.Verdict.FIT;
+			ForbricLog.info("[Forbric/Mixin] guest mixin %s:%s as handed to Mixin — %d anchor(s) the config-time read missed now land "
+							+ "where the merged game runs them, withdrawn: %s; verdict %s→%s%s", MixinConfigOwners.describe(handed.configName()),
+					handed.mixin(), landed.size(), String.join(", ", landed), handed.kept().verdict(), fit.verdict(),
+					fits ? "" : " (" + fit.reason() + ")");
+			if (fits) {
+				PARTIAL.remove(key);
+				REJECTING.remove(key);
+				MixinCompatibility.resolveAs(MixinCompatibility.id(handed.configName(), handed.pkg() + "." + handed.mixin()), handed.configName(),
+						"every anchor lands where the merged game runs it, as the mixin is handed to Mixin");
+			}
+		} catch (RuntimeException unreadable) {
+			Caught.warn(unreadable, "[Forbric/Mixin] could not read guest mixin %s again as it is handed to Mixin; its config-time verdict stands",
+					node.name);
+		}
+	}
+
+	private static void handed(String configName, String pkg, String mixin, Function<String, byte[]> resource, MixinAddedMembers.View added,
+			NativeAbsentTargets.Context nativeView, MixinFit.Result kept) {
+		if (configName == null || pkg == null || mixin == null || kept == null) return;
+		HANDED.put(pkg.replace('.', '/') + "/" + mixin.replace('.', '/'), new Handed(configName, pkg, mixin, resource, added, nativeView, kept));
+	}
+
 	/** Records one, keyed so the same mixin evaluated twice counts once. */
 	static void notePartial(String configName, String mixin) {
 		if (configName == null || mixin == null) return;
@@ -437,6 +492,7 @@ public final class KernelGuestMixinAdapter {
 						suspectDrift(configName, pkg, mixin, pluginClass, classBytes, required, kept);
 						notePartial(configName, mixin, kept);
 						preflight(configName, pkg, mixin, pluginClass, classBytes, required, kept.reason(), kept.unresolved());
+						handed(configName, pkg, mixin, resource, added, nativeView, kept);
 						ForbricLog.info("[Forbric/Mixin] guest mixin %s:%s applies only partially on the merged base "
 								+ "— %s (kept; -Dforbric.mixinFit=strict drops these%s)", MixinConfigOwners.describe(configName), mixin,
 								kept.reason(), rejectionNote(kept));
@@ -530,6 +586,7 @@ public final class KernelGuestMixinAdapter {
 			notePartial(configName, mixin, after);
 			suspectDrift(configName, pkg, mixin, pluginClass, classBytes, required, after);
 			preflight(configName, pkg, mixin, pluginClass, classBytes, required, after.reason(), after.unresolved());
+			handed(configName, pkg, mixin, resource, added, nativeView, after);
 			ForbricLog.info("[Forbric/Mixin] guest mixin %s:%s still applies only partially — %s%s",
 					MixinConfigOwners.describe(configName), mixin, after.reason(), rejectionNote(after));
 		}

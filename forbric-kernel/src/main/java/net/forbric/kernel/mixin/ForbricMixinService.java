@@ -534,6 +534,9 @@ public final class ForbricMixinService
 		// code: the rule asks whether the injector's @At finds a point in the method its name binds.
 		net.forbric.kernel.transform.GuestInjectorPruner.pruneRefused(node,
 				(mixin, handler) -> MixinFit.stillRejected(mixin, handler, this::mergedBaseNodeWithCode));
+		// …and a PARTIAL verdict the config-time pass printed is read again on the mixin as handed over: an injector it said never
+		// runs, which an adapter above moved onto a body that runs, is withdrawn from the report with where it landed.
+		KernelGuestMixinAdapter.judgeAsHanded(node);
 		FinalMixinApplications.remember(node);
 		// The call sites its injectors take, as they will apply: a raw post-Mixin patch of another mod that finds one
 		// gone is reported as a contention between the two (ContendedCallSites), not arbitrated.
