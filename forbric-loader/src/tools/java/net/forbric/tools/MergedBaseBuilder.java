@@ -409,12 +409,9 @@ public final class MergedBaseBuilder {
 			allNodes.get(owner).accept(cw);
 			outEntries.put(owner, cw.toByteArray());
 		}
-		for (DelegateTwinRoutes.Decision decision : delegateTwinDecisions) {
-			if (!decision.retargeted()) continue;
-			delegateTwinRetargeted++;
-			// The side's edit at that site — its constants — is gone from the merged game: reported as that side's loss.
-			conflicts.add(decision.site() + " (" + decision.side() + " hook lost)");
-		}
+		// Each retargeted site gives up that side's constants there; the pass's own section names it, with the side whose
+		// edit it was. It is not a both-modified method, so it is not a row of the hook-lost section the census reads.
+		for (DelegateTwinRoutes.Decision decision : delegateTwinDecisions) if (decision.retargeted()) delegateTwinRetargeted++;
 		if (!delegateTwinDecisions.isEmpty()) {
 			System.out.println("[merge] delegate-twin pass: " + delegateTwinRetargeted + " call site(s) retargeted to the merged entry, "
 					+ (delegateTwinDecisions.size() - delegateTwinRetargeted) + " left");

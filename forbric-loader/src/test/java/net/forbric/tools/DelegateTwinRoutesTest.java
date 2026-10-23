@@ -75,8 +75,10 @@ public class DelegateTwinRoutesTest {
 				"the merged reap calls the merged entry, not the first side's twin");
 		assertTrue(built.report().contains(MergedBaseBuilder.DELEGATE_TWIN_SECTION), built.report());
 		assertTrue(built.report().contains(names.grain() + "#" + names.reap() + "(Ljava/lang/Object;)V -> " + names.grain() + "."
-				+ names.scatter() + names.twinDesc() + " RETARGETED"), built.report());
-		assertTrue(built.report().contains(names.grain() + "#" + names.reap() + "(Ljava/lang/Object;)V (forge hook lost)"), built.report());
+				+ names.scatter() + names.twinDesc() + " RETARGETED to " + names.grain() + "." + names.scatter() + names.entryDesc()
+				+ " (forge edit given up here)"), built.report());
+		assertFalse(built.report().contains(names.grain() + "#" + names.reap() + "(Ljava/lang/Object;)V (forge hook lost)"),
+				"not a both-modified method: not a row of the hook-lost section");
 
 		// Run it: the second side's hook in scatter now runs on reap's path, exactly once, and nothing is released twice.
 		assertEquals(List.of("out", "neo-release"), built.run(names, "harvest-path"));

@@ -60,8 +60,8 @@ import org.objectweb.asm.tree.VarInsnNode;
  *       first-side body added. Where one of them does, the first side's mechanism is whole on that path and the call
  *       is left alone (pointing it back would do the switched-off part twice).</li>
  * </ul>
- * Anything else stays as merged, and every candidate is reported with what decided it. Names of classes, methods or
- * mods decide nothing.
+ * Anything else stays as merged, and every candidate is reported with what decided it, a retargeted one with the side
+ * whose edit (its constants) is given up there. Names of classes, methods or mods decide nothing.
  */
 final class DelegateTwinRoutes {
 	private DelegateTwinRoutes() {
@@ -70,7 +70,7 @@ final class DelegateTwinRoutes {
 	/** One rewritten or left call site, for the report. */
 	record Decision(String site, String twin, String entry, String side, boolean retargeted, String why) {
 		String line() {
-			return site + " -> " + twin + (retargeted ? " RETARGETED to " + entry + ": " : " LEFT: ") + why;
+			return site + " -> " + twin + (retargeted ? " RETARGETED to " + entry + " (" + side + " edit given up here): " : " LEFT: ") + why;
 		}
 	}
 
