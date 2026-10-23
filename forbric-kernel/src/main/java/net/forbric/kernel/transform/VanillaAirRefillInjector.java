@@ -49,7 +49,9 @@ import net.forbric.kernel.util.ForbricSwitches;
  * the maximum stays where it is unless a listener set the refill, which NeoForge applies as it always does.
  *
  * <p>Everything else stays the hook's: the event is posted with the default refill, and a NeoForge listener still sets the
- * amounts and decides whether the body breathes, exactly as on NeoForge. The seams are found by shape: the hook's
+ * amounts and decides whether the body breathes, as on NeoForge but for air above the maximum: there a listener that leaves
+ * the refill as it started (only letting a drowning body breathe, or setting the refill to zero) leaves the air where it is,
+ * where NeoForge pulls it to the maximum. The seams are found by shape: the hook's
  * {@code (LivingEntity, ServerLevel, int, int)} signature, the one breathe event it constructs from {@code (entity, canBreathe,
  * consume, refill)} and keeps in a local, the one store into the event's refill local — a constant zero, right after the store
  * of true into its can-breathe local — and the one {@code Math.min(air + event refill, max)} handed to {@code setAirSupply},

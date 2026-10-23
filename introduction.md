@@ -2023,11 +2023,16 @@ Break one and the failure usually surfaces far from the cause.
   holds it in water and in a drowning mod fluid outside the water tag — the Fabric test fluid as on native Fabric, a
   NeoForge fluid type that drowns as on native NeoForge, also with the cross-host predicate island switched off, where
   the hook decides alone — and refills it in lava and in a breathable fluid, as on native Fabric (native NeoForge and
-  MinecraftForge hold it in every fluid). Air above the maximum (400 of 300) stays there in water with water
-  breathing, in open air and with Breath of the Nautilus alone, as on native Fabric; native NeoForge pulls all three to
-  300, MinecraftForge the first two. A NeoForge listener that sets the amounts or whether the body breathes gets
-  exactly the curve it gets on NeoForge, and reads vanilla's refill (4) as the default where NeoForge hands it 0. A
-  MinecraftForge mod's fluid could not be measured in Forbric: its liquid block throws when placed (below).
+  MinecraftForge hold it in every fluid). Air above the maximum (400 of 300) stays there in water with water breathing,
+  in open air and with Breath of the Nautilus alone, as on native Fabric; native NeoForge pulls all three to 300,
+  MinecraftForge the first two. Up to the maximum (the in-game listener scenarios start at 200), a NeoForge listener
+  that sets the amounts or whether the body breathes gets exactly the curve it gets on NeoForge, and reads vanilla's
+  refill (4) as the default where NeoForge hands it 0. Above the maximum the event starts from a refill of 0, and the
+  air stays where it is unless a listener sets another refill (§6), where NeoForge pulls it to the maximum: a listener
+  that only lets a drowning body breathe leaves 400 of 300 at 400, and so does one that sets the refill to 0 or to any
+  negative amount (the event holds it at 0); NeoForge makes both 300 (from executing NeoForge's actual hook, decorated
+  and switched off, not measured in game). A MinecraftForge mod's fluid could not be measured in Forbric: its liquid
+  block throws when placed (below).
 
 **What is still not native-equivalent.** Proven not closable by any structural trigger (each proof kept):
 
@@ -2043,15 +2048,6 @@ Break one and the failure usually surfaces far from the cause.
   optimisation, is inactive.
 - Channel declarations: per join, `REGISTER` fires 5 times on the client and 4 on the server in the configuration
   phase (native once each), 3 times in play (native 2), plus 3 `UNREGISTER`s.
-- Air, the random sequence: a body with an oxygen bonus (Respiration) draws its own random every tick it is alive on a
-  server, where vanilla draws only while it drowns. The merged `baseTick` hands NeoForge's breathing hook its consume
-  amount up front, `air - decreaseAirSupply(air)`, and `decreaseAirSupply` calls `random.nextDouble()` whenever the
-  `OXYGEN_BONUS` attribute is above zero; vanilla calls it only in its drowning branch (native NeoForge and
-  MinecraftForge draw as Forbric does). The air values are vanilla's — the amount is used only when the body does not
-  breathe — but that entity's later random draws (movement, sounds, particles) are not. It cannot be moved without
-  changing NeoForge's `LivingBreatheEvent` contract: the event is constructed with the consume amount, and a listener
-  may read it and may decide the body does not breathe after all, so the amount must exist, drawn, before anyone knows
-  whether it will be used; a placeholder or a later draw would hand listeners a value NeoForge never does.
 
 Located, not yet fixed (no impossibility proof):
 
@@ -2068,11 +2064,27 @@ Located, not yet fixed (no impossibility proof):
   fires exactly once per break in every mode measured; the enchanting table's primary-item check goes through
   NeoForge's `isPrimaryItemFor`, proven only for the disjunct it folds (the in-game enchanting probe matches native);
   datagen's `TagsProviderMixin` attaches nowhere (Fabric data generation only).
+- Air, the random sequence: a body with an oxygen bonus (Respiration) draws its own random every tick it is alive on a
+  server, where vanilla draws only while it drowns. The merged `baseTick` hands NeoForge's breathing hook its consume
+  amount up front, `air - decreaseAirSupply(air)`, and `decreaseAirSupply` calls `random.nextDouble()` whenever the
+  `OXYGEN_BONUS` attribute is above zero; vanilla calls it only in its drowning branch (native NeoForge and
+  MinecraftForge draw as Forbric does). The air values are vanilla's — the amount is used only when the body does not
+  breathe — but that entity's later random draws (movement, sounds, particles) are not. It can be closed as a trade-off,
+  not built and not measured: around that one call in `baseTick`, keep the state of the entity's random, draw, and put
+  the state back, then move the random on as the call did only where the hook uses the amount (the event left the body
+  not breathing), which is where vanilla draws. A listener reads the same amount as on NeoForge, and while no listener
+  draws from the entity's random during the event the sequence is vanilla's. The costs: a NeoForge listener that does
+  draw from it gets the value the amount was drawn from where NeoForge gives it the next one; keeping and restoring the
+  state depends on the random source's implementation (the entity's is vanilla's `LegacyRandomSource`, whose
+  `nextDouble` moves only its private `seed`); and an override of `decreaseAirSupply` that draws from another source
+  still draws every tick.
 - MinecraftForge's own `LivingBreatheEvent` is never posted: the merged `baseTick` calls only NeoForge's breathing hook
   (`ForgeHooks.onLivingBreathe` has no caller), so a MinecraftForge listener of it never runs. The air itself follows
   vanilla's rule (§6), which is MinecraftForge's own but in two places: with only Breath of the Nautilus, MinecraftForge
   holds the air in any fluid that is not air (lava, a mod's breathable fluid) where vanilla, and so Forbric, refills it
-  outside the fluids that drown the body; and it pulls air above the maximum back to it, as NeoForge does.
+  outside the fluids that drown the body; and where it refills it pulls air above the maximum back to it, as NeoForge
+  does wherever the body breathes (with only Breath of the Nautilus in water it leaves 400 of 300 at 400, as vanilla
+  does).
 - A MinecraftForge mod's liquid block built with `LiquidBlock(Supplier, Properties)` (with a `ForgeFlowingFluid`) throws
   a `NullPointerException` as soon as it is placed: the merged `LiquidBlock.onPlace` reads the vanilla `fluid` field,
   which that constructor leaves null (it fills only the supplier). Found while measuring air in a MinecraftForge fluid.
