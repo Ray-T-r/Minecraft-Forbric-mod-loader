@@ -500,8 +500,9 @@ public final class KernelRuntimeClasses {
 		CLASSES.put("net.forbric.kernel.runtime.KernelFluidTypes", new Entry(Origin.COMPILED, List.of()));
 		CLASSES.put("net.forbric.kernel.runtime.KernelFabricTagViews", new Entry(Origin.COMPILED, List.of()));
 		CLASSES.put("net.forbric.kernel.runtime.KernelTagFacadeSources", new Entry(Origin.COMPILED, List.of()));
-		// The shared breathe hook preserves the original drowning query and corrects adapter refill before its event.
-		CLASSES.put("net.forbric.kernel.runtime.KernelFluidBreathing", new Entry(Origin.COMPILED, List.of()));
+		// Asked by NeoForge's breathing hook where it would hold the air of a body that breathes in its fluid (VanillaAirRefillInjector),
+		// and by the cross-host predicate island's protected decision: the refill vanilla gives there.
+		CLASSES.put("net.forbric.kernel.runtime.KernelAirRefill", new Entry(Origin.COMPILED, List.of()));
 		CLASSES.put("net.forbric.kernel.runtime.KernelFluidPredicateSeams", new Entry(Origin.COMPILED, List.of()));
 		// A class that reads [modproperties] out of a Forge-family ModList calls these instead of that ModList
 		// (DeclarationReaderModListInjector). Rewritten calls with the family's own ModList/IModInfo descriptors.

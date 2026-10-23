@@ -43,8 +43,8 @@ import net.minecraft.world.level.material.FluidState;
  * that tag gets it (the water and lava tags still win, as before). The type answers canSwim, canDrownIn and
  * supportsBoating from the behaviour, and has NeoForge's empty type's properties, today's answer, in everything else but
 	 * the push — but it is not air: {@code FluidType.isAir()} is final and true for the empty type itself only.
-	 * The shared breathing hook keeps the original refill amount for a non-drowning type manufactured here,
-	 * before posting NeoForge's breathe event; native types keep their defaults and that event still has the final say.
+	 * A body that does not drown in such a type refills its air as in vanilla, like a body that breathes in any other
+	 * fluid (KernelAirRefill), before NeoForge's breathe event, which still has the final say.
  * Pushing and fall distance are fabric-api's: its per-tick hook hands the entity to the behaviour, which pushes through
  * {@code applyCurrentTo(tag, …)} — the tracker of this same type, since the merged class tracks by type identity — and
  * scales the fall distance itself. NeoForge gathers a tracker's current only for a type that {@code canPushEntity},

@@ -3,7 +3,7 @@ package net.forbric.kernel.mixin;
 import static org.junit.jupiter.api.Assertions.*;
 import java.nio.file.*;import java.util.*;import java.util.function.*;import java.util.zip.*;
 import org.junit.jupiter.api.*;import org.objectweb.asm.*;import org.objectweb.asm.tree.*;
-import net.forbric.api.Ecosystem;import net.forbric.kernel.TestFixtures;import net.forbric.kernel.boot.KernelCrossHostPredicateContracts;import net.forbric.kernel.transform.FabricFluidBreathingInjector;
+import net.forbric.api.Ecosystem;import net.forbric.kernel.TestFixtures;import net.forbric.kernel.boot.KernelCrossHostPredicateContracts;import net.forbric.kernel.transform.VanillaAirRefillInjector;
 class MixinCrossHostPredicateIslandTest implements Opcodes {
  @AfterEach void reset(){MixinCrossHostPredicateIsland.resetForTests();}
  static ClassNode node(byte[]bytes){if(bytes==null)return null;ClassNode n=new ClassNode();new ClassReader(bytes).accept(n,0);return n;}
@@ -20,7 +20,27 @@ class MixinCrossHostPredicateIslandTest implements Opcodes {
   public void close()throws Exception{base.close();neo.close();}
  }
  @Test void actualDefaultClosureIncludesItsPrivateOrPublicIdentityAndTheBoundSpecialType()throws Exception{try(var in=new Inputs()){assertEquals(1,in.bind((name,r)->{r.run();return true;}));var plan=MixinCrossHostPredicateIsland.plans().iterator().next();assertEquals(1,plan.schema().excluded().size());assertTrue(plan.schema().actorGuards().stream().anyMatch(m->m.name().equals("self")));assertTrue(plan.schema().flags().values().stream().noneMatch(f->(f&(ACC_NATIVE|ACC_ABSTRACT|ACC_SYNCHRONIZED))!=0));}}
- @Test void theActualPriorBreathingDecorationIsKeptAsFallbackAndAnUnknownDecorationIsRejected()throws Exception{try(var in=new Inputs()){String host="net/neoforged/neoforge/common/CommonHooks";byte[]raw=read(in.neo,host+".class");ClassNode decorated=node(new FabricFluidBreathingInjector().transform(host.replace('/','.'),raw,null));in.cache.put(host,decorated);assertEquals(1,in.bind((name,r)->{r.run();return true;}));var method=MixinCrossHostPredicateIsland.plans().iterator().next().plan().method();assertTrue(Arrays.stream(method.instructions.toArray()).anyMatch(i->i instanceof MethodInsnNode c&&c.name.equals("refillDefault")));MixinCrossHostPredicateIsland.resetForTests();}try(var in=new Inputs()){String host="net/neoforged/neoforge/common/CommonHooks";ClassNode decorated=node(new FabricFluidBreathingInjector().transform(host.replace('/','.'),read(in.neo,host+".class"),null));for(var m:decorated.methods)for(var i:m.instructions)if(i instanceof MethodInsnNode c&&c.name.equals("remember"))c.name="otherRemember";in.cache.put(host,decorated);assertEquals(0,in.bind((name,r)->{r.run();return true;}));assertTrue(MixinCrossHostPredicateIsland.plans().isEmpty());}}
+ /**
+  * The kernel's vanilla-refill decoration of the actual hook stays in the executable host and is recorded in the plan, so the
+  * island's protected decision hands the event vanilla's refill too (KernelAirRefill.waterRefill) instead of the carrier's zero;
+  * the undecorated hook keeps the zero; an unknown shape of the decoration declines.
+  */
+ @Test void theActualVanillaRefillDecorationIsKeptAndTheIslandsProtectedDecisionFollowsIt()throws Exception{
+  String host="net/neoforged/neoforge/common/CommonHooks";
+  try(var in=new Inputs()){byte[]raw=read(in.neo,host+".class");ClassNode decorated=node(new VanillaAirRefillInjector().transform(host.replace('/','.'),raw,null));in.cache.put(host,decorated);
+   assertEquals(1,in.bind((name,r)->{r.run();return true;}));var plan=MixinCrossHostPredicateIsland.plans().iterator().next().plan();
+   assertTrue(plan.vanillaRefill(),"the decorated hook's protected branch hands its event vanilla's refill");
+   assertTrue(Arrays.stream(plan.method().instructions.toArray()).anyMatch(i->i instanceof MethodInsnNode c&&c.name.equals(VanillaAirRefillInjector.PROTECTED)),"the decoration stays in the executable host");
+   assertEquals(List.of(VanillaAirRefillInjector.WATER),islandRefills(decorated,host),"the island's protected decision asks vanilla's water-branch refill");
+   MixinCrossHostPredicateIsland.resetForTests();}
+  try(var in=new Inputs()){in.cache.put(host,node(read(in.neo,host+".class")));assertEquals(1,in.bind((name,r)->{r.run();return true;}));var plan=MixinCrossHostPredicateIsland.plans().iterator().next().plan();
+   assertFalse(plan.vanillaRefill(),"NeoForge's own hook zeroes the refill");assertEquals(List.of(),islandRefills(node(read(in.neo,host+".class")),host),"switched off, the island hands the carrier's zero");
+   MixinCrossHostPredicateIsland.resetForTests();}
+  try(var in=new Inputs()){ClassNode decorated=node(new VanillaAirRefillInjector().transform(host.replace('/','.'),read(in.neo,host+".class"),null));for(var m:decorated.methods)for(var i:m.instructions)if(i instanceof MethodInsnNode c&&c.name.equals(VanillaAirRefillInjector.PROTECTED))c.name="otherRefill";in.cache.put(host,decorated);assertEquals(0,in.bind((name,r)->{r.run();return true;}));assertTrue(MixinCrossHostPredicateIsland.plans().isEmpty());}
+ }
+ /** The kernel refill calls the island's prefix makes once CrossHostPredicateIslandInjector has put it into {@code hook}'s class. */
+ private static List<String> islandRefills(ClassNode hook,String host){ClassWriter w=new ClassWriter(0);hook.accept(w);byte[]in=w.toByteArray(),out=new CrossHostPredicateIslandInjector().transform(host.replace('/','.'),in,null);assertNotSame(in,out,"the island is put into the hook");ClassNode transformed=node(out);
+  List<String>calls=new ArrayList<>();for(var m:transformed.methods)if(m.name.equals("onLivingBreathe"))for(var i:m.instructions)if(i instanceof MethodInsnNode c&&c.owner.equals(VanillaAirRefillInjector.RUNTIME)&&!c.name.equals(VanillaAirRefillInjector.PROTECTED))calls.add(c.name);return calls;}
  @Test void typedEffectsAndSynchronizedDefaultsCannotBeDiscarded()throws Exception{try(var in=new Inputs()){ClassNode type=in.current("net/neoforged/neoforge/common/extensions/ILivingEntityExtension");MethodNode predicate=type.methods.stream().filter(m->m.name.equals("canDrownInFluidType")).findFirst().orElseThrow();predicate.instructions.insert(new MethodInsnNode(INVOKESTATIC,"test/Changed","sideEffect","()V",false));assertEquals(0,in.bind((name,r)->{r.run();return true;}));}try(var in=new Inputs()){ClassNode type=in.current("net/neoforged/neoforge/common/extensions/ILivingEntityExtension");type.methods.stream().filter(m->m.name.equals("canDrownInFluidType")).findFirst().orElseThrow().access|=ACC_SYNCHRONIZED;assertEquals(0,in.bind((name,r)->{r.run();return true;}));}}
  @Test void lateRejectionAndPublicationFailureKeepTheSourceAndPlanUnchanged()throws Exception{try(var in=new Inputs()){var handler=in.source.methods.stream().filter(m->m.name.equals("customFluidDrowning")).findFirst().orElseThrow();String before=MixinInstructionFingerprint.hash(handler);int count=in.source.methods.size();assertEquals(0,in.bind((name,r)->false));assertEquals(count,in.source.methods.size());assertEquals(before,MixinInstructionFingerprint.hash(handler));assertTrue(MixinCrossHostPredicateIsland.plans().isEmpty());assertThrows(IllegalStateException.class,()->in.bind((name,r)->{throw new IllegalStateException("registration refused");}));assertTrue(MixinCrossHostPredicateIsland.plans().isEmpty());assertEquals(count,in.source.methods.size());}}
 }
