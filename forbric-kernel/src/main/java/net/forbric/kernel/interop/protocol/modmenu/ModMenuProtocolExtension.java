@@ -52,11 +52,27 @@ public final class ModMenuProtocolExtension implements ProtocolExtension {
                 Class<?> api = Class.forName(API, false, game);
                 entrypoints = ModMenuConfigFactories.read(FabricLoader.getInstance(), api);
                 ForbricLog.info("[Forbric/ModConfig] read %d declared Mod Menu entrypoint(s), %d broken", entrypoints.entrypoints(), entrypoints.broken());
+                reportUnlisted(entrypoints);
             } catch (ReflectiveOperationException | RuntimeException | LinkageError unavailable) {
                 Caught.warn(unavailable, "[Forbric/ModConfig] Mod Menu config contract is unavailable; Fabric mods get no "
                         + "config screen");
             }
         }
         looked = true;
+    }
+    /**
+     * Says which config screens were offered for an id nothing on this instance has. The Mods screen lists every mod a
+     * loader knows that has a config screen -- installed, carried, the game -- so such a factory is the one kind no row
+     * can ever show; a library offering a screen for a mod that is not installed is the ordinary case. Said once, so a
+     * screen that becomes unreachable some other way is not silent either.
+     */
+    private static void reportUnlisted(ModMenuConfigFactories read) {
+        java.util.Set<String> unlisted = new java.util.TreeSet<>();
+        java.util.Set<String> catalogued = new java.util.HashSet<>();
+        for (ModCatalog.Entry entry : ModCatalog.everything()) catalogued.add(entry.modId());
+        FabricLoader fabric = FabricLoader.getInstance();
+        for (String id : read.modIds()) if (!catalogued.contains(id) && !fabric.isModLoaded(id)) unlisted.add(id);
+        if (!unlisted.isEmpty()) ForbricLog.info("[Forbric/ModConfig] %d config screen(s) offered for mod ids nothing on this "
+                + "instance has, so no row shows them: %s", unlisted.size(), unlisted);
     }
 }

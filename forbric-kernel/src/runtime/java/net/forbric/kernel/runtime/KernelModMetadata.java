@@ -83,6 +83,15 @@ final class KernelModMetadata {
 	}
 
 	/**
+	 * The {@code description} the mod's own {@code [[mods]]} entry declares, {@code \r\n} read as {@code \n} as NeoForge's
+	 * {@code ModInfo} reads it, or {@code ""}. See {@link #resolve}.
+	 */
+	static String descriptionOf(String modId, DiscoveredMod declared) {
+		Object description = configElementsOf(modId, declared).get("description");
+		return description instanceof String text ? text.replace("\r\n", "\n") : "";
+	}
+
+	/**
 	 * The mod's {@code [modproperties.<id>]} table, or an empty map.
 	 *
 	 * <p>Not loader data: it is how a mod addresses ANOTHER mod, and the reader is whoever looks. Sodium reads

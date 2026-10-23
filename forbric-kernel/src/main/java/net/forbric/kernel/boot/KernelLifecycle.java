@@ -705,9 +705,11 @@ public final class KernelLifecycle {
 			Object dist = Enum.valueOf(distClass.asSubclass(Enum.class), side.distName());
 
 			// The NeoForge baseline mod on its own bus. Captured so the client step can add ClientNeoForgeMod to
-			// the same bus + route the game's mod-bus events to its container.
+			// the same bus + route the game's mod-bus events to its container. Described by the [[mods]] entry NeoForge's
+			// own manifest declares for itself (name "NeoForge", its version), as genuine NeoForge's container is.
 			Object bus = KernelBusSupport.makeModBus(cl);
-			Object container = KernelModContainerFactory.create(cl, "neoforge", bus);
+			Object container = KernelModContainerFactory.create(cl, CarrierOwnMod.NEOFORGE_ID, bus, null,
+					CarrierOwnMod.neoForge(runtimeJars));
 			baselineBus = bus;
 			baselineContainer = container;
 			Class<?> neoForgeMod = Class.forName("net.neoforged.neoforge.common.NeoForgeMod", false, cl);

@@ -195,7 +195,8 @@ public final class KernelFabricEcosystem {
 		fabric.register(new KernelModContainer(
 				KernelModMetadata.builtin("java", String.valueOf(Runtime.version().feature()), "Java"), null, null));
 		KernelModContainer fabricLoader = new KernelModContainer(
-				KernelModMetadata.builtin("fabricloader", FABRIC_LOADER_API_LEVEL, "Fabric Loader (Forbric kernel)"),
+				KernelModMetadata.builtin("fabricloader", FABRIC_LOADER_API_LEVEL, "Fabric Loader (Forbric kernel)", Map.of(),
+						loaderEntrypoints(envType)),
 				null, null);
 		fabric.register(fabricLoader);
 		List<KernelModContainer> inLoader = registerLoaderNested(fabric, fabricLoader, platformJars, envType,
@@ -277,9 +278,13 @@ public final class KernelFabricEcosystem {
 				Caught.warn(t, "[Forbric/DupeId] could not work out which entrypoints %s's losing Fabric build offered other "
 						+ "mods — none of them is declared", alias.modId());
 			}
-			fabric.register(KernelModContainer.presence(KernelModMetadata.builtin(alias.modId(), alias.version(),
-					alias.modId(), foreignCustomValues(alias.modId()), entrypoints),
-					presenceSource(alias.modId(), dupes)));
+			// Shown as its own Fabric build shows itself: that build's fabric.mod.json is how the mod presents itself to
+			// a Fabric mod list, and the bare id made it a nameless, iconless row on Mod Menu.
+			LosingBuild shown = losingBuildOf(discovery, dupes, alias.modId());
+			fabric.register(KernelModContainer.presence(KernelModMetadata.presenceShownAs(
+					shown == null ? null : shown.metadata(), alias.modId(), alias.version(),
+					foreignCustomValues(alias.modId()), entrypoints),
+					presenceSource(alias.modId(), dupes), shown == null ? null : shown.jar()));
 			ForbricLog.info("[Forbric/Fabric] presence alias '%s' %s — its Fabric jar lost arbitration, but the "
 					+ "winning jar supplies the classes; isModLoaded now answers", alias.modId(), alias.version());
 		}
@@ -1219,6 +1224,67 @@ public final class KernelFabricEcosystem {
 		ForbricLog.warn("[Forbric/Fabric] %s declares %s, but the build that loaded never registers a Fabric renderer "
 				+ "— not forwarding it, so Indigo takes the slot instead of leaving it empty", mod.getId(), CONTAINS_RENDERER);
 		return false;
+	}
+
+	/**
+	 * The class the kernel's own {@code "modmenu"} entrypoint is: it offers Mod Menu the config screens of the mods Fabric
+	 * knows only by their id (see {@code KernelModMenuPlugin}). Game-side, in the kernel's runtime jar.
+	 */
+	public static final String MOD_MENU_PLUGIN = "net.forbric.kernel.runtime.modmenu.KernelModMenuPlugin";
+
+	/**
+	 * What the {@code fabricloader} built-in declares: on a client, the kernel's Mod Menu entrypoint. Fabric Loader is
+	 * where the kernel registers the identities of mods another family loads, so it is the one to answer for them in a
+	 * Fabric mod list. Mod Menu is a client mod and reads its entrypoints on the client only; a server declares nothing.
+	 */
+	static Map<String, List<KernelModMetadata.EntrypointDecl>> loaderEntrypoints(EnvType envType) {
+		if (envType != EnvType.CLIENT) return Map.of();
+		return Map.of(net.forbric.kernel.interop.protocol.modmenu.ModMenuConfigFactories.KEY,
+				List.of(new KernelModMetadata.EntrypointDecl("default", MOD_MENU_PLUGIN)));
+	}
+
+	/** A Fabric build of a mod that did not win its id: what its {@code fabric.mod.json} says, and the jar it is in. */
+	record LosingBuild(KernelModMetadata metadata, Path jar) {
+	}
+
+	/**
+	 * {@code id}'s Fabric build that lost its id, as it shows itself: null when there is none to read.
+	 *
+	 * <p>Two places, because a losing build reaches one of two: discovery read and did not register the Fabric half of a
+	 * universal jar a Forge family owns and a nested jar whose id another jar won; a top-level Fabric jar that lost to
+	 * another jar (its NeoForge build beside it in {@code mods/}) is never read at all -- discovery skips a suppressed jar
+	 * -- so its {@code fabric.mod.json} is read here, from the jar, which is still there.
+	 */
+	static LosingBuild losingBuildOf(FabricModDiscovery discovery, DuplicateModArbiter.Decision dupes, String id) {
+		if (id == null) return null;
+		if (discovery != null) {
+			for (KernelModContainer container : discovery.getContainers()) {
+				if (id.equals(container.getMetadata().getId())) return new LosingBuild(container.getMetadata(), container.getJar());
+			}
+		}
+		if (dupes == null) return null;
+		List<Path> suppressed = new ArrayList<>(dupes.suppressedJars());
+		suppressed.sort(java.util.Comparator.comparing(Path::toString));
+		for (Path jar : suppressed) {
+			KernelModMetadata metadata = fabricManifestOf(jar);
+			if (metadata != null && id.equals(metadata.getId())) return new LosingBuild(metadata, jar);
+		}
+		return null;
+	}
+
+	/** {@code jar}'s own {@code fabric.mod.json}, or null when it has none or it will not parse. */
+	private static KernelModMetadata fabricManifestOf(Path jar) {
+		if (jar == null || !Files.isRegularFile(jar)) return null;
+		try (java.util.zip.ZipFile zip = new java.util.zip.ZipFile(jar.toFile())) {
+			java.util.zip.ZipEntry manifest = zip.getEntry(FabricModDiscovery.MANIFEST);
+			if (manifest == null) return null;
+			try (java.io.InputStream in = zip.getInputStream(manifest)) {
+				return net.forbric.kernel.fabric.FabricModMetadataParser.read(in);
+			}
+		} catch (java.io.IOException | RuntimeException unreadable) {
+			Caught.expected(unreadable);
+			return null;
+		}
 	}
 
 	/**

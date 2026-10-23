@@ -1,0 +1,8 @@
+{
+  "schemaVersion": 1,
+  "id": "forbricmmplain",
+  "version": "1.0.0",
+  "name": "Forbric Config Canary Plain",
+  "description": "gate-m56: a Fabric mod with no config screen at all; its Config button must stay hidden.",
+  "environment": "client"
+}

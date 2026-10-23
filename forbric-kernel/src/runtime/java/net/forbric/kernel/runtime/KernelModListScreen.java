@@ -24,6 +24,7 @@ import net.forbric.api.CompatibilityFinding;
 import net.forbric.api.CompatibilityFindings;
 import net.forbric.api.Ecosystem;
 import net.forbric.api.ModCatalog;
+import net.forbric.kernel.ui.ModListRows;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.GuiGraphicsExtractor;
 import net.minecraft.client.gui.components.Button;
@@ -45,6 +46,10 @@ import net.minecraft.network.chat.FormattedText;
  * <p>Drawn rather than composed out of a vanilla layout on purpose: what a player needs from this screen is which
  * mods are here and which loader each came from, and the second half has no vanilla widget because no vanilla
  * screen has ever had to say it. Each row carries its ecosystem as a coloured tag.
+ *
+ * <p>The rows are the installed jars plus whatever else has settings a player could otherwise not reach: a mod a jar
+ * carries inside itself that has a config screen, the game itself, a loader's own mod with one (see
+ * {@link ModListRows}). The title still counts the installed jars.
  */
 public final class KernelModListScreen extends Screen {
 	private static final int TAG_FABRIC = 0xFFDBB03B;
@@ -66,13 +71,19 @@ public final class KernelModListScreen extends Screen {
 	/** How many unconfirmed notes the detail pane names for one mod before pointing at the machine report. */
 	private static final int SUSPECTED_NOTES = 3;
 	private static final int PAD = 6;
+	/** How far a mod listed under the parent it names is drawn in from its parent. */
+	private static final int INDENT = 10;
 	private static final int SEARCH_Y = 32;
 	private static final int LIST_TOP = 54;
 
 	private final Screen parent;
+	/** Every row, worked out once per {@link #init}: deciding which carried mods have a config asks every one of them. */
+	private List<ModListRows.Row> planned = List.of();
 	private ModList list;
 	private EditBox search;
 	private Button config;
+	/** Whether the selected row has a config screen: asked once per selection change, read by the button and the pane. */
+	private boolean selectedHasConfig;
 
 	/**
 	 * Frames actually drawn, and rows actually built — read by the client smoke harness.
@@ -119,7 +130,7 @@ public final class KernelModListScreen extends Screen {
 		this.search.setResponder(this::rebuild);
 		addRenderableWidget(this.search);
 
-		this.list = new ModList(this.minecraft, listWidth, this.height - LIST_TOP - 34, LIST_TOP, 26);
+		this.list = new ModList(this.minecraft, listWidth, this.height - LIST_TOP - 34, LIST_TOP, 26, this::selectionChanged);
 		this.list.setX(0);
 		addRenderableWidget(this.list);
 
@@ -128,32 +139,32 @@ public final class KernelModListScreen extends Screen {
 		addRenderableWidget(Button.builder(Component.translatable("gui.done"), b -> onClose())
 				.bounds(this.width / 2 - 100, this.height - 26, 200, 20).build());
 
+		this.planned = KernelModConfigScreens.rows();
 		rebuild(this.search.getValue());
 	}
 
 	private void rebuild(String query) {
 		if (this.list == null) return;
 		String needle = query == null ? "" : query.trim().toLowerCase(Locale.ROOT);
+		List<ModListRows.Row> kept = needle.isEmpty() ? this.planned : ModListRows.filter(this.planned, r -> matches(r, needle));
 		List<Row> rows = new ArrayList<>();
-		for (ModCatalog.Entry e : ModCatalog.all()) {
-			if (!needle.isEmpty() && !matches(e, needle)) continue;
-			rows.add(new Row(e));
-		}
+		for (ModListRows.Row r : kept) rows.add(new Row(r));
 		this.list.replaceEntries(rows);
 		rowsBuilt = rows.size();
 		if (!rows.isEmpty() && this.list.getSelected() == null) this.list.setSelected(rows.get(0));
 		selectionChanged();
 	}
 
-	private static boolean matches(ModCatalog.Entry e, String needle) {
-		if (e.status() != ModCatalog.Status.OK
+	private static boolean matches(ModListRows.Row r, String needle) {
+		ModCatalog.Entry e = r.entry();
+		if (e != null && e.status() != ModCatalog.Status.OK
 				&& ("broken".contains(needle) || "failed".contains(needle) || needle.startsWith("!"))) {
 			// So that a player who can SEE something is wrong can also filter down to it.
 			return true;
 		}
-		return e.name().toLowerCase(Locale.ROOT).contains(needle)
-				|| e.modId().toLowerCase(Locale.ROOT).contains(needle)
-				|| label(e.ecosystem()).toLowerCase(Locale.ROOT).contains(needle);
+		return r.name().toLowerCase(Locale.ROOT).contains(needle)
+				|| r.id().toLowerCase(Locale.ROOT).contains(needle)
+				|| tagLabel(r).toLowerCase(Locale.ROOT).contains(needle);
 	}
 
 	/**
@@ -177,13 +188,31 @@ public final class KernelModListScreen extends Screen {
 		g.text(this.font, this.title.copy().append(Component.literal(" (" + ModCatalog.all().size() + ")")),
 				PAD, 8, BRIGHT);
 		g.text(this.font, Component.literal(summary()), PAD, 20, DIM);
-		ModCatalog.Entry selected = this.list == null || this.list.getSelected() == null
-				? null : this.list.getSelected().entry;
-		if (selected != null) detail(g, selected);
+		ModListRows.Row selected = this.list == null || this.list.getSelected() == null
+				? null : this.list.getSelected().row;
+		if (selected != null && selected.entry() == null) group(g, selected);
+		else if (selected != null) detail(g, selected);
+	}
+
+	/** The pane for a heading a carried mod named as its parent: what it is called, what it says, what is under it. */
+	private void group(GuiGraphicsExtractor g, ModListRows.Row r) {
+		int x = this.list.getWidth() + 12;
+		int wrap = Math.max(80, this.width - x - 10);
+		int y = LIST_TOP - 8;
+		g.text(this.font, Component.literal(r.name()), x, y, BRIGHT);
+		y += 14;
+		FormattedText what = FormattedText.of("Mods other mods carry inside themselves list themselves under this name; "
+				+ "it is not a mod of its own.");
+		g.textWithWordWrap(this.font, what, x, y, wrap, DIM);
+		y += 12 * this.font.split(what, wrap).size() + 6;
+		if (!r.description().isEmpty()) {
+			g.textWithWordWrap(this.font, FormattedText.of(r.description()), x, y, wrap, BRIGHT);
+		}
 	}
 
 	/** The right-hand pane. Word-wrapped so a long description does not run off the edge of the screen. */
-	private void detail(GuiGraphicsExtractor g, ModCatalog.Entry e) {
+	private void detail(GuiGraphicsExtractor g, ModListRows.Row r) {
+		ModCatalog.Entry e = r.entry();
 		int x = this.list.getWidth() + 12;
 		int wrap = Math.max(80, this.width - x - 10);
 		// Below the header band, not level with it: the counts line is as wide as it needs to be and runs past
@@ -194,8 +223,15 @@ public final class KernelModListScreen extends Screen {
 		g.text(this.font, Component.literal(e.modId() + (e.version().isEmpty() ? "" : "  " + e.version())),
 				x, y, DIM);
 		y += 12;
-		g.text(this.font, Component.literal(label(e.ecosystem())), x, y, tag(e.ecosystem()));
+		g.text(this.font, Component.literal(tagLabel(r)), x, y, tagColour(r));
 		y += 14;
+		// Where a row that is no jar in mods/ comes from, said once here rather than left for the player to wonder why
+		// a mod they never installed is in the list.
+		String origin = origin(r, this.selectedHasConfig);
+		if (!origin.isEmpty()) {
+			g.textWithWordWrap(this.font, FormattedText.of(origin), x, y, wrap, DIM);
+			y += 12 * this.font.split(FormattedText.of(origin), wrap).size() + 2;
+		}
 		if (e.status() != ModCatalog.Status.OK) {
 			// The wording is the careful part. A withdrawn mod's classes are loaded and its mixins applied, so
 			// "not running" would be untrue and would send someone to reinstall what is already there.
@@ -238,9 +274,9 @@ public final class KernelModListScreen extends Screen {
 			g.textWithWordWrap(this.font, FormattedText.of(e.description()), x, y, wrap, BRIGHT);
 			y += 12 * (1 + this.font.split(FormattedText.of(e.description()), wrap).size());
 		}
-		// What this jar carries inside itself. Not listed as mods of their own -- they are not what anyone
-		// installed -- but a player looking for "why is Kotlin here" should find the answer on the mod that
-		// brought it, not have it missing from the screen entirely.
+		// What this jar carries inside itself. Not rows of their own -- they are not what anyone installed -- unless
+		// they have settings of their own, which a row is the only way to; but a player looking for "why is Kotlin
+		// here" should find the answer on the mod that brought it, not have it missing from the screen entirely.
 		int bundled = ModCatalog.bundledBy(e.modId()).size();
 		if (bundled > 0) {
 			g.text(this.font, Component.literal("bundles " + bundled + " jar(s)"), x, y + 4, DIM);
@@ -253,6 +289,26 @@ public final class KernelModListScreen extends Screen {
 	}
 
 	/**
+	 * Why a row that is not a jar in {@code mods/} is listed, or empty for one that is. A carried mod is listed either for
+	 * settings of its own or, with none, because a carried mod that has some names it as the mod it belongs under; which
+	 * one is said by whether it has a config screen ({@code hasConfig}), not assumed.
+	 */
+	static String origin(ModListRows.Row r, boolean hasConfig) {
+		if (r.game()) return "The game itself.";
+		if (r.kind() == ModListRows.Kind.PLATFORM) return "Part of " + label(r.family()) + " itself, not a jar in mods/.";
+		ModCatalog.Entry e = r.entry();
+		if (e == null || e.installed()) return "";
+		// "?" is the catalogue's "more than one mod carries it", which is not a mod id a player could look for.
+		String by = e.bundledBy();
+		ModCatalog.Entry carrier = null;
+		for (ModCatalog.Entry c : ModCatalog.all()) if (c.modId().equals(by)) carrier = c;
+		String where = carrier != null ? "Carried inside " + carrier.name() : "Carried inside other mods";
+		return where + (hasConfig ? "; listed because it has settings of its own."
+				: "; it has no settings of its own, and is listed because a carried mod with settings names it as the mod "
+						+ "it belongs under.");
+	}
+
+	/**
 	 * Shows the Config button only when the selected mod's own ecosystem has a factory registered for it.
 	 *
 	 * <p>Asked on selection, not per frame: the answer needs a registry lookup in one of three places, and a
@@ -261,13 +317,14 @@ public final class KernelModListScreen extends Screen {
 	private void selectionChanged() {
 		if (this.config == null) return;
 		Row row = this.list == null ? null : this.list.getSelected();
-		this.config.visible = row != null && KernelModConfigScreens.has(row.entry);
+		this.selectedHasConfig = row != null && KernelModConfigScreens.has(row.row);
+		this.config.visible = this.selectedHasConfig;
 	}
 
 	private void openConfig() {
 		Row row = this.list == null ? null : this.list.getSelected();
 		if (row == null) return;
-		Screen screen = KernelModConfigScreens.open(row.entry, this);
+		Screen screen = KernelModConfigScreens.open(row.row, this);
 		// Null here means the factory changed its mind between the probe and the press, or threw. Staying put is
 		// the only sane answer: setScreen(null) would drop the player into the world with the menu gone.
 		if (screen != null) this.minecraft.gui.setScreen(screen);
@@ -304,6 +361,17 @@ public final class KernelModListScreen extends Screen {
 		};
 	}
 
+	/** A row's second line: the loader it came from; "Game" for the game, "Group" for a heading. */
+	private static String tagLabel(ModListRows.Row r) {
+		if (r.game()) return "Game";
+		if (r.family() == null) return "Group";
+		return label(r.family());
+	}
+
+	private static int tagColour(ModListRows.Row r) {
+		return r.family() == null ? BRIGHT : tag(r.family());
+	}
+
 	@Override
 	public void onClose() {
 		this.minecraft.gui.setScreen(this.parent);
@@ -311,8 +379,24 @@ public final class KernelModListScreen extends Screen {
 
 	/** The scrolling list. Vanilla's widget, so scrolling, selection and keyboard navigation are not reinvented. */
 	private static final class ModList extends ObjectSelectionList<Row> {
-		ModList(Minecraft minecraft, int width, int height, int y, int entryHeight) {
+		private final Runnable selected;
+
+		ModList(Minecraft minecraft, int width, int height, int y, int entryHeight, Runnable selected) {
 			super(minecraft, width, height, y, entryHeight);
+			this.selected = selected;
+		}
+
+		/**
+		 * Every way the selection moves comes through here -- a click, and the arrow keys and Tab, which vanilla's
+		 * focus handling turns into {@code setFocused(entry)} and that into this. The Config button follows the
+		 * selection only if it is told here: told from the click alone, it showed the previous row's answer after
+		 * every key press, hidden on a mod with settings and pressable on one without. gate-m56 drives the click and the
+		 * arrow keys through the game's own input handlers; Tab reaches here by the same vanilla path but nothing drives it.
+		 */
+		@Override
+		public void setSelected(Row row) {
+			super.setSelected(row);
+			this.selected.run();
 		}
 
 		/**
@@ -326,27 +410,34 @@ public final class KernelModListScreen extends Screen {
 		}
 	}
 
-	/** One mod: its name, and under it the loader it came from — which is the half no vanilla row has. */
+	/**
+	 * One row: a mod's name, and under it the loader it came from — which is the half no vanilla row has. A mod listed
+	 * under the parent it names is drawn indented beneath it.
+	 */
 	private final class Row extends ObjectSelectionList.Entry<Row> {
-		private final ModCatalog.Entry entry;
+		private final ModListRows.Row row;
 
-		Row(ModCatalog.Entry entry) {
-			this.entry = entry;
+		Row(ModListRows.Row row) {
+			this.row = row;
 		}
 
 		@Override
 		public void extractContent(GuiGraphicsExtractor g, int mouseX, int mouseY, boolean hovered,
 				float partialTick) {
-			int x = getContentX();
+			int indent = this.row.depth() * INDENT;
+			int x = getContentX() + indent;
 			int y = getContentY();
+			int width = getContentWidth() - indent;
 			if (KernelModListScreen.this.list.getSelected() == this) {
-				g.fill(x - 2, y - 2, x + getContentWidth() + 2, y + getContentHeight() + 1, SELECTED);
+				g.fill(x - 2, y - 2, x + width + 2, y + getContentHeight() + 1, SELECTED);
 			}
-			boolean broken = this.entry.status() != ModCatalog.Status.OK;
-			String name = broken ? BROKEN_MARK + this.entry.name() : this.entry.name();
-			g.text(KernelModListScreen.this.font, trim(name, getContentWidth()), x, y, broken ? BROKEN : BRIGHT);
-			g.text(KernelModListScreen.this.font, label(this.entry.ecosystem()), x, y + 11,
-					tag(this.entry.ecosystem()));
+			ModCatalog.Entry entry = this.row.entry();
+			boolean broken = entry != null && entry.status() != ModCatalog.Status.OK;
+			String name = broken ? BROKEN_MARK + this.row.name() : this.row.name();
+			g.text(KernelModListScreen.this.font, trim(name, width), x, y, broken ? BROKEN : BRIGHT);
+			String second = tagLabel(this.row);
+			if (entry != null && this.row.kind() == ModListRows.Kind.MOD && !entry.installed()) second += "  (carried)";
+			g.text(KernelModListScreen.this.font, trim(second, width), x, y + 11, tagColour(this.row));
 		}
 
 		/** Names are arbitrary user data and the column is narrow; an ellipsis beats drawing over the next pane. */
@@ -358,7 +449,7 @@ public final class KernelModListScreen extends Screen {
 
 		@Override
 		public Component getNarration() {
-			return Component.literal(this.entry.name() + ", " + label(this.entry.ecosystem()));
+			return Component.literal(this.row.name() + ", " + tagLabel(this.row));
 		}
 
 		/**
@@ -371,8 +462,8 @@ public final class KernelModListScreen extends Screen {
 		 */
 		@Override
 		public boolean mouseClicked(net.minecraft.client.input.MouseButtonEvent event, boolean doubled) {
+			// setSelected tells the screen, which shows or hides the Config button.
 			KernelModListScreen.this.list.setSelected(this);
-			KernelModListScreen.this.selectionChanged();
 			if (doubled) KernelModListScreen.this.openConfig();
 			return true;
 		}

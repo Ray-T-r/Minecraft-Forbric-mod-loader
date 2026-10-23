@@ -112,6 +112,55 @@ class KernelRuntimeClassesTest {
 				+ "prevent, one level up: " + stale);
 	}
 
+	/**
+	 * A game-side class named by {@code Class.forName("net.forbric.kernel.runtime.X", ...)} and then asked for a method by
+	 * name is a call the registry must list: that is what turns a renamed game-side method into one line at boot instead of
+	 * a NoSuchMethodException half way through a client smoke. Two spellings are recognised, and only these two: the class
+	 * held in a local ({@code Class<?> configs = Class.forName(...)} then {@code configs.getMethod("name", ...)}), and the
+	 * call chained onto the {@code forName} in one statement ({@code Class.forName(...).getMethod("name", ...)}). The client
+	 * smoke's config walk named two methods the registry did not.
+	 *
+	 * <p>Not covered: a method asked of an instance's {@code getClass()}, a class reached any other way, and FIELDS read by
+	 * name -- the client smoke reads the Mods screen's {@code list} and its rows' {@code row} that way, and a rename there
+	 * shows only as gate-m56's "the walk stopped", not here.
+	 */
+	@Test
+	void everyMethodAskedByNameOfAForNamedGameSideClassIsARegisteredCall() throws Exception {
+		Pattern held = Pattern.compile("Class<\\?>\\s+(\\w+)\\s*=\\s*Class\\.forName\\(\\s*\"(net\\.forbric\\.kernel\\.runtime\\.[\\w.$]+)\"");
+		Pattern chained = Pattern.compile("Class\\.forName\\(\\s*\"(net\\.forbric\\.kernel\\.runtime\\.[\\w.$]+)\"[^;]*?"
+				+ "\\.\\s*get(?:Declared)?Method\\(\\s*\"(\\w+)\"");
+		List<String> missing = new ArrayList<>();
+		int heldAsked = 0;
+		int chainedAsked = 0;
+		for (Path file : javaFiles(MAIN)) {
+			if (file.endsWith("KernelRuntimeClasses.java")) continue;
+			String text = Files.readString(file, StandardCharsets.UTF_8);
+			Matcher m = held.matcher(text);
+			Map<String, String> locals = new java.util.HashMap<>();
+			while (m.find()) locals.put(m.group(1), m.group(2));
+			for (Map.Entry<String, String> local : locals.entrySet()) {
+				Matcher call = Pattern.compile("\\b" + local.getKey() + "\\s*\\.\\s*get(?:Declared)?Method\\(\\s*\"(\\w+)\"").matcher(text);
+				while (call.find()) {
+					heldAsked++;
+					requireRegistered(local.getValue(), call.group(1), file, missing);
+				}
+			}
+			Matcher call = chained.matcher(text);
+			while (call.find()) {
+				chainedAsked++;
+				requireRegistered(call.group(1), call.group(2), file, missing);
+			}
+		}
+		assertTrue(heldAsked > 0, "found no game-side method asked of a held class; the pattern no longer matches the boot side");
+		assertTrue(chainedAsked > 0, "found no game-side method asked by a chained call; the pattern no longer matches the boot side");
+		assertTrue(missing.isEmpty(), () -> "asked for by name, but not a registered call: " + missing);
+	}
+
+	private static void requireRegistered(String binary, String name, Path file, List<String> missing) {
+		boolean registered = KernelRuntimeClasses.callsOn(binary).stream().anyMatch(c -> c.name().equals(name));
+		if (!registered) missing.add(binary + "." + name + " (" + MAIN.relativize(file) + ")");
+	}
+
 	@Test
 	void compiledMeansThereIsSourceAndGeneratedMeansThereIsNot() {
 		List<String> wrong = new ArrayList<>();
@@ -316,7 +365,9 @@ class KernelRuntimeClassesTest {
 
 	@Test
 	void verifyPassesWhenTheGameSideJarIsOwned(@TempDir Path dir) throws Exception {
-		URL runtimeJar = jarWith(dir.resolve("forbric-kernel-runtime.jar"), KernelRuntimeClasses.compiled());
+		List<String> delivered = new ArrayList<>(KernelRuntimeClasses.compiled());
+		delivered.addAll(KernelRuntimeClasses.packed());
+		URL runtimeJar = jarWith(dir.resolve("forbric-kernel-runtime.jar"), delivered);
 
 		try (ForbricClassLoader loader =
 				new ForbricClassLoader(new URL[] {runtimeJar}, getClass().getClassLoader())) {
@@ -335,6 +386,49 @@ class KernelRuntimeClassesTest {
 			assertFalse(KernelRuntimeClasses.verify(loader),
 					"a kernel whose own game-side classes are absent must say so; every one of them fails to "
 							+ "link later, at the point of use, naming a class instead of the build");
+		}
+	}
+
+	/**
+	 * A PACKED class is checked for being in the jar and nothing else: a runtime jar with every linked class and without
+	 * it fails, and the class is never loaded -- the stand-in jar built here has it as a bare class with no Mod Menu API
+	 * anywhere, which would not link.
+	 */
+	@Test
+	void verifyFailsWhenAPackedClassIsMissingAndNeverLoadsOne(@TempDir Path dir) throws Exception {
+		assertFalse(KernelRuntimeClasses.packed().isEmpty(), "the registry has a PACKED class to check");
+		URL withoutPacked = jarWith(dir.resolve("without.jar"), KernelRuntimeClasses.compiled());
+		try (ForbricClassLoader loader = new ForbricClassLoader(new URL[] {withoutPacked}, getClass().getClassLoader())) {
+			assertFalse(KernelRuntimeClasses.verify(loader), "a packed class missing from the jar is a broken build");
+		}
+		Path jar = dir.resolve("with.jar");
+		try (OutputStream out = Files.newOutputStream(jar); ZipOutputStream zip = new ZipOutputStream(out)) {
+			for (String binary : KernelRuntimeClasses.compiled()) {
+				String internal = binary.replace('.', '/');
+				zip.putNextEntry(new ZipEntry(internal + ".class"));
+				zip.write(standIn(internal, KernelRuntimeClasses.callsOn(binary), null));
+				zip.closeEntry();
+			}
+			for (String binary : KernelRuntimeClasses.packed()) {
+				zip.putNextEntry(new ZipEntry(binary.replace('.', '/') + ".class"));
+				zip.write("not a class file: loading it would fail".getBytes(StandardCharsets.UTF_8));
+				zip.closeEntry();
+			}
+		}
+		try (ForbricClassLoader loader = new ForbricClassLoader(new URL[] {jar.toUri().toURL()}, getClass().getClassLoader())) {
+			assertTrue(KernelRuntimeClasses.verify(loader), "packed is all verify asks of it");
+		}
+	}
+
+	@Test
+	void aPackedClassHasSourceOutsideTheRuntimeSetAndNoneInIt() throws Exception {
+		for (String binary : KernelRuntimeClasses.packed()) {
+			String relative = binary.replace('.', '/') + ".java";
+			assertFalse(Files.isRegularFile(Path.of("src/runtime/java").resolve(relative)), binary);
+			try (Stream<Path> sets = Files.list(Path.of("src"))) {
+				assertTrue(sets.anyMatch(set -> Files.isRegularFile(set.resolve("java").resolve(relative))),
+						binary + " is PACKED but no source set under src/ has it");
+			}
 		}
 	}
 

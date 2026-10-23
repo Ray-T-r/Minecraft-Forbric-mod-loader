@@ -13,6 +13,7 @@ on the developer's Mac every night at 02:30, started by launchd.
    not changed, and whatever branch it has checked out does not matter.
 2. Links the fixtures that are not in git from the main checkout into that worktree:
    `forbric-kernel/run/client-merged-pack`, `client-popular`, `client-neo-pack`, `client-kernel`,
+   `forbric-kernel/run/modmenu` (a Mod Menu jar for 26.2 and a fabric-api jar: gate-m56 requires them),
    `forbric-kernel/build/compat-inputs`, `sweep80-mac`, `sweep100-mac-network`, `forbric-kernel/.dev` and the
    `fabric-loader` substrate that `./bootstrap.sh` checks out (the installer build compiles it). The gates that write into
    `client-merged-pack` get their own copy from `gates-parallel.py`, never the linked original.

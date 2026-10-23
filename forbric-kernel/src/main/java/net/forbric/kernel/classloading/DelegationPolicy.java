@@ -77,6 +77,10 @@ public final class DelegationPolicy {
 			"net.forbric.kernel.discovery.",
 			"net.forbric.kernel.fabric.",
 			"net.forbric.kernel.util.",
+			// Boot-side like the rest, and named here because the game side reads it: the Mods screen draws the rows
+			// ModListRows plans, and the compatibility screens act on CompatibilityDecision's process-wide state. A
+			// second copy defined game-side would be a second answer, and a seam type both sides cannot share.
+			"net.forbric.kernel.ui.",
 			// The reflective interop hooks that GUEST bytecode calls into (PayloadInterop, ClientShutdown,
 			// ForgeRuntimeInterop). They name no game type — every game/ecosystem class they touch is reached
 			// reflectively through the loader of the object handed to them — so they are boot-side like the rest

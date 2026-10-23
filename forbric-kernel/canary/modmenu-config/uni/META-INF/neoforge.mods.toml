@@ -1,0 +1,10 @@
+modLoader="javafml"
+loaderVersion="[1,)"
+license="Apache-2.0"
+[[mods]]
+modId="forbricmmuni"
+version="1.0.0"
+# Deliberately not the fabric.mod.json's name and description: gate-m56 asserts Mod Menu's list shows those, which is
+# only true if the Fabric identity is drawn from the Fabric build's own metadata and not from this file.
+displayName="Forbric Universal Canary, as NeoForge names it"
+description="gate-m56: NeoForge's description of the universal canary, which Mod Menu's list must not show."
