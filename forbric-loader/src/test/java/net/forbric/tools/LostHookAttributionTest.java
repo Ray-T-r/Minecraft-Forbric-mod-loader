@@ -238,17 +238,34 @@ class LostHookAttributionTest {
 		assertTrue(output.contains("listed-conflict-callers=1 splice-residual-callers=1 unlisted-callers=0"), output);
 	}
 
-	/** The tracked historical report: every row the builder wrote as a hook loss is a row the tools judge. */
+	/**
+	 * The tracked report, the one beside the merged base in forbric-loader/run: every row the builder wrote as a hook
+	 * loss is a row the tools judge, read back in the form it was written. Which methods the report lists, and how many,
+	 * is the build's answer and changes whenever the base is rebuilt (the edit splice took the old report's 1 006 rows
+	 * to 922, its six field-init rows to two, and LivingEntity's constructor off the list), so nothing here pins them:
+	 * each row the text has must come back as that row, the field-init and displaced-lambda forms included.
+	 */
 	@Test void everyHookLostRowOfTheTrackedReportEntersTheDenominator() throws Exception {
 		Path report = Path.of(System.getProperty("user.dir"), "run", "merged-base", "merge-conflicts.txt");
-		long written = Files.readAllLines(report).stream().filter(line -> line.trim().endsWith("hook lost)")).count();
+		List<String> lines = Files.readAllLines(report);
+		assertTrue(!lines.isEmpty() && lines.get(0).startsWith("[merge] classes:"),
+				"the tracked report is the fixture this test reads, as MergedBaseBuilder writes it: " + report);
+		List<String> written = lines.stream().map(String::trim).filter(line -> line.endsWith("hook lost)")).toList();
+		assertFalse(written.isEmpty(), "the tracked report lists no hook loss: " + report);
 		var rows = LostHookAttribution.conflicts(report);
-		assertTrue(written > 1000, "the tracked report is the fixture this test reads: " + written);
-		assertEquals(written, rows.size());
-		assertEquals(6, rows.stream().filter(LostHookAttribution.Conflict::fieldInitKept).count());
-		assertTrue(rows.stream().anyMatch(r -> r.owner().equals("net/minecraft/world/entity/LivingEntity")
-				&& r.method().startsWith("<init>(") && r.lostFamily().equals("forge")));
-		assertEquals(written, MergeabilityCensus.conflicts(report).size());
+		assertEquals(written.size(), rows.size());
+		for (int i = 0; i < written.size(); i++) {
+			String line = written.get(i);
+			var row = rows.get(i);
+			int hash = line.indexOf('#'), space = line.indexOf(' ', hash);
+			assertEquals(line.substring(0, hash), row.owner(), line);
+			assertEquals(line.substring(hash + 1, space), row.method(), line);
+			assertEquals(line.endsWith("forge hook lost)") ? "forge" : line.endsWith("neo hook lost)") ? "neo" : "?",
+					row.lostFamily(), line);
+			assertEquals(line.contains(" to preserve base-added field init; "), row.fieldInitKept(), line);
+			assertEquals(line.contains("(lambda body displaced by its capturer's side; "), row.displacedLambda(), line);
+		}
+		assertEquals(written.size(), MergeabilityCensus.conflicts(report).size());
 	}
 
 	@Test void realReportTraversalAttributesBothSidesAndNamesUnobservedConflicts() throws Exception {
