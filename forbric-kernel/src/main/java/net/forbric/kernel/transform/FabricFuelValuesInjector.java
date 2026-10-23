@@ -30,15 +30,17 @@ import org.objectweb.asm.tree.VarInsnNode;
  * with the method's own registries and feature flags. Applied only when the method builds one builder from its two
  * parameters and builds it once. {@code -Dforbric.fabricFuel=off} leaves it as shipped.
  *
- * <p>The other half is the mixins on {@code vanillaBurnTimes}' RETURN, torrential's Angling Table among them: right
- * after that {@code build()}, the table goes through {@code KernelFabricFuel.throughVanillaReturnHooks}, which calls
+ * <p>The other half is the mixins on {@code vanillaBurnTimes} itself: at its {@code build()} (Create's wrap adds its
+ * fuels to the builder there) and at its RETURN (torrential's Angling Table). Instead of building, populateFuelValues
+ * hands its builder and the table it built to {@code KernelFabricFuel.throughVanillaReturnHooks}, which calls
  * {@code vanillaBurnTimes(Provider, FeatureFlagSet)} — the call native Fabric and MinecraftForge servers make, which
- * forwards to {@code (Provider, FeatureFlagSet, int)} — with it pending; and the merge-added body
- * {@code vanillaBurnTimes(Builder, int)} starts by returning the pending table when there is one. The short-circuit
- * sits in that body, never in the forwarding overload: MixinStubRebind recognises the overload as the carrier's stub
- * only while it is a pure forward, and moves Fabric injectors into the body by that recognition. It jumps to the
- * body's single {@code areturn} rather than adding a return of its own, so a RETURN or TAIL injector there — whatever
- * its ordinal — runs on both paths. {@code -Dforbric.fabricFuel.returnHooks=off} leaves both methods without it.
+ * forwards to {@code (Provider, FeatureFlagSet, int)} — with the builder pending; and the body that builds vanilla's
+ * table starts by taking the pending builder when there is one and jumping with it to its own {@code build()}. The
+ * short-circuit sits in that body, never in a forwarding overload: MixinStubRebind recognises an overload as the
+ * carrier's stub only while it is a pure forward, and moves Fabric injectors into the body by that recognition. It
+ * joins the body's own {@code build()} and single {@code areturn} rather than adding either, so an injector at that
+ * call and a RETURN or TAIL injector — whatever its ordinal — run on both paths; vanilla's entries and the native point
+ * before the build are what it skips. {@code -Dforbric.fabricFuel.returnHooks=off} leaves both methods without it.
  *
  * <p>The third half is the client's second table. A client on a NeoForge connection builds vanilla's table — where the
  * guest's own wrap fires the fuel events and every return hook runs — and right after it NeoForge's from the synced data
@@ -46,7 +48,8 @@ import org.objectweb.asm.tree.VarInsnNode;
  * second time per native build. So the native build reports what it did and the data-map table built from the same
  * registries gets that instead ({@code KernelFabricFuel}'s class comment has the rule): the native point in vanilla's
  * body — its {@code Builder.remove(TagKey)} right before {@code build()}, the call fabric-content-registries wraps — is
- * bracketed by {@code openNativePoint}/{@code closeNativePoint}, the body's built table goes through
+ * bracketed by {@code openNativePoint}/{@code closeNativePoint}, the builder going into its {@code build()} goes through
+ * {@code nativeBuilding} (the baseline, before anything Mixin put at the build) and the built table through
  * {@code nativeBuilt}, every public mutator of {@code FuelValues.Builder} reports its call ({@code recordCall}) and its
  * registries constructor the registries ({@code builderMade}); after weaving, the two-argument overload reports entering
  * and the table it returns ({@link #afterMixin}). All of it is keyed on the platform classes' own shapes, not on any
@@ -73,7 +76,7 @@ public final class FabricFuelValuesInjector implements ClassTransformer {
 	/** The merge-added body the forwarding {@code vanillaBurnTimes(Provider, FeatureFlagSet, int)} calls. */
 	static final String BODY_DESC = "(L" + BUILDER + ";I)L" + FUEL_VALUES + ";";
 	static final String KERNEL_FUEL = "net/forbric/kernel/runtime/KernelFabricFuel";
-	static final String THROUGH_DESC = "(L" + FUEL_VALUES + ";Lnet/minecraft/core/HolderLookup$Provider;"
+	static final String THROUGH_DESC = "(L" + BUILDER + ";L" + FUEL_VALUES + ";Lnet/minecraft/core/HolderLookup$Provider;"
 			+ "Lnet/minecraft/world/flag/FeatureFlagSet;)L" + FUEL_VALUES + ";";
 
 	/** What {@link #repair} inserted into populateFuelValues. */
@@ -126,9 +129,9 @@ public final class FabricFuelValuesInjector implements ClassTransformer {
 					+ "builds — the merged game builds its fuels there and never reached Fabric's hook in vanillaBurnTimes");
 		}
 		if ((inserted & RETURN_HOOKED) != 0) {
-			ForbricLog.info("[Forbric/Fuel] DataMapHooks.populateFuelValues hands the table it built through "
-					+ "FuelValues.vanillaBurnTimes' return — a mod's mixin there (torrential's Angling Table) now reaches "
-					+ "the fuels the merged server uses");
+			ForbricLog.info("[Forbric/Fuel] DataMapHooks.populateFuelValues hands its builder to FuelValues.vanillaBurnTimes' "
+					+ "own build() and the table through its return — a mod's mixin at either (a wrap of the build that adds its "
+					+ "fuels, torrential's Angling Table) now reaches the fuels the merged server uses");
 		}
 		return writer.toByteArray();
 	}
@@ -160,7 +163,9 @@ public final class FabricFuelValuesInjector implements ClassTransformer {
 				inserted |= APPLIED;
 			}
 			if (!hooked && returnHooksEnabled()) {
-				// [table] -> [table, registries, features] -> [table'] : the built table, then what the hooks make of it.
+				// [builder] -> [builder, builder] -> build -> [builder, table] -> [builder, table, registries, features]
+				// -> [table']: the builder and the table built from it, then what vanilla's build and its hooks make of it.
+				method.instructions.insertBefore(build, new InsnNode(Opcodes.DUP));
 				InsnList through = new InsnList();
 				through.add(new VarInsnNode(Opcodes.ALOAD, 0));
 				through.add(new VarInsnNode(Opcodes.ALOAD, 1));
@@ -174,8 +179,9 @@ public final class FabricFuelValuesInjector implements ClassTransformer {
 	}
 
 	/**
-	 * Puts {@code KernelFabricFuel.takePending()} at the head of {@code vanillaBurnTimes(Builder, int)}: a pending table
-	 * goes straight to the body's own {@code areturn}, everything else runs the body as shipped.
+	 * Puts {@code KernelFabricFuel.takePendingBuilder()} at the head of the body that builds vanilla's table: a pending
+	 * builder goes straight to the body's own {@code build()} (and from there its one {@code areturn}), everything else
+	 * runs the body as shipped.
 	 *
 	 * <p>Only while the forwarding overload still calls this body, and the body still ends in its one {@code areturn}
 	 * after building its builder; anything else is left alone, and the anchor audit names it. The frame at the join is
@@ -201,7 +207,7 @@ public final class FabricFuelValuesInjector implements ClassTransformer {
 		if (body == null || !forwarded && !fromEntry) return bytes;
 		AbstractInsnNode exit = null;
 		for (AbstractInsnNode insn : body.instructions) {
-			if (insn instanceof MethodInsnNode call && call.owner.equals(KERNEL_FUEL) && call.name.equals("takePending")) return bytes;   // already in
+			if (insn instanceof MethodInsnNode call && call.owner.equals(KERNEL_FUEL) && call.name.equals("takePendingBuilder")) return bytes;   // already in
 			if (insn.getOpcode() == Opcodes.ARETURN) {
 				if (exit != null) return bytes;
 				exit = insn;
@@ -216,7 +222,7 @@ public final class FabricFuelValuesInjector implements ClassTransformer {
 
 		LabelNode join = new LabelNode();
 		InsnList head = new InsnList();
-		head.add(new MethodInsnNode(Opcodes.INVOKESTATIC, KERNEL_FUEL, "takePending", "()L" + FUEL_VALUES + ";", false));
+		head.add(new MethodInsnNode(Opcodes.INVOKESTATIC, KERNEL_FUEL, "takePendingBuilder", "()L" + BUILDER + ";", false));
 		head.add(new InsnNode(Opcodes.DUP));
 		head.add(new JumpInsnNode(Opcodes.IFNONNULL, join));
 		head.add(new InsnNode(Opcodes.POP));
@@ -234,14 +240,16 @@ public final class FabricFuelValuesInjector implements ClassTransformer {
 				default -> Opcodes.INTEGER;
 			});
 		}
-		tail.add(new FrameNode(Opcodes.F_NEW, locals.size(), locals.toArray(), 1, new Object[] { FUEL_VALUES }));
-		body.instructions.insertBefore(exit, tail);
+		// The join is the body's own build(), with the builder it builds on the stack: what Mixin puts at that call
+		// (a guest's wrap adding its fuels) runs on the pending builder too.
+		tail.add(new FrameNode(Opcodes.F_NEW, locals.size(), locals.toArray(), 1, new Object[] { BUILDER }));
+		body.instructions.insertBefore(built, tail);
 
 		ClassWriter writer = new ClassWriter(ClassWriter.COMPUTE_MAXS);
 		node.accept(writer);
-		ForbricLog.info("[Forbric/Fuel] FuelValues.%s%s returns the fuel table populateFuelValues "
-				+ "hands it instead of rebuilding vanilla's, so the return hooks of both vanillaBurnTimes run on the table "
-				+ "the merged server uses", body.name, body.desc);
+		ForbricLog.info("[Forbric/Fuel] FuelValues.%s%s builds the fuel builder populateFuelValues hands it at its own "
+				+ "build() instead of vanilla's, so what a mod puts at that build and the return hooks of both vanillaBurnTimes "
+				+ "run on the table the merged server uses", body.name, body.desc);
 		return writer.toByteArray();
 	}
 
@@ -291,6 +299,10 @@ public final class FabricFuelValuesInjector implements ClassTransformer {
 			site.instructions.insertBefore(remove, open);
 			site.instructions.insert(remove, new MethodInsnNode(Opcodes.INVOKESTATIC, KERNEL_FUEL, "closeNativePoint",
 					"(L" + BUILDER + ";)L" + BUILDER + ";", false));
+			InsnList building = new InsnList();
+			building.add(new InsnNode(Opcodes.DUP));
+			building.add(new MethodInsnNode(Opcodes.INVOKESTATIC, KERNEL_FUEL, "nativeBuilding", "(L" + BUILDER + ";)V", false));
+			site.instructions.insertBefore(build, building);
 			site.instructions.insert(build, new MethodInsnNode(Opcodes.INVOKESTATIC, KERNEL_FUEL, "nativeBuilt",
 					"(L" + FUEL_VALUES + ";)L" + FUEL_VALUES + ";", false));
 			where.add(site.name + site.desc);

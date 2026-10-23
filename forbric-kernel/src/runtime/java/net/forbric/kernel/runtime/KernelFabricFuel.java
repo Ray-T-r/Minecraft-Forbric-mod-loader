@@ -44,11 +44,12 @@ import net.minecraft.world.level.block.entity.FuelValues;
  * with 200, so both run on it. The merged server never calls it — its table comes from {@code populateFuelValues} —
  * so the Angling Table would not burn on a Forbric server while the client, which does call it, thought it would.
  *
- * <p>{@link #throughVanillaReturnHooks} hands the table {@code populateFuelValues} built through that same
- * two-argument call as its result: the merge-added body {@code vanillaBurnTimes(Builder, int)} starts by returning
- * the {@link #takePending pending} table when there is one, so nothing of vanilla's is rebuilt and the body's own
- * anchors (fabric-content-registries' fuel events among them, already run by {@link #apply}) are skipped, while every
- * RETURN hook on each of the three overloads runs on it once, in the order the native server runs them. It is
+ * <p>{@link #throughVanillaReturnHooks} hands the builder {@code populateFuelValues} built from through that same
+ * two-argument call: the body that builds vanilla's table starts by taking the {@link #takePendingBuilder pending}
+ * builder when there is one and jumping with it to its own {@code build()}, so nothing of vanilla's is added and the
+ * body's native point (fabric-content-registries' fuel events, already run by {@link #apply}) is skipped, while the
+ * build — and every guest injector at it, a wrap that puts its own fuels in the builder first (Create's) — and every
+ * RETURN hook on each of the three overloads run on it once, in the order the native server runs them. It is
  * Fabric's hooks applying on top of the data map's table, the way they apply on top of vanilla's natively — a hook
  * may replace entries or return another table, as it may there. A client that calls {@code vanillaBurnTimes} itself
  * has nothing pending and gets the method as shipped.
@@ -168,11 +169,14 @@ public final class KernelFabricFuel {
 		}
 	}
 
+	/** The server's builder on its way through vanillaBurnTimes' build, with the table it built already as a fallback. */
 	private static final class Pending {
+		final FuelValues.Builder builder;
 		final FuelValues values;
 		boolean taken;
 
-		Pending(FuelValues values) {
+		Pending(FuelValues.Builder builder, FuelValues values) {
+			this.builder = builder;
 			this.values = values;
 		}
 	}
@@ -210,8 +214,15 @@ public final class KernelFabricFuel {
 	}
 
 	/**
-	 * Called by {@code DataMapHooks.populateFuelValues} with the table it built; returns what vanillaBurnTimes' return
-	 * hooks make of it.
+	 * Called by {@code DataMapHooks.populateFuelValues} with its builder and the table it built from it; returns the
+	 * table vanillaBurnTimes' own {@code build()} makes of that builder — through every guest injector at that call, a
+	 * {@code @WrapOperation} that adds its fuels to the builder first among them — and through its return hooks.
+	 *
+	 * <p>Natively a guest's wrap of the {@code build()} in {@code vanillaBurnTimes} runs on the server's table, because
+	 * that is where the native server's table is built. The merged server builds its table in populateFuelValues, so the
+	 * short-circuit in the body jumps to right before its {@code build()} with this builder on the stack instead of
+	 * vanilla's: vanilla's entries and the native point (where the fuel events fire, already fired by {@link #apply}) are
+	 * skipped, the build and everything Mixin put at it run once, on the data map's builder.
 	 *
 	 * <p>The table goes back unchanged when the body's short-circuit was never reached: a carrier whose stub stopped
 	 * forwarding to it would otherwise have the full vanilla table rebuilt in place of the data map's, and a mixin
@@ -219,7 +230,7 @@ public final class KernelFabricFuel {
 	 * such a cancel replaces only vanilla's table; here there is more in it than vanilla's, so the data map's result
 	 * stands. A hook that throws costs its own change, not the server's fuel table.
 	 */
-	public static FuelValues throughVanillaReturnHooks(FuelValues built, HolderLookup.Provider registries,
+	public static FuelValues throughVanillaReturnHooks(FuelValues.Builder builder, FuelValues built, HolderLookup.Provider registries,
 			FeatureFlagSet features) {
 		if (built == null || "off".equalsIgnoreCase(System.getProperty(RETURN_HOOKS, "on"))) return built;
 		Carried carried = carriedFor(registries, features);
@@ -232,7 +243,7 @@ public final class KernelFabricFuel {
 				return built;
 			}
 		}
-		Pending pending = new Pending(built);
+		Pending pending = new Pending(builder, built);
 		Pending outer = PENDING.get();
 		PENDING.set(pending);
 		try {
@@ -244,9 +255,10 @@ public final class KernelFabricFuel {
 				return built;
 			}
 			if (HOOKS_PROVED.compareAndSet(false, true)) {
-				ForbricLog.info("[Forbric/Fuel] the fuel table NeoForge's populateFuelValues built went through "
-						+ "FuelValues.vanillaBurnTimes' return hooks — the merged server never calls that method, so a "
-						+ "mod's mixin there (torrential's Angling Table) never reached the fuels a furnace uses");
+				ForbricLog.info("[Forbric/Fuel] the fuel builder NeoForge's populateFuelValues filled was built at "
+						+ "FuelValues.vanillaBurnTimes' own build() and went through its return hooks — the merged server never "
+						+ "calls that method, so a mod's mixin there (a wrap that adds its fuels, torrential's Angling Table) "
+						+ "never reached the fuels a furnace uses");
 			}
 			return hooked == null ? built : hooked;
 		} catch (Throwable t) {
@@ -317,8 +329,24 @@ public final class KernelFabricFuel {
 	}
 
 	/**
+	 * Called right before vanilla's body builds its table, before anything Mixin put at that {@code build()}: the
+	 * builder's entries there are the baseline what follows is measured against, so a guest's wrap of the build that adds
+	 * its own fuels is carried to the data-map table with the return hooks' changes.
+	 */
+	@SuppressWarnings("unchecked")
+	public static void nativeBuilding(FuelValues.Builder builder) {
+		Outer outer = OUTER.get();
+		if (outer == null || outer.window == null || outer.built != null || builder == null) return;
+		try {
+			outer.built = new LinkedHashMap<>((Map<Item, Integer>) builderValues().get(builder));
+		} catch (Throwable t) {
+			Caught.warn(t, "[Forbric/Fuel] could not take the fuel builder's baseline; the table it builds is the baseline instead");
+		}
+	}
+
+	/**
 	 * Called right after vanilla's body builds its table, before any return hook in it: what the body built, as the
-	 * baseline the return hooks' changes are measured against.
+	 * baseline the return hooks' changes are measured against when {@link #nativeBuilding} took none.
 	 */
 	public static FuelValues nativeBuilt(FuelValues table) {
 		Outer outer = OUTER.get();
@@ -478,15 +506,15 @@ public final class KernelFabricFuel {
 	}
 
 	/**
-	 * The table {@link #throughVanillaReturnHooks} is carrying, once; null when there is none. Called at the head of
-	 * the merge-added {@code FuelValues.vanillaBurnTimes(Builder, int)}, which returns it as its result instead of
-	 * building vanilla's. Once only, so a hook that calls vanillaBurnTimes again gets the method as shipped.
+	 * The builder {@link #throughVanillaReturnHooks} is carrying, once; null when there is none. Called at the head of
+	 * the body that builds vanilla's table, which then builds this one instead, at its own {@code build()}. Once only, so
+	 * a hook that calls vanillaBurnTimes again gets the method as shipped.
 	 */
-	public static FuelValues takePending() {
+	public static FuelValues.Builder takePendingBuilder() {
 		Pending pending = PENDING.get();
 		if (pending == null || pending.taken) return null;
 		pending.taken = true;
-		return pending.values;
+		return pending.builder;
 	}
 
 	private static void warnHooksOnce(String what) {

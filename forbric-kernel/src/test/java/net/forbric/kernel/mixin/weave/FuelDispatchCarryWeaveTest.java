@@ -27,8 +27,11 @@ import net.forbric.kernel.transform.FabricFuelValuesInjector;
  * probe plays a server and a client through a startup and a reload. Natively each phase fires the events twice and the
  * return hook twice (the server's table, the client's table). Carried, the client's data-map table gets the native
  * build's result — the listener calls replayed, the return hook's entry put on — and each phase fires twice, with the
- * same tables as when everything fires again ({@code -Dforbric.fabricFuel.carry=off}: three times). Without the wrap,
- * nothing proves the events fired at the native point, so the data-map table fires them itself.
+ * same tables as when everything fires again ({@code -Dforbric.fabricFuel.carry=off}: three times). A third guest wraps
+ * vanillaBurnTimes' {@code build()} and puts its own fuel in the builder: natively it runs once per table (twice per
+ * phase), on the server's builder too, and its fuel is in every table; the merged server runs it on the data map's
+ * builder (the body's short-circuit joins its build), and the client's data-map table gets its fuel carried. Without the
+ * wrap of the native point, nothing proves the events fired there, so the data-map table fires them itself.
  */
 @net.forbric.kernel.transform.ExecutesInjector(FabricFuelValuesInjector.class)
 class FuelDispatchCarryWeaveTest {
@@ -36,18 +39,21 @@ class FuelDispatchCarryWeaveTest {
 	private static final String CONFIG = "hearthkeep.mixins.json";
 	private static final String NO_WRAP_CONFIG = "hearthkeep-nowrap.mixins.json";
 
-	/** Both the server's and the client's tables hold the data map's coal, the listener's peat and the hook's kiln brick. */
-	private static final String TABLES = " server={coal=1600, peat=800, kiln_brick=300} clientVanilla={coal=1600, peat=800, kiln_brick=300}"
-			+ " clientDataMap={coal=1600, peat=800, kiln_brick=300}";
-	private static final String CARRIED = WeaveHarnessMain.DONE + " startup builds=2 exclusions=2 hooks=2" + TABLES
-			+ " | reload builds=2 exclusions=2 hooks=2" + TABLES;
-	private static final String FIRED_AGAIN = WeaveHarnessMain.DONE + " startup builds=3 exclusions=3 hooks=3" + TABLES
-			+ " | reload builds=3 exclusions=3 hooks=3" + TABLES;
+	/**
+	 * Every table holds the data map's coal, the listener's peat, the ember a wrap of vanillaBurnTimes' build() puts in
+	 * the builder, and the hook's kiln brick: natively both the server's and the client's table come out of that build.
+	 */
+	private static final String TABLES = " server={coal=1600, peat=800, ember=6400, kiln_brick=300}"
+			+ " clientVanilla={coal=1600, peat=800, ember=6400, kiln_brick=300} clientDataMap={coal=1600, peat=800, ember=6400, kiln_brick=300}";
+	private static final String CARRIED = WeaveHarnessMain.DONE + " startup builds=2 exclusions=2 hooks=2 embers=2" + TABLES
+			+ " | reload builds=2 exclusions=2 hooks=2 embers=2" + TABLES;
+	private static final String FIRED_AGAIN = WeaveHarnessMain.DONE + " startup builds=3 exclusions=3 hooks=3 embers=3" + TABLES
+			+ " | reload builds=3 exclusions=3 hooks=3 embers=3" + TABLES;
 	/** No wrap: the events fire only where the kernel fires them (the server's table, the client's data-map table). */
 	private static final String NO_WRAP_TABLES = " server={coal=1600, peat=800, kiln_brick=300} clientVanilla={coal=1600, kiln_brick=300}"
 			+ " clientDataMap={coal=1600, peat=800, kiln_brick=300}";
-	private static final String NO_WRAP = WeaveHarnessMain.DONE + " startup builds=2 exclusions=2 hooks=2" + NO_WRAP_TABLES
-			+ " | reload builds=2 exclusions=2 hooks=2" + NO_WRAP_TABLES;
+	private static final String NO_WRAP = WeaveHarnessMain.DONE + " startup builds=2 exclusions=2 hooks=2 embers=0" + NO_WRAP_TABLES
+			+ " | reload builds=2 exclusions=2 hooks=2 embers=0" + NO_WRAP_TABLES;
 	private static final String CARRY_LOG = "[Forbric/Fuel] the data-map fuel table got the result of the native fuel-event dispatch";
 	private static final String DELTA_LOG = "[Forbric/Fuel] the data-map fuel table got what vanillaBurnTimes' return hooks did";
 
@@ -96,6 +102,7 @@ class FuelDispatchCarryWeaveTest {
 					 public static final Item CRIMSON_PLANKS = new Item("crimson_planks", Set.of(ItemTags.NON_FLAMMABLE_WOOD));
 					 public static final Item PEAT = new Item("peat", Set.of());
 					 public static final Item KILN_BRICK = new Item("kiln_brick", Set.of());
+					 public static final Item EMBER = new Item("ember", Set.of());
 					}
 					"""),
 			// Vanilla's shape: the two-argument overload forwards to the three-argument one, which builds the table and ends
@@ -224,7 +231,28 @@ class FuelDispatchCarryWeaveTest {
 					 }
 					}
 					"""),
-			Map.entry("org/hearthkeep/Counters.java", "package org.hearthkeep; public class Counters { public static int builds, exclusions, hooks; }"),
+			// A guest that puts its own fuel in the builder at vanillaBurnTimes' build(), as a content mod's fuel table does.
+			Map.entry("org/hearthkeep/mixin/EmberMixin.java", """
+					package org.hearthkeep.mixin;
+					import com.llamalad7.mixinextras.injector.wrapoperation.Operation;
+					import com.llamalad7.mixinextras.injector.wrapoperation.WrapOperation;
+					import net.minecraft.world.item.Items;
+					import net.minecraft.world.level.block.entity.FuelValues;
+					import org.hearthkeep.Counters;
+					import org.spongepowered.asm.mixin.Mixin;
+					import org.spongepowered.asm.mixin.injection.At;
+					@Mixin(FuelValues.class)
+					public class EmberMixin {
+					 @WrapOperation(method = "vanillaBurnTimes(Lnet/minecraft/core/HolderLookup$Provider;Lnet/minecraft/world/flag/FeatureFlagSet;I)Lnet/minecraft/world/level/block/entity/FuelValues;",
+					   at = @At(value = "INVOKE", target = "Lnet/minecraft/world/level/block/entity/FuelValues$Builder;build()Lnet/minecraft/world/level/block/entity/FuelValues;"))
+					 private static FuelValues stoke(FuelValues.Builder builder, Operation<FuelValues> original) {
+					  Counters.embers++;
+					  builder.add(Items.EMBER, 6400);
+					  return original.call(builder);
+					 }
+					}
+					"""),
+			Map.entry("org/hearthkeep/Counters.java", "package org.hearthkeep; public class Counters { public static int builds, exclusions, hooks, embers; }"),
 			// Another mod's listeners: peat burns, so would crimson planks (vanilla's removal takes them), soggy items do not.
 			Map.entry("org/hearthkeep/Peat.java", """
 					package org.hearthkeep;
@@ -263,11 +291,11 @@ class FuelDispatchCarryWeaveTest {
 					  FeatureFlagSet features = new FeatureFlagSet();
 					  List<String> phases = new ArrayList<>();
 					  for (String phase : List.of("startup", "reload")) {
-					   Counters.builds = Counters.exclusions = Counters.hooks = 0;
+					   Counters.builds = Counters.exclusions = Counters.hooks = Counters.embers = 0;
 					   FuelValues onServer = DataMapHooks.populateFuelValues(server, features);
 					   FuelValues clientVanilla = FuelValues.vanillaBurnTimes(client, features);
 					   FuelValues clientDataMap = DataMapHooks.populateFuelValues(client, features);
-					   phases.add(phase + " builds=" + Counters.builds + " exclusions=" + Counters.exclusions + " hooks=" + Counters.hooks
+					   phases.add(phase + " builds=" + Counters.builds + " exclusions=" + Counters.exclusions + " hooks=" + Counters.hooks + " embers=" + Counters.embers
 					     + " server=" + show(onServer) + " clientVanilla=" + show(clientVanilla) + " clientDataMap=" + show(clientDataMap));
 					  }
 					  return String.join(" | ", phases);
@@ -289,7 +317,7 @@ class FuelDispatchCarryWeaveTest {
 		sources.add(Path.of("src/runtime/java/net/forbric/kernel/runtime/KernelFabricFuel.java"));
 		sources.add(Path.of("src/runtime/java/net/forbric/kernel/runtime/KernelFuelValueContext.java"));
 		Path json = work.resolve(CONFIG), noWrapJson = work.resolve(NO_WRAP_CONFIG);
-		Files.writeString(json, "{\"required\":true,\"package\":\"org.hearthkeep.mixin\",\"mixins\":[\"HearthMixin\",\"KilnMixin\"],"
+		Files.writeString(json, "{\"required\":true,\"package\":\"org.hearthkeep.mixin\",\"mixins\":[\"HearthMixin\",\"KilnMixin\",\"EmberMixin\"],"
 				+ "\"injectors\":{\"defaultRequire\":1}}");
 		Files.writeString(noWrapJson, "{\"required\":true,\"package\":\"org.hearthkeep.mixin\",\"mixins\":[\"KilnMixin\"],"
 				+ "\"injectors\":{\"defaultRequire\":1}}");
