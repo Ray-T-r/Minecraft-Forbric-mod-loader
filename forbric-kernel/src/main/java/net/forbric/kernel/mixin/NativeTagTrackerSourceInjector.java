@@ -53,6 +53,9 @@ public final class NativeTagTrackerSourceInjector implements ClassTransformer{
 		MethodNode resetCopy=staticCopy(reset,prefix+"Reset",tracker);current.methods.add(resetCopy);MethodNode begin=begin(current,sourceMap,ready,tracker,resetCopy,prefix+"Begin",id);current.methods.add(begin);
 		List<MethodNode>rewritten=new ArrayList<>();for(MethodNode source:tagMethods){MethodNode live=method(current,source.name,source.desc);if(live==null)return false;MethodNode helper=copy(source,names.get(source.name+source.desc),Opcodes.ACC_PRIVATE,current.name,primary.name,sourceMap,names);current.methods.add(helper);if(!forwarder(live,current.name,tag,TYPE,helper,sourceMap,ready,primary.name))return false;rewritten.add(live);}
 		for(MethodNode live:current.methods)if(Type.getArgumentTypes(live.desc).length==1&&Type.getArgumentTypes(live.desc)[0].equals(Type.getObjectType(tag))&&Type.getReturnType(live.desc).equals(Type.getObjectType(tracker))&&directTrackerGetter(live,current.name,primary.name,sourceMap,tracker))rewritten.add(live);
+		// Before the sample hooks go in: the current cell's own code between the flow read and the cell's end, which the
+		// copied metric's later read of the same vector has to be proved unable to see changed (vectorWindowWritesNone).
+		List<AbstractInsnNode>flowWindow=window(template.flowGetter(),template.cellEnd());
 		instrument(current,template,sourceLookup,begin,ready,id);
 		current.methods.add(template.metric());
 		List<MethodContract>definitions=new ArrayList<>();definitions.add(contract(current.name,ctor));definitions.add(contract(current.name,extract));definitions.add(contract(current.name,sourceLookup));definitions.add(contract(current.name,begin));definitions.add(contract(current.name,resetCopy));definitions.add(contract(current.name,template.metric()));for(MethodNode m:rewritten)definitions.add(contract(current.name,m));for(MethodNode m:current.methods)if(names.containsValue(m.name))definitions.add(contract(current.name,m));
@@ -64,11 +67,48 @@ public final class NativeTagTrackerSourceInjector implements ClassTransformer{
 		boolean expanded;do{expanded=false;for(MethodNode candidate:vector.methods)if(vectorSymbols.contains(candidate.name+candidate.desc))for(var instruction:candidate.instructions)if(instruction instanceof MethodInsnNode call&&call.owner.equals(vector.name))expanded|=vectorSymbols.add(call.name+call.desc);}while(expanded);
 		for(MethodNode dependency:vector.methods)if(dependency.name.equals("<clinit>")||dependency.name.equals("<init>")||vectorSymbols.contains(dependency.name+dependency.desc)){MethodNode nativeBody=method(nativeVector,dependency.name,dependency.desc);if(nativeBody==null||!MixinInstructionFingerprint.hash(nativeBody).equals(MixinInstructionFingerprint.hash(dependency)))return false;definitions.add(contract(vector.name,dependency));if(!dependency.name.startsWith("<"))vectorMethods.add(contract(vector.name,dependency));}
 		Map<String,Integer>flags=new HashMap<>();for(MethodContract dependency:definitions){ClassNode declaration=dependency.owner().equals(current.name.replace('/','.'))?current:classes.apply(dependency.owner().replace('.','/'));if(declaration==null)return false;MethodNode body=method(declaration,dependency.name(),dependency.descriptor());if(body==null)return false;flags.put(dependency.owner()+"#"+dependency.name()+dependency.descriptor(),body.access);}
+		boolean vectorStable=vectorWindowWritesNone(flowWindow,template.cellEnd(),template.vector(),definitions,current,classes);
 		List<KernelTagSourceContracts.FieldShape>fields=new ArrayList<>();Set<String>fieldKeys=new HashSet<>();
-		for(MethodContract dependency:definitions){ClassNode declaration=dependency.owner().equals(current.name.replace('/','.'))?current:classes.apply(dependency.owner().replace('.','/'));MethodNode body=method(declaration,dependency.name(),dependency.descriptor());for(var instruction:body.instructions)if(instruction instanceof FieldInsnNode field){KernelTagSourceContracts.FieldShape shape=fieldShape(field,current,classes);if(shape==null)return false;if(fieldKeys.add(shape.owner()+"#"+shape.name()))fields.add(shape);}}
+		for(MethodContract dependency:definitions){ClassNode declaration=dependency.owner().equals(current.name.replace('/','.'))?current:classes.apply(dependency.owner().replace('.','/'));MethodNode body=method(declaration,dependency.name(),dependency.descriptor());for(var instruction:body.instructions)if(instruction instanceof FieldInsnNode field){KernelTagSourceContracts.FieldShape shape=fieldShape(field,current,classes);if(shape==null)return false;if(vectorStable&&shape.owner().equals(template.vector())&&(shape.flags()&Opcodes.ACC_STATIC)==0)shape=new KernelTagSourceContracts.FieldShape(shape.owner(),shape.name(),shape.descriptor(),shape.flags(),true);if(fieldKeys.add(shape.owner()+"#"+shape.name()))fields.add(shape);}}
 		KernelTagSourceContracts.register(id,new KernelTagSourceContracts.Schema(current.name,sourceMap,ready,tracker,tag,contract(current.name,template.current()),definitions,vectorMethods,flags,fields,contract(fluid.name,queryBody),contract(fluid.name,typeBody)));
 		return true;
 	}catch(RuntimeException unsupported){Caught.expected(unsupported);return false;}}
+	/** The instructions strictly between {@code from} and {@code end}, in order. */
+	private static List<AbstractInsnNode>window(AbstractInsnNode from,AbstractInsnNode end){List<AbstractInsnNode>result=new ArrayList<>();for(var i=from.getNext();i!=null&&i!=end;i=i.getNext())result.add(i);return result;}
+	/**
+	 * Whether nothing that runs between the sampled flow vector's read and the copied metric's later use of it can write
+	 * a field of the vector's class: the window falls through to the cell's end or jumps there or within itself, makes no
+	 * dynamic call, writes no such field, and calls only methods whose bodies are proved unchanged ({@code definitions}),
+	 * or {@code java.lang.Math}, and that hold to the same, transitively. A constructor of the vector's class writes its
+	 * own new object, which nothing else holds yet. Native code reads the vector right where it was read; this is what
+	 * makes the later read the same read, whatever the declared {@code final} of those fields says at run time.
+	 */
+	static boolean vectorWindowWritesNone(List<AbstractInsnNode>window,AbstractInsnNode end,String vector,List<MethodContract>definitions,ClassNode current,Function<String,ClassNode>classes){
+		if(window.isEmpty())return false;Set<AbstractInsnNode>inside=Collections.newSetFromMap(new IdentityHashMap<>());inside.addAll(window);
+		Set<String>verified=new HashSet<>();for(MethodContract contract:definitions)verified.add(contract.owner().replace('.','/')+"."+contract.name()+contract.descriptor());
+		for(var instruction:window){
+			if(instruction instanceof JumpInsnNode jump&&!inside.contains(jump.label)&&next(jump.label)!=end)return false;
+			if(instruction instanceof TableSwitchInsnNode||instruction instanceof LookupSwitchInsnNode)return false;
+			int opcode=instruction.getOpcode();if(opcode==Opcodes.ATHROW||opcode>=Opcodes.IRETURN&&opcode<=Opcodes.RETURN)return false;
+		}
+		Deque<MethodNode>pending=new ArrayDeque<>();Set<String>seen=new HashSet<>();
+		if(!leavesVectorAlone(window,false,vector,verified,current,classes,pending,seen))return false;
+		while(!pending.isEmpty()){MethodNode called=pending.removeFirst();if(!leavesVectorAlone(Arrays.asList(called.instructions.toArray()),called.name.equals("<init>"),vector,verified,current,classes,pending,seen))return false;}
+		return true;
+	}
+	private static boolean leavesVectorAlone(List<AbstractInsnNode>code,boolean ownConstructor,String vector,Set<String>verified,ClassNode current,Function<String,ClassNode>classes,Deque<MethodNode>pending,Set<String>seen){
+		for(var instruction:code){
+			if(instruction instanceof InvokeDynamicInsnNode)return false;
+			if(instruction instanceof FieldInsnNode field&&(field.getOpcode()==Opcodes.PUTFIELD||field.getOpcode()==Opcodes.PUTSTATIC)&&field.owner.equals(vector)&&!(ownConstructor&&field.getOpcode()==Opcodes.PUTFIELD))return false;
+			if(!(instruction instanceof MethodInsnNode call))continue;
+			if(call.owner.equals("java/lang/Math")&&call.getOpcode()==Opcodes.INVOKESTATIC)continue;
+			if(ownConstructor&&call.owner.equals("java/lang/Object")&&call.name.equals("<init>")&&call.desc.equals("()V"))continue;
+			String key=call.owner+"."+call.name+call.desc;if(!verified.contains(key))return false;if(!seen.add(key))continue;
+			ClassNode owner=call.owner.equals(current.name)?current:classes.apply(call.owner);MethodNode body=owner==null?null:method(owner,call.name,call.desc);if(body==null)return false;
+			if(call.name.equals("<init>")&&!call.owner.equals(vector))return false;pending.add(body);
+		}
+		return true;
+	}
 	private static KernelTagSourceContracts.FieldShape fieldShape(FieldInsnNode instruction,ClassNode current,Function<String,ClassNode>classes){
 		String owner=instruction.owner;Set<String>seen=new HashSet<>();while(owner!=null&&seen.add(owner)){ClassNode declaration=owner.equals(current.name)?current:classes.apply(owner);if(declaration==null){try(var in=NativeTagTrackerSourceInjector.class.getClassLoader().getResourceAsStream(owner+".class")){if(in!=null)declaration=parse(in.readAllBytes());}catch(java.io.IOException unavailable){Caught.warn(unavailable,"[Forbric/Mixin] could not read %s.class while checking a tag-tracker field; the tag-source repair declines",owner);return null;}}if(declaration==null)return null;
 			for(FieldNode field:declaration.fields)if(field.name.equals(instruction.name)){boolean staticInsn=instruction.getOpcode()==Opcodes.GETSTATIC||instruction.getOpcode()==Opcodes.PUTSTATIC;if(!field.desc.equals(instruction.desc)||staticInsn!=((field.access&Opcodes.ACC_STATIC)!=0))return null;return new KernelTagSourceContracts.FieldShape(declaration.name,field.name,field.desc,field.access);}owner=declaration.superName;

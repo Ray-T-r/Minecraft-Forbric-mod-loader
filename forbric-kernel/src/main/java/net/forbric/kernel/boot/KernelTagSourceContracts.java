@@ -11,7 +11,13 @@ import org.objectweb.asm.Type;
 
 /** Definition witnesses for a native-source tag view fed by current physical samples. */
 public final class KernelTagSourceContracts {
-	public record FieldShape(String owner,String name,String descriptor,int flags){ }
+	/**
+	 * A field the copied source touches, as natively declared. {@code finalImmaterial}: the injector proved that whether
+	 * the field is final cannot change what the copy reads (see {@link #sameFieldShape}); otherwise every flag must match.
+	 */
+	public record FieldShape(String owner,String name,String descriptor,int flags,boolean finalImmaterial){
+		public FieldShape(String owner,String name,String descriptor,int flags){this(owner,name,descriptor,flags,false);}
+	}
 	public record Schema(String owner,String mapField,String readyField,String tracker,String tag,
 			MethodContract update,List<MethodContract>definitions,List<MethodContract>vectorMethods,
 			Map<String,Integer>accessFlags,List<FieldShape>fields,MethodContract fluidQuery,MethodContract fluidTypeGetter){
@@ -36,11 +42,27 @@ public final class KernelTagSourceContracts {
 			}
 			for(FieldShape shape:schema.fields()){
 				Class<?>declaration=Class.forName(shape.owner().replace('/','.'),false,loader);Field field=declaration.getDeclaredField(shape.name());
-				int relevant=Modifier.PUBLIC|Modifier.PRIVATE|Modifier.PROTECTED|Modifier.STATIC|Modifier.FINAL|Modifier.VOLATILE|Modifier.TRANSIENT;
-				if(!Type.getDescriptor(field.getType()).equals(shape.descriptor())||(field.getModifiers()&relevant)!=(shape.flags()&relevant))return decline(receiver,key,"source field shape changed: "+shape.owner()+"."+shape.name(),false);
+				if(!Type.getDescriptor(field.getType()).equals(shape.descriptor())||!sameFieldShape(field.getModifiers(),shape.flags(),shape.finalImmaterial()))return decline(receiver,key,"source field shape changed: "+shape.owner()+"."+shape.name(),false);
 			}
 			return true;
 		}catch(ReflectiveOperationException|RuntimeException|LinkageError unknown){Caught.warn(unknown,"[Forbric/Mixin] source tag view was not updated; native type queries retained: source field/definition proof is unavailable (source=%s)",key);return false;}
+	}
+	/**
+	 * Whether a field the copied source reads or writes still means to it what it meant natively.
+	 *
+	 * <p>Access, static-ness, volatility and transience must always match: each changes what a field instruction links
+	 * to or how it reads. So must {@code final}, unless the injector proved it immaterial for this field. Then only one
+	 * direction declines: a field that became final would make a copied write outside a constructor illegal. One that
+	 * is no longer final -- a mixin's {@code @Mutable} shadow strips the flag, as one making {@code Vec3}'s coordinates
+	 * writable does -- leaves every copied read and write as legal and as meaningful as it was. The proof is about time:
+	 * the copy reads the sampled vector later than native code does, and what lies between is only method bodies
+	 * proved unchanged that write no field of the vector's class; native code runs beside the same mixin, so whatever
+	 * else changes such a field changes it for both.
+	 */
+	static boolean sameFieldShape(int runtime,int nativeFlags,boolean finalImmaterial){
+		int exact=Modifier.PUBLIC|Modifier.PRIVATE|Modifier.PROTECTED|Modifier.STATIC|Modifier.VOLATILE|Modifier.TRANSIENT|(finalImmaterial?0:Modifier.FINAL);
+		if((runtime&exact)!=(nativeFlags&exact))return false;
+		return (runtime&Modifier.FINAL)==0||(nativeFlags&Modifier.FINAL)!=0;
 	}
 	public static boolean validatesVector(Object receiver,Object vector,String key){
 		Schema schema=SCHEMAS.get(key);if(schema==null||vector==null)return vector==null;
