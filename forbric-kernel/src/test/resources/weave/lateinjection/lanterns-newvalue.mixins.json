@@ -1,0 +1,1 @@
+{"required": true, "package": "org.example.lanterns.mixin", "compatibilityLevel": "JAVA_21", "mixins": ["LanternNewMixin"], "injectors": {"defaultRequire": 1}}

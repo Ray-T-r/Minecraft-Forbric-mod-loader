@@ -123,9 +123,13 @@ public final class KernelMixinBootstrap {
 		// added after that sits out until it prepares again.
 		if (transformer.getExtensions() instanceof Extensions extensions) {
 			extensions.add(new MixinCaptureLanding());
+			// MixinExtras registered its late applicator above (initMixinExtras); one guest's late injector failing must
+			// cost that injection, not every mod's mixins on the class.
+			LateInjectionIsolation.install(extensions, loader);
 		} else {
 			ForbricLog.warn("[Forbric/Mixin] Mixin's extension registry is a %s, not Mixin's own: a moved locals capture "
-					+ "gets no NOP to land on, and at 0.9.2 Mixin may skip it", String.valueOf(transformer.getExtensions()));
+					+ "gets no NOP to land on, and at 0.9.2 Mixin may skip it; a late injector that fails costs its target "
+					+ "class every mixin", String.valueOf(transformer.getExtensions()));
 		}
 		// Mixin is handed pre-mixin bytes, and null for a class in no owned jar — which is its class-GENERATION
 		// request (org.spongepowered.asm.synthetic.*). transformClassBytes handles both. PostMixinFixups then repairs

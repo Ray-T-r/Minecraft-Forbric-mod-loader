@@ -892,6 +892,56 @@ registration order only breaks ties, so the least-proven set becomes the outer w
    `require`/`expect` still win. `-Dforbric.relaxGuestMixins=off` restores strict behaviour;
    `-Dforbric.relaxMixinOverwrites` relaxes named configs when that is off; `-Dforbric.mixinDiagnostics` keeps
    injection requirements strict (so every misfit is reported) while keeping `required=false`.
+   `required=false` only helps where Mixin isolates a failure per mixin, which is inside its own apply loop.
+   MixinExtras' late injectors (`@WrapOperation`, `@WrapWithCondition`, `@ModifyExpressionValue`) inject and check
+   afterwards, in a target-class extension (`LateInjectionApplicatorExtension.postApply`), and upstream an
+   `InvalidMixinException` there hands the class back unwoven: every mod's mixins on it are gone. Two things raise
+   one there. In a player's game only one does: a late injector's own checks while injecting (a `@WrapOperation`
+   whose handler does not fit the call it bound), at any setting. The other is `mixin.debug.countInjections` (or
+   `mixin.debug`), whose `expect` check fails every injector that lands nothing; it is a debug switch the kernel's
+   test harness turns on and a launcher does not. `LateInjectionIsolation` sits directly in front of that applicator,
+   takes the class's queue and runs it in the same order with Mixin's own rule around each step: an optional mixin's
+   failure goes to the class's suppressed list, is reported like any optional mixin that failed, and the queue goes
+   on. A required config's failure, a failure that names no mixin, an `Error` (such as `InjectionError`) and anything
+   else are thrown as upstream throws them, but not always reached as upstream reaches them: upstream gives up on the
+   class at its first failure and never runs the rest of its queue, while here the queue goes on past a failure set
+   aside. So a later late injection that fails in a way upstream would not tolerate either — a required config's,
+   or an `InjectionError` from a `require`/`allow` left strict (on relaxed guest mixins that takes
+   `-Dforbric.mixinDiagnostics` or `-Dforbric.requireFailSoft=off`; a config the kernel does not relax keeps its
+   own) — now stops the game where upstream, having already given up on the class, warned and left it unwoven.
+   When anything leaves the queue after a failure was set aside, Mixin reports only that, so the ones set aside
+   before are logged and carried on it as suppressed exceptions. An injection can also stop half-way (a target
+   without a descriptor matching two overloads: the first call is wrapped, the handler check fails at the second).
+   Nothing is rolled back — Mixin rolls back nothing of an optional mixin it sets aside, and the instructions an
+   injection replaced are shared with every other injection queued on them — and none needs to be for the wrappers:
+   `@WrapOperation` and `@WrapWithCondition` check a call before they touch it, and `@WrapOperation` adds the bridge
+   a rewritten call needs in the same step. Because that is read from MixinExtras' code rather than enforced, every
+   method of the class is analysed (ASM's `BasicVerifier`: stack heights at every join and the basic kind of every
+   value, not a full verification) before a failure is set aside, and a class that no longer analyses is handed back
+   unwoven with its first failure, upstream's outcome. The analysis runs only after a late failure. Over the 22,250
+   classes a full client pack's JVM defined (Mixin's 759 woven ones among them) it found none that does not analyse;
+   those are the bytes as finally defined, after Mixin's `ClassWriter` recomputed their frames and maxima, not the
+   classes as `postApply` holds them. `@ModifyExpressionValue` has one path that inserts an instruction before it
+   checks its handler (a `DUP` behind a `new` it sees as not yet duplicated); on javac's `new` it leaves nothing
+   behind, and no MixinExtras 0.5.4 injector is known to change code before its check on javac-compiled code. The
+   weave test covers the half-way wrap (kept; both injections on the call it rewrote do what they asked; the class
+   verifies), a value modifier whose handler check fails on a `new` inside a conditional (kept, with javac's one
+   `DUP` and nothing else), and a class a stand-in leaves inconsistent (handed back). The isolation holds
+   MixinExtras' private queue and reads it only in the shape MixinExtras 0.5.4 declares
+   (`Map<ITargetClassContext, Map<String, List<Runnable[]>>>`, checked from the field's generic type at install, and
+   each entry checked before it is taken); anything else stands it down with one warning, and upstream behaviour
+   returns. A guest that bundles a newer, relocated MixinExtras and starts it from its config plugin's `onLoad` takes
+   over after the isolation is installed: the kernel's applicator is unregistered and the newer one has its own
+   queue, so late injections fail the upstream way again. The isolation notices when Mixin's active extensions change
+   and says so once. Measured with lambdynamiclights and `countInjections` on: spruceui's NeoForge `GuiMixin` wraps
+   `ClientHooks.extractScreen`, which the merged `Gui.extractRenderState` no longer calls, and `Gui` lost
+   fabric-screen-api's `GuiExtensions`, so `Minecraft.<init>` died on the cast; balm's moisture wrap cost `CropBlock`
+   every mixin the same way, because the moisture read it wraps in `CropBlock.getGrowthSpeed` is in neither of the
+   merged base's two `getGrowthSpeed` overloads (and `randomTick` calls NeoForge's `BlockState` one). With the
+   isolation only those wraps are lost. The two lost calls are the merged base's and stay open: spruceui's
+   `BEFORE_EXTRACT` / `AFTER_EXTRACT` screen events and balm's moisture hook do not fire, isolated or not, with the
+   switch or without. Without `countInjections` (a player's setup) the same packs never reached the isolation.
+   `-Dforbric.lateInjectionIsolation=off` restores upstream.
 3. **Per-mixin drops** — the union of `KernelGuestMixinAdapter.unfitMixins` (below), the hand list
    `MergedBaseMixinCompat.SUPPRESSED_MIXINS`, and `-Dforbric.suppressMixins=config:Mixin,…`, minus
    `-Dforbric.keepMixins`. Dropping a mixin also drops every mixin that depends on an interface it contributed.
@@ -1934,6 +1984,7 @@ developer reaches for:
 | `forbric.relaxGuestMixins` | `off`: guest configs are not relaxed |
 | `forbric.mixinCompat` | `latest`: every Fabric config at Mixin's newest level instead of the level Fabric Loader gives its mod (§7.1) |
 | `forbric.captureLanding` | `off`: below 0.10.0, a TAIL capture the kernel moved after a call that falls into the tail's join gets no `NOP` to land on, and Mixin skips it (§7.1) |
+| `forbric.lateInjectionIsolation` | `off`: a MixinExtras late injector that fails in an optional mixin hands its whole target class back unwoven, as upstream (§7.2); on, a newer MixinExtras a guest starts after install takes the same path, and the log says so once |
 | `forbric.relaxMixinOverwrites` | csv (`*` glob) of configs to relax |
 | `forbric.mixinDiagnostics` | keep injection requirements strict to surface every misfit |
 | `forbric.mixinFit` | `strict`: also drop `PARTIAL` mixins |
