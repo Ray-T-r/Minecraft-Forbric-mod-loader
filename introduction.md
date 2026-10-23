@@ -796,18 +796,29 @@ Notable repairs by family (read each class's javadoc for the case that motivated
 - **Air** — `VanillaAirRefillInjector` + `KernelAirRefill` (the owner chose vanilla's rule). The merged `baseTick` is
   NeoForge's and hands the air supply to `CommonHooks.onLivingBreathe`. Where the eye is in a fluid that is not air and
   the body does not drown there — water breathing or conduit power, a drowned, an invulnerable player, lava, a mod's
-  fluid it may breathe in — that hook hands its breathe event a refill of zero, so the air stayed where it was; vanilla
-  and MinecraftForge refill it by 4 a tick up to the maximum, and hold it only in water for a body that Breath of the
-  Nautilus alone keeps from drowning. The one store of that zero (found by shape: the hook's signature, its one
-  `LivingBreatheEvent(entity, canBreathe, consume, refill)`, the zero stored into the refill local right after true into
-  the can-breathe local) becomes vanilla's refill. Only the default changes: the hook still posts `LivingBreatheEvent`
-  with it, and a NeoForge listener still sets the amounts and decides whether the body breathes, as on NeoForge. The
-  cross-host predicate island's protected decision (a Fabric fluid that drowns like water, §7.4.1) starts its event from
-  the same refill. The refill asks its water question of the body's fluid interaction rather than through
-  `isEyeInFluid`, because the native decision island would take the carrier asking vanilla's own call as the call having
-  moved and give up the injectors there (Create's diving gear, fabric-api's drowning fluids); `NativeDecisionIslandStagedTest`
-  holds both sides of that. `-Dforbric.vanillaAirRefill=off` (formerly `forbric.foreignFluidBreathing`, which gave only a
-  Fabric mod's non-drowning fluid the refill) keeps NeoForge's rule.
+  fluid it may breathe in — that hook hands its breathe event a refill of zero, so the air stayed where it was. Vanilla
+  refills it by 4 a tick up to the maximum everywhere but its water branch, where a body that Breath of the Nautilus
+  alone keeps from drowning holds its air. That branch is the eye in a fluid the body can drown in (fabric-api makes a
+  Fabric drowning fluid answer vanilla's water question exactly so), and the kernel asks it of the eye's fluid types,
+  each answering `FluidType.canDrownIn` for that body — water's type yes, lava's no, a mod's type for itself — never
+  through the water tag; lava and a fluid the body breathes in refill, as in vanilla. MinecraftForge's own hook refills
+  like vanilla but holds that body's air in any fluid that is not air (`canRefillAir = isAir || the effects refill`).
+  The one store of that zero (found by shape: the hook's signature, its one `LivingBreatheEvent(entity, canBreathe,
+  consume, refill)`, the zero stored into the refill local right after true into the can-breathe local) becomes
+  vanilla's refill. Vanilla also changes the air only below the maximum, where the hook's update for a body that
+  breathes, `setAirSupply(min(air + refill, max))`, pulled air above the maximum back to it every tick (native NeoForge
+  does too, and MinecraftForge wherever it refills); its `Math.min` becomes `KernelAirRefill.refilledAir`, handed the
+  refill the event started from and the one it ended with, which leaves air at or above the maximum where it is unless a
+  listener set the refill (a listener that sets the very amount the event started from cannot be told apart, and gets
+  vanilla's update). Nothing else changes: the hook still posts `LivingBreatheEvent` once, and a NeoForge listener still
+  sets the amounts and decides whether the body breathes, as on NeoForge. The cross-host predicate island's protected
+  decision (a Fabric fluid that drowns like water, §7.4.1) starts its event from the same refill
+  (`KernelAirRefill.waterRefill`), and the island's prefix is executed in the decorated hook by
+  `VanillaAirRefillInjectorExecutionTest`. The refill asks its drowning question of the body's fluid interaction rather
+  than through `isEyeInFluid`, because the native decision island would take the carrier asking vanilla's own call as
+  the call having moved and give up the injectors there (Create's diving gear, fabric-api's drowning fluids);
+  `NativeDecisionIslandStagedTest` holds both sides of that. `-Dforbric.vanillaAirRefill=off` (formerly
+  `forbric.foreignFluidBreathing`, which gave only a Fabric mod's non-drowning fluid the refill) keeps NeoForge's rule.
 - **Instrumentation** — `ClientSmokeTickInjector` (inert unless `-Dforbric.clientSmoke=true`),
   `EventChainAuditInjector` (inert unless `-Dforbric.eventChainAudit=<report>`), `ServerTickSamplerInjector`,
   `CompatibilityPromptTickInjector`, `ServerCompatibilityTickInjector`.
@@ -2008,9 +2019,15 @@ Break one and the failure usually surfaces far from the cause.
   Fabric test fluid, and with Create Fly too), NeoForge 26.2.0.88 and MinecraftForge 26.2-65.0.1, with Forbric run
   without fabric-api, with it, and with Create Fly. For every body that breathes where its eyes are — water breathing,
   conduit power, a drowned, a turtle helmet, an invulnerable player, lava, a mod's breathable fluid, Create's diving
-  gear — Forbric's air now climbs by 4 a tick to 300 tick for tick as on native Fabric (Breath of the Nautilus alone
-  holds it in water, as there); a NeoForge listener that sets the amounts or whether the body breathes gets exactly
-  the curve it gets on NeoForge, and reads vanilla's refill (4) as the default where NeoForge hands it 0.
+  gear — Forbric's air now climbs by 4 a tick to 300 tick for tick as on native Fabric. Breath of the Nautilus alone
+  holds it in water and in a drowning mod fluid outside the water tag — the Fabric test fluid as on native Fabric, a
+  NeoForge fluid type that drowns as on native NeoForge, also with the cross-host predicate island switched off, where
+  the hook decides alone — and refills it in lava and in a breathable fluid, as on native Fabric (native NeoForge and
+  MinecraftForge hold it in every fluid). Air above the maximum (400 of 300) stays there in water with water
+  breathing, in open air and with Breath of the Nautilus alone, as on native Fabric; native NeoForge pulls all three to
+  300, MinecraftForge the first two. A NeoForge listener that sets the amounts or whether the body breathes gets
+  exactly the curve it gets on NeoForge, and reads vanilla's refill (4) as the default where NeoForge hands it 0. A
+  MinecraftForge mod's fluid could not be measured in Forbric: its liquid block throws when placed (below).
 
 **What is still not native-equivalent.** Proven not closable by any structural trigger (each proof kept):
 
@@ -2026,6 +2043,15 @@ Break one and the failure usually surfaces far from the cause.
   optimisation, is inactive.
 - Channel declarations: per join, `REGISTER` fires 5 times on the client and 4 on the server in the configuration
   phase (native once each), 3 times in play (native 2), plus 3 `UNREGISTER`s.
+- Air, the random sequence: a body with an oxygen bonus (Respiration) draws its own random every tick it is alive on a
+  server, where vanilla draws only while it drowns. The merged `baseTick` hands NeoForge's breathing hook its consume
+  amount up front, `air - decreaseAirSupply(air)`, and `decreaseAirSupply` calls `random.nextDouble()` whenever the
+  `OXYGEN_BONUS` attribute is above zero; vanilla calls it only in its drowning branch (native NeoForge and
+  MinecraftForge draw as Forbric does). The air values are vanilla's — the amount is used only when the body does not
+  breathe — but that entity's later random draws (movement, sounds, particles) are not. It cannot be moved without
+  changing NeoForge's `LivingBreatheEvent` contract: the event is constructed with the consume amount, and a listener
+  may read it and may decide the body does not breathe after all, so the amount must exist, drawn, before anyone knows
+  whether it will be used; a placeholder or a later draw would hand listeners a value NeoForge never does.
 
 Located, not yet fixed (no impossibility proof):
 
@@ -2044,8 +2070,9 @@ Located, not yet fixed (no impossibility proof):
   datagen's `TagsProviderMixin` attaches nowhere (Fabric data generation only).
 - MinecraftForge's own `LivingBreatheEvent` is never posted: the merged `baseTick` calls only NeoForge's breathing hook
   (`ForgeHooks.onLivingBreathe` has no caller), so a MinecraftForge listener of it never runs. The air itself follows
-  vanilla's rule (§6), which is MinecraftForge's own but for one case: with only Breath of the Nautilus, MinecraftForge
-  holds the air in lava where vanilla, and so Forbric, refills it.
+  vanilla's rule (§6), which is MinecraftForge's own but in two places: with only Breath of the Nautilus, MinecraftForge
+  holds the air in any fluid that is not air (lava, a mod's breathable fluid) where vanilla, and so Forbric, refills it
+  outside the fluids that drown the body; and it pulls air above the maximum back to it, as NeoForge does.
 - A MinecraftForge mod's liquid block built with `LiquidBlock(Supplier, Properties)` (with a `ForgeFlowingFluid`) throws
   a `NullPointerException` as soon as it is placed: the merged `LiquidBlock.onPlace` reads the vanilla `fluid` field,
   which that constructor leaves null (it fills only the supplier). Found while measuring air in a MinecraftForge fluid.
