@@ -175,6 +175,13 @@ public final class PluginDeclinedMixins {
 		}
 		MixinCompatibility.recordAs(p.id(), p.configName(), p.mixinClass(), p.detail(), p.confidence(), p.required(),
 				evidence);
+		// A repair proved before this row could be written resolved nothing then; it answers the row now.
+		String proved = p.id().equals(MixinCompatibility.id(p.configName(), p.mixinClass()))
+				? SupersededMixins.provedReplacement(p.mixinClass()) : null;
+		if (proved != null) {
+			MixinCompatibility.resolveAs(p.id(), p.configName(), proved);
+			return;
+		}
 		// The row is written here, at the load report, and the target is often defined before that — when the
 		// final-class check had no row to discharge. The whole-mixin suspicion it already answered is answered
 		// now; any other identity (a drifted target) is not something attachment speaks to.

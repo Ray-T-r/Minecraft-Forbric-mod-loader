@@ -52,6 +52,13 @@ public final class LootSourceContracts implements Opcodes {
     public static void observeDefinition(ClassLoader definingLoader,String name,byte[] bytes){if(bytes==null)return;String internal=name.replace('.','/');if(!internal.equals(BRIDGE)&&!internal.equals(LootRegistryDomain.DATA)&&!internal.equals(LootRegistryDomain.KEYS)&&!isWitness(name))return;
         try{ledger(definingLoader,true).put(internal,fingerprints(read(bytes)));}catch(RuntimeException unreadable){Caught.warn(unreadable,"[Forbric/Mixin] could not fingerprint %s as it was defined; it is no longer a proved loot witness",internal);ledger(definingLoader,true).remove(internal);}
     }
+    /**
+     * Whether this loader already defined a witness that can never match, or the dispatch the proof needs is off: the
+     * proof cannot complete here any more. A witness not yet defined is not evidence either way.
+     */
+    public static boolean disproved(ClassLoader loader){Contract c=contract;if(c==null||c.loader!=loader)return false;if(!LootTableEventDispatch.enabled())return true;Map<String,Map<String,String>> definitions=ledger(loader,false);if(definitions==null)return false;
+        Map<String,Map<String,String>> expected=new LinkedHashMap<>(c.domain);expected.put(BRIDGE,c.bridge);expected.put(c.plan.targetName().replace('.','/'),c.host);expected.put(c.plan.helperName(),c.plan.helperMethods());
+        for(var e:expected.entrySet())if(definitions.containsKey(e.getKey())&&!matches(loader,e.getKey(),e.getValue()))return true;return false;}
     public static boolean helperProved(){Contract c=contract;return c!=null&&matches(c.loader,c.plan.helperName(),c.plan.helperMethods());}
     public static boolean proved(){Contract c=contract;return c!=null&&proved(c.loader);}
     public static boolean proved(ClassLoader loader){Contract c=contract;return c!=null&&c.loader==loader&&LootTableEventDispatch.enabled()&&helperProved()&&matches(loader,BRIDGE,c.bridge)&&matches(loader,c.plan.targetName().replace('.','/'),c.host)&&c.domain.entrySet().stream().allMatch(e->matches(loader,e.getKey(),e.getValue()));}

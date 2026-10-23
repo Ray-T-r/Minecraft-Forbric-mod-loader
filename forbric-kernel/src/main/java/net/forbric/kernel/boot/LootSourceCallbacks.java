@@ -93,6 +93,8 @@ public final class LootSourceCallbacks implements Opcodes {
         return taken;
     }
     public static boolean proved(String sourceName){Plan p=offered;return p!=null&&p.sourceName.equals(sourceName)&&LootSourceContracts.proved(gameLoader);}
+    /** Whether the proof for {@code sourceName} can no longer complete in the game loader (see LootSourceContracts.disproved). */
+    public static boolean disproved(String sourceName){Plan p=offered;return p!=null&&p.sourceName.equals(sourceName)&&LootSourceContracts.disproved(gameLoader);}
     public static void observeDefinition(String name,byte[] bytes){LootSourceContracts.observeDefinition(name,bytes);}
     public static void observeDefinition(ClassLoader loader,String name,byte[] bytes){LootSourceContracts.observeDefinition(loader,name,bytes);}
     public static Callbacks callbacks(ClassLoader loader){

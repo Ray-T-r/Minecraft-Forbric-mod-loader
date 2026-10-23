@@ -1500,6 +1500,7 @@ test	net.forbric.kernel.mixin.StubLocalsCaptureTest	capturesTheBodyCannotServeSt
 test	net.forbric.kernel.mixin.SupersededMixinsTest	theClaimsReadTheMixinNotItsName()	[fixture:staged] actual Fabric API fixture required
 test	net.forbric.kernel.mixin.SupersededMixinsTest	theHopperProofMatchesWhatTheRealRepairWritesIntoTheRealClass()	[fixture:staged] actual game required
 test	net.forbric.kernel.mixin.SupersededMixinsTest	theProofMatchesWhatTheRealRepairWritesIntoTheRealClass()	[fixture:staged] staged NeoForge carrier absent
+test	net.forbric.kernel.mixin.SupersededRemovalTest	theLootRemovalWaitsForEveryWitnessAndIsConfirmedOnlyWhenOneCanNeverMatch()	[fixture:staged] current raw loot source: $ROOT/forbric-kernel/run/client-merged-pack/mods/fabric-api-0.155.2+26.2.jar
 test	net.forbric.kernel.mixin.ThinnedCallOrdinalsSpellingTest	aSelectorBindingAnotherMethodOrTwoKeepsItsOrdinal()	[fixture:staged] actual game required
 test	net.forbric.kernel.mixin.ThinnedCallOrdinalsSpellingTest	aShortTargetThatAlsoCountsAnotherCallInTheMergedBodyKeepsItsOrdinal()	[fixture:staged] actual game required
 test	net.forbric.kernel.mixin.ThinnedCallOrdinalsSpellingTest	aTargetNamingAnotherOwnerKeepsItsOrdinal()	[fixture:staged] actual game required

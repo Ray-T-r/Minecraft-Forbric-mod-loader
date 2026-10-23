@@ -657,12 +657,14 @@ public final class KernelGuestMixinAdapter {
 		List<String> evidence = new ArrayList<>(reasons);
 		evidence.add("kernel suppressed this mixin: an injector in it Mixin rejects outright");
 		if (superseded != null) {
-			// The kernel's measured decision, with a named repair doing the whole job: not a loss the player decides on,
-			// and resolved once the repair is seen in the class the game defines, as the same mixin's apply failure was.
-			report(MixinCompatibility.id(configName, binary), configName, pkg, mixin, pluginClass, classBytes,
-					"the kernel leaves out its mixin " + mixin + " on the merged game", CompatibilityFinding.Confidence.CONFIRMED,
-					false, evidence);
-			SupersededMixins.awaitProof(configName, binary);
+			// The kernel's measured decision, with a named repair doing the whole job: not a loss the player decides on.
+			// Left out before Mixin reads the config, so nothing is lost until the target class is defined; the row is a
+			// note until the repair is seen in the class the game defines, or shown not to be there.
+			String detail = "the kernel leaves out its mixin " + mixin + " on the merged game";
+			evidence.add(SUPERSEDE_PENDING);
+			report(MixinCompatibility.id(configName, binary), configName, pkg, mixin, pluginClass, classBytes, detail,
+					CompatibilityFinding.Confidence.SUSPECTED, false, evidence);
+			SupersededMixins.awaitProofProvisionally(configName, binary, detail, evidence);
 		} else {
 			report(MixinCompatibility.id(configName, binary), configName, pkg, mixin, pluginClass, classBytes,
 					"guest mixin " + mixin + " did not fit the merged game and was left out",
@@ -786,15 +788,23 @@ public final class KernelGuestMixinAdapter {
 				Caught.warn(unreadable, "[Forbric/Mixin] could not read the targets of %s:%s; its removal is reported "
 						+ "without them", MixinConfigOwners.describe(configName), mixin);
 			}
+			String detail = "the kernel leaves out its mixin " + mixin + " on the merged game";
+			List<String> evidence = new ArrayList<>(List.of("kernel suppressed this mixin by name", "source=" + e.getValue(),
+					"config required=" + required));
+			// A repair claims this mixin's whole job: nothing is lost before its target class is defined, so the row is
+			// a note until the repair is seen, or shown not to be there (SupersededMixins.awaitProofProvisionally).
+			boolean superseded = SupersededMixins.replacementFor(pkg + "." + mixin) != null;
+			if (superseded) evidence.add(SUPERSEDE_PENDING);
 			report(MixinCompatibility.id(configName, pkg + "." + mixin), configName, pkg, mixin, pluginClass, targets,
-					"the kernel leaves out its mixin " + mixin + " on the merged game",
-					CompatibilityFinding.Confidence.CONFIRMED, false,
-					List.of("kernel suppressed this mixin by name", "source=" + e.getValue(), "config required=" + required));
-			if (SupersededMixins.replacementFor(pkg + "." + mixin) != null) {
-				SupersededMixins.awaitProof(configName, pkg + "." + mixin);
-			}
+					detail, superseded ? CompatibilityFinding.Confidence.SUSPECTED : CompatibilityFinding.Confidence.CONFIRMED,
+					false, evidence);
+			if (superseded) SupersededMixins.awaitProofProvisionally(configName, pkg + "." + mixin, detail, evidence);
 		}
 	}
+
+	/** The evidence a superseded removal carries while its repair has not been seen yet. */
+	static final String SUPERSEDE_PENDING = "a kernel repair claims this mixin's whole job: a loss only once the repair's "
+			+ "witness class is defined without it, resolved once it is seen there";
 
 	/** Every {@code @Mixin} target, dotted, in declaration order — the names Mixin asks a config plugin about. */
 	private static List<String> dottedTargets(byte[] mixinBytes) {

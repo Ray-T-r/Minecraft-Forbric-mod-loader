@@ -107,6 +107,15 @@ public final class SupersededMixins {
 	/** Failures recorded while their replacement was not yet proved: mixin → configs. */
 	private static final Map<String, Set<String>> PENDING = new ConcurrentHashMap<>();
 	private static final Set<String> PROVED = ConcurrentHashMap.newKeySet();
+	/**
+	 * Removals recorded as SUSPECTED because nothing could have been lost yet (see {@link #awaitProofProvisionally}):
+	 * mixin → the rows to confirm if the repair's witness turns out not to carry it.
+	 */
+	private static final Map<String, Set<Provisional>> PROVISIONAL = new ConcurrentHashMap<>();
+
+	/** A whole-mixin removal held at SUSPECTED until its repair is proved or disproved. */
+	record Provisional(String config, String mixinClass, String detail, List<String> evidence) {
+	}
 
 	private SupersededMixins() {
 	}
@@ -200,6 +209,57 @@ public final class SupersededMixins {
 	}
 
 	/**
+	 * A mixin the kernel leaves out of its config before Mixin reads it, whose job a claimed repair takes over.
+	 *
+	 * <p>Unlike a mixin that failed while its target was being defined, nothing has been lost yet: native Mixin would
+	 * only apply this one when its target class is defined, and that class is often defined late -- the loot reload
+	 * host only when the first world's data loads, long after the boot and title-screen reports. Recorded CONFIRMED,
+	 * the removal named the mod as "did not finish loading" on every one of those reports and was resolved minutes
+	 * later. So the caller records the row SUSPECTED (a note, never a mark), and it is decided here: resolved when the
+	 * repair is seen in its witness ({@link #observeDefinition}), CONFIRMED when the witness is defined without it or
+	 * can no longer prove it. A claim alone still resolves nothing.
+	 */
+	static void awaitProofProvisionally(String config, String mixinClass, String detail, List<String> evidence) {
+		if (provedFor(mixinClass)) {
+			resolve(config, mixinClass);
+			return;
+		}
+		PROVISIONAL.computeIfAbsent(mixinClass, k -> ConcurrentHashMap.newKeySet())
+				.add(new Provisional(config, mixinClass, detail, evidence == null ? List.of() : List.copyOf(evidence)));
+		PENDING.computeIfAbsent(mixinClass, k -> ConcurrentHashMap.newKeySet()).add(String.valueOf(config));
+		if (provedFor(mixinClass)) resolveAll(mixinClass);  // proved between the two checks
+	}
+
+	/** Whether a removal of {@code mixinClass} is still held at SUSPECTED, waiting on its repair's witness. */
+	static boolean provisional(String mixinClass) {
+		Set<Provisional> waiting = PROVISIONAL.get(mixinClass);
+		return waiting != null && !waiting.isEmpty();
+	}
+
+	/** The witness can no longer carry the repair: every row held at SUSPECTED for these mixins is a loss after all. */
+	private static void confirmProvisional(List<String> mixins, String why) {
+		for (String mixin : mixins) {
+			Set<Provisional> rows = PROVISIONAL.remove(mixin);
+			if (rows == null) continue;
+			for (Provisional row : rows) {
+				String id = MixinCompatibility.id(row.config(), row.mixinClass());
+				List<String> evidence = new java.util.ArrayList<>(row.evidence());
+				evidence.add(why);
+				net.forbric.api.CompatibilityFinding held = null;
+				for (net.forbric.api.CompatibilityFinding finding : net.forbric.api.CompatibilityFindings.all()) {
+					if (finding.id().equals(id)) held = finding;
+				}
+				// Already settled otherwise (the mod's own plugin declined the mixin): nothing to confirm.
+				if (held != null && held.confidence() == net.forbric.api.CompatibilityFinding.Confidence.RESOLVED) continue;
+				// Recorded even when the row is still held back for the mod's config plugin: a later SUSPECTED settle
+				// cannot lower it, and the plugin declining the mixin still resolves it.
+				MixinCompatibility.recordAs(id, row.config(), row.mixinClass(), held == null ? row.detail() : held.detail(),
+						net.forbric.api.CompatibilityFinding.Confidence.CONFIRMED, false, evidence);
+			}
+		}
+	}
+
+	/**
 	 * Every class the game loader defines passes here; the one that carries a replacement proves it or does not.
 	 * Never throws into the definition it observes.
 	 */
@@ -216,12 +276,22 @@ public final class SupersededMixins {
 				ClassNode node = new ClassNode();
 				new ClassReader(bytes).accept(node, ClassReader.SKIP_DEBUG | ClassReader.SKIP_FRAMES);
 				if (!replacement.witness().test(node)) {
-					if(sourceCallback)continue; // a multi-class proof may still await its helper; the unresolved ledger remains loud
+					if(sourceCallback){
+						// A multi-class proof may still await its helper: only a witness that can never match decides.
+						List<String> refuted=waiting.stream().filter(net.forbric.kernel.boot.LootSourceCallbacks::disproved).toList();
+						if(refuted.stream().anyMatch(SupersededMixins::provisional)){
+							ForbricLog.warn("[Forbric/Mixin] %s was defined so that the repair that supersedes %s can no longer be "
+									+ "proved, so its failure stays reported",binaryName,refuted);
+							confirmProvisional(refuted,"the repair's witness "+binaryName+" was defined so that it can no longer be proved");
+						}
+						continue;
+					}
 					// Loud only when a failure is waiting on this proof: the class is defined on every boot, and a repair
 					// that was never meant to run (its mod absent) has nothing to supersede.
 					if (waiting.stream().anyMatch(PENDING::containsKey)) {
 						ForbricLog.warn("[Forbric/Mixin] %s was defined without the repair that supersedes %s, so its"
 								+ " failure stays reported", binaryName, waiting);
+						confirmProvisional(waiting, "the repair's witness " + binaryName + " was defined without it");
 					} else {
 						ForbricLog.debug("[Forbric/Mixin] %s defined without the repair for %s; nothing waits on it",
 								binaryName, replacement.kind());
@@ -248,6 +318,7 @@ public final class SupersededMixins {
 	/** Every loader session proves its own replacements. */
 	static void reset() {
 		PENDING.clear();
+		PROVISIONAL.clear();
 		PROVED.clear();
 		CLAIMS.clear();
 		TEST_CLAIMS.clear();
@@ -266,6 +337,7 @@ public final class SupersededMixins {
 	}
 
 	private static void resolveAll(String mixinClass) {
+		PROVISIONAL.remove(mixinClass);
 		Set<String> configs = PENDING.remove(mixinClass);
 		if (configs != null) for (String config : configs) resolve("null".equals(config) ? null : config, mixinClass);
 	}
