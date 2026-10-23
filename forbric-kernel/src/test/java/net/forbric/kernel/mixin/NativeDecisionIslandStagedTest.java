@@ -89,6 +89,59 @@ class NativeDecisionIslandStagedTest {
 	}
 
 	/**
+	 * The kernel's vanilla refill in the carrier's hook asks whether the eye is in a fluid that drowns the body of the body's fluid
+	 * interaction — each eye fluid type's own {@code canDrownIn} — so the island still holds vanilla's eye-in-water check (a mod's
+	 * injector there keeps running at the native call) and still relays the effect check. The control makes the refill ask
+	 * vanilla's {@code isEyeInFluid(WATER)} on the body as well, as vanilla's stretch does: the island then finds the carrier
+	 * making that call with operands of its own, takes it as moved, and gives it up — which is why the refill must not ask it
+	 * that way. Both read the compiled refill class through the same class view the island plans with.
+	 */
+	@Test void theVanillaRefillInTheHookLeavesTheEyeCheckToTheIsland() throws Exception {
+		ClassNode merged = staged("merged-base/patched-mc-merged-26.2.jar", LIVING + ".class");
+		ClassNode vanilla = staged("merged-base/patched-mc-merged-26.2.jar", "META-INF/forbric/native-reference/FABRIC/" + LIVING + ".class.bin");
+		MethodNode host = NativeCallInlining.method(merged, "baseTick()V"), was = NativeCallInlining.method(vanilla, "baseTick()V");
+		String hook = "net/neoforged/neoforge/common/CommonHooks", refill = net.forbric.kernel.transform.VanillaAirRefillInjector.RUNTIME;
+		ClassNode decorated = new ClassNode();
+		new ClassReader(new net.forbric.kernel.transform.VanillaAirRefillInjector().transform(hook.replace('/', '.'),
+				TestFixtures.requireEntry(Fixture.STAGED, TestFixtures.stagedRoot().resolve("neoforge-runtime/neoforge-runtime.jar"), hook + ".class"), null)).accept(decorated, 0);
+		Path compiled = Path.of(System.getProperty("forbric.test.runtimeClasses", "build/classes/java/runtime")).resolve(refill + ".class");
+		TestFixtures.require(Fixture.GAME_SIDE, java.nio.file.Files.isRegularFile(compiled), "compiled KernelAirRefill required");
+		ClassNode runtime = new ClassNode();
+		new ClassReader(java.nio.file.Files.readAllBytes(compiled)).accept(runtime, 0);
+		Function<String, ClassNode> base = classes();
+		Function<String, ClassNode> view = owner -> owner.equals(hook) ? decorated : owner.equals(refill) ? runtime : base.apply(owner);
+		NativeDecisionIsland.Outcome outcome = NativeDecisionIsland.derive(merged, host, vanilla, was, Set.of(EYE, EFFECT), view);
+		assertNotNull(outcome.island(), String.valueOf(outcome.declined()));
+		assertFalse(outcome.island().carried().contains(EYE), "the hook's refill never asks the eye-in-water check: " + outcome.island().carried());
+		assertEquals(List.of(EFFECT), outcome.island().relays().values().stream().map(NativeDecisionIsland.Relay::key).toList());
+
+		MethodNode protectedRefill = NativeCallInlining.method(runtime, net.forbric.kernel.transform.VanillaAirRefillInjector.PROTECTED
+				+ net.forbric.kernel.transform.VanillaAirRefillInjector.REFILL_DESC);
+		assertNotNull(protectedRefill);
+		List<String> asked = new java.util.ArrayList<>();
+		for (AbstractInsnNode insn : protectedRefill.instructions) if (insn instanceof MethodInsnNode call) asked.add(call.owner + "." + call.name);
+		assertTrue(asked.contains("net/minecraft/world/entity/EntityFluidInteraction.isEyeInFluidMatching"),
+				"the refill asks the eye's fluid types through the body's fluid interaction: " + asked);
+		assertFalse(asked.stream().anyMatch(call -> call.endsWith(".isEyeInFluid")), "and never vanilla's tag question: " + asked);
+
+		// Control: the same refill asking isEyeInFluid(WATER) on the body too, as vanilla's stretch does (and the proof that the
+		// island reads the refill class at all).
+		ClassNode asking = new ClassNode();
+		runtime.accept(asking);
+		MethodNode refillWithTag = NativeCallInlining.method(asking, protectedRefill.name + protectedRefill.desc);
+		org.objectweb.asm.tree.InsnList vanillaQuestion = new org.objectweb.asm.tree.InsnList();
+		vanillaQuestion.add(new org.objectweb.asm.tree.VarInsnNode(Opcodes.ALOAD, 0));
+		vanillaQuestion.add(new org.objectweb.asm.tree.FieldInsnNode(Opcodes.GETSTATIC, "net/minecraft/tags/FluidTags", "WATER", "Lnet/minecraft/tags/TagKey;"));
+		vanillaQuestion.add(new MethodInsnNode(Opcodes.INVOKEVIRTUAL, LIVING, "isEyeInFluid", "(Lnet/minecraft/tags/TagKey;)Z", false));
+		vanillaQuestion.add(new org.objectweb.asm.tree.InsnNode(Opcodes.POP));
+		refillWithTag.instructions.insert(vanillaQuestion);
+		Function<String, ClassNode> controlView = owner -> owner.equals(refill) ? asking : view.apply(owner);
+		NativeDecisionIsland.Outcome control = NativeDecisionIsland.derive(merged, host, vanilla, was, Set.of(EYE, EFFECT), controlView);
+		assertNotNull(control.island(), String.valueOf(control.declined()));
+		assertTrue(control.island().carried().contains(EYE), "asked through isEyeInFluid, the island takes the eye check as carried");
+	}
+
+	/**
 	 * Where the carrier moved the call rather than replaced it — the merged {@code SimpleModelWrapper.bake(baker, id, state)}
 	 * forwards to the overload taking the resolved model, which asks {@code findNonBlockSprites} on quads of its own — the
 	 * island would ask it a second time on quads the carrier never sees: the call is carried, not relayable, and planning

@@ -848,7 +848,9 @@ public final class KernelBoot {
 		// …and a tag a Fabric mod gave a fluid behaviour has that behaviour's fluid type where the merged
 		// EntityFluidInteraction turns tags into types, instead of the IllegalArgumentException fabric-api hit every tick.
 		chain.register(TransformPhase.COREMOD, new net.forbric.kernel.transform.FabricFluidBehaviorInjector());
-		chain.register(TransformPhase.COREMOD, new net.forbric.kernel.transform.FabricFluidBreathingInjector());
+		// A body that breathes where its eyes are (water breathing, a drowned, lava, a fluid it may breathe in) refills its air
+		// as in vanilla; NeoForge's breathing hook held it, and its breathe event now starts from vanilla's refill.
+		chain.register(TransformPhase.COREMOD, new net.forbric.kernel.transform.VanillaAirRefillInjector());
 		chain.register(TransformPhase.COREMOD, new net.forbric.kernel.transform.UntrackedFluidEyeQueryInjector());
 		chain.register(TransformPhase.COREMOD, new net.forbric.kernel.transform.PredicateGetterResultRecorder());
 		chain.register(TransformPhase.COREMOD, new net.forbric.kernel.mixin.NativeTagTrackerSourceInjector());

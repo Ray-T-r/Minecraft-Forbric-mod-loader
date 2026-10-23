@@ -49,6 +49,8 @@ public final class ForbricSwitches {
 			// general mechanism that replaced them is the loader's.
 			Map.entry("forbric.earlyGameDirectory", "forbric.deferLinkTimeTypes"),
 			Map.entry("forbric.irisEarlyGamePath", "forbric.deferLinkTimeTypes"),
+			// Gave a Fabric mod's non-drowning fluid vanilla's refill in the breathing hook; every fluid a body breathes in gets it now.
+			Map.entry("forbric.foreignFluidBreathing", "forbric.vanillaAirRefill"),
 			Map.entry("forbric.portingLayerAbi", "forbric.configApiAbi"),
 			Map.entry("forbric.sodiumConfigUsers", "forbric.crossEcosystemDeclarations"));
 
