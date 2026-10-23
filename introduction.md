@@ -223,8 +223,10 @@ which locks MinecraftForge's registry wrappers (the registration window opens th
 that now calls both families' hooks posts the MinecraftForge event natively, so every bridge forwarding it must stand
 down there (§8.1).
 
-The copy committed at `forbric-loader/run/merged-base/merge-conflicts.txt` is the report of the builder before the
-edit splice, kept as the fixture `LostHookAttributionTest` reads; it does not describe the current base.
+The copy committed at `forbric-loader/run/merged-base/merge-conflicts.txt` is the report written beside the merged
+base `forbric-loader/run` holds, which the current tools (edit splice included) built, so a staged root made from that
+directory pairs the base with its own report. `LostHookAttributionTest` reads every hook-lost row of it back as
+written, without pinning which methods it lists or how many.
 
 ## 3. Boot order
 
@@ -1794,8 +1796,8 @@ version is installed, pins, which artifacts are present or will be built, expect
   against and every gate runs on. `FORBRIC_OLD` (or `-Pforbric.stagedRoot`) points another worktree at them.
   `build-merged-base.sh` writes the merge's report (`merge-conflicts.txt`) and a build record
   (`patched-mc-merged-26.2.jar.provenance.json`: tool-source hashes, input hashes, jar and report hashes) beside the
-  jar. The committed `run/merged-base/merge-conflicts.txt` is the historical report of the builder before the edit
-  splice, a test fixture (§2.4).
+  jar. The committed `run/merged-base/merge-conflicts.txt` is the report of the base the current tools build, the
+  one beside it in `run/merged-base/`, and a test fixture (§2.4).
 - **Test inputs.** The canary mod sources in `run/livemod-src*`/`testmod-src` (`build-testmods.sh`), and the
   mod sets in its run directories that gate-m0's discovery oracle reads.
 - **Installer payload.** The installer's bundle manifest still includes `net.forbric:forbric-loader` and
@@ -1872,14 +1874,16 @@ java -cp <boot-cp> net.forbric.kernel.boot.Main --scan --mods <dir> --report out
   Team Reborn Energy 5.0.0 pinned by SHA-256 (`run/energy-api/energy-5.0.0.jar` or `-Pforbric.rebornEnergy`).
   Without the staged jars `compileRuntimeJava` is skipped and `jar` produces a boot jar with no game side — which
   is what CI builds. `KernelRuntimeClasses.verify` is what catches such a jar at launch.
-- **Unit tests.** Counted from source: `src/test` has 5 457 `@Test` methods (23 of them spelled
-  `@org.junit.jupiter.api.Test`), 57 `@TestFactory` and 6 `@ParameterizedTest` methods in 1 036 `*Test.java` files;
+- **Unit tests.** Counted from source: `src/test` has 5 480 `@Test` methods (23 of them spelled
+  `@org.junit.jupiter.api.Test`), 57 `@TestFactory` and 6 `@ParameterizedTest` methods in 1 038 `*Test.java` files;
   `src/transferTest` has 71 `@Test` methods in 6 files (annotations at line start after indentation, `git grep` over
-  tracked files). A full run on the staged base (`forbric-loader/run` with its current merged base and report) reported
-  6 535 tests, 803 of them skipped for third-party or opt-in fixtures that run was not given. Many tests read the staged jars; gate-m0
-  fails on *any* skipped test, because a skip there means the tests did not look at the real base. The weave tests
-  (`mixin/weave/`) run synthetic mods with unrelated names through the real Mixin and MixinExtras, each with its
-  mechanism switched off as the control. Tests must pass on JDK 21 as well as 25 (the CI unstaged job is JDK 21).
+  tracked files). A full run on the staged base (`forbric-loader/run` with its current merged base and report, and
+  the third-party mod packs the developer's machine still has) reported 6 591 tests in its JUnit XML, 77 of them
+  skipped: 75 for third-party packs that machine no longer has, 2 opt-in. How many run depends on the fixtures
+  present, since some tests generate one case per fixture. Many tests read the staged jars; gate-m0 fails on *any*
+  skipped test, because a skip there means the tests did not look at the real base. The weave tests (`mixin/weave/`)
+  run synthetic mods with unrelated names through the real Mixin and MixinExtras, each with its mechanism switched
+  off as the control. Tests must pass on JDK 21 as well as 25 (the CI unstaged job is JDK 21).
 - **Gates.** 59 scripts, `forbric-kernel/run/gate-m*.sh`, each asserting on the real logs and files of a real
   instance, most with named negative controls (a `-D…=off` or input removal that must turn exactly the named
   checks red). `run/compat/gates-all.sh` discovers them by glob; `gates-parallel.py` overlaps them using each
@@ -1927,14 +1931,15 @@ java -cp <boot-cp> net.forbric.kernel.boot.Main --scan --mods <dir> --report out
   upstream downloads are cached and nothing derived is uploaded), then runs the same suite plus `transferTest` with
   `-Pforbric.requireFixtures=staged,game-side,mc-libraries,java-25`: every kind of fixture except third-party mod
   packs is present there, so a skip for any other kind, or an untagged skip, fails the job at the test that skipped.
-  The 775 tests that still skip there are held to `ci-prepared.tsv` the same way: 773 need third-party mod packs that
-  are not in this repository, 2 are opt-in fixtures. The same job builds a merged base from the prepared inputs with
-  `build-merged-base.sh` and runs the merge-loss ratchet on it (§2.4), the one place it runs. Job `development-tools` runs
-  `tools/dev.py tool-test` and the packaged link gate on Windows, Linux and macOS. kernel-prepared then runs four
-  real dedicated-server gates on the same files: m1, m36, m46 and m53, whose mods are canaries built from this
-  repository. The other gates (client, third-party packs, soak) need the developer's Mac: `tools/nightly/` runs
-  them there every night from launchd (02:30, the soak on Sundays), commits each night's summary to the branch
-  `ci-results` and sets the commit status `nightly/dev-mac` on the tested commit.
+  The 781 tests that still skip there (counted by name, as the baseline holds them) are held to `ci-prepared.tsv` the
+  same way: 779 need third-party mod packs that are not in this repository, 2 are opt-in fixtures. The same job
+  builds a merged base from the prepared inputs with `build-merged-base.sh` and runs the merge-loss ratchet on it
+  (§2.4), the one place it runs. Job `development-tools` runs `tools/dev.py tool-test` and the packaged link gate on
+  Windows, Linux and macOS. kernel-prepared then runs four real dedicated-server gates on the same files: m1, m36,
+  m46 and m53, whose mods are canaries built from this repository. The other gates (client, third-party packs, soak)
+  need the developer's Mac: `tools/nightly/` runs them there every night from launchd (02:30, the soak on Sundays),
+  commits each night's summary to the branch `ci-results` and sets the commit status `nightly/dev-mac` on the tested
+  commit.
 
 ### 16.1 Judging against the native game, and the rename experiment
 
