@@ -403,7 +403,7 @@ public final class MergedBaseBuilder {
 		// different mode) follows the merge's choice of that method when the side's compensating caller did not
 		// survive the merge — see DelegateTwinRoutes. Reported in full, retargeted or not.
 		Set<String> routed = new LinkedHashSet<>();
-		delegateTwinDecisions.addAll(DelegateTwinRoutes.route(allNodes, vanilla, forge, neo, routed));
+		delegateTwinDecisions.addAll(DelegateTwinRoutes.route(allNodes, vanilla, forge, neo, forgeRuntime, neoRuntime, routed));
 		for (String owner : routed) {
 			ClassWriter cw = new ClassWriter(ClassWriter.COMPUTE_MAXS);
 			allNodes.get(owner).accept(cw);

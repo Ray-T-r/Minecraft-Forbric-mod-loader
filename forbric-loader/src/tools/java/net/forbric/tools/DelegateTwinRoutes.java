@@ -59,7 +59,19 @@ import org.objectweb.asm.tree.VarInsnNode;
  *       method holding the site and was changed by that side, and none of those merged callers makes every call its
  *       first-side body added. Where one of them does, the first side's mechanism is whole on that path and the call
  *       is left alone (pointing it back would do the switched-off part twice).</li>
+ *   <li>and none of those merged callers was handed a PART of the edit (an edit splice carries runs, not methods) that does
+ *       the switched-off part: of the calls the first side's edit added and the other side's version of the caller does
+ *       not make, the ones the merged caller makes are each followed into what they do (the void calls their body makes,
+ *       two deep, on the first side and its runtime), and compared with what the twin does only in the delegate's mode — the
+ *       calls its overload makes under a test of a mode parameter whose constant the site changes, followed into every
+ *       declaration a mode parameter is handed to, and what those do in turn. A carried call that shares one of those is
+ *       the compensation, and the call is left. When the switched-off part cannot be read that way at all and some of the
+ *       edit was carried, the call is left too, for judgment, rather than risk doing the part twice.</li>
  * </ul>
+ * On 26.2 the switched-off part of MinecraftForge's {@code dropResources(…, false)} is {@code ForgeHooks.dropXpForBlock}
+ * (under {@code BlockBehaviour.spawnAfterBreak}'s test of {@code dropXp}) and the {@code popExperience} it makes; the
+ * merged {@code destroyBlock} carries MinecraftForge's {@code onBlockStartBreak} and {@code onPlayerDestroyItem}, which do
+ * neither, and not its {@code popExperience} — so the site is pointed back.
  * Anything else stays as merged, and every candidate is reported with what decided it, a retargeted one with the side
  * whose edit (its constants) is given up there. Names of classes, methods or mods decide nothing.
  */
@@ -85,7 +97,17 @@ final class DelegateTwinRoutes {
 	 */
 	static List<Decision> route(Map<String, ClassNode> merged, Map<String, byte[]> vanilla, Map<String, byte[]> forge,
 			Map<String, byte[]> neo, Set<String> changed) {
+		return route(merged, vanilla, forge, neo, Map.of(), Map.of(), changed);
+	}
+
+	/**
+	 * As above, with each side's runtime classes (its hooks), which the pass reads only to follow a call into what it does:
+	 * the part a twin's constants switch off, and a caller's kept edit, are compared by the calls they make there too.
+	 */
+	static List<Decision> route(Map<String, ClassNode> merged, Map<String, byte[]> vanilla, Map<String, byte[]> forge,
+			Map<String, byte[]> neo, Map<String, byte[]> forgeRuntime, Map<String, byte[]> neoRuntime, Set<String> changed) {
 		Function<String, ClassNode> v = parser(vanilla), f = parser(forge), n = parser(neo);
+		Function<String, ClassNode> fAll = either(f, parser(forgeRuntime)), nAll = either(n, parser(neoRuntime));
 		List<Twin> twins = new ArrayList<>();
 		for (String side : List.of("forge", "neo")) {
 			Map<String, byte[]> own = side.equals("forge") ? forge : neo;
@@ -115,7 +137,10 @@ final class DelegateTwinRoutes {
 		Map<String, Map<String, List<String[]>>> callerIndex = new HashMap<>();
 		for (Twin twin : twins) {
 			Map<String, byte[]> own = twin.side().equals("forge") ? forge : neo;
-			Function<String, ClassNode> mine = twin.side().equals("forge") ? f : n;
+			Function<String, ClassNode> mine = twin.side().equals("forge") ? f : n, theirs = twin.side().equals("forge") ? n : f;
+			Function<String, ClassNode> mineAll = twin.side().equals("forge") ? fAll : nAll;
+			Map<String, byte[]> ownAll = new HashMap<>(twin.side().equals("forge") ? forgeRuntime : neoRuntime);
+			ownAll.putAll(own);
 			for (ClassNode holder : merged.values()) {
 				for (MethodNode method : holder.methods) {
 					for (AbstractInsnNode insn : method.instructions.toArray()) {
@@ -144,7 +169,9 @@ final class DelegateTwinRoutes {
 						String key = holder.name + "#" + method.name + method.desc;
 						List<String[]> callers = callerIndex.computeIfAbsent(twin.side(), k -> new HashMap<>())
 								.computeIfAbsent(key, k -> callersOf(own, mine, v, holder.name, method.name, method.desc));
-						String compensation = compensation(callers, mine, v, merged);
+						Set<String> switchedOff = switchedOff(twin, pushed, ownAll, mineAll);
+						StringBuilder unrelated = new StringBuilder();
+						String compensation = compensation(callers, mine, theirs, v, merged, mineAll, switchedOff, unrelated);
 						if (compensation != null) {
 							decisions.add(new Decision(site, twinName, entryName, twin.side(), false, compensation));
 							continue;
@@ -156,7 +183,7 @@ final class DelegateTwinRoutes {
 						decisions.add(new Decision(site, twinName, entryName, twin.side(), true, "the merged " + entryName + " is the "
 								+ (twin.side().equals("forge") ? "neo" : "forge") + " body, and no merged caller of this method keeps the "
 								+ twin.side() + " edit that the constants " + describe(pushed) + " leave the switched-off part to ("
-								+ String.join(", ", callers.stream().map(c -> c[0]).toList()) + ")"));
+								+ String.join(", ", callers.stream().map(c -> c[0]).toList()) + ")" + unrelated));
 					}
 				}
 			}
@@ -169,8 +196,9 @@ final class DelegateTwinRoutes {
 	 * Each caller is {@code {owner#name(desc)}}: a method of the side that calls the site's method and differs from
 	 * vanilla's version of itself.
 	 */
-	private static String compensation(List<String[]> callers, Function<String, ClassNode> side, Function<String, ClassNode> vanilla,
-			Map<String, ClassNode> merged) {
+	private static String compensation(List<String[]> callers, Function<String, ClassNode> side, Function<String, ClassNode> other,
+			Function<String, ClassNode> vanilla, Map<String, ClassNode> merged, Function<String, ClassNode> sideAll, Set<String> switchedOff,
+			StringBuilder unrelated) {
 		if (callers.isEmpty()) return "no method of that side calls it with an edit of its own, so the constants are the whole change";
 		for (String[] caller : callers) {
 			String owner = caller[1], name = caller[2], desc = caller[3];
@@ -184,8 +212,174 @@ final class DelegateTwinRoutes {
 			boolean whole = !added.isEmpty();
 			for (Map.Entry<String, Integer> call : added.entrySet()) if (kept.getOrDefault(call.getKey(), 0) < call.getValue()) whole = false;
 			if (whole) return caller[0] + " keeps every call that side's edit of it added, so its mechanism is whole on that path";
+			// Part of the edit may have been carried into the merged caller (an edit splice). The calls that are that side's own
+			// — added by its edit and not also made by the other side's version of the caller, where a shared hook would be a
+			// coincidence of names — are the candidates for its compensation.
+			MethodNode otherBody = method(other.apply(owner), name, desc);
+			Set<String> others = otherBody == null ? Set.of() : callCounts(otherBody).keySet();
+			List<String> carried = new ArrayList<>();
+			for (String call : added.keySet()) if (!others.contains(call) && kept.containsKey(call)) carried.add(call);
+			if (carried.isEmpty()) continue;
+			if (switchedOff.isEmpty()) {
+				return caller[0] + " keeps part of that side's edit of it (" + String.join(", ", carried) + "), and what the constants switch off "
+						+ "cannot be read from the twin: left for judgment rather than risk doing that part twice";
+			}
+			for (String call : carried) {
+				Set<String> does = new LinkedHashSet<>(List.of(call));
+				effects(call, sideAll, EFFECT_DEPTH, does, new java.util.HashSet<>());
+				does.retainAll(switchedOff);
+				if (!does.isEmpty()) {
+					return caller[0] + " keeps " + call + " of that side's edit, which does what the part the constants switch off does ("
+							+ String.join(", ", does) + "): its compensation survived there, and pointing the call back would do that part twice";
+				}
+			}
+			unrelated.append("; ").append(caller[0]).append(" keeps ").append(String.join(", ", carried))
+					.append(" of that side's edit, none of which does what the switched-off part does (").append(String.join(", ", switchedOff)).append(")");
 		}
 		return null;
+	}
+
+	/** How deep a call is followed into what it does, and how deep a twin's mode parameter is followed into the calls it reaches. */
+	private static final int EFFECT_DEPTH = 2, FLOW_DEPTH = 4;
+
+	/**
+	 * What the twin does only in the delegate's mode: every call the twin's overload — or a method it hands a mode parameter to,
+	 * followed into every declaration of that method on the side — makes under a test of a mode parameter whose constant the
+	 * call site changes, and the void calls those make in turn (the actions they take). Empty when no such call is found.
+	 */
+	private static Set<String> switchedOff(Twin twin, List<AbstractInsnNode> pushed, Map<String, byte[]> sideClasses, Function<String, ClassNode> side) {
+		MethodNode overload = method(side.apply(twin.owner()), twin.overload().name, twin.overload().desc);
+		if (overload == null) return Set.of();
+		Type[] parameters = Type.getArgumentTypes(twin.overload().desc);
+		int entryArguments = Type.getArgumentTypes(twin.entry().desc).length;
+		int slot = (overload.access & Opcodes.ACC_STATIC) != 0 ? 0 : 1;
+		Set<Integer> modes = new java.util.HashSet<>();
+		for (int i = 0; i < parameters.length; i++) {
+			if (i >= entryArguments && !text(pushed.get(i - entryArguments)).equals(text(twin.constants().get(i - entryArguments)))) modes.add(slot);
+			slot += parameters[i].getSize();
+		}
+		Set<String> guarded = new LinkedHashSet<>();
+		guardedCalls(twin.owner(), overload, modes, sideClasses, side, FLOW_DEPTH, guarded, new java.util.HashSet<>());
+		Set<String> out = new LinkedHashSet<>(guarded);
+		for (String call : guarded) effects(call, side, EFFECT_DEPTH, out, new java.util.HashSet<>());
+		return out;
+	}
+
+	private static void guardedCalls(String owner, MethodNode method, Set<Integer> modes, Map<String, byte[]> sideClasses,
+			Function<String, ClassNode> side, int depth, Set<String> out, Set<String> seen) {
+		if (depth < 0 || method.instructions == null || method.instructions.size() == 0
+				|| !seen.add(owner + "#" + method.name + method.desc + modes)) return;
+		org.objectweb.asm.tree.analysis.Frame<org.objectweb.asm.tree.analysis.SourceValue>[] frames;
+		try {
+			frames = new org.objectweb.asm.tree.analysis.Analyzer<>(new org.objectweb.asm.tree.analysis.SourceInterpreter()).analyze(owner, method);
+		} catch (org.objectweb.asm.tree.analysis.AnalyzerException | RuntimeException unreadable) {
+			return;   // a body the analyzer cannot read adds nothing: the decision then falls to the cautious side
+		}
+		AbstractInsnNode[] code = method.instructions.toArray();
+		for (int i = 0; i < code.length; i++) {
+			var frame = frames[i];
+			if (frame == null) continue;
+			if (code[i] instanceof JumpInsnNode jump && jump.getOpcode() != Opcodes.GOTO && jump.getOpcode() != Opcodes.JSR) {
+				int operands = jump.getOpcode() >= Opcodes.IF_ICMPEQ && jump.getOpcode() <= Opcodes.IF_ACMPNE ? 2 : 1;
+				boolean tested = false;
+				for (int k = 0; k < operands; k++) tested |= loads(frame.getStack(frame.getStackSize() - 1 - k), modes);
+				int target = method.instructions.indexOf(jump.label);
+				if (tested && target > i) {
+					for (int j = i + 1; j < target; j++) if (code[j] instanceof MethodInsnNode call && !call.name.startsWith("<")) out.add(key(call));
+				}
+			} else if (code[i] instanceof MethodInsnNode call) {
+				Type[] arguments = Type.getArgumentTypes(call.desc);
+				boolean isStatic = call.getOpcode() == Opcodes.INVOKESTATIC;
+				Set<Integer> handed = new java.util.HashSet<>();
+				int calleeSlot = isStatic ? 0 : 1;
+				for (int a = 0; a < arguments.length; a++) {
+					if (loads(frame.getStack(frame.getStackSize() - arguments.length + a), modes)) handed.add(calleeSlot);
+					calleeSlot += arguments[a].getSize();
+				}
+				if (handed.isEmpty()) continue;
+				for (Map.Entry<String, MethodNode> declaration : declarations(call, sideClasses, side).entrySet())
+					guardedCalls(declaration.getKey(), declaration.getValue(), handed, sideClasses, side, depth - 1, out, seen);
+			}
+		}
+	}
+
+	/** Whether {@code value} was pushed by a load of one of {@code slots}. */
+	private static boolean loads(org.objectweb.asm.tree.analysis.SourceValue value, Set<Integer> slots) {
+		for (AbstractInsnNode source : value.insns) if (source instanceof VarInsnNode load && load.getOpcode() >= Opcodes.ILOAD
+				&& load.getOpcode() <= Opcodes.ALOAD && slots.contains(load.var)) return true;
+		return false;
+	}
+
+	/**
+	 * Every body on the side a call may run: the declaration it resolves to (through superclasses and interfaces), and, for a
+	 * virtual call, every override of it in a class below the call's owner.
+	 */
+	private static Map<String, MethodNode> declarations(MethodInsnNode call, Map<String, byte[]> sideClasses, Function<String, ClassNode> side) {
+		Map<String, MethodNode> out = new LinkedHashMap<>();
+		String resolved = resolve(call.owner, call.name, call.desc, side, 0);
+		if (resolved != null) out.put(resolved, method(side.apply(resolved), call.name, call.desc));
+		if (call.getOpcode() != Opcodes.INVOKEVIRTUAL && call.getOpcode() != Opcodes.INVOKEINTERFACE) return out;
+		for (String name : sideClasses.keySet()) {
+			if (out.containsKey(name)) continue;
+			ClassNode node = side.apply(name);
+			MethodNode override = node == null ? null : method(node, call.name, call.desc);
+			if (override == null || (override.access & Opcodes.ACC_ABSTRACT) != 0 || !below(node, call.owner, side)) continue;
+			out.put(name, override);
+		}
+		return out;
+	}
+
+	private static boolean below(ClassNode node, String owner, Function<String, ClassNode> side) {
+		for (int guard = 0; node != null && guard < 32; guard++) {
+			if (node.name.equals(owner) || (node.interfaces != null && node.interfaces.contains(owner))) return true;
+			node = node.superName == null ? null : side.apply(node.superName);
+		}
+		return false;
+	}
+
+	/** The class whose body a call of {@code owner.name(desc)} runs, read from the side's classes; null when none has one. */
+	private static String resolve(String owner, String name, String desc, Function<String, ClassNode> side, int depth) {
+		ClassNode node = depth > 32 ? null : side.apply(owner);
+		if (node == null) return null;
+		MethodNode declared = method(node, name, desc);
+		if (declared != null && declared.instructions != null && declared.instructions.size() > 0) return owner;
+		if (node.superName != null) {
+			String up = resolve(node.superName, name, desc, side, depth + 1);
+			if (up != null) return up;
+		}
+		if (node.interfaces != null) for (String face : node.interfaces) {
+			String up = resolve(face, name, desc, side, depth + 1);
+			if (up != null) return up;
+		}
+		return null;
+	}
+
+	/** The void calls (actions) the body {@code call} runs makes, followed {@code depth} deep, into {@code out}. */
+	private static void effects(String call, Function<String, ClassNode> side, int depth, Set<String> out, Set<String> seen) {
+		if (depth <= 0 || !seen.add(call)) return;
+		int dot = call.indexOf('.'), paren = call.indexOf('(');
+		if (dot < 0 || paren < dot) return;
+		String owner = call.substring(0, dot), name = call.substring(dot + 1, paren), desc = call.substring(paren);
+		String resolved = resolve(owner, name, desc, side, 0);
+		MethodNode body = resolved == null ? null : method(side.apply(resolved), name, desc);
+		if (body == null || body.instructions == null) return;
+		for (AbstractInsnNode insn : body.instructions) {
+			if (!(insn instanceof MethodInsnNode inner) || inner.name.startsWith("<") || Type.getReturnType(inner.desc).getSort() != Type.VOID) continue;
+			String next = key(inner);
+			out.add(next);
+			effects(next, side, depth - 1, out, seen);
+		}
+	}
+
+	private static String key(MethodInsnNode call) {
+		return call.owner + "." + call.name + call.desc;
+	}
+
+	private static Function<String, ClassNode> either(Function<String, ClassNode> first, Function<String, ClassNode> second) {
+		return name -> {
+			ClassNode found = first.apply(name);
+			return found != null ? found : second.apply(name);
+		};
 	}
 
 	/**
