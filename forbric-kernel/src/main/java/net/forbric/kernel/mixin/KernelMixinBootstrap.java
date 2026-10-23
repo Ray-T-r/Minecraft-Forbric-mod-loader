@@ -71,6 +71,9 @@ public final class KernelMixinBootstrap {
 		// ForbricMixinService.getResourceAsStream, which re-runs KernelGuestMixinAdapter and re-emits every
 		// "suppressed mixin" line. Now that two ecosystems feed this list, collapse it up front.
 		List<String> configs = List.copyOf(new java.util.LinkedHashSet<>(declared));
+		// A read of a MinecraftForge-routed field from another class goes through the getter only where the base's own
+		// class has it in the shape that answers for every constructor; NativeCoremodParity reads that class from here.
+		net.forbric.kernel.transform.NativeCoremodParity.readGameClassesFrom(gameClasses(loader));
 
 		if (configs.isEmpty()) {
 			ForbricLog.info("[Forbric/Mixin] no mixin configs declared — Mixin not started");
@@ -156,14 +159,7 @@ public final class KernelMixinBootstrap {
 		var callbackPriority = new net.forbric.kernel.transform.PostMixinCallbackPriority();
 		// The transfer audit proves an interface-default delegate against the same raw game classes the merged-base
 		// repair read when it dropped the ones it could prove (KernelBoot hands it this lookup).
-		java.util.function.Function<String, byte[]> gameClasses = path -> {
-			try (var in = loader.getGameResourceAsStream(path)) {
-				return in == null ? null : in.readAllBytes();
-			} catch (java.io.IOException unreadable) {
-				Caught.warn(unreadable, "[Forbric/Mixin] could not read game resource %s; taken as absent", path);
-				return null;
-			}
-		};
+		java.util.function.Function<String, byte[]> gameClasses = gameClasses(loader);
 		// UncalledValueRelay after the fixups: a vanilla method the merged game never calls, into which guest hooks were woven, gets
 		// a relay of its woven body the carrier's own place runs (Block.tryDropExperience, from NeoForge's drops event). It needs
 		// the bytes Mixin was handed, to tell what was woven.
@@ -179,6 +175,18 @@ public final class KernelMixinBootstrap {
 		initialized = true;
 		ForbricLog.info("[Forbric/Mixin] Mixin up on the sovereign kernel — %d config(s) registered, side %s",
 				configs.size(), side);
+	}
+
+	/** The game's raw class files by resource path ({@code a/b/C.class}), as the base has them; null when absent. */
+	private static java.util.function.Function<String, byte[]> gameClasses(ForbricClassLoader loader) {
+		return path -> {
+			try (var in = loader.getGameResourceAsStream(path)) {
+				return in == null ? null : in.readAllBytes();
+			} catch (java.io.IOException unreadable) {
+				Caught.warn(unreadable, "[Forbric/Mixin] could not read game resource %s; taken as absent", path);
+				return null;
+			}
+		};
 	}
 
 	/** {@code off} leaves Mixin's own messages saying "(unknown)" where the mod id would go. */
