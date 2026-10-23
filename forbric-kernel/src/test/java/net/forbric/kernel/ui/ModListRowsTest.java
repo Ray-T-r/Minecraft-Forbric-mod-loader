@@ -162,9 +162,10 @@ class ModListRowsTest {
 		ModCatalog.Entry game = new ModCatalog.Entry(Ecosystem.FABRIC, "game", "Minecraft", "26.2", "", List.of(), "", "", "");
 		ModCatalog.Entry loader = new ModCatalog.Entry(Ecosystem.NEOFORGE, "loader", "NeoForge", "1", "", List.of(), "", "", "");
 		ModCatalog.Entry shadow = new ModCatalog.Entry(Ecosystem.NEOFORGE, "mod", "Shadow", "1", "", List.of(), "", "", "");
-		List<ModCatalog.Entry> all = List.of(installed("mod", "Lemon"), installed("zz", "Zz"));
+		List<ModCatalog.Entry> all = List.of(installed("mod", "Lemon"),
+				new ModCatalog.Entry(Ecosystem.NEOFORGE, "zz", "Zz", "1", "", List.of(), "zz.jar", "", ""));
 		List<Row> rows = ModListRows.plan(all, List.of(new Platform(game, null), new Platform(loader, Ecosystem.NEOFORGE),
-				new Platform(shadow, Ecosystem.NEOFORGE)), e -> true, id -> null, ModListRows.LoaderRows.ALWAYS);
+				new Platform(shadow, Ecosystem.NEOFORGE)), e -> true, id -> null);
 		assertEquals(List.of("mod", "game", "loader", "zz"), ids(rows));
 		assertTrue(rows.get(1).game());
 		assertEquals(Kind.PLATFORM, rows.get(2).kind());
@@ -223,25 +224,58 @@ class ModListRowsTest {
 	}
 
 	/**
-	 * The loader-row decision, each answer: the game's row is never a loader's and is listed under all three; a loader's
-	 * own entry follows the decision. Which answer {@link ModListRows#LOADER_ROWS} holds is the owner's call and is not
-	 * asserted here.
+	 * A loader's own row is listed only when the catalogue holds a mod that loader serves; the Forge-family carrier
+	 * (NeoForge's own entry, whose Config opens NeoForge's settings) serves NeoForge and MinecraftForge mods alike. The
+	 * game's row is no loader's and is listed every time. A universal jar arbitration gave to NeoForge is in
+	 * {@code net.forbric.kernel.boot.LoaderRowCatalogueTest}, through the arbiter and the catalogue the boot builds.
 	 */
 	@Test
-	void aLoadersOwnRowFollowsTheOneLoaderRowDecision() {
+	void aPureFabricInstanceHasNoNeoForgeRow() {
+		List<ModCatalog.Entry> all = List.of(installed("f", "Fabric Mod"), carried("lib", "Lib", "f"));
+		assertEquals(List.of("f", "game"), listedWithLoaderRows(all));
+	}
+
+	@Test
+	void oneNeoForgeModListsNeoForgesOwnRow() {
+		List<ModCatalog.Entry> all = List.of(installed("f", "Fabric Mod"), of(Ecosystem.NEOFORGE, "n", "Neo Mod", ""));
+		List<Row> rows = planWithLoaderRows(all);
+		assertEquals(List.of("f", "game", "n", "loader"), ids(rows));
+		Row loader = rows.get(3);
+		assertEquals(Kind.PLATFORM, loader.kind());
+		assertEquals(Ecosystem.NEOFORGE, loader.family());
+		assertEquals("NeoForge", loader.name(), "named as its own entry names itself");
+	}
+
+	@Test
+	void aMinecraftForgeModAloneListsNeoForgesOwnRow() {
+		List<ModCatalog.Entry> all = List.of(installed("f", "Fabric Mod"), of(Ecosystem.FORGE, "m", "Forge Mod", ""));
+		assertEquals(List.of("f", "m", "game", "loader"), listedWithLoaderRows(all));
+	}
+
+	@Test
+	void aCarriedNeoForgeModCountsAsWellAsAnInstalledOne() {
+		List<ModCatalog.Entry> all = List.of(installed("f", "Fabric Mod"), of(Ecosystem.NEOFORGE, "n", "Neo Lib", "f"));
+		assertEquals(List.of("f", "game", "loader"), listedWithLoaderRows(all),
+				"a carried mod with no config has no row of its own, and still makes NeoForge's settings relevant");
+	}
+
+	private static ModCatalog.Entry of(Ecosystem ecosystem, String id, String name, String bundledBy) {
+		return new ModCatalog.Entry(ecosystem, id, name, "1", "", List.of(), id + ".jar", "", bundledBy);
+	}
+
+	/**
+	 * The game's row and NeoForge's own entry offered as platform entries, as the screen offers them. Only those have a
+	 * config here, so no carried mod is listed for having one.
+	 */
+	private static List<Row> planWithLoaderRows(List<ModCatalog.Entry> all) {
 		ModCatalog.Entry game = new ModCatalog.Entry(Ecosystem.FABRIC, "game", "Minecraft", "26.2", "", List.of(), "", "", "");
 		ModCatalog.Entry loader = new ModCatalog.Entry(Ecosystem.NEOFORGE, "loader", "NeoForge", "1", "", List.of(), "", "", "");
-		List<Platform> platform = List.of(new Platform(game, null), new Platform(loader, Ecosystem.NEOFORGE));
-		List<ModCatalog.Entry> fabricOnly = List.of(installed("f", "Fabric Mod"));
-		List<ModCatalog.Entry> withNeo = List.of(installed("f", "Fabric Mod"),
-				new ModCatalog.Entry(Ecosystem.NEOFORGE, "n", "Neo Mod", "1", "", List.of(), "n.jar", "", ""));
-		Function<ModListRows.LoaderRows, Function<List<ModCatalog.Entry>, List<String>>> listed = policy -> all -> ids(
-				ModListRows.plan(all, platform, e -> true, id -> null, policy));
-		assertEquals(List.of("f", "game", "loader"), listed.apply(ModListRows.LoaderRows.ALWAYS).apply(fabricOnly));
-		assertEquals(List.of("f", "game"), listed.apply(ModListRows.LoaderRows.WHEN_ITS_FAMILY_HAS_MODS).apply(fabricOnly));
-		assertEquals(List.of("f", "game", "n", "loader"),
-				listed.apply(ModListRows.LoaderRows.WHEN_ITS_FAMILY_HAS_MODS).apply(withNeo));
-		assertEquals(List.of("f", "game", "n"), listed.apply(ModListRows.LoaderRows.NEVER).apply(withNeo));
+		return ModListRows.plan(all, List.of(new Platform(game, null), new Platform(loader, Ecosystem.NEOFORGE)),
+				e -> e.jar().isEmpty(), id -> null);
+	}
+
+	private static List<String> listedWithLoaderRows(List<ModCatalog.Entry> all) {
+		return ids(planWithLoaderRows(all));
 	}
 
 	@Test

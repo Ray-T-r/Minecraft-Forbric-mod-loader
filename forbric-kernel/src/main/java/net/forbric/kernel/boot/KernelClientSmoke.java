@@ -2102,6 +2102,8 @@ public final class KernelClientSmoke {
 		}
 		net.forbric.kernel.ui.ModListRows.Row listed = modelOf(widgets.get(at));
 		String kind = kindOf(listed);
+		// The name the row is built to draw (KernelModListScreen draws row.name()), as the list widget holds it.
+		ForbricLog.info("[Forbric/ClientSmoke] config screen of %s (%s): its row is named \"%s\"", modId, kind, listed.name());
 		java.lang.reflect.Method has = configs.getMethod("has", net.forbric.kernel.ui.ModListRows.Row.class);
 		boolean[] answers = new boolean[widgets.size()];
 		for (int i = 0; i < widgets.size(); i++) answers[i] = (Boolean) has.invoke(null, modelOf(widgets.get(i)));

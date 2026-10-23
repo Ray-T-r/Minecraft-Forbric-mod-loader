@@ -32,8 +32,8 @@ import net.forbric.api.ModCatalog;
  *       config still has no row: it is in the carrier's "bundles N jar(s)".</li>
  *   <li><b>A platform entry</b>: an id a loader's own registry holds that is no jar's — the game itself, a loader's
  *       own mod — when it has a config screen. The caller decides which ones; for the game the answer is always yes
- *       (its options screen), as under Mod Menu. Whether a loader's own entry (one with a {@link Platform#family()})
- *       is listed at all is one decision, {@link #LOADER_ROWS}.</li>
+ *       (its options screen), as under Mod Menu. A loader's own entry (one with a {@link Platform#family()}) is listed
+ *       only when its settings matter to a mod on the instance: {@link #serves}.</li>
  * </ul>
  *
  * <p>This plan drops no installed entry for sharing an id with another: each is a row of its own. That does NOT mean
@@ -89,33 +89,21 @@ public final class ModListRows {
 	public record Platform(ModCatalog.Entry entry, Ecosystem family) {
 	}
 
-	/** Which loaders' own entries (a {@link Platform} with a family: NeoForge's own settings, say) become rows. */
-	public enum LoaderRows {
-		/** Every one with a config screen, on every instance -- NeoForge's own row even with no NeoForge mod installed. */
-		ALWAYS,
-		/** Only a loader at least one catalogued mod (installed or carried) belongs to. */
-		WHEN_ITS_FAMILY_HAS_MODS,
-		/** None; the game's row is not a loader's and stays. */
-		NEVER
-	}
-
 	/**
-	 * THE decision whether a loader's own entry is a row, and the one line to change to decide it differently. It is the
-	 * owner's call, not settled: {@code ALWAYS} puts a NeoForge row, which opens NeoForge's own settings screen, into
-	 * every instance's list, pure-Fabric packs included, because the kernel always runs NeoForge. The row is named by
-	 * the container's own display name, and the kernel's NeoForge baseline container answers its id, so today it reads
-	 * "neoforge" (genuine NeoForge's manifest says "NeoForge"). Nothing else reads a loader's own row, and gate-m56
-	 * deliberately asserts it neither way.
+	 * Whether a loader whose own entry is of family {@code loader} serves mods of family {@code mod}. A loader's own row
+	 * (NeoForge's own settings screen, say) is listed only when the catalogue -- installed and carried mods, each under the
+	 * family that won it -- holds a mod that loader serves: its settings are the settings of what those mods run on. The
+	 * rule is the shape of the instance, not a setting.
+	 *
+	 * <p>The Forge-family carrier serves both FML families: on Forbric a NeoForge mod and a MinecraftForge mod both run on
+	 * the one NeoForge-patched base. So NeoForge's row is there when the instance has a NeoForge mod, a MinecraftForge mod,
+	 * or a universal jar arbitration gave to either, and a pure-Fabric pack -- a universal jar Fabric won included -- has no
+	 * such row. NeoForge itself still runs under every instance and still reads its own settings file; what a pure-Fabric
+	 * pack does not get is a row for a loader none of its mods is for. The game's own row is no loader's
+	 * ({@link Platform#family()} null) and is always listed.
 	 */
-	public static final LoaderRows LOADER_ROWS = LoaderRows.ALWAYS;
-
-	/** Whether {@code policy} lists a loader's own entry of {@code family}, given the families catalogued mods are of. */
-	static boolean listsLoaderRow(LoaderRows policy, Ecosystem family, Set<Ecosystem> catalogued) {
-		return switch (policy) {
-			case ALWAYS -> true;
-			case WHEN_ITS_FAMILY_HAS_MODS -> catalogued.contains(family);
-			case NEVER -> false;
-		};
+	static boolean serves(Ecosystem loader, Ecosystem mod) {
+		return loader == mod || loader.isForgeFamily() && mod.isForgeFamily();
 	}
 
 	/**
@@ -143,8 +131,8 @@ public final class ModListRows {
 	}
 
 	/**
-	 * The rows, top-level ones in name order each followed by its children in name order, with loaders' own entries as
-	 * {@link #LOADER_ROWS} decides.
+	 * The rows, top-level ones in name order each followed by its children in name order, with a loader's own entry
+	 * where it {@link #serves} a catalogued mod.
 	 *
 	 * @param everything     every mod in the catalogue, carried ones included ({@code ModCatalog.everything()})
 	 * @param platform       platform entries that have a config screen; an id the catalogue also has is ignored
@@ -153,12 +141,6 @@ public final class ModListRows {
 	 */
 	public static List<Row> plan(List<ModCatalog.Entry> everything, List<Platform> platform,
 			Predicate<ModCatalog.Entry> hasConfig, Function<String, DeclaredParent> declaredParent) {
-		return plan(everything, platform, hasConfig, declaredParent, LOADER_ROWS);
-	}
-
-	/** As above, with the loader-row decision given rather than {@link #LOADER_ROWS}: for tests of each answer. */
-	static List<Row> plan(List<ModCatalog.Entry> everything, List<Platform> platform,
-			Predicate<ModCatalog.Entry> hasConfig, Function<String, DeclaredParent> declaredParent, LoaderRows loaderRows) {
 		Map<String, ModCatalog.Entry> byId = new HashMap<>();
 		Set<Ecosystem> families = new HashSet<>();
 		for (ModCatalog.Entry e : everything) {
@@ -175,7 +157,7 @@ public final class ModListRows {
 		}
 		for (Platform p : platform) {
 			if (p == null || p.entry() == null || byId.containsKey(p.entry().modId()) || tops.containsKey(p.entry().modId())) continue;
-			if (p.family() != null && !listsLoaderRow(loaderRows, p.family(), families)) continue;
+			if (p.family() != null && families.stream().noneMatch(family -> serves(p.family(), family))) continue;
 			ModCatalog.Entry e = p.entry();
 			add(blocks, tops, new Block(new Row(Kind.PLATFORM, e, e.modId(), e.name(), e.description(), p.family(), 0)));
 		}

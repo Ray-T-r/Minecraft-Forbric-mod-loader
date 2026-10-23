@@ -49,6 +49,7 @@ public final class KernelModInfo implements IModInfo {
 	private final IModFileInfo owningFile;
 	private final IConfigurable config;
 	private final String displayName;
+	private final String description;
 	private final ArtifactVersion version;
 	/** What the mod's own jar declared, or null to describe it from ModPresence alone. */
 	private final DiscoveredMod declared;
@@ -69,6 +70,7 @@ public final class KernelModInfo implements IModInfo {
 				? new KernelConfigurable(modId, KernelModMetadata.configElementsOf(modId, declared))
 				: new KernelConfigurable(modId);
 		this.displayName = KernelModMetadata.displayNameOf(modId, declared);
+		this.description = KernelModMetadata.descriptionOf(modId, declared);
 		this.version = new DefaultArtifactVersion(KernelModMetadata.versionOf(modId, declared));
 
 		// The owning file's getMods() has to return THIS object, so it is handed a slot to read back from.
@@ -94,9 +96,13 @@ public final class KernelModInfo implements IModInfo {
 		return displayName;
 	}
 
+	/**
+	 * The {@code description} of the mod's own {@code [[mods]]} entry, line endings as NeoForge's {@code ModInfo} leaves
+	 * them; {@code ""} when it declares none (genuine NeoForge says "MISSING DESCRIPTION" there, which this does not copy).
+	 */
 	@Override
 	public String getDescription() {
-		return "";
+		return description;
 	}
 
 	/**

@@ -143,7 +143,8 @@ public final class KernelModConfigScreens {
 	 * container in NeoForge's or MinecraftForge's list, or a mod in Fabric's, whose id the catalogue does not have. On
 	 * NeoForge that is NeoForge itself, which registers a config screen for its own settings; its own Mods screen
 	 * shows it, and this one is that screen's replacement. Whether such a loader's own entry becomes a row is not
-	 * decided here: {@link ModListRows#LOADER_ROWS} is that one decision.
+	 * decided here: {@link ModListRows} lists it only when the catalogue holds a mod that loader serves (NeoForge's,
+	 * when the instance has a NeoForge or MinecraftForge mod).
 	 */
 	private static List<ModListRows.Platform> platform(Set<String> catalogued) {
 		List<ModListRows.Platform> out = new ArrayList<>();
