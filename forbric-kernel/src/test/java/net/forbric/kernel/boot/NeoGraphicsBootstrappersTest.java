@@ -270,8 +270,7 @@ class NeoGraphicsBootstrappersTest {
 		TestFixtures.require(Fixture.STAGED, Files.isRegularFile(NEO_RUNTIME), "staged neoforge-runtime.jar absent");
 		TestFixtures.require(Fixture.JAVA_25, Runtime.version().feature() >= 25,
 				"the carrier's classes are class-file 69, which only Java 25 links");
-		Path nightConfig = newestLibrary("com/electronwill/night-config/core");
-		TestFixtures.require(Fixture.MC_LIBRARIES, nightConfig != null, "night-config core absent from the Minecraft library tree");
+		Path nightConfig = kernelNightConfig();
 		Path stubs = Files.createDirectories(work.resolve("stubs"));
 		writeClass(stubs, "org/slf4j/Logger", emptyInterface("org/slf4j/Logger"));
 		writeClass(stubs, "org/slf4j/Marker", emptyInterface("org/slf4j/Marker"));
@@ -280,15 +279,14 @@ class NeoGraphicsBootstrappersTest {
 				ClassLoader.getPlatformClassLoader());
 	}
 
-	private static Path newestLibrary(String relative) throws IOException {
-		String configured = System.getProperty("forbric.mcLibraries");
-		Path root = configured != null ? Path.of(configured) : TestFixtures.minecraftDir().resolve("libraries");
-		Path dir = root.resolve(relative);
-		if (!Files.isDirectory(dir)) return null;
-		try (var found = Files.walk(dir)) {
-			return found.filter(f -> f.getFileName().toString().endsWith(".jar"))
-					.filter(f -> !f.getFileName().toString().contains("sources")).sorted().reduce((a, b) -> b).orElse(null);
-		}
+	/**
+	 * night-config as the game gets it: the kernel's own copy. The NeoForge runtime is built without it
+	 * (NeoForgeRuntimeBuilder.isProvidedElsewhere) and the kernel's class loader pins the package to its parent, so
+	 * the carrier's FMLConfig links against the jar the kernel depends on, the one the installer stages. A launcher's
+	 * library tree is not that: it has night-config only where some NeoForge install put it, in whatever versions.
+	 */
+	private static Path kernelNightConfig() throws Exception {
+		return Path.of(com.electronwill.nightconfig.core.Config.class.getProtectionDomain().getCodeSource().getLocation().toURI());
 	}
 
 	private static void writeClass(Path root, String internalName, byte[] bytes) throws IOException {
