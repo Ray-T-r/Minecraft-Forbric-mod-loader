@@ -1,0 +1,1 @@
+{"required": true, "package": "org.example.lanterns.mixin", "plugin": "org.example.lanterns.NewerMixinExtrasPlugin", "compatibilityLevel": "JAVA_21", "mixins": ["LanternMismatchMixin"], "injectors": {"defaultRequire": 1}}
