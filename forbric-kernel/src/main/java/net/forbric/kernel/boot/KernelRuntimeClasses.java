@@ -430,18 +430,21 @@ public final class KernelRuntimeClasses {
 		CLASSES.put("net.forbric.kernel.runtime.KernelGameServerAboutToStart", new Entry(Origin.COMPILED, List.of(
 				new Call("install", void.class, Object.class),
 				new Call("forgetCurrentServer", void.class))));
-		// The unified Mods screen. Named by ModsButtonRedirector as an ASM internal name rather than called, so
-		// it has no Call entries — the seam is the class existing and carrying a (Screen) constructor, and a
-		// missing runtime jar would otherwise surface as a NoClassDefFoundError the moment a player opens the
-		// pause menu.
-		CLASSES.put("net.forbric.kernel.runtime.KernelModListScreen", new Entry(Origin.COMPILED, List.of()));
+		// The unified Mods screen. Named by ModsButtonRedirector as an ASM internal name rather than called — the seam
+		// is the class existing and carrying a (Screen) constructor, and a missing runtime jar would otherwise surface
+		// as a NoClassDefFoundError the moment a player opens the pause menu. Its two calls are the client smoke's.
+		CLASSES.put("net.forbric.kernel.runtime.KernelModListScreen", new Entry(Origin.COMPILED, List.of(
+				// Read back by the client smoke's mods-screen check: frames drawn and rows built.
+				new Call("framesDrawn", int.class),
+				new Call("rowsBuilt", int.class))));
 		// The three config-screen registries behind that screen's Config button. Called by the client smoke,
 		// which is the only thing that can prove a screen belonging to another mod actually opens.
 		CLASSES.put("net.forbric.kernel.runtime.KernelModConfigScreens", new Entry(Origin.COMPILED, List.of(
 				new Call("summary", String.class),
 				new Call("firstWithConfig", net.forbric.api.ModCatalog.Entry.class, String.class),
 				new Call("openById", Object.class, String.class, Object.class),
-				new Call("listedRow", net.forbric.kernel.ui.ModListRows.Row.class, String.class))));
+				// The client smoke's config walk asks it of every row the Mods screen's list widget holds.
+				new Call("has", boolean.class, net.forbric.kernel.ui.ModListRows.Row.class))));
 		// The kernel's own "modmenu" entrypoint, which the fabricloader built-in declares on a client
 		// (KernelFabricEcosystem.loaderEntrypoints); Mod Menu constructs it, nothing calls it by name. PACKED: it
 		// implements Mod Menu's API, which exists only when Mod Menu or the kernel's stand-in does.

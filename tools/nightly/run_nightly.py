@@ -47,6 +47,9 @@ FIXTURES = (
     'forbric-kernel/run/client-kernel',
     # The third-party mod sets the bytecode tests read (sweep90, carpet, create-fly, ...).
     'forbric-kernel/build/compat-inputs',
+    # gate-m56's phase 3: a Mod Menu jar for 26.2 (and the fabric-api beside it). The gate requires it -- SKIP-FATAL,
+    # exit 3, RED -- rather than passing with Mod Menu's list untested, so a main checkout without it shows here.
+    'forbric-kernel/run/modmenu',
     # Two more the tests read by path (GuiItemCaptureMixinAdapterTest, KernelClientHookMixinAnchorsTest,
     # CompatPluginPlatformInjectorTest). Without them the first nightly's strict run failed those tests as skipped.
     'forbric-kernel/build/sweep80-mac',

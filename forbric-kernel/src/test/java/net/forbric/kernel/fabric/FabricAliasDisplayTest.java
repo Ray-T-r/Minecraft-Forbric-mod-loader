@@ -105,6 +105,43 @@ class FabricAliasDisplayTest {
 				"its losing build's entrypoints are not the identity's: that build does not run");
 	}
 
+	/**
+	 * A Fabric-only jar that lost its id to the NeoForge build of the same mod beside it in {@code mods/}. Discovery never
+	 * reads a suppressed jar, so the identity used to be the bare id with no icon; the losing jar is still there, and its
+	 * fabric.mod.json is how the mod shows itself on a Fabric mod list. The icon it names is only in that jar, so the
+	 * identity reads that one file from it -- and every other file still from the jar that runs.
+	 */
+	@Test
+	void aTopLevelFabricJarThatLostToAnotherFamilysJarStillShowsItself() throws Exception {
+		Path fabricJar = jar("ember-fabric.jar", Map.of(FabricModDiscovery.MANIFEST, """
+				{"schemaVersion":1,"id":"ember","version":"2.0.0","name":"Ember Torches",
+				 "description":"Torches that smoulder.","authors":["Grace"],"icon":"assets/ember/fabric_icon.png"}
+				""", "assets/ember/fabric_icon.png", "png", "data/ember/shared.txt", "from the losing build"));
+		Path neoJar = jar("ember-neoforge.jar", Map.of("META-INF/neoforge.mods.toml",
+				"modLoader=\"javafml\"\nloaderVersion=\"[1,)\"\nlicense=\"MIT\"\n[[mods]]\nmodId=\"ember\"\n"
+						+ "version=\"2.0.0\"\ndisplayName=\"Ember (NeoForge build)\"\n",
+				"data/ember/shared.txt", "from the winning build"));
+		ModPresence.publishForgeFamily(List.of(new net.forbric.api.DiscoveredMod(Ecosystem.NEOFORGE, "ember", "2.0.0",
+				"Ember (NeoForge build)", List.of(), List.of(), null, neoJar.toString())));
+		DuplicateModArbiter.Decision dupes = new DuplicateModArbiter.Decision(Set.of(fabricJar.toAbsolutePath()),
+				Map.of("ember", neoJar.toAbsolutePath()), List.of(new DuplicateModArbiter.Alias("ember", Ecosystem.FABRIC, "2.0.0")));
+		FabricModDiscovery discovery = KernelFabricEcosystem.scan(EnvType.CLIENT, gameDir, dupes);
+		assertTrue(discovery.getContainers().stream().noneMatch(c -> c.getMetadata().getId().equals("ember")),
+				"the fixture's losing jar is one discovery skips, as a suppressed jar is");
+		KernelFabricEcosystem.build(discovery, EnvType.CLIENT, gameDir, "26.2", new String[0], dupes, null);
+
+		ModContainer alias = KernelFabricLoader.getInstanceOrNull().getModContainer("ember").orElseThrow();
+		assertNull(((KernelModContainer) alias).getJar(), "still a presence identity");
+		assertEquals("Ember Torches", alias.getMetadata().getName(), "the losing Fabric build's name, not the bare id");
+		assertEquals("Torches that smoulder.", alias.getMetadata().getDescription());
+		assertEquals(List.of("Grace"), alias.getMetadata().getAuthors().stream().map(Person::getName).toList());
+		assertEquals(Optional.of("assets/ember/fabric_icon.png"), alias.getMetadata().getIconPath(64));
+		assertTrue(alias.findPath("assets/ember/fabric_icon.png").isPresent(), "the declared icon is found in the jar that declared it");
+		assertEquals("from the winning build", Files.readString(alias.findPath("data/ember/shared.txt").orElseThrow()),
+				"every other file is still the running jar's");
+		assertTrue(alias.findPath("assets/ember/other.png").isEmpty(), "and nothing else is read from the losing jar");
+	}
+
 	@Test
 	void anIdentityWithNoFabricBuildToShowKeepsItsId() throws Exception {
 		universal("plain.jar", "plain", null);
@@ -152,6 +189,19 @@ class FabricAliasDisplayTest {
 			out.putNextEntry(new JarEntry("assets/" + id + "/icon.png"));
 			out.write(new byte[] {(byte) 0x89, 'P', 'N', 'G'});
 			out.closeEntry();
+		}
+		return jar;
+	}
+
+	/** A jar in {@code mods/} with these entries (path to text). */
+	private Path jar(String name, Map<String, String> entries) throws IOException {
+		Path jar = mods.resolve(name);
+		try (OutputStream target = Files.newOutputStream(jar); JarOutputStream out = new JarOutputStream(target)) {
+			for (Map.Entry<String, String> entry : new java.util.TreeMap<>(entries).entrySet()) {
+				out.putNextEntry(new JarEntry(entry.getKey()));
+				out.write(entry.getValue().getBytes(StandardCharsets.UTF_8));
+				out.closeEntry();
+			}
 		}
 		return jar;
 	}

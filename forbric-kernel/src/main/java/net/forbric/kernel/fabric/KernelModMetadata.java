@@ -263,6 +263,11 @@ public final class KernelModMetadata implements ModMetadata, net.fabricmc.loader
 		return license;
 	}
 
+	/** Whether {@code path} is one of the icon files this metadata declares, at any size. */
+	public boolean declaresIcon(String path) {
+		return path != null && icons.containsValue(path);
+	}
+
 	@Override
 	public Optional<String> getIconPath(int size) {
 		if (icons.isEmpty()) return Optional.empty();

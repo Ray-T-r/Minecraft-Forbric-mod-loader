@@ -29,12 +29,13 @@ import net.minecraft.client.gui.screens.Screen;
  * {@link KernelModConfigScreens#foreignScreensForFabric}, which decides by shape (another family loaded the id, Fabric
  * holds it, that family has a screen) and asks nothing but that family's registry.
  *
- * <h2>Only for a real Mod Menu</h2>
+ * <h2>Whoever reads the entrypoint</h2>
  *
- * <p>Without Mod Menu the kernel's stand-in API reads this entrypoint too; there it offers nothing, because the
- * kernel's own Mods screen already opens those screens from their own family and nothing else reads what is offered
- * here. Whether Mod Menu is installed is the same question {@code ModMenuProtocolExtension} asks: whether its main
- * class is there.
+ * <p>Offered to every reader of {@code "modmenu"} entrypoints, not only to a Mod Menu recognised by its class name: a
+ * fork of Mod Menu, or another mod list built on the same entrypoint, gets the same screens. Without Mod Menu the kernel's
+ * stand-in reads this entrypoint too, and the offer is harmless there: the kernel asks the Fabric protocol only about
+ * FABRIC entries ({@code ModMenuProtocolExtension}), and every id offered here is one another family loaded, whose screen
+ * the kernel's own Mods screen already asks that family for.
  *
  * <p>{@code -Dforbric.modMenuForeignScreens=off} offers nothing: Mod Menu's list goes back to showing those mods with
  * no Config button, which is gate-m56's negative control for this.
@@ -50,16 +51,14 @@ public final class KernelModMenuPlugin implements ModMenuApi {
 	static final long REFRESH_NANOS = 2_000_000_000L;
 	/** {@code off}: offer Mod Menu nothing. */
 	public static final String SWITCH = "forbric.modMenuForeignScreens";
-	private static final String MOD_MENU = "com.terraformersmc.modmenu.ModMenu";
 
 	private Map<String, ConfigScreenFactory<?>> offered = Map.of();
 	private long readAt;
 	private boolean read;
-	private Boolean modMenu;
 
 	@Override
 	public synchronized Map<String, ConfigScreenFactory<?>> getProvidedConfigScreenFactories() {
-		if (!modMenuInstalled() || "off".equalsIgnoreCase(System.getProperty(SWITCH, "on"))) return Map.of();
+		if ("off".equalsIgnoreCase(System.getProperty(SWITCH, "on"))) return Map.of();
 		long now = System.nanoTime();
 		if (read && now - readAt < REFRESH_NANOS) return offered;
 		read = true;
@@ -76,20 +75,5 @@ public final class KernelModMenuPlugin implements ModMenuApi {
 		}
 		offered = Map.copyOf(fresh);
 		return offered;
-	}
-
-	private boolean modMenuInstalled() {
-		if (modMenu == null) {
-			boolean found;
-			try {
-				Class.forName(MOD_MENU, false, KernelModMenuPlugin.class.getClassLoader());
-				found = true;
-			} catch (ClassNotFoundException | LinkageError absent) {
-				Caught.expected(absent);
-				found = false;
-			}
-			modMenu = found;
-		}
-		return modMenu;
 	}
 }

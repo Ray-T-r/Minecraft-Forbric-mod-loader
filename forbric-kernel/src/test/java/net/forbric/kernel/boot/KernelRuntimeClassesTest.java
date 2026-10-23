@@ -112,6 +112,37 @@ class KernelRuntimeClassesTest {
 				+ "prevent, one level up: " + stale);
 	}
 
+	/**
+	 * A game-side class held in a local ({@code Class<?> configs = Class.forName("net.forbric.kernel.runtime.X", ...)}) and
+	 * then asked for a method by name ({@code configs.getMethod("name", ...)}) is a call the registry must list: that is
+	 * what turns a renamed game-side method into one line at boot instead of a NoSuchMethodException half way through a
+	 * client smoke. The client smoke's config walk named two methods the registry did not.
+	 */
+	@Test
+	void everyMethodTheBootSideAsksAGameSideClassForByNameIsARegisteredCall() throws Exception {
+		Pattern held = Pattern.compile("Class<\\?>\\s+(\\w+)\\s*=\\s*Class\\.forName\\(\\s*\"(net\\.forbric\\.kernel\\.runtime\\.[\\w.$]+)\"");
+		List<String> missing = new ArrayList<>();
+		int asked = 0;
+		for (Path file : javaFiles(MAIN)) {
+			if (file.endsWith("KernelRuntimeClasses.java")) continue;
+			String text = Files.readString(file, StandardCharsets.UTF_8);
+			Matcher m = held.matcher(text);
+			Map<String, String> locals = new java.util.HashMap<>();
+			while (m.find()) locals.put(m.group(1), m.group(2));
+			for (Map.Entry<String, String> local : locals.entrySet()) {
+				Matcher call = Pattern.compile("\\b" + local.getKey() + "\\s*\\.\\s*getMethod\\(\\s*\"(\\w+)\"").matcher(text);
+				while (call.find()) {
+					asked++;
+					String name = call.group(1);
+					boolean registered = KernelRuntimeClasses.callsOn(local.getValue()).stream().anyMatch(c -> c.name().equals(name));
+					if (!registered) missing.add(local.getValue() + "." + name + " (" + MAIN.relativize(file) + ")");
+				}
+			}
+		}
+		assertTrue(asked > 0, "found no game-side method asked for by name; the pattern no longer matches the boot side");
+		assertTrue(missing.isEmpty(), () -> "asked for by name, but not a registered call: " + missing);
+	}
+
 	@Test
 	void compiledMeansThereIsSourceAndGeneratedMeansThereIsNot() {
 		List<String> wrong = new ArrayList<>();

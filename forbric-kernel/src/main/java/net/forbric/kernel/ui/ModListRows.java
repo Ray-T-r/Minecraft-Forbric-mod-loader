@@ -32,8 +32,12 @@ import net.forbric.api.ModCatalog;
  *       config still has no row: it is in the carrier's "bundles N jar(s)".</li>
  *   <li><b>A platform entry</b>: an id a loader's own registry holds that is no jar's — the game itself, a loader's
  *       own mod — when it has a config screen. The caller decides which ones; for the game the answer is always yes
- *       (its options screen), as under Mod Menu.</li>
+ *       (its options screen), as under Mod Menu. Whether a loader's own entry (one with a {@link Platform#family()})
+ *       is listed at all is one decision, {@link #LOADER_ROWS}.</li>
  * </ul>
+ *
+ * <p>Every installed entry is a row of its own, even when two of them share an id: a jar whose metadata could not be
+ * read is catalogued under the id its failure names, and the row saying so is the one a player most needs to see.
  *
  * <h2>Where a carried mod sits</h2>
  *
@@ -80,6 +84,33 @@ public final class ModListRows {
 	public record Platform(ModCatalog.Entry entry, Ecosystem family) {
 	}
 
+	/** Which loaders' own entries (a {@link Platform} with a family: NeoForge's own settings, say) become rows. */
+	public enum LoaderRows {
+		/** Every one with a config screen, on every instance -- NeoForge's own row even with no NeoForge mod installed. */
+		ALWAYS,
+		/** Only a loader at least one catalogued mod (installed or carried) belongs to. */
+		WHEN_ITS_FAMILY_HAS_MODS,
+		/** None; the game's row is not a loader's and stays. */
+		NEVER
+	}
+
+	/**
+	 * THE decision whether a loader's own entry is a row, and the one line to change to decide it differently. It is the
+	 * owner's call, not settled: {@code ALWAYS} puts a "NeoForge" row, which opens NeoForge's own settings screen, into
+	 * every instance's list, pure-Fabric packs included, because the kernel always runs NeoForge. Nothing else reads a
+	 * loader's own row, and gate-m56 deliberately asserts it neither way.
+	 */
+	public static final LoaderRows LOADER_ROWS = LoaderRows.ALWAYS;
+
+	/** Whether {@code policy} lists a loader's own entry of {@code family}, given the families catalogued mods are of. */
+	static boolean listsLoaderRow(LoaderRows policy, Ecosystem family, Set<Ecosystem> catalogued) {
+		return switch (policy) {
+			case ALWAYS -> true;
+			case WHEN_ITS_FAMILY_HAS_MODS -> catalogued.contains(family);
+			case NEVER -> false;
+		};
+	}
+
 	/**
 	 * One row. {@code entry} is null only for a {@link Kind#GROUP}; {@code family} is the tag the row shows (null for
 	 * the game and for a group); {@code depth} is 0 at the top and 1 under a parent.
@@ -105,7 +136,8 @@ public final class ModListRows {
 	}
 
 	/**
-	 * The rows, top-level ones in name order each followed by its children in name order.
+	 * The rows, top-level ones in name order each followed by its children in name order, with loaders' own entries as
+	 * {@link #LOADER_ROWS} decides.
 	 *
 	 * @param everything     every mod in the catalogue, carried ones included ({@code ModCatalog.everything()})
 	 * @param platform       platform entries that have a config screen; an id the catalogue also has is ignored
@@ -114,17 +146,31 @@ public final class ModListRows {
 	 */
 	public static List<Row> plan(List<ModCatalog.Entry> everything, List<Platform> platform,
 			Predicate<ModCatalog.Entry> hasConfig, Function<String, DeclaredParent> declaredParent) {
+		return plan(everything, platform, hasConfig, declaredParent, LOADER_ROWS);
+	}
+
+	/** As above, with the loader-row decision given rather than {@link #LOADER_ROWS}: for tests of each answer. */
+	static List<Row> plan(List<ModCatalog.Entry> everything, List<Platform> platform,
+			Predicate<ModCatalog.Entry> hasConfig, Function<String, DeclaredParent> declaredParent, LoaderRows loaderRows) {
 		Map<String, ModCatalog.Entry> byId = new HashMap<>();
-		for (ModCatalog.Entry e : everything) byId.putIfAbsent(e.modId(), e);
+		Set<Ecosystem> families = new HashSet<>();
+		for (ModCatalog.Entry e : everything) {
+			byId.putIfAbsent(e.modId(), e);
+			families.add(e.ecosystem());
+		}
+		// Every installed entry is a block of its own, two with one id included (an unreadable jar is catalogued under the
+		// id its failure names, beside the jar that loaded under it). tops is only how a parent is found by id: the
+		// first block with that id.
+		List<Block> blocks = new ArrayList<>();
 		Map<String, Block> tops = new LinkedHashMap<>();
 		for (ModCatalog.Entry e : everything) {
-			if (e.installed()) tops.putIfAbsent(e.modId(), new Block(mod(e, 0)));
+			if (e.installed()) add(blocks, tops, new Block(mod(e, 0)));
 		}
 		for (Platform p : platform) {
-			if (p == null || p.entry() == null || byId.containsKey(p.entry().modId())) continue;
+			if (p == null || p.entry() == null || byId.containsKey(p.entry().modId()) || tops.containsKey(p.entry().modId())) continue;
+			if (p.family() != null && !listsLoaderRow(loaderRows, p.family(), families)) continue;
 			ModCatalog.Entry e = p.entry();
-			tops.putIfAbsent(e.modId(), new Block(new Row(Kind.PLATFORM, e, e.modId(), e.name(), e.description(),
-					p.family(), 0)));
+			add(blocks, tops, new Block(new Row(Kind.PLATFORM, e, e.modId(), e.name(), e.description(), p.family(), 0)));
 		}
 
 		// Carried mods with a config: those naming no parent are rows of their own first, so a carried mod can be the
@@ -132,9 +178,9 @@ public final class ModListRows {
 		List<ModCatalog.Entry> placed = new ArrayList<>();
 		Map<String, DeclaredParent> parents = new HashMap<>();
 		for (ModCatalog.Entry e : everything) {
-			if (e.installed() || tops.containsKey(e.modId()) || !hasConfig.test(e)) continue;
+			if (e.installed() || tops.containsKey(e.modId()) || parents.containsKey(e.modId()) || !hasConfig.test(e)) continue;
 			DeclaredParent parent = parent(declaredParent, e.modId());
-			if (parent == null) tops.putIfAbsent(e.modId(), new Block(mod(e, 0)));
+			if (parent == null) add(blocks, tops, new Block(mod(e, 0)));
 			else {
 				parents.put(e.modId(), parent);
 				placed.add(e);
@@ -143,12 +189,12 @@ public final class ModListRows {
 		Set<String> children = new HashSet<>();
 		for (ModCatalog.Entry e : placed) children.add(e.modId());
 		for (ModCatalog.Entry e : placed) {
-			Block top = topFor(e.modId(), parents.get(e.modId()), tops, byId, children, parents, declaredParent);
-			if (top == null) tops.putIfAbsent(e.modId(), new Block(mod(e, 0)));
+			Block top = topFor(e.modId(), parents.get(e.modId()), blocks, tops, byId, children, parents, declaredParent);
+			if (top == null) add(blocks, tops, new Block(mod(e, 0)));
 			else top.children.add(mod(e, 1));
 		}
 
-		List<Block> sorted = new ArrayList<>(tops.values());
+		List<Block> sorted = new ArrayList<>(blocks);
 		sorted.sort(BY_NAME);
 		List<Row> rows = new ArrayList<>();
 		for (Block block : sorted) {
@@ -159,12 +205,19 @@ public final class ModListRows {
 		return List.copyOf(rows);
 	}
 
+	/** Adds a top-level block; the first one with an id is the one a child naming that id sits under. */
+	private static void add(List<Block> blocks, Map<String, Block> tops, Block block) {
+		blocks.add(block);
+		tops.putIfAbsent(block.head.id(), block);
+	}
+
 	/**
 	 * The top-level row {@code modId}'s declared parent leads to, made if it is not there yet; null when the chain loops
 	 * back on itself, in which case the mod is left at the top.
 	 */
-	private static Block topFor(String modId, DeclaredParent first, Map<String, Block> tops, Map<String, ModCatalog.Entry> byId,
-			Set<String> children, Map<String, DeclaredParent> parents, Function<String, DeclaredParent> declaredParent) {
+	private static Block topFor(String modId, DeclaredParent first, List<Block> blocks, Map<String, Block> tops,
+			Map<String, ModCatalog.Entry> byId, Set<String> children, Map<String, DeclaredParent> parents,
+			Function<String, DeclaredParent> declaredParent) {
 		Set<String> seen = new HashSet<>();
 		seen.add(modId);
 		DeclaredParent at = first;
@@ -178,7 +231,7 @@ public final class ModListRows {
 				// Nothing here is that id: a heading named the way the child named it, as Mod Menu's dummy parent.
 				String name = at.name().isEmpty() ? id : at.name();
 				Block group = new Block(new Row(Kind.GROUP, null, id, name, at.description(), null, 0));
-				tops.put(id, group);
+				add(blocks, tops, group);
 				return group;
 			}
 			// A real mod. A carried one placed under a parent of its own passes the child up to that parent; any other
@@ -186,7 +239,7 @@ public final class ModListRows {
 			DeclaredParent up = children.contains(id) ? parents.get(id) : parent(declaredParent, id);
 			if (up == null) {
 				Block made = new Block(mod(real, 0));
-				tops.put(id, made);
+				add(blocks, tops, made);
 				return made;
 			}
 			at = up;

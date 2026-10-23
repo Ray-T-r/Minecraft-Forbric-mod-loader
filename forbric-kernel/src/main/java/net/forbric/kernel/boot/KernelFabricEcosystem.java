@@ -280,10 +280,11 @@ public final class KernelFabricEcosystem {
 			}
 			// Shown as its own Fabric build shows itself: that build's fabric.mod.json is how the mod presents itself to
 			// a Fabric mod list, and the bare id made it a nameless, iconless row on Mod Menu.
+			LosingBuild shown = losingBuildOf(discovery, dupes, alias.modId());
 			fabric.register(KernelModContainer.presence(KernelModMetadata.presenceShownAs(
-					losingBuildOf(discovery, alias.modId()), alias.modId(), alias.version(),
+					shown == null ? null : shown.metadata(), alias.modId(), alias.version(),
 					foreignCustomValues(alias.modId()), entrypoints),
-					presenceSource(alias.modId(), dupes)));
+					presenceSource(alias.modId(), dupes), shown == null ? null : shown.jar()));
 			ForbricLog.info("[Forbric/Fabric] presence alias '%s' %s — its Fabric jar lost arbitration, but the "
 					+ "winning jar supplies the classes; isModLoaded now answers", alias.modId(), alias.version());
 		}
@@ -1242,16 +1243,48 @@ public final class KernelFabricEcosystem {
 				List.of(new KernelModMetadata.EntrypointDecl("default", MOD_MENU_PLUGIN)));
 	}
 
+	/** A Fabric build of a mod that did not win its id: what its {@code fabric.mod.json} says, and the jar it is in. */
+	record LosingBuild(KernelModMetadata metadata, Path jar) {
+	}
+
 	/**
-	 * The metadata of {@code id}'s Fabric build that discovery read and did not register: the Fabric half of a universal
-	 * jar a Forge family owns, or a Fabric jar whose id another jar won. Null when discovery has none.
+	 * {@code id}'s Fabric build that lost its id, as it shows itself: null when there is none to read.
+	 *
+	 * <p>Two places, because a losing build reaches one of two: discovery read and did not register the Fabric half of a
+	 * universal jar a Forge family owns and a nested jar whose id another jar won; a top-level Fabric jar that lost to
+	 * another jar (its NeoForge build beside it in {@code mods/}) is never read at all -- discovery skips a suppressed jar
+	 * -- so its {@code fabric.mod.json} is read here, from the jar, which is still there.
 	 */
-	static KernelModMetadata losingBuildOf(FabricModDiscovery discovery, String id) {
-		if (discovery == null || id == null) return null;
-		for (KernelModContainer container : discovery.getContainers()) {
-			if (id.equals(container.getMetadata().getId())) return container.getMetadata();
+	static LosingBuild losingBuildOf(FabricModDiscovery discovery, DuplicateModArbiter.Decision dupes, String id) {
+		if (id == null) return null;
+		if (discovery != null) {
+			for (KernelModContainer container : discovery.getContainers()) {
+				if (id.equals(container.getMetadata().getId())) return new LosingBuild(container.getMetadata(), container.getJar());
+			}
+		}
+		if (dupes == null) return null;
+		List<Path> suppressed = new ArrayList<>(dupes.suppressedJars());
+		suppressed.sort(java.util.Comparator.comparing(Path::toString));
+		for (Path jar : suppressed) {
+			KernelModMetadata metadata = fabricManifestOf(jar);
+			if (metadata != null && id.equals(metadata.getId())) return new LosingBuild(metadata, jar);
 		}
 		return null;
+	}
+
+	/** {@code jar}'s own {@code fabric.mod.json}, or null when it has none or it will not parse. */
+	private static KernelModMetadata fabricManifestOf(Path jar) {
+		if (jar == null || !Files.isRegularFile(jar)) return null;
+		try (java.util.zip.ZipFile zip = new java.util.zip.ZipFile(jar.toFile())) {
+			java.util.zip.ZipEntry manifest = zip.getEntry(FabricModDiscovery.MANIFEST);
+			if (manifest == null) return null;
+			try (java.io.InputStream in = zip.getInputStream(manifest)) {
+				return net.forbric.kernel.fabric.FabricModMetadataParser.read(in);
+			}
+		} catch (java.io.IOException | RuntimeException unreadable) {
+			Caught.expected(unreadable);
+			return null;
+		}
 	}
 
 	/**

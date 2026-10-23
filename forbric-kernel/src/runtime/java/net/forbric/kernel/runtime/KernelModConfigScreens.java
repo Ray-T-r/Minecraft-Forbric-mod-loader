@@ -142,7 +142,8 @@ public final class KernelModConfigScreens {
 	 * a config screen. The game is always one: its options screen is always there. The rest are found, not named: a
 	 * container in NeoForge's or MinecraftForge's list, or a mod in Fabric's, whose id the catalogue does not have. On
 	 * NeoForge that is NeoForge itself, which registers a config screen for its own settings; its own Mods screen
-	 * shows it, and this one is that screen's replacement.
+	 * shows it, and this one is that screen's replacement. Whether such a loader's own entry becomes a row is not
+	 * decided here: {@link ModListRows#LOADER_ROWS} is that one decision.
 	 */
 	private static List<ModListRows.Platform> platform(Set<String> catalogued) {
 		List<ModListRows.Platform> out = new ArrayList<>();

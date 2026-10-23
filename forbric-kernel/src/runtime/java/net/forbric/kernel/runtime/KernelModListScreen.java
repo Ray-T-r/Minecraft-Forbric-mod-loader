@@ -82,6 +82,8 @@ public final class KernelModListScreen extends Screen {
 	private ModList list;
 	private EditBox search;
 	private Button config;
+	/** Whether the selected row has a config screen: asked once per selection change, read by the button and the pane. */
+	private boolean selectedHasConfig;
 
 	/**
 	 * Frames actually drawn, and rows actually built — read by the client smoke harness.
@@ -225,7 +227,7 @@ public final class KernelModListScreen extends Screen {
 		y += 14;
 		// Where a row that is no jar in mods/ comes from, said once here rather than left for the player to wonder why
 		// a mod they never installed is in the list.
-		String origin = origin(r);
+		String origin = origin(r, this.selectedHasConfig);
 		if (!origin.isEmpty()) {
 			g.textWithWordWrap(this.font, FormattedText.of(origin), x, y, wrap, DIM);
 			y += 12 * this.font.split(FormattedText.of(origin), wrap).size() + 2;
@@ -286,8 +288,12 @@ public final class KernelModListScreen extends Screen {
 		}
 	}
 
-	/** Why a row that is not a jar in {@code mods/} is listed, or empty for one that is. */
-	private static String origin(ModListRows.Row r) {
+	/**
+	 * Why a row that is not a jar in {@code mods/} is listed, or empty for one that is. A carried mod is listed either for
+	 * settings of its own or, with none, because a carried mod that has some names it as the mod it belongs under; which
+	 * one is said by whether it has a config screen ({@code hasConfig}), not assumed.
+	 */
+	static String origin(ModListRows.Row r, boolean hasConfig) {
 		if (r.game()) return "The game itself.";
 		if (r.kind() == ModListRows.Kind.PLATFORM) return "Part of " + label(r.family()) + " itself, not a jar in mods/.";
 		ModCatalog.Entry e = r.entry();
@@ -296,8 +302,10 @@ public final class KernelModListScreen extends Screen {
 		String by = e.bundledBy();
 		ModCatalog.Entry carrier = null;
 		for (ModCatalog.Entry c : ModCatalog.all()) if (c.modId().equals(by)) carrier = c;
-		return carrier != null ? "Carried inside " + carrier.name() + "; listed because it has settings of its own."
-				: "Carried inside other mods; listed because it has settings of its own.";
+		String where = carrier != null ? "Carried inside " + carrier.name() : "Carried inside other mods";
+		return where + (hasConfig ? "; listed because it has settings of its own."
+				: "; it has no settings of its own, and is listed because a carried mod with settings names it as the mod "
+						+ "it belongs under.");
 	}
 
 	/**
@@ -309,7 +317,8 @@ public final class KernelModListScreen extends Screen {
 	private void selectionChanged() {
 		if (this.config == null) return;
 		Row row = this.list == null ? null : this.list.getSelected();
-		this.config.visible = row != null && KernelModConfigScreens.has(row.row);
+		this.selectedHasConfig = row != null && KernelModConfigScreens.has(row.row);
+		this.config.visible = this.selectedHasConfig;
 	}
 
 	private void openConfig() {

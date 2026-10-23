@@ -164,7 +164,7 @@ class ModListRowsTest {
 		ModCatalog.Entry shadow = new ModCatalog.Entry(Ecosystem.NEOFORGE, "mod", "Shadow", "1", "", List.of(), "", "", "");
 		List<ModCatalog.Entry> all = List.of(installed("mod", "Lemon"), installed("zz", "Zz"));
 		List<Row> rows = ModListRows.plan(all, List.of(new Platform(game, null), new Platform(loader, Ecosystem.NEOFORGE),
-				new Platform(shadow, Ecosystem.NEOFORGE)), e -> true, id -> null);
+				new Platform(shadow, Ecosystem.NEOFORGE)), e -> true, id -> null, ModListRows.LoaderRows.ALWAYS);
 		assertEquals(List.of("mod", "game", "loader", "zz"), ids(rows));
 		assertTrue(rows.get(1).game());
 		assertEquals(Kind.PLATFORM, rows.get(2).kind());
@@ -194,6 +194,53 @@ class ModListRowsTest {
 		assertEquals(List.of("a", "  x", "  y"), search.apply("alp"));
 		assertEquals(List.of("b"), search.apply("bet"));
 		assertEquals(List.of(), search.apply("nothing"));
+	}
+
+	/**
+	 * An unreadable jar is catalogued under the id its failure names, which can be the id of a jar that did load. Both
+	 * are jars a player installed and each is a row: the broken one, marked FAILED, is the row the player most needs, and
+	 * keying rows by id alone dropped whichever came second.
+	 */
+	@Test
+	void everyInstalledEntryIsARowEvenWhenTwoShareAnId() {
+		ModCatalog.Entry loaded = installed("shared", "Shared");
+		ModCatalog.Entry broken = new ModCatalog.Entry(Ecosystem.NEOFORGE, "shared", "shared", "", "", List.of(),
+				"shared-broken.jar", "", "").withStatus(ModCatalog.Status.FAILED, "its metadata would not parse");
+		ModCatalog.Entry other = installed("zz", "Zz");
+		for (List<ModCatalog.Entry> all : List.of(List.of(loaded, broken, other), List.of(broken, loaded, other))) {
+			List<Row> rows = plan(all, Set.of(), Map.of());
+			assertEquals(List.of("shared", "shared", "zz"), ids(rows));
+			assertEquals(Set.of(loaded, broken), Set.of(rows.get(0).entry(), rows.get(1).entry()),
+					"each installed entry is its own row, the FAILED one included");
+			assertTrue(ModListRows.filter(rows, r -> r.entry() != null && r.entry().status() != ModCatalog.Status.OK)
+					.stream().anyMatch(r -> r.entry() == broken), "and a search for what is broken still finds it");
+		}
+		// A carried mod naming that id as its parent sits under one of them, once.
+		List<Row> rows = plan(List.of(loaded, broken, carried("lib", "Lib", "shared")), Set.of("lib"),
+				Map.of("lib", new DeclaredParent("shared", "", "")));
+		assertEquals(List.of("shared", "  lib", "shared"), ids(rows));
+	}
+
+	/**
+	 * The loader-row decision, each answer: the game's row is never a loader's and is listed under all three; a loader's
+	 * own entry follows the decision. Which answer {@link ModListRows#LOADER_ROWS} holds is the owner's call and is not
+	 * asserted here.
+	 */
+	@Test
+	void aLoadersOwnRowFollowsTheOneLoaderRowDecision() {
+		ModCatalog.Entry game = new ModCatalog.Entry(Ecosystem.FABRIC, "game", "Minecraft", "26.2", "", List.of(), "", "", "");
+		ModCatalog.Entry loader = new ModCatalog.Entry(Ecosystem.NEOFORGE, "loader", "NeoForge", "1", "", List.of(), "", "", "");
+		List<Platform> platform = List.of(new Platform(game, null), new Platform(loader, Ecosystem.NEOFORGE));
+		List<ModCatalog.Entry> fabricOnly = List.of(installed("f", "Fabric Mod"));
+		List<ModCatalog.Entry> withNeo = List.of(installed("f", "Fabric Mod"),
+				new ModCatalog.Entry(Ecosystem.NEOFORGE, "n", "Neo Mod", "1", "", List.of(), "n.jar", "", ""));
+		Function<ModListRows.LoaderRows, Function<List<ModCatalog.Entry>, List<String>>> listed = policy -> all -> ids(
+				ModListRows.plan(all, platform, e -> true, id -> null, policy));
+		assertEquals(List.of("f", "game", "loader"), listed.apply(ModListRows.LoaderRows.ALWAYS).apply(fabricOnly));
+		assertEquals(List.of("f", "game"), listed.apply(ModListRows.LoaderRows.WHEN_ITS_FAMILY_HAS_MODS).apply(fabricOnly));
+		assertEquals(List.of("f", "game", "n", "loader"),
+				listed.apply(ModListRows.LoaderRows.WHEN_ITS_FAMILY_HAS_MODS).apply(withNeo));
+		assertEquals(List.of("f", "game", "n"), listed.apply(ModListRows.LoaderRows.NEVER).apply(withNeo));
 	}
 
 	@Test

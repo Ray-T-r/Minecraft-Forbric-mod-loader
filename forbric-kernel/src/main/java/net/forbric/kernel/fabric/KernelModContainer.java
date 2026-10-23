@@ -54,6 +54,9 @@ public final class KernelModContainer extends ModContainerImpl {
 	private volatile List<Path> rootPaths;
 	/** For a presence identity only: the jar its files are read from. {@link #getJar()} stays null. */
 	private final Path loadedFrom;
+	/** The jar the metadata's icon came from, when that is not {@link #loadedFrom}; see {@link #presence(KernelModMetadata, Path, Path)}. */
+	private final Path shownFrom;
+	private volatile List<Path> shownRoots;
 
 	/** @param jar the mod's jar, or {@code null} for a builtin (synthetic) mod such as {@code minecraft} */
 	public KernelModContainer(KernelModMetadata metadata, Path jar, KernelModContainer parent) {
@@ -61,10 +64,15 @@ public final class KernelModContainer extends ModContainerImpl {
 	}
 
 	private KernelModContainer(KernelModMetadata metadata, Path jar, KernelModContainer parent, Path loadedFrom) {
+		this(metadata, jar, parent, loadedFrom, null);
+	}
+
+	private KernelModContainer(KernelModMetadata metadata, Path jar, KernelModContainer parent, Path loadedFrom, Path shownFrom) {
 		this.metadata = metadata;
 		this.jar = jar;
 		this.parent = parent;
 		this.loadedFrom = loadedFrom;
+		this.shownFrom = shownFrom;
 
 		if (parent != null) parent.children.add(this);
 	}
@@ -80,6 +88,44 @@ public final class KernelModContainer extends ModContainerImpl {
 	 */
 	public static KernelModContainer presence(KernelModMetadata metadata, Path loadedFrom) {
 		return new KernelModContainer(metadata, null, null, loadedFrom);
+	}
+
+	/**
+	 * As {@link #presence(KernelModMetadata, Path)}, for an identity shown as another jar shows it: a mod whose Fabric
+	 * build lost, presented by that build's {@code fabric.mod.json} ({@link KernelModMetadata#presenceShownAs}). Every file
+	 * is still read from {@code loadedFrom}, the jar that runs; only an icon the metadata declares and that jar lacks is
+	 * read from {@code shownFrom}, the jar that declared it -- a mod list draws the icon of the metadata it shows, and a
+	 * Fabric jar that lost to another family's build of the mod can be the only jar with that file at that path.
+	 */
+	public static KernelModContainer presence(KernelModMetadata metadata, Path loadedFrom, Path shownFrom) {
+		boolean elsewhere = shownFrom != null && (loadedFrom == null
+				|| !shownFrom.toAbsolutePath().normalize().equals(loadedFrom.toAbsolutePath().normalize()));
+		return new KernelModContainer(metadata, null, null, loadedFrom, elsewhere ? shownFrom : null);
+	}
+
+	/** {@link ModContainer#findPath}, and for a presence identity the declared icon from the jar that declared it. */
+	@Override
+	public Optional<Path> findPath(String file) {
+		Optional<Path> found = firstExisting(getRootPaths(), file);
+		if (found.isPresent() || shownFrom == null || file == null || !metadata.declaresIcon(file)) return found;
+		return firstExisting(shownRoots(), file);
+	}
+
+	private static Optional<Path> firstExisting(List<Path> roots, String file) {
+		for (Path root : roots) {
+			Path path = root.resolve(file.replace("/", root.getFileSystem().getSeparator()));
+			if (Files.exists(path)) return Optional.of(path);
+		}
+		return Optional.empty();
+	}
+
+	private List<Path> shownRoots() {
+		List<Path> roots = shownRoots;
+		if (roots != null) return roots;
+		synchronized (this) {
+			if (shownRoots == null) shownRoots = open(shownFrom);
+			return shownRoots;
+		}
 	}
 
 	/**
@@ -110,29 +156,24 @@ public final class KernelModContainer extends ModContainerImpl {
 
 		synchronized (this) {
 			if (rootPaths != null) return rootPaths;
+			rootPaths = open(jar);
+			return rootPaths;
+		}
+	}
 
-			List<Path> resolved;
-
-			try {
-				if (Files.isDirectory(jar)) {
-					resolved = List.of(jar);
-				} else {
-					FileSystem fs = FileSystems.newFileSystem(jar, (ClassLoader) null);
-					List<Path> roots = new ArrayList<>();
-
-					for (Path root : fs.getRootDirectories()) {
-						roots.add(root);
-					}
-
-					resolved = Collections.unmodifiableList(roots);
-				}
-			} catch (IOException e) {
-				Caught.warn(e, "[Forbric/Fabric] could not open %s for %s", jar.getFileName(), metadata.getId());
-				resolved = List.of();
+	/** The roots of {@code jar}'s contents: the directory itself, or a zip file system kept open for the JVM's life. */
+	private List<Path> open(Path jar) {
+		try {
+			if (Files.isDirectory(jar)) return List.of(jar);
+			FileSystem fs = FileSystems.newFileSystem(jar, (ClassLoader) null);
+			List<Path> roots = new ArrayList<>();
+			for (Path root : fs.getRootDirectories()) {
+				roots.add(root);
 			}
-
-			rootPaths = resolved;
-			return resolved;
+			return Collections.unmodifiableList(roots);
+		} catch (IOException e) {
+			Caught.warn(e, "[Forbric/Fabric] could not open %s for %s", jar.getFileName(), metadata.getId());
+			return List.of();
 		}
 	}
 
