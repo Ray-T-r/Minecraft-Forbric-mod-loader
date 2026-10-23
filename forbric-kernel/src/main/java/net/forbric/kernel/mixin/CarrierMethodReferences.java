@@ -80,7 +80,8 @@ import net.forbric.kernel.util.ForbricLog;
  *       implementation (followed through every level the receiver inherits) first tests that very boolean's expression,
  *       answering on its own one way what the lambda answers whatever the call says, and otherwise answers something that
  *       stands for the call's answer, as it is or negated, as the lambda's other way is — the folded disjunct, compared
- *       expression by expression after inlining the code that a receiver of that type cannot override;</li>
+ *       expression by expression after inlining, on both sides, the implementation a receiver of the declared type reaches
+ *       (so a widener that only makes the receiver's class extendable changes nothing compared);</li>
  *   <li>everything the lambda's body names, but the call, is public.</li>
  * </ul>
  *

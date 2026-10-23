@@ -188,6 +188,29 @@ class CarrierMethodReferencesStagedTest {
 		assertEquals(STACK_EXTENSION, plans.getFirst().handle().getOwner());
 	}
 
+	/**
+	 * What the moved redirect leaves to the carrier: nothing of isPrimaryItemFor. The wrapper runs the native lambda — the mod's
+	 * handler, then the captured isBook — and the mod's own fallback asks Enchantment.isPrimaryItem, whose merged body (and the
+	 * isSupportedItem it asks) is the native body instruction for instruction. Only without a mod's redirect does the carrier's
+	 * isPrimaryItemFor decide, and its default differs from the native lambda for an enchanted book alone (supportsEnchantment
+	 * answers true for one), or for an item whose class overrides it — the carrier's own contract.
+	 */
+	@Test void theMovedDecisionLeavesTheCarrierNothingButTheNativeIsPrimaryItem() throws Exception {
+		Function<String, ClassNode> game = game();
+		String enchantment = "net/minecraft/world/item/enchantment/Enchantment";
+		ClassNode merged = game.apply(enchantment), original = natives().apply(Ecosystem.FABRIC, enchantment);
+		for (String name : List.of("isPrimaryItem", "isSupportedItem")) {
+			MethodNode was = original.methods.stream().filter(m -> m.name.equals(name) && m.desc.equals("(Lnet/minecraft/world/item/ItemStack;)Z")).findFirst().orElseThrow();
+			MethodNode is = merged.methods.stream().filter(m -> m.name.equals(name) && m.desc.equals(was.desc)).findFirst().orElseThrow();
+			assertEquals(MixinInstructionFingerprint.hash(was), MixinInstructionFingerprint.hash(is), name + " is the native body");
+		}
+		MethodNode supports = game.apply(ITEM_EXTENSION).methods.stream().filter(m -> m.name.equals("supportsEnchantment")).findFirst().orElseThrow();
+		boolean enchantedBook = false;
+		for (AbstractInsnNode instruction : supports.instructions)
+			if (instruction instanceof FieldInsnNode field && field.name.equals("ENCHANTED_BOOK")) enchantedBook = true;
+		assertTrue(enchantedBook, "the carrier's default answers true for an enchanted book before it asks the enchantment");
+	}
+
 	/** The carrier's default that tests another value first folds nothing the lambda captured: nothing moves. */
 	@Test void withoutTheFoldedDisjunctNothingMoves() throws Exception {
 		Function<String, ClassNode> game = game();

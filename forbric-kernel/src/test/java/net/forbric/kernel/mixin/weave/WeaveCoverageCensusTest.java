@@ -114,6 +114,7 @@ class WeaveCoverageCensusTest {
 			Map.entry("NativeLocalMaterialization", Switch.own("forbric.nativeLocalMaterialization")), // NativeLocalMaterializationWeaveTest
 			Map.entry("NativeLocalPins", Switch.own("forbric.nativeLocalPins")), // NativeLocalPinsWeaveTest
 			Map.entry("NativeEntryRelay", Switch.own("forbric.nativeEntryRelay")), // NativeEntryRelayWeaveTest, FluidPairMixinAdaptersWeaveTest
+			Map.entry("UncalledDecisionEntries", Switch.own("forbric.uncalledDecisionEntries")), // UncalledDecisionEntriesWeaveTest
 			Map.entry("NativeDecisionIsland", Switch.own("forbric.nativeDecisionIsland")), // NativeDecisionIslandWeaveTest
 			Map.entry("NativeConsumerStores", Switch.own("forbric.nativeConsumerStores")), // NativeConsumerStoresWeaveTest
 			Map.entry("NativeValueStores", Switch.own("forbric.nativeValueStores")), // NativeValueStoresWeaveTest
