@@ -1,0 +1,1 @@
+{"required": true, "package": "io.wren.latch.mixin", "compatibilityLevel": "JAVA_21", "mixins": ["WeirMixin"], "injectors": {"defaultRequire": 1}}
