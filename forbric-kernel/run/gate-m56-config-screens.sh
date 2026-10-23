@@ -271,10 +271,11 @@ esac; done
 
 step "M56 result"
 RAN="${RAN# }"
-case " $RAN " in
-  *" standin "*" control "*" modmenu "*) WHAT="all three phases" ;;
-  *) WHAT="ONLY the phases [$RAN] (M56_PHASES): not the whole gate" ;;
-esac
+# One phase at a time: a single pattern over the three shares the spaces between them and never matches.
+WHAT="all three phases"
+for need in standin control modmenu; do
+  case " $RAN " in *" $need "*) ;; *) WHAT="ONLY the phases [$RAN] (M56_PHASES): not the whole gate" ;; esac
+done
 if [ "$FAIL" -eq 0 ]; then
   echo "[kernel] ✅ M56 CONFIG SCREENS GATE GREEN ($WHAT) — Fabric mods' config screens open from Forbric's own Mods screen without Mod Menu, carried mods and the game included"
 else
