@@ -567,8 +567,10 @@ test	net.forbric.kernel.mixin.CarrierHelperResultsStagedTest	theMoveKnowsNoName(
 test	net.forbric.kernel.mixin.CarrierHelperResultsStagedTest	theSwitchLeavesFabricApisMixinAlone()	[fixture:staged] actual game required
 test	net.forbric.kernel.mixin.CarrierHelperResultsStagedTest	vanillasOwnBodyIsWhatBothWereWrittenFor()	[fixture:mc-libraries] actual game required
 test	net.forbric.kernel.mixin.CarrierMethodReferencesStagedTest	aGroupOrTheSwitchLeavesTheRedirectAsCompiled()	[fixture:staged] actual Fabric API fixture required
+test	net.forbric.kernel.mixin.CarrierMethodReferencesStagedTest	aWidenerThatOnlyMakesTheStackExtendableStillMoves()	[fixture:staged] actual game required
 test	net.forbric.kernel.mixin.CarrierMethodReferencesStagedTest	theMaterializedReferenceTakesTheLambdasParametersAndReadsTheFoldedValueFromItsLocal()	[fixture:staged] actual Fabric API fixture required
 test	net.forbric.kernel.mixin.CarrierMethodReferencesStagedTest	theMoveKnowsNoName()	[fixture:staged] actual Fabric API fixture required
+test	net.forbric.kernel.mixin.CarrierMethodReferencesStagedTest	theMovedDecisionLeavesTheCarrierNothingButTheNativeIsPrimaryItem()	[fixture:staged] actual game required
 test	net.forbric.kernel.mixin.CarrierMethodReferencesStagedTest	theTablesRedirectMovesOntoTheMethodReferencesCallAndRunsTheNativeLambdaThere()	[fixture:staged] actual Fabric API fixture required
 test	net.forbric.kernel.mixin.CarrierMethodReferencesStagedTest	whereTheMergedClassStillHasTheLambdaNothingMoves()	[fixture:staged] actual game required
 test	net.forbric.kernel.mixin.CarrierMethodReferencesStagedTest	withoutTheFoldedDisjunctNothingMoves()	[fixture:staged] actual game required
@@ -1525,6 +1527,11 @@ test	net.forbric.kernel.mixin.ThinnedCallOrdinalsSpellingTest	theReleasedHookUnd
 test	net.forbric.kernel.mixin.ThinnedCallOrdinalsSpellingTest	with whitespace	[fixture:staged] actual game required
 test	net.forbric.kernel.mixin.ThinnedCallOrdinalsTest	releasedViaFabricPlusCountsOnTheMergedBody()	[fixture:staged] actual game required
 test	net.forbric.kernel.mixin.ThinnedCallOrdinalsTest	theRowIsWhatVanillaAndTheMergedBaseSay()	[fixture:staged] actual game required
+test	net.forbric.kernel.mixin.UncalledDecisionEntriesStagedTest	aCarrierCallOnAnotherValueMovesNothing()	[fixture:staged] actual game required
+test	net.forbric.kernel.mixin.UncalledDecisionEntriesStagedTest	createsHeadHookWrapsTheCarriersThreeDecisionsInGetConnectingSide()	[fixture:third-party] real fixture required: $ROOT/forbric-kernel/build/compat-inputs/create-fly/create-fly.jar
+test	net.forbric.kernel.mixin.UncalledDecisionEntriesStagedTest	theMoveKnowsNoName()	[fixture:third-party] real fixture required: $ROOT/forbric-kernel/build/compat-inputs/create-fly/create-fly.jar
+test	net.forbric.kernel.mixin.UncalledDecisionEntriesStagedTest	theSwitchLeavesTheHookAsCompiled()	[fixture:third-party] real fixture required: $ROOT/forbric-kernel/build/compat-inputs/create-fly/create-fly.jar
+test	net.forbric.kernel.mixin.UncalledDecisionEntriesStagedTest	whereTheMergedClassStillAsksTheDecisionNothingMoves()	[fixture:staged] actual game required
 test	net.forbric.kernel.mixin.UncalledMethodCensusTest	theShippedTableIsExactlyWhatTheArtifactsSay()	[fixture:staged] $ROOT/forbric-loader/run/merged-base/patched-mc-merged-26.2.jar required
 test	net.forbric.kernel.mixin.weave.ControlifyPlatformWeaveTest	eachBuildOfControlifyLoadsItsOwnPlatformHalfUnrewritten()	[fixture:third-party] local mod fixture absent: build/sweep100-mac-network/mods/controlify-3.5.3+mc26.2-universal.jar
 test	net.forbric.kernel.mixin.weave.LootSourceCallbacksSpellingTest	aPairWhoseCallbacksBindTwoMethodsIsNoGroup()	[fixture:staged] verified native loot target and compiled typed seam: $ROOT/forbric-loader/run/merged-base/patched-mc-merged-26.2.jar
@@ -1705,6 +1712,8 @@ test	net.forbric.kernel.runtime.KernelGameBlockEventsTest	aModThatDeniesTheResul
 test	net.forbric.kernel.runtime.KernelGameBlockEventsTest	aModThatOnlyWatchesDoesNotStopTheBreak()	[fixture:staged] the staged bases are absent
 test	net.forbric.kernel.runtime.KernelGameBlockEventsTest	aNeoForgeDecisionIsHandedToMinecraftForgeUnderItsOwnName()	[fixture:staged] the staged bases are absent
 test	net.forbric.kernel.runtime.KernelGameBlockEventsTest	everyLeftClickActionHasTheSameNameOnBothSides()	[fixture:staged] the staged bases are absent
+test	net.forbric.kernel.runtime.KernelGameBlockEventsTest	onlyAMinecraftForgeDecisionIsHandedToTheDropsEvent()	[fixture:staged] the staged bases are absent
+test	net.forbric.kernel.runtime.KernelGameBlockEventsTest	theFamilyThatAnswersABlocksExperienceIsReadFromItsDeclarations()	[fixture:staged] the staged bases are absent
 test	net.forbric.kernel.runtime.KernelGameEntityEventsTest	aMinecraftForgeModCannotUndoANeoForgeCancellation()	[fixture:staged] the staged carriers are absent
 test	net.forbric.kernel.runtime.KernelGameEntityEventsTest	aMinecraftForgeModThatDoesNotVetoChangesNothing()	[fixture:staged] the staged carriers are absent
 test	net.forbric.kernel.runtime.KernelGameEntityEventsTest	aMinecraftForgeVetoCancelsTheNeoForgeEvent()	[fixture:staged] the staged carriers are absent

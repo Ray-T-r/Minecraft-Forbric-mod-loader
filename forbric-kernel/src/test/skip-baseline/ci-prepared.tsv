@@ -732,6 +732,11 @@ test	net.forbric.kernel.mixin.ThinnedCallOrdinalsSpellingTest	selectorAndTargetB
 test	net.forbric.kernel.mixin.ThinnedCallOrdinalsSpellingTest	theReleasedHookUnderOtherNamesIsRecounted()	[fixture:third-party] ../build/lb-vfp/jars/ViaFabricPlus-5.0.2.jar absent
 test	net.forbric.kernel.mixin.ThinnedCallOrdinalsSpellingTest	with whitespace	[fixture:third-party] ../build/lb-vfp/jars/ViaFabricPlus-5.0.2.jar absent
 test	net.forbric.kernel.mixin.ThinnedCallOrdinalsTest	releasedViaFabricPlusCountsOnTheMergedBody()	[fixture:third-party] ../build/lb-vfp/jars/ViaFabricPlus-5.0.2.jar absent
+test	net.forbric.kernel.mixin.UncalledDecisionEntriesStagedTest	aCarrierCallOnAnotherValueMovesNothing()	[fixture:third-party] real fixture required: $ROOT/forbric-kernel/build/compat-inputs/create-fly/create-fly.jar
+test	net.forbric.kernel.mixin.UncalledDecisionEntriesStagedTest	createsHeadHookWrapsTheCarriersThreeDecisionsInGetConnectingSide()	[fixture:third-party] real fixture required: $ROOT/forbric-kernel/build/compat-inputs/create-fly/create-fly.jar
+test	net.forbric.kernel.mixin.UncalledDecisionEntriesStagedTest	theMoveKnowsNoName()	[fixture:third-party] real fixture required: $ROOT/forbric-kernel/build/compat-inputs/create-fly/create-fly.jar
+test	net.forbric.kernel.mixin.UncalledDecisionEntriesStagedTest	theSwitchLeavesTheHookAsCompiled()	[fixture:third-party] real fixture required: $ROOT/forbric-kernel/build/compat-inputs/create-fly/create-fly.jar
+test	net.forbric.kernel.mixin.UncalledDecisionEntriesStagedTest	whereTheMergedClassStillAsksTheDecisionNothingMoves()	[fixture:third-party] real fixture required: $ROOT/forbric-kernel/build/compat-inputs/create-fly/create-fly.jar
 test	net.forbric.kernel.mixin.weave.ControlifyPlatformWeaveTest	eachBuildOfControlifyLoadsItsOwnPlatformHalfUnrewritten()	[fixture:third-party] local mod fixture absent: build/sweep100-mac-network/mods/controlify-3.5.3+mc26.2-universal.jar
 test	net.forbric.kernel.runtime.KernelFabricFluidBehaviorsTest	aLookupThatBreaksAnswersNoBehaviourType()	[fixture:third-party] sweep pack absent
 test	net.forbric.kernel.runtime.KernelFabricFluidBehaviorsTest	aQuestionDuringTheFirstResolveWaitsForIt()	[fixture:third-party] sweep pack absent
