@@ -793,6 +793,21 @@ Notable repairs by family (read each class's javadoc for the case that motivated
 - **Configs** — `StaleWatchEventInjector` (a config file watch's handler runs only for a change made after the watch
   was registered, so a config the tracker creates in an already-watched directory no longer fires a reload event;
   `StaleWatchGuard`).
+- **Air** — `VanillaAirRefillInjector` + `KernelAirRefill` (the owner chose vanilla's rule). The merged `baseTick` is
+  NeoForge's and hands the air supply to `CommonHooks.onLivingBreathe`. Where the eye is in a fluid that is not air and
+  the body does not drown there — water breathing or conduit power, a drowned, an invulnerable player, lava, a mod's
+  fluid it may breathe in — that hook hands its breathe event a refill of zero, so the air stayed where it was; vanilla
+  and MinecraftForge refill it by 4 a tick up to the maximum, and hold it only in water for a body that Breath of the
+  Nautilus alone keeps from drowning. The one store of that zero (found by shape: the hook's signature, its one
+  `LivingBreatheEvent(entity, canBreathe, consume, refill)`, the zero stored into the refill local right after true into
+  the can-breathe local) becomes vanilla's refill. Only the default changes: the hook still posts `LivingBreatheEvent`
+  with it, and a NeoForge listener still sets the amounts and decides whether the body breathes, as on NeoForge. The
+  cross-host predicate island's protected decision (a Fabric fluid that drowns like water, §7.4.1) starts its event from
+  the same refill. The refill asks its water question of the body's fluid interaction rather than through
+  `isEyeInFluid`, because the native decision island would take the carrier asking vanilla's own call as the call having
+  moved and give up the injectors there (Create's diving gear, fabric-api's drowning fluids); `NativeDecisionIslandStagedTest`
+  holds both sides of that. `-Dforbric.vanillaAirRefill=off` (formerly `forbric.foreignFluidBreathing`, which gave only a
+  Fabric mod's non-drowning fluid the refill) keeps NeoForge's rule.
 - **Instrumentation** — `ClientSmokeTickInjector` (inert unless `-Dforbric.clientSmoke=true`),
   `EventChainAuditInjector` (inert unless `-Dforbric.eventChainAudit=<report>`), `ServerTickSamplerInjector`,
   `CompatibilityPromptTickInjector`, `ServerCompatibilityTickInjector`.
@@ -1983,11 +1998,19 @@ Break one and the failure usually surfaces far from the cause.
   | Create Fly (with fabric-api) | equivalent | fuel, redstone connection and the global keys are native now; report-only: its `FuelValuesMixin` still reads `SUSPECTED`, and a second preflight on the render thread prints `EntityMixin`'s old partial line again |
   | PuzzlesLib (Fabric and NeoForge builds) | equivalent | its experience event is handed the vanilla value and decides once (50 and 100 for two breaks, as natively) |
   | Mod Menu | not equivalent | the update checker announces an update for `fabricloader@0.19.3`; the carrier's branding line |
-  | fabric-api 0.161 | not equivalent | datagen's `TagsProviderMixin`; `AFTER` has two static call sites (fires once per break); the breathing rule; two proven items |
+  | fabric-api 0.161 | not equivalent | datagen's `TagsProviderMixin`; `AFTER` has two static call sites (fires once per break); two proven items |
   | Balm | not equivalent | `SCREEN_OPEN` reads; crop moisture (proven) |
   | Origins Legacy (with fabric-api) | equivalent | — |
   | Architectury | equivalent | — (the global keys measured in game this round) |
   | Physics Mod | equivalent | — |
+
+  Air under a fluid was measured again after that, on dedicated servers against native Fabric (with fabric-api and a
+  Fabric test fluid, and with Create Fly too), NeoForge 26.2.0.88 and MinecraftForge 26.2-65.0.1, with Forbric run
+  without fabric-api, with it, and with Create Fly. For every body that breathes where its eyes are — water breathing,
+  conduit power, a drowned, a turtle helmet, an invulnerable player, lava, a mod's breathable fluid, Create's diving
+  gear — Forbric's air now climbs by 4 a tick to 300 tick for tick as on native Fabric (Breath of the Nautilus alone
+  holds it in water, as there); a NeoForge listener that sets the amounts or whether the body breathes gets exactly
+  the curve it gets on NeoForge, and reads vanilla's refill (4) as the default where NeoForge hands it 0.
 
 **What is still not native-equivalent.** Proven not closable by any structural trigger (each proof kept):
 
@@ -2019,9 +2042,13 @@ Located, not yet fixed (no impossibility proof):
   fires exactly once per break in every mode measured; the enchanting table's primary-item check goes through
   NeoForge's `isPrimaryItemFor`, proven only for the disjunct it folds (the in-game enchanting probe matches native);
   datagen's `TagsProviderMixin` attaches nowhere (Fabric data generation only).
-- Air under water: an entity that can breathe there (a player with water breathing, in water or a modded fluid; a
-  drowned) keeps its air value where native refills it by 4 per tick. That is NeoForge's carrier rule, left as
-  NeoForge decides it pending the owner's decision.
+- MinecraftForge's own `LivingBreatheEvent` is never posted: the merged `baseTick` calls only NeoForge's breathing hook
+  (`ForgeHooks.onLivingBreathe` has no caller), so a MinecraftForge listener of it never runs. The air itself follows
+  vanilla's rule (§6), which is MinecraftForge's own but for one case: with only Breath of the Nautilus, MinecraftForge
+  holds the air in lava where vanilla, and so Forbric, refills it.
+- A MinecraftForge mod's liquid block built with `LiquidBlock(Supplier, Properties)` (with a `ForgeFlowingFluid`) throws
+  a `NullPointerException` as soon as it is placed: the merged `LiquidBlock.onPlace` reads the vanilla `fluid` field,
+  which that constructor leaves null (it fills only the supplier). Found while measuring air in a MinecraftForge fluid.
 - Experience: a MinecraftForge `BreakEvent` listener that only reads `getExpToDrop` sees MinecraftForge's own draw, not
   the one NeoForge drops (a listener that sets it decides correctly). The relay of `tryDropExperience` (§7.4) declines,
   with a WARN, a hook that reads or changes the raw draw or replaces the `popExperience` call, and runs for a block

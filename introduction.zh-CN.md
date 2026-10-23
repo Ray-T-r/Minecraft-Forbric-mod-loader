@@ -292,6 +292,7 @@ Mixin (via MixinWeaverSlot) → NativeCoremodParity → PostMixinFixups → Unca
 - **把原生形状还回去** —— 让合并后的方法体恢复平台自己方法体里的某种形状，使照着它写的第三方注入器像原生一样落点和运行（§7.4）：`VanillaEarlyReturns`（载体把一个守卫并进汇合点、或把方法体拆开的地方，恢复原版编译出的提前 `return`；拆开后的最后一块拿回它所属方法的那些 return）、`LocalRanges`（拼接把对某个局部变量的读取放到它的作用域前面时，让它的局部变量表范围重新覆盖它自己的用处）、`TailLocals`（拆开的方法的尾部重新持有原版尾部持有的基本类型局部变量）、`LambdaInvocationThunkInjector`（把本类的虚方法引用物化成一次确切的调用，供第三方作为目标）、`ScopedClearRelayInjector`（载体把原生的 `field.clear()` 换成删除算出来的一部分 key 时，把它放回去；`ScopedClearView`），以及 §8.1 的投递记账（`NativeDualEventInjector`），它从不挪动任何一条游戏指令。
 - **客户端渲染与装备** —— `ForgeModelDataFlowTransformer` + `KernelForgeModelData`（MinecraftForge 的方块模型数据能在合并后的客户端里流动，尽管客户端问的是 NeoForge 的模型问题；每当方块被曲面细分时，都会进入它的细分入口的边）、`GlideFreshEquipmentInjector`（载体缓存的滑翔属性还没跟上装备时，`canGlide` 按装备回答，和原生方法一样）。
 - **配置** —— `StaleWatchEventInjector`（配置文件监视的处理器只对监视注册之后发生的修改运行，所以配置追踪器在已被监视的目录里新建配置时不再触发重载事件；`StaleWatchGuard`）。
+- **空气** —— `VanillaAirRefillInjector` + `KernelAirRefill`（所有者选了原版的规则）。合并后的 `baseTick` 是 NeoForge 的，它把空气值交给 `CommonHooks.onLivingBreathe`。眼睛在一种不是空气的流体里、而身体在里面不会溺水时——水下呼吸或潮涌能量、溺尸、无敌的玩家、岩浆、mod 的可呼吸流体——这个钩子交给呼吸事件的回气量是 0，所以空气值原地不动；原版和 MinecraftForge 每 tick 回 4 点直到上限，只有在水里、仅靠鹦鹉螺之息不溺水的身体才保持不动。钩子里存这个 0 的那一处（按形状找：钩子的签名、它唯一一次构造的 `LivingBreatheEvent(entity, canBreathe, consume, refill)`、紧跟在“能呼吸”局部变量存入 true 之后、往回气量局部变量里存的那个 0）改成原版会给的回气量。只改默认值：钩子照样用它发出 `LivingBreatheEvent`，NeoForge 的监听器照样设置数量、决定身体能不能呼吸，和在 NeoForge 上一样。跨宿主谓词岛的受保护判定（像水一样会溺水的 Fabric 流体，§7.4.1）也从同一个回气量开始发事件。回气量问“是不是在水里”时问的是身体的流体交互，而不是 `isEyeInFluid`：载体自己问原版的那个调用，原生判定岛会当成调用被挪走了，放弃挂在那里的注入器（Create 的潜水装备、fabric-api 的溺水流体）；`NativeDecisionIslandStagedTest` 把两边都钉住了。`-Dforbric.vanillaAirRefill=off`（原名 `forbric.foreignFluidBreathing`，以前只给 Fabric mod 的不溺水流体回气）保留 NeoForge 的规则。
 - **插桩** —— `ClientSmokeTickInjector`（除非 `-Dforbric.clientSmoke=true`，否则不起作用）、`EventChainAuditInjector`（除非 `-Dforbric.eventChainAudit=<report>`，否则不起作用）、`ServerTickSamplerInjector`、`CompatibilityPromptTickInjector`、`ServerCompatibilityTickInjector`。
 - **加固** —— `ChunkExecutorGuardInjector`（服务器停止后，拒收提交给其区块执行器的任务；`-Dforbric.chunkExecutorGuard=off`）。
 
@@ -741,11 +742,13 @@ java -cp <boot-cp> net.forbric.kernel.boot.Main --scan --mods <dir> --report out
   | Create Fly（配 fabric-api） | 等价 | 燃料、红石连接和全局键现在与原生一致；只影响报告：`FuelValuesMixin` 仍标 `SUSPECTED`，渲染线程上的第二次预检会再打印一遍 `EntityMixin` 旧的 partial 行 |
   | PuzzlesLib（Fabric 和 NeoForge 构建） | 等价 | 经验事件拿到的是原版的值，只决定一次（两次挖掘 50 和 100，与原生相同） |
   | Mod Menu | 不等价 | 更新检查提示 `fabricloader@0.19.3` 有新版；载体的品牌行 |
-  | fabric-api 0.161 | 不等价 | 数据生成的 `TagsProviderMixin`；`AFTER` 有两个静态调用点（每次挖掘只触发一次）；呼吸规则；两项已证明 |
+  | fabric-api 0.161 | 不等价 | 数据生成的 `TagsProviderMixin`；`AFTER` 有两个静态调用点（每次挖掘只触发一次）；两项已证明 |
   | Balm | 不等价 | `SCREEN_OPEN` 的读取点；作物湿度（已证明） |
   | Origins Legacy（配 fabric-api） | 等价 | — |
   | Architectury | 等价 | —（本轮在游戏里实测了全局键） |
   | Physics Mod | 等价 | — |
+
+  之后又在专用服务器上重测了流体里的空气值，对照原生 Fabric（带 fabric-api 和一种 Fabric 测试流体，再加 Create Fly）、NeoForge 26.2.0.88 和 MinecraftForge 26.2-65.0.1，Forbric 分别不带 fabric-api、带 fabric-api、带 Create Fly 运行。对每一种眼睛所在之处能呼吸的身体——水下呼吸、潮涌能量、溺尸、海龟头盔、无敌的玩家、岩浆、mod 的可呼吸流体、Create 的潜水装备——Forbric 的空气值现在和原生 Fabric 逐 tick 相同，每 tick 回 4 点直到 300（只有鹦鹉螺之息时在水里保持不动，和原生一样）；设置数量或决定能否呼吸的 NeoForge 监听器得到的曲线和在 NeoForge 上完全相同，它读到的默认回气量是原版的 4，而 NeoForge 给的是 0。
 
 **仍然不与原生等价的地方。** 已证明任何结构性触发条件都无法弥补的（证明都保留着）：
 
@@ -760,7 +763,8 @@ java -cp <boot-cp> net.forbric.kernel.boot.Main --scan --mods <dir> --report out
 - Mod Menu：`fabricloader` 容器报的版本是 0.19.3——内核实现的 Fabric Loader API 级别，`FabricLoaderApiSurfaceTest` 把它钉在这里——而原生报的是实际运行的加载器版本（0.19.5），所以 Mod Menu 的更新检查会提示一个原生不会提示的更新；挂在加载器下的 `mixinextras` 是内核自带的 0.5.4（原生 0.5.5），容器类型是 `builtin`（原生 `fabric`）。报一个内核没有实现的版本是不实的，所以要等 API 本身到 0.19.5。标题界面还多一行 Forbric 自己的品牌行 `forbric-v<版本> (N mods)`，N 是 `mods/` 里的 jar 数（Mod Menu 的数还算上了打包在这些 jar 里的 mod），它让 Mod Menu 那一行上移一格；所有者决定保留。
 - Balm 的 `SCREEN_OPEN` 钩子（挂在每次读取 `Gui.screen` 上的修改器）原生挂在 4 处读取上，这里只有 3 处：载体把这个字段存进了局部变量，少读了一次。
 - fabric-api：`PlayerBlockBreakEvents.AFTER` 在 `Block.destroy` 之后有两个静态调用点（原生一个），但在测过的每种模式下每次挖掘都恰好触发一次；附魔台的主物品判断走 NeoForge 的 `isPrimaryItemFor`，只证明了它折叠掉的那个析取项等价（游戏内附魔探针与原生相同）；数据生成的 `TagsProviderMixin` 挂不上任何地方（只影响 Fabric 数据生成）。
-- 水下的空气值：能在水下呼吸的实体（有水下呼吸效果、在水或 mod 流体里的玩家；溺尸）的空气值保持不变，原生每 tick 回 4 点。这是 NeoForge 载体的规则，按 NeoForge 的决定保留，等所有者决定。
+- MinecraftForge 自己的 `LivingBreatheEvent` 从不发出：合并后的 `baseTick` 只调用 NeoForge 的呼吸钩子（`ForgeHooks.onLivingBreathe` 没有调用方），所以 MinecraftForge 的这个监听器从不运行。空气值本身按原版的规则走（§6），这也是 MinecraftForge 自己的规则，只有一处例外：只有鹦鹉螺之息时，MinecraftForge 在岩浆里保持空气值不动，而原版会回气，Forbric 也回气。
+- 用 `LiquidBlock(Supplier, Properties)`（配 `ForgeFlowingFluid`）构造液体方块的 MinecraftForge mod，方块一放下就抛 `NullPointerException`：合并后的 `LiquidBlock.onPlace` 读的是原版的 `fluid` 字段，而这个构造器只填了 supplier，把它留成了 null。这是在 MinecraftForge 流体里测空气值时发现的。
 - 经验：只读 `getExpToDrop` 的 MinecraftForge `BreakEvent` 监听器看到的是 MinecraftForge 自己那次抽样，不是 NeoForge 实际掉落的那次（设置它的监听器结果正确）。`tryDropExperience` 的中继（§7.4）会拒绝读取或改动原始抽样、或者替换了 `popExperience` 调用的钩子，并打一条 WARN；而且只在方块的原生调用方传给 provider 的值读得出来时（字段、静态字段、对常量的静态调用）才为它运行；在内核之前注册的 `LOWEST` `BlockDropsEvent` 监听器看到的是中继前的值。从字节码读出、没有实测：NeoForge 的 `handleBlockDrops` 调用的是 `spawnAfterBreak(…, false)`，所以一个 Fabric mod 自己的方块，如果它重写的 `spawnAfterBreak` 在 `dropXp` 为 true 时弹出经验，这里一点也不会弹出。
 - 两个 mod 挂在同一个已没人调用的静态判断方法上的 `HEAD` 钩子（`UncalledDecisionEntries`）会变成载体判断外面的两层包装：运行顺序和原生相反，第一个取消时第二个照样运行（由 `UncalledDecisionTwoMixinsWeaveTest` 钉住；测过的 mod 里没有哪个有两个这样的钩子）。
 - 给开发者：委托孪生一遍（§2.4）之前构建的合并基底，挖方块仍然没有经验，`UncalledMethodCensusTest` 和 gate-m43 在它上面会红；请用当前工具重建 staged 基底（CI 和安装器总是这样做）。
