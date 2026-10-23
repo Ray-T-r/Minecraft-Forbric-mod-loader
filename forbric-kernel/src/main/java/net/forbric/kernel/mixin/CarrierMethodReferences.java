@@ -166,8 +166,16 @@ public final class CarrierMethodReferences {
 				if (points.size() != 1 || !"INVOKE".equals(MixinFit.asString(MixinFit.value(points.getFirst(), "value")))) continue;
 				if (merged == null) merged = classes.apply(target);
 				if (merged == null) break;
-				Move move = plan(mixin, handler, redirect, points.getFirst(), original, merged, classes);
-				if (move == null || !register.test(move.plan())) continue;
+				StringBuilder why = new StringBuilder();
+				Move move = plan(mixin, handler, redirect, points.getFirst(), original, merged, classes, why);
+				if (move == null || !register.test(move.plan())) {
+					// Bound to a native lambda and still not moved: say why, or the redirect is lost without a word.
+					if (move != null || !why.isEmpty())
+						ForbricLog.info("[Forbric/Mixin] %s.%s: its native lambda is gone from %s, and the redirect is not moved onto the carrier's method reference — %s",
+								mixin.name.replace('/', '.'), handler.name, target.replace('/', '.'),
+								move == null ? why : "the class " + move.plan().host().replace('/', '.') + " is already defined (or being defined), so the reference cannot be materialized before it");
+					continue;
+				}
 				String name = handler.name;
 				apply(mixin, handler, redirect, points.getFirst(), move, classes);
 				moved++;
@@ -189,7 +197,7 @@ public final class CarrierMethodReferences {
 	}
 
 	private static Move plan(ClassNode mixin, MethodNode handler, AnnotationNode redirect, AnnotationNode at, ClassNode original, ClassNode merged,
-			Function<String, ClassNode> code) {
+			Function<String, ClassNode> code, StringBuilder why) {
 		// The native lambda the redirect is bound to: one static method that is one metafactory call's implementation, gone from
 		// the merged class or left there dead (nothing in it names it), whatever its name binds there now.
 		MethodNode lambda = MixinTargetSelectors.one(handler, original);
@@ -208,22 +216,23 @@ public final class CarrierMethodReferences {
 		List<MethodInsnNode> calls = MixinCallbackShape.calls(at, lambda);
 		int ordinal = MixinFit.value(at, "ordinal") instanceof Number number ? number.intValue() : -1;
 		MethodInsnNode call = ordinal >= 0 ? (ordinal < calls.size() ? calls.get(ordinal) : null) : calls.size() == 1 ? calls.getFirst() : null;
-		if (call == null || call.getOpcode() == Opcodes.INVOKESPECIAL) return null;
+		if (call == null || call.getOpcode() == Opcodes.INVOKESPECIAL) return declined(why, "the point selects no one call in the native lambda");
 		for (AbstractInsnNode instruction : handler.instructions)
-			if (instruction instanceof MethodInsnNode own && own.owner.equals(call.owner) && own.name.equals(call.name) && own.desc.equals(call.desc)) return null;
+			if (instruction instanceof MethodInsnNode own && own.owner.equals(call.owner) && own.name.equals(call.name) && own.desc.equals(call.desc)) return declined(why, "the handler makes the call it redirects itself");
 
 		// The merged method's one metafactory call of the same functional shape, handed to the same consumer: a method reference.
 		MethodNode mergedHost = declared(merged, nativeHost.name, nativeHost.desc);
-		if (mergedHost == null) return null;
+		if (mergedHost == null) return declined(why, "the merged class has no " + nativeHost.name + nativeHost.desc);
 		InvokeDynamicInsnNode reference = null;
 		for (AbstractInsnNode instruction : mergedHost.instructions) {
 			if (!(instruction instanceof InvokeDynamicInsnNode indy) || !metafactory(indy) || !indy.name.equals(created.name)
 					|| !indy.bsmArgs[0].equals(created.bsmArgs[0]) || !indy.bsmArgs[2].equals(created.bsmArgs[2])
 					|| !Type.getReturnType(indy.desc).equals(Type.getReturnType(created.desc))) continue;
-			if (reference != null) return null;
+			if (reference != null) return declined(why, "the merged " + mergedHost.name + " makes more than one metafactory call of that functional shape");
 			reference = indy;
 		}
-		if (reference == null || !(reference.bsmArgs[1] instanceof Handle handle) || !sameConsumer(created, reference)) return null;
+		if (reference == null || !(reference.bsmArgs[1] instanceof Handle handle) || !sameConsumer(created, reference))
+			return declined(why, reference == null ? "the merged " + mergedHost.name + " makes no metafactory call of that functional shape" : "the merged method reference is handed to another consumer");
 		// A method reference to another class's instance method on its captured receiver; or one already materialized by an
 		// earlier read of this mixin: a static method of the class that hands its parameters, unchanged, to such a method.
 		Handle method = handle;
@@ -232,52 +241,68 @@ public final class CarrierMethodReferences {
 			method = forwarded(declared(merged, handle.getName(), handle.getDesc()), Type.getArgumentTypes(reference.desc).length);
 			materialized = true;
 		}
-		if (method == null || method.getOwner().equals(merged.name) || method.getTag() != Opcodes.H_INVOKEINTERFACE && method.getTag() != Opcodes.H_INVOKEVIRTUAL) return null;
+		if (method == null || method.getOwner().equals(merged.name) || method.getTag() != Opcodes.H_INVOKEINTERFACE && method.getTag() != Opcodes.H_INVOKEVIRTUAL)
+			return declined(why, "the merged reference is not to another class's instance method" + (materialized ? " (its materialized thunk does not forward)" : ""));
 
 		// Captures: the reference's receiver is the lambda's first capture; the lambda captures exactly one boolean more.
 		Type[] lambdaCaptures = Type.getArgumentTypes(created.desc), referenceCaptures = Type.getArgumentTypes(reference.desc);
-		if (referenceCaptures.length != (materialized ? 2 : 1) || lambdaCaptures.length != 2 || !lambdaCaptures[1].equals(Type.BOOLEAN_TYPE)) return null;
+		if (referenceCaptures.length != (materialized ? 2 : 1) || lambdaCaptures.length != 2 || !lambdaCaptures[1].equals(Type.BOOLEAN_TYPE))
+			return declined(why, "the captures differ: native " + created.desc + ", merged " + reference.desc);
 		List<NativeCallChanges.Expr> nativeCaptures = captures(original.name, nativeHost, created), mergedCaptures = captures(merged.name, mergedHost, reference);
 		if (nativeCaptures == null || mergedCaptures == null || !nativeCaptures.getFirst().equals(mergedCaptures.getFirst())
-				|| materialized && !nativeCaptures.equals(mergedCaptures)) return null;
+				|| materialized && !nativeCaptures.equals(mergedCaptures))
+			return declined(why, "the reference's receiver is not the value the lambda captured first" + (materialized ? ", or its materialized thunk is handed other values" : ""));
 		NativeCallChanges.Expr folded = nativeCaptures.get(1);
 		List<Integer> slots = new ArrayList<>();
 		if (!materialized) {
 			Map<Integer, NativeCallChanges.Expr> held = NativeCallChanges.localsAt(merged.name, mergedHost, reference);
-			if (held == null) return null;
+			if (held == null) return declined(why, "the merged " + mergedHost.name + "'s locals at the reference cannot be read");
 			for (int slot : MixinLocalOriginProof.typedSlots(mergedHost, mergedHost.instructions.indexOf(reference), Type.BOOLEAN_TYPE, false))
 				if (folded.equals(held.get(slot))) slots.add(slot);
-			if (slots.size() != 1) return null;
+			if (slots.size() != 1) return declined(why, slots.size() + " boolean locals of the merged " + mergedHost.name + " hold the lambda's captured value at the reference (one is needed)");
 		}
 		// The lambda's parameters: its captures, then the functional arguments, which the reference hands its call.
 		Type[] lambdaParameters = Type.getArgumentTypes(lambda.desc), samArguments = ((Type) created.bsmArgs[2]).getArgumentTypes();
 		if (lambdaParameters.length != 2 + samArguments.length || !Type.getReturnType(lambda.desc).equals(Type.getReturnType(method.getDesc()))
-				|| Type.getArgumentTypes(method.getDesc()).length != samArguments.length) return null;
+				|| Type.getArgumentTypes(method.getDesc()).length != samArguments.length)
+			return declined(why, "the lambda's parameters do not line up with the reference's call");
 
 		// The folded disjunct: the lambda decides on the call and the boolean alone; the reference's inherited implementation first
 		// tests the boolean's very expression and answers on its own what the lambda answers whatever the call says.
 		Symbolic.Tree lambdaTree = new Symbolic(code, false, call).run(lambda, inputs(lambda.desc, true), 0);
 		Boolean[][] table = table(lambdaTree);
-		if (table == null) return null;
+		if (table == null) return declined(why, "the lambda's answer is not decided by the call and its captured boolean alone");
 		Symbolic chain = new Symbolic(code, true, null);
 		Symbolic.Val receiver = new Symbolic.Val(Symbolic.input(0), referenceCaptures[0].getInternalName());
 		List<Symbolic.Val> arguments = new ArrayList<>(List.of(receiver));
 		for (int i = 0; i < samArguments.length; i++) arguments.add(new Symbolic.Val(Symbolic.input(2 + i), typeName(samArguments[i])));
 		Symbolic.Tree decided = chain.call(new MethodInsnNode(method.getTag() == Opcodes.H_INVOKEINTERFACE ? Opcodes.INVOKEINTERFACE : Opcodes.INVOKEVIRTUAL,
 				method.getOwner(), method.getName(), method.getDesc(), method.isInterface()), arguments, true, 0);
-		Symbolic.E foldedValue = new Symbolic(code, false, null).value(folded, Map.of(nativeCaptures.getFirst(), receiver));
-		if (decided == null || foldedValue == null || !folds(decided, foldedValue, table)) return null;
+		// The captured value is read by the chain's own rule — the implementation a receiver of its declared type reaches — so
+		// both sides of the comparison inline the same code. Read by finality instead, a widener that only makes the receiver's
+		// class extendable (an access widener's "extendable class", which takes ACC_FINAL off ItemStack) left the captured
+		// value an opaque call while the chain still read through it, and the move was declined for that alone.
+		Symbolic.E foldedValue = new Symbolic(code, true, null).value(folded, Map.of(nativeCaptures.getFirst(), receiver));
+		if (decided == null || foldedValue == null || !folds(decided, foldedValue, table))
+			return declined(why, decided == null ? "the reference's inherited implementation could not be followed" : foldedValue == null ? "the captured boolean's expression could not be read"
+					: "the reference's inherited implementation does not first test the captured boolean the way the lambda answers it");
 
 		// Everything the lambda's body names, but the call, the new handler can name too.
-		if (!names(lambda, call, code)) return null;
+		if (!names(lambda, call, code)) return declined(why, "the lambda names something the handler cannot");
 
 		String thunkDesc = lambda.desc;
-		if (materialized && !handle.getDesc().equals(thunkDesc)) return null;
+		if (materialized && !handle.getDesc().equals(thunkDesc)) return declined(why, "the materialized thunk has another descriptor than the lambda");
 		String thunk = materialized ? handle.getName() : PREFIX + digest(merged.name + "\0" + mergedHost.name + mergedHost.desc + "\0" + method + "\0" + slots + "\0" + thunkDesc);
 		Plan plan = new Plan(merged.name, mergedHost.name + mergedHost.desc, reference.name, reference.desc, (Type) reference.bsmArgs[0],
 				(Type) reference.bsmArgs[2], method, List.copyOf(slots), List.of(Type.BOOLEAN_TYPE.getDescriptor()), thunk, thunkDesc, mixin.name, handler.name);
 		MethodNode wrapper = wrapper(mixin, handler, lambda, call, method, code);
-		return wrapper == null ? null : new Move(plan, lambda, call, wrapper);
+		return wrapper == null ? declined(why, "the handler's shape is not the call's operands then the lambda's parameters, or its wrapper does not verify") : new Move(plan, lambda, call, wrapper);
+	}
+
+	/** Records why a redirect bound to a native lambda is not moved; null, for the caller to return. */
+	private static Move declined(StringBuilder why, String reason) {
+		if (why != null) why.append(reason);
+		return null;
 	}
 
 	/** Rewrites the mixin for a planned move: the original handler renamed, the new one carrying the redirect onto the thunk's call. */
@@ -710,12 +735,20 @@ public final class CarrierMethodReferences {
 		private final Function<String, ClassNode> code;
 		private final boolean followDefaults;
 		private final MethodInsnNode leftAlone;
+		/** A call read as a value of its own (handed the call and its inputs), never inlined or named by its implementation; null to read it as any other. */
+		private final java.util.function.BiFunction<MethodInsnNode, List<Val>, E> marker;
 		private int budget = 4000;
 
 		Symbolic(Function<String, ClassNode> code, boolean followDefaults, MethodInsnNode leftAlone) {
+			this(code, followDefaults, leftAlone, null);
+		}
+
+		Symbolic(Function<String, ClassNode> code, boolean followDefaults, MethodInsnNode leftAlone,
+				java.util.function.BiFunction<MethodInsnNode, List<Val>, E> marker) {
 			this.code = code;
 			this.followDefaults = followDefaults;
 			this.leftAlone = leftAlone;
+			this.marker = marker;
 		}
 
 		private record State(List<Val> stack, Map<Integer, Val> locals) {
@@ -850,9 +883,13 @@ public final class CarrierMethodReferences {
 		Tree call(MethodInsnNode call, List<Val> inputs, boolean tail, int depth) {
 			if (leftAlone != null && call.owner.equals(leftAlone.owner) && call.name.equals(leftAlone.name) && call.desc.equals(leftAlone.desc))
 				return new Leaf(CALL);
+			if (marker != null) {
+				E marked = marker.apply(call, inputs);
+				if (marked != null) return new Leaf(marked);
+			}
 			CarrierDefaultChains.Body body = inlinable(call, inputs);
 			if (body != null && CarrierDefaultChains.simple(body.method()) && depth < DEPTH) {
-				Tree inlined = new Symbolic(code, followDefaults, leftAlone).withBudget(budget).run(body.method(), inputs, depth + 1);
+				Tree inlined = new Symbolic(code, followDefaults, leftAlone, marker).withBudget(budget).run(body.method(), inputs, depth + 1);
 				if (inlined != null && (inlined instanceof Leaf || tail || bool((Test) inlined) != null)) return inlined;
 			}
 			return Type.getReturnType(call.desc).equals(Type.VOID_TYPE) ? null : new Leaf(opaque(call, inputs));

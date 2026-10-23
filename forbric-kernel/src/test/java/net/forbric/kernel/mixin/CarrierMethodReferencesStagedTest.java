@@ -171,6 +171,23 @@ class CarrierMethodReferencesStagedTest {
 		assertNotNull(StagedFabricMixinFixture.method(mixin, "primary" + CarrierDecisions.SUFFIX));
 	}
 
+	/**
+	 * An access widener that only makes the receiver's class extendable ({@code extendable class ItemStack}, as Apoli Legacy
+	 * ships) takes ACC_FINAL off ItemStack. The captured {@code stack.is(Items.BOOK)} is still read through the implementation an
+	 * ItemStack reaches, as the chain is: the move is made exactly as on the unwidened class. Read by finality, it was declined
+	 * ("does not first test the captured boolean") for every pack that installed such a widener.
+	 */
+	@Test void aWidenerThatOnlyMakesTheStackExtendableStillMoves() throws Exception {
+		Function<String, ClassNode> game = game();
+		ClassNode stack = game.apply("net/minecraft/world/item/ItemStack");
+		assertTrue((stack.access & Opcodes.ACC_FINAL) != 0, "the merged ItemStack is final as built");
+		stack.access &= ~Opcodes.ACC_FINAL;
+		List<CarrierMethodReferences.Plan> plans = new ArrayList<>();
+		assertEquals(1, adapt(fabric(), owner -> owner.equals(stack.name) ? stack : game.apply(owner), plans));
+		assertEquals(List.of(4), plans.getFirst().extra(), "the same isBook local as on the unwidened class");
+		assertEquals(STACK_EXTENSION, plans.getFirst().handle().getOwner());
+	}
+
 	/** The carrier's default that tests another value first folds nothing the lambda captured: nothing moves. */
 	@Test void withoutTheFoldedDisjunctNothingMoves() throws Exception {
 		Function<String, ClassNode> game = game();
