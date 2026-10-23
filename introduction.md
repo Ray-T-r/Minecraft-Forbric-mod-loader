@@ -198,6 +198,23 @@ before:
   and that no caller goes unobserved. It reads a base only together with the build record `build-merged-base.sh`
   writes beside it (`patched-mc-merged-26.2.jar.provenance.json`, which names jar and report by hash); CI builds such a
   base from the prepared inputs and runs it (§16).
+- **A call into one side's delegate twin** (`DelegateTwinRoutes`, the builder's PASS 6). A family sometimes gives a
+  vanilla method `C(args)` a mode: its own `C(args, extra)` holds the body, `C(args)` forwards with constants, and one
+  caller passes another constant because the same family does the switched-off part in its own version of a caller
+  of that caller. Where the other family's `C` won the merge, that caller — taken whole from the first family, which
+  the other left vanilla — would skip the kept `C` and every hook in it, and leave the switched-off part to a
+  compensation the merge dropped. Such a call is pointed back at `C(args)` when that compensation is gone: no merged
+  caller keeps all of the first family's edit of it, and no part of that edit an edit splice carried into it does
+  what the mode switches off (each carried call is followed into the void calls its body makes, two deep, on that
+  family and its runtime, and compared with the calls the twin makes under a test of the mode parameter the site
+  changes, followed through every declaration that parameter is handed to; when that part cannot be read and some of
+  the edit was carried, the call is left, for judgment). On 26.2 exactly one call moves: `Block.playerDestroy` called
+  MinecraftForge's `dropResources(…, false)` while the merged `ServerPlayerGameMode.destroyBlock` is NeoForge's (which
+  leaves the experience to `handleBlockDrops`, where MinecraftForge's popped it itself), so a player's break popped no
+  experience and never posted `BlockDropsEvent`. The merged `destroyBlock` carries MinecraftForge's
+  `onBlockStartBreak` and `onPlayerDestroyItem` but not its `popExperience`, and the switched-off part is
+  `ForgeHooks.dropXpForBlock` and the `popExperience` it makes, so the call now reaches NeoForge's `dropResources`. The
+  other 21 candidates are left; each decision and its reason is in the report's `=== delegate-twin routes` section.
 
 Keeping both edits has a cost the kernel pays at run time: an edit of the other family can switch on a mechanism of
 that family's loader that never ran before. The merged `Bootstrap` now also runs MinecraftForge's own vanilla snapshot,
@@ -723,8 +740,8 @@ What `KernelBoot` registers (131 call sites; some conditional):
 The post-Mixin stage (`KernelMixinBootstrap`) is a fixed composition:
 
 ```
-Mixin (via MixinWeaverSlot) → NativeCoremodParity → PostMixinFixups → InterfaceDefaultConflictRepair
-                           → ForgeTransferShapeAudit.certify
+Mixin (via MixinWeaverSlot) → NativeCoremodParity → PostMixinFixups → UncalledValueRelay
+                           → InterfaceDefaultConflictRepair → ForgeTransferShapeAudit.certify
 ```
 
 Notable repairs by family (read each class's javadoc for the case that motivated it):
@@ -909,11 +926,12 @@ private method is reached only by a call or handle naming its own class, a stati
 its class or a subclass that does not declare it again, and an override's `super` call of itself is no call; a row
 needs the mod's own game to call the method from a place that runs there. The boot scan of the installed mods
 (`scanGuests`) reads their calls by the same rules, an `@Invoker` only for the method of its target class with that
-name and descriptor, and the row is re-checked on the live bytes. An injector that stays bound only to such a method
+name and descriptor, and the row is re-checked on the live bytes. A method whose woven hooks the kernel relays to the
+carrier's own place (`UncalledValueRelay`, §7.4) is read as running for the ecosystems its census row names. An injector that stays bound only to such a method
 is reported by the final-class check as one that never runs (`CONFIRMED`, not required: it marks the mod's row and
 stops no launch). Physics Mod's collapse hook on a private `removeBlock` overload nothing calls (now moved onto the
-overload that runs, `MixinTwinRebind`, §7.4) and Create's redirect into the static `RedStoneWireBlock.shouldConnectTo`
-nothing calls (still reported, not repaired, §19) used to read as running. And a name-only
+overload that runs, `MixinTwinRebind`, §7.4) and Create's hook on the static `RedStoneWireBlock.shouldConnectTo`
+nothing calls (now moved onto the carrier's decision, `UncalledDecisionEntries`, §7.4) used to read as running. And a name-only
 `@Inject` selector is **not** resolved when the method it binds — Mixin takes the first of that name the target
 declares — is not one the handler was written for (that method's arguments then the callback its return calls for, or
 the callback alone), which Mixin would reject as "Invalid descriptor" (`-Dforbric.mixinFit.handlerFit=off`): the merged
@@ -939,7 +957,9 @@ unjudged. `-Dforbric.guestInjectorPruner.refused=off` keeps such a mixin in fron
 summary then counts it apart. A `PARTIAL` or `UNFIT` mixin is first offered to `MixinRetarget`, and its plan is taken when the
 rewritten mixin misses fewer anchors, is one the adapter keeps, and adds no rejection — an `UNFIT` one's rewrite may
 keep none (`MixinRetarget.adopt`). A mixin the kernel leaves out by name is not judged at all, so it gets no verdict line
-and no place in the `PARTIAL` count. `MixinFitReport` runs the same judgement offline:
+and no place in the `PARTIAL` count. A `PARTIAL` verdict is read once more on the mixin as it is handed to Mixin,
+after every adapter (`KernelGuestMixinAdapter.judgeAsHanded`): an anchor an adapter moved onto a body that runs is
+withdrawn from the report with where it landed, and a mixin that now fits is resolved. `MixinFitReport` runs the same judgement offline:
 `MixinFitReport <merged-base.jar> <mods-dir> [--verbose]`.
 
 A miss is the merge's only if the mod's own platform had the member: vanilla 26.2 for a Fabric mod, MinecraftForge's
@@ -1125,7 +1145,10 @@ ecosystem (`MixinConfigOwners`).
   out of the slice; `MixinReturnOrdinals` counts a `RETURN` ordinal by which way out it is, not by position;
   `MixinShiftedPoints` lands `shift = BY` on the instruction it lands on natively; `JoinedReturnExits` /
   `MixinKeyActionAdapter` handle exits a carrier joined into one hook call before the final return (found also across
-  the return block `VanillaEarlyReturns` puts in front of the tail).
+  the return block `VanillaEarlyReturns` puts in front of the tail; and a global key — F2, F11 — that the carrier sends
+  into its hook where vanilla returned once `handleGlobalKeyPress` answered true keeps the final-return hooks off it).
+  A native occurrence whose operand the carrier changed is paired with its merged counterpart by the aligned consumer
+  of its value (Mod Menu's constant hook wraps three buttons, as natively, not NeoForge's mods button as a fourth).
 - **Where the code went.** `MixinStubRebind` (now also with slices, a state-sharing redirect together with its siblings,
   a head argument modifier together with the head callback it reads, and a `@ModifyVariable` whose slot is pinned by
   the value it holds natively; judged at the Mixin level the mod is woven at), `MixinBuilderStubRebind` (a vanilla
@@ -1143,7 +1166,13 @@ ecosystem (`MixinConfigOwners`).
   carrier now makes inside a helper runs on the helper's answer, where that answer is proved to say whether the call
   was made; inside a body the carrier renamed whole, the renamed-body rule takes precedence), `CarrierReturnedCalls`
   (a wrap of a call whose answer was the method's answer), `CarrierMethodReferences` (a redirect inside a native lambda
-  the carrier replaced with a method reference), `ReplacedDecisionValues` (a `@ModifyExpressionValue` of a vanilla
+  the carrier replaced with a method reference; it reads the value the reference folds in by the chain's own rule and
+  says why when it declines — fabric-item-api's enchanting check, with Origins Legacy installed),
+  `UncalledDecisionEntries` (a `HEAD` injector on a static decision nothing in the merged game calls any more wraps the
+  carrier's own decision at each place the native game asked it, handed the native arguments, its cancel the answer
+  there — Create's redstone connection on `RedStoneWireBlock.shouldConnectTo`, where NeoForge asks the neighbour's
+  `canRedstoneConnectTo`; two mixins' hooks on one such decision become two wraps, so they run in the reverse of the
+  native order and a cancel by the first no longer skips the second), `ReplacedDecisionValues` (a `@ModifyExpressionValue` of a vanilla
   decision), `NativeEntryRelay` (a native decision method called again so an injector at its entry runs),
   `NativeDecisionIsland` + `NativeDecisionRelay` (the native method's decisions put back ahead of the carrier hook that
   replaced them, their answers handed on to the carrier's code), `CallWitness` (a handler replayed after a relocated
@@ -1157,9 +1186,25 @@ ecosystem (`MixinConfigOwners`).
   lists (an argument-list hook moves from the call its slice picks natively to the widened call that plays its role),
   and `MixinDelegationEquivalence` (report-only proof that an argument modifier with nothing to attach to loses
   nothing).
+- **A method nothing calls, whose value the carrier computes elsewhere.** `UncalledValueRelay` runs after Mixin, not
+  on the mixin: when guest hooks were woven into a vanilla method the census lists as never called, and that method's
+  value is one the carrier computes in a place of its own, the woven body is copied into a relay of the same class
+  with three calls replaced by the kernel's — the raw draw answers nothing (the carrier already drew), the processing
+  answers the carrier's value, the effect records its amount instead of doing it — and the carrier's place runs it.
+  Every hook stays where Mixin put it and runs in its order. One contract today: `Block.tryDropExperience`, whose
+  value is NeoForge's `BlockDropsEvent` experience (§8). The relay is made only for hooks of an ecosystem whose own
+  game calls the method (a NeoForge hook there stays as dead as it is natively), only when the draw hands its value
+  straight to the processing, and a hook handed the method's provider gets what the native caller passed (a field of
+  the block, a static field, or a static call on constants, read off the caller's native body); anything else stays
+  as woven and is said in a WARN, and the final-class check still reports it.
+- **Names a rule sets a body aside under.** A rule that keeps a mod's handler body as a plain method under a wrapper
+  names it after the handler, the rule and the mixin (`MixinHandlerShim.asideName`; `markAsides` gives every
+  `$forbricOriginal` body its mixin's mark once all rules have run). Mixin merges a plain method into the target by
+  name: two mixins whose handlers share a name used to share one body, and the second wrapper ran the first mixin's
+  ("Method overwrite conflict"; with a cancellable and a non-cancellable hook, the game method threw).
 
 Each has an `-Dforbric.<name>=off` switch (§17) and a weave test that runs a synthetic mod with unrelated names through
-the real Mixin and MixinExtras with the switch on and off (`src/test/java/net/forbric/kernel/mixin/weave/`, 160 files).
+the real Mixin and MixinExtras with the switch on and off (`src/test/java/net/forbric/kernel/mixin/weave/`, 164 files).
 A mechanism counts as done only when the same mod also passes the rename experiment and the native comparison of §16.1.
 
 ### 7.5 Attribution
@@ -1168,7 +1213,10 @@ A mechanism counts as done only when the same mod also passes the rename experim
 `-Dforbric.mixinModIdDecoration` puts the mod id into generated handler names). `KernelMixinErrorHandler` puts
 prepare/apply failures on the mod's row without changing Mixin's decision. `FinalMixinApplications` observes each
 defined class after all stages — zero references to a handler prove it did not attach. `SupersededMixins` keeps a
-failure off the mod's row when a named kernel repair does *everything* that mixin did; `PluginDeclinedMixins` when
+failure off the mod's row when a named kernel repair does *everything* that mixin did; a mixin removed before Mixin
+read its config, whose repair has a witness, is a `SUSPECTED` note until a witness class is defined — `RESOLVED` when
+the repair is seen there, `CONFIRMED` when it is not or can no longer be proved (`LootSourceContracts.disproved`) — so
+fabric-loot-api-v3 no longer reads "did not finish loading" until the first world loads; `PluginDeclinedMixins` when
 the mod's own config plugin would have declined it; `ForeignMixinBreaks` records mixins written to attach to
 another mod that did not. `MixinCompatibility` carries one identity for a mixin from preflight to application.
 
@@ -1216,11 +1264,25 @@ both events itself, and a bridge must not post the same one again (§8.1).
   `KernelItemTooltips`, `ScreenEvent.Opening/Closing` via `NeoScreenEventsInjector`, conversion `Post` via
   `NeoConversionPostInjector`); Fabric API events fired from NeoForge's own sites where Fabric's mixin cannot fit
   (`LootTableEventBridgeInjector` + `LootTableEventDispatch` for `LootTableEvents`, `FabricFuelValuesInjector`, the
-  tooltip bridge). The Fabric half of `KernelHudBridge`, which redrew fabric-api's `HudElementRegistry` roots through
+  tooltip bridge). The merged server builds its fuel table in `populateFuelValues`; the fuel bridge hands that builder
+  to the restored `vanillaBurnTimes` facade, which jumps straight to its own `build()`, so a mod's wrap of that build
+  (Create's blaze cake, cardboard) adds its fuels once and the client's data-map table carries them. The Fabric half of `KernelHudBridge`, which redrew fabric-api's `HudElementRegistry` roots through
   its implementation classes, is retired: fabric-rendering-v1's own `HudMixin` wraps now land, in the body the kernel
   gives a method reference (`LambdaInvocationThunkInjector`), and the bridge had bridged 0 of 21 roots in every run.
   MinecraftForge's `PlayLevelSoundEvent`s are forwarded from NeoForge's wherever the merged game plays a sound, with the
   answer carried back (`KernelGameSoundEvents`).
+- **Experience from a break** — NeoForge computes it in `BlockDropsEvent` and pops it once in `handleBlockDrops`
+  (a player's break reaches that since the merge's delegate-twin pass, §2.4); MinecraftForge computes it in its
+  `BreakEvent` and popped it in its own `destroyBlock`, which is not the merged one; Fabric mods hook vanilla's
+  `Block.tryDropExperience`, which nothing in the merged game calls. `KernelGameBlockEvents` hands a MinecraftForge
+  decision (a listener's `setExpToDrop`, or a block whose experience only MinecraftForge's `getExpDrop` answers) to the
+  same break's `BlockDropsEvent` at `HIGHEST`, and at `LOWEST` runs the relay of `tryDropExperience`
+  (`UncalledValueRelay`, §7.4) for a block whose native `spawnAfterBreak` asked it (the census's callers, through a
+  class that only adds to its parent's), handing it the event's value and dropping what it would have popped. So a
+  Fabric mod's replaced or cancelled ore experience, or PuzzlesLib's experience event, decides the experience once,
+  where NeoForge pops it. Not equal: a MinecraftForge listener reading `getExpToDrop` sees MinecraftForge's own draw,
+  not the one NeoForge drops (a listener that sets it decides correctly); a NeoForge listener at `LOWEST` registered
+  after the kernel's sees the relayed value, one registered before sees the value before it.
 - **Audits** — `HookCallSiteCensus` (which hooks of `ForgeEventFactory`/`ForgeEventFactoryClient`/NeoForge
   `ClientHooks` the merged base still calls), `DeadEventAudit` + `ForgeBusSubscriptions` (who listens to a dead
   event, including subscriptions an annotation scan cannot see), `DeadHookWorklist` (the join, ordered by how many
@@ -1670,9 +1732,9 @@ java -cp <boot-cp> net.forbric.kernel.boot.Main --scan --mods <dir> --report out
   Team Reborn Energy 5.0.0 pinned by SHA-256 (`run/energy-api/energy-5.0.0.jar` or `-Pforbric.rebornEnergy`).
   Without the staged jars `compileRuntimeJava` is skipped and `jar` produces a boot jar with no game side — which
   is what CI builds. `KernelRuntimeClasses.verify` is what catches such a jar at launch.
-- **Unit tests.** Counted from source: `src/test` has 5 350 `@Test` methods and 6 `@ParameterizedTest` methods in
-  1 021 `*Test.java` files; `src/transferTest` has 70 `@Test` methods in 6 files (annotations at line start, `grep`
-  over tracked files). A full run on the staged base executes 6 484 tests. Many tests read the staged jars; gate-m0
+- **Unit tests.** Counted from source: `src/test` has 5 459 `@Test` methods and 6 `@ParameterizedTest` methods in
+  1 032 `*Test.java` files; `src/transferTest` has 71 `@Test` methods in 6 files (annotations at line start, `grep`
+  over tracked files). A full run on the staged base executes 6 536 tests. Many tests read the staged jars; gate-m0
   fails on *any* skipped test, because a skip there means the tests did not look at the real base. The weave tests
   (`mixin/weave/`) run synthetic mods with unrelated names through the real Mixin and MixinExtras, each with its
   mechanism switched off as the control. Tests must pass on JDK 21 as well as 25 (the CI unstaged job is JDK 21).
@@ -1828,7 +1890,7 @@ developer reaches for:
 `forbric.nativeEntryRelay`, `forbric.nativeDecisionIsland`, `forbric.placementCallWitness`, `forbric.nativeValueStores`,
 `forbric.nativeConsumerStores`, `forbric.nativeDeadValueConsumers`, `forbric.nativeLocalPins`,
 `forbric.nativeLocalMaterialization`, `forbric.capturedLocals`, `forbric.localRanges`, `forbric.tailLocals`,
-`forbric.scopedClearRelay`.
+`forbric.scopedClearRelay`, `forbric.uncalledDecisionEntries`, `forbric.uncalledValueRelay`, `forbric.mixinAsideMarks`.
 
 **Diagnostics and test drivers**
 
@@ -1846,7 +1908,8 @@ developer reaches for:
 `forbric.commonNetworkInterop`, `forbric.playPayloadFallThrough`, `forbric.chunkExecutorGuard`,
 `forbric.forgeCapabilities`, `forbric.forgeWorldgen`, `forbric.transferBridge`, `forbric.hopperFabricStorage`,
 `forbric.clientResourcePreload`, `forbric.earlyConfigs`, `forbric.fabricHooks`, `forbric.fabricImpl`,
-`forbric.kernelBundledFirst`, `forbric.modDataPacks`, `forbric.modMenuStandIn`. `forbric.kernel.registryRedirect=true` enables an
+`forbric.kernelBundledFirst`, `forbric.modDataPacks`, `forbric.modMenuStandIn`, `forbric.forgeBreakExperience`,
+`forbric.supersededMixins`. `forbric.kernel.registryRedirect=true` enables an
 experimental registry-wrapper redirect.
 
 ## 18. Invariants
@@ -1908,8 +1971,23 @@ Break one and the failure usually surfaces far from the cause.
   and NeoForge builds), Physics Mod, Sodium (NeoForge), Continuity, Iris, Corpse, Shoulder Surfing with
   CustomSkinLoader, fusion, Do a Barrel Roll, Controlify, Just Enough Characters, SpectreLib, Mod Menu, Forge Config API
   Port, PuzzlesLib, Item Glint Relight, Jade, Essential, fabric-api, Balm, Architectury, Origins Legacy, Better Mount
-  HUD. 19 are equivalent; Create Fly, Lithium (Fabric), Mod Menu, Forge Config API Port, PuzzlesLib, fabric-api, Balm
-  and Origins Legacy are not, for the reasons below. Every rename experiment came out the same as the original.
+  HUD. 22 are equivalent; Lithium (Fabric) and Forge Config API Port are not only for reasons proven not closable,
+  and Mod Menu, fabric-api and Balm are not for the reasons below. Every rename experiment came out the same as the
+  original. The last round re-measured the ten rows below (on a base built by the current tools; the kernel at
+  `91dbfa5d`, then the experience relay, the delegate-twin rule and the aside names of this round on top):
+
+  | Mod | Verdict | What is left |
+  | --- | --- | --- |
+  | Mining experience, no mods | equivalent | a MinecraftForge listener that only reads `getExpToDrop` sees another draw |
+  | Carpet | equivalent | — |
+  | Create Fly (with fabric-api) | equivalent | fuel, redstone connection and the global keys are native now; report-only: its `FuelValuesMixin` still reads `SUSPECTED`, and a second preflight on the render thread prints `EntityMixin`'s old partial line again |
+  | PuzzlesLib (Fabric and NeoForge builds) | equivalent | its experience event is handed the vanilla value and decides once (50 and 100 for two breaks, as natively) |
+  | Mod Menu | not equivalent | the update checker announces an update for `fabricloader@0.19.3`; the carrier's branding line |
+  | fabric-api 0.161 | not equivalent | datagen's `TagsProviderMixin`; `AFTER` has two static call sites (fires once per break); the breathing rule; two proven items |
+  | Balm | not equivalent | `SCREEN_OPEN` reads; crop moisture (proven) |
+  | Origins Legacy (with fabric-api) | equivalent | — |
+  | Architectury | equivalent | — (the global keys measured in game this round) |
+  | Physics Mod | equivalent | — |
 
 **What is still not native-equivalent.** Proven not closable by any structural trigger (each proof kept):
 
@@ -1928,46 +2006,40 @@ Break one and the failure usually surfaces far from the cause.
 
 Located, not yet fixed (no impossibility proof):
 
-- **A player breaking a block gets no experience, whatever mods are installed**, and NeoForge's `BlockDropsEvent`
-  never fires for a player's break. The merged `Block.playerDestroy` calls MinecraftForge's `dropResources(…, false)`,
-  which leaves the experience to `destroyBlock`; the merged `ServerPlayerGameMode.destroyBlock` is NeoForge's, which
-  leaves it to `handleBlockDrops`. A producer and its consumer on opposite sides of the merge; items drop normally.
-  PuzzlesLib's experience events see 0 (both builds), and its Fabric build's `tryDropExperience` hook is bound to the
-  merged `Block.tryDropExperience`, which nothing calls.
-- With Origins Legacy installed, fabric-item-api's `EnchantmentHelperMixin.useCustomEnchantingChecks` does not attach
-  (it does with fabric-api alone), so the enchanting table ignores `ALLOW_ENCHANTING`. `CarrierMethodReferences` does
-  not move it and logs no reason; AdditionalEntityAttributes, MixinSquared and mixinconstraints are ruled out as the
-  trigger. Pre-existing.
-- `KeyboardHandler.keyPress` on a global key (F2, F11, the social-interactions key): natively the method returns early
-  once `handleGlobalKeyPress` answers true; on Forbric a `TAIL` or last-`RETURN` injector still runs there (Create's key
-  handlers run twice per press where native runs none; Balm's `KEYBOARD_INPUT` once more). Releases and other keys are
-  equivalent.
-- Create Fly: its fuel `@WrapOperation` sits in `vanillaBurnTimes`, whose body the merged server never runs (it builds
-  the table in `populateFuelValues`), so blaze cake, cardboard and cardboard blocks burn 0 ticks on a Forbric server
-  (native 6400/1000/4000) and the report says only `SUSPECTED`. Its redirect into the static
-  `RedStoneWireBlock.shouldConnectTo` never runs (NeoForge asks the block's `canConnectRedstone` there): reported as
-  never running; redstone does not connect to Create's nine `RedStoneConnectBlock` blocks as natively. A structural
-  repair (a `HEAD` hook on such an uncalled static decision becomes a wrap of the carrier's decision at each native
-  call site) is designed, not implemented.
-- Mod Menu counts 66 mods where native counts 67 (no `mixinextras` builtin, §5.1); the title screen also shows the
-  carrier's own branding line, which moves Mod Menu's up one line, and its constant hook lands 4 times (native 3; the
-  extra one wraps NeoForge's mods button).
-- Balm's `SCREEN_OPEN` (fired at each read of `Gui.screen`) fires 1–3 times per path where native fires 2–4, the first
-  one after a null screen was already replaced by the title or death screen.
-- fabric-api: `PlayerBlockBreakEvents.AFTER` runs after `Block.destroy` from two call sites (native one); the
-  enchanting table's primary-item check goes through NeoForge's `isPrimaryItemFor`, proven equivalent only for the
-  disjunct it folds; datagen's `TagsProviderMixin` attaches nowhere (Fabric data generation only); two preflight lines
-  saying "never runs" (block-api's trapdoor ladder, renderer-api's in-wall view) are stale — the handlers were moved to
-  live methods and the final ledger says `RESOLVED`.
+- Mod Menu: the `fabricloader` container reports version 0.19.3 — the Fabric Loader API level the kernel implements and
+  `FabricLoaderApiSurfaceTest` holds it to — where native reports the loader actually run (0.19.5), so Mod Menu's update
+  checker announces an update native does not; the loader-nested `mixinextras` is the kernel's 0.5.4 (native 0.5.5),
+  and the container's type is `builtin` (native `fabric`). Reporting a version the kernel does not implement would be
+  untrue, so this waits for the API itself to reach 0.19.5. The title screen also shows the carrier's own branding
+  line, which moves Mod Menu's up one line (the owner's decision).
+- Balm's `SCREEN_OPEN` hook (a modifier at each read of `Gui.screen`) attaches at 3 reads where native has 4: the
+  carrier keeps the field in a local and reads it once less.
+- fabric-api: `PlayerBlockBreakEvents.AFTER` has two static call sites after `Block.destroy` (native one), though it
+  fires exactly once per break in every mode measured; the enchanting table's primary-item check goes through
+  NeoForge's `isPrimaryItemFor`, proven only for the disjunct it folds (the in-game enchanting probe matches native);
+  datagen's `TagsProviderMixin` attaches nowhere (Fabric data generation only).
 - Air under water: an entity that can breathe there (a player with water breathing, in water or a modded fluid; a
   drowned) keeps its air value where native refills it by 4 per tick. That is NeoForge's carrier rule, left as
   NeoForge decides it pending the owner's decision.
-- With cicada installed (it marks `Vec3.x/y/z` `@Mutable`), `KernelTagSourceContracts` refuses to update the tag
-  source view, and Fabric custom fluids' native tag queries do not take effect for the session (one WARN; the effect
-  is not quantified).
+- Experience: a MinecraftForge `BreakEvent` listener that only reads `getExpToDrop` sees MinecraftForge's own draw, not
+  the one NeoForge drops (a listener that sets it decides correctly). The relay of `tryDropExperience` (§7.4) declines,
+  with a WARN, a hook that reads or changes the raw draw or replaces the `popExperience` call, and runs for a block
+  only when what its native caller hands the provider can be read (a field, a static field, a static call on
+  constants); a NeoForge `BlockDropsEvent` listener at `LOWEST` registered before the kernel's sees the value before
+  the relay. Read from the bytecode, not measured: NeoForge's `handleBlockDrops` calls `spawnAfterBreak(…, false)`, so
+  a Fabric mod's own block whose `spawnAfterBreak` override pops experience when `dropXp` is true pops none.
+- Two mods' `HEAD` hooks on one static decision nothing calls any more (`UncalledDecisionEntries`) become two wraps of
+  the carrier's decision: they run in the reverse of the native order, and a cancel by the first no longer skips the
+  second (pinned by `UncalledDecisionTwoMixinsWeaveTest`; no measured mod has two such hooks).
+- For developers: a merged base built before the delegate-twin pass (§2.4) still gives no experience from mining, and
+  `UncalledMethodCensusTest` and gate-m43 fail on it; rebuild the staged base with the current tools (CI and the
+  installer always do).
 - Report-only noise, behaviour equivalent: Sodium's `WindowMixin` "partial 3/4", the `MixinOverlap` R3 warning on
   Sodium and fabric-rendering, Continuity's stale "partial (kept)", the contended call-site warning for Shoulder
-  Surfing with CustomSkinLoader, Create's `EntityMixin`/`HudMixin` "never runs (kept)".
+  Surfing with CustomSkinLoader, Create's `FuelValuesMixin` `SUSPECTED` and the render thread's second preflight of
+  `EntityMixin`. The loader-nested `mixinextras.init.mixins.json` (no mixin, only MixinExtras' init) is now applied in
+  every pack, as Fabric Loader does, a MinecraftForge-only pack included, where native MinecraftForge has no such
+  config.
 - Not measured: Controlify's gamepad features (no gamepad); Sodium's NVIDIA/AMD/Intel workaround branches (only Apple
   hardware was available; the code path is the same on both sides); the load point of a Fabric consumer's server
   config under SpectreLib (`ServerAboutToStart` instead of `SERVER_STARTING`, both before the world loads; argued
