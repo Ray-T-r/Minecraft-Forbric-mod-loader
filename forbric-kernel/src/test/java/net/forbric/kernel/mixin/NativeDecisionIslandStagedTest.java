@@ -89,11 +89,12 @@ class NativeDecisionIslandStagedTest {
 	}
 
 	/**
-	 * The kernel's vanilla refill in the carrier's hook asks its water question of the body's fluid interaction, so the island
-	 * still holds vanilla's eye-in-water check (a mod's injector there keeps running at the native call) and still relays the
-	 * effect check. The control asks the same question through {@code isEyeInFluid}, as vanilla's stretch does: the island then
-	 * finds the carrier making that call with operands of its own, takes it as moved, and gives it up — which is why the refill
-	 * must not ask it that way. Both read the compiled refill class through the same class view the island plans with.
+	 * The kernel's vanilla refill in the carrier's hook asks whether the eye is in a fluid that drowns the body of the body's fluid
+	 * interaction — each eye fluid type's own {@code canDrownIn} — so the island still holds vanilla's eye-in-water check (a mod's
+	 * injector there keeps running at the native call) and still relays the effect check. The control makes the refill ask
+	 * vanilla's {@code isEyeInFluid(WATER)} on the body as well, as vanilla's stretch does: the island then finds the carrier
+	 * making that call with operands of its own, takes it as moved, and gives it up — which is why the refill must not ask it
+	 * that way. Both read the compiled refill class through the same class view the island plans with.
 	 */
 	@Test void theVanillaRefillInTheHookLeavesTheEyeCheckToTheIsland() throws Exception {
 		ClassNode merged = staged("merged-base/patched-mc-merged-26.2.jar", LIVING + ".class");
@@ -114,14 +115,26 @@ class NativeDecisionIslandStagedTest {
 		assertFalse(outcome.island().carried().contains(EYE), "the hook's refill never asks the eye-in-water check: " + outcome.island().carried());
 		assertEquals(List.of(EFFECT), outcome.island().relays().values().stream().map(NativeDecisionIsland.Relay::key).toList());
 
-		// Control: the same refill asking isEyeInFluid(WATER) on the body, as vanilla's stretch does (and the proof that the
+		MethodNode protectedRefill = NativeCallInlining.method(runtime, net.forbric.kernel.transform.VanillaAirRefillInjector.PROTECTED
+				+ net.forbric.kernel.transform.VanillaAirRefillInjector.REFILL_DESC);
+		assertNotNull(protectedRefill);
+		List<String> asked = new java.util.ArrayList<>();
+		for (AbstractInsnNode insn : protectedRefill.instructions) if (insn instanceof MethodInsnNode call) asked.add(call.owner + "." + call.name);
+		assertTrue(asked.contains("net/minecraft/world/entity/EntityFluidInteraction.isEyeInFluidMatching"),
+				"the refill asks the eye's fluid types through the body's fluid interaction: " + asked);
+		assertFalse(asked.stream().anyMatch(call -> call.endsWith(".isEyeInFluid")), "and never vanilla's tag question: " + asked);
+
+		// Control: the same refill asking isEyeInFluid(WATER) on the body too, as vanilla's stretch does (and the proof that the
 		// island reads the refill class at all).
 		ClassNode asking = new ClassNode();
 		runtime.accept(asking);
-		for (MethodNode method : asking.methods)
-			for (AbstractInsnNode insn : method.instructions.toArray())
-				if (insn instanceof MethodInsnNode call && call.name.equals("getFluidInteraction")) method.instructions.remove(insn);
-				else if (insn instanceof MethodInsnNode call && call.name.equals("isEyeInFluid")) call.owner = LIVING;
+		MethodNode refillWithTag = NativeCallInlining.method(asking, protectedRefill.name + protectedRefill.desc);
+		org.objectweb.asm.tree.InsnList vanillaQuestion = new org.objectweb.asm.tree.InsnList();
+		vanillaQuestion.add(new org.objectweb.asm.tree.VarInsnNode(Opcodes.ALOAD, 0));
+		vanillaQuestion.add(new org.objectweb.asm.tree.FieldInsnNode(Opcodes.GETSTATIC, "net/minecraft/tags/FluidTags", "WATER", "Lnet/minecraft/tags/TagKey;"));
+		vanillaQuestion.add(new MethodInsnNode(Opcodes.INVOKEVIRTUAL, LIVING, "isEyeInFluid", "(Lnet/minecraft/tags/TagKey;)Z", false));
+		vanillaQuestion.add(new org.objectweb.asm.tree.InsnNode(Opcodes.POP));
+		refillWithTag.instructions.insert(vanillaQuestion);
 		Function<String, ClassNode> controlView = owner -> owner.equals(refill) ? asking : view.apply(owner);
 		NativeDecisionIsland.Outcome control = NativeDecisionIsland.derive(merged, host, vanilla, was, Set.of(EYE, EFFECT), controlView);
 		assertNotNull(control.island(), String.valueOf(control.declined()));

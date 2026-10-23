@@ -44,9 +44,11 @@ final class CrossHostPredicateIslandPlan implements Opcodes {
     }
     private record Logical(MethodNode method,Map<AbstractInsnNode,AbstractInsnNode>original,boolean vanillaRefill){}
     /**
-     * The host as NeoForge wrote it, for the comparison with the native predicate: the kernel's one decoration of it — the
-     * protected branch's refill handed to {@code KernelAirRefill.protectedRefill} instead of zeroed (VanillaAirRefillInjector) —
-     * is put back to the zero it replaced. It stays in the executable host; the plan only records that it is there, so the
+     * The host as NeoForge wrote it, for the comparison with the native predicate: the kernel's decoration of it
+     * (VanillaAirRefillInjector) — the protected branch's refill handed to {@code KernelAirRefill.protectedRefill} instead of
+     * zeroed, and the breathing body's air update clamped by {@code KernelAirRefill.refilledAir} instead of {@code Math.min},
+     * with the event's starting refill kept in a fresh local for it —
+     * is put back to what it replaced. It stays in the executable host; the plan only records that it is there, so the
      * island's own protected decision starts the event from vanilla's refill too. Any other shape of that runtime's calls is
      * unknown and declines.
      */
@@ -54,12 +56,24 @@ final class CrossHostPredicateIslandPlan implements Opcodes {
         MethodNode copy=new MethodNode(actual.access,actual.name,actual.desc,actual.signature,actual.exceptions.toArray(String[]::new));actual.accept(copy);
         Map<AbstractInsnNode,AbstractInsnNode>original=new IdentityHashMap<>();AbstractInsnNode[]a=actual.instructions.toArray(),b=copy.instructions.toArray();for(int i=0;i<a.length;i++)original.put(b[i],a[i]);
         List<MethodInsnNode>calls=new ArrayList<>();for(var i:copy.instructions)if(i instanceof MethodInsnNode c&&c.owner.equals(VanillaAirRefillInjector.RUNTIME))calls.add(c);
-        if(calls.isEmpty())return new Logical(copy,original,false);if(calls.size()!=1)return null;
-        MethodInsnNode refill=calls.getFirst();
-        if(refill.getOpcode()!=INVOKESTATIC||!refill.name.equals(VanillaAirRefillInjector.PROTECTED)||!refill.desc.equals("("+Type.getArgumentTypes(actual.desc)[0].getDescriptor()+"I)I"))return null;
+        if(calls.isEmpty())return new Logical(copy,original,false);if(calls.size()!=2)return null;
+        MethodInsnNode refill=null,update=null;for(var c:calls){if(c.getOpcode()!=INVOKESTATIC)return null;
+            if(c.name.equals(VanillaAirRefillInjector.PROTECTED)&&c.desc.equals("("+Type.getArgumentTypes(actual.desc)[0].getDescriptor()+"I)I")&&refill==null)refill=c;
+            else if(c.name.equals(VanillaAirRefillInjector.UPDATE)&&c.desc.equals(VanillaAirRefillInjector.UPDATE_DESC)&&update==null)update=c;else return null;}
+        if(refill==null||update==null)return null;
         AbstractInsnNode amount=previous(refill),actor=previous(amount),sink=next(refill.getNext());
         if(!(amount instanceof VarInsnNode value&&value.getOpcode()==ILOAD&&value.var==3)||!aload(actor,0)||!(sink instanceof VarInsnNode result&&result.getOpcode()==ISTORE&&result.var==3))return null;
-        copy.instructions.insertBefore(actor,new InsnNode(ICONST_0));copy.instructions.remove(actor);copy.instructions.remove(amount);copy.instructions.remove(refill);return new Logical(copy,original,true);
+        // The update: the refill the event started from (a fresh local the decoration stores right after the event is kept), then
+        // the event's refill read again, in front of the call that was Math.min.
+        AbstractInsnNode decided=previous(update),event=previous(decided),started=previous(event);
+        if(!(decided instanceof MethodInsnNode getter&&getter.getOpcode()==INVOKEVIRTUAL&&getter.desc.equals("()I"))||!(event instanceof VarInsnNode kept&&kept.getOpcode()==ALOAD)||!(started instanceof VarInsnNode given&&given.getOpcode()==ILOAD))return null;
+        List<VarInsnNode>stores=new ArrayList<>();for(var i:copy.instructions)if(i instanceof VarInsnNode v&&v.getOpcode()==ISTORE&&v.var==given.var)stores.add(v);if(stores.size()!=1)return null;
+        AbstractInsnNode read=previous(stores.getFirst()),from=previous(read);
+        if(!(read instanceof MethodInsnNode first&&first.getOpcode()==INVOKEVIRTUAL&&first.owner.equals(getter.owner)&&first.name.equals(getter.name)&&first.desc.equals("()I"))||!(from instanceof VarInsnNode source&&source.getOpcode()==ALOAD&&source.var==kept.var))return null;
+        copy.instructions.insertBefore(actor,new InsnNode(ICONST_0));copy.instructions.remove(actor);copy.instructions.remove(amount);copy.instructions.remove(refill);
+        copy.instructions.remove(from);copy.instructions.remove(read);copy.instructions.remove(stores.getFirst());
+        copy.instructions.insertBefore(update,new MethodInsnNode(INVOKESTATIC,"java/lang/Math","min","(II)I",false));copy.instructions.remove(started);copy.instructions.remove(event);copy.instructions.remove(decided);copy.instructions.remove(update);
+        return new Logical(copy,original,true);
     }
     private static AbstractInsnNode previous(AbstractInsnNode i){i=i.getPrevious();while(i!=null&&i.getOpcode()<0)i=i.getPrevious();return i;}
     private static Member negatedTypeQuestion(MethodNode method){if((method.access&ACC_STATIC)==0||!method.tryCatchBlocks.isEmpty())return null;Type[]args=Type.getArgumentTypes(method.desc);if(args.length!=3||args[0].getSort()!=Type.OBJECT||args[1].getSort()!=Type.OBJECT||args[2]!=Type.DOUBLE_TYPE||Type.getReturnType(method.desc)!=Type.BOOLEAN_TYPE)return null;

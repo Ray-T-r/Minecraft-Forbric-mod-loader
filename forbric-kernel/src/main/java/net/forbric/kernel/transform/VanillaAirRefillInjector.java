@@ -17,8 +17,15 @@ import org.objectweb.asm.tree.MethodInsnNode;
 import org.objectweb.asm.tree.MethodNode;
 import org.objectweb.asm.tree.TableSwitchInsnNode;
 import org.objectweb.asm.tree.TryCatchBlockNode;
+import org.objectweb.asm.tree.TypeInsnNode;
 import org.objectweb.asm.tree.VarInsnNode;
+import org.objectweb.asm.tree.analysis.Analyzer;
+import org.objectweb.asm.tree.analysis.AnalyzerException;
+import org.objectweb.asm.tree.analysis.Frame;
+import org.objectweb.asm.tree.analysis.SourceInterpreter;
+import org.objectweb.asm.tree.analysis.SourceValue;
 
+import net.forbric.kernel.util.Caught;
 import net.forbric.kernel.util.ForbricLog;
 import net.forbric.kernel.util.ForbricSwitches;
 
@@ -28,18 +35,28 @@ import net.forbric.kernel.util.ForbricSwitches;
  * <p>The merged {@code LivingEntity.baseTick} is NeoForge's: it hands the air supply to {@code CommonHooks.onLivingBreathe},
  * which decides it its own way. Where the eye is in a fluid that is not air and the body does not drown there — water
  * breathing, conduit power, a drowned, an invulnerable player, lava, a mod's fluid it may breathe in — the hook marks the body
- * as breathing and sets the refill it hands its breathe event to zero, so the air stays where it was. Vanilla (and
- * MinecraftForge, whose own hook keeps vanilla's rule) refills it by 4 a tick up to the maximum, holding it only in water for a
- * body that Breath of the Nautilus alone keeps from drowning. The one store of zero into the refill amount in the hook's
- * protected branch becomes the refill vanilla would give ({@code KernelAirRefill.protectedRefill}); everything else stays the
- * hook's: the event is posted with that default, and a NeoForge listener still sets the amounts and decides whether the body
- * breathes, exactly as on NeoForge.
+ * as breathing and sets the refill it hands its breathe event to zero, so the air stays where it was. Vanilla refills it by 4 a
+ * tick up to the maximum, holding it only in its water branch for a body that Breath of the Nautilus alone keeps from drowning
+ * — the eye in a fluid the body can drown in, which is how fabric-api makes a Fabric drowning fluid count as water — and
+ * refilling it in lava or a fluid the body breathes in. (MinecraftForge's own hook refills like vanilla but holds that body's
+ * air in any fluid that is not air.) The one store of zero into the refill amount in the hook's protected branch becomes the
+ * refill vanilla would give ({@code KernelAirRefill.protectedRefill}).
  *
- * <p>The seam is found by shape, not by name: the hook's {@code (LivingEntity, ServerLevel, int, int)} signature, the one
- * breathe event it constructs from {@code (entity, canBreathe, consume, refill)}, and the one store into the event's refill
- * local — a constant zero, right after the store of true into its can-breathe local. Anything else declines with a warning and
- * leaves the hook as it is. {@code -Dforbric.vanillaAirRefill=off} (formerly {@code forbric.foreignFluidBreathing}) keeps
- * NeoForge's rule.
+ * <p>Vanilla also changes the air only while it is below the maximum; the hook's air update for a body that breathes,
+ * {@code setAirSupply(min(air + refill, max))}, pulls air above the maximum back to it every tick (a negative refill there, or
+ * zero, still clamps). Its {@code Math.min} becomes {@code KernelAirRefill.refilledAir}, handed the refill the event started
+ * from (read from the event right after it is constructed, before it is posted) and the one it ends with: air at or above
+ * the maximum stays where it is unless a listener set the refill, which NeoForge applies as it always does.
+ *
+ * <p>Everything else stays the hook's: the event is posted with the default refill, and a NeoForge listener still sets the
+ * amounts and decides whether the body breathes, exactly as on NeoForge. The seams are found by shape: the hook's
+ * {@code (LivingEntity, ServerLevel, int, int)} signature, the one breathe event it constructs from {@code (entity, canBreathe,
+ * consume, refill)} and keeps in a local, the one store into the event's refill local — a constant zero, right after the store
+ * of true into its can-breathe local — and the one {@code Math.min(air + event refill, max)} handed to {@code setAirSupply},
+ * reading that event on every path (followed through the hook's values, so the kernel's own delivery bookkeeping around the
+ * construction does not matter).
+ * Anything else declines with a warning and leaves the hook as it is. {@code -Dforbric.vanillaAirRefill=off} (formerly
+ * {@code forbric.foreignFluidBreathing}) keeps NeoForge's rule.
  */
 public final class VanillaAirRefillInjector implements ClassTransformer {
 	public static final String PROPERTY = "forbric.vanillaAirRefill";
@@ -48,6 +65,9 @@ public final class VanillaAirRefillInjector implements ClassTransformer {
 	public static final String PROTECTED = "protectedRefill";
 	/** The same rule where vanilla's water branch is already known to be taken (the cross-host predicate island). */
 	public static final String WATER = "waterRefill";
+	/** The air update of a body that breathes: NeoForge's clamp, but air at or above the maximum left alone when no listener set the refill. */
+	public static final String UPDATE = "refilledAir";
+	public static final String UPDATE_DESC = "(IIII)I";
 	private static final String TARGET = "net.neoforged.neoforge.common.CommonHooks";
 	private static final String HOOK = "onLivingBreathe";
 	private static final String LIVING = "net/minecraft/world/entity/LivingEntity";
@@ -55,6 +75,7 @@ public final class VanillaAirRefillInjector implements ClassTransformer {
 	private static final String EVENT = "net/neoforged/neoforge/event/entity/living/LivingBreatheEvent";
 	private static final String EVENT_DESC = "(L" + LIVING + ";ZII)V";
 	public static final String REFILL_DESC = "(L" + LIVING + ";I)I";
+	private static final String MATH = "java/lang/Math";
 
 	public static boolean enabled() {
 		return !"off".equalsIgnoreCase(ForbricSwitches.get(PROPERTY, "on"));
@@ -77,8 +98,8 @@ public final class VanillaAirRefillInjector implements ClassTransformer {
 		if (!repair(node)) return bytes;
 		ClassWriter writer = new ClassWriter(ClassWriter.COMPUTE_MAXS);
 		node.accept(writer);
-		ForbricLog.info("[Forbric/Fluid] a body that breathes in its fluid refills its air as in vanilla; NeoForge's breathe event starts "
-				+ "from that refill and still decides");
+		ForbricLog.info("[Forbric/Fluid] a body that breathes in its fluid refills its air as in vanilla, and air above the maximum stays "
+				+ "there; NeoForge's breathe event starts from that refill and still decides");
 		return writer.toByteArray();
 	}
 
@@ -110,13 +131,97 @@ public final class VanillaAirRefillInjector implements ClassTransformer {
 		if (zero == null || zero.getOpcode() != Opcodes.ICONST_0 || !(marked instanceof VarInsnNode mark && mark.getOpcode() == Opcodes.ISTORE
 				&& mark.var == breathe.var) || yes == null || yes.getOpcode() != Opcodes.ICONST_1 || hasEntry(hook, yes, seam))
 			return declined("the refill amount is not zeroed right where the hook decides the body breathes");
+		// The event is kept in a local, and the air update of a body that breathes reads its refill from there:
+		// setAirSupply(Math.min(getAirSupply() + event.getRefillAirAmount(), getMaxAirSupply())). Which local, and that the update
+		// reads the event on every path, is followed through the hook's values (copies kept as the value they copy), so the
+		// kernel's own bookkeeping of what the hook constructs (NativeDualEventInjector) may sit between the two.
+		Frame<SourceValue>[] frames;
+		try {
+			frames = new Analyzer<>(new Copies()).analyze(node.name, hook);
+		} catch (AnalyzerException unreadable) {
+			Caught.warn(unreadable, "[Forbric/Fluid] could not follow the breathing hook's values; it keeps its own refill rule");
+			return false;
+		}
+		Frame<SourceValue> atConstruction = frames[hook.instructions.indexOf(events.getFirst())];
+		SourceValue constructed = atConstruction == null ? null : atConstruction.getStack(atConstruction.getStackSize() - 5);
+		if (constructed == null || constructed.insns.size() != 1
+				|| !(constructed.insns.iterator().next() instanceof TypeInsnNode allocation && allocation.getOpcode() == Opcodes.NEW && allocation.desc.equals(EVENT)))
+			return declined("the breathe event's construction is not one allocation");
+		List<VarInsnNode> keeps = new ArrayList<>();
+		for (AbstractInsnNode insn : hook.instructions) {
+			Frame<SourceValue> before = frames[hook.instructions.indexOf(insn)];
+			if (insn instanceof VarInsnNode store && store.getOpcode() == Opcodes.ASTORE && before != null
+					&& before.getStack(before.getStackSize() - 1).insns.contains(allocation)) keeps.add(store);
+		}
+		if (keeps.size() != 1) return declined("the breathe event is kept " + keeps.size() + " times, not in one local");
+		VarInsnNode event = keeps.getFirst();
+		List<MethodInsnNode> clamps = new ArrayList<>();
+		for (AbstractInsnNode insn : hook.instructions)
+			if (insn instanceof MethodInsnNode call && call.getOpcode() == Opcodes.INVOKESTATIC && call.owner.equals(MATH) && call.name.equals("min")
+					&& call.desc.equals("(II)I")) clamps.add(call);
+		if (clamps.size() != 1) return declined("the hook clamps " + clamps.size() + " times, not once");
+		MethodInsnNode clamp = clamps.getFirst();
+		AbstractInsnNode max = previous(clamp), self = previous(max), sum = previous(self), amount = previous(sum), read = previous(amount),
+				air = previous(read), receiver = previous(air), sink = next(clamp);
+		if (!living(max, "getMaxAirSupply", "()I") || !self(self) || sum == null || sum.getOpcode() != Opcodes.IADD
+				|| !(amount instanceof MethodInsnNode getter && getter.getOpcode() == Opcodes.INVOKEVIRTUAL && getter.owner.equals(EVENT)
+						&& getter.name.equals("getRefillAirAmount") && getter.desc.equals("()I"))
+				|| !(read instanceof VarInsnNode load && load.getOpcode() == Opcodes.ALOAD && load.var == event.var)
+				|| !living(air, "getAirSupply", "()I") || !self(receiver) || !living(sink, "setAirSupply", "(I)V") || hasEntry(hook, receiver, sink))
+			return declined("the air update of a body that breathes is not setAirSupply(min(air + the event's refill, max))");
+		// The event read there is the one constructed, on every path to it (the hook uses the same local for other values
+		// before the event).
+		Frame<SourceValue> atRead = frames[hook.instructions.indexOf(read)];
+		if (atRead == null || !atRead.getLocal(event.var).insns.equals(java.util.Set.of(allocation)))
+			return declined("the air update does not read the breathe event the hook posted");
 		InsnList vanilla = new InsnList();
 		vanilla.add(new VarInsnNode(Opcodes.ALOAD, 0));
 		vanilla.add(new VarInsnNode(Opcodes.ILOAD, refill.var));
 		vanilla.add(new MethodInsnNode(Opcodes.INVOKESTATIC, RUNTIME, PROTECTED, REFILL_DESC, false));
 		hook.instructions.insertBefore(zero, vanilla);
 		hook.instructions.remove(zero);
+		// The refill the event starts from, as the event itself holds it before any listener runs (NeoForge's event clamps a
+		// negative amount to zero), kept in a fresh local; the update compares the one the listeners leave with it.
+		int started = hook.maxLocals;
+		InsnList capture = new InsnList();
+		capture.add(new VarInsnNode(Opcodes.ALOAD, event.var));
+		capture.add(new MethodInsnNode(Opcodes.INVOKEVIRTUAL, EVENT, "getRefillAirAmount", "()I", false));
+		capture.add(new VarInsnNode(Opcodes.ISTORE, started));
+		hook.instructions.insert(event, capture);
+		hook.maxLocals = started + 1;
+		InsnList update = new InsnList();
+		update.add(new VarInsnNode(Opcodes.ILOAD, started));
+		update.add(new VarInsnNode(Opcodes.ALOAD, event.var));
+		update.add(new MethodInsnNode(Opcodes.INVOKEVIRTUAL, EVENT, "getRefillAirAmount", "()I", false));
+		update.add(new MethodInsnNode(Opcodes.INVOKESTATIC, RUNTIME, UPDATE, UPDATE_DESC, false));
+		hook.instructions.insertBefore(clamp, update);
+		hook.instructions.remove(clamp);
 		return true;
+	}
+
+	private static boolean living(AbstractInsnNode insn, String name, String desc) {
+		return insn instanceof MethodInsnNode call && call.getOpcode() == Opcodes.INVOKEVIRTUAL && call.owner.equals(LIVING) && call.name.equals(name)
+				&& call.desc.equals(desc);
+	}
+
+	private static boolean self(AbstractInsnNode insn) {
+		return insn instanceof VarInsnNode load && load.getOpcode() == Opcodes.ALOAD && load.var == 0;
+	}
+
+	/** The hook's values, a copy (a load, a store, a dup) kept as the value it copies, so a local's source is what was stored. */
+	private static final class Copies extends SourceInterpreter {
+		Copies() {
+			super(Opcodes.ASM9);
+		}
+
+		@Override public SourceValue copyOperation(AbstractInsnNode insn, SourceValue value) {
+			return value;
+		}
+	}
+
+	private static AbstractInsnNode next(AbstractInsnNode insn) {
+		for (AbstractInsnNode i = insn == null ? null : insn.getNext(); i != null; i = i.getNext()) if (i.getOpcode() >= 0) return i;
+		return null;
 	}
 
 	/** Whether a label between {@code from} and {@code to} is entered from elsewhere: the true, the zero and their stores are one straight run. */

@@ -2416,9 +2416,13 @@ test	net.forbric.kernel.transform.UnboundHolderDataInjectorTest	theReportJudgesT
 test	net.forbric.kernel.transform.UntrackedFluidEyeQueryInjectorTest	eyeQueriesUseTheInteractionAndKeepNativeQueriesBehindTheUntrackedGuard()	[fixture:staged] $ROOT/forbric-loader/run/merged-base/patched-mc-merged-26.2.jar absent (reading net/minecraft/world/entity/Entity.class)
 test	net.forbric.kernel.transform.VanillaAirRefillInjectorExecutionTest	aBodyThatBreathesInItsFluidRefillsAsInVanilla(Path)	[fixture:staged] actual NeoForge CommonHooks required
 test	net.forbric.kernel.transform.VanillaAirRefillInjectorExecutionTest	aHookOfAnotherShapeIsLeftAsItIs()	[fixture:staged] actual NeoForge CommonHooks required
+test	net.forbric.kernel.transform.VanillaAirRefillInjectorExecutionTest	airAboveTheMaximumStaysAsInVanilla(Path)	[fixture:staged] actual NeoForge CommonHooks required
+test	net.forbric.kernel.transform.VanillaAirRefillInjectorExecutionTest	breathOfTheNautilusAloneHoldsTheAirWhereTheBodyCouldDrown(Path)	[fixture:staged] actual NeoForge CommonHooks required
 test	net.forbric.kernel.transform.VanillaAirRefillInjectorExecutionTest	drowningAndOpenAirAreTheHooksOwn(Path)	[fixture:staged] actual NeoForge CommonHooks required
 test	net.forbric.kernel.transform.VanillaAirRefillInjectorExecutionTest	switchedOffTheHookHoldsTheAirAsNeoForgeDoes(Path)	[fixture:staged] actual NeoForge CommonHooks required
 test	net.forbric.kernel.transform.VanillaAirRefillInjectorExecutionTest	theBreatheEventStartsFromVanillasRefillAndStillDecides(Path)	[fixture:staged] actual NeoForge CommonHooks required
+test	net.forbric.kernel.transform.VanillaAirRefillInjectorExecutionTest	theIslandsProtectedDecisionHandsTheEventVanillasWaterBranchRefill(Path)	[fixture:staged] actual NeoForge CommonHooks required
+test	net.forbric.kernel.transform.VanillaAirRefillInjectorExecutionTest	theStandInEventClampsLikeNeoForgesOwn()	[fixture:staged] actual NeoForge CommonHooks required
 test	net.forbric.kernel.transform.VanillaDamageReadInjectorTest	livingEntityReadsBeforeArmourAndBeforeTheForgeSeam()	[fixture:staged] merged base not staged: $ROOT/forbric-loader/run/merged-base/patched-mc-merged-26.2.jar
 test	net.forbric.kernel.transform.VanillaDamageReadInjectorTest	playerOverridesTheSameWayAndGetsTheSameRead()	[fixture:staged] merged base not staged: $ROOT/forbric-loader/run/merged-base/patched-mc-merged-26.2.jar
 test	net.forbric.kernel.transform.VanillaEarlyReturnsCensusTest	everySplitIsOneTheVerifierAccepts()	[fixture:staged] merged base not staged: $ROOT/forbric-loader/run/merged-base/patched-mc-merged-26.2.jar
