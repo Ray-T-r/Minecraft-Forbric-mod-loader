@@ -67,6 +67,15 @@ public final class KernelRuntimeClasses {
 		 * fabric-api, which is a mod the user installs rather than a staged artifact.
 		 */
 		GENERATED,
+		/**
+		 * Compiled into {@code forbric-kernel-runtime.jar} like {@link #COMPILED}, but implementing an API that only an
+		 * installed mod -- or the kernel's stand-in for it -- defines, so whether it LINKS is a property of the launch,
+		 * not of the build. {@link #verify} checks that it is packed and never loads it: loading it on a launch without
+		 * that API would fail for no fault of the build, and loading it on one with the API would define the mod's
+		 * interface at boot for no reason. Its source is not in {@code src/runtime/java} but in the source set that
+		 * compiles against the API.
+		 */
+		PACKED,
 	}
 
 	/**
@@ -431,7 +440,12 @@ public final class KernelRuntimeClasses {
 		CLASSES.put("net.forbric.kernel.runtime.KernelModConfigScreens", new Entry(Origin.COMPILED, List.of(
 				new Call("summary", String.class),
 				new Call("firstWithConfig", net.forbric.api.ModCatalog.Entry.class, String.class),
-				new Call("openById", Object.class, String.class, Object.class))));
+				new Call("openById", Object.class, String.class, Object.class),
+				new Call("listedRow", net.forbric.kernel.ui.ModListRows.Row.class, String.class))));
+		// The kernel's own "modmenu" entrypoint, which the fabricloader built-in declares on a client
+		// (KernelFabricEcosystem.loaderEntrypoints); Mod Menu constructs it, nothing calls it by name. PACKED: it
+		// implements Mod Menu's API, which exists only when Mod Menu or the kernel's stand-in does.
+		CLASSES.put("net.forbric.kernel.runtime.modmenu.KernelModMenuPlugin", new Entry(Origin.PACKED, List.of()));
 		// The only MOD-bus bridge: Forge's client reload listeners into NeoForge's sorted graph.
 		CLASSES.put("net.forbric.kernel.runtime.KernelGameClientReload", new Entry(Origin.COMPILED, List.of(
 				new Call("install", void.class, Object.class))));
@@ -580,6 +594,11 @@ public final class KernelRuntimeClasses {
 				.toList();
 	}
 
+	/** The names that must be packed in an owned jar but are never loaded by {@link #verify}: see {@link Origin#PACKED}. */
+	public static List<String> packed() {
+		return CLASSES.entrySet().stream().filter(e -> e.getValue().origin() == Origin.PACKED).map(Map.Entry::getKey).toList();
+	}
+
 	/** The calls the boot side makes on {@code binaryName}; empty if it is not registered. */
 	public static List<Call> callsOn(String binaryName) {
 		Entry entry = CLASSES.get(binaryName);
@@ -662,7 +681,16 @@ public final class KernelRuntimeClasses {
 			ok++;
 		}
 
-		if (ok == names.size()) {
+		boolean allPacked = true;
+		for (String name : packed()) {
+			if (loader.findResource(name.replace('.', '/') + ".class") != null) continue;
+			allPacked = false;
+			ForbricLog.error("[Forbric/Runtime] the kernel's own game-side class %s is in no owned jar. It is not loaded "
+					+ "at boot (it implements a mod's API), so nothing else would notice until that mod asked for it. Fix: "
+					+ "rebuild with ./gradlew jar on a machine with the staged game artifacts", name);
+		}
+
+		if (ok == names.size() && allPacked) {
 			ForbricLog.info("[Forbric/Runtime] game-side kernel classes: %d/%d linked", ok, names.size());
 			return true;
 		}

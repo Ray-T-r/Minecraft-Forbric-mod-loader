@@ -197,6 +197,14 @@ sourceSets {
 		java { srcDir 'src/modmenuApi/java' }
 		compileClasspath += sourceSets.runtime.output + sourceSets.main.output + files(stagedGameJars) + files(stagedMcLibraries)
 	}
+	// The kernel's own "modmenu" entrypoint (KernelModMenuPlugin): game-side code that IMPLEMENTS Mod Menu's API, so it
+	// compiles against the stand-in above and links at run time against whichever ModMenuApi the game loader defines --
+	// a real Mod Menu's, or the stand-in. Its own set, because the stand-in's must hold the API package and nothing else.
+	// Shipped as ordinary classes in the game-side jar: they are net.forbric names, and nothing of Mod Menu's.
+	modMenuPlugin {
+		java { srcDir 'src/modmenuPlugin/java' }
+		compileClasspath += sourceSets.modMenuApi.output + sourceSets.runtime.output + sourceSets.main.output + files(stagedGameJars) + files(stagedMcLibraries)
+	}
 }
 
 repositories {
@@ -315,6 +323,9 @@ tasks.named('compileRuntimeJava') { dependsOn verifyRebornEnergy }
 tasks.named('compileModMenuApiJava') {
 	onlyIf { !stagedGameJars.isEmpty() }
 }
+tasks.named('compileModMenuPluginJava') {
+	onlyIf { !stagedGameJars.isEmpty() }
+}
 
 test {
 	useJUnitPlatform()
@@ -380,6 +391,8 @@ test {
 	// The same for the Mod Menu API stand-in, which ModMenuApiStandInShapeTest reads off build/classes/java/modMenuApi.
 	dependsOn tasks.named('compileModMenuApiJava')
 	inputs.files(sourceSets.modMenuApi.output).withPropertyName('modMenuApiStandIn').optional()
+	dependsOn tasks.named('compileModMenuPluginJava')
+	inputs.files(sourceSets.modMenuPlugin.output).withPropertyName('modMenuPlugin').optional()
 	// NoRawAssumptionsTest reads the test sources and its allowlist as TEXT. An allowlist edit changes no class, so
 	// without these the task stayed UP-TO-DATE and kept the verdict on the previous list.
 	inputs.file('src/test/raw-assumption-allowlist.txt').withPropertyName('rawAssumptionAllowlist')
@@ -517,6 +530,8 @@ tasks.register('runtimeJar', Jar) {
 		into 'META-INF/forbric/modmenu-api'
 		rename { String file -> file + '.bin' }
 	}
+	// The kernel's own Mod Menu entrypoint, as classes: see the modMenuPlugin source set.
+	from sourceSets.modMenuPlugin.output.classesDirs
 	// The boot seam requires exactly these three when the transfer APIs are installed; a jar without them is a
 	// release that turns every fabric-api pack into a required loss. Checked on the artifact itself.
 	doLast {
@@ -530,6 +545,8 @@ tasks.register('runtimeJar', Jar) {
 				.collect { "META-INF/forbric/modmenu-api/com/terraformersmc/modmenu/${it}.class.bin".toString() }
 				.findAll { !entries.contains(it) }
 		if (standIn) throw new GradleException("forbric-kernel-runtime.jar was built without its Mod Menu API stand-in: ${standIn}")
+		if (!entries.contains('net/forbric/kernel/runtime/modmenu/KernelModMenuPlugin.class'))
+			throw new GradleException("forbric-kernel-runtime.jar was built without the kernel's Mod Menu entrypoint (KernelModMenuPlugin)")
 		def missing = ['BlockTransferBridge', 'TransferIssues', 'PairedTransactions', 'RebornEnergyBridge',
 				'RebornEnergyAdapters', 'ForgeEnergyAdapters', 'EnergyUnits']
 				.collect { "net/forbric/kernel/runtime/transfer/${it}.class".toString() }.findAll { !entries.contains(it) }

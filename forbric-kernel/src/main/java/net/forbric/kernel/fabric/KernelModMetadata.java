@@ -133,6 +133,25 @@ public final class KernelModMetadata implements ModMetadata, net.fabricmc.loader
 				entrypoints == null ? Map.of() : Map.copyOf(entrypoints), List.of(), null, List.of(), Map.of());
 	}
 
+	/**
+	 * A presence identity that shows itself as {@code display} does: its name, description, people, contact, licence
+	 * and icon. Nothing else is taken from {@code display} -- no dependencies, provides, environment, entrypoints, mixins
+	 * or nested jars -- because none of those is this identity's: the mod runs under the family that won it.
+	 *
+	 * <p>For a mod whose Fabric build lost arbitration: that build's own {@code fabric.mod.json} is how the mod presents
+	 * itself to every Fabric mod list, and an identity carrying only the id made it a row named by its id with no icon
+	 * and no description on Mod Menu, beside every other mod showing its own.
+	 */
+	public static KernelModMetadata presenceShownAs(KernelModMetadata display, String id, String version,
+			Map<String, CustomValue> customValues, Map<String, List<EntrypointDecl>> entrypoints) {
+		KernelModMetadata bare = builtin(id, version, display == null ? id : display.getName(), customValues, entrypoints);
+		if (display == null) return bare;
+		return new KernelModMetadata(bare.type, bare.id, bare.provides, bare.version, bare.environment, bare.dependencies,
+				display.name, display.description, display.authors, display.contributors, display.contact, display.license,
+				display.icons, bare.customValues, bare.entrypoints, bare.mixinConfigs, bare.accessWidener, bare.nestedJars,
+				bare.languageAdapters);
+	}
+
 	// --- loader-facing (kernel) ---
 
 	/** Entrypoint declarations by key ({@code main}, {@code client}, {@code server}, {@code preLaunch}, custom…). */

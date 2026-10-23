@@ -316,7 +316,9 @@ class KernelRuntimeClassesTest {
 
 	@Test
 	void verifyPassesWhenTheGameSideJarIsOwned(@TempDir Path dir) throws Exception {
-		URL runtimeJar = jarWith(dir.resolve("forbric-kernel-runtime.jar"), KernelRuntimeClasses.compiled());
+		List<String> delivered = new ArrayList<>(KernelRuntimeClasses.compiled());
+		delivered.addAll(KernelRuntimeClasses.packed());
+		URL runtimeJar = jarWith(dir.resolve("forbric-kernel-runtime.jar"), delivered);
 
 		try (ForbricClassLoader loader =
 				new ForbricClassLoader(new URL[] {runtimeJar}, getClass().getClassLoader())) {
@@ -335,6 +337,49 @@ class KernelRuntimeClassesTest {
 			assertFalse(KernelRuntimeClasses.verify(loader),
 					"a kernel whose own game-side classes are absent must say so; every one of them fails to "
 							+ "link later, at the point of use, naming a class instead of the build");
+		}
+	}
+
+	/**
+	 * A PACKED class is checked for being in the jar and nothing else: a runtime jar with every linked class and without
+	 * it fails, and the class is never loaded -- the stand-in jar built here has it as a bare class with no Mod Menu API
+	 * anywhere, which would not link.
+	 */
+	@Test
+	void verifyFailsWhenAPackedClassIsMissingAndNeverLoadsOne(@TempDir Path dir) throws Exception {
+		assertFalse(KernelRuntimeClasses.packed().isEmpty(), "the registry has a PACKED class to check");
+		URL withoutPacked = jarWith(dir.resolve("without.jar"), KernelRuntimeClasses.compiled());
+		try (ForbricClassLoader loader = new ForbricClassLoader(new URL[] {withoutPacked}, getClass().getClassLoader())) {
+			assertFalse(KernelRuntimeClasses.verify(loader), "a packed class missing from the jar is a broken build");
+		}
+		Path jar = dir.resolve("with.jar");
+		try (OutputStream out = Files.newOutputStream(jar); ZipOutputStream zip = new ZipOutputStream(out)) {
+			for (String binary : KernelRuntimeClasses.compiled()) {
+				String internal = binary.replace('.', '/');
+				zip.putNextEntry(new ZipEntry(internal + ".class"));
+				zip.write(standIn(internal, KernelRuntimeClasses.callsOn(binary), null));
+				zip.closeEntry();
+			}
+			for (String binary : KernelRuntimeClasses.packed()) {
+				zip.putNextEntry(new ZipEntry(binary.replace('.', '/') + ".class"));
+				zip.write("not a class file: loading it would fail".getBytes(StandardCharsets.UTF_8));
+				zip.closeEntry();
+			}
+		}
+		try (ForbricClassLoader loader = new ForbricClassLoader(new URL[] {jar.toUri().toURL()}, getClass().getClassLoader())) {
+			assertTrue(KernelRuntimeClasses.verify(loader), "packed is all verify asks of it");
+		}
+	}
+
+	@Test
+	void aPackedClassHasSourceOutsideTheRuntimeSetAndNoneInIt() throws Exception {
+		for (String binary : KernelRuntimeClasses.packed()) {
+			String relative = binary.replace('.', '/') + ".java";
+			assertFalse(Files.isRegularFile(Path.of("src/runtime/java").resolve(relative)), binary);
+			try (Stream<Path> sets = Files.list(Path.of("src"))) {
+				assertTrue(sets.anyMatch(set -> Files.isRegularFile(set.resolve("java").resolve(relative))),
+						binary + " is PACKED but no source set under src/ has it");
+			}
 		}
 	}
 
