@@ -1,6 +1,8 @@
 #!/usr/bin/env bash
 # Builds run/canary/forbricbreakandloot.jar for gate-m43: a NeoForge mod that breaks blocks with a fake player while
-# listening through the unmodified fabric-events-interaction-v0, and drives MinecraftForge loot-pool conditions.
+# listening through the unmodified fabric-events-interaction-v0, and drives MinecraftForge loot-pool conditions; and
+# run/canary/forbricxprelay.jar, a Fabric mod whose mixins change ore experience in vanilla's Block.tryDropExperience
+# (compiled against vanilla and Mixin's annotations only, as a Fabric mod is built).
 # Only javac/jar; no kernel Gradle. The gate owns the separately scheduled kernel build.
 set -euo pipefail
 . "$(cd "$(dirname "$0")" && pwd)/lib.sh"
@@ -15,6 +17,10 @@ forge = pathlib.Path(os.environ.get('FORGE_RT', old / 'run/merged-base/forge-run
 if not forge.is_file(): forge = old / 'run/forge-runtime/forge-runtime.jar'
 neo = pathlib.Path(os.environ.get('NEO_RT', old / 'run/neoforge-runtime/neoforge-runtime.jar'))
 fapi = pathlib.Path(os.environ.get('M43_FABRIC_API', kernel / 'run/client-merged-pack/mods/fabric-api-0.155.2+26.2.jar'))
+vanilla = mc / 'versions/26.2/26.2.jar'
+mixin = mc / 'libraries/net/fabricmc/sponge-mixin/0.17.3+mixin.0.8.7/sponge-mixin-0.17.3+mixin.0.8.7.jar'
+# A vanilla Minecraft tree (a CI runner's .dev/minecraft) has no Fabric libraries: take the kernel's own copy.
+if not mixin.is_file() and os.environ.get('FORBRIC_SPONGE_MIXIN'): mixin = pathlib.Path(os.environ['FORBRIC_SPONGE_MIXIN'])
 libraries = []
 for entry in json.loads((mc / 'versions/26.2/26.2.json').read_text())['libraries']:
     artifact = entry.get('downloads', {}).get('artifact', {}).get('path')
@@ -27,7 +33,7 @@ with zipfile.ZipFile(fapi) as archive:
         if len(names) != 1: raise SystemExit('required actual Fabric module missing or ambiguous: ' + prefix)
         target = modules / pathlib.PurePosixPath(names[0]).name; target.write_bytes(archive.read(names[0])); selected.append(target)
 classpath = [compile_game, forge, neo, *selected, *libraries]
-for path in [compile_game, forge, neo, fapi]:
+for path in [compile_game, forge, neo, fapi, vanilla, mixin]:
     if not path.is_file(): raise SystemExit(f'M43 prerequisite absent: {path}')
 root = kernel / 'canary/break-and-loot'
 classes = work / 'classes'; classes.mkdir()
@@ -41,9 +47,21 @@ with zipfile.ZipFile(staged, 'w', zipfile.ZIP_DEFLATED) as target:
     for path in sorted((root / 'data').rglob('*.json')): target.write(path, path.relative_to(root).as_posix())
 jar = output / 'forbricbreakandloot.jar'
 os.replace(staged, jar)
+fabric = root / 'fabric-xp'
+xp_classes = work / 'xp-classes'; xp_classes.mkdir()
+subprocess.run(['javac', '-proc:none', '-nowarn', '--release', '21', '-cp', os.pathsep.join(map(str, [vanilla, mixin, *libraries])),
+                '-d', str(xp_classes), *map(str, sorted((fabric / 'src').rglob('*.java')))], check=True)
+xp_staged = work / 'forbricxprelay.jar'
+with zipfile.ZipFile(xp_staged, 'w', zipfile.ZIP_DEFLATED) as target:
+    for path in sorted(xp_classes.rglob('*.class')): target.write(path, path.relative_to(xp_classes).as_posix())
+    target.write(fabric / 'fabric.mod.json', 'fabric.mod.json')
+    target.write(fabric / 'forbricxprelay.mixins.json', 'forbricxprelay.mixins.json')
+xp_jar = output / 'forbricxprelay.jar'
+os.replace(xp_staged, xp_jar)
 def record(path):
     path = path.resolve(); return {'path': str(path), 'sha256': hashlib.sha256(path.read_bytes()).hexdigest()}
-(output / 'm43-build-inputs.json').write_text(json.dumps({'mod': record(jar), 'compileGame': record(compile_game),
+(output / 'm43-build-inputs.json').write_text(json.dumps({'mod': record(jar), 'fabricMod': record(xp_jar), 'vanilla': record(vanilla),
+    'mixin': record(mixin), 'compileGame': record(compile_game),
     'forge': record(forge), 'neo': record(neo), 'fabricApi': record(fapi), 'modules': [record(p) for p in selected]}, indent=2) + '\n')
 print('[M43Break] built the block-break and loot probe')
 PY

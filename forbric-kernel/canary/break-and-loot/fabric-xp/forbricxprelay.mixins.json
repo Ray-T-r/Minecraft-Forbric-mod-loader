@@ -1,0 +1,1 @@
+{"required": true, "package": "forbric.xprelay", "compatibilityLevel": "JAVA_21", "mixins": ["OreTallyMixin", "OreHushMixin"], "injectors": {"defaultRequire": 1}}

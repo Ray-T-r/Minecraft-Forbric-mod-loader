@@ -14,7 +14,10 @@
 #   no AFTER), a Fabric BEFORE veto (CANCELED, no AFTER) and a NeoForge BreakBlockEvent cancel (no Fabric event at all);
 #   experience — six diamond ore breaks each drop 3..7 orbs' worth, exactly what NeoForge's BlockDropsEvent (fired once)
 #   ends with; silk touch drops none; a NeoForge listener's number (50 on lapis), a MinecraftForge BreakEvent listener's
-#   setExpToDrop (100 on emerald) and a block whose experience only MinecraftForge's getExpDrop answers (7) are what drop.
+#   setExpToDrop (100 on emerald) and a block whose experience only MinecraftForge's getExpDrop answers (7) are what drop;
+#   and a Fabric mod's mixins in vanilla's Block.tryDropExperience (canary forbricxprelay) — redstone ore's experience plus a
+#   hundred at the store of its value, nether quartz ore's cancelled at HEAD by a handler handed every argument — drop as they
+#   would natively (101..105, and 0), relayed by the kernel to the drops event's value (UncalledValueRelay).
 #   The merged playerDestroy used to call MinecraftForge's dropResources(..., false) while destroyBlock is NeoForge's, so
 #   a player got no experience from mining at all; the merge now points it back at NeoForge's dropResources
 #   (DelegateTwinRoutes), and KernelGameBlockEvents hands MinecraftForge's decision to the drops event.
@@ -24,9 +27,11 @@
 #   by MinecraftForge's own codec as an empty pool.
 #
 #   1. positive — STRICT, every case passes, zero confirmed required findings.
-#   2. off — -Dforbric.carrierHelperResults=off -Dforbric.forgePoolConditions=off -Dforbric.forgeBreakExperience=off:
+#   2. off — -Dforbric.carrierHelperResults=off -Dforbric.forgePoolConditions=off -Dforbric.forgeBreakExperience=off
+#      -Dforbric.uncalledValueRelay=off:
 #      exactly the repaired cases fail (AFTER in survival, block entity, creative and nested; forge:condition false; the
-#      code-built condition, its encoding and round trip; MinecraftForge's experience decision and its block), and the
+#      code-built condition, its encoding and round trip; MinecraftForge's experience decision and its block; the Fabric
+#      hooks in tryDropExperience, which then never run, so redstone drops its bare 1..5 and quartz its 2..5), and the
 #      controls (air, veto, NeoForge cancel, plain/true/NeoForge pools, vanilla and NeoForge experience) still hold. The
 #      merge's own repair has no switch: on a base built before it, xp.vanillaOre, xp.silkTouch and every other xp case
 #      fail with no orbs and no drops event.
@@ -38,7 +43,7 @@ set -uo pipefail
 SERVER_DIR="$KERNEL/run/server-break-m43"
 RESULTS="$BUILD/verification/m43-break-and-loot"
 FAIL=0
-REPAIRED="{'break.survival.plain', 'break.survival.blockEntity', 'break.creative', 'break.nested', 'xp.forgeDecision', 'xp.forgeBlock', 'loot.json.forgeFalse', 'loot.code.condition', 'loot.code.encode', 'loot.code.roundtrip'}"
+REPAIRED="{'break.survival.plain', 'break.survival.blockEntity', 'break.creative', 'break.nested', 'xp.forgeDecision', 'xp.forgeBlock', 'xp.fabricReplace', 'xp.fabricCancel', 'loot.json.forgeFalse', 'loot.code.condition', 'loot.code.encode', 'loot.code.roundtrip'}"
 rm -rf "$RESULTS"; mkdir -p "$RESULTS"
 
 kernel_jar
@@ -50,7 +55,7 @@ run_server() {
   reap_stale_server "$SERVER_DIR"
   rm -rf "$SERVER_DIR/world" "$SERVER_DIR/mods" "$SERVER_DIR/.forbric-kernel" "$SERVER_DIR/logs"
   mkdir -p "$SERVER_DIR/mods"
-  cp "$KERNEL/run/canary/forbricbreakandloot.jar" "$KERNEL"/run/canary/m43-modules/*.jar "$SERVER_DIR/mods/"
+  cp "$KERNEL/run/canary/forbricbreakandloot.jar" "$KERNEL/run/canary/forbricxprelay.jar" "$KERNEL"/run/canary/m43-modules/*.jar "$SERVER_DIR/mods/"
   echo "eula=true" > "$SERVER_DIR/eula.txt"
   seed_server_properties "$SERVER_DIR"
   printf 'level-name=world\nlevel-type=minecraft:flat\ngenerate-structures=false\nmax-tick-time=-1\npause-when-empty-seconds=0\nonline-mode=false\n' >> "$SERVER_DIR/server.properties"
@@ -72,7 +77,7 @@ import json, sys
 report, phase, rule = json.load(open(sys.argv[1])), sys.argv[2], sys.argv[3]
 assert report['phase'] == phase, report['phase']
 cases = {c['name']: c for c in report['cases']}
-assert len(cases) == 20, sorted(cases)
+assert len(cases) == 22, sorted(cases)
 failed = {name for name, c in cases.items() if not c['pass']}
 for name in sorted(failed): print(f"[kernel]   {phase}: {name} failed — {cases[name]['detail'][:240]}")
 assert eval(rule, {'failed': failed, 'cases': cases}), (phase, sorted(failed))
@@ -83,13 +88,13 @@ PY
 
 step "1. positive: Fabric's AFTER fires and MinecraftForge's pool conditions hold"
 run_server positive strict ""
-judge positive "not failed" "all 20 cases pass"
+judge positive "not failed" "all 22 cases pass"
 if python3 -c "import json,sys; r=json.load(open(sys.argv[1])); sys.exit(0 if r['confirmedRequired']==0 else 1)" "$RESULTS/positive-compatibility.json" 2>/dev/null
 then echo "[kernel] PASS positive: zero confirmed required findings under STRICT"
 else echo "[kernel] FAIL positive: STRICT report missing or has confirmed required findings"; FAIL=1; fi
 
 step "2. off: the same server with both repairs switched off"
-run_server off continue "-Dforbric.carrierHelperResults=off -Dforbric.forgePoolConditions=off -Dforbric.forgeBreakExperience=off"
+run_server off continue "-Dforbric.carrierHelperResults=off -Dforbric.forgePoolConditions=off -Dforbric.forgeBreakExperience=off -Dforbric.uncalledValueRelay=off"
 judge off "failed == $REPAIRED" "exactly the repaired cases fail; the controls hold"
 
 if [ "$FAIL" -eq 0 ]; then

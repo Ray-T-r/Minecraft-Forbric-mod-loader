@@ -1288,6 +1288,9 @@ public final class MixinFit {
 			String why = owner == null ? null : MergedBaseUncalledMethods.neverRuns(owner, hit, ecosystem, resolver);
 			// Or a body a carrier renamed and nothing calls, where R3 moved the injector to bind as it would in the body.
 			if (why == null && owner != null) why = CarrierRenames.neverRuns(owner, hit, ecosystem);
+			// Or a method whose woven body the carrier's own place runs through a relay (UncalledValueRelay): it runs there, on the
+			// carrier's value. The final class still reports it, should the relay be declined after weaving.
+			if (why != null && UncalledValueRelay.relays(owner.name, hit.name, hit.desc, ecosystem)) why = null;
 			if (why == null) return null;
 			String line = hit.name + " never runs: " + why;
 			if (!dead.contains(line)) dead.add(line);

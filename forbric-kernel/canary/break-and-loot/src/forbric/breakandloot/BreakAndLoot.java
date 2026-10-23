@@ -128,6 +128,18 @@ public final class BreakAndLoot {
   test("xp.forgeBlock",()->{Block forgeXp=BuiltInRegistries.BLOCK.getValue(Identifier.fromNamespaceAndPath(ID,"forge_xp"));
    String r=mine.apply(forgeXp.defaultBlockState(),pick.copy());return expect(r.equals("broken=true xp=7 drops=["+ID+":forge_xp=7]"),r);});
   mode="";
+  // A Fabric mod's hooks in vanilla's tryDropExperience (canary forbricxprelay), which the merged game never calls: natively a
+  // redstone ore break drops its 1..5 plus a hundred (a @ModifyVariable at the store), and nether quartz ore none (a HEAD cancel
+  // handed every argument, the provider included). The kernel relays the woven method to the drops event's value.
+  test("xp.fabricReplace",()->{StringBuilder all=new StringBuilder();
+   for(int i=0;i<4;i++){String r=mine.apply(Blocks.REDSTONE_ORE.defaultBlockState(),pick.copy());all.append(r).append("; ");
+    int xp=Integer.parseInt(r.replaceAll(".* xp=(-?\\d+) .*","$1"));
+    if(xp<101||xp>105)return "a redstone ore break: "+all;}
+   return null;});
+  test("xp.fabricCancel",()->{StringBuilder all=new StringBuilder();
+   for(int i=0;i<4;i++){String r=mine.apply(Blocks.NETHER_QUARTZ_ORE.defaultBlockState(),pick.copy());all.append(r).append("; ");
+    if(!r.startsWith("broken=true xp=0 "))return "a nether quartz ore break: "+all;}
+   return null;});
 
   // A loot table's pools, each with one item: which items a roll gives says which pools survived their conditions.
   LootTable table=server.reloadableRegistries().getLootTable(ResourceKey.create(Registries.LOOT_TABLE,Identifier.fromNamespaceAndPath(ID,"probe")));

@@ -269,6 +269,16 @@ public final class KernelGameBlockEvents {
 				"BlockEvent.BreakEvent",
 				"a MinecraftForge claim or protection mod does not protect, and a block-logging mod records nothing",
 				KernelGameBlockEvents::fireBreak);
+		// Last of all, whatever the drops event now holds is what a Fabric mod's hooks in vanilla's tryDropExperience — which the
+		// merged game never calls — are handed, as their own game would hand them the value there (UncalledValueRelay).
+		bus.addListener(net.neoforged.bus.api.EventPriority.LOWEST, false, BlockDropsEvent.class, drops -> {
+			try {
+				relayExperience(drops);
+			} catch (Throwable t) {
+				Caught.warn(t, "[Forbric/EventMux] the experience relay failed — a Fabric mod's hook in Block.tryDropExperience did not run for this "
+						+ "break, NeoForge's experience stands");
+			}
+		});
 		if (!experienceCarried()) return;
 		bus.addListener(net.neoforged.bus.api.EventPriority.HIGHEST, false, BlockDropsEvent.class, drops -> {
 			try {
@@ -278,6 +288,21 @@ public final class KernelGameBlockEvents {
 						+ "experience for this break is not applied, NeoForge's stands");
 			}
 		});
+	}
+
+	/**
+	 * Runs the relay of vanilla's {@code tryDropExperience} for this break's block, when its native {@code spawnAfterBreak} asked
+	 * that method: handed the experience the event holds now, and the event drops what the method would have popped. No relay
+	 * (nothing woven into the method, or the block's native game never asked it) leaves the event as it is.
+	 */
+	static void relayExperience(BlockDropsEvent drops) throws Throwable {
+		if (!(drops.getLevel() instanceof net.minecraft.server.level.ServerLevel level)) return;
+		Object block = drops.getState().getBlock();
+		net.forbric.kernel.mixin.UncalledValueRelay.Relay relay = net.forbric.kernel.mixin.UncalledValueRelay.relayFor(block.getClass(),
+				net.forbric.kernel.mixin.UncalledValueRelay.EXPERIENCE);
+		if (relay == null) return;
+		int popped = net.forbric.kernel.mixin.UncalledValueRelay.run(relay, drops.getDroppedExperience(), block, level, drops.getPos(), drops.getTool(), null);
+		drops.setDroppedExperience(popped);
 	}
 
 	/** {@code off}: a MinecraftForge break's experience decision is not handed to NeoForge's drops event. */

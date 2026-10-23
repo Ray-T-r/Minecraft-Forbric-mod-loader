@@ -107,6 +107,9 @@ class MixinFitLivenessCensusStagedTest {
 	 * verbatim piece NeoForge's hotbar layer runs ({@code extractHotbar}): FIT both ways, with the move. Balm's health events
 	 * at the start and end of {@code Hud.extractPlayerHealth}, whose four pieces NeoForge draws as layers, are judged where
 	 * MixinSplitBodyEdges moves them and are not on the list either ({@code -Dforbric.splitBodyEdges=off} puts them on it).
+	 * PuzzlesLib's experience hook on the dead {@code Block.tryDropExperience} left the list when the kernel began relaying
+	 * that method's woven hooks to NeoForge's drops event (UncalledValueRelay): liveness reads it as running for the Fabric
+	 * mods its census row names ({@code -Dforbric.uncalledValueRelay=off} puts it back).
 	 */
 	private static final Set<String> EXPECTED = Set.of(
 			"apoli.mixins.json:legacy.hud_power.HudMixin FIT -> FIT",
@@ -117,7 +120,6 @@ class MixinFitLivenessCensusStagedTest {
 			"fabric-renderer-api-v1.mixins.json:block.particle.ScreenEffectRendererMixin FIT -> PARTIAL",
 			"fabric-rendering-v1.mixins.json:HudMixin PARTIAL -> PARTIAL",
 			"mixins.malilib.json:item.MixinItemStack FIT -> PARTIAL",
-			"puzzleslib.fabric.mixins.json:BlockFabricMixin FIT -> PARTIAL",
 			"sodium-fabric.mixins.json:features.render.model.ItemModelGeneratorMixin FIT -> PARTIAL",
 			"trinkets.fabric.mixins.json:ItemStackMixin FIT -> PARTIAL");
 	/**
@@ -127,9 +129,10 @@ class MixinFitLivenessCensusStagedTest {
 	 * PuzzlesLib's left it the same way once the census bound the native references a boot binds (28 → 27), and its
 	 * effect-tooltip hook, in the one pack that carries it, once a sliced pinned local moves too (27 → 26). fabric-registry-sync's
 	 * hook on the private, uncalled four-argument {@code RegistryDataLoader.load} joined it in the five packs that carry it once
-	 * private methods were read by owner (26 → 31).
+	 * private methods were read by owner (26 → 31). PuzzlesLib's experience hook left it in its one pack once the method it
+	 * hooks is relayed (31 → 30).
 	 */
-	private static final int EXPECTED_IN_PACKS = 31;
+	private static final int EXPECTED_IN_PACKS = 30;
 
 	/** The merged base's native references, bound for the census as ForbricMixinService.bind binds them before Mixin starts. */
 	private net.forbric.kernel.classloading.ForbricClassLoader references;
