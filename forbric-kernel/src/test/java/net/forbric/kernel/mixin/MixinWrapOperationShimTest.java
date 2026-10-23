@@ -51,7 +51,7 @@ class MixinWrapOperationShimTest {
 		assertNotNull(outer.invisibleParameterAnnotations[6], "the packet's @Local(argsOnly) moved with it");
 		assertTrue(outer.invisibleParameterAnnotations[0] == null || outer.invisibleParameterAnnotations[0].isEmpty());
 
-		MethodNode inner = method(mixin, "onPickItemFromBlock" + MixinHandlerShim.INNER_SUFFIX);
+		MethodNode inner = method(mixin, MixinHandlerShim.asideName(mixin.name, "onPickItemFromBlock", MixinHandlerShim.INNER_SUFFIX));
 		assertNull(MixinFit.injectorOf(inner), "fabric-api's own handler is only called");
 		List<Integer> loads = Arrays.stream(outer.instructions.toArray()).filter(VarInsnNode.class::isInstance).map(i -> ((VarInsnNode) i).var).toList();
 		assertEquals(List.of(0, 1, 3, 2, 4, 6, 5, 7), loads,

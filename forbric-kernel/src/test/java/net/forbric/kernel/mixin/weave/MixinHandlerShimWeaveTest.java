@@ -100,7 +100,7 @@ class MixinHandlerShimWeaveTest {
 		assertEquals(MERGED_HANDLER, fromLambda.get(0).desc, methods(woven));
 		List<MethodInsnNode> fromWrapper = handlerCalls(woven, fromLambda.get(0).name, MERGED_HANDLER);
 		assertEquals(1, fromWrapper.size(), methods(woven));
-		assertEquals(HANDLER + "$forbricshim", fromWrapper.get(0).name, methods(woven));
+		assertTrue(fromWrapper.get(0).name.startsWith(HANDLER + "$forbricshim$"), "the body aside, under a name of its own mixin: " + methods(woven));
 		assertEquals(VANILLA_HANDLER, fromWrapper.get(0).desc, methods(woven));
 		WeaveHarness.assertWovenAndVerified(shimmed, TARGET, fixture);
 	}

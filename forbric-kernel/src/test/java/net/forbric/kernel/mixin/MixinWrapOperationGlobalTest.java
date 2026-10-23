@@ -20,7 +20,7 @@ class MixinWrapOperationGlobalTest {
   assertEquals("(III"+OP+")Ljava/lang/String;",outer.desc);
   assertTrue(java.util.Arrays.stream(outer.instructions.toArray()).anyMatch(i->i instanceof LdcInsnNode l&&l.cst.equals("0,1")));
   new Analyzer<>(new BasicVerifier()).analyze(mixin.name,outer);
-  assertNotNull(mixin.methods.stream().filter(m->m.name.equals("intercept"+MixinHandlerShim.INNER_SUFFIX)).findFirst().orElse(null));
+  assertNotNull(mixin.methods.stream().filter(m->m.name.equals(MixinHandlerShim.asideName(mixin.name,"intercept",MixinHandlerShim.INNER_SUFFIX))).findFirst().orElse(null));
   assertEquals(0,MixinWrapOperationShim.adapt(mixin,n->target));
  }
  @Test void twoExtendedOverloadsAreAmbiguousAndStayUnmodified() {

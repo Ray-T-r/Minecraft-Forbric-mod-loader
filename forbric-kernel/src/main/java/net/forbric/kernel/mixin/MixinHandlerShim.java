@@ -176,7 +176,7 @@ public final class MixinHandlerShim {
 	}
 
 	private static Plan plan(MethodNode handler, List<String> targetNames, Function<String, ClassNode> targets) {
-		if (handler.name.endsWith(INNER_SUFFIX)) return null;
+		if (handler.name.contains(INNER_SUFFIX)) return null;
 		AnnotationNode inject = injectOf(handler);
 		if (inject == null) return null;
 		String selector = onlySelector(inject);
@@ -323,7 +323,7 @@ public final class MixinHandlerShim {
 			}
 		}
 
-		String innerName = handler.name + INNER_SUFFIX;
+		String innerName = asideName(mixin.name, handler.name, INNER_SUFFIX);
 		String outerDesc = Type.getMethodDescriptor(Type.VOID_TYPE, withCallback(available, wanted[wanted.length - 1]));
 		MethodNode outer = new MethodNode(Opcodes.ASM9,
 				(handler.access & ~Opcodes.ACC_STATIC) | (targetStatic ? Opcodes.ACC_STATIC : 0),

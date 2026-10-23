@@ -139,7 +139,7 @@ public final class MixinWrapOperationShim {
 	}
 
 	private static Plan plan(String mixinName, MethodNode handler, List<ClassNode> classes, ClassNode target) {
-		if (handler.name.endsWith(MixinHandlerShim.INNER_SUFFIX)) return null;
+		if (handler.name.contains(MixinHandlerShim.INNER_SUFFIX)) return null;
 		List<AnnotationNode> annotations = new ArrayList<>();
 		if (handler.visibleAnnotations != null) annotations.addAll(handler.visibleAnnotations);
 		if (handler.invisibleAnnotations != null) annotations.addAll(handler.invisibleAnnotations);
@@ -263,7 +263,10 @@ public final class MixinWrapOperationShim {
 		for (int i = trailingFrom; i < outerParams.size(); i++) {
 			outer.instructions.add(new VarInsnNode(outerParams.get(i).getOpcode(Opcodes.ILOAD), slots[i]));
 		}
-		outer.instructions.add(MixinHandlerShim.callOwn(mixin, handlerStatic, handler.name + MixinHandlerShim.INNER_SUFFIX,
+		// The body aside under a name of this mixin's own, as every shim sets one aside: one name per target and handler name
+		// would be one method for two mixins.
+		String inner = MixinHandlerShim.asideName(mixin.name, handler.name, MixinHandlerShim.INNER_SUFFIX);
+		outer.instructions.add(MixinHandlerShim.callOwn(mixin, handlerStatic, inner,
 				handler.desc));
 		outer.instructions.add(new InsnNode(Type.getReturnType(handler.desc).getOpcode(Opcodes.IRETURN)));
 		outer.maxLocals = slot;
@@ -275,7 +278,7 @@ public final class MixinWrapOperationShim {
 		}
 		if (plan.ordinal() != null) CurrentBodyOrdinals.mark(outer);
 		String originalName = handler.name;
-		handler.name = handler.name + MixinHandlerShim.INNER_SUFFIX;
+		handler.name = inner;
 		// Ordinary helpers may call the injector directly too. They keep its original argument contract.
 		for (MethodNode caller : mixin.methods) for (AbstractInsnNode instruction : caller.instructions) {
 			if (instruction instanceof MethodInsnNode call && call.owner.equals(mixin.name)

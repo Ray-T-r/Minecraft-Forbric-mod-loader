@@ -119,7 +119,7 @@ public final class MixinShearsRelay {
 		ClassNode source = references == null ? null : references.apply(Ecosystem.FABRIC, targetName);
 		int relayed = 0;
 		for (MethodNode handler : new ArrayList<>(mixin.methods)) {
-			if (handler.name.endsWith(MixinHandlerShim.INNER_SUFFIX) || handler.name.endsWith(ADDED_SUFFIX)) continue;
+			if (handler.name.contains(MixinHandlerShim.INNER_SUFFIX) || handler.name.endsWith(ADDED_SUFFIX)) continue;
 			if (relay(mixin, handler, target, source)) relayed++;
 		}
 		return relayed;
@@ -146,7 +146,7 @@ public final class MixinShearsRelay {
 
 		// Moved when the method has no vanilla `is` call left for the handler; added beside it when it has.
 		boolean added = vanillaCalls(body) > 0;
-		String innerName = handler.name + (added ? ADDED_SUFFIX + "$inner" : MixinHandlerShim.INNER_SUFFIX);
+		String innerName = added ? handler.name + ADDED_SUFFIX + "$inner" : MixinHandlerShim.asideName(mixin.name, handler.name, MixinHandlerShim.INNER_SUFFIX);
 		String outerName = added ? handler.name + ADDED_SUFFIX : handler.name;
 		for (MethodNode existing : mixin.methods) if (existing.name.equals(innerName)) return false;   // done already
 		AnnotationNode moved = new AnnotationNode(injector.desc);

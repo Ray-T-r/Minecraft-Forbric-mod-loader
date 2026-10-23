@@ -66,7 +66,7 @@ public class MixinHandlerShimTest {
 		Class<?> defined = define(mixin);
 		Method outer = null;
 		for (Method m : defined.getDeclaredMethods()) {
-			if (m.getName().equals("handler") && !m.getName().endsWith(MixinHandlerShim.INNER_SUFFIX)
+			if (m.getName().equals("handler") && !m.getName().contains(MixinHandlerShim.INNER_SUFFIX)
 					&& m.getParameterCount() == 4) {
 				outer = m;
 			}
@@ -88,7 +88,7 @@ public class MixinHandlerShimTest {
 		ClassNode mixin = mixin("(Ljava/lang/Object;Ljava/lang/String;" + CI + ")V", true);
 		MixinHandlerShim.adapt(mixin, targets(instanceTarget()));
 
-		MethodNode inner = methodNamed(mixin, "handler" + MixinHandlerShim.INNER_SUFFIX);
+		MethodNode inner = methodNamed(mixin, MixinHandlerShim.asideName(mixin.name, "handler", MixinHandlerShim.INNER_SUFFIX));
 		assertNotNull(inner, "the mod's own code is moved aside, not rewritten");
 		assertTrue(inner.visibleAnnotations == null || inner.visibleAnnotations.isEmpty(),
 				"only one of the two may carry the @Inject, or Mixin injects twice");
@@ -162,7 +162,7 @@ public class MixinHandlerShimTest {
 			System.setProperty(MixinHandlerShim.PROPERTY, "off");
 			ClassNode mixin = mixin("(Ljava/lang/Object;Ljava/lang/String;" + CI + ")V", true);
 			assertEquals(0, MixinHandlerShim.adapt(mixin, targets(instanceTarget())));
-			assertNull(methodNamed(mixin, "handler" + MixinHandlerShim.INNER_SUFFIX));
+			assertNull(methodNamed(mixin, MixinHandlerShim.asideName(mixin.name, "handler", MixinHandlerShim.INNER_SUFFIX)));
 		} finally {
 			if (previous == null) System.clearProperty(MixinHandlerShim.PROPERTY);
 			else System.setProperty(MixinHandlerShim.PROPERTY, previous);
@@ -301,7 +301,7 @@ public class MixinHandlerShimTest {
 			List<Object> selector = new ArrayList<>((List<?>) MixinFit.value(MixinFit.injectorOf(methodNamed(mixin, "handler")), "method"));
 
 			assertEquals(0, MixinHandlerShim.adapt(mixin, targets(target)), why[mode]);
-			assertNull(methodNamed(mixin, "handler" + MixinHandlerShim.INNER_SUFFIX), why[mode]);
+			assertNull(methodNamed(mixin, MixinHandlerShim.asideName(mixin.name, "handler", MixinHandlerShim.INNER_SUFFIX)), why[mode]);
 			assertEquals(selector, MixinFit.value(MixinFit.injectorOf(methodNamed(mixin, "handler")), "method"), why[mode]);
 			assertNull(MixinHandlerShim.destination(methodNamed(mixin, "handler"), target), why[mode]);
 			System.clearProperty(MixinHandlerShim.TABLE_PROPERTY);

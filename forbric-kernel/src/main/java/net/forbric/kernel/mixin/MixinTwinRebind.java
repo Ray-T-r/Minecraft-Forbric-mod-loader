@@ -221,7 +221,7 @@ public final class MixinTwinRebind {
 	}
 
 	static Plan plan(ClassNode mixin, MethodNode handler, ClassNode target, Ecosystem ecosystem) {
-		if (handler.name.endsWith(MixinHandlerShim.INNER_SUFFIX)) return null;
+		if (handler.name.contains(MixinHandlerShim.INNER_SUFFIX)) return null;
 		AnnotationNode injector = MixinFit.injectorOf(handler);
 		if (injector == null || MODIFY_VARIABLE.equals(injector.desc)) return null;
 		boolean inject = INJECT.equals(injector.desc);
@@ -529,12 +529,14 @@ public final class MixinTwinRebind {
 				break;
 			}
 		}
-		outer.instructions.add(MixinHandlerShim.callOwn(mixin, handlerStatic, handler.name + MixinHandlerShim.INNER_SUFFIX,
-				handler.desc));
+		// The body aside under a name of this mixin's own: two mixins on one target whose handlers share a name (Balm's and
+		// Architectury's ServerPlayer openMenu) would otherwise add one method twice, and Mixin fails the second mixin.
+		String inner = MixinHandlerShim.asideName(mixin.name, handler.name, MixinHandlerShim.INNER_SUFFIX);
+		outer.instructions.add(MixinHandlerShim.callOwn(mixin, handlerStatic, inner, handler.desc));
 		outer.instructions.add(new InsnNode(Type.getReturnType(handler.desc).getOpcode(Opcodes.IRETURN)));
 		outer.maxLocals = slot;
 		outer.maxStack = slot + 2;
-		handler.name = handler.name + MixinHandlerShim.INNER_SUFFIX;
+		handler.name = inner;
 		handler.visibleAnnotations = without(handler.visibleAnnotations, plan.injector().desc);
 		handler.invisibleAnnotations = without(handler.invisibleAnnotations, plan.injector().desc);
 		return outer;

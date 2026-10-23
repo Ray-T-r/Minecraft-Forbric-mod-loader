@@ -251,7 +251,7 @@ class MixinRetargetSubstitutedCallTest {
 		assertEquals(PARSE, MixinFit.value(MixinFit.atNodes(inject).get(0), "target"));
 		assertEquals("CAPTURE_FAILSOFT", MixinFit.asString(MixinFit.value(inject, "locals")));
 		assertNull(MixinFit.injectorOf(method(served, MixinHandlerShim.asideName(served.name, "deserializeModel", MixinRetarget.GUARDED_SUFFIX))));
-		method(served, "captureBlockItemSprites" + MixinHandlerShim.INNER_SUFFIX);
+		method(served, MixinHandlerShim.asideName(served.name, "captureBlockItemSprites", MixinHandlerShim.INNER_SUFFIX));
 		new Analyzer<>(new BasicVerifier()).analyze(served.name, outer);
 		MethodNode live = manager.methods.stream().filter(m -> LAMBDA.equals(m.name + m.desc)).findFirst().orElseThrow();
 		assertTrue(InsertedLambdaArgumentShim.localsAtCall(PARSE, live, new Type[] {Type.getType(IDENTIFIER)}),

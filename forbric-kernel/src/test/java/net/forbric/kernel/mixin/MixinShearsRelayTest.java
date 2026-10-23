@@ -53,13 +53,13 @@ class MixinShearsRelayTest {
 			MixinFit.Result before = MixinFit.evaluate(StagedFabricMixinFixture.bytes(mixin), resolver(target));
 			assertNotEquals(MixinFit.Verdict.FIT, before.verdict(), name + ": " + before.reason());
 			assertEquals(1, MixinShearsRelay.adapt(mixin, n -> target), name);
-			MethodNode outer = only(mixin, HANDLER), inner = only(mixin, HANDLER + MixinHandlerShim.INNER_SUFFIX);
+			MethodNode outer = only(mixin, HANDLER), inner = only(mixin, MixinHandlerShim.asideName(mixin.name, HANDLER, MixinHandlerShim.INNER_SUFFIX));
 			assertEquals("(Lnet/minecraft/world/item/ItemStack;" + row.type() + "Lcom/llamalad7/mixinextras/injector/wrapoperation/Operation;)Z", outer.desc);
 			assertEquals(MixinShearsRelay.carrierTarget(row), MixinFit.value(StagedFabricMixinFixture.at(mixin, HANDLER), "target"));
 			assertNull(MixinFit.injectorOf(inner), "the handler itself is a plain method now");
 			assertEquals(MixinShearsRelay.HANDLER_DESC, inner.desc);
 			List<String> calls = calls(outer);
-			assertEquals(List.of("relay", HANDLER + MixinHandlerShim.INNER_SUFFIX), calls);
+			assertEquals(List.of("relay", MixinHandlerShim.asideName(mixin.name, HANDLER, MixinHandlerShim.INNER_SUFFIX)), calls);
 			new Analyzer<>(new BasicVerifier()).analyze(mixin.name, outer);
 			MixinFit.Result after = MixinFit.evaluate(StagedFabricMixinFixture.bytes(mixin), resolver(target));
 			assertEquals(MixinFit.Verdict.FIT, after.verdict(), name + ": " + after.reason());

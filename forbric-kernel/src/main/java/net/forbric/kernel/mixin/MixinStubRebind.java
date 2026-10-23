@@ -364,7 +364,7 @@ public final class MixinStubRebind {
 		// The level Mixin weaves this mixin at, which decides where it looks for a @ModifyVariable's points.
 		int level = KernelMixinBootstrap.wovenLevel(configOf(mixin.name));
 		for (MethodNode handler : new ArrayList<>(mixin.methods)) {
-			if (handler.name.endsWith(MixinHandlerShim.INNER_SUFFIX)) continue;
+			if (handler.name.contains(MixinHandlerShim.INNER_SUFFIX)) continue;
 			plans.put(handler, plan(handler, target, ecosystem, level, capturesLost == null ? null
 					: (stub, delegate) -> capturesLost.accept(handler, stub, delegate)));
 		}
@@ -851,12 +851,15 @@ public final class MixinStubRebind {
 		for (int i = delegateParams.length; i < outerParams.size(); i++) {
 			outer.instructions.add(new VarInsnNode(outerParams.get(i).getOpcode(Opcodes.ILOAD), slots[i]));
 		}
-		outer.instructions.add(MixinHandlerShim.callOwn(mixin, handlerStatic, handler.name + MixinHandlerShim.INNER_SUFFIX,
+		// The body aside under a name of this mixin's own: two mixins on one target whose handlers share a name (Balm's and
+		// Architectury's ServerPlayer openMenu) would otherwise add one method twice, and Mixin fails the second mixin.
+		String inner = MixinHandlerShim.asideName(mixin.name, handler.name, MixinHandlerShim.INNER_SUFFIX);
+		outer.instructions.add(MixinHandlerShim.callOwn(mixin, handlerStatic, inner,
 				handler.desc));
 		outer.instructions.add(new InsnNode(Type.getReturnType(handler.desc).getOpcode(Opcodes.IRETURN)));
 		outer.maxLocals = slot;
 		outer.maxStack = slot + 2;
-		handler.name = handler.name + MixinHandlerShim.INNER_SUFFIX;
+		handler.name = inner;
 		handler.visibleAnnotations = without(handler.visibleAnnotations, injector.desc);
 		handler.invisibleAnnotations = without(handler.invisibleAnnotations, injector.desc);
 		handler.visibleParameterAnnotations = null;

@@ -62,7 +62,7 @@ class MixinStubRebindTest {
 				MixinFit.stringList(MixinFit.value(MixinFit.injectorOf(outer), "method")));
 		assertTrue(outer.desc.startsWith("(Lnet/minecraft/world/level/block/state/BlockState;Lnet/minecraft/core/BlockPos;"
 				+ "Lorg/spongepowered/asm/mixin/injection/callback/CallbackInfoReturnable;"), outer.desc);
-		assertNull(MixinFit.injectorOf(mixin.methods.stream().filter(m -> m.name.equals("breakSpeed" + MixinHandlerShim.INNER_SUFFIX)).findFirst().orElseThrow()));
+		assertNull(MixinFit.injectorOf(mixin.methods.stream().filter(m -> m.name.equals(MixinHandlerShim.asideName(mixin.name, "breakSpeed", MixinHandlerShim.INNER_SUFFIX))).findFirst().orElseThrow()));
 		List<Integer> loads = Arrays.stream(outer.instructions.toArray()).filter(VarInsnNode.class::isInstance).map(i -> ((VarInsnNode) i).var).toList();
 		assertEquals(List.of(0, 1, 3), loads, "this, the state (the stub passes its only argument first), the callback");
 		new Analyzer<>(new BasicVerifier()).analyze(mixin.name, outer);
@@ -180,7 +180,7 @@ class MixinStubRebindTest {
 		MixinStubRebind.adapt(mixin, name -> manager);
 		MethodNode outer = mixin.methods.stream().filter(m -> m.name.equals("captureBlockItemSprites")).findFirst().orElseThrow();
 		assertEquals(List.of(LOAD_MODELS_BODY), MixinFit.stringList(MixinFit.value(MixinFit.injectorOf(outer), "method")));
-		assertNull(MixinFit.injectorOf(mixin.methods.stream().filter(m -> m.name.equals("captureBlockItemSprites" + MixinHandlerShim.INNER_SUFFIX))
+		assertNull(MixinFit.injectorOf(mixin.methods.stream().filter(m -> m.name.equals(MixinHandlerShim.asideName(mixin.name, "captureBlockItemSprites", MixinHandlerShim.INNER_SUFFIX)))
 				.findFirst().orElseThrow()));
 		List<Integer> loads = Arrays.stream(outer.instructions.toArray()).filter(VarInsnNode.class::isInstance).map(i -> ((VarInsnNode) i).var).toList();
 		assertEquals(List.of(0, 1, 2, 3, 4, 5, 6, 8), loads, "the stub's seven arguments, then the callback past the pending animations");
@@ -654,7 +654,7 @@ class MixinStubRebindTest {
 		assertEquals(List.of("loadFromJson(Ljava/io/InputStream;Ljava/util/function/BiConsumer;Ljava/util/function/BiConsumer;)V"),
 				MixinFit.stringList(MixinFit.value(MixinFit.injectorOf(handler), "method")));
 		assertEquals(desc, handler.desc, "a @ModifyArgs handler keeps its own signature");
-		assertTrue(mixin.methods.stream().noneMatch(m -> m.name.endsWith(MixinHandlerShim.INNER_SUFFIX)));
+		assertTrue(mixin.methods.stream().noneMatch(m -> m.name.contains(MixinHandlerShim.INNER_SUFFIX)));
 		assertEquals(0, MixinStubRebind.adapt(mixin, name -> language), "a second pass changes nothing");
 		MixinStubRebind.forget();
 		ClassNode neo = fromJar(jar, "fi/dy/masa/malilib/mixin/client/MixinLanguage");
