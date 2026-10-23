@@ -300,9 +300,16 @@ public final class KernelBoot {
 		// which, at the same weight as any other mod that did not load (see MetadataFailures).
 		net.forbric.kernel.discovery.MetadataFailures.recordFindings(MultiLoaderArbiter::ownerOf, runtimeJars);
 
+		// Game-side bundled libraries (MixinExtras) and the kernel's own runtime jar. The latter also carries
+		// the kernel's client assets -- the Mods button's icon lives in it -- so its extracted path is handed to
+		// the lifecycle for the client pack repository as well as to the class loader. Extracted before the Fabric
+		// side is built: Fabric Loader nests MixinExtras in its own jar, so on Fabric it is a mod inside fabricloader,
+		// and the kernel's copy is registered the same way (KernelFabricEcosystem.registerLoaderNested).
+		List<Path> bundled = KernelBundledJars.extract(gameDir);
+
 		// Fabric mods (+ extracted JiJ children). Also Mojmap on this game version. Creates the FabricLoader.
 		List<Path> fabricJars = KernelFabricEcosystem.build(fabricScan, side.envType, gameDir, gameVersion,
-				gameArgs.toArray(new String[0]), dupes, gameJar);
+				gameArgs.toArray(new String[0]), dupes, gameJar, bundled);
 		// Which custom entrypoint keys the Fabric mods just declared only a build arbitration did NOT load would have
 		// dispatched; the lifecycle dispatches them in its place (ArbitratedAwayDispatchers says when and why).
 		try {
@@ -313,10 +320,6 @@ public final class KernelBoot {
 					+ "a Fabric mod integrating with a library whose other build loaded may go uninitialised");
 		}
 
-		// Game-side bundled libraries (MixinExtras) and the kernel's own runtime jar. The latter also carries
-		// the kernel's client assets -- the Mods button's icon lives in it -- so its extracted path is handed to
-		// the lifecycle for the client pack repository as well as to the class loader.
-		List<Path> bundled = KernelBundledJars.extract(gameDir);
 		owned = KernelOwnedClasspath.compose(owned, minecraftLibraries, modJars, fabricJars, bundled);
 		KernelLifecycle.setKernelAssetJars(bundled);
 		if (!KernelOwnedClasspath.bundledFirst()) {

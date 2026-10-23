@@ -82,6 +82,14 @@ public final class KernelModContainer extends ModContainerImpl {
 		return new KernelModContainer(metadata, null, null, loadedFrom);
 	}
 
+	/**
+	 * Takes this container out of its parent's contained mods: for a nested copy that is not registered after all, so
+	 * that, as on Fabric, a mod's contained mods are only the ones that loaded.
+	 */
+	public void leaveParent() {
+		if (parent != null) parent.children.remove(this);
+	}
+
 	/** The jar this mod was loaded from (an extracted file for JiJ-nested mods), or {@code null} if builtin. */
 	public Path getJar() {
 		return jar;

@@ -174,6 +174,19 @@ public final class KernelFabricEcosystem {
 
 	public static List<Path> build(FabricModDiscovery discovery, EnvType envType, Path gameDir, String gameVersion,
 			String[] launchArgs, DuplicateModArbiter.Decision dupes, Path gameJar) {
+		return build(discovery, envType, gameDir, gameVersion, launchArgs, dupes, gameJar, List.of());
+	}
+
+	/**
+	 * @param platformJars the jars the kernel itself carries onto the game side ({@link KernelBundledJars#extract}).
+	 *                     Fabric Loader's own {@code fabric.mod.json} nests a jar ({@code "jars"}: MixinExtras), and the
+	 *                     loader reads its own nested jars like any mod's: on Fabric that jar is a mod, contained in
+	 *                     {@code fabricloader}, and {@code getAllMods()}, {@code isModLoaded} and Mod Menu's count all see
+	 *                     it. Each of these jars that is a Fabric mod is registered the same way, nested in the
+	 *                     {@code fabricloader} built-in; one that is not a mod is not.
+	 */
+	public static List<Path> build(FabricModDiscovery discovery, EnvType envType, Path gameDir, String gameVersion,
+			String[] launchArgs, DuplicateModArbiter.Decision dupes, Path gameJar, List<Path> platformJars) {
 		KernelFabricLoader fabric = KernelFabricLoader.create(envType, gameDir, gameDir.resolve("config"),
 				launchArgs, gameVersion);
 
@@ -181,9 +194,12 @@ public final class KernelFabricEcosystem {
 				KernelModMetadata.builtin("minecraft", gameVersion, "Minecraft"), gameJar, null));
 		fabric.register(new KernelModContainer(
 				KernelModMetadata.builtin("java", String.valueOf(Runtime.version().feature()), "Java"), null, null));
-		fabric.register(new KernelModContainer(
+		KernelModContainer fabricLoader = new KernelModContainer(
 				KernelModMetadata.builtin("fabricloader", FABRIC_LOADER_API_LEVEL, "Fabric Loader (Forbric kernel)"),
-				null, null));
+				null, null);
+		fabric.register(fabricLoader);
+		List<KernelModContainer> inLoader = registerLoaderNested(fabric, fabricLoader, platformJars, envType,
+				orderByDependency(discovery.getContainers()), dupes);
 		int builtins = fabric.getAllMods().size();
 
 		// A universal jar also ships a fabric.mod.json; register it as a Fabric mod only if Fabric OWNS the jar,
@@ -195,6 +211,16 @@ public final class KernelFabricEcosystem {
 		// Registered in DEPENDENCY order, and put in Fabric Loader's order (by mod id) just before the freeze; see
 		// putInFabricOrder. The dependency order still decides which of two same-id containers is kept, as it
 		// always did, and it is the order the Forge-family seeders read the Fabric mods in below.
+		// A guest copy of a mod the loader itself nests is the one Fabric Loader leaves out (see registerLoaderNested),
+		// and what that copy nests goes with it, as a mod nested only in a mod that does not load does not load.
+		// Decided in discovery order, where every parent comes before what it nests.
+		java.util.Set<ModContainer> outranked = java.util.Collections.newSetFromMap(new java.util.IdentityHashMap<>());
+		for (KernelModContainer container : discovery.getContainers()) {
+			KernelModContainer loaderCopy = answering(inLoader, container.getMetadata());
+			if (loaderCopy != null || container.getContainingMod().filter(outranked::contains).isPresent()) {
+				outranked.add(container);
+			}
+		}
 		for (KernelModContainer container : orderByDependency(discovery.getContainers())) {
 			Path jar = container.getJar();
 			if (jar != null && MultiLoaderArbiter.suppressedFor(jar, Ecosystem.FABRIC)) {
@@ -206,6 +232,12 @@ public final class KernelFabricEcosystem {
 			// the same library, and leaving the loser's would keep its platform mixins live.
 			if (jar != null && dupes.suppressed(jar)) {
 				lostNested++;
+				continue;
+			}
+			if (outranked.contains(container)) {
+				KernelModContainer loaderCopy = answering(inLoader, container.getMetadata());
+				if (loaderCopy != null) logOutranked(container, loaderCopy);
+				container.leaveParent();
 				continue;
 			}
 			fabric.register(container);
@@ -225,6 +257,8 @@ public final class KernelFabricEcosystem {
 		// that gates an integration on that check silently disables it. Register the identity, nothing else: no
 		// entrypoints, no mixins, no assets, all of which the winner already provides.
 		for (DuplicateModArbiter.Alias alias : dupes.aliasesFor(Ecosystem.FABRIC)) {
+			// The loader's own nested copy already answers for this id, as on Fabric whichever guest copy lost.
+			if (answering(inLoader, alias.modId()) != null) continue;
 			// What the winner declares to Fabric mods, plus what only the losing Fabric build offered them under a key
 			// another mod reads (its modmenu plugin) where the winner can satisfy it: see ArbitratedAwayEntrypoints.
 			Map<String, List<KernelModMetadata.EntrypointDecl>> entrypoints = new LinkedHashMap<>(foreignEntrypoints(alias.modId()));
@@ -303,6 +337,9 @@ public final class KernelFabricEcosystem {
 			String id = kernel.getMetadata().getId();
 			// Minecraft has real resource roots, but remains a builtin rather than a foreign mod alias.
 			if (id != null && java.util.Set.of("minecraft", "java", "fabricloader").contains(id)) continue;
+			// What the loader itself nests is part of the Fabric platform, as the built-ins are: MinecraftForge ships
+			// its MixinExtras as a library, not as a mod in its list, and the kernel used to seed none.
+			if (inLoader.contains(kernel)) continue;
 			if (id == null || id.isBlank() || ModPresence.isLoaded(id)) continue;
 			// The provides aliases ride along. FabricLoader resolves them itself, but the Forge-family lists and
 			// ModPresence are built from THIS list, and every LibJF module is named through an alias.
@@ -644,6 +681,122 @@ public final class KernelFabricEcosystem {
 		} catch (Throwable t) {
 			Caught.warn(t, "[Forbric/Order] could not put Fabric mods in Fabric Loader's order; they initialise in "
 					+ "the order they were registered in");
+		}
+	}
+
+	/**
+	 * Registers, nested in {@code fabricLoader}, every jar of {@code platformJars} that is a Fabric mod for this side.
+	 *
+	 * <p>Fabric Loader is itself a mod on Fabric, read from its own jar's {@code fabric.mod.json}, and that file nests a
+	 * jar ({@code "jars"}: {@code META-INF/jars/mixinextras-fabric-*.jar} in 0.19.x) the loader reads like any mod's
+	 * nested jar. So on Fabric MixinExtras is a mod contained in {@code fabricloader}. The kernel carries its own
+	 * game-side jars the same way, inside its own jar ({@link KernelBundledJars}); which of them is a mod is read from
+	 * the jar, not named here: one with a {@code fabric.mod.json} is, the kernel's runtime jar is not.
+	 *
+	 * <p>One mod per id, as on Fabric. Where a guest jar nests a copy of the same mod, Fabric Loader keeps one, the
+	 * highest version; here the copy that answers is the one whose classes every mod actually gets, which is the
+	 * kernel's own, read ahead of every guest copy ({@link KernelOwnedClasspath#bundledFirst}). With that switched off a
+	 * guest copy is read first, so an installed guest copy answers and the kernel's is not registered.
+	 */
+	private static List<KernelModContainer> registerLoaderNested(KernelFabricLoader fabric, KernelModContainer fabricLoader,
+			List<Path> platformJars, EnvType envType, List<KernelModContainer> candidates, DuplicateModArbiter.Decision dupes) {
+		List<KernelModContainer> nested = new ArrayList<>();
+		if (platformJars == null || platformJars.isEmpty()) return nested;
+		boolean kernelFirst = KernelOwnedClasspath.bundledFirst();
+		for (Path jar : platformJars) {
+			KernelModMetadata metadata = fabricManifest(jar);
+			if (metadata == null || !metadata.getEnvironment().matches(envType)) continue;
+			if (!kernelFirst) {
+				KernelModContainer guest = null;
+				for (KernelModContainer candidate : candidates) {
+					Path candidateJar = candidate.getJar();
+					if (candidateJar != null && (MultiLoaderArbiter.suppressedFor(candidateJar, Ecosystem.FABRIC)
+							|| dupes.suppressed(candidateJar))) continue;
+					if (sharesId(candidate.getMetadata(), metadata)) {
+						guest = candidate;
+						break;
+					}
+				}
+				if (guest != null) {
+					ForbricLog.info("[Forbric/Fabric] -D%s=off: '%s' is read from the guest copy %s first, so that copy "
+							+ "answers for it and the platform loader's own %s is not registered", KernelOwnedClasspath.SWITCH,
+							metadata.getId(), guest, metadata.getVersion().getFriendlyString());
+					continue;
+				}
+			}
+			nested.add(new KernelModContainer(metadata, jar, fabricLoader));
+			fabric.register(nested.getLast());
+		}
+		if (!nested.isEmpty()) {
+			List<String> names = new ArrayList<>();
+			for (KernelModContainer container : nested) {
+				names.add(container.getMetadata().getId() + " " + container.getMetadata().getVersion().getFriendlyString());
+			}
+			ForbricLog.info("[Forbric/Fabric] %d mod(s) nested in fabricloader, as Fabric Loader nests them in its own jar: %s",
+					nested.size(), String.join(", ", names));
+		}
+		return nested;
+	}
+
+	/** The jar's own {@code fabric.mod.json}, or null when it has none: then it is a library, not a mod. */
+	private static KernelModMetadata fabricManifest(Path jar) {
+		try (java.util.jar.JarFile file = new java.util.jar.JarFile(jar.toFile())) {
+			java.util.zip.ZipEntry entry = file.getEntry(FabricModDiscovery.MANIFEST);
+			if (entry == null) return null;
+			try (java.io.InputStream in = file.getInputStream(entry)) {
+				return net.forbric.kernel.fabric.FabricModMetadataParser.read(in);
+			}
+		} catch (Exception unreadable) {
+			Caught.warn(unreadable, "[Forbric/Fabric] could not read the fabric.mod.json of the kernel's own %s; it is not "
+					+ "registered as a mod nested in fabricloader", jar.getFileName());
+			return null;
+		}
+	}
+
+	/** Whether two mods answer to one id, their own or one they {@code provides}: Fabric Loader keeps one of them. */
+	static boolean sharesId(ModMetadata first, ModMetadata second) {
+		java.util.Set<String> ids = new java.util.HashSet<>(first.getProvides());
+		ids.add(first.getId());
+		if (ids.contains(second.getId())) return true;
+		for (String alias : second.getProvides()) if (ids.contains(alias)) return true;
+		return false;
+	}
+
+	private static KernelModContainer answering(List<KernelModContainer> inLoader, ModMetadata metadata) {
+		for (KernelModContainer nested : inLoader) if (sharesId(nested.getMetadata(), metadata)) return nested;
+		return null;
+	}
+
+	private static KernelModContainer answering(List<KernelModContainer> inLoader, String id) {
+		for (KernelModContainer nested : inLoader) {
+			if (nested.getMetadata().getId().equals(id) || nested.getMetadata().getProvides().contains(id)) return nested;
+		}
+		return null;
+	}
+
+	/** Says why a guest copy of a mod the loader nests is not registered, and where that differs from native. */
+	private static void logOutranked(KernelModContainer guest, KernelModContainer loaderCopy) {
+		String guestVersion = guest.getMetadata().getVersion().getFriendlyString();
+		String ownVersion = loaderCopy.getMetadata().getVersion().getFriendlyString();
+		String where = guest.getContainingMod().map(parent -> "nested in " + parent.getMetadata().getId())
+				.orElse("in mods/");
+		int newer;
+		try {
+			newer = guest.getMetadata().getVersion().compareTo(loaderCopy.getMetadata().getVersion());
+		} catch (RuntimeException incomparable) {
+			Caught.expected(incomparable);
+			newer = 0;
+		}
+		if (newer <= 0) {
+			ForbricLog.info("[Forbric/Fabric] '%s' %s (%s, %s) is not registered: fabricloader nests its own %s, and of two "
+					+ "copies of one mod Fabric Loader keeps the higher version", guest.getMetadata().getId(), guestVersion,
+					guest.getJar() == null ? "?" : guest.getJar().getFileName(), where, ownVersion);
+		} else {
+			ForbricLog.info("[Forbric/Fabric] '%s' %s (%s, %s) is not registered although it is newer than fabricloader's "
+					+ "own %s: native Fabric Loader would keep and run this copy, but here every mod runs on the kernel's %s, "
+					+ "which the class path reads ahead of every guest copy, so FabricLoader names the copy that runs",
+					guest.getMetadata().getId(), guestVersion, guest.getJar() == null ? "?" : guest.getJar().getFileName(),
+					where, ownVersion, ownVersion);
 		}
 	}
 
