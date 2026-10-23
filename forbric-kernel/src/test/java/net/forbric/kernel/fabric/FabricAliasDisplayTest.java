@@ -110,6 +110,10 @@ class FabricAliasDisplayTest {
 	 * reads a suppressed jar, so the identity used to be the bare id with no icon; the losing jar is still there, and its
 	 * fabric.mod.json is how the mod shows itself on a Fabric mod list. The icon it names is only in that jar, so the
 	 * identity reads that one file from it -- and every other file still from the jar that runs.
+	 *
+	 * <p>The decision is the arbiter's own, made over the two jars ({@link DuplicateModArbiter#arbitrate(Path, EnvType)}
+	 * with the default family order), not one written for the test: that is what shows the boot reaches this shape -- the
+	 * Fabric jar suppressed, the id NeoForge's, a FABRIC alias for it.
 	 */
 	@Test
 	void aTopLevelFabricJarThatLostToAnotherFamilysJarStillShowsItself() throws Exception {
@@ -123,8 +127,11 @@ class FabricAliasDisplayTest {
 				"data/ember/shared.txt", "from the winning build"));
 		ModPresence.publishForgeFamily(List.of(new net.forbric.api.DiscoveredMod(Ecosystem.NEOFORGE, "ember", "2.0.0",
 				"Ember (NeoForge build)", List.of(), List.of(), null, neoJar.toString())));
-		DuplicateModArbiter.Decision dupes = new DuplicateModArbiter.Decision(Set.of(fabricJar.toAbsolutePath()),
-				Map.of("ember", neoJar.toAbsolutePath()), List.of(new DuplicateModArbiter.Alias("ember", Ecosystem.FABRIC, "2.0.0")));
+		DuplicateModArbiter.Decision dupes = DuplicateModArbiter.arbitrate(mods, EnvType.CLIENT);
+		assertTrue(dupes.suppressed(fabricJar), "the arbiter suppresses the Fabric jar: " + dupes.suppressedJars());
+		assertTrue(!dupes.suppressed(neoJar), "and keeps the NeoForge one");
+		assertEquals(List.of(new DuplicateModArbiter.Alias("ember", Ecosystem.FABRIC, "2.0.0")),
+				dupes.aliasesFor(Ecosystem.FABRIC), "with a FABRIC presence alias for the id it lost");
 		FabricModDiscovery discovery = KernelFabricEcosystem.scan(EnvType.CLIENT, gameDir, dupes);
 		assertTrue(discovery.getContainers().stream().noneMatch(c -> c.getMetadata().getId().equals("ember")),
 				"the fixture's losing jar is one discovery skips, as a suppressed jar is");

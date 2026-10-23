@@ -1463,9 +1463,13 @@ every lookup, as Mod Menu does. A broken entrypoint is skipped.
 `-Dforbric.modMenuStandIn=off` restores the old behaviour, where a Fabric mod gets a Config button only from an installed
 Mod Menu.
 
-The rows come from `ui.ModListRows` (boot side, pure; `KernelModConfigScreens.rows()` feeds it): every installed jar,
-each its own row even when two share an id (an unreadable jar is catalogued under the id its failure names, and its FAILED
-row must not be dropped for a loaded jar's), plus every config screen a row is the only way to. A mod a jar carries
+The rows come from `ui.ModListRows` (boot side, pure; `KernelModConfigScreens.rows()` feeds it): every installed jar the
+catalogue has, plus every config screen a row is the only way to. The plan keeps two installed entries that share an id as
+two rows, but the catalogue never hands it two: `ModCatalog.publish` collapses duplicate ids first (first one wins), and
+`KernelModCatalog` appends a jar whose metadata could not be read (catalogued under the id its failure names) after every
+mod that loaded. So an unreadable jar sharing a loaded jar's id has no row, and its finding is shown on the loaded jar's
+row instead (`CompatibilityFindings.project` matches by id) — an open defect: the catalogue's identity is the mod id, not
+the jar. A mod a jar carries
 inside itself gets a row exactly when it has a config screen of its own (`!installed() && has()`), and sits where Mod
 Menu puts it: under the parent it names in `custom.modmenu.parent` (an id, or an object whose name heads a `GROUP` row
 when the id is no mod on the instance), followed up to the topmost parent, and at the top when it names none — not under
@@ -1475,9 +1479,11 @@ jars stay where they are whatever they name. Platform rows: the game itself (`mi
 Fabric protocol answers for that id — Mod Menu's own factory when it is installed — else vanilla's `OptionsScreen`), and
 any container a family's registry holds that the catalogue does not and that has a config screen there (on NeoForge,
 NeoForge's own settings). Whether such a loader's own row is listed is one constant, `ModListRows.LOADER_ROWS`
-(`ALWAYS`, `WHEN_ITS_FAMILY_HAS_MODS`, `NEVER`); it is `ALWAYS` for now, which lists a "NeoForge" row on every instance,
-pure-Fabric packs included, and is the owner's open decision. The list's `setSelected` tells the screen, so the Config
-button follows the arrow keys and Tab as well as the mouse. `ModMenuProtocolExtension` logs, once, provided factories
+(`ALWAYS`, `WHEN_ITS_FAMILY_HAS_MODS`, `NEVER`); it is `ALWAYS` for now, which lists NeoForge's row on every instance,
+pure-Fabric packs included, and is the owner's open decision. That row is named by the container's display name, which the
+kernel's NeoForge baseline container answers with its id, so it reads `neoforge` (genuine NeoForge's manifest says
+`NeoForge`). The list's `setSelected` tells the screen, so the Config button follows whatever moves the selection; the
+arrow keys and the mouse are measured, Tab is not. `ModMenuProtocolExtension` logs, once, provided factories
 for ids nothing on the instance has. The other direction, for Mod Menu's own list: `fabricloader` declares the kernel's
 own `"modmenu"` entrypoint on a client (`runtime.modmenu.KernelModMenuPlugin`, its own source set compiled against the
 stand-in API, `KernelRuntimeClasses.Origin.PACKED`), whose provided factories map every id another family loaded and
@@ -1491,20 +1497,24 @@ half of a universal jar and a nested loser from discovery, a top-level Fabric ja
 from that jar (discovery never reads a suppressed jar), and the declared icon, if the jar that runs lacks it, from the
 jar that declared it (`KernelModContainer.presence(metadata, loadedFrom, shownFrom)`).
 
-What gate-m56 measures (all phases required; missing Mod Menu or fabric-api is SKIP-FATAL, exit 3): with no Mod Menu,
-canaries opening through the Config button — two Fabric mods' own entrypoints, one through a factory another mod
-provides, two carried mods (one at the top, one under the heading it names, positions read from the rows the open
-screen's list widget holds, the screen photographed), a universal jar's NeoForge screen and the game's `OptionsScreen`;
-the plain canary's button hidden; every selection and press through `KeyboardHandler.keyPress` / `MouseHandler.onButton`
-(arrow keys from a row with the opposite answer and back, including from a mod with no config to two with one, clicks,
-double clicks); and where Mod Menu's API resolves from (the kernel's stand-in bytes, or nothing with
-`-Dforbric.modMenuStandIn=off`, its control). With Mod Menu 20.0.3 installed: Mod Menu's own `hasConfigScreen`, name,
-description and icon for the universal canary (whose `neoforge.mods.toml` names it differently, so NeoForge's name would
-fail), the screen it builds, Mod Menu's own factory answering the game's and a Fabric canary's Config button and not
-the universal canary's, and `-Dforbric.modMenuForeignScreens=off` as the control. Not measured by any gate: a NeoForge or
-MinecraftForge mod other than that canary in Mod Menu's list, the unlisted-factory log, the 2 s refresh, the NeoForge
+What gate-m56 measures (all phases required; missing Mod Menu or fabric-api is SKIP-FATAL, exit 3; a subset run through
+`M56_PHASES` exits 3 too, never 0): with no Mod Menu, canaries opening through the Config button — two Fabric mods' own
+entrypoints, one through a factory another mod provides, two carried mods (one at the top, one under the heading it names,
+positions read from the rows the open screen's list widget holds, the screen photographed), a universal jar's NeoForge
+screen and the game's `OptionsScreen`, exactly 7 of the 8 walked rows; the plain canary's button hidden; every selection
+and press through `KeyboardHandler.keyPress` / `MouseHandler.onButton` (arrow keys from a row with the opposite answer and
+back, including from a mod with no config to two with one, clicks, a double click on every row that has a config); and the
+code source Mod Menu's API class was defined with (none, with no jar on the game loader holding it and the kernel's
+stand-in bytes present; or not resolving with `-Dforbric.modMenuStandIn=off`, its control). With Mod Menu 20.0.3 installed,
+Mod Menu's API answers for the universal canary — `ModMenu.hasConfigScreen` (what its list's Config button reads), the
+name and description of its `ModMenu.MODS` entry (the canary's `neoforge.mods.toml` names it differently, so NeoForge's
+name would fail), `ModMenu.getConfigScreen` building NeoForge's screen — and the icon path Fabric's container names is
+found in that container (the probe's own lookup, the one Mod Menu's icon code does); Mod Menu's own factory answers the
+game's and a Fabric canary's Config button exactly once and not the universal canary's; `-Dforbric.modMenuForeignScreens=off`
+is the control. Not measured by any gate: Mod Menu's own list screen and a real press of its Config button, a NeoForge or
+MinecraftForge mod other than that canary in Mod Menu, the unlisted-factory log, the 2 s refresh, Tab, the NeoForge
 platform row (deliberately, until it is decided), and a top-level Fabric jar losing to another family's jar
-(`FabricAliasDisplayTest` only).
+(`FabricAliasDisplayTest`, with the arbiter's real decision, only).
 
 ## 12. Compatibility reporting and policy
 
@@ -1809,7 +1819,7 @@ java -cp <boot-cp> net.forbric.kernel.boot.Main --scan --mods <dir> --report out
 | m35–m38, m41–m51, m53 | per-surface behaviour: mixin outcome, entity callbacks, enchantments, event chain, coremod parity, block break and loot, interaction, everyday actions, stub rebind, damage/server/world events, load predicates, tooltips, widened `NEW` anchors |
 | m54 | a NeoForge mod's play-phase packet reaches the server: Carry On, with fabric-api installed, carries a chest and a pig through real key and mouse input; the same run with the repair off must pick nothing up (third-party jars: `M54_CARRYON`, `M54_FABRIC_API`) |
 | m55 | the creative inventory's search finds items after a Fabric mod refreshed the search trees the vanilla way, judged from the screen's own grid, with a switched-off negative control |
-| m56 | with no Mod Menu, Fabric mods' config screens open through the kernel Mods screen's Config button (own entrypoint, a provided factory, two mods carried inside a jar — one under the heading it names, positions read from the screen's own list widget), as do a universal jar's NeoForge screen and the game's options, all driven through the game's keyboard and mouse handlers (arrow keys, clicks, double clicks); `-Dforbric.modMenuStandIn=off` must take the Fabric canaries' buttons away. With Mod Menu installed (required: `M56_MODMENU`/`M56_FABRIC_API`, default `run/modmenu/`, else SKIP-FATAL), Mod Menu's own list shows the universal canary under its `fabric.mod.json` name, description and icon with NeoForge's screen, and Mod Menu's own factory answers the game's row; `-Dforbric.modMenuForeignScreens=off` is that phase's control. Canaries built from `canary/modmenu-config` |
+| m56 | with no Mod Menu, Fabric mods' config screens open through the kernel Mods screen's Config button (own entrypoint, a provided factory, two mods carried inside a jar — one under the heading it names, positions read from the screen's own list widget), as do a universal jar's NeoForge screen and the game's options, all driven through the game's keyboard and mouse handlers (arrow keys, clicks, double clicks); `-Dforbric.modMenuStandIn=off` must take the Fabric canaries' buttons away. With Mod Menu installed (required: `M56_MODMENU`/`M56_FABRIC_API`, default `run/modmenu/`, else SKIP-FATAL), Mod Menu's API answers for the universal canary with its `fabric.mod.json` name and description and NeoForge's screen (its list screen is not opened), and Mod Menu's own factory answers the game's row once; `-Dforbric.modMenuForeignScreens=off` is that phase's control. Canaries built from `canary/modmenu-config` |
 
 - **Compatibility sweeps.** `run/compat/PROTOCOL.md` is the procedure for running random/popular Modrinth sets on
   a Windows machine through the installed profile (`push-and-run.sh`, `win/*.py`, `pick_mods.py`, `evidence.py`),

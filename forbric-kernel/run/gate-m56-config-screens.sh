@@ -19,48 +19,57 @@
 # clicks the button and logs the class of the screen in front; then double-clicks the row on a fresh Mods screen. The
 # assertions are on those classes, which the canaries themselves define (forbric.mmcfg.*), on the button's own
 # `visible`, on the rows the list widget holds in the order it draws them (and a screenshot of that screen, kept in the
-# results), and on where Mod Menu's classes resolve from in the game loader. No line the kernel writes about itself is
-# asserted: every check reads what the probe observed. The canaries are built from canary/modmenu-config by
+# results), on how many rows' Config buttons opened a screen, and on the code source Mod Menu's classes were defined
+# with in the game loader. No line the kernel writes about itself is asserted: every check reads what the probe
+# observed and logged under [Forbric/ClientSmoke]. The canaries are built from canary/modmenu-config by
 # run/build-modmenu-config-canary.sh; none is a third-party jar.
 #
-#   1. stand-in — no Mod Menu (its main class does not resolve; its API resolves from no jar, defined from the kernel's
-#      stand-in bytes): canaries A and B open their own screens through their own Mod Menu entrypoints; E, which declares
+#   1. stand-in — no Mod Menu (its main class does not resolve; its API is defined with no code source, no jar the game
+#      loader reads has it, and the kernel carries stand-in bytes for it): canaries A and B open their own screens through their own Mod Menu entrypoints; E, which declares
 #      none, opens the screen A provides for it; C and D, which A carries inside itself, have rows of their own (C at the
 #      top, D under the heading "Forbric Canary Family" it names for itself) and open their screens; the universal
 #      canary opens NeoForge's screen; the game's row opens OptionsScreen; the plain canary's Config button stays hidden
-#      and a double click on it opens nothing; every other walked row also opens its screen on a double click. The
+#      and a double click on it opens nothing; every other walked row (A to E, the universal canary, the game) also
+#      opens its screen on a double click; exactly 7 of the 8 walked rows open a screen through the Config button. The
 #      keyboard checks for E and the universal canary start from the plain canary: a mod WITHOUT a config to one WITH
 #      one, and back. The NeoForge platform row (NeoForge's own settings, listed on every instance) is the owner's open
 #      decision (ModListRows.LOADER_ROWS) and is asserted neither way.
 #   2. control — phase 1 with -Dforbric.modMenuStandIn=off. Without the stand-in Mod Menu's API does not resolve and a
 #      Fabric mod's Mod Menu entrypoint cannot be read: A, B and E show no Config button and the carried canaries have
-#      no row. The game and the NeoForge half are not the stand-in's, so they still open.
-#      RED (verified): phase 1 run with M56_EXTRA_JVM=-Dforbric.modMenuStandIn=off fails exactly 25 checks of phase 1
-#      and no other: the stand-in API line; for each of A, B, C, D and E its two arrow-key checks, its click and its
-#      Config button; the double clicks on A and D; and the rows of C and D. The universal canary, the game and the
-#      plain canary stay green.
+#      no row. The game and the NeoForge half are not the stand-in's, so they still open: exactly 2 of the 8.
+#      RED (verified): phase 1 run with M56_EXTRA_JVM=-Dforbric.modMenuStandIn=off fails exactly 29 checks of phase 1
+#      and no other: the stand-in API line; the count of rows that opened (2, not 7); for each of A, B, C, D and E its
+#      two arrow-key checks, its click, its Config button and its double click; and the rows of C and D. The universal
+#      canary, the game and the plain canary stay green.
 #   3. Mod Menu — Mod Menu installed (M56_MODMENU, default run/modmenu/modmenu-*.jar, e.g. modmenu-20.0.3.jar) with
 #      fabric-api (M56_FABRIC_API, default run/modmenu/fabric-api-*.jar, else the client-merged-pack's): both of Mod
-#      Menu's classes resolve from its jar. Mod Menu itself answers hasConfigScreen=true for the universal canary, shows
-#      it with the name, description and icon its fabric.mod.json gives (the canary's neoforge.mods.toml gives another
-#      name and description, so reading NeoForge's would fail this), and builds NeoForge's screen. Forbric's list still
-#      opens A's, C's, the universal canary's and the game's screens; for A and the game, Mod Menu's own factory is what
-#      answered (a counting stand-in in Mod Menu's own factory map, around the press), and for the universal canary it
-#      is not (the kernel asks NeoForge). Then 3b, the same with -Dforbric.modMenuForeignScreens=off, which must take the
-#      universal canary's Config button out of Mod Menu again, with the same in-world checks as every other run.
+#      Menu's classes are defined from its jar. Mod Menu's API -- not its list screen, which this gate never opens --
+#      is asked about the universal canary: ModMenu.hasConfigScreen answers true (what its list's Config button reads),
+#      its ModMenu.MODS entry's getName/getDescription answer what the canary's fabric.mod.json gives (the canary's
+#      neoforge.mods.toml gives another name and description, so reading NeoForge's would fail this), the icon path
+#      Fabric's container names is found in that container (the probe's own lookup, the one Mod Menu's icon code does,
+#      not Mod Menu's answer), and ModMenu.getConfigScreen builds NeoForge's screen. Forbric's list opens the same 7 of
+#      8 as in phase 1; for A and the game, Mod Menu's own factory is what answered, exactly once (a counting stand-in
+#      in Mod Menu's own factory map, around the press), and for the universal canary it is not (the kernel asks
+#      NeoForge). Then 3b, the same with -Dforbric.modMenuForeignScreens=off, which must take the universal canary's
+#      Config button out of Mod Menu again, with the same in-world checks as every other run.
 #      Phase 3 is required, as m54 requires its third-party jars: when it is selected (it is by default) and either jar
 #      is missing the gate stops with SKIP-FATAL and exit 3, which gates-all reports RED — never GREEN with phase 3
-#      silently left out. tools/nightly links run/modmenu from the main checkout. M56_PHASES="standin control" runs
-#      without it on purpose, and the result line then names the phases that ran.
+#      silently left out. tools/nightly links run/modmenu from the main checkout. M56_PHASES="standin control" runs a
+#      subset on purpose: the result line names the phases that ran, and a subset with no failure exits 3, not 0, so no
+#      runner can count it GREEN.
 #
 # RED (verified by mutation): KernelModListScreen's list told the screen nothing from setSelected and the row's click
 # handler told it instead (the code before this gate) — phase 1 fails exactly its 8 "selected with the arrow keys"
 # checks (D, A, B, C, E, the universal canary, the game, the plain canary) and nothing else. The "back with the arrow
 # keys" checks stay green under that mutation, rightly: the button is still the clicked row's, which is that row's.
+# (Measured before the count and B/C/E double-click checks were added; neither depends on the arrow keys.)
 #
-# Not covered here: a NeoForge or MinecraftForge mod other than the universal canary in Mod Menu's list; the kernel's
-# log line for a provided factory whose id nothing on the instance has; the plugin's 2 s refresh; a top-level Fabric jar
-# that lost its id to another family's jar (FabricAliasDisplayTest covers that one); the NeoForge platform row.
+# Not covered here: Mod Menu's own list screen (ModsScreen) and a real press of its Config button -- phase 3 asks its
+# API; a NeoForge or MinecraftForge mod other than the universal canary in Mod Menu; the kernel's log line for a provided
+# factory whose id nothing on the instance has; the plugin's 2 s refresh; Tab (only the arrow keys and the mouse are
+# driven); a top-level Fabric jar that lost its id to another family's jar (FabricAliasDisplayTest covers that one);
+# the NeoForge platform row.
 #
 # Needs a world to join (the smoke runs in-world): M56_WORLD, default run/client-merged-pack/saves/ForbricTest.
 # GATE-PARALLEL: rundirs=client-config-screens-m56 mem=3000
@@ -169,9 +178,12 @@ modmenu_classes() {
     "ClientSmoke\] Mod Menu's classes: its API com\.terraformersmc\.modmenu\.api\.ModMenuApi $3; its main class com\.terraformersmc\.modmenu\.ModMenu $4;" \
     "$RESULTS/$1.log"
 }
+# common <phase> <how many of the 8 walked rows open a screen through the Config button>
 common() {
   check "$1: the client entered the world" 'ClientSmoke\] client-ready after' "$RESULTS/$1.log"
   check "$1: the walk ran to its end" 'ClientSmoke\] config screens: [0-9]+ of 8 opened through the Config button' "$RESULTS/$1.log"
+  check "$1: exactly $2 of the 8 rows opened a screen through the Config button" \
+    "ClientSmoke\] config screens: $2 of 8 opened through the Config button" "$RESULTS/$1.log"
   check "$1: the Mods screen's rows were read from its list widget" "$ROWS" "$RESULTS/$1.log"
   if [ -s "$RESULTS/$1-screenshots/forbric-config-mods-screen.png" ]; then
     echo "[kernel] PASS $1: the Mods screen was photographed ($RESULTS/$1-screenshots/forbric-config-mods-screen.png)"
@@ -180,7 +192,8 @@ common() {
   fi
   check_absent "$1: no row was selected with nothing to contrast it with" 'selected with the keyboard after nothing else' "$RESULTS/$1.log"
   check_absent "$1: every arrow key landed where it was sent" 'ClientSmoke\] config screen of .* left .* selected$' "$RESULTS/$1.log"
-  check_absent "$1: no config screen threw" 'has a Config button, but its config screen threw|config screens: the walk stopped' "$RESULTS/$1.log"
+  check_absent "$1: no shown Config button left the Mods screen in front when pressed" 'ClientSmoke\] config screen of .*: pressing Config left' "$RESULTS/$1.log"
+  check_absent "$1: the walk did not stop" 'ClientSmoke\] config screens: the walk stopped' "$RESULTS/$1.log"
   check_absent "$1: no crash report" 'Preparing crash report' "$RESULTS/$1.log"
 }
 
@@ -190,9 +203,9 @@ standin)
 step "1. stand-in: no Mod Menu — every config screen opens through Forbric's own Config button"
 run_client standin "${M56_EXTRA_JVM:-}"
 RAN="$RAN standin"
-common standin
-modmenu_classes standin "Mod Menu's API is the kernel's stand-in (defined from no jar), its main class does not resolve" \
-  "resolves from no jar: defined from the kernel's stand-in bytes in [^;]+" "does not resolve"
+common standin 7
+modmenu_classes standin "Mod Menu's API has no code source, no jar has it, the kernel carries stand-in bytes; its main class does not resolve" \
+  "is defined from no jar \(no code source\); no jar the game loader reads has it; the kernel's stand-in bytes for it are in [^;]+" "does not resolve"
 keyboard standin forbricmmcfgd FABRIC shown
 for id in forbricmmcfga forbricmmcfgb forbricmmcfgc; do keyboard standin "$id" FABRIC shown; done
 keyboard standin forbricmmcfge FABRIC shown forbricmmplain
@@ -203,6 +216,9 @@ opens standin forbricmmcfge FABRIC forbric.mmcfg.a.CanaryEScreen
 opens standin forbricmmcfgc FABRIC forbric.mmcfg.c.CanaryCScreen
 opens standin forbricmmcfgd FABRIC forbric.mmcfg.d.CanaryDScreen
 doubled standin forbricmmcfga FABRIC forbric.mmcfg.a.CanaryAScreen
+doubled standin forbricmmcfgb FABRIC forbric.mmcfg.b.CanaryBScreen
+doubled standin forbricmmcfge FABRIC forbric.mmcfg.a.CanaryEScreen
+doubled standin forbricmmcfgc FABRIC forbric.mmcfg.c.CanaryCScreen
 doubled standin forbricmmcfgd FABRIC forbric.mmcfg.d.CanaryDScreen
 row standin "a mod carried inside another, naming no parent, is a row of its own at the top" 'MOD:forbricmmcfgc'
 row standin "a carried mod naming a parent that is no mod is drawn under that heading" 'GROUP:forbric-canary-family, >MOD:forbricmmcfgd'
@@ -223,7 +239,7 @@ control)
 step "2. control: the stand-in switched off — the Fabric canaries lose their Config buttons, the rest do not"
 run_client control "-Dforbric.modMenuStandIn=off"
 RAN="$RAN control"
-common control
+common control 2
 modmenu_classes control "neither Mod Menu's API nor its main class resolves" "does not resolve" "does not resolve"
 for id in forbricmmcfga forbricmmcfgb forbricmmcfge; do keyboard control "$id" FABRIC hidden; clicked control "$id" FABRIC hidden; hidden control "$id" FABRIC; done
 for id in forbricmmcfgc forbricmmcfgd; do norow control "$id"; done
@@ -234,34 +250,34 @@ opens control minecraft GAME net.minecraft.client.gui.screens.options.OptionsScr
 check_absent "control: no Fabric canary's screen opened" 'through (the Config button|a double click on its row): forbric\.mmcfg\.[abcde]\.' "$RESULTS/control.log"
 ;;
 modmenu)
-step "3. Mod Menu installed: Mod Menu's own list has the universal canary's Config button, and Forbric's list still works"
+step "3. Mod Menu installed: Mod Menu's API offers the universal canary's NeoForge screen, and Forbric's list still works"
 MMJAR="$(re "$(basename "$MODMENU")")"
 run_client modmenu "-Dforbric.clientSmokeModMenuAsk=forbricmmuni,forbricmmcfga" "$MODMENU" "$FABRIC_API"
 RAN="$RAN modmenu"
-common modmenu
-modmenu_classes modmenu "Mod Menu's API and main class both resolve from $(basename "$MODMENU")" "resolves from $MMJAR" "resolves from $MMJAR"
-check "modmenu: Mod Menu offers the universal canary's NeoForge screen, shown as its fabric.mod.json shows it" \
+common modmenu 7
+modmenu_classes modmenu "Mod Menu's API and main class are both defined from $(basename "$MODMENU")" "is defined from $MMJAR" "is defined from $MMJAR"
+check "modmenu: Mod Menu's API has the universal canary's NeoForge screen and its fabric.mod.json name and description; the icon it names is in its container" \
   'ClientSmoke\] Mod Menu: forbricmmuni hasConfigScreen=true, its list names it "Forbric Universal Config Canary", describes it "gate-m56: one jar for Fabric and NeoForge; NeoForge wins it, and its config screen is NeoForge.s\.", icon assets/forbricmmuni/icon\.png \(found in its container=true\), getConfigScreen builds forbric\.mmcfg\.uni\.UniNeoScreen$' \
   "$RESULTS/modmenu.log"
-check "modmenu: and A's own, from A's entrypoint" \
+check "modmenu: and A's own, from A's entrypoint, through Mod Menu's API" \
   'ClientSmoke\] Mod Menu: forbricmmcfga hasConfigScreen=true, its list names it "Forbric Config Canary A", .* getConfigScreen builds forbric\.mmcfg\.a\.CanaryAScreen$' \
   "$RESULTS/modmenu.log"
 opens modmenu forbricmmcfga FABRIC forbric.mmcfg.a.CanaryAScreen
 opens modmenu forbricmmcfgc FABRIC forbric.mmcfg.c.CanaryCScreen
 opens modmenu forbricmmuni NEOFORGE forbric.mmcfg.uni.UniNeoScreen
 opens modmenu minecraft GAME net.minecraft.client.gui.screens.options.OptionsScreen
-check "modmenu: the game's Config button went through the factory Mod Menu itself provides for minecraft" \
-  'ClientSmoke\] config screen of minecraft \(GAME\): the factory Mod Menu holds for it \(com\.terraformersmc\.modmenu\.[^)]*\) answered [1-9][0-9]* time\(s\)$' \
+check "modmenu: the game's Config button went once through the factory Mod Menu itself provides for minecraft" \
+  'ClientSmoke\] config screen of minecraft \(GAME\): the factory Mod Menu holds for it \(com\.terraformersmc\.modmenu\.[^)]*\) answered 1 time\(s\)$' \
   "$RESULTS/modmenu.log"
-check "modmenu: A's went through the factory Mod Menu holds for it, from A's entrypoint" \
-  'ClientSmoke\] config screen of forbricmmcfga \(FABRIC\): the factory Mod Menu holds for it \(forbric\.mmcfg\.a\.[^)]*\) answered [1-9][0-9]* time\(s\)$' \
+check "modmenu: A's went once through the factory Mod Menu holds for it, from A's entrypoint" \
+  'ClientSmoke\] config screen of forbricmmcfga \(FABRIC\): the factory Mod Menu holds for it \(forbric\.mmcfg\.a\.[^)]*\) answered 1 time\(s\)$' \
   "$RESULTS/modmenu.log"
 check "modmenu: the universal canary's did not (Mod Menu holds the kernel plugin's factory for it; Forbric's list asks NeoForge)" \
   'ClientSmoke\] config screen of forbricmmuni \(NEOFORGE\): the factory Mod Menu holds for it \(net\.forbric\.kernel\.runtime\.modmenu\.KernelModMenuPlugin[^)]*\) answered 0 time\(s\)$' \
   "$RESULTS/modmenu.log"
 step "3b. Mod Menu, the kernel's offer switched off — the universal canary loses its Config button in Mod Menu (negative control)"
 run_client modmenuoff "-Dforbric.clientSmokeModMenuAsk=forbricmmuni -Dforbric.modMenuForeignScreens=off" "$MODMENU" "$FABRIC_API"
-common modmenuoff
+common modmenuoff 7
 check "modmenuoff: Mod Menu has no config screen for the universal canary" \
   'ClientSmoke\] Mod Menu: forbricmmuni hasConfigScreen=false' "$RESULTS/modmenuoff.log"
 opens modmenuoff forbricmmuni NEOFORGE forbric.mmcfg.uni.UniNeoScreen
@@ -276,9 +292,15 @@ WHAT="all three phases"
 for need in standin control modmenu; do
   case " $RAN " in *" $need "*) ;; *) WHAT="ONLY the phases [$RAN] (M56_PHASES): not the whole gate" ;; esac
 done
-if [ "$FAIL" -eq 0 ]; then
-  echo "[kernel] ✅ M56 CONFIG SCREENS GATE GREEN ($WHAT) — Fabric mods' config screens open from Forbric's own Mods screen without Mod Menu, carried mods and the game included"
-else
+if [ "$FAIL" -ne 0 ]; then
   echo "[kernel] ❌ M56 GATE RED ($WHAT) — inspect $RESULTS"
+  exit 1
 fi
-exit "$FAIL"
+if [ "$WHAT" != "all three phases" ]; then
+  # Not GREEN: every runner reads exit 0 as GREEN (gates-parallel.py passes the environment through, so a leftover
+  # M56_PHASES would otherwise turn a partial run into a green gate).
+  echo "[kernel] M56 PARTIAL ($WHAT) — no check failed, but the gate did not run; exit 3"
+  exit 3
+fi
+echo "[kernel] ✅ M56 CONFIG SCREENS GATE GREEN ($WHAT) — Fabric mods' config screens open from Forbric's own Mods screen without Mod Menu, carried mods and the game included"
+exit 0

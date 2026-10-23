@@ -197,9 +197,10 @@ class ModListRowsTest {
 	}
 
 	/**
-	 * An unreadable jar is catalogued under the id its failure names, which can be the id of a jar that did load. Both
-	 * are jars a player installed and each is a row: the broken one, marked FAILED, is the row the player most needs, and
-	 * keying rows by id alone dropped whichever came second.
+	 * The plan itself drops no installed entry for sharing an id: given two, it makes two rows. This is the plan's
+	 * contract only. In a running instance the catalogue has already collapsed duplicate ids ({@code ModCatalog.publish},
+	 * first one wins) before the plan is asked, so an unreadable jar sharing a loaded jar's id is still missing from the
+	 * Mods screen -- an open defect of the catalogue, not covered here.
 	 */
 	@Test
 	void everyInstalledEntryIsARowEvenWhenTwoShareAnId() {

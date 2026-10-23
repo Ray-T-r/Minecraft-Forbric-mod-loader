@@ -1965,9 +1965,9 @@ public final class KernelClientSmoke {
 	}
 
 	/**
-	 * Where Mod Menu's two classes come from in the game loader, as observed: its API ({@code ModMenuApi}) and its main
-	 * class ({@code ModMenu}), each resolving from a jar, from no jar (the kernel's stand-in is defined from bytes the
-	 * kernel carries, not from a jar entry of that name), or not at all; and whether Fabric has the mod {@code modmenu}.
+	 * Where Mod Menu's two classes come from in the game loader, as observed on the classes themselves: its API
+	 * ({@code ModMenuApi}) and its main class ({@code ModMenu}), each loaded and asked for the code source it was defined
+	 * with -- a jar, or none -- or not resolving at all; and whether Fabric has the mod {@code modmenu}.
 	 */
 	private static void logModMenuClasses(ClassLoader cl) {
 		boolean loaded;
@@ -1983,21 +1983,32 @@ public final class KernelClientSmoke {
 				classOrigin(cl, "com.terraformersmc.modmenu.ModMenu"), loaded ? "has" : "does not have");
 	}
 
-	/** {@code resolves from <jar>}, {@code resolves from no jar...}, or {@code does not resolve}. */
+	/**
+	 * {@code does not resolve}; {@code is defined from <jar>}, the code source the loaded class carries; or
+	 * {@code is defined from no jar (no code source)}, followed by what else is true of the name: whether any jar the
+	 * game loader reads has it as a class file (one that does, while the class in use came from none, is a stand-in that
+	 * shadowed a jar), and where the kernel's stand-in bytes for it are. The first half is the class's own; the rest
+	 * describes the loader's resources, and says so.
+	 */
 	private static String classOrigin(ClassLoader cl, String binaryName) {
+		Class<?> type;
 		try {
-			Class.forName(binaryName, false, cl);
+			type = Class.forName(binaryName, false, cl);
 		} catch (ClassNotFoundException | LinkageError absent) {
 			Caught.expected(absent);
 			return "does not resolve";
 		}
+		java.security.CodeSource source = type.getProtectionDomain() == null ? null : type.getProtectionDomain().getCodeSource();
+		java.net.URL location = source == null ? null : source.getLocation();
+		if (location != null) return "is defined from " + jarName(location);
 		String internal = binaryName.replace('.', '/');
 		java.net.URL file = cl.getResource(internal + ".class");
-		if (file != null) return "resolves from " + jarName(file);
 		java.net.URL standIn = cl.getResource(net.forbric.kernel.interop.protocol.modmenu.ModMenuApiStandIn.RESOURCES
 				+ internal + ".class.bin");
-		return standIn == null ? "resolves from no jar"
-				: "resolves from no jar: defined from the kernel's stand-in bytes in " + jarName(standIn);
+		return "is defined from no jar (no code source); "
+				+ (file == null ? "no jar the game loader reads has it" : "yet " + jarName(file) + " has it")
+				+ (standIn == null ? "; the kernel carries no stand-in bytes for it"
+						: "; the kernel's stand-in bytes for it are in " + jarName(standIn));
 	}
 
 	/** {@code jar:file:/x/y.jar!/a/B.class} → {@code y.jar}. */
@@ -2009,9 +2020,11 @@ public final class KernelClientSmoke {
 	}
 
 	/**
-	 * {@link #MOD_MENU_ASK}: Mod Menu's own answers, when it is installed -- whether it has a config screen for each id,
-	 * the name and description its list shows, the icon it reads (the path its metadata names and whether the mod's
-	 * container has that file, which is where Mod Menu reads it from), and the class of the screen it builds.
+	 * {@link #MOD_MENU_ASK}: Mod Menu's API's answers, when it is installed -- {@code ModMenu.hasConfigScreen} for each id
+	 * (what its list's Config button reads), the name and description of its {@code ModMenu.MODS} entry, and the class of
+	 * the screen {@code ModMenu.getConfigScreen} builds -- plus the icon, which is NOT Mod Menu's answer: the probe looks
+	 * it up itself the way Mod Menu's icon code does (the path Fabric's metadata names, found in the mod's container).
+	 * Mod Menu's list screen is never opened.
 	 */
 	@SuppressWarnings("unchecked")
 	private static void askModMenu(Object minecraft, ClassLoader cl) {
@@ -2149,7 +2162,13 @@ public final class KernelClientSmoke {
 			return Pressed.NOTHING_OPENED;
 		}
 		ModMenuSpy spy = ModMenuSpy.on(cl, modId);
-		clickWidget(minecraft, cl, null, button, false);
+		try {
+			clickWidget(minecraft, cl, null, button, false);
+		} finally {
+			// Put back even when the press threw: the counting stand-in must not stay in Mod Menu's map for the rest of
+			// the run, where every later lookup of this id would go through it.
+			if (spy != null) spy.restore();
+		}
 		Object now = currentScreen(minecraft);
 		if (spy != null) spy.report(modId, kind);
 		if (now == null || now == screen) {
@@ -2306,12 +2325,16 @@ public final class KernelClientSmoke {
 			}
 		}
 
+		/** Puts Mod Menu's own factory back in its map; harmless when there was none to replace, or twice. */
+		void restore() {
+			if (original != null) factories.put(modId, original);
+		}
+
 		void report(String id, String kind) {
 			if (original == null) {
 				ForbricLog.info("[Forbric/ClientSmoke] config screen of %s (%s): Mod Menu holds no factory for it", id, kind);
 				return;
 			}
-			factories.put(modId, original);
 			ForbricLog.info("[Forbric/ClientSmoke] config screen of %s (%s): the factory Mod Menu holds for it (%s) answered %d "
 					+ "time(s)", id, kind, original.getClass().getName(), calls[0]);
 		}

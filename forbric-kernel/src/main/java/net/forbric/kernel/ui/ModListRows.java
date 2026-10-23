@@ -36,8 +36,13 @@ import net.forbric.api.ModCatalog;
  *       is listed at all is one decision, {@link #LOADER_ROWS}.</li>
  * </ul>
  *
- * <p>Every installed entry is a row of its own, even when two of them share an id: a jar whose metadata could not be
- * read is catalogued under the id its failure names, and the row saying so is the one a player most needs to see.
+ * <p>This plan drops no installed entry for sharing an id with another: each is a row of its own. That does NOT mean
+ * the screen shows two jars with one id today. {@link ModCatalog#publish} collapses duplicate ids before anything reads
+ * the catalogue (first one wins), and the kernel appends a jar whose metadata could not be read -- catalogued under the
+ * id its failure names -- after every mod that loaded, so when that id is a loaded jar's, the FAILED entry is gone
+ * before this plan sees it, and the unreadable jar's finding is then shown on the loaded jar's row
+ * ({@code CompatibilityFindings.project} matches by id). That is an open defect of the catalogue's identity (mod id,
+ * not jar), not something this class can repair.
  *
  * <h2>Where a carried mod sits</h2>
  *
@@ -96,9 +101,11 @@ public final class ModListRows {
 
 	/**
 	 * THE decision whether a loader's own entry is a row, and the one line to change to decide it differently. It is the
-	 * owner's call, not settled: {@code ALWAYS} puts a "NeoForge" row, which opens NeoForge's own settings screen, into
-	 * every instance's list, pure-Fabric packs included, because the kernel always runs NeoForge. Nothing else reads a
-	 * loader's own row, and gate-m56 deliberately asserts it neither way.
+	 * owner's call, not settled: {@code ALWAYS} puts a NeoForge row, which opens NeoForge's own settings screen, into
+	 * every instance's list, pure-Fabric packs included, because the kernel always runs NeoForge. The row is named by
+	 * the container's own display name, and the kernel's NeoForge baseline container answers its id, so today it reads
+	 * "neoforge" (genuine NeoForge's manifest says "NeoForge"). Nothing else reads a loader's own row, and gate-m56
+	 * deliberately asserts it neither way.
 	 */
 	public static final LoaderRows LOADER_ROWS = LoaderRows.ALWAYS;
 
@@ -158,9 +165,9 @@ public final class ModListRows {
 			byId.putIfAbsent(e.modId(), e);
 			families.add(e.ecosystem());
 		}
-		// Every installed entry is a block of its own, two with one id included (an unreadable jar is catalogued under the
-		// id its failure names, beside the jar that loaded under it). tops is only how a parent is found by id: the
-		// first block with that id.
+		// Every installed entry is a block of its own, two with one id included -- though the catalogue collapses
+		// duplicate ids before this runs (see the class comment). tops is only how a parent is found by id: the first
+		// block with that id.
 		List<Block> blocks = new ArrayList<>();
 		Map<String, Block> tops = new LinkedHashMap<>();
 		for (ModCatalog.Entry e : everything) {

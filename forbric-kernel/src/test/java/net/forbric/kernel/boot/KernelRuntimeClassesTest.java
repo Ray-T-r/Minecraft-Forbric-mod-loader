@@ -113,16 +113,25 @@ class KernelRuntimeClassesTest {
 	}
 
 	/**
-	 * A game-side class held in a local ({@code Class<?> configs = Class.forName("net.forbric.kernel.runtime.X", ...)}) and
-	 * then asked for a method by name ({@code configs.getMethod("name", ...)}) is a call the registry must list: that is
-	 * what turns a renamed game-side method into one line at boot instead of a NoSuchMethodException half way through a
-	 * client smoke. The client smoke's config walk named two methods the registry did not.
+	 * A game-side class named by {@code Class.forName("net.forbric.kernel.runtime.X", ...)} and then asked for a method by
+	 * name is a call the registry must list: that is what turns a renamed game-side method into one line at boot instead of
+	 * a NoSuchMethodException half way through a client smoke. Two spellings are recognised, and only these two: the class
+	 * held in a local ({@code Class<?> configs = Class.forName(...)} then {@code configs.getMethod("name", ...)}), and the
+	 * call chained onto the {@code forName} in one statement ({@code Class.forName(...).getMethod("name", ...)}). The client
+	 * smoke's config walk named two methods the registry did not.
+	 *
+	 * <p>Not covered: a method asked of an instance's {@code getClass()}, a class reached any other way, and FIELDS read by
+	 * name -- the client smoke reads the Mods screen's {@code list} and its rows' {@code row} that way, and a rename there
+	 * shows only as gate-m56's "the walk stopped", not here.
 	 */
 	@Test
-	void everyMethodTheBootSideAsksAGameSideClassForByNameIsARegisteredCall() throws Exception {
+	void everyMethodAskedByNameOfAForNamedGameSideClassIsARegisteredCall() throws Exception {
 		Pattern held = Pattern.compile("Class<\\?>\\s+(\\w+)\\s*=\\s*Class\\.forName\\(\\s*\"(net\\.forbric\\.kernel\\.runtime\\.[\\w.$]+)\"");
+		Pattern chained = Pattern.compile("Class\\.forName\\(\\s*\"(net\\.forbric\\.kernel\\.runtime\\.[\\w.$]+)\"[^;]*?"
+				+ "\\.\\s*get(?:Declared)?Method\\(\\s*\"(\\w+)\"");
 		List<String> missing = new ArrayList<>();
-		int asked = 0;
+		int heldAsked = 0;
+		int chainedAsked = 0;
 		for (Path file : javaFiles(MAIN)) {
 			if (file.endsWith("KernelRuntimeClasses.java")) continue;
 			String text = Files.readString(file, StandardCharsets.UTF_8);
@@ -130,17 +139,26 @@ class KernelRuntimeClassesTest {
 			Map<String, String> locals = new java.util.HashMap<>();
 			while (m.find()) locals.put(m.group(1), m.group(2));
 			for (Map.Entry<String, String> local : locals.entrySet()) {
-				Matcher call = Pattern.compile("\\b" + local.getKey() + "\\s*\\.\\s*getMethod\\(\\s*\"(\\w+)\"").matcher(text);
+				Matcher call = Pattern.compile("\\b" + local.getKey() + "\\s*\\.\\s*get(?:Declared)?Method\\(\\s*\"(\\w+)\"").matcher(text);
 				while (call.find()) {
-					asked++;
-					String name = call.group(1);
-					boolean registered = KernelRuntimeClasses.callsOn(local.getValue()).stream().anyMatch(c -> c.name().equals(name));
-					if (!registered) missing.add(local.getValue() + "." + name + " (" + MAIN.relativize(file) + ")");
+					heldAsked++;
+					requireRegistered(local.getValue(), call.group(1), file, missing);
 				}
 			}
+			Matcher call = chained.matcher(text);
+			while (call.find()) {
+				chainedAsked++;
+				requireRegistered(call.group(1), call.group(2), file, missing);
+			}
 		}
-		assertTrue(asked > 0, "found no game-side method asked for by name; the pattern no longer matches the boot side");
+		assertTrue(heldAsked > 0, "found no game-side method asked of a held class; the pattern no longer matches the boot side");
+		assertTrue(chainedAsked > 0, "found no game-side method asked by a chained call; the pattern no longer matches the boot side");
 		assertTrue(missing.isEmpty(), () -> "asked for by name, but not a registered call: " + missing);
+	}
+
+	private static void requireRegistered(String binary, String name, Path file, List<String> missing) {
+		boolean registered = KernelRuntimeClasses.callsOn(binary).stream().anyMatch(c -> c.name().equals(name));
+		if (!registered) missing.add(binary + "." + name + " (" + MAIN.relativize(file) + ")");
 	}
 
 	@Test

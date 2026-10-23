@@ -390,7 +390,8 @@ public final class KernelModListScreen extends Screen {
 		 * Every way the selection moves comes through here -- a click, and the arrow keys and Tab, which vanilla's
 		 * focus handling turns into {@code setFocused(entry)} and that into this. The Config button follows the
 		 * selection only if it is told here: told from the click alone, it showed the previous row's answer after
-		 * every key press, hidden on a mod with settings and pressable on one without.
+		 * every key press, hidden on a mod with settings and pressable on one without. gate-m56 drives the click and the
+		 * arrow keys through the game's own input handlers; Tab reaches here by the same vanilla path but nothing drives it.
 		 */
 		@Override
 		public void setSelected(Row row) {
