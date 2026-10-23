@@ -757,7 +757,7 @@ java -cp <boot-cp> net.forbric.kernel.boot.Main --scan --mods <dir> --report out
 
 已定位、尚未修复的（没有不可能性证明）：
 
-- Mod Menu：`fabricloader` 容器报的版本是 0.19.3——内核实现的 Fabric Loader API 级别，`FabricLoaderApiSurfaceTest` 把它钉在这里——而原生报的是实际运行的加载器版本（0.19.5），所以 Mod Menu 的更新检查会提示一个原生不会提示的更新；挂在加载器下的 `mixinextras` 是内核自带的 0.5.4（原生 0.5.5），容器类型是 `builtin`（原生 `fabric`）。报一个内核没有实现的版本是不实的，所以要等 API 本身到 0.19.5。标题界面还多一行载体自己的品牌行，让 Mod Menu 那一行上移一格（等所有者决定）。
+- Mod Menu：`fabricloader` 容器报的版本是 0.19.3——内核实现的 Fabric Loader API 级别，`FabricLoaderApiSurfaceTest` 把它钉在这里——而原生报的是实际运行的加载器版本（0.19.5），所以 Mod Menu 的更新检查会提示一个原生不会提示的更新；挂在加载器下的 `mixinextras` 是内核自带的 0.5.4（原生 0.5.5），容器类型是 `builtin`（原生 `fabric`）。报一个内核没有实现的版本是不实的，所以要等 API 本身到 0.19.5。标题界面还多一行 Forbric 自己的品牌行 `forbric-v<版本> (N mods)`，N 是 `mods/` 里的 jar 数（Mod Menu 的数还算上了打包在这些 jar 里的 mod），它让 Mod Menu 那一行上移一格；所有者决定保留。
 - Balm 的 `SCREEN_OPEN` 钩子（挂在每次读取 `Gui.screen` 上的修改器）原生挂在 4 处读取上，这里只有 3 处：载体把这个字段存进了局部变量，少读了一次。
 - fabric-api：`PlayerBlockBreakEvents.AFTER` 在 `Block.destroy` 之后有两个静态调用点（原生一个），但在测过的每种模式下每次挖掘都恰好触发一次；附魔台的主物品判断走 NeoForge 的 `isPrimaryItemFor`，只证明了它折叠掉的那个析取项等价（游戏内附魔探针与原生相同）；数据生成的 `TagsProviderMixin` 挂不上任何地方（只影响 Fabric 数据生成）。
 - 水下的空气值：能在水下呼吸的实体（有水下呼吸效果、在水或 mod 流体里的玩家；溺尸）的空气值保持不变，原生每 tick 回 4 点。这是 NeoForge 载体的规则，按 NeoForge 的决定保留，等所有者决定。

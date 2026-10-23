@@ -2010,8 +2010,9 @@ Located, not yet fixed (no impossibility proof):
   `FabricLoaderApiSurfaceTest` holds it to — where native reports the loader actually run (0.19.5), so Mod Menu's update
   checker announces an update native does not; the loader-nested `mixinextras` is the kernel's 0.5.4 (native 0.5.5),
   and the container's type is `builtin` (native `fabric`). Reporting a version the kernel does not implement would be
-  untrue, so this waits for the API itself to reach 0.19.5. The title screen also shows the carrier's own branding
-  line, which moves Mod Menu's up one line (the owner's decision).
+  untrue, so this waits for the API itself to reach 0.19.5. The title screen also shows Forbric's own branding
+  line, `forbric-v<version> (N mods)` with N the jars in `mods/` (Mod Menu's count also takes in the mods bundled
+  inside them), which moves Mod Menu's up one line; the owner chose to keep it.
 - Balm's `SCREEN_OPEN` hook (a modifier at each read of `Gui.screen`) attaches at 3 reads where native has 4: the
   carrier keeps the field in a local and reads it once less.
 - fabric-api: `PlayerBlockBreakEvents.AFTER` has two static call sites after `Block.destroy` (native one), though it
