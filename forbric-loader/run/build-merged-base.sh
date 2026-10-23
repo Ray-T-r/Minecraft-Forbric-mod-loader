@@ -90,6 +90,7 @@ TOOL_SOURCES=(
   "$PROJECT/src/tools/java/net/forbric/tools/EmptyArrayContractBridge.java"
   "$PROJECT/src/tools/java/net/forbric/tools/PatchLineProvenance.java"
   "$PROJECT/src/tools/java/net/forbric/tools/EditSplicer.java"
+  "$PROJECT/src/tools/java/net/forbric/tools/DelegateTwinRoutes.java"
 )
 javac --release 17 -cp "$CP" -d "$BUILD" "${TOOL_SOURCES[@]}"
 

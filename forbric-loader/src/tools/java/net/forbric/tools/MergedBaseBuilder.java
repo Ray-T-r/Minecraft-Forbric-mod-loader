@@ -165,6 +165,9 @@ public final class MergedBaseBuilder {
 	private int collisionMethodsDropped, classAccessWidened, bridgedConstructors, exclusiveFieldsInitialized;
 	private int divergentAnonymousMaterialized, divergentAnonymousCallSitesRewritten;
 	private int customPayloadInteropPatched;
+	/** PASS 6: every delegate-twin call site judged, and how many were pointed back at the merged entry. */
+	private final List<DelegateTwinRoutes.Decision> delegateTwinDecisions = new ArrayList<>();
+	private int delegateTwinRetargeted;
 	/** The three input class sets, kept as fields so per-class merge helpers can inspect sibling classes. */
 	private Map<String, byte[]> vanillaClasses = Map.of(), forgeClasses = Map.of(), neoClasses = Map.of();
 	/** How many surviving methods kept the other side's wider access. See {@link #mostPermissive}. */
@@ -396,6 +399,27 @@ public final class MergedBaseBuilder {
 					+ " delegating constructor(s) across " + bridgedOwners.size() + " class(es)");
 		}
 
+		// PASS 6: a call into one side's private implementation of a vanilla method (its delegate twin, passed a
+		// different mode) follows the merge's choice of that method when the side's compensating caller did not
+		// survive the merge — see DelegateTwinRoutes. Reported in full, retargeted or not.
+		Set<String> routed = new LinkedHashSet<>();
+		delegateTwinDecisions.addAll(DelegateTwinRoutes.route(allNodes, vanilla, forge, neo, routed));
+		for (String owner : routed) {
+			ClassWriter cw = new ClassWriter(ClassWriter.COMPUTE_MAXS);
+			allNodes.get(owner).accept(cw);
+			outEntries.put(owner, cw.toByteArray());
+		}
+		for (DelegateTwinRoutes.Decision decision : delegateTwinDecisions) {
+			if (!decision.retargeted()) continue;
+			delegateTwinRetargeted++;
+			// The side's edit at that site — its constants — is gone from the merged game: reported as that side's loss.
+			conflicts.add(decision.site() + " (" + decision.side() + " hook lost)");
+		}
+		if (!delegateTwinDecisions.isEmpty()) {
+			System.out.println("[merge] delegate-twin pass: " + delegateTwinRetargeted + " call site(s) retargeted to the merged entry, "
+					+ (delegateTwinDecisions.size() - delegateTwinRetargeted) + " left");
+		}
+
 		if (accessWidened > 0) {
 			System.out.println("[merge] access reconciliation: " + accessWidened + " surviving method(s) kept the "
 					+ "wider of the two ecosystems' access — each side widens what its own mods need, and the "
@@ -448,6 +472,9 @@ public final class MergedBaseBuilder {
 				ps.println(KEPT_AS_ONE_SECTION + " (left on the side that edited it; a capturer of the other compile runs it on purpose) ===");
 				for (String lambda : keptAsOne) ps.println(lambda);
 				ps.println();
+				ps.println(DELEGATE_TWIN_SECTION + " (a call into one side's delegate twin, judged against the merge's choice of its entry) ===");
+				for (DelegateTwinRoutes.Decision decision : delegateTwinDecisions) ps.println(decision.line());
+				ps.println();
 				ps.println("=== edit splice: both ecosystems' edits kept in one body (per run; lines are the other side's patched source lines) ===");
 				for (String decision : spliceDecisions) ps.println(decision);
 			}
@@ -455,6 +482,8 @@ public final class MergedBaseBuilder {
 		}
 	}
 
+	/** The heading above {@link #delegateTwinDecisions}: one decision per line. */
+	static final String DELEGATE_TWIN_SECTION = "=== delegate-twin routes";
 	/** The heading above {@link #keptAsOne}: one {@code owner#name(desc)} per line. */
 	static final String KEPT_AS_ONE_SECTION = "=== lambdas both sides compile as one vanilla lambda";
 
