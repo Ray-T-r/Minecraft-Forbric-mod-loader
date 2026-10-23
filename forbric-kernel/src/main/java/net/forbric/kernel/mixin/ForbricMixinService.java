@@ -488,6 +488,12 @@ public final class ForbricMixinService
 		MixinKeyActionAdapter.adapt(node, this::mergedBaseGameCode);
 		MixinStructurePlacementAdapter.adapt(node, this::mergedBaseNodeWithCode);
 		FabricBlockStateCodecMixinAdapter.adapt(node, this::mergedBaseNodeWithCode);
+		// …and a @Redirect of BlockState.isAir(), which the merged base makes as isEmpty() in the same method, moves
+		// onto that call instead of binding nothing (fabric-block-api's LevelChunkSection air check).
+		FabricAirCheckMixinAdapter.adapt(node, this::mergedBaseNodeWithCode);
+		// …and a @WrapOperation of CustomPacketPayload.codec(), which the merged base gives two more arguments,
+		// is handed those arguments instead of binding nothing (fabric-networking's payload codec wrapper).
+		FabricCustomPayloadCodecMixinAdapter.adapt(node, this::mergedBaseNodeWithCode);
 		MixinPlayerWorldCallbackAdapter.adapt(node, this::mergedBaseNodeWithCode);
 		MixinFluidReactionAdapter.adapt(node, this::mergedBaseNodeWithCode);
 		// …and an @Inject anchored on a call the merged body makes through a subtype of the same method
