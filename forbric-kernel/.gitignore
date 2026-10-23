@@ -1,7 +1,9 @@
 # Local game instances. Keep probe source in canary/ (outside run/), and tools in run/compat/.
-/.dev/
+# .dev and run/client-* carry no trailing slash: a worktree links them to the main checkout's
+# (link-fixtures.sh), and a pattern ending in / never matches a symlink.
+/.dev
 # Ignore whole instance trees so new game/mod output does not require another per-gate rule.
-/run/client-*/
+/run/client-*
 /run/server-*/
 /run/ac-client/
 /run/ac-server/

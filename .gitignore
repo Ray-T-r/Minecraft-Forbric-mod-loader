@@ -30,8 +30,9 @@ __pycache__/
 # the whole project depends on.
 /FML/
 # fabric-loader/ is where bootstrap.sh clones the substrate: upstream's code at an upstream tag plus
-# forbric-loader/patches/. Deliberately NOT vendored, so its provenance stays inspectable.
-/fabric-loader/
+# forbric-loader/patches/. Deliberately NOT vendored, so its provenance stays inspectable. No trailing slash: in a
+# worktree it is a symlink to the main checkout's clone, and a pattern ending in / never matches a symlink.
+/fabric-loader
 
 # ---- Test-instance runtime state ----
 logs/
