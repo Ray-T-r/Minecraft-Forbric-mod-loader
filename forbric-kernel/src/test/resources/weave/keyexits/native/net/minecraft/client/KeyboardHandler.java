@@ -25,7 +25,7 @@ public class KeyboardHandler {
 		if (handle != window) {
 			return;
 		}
-		if (action == 1 && consumed) {
+		if (action == 1 && global(event)) {
 			return;
 		}
 		if (screen != null) {
@@ -42,6 +42,11 @@ public class KeyboardHandler {
 			return;
 		}
 		pressed(event);
+	}
+
+	/** A key the game handles whatever has focus (vanilla's handleGlobalKeyPress: the screenshot key, fullscreen…). */
+	private boolean global(KeyEvent event) {
+		return event.key().equals("F2");
 	}
 
 	private void released(KeyEvent event) {

@@ -42,6 +42,12 @@ public final class MixinKeyActionAdapter {
 	static final String BARE = "(" + CALLBACK + ")V";
 	static final String LIVE = "Lnet/neoforged/neoforge/client/ClientHooks;onKeyInput(" + EVENT + "I)V";
 	static final String SUFFIX = "$forbrickeyexit";
+	static final String MODIFY_EXPRESSION_VALUE = "Lcom/llamalad7/mixinextras/injector/ModifyExpressionValue;";
+	static final String AT = "Lorg/spongepowered/asm/mixin/injection/At;";
+	static final String SHARE = "Lcom/llamalad7/mixinextras/sugar/Share;";
+	static final String FLAG = "com/llamalad7/mixinextras/sugar/ref/LocalBooleanRef";
+	/** The share a decision exit's observer sets, per native return ordinal: {@code forbric$exit<ordinal>}. */
+	static final String EXIT_SHARE = "forbric$exit";
 
 	private MixinKeyActionAdapter() { }
 
@@ -92,12 +98,16 @@ public final class MixinKeyActionAdapter {
 		if (ordinal >= exits.nativeReturns()) return false;
 		JoinedReturnExits.Values guard;
 		String placed;
+		List<JoinedReturnExits.DecisionExit> decisions = List.of();
 		if (exits.isFinal(ordinal)) {
 			// The native final return is still the final return; a RETURN ordinal counted on the native body is not.
 			if (!exits.finalReached()) return false;
 			guard = exits.finalGuard();
+			// And a native early return the carrier sends here on a decision (a global key handleGlobalKeyPress handled)
+			// must not run it either: the decision's answer, seen where it is made, is shared with the handler's guard.
+			decisions = exits.decisionExits();
 			boolean recount = !tail && exits.currentReturns() != exits.nativeReturns();
-			if (guard == null && !recount) return false;
+			if (guard == null && !recount && decisions.isEmpty()) return false;
 			if (recount) {
 				MixinPlayerWorldCallbackAdapter.set(at, "value", "TAIL");
 				MixinPlayerWorldCallbackAdapter.remove(at, "ordinal");
@@ -114,37 +124,113 @@ public final class MixinKeyActionAdapter {
 			placed = "the merged " + exits.entry() + " call that begins the join";
 			if (guard.all()) guard = null;
 		}
-		MethodNode marked = guard == null ? handler : guarded(mixin, handler, guard);
+		List<String> shares = new ArrayList<>();
+		for (JoinedReturnExits.DecisionExit decision : decisions) shares.add(observe(mixin, decision));
+		MethodNode marked = guard == null && shares.isEmpty() ? handler : guarded(mixin, handler, guard, shares);
 		CurrentBodyOrdinals.mark(marked);
-		ForbricLog.info("[Forbric/Mixin] %s: %s's %s on KeyboardHandler.keyPress is native return %d of %d; it now runs at %s%s",
+		StringBuilder unless = new StringBuilder();
+		for (JoinedReturnExits.DecisionExit decision : decisions)
+			unless.append(", and not after ").append(readable(decision.member())).append(" answered ").append(decision.nonZero() ? "true" : "false")
+					.append(" (native return ").append(decision.ordinal()).append(", which the carrier sends into its hook)");
+		ForbricLog.info("[Forbric/Mixin] %s: %s's %s on KeyboardHandler.keyPress is native return %d of %d; it now runs at %s%s%s",
 				mixin.name.replace('/', '.'), marked.name, tail ? "TAIL" : "RETURN ordinal " + ordinal, ordinal, exits.nativeReturns(),
-				placed, guard == null ? "" : ", for action " + guard + " only, as the native return was reached");
+				placed, guard == null ? "" : ", for action " + guard + " only, as the native return was reached", unless);
 		return true;
+	}
+
+	/**
+	 * The mixin's observer of a decision exit's call, added once: a MixinExtras {@code @ModifyExpressionValue} on that call in
+	 * {@code keyPress} (its occurrence in the current body, which the native body makes as often) that hands the answer back
+	 * unchanged and, when it is the answer that natively returned there, sets the per-call share the guards read. Returns the
+	 * share's name.
+	 */
+	private static String observe(ClassNode mixin, JoinedReturnExits.DecisionExit decision) {
+		String share = EXIT_SHARE + decision.ordinal();
+		String name = MixinHandlerShim.asideName(mixin.name, share, "$taken");
+		for (MethodNode existing : mixin.methods) if (existing.name.equals(name)) return share;
+		Type answer = Type.getReturnType(decision.member().substring(decision.member().indexOf('(')));
+		MethodNode observer = new MethodNode(Opcodes.ASM9, Opcodes.ACC_PRIVATE, name,
+				Type.getMethodDescriptor(answer, answer, Type.getObjectType(FLAG)), null, null);
+		LabelNode keep = new LabelNode();
+		observer.instructions.add(new VarInsnNode(Opcodes.ILOAD, 1));
+		observer.instructions.add(new JumpInsnNode(decision.nonZero() ? Opcodes.IFEQ : Opcodes.IFNE, keep));
+		observer.instructions.add(new VarInsnNode(Opcodes.ALOAD, 2));
+		observer.instructions.add(new InsnNode(Opcodes.ICONST_1));
+		observer.instructions.add(new MethodInsnNode(Opcodes.INVOKEINTERFACE, FLAG, "set", "(Z)V", true));
+		observer.instructions.add(keep);
+		observer.instructions.add(new FrameNode(Opcodes.F_SAME, 0, null, 0, null));
+		observer.instructions.add(new VarInsnNode(Opcodes.ILOAD, 1));
+		observer.instructions.add(new InsnNode(answer.getOpcode(Opcodes.IRETURN)));
+		observer.maxLocals = 3;
+		observer.maxStack = 2;
+		AnnotationNode modify = new AnnotationNode(MODIFY_EXPRESSION_VALUE), at = new AnnotationNode(AT);
+		at.values = new ArrayList<>(List.of("value", "INVOKE", "target", decision.member(), "ordinal", decision.occurrence()));
+		modify.values = new ArrayList<>(List.of("method", new ArrayList<>(List.of(HOST)), "at", at));
+		observer.visibleAnnotations = new ArrayList<>(List.of(modify));
+		@SuppressWarnings("unchecked") List<AnnotationNode>[] table = new List[2];
+		table[1] = new ArrayList<>(List.of(shareAnnotation(share)));
+		observer.invisibleParameterAnnotations = table;
+		observer.invisibleAnnotableParameterCount = 2;
+		CurrentBodyOrdinals.mark(observer);
+		mixin.methods.add(observer);
+		return share;
+	}
+
+	private static AnnotationNode shareAnnotation(String name) {
+		AnnotationNode share = new AnnotationNode(SHARE);
+		share.values = new ArrayList<>(List.of("value", name));
+		return share;
+	}
+
+	private static String readable(String member) {
+		int semicolon = member.indexOf(';'), paren = member.indexOf('(');
+		if (!member.startsWith("L") || semicolon < 0 || paren < semicolon) return member;
+		return member.substring(1, semicolon).replace('/', '.') + "." + member.substring(semicolon + 1, paren);
 	}
 
 	/**
 	 * The handler renamed aside, and in its place a method with its name, descriptor (the full one, for a bare handler),
 	 * annotations and position that calls it only for the guard's action values.
 	 */
-	private static MethodNode guarded(ClassNode mixin, MethodNode handler, JoinedReturnExits.Values guard) {
+	private static MethodNode guarded(ClassNode mixin, MethodNode handler, JoinedReturnExits.Values guard, List<String> shares) {
 		boolean isStatic = (handler.access & Opcodes.ACC_STATIC) != 0;
-		MethodNode outer = new MethodNode(Opcodes.ASM9, handler.access, handler.name, HANDLER, null,
+		// The handler's own shape, then one MixinExtras @Share flag per decision exit it must not run after.
+		StringBuilder desc = new StringBuilder(HANDLER.substring(0, HANDLER.length() - 2));
+		for (int i = 0; i < shares.size(); i++) desc.append('L').append(FLAG).append(';');
+		desc.append(")V");
+		MethodNode outer = new MethodNode(Opcodes.ASM9, handler.access, handler.name, desc.toString(), null,
 				handler.exceptions == null ? null : handler.exceptions.toArray(new String[0]));
 		outer.visibleAnnotations = handler.visibleAnnotations;
 		outer.invisibleAnnotations = handler.invisibleAnnotations;
 		handler.visibleAnnotations = null;
 		handler.invisibleAnnotations = null;
 		Type[] parameters = Type.getArgumentTypes(HANDLER);
-		int[] slots = new int[parameters.length];
+		Type[] all = Type.getArgumentTypes(outer.desc);
+		int[] slots = new int[all.length];
 		int slot = isStatic ? 0 : 1;
-		for (int i = 0; i < parameters.length; i++) { slots[i] = slot; slot += parameters[i].getSize(); }
+		for (int i = 0; i < all.length; i++) { slots[i] = slot; slot += all[i].getSize(); }
+		if (!shares.isEmpty()) {
+			@SuppressWarnings("unchecked") List<AnnotationNode>[] table = new List[all.length];
+			for (int i = 0; i < shares.size(); i++) table[parameters.length + i] = new ArrayList<>(List.of(shareAnnotation(shares.get(i))));
+			outer.invisibleParameterAnnotations = table;
+			outer.invisibleAnnotableParameterCount = all.length;
+		}
 
 		LabelNode skip = new LabelNode();
-		int action = slots[guard.parameter()];
-		int[] constants = guard.constants();
-		if (guard.other()) {
+		for (int i = 0; i < shares.size(); i++) {
+			outer.instructions.add(new VarInsnNode(Opcodes.ALOAD, slots[parameters.length + i]));
+			outer.instructions.add(new MethodInsnNode(Opcodes.INVOKEINTERFACE, FLAG, "get", "()Z", true));
+			outer.instructions.add(new JumpInsnNode(Opcodes.IFNE, skip));
+		}
+		if (guard == null) {
+			// Only the decision exits to rule out: run.
+		} else if (guard.other()) {
+			int action = slots[guard.parameter()];
+			int[] constants = guard.constants();
 			for (int i = 0; i < constants.length; i++) if (!guard.allowed().get(i)) jumpIfEqual(outer.instructions, action, constants[i], skip);
 		} else {
+			int action = slots[guard.parameter()];
+			int[] constants = guard.constants();
 			LabelNode run = new LabelNode();
 			for (int i = 0; i < constants.length; i++) if (guard.allowed().get(i)) jumpIfEqual(outer.instructions, action, constants[i], run);
 			outer.instructions.add(new JumpInsnNode(Opcodes.GOTO, skip));

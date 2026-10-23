@@ -165,19 +165,25 @@ class BracketedTargetAdaptersStagedTest {
 			Map<String, String> sources = Map.of(
 					"com/zurrtum/create/client/mixin/KeyboardHandlerMixin.java", "package com.zurrtum.create.client.mixin; public class KeyboardHandlerMixin { public java.util.List<Boolean> calls=new java.util.ArrayList<>(); public Object event; private void onKey(net.minecraft.client.input.KeyEvent e,boolean p){event=e;calls.add(p);} }",
 					"net/minecraft/client/input/KeyEvent.java", "package net.minecraft.client.input; public class KeyEvent {}",
-					"org/spongepowered/asm/mixin/injection/callback/CallbackInfo.java", "package org.spongepowered.asm.mixin.injection.callback; public class CallbackInfo {}");
-			try (var loader = CreateGuestMixinFixture.executable(Files.createDirectories(scratch.resolve("create")), create, sources,
-					m -> m.desc.equals(MixinKeyActionAdapter.HANDLER))) {
+					"org/spongepowered/asm/mixin/injection/callback/CallbackInfo.java", "package org.spongepowered.asm.mixin.injection.callback; public class CallbackInfo {}",
+					"com/llamalad7/mixinextras/sugar/ref/LocalBooleanRef.java", "package com.llamalad7.mixinextras.sugar.ref; public interface LocalBooleanRef { boolean get(); void set(boolean v); }",
+					"fixture/Flag.java", "package fixture; public class Flag implements com.llamalad7.mixinextras.sugar.ref.LocalBooleanRef { public boolean on; public Flag(boolean on) { this.on = on; } public boolean get() { return on; } public void set(boolean v) { on = v; } }",
+					"fixture/Keep.java", "package fixture; public class Keep {}");
+			java.util.function.Predicate<MethodNode> guards = m -> m.desc.startsWith(MixinKeyActionAdapter.HANDLER.substring(0, MixinKeyActionAdapter.HANDLER.length() - 2));
+			try (var loader = CreateGuestMixinFixture.executable(Files.createDirectories(scratch.resolve("create")), create, sources, guards)) {
 				Class<?> type = loader.loadClass(create.name.replace('/', '.')), eventType = loader.loadClass("net.minecraft.client.input.KeyEvent"),
 						callbackType = loader.loadClass("org.spongepowered.asm.mixin.injection.callback.CallbackInfo");
+				Class<?> flagType = loader.loadClass("com.llamalad7.mixinextras.sugar.ref.LocalBooleanRef"), flagImpl = loader.loadClass("fixture.Flag");
 				Object receiver = type.getConstructor().newInstance(), event = eventType.getConstructor().newInstance();
-				var released = type.getMethod("onKeyReleased", long.class, int.class, eventType, callbackType);
-				var pressed = type.getMethod("onKey", long.class, int.class, eventType, callbackType);
-				for (int action : new int[] {0, 1, 2}) {
+				var released = type.getMethod("onKeyReleased", long.class, int.class, eventType, callbackType, flagType);
+				var pressed = type.getMethod("onKey", long.class, int.class, eventType, callbackType, flagType);
+				for (boolean global : new boolean[] {false, true}) for (int action : new int[] {0, 1, 2}) {
 					((List<?>) type.getField("calls").get(receiver)).clear();
-					released.invoke(receiver, 0L, action, event, null);
-					pressed.invoke(receiver, 0L, action, event, null);
-					assertEquals(action == 0 ? List.of() : List.of(false, true), type.getField("calls").get(receiver), "Create, action " + action);
+					Object flag = flagImpl.getConstructor(boolean.class).newInstance(global);
+					released.invoke(receiver, 0L, action, event, null, flag);
+					pressed.invoke(receiver, 0L, action, event, null, flag);
+					assertEquals(action == 0 || global ? List.of() : List.of(false, true), type.getField("calls").get(receiver),
+							"Create, action " + action + (global ? ", after a handled global key" : ""));
 				}
 			}
 			String inner = MixinHandlerShim.asideName(balm.name, "keyPress", MixinKeyActionAdapter.SUFFIX);
@@ -185,15 +191,20 @@ class BracketedTargetAdaptersStagedTest {
 					"net/blay09/mods/balm/fabric/internal/mixin/KeyboardHandlerMixin.java", "package net.blay09.mods.balm.fabric.internal.mixin; public class KeyboardHandlerMixin { public java.util.List<Integer> calls=new java.util.ArrayList<>(); private void "
 							+ inner + "(long w,int a,net.minecraft.client.input.KeyEvent e,org.spongepowered.asm.mixin.injection.callback.CallbackInfo c){calls.add(a);} }",
 					"net/minecraft/client/input/KeyEvent.java", "package net.minecraft.client.input; public class KeyEvent {}",
-					"org/spongepowered/asm/mixin/injection/callback/CallbackInfo.java", "package org.spongepowered.asm.mixin.injection.callback; public class CallbackInfo {}");
+					"org/spongepowered/asm/mixin/injection/callback/CallbackInfo.java", "package org.spongepowered.asm.mixin.injection.callback; public class CallbackInfo {}",
+					"com/llamalad7/mixinextras/sugar/ref/LocalBooleanRef.java", "package com.llamalad7.mixinextras.sugar.ref; public interface LocalBooleanRef { boolean get(); void set(boolean v); }",
+					"fixture/Flag.java", "package fixture; public class Flag implements com.llamalad7.mixinextras.sugar.ref.LocalBooleanRef { public boolean on; public Flag(boolean on) { this.on = on; } public boolean get() { return on; } public void set(boolean v) { on = v; } }",
+					"fixture/Keep.java", "package fixture; public class Keep {}");
 			try (var loader = CreateGuestMixinFixture.executable(Files.createDirectories(scratch.resolve("balm")), balm, balmSources,
-					m -> m.name.equals("keyPress") && m.desc.equals(MixinKeyActionAdapter.HANDLER))) {
+					m -> m.name.equals("keyPress") && guards.test(m))) {
 				Class<?> type = loader.loadClass(balm.name.replace('/', '.')), eventType = loader.loadClass("net.minecraft.client.input.KeyEvent"),
 						callbackType = loader.loadClass("org.spongepowered.asm.mixin.injection.callback.CallbackInfo");
+				Class<?> flagType = loader.loadClass("com.llamalad7.mixinextras.sugar.ref.LocalBooleanRef"), flagImpl = loader.loadClass("fixture.Flag");
 				Object receiver = type.getConstructor().newInstance(), event = eventType.getConstructor().newInstance();
-				var tail = type.getMethod("keyPress", long.class, int.class, eventType, callbackType);
-				for (int action : new int[] {0, 1, 2}) tail.invoke(receiver, 0L, action, event, null);
-				assertEquals(List.of(1, 2), type.getField("calls").get(receiver), "Balm's TAIL: press and repeat, never release");
+				var tail = type.getMethod("keyPress", long.class, int.class, eventType, callbackType, flagType);
+				for (boolean global : new boolean[] {false, true})
+					for (int action : new int[] {0, 1, 2}) tail.invoke(receiver, 0L, action, event, null, flagImpl.getConstructor(boolean.class).newInstance(global));
+				assertEquals(List.of(1, 2), type.getField("calls").get(receiver), "Balm's TAIL: press and repeat, never release, never after a handled global key");
 			}
 		}
 	}

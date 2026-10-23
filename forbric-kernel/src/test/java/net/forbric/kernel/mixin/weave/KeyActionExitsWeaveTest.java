@@ -26,8 +26,10 @@ import net.forbric.kernel.mixin.MixinKeyActionAdapter;
  * {@code TAIL}. The native body is a stand-in with vanilla 26.2's six returns in vanilla's order; the game body joins
  * the global key, the release and the press into one {@code ClientHooks.onKeyInput} call before its final return.
  *
- * <p>The probe presses, repeats and releases one key. The native run is the reference: ordinal 4 is the release, and
- * ordinal 5 and TAIL are the final return, which a release never reaches. Adapted, the game run hears exactly that —
+ * <p>The probe presses, repeats and releases one key, then presses a global key, which the game handles at once. The
+ * native run is the reference: ordinal 4 is the release, and ordinal 5 and TAIL are the final return, which a release
+ * never reaches, nor a global key (natively keyPress returns right after its handler answers true; the game body sends it
+ * into NeoForge's join, and the final hooks are guarded by that answer, seen where it is made). Adapted, the game run hears exactly that —
  * with NeoForge's event in between. With {@code -Dforbric.keyActionCallbacks=off} both ordinal hooks find no return
  * of their number and are lost, and TAIL also hears the release.
  */
@@ -38,14 +40,15 @@ class KeyActionExitsWeaveTest {
 	private static final String TARGET = "net/minecraft/client/KeyboardHandler";
 
 	private static final String NATIVE = WeaveHarnessMain.DONE + " 1=[keyecho final G, keyecho tail] | 2=[keyecho final G,"
-			+ " keyecho tail] | 0=[keyecho release G]";
+			+ " keyecho tail] | 0=[keyecho release G] | global=[]";
 	private static final String ADAPTED = WeaveHarnessMain.DONE + " 1=[neoforge G1, keyecho final G, keyecho tail]"
-			+ " | 2=[neoforge G2, keyecho final G, keyecho tail] | 0=[keyecho release G, neoforge G0]";
+			+ " | 2=[neoforge G2, keyecho final G, keyecho tail] | 0=[keyecho release G, neoforge G0] | global=[neoforge F21]";
 	/** MixinReturnOrdinals on its own: the final return re-counted, the release hook lost, the release heard at the final return. */
 	private static final String RETURN_ORDINALS_ONLY = WeaveHarnessMain.DONE + " 1=[neoforge G1, keyecho final G, keyecho tail]"
-			+ " | 2=[neoforge G2, keyecho final G, keyecho tail] | 0=[neoforge G0, keyecho final G, keyecho tail]";
+			+ " | 2=[neoforge G2, keyecho final G, keyecho tail] | 0=[neoforge G0, keyecho final G, keyecho tail]"
+			+ " | global=[neoforge F21, keyecho final F2, keyecho tail]";
 	private static final String UNADAPTED = WeaveHarnessMain.DONE + " 1=[neoforge G1, keyecho tail]"
-			+ " | 2=[neoforge G2, keyecho tail] | 0=[neoforge G0, keyecho tail]";
+			+ " | 2=[neoforge G2, keyecho tail] | 0=[neoforge G0, keyecho tail] | global=[neoforge F21, keyecho tail]";
 
 	@TempDir static Path work;
 	private static Path fixture;
@@ -92,7 +95,7 @@ class KeyActionExitsWeaveTest {
 	@Test void theGameHearsEachActionWhereTheNativeBodyDoes() throws Exception {
 		assertTrue(nativeRun.printedLine(NATIVE), nativeRun.describe());
 		assertTrue(adaptedHolds(adapted), adapted.describe() + "\nfindings " + adapted.findings());
-		assertEquals(trail(NATIVE), trail(ADAPTED).replaceAll("neoforge G\\d(, )?", "").replace(", ]", "]"),
+		assertEquals(trail(NATIVE), trail(ADAPTED).replaceAll("neoforge (G|F2)\\d(, )?", "").replace(", ]", "]"),
 				"apart from NeoForge's event, the adapted trail is the native one");
 		WeaveHarness.assertWovenAndVerified(adapted, TARGET, fixture);
 	}

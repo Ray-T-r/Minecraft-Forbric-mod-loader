@@ -13,6 +13,9 @@ public class Probe {
 			keyboard.keyCallback(7L, action, g);
 			out.append(out.isEmpty() ? "" : " | ").append(action).append("=[").append(Trail.drain()).append(']');
 		}
+		// A global key's press, which the game handles at once: natively keyPress returns right there.
+		keyboard.keyCallback(7L, 1, new KeyEvent("F2"));
+		out.append(" | global=[").append(Trail.drain()).append(']');
 		return out.toString();
 	}
 }

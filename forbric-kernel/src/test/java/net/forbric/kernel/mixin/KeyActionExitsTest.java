@@ -177,7 +177,13 @@ class KeyActionExitsTest {
 		assertPoint(mixin, "heardRelease", "INVOKE", MixinKeyActionAdapter.LIVE, 0);
 		assertPoint(mixin, "heardFinal", "TAIL", null, null);
 		assertPoint(mixin, "heardTail", "TAIL", null, null);
-		assertEquals(MixinKeyActionAdapter.HANDLER, method(mixin, "heardTail").desc, "a bare TAIL handler is wrapped with the full arguments");
+		assertEquals(MixinKeyActionAdapter.HANDLER.replace(")V", "Lcom/llamalad7/mixinextras/sugar/ref/LocalBooleanRef;)V"), method(mixin, "heardTail").desc,
+				"a bare TAIL handler is wrapped with the full arguments, and the global key's share");
+		JoinedReturnExits exits = exits(original, current);
+		assertEquals(1, exits.decisionExits().size(), "the global key: natively a return on its own answer, merged a jump into the join");
+		assertEquals(1, exits.decisionExits().getFirst().ordinal());
+		assertEquals("Lnet/minecraft/client/KeyboardHandler;global(Lnet/minecraft/client/input/KeyEvent;)Z", exits.decisionExits().getFirst().member());
+		assertTrue(exits.decisionExits().getFirst().nonZero());
 		for (var entry : untouched.entrySet()) assertArrayEquals(entry.getValue(), bytes(method(mixin, entry.getKey())), entry.getKey() + " is untouched");
 		CarpetMixinAdapterTest.verify(mixin);
 
@@ -186,6 +192,10 @@ class KeyActionExitsTest {
 		assertEquals(List.of(1, 2, 7), heard.get("heardFinal"), "the final return runs on press, repeat and anything else");
 		assertEquals(List.of(1, 2, 7), heard.get("heardTail"));
 		assertEquals(List.of(0, 1, 2, 7), heard.get("heardGlobal"), "an unproved exit keeps its body unguarded");
+		Map<String, List<Integer>> afterGlobal = heard(mixin, true, "heardRelease", "heardFinal", "heardTail");
+		assertEquals(List.of(0), afterGlobal.get("heardRelease"), "the release exit has no share to read");
+		assertEquals(List.of(), afterGlobal.get("heardFinal"), "natively a handled global key never reaches the final return");
+		assertEquals(List.of(), afterGlobal.get("heardTail"));
 
 		assertEquals(0, MixinKeyActionAdapter.adapt(mixin, n -> current, (family, n) -> original), "idempotent");
 		ClassNode reread = MixinFit.parse(bytes(mixin));
@@ -406,6 +416,14 @@ class KeyActionExitsTest {
 
 	/** For each named (outer) handler, the actions among 0, 1, 2 and 7 for which its original body ran. */
 	private Map<String, List<Integer>> heard(ClassNode mixin, String... names) throws Exception {
+		return heard(mixin, false, names);
+	}
+
+	/**
+	 * The same, with every decision exit's share handed to a guard set as {@code taken} says — true: the call that natively
+	 * returned early (the global key) answered so on this call.
+	 */
+	private Map<String, List<Integer>> heard(ClassNode mixin, boolean taken, String... names) throws Exception {
 		// Read with its frames, so the JVM verifies the wrappers' own stack map frames.
 		ClassNode runnable = new ClassNode();
 		new org.objectweb.asm.ClassReader(bytes(mixin)).accept(runnable, 0);
@@ -413,7 +431,9 @@ class KeyActionExitsTest {
 		ClassWriter writer = new ClassWriter(ClassWriter.COMPUTE_MAXS);
 		runnable.accept(writer);
 		byte[] code = writer.toByteArray();
-		Path events = compile("events", Map.of("net/minecraft/client/input/KeyEvent.java", EVENT));
+		Path events = compile("events", Map.of("net/minecraft/client/input/KeyEvent.java", EVENT,
+				"com/llamalad7/mixinextras/sugar/ref/LocalBooleanRef.java", "package com.llamalad7.mixinextras.sugar.ref; public interface LocalBooleanRef { boolean get(); void set(boolean v); }",
+				"fixture/Flag.java", "package fixture; public class Flag implements com.llamalad7.mixinextras.sugar.ref.LocalBooleanRef { boolean on; public Flag(boolean on) { this.on = on; } public boolean get() { return on; } public void set(boolean v) { on = v; } }"));
 		try (var loader = new java.net.URLClassLoader(new java.net.URL[] {events.toUri().toURL()}, getClass().getClassLoader()) {
 			{ defineClass(mixin.name.replace('/', '.'), code, 0, code.length); }
 		}) {
@@ -425,9 +445,14 @@ class KeyActionExitsTest {
 			Map<String, List<Integer>> heard = new HashMap<>();
 			for (String name : names) {
 				List<Integer> actions = new ArrayList<>();
+				java.lang.reflect.Method method = java.util.Arrays.stream(type.getMethods()).filter(m -> m.getName().equals(name)).findFirst().orElseThrow();
 				for (int action : new int[] {0, 1, 2, 7}) {
 					log.clear();
-					type.getMethod(name, long.class, int.class, event, callback).invoke(receiver, 0L, action, key, null);
+					List<Object> arguments = new ArrayList<>(java.util.Arrays.asList(0L, action, key, null));
+					// Every share flag the guard reads: what the decision exits' observers set on this call.
+					while (arguments.size() < method.getParameterCount())
+						arguments.add(loader.loadClass("fixture.Flag").getConstructor(boolean.class).newInstance(taken));
+					method.invoke(receiver, arguments.toArray());
 					if (!log.isEmpty()) actions.add(action);
 				}
 				heard.put(name, actions);
