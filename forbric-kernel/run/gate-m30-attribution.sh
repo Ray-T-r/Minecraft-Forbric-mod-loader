@@ -61,7 +61,7 @@ stage() { # stage <include-canaries>
 boot() { # boot <log>
   local log="$1"
   : > "$log"
-  ( sleep 30; echo stop ) | FORBRIC_JVM="${FORBRIC_JVM:-} ${M30_EXTRA_JVM:-}" RUNDIR="$RUNDIR" "$KERNEL/run/launch-kernel-server.sh" > "$log" 2>&1 &
+  ( stop_when_ready "$log" 30 ) | FORBRIC_JVM="${FORBRIC_JVM:-} ${M30_EXTRA_JVM:-}" RUNDIR="$RUNDIR" "$KERNEL/run/launch-kernel-server.sh" > "$log" 2>&1 &
   local pid=$!
   record_server_pid "$RUNDIR" "$pid"
   await_server "$pid" "$log" 130

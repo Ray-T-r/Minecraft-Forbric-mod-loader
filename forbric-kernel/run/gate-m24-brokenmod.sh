@@ -60,7 +60,7 @@ boot() { # boot <log> <policy> [expect-policy-stop]
       # No sleeping stdin feeder may outlive an early policy stop and look like a leaked server process.
       launch </dev/null
     else
-      ( sleep 30; echo stop ) | launch
+      ( stop_when_ready "$log" 30 ) | launch
     fi
     code=$?
     printf '%s\n' "$code" > "$log.exit"

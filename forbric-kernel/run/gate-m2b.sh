@@ -51,7 +51,7 @@ echo "[kernel] staged: $(ls -1 "$RUNDIR/mods" | tr '\n' ' ')"
 
 step "boot the merged base under the kernel"
 : > "$LOG"
-( sleep 40; echo stop ) | RUNDIR="$RUNDIR" FORBRIC_JVM="${FORBRIC_JVM:-} ${M2B_EXTRA_JVM:-}" \
+( stop_when_ready "$LOG" 40 ) | RUNDIR="$RUNDIR" FORBRIC_JVM="${FORBRIC_JVM:-} ${M2B_EXTRA_JVM:-}" \
   "$KERNEL/run/launch-kernel-server.sh" > "$LOG" 2>&1 &
 BOOTPID=$!
 record_server_pid "$RUNDIR" "$BOOTPID"

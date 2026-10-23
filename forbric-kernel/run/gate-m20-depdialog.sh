@@ -149,7 +149,7 @@ step "the dedicated server must report it, open nothing, and stop exactly as its
 # ABSENCE of a fork -- and that absence is also produced by launch-kernel-server.sh's -Djava.awt.headless=true,
 # so the assertion would stay green with the side check deleted. Asserting the line names WHICH guard fired.
 (
-  ( sleep 25; echo stop ) | FORBRIC_COMPAT_POLICY=strict FORBRIC_JVM="-Dforbric.debug=true" \
+  ( stop_when_ready "$SLOG" 25 ) | FORBRIC_COMPAT_POLICY=strict FORBRIC_JVM="-Dforbric.debug=true" \
     RUNDIR="$SRV" "$KERNEL/run/launch-kernel-server.sh"
   code=$?
   printf '%s\n' "$code" > "$SLOG.exit"

@@ -59,7 +59,7 @@ boot() { # boot <log> <policy> [expect-policy-stop]
     if [ "$mode" = "expect-policy-stop" ]; then
       launch </dev/null
     else
-      ( sleep 30; echo stop ) | launch
+      ( stop_when_ready "$log" 30 ) | launch
     fi
     code=$?
     printf '%s\n' "$code" > "$log.exit"

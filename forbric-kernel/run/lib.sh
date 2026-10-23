@@ -323,6 +323,53 @@ reap_stale_server() {
 
 record_server_pid() { echo "$2" > "$(_pidfile "$1")"; }
 
+# server_ready <server-log> <seconds> [settle-seconds] — return once <seconds> have passed AND the server has printed
+# "Done (", so a console line written now is one it can run; return 1 instead when the log says the server is gone
+# or going without ever getting there, when the log has not grown for STOP_READY_STALL (default 60) seconds, or after
+# STOP_READY_CAP (default 150) more seconds without either.
+#
+# The give-ups matter because a gate waits for its whole pipeline: await_server's `wait` on the server's pid returns
+# only when the feeder on the other end of the pipe has finished too, so a feeder still polling for a Done that a
+# refused launch (the policy stops gate-m19 and gate-m24 provoke on purpose) will never print would hold the gate
+# for the full cap. Every way the kernel, the launcher or the game ends a boot early says so in the log, and those
+# lines end the wait at once; the stall is for a death nothing announced.
+# stop_when_ready <server-log> <seconds> [settle-seconds] — server_ready, then "stop": what a gate pipes into its
+# server's stdin in place of `sleep <seconds>; echo stop`.
+#
+# The dedicated server's console thread builds a command's source when it READS the line, not when it runs it:
+# DedicatedServer$1 calls createCommandSourceStack(), which takes findRespawnDimension() and so overworld() as it is
+# at that moment. initServer starts that thread before loadLevel, so a line read during the boot gets a source with no
+# level, and running it on the first tick throws in Commands.executeCommandInContext (context.getLevel().getGameRules()).
+# Vanilla 26.2, MinecraftForge's and NeoForge's bodies and the merged one are the same instructions there; the server
+# prints "An unexpected error occurred while trying to execute that command" and runs on. A gate that fed "stop" on a
+# fixed timer therefore went red as "never announced a stop" whenever the machine was loaded enough that the boot
+# outlasted the timer (measured: gate-m3 with a 28 s boot against its 22 s timer). With a boot inside the timer this
+# writes the line at the same moment the timer did; only a slower boot moves it, to <settle> (default 5) seconds after
+# "Done (", so what the gate wanted to see run after the boot still gets some ticks.
+server_ready() {
+  local log="$1" seconds="$2" settle="${3:-5}" cap="${STOP_READY_CAP:-150}" stall="${STOP_READY_STALL:-60}"
+  local waited=0 still=0 size last=-1
+  sleep "$seconds"
+  until grep -aq 'Done (' "$log" 2>/dev/null; do
+    # Gone or going: a line written now would only meet a closed pipe (and a pipeline under pipefail would report it).
+    # The game's own stop and crash lines, every "launch stopped" the kernel prints when it refuses a launch, the
+    # launcher's refusal, and a JVM that died before the game started.
+    grep -aqE 'Stopping server|Failed to start the minecraft server|Encountered an unexpected exception|launch stopped|\[kernel-launch\] FATAL|Exception in thread "main"|Error occurred during initialization of VM|Could not find or load main class' \
+      "$log" 2>/dev/null && return 1
+    [ "$waited" -ge "$cap" ] && return 1
+    size=$(wc -c < "$log" 2>/dev/null || echo 0)
+    if [ "$size" = "$last" ]; then still=$((still + 1)); else still=0; last=$size; fi
+    [ "$still" -ge "$stall" ] && return 1
+    sleep 1; waited=$((waited + 1))
+  done
+  [ "$waited" -eq 0 ] || sleep "$settle"
+  return 0
+}
+stop_when_ready() {
+  server_ready "$@" && echo stop
+  return 0
+}
+
 # await_server <pid> <log> [limit-seconds] [grace-seconds] — wait for a clean stop, then guarantee it is gone.
 # Bounded on purpose: a hung server costs the timeout, not the afternoon.
 await_server() {

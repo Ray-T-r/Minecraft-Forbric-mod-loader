@@ -10,7 +10,7 @@ NEO_RT="${NEO_RT:-$RUN_OLD/neoforge-runtime/neoforge-runtime.jar}"
 export MERGED FORGE_RT NEO_RT
 if [ "${1:-}" = --execute ]; then
   RUNDIR="$2"
-  (sleep 35; echo stop) | RUNDIR="$RUNDIR" FORBRIC_COMPAT_POLICY=strict "$KERNEL/run/launch-kernel-server.sh"
+  ( stop_when_ready "$RUNDIR/inputs.log" 35 ) | RUNDIR="$RUNDIR" FORBRIC_COMPAT_POLICY=strict "$KERNEL/run/launch-kernel-server.sh"
   exit "$?"
 fi
 kernel_jar

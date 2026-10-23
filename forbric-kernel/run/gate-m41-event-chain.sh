@@ -166,7 +166,7 @@ run_server() {
   echo "eula=true" > "$SERVER_DIR/eula.txt"
   seed_server_properties "$SERVER_DIR"
   printf 'level-name=world\nlevel-type=minecraft:flat\ngenerate-structures=false\nmax-tick-time=-1\npause-when-empty-seconds=0\nonline-mode=false\n' >> "$SERVER_DIR/server.properties"
-  ( sleep 200; echo stop ) | RUNDIR="$SERVER_DIR" \
+  ( stop_when_ready "$RESULTS/$phase.log" 200 ) | RUNDIR="$SERVER_DIR" \
     FORBRIC_JVM="-Dforbric.eventChainAudit=$RESULTS/$phase.json -Dforbric.chainProbe.output=$RESULTS/$phase-probe.json $extra" \
     "$KERNEL/run/launch-kernel-server.sh" > "$RESULTS/$phase.log" 2>&1 &
   pid=$!; record_server_pid "$SERVER_DIR" "$pid"

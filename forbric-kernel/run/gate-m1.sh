@@ -23,9 +23,9 @@ rm -rf "$RUNDIR/mods" 2>/dev/null; mkdir -p "$RUNDIR/mods"  # genuinely zero-mod
 seed_server_properties "$RUNDIR"
 : > "$LOG"
 # Feed "stop" once the server has actually reached Done and ticked a little, then let it shut down gracefully.
-# A fixed timer raced: if boot happens to finish right at the deadline, "stop" lands on the Done boundary (the
-# permission handler is still initialising) and the command dies with "An unexpected error occurred while trying to
-# execute that command" — the server then never stops and the gate burns its whole 90s poll before the hammer.
+# A fixed timer raced: a "stop" the console thread reads before the overworld exists gets a source with no level and
+# dies on the first tick with "An unexpected error occurred while trying to execute that command" (vanilla 26.2 too;
+# see server_ready in lib.sh) — the server then never stops and the gate burns its whole 90s poll before the hammer.
 (
   for i in $(seq 1 90); do
     grep -q 'Done (' "$LOG" 2>/dev/null && break

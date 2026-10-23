@@ -150,7 +150,7 @@ check_probe() {
 
 step "boot both Forge families in one instance"
 : > "$LOG"
-( sleep 30; probe_commands; sleep 3; echo stop ) | FORBRIC_JVM="${FORBRIC_JVM:-} ${M21_EXTRA_JVM:-}" RUNDIR="$RUNDIR" "$KERNEL/run/launch-kernel-server.sh" > "$LOG" 2>&1 &
+( server_ready "$LOG" 30 && { probe_commands; sleep 3; echo stop; } ) | FORBRIC_JVM="${FORBRIC_JVM:-} ${M21_EXTRA_JVM:-}" RUNDIR="$RUNDIR" "$KERNEL/run/launch-kernel-server.sh" > "$LOG" 2>&1 &
 BOOTPID=$!
 record_server_pid "$RUNDIR" "$BOOTPID"
 await_server "$BOOTPID" "$LOG" 130

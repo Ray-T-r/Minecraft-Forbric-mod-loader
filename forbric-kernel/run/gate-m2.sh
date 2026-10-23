@@ -27,7 +27,7 @@ mkdir -p "$RUNDIR/mods"
 cp "$CANARY" "$RUNDIR/mods/"
 seed_server_properties "$RUNDIR"
 : > "$LOG"
-( sleep 22; echo stop ) | FORBRIC_JVM="-Dforbric.debug=true" "$KERNEL/run/launch-kernel-server.sh" > "$LOG" 2>&1 &
+( stop_when_ready "$LOG" 22 ) | FORBRIC_JVM="-Dforbric.debug=true" "$KERNEL/run/launch-kernel-server.sh" > "$LOG" 2>&1 &
 BOOTPID=$!
 record_server_pid "$RUNDIR" "$BOOTPID"
 await_server "$BOOTPID" "$LOG" 90

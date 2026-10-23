@@ -42,7 +42,7 @@ echo "[kernel] staged: $(ls -1 "$RUNDIR/mods" | tr '\n' ' ')"
 boot() { # boot <log> [extra jvm flags]
   local log="$1"; shift
   : > "$log"
-  ( sleep 30; echo stop ) | RUNDIR="$RUNDIR" FORBRIC_JVM="${*:-}" "$KERNEL/run/launch-kernel-server.sh" > "$log" 2>&1 &
+  ( stop_when_ready "$log" 30 ) | RUNDIR="$RUNDIR" FORBRIC_JVM="${*:-}" "$KERNEL/run/launch-kernel-server.sh" > "$log" 2>&1 &
   local pid=$!
   record_server_pid "$RUNDIR" "$pid"
   await_server "$pid" "$log" 130

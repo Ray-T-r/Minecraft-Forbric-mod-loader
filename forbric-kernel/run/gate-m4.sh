@@ -205,7 +205,7 @@ step "negative control: the same instance with -Dforbric.unifiedEvents=off"
 CONTROL="$BUILD/gate-m4-control.log"
 reap_stale_server "$RUNDIR"
 rm -rf "$RUNDIR/world" "$RUNDIR/.forbric-kernel" 2>/dev/null
-( sleep 30; echo stop ) | RUNDIR="$RUNDIR" FORBRIC_JVM="-Dforbric.unifiedEvents=off" \
+( stop_when_ready "$CONTROL" 30 ) | RUNDIR="$RUNDIR" FORBRIC_JVM="-Dforbric.unifiedEvents=off" \
   "$KERNEL/run/launch-kernel-server.sh" > "$CONTROL" 2>&1 &
 CTLPID=$!
 record_server_pid "$RUNDIR" "$CTLPID"
