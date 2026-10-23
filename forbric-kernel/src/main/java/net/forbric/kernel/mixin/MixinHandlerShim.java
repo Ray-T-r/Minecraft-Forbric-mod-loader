@@ -366,6 +366,59 @@ public final class MixinHandlerShim {
 		return handlerName + suffix + "$" + Integer.toHexString(mixinName.hashCode());
 	}
 
+	/** {@code off} leaves a body a rule set aside under its plain {@code $forbricOriginal} name. */
+	public static final String MARK_PROPERTY = "forbric.mixinAsideMarks";
+
+	/**
+	 * Gives every body a rule set aside under the shared {@code $forbricOriginal} name its mixin's mark, as
+	 * {@link #asideName} would have named it, and points the mixin's own calls and method handles at the new name; returns
+	 * how many it renamed.
+	 *
+	 * <p>The rules that keep a mod's handler as a plain method under a wrapper of its own ({@link CarrierDecisions},
+	 * {@link UncalledDecisionEntries}, the carrier callback adapters, …) name that body {@code handler$forbricOriginal}. Mixin
+	 * merges a plain method into the target by name, so two mixins on one target whose handlers share a name — two mods,
+	 * or two mixins of one mod — merged one body ("Method overwrite conflict … Skipping method"), and the second wrapper called
+	 * the first mixin's body: the second mod's hook never ran, and when the first was cancellable and the second not, the
+	 * call threw. Run once, after every rule, on the node Mixin receives; an injector handler is left alone (Mixin gives
+	 * each one a name of its own). {@code -Dforbric.mixinAsideMarks=off} renames nothing.
+	 */
+	public static int markAsides(ClassNode mixin) {
+		if (mixin == null || mixin.methods == null || "off".equalsIgnoreCase(System.getProperty(MARK_PROPERTY, "on"))) return 0;
+		String mark = "$" + Integer.toHexString(mixin.name.hashCode());
+		Map<String, String> renamed = new HashMap<>();
+		java.util.Set<String> taken = new java.util.HashSet<>();
+		for (MethodNode method : mixin.methods) taken.add(method.name + method.desc);
+		for (MethodNode method : mixin.methods) {
+			if (!method.name.endsWith(CarrierDecisions.SUFFIX) || MixinFit.injectorOf(method) != null) continue;
+			String to = method.name + mark;
+			if (!taken.add(to + method.desc)) continue;
+			renamed.put(method.name + method.desc, to);
+		}
+		if (renamed.isEmpty()) return 0;
+		for (MethodNode method : mixin.methods) {
+			String to = renamed.get(method.name + method.desc);
+			if (to != null) method.name = to;
+			if (method.instructions == null) continue;
+			for (org.objectweb.asm.tree.AbstractInsnNode instruction : method.instructions) {
+				if (instruction instanceof MethodInsnNode call && call.owner.equals(mixin.name)) {
+					String target = renamed.get(call.name + call.desc);
+					if (target != null) call.name = target;
+				} else if (instruction instanceof org.objectweb.asm.tree.InvokeDynamicInsnNode indy) {
+					for (int i = 0; i < indy.bsmArgs.length; i++)
+						if (indy.bsmArgs[i] instanceof org.objectweb.asm.Handle handle) indy.bsmArgs[i] = marked(handle, mixin.name, renamed);
+				} else if (instruction instanceof org.objectweb.asm.tree.LdcInsnNode ldc && ldc.cst instanceof org.objectweb.asm.Handle handle) {
+					ldc.cst = marked(handle, mixin.name, renamed);
+				}
+			}
+		}
+		return renamed.size();
+	}
+
+	private static org.objectweb.asm.Handle marked(org.objectweb.asm.Handle handle, String owner, Map<String, String> renamed) {
+		String target = handle.getOwner().equals(owner) ? renamed.get(handle.getName() + handle.getDesc()) : null;
+		return target == null ? handle : new org.objectweb.asm.Handle(handle.getTag(), owner, target, handle.getDesc(), handle.isInterface());
+	}
+
 	/**
 	 * A generated method's call to one of its own mixin's methods. A mixin onto an interface is itself an interface,
 	 * and the JVM links a call to an interface's method only through an InterfaceMethodref — a plain Methodref

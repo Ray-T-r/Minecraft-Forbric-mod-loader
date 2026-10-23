@@ -528,6 +528,9 @@ public final class ForbricMixinService
 		// …and a NeoForge or MinecraftForge mod's TAIL on a method whose early returns the kernel restored keeps every
 		// return its own loader's folded body sent there. After the rebind: it reads the injector's final target.
 		MixinNativeTail.adapt(node, this::mergedBaseNodeWithCode);
+		// …and, after every rule that sets a handler's body aside, each such body is named for its own mixin: Mixin merges it into
+		// the target by name, and two mixins whose handlers share a name would otherwise share one body.
+		MixinHandlerShim.markAsides(node);
 		// …and an @Inject the adapter found Mixin would reject outright ("Invalid descriptor", which fails the whole mixin)
 		// is taken out, after every adapter above has had its say and only while the same rule still says so of this
 		// node, so the rest of the mixin applies. Before remember: the ledger must not expect a handler that is gone. With

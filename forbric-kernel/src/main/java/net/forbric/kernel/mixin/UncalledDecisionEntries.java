@@ -67,7 +67,8 @@ import net.forbric.kernel.util.ForbricLog;
  *       one operand of the carrier's call, the same value on every path ({@link Symbolic}: both bodies as trees of tests over
  *       their inputs, compared whole) — and no call of the carrier's decision discards its answer.</li>
  * </ul>
- * The handler keeps its body under its name with {@code $forbricOriginal} appended, without the annotation. A new handler per
+ * The handler keeps its body under its name with {@code $forbricOriginal} appended (and, once every rule has run, its mixin's
+ * mark: {@link MixinHandlerShim#markAsides}), without the annotation. A new handler per
  * host, a MixinExtras {@code @WrapOperation} of every call of the carrier's decision there, hands it the native arguments from
  * the call's operands and a fresh callback (cancellable as the injector was); a cancelled callback answers the call with its
  * value, otherwise the carrier's call is made as it was. {@code -Dforbric.uncalledDecisionEntries=off} moves nothing.
@@ -141,7 +142,15 @@ public final class UncalledDecisionEntries {
 					continue;
 				}
 				String name = handler.name;
-				if (!apply(mixin, handler, injector, decision, entries, code)) continue;
+				String failed = apply(mixin, handler, injector, decision, entries, code);
+				if (failed != null) {
+					// The plan proved the injector never runs where it binds and must move; a move that cannot be made loses a hook.
+					ForbricLog.warn("[Forbric/Mixin] %s.%s: %s.%s never runs for this mod's ecosystem, and its HEAD injector was to wrap the "
+									+ "carrier's decision in %s, but the move could not be made — %s; it stays where it binds, where nothing runs it",
+							mixin.name.replace('/', '.'), name, target.replace('/', '.'), decision.name,
+							String.join(", ", entries.stream().map(entry -> entry.host().name + entry.host().desc).toList()), failed);
+					continue;
+				}
 				moved++;
 				for (Entry entry : entries) {
 					ForbricLog.info("[Forbric/Mixin] %s.%s: %s.%s is no longer called; the carrier decides with %s.%s in %s where the native %s "
@@ -317,15 +326,20 @@ public final class UncalledDecisionEntries {
 	// ---------------------------------------------------------------------------------------------------------------
 	// The move
 
-	private static boolean apply(ClassNode mixin, MethodNode handler, AnnotationNode injector, MethodNode decision, List<Entry> entries,
+	/** Moves the injector; null when it moved, otherwise why it could not (and nothing of the mixin changed). */
+	private static String apply(ClassNode mixin, MethodNode handler, AnnotationNode injector, MethodNode decision, List<Entry> entries,
 			Function<String, ClassNode> code) {
+		// The body keeps the handler's name with the rule's suffix; MixinHandlerShim.markAsides gives it the mixin's mark once
+		// every rule has run, so a second mixin's same-named handler keeps a body of its own in the target.
 		String name = handler.name, original = name + CarrierDecisions.SUFFIX;
-		for (MethodNode other : mixin.methods) if (other.name.equals(original) || other.name.startsWith(name + SUFFIX)) return false;
+		for (MethodNode other : mixin.methods)
+			if (other.name.equals(original) || other.name.startsWith(name + SUFFIX)) return "the mixin already declares " + other.name;
 		boolean cancellable = Boolean.TRUE.equals(MixinFit.value(injector, "cancellable"));
 		List<MethodNode> wrappers = new ArrayList<>();
 		for (int i = 0; i < entries.size(); i++) {
-			MethodNode wrapper = wrapper(mixin, handler, original, decision, entries.get(i), cancellable, name + SUFFIX + (i == 0 ? "" : Integer.toString(i)), code);
-			if (wrapper == null) return false;
+			StringBuilder why = new StringBuilder();
+			MethodNode wrapper = wrapper(mixin, handler, original, decision, entries.get(i), cancellable, name + SUFFIX + (i == 0 ? "" : Integer.toString(i)), code, why);
+			if (wrapper == null) return "the wrapper of " + entries.get(i).carrier().name + " in " + entries.get(i).host().name + " " + why;
 			wrappers.add(wrapper);
 		}
 		boolean visible = handler.visibleAnnotations != null && handler.visibleAnnotations.remove(injector);
@@ -342,7 +356,7 @@ public final class UncalledDecisionEntries {
 			CurrentBodyOrdinals.mark(wrapper);
 			mixin.methods.add(wrapper);
 		}
-		return true;
+		return null;
 	}
 
 	/**
@@ -350,7 +364,7 @@ public final class UncalledDecisionEntries {
 	 * the assignment names, the callback's value when it was cancelled, else the carrier's call through the operation.
 	 */
 	private static MethodNode wrapper(ClassNode mixin, MethodNode handler, String original, MethodNode decision, Entry entry, boolean cancellable,
-			String name, Function<String, ClassNode> code) {
+			String name, Function<String, ClassNode> code, StringBuilder why) {
 		MethodInsnNode carrier = entry.carrier();
 		Type answer = Type.getReturnType(decision.desc);
 		List<Type> operands = CarrierDecisions.operandTypes(carrier);
@@ -406,10 +420,15 @@ public final class UncalledDecisionEntries {
 		try {
 			new Analyzer<>(new BasicVerifier()).analyze(mixin.name, wrapper);
 		} catch (AnalyzerException | RuntimeException unverifiable) {
-			Caught.expected(unverifiable);
+			// The kernel's own generated code failing its verifier is a defect of this rule, not a shape it declines.
+			Caught.warn(unverifiable, "[Forbric/Mixin] %s.%s: the wrapper this rule generated for %s in %s does not verify",
+					mixin.name.replace('/', '.'), handler.name, entry.carrier().name, entry.host().name);
+			why.append("does not verify (").append(unverifiable.getMessage()).append(')');
 			return null;
 		}
-		return CarrierDefaultChains.framed(mixin, wrapper, code) ? wrapper : null;
+		if (CarrierDefaultChains.framed(mixin, wrapper, code)) return wrapper;
+		why.append("could not be given stack map frames");
+		return null;
 	}
 
 	private static AbstractInsnNode intConstant(int value) {
