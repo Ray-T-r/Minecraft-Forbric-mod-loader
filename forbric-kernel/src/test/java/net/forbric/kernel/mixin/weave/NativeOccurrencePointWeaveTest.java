@@ -40,6 +40,9 @@ import net.forbric.kernel.mixin.NativeOccurrences;
  * <li>C — a MixinExtras expression; the carrier evaluates the same expression again as an argument of its own hook;</li>
  * <li>D — an unnumbered call point the carrier copied into two exclusive branches: it still runs once on either branch;</li>
  * <li>E — a numbered call point; the carrier calls the same method once more in front of it.</li>
+ * <li>F — an unnumbered call point the carrier hands another operand at every native call (a count it raised by one) and
+ * calls once more in front of them for a slot of its own: no native call aligns as itself, each is paired by the aligned
+ * consumer of its value, and the carrier's own call is left unwrapped (Mod Menu's title-screen buttons beside NeoForge's).</li>
  * </ul>
  * The run with {@code -Dforbric.nativeOccurrences=off} is the control: Mixin's own count over the merged body. The older
  * AddedCallOccurrences pass is switched off in both, so the runs differ only in this mechanism.
@@ -47,8 +50,8 @@ import net.forbric.kernel.mixin.NativeOccurrences;
 class NativeOccurrencePointWeaveTest {
 	private static final String CONFIG = "occurrence.mixins.json";
 	private static final String OWNER = "fixture/occurrence/Pantry";
-	private static final String NATIVE = "A=1 B=1 B2=1 C=1 D=2 E=7";
-	private static final String MERGED_COUNTS = "A=3 B=3 B2=2 C=2 D=2 E=3";
+	private static final String NATIVE = "A=1 B=1 B2=1 C=1 D=2 E=7 F=2";
+	private static final String MERGED_COUNTS = "A=3 B=3 B2=2 C=2 D=2 E=3 F=3";
 
 	@TempDir static Path work;
 	private static Path fixture;
@@ -59,6 +62,7 @@ class NativeOccurrencePointWeaveTest {
 			public class Parts {
 			 public static class Jar { public int n; public Jar(int n){this.n=n;} public int count(){return n;} public Jar copy(){return new Jar(n);} public void take(int k){n-=k;} }
 			 public static class Mode { private final boolean m; public Mode(boolean m){this.m=m;} public boolean mirrored(){return m;} }
+			 public static class Slot { public int x; public void setX(int v){x=v;} }
 			}
 			""";
 
@@ -66,7 +70,10 @@ class NativeOccurrencePointWeaveTest {
 			package fixture.occurrence;
 			import fixture.occurrence.Parts.*;
 			public class Pantry {
-			 public static int A, B, C, D; public static String trace = "";
+			 public static int A, B, C, D, F; public static String trace = "";
+			 public Slot slotA = new Slot(), slotB = new Slot(), extra = new Slot();
+			 public int position(int i, int n){ return i * 10 + n; }
+			 public void shelf(){ int n = 3; slotA.setX(position(0, n)); slotB.setX(position(1, n)); }
 			 public int weigh(Jar jar){ int before = jar.count(); jar.take(1); return before; }
 			 public int heat(int base){ int level = base * 2; return level + 1; }
 			 public int heatLate(int base){ int level = base * 2; return level + 1; }
@@ -83,7 +90,10 @@ class NativeOccurrencePointWeaveTest {
 			package fixture.occurrence;
 			import fixture.occurrence.Parts.*;
 			public class Pantry {
-			 public static int A, B, C, D; public static String trace = "";
+			 public static int A, B, C, D, F; public static String trace = "";
+			 public Slot slotA = new Slot(), slotB = new Slot(), extra = new Slot();
+			 public int position(int i, int n){ return i * 10 + n; }
+			 public void shelf(){ int n = 4; extra.setX(position(3, n)); slotA.setX(position(0, n)); slotB.setX(position(1, n)); }
 			 public int weigh(Jar jar){ int before = jar.count(); Jar copy = jar.copy(); jar.take(1); int taken = copy.count() - jar.count(); return before + taken - 1; }
 			 public int heat(int base){ int level = base * 2; level = stokeA(level); if (level < 0) return 0; level = stokeB(level); return level + 1; }
 			 public int heatLate(int base){ int level = base * 2; level = stokeA(level); if (level < 0) return 0; level = stokeB(level); return level + 1; }
@@ -107,7 +117,8 @@ class NativeOccurrencePointWeaveTest {
 			  Pantry.C = 0; p.place(new Mode(true), 2f); int c = Pantry.C;
 			  Pantry.D = 0; p.pick(new Jar(1), true); p.pick(new Jar(1), false); int d = Pantry.D;
 			  Pantry.trace = ""; p.label(new Jar(3), new Jar(7));
-			  return "A=" + a + " B=" + b + " B2=" + b2 + " C=" + c + " D=" + d + " E=" + Pantry.trace;
+			  Pantry.F = 0; p.shelf(); int f = Pantry.F;
+			  return "A=" + a + " B=" + b + " B2=" + b2 + " C=" + c + " D=" + d + " E=" + Pantry.trace + " F=" + f;
 			 }
 			}
 			""";
@@ -138,6 +149,8 @@ class NativeOccurrencePointWeaveTest {
 			 private void picked(Jar jar, boolean flag, CallbackInfoReturnable<Integer> cir) { Pantry.D++; }
 			 @WrapOperation(method = "label", at = @At(value = "INVOKE", target = "Lfixture/occurrence/Parts$Jar;count()I", ordinal = 1))
 			 private int second(Jar jar, Operation<Integer> original) { Pantry.trace += jar.n; return original.call(jar); }
+			 @WrapOperation(method = "shelf", at = @At(value = "INVOKE", target = "Lfixture/occurrence/Pantry;position(II)I"))
+			 private int placed(Pantry self, int i, int n, Operation<Integer> original) { Pantry.F++; return original.call(self, i, n); }
 			}
 			""";
 
@@ -170,6 +183,7 @@ class NativeOccurrencePointWeaveTest {
 		assertTrue(on.printed("the carrier added on the native path never run it"), on.describe());
 		assertTrue(on.printed("stand(s) on the first point it binds after the native step"), on.describe());
 		assertTrue(on.printed("(ordinal 1 counted natively)"), on.describe());
+		assertTrue(on.printed("2 paired by the consumer of its value, which the carrier hands another operand"), on.describe());
 		assertTrue(on.findings().stream().noneMatch(WeaveHarness.Finding::confirmedRequired), on.describe());
 		WeaveHarness.assertWovenAndVerified(on, OWNER, fixture);
 	}

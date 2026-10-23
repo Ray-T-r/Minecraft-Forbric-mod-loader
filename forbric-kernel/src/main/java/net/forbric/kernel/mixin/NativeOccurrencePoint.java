@@ -173,8 +173,21 @@ public final class NativeOccurrencePoint extends InjectionPoint {
 		Set<AbstractInsnNode> boundSteps = identitySet(byStep.keySet());
 		List<AbstractInsnNode> counterpartSteps = new ArrayList<>();
 		int moved = 0;
+		Consumers nativeConsumers = null, mergedConsumers = null;
+		int byConsumer = 0;
 		for (AbstractInsnNode occurrence : wanted) {
 			AbstractInsnNode same = aligned.get(step(occurrence));
+			if (same == null) {
+				// The step itself did not align — the carrier changed a value it is handed (NeoForge counts its own Mods button
+				// among the title screen's icon buttons, so every getHorizontalPosition there is handed 4 where vanilla hands 3) —
+				// but what consumes its value did: the merged occurrence that hands the aligned consumer the same operand is it.
+				if (nativeConsumers == null) {
+					nativeConsumers = Consumers.of(nativeClass.name, nativeMethod);
+					mergedConsumers = Consumers.of(target.classNode.name, target.method);
+				}
+				same = byConsumer(occurrence, nativeConsumers, mergedConsumers, aligned, boundSteps);
+				if (same != null) byConsumer++;
+			}
 			if (same == null) {
 				dump(nativeClass.name, nativeMethod, target.classNode.name, target.method, aligned, wanted, merged, List.of());
 				ForbricLog.debug("[Forbric/Mixin] %s: %s point in %s.%s: native occurrence %d has no aligned counterpart — as written",
@@ -214,12 +227,109 @@ public final class NativeOccurrencePoint extends InjectionPoint {
 		if (LOGGED.putIfAbsent(key, Boolean.TRUE) == null) {
 			dump(nativeClass.name, nativeMethod, target.classNode.name, target.method, aligned, wanted, merged, chosen);
 			ForbricLog.info("[Forbric/Mixin] %s: %s point in %s.%s selects %d of the merged body's %d occurrence(s), the native body's %d"
-					+ "%s%s%s", owner(), point, target.classNode.name.replace('/', '.'), target.method.name, chosen.size(), merged.size(),
+					+ "%s%s%s%s", owner(), point, target.classNode.name.replace('/', '.'), target.method.name, chosen.size(), merged.size(),
 					native_.size(), ordinal >= 0 ? " (ordinal " + ordinal + " counted natively)" : "",
 					dropped > 0 ? "; " + dropped + " the carrier added on the native path never run it" : "",
-					moved > 0 ? "; " + moved + " stand(s) on the first point it binds after the native step" : "");
+					moved > 0 ? "; " + moved + " stand(s) on the first point it binds after the native step" : "",
+					byConsumer > 0 ? "; " + byConsumer + " paired by the consumer of its value, which the carrier hands another operand" : "");
 		}
 		return chosen;
+	}
+
+	/**
+	 * The merged counterpart of a native occurrence whose own step aligned with nothing: the value it produces is consumed by
+	 * exactly one instruction, as that operand alone, and that consumer aligned; the merged consumer's same operand is produced by
+	 * exactly one instruction, which is an occurrence the point binds, of the same opcode. Null otherwise.
+	 */
+	private static AbstractInsnNode byConsumer(AbstractInsnNode occurrence, Consumers natives, Consumers merged,
+			Map<AbstractInsnNode, AbstractInsnNode> aligned, Set<AbstractInsnNode> boundSteps) {
+		AbstractInsnNode produced = step(occurrence);
+		if (natives == null || merged == null || produced == null) return null;
+		Consumers.Use use = natives.soleUse(produced);
+		if (use == null) return null;
+		AbstractInsnNode consumer = aligned.get(use.consumer());
+		if (consumer == null || consumer.getOpcode() != use.consumer().getOpcode()) return null;
+		AbstractInsnNode producer = merged.soleProducer(consumer, use.depth());
+		if (producer == null || producer.getOpcode() != produced.getOpcode() || !boundSteps.contains(producer)) return null;
+		Consumers.Use back = merged.soleUse(producer);
+		return back != null && back.consumer() == consumer && back.depth() == use.depth() ? producer : null;
+	}
+
+	/** Who consumes which value: read once per body with a source analysis. */
+	private static final class Consumers {
+		/** The instruction consuming a value, and how deep under the top of its operand stack the value is. */
+		record Use(AbstractInsnNode consumer, int depth) {
+		}
+
+		private final MethodNode method;
+		private final org.objectweb.asm.tree.analysis.Frame<org.objectweb.asm.tree.analysis.SourceValue>[] frames;
+
+		private Consumers(MethodNode method, org.objectweb.asm.tree.analysis.Frame<org.objectweb.asm.tree.analysis.SourceValue>[] frames) {
+			this.method = method;
+			this.frames = frames;
+		}
+
+		static Consumers of(String owner, MethodNode method) {
+			try {
+				return new Consumers(method, new org.objectweb.asm.tree.analysis.Analyzer<>(new org.objectweb.asm.tree.analysis.SourceInterpreter())
+						.analyze(owner, method));
+			} catch (org.objectweb.asm.tree.analysis.AnalyzerException | RuntimeException unreadable) {
+				Caught.expected(unreadable);
+				return null;
+			}
+		}
+
+		/** The one consumer of the value {@code producer} pushes, where that value has no other source there; else null. */
+		Use soleUse(AbstractInsnNode producer) {
+			Use found = null;
+			for (int i = 0; i < method.instructions.size(); i++) {
+				var frame = frames[i];
+				AbstractInsnNode at = method.instructions.get(i);
+				if (frame == null || at.getOpcode() < 0) continue;
+				int consumed = consumed(at, frame);
+				for (int depth = 0; depth < consumed && depth < frame.getStackSize(); depth++) {
+					var value = frame.getStack(frame.getStackSize() - 1 - depth);
+					if (!value.insns.contains(producer)) continue;
+					if (value.insns.size() != 1 || found != null) return null;
+					found = new Use(at, depth);
+				}
+			}
+			return found;
+		}
+
+		/** The one instruction producing the value {@code depth} under the top of {@code consumer}'s operand stack; else null. */
+		AbstractInsnNode soleProducer(AbstractInsnNode consumer, int depth) {
+			int index = method.instructions.indexOf(consumer);
+			var frame = index < 0 ? null : frames[index];
+			if (frame == null || depth >= frame.getStackSize()) return null;
+			var value = frame.getStack(frame.getStackSize() - 1 - depth);
+			return value.insns.size() == 1 ? value.insns.iterator().next() : null;
+		}
+
+		/** How many operand-stack values {@code at} pops: what a call, a field write or a store reads; other instructions none here. */
+		private static int consumed(AbstractInsnNode at, org.objectweb.asm.tree.analysis.Frame<?> frame) {
+			if (at instanceof org.objectweb.asm.tree.MethodInsnNode call)
+				return org.objectweb.asm.Type.getArgumentTypes(call.desc).length + (call.getOpcode() == Opcodes.INVOKESTATIC ? 0 : 1);
+			if (at instanceof org.objectweb.asm.tree.FieldInsnNode field)
+				return field.getOpcode() == Opcodes.PUTFIELD ? 2 : field.getOpcode() == Opcodes.PUTSTATIC || field.getOpcode() == Opcodes.GETFIELD ? 1 : 0;
+			if (at instanceof org.objectweb.asm.tree.VarInsnNode store && store.getOpcode() >= Opcodes.ISTORE && store.getOpcode() <= Opcodes.ASTORE) return 1;
+			if (at instanceof JumpInsnNode jump) return jump.getOpcode() >= Opcodes.IFEQ && jump.getOpcode() <= Opcodes.IFLE
+					|| jump.getOpcode() == Opcodes.IFNULL || jump.getOpcode() == Opcodes.IFNONNULL ? 1 : jump.getOpcode() == Opcodes.GOTO ? 0 : 2;
+			if (at instanceof org.objectweb.asm.tree.InvokeDynamicInsnNode indy) return org.objectweb.asm.Type.getArgumentTypes(indy.desc).length;
+			if (at instanceof org.objectweb.asm.tree.MultiANewArrayInsnNode array) return array.dims;
+			int opcode = at.getOpcode();
+			if (opcode >= Opcodes.IRETURN && opcode <= Opcodes.ARETURN || opcode == Opcodes.ATHROW || opcode == Opcodes.POP
+					|| opcode >= Opcodes.DUP && opcode <= Opcodes.DUP_X2 || opcode >= Opcodes.INEG && opcode <= Opcodes.DNEG
+					|| opcode >= Opcodes.I2L && opcode <= Opcodes.I2S || opcode == Opcodes.CHECKCAST || opcode == Opcodes.INSTANCEOF
+					|| opcode == Opcodes.ARRAYLENGTH || opcode == Opcodes.NEWARRAY || opcode == Opcodes.ANEWARRAY
+					|| opcode == Opcodes.TABLESWITCH || opcode == Opcodes.LOOKUPSWITCH || opcode == Opcodes.MONITORENTER
+					|| opcode == Opcodes.MONITOREXIT) return 1;
+			if (opcode >= Opcodes.IADD && opcode <= Opcodes.LXOR || opcode >= Opcodes.LCMP && opcode <= Opcodes.DCMPG
+					|| opcode >= Opcodes.IALOAD && opcode <= Opcodes.SALOAD || opcode == Opcodes.POP2 || opcode == Opcodes.SWAP
+					|| opcode >= Opcodes.DUP2 && opcode <= Opcodes.DUP2_X2) return 2;
+			if (opcode >= Opcodes.IASTORE && opcode <= Opcodes.SASTORE) return 3;
+			return 0;
+		}
 	}
 
 	/** {@code -Dforbric.nativeOccurrences.dump=<dir>}: both bodies' instructions and their alignment, for reading a refusal. */
