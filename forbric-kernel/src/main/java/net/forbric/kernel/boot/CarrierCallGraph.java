@@ -23,7 +23,6 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayDeque;
 import java.util.ArrayList;
-import java.util.Collection;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
@@ -684,13 +683,6 @@ final class CarrierCallGraph {
 			String declaring = declaring(ref.owner(), ref.nameDesc());
 			if (declaring != null && carrierTypes.containsKey(declaring)) out.add(declaring + "." + ref.nameDesc());
 		}
-		return out;
-	}
-
-	/** The carrier types among {@code names}. */
-	Set<String> carriersAmong(Collection<String> names) {
-		Set<String> out = new HashSet<>();
-		for (String n : names) if (carrierTypes.containsKey(n)) out.add(n);
 		return out;
 	}
 }
