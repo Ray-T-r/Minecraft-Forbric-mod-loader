@@ -23,9 +23,12 @@ import org.junit.jupiter.api.Test;
  * listener never ran (the air probe: 0 events on Forbric, one per drowning on MinecraftForge 26.2). Native
  * MinecraftForge posts it once the air is down to -20, always as {@code (entity, true, 2.0f, 8)}, with
  * {@code BUS.post} so a cancel is the post's result; a cancel or a body no longer drowning skips the reset and the
- * damage, and the damage is whatever the listeners leave. The scenarios are the probe's canaries with the values native
- * MinecraftForge 26.2 handed them; the controls are that a listener that changes nothing writes nothing, and that a body
- * NeoForge does not drown is not handed to MinecraftForge at all.
+ * damage, and the damage is whatever the listeners leave; the bubble count is never read (ForgeHooks.onLivingBreathe bc
+ * 198-282), so a changed one is not carried back — NeoForge's hook draws the body's random numbers per bubble, and
+ * writing it would change that body's random sequence where natively the change does nothing. The scenarios are the
+ * probe's canaries with the values native MinecraftForge 26.2 handed them; the controls are that a listener that changes
+ * nothing writes nothing, that a changed bubble count writes nothing, and that a body NeoForge does not drown is not
+ * handed to MinecraftForge at all.
  *
  * <p>The carry-back has no game types in its signature and is called directly; the bridge itself is driven on a real
  * NeoForge bus and MinecraftForge's real event bus, over the compiled game side and the staged game.
@@ -45,7 +48,7 @@ class KernelDrownBridgeTest {
 		Class<?> type = Class.forName("net.forbric.kernel.runtime.KernelGameWorldEvents$NeoDrown", true, loader);
 		return Proxy.newProxyInstance(loader, new Class<?>[] {type}, (proxy, method, args) -> {
 			switch (method.getName()) {
-				case "setDrowning", "setDamage", "setBubbles" -> neo.writes.add(method.getName().substring(3).toLowerCase() + "=" + args[0]);
+				case "setDrowning", "setDamage" -> neo.writes.add(method.getName().substring(3).toLowerCase() + "=" + args[0]);
 				default -> throw new UnsupportedOperationException(method.getName());
 			}
 			return null;
@@ -123,7 +126,7 @@ class KernelDrownBridgeTest {
 		}
 	}
 
-	/** drown-notdrowning / drown-damage3 / drown-damage0 / drown-bubbles0: each change is carried back on its own. */
+	/** drown-notdrowning / drown-damage3 / drown-damage0: each change MinecraftForge's hook reads is carried back on its own. */
 	@Test void eachChangedValueIsCarriedBack() throws Exception {
 		try (URLClassLoader loader = StagedGameClassLoader.create(List.of())) {
 			Neo notDrowning = new Neo();
@@ -135,12 +138,29 @@ class KernelDrownBridgeTest {
 			Neo zero = new Neo();
 			assertFalse(carry(loader, zero, handed(loader, 2f, 8), forge(loader, true, 0f, 8), false));
 			assertEquals(List.of("damage=0.0"), zero.writes);
-			Neo bubbles = new Neo();
-			assertFalse(carry(loader, bubbles, handed(loader, 2f, 8), forge(loader, true, 2f, 0), false));
-			assertEquals(List.of("bubbles=0"), bubbles.writes);
 			Neo all = new Neo();
 			assertFalse(carry(loader, all, handed(loader, 4f, 2), forge(loader, false, 1f, 9), false));
-			assertEquals(List.of("drowning=false", "damage=1.0", "bubbles=9"), all.writes);
+			assertEquals(List.of("drowning=false", "damage=1.0"), all.writes);
+		}
+	}
+
+	/**
+	 * drown-bubbles0 / drown-bubbles50: a changed bubble count is not carried back, alone or beside a change that is. Native
+	 * MinecraftForge never reads it, so nothing a MinecraftForge listener does to it may reach NeoForge's hook, which would
+	 * draw six of the body's random numbers per bubble for it.
+	 */
+	@Test void aChangedBubbleCountIsNotCarriedBack() throws Exception {
+		try (URLClassLoader loader = StagedGameClassLoader.create(List.of())) {
+			for (int handedBubbles : new int[] {8, 2, 0})
+				for (int after : new int[] {0, 1, 50, 1_000_000, -3}) {
+					if (after == handedBubbles) continue;
+					Neo neo = new Neo();
+					assertFalse(carry(loader, neo, handed(loader, 2f, handedBubbles), forge(loader, true, 2f, after), false));
+					assertEquals(List.of(), neo.writes, handedBubbles + " -> " + after);
+				}
+			Neo beside = new Neo();
+			assertFalse(carry(loader, beside, handed(loader, 2f, 8), forge(loader, true, 3f, 0), false));
+			assertEquals(List.of("damage=3.0"), beside.writes);
 		}
 	}
 
@@ -227,7 +247,7 @@ class KernelDrownBridgeTest {
 		}
 	}
 
-	/** drown-cancel, drown-notdrowning, drown-damage3, drown-damage0, drown-bubbles0, end to end. */
+	/** drown-cancel, drown-notdrowning, drown-damage3, drown-damage0, drown-bubbles0, drown-bubbles50, end to end. */
 	@Test void theCanariesReachNeoForgesEventAsNativeMinecraftForgeAppliesThem() throws Exception {
 		record Canary(String name, java.util.function.Function<ClassLoader, Predicate<Object>> change, String after) {
 		}
@@ -236,7 +256,9 @@ class KernelDrownBridgeTest {
 				new Canary("notdrowning", cl -> set(cl, "setDrowning", boolean.class, false), "false/2.0/8/false"),
 				new Canary("damage3", cl -> set(cl, "setDamageAmount", float.class, 3f), "true/3.0/8/false"),
 				new Canary("damage0", cl -> set(cl, "setDamageAmount", float.class, 0f), "true/0.0/8/false"),
-				new Canary("bubbles0", cl -> set(cl, "setBubbleCount", int.class, 0), "true/2.0/0/false"))) {
+				// Natively a changed bubble count changes nothing; NeoForge's event keeps the count it had.
+				new Canary("bubbles0", cl -> set(cl, "setBubbleCount", int.class, 0), "true/2.0/8/false"),
+				new Canary("bubbles50", cl -> set(cl, "setBubbleCount", int.class, 50), "true/2.0/8/false"))) {
 			try (URLClassLoader cl = game()) {
 				Object bus = neoBus(cl);
 				List<String> seen = listen(cl, canary.change().apply(cl));

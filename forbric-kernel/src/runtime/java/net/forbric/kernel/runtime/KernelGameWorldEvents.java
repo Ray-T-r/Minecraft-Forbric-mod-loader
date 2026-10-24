@@ -295,8 +295,12 @@ public final class KernelGameWorldEvents {
 	 * as MinecraftForge's hook posts it: EventBus 7 keeps a cancel in what {@code post} returns, not on the event, and
 	 * {@code onLivingDrown} fires it and drops the cancel. A cancel is carried back as NeoForge's cancel and nothing
 	 * else, as natively nothing else of a cancelled drown event is read. Otherwise what MinecraftForge's listeners
-	 * changed — whether the body drowns, the damage, the bubbles — is written; nothing where nothing changed. Asked only
-	 * when a MinecraftForge mod listens.
+	 * changed of what its hook reads — whether the body drowns, and the damage — is written; nothing where nothing
+	 * changed. The bubble count is handed to them and never carried back: MinecraftForge's hook never reads it
+	 * (ForgeHooks.onLivingBreathe, bc 198-282, has no getBubbleCount), while NeoForge's draws six numbers from the body's
+	 * random source per bubble before it asks the level for a particle, so a count written back would change that body's
+	 * random sequence (and, set large, the server thread's work) where natively the change does nothing. Asked only when
+	 * a MinecraftForge mod listens.
 	 */
 	public static void installDrown(Object neoBus) {
 		KernelGameEntityEvents.subscribe((IEventBus) neoBus, LivingDrownEvent.class, "LivingDrownEvent",
@@ -310,7 +314,6 @@ public final class KernelGameWorldEvents {
 					return carryBack(new NeoDrown() {
 						@Override public void setDrowning(boolean drowning) { event.setDrowning(drowning); }
 						@Override public void setDamage(float damage) { event.setDamageAmount(damage); }
-						@Override public void setBubbles(int bubbles) { event.setBubbleCount(bubbles); }
 					}, handed, new ForgeDrown(forge.isDrowning(), forge.getDamageAmount(), forge.getBubbleCount()), cancelled);
 				});
 	}
@@ -323,26 +326,27 @@ public final class KernelGameWorldEvents {
 		}
 	}
 
-	/** NeoForge's drown event, as much of it as the carry-back writes. */
+	/**
+	 * NeoForge's drown event, as much of it as the carry-back writes: what MinecraftForge's own hook reads of its event.
+	 * There is no bubble setter on purpose; see {@link #installDrown}.
+	 */
 	interface NeoDrown {
 		void setDrowning(boolean drowning);
 
 		void setDamage(float damage);
-
-		void setBubbles(int bubbles);
 	}
 
 	/**
 	 * What MinecraftForge's listeners decided, carried to NeoForge's event: whether they cancelled it (returned, for the
-	 * one-way veto), and if not, whether the body drowns, the damage and the bubbles — each written only where it
-	 * changed, so an event no MinecraftForge listener touched is left exactly as NeoForge's listeners left it. A cancelled
-	 * answer writes nothing: natively MinecraftForge reads nothing else of a cancelled drown event.
+	 * one-way veto), and if not, whether the body drowns and the damage — each written only where it changed, so an event
+	 * no MinecraftForge listener touched is left exactly as NeoForge's listeners left it. A cancelled answer writes
+	 * nothing: natively MinecraftForge reads nothing else of a cancelled drown event. A changed bubble count is not
+	 * written either, because natively nothing reads it.
 	 */
 	static boolean carryBack(NeoDrown neo, ForgeDrown handed, ForgeDrown after, boolean cancelled) {
 		if (cancelled) return true;
 		if (after.drowning() != handed.drowning()) neo.setDrowning(after.drowning());
 		if (Float.compare(after.damage(), handed.damage()) != 0) neo.setDamage(after.damage());
-		if (after.bubbles() != handed.bubbles()) neo.setBubbles(after.bubbles());
 		return false;
 	}
 
