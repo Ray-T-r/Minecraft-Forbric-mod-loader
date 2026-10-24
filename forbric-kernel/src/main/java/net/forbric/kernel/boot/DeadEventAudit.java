@@ -57,9 +57,13 @@ import net.forbric.kernel.util.ForbricLog;
  * {@code onNeighborNotify}; {@code LivingEntity} has NeoForge's {@code onLivingFall}.
  *
  * <p>It is DATA, deliberately, not a scan: scanning a 30MB merged jar for hook references on every boot would
- * cost more than it is worth, and the answer only changes when the merged base is rebuilt. When it is rebuilt,
- * re-run the survey and update this map — the audit itself will not notice a base that grew a hook back, it will
- * only over-report, which is the safe direction.
+ * cost more than it is worth, and the answer only changes when the merged base is rebuilt. The data is checked
+ * against the bytecode in both directions by {@code HookCallSiteCensusStagedTest}: no row may name an event the base
+ * still posts, and every event {@link HookCallSiteCensus} measures as never posted — over every hook class of both
+ * families, a carrier caller counting only when it is reached itself — must have a row here, in {@link #BRIDGED},
+ * {@link #REPAIRED} or {@link #STAND_DOWN}. Until 2026-10-24 only the first direction was checked, so the table could
+ * leave out a measured-dead event and nothing noticed: MinecraftForge's {@code LivingDrownEvent} was measured dead and
+ * named nowhere, and its {@code LivingBreatheEvent} hid behind a carrier hook nothing called.
  *
  * <p>Anything the kernel does bridge is subtracted live from {@link EventBridges#installed()}, so an entry does
  * not have to be deleted here the day a bridge for it lands.
@@ -80,10 +84,9 @@ public final class DeadEventAudit {
 
 	private static Map<String, String> deadEvents() {
 		Map<String, String> dead = new LinkedHashMap<>();
-		// ServerPlayerGameMode: four NeoForge hooks, zero MinecraftForge ones.
-		dead.put("net/minecraftforge/event/level/BlockEvent$BreakEvent",
-				"block breaking is neither observed nor preventable — claim and protection mods do not protect, "
-						+ "and block-logging mods record nothing");
+		// ServerPlayerGameMode: four NeoForge hooks, zero MinecraftForge ones. BreakEvent was a row here too; it is
+		// BRIDGED (BLOCK_BREAK), which is consulted first, so the row was unreachable, and once the census began checking
+		// that no row here names an event the kernel itself delivers, it was the one row that did.
 		dead.put("net/minecraftforge/event/entity/player/PlayerInteractEvent$RightClickBlock",
 				"right-clicking a block is neither observed nor preventable");
 		// LeftClickBlock and RightClickItem were rows here too. The merge now keeps both families' edits in a method
@@ -145,6 +148,112 @@ public final class DeadEventAudit {
 		// of the vanilla play call over NeoForge's own handling of the same sound (it dropped what NeoForge's listeners
 		// set), every place the merged game plays a sound asked only NeoForge. KernelGameSoundEvents forwards both now,
 		// so they are BRIDGED.
+		//
+		// The rest were added on 2026-10-24, when HookCallSiteCensusStagedTest began requiring a row for every event the
+		// census measures as never posted. Each is posted only by MinecraftForge hooks that neither the merged game nor
+		// a reached carrier method calls, and the kernel delivers none of them; the merged game posts NeoForge's event
+		// (or nothing) in their place. None is bridged yet: these are the candidates, named so a waiting mod is told.
+		String forge = "net/minecraftforge/event/", client = "net/minecraftforge/client/event/";
+		dead.put(forge + "brewing/PotionBrewEvent$Pre",
+				"a brewing stand finishing a brew can be neither stopped nor taken over");
+		dead.put(forge + "entity/EntityMobGriefingEvent",
+				"one mob cannot be allowed or forbidden to grief against the mobGriefing rule");
+		dead.put(forge + "entity/EntityTeleportEvent$ChorusFruit",
+				"a chorus-fruit teleport cannot be cancelled or redirected");
+		dead.put(forge + "entity/EntityTeleportEvent$EnderPearl",
+				"an ender-pearl teleport cannot be cancelled or redirected, nor its fall damage changed");
+		dead.put(forge + "entity/EntityTeleportEvent$SpreadPlayersCommand",
+				"a /spreadplayers move cannot be cancelled or redirected");
+		dead.put(forge + "entity/item/ItemExpireEvent",
+				"a dropped item cannot be kept from despawning");
+		dead.put(forge + "entity/item/ItemTossEvent",
+				"an item a player drops is neither seen nor preventable");
+		dead.put(forge + "entity/living/AnimalTameEvent",
+				"taming is neither seen nor preventable");
+		dead.put(forge + "entity/living/LivingChangeTargetEvent",
+				"what a mob decides to attack can be neither seen nor changed — mods that keep mobs off a player do nothing");
+		dead.put(forge + "entity/living/LivingDestroyBlockEvent",
+				"a mob breaking a block cannot be stopped");
+		dead.put(forge + "entity/living/LivingEntityUseItemEvent$Start",
+				"starting to use an item (eating, drawing a bow) can be neither stopped nor retimed");
+		dead.put(forge + "entity/living/LivingGetProjectileEvent",
+				"the ammunition a bow or crossbow uses cannot be chosen — quivers and custom ammunition do nothing");
+		dead.put(forge + "entity/living/LivingPackSizeEvent",
+				"how many mobs spawn together cannot be changed");
+		dead.put(forge + "entity/living/LivingSwapItemsEvent$Hands",
+				"swapping hands is neither seen nor preventable");
+		dead.put(forge + "entity/living/LivingUseTotemEvent",
+				"a totem of undying can be neither stopped nor stood in for by another item");
+		dead.put(forge + "entity/living/MobSpawnEvent$PositionCheck",
+				"a natural or spawner spawn cannot be allowed or denied at its position");
+		dead.put(forge + "entity/living/MobSpawnEvent$SpawnPlacementCheck",
+				"where a kind of mob may spawn cannot be overridden");
+		dead.put(forge + "entity/player/EntityItemPickupEvent",
+				"a player picking up an item can be neither stopped nor taken over");
+		dead.put(forge + "entity/player/PlayerEvent$ItemPickupEvent",
+				"a player picking up an item is not announced — pickup trackers and quests count nothing");
+		dead.put(forge + "entity/player/PlayerEvent$NameFormat",
+				"a player's displayed name cannot be changed");
+		dead.put(forge + "entity/player/PlayerEvent$TabListNameFormat",
+				"a player's name in the player list cannot be changed");
+		dead.put(forge + "entity/player/PlayerInteractEvent$LeftClickEmpty",
+				"a left click at nothing is not announced");
+		dead.put(forge + "entity/player/PlayerSleepInBedEvent",
+				"sleeping in a bed can be neither allowed nor refused");
+		dead.put(forge + "entity/player/PlayerSpawnPhantomsEvent",
+				"phantom spawns for a player can be neither stopped nor changed");
+		dead.put(forge + "entity/player/PlayerXpEvent$LevelChange",
+				"a player's level changes can be neither seen nor changed");
+		dead.put(forge + "entity/player/PlayerXpEvent$XpChange",
+				"experience a player gains can be neither seen nor changed");
+		dead.put(forge + "entity/player/SleepingLocationCheckEvent",
+				"a player cannot be kept asleep somewhere that is not a bed");
+		dead.put(forge + "entity/player/SleepingTimeCheckEvent",
+				"whether a player may sleep at this time of day cannot be decided");
+		dead.put(forge + "level/AlterGroundEvent",
+				"the ground a tree decorator places (podzol under a giant spruce) cannot be changed");
+		dead.put(forge + "level/ChunkDataEvent$Load",
+				"data saved with a chunk is never read back when the chunk loads");
+		dead.put(forge + "level/LevelEvent$PotentialSpawns",
+				"the mobs that may spawn at a place can be neither added nor removed");
+		dead.put(forge + "level/NoteBlockEvent$Change",
+				"a note block's pitch being changed is neither seen nor preventable");
+		dead.put(forge + "level/NoteBlockEvent$Play",
+				"a note block playing can be neither changed nor stopped");
+		dead.put(forge + "level/SleepFinishedTimeEvent",
+				"the time a night of sleep skips to cannot be changed");
+		dead.put(client + "CustomizeGuiOverlayEvent$DebugText",
+				"lines added to the F3 debug screen never appear");
+		dead.put(client + "GatherAtlasMetadataSectionsEvent",
+				"extra texture metadata registered for atlas sprites is never read");
+		dead.put(client + "InputEvent$MouseButton$Post",
+				"a mouse button the game has handled is not announced");
+		dead.put(client + "RenderArmEvent",
+				"the first-person arm can be neither changed nor hidden");
+		dead.put(client + "RenderAvatarEvent$Pre",
+				"how a player is drawn can be neither changed nor stopped");
+		dead.put(client + "RenderAvatarEvent$Post",
+				"nothing is drawn after a player is drawn");
+		dead.put(client + "RenderNameTagEvent",
+				"name tags can be neither changed nor hidden");
+		dead.put(client + "RenderTooltipEvent$Pre",
+				"a tooltip can be neither moved nor cancelled before it is drawn");
+		dead.put(client + "ScreenEvent$CharacterTyped$Pre",
+				"a character typed into a screen is neither seen nor consumable before the screen takes it");
+		dead.put(client + "ScreenEvent$CharacterTyped$Post",
+				"a character typed into a screen is not announced after the screen takes it");
+		dead.put(client + "ScreenEvent$MouseButtonPressed$Post",
+				"a click a screen handled (or ignored) is not announced");
+		dead.put(client + "ScreenEvent$MouseButtonReleased$Post",
+				"a mouse release a screen handled (or ignored) is not announced");
+		dead.put(client + "ScreenEvent$MouseDragged$Post",
+				"a drag a screen handled is not announced");
+		dead.put(client + "ScreenEvent$MouseScrolled$Pre",
+				"scrolling in a screen is neither seen nor consumable before the screen takes it");
+		dead.put(client + "ScreenEvent$RenderInventoryMobEffects",
+				"the effect list beside the inventory can be neither moved, compacted nor hidden");
+		dead.put(client + "sound/PlaySoundEvent",
+				"a sound the client is about to play can be neither replaced nor silenced");
 		return Map.copyOf(dead);
 	}
 
@@ -241,7 +350,19 @@ public final class DeadEventAudit {
 			"net/minecraftforge/event/AddPackFindersEvent",
 			// ForgeDamageSeamsInjector: no NeoForge event sits where these were, so the pipeline posts them.
 			"net/minecraftforge/event/entity/living/LivingHurtEvent",
-			"net/minecraftforge/event/entity/living/LivingDamageEvent");
+			"net/minecraftforge/event/entity/living/LivingDamageEvent",
+			// The four below were named nowhere until the census required a row for every event it measures as never
+			// posted. Each is delivered by the kernel, not by the merged game: the server's reload is routed through
+			// KernelForgeReload, which hands NeoForge's listener list to MinecraftForge's own onResourceReload; the
+			// picture-in-picture map nothing wrote is filled by KernelForgePipRenderers, which posts MinecraftForge's
+			// registration; MinecraftForge's configuration tasks are gathered by PayloadInterop through its
+			// gatherLoginConfigTasks (reflectively, which no census can see); and ItemStack.useOn is routed to
+			// NeoForge's onPlaceItemIntoWorld (routePlaceItemHookToNeoForge, a transform the staged jar does not show),
+			// which posts NeoForge's multi-block place through EventHooks.onMultiBlockPlace.
+			"net/minecraftforge/event/AddReloadListenerEvent",
+			"net/minecraftforge/client/event/RegisterPictureInPictureRendererEvent",
+			"net/minecraftforge/event/network/GatherLoginConfigurationTasksEvent",
+			"net/neoforged/neoforge/event/level/BlockEvent$EntityMultiPlaceEvent");
 
 	/** Package-private for the same reason as {@link #DEAD}. */
 	static final Map<String, GameEventBridge> BRIDGED = bridged();
@@ -509,7 +630,7 @@ public final class DeadEventAudit {
 	 * Reports what a boot found. One line per event, naming every mod waiting on it, because the same dead event
 	 * is usually subscribed by several mods and a line each would bury the list.
 	 */
-	public static void report(Map<String, Set<String>> subscribedByMod) {
+	public static void report(Map<String, Set<String>> subscribedByMod, net.forbric.api.Side side) {
 		if (!enabled()) {
 			ForbricLog.debug("[Forbric/DeadEvents] -D%s=off — not reporting merge-lost game events", PROPERTY);
 			return;
@@ -522,6 +643,9 @@ public final class DeadEventAudit {
 		Map<String, Set<String>> deadNow = new LinkedHashMap<>(), bridgeable = new LinkedHashMap<>();
 		for (Map.Entry<String, Set<String>> mod : subscribedByMod.entrySet()) {
 			for (String event : mod.getValue()) {
+				// A client event is never posted on a dedicated server under either family either: a listener there is
+				// waiting for nothing natively, and naming its mod DEGRADED for it would be a false accusation.
+				if (!BRIDGED.containsKey(event) && !side.isClient() && clientEvent(event)) continue;
 				(BRIDGED.containsKey(event) ? bridgeable : deadNow).computeIfAbsent(mod.getKey(), k -> new LinkedHashSet<>()).add(event);
 			}
 		}
@@ -535,6 +659,11 @@ public final class DeadEventAudit {
 					bridgeable.size());
 		}
 		report(audit(deadNow, EventBridges.satisfied()));
+	}
+
+	/** Whether {@code event} lives in either family's client event package, which only the client posts from. */
+	static boolean clientEvent(String event) {
+		return event.startsWith("net/minecraftforge/client/") || event.startsWith("net/neoforged/neoforge/client/");
 	}
 
 	/** mod id → the bridgeable events it listens for, judged by {@link #judgePending()}. */

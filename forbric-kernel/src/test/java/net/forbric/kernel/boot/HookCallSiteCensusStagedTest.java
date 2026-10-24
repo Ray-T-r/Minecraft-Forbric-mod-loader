@@ -61,7 +61,12 @@ class HookCallSiteCensusStagedTest {
 			// ForgeHooks posts the damage family (attack, hurt, damage) and more; left out, the census was blind to
 			// every one of them and the dead table never grew rows for them.
 			"net/minecraftforge/common/ForgeHooks", "forge-runtime/forge-runtime.jar",
-			"net/neoforged/neoforge/event/EventHooks", "neoforge-runtime/neoforge-runtime.jar");
+			// And the rest of both families' hook classes: the client's (the F3 text, tooltips, sounds) and NeoForge's
+			// own two, so that a dead event of either family has no hook class left to hide in.
+			"net/minecraftforge/client/ForgeHooksClient", "forge-runtime/forge-runtime.jar",
+			"net/neoforged/neoforge/event/EventHooks", "neoforge-runtime/neoforge-runtime.jar",
+			"net/neoforged/neoforge/common/CommonHooks", "neoforge-runtime/neoforge-runtime.jar",
+			"net/neoforged/neoforge/client/ClientHooks", "neoforge-runtime/neoforge-runtime.jar");
 
 	private static Path root() {
 		return TestFixtures.stagedRoot().normalize();
@@ -81,16 +86,104 @@ class HookCallSiteCensusStagedTest {
 		return root().resolve("merged-base/patched-mc-merged-26.2.jar");
 	}
 
+	/** The kernel's own game-side classes, compiled beside these tests: the fourth place an event can come from. */
+	private static Path kernelRuntime() {
+		return Path.of(System.getProperty("forbric.test.runtimeClasses",
+				Path.of(System.getProperty("user.dir"), "build", "classes", "java", "runtime").toString())).normalize();
+	}
+
 	private static Map<String, HookCallSiteCensus.Census> censusAll() throws Exception {
-		Map<String, HookCallSiteCensus.Census> out = new LinkedHashMap<>();
-		for (Map.Entry<String, String> e : HOOK_CLASSES.entrySet()) {
+		Map<String, Path> hooks = new LinkedHashMap<>();
+		for (Map.Entry<String, String> e : new TreeMap<>(HOOK_CLASSES).entrySet()) {
 			Path carrier = root().resolve(e.getValue());
-			if (!Files.isRegularFile(carrier)) continue;
-			// The carriers as carriers, not as game: a hook the game never calls may still be reached through
-			// its own ecosystem's runtime, and calling that dead put a delivered event on the work list once.
-			out.put(e.getKey(), HookCallSiteCensus.of(carrier, e.getKey(), List.of(base()), carriers()));
+			if (Files.isRegularFile(carrier)) hooks.put(e.getKey(), carrier);
 		}
-		return out;
+		if (hooks.isEmpty()) return Map.of();
+		// The carriers as carriers, not as game: a hook the game never calls may still be reached through
+		// its own ecosystem's runtime, and calling that dead put a delivered event on the work list once. All hook
+		// classes at once, because a carrier caller that is itself a hook counts only when something reaches it.
+		return HookCallSiteCensus.all(hooks, List.of(base()), carriers(), List.of(kernelRuntime()));
+	}
+
+	/** Every event the census measures as never posted, over every hook class: dead in one and live in none. */
+	private static Map<String, HookCallSiteCensus.Census> measuredDead(Map<String, HookCallSiteCensus.Census> all, Set<String> dead,
+			Set<String> kernelDelivered) {
+		Set<String> live = new TreeSet<>();
+		for (HookCallSiteCensus.Census c : all.values()) {
+			dead.addAll(c.deadEvents());
+			live.addAll(c.liveEvents());
+			kernelDelivered.addAll(c.kernelDelivered());
+		}
+		dead.removeAll(live);
+		kernelDelivered.retainAll(dead);
+		return all;
+	}
+
+	/**
+	 * The other direction, which nothing checked until 2026-10-24: every event the census measures as never posted has a
+	 * row — the audit names a mod waiting on it ({@link DeadEventAudit#DEAD}), or a bridge or repair delivers it
+	 * ({@link DeadEventAudit#BRIDGED}, {@link DeadEventAudit#REPAIRED}, {@link DeadEventAudit#STAND_DOWN}). The table had
+	 * only ever been checked for rows that lie, so it could leave out a measured-dead event: MinecraftForge's
+	 * LivingDrownEvent was measured dead and named nowhere, and a MinecraftForge mod that stopped drowning did nothing
+	 * with no line saying so.
+	 */
+	@Test
+	void everyEventTheCensusMeasuresDeadHasARow() throws Exception {
+		TestFixtures.require(Fixture.STAGED, Files.isRegularFile(base()), "staged merged base absent");
+		TestFixtures.require(Fixture.GAME_SIDE, Files.isDirectory(kernelRuntime()), "the kernel's game side is not compiled");
+		Map<String, HookCallSiteCensus.Census> all = censusAll();
+		TestFixtures.require(Fixture.STAGED, !all.isEmpty(), "staged carriers absent");
+		Set<String> dead = new TreeSet<>(), kernel = new TreeSet<>();
+		measuredDead(all, dead, kernel);
+		List<String> unnamed = new ArrayList<>();
+		for (String event : dead) {
+			if (DeadEventAudit.DEAD.containsKey(event) || DeadEventAudit.BRIDGED.containsKey(event)
+					|| DeadEventAudit.REPAIRED.contains(event) || DeadEventAudit.STAND_DOWN.containsKey(event)) continue;
+			unnamed.add(event + (kernel.contains(event) ? " (the kernel delivers it: a BRIDGED or REPAIRED row)" : ""));
+		}
+		System.out.println("[Forbric/Hooks] measured never posted: " + dead.size() + " event(s), " + kernel.size()
+				+ " delivered by the kernel, " + unnamed.size() + " named in no table");
+		// The denominator: a census that measured nothing dead would pass this vacuously.
+		assertTrue(dead.size() > 0, "not one event is measured dead — verify the scan before believing it");
+		assertEquals(List.of(), unnamed, "events the merged game never posts that no table names: a mod waiting on one is "
+				+ "told nothing, and nothing says whether a bridge carries it");
+	}
+
+	/** A row that says "never posted" about an event the kernel itself posts would name a mod for an event it receives. */
+	@Test
+	void noDeadRowNamesAnEventTheKernelDelivers() throws Exception {
+		TestFixtures.require(Fixture.STAGED, Files.isRegularFile(base()), "staged merged base absent");
+		TestFixtures.require(Fixture.GAME_SIDE, Files.isDirectory(kernelRuntime()), "the kernel's game side is not compiled");
+		Map<String, HookCallSiteCensus.Census> all = censusAll();
+		TestFixtures.require(Fixture.STAGED, !all.isEmpty(), "staged carriers absent");
+		Set<String> dead = new TreeSet<>(), kernel = new TreeSet<>();
+		measuredDead(all, dead, kernel);
+		assertTrue(kernel.size() > 0, "the kernel delivers none of the dead events — the fourth source read nothing");
+		Set<String> both = new TreeSet<>(DeadEventAudit.DEAD.keySet());
+		both.retainAll(kernel);
+		assertEquals(Set.of(), both, "listed as never posted although the kernel posts them: move each to BRIDGED or REPAIRED");
+	}
+
+	/**
+	 * The two events the census used to miss, pinned on the real base. MinecraftForge's breathe event is posted only by
+	 * {@code ForgeEventFactory.onLivingBreathe}, whose one caller is {@code ForgeHooks.onLivingBreathe}, which nothing
+	 * calls: counting any carrier caller called it posted. Its drown event is constructed by that same dead hook and by a
+	 * factory method nothing calls. Both must be measured dead, and both are delivered by the kernel's bridges.
+	 */
+	@Test
+	void minecraftForgesBreatheAndDrownEventsAreMeasuredDeadAndBridged() throws Exception {
+		TestFixtures.require(Fixture.STAGED, Files.isRegularFile(base()), "staged merged base absent");
+		TestFixtures.require(Fixture.GAME_SIDE, Files.isDirectory(kernelRuntime()), "the kernel's game side is not compiled");
+		Map<String, HookCallSiteCensus.Census> all = censusAll();
+		TestFixtures.require(Fixture.STAGED, !all.isEmpty(), "staged carriers absent");
+		Set<String> dead = new TreeSet<>(), kernel = new TreeSet<>();
+		measuredDead(all, dead, kernel);
+		for (String event : List.of("net/minecraftforge/event/entity/living/LivingBreatheEvent",
+				"net/minecraftforge/event/entity/living/LivingDrownEvent")) {
+			assertTrue(dead.contains(event), event + " is not measured dead");
+			assertTrue(kernel.contains(event), event + " is not delivered by the kernel");
+			assertNotNull(DeadEventAudit.BRIDGED.get(event), event + " has no BRIDGED row");
+		}
 	}
 
 	@Test

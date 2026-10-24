@@ -200,14 +200,17 @@ public final class DeadHookWorklist {
 		Map<String, Set<String>> posters = new LinkedHashMap<>();
 		Set<String> dead = new TreeSet<>();
 		Set<String> live = new TreeSet<>();
+		// All hook classes at once: a carrier caller that is itself one of their hooks counts only when it is reached.
+		Map<String, Path> hookClasses = new LinkedHashMap<>();
 		for (int i = 2; i < args.length; i++) {
 			int eq = args[i].lastIndexOf('=');
 			if (eq < 0) {
 				System.err.println("expected <carrier.jar>=<hookClass>, got " + args[i]);
 				System.exit(2);
 			}
-			var census = HookCallSiteCensus.of(Path.of(args[i].substring(0, eq)), args[i].substring(eq + 1),
-					List.of(base), carriers);
+			hookClasses.put(args[i].substring(eq + 1), Path.of(args[i].substring(0, eq)));
+		}
+		for (var census : HookCallSiteCensus.all(hookClasses, List.of(base), carriers, List.of()).values()) {
 			System.out.println(census.summary());
 			census.postersOf().forEach((e, p) -> posters.merge(e, p, (a, b) -> {
 				Set<String> both = new TreeSet<>(a);

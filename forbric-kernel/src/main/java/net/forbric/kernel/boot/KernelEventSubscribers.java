@@ -248,7 +248,7 @@ public final class KernelEventSubscribers {
 		// the event classes that bus has actually seen, so the answer is one field read per mod rather than a
 		// second and much more expensive pass over every method body.
 		DeadEventAudit.report(ForgeBusSubscriptions.merge(subscribedByMod,
-				ForgeBusSubscriptions.byMod(KernelModLoader.publishedForgeMods())));
+				ForgeBusSubscriptions.byMod(KernelModLoader.publishedForgeMods())), side);
 		// And this is about mixins that DID apply, to a point. Ninety individual lines on a client boot, none of
 		// them totalled anywhere, for the state MixinFit's javadoc calls worse than either extreme.
 		ForbricLog.info("%s", net.forbric.kernel.mixin.KernelGuestMixinAdapter.partialSummary());
