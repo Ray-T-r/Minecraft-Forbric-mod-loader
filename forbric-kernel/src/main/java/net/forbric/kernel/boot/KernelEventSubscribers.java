@@ -251,7 +251,7 @@ public final class KernelEventSubscribers {
 		// a family hook as API): the hooks that post it are read from the hook classes this class loader serves.
 		DeadEventAudit.report(ForgeBusSubscriptions.merge(subscribedByMod,
 				ForgeBusSubscriptions.byMod(KernelModLoader.publishedForgeMods())), side,
-				events -> GuestEventPosters.find(events, name -> resourceBytes(cl, name + ".class"), modJars));
+				events -> GuestEventPosters.find(events, name -> resourceBytes(loader, name + ".class"), modJars));
 		// And this is about mixins that DID apply, to a point. Ninety individual lines on a client boot, none of
 		// them totalled anywhere, for the state MixinFit's javadoc calls worse than either extreme.
 		ForbricLog.info("%s", net.forbric.kernel.mixin.KernelGuestMixinAdapter.partialSummary());
@@ -263,9 +263,12 @@ public final class KernelEventSubscribers {
 				net.forbric.kernel.transform.ForgeCapabilityCompositionTransformer.composedRoots());
 	}
 
-	/** A resource's bytes from {@code cl}, or null when it has none or it cannot be read. */
-	private static byte[] resourceBytes(ClassLoader cl, String name) {
-		try (java.io.InputStream in = cl.getResourceAsStream(name)) {
+	/**
+	 * A game resource's bytes from {@code loader} (its own jars first, as the merged-base repairs read them), or null when
+	 * it has none or it cannot be read.
+	 */
+	private static byte[] resourceBytes(ForbricClassLoader loader, String name) {
+		try (java.io.InputStream in = loader.getGameResourceAsStream(name)) {
 			return in == null ? null : in.readAllBytes();
 		} catch (java.io.IOException unreadable) {
 			Caught.warn(unreadable, "[Forbric/DeadEvents] could not read %s", name);
