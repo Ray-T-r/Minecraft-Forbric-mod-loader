@@ -34,7 +34,12 @@ import org.junit.jupiter.api.parallel.ResourceLock;
  */
 @ResourceLock("system-properties")
 class KernelForgeFluidTypeViewsTest {
-	private static final Path FORGE_PATCHED = Path.of("../forbric-loader/run/forge-patched/patched-mc-forge-26.2.jar");
+	/**
+	 * Under the staged root the game side was compiled against, beside the runtime the mod is compiled with: CI's
+	 * prepared job stages under {@code forbric-kernel/.dev/staged}, where a path naming the sibling forbric-loader
+	 * checkout finds nothing (and on a machine that has both, mixes two roots).
+	 */
+	private static final Path FORGE_PATCHED = TestFixtures.stagedRoot().resolve("forge-patched/patched-mc-forge-26.2.jar");
 
 	private static final Map<String, String> MOD = Map.of(
 			"example.forge.TypedFluid", """
