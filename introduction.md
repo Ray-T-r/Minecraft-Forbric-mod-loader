@@ -1407,11 +1407,42 @@ both events itself, and a bridge must not post the same one again (§8.1).
   Nautilus alone, where native MinecraftForge reads false and holds the air. A NeoForge listener at `LOWEST`
   registered after the kernel's sees the MinecraftForge listeners' changes, one registered before does not. The event
   has a `BRIDGED` row and a `ForeignType` row (`LIVING_BREATHE_EVENT`); the bridge's only switch is the global
-  `-Dforbric.unifiedEvents=off`. MinecraftForge's `LivingDrownEvent` is still never posted (§19).
-- **Audits** — `HookCallSiteCensus` (which hooks of `ForgeEventFactory`/`ForgeEventFactoryClient`/NeoForge
-  `ClientHooks` the merged base still calls), `DeadEventAudit` + `ForgeBusSubscriptions` (who listens to a dead
+  `-Dforbric.unifiedEvents=off`.
+- **Drowning** — the same hook posts NeoForge's `LivingDrownEvent`; MinecraftForge's (constructed inline in
+  `ForgeHooks.onLivingBreathe`, and by `ForgeEventFactory.onLivingDrown`, which nothing calls natively either) had no
+  poster, so a MinecraftForge mod that stops drowning or changes its damage did nothing.
+  `KernelGameWorldEvents.installDrown` posts it from NeoForge's at `LOWEST`, only where NeoForge's answer is that the
+  body drowns and a MinecraftForge listener exists. That is where MinecraftForge asks natively: its hook posts once the
+  air is down to -20, the point at which NeoForge's event starts out drowning (NeoForge posts from air 0, not yet
+  drowning, and that is not handed on), always with a drowning body; here the damage and bubbles are NeoForge's
+  (vanilla's 2 and 8 unless a NeoForge listener changed them). It is posted with `BUS.post`, as MinecraftForge's hook
+  does, because EventBus 7 keeps a cancel in what `post` returns, not on the event (`onLivingDrown` fires it and drops
+  the cancel). A cancel is carried back as NeoForge's cancel and nothing else — natively nothing else of a cancelled
+  drown event is read; otherwise whether the body drowns, the damage and the bubbles are written only where a
+  MinecraftForge listener changed them (`ForgeDrown.of` and `carryBack`, driven on real buses by
+  `KernelDrownBridgeTest`). Native MinecraftForge never reads the bubble count; NeoForge's hook spawns that many bubble
+  particles through `Level.addParticle`, which a server level ignores, so a changed count shows nothing either way. A
+  NeoForge listener's cancel keeps MinecraftForge from being asked, as with every cancellable bridge here. `BRIDGED`
+  and `ForeignType` (`LIVING_DROWN_EVENT`) rows as for breathing; the switch is again only
+  `-Dforbric.unifiedEvents=off`.
+- **Audits** — `HookCallSiteCensus` (which hooks of both families' hook classes the merged base still calls, and
+  which events are therefore never posted), `DeadEventAudit` + `ForgeBusSubscriptions` (who listens to a dead
   event, including subscriptions an annotation scan cannot see), `DeadHookWorklist` (the join, ordered by how many
   installed jars notice), `EventChainAudit` (every cross-bus post, checked by one rule set; gate-m41).
+  `HookCallSiteCensus.all` judges every hook class at once: a hook with no call site in the game still counts as
+  reached when a carrier method calls it, but a caller that is itself a hook (a public static, non-synthetic method of
+  a censused class) counts only when it is reached in turn, to a fixed point. Counting any carrier caller hid
+  MinecraftForge's breathe event behind `ForgeHooks.onLivingBreathe`, which nothing calls. Only a constructed type whose
+  supertypes reach its family's event base counts as an event. The kernel's own compiled classes are a fourth source:
+  a dead hook they call, or a dead event they construct, is delivered by the kernel. `DeadEventAudit`'s rows are data,
+  and `HookCallSiteCensusStagedTest` checks them against that census in both directions, over `ForgeEventFactory`,
+  `ForgeEventFactoryClient`, `ForgeHooks`, `ForgeHooksClient`, `EventHooks`, `CommonHooks` and `ClientHooks`: no
+  `DEAD` row may name an event the base still posts or the kernel delivers, and every event measured as never posted
+  needs a `DEAD`, `BRIDGED`, `REPAIRED` or `STAND_DOWN` row. Until 2026-10-24 only the first was checked, so
+  MinecraftForge's `LivingDrownEvent`, measured dead, was named nowhere. The census can still call an event dead that
+  a call it cannot see reaches — one a kernel transform injects, or a reflective one — so those are `REPAIRED` rows by
+  hand (NeoForge's multi-block place through the `useOn` route, MinecraftForge's configuration tasks). A client
+  event's `DEAD` row is judged on the client only: a dedicated server never posts it under either family.
 
 ### 8.1 One delivery per native dispatch — stand-down
 
@@ -1921,11 +1952,11 @@ java -cp <boot-cp> net.forbric.kernel.boot.Main --scan --mods <dir> --report out
   Team Reborn Energy 5.0.0 pinned by SHA-256 (`run/energy-api/energy-5.0.0.jar` or `-Pforbric.rebornEnergy`).
   Without the staged jars `compileRuntimeJava` is skipped and `jar` produces a boot jar with no game side — which
   is what CI builds. `KernelRuntimeClasses.verify` is what catches such a jar at launch.
-- **Unit tests.** Counted from source: `src/test` has 5 496 `@Test` methods (23 of them spelled
-  `@org.junit.jupiter.api.Test`), 57 `@TestFactory` and 6 `@ParameterizedTest` methods in 1 041 `*Test.java` files;
+- **Unit tests.** Counted from source: `src/test` has 5 514 `@Test` methods (23 of them spelled
+  `@org.junit.jupiter.api.Test`), 57 `@TestFactory` and 6 `@ParameterizedTest` methods in 1 042 `*Test.java` files;
   `src/transferTest` has 71 `@Test` methods in 6 files (annotations at line start after indentation, `git grep` over
   tracked files). A full run on the staged base (`forbric-loader/run` with its current merged base and report, and
-  the third-party mod packs the developer's machine still has) reported 6 607 tests in its JUnit XML, 77 of them
+  the third-party mod packs the developer's machine still has) reported 6 625 tests in its JUnit XML, 77 of them
   skipped: 75 for third-party packs that machine no longer has, 2 opt-in. How many run depends on the fixtures
   present, since some tests generate one case per fixture. Many tests read the staged jars; gate-m0 fails on *any*
   skipped test, because a skip there means the tests did not look at the real base. The weave tests (`mixin/weave/`)
@@ -2214,7 +2245,14 @@ Break one and the failure usually surfaces far from the cause.
   the first two a MinecraftForge listener reads `canRefillAir` true where native MinecraftForge reads false. With
   `-Dforbric.forgeFluidOwnType=off` a body breathes in the drowning MinecraftForge fluid again (3 scenarios change). The
   NeoForge-with-fabric-api and Fabric-with-Create runs are identical, scenario for scenario, to the runs before these
-  three changes.
+  three changes. With the drown bridge (§8), seven drowning scenarios were added — a pig out of air in water, its air
+  and health every tick and every MinecraftForge drown event its listener sees: reading only, cancelling, setting the
+  body not drowning, setting the damage to 3 and to 0, setting the bubbles to 0, and water breathing (no event). All
+  seven match native MinecraftForge in air, health, and the number and ticks of the events: one event per drowning,
+  handed `(true, 2.0, 8)` at air -20; a cancel or a body not drowning keeps the air falling past -20 with no damage, as
+  natively. Before the bridge the listener saw no event and all six drowned as with no listener. The 29 breathing
+  scenarios are unchanged by it, run for run. One of them, a pig sinking into the drowning MinecraftForge fluid, starts
+  losing air a tick later than in two of four native MinecraftForge runs and at the same tick as the other two.
 
 **What is still not native-equivalent.** Proven not closable by any structural trigger (each proof kept):
 
@@ -2260,11 +2298,25 @@ Located, not yet fixed (no impossibility proof):
   state depends on the random source's implementation (the entity's is vanilla's `LegacyRandomSource`, whose
   `nextDouble` moves only its private `seed`); and an override of `decreaseAirSupply` that draws from another source
   still draws every tick.
-- MinecraftForge's `LivingDrownEvent` is never posted: the merged game calls neither MinecraftForge's breathing hook,
-  which is where MinecraftForge posts it, nor `ForgeEventFactory.onLivingDrown` (the breathe bridge of §8 posts only
-  the breathe event), and `DeadEventAudit` has no row for it, so a MinecraftForge listener that cancels drowning, or
-  changes its damage or bubbles, never runs and nothing reports it. NeoForge's `LivingDrownEvent` is posted as on
-  NeoForge.
+- Fifty MinecraftForge events are never posted and not bridged. The census found them once it had to account for
+  every event it measures as never posted (§8); `DeadEventAudit` now names a mod waiting on one, marking it DEGRADED,
+  and the merged game posts NeoForge's event (or nothing) in their place. Common: `PlayerXpEvent.XpChange` and
+  `.LevelChange`, `ItemTossEvent`, `ItemExpireEvent`, `EntityItemPickupEvent`, `PlayerEvent.ItemPickupEvent`,
+  `AnimalTameEvent`, `LivingChangeTargetEvent`, `LivingDestroyBlockEvent`, `EntityMobGriefingEvent`,
+  `LivingUseTotemEvent`, `LivingGetProjectileEvent`, `LivingEntityUseItemEvent.Start`, `LivingSwapItemsEvent.Hands`,
+  `LivingPackSizeEvent`, `MobSpawnEvent.PositionCheck` and `.SpawnPlacementCheck`, `LevelEvent.PotentialSpawns`, the
+  three `EntityTeleportEvent`s (chorus fruit, ender pearl, `/spreadplayers`), `PlayerSleepInBedEvent`,
+  `SleepingLocationCheckEvent`, `SleepingTimeCheckEvent`, `SleepFinishedTimeEvent`, `PlayerSpawnPhantomsEvent`,
+  `PlayerEvent.NameFormat` and `.TabListNameFormat`, `PlayerInteractEvent.LeftClickEmpty`, `PotionBrewEvent.Pre`,
+  `AlterGroundEvent`, `ChunkDataEvent.Load`, `NoteBlockEvent.Play` and `.Change`. Client: `CustomizeGuiOverlayEvent
+  .DebugText`, `RenderNameTagEvent`, `RenderAvatarEvent.Pre` and `.Post`, `RenderArmEvent`, `RenderTooltipEvent.Pre`,
+  `ScreenEvent.CharacterTyped.Pre` and `.Post`, `ScreenEvent.MouseButtonPressed.Post`, `.MouseButtonReleased.Post`,
+  `.MouseDragged.Post`, `.MouseScrolled.Pre`, `ScreenEvent.RenderInventoryMobEffects`, `InputEvent.MouseButton.Post`,
+  `PlaySoundEvent`, `GatherAtlasMetadataSectionsEvent`. Each row's sentence says what a player loses. No NeoForge event
+  is among them.
+- Drowning, on a client: the merged hook (NeoForge's) sends no entity event 67 when a body drowns, so a client does
+  not show vanilla's burst of drowning bubbles; native MinecraftForge and vanilla send it, native NeoForge does not.
+  Read from the bytecode, not measured.
 - Experience: a MinecraftForge `BreakEvent` listener that only reads `getExpToDrop` sees MinecraftForge's own draw, not
   the one NeoForge drops (a listener that sets it decides correctly). The relay of `tryDropExperience` (§7.4) declines,
   with a WARN, a hook that reads or changes the raw draw or replaces the `popExperience` call, and runs for a block
