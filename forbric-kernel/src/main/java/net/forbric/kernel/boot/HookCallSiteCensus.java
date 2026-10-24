@@ -80,9 +80,10 @@ import org.objectweb.asm.tree.TypeInsnNode;
  *   <li>a call site the merge left in unreachable code still counts as a call site;</li>
  *   <li>a carrier method is reached by rules that err towards reaching ({@link CarrierCallGraph}): a lambda or method
  *       reference counts as called where it is created, a virtual call reaches every override in a class something
- *       constructs, and a method overriding one the scan cannot read counts as called. A listener a carrier builds for a
- *       payload the kernel routes elsewhere (MinecraftForge's channel-registration handler) is reached by these rules
- *       and never runs.</li>
+ *       constructs, and a method overriding one the scan cannot read counts as called. A handler a carrier builds for a
+ *       payload the kernel routes elsewhere is reached by these rules and may never run (MinecraftForge's
+ *       channel-registration handler: the kernel decodes {@code minecraft:register} as NeoForge's, read from
+ *       {@code PayloadInterop}, not measured).</li>
  * </ul>
  *
  * <p>And one makes it OVER-report, since a carrier method counts only when it is reached ({@link #all}): a call the scanned
