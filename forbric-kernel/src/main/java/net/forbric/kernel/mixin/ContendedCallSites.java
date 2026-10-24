@@ -2,11 +2,8 @@
 package net.forbric.kernel.mixin;
 
 import java.io.IOException;
-import java.net.URL;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.security.CodeSource;
-import java.security.ProtectionDomain;
 import java.util.ArrayList;
 import java.util.IdentityHashMap;
 import java.util.LinkedHashMap;
@@ -45,6 +42,7 @@ import org.objectweb.asm.tree.VarInsnNode;
 import net.forbric.api.CompatibilityFinding;
 import net.forbric.api.CompatibilityFindings;
 import net.forbric.kernel.util.Caught;
+import net.forbric.kernel.util.CodeRoots;
 import net.forbric.kernel.util.ForbricLog;
 
 /**
@@ -412,31 +410,9 @@ public final class ContendedCallSites {
 		}
 	}
 
-	/** The jar or class directory {@code type} came from, or null. */
+	/** The jar or class directory {@code type} came from, or null (see {@link CodeRoots#of}). */
 	static Path codeRoot(Class<?> type) {
-		try {
-			ProtectionDomain domain = type.getProtectionDomain();
-			CodeSource source = domain == null ? null : domain.getCodeSource();
-			URL location = source == null ? null : source.getLocation();
-			if (location == null || !"file".equals(location.getProtocol())) return null;
-			Path path;
-			try {
-				path = Path.of(location.toURI());
-			} catch (java.net.URISyntaxException | IllegalArgumentException unencoded) {
-				// A location spelled with raw spaces, brackets or non-ASCII (mod jars are named like that) is not a
-				// valid URI as it stands; quote its path rather than decode it, since '+' is literal in a file name.
-				Caught.expected(unencoded);
-				path = Path.of(new java.net.URI("file", null, location.getPath(), null));
-			}
-			String spelling = path.toString().replace('\\', '/');
-			String entry = type.getName().replace('.', '/') + ".class";
-			// A class defined out of a directory has its own file as its code source (ForbricClassLoader.jarUrlOf).
-			if (spelling.endsWith("/" + entry)) return Path.of(spelling.substring(0, spelling.length() - entry.length()));
-			return Files.exists(path) ? path : null;
-		} catch (Exception unreadable) {
-			Caught.warn(unreadable, "[Forbric/CallSite] could not find the jar or directory %s came from", type.getName());
-			return null;
-		}
+		return CodeRoots.of(type);
 	}
 
 	// ---------------------------------------------------------------------------------------------------------------
