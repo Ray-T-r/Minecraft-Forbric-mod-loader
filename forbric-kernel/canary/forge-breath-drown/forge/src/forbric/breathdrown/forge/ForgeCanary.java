@@ -91,7 +91,9 @@ public final class ForgeCanary {
 		if (Core.tagged(entity, "f-notdrowning")) e.setDrowning(false);
 		if (Core.tagged(entity, "f-damage3")) e.setDamageAmount(3f);
 		if (Core.tagged(entity, "f-damage0")) e.setDamageAmount(0f);
-		Core.report(FAMILY, "drown", entity, seen + " -> cancel=" + cancel + " drowning=" + e.isDrowning() + " damage=" + e.getDamageAmount());
+		if (Core.tagged(entity, "f-bubbles0")) e.setBubbleCount(0);
+		if (Core.tagged(entity, "f-bubbles50")) e.setBubbleCount(50);
+		Core.report(FAMILY, "drown", entity, seen + " -> cancel=" + cancel + " drowning=" + e.isDrowning() + " damage=" + e.getDamageAmount() + " bubbles=" + e.getBubbleCount());
 		return cancel;
 	}
 

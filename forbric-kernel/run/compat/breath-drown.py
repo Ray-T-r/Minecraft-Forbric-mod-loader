@@ -4,19 +4,25 @@ bucket round trip, each family's listeners alone and both in one pack.
 
   run        one dedicated server with the canaries (native MinecraftForge / NeoForge / Fabric image, or Forbric) and
              its probe result: breath-drown.py run --engine native-forge --mods a.jar ... --driver forge --out DIR
-  reference  rebuild the canaries, run each native loader --runs times (3 by default), require every run of one loader
-             to agree on everything the gate judges, and write canary/forge-breath-drown/native-reference.json
+  reference  rebuild the canaries, run each native loader --runs times (3 by default), and write
+             canary/forge-breath-drown/native-reference.json — or stop, naming the differences, if any run of one loader
+             disagrees with its first on a stored field (everything judged, and the random draws)
   judge      one Forbric result against the reference, for a gate phase: prints a line per row and exits 1 unless the
-             rows that failed are exactly the ones that phase predicts
-  compare    two results field by field, including what the gate does not judge (the body's random draws per tick and
-             the entity events the server broadcast) — for the developer probe
+             rows that failed are exactly the ones that phase predicts, each for that phase's cause
+  compare    two results field by field, including what the gate does not judge (the entity events the server
+             broadcast, and the random draws outside the rows that check them) — for the developer probe
 
 What the gate judges, per row: the air and health sampled at the end of every tick (or a liquid row's result), and the
 view of the listener families the row names in EXPECT, each against that family's native loader running the same jar.
 A tag of the other family does nothing on a native loader, so the native run of a row is what its deciding family's
-listeners produce alone: where both families act, EXPECT names the one whose answer stands (NeoForge's listeners answer
-first, then MinecraftForge's, as the kernel posts MinecraftForge's events from NeoForge's at LOWEST), and adds what the
-other family must have seen. Not judged: the random source and the entity events (documented in introduction §19).
+listeners produce alone: where both families act, EXPECT names the one whose answer stands, and adds what the other
+family must have seen. NeoForge's listeners answer first, then MinecraftForge's, because the kernel posts
+MinecraftForge's events from NeoForge's at LOWEST before any mod's setup runs: that holds for every NeoForge listener
+above LOWEST and every one registered before the kernel's bridges (a mod's constructor, an @EventBusSubscriber class);
+a NeoForge listener registered at LOWEST later (from a setup event, say) answers after MinecraftForge's, and the gate's
+canaries have none (introduction §19). The body's random draws are judged only where a row must draw what another row
+draws ('rng-as': a MinecraftForge listener's bubble count, which natively nothing reads); the entity events never are
+(both documented in introduction §19).
 """
 import argparse
 import hashlib
@@ -33,7 +39,6 @@ KERNEL = Path(__file__).resolve().parents[2]
 CANARY = KERNEL / 'canary/forge-breath-drown'
 REFERENCE = CANARY / 'native-reference.json'
 NATIVE = Path(os.environ.get('M57_NATIVE', KERNEL / 'build/native-controls/native'))
-MC = Path(os.environ.get('MC_DIR', Path.home() / 'Library/Application Support/minecraft'))
 JARS = {'forge': 'forbricbreathforge.jar', 'neo': 'forbricbreathneo.jar'}
 NATIVE_VERSIONS = {'forge': ('net/minecraftforge/forge', '26.2-65.0.1'), 'neo': ('net/neoforged/neoforge', '26.2.0.88')}
 FABRIC_LAUNCHER = 'fabric-server-mc26.2-loader0.19.5-launcher1.1.2.jar'
@@ -47,13 +52,23 @@ F, N = 'forge', 'neo'
 #   ('none', family, kind)        that family's listener was never asked for this body (NeoForge's answer stopped it)
 #   ('asked', family, kind)       that family's listener was asked
 #   ('sees', family, kind, text)  that family's first note of that kind contains text (it was handed the other's answer)
+#   ('rng-as', row)               the body drew from its random source what <row>'s body drew, tick for tick, here and
+#                                 in every native run the row is judged against
 EXPECT = {
     'drown-read': ({F, N}, []),
+    'drown-late': ({F, N}, []),
     'drown-f-cancel': ({F}, []),
     'drown-f-notdrowning': ({F}, []),
     'drown-f-damage3': ({F}, []),
     'drown-f-damage0': ({F}, []),
+    # A MinecraftForge listener's bubble count: MinecraftForge's hook never reads it, so natively the body draws what it
+    # draws with none (drown-late); NeoForge's hook draws six numbers per bubble, so a count carried back would not.
+    'drown-f-bubbles0': ({F}, [('rng-as', 'drown-late')]),
+    'drown-f-bubbles50': ({F}, [('rng-as', 'drown-late')]),
     'drown-f-ann-cancel': ({F}, []),
+    # Water breathing: nobody drowns. Native NeoForge also holds the air (its hook refills nothing where the eye is in
+    # water); the merged hook refills like vanilla and MinecraftForge, the owner's choice (introduction §6).
+    'drown-read-waterbreathing': ({F}, [('none', F, 'drown'), ('none', N, 'drown')]),
     'drown-n-cancel': ({N}, [('none', F, 'drown'), ('none', F, 'drown-ann')]),
     'drown-n-notdrowning': ({N}, [('none', F, 'drown'), ('none', F, 'drown-ann')]),
     'drown-n-damage3': ({N}, [('sees', F, 'drown', 'damage=3.0 ')]),
@@ -61,6 +76,9 @@ EXPECT = {
     # A NeoForge listener that makes a body drown before air -20: MinecraftForge's listeners are asked from then on,
     # with the air the body has (natively MinecraftForge asks only from -20; no native loader has both families).
     'drown-n-drowning': ({N}, [('sees', F, 'drown', 'drowning=true damage=2.0 bubbles=8 air=0 ')]),
+    # MinecraftForge's attack event is posted at the head of hurtServer, its own position and before NeoForge's
+    # incoming-damage event, so a NeoForge cancel there stops MinecraftForge's hurt and damage but not its attack.
+    'drown-n-incoming-cancel': ({N}, [('asked', F, 'attack'), ('none', F, 'hurt'), ('none', F, 'damage-ann')]),
     'drown-n-damage3-f-damage0': ({F}, [('sees', F, 'drown', 'damage=3.0 ')]),
     'drown-n-cancel-f-damage3': ({N}, [('none', F, 'drown'), ('none', F, 'drown-ann')]),
     'drown-n-damage3-f-cancel': ({F}, [('sees', F, 'drown', 'damage=3.0 ')]),
@@ -73,8 +91,18 @@ EXPECT = {
     'breathe-n-cant': ({N}, [('sees', F, 'breathe', 'forge can=false canRefill=true consume=3 ')]),
     'breathe-n-refill0-f-refill2': ({F}, [('sees', F, 'breathe', 'refill=0 ->')]),
     'breathe-n-cant-f-can': ({F}, [('sees', F, 'breathe', 'forge can=false ')]),
+    # Breath of the Nautilus alone: the body breathes; in water MinecraftForge's listeners are told it may not refill
+    # (canRefillAir false: a refill they set is not taken, unless they also let it refill), in a bubble column that it may.
+    'breathe-nautilus-water': ({F, N}, []),
+    'breathe-nautilus-water-f-refill2': ({F}, []),
+    'breathe-nautilus-water-f-can': ({F}, []),
+    'breathe-nautilus-bubbles': ({F, N}, []),
+    # NeoForge refills nothing, so MinecraftForge's own rule decides canRefillAir — the bubble column says yes — and
+    # NeoForge's nothing is what MinecraftForge's listener is offered.
+    'breathe-nautilus-bubbles-n-refill0-f-refill2': ({F}, [('sees', F, 'breathe', 'forge can=true canRefill=true consume=1 refill=0 ->')]),
     'drown-read-forgemurk': ({F}, []),
     'drown-f-damage3-forgemurk': ({F}, []),
+    'breathe-nautilus-forgemurk': ({F}, []),
     'drown-read-neomurk': ({N}, []),
     'player-drown-read': ({F, N}, []),
     'player-drown-f-hurt-halve': ({F}, []),
@@ -89,11 +117,19 @@ EXPECT = {
 # Rows where both families act and MinecraftForge's answer stands: its listeners were handed NeoForge's answer, so what
 # they saw (the first half of each note) is not what they see natively; their counts and ticks are still compared, and
 # what they were handed is checked by the 'sees' checks above.
-HANDED_NEOFORGES_ANSWER = {'drown-n-damage3-f-damage0', 'drown-n-damage3-f-cancel', 'breathe-n-refill0-f-refill2', 'breathe-n-cant-f-can'}
+HANDED_NEOFORGES_ANSWER = {'drown-n-damage3-f-damage0', 'drown-n-damage3-f-cancel', 'breathe-n-refill0-f-refill2', 'breathe-n-cant-f-can',
+                           'breathe-nautilus-bubbles-n-refill0-f-refill2'}
 # The rows in or with MinecraftForge's liquid, which the getter and fluid-type repairs decide.
-FORGE_LIQUID_ROWS = {'drown-read-forgemurk', 'drown-f-damage3-forgemurk', 'forge-bucket'}
-FORGE_LIQUID_BODY_ROWS = {'drown-read-forgemurk', 'drown-f-damage3-forgemurk'}
+FORGE_LIQUID_ROWS = {'drown-read-forgemurk', 'drown-f-damage3-forgemurk', 'breathe-nautilus-forgemurk', 'forge-bucket'}
+FORGE_LIQUID_BODY_ROWS = {'drown-read-forgemurk', 'drown-f-damage3-forgemurk', 'breathe-nautilus-forgemurk'}
 JUDGED = ('air', 'health', 'result')
+# Stored in the reference besides what is judged directly: the random draws, for the 'rng-as' checks.
+STORED = JUDGED + ('rng',)
+# MinecraftForge's events each phase switches off: breathe and drown (the bridges), hurt (the damage seams).
+BRIDGED_KINDS = ('breathe', 'breathe-ann', 'drown', 'drown-ann')
+SEAM_KINDS = ('attack', 'hurt', 'damage-ann')
+FORGE_MURK = 'forbricbreathforge:murk'
+PHASES = ('positive', 'bridges-off', 'getters-off', 'own-type-off', 'seams-off')
 
 
 def sha256(path):
@@ -101,6 +137,17 @@ def sha256(path):
 
 
 # ---- running a server -----------------------------------------------------------------------------------------------
+
+def clone(source, target):
+    """A copy of a native image's file or tree: an APFS clone on macOS (instant, no space), a plain copy elsewhere."""
+    source, target = Path(source), Path(target)
+    if sys.platform == 'darwin':
+        subprocess.run(['cp', '-cR' if source.is_dir() else '-c', str(source), str(target)], check=True)
+    elif source.is_dir():
+        shutil.copytree(source, target)
+    else:
+        shutil.copy2(source, target)
+
 
 def run(engine, mods, driver, out, port, jvm='', tree=None, staged=None, timeout=900, policy='strict'):
     """One server in a fresh instance under <out>; returns the probe result (or None) and writes run.json beside it."""
@@ -118,16 +165,17 @@ def run(engine, mods, driver, out, port, jvm='', tree=None, staged=None, timeout
         image = NATIVE / family
         if not image.is_dir(): raise SystemExit(f'no native {family} image at {image} (run/compat/native-controls.py prepare)')
         for rel in ('libraries', '.fabric'):
-            if (image / rel).exists(): subprocess.run(['cp', '-cR', str(image / rel), str(out / rel)], check=True)
-        for p in image.glob('*.jar'): subprocess.run(['cp', '-c', str(p), str(out / p.name)], check=True)
+            if (image / rel).exists(): clone(image / rel, out / rel)
+        for p in image.glob('*.jar'): clone(p, out / p.name)
         java = ['java', '-Xms256M', '-Xmx2G', '-Djava.awt.headless=true', *props]
         if family == 'fabric': cmd = [*java, '-jar', FABRIC_LAUNCHER, '--nogui']
         else:
             group, version = NATIVE_VERSIONS[family]
-            cmd = [*java, f'@libraries/{group}/{version}/unix_args.txt', 'nogui']
+            # The installers write both argument files; Windows takes the one with its path separator.
+            cmd = [*java, f'@libraries/{group}/{version}/{"win" if os.name == "nt" else "unix"}_args.txt', 'nogui']
     elif engine == 'forbric':
         tree = Path(tree) if tree else KERNEL.parent
-        cmd = [str(tree / 'forbric-kernel/run/launch-kernel-server.sh')]
+        cmd = ['bash', str(tree / 'forbric-kernel/run/launch-kernel-server.sh')]
         env['RUNDIR'] = str(out); env['FORBRIC_COMPAT_POLICY'] = policy
         if staged: env['FORBRIC_OLD'] = str(staged)
         env['GRADLE_OPTS'] = (env.get('GRADLE_OPTS', '') + ' -Dorg.gradle.daemon=false').strip()
@@ -151,16 +199,17 @@ def run(engine, mods, driver, out, port, jvm='', tree=None, staged=None, timeout
 
 # ---- what is judged -------------------------------------------------------------------------------------------------
 
-def judged_row(row, families):
+def judged_row(row, families, fields=JUDGED):
     """The part of a probe row the gate compares, with the views of <families> only."""
     if 'skipped' in row: return {'skipped': row['skipped']}
-    kept = {k: row[k] for k in JUDGED if k in row}
+    kept = {k: row[k] for k in fields if k in row}
     kept['views'] = {f: row.get('views', {}).get(f, {}) for f in sorted(families)}
     return kept
 
 
 def native_rows(result, family):
-    return {row['name']: judged_row(row, {family}) for row in result['rows']}
+    """A native result's rows as the reference stores them: what is judged, and the random draws."""
+    return {row['name']: judged_row(row, {family}, STORED) for row in result['rows']}
 
 
 def diff(a, b, path=''):
@@ -182,9 +231,17 @@ def without_notes(judged, family):
     return out
 
 
+def first_difference(a, b):
+    """Where two per-tick lists first part: '(tick 4: 3 vs 99)'."""
+    for i, (x, y) in enumerate(zip(a, b)):
+        if x != y: return f'tick {i}: {x} vs {y}'
+    return f'lengths {len(a)} vs {len(b)}'
+
+
 def judge_rows(reference, result):
     """{row: [reasons]} for every row EXPECT names; an empty list is a pass."""
     rows = {row['name']: row for row in result['rows']}
+    native_of = lambda family, name: reference['families'][family]['rows'].get(name)
     verdicts = {}
     for name, (families, checks) in EXPECT.items():
         reasons = []
@@ -192,9 +249,10 @@ def judge_rows(reference, result):
         if row is None: verdicts[name] = ['no such row in the Forbric result']; continue
         if 'skipped' in row: verdicts[name] = [f'skipped on Forbric: {row["skipped"]}']; continue
         for family in sorted(families):
-            native = reference['families'][family]['rows'].get(name)
+            native = native_of(family, name)
             if native is None or 'skipped' in native:
                 reasons.append(f'the {family} reference has no measured row (regenerate it)'); continue
+            native = {k: v for k, v in native.items() if k not in STORED or k in JUDGED}
             mine = judged_row(row, {family})
             if name in HANDED_NEOFORGES_ANSWER and family == F:
                 native, mine = without_notes(native, family), without_notes(mine, family)
@@ -214,6 +272,17 @@ def judge_rows(reference, result):
                 notes = views.get(family, {}).get(kind, {}).get('notes', [])
                 if not notes or text not in notes[0]:
                     reasons.append(f'{family} {kind} first note must contain {text!r}: {notes[:1]}')
+            elif check[0] == 'rng-as':
+                _, other = check
+                for family in sorted(families):
+                    a, b = (native_of(family, n) or {} for n in (name, other))
+                    if 'rng' not in a or a.get('rng') != b.get('rng'):
+                        reasons.append(f'the native {family} reference does not show {name} drawing what {other} draws '
+                                       f'(regenerate it, or the expectation is wrong)')
+                theirs = rows.get(other, {})
+                if 'rng' not in row or row.get('rng') != theirs.get('rng'):
+                    reasons.append(f'rng: the body did not draw what {other}\'s drew '
+                                   f'({first_difference(row.get("rng", []), theirs.get("rng", []))})')
         for kind, order in row.get('order', {}).items():
             fams = order.split(',')
             if F in fams and N in fams and fams.index(N) > fams.index(F):
@@ -222,20 +291,49 @@ def judge_rows(reference, result):
     return verdicts
 
 
+def native_forge_kinds(reference, name):
+    """The MinecraftForge listener kinds the native MinecraftForge run of a row heard from."""
+    native = reference['families'][F]['rows'].get(name, {})
+    return {kind for kind, view in native.get('views', {}).get(F, {}).items() if view.get('count')}
+
+
 def predicted_failures(reference, phase):
     """Which rows a phase must fail, read from EXPECT and the reference; exact both ways."""
     if phase == 'positive': return set()
     if phase == 'bridges-off':
-        # Every row whose verdict needs a MinecraftForge breathe/drown/damage listener to have been asked.
+        # Every row judged on what a MinecraftForge listener heard natively, and every row where MinecraftForge must be
+        # handed NeoForge's answer ('sees'). Not the 'asked' attack checks: MinecraftForge's attack is posted at its own
+        # position in hurtServer, no bridge of NeoForge's.
         out = set()
         for name, (families, checks) in EXPECT.items():
-            native = reference['families'][F]['rows'].get(name, {})
-            if F in families and any(native.get('views', {}).get(F, {}).values()): out.add(name)
+            if F in families and native_forge_kinds(reference, name): out.add(name)
             if any(c[0] == 'sees' and c[1] == F for c in checks): out.add(name)
         return out
     if phase == 'getters-off': return set(FORGE_LIQUID_ROWS)
     if phase == 'own-type-off': return set(FORGE_LIQUID_BODY_ROWS)
+    if phase == 'seams-off':
+        # MinecraftForge's Hurt has a seam on every merged base (NeoForge's actuallyHurt never reads its answer), so every
+        # row whose native MinecraftForge run heard it, judged on MinecraftForge's view, loses it.
+        return {name for name, (families, _) in EXPECT.items() if F in families and 'hurt' in native_forge_kinds(reference, name)}
     raise SystemExit(f'unknown phase {phase}')
+
+
+def phase_cause(phase, row, reasons):
+    """Whether a row a phase predicted to fail failed for that phase's cause, not for another; with what was looked for."""
+    if phase == 'bridges-off':
+        hit = any(f'views.{F}.{kind}' in r or f'{F} {kind} ' in r for r in reasons for kind in BRIDGED_KINDS)
+        return hit, "a MinecraftForge breathe or drown listener's view differs (it was not asked)"
+    if phase == 'getters-off':
+        text = ' '.join([str(row.get('skipped', ''))] + [str(r) for r in row.get('result', [])])
+        return '"this.fluid" is null' in text, 'its liquid block threw with "this.fluid" is null (no fluid without the getter)'
+    if phase == 'own-type-off':
+        inside = f'blockAtEye={FORGE_MURK} ' in (row.get('first') or '')
+        moved = any(r.startswith(f'vs native {F}: air') or f'views.{F}.breathe' in r for r in reasons)
+        return inside and moved, f'the body was in {FORGE_MURK} and its air or MinecraftForge breathe view differs'
+    if phase == 'seams-off':
+        hit = any(f'views.{F}.{kind}' in r or f'{F} {kind} ' in r for r in reasons for kind in SEAM_KINDS)
+        return hit, "a MinecraftForge attack, hurt or damage listener's view differs"
+    return True, ''
 
 
 def cmd_judge(args):
@@ -252,11 +350,17 @@ def cmd_judge(args):
     extra = sorted({row['name'] for row in result['rows']} - set(EXPECT))
     if extra: print(f'[kernel]   {args.phase}: rows the gate does not judge: {", ".join(extra)}')
     predicted = predicted_failures(reference, args.phase)
-    if failed == predicted:
-        print(f'[kernel] PASS {args.phase}: {len(EXPECT) - len(failed)} rows as native, the {len(failed)} predicted failure(s) and no others')
+    rows = {row['name']: row for row in result['rows']}
+    wrong_cause = []
+    for name in sorted(failed & predicted):
+        ok, wanted = phase_cause(args.phase, rows.get(name, {}), verdicts[name])
+        if not ok: wrong_cause.append(name); print(f'[kernel]   {args.phase}: {name} failed, but not because {wanted}')
+    if failed == predicted and not wrong_cause:
+        print(f'[kernel] PASS {args.phase}: {len(EXPECT) - len(failed)} rows as native, the {len(failed)} predicted failure(s) '
+              f'and no others' + (', each for the phase\'s cause' if failed else ''))
         return 0
     print(f'[kernel] FAIL {args.phase}: failed rows differ from the prediction — unexpected: {sorted(failed - predicted)}, '
-          f'expected but held: {sorted(predicted - failed)}')
+          f'expected but held: {sorted(predicted - failed)}, failed for another cause: {wrong_cause}')
     return 1
 
 
@@ -286,8 +390,9 @@ def cmd_reference(args):
         families[family] = {'loader': '/'.join(NATIVE_VERSIONS[family]), 'runs': args.runs,
                             'installation': sha256(image / 'installation.json') if (image / 'installation.json').is_file() else None,
                             'rows': runs[0]}
-    reference = {'about': 'gate-m57 native reference: what each native loader does with the same canary jar, every judged field '
-                          'agreeing across all runs. Regenerate with: python3 run/compat/breath-drown.py reference',
+    reference = {'about': 'gate-m57 native reference: what each native loader does with the same canary jar, every stored field '
+                          '(what is judged, and the random draws) agreeing across all runs. Regenerate with: '
+                          'python3 run/compat/breath-drown.py reference',
                  'canarySources': built['canarySources'], 'properties': PROPERTIES, 'families': families}
     write_reference(Path(args.out), reference)
     print(f'wrote {args.out}: {sum(len(f["rows"]) for f in families.values())} rows from {args.runs} agreeing runs per loader')
@@ -366,7 +471,8 @@ def main(argv=None):
     g = sub.add_parser('reference'); g.add_argument('--runs', type=int, default=3); g.add_argument('--port', type=int, default=int(os.environ.get('GATE_PORT', 25565)))
     g.add_argument('--work', default=str(KERNEL / 'build/m57-reference')); g.add_argument('--out', default=str(REFERENCE))
     g.add_argument('--staged'); g.add_argument('--timeout', type=int, default=900)
-    j = sub.add_parser('judge'); j.add_argument('--reference', default=str(REFERENCE)); j.add_argument('--result', required=True); j.add_argument('--phase', required=True)
+    j = sub.add_parser('judge'); j.add_argument('--reference', default=str(REFERENCE)); j.add_argument('--result', required=True)
+    j.add_argument('--phase', required=True, choices=PHASES)
     s = sub.add_parser('check-sources'); s.add_argument('--reference', default=str(REFERENCE))
     sub.add_parser('properties', help='the server.properties lines every arm runs with (the gate appends them)')
     c = sub.add_parser('compare'); c.add_argument('a'); c.add_argument('b'); c.add_argument('--fields', default='air,health,result,rng,entityEvents')

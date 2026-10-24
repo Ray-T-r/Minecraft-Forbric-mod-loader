@@ -120,26 +120,36 @@ must go RED.
 ## MinecraftForge breathing, drowning and liquids (gate-m57)
 
 `breath-drown.py` is gate-m57's measuring tool. Its canaries (`canary/forge-breath-drown`, one MinecraftForge and one
-NeoForge mod, built by `run/build-breath-drown-canary.sh`) play 33 scenarios on a dedicated server and write one JSON
+NeoForge mod, built by `run/build-breath-drown-canary.sh`) play 44 scenarios on a dedicated server and write one JSON
 result: air and health every tick, what each family's breathe, drown and damage listeners saw, a liquid's bucket round
-trip, and, not judged, the body's random-source steps per tick and the entity events the server sent.
+trip, the body's random-source steps per tick, and the entity events the server sent for the body (the probe's player
+gets an entity tracker of its own for that, as a player in a level has one).
 
 - `breath-drown.py reference [--runs 3] [--port N]` rebuilds the canaries and runs native MinecraftForge 26.2-65.0.1
   and NeoForge 26.2.0.88 (the images `native-controls.py prepare` installs; `M57_NATIVE` points elsewhere) `--runs`
-  times each, in fresh instances under `build/m57-reference/`, requires every run of one loader to agree on every
-  judged field, and writes `canary/forge-breath-drown/native-reference.json` with the canary sources' digest. Run it
-  after any change to the canaries; the gate refuses a reference measured with other sources (`check-sources`).
-- `breath-drown.py judge --result R.json --phase positive|bridges-off|getters-off|own-type-off` is the gate's verdict:
-  every row against the native loader whose answer stands, plus what MinecraftForge was handed in the mixed rows, and
-  exit 1 unless the failed rows are exactly the ones the phase predicts.
+  times each, in fresh instances under `build/m57-reference/`. Every run of one loader must agree with its first on
+  every stored field — what is judged, and the random draws — or it stops and names the differences; nothing is
+  filtered. It then writes `canary/forge-breath-drown/native-reference.json` with the canary sources' digest. Run it
+  after any change to the canaries; the gate refuses a reference measured with other sources (`check-sources`). The
+  native images are cloned with `cp -c` on macOS and copied elsewhere, and the NeoForge and MinecraftForge servers
+  start from their installers' `unix_args.txt` (`win_args.txt` on Windows); the canary build reads the game's
+  libraries from `MC_DIR` (default: the macOS launcher directory), as every canary builder does.
+- `breath-drown.py judge --result R.json --phase positive|bridges-off|getters-off|own-type-off|seams-off` is the gate's
+  verdict: every row against the native loader whose answer stands, plus what MinecraftForge was handed in the mixed
+  rows, plus the random draws where a row must draw what another draws (`rng-as`). Exit 1 unless the failed rows are
+  exactly the ones the phase predicts and each failed for the phase's cause (a MinecraftForge breathe or drown view; a
+  liquid block that threw with `"this.fluid" is null`; a body in MinecraftForge's liquid whose air or breathe view
+  moved; a MinecraftForge attack, hurt or damage view).
 - `breath-drown.py run --engine native-forge|native-neo|native-fabric|forbric --mods JAR... --driver forge|neo|fabric
   --out DIR --port N [--jvm=-D...] [--tree WT --staged OLD]` is one server, for a developer probe (a Fabric build of the
   same canary with fabric-api's damage events stays out of the repository); `compare A.json B.json` lists every
-  difference, the unjudged fields included. `properties` prints the server.properties lines every arm uses.
+  difference, the unjudged fields included. `properties` prints the server.properties lines every arm uses. The
+  Forbric engine runs `run/launch-kernel-server.sh`, so it needs bash.
 
-`test_breath_drown.py` holds the judge's row table to the canary's plan, the committed reference to the canary sources
-(line endings ignored) and to every row it is compared on, and each phase's verdict to "exact both ways"; it needs no
-game files and runs in `tools/dev.py tool-test`.
+`test_breath_drown.py` holds the judge's row table to the canary's plan (and the liquid rows to the rows the plan puts
+in MinecraftForge's liquid), the gate to every row and phase, the committed reference to the canary sources (line
+endings ignored) and to every row it is compared on, and each phase's verdict to "exact both ways, for the phase's
+cause"; it needs no game files and runs in `tools/dev.py tool-test`.
 
 ## Fabric menu codec verification
 

@@ -2,6 +2,7 @@ package forbric.breathdrown.PKG;
 
 import com.google.gson.GsonBuilder;
 import com.mojang.authlib.GameProfile;
+import java.lang.reflect.Constructor;
 import java.lang.reflect.Field;
 import java.lang.reflect.Proxy;
 import java.nio.file.Files;
@@ -19,6 +20,7 @@ import java.util.UUID;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.function.Consumer;
 import net.minecraft.core.BlockPos;
+import net.minecraft.core.Holder;
 import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.network.Connection;
 import net.minecraft.network.protocol.Packet;
@@ -37,7 +39,10 @@ import net.minecraft.server.network.ServerPlayerConnection;
 import net.minecraft.util.RandomSource;
 import net.minecraft.world.InteractionHand;
 import net.minecraft.world.InteractionResult;
+import net.minecraft.world.effect.MobEffect;
 import net.minecraft.world.effect.MobEffectInstance;
+import net.minecraft.world.effect.MobEffects;
+import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.EntitySpawnReason;
 import net.minecraft.world.entity.EntityType;
 import net.minecraft.world.entity.LivingEntity;
@@ -60,9 +65,11 @@ import net.minecraft.world.level.material.FluidState;
  * loader that has only one of the two families. Liquid scenarios place a family's liquid block and take it up and pour it
  * out with a bucket through the server's own use-item path.
  *
- * <p>Also measured, and not judged by the gate: how far the body's random source moved each tick (its seed is set at
- * the start of every scenario, so the sequence is the same on every run of one loader) and which entity events the
- * server broadcast for the body. The result is one JSON file ({@code -Dforbric.breathDrownProbe}), then the server halts.
+ * <p>Also measured: how far the body's random source moved each tick (its seed is set at the start of every scenario,
+ * so the sequence is the same on every run of one loader) and which entity events the server broadcast for the body.
+ * The gate judges the random source only where a row is to draw what another row draws (a MinecraftForge listener's
+ * bubble count), never the entity events. The result is one JSON file ({@code -Dforbric.breathDrownProbe}), then the
+ * server halts.
  */
 public final class Core {
 	public static final String FAMILY = "PKG";
@@ -74,13 +81,19 @@ public final class Core {
 	private static final Set<String> EVERY_TICK = Set.of("breathe", "breathe-ann");
 	private static final Set<String> ORDERED = Set.of("breathe", "drown");
 	/** Each pool's place, by fluid, fixed so a loader that lacks one family's fluid builds the others where every loader does. */
-	private static final List<String> POOL_ORDER = List.of("minecraft:water", "minecraft:air", "forbricbreathforge:murk", "forbricbreathneo:murk");
+	private static final List<String> POOL_ORDER = List.of("minecraft:water", "minecraft:air", "forbricbreathforge:murk", "forbricbreathneo:murk",
+			"minecraft:bubble_column");
+	/** The effects a scenario may give its body, by the name the plan uses. */
+	private static final Map<String, Holder<MobEffect>> EFFECTS = Map.of("water_breathing", MobEffects.WATER_BREATHING,
+			"breath_of_the_nautilus", MobEffects.BREATH_OF_THE_NAUTILUS);
 
 	private static int ticks;
 	private static boolean done;
 	private static final List<Map<String, Object>> rows = new ArrayList<>();
 	private static final Deque<Scenario> queue = new ArrayDeque<>();
 	private static final Map<String, BlockPos> pools = new LinkedHashMap<>();
+	/** A pool that did not build, and why: every scenario in it fails with that cause, whichever comes first. */
+	private static final Map<String, Throwable> poolErrors = new LinkedHashMap<>();
 	private static Scenario current;
 	private static ServerPlayer player;
 	private static String error;
@@ -118,9 +131,11 @@ public final class Core {
 	static final class Scenario {
 		final String name, fluid, entityType;
 		final int air0, length;
-		final List<String> tags = new ArrayList<>();
+		final List<String> tags = new ArrayList<>(), effects = new ArrayList<>();
 		String bucket;
 		LivingEntity entity;
+		/** The entity tracker the probe made for its player (a player the level does not hold has none), removed at the end. */
+		Object probeTracker;
 		int waited, step;
 		long lastSeed = -1;
 		final List<Integer> air = new ArrayList<>(), rng = new ArrayList<>();
@@ -140,6 +155,12 @@ public final class Core {
 		}
 
 		Scenario tag(String... t) { tags.addAll(List.of(t)); return this; }
+
+		Scenario effect(String name) {
+			if (!EFFECTS.containsKey(name)) throw new IllegalArgumentException("no effect " + name);
+			effects.add(name);
+			return this;
+		}
 	}
 
 	private static Scenario pig(String name, String fluid, int air0, int length, String... tags) {
@@ -155,22 +176,30 @@ public final class Core {
 	/**
 	 * The scenarios. Tags: {@code f-*} act in the MinecraftForge listeners, {@code n-*} in the NeoForge ones. Drown rows
 	 * start a pig in water at air -15 (five ticks short of the point MinecraftForge asks at), the read rows at air 5 so
-	 * the first drowning shows; breathe rows use open air, where both native loaders refill the same way.
+	 * the first drowning shows; breathe rows start at 200 of 300, in open air where both native loaders refill the same
+	 * way, or with Breath of the Nautilus alone, where MinecraftForge's listeners are told the body may not refill.
 	 */
 	private static void plan() {
-		String water = "minecraft:water", air = "minecraft:air", forgeMurk = "forbricbreathforge:murk", neoMurk = "forbricbreathneo:murk";
+		String water = "minecraft:water", air = "minecraft:air", forgeMurk = "forbricbreathforge:murk", neoMurk = "forbricbreathneo:murk",
+				bubbles = "minecraft:bubble_column";
 		// Drowning, each family alone, then both: NeoForge's listeners answer first, MinecraftForge's last.
 		queue.add(pig("drown-read", water, 5, 50));
+		queue.add(pig("drown-late", water, -15, 30));
 		queue.add(pig("drown-f-cancel", water, -15, 30, "f-cancel"));
 		queue.add(pig("drown-f-notdrowning", water, -15, 30, "f-notdrowning"));
 		queue.add(pig("drown-f-damage3", water, -15, 30, "f-damage3"));
 		queue.add(pig("drown-f-damage0", water, -15, 30, "f-damage0"));
+		// A MinecraftForge listener's bubble count: natively nothing reads it, so the body's random draws are drown-late's.
+		queue.add(pig("drown-f-bubbles0", water, -15, 30, "f-bubbles0"));
+		queue.add(pig("drown-f-bubbles50", water, -15, 30, "f-bubbles50"));
 		queue.add(pig("drown-f-ann-cancel", water, -15, 30, "f-ann-cancel"));
+		queue.add(pig("drown-read-waterbreathing", water, 5, 30).effect("water_breathing"));
 		queue.add(pig("drown-n-cancel", water, -15, 30, "n-cancel"));
 		queue.add(pig("drown-n-notdrowning", water, -15, 30, "n-notdrowning"));
 		queue.add(pig("drown-n-damage3", water, -15, 30, "n-damage3"));
 		queue.add(pig("drown-n-bubbles0", water, -15, 30, "n-bubbles0"));
 		queue.add(pig("drown-n-drowning", water, 5, 30, "n-drowning"));
+		queue.add(pig("drown-n-incoming-cancel", water, -15, 30, "n-incoming-cancel"));
 		queue.add(pig("drown-n-damage3-f-damage0", water, -15, 30, "n-damage3", "f-damage0"));
 		queue.add(pig("drown-n-cancel-f-damage3", water, -15, 30, "n-cancel", "f-damage3"));
 		queue.add(pig("drown-n-damage3-f-cancel", water, -15, 30, "n-damage3", "f-cancel"));
@@ -184,11 +213,19 @@ public final class Core {
 		queue.add(pig("breathe-n-cant", air, 200, 30, "n-cant"));
 		queue.add(pig("breathe-n-refill0-f-refill2", air, 200, 30, "n-refill0", "f-refill2"));
 		queue.add(pig("breathe-n-cant-f-can", air, 200, 30, "n-cant", "f-can"));
+		// Breath of the Nautilus alone: the body breathes but may not refill where its eyes are in a fluid (MinecraftForge's
+		// canRefillAir false), unless that fluid is a bubble column.
+		queue.add(pig("breathe-nautilus-water", water, 200, 30).effect("breath_of_the_nautilus"));
+		queue.add(pig("breathe-nautilus-water-f-refill2", water, 200, 30, "f-refill2").effect("breath_of_the_nautilus"));
+		queue.add(pig("breathe-nautilus-water-f-can", water, 200, 30, "f-can").effect("breath_of_the_nautilus"));
+		queue.add(pig("breathe-nautilus-bubbles", bubbles, 200, 30).effect("breath_of_the_nautilus"));
+		queue.add(pig("breathe-nautilus-bubbles-n-refill0-f-refill2", bubbles, 200, 30, "n-refill0", "f-refill2").effect("breath_of_the_nautilus"));
 		// Each family's own drowning liquid.
 		queue.add(pig("drown-read-forgemurk", forgeMurk, 5, 50));
 		queue.add(pig("drown-f-damage3-forgemurk", forgeMurk, -15, 30, "f-damage3"));
+		queue.add(pig("breathe-nautilus-forgemurk", forgeMurk, 200, 30).effect("breath_of_the_nautilus"));
 		queue.add(pig("drown-read-neomurk", neoMurk, 5, 50));
-		// The probe's player drowning: the whole damage chain.
+		// The probe's player drowning three times: the whole damage chain, each time.
 		queue.add(new Scenario("player-drown-read", water, "player", 5, 70));
 		queue.add(new Scenario("player-drown-f-hurt-halve", water, "player", 5, 70).tag("f-hurt-halve"));
 		queue.add(new Scenario("player-drown-f-ann-damage-cancel", water, "player", 5, 70).tag("f-ann-damage-cancel"));
@@ -257,20 +294,42 @@ public final class Core {
 		return null;
 	}
 
+	/**
+	 * The glass basin a fluid's scenarios put their body in, built the first time one asks: 3 x 3 x 4 of the fluid's
+	 * block (a bubble column stands on soul sand), and checked block by block before anyone uses it. A basin that does
+	 * not build — its block throws when placed, or what stands there afterwards is not that block holding its fluid — is
+	 * never used: every scenario in it fails with the same cause, whichever of them asks first.
+	 */
 	private static BlockPos pool(MinecraftServer server, String fluid) {
 		BlockPos made = pools.get(fluid);
 		if (made != null) return made;
+		Throwable failed = poolErrors.get(fluid);
+		if (failed != null) throw new IllegalStateException("the " + fluid + " pool did not build: " + failed, failed);
 		int i = POOL_ORDER.indexOf(fluid);
 		if (i < 0) throw new IllegalArgumentException("no pool place for " + fluid);
 		BlockPos center = new BlockPos(4 + 8 * i, 100, 4);
 		ServerLevel level = server.overworld();
 		level.setChunkForced(center.getX() >> 4, center.getZ() >> 4, true);
-		pools.put(fluid, center);   // before the fluid goes in: a block that throws on placement fails each scenario, not the run
+		boolean column = fluid.equals("minecraft:bubble_column");
 		BlockState state = fluid.equals("minecraft:air") ? Blocks.AIR.defaultBlockState() : BuiltInRegistries.BLOCK.getValue(Identifier.parse(fluid)).defaultBlockState();
-		for (int x = -2; x <= 2; x++) for (int z = -2; z <= 2; z++) for (int y = -1; y <= 4; y++) {
-			boolean wall = Math.abs(x) == 2 || Math.abs(z) == 2 || y == -1 || y == 4;
-			level.setBlock(center.offset(x, y, z), wall ? Blocks.GLASS.defaultBlockState() : state, 2);
+		try {
+			for (int x = -2; x <= 2; x++) for (int z = -2; z <= 2; z++) for (int y = -1; y <= 4; y++) {
+				boolean wall = Math.abs(x) == 2 || Math.abs(z) == 2 || y == 4;
+				BlockState here = wall ? Blocks.GLASS.defaultBlockState() : y == -1 ? (column ? Blocks.SOUL_SAND : Blocks.GLASS).defaultBlockState() : state;
+				level.setBlock(center.offset(x, y, z), here, 2);
+			}
+			for (int x = -1; x <= 1; x++) for (int z = -1; z <= 1; z++) for (int y = 0; y <= 3; y++) {
+				BlockPos at = center.offset(x, y, z);
+				BlockState stands = level.getBlockState(at);
+				if (stands.getBlock() != state.getBlock() || stands.getFluidState().getType() != state.getFluidState().getType())
+					throw new IllegalStateException(at.toShortString() + " holds " + BuiltInRegistries.BLOCK.getKey(stands.getBlock()) + " with "
+							+ BuiltInRegistries.FLUID.getKey(stands.getFluidState().getType()) + ", not " + fluid);
+			}
+		} catch (Throwable t) {
+			poolErrors.put(fluid, t);
+			throw new IllegalStateException("the " + fluid + " pool did not build: " + t, t);
 		}
+		pools.put(fluid, center);
 		return center;
 	}
 
@@ -281,9 +340,12 @@ public final class Core {
 
 	/**
 	 * A new probe player for every player scenario, so nothing carries over from the last one (its food and saturation,
-	 * its hurt window, its regeneration timer): a ServerPlayer on a connection that goes nowhere, not in the player
-	 * list, ticked by the probe with doTick(). It flies (stays where it is put), is not invulnerable, and has full food
-	 * but no saturation, so it does not heal within a scenario and its health shows exactly the damage it took.
+	 * its hurt window, its regeneration timer): a ServerPlayer on a connection that goes nowhere, not in the player list
+	 * nor in the level. The probe ticks it as a server ticks a player, in the server's order: tick(), which the level's
+	 * entity loop calls (it counts down the hurt cooldown, which LivingEntity.baseTick leaves to it for a ServerPlayer),
+	 * then doTick(), which the connection's tick calls (the living body: air, drowning, food). It flies (stays where it
+	 * is put), is not invulnerable, and has full food but no saturation, so it does not heal within a scenario (a hurt
+	 * body at 18 food or more heals 1 every 80 ticks; a scenario is 70) and its health shows exactly the damage it took.
 	 */
 	private static ServerPlayer freshPlayer(MinecraftServer server) {
 		ServerLevel level = server.overworld();
@@ -318,6 +380,7 @@ public final class Core {
 			for (String t : s.tags) p.addTag(t);
 			p.setPos(at.getX() + 0.5, at.getY(), at.getZ() + 0.5);
 			e = p;
+			s.tracking = trackPlayer(level, p, s);
 		} else {
 			EntityType<?> type = BuiltInRegistries.ENTITY_TYPE.getValue(Identifier.parse(s.entityType));
 			Mob mob = (Mob) type.create(level, EntitySpawnReason.COMMAND);
@@ -329,6 +392,7 @@ public final class Core {
 			e = mob;
 			s.tracking = watch(level, mob, s);
 		}
+		for (String effect : s.effects) e.addEffect(new MobEffectInstance(EFFECTS.get(effect), 1_000_000, 0, false, false));
 		e.setDeltaMovement(0, 0, 0);
 		e.setAirSupply(s.air0);
 		e.getRandom().setSeed(SEED);
@@ -337,39 +401,82 @@ public final class Core {
 		return null;
 	}
 
+	@SuppressWarnings("unchecked")
+	private static Map<Integer, Object> entityMap(ServerLevel level) throws ReflectiveOperationException {
+		Field entityMap = ChunkMap.class.getDeclaredField("entityMap");
+		entityMap.setAccessible(true);
+		return (Map<Integer, Object>) entityMap.get(level.getChunkSource().chunkMap);
+	}
+
 	/**
 	 * Watches the entity events the server broadcasts for {@code mob}: a stand-in connection in the set of players its
 	 * tracker sends to, recording each entity event's id and the sample it came before. Measured only; nothing judges it.
 	 */
 	private static String watch(ServerLevel level, Mob mob, Scenario s) {
 		try {
-			Field entityMap = ChunkMap.class.getDeclaredField("entityMap");
-			entityMap.setAccessible(true);
-			Object tracked = ((Map<?, ?>) entityMap.get(level.getChunkSource().chunkMap)).get(mob.getId());
+			Object tracked = entityMap(level).get(mob.getId());
 			if (tracked == null) return "untracked: no tracker";
-			Field seenBy = tracked.getClass().getDeclaredField("seenBy");
-			seenBy.setAccessible(true);
-			ServerPlayer stand = player(level.getServer());
-			Object watcher = Proxy.newProxyInstance(Core.class.getClassLoader(), new Class<?>[] {ServerPlayerConnection.class}, (proxy, method, args) -> {
-				switch (method.getName()) {
-					case "send": {
-						Packet<?> packet = (Packet<?>) args[0];
-						if (packet instanceof ClientboundEntityEventPacket event && s.entity == mob) s.entityEvents.add(s.air.size() + ":" + event.getEventId());
-						return null;
-					}
-					case "getPlayer": return stand;
-					case "hashCode": return System.identityHashCode(proxy);
-					case "equals": return proxy == args[0];
-					case "toString": return "breath-drown entity-event watcher";
-					default: return null;
-				}
-			});
-			@SuppressWarnings("unchecked") Set<Object> set = (Set<Object>) seenBy.get(tracked);
-			set.add(watcher);
-			return "watched";
+			return watchTracked(level, tracked, mob, s);
 		} catch (Throwable t) {
 			return "untracked: " + t;
 		}
+	}
+
+	/**
+	 * The probe's player is in no level, so it has no entity tracker and what the server broadcasts for it goes nowhere.
+	 * It gets one here, made as ChunkMap.addEntity makes a player's (its type's range, interval and deltas), so the
+	 * server's broadcasts for it reach the watcher; it is taken out again when the scenario ends. A tracker only sends:
+	 * it makes nobody else see the player (this one is in no chunk's view), and nothing reads it but the broadcasts.
+	 */
+	private static String trackPlayer(ServerLevel level, ServerPlayer p, Scenario s) {
+		try {
+			Class<?> type = Class.forName(ChunkMap.class.getName() + "$TrackedEntity", false, ChunkMap.class.getClassLoader());
+			Constructor<?> make = type.getDeclaredConstructor(ChunkMap.class, Entity.class, int.class, int.class, boolean.class);
+			make.setAccessible(true);
+			EntityType<?> kind = p.getType();
+			Object tracked = make.newInstance(level.getChunkSource().chunkMap, p, kind.clientTrackingRange() * 16, kind.updateInterval(), kind.trackDeltas());
+			Map<Integer, Object> map = entityMap(level);
+			if (map.containsKey(p.getId())) return "untracked: id " + p.getId() + " already tracked";
+			map.put(p.getId(), tracked);
+			s.probeTracker = tracked;
+			return watchTracked(level, tracked, p, s);
+		} catch (Throwable t) {
+			return "untracked: " + t;
+		}
+	}
+
+	private static void untrackPlayer(ServerLevel level, Scenario s) {
+		if (s.probeTracker == null) return;
+		try {
+			entityMap(level).remove(s.entity.getId(), s.probeTracker);
+		} catch (Throwable t) {
+			t.printStackTrace();
+		}
+		s.probeTracker = null;
+	}
+
+	/** Puts the entity-event watcher in {@code tracked}'s set of players it sends to. */
+	private static String watchTracked(ServerLevel level, Object tracked, LivingEntity body, Scenario s) throws ReflectiveOperationException {
+		Field seenBy = tracked.getClass().getDeclaredField("seenBy");
+		seenBy.setAccessible(true);
+		ServerPlayer stand = player(level.getServer());
+		Object watcher = Proxy.newProxyInstance(Core.class.getClassLoader(), new Class<?>[] {ServerPlayerConnection.class}, (proxy, method, args) -> {
+			switch (method.getName()) {
+				case "send": {
+					Packet<?> packet = (Packet<?>) args[0];
+					if (packet instanceof ClientboundEntityEventPacket event && s.entity == body) s.entityEvents.add(s.air.size() + ":" + event.getEventId());
+					return null;
+				}
+				case "getPlayer": return stand;
+				case "hashCode": return System.identityHashCode(proxy);
+				case "equals": return proxy == args[0];
+				case "toString": return "breath-drown entity-event watcher";
+				default: return null;
+			}
+		});
+		@SuppressWarnings("unchecked") Set<Object> set = (Set<Object>) seenBy.get(tracked);
+		set.add(watcher);
+		return "watched";
 	}
 
 	/** The random source's state, read without drawing from it; -1 when it is not a seeded linear-congruential source. */
@@ -399,7 +506,10 @@ public final class Core {
 
 	private static void step(MinecraftServer server, Scenario s) throws Exception {
 		LivingEntity e = s.entity;
-		if (e instanceof ServerPlayer p) p.doTick();
+		if (e instanceof ServerPlayer p) {
+			p.tick();     // the level's entity loop
+			p.doTick();   // then the connection's tick
+		}
 		if (s.air.isEmpty()) s.first = describe(e);
 		s.air.add(e.getAirSupply());
 		s.health.add(e.getHealth());
@@ -432,6 +542,7 @@ public final class Core {
 		rows.add(row);
 		System.out.println("[BreathDrown] ROW " + s.name);
 		if (!(e instanceof ServerPlayer)) e.discard();
+		else untrackPlayer(server.overworld(), s);
 		current = null;
 	}
 

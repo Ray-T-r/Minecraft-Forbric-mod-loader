@@ -2,7 +2,8 @@
 
 The gate's verdicts are only as good as three things this file holds still: the rows the judge expects are the rows
 the canary plays, the committed native reference measures every row the judge compares against it, and each phase's
-verdict is exact both ways — an unexpected failure is red, and so is a predicted failure that did not happen.
+verdict is exact both ways — an unexpected failure is red, and so is a predicted failure that did not happen, and so is
+a predicted failure for another cause than the one the phase switches off.
 """
 import contextlib
 import copy
@@ -36,16 +37,21 @@ def view(count, notes, at=None):
 
 
 def reference():
-    """A small reference: every EXPECT row measured by each family it names, with a drown view for MinecraftForge."""
+    """A small reference: every EXPECT row measured by each family it names, with drown and breathe views, a hurt view
+    for MinecraftForge's drowning rows, and the same random draws everywhere (so every 'rng-as' holds natively)."""
     families = {}
     for family in (bd.F, bd.N):
         rows = {}
-        for name, (expect, _) in bd.EXPECT.items():
+        for name, (expect, checks) in bd.EXPECT.items():
             if family not in expect: rows[name] = {'skipped': 'no block'} if 'murk' in name or 'bucket' in name else {
-                'air': [1], 'health': [1.0], 'views': {family: {}}}; continue
+                'air': [1], 'health': [1.0], 'rng': [1], 'views': {family: {}}}; continue
             if name.endswith('bucket'): rows[name] = {'result': ['place=' + name], 'views': {family: {}}}
-            else: rows[name] = {'air': [5, 4], 'health': [10.0, 8.0],
-                                'views': {family: {'drown': view(1, [f'{family} drown x'], [1]), 'breathe': view(2, [f'{family} breathe x'])}}}
+            else:
+                views = {'drown': view(1, [f'{family} drown x'], [1]), 'breathe': view(2, [f'{family} breathe x'])}
+                if family == bd.F and 'drown' in name: views['hurt'] = view(1, ['forge hurt x'], [1])
+                for c in checks:
+                    if c[0] == 'none' and c[1] == family: views.pop(c[2], None)
+                rows[name] = {'air': [5, 4], 'health': [10.0, 8.0], 'rng': [1, 3], 'views': {family: views}}
         families[family] = {'rows': rows}
     return {'canarySources': 'x', 'families': families}
 
@@ -56,7 +62,8 @@ def mixed_result(ref):
     for name, (expect, checks) in bd.EXPECT.items():
         decider = sorted(expect)[0]
         native = ref['families'][decider]['rows'][name]
-        row = {'name': name, **{k: copy.deepcopy(native[k]) for k in bd.JUDGED if k in native}, 'views': {}, 'order': {}}
+        row = {'name': name, **{k: copy.deepcopy(native[k]) for k in bd.STORED if k in native}, 'views': {}, 'order': {},
+               'first': f'blockAtEye={bd.FORGE_MURK} y=100.00' if 'forgemurk' in name else 'blockAtEye=minecraft:water y=100.00'}
         for family in expect: row['views'][family] = copy.deepcopy(ref['families'][family]['rows'][name]['views'][family])
         for check in checks:
             if check[0] in ('sees', 'asked'):
@@ -76,6 +83,22 @@ class PlanAndTable(unittest.TestCase):
         for rows in (bd.FORGE_LIQUID_ROWS, bd.FORGE_LIQUID_BODY_ROWS, bd.HANDED_NEOFORGES_ANSWER):
             self.assertLessEqual(rows, set(bd.EXPECT))
         self.assertLessEqual(bd.FORGE_LIQUID_BODY_ROWS, bd.FORGE_LIQUID_ROWS)
+        for name, (_, checks) in bd.EXPECT.items():
+            for check in checks:
+                if check[0] == 'rng-as': self.assertIn(check[1], bd.EXPECT, name)
+
+    def test_the_rows_in_minecraftforges_liquid_are_the_rows_the_plan_puts_in_it(self):
+        plan = (KERNEL / 'canary/forge-breath-drown/common/src/Core.java').read_text(encoding='utf-8')
+        in_murk = set(re.findall(r'pig\("([a-z0-9-]+)", forgeMurk', plan)) | set(re.findall(r'bucket\("([a-z0-9-]+)", forgeMurk', plan))
+        self.assertEqual(in_murk, bd.FORGE_LIQUID_ROWS)
+        self.assertEqual({n for n in in_murk if not n.endswith('bucket')}, bd.FORGE_LIQUID_BODY_ROWS)
+
+    def test_the_gate_plays_every_row_and_runs_every_phase(self):
+        gate = (KERNEL / 'run/gate-m57-forge-breath-drown.sh').read_text(encoding='utf-8')
+        self.assertIn(f'DONE rows={len(bd.EXPECT)} error=null', gate)
+        for phase in bd.PHASES:
+            self.assertRegex(gate, rf'\nrun_server {phase} ', phase)
+            self.assertRegex(gate, rf'\njudge {phase} ', phase)
 
     def test_the_committed_reference_measures_every_row_it_is_compared_on(self):
         ref = json.loads(bd.REFERENCE.read_text(encoding='utf-8'))
@@ -86,6 +109,13 @@ class PlanAndTable(unittest.TestCase):
                 self.assertNotIn('skipped', row, (family, name))
         self.assertEqual(ref['properties'], bd.PROPERTIES)
         self.assertGreaterEqual(min(f['runs'] for f in ref['families'].values()), 3)
+        for name, (expect, checks) in bd.EXPECT.items():
+            for check in checks:
+                if check[0] != 'rng-as': continue
+                for family in expect:
+                    rows = ref['families'][family]['rows']
+                    self.assertEqual(rows[name].get('rng'), rows[check[1]].get('rng'), (family, name, check[1]))
+                    self.assertTrue(rows[name].get('rng'), (family, name))
 
     def test_the_committed_reference_belongs_to_the_canary_sources_in_this_tree(self):
         self.assertEqual(json.loads(bd.REFERENCE.read_text(encoding='utf-8'))['canarySources'], bd.sources_digest())
@@ -148,6 +178,22 @@ class Judge(unittest.TestCase):
         self.row('drown-read')['order'] = {'drown': 'neo,forge'}
         self.assertEqual(self.failed(), set())
 
+    def test_a_row_that_must_draw_what_another_draws_fails_when_it_does_not(self):
+        name, other = next((n, c[1]) for n, (_, checks) in bd.EXPECT.items() for c in checks if c[0] == 'rng-as')
+        self.row(name)['rng'] = [1, 99]
+        verdicts = bd.judge_rows(self.ref, self.result)
+        self.assertEqual({n for n, r in verdicts.items() if r}, {name})
+        self.assertIn('tick 1: 99 vs 3', ' '.join(verdicts[name]))
+        # The random draws are judged only there: another row's differing draws are not a failure.
+        self.row('drown-read')['rng'] = [7, 7]
+        self.assertEqual(self.failed(), {name})
+
+    def test_a_row_that_must_draw_what_another_draws_needs_the_reference_to_show_it(self):
+        name, other = next((n, c[1]) for n, (_, checks) in bd.EXPECT.items() for c in checks if c[0] == 'rng-as')
+        self.ref['families'][bd.F]['rows'][name]['rng'] = [1, 99]
+        verdicts = bd.judge_rows(self.ref, self.result)
+        self.assertIn('reference does not show', ' '.join(verdicts[name]))
+
     def test_a_skipped_or_missing_row_fails(self):
         self.result['rows'] = [r for r in self.result['rows'] if r['name'] != 'neo-bucket']
         bucket = self.row('forge-bucket')
@@ -172,19 +218,73 @@ class Phases(unittest.TestCase):
             forge_events = bd.F in expect and any(ref['families'][bd.F]['rows'][name]['views'][bd.F].values())
             self.assertEqual(name in predicted, sees or forge_events, name)
 
+    def test_seams_off_predicts_every_row_judged_on_a_minecraftforge_hurt_listener(self):
+        ref = reference()
+        predicted = bd.predicted_failures(ref, 'seams-off')
+        self.assertTrue(predicted)
+        for name, (expect, _) in bd.EXPECT.items():
+            hurt = bd.F in expect and 'hurt' in ref['families'][bd.F]['rows'][name]['views'][bd.F]
+            self.assertEqual(name in predicted, hurt, name)
+
+    NPE = ('setup failed: java.lang.IllegalStateException: the forbricbreathforge:murk pool did not build: '
+           'java.lang.NullPointerException: Cannot invoke "FlowingFluid.getTickDelay(LevelReader)" because "this.fluid" is null')
+
+    def getters_off(self, good, skip):
+        broken = copy.deepcopy(good)
+        broken['rows'] = [r if r['name'] not in bd.FORGE_LIQUID_ROWS else {'name': r['name'], 'skipped': skip} for r in broken['rows']]
+        return broken
+
     def test_a_phase_is_exact_both_ways(self):
         ref = reference()
         good = mixed_result(ref)
         self.assertEqual(self.run_judge(ref, good, 'positive')[0], 0)
-        # getters-off predicts the three liquid rows: all three failing passes the phase...
-        broken = copy.deepcopy(good)
-        broken['rows'] = [r if r['name'] not in bd.FORGE_LIQUID_ROWS else {'name': r['name'], 'skipped': 'NPE'} for r in broken['rows']]
+        # getters-off predicts the liquid rows: all of them failing on the missing fluid passes the phase...
+        broken = self.getters_off(good, self.NPE)
         self.assertEqual(self.run_judge(ref, broken, 'getters-off')[0], 0)
         # ...one of them holding is red, and so is the same result judged as positive.
         held = copy.deepcopy(broken)
         held['rows'] = [r for r in held['rows'] if r['name'] != 'forge-bucket'] + [next(r for r in good['rows'] if r['name'] == 'forge-bucket')]
         self.assertEqual(self.run_judge(ref, held, 'getters-off')[0], 1)
         self.assertEqual(self.run_judge(ref, broken, 'positive')[0], 1)
+
+    def test_a_predicted_failure_for_another_cause_is_red(self):
+        ref = reference()
+        good = mixed_result(ref)
+        # getters-off: the right rows, but not because the liquid block had no fluid.
+        code, out = self.run_judge(ref, self.getters_off(good, 'setup failed: no block forbricbreathforge:murk'), 'getters-off')
+        self.assertEqual(code, 1)
+        self.assertIn('failed for another cause', out)
+        # bridges-off: every predicted row fails on its air alone, its MinecraftForge breathe and drown views intact.
+        predicted = bd.predicted_failures(ref, 'bridges-off')
+        wrong = copy.deepcopy(good)
+        for r in wrong['rows']:
+            if r['name'] in predicted and 'air' in r: r['air'] = [0, 0]
+            elif r['name'] in predicted: r['result'] = ['other']
+        code, out = self.run_judge(ref, wrong, 'bridges-off')
+        self.assertEqual(code, 1)
+        self.assertIn('failed for another cause', out)
+        # ...and the same rows without MinecraftForge's breathe and drown views pass it.
+        right = copy.deepcopy(good)
+        for r in right['rows']:
+            for kind in bd.BRIDGED_KINDS: r['views'].get(bd.F, {}).pop(kind, None)
+            if r['name'] in predicted and not any(r['views'].get(bd.F, {}).get(k) for k in bd.BRIDGED_KINDS):
+                r.setdefault('views', {}).setdefault(bd.F, {})
+            for c in bd.EXPECT[r['name']][1]:
+                if c[0] == 'sees' and c[1] == bd.F: r['views'][bd.F].pop(c[2], None)
+        self.assertEqual(self.run_judge(ref, right, 'bridges-off')[0], 0, self.run_judge(ref, right, 'bridges-off')[1][-600:])
+
+    def test_own_type_off_needs_the_body_in_minecraftforges_liquid(self):
+        ref = reference()
+        good = mixed_result(ref)
+        moved = copy.deepcopy(good)
+        for r in moved['rows']:
+            if r['name'] in bd.FORGE_LIQUID_BODY_ROWS: r['air'] = [9, 13]
+        self.assertEqual(self.run_judge(ref, moved, 'own-type-off')[0], 0)
+        for r in moved['rows']:
+            if r['name'] in bd.FORGE_LIQUID_BODY_ROWS: r['first'] = 'blockAtEye=minecraft:air y=100.00'
+        code, out = self.run_judge(ref, moved, 'own-type-off')
+        self.assertEqual(code, 1)
+        self.assertIn('not because the body was in', out)
 
     def test_a_probe_that_stopped_on_an_error_is_red(self):
         ref = reference()
