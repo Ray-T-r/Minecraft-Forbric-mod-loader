@@ -329,6 +329,7 @@ public final class KernelRuntimeClasses {
 				new Call("installEntityInteractSpecific", void.class, Object.class),
 				new Call("installHeal", void.class, Object.class),
 				new Call("installVisibility", void.class, Object.class),
+				new Call("installBreathe", void.class, Object.class),
 				new Call("installCriticalHit", void.class, Object.class),
 				new Call("installAnvilUpdate", void.class, Object.class),
 				new Call("installAnvilRepair", void.class, Object.class),

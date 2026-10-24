@@ -1,13 +1,21 @@
 /* Copyright 2026 The Forbric Project. Licensed under the Apache License, Version 2.0. */
 package net.forbric.kernel.runtime;
 
+import java.lang.invoke.MethodHandle;
+import java.lang.invoke.MethodHandles;
+import java.lang.invoke.MethodType;
+
+import net.minecraft.core.BlockPos;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.world.entity.EntityTypes;
+import net.minecraft.world.entity.LivingEntity;
 import net.minecraft.world.entity.monster.spider.Spider;
 import net.minecraft.world.entity.monster.zombie.Zombie;
 import net.minecraft.world.entity.npc.villager.Villager;
+import net.minecraft.world.effect.MobEffectUtil;
 import net.minecraft.world.effect.MobEffects;
 import net.minecraft.world.item.ItemStack;
+import net.minecraft.world.level.block.Blocks;
 import net.minecraft.core.component.DataComponents;
 import net.minecraftforge.common.ForgeHooks;
 import net.minecraftforge.common.ToolAction;
@@ -20,6 +28,7 @@ import net.neoforged.neoforge.event.TagsUpdatedEvent;
 import net.neoforged.neoforge.event.entity.EntityEvent;
 import net.neoforged.neoforge.event.entity.EntityLeaveLevelEvent;
 import net.neoforged.neoforge.event.entity.ProjectileImpactEvent;
+import net.neoforged.neoforge.event.entity.living.LivingBreatheEvent;
 import net.neoforged.neoforge.event.entity.living.LivingConversionEvent;
 import net.neoforged.neoforge.event.entity.living.LivingEvent;
 import net.neoforged.neoforge.event.entity.living.LivingHealEvent;
@@ -199,6 +208,109 @@ public final class KernelGameWorldEvents {
 					double after = ForgeHooks.getEntityVisibilityMultiplier(event.getEntity(), event.getLookingEntity(), before);
 					if (after != before) event.modifyVisibility(after / before);
 				});
+	}
+
+	/**
+	 * Whether a body breathes, and how much air it loses or regains this tick. The merged LivingEntity hands its air to
+	 * NeoForge's hook alone; MinecraftForge's has no caller. MinecraftForge's event is posted from NeoForge's answer,
+	 * said in MinecraftForge's terms: it has a flag NeoForge has not, whether a breathing body may refill. Where
+	 * NeoForge's answer refills something, it may; where it refills nothing, the flag is MinecraftForge's own rule (the
+	 * eye in air or a bubble column, or any effects but Breath of the Nautilus alone) and the amount offered is what
+	 * vanilla would refill, unless that rule says it may refill — then NeoForge's nothing stands. With no listener
+	 * changing it, the answer carried back is NeoForge's exactly. What a listener changes is carried back: whether the
+	 * body breathes, the air it loses, and the air it regains (none where it may not refill). Asked only when a
+	 * MinecraftForge mod listens: it is every living entity, every tick.
+	 */
+	public static void installBreathe(Object neoBus) {
+		KernelGameServerEvents.forward((IEventBus) neoBus, LivingBreatheEvent.class, "LivingBreatheEvent", event -> {
+			if (!net.minecraftforge.event.entity.living.LivingBreatheEvent.BUS.hasListeners()) return;
+			LivingEntity entity = event.getEntity();
+			ForgeBreath handed = ForgeBreath.of(event.canBreathe(), event.getConsumeAirAmount(), event.getRefillAirAmount(),
+					() -> refillsByMinecraftForgesRule(entity), () -> vanillaRefill(entity));
+			var forge = ForgeEventFactory.onLivingBreathe(entity, handed.canBreathe(), handed.consume(), handed.refill(), handed.canRefill());
+			carryBack(new NeoBreath() {
+				@Override public boolean canBreathe() { return event.canBreathe(); }
+				@Override public int consume() { return event.getConsumeAirAmount(); }
+				@Override public int refill() { return event.getRefillAirAmount(); }
+				@Override public void setCanBreathe(boolean canBreathe) { event.setCanBreathe(canBreathe); }
+				@Override public void setConsume(int consume) { event.setConsumeAirAmount(consume); }
+				@Override public void setRefill(int refill) { event.setRefillAirAmount(refill); }
+			}, handed, new ForgeBreath(forge.canBreathe(), forge.getConsumeAirAmount(), forge.getRefillAirAmount(), forge.canRefillAir()));
+		});
+	}
+
+	/** What MinecraftForge's breathe event holds: whether the body breathes, the air it loses, the air offered, and whether it may take it. */
+	record ForgeBreath(boolean canBreathe, int consume, int refill, boolean canRefill) {
+		/**
+		 * NeoForge's answer in MinecraftForge's terms. {@code refillsByRule} and {@code vanillaRefill} are asked only where
+		 * NeoForge's answer refills nothing; both amounts are clamped to zero or more, as MinecraftForge's event clamps them.
+		 */
+		static ForgeBreath of(boolean canBreathe, int consume, int refill, java.util.function.BooleanSupplier refillsByRule,
+				java.util.function.IntSupplier vanillaRefill) {
+			boolean canRefill = refill > 0 || refillsByRule.getAsBoolean();
+			return new ForgeBreath(canBreathe, Math.max(consume, 0), Math.max(canRefill ? refill : vanillaRefill.getAsInt(), 0), canRefill);
+		}
+
+		/** The air a breathing body regains under this answer. */
+		int regained() {
+			return canRefill ? refill : 0;
+		}
+	}
+
+	/** NeoForge's breathe event, as much of it as the carry-back reads and writes. */
+	interface NeoBreath {
+		boolean canBreathe();
+
+		int consume();
+
+		int refill();
+
+		void setCanBreathe(boolean canBreathe);
+
+		void setConsume(int consume);
+
+		void setRefill(int refill);
+	}
+
+	/**
+	 * What MinecraftForge's listeners changed, written to NeoForge's event: whether the body breathes, the air it loses,
+	 * and — for a breathing body — the air it regains. Nothing is written where nothing changed, so an event no
+	 * MinecraftForge listener touched is left exactly as NeoForge's listeners left it.
+	 */
+	static void carryBack(NeoBreath neo, ForgeBreath handed, ForgeBreath after) {
+		if (after.canBreathe() != handed.canBreathe()) neo.setCanBreathe(after.canBreathe());
+		if (after.consume() != handed.consume()) neo.setConsume(after.consume());
+		if (after.canBreathe() && after.regained() != handed.regained()) neo.setRefill(after.regained());
+	}
+
+	/** MinecraftForge's own answer to whether a breathing body may refill (ForgeHooks.onLivingBreathe). */
+	private static boolean refillsByMinecraftForgesRule(LivingEntity entity) {
+		if (MobEffectUtil.shouldEffectsRefillAirsupply(entity)) return true;
+		if (!entity.getFluidInteraction().isEyeInFluidMatching(entity, (body, type, height) -> !type.isAir())) return true;
+		return entity.level().getBlockState(BlockPos.containing(entity.getX(), entity.getEyeY(), entity.getZ())).is(Blocks.BUBBLE_COLUMN);
+	}
+
+	/** {@code LivingEntity.increaseAirSupply}, protected: what vanilla would give back this tick. */
+	private static final class AirSupply {
+		static final MethodHandle INCREASE;
+
+		static {
+			try {
+				INCREASE = MethodHandles.privateLookupIn(LivingEntity.class, MethodHandles.lookup())
+						.findVirtual(LivingEntity.class, "increaseAirSupply", MethodType.methodType(int.class, int.class));
+			} catch (ReflectiveOperationException missing) {
+				throw new ExceptionInInitializerError(missing);
+			}
+		}
+	}
+
+	private static int vanillaRefill(LivingEntity entity) {
+		int air = entity.getAirSupply();
+		try {
+			return (int) AirSupply.INCREASE.invokeExact(entity, air) - air;
+		} catch (Throwable t) {
+			throw t instanceof RuntimeException runtime ? runtime : new IllegalStateException(t);
+		}
 	}
 
 	/**

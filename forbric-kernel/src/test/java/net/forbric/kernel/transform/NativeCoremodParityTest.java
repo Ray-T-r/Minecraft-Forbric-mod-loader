@@ -27,6 +27,7 @@ class NativeCoremodParityTest {
 	private static final Path STAGED = TestFixtures.stagedRoot();
 	private static final Path MERGED = STAGED.resolve("merged-base/patched-mc-merged-26.2.jar");
 	private static final Path FORGE = STAGED.resolve("merged-base/forge-runtime-interop.jar");
+	private static final Path NEO_RUNTIME = STAGED.resolve("neoforge-runtime/neoforge-runtime.jar");
 	private static final Path VANILLA = TestFixtures.vanillaJar();
 	/** tools/dev.py prepare downloads NeoForge's universal jar here; its coremods jar is nested inside. */
 	private static final Path NEO_DOWNLOADS = TestFixtures.minecraftDir().resolve(".forbric-build/dl");
@@ -35,10 +36,13 @@ class NativeCoremodParityTest {
 	private static final String POT = "net/minecraft/world/level/block/FlowerPotBlock";
 	private static final String BIOME = "net/minecraft/world/level/biome/Biome";
 	private static final String STRUCTURE = "net/minecraft/world/level/levelgen/structure/Structure";
+	private static final String LIQUID = "net/minecraft/world/level/block/LiquidBlock";
+	private static final String BUCKET = "net/minecraft/world/item/BucketItem";
 
 	@AfterEach void reset() {
 		for (String key : List.of(NativeCoremodParity.PROPERTY, NativeCoremodParity.FLOWER_POT, NativeCoremodParity.BIOME,
-				NativeCoremodParity.STRUCTURE, NativeCoremodParity.FINALIZE)) System.clearProperty(key);
+				NativeCoremodParity.STRUCTURE, NativeCoremodParity.FINALIZE, NativeCoremodParity.FORGE_GETTERS)) System.clearProperty(key);
+		NativeCoremodParity.readGameClassesFrom(null);
 	}
 
 	@Test void everyFlowerPotReadGoesThroughTheGetterExceptTheGetter() throws Exception {
@@ -61,6 +65,57 @@ class NativeCoremodParityTest {
 		ClassNode structure = rewritten(STRUCTURE);
 		assertEquals(4, calls(structure, STRUCTURE, "getModifiedStructureSettings") - calls(node(read(MERGED, STRUCTURE)), STRUCTURE, "getModifiedStructureSettings"));
 		verify(structure);
+	}
+
+	/**
+	 * MinecraftForge's own rules on the merged base: its {@code (Supplier, …)} constructors store null in the field, so
+	 * every read but the getter's goes through the getter — the liquid's onPlace, spread and pickup, the bucket's use and
+	 * emptying, and vanilla's {@code getContent()}, which MinecraftForge routes too.
+	 */
+	@Test void minecraftForgesLiquidAndBucketReadsGoThroughTheGetter() throws Exception {
+		ClassNode liquid = rewritten(LIQUID);
+		assertEquals(0, reads(liquid, LIQUID, "fluid", m -> !m.name.equals("<init>")), "no raw read of the fluid is left");
+		assertEquals(9, calls(liquid, LIQUID, "getFluid") - calls(node(read(MERGED, LIQUID)), LIQUID, "getFluid"),
+				"onPlace, shouldSpreadLiquid, neighborChanged, updateShape, isPathfindable, skipRendering, pickupBlock, "
+						+ "getPickupSound and the codec");
+		verify(liquid);
+		ClassNode bucket = rewritten(BUCKET);
+		assertEquals(0, reads(bucket, BUCKET, "content", m -> !m.name.equals("<init>")), "no raw read of the content is left");
+		assertEquals(18, calls(bucket, BUCKET, "getFluid") - calls(node(read(MERGED, BUCKET)), BUCKET, "getFluid"));
+		verify(bucket);
+		byte[] once = NativeCoremodParity.apply(LIQUID, read(MERGED, LIQUID));
+		assertSame(once, NativeCoremodParity.apply(LIQUID, once), "a second pass changes nothing");
+	}
+
+	/** NeoForge's fluid code reads the bucket's public field from outside; on this base those reads go through the getter. */
+	@Test void neoForgesOutsideReadsOfTheBucketGoThroughTheGetter() throws Exception {
+		NativeCoremodParity.readGameClassesFrom(path -> {
+			try (ZipFile zip = new ZipFile(MERGED.toFile())) {
+				ZipEntry entry = zip.getEntry(path);
+				return entry == null ? null : zip.getInputStream(entry).readAllBytes();
+			} catch (java.io.IOException e) {
+				throw new java.io.UncheckedIOException(e);
+			}
+		});
+		int routed = 0;
+		for (String reader : List.of("net/neoforged/neoforge/transfer/fluid/FluidUtil",
+				"net/neoforged/neoforge/transfer/fluid/BucketResourceHandler",
+				"net/neoforged/neoforge/fluids/capability/wrappers/FluidBucketWrapper",
+				"net/neoforged/neoforge/fluids/capability/wrappers/BucketPickupHandlerWrapper")) {
+			byte[] original = read(NEO_RUNTIME, reader);
+			int raw = reads(node(original), BUCKET, "content", m -> true);
+			assertTrue(raw >= 1, "premise: " + reader + " reads BucketItem.content");
+			ClassNode out = node(NativeCoremodParity.apply(reader, original));
+			assertEquals(0, reads(out, BUCKET, "content", m -> true), reader);
+			assertEquals(raw, calls(out, BUCKET, "getFluid") - calls(node(original), BUCKET, "getFluid"), reader);
+			verify(out);
+			routed += raw;
+		}
+		assertEquals(7, routed, "every outside read of the bucket's field in NeoForge's runtime");
+		NativeCoremodParity.readGameClassesFrom(null);
+		byte[] unread = read(NEO_RUNTIME, "net/neoforged/neoforge/transfer/fluid/FluidUtil");
+		assertSame(unread, NativeCoremodParity.apply("net/neoforged/neoforge/transfer/fluid/FluidUtil", unread),
+				"without the base to read the bucket from, its outside reads stay raw");
 	}
 
 	@Test void everyFinalizeSpawnInNeoForgesListIsRedirectedAndNothingElse() throws Exception {
@@ -199,6 +254,16 @@ class NativeCoremodParityTest {
 		TestFixtures.require(Fixture.MC_LIBRARIES, Files.isRegularFile(VANILLA), "vanilla 26.2 absent");
 		byte[] vanillaPot = read(VANILLA, POT);
 		assertSame(vanillaPot, NativeCoremodParity.apply(POT, vanillaPot), "vanilla's getter reads the field; nothing to route");
+		for (String owner : List.of(LIQUID, BUCKET)) {
+			byte[] vanilla = read(VANILLA, owner);
+			assertSame(vanilla, NativeCoremodParity.apply(owner, vanilla), "vanilla has no MinecraftForge getter to route to: " + owner);
+		}
+		System.setProperty(NativeCoremodParity.FORGE_GETTERS, "off");
+		for (String owner : List.of(LIQUID, BUCKET)) {
+			byte[] merged = read(MERGED, owner);
+			assertSame(merged, NativeCoremodParity.apply(owner, merged), NativeCoremodParity.FORGE_GETTERS + ": " + owner);
+		}
+		System.clearProperty(NativeCoremodParity.FORGE_GETTERS);
 		for (String property : List.of(NativeCoremodParity.PROPERTY, NativeCoremodParity.FLOWER_POT)) {
 			System.setProperty(property, "off");
 			byte[] merged = read(MERGED, POT);

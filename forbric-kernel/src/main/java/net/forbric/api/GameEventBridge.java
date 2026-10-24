@@ -142,6 +142,9 @@ public enum GameEventBridge {
 			"a MinecraftForge mod cannot stop or change healing"),
 	LIVING_VISIBILITY(Pass.GAME_BUS, "LivingEvent.LivingVisibilityEvent",
 			"a MinecraftForge mod's stealth does nothing: mobs see the player at full range"),
+	LIVING_BREATHE(Pass.GAME_BUS, "LivingBreatheEvent",
+			"a MinecraftForge mod cannot change whether a body breathes or how fast it loses or regains air: its "
+					+ "breathing gear, gills and breathable places do nothing"),
 	CRITICAL_HIT(Pass.GAME_BUS, "CriticalHitEvent",
 			"a MinecraftForge mod cannot force, prevent or scale a critical hit"),
 	ANVIL_UPDATE(Pass.GAME_BUS, "AnvilUpdateEvent",

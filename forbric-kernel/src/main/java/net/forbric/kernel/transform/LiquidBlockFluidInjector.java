@@ -125,28 +125,7 @@ public final class LiquidBlockFluidInjector implements ClassTransformer {
 	 * shape the getter throws for.
 	 */
 	static boolean everyConstructorFillsTheSupplier(ClassNode node) {
-		int constructors = 0;
-		for (MethodNode method : node.methods) {
-			if (!method.name.equals("<init>")) continue;
-			boolean delegates = false, fills = false;
-			for (AbstractInsnNode insn : method.instructions) {
-				if (insn instanceof MethodInsnNode call && call.getOpcode() == Opcodes.INVOKESPECIAL && call.owner.equals(node.name)
-						&& call.name.equals("<init>")) delegates = true;
-				if (insn instanceof FieldInsnNode put && put.getOpcode() == Opcodes.PUTFIELD && put.owner.equals(node.name)
-						&& put.name.equals("supplier") && previousOpcode(put) != Opcodes.ACONST_NULL) fills = true;
-			}
-			if (delegates) continue;
-			if (!fills) return false;
-			constructors++;
-		}
-		return constructors > 0;
-	}
-
-	private static int previousOpcode(AbstractInsnNode from) {
-		for (AbstractInsnNode insn = from.getPrevious(); insn != null; insn = insn.getPrevious()) {
-			if (insn.getOpcode() >= 0) return insn.getOpcode();
-		}
-		return -1;
+		return NativeCoremodParity.everyConstructorFills(node, "supplier", "L" + SUPPLIER + ";");
 	}
 
 	/** The merged (MinecraftForge) body: {@code return (FlowingFluid) this.supplier.get();} and nothing else. */

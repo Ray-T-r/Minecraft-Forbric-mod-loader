@@ -135,7 +135,7 @@ public final class GameEventMultiplexer {
 					bus -> serverBridge(cl, "installBrewingRecipes").invoke(null, bus));
 			// The rest of the world and entity events the merged game posts only NeoForge's version of: chunks,
 			// section moves, leaving a level, waking, tag reloads, effects, conversions, impacts, trampling,
-			// permissions, commands, entity interaction, healing, visibility, critical hits, anvils and tools.
+			// permissions, commands, entity interaction, healing, visibility, breathing, critical hits, anvils and tools.
 			install(cl, neoBus, GameEventBridge.CHUNK_LOAD,
 					bus -> worldBridge(cl, "installChunkLoad").invoke(null, bus));
 			install(cl, neoBus, GameEventBridge.CHUNK_UNLOAD,
@@ -172,6 +172,8 @@ public final class GameEventMultiplexer {
 					bus -> worldBridge(cl, "installHeal").invoke(null, bus));
 			install(cl, neoBus, GameEventBridge.LIVING_VISIBILITY,
 					bus -> worldBridge(cl, "installVisibility").invoke(null, bus));
+			install(cl, neoBus, GameEventBridge.LIVING_BREATHE,
+					bus -> worldBridge(cl, "installBreathe").invoke(null, bus));
 			install(cl, neoBus, GameEventBridge.CRITICAL_HIT,
 					bus -> worldBridge(cl, "installCriticalHit").invoke(null, bus));
 			install(cl, neoBus, GameEventBridge.ANVIL_UPDATE,

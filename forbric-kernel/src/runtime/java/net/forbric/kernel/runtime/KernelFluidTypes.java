@@ -29,6 +29,13 @@ import net.neoforged.neoforge.fluids.FluidType;
  * (KernelFabricFluidBehaviors), and one in none of them is NeoForge's empty type, which entities do not interact with —
  * exactly what vanilla does with an untagged fluid. The answer is not cached: tags are bound after registration and
  * rebound on every reload.
+ *
+ * <p>Tags are the last word only for a fluid that has no type at all. A MinecraftForge mod's fluid has one — its class
+ * overrides MinecraftForge's {@code getFluidType()} — and on its own platform every entity question about it (does a
+ * body drown, swim, get pushed, put out fire, float a boat) is that type's answer, never its tags'. The merged entity
+ * code is NeoForge's and asks NeoForge's type, so such a fluid gets NeoForge's view of its own MinecraftForge type
+ * ({@link KernelForgeFluidTypeViews}); before, an untagged one was NeoForge's empty type, air, and a body whose eye was in a
+ * fluid declared {@code canDrown(true)} breathed there. {@code -Dforbric.forgeFluidOwnType=off} goes back to the tags.
  */
 public final class KernelFluidTypes {
 
@@ -38,8 +45,15 @@ public final class KernelFluidTypes {
 	/** The type for {@code fluid} when NeoForge's own lookup would throw for it, else null (NeoForge answers it). */
 	public static FluidType foreignType(Fluid fluid) {
 		if (fluid == null || isNative(fluid)) return null;
-		return taggedType(fluid);
+		return neoTypeOf(fluid);
 	}
+
+	/** A fluid NeoForge cannot type: its own MinecraftForge type seen through NeoForge's, else what its tags imply. */
+	private static FluidType neoTypeOf(Fluid fluid) {
+		FluidType own = KernelForgeFluidTypeViews.of(fluid);
+		return own != null ? own : taggedType(fluid);
+	}
+
 	private static FluidType taggedType(Fluid fluid) {
 		FluidState state = fluid.defaultFluidState();
 		try {
@@ -54,7 +68,7 @@ public final class KernelFluidTypes {
 		return NeoForgeMod.EMPTY_TYPE.value();
 	}
 	/** Entered only at the actual SDK lookup's proved unsupported branch; namespace guesses are unnecessary. */
-	public static FluidType foreignNeoLookup(Fluid fluid){FluidType type=taggedType(fluid);return (FluidType)net.forbric.api.LookupOutcomes.foreign(fluid,FluidType.class,type);}
+	public static FluidType foreignNeoLookup(Fluid fluid){FluidType type=neoTypeOf(fluid);return (FluidType)net.forbric.api.LookupOutcomes.foreign(fluid,FluidType.class,type);}
 	public static net.minecraftforge.fluids.FluidType foreignForgeLookup(Fluid fluid){var type=forgeType(fluid);if(fluid!=null)FORGE_STAND_INS.add(fluid);return (net.minecraftforge.fluids.FluidType)net.forbric.api.LookupOutcomes.foreign(fluid,net.minecraftforge.fluids.FluidType.class,type);}
 
 	/**
