@@ -203,6 +203,36 @@ class SoakVerifierTest(unittest.TestCase):
                 raise ProcessLookupError()
             with patch.object(soak.os,'killpg',side_effect=exited,create=True),patch.object(soak.time,'sleep'):
                 self.assertEqual(42,soak.wait_for_client(child,log,7200))
+    def test_the_client_writes_its_caught_failures_into_the_evidence(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            caught=Path(temporary)/'evidence'/'caught.tsv'
+            with patch.dict(soak.os.environ,{'FORBRIC_CAUGHT_FILE':str(Path(temporary)/'gate.tsv'),'KEEP':'1'}):
+                environment=soak.client_environment(caught)
+            self.assertEqual(str(caught),environment['FORBRIC_CAUGHT_FILE'],'the client JVM writes the run\'s own file, not the gate\'s')
+            self.assertEqual('1',environment['KEEP'])
+    def test_the_clients_caught_failures_reach_the_gates_file(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            caught=Path(temporary)/'caught.tsv';gate=Path(temporary)/'gate-m34-soak.1.tsv'
+            gate.write_text('FAILURE\tWARN\tbuilder.Site:1\tbefore\tx\n')
+            caught.write_text('FAILURE\tWARN\ta.B.c:7\t[Forbric/X] one\tjava.lang.IllegalStateException\n'
+                              'FAILURE\tWARN\ta.B.c:7\t[Forbric/X] two\tjava.lang.IllegalStateException\n'
+                              'FAILURE\tERROR\td.E.f:9\t[Forbric/Y] three\tjava.lang.RuntimeException\n'
+                              'COUNT\tWARN\ta.B.c:7\t2')
+            record=soak.forward_caught(caught,str(gate))
+            self.assertEqual(['a.B.c:7','d.E.f:9'],record['failureSites'])
+            self.assertEqual(soak.digest(caught),record['sha256'])
+            lines=gate.read_text().splitlines()
+            self.assertEqual('FAILURE\tWARN\tbuilder.Site:1\tbefore\tx',lines[0],'what the gate already had stays')
+            self.assertEqual(caught.read_text().splitlines(),lines[1:])
+            self.assertTrue(gate.read_text().endswith('\n'))
+    def test_a_soak_started_without_a_gate_still_counts_what_the_client_caught(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            caught=Path(temporary)/'caught.tsv';caught.write_text('FAILURE\tWARN\ta.B.c:7\tm\tx\n')
+            self.assertEqual(['a.B.c:7'],soak.forward_caught(caught,None)['failureSites'])
+            self.assertEqual([],soak.forward_caught(Path(temporary)/'never-written.tsv',None)['failureSites'])
+            empty=Path(temporary)/'empty.tsv';empty.touch();gate=Path(temporary)/'gate.tsv';gate.touch()
+            self.assertEqual([],soak.forward_caught(empty,str(gate))['failureSites'])
+            self.assertEqual('',gate.read_text())
     def test_insufficient_measured_activity_is_rejected(self):
         with self.assertRaises(ValueError):self.check(*fixture(),seconds=60)
     def test_missing_finish_cannot_pass(self):
@@ -235,6 +265,8 @@ class SoakVerifierTest(unittest.TestCase):
                 returncode=0
                 def __init__(self,command,cwd,**kwargs):
                     evidence=cwd/'evidence';manifest=json.loads((evidence/'manifest.json').read_text());manifests.append(manifest)
+                    # What the kernel's Caught does in the real JVM: append a failure site to the file it was handed.
+                    with open(kwargs['env']['FORBRIC_CAUGHT_FILE'],'a') as sink:sink.write('FAILURE\tWARN\tnet.forbric.Probe.site:1\t[Forbric/Probe] injected\tjava.lang.IllegalStateException\n')
                     rows,result=fixture()
                     for row in rows:row['nonce']=manifest['nonce']
                     result['nonce']=manifest['nonce']
@@ -242,8 +274,14 @@ class SoakVerifierTest(unittest.TestCase):
                     (evidence/'controller-result.json').write_text(json.dumps(result))
                 def wait(self,timeout=None):return 0
                 def poll(self):return 0
-            with patch.object(soak,'source_record',return_value=source),patch.object(soak.subprocess,'Popen',Child),patch.object(soak,'wait_for_client',return_value=0),patch.object(soak.time,'monotonic',side_effect=[0,24]):
+            gate=put(root/'gate-m34-soak.1.tsv',b'')
+            with patch.object(soak,'source_record',return_value=source),patch.object(soak.subprocess,'Popen',Child),patch.object(soak,'wait_for_client',return_value=0),patch.object(soak.time,'monotonic',side_effect=[0,24]),patch.dict(soak.os.environ,{'FORBRIC_CAUGHT_FILE':str(gate)}):
                 self.assertEqual(0,soak.launch(args))
             self.assertEqual(source,manifests[0]['source'])
-            self.assertFalse(json.loads((kernel/'build/verification/m34-soak/last-control.json').read_text())['acceptance']['releaseAccepted'])
+            acceptance=json.loads((kernel/'build/verification/m34-soak/last-control.json').read_text())['acceptance']
+            self.assertFalse(acceptance['releaseAccepted'])
+            # The client's failure is in the run's evidence AND in the gate's file, which the gate's CAUGHT line reports.
+            self.assertEqual(['net.forbric.Probe.site:1'],acceptance['caught']['failureSites'])
+            self.assertIn('[Forbric/Probe] injected',Path(acceptance['caught']['file']).read_text())
+            self.assertIn('[Forbric/Probe] injected',gate.read_text())
 if __name__=='__main__':unittest.main()

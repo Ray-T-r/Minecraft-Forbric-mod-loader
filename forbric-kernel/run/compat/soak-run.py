@@ -51,6 +51,35 @@ def wait_for_client(process, log, timeout):
     return process.returncode
 
 
+def client_environment(caught):
+    """The client JVM's environment: the caller's, with the kernel's caught-failure sink pointed at the run's evidence.
+
+    The client and every integrated server it opens are one process, so this one file is everything the kernel caught
+    and carried on from during the soak. It lives in the evidence directory so a retained run is complete without the
+    gate that started it; forward_caught() then hands it to that gate.
+    """
+    environment = dict(os.environ)
+    environment['FORBRIC_CAUGHT_FILE'] = str(caught)
+    return environment
+
+
+def forward_caught(caught, outer):
+    """Append the client's caught file to the gate's (the inherited FORBRIC_CAUGHT_FILE) and summarise it.
+
+    gate-m34 used to exec this script, which replaced the shell whose EXIT trap prints a gate's [kernel] CAUGHT line,
+    and the client wrote to a file nobody reported. Now the gate waits for this script and reports its own file, and
+    this is what puts the client's failures in it. Returns the evidence record: the file, its failure sites, its digest.
+    """
+    caught = Path(caught)
+    text = caught.read_text(errors='replace') if caught.is_file() else ''
+    sites = sorted({fields[2] for fields in (line.split('\t') for line in text.splitlines())
+                    if len(fields) > 2 and fields[0] == 'FAILURE'})
+    if outer and text and Path(outer).resolve() != caught.resolve():
+        with Path(outer).open('a') as stream:
+            stream.write(text if text.endswith('\n') else text + '\n')
+    return {'file': str(caught), 'failureSites': sites, 'sha256': digest(caught) if caught.is_file() else None}
+
+
 class RetentionReview(ValueError):
     """Activity can be proven while release acceptance remains refused."""
     def __init__(self, activity):
@@ -417,18 +446,27 @@ def launch(args):
     print(f'[M34] {"CONTROL ONLY" if args.control else "RELEASE SOAK"} nonce={nonce} evidence={evidence}', flush=True)
     began = time.monotonic()
     started_ns = time.time_ns()
-    with (evidence / 'client.log').open('w') as log:
-        process = subprocess.Popen(command, cwd=run, stdout=log, stderr=subprocess.STDOUT, start_new_session=True)
-        dump(evidence / 'process.json', {'pid': process.pid, 'nonce': nonce})
-        try:
-            code = wait_for_client(process, evidence / 'client.log', args.timeout or max(args.seconds * 2, args.seconds + 1800))
-        except KeyboardInterrupt:
-            signal_owned_group(process, signal.SIGTERM)
-            try: process.wait(timeout=30)
-            except subprocess.TimeoutExpired: signal_owned_group(process, signal.SIGKILL); process.wait()
-            code = -1
+    caught = evidence / 'caught.tsv'
+    caught.touch()
+    outer_caught = os.environ.get('FORBRIC_CAUGHT_FILE')
+    try:
+        with (evidence / 'client.log').open('w') as log:
+            process = subprocess.Popen(command, cwd=run, stdout=log, stderr=subprocess.STDOUT, start_new_session=True,
+                                       env=client_environment(caught))
+            dump(evidence / 'process.json', {'pid': process.pid, 'nonce': nonce})
+            try:
+                code = wait_for_client(process, evidence / 'client.log', args.timeout or max(args.seconds * 2, args.seconds + 1800))
+            except KeyboardInterrupt:
+                signal_owned_group(process, signal.SIGTERM)
+                try: process.wait(timeout=30)
+                except subprocess.TimeoutExpired: signal_owned_group(process, signal.SIGKILL); process.wait()
+                code = -1
+    finally:
+        caught_record = forward_caught(caught, outer_caught)
+    print(f"[M34] the client's kernel caught {len(caught_record['failureSites'])} failure site(s) and carried on: {caught}", flush=True)
     elapsed = time.monotonic() - began
-    validation = {'status': 'FAIL', 'releaseAccepted': False, 'nonce': nonce, 'pid': process.pid, 'exitCode': code, 'processSeconds': elapsed}
+    validation = {'status': 'FAIL', 'releaseAccepted': False, 'nonce': nonce, 'pid': process.pid, 'exitCode': code, 'processSeconds': elapsed,
+                  'caught': caught_record}
     try:
         if code != 0:
             stated = evidence / 'controller-result.json'
