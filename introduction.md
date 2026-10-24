@@ -662,7 +662,7 @@ classpath (first-URL-wins would otherwise let it shadow the winner and contribut
   load-bearing: it defines FML classes at that point), and only if some mod declares an extension.
 - **Coremods** — NeoForge's coremod jar is never loaded; `transform.NativeCoremodParity` performs its rewrites
   (flower pot `potted`, biome climate/effects, structure settings, `finalizeSpawn`) *after* Mixin, where NeoForge
-  runs them.
+  runs them. MinecraftForge's own field-to-getter transformer runs at the same place (§5.3).
 
 ### 5.3 MinecraftForge
 
@@ -688,6 +688,33 @@ classpath (first-URL-wins would otherwise let it shadow the winner and contribut
   or the composition did not land on every root type.
 - **Enum extensions** — `ForgeEnumExtensionInjector` drives MinecraftForge's own processor (unconditional; it
   declines everything unless Forge's mod list holds more than two mods).
+- **Field getters** — MinecraftForge's own `FieldToMethodTransformer` (in `forge-transformers`, a ModLauncher
+  transformation service the kernel never loads, like NeoForge's coremod jar) routes reads of `LiquidBlock.fluid` and
+  `BucketItem.content` through `getFluid()`. MinecraftForge's `(Supplier, …)` constructors, which the merged base
+  keeps, store null in the field and keep the fluid in a supplier, because the fluid is registered after the block or
+  item that names it; without the rewrite every MinecraftForge liquid block threw on being placed (`onPlace` reads the
+  field) and every MinecraftForge bucket emptied nothing. `NativeCoremodParity` carries MinecraftForge's rules beside
+  NeoForge's, per family: MinecraftForge leaves only the getter itself reading the field (its same-descriptor check
+  never holds), NeoForge every method shaped like the getter. Two conditions are this base's own: a read is routed
+  only while the getter answers for an instance every constructor builds (`answersEveryConstructor`), so vanilla's
+  water and lava never lose their fluid to a supplier left unset; and because the merged fields are public, as NeoForge
+  declares them, a read from another class (NeoForge's own fluid code, a NeoForge mod) is routed too, judged against
+  the owner's raw base class (`readGameClassesFrom`, which `KernelMixinBootstrap` hands the game classes before any
+  class is woven, with or without mixin configs). Its flower pot and biome rules are NeoForge's too and already run;
+  the one other field on its list, `MobEffectInstance.effect`, is left alone: that getter only returns the field, and
+  native NeoForge does not route it. `-Dforbric.forgeFieldGetters=off`; `ForgeFieldGettersExecutionTest` runs the
+  rewritten classes.
+- **Fluid types** — a MinecraftForge mod's fluid overrides only MinecraftForge's `getFluidType()`. The merged entity
+  code is NeoForge's and asks NeoForge's type, which such a fluid never gives, so `KernelFluidTypes` answered from the
+  fluid's tags: for an untagged one NeoForge's empty type, air, and a body whose eye was in a fluid built
+  `canDrown(true)` breathed there. `KernelForgeFluidTypeViews` now answers first for a fluid whose class has a
+  MinecraftForge type of its own (the `getFluidType()` it resolves to is declared below `Fluid`): MinecraftForge's
+  empty, water and lava types are NeoForge's own (NeoForge's entity code knows those by identity), any other gets one
+  NeoForge `FluidType` view that puts every question NeoForge's entity and world code asks (drowning, swimming,
+  pushing, putting out fire, hydration, boats, path types, sounds, `move`) to the MinecraftForge type, with its plain
+  values (light, density, temperature, viscosity, rarity, name) copied. The view is not registered with NeoForge.
+  Until MinecraftForge's fluid types are registered such a fluid answers by its tags, uncached.
+  `-Dforbric.forgeFluidOwnType=off` goes back to the tags.
 - **Configs** — `KernelForgeConfigLoad` opens genuine MinecraftForge configs one at a time, keeping Forge's reader,
   events, save and file watcher; the watchers are stopped on exit by `interop.ClientShutdown`
   (`ExitHookInjector`: `Minecraft.close` on the client, `DedicatedServer.onServerExit` on the server). A watcher
@@ -813,7 +840,11 @@ Notable repairs by family (read each class's javadoc for the case that motivated
   refill the event started from and the one it ended with, which leaves air at or above the maximum where it is unless a
   listener set the refill (a listener that sets the very amount the event started from cannot be told apart, and gets
   vanilla's update). Nothing else changes: the hook still posts `LivingBreatheEvent` once, and a NeoForge listener still
-  sets the amounts and decides whether the body breathes, as on NeoForge. The cross-host predicate island's protected
+  sets the amounts and decides whether the body breathes, as on NeoForge. MinecraftForge's own `LivingBreatheEvent` is
+  posted from inside that one post, by the kernel's NeoForge listener at `LOWEST` (§8), so what a MinecraftForge
+  listener changes is on the NeoForge event before `refilledAir` compares the refill: a refill it carries back counts
+  as a listener's, and a MinecraftForge listener that changes nothing writes nothing. A MinecraftForge mod's fluid
+  answers `canDrownIn` through its own type (§5.3). The cross-host predicate island's protected
   decision (a Fabric fluid that drowns like water, §7.4.1) starts its event from the same refill
   (`KernelAirRefill.waterRefill`), and the island's prefix is executed in the decorated hook by
   `VanillaAirRefillInjectorExecutionTest`. The refill asks its drowning question of the body's fluid interaction rather
@@ -1325,7 +1356,7 @@ and that family's listeners sit on a bus nobody posts to. A MinecraftForge mod n
 `net.minecraftforge.…Event`, so re-emission is intrinsic. Where the edit splice kept both hooks (§2.4), the game posts
 both events itself, and a bridge must not post the same one again (§8.1).
 
-- **Inventory** — `net.forbric.api.GameEventBridge` enumerates 104 bridges, each with the event, its install pass
+- **Inventory** — `net.forbric.api.GameEventBridge` enumerates 105 bridges, each with the event, its install pass
   and its **cost** in player terms. Passes: `GAME_BUS` (both sides), `CLIENT_GAME_BUS`, `CLIENT_MOD_BUS`,
   `CLIENT_INIT`, `REGISTRATION`, `CLIENT_HUD`, `ON_DEMAND`.
 - **Verification** — `net.forbric.api.EventBridges.verify(pass)` compares achieved against declared and names what
@@ -1361,6 +1392,22 @@ both events itself, and a bridge must not post the same one again (§8.1).
   where NeoForge pops it. Not equal: a MinecraftForge listener reading `getExpToDrop` sees MinecraftForge's own draw,
   not the one NeoForge drops (a listener that sets it decides correctly); a NeoForge listener at `LOWEST` registered
   after the kernel's sees the relayed value, one registered before sees the value before it.
+- **Breathing** — the merged `baseTick` hands the air only to NeoForge's hook; MinecraftForge's
+  (`ForgeHooks.onLivingBreathe`) has no caller, so a MinecraftForge `LivingBreatheEvent` listener never ran.
+  `KernelGameWorldEvents.installBreathe` posts MinecraftForge's event from NeoForge's at `LOWEST`, only while a
+  MinecraftForge listener exists (it is every living entity, every tick). MinecraftForge's event has a flag NeoForge's
+  has not, `canRefillAir`: where NeoForge's answer refills something it is true; where it refills nothing it is
+  MinecraftForge's own rule (the eye in air or a bubble column, or effects other than Breath of the Nautilus alone),
+  and the amount offered is what vanilla would refill, unless that rule says it may refill, where NeoForge's nothing
+  stands. Only what a MinecraftForge listener changed is written back — whether the body breathes, the air it loses,
+  and for a breathing body the air it regains (none where it may not refill) — so an event no MinecraftForge listener
+  touched stays exactly as NeoForge's listeners left it (`ForgeBreath.of` and `carryBack`, driven by
+  `KernelBreatheBridgeTest`). With the vanilla refill (§6) NeoForge's answer already refills wherever vanilla does, so
+  a MinecraftForge listener reads `canRefillAir` true there, also in lava or a breathable fluid with Breath of the
+  Nautilus alone, where native MinecraftForge reads false and holds the air. A NeoForge listener at `LOWEST`
+  registered after the kernel's sees the MinecraftForge listeners' changes, one registered before does not. The event
+  has a `BRIDGED` row and a `ForeignType` row (`LIVING_BREATHE_EVENT`); the bridge's only switch is the global
+  `-Dforbric.unifiedEvents=off`. MinecraftForge's `LivingDrownEvent` is still never posted (§19).
 - **Audits** — `HookCallSiteCensus` (which hooks of `ForgeEventFactory`/`ForgeEventFactoryClient`/NeoForge
   `ClientHooks` the merged base still calls), `DeadEventAudit` + `ForgeBusSubscriptions` (who listens to a dead
   event, including subscriptions an annotation scan cannot see), `DeadHookWorklist` (the join, ordered by how many
@@ -1506,7 +1553,7 @@ translating pairwise:
 | Type | Role |
 | --- | --- |
 | `Ecosystem`, `Side` | the one ecosystem and side vocabulary |
-| `ForeignType` | 70 rows mapping one Forge-family concept to its MinecraftForge and NeoForge class names — names only; per-family divergence stays data |
+| `ForeignType` | 71 rows mapping one Forge-family concept to its MinecraftForge and NeoForge class names — names only; per-family divergence stays data |
 | `DiscoveredMod`, `UnifiedDependency`, `VersionPredicate`, `ModIds` | the mod and dependency model |
 | `ModPresence`, `ModCatalog` | "is X running", and the list a player sees with status `OK` / `DEGRADED` / `FAILED` |
 | `GameEventBridge`, `EventBridges` | the bridge inventory and its verification |
@@ -1874,11 +1921,11 @@ java -cp <boot-cp> net.forbric.kernel.boot.Main --scan --mods <dir> --report out
   Team Reborn Energy 5.0.0 pinned by SHA-256 (`run/energy-api/energy-5.0.0.jar` or `-Pforbric.rebornEnergy`).
   Without the staged jars `compileRuntimeJava` is skipped and `jar` produces a boot jar with no game side — which
   is what CI builds. `KernelRuntimeClasses.verify` is what catches such a jar at launch.
-- **Unit tests.** Counted from source: `src/test` has 5 480 `@Test` methods (23 of them spelled
-  `@org.junit.jupiter.api.Test`), 57 `@TestFactory` and 6 `@ParameterizedTest` methods in 1 038 `*Test.java` files;
+- **Unit tests.** Counted from source: `src/test` has 5 496 `@Test` methods (23 of them spelled
+  `@org.junit.jupiter.api.Test`), 57 `@TestFactory` and 6 `@ParameterizedTest` methods in 1 041 `*Test.java` files;
   `src/transferTest` has 71 `@Test` methods in 6 files (annotations at line start after indentation, `git grep` over
   tracked files). A full run on the staged base (`forbric-loader/run` with its current merged base and report, and
-  the third-party mod packs the developer's machine still has) reported 6 591 tests in its JUnit XML, 77 of them
+  the third-party mod packs the developer's machine still has) reported 6 607 tests in its JUnit XML, 77 of them
   skipped: 75 for third-party packs that machine no longer has, 2 opt-in. How many run depends on the fixtures
   present, since some tests generate one case per fixture. Many tests read the staged jars; gate-m0 fails on *any*
   skipped test, because a skip there means the tests did not look at the real base. The weave tests (`mixin/weave/`)
@@ -1974,7 +2021,7 @@ The last round's results are in §19.
 
 ## 17. System properties
 
-Set with `-D` on the JVM. The installed profile sets none. There are about 430 distinct `forbric.*` names in
+Set with `-D` on the JVM. The installed profile sets none. There are about 440 distinct `forbric.*` names in
 `src/main` and `src/runtime`; almost every repair has an `-Dforbric.<name>=off` switch, and turning one off logs a
 WARN stating what is lost. Those switches exist for bisecting and for gates' negative controls. The ones a
 developer reaches for:
@@ -2058,8 +2105,8 @@ developer reaches for:
 `forbric.forgeCapabilities`, `forbric.forgeWorldgen`, `forbric.transferBridge`, `forbric.hopperFabricStorage`,
 `forbric.clientResourcePreload`, `forbric.earlyConfigs`, `forbric.fabricHooks`, `forbric.fabricImpl`,
 `forbric.kernelBundledFirst`, `forbric.modDataPacks`, `forbric.modMenuStandIn`, `forbric.forgeBreakExperience`,
-`forbric.supersededMixins`. `forbric.kernel.registryRedirect=true` enables an
-experimental registry-wrapper redirect.
+`forbric.forgeFieldGetters`, `forbric.forgeFluidOwnType` (both §5.3), `forbric.supersededMixins`.
+`forbric.kernel.registryRedirect=true` enables an experimental registry-wrapper redirect.
 
 ## 18. Invariants
 
@@ -2154,8 +2201,20 @@ Break one and the failure usually surfaces far from the cause.
   air stays where it is unless a listener sets another refill (§6), where NeoForge pulls it to the maximum: a listener
   that only lets a drowning body breathe leaves 400 of 300 at 400, and so does one that sets the refill to 0 or to any
   negative amount (the event holds it at 0); NeoForge makes both 300 (from executing NeoForge's actual hook, decorated
-  and switched off, not measured in game). A MinecraftForge mod's fluid could not be measured in Forbric: its liquid
-  block throws when placed (below).
+  and switched off, not measured in game). With MinecraftForge's field getters, its fluids' own types and its breathe
+  event added (§5.3, §8), the MinecraftForge server was measured again with a MinecraftForge test fluid that drowns
+  and one that does not: 25 of 29 scenarios match native MinecraftForge tick for tick. Among them are the five where a
+  MinecraftForge `LivingBreatheEvent` listener sets the refill (to 2 and to 0, and for a drowned), makes a
+  water-breathing body drown, or lets a drowning body breathe (before the bridge none of the five listeners ran), and
+  five of the six in the MinecraftForge fluids, which could not be measured before because their liquid block threw
+  when placed: a body drowning in the drowning one, with water breathing, a drowned in it, Breath of the Nautilus
+  alone in it, and a body in the breathable one. The other four are the vanilla rule above: Breath of the Nautilus
+  alone refills in lava and in the breathable MinecraftForge fluid, where MinecraftForge holds, and air above the
+  maximum stays where it is in water with water breathing and in open air, where MinecraftForge pulls it to 300; in
+  the first two a MinecraftForge listener reads `canRefillAir` true where native MinecraftForge reads false. With
+  `-Dforbric.forgeFluidOwnType=off` a body breathes in the drowning MinecraftForge fluid again (3 scenarios change). The
+  NeoForge-with-fabric-api and Fabric-with-Create runs are identical, scenario for scenario, to the runs before these
+  three changes.
 
 **What is still not native-equivalent.** Proven not closable by any structural trigger (each proof kept):
 
@@ -2201,16 +2260,11 @@ Located, not yet fixed (no impossibility proof):
   state depends on the random source's implementation (the entity's is vanilla's `LegacyRandomSource`, whose
   `nextDouble` moves only its private `seed`); and an override of `decreaseAirSupply` that draws from another source
   still draws every tick.
-- MinecraftForge's own `LivingBreatheEvent` is never posted: the merged `baseTick` calls only NeoForge's breathing hook
-  (`ForgeHooks.onLivingBreathe` has no caller), so a MinecraftForge listener of it never runs. The air itself follows
-  vanilla's rule (§6), which is MinecraftForge's own but in two places: with only Breath of the Nautilus, MinecraftForge
-  holds the air in any fluid that is not air (lava, a mod's breathable fluid) where vanilla, and so Forbric, refills it
-  outside the fluids that drown the body; and where it refills it pulls air above the maximum back to it, as NeoForge
-  does wherever the body breathes (with only Breath of the Nautilus in water it leaves 400 of 300 at 400, as vanilla
-  does).
-- A MinecraftForge mod's liquid block built with `LiquidBlock(Supplier, Properties)` (with a `ForgeFlowingFluid`) throws
-  a `NullPointerException` as soon as it is placed: the merged `LiquidBlock.onPlace` reads the vanilla `fluid` field,
-  which that constructor leaves null (it fills only the supplier). Found while measuring air in a MinecraftForge fluid.
+- MinecraftForge's `LivingDrownEvent` is never posted: the merged game calls neither MinecraftForge's breathing hook,
+  which is where MinecraftForge posts it, nor `ForgeEventFactory.onLivingDrown` (the breathe bridge of §8 posts only
+  the breathe event), and `DeadEventAudit` has no row for it, so a MinecraftForge listener that cancels drowning, or
+  changes its damage or bubbles, never runs and nothing reports it. NeoForge's `LivingDrownEvent` is posted as on
+  NeoForge.
 - Experience: a MinecraftForge `BreakEvent` listener that only reads `getExpToDrop` sees MinecraftForge's own draw, not
   the one NeoForge drops (a listener that sets it decides correctly). The relay of `tryDropExperience` (§7.4) declines,
   with a WARN, a hook that reads or changes the raw draw or replaces the `popExperience` call, and runs for a block
