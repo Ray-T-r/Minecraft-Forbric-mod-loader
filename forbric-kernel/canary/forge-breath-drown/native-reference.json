@@ -1,6 +1,6 @@
 {
  "about": "gate-m57 native reference: what each native loader does with the same canary jar, every stored field (what is judged, and the random draws) agreeing across all runs. Regenerate with: python3 run/compat/breath-drown.py reference",
- "canarySources": "d9c8d686858478b7044efeb04fcb5f468bca6dd682c0a3c87d27b338ff9b522c",
+ "canarySources": "0fa502aba2e8e9a80ba6b936885200f93438fd4321f39ab39422fe9f89eabbfa",
  "properties": ["level-seed=forbrickernel", "level-name=world", "level-type=minecraft:flat", "generate-structures=false", "max-tick-time=-1", "pause-when-empty-seconds=0", "online-mode=false", "spawn-animals=false", "view-distance=3", "simulation-distance=3", "spawn-protection=0", "sync-chunk-writes=false"],
  "families": {
   "forge": {

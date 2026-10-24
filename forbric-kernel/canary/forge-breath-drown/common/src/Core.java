@@ -425,8 +425,9 @@ public final class Core {
 	/**
 	 * The probe's player is in no level, so it has no entity tracker and what the server broadcasts for it goes nowhere.
 	 * It gets one here, made as ChunkMap.addEntity makes a player's (its type's range, interval and deltas), so the
-	 * server's broadcasts for it reach the watcher; it is taken out again when the scenario ends. A tracker only sends:
-	 * it makes nobody else see the player (this one is in no chunk's view), and nothing reads it but the broadcasts.
+	 * server's broadcasts for it reach the watcher; it is taken out again when the scenario ends. While it is in, the
+	 * chunk map's tick also sends the player's changes through it, as it does a tracked player's (and clears what that
+	 * clears: the motion and attribute marks). It makes nobody else see the player: this one is in no chunk's view.
 	 */
 	private static String trackPlayer(ServerLevel level, ServerPlayer p, Scenario s) {
 		try {
