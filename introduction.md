@@ -2015,13 +2015,14 @@ java -cp <boot-cp> net.forbric.kernel.boot.Main --scan --mods <dir> --report out
 - **Unit tests.** Counted from source: `src/test` has 5 543 `@Test` methods (23 of them spelled
   `@org.junit.jupiter.api.Test`), 57 `@TestFactory` and 6 `@ParameterizedTest` methods in 1 045 `*Test.java` files;
   `src/transferTest` has 75 `@Test` methods in 7 files (annotations at line start after indentation, `git grep` over
-  tracked files). A full run on the staged base (`forbric-loader/run` with its current merged base and report, and
-  the third-party mod packs the developer's machine still has) reported 6 642 tests in its JUnit XML, 77 of them
-  skipped: 75 for third-party packs that machine no longer has, 2 opt-in. How many run depends on the fixtures
-  present, since some tests generate one case per fixture. Many tests read the staged jars; gate-m0 fails on *any*
-  skipped test, because a skip there means the tests did not look at the real base. The weave tests (`mixin/weave/`)
-  run synthetic mods with unrelated names through the real Mixin and MixinExtras, each with its mechanism switched
-  off as the control. Tests must pass on JDK 21 as well as 25 (the CI unstaged job is JDK 21).
+  tracked files). A full run (`cleanTest test`, no daemon) on a staged root cloned whole from the developer's
+  `forbric-loader/run` — its merged base, runtimes and test fixtures — with this tree's tracked report in it, and the
+  third-party mod packs that machine still has, reported 6 654 tests in its JUnit XML, 74 of them skipped: 72 for
+  third-party packs the machine no longer has, 2 opt-in. How many run and skip depends on the root and the fixtures
+  present (some tests generate one case per fixture; a root cloned from an older copy skipped five more). Many tests
+  read the staged jars; gate-m0 fails on *any* skipped test, because a skip there means the tests did not look at the
+  real base. The weave tests (`mixin/weave/`) run synthetic mods with unrelated names through the real Mixin and
+  MixinExtras, each with its mechanism switched off as the control. Tests must pass on JDK 21 as well as 25 (the CI unstaged job is JDK 21).
 - **Gates.** 59 scripts, `forbric-kernel/run/gate-m*.sh`, each asserting on the real logs and files of a real
   instance, most with named negative controls (a `-D…=off` or input removal that must turn exactly the named
   checks red). `run/compat/gates-all.sh` discovers them by glob; `gates-parallel.py` overlaps them using each
