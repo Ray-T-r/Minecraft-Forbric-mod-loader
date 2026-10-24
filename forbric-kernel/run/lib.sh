@@ -31,13 +31,28 @@ FAIL=0
 #
 # Only a gate owns a file. Every other script sourcing this (the canary builders, the oracles) leaves an inherited
 # variable alone, so a builder a gate calls writes into the gate's file and does not report it a second time.
+#
+# A gate started BY a gate joins the outer one's file the same way. Six gates (m33, m35, m37, m38, m39, m40) start
+# their servers by running themselves again under evidence.py (`gate-mNN.sh --execute…`), and that inner run is a
+# gate-* script too. It used to take a file of its own: every JVM it started wrote there, it printed its CAUGHT line
+# into the server log the outer gate keeps as evidence, and the outer gate read its own, empty, file and printed
+# "CAUGHT none". gate-m39's server hit an NPE in the transfer interop on every run, and the gate said none. The outer
+# gate exports FORBRIC_CAUGHT_GATE (name:pid) with its file; an inner run that inherits both, while that pid is still
+# alive and the file still exists, writes into it and leaves the report to the gate that owns it. A variable left over
+# in an unrelated shell (no live owner, or no file) is not inherited ownership, and the gate takes its own file.
 case "$(basename "$0")" in
   gate-*)
-    CAUGHT_OWNER=$$
-    mkdir -p "$BUILD/caught"
-    FORBRIC_CAUGHT_FILE="$BUILD/caught/$(basename "$0" .sh).$$.tsv"
-    : > "$FORBRIC_CAUGHT_FILE"
-    export FORBRIC_CAUGHT_FILE
+    if [ -n "${FORBRIC_CAUGHT_GATE:-}" ] && [ -n "${FORBRIC_CAUGHT_FILE:-}" ] && [ -f "$FORBRIC_CAUGHT_FILE" ] \
+        && kill -0 "${FORBRIC_CAUGHT_GATE##*:}" 2>/dev/null; then
+      export FORBRIC_CAUGHT_FILE FORBRIC_CAUGHT_GATE
+    else
+      CAUGHT_OWNER=$$
+      mkdir -p "$BUILD/caught"
+      FORBRIC_CAUGHT_FILE="$BUILD/caught/$(basename "$0" .sh).$$.tsv"
+      FORBRIC_CAUGHT_GATE="$(basename "$0" .sh):$$"
+      : > "$FORBRIC_CAUGHT_FILE"
+      export FORBRIC_CAUGHT_FILE FORBRIC_CAUGHT_GATE
+    fi
     ;;
 esac
 
