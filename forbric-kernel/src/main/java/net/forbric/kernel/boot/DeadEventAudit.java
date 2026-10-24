@@ -841,8 +841,11 @@ public final class DeadEventAudit {
 			ForbricLog.info("[Forbric/DeadEvents] %d mod(s) listen for bridged Forge-family events; judged once the server is up",
 					bridgeable.size());
 		}
-		Map<String, Set<String>> asked = new LinkedHashMap<>(deadNow);
-		codeNow.forEach((mod, events) -> asked.computeIfAbsent(mod, k -> new LinkedHashSet<>()).addAll(events));
+		// A copy of every set: a mod in both maps must not have its code events added to the ones judged now.
+		Map<String, Set<String>> asked = new LinkedHashMap<>();
+		for (Map<String, Set<String>> source : List.of(deadNow, codeNow)) {
+			source.forEach((mod, events) -> asked.computeIfAbsent(mod, k -> new LinkedHashSet<>()).addAll(events));
+		}
 		Map<String, Set<String>> posted = postedByGuests(asked, postedByGuests);
 		if (!posted.isEmpty()) {
 			ForbricLog.info("[Forbric/DeadEvents] %d game event(s) the merged base never posts are posted by a mod in this "

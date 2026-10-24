@@ -155,6 +155,14 @@ class DeadEventAuditTest {
 				assertEquals(Boolean.FALSE.equals(onBus) ? 0 : 1, findings.size(), "bus answered " + onBus + ": " + findings);
 			}
 			assertEquals("codemod", net.forbric.api.ModCatalog.failures().get(0).modId());
+			// A mod with an annotation subscriber as well: its code-found event is still judged later, not with the other.
+			net.forbric.api.ModCatalog.publish(List.of(new net.forbric.api.ModCatalog.Entry(
+					net.forbric.api.Ecosystem.FORGE, "codemod", "Code", "1", "", List.of(), "code.jar", "", "")));
+			java.util.Map<String, Set<String>> annotated = new java.util.LinkedHashMap<>();
+			annotated.put("codemod", new java.util.LinkedHashSet<>(Set.of(ALIVE)));
+			DeadEventAudit.report(annotated, net.forbric.api.Side.DEDICATED_SERVER, events -> Map.of(), inCode, event -> false);
+			assertTrue(net.forbric.api.ModCatalog.failures().isEmpty(), "the code-found event was judged with the annotated one");
+			assertEquals(List.of(), DeadEventAudit.judgePending(EnumSet.noneOf(GameEventBridge.class)), "and its bus has no listener");
 			DeadEventAudit.report(Map.of(), net.forbric.api.Side.DEDICATED_SERVER, events -> Map.of(toss, Set.of("tomb.jar")), inCode,
 					event -> true);
 			assertEquals(List.of(), DeadEventAudit.judgePending(EnumSet.noneOf(GameEventBridge.class)),
