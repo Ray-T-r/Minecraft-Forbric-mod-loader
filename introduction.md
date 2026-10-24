@@ -83,7 +83,7 @@ ForbricClassLoader  (GAME side — the only loader that defines game/ecosystem c
 
 `forbric-kernel.jar` is parent-loaded and names no game type. Everything that references `net.minecraft.*`,
 `net.minecraftforge.*`, `net.neoforged.*` or `net.fabricmc.fabric.*` lives in `src/runtime/java`
-(package `net.forbric.kernel.runtime` and its `soak`/`transfer` subpackages, 156 files), is compiled `compileOnly` against the staged game artifacts,
+(package `net.forbric.kernel.runtime` and its `soak`/`transfer` subpackages, 157 files), is compiled `compileOnly` against the staged game artifacts,
 packaged as `forbric-kernel-runtime.jar`, nested at `META-INF/jars/` inside the boot jar, extracted at launch by
 `KernelBundledJars` and loaded as an owned jar.
 
@@ -1356,7 +1356,7 @@ and that family's listeners sit on a bus nobody posts to. A MinecraftForge mod n
 `net.minecraftforge.…Event`, so re-emission is intrinsic. Where the edit splice kept both hooks (§2.4), the game posts
 both events itself, and a bridge must not post the same one again (§8.1).
 
-- **Inventory** — `net.forbric.api.GameEventBridge` enumerates 105 bridges, each with the event, its install pass
+- **Inventory** — `net.forbric.api.GameEventBridge` enumerates 106 bridges, each with the event, its install pass
   and its **cost** in player terms. Passes: `GAME_BUS` (both sides), `CLIENT_GAME_BUS`, `CLIENT_MOD_BUS`,
   `CLIENT_INIT`, `REGISTRATION`, `CLIENT_HUD`, `ON_DEMAND`.
 - **Verification** — `net.forbric.api.EventBridges.verify(pass)` compares achieved against declared and names what
@@ -1438,11 +1438,18 @@ both events itself, and a bridge must not post the same one again (§8.1).
   MinecraftForge's breathe event behind `ForgeHooks.onLivingBreathe`, which nothing calls. Only a constructed type whose
   supertypes reach its family's event base counts as an event. The kernel's own compiled classes are a fourth source:
   a dead hook they call, or a dead event they construct, is delivered by the kernel. `DeadEventAudit`'s rows are data,
-  and `HookCallSiteCensusStagedTest` checks them against that census in both directions, over `ForgeEventFactory`,
+  and `HookCallSiteCensusStagedTest` checks them against that census, over `ForgeEventFactory`,
   `ForgeEventFactoryClient`, `ForgeHooks`, `ForgeHooksClient`, `EventHooks`, `CommonHooks` and `ClientHooks`: no
   `DEAD` row may name an event the base still posts or the kernel delivers, and every event measured as never posted
   needs a `DEAD`, `BRIDGED`, `REPAIRED` or `STAND_DOWN` row. Until 2026-10-24 only the first was checked, so
-  MinecraftForge's `LivingDrownEvent`, measured dead, was named nowhere.
+  MinecraftForge's `LivingDrownEvent`, measured dead, was named nowhere. Only `DEAD` is held both ways: a
+  measured-dead event in `BRIDGED`, `REPAIRED` or `STAND_DOWN` passes whether or not anything delivers it, and the
+  audit names no mod for any of the three, so an event filed there by mistake is silent again (moving
+  `PlayerXpEvent$XpChange` from `DEAD` to each of the three in turn leaves the suite green). Today every such row is one
+  the census counts as kernel-delivered, except `GatherLoginConfigurationTasksEvent`, whose hook the kernel calls
+  reflectively (`PayloadInterop`); no test requires it. And an event whose native posting sites the merge lost needs no
+  row while the census still counts it as posted — through a carrier caller that is not itself a hook, or a call site
+  that survived elsewhere; five such MinecraftForge events are listed in §19.
   - *What runs, not what is staged.* The census reads each game class through the merged-base repairs
     (`MergedBaseLoadTimeView` replays `ForbricMergedBaseCompatTransformer`, which writes without computing frames, so
     it needs no running game). A repair can take a hook call away: `routePlaceItemHookToNeoForge` sends
@@ -1480,7 +1487,9 @@ both events itself, and a bridge must not post the same one again (§8.1).
     the four local packs, and at boot it runs only when a mod listens for a `DEAD` event. A guest posts the event on its own paths, not necessarily the game's, so this can
     only make the audit say less. Checked on a dedicated server: a mod whose subscriber listens for
     `PlayerSpawnPhantomsEvent` is named; beside a second mod that only calls `onPlayerSpawnPhantom`, it is not, and the
-    line names that mod as the poster.
+    line names that mod as the poster. That run is the only check of the boot-time path: `GuestEventPostersTest`
+    drives the scan with the hook classes handed to it, and no test covers the call in `KernelEventSubscribers` or how
+    it reads the hook classes (unwiring either leaves the suite green).
 
 ### 8.1 One delivery per native dispatch — stand-down
 
@@ -1622,7 +1631,7 @@ translating pairwise:
 | Type | Role |
 | --- | --- |
 | `Ecosystem`, `Side` | the one ecosystem and side vocabulary |
-| `ForeignType` | 71 rows mapping one Forge-family concept to its MinecraftForge and NeoForge class names — names only; per-family divergence stays data |
+| `ForeignType` | 74 rows mapping one Forge-family concept to its MinecraftForge and NeoForge class names — names only; per-family divergence stays data |
 | `DiscoveredMod`, `UnifiedDependency`, `VersionPredicate`, `ModIds` | the mod and dependency model |
 | `ModPresence`, `ModCatalog` | "is X running", and the list a player sees with status `OK` / `DEGRADED` / `FAILED` |
 | `GameEventBridge`, `EventBridges` | the bridge inventory and its verification |
@@ -1939,9 +1948,9 @@ Forbric/
 │   ├── build.gradle               boot jar (release 21), runtimeJar, transferTest, staged-artifact wiring
 │   ├── gradle.properties          ASM, sponge-mixin, MixinExtras, SAT4J, NightConfig … versions
 │   ├── src/main/java/net/forbric/api/          the unified API (25 files)
-│   ├── src/main/java/net/forbric/kernel/       boot (105), transform (151), mixin (163), fabric (15),
+│   ├── src/main/java/net/forbric/kernel/       boot (107), transform (152), mixin (166), fabric (15),
 │   │                                           metadata (12), access (7), classloading (10), discovery (5),
-│   │                                           interop (23), ui (5), util (12), mapping (3), soak (2)
+│   │                                           interop (23), ui (6), util (12), mapping (3), soak (2)
 │   ├── src/main/java/net/fabricmc/             vendored Fabric API surface (47 files)
 │   ├── src/main/resources/                     Mixin service registrations; mixin census tables
 │   ├── src/runtime/                            GAME side, net.forbric.kernel.runtime (+ soak/, transfer/)
@@ -2374,6 +2383,21 @@ Located, not yet fixed (no impossibility proof):
   that one is not reported (§8). Four more are never posted here either and are not listed, because MinecraftForge
   26.2 never posts them: `PotionBrewEvent.Pre`, `EntityTeleportEvent.ChorusFruit`, `ChunkDataEvent.Load`,
   `CustomizeGuiOverlayEvent.DebugText`.
+- Five more MinecraftForge events lost native posting sites in the merge and no table names them, so a mod waiting on
+  one is not marked DEGRADED and nothing is logged. The census counts an event as posted while any path reaches its
+  poster, and a carrier caller that is not itself a hook counts outright; `PARTIAL` rows are measured only for
+  `ForgeEventFactory` and `ForgeEventFactoryClient`. `PlayerContainerEvent.Open`: native `ServerPlayer` posts it through
+  `ForgeEventFactory.onPlayerOpenContainer`; the merged one constructs NeoForge's `Open` at three sites and still calls
+  MinecraftForge's close hook, so a MinecraftForge listener is told a vanilla container closed but never that it opened
+  (the hook's one remaining caller is `IForgeServerPlayer.openMenu`, which only a MinecraftForge mod's own menus go
+  through). `PlayerEvent.HarvestCheck`: native `Player` and `BlockBehaviour` reach it through `doPlayerHarvestCheck` and
+  `ForgeHooks.isCorrectToolForDrops`; the merged ones call no such hook, and the merged `Block.canHarvestBlock`,
+  which takes the place of MinecraftForge's `IForgeBlock.canHarvestBlock` default, calls NeoForge's.
+  `BlockEvent.CropGrowEvent.Pre`: `ForgeHooks.onCropsGrowPre` has ten game call sites natively and two merged (cactus
+  and sugar cane; the merged `CropBlock` asks NeoForge's `CommonHooks.canCropGrow`), and `.Post` keeps nine of ten
+  (`StemBlock` calls neither). `BlockEvent.FluidPlaceBlockEvent`: the merged `LavaFluid` posts only NeoForge's at its
+  three sites; MinecraftForge's own `FluidInteractionRegistry` still calls the hook from a lambda. Read from the
+  bytecode (MinecraftForge's patched game against the merged base, the `useOn` repair applied), not measured in game.
 - An item used up on a block, under MinecraftForge (the last block of a stack placed, a tool broken by `useOn`):
   natively `ForgeHooks.onPlaceItemIntoWorld` posts `PlayerDestroyItemEvent` when the stack is empty afterwards; the
   same `routePlaceItemHookToNeoForge` leaves that hook uncalled, and NeoForge's hook posts NeoForge's event there, which
