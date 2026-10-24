@@ -69,9 +69,15 @@ test	net.forbric.kernel.boot.GameEventMultiplexerStandDownTest	everyGuardableBri
 test	net.forbric.kernel.boot.GateWorldgenContractTest	theGateProbesExactlyTheBlocksThePackagedCanariesPlace()	[fixture:staged] build canaries with forbric-loader/run/build-testmods.sh
 test	net.forbric.kernel.boot.HookCallSiteCensusStagedTest	aDualFamilyPortalCallerWithoutTheProvedShapeIsStillReported()	[fixture:staged] staged merged base absent
 test	net.forbric.kernel.boot.HookCallSiteCensusStagedTest	aPairWithoutItsNativeDeliveryIsNotStoodDown()	[fixture:staged] staged merged base absent
+test	net.forbric.kernel.boot.HookCallSiteCensusStagedTest	everyEventTheCensusMeasuresDeadHasARow()	[fixture:staged] staged merged base absent
 test	net.forbric.kernel.boot.HookCallSiteCensusStagedTest	everyRowOfTheDeadTableIsStillDeadInTheBytecode()	[fixture:staged] staged merged base absent
+test	net.forbric.kernel.boot.HookCallSiteCensusStagedTest	minecraftForgesBreatheAndDrownEventsAreMeasuredDeadAndBridged()	[fixture:staged] staged merged base absent
+test	net.forbric.kernel.boot.HookCallSiteCensusStagedTest	noDeadRowNamesAnEventTheKernelDelivers()	[fixture:staged] staged merged base absent
 test	net.forbric.kernel.boot.HookCallSiteCensusStagedTest	noSinglePathPostsABridgedEventTwice()	[fixture:staged] staged merged base absent
+test	net.forbric.kernel.boot.HookCallSiteCensusStagedTest	noTableNamesAnEventItsOwnFamilyNeverPosts()	[fixture:staged] staged merged base absent
 test	net.forbric.kernel.boot.HookCallSiteCensusStagedTest	theCensusRunsAndTheSurfaceIsNotAllAlive()	[fixture:staged] staged merged base absent
+test	net.forbric.kernel.boot.HookCallSiteCensusStagedTest	theCensusSeesTheCallsTheMergedBaseRepairsMove()	[fixture:staged] staged merged base absent
+test	net.forbric.kernel.boot.HookCallSiteCensusStagedTest	theClientOnlyTableIsWhereTheNativeLoaderPostsOnlyOnTheClient()	[fixture:staged] staged merged base absent
 test	net.forbric.kernel.boot.HookCallSiteCensusStagedTest	thePartialTableIsExactlyWhatTheCallSitesSay()	[fixture:staged] staged merged base absent
 test	net.forbric.kernel.boot.KernelBootNeutersTest	onEverySideMinecraftForgesOwnModPackFinderIsEmptied()	[fixture:staged] $ROOT/forbric-loader/run/forge-runtime/forge-runtime.jar absent
 test	net.forbric.kernel.boot.KernelBootNeutersTest	onEverySideMinecraftForgesOwnModifierPassIsEmptiedAndItsAboutToStartIsNot()	[fixture:staged] $ROOT/forbric-loader/run/forge-runtime/forge-runtime.jar absent
@@ -1621,6 +1627,15 @@ test	net.forbric.kernel.runtime.KernelDispatchTest	aClassDeclarerThatForwardsIsS
 test	net.forbric.kernel.runtime.KernelDispatchTest	aDeclarationThatOnlyForwardsToTheSameDefaultIsNoOverride()	[fixture:game-side] game-side classes not compiled yet
 test	net.forbric.kernel.runtime.KernelDispatchTest	aForwarderToAnotherDefaultOrWithChangedArgumentsIsAnOverride()	[fixture:game-side] game-side classes not compiled yet
 test	net.forbric.kernel.runtime.KernelDispatchTest	anInheritedDefaultIsSelected()	[fixture:game-side] game-side classes not compiled yet
+test	net.forbric.kernel.runtime.KernelDrownBridgeTest	aBodyNeoForgeDoesNotDrownIsNotHandedToMinecraftForge()	[fixture:staged] the staged game is absent
+test	net.forbric.kernel.runtime.KernelDrownBridgeTest	aCancelIsTheVetoAndNothingElse()	[fixture:staged] the staged game is absent
+test	net.forbric.kernel.runtime.KernelDrownBridgeTest	aChangedBubbleCountIsNotCarriedBack()	[fixture:staged] the staged game is absent
+test	net.forbric.kernel.runtime.KernelDrownBridgeTest	aDrowningBodyIsHandedAsMinecraftForgeHandsIt()	[fixture:staged] the staged game is absent
+test	net.forbric.kernel.runtime.KernelDrownBridgeTest	aDrowningBodyReachesMinecraftForgeOnceAndAReadingListenerChangesNothing()	[fixture:staged] the staged game is absent
+test	net.forbric.kernel.runtime.KernelDrownBridgeTest	aListenerThatChangesNothingWritesNothing()	[fixture:staged] the staged game is absent
+test	net.forbric.kernel.runtime.KernelDrownBridgeTest	eachChangedValueIsCarriedBack()	[fixture:staged] the staged game is absent
+test	net.forbric.kernel.runtime.KernelDrownBridgeTest	neoForgesAnswerIsWhatMinecraftForgeIsHanded()	[fixture:staged] the staged game is absent
+test	net.forbric.kernel.runtime.KernelDrownBridgeTest	theCanariesReachNeoForgesEventAsNativeMinecraftForgeAppliesThem()	[fixture:staged] the staged game is absent
 test	net.forbric.kernel.runtime.KernelFabricConditionsGateLineTest	theFirstJudgementPrintsTheLineGateM9Reads(Path)	[fixture:staged] the staged artifacts are absent
 test	net.forbric.kernel.runtime.KernelFabricConditionsPublicApiTest	theKeyIsJudgedByThePublicCodecAndTest(Path)	[fixture:staged] the staged artifacts are absent
 test	net.forbric.kernel.runtime.KernelFabricFluidBehaviorsTest	aLookupThatBreaksAnswersNoBehaviourType()	[fixture:third-party] sweep pack absent

@@ -82,6 +82,15 @@ public enum ForeignType {
 	/** Whether a body breathes and how much air it loses or regains: the merged game posts NeoForge's, the kernel bridges MinecraftForge's. */
 	LIVING_BREATHE_EVENT("net.minecraftforge.event.entity.living.LivingBreatheEvent",
 			"net.neoforged.neoforge.event.entity.living.LivingBreatheEvent"),
+	/** A body out of air about to drown, and what drowning costs it: the merged game posts NeoForge's, the kernel bridges MinecraftForge's. */
+	LIVING_DROWN_EVENT("net.minecraftforge.event.entity.living.LivingDrownEvent",
+			"net.neoforged.neoforge.event.entity.living.LivingDrownEvent"),
+	/** Custom skull models: MinecraftForge's is never posted on the merged client, NeoForge's through the kernel's client init. */
+	CREATE_SKULL_MODELS_EVENT("net.minecraftforge.client.event.EntityRenderersEvent$CreateSkullModels",
+			"net.neoforged.neoforge.client.event.EntityRenderersEvent$CreateSkullModels"),
+	/** An item's burn time: the merged FuelValues asks both families through the kernel. */
+	FURNACE_FUEL_BURN_TIME_EVENT("net.minecraftforge.event.furnace.FurnaceFuelBurnTimeEvent",
+			"net.neoforged.neoforge.event.furnace.FurnaceFuelBurnTimeEvent"),
 	// The mod-lifecycle phases. Paired because the kernel posts each one at BOTH families and the two events are
 	// different classes on different bus shapes -- naming either half inline is how one family silently stops
 	// receiving a phase, which is exactly what happened to traditional MinecraftForge until 2026-09-13.

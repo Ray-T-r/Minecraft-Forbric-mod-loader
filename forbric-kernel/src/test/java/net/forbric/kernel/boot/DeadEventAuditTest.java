@@ -116,14 +116,14 @@ class DeadEventAuditTest {
 			DeadEventAudit.resetPending();
 			net.forbric.api.ModCatalog.publish(List.of(new net.forbric.api.ModCatalog.Entry(
 					net.forbric.api.Ecosystem.FORGE, "cmdmod", "Cmd", "1", "", List.of(), "cmd.jar", "", "")));
-			DeadEventAudit.report(Map.of("cmdmod", Set.of(COMMANDS)));
+			DeadEventAudit.report(Map.of("cmdmod", Set.of(COMMANDS)), net.forbric.api.Side.DEDICATED_SERVER);
 			assertTrue(net.forbric.api.ModCatalog.failures().isEmpty(),
 					"Commands loads after mod construction on a dedicated server; judging now marked every mod with a command");
 			assertEquals(List.of(), DeadEventAudit.judgePending(EnumSet.of(GameEventBridge.REGISTER_COMMANDS)),
 					"the bridge installed by the time the server was up: nothing to say");
 			assertTrue(net.forbric.api.ModCatalog.failures().isEmpty());
 
-			DeadEventAudit.report(Map.of("cmdmod", Set.of(COMMANDS)));
+			DeadEventAudit.report(Map.of("cmdmod", Set.of(COMMANDS)), net.forbric.api.Side.DEDICATED_SERVER);
 			List<DeadEventAudit.Finding> still = DeadEventAudit.judgePending(EnumSet.noneOf(GameEventBridge.class));
 			assertEquals(1, still.size(), "a bridge STILL absent once the server is up is the real finding");
 			assertEquals("cmdmod", net.forbric.api.ModCatalog.failures().get(0).modId());
@@ -143,7 +143,7 @@ class DeadEventAuditTest {
 			Map<String, Set<String>> subscribed = new java.util.LinkedHashMap<>();
 			subscribed.put("claimmod", Set.of(CHAT));
 			subscribed.put("a.b.OrphanSubscriber", Set.of(CHAT));
-			DeadEventAudit.report(subscribed);
+			DeadEventAudit.report(subscribed, net.forbric.api.Side.DEDICATED_SERVER);
 			assertEquals(1, net.forbric.api.ModCatalog.failures().size(), "the class-keyed listener invents no row");
 			net.forbric.api.ModCatalog.Entry claim = net.forbric.api.ModCatalog.failures().get(0);
 			assertEquals("claimmod", claim.modId());
@@ -202,6 +202,103 @@ class DeadEventAuditTest {
 		assertTrue(DeadEventAudit.audit(Map.of("keymod", Set.of(KEYS), "tabmod", Set.of(TABS)),
 						EnumSet.noneOf(GameEventBridge.class)).isEmpty(),
 				"a late pass has not run when the audit does; reporting it would name every client mod on every boot");
+	}
+
+	/**
+	 * MinecraftForge's drown event is bridged now: a finding only when the bridge did not install, with the bridge's own
+	 * sentence. Until 2026-10-24 it was in no table at all, so a mod waiting on it was never named either way.
+	 */
+	@Test
+	void aForgeDrownListenerIsAFindingOnlyWithoutItsBridge() {
+		String drown = "net/minecraftforge/event/entity/living/LivingDrownEvent";
+		assertEquals(GameEventBridge.LIVING_DROWN, DeadEventAudit.BRIDGED.get(drown));
+		List<DeadEventAudit.Finding> unbridged = DeadEventAudit.audit(Map.of("gillmod", Set.of(drown)), EnumSet.noneOf(GameEventBridge.class));
+		assertEquals(1, unbridged.size());
+		assertTrue(unbridged.get(0).cost().contains("drowning"), unbridged.get(0).cost());
+		assertTrue(DeadEventAudit.audit(Map.of("gillmod", Set.of(drown)), EnumSet.of(GameEventBridge.LIVING_DROWN)).isEmpty());
+	}
+
+	/**
+	 * A client event the merged game never posts is judged on the client only. A dedicated server never posts it under
+	 * either family, so a listener there waits for nothing natively too, and naming its mod would be a false accusation.
+	 */
+	@Test
+	void aDeadClientEventIsAFindingOnTheClientOnly() {
+		List<net.forbric.api.ModCatalog.Entry> previous = net.forbric.api.ModCatalog.everything();
+		try {
+			net.forbric.api.ModCatalog.publish(List.of(new net.forbric.api.ModCatalog.Entry(
+					net.forbric.api.Ecosystem.FORGE, "skullmod", "Skull", "1", "", List.of(), "skull.jar", "", "")));
+			DeadEventAudit.report(Map.of("skullmod", Set.of(SKULLS)), net.forbric.api.Side.DEDICATED_SERVER);
+			assertTrue(net.forbric.api.ModCatalog.failures().isEmpty(), "a dedicated server never posts a client event natively either");
+			DeadEventAudit.report(Map.of("skullmod", Set.of(SKULLS)), net.forbric.api.Side.CLIENT);
+			assertEquals(1, net.forbric.api.ModCatalog.failures().size());
+			assertEquals("skullmod", net.forbric.api.ModCatalog.failures().get(0).modId());
+			assertTrue(DeadEventAudit.CLIENT_ONLY.contains(SKULLS));
+			assertFalse(DeadEventAudit.CLIENT_ONLY.contains(CHAT));
+		} finally {
+			net.forbric.api.ModCatalog.publish(previous);
+		}
+	}
+
+	/**
+	 * The side is judged by where MinecraftForge posts the event, not by its package. {@code LeftClickEmpty} lives in the
+	 * common {@code event/entity/player} package and is posted natively from {@code Minecraft} alone; judged by package it
+	 * named a mod DEGRADED on every dedicated server for a click no server announces.
+	 */
+	@Test
+	void aCommonPackageEventPostedOnlyOnTheClientIsJudgedOnTheClientOnly() {
+		String leftClickEmpty = "net/minecraftforge/event/entity/player/PlayerInteractEvent$LeftClickEmpty";
+		assertTrue(DeadEventAudit.DEAD.containsKey(leftClickEmpty));
+		Map<String, Set<String>> deadNow = new java.util.LinkedHashMap<>(), bridgeable = new java.util.LinkedHashMap<>();
+		DeadEventAudit.split(Map.of("clickmod", Set.of(leftClickEmpty, CHAT)), net.forbric.api.Side.DEDICATED_SERVER, deadNow, bridgeable);
+		assertEquals(Map.of("clickmod", Set.of(CHAT)), deadNow, "a dedicated server never announces a click at nothing natively");
+		deadNow.clear();
+		DeadEventAudit.split(Map.of("clickmod", Set.of(leftClickEmpty)), net.forbric.api.Side.CLIENT, deadNow, bridgeable);
+		assertEquals(Map.of("clickmod", Set.of(leftClickEmpty)), deadNow, "the client does announce it natively");
+		assertEquals(Map.of(), bridgeable);
+	}
+
+	/**
+	 * An event the merged game never posts is posted in a pack where a guest posts it (Tombstone's phantom spawner calls
+	 * ForgeEventFactory.onPlayerSpawnPhantom), so a mod listening for it there is not accused. The guests are asked only
+	 * about the DEAD events someone listens for, and a pack where no guest posts one is reported as before.
+	 */
+	@Test
+	void anEventAGuestPostsIsNotReported() {
+		String phantoms = "net/minecraftforge/event/entity/player/PlayerSpawnPhantomsEvent";
+		assertTrue(DeadEventAudit.DEAD.containsKey(phantoms));
+		List<net.forbric.api.ModCatalog.Entry> previous = net.forbric.api.ModCatalog.everything();
+		try {
+			net.forbric.api.ModCatalog.publish(List.of(new net.forbric.api.ModCatalog.Entry(
+					net.forbric.api.Ecosystem.FORGE, "nightmod", "Night", "1", "", List.of(), "night.jar", "", "")));
+			List<Set<String>> asked = new ArrayList<>();
+			Map<String, Set<String>> subscribed = Map.of("nightmod", Set.of(phantoms, CHAT, COMMANDS));
+			DeadEventAudit.report(subscribed, net.forbric.api.Side.DEDICATED_SERVER, events -> {
+				asked.add(Set.copyOf(events));
+				return Map.of(phantoms, Set.of("tombstone.jar"));
+			});
+			assertEquals(List.of(Set.of(phantoms, CHAT)), asked, "asked about the DEAD events listened for, and nothing else");
+			assertEquals(1, net.forbric.api.ModCatalog.failures().size());
+			assertTrue(net.forbric.api.ModCatalog.failures().get(0).statusDetail().contains("ServerChatEvent"),
+					net.forbric.api.ModCatalog.failures().get(0).statusDetail());
+			assertFalse(net.forbric.api.ModCatalog.failures().get(0).statusDetail().contains("PlayerSpawnPhantomsEvent"));
+
+			net.forbric.api.ModCatalog.publish(List.of(new net.forbric.api.ModCatalog.Entry(
+					net.forbric.api.Ecosystem.FORGE, "nightmod", "Night", "1", "", List.of(), "night.jar", "", "")));
+			DeadEventAudit.report(Map.of("nightmod", Set.of(phantoms)), net.forbric.api.Side.DEDICATED_SERVER, events -> Map.of());
+			assertEquals(1, net.forbric.api.ModCatalog.failures().size(), "no guest posts it: the listener is reported");
+			assertTrue(net.forbric.api.ModCatalog.failures().get(0).statusDetail().contains("PlayerSpawnPhantomsEvent"));
+
+			asked.clear();
+			DeadEventAudit.report(Map.of("nightmod", Set.of(COMMANDS)), net.forbric.api.Side.DEDICATED_SERVER, events -> {
+				asked.add(Set.copyOf(events));
+				return Map.of();
+			});
+			assertEquals(List.of(), asked, "no DEAD event is listened for: the guests are not scanned at all");
+		} finally {
+			DeadEventAudit.resetPending();
+			net.forbric.api.ModCatalog.publish(previous);
+		}
 	}
 
 	/** A client event no bridge carries and the merged game never posts: a mod waiting on one is named, with its cost. */

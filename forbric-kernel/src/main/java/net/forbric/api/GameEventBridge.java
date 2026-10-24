@@ -145,6 +145,9 @@ public enum GameEventBridge {
 	LIVING_BREATHE(Pass.GAME_BUS, "LivingBreatheEvent",
 			"a MinecraftForge mod cannot change whether a body breathes or how fast it loses or regains air: its "
 					+ "breathing gear, gills and breathable places do nothing"),
+	LIVING_DROWN(Pass.GAME_BUS, "LivingDrownEvent",
+			"a MinecraftForge mod cannot stop a body drowning or change what drowning costs it: its drowning "
+					+ "protection does nothing and every drowning body takes vanilla's damage"),
 	CRITICAL_HIT(Pass.GAME_BUS, "CriticalHitEvent",
 			"a MinecraftForge mod cannot force, prevent or scale a critical hit"),
 	ANVIL_UPDATE(Pass.GAME_BUS, "AnvilUpdateEvent",
