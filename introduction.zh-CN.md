@@ -264,7 +264,7 @@ Fabric 和 NeoForge 在构造函数里需要的状态正好相反，所以内核
 ### 5.4 事件之外的跨生态服务
 
 - **网络** —— 在 Fabric API 和 NeoForge 共用同一个原版频道 id 的地方，`interop.PayloadInterop` 按运行时的负载类选择自定义负载编解码器；`CommonNetworkInteropInjector` 仲裁两边都要占用的 `c:version` / `c:register` 频道（`-Dforbric.commonNetworkInterop=off`）；`RegistrySyncParityInjector` + `KernelForgeWrapperSync` 借助 Forge 自己的 `GameData.injectSnapshot`，把 NeoForge 的注册表同步（装了 fabric-api 时还有 fabric-api 的）应用到 MinecraftForge 包装的注册表上；`KernelRegistryRevert` 在断开连接时恢复连接之前的 id；`NetworkChannelCensus` 比对已注册的频道和已声明的频道。合并后的 `ServerGamePacketListenerImpl.handleCustomPayload` 是 MinecraftForge 的重写：它问一下 `ForgeHooks.onCustomPayload`，把答案丢掉，永远走不到 NeoForge，所以每个 NeoForge mod 在游玩阶段发给服务端的包都没人收（Carry On 的"搬运键按下"包就是其中之一，所以它什么都搬不起来）。`CommonNetworkInteropInjector` 把丢掉的答案改成分支：MinecraftForge 没收、而 NeoForge 注册过的负载交给 `NetworkRegistry.handleModdedPayload`。直接调它而不是调 `super`，因为 fabric-api 注入在 super 里的处理器只服务配置阶段的监听器，对游玩阶段的会抛 `Unknown addon`（`-Dforbric.playPayloadFallThrough=off` 关闭）。`KernelClientSmoke` 的 `-Dforbric.clientSmokeCarry=<tick>` 演练用游戏自己的键盘和鼠标输入把整条链跑一遍。编辑拼接后的通用监听器保留了 MinecraftForge 的 `ForgeHooks.onCustomPayload` 调用的地方，只把 `ForgePayload` 交给它（`PayloadInterop.offerToForge`），和 MinecraftForge 上一样——它的编解码器会把自己拥有的每个频道都解码成这一种负载；内核自己的分发前置代码只在这个被保留的调用位于方法开头、并按它的答案返回时才退让。Fabric 的负载接收方按它实现的公开 `PacketSender` 找出来，交给它的共享负载按 Fabric 自己的编解码器读出（`WirePayloads`）。每条频道声明只交给 fabric-api 的 addon 一次，只列出本阶段已经声明过的频道的 `minecraft:register` 不再重复发送（`-Dforbric.channelDeclarationsOnce=off`）；镜像频道的版本标明它的来源和阶段，而不是方向，所以客户端和服务端对它的看法一致。
-- **物品/流体/能量传输** —— `KernelTransferInterop` + `runtime/transfer/` 桥接 Fabric 的传输 API、NeoForge 的 `ResourceHandler` 和 MinecraftForge capability，装了 Team Reborn Energy 时也桥接它（`-Dforbric.transferBridge=off`、`-Dforbric.hopperFabricStorage=off`）。只在相关 API 存在时启用，是否存在通过查找资源来判断。
+- **物品/流体/能量传输** —— `KernelTransferInterop` + `runtime/transfer/` 桥接 Fabric 的传输 API、NeoForge 的 `ResourceHandler` 和 MinecraftForge capability，装了 Team Reborn Energy 时也桥接它（`-Dforbric.transferBridge=off`、`-Dforbric.hopperFabricStorage=off`）。只在相关 API 存在时启用，是否存在通过查找资源来判断。传输检出项（桥不会以事务方式驱动的提供者）归给哪个 mod，看的是替这个提供者应答的那个类在谁的 jar 里：提供者自己的类，动态代理则是它的 invocation handler。这个类以 `Class` 的形式传过来（`TransferIssues.Issue.source`），因为 lambda 按名字找不到，而代理类根本不是从 jar 里定义的。jar 由 `util.CodeRoots` 读出（代理、没有保护域的类、JDK 类返回 null；隐藏类返回定义它的那个类的 jar）；不来自任何 mod jar 的类归给 `forbric`，这是一个答案，不算失败。
 
 ## 6. 转换流水线
 
@@ -499,7 +499,7 @@ gate-m56 实际测到的（四个阶段都是必需的；缺 Mod Menu 或 fabric
 
 加载结束时和 JVM 退出时各记录一次汇总（`[Forbric/Caught] summary …`，每个失败位置一行，带次数）。用 `FORBRIC_CAUGHT_FILE`（或 `-Dforbric.caught.file`）指定一个文件后，每个失败位置第一次出现时也会追加写进去，退出时再写入次数。
 
-单测和闸门都会读它。`CaughtErrorsExtension`（通过 META-INF/services 对每个单测生效）会让测试期间内核吞下过失败的测试失败，除非测试用 `@ExpectCaught("<失败消息里的文字>")` 说明这是它故意造成的；标在方法上时，列出的每个失败还必须真的发生。`run/lib.sh` 给每个闸门分配自己的 `build/caught/<gate>.<pid>.tsv`，导出给闸门启动的每个 JVM，退出时打印 `[kernel] CAUGHT …`，列出每个位置、消息和次数；`FORBRIC_CAUGHT_STRICT=1` 会让其中任何一条把闸门变红。
+单测和闸门都会读它。`CaughtErrorsExtension`（通过 META-INF/services 对每个单测生效）会让测试期间内核吞下过失败的测试失败，除非测试用 `@ExpectCaught("<失败消息里的文字>")` 说明这是它故意造成的；标在方法上时，列出的每个失败还必须真的发生。`run/lib.sh` 给每个闸门分配自己的 `build/caught/<gate>.<pid>.tsv`，导出给闸门启动的每个 JVM，退出时打印 `[kernel] CAUGHT …`，列出每个位置、消息和次数；`FORBRIC_CAUGHT_STRICT=1` 会让其中任何一条把闸门变红。闸门里再启动的闸门，通过外层闸门汇报：m33、m35、m37、m38、m39、m40 启动服务端的方式是在 `evidence.py` 下把自己再跑一遍，这个内层运行会连同 `FORBRIC_CAUGHT_GATE`（属主的名字和 pid）一起继承这个文件，往里写，自己什么都不打印；属主已经不在的遗留变量、或者没有属主却被导出的文件，都不算继承（`LibCaughtContractTest`）。以前每个内层运行都另开一个文件，把自己的 CAUGHT 行打进外层闸门留作证据的服务端日志里，外层闸门则打印 `CAUGHT none`——而 gate-m39 的服务端每次运行都会撞上一个 NPE（main f7f4ff92 上也一样；见 §5 的传输归属）。gate-m34 改为等待 `soak-run.py` 结束而不是 exec 成它，所以它的 EXIT trap 照样会跑；soak 客户端（一个 JVM：客户端加上它打开的每个集成服务端）把被吞下的失败写进本次运行的 `evidence/caught.tsv`，`soak-run.py` 再把它追加进闸门的文件，并记进 `acceptance.json`。
 
 ## 13. 安装器 —— `forbric-kernel-installer/`
 
@@ -579,7 +579,7 @@ Forbric/
 │   ├── src/main/java/net/forbric/api/          the unified API (25 files)
 │   ├── src/main/java/net/forbric/kernel/       boot (107), transform (152), mixin (166), fabric (15),
 │   │                                           metadata (12), access (7), classloading (10), discovery (5),
-│   │                                           interop (23), ui (6), util (12), mapping (3), soak (2)
+│   │                                           interop (23), ui (6), util (13), mapping (3), soak (2)
 │   ├── src/main/java/net/fabricmc/             vendored Fabric API surface (47 files)
 │   ├── src/main/resources/                     Mixin service registrations; mixin census tables
 │   ├── src/runtime/                            GAME side, net.forbric.kernel.runtime (+ soak/, transfer/)
@@ -613,7 +613,7 @@ java -cp <boot-cp> net.forbric.kernel.boot.Main --scan --mods <dir> --report out
 ```
 
 - **暂存产物。** 游戏侧编译时依赖 `forbric-loader/run/merged-base/patched-mc-merged-26.2.jar`、`…/forge-runtime/forge-runtime.jar`、`…/neoforge-runtime/neoforge-runtime.jar`，外加取自本地 Minecraft 安装的 brigadier、datafixerupper 和 gson，传输模块要用的一个 fabric-api jar（`-Pforbric.fabricApi`），以及按 SHA-256 锁定的 Team Reborn Energy 5.0.0（`run/energy-api/energy-5.0.0.jar` 或 `-Pforbric.rebornEnergy`）。没有暂存的 jar 时，`compileRuntimeJava` 会被跳过，`jar` 产出一个没有游戏侧的引导 jar——CI 构建的就是这种 jar。启动时负责发现这种 jar 的是 `KernelRuntimeClasses.verify`。
-- **单元测试。** 按源码数：`src/test` 的 1 043 个 `*Test.java` 文件里有 5 531 个 `@Test` 方法（其中 23 个写成 `@org.junit.jupiter.api.Test`）、57 个 `@TestFactory` 方法和 6 个 `@ParameterizedTest` 方法；`src/transferTest` 的 6 个文件里有 71 个 `@Test` 方法（只数缩进之后位于行首的注解，用 `git grep` 扫已跟踪的文件）。在暂存基底上（`forbric-loader/run`，带当前的合并基底和报告，以及开发者机器上还在的第三方 mod 整合包）完整跑一遍，JUnit XML 里是 6 642 个测试，其中 77 个跳过：75 个因为那台机器已经没有对应的第三方整合包，2 个是 opt-in 夹具。跑出多少个测试取决于有哪些夹具，因为有些测试按夹具逐个生成用例。很多测试会读取暂存的 jar；gate-m0 只要遇到*任何*一个被跳过的测试就失败，因为在那里跳过意味着测试没有看过真正的基底。织入测试（`mixin/weave/`）让名字毫不相干的合成 mod 经过真正的 Mixin 和 MixinExtras，每个都以关掉对应机制作为对照。测试在 JDK 21 上也必须通过（CI 的 unstaged 作业用的就是 JDK 21）。
+- **单元测试。** 按源码数：`src/test` 的 1 045 个 `*Test.java` 文件里有 5 543 个 `@Test` 方法（其中 23 个写成 `@org.junit.jupiter.api.Test`）、57 个 `@TestFactory` 方法和 6 个 `@ParameterizedTest` 方法；`src/transferTest` 的 7 个文件里有 75 个 `@Test` 方法（只数缩进之后位于行首的注解，用 `git grep` 扫已跟踪的文件）。在暂存基底上（`forbric-loader/run`，带当前的合并基底和报告，以及开发者机器上还在的第三方 mod 整合包）完整跑一遍，JUnit XML 里是 6 642 个测试，其中 77 个跳过：75 个因为那台机器已经没有对应的第三方整合包，2 个是 opt-in 夹具。跑出多少个测试取决于有哪些夹具，因为有些测试按夹具逐个生成用例。很多测试会读取暂存的 jar；gate-m0 只要遇到*任何*一个被跳过的测试就失败，因为在那里跳过意味着测试没有看过真正的基底。织入测试（`mixin/weave/`）让名字毫不相干的合成 mod 经过真正的 Mixin 和 MixinExtras，每个都以关掉对应机制作为对照。测试在 JDK 21 上也必须通过（CI 的 unstaged 作业用的就是 JDK 21）。
 - **闸门。** 共 59 个脚本（`forbric-kernel/run/gate-m*.sh`），每个都对真实实例的真实日志和文件做断言，大多带有指名的负控制（一个 `-D…=off`，或移除某项输入，必须恰好让指名的那几项检查变红）。`run/compat/gates-all.sh` 按 glob 发现它们；`gates-parallel.py` 依据每个闸门里的 `# GATE-PARALLEL: rundirs=… mem=…` 行让它们重叠运行（59 个里有 56 个带这一行；没有的闸门单独运行），并给每个槽位分配独立的端口段。
 
 | 闸门 | 断言内容 |
@@ -629,7 +629,7 @@ java -cp <boot-cp> net.forbric.kernel.boot.Main --scan --mods <dir> --report out
 | m17 | 安装器写出的版本配置，按启动器的方式启动 |
 | m18, m19, m20 | 跨生态在场；内嵌库只初始化一次；玩家能得知未满足的依赖 |
 | m21, m26, m28, m29 | MinecraftForge 初始化、客户端注册事件、配置 + 实时文件监视器、capability |
-| m22, m23 | 内核 jar 被替换后仍能正常退出；鞘翅飞行 |
+| m22, m23 | 内核 jar 被替换后仍能正常退出（客户端 JVM 从自己启动起有 `M22_READY_SECONDS`（600 秒）进入世界；启动脚本在它之前跑的 Gradle 构建单独计时、单独设上限）；鞘翅飞行 |
 | m24, m24b, m30 | 一个失败的 mod、一个元数据读不出来的 mod、一个部分失败的 mod，在每个呈现面上都有归因 |
 | m24c | 写进 `forbric-disabled.txt` 的 jar 谁都不加载，并在加载报告里点名；服务器对崩溃嫌疑提示只写日志 |
 | m25, m31, m32 | 两条生物群系修改器流水线；零 mod 时世界生成与原版一致；移除一个 mod 后存档仍能打开 |
