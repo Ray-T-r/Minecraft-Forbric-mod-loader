@@ -1,15 +1,15 @@
-Latest nightly: [results/2026-10-24/summary.md](results/2026-10-24/summary.md)
+Latest nightly: [results/2026-10-25/summary.md](results/2026-10-25/summary.md)
 
-# Forbric nightly 2026-10-24: FAIL
+# Forbric nightly 2026-10-25: FAIL
 
 | | |
 | --- | --- |
 | commit | [`f7f4ff92f67f`](https://github.com/Ray-T-r/Minecraft-Forbric-mod-loader/commit/f7f4ff92f67fe8de1a5957efda5cceb4c55d5057) Say the title screen's Forbric line stays, and what its count counts |
 | tested | `origin/main` on the developer's Mac (commit status `nightly/dev-mac`) |
-| started | 2026-10-24 02:30 +0800 |
-| soak (`gate-m34-soak.sh`) | skipped: it runs on Sundays |
-| integration | FAILED (exit 1) in 12 min |
-| gates | FAILED (exit 1) in 66 min: 42 GREEN, 15 RED, 1 SKIP |
+| started | 2026-10-25 02:30 +0800 |
+| soak (`gate-m34-soak.sh`) | run: a `--release` run, nothing skipped |
+| integration | FAILED (exit 1) in 11 min |
+| gates | FAILED (exit 1) in 73 min: 49 GREEN, 9 RED |
 
 ## Integration: `python3 tools/dev.py integration`
 
@@ -73,48 +73,41 @@ Did not execute (no results): `transferTest`
 - `test` net.forbric.kernel.mixin.MixinRetargetRenamedBodyCorpusTest.r3MovesExactlyThePinnedInjectorsOverTheAuditCorpus() (org.opentest4j.AssertionFailedError)
 - `test` net.forbric.kernel.mixin.MixinTwinRebindTest.releasedLiquidBounceMovesItsFaceTestAndNothingElse() (org.opentest4j.AssertionFailedError)
 
-## Gates: `bash forbric-kernel/run/compat/gates-all.sh -j auto --skip gate-m34-soak.sh`
+## Gates: `bash forbric-kernel/run/compat/gates-all.sh -j auto --release`
 
 - `gate-m0.sh` RED (exit=1)
-- `gate-m1.sh` RED (exit=1)
-- `gate-m2.sh` RED (exit=1)
 - `gate-m2b.sh` RED (exit=1)
-- `gate-m3.sh` RED (exit=1)
 - `gate-m4.sh` RED (exit=1)
-- `gate-m8-packmeta.sh` RED (exit=1)
-- `gate-m10-overlay.sh` RED (exit=1)
-- `gate-m11-serverconfig.sh` RED (exit=1)
 - `gate-m12-multiplayer.sh` RED (exit=1)
-- `gate-m18-presence.sh` RED (exit=1)
-- `gate-m19-nesteddupe.sh` RED (exit=1)
+- `gate-m17-installer.sh` RED (exit=1)
 - `gate-m21-forgesetup.sh` RED (exit=1)
 - `gate-m22-exitswap.sh` RED (exit=1)
-- `gate-m34-soak.sh` SKIP (explicit --skip)
+- `gate-m34-soak.sh` RED (exit=1)
 - `gate-m54-carry.sh` RED (exit=3)
 
 <details><summary>All 58 RESULT lines</summary>
 
 ```
 RESULT gate-m0.sh RED (exit=1)
-RESULT gate-m1.sh RED (exit=1)
-RESULT gate-m2.sh RED (exit=1)
+RESULT gate-m1.sh GREEN (exit=0)
+RESULT gate-m2.sh GREEN (exit=0)
 RESULT gate-m2b.sh RED (exit=1)
-RESULT gate-m3.sh RED (exit=1)
+RESULT gate-m3.sh GREEN (exit=0)
 RESULT gate-m4.sh RED (exit=1)
 RESULT gate-m4-canary.sh GREEN (exit=0)
 RESULT gate-m7-neo.sh GREEN (exit=0)
-RESULT gate-m8-packmeta.sh RED (exit=1)
+RESULT gate-m8-packmeta.sh GREEN (exit=0)
 RESULT gate-m9-client.sh GREEN (exit=0)
-RESULT gate-m10-overlay.sh RED (exit=1)
-RESULT gate-m11-serverconfig.sh RED (exit=1)
+RESULT gate-m10-overlay.sh GREEN (exit=0)
+RESULT gate-m11-serverconfig.sh GREEN (exit=0)
 RESULT gate-m12-multiplayer.sh RED (exit=1)
 RESULT gate-m13-anticheat.sh GREEN (exit=0)
 RESULT gate-m14-fabric-server.sh GREEN (exit=0)
 RESULT gate-m15-forge-network.sh GREEN (exit=0)
 RESULT gate-m16-forge-handshake.sh GREEN (exit=0)
-RESULT gate-m17-installer.sh GREEN (exit=0)
-RESULT gate-m18-presence.sh RED (exit=1)
-RESULT gate-m19-nesteddupe.sh RED (exit=1)
+RESULT gate-m17-installer.sh RED (exit=1)
+RESULT gate-m18-presence.sh GREEN (exit=0)
+RESULT gate-m19-nesteddupe.sh GREEN (exit=0)
 RESULT gate-m20-depdialog.sh GREEN (exit=0)
 RESULT gate-m21-forgesetup.sh RED (exit=1)
 RESULT gate-m22-exitswap.sh RED (exit=1)
@@ -131,7 +124,7 @@ RESULT gate-m30-attribution.sh GREEN (exit=0)
 RESULT gate-m31-vanilla-parity.sh GREEN (exit=0)
 RESULT gate-m32-savedrop.sh GREEN (exit=0)
 RESULT gate-m33-transfer.sh GREEN (exit=0)
-RESULT gate-m34-soak.sh SKIP (explicit --skip)
+RESULT gate-m34-soak.sh RED (exit=1)
 RESULT gate-m35-behavior.sh GREEN (exit=0)
 RESULT gate-m36-mixin-outcome.sh GREEN (exit=0)
 RESULT gate-m37-entity-callbacks.sh GREEN (exit=0)
