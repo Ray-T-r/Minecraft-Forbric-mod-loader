@@ -68,11 +68,14 @@ step "destroy that copy while the game is in a world"
 #
 # M22_READY_SECONDS, measured from JVM start to client-ready with this 97-jar pack: 84-88 s alone on a quiet
 # machine; 79-125 s for the eight client-merged-pack clients (m9, m22, m23, m27) of two parallel gates-all runs; and
-# 97, 140 and 204 s for this gate run alone while other worktrees' gates and probes kept the load average at 10-29. A
-# vanilla 26.2 client (no loader, a vanilla world) took 10-24 s to join under the same load, so most of what load
-# stretches is the pack's loading, not the game's. 600 s is three times the worst of those. It bounds a client that is
-# still loading, not its speed: one that will never reach a world (a world it cannot open leaves it on the title
-# screen) is red when the bound runs out, and one that dies first is red at once.
+# 97, 140, 180 and 204 s for this gate run alone while other worktrees' gates and probes (and a soak) kept the load
+# average at 10-29. A vanilla 26.2 client (no loader, a vanilla world) took 10-24 s to join under the same load, so most
+# of what load stretches is the pack's loading, not the game's. 600 s is three times the worst of those. It bounds a
+# client that is still loading, not its speed: one that is alive and will never reach a world is red when the bound
+# runs out, and one that exits first is red at once. The negative controls are a client JVM stopped (SIGSTOP) as soon
+# as it starts, and a pack whose only world has an unreadable level.dat; both went red at the bound. With a loadable
+# world beside the unreadable one, a mouse click from outside reached the window and opened that world instead (twice),
+# so a control that leaves one is no control.
 BUILD_LIMIT="${M22_BUILD_SECONDS:-900}"
 READY_LIMIT="${M22_READY_SECONDS:-600}"
 JVM_AT=""

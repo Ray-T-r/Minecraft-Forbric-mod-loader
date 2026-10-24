@@ -2041,7 +2041,7 @@ java -cp <boot-cp> net.forbric.kernel.boot.Main --scan --mods <dir> --report out
 | m17 | the installer's profile, launched the way a launcher does |
 | m18, m19, m20 | cross-ecosystem presence; a nested library initialised once; unmet dependency reaches the player |
 | m21, m26, m28, m29 | MinecraftForge setup, client registration events, configs + live file watcher, capabilities |
-| m22, m23 | quitting survives a replaced kernel jar (the client JVM gets `M22_READY_SECONDS`, 600, from its own start to reach a world; the launcher's Gradle build before it is timed and bounded apart); elytra flight |
+| m22, m23 | quitting survives a replaced kernel jar (the client JVM gets `M22_READY_SECONDS`, 600, from its own start to reach a world; the launcher's Gradle build before it is timed and bounded apart; negative controls: a client JVM stopped as it starts, and a pack whose only world is unreadable); elytra flight |
 | m24, m24b, m30 | a failing mod, a mod whose metadata cannot be read, and a partly failing mod, attributed on every surface |
 | m24c | a jar listed in `forbric-disabled.txt` is loaded by nobody and named in the load report; a server only logs the crash-suspects offer |
 | m25, m31, m32 | both biome-modifier pipelines; zero-mod worldgen parity with vanilla; a save opens with a mod removed |
