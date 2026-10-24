@@ -24,7 +24,7 @@ ROW_NAME = re.compile(r'(?:pig|bucket)\("([a-z0-9-]+)"|new Scenario\("([a-z0-9-]
 
 
 def planned_rows():
-    plan = (KERNEL / 'canary/forge-breath-drown/common/src/Core.java').read_text()
+    plan = (KERNEL / 'canary/forge-breath-drown/common/src/Core.java').read_text(encoding='utf-8')
     body = plan[plan.index('private static void plan()'):plan.index('public static void tick(')]
     return [a or b for a, b in ROW_NAME.findall(body)]
 
@@ -78,7 +78,7 @@ class PlanAndTable(unittest.TestCase):
         self.assertLessEqual(bd.FORGE_LIQUID_BODY_ROWS, bd.FORGE_LIQUID_ROWS)
 
     def test_the_committed_reference_measures_every_row_it_is_compared_on(self):
-        ref = json.loads(bd.REFERENCE.read_text())
+        ref = json.loads(bd.REFERENCE.read_text(encoding='utf-8'))
         for name, (expect, _) in bd.EXPECT.items():
             for family in expect:
                 row = ref['families'][family]['rows'].get(name)
@@ -88,10 +88,22 @@ class PlanAndTable(unittest.TestCase):
         self.assertGreaterEqual(min(f['runs'] for f in ref['families'].values()), 3)
 
     def test_the_committed_reference_belongs_to_the_canary_sources_in_this_tree(self):
-        self.assertEqual(json.loads(bd.REFERENCE.read_text())['canarySources'], bd.sources_digest())
+        self.assertEqual(json.loads(bd.REFERENCE.read_text(encoding='utf-8'))['canarySources'], bd.sources_digest())
+
+    def test_the_source_digest_does_not_see_line_endings(self):
+        # A Windows checkout may hold the canary with CRLF; the reference must still be the one for these sources.
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            for source in sorted(p for p in bd.CANARY.rglob('*') if p.is_file() and p.suffix in ('.java', '.toml')):
+                target = root / source.relative_to(bd.CANARY)
+                target.parent.mkdir(parents=True, exist_ok=True)
+                target.write_bytes(source.read_bytes().replace(b'\r\n', b'\n').replace(b'\n', b'\r\n'))
+            self.assertEqual(bd.sources_digest(root), bd.sources_digest())
+            (root / 'common/src/Core.java').write_bytes((root / 'common/src/Core.java').read_bytes() + b'//\r\n')
+            self.assertNotEqual(bd.sources_digest(root), bd.sources_digest())
 
     def test_the_gate_writes_the_same_server_properties_as_the_reference_runs(self):
-        gate = (KERNEL / 'run/gate-m57-forge-breath-drown.sh').read_text()
+        gate = (KERNEL / 'run/gate-m57-forge-breath-drown.sh').read_text(encoding='utf-8')
         self.assertIn('"$TOOL" properties >> "$SERVER_DIR/server.properties"', gate)
         self.assertIn('level-seed=forbrickernel', bd.PROPERTIES)   # what seed_server_properties writes first
 
@@ -147,7 +159,7 @@ class Phases(unittest.TestCase):
     def run_judge(self, ref, result, phase):
         with tempfile.TemporaryDirectory() as tmp:
             r, o = Path(tmp) / 'ref.json', Path(tmp) / 'result.json'
-            r.write_text(json.dumps(ref)); o.write_text(json.dumps(result))
+            r.write_text(json.dumps(ref), encoding='utf-8'); o.write_text(json.dumps(result), encoding='utf-8')
             with contextlib.redirect_stdout(io.StringIO()) as out:
                 code = bd.main(['judge', '--reference', str(r), '--result', str(o), '--phase', phase])
         return code, out.getvalue()
@@ -184,7 +196,7 @@ class Phases(unittest.TestCase):
     def test_check_sources_names_a_stale_reference(self):
         with tempfile.TemporaryDirectory() as tmp:
             r = Path(tmp) / 'ref.json'
-            r.write_text(json.dumps({'canarySources': '0' * 64}))
+            r.write_text(json.dumps({'canarySources': '0' * 64}), encoding='utf-8')
             with contextlib.redirect_stdout(io.StringIO()) as out:
                 self.assertEqual(bd.main(['check-sources', '--reference', str(r)]), 1)
             self.assertIn('regenerate', out.getvalue())

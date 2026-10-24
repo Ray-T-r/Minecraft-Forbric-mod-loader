@@ -108,8 +108,8 @@ def run(engine, mods, driver, out, port, jvm='', tree=None, staged=None, timeout
     if out.exists(): shutil.rmtree(out)
     (out / 'mods').mkdir(parents=True)
     for m in mods: shutil.copy(m, out / 'mods' / Path(m).name)
-    (out / 'eula.txt').write_text('eula=true\n')
-    (out / 'server.properties').write_text('\n'.join(PROPERTIES + [f'server-port={port}', 'server-ip=127.0.0.1']) + '\n')
+    (out / 'eula.txt').write_text('eula=true\n', encoding='utf-8')
+    (out / 'server.properties').write_text('\n'.join(PROPERTIES + [f'server-port={port}', 'server-ip=127.0.0.1']) + '\n', encoding='utf-8')
     result = out / 'breathdrown.json'
     props = [f'-Dforbric.breathDrownDriver={driver}', f'-Dforbric.breathDrownProbe={result}', *jvm.split()]
     env = os.environ.copy()
@@ -145,8 +145,8 @@ def run(engine, mods, driver, out, port, jvm='', tree=None, staged=None, timeout
     record = {'engine': engine, 'driver': driver, 'jvm': jvm, 'port': port, 'command': cmd, 'rc': process.returncode,
               'timedOut': timed_out, 'seconds': round(time.time() - started), 'mods': {Path(m).name: sha256(m) for m in mods},
               'environment': {k: env[k] for k in ('RUNDIR', 'FORBRIC_OLD', 'FORBRIC_JVM', 'FORBRIC_COMPAT_POLICY') if k in env}}
-    (out / 'run.json').write_text(json.dumps(record, indent=2) + '\n')
-    return json.loads(result.read_text()) if result.is_file() else None
+    (out / 'run.json').write_text(json.dumps(record, indent=2) + '\n', encoding='utf-8')
+    return json.loads(result.read_text(encoding='utf-8')) if result.is_file() else None
 
 
 # ---- what is judged -------------------------------------------------------------------------------------------------
@@ -239,10 +239,10 @@ def predicted_failures(reference, phase):
 
 
 def cmd_judge(args):
-    reference = json.loads(Path(args.reference).read_text())
+    reference = json.loads(Path(args.reference).read_text(encoding='utf-8'))
     if not Path(args.result).is_file():
         print(f'[kernel] FAIL {args.phase}: no probe result at {args.result}'); return 1
-    result = json.loads(Path(args.result).read_text())
+    result = json.loads(Path(args.result).read_text(encoding='utf-8'))
     if result.get('error'): print(f'[kernel] FAIL {args.phase}: the probe stopped on {result["error"]}'); return 1
     verdicts = judge_rows(reference, result)
     failed = {name for name, reasons in verdicts.items() if reasons}
@@ -266,7 +266,7 @@ def cmd_reference(args):
     env = os.environ.copy()
     if args.staged: env['FORBRIC_OLD'] = str(args.staged)
     subprocess.run(['bash', str(KERNEL / 'run/build-breath-drown-canary.sh')], check=True, env=env)
-    built = json.loads((KERNEL / 'run/canary/m57-build-inputs.json').read_text())
+    built = json.loads((KERNEL / 'run/canary/m57-build-inputs.json').read_text(encoding='utf-8'))
     work = Path(args.work); work.mkdir(parents=True, exist_ok=True)
     families = {}
     for family in (F, N):
@@ -313,16 +313,18 @@ def write_reference(path, reference):
     lines.append('}')
     text = '\n'.join(lines) + '\n'
     if json.loads(text) != reference: raise AssertionError('reference writer lost data')
-    path.write_text(text)
+    path.write_bytes(text.encode('utf-8'))   # LF on every platform: the file is committed
 
 
-def sources_digest():
-    sources = sorted(p for p in CANARY.rglob('*') if p.is_file() and p.suffix in ('.java', '.toml'))
-    return hashlib.sha256(b''.join(p.relative_to(CANARY).as_posix().encode() + b'\0' + p.read_bytes() for p in sources)).hexdigest()
+def sources_digest(root=CANARY):
+    """The canary's .java and .toml sources, line endings read as LF: a Windows checkout's CRLF is the same source."""
+    sources = sorted(p for p in root.rglob('*') if p.is_file() and p.suffix in ('.java', '.toml'))
+    return hashlib.sha256(b''.join(p.relative_to(root).as_posix().encode() + b'\0' + p.read_bytes().replace(b'\r\n', b'\n')
+                                   for p in sources)).hexdigest()
 
 
 def cmd_check_sources(args):
-    reference = json.loads(Path(args.reference).read_text())
+    reference = json.loads(Path(args.reference).read_text(encoding='utf-8'))
     now = sources_digest()
     if reference['canarySources'] != now:
         print(f'[kernel] FAIL the native reference was measured with other canary sources ({reference["canarySources"][:12]}, '
@@ -335,7 +337,7 @@ def cmd_check_sources(args):
 # ---- the developer probe's comparison -------------------------------------------------------------------------------
 
 def cmd_compare(args):
-    a, b = (json.loads(Path(p).read_text()) for p in (args.a, args.b))
+    a, b = (json.loads(Path(p).read_text(encoding='utf-8')) for p in (args.a, args.b))
     rows_a, rows_b = ({r['name']: r for r in x['rows']} for x in (a, b))
     fields = args.fields.split(',')
     same = differ = 0

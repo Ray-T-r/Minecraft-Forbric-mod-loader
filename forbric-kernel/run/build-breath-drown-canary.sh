@@ -46,7 +46,8 @@ for family, classpath in inputs.items():
     os.replace(staged, jar)
     built[family] = {'mod': record(jar), 'compile': [record(p) for p in classpath]}
 sources = sorted(p for p in root.rglob('*') if p.is_file() and p.suffix in ('.java', '.toml'))
-digest = hashlib.sha256(b''.join(p.relative_to(root).as_posix().encode() + b'\0' + p.read_bytes() for p in sources)).hexdigest()
+digest = hashlib.sha256(b''.join(p.relative_to(root).as_posix().encode() + b'\0' + p.read_bytes().replace(b'\r\n', b'\n')
+                                 for p in sources)).hexdigest()   # as breath-drown.py's sources_digest: CRLF reads as LF
 (output / 'm57-build-inputs.json').write_text(json.dumps({'canarySources': digest, **built}, indent=2) + '\n')
 print('[M57BreathDrown] built forbricbreathforge.jar and forbricbreathneo.jar, sources ' + digest[:12])
 PY
