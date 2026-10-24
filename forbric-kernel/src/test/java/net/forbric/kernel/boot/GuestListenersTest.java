@@ -329,6 +329,36 @@ class GuestListenersTest {
 		assertEquals(Map.of("voicemod", Set.of(TOSS)), deadNow);
 	}
 
+	@Test void aJarWithSeveralModsGivesTheListenerToTheModClassThatNamesIt() throws Exception {
+		// voicechat's shape: two @Mod classes in one package (the mod and an API dummy mod), the client listener constructed
+		// by the mod class only. The name prefix alone would not settle it; the constant pool does.
+		Map<String, byte[]> entries = new LinkedHashMap<>();
+		entries.put("v/ApiDummyMod.class", modClass("v/ApiDummyMod", "voice_api"));
+		ClassWriter mod = new ClassWriter(0);
+		mod.visit(Opcodes.V17, Opcodes.ACC_PUBLIC, "v/VoiceMod", null, "java/lang/Object", null);
+		var id = mod.visitAnnotation("Lnet/minecraftforge/fml/common/Mod;", true);
+		id.visit("value", "voice");
+		id.visitEnd();
+		MethodVisitor init = mod.visitMethod(Opcodes.ACC_PUBLIC, "<init>", "()V", null, null);
+		init.visitCode();
+		init.visitTypeInsn(Opcodes.NEW, "v/ClientListener");
+		init.visitInsn(Opcodes.POP);
+		init.visitInsn(Opcodes.RETURN);
+		init.visitMaxs(1, 1);
+		init.visitEnd();
+		mod.visitEnd();
+		entries.put("v/VoiceMod.class", mod.toByteArray());
+		entries.put("v/ClientListener.class", guest("v/ClientListener", NAME_TAG, mv -> {
+			mv.visitFieldInsn(Opcodes.GETSTATIC, NAME_TAG, "BUS", "L" + CANCELLABLE_BUS + ";");
+			methodReference(mv, "v/ClientListener", NAME_TAG);
+			addListener(mv, CANCELLABLE_BUS);
+		}));
+		Path jar = jar("voice2.jar", entries);
+		Map<String, Set<String>> client = new LinkedHashMap<>();
+		KernelEventSubscribers.addCodeListeners(jar, KernelEventSubscribers.scanJar(jar), Side.CLIENT, client);
+		assertEquals(Map.of("voice", Set.of(NAME_TAG)), client);
+	}
+
 	@Test void aClientOnlyListenerIsNotCountedOnADedicatedServer() throws Exception {
 		Map<String, byte[]> entries = new LinkedHashMap<>();
 		entries.put("d/DMod.class", modClass("d/DMod", "dmod"));
