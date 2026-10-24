@@ -82,6 +82,9 @@ public enum ForeignType {
 	/** Whether a body breathes and how much air it loses or regains: the merged game posts NeoForge's, the kernel bridges MinecraftForge's. */
 	LIVING_BREATHE_EVENT("net.minecraftforge.event.entity.living.LivingBreatheEvent",
 			"net.neoforged.neoforge.event.entity.living.LivingBreatheEvent"),
+	/** A body out of air about to drown, and what drowning costs it: the merged game posts NeoForge's, the kernel bridges MinecraftForge's. */
+	LIVING_DROWN_EVENT("net.minecraftforge.event.entity.living.LivingDrownEvent",
+			"net.neoforged.neoforge.event.entity.living.LivingDrownEvent"),
 	// The mod-lifecycle phases. Paired because the kernel posts each one at BOTH families and the two events are
 	// different classes on different bus shapes -- naming either half inline is how one family silently stops
 	// receiving a phase, which is exactly what happened to traditional MinecraftForge until 2026-09-13.

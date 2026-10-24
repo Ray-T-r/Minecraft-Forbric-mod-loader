@@ -30,6 +30,7 @@ import net.neoforged.neoforge.event.entity.EntityLeaveLevelEvent;
 import net.neoforged.neoforge.event.entity.ProjectileImpactEvent;
 import net.neoforged.neoforge.event.entity.living.LivingBreatheEvent;
 import net.neoforged.neoforge.event.entity.living.LivingConversionEvent;
+import net.neoforged.neoforge.event.entity.living.LivingDrownEvent;
 import net.neoforged.neoforge.event.entity.living.LivingEvent;
 import net.neoforged.neoforge.event.entity.living.LivingHealEvent;
 import net.neoforged.neoforge.event.entity.living.MobEffectEvent;
@@ -281,6 +282,68 @@ public final class KernelGameWorldEvents {
 		if (after.canBreathe() != handed.canBreathe()) neo.setCanBreathe(after.canBreathe());
 		if (after.consume() != handed.consume()) neo.setConsume(after.consume());
 		if (after.canBreathe() && after.regained() != handed.regained()) neo.setRefill(after.regained());
+	}
+
+	/**
+	 * A body out of air about to drown, and what drowning costs it. The merged LivingEntity hands its air to NeoForge's
+	 * hook alone, which posts NeoForge's drown event; MinecraftForge's hook, which constructs its own drown event inline,
+	 * has no caller, and neither has {@code ForgeEventFactory.onLivingDrown}. MinecraftForge's event is posted from
+	 * NeoForge's, at LOWEST, where NeoForge's answer is that the body drowns. That is where MinecraftForge asks natively:
+	 * its hook posts the event only once the air is down to -20, the point at which NeoForge's event starts out drowning
+	 * (NeoForge posts from air 0, not yet drowning), and it always hands its listeners a drowning body, here with
+	 * NeoForge's damage and bubbles (vanilla's 2 and 8 unless a NeoForge listener changed them). It is posted on its bus
+	 * as MinecraftForge's hook posts it: EventBus 7 keeps a cancel in what {@code post} returns, not on the event, and
+	 * {@code onLivingDrown} fires it and drops the cancel. A cancel is carried back as NeoForge's cancel and nothing
+	 * else, as natively nothing else of a cancelled drown event is read. Otherwise what MinecraftForge's listeners
+	 * changed — whether the body drowns, the damage, the bubbles — is written; nothing where nothing changed. Asked only
+	 * when a MinecraftForge mod listens.
+	 */
+	public static void installDrown(Object neoBus) {
+		KernelGameEntityEvents.subscribe((IEventBus) neoBus, LivingDrownEvent.class, "LivingDrownEvent",
+				"a MinecraftForge mod cannot stop a body drowning or change what drowning costs it",
+				event -> {
+					if (!event.isDrowning() || !net.minecraftforge.event.entity.living.LivingDrownEvent.BUS.hasListeners()) return false;
+					ForgeDrown handed = ForgeDrown.of(event.getDamageAmount(), event.getBubbleCount());
+					var forge = new net.minecraftforge.event.entity.living.LivingDrownEvent(event.getEntity(), handed.drowning(),
+							handed.damage(), handed.bubbles());
+					boolean cancelled = net.minecraftforge.event.entity.living.LivingDrownEvent.BUS.post(forge);
+					return carryBack(new NeoDrown() {
+						@Override public void setDrowning(boolean drowning) { event.setDrowning(drowning); }
+						@Override public void setDamage(float damage) { event.setDamageAmount(damage); }
+						@Override public void setBubbles(int bubbles) { event.setBubbleCount(bubbles); }
+					}, handed, new ForgeDrown(forge.isDrowning(), forge.getDamageAmount(), forge.getBubbleCount()), cancelled);
+				});
+	}
+
+	/** What MinecraftForge's drown event holds: whether the body drowns, the damage it takes, the bubbles it lets out. */
+	record ForgeDrown(boolean drowning, float damage, int bubbles) {
+		/** NeoForge's drowning answer as MinecraftForge's listeners are handed it: a drowning body, with NeoForge's damage and bubbles. */
+		static ForgeDrown of(float damage, int bubbles) {
+			return new ForgeDrown(true, damage, bubbles);
+		}
+	}
+
+	/** NeoForge's drown event, as much of it as the carry-back writes. */
+	interface NeoDrown {
+		void setDrowning(boolean drowning);
+
+		void setDamage(float damage);
+
+		void setBubbles(int bubbles);
+	}
+
+	/**
+	 * What MinecraftForge's listeners decided, carried to NeoForge's event: whether they cancelled it (returned, for the
+	 * one-way veto), and if not, whether the body drowns, the damage and the bubbles — each written only where it
+	 * changed, so an event no MinecraftForge listener touched is left exactly as NeoForge's listeners left it. A cancelled
+	 * answer writes nothing: natively MinecraftForge reads nothing else of a cancelled drown event.
+	 */
+	static boolean carryBack(NeoDrown neo, ForgeDrown handed, ForgeDrown after, boolean cancelled) {
+		if (cancelled) return true;
+		if (after.drowning() != handed.drowning()) neo.setDrowning(after.drowning());
+		if (Float.compare(after.damage(), handed.damage()) != 0) neo.setDamage(after.damage());
+		if (after.bubbles() != handed.bubbles()) neo.setBubbles(after.bubbles());
+		return false;
 	}
 
 	/** MinecraftForge's own answer to whether a breathing body may refill (ForgeHooks.onLivingBreathe). */

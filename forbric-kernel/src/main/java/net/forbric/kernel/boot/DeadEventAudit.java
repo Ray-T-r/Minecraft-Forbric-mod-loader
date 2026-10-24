@@ -282,6 +282,7 @@ public final class DeadEventAudit {
 		map.put("net/minecraftforge/event/entity/living/LivingHealEvent", GameEventBridge.LIVING_HEAL);
 		map.put("net/minecraftforge/event/entity/living/LivingEvent$LivingVisibilityEvent", GameEventBridge.LIVING_VISIBILITY);
 		map.put(ForeignType.LIVING_BREATHE_EVENT.internal(Ecosystem.FORGE), GameEventBridge.LIVING_BREATHE);
+		map.put(ForeignType.LIVING_DROWN_EVENT.internal(Ecosystem.FORGE), GameEventBridge.LIVING_DROWN);
 		map.put("net/minecraftforge/event/entity/player/CriticalHitEvent", GameEventBridge.CRITICAL_HIT);
 		map.put("net/minecraftforge/event/AnvilUpdateEvent", GameEventBridge.ANVIL_UPDATE);
 		map.put("net/minecraftforge/event/entity/player/AnvilRepairEvent", GameEventBridge.ANVIL_REPAIR);
