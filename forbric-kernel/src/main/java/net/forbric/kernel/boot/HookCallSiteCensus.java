@@ -73,19 +73,25 @@ import org.objectweb.asm.tree.TypeInsnNode;
  * event base ({@link #EVENT_ROOTS}). A codec, a map or a result holder a hook allocates in its own namespace is not an
  * event nothing posts; a type the carriers do not carry is counted, as before, because it cannot be told apart.
  *
- * <p>Two honest limits make this UNDER-report deadness (call a dead event live):
+ * <p>Three honest limits make this UNDER-report deadness (call a dead event live):
  * <ul>
  *   <li>a hook handed an already-constructed event posts an event it never {@code NEW}s, so that event looks
  *       like it has no posters at all and is simply not judged;</li>
- *   <li>a call site the merge left in unreachable code still counts as a call site.</li>
+ *   <li>a call site the merge left in unreachable code still counts as a call site;</li>
+ *   <li>a carrier method is reached by rules that err towards reaching ({@link CarrierCallGraph}): a lambda or method
+ *       reference counts as called where it is created, a virtual call reaches every override in a class something
+ *       constructs, and a method overriding one the scan cannot read counts as called. A listener a carrier builds for a
+ *       payload the kernel routes elsewhere (MinecraftForge's channel-registration handler) is reached by these rules
+ *       and never runs.</li>
  * </ul>
  *
- * <p>And one makes it OVER-report, since a carrier caller that is a hook counts only when it is reached ({@link #all}):
- * a call the scanned bytecode does not show — one a kernel transform injects at load time, or one made reflectively —
- * reaches a hook the census calls unreached. The kernel's own compiled calls are read ({@code kernelRoots}), method
- * references included; the reflective ones are why {@link DeadEventAudit#REPAIRED} names such events by hand
- * (MinecraftForge's configuration tasks, gathered reflectively), and the staged test requires every measured-dead event
- * to have a row, so such an event cannot be named "never posted" without someone reading where it comes from.
+ * <p>And one makes it OVER-report, since a carrier method counts only when it is reached ({@link #all}): a call the scanned
+ * bytecode does not show — one a kernel transform outside the merged-base repairs injects at load time — reaches a hook
+ * the census calls unreached. The kernel's own compiled calls are read ({@code kernelRoots}), method references included,
+ * and so are its calls by reflection (a family class's binary name and a method name held by a method that looks a method
+ * up: {@code PayloadInterop} gathers MinecraftForge's configuration tasks that way); the staged test requires every
+ * measured-dead event to have a row, so such an event cannot be named "never posted" without someone reading where it
+ * comes from.
  *
  * <p>A call is an {@code invoke} instruction or a method handle naming the method (a method reference, a lambda's
  * implementation, a handle constant): {@code ForgeEventFactory::onPreClientTick} handed to a listener reaches the hook as
@@ -113,16 +119,28 @@ public final class HookCallSiteCensus {
 	 * @param live        those with at least one call site in the scanned base
 	 * @param dead        {@code declared - live} — the surface that is present and never reached
 	 * @param postersOf   event internal name → the hooks that construct it
-	 * @param deadEvents  events every one of whose posters is dead: neither the game nor a reached carrier method
-	 *                    calls any of them
+	 * @param deadEvents  events every one of whose posters is unreached: neither the game nor a carrier method the game
+	 *                    or the runtime reaches calls any of them
 	 * @param viaCarrier  dead hooks a carrier method that is itself reached calls — see {@link #all}
-	 * @param viaKernel   dead hooks reached through neither, but called by the kernel's own classes
+	 * @param viaKernel   dead hooks reached through neither, but through the kernel's own classes (compiled calls, and
+	 *                    calls by reflection — see {@link CarrierCallGraph})
 	 * @param kernelDelivered the dead events the kernel posts itself: through a hook in {@code viaKernel}, or by
 	 *                    constructing the event in its own classes
+	 * @param guestPosted the dead events the kernel does not post that a guest does, by calling a family's public API
+	 *                    outside the hook classes (a MinecraftForge mod opening its menu through
+	 *                    {@code IForgeServerPlayer.openMenu}): posted on the paths mods take, never on the game's
+	 * @param witness     each hook in {@code viaCarrier}, {@code viaKernel}, or reached only by a guest → why it is
+	 *                    reached: the chain of carrier methods back to its root, root last ({@link CarrierCallGraph})
+	 * @param postsThrough each declared hook → the events it posts: those it constructs, and those a hook it calls (of
+	 *                    any censused class, to a fixed point) constructs — what a call site of it delivers
+	 * @param kernelConstructs every type the kernel's own code constructs, in its classes or in the carrier methods it
+	 *                    alone reaches (the same set for every hook class of one census): what a repair or a bridge
+	 *                    posts itself
 	 */
 	public record Census(String hookClass, List<String> declared, Set<String> live, Set<String> dead,
 			Map<String, Set<String>> postersOf, Set<String> deadEvents, Set<String> viaCarrier, Set<String> viaKernel,
-			Set<String> kernelDelivered) {
+			Set<String> kernelDelivered, Set<String> guestPosted, Map<String, List<String>> witness,
+			Map<String, Set<String>> postsThrough, Set<String> kernelConstructs) {
 
 		public Census {
 			declared = List.copyOf(declared);
@@ -133,6 +151,10 @@ public final class HookCallSiteCensus {
 			viaCarrier = Set.copyOf(viaCarrier);
 			viaKernel = Set.copyOf(viaKernel);
 			kernelDelivered = Set.copyOf(kernelDelivered);
+			guestPosted = Set.copyOf(guestPosted);
+			witness = Map.copyOf(witness);
+			postsThrough = Map.copyOf(postsThrough);
+			kernelConstructs = Set.copyOf(kernelConstructs);
 		}
 
 		/** Live events: posted by at least one hook something still calls, the carriers included. */
@@ -221,20 +243,20 @@ public final class HookCallSiteCensus {
 	 * <h2>Why a carrier caller is not enough on its own</h2>
 	 *
 	 * <p>A hook with no call site in the game may be reached through its own ecosystem's runtime, and {@link #of}
-	 * counted any caller in a carrier as that. But a caller that is itself a hook nothing reaches reaches nothing:
-	 * MinecraftForge's {@code ForgeHooks.onLivingBreathe} calls {@code ForgeEventFactory.onLivingBreathe}, and the merged
-	 * game calls neither, so a MinecraftForge mod's breathe listener never ran while the census called its event posted.
-	 * So a caller that is a hook of one of {@code hookClasses} (a public static method, not synthetic) counts only when
-	 * it is reached itself — called by the game, or by a caller that counts — followed to a fixed point. Any other caller
-	 * (an instance method, a lambda body, a static initializer, a class that is not a hook class) still counts, because
-	 * reading whether the runtime reaches it is beyond a call-site count; that keeps every error on the side of calling
-	 * a dead event live. A hook class calling its own hook is judged the same way: from a dead hook it is nothing, from a
-	 * lambda the game's call hands out it is the runtime reaching it.
+	 * counted any caller in a carrier as that. But a caller nothing reaches reaches nothing: MinecraftForge's
+	 * {@code ForgeHooks.onLivingBreathe} calls {@code ForgeEventFactory.onLivingBreathe}, and the merged game calls neither,
+	 * so a MinecraftForge mod's breathe listener never ran while the census called its event posted. That was fixed for a
+	 * caller that is itself a hook; any other caller (an instance method, a lambda body, a static initializer, a class that
+	 * is not a hook class) still counted outright, and {@code IForgeServerPlayer.openMenu} kept MinecraftForge's
+	 * container-open event "posted" although nothing the merged game runs calls it. So every carrier method is followed
+	 * now: reached when something reached calls it or the runtime enters it, to a fixed point ({@link CarrierCallGraph}).
+	 * Its rules err towards reaching more, so the census still errs towards calling a dead event live.
 	 *
 	 * <h2>The kernel</h2>
 	 *
 	 * <p>{@code kernelRoots} (class directories or jars) are the kernel's own classes: a dead hook they call, or a dead
-	 * event they construct, is one the kernel delivers. That does not make the event posted by the merged game — {@link
+	 * event they construct, is one the kernel delivers — a call made by reflection included, which is how its boot side
+	 * reaches a family method ({@link CarrierCallGraph}). That does not make the event posted by the merged game — {@link
 	 * Census#deadEvents} stays what the game and its carriers never post — but it is what tells a bridged or repaired
 	 * event from one nothing delivers at all.
 	 *
@@ -255,6 +277,18 @@ public final class HookCallSiteCensus {
 	 */
 	public static Map<String, Census> all(Map<String, Path> hookClasses, List<Path> baseJars, List<Path> carrierJars,
 			List<Path> kernelRoots, java.util.function.BiFunction<String, byte[], byte[]> loadTime) throws IOException {
+		return all(hookClasses, baseJars, carrierJars, kernelRoots, loadTime, List.of());
+	}
+
+	/**
+	 * The same, told each family's own patched game ({@code nativeGames}), so that a public carrier method one of them
+	 * calls is read as the game's entry rather than as API a guest calls ({@link Census#guestPosted}): MinecraftForge's
+	 * patched {@code LiquidBlock} calls {@code FluidInteractionRegistry.canInteract}, so a merged game that does not call it
+	 * has lost a path, and no guest is assumed to take it instead.
+	 */
+	public static Map<String, Census> all(Map<String, Path> hookClasses, List<Path> baseJars, List<Path> carrierJars,
+			List<Path> kernelRoots, java.util.function.BiFunction<String, byte[], byte[]> loadTime, List<Path> nativeGames)
+			throws IOException {
 		Map<String, ClassNode> hookNodes = new LinkedHashMap<>();
 		Map<Path, Map<String, String[]>> hierarchies = new java.util.HashMap<>();
 		for (Map.Entry<String, Path> e : hookClasses.entrySet()) {
@@ -263,36 +297,62 @@ public final class HookCallSiteCensus {
 			hookNodes.put(e.getKey(), hooks);
 			if (!hierarchies.containsKey(e.getValue())) hierarchies.put(e.getValue(), hierarchy(e.getValue()));
 		}
-		// Every hook of every censused class: the callers whose own reach is judged rather than assumed.
-		Set<String> gates = new java.util.HashSet<>();
 		Map<String, List<String>> declaredOf = new LinkedHashMap<>();
 		for (Map.Entry<String, ClassNode> e : hookNodes.entrySet()) {
 			List<String> declared = new java.util.ArrayList<>();
-			for (MethodNode m : e.getValue().methods) {
-				if (!isHook(m)) continue;
-				declared.add(m.name + m.desc);
-				gates.add(e.getKey() + "." + m.name + m.desc);
-			}
+			for (MethodNode m : e.getValue().methods) if (isHook(m)) declared.add(m.name + m.desc);
 			declared.sort(String::compareTo);
 			declaredOf.put(e.getKey(), declared);
 		}
 
-		// The game's calls, and the kernel's. A copy of a hook class handed in as a base calling its own hooks is not
-		// the game reaching them.
-		Set<String> gameCalls = calls(baseJars, hookClasses.keySet(), loadTime);
-		Set<String> kernelCalls = calls(kernelRoots, Set.of(), null);
-		Set<String> kernelNews = constructions(kernelRoots);
+		// The carriers: the runtimes handed in, and the jars declaring the hook classes.
+		List<Path> graphJars = new java.util.ArrayList<>(new java.util.LinkedHashSet<>(carrierJars));
+		for (Path jar : hookClasses.values()) if (!graphJars.contains(jar)) graphJars.add(jar);
+		CarrierCallGraph graph = CarrierCallGraph.of(graphJars);
+		// The game's calls (a copy of a hook class handed in as a base calling its own hooks is not the game reaching them),
+		// then the kernel's: compiled, and by reflection.
+		CarrierCallGraph.Body game = new CarrierCallGraph.Body();
+		for (Path jar : baseJars) graph.readBodies(jar, hookClasses.keySet(), loadTime, game, true, false);
+		graph.markScannedBodies();
+		CarrierCallGraph.Body kernel = new CarrierCallGraph.Body();
+		for (Path root : kernelRoots) graph.readBodies(root, Set.of(), null, kernel, false, true);
+		graph.resolveReflection(kernel);
+		Set<String> gameCalls = new java.util.HashSet<>();
+		for (CarrierCallGraph.Ref ref : game.refs) gameCalls.add(ref.id());
+		Set<String> kernelNews = kernel.constructs;
 
-		// The carriers' calls into hook classes, by caller: a gate's edges are followed only from a reached gate; every
-		// other caller's callees are reached outright.
-		Map<String, Set<String>> gateEdges = new java.util.HashMap<>();
-		Set<String> reachedOutright = new java.util.HashSet<>();
-		for (Path jar : carrierJars) carrierEdges(jar, hookClasses.keySet(), gates, gateEdges, reachedOutright);
+		Map<CarrierCallGraph.Body, String> roots = new LinkedHashMap<>();
+		roots.put(game, CarrierCallGraph.GAME);
+		CarrierCallGraph.Reach byGame = graph.reach(roots);
+		roots.put(kernel, CarrierCallGraph.KERNEL);
+		CarrierCallGraph.Reach withKernel = graph.reach(roots);
+		roots.put(graph.publicApi(hookClasses.keySet(), CarrierCallGraph.entries(graphJars, nativeGames)), CarrierCallGraph.GUEST);
+		CarrierCallGraph.Reach withGuests = graph.reach(roots);
+		// What the kernel's own code posts: its constructions, and those of the carrier methods it alone reaches.
+		Set<String> kernelConstructs = new java.util.HashSet<>(kernelNews);
+		kernelConstructs.addAll(graph.reach(Map.of(kernel, CarrierCallGraph.KERNEL), false).constructed());
 
-		Set<String> reachedByGame = reach(gates, gameCalls, gateEdges, reachedOutright);
-		Set<String> withKernel = new java.util.HashSet<>(gameCalls);
-		withKernel.addAll(kernelCalls);
-		Set<String> reachedWithKernel = reach(gates, withKernel, gateEdges, reachedOutright);
+		// Each hook → the events it posts, through the hooks it calls too (GuestEventPosters' rule).
+		Map<String, Set<String>> constructsOf = new java.util.HashMap<>(), hookCalls = new java.util.HashMap<>();
+		for (Map.Entry<String, ClassNode> e : hookNodes.entrySet()) {
+			String namespace = namespaceOf(e.getKey());
+			Map<String, String[]> hierarchy = hierarchies.get(hookClasses.get(e.getKey()));
+			for (MethodNode m : e.getValue().methods) {
+				if (!isHook(m) || m.instructions == null) continue;
+				String gate = e.getKey() + "." + m.name + m.desc;
+				for (AbstractInsnNode insn = m.instructions.getFirst(); insn != null; insn = insn.getNext()) {
+					if (insn.getOpcode() == Opcodes.NEW && insn instanceof TypeInsnNode t && t.desc.startsWith(namespace)
+							&& isEvent(t.desc, namespace, hierarchy)) {
+						constructsOf.computeIfAbsent(gate, k -> new TreeSet<>()).add(t.desc);
+					}
+					callees(insn, callee -> {
+						if (!callee.equals(gate) && hookClasses.containsKey(callee.substring(0, callee.indexOf('.')))) {
+							hookCalls.computeIfAbsent(gate, k -> new java.util.HashSet<>()).add(callee);
+						}
+					});
+				}
+			}
+		}
 
 		Map<String, Census> out = new LinkedHashMap<>();
 		for (Map.Entry<String, ClassNode> e : hookNodes.entrySet()) {
@@ -314,6 +374,7 @@ public final class HookCallSiteCensus {
 			}
 			List<String> declared = declaredOf.get(hookClass);
 			Set<String> live = new TreeSet<>(), dead = new TreeSet<>(), viaCarrier = new TreeSet<>(), viaKernel = new TreeSet<>();
+			Map<String, List<String>> witness = new TreeMap<>();
 			for (String key : declared) {
 				String gate = hookClass + "." + key;
 				if (gameCalls.contains(gate)) {
@@ -321,26 +382,46 @@ public final class HookCallSiteCensus {
 					continue;
 				}
 				dead.add(key);
-				if (reachedByGame.contains(gate)) viaCarrier.add(key);
-				else if (reachedWithKernel.contains(gate)) viaKernel.add(key);
-			}
-			Set<String> deadEvents = new TreeSet<>(), kernelDelivered = new TreeSet<>();
-			for (Map.Entry<String, Set<String>> event : posters.entrySet()) {
-				boolean allUnreached = true, byKernel = kernelNews.contains(event.getKey());
-				for (String poster : event.getValue()) {
-					if (!dead.contains(poster) || viaCarrier.contains(poster)) {
-						allUnreached = false;
-						break;
-					}
-					if (viaKernel.contains(poster)) byKernel = true;
+				if (byGame.reached(gate)) {
+					viaCarrier.add(key);
+					witness.put(key, byGame.chain(gate));
+				} else if (withKernel.reached(gate)) {
+					viaKernel.add(key);
+					witness.put(key, withKernel.chain(gate));
+				} else if (withGuests.reached(gate)) {
+					witness.put(key, withGuests.chain(gate));
 				}
-				if (!allUnreached) continue;
+			}
+			Map<String, Set<String>> postsThrough = new TreeMap<>();
+			for (String key : declared) {
+				Set<String> events = new TreeSet<>(), seen = new java.util.HashSet<>();
+				java.util.ArrayDeque<String> work = new java.util.ArrayDeque<>(List.of(hookClass + "." + key));
+				while (!work.isEmpty()) {
+					String at = work.removeFirst();
+					if (!seen.add(at)) continue;
+					events.addAll(constructsOf.getOrDefault(at, Set.of()));
+					work.addAll(hookCalls.getOrDefault(at, Set.of()));
+				}
+				if (!events.isEmpty()) postsThrough.put(key, Set.copyOf(events));
+			}
+			Set<String> deadEvents = new TreeSet<>(), kernelDelivered = new TreeSet<>(), guestPosted = new TreeSet<>();
+			for (Map.Entry<String, Set<String>> event : posters.entrySet()) {
+				boolean reached = false, byKernel = kernelNews.contains(event.getKey()), byGuest = false;
+				for (String poster : event.getValue()) {
+					String gate = hookClass + "." + poster;
+					if (gameCalls.contains(gate) || byGame.reached(gate)) reached = true;
+					if (withKernel.reached(gate)) byKernel = true;
+					if (withGuests.reached(gate)) byGuest = true;
+				}
+				if (reached) continue;
 				deadEvents.add(event.getKey());
 				if (byKernel) kernelDelivered.add(event.getKey());
+				else if (byGuest) guestPosted.add(event.getKey());
 			}
 			Map<String, Set<String>> frozen = new LinkedHashMap<>();
 			posters.forEach((k, v) -> frozen.put(k, Set.copyOf(v)));
-			out.put(hookClass, new Census(hookClass, declared, live, dead, frozen, deadEvents, viaCarrier, viaKernel, kernelDelivered));
+			out.put(hookClass, new Census(hookClass, declared, live, dead, frozen, deadEvents, viaCarrier, viaKernel,
+					kernelDelivered, guestPosted, witness, postsThrough, kernelConstructs));
 		}
 		return out;
 	}
@@ -352,19 +433,6 @@ public final class HookCallSiteCensus {
 		return !m.name.startsWith("<");
 	}
 
-	/** The gates reached from {@code roots}: called there, or by a reached gate, or by any caller that is not a gate. */
-	private static Set<String> reach(Set<String> gates, Set<String> roots, Map<String, Set<String>> gateEdges,
-			Set<String> reachedOutright) {
-		Set<String> reached = new java.util.HashSet<>();
-		java.util.ArrayDeque<String> work = new java.util.ArrayDeque<>();
-		for (String gate : gates) if (roots.contains(gate) || reachedOutright.contains(gate)) work.add(gate);
-		while (!work.isEmpty()) {
-			String gate = work.removeFirst();
-			if (!reached.add(gate)) continue;
-			for (String next : gateEdges.getOrDefault(gate, Set.of())) if (gates.contains(next)) work.add(next);
-		}
-		return reached;
-	}
 
 	/**
 	 * Whether {@code type} is an event: its supertypes, as far as the carrier carries them, reach a family event base. A
@@ -411,26 +479,6 @@ public final class HookCallSiteCensus {
 		return out;
 	}
 
-	/**
-	 * {@code owner.name+desc} of every method called from {@code roots}, classes named in {@code skip} left out, each class
-	 * read through {@code loadTime} first when there is one.
-	 */
-	private static Set<String> calls(List<Path> roots, Set<String> skip,
-			java.util.function.BiFunction<String, byte[], byte[]> loadTime) throws IOException {
-		Set<String> out = new java.util.HashSet<>();
-		for (Path root : roots) {
-			forEachClass(root, loadTime, cn -> {
-				if (skip.contains(cn.name)) return;
-				for (MethodNode m : cn.methods) {
-					if (m.instructions == null) continue;
-					for (AbstractInsnNode insn = m.instructions.getFirst(); insn != null; insn = insn.getNext()) {
-						callees(insn, out::add);
-					}
-				}
-			});
-		}
-		return out;
-	}
 
 	/**
 	 * Every method {@code insn} names as one it calls, as {@code owner.name+desc}: the target of an {@code invoke}, and each
@@ -452,43 +500,7 @@ public final class HookCallSiteCensus {
 		if (value instanceof Handle h && h.getTag() >= Opcodes.H_INVOKEVIRTUAL) out.accept(h.getOwner() + "." + h.getName() + h.getDesc());
 	}
 
-	/** Every type {@code roots} construct. */
-	private static Set<String> constructions(List<Path> roots) throws IOException {
-		Set<String> out = new java.util.HashSet<>();
-		for (Path root : roots) {
-			forEachClass(root, cn -> {
-				for (MethodNode m : cn.methods) {
-					if (m.instructions == null) continue;
-					for (AbstractInsnNode insn = m.instructions.getFirst(); insn != null; insn = insn.getNext()) {
-						if (insn.getOpcode() == Opcodes.NEW && insn instanceof TypeInsnNode t) out.add(t.desc);
-					}
-				}
-			});
-		}
-		return out;
-	}
 
-	/**
-	 * The carrier's calls into the hook classes: from a gate, recorded as that gate's edges; from anything else, the
-	 * callee is reached outright.
-	 */
-	private static void carrierEdges(Path jar, Set<String> hookClasses, Set<String> gates, Map<String, Set<String>> gateEdges,
-			Set<String> reachedOutright) throws IOException {
-		forEachClass(jar, cn -> {
-			for (MethodNode m : cn.methods) {
-				if (m.instructions == null) continue;
-				String caller = cn.name + "." + m.name + m.desc;
-				boolean gate = gates.contains(caller);
-				for (AbstractInsnNode insn = m.instructions.getFirst(); insn != null; insn = insn.getNext()) {
-					callees(insn, callee -> {
-						if (callee.equals(caller) || !hookClasses.contains(callee.substring(0, callee.indexOf('.')))) return;
-						if (gate) gateEdges.computeIfAbsent(caller, k -> new java.util.HashSet<>()).add(callee);
-						else reachedOutright.add(callee);
-					});
-				}
-			}
-		});
-	}
 
 	/** Each class in a jar or under a class directory; a root that is neither is skipped. */
 	private static void forEachClass(Path root, java.util.function.Consumer<ClassNode> action) throws IOException {
@@ -707,41 +719,59 @@ public final class HookCallSiteCensus {
 	 * @param after  the merged base
 	 */
 	public static List<Erosion> erosion(String hookClass, Path before, Path after) throws IOException {
-		Map<String, Integer> was = callSites(before, hookClass);
-		Map<String, Integer> is = callSites(after, hookClass);
-		List<Erosion> out = new java.util.ArrayList<>();
-		for (Map.Entry<String, Integer> e : was.entrySet()) {
-			out.add(new Erosion(e.getKey(), e.getValue(), is.getOrDefault(e.getKey(), 0)));
+		return erosion(Set.of(hookClass), before, after, null).getOrDefault(hookClass, List.of());
+	}
+
+	/**
+	 * The same for several hook classes of one family in one pass over each jar, with the merged base read as the kernel
+	 * loads it ({@code afterLoadTime}, as {@link #all}): a merged-base repair that sends a hook call elsewhere takes that call
+	 * site away ({@code routePlaceItemHookToNeoForge} takes {@code ItemStack.useOn}'s {@code ForgeHooks.onPlaceItemIntoWorld}).
+	 *
+	 * @return hook class → its hooks' erosion, every hook the ecosystem's own game calls listed
+	 */
+	public static Map<String, List<Erosion>> erosion(Set<String> hookClasses, Path before, Path after,
+			java.util.function.BiFunction<String, byte[], byte[]> afterLoadTime) throws IOException {
+		Map<String, Map<String, Integer>> was = callSites(before, hookClasses, null);
+		Map<String, Map<String, Integer>> is = callSites(after, hookClasses, afterLoadTime);
+		Map<String, List<Erosion>> out = new TreeMap<>();
+		for (String hookClass : hookClasses) {
+			List<Erosion> eroded = new java.util.ArrayList<>();
+			Map<String, Integer> kept = is.getOrDefault(hookClass, Map.of());
+			for (Map.Entry<String, Integer> e : was.getOrDefault(hookClass, Map.of()).entrySet()) {
+				eroded.add(new Erosion(e.getKey(), e.getValue(), kept.getOrDefault(e.getKey(), 0)));
+			}
+			eroded.sort(java.util.Comparator.comparing(Erosion::hook));
+			out.put(hookClass, List.copyOf(eroded));
 		}
-		out.sort(java.util.Comparator.comparing(Erosion::hook));
-		return List.copyOf(out);
+		return out;
 	}
 
 	/** {@code name+desc} → how many instructions in {@code jar} call it on {@code hookClass} (or hand it out as a method handle). */
 	static Map<String, Integer> callSites(Path jar, String hookClass) throws IOException {
-		Map<String, Integer> out = new TreeMap<>();
+		return callSites(jar, Set.of(hookClass), null).getOrDefault(hookClass, new TreeMap<>());
+	}
+
+	/** The same for each of {@code hookClasses}, each class of {@code jar} read through {@code loadTime} first when there is one. */
+	static Map<String, Map<String, Integer>> callSites(Path jar, Set<String> hookClasses,
+			java.util.function.BiFunction<String, byte[], byte[]> loadTime) throws IOException {
+		Map<String, Map<String, Integer>> out = new TreeMap<>();
 		if (!Files.isRegularFile(jar)) return out;
-		try (ZipFile zf = new ZipFile(jar.toFile())) {
-			var entries = zf.entries();
-			while (entries.hasMoreElements()) {
-				ZipEntry e = entries.nextElement();
-				if (!e.getName().endsWith(".class")) continue;
-				ClassNode cn = new ClassNode();
-				try (InputStream in = zf.getInputStream(e)) {
-					new ClassReader(in.readAllBytes()).accept(cn, ClassReader.SKIP_FRAMES | ClassReader.SKIP_DEBUG);
-				}
-				// The hook class calling its own hooks is not the game reaching them, the same rule as of().
-				if (cn.name.equals(hookClass)) continue;
-				for (MethodNode m : cn.methods) {
-					if (m.instructions == null) continue;
-					for (AbstractInsnNode insn = m.instructions.getFirst(); insn != null; insn = insn.getNext()) {
-						callees(insn, callee -> {
-							if (callee.startsWith(hookClass + ".")) out.merge(callee.substring(hookClass.length() + 1), 1, Integer::sum);
-						});
-					}
+		forEachClass(jar, loadTime, cn -> {
+			// The hook class calling its own hooks is not the game reaching them, the same rule as of().
+			if (hookClasses.contains(cn.name)) return;
+			for (MethodNode m : cn.methods) {
+				if (m.instructions == null) continue;
+				for (AbstractInsnNode insn = m.instructions.getFirst(); insn != null; insn = insn.getNext()) {
+					callees(insn, callee -> {
+						int dot = callee.indexOf('.');
+						String owner = callee.substring(0, dot);
+						if (hookClasses.contains(owner)) {
+							out.computeIfAbsent(owner, k -> new TreeMap<>()).merge(callee.substring(dot + 1), 1, Integer::sum);
+						}
+					});
 				}
 			}
-		}
+		});
 		return out;
 	}
 

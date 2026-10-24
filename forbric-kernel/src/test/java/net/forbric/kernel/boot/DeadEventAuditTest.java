@@ -361,20 +361,36 @@ class DeadEventAuditTest {
 	}
 
 	/**
-	 * The stand-down rows are not the dead-event judgement's: a listener for one of their events is never a finding on
-	 * their account, not even while its bridge is missing (a client bridge always is on a dedicated server) — only the
-	 * dead and partly-posted tables speak for an event there — and no event is in both bridge tables.
+	 * A stand-down row is judged by its bridge, as a bridged row is: its bridge delivers the event, and only stands down
+	 * where the merged game posts it natively. So a listener is a finding exactly while that bridge is missing — with the
+	 * bridge's own cost — and never while it is installed, not even for an event that is also partly posted
+	 * ({@code LevelEvent$Unload}: its bridge forwards the server-stop path the merge took, and naming its listeners "partly
+	 * posted" was a false accusation). On a dedicated server a client bridge's event is not judged at all: it never
+	 * installs there and its event is a client's. No event is in both bridge tables.
 	 */
 	@Test
-	void standDownRowsAreNeverAFinding() {
+	void standDownRowsAreJudgedByTheirBridge() {
 		Set<String> both = new java.util.TreeSet<>(DeadEventAudit.STAND_DOWN.keySet());
 		both.retainAll(DeadEventAudit.BRIDGED.keySet());
 		assertEquals(Set.of(), both, "an event in both tables");
+		String unload = "net/minecraftforge/event/level/LevelEvent$Unload";
+		assertTrue(DeadEventAudit.PARTIAL.containsKey(unload), "the level unload is a partly-posted row as well");
 		Map<String, Set<String>> subscribed = Map.of("somemod", DeadEventAudit.STAND_DOWN.keySet());
-		for (DeadEventAudit.Finding finding : DeadEventAudit.audit(subscribed, Set.of())) {
-			assertTrue(DeadEventAudit.DEAD.containsKey(finding.event()) || DeadEventAudit.PARTIAL.containsKey(finding.event()),
-					"no bridge installed, and a finding no dead or partly-posted row speaks for: " + finding);
+		Set<GameEventBridge> all = EnumSet.allOf(GameEventBridge.class);
+		assertEquals(List.of(), DeadEventAudit.audit(subscribed, all), "every bridge installed, yet a stand-down row is a finding");
+		List<DeadEventAudit.Finding> missing = DeadEventAudit.audit(subscribed, Set.of());
+		for (DeadEventAudit.Finding finding : missing) {
+			GameEventBridge bridge = DeadEventAudit.STAND_DOWN.get(finding.event());
+			assertEquals(bridge.cost(), finding.cost(), "a missing bridge is reported with its own cost: " + finding);
+			assertFalse(finding.partial(), finding.event());
 		}
+		assertTrue(missing.stream().anyMatch(f -> f.event().equals(unload)), "the level-unload bridge missing is a finding");
+		Map<String, Set<String>> deadNow = new java.util.LinkedHashMap<>(), bridgeable = new java.util.LinkedHashMap<>();
+		DeadEventAudit.split(Map.of("somemod", Set.of(unload, "net/minecraftforge/client/event/ClientChatEvent")),
+				net.forbric.api.Side.DEDICATED_SERVER, deadNow, bridgeable);
+		assertEquals(Map.of("somemod", Set.of(unload)), bridgeable, "a game-bus stand-down bridge is judged once the server is "
+				+ "up; a client bridge's event is not judged on a dedicated server");
+		assertEquals(Map.of(), deadNow);
 	}
 
 	/**
@@ -407,20 +423,23 @@ class DeadEventAuditTest {
 
 	/** The two fluid events the fluid-rendering repair deliberately does not bridge: a listener is told, per event. */
 	@Test
-	void theDeadFluidEventNamesTheModWithItsCostAndTheOtherNoLongerDoes() {
+	void theDeadFluidEventNamesTheModWithItsCostAndThePartlyPostedOneSaysSo() {
 		List<DeadEventAudit.Finding> findings = DeadEventAudit.audit(
 				Map.of("fluidmod", Set.of(CREATE_FLUID_SOURCE, FLUID_PLACE_BLOCK)), EnumSet.noneOf(GameEventBridge.class));
 
-		// FLUID_PLACE_BLOCK was a row here until the census learned to look in the carriers as well as the
-		// game: it is posted from MinecraftForge's own FluidInteractionRegistry, which this layer cannot prove
-		// is reached but can no longer claim is not. A row here says "the merged game never posts this", and
-		// that row could not say it any more. Naming a mod for an event it may well receive is the failure this
-		// table has already had to be corrected for three times.
-		assertEquals(1, findings.size(), "only the event still claimed dead is a finding: " + findings);
-		DeadEventAudit.Finding finding = findings.get(0);
-		assertEquals("fluidmod", finding.modId());
-		assertEquals(CREATE_FLUID_SOURCE, finding.event());
-		assertTrue(finding.cost() != null && !finding.cost().isBlank(), finding.event() + " must state its cost");
+		// FLUID_PLACE_BLOCK left this table once the census looked in the carriers: MinecraftForge's own
+		// FluidInteractionRegistry still posts it, for what the fluid-interaction rules place. Once every hook class was
+		// measured against MinecraftForge's own game it came back as partly posted: LavaFluid's three call sites (lava
+		// turning water to stone as it flows, lava setting fire) are gone, and that is worded as partial, not as dead.
+		assertEquals(2, findings.size(), "both are findings, each in its own words: " + findings);
+		Map<String, DeadEventAudit.Finding> byEvent = new java.util.HashMap<>();
+		for (DeadEventAudit.Finding f : findings) byEvent.put(f.event(), f);
+		assertEquals("fluidmod", byEvent.get(CREATE_FLUID_SOURCE).modId());
+		assertFalse(byEvent.get(CREATE_FLUID_SOURCE).partial(), "the source event is never posted");
+		assertTrue(byEvent.get(FLUID_PLACE_BLOCK).partial(), "the placement event is posted on some paths");
+		for (DeadEventAudit.Finding finding : findings) {
+			assertTrue(finding.cost() != null && !finding.cost().isBlank(), finding.event() + " must state its cost");
+		}
 	}
 
 	@Test
