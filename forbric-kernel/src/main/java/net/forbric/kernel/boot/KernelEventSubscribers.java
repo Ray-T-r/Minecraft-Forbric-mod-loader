@@ -164,8 +164,13 @@ public final class KernelEventSubscribers {
 		// every subscriber class of every mod; DeadEventAudit turns it into the one line that says a listener will
 		// never run.
 		java.util.Map<String, java.util.Set<String>> subscribedByMod = new java.util.LinkedHashMap<>();
+		// Each jar's scan, kept for the listeners its classes register in code (GuestListeners), which the audit names like
+		// annotation subscribers.
+		java.util.Map<Path, JarScan> scans = new java.util.LinkedHashMap<>();
 		for (Path jar : modJars) {
-			List<Subscriber> subscribers = scan(jar);
+			JarScan scanned = scanJar(jar);
+			scans.put(jar, scanned);
+			List<Subscriber> subscribers = scanned.subscribers();
 			if (subscribers.isEmpty()) continue;
 			List<ModAnnotationScanner.ModClassInfo> modsInJar = null; // scanned lazily, only if a modid() is missing
 
@@ -241,17 +246,15 @@ public final class KernelEventSubscribers {
 		// Everything above is about listeners the kernel DID wire. This is about the ones it wired onto a hook the
 		// merged base no longer calls — registered successfully, and never to be reached.
 		//
-		// The scan above reads jars with SKIP_CODE, so its whole input is {class-level @EventBusSubscriber} x
-		// {@SubscribeEvent methods}. A listener registered with bus.addListener(...) lives in a method BODY and
-		// is invisible to it — and for an audit whose failure mode is silence, invisible reads exactly like
-		// fine. The kernel already holds each MinecraftForge mod's own BusGroup, whose internal map is keyed by
-		// the event classes that bus has actually seen, so the answer is one field read per mod rather than a
-		// second and much more expensive pass over every method body.
-		// Before it names anyone, the audit asks the loaded jars whether one of them posts the event itself (a mod calling
-		// a family hook as API): the hooks that post it are read from the hook classes this class loader serves.
-		DeadEventAudit.report(ForgeBusSubscriptions.merge(subscribedByMod,
-				ForgeBusSubscriptions.byMod(KernelModLoader.publishedForgeMods())), side,
-				events -> GuestEventPosters.find(events, name -> resourceBytes(loader, name + ".class"), modJars));
+		// The annotation scan's input is {class-level @EventBusSubscriber} x {@SubscribeEvent methods}. A listener
+		// registered with bus.addListener(...) lives in a method BODY and is invisible to it — and for an audit whose
+		// failure mode is silence, invisible reads exactly like fine. Two sources close that: each MinecraftForge mod's
+		// own BusGroup (ForgeBusSubscriptions), whose internal map is keyed by the event classes that bus has seen —
+		// its mod-bus events — and, for the static game buses EventBus 7 shares between all mods, the registrations
+		// the guest's own code makes (GuestListeners, read in the same pass as the annotations, and parsed only for a
+		// class whose constant pool names a bus).
+		reportDeadEvents(loader, modJars, side, ForgeBusSubscriptions.merge(subscribedByMod,
+				ForgeBusSubscriptions.byMod(KernelModLoader.publishedForgeMods())), scans);
 		// And this is about mixins that DID apply, to a point. Ninety individual lines on a client boot, none of
 		// them totalled anywhere, for the state MixinFit's javadoc calls worse than either extreme.
 		ForbricLog.info("%s", net.forbric.kernel.mixin.KernelGuestMixinAdapter.partialSummary());
@@ -261,6 +264,91 @@ public final class KernelEventSubscribers {
 		// Everything above is about listeners. This is about a whole subsystem the merged game does not carry.
 		CapabilityUseAudit.report(net.forbric.kernel.transform.ForgeCapabilityCompositionTransformer.enabled(),
 				net.forbric.kernel.transform.ForgeCapabilityCompositionTransformer.composedRoots());
+	}
+
+	/**
+	 * Hands the listeners found to {@link DeadEventAudit} — the annotation scan's and the bus groups' ({@code subscribedByMod}),
+	 * and those each jar's classes register in code ({@code scans}, {@link #addCodeListeners}) — told which of the events it
+	 * would call never posted a loaded guest posts itself. Split out of {@link #registerAll} so this wiring — the code
+	 * listeners merged in, the hook classes read through {@code loader}, the guests' jars scanned — is tested as production
+	 * runs it.
+	 *
+	 * <p>Before it names anyone, the audit asks the loaded jars whether one of them posts the event itself (a mod calling
+	 * a family hook as API): the hooks that post it are read from the hook classes this class loader serves — its own jars
+	 * first, then its parent, as the merged-base repairs read game classes, so the bytes are the carrier's whichever of the
+	 * two serves it (a launch that also puts a stale copy of a hook class on the parent class path reads the carrier's).
+	 */
+	static void reportDeadEvents(ForbricClassLoader loader, List<Path> modJars, Side side,
+			java.util.Map<String, java.util.Set<String>> subscribedByMod, java.util.Map<Path, JarScan> scans) {
+		java.util.Map<String, java.util.Set<String>> listening = ForgeBusSubscriptions.merge(subscribedByMod, java.util.Map.of());
+		for (java.util.Map.Entry<Path, JarScan> scan : scans.entrySet()) {
+			if (!scan.getValue().code().isEmpty()) addCodeListeners(scan.getKey(), scan.getValue(), side, listening);
+		}
+		DeadEventAudit.report(listening, side,
+				events -> GuestEventPosters.find(events, name -> resourceBytes(loader, name + ".class"), modJars));
+	}
+
+	/**
+	 * Adds the listeners {@code jar}'s classes register in code ({@link GuestListeners}) to {@code into}, under the jar's mod:
+	 * a listener on an event's static bus, or a class handed to a bus to register. Skipped like an annotation subscriber is:
+	 * a client-only class on a dedicated server, the half of a universal jar the arbiter gave to the other family, a mod
+	 * that did not finish loading.
+	 */
+	static void addCodeListeners(Path jar, JarScan scanned, Side side, java.util.Map<String, java.util.Set<String>> into) {
+		java.util.Map<String, java.util.Set<String>> byClass = new java.util.LinkedHashMap<>();
+		for (java.util.Map.Entry<String, GuestListeners.Found> e : scanned.code().entrySet()) {
+			GuestListeners.Found found = e.getValue();
+			if (found.clientOnly() && !side.isClient()) continue;
+			if (!found.events().isEmpty()) byClass.computeIfAbsent(e.getKey(), k -> new java.util.TreeSet<>()).addAll(found.events());
+			for (String registered : found.registeredClasses()) {
+				// A class with a class-level @EventBusSubscriber is the annotation scan's already.
+				GuestListeners.Found annotated = scanned.annotated().get(registered);
+				if (annotated == null || annotated.events().isEmpty() || scanned.subscriberClasses().contains(registered)) continue;
+				if (annotated.clientOnly() && !side.isClient()) continue;
+				byClass.computeIfAbsent(registered, k -> new java.util.TreeSet<>()).addAll(annotated.events());
+			}
+		}
+		if (byClass.isEmpty()) return;
+		List<ModAnnotationScanner.ModClassInfo> modsInJar = scanModClasses(jar);
+		for (java.util.Map.Entry<String, java.util.Set<String>> e : byClass.entrySet()) {
+			for (String event : e.getValue()) {
+				Ecosystem family = event.startsWith("net/minecraftforge/") ? Ecosystem.FORGE
+						: event.startsWith("net/neoforged/") ? Ecosystem.NEOFORGE : null;
+				if (family == null || MultiLoaderArbiter.suppressedFor(jar, family)) continue;
+				String modId = codeOwner(e.getKey(), family, modsInJar);
+				if (didNotFinishLoading(modId)) continue;
+				into.computeIfAbsent(modId == null ? e.getKey().replace('/', '.') : modId, k -> new java.util.LinkedHashSet<>()).add(event);
+			}
+		}
+	}
+
+	/**
+	 * The mod a class registering listeners in code belongs to: the jar's one {@code @Mod} id of {@code family}, else the one
+	 * whose {@code @Mod} class shares the longest package with it; null when the jar has none.
+	 */
+	static String codeOwner(String internalName, Ecosystem family, List<ModAnnotationScanner.ModClassInfo> modsInJar) {
+		String binary = internalName.replace('/', '.'), best = null;
+		int bestLength = -1;
+		java.util.Set<String> ids = new java.util.TreeSet<>();
+		for (ModAnnotationScanner.ModClassInfo info : modsInJar) {
+			if (info.family != family || info.modId == null) continue;
+			ids.add(info.modId);
+			int common = commonPackage(binary, info.className);
+			if (common > bestLength) {
+				bestLength = common;
+				best = info.modId;
+			}
+		}
+		return ids.size() == 1 ? ids.iterator().next() : best;
+	}
+
+	private static int commonPackage(String a, String b) {
+		int i = 0, lastDot = -1;
+		while (i < a.length() && i < b.length() && a.charAt(i) == b.charAt(i)) {
+			if (a.charAt(i) == '.') lastDot = i;
+			i++;
+		}
+		return lastDot;
 	}
 
 	/**
@@ -567,7 +655,27 @@ public final class KernelEventSubscribers {
 	 * {@code DEDICATED_SERVER}, so the captured constant names compare directly.
 	 */
 	private static List<Subscriber> scan(Path jar) {
+		return scanJar(jar).subscribers();
+	}
+
+	/**
+	 * One jar's listeners: its {@code @EventBusSubscriber} classes, and what its classes register in code
+	 * ({@link GuestListeners}) — class name (internal) → what its methods register; class name → the events its
+	 * {@code @SubscribeEvent} methods take, for every class that has one.
+	 */
+	record JarScan(List<Subscriber> subscribers, java.util.Map<String, GuestListeners.Found> code,
+			java.util.Map<String, GuestListeners.Found> annotated) {
+		/** The classes the annotation scan registered (internal names). */
+		java.util.Set<String> subscriberClasses() {
+			java.util.Set<String> out = new java.util.HashSet<>();
+			for (Subscriber s : subscribers) out.add(s.className().replace('.', '/'));
+			return out;
+		}
+	}
+
+	static JarScan scanJar(Path jar) {
 		List<Subscriber> found = new ArrayList<>();
+		java.util.Map<String, GuestListeners.Found> code = new java.util.TreeMap<>(), annotated = new java.util.TreeMap<>();
 		try (FileSystem fs = FileSystems.newFileSystem(jar, (ClassLoader) null)) {
 			for (Path root : fs.getRootDirectories()) {
 				String jarName = jar.getFileName() == null ? jar.toString() : jar.getFileName().toString();
@@ -575,8 +683,9 @@ public final class KernelEventSubscribers {
 					walk.filter(p -> p.toString().endsWith(".class")).forEach(p -> {
 						byte[] bytes = read(p);
 						if (bytes == null) return;
-						Subscriber s = scanClassBytes(bytes);
-						if (s != null) found.add(s);
+						ClassScan s = scanClass(bytes);
+						if (s != null && s.subscriber() != null) found.add(s.subscriber());
+						scanCode(bytes, s, code, annotated);
 						// Free ride on a pass that is already reading every class of every Forge-family jar.
 						// See CapabilityUseAudit for what it is looking for and why it can only warn.
 						CapabilityUseAudit.note(jarName, bytes);
@@ -587,7 +696,27 @@ public final class KernelEventSubscribers {
 			Caught.warn(t, "[Forbric/EBS] could not scan %s for @EventBusSubscriber classes; %d found before the "
 					+ "failure are kept", jar.getFileName(), found.size());
 		}
-		return found;
+		return new JarScan(found, code, annotated);
+	}
+
+	/**
+	 * The code-registration half of a class's scan, into {@code code} and {@code annotated} ({@code annotation} is the class's
+	 * annotation scan, null when it could not be parsed). Never throws.
+	 */
+	static void scanCode(byte[] bytes, ClassScan annotation, java.util.Map<String, GuestListeners.Found> code,
+			java.util.Map<String, GuestListeners.Found> annotated) {
+		try {
+			ClassReader reader = new ClassReader(bytes);
+			if (annotation != null && !annotation.subscribedEvents().isEmpty()) {
+				annotated.put(reader.getClassName(), new GuestListeners.Found(annotation.subscribedEvents(), java.util.Set.of(),
+						annotation.clientOnly()));
+			}
+			if (!GuestListeners.namesABus(reader)) return;
+			GuestListeners.Found found = GuestListeners.scan(bytes);
+			if (!found.events().isEmpty() || !found.registeredClasses().isEmpty()) code.put(reader.getClassName(), found);
+		} catch (Throwable t) {
+			Caught.warn(t, "[Forbric/EBS] could not read a class's code for the listeners it registers; it is skipped");
+		}
 	}
 
 	static Subscriber scanClass(Path classFile) {
@@ -607,7 +736,22 @@ public final class KernelEventSubscribers {
 
 	/** The scan proper, split out so tests can drive it from bytes without a jar on disk. */
 	static Subscriber scanClassBytes(byte[] bytes) {
+		ClassScan scan = scanClass(bytes);
+		return scan == null ? null : scan.subscriber();
+	}
+
+	/**
+	 * One class's annotation scan: its {@code @EventBusSubscriber} (null when it has none), the events its
+	 * {@code @SubscribeEvent} methods take whether or not it has one (a class a bus is handed to register is a listener
+	 * without it), and whether it carries a family's {@code @OnlyIn(Dist.CLIENT)}.
+	 */
+	record ClassScan(Subscriber subscriber, java.util.Set<String> subscribedEvents, boolean clientOnly) {
+	}
+
+	/** The scan proper; null when the class cannot be parsed. */
+	static ClassScan scanClass(byte[] bytes) {
 		try {
+			boolean[] clientOnly = new boolean[1];
 			String[] name = new String[1];
 			Ecosystem[] family = new Ecosystem[1];
 			String[] modId = new String[1];
@@ -645,6 +789,14 @@ public final class KernelEventSubscribers {
 
 				@Override
 				public AnnotationVisitor visitAnnotation(String descriptor, boolean visible) {
+					if (descriptor.endsWith("/api/distmarker/OnlyIn;")) {
+						return new AnnotationVisitor(Opcodes.ASM9) {
+							@Override
+							public void visitEnum(String attr, String desc, String value) {
+								if ("value".equals(attr) && "CLIENT".equals(value)) clientOnly[0] = true;
+							}
+						};
+					}
 					boolean forge = EBS_FORGE.equals(descriptor);
 					if (!forge && !EBS_NEO.equals(descriptor)) return null;
 					// A universal jar's glue class can carry BOTH. First one wins and the other is ignored: the
@@ -677,10 +829,10 @@ public final class KernelEventSubscribers {
 				}
 			}, ClassReader.SKIP_CODE | ClassReader.SKIP_DEBUG | ClassReader.SKIP_FRAMES);
 
-			if (family[0] == null) return null;
 			// Absent bus() is Bus.BOTH — Forge's own default, and the one that routes per event type.
-			return new Subscriber(name[0].replace('/', '.'), family[0], dists, modId[0],
+			Subscriber subscriber = family[0] == null ? null : new Subscriber(name[0].replace('/', '.'), family[0], dists, modId[0],
 					bus[0] == null ? "BOTH" : bus[0], java.util.Set.copyOf(events));
+			return new ClassScan(subscriber, java.util.Set.copyOf(events), clientOnly[0]);
 		} catch (Throwable t) {
 			Caught.warn(t, "[Forbric/EBS] could not parse a class for @EventBusSubscriber; it is skipped");
 			return null;
