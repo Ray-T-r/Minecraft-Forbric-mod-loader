@@ -489,7 +489,7 @@ public final class ForbricMergedBaseCompatTransformer implements ClassTransforme
 	private static final String FLUID_MODEL_FUNNEL_DESC = "(" + FLUID_MODEL + FLUID_STATE
 			+ "Lnet/minecraft/client/renderer/block/BlockAndTintGetter;Lnet/minecraft/core/BlockPos;)" + FLUID_MODEL;
 	/** MinecraftForge's own model ask, {@code IClientFluidTypeExtensions.getModel(state, level, pos, model)}. */
-	private static final String FORGE_FLUID_EXTENSIONS = "net/minecraftforge/client/extensions/common/IClientFluidTypeExtensions";
+	private static final String FORGE_FLUID_EXTENSIONS = net.forbric.api.ForeignType.CLIENT_FLUID_TYPE_EXTENSIONS.internal(net.forbric.api.Ecosystem.FORGE);
 	private static final String FORGE_FLUID_GET_MODEL_DESC = "(" + FLUID_STATE
 			+ "Lnet/minecraft/client/renderer/block/BlockAndTintGetter;Lnet/minecraft/core/BlockPos;" + FLUID_MODEL + ")" + FLUID_MODEL;
 	private static final String WEIGHTED_VARIANTS = "net/minecraft/client/renderer/block/dispatch/WeightedVariants";

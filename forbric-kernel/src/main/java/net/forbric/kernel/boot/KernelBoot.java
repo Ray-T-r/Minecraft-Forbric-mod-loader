@@ -852,6 +852,17 @@ public final class KernelBoot {
 		// as in vanilla; NeoForge's breathing hook held it, and its breathe event now starts from vanilla's refill.
 		chain.register(TransformPhase.COREMOD, new net.forbric.kernel.transform.VanillaAirRefillInjector());
 		chain.register(TransformPhase.COREMOD, new net.forbric.kernel.transform.UntrackedFluidEyeQueryInjector());
+		// MinecraftForge's half of EntityFluidInteraction.update, which the merge dropped: its entity-fluid queries read what
+		// it records, and a MinecraftForge mod's fluid in minecraft:water or minecraft:lava is water or lava to NeoForge's
+		// entity code, as MinecraftForge decides by those tags. Before the native tag-tracker source below, which proves the
+		// update and constructor it copies from as they are after this edit.
+		chain.register(TransformPhase.COREMOD, new net.forbric.kernel.transform.ForgeEntityFluidsInjector());
+		// NeoForge's client extensions of a MinecraftForge fluid's type (the kernel's view of it) are the type's own: its
+		// fog colour, which the merged client asks NeoForge alone.
+		chain.register(TransformPhase.COREMOD, new net.forbric.kernel.transform.ForgeFluidViewExtensionsInjector());
+		// Two water rules NeoForge has and MinecraftForge does not (a player is under water in any type it can swim in; a
+		// body in such a type, eyes out, is in shallow water) answer a MinecraftForge fluid as MinecraftForge does.
+		chain.register(TransformPhase.COREMOD, new net.forbric.kernel.transform.ForgeFluidWaterRulesInjector());
 		chain.register(TransformPhase.COREMOD, new net.forbric.kernel.transform.PredicateGetterResultRecorder());
 		chain.register(TransformPhase.COREMOD, new net.forbric.kernel.mixin.NativeTagTrackerSourceInjector());
 		chain.register(TransformPhase.COREMOD, new net.forbric.kernel.mixin.NativeTagSourceFacadeInjector());
