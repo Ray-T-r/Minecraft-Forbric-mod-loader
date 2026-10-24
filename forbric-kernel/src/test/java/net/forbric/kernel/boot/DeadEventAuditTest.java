@@ -233,9 +233,70 @@ class DeadEventAuditTest {
 			DeadEventAudit.report(Map.of("skullmod", Set.of(SKULLS)), net.forbric.api.Side.CLIENT);
 			assertEquals(1, net.forbric.api.ModCatalog.failures().size());
 			assertEquals("skullmod", net.forbric.api.ModCatalog.failures().get(0).modId());
-			assertTrue(DeadEventAudit.clientEvent(SKULLS));
-			assertFalse(DeadEventAudit.clientEvent(CHAT));
+			assertTrue(DeadEventAudit.CLIENT_ONLY.contains(SKULLS));
+			assertFalse(DeadEventAudit.CLIENT_ONLY.contains(CHAT));
 		} finally {
+			net.forbric.api.ModCatalog.publish(previous);
+		}
+	}
+
+	/**
+	 * The side is judged by where MinecraftForge posts the event, not by its package. {@code LeftClickEmpty} lives in the
+	 * common {@code event/entity/player} package and is posted natively from {@code Minecraft} alone; judged by package it
+	 * named a mod DEGRADED on every dedicated server for a click no server announces.
+	 */
+	@Test
+	void aCommonPackageEventPostedOnlyOnTheClientIsJudgedOnTheClientOnly() {
+		String leftClickEmpty = "net/minecraftforge/event/entity/player/PlayerInteractEvent$LeftClickEmpty";
+		assertTrue(DeadEventAudit.DEAD.containsKey(leftClickEmpty));
+		Map<String, Set<String>> deadNow = new java.util.LinkedHashMap<>(), bridgeable = new java.util.LinkedHashMap<>();
+		DeadEventAudit.split(Map.of("clickmod", Set.of(leftClickEmpty, CHAT)), net.forbric.api.Side.DEDICATED_SERVER, deadNow, bridgeable);
+		assertEquals(Map.of("clickmod", Set.of(CHAT)), deadNow, "a dedicated server never announces a click at nothing natively");
+		deadNow.clear();
+		DeadEventAudit.split(Map.of("clickmod", Set.of(leftClickEmpty)), net.forbric.api.Side.CLIENT, deadNow, bridgeable);
+		assertEquals(Map.of("clickmod", Set.of(leftClickEmpty)), deadNow, "the client does announce it natively");
+		assertEquals(Map.of(), bridgeable);
+	}
+
+	/**
+	 * An event the merged game never posts is posted in a pack where a guest posts it (Tombstone's phantom spawner calls
+	 * ForgeEventFactory.onPlayerSpawnPhantom), so a mod listening for it there is not accused. The guests are asked only
+	 * about the DEAD events someone listens for, and a pack where no guest posts one is reported as before.
+	 */
+	@Test
+	void anEventAGuestPostsIsNotReported() {
+		String phantoms = "net/minecraftforge/event/entity/player/PlayerSpawnPhantomsEvent";
+		assertTrue(DeadEventAudit.DEAD.containsKey(phantoms));
+		List<net.forbric.api.ModCatalog.Entry> previous = net.forbric.api.ModCatalog.everything();
+		try {
+			net.forbric.api.ModCatalog.publish(List.of(new net.forbric.api.ModCatalog.Entry(
+					net.forbric.api.Ecosystem.FORGE, "nightmod", "Night", "1", "", List.of(), "night.jar", "", "")));
+			List<Set<String>> asked = new ArrayList<>();
+			Map<String, Set<String>> subscribed = Map.of("nightmod", Set.of(phantoms, CHAT, COMMANDS));
+			DeadEventAudit.report(subscribed, net.forbric.api.Side.DEDICATED_SERVER, events -> {
+				asked.add(Set.copyOf(events));
+				return Map.of(phantoms, Set.of("tombstone.jar"));
+			});
+			assertEquals(List.of(Set.of(phantoms, CHAT)), asked, "asked about the DEAD events listened for, and nothing else");
+			assertEquals(1, net.forbric.api.ModCatalog.failures().size());
+			assertTrue(net.forbric.api.ModCatalog.failures().get(0).statusDetail().contains("ServerChatEvent"),
+					net.forbric.api.ModCatalog.failures().get(0).statusDetail());
+			assertFalse(net.forbric.api.ModCatalog.failures().get(0).statusDetail().contains("PlayerSpawnPhantomsEvent"));
+
+			net.forbric.api.ModCatalog.publish(List.of(new net.forbric.api.ModCatalog.Entry(
+					net.forbric.api.Ecosystem.FORGE, "nightmod", "Night", "1", "", List.of(), "night.jar", "", "")));
+			DeadEventAudit.report(Map.of("nightmod", Set.of(phantoms)), net.forbric.api.Side.DEDICATED_SERVER, events -> Map.of());
+			assertEquals(1, net.forbric.api.ModCatalog.failures().size(), "no guest posts it: the listener is reported");
+			assertTrue(net.forbric.api.ModCatalog.failures().get(0).statusDetail().contains("PlayerSpawnPhantomsEvent"));
+
+			asked.clear();
+			DeadEventAudit.report(Map.of("nightmod", Set.of(COMMANDS)), net.forbric.api.Side.DEDICATED_SERVER, events -> {
+				asked.add(Set.copyOf(events));
+				return Map.of();
+			});
+			assertEquals(List.of(), asked, "no DEAD event is listened for: the guests are not scanned at all");
+		} finally {
+			DeadEventAudit.resetPending();
 			net.forbric.api.ModCatalog.publish(previous);
 		}
 	}

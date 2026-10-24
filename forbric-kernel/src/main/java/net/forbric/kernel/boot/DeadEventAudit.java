@@ -60,10 +60,27 @@ import net.forbric.kernel.util.ForbricLog;
  * cost more than it is worth, and the answer only changes when the merged base is rebuilt. The data is checked
  * against the bytecode in both directions by {@code HookCallSiteCensusStagedTest}: no row may name an event the base
  * still posts, and every event {@link HookCallSiteCensus} measures as never posted — over every hook class of both
- * families, a carrier caller counting only when it is reached itself — must have a row here, in {@link #BRIDGED},
- * {@link #REPAIRED} or {@link #STAND_DOWN}. Until 2026-10-24 only the first direction was checked, so the table could
- * leave out a measured-dead event and nothing noticed: MinecraftForge's {@code LivingDrownEvent} was measured dead and
- * named nowhere, and its {@code LivingBreatheEvent} hid behind a carrier hook nothing called.
+ * families, a carrier caller counting only when it is reached itself, the game read as the kernel's merged-base repairs
+ * leave it — must have a row here, in {@link #BRIDGED}, {@link #REPAIRED} or {@link #STAND_DOWN}, unless its own family's
+ * patched game never posts it either. Until 2026-10-24 only the first direction was checked, so the table could leave out
+ * a measured-dead event and nothing noticed: MinecraftForge's {@code LivingDrownEvent} was measured dead and named
+ * nowhere, and its {@code LivingBreatheEvent} hid behind a carrier hook nothing called.
+ *
+ * <h2>What the merge lost, against what was never there</h2>
+ *
+ * <p>A row here is an accusation: the mod is marked DEGRADED because "this merged game never posts" what it waits for.
+ * That is only true against what its own loader does. Four events the census measures dead on the merged base are dead
+ * on MinecraftForge 26.2's own patched game as well — {@code PotionBrewEvent$Pre}, {@code EntityTeleportEvent$ChorusFruit},
+ * {@code ChunkDataEvent$Load} and {@code CustomizeGuiOverlayEvent$DebugText}: each one's only poster has no caller in
+ * MinecraftForge's patched client or server, its installer's jars, or its runtime. A listener for one waits for nothing on
+ * MinecraftForge too, so they have no row (the staged test forbids one), and a bridge for one would post what the native
+ * loader never does. The same goes for a client event on a dedicated server: {@link #CLIENT_ONLY} names the rows whose
+ * native posting lives only in code a dedicated server does not have.
+ *
+ * <p>And an event the game never posts is still posted in a pack where a guest posts it: a mod that calls the hook
+ * itself (Tombstone swaps in its own phantom spawner, which calls {@code ForgeEventFactory.onPlayerSpawnPhantom}) or
+ * constructs the event. {@link #report(Map, net.forbric.api.Side, java.util.function.Function)} asks the loaded jars
+ * before it accuses anyone, and says nothing of an event a guest posts.
  *
  * <p>Anything the kernel does bridge is subtracted live from {@link EventBridges#installed()}, so an entry does
  * not have to be deleted here the day a bridge for it lands.
@@ -122,7 +139,7 @@ public final class DeadEventAudit {
 		// both families' edits in a method both patched: the census now finds Minecraft.<init> calling
 		// ForgeEventFactoryClient.onInitLevelRenderer and EntityRenderDispatcher.onResourceManagerReload calling its
 		// onGatherLayers again, so neither row can still say the event is never posted.
-		dead.put("net/minecraftforge/client/event/EntityRenderersEvent$CreateSkullModels",
+		dead.put(ForeignType.CREATE_SKULL_MODELS_EVENT.internal(Ecosystem.FORGE),
 				"custom skull block models a MinecraftForge mod registers never render — the merged skull renderer "
 						+ "reads only NeoForge's map");
 		// The two fluid events the merged FlowingFluid/LavaFluid post only for NeoForge (EventHooks
@@ -151,15 +168,15 @@ public final class DeadEventAudit {
 		//
 		// The rest were added on 2026-10-24, when HookCallSiteCensusStagedTest began requiring a row for every event the
 		// census measures as never posted. Each is posted only by MinecraftForge hooks that neither the merged game nor
-		// a reached carrier method calls, and the kernel delivers none of them; the merged game posts NeoForge's event
-		// (or nothing) in their place. None is bridged yet: these are the candidates, named so a waiting mod is told.
+		// a reached carrier method calls, the kernel delivers none of them, and MinecraftForge's own patched game DOES
+		// call one of them: the merge lost it. The merged game posts NeoForge's event (or nothing) in their place. None
+		// is bridged yet: these are the candidates, named so a waiting mod is told. Four more were rows here for one
+		// round and are not: PotionBrewEvent$Pre, EntityTeleportEvent$ChorusFruit, ChunkDataEvent$Load and
+		// CustomizeGuiOverlayEvent$DebugText are never posted by MinecraftForge 26.2 itself (see the class javadoc), so a
+		// row accused their listeners of a loss the native loader has too.
 		String forge = "net/minecraftforge/event/", client = "net/minecraftforge/client/event/";
-		dead.put(forge + "brewing/PotionBrewEvent$Pre",
-				"a brewing stand finishing a brew can be neither stopped nor taken over");
 		dead.put(forge + "entity/EntityMobGriefingEvent",
 				"one mob cannot be allowed or forbidden to grief against the mobGriefing rule");
-		dead.put(forge + "entity/EntityTeleportEvent$ChorusFruit",
-				"a chorus-fruit teleport cannot be cancelled or redirected");
 		dead.put(forge + "entity/EntityTeleportEvent$EnderPearl",
 				"an ender-pearl teleport cannot be cancelled or redirected, nor its fall damage changed");
 		dead.put(forge + "entity/EntityTeleportEvent$SpreadPlayersCommand",
@@ -212,8 +229,13 @@ public final class DeadEventAudit {
 				"whether a player may sleep at this time of day cannot be decided");
 		dead.put(forge + "level/AlterGroundEvent",
 				"the ground a tree decorator places (podzol under a giant spruce) cannot be changed");
-		dead.put(forge + "level/ChunkDataEvent$Load",
-				"data saved with a chunk is never read back when the chunk loads");
+		// Posted natively only from ForgeHooks.onPlaceItemIntoWorld, for an item that places more than one block (a bed, a
+		// door). The staged ItemStack.useOn still calls that hook; the kernel's routePlaceItemHookToNeoForge sends the call to
+		// NeoForge's (the snapshot list it drains is NeoForge-typed), so at runtime nothing reaches it. The census reads the
+		// game through the merged-base repairs and sees that now; read off the staged jar, it called the event posted.
+		dead.put(forge + "level/BlockEvent$EntityMultiPlaceEvent",
+				"placing a block that is more than one block (a bed, a door) is not announced as one placement and "
+						+ "cannot be refused as one");
 		dead.put(forge + "level/LevelEvent$PotentialSpawns",
 				"the mobs that may spawn at a place can be neither added nor removed");
 		dead.put(forge + "level/NoteBlockEvent$Change",
@@ -222,8 +244,6 @@ public final class DeadEventAudit {
 				"a note block playing can be neither changed nor stopped");
 		dead.put(forge + "level/SleepFinishedTimeEvent",
 				"the time a night of sleep skips to cannot be changed");
-		dead.put(client + "CustomizeGuiOverlayEvent$DebugText",
-				"lines added to the F3 debug screen never appear");
 		dead.put(client + "GatherAtlasMetadataSectionsEvent",
 				"extra texture metadata registered for atlas sprites is never read");
 		dead.put(client + "InputEvent$MouseButton$Post",
@@ -257,7 +277,41 @@ public final class DeadEventAudit {
 		return Map.copyOf(dead);
 	}
 
-	/** The bridge that covers an event, when one does. Keeps an entry from being reported once it is bridged. */
+	/**
+	 * The {@link #DEAD} and {@link #PARTIAL} rows whose event MinecraftForge posts natively only on the client: every
+	 * method of its patched game whose calls reach a hook constructing the event carries, on itself or its class, the
+	 * {@code @OnlyIn(Dist.CLIENT)} that MinecraftForge's merge of the client and server jars puts on what only the client
+	 * jar has (for these rows that is also exactly the set of posting classes absent from the vanilla server jar). A
+	 * dedicated server never posts these under MinecraftForge, so a listener there waits for nothing natively too, and
+	 * {@link #report} judges them on the client only.
+	 *
+	 * <h2>Why a table and not the package</h2>
+	 *
+	 * <p>The first version judged by package: an event under {@code net/minecraftforge/client/} was a client event. That
+	 * is a name, and it was wrong both ways it could be: {@code PlayerInteractEvent$LeftClickEmpty} lives in the common
+	 * {@code event/entity/player} package and is posted natively from {@code net/minecraft/client/Minecraft} alone, so a
+	 * mod listening for it from a common subscriber was named DEGRADED on every dedicated server for a click no server
+	 * ever announces. Measured, not read: {@code HookCallSiteCensusStagedTest} recomputes this set from each family's own
+	 * patched game ({@link HookCallSiteCensus#postingSites}) and fails when the two disagree.
+	 */
+	static final Set<String> CLIENT_ONLY = clientOnly();
+
+	private static Set<String> clientOnly() {
+		String client = "net/minecraftforge/client/event/";
+		Set<String> out = new java.util.TreeSet<>(List.of(
+				"net/minecraftforge/event/entity/player/PlayerInteractEvent$LeftClickEmpty"));
+		out.add(ForeignType.CREATE_SKULL_MODELS_EVENT.internal(Ecosystem.FORGE));
+		for (String event : List.of("GatherAtlasMetadataSectionsEvent",
+				"InputEvent$MouseButton$Post", "RenderArmEvent", "RenderAvatarEvent$Pre", "RenderAvatarEvent$Post",
+				"RenderNameTagEvent", "RenderTooltipEvent$Pre", "ScreenEvent$CharacterTyped$Pre",
+				"ScreenEvent$CharacterTyped$Post", "ScreenEvent$MouseButtonPressed$Post",
+				"ScreenEvent$MouseButtonReleased$Post", "ScreenEvent$MouseDragged$Post", "ScreenEvent$MouseScrolled$Pre",
+				"ScreenEvent$RenderInventoryMobEffects", "sound/PlaySoundEvent")) {
+			out.add(client + event);
+		}
+		return Set.copyOf(out);
+	}
+
 	/**
 	 * Events the merged game posts from SOME of the places it used to, and not the others.
 	 *
@@ -345,7 +399,7 @@ public final class DeadEventAudit {
 	 * with it is spend a day on one.
 	 */
 	static final java.util.Set<String> REPAIRED = java.util.Set.of(
-			"net/neoforged/neoforge/event/furnace/FurnaceFuelBurnTimeEvent",
+			ForeignType.FURNACE_FUEL_BURN_TIME_EVENT.internal(Ecosystem.NEOFORGE),
 			"net/minecraftforge/event/entity/living/MobSpawnEvent$FinalizeSpawn",
 			"net/minecraftforge/event/AddPackFindersEvent",
 			// ForgeDamageSeamsInjector: no NeoForge event sits where these were, so the pipeline posts them.
@@ -358,11 +412,27 @@ public final class DeadEventAudit {
 			// registration; MinecraftForge's configuration tasks are gathered by PayloadInterop through its
 			// gatherLoginConfigTasks (reflectively, which no census can see); and ItemStack.useOn is routed to
 			// NeoForge's onPlaceItemIntoWorld (routePlaceItemHookToNeoForge, a transform the staged jar does not show),
-			// which posts NeoForge's multi-block place through EventHooks.onMultiBlockPlace.
+			// which posts NeoForge's multi-block place through EventHooks.onMultiBlockPlace. The census reads the game
+			// through that repair now and finds this one posted; the row stays because the repair is what posts it.
 			"net/minecraftforge/event/AddReloadListenerEvent",
 			"net/minecraftforge/client/event/RegisterPictureInPictureRendererEvent",
 			"net/minecraftforge/event/network/GatherLoginConfigurationTasksEvent",
-			"net/neoforged/neoforge/event/level/BlockEvent$EntityMultiPlaceEvent");
+			"net/neoforged/neoforge/event/level/BlockEvent$EntityMultiPlaceEvent",
+			// The eight below are delivered through a merged-base repair that moves the game's own hook call into the
+			// kernel, so once the census read the game as those repairs leave it, the game no longer calls the hook and
+			// the kernel's class does: Minecraft.<init>'s two initClientHooks calls go through KernelForgeClientInit
+			// (restoreForgeClientInit), which posts both families' client registration; ReloadableServerResources hands
+			// NeoForge's reload to KernelForgeReload (postMinecraftForgesReloadListenerEvent), which still asks NeoForge's
+			// onResourceReload; and FuelValues.burnDuration asks both families through the kernel
+			// (letBothEcosystemsSetBurnTime). Read off the staged bytes each looked posted by the game itself.
+			"net/minecraftforge/client/event/RegisterClientReloadListenersEvent",
+			"net/neoforged/neoforge/client/event/AddClientReloadListenersEvent",
+			ForeignType.CREATE_SKULL_MODELS_EVENT.internal(Ecosystem.NEOFORGE),
+			"net/neoforged/neoforge/client/event/EntityRenderersEvent$RegisterLayerDefinitions",
+			"net/neoforged/neoforge/client/event/EntityRenderersEvent$RegisterRenderers",
+			"net/neoforged/neoforge/client/renderstate/RegisterRenderStateModifiersEvent",
+			"net/neoforged/neoforge/event/AddServerReloadListenersEvent",
+			ForeignType.FURNACE_FUEL_BURN_TIME_EVENT.internal(Ecosystem.FORGE));
 
 	/** Package-private for the same reason as {@link #DEAD}. */
 	static final Map<String, GameEventBridge> BRIDGED = bridged();
@@ -631,6 +701,17 @@ public final class DeadEventAudit {
 	 * is usually subscribed by several mods and a line each would bury the list.
 	 */
 	public static void report(Map<String, Set<String>> subscribedByMod, net.forbric.api.Side side) {
+		report(subscribedByMod, side, events -> Map.of());
+	}
+
+	/**
+	 * The same, told which of the events it is about to call never posted a loaded guest posts itself: event → the jars
+	 * that post it, asked only for the {@link #DEAD} events someone listens for (see {@link GuestEventPosters}). An event a
+	 * guest posts is posted in this pack, on that guest's paths at least, so its listeners are not accused; the line says
+	 * which guest posts what instead.
+	 */
+	public static void report(Map<String, Set<String>> subscribedByMod, net.forbric.api.Side side,
+			java.util.function.Function<Set<String>, Map<String, Set<String>>> postedByGuests) {
 		if (!enabled()) {
 			ForbricLog.debug("[Forbric/DeadEvents] -D%s=off — not reporting merge-lost game events", PROPERTY);
 			return;
@@ -641,14 +722,7 @@ public final class DeadEventAudit {
 		// finding marks the row that was a false DEGRADED on the Mods screen. The listeners are kept and judged by
 		// judgePending() from the ServerStarted hook, when every bridge has had its target.
 		Map<String, Set<String>> deadNow = new LinkedHashMap<>(), bridgeable = new LinkedHashMap<>();
-		for (Map.Entry<String, Set<String>> mod : subscribedByMod.entrySet()) {
-			for (String event : mod.getValue()) {
-				// A client event is never posted on a dedicated server under either family either: a listener there is
-				// waiting for nothing natively, and naming its mod DEGRADED for it would be a false accusation.
-				if (!BRIDGED.containsKey(event) && !side.isClient() && clientEvent(event)) continue;
-				(BRIDGED.containsKey(event) ? bridgeable : deadNow).computeIfAbsent(mod.getKey(), k -> new LinkedHashSet<>()).add(event);
-			}
-		}
+		split(subscribedByMod, side, deadNow, bridgeable);
 		synchronized (PENDING) {
 			for (Map.Entry<String, Set<String>> e : bridgeable.entrySet()) {
 				PENDING.computeIfAbsent(e.getKey(), k -> new LinkedHashSet<>()).addAll(e.getValue());
@@ -658,12 +732,58 @@ public final class DeadEventAudit {
 			ForbricLog.info("[Forbric/DeadEvents] %d mod(s) listen for bridged Forge-family events; judged once the server is up",
 					bridgeable.size());
 		}
-		report(audit(deadNow, EventBridges.satisfied()));
+		Map<String, Set<String>> posted = postedByGuests(deadNow, postedByGuests);
+		if (!posted.isEmpty()) {
+			ForbricLog.info("[Forbric/DeadEvents] %d game event(s) the merged base never posts are posted by a mod in this "
+					+ "pack, so their listeners are not reported: %s", posted.size(), posted);
+		}
+		report(audit(withoutEvents(deadNow, posted.keySet()), EventBridges.satisfied()));
 	}
 
-	/** Whether {@code event} lives in either family's client event package, which only the client posts from. */
-	static boolean clientEvent(String event) {
-		return event.startsWith("net/minecraftforge/client/") || event.startsWith("net/neoforged/neoforge/client/");
+	/**
+	 * Sorts each listener: a bridgeable event into {@code bridgeable} (judged once the server is up), anything else into
+	 * {@code deadNow} — except, on a dedicated server, an event MinecraftForge posts natively only on the client
+	 * ({@link #CLIENT_ONLY}). A listener there waits for nothing under its own loader either, and naming its mod DEGRADED
+	 * for it would be a false accusation.
+	 */
+	static void split(Map<String, Set<String>> subscribedByMod, net.forbric.api.Side side, Map<String, Set<String>> deadNow,
+			Map<String, Set<String>> bridgeable) {
+		for (Map.Entry<String, Set<String>> mod : subscribedByMod.entrySet()) {
+			for (String event : mod.getValue()) {
+				if (!BRIDGED.containsKey(event) && !side.isClient() && CLIENT_ONLY.contains(event)) continue;
+				(BRIDGED.containsKey(event) ? bridgeable : deadNow).computeIfAbsent(mod.getKey(), k -> new LinkedHashSet<>()).add(event);
+			}
+		}
+	}
+
+	/**
+	 * Of the {@link #DEAD} events someone in {@code deadNow} listens for, those a loaded guest posts: event → the jars that
+	 * post it. Nothing is asked when no such listener exists, so a pack without one pays for no scan.
+	 */
+	static Map<String, Set<String>> postedByGuests(Map<String, Set<String>> deadNow,
+			java.util.function.Function<Set<String>, Map<String, Set<String>>> postedByGuests) {
+		Set<String> asked = new java.util.TreeSet<>();
+		for (Set<String> events : deadNow.values()) {
+			for (String event : events) if (DEAD.containsKey(event)) asked.add(event);
+		}
+		if (asked.isEmpty()) return Map.of();
+		Map<String, Set<String>> out = new java.util.TreeMap<>();
+		postedByGuests.apply(asked).forEach((event, jars) -> {
+			if (asked.contains(event) && !jars.isEmpty()) out.put(event, Set.copyOf(jars));
+		});
+		return out;
+	}
+
+	/** {@code subscribedByMod} without {@code events}. */
+	static Map<String, Set<String>> withoutEvents(Map<String, Set<String>> subscribedByMod, Set<String> events) {
+		if (events.isEmpty()) return subscribedByMod;
+		Map<String, Set<String>> out = new LinkedHashMap<>();
+		subscribedByMod.forEach((mod, subscribed) -> {
+			Set<String> kept = new LinkedHashSet<>(subscribed);
+			kept.removeAll(events);
+			if (!kept.isEmpty()) out.put(mod, kept);
+		});
+		return out;
 	}
 
 	/** mod id → the bridgeable events it listens for, judged by {@link #judgePending()}. */

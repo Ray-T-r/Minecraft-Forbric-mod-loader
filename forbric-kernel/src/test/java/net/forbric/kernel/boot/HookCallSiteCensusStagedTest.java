@@ -92,17 +92,77 @@ class HookCallSiteCensusStagedTest {
 				Path.of(System.getProperty("user.dir"), "build", "classes", "java", "runtime").toString())).normalize();
 	}
 
-	private static Map<String, HookCallSiteCensus.Census> censusAll() throws Exception {
+	/** The censused hook classes whose carrier is staged, each with its carrier. */
+	private static Map<String, Path> stagedHooks(java.util.function.Predicate<String> family) {
 		Map<String, Path> hooks = new LinkedHashMap<>();
 		for (Map.Entry<String, String> e : new TreeMap<>(HOOK_CLASSES).entrySet()) {
 			Path carrier = root().resolve(e.getValue());
-			if (Files.isRegularFile(carrier)) hooks.put(e.getKey(), carrier);
+			if (family.test(e.getKey()) && Files.isRegularFile(carrier)) hooks.put(e.getKey(), carrier);
 		}
-		if (hooks.isEmpty()) return Map.of();
+		return hooks;
+	}
+
+	/** One census of the staged base per run: replaying the merged-base repairs over every class is not free. */
+	private static volatile Map<String, HookCallSiteCensus.Census> cachedCensus;
+
+	private static Map<String, HookCallSiteCensus.Census> censusAll() throws Exception {
+		Map<String, HookCallSiteCensus.Census> cached = cachedCensus;
+		if (cached != null) return cached;
+		Map<String, Path> hooks = stagedHooks(hook -> true);
+		if (hooks.isEmpty() || !Files.isRegularFile(base())) return Map.of();
 		// The carriers as carriers, not as game: a hook the game never calls may still be reached through
 		// its own ecosystem's runtime, and calling that dead put a delivered event on the work list once. All hook
-		// classes at once, because a carrier caller that is itself a hook counts only when something reaches it.
-		return HookCallSiteCensus.all(hooks, List.of(base()), carriers(), List.of(kernelRuntime()));
+		// classes at once, because a carrier caller that is itself a hook counts only when something reaches it. And
+		// the game as the kernel loads it: a merged-base repair that sends a hook call elsewhere takes that call away.
+		try (var loadTime = new net.forbric.kernel.transform.MergedBaseLoadTimeView(served())) {
+			cached = HookCallSiteCensus.all(hooks, List.of(base()), carriers(), List.of(kernelRuntime()), loadTime);
+		}
+		cachedCensus = cached;
+		return cached;
+	}
+
+	/** What a launch serves game classes from, for the repairs that read another class: the base, then the carriers. */
+	private static List<Path> served() {
+		List<Path> out = new ArrayList<>(List.of(base()));
+		out.addAll(carriers());
+		return out;
+	}
+
+	/** NeoForge's own patched game, as it was before the merge. */
+	private static Path neoForgePatchedGame() {
+		return root().resolve("neoforge-patched/patched-mc-neoforge-26.2.jar");
+	}
+
+	private static boolean forgeFamily(String internalName) {
+		return internalName.startsWith("net/minecraftforge/");
+	}
+
+	/** Each family's hook classes against that family's own patched game: what its loader posts natively. */
+	private static Map<String, Map<String, Path>> nativeSides() {
+		Map<String, Map<String, Path>> out = new LinkedHashMap<>();
+		out.put(forgePatchedGame().toString(), stagedHooks(HookCallSiteCensusStagedTest::forgeFamily));
+		out.put(neoForgePatchedGame().toString(), stagedHooks(hook -> !forgeFamily(hook)));
+		return out;
+	}
+
+	/**
+	 * The events each family's own patched game never posts either: every hook constructing one is called by neither that
+	 * game nor a reached method of that family's runtime. Read from the staged copies the merge itself read.
+	 */
+	private static Set<String> nativelyNeverPosted() throws Exception {
+		Set<String> dead = new TreeSet<>(), live = new TreeSet<>();
+		for (Map.Entry<String, Map<String, Path>> side : nativeSides().entrySet()) {
+			Path game = Path.of(side.getKey());
+			TestFixtures.require(Fixture.STAGED, Files.isRegularFile(game), "a family's own patched game is absent: " + game);
+			if (side.getValue().isEmpty()) continue;
+			for (HookCallSiteCensus.Census c : HookCallSiteCensus.all(side.getValue(), List.of(game),
+					List.copyOf(new java.util.LinkedHashSet<>(side.getValue().values())), List.of()).values()) {
+				dead.addAll(c.deadEvents());
+				live.addAll(c.liveEvents());
+			}
+		}
+		dead.removeAll(live);
+		return dead;
 	}
 
 	/** Every event the census measures as never posted, over every hook class: dead in one and live in none. */
@@ -135,18 +195,130 @@ class HookCallSiteCensusStagedTest {
 		TestFixtures.require(Fixture.STAGED, !all.isEmpty(), "staged carriers absent");
 		Set<String> dead = new TreeSet<>(), kernel = new TreeSet<>();
 		measuredDead(all, dead, kernel);
+		// What the merge lost, not what was never there: an event its own family's patched game never posts either is
+		// waited for in vain under that family's own loader too, and a row would accuse its listeners of a loss they have
+		// natively (four MinecraftForge events were rows for one round for exactly that reason).
+		Set<String> nativelyDead = nativelyNeverPosted();
 		List<String> unnamed = new ArrayList<>();
+		int native_ = 0;
 		for (String event : dead) {
+			if (nativelyDead.contains(event)) {
+				native_++;
+				continue;
+			}
 			if (DeadEventAudit.DEAD.containsKey(event) || DeadEventAudit.BRIDGED.containsKey(event)
 					|| DeadEventAudit.REPAIRED.contains(event) || DeadEventAudit.STAND_DOWN.containsKey(event)) continue;
 			unnamed.add(event + (kernel.contains(event) ? " (the kernel delivers it: a BRIDGED or REPAIRED row)" : ""));
 		}
 		System.out.println("[Forbric/Hooks] measured never posted: " + dead.size() + " event(s), " + kernel.size()
-				+ " delivered by the kernel, " + unnamed.size() + " named in no table");
+				+ " delivered by the kernel, " + native_ + " never posted by their own family either, " + unnamed.size()
+				+ " named in no table");
 		// The denominator: a census that measured nothing dead would pass this vacuously.
 		assertTrue(dead.size() > 0, "not one event is measured dead — verify the scan before believing it");
 		assertEquals(List.of(), unnamed, "events the merged game never posts that no table names: a mod waiting on one is "
 				+ "told nothing, and nothing says whether a bridge carries it");
+	}
+
+	/**
+	 * No table names an event its own family's patched game never posts. A DEAD or PARTIAL row would mark a mod DEGRADED
+	 * for a loss its own loader has too ("which this merged game never posts" is then a false accusation); a bridge or a
+	 * repair would post what the native loader never does. Measured on the family's own patched game with the same census
+	 * as the merged base: MinecraftForge 26.2 never posts PotionBrewEvent$Pre, EntityTeleportEvent$ChorusFruit,
+	 * ChunkDataEvent$Load or CustomizeGuiOverlayEvent$DebugText, and those four were DEAD rows for one round.
+	 */
+	@Test
+	void noTableNamesAnEventItsOwnFamilyNeverPosts() throws Exception {
+		TestFixtures.require(Fixture.STAGED, Files.isRegularFile(base()), "staged merged base absent");
+		Set<String> nativelyDead = nativelyNeverPosted();
+		System.out.println("[Forbric/Hooks] never posted by their own family's patched game: " + nativelyDead);
+		Map<String, String> named = new TreeMap<>();
+		for (String event : nativelyDead) {
+			if (DeadEventAudit.DEAD.containsKey(event)) named.put(event, "DEAD");
+			if (DeadEventAudit.PARTIAL.containsKey(event)) named.put(event, "PARTIAL");
+			if (DeadEventAudit.BRIDGED.containsKey(event)) named.put(event, "BRIDGED");
+			if (DeadEventAudit.STAND_DOWN.containsKey(event)) named.put(event, "STAND_DOWN");
+			if (DeadEventAudit.REPAIRED.contains(event)) named.put(event, "REPAIRED");
+		}
+		// The denominator, as measured on the staged MinecraftForge 26.2-65.0.1: a native census that found nothing would
+		// make the assertion below vacuous.
+		assertTrue(!nativelyDead.isEmpty(), "the native census found no event its own family never posts — verify the scan");
+		assertEquals(Map.of(), named, "rows for events the native loader never posts either");
+	}
+
+	/**
+	 * {@link DeadEventAudit#CLIENT_ONLY} is exactly the DEAD and PARTIAL rows MinecraftForge posts natively only on the
+	 * client: every method of its patched game whose calls reach a hook constructing the event carries the
+	 * {@code @OnlyIn(Dist.CLIENT)} its merge of the client and server jars puts on what only the client jar has (on the
+	 * method or its class). The table replaced a package rule, which named a mod DEGRADED on every dedicated server for
+	 * {@code PlayerInteractEvent$LeftClickEmpty} — a common-package event posted from {@code Minecraft} alone.
+	 */
+	@Test
+	void theClientOnlyTableIsWhereTheNativeLoaderPostsOnlyOnTheClient() throws Exception {
+		TestFixtures.require(Fixture.STAGED, Files.isRegularFile(base()), "staged merged base absent");
+		Map<String, Set<HookCallSiteCensus.PostingSite>> sites = new TreeMap<>();
+		for (Map.Entry<String, Map<String, Path>> side : nativeSides().entrySet()) {
+			Path game = Path.of(side.getKey());
+			TestFixtures.require(Fixture.STAGED, Files.isRegularFile(game), "a family's own patched game is absent: " + game);
+			if (side.getValue().isEmpty()) continue;
+			sites.putAll(HookCallSiteCensus.postingSites(side.getValue(), List.of(game),
+					List.copyOf(new java.util.LinkedHashSet<>(side.getValue().values()))));
+		}
+		Set<String> rows = new TreeSet<>(DeadEventAudit.DEAD.keySet());
+		rows.addAll(DeadEventAudit.PARTIAL.keySet());
+		Set<String> clientOnly = new TreeSet<>();
+		List<String> unjudgeable = new ArrayList<>();
+		int clientSites = 0;
+		for (String event : rows) {
+			Set<HookCallSiteCensus.PostingSite> posted = sites.getOrDefault(event, Set.of());
+			if (posted.isEmpty()) continue;
+			boolean common = false, carrier = false;
+			for (HookCallSiteCensus.PostingSite site : posted) {
+				if (site.carrier()) carrier = true;
+				else if (site.clientOnly()) clientSites++;
+				else common = true;
+			}
+			if (common) continue;
+			// Posted from client-only game code and from a carrier method this cannot place: a person has to say which.
+			if (carrier) unjudgeable.add(event + " " + posted);
+			else clientOnly.add(event);
+		}
+		System.out.println("[Forbric/Hooks] rows posted natively only on the client: " + clientOnly.size() + " of " + rows.size());
+		assertTrue(clientSites > 0, "no posting site is client-only — the @OnlyIn reading matched nothing; verify it");
+		assertEquals(List.of(), unjudgeable, "rows whose native posting this census cannot place on a side");
+		assertEquals(clientOnly, new TreeSet<>(DeadEventAudit.CLIENT_ONLY),
+				"CLIENT_ONLY and where MinecraftForge posts these events disagree; the table is the one that is wrong");
+	}
+
+	/**
+	 * The census reads the game as the kernel's merged-base repairs leave it. {@code routePlaceItemHookToNeoForge} sends
+	 * {@code ItemStack.useOn}'s {@code ForgeHooks.onPlaceItemIntoWorld} to NeoForge's {@code CommonHooks}: read off the
+	 * staged bytes MinecraftForge's multi-block place event is posted and NeoForge's is not, and at runtime it is the other
+	 * way round — which is what the census, and the tables, must say.
+	 */
+	@Test
+	void theCensusSeesTheCallsTheMergedBaseRepairsMove() throws Exception {
+		TestFixtures.require(Fixture.STAGED, Files.isRegularFile(base()), "staged merged base absent");
+		TestFixtures.require(Fixture.GAME_SIDE, Files.isDirectory(kernelRuntime()), "the kernel's game side is not compiled");
+		Map<String, HookCallSiteCensus.Census> loaded = censusAll();
+		TestFixtures.require(Fixture.STAGED, !loaded.isEmpty(), "staged carriers absent");
+		Map<String, HookCallSiteCensus.Census> staged = HookCallSiteCensus.all(stagedHooks(hook -> true), List.of(base()),
+				carriers(), List.of(kernelRuntime()));
+		String forgeMulti = "net/minecraftforge/event/level/BlockEvent$EntityMultiPlaceEvent";
+		String neoMulti = "net/neoforged/neoforge/event/level/BlockEvent$EntityMultiPlaceEvent";
+		Set<String> deadLoaded = new TreeSet<>(), deadStaged = new TreeSet<>();
+		measuredDead(loaded, deadLoaded, new TreeSet<>());
+		measuredDead(staged, deadStaged, new TreeSet<>());
+		assertFalse(deadStaged.contains(forgeMulti), "the staged ItemStack.useOn calls ForgeHooks.onPlaceItemIntoWorld");
+		assertTrue(deadLoaded.contains(forgeMulti), "the repair takes that call away, so nothing posts it at runtime");
+		assertTrue(deadStaged.contains(neoMulti), "the staged game never calls CommonHooks.onPlaceItemIntoWorld");
+		assertFalse(deadLoaded.contains(neoMulti), "the repair sends useOn there, so NeoForge's is posted at runtime");
+		assertTrue(DeadEventAudit.DEAD.containsKey(forgeMulti), "a mod waiting for MinecraftForge's multi-block place is named");
+	}
+
+	/** The census, the guests' poster scan and this test read the same hook classes. */
+	@Test
+	void theCensusedHookClassesAreBothFamiliesHookClasses() {
+		assertEquals(HookCallSiteCensus.HOOK_CLASSES, HOOK_CLASSES.keySet());
 	}
 
 	/** A row that says "never posted" about an event the kernel itself posts would name a mod for an event it receives. */

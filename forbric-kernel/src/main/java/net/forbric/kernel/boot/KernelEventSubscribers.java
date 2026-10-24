@@ -247,8 +247,11 @@ public final class KernelEventSubscribers {
 		// fine. The kernel already holds each MinecraftForge mod's own BusGroup, whose internal map is keyed by
 		// the event classes that bus has actually seen, so the answer is one field read per mod rather than a
 		// second and much more expensive pass over every method body.
+		// Before it names anyone, the audit asks the loaded jars whether one of them posts the event itself (a mod calling
+		// a family hook as API): the hooks that post it are read from the hook classes this class loader serves.
 		DeadEventAudit.report(ForgeBusSubscriptions.merge(subscribedByMod,
-				ForgeBusSubscriptions.byMod(KernelModLoader.publishedForgeMods())), side);
+				ForgeBusSubscriptions.byMod(KernelModLoader.publishedForgeMods())), side,
+				events -> GuestEventPosters.find(events, name -> resourceBytes(cl, name + ".class"), modJars));
 		// And this is about mixins that DID apply, to a point. Ninety individual lines on a client boot, none of
 		// them totalled anywhere, for the state MixinFit's javadoc calls worse than either extreme.
 		ForbricLog.info("%s", net.forbric.kernel.mixin.KernelGuestMixinAdapter.partialSummary());
@@ -258,6 +261,16 @@ public final class KernelEventSubscribers {
 		// Everything above is about listeners. This is about a whole subsystem the merged game does not carry.
 		CapabilityUseAudit.report(net.forbric.kernel.transform.ForgeCapabilityCompositionTransformer.enabled(),
 				net.forbric.kernel.transform.ForgeCapabilityCompositionTransformer.composedRoots());
+	}
+
+	/** A resource's bytes from {@code cl}, or null when it has none or it cannot be read. */
+	private static byte[] resourceBytes(ClassLoader cl, String name) {
+		try (java.io.InputStream in = cl.getResourceAsStream(name)) {
+			return in == null ? null : in.readAllBytes();
+		} catch (java.io.IOException unreadable) {
+			Caught.warn(unreadable, "[Forbric/DeadEvents] could not read %s", name);
+			return null;
+		}
 	}
 
 	/**

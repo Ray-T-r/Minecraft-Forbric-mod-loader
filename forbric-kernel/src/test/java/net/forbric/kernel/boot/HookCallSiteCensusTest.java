@@ -238,6 +238,102 @@ class HookCallSiteCensusTest {
 		assertEquals(java.util.Set.of(), without.get(FACTORY).kernelDelivered());
 	}
 
+	/** A class whose one static method hands out {@code target} as a method reference (an invokedynamic, no invoke). */
+	private static Map<String, byte[]> referencing(String owner, String targetOwner, String target) {
+		ClassWriter cw = new ClassWriter(0);
+		cw.visit(Opcodes.V17, Opcodes.ACC_PUBLIC, owner, null, "java/lang/Object", null);
+		MethodVisitor mv = cw.visitMethod(Opcodes.ACC_PUBLIC | Opcodes.ACC_STATIC, "install", "()Ljava/lang/Runnable;", null, null);
+		mv.visitCode();
+		org.objectweb.asm.Handle metafactory = new org.objectweb.asm.Handle(Opcodes.H_INVOKESTATIC, "java/lang/invoke/LambdaMetafactory",
+				"metafactory", "(Ljava/lang/invoke/MethodHandles$Lookup;Ljava/lang/String;Ljava/lang/invoke/MethodType;"
+						+ "Ljava/lang/invoke/MethodType;Ljava/lang/invoke/MethodHandle;Ljava/lang/invoke/MethodType;)Ljava/lang/invoke/CallSite;",
+				false);
+		mv.visitInvokeDynamicInsn("run", "()Ljava/lang/Runnable;", metafactory, org.objectweb.asm.Type.getType("()V"),
+				new org.objectweb.asm.Handle(Opcodes.H_INVOKESTATIC, targetOwner, target, "()V", false), org.objectweb.asm.Type.getType("()V"));
+		mv.visitInsn(Opcodes.ARETURN);
+		mv.visitMaxs(1, 0);
+		mv.visitEnd();
+		cw.visitEnd();
+		return Map.of(owner + ".class", cw.toByteArray());
+	}
+
+	@Test void aMethodReferenceToAHookReachesIt() throws Exception {
+		// The kernel hands ForgeEventFactory::onPreClientTick to a listener: no invoke names the hook, and an invoke-only
+		// count called it unreached by the kernel. The game handing one out is the game reaching it.
+		Path carrier = outerAndInner(Map.of());
+		Path kernel = base(referencing("kernel/Ticks", HOOKS, "onOuter"));
+		var byKernel = HookCallSiteCensus.all(both(carrier), List.of(base(callerCalling("game/Level", List.of()))), List.of(carrier),
+				List.of(kernel));
+		assertEquals(java.util.Set.of("onInner()V"), byKernel.get(FACTORY).viaKernel());
+		assertEquals(java.util.Set.of("forge/InnerEvent"), byKernel.get(FACTORY).kernelDelivered());
+		var byGame = HookCallSiteCensus.all(both(carrier), List.of(base(referencing("game/Level", HOOKS, "onOuter"))), List.of(carrier),
+				List.of());
+		assertEquals(java.util.Set.of("onOuter()V"), byGame.get(HOOKS).live());
+		assertEquals(java.util.Set.of(), byGame.get(FACTORY).deadEvents());
+	}
+
+	@Test void theGameIsCountedAsTheLoadTimeViewLeavesIt() throws Exception {
+		// routePlaceItemHookToNeoForge, in miniature: the staged game calls the outer hook, and a repair sends the call to
+		// another owner as the class loads. What runs posts nothing, so the event is dead; the staged bytes alone said live.
+		Path carrier = outerAndInner(Map.of());
+		Path game = base(callerCalling("game/Level", List.of(new Call("onOuter", "()V"))));
+		java.util.function.BiFunction<String, byte[], byte[]> reroute = (name, bytes) -> {
+			if (!name.equals("game/Level")) return bytes;
+			org.objectweb.asm.tree.ClassNode node = new org.objectweb.asm.tree.ClassNode();
+			new org.objectweb.asm.ClassReader(bytes).accept(node, 0);
+			for (var m : node.methods) for (var insn : m.instructions) {
+				if (insn instanceof org.objectweb.asm.tree.MethodInsnNode call && call.owner.equals(HOOKS)) call.owner = "other/Hooks";
+			}
+			ClassWriter cw = new ClassWriter(0);
+			node.accept(cw);
+			return cw.toByteArray();
+		};
+		var staged = HookCallSiteCensus.all(both(carrier), List.of(game), List.of(carrier), List.of());
+		assertEquals(java.util.Set.of(), staged.get(FACTORY).deadEvents());
+		var loaded = HookCallSiteCensus.all(both(carrier), List.of(game), List.of(carrier), List.of(), reroute);
+		assertEquals(java.util.Set.of("forge/InnerEvent"), loaded.get(FACTORY).deadEvents());
+		assertEquals(java.util.Set.of(), loaded.get(HOOKS).live());
+	}
+
+	/** A game class calling {@code hook} from {@code tick}; {@code onClass}/{@code onMethod} carry a family's @OnlyIn(CLIENT). */
+	private static Map<String, byte[]> sided(String owner, String hook, boolean onClass, boolean onMethod) {
+		ClassWriter cw = new ClassWriter(0);
+		cw.visit(Opcodes.V17, Opcodes.ACC_PUBLIC, owner, null, "java/lang/Object", null);
+		if (onClass) onlyInClient(cw.visitAnnotation("Lforge/api/distmarker/OnlyIn;", true));
+		MethodVisitor mv = cw.visitMethod(Opcodes.ACC_PUBLIC, "tick", "()V", null, null);
+		if (onMethod) onlyInClient(mv.visitAnnotation("Lforge/api/distmarker/OnlyIn;", true));
+		mv.visitCode();
+		mv.visitMethodInsn(Opcodes.INVOKESTATIC, HOOKS, hook, "()V", false);
+		mv.visitInsn(Opcodes.RETURN);
+		mv.visitMaxs(1, 1);
+		mv.visitEnd();
+		cw.visitEnd();
+		return Map.of(owner + ".class", cw.toByteArray());
+	}
+
+	private static void onlyInClient(org.objectweb.asm.AnnotationVisitor av) {
+		av.visitEnum("value", "Lforge/api/distmarker/Dist;", "CLIENT");
+		av.visitEnd();
+	}
+
+	@Test void aPostingSiteIsClientOnlyByItsFamilysMarkerOnTheMethodOrItsClass() throws Exception {
+		// Where an event is posted decides whether a dedicated server ever posts it natively. The families' merge of the
+		// client and server jars marks what only the client jar has; a package name says nothing of the kind.
+		Map<String, byte[]> entries = new LinkedHashMap<>();
+		entries.put(HOOKS + ".class", hookClass(HOOKS, Map.of("onOuter", List.<String[]>of(new String[] {HOOKS, "onC"})),
+				Map.of("onA", "forge/AEvent", "onB", "forge/BEvent", "onC", "forge/CEvent")));
+		Path carrier = carrier(entries);
+		Map<String, byte[]> game = new LinkedHashMap<>();
+		game.putAll(sided("game/ClientOnly", "onA", true, false));
+		game.putAll(sided("game/Common", "onB", false, true));
+		game.putAll(sided("game/Server", "onOuter", false, false));
+		var sites = HookCallSiteCensus.postingSites(Map.of(HOOKS, carrier), List.of(base(game)), List.of(carrier));
+		assertEquals(java.util.Set.of(new HookCallSiteCensus.PostingSite("game/ClientOnly#tick()V", true, false)), sites.get("forge/AEvent"));
+		assertEquals(java.util.Set.of(new HookCallSiteCensus.PostingSite("game/Common#tick()V", true, false)), sites.get("forge/BEvent"));
+		assertEquals(java.util.Set.of(new HookCallSiteCensus.PostingSite("game/Server#tick()V", false, false)), sites.get("forge/CEvent"),
+				"reached through the outer hook the unmarked class calls");
+	}
+
 	@Test void theEcosystemRootIsTheFirstTwoPackageSegments() {
 		assertEquals("net/minecraftforge/",
 				HookCallSiteCensus.namespaceOf("net/minecraftforge/event/ForgeEventFactory"));

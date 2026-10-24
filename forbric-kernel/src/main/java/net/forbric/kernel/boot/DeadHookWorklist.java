@@ -210,7 +210,14 @@ public final class DeadHookWorklist {
 			}
 			hookClasses.put(args[i].substring(eq + 1), Path.of(args[i].substring(0, eq)));
 		}
-		for (var census : HookCallSiteCensus.all(hookClasses, List.of(base), carriers, List.of()).values()) {
+		// The game as the kernel loads it: a merged-base repair that sends a hook call elsewhere takes that call away.
+		List<Path> served = new ArrayList<>(List.of(base));
+		served.addAll(carriers);
+		Map<String, HookCallSiteCensus.Census> censuses;
+		try (var loadTime = new net.forbric.kernel.transform.MergedBaseLoadTimeView(served)) {
+			censuses = HookCallSiteCensus.all(hookClasses, List.of(base), carriers, List.of(), loadTime);
+		}
+		for (var census : censuses.values()) {
 			System.out.println(census.summary());
 			census.postersOf().forEach((e, p) -> posters.merge(e, p, (a, b) -> {
 				Set<String> both = new TreeSet<>(a);
