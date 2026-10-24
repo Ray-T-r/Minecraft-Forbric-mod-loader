@@ -1,0 +1,9 @@
+modLoader="javafml"
+loaderVersion="[65,)"
+license="Apache-2.0"
+
+[[mods]]
+modId="forbricbreathforge"
+version="1.0.0"
+displayName="Forbric MinecraftForge breath and drown canary"
+description="gate-m57: a MinecraftForge liquid, bucket, and breathe/drown/damage listeners. Test fixture only."
