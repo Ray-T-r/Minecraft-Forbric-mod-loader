@@ -2380,11 +2380,15 @@ Break one and the failure usually surfaces far from the cause.
   the surface falling under gravity in Forbric (not examined further). On the client, native MinecraftForge against
   Forbric with Biomes O' Plenty, each fluid seen from inside and from above: at 5fbf7de1 its blood and liquid null had
   the sky's fog colour and no eye overlay, and a MinecraftForge fluid in `minecraft:water` had water's fog but not
-  water's overlay; with the changes all twelve frames have the same centre colour as native, and what the client
-  reported in each (eyes in water, under water, in shallow water, MinecraftForge's eye type, the camera's fog type) is
-  identical. Biomes O' Plenty's fluids draw as the missing texture on native MinecraftForge too: 26.2's model set has no
-  model for them and the mod supplies none. Not measured: a Fabric or NeoForge fluid on the client, multiplayer,
-  Windows and real launchers. Known gaps: the view answers `isWaterLike` and the tag half of `canSwim` per
+  water's overlay; with the changes the twelve frames have native's centre colours — exactly in two of four runs, in
+  the other two within the three colour steps by which two native runs differ in animated lava, except one frame where
+  the flying player had moved off the spot it was put on (no gravity there, so by movement input; not seen again in
+  the repeat) — and what the client reported in each (eyes in water, under water, in shallow water, MinecraftForge's
+  eye type, the camera's fog type) is identical. Biomes O' Plenty's fluids draw as the missing texture on native MinecraftForge too: 26.2's model set has no
+  model for them and the mod supplies none. The two NeoForge test fluids were compared on the client on Forbric alone,
+  before against after: the same state in every frame and centre colours within one step, apart from one more frame
+  where the player had moved the same way. Not measured: a native NeoForge client, a Fabric fluid on the client,
+  multiplayer, Windows and real launchers. Known gaps: the view answers `isWaterLike` and the tag half of `canSwim` per
   MinecraftForge type, not per fluid (a type whose source is in `minecraft:water` and whose flowing form is not counts
   as water in both); it does not forward a MinecraftForge type's positional getters (`getLightLevel(state, level, pos)`
   and the three beside it), its `FluidStack` overloads or `shouldUpdateWhileBoating`; and tag trackers a MinecraftForge
