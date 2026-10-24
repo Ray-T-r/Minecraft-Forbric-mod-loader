@@ -134,6 +134,37 @@ class DeadEventAuditTest {
 		}
 	}
 
+	/**
+	 * A listener a guest registers in code is judged once the server is up, and only where its event's own bus has a
+	 * listener then: JourneyMap registers its handlers from its client setup, and a dedicated server, where they never
+	 * register, must not name it. A bus that cannot be asked counts as found.
+	 */
+	@Test
+	void aListenerFoundInCodeIsJudgedOnceTheServerIsUpWhereItsBusHasOne() {
+		String toss = "net/minecraftforge/event/entity/item/ItemTossEvent";
+		List<net.forbric.api.ModCatalog.Entry> previous = net.forbric.api.ModCatalog.everything();
+		try {
+			DeadEventAudit.resetPending();
+			Map<String, Set<String>> inCode = Map.of("codemod", Set.of(toss));
+			for (Boolean onBus : new Boolean[] {false, true, null}) {
+				net.forbric.api.ModCatalog.publish(List.of(new net.forbric.api.ModCatalog.Entry(
+						net.forbric.api.Ecosystem.FORGE, "codemod", "Code", "1", "", List.of(), "code.jar", "", "")));
+				DeadEventAudit.report(Map.of(), net.forbric.api.Side.DEDICATED_SERVER, events -> Map.of(), inCode, event -> onBus);
+				assertTrue(net.forbric.api.ModCatalog.failures().isEmpty(), "judged once the server is up, not at construction");
+				List<DeadEventAudit.Finding> findings = DeadEventAudit.judgePending(EnumSet.noneOf(GameEventBridge.class));
+				assertEquals(Boolean.FALSE.equals(onBus) ? 0 : 1, findings.size(), "bus answered " + onBus + ": " + findings);
+			}
+			assertEquals("codemod", net.forbric.api.ModCatalog.failures().get(0).modId());
+			DeadEventAudit.report(Map.of(), net.forbric.api.Side.DEDICATED_SERVER, events -> Map.of(toss, Set.of("tomb.jar")), inCode,
+					event -> true);
+			assertEquals(List.of(), DeadEventAudit.judgePending(EnumSet.noneOf(GameEventBridge.class)),
+					"an event a loaded guest posts names nobody, whoever found its listener");
+		} finally {
+			DeadEventAudit.resetPending();
+			net.forbric.api.ModCatalog.publish(previous);
+		}
+	}
+
 	@Test
 	void aFindingMarksTheModDegradedAndAClassKeyedOneMarksNobody() {
 		List<net.forbric.api.ModCatalog.Entry> previous = net.forbric.api.ModCatalog.everything();

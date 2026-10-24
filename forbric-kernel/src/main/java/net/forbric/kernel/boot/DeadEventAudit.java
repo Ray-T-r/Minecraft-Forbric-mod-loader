@@ -800,6 +800,25 @@ public final class DeadEventAudit {
 	 */
 	public static void report(Map<String, Set<String>> subscribedByMod, net.forbric.api.Side side,
 			java.util.function.Function<Set<String>, Map<String, Set<String>>> postedByGuests) {
+		report(subscribedByMod, side, postedByGuests, Map.of(), event -> null);
+	}
+
+	/**
+	 * The same, also told what each mod's code registers ({@code inCode}, from {@link GuestListeners}) and how to ask an
+	 * event's own bus whether a listener is on it ({@code listenersOnBus}: true, false, or null when it cannot tell).
+	 *
+	 * <h2>Why a listener found in code is judged later, and only if its bus has one</h2>
+	 *
+	 * <p>An annotation subscriber declares its side ({@code @EventBusSubscriber(value = Dist.CLIENT)}); a registration in
+	 * code does not: JourneyMap registers its handlers from its client setup listener, and nothing in the handler classes
+	 * says they are a client's. Judged from the bytecode alone, a dedicated server would name JourneyMap for a fluid event
+	 * whose listener it never registers there. So these are judged once the server is up, when every mod's setup has run,
+	 * and an event whose own static bus has no listener at that point is not reported: nothing registered for it on this
+	 * side. An event with no bus of its own to ask (NeoForge's, a mod-bus event) is judged as found.
+	 */
+	public static void report(Map<String, Set<String>> subscribedByMod, net.forbric.api.Side side,
+			java.util.function.Function<Set<String>, Map<String, Set<String>>> postedByGuests, Map<String, Set<String>> inCode,
+			java.util.function.Function<String, Boolean> listenersOnBus) {
 		if (!enabled()) {
 			ForbricLog.debug("[Forbric/DeadEvents] -D%s=off — not reporting merge-lost game events", PROPERTY);
 			return;
@@ -811,6 +830,8 @@ public final class DeadEventAudit {
 		// judgePending() from the ServerStarted hook, when every bridge has had its target.
 		Map<String, Set<String>> deadNow = new LinkedHashMap<>(), bridgeable = new LinkedHashMap<>();
 		split(subscribedByMod, side, deadNow, bridgeable);
+		Map<String, Set<String>> codeNow = new LinkedHashMap<>(), codeBridgeable = new LinkedHashMap<>();
+		split(inCode, side, codeNow, codeBridgeable);
 		synchronized (PENDING) {
 			for (Map.Entry<String, Set<String>> e : bridgeable.entrySet()) {
 				PENDING.computeIfAbsent(e.getKey(), k -> new LinkedHashSet<>()).addAll(e.getValue());
@@ -820,13 +841,40 @@ public final class DeadEventAudit {
 			ForbricLog.info("[Forbric/DeadEvents] %d mod(s) listen for bridged Forge-family events; judged once the server is up",
 					bridgeable.size());
 		}
-		Map<String, Set<String>> posted = postedByGuests(deadNow, postedByGuests);
+		Map<String, Set<String>> asked = new LinkedHashMap<>(deadNow);
+		codeNow.forEach((mod, events) -> asked.computeIfAbsent(mod, k -> new LinkedHashSet<>()).addAll(events));
+		Map<String, Set<String>> posted = postedByGuests(asked, postedByGuests);
 		if (!posted.isEmpty()) {
 			ForbricLog.info("[Forbric/DeadEvents] %d game event(s) the merged base never posts are posted by a mod in this "
 					+ "pack, so their listeners are not reported: %s", posted.size(), posted);
 		}
 		report(audit(withoutEvents(deadNow, posted.keySet()), EventBridges.satisfied()));
+		Map<String, Set<String>> code = new LinkedHashMap<>(withoutEvents(codeNow, posted.keySet()));
+		codeBridgeable.forEach((mod, events) -> code.computeIfAbsent(mod, k -> new LinkedHashSet<>()).addAll(events));
+		code.values().removeIf(events -> events.stream().noneMatch(DeadEventAudit::judged));
+		synchronized (PENDING) {
+			for (Map.Entry<String, Set<String>> e : code.entrySet()) {
+				PENDING_CODE.computeIfAbsent(e.getKey(), k -> new LinkedHashSet<>()).addAll(e.getValue());
+			}
+			LISTENERS_ON_BUS[0] = listenersOnBus;
+		}
+		if (!code.isEmpty()) {
+			ForbricLog.info("[Forbric/DeadEvents] %d mod(s) register listeners in code for Forge-family events a table names; "
+					+ "judged once the server is up, where the event's bus has a listener", code.size());
+		}
 	}
+
+	/** Whether any table speaks for {@code event}: only those are worth keeping for the later judgement. */
+	private static boolean judged(String event) {
+		return bridgeOf(event) != null || REPAIRED.contains(event) || DEAD.containsKey(event) || PARTIAL.containsKey(event);
+	}
+
+	/** mod id → the events its code registers for that a table names, judged by {@link #judgePending()} (guarded by PENDING). */
+	private static final Map<String, Set<String>> PENDING_CODE = new LinkedHashMap<>();
+	/** How {@link #judgePending()} asks an event's bus whether it has a listener (guarded by PENDING). */
+	@SuppressWarnings("unchecked")
+	private static final java.util.function.Function<String, Boolean>[] LISTENERS_ON_BUS = new java.util.function.Function[] {
+			(java.util.function.Function<String, Boolean>) event -> null};
 
 	/**
 	 * Sorts each listener: an event a bridge delivers ({@link #BRIDGED} or {@link #STAND_DOWN}) into {@code bridgeable}
@@ -886,13 +934,31 @@ public final class DeadEventAudit {
 
 	static List<Finding> judgePending(Set<GameEventBridge> installed) {
 		if (!enabled()) return List.of();
-		Map<String, Set<String>> pending;
+		Map<String, Set<String>> pending, code;
+		java.util.function.Function<String, Boolean> onBus;
 		synchronized (PENDING) {
 			pending = new LinkedHashMap<>();
 			for (var e : PENDING.entrySet()) pending.put(e.getKey(), new LinkedHashSet<>(e.getValue()));
 			PENDING.clear();
+			code = new LinkedHashMap<>();
+			for (var e : PENDING_CODE.entrySet()) code.put(e.getKey(), new LinkedHashSet<>(e.getValue()));
+			PENDING_CODE.clear();
+			onBus = LISTENERS_ON_BUS[0];
 		}
-		List<Finding> findings = audit(pending, installed);
+		List<Finding> findings = new ArrayList<>(audit(pending, installed));
+		// A listener found in code counts only where its event's bus has one now; an event whose bus cannot be asked
+		// counts as found. Two mods registering for one event share its bus, so its answer covers both: the scan, not
+		// the bus, says who.
+		Map<String, Boolean> answers = new java.util.HashMap<>();
+		Map<String, Set<String>> confirmed = new LinkedHashMap<>();
+		code.forEach((mod, events) -> {
+			for (String event : events) {
+				if (!answers.containsKey(event)) answers.put(event, onBus.apply(event));
+				if (Boolean.FALSE.equals(answers.get(event))) continue;
+				confirmed.computeIfAbsent(mod, k -> new LinkedHashSet<>()).add(event);
+			}
+		});
+		findings.addAll(audit(confirmed, installed));
 		report(findings);
 		return findings;
 	}
@@ -900,6 +966,8 @@ public final class DeadEventAudit {
 	static void resetPending() {
 		synchronized (PENDING) {
 			PENDING.clear();
+			PENDING_CODE.clear();
+			LISTENERS_ON_BUS[0] = event -> null;
 		}
 	}
 

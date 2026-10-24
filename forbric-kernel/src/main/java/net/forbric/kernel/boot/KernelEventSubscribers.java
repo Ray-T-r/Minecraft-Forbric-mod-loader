@@ -268,8 +268,9 @@ public final class KernelEventSubscribers {
 
 	/**
 	 * Hands the listeners found to {@link DeadEventAudit} — the annotation scan's and the bus groups' ({@code subscribedByMod}),
-	 * and those each jar's classes register in code ({@code scans}, {@link #addCodeListeners}) — told which of the events it
-	 * would call never posted a loaded guest posts itself. Split out of {@link #registerAll} so this wiring — the code
+	 * and those each jar's classes register in code ({@code scans}, {@link #addCodeListeners}; judged once the server is up,
+	 * where the event's own bus has a listener) — told which of the events it would call never posted a loaded guest posts
+	 * itself. Split out of {@link #registerAll} so this wiring — the code
 	 * listeners merged in, the hook classes read through {@code loader}, the guests' jars scanned — is tested as production
 	 * runs it.
 	 *
@@ -280,12 +281,13 @@ public final class KernelEventSubscribers {
 	 */
 	static void reportDeadEvents(ForbricClassLoader loader, List<Path> modJars, Side side,
 			java.util.Map<String, java.util.Set<String>> subscribedByMod, java.util.Map<Path, JarScan> scans) {
-		java.util.Map<String, java.util.Set<String>> listening = ForgeBusSubscriptions.merge(subscribedByMod, java.util.Map.of());
+		java.util.Map<String, java.util.Set<String>> inCode = new java.util.LinkedHashMap<>();
 		for (java.util.Map.Entry<Path, JarScan> scan : scans.entrySet()) {
-			if (!scan.getValue().code().isEmpty()) addCodeListeners(scan.getKey(), scan.getValue(), side, listening);
+			if (!scan.getValue().code().isEmpty()) addCodeListeners(scan.getKey(), scan.getValue(), side, inCode);
 		}
-		DeadEventAudit.report(listening, side,
-				events -> GuestEventPosters.find(events, name -> resourceBytes(loader, name + ".class"), modJars));
+		DeadEventAudit.report(subscribedByMod, side,
+				events -> GuestEventPosters.find(events, name -> resourceBytes(loader, name + ".class"), modJars),
+				inCode, event -> GuestListeners.listenersOnBus(loader, event));
 	}
 
 	/**
@@ -315,7 +317,7 @@ public final class KernelEventSubscribers {
 				Ecosystem family = event.startsWith("net/minecraftforge/") ? Ecosystem.FORGE
 						: event.startsWith("net/neoforged/") ? Ecosystem.NEOFORGE : null;
 				if (family == null || MultiLoaderArbiter.suppressedFor(jar, family)) continue;
-				String modId = codeOwner(e.getKey(), family, modsInJar);
+				String modId = codeOwner(jar, e.getKey(), family, modsInJar);
 				if (didNotFinishLoading(modId)) continue;
 				into.computeIfAbsent(modId == null ? e.getKey().replace('/', '.') : modId, k -> new java.util.LinkedHashSet<>()).add(event);
 			}
@@ -323,32 +325,58 @@ public final class KernelEventSubscribers {
 	}
 
 	/**
-	 * The mod a class registering listeners in code belongs to: the jar's one {@code @Mod} id of {@code family}, else the one
-	 * whose {@code @Mod} class shares the longest package with it; null when the jar has none.
+	 * The mod a class registering listeners in code belongs to: the jar's one {@code @Mod} id of {@code family}; between
+	 * several, the one whose {@code @Mod} class names the listener class in its constant pool (it constructs or calls it),
+	 * else the one whose {@code @Mod} class's name shares the longest prefix with it; null when the jar has none.
 	 */
-	static String codeOwner(String internalName, Ecosystem family, List<ModAnnotationScanner.ModClassInfo> modsInJar) {
-		String binary = internalName.replace('/', '.'), best = null;
+	static String codeOwner(Path jar, String internalName, Ecosystem family, List<ModAnnotationScanner.ModClassInfo> modsInJar) {
+		String binary = internalName.replace('/', '.'), best = null, naming = null;
 		int bestLength = -1;
 		java.util.Set<String> ids = new java.util.TreeSet<>();
 		for (ModAnnotationScanner.ModClassInfo info : modsInJar) {
 			if (info.family != family || info.modId == null) continue;
 			ids.add(info.modId);
-			int common = commonPackage(binary, info.className);
+			int common = commonPrefix(binary, info.className);
 			if (common > bestLength) {
 				bestLength = common;
 				best = info.modId;
 			}
 		}
-		return ids.size() == 1 ? ids.iterator().next() : best;
+		if (ids.size() <= 1) return ids.isEmpty() ? null : ids.iterator().next();
+		for (ModAnnotationScanner.ModClassInfo info : modsInJar) {
+			if (info.family != family || info.modId == null || !namesClass(jar, info.className.replace('.', '/'), internalName)) continue;
+			if (naming != null && !naming.equals(info.modId)) return best;
+			naming = info.modId;
+		}
+		return naming != null ? naming : best;
 	}
 
-	private static int commonPackage(String a, String b) {
-		int i = 0, lastDot = -1;
-		while (i < a.length() && i < b.length() && a.charAt(i) == b.charAt(i)) {
-			if (a.charAt(i) == '.') lastDot = i;
-			i++;
+	private static int commonPrefix(String a, String b) {
+		int i = 0;
+		while (i < a.length() && i < b.length() && a.charAt(i) == b.charAt(i)) i++;
+		return i;
+	}
+
+	/** Whether {@code owner}'s class file in {@code jar} names {@code type} as a class constant. */
+	private static boolean namesClass(Path jar, String owner, String type) {
+		if (owner.equals(type)) return true;
+		try (java.util.zip.ZipFile zip = new java.util.zip.ZipFile(jar.toFile())) {
+			java.util.zip.ZipEntry entry = zip.getEntry(owner + ".class");
+			if (entry == null) return false;
+			ClassReader reader;
+			try (java.io.InputStream in = zip.getInputStream(entry)) {
+				reader = new ClassReader(in.readAllBytes());
+			}
+			char[] buffer = new char[reader.getMaxStringLength()];
+			for (int item = 1; item < reader.getItemCount(); item++) {
+				int offset = reader.getItem(item);
+				if (offset != 0 && reader.readByte(offset - 1) == 7 && type.equals(reader.readUTF8(offset, buffer))) return true;
+			}
+			return false;
+		} catch (java.io.IOException | RuntimeException unreadable) {
+			Caught.warn(unreadable, "[Forbric/EBS] could not read %s in %s to attribute a listener to its mod", owner, jar.getFileName());
+			return false;
 		}
-		return lastDot;
 	}
 
 	/**

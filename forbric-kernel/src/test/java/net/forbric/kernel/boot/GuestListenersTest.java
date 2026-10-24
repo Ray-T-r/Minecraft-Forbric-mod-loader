@@ -167,6 +167,70 @@ class GuestListenersTest {
 		assertEquals(Set.of("c/events/ForgeEvents"), GuestListeners.scan(registrar).registeredClasses());
 	}
 
+	@Test void anInstanceRegisteredOnMinecraftForgesGameBusIsRead() {
+		// libIPN: MinecraftForge.EVENT_BUS.register(new CommonForgeEventHandler()), the bus field declared as Forge's
+		// EventBusMigrationHelper; the handler's @SubscribeEvent methods (boolean ones among them) carry no class-level
+		// @EventBusSubscriber.
+		String helper = "net/minecraftforge/common/EventBusMigrationHelper";
+		byte[] init = guest("ipn/ClientInit", TOSS, mv -> {
+			mv.visitFieldInsn(Opcodes.GETSTATIC, "net/minecraftforge/common/MinecraftForge", "EVENT_BUS", "L" + helper + ";");
+			mv.visitTypeInsn(Opcodes.NEW, "ipn/Handler");
+			mv.visitInsn(Opcodes.DUP);
+			mv.visitMethodInsn(Opcodes.INVOKESPECIAL, "ipn/Handler", "<init>", "()V", false);
+			mv.visitMethodInsn(Opcodes.INVOKEVIRTUAL, helper, "register", "(Ljava/lang/Object;)Ljava/util/Collection;", false);
+			mv.visitInsn(Opcodes.POP);
+		});
+		assertTrue(GuestListeners.namesABus(new ClassReader(init)));
+		assertEquals(Set.of("ipn/Handler"), GuestListeners.scan(init).registeredClasses());
+	}
+
+	@Test void aHelperHandedTheBusArgumentIsFollowedToItsCallers() {
+		// JourneyMap's shape: ForgeEventHandlerManager.register(EventHandler handler) calls BusGroup.DEFAULT.register(lookup,
+		// handler), and registerHandlers() calls register(new ForgeEvents()). The registered class is the helper's parameter,
+		// named at the helper's call site in the same class; a listener a helper is handed is followed the same way.
+		ClassWriter cw = new ClassWriter(ClassWriter.COMPUTE_MAXS | ClassWriter.COMPUTE_FRAMES) {
+			@Override protected String getCommonSuperClass(String a, String b) {
+				return "java/lang/Object";
+			}
+		};
+		cw.visit(Opcodes.V17, Opcodes.ACC_PUBLIC, "jm/Manager", null, "java/lang/Object", null);
+		MethodVisitor register = cw.visitMethod(Opcodes.ACC_PRIVATE | Opcodes.ACC_STATIC, "register", "(Ljava/lang/Object;)V", null, null);
+		register.visitCode();
+		register.visitFieldInsn(Opcodes.GETSTATIC, BUS_GROUP, "DEFAULT", "L" + BUS_GROUP + ";");
+		register.visitInsn(Opcodes.ACONST_NULL);
+		register.visitVarInsn(Opcodes.ALOAD, 0);
+		register.visitMethodInsn(Opcodes.INVOKEINTERFACE, BUS_GROUP, "register",
+				"(Ljava/lang/invoke/MethodHandles$Lookup;Ljava/lang/Object;)Ljava/util/Collection;", true);
+		register.visitInsn(Opcodes.POP);
+		register.visitInsn(Opcodes.RETURN);
+		register.visitMaxs(0, 0);
+		register.visitEnd();
+		MethodVisitor listen = cw.visitMethod(Opcodes.ACC_PRIVATE | Opcodes.ACC_STATIC, "listen", "(L" + CANCELLABLE_BUS + ";Ljava/util/function/Consumer;)V", null, null);
+		listen.visitCode();
+		listen.visitVarInsn(Opcodes.ALOAD, 0);
+		listen.visitVarInsn(Opcodes.ALOAD, 1);
+		addListener(listen, CANCELLABLE_BUS);
+		listen.visitInsn(Opcodes.RETURN);
+		listen.visitMaxs(0, 0);
+		listen.visitEnd();
+		MethodVisitor all = cw.visitMethod(Opcodes.ACC_PUBLIC | Opcodes.ACC_STATIC, "registerHandlers", "()V", null, null);
+		all.visitCode();
+		all.visitTypeInsn(Opcodes.NEW, "jm/ForgeEvents");
+		all.visitInsn(Opcodes.DUP);
+		all.visitMethodInsn(Opcodes.INVOKESPECIAL, "jm/ForgeEvents", "<init>", "()V", false);
+		all.visitMethodInsn(Opcodes.INVOKESTATIC, "jm/Manager", "register", "(Ljava/lang/Object;)V", false);
+		all.visitFieldInsn(Opcodes.GETSTATIC, TOSS, "BUS", "L" + CANCELLABLE_BUS + ";");
+		all.visitInsn(Opcodes.ACONST_NULL);
+		all.visitMethodInsn(Opcodes.INVOKESTATIC, "jm/Manager", "listen", "(L" + CANCELLABLE_BUS + ";Ljava/util/function/Consumer;)V", false);
+		all.visitInsn(Opcodes.RETURN);
+		all.visitMaxs(0, 0);
+		all.visitEnd();
+		cw.visitEnd();
+		GuestListeners.Found found = GuestListeners.scan(cw.toByteArray());
+		assertEquals(Set.of("jm/ForgeEvents"), found.registeredClasses());
+		assertEquals(Set.of(TOSS), found.events());
+	}
+
 	@Test void aBooleanReturningSubscribeEventMethodIsAListenerToo() {
 		// MinecraftForge's cancellable listeners may return boolean (a predicate); the annotation scan reads the parameter,
 		// so an @SubscribeEvent boolean onToss(ItemTossEvent) is a listener for ItemTossEvent like a void one.

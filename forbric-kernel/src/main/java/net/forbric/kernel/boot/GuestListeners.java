@@ -65,9 +65,14 @@ import org.objectweb.asm.tree.analysis.SourceValue;
  */
 final class GuestListeners {
 
-	/** MinecraftForge's EventBus 7 bus types live here; NeoForge's bus is {@code IEventBus}. */
+	/**
+	 * MinecraftForge's EventBus 7 bus types live here; NeoForge's bus is {@code IEventBus}; and MinecraftForge's own game bus
+	 * field, {@code MinecraftForge.EVENT_BUS}, is declared as its {@code EventBusMigrationHelper}, which takes the same
+	 * {@code register} and {@code addListener} calls for mods still written against the old bus.
+	 */
 	private static final String FORGE_BUSES = "net/minecraftforge/eventbus/api/bus/";
 	private static final String NEO_BUS = "net/neoforged/bus/api/IEventBus";
+	private static final String FORGE_GAME_BUS = "net/minecraftforge/common/EventBusMigrationHelper";
 	private static final String ONLY_IN_SUFFIX = "/api/distmarker/OnlyIn;";
 
 	private GuestListeners() {
@@ -87,7 +92,7 @@ final class GuestListeners {
 			int offset = reader.getItem(item);
 			if (offset == 0 || reader.readByte(offset - 1) != CONSTANT_CLASS) continue;
 			String name = reader.readUTF8(offset, buffer);
-			if (name != null && (name.startsWith(FORGE_BUSES) || name.equals(NEO_BUS))) return true;
+			if (name != null && isBus(name)) return true;
 		}
 		return false;
 	}
@@ -95,40 +100,133 @@ final class GuestListeners {
 	/** The constant pool tag of a CONSTANT_Class entry (JVMS 4.4.1). */
 	private static final int CONSTANT_CLASS = 7;
 
-	/** The listeners {@code bytes}' methods register in code, and the classes they hand a bus to register. */
+	/** What a bus call's argument is, when it is one of its method's parameters: resolved at the method's callers. */
+	private enum Role { RECEIVER, LISTENER, REGISTERED }
+
+	/** A parameter of a method in this class that reaches a bus call in the role given. */
+	private record Need(String method, int parameter, Role role) {
+	}
+
+	/**
+	 * The listeners {@code bytes}' methods register in code, and the classes they hand a bus to register. An argument of
+	 * the bus call that is the method's own parameter (a helper such as {@code register(EventHandler handler)}) is followed
+	 * one level, to the calls of that method in the same class.
+	 */
 	static Found scan(byte[] bytes) {
 		ClassNode node = new ClassNode();
 		new ClassReader(bytes).accept(node, ClassReader.SKIP_FRAMES | ClassReader.SKIP_DEBUG);
 		Set<String> events = new TreeSet<>(), registered = new TreeSet<>();
+		java.util.List<Need> needs = new java.util.ArrayList<>();
 		for (MethodNode m : node.methods) {
 			if (m.instructions == null || !callsABus(m)) continue;
-			Frame<SourceValue>[] frames;
-			try {
-				frames = new Analyzer<>(new SourceInterpreter()).analyze(node.name, m);
-			} catch (AnalyzerException unanalyzable) {
-				net.forbric.kernel.util.Caught.expected(unanalyzable);
-				frames = null;
-			}
+			Frame<SourceValue>[] frames = frames(node.name, m);
+			if (frames == null) continue;
 			for (AbstractInsnNode insn = m.instructions.getFirst(); insn != null; insn = insn.getNext()) {
 				if (!(insn instanceof MethodInsnNode call) || !isBus(call.owner)) continue;
-				Frame<SourceValue> frame = frames == null ? null : frames[m.instructions.indexOf(insn)];
+				Frame<SourceValue> frame = frames[m.instructions.indexOf(insn)];
+				if (frame == null) continue;
 				Type[] args = Type.getArgumentTypes(call.desc);
 				if (call.name.equals("addListener")) {
-					String event = frame == null ? null : eventOfReceiver(m, frames, frame, args.length);
-					if (event == null && args.length > 0 && frame != null) {
-						event = eventOfListener(m, frames, frame.getStack(frame.getStackSize() - 1));
+					if (frame.getStackSize() < args.length + 1) continue;
+					AbstractInsnNode receiver = origin(m, frames, frame.getStack(frame.getStackSize() - args.length - 1), new HashSet<>());
+					AbstractInsnNode listener = args.length == 0 ? null
+							: origin(m, frames, frame.getStack(frame.getStackSize() - 1), new HashSet<>());
+					String event = eventOfReceiver(receiver);
+					if (event == null) event = eventOfListener(listener);
+					if (event != null) {
+						events.add(event);
+						continue;
 					}
-					if (event != null) events.add(event);
-				} else if (call.name.equals("register") && frame != null) {
+					int asReceiver = parameter(m, frames, receiver), asListener = parameter(m, frames, listener);
+					if (asReceiver >= 0) needs.add(new Need(m.name + m.desc, asReceiver, Role.RECEIVER));
+					if (asListener >= 0) needs.add(new Need(m.name + m.desc, asListener, Role.LISTENER));
+				} else if (call.name.equals("register")) {
 					for (int i = 0; i < args.length; i++) {
-						SourceValue arg = frame.getStack(frame.getStackSize() - args.length + i);
-						String type = registeredType(m, node.name, frames, arg);
+						AbstractInsnNode arg = origin(m, frames, frame.getStack(frame.getStackSize() - args.length + i), new HashSet<>());
+						String type = registeredType(m, node.name, arg);
 						if (type != null) registered.add(type);
+						else if (parameter(m, frames, arg) >= 0) needs.add(new Need(m.name + m.desc, parameter(m, frames, arg), Role.REGISTERED));
 					}
 				}
 			}
 		}
+		if (!needs.isEmpty()) resolveAtCallers(node, needs, events, registered);
 		return new Found(events, registered, clientOnly(node.visibleAnnotations) || clientOnly(node.invisibleAnnotations));
+	}
+
+	/** Each need resolved at every call in {@code node} of the method it names: what that call hands the parameter. */
+	private static void resolveAtCallers(ClassNode node, java.util.List<Need> needs, Set<String> events, Set<String> registered) {
+		for (MethodNode caller : node.methods) {
+			if (caller.instructions == null) continue;
+			Frame<SourceValue>[] frames = null;
+			for (AbstractInsnNode insn = caller.instructions.getFirst(); insn != null; insn = insn.getNext()) {
+				if (!(insn instanceof MethodInsnNode call) || !call.owner.equals(node.name)) continue;
+				for (Need need : needs) {
+					if (!need.method().equals(call.name + call.desc)) continue;
+					if (frames == null) frames = frames(node.name, caller);
+					if (frames == null) return;
+					Frame<SourceValue> frame = frames[caller.instructions.indexOf(insn)];
+					int argCount = Type.getArgumentTypes(call.desc).length;
+					if (frame == null || frame.getStackSize() < argCount) continue;
+					AbstractInsnNode arg = origin(caller, frames, frame.getStack(frame.getStackSize() - argCount + need.parameter()), new HashSet<>());
+					switch (need.role()) {
+						case RECEIVER -> add(events, eventOfReceiver(arg));
+						case LISTENER -> add(events, eventOfListener(arg));
+						case REGISTERED -> add(registered, registeredType(caller, node.name, arg));
+					}
+				}
+			}
+		}
+	}
+
+	private static void add(Set<String> into, String value) {
+		if (value != null) into.add(value);
+	}
+
+	private static Frame<SourceValue>[] frames(String owner, MethodNode m) {
+		try {
+			return new Analyzer<>(new SourceInterpreter()).analyze(owner, m);
+		} catch (AnalyzerException unanalyzable) {
+			net.forbric.kernel.util.Caught.expected(unanalyzable);
+			return null;
+		}
+	}
+
+	/** The index of the method parameter {@code source} loads unchanged, or -1 ({@code this} is not a parameter). */
+	private static int parameter(MethodNode m, Frame<SourceValue>[] frames, AbstractInsnNode source) {
+		if (!(source instanceof VarInsnNode load) || load.getOpcode() != Opcodes.ALOAD) return -1;
+		Frame<SourceValue> frame = frames[m.instructions.indexOf(source)];
+		if (frame == null || !frame.getLocal(load.var).insns.isEmpty()) return -1;
+		int slot = (m.access & Opcodes.ACC_STATIC) != 0 ? 0 : 1;
+		Type[] params = Type.getArgumentTypes(m.desc);
+		for (int i = 0; i < params.length; i++) {
+			if (slot == load.var) return i;
+			slot += params[i].getSize();
+		}
+		return -1;
+	}
+
+	/**
+	 * Whether {@code event}'s own static bus (MinecraftForge's EventBus 7 {@code BUS} field) has a listener now, asked
+	 * through {@code loader}; null when the event has no such bus or it cannot be asked.
+	 */
+	static Boolean listenersOnBus(ClassLoader loader, String event) {
+		try {
+			Class<?> type = Class.forName(event.replace('/', '.'), false, loader);
+			java.lang.reflect.Field bus = type.getField("BUS");
+			if (!java.lang.reflect.Modifier.isStatic(bus.getModifiers()) || !bus.getType().getName().startsWith(FORGE_BUSES.replace('/', '.'))) {
+				return null;
+			}
+			Object value = bus.get(null);
+			return value == null ? null : (Boolean) bus.getType().getMethod("hasListeners").invoke(value);
+		} catch (ClassNotFoundException | NoSuchFieldException | NoSuchMethodException noBus) {
+			net.forbric.kernel.util.Caught.expected(noBus);
+			return null;
+		} catch (ReflectiveOperationException | RuntimeException | LinkageError unaskable) {
+			net.forbric.kernel.util.Caught.warn(unaskable, "[Forbric/DeadEvents] could not ask %s's bus for its listeners; a mod "
+					+ "registering for it in code is judged as found", event);
+			return null;
+		}
 	}
 
 	/** Whether a class carries a family's {@code @OnlyIn(Dist.CLIENT)}: a dedicated server never loads it. */
@@ -146,7 +244,7 @@ final class GuestListeners {
 	}
 
 	private static boolean isBus(String owner) {
-		return owner.startsWith(FORGE_BUSES) || owner.equals(NEO_BUS);
+		return owner.startsWith(FORGE_BUSES) || owner.equals(NEO_BUS) || owner.equals(FORGE_GAME_BUS);
 	}
 
 	private static boolean callsABus(MethodNode m) {
@@ -158,12 +256,10 @@ final class GuestListeners {
 	}
 
 	/**
-	 * The event whose bus the call's receiver is: an event's static {@code BUS} field, or what its static {@code getBus}
-	 * returns — traced through locals.
+	 * The event whose bus {@code source} produced: an event's static {@code BUS} field, or what its static {@code getBus}
+	 * returns.
 	 */
-	private static String eventOfReceiver(MethodNode m, Frame<SourceValue>[] frames, Frame<SourceValue> frame, int argCount) {
-		if (frame.getStackSize() < argCount + 1) return null;
-		AbstractInsnNode source = origin(m, frames, frame.getStack(frame.getStackSize() - argCount - 1), new HashSet<>());
+	private static String eventOfReceiver(AbstractInsnNode source) {
 		if (source instanceof FieldInsnNode f && f.getOpcode() == Opcodes.GETSTATIC && isBusType(Type.getType(f.desc))) return f.owner;
 		if (source instanceof MethodInsnNode call && call.getOpcode() == Opcodes.INVOKESTATIC && call.name.equals("getBus")
 				&& isBusType(Type.getReturnType(call.desc))) return call.owner;
@@ -174,18 +270,16 @@ final class GuestListeners {
 		return type.getSort() == Type.OBJECT && isBus(type.getInternalName());
 	}
 
-	/** The event a lambda or method-reference listener takes: its instantiated method type's first parameter. */
-	private static String eventOfListener(MethodNode m, Frame<SourceValue>[] frames, SourceValue listener) {
-		AbstractInsnNode source = origin(m, frames, listener, new HashSet<>());
+	/** The event a lambda or method-reference listener {@code source} takes: its instantiated method type's first parameter. */
+	private static String eventOfListener(AbstractInsnNode source) {
 		if (!(source instanceof InvokeDynamicInsnNode indy) || indy.bsmArgs == null || indy.bsmArgs.length < 3) return null;
 		if (!(indy.bsm.getOwner().equals("java/lang/invoke/LambdaMetafactory")) || !(indy.bsmArgs[2] instanceof Type instantiated)) return null;
 		Type[] params = instantiated.getArgumentTypes();
 		return params.length >= 1 && params[0].getSort() == Type.OBJECT ? params[0].getInternalName() : null;
 	}
 
-	/** The class a {@code register} argument names: a class literal, or {@code this} (registering an instance of itself). */
-	private static String registeredType(MethodNode m, String owner, Frame<SourceValue>[] frames, SourceValue arg) {
-		AbstractInsnNode source = origin(m, frames, arg, new HashSet<>());
+	/** The class a {@code register} argument {@code source} names: a class literal, a construction, or {@code this}. */
+	private static String registeredType(MethodNode m, String owner, AbstractInsnNode source) {
 		if (source instanceof LdcInsnNode ldc && ldc.cst instanceof Type t && t.getSort() == Type.OBJECT) return t.getInternalName();
 		if (source instanceof VarInsnNode load && load.getOpcode() == Opcodes.ALOAD && load.var == 0
 				&& (m.access & Opcodes.ACC_STATIC) == 0) return owner;

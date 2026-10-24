@@ -119,7 +119,6 @@ class GuestEventPostersWiringTest {
 		// RenderNameTagEvent is never posted and is a client event; ItemTossEvent is never posted on either side. A mod whose
 		// only listener is ItemTossEvent.BUS.addListener(...) is named by the very call production makes.
 		String toss = "net/minecraftforge/event/entity/item/ItemTossEvent", bus = "net/minecraftforge/eventbus/api/bus/CancellableEventBus";
-		ModCatalog.publish(List.of(new ModCatalog.Entry(Ecosystem.FORGE, "tossmod", "Toss", "1", "", List.of(), "toss.jar", "", "")));
 		ClassWriter mod = new ClassWriter(0);
 		mod.visit(Opcodes.V17, Opcodes.ACC_PUBLIC, "toss/TossMod", null, "java/lang/Object", null);
 		var id = mod.visitAnnotation("Lnet/minecraftforge/fml/common/Mod;", true);
@@ -136,13 +135,66 @@ class GuestEventPostersWiringTest {
 		init.visitEnd();
 		mod.visitEnd();
 		Path jar = jar("toss.jar", Map.of("toss/TossMod.class", mod.toByteArray()));
-		try (URLClassLoader parent = new URLClassLoader(new URL[0], null);
-				ForbricClassLoader loader = new ForbricClassLoader(new URL[0], parent)) {
-			KernelEventSubscribers.reportDeadEvents(loader, List.of(jar), Side.DEDICATED_SERVER, Map.of(),
-					Map.of(jar, KernelEventSubscribers.scanJar(jar)));
+		// The loader serves ItemTossEvent with a static bus whose hasListeners answers as the run below says: the listener
+		// found in the mod's code counts once the server is up, and only if its bus has one then.
+		for (boolean listened : new boolean[] {false, true}) {
+			ModCatalog.publish(List.of(new ModCatalog.Entry(Ecosystem.FORGE, "tossmod", "Toss", "1", "", List.of(), "toss.jar", "", "")));
+			Path game = jar("game-" + listened + ".jar", eventWithBus(toss, bus, listened));
+			try (URLClassLoader parent = new URLClassLoader(new URL[0], null);
+					ForbricClassLoader loader = new ForbricClassLoader(new URL[] {game.toUri().toURL()}, parent)) {
+				DeadEventAudit.resetPending();
+				KernelEventSubscribers.reportDeadEvents(loader, List.of(jar), Side.DEDICATED_SERVER, Map.of(),
+						Map.of(jar, KernelEventSubscribers.scanJar(jar)));
+				assertTrue(ModCatalog.failures().isEmpty(), "a listener found in code is judged once the server is up");
+				DeadEventAudit.judgePending(java.util.EnumSet.noneOf(net.forbric.api.GameEventBridge.class));
+			} finally {
+				DeadEventAudit.resetPending();
+			}
+			assertEquals(listened, ModCatalog.failures().stream().anyMatch(e -> e.modId().equals("tossmod")
+					&& e.statusDetail().contains("ItemTossEvent")), "the bus has a listener: " + listened + " " + ModCatalog.failures());
 		}
-		assertTrue(ModCatalog.failures().stream().anyMatch(e -> e.modId().equals("tossmod") && e.statusDetail().contains("ItemTossEvent")),
-				"the mod listening on ItemTossEvent's static bus is named: " + ModCatalog.failures());
+	}
+
+	/**
+	 * {@code event} with a static {@code BUS} of {@code busType}, an interface declaring {@code hasListeners()}, held by an
+	 * implementation that answers {@code listened}.
+	 */
+	private static Map<String, byte[]> eventWithBus(String event, String busType, boolean listened) {
+		ClassWriter bus = new ClassWriter(0);
+		bus.visit(Opcodes.V17, Opcodes.ACC_PUBLIC | Opcodes.ACC_INTERFACE | Opcodes.ACC_ABSTRACT, busType, null, "java/lang/Object", null);
+		bus.visitMethod(Opcodes.ACC_PUBLIC | Opcodes.ACC_ABSTRACT, "hasListeners", "()Z", null, null).visitEnd();
+		bus.visitEnd();
+		String impl = "test/Bus";
+		ClassWriter cw = new ClassWriter(0);
+		cw.visit(Opcodes.V17, Opcodes.ACC_PUBLIC, impl, null, "java/lang/Object", new String[] {busType});
+		MethodVisitor init = cw.visitMethod(Opcodes.ACC_PUBLIC, "<init>", "()V", null, null);
+		init.visitCode();
+		init.visitVarInsn(Opcodes.ALOAD, 0);
+		init.visitMethodInsn(Opcodes.INVOKESPECIAL, "java/lang/Object", "<init>", "()V", false);
+		init.visitInsn(Opcodes.RETURN);
+		init.visitMaxs(1, 1);
+		init.visitEnd();
+		MethodVisitor has = cw.visitMethod(Opcodes.ACC_PUBLIC, "hasListeners", "()Z", null, null);
+		has.visitCode();
+		has.visitInsn(listened ? Opcodes.ICONST_1 : Opcodes.ICONST_0);
+		has.visitInsn(Opcodes.IRETURN);
+		has.visitMaxs(1, 1);
+		has.visitEnd();
+		cw.visitEnd();
+		ClassWriter ev = new ClassWriter(0);
+		ev.visit(Opcodes.V17, Opcodes.ACC_PUBLIC, event, null, "java/lang/Object", null);
+		ev.visitField(Opcodes.ACC_PUBLIC | Opcodes.ACC_STATIC | Opcodes.ACC_FINAL, "BUS", "L" + busType + ";", null, null).visitEnd();
+		MethodVisitor clinit = ev.visitMethod(Opcodes.ACC_STATIC, "<clinit>", "()V", null, null);
+		clinit.visitCode();
+		clinit.visitTypeInsn(Opcodes.NEW, impl);
+		clinit.visitInsn(Opcodes.DUP);
+		clinit.visitMethodInsn(Opcodes.INVOKESPECIAL, impl, "<init>", "()V", false);
+		clinit.visitFieldInsn(Opcodes.PUTSTATIC, event, "BUS", "L" + busType + ";");
+		clinit.visitInsn(Opcodes.RETURN);
+		clinit.visitMaxs(2, 0);
+		clinit.visitEnd();
+		ev.visitEnd();
+		return Map.of(busType + ".class", bus.toByteArray(), impl + ".class", cw.toByteArray(), event + ".class", ev.toByteArray());
 	}
 
 	@Test void aCarrierOnlyTheParentServesIsStillRead() throws Exception {
