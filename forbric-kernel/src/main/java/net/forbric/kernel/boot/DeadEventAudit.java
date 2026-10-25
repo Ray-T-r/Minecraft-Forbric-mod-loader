@@ -58,13 +58,35 @@ import net.forbric.kernel.util.ForbricLog;
  *
  * <p>It is DATA, deliberately, not a scan: scanning a 30MB merged jar for hook references on every boot would
  * cost more than it is worth, and the answer only changes when the merged base is rebuilt. The data is checked
- * against the bytecode in both directions by {@code HookCallSiteCensusStagedTest}: no row may name an event the base
- * still posts, and every event {@link HookCallSiteCensus} measures as never posted — over every hook class of both
- * families, a carrier caller counting only when it is reached itself, the game read as the kernel's merged-base repairs
- * leave it — must have a row here, in {@link #BRIDGED}, {@link #REPAIRED} or {@link #STAND_DOWN}, unless its own family's
- * patched game never posts it either. Until 2026-10-24 only the first direction was checked, so the table could leave out
- * a measured-dead event and nothing noticed: MinecraftForge's {@code LivingDrownEvent} was measured dead and named
- * nowhere, and its {@code LivingBreatheEvent} hid behind a carrier hook nothing called.
+ * against the bytecode by {@code HookCallSiteCensusStagedTest}, every table and in both directions:
+ * <ul>
+ *   <li>no DEAD row may name an event the base still posts, the kernel constructs, or another table delivers;</li>
+ *   <li>every event {@link HookCallSiteCensus} measures as never posted — over every hook class of both families, every
+ *       carrier method counting only when something reached calls it or the runtime enters it ({@link CarrierCallGraph}),
+ *       the game read as the kernel's merged-base repairs leave it — has a row (DEAD, PARTIAL, BRIDGED, REPAIRED or
+ *       STAND_DOWN), unless its own family's patched game never posts it either;</li>
+ *   <li>a row that silences the audit proves the delivery it claims: a BRIDGED or STAND_DOWN row's bridge is installed (by
+ *       {@link GameEventMultiplexer}, through an install method that exists and is declared to {@link KernelRuntimeClasses},
+ *       or recorded by the transformer or runtime class that lands it) and what it reaches posts the event; a REPAIRED
+ *       row's event is posted by the kernel's own code, or by the game only as the merged-base repairs leave it. "Posts" is
+ *       read from the bytecode: a construction of the kernel's that flows into a bus's {@code post} or {@code fire}, or one
+ *       a family method the kernel reaches makes — an event's own constructor and instance methods not followed, so the
+ *       harvest check MinecraftForge's {@code BreakEvent} constructor asks for is not the break bridge's delivery;</li>
+ *   <li>{@link #PARTIAL} is exactly the events a hook of any hook class lost game call sites for (counted with the hooks
+ *       that reach it, through the hooks they call and the constructors of the events they construct) and that are still
+ *       posted somewhere, plus those the game never posts but the kernel or a guest's API call still does on some path;
+ *       and a PARTIAL row a bridge or repair also carries — silent while its bridge is in — has every lost path covered:
+ *       at each game method that lost the family's posting, the merged game posts what the bridge forwards, or calls the
+ *       kernel that posts the event;</li>
+ *   <li>{@link #NO_NATIVE_PATH} is exactly the bridged and stood-down events the merged game never posts itself.</li>
+ * </ul>
+ * Until 2026-10-24 only the first was checked, so the table could leave out a measured-dead event and nothing noticed:
+ * MinecraftForge's {@code LivingDrownEvent} was measured dead and named nowhere, and its {@code LivingBreatheEvent} hid
+ * behind a carrier hook nothing called. Until 2026-10-25 the rows that silence the audit proved nothing (moving an event
+ * nothing delivers into BRIDGED, REPAIRED or STAND_DOWN left the suite green), and only the two event factories were
+ * measured for lost call sites (five events that lost game paths were named nowhere); for one more round the proof
+ * accepted an event the bridge only constructed (a drown bridge with its {@code post} taken out) or that another event's
+ * constructor sets off (the harvest check filed under the break bridge).
  *
  * <h2>What the merge lost, against what was never there</h2>
  *
@@ -103,9 +125,11 @@ public final class DeadEventAudit {
 		Map<String, String> dead = new LinkedHashMap<>();
 		// ServerPlayerGameMode: four NeoForge hooks, zero MinecraftForge ones. BreakEvent was a row here too; it is
 		// BRIDGED (BLOCK_BREAK), which is consulted first, so the row was unreachable, and once the census began checking
-		// that no row here names an event the kernel itself delivers, it was the one row that did.
-		dead.put("net/minecraftforge/event/entity/player/PlayerInteractEvent$RightClickBlock",
-				"right-clicking a block is neither observed nor preventable");
+		// that no row here names an event the kernel itself delivers, it was the one row that did. RightClickBlock was the
+		// same and stayed one more round: BRIDGED as well (RIGHT_CLICK_BLOCK, which KernelGameBlockEvents constructs), and
+		// the census never judged it — no hook class constructs it, so "no row names an event the kernel delivers" was
+		// checked only against what the census measures. HookCallSiteCensusStagedTest now checks every row against what the
+		// kernel constructs, and against the other tables, whatever the census can judge.
 		// LeftClickBlock and RightClickItem were rows here too. The merge now keeps both families' edits in a method
 		// both patched, and HookCallSiteCensus finds ServerPlayerGameMode (and MultiPlayerGameMode) calling
 		// MinecraftForge's onLeftClickBlock and onItemRightClick again, so neither is "never posted". Both are BRIDGED as well, which is consulted first, so the rows were
@@ -301,7 +325,8 @@ public final class DeadEventAudit {
 		Set<String> out = new java.util.TreeSet<>(List.of(
 				"net/minecraftforge/event/entity/player/PlayerInteractEvent$LeftClickEmpty"));
 		out.add(ForeignType.CREATE_SKULL_MODELS_EVENT.internal(Ecosystem.FORGE));
-		for (String event : List.of("GatherAtlasMetadataSectionsEvent",
+		out.add("net/neoforged/neoforge/client/event/InitializeClientRegistriesEvent");
+		for (String event : List.of("GatherAtlasMetadataSectionsEvent", "RenderTooltipEvent$GatherComponents", "RenderBlockScreenEffectEvent",
 				"InputEvent$MouseButton$Post", "RenderArmEvent", "RenderAvatarEvent$Pre", "RenderAvatarEvent$Post",
 				"RenderNameTagEvent", "RenderTooltipEvent$Pre", "ScreenEvent$CharacterTyped$Pre",
 				"ScreenEvent$CharacterTyped$Post", "ScreenEvent$MouseButtonPressed$Post",
@@ -363,7 +388,8 @@ public final class DeadEventAudit {
 				"fall damage can be modified on 2 of its 3 paths; the one that is gone is the one most entities "
 						+ "take, so this reads as a mod that works for horses and llamas only");
 		partial.put("net/minecraftforge/event/level/BlockEvent$EntityPlaceEvent",
-				"placement by an entity is announced on 1 of its 2 paths");
+				"placement by an entity is announced on 1 of its 3 paths — not for a player placing a block, which "
+						+ "its bridge delivers");
 		partial.put("net/minecraftforge/event/level/LevelEvent$Unload",
 				"a level going away is announced on 2 of its 3 paths — not when a server stops — so what a mod "
 						+ "releases on unload is kept at shutdown");
@@ -378,6 +404,46 @@ public final class DeadEventAudit {
 		partial.put("net/minecraftforge/event/level/BlockFeatureGrowEvent",
 				"a feature growing from a bonemealed plant can be changed or stopped on 2 of its 3 paths — not for a "
 						+ "huge mushroom");
+		// The rows below were added on 2026-10-25, when HookCallSiteCensusStagedTest began measuring every hook class of
+		// both families (ForgeHooks, ForgeHooksClient and NeoForge's three, not only the two event factories), counting a
+		// hook's call sites together with those of every hook that calls it, and reading the merged game as its repairs
+		// leave it. Before that none of these was named anywhere, so a mod waiting on one was told nothing.
+		String forge = "net/minecraftforge/event/", client = "net/minecraftforge/client/event/";
+		partial.put(forge + "level/BlockEvent$CropGrowEvent$Pre",
+				"whether a plant may grow is asked on 2 of its 10 paths — only for cactus and sugar cane; wheat and every "
+						+ "other crop, stems, cocoa, nether wart, sweet berries, bamboo, chorus flowers, kelp and vines grow "
+						+ "without asking, so a mod that slows or stops growth (seasons, fertility) does nothing for them");
+		partial.put(forge + "level/BlockEvent$CropGrowEvent$Post",
+				"a plant that grew is announced on 9 of its 10 paths — not for melon and pumpkin stems");
+		partial.put(forge + "level/BlockEvent$FluidPlaceBlockEvent",
+				"lava flowing into water and turning it to stone, and lava setting fire, are not announced (0 of its 3 paths) "
+						+ "— only the fluid-interaction rules (lava placed beside water) still announce the block they place");
+		partial.put(forge + "entity/player/PlayerContainerEvent$Open",
+				"a container a player opens is announced on 0 of its 1 paths — never for a vanilla container or one opened "
+						+ "the vanilla way, only for a menu a MinecraftForge mod opens with extra data through Forge's own "
+						+ "openMenu; the close is announced, so a mod pairing the two sees closes without opens");
+		partial.put(forge + "entity/player/PlayerEvent$HarvestCheck",
+				"whether a player can harvest a block is asked on 0 of its 3 paths — the game never asks it (mining speed, "
+						+ "drops); it is asked only when a block breaks, by the break event the break bridge posts");
+		partial.put(forge + "entity/player/PlayerDestroyItemEvent",
+				"an item used up is announced on 7 of its 8 paths — not when the last of a stack is placed as a block");
+		partial.put(forge + "entity/EntityJoinLevelEvent",
+				"an entity joining a level is posted natively on 2 of its 3 paths — not for one added to a server level's "
+						+ "entity manager (every mob, item and projectile), which its bridge delivers");
+		partial.put(forge + "entity/ProjectileImpactEvent",
+				"a projectile's hit is posted natively on 1 of its 6 paths (fishing hooks), which its bridge makes up for");
+		partial.put(client + "RenderTooltipEvent$GatherComponents",
+				"the lines of a tooltip can be added to or changed on 3 of its 4 paths — not for a tooltip a screen sets "
+						+ "with its own background for the next frame");
+		partial.put(client + "RenderBlockScreenEffectEvent",
+				"the in-block overlay is posted natively on 2 of its 3 paths (water and fire, not a block the camera is "
+						+ "inside), which its bridge makes up for");
+		partial.put("net/neoforged/neoforge/event/entity/living/FinalizeSpawnEvent",
+				"a spawner's mob being finalized is posted natively on 1 of its 2 paths; the kernel posts the other "
+						+ "(KernelFinalizeSpawn)");
+		partial.put("net/neoforged/neoforge/client/event/InitializeClientRegistriesEvent",
+				"NeoForge's client registries are initialized natively on 1 of its 2 paths; the kernel posts the other "
+						+ "(KernelForgeClientInit)");
 		return Map.copyOf(partial);
 	}
 
@@ -410,7 +476,8 @@ public final class DeadEventAudit {
 			// KernelForgeReload, which hands NeoForge's listener list to MinecraftForge's own onResourceReload; the
 			// picture-in-picture map nothing wrote is filled by KernelForgePipRenderers, which posts MinecraftForge's
 			// registration; MinecraftForge's configuration tasks are gathered by PayloadInterop through its
-			// gatherLoginConfigTasks (reflectively, which no census can see); and ItemStack.useOn is routed to
+			// gatherLoginConfigTasks (by reflection, which the census reads as a call since 2026-10-25: the binary class
+			// name and the method name beside a reflective lookup); and ItemStack.useOn is routed to
 			// NeoForge's onPlaceItemIntoWorld (routePlaceItemHookToNeoForge, a transform the staged jar does not show),
 			// which posts NeoForge's multi-block place through EventHooks.onMultiBlockPlace. The census reads the game
 			// through that repair now and finds this one posted; the row stays because the repair is what posts it.
@@ -432,7 +499,12 @@ public final class DeadEventAudit {
 			"net/neoforged/neoforge/client/event/EntityRenderersEvent$RegisterRenderers",
 			"net/neoforged/neoforge/client/renderstate/RegisterRenderStateModifiersEvent",
 			"net/neoforged/neoforge/event/AddServerReloadListenersEvent",
-			ForeignType.FURNACE_FUEL_BURN_TIME_EVENT.internal(Ecosystem.FORGE));
+			ForeignType.FURNACE_FUEL_BURN_TIME_EVENT.internal(Ecosystem.FORGE),
+			// Two NeoForge events the census found eroded once it measured NeoForge's hook classes against NeoForge's own
+			// game: the spawner's finalization goes through KernelFinalizeSpawn (NativeCoremodParity), and Minecraft.<init>'s
+			// initClientHooks through KernelForgeClientInit, and each posts NeoForge's event itself on that path.
+			"net/neoforged/neoforge/event/entity/living/FinalizeSpawnEvent",
+			"net/neoforged/neoforge/client/event/InitializeClientRegistriesEvent");
 
 	/** Package-private for the same reason as {@link #DEAD}. */
 	static final Map<String, GameEventBridge> BRIDGED = bridged();
@@ -547,9 +619,14 @@ public final class DeadEventAudit {
 	 * render ticks, each level's load, save and unload, the client's log-in and log-out, system chat, mouse buttons,
 	 * fog and block overlays twice — once from the game and once from the bridge.
 	 *
-	 * <p>Not {@link #BRIDGED}, because that table is also the dead-event judgement's, and none of these is "never
-	 * posted": each bridge here installs on every boot of its side, and a CLIENT_GAME_BUS row there would name every mod
-	 * listening for its event DEGRADED on every dedicated server, which never installs it. The portal bridge is not here
+	 * <p>Why these are not {@link #BRIDGED} rows is history. That table was once the dead-event judgement's alone, and a
+	 * CLIENT_GAME_BUS row there named every mod listening for its event DEGRADED on every dedicated server, which never
+	 * installs it. The judgement now reads the two alike ({@link #bridgeOf}: judged by the bridge, a client's bridge not on
+	 * a dedicated server), and {@code HookCallSiteCensusStagedTest} holds both to the same proof: the bridge is installed and
+	 * what it reaches constructs the event. A row here is not a claim that the merged game still posts the event natively,
+	 * and the two tables do not split on that: measured on 2026-10-25, fifteen of the 44 rows here (the chat, screen key
+	 * and mouse, fog colour, field-of-view, boss bar and item-use-finish forwards) have no native path left and their bridge
+	 * is their only delivery, while 34 of BRIDGED's 72 rows are posted natively on some path. The portal bridge is not here
 	 * either: {@code PortalSpawnInjector} composes its two families' calls itself.
 	 */
 	static final Map<String, GameEventBridge> STAND_DOWN = standDown();
@@ -608,6 +685,60 @@ public final class DeadEventAudit {
 	}
 
 	/**
+	 * The {@link #BRIDGED} and {@link #STAND_DOWN} events the merged game never posts itself: neither its own code nor a
+	 * family method it (or the family's runtime) reaches constructs one, so the bridge is the only delivery.
+	 *
+	 * <h2>What a missing bridge costs</h2>
+	 *
+	 * <p>{@link #audit} names a mod whose event's bridge is not installed: a bridge that failed on a runtime the kernel did not
+	 * expect, which is what the judgement once the server is up exists to catch. Until 2026-10-25 it said "which this merged
+	 * game never posts" for every such event, and for most of them that was false: the merged game posts the server and player
+	 * ticks, the level's load and save, logging in and out, and dozens more itself, and the bridge only stands down there —
+	 * offline, on the popular pack with no bridge installed, 45 of the 76 listener and event pairs it would have called never
+	 * posted are posted by the merged game itself. ({@code -Dforbric.unifiedEvents=off} does not reach this judgement: with
+	 * the switch off {@code GameEventMultiplexer.install} returns before it installs the kernel's server-started work.) So a
+	 * missing bridge is now judged by what the merged game does without
+	 * it: an event in this set is never posted ("never posts", the bridge's own cost sentence); one the merged game posts
+	 * itself is posted on the paths {@link #PARTIAL} counts when it has a row there, and on every path its family's game posts
+	 * it, as far as the census counts, when it has none — the listener loses nothing measured, and is not named.
+	 *
+	 * <p>Measured, not read: {@code HookCallSiteCensusStagedTest} recomputes this set from the merged game as the kernel loads
+	 * it and fails when the two disagree.
+	 */
+	static final Set<String> NO_NATIVE_PATH = noNativePath();
+
+	private static Set<String> noNativePath() {
+		Set<String> out = new java.util.TreeSet<>();
+		String event = "net/minecraftforge/event/", client = "net/minecraftforge/client/event/";
+		for (String e : List.of("AnvilUpdateEvent", "BuildCreativeModeTabContentsEvent", "CommandEvent",
+				"PlayLevelSoundEvent$AtEntity", "PlayLevelSoundEvent$AtPosition",
+				"brewing/BrewingRecipeRegisterEvent", "entity/living/LivingBreatheEvent",
+				"entity/living/LivingDropsEvent", "entity/living/LivingDrownEvent",
+				"entity/living/LivingEntityUseItemEvent$Finish", "entity/living/LivingExperienceDropEvent",
+				"entity/living/LivingHealEvent", "entity/living/ShieldBlockEvent", "entity/player/AnvilRepairEvent",
+				"entity/player/CriticalHitEvent", "entity/player/PlayerInteractEvent$RightClickBlock",
+				"level/BlockEvent$BlockToolModificationEvent", "level/BlockEvent$BreakEvent",
+				"level/BlockEvent$FarmlandTrampleEvent", "level/ExplosionEvent$Detonate",
+				"server/ServerStoppedEvent")) {
+			out.add(event + e);
+		}
+		for (String e : List.of("ClientChatEvent", "ClientChatReceivedEvent", "ClientChatReceivedEvent$Player",
+				"ComputeFovModifierEvent", "CustomizeGuiOverlayEvent$BossEventProgress",
+				"EntityRenderersEvent$RegisterLayerDefinitions", "EntityRenderersEvent$RegisterRenderers",
+				"RegisterClientTooltipComponentFactoriesEvent", "RegisterColorHandlersEvent$ColorResolvers",
+				"RegisterEntitySpectatorShadersEvent", "RegisterItemDecorationsEvent", "RegisterKeyMappingsEvent",
+				"RegisterNamedRenderTypesEvent", "RegisterPresetEditorsEvent",
+				"RegisterTextureAtlasSpriteLoadersEvent", "ScreenEvent$Init$Post", "ScreenEvent$Init$Pre",
+				"ScreenEvent$KeyPressed$Post", "ScreenEvent$KeyPressed$Pre", "ScreenEvent$KeyReleased$Post",
+				"ScreenEvent$KeyReleased$Pre", "ScreenEvent$MouseButtonPressed$Pre",
+				"ScreenEvent$MouseButtonReleased$Pre", "ScreenEvent$MouseDragged$Pre",
+				"ScreenEvent$MouseScrolled$Post", "ViewportEvent$ComputeFogColor")) {
+			out.add(client + e);
+		}
+		return Set.copyOf(out);
+	}
+
+	/**
 	 * The MinecraftForge events a bridge re-posts from a NeoForge event on a NeoForge bus: every {@link #BRIDGED} or
 	 * {@link #STAND_DOWN} key in MinecraftForge's namespace whose bridge {@link GameEventMultiplexer} installs, and
 	 * therefore guards. What {@code NativeDualEventInjector} looks for on a path that also posts NeoForge's. The rows
@@ -650,8 +781,29 @@ public final class DeadEventAudit {
 		return !"off".equalsIgnoreCase(System.getProperty(PROPERTY, "on"));
 	}
 
-	/** One mod listening for one event that will never arrive. */
-	public record Finding(String modId, String event, String cost) {
+	/**
+	 * One mod listening for one event that will never arrive, or arrive only on some of its paths ({@code partial}): a
+	 * {@link #PARTIAL} row. The two are worded apart where a player reads them — "never posts" said of an event that is
+	 * posted on five of seven paths is a false statement on the Mods screen.
+	 */
+	public record Finding(String modId, String event, String cost, boolean partial) {
+		public Finding(String modId, String event, String cost) {
+			this(modId, event, cost, false);
+		}
+	}
+
+	/** The bridge that delivers {@code event}: its {@link #BRIDGED} row, else its {@link #STAND_DOWN} row; null when neither. */
+	static GameEventBridge bridgeOf(String event) {
+		GameEventBridge bridge = BRIDGED.get(event);
+		return bridge != null ? bridge : STAND_DOWN.get(event);
+	}
+
+	/** Whether {@code bridge} is installed only on a client: a dedicated server never has it, and never misses it. */
+	static boolean clientBridge(GameEventBridge bridge) {
+		return switch (bridge.pass()) {
+			case CLIENT_GAME_BUS, CLIENT_MOD_BUS, CLIENT_INIT, CLIENT_HUD -> true;
+			default -> false;
+		};
 	}
 
 	/**
@@ -664,7 +816,10 @@ public final class DeadEventAudit {
 		List<Finding> findings = new ArrayList<>();
 		for (Map.Entry<String, Set<String>> mod : subscribedByMod.entrySet()) {
 			for (String event : mod.getValue()) {
-				GameEventBridge bridge = BRIDGED.get(event);
+				// A STAND_DOWN bridge delivers its event as surely as a BRIDGED one; it only also stands down where the merged
+				// game posts it natively. Not consulting it named every mod waiting on LevelEvent$Unload "partly posted" for
+				// the server-stop path its bridge forwards.
+				GameEventBridge bridge = bridgeOf(event);
 				if (bridge != null) {
 					// A bridgeable event is dead exactly when its bridge is not in — which is the case worth
 					// reporting, because a bridge can fail to install on a runtime the kernel did not expect and
@@ -674,7 +829,10 @@ public final class DeadEventAudit {
 					// pass's own moment instead. Counting it now would name every client mod as waiting, on every
 					// boot, and train the reader to ignore the whole audit.
 					if (!bridge.pass().lateInstalled() && !installed.contains(bridge)) {
-						findings.add(new Finding(mod.getKey(), event, bridge.cost()));
+						// Without its bridge the event arrives where the merged game posts it itself (NO_NATIVE_PATH): never,
+						// on PARTIAL's paths, or on every path its family's game has.
+						if (NO_NATIVE_PATH.contains(event)) findings.add(new Finding(mod.getKey(), event, bridge.cost()));
+						else if (PARTIAL.containsKey(event)) findings.add(new Finding(mod.getKey(), event, PARTIAL.get(event), true));
 					}
 					continue;
 				}
@@ -690,7 +848,7 @@ public final class DeadEventAudit {
 				// the same weight, because a listener that fires on a third of its paths is not working.
 				String partial = PARTIAL.get(event);
 				if (partial == null) continue;
-				findings.add(new Finding(mod.getKey(), event, partial));
+				findings.add(new Finding(mod.getKey(), event, partial, true));
 			}
 		}
 		return findings;
@@ -712,6 +870,47 @@ public final class DeadEventAudit {
 	 */
 	public static void report(Map<String, Set<String>> subscribedByMod, net.forbric.api.Side side,
 			java.util.function.Function<Set<String>, Map<String, Set<String>>> postedByGuests) {
+		report(subscribedByMod, side, postedByGuests, Map.of(), event -> null);
+	}
+
+	/**
+	 * The same, also told what each mod's code registers ({@code inCode}, from {@link GuestListeners}) and how to ask an
+	 * event's own bus whether a listener is on it ({@code listenersOnBus}: true, false, or null when it cannot tell). Every
+	 * registering class counts as loaded; see the next overload.
+	 */
+	public static void report(Map<String, Set<String>> subscribedByMod, net.forbric.api.Side side,
+			java.util.function.Function<Set<String>, Map<String, Set<String>>> postedByGuests, Map<String, Set<String>> inCode,
+			java.util.function.Function<String, Boolean> listenersOnBus) {
+		report(subscribedByMod, side, postedByGuests, inCode, Map.of(), type -> true, listenersOnBus);
+	}
+
+	/**
+	 * The same, also told which classes register each mod's listeners in code ({@code registrars}: mod → event → the classes
+	 * whose code makes the registration, or the class handed to a bus to register) and whether a class has been loaded.
+	 *
+	 * <h2>Why a listener found in code is judged later, and only where it was registered</h2>
+	 *
+	 * <p>An annotation subscriber declares its side ({@code @EventBusSubscriber(value = Dist.CLIENT)}); a registration in
+	 * code does not: JourneyMap registers its handlers from its client setup listener, and nothing in the handler classes
+	 * says they are a client's. Judged from the bytecode alone, a dedicated server would name JourneyMap for a fluid event
+	 * whose listener it never registers there. So these are judged once every mod's setup has run — when loading completes,
+	 * on either side ({@link #judgeCodeListeners}), or, for an event a bridge delivers, once the server is up with the
+	 * annotation listeners ({@link #judgePending}) — and a registration counts only when it can have happened:
+	 * <ul>
+	 *   <li>one of the classes that make it has been loaded (a class whose code never ran registered nothing; JourneyMap's
+	 *       handler classes on a dedicated server), and</li>
+	 *   <li>the event's own static bus has a listener now ({@code listenersOnBus}); an event with no bus of its own to ask
+	 *       (NeoForge's, a mod-bus event) is judged as found.</li>
+	 * </ul>
+	 * Until 2026-10-25 they were judged only from the {@code ServerStarted} hook, so a client that only ever joined a remote
+	 * server never judged them at all, and the bus's answer stood alone: a mod that registers on the client only was named on
+	 * a dedicated server whenever another mod listened for the same event there. The bus still cannot say who is on it; the
+	 * loaded class is what ties the registration to this mod.
+	 */
+	public static void report(Map<String, Set<String>> subscribedByMod, net.forbric.api.Side side,
+			java.util.function.Function<Set<String>, Map<String, Set<String>>> postedByGuests, Map<String, Set<String>> inCode,
+			Map<String, Map<String, Set<String>>> registrars, java.util.function.Predicate<String> loaded,
+			java.util.function.Function<String, Boolean> listenersOnBus) {
 		if (!enabled()) {
 			ForbricLog.debug("[Forbric/DeadEvents] -D%s=off — not reporting merge-lost game events", PROPERTY);
 			return;
@@ -723,6 +922,8 @@ public final class DeadEventAudit {
 		// judgePending() from the ServerStarted hook, when every bridge has had its target.
 		Map<String, Set<String>> deadNow = new LinkedHashMap<>(), bridgeable = new LinkedHashMap<>();
 		split(subscribedByMod, side, deadNow, bridgeable);
+		Map<String, Set<String>> codeNow = new LinkedHashMap<>(), codeBridgeable = new LinkedHashMap<>();
+		split(inCode, side, codeNow, codeBridgeable);
 		synchronized (PENDING) {
 			for (Map.Entry<String, Set<String>> e : bridgeable.entrySet()) {
 				PENDING.computeIfAbsent(e.getKey(), k -> new LinkedHashSet<>()).addAll(e.getValue());
@@ -732,26 +933,77 @@ public final class DeadEventAudit {
 			ForbricLog.info("[Forbric/DeadEvents] %d mod(s) listen for bridged Forge-family events; judged once the server is up",
 					bridgeable.size());
 		}
-		Map<String, Set<String>> posted = postedByGuests(deadNow, postedByGuests);
+		// A copy of every set: a mod in both maps must not have its code events added to the ones judged now.
+		Map<String, Set<String>> asked = new LinkedHashMap<>();
+		for (Map<String, Set<String>> source : List.of(deadNow, codeNow)) {
+			source.forEach((mod, events) -> asked.computeIfAbsent(mod, k -> new LinkedHashSet<>()).addAll(events));
+		}
+		Map<String, Set<String>> posted = postedByGuests(asked, postedByGuests);
 		if (!posted.isEmpty()) {
 			ForbricLog.info("[Forbric/DeadEvents] %d game event(s) the merged base never posts are posted by a mod in this "
 					+ "pack, so their listeners are not reported: %s", posted.size(), posted);
 		}
 		report(audit(withoutEvents(deadNow, posted.keySet()), EventBridges.satisfied()));
+		Map<String, Set<String>> code = new LinkedHashMap<>(withoutEvents(codeNow, posted.keySet()));
+		code.values().removeIf(events -> events.stream().noneMatch(DeadEventAudit::judged));
+		Map<String, Set<String>> codeLater = new LinkedHashMap<>();
+		codeBridgeable.forEach((mod, events) -> codeLater.computeIfAbsent(mod, k -> new LinkedHashSet<>()).addAll(events));
+		synchronized (PENDING) {
+			for (Map.Entry<String, Set<String>> e : code.entrySet()) {
+				PENDING_CODE.computeIfAbsent(e.getKey(), k -> new LinkedHashSet<>()).addAll(e.getValue());
+			}
+			for (Map.Entry<String, Set<String>> e : codeLater.entrySet()) {
+				PENDING_CODE_BRIDGED.computeIfAbsent(e.getKey(), k -> new LinkedHashSet<>()).addAll(e.getValue());
+			}
+			registrars.forEach((mod, byEvent) -> byEvent.forEach((event, classes) -> REGISTRARS
+					.computeIfAbsent(mod, k -> new LinkedHashMap<>()).computeIfAbsent(event, k -> new java.util.TreeSet<>()).addAll(classes)));
+			LISTENERS_ON_BUS[0] = listenersOnBus;
+			LOADED[0] = loaded;
+		}
+		if (!code.isEmpty() || !codeLater.isEmpty()) {
+			ForbricLog.info("[Forbric/DeadEvents] %d mod(s) register listeners in code for Forge-family events a table names; "
+					+ "judged once loading completes (an event a bridge delivers, once the server is up), where a class that "
+					+ "registers it has loaded and the event's bus has a listener", code.size() + codeLater.size());
+		}
+	}
+
+	/** Whether any table speaks for {@code event}: only those are worth keeping for the later judgement. */
+	private static boolean judged(String event) {
+		return bridgeOf(event) != null || REPAIRED.contains(event) || DEAD.containsKey(event) || PARTIAL.containsKey(event);
 	}
 
 	/**
-	 * Sorts each listener: a bridgeable event into {@code bridgeable} (judged once the server is up), anything else into
-	 * {@code deadNow} — except, on a dedicated server, an event MinecraftForge posts natively only on the client
-	 * ({@link #CLIENT_ONLY}). A listener there waits for nothing under its own loader either, and naming its mod DEGRADED
-	 * for it would be a false accusation.
+	 * mod id → the events its code registers for that a table names and no bridge delivers, judged by
+	 * {@link #judgeCodeListeners()} once loading completes (guarded by PENDING).
+	 */
+	private static final Map<String, Set<String>> PENDING_CODE = new LinkedHashMap<>();
+	/** The same for events a bridge delivers, judged by {@link #judgePending()} once the server is up (guarded by PENDING). */
+	private static final Map<String, Set<String>> PENDING_CODE_BRIDGED = new LinkedHashMap<>();
+	/** mod id → event → the classes that register it in code (guarded by PENDING). */
+	private static final Map<String, Map<String, Set<String>>> REGISTRARS = new LinkedHashMap<>();
+	/** How the code judgement asks an event's bus whether it has a listener (guarded by PENDING). */
+	@SuppressWarnings("unchecked")
+	private static final java.util.function.Function<String, Boolean>[] LISTENERS_ON_BUS = new java.util.function.Function[] {
+			(java.util.function.Function<String, Boolean>) event -> null};
+	/** Whether a class (internal name) has been loaded (guarded by PENDING). */
+	@SuppressWarnings("unchecked")
+	private static final java.util.function.Predicate<String>[] LOADED = new java.util.function.Predicate[] {
+			(java.util.function.Predicate<String>) type -> true};
+
+	/**
+	 * Sorts each listener: an event a bridge delivers ({@link #BRIDGED} or {@link #STAND_DOWN}) into {@code bridgeable}
+	 * (judged once the server is up), anything else into {@code deadNow} — except, on a dedicated server, an event
+	 * MinecraftForge posts natively only on the client ({@link #CLIENT_ONLY}), or one whose bridge only a client installs.
+	 * A listener there waits for nothing under its own loader either, and naming its mod DEGRADED for it would be a false
+	 * accusation.
 	 */
 	static void split(Map<String, Set<String>> subscribedByMod, net.forbric.api.Side side, Map<String, Set<String>> deadNow,
 			Map<String, Set<String>> bridgeable) {
 		for (Map.Entry<String, Set<String>> mod : subscribedByMod.entrySet()) {
 			for (String event : mod.getValue()) {
-				if (!BRIDGED.containsKey(event) && !side.isClient() && CLIENT_ONLY.contains(event)) continue;
-				(BRIDGED.containsKey(event) ? bridgeable : deadNow).computeIfAbsent(mod.getKey(), k -> new LinkedHashSet<>()).add(event);
+				GameEventBridge bridge = bridgeOf(event);
+				if (!side.isClient() && (bridge == null ? CLIENT_ONLY.contains(event) : clientBridge(bridge))) continue;
+				(bridge != null ? bridgeable : deadNow).computeIfAbsent(mod.getKey(), k -> new LinkedHashSet<>()).add(event);
 			}
 		}
 	}
@@ -796,20 +1048,82 @@ public final class DeadEventAudit {
 
 	static List<Finding> judgePending(Set<GameEventBridge> installed) {
 		if (!enabled()) return List.of();
-		Map<String, Set<String>> pending;
+		Map<String, Set<String>> pending, code;
 		synchronized (PENDING) {
 			pending = new LinkedHashMap<>();
 			for (var e : PENDING.entrySet()) pending.put(e.getKey(), new LinkedHashSet<>(e.getValue()));
 			PENDING.clear();
+			code = new LinkedHashMap<>();
+			// The code listeners of a bridged event, and any not yet judged because loading never reported complete.
+			for (Map<String, Set<String>> source : List.of(PENDING_CODE_BRIDGED, PENDING_CODE)) {
+				source.forEach((mod, events) -> code.computeIfAbsent(mod, k -> new LinkedHashSet<>()).addAll(events));
+				source.clear();
+			}
 		}
-		List<Finding> findings = audit(pending, installed);
+		List<Finding> findings = new ArrayList<>(audit(pending, installed));
+		findings.addAll(audit(confirmed(code), installed));
 		report(findings);
 		return findings;
+	}
+
+	/**
+	 * The judgement of the listeners mods register in code for events no bridge delivers, once loading has completed on
+	 * this side (every mod's setup has run, so every registration that will happen has): from the end of the setup
+	 * lifecycle, on a dedicated server and on a client alike — a client that only ever joins a remote server never runs
+	 * {@link #judgePending()}.
+	 */
+	public static void judgeCodeListeners() {
+		judgeCodeListeners(EventBridges.satisfied());
+	}
+
+	static List<Finding> judgeCodeListeners(Set<GameEventBridge> installed) {
+		if (!enabled()) return List.of();
+		Map<String, Set<String>> code = new LinkedHashMap<>();
+		synchronized (PENDING) {
+			for (var e : PENDING_CODE.entrySet()) code.put(e.getKey(), new LinkedHashSet<>(e.getValue()));
+			PENDING_CODE.clear();
+		}
+		List<Finding> findings = audit(confirmed(code), installed);
+		report(findings);
+		return findings;
+	}
+
+	/**
+	 * Of {@code code} (mod → events registered in code), what can have been registered on this side: a class that registers
+	 * it has loaded (or none was recorded), and the event's own bus has a listener now, or cannot be asked. Two mods
+	 * registering for one event share its bus, so its answer is asked once; the loaded class is what is this mod's own.
+	 */
+	private static Map<String, Set<String>> confirmed(Map<String, Set<String>> code) {
+		java.util.function.Function<String, Boolean> onBus;
+		java.util.function.Predicate<String> loaded;
+		Map<String, Map<String, Set<String>>> registrars = new LinkedHashMap<>();
+		synchronized (PENDING) {
+			onBus = LISTENERS_ON_BUS[0];
+			loaded = LOADED[0];
+			REGISTRARS.forEach((mod, byEvent) -> registrars.put(mod, new LinkedHashMap<>(byEvent)));
+		}
+		Map<String, Boolean> answers = new java.util.HashMap<>();
+		Map<String, Set<String>> confirmed = new LinkedHashMap<>();
+		code.forEach((mod, events) -> {
+			for (String event : events) {
+				Set<String> classes = registrars.getOrDefault(mod, Map.of()).getOrDefault(event, Set.of());
+				if (!classes.isEmpty() && classes.stream().noneMatch(loaded)) continue;
+				if (!answers.containsKey(event)) answers.put(event, onBus.apply(event));
+				if (Boolean.FALSE.equals(answers.get(event))) continue;
+				confirmed.computeIfAbsent(mod, k -> new LinkedHashSet<>()).add(event);
+			}
+		});
+		return confirmed;
 	}
 
 	static void resetPending() {
 		synchronized (PENDING) {
 			PENDING.clear();
+			PENDING_CODE.clear();
+			PENDING_CODE_BRIDGED.clear();
+			REGISTRARS.clear();
+			LISTENERS_ON_BUS[0] = event -> null;
+			LOADED[0] = type -> true;
 		}
 	}
 
@@ -820,7 +1134,7 @@ public final class DeadEventAudit {
 		Map<String, String> costByEvent = new LinkedHashMap<>();
 		for (Finding finding : findings) {
 			modsByEvent.computeIfAbsent(finding.event(), k -> new LinkedHashSet<>()).add(finding.modId());
-			costByEvent.putIfAbsent(finding.event(), finding.cost());
+			costByEvent.putIfAbsent(finding.event(), (finding.partial() ? "(partly posted) " : "") + finding.cost());
 		}
 
 		// The Mods screen and load-report.txt read the catalogue; a listener keyed by class name (no owning mod
@@ -828,11 +1142,12 @@ public final class DeadEventAudit {
 		for (Finding finding : findings) {
 			ModCatalog.mark(finding.modId(), ModCatalog.Status.DEGRADED, "it listens for "
 					+ finding.event().substring(finding.event().lastIndexOf('/') + 1).replace('$', '.')
-					+ ", which this merged game never posts — " + finding.cost());
+					+ (finding.partial() ? ", which this merged game posts only on some of its paths — "
+							: ", which this merged game never posts — ") + finding.cost());
 		}
-		ForbricLog.warn("[Forbric/DeadEvents] %d Forge-family game event(s) the merged base no longer posts have "
-				+ "listeners waiting on them. Those listeners will not run, and their mods are marked on the Mods screen.",
-				modsByEvent.size());
+		ForbricLog.warn("[Forbric/DeadEvents] %d Forge-family game event(s) the merged base no longer posts, or posts on "
+				+ "only some of its paths, have listeners waiting on them. Those listeners will not run (or run on those "
+				+ "paths only), and their mods are marked on the Mods screen.", modsByEvent.size());
 		for (Map.Entry<String, Set<String>> entry : modsByEvent.entrySet()) {
 			ForbricLog.warn("[Forbric/DeadEvents]   %s — %s (waiting: %s)",
 					entry.getKey().substring(entry.getKey().lastIndexOf('/') + 1),

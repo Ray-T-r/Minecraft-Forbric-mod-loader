@@ -67,17 +67,22 @@ test	net.forbric.kernel.boot.ForgeRegistrationA2ContractTest	realClientBusesRegi
 test	net.forbric.kernel.boot.FrapiRendererEvidenceTest	theRealSodiumBuildsAreToldApart()	[fixture:third-party] sodium fixtures absent: $ROOT/forbric-kernel/run/client-merged-pack/mods
 test	net.forbric.kernel.boot.GameEventMultiplexerStandDownTest	everyGuardableBridgeCastsItsBusToTheInterfaceTheViewImplements()	[fixture:game-side] game-side classes absent: build/classes/java/runtime
 test	net.forbric.kernel.boot.GateWorldgenContractTest	theGateProbesExactlyTheBlocksThePackagedCanariesPlace()	[fixture:staged] build canaries with forbric-loader/run/build-testmods.sh
+test	net.forbric.kernel.boot.HookCallSiteCensusStagedTest	aBridgedPartialRowIsSilentOnlyWhereItsBridgeCoversEveryLostPath()	[fixture:staged] staged merged base absent
 test	net.forbric.kernel.boot.HookCallSiteCensusStagedTest	aDualFamilyPortalCallerWithoutTheProvedShapeIsStillReported()	[fixture:staged] staged merged base absent
 test	net.forbric.kernel.boot.HookCallSiteCensusStagedTest	aPairWithoutItsNativeDeliveryIsNotStoodDown()	[fixture:staged] staged merged base absent
+test	net.forbric.kernel.boot.HookCallSiteCensusStagedTest	everyEventLiveOnlyThroughACarrierCallerIsReachedForAReason()	[fixture:staged] staged merged base absent
 test	net.forbric.kernel.boot.HookCallSiteCensusStagedTest	everyEventTheCensusMeasuresDeadHasARow()	[fixture:staged] staged merged base absent
+test	net.forbric.kernel.boot.HookCallSiteCensusStagedTest	everyHookThatLostGameCallSitesHasItsEventsNamed()	[fixture:staged] staged merged base absent
 test	net.forbric.kernel.boot.HookCallSiteCensusStagedTest	everyRowOfTheDeadTableIsStillDeadInTheBytecode()	[fixture:staged] staged merged base absent
+test	net.forbric.kernel.boot.HookCallSiteCensusStagedTest	everyRowThatSilencesTheAuditProvesItsDelivery()	[fixture:staged] staged merged base absent
 test	net.forbric.kernel.boot.HookCallSiteCensusStagedTest	minecraftForgesBreatheAndDrownEventsAreMeasuredDeadAndBridged()	[fixture:staged] staged merged base absent
-test	net.forbric.kernel.boot.HookCallSiteCensusStagedTest	noDeadRowNamesAnEventTheKernelDelivers()	[fixture:staged] staged merged base absent
+test	net.forbric.kernel.boot.HookCallSiteCensusStagedTest	noDeadRowNamesADeliveredEvent()	[fixture:staged] staged merged base absent
 test	net.forbric.kernel.boot.HookCallSiteCensusStagedTest	noSinglePathPostsABridgedEventTwice()	[fixture:staged] staged merged base absent
 test	net.forbric.kernel.boot.HookCallSiteCensusStagedTest	noTableNamesAnEventItsOwnFamilyNeverPosts()	[fixture:staged] staged merged base absent
 test	net.forbric.kernel.boot.HookCallSiteCensusStagedTest	theCensusRunsAndTheSurfaceIsNotAllAlive()	[fixture:staged] staged merged base absent
 test	net.forbric.kernel.boot.HookCallSiteCensusStagedTest	theCensusSeesTheCallsTheMergedBaseRepairsMove()	[fixture:staged] staged merged base absent
 test	net.forbric.kernel.boot.HookCallSiteCensusStagedTest	theClientOnlyTableIsWhereTheNativeLoaderPostsOnlyOnTheClient()	[fixture:staged] staged merged base absent
+test	net.forbric.kernel.boot.HookCallSiteCensusStagedTest	theNoNativePathTableIsWhereTheMergedGamePostsNothingItself()	[fixture:staged] staged merged base absent
 test	net.forbric.kernel.boot.HookCallSiteCensusStagedTest	thePartialTableIsExactlyWhatTheCallSitesSay()	[fixture:staged] staged merged base absent
 test	net.forbric.kernel.boot.KernelBootNeutersTest	onEverySideMinecraftForgesOwnModPackFinderIsEmptied()	[fixture:staged] $ROOT/forbric-loader/run/forge-runtime/forge-runtime.jar absent
 test	net.forbric.kernel.boot.KernelBootNeutersTest	onEverySideMinecraftForgesOwnModifierPassIsEmptiedAndItsAboutToStartIsNot()	[fixture:staged] $ROOT/forbric-loader/run/forge-runtime/forge-runtime.jar absent

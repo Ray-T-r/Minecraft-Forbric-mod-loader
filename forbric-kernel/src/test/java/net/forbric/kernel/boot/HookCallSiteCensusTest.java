@@ -180,28 +180,305 @@ class HookCallSiteCensusTest {
 		assertEquals(java.util.Set.of(), reached.get(FACTORY).deadEvents());
 	}
 
-	@Test void aCarrierCallerThatIsNotAHookStillCounts() throws Exception {
-		// Whether the runtime reaches an instance method, a lambda or a non-hook class is beyond a call-site count, so
-		// such a caller still counts: every error stays on the side of calling a dead event live.
+	@Test void aCarrierCallerThatIsNotAHookCountsOnlyWhenSomethingReachesIt() throws Exception {
+		// MinecraftForge's container-open event, in miniature: a public method of a carrier class that is not a hook class
+		// (IForgeServerPlayer.openMenu) calls the hook that posts it, and nothing the game runs calls that method. Counting any
+		// carrier caller called the event posted; it is posted only when a guest calls that API.
 		Map<String, byte[]> helper = Map.of("forge/Helper.class",
 				hookClass("forge/Helper", Map.of("help", List.<String[]>of(new String[] {FACTORY, "onInner"})), Map.of()));
 		Path carrier = outerAndInner(helper);
-		var all = HookCallSiteCensus.all(both(carrier), List.of(base(callerCalling("game/Level", List.of()))), List.of(carrier), List.of());
-		assertEquals(java.util.Set.of("onInner()V"), all.get(FACTORY).reachedOnlyViaCarrier());
-		assertEquals(java.util.Set.of(), all.get(FACTORY).deadEvents());
+		var unreached = HookCallSiteCensus.all(both(carrier), List.of(base(callerCalling("game/Level", List.of()))), List.of(carrier), List.of());
+		assertEquals(java.util.Set.of(), unreached.get(FACTORY).reachedOnlyViaCarrier());
+		assertEquals(java.util.Set.of("forge/InnerEvent"), unreached.get(FACTORY).deadEvents());
+		assertEquals(java.util.Set.of("forge/InnerEvent"), unreached.get(FACTORY).guestPosted(), "a guest calling forge/Helper.help posts it");
+		assertEquals(List.of(FACTORY + ".onInner()V", "forge/Helper.help()V", "<a guest calling public API>"),
+				unreached.get(FACTORY).witness().get("onInner()V"));
+		// Once the game calls it, the hook is reached through it, and the census says why.
+		Map<String, byte[]> game = callerCallingOn("game/Level", "forge/Helper", List.of(new Call("help", "()V")));
+		var reached = HookCallSiteCensus.all(both(carrier), List.of(base(game)), List.of(carrier), List.of());
+		assertEquals(java.util.Set.of("onInner()V"), reached.get(FACTORY).reachedOnlyViaCarrier());
+		assertEquals(java.util.Set.of(), reached.get(FACTORY).deadEvents());
+		assertEquals(List.of(FACTORY + ".onInner()V", "forge/Helper.help()V", "<game>"), reached.get(FACTORY).witness().get("onInner()V"));
+	}
+
+	@Test void aMethodAFamilysOwnGameCallsIsItsEntryNotAGuestsApi() throws Exception {
+		// MinecraftForge's patched LiquidBlock calls FluidInteractionRegistry.canInteract: a public method the family's own
+		// game enters is not API a guest is assumed to call, so a merged game that does not call it has simply lost a path.
+		Map<String, byte[]> helper = Map.of("forge/Helper.class",
+				hookClass("forge/Helper", Map.of("help", List.<String[]>of(new String[] {FACTORY, "onInner"})), Map.of()));
+		Path carrier = outerAndInner(helper);
+		Path nativeGame = base(callerCallingOn("game/NativeLevel", "forge/Helper", List.of(new Call("help", "()V"))));
+		var census = HookCallSiteCensus.all(both(carrier), List.of(base(callerCalling("game/Level", List.of()))), List.of(carrier),
+				List.of(), null, List.of(nativeGame));
+		assertEquals(java.util.Set.of("forge/InnerEvent"), census.get(FACTORY).deadEvents());
+		assertEquals(java.util.Set.of(), census.get(FACTORY).guestPosted());
 	}
 
 	@Test void aLambdaInAHookClassReachesItsOwnHook() throws Exception {
-		// NeoForge's chat decorator: the game calls a hook that hands out a lambda, and the lambda calls the hook that
-		// posts the event. A hook class calling its own hook from a dead hook is nothing; from a lambda it is the runtime.
+		// NeoForge's chat decorator: the game calls a hook that hands out a lambda, and the lambda calls the hook that posts
+		// the event. A hook class calling its own hook from a dead hook is nothing; from a lambda the game's call hands out it
+		// is the runtime reaching it. The lambda counts only because the hook the game calls hands it out.
+		ClassWriter cw = new ClassWriter(0);
+		cw.visit(Opcodes.V17, Opcodes.ACC_PUBLIC, HOOKS, null, "java/lang/Object", null);
+		posts(cw, "onChat", "forge/ChatEvent");
+		MethodVisitor lambda = cw.visitMethod(Opcodes.ACC_PRIVATE | Opcodes.ACC_STATIC | Opcodes.ACC_SYNTHETIC, "lambda$0", "()V", null, null);
+		lambda.visitCode();
+		lambda.visitMethodInsn(Opcodes.INVOKESTATIC, HOOKS, "onChat", "()V", false);
+		lambda.visitInsn(Opcodes.RETURN);
+		lambda.visitMaxs(1, 0);
+		lambda.visitEnd();
+		MethodVisitor decorator = cw.visitMethod(Opcodes.ACC_PUBLIC | Opcodes.ACC_STATIC, "decorator", "()Ljava/lang/Runnable;", null, null);
+		decorator.visitCode();
+		decorator.visitInvokeDynamicInsn("run", "()Ljava/lang/Runnable;", METAFACTORY, org.objectweb.asm.Type.getType("()V"),
+				new org.objectweb.asm.Handle(Opcodes.H_INVOKESTATIC, HOOKS, "lambda$0", "()V", false), org.objectweb.asm.Type.getType("()V"));
+		decorator.visitInsn(Opcodes.ARETURN);
+		decorator.visitMaxs(1, 0);
+		decorator.visitEnd();
+		cw.visitEnd();
+		Path carrier = carrier(Map.of(HOOKS + ".class", cw.toByteArray()));
+		var called = HookCallSiteCensus.all(Map.of(HOOKS, carrier),
+				List.of(base(callerCalling("game/Level", List.of(new Call("decorator", "()Ljava/lang/Runnable;"))))), List.of(carrier), List.of());
+		assertEquals(java.util.Set.of("onChat()V"), called.get(HOOKS).reachedOnlyViaCarrier());
+		assertEquals(java.util.Set.of(), called.get(HOOKS).deadEvents());
+		var uncalled = HookCallSiteCensus.all(Map.of(HOOKS, carrier), List.of(base(callerCalling("game/Level", List.of()))),
+				List.of(carrier), List.of());
+		assertEquals(java.util.Set.of("forge/ChatEvent"), uncalled.get(HOOKS).deadEvents(), "a lambda nothing hands out is reached by nothing");
+	}
+
+	@Test void aGameClassInheritingACarrierDefaultMethodReachesIt() throws Exception {
+		// A merged game class implementing a family's extension interface: the game calling the method on itself resolves to
+		// the interface's default method, unless the game class declares the method itself.
+		Map<String, byte[]> ext = new LinkedHashMap<>();
+		ClassWriter cw = new ClassWriter(0);
+		cw.visit(Opcodes.V17, Opcodes.ACC_PUBLIC | Opcodes.ACC_INTERFACE | Opcodes.ACC_ABSTRACT, "forge/IExt", null, "java/lang/Object", null);
+		MethodVisitor mv = cw.visitMethod(Opcodes.ACC_PUBLIC, "openMenu", "()V", null, null);
+		mv.visitCode();
+		mv.visitMethodInsn(Opcodes.INVOKESTATIC, FACTORY, "onInner", "()V", false);
+		mv.visitInsn(Opcodes.RETURN);
+		mv.visitMaxs(1, 1);
+		mv.visitEnd();
+		cw.visitEnd();
+		ext.put("forge/IExt.class", cw.toByteArray());
+		Path carrier = outerAndInner(ext);
+		for (boolean overrides : List.of(false, true)) {
+			Map<String, byte[]> game = new LinkedHashMap<>(gameClass("game/Player", "java/lang/Object", new String[] {"forge/IExt"}, overrides ? "openMenu" : null));
+			game.putAll(virtualCaller("game/Level", "game/Player", "openMenu", "()V"));
+			var census = HookCallSiteCensus.all(both(carrier), List.of(base(game)), List.of(carrier), List.of());
+			assertEquals(overrides ? java.util.Set.of("forge/InnerEvent") : java.util.Set.of(), census.get(FACTORY).deadEvents(),
+					overrides ? "the game class's own openMenu shadows the default" : "the default method is what the game's call runs");
+		}
+	}
+
+	@Test void aVirtualCallDispatchesOnlyIntoACarrierClassSomethingConstructs() throws Exception {
+		// A carrier class overriding a game method: the game's virtual call can run it only once something has constructed it.
+		Map<String, byte[]> impl = new LinkedHashMap<>();
+		impl.put("forge/Impl.class", overriding("forge/Impl", "game/Base", "run"));
+		impl.put("forge/Maker.class", hookClass("forge/Maker", Map.of(), Map.of("make", "forge/Impl")));
+		Path carrier = outerAndInner(impl);
+		Map<String, byte[]> game = new LinkedHashMap<>(gameClass("game/Base", "java/lang/Object", new String[0], "run"));
+		game.putAll(virtualCaller("game/Level", "game/Base", "run", "()V"));
+		var none = HookCallSiteCensus.all(both(carrier), List.of(base(game)), List.of(carrier), List.of());
+		assertEquals(java.util.Set.of("forge/InnerEvent"), none.get(FACTORY).deadEvents(), "nothing constructs forge/Impl");
+		game.putAll(callerCallingOn("game/Spawner", "forge/Maker", List.of(new Call("make", "()V"))));
+		var constructed = HookCallSiteCensus.all(both(carrier), List.of(base(game)), List.of(carrier), List.of());
+		assertEquals(java.util.Set.of(), constructed.get(FACTORY).deadEvents(), "the game constructs forge/Impl through forge/Maker");
+	}
+
+	@Test void theRuntimeEntersAListenerAModClassAndAStaticInitializer() throws Exception {
 		Map<String, byte[]> entries = new LinkedHashMap<>();
-		entries.put(HOOKS + ".class", hookClass(HOOKS, Map.of("lambda$0", List.<String[]>of(new String[] {HOOKS, "onChat"})),
-				Map.of("onChat", "forge/ChatEvent")));
-		Path carrier = carrier(entries);
-		var all = HookCallSiteCensus.all(Map.of(HOOKS, carrier), List.of(base(callerCalling("game/Level", List.of()))), List.of(carrier),
-				List.of());
-		assertEquals(java.util.Set.of("onChat()V"), all.get(HOOKS).reachedOnlyViaCarrier());
-		assertEquals(java.util.Set.of(), all.get(HOOKS).deadEvents());
+		entries.put("forge/Listener.class", annotatedCaller("forge/Listener", "Lnet/minecraftforge/eventbus/api/listener/SubscribeEvent;", false));
+		Path listener = outerAndInner(entries);
+		assertEquals(java.util.Set.of(), HookCallSiteCensus.all(both(listener), List.of(base(callerCalling("game/Level", List.of()))),
+				List.of(listener), List.of()).get(FACTORY).deadEvents(), "a listener is entered by its bus");
+		entries.clear();
+		entries.put("forge/MyMod.class", annotatedCaller("forge/MyMod", "Lnet/minecraftforge/fml/common/Mod;", true));
+		Path mod = outerAndInner(entries);
+		assertEquals(java.util.Set.of(), HookCallSiteCensus.all(both(mod), List.of(base(callerCalling("game/Level", List.of()))),
+				List.of(mod), List.of()).get(FACTORY).deadEvents(), "a mod class is constructed by its loader");
+		entries.clear();
+		entries.put("forge/Registry.class", initializerCaller("forge/Registry"));
+		Path registry = outerAndInner(entries);
+		assertEquals(java.util.Set.of("forge/InnerEvent"), HookCallSiteCensus.all(both(registry), List.of(base(callerCalling("game/Level", List.of()))),
+				List.of(registry), List.of()).get(FACTORY).deadEvents(), "nothing touches forge/Registry");
+		assertEquals(java.util.Set.of(), HookCallSiteCensus.all(both(registry), List.of(base(staticReader("game/Level", "forge/Registry"))),
+				List.of(registry), List.of()).get(FACTORY).deadEvents(), "the game reading its static field runs its initializer");
+	}
+
+	@Test void aKernelReflectiveLookupByBinaryNameIsACall() throws Exception {
+		// PayloadInterop: factory.getMethod("gatherLoginConfigTasks", ...) on the class it loaded by its binary name.
+		Path carrier = outerAndInner(Map.of());
+		Map<String, Path> hooks = both(carrier);
+		Path direct = base(reflector("kernel/Direct", "forge.Factory", "onInner", true, null));
+		Path slashed = base(reflector("kernel/Slashed", FACTORY, "onInner", true, null));
+		Path noLookup = base(reflector("kernel/NoLookup", "forge.Factory", "onInner", false, null));
+		Map<String, byte[]> viaHelper = new LinkedHashMap<>(reflector("kernel/Caller", "forge.Factory", "onInner", false, "kernel/Helper"));
+		viaHelper.putAll(reflector("kernel/Helper", null, null, true, null));
+		Path helper = base(viaHelper);
+		Path game = base(callerCalling("game/Level", List.of()));
+		assertEquals(java.util.Set.of("forge/InnerEvent"), HookCallSiteCensus.all(hooks, List.of(game), List.of(carrier), List.of(direct))
+				.get(FACTORY).kernelDelivered(), "a binary name, a method name and a reflective lookup are a call");
+		assertEquals(java.util.Set.of("forge/InnerEvent"), HookCallSiteCensus.all(hooks, List.of(game), List.of(carrier), List.of(helper))
+				.get(FACTORY).kernelDelivered(), "a helper that does the lookup makes its caller the reflective one");
+		assertEquals(java.util.Set.of(), HookCallSiteCensus.all(hooks, List.of(game), List.of(carrier), List.of(slashed))
+				.get(FACTORY).kernelDelivered(), "a slashed internal name is a transformer matching bytecode, not a lookup");
+		assertEquals(java.util.Set.of(), HookCallSiteCensus.all(hooks, List.of(game), List.of(carrier), List.of(noLookup))
+				.get(FACTORY).kernelDelivered(), "the names alone, with no lookup, are not a call");
+	}
+
+	private static final org.objectweb.asm.Handle METAFACTORY = new org.objectweb.asm.Handle(Opcodes.H_INVOKESTATIC,
+			"java/lang/invoke/LambdaMetafactory", "metafactory", "(Ljava/lang/invoke/MethodHandles$Lookup;Ljava/lang/String;"
+					+ "Ljava/lang/invoke/MethodType;Ljava/lang/invoke/MethodType;Ljava/lang/invoke/MethodHandle;Ljava/lang/invoke/MethodType;)"
+					+ "Ljava/lang/invoke/CallSite;", false);
+
+	/** A game class whose {@code tick} calls each of {@code calls} statically on {@code target}. */
+	private static Map<String, byte[]> callerCallingOn(String owner, String target, List<Call> calls) {
+		ClassWriter cw = new ClassWriter(0);
+		cw.visit(Opcodes.V17, Opcodes.ACC_PUBLIC, owner, null, "java/lang/Object", null);
+		MethodVisitor mv = cw.visitMethod(Opcodes.ACC_PUBLIC, "tick", "()V", null, null);
+		mv.visitCode();
+		for (Call c : calls) {
+			mv.visitMethodInsn(Opcodes.INVOKESTATIC, target, c.name(), c.desc(), false);
+			if (!c.desc().endsWith(")V")) mv.visitInsn(Opcodes.POP);
+		}
+		mv.visitInsn(Opcodes.RETURN);
+		mv.visitMaxs(4, 4);
+		mv.visitEnd();
+		cw.visitEnd();
+		return Map.of(owner + ".class", cw.toByteArray());
+	}
+
+	/** A game class {@code name extends superName implements interfaces}, declaring {@code declares()V} when not null. */
+	private static Map<String, byte[]> gameClass(String name, String superName, String[] interfaces, String declares) {
+		ClassWriter cw = new ClassWriter(0);
+		cw.visit(Opcodes.V17, Opcodes.ACC_PUBLIC, name, null, superName, interfaces);
+		if (declares != null) {
+			MethodVisitor mv = cw.visitMethod(Opcodes.ACC_PUBLIC, declares, "()V", null, null);
+			mv.visitCode();
+			mv.visitInsn(Opcodes.RETURN);
+			mv.visitMaxs(0, 1);
+			mv.visitEnd();
+		}
+		cw.visitEnd();
+		return Map.of(name + ".class", cw.toByteArray());
+	}
+
+	/** A game class whose {@code tick} calls {@code name+desc} virtually on {@code receiver}. */
+	private static Map<String, byte[]> virtualCaller(String owner, String receiver, String name, String desc) {
+		ClassWriter cw = new ClassWriter(0);
+		cw.visit(Opcodes.V17, Opcodes.ACC_PUBLIC, owner, null, "java/lang/Object", null);
+		MethodVisitor mv = cw.visitMethod(Opcodes.ACC_PUBLIC, "tick", "(L" + receiver + ";)V", null, null);
+		mv.visitCode();
+		mv.visitVarInsn(Opcodes.ALOAD, 1);
+		mv.visitMethodInsn(Opcodes.INVOKEVIRTUAL, receiver, name, desc, false);
+		mv.visitInsn(Opcodes.RETURN);
+		mv.visitMaxs(1, 2);
+		mv.visitEnd();
+		cw.visitEnd();
+		return Map.of(owner + ".class", cw.toByteArray());
+	}
+
+	/** A carrier class extending {@code superName} whose {@code method()V} calls forge/Factory.onInner. */
+	private static byte[] overriding(String name, String superName, String method) {
+		ClassWriter cw = new ClassWriter(0);
+		cw.visit(Opcodes.V17, Opcodes.ACC_PUBLIC, name, null, superName, null);
+		MethodVisitor init = cw.visitMethod(Opcodes.ACC_PUBLIC, "<init>", "()V", null, null);
+		init.visitCode();
+		init.visitVarInsn(Opcodes.ALOAD, 0);
+		init.visitMethodInsn(Opcodes.INVOKESPECIAL, superName, "<init>", "()V", false);
+		init.visitInsn(Opcodes.RETURN);
+		init.visitMaxs(1, 1);
+		init.visitEnd();
+		MethodVisitor mv = cw.visitMethod(Opcodes.ACC_PUBLIC, method, "()V", null, null);
+		mv.visitCode();
+		mv.visitMethodInsn(Opcodes.INVOKESTATIC, FACTORY, "onInner", "()V", false);
+		mv.visitInsn(Opcodes.RETURN);
+		mv.visitMaxs(1, 1);
+		mv.visitEnd();
+		cw.visitEnd();
+		return cw.toByteArray();
+	}
+
+	/**
+	 * A carrier class carrying {@code annotation}: on its class with a constructor calling forge/Factory.onInner when
+	 * {@code onClass}, else on a method calling it.
+	 */
+	private static byte[] annotatedCaller(String name, String annotation, boolean onClass) {
+		ClassWriter cw = new ClassWriter(0);
+		cw.visit(Opcodes.V17, Opcodes.ACC_PUBLIC, name, null, "java/lang/Object", null);
+		if (onClass) cw.visitAnnotation(annotation, true).visitEnd();
+		MethodVisitor mv = cw.visitMethod(Opcodes.ACC_PUBLIC, onClass ? "<init>" : "on", "()V", null, null);
+		if (!onClass) mv.visitAnnotation(annotation, true).visitEnd();
+		mv.visitCode();
+		mv.visitMethodInsn(Opcodes.INVOKESTATIC, FACTORY, "onInner", "()V", false);
+		mv.visitInsn(Opcodes.RETURN);
+		mv.visitMaxs(1, 1);
+		mv.visitEnd();
+		cw.visitEnd();
+		return cw.toByteArray();
+	}
+
+	/** A carrier class whose static initializer calls forge/Factory.onInner, with a static field to read. */
+	private static byte[] initializerCaller(String name) {
+		ClassWriter cw = new ClassWriter(0);
+		cw.visit(Opcodes.V17, Opcodes.ACC_PUBLIC, name, null, "java/lang/Object", null);
+		cw.visitField(Opcodes.ACC_PUBLIC | Opcodes.ACC_STATIC, "X", "I", null, null).visitEnd();
+		MethodVisitor mv = cw.visitMethod(Opcodes.ACC_STATIC, "<clinit>", "()V", null, null);
+		mv.visitCode();
+		mv.visitMethodInsn(Opcodes.INVOKESTATIC, FACTORY, "onInner", "()V", false);
+		mv.visitInsn(Opcodes.RETURN);
+		mv.visitMaxs(1, 0);
+		mv.visitEnd();
+		cw.visitEnd();
+		return cw.toByteArray();
+	}
+
+	/** A game class whose {@code tick} reads {@code owner.X}. */
+	private static Map<String, byte[]> staticReader(String name, String owner) {
+		ClassWriter cw = new ClassWriter(0);
+		cw.visit(Opcodes.V17, Opcodes.ACC_PUBLIC, name, null, "java/lang/Object", null);
+		MethodVisitor mv = cw.visitMethod(Opcodes.ACC_PUBLIC, "tick", "()V", null, null);
+		mv.visitCode();
+		mv.visitFieldInsn(Opcodes.GETSTATIC, owner, "X", "I");
+		mv.visitInsn(Opcodes.POP);
+		mv.visitInsn(Opcodes.RETURN);
+		mv.visitMaxs(1, 1);
+		mv.visitEnd();
+		cw.visitEnd();
+		return Map.of(name + ".class", cw.toByteArray());
+	}
+
+	/**
+	 * A kernel class whose {@code run} holds {@code className} and {@code methodName} as constants (when not null), looks a
+	 * method up with {@code Class.getMethod} when {@code looksUp}, and calls {@code helper.find(String,String)} when not null.
+	 */
+	private static Map<String, byte[]> reflector(String name, String className, String methodName, boolean looksUp, String helper) {
+		ClassWriter cw = new ClassWriter(0);
+		cw.visit(Opcodes.V17, Opcodes.ACC_PUBLIC, name, null, "java/lang/Object", null);
+		MethodVisitor mv = cw.visitMethod(Opcodes.ACC_PUBLIC | Opcodes.ACC_STATIC, helper == null && className == null ? "find" : "run",
+				helper == null && className == null ? "(Ljava/lang/String;Ljava/lang/String;)V" : "()V", null, null);
+		mv.visitCode();
+		if (className != null) {
+			mv.visitLdcInsn(className);
+			mv.visitLdcInsn(methodName);
+			if (helper != null) mv.visitMethodInsn(Opcodes.INVOKESTATIC, helper, "find", "(Ljava/lang/String;Ljava/lang/String;)V", false);
+			else {
+				mv.visitInsn(Opcodes.POP2);
+			}
+		}
+		if (looksUp) {
+			mv.visitLdcInsn(org.objectweb.asm.Type.getType("Ljava/lang/Object;"));
+			mv.visitLdcInsn("x");
+			mv.visitInsn(Opcodes.ICONST_0);
+			mv.visitTypeInsn(Opcodes.ANEWARRAY, "java/lang/Class");
+			mv.visitMethodInsn(Opcodes.INVOKEVIRTUAL, "java/lang/Class", "getMethod",
+					"(Ljava/lang/String;[Ljava/lang/Class;)Ljava/lang/reflect/Method;", false);
+			mv.visitInsn(Opcodes.POP);
+		}
+		mv.visitInsn(Opcodes.RETURN);
+		mv.visitMaxs(4, 2);
+		mv.visitEnd();
+		cw.visitEnd();
+		return Map.of(name + ".class", cw.toByteArray());
 	}
 
 	@Test void onlyAnEventCountsAsAnEventAHookPosts() throws Exception {
@@ -236,6 +513,68 @@ class HookCallSiteCensusTest {
 		assertEquals(java.util.Set.of("forge/LonelyEvent"), all.get(FACTORY + "2").kernelDelivered(), "constructed by the kernel itself");
 		var without = HookCallSiteCensus.all(hooks, List.of(base(callerCalling("game/Level", List.of()))), List.of(carrier), List.of());
 		assertEquals(java.util.Set.of(), without.get(FACTORY).kernelDelivered());
+	}
+
+	/**
+	 * An event whose constructor calls a hook posting another event. MinecraftForge's {@code BreakEvent} asks
+	 * {@code ForgeHooks.isCorrectToolForDrops} from its constructor, which posts {@code PlayerEvent$HarvestCheck}: a hook
+	 * constructing the break posts a harvest check too (the hook's events and call-site counts follow the constructor), and
+	 * the kernel posting a break delivers one — but on the break's path only, so it is not what the kernel posts itself
+	 * ({@code kernelConstructs}, what proves a bridge's or a repair's row): filing the harvest check under the break bridge
+	 * would silence the audit for a check the game asks on paths no break takes.
+	 */
+	@Test void anEventsConstructorPostsForItsHookButNotAsTheKernelsOwnDelivery() throws Exception {
+		String base = "net/minecraftforge/eventbus/internal/Event", brk = "forge/BreakEvent", harvest = "forge/HarvestEvent";
+		Map<String, byte[]> entries = new LinkedHashMap<>();
+		ClassWriter hooks = new ClassWriter(0);
+		hooks.visit(Opcodes.V17, Opcodes.ACC_PUBLIC, HOOKS, null, "java/lang/Object", null);
+		constructing(hooks, "onBreak", brk);
+		constructing(hooks, "onHarvest", harvest);
+		hooks.visitEnd();
+		entries.put(HOOKS + ".class", hooks.toByteArray());
+		entries.put(harvest + ".class", event(harvest, base, null));
+		entries.put(brk + ".class", event(brk, base, new String[] {HOOKS, "onHarvest"}));
+		Path carrier = carrier(entries);
+		ClassWriter bridge = new ClassWriter(0);
+		bridge.visit(Opcodes.V17, Opcodes.ACC_PUBLIC, "kernel/Bridge", null, "java/lang/Object", null);
+		constructing(bridge, "forward", brk);
+		bridge.visitEnd();
+		Path kernel = base(Map.of("kernel/Bridge.class", bridge.toByteArray()));
+		var census = HookCallSiteCensus.all(Map.of(HOOKS, carrier), List.of(base(callerCalling("game/Level", List.of()))), List.of(carrier),
+				List.of(kernel)).get(HOOKS);
+		assertEquals(java.util.Set.of(brk, harvest), census.postsThrough().get("onBreak()V"), "constructing the break posts a harvest check");
+		assertEquals(java.util.Set.of(brk, harvest), census.kernelDelivered(), "the kernel's break delivers a harvest check on its path");
+		assertTrue(census.kernelConstructs().contains(brk), "the kernel posts the break itself");
+		assertFalse(census.kernelConstructs().contains(harvest), "the harvest check is the break constructor's, not the kernel's own delivery");
+	}
+
+	/** A public static {@code name()V} constructing {@code type} through its no-argument constructor. */
+	private static void constructing(ClassWriter cw, String name, String type) {
+		MethodVisitor mv = cw.visitMethod(Opcodes.ACC_PUBLIC | Opcodes.ACC_STATIC, name, "()V", null, null);
+		mv.visitCode();
+		mv.visitTypeInsn(Opcodes.NEW, type);
+		mv.visitInsn(Opcodes.DUP);
+		mv.visitMethodInsn(Opcodes.INVOKESPECIAL, type, "<init>", "()V", false);
+		mv.visitInsn(Opcodes.POP);
+		mv.visitInsn(Opcodes.RETURN);
+		mv.visitMaxs(2, 0);
+		mv.visitEnd();
+	}
+
+	/** An event class {@code name extends superName} whose constructor calls {@code call} (owner, name) when given. */
+	private static byte[] event(String name, String superName, String[] call) {
+		ClassWriter cw = new ClassWriter(0);
+		cw.visit(Opcodes.V17, Opcodes.ACC_PUBLIC, name, null, superName, null);
+		MethodVisitor init = cw.visitMethod(Opcodes.ACC_PUBLIC, "<init>", "()V", null, null);
+		init.visitCode();
+		init.visitVarInsn(Opcodes.ALOAD, 0);
+		init.visitMethodInsn(Opcodes.INVOKESPECIAL, superName, "<init>", "()V", false);
+		if (call != null) init.visitMethodInsn(Opcodes.INVOKESTATIC, call[0], call[1], "()V", false);
+		init.visitInsn(Opcodes.RETURN);
+		init.visitMaxs(1, 1);
+		init.visitEnd();
+		cw.visitEnd();
+		return cw.toByteArray();
 	}
 
 	/** A class whose one static method hands out {@code target} as a method reference (an invokedynamic, no invoke). */

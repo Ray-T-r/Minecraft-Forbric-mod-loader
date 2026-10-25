@@ -42,11 +42,14 @@ import net.forbric.kernel.util.Caught;
  * has actually seen. Reading it is one field access per mod, after registration is over, and it is attributed —
  * the group belongs to one mod.
  *
- * <p>Two honest limits. The map holds every event class the bus has been ASKED about, so an event that was
- * posted but never listened for can appear; and the game bus is shared, so listeners registered there carry no
- * mod attribution and are not covered here. Both make this OVER-report rather than under-report, which for an
- * audit whose failure mode is silence is the right direction — and {@code DeadEventAudit} only turns an entry
- * into a finding when the event is in its dead table anyway.
+ * <p>Two honest limits, pulling opposite ways. The map holds every event class the bus has been ASKED about, so an
+ * event that was posted but never listened for can appear: that over-reports, which for an audit whose failure mode is
+ * silence is the right direction — and {@code DeadEventAudit} only turns an entry into a finding when the event is in
+ * one of its tables anyway. And this reads only each mod's OWN group: MinecraftForge's EventBus 7 keeps every game event
+ * on a static bus shared by all mods ({@code ItemTossEvent.BUS}), so a listener registered there with
+ * {@code ItemTossEvent.BUS.addListener(...)} carries no mod attribution and is not seen here at all — that UNDER-reports,
+ * and for a dead event it is exactly the silence the audit exists to break. {@link GuestListeners} reads those
+ * registrations from the guest's bytecode instead.
  */
 public final class ForgeBusSubscriptions {
 
