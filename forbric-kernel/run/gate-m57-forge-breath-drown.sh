@@ -7,12 +7,14 @@
 # built from a supplier reads its fluid through MinecraftForge's getters (NativeCoremodParity, Family.FORGE); and
 # MinecraftForge's Hurt and Damage events sit in NeoForge's damage pipeline through seams (ForgeDamageSeamsInjector). A
 # dedicated server with a MinecraftForge canary and a NeoForge canary (canary/forge-breath-drown, both built here)
-# plays 44 scenarios (Core.plan): pigs drowning in water with each family's drown listeners acting alone and both
-# acting (NeoForge's answer first, then MinecraftForge's), including MinecraftForge's @SubscribeEvent listeners that
+# plays 48 scenarios (Core.plan): pigs drowning in water with each family's drown listeners acting alone and both
+# acting (NeoForge's answer first, then MinecraftForge's, also from NeoForge listeners at LOW that the NeoForge canary
+# registers from common setup, after the kernel's bridges), including MinecraftForge's @SubscribeEvent listeners that
 # cancel by returning true and a MinecraftForge bubble count that must leave the body's random draws as they are;
 # breathing in open air the same way, and with Breath of the Nautilus alone in water, in a bubble column and in
 # MinecraftForge's liquid, where MinecraftForge's listeners are told whether the body may refill; a pig drowning in each
-# family's own liquid; the probe's player drowning three times through the damage chain (MinecraftForge's attack, hurt
+# family's own liquid, and in a MinecraftForge liquid built canDrown(false), where only its type's canDrownIn keeps the
+# body from drowning; the probe's player drowning three times through the damage chain (MinecraftForge's attack, hurt
 # and damage, NeoForge's incoming damage); and each family's liquid placed, taken up and poured out with its bucket
 # through the server's own use-item path. Every row's air and health (or a liquid row's result) and the listener views
 # it names are compared with the same jar on the native loader whose answer stands
@@ -23,20 +25,21 @@
 #   1. positive — STRICT: every row as native, zero confirmed required findings.
 #   2. bridges-off — -Dforbric.unifiedEvents=off: exactly the rows a MinecraftForge breathe or drown listener decides or
 #      sees fail, each on a MinecraftForge breathe or drown view.
-#   3. getters-off — -Dforbric.forgeFieldGetters=off: exactly the rows in or with MinecraftForge's liquid fail, each
+#   3. getters-off — -Dforbric.forgeFieldGetters=off: exactly the rows in or with MinecraftForge's liquids fail, each
 #      because its liquid block threw with "this.fluid" is null.
-#   4. own-type-off — -Dforbric.forgeFluidOwnType=off: exactly the rows with a body in MinecraftForge's liquid fail, each
-#      with the body in it and its air or MinecraftForge breathe view off native.
+#   4. own-type-off — -Dforbric.forgeFluidOwnType=off: exactly the rows with a body in MinecraftForge's liquids fail,
+#      each with the body in one and its air or MinecraftForge breathe view off native.
 #   5. seams-off — -Dforbric.forgeDamageSeams=off: exactly the rows judged on a MinecraftForge Hurt listener fail, each
 #      on a MinecraftForge attack, hurt or damage view. (MinecraftForge's attack is asked by the edit-spliced base itself
 #      at the head of hurtServer, so the NeoForge incoming-damage cancel rows hold; a base without that call would fail
 #      them here too, and the phase names them.)
-# Judged only where a row says so: the body's random draws (the bubble-count rows must draw what drown-late draws).
+# Judged only where a row says so: the body's random draws (the bubble-count rows must draw what drown-late draws, the
+# draws counted on every sampled tick).
 # Not judged (measured, documented in introduction §19): the entity events the server broadcasts, and the random draws
 # elsewhere — merged drowning goes through NeoForge's hook, as native NeoForge's does. Not covered: a rendered client,
 # single player, a NeoForge listener registered at LOWEST after the kernel's bridges (it answers after
-# MinecraftForge's; the canaries register in their constructors), Fabric's damage events (fabric-api is a third-party
-# jar; the developer probe covers them).
+# MinecraftForge's; the canary's setup-registered listeners are at LOW), Fabric's damage events (fabric-api is a
+# third-party jar; the developer probe covers them).
 # GATE-PARALLEL: rundirs=server-breath-m57 mem=2500
 set -uo pipefail
 . "$(cd "$(dirname "$0")" && pwd)/lib.sh"
@@ -75,7 +78,7 @@ run_server() {
 judge() {
   local phase="$1" what="$2"
   check "$phase: the server started" 'Done \(' "$RESULTS/$phase.log"
-  check "$phase: the probe played every scenario" '\[BreathDrown\] DONE rows=44 error=null' "$RESULTS/$phase.log"
+  check "$phase: the probe played every scenario" '\[BreathDrown\] DONE rows=48 error=null' "$RESULTS/$phase.log"
   if python3 "$TOOL" judge --result "$RESULTS/$phase.json" --phase "$phase"
   then echo "[kernel] PASS $phase: $what"
   else echo "[kernel] FAIL $phase: $what (see $RESULTS/$phase.json)"; FAIL=1; fi
@@ -98,12 +101,12 @@ judge bridges-off "exactly the rows a MinecraftForge breathe or drown listener d
 
 step "3. getters-off: MinecraftForge's field getters switched off"
 run_server getters-off continue "-Dforbric.forgeFieldGetters=off"
-judge getters-off "exactly the rows in or with MinecraftForge's liquid fail, each on its liquid block's missing fluid"
+judge getters-off "exactly the rows in or with MinecraftForge's liquids fail, each on its liquid block's missing fluid"
 check "getters-off: ...because its LiquidBlock has no fluid without the getter" 'Cannot invoke "net\.minecraft\.world\.level\.material\.FlowingFluid\.[A-Za-z]+\(.*because "this\.fluid" is null' "$RESULTS/getters-off.log"
 
 step "4. own-type-off: NeoForge's view of MinecraftForge's own fluid type switched off"
 run_server own-type-off continue "-Dforbric.forgeFluidOwnType=off"
-judge own-type-off "exactly the rows with a body in MinecraftForge's liquid fail, each with the body in it"
+judge own-type-off "exactly the rows with a body in MinecraftForge's liquids fail, each with the body in one"
 
 step "5. seams-off: MinecraftForge's damage seams switched off"
 run_server seams-off continue "-Dforbric.forgeDamageSeams=off"

@@ -18,11 +18,13 @@ A tag of the other family does nothing on a native loader, so the native run of 
 listeners produce alone: where both families act, EXPECT names the one whose answer stands, and adds what the other
 family must have seen. NeoForge's listeners answer first, then MinecraftForge's, because the kernel posts
 MinecraftForge's events from NeoForge's at LOWEST before any mod's setup runs: that holds for every NeoForge listener
-above LOWEST and every one registered before the kernel's bridges (a mod's constructor, an @EventBusSubscriber class);
-a NeoForge listener registered at LOWEST later (from a setup event, say) answers after MinecraftForge's, and the gate's
-canaries have none (introduction §19). The body's random draws are judged only where a row must draw what another row
-draws ('rng-as': a MinecraftForge listener's bubble count, which natively nothing reads); the entity events never are
-(both documented in introduction §19).
+above LOWEST and every one registered before the kernel's bridges (a mod's constructor, an @EventBusSubscriber class).
+The NeoForge canary's LOW listeners, registered from common setup (after the bridges), hold the first half: a bridge
+at any priority above LOWEST would answer before them. A NeoForge listener registered at LOWEST later answers after
+MinecraftForge's, and the gate's canaries have none (introduction §19). The body's random draws are judged only where
+a row must draw what another row draws ('rng-as': a MinecraftForge listener's bubble count, which natively nothing
+reads), and only once the probe read them on every tick; the entity events never are (both documented in
+introduction §19).
 """
 import argparse
 import hashlib
@@ -82,6 +84,10 @@ EXPECT = {
     'drown-n-damage3-f-damage0': ({F}, [('sees', F, 'drown', 'damage=3.0 ')]),
     'drown-n-cancel-f-damage3': ({N}, [('none', F, 'drown'), ('none', F, 'drown-ann')]),
     'drown-n-damage3-f-cancel': ({F}, [('sees', F, 'drown', 'damage=3.0 ')]),
+    # NeoForge's LOW listeners, registered from common setup, after the kernel's bridges: they answer before
+    # MinecraftForge's all the same (a bridge above LOWEST would answer before them, and these rows would fail).
+    'drown-nlow-damage3-f-damage0': ({F}, [('sees', F, 'drown', 'damage=3.0 ')]),
+    'drown-nlow-cancel-f-damage3': ({N}, [('none', F, 'drown'), ('none', F, 'drown-ann')]),
     'breathe-read': ({F, N}, []),
     'breathe-f-refill2': ({F}, []),
     'breathe-f-cant': ({F}, []),
@@ -91,6 +97,7 @@ EXPECT = {
     'breathe-n-cant': ({N}, [('sees', F, 'breathe', 'forge can=false canRefill=true consume=3 ')]),
     'breathe-n-refill0-f-refill2': ({F}, [('sees', F, 'breathe', 'refill=0 ->')]),
     'breathe-n-cant-f-can': ({F}, [('sees', F, 'breathe', 'forge can=false ')]),
+    'breathe-nlow-refill0-f-refill2': ({F}, [('sees', F, 'breathe', 'refill=0 ->')]),
     # Breath of the Nautilus alone: the body breathes; in water MinecraftForge's listeners are told it may not refill
     # (canRefillAir false: a refill they set is not taken, unless they also let it refill), in a bubble column that it may.
     'breathe-nautilus-water': ({F, N}, []),
@@ -104,6 +111,8 @@ EXPECT = {
     'drown-f-damage3-forgemurk': ({F}, []),
     'breathe-nautilus-forgemurk': ({F}, []),
     'drown-read-neomurk': ({N}, []),
+    # MinecraftForge's liquid built canDrown(false): only its type's canDrownIn says a body does not drown there.
+    'drown-read-forgecalm': ({F}, []),
     'player-drown-read': ({F, N}, []),
     'player-drown-f-hurt-halve': ({F}, []),
     'player-drown-f-ann-damage-cancel': ({F}, []),
@@ -118,9 +127,12 @@ EXPECT = {
 # they saw (the first half of each note) is not what they see natively; their counts and ticks are still compared, and
 # what they were handed is checked by the 'sees' checks above.
 HANDED_NEOFORGES_ANSWER = {'drown-n-damage3-f-damage0', 'drown-n-damage3-f-cancel', 'breathe-n-refill0-f-refill2', 'breathe-n-cant-f-can',
-                           'breathe-nautilus-bubbles-n-refill0-f-refill2'}
-# The rows in or with MinecraftForge's liquid, which the getter and fluid-type repairs decide.
-FORGE_LIQUID_ROWS = {'drown-read-forgemurk', 'drown-f-damage3-forgemurk', 'breathe-nautilus-forgemurk', 'forge-bucket'}
+                           'breathe-nautilus-bubbles-n-refill0-f-refill2', 'drown-nlow-damage3-f-damage0', 'breathe-nlow-refill0-f-refill2'}
+# The rows in or with MinecraftForge's liquids, which the getters decide (each liquid block is built from a supplier).
+FORGE_LIQUID_ROWS = {'drown-read-forgemurk', 'drown-f-damage3-forgemurk', 'breathe-nautilus-forgemurk', 'drown-read-forgecalm', 'forge-bucket'}
+# The rows with a body in MinecraftForge's drowning liquid, which its own type decides: without it the untagged liquid is
+# air to NeoForge and the body breathes there. (In the liquid built canDrown(false) a body breathes either way, natively
+# too, and refills as in any liquid but water: own-type-off holds that row; only the type's canDrownIn decides it.)
 FORGE_LIQUID_BODY_ROWS = {'drown-read-forgemurk', 'drown-f-damage3-forgemurk', 'breathe-nautilus-forgemurk'}
 JUDGED = ('air', 'health', 'result')
 # Stored in the reference besides what is judged directly: the random draws, for the 'rng-as' checks.
@@ -238,6 +250,16 @@ def first_difference(a, b):
     return f'lengths {len(a)} vs {len(b)}'
 
 
+def unreadable_rng(row):
+    """Why a row's random draws cannot be compared, or None: the probe counted the body's draws on every sampled tick."""
+    rng = row.get('rng')
+    if not isinstance(rng, list) or not rng: return 'no random draws recorded'
+    if row.get('rngNote'): return f'the seed was not readable ({row["rngNote"]})'
+    if len(rng) != len(row.get('air', [])): return f'{len(rng)} draw counts for {len(row.get("air", []))} samples'
+    if any(type(x) is not int or x < 0 for x in rng): return 'a tick whose draws were not counted (-1)'
+    return None
+
+
 def judge_rows(reference, result):
     """{row: [reasons]} for every row EXPECT names; an empty list is a pass."""
     rows = {row['name']: row for row in result['rows']}
@@ -276,17 +298,23 @@ def judge_rows(reference, result):
                 _, other = check
                 for family in sorted(families):
                     a, b = (native_of(family, n) or {} for n in (name, other))
-                    if 'rng' not in a or a.get('rng') != b.get('rng'):
+                    why = unreadable_rng(a) or unreadable_rng(b)
+                    if why or a.get('rng') != b.get('rng'):
                         reasons.append(f'the native {family} reference does not show {name} drawing what {other} draws '
-                                       f'(regenerate it, or the expectation is wrong)')
+                                       f'({why or "they differ"}; regenerate it, or the expectation is wrong)')
                 theirs = rows.get(other, {})
-                if 'rng' not in row or row.get('rng') != theirs.get('rng'):
+                unread = [f'{n}: {why}' for n, why in ((name, unreadable_rng(row)), (other, unreadable_rng(theirs))) if why]
+                if unread:
+                    reasons.append(f'rng: the probe did not count the body\'s draws ({"; ".join(unread)})')
+                elif row.get('rng') != theirs.get('rng'):
                     reasons.append(f'rng: the body did not draw what {other}\'s drew '
                                    f'({first_difference(row.get("rng", []), theirs.get("rng", []))})')
-        for kind, order in row.get('order', {}).items():
-            fams = order.split(',')
-            if F in fams and N in fams and fams.index(N) > fams.index(F):
-                reasons.append(f'{kind}: MinecraftForge answered before NeoForge in one tick ({order})')
+        for kind, orders in row.get('order', {}).items():
+            # Every distinct order of a tick more than one family answered; N-low: a NeoForge LOW listener from common setup.
+            for order in [orders] if isinstance(orders, str) else orders:
+                fams = order.split(',')
+                if F in fams and any(f.split('-')[0] == N and fams.index(f) > fams.index(F) for f in fams):
+                    reasons.append(f'{kind}: MinecraftForge answered before a NeoForge listener in one tick ({order})')
         verdicts[name] = reasons
     return verdicts
 

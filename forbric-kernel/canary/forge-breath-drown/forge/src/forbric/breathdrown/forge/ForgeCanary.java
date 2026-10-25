@@ -28,7 +28,8 @@ import net.minecraftforge.registries.ForgeRegistries;
 
 /**
  * gate-m57's MinecraftForge mod, using MinecraftForge's API only: a drowning liquid of its own (MinecraftForge fluid
- * type, a {@code LiquidBlock} built from a supplier, a bucket built from a supplier), and listeners for breathing,
+ * type, a {@code LiquidBlock} built from a supplier, a bucket built from a supplier), a liquid no body drowns in (its
+ * type built {@code canDrown(false)}, which only the type's own {@code canDrownIn} says), and listeners for breathing,
  * drowning and the damage chain, registered with {@code BUS.addListener} here and with {@code @SubscribeEvent} in
  * {@link ForgeAnnotated}. Each reports what it saw to the probe and acts on the body's {@code f-*} tags.
  */
@@ -58,8 +59,22 @@ public final class ForgeCanary {
 				.setId(ResourceKey.create(Registries.ITEM, Identifier.fromNamespaceAndPath(ID, "murk_bucket")))));
 	}
 
+	/** A liquid no body drowns in: its type says so ({@code canDrown(false)}), and nothing else does. No bucket. */
+	@SuppressWarnings("unchecked")
+	private static void calm() {
+		Supplier<FluidType> type = TYPES.register("calm", () -> new FluidType(FluidType.Properties.create().canDrown(false).canSwim(true).descriptionId("block." + ID + ".calm")));
+		Supplier<Fluid>[] source = new Supplier[1], flowing = new Supplier[1];
+		Supplier<LiquidBlock>[] block = new Supplier[1];
+		ForgeFlowingFluid.Properties props = new ForgeFlowingFluid.Properties(type, () -> source[0].get(), () -> flowing[0].get()).block(() -> block[0].get());
+		source[0] = FLUIDS.register("calm", () -> new ForgeFlowingFluid.Source(props));
+		flowing[0] = FLUIDS.register("flowing_calm", () -> new ForgeFlowingFluid.Flowing(props));
+		block[0] = BLOCKS.register("calm", () -> new LiquidBlock(() -> (FlowingFluid) source[0].get(), BlockBehaviour.Properties.of().noCollision().strength(100f).noLootTable()
+				.setId(ResourceKey.create(Registries.BLOCK, Identifier.fromNamespaceAndPath(ID, "calm")))));
+	}
+
 	static {
 		murk();
+		calm();
 	}
 
 	public ForgeCanary(FMLJavaModLoadingContext context) {

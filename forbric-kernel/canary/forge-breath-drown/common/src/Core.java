@@ -78,11 +78,16 @@ public final class Core {
 	private static final long SEED = 0x5EED_DA7AL;
 	private static final long LCG_MULTIPLIER = 0x5DEECE66DL, LCG_INCREMENT = 0xBL, LCG_MASK = (1L << 48) - 1;
 	/** Kinds a listener reports every tick: counted, their ticks not recorded. */
-	private static final Set<String> EVERY_TICK = Set.of("breathe", "breathe-ann");
-	private static final Set<String> ORDERED = Set.of("breathe", "drown");
+	private static final Set<String> EVERY_TICK = Set.of("breathe", "breathe-ann", "breathe-low");
+	/**
+	 * The kinds whose answering order within one tick is recorded, by the event they answer: a NeoForge {@code LOW}
+	 * listener's ({@code *-low}) answer is recorded under its event as family {@code <family>-low}. Every distinct order
+	 * of a tick that more than one family answered is kept, first seen first.
+	 */
+	private static final Map<String, String> ORDERED = Map.of("breathe", "breathe", "drown", "drown", "breathe-low", "breathe", "drown-low", "drown");
 	/** Each pool's place, by fluid, fixed so a loader that lacks one family's fluid builds the others where every loader does. */
 	private static final List<String> POOL_ORDER = List.of("minecraft:water", "minecraft:air", "forbricbreathforge:murk", "forbricbreathneo:murk",
-			"minecraft:bubble_column");
+			"minecraft:bubble_column", "forbricbreathforge:calm");
 	/** The effects a scenario may give its body, by the name the plan uses. */
 	private static final Map<String, Holder<MobEffect>> EFFECTS = Map.of("water_breathing", MobEffects.WATER_BREATHING,
 			"breath_of_the_nautilus", MobEffects.BREATH_OF_THE_NAUTILUS);
@@ -119,7 +124,8 @@ public final class Core {
 		view.count++;
 		if (!EVERY_TICK.contains(kind)) view.at.add(s.air.size());
 		if (view.notes.size() < 4 && (view.notes.isEmpty() || !view.notes.get(view.notes.size() - 1).equals(line))) view.notes.add(line);
-		if (ORDERED.contains(kind)) s.thisTick.computeIfAbsent(kind, k -> new ArrayList<>()).add(family);
+		String event = ORDERED.get(kind);
+		if (event != null) s.thisTick.computeIfAbsent(event, k -> new ArrayList<>()).add(kind.endsWith("-low") ? family + "-low" : family);
 	}
 
 	static final class View {
@@ -143,7 +149,7 @@ public final class Core {
 		final List<String> entityEvents = new ArrayList<>(), result = new ArrayList<>();
 		final Map<String, Map<String, View>> views = new LinkedHashMap<>();
 		final Map<String, List<String>> thisTick = new LinkedHashMap<>();
-		final Map<String, String> order = new LinkedHashMap<>();
+		final Map<String, Set<String>> order = new LinkedHashMap<>();
 		String first, last, tracking = "untracked", rngNote;
 
 		Scenario(String name, String fluid, String entityType, int air0, int length) {
@@ -174,14 +180,15 @@ public final class Core {
 	}
 
 	/**
-	 * The scenarios. Tags: {@code f-*} act in the MinecraftForge listeners, {@code n-*} in the NeoForge ones. Drown rows
+	 * The scenarios. Tags: {@code f-*} act in the MinecraftForge listeners, {@code n-*} in the NeoForge ones ({@code n-low-*}
+	 * in its {@code LOW} listeners, which it registers from common setup). Drown rows
 	 * start a pig in water at air -15 (five ticks short of the point MinecraftForge asks at), the read rows at air 5 so
 	 * the first drowning shows; breathe rows start at 200 of 300, in open air where both native loaders refill the same
 	 * way, or with Breath of the Nautilus alone, where MinecraftForge's listeners are told the body may not refill.
 	 */
 	private static void plan() {
 		String water = "minecraft:water", air = "minecraft:air", forgeMurk = "forbricbreathforge:murk", neoMurk = "forbricbreathneo:murk",
-				bubbles = "minecraft:bubble_column";
+				bubbles = "minecraft:bubble_column", forgeCalm = "forbricbreathforge:calm";
 		// Drowning, each family alone, then both: NeoForge's listeners answer first, MinecraftForge's last.
 		queue.add(pig("drown-read", water, 5, 50));
 		queue.add(pig("drown-late", water, -15, 30));
@@ -203,6 +210,10 @@ public final class Core {
 		queue.add(pig("drown-n-damage3-f-damage0", water, -15, 30, "n-damage3", "f-damage0"));
 		queue.add(pig("drown-n-cancel-f-damage3", water, -15, 30, "n-cancel", "f-damage3"));
 		queue.add(pig("drown-n-damage3-f-cancel", water, -15, 30, "n-damage3", "f-cancel"));
+		// A NeoForge listener at LOW, registered from common setup (after the kernel's bridges): it answers before
+		// MinecraftForge's all the same, as every NeoForge listener above LOWEST does.
+		queue.add(pig("drown-nlow-damage3-f-damage0", water, -15, 30, "n-low-damage3", "f-damage0"));
+		queue.add(pig("drown-nlow-cancel-f-damage3", water, -15, 30, "n-low-cancel", "f-damage3"));
 		// Breathing in open air.
 		queue.add(pig("breathe-read", air, 200, 30));
 		queue.add(pig("breathe-f-refill2", air, 200, 30, "f-refill2"));
@@ -213,6 +224,7 @@ public final class Core {
 		queue.add(pig("breathe-n-cant", air, 200, 30, "n-cant"));
 		queue.add(pig("breathe-n-refill0-f-refill2", air, 200, 30, "n-refill0", "f-refill2"));
 		queue.add(pig("breathe-n-cant-f-can", air, 200, 30, "n-cant", "f-can"));
+		queue.add(pig("breathe-nlow-refill0-f-refill2", air, 200, 30, "n-low-refill0", "f-refill2"));
 		// Breath of the Nautilus alone: the body breathes but may not refill where its eyes are in a fluid (MinecraftForge's
 		// canRefillAir false), unless that fluid is a bubble column.
 		queue.add(pig("breathe-nautilus-water", water, 200, 30).effect("breath_of_the_nautilus"));
@@ -225,6 +237,8 @@ public final class Core {
 		queue.add(pig("drown-f-damage3-forgemurk", forgeMurk, -15, 30, "f-damage3"));
 		queue.add(pig("breathe-nautilus-forgemurk", forgeMurk, 200, 30).effect("breath_of_the_nautilus"));
 		queue.add(pig("drown-read-neomurk", neoMurk, 5, 50));
+		// MinecraftForge's liquid no body drowns in: only its type's canDrownIn says so.
+		queue.add(pig("drown-read-forgecalm", forgeCalm, 5, 50));
 		// The probe's player drowning three times: the whole damage chain, each time.
 		queue.add(new Scenario("player-drown-read", water, "player", 5, 70));
 		queue.add(new Scenario("player-drown-f-hurt-halve", water, "player", 5, 70).tag("f-hurt-halve"));
@@ -521,7 +535,7 @@ public final class Core {
 		}
 		for (Map.Entry<String, List<String>> tick : s.thisTick.entrySet()) {
 			Set<String> families = new LinkedHashSet<>(tick.getValue());
-			if (families.size() > 1) s.order.putIfAbsent(tick.getKey(), String.join(",", families));
+			if (families.size() > 1) s.order.computeIfAbsent(tick.getKey(), k -> new LinkedHashSet<>()).add(String.join(",", families));
 		}
 		s.thisTick.clear();
 		if (s.air.size() < s.length) return;

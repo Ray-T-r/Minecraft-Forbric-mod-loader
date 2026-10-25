@@ -43,7 +43,7 @@ def reference():
     for family in (bd.F, bd.N):
         rows = {}
         for name, (expect, checks) in bd.EXPECT.items():
-            if family not in expect: rows[name] = {'skipped': 'no block'} if 'murk' in name or 'bucket' in name else {
+            if family not in expect: rows[name] = {'skipped': 'no block'} if any(w in name for w in ('murk', 'calm', 'bucket')) else {
                 'air': [1], 'health': [1.0], 'rng': [1], 'views': {family: {}}}; continue
             if name.endswith('bucket'): rows[name] = {'result': ['place=' + name], 'views': {family: {}}}
             else:
@@ -56,6 +56,13 @@ def reference():
     return {'canarySources': 'x', 'families': families}
 
 
+def liquid_at_eye(name):
+    """The block a row's body has its eyes in, as the probe's 'first' names it."""
+    for liquid in ('murk', 'calm'):
+        if name.endswith('forge' + liquid): return 'forbricbreathforge:' + liquid
+    return 'minecraft:water'
+
+
 def mixed_result(ref):
     """What Forbric reports when every row is as native and every composition check holds."""
     rows = []
@@ -63,7 +70,7 @@ def mixed_result(ref):
         decider = sorted(expect)[0]
         native = ref['families'][decider]['rows'][name]
         row = {'name': name, **{k: copy.deepcopy(native[k]) for k in bd.STORED if k in native}, 'views': {}, 'order': {},
-               'first': f'blockAtEye={bd.FORGE_MURK} y=100.00' if 'forgemurk' in name else 'blockAtEye=minecraft:water y=100.00'}
+               'first': f'blockAtEye={liquid_at_eye(name)} y=100.00'}
         for family in expect: row['views'][family] = copy.deepcopy(ref['families'][family]['rows'][name]['views'][family])
         for check in checks:
             if check[0] in ('sees', 'asked'):
@@ -89,9 +96,12 @@ class PlanAndTable(unittest.TestCase):
 
     def test_the_rows_in_minecraftforges_liquid_are_the_rows_the_plan_puts_in_it(self):
         plan = (KERNEL / 'canary/forge-breath-drown/common/src/Core.java').read_text(encoding='utf-8')
-        in_murk = set(re.findall(r'pig\("([a-z0-9-]+)", forgeMurk', plan)) | set(re.findall(r'bucket\("([a-z0-9-]+)", forgeMurk', plan))
-        self.assertEqual(in_murk, bd.FORGE_LIQUID_ROWS)
-        self.assertEqual({n for n in in_murk if not n.endswith('bucket')}, bd.FORGE_LIQUID_BODY_ROWS)
+        in_liquid = set(re.findall(r'(?:pig|bucket)\("([a-z0-9-]+)", forge(?:Murk|Calm)', plan))
+        in_murk = set(re.findall(r'pig\("([a-z0-9-]+)", forgeMurk', plan))
+        self.assertEqual(in_liquid, bd.FORGE_LIQUID_ROWS)
+        self.assertEqual(in_murk, bd.FORGE_LIQUID_BODY_ROWS)
+        self.assertTrue(in_liquid - in_murk - {n for n in in_liquid if n.endswith('bucket')})   # the canDrown(false) liquid's rows
+        self.assertEqual({liquid_at_eye(n) for n in in_murk}, {bd.FORGE_MURK})
 
     def test_the_gate_plays_every_row_and_runs_every_phase(self):
         gate = (KERNEL / 'run/gate-m57-forge-breath-drown.sh').read_text(encoding='utf-8')
@@ -178,6 +188,16 @@ class Judge(unittest.TestCase):
         self.row('drown-read')['order'] = {'drown': 'neo,forge'}
         self.assertEqual(self.failed(), set())
 
+    def test_minecraftforge_answering_before_a_neoforge_low_listener_fails(self):
+        # The NeoForge canary's LOW listeners, registered from common setup: a bridge above LOWEST answers before them.
+        self.row('breathe-read')['order'] = {'breathe': ['neo,forge,neo-low']}
+        self.assertEqual(self.failed(), {'breathe-read'})
+        self.row('breathe-read')['order'] = {'breathe': ['neo,neo-low,forge']}
+        self.assertEqual(self.failed(), set())
+        # Every distinct order is judged, not the first tick's alone (that one may be NeoForge's without MinecraftForge).
+        self.row('drown-read')['order'] = {'drown': ['neo,neo-low', 'neo,forge,neo-low']}
+        self.assertEqual(self.failed(), {'drown-read'})
+
     def test_a_row_that_must_draw_what_another_draws_fails_when_it_does_not(self):
         name, other = next((n, c[1]) for n, (_, checks) in bd.EXPECT.items() for c in checks if c[0] == 'rng-as')
         self.row(name)['rng'] = [1, 99]
@@ -187,6 +207,27 @@ class Judge(unittest.TestCase):
         # The random draws are judged only there: another row's differing draws are not a failure.
         self.row('drown-read')['rng'] = [7, 7]
         self.assertEqual(self.failed(), {name})
+
+    def test_draws_the_probe_did_not_count_never_match(self):
+        # Equal but unread draws (no list, an unreadable seed, an uncounted tick, a short list) are no evidence.
+        name, other = next((n, c[1]) for n, (_, checks) in bd.EXPECT.items() for c in checks if c[0] == 'rng-as')
+        for unread in ([], [-1, -1], [1]):
+            with self.subTest(rng=unread):
+                result = copy.deepcopy(self.result)
+                for r in result['rows']:
+                    if r['name'] in (name, other): r['rng'] = list(unread)
+                verdicts = bd.judge_rows(self.ref, result)
+                self.assertIn(name, {n for n, r in verdicts.items() if r})
+                self.assertIn('did not count', ' '.join(verdicts[name]))
+        result = copy.deepcopy(self.result)
+        for r in result['rows']:
+            if r['name'] in (name, other): r['rngNote'] = 'seed unreadable: x'
+        self.assertIn('did not count', ' '.join(bd.judge_rows(self.ref, result)[name]))
+        for r in result['rows']: r.pop('rngNote', None)
+        self.assertEqual({n for n, r in bd.judge_rows(self.ref, result).items() if r}, set())
+        # ...and the same in the reference.
+        for row in (self.ref['families'][bd.F]['rows'][name], self.ref['families'][bd.F]['rows'][other]): row['rng'] = [-1, -1]
+        self.assertIn('reference does not show', ' '.join(bd.judge_rows(self.ref, self.result)[name]))
 
     def test_a_row_that_must_draw_what_another_draws_needs_the_reference_to_show_it(self):
         name, other = next((n, c[1]) for n, (_, checks) in bd.EXPECT.items() for c in checks if c[0] == 'rng-as')

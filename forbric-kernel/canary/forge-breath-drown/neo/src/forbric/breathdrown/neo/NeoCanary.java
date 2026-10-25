@@ -12,8 +12,10 @@ import net.minecraft.world.level.block.Block;
 import net.minecraft.world.level.block.LiquidBlock;
 import net.minecraft.world.level.block.state.BlockBehaviour;
 import net.minecraft.world.level.material.Fluid;
+import net.neoforged.bus.api.EventPriority;
 import net.neoforged.bus.api.IEventBus;
 import net.neoforged.fml.common.Mod;
+import net.neoforged.fml.event.lifecycle.FMLCommonSetupEvent;
 import net.neoforged.neoforge.common.NeoForge;
 import net.neoforged.neoforge.event.entity.living.LivingBreatheEvent;
 import net.neoforged.neoforge.event.entity.living.LivingDamageEvent;
@@ -26,9 +28,10 @@ import net.neoforged.neoforge.registries.DeferredRegister;
 import net.neoforged.neoforge.registries.NeoForgeRegistries;
 
 /**
- * gate-m57's NeoForge mod, using NeoForge's API only: a drowning liquid of its own and a bucket for it, and listeners
- * for breathing, drowning and the damage chain at normal priority. Each reports what it saw to the probe and acts on
- * the body's {@code n-*} tags.
+ * gate-m57's NeoForge mod, using NeoForge's API only: a drowning liquid of its own and a bucket for it, listeners for
+ * breathing, drowning and the damage chain at normal priority, registered in the constructor, and a breathe and a drown
+ * listener at {@code LOW}, registered from common setup (after the constructor, as a mod may). Each reports what it saw
+ * to the probe and acts on the body's {@code n-*} tags; the {@code LOW} ones on {@code n-low-*} alone.
  */
 @Mod(NeoCanary.ID)
 public final class NeoCanary {
@@ -69,6 +72,10 @@ public final class NeoCanary {
 		NeoForge.EVENT_BUS.addListener(LivingDrownEvent.class, NeoCanary::drown);
 		NeoForge.EVENT_BUS.addListener(LivingIncomingDamageEvent.class, NeoCanary::incoming);
 		NeoForge.EVENT_BUS.addListener(LivingDamageEvent.Pre.class, NeoCanary::damage);
+		bus.addListener(FMLCommonSetupEvent.class, e -> {
+			NeoForge.EVENT_BUS.addListener(EventPriority.LOW, false, LivingBreatheEvent.class, NeoCanary::breatheLow);
+			NeoForge.EVENT_BUS.addListener(EventPriority.LOW, false, LivingDrownEvent.class, NeoCanary::drownLow);
+		});
 	}
 
 	static void breathe(LivingBreatheEvent e) {
@@ -88,6 +95,21 @@ public final class NeoCanary {
 		if (Core.tagged(entity, "n-damage3")) e.setDamageAmount(3f);
 		if (Core.tagged(entity, "n-bubbles0")) e.setBubbleCount(0);
 		Core.report(FAMILY, "drown", entity, seen + " -> cancel=" + e.isCanceled() + " drowning=" + e.isDrowning() + " damage=" + e.getDamageAmount() + " bubbles=" + e.getBubbleCount());
+	}
+
+	static void breatheLow(LivingBreatheEvent e) {
+		LivingEntity entity = e.getEntity();
+		String seen = "neo-low can=" + e.canBreathe() + " consume=" + e.getConsumeAirAmount() + " refill=" + e.getRefillAirAmount();
+		if (Core.tagged(entity, "n-low-refill0")) e.setRefillAirAmount(0);
+		Core.report(FAMILY, "breathe-low", entity, seen + " -> can=" + e.canBreathe() + " consume=" + e.getConsumeAirAmount() + " refill=" + e.getRefillAirAmount());
+	}
+
+	static void drownLow(LivingDrownEvent e) {
+		LivingEntity entity = e.getEntity();
+		String seen = "neo-low drown drowning=" + e.isDrowning() + " damage=" + e.getDamageAmount() + " bubbles=" + e.getBubbleCount() + " air=" + entity.getAirSupply();
+		if (Core.tagged(entity, "n-low-cancel")) e.setCanceled(true);
+		if (Core.tagged(entity, "n-low-damage3")) e.setDamageAmount(3f);
+		Core.report(FAMILY, "drown-low", entity, seen + " -> cancel=" + e.isCanceled() + " drowning=" + e.isDrowning() + " damage=" + e.getDamageAmount() + " bubbles=" + e.getBubbleCount());
 	}
 
 	static void incoming(LivingIncomingDamageEvent e) {
