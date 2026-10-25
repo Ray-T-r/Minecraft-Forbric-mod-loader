@@ -3,12 +3,14 @@
 Two mods, each using only its own loader's API, built by `run/build-breath-drown-canary.sh` into `run/canary/`:
 
 - `forge/` — `forbricbreathforge`, MinecraftForge: a drowning liquid `murk` (MinecraftForge fluid type, a
-  `LiquidBlock` and a `BucketItem` built from suppliers), and listeners for `LivingBreatheEvent`, `LivingDrownEvent`
+  `LiquidBlock` and a `BucketItem` built from suppliers), a liquid `calm` whose type is built `canDrown(false)` (no
+  bucket), and listeners for `LivingBreatheEvent`, `LivingDrownEvent`
   (which can also set the bubble count), `LivingAttackEvent` and `LivingHurtEvent` registered with `BUS.addListener`,
   plus `@SubscribeEvent` listeners (`ForgeAnnotated`) for drowning and `LivingDamageEvent` that cancel by returning
   true, and one for breathing.
-- `neo/` — `forbricbreathneo`, NeoForge: its own `murk` and bucket, and listeners for breathing, drowning,
-  `LivingIncomingDamageEvent` and `LivingDamageEvent.Pre`.
+- `neo/` — `forbricbreathneo`, NeoForge: its own `murk` and bucket, listeners for breathing, drowning,
+  `LivingIncomingDamageEvent` and `LivingDamageEvent.Pre` registered in its constructor, and a breathing and a drowning
+  listener at `LOW` registered from common setup (tags `n-low-*`).
 - `common/src/Core.java` — the world probe, copied into each jar under the jar's own package. The jar whose family
   `-Dforbric.breathDrownDriver` names plays the scenarios (`Core.plan`) and writes `-Dforbric.breathDrownProbe`.
   Listeners act on the body's entity tags (`f-*` MinecraftForge, `n-*` NeoForge); a tag of the other family does
