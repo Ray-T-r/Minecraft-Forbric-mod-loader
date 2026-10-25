@@ -517,6 +517,13 @@ public final class KernelRuntimeClasses {
 		// Asked by the merged Fluid.getFluidType() (ForeignFluidTypeInjector) before NeoForge's throwing lookup, and by
 		// EntityFluidInteraction.getFluidTypeByTag before its throw (FabricFluidBehaviorInjector).
 		CLASSES.put("net.forbric.kernel.runtime.KernelFluidTypes", new Entry(Origin.COMPILED, List.of()));
+		// MinecraftForge's half of EntityFluidInteraction.update and its queries (ForgeEntityFluidsInjector): called from the
+		// merged class's constructor, update and query bodies, with game types no boot-side descriptor can name.
+		CLASSES.put("net.forbric.kernel.runtime.KernelForgeEntityFluids", new Entry(Origin.COMPILED, List.of()));
+		// Asked by the predicates of Player.updateIsUnderwater and Entity.isInShallowWater (ForgeFluidWaterRulesInjector).
+		CLASSES.put("net.forbric.kernel.runtime.KernelForgeFluidTypeViews", new Entry(Origin.COMPILED, List.of()));
+		// Asked first thing in NeoForge's IClientFluidTypeExtensions.of(FluidType) (ForgeFluidViewExtensionsInjector).
+		CLASSES.put("net.forbric.kernel.runtime.KernelForgeFluidClientViews", new Entry(Origin.COMPILED, List.of()));
 		CLASSES.put("net.forbric.kernel.runtime.KernelFabricTagViews", new Entry(Origin.COMPILED, List.of()));
 		CLASSES.put("net.forbric.kernel.runtime.KernelTagFacadeSources", new Entry(Origin.COMPILED, List.of()));
 		// Asked by NeoForge's breathing hook where it would hold the air of a body that breathes in its fluid (VanillaAirRefillInjector),

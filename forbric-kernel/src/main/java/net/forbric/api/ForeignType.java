@@ -238,6 +238,13 @@ public enum ForeignType {
 	 */
 	FLUID_TYPE("net.minecraftforge.fluids.FluidType", "net.neoforged.neoforge.fluids.FluidType"),
 	/**
+	 * Each family's client extensions of a fluid type: the merged FluidRenderer asks MinecraftForge's of a MinecraftForge
+	 * fluid's type for its model and tint (ForbricMergedBaseCompatTransformer), and NeoForge's lookup answers the kernel's
+	 * view of a MinecraftForge type with that type's fog colour (ForgeFluidViewExtensionsInjector).
+	 */
+	CLIENT_FLUID_TYPE_EXTENSIONS("net.minecraftforge.client.extensions.common.IClientFluidTypeExtensions",
+			"net.neoforged.neoforge.client.extensions.common.IClientFluidTypeExtensions"),
+	/**
 	 * Each family's multipart-entity part: consumers may read either public array-return descriptor;
 	 * the verified runtime bridge preserves both ancestor types for the shared native array.
 	 */

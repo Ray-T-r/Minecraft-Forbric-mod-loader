@@ -66,6 +66,72 @@ class KernelForgeFluidTypeViewsTest {
 					/** A fluid that gives no MinecraftForge type of its own, as a Fabric mod's never does. */
 					public class UntypedFluid extends EmptyFluid {
 					}
+					""",
+			"example.forge.WaterTaggedFluid", """
+					package example.forge;
+
+					/** A MinecraftForge mod's fluid in minecraft:water (off-game its tags are answered here, not by a registry). */
+					public class WaterTaggedFluid extends TypedFluid {
+						@Override
+						public boolean is(net.minecraft.tags.TagKey<net.minecraft.world.level.material.Fluid> tag) {
+							return tag == net.minecraft.tags.FluidTags.WATER;
+						}
+					}
+					""",
+			"example.forge.DryFluid", """
+					package example.forge;
+
+					/** A MinecraftForge mod's fluid in no vanilla tag (off-game its tags are answered here). */
+					public class DryFluid extends TypedFluid {
+						@Override
+						public boolean is(net.minecraft.tags.TagKey<net.minecraft.world.level.material.Fluid> tag) {
+							return false;
+						}
+					}
+					""",
+			"example.forge.FoggyType", """
+					package example.forge;
+
+					/** A MinecraftForge fluid type with client extensions of its own: a dark red fog, as Biomes O' Plenty's blood. */
+					public class FoggyType extends net.minecraftforge.fluids.FluidType {
+						public FoggyType() {
+							super(Properties.create().descriptionId("block.example.blood"));
+						}
+
+						@Override
+						public Object getRenderPropertiesInternal() {
+							return new net.minecraftforge.client.extensions.common.IClientFluidTypeExtensions() {
+								@Override
+								public org.joml.Vector3f modifyFogColor(net.minecraft.client.Camera camera, float partialTick,
+										net.minecraft.client.multiplayer.ClientLevel level, int renderDistance, float darkenWorldAmount,
+										org.joml.Vector3f fluidFogColor) {
+									return new org.joml.Vector3f(0.407f, 0.121f, 0.137f);
+								}
+							};
+						}
+					}
+					""",
+			"example.forge.DimmingType", """
+					package example.forge;
+
+					/** A MinecraftForge fluid type whose fog darkens the colour it is handed, as MinecraftForge hands it the fog's colour so far. */
+					public class DimmingType extends net.minecraftforge.fluids.FluidType {
+						public DimmingType() {
+							super(Properties.create().descriptionId("block.example.dim"));
+						}
+
+						@Override
+						public Object getRenderPropertiesInternal() {
+							return new net.minecraftforge.client.extensions.common.IClientFluidTypeExtensions() {
+								@Override
+								public org.joml.Vector3f modifyFogColor(net.minecraft.client.Camera camera, float partialTick,
+										net.minecraft.client.multiplayer.ClientLevel level, int renderDistance, float darkenWorldAmount,
+										org.joml.Vector3f fluidFogColor) {
+									return new org.joml.Vector3f(fluidFogColor).mul(0.5f);
+								}
+							};
+						}
+					}
 					""");
 
 	@TempDir Path temp;
@@ -76,7 +142,15 @@ class KernelForgeFluidTypeViewsTest {
 		Path forgeRuntime = TestFixtures.stagedRoot().resolve("merged-base/forge-runtime-interop.jar");
 		TestFixtures.require(Fixture.STAGED, Files.isRegularFile(FORGE_PATCHED) && Files.isRegularFile(forgeRuntime),
 				"MinecraftForge's patched game or its runtime is absent");
-		Map<String, byte[]> classes = InjectorExecution.compile(temp.resolve("work"), MOD, List.of(FORGE_PATCHED, forgeRuntime));
+		// The client extensions a mod's type gives take JOML's vectors, as MinecraftForge's do.
+		Path joml;
+		try (var jars = Files.walk(TestFixtures.minecraftDir().resolve("libraries/org/joml/joml"))) {
+			joml = jars.filter(f -> f.getFileName().toString().matches("joml-[0-9.]+\\.jar")).findFirst().orElse(null);
+		} catch (java.io.IOException absent) {
+			joml = null;
+		}
+		TestFixtures.require(Fixture.MC_LIBRARIES, joml != null, "no JOML in the local Minecraft libraries");
+		Map<String, byte[]> classes = InjectorExecution.compile(temp.resolve("work"), MOD, List.of(FORGE_PATCHED, forgeRuntime, joml));
 		Path out = temp.resolve("mod");
 		for (var entry : classes.entrySet()) {
 			Path file = out.resolve(entry.getKey() + ".class");
@@ -175,6 +249,156 @@ class KernelForgeFluidTypeViewsTest {
 		load();
 		System.setProperty("forbric.forgeFluidOwnType", "off");
 		assertNull(own(fluid("example.forge.TypedFluid", forgeType("murk", true))));
+	}
+
+	private static List<Float> rgba(Object vector) throws Exception {
+		List<Float> out = new java.util.ArrayList<>();
+		for (String c : new String[] {"x", "y", "z", "w"}) out.add(vector.getClass().getField(c).getFloat(vector));
+		return out;
+	}
+
+	/**
+	 * NeoForge's view of {@code forgeType} with {@code fluid} seen with it, as {@code KernelForgeFluidTypeViews.of} hands
+	 * it out past MinecraftForge's own three types (off-game {@code of} itself cannot run past MinecraftForge's
+	 * {@code ForgeMod}, which cannot initialise).
+	 */
+	private Object viewOf(Object forgeType, Object fluid) throws Exception {
+		Method viewFor = runtime.getDeclaredMethod("viewFor", loader.loadClass("net.minecraftforge.fluids.FluidType"),
+				loader.loadClass("net.minecraft.world.level.material.Fluid"));
+		viewFor.setAccessible(true);
+		return viewFor.invoke(null, forgeType, fluid);
+	}
+
+	/** A MinecraftForge type built as a mod builds one, unswimmable: "wet" in the probe. */
+	private Object unswimmableType() throws Exception {
+		Class<?> properties = loader.loadClass("net.minecraftforge.fluids.FluidType$Properties");
+		Object built = properties.getMethod("create").invoke(null);
+		built = properties.getMethod("descriptionId", String.class).invoke(built, "block.example.wet");
+		built = properties.getMethod("canSwim", boolean.class).invoke(built, false);
+		return loader.loadClass("net.minecraftforge.fluids.FluidType").getConstructor(properties).newInstance(built);
+	}
+
+	/**
+	 * NeoForge's entity code asks {@code isWaterLike} where vanilla and MinecraftForge ask {@code minecraft:water}; the view
+	 * of a MinecraftForge fluid in that tag is water-like, one outside it is not. Before, every view answered false, so a
+	 * MinecraftForge fluid in {@code minecraft:water} was not water to NeoForge's entity code (the probe: not in water,
+	 * not under water, no fall reset, no swimming).
+	 */
+	@Test void aViewOfAFluidInMinecraftWaterIsWaterLike() throws Exception {
+		load();
+		Object wetType = forgeType("wet", false), murkType = forgeType("murk", true);
+		Object wet = viewOf(wetType, fluid("example.forge.WaterTaggedFluid", wetType));
+		Object murk = viewOf(murkType, fluid("example.forge.DryFluid", murkType));
+		assertEquals(true, ask(wet, "getIsWaterLike", null));
+		assertEquals(false, ask(murk, "getIsWaterLike", null), "a fluid outside the tag is not water, whatever its type says");
+		assertEquals(false, ask(view(forgeType("unseen", true)), "getIsWaterLike", null), "a type no fluid was seen with yet");
+	}
+
+	/**
+	 * Every fluid seen with a type is asked, not only the first: a type seen first with a fluid outside
+	 * {@code minecraft:water} and then with one in it is water-like from then on, in whichever order the two were seen.
+	 */
+	@Test void aViewIsWaterLikeWhenAnyFluidSeenWithItIs() throws Exception {
+		load();
+		Object first = forgeType("dry-first", false), second = forgeType("wet-first", false);
+		Object dryFirst = viewOf(first, fluid("example.forge.DryFluid", first));
+		assertEquals(false, ask(dryFirst, "getIsWaterLike", null), "premise: seen only outside the tag");
+		assertSame(dryFirst, viewOf(first, fluid("example.forge.WaterTaggedFluid", first)), "one view per type");
+		assertEquals(true, ask(dryFirst, "getIsWaterLike", null), "the second fluid, in the tag, makes it water-like");
+		Object wetFirst = viewOf(second, fluid("example.forge.WaterTaggedFluid", second));
+		viewOf(second, fluid("example.forge.DryFluid", second));
+		assertEquals(true, ask(wetFirst, "getIsWaterLike", null));
+	}
+
+	/**
+	 * MinecraftForge's game never scales a fall by the fluid it falls through (only lava's factor, in lava), so the view's
+	 * factor is 1. Before it was the MinecraftForge type's (0.5 by default, 0 for Biomes O' Plenty's blood): a body that
+	 * dies landing through a MinecraftForge fluid on MinecraftForge survived it here.
+	 */
+	@Test void aViewNeverShortensAFall() throws Exception {
+		load();
+		Object murk = view(forgeType("murk", true));
+		assertEquals(1.0f, ask(murk, "getFallDistanceModifier", entity));
+	}
+
+	/**
+	 * Without a body under water (off-game no entity can exist: NeoForge's attachment holder cannot initialise), the view
+	 * swims as its type says — the tag's clause needs the body; the in-game probe measures that half (a player sprinting
+	 * in a MinecraftForge fluid in minecraft:water starts swimming on the same tick as on MinecraftForge).
+	 */
+	@Test void aViewSwimsAsItsTypeSaysWithoutABodyUnderWater() throws Exception {
+		load();
+		Object dryType = unswimmableType(), wetType = unswimmableType();
+		Method canSwim = loader.loadClass("net.neoforged.neoforge.fluids.FluidType").getMethod("canSwim", entity);
+		assertEquals(false, canSwim.invoke(viewOf(wetType, fluid("example.forge.WaterTaggedFluid", wetType)), (Object) null));
+		assertEquals(false, canSwim.invoke(viewOf(dryType, fluid("example.forge.DryFluid", dryType)), (Object) null));
+		assertEquals(true, canSwim.invoke(view(forgeType("murk", true)), (Object) null), "a swimmable type is swum in");
+	}
+
+	/**
+	 * The two NeoForge water rules MinecraftForge does not have: a player under water in any type it can swim in, and a
+	 * body in such a type, eyes out, in shallow water. For a view they answer MinecraftForge's way (the tag; never), for any
+	 * other type NeoForge's {@code canSwimInFluidType}, as merged.
+	 */
+	@Test void neoForgesOwnWaterRulesAnswerAViewAsMinecraftForgeDoes() throws Exception {
+		load();
+		Class<?> neoType = loader.loadClass("net.neoforged.neoforge.fluids.FluidType");
+		Method underwater = runtime.getMethod("underwaterIn", entity, neoType), shallow = runtime.getMethod("shallowIn", entity, neoType);
+		// A view is answered from the view alone; any other type goes to the body's canSwimInFluidType (in game).
+		Object bloodType = forgeType("blood", true), wetType = unswimmableType();
+		Object swimmableUntagged = viewOf(bloodType, fluid("example.forge.DryFluid", bloodType));
+		assertEquals(false, underwater.invoke(null, null, swimmableUntagged), "swimmable, outside minecraft:water: not under water on MinecraftForge");
+		assertEquals(false, shallow.invoke(null, null, swimmableUntagged), "nor in shallow water");
+		Object unswimmableTagged = viewOf(wetType, fluid("example.forge.WaterTaggedFluid", wetType));
+		assertEquals(true, underwater.invoke(null, null, unswimmableTagged), "in minecraft:water: under water on MinecraftForge");
+		assertEquals(false, shallow.invoke(null, null, unswimmableTagged));
+	}
+
+	/**
+	 * NeoForge's client extensions of a view answer the fog colour with the MinecraftForge type's own. The merged client
+	 * asks NeoForge alone for it, so before, a MinecraftForge fluid's fog kept the sky's colour (the client probe: grey-blue
+	 * inside Biomes O' Plenty's blood, dark red on native MinecraftForge). Anything else is NeoForge's default.
+	 */
+	@Test void aViewsFogColourIsItsMinecraftForgeTypes() throws Exception {
+		load();
+		Class<?> client = loader.loadClass("net.forbric.kernel.runtime.KernelForgeFluidClientViews");
+		Method extensions = client.getMethod("neoExtensions", Object.class);
+		Object blood = view(loader.loadClass("example.forge.FoggyType").getConstructor().newInstance());
+		Object neo = extensions.invoke(null, blood);
+		assertNotNull(neo, "a view has extensions of its own");
+		assertSame(neo, extensions.invoke(null, blood), "made once per view");
+		Class<?> vector = loader.loadClass("org.joml.Vector4f");
+		Object colour = vector.getConstructor(float.class, float.class, float.class, float.class).newInstance(0.5f, 0.6f, 0.7f, 0.8f);
+		Class<?> api = loader.loadClass("net.neoforged.neoforge.client.extensions.common.IClientFluidTypeExtensions");
+		api.getMethod("modifyFogColor", loader.loadClass("net.minecraft.client.Camera"), float.class,
+				loader.loadClass("net.minecraft.client.multiplayer.ClientLevel"), int.class, float.class, vector)
+				.invoke(neo, null, 0f, null, 8, 0f, colour);
+		assertEquals(List.of(0.407f, 0.121f, 0.137f, 0.8f), rgba(colour), "the mod's fog colour, the alpha NeoForge handed in");
+		Object plain = extensions.invoke(null, view(forgeType("murk", true)));
+		Object untouched = vector.getConstructor(float.class, float.class, float.class, float.class).newInstance(0.5f, 0.6f, 0.7f, 1f);
+		api.getMethod("modifyFogColor", loader.loadClass("net.minecraft.client.Camera"), float.class,
+				loader.loadClass("net.minecraft.client.multiplayer.ClientLevel"), int.class, float.class, vector)
+				.invoke(plain, null, 0f, null, 8, 0f, untouched);
+		assertEquals(List.of(0.5f, 0.6f, 0.7f, 1f), rgba(untouched), "a type with no client extensions changes nothing");
+		assertNull(extensions.invoke(null, (Object) null), "any other type: NeoForge decides");
+	}
+
+	/**
+	 * MinecraftForge hands a type's {@code modifyFogColor} the fog's colour so far ({@code ForgeHooksClient.getFogColor}
+	 * passes the current colour), and a type may build on it rather than replace it; the view hands it the colour NeoForge
+	 * handed in, and keeps NeoForge's alpha.
+	 */
+	@Test void aViewHandsTheMinecraftForgeTypeTheFogsColourSoFar() throws Exception {
+		load();
+		Class<?> client = loader.loadClass("net.forbric.kernel.runtime.KernelForgeFluidClientViews");
+		Object neo = client.getMethod("neoExtensions", Object.class).invoke(null, view(loader.loadClass("example.forge.DimmingType").getConstructor().newInstance()));
+		Class<?> vector = loader.loadClass("org.joml.Vector4f");
+		Object colour = vector.getConstructor(float.class, float.class, float.class, float.class).newInstance(0.5f, 0.6f, 0.8f, 0.8f);
+		loader.loadClass("net.neoforged.neoforge.client.extensions.common.IClientFluidTypeExtensions")
+				.getMethod("modifyFogColor", loader.loadClass("net.minecraft.client.Camera"), float.class,
+						loader.loadClass("net.minecraft.client.multiplayer.ClientLevel"), int.class, float.class, vector)
+				.invoke(neo, null, 0f, null, 8, 0f, colour);
+		assertEquals(List.of(0.25f, 0.3f, 0.4f, 0.8f), rgba(colour), "half the colour handed in, NeoForge's alpha kept");
 	}
 
 	/** A type its getter cannot give yet (its registry entry is unfilled) is not pinned: the tags answer, uncached. */
