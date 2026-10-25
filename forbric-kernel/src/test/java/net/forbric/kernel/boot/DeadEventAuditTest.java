@@ -50,6 +50,8 @@ class DeadEventAuditTest {
 	 */
 	private static final String CHAT = "net/minecraftforge/event/ServerChatEvent";
 	private static final String COMMANDS = "net/minecraftforge/event/RegisterCommandsEvent";
+	private static final String COMMAND = "net/minecraftforge/event/CommandEvent";
+	private static final String DROPS = "net/minecraftforge/event/entity/living/LivingDropsEvent";
 	private static final String DEATH = "net/minecraftforge/event/entity/living/LivingDeathEvent";
 	private static final String ALIVE = "net/minecraftforge/event/entity/living/LivingEvent$LivingTickEvent";
 	private static final String KEYS = "net/minecraftforge/client/event/RegisterKeyMappingsEvent";
@@ -100,9 +102,11 @@ class DeadEventAuditTest {
 		List<DeadEventAudit.Finding> unbridged = DeadEventAudit.audit(
 				Map.of("logmod", Set.of(ENTITY_PLACE)), EnumSet.noneOf(GameEventBridge.class));
 		assertEquals(1, unbridged.size(), "routePlaceItemHookToNeoForge's stated cost");
-		// The cost now comes from the BRIDGE, not the dead row: an event with a bridge that did not install is
-		// reported with the bridge's own sentence, which is the one that says what this particular mod loses.
-		assertTrue(unbridged.get(0).cost().contains("refuse a block being placed"), unbridged.get(0).cost());
+		// Without its bridge the event arrives where the merged game posts it itself: on one of its three paths, which is
+		// what its PARTIAL row says. "Never posts" (the bridge's own sentence) would be false of it.
+		assertFalse(DeadEventAudit.NO_NATIVE_PATH.contains(ENTITY_PLACE), "the merged game posts an entity's placement itself");
+		assertTrue(unbridged.get(0).partial(), "posted on some of its paths without the bridge");
+		assertEquals(DeadEventAudit.PARTIAL.get(ENTITY_PLACE), unbridged.get(0).cost());
 
 		assertTrue(DeadEventAudit.audit(Map.of("logmod", Set.of(ENTITY_PLACE)),
 				EnumSet.allOf(GameEventBridge.class)).isEmpty(),
@@ -116,14 +120,17 @@ class DeadEventAuditTest {
 			DeadEventAudit.resetPending();
 			net.forbric.api.ModCatalog.publish(List.of(new net.forbric.api.ModCatalog.Entry(
 					net.forbric.api.Ecosystem.FORGE, "cmdmod", "Cmd", "1", "", List.of(), "cmd.jar", "", "")));
-			DeadEventAudit.report(Map.of("cmdmod", Set.of(COMMANDS)), net.forbric.api.Side.DEDICATED_SERVER);
+			// The command event: its bridge installs when Commands is transformed, and the merged game never posts it itself
+			// (NO_NATIVE_PATH), so a bridge still missing once the server is up is a listener waiting for nothing.
+			assertTrue(DeadEventAudit.NO_NATIVE_PATH.contains(COMMAND));
+			DeadEventAudit.report(Map.of("cmdmod", Set.of(COMMAND)), net.forbric.api.Side.DEDICATED_SERVER);
 			assertTrue(net.forbric.api.ModCatalog.failures().isEmpty(),
 					"Commands loads after mod construction on a dedicated server; judging now marked every mod with a command");
-			assertEquals(List.of(), DeadEventAudit.judgePending(EnumSet.of(GameEventBridge.REGISTER_COMMANDS)),
+			assertEquals(List.of(), DeadEventAudit.judgePending(EnumSet.of(GameEventBridge.COMMAND)),
 					"the bridge installed by the time the server was up: nothing to say");
 			assertTrue(net.forbric.api.ModCatalog.failures().isEmpty());
 
-			DeadEventAudit.report(Map.of("cmdmod", Set.of(COMMANDS)), net.forbric.api.Side.DEDICATED_SERVER);
+			DeadEventAudit.report(Map.of("cmdmod", Set.of(COMMAND)), net.forbric.api.Side.DEDICATED_SERVER);
 			List<DeadEventAudit.Finding> still = DeadEventAudit.judgePending(EnumSet.noneOf(GameEventBridge.class));
 			assertEquals(1, still.size(), "a bridge STILL absent once the server is up is the real finding");
 			assertEquals("cmdmod", net.forbric.api.ModCatalog.failures().get(0).modId());
@@ -224,11 +231,46 @@ class DeadEventAuditTest {
 	@Test
 	void aBridgeableEventIsAFindingWhenItsBridgeDidNotInstall() {
 		List<DeadEventAudit.Finding> findings = DeadEventAudit.audit(
-				Map.of("somemod", Set.of(DEATH)), EnumSet.noneOf(GameEventBridge.class));
+				Map.of("somemod", Set.of(DROPS)), EnumSet.noneOf(GameEventBridge.class));
 
 		assertEquals(1, findings.size(),
 				"if the bridge did not install, the listener really is waiting for an event that will not come, "
 						+ "and that is exactly when the line is worth printing");
+		assertEquals(GameEventBridge.LIVING_DROPS.cost(), findings.get(0).cost(), "never posted: the bridge's own sentence");
+		assertFalse(findings.get(0).partial());
+	}
+
+	/**
+	 * A missing bridge whose event the merged game posts itself is not "never posts". With the bridges off
+	 * ({@code -Dforbric.unifiedEvents=off}, gate-m4's and gate-m25's negative control) the server tick, the player tick and
+	 * the level's load and save still arrive from the merged game; until 2026-10-25 a missing bridge always said "which this
+	 * merged game never posts", so nearly every MinecraftForge mod was named DEGRADED for a tick it was receiving. And no
+	 * bridged or stood-down event is ever called never posted unless the merged game posts it nowhere itself.
+	 */
+	@Test
+	void aMissingBridgeIsJudgedByWhatTheMergedGamePostsItself() {
+		String event = "net/minecraftforge/event/";
+		List<String> native_ = List.of(event + "TickEvent$ServerTickEvent$Pre", event + "TickEvent$PlayerTickEvent$Pre",
+				event + "level/LevelEvent$Load", event + "level/LevelEvent$Save", DEATH);
+		for (String posted : native_) {
+			assertFalse(DeadEventAudit.NO_NATIVE_PATH.contains(posted), posted);
+			assertFalse(DeadEventAudit.PARTIAL.containsKey(posted), posted);
+		}
+		assertEquals(List.of(), DeadEventAudit.audit(Map.of("tickmod", Set.copyOf(native_)), Set.of()),
+				"the merged game posts all of these itself: without their bridges a listener still receives them");
+		Map<String, Set<String>> everything = new java.util.LinkedHashMap<>();
+		Set<String> rows = new java.util.TreeSet<>(DeadEventAudit.BRIDGED.keySet());
+		rows.addAll(DeadEventAudit.STAND_DOWN.keySet());
+		everything.put("everymod", rows);
+		for (DeadEventAudit.Finding finding : DeadEventAudit.audit(everything, Set.of())) {
+			if (finding.partial()) {
+				assertEquals(DeadEventAudit.PARTIAL.get(finding.event()), finding.cost(), finding.event());
+				assertFalse(DeadEventAudit.NO_NATIVE_PATH.contains(finding.event()), finding.event());
+			} else {
+				assertTrue(DeadEventAudit.NO_NATIVE_PATH.contains(finding.event()),
+						"called never posted although the merged game posts it itself: " + finding.event());
+			}
+		}
 	}
 
 	/**
@@ -420,10 +462,17 @@ class DeadEventAuditTest {
 		List<DeadEventAudit.Finding> missing = DeadEventAudit.audit(subscribed, Set.of());
 		for (DeadEventAudit.Finding finding : missing) {
 			GameEventBridge bridge = DeadEventAudit.STAND_DOWN.get(finding.event());
-			assertEquals(bridge.cost(), finding.cost(), "a missing bridge is reported with its own cost: " + finding);
-			assertFalse(finding.partial(), finding.event());
+			if (DeadEventAudit.NO_NATIVE_PATH.contains(finding.event())) {
+				assertEquals(bridge.cost(), finding.cost(), "a missing bridge is reported with its own cost: " + finding);
+				assertFalse(finding.partial(), finding.event());
+			} else {
+				assertEquals(DeadEventAudit.PARTIAL.get(finding.event()), finding.cost(), "posted natively on some paths: " + finding);
+				assertTrue(finding.partial(), finding.event());
+			}
 		}
-		assertTrue(missing.stream().anyMatch(f -> f.event().equals(unload)), "the level-unload bridge missing is a finding");
+		assertTrue(missing.stream().anyMatch(f -> f.event().equals(unload) && f.partial()),
+				"the level-unload bridge missing leaves the two paths the merged game posts itself: a partial finding");
+		assertTrue(missing.stream().anyMatch(f -> !f.partial()), "a stand-down event the merged game never posts itself is named");
 		Map<String, Set<String>> deadNow = new java.util.LinkedHashMap<>(), bridgeable = new java.util.LinkedHashMap<>();
 		DeadEventAudit.split(Map.of("somemod", Set.of(unload, "net/minecraftforge/client/event/ClientChatEvent")),
 				net.forbric.api.Side.DEDICATED_SERVER, deadNow, bridgeable);

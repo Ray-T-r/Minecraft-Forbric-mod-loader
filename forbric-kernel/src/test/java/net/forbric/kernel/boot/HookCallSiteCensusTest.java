@@ -515,6 +515,68 @@ class HookCallSiteCensusTest {
 		assertEquals(java.util.Set.of(), without.get(FACTORY).kernelDelivered());
 	}
 
+	/**
+	 * An event whose constructor calls a hook posting another event. MinecraftForge's {@code BreakEvent} asks
+	 * {@code ForgeHooks.isCorrectToolForDrops} from its constructor, which posts {@code PlayerEvent$HarvestCheck}: a hook
+	 * constructing the break posts a harvest check too (the hook's events and call-site counts follow the constructor), and
+	 * the kernel posting a break delivers one — but on the break's path only, so it is not what the kernel posts itself
+	 * ({@code kernelConstructs}, what proves a bridge's or a repair's row): filing the harvest check under the break bridge
+	 * would silence the audit for a check the game asks on paths no break takes.
+	 */
+	@Test void anEventsConstructorPostsForItsHookButNotAsTheKernelsOwnDelivery() throws Exception {
+		String base = "net/minecraftforge/eventbus/internal/Event", brk = "forge/BreakEvent", harvest = "forge/HarvestEvent";
+		Map<String, byte[]> entries = new LinkedHashMap<>();
+		ClassWriter hooks = new ClassWriter(0);
+		hooks.visit(Opcodes.V17, Opcodes.ACC_PUBLIC, HOOKS, null, "java/lang/Object", null);
+		constructing(hooks, "onBreak", brk);
+		constructing(hooks, "onHarvest", harvest);
+		hooks.visitEnd();
+		entries.put(HOOKS + ".class", hooks.toByteArray());
+		entries.put(harvest + ".class", event(harvest, base, null));
+		entries.put(brk + ".class", event(brk, base, new String[] {HOOKS, "onHarvest"}));
+		Path carrier = carrier(entries);
+		ClassWriter bridge = new ClassWriter(0);
+		bridge.visit(Opcodes.V17, Opcodes.ACC_PUBLIC, "kernel/Bridge", null, "java/lang/Object", null);
+		constructing(bridge, "forward", brk);
+		bridge.visitEnd();
+		Path kernel = base(Map.of("kernel/Bridge.class", bridge.toByteArray()));
+		var census = HookCallSiteCensus.all(Map.of(HOOKS, carrier), List.of(base(callerCalling("game/Level", List.of()))), List.of(carrier),
+				List.of(kernel)).get(HOOKS);
+		assertEquals(java.util.Set.of(brk, harvest), census.postsThrough().get("onBreak()V"), "constructing the break posts a harvest check");
+		assertEquals(java.util.Set.of(brk, harvest), census.kernelDelivered(), "the kernel's break delivers a harvest check on its path");
+		assertTrue(census.kernelConstructs().contains(brk), "the kernel posts the break itself");
+		assertFalse(census.kernelConstructs().contains(harvest), "the harvest check is the break constructor's, not the kernel's own delivery");
+	}
+
+	/** A public static {@code name()V} constructing {@code type} through its no-argument constructor. */
+	private static void constructing(ClassWriter cw, String name, String type) {
+		MethodVisitor mv = cw.visitMethod(Opcodes.ACC_PUBLIC | Opcodes.ACC_STATIC, name, "()V", null, null);
+		mv.visitCode();
+		mv.visitTypeInsn(Opcodes.NEW, type);
+		mv.visitInsn(Opcodes.DUP);
+		mv.visitMethodInsn(Opcodes.INVOKESPECIAL, type, "<init>", "()V", false);
+		mv.visitInsn(Opcodes.POP);
+		mv.visitInsn(Opcodes.RETURN);
+		mv.visitMaxs(2, 0);
+		mv.visitEnd();
+	}
+
+	/** An event class {@code name extends superName} whose constructor calls {@code call} (owner, name) when given. */
+	private static byte[] event(String name, String superName, String[] call) {
+		ClassWriter cw = new ClassWriter(0);
+		cw.visit(Opcodes.V17, Opcodes.ACC_PUBLIC, name, null, superName, null);
+		MethodVisitor init = cw.visitMethod(Opcodes.ACC_PUBLIC, "<init>", "()V", null, null);
+		init.visitCode();
+		init.visitVarInsn(Opcodes.ALOAD, 0);
+		init.visitMethodInsn(Opcodes.INVOKESPECIAL, superName, "<init>", "()V", false);
+		if (call != null) init.visitMethodInsn(Opcodes.INVOKESTATIC, call[0], call[1], "()V", false);
+		init.visitInsn(Opcodes.RETURN);
+		init.visitMaxs(1, 1);
+		init.visitEnd();
+		cw.visitEnd();
+		return cw.toByteArray();
+	}
+
 	/** A class whose one static method hands out {@code target} as a method reference (an invokedynamic, no invoke). */
 	private static Map<String, byte[]> referencing(String owner, String targetOwner, String target) {
 		ClassWriter cw = new ClassWriter(0);

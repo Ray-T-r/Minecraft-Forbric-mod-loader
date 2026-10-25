@@ -481,6 +481,24 @@ final class CarrierCallGraph {
 
 	/** One reachability fixpoint over the carriers. */
 	final class Reach {
+		/**
+		 * Whether this pass leaves an event's constructors and instance methods unfollowed: what a body posts ITSELF, rather
+		 * than everything its posting sets off. MinecraftForge's {@code BreakEvent} constructor asks
+		 * {@code ForgeHooks.isCorrectToolForDrops}, which posts {@code PlayerEvent$HarvestCheck}: a bridge posting the break
+		 * posts a harvest check too, on the break's path — but filing the harvest check under that bridge would silence the
+		 * audit for a check the game asks on paths no break takes.
+		 */
+		private final boolean own;
+
+		Reach() {
+			this(false);
+		}
+
+		Reach(boolean own) {
+			this.own = own;
+		}
+
+
 		/** Reached carrier method → why: a root tag or the reached method whose body reached it. */
 		final Map<String, String> why = new LinkedHashMap<>();
 		private final Set<String> instantiated = new HashSet<>();
@@ -513,7 +531,10 @@ final class CarrierCallGraph {
 		}
 
 		private void enter(String id, String from) {
-			if (methods.containsKey(id) && !why.containsKey(id)) work.add(new String[] {id, from});
+			Method m = methods.get(id);
+			if (m == null || why.containsKey(id)) return;
+			if (own && !m.isStatic() && isEvent(m.owner)) return;
+			work.add(new String[] {id, from});
 		}
 
 		void body(Body body, String tag) {
@@ -610,6 +631,12 @@ final class CarrierCallGraph {
 		}
 	}
 
+	/** Whether {@code type}'s supertypes, as far as headers can be read, reach a family's event base. */
+	boolean isEvent(String type) {
+		for (String t : supertypes(type)) if (HookCallSiteCensus.EVENT_ROOTS.contains(t)) return true;
+		return false;
+	}
+
 	/** Types read as scanned bodies (the game): a call into them from the game itself is seen, not assumed. */
 	private final Set<String> scannedBodies = new HashSet<>();
 
@@ -635,7 +662,15 @@ final class CarrierCallGraph {
 	 * reach — the kernel's own code, for what it posts itself.
 	 */
 	Reach reach(Map<Body, String> bodies, boolean runtime) {
-		Reach reach = new Reach();
+		return reach(bodies, runtime, false);
+	}
+
+	/**
+	 * The same; {@code own} true leaves every event's constructors and instance methods unfollowed (see {@link Reach#own}),
+	 * so the pass answers what {@code bodies} post themselves.
+	 */
+	Reach reach(Map<Body, String> bodies, boolean runtime, boolean own) {
+		Reach reach = new Reach(own);
 		if (runtime) {
 			for (Method m : methods.values()) if (m.listener) reach.enter(m.id, LISTENER);
 			for (String type : runtimeConstructed) reach.construct(type, RUNTIME);

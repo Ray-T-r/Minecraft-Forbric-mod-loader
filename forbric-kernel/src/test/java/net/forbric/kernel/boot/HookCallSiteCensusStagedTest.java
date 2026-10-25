@@ -418,12 +418,18 @@ class HookCallSiteCensusStagedTest {
 	 * installed by {@link GameEventMultiplexer} (its install method exists on the runtime class the setup names, public and
 	 * static, and is declared to {@link KernelRuntimeClasses}, the boot-time seam check) or, for a pass a transformer lands,
 	 * recorded by the kernel class that lands it — and what that reaches, through the kernel and then the carriers,
-	 * constructs the event. A {@link DeadEventAudit#REPAIRED} row means "the kernel posts it": its own code constructs it,
-	 * or the merged-base repairs make the game post it (posted as the game is loaded, not as it is staged).
+	 * posts the event. A {@link DeadEventAudit#REPAIRED} row means "the kernel posts it": its own code posts it, or the
+	 * merged-base repairs make the game post it (posted as the game is loaded, not as it is staged). Posting is read by
+	 * {@link BridgeDeliveryProof}: a kernel construction that flows into a bus's {@code post} or {@code fire}, or a
+	 * construction in a family method the kernel reaches, an event's own constructor and instance methods left unfollowed.
 	 *
 	 * <p>Until 2026-10-25 only the DEAD table was held to the bytecode. Moving {@code PlayerXpEvent$XpChange}, which nothing
 	 * delivers, into REPAIRED, into STAND_DOWN under the level-save bridge, or into BRIDGED under the drown bridge left the
-	 * suite green, and each would have silenced the audit for every mod waiting on it.
+	 * suite green, and each would have silenced the audit for every mod waiting on it. For one more round a construction
+	 * counted as a post (the drown bridge with its {@code post} taken out still proved its row), and so did what another
+	 * event's constructor sets off: {@code PlayerEvent$HarvestCheck}, asked by MinecraftForge's {@code BreakEvent}
+	 * constructor, proved a row under the break bridge or in REPAIRED, which would have silenced the audit for a check the
+	 * game asks on paths no break takes.
 	 */
 	@Test
 	void everyRowThatSilencesTheAuditProvesItsDelivery() throws Exception {
@@ -474,8 +480,9 @@ class HookCallSiteCensusStagedTest {
 			}
 		}
 		Measured loaded = measure(all), staged = measure(censusStaged());
+		Set<String> kernelPosts = proof.postedByTheKernel();
 		for (String event : new TreeSet<>(DeadEventAudit.REPAIRED)) {
-			boolean byKernel = loaded.kernelConstructs().contains(event);
+			boolean byKernel = kernelPosts.contains(event);
 			boolean byRepair = loaded.live().contains(event) && !staged.live().contains(event);
 			if (!byKernel && !byRepair) unproved.add(event + ": REPAIRED, but neither the kernel's code nor a merged-base repair posts it");
 		}
@@ -486,6 +493,39 @@ class HookCallSiteCensusStagedTest {
 		assertTrue(installs.size() >= 90, "only " + installs.size() + " bridges read from GameEventMultiplexer — verify the reading");
 		assertTrue(!recorders.isEmpty(), "no kernel class records a bridge — verify the reading");
 		assertEquals(List.of(), unproved, "rows that silence the audit for an event their delivery does not post");
+	}
+
+	/**
+	 * {@link DeadEventAudit#NO_NATIVE_PATH} is exactly the {@link DeadEventAudit#BRIDGED} and {@link DeadEventAudit#STAND_DOWN}
+	 * events the merged game, as the kernel loads it, never constructs itself — in its own methods, or in a family method it or
+	 * the family's runtime reaches. It decides what a mod is told when the event's bridge is missing: "never posts" for these,
+	 * and for every other event the merged game's own paths. Until 2026-10-25 every missing bridge said "never posts", which
+	 * named nearly every MinecraftForge mod for a tick the merged game still posts whenever the bridges were off.
+	 */
+	@Test
+	void theNoNativePathTableIsWhereTheMergedGamePostsNothingItself() throws Exception {
+		TestFixtures.require(Fixture.STAGED, Files.isRegularFile(base()), "staged merged base absent");
+		Map<String, HookCallSiteCensus.Census> all = censusAll();
+		TestFixtures.require(Fixture.STAGED, !all.isEmpty(), "staged carriers absent");
+		Set<String> gameConstructs = all.values().iterator().next().gameConstructs();
+		Set<String> rows = new TreeSet<>(DeadEventAudit.BRIDGED.keySet());
+		rows.addAll(DeadEventAudit.STAND_DOWN.keySet());
+		Set<String> none = new TreeSet<>(), stand = new TreeSet<>(), bridged = new TreeSet<>();
+		for (String event : rows) {
+			if (gameConstructs.contains(event)) continue;
+			none.add(event);
+			(DeadEventAudit.STAND_DOWN.containsKey(event) ? stand : bridged).add(event);
+		}
+		System.out.println("[Forbric/Hooks] bridged events the merged game never posts itself: " + none.size() + " of " + rows.size()
+				+ " (BRIDGED " + bridged.size() + " of " + DeadEventAudit.BRIDGED.size() + ", STAND_DOWN " + stand.size() + " of "
+				+ DeadEventAudit.STAND_DOWN.size() + ")");
+		for (String event : none) System.out.println("[Forbric/Hooks]   no native path: " + event);
+		// The denominators: a reading of the game that constructed nothing would put every row here, one that read the kernel as
+		// the game none.
+		assertTrue(none.size() < rows.size(), "the merged game posts none of the bridged events itself — verify the reading");
+		assertTrue(!none.isEmpty(), "the merged game posts every bridged event itself — verify the reading");
+		assertEquals(none, new TreeSet<>(DeadEventAudit.NO_NATIVE_PATH),
+				"NO_NATIVE_PATH and what the merged game posts itself disagree; the table is the one that is wrong");
 	}
 
 	/** Whether {@link KernelRuntimeClasses} declares {@code install}'s method, so the boot-time seam check covers it. */
@@ -588,7 +628,7 @@ class HookCallSiteCensusStagedTest {
 	 * {@link DeadEventAudit#PARTIAL} is exactly the events posted on some of their paths and not the others.
 	 *
 	 * <p>An event is partly posted when a hook that posts it — any hook class of either family, a hook counting for the
-	 * events of every hook it calls — has fewer call sites in the merged game, read as its repairs leave it, than in its
+	 * events of every hook it calls and of every hook the constructor of an event it constructs calls — has fewer call sites in the merged game, read as its repairs leave it, than in its
 	 * own family's patched game, and the event is still posted somewhere; or when the census measures it never posted by
 	 * the game but the kernel or a guest's call into a family's API posts it, and no bridge or repair row claims the whole
 	 * delivery. Until 2026-10-25 only the two event factories were measured, and only their partly kept hooks: five events
@@ -661,6 +701,130 @@ class HookCallSiteCensusStagedTest {
 		assertTrue(stated > 0, "no partly-posted row states how many paths it has — the count check checked nothing");
 	}
 
+	/**
+	 * Each {@link DeadEventAudit#PARTIAL} row a bridge or a repair also carries is silent while its bridge is installed
+	 * ({@link DeadEventAudit#audit} consults the bridge first), on the claim that the bridge or repair delivers the paths the
+	 * merge lost. This holds every one of them to that claim, game method by game method: at each method of the family's own
+	 * patched game that posted the event from more places than the merged game (as loaded) still does, the merged method
+	 * hands the bridge what it forwards — it calls a NeoForge hook posting a NeoForge event the bridge listens to, or
+	 * constructs one inline — or calls into the kernel, whose delivery posts the row's event or one the bridge listens to.
+	 * A lost path nothing covers would be a listener silently missing it with nothing said; until 2026-10-25 the claim was
+	 * written in the introduction and checked nowhere.
+	 */
+	@Test
+	void aBridgedPartialRowIsSilentOnlyWhereItsBridgeCoversEveryLostPath() throws Exception {
+		TestFixtures.require(Fixture.STAGED, Files.isRegularFile(base()), "staged merged base absent");
+		TestFixtures.require(Fixture.STAGED, Files.isRegularFile(forgePatchedGame()) && Files.isRegularFile(neoForgePatchedGame()),
+				"a family's own patched game is absent");
+		TestFixtures.require(Fixture.GAME_SIDE, Files.isDirectory(kernelRuntime()) && Files.isDirectory(kernelMain()), "the kernel is not compiled");
+		Map<String, HookCallSiteCensus.Census> all = censusAll();
+		TestFixtures.require(Fixture.STAGED, !all.isEmpty(), "staged carriers absent");
+		Measured m = measure(all);
+		BridgeDeliveryProof proof = new BridgeDeliveryProof(List.of(kernelMain(), kernelRuntime()), carriers());
+		Map<GameEventBridge, BridgeDeliveryProof.Entry> installs = proof.multiplexerInstalls();
+		Map<GameEventBridge, Set<String>> recorders = proof.recorders();
+		Set<String> hooks = stagedHooks(hook -> true).keySet();
+		// caller method -> hook -> call count, in each family's game and in the merged game as loaded
+		Map<String, Map<String, Integer>> forge = callersOf(forgePatchedGame(), hooks, null), neo = callersOf(neoForgePatchedGame(), hooks, null);
+		Map<String, Map<String, Integer>> merged;
+		Map<String, Set<String>> mergedKernelCalls = new HashMap<>(), mergedNews = new HashMap<>();
+		try (var loadTime = new net.forbric.kernel.transform.MergedBaseLoadTimeView(served())) {
+			merged = callersOf(base(), hooks, loadTime);
+			CarrierCallGraph.forEachClass(base(), loadTime, node -> {
+				if (hooks.contains(node.name)) return;
+				for (MethodNode method : node.methods) {
+					if (method.instructions == null) continue;
+					String caller = node.name + "#" + method.name + method.desc;
+					for (AbstractInsnNode insn : method.instructions) {
+						if (insn instanceof MethodInsnNode call && call.owner.startsWith("net/forbric/kernel/")) {
+							mergedKernelCalls.computeIfAbsent(caller, k -> new TreeSet<>()).add(call.owner + "." + call.name + call.desc);
+						}
+						if (insn instanceof TypeInsnNode t && t.getOpcode() == Opcodes.NEW) mergedNews.computeIfAbsent(caller, k -> new TreeSet<>()).add(t.desc);
+					}
+				}
+			});
+		}
+		Set<String> rows = new TreeSet<>(DeadEventAudit.PARTIAL.keySet());
+		rows.removeIf(e -> DeadEventAudit.bridgeOf(e) == null && !DeadEventAudit.REPAIRED.contains(e));
+		Set<String> uncovered = new TreeSet<>();
+		Map<String, Set<String>> kernelPosts = new HashMap<>();
+		int lostSites = 0;
+		for (String event : rows) {
+			Map<String, Map<String, Integer>> family = event.startsWith("net/minecraftforge/") ? forge : neo;
+			Set<String> posting = new TreeSet<>();
+			m.postsThrough().forEach((hook, events) -> {
+				if (events.contains(event) && hook.startsWith(event.startsWith("net/minecraftforge/") ? "net/minecraftforge/" : "net/neoforged/")) posting.add(hook);
+			});
+			GameEventBridge bridge = DeadEventAudit.bridgeOf(event);
+			Set<String> entries = new TreeSet<>();
+			if (bridge != null) {
+				BridgeDeliveryProof.Entry install = installs.get(bridge);
+				if (install != null) entries.add(install.owner() + "." + install.method());
+				for (String recorder : recorders.getOrDefault(bridge, Set.of())) entries.addAll(proof.entriesOf(recorder));
+			}
+			Set<String> sources = proof.listensTo(entries);
+			List<String> lines = new ArrayList<>();
+			for (Map.Entry<String, Map<String, Integer>> caller : new TreeMap<>(family).entrySet()) {
+				int before = 0, after = 0;
+				for (String hook : posting) {
+					before += caller.getValue().getOrDefault(hook, 0);
+					after += merged.getOrDefault(caller.getKey(), Map.of()).getOrDefault(hook, 0);
+				}
+				if (before == 0 || after >= before) continue;
+				lostSites++;
+				String why = null;
+				for (Map.Entry<String, Integer> call : merged.getOrDefault(caller.getKey(), Map.of()).entrySet()) {
+					Set<String> posted = m.postsThrough().getOrDefault(call.getKey(), Set.of());
+					for (String source : sources) if (posted.contains(source)) why = "posts " + simple(source) + " (" + simple(call.getKey()) + ")";
+				}
+				for (String made : mergedNews.getOrDefault(caller.getKey(), Set.of())) if (sources.contains(made)) why = "constructs " + simple(made);
+				for (String kernelCall : mergedKernelCalls.getOrDefault(caller.getKey(), Set.of())) {
+					Set<String> posts = kernelPosts.computeIfAbsent(kernelCall, k -> proof.posts(Set.of(k)));
+					if (posts.contains(event) || sources.stream().anyMatch(posts::contains)) why = "the kernel posts it (" + simple(kernelCall) + ")";
+				}
+				lines.add(caller.getKey() + " " + after + "/" + before + " -> " + (why == null ? "NOT COVERED" : why));
+				if (why == null) uncovered.add(event);
+			}
+			System.out.println("[Forbric/Hooks] lost paths of " + event + " (" + (bridge != null ? bridge : "REPAIRED") + ", listens to "
+					+ sources.stream().map(HookCallSiteCensusStagedTest::simple).toList() + "):");
+			for (String line : lines) System.out.println("[Forbric/Hooks]   " + line);
+		}
+		System.out.println("[Forbric/Hooks] bridged or repaired partial rows: " + rows.size() + ", lost paths: " + lostSites
+				+ ", rows with a lost path nothing covers: " + uncovered);
+		assertTrue(lostSites > 0, "no lost path found for a bridged partial row — verify the reading");
+		assertEquals(Set.of(), uncovered, "bridged partial rows with a lost path their bridge or repair does not cover: the audit "
+				+ "is silent about them while the bridge is in, so a listener misses that path unannounced — cover the path, or "
+				+ "make the audit name the row while its bridge is installed");
+	}
+
+	/** A type's simple name, or a hook id's class and method name. */
+	private static String simple(String name) {
+		int paren = name.indexOf('(');
+		String head = paren < 0 ? name : name.substring(0, paren);
+		return head.substring(head.lastIndexOf('/') + 1);
+	}
+
+	/** Caller method ({@code owner#name+desc}) → hook id → how many times it calls the hook, in {@code jar}, hook classes left out. */
+	private static Map<String, Map<String, Integer>> callersOf(Path jar, Set<String> hooks, java.util.function.BiFunction<String, byte[], byte[]> loadTime)
+			throws Exception {
+		Map<String, Map<String, Integer>> out = new HashMap<>();
+		CarrierCallGraph.forEachClass(jar, loadTime, node -> {
+			if (hooks.contains(node.name)) return;
+			for (MethodNode method : node.methods) {
+				if (method.instructions == null) continue;
+				String caller = node.name + "#" + method.name + method.desc;
+				for (AbstractInsnNode insn : method.instructions) {
+					HookCallSiteCensus.callees(insn, callee -> {
+						if (hooks.contains(callee.substring(0, callee.indexOf('.')))) {
+							out.computeIfAbsent(caller, k -> new HashMap<>()).merge(callee, 1, Integer::sum);
+						}
+					});
+				}
+			}
+		});
+		return out;
+	}
+
 	/** Every hook class's erosion, each family against its own patched game, the merged game read as the kernel loads it. */
 	private static volatile Map<String, List<HookCallSiteCensus.Erosion>> cachedErosion;
 
@@ -714,6 +878,32 @@ class HookCallSiteCensusStagedTest {
 				}
 			}
 		}
+		// And the hooks an event's constructor calls, read from the carriers: constructing the event posts theirs too
+		// (MinecraftForge's BreakEvent asks for a harvest check from its constructor).
+		Map<String, Set<String>> constructorCalls = new HashMap<>();
+		for (Path jar : new java.util.LinkedHashSet<>(hooks.values())) {
+			try (java.util.zip.ZipFile zip = new java.util.zip.ZipFile(jar.toFile())) {
+				Set<String> constructed = new TreeSet<>();
+				constructs.values().forEach(constructed::addAll);
+				for (String event : constructed) {
+					for (String type = event; type != null; ) {
+						var entry = zip.getEntry(type + ".class");
+						if (entry == null) break;
+						ClassNode node = new ClassNode();
+						new ClassReader(zip.getInputStream(entry).readAllBytes()).accept(node, ClassReader.SKIP_FRAMES);
+						for (MethodNode method : node.methods) {
+							if (!method.name.equals("<init>") || method.instructions == null) continue;
+							for (AbstractInsnNode insn : method.instructions) {
+								if (insn instanceof MethodInsnNode call && hooks.containsKey(call.owner)) {
+									constructorCalls.computeIfAbsent(event, k -> new HashSet<>()).add(call.owner + "." + call.name + call.desc);
+								}
+							}
+						}
+						type = node.superName;
+					}
+				}
+			}
+		}
 		Map<String, Integer> before = new HashMap<>(), after = new HashMap<>();
 		lostSilentSites(forgePatchedGame(), hooks.keySet(), null, before, "net/minecraftforge/");
 		lostSilentSites(neoForgePatchedGame(), hooks.keySet(), null, before, "net/neoforged/");
@@ -729,7 +919,10 @@ class HookCallSiteCensusStagedTest {
 			while (!work.isEmpty()) {
 				String at = work.removeFirst();
 				if (!seen.add(at)) continue;
-				events.addAll(constructs.getOrDefault(at, Set.of()));
+				for (String event : constructs.getOrDefault(at, Set.of())) {
+					events.add(event);
+					work.addAll(constructorCalls.getOrDefault(event, Set.of()));
+				}
 				work.addAll(calls.getOrDefault(at, Set.of()));
 			}
 			int kept = after.getOrDefault(site.getKey(), 0);

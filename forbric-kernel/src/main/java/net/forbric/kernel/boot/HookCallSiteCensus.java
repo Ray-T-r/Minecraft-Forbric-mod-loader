@@ -132,16 +132,20 @@ public final class HookCallSiteCensus {
 	 *                    {@code IForgeServerPlayer.openMenu}): posted on the paths mods take, never on the game's
 	 * @param witness     each hook in {@code viaCarrier}, {@code viaKernel}, or reached only by a guest → why it is
 	 *                    reached: the chain of carrier methods back to its root, root last ({@link CarrierCallGraph})
-	 * @param postsThrough each declared hook → the events it posts: those it constructs, and those a hook it calls (of
-	 *                    any censused class, to a fixed point) constructs — what a call site of it delivers
+	 * @param postsThrough each declared hook → the events it posts: those it constructs, and those a hook it calls, or a
+	 *                    hook the constructor of an event it constructs calls (of any censused class, to a fixed point),
+	 *                    constructs — what a call site of it delivers
 	 * @param kernelConstructs every type the kernel's own code constructs, in its classes or in the carrier methods it
-	 *                    alone reaches (the same set for every hook class of one census): what a repair or a bridge
-	 *                    posts itself
+	 *                    alone reaches, an event's constructor and instance methods left unfollowed (the same set for every
+	 *                    hook class of one census): what a repair or a bridge posts itself, not what that sets off
+	 * @param gameConstructs every type the game constructs itself, in its own methods (an inline post) or in the carrier
+	 *                    methods it or the runtime reaches, the kernel left out (the same set for every hook class): what
+	 *                    the merged game posts with no bridge of the kernel's installed
 	 */
 	public record Census(String hookClass, List<String> declared, Set<String> live, Set<String> dead,
 			Map<String, Set<String>> postersOf, Set<String> deadEvents, Set<String> viaCarrier, Set<String> viaKernel,
 			Set<String> kernelDelivered, Set<String> guestPosted, Map<String, List<String>> witness,
-			Map<String, Set<String>> postsThrough, Set<String> kernelConstructs) {
+			Map<String, Set<String>> postsThrough, Set<String> kernelConstructs, Set<String> gameConstructs) {
 
 		public Census {
 			declared = List.copyOf(declared);
@@ -156,6 +160,7 @@ public final class HookCallSiteCensus {
 			witness = Map.copyOf(witness);
 			postsThrough = Map.copyOf(postsThrough);
 			kernelConstructs = Set.copyOf(kernelConstructs);
+			gameConstructs = Set.copyOf(gameConstructs);
 		}
 
 		/** Live events: posted by at least one hook something still calls, the carriers included. */
@@ -329,9 +334,14 @@ public final class HookCallSiteCensus {
 		CarrierCallGraph.Reach withKernel = graph.reach(roots);
 		roots.put(graph.publicApi(hookClasses.keySet(), CarrierCallGraph.entries(graphJars, nativeGames)), CarrierCallGraph.GUEST);
 		CarrierCallGraph.Reach withGuests = graph.reach(roots);
-		// What the kernel's own code posts: its constructions, and those of the carrier methods it alone reaches.
+		// What the kernel's own code posts: its constructions, and those of the carrier methods it alone reaches — not what an
+		// event it constructs sets off from that event's constructor (see CarrierCallGraph.Reach#own).
 		Set<String> kernelConstructs = new java.util.HashSet<>(kernelNews);
-		kernelConstructs.addAll(graph.reach(Map.of(kernel, CarrierCallGraph.KERNEL), false).constructed());
+		kernelConstructs.addAll(graph.reach(Map.of(kernel, CarrierCallGraph.KERNEL), false, true).constructed());
+		// What the game posts itself, the kernel left out: its own constructions (an inline post), and those of the carrier
+		// methods it or the runtime reaches.
+		Set<String> gameConstructs = new java.util.HashSet<>(game.constructs);
+		gameConstructs.addAll(byGame.constructed());
 
 		// Each hook → the events it posts, through the hooks it calls too (GuestEventPosters' rule).
 		Map<String, Set<String>> constructsOf = new java.util.HashMap<>(), hookCalls = new java.util.HashMap<>();
@@ -352,6 +362,29 @@ public final class HookCallSiteCensus {
 						}
 					});
 				}
+			}
+		}
+		// And the hooks an event's constructor calls: constructing it posts theirs. MinecraftForge's BreakEvent asks
+		// ForgeHooks.isCorrectToolForDrops from its constructor, so ForgeHooks.onBlockBreakEvent, which constructs a BreakEvent,
+		// posts a harvest check too; following hook calls alone left that path off the harvest check's count.
+		Map<String, Set<String>> constructorCalls = new java.util.HashMap<>();
+		Map<String, List<CarrierCallGraph.Method>> constructorsOf = new java.util.HashMap<>();
+		for (CarrierCallGraph.Method m : graph.methods.values()) {
+			if (m.nameDesc.startsWith("<init>")) constructorsOf.computeIfAbsent(m.owner, k -> new java.util.ArrayList<>()).add(m);
+		}
+		for (Set<String> events : List.copyOf(constructsOf.values())) {
+			for (String event : events) {
+				if (constructorCalls.containsKey(event)) continue;
+				Set<String> calls = new java.util.HashSet<>();
+				for (String type : graph.supertypes(event)) {
+					for (CarrierCallGraph.Method m : constructorsOf.getOrDefault(type, List.of())) {
+						for (CarrierCallGraph.Ref ref : m.refs) {
+							String owner = ref.owner();
+							if (hookClasses.containsKey(owner) && isHook(hookNodes.get(owner), ref.nameDesc())) calls.add(ref.id());
+						}
+					}
+				}
+				constructorCalls.put(event, calls);
 			}
 		}
 
@@ -400,7 +433,10 @@ public final class HookCallSiteCensus {
 				while (!work.isEmpty()) {
 					String at = work.removeFirst();
 					if (!seen.add(at)) continue;
-					events.addAll(constructsOf.getOrDefault(at, Set.of()));
+					for (String event : constructsOf.getOrDefault(at, Set.of())) {
+						events.add(event);
+						work.addAll(constructorCalls.getOrDefault(event, Set.of()));
+					}
 					work.addAll(hookCalls.getOrDefault(at, Set.of()));
 				}
 				if (!events.isEmpty()) postsThrough.put(key, Set.copyOf(events));
@@ -422,9 +458,15 @@ public final class HookCallSiteCensus {
 			Map<String, Set<String>> frozen = new LinkedHashMap<>();
 			posters.forEach((k, v) -> frozen.put(k, Set.copyOf(v)));
 			out.put(hookClass, new Census(hookClass, declared, live, dead, frozen, deadEvents, viaCarrier, viaKernel,
-					kernelDelivered, guestPosted, witness, postsThrough, kernelConstructs));
+					kernelDelivered, guestPosted, witness, postsThrough, kernelConstructs, gameConstructs));
 		}
 		return out;
+	}
+
+	/** Whether {@code hooks} declares {@code nameDesc} as a hook. */
+	private static boolean isHook(ClassNode hooks, String nameDesc) {
+		for (MethodNode m : hooks.methods) if ((m.name + m.desc).equals(nameDesc)) return isHook(m);
+		return false;
 	}
 
 	/** A public static, non-synthetic, non-bridge, non-initializer method: what a hook class offers as a hook. */

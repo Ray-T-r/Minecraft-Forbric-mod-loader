@@ -67,18 +67,26 @@ import net.forbric.kernel.util.ForbricLog;
  *       STAND_DOWN), unless its own family's patched game never posts it either;</li>
  *   <li>a row that silences the audit proves the delivery it claims: a BRIDGED or STAND_DOWN row's bridge is installed (by
  *       {@link GameEventMultiplexer}, through an install method that exists and is declared to {@link KernelRuntimeClasses},
- *       or recorded by the transformer or runtime class that lands it) and what it reaches constructs the event; a REPAIRED
- *       row's event is constructed by the kernel's own code, or posted by the game only as the merged-base repairs leave
- *       it;</li>
+ *       or recorded by the transformer or runtime class that lands it) and what it reaches posts the event; a REPAIRED
+ *       row's event is posted by the kernel's own code, or by the game only as the merged-base repairs leave it. "Posts" is
+ *       read from the bytecode: a construction of the kernel's that flows into a bus's {@code post} or {@code fire}, or one
+ *       a family method the kernel reaches makes — an event's own constructor and instance methods not followed, so the
+ *       harvest check MinecraftForge's {@code BreakEvent} constructor asks for is not the break bridge's delivery;</li>
  *   <li>{@link #PARTIAL} is exactly the events a hook of any hook class lost game call sites for (counted with the hooks
- *       that reach it) and that are still posted somewhere, plus those the game never posts but the kernel or a guest's
- *       API call still does on some path.</li>
+ *       that reach it, through the hooks they call and the constructors of the events they construct) and that are still
+ *       posted somewhere, plus those the game never posts but the kernel or a guest's API call still does on some path;
+ *       and a PARTIAL row a bridge or repair also carries — silent while its bridge is in — has every lost path covered:
+ *       at each game method that lost the family's posting, the merged game posts what the bridge forwards, or calls the
+ *       kernel that posts the event;</li>
+ *   <li>{@link #NO_NATIVE_PATH} is exactly the bridged and stood-down events the merged game never posts itself.</li>
  * </ul>
  * Until 2026-10-24 only the first was checked, so the table could leave out a measured-dead event and nothing noticed:
  * MinecraftForge's {@code LivingDrownEvent} was measured dead and named nowhere, and its {@code LivingBreatheEvent} hid
  * behind a carrier hook nothing called. Until 2026-10-25 the rows that silence the audit proved nothing (moving an event
  * nothing delivers into BRIDGED, REPAIRED or STAND_DOWN left the suite green), and only the two event factories were
- * measured for lost call sites (five events that lost game paths were named nowhere).
+ * measured for lost call sites (five events that lost game paths were named nowhere); for one more round the proof
+ * accepted an event the bridge only constructed (a drown bridge with its {@code post} taken out) or that another event's
+ * constructor sets off (the harvest check filed under the break bridge).
  *
  * <h2>What the merge lost, against what was never there</h2>
  *
@@ -415,8 +423,8 @@ public final class DeadEventAudit {
 						+ "the vanilla way, only for a menu a MinecraftForge mod opens with extra data through Forge's own "
 						+ "openMenu; the close is announced, so a mod pairing the two sees closes without opens");
 		partial.put(forge + "entity/player/PlayerEvent$HarvestCheck",
-				"whether a player can harvest a block is asked on 0 of its 2 paths — the game never asks it (mining speed, "
-						+ "drops); it is asked only when a block breaks, from the break bridge");
+				"whether a player can harvest a block is asked on 0 of its 3 paths — the game never asks it (mining speed, "
+						+ "drops); it is asked only when a block breaks, by the break event the break bridge posts");
 		partial.put(forge + "entity/player/PlayerDestroyItemEvent",
 				"an item used up is announced on 7 of its 8 paths — not when the last of a stack is placed as a block");
 		partial.put(forge + "entity/EntityJoinLevelEvent",
@@ -677,6 +685,57 @@ public final class DeadEventAudit {
 	}
 
 	/**
+	 * The {@link #BRIDGED} and {@link #STAND_DOWN} events the merged game never posts itself: neither its own code nor a
+	 * family method it (or the family's runtime) reaches constructs one, so the bridge is the only delivery.
+	 *
+	 * <h2>What a missing bridge costs</h2>
+	 *
+	 * <p>{@link #audit} names a mod whose event's bridge is not installed (a runtime the kernel did not expect, or
+	 * {@code -Dforbric.unifiedEvents=off}). Until 2026-10-25 it said "which this merged game never posts" for every such
+	 * event, and for most of them that was false: the merged game posts the server and player ticks, the level's load and
+	 * save, and dozens more itself, and the bridge only stands down there — with the bridges off, nearly every MinecraftForge
+	 * mod was named for a tick it was still receiving. So a missing bridge is now judged by what the merged game does without
+	 * it: an event in this set is never posted ("never posts", the bridge's own cost sentence); one the merged game posts
+	 * itself is posted on the paths {@link #PARTIAL} counts when it has a row there, and on every path its family's game posts
+	 * it, as far as the census counts, when it has none — the listener loses nothing measured, and is not named.
+	 *
+	 * <p>Measured, not read: {@code HookCallSiteCensusStagedTest} recomputes this set from the merged game as the kernel loads
+	 * it and fails when the two disagree.
+	 */
+	static final Set<String> NO_NATIVE_PATH = noNativePath();
+
+	private static Set<String> noNativePath() {
+		Set<String> out = new java.util.TreeSet<>();
+		String event = "net/minecraftforge/event/", client = "net/minecraftforge/client/event/";
+		for (String e : List.of("AnvilUpdateEvent", "BuildCreativeModeTabContentsEvent", "CommandEvent",
+				"PlayLevelSoundEvent$AtEntity", "PlayLevelSoundEvent$AtPosition",
+				"brewing/BrewingRecipeRegisterEvent", "entity/living/LivingBreatheEvent",
+				"entity/living/LivingDropsEvent", "entity/living/LivingDrownEvent",
+				"entity/living/LivingEntityUseItemEvent$Finish", "entity/living/LivingExperienceDropEvent",
+				"entity/living/LivingHealEvent", "entity/living/ShieldBlockEvent", "entity/player/AnvilRepairEvent",
+				"entity/player/CriticalHitEvent", "entity/player/PlayerInteractEvent$RightClickBlock",
+				"level/BlockEvent$BlockToolModificationEvent", "level/BlockEvent$BreakEvent",
+				"level/BlockEvent$FarmlandTrampleEvent", "level/ExplosionEvent$Detonate",
+				"server/ServerStoppedEvent")) {
+			out.add(event + e);
+		}
+		for (String e : List.of("ClientChatEvent", "ClientChatReceivedEvent", "ClientChatReceivedEvent$Player",
+				"ComputeFovModifierEvent", "CustomizeGuiOverlayEvent$BossEventProgress",
+				"EntityRenderersEvent$RegisterLayerDefinitions", "EntityRenderersEvent$RegisterRenderers",
+				"RegisterClientTooltipComponentFactoriesEvent", "RegisterColorHandlersEvent$ColorResolvers",
+				"RegisterEntitySpectatorShadersEvent", "RegisterItemDecorationsEvent", "RegisterKeyMappingsEvent",
+				"RegisterNamedRenderTypesEvent", "RegisterPresetEditorsEvent",
+				"RegisterTextureAtlasSpriteLoadersEvent", "ScreenEvent$Init$Post", "ScreenEvent$Init$Pre",
+				"ScreenEvent$KeyPressed$Post", "ScreenEvent$KeyPressed$Pre", "ScreenEvent$KeyReleased$Post",
+				"ScreenEvent$KeyReleased$Pre", "ScreenEvent$MouseButtonPressed$Pre",
+				"ScreenEvent$MouseButtonReleased$Pre", "ScreenEvent$MouseDragged$Pre",
+				"ScreenEvent$MouseScrolled$Post", "ViewportEvent$ComputeFogColor")) {
+			out.add(client + e);
+		}
+		return Set.copyOf(out);
+	}
+
+	/**
 	 * The MinecraftForge events a bridge re-posts from a NeoForge event on a NeoForge bus: every {@link #BRIDGED} or
 	 * {@link #STAND_DOWN} key in MinecraftForge's namespace whose bridge {@link GameEventMultiplexer} installs, and
 	 * therefore guards. What {@code NativeDualEventInjector} looks for on a path that also posts NeoForge's. The rows
@@ -767,7 +826,10 @@ public final class DeadEventAudit {
 					// pass's own moment instead. Counting it now would name every client mod as waiting, on every
 					// boot, and train the reader to ignore the whole audit.
 					if (!bridge.pass().lateInstalled() && !installed.contains(bridge)) {
-						findings.add(new Finding(mod.getKey(), event, bridge.cost()));
+						// Without its bridge the event arrives where the merged game posts it itself (NO_NATIVE_PATH): never,
+						// on PARTIAL's paths, or on every path its family's game has.
+						if (NO_NATIVE_PATH.contains(event)) findings.add(new Finding(mod.getKey(), event, bridge.cost()));
+						else if (PARTIAL.containsKey(event)) findings.add(new Finding(mod.getKey(), event, PARTIAL.get(event), true));
 					}
 					continue;
 				}
