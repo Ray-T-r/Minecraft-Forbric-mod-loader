@@ -690,11 +690,14 @@ public final class DeadEventAudit {
 	 *
 	 * <h2>What a missing bridge costs</h2>
 	 *
-	 * <p>{@link #audit} names a mod whose event's bridge is not installed (a runtime the kernel did not expect, or
-	 * {@code -Dforbric.unifiedEvents=off}). Until 2026-10-25 it said "which this merged game never posts" for every such
-	 * event, and for most of them that was false: the merged game posts the server and player ticks, the level's load and
-	 * save, and dozens more itself, and the bridge only stands down there — with the bridges off, nearly every MinecraftForge
-	 * mod was named for a tick it was still receiving. So a missing bridge is now judged by what the merged game does without
+	 * <p>{@link #audit} names a mod whose event's bridge is not installed: a bridge that failed on a runtime the kernel did not
+	 * expect, which is what the judgement once the server is up exists to catch. Until 2026-10-25 it said "which this merged
+	 * game never posts" for every such event, and for most of them that was false: the merged game posts the server and player
+	 * ticks, the level's load and save, logging in and out, and dozens more itself, and the bridge only stands down there —
+	 * offline, on the popular pack with no bridge installed, 45 of the 76 listener and event pairs it would have called never
+	 * posted are posted by the merged game itself. ({@code -Dforbric.unifiedEvents=off} does not reach this judgement: with
+	 * the switch off {@code GameEventMultiplexer.install} returns before it installs the kernel's server-started work.) So a
+	 * missing bridge is now judged by what the merged game does without
 	 * it: an event in this set is never posted ("never posts", the bridge's own cost sentence); one the merged game posts
 	 * itself is posted on the paths {@link #PARTIAL} counts when it has a row there, and on every path its family's game posts
 	 * it, as far as the census counts, when it has none — the listener loses nothing measured, and is not named.

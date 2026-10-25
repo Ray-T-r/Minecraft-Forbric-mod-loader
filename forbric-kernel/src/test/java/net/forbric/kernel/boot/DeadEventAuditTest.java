@@ -315,11 +315,11 @@ class DeadEventAuditTest {
 	}
 
 	/**
-	 * A missing bridge whose event the merged game posts itself is not "never posts". With the bridges off
-	 * ({@code -Dforbric.unifiedEvents=off}, gate-m4's and gate-m25's negative control) the server tick, the player tick and
-	 * the level's load and save still arrive from the merged game; until 2026-10-25 a missing bridge always said "which this
-	 * merged game never posts", so nearly every MinecraftForge mod was named DEGRADED for a tick it was receiving. And no
-	 * bridged or stood-down event is ever called never posted unless the merged game posts it nowhere itself.
+	 * A missing bridge whose event the merged game posts itself is not "never posts". Without their bridges the server tick,
+	 * the player tick and the level's load and save still arrive from the merged game; until 2026-10-25 a missing bridge
+	 * always said "which this merged game never posts", so a bridge failing to install named nearly every MinecraftForge mod
+	 * DEGRADED for a tick it was receiving. And no bridged or stood-down event is ever called never posted unless the merged
+	 * game posts it nowhere itself.
 	 */
 	@Test
 	void aMissingBridgeIsJudgedByWhatTheMergedGamePostsItself() {
