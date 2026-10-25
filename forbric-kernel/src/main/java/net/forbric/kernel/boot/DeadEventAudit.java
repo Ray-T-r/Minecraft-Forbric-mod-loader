@@ -872,19 +872,41 @@ public final class DeadEventAudit {
 
 	/**
 	 * The same, also told what each mod's code registers ({@code inCode}, from {@link GuestListeners}) and how to ask an
-	 * event's own bus whether a listener is on it ({@code listenersOnBus}: true, false, or null when it cannot tell).
+	 * event's own bus whether a listener is on it ({@code listenersOnBus}: true, false, or null when it cannot tell). Every
+	 * registering class counts as loaded; see the next overload.
+	 */
+	public static void report(Map<String, Set<String>> subscribedByMod, net.forbric.api.Side side,
+			java.util.function.Function<Set<String>, Map<String, Set<String>>> postedByGuests, Map<String, Set<String>> inCode,
+			java.util.function.Function<String, Boolean> listenersOnBus) {
+		report(subscribedByMod, side, postedByGuests, inCode, Map.of(), type -> true, listenersOnBus);
+	}
+
+	/**
+	 * The same, also told which classes register each mod's listeners in code ({@code registrars}: mod → event → the classes
+	 * whose code makes the registration, or the class handed to a bus to register) and whether a class has been loaded.
 	 *
-	 * <h2>Why a listener found in code is judged later, and only if its bus has one</h2>
+	 * <h2>Why a listener found in code is judged later, and only where it was registered</h2>
 	 *
 	 * <p>An annotation subscriber declares its side ({@code @EventBusSubscriber(value = Dist.CLIENT)}); a registration in
 	 * code does not: JourneyMap registers its handlers from its client setup listener, and nothing in the handler classes
 	 * says they are a client's. Judged from the bytecode alone, a dedicated server would name JourneyMap for a fluid event
-	 * whose listener it never registers there. So these are judged once the server is up, when every mod's setup has run,
-	 * and an event whose own static bus has no listener at that point is not reported: nothing registered for it on this
-	 * side. An event with no bus of its own to ask (NeoForge's, a mod-bus event) is judged as found.
+	 * whose listener it never registers there. So these are judged once every mod's setup has run — when loading completes,
+	 * on either side ({@link #judgeCodeListeners}), or, for an event a bridge delivers, once the server is up with the
+	 * annotation listeners ({@link #judgePending}) — and a registration counts only when it can have happened:
+	 * <ul>
+	 *   <li>one of the classes that make it has been loaded (a class whose code never ran registered nothing; JourneyMap's
+	 *       handler classes on a dedicated server), and</li>
+	 *   <li>the event's own static bus has a listener now ({@code listenersOnBus}); an event with no bus of its own to ask
+	 *       (NeoForge's, a mod-bus event) is judged as found.</li>
+	 * </ul>
+	 * Until 2026-10-25 they were judged only from the {@code ServerStarted} hook, so a client that only ever joined a remote
+	 * server never judged them at all, and the bus's answer stood alone: a mod that registers on the client only was named on
+	 * a dedicated server whenever another mod listened for the same event there. The bus still cannot say who is on it; the
+	 * loaded class is what ties the registration to this mod.
 	 */
 	public static void report(Map<String, Set<String>> subscribedByMod, net.forbric.api.Side side,
 			java.util.function.Function<Set<String>, Map<String, Set<String>>> postedByGuests, Map<String, Set<String>> inCode,
+			Map<String, Map<String, Set<String>>> registrars, java.util.function.Predicate<String> loaded,
 			java.util.function.Function<String, Boolean> listenersOnBus) {
 		if (!enabled()) {
 			ForbricLog.debug("[Forbric/DeadEvents] -D%s=off — not reporting merge-lost game events", PROPERTY);
@@ -920,17 +942,25 @@ public final class DeadEventAudit {
 		}
 		report(audit(withoutEvents(deadNow, posted.keySet()), EventBridges.satisfied()));
 		Map<String, Set<String>> code = new LinkedHashMap<>(withoutEvents(codeNow, posted.keySet()));
-		codeBridgeable.forEach((mod, events) -> code.computeIfAbsent(mod, k -> new LinkedHashSet<>()).addAll(events));
 		code.values().removeIf(events -> events.stream().noneMatch(DeadEventAudit::judged));
+		Map<String, Set<String>> codeLater = new LinkedHashMap<>();
+		codeBridgeable.forEach((mod, events) -> codeLater.computeIfAbsent(mod, k -> new LinkedHashSet<>()).addAll(events));
 		synchronized (PENDING) {
 			for (Map.Entry<String, Set<String>> e : code.entrySet()) {
 				PENDING_CODE.computeIfAbsent(e.getKey(), k -> new LinkedHashSet<>()).addAll(e.getValue());
 			}
+			for (Map.Entry<String, Set<String>> e : codeLater.entrySet()) {
+				PENDING_CODE_BRIDGED.computeIfAbsent(e.getKey(), k -> new LinkedHashSet<>()).addAll(e.getValue());
+			}
+			registrars.forEach((mod, byEvent) -> byEvent.forEach((event, classes) -> REGISTRARS
+					.computeIfAbsent(mod, k -> new LinkedHashMap<>()).computeIfAbsent(event, k -> new java.util.TreeSet<>()).addAll(classes)));
 			LISTENERS_ON_BUS[0] = listenersOnBus;
+			LOADED[0] = loaded;
 		}
-		if (!code.isEmpty()) {
+		if (!code.isEmpty() || !codeLater.isEmpty()) {
 			ForbricLog.info("[Forbric/DeadEvents] %d mod(s) register listeners in code for Forge-family events a table names; "
-					+ "judged once the server is up, where the event's bus has a listener", code.size());
+					+ "judged once loading completes (an event a bridge delivers, once the server is up), where a class that "
+					+ "registers it has loaded and the event's bus has a listener", code.size() + codeLater.size());
 		}
 	}
 
@@ -939,12 +969,23 @@ public final class DeadEventAudit {
 		return bridgeOf(event) != null || REPAIRED.contains(event) || DEAD.containsKey(event) || PARTIAL.containsKey(event);
 	}
 
-	/** mod id → the events its code registers for that a table names, judged by {@link #judgePending()} (guarded by PENDING). */
+	/**
+	 * mod id → the events its code registers for that a table names and no bridge delivers, judged by
+	 * {@link #judgeCodeListeners()} once loading completes (guarded by PENDING).
+	 */
 	private static final Map<String, Set<String>> PENDING_CODE = new LinkedHashMap<>();
-	/** How {@link #judgePending()} asks an event's bus whether it has a listener (guarded by PENDING). */
+	/** The same for events a bridge delivers, judged by {@link #judgePending()} once the server is up (guarded by PENDING). */
+	private static final Map<String, Set<String>> PENDING_CODE_BRIDGED = new LinkedHashMap<>();
+	/** mod id → event → the classes that register it in code (guarded by PENDING). */
+	private static final Map<String, Map<String, Set<String>>> REGISTRARS = new LinkedHashMap<>();
+	/** How the code judgement asks an event's bus whether it has a listener (guarded by PENDING). */
 	@SuppressWarnings("unchecked")
 	private static final java.util.function.Function<String, Boolean>[] LISTENERS_ON_BUS = new java.util.function.Function[] {
 			(java.util.function.Function<String, Boolean>) event -> null};
+	/** Whether a class (internal name) has been loaded (guarded by PENDING). */
+	@SuppressWarnings("unchecked")
+	private static final java.util.function.Predicate<String>[] LOADED = new java.util.function.Predicate[] {
+			(java.util.function.Predicate<String>) type -> true};
 
 	/**
 	 * Sorts each listener: an event a bridge delivers ({@link #BRIDGED} or {@link #STAND_DOWN}) into {@code bridgeable}
@@ -1005,39 +1046,81 @@ public final class DeadEventAudit {
 	static List<Finding> judgePending(Set<GameEventBridge> installed) {
 		if (!enabled()) return List.of();
 		Map<String, Set<String>> pending, code;
-		java.util.function.Function<String, Boolean> onBus;
 		synchronized (PENDING) {
 			pending = new LinkedHashMap<>();
 			for (var e : PENDING.entrySet()) pending.put(e.getKey(), new LinkedHashSet<>(e.getValue()));
 			PENDING.clear();
 			code = new LinkedHashMap<>();
-			for (var e : PENDING_CODE.entrySet()) code.put(e.getKey(), new LinkedHashSet<>(e.getValue()));
-			PENDING_CODE.clear();
-			onBus = LISTENERS_ON_BUS[0];
+			// The code listeners of a bridged event, and any not yet judged because loading never reported complete.
+			for (Map<String, Set<String>> source : List.of(PENDING_CODE_BRIDGED, PENDING_CODE)) {
+				source.forEach((mod, events) -> code.computeIfAbsent(mod, k -> new LinkedHashSet<>()).addAll(events));
+				source.clear();
+			}
 		}
 		List<Finding> findings = new ArrayList<>(audit(pending, installed));
-		// A listener found in code counts only where its event's bus has one now; an event whose bus cannot be asked
-		// counts as found. Two mods registering for one event share its bus, so its answer covers both: the scan, not
-		// the bus, says who.
+		findings.addAll(audit(confirmed(code), installed));
+		report(findings);
+		return findings;
+	}
+
+	/**
+	 * The judgement of the listeners mods register in code for events no bridge delivers, once loading has completed on
+	 * this side (every mod's setup has run, so every registration that will happen has): from the end of the setup
+	 * lifecycle, on a dedicated server and on a client alike — a client that only ever joins a remote server never runs
+	 * {@link #judgePending()}.
+	 */
+	public static void judgeCodeListeners() {
+		judgeCodeListeners(EventBridges.satisfied());
+	}
+
+	static List<Finding> judgeCodeListeners(Set<GameEventBridge> installed) {
+		if (!enabled()) return List.of();
+		Map<String, Set<String>> code = new LinkedHashMap<>();
+		synchronized (PENDING) {
+			for (var e : PENDING_CODE.entrySet()) code.put(e.getKey(), new LinkedHashSet<>(e.getValue()));
+			PENDING_CODE.clear();
+		}
+		List<Finding> findings = audit(confirmed(code), installed);
+		report(findings);
+		return findings;
+	}
+
+	/**
+	 * Of {@code code} (mod → events registered in code), what can have been registered on this side: a class that registers
+	 * it has loaded (or none was recorded), and the event's own bus has a listener now, or cannot be asked. Two mods
+	 * registering for one event share its bus, so its answer is asked once; the loaded class is what is this mod's own.
+	 */
+	private static Map<String, Set<String>> confirmed(Map<String, Set<String>> code) {
+		java.util.function.Function<String, Boolean> onBus;
+		java.util.function.Predicate<String> loaded;
+		Map<String, Map<String, Set<String>>> registrars = new LinkedHashMap<>();
+		synchronized (PENDING) {
+			onBus = LISTENERS_ON_BUS[0];
+			loaded = LOADED[0];
+			REGISTRARS.forEach((mod, byEvent) -> registrars.put(mod, new LinkedHashMap<>(byEvent)));
+		}
 		Map<String, Boolean> answers = new java.util.HashMap<>();
 		Map<String, Set<String>> confirmed = new LinkedHashMap<>();
 		code.forEach((mod, events) -> {
 			for (String event : events) {
+				Set<String> classes = registrars.getOrDefault(mod, Map.of()).getOrDefault(event, Set.of());
+				if (!classes.isEmpty() && classes.stream().noneMatch(loaded)) continue;
 				if (!answers.containsKey(event)) answers.put(event, onBus.apply(event));
 				if (Boolean.FALSE.equals(answers.get(event))) continue;
 				confirmed.computeIfAbsent(mod, k -> new LinkedHashSet<>()).add(event);
 			}
 		});
-		findings.addAll(audit(confirmed, installed));
-		report(findings);
-		return findings;
+		return confirmed;
 	}
 
 	static void resetPending() {
 		synchronized (PENDING) {
 			PENDING.clear();
 			PENDING_CODE.clear();
+			PENDING_CODE_BRIDGED.clear();
+			REGISTRARS.clear();
 			LISTENERS_ON_BUS[0] = event -> null;
+			LOADED[0] = type -> true;
 		}
 	}
 

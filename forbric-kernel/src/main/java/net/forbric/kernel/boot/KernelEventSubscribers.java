@@ -268,8 +268,8 @@ public final class KernelEventSubscribers {
 
 	/**
 	 * Hands the listeners found to {@link DeadEventAudit} — the annotation scan's and the bus groups' ({@code subscribedByMod}),
-	 * and those each jar's classes register in code ({@code scans}, {@link #addCodeListeners}; judged once the server is up,
-	 * where the event's own bus has a listener) — told which of the events it would call never posted a loaded guest posts
+	 * and those each jar's classes register in code ({@code scans}, {@link #addCodeListeners}; judged once loading completes,
+	 * where a class that registers it has loaded and the event's own bus has a listener) — told which of the events it would call never posted a loaded guest posts
 	 * itself. Split out of {@link #registerAll} so this wiring — the code
 	 * listeners merged in, the hook classes read through {@code loader}, the guests' jars scanned — is tested as production
 	 * runs it.
@@ -282,12 +282,14 @@ public final class KernelEventSubscribers {
 	static void reportDeadEvents(ForbricClassLoader loader, List<Path> modJars, Side side,
 			java.util.Map<String, java.util.Set<String>> subscribedByMod, java.util.Map<Path, JarScan> scans) {
 		java.util.Map<String, java.util.Set<String>> inCode = new java.util.LinkedHashMap<>();
+		java.util.Map<String, java.util.Map<String, java.util.Set<String>>> registrars = new java.util.LinkedHashMap<>();
 		for (java.util.Map.Entry<Path, JarScan> scan : scans.entrySet()) {
-			if (!scan.getValue().code().isEmpty()) addCodeListeners(scan.getKey(), scan.getValue(), side, inCode);
+			if (!scan.getValue().code().isEmpty()) addCodeListeners(scan.getKey(), scan.getValue(), side, inCode, registrars);
 		}
 		DeadEventAudit.report(subscribedByMod, side,
 				events -> GuestEventPosters.find(events, name -> resourceBytes(loader, name + ".class"), modJars),
-				inCode, event -> GuestListeners.listenersOnBus(loader, event));
+				inCode, registrars, type -> loader.isClassLoadedByName(type.replace('/', '.')),
+				event -> GuestListeners.listenersOnBus(loader, event));
 	}
 
 	/**
@@ -297,6 +299,16 @@ public final class KernelEventSubscribers {
 	 * that did not finish loading.
 	 */
 	static void addCodeListeners(Path jar, JarScan scanned, Side side, java.util.Map<String, java.util.Set<String>> into) {
+		addCodeListeners(jar, scanned, side, into, new java.util.LinkedHashMap<>());
+	}
+
+	/**
+	 * The same, also recording in {@code registrars} (mod → event → classes) which classes make each registration: the class
+	 * whose code calls {@code addListener}, or the class handed to a bus to register. {@link DeadEventAudit} counts a
+	 * registration only once one of them has loaded.
+	 */
+	static void addCodeListeners(Path jar, JarScan scanned, Side side, java.util.Map<String, java.util.Set<String>> into,
+			java.util.Map<String, java.util.Map<String, java.util.Set<String>>> registrars) {
 		java.util.Map<String, java.util.Set<String>> byClass = new java.util.LinkedHashMap<>();
 		for (java.util.Map.Entry<String, GuestListeners.Found> e : scanned.code().entrySet()) {
 			GuestListeners.Found found = e.getValue();
@@ -319,7 +331,10 @@ public final class KernelEventSubscribers {
 				if (family == null || MultiLoaderArbiter.suppressedFor(jar, family)) continue;
 				String modId = codeOwner(jar, e.getKey(), family, modsInJar);
 				if (didNotFinishLoading(modId)) continue;
-				into.computeIfAbsent(modId == null ? e.getKey().replace('/', '.') : modId, k -> new java.util.LinkedHashSet<>()).add(event);
+				String key = modId == null ? e.getKey().replace('/', '.') : modId;
+				into.computeIfAbsent(key, k -> new java.util.LinkedHashSet<>()).add(event);
+				registrars.computeIfAbsent(key, k -> new java.util.LinkedHashMap<>())
+						.computeIfAbsent(event, k -> new java.util.TreeSet<>()).add(e.getKey());
 			}
 		}
 	}

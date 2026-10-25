@@ -180,6 +180,80 @@ class DeadEventAuditTest {
 		}
 	}
 
+	/**
+	 * Listeners found in code are judged when loading completes (every mod's setup has run) — on a client too, which never
+	 * reaches {@code ServerStarted} when it only joins remote servers — except those of an event a bridge delivers, which
+	 * wait for the server with the annotation listeners. And a registration counts only once a class that makes it has
+	 * loaded: the bus cannot say whose listener it holds, so a mod registering on the client only was named on a dedicated
+	 * server whenever another mod listened for the same event there.
+	 */
+	@Test
+	void aListenerFoundInCodeIsJudgedWhenLoadingCompletesWhereItsRegistrarLoaded() {
+		String toss = "net/minecraftforge/event/entity/item/ItemTossEvent";
+		List<net.forbric.api.ModCatalog.Entry> previous = net.forbric.api.ModCatalog.everything();
+		try {
+			DeadEventAudit.resetPending();
+			Map<String, Set<String>> inCode = Map.of("codemod", Set.of(toss, COMMAND));
+			Map<String, Map<String, Set<String>>> registrars = Map.of("codemod", Map.of(toss, Set.of("c/Registrar"), COMMAND, Set.of("c/Registrar")));
+			Set<String> loaded = new java.util.HashSet<>();
+			net.forbric.api.ModCatalog.publish(List.of(new net.forbric.api.ModCatalog.Entry(
+					net.forbric.api.Ecosystem.FORGE, "codemod", "Code", "1", "", List.of(), "code.jar", "", "")));
+			// Another mod's listener is on both buses; this mod's registering class never loaded.
+			DeadEventAudit.report(Map.of(), net.forbric.api.Side.DEDICATED_SERVER, events -> Map.of(), inCode, registrars, loaded::contains,
+					event -> true);
+			assertEquals(List.of(), DeadEventAudit.judgeCodeListeners(EnumSet.noneOf(GameEventBridge.class)),
+					"the class that registers it never loaded: this mod registered nothing");
+			assertEquals(List.of(), DeadEventAudit.judgePending(EnumSet.noneOf(GameEventBridge.class)));
+			assertTrue(net.forbric.api.ModCatalog.failures().isEmpty());
+
+			DeadEventAudit.report(Map.of(), net.forbric.api.Side.DEDICATED_SERVER, events -> Map.of(), inCode, registrars, loaded::contains,
+					event -> true);
+			loaded.add("c/Registrar");
+			List<DeadEventAudit.Finding> atLoadComplete = DeadEventAudit.judgeCodeListeners(EnumSet.noneOf(GameEventBridge.class));
+			assertEquals(List.of(toss), atLoadComplete.stream().map(DeadEventAudit.Finding::event).toList(),
+					"judged when loading completes; the bridged event waits for the server");
+			List<DeadEventAudit.Finding> atServer = DeadEventAudit.judgePending(EnumSet.noneOf(GameEventBridge.class));
+			assertEquals(List.of(COMMAND), atServer.stream().map(DeadEventAudit.Finding::event).toList(),
+					"the bridged event's bridge still missing once the server is up");
+			assertEquals(List.of(), DeadEventAudit.judgeCodeListeners(EnumSet.noneOf(GameEventBridge.class)), "judged once");
+			assertEquals("codemod", net.forbric.api.ModCatalog.failures().get(0).modId());
+		} finally {
+			DeadEventAudit.resetPending();
+			net.forbric.api.ModCatalog.publish(previous);
+		}
+	}
+
+	/**
+	 * Both sides' setup lifecycles judge the code-found listeners once their load-complete phase has been posted and before
+	 * the load report is written: a dedicated server's ({@code fireModSetupLifecycle}) and a client's, inside
+	 * {@code Minecraft.<init>} ({@code fireClientSetupLifecycle}), which a client joining only remote servers reaches and
+	 * {@code ServerStarted} it never does.
+	 */
+	@Test
+	void bothSetupLifecyclesJudgeTheCodeListenersWhenLoadingCompletes() throws Exception {
+		org.objectweb.asm.tree.ClassNode node = new org.objectweb.asm.tree.ClassNode();
+		try (var in = KernelLifecycle.class.getResourceAsStream("KernelLifecycle.class")) {
+			new org.objectweb.asm.ClassReader(in.readAllBytes()).accept(node, org.objectweb.asm.ClassReader.SKIP_FRAMES);
+		}
+		int checked = 0;
+		for (org.objectweb.asm.tree.MethodNode m : node.methods) {
+			if (!m.name.equals("fireModSetupLifecycle") && !m.name.equals("fireClientSetupLifecycle")) continue;
+			int loadComplete = -1, judged = -1, report = -1, i = 0;
+			for (org.objectweb.asm.tree.AbstractInsnNode insn : m.instructions) {
+				if (insn instanceof org.objectweb.asm.tree.FieldInsnNode f && f.name.equals("FML_LOAD_COMPLETE_EVENT")) loadComplete = i;
+				if (insn instanceof org.objectweb.asm.tree.MethodInsnNode call) {
+					if (call.owner.endsWith("/DeadEventAudit") && call.name.equals("judgeCodeListeners") && judged < 0) judged = i;
+					if (call.owner.endsWith("/KernelLoadReport") && call.name.equals("write") && report < 0) report = i;
+				}
+				i++;
+			}
+			assertTrue(loadComplete >= 0 && judged > loadComplete && report > judged,
+					m.name + ": load complete @" + loadComplete + ", judged @" + judged + ", load report @" + report);
+			checked++;
+		}
+		assertEquals(2, checked, "both setup lifecycles");
+	}
+
 	@Test
 	void aFindingMarksTheModDegradedAndAClassKeyedOneMarksNobody() {
 		List<net.forbric.api.ModCatalog.Entry> previous = net.forbric.api.ModCatalog.everything();

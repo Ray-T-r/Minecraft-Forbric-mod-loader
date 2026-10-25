@@ -135,23 +135,29 @@ class GuestEventPostersWiringTest {
 		init.visitEnd();
 		mod.visitEnd();
 		Path jar = jar("toss.jar", Map.of("toss/TossMod.class", mod.toByteArray()));
-		// The loader serves ItemTossEvent with a static bus whose hasListeners answers as the run below says: the listener
-		// found in the mod's code counts once the server is up, and only if its bus has one then.
-		for (boolean listened : new boolean[] {false, true}) {
+		// The loader serves ItemTossEvent with a static bus whose hasListeners answers as each run says, and the mod's class,
+		// which a run loads or not. The listener found in the mod's code counts once loading completes, and only where it
+		// can have been registered: the class that registers it has loaded, and its bus has a listener then. A bus with
+		// someone else's listener on it says nothing about this mod: the class is what ties the registration to it (a mod
+		// registering on the client only, on a dedicated server where another mod listens for the same event).
+		for (boolean[] run : new boolean[][] {{false, true}, {true, false}, {true, true}}) {
+			boolean listened = run[0], registered = run[1];
 			ModCatalog.publish(List.of(new ModCatalog.Entry(Ecosystem.FORGE, "tossmod", "Toss", "1", "", List.of(), "toss.jar", "", "")));
-			Path game = jar("game-" + listened + ".jar", eventWithBus(toss, bus, listened));
+			Path game = jar("game-" + listened + "-" + registered + ".jar", eventWithBus(toss, bus, listened));
 			try (URLClassLoader parent = new URLClassLoader(new URL[0], null);
-					ForbricClassLoader loader = new ForbricClassLoader(new URL[] {game.toUri().toURL()}, parent)) {
+					ForbricClassLoader loader = new ForbricClassLoader(new URL[] {game.toUri().toURL(), jar.toUri().toURL()}, parent)) {
 				DeadEventAudit.resetPending();
 				KernelEventSubscribers.reportDeadEvents(loader, List.of(jar), Side.DEDICATED_SERVER, Map.of(),
 						Map.of(jar, KernelEventSubscribers.scanJar(jar)));
-				assertTrue(ModCatalog.failures().isEmpty(), "a listener found in code is judged once the server is up");
-				DeadEventAudit.judgePending(java.util.EnumSet.noneOf(net.forbric.api.GameEventBridge.class));
+				assertTrue(ModCatalog.failures().isEmpty(), "a listener found in code is judged once loading completes");
+				if (registered) Class.forName("toss.TossMod", false, loader);
+				DeadEventAudit.judgeCodeListeners(java.util.EnumSet.noneOf(net.forbric.api.GameEventBridge.class));
 			} finally {
 				DeadEventAudit.resetPending();
 			}
-			assertEquals(listened, ModCatalog.failures().stream().anyMatch(e -> e.modId().equals("tossmod")
-					&& e.statusDetail().contains("ItemTossEvent")), "the bus has a listener: " + listened + " " + ModCatalog.failures());
+			assertEquals(listened && registered, ModCatalog.failures().stream().anyMatch(e -> e.modId().equals("tossmod")
+					&& e.statusDetail().contains("ItemTossEvent")), "the bus has a listener: " + listened + ", the mod's class loaded: "
+					+ registered + " " + ModCatalog.failures());
 		}
 	}
 
