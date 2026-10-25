@@ -389,6 +389,22 @@ class KernelForgeEntityFluidsTest {
 	}
 
 	/**
+	 * A fluid already known to hold the kernel's stand-in is not asked its MinecraftForge type again: that getter keeps no
+	 * cache for a stand-in and would derive one from the fluid's tags for every cell, every tick. Here the stand-in fluid's
+	 * cache is empty, so asking would run MinecraftForge's own lookup, which cannot even start off-game.
+	 */
+	@Test void aKnownStandInIsNotAskedAgain() throws Exception {
+		loadWithFluids();
+		Object water = tag("WATER");
+		Object state = tracking(water);
+		begin(state, 100.0, 100.0, 101.5, 0, 0);
+		Object fabric = foreign(null, true, water);   // a Fabric fluid's: recorded as a stand-in, nothing cached
+		assertDoesNotThrow(() -> cell(state, fabric, 0, 101, 0, 1.0f), "the getter is not asked");
+		assertTrue(byType(state).isEmpty());
+		assertEquals(true, call("forgeInFluid", state), "it is still a fluid touched, as MinecraftForge counts any");
+	}
+
+	/**
 	 * NeoForge's water and lava answers, widened by a MinecraftForge mod's fluid in that tag: the greater height; "in" by a
 	 * height above zero; "eyes in" by the eyes alone. NeoForge's own "yes" stands, and a type decided by no tag is
 	 * NeoForge's alone.
