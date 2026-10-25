@@ -86,10 +86,16 @@ public final class KernelForgeFluidTypeViews {
 					+ "acts as its fluid tags say", fluid.getClass().getName());
 			return null;
 		}
+		return viewFor(own, fluid);
+	}
+
+	/** NeoForge's view of {@code own}, with {@code fluid} noted as seen with it: its tags decide what the view answers by them. */
+	static View viewFor(net.minecraftforge.fluids.FluidType own, Fluid fluid) {
 		View view = VIEWS.computeIfAbsent(own, View::new);
 		view.note(fluid);
 		return view;
 	}
+
 	/**
 	 * {@code Player.updateIsUnderwater}'s eye rule (ForgeFluidWaterRulesInjector): NeoForge counts a player under water
 	 * whose eyes are in a type it can swim in; MinecraftForge counts eyes in {@code minecraft:water}. A MinecraftForge

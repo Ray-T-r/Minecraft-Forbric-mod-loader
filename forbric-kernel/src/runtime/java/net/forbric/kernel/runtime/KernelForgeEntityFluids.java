@@ -95,9 +95,85 @@ public final class KernelForgeEntityFluids {
 			for (int i = 0; i < byTag.length; i++) byTag[i] = new Tracker();
 		}
 
+		/** The tracker of a tracked tag; null for a tag not tracked, or none (a type MinecraftForge decides by no tag). */
 		Tracker tag(TagKey<Fluid> tag) {
+			if (tag == null) return null;
 			int i = tags.indexOf(tag);
 			return i < 0 ? null : byTag[i];
+		}
+
+		/**
+		 * The start of an update: MinecraftForge resets every tracker it has (keeping them all), the any-fluid flag and the
+		 * eye type, then walks the cells with the entity's interaction box bottom, body bottom, eye height and block column.
+		 * Nothing to reset when no cell was recorded since the last reset.
+		 */
+		void begin(double boxMinY, double bodyMinY, double eyeY, int blockX, int blockZ) {
+			if (touched) {
+				for (Tracker t : byType.values()) { t.height = 0; t.eyes = false; }
+				for (Tracker t : byTag) { t.height = 0; t.eyes = false; }
+				inFluid = false;
+				eye = null;
+				tagged = false;
+				touched = false;
+			}
+			this.boxMinY = boxMinY;
+			this.bodyMinY = bodyMinY;
+			this.eyeY = eyeY;
+			this.blockX = blockX;
+			this.blockZ = blockZ;
+		}
+
+		/**
+		 * One non-empty cell at {@code x, y, z} whose fluid stands {@code fluidHeight} high, as MinecraftForge's loop takes
+		 * it: any fluid touched; nothing more when its top is below the interaction box; else the height above the body's
+		 * bottom and, in the entity's own column between the cell's bottom and top (both included), the eyes — for the
+		 * fluid's MinecraftForge type (not the kernel's stand-in), and for each tracked tag a MinecraftForge mod's fluid is in.
+		 */
+		void cell(Fluid fluid, int x, int y, int z, float fluidHeight) {
+			inFluid = true;
+			touched = true;
+			double top = y + (double) fluidHeight;
+			if (top < boxMinY) return;
+			boolean eyes = x == blockX && z == blockZ && eyeY >= y && eyeY <= top;
+			double height = top - bodyMinY;
+			FluidType type = forgeType(fluid);
+			if (type != null && !KernelFluidTypes.forgeTypeIsStandIn(fluid)) {
+				Tracker t = byType.computeIfAbsent(type, unused -> new Tracker());
+				t.height = Math.max(height, t.height);
+				if (eyes) {
+					t.eyes = true;
+					eye = type;
+				}
+			}
+			if (!tags.isEmpty() && KernelForgeFluidTypeViews.ownsForgeType(fluid)) {
+				for (int i = 0; i < byTag.length; i++) {
+					if (!in(fluid, tags.get(i))) continue;
+					Tracker t = byTag[i];
+					t.height = Math.max(height, t.height);
+					if (eyes) t.eyes = true;
+					tagged = true;
+				}
+			}
+		}
+
+		/** NeoForge's height of its water or lava type ({@code tag}), or a MinecraftForge mod's fluid in that tag if higher. */
+		double heightIn(TagKey<Fluid> tag, double neo) {
+			Tracker t = tagged ? tag(tag) : null;
+			return t == null ? neo : Math.max(neo, t.height);
+		}
+
+		/** NeoForge's "in its water or lava type", or in a MinecraftForge mod's fluid in that tag (height above zero). */
+		boolean inTag(TagKey<Fluid> tag, boolean neo) {
+			if (neo) return true;
+			Tracker t = tagged ? tag(tag) : null;
+			return t != null && t.height > 0;
+		}
+
+		/** NeoForge's "eyes in its water or lava type", or eyes in a MinecraftForge mod's fluid in that tag. */
+		boolean eyesInTag(TagKey<Fluid> tag, boolean neo) {
+			if (neo) return true;
+			Tracker t = tagged ? tag(tag) : null;
+			return t != null && t.eyes;
 		}
 	}
 
@@ -109,51 +185,15 @@ public final class KernelForgeEntityFluids {
 	/** First thing in the merged {@code update}: MinecraftForge resets everything before it walks the cells. */
 	public static void begin(Object state, Entity entity) {
 		if (!(state instanceof State s)) return;
-		if (s.touched) {
-			for (Tracker t : s.byType.values()) { t.height = 0; t.eyes = false; }
-			for (Tracker t : s.byTag) { t.height = 0; t.eyes = false; }
-			s.inFluid = false;
-			s.eye = null;
-			s.tagged = false;
-			s.touched = false;
-		}
 		AABB box = entity.getFluidInteractionBox();
-		s.boxMinY = box == null ? Double.POSITIVE_INFINITY : box.minY;
-		s.bodyMinY = entity.getBoundingBox().minY;
-		s.eyeY = entity.getEyeY();
-		s.blockX = entity.getBlockX();
-		s.blockZ = entity.getBlockZ();
+		s.begin(box == null ? Double.POSITIVE_INFINITY : box.minY, entity.getBoundingBox().minY, entity.getEyeY(),
+				entity.getBlockX(), entity.getBlockZ());
 	}
 
 	/** Each cell the merged {@code update} reads, right after it reads it: what MinecraftForge's loop records there. */
 	public static void cell(Object state, FluidState fluidState, BlockGetter level, BlockPos pos) {
 		if (!(state instanceof State s) || fluidState.isEmpty()) return;
-		s.inFluid = true;
-		s.touched = true;
-		double y = pos.getY();
-		double top = y + fluidState.getHeight(level, pos);
-		if (top < s.boxMinY) return;
-		Fluid fluid = fluidState.getType();
-		boolean eyes = pos.getX() == s.blockX && pos.getZ() == s.blockZ && s.eyeY >= y && s.eyeY <= top;
-		double height = top - s.bodyMinY;
-		FluidType type = forgeType(fluid);
-		if (type != null && !KernelFluidTypes.forgeTypeIsStandIn(fluid)) {
-			Tracker t = s.byType.computeIfAbsent(type, unused -> new Tracker());
-			t.height = Math.max(height, t.height);
-			if (eyes) {
-				t.eyes = true;
-				s.eye = type;
-			}
-		}
-		if (!s.tags.isEmpty() && KernelForgeFluidTypeViews.ownsForgeType(fluid)) {
-			for (int i = 0; i < s.byTag.length; i++) {
-				if (!in(fluid, s.tags.get(i))) continue;
-				Tracker t = s.byTag[i];
-				t.height = Math.max(height, t.height);
-				if (eyes) t.eyes = true;
-				s.tagged = true;
-			}
-		}
+		s.cell(fluidState.getType(), pos.getX(), pos.getY(), pos.getZ(), fluidState.getHeight(level, pos));
 	}
 
 	private static boolean in(Fluid fluid, TagKey<Fluid> tag) {
@@ -230,44 +270,51 @@ public final class KernelForgeEntityFluids {
 
 	/** {@code getMaxHeightFluid()}: the first type with the greatest height, else the empty type. */
 	public static FluidType forgeMaxHeight(Object state) {
-		FluidType best = net.minecraftforge.common.ForgeMod.EMPTY_TYPE.get();
-		if (!(state instanceof State s)) return best;
-		double max = 0;
-		for (Map.Entry<FluidType, Tracker> entry : s.byType.entrySet()) {
-			if (entry.getValue().height > max) {
-				max = entry.getValue().height;
-				best = entry.getKey();
+		FluidType best = null;
+		if (state instanceof State s) {
+			double max = 0;
+			for (Map.Entry<FluidType, Tracker> entry : s.byType.entrySet()) {
+				if (entry.getValue().height > max) {
+					max = entry.getValue().height;
+					best = entry.getKey();
+				}
 			}
 		}
-		return best;
+		return best != null ? best : net.minecraftforge.common.ForgeMod.EMPTY_TYPE.get();
 	}
 
 	// ---- NeoForge's water and lava questions, widened by a MinecraftForge mod's fluid in minecraft:water / minecraft:lava ----
 
-	private static Tracker tagged(Object state, net.neoforged.neoforge.fluids.FluidType type) {
-		if (!(state instanceof State s) || !s.tagged) return null;
-		if (type == NeoForgeMod.WATER_TYPE.value()) return s.tag(FluidTags.WATER);
-		if (type == NeoForgeMod.LAVA_TYPE.value()) return s.tag(FluidTags.LAVA);
+	/**
+	 * The record when it holds a MinecraftForge mod's fluid in a tag — else null, and NeoForge's answer stands without
+	 * looking at the type (the common case: every entity asks every tick).
+	 */
+	private static State tagged(Object state) {
+		return state instanceof State s && s.tagged ? s : null;
+	}
+
+	/** The tag MinecraftForge decides NeoForge's water or lava type by; null for any other type. */
+	private static TagKey<Fluid> tagOf(net.neoforged.neoforge.fluids.FluidType type) {
+		if (type == NeoForgeMod.WATER_TYPE.value()) return FluidTags.WATER;
+		if (type == NeoForgeMod.LAVA_TYPE.value()) return FluidTags.LAVA;
 		return null;
 	}
 
 	/** {@code getFluidHeight(FluidType)}: NeoForge's answer, or a MinecraftForge mod's fluid in that type's tag if higher. */
 	public static double neoHeight(Object state, net.neoforged.neoforge.fluids.FluidType type, double neo) {
-		Tracker t = tagged(state, type);
-		return t == null ? neo : Math.max(neo, t.height);
+		State s = tagged(state);
+		return s == null ? neo : s.heightIn(tagOf(type), neo);
 	}
 
 	/** {@code isInFluid(FluidType)}: NeoForge's answer, or a MinecraftForge mod's fluid in that type's tag. */
 	public static boolean neoIn(Object state, net.neoforged.neoforge.fluids.FluidType type, boolean neo) {
-		if (neo) return true;
-		Tracker t = tagged(state, type);
-		return t != null && t.height > 0;
+		State s = neo ? null : tagged(state);
+		return s == null ? neo : s.inTag(tagOf(type), false);
 	}
 
 	/** {@code isEyeInFluid(FluidType)}: NeoForge's answer, or eyes in a MinecraftForge mod's fluid in that type's tag. */
 	public static boolean neoEyes(Object state, net.neoforged.neoforge.fluids.FluidType type, boolean neo) {
-		if (neo) return true;
-		Tracker t = tagged(state, type);
-		return t != null && t.eyes;
+		State s = neo ? null : tagged(state);
+		return s == null ? neo : s.eyesInTag(tagOf(type), false);
 	}
 }

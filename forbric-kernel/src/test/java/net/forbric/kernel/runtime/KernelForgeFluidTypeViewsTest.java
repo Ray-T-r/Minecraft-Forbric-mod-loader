@@ -236,15 +236,15 @@ class KernelForgeFluidTypeViewsTest {
 	}
 
 	/**
-	 * NeoForge's view of {@code forgeType} with {@code fluid} seen with it, as {@code KernelForgeFluidTypeViews.of} notes a
-	 * fluid (off-game {@code of} itself cannot run past MinecraftForge's own {@code ForgeMod}, which cannot initialise).
+	 * NeoForge's view of {@code forgeType} with {@code fluid} seen with it, as {@code KernelForgeFluidTypeViews.of} hands
+	 * it out past MinecraftForge's own three types (off-game {@code of} itself cannot run past MinecraftForge's
+	 * {@code ForgeMod}, which cannot initialise).
 	 */
 	private Object viewOf(Object forgeType, Object fluid) throws Exception {
-		Object view = view(forgeType);
-		Method note = view.getClass().getDeclaredMethod("note", loader.loadClass("net.minecraft.world.level.material.Fluid"));
-		note.setAccessible(true);
-		note.invoke(view, fluid);
-		return view;
+		Method viewFor = runtime.getDeclaredMethod("viewFor", loader.loadClass("net.minecraftforge.fluids.FluidType"),
+				loader.loadClass("net.minecraft.world.level.material.Fluid"));
+		viewFor.setAccessible(true);
+		return viewFor.invoke(null, forgeType, fluid);
 	}
 
 	/** A MinecraftForge type built as a mod builds one, unswimmable: "wet" in the probe. */
@@ -330,12 +330,12 @@ class KernelForgeFluidTypeViewsTest {
 		assertNotNull(neo, "a view has extensions of its own");
 		assertSame(neo, extensions.invoke(null, blood), "made once per view");
 		Class<?> vector = loader.loadClass("org.joml.Vector4f");
-		Object colour = vector.getConstructor(float.class, float.class, float.class, float.class).newInstance(0.5f, 0.6f, 0.7f, 1f);
+		Object colour = vector.getConstructor(float.class, float.class, float.class, float.class).newInstance(0.5f, 0.6f, 0.7f, 0.8f);
 		Class<?> api = loader.loadClass("net.neoforged.neoforge.client.extensions.common.IClientFluidTypeExtensions");
 		api.getMethod("modifyFogColor", loader.loadClass("net.minecraft.client.Camera"), float.class,
 				loader.loadClass("net.minecraft.client.multiplayer.ClientLevel"), int.class, float.class, vector)
 				.invoke(neo, null, 0f, null, 8, 0f, colour);
-		assertEquals(List.of(0.407f, 0.121f, 0.137f, 1f), rgba(colour), "the mod's fog colour, NeoForge's alpha");
+		assertEquals(List.of(0.407f, 0.121f, 0.137f, 0.8f), rgba(colour), "the mod's fog colour, the alpha NeoForge handed in");
 		Object plain = extensions.invoke(null, view(forgeType("murk", true)));
 		Object untouched = vector.getConstructor(float.class, float.class, float.class, float.class).newInstance(0.5f, 0.6f, 0.7f, 1f);
 		api.getMethod("modifyFogColor", loader.loadClass("net.minecraft.client.Camera"), float.class,
