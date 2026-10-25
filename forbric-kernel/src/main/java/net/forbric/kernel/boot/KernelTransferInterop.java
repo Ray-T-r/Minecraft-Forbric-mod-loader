@@ -9,6 +9,7 @@ import net.forbric.api.CompatibilityFindings;
 import net.forbric.api.ModCatalog;
 import net.forbric.kernel.classloading.ForbricClassLoader;
 import net.forbric.kernel.util.Caught;
+import net.forbric.kernel.util.CodeRoots;
 import net.forbric.kernel.util.ForbricLog;
 
 /**
@@ -132,11 +133,12 @@ public final class KernelTransferInterop {
 			String code = (String) issue.getClass().getMethod("code").invoke(issue);
 			String provider = (String) issue.getClass().getMethod("providerClass").invoke(issue);
 			String detail = (String) issue.getClass().getMethod("detail").invoke(issue);
+			Class<?> source = (Class<?>) issue.getClass().getMethod("source").invoke(issue);
 			// A finding with no provider object has no class to look up: it is the kernel's own, attributed to forbric
 			// without asking a class loader for a class that does not exist.
-			String shown = provider == null ? "unknown" : provider;
+			String shown = subject(provider, source);
 			CompatibilityFindings.record(new CompatibilityFinding("transfer:" + code + ":" + shown,
-					provider == null ? "forbric" : owner(loader, provider),
+					provider == null ? "forbric" : owner(loader, provider, source),
 					"Cross-ecosystem storage", "transfer:" + shown, CompatibilityFinding.Confidence.CONFIRMED,
 					false, detail, List.of(code, shown)));
 			ForbricLog.warn("[Forbric/Transfer] %s: %s — %s", code, shown, detail);
@@ -145,16 +147,38 @@ public final class KernelTransferInterop {
 		}
 	}
 
-	private static String owner(ClassLoader loader, String provider) {
-		try {
-			var source = Class.forName(provider, false, loader).getProtectionDomain().getCodeSource();
-			String file = Path.of(source.getLocation().toURI()).getFileName().toString();
-			return ModCatalog.everything().stream().filter(mod -> file.equals(mod.jar()))
-					.map(ModCatalog.Entry::modId).findFirst().orElse("forbric");
-		} catch (Exception | LinkageError unknown) {
-			Caught.warn(unknown, "[Forbric/Transfer] could not tell which mod ships %s; its finding is attributed to forbric",
-					provider);
-			return "forbric";
+	/**
+	 * What a finding is about, as its id and its log line name it: the offered class, and when another class answers
+	 * for it (a dynamic proxy's handler), that class too. A proxy class is shared by every handler behind the same
+	 * interfaces in one class loader, so two mods' proxies carry one name; by that name alone their findings had one id.
+	 */
+	static String subject(String provider, Class<?> source) {
+		if (provider == null) return "unknown";
+		return source == null || source.getName().equals(provider) ? provider : provider + " via " + source.getName();
+	}
+
+	/**
+	 * The mod whose jar holds {@code source} -- the class the runtime says answers for the provider -- or, when only a
+	 * name was reported, the class that name resolves to. "forbric" when that class came from no mod's jar: a carrier or
+	 * JDK class, or one generated at run time with no jar behind it (a dynamic proxy reported by name, a class defined
+	 * with no protection domain). That is an answer, not a failure: there is no mod to name. Only a name that resolves
+	 * to nothing is reported as a failure.
+	 */
+	static String owner(ClassLoader loader, String provider, Class<?> source) {
+		Class<?> type = source;
+		if (type == null) {
+			try {
+				type = Class.forName(provider, false, loader);
+			} catch (ClassNotFoundException | LinkageError unknown) {
+				Caught.warn(unknown, "[Forbric/Transfer] could not tell which mod ships %s; its finding is attributed to forbric",
+						provider);
+				return "forbric";
+			}
 		}
+		Path root = CodeRoots.of(type);
+		if (root == null || root.getFileName() == null) return "forbric";
+		String file = root.getFileName().toString();
+		return ModCatalog.everything().stream().filter(mod -> file.equals(mod.jar()))
+				.map(ModCatalog.Entry::modId).findFirst().orElse("forbric");
 	}
 }

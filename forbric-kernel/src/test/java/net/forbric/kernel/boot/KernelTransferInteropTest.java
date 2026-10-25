@@ -204,7 +204,9 @@ class KernelTransferInteropTest {
 		}
 	}
 	/** TransferIssues.Issue's shape, which recordIssue reads by its accessors across the game loader boundary. */
-	record Issue(String code, String providerClass, String detail) { }
+	record Issue(String code, String providerClass, String detail, Class<?> source) {
+		Issue(String code, String providerClass, String detail) { this(code, providerClass, detail, null); }
+	}
 	@Test void aFindingWithNoProviderIsTheKernelsOwnAndLooksUpNoClass() {
 		// A finding with no provider object (the Forge fallback hook missing) has no class to attribute. It used to be
 		// looked up as a class named "unknown", which never exists, so every such finding was also a failure.
@@ -213,6 +215,111 @@ class KernelTransferInteropTest {
 				.filter(f -> f.id().equals("transfer:FORGE_QUERY_HOOK_MISSING:unknown")).findFirst().orElseThrow();
 		assertEquals("forbric", finding.modId());
 		assertEquals(List.of("FORGE_QUERY_HOOK_MISSING", "unknown"), finding.evidence());
+	}
+	/**
+	 * gate-m39's proxy item handler, as the boot side saw it before the runtime carried the handler across: the name
+	 * of a jdk.proxy class, which resolves but was defined from no jar. Looking up its code source threw an NPE on
+	 * every run, reported as a kernel failure and attributed to forbric. A class that came from no jar names no mod;
+	 * that is the answer, and no failure is reported (CaughtErrorsExtension fails this test if one is).
+	 */
+	@Test void aProxyReportedByNameIsNoModsAndNoFailure() {
+		Object proxy = java.lang.reflect.Proxy.newProxyInstance(getClass().getClassLoader(), new Class<?>[] { Runnable.class }, (p, m, a) -> null);
+		String name = proxy.getClass().getName();
+		KernelTransferInterop.recordIssue(getClass().getClassLoader(), new Issue("FORGE_HANDLER_NOT_ROLLBACK_SAFE", name, "detail"));
+		assertEquals("forbric", attributed("transfer:FORGE_HANDLER_NOT_ROLLBACK_SAFE:" + name));
+		assertEquals("forbric", KernelTransferInterop.owner(getClass().getClassLoader(), "java.lang.String", null), "a JDK class names no mod either");
+		assertEquals("forbric", KernelTransferInterop.owner(getClass().getClassLoader(), name, String.class));
+	}
+	/** The class the runtime says answers for a provider -- a proxy's handler, a lambda -- is attributed to its jar's mod. */
+	@Test void theProvidersSourceIsAttributedToTheModWhoseJarHoldsIt() throws Exception {
+		Path jar = directory.resolve("handler mod.jar");
+		try (JarOutputStream out = new JarOutputStream(Files.newOutputStream(jar))) {
+			add(out, "p/Handler");
+			out.putNextEntry(new JarEntry("p/Anchor.class"));
+			out.write(lambdaFactory("p/Anchor"));
+			out.closeEntry();
+		}
+		net.forbric.api.ModCatalog.publish(List.of(new net.forbric.api.ModCatalog.Entry(net.forbric.api.Ecosystem.FABRIC,
+				"handlermod", "Handler Mod", "1", "", List.of(), "handler mod.jar", "", "")));
+		try (var loader = new java.net.URLClassLoader(new java.net.URL[] { jar.toUri().toURL() }, null)) {
+			Class<?> handler = loader.loadClass("p.Handler");
+			KernelTransferInterop.recordIssue(getClass().getClassLoader(),
+					new Issue("FORGE_HANDLER_NOT_ROLLBACK_SAFE", "jdk.proxy9.$Proxy1", "detail", handler));
+			assertEquals("handlermod", attributed("transfer:FORGE_HANDLER_NOT_ROLLBACK_SAFE:jdk.proxy9.$Proxy1 via p.Handler"),
+					"the source is used as it is: the name is never looked up");
+			Class<?> lambda = loader.loadClass("p.Anchor").getMethod("make").invoke(null).getClass();
+			assertTrue(lambda.isHidden(), "the shape this case is about");
+			assertEquals("handlermod", KernelTransferInterop.owner(getClass().getClassLoader(), lambda.getName(), lambda),
+					"a lambda (hidden class) is its definer's");
+		} finally {
+			net.forbric.api.ModCatalog.publish(List.of());
+		}
+	}
+	/**
+	 * One proxy class, two mods' handlers: the JDK defines a single jdk.proxyN.$ProxyM per class loader and interface
+	 * list, so the offered name is the same for both. Each finding is its handler's -- its own id, its own mod -- and
+	 * neither stands in for the other.
+	 */
+	@Test void twoModsHandlersBehindOneProxyClassAreTwoFindingsEachItsOwnMods() throws Exception {
+		Path first = directory.resolve("first.jar");
+		Path second = directory.resolve("second.jar");
+		try (JarOutputStream out = new JarOutputStream(Files.newOutputStream(first))) { add(out, "a/Handler"); }
+		try (JarOutputStream out = new JarOutputStream(Files.newOutputStream(second))) { add(out, "b/Handler"); }
+		net.forbric.api.ModCatalog.publish(List.of(
+				new net.forbric.api.ModCatalog.Entry(net.forbric.api.Ecosystem.FABRIC, "firstmod", "First", "1", "", List.of(), "first.jar", "", ""),
+				new net.forbric.api.ModCatalog.Entry(net.forbric.api.Ecosystem.FORGE, "secondmod", "Second", "1", "", List.of(), "second.jar", "", "")));
+		try (var a = new java.net.URLClassLoader(new java.net.URL[] { first.toUri().toURL() }, null);
+				var b = new java.net.URLClassLoader(new java.net.URL[] { second.toUri().toURL() }, null)) {
+			String shared = "jdk.proxy3.$Proxy7";
+			KernelTransferInterop.recordIssue(getClass().getClassLoader(),
+					new Issue("FORGE_HANDLER_NOT_ROLLBACK_SAFE", shared, "first", a.loadClass("a.Handler")));
+			KernelTransferInterop.recordIssue(getClass().getClassLoader(),
+					new Issue("FORGE_HANDLER_NOT_ROLLBACK_SAFE", shared, "second", b.loadClass("b.Handler")));
+			assertEquals("firstmod", attributed("transfer:FORGE_HANDLER_NOT_ROLLBACK_SAFE:" + shared + " via a.Handler"));
+			assertEquals("secondmod", attributed("transfer:FORGE_HANDLER_NOT_ROLLBACK_SAFE:" + shared + " via b.Handler"));
+			assertEquals(2, CompatibilityFindings.all().stream().filter(f -> f.id().startsWith("transfer:")).count(),
+					CompatibilityFindings.all()::toString);
+		} finally {
+			net.forbric.api.ModCatalog.publish(List.of());
+		}
+	}
+	/** An ordinary provider is its own source, and its finding is named exactly as before. */
+	@Test void anOrdinaryProvidersFindingIsNamedByItsClassAlone() {
+		assertEquals("p.Storage", KernelTransferInterop.subject("p.Storage", null));
+		assertEquals("java.lang.String", KernelTransferInterop.subject("java.lang.String", String.class));
+		assertEquals("unknown", KernelTransferInterop.subject(null, null));
+	}
+	/** Only a name that resolves to no class at all is a failure to attribute, and it still says so. */
+	@Test @net.forbric.kernel.ExpectCaught("could not tell which mod ships no.such.Provider")
+	void aNameThatResolvesToNothingIsStillReported() {
+		assertEquals("forbric", KernelTransferInterop.owner(getClass().getClassLoader(), "no.such.Provider", null));
+	}
+	/** {@code public class <name> { public static Runnable make() { return () -> {}; } }}: a jar class that makes a real lambda. */
+	private static byte[] lambdaFactory(String internalName) {
+		ClassWriter writer = new ClassWriter(ClassWriter.COMPUTE_MAXS);
+		writer.visit(Opcodes.V17, Opcodes.ACC_PUBLIC | Opcodes.ACC_SUPER, internalName, null, "java/lang/Object", null);
+		var make = writer.visitMethod(Opcodes.ACC_PUBLIC | Opcodes.ACC_STATIC, "make", "()Ljava/lang/Runnable;", null, null);
+		make.visitCode();
+		make.visitInvokeDynamicInsn("run", "()Ljava/lang/Runnable;",
+				new org.objectweb.asm.Handle(Opcodes.H_INVOKESTATIC, "java/lang/invoke/LambdaMetafactory", "metafactory",
+						"(Ljava/lang/invoke/MethodHandles$Lookup;Ljava/lang/String;Ljava/lang/invoke/MethodType;Ljava/lang/invoke/MethodType;"
+								+ "Ljava/lang/invoke/MethodHandle;Ljava/lang/invoke/MethodType;)Ljava/lang/invoke/CallSite;", false),
+				org.objectweb.asm.Type.getType("()V"),
+				new org.objectweb.asm.Handle(Opcodes.H_INVOKESTATIC, internalName, "lambda$make$0", "()V", false),
+				org.objectweb.asm.Type.getType("()V"));
+		make.visitInsn(Opcodes.ARETURN);
+		make.visitMaxs(0, 0);
+		make.visitEnd();
+		var body = writer.visitMethod(Opcodes.ACC_PRIVATE | Opcodes.ACC_STATIC | Opcodes.ACC_SYNTHETIC, "lambda$make$0", "()V", null, null);
+		body.visitCode();
+		body.visitInsn(Opcodes.RETURN);
+		body.visitMaxs(0, 0);
+		body.visitEnd();
+		writer.visitEnd();
+		return writer.toByteArray();
+	}
+	private static String attributed(String id) {
+		return CompatibilityFindings.all().stream().filter(f -> f.id().equals(id)).findFirst().orElseThrow().modId();
 	}
 	/**
 	 * Hoppers ask Fabric's lookup whenever fabric-transfer-api and NeoForge's hopper are both present — with or without

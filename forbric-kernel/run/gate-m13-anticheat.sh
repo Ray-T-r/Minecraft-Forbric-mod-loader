@@ -145,9 +145,8 @@ done
 
 step "let vanilla's post-main watchdog speak before killing anything"
 for i in $(seq 1 25); do kill -0 "$CLIENT_PID" 2>/dev/null || break; sleep 1; done
-for pid in $(pgrep -P "$CLIENT_PID" 2>/dev/null) "$CLIENT_PID"; do kill "$pid" 2>/dev/null; done
-sleep 2
-for pid in $(pgrep -P "$CLIENT_PID" 2>/dev/null) "$CLIENT_PID"; do kill -9 "$pid" 2>/dev/null; done
+stop_tree "$CLIENT_PID"   # the whole tree: lib.sh says why children-only orphans a JVM
+wait "$CLIENT_PID" 2>/dev/null
 cat "$CGAME" >> "$CLOG" 2>/dev/null || true
 
 step "stop the server"

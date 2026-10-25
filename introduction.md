@@ -748,7 +748,15 @@ classpath (first-URL-wins would otherwise let it shadow the winner and contribut
 - **Item/fluid/energy transfer** — `KernelTransferInterop` + `runtime/transfer/` bridge Fabric's transfer API,
   NeoForge's `ResourceHandler` and MinecraftForge capabilities, and Team Reborn Energy when installed
   (`-Dforbric.transferBridge=off`, `-Dforbric.hopperFabricStorage=off`). Active only when the relevant APIs are
-  present, checked by resource.
+  present, checked by resource. A transfer finding (a provider the bridge will not drive transactionally) is attributed
+  to the mod whose jar holds the class that answers for the provider: its own class, or a dynamic proxy's invocation
+  handler, carried across as a `Class` (`TransferIssues.Issue.source`) because a lambda cannot be found by name and a
+  proxy was defined from no jar. `util.CodeRoots` reads the jar (null for a proxy, a class with no protection domain, a
+  JDK class; a hidden class's is its definer's), and a class from no mod's jar is attributed to `forbric` as an answer,
+  not a failure. A proxy class is shared — the JDK defines one per class loader and interface list — so the runtime's
+  once-per-finding key and the finding's id carry that class too whenever it is not the provider's own
+  (`transfer:<code>:<proxy> via <handler>`); keyed by the proxy's name, the first mod to report took the finding and
+  every other mod's handler behind the same interfaces was dropped.
 
 ## 6. The transform pipeline
 
@@ -1824,7 +1832,23 @@ Tests and gates both read it. `CaughtErrorsExtension` (loaded for every unit tes
 a test during which the kernel caught a failure, unless the test says it causes it with `@ExpectCaught("<what the
 failure says>")`; on a method, every named failure must also happen. `run/lib.sh` gives each gate its own
 `build/caught/<gate>.<pid>.tsv`, exports it to every JVM the gate starts, and at exit prints `[kernel] CAUGHT …` with
-each site, its message and its count; `FORBRIC_CAUGHT_STRICT=1` turns any of them into a red gate.
+each site, its message and its count; `FORBRIC_CAUGHT_STRICT=1` turns any of them into a red gate. A gate started by
+a gate reports through it: m33, m35, m37, m38, m39 and m40 start their servers by running themselves again under
+`evidence.py`, and that inner run inherits the file together with `FORBRIC_CAUGHT_GATE` (the owner's name and pid),
+writes into it and prints nothing; a leftover variable whose owner is dead, or a file exported with no owner, is not
+inherited (`LibCaughtContractTest`). Each inner run used to take a file of its own, print its CAUGHT line into the
+server log the outer gate keeps, and leave the outer gate printing `CAUGHT none` — over an NPE gate-m39's server hit on
+every run (main f7f4ff92 too; §5's transfer attribution). gate-m34 waits for `soak-run.py` rather than exec'ing it, so
+its EXIT trap still runs; the soak client (one JVM: the client and every integrated server it opens) writes the run's
+`evidence/caught.tsv`, which `soak-run.py` appends to the gate's file and records in `acceptance.json`.
+
+A JVM that outlives its gate is reported by nobody, so the gates stop a client with lib.sh's `stop_tree`: the whole
+process tree, frozen first (STOP, parents before children), then TERM to every process in it so a JVM runs its
+shutdown hooks, and SIGKILL for what is left after a grace (`LibStopTreeTest`). Seven client gates used to signal the
+recorded pid and its direct children — the form `kill_tree` had already replaced for servers. Where the launcher execs
+java that was the JVM; gate-m17 runs the resolved command as `tr … | xargs -0 env … java` in a subshell, and on a
+loaded run its client lived on re-parented to launchd after the gate had printed `CAUGHT none` and exited, then wrote
+two failures into the gate's file.
 
 ## 13. The installer — `forbric-kernel-installer/`
 
@@ -1950,7 +1974,7 @@ Forbric/
 │   ├── src/main/java/net/forbric/api/          the unified API (25 files)
 │   ├── src/main/java/net/forbric/kernel/       boot (107), transform (152), mixin (166), fabric (15),
 │   │                                           metadata (12), access (7), classloading (10), discovery (5),
-│   │                                           interop (23), ui (6), util (12), mapping (3), soak (2)
+│   │                                           interop (23), ui (6), util (13), mapping (3), soak (2)
 │   ├── src/main/java/net/fabricmc/             vendored Fabric API surface (47 files)
 │   ├── src/main/resources/                     Mixin service registrations; mixin census tables
 │   ├── src/runtime/                            GAME side, net.forbric.kernel.runtime (+ soak/, transfer/)
@@ -1999,21 +2023,40 @@ java -cp <boot-cp> net.forbric.kernel.boot.Main --scan --mods <dir> --report out
   Team Reborn Energy 5.0.0 pinned by SHA-256 (`run/energy-api/energy-5.0.0.jar` or `-Pforbric.rebornEnergy`).
   Without the staged jars `compileRuntimeJava` is skipped and `jar` produces a boot jar with no game side — which
   is what CI builds. `KernelRuntimeClasses.verify` is what catches such a jar at launch.
-- **Unit tests.** Counted from source: `src/test` has 5 531 `@Test` methods (23 of them spelled
-  `@org.junit.jupiter.api.Test`), 57 `@TestFactory` and 6 `@ParameterizedTest` methods in 1 043 `*Test.java` files;
-  `src/transferTest` has 71 `@Test` methods in 6 files (annotations at line start after indentation, `git grep` over
-  tracked files). A full run on the staged base (`forbric-loader/run` with its current merged base and report, and
-  the third-party mod packs the developer's machine still has) reported 6 642 tests in its JUnit XML, 77 of them
-  skipped: 75 for third-party packs that machine no longer has, 2 opt-in. How many run depends on the fixtures
-  present, since some tests generate one case per fixture. Many tests read the staged jars; gate-m0 fails on *any*
-  skipped test, because a skip there means the tests did not look at the real base. The weave tests (`mixin/weave/`)
-  run synthetic mods with unrelated names through the real Mixin and MixinExtras, each with its mechanism switched
-  off as the control. Tests must pass on JDK 21 as well as 25 (the CI unstaged job is JDK 21).
+- **Unit tests.** Counted from source: `src/test` has 5 549 `@Test` methods (23 of them spelled
+  `@org.junit.jupiter.api.Test`), 57 `@TestFactory` and 6 `@ParameterizedTest` methods in 1 046 `*Test.java` files;
+  `src/transferTest` has 76 `@Test` methods in 7 files (annotations at line start after indentation, `git grep` over
+  tracked files). A full run (`cleanTest test`, no daemon) on a staged root cloned whole from the developer's
+  `forbric-loader/run` — its merged base, runtimes and test fixtures — with this tree's tracked report in it, and the
+  third-party mod packs that machine still has, reported 6 660 tests in its JUnit XML, 74 of them skipped: 72 for
+  third-party packs the machine no longer has, 2 opt-in. How many run and skip depends on the root and the fixtures
+  present (some tests generate one case per fixture; a root cloned from an older copy skipped five more). Many tests
+  read the staged jars; gate-m0 fails on *any* skipped test, because a skip there means the tests did not look at the
+  real base. The weave tests (`mixin/weave/`) run synthetic mods with unrelated names through the real Mixin and
+  MixinExtras, each with its mechanism switched off as the control. Tests must pass on JDK 21 as well as 25 (the CI unstaged job is JDK 21).
 - **Gates.** 59 scripts, `forbric-kernel/run/gate-m*.sh`, each asserting on the real logs and files of a real
   instance, most with named negative controls (a `-D…=off` or input removal that must turn exactly the named
   checks red). `run/compat/gates-all.sh` discovers them by glob; `gates-parallel.py` overlaps them using each
   gate's `# GATE-PARALLEL: rundirs=… mem=…` line (56 of 59 carry one; a gate without it runs alone), giving each
-  slot its own port block.
+  slot its own port block. Their time bounds are wall-clock seconds sized on a machine with cores to spare, and most
+  count from the launcher's start, its Gradle build included; gate-m22's client window counts from the JVM's own
+  start instead. On a busy machine they measure the machine. Run as two `-j 5` batches side by side, one on a
+  tree and one on the commit it branched from, so that both see one load (10 cores; median load average 28–59 per
+  round, peaks 40–111), m2b, m3 and m4 went red on both alike in all three rounds: m2b's and m3's servers were still
+  short of `Done` 136–140 s and 77–83 s after their first line (one m2b got there at 138 s, too late for its stop),
+  against 150 s and 90 s counted from the launch, and m4's own stop feeder stops waiting 150 s after the launch and
+  writes `stop` into a boot that has not reached `Done`, where the console drops it ("An unexpected error occurred
+  while trying to execute that command"; `server_ready` in `run/lib.sh` exists for exactly this, and m4 does not use
+  it). A full `-j 5` run at load averages 44–163 turned m8, m17, m18 and m40 red on the same kind of timeout. The one
+  performance assertion, `check_kept_up` (vanilla's "Can't keep up!" while a player is on), measures the machine the
+  same way: a loaded server logs it once, 2.0–3.6 s behind, one to six seconds after the player joins. With m12–m16 run
+  as the same pair of side-by-side batches (median load averages 23–39), m12 went red on it on both trees in all three
+  rounds and m15 on each tree in two of three, and in a `-j 5` batch with the full test suites beside it m12 and m16
+  did. A red
+  gate from a loaded parallel run says nothing about the kernel until the boot times in its logs have been read. The
+  clock can also bite by date: the game's log4j configuration rolls `logs/latest.log` at midnight, eleven gates read
+  that file, and m9 went red once because its session crossed midnight and the reload line it looks for went to the
+  rolled archive.
 
 | Gate | Asserts |
 | --- | --- |
@@ -2028,7 +2071,7 @@ java -cp <boot-cp> net.forbric.kernel.boot.Main --scan --mods <dir> --report out
 | m17 | the installer's profile, launched the way a launcher does |
 | m18, m19, m20 | cross-ecosystem presence; a nested library initialised once; unmet dependency reaches the player |
 | m21, m26, m28, m29 | MinecraftForge setup, client registration events, configs + live file watcher, capabilities |
-| m22, m23 | quitting survives a replaced kernel jar; elytra flight |
+| m22, m23 | quitting survives a replaced kernel jar (the client JVM gets `M22_READY_SECONDS`, 600, from its own start to reach a world; the launcher's Gradle build before it is timed and bounded apart; negative controls: a client JVM stopped as it starts, and a pack whose only world is unreadable); elytra flight |
 | m24, m24b, m30 | a failing mod, a mod whose metadata cannot be read, and a partly failing mod, attributed on every surface |
 | m24c | a jar listed in `forbric-disabled.txt` is loaded by nobody and named in the load report; a server only logs the crash-suspects offer |
 | m25, m31, m32 | both biome-modifier pipelines; zero-mod worldgen parity with vanilla; a save opens with a mod removed |

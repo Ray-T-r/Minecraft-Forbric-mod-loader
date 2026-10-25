@@ -31,13 +31,28 @@ FAIL=0
 #
 # Only a gate owns a file. Every other script sourcing this (the canary builders, the oracles) leaves an inherited
 # variable alone, so a builder a gate calls writes into the gate's file and does not report it a second time.
+#
+# A gate started BY a gate joins the outer one's file the same way. Six gates (m33, m35, m37, m38, m39, m40) start
+# their servers by running themselves again under evidence.py (`gate-mNN.sh --execute…`), and that inner run is a
+# gate-* script too. It used to take a file of its own: every JVM it started wrote there, it printed its CAUGHT line
+# into the server log the outer gate keeps as evidence, and the outer gate read its own, empty, file and printed
+# "CAUGHT none". gate-m39's server hit an NPE in the transfer interop on every run, and the gate said none. The outer
+# gate exports FORBRIC_CAUGHT_GATE (name:pid) with its file; an inner run that inherits both, while that pid is still
+# alive and the file still exists, writes into it and leaves the report to the gate that owns it. A variable left over
+# in an unrelated shell (no live owner, or no file) is not inherited ownership, and the gate takes its own file.
 case "$(basename "$0")" in
   gate-*)
-    CAUGHT_OWNER=$$
-    mkdir -p "$BUILD/caught"
-    FORBRIC_CAUGHT_FILE="$BUILD/caught/$(basename "$0" .sh).$$.tsv"
-    : > "$FORBRIC_CAUGHT_FILE"
-    export FORBRIC_CAUGHT_FILE
+    if [ -n "${FORBRIC_CAUGHT_GATE:-}" ] && [ -n "${FORBRIC_CAUGHT_FILE:-}" ] && [ -f "$FORBRIC_CAUGHT_FILE" ] \
+        && kill -0 "${FORBRIC_CAUGHT_GATE##*:}" 2>/dev/null; then
+      export FORBRIC_CAUGHT_FILE FORBRIC_CAUGHT_GATE
+    else
+      CAUGHT_OWNER=$$
+      mkdir -p "$BUILD/caught"
+      FORBRIC_CAUGHT_FILE="$BUILD/caught/$(basename "$0" .sh).$$.tsv"
+      FORBRIC_CAUGHT_GATE="$(basename "$0" .sh):$$"
+      : > "$FORBRIC_CAUGHT_FILE"
+      export FORBRIC_CAUGHT_FILE FORBRIC_CAUGHT_GATE
+    fi
     ;;
 esac
 
@@ -304,6 +319,51 @@ kill_tree() {
   kill -STOP "$root" 2>/dev/null   # it cannot spawn a new child while its children are being collected
   for child in $(pgrep -P "$root" 2>/dev/null); do kill_tree "$child"; done
   kill -9 "$root" 2>/dev/null
+}
+
+# stop_tree <pid> [grace-seconds] — the same whole tree, asked first: TERM to every process in it, up to <grace>
+# seconds (default 2) for them to go, then SIGKILL for whatever is left. For a client a gate is done with, whose JVM
+# should get to run its shutdown hooks (Caught's per-site counts are written there).
+#
+# The clients had kept the children-only form kill_tree replaced for servers. Where the launcher execs java that is
+# the JVM itself and it worked; gate-m17 runs the resolved command as `tr … | xargs -0 env … java` in a subshell, so
+# java is the subshell's grandchild. TERM reached the subshell, tr and xargs, and the client lived on re-parented to
+# launchd with its window open. Measured on a loaded run: the gate gave up on it, printed "CAUGHT none" and exited;
+# two minutes later the orphan hit two failures (the gate's last step had reinstalled the libraries under it) and
+# wrote them into the gate's caught file, reached its world 14 s after that, and quit. A JVM that outlives its gate
+# is reported by nobody.
+#
+# The tree is frozen (STOP, parents before children, as kill_tree does) before anything is signalled, so a process
+# killed first cannot orphan a child the snapshot has not seen, and none can start a new one in between.
+stop_tree() {
+  local root="$1" grace="${2:-2}" pids pid alive i
+  case "$root" in ''|*[!0-9]*) return 0;; esac
+  pids="$(_freeze_tree "$root")"
+  [ -n "$pids" ] || return 0
+  for pid in $pids; do kill -TERM "$pid" 2>/dev/null; done
+  for pid in $pids; do kill -CONT "$pid" 2>/dev/null; done
+  for i in $(seq 1 $((grace * 4))); do
+    alive=""
+    for pid in $pids; do _running "$pid" && alive="$alive $pid"; done
+    [ -n "$alive" ] || return 0
+    sleep 0.25
+  done
+  for pid in $pids; do _running "$pid" && kill_tree "$pid"; done
+  return 0
+}
+# _freeze_tree <pid> — STOP <pid>, then each child's tree; prints every pid stopped, parents first.
+_freeze_tree() {
+  local root="$1" child
+  kill -STOP "$root" 2>/dev/null || return 0
+  echo "$root"
+  for child in $(pgrep -P "$root" 2>/dev/null); do _freeze_tree "$child"; done
+}
+# _running <pid> — alive and not a zombie (an exited child the gate has not waited for yet still answers kill -0).
+_running() {
+  local state
+  state="$(ps -o stat= -p "$1" 2>/dev/null)" || return 1
+  case "$state" in ''|Z*) return 1;; esac
+  return 0
 }
 
 # reap_stale_server <rundir> — clean up a server left running by an INTERRUPTED earlier run of this same gate.
