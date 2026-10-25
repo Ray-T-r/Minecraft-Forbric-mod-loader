@@ -61,21 +61,32 @@ public final class ForgeEntityFluidsInjector implements ClassTransformer {
 	static final String CONSTRUCTOR_DESC = "(Ljava/util/Set;)V";
 	static final String STATE = "Ljava/lang/Object;";
 
-	/** MinecraftForge's six queries of its own state: name, descriptor, the kernel method answering it. */
+	/**
+	 * MinecraftForge's six queries of its own state: name, descriptor, the kernel method answering it. Each is written as
+	 * one name-and-descriptor key ({@link #query}): the uncalled-method census reads a string in the kernel that spells a
+	 * method's bare name as a possible call of every method of that name, and these name only the methods matched here
+	 * (spelling {@code "isInFluid"} alone made EntityFluidInteraction's uncalled {@code isInFluid(TagKey)} look called).
+	 */
 	static final String[][] FORGE_QUERIES = {
-		{"getFluidHeight", "(" + FORGE_TYPE + ")D", "forgeHeight"},
-		{"isEyeInFluid", "(" + FORGE_TYPE + ")Z", "forgeEyes"},
-		{"getEyeFluid", "()" + FORGE_TYPE, "forgeEye"},
-		{"isInFluid", "()Z", "forgeInFluid"},
-		{"isInFluid", "(Ljava/util/function/BiPredicate;Z)Z", "forgeMatching"},
-		{"getMaxHeightFluid", "()" + FORGE_TYPE, "forgeMaxHeight"},
+		query("getFluidHeight(" + FORGE_TYPE + ")D", "forgeHeight"),
+		query("isEyeInFluid(" + FORGE_TYPE + ")Z", "forgeEyes"),
+		query("getEyeFluid()" + FORGE_TYPE, "forgeEye"),
+		query("isInFluid()Z", "forgeInFluid"),
+		query("isInFluid(Ljava/util/function/BiPredicate;Z)Z", "forgeMatching"),
+		query("getMaxHeightFluid()" + FORGE_TYPE, "forgeMaxHeight"),
 	};
 	/** NeoForge's three type queries the tags widen: name, descriptor, the kernel method passing the answer through. */
 	static final String[][] NEO_QUERIES = {
-		{"isInFluid", "(" + NEO_TYPE + ")Z", "neoIn"},
-		{"isEyeInFluid", "(" + NEO_TYPE + ")Z", "neoEyes"},
-		{"getFluidHeight", "(" + NEO_TYPE + ")D", "neoHeight"},
+		query("isInFluid(" + NEO_TYPE + ")Z", "neoIn"),
+		query("isEyeInFluid(" + NEO_TYPE + ")Z", "neoEyes"),
+		query("getFluidHeight(" + NEO_TYPE + ")D", "neoHeight"),
 	};
+
+	/** {name, descriptor, answer} of a {@code name(descriptor)} key. */
+	private static String[] query(String key, String answer) {
+		int at = key.indexOf('(');
+		return new String[] {key.substring(0, at), key.substring(at), answer};
+	}
 
 	static boolean enabled() {
 		return !"off".equalsIgnoreCase(System.getProperty(PROPERTY, "on"));

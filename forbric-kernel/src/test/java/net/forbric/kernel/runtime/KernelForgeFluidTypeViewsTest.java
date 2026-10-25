@@ -110,6 +110,28 @@ class KernelForgeFluidTypeViewsTest {
 							};
 						}
 					}
+					""",
+			"example.forge.DimmingType", """
+					package example.forge;
+
+					/** A MinecraftForge fluid type whose fog darkens the colour it is handed, as MinecraftForge hands it the fog's colour so far. */
+					public class DimmingType extends net.minecraftforge.fluids.FluidType {
+						public DimmingType() {
+							super(Properties.create().descriptionId("block.example.dim"));
+						}
+
+						@Override
+						public Object getRenderPropertiesInternal() {
+							return new net.minecraftforge.client.extensions.common.IClientFluidTypeExtensions() {
+								@Override
+								public org.joml.Vector3f modifyFogColor(net.minecraft.client.Camera camera, float partialTick,
+										net.minecraft.client.multiplayer.ClientLevel level, int renderDistance, float darkenWorldAmount,
+										org.joml.Vector3f fluidFogColor) {
+									return new org.joml.Vector3f(fluidFogColor).mul(0.5f);
+								}
+							};
+						}
+					}
 					""");
 
 	@TempDir Path temp;
@@ -273,6 +295,22 @@ class KernelForgeFluidTypeViewsTest {
 	}
 
 	/**
+	 * Every fluid seen with a type is asked, not only the first: a type seen first with a fluid outside
+	 * {@code minecraft:water} and then with one in it is water-like from then on, in whichever order the two were seen.
+	 */
+	@Test void aViewIsWaterLikeWhenAnyFluidSeenWithItIs() throws Exception {
+		load();
+		Object first = forgeType("dry-first", false), second = forgeType("wet-first", false);
+		Object dryFirst = viewOf(first, fluid("example.forge.DryFluid", first));
+		assertEquals(false, ask(dryFirst, "getIsWaterLike", null), "premise: seen only outside the tag");
+		assertSame(dryFirst, viewOf(first, fluid("example.forge.WaterTaggedFluid", first)), "one view per type");
+		assertEquals(true, ask(dryFirst, "getIsWaterLike", null), "the second fluid, in the tag, makes it water-like");
+		Object wetFirst = viewOf(second, fluid("example.forge.WaterTaggedFluid", second));
+		viewOf(second, fluid("example.forge.DryFluid", second));
+		assertEquals(true, ask(wetFirst, "getIsWaterLike", null));
+	}
+
+	/**
 	 * MinecraftForge's game never scales a fall by the fluid it falls through (only lava's factor, in lava), so the view's
 	 * factor is 1. Before it was the MinecraftForge type's (0.5 by default, 0 for Biomes O' Plenty's blood): a body that
 	 * dies landing through a MinecraftForge fluid on MinecraftForge survived it here.
@@ -343,6 +381,24 @@ class KernelForgeFluidTypeViewsTest {
 				.invoke(plain, null, 0f, null, 8, 0f, untouched);
 		assertEquals(List.of(0.5f, 0.6f, 0.7f, 1f), rgba(untouched), "a type with no client extensions changes nothing");
 		assertNull(extensions.invoke(null, (Object) null), "any other type: NeoForge decides");
+	}
+
+	/**
+	 * MinecraftForge hands a type's {@code modifyFogColor} the fog's colour so far ({@code ForgeHooksClient.getFogColor}
+	 * passes the current colour), and a type may build on it rather than replace it; the view hands it the colour NeoForge
+	 * handed in, and keeps NeoForge's alpha.
+	 */
+	@Test void aViewHandsTheMinecraftForgeTypeTheFogsColourSoFar() throws Exception {
+		load();
+		Class<?> client = loader.loadClass("net.forbric.kernel.runtime.KernelForgeFluidClientViews");
+		Object neo = client.getMethod("neoExtensions", Object.class).invoke(null, view(loader.loadClass("example.forge.DimmingType").getConstructor().newInstance()));
+		Class<?> vector = loader.loadClass("org.joml.Vector4f");
+		Object colour = vector.getConstructor(float.class, float.class, float.class, float.class).newInstance(0.5f, 0.6f, 0.8f, 0.8f);
+		loader.loadClass("net.neoforged.neoforge.client.extensions.common.IClientFluidTypeExtensions")
+				.getMethod("modifyFogColor", loader.loadClass("net.minecraft.client.Camera"), float.class,
+						loader.loadClass("net.minecraft.client.multiplayer.ClientLevel"), int.class, float.class, vector)
+				.invoke(neo, null, 0f, null, 8, 0f, colour);
+		assertEquals(List.of(0.25f, 0.3f, 0.4f, 0.8f), rgba(colour), "half the colour handed in, NeoForge's alpha kept");
 	}
 
 	/** A type its getter cannot give yet (its registry entry is unfilled) is not pinned: the tags answer, uncached. */

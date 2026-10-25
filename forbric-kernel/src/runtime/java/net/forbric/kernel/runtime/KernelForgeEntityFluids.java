@@ -136,7 +136,9 @@ public final class KernelForgeEntityFluids {
 			if (top < boxMinY) return;
 			boolean eyes = x == blockX && z == blockZ && eyeY >= y && eyeY <= top;
 			double height = top - bodyMinY;
-			FluidType type = forgeType(fluid);
+			// A fluid already known to hold the kernel's stand-in is not asked again: its MinecraftForge getter has no cache
+			// for a stand-in and would derive it from the fluid's tags again, for every cell of every entity in it every tick.
+			FluidType type = KernelFluidTypes.forgeTypeIsStandIn(fluid) ? null : forgeType(fluid);
 			if (type != null && !KernelFluidTypes.forgeTypeIsStandIn(fluid)) {
 				Tracker t = byType.computeIfAbsent(type, unused -> new Tracker());
 				t.height = Math.max(height, t.height);

@@ -303,6 +303,51 @@ class KernelForgeEntityFluidsTest {
 		assertEquals(1.25, call("forgeHeight", high, murk));
 	}
 
+	/**
+	 * The eyes are in a cell only in the body's own block column: MinecraftForge's loop compares the cell's x with the
+	 * body's block x and its z with the body's block z, both. A cell beside the body in either axis alone, at the eyes'
+	 * height, holds the body (its height counts) but not its eyes — for the type and for a tag the fluid is in.
+	 */
+	@Test void theEyesAreInTheBodysOwnColumnOnly() throws Exception {
+		loadWithFluids();
+		Object water = tag("WATER"), sameX = type("same-x"), sameZ = type("same-z"), own = type("own");
+		Object state = tracking(water);
+		begin(state, 100.0, 100.0, 101.5, 4, 7);
+		cell(state, own(sameX, water), 4, 101, 8, 1.0f);   // the body's x, another z
+		assertEquals(2.0, call("forgeHeight", state, sameX), "a cell beside the body holds it");
+		assertEquals(false, call("forgeEyes", state, sameX), "the body's x but another z: not the eyes' column");
+		assertEquals(false, read(tracker(state, water), "eyes"), "nor for the tag the fluid is in");
+		cell(state, own(sameZ, water), 3, 101, 7, 1.0f);   // another x, the body's z
+		assertEquals(false, call("forgeEyes", state, sameZ), "another x but the body's z: not the eyes' column");
+		assertEquals(false, read(tracker(state, water), "eyes"));
+		assertNull(read(state, "eye"), "no eye type: the eyes were in neither cell");
+		cell(state, own(own, water), 4, 101, 7, 1.0f);    // the body's own column
+		assertEquals(true, call("forgeEyes", state, own));
+		assertEquals(true, read(tracker(state, water), "eyes"));
+		assertSame(own, call("forgeEye", state));
+	}
+
+	/**
+	 * A tracker keeps the greatest height of every cell it was met in during one update, whatever the order: MinecraftForge
+	 * takes {@code Math.max} of the cell's height and the tracker's. A lower cell met after a higher one — the cells are
+	 * walked by x, then y, then z, so a column beside the body is met after the body's own — leaves the height as it was,
+	 * for the type and for each tag the fluid is in.
+	 */
+	@Test void aLowerCellMetLaterLeavesTheHeight() throws Exception {
+		loadWithFluids();
+		Object water = tag("WATER"), wet = type("wet");
+		Object state = tracking(water);
+		begin(state, 100.0, 100.0, 101.62, 0, 0);
+		cell(state, own(wet, water), 0, 101, 0, 0.75f);   // the body's own column, 1.75 above its bottom
+		cell(state, own(wet, water), 1, 100, 0, 0.25f);   // beside it, shallower: 0.25
+		assertEquals(1.75, call("forgeHeight", state, wet), "the higher cell's height stands");
+		assertEquals(1.75, read(tracker(state, water), "height"), "and the tag's");
+		assertEquals(1.75, invoke(state, "heightIn", water, 0.0));
+		cell(state, own(wet, water), 2, 101, 0, 0.5f);    // a third, between the two
+		assertEquals(1.75, call("forgeHeight", state, wet));
+		assertEquals(1.75, read(tracker(state, water), "height"));
+	}
+
 	/** A cell whose fluid tops out below the interaction box is touched (any-fluid) and nothing more: no tracker is made. */
 	@Test void aCellBelowTheBoxIsOnlyTouched() throws Exception {
 		loadWithFluids();
