@@ -76,7 +76,13 @@ import org.objectweb.asm.tree.analysis.SourceValue;
  * the calls of that method in the same class.
  *
  * <p>A shape this cannot trace is not seen: a bus or listener handed to a helper in another class, a listener built by a
- * factory method, a per-event bus kept in another class's field. What is seen is a registration the guest's own code makes.
+ * factory method, a per-event bus kept in another class's field; an object handed to {@code register} that is read from a
+ * field, a static field or a getter (Xaero's MinecraftForge builds register their handlers so: {@code
+ * MinecraftForge.EVENT_BUS.register(modMain.getEvents())}), and the {@code @SubscribeEvent} methods of a subclass of the
+ * argument's declared type; a listener that is an anonymous class ({@code addListener(new Consumer<…>() {…})}) or is kept
+ * in a field; a helper two levels away, or a class literal passed in as a helper's parameter (JEI's {@code
+ * PermanentEventSubscriptions.register(priority, FooEvent.class, listener)}). What is seen is a registration the guest's
+ * own code makes in the shapes above.
  */
 final class GuestListeners {
 

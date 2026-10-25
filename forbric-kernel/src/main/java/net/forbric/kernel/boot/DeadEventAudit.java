@@ -433,8 +433,10 @@ public final class DeadEventAudit {
 		partial.put(forge + "entity/ProjectileImpactEvent",
 				"a projectile's hit is posted natively on 1 of its 6 paths (fishing hooks), which its bridge makes up for");
 		partial.put(client + "RenderTooltipEvent$GatherComponents",
-				"the lines of a tooltip can be added to or changed on 3 of its 4 paths — not for a tooltip a screen sets "
-						+ "with its own background for the next frame");
+				"the lines of a tooltip can be added to or changed on 3 of its 4 paths — not on the one every item's "
+						+ "tooltip takes (container slots, villager trades, the stonecutter, an item hovered in chat), which "
+						+ "posts NeoForge's event alone: of the game's own tooltips only the enchanting table's and an entity "
+						+ "hovered in chat still post it");
 		partial.put(client + "RenderBlockScreenEffectEvent",
 				"the in-block overlay is posted natively on 2 of its 3 paths (water and fire, not a block the camera is "
 						+ "inside), which its bridge makes up for");
@@ -905,7 +907,13 @@ public final class DeadEventAudit {
 	 * Until 2026-10-25 they were judged only from the {@code ServerStarted} hook, so a client that only ever joined a remote
 	 * server never judged them at all, and the bus's answer stood alone: a mod that registers on the client only was named on
 	 * a dedicated server whenever another mod listened for the same event there. The bus still cannot say who is on it; the
-	 * loaded class is what ties the registration to this mod.
+	 * loaded class is what ties the registration to this mod — only where that class registers on every side it loads on.
+	 * A class both sides load that registers under a side check of its own (lucid-dreams' {@code @Mod} constructor tests
+	 * {@code FMLEnvironment.dist} before its client listeners) counts as registering on a dedicated server too, and would be
+	 * named there for a common event whenever anything else listens on that event's bus (no case today: what it registers
+	 * under that check is for client-only rows). The listeners for an event a bridge delivers are judged by {@link #judgePending} alone, which a
+	 * client that only ever joins a remote server never runs: there a missing client bridge is logged by
+	 * {@code EventBridges.verify}, which names no mod.
 	 */
 	public static void report(Map<String, Set<String>> subscribedByMod, net.forbric.api.Side side,
 			java.util.function.Function<Set<String>, Map<String, Set<String>>> postedByGuests, Map<String, Set<String>> inCode,

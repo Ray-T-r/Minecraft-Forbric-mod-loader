@@ -25,10 +25,11 @@ registered in its constructor, after bridges installed before the mods are const
 registered at LOWEST later answers after MinecraftForge's, and the gate's canaries have none (introduction §19). The
 order is recorded, never assumed: a row where a NeoForge listener and MinecraftForge's both answered an event must
 record the order of a tick they both answered. One row is a documented deliberate difference ('owner-refill': the
-owner's vanilla refill, which the reference must still show natively). The body's random draws are judged only where
-a row must draw what another row draws ('rng-as': a MinecraftForge listener's bubble count, which natively nothing
-reads), and only once the probe read them on every tick; the entity events never are (both documented in
-introduction §19).
+owner's vanilla refill, which the reference must still show native MinecraftForge not doing: its air apart from the
+vanilla refill and its listener told it may not refill; whether that air holds still is not judged). The body's
+random draws are judged only where a row must draw what another row draws ('rng-as': a MinecraftForge listener's
+bubble count, which natively nothing reads), and only once the probe read them on every tick; the entity events never
+are (both documented in introduction §19).
 """
 import argparse
 import hashlib
@@ -64,8 +65,9 @@ F, N = 'forge', 'neo'
 #                                 a deliberate difference (the owner's vanilla refill, introduction §6 and §8.1): the
 #                                 body's air is what <row>'s body does on native MinecraftForge (the vanilla refill) and
 #                                 MinecraftForge's breathe listener's first note contains <merged>, where this row's own
-#                                 native run holds the air and its note contains <native> (the reference must still show
-#                                 that); the rest of the row (health, every view's count and ticks) is judged as native
+#                                 native run does not refill so (its air is not <row>'s native air) and its note contains
+#                                 <native> (the reference must still show that; that its air holds still is not checked);
+#                                 the rest of the row (health, every view's count and ticks) is judged as native
 EXPECT = {
     'drown-read': ({F, N}, []),
     'drown-late': ({F, N}, []),

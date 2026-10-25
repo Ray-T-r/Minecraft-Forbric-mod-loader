@@ -21,20 +21,24 @@ import org.objectweb.asm.tree.VarInsnNode;
 /**
  * A fluid typed as NeoForge's empty type is no fluid to NeoForge's entity code, as the type says.
  *
- * <p>NeoForge's {@code EntityFluidInteraction.update} skips an empty cell and gives every other cell's type a tracker:
- * on NeoForge only the empty fluid state has the empty type, so no tracker of that type ever exists. On the merged base
- * the kernel gives the empty type to a fluid no loader types and no tag gives meaning — a Fabric mod's fluid in neither
- * {@code minecraft:water} nor {@code minecraft:lava} nor a Fabric behaviour's tag (KernelFluidTypes) — meaning "entities
- * do not interact with it", which is what vanilla does with such a fluid. But the walk made a tracker for it all the
- * same, and NeoForge's entity code reads any tracker with height as "in a fluid": {@code shouldTravelInFluid} asks
- * {@code isInFluidType(state)}, so a body in such a fluid moved as through lava (the merged {@code travelInFluid} sends
- * every fluid but water there), where on Fabric it falls through it as through air.
+ * <p>NeoForge's {@code EntityFluidInteraction.update} skips an empty cell and gives every other cell's type a tracker,
+ * the empty type's too when a fluid is typed so. On the merged base the kernel gives the empty type to a fluid no
+ * loader types and no tag gives meaning — a Fabric mod's fluid in neither {@code minecraft:water} nor {@code
+ * minecraft:lava} nor a Fabric behaviour's tag (KernelFluidTypes) — meaning "entities do not interact with it", which
+ * is what vanilla does with such a fluid. But the walk made a tracker for it all the same, and NeoForge's entity code
+ * reads any tracker with height as "in a fluid": {@code shouldTravelInFluid} asks {@code isInFluidType(state)}, so a
+ * body in such a fluid moved as through lava (the merged {@code travelInFluid} sends every fluid but water there),
+ * where on Fabric it falls through it as through air.
  *
  * <p>NeoForge's private {@code getTrackerFor(FluidType)}, which only the walk calls, answers null for the empty type —
- * the walk already passes over a cell with no tracker — so no native fluid's cell is treated differently. MinecraftForge's
- * record of the same cell (ForgeEntityFluidsInjector, which keeps MinecraftForge's "any fluid touched") is taken before
- * this lookup and is unchanged. On the reviewed shape only: one parameter, NeoForge's type, returning the tracker. Not
- * made twice. {@code -Dforbric.emptyFluidTypeTracker=off} leaves it as merged.
+ * the walk already passes over a cell with no tracker. That is keyed on the type, not on whether the kernel gave it: a
+ * mod's fluid whose own type is the empty type (a NeoForge fluid typed with NeoForge's, or a MinecraftForge fluid typed
+ * with MinecraftForge's, whose view is NeoForge's) loses its tracker too, where both native loaders give it one — a
+ * measured difference (a body in it falls as through air; natively MinecraftForge moves it as through lava and NeoForge
+ * holds it still) that no jar in the local corpus has a fluid for. Keying on the kernel's stand-in is the open fix.
+ * MinecraftForge's record of the same cell (ForgeEntityFluidsInjector, which keeps MinecraftForge's "any fluid
+ * touched") is taken before this lookup and is unchanged. On the reviewed shape only: one parameter, NeoForge's type,
+ * returning the tracker. Not made twice. {@code -Dforbric.emptyFluidTypeTracker=off} leaves it as merged.
  */
 public final class EmptyFluidTypeTrackerInjector implements ClassTransformer {
 	public static final String PROPERTY = "forbric.emptyFluidTypeTracker";

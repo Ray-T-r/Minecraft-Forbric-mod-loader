@@ -18,7 +18,8 @@
 # each family's own liquid, and in a MinecraftForge liquid built canDrown(false), where only its type's canDrownIn keeps
 # the body from drowning, and with Breath of the Nautilus alone in that liquid, where the owner's vanilla refill refills
 # and native MinecraftForge holds the air (a documented deliberate difference, pinned both ways: the row must refill as
-# open air does natively and the reference must still hold); the probe's player drowning three times through the
+# open air does natively, and the reference must still show native MinecraftForge not refilling so and told it may not
+# refill — that its air holds still is not judged); the probe's player drowning three times through the
 # damage chain (MinecraftForge's attack, hurt and damage, NeoForge's incoming damage); and each family's liquid placed,
 # taken up and poured out with its bucket through the server's own use-item path. Every row's air and health (or a
 # liquid row's result) and the listener views it names are compared with the same jar on the native loader whose
