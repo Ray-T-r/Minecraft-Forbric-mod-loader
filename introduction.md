@@ -753,7 +753,10 @@ classpath (first-URL-wins would otherwise let it shadow the winner and contribut
   handler, carried across as a `Class` (`TransferIssues.Issue.source`) because a lambda cannot be found by name and a
   proxy was defined from no jar. `util.CodeRoots` reads the jar (null for a proxy, a class with no protection domain, a
   JDK class; a hidden class's is its definer's), and a class from no mod's jar is attributed to `forbric` as an answer,
-  not a failure.
+  not a failure. A proxy class is shared — the JDK defines one per class loader and interface list — so the runtime's
+  once-per-finding key and the finding's id carry that class too whenever it is not the provider's own
+  (`transfer:<code>:<proxy> via <handler>`); keyed by the proxy's name, the first mod to report took the finding and
+  every other mod's handler behind the same interfaces was dropped.
 
 ## 6. The transform pipeline
 
@@ -1839,6 +1842,14 @@ every run (main f7f4ff92 too; §5's transfer attribution). gate-m34 waits for `s
 its EXIT trap still runs; the soak client (one JVM: the client and every integrated server it opens) writes the run's
 `evidence/caught.tsv`, which `soak-run.py` appends to the gate's file and records in `acceptance.json`.
 
+A JVM that outlives its gate is reported by nobody, so the gates stop a client with lib.sh's `stop_tree`: the whole
+process tree, frozen first (STOP, parents before children), then TERM to every process in it so a JVM runs its
+shutdown hooks, and SIGKILL for what is left after a grace (`LibStopTreeTest`). Seven client gates used to signal the
+recorded pid and its direct children — the form `kill_tree` had already replaced for servers. Where the launcher execs
+java that was the JVM; gate-m17 runs the resolved command as `tr … | xargs -0 env … java` in a subshell, and on a
+loaded run its client lived on re-parented to launchd after the gate had printed `CAUGHT none` and exited, then wrote
+two failures into the gate's file.
+
 ## 13. The installer — `forbric-kernel-installer/`
 
 Pure JDK, no dependencies, bytecode release 17, version `0.3.1-beta2`.
@@ -2012,9 +2023,9 @@ java -cp <boot-cp> net.forbric.kernel.boot.Main --scan --mods <dir> --report out
   Team Reborn Energy 5.0.0 pinned by SHA-256 (`run/energy-api/energy-5.0.0.jar` or `-Pforbric.rebornEnergy`).
   Without the staged jars `compileRuntimeJava` is skipped and `jar` produces a boot jar with no game side — which
   is what CI builds. `KernelRuntimeClasses.verify` is what catches such a jar at launch.
-- **Unit tests.** Counted from source: `src/test` has 5 543 `@Test` methods (23 of them spelled
-  `@org.junit.jupiter.api.Test`), 57 `@TestFactory` and 6 `@ParameterizedTest` methods in 1 045 `*Test.java` files;
-  `src/transferTest` has 75 `@Test` methods in 7 files (annotations at line start after indentation, `git grep` over
+- **Unit tests.** Counted from source: `src/test` has 5 549 `@Test` methods (23 of them spelled
+  `@org.junit.jupiter.api.Test`), 57 `@TestFactory` and 6 `@ParameterizedTest` methods in 1 046 `*Test.java` files;
+  `src/transferTest` has 76 `@Test` methods in 7 files (annotations at line start after indentation, `git grep` over
   tracked files). A full run (`cleanTest test`, no daemon) on a staged root cloned whole from the developer's
   `forbric-loader/run` — its merged base, runtimes and test fixtures — with this tree's tracked report in it, and the
   third-party mod packs that machine still has, reported 6 654 tests in its JUnit XML, 74 of them skipped: 72 for
