@@ -64,15 +64,17 @@ step "destroy that copy while the game is in a world"
 # parallel gates-all run turned it red on both integration runs of 2026-10-24, once with the JVM reaching the world
 # 79 s after it started (the other 41 s were Gradle) and once at 121 s with the build on top. Alone it had passed
 # with ~20 s to spare. The build gets its own loose bound, M22_BUILD_SECONDS, so a hung Gradle still ends the gate;
-# how long it took is printed, not judged (6-31 s measured).
+# how long it took is printed, not judged (6-41 s measured; the 41 s in a full parallel gates-all run).
 #
 # M22_READY_SECONDS, measured from JVM start to client-ready with this 97-jar pack: 84-88 s alone on a quiet
-# machine; 79-125 s for the eight client-merged-pack clients (m9, m22, m23, m27) of two parallel gates-all runs; and
-# 97, 140, 180 and 204 s for this gate run alone while other worktrees' gates and probes (and a soak) kept the load
-# average at 10-29. A vanilla 26.2 client (no loader, a vanilla world) took 10-24 s to join under the same load, so most
-# of what load stretches is the pack's loading, not the game's. 600 s is three times the worst of those. It bounds a
-# client that is still loading, not its speed: one that is alive and will never reach a world is red when the bound
-# runs out, and one that exits first is red at once. The negative controls are a client JVM stopped (SIGSTOP) as soon
+# machine; 79-125 s for the eight client-merged-pack clients (m9, m22, m23, m27) of two parallel gates-all runs;
+# 97-204 s for this gate run alone (seven runs) while other worktrees' gates and probes (and a soak) kept the load
+# average at 10-29; 205, 231 and 235 s with ten gates at once on this tree and ten on another (load average medians
+# 28-59, peaks 40-111); and 270 s, the worst, in a full -j 5 gates-all run beside other worktrees' work, whose load
+# samples in its first half hour read 44-163 (none was taken while this gate ran). A vanilla 26.2 client (no loader, a
+# vanilla world) took 10-51 s to join under those loads, so most of what load stretches is the pack's loading, not
+# the game's. 600 s is 2.2 times the worst of those. It bounds a client that is still loading, not its speed: one
+# that is alive and will never reach a world is red when the bound runs out, and one that exits first is red at once. The negative controls are a client JVM stopped (SIGSTOP) as soon
 # as it starts, and a pack whose only world has an unreadable level.dat; both went red at the bound. With a loadable
 # world beside the unreadable one, a mouse click from outside reached the window and opened that world instead (twice),
 # so a control that leaves one is no control.
