@@ -82,10 +82,13 @@ ForbricClassLoader  (GAME side — the only loader that defines game/ecosystem c
 ### 2.1 Boot side vs game side
 
 `forbric-kernel.jar` is parent-loaded and names no game type. Everything that references `net.minecraft.*`,
-`net.minecraftforge.*`, `net.neoforged.*` or `net.fabricmc.fabric.*` lives in `src/runtime/java`
-(package `net.forbric.kernel.runtime` and its `soak`/`transfer` subpackages, 159 files), is compiled `compileOnly` against the staged game artifacts,
-packaged as `forbric-kernel-runtime.jar`, nested at `META-INF/jars/` inside the boot jar, extracted at launch by
-`KernelBundledJars` and loaded as an owned jar.
+`net.minecraftforge.*`, `net.neoforged.*` or `net.fabricmc.fabric.*` lives in the three game-side source sets —
+`src/runtime/java` (package `net.forbric.kernel.runtime` and its `soak`/`transfer` subpackages, 159 files),
+`src/modmenuPlugin/java` (the kernel's own Mod Menu entrypoint, `net.forbric.kernel.runtime.modmenu`, 1 file) and
+`src/modmenuApi/java` (a stand-in of Mod Menu's API, `com.terraformersmc.modmenu`, 6 files) — is compiled against the
+staged game artifacts, packaged as `forbric-kernel-runtime.jar` (the Mod Menu stand-in only as resources under
+`META-INF/forbric/modmenu-api/`, never as classes, §11), nested at `META-INF/jars/` inside the boot jar, extracted at
+launch by `KernelBundledJars` and loaded as an owned jar.
 
 The boot side reaches the game side by *string* (`Class.forName`, `getMethod`, ASM owner names).
 `KernelRuntimeClasses` is the registry of every such string, and `KernelRuntimeClasses.verify(loader)` loads the
@@ -777,14 +780,20 @@ classpath (first-URL-wins would otherwise let it shadow the winner and contribut
   where the kernel's stand-in answered (`forgeTypeIsStandIn`; `neoTypeIsStandIn`, recorded by `foreignNeoLookup` when
   no view of a MinecraftForge type of the fluid's own answers). A MinecraftForge mod's fluid keeps its own type and
   NeoForge's view of it, a NeoForge mod's its own, vanilla's both. `-Dforbric.ownFluidTypeClauses=off`. Second,
-  NeoForge's walk gives every non-empty cell's type a tracker; on NeoForge only the empty fluid state has the empty type,
-  but the kernel gives that type to a Fabric fluid in no tag (and in no Fabric behaviour's tag), meaning "entities do not
+  NeoForge's walk gives every non-empty cell's type a tracker, the empty type's included; the kernel gives that type to
+  a Fabric fluid in no tag (and in no Fabric behaviour's tag), meaning "entities do not
   interact with it", and the walk tracked it all the same: `shouldTravelInFluid` asks `isInFluidType(state)`, so a body
   in such a fluid moved as through lava (the merged `travelInFluid` is MinecraftForge's, which sends every fluid but water
   there) where on Fabric it falls through it as through air. `EmptyFluidTypeTrackerInjector` makes NeoForge's private
   `getTrackerFor(FluidType)` — which only the walk calls, and the walk passes over a cell with no tracker — answer null
-  for the empty type, so no native cell is treated differently; MinecraftForge's record of the cell is taken before the
-  lookup. `-Dforbric.emptyFluidTypeTracker=off`.
+  for the empty type; MinecraftForge's record of the cell is taken before the lookup. `-Dforbric.emptyFluidTypeTracker=off`.
+  The guard is keyed on the type, not on whether the kernel gave it: a mod fluid whose own type is the empty type — a
+  NeoForge fluid typed with NeoForge's, or a MinecraftForge fluid typed with MinecraftForge's, whose view is NeoForge's —
+  loses its tracker as well, where both native loaders give it one. Measured with one such test fluid per family (a
+  review's probe): a body in the MinecraftForge one falls as through air where native MinecraftForge moves it as through
+  lava (5 of 210 rows; with the switch off all 210 are native's), and in the NeoForge one where native NeoForge holds it
+  still. No jar in the local corpus (3 389, nested ones included) types a fluid so; keying the guard on the kernel's
+  stand-in instead of the type is the open fix.
 - **Configs** — `KernelForgeConfigLoad` opens genuine MinecraftForge configs one at a time, keeping Forge's reader,
   events, save and file watcher; the watchers are stopped on exit by `interop.ClientShutdown`
   (`ExitHookInjector`: `Minecraft.close` on the client, `DedicatedServer.onServerExit` on the server). A watcher
@@ -1484,7 +1493,8 @@ both events itself, and a bridge must not post the same one again (§8.1).
   a MinecraftForge listener reads `canRefillAir` true there, also in lava or a breathable fluid with Breath of the
   Nautilus alone, where native MinecraftForge reads false and holds the air. gate-m57 pins that difference in
   MinecraftForge's `canDrown(false)` liquid (the body refills as in open air natively, its MinecraftForge listener
-  reads true, and the native reference must still hold the air there), and plays each clause of MinecraftForge's rule
+  reads true, and the native reference must still show native MinecraftForge not refilling there and told it may not;
+  that its air holds still is not judged), and plays each clause of MinecraftForge's rule
   as the only one that says yes where a NeoForge listener refills nothing: water breathing in water (the effects),
   Breath of the Nautilus alone in open air (the eye in air), and in a bubble column. A NeoForge listener at `LOWEST`
   registered after the kernel's sees the MinecraftForge listeners' changes, one registered before does not. The event
@@ -1627,8 +1637,9 @@ both events itself, and a bridge must not post the same one again (§8.1).
     family's game posts it, as far as the census counts, and is no finding. Until 2026-10-25 a missing bridge always
     said "never posts": a bridge failing to install named nearly every MinecraftForge mod DEGRADED for the server or
     player tick, the level's load or save, logging in, which the merged game still posts (offline, on the popular pack
-    with no bridge installed, 45 of the 76 listener and event pairs it would have called never posted; now 19 are called
-    never posted, all of them `NO_NATIVE_PATH`, and 12 partly posted). `-Dforbric.unifiedEvents=off` does not reach this
+    with no bridge installed, the rules before 2026-10-25, which consulted `BRIDGED` but not `STAND_DOWN`, called 66
+    listener and event pairs never posted, 36 of them for events the merged game posts itself; now 19 are called never
+    posted, all of them `NO_NATIVE_PATH`, and 12 partly posted). `-Dforbric.unifiedEvents=off` does not reach this
     judgement in game at all (§19). A stand-down bridge delivers its event as surely as a bridged one; it only also
     stands down where the merged game posts natively. Until 2026-10-25 `STAND_DOWN` rows were never consulted, so a mod
     waiting on `LevelEvent$Unload` was told "partly posted" for the server-stop path its bridge forwards. A `PARTIAL`
@@ -1668,8 +1679,16 @@ both events itself, and a bridge must not post the same one again (§8.1).
     calls of that method in the same class. The events go to the jar's mod and are skipped as annotation subscribers
     are (a client-only class on a dedicated server, the arbiter's other half, a mod that did not finish loading). A bus
     or listener handed to a helper in another class, a per-event bus kept in another class's field, or a listener built
-    by a factory, is not traced. Annotation-style cancellable listeners (`@SubscribeEvent` returning `boolean`) are read
-    like void ones.
+    by a factory, is not traced; nor is an object handed to `register` that is read from a field, a static field or a
+    getter, nor the `@SubscribeEvent` methods of a subclass of the argument's declared type. A review's probe over the
+    741 distinct jars of the local corpus found 36 such `register` calls in 18 classes (8 of them in two loader classes),
+    among them Xaero's minimap and world map for MinecraftForge (`MinecraftForge.EVENT_BUS.register(modMain.getEvents())`,
+    the handlers in a subclass), which wait on chat, boss-bar and server-stop events the merged game posts only through
+    their bridges (`NO_NATIVE_PATH`): with such a bridge missing they are not named. Nor are a listener that is an
+    anonymous class or kept in a field, a helper two levels away, or a class literal passed in as a helper's parameter
+    (JEI's `PermanentEventSubscriptions.register(priority, FooEvent.class, listener)`) traced. The corpus counts above
+    compare `addListener` calls only, so they do not measure these. Annotation-style cancellable listeners
+    (`@SubscribeEvent` returning `boolean`) are read like void ones.
   - *When a listener found in code is judged.* A registration in code carries no side: JourneyMap registers its handlers
     from its client setup, and nothing in the handler classes says they are a client's. So these are judged once every
     mod's setup has run — when loading completes (`DeadEventAudit.judgeCodeListeners`, from the end of either side's
@@ -1677,10 +1696,17 @@ both events itself, and a bridge must not post the same one again (§8.1).
     bridge delivers, once the server is up with the annotation listeners — and a registration counts only where it can
     have happened: a class that makes it (the class calling `addListener`, or the class handed to `register`) has been
     loaded, and the event's own static bus has a listener then (an event with no bus of its own to ask is judged as
-    found). The bus cannot say whose listener it holds; the loaded class is what ties the registration to the mod.
-    Until 2026-10-25 they were judged only from `ServerStarted`, so a client that only ever joined a remote server never
-    judged them, and the bus's answer stood alone: a mod registering on the client only was named on a dedicated server
-    whenever another mod listened for the same event there.
+    found). The bus cannot say whose listener it holds; the loaded class is what ties the registration to the mod —
+    where that class registers on every side it loads on. A class both sides load that registers under a side check of its own
+    (lucid-dreams' `@Mod` constructor tests `FMLEnvironment.dist` before its client listeners) counts as registering on
+    a dedicated server too, and would be named there for a common event whenever anything else listens on that event's
+    bus (no case today: what it registers under the check is for client-only rows). Until 2026-10-25 they were judged
+    only from `ServerStarted`, so a client that only ever joined a remote server never judged them, and the bus's answer
+    stood alone: a mod registering on the client only was named on a dedicated server whenever another mod listened for
+    the same event there. Listeners for an event a bridge delivers, annotation or code, are still judged only from
+    `ServerStarted`: on a client that only joins remote servers a missing client bridge is logged by
+    `EventBridges.verify` (the bridge and its cost) and names no mod, although which client game-bus bridges are missing
+    is known once the multiplexer has installed them.
 
 ### 8.1 One delivery per native dispatch — stand-down
 
@@ -2019,7 +2045,9 @@ each site, its message and its count; `FORBRIC_CAUGHT_STRICT=1` turns any of the
 a gate reports through it: m33, m35, m37, m38, m39 and m40 start their servers by running themselves again under
 `evidence.py`, and that inner run inherits the file together with `FORBRIC_CAUGHT_GATE` (the owner's name and pid),
 writes into it and prints nothing; a leftover variable whose owner is dead, or a file exported with no owner, is not
-inherited (`LibCaughtContractTest`). Each inner run used to take a file of its own, print its CAUGHT line into the
+inherited (`LibCaughtContractTest`; its strict case passes with the inner run keeping a file of its own too, since
+the stub's outer gate ends on the inner run and takes its exit status, so that the outer gate turns red for an inner
+run's failure is held by no test). Each inner run used to take a file of its own, print its CAUGHT line into the
 server log the outer gate keeps, and leave the outer gate printing `CAUGHT none` — over an NPE gate-m39's server hit on
 every run (main f7f4ff92 too; §5's transfer attribution). gate-m34 waits for `soak-run.py` rather than exec'ing it, so
 its EXIT trap still runs; the soak client (one JVM: the client and every integrated server it opens) writes the run's
@@ -2155,12 +2183,14 @@ Forbric/
 │   ├── build.gradle               boot jar (release 21), runtimeJar, transferTest, staged-artifact wiring
 │   ├── gradle.properties          ASM, sponge-mixin, MixinExtras, SAT4J, NightConfig … versions
 │   ├── src/main/java/net/forbric/api/          the unified API (25 files)
-│   ├── src/main/java/net/forbric/kernel/       boot (109), transform (155), mixin (166), fabric (15),
+│   ├── src/main/java/net/forbric/kernel/       boot (109), transform (157), mixin (166), fabric (15),
 │   │                                           metadata (12), access (7), classloading (10), discovery (5),
 │   │                                           interop (23), ui (6), util (13), mapping (3), soak (2)
 │   ├── src/main/java/net/fabricmc/             vendored Fabric API surface (47 files)
 │   ├── src/main/resources/                     Mixin service registrations; mixin census tables
 │   ├── src/runtime/                            GAME side, net.forbric.kernel.runtime (+ soak/, transfer/)
+│   ├── src/modmenuPlugin/                      GAME side, the kernel's own Mod Menu entrypoint (KernelModMenuPlugin)
+│   ├── src/modmenuApi/                         GAME side, a stand-in of Mod Menu's API, shipped as resources (§11)
 │   ├── src/test/, src/transferTest/            unit tests; transfer-engine tests
 │   ├── canary/                                 canary mods the gates build and load
 │   └── run/                                    gate-m*.sh, launch-kernel-{client,server}.sh, lib.sh,
@@ -2264,7 +2294,7 @@ java -cp <boot-cp> net.forbric.kernel.boot.Main --scan --mods <dir> --report out
 | m54 | a NeoForge mod's play-phase packet reaches the server: Carry On, with fabric-api installed, carries a chest and a pig through real key and mouse input; the same run with the repair off must pick nothing up (third-party jars: `M54_CARRYON`, `M54_FABRIC_API`) |
 | m55 | the creative inventory's search finds items after a Fabric mod refreshed the search trees the vanilla way, judged from the screen's own grid, with a switched-off negative control |
 | m56 | with no Mod Menu, Fabric mods' config screens open through the kernel Mods screen's Config button (own entrypoint, a provided factory, two mods carried inside a jar — one under the heading it names, positions read from the screen's own list widget), as do a universal jar's NeoForge screen, the game's options and NeoForge's own settings (its row named `NeoForge`, listed because the set has a NeoForge mod), all driven through the game's keyboard and mouse handlers (arrow keys, clicks, double clicks); `-Dforbric.modMenuStandIn=off` must take the Fabric canaries' buttons away; with Fabric canaries only, NeoForge's row must be absent. With Mod Menu installed (required: `M56_MODMENU`/`M56_FABRIC_API`, default `run/modmenu/`, else SKIP-FATAL), Mod Menu's API answers for the universal canary with its `fabric.mod.json` name and description and NeoForge's screen (its list screen is not opened), and Mod Menu's own factory answers the game's row once; `-Dforbric.modMenuForeignScreens=off` is that phase's control. Canaries built from `canary/modmenu-config` |
-| m57 | MinecraftForge's breathing, drowning, damage and liquids against the native loaders: a dedicated server with a MinecraftForge and a NeoForge canary plays 53 scenarios — each family's breathe and drown listeners alone and both in one pack (NeoForge's answer first, then MinecraftForge's, also from NeoForge listeners at `LOW` registered from common setup, after the kernel's bridges, which a bridge above `LOWEST` would answer before, and at `LOWEST` registered in the NeoForge canary's constructor, before them, which bridges installed before the mods are constructed would answer before), MinecraftForge `@SubscribeEvent` listeners that cancel by returning true, a MinecraftForge bubble count that must leave the body's random draws as they are, Breath of the Nautilus alone in water, in a bubble column and in MinecraftForge's liquid (where MinecraftForge's listeners are told whether the body may refill), each clause of MinecraftForge's refill rule as the only one that says yes where a NeoForge listener refills nothing (water breathing in water, Breath of the Nautilus alone in open air, a bubble column), a pig drowning in each family's own liquid and breathing in a MinecraftForge liquid built `canDrown(false)`, where only its type's `canDrownIn` keeps it from drowning, and with Breath of the Nautilus alone in it, the owner's vanilla refill pinned as a documented difference (it refills as open air does natively, and the reference must still show native MinecraftForge holding the air), the probe's player drowning three times through MinecraftForge's attack, hurt and damage events and NeoForge's incoming damage, and each family's liquid block placed, taken up and poured out with its bucket. Each row's air and health (or a liquid row's result) and the listener views it names are compared with the same jar on the native loader whose answer stands (`canary/forge-breath-drown/native-reference.json`: three runs per native loader that agree on every stored field, regenerated by `run/compat/breath-drown.py reference`); a tick where MinecraftForge's listener answers before a NeoForge one fails, and so does a row where both answered with no tick recording which answered first; the body's random draws are compared only where a row must draw what another row draws, and only once the probe counted them on every sampled tick; the entity events never. `-Dforbric.unifiedEvents=off`, `-Dforbric.forgeFieldGetters=off`, `-Dforbric.forgeFluidOwnType=off` and `-Dforbric.forgeDamageSeams=off` must each fail exactly the rows they decide, each for that switch's cause. Canaries built from `canary/forge-breath-drown` |
+| m57 | MinecraftForge's breathing, drowning, damage and liquids against the native loaders: a dedicated server with a MinecraftForge and a NeoForge canary plays 53 scenarios — each family's breathe and drown listeners alone and both in one pack (NeoForge's answer first, then MinecraftForge's, also from NeoForge listeners at `LOW` registered from common setup, after the kernel's bridges, which a bridge above `LOWEST` would answer before, and at `LOWEST` registered in the NeoForge canary's constructor, before them, which bridges installed before the mods are constructed would answer before), MinecraftForge `@SubscribeEvent` listeners that cancel by returning true, a MinecraftForge bubble count that must leave the body's random draws as they are, Breath of the Nautilus alone in water, in a bubble column and in MinecraftForge's liquid (where MinecraftForge's listeners are told whether the body may refill), each clause of MinecraftForge's refill rule as the only one that says yes where a NeoForge listener refills nothing (water breathing in water, Breath of the Nautilus alone in open air, a bubble column), a pig drowning in each family's own liquid and breathing in a MinecraftForge liquid built `canDrown(false)`, where only its type's `canDrownIn` keeps it from drowning, and with Breath of the Nautilus alone in it, the owner's vanilla refill pinned as a documented difference (it refills as open air does natively, and the reference must still show native MinecraftForge not refilling so and told it may not; that its air holds still is not judged), the probe's player drowning three times through MinecraftForge's attack, hurt and damage events and NeoForge's incoming damage, and each family's liquid block placed, taken up and poured out with its bucket. Each row's air and health (or a liquid row's result) and the listener views it names are compared with the same jar on the native loader whose answer stands (`canary/forge-breath-drown/native-reference.json`: three runs per native loader that agree on every stored field, regenerated by `run/compat/breath-drown.py reference`); a tick where MinecraftForge's listener answers before a NeoForge one fails, and so does a row where both answered with no tick recording which answered first; the body's random draws are compared only where a row must draw what another row draws, and only once the probe counted them on every sampled tick; the entity events never. `-Dforbric.unifiedEvents=off`, `-Dforbric.forgeFieldGetters=off`, `-Dforbric.forgeFluidOwnType=off` and `-Dforbric.forgeDamageSeams=off` must each fail exactly the rows they decide, each for that switch's cause. Canaries built from `canary/forge-breath-drown` |
 
 - **Compatibility sweeps.** `run/compat/PROTOCOL.md` is the procedure for running random/popular Modrinth sets on
   a Windows machine through the installed profile (`push-and-run.sh`, `win/*.py`, `pick_mods.py`, `evidence.py`),
@@ -2598,7 +2628,8 @@ Break one and the failure usually surfaces far from the cause.
   body refills 4 a tick up to 300, as in open air, and MinecraftForge's listener reads `canRefillAir` true while it
   does (false once the air is full), where native MinecraftForge reads false and holds the air at 200: the owner's
   vanilla refill (§6, §8.1), a difference the gate pins (the row must refill as open air does natively, and the
-  reference must still show the native hold). The probe's
+  reference must still show native MinecraftForge not refilling so and told it may not; the judge does not check that
+  its air holds still, which today's reference shows). The probe's
   player drowns three times, each through MinecraftForge's attack, hurt and damage events with the native amounts (20
   to 18, 16 and 14; a halved hurt halves each, a cancelled damage event keeps the health); a NeoForge incoming-damage
   cancel stops MinecraftForge's hurt and damage but not its attack, which MinecraftForge posts first, at the head of
@@ -2722,7 +2753,7 @@ Break one and the failure usually surfaces far from the cause.
   `minecraft:water` whose type is unswimmable), NeoForge's own answer dropped for a non-view type in the underwater rule
   (1 with MinecraftForge's driver — the `wasUnderwater` flag in water — and 4 with NeoForge's) and in the shallow-water
   rule (9, NeoForge's own swimmable fluids, NeoForge's driver), the swim start by type alone (1), NeoForge's three
-  queries skipping the tag widening (27). Of this round's own changes, each family's clause left unfiltered for a stand-in — MinecraftForge's (1 row with NeoForge's driver, the fire row; 2 with Fabric's, both fire rows) or NeoForge's (2) — the NeoForge stand-ins left unrecorded (2) and NeoForge's getters left unedited (2) pass every unit test (neither family's empty type can be made off-game) and are caught in game; tracking the empty type again (5 rows, the untagged Fabric fluid) and leaving NeoForge's getters unedited also fail the execution and staged tests, dropping either registration fails the registration test, and the census's bare-name keys put back fail the census test. The record's stand-in pre-check, a performance change, changes no row in game (189 of 189 the same with it removed) and is held by its own unit test. On this round's tree, with `-Dforbric.forgeFluidOwnType=off` 40 of the 189 rows differ from native MinecraftForge (the MinecraftForge fluids go back to their tags: an untagged one is no fluid to NeoForge's entity code, and one in `minecraft:water` makes obsidian next to lava), with `-Dforbric.forgeEntityFluids=off` 27 (every scenario of the three test fluids in `minecraft:water` or `minecraft:lava` with a body in it).
+  queries skipping the tag widening (27). Of this round's own changes, each family's clause left unfiltered for a stand-in — MinecraftForge's (1 row with NeoForge's driver, the fire row; 2 with Fabric's, both fire rows) or NeoForge's (2) — and the NeoForge stand-ins left unrecorded (2) pass every unit test (neither family's empty type can be made off-game) and are caught in game; leaving NeoForge's getters unedited (2 rows in game) fails the execution and staged tests, and so does tracking the empty type again (5 rows, the untagged Fabric fluid); dropping either registration fails the registration test, and the census's bare-name keys put back fail the census test. A later review found two more that pass every unit test: the clause injector triggered by either getter alone instead of both in one body (it then edits five `EntityFluidInteraction` methods and two of `BucketItem`; `OwnFluidTypeClausesInjectorTest` re-derives its targets with the injector's own rule, and only over methods that call both getters) changes 27 Fabric rows in game (the three water-tagged fluids, nine body scenarios each) and no MinecraftForge or NeoForge row; and the record's second stand-in check, after MinecraftForge's getter has run, dropped — the tests record the stand-in before the first contact, so the order a real first contact takes is not driven (not run in game). The record's stand-in pre-check, a performance change, changes no row in game (189 of 189 the same with it removed) and is held by its own unit test. On this round's tree, with `-Dforbric.forgeFluidOwnType=off` 40 of the 189 rows differ from native MinecraftForge (the MinecraftForge fluids go back to their tags: an untagged one is no fluid to NeoForge's entity code, and one in `minecraft:water` makes obsidian next to lava), with `-Dforbric.forgeEntityFluids=off` 27 (every scenario of the three test fluids in `minecraft:water` or `minecraft:lava` with a body in it).
 
 **What is still not native-equivalent.** Proven not closable by any structural trigger (each proof kept):
 
@@ -2805,7 +2836,12 @@ Located, not yet fixed (no impossibility proof):
   stone or sets fire; MinecraftForge's fluid-interaction rules, which the merged `LiquidBlock` still asks, post it for
   what they place. `PlayerDestroyItemEvent`, 7 of 8: not when the last of a stack is placed as a block (the path
   `routePlaceItemHookToNeoForge` takes away; NeoForge's hook posts NeoForge's event there). `RenderTooltipEvent.GatherComponents`,
-  3 of 4 (not for a tooltip a screen sets with its own background for the next frame). Until 2026-10-25 none of these
+  3 of 4: not on `GuiGraphicsExtractor.setTooltipForNextFrame(Font, List, Optional, int, int, Identifier)`, which every
+  item's tooltip takes (container slots, villager trades, the stonecutter, an item hovered in chat) and which in the
+  merged game asks NeoForge's hook alone; of the game's own tooltips only the enchanting table's and an entity hovered in
+  chat still post it (Iceberg's MinecraftForge build in the sweep90 corpus listens for it, read from its bytecode; its
+  client was not run; until 2026-10-25 the row's sentence named a screen's own-background tooltip as the lost path).
+  Until 2026-10-25 none of these
   seven had a row, so a mod waiting on one was not named and nothing was logged. Thirteen more rows are partly posted
   natively with a bridge or a repair covering the rest — eight from before (the conversions, the fall, an entity's
   placement, the level unload, the level tick's two halves, the left click on a block) and five new (`EntityJoinLevelEvent` 2 of 3, `ProjectileImpactEvent` 1 of 6,
@@ -2821,12 +2857,16 @@ Located, not yet fixed (no impossibility proof):
   one on all 4 of its paths, and lava turning water to stone notifies neighbours), so the player loses next to nothing
   there; the audit judges one event at a time and cannot see two listeners of a mod standing in for each other.
 - The audit sees a listener a guest registers in code only in the shapes `GuestListeners` reads (§8): a bus or listener
-  handed to a helper in another class, a per-event bus kept in another class's field, or a listener built by a factory
-  method, is not traced, and a helper is followed one level, within its class. A listener found in code is judged when
-  loading completes (on a client, inside `Minecraft.<init>`, whether or not it ever joins a world), or with the
-  annotation listeners once the server is up when a bridge delivers its event, and only where a class that registers it
-  has loaded and the event's own bus has a listener; the bus says someone listens, the loaded class says it is this
-  mod. Measured in game on 2026-10-25, Chinese system language, with the popular pack plus libIPN, voicechat and
+  handed to a helper in another class, a per-event bus kept in another class's field, a listener built by a factory
+  method, an anonymous listener class or one kept in a field, an object handed to `register` from a field, a static
+  field or a getter, and a subclass's `@SubscribeEvent` methods are not traced, and a helper is followed one level,
+  within its class (Xaero's minimap and world map for MinecraftForge go unread so, §8). A listener found in code is
+  judged when loading completes (on a client, inside `Minecraft.<init>`, whether or not it ever joins a world), or with
+  the annotation listeners once the server is up when a bridge delivers its event, and only where a class that registers
+  it has loaded and the event's own bus has a listener; the bus says someone listens, the loaded class says it is this
+  mod — except for a class both sides load that registers under its own side check (§8). A client that only joins
+  remote servers never judges the listeners for bridged events, so there a missing client bridge names no mod.
+  Measured in game on 2026-10-25, Chinese system language, with the popular pack plus libIPN, voicechat and
   lucid-dreams (fantasyfurniture left out, whose warning screen took a click last round): a client that reached the
   title screen and never started an integrated server named exactly the nine it named last round from inside a world —
   JourneyMap (fluid placement, partly posted), libIPN's four screen and mouse events, lucid-dreams' item toss, client
