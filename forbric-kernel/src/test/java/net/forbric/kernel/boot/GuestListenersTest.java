@@ -145,6 +145,87 @@ class GuestListenersTest {
 		}
 	}
 
+	@Test void aBusServingEveryEventNamesNoEventAndItsListenerDoes() {
+		// NeoForge.EVENT_BUS.addListener(this::onToss): the receiver is a static field of a bus type, but a bus that serves
+		// every event, so the event is the listener's. Read as an event's BUS, every such registration recorded NeoForge as
+		// the event and the listener was never read (114 classes in 59 jars of the local corpus).
+		String neoForge = "net/neoforged/neoforge/common/NeoForge";
+		byte[] reference = guest("n/Mod", TOSS, mv -> {
+			mv.visitFieldInsn(Opcodes.GETSTATIC, neoForge, "EVENT_BUS", "L" + NEO_BUS + ";");
+			methodReference(mv, "n/Mod", TOSS);
+			addListener(mv, NEO_BUS);
+		});
+		assertEquals(Set.of(TOSS), events(reference));
+		// A bus of either serve-all type in a field named BUS on a guest's own class is not an event's bus either.
+		for (String bus : List.of(NEO_BUS, BUS_GROUP)) {
+			byte[] object = guest("n/Holder", TOSS, mv -> {
+				mv.visitFieldInsn(Opcodes.GETSTATIC, "n/Holder", "BUS", "L" + bus + ";");
+				mv.visitVarInsn(Opcodes.ALOAD, 1);
+				mv.visitTypeInsn(Opcodes.CHECKCAST, "java/util/function/Consumer");
+				mv.visitMethodInsn(Opcodes.INVOKEINTERFACE, bus, "addListener",
+						"(Ljava/util/function/Consumer;)Ljava/lang/Object;", true);
+				mv.visitInsn(Opcodes.POP);
+			});
+			assertEquals(Set.of(), GuestListeners.scan(object).events(), bus);
+		}
+	}
+
+	@Test void aClassLiteralHandedToAddListenerNamesTheEvent() {
+		// NeoForge's addListener(priority, receiveCanceled, FooEvent.class, listener) with a listener object: no lambda type
+		// to read, and the bus serves every event; the class literal says which.
+		byte[] literal = guest("n/Literal", TOSS, mv -> {
+			mv.visitFieldInsn(Opcodes.GETSTATIC, "net/neoforged/neoforge/common/NeoForge", "EVENT_BUS", "L" + NEO_BUS + ";");
+			mv.visitFieldInsn(Opcodes.GETSTATIC, "net/neoforged/bus/api/EventPriority", "NORMAL", "Lnet/neoforged/bus/api/EventPriority;");
+			mv.visitInsn(Opcodes.ICONST_0);
+			mv.visitLdcInsn(Type.getObjectType(TOSS));
+			mv.visitVarInsn(Opcodes.ALOAD, 1);
+			mv.visitTypeInsn(Opcodes.CHECKCAST, "java/util/function/Consumer");
+			mv.visitMethodInsn(Opcodes.INVOKEINTERFACE, NEO_BUS, "addListener",
+					"(Lnet/neoforged/bus/api/EventPriority;ZLjava/lang/Class;Ljava/util/function/Consumer;)V", true);
+		});
+		assertEquals(Set.of(TOSS), events(literal));
+	}
+
+	/** A guest class keeping {@code event}'s own bus in its static field {@code TOSS}, typed generically or not, and listening on it. */
+	private static byte[] fieldBus(String name, String event, boolean generic) {
+		ClassWriter cw = new ClassWriter(ClassWriter.COMPUTE_MAXS | ClassWriter.COMPUTE_FRAMES) {
+			@Override protected String getCommonSuperClass(String a, String b) {
+				return "java/lang/Object";
+			}
+		};
+		cw.visit(Opcodes.V17, Opcodes.ACC_PUBLIC, name, null, "java/lang/Object", null);
+		cw.visitField(Opcodes.ACC_STATIC | Opcodes.ACC_FINAL, "TOSS", "L" + CANCELLABLE_BUS + ";",
+				generic ? "L" + CANCELLABLE_BUS + "<L" + event + ";>;" : null, null).visitEnd();
+		MethodVisitor clinit = cw.visitMethod(Opcodes.ACC_STATIC, "<clinit>", "()V", null, null);
+		clinit.visitCode();
+		if (generic) clinit.visitInsn(Opcodes.ACONST_NULL);
+		else clinit.visitFieldInsn(Opcodes.GETSTATIC, event, "BUS", "L" + CANCELLABLE_BUS + ";");
+		clinit.visitFieldInsn(Opcodes.PUTSTATIC, name, "TOSS", "L" + CANCELLABLE_BUS + ";");
+		clinit.visitInsn(Opcodes.RETURN);
+		clinit.visitMaxs(0, 0);
+		clinit.visitEnd();
+		MethodVisitor init = cw.visitMethod(Opcodes.ACC_PUBLIC, "init", "(Ljava/lang/Object;)V", null, null);
+		init.visitCode();
+		init.visitFieldInsn(Opcodes.GETSTATIC, name, "TOSS", "L" + CANCELLABLE_BUS + ";");
+		init.visitVarInsn(Opcodes.ALOAD, 1);
+		init.visitTypeInsn(Opcodes.CHECKCAST, "java/util/function/Consumer");
+		addListener(init, CANCELLABLE_BUS);
+		init.visitInsn(Opcodes.RETURN);
+		init.visitMaxs(0, 0);
+		init.visitEnd();
+		cw.visitEnd();
+		return cw.toByteArray();
+	}
+
+	@Test void anEventsBusKeptInTheGuestsOwnFieldIsReadThroughIt() {
+		// static final CancellableEventBus<ItemTossEvent> TOSS = ItemTossEvent.BUS; ... TOSS.addListener(listenerObject): the
+		// field is the guest's, not the event's, and its name is not BUS. Its generic type says which event it holds, or its
+		// static initializer does; read as an event's BUS, the guest's own class was recorded as the event.
+		for (boolean generic : List.of(true, false)) {
+			assertEquals(Set.of(TOSS), events(fieldBus("f/FieldBus", TOSS, generic)), generic ? "generic type" : "static initializer");
+		}
+	}
+
 	@Test void postingOnABusIsNotListening() {
 		byte[] poster = guest("p/Poster", TOSS, mv -> {
 			mv.visitFieldInsn(Opcodes.GETSTATIC, TOSS, "BUS", "L" + CANCELLABLE_BUS + ";");

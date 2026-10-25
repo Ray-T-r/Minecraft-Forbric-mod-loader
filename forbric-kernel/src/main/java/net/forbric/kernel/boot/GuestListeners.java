@@ -18,6 +18,7 @@ package net.forbric.kernel.boot;
 
 import java.util.HashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 import java.util.TreeSet;
 
@@ -51,17 +52,31 @@ import org.objectweb.asm.tree.analysis.SourceValue;
  * real mods doing exactly that for events the merged game never posts (a voice-chat mod's name-tag listener; a mod listening
  * for item tosses, client sounds and player rendering), and the audit said nothing about either.
  *
- * <p>So the guest's bytecode is read for the shapes that register a listener in code:
+ * <p>So the guest's bytecode is read for the shapes that register a listener in code. For an {@code addListener} call on
+ * either family's bus, the event is read, in this order, from:
  * <ul>
- *   <li>an {@code addListener} call on a bus whose receiver is an event's static {@code BUS} field (traced through locals),
- *       or what that event's static {@code getBus(...)} returns — the event is that class;</li>
- *   <li>an {@code addListener} call on either family's bus whose receiver cannot be traced, but whose listener is a lambda or
- *       a method reference: its instantiated type's parameter is the event;</li>
- *   <li>a class handed to a bus's {@code register} as a class literal, or registering itself: its {@code @SubscribeEvent}
- *       methods are listeners, class-level {@code @EventBusSubscriber} or not.</li>
+ *   <li>a class literal among its arguments (NeoForge's {@code addListener(priority, receiveCancelled, FooEvent.class, l)});</li>
+ *   <li>the listener, when it is a lambda or a method reference: its instantiated method type's first parameter
+ *       ({@code NeoForge.EVENT_BUS.addListener(this::onToss)} listens for what {@code onToss} takes);</li>
+ *   <li>the bus, when it is one event's own: EventBus 7 keeps each game event on a per-event bus ({@code EventBus} or
+ *       {@code CancellableEventBus}) in that event's static {@code BUS} field, or returns it from the event's static
+ *       {@code getBus(...)} — the event is that field's or method's class. A per-event bus kept in a static field of the
+ *       guest's own class ({@code static final CancellableEventBus<ItemTossEvent> TOSS = ItemTossEvent.BUS}) is read through
+ *       that field's generic type, or what its static initializer stores in it.</li>
  * </ul>
- * A shape this cannot trace (a bus kept in a field and read elsewhere, a listener built by a factory method) is not seen;
- * what is seen is a registration the guest's own code makes.
+ * A bus that serves every event — NeoForge's {@code IEventBus} ({@code NeoForge.EVENT_BUS}, a mod's bus), MinecraftForge's
+ * {@code BusGroup} or its {@code EventBusMigrationHelper} ({@code MinecraftForge.EVENT_BUS}) — names no event, whatever its
+ * field is called: until 2026-10-25 any static field of a bus type was read as an event's {@code BUS}, so every
+ * {@code NeoForge.EVENT_BUS.addListener(...)} recorded {@code NeoForge} as the event and never read the listener (114
+ * classes in 59 jars of the local corpus).
+ *
+ * <p>And a class handed to a bus's {@code register} as a class literal, a construction, or registering itself: its
+ * {@code @SubscribeEvent} methods are listeners, class-level {@code @EventBusSubscriber} or not. An argument of either call
+ * that is the method's own parameter (a helper such as {@code register(EventHandler handler)}) is followed one level, to
+ * the calls of that method in the same class.
+ *
+ * <p>A shape this cannot trace is not seen: a bus or listener handed to a helper in another class, a listener built by a
+ * factory method, a per-event bus kept in another class's field. What is seen is a registration the guest's own code makes.
  */
 final class GuestListeners {
 
@@ -71,6 +86,8 @@ final class GuestListeners {
 	 * {@code register} and {@code addListener} calls for mods still written against the old bus.
 	 */
 	private static final String FORGE_BUSES = "net/minecraftforge/eventbus/api/bus/";
+	/** EventBus 7's per-event buses: one event's, held in its static {@code BUS} field. Every other bus type serves any event. */
+	private static final Set<String> PER_EVENT_BUSES = Set.of(FORGE_BUSES + "EventBus", FORGE_BUSES + "CancellableEventBus");
 	private static final String NEO_BUS = "net/neoforged/bus/api/IEventBus";
 	private static final String FORGE_GAME_BUS = "net/minecraftforge/common/EventBusMigrationHelper";
 	private static final String ONLY_IN_SUFFIX = "/api/distmarker/OnlyIn;";
@@ -117,6 +134,7 @@ final class GuestListeners {
 		new ClassReader(bytes).accept(node, ClassReader.SKIP_FRAMES | ClassReader.SKIP_DEBUG);
 		Set<String> events = new TreeSet<>(), registered = new TreeSet<>();
 		java.util.List<Need> needs = new java.util.ArrayList<>();
+		java.util.Map<String, String> aliases = busAliases(node);
 		for (MethodNode m : node.methods) {
 			if (m.instructions == null || !callsABus(m)) continue;
 			Frame<SourceValue>[] frames = frames(node.name, m);
@@ -131,8 +149,9 @@ final class GuestListeners {
 					AbstractInsnNode receiver = origin(m, frames, frame.getStack(frame.getStackSize() - args.length - 1), new HashSet<>());
 					AbstractInsnNode listener = args.length == 0 ? null
 							: origin(m, frames, frame.getStack(frame.getStackSize() - 1), new HashSet<>());
-					String event = eventOfReceiver(receiver);
+					String event = classLiteral(m, frames, frame, args.length);
 					if (event == null) event = eventOfListener(listener);
+					if (event == null) event = eventOfReceiver(receiver, node.name, aliases);
 					if (event != null) {
 						events.add(event);
 						continue;
@@ -156,6 +175,7 @@ final class GuestListeners {
 
 	/** Each need resolved at every call in {@code node} of the method it names: what that call hands the parameter. */
 	private static void resolveAtCallers(ClassNode node, java.util.List<Need> needs, Set<String> events, Set<String> registered) {
+		java.util.Map<String, String> aliases = busAliases(node);
 		for (MethodNode caller : node.methods) {
 			if (caller.instructions == null) continue;
 			Frame<SourceValue>[] frames = null;
@@ -170,7 +190,7 @@ final class GuestListeners {
 					if (frame == null || frame.getStackSize() < argCount) continue;
 					AbstractInsnNode arg = origin(caller, frames, frame.getStack(frame.getStackSize() - argCount + need.parameter()), new HashSet<>());
 					switch (need.role()) {
-						case RECEIVER -> add(events, eventOfReceiver(arg));
+						case RECEIVER -> add(events, eventOfReceiver(arg, node.name, aliases));
 						case LISTENER -> add(events, eventOfListener(arg));
 						case REGISTERED -> add(registered, registeredType(caller, node.name, arg));
 					}
@@ -256,18 +276,69 @@ final class GuestListeners {
 	}
 
 	/**
-	 * The event whose bus {@code source} produced: an event's static {@code BUS} field, or what its static {@code getBus}
-	 * returns.
+	 * The event whose own bus {@code source} produced: an event's static {@code BUS} field of a per-event bus type, what its
+	 * static {@code getBus} returns as one, or a static field of the scanned class ({@code self}) that {@code aliases} maps to
+	 * an event. A bus serving every event ({@code NeoForge.EVENT_BUS}, {@code MinecraftForge.EVENT_BUS}, a mod's bus) is no
+	 * event's, so it names none.
 	 */
-	private static String eventOfReceiver(AbstractInsnNode source) {
-		if (source instanceof FieldInsnNode f && f.getOpcode() == Opcodes.GETSTATIC && isBusType(Type.getType(f.desc))) return f.owner;
+	private static String eventOfReceiver(AbstractInsnNode source, String self, java.util.Map<String, String> aliases) {
+		if (source instanceof FieldInsnNode f && f.getOpcode() == Opcodes.GETSTATIC && perEventBus(Type.getType(f.desc))) {
+			if (f.owner.equals(self) && aliases.containsKey(f.name)) return aliases.get(f.name);
+			return f.name.equals("BUS") ? f.owner : null;
+		}
 		if (source instanceof MethodInsnNode call && call.getOpcode() == Opcodes.INVOKESTATIC && call.name.equals("getBus")
-				&& isBusType(Type.getReturnType(call.desc))) return call.owner;
+				&& perEventBus(Type.getReturnType(call.desc))) return call.owner;
 		return null;
 	}
 
-	private static boolean isBusType(Type type) {
-		return type.getSort() == Type.OBJECT && isBus(type.getInternalName());
+	private static boolean perEventBus(Type type) {
+		return type.getSort() == Type.OBJECT && PER_EVENT_BUSES.contains(type.getInternalName());
+	}
+
+	/**
+	 * The static fields of {@code node} that hold one event's own bus: field name → event, read from the field's generic type
+	 * ({@code CancellableEventBus<ItemTossEvent>}) or, failing that, from what the class's static initializer stores in it (an
+	 * event's {@code BUS} or {@code getBus(...)}).
+	 */
+	private static java.util.Map<String, String> busAliases(ClassNode node) {
+		java.util.Map<String, String> out = new java.util.HashMap<>();
+		boolean any = false;
+		for (org.objectweb.asm.tree.FieldNode f : node.fields) {
+			if ((f.access & Opcodes.ACC_STATIC) == 0 || !perEventBus(Type.getType(f.desc))) continue;
+			any = true;
+			if (f.signature == null) continue;
+			String prefix = "L" + Type.getType(f.desc).getInternalName() + "<L";
+			if (f.signature.startsWith(prefix) && f.signature.endsWith(";>;") && f.signature.indexOf('<', prefix.length()) < 0) {
+				out.put(f.name, f.signature.substring(prefix.length(), f.signature.length() - 3));
+			}
+		}
+		for (MethodNode m : node.methods) {
+			if (!any || !m.name.equals("<clinit>") || m.instructions == null) continue;
+			Frame<SourceValue>[] frames = frames(node.name, m);
+			if (frames == null) continue;
+			for (AbstractInsnNode insn = m.instructions.getFirst(); insn != null; insn = insn.getNext()) {
+				if (!(insn instanceof FieldInsnNode put) || put.getOpcode() != Opcodes.PUTSTATIC || !put.owner.equals(node.name)
+						|| out.containsKey(put.name) || !perEventBus(Type.getType(put.desc))) continue;
+				Frame<SourceValue> frame = frames[m.instructions.indexOf(insn)];
+				if (frame == null || frame.getStackSize() < 1) continue;
+				String event = eventOfReceiver(origin(m, frames, frame.getStack(frame.getStackSize() - 1), new HashSet<>()), node.name, Map.of());
+				if (event != null) out.put(put.name, event);
+			}
+		}
+		return out;
+	}
+
+	/** The class literal among a call's {@code argCount} arguments in {@code frame}, if exactly one is one: the event it names. */
+	private static String classLiteral(MethodNode m, Frame<SourceValue>[] frames, Frame<SourceValue> frame, int argCount) {
+		String found = null;
+		for (int i = 0; i < argCount && frame.getStackSize() - argCount + i >= 0; i++) {
+			AbstractInsnNode arg = origin(m, frames, frame.getStack(frame.getStackSize() - argCount + i), new HashSet<>());
+			if (arg instanceof LdcInsnNode ldc && ldc.cst instanceof Type t && t.getSort() == Type.OBJECT) {
+				if (found != null) return null;
+				found = t.getInternalName();
+			}
+		}
+		return found;
 	}
 
 	/** The event a lambda or method-reference listener {@code source} takes: its instantiated method type's first parameter. */
