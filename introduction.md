@@ -2027,7 +2027,20 @@ java -cp <boot-cp> net.forbric.kernel.boot.Main --scan --mods <dir> --report out
   instance, most with named negative controls (a `-D…=off` or input removal that must turn exactly the named
   checks red). `run/compat/gates-all.sh` discovers them by glob; `gates-parallel.py` overlaps them using each
   gate's `# GATE-PARALLEL: rundirs=… mem=…` line (56 of 59 carry one; a gate without it runs alone), giving each
-  slot its own port block.
+  slot its own port block. Their time bounds are wall-clock seconds sized on a machine with cores to spare, and most
+  count from the launcher's start, its Gradle build included; gate-m22's client window counts from the JVM's own
+  start instead. On a busy machine they measure the machine. Run as two `-j 5` batches side by side, one on a
+  tree and one on the commit it branched from, so that both see one load (10 cores; median load average 28–59 per
+  round, peaks 40–111), m2b, m3 and m4 went red on both alike in all three rounds: m2b's and m3's servers were still
+  short of `Done` 136–140 s and 77–83 s after their first line (one m2b got there at 138 s, too late for its stop),
+  against 150 s and 90 s counted from the launch, and m4's own stop feeder stops waiting 150 s after the launch and
+  writes `stop` into a boot that has not reached `Done`, where the console drops it ("An unexpected error occurred
+  while trying to execute that command"; `server_ready` in `run/lib.sh` exists for exactly this, and m4 does not use
+  it). A full `-j 5` run at load averages 44–163 turned m8, m17, m18 and m40 red on the same kind of timeout. A red
+  gate from a loaded parallel run says nothing about the kernel until the boot times in its logs have been read. The
+  clock can also bite by date: the game's log4j configuration rolls `logs/latest.log` at midnight, eleven gates read
+  that file, and m9 went red once because its session crossed midnight and the reload line it looks for went to the
+  rolled archive.
 
 | Gate | Asserts |
 | --- | --- |
