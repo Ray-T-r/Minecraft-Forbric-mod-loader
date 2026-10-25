@@ -866,6 +866,13 @@ public final class KernelBoot {
 		chain.register(TransformPhase.COREMOD, new net.forbric.kernel.transform.PredicateGetterResultRecorder());
 		chain.register(TransformPhase.COREMOD, new net.forbric.kernel.mixin.NativeTagTrackerSourceInjector());
 		chain.register(TransformPhase.COREMOD, new net.forbric.kernel.mixin.NativeTagSourceFacadeInjector());
+		// A merged method that asks one fluid both families' type (Fluid.entityInside, BucketItem.playEmptySound) asks each
+		// family only the type it gave the fluid: where the kernel's tag-derived stand-in would answer, that family's empty
+		// type does — a NeoForge or Fabric fluid in minecraft:water no longer puts out fire by MinecraftForge's water type.
+		chain.register(TransformPhase.COREMOD, new net.forbric.kernel.transform.OwnFluidTypeClausesInjector());
+		// NeoForge's empty fluid type gets no tracker: a fluid the kernel types empty (a Fabric fluid in no tag) is no fluid
+		// to NeoForge's entity code, as on Fabric. After the native tag-tracker source, which proves the walk as it is.
+		chain.register(TransformPhase.COREMOD, new net.forbric.kernel.transform.EmptyFluidTypeTrackerInjector());
 		chain.register(TransformPhase.COREMOD, new net.forbric.kernel.mixin.CrossHostPredicateIslandInjector());
 		chain.register(TransformPhase.COREMOD, new net.forbric.kernel.transform.AxeStripCallbacksInjector());
 		// Lava placed or flowing next to water: the merged LiquidBlock.onPlace (MinecraftForge's) asked MinecraftForge's

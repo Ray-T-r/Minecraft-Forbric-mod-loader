@@ -67,8 +67,16 @@ public final class KernelFluidTypes {
 		}
 		return NeoForgeMod.EMPTY_TYPE.value();
 	}
-	/** Entered only at the actual SDK lookup's proved unsupported branch; namespace guesses are unnecessary. */
-	public static FluidType foreignNeoLookup(Fluid fluid){FluidType type=neoTypeOf(fluid);return (FluidType)net.forbric.api.LookupOutcomes.foreign(fluid,FluidType.class,type);}
+	/**
+	 * Entered only at the actual SDK lookup's proved unsupported branch; namespace guesses are unnecessary. A fluid answered
+	 * from its tags (no NeoForge view of a MinecraftForge type of its own) is recorded as holding a stand-in.
+	 */
+	public static FluidType foreignNeoLookup(Fluid fluid){
+		FluidType own=KernelForgeFluidTypeViews.of(fluid);
+		FluidType type=own!=null?own:taggedType(fluid);
+		if(own==null&&fluid!=null)NEO_STAND_INS.add(fluid);
+		return (FluidType)net.forbric.api.LookupOutcomes.foreign(fluid,FluidType.class,type);
+	}
 	public static net.minecraftforge.fluids.FluidType foreignForgeLookup(Fluid fluid){var type=forgeType(fluid);if(fluid!=null)FORGE_STAND_INS.add(fluid);return (net.minecraftforge.fluids.FluidType)net.forbric.api.LookupOutcomes.foreign(fluid,net.minecraftforge.fluids.FluidType.class,type);}
 
 	/**
@@ -87,6 +95,37 @@ public final class KernelFluidTypes {
 	 */
 	public static boolean forgeTypeIsStandIn(Fluid fluid) {
 		return fluid != null && FORGE_STAND_INS.contains(fluid);
+	}
+
+	/**
+	 * Fluids whose NeoForge type NeoForge's own lookup could not give and {@link #foreignNeoLookup} answered from their
+	 * tags: a Fabric mod's (water's, lava's, a Fabric behaviour's or the empty type), and a MinecraftForge mod's with
+	 * {@code -Dforbric.forgeFluidOwnType=off}. Not a MinecraftForge mod's own type seen through NeoForge's (a view):
+	 * that one is the fluid's. Bounded by the fluid registry, as {@link #FORGE_STAND_INS}.
+	 */
+	private static final Set<Fluid> NEO_STAND_INS = ConcurrentHashMap.newKeySet();
+
+	/** Whether {@code fluid}'s NeoForge type is {@link #foreignNeoLookup}'s tag-derived stand-in. Read after the type was asked. */
+	public static boolean neoTypeIsStandIn(Fluid fluid) {
+		return fluid != null && NEO_STAND_INS.contains(fluid);
+	}
+
+	/** {@code -Dforbric.ownFluidTypeClauses=off} leaves each family's clause asking whatever type the fluid answers it. */
+	public static final String CLAUSES_PROPERTY = "forbric.ownFluidTypeClauses";
+
+	/**
+	 * In a merged method that asks one fluid both families' type (OwnFluidTypeClausesInjector), MinecraftForge's clause
+	 * gets the type MinecraftForge gave the fluid: {@code type} itself, or — where the kernel's tag-derived stand-in
+	 * answered, because MinecraftForge does not type the fluid (a NeoForge or Fabric mod's) — MinecraftForge's empty type,
+	 * which claims nothing. Its own loader asks that fluid only the other family's type, or (vanilla's {@code Fluid}) none.
+	 */
+	public static net.minecraftforge.fluids.FluidType ownForgeType(Fluid fluid, net.minecraftforge.fluids.FluidType type) {
+		return forgeTypeIsStandIn(fluid) ? net.minecraftforge.common.ForgeMod.EMPTY_TYPE.get() : type;
+	}
+
+	/** NeoForge's side of {@link #ownForgeType}: NeoForge's empty type where the kernel's tag-derived stand-in answered. */
+	public static FluidType ownNeoType(Fluid fluid, FluidType type) {
+		return neoTypeIsStandIn(fluid) ? NeoForgeMod.EMPTY_TYPE.value() : type;
 	}
 
 	/**

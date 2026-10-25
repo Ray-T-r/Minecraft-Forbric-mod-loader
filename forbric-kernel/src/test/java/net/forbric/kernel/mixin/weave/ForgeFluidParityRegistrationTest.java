@@ -5,10 +5,13 @@ import static org.junit.jupiter.api.Assertions.*;
 
 import java.util.List;
 
+import net.forbric.kernel.mixin.NativeTagSourceFacadeInjector;
 import net.forbric.kernel.mixin.NativeTagTrackerSourceInjector;
+import net.forbric.kernel.transform.EmptyFluidTypeTrackerInjector;
 import net.forbric.kernel.transform.ForgeEntityFluidsInjector;
 import net.forbric.kernel.transform.ForgeFluidViewExtensionsInjector;
 import net.forbric.kernel.transform.ForgeFluidWaterRulesInjector;
+import net.forbric.kernel.transform.OwnFluidTypeClausesInjector;
 import net.forbric.kernel.transform.TransformPhase;
 import org.junit.jupiter.api.Test;
 
@@ -32,5 +35,19 @@ class ForgeFluidParityRegistrationTest {
 		assertEquals(source.phase(), state.phase());
 		assertEquals(source.sortIndex(), state.sortIndex());
 		assertTrue(state.position() < source.position(), state.describe() + " must come before " + source.describe());
+	}
+
+	/**
+	 * The two edits that keep a type the kernel derived for a fluid from claiming what its family never claimed run in the
+	 * game too, after the native tag-tracker source and its facade, which prove the walk as they find it.
+	 */
+	@Test void theForeignFluidTypeClaimEditsAreRegisteredAfterTheNativeTagSource() throws Exception {
+		KernelBootChain.Registration facade = KernelBootChain.registration(NativeTagSourceFacadeInjector.class.getName());
+		for (Class<?> edit : List.of(OwnFluidTypeClausesInjector.class, EmptyFluidTypeTrackerInjector.class)) {
+			KernelBootChain.Registration registration = KernelBootChain.registration(edit.getName());
+			assertEquals(TransformPhase.COREMOD, registration.phase(), edit.getSimpleName());
+			assertEquals(facade.sortIndex(), registration.sortIndex());
+			assertTrue(facade.position() < registration.position(), registration.describe() + " must come after " + facade.describe());
+		}
 	}
 }
