@@ -8,9 +8,11 @@ import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
 import java.lang.reflect.Proxy;
 import java.net.URLClassLoader;
+import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.function.BooleanSupplier;
+import java.util.function.Consumer;
 import java.util.function.IntSupplier;
 
 import org.junit.jupiter.api.AfterEach;
@@ -166,5 +168,57 @@ class KernelBreatheBridgeTest {
 	@Test void aDrowningBodyMadeToBreatheRegainsWhatTheModSays() throws Exception {
 		Neo neo = new Neo(false, 1, 4);
 		assertEquals(List.of("canBreathe=true", "refill=3"), carry(neo, handed(neo, never(), noAmount()), forge(true, 1, 3, true)));
+	}
+
+	// ---- the bridge, on real buses ----
+
+	private static final String NEO_EVENT = "net.neoforged.neoforge.event.entity.living.LivingBreatheEvent";
+	private static final String FORGE_EVENT = "net.minecraftforge.event.entity.living.LivingBreatheEvent";
+
+	/**
+	 * Every NeoForge listener above LOWEST answers before MinecraftForge's, also one added after the bridge, as a mod's
+	 * setup event adds one (the bridge is installed before any mod's setup): MinecraftForge's listener is handed what a
+	 * NeoForge listener at LOW and one at NORMAL, both added after the bridge, set. A bridge at any priority above
+	 * LOWEST would be asked before one of them.
+	 */
+	@Test void neoForgeListenersAboveLowestAddedAfterTheBridgeAnswerFirst() throws Exception {
+		try (URLClassLoader cl = StagedGameClassLoader.create(List.of(Path.of("build/classes/java/main").toAbsolutePath().toUri().toURL()))) {
+			Object builder = cl.loadClass("net.neoforged.bus.api.BusBuilder").getMethod("builder").invoke(null);
+			Object bus = builder.getClass().getMethod("build").invoke(builder);
+			cl.loadClass("net.forbric.kernel.runtime.KernelGameWorldEvents").getMethod("installBreathe", Object.class).invoke(null, bus);
+			Class<?> neo = cl.loadClass(NEO_EVENT), priority = cl.loadClass("net.neoforged.bus.api.EventPriority");
+			Method add = cl.loadClass("net.neoforged.bus.api.IEventBus").getMethod("addListener", priority, boolean.class, Class.class, Consumer.class);
+			Consumer<Object> normal = event -> {
+				try {
+					neo.getMethod("setConsumeAirAmount", int.class).invoke(event, 3);
+				} catch (ReflectiveOperationException failure) {
+					throw new AssertionError(failure);
+				}
+			};
+			Consumer<Object> low = event -> {
+				try {
+					neo.getMethod("setRefillAirAmount", int.class).invoke(event, 2);
+				} catch (ReflectiveOperationException failure) {
+					throw new AssertionError(failure);
+				}
+			};
+			add.invoke(bus, priority.getField("LOW").get(null), false, neo, low);
+			add.invoke(bus, priority.getField("NORMAL").get(null), false, neo, normal);
+			Class<?> forge = cl.loadClass(FORGE_EVENT);
+			List<String> seen = new ArrayList<>();
+			Consumer<Object> listener = event -> {
+				try {
+					seen.add(forge.getMethod("canBreathe").invoke(event) + "/" + forge.getMethod("getConsumeAirAmount").invoke(event) + "/"
+							+ forge.getMethod("getRefillAirAmount").invoke(event) + "/" + forge.getMethod("canRefillAir").invoke(event));
+				} catch (ReflectiveOperationException failure) {
+					throw new AssertionError(failure);
+				}
+			};
+			cl.loadClass("net.minecraftforge.eventbus.api.bus.EventBus").getMethod("addListener", Consumer.class).invoke(forge.getField("BUS").get(null), listener);
+			Object event = neo.getConstructor(cl.loadClass("net.minecraft.world.entity.LivingEntity"), boolean.class, int.class, int.class)
+					.newInstance(null, true, 1, 4);
+			cl.loadClass("net.neoforged.bus.api.IEventBus").getMethod("post", cl.loadClass("net.neoforged.bus.api.Event")).invoke(bus, event);
+			assertEquals(List.of("true/3/2/true"), seen);
+		}
 	}
 }

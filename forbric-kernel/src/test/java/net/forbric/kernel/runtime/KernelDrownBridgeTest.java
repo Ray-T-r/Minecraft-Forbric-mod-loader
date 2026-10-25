@@ -273,7 +273,8 @@ class KernelDrownBridgeTest {
 	/**
 	 * NeoForge's listeners run first: MinecraftForge is handed NeoForge's damage and bubbles, and a MinecraftForge listener
 	 * that leaves them keeps them; one NeoForge listener's cancel keeps MinecraftForge from being asked, as every
-	 * cancellable bridge here does.
+	 * cancellable bridge here does. The NeoForge listeners here are added after the bridge, as a mod's setup event adds
+	 * one; see {@link #aNeoForgeListenerAtLowAddedAfterTheBridgeAnswersFirst} for one below NORMAL.
 	 */
 	@Test void neoForgesAnswerIsWhatMinecraftForgeIsHanded() throws Exception {
 		try (URLClassLoader cl = game()) {
@@ -310,6 +311,32 @@ class KernelDrownBridgeTest {
 			post(cl, bus, event);
 			assertEquals(List.of(), seen);
 			assertEquals("true/2.0/8/true", state(cl, event));
+		}
+	}
+
+	/**
+	 * A NeoForge listener at LOW added after the bridge (from a mod's setup event, say) still answers before
+	 * MinecraftForge's: the bridge is at LOWEST. A bridge at LOW or above would be asked first and MinecraftForge
+	 * handed vanilla's 2; its answer would then be overwritten by the NeoForge listener's.
+	 */
+	@Test void aNeoForgeListenerAtLowAddedAfterTheBridgeAnswersFirst() throws Exception {
+		try (URLClassLoader cl = game()) {
+			Object bus = neoBus(cl);
+			Class<?> neo = cl.loadClass(NEO), priority = cl.loadClass("net.neoforged.bus.api.EventPriority");
+			Consumer<Object> low = event -> {
+				try {
+					neo.getMethod("setDamageAmount", float.class).invoke(event, 3f);
+				} catch (ReflectiveOperationException failure) {
+					throw new AssertionError(failure);
+				}
+			};
+			cl.loadClass("net.neoforged.bus.api.IEventBus").getMethod("addListener", priority, boolean.class, Class.class, Consumer.class)
+					.invoke(bus, priority.getField("LOW").get(null), false, neo, low);
+			List<String> seen = listen(cl, set(cl, "setDamageAmount", float.class, 0f));
+			Object event = neoEvent(cl, true, 2f, 8);
+			post(cl, bus, event);
+			assertEquals(List.of("true/3.0/8"), seen);
+			assertEquals("true/0.0/8/false", state(cl, event));
 		}
 	}
 }

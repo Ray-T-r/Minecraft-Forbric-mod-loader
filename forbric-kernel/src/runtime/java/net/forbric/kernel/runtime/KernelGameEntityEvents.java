@@ -106,7 +106,10 @@ public final class KernelGameEntityEvents {
 	 *
 	 * <p>LOWEST is load-bearing twice over here: it is last inside the post, so the cancel still reaches the
 	 * caller that reads {@code isCanceled()} afterwards, and it means every NeoForge listener has already had its
-	 * say before a MinecraftForge mod is asked.
+	 * say before a MinecraftForge mod is asked — every one above LOWEST, and every one at LOWEST registered before
+	 * this forward (the forwards go on before any mod's setup runs: a constructor or an {@code @EventBusSubscriber}
+	 * class is before them). A NeoForge listener added at LOWEST later, from a setup event say, runs after this
+	 * forward, and what it sets is what the caller reads (measured in game; introduction §19).
 	 */
 	static <E extends Event & ICancellableEvent> void subscribe(IEventBus bus, Class<E> event, String name,
 			String cost, ForgeVeto<E> forge) {

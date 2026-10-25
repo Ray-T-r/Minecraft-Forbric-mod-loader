@@ -1,0 +1,9 @@
+modLoader="javafml"
+loaderVersion="[1,)"
+license="Apache-2.0"
+
+[[mods]]
+modId="forbricbreathneo"
+version="1.0.0"
+displayName="Forbric NeoForge breath and drown canary"
+description="gate-m57: a NeoForge liquid, bucket, and breathe/drown/damage listeners. Test fixture only."

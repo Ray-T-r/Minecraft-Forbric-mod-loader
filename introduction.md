@@ -1412,7 +1412,11 @@ both events itself, and a bridge must not post the same one again (§8.1).
   touched stays exactly as NeoForge's listeners left it (`ForgeBreath.of` and `carryBack`, driven by
   `KernelBreatheBridgeTest`). With the vanilla refill (§6) NeoForge's answer already refills wherever vanilla does, so
   a MinecraftForge listener reads `canRefillAir` true there, also in lava or a breathable fluid with Breath of the
-  Nautilus alone, where native MinecraftForge reads false and holds the air. A NeoForge listener at `LOWEST`
+  Nautilus alone, where native MinecraftForge reads false and holds the air. gate-m57 pins that difference in
+  MinecraftForge's `canDrown(false)` liquid (the body refills as in open air natively, its MinecraftForge listener
+  reads true, and the native reference must still hold the air there), and plays each clause of MinecraftForge's rule
+  as the only one that says yes where a NeoForge listener refills nothing: water breathing in water (the effects),
+  Breath of the Nautilus alone in open air (the eye in air), and in a bubble column. A NeoForge listener at `LOWEST`
   registered after the kernel's sees the MinecraftForge listeners' changes, one registered before does not. The event
   has a `BRIDGED` row and a `ForeignType` row (`LIVING_BREATHE_EVENT`); the bridge's only switch is the global
   `-Dforbric.unifiedEvents=off`.
@@ -1432,10 +1436,20 @@ both events itself, and a bridge must not post the same one again (§8.1).
   (`ForgeHooks.onLivingBreathe` bc 198–282 has no `getBubbleCount`), while NeoForge's draws six `nextDouble`s from the
   body's random source per bubble (bc 246–368) before it asks the level for a particle, which a server level ignores.
   A written-back count would change that body's random sequence — the pitch of the hurt sound in the same tick, its
-  later AI — and, set large, the server thread's work, where natively the change does nothing. A NeoForge listener's
-  cancel keeps MinecraftForge from being asked, as with every cancellable bridge here. `BRIDGED`
+  later AI — and, set large, the server thread's work, where natively the change does nothing (gate-m57 judges this in
+  game: a MinecraftForge bubble count of 0 or 50 must leave the body's random draws as they are). A NeoForge listener's
+  cancel keeps MinecraftForge from being asked, as with every cancellable bridge here. As for breathing, the NeoForge
+  listeners that answer before MinecraftForge's are every one above `LOWEST` and every one at `LOWEST` registered
+  before the kernel's bridges (a constructor, an `@EventBusSubscriber` class); one added at `LOWEST` later, from a
+  setup event say, is asked after MinecraftForge's, and what it sets is what the hook reads (measured, §19). gate-m57
+  holds the first half both ways: its NeoForge canary registers a breathe and a drown listener at `LOW` from common
+  setup, after the bridges (a bridge above `LOWEST` would answer before them), and one of each at `LOWEST` in its
+  constructor, before them (bridges installed before the mods are constructed would answer before those); a tick
+  where MinecraftForge's listener answers before any of them fails it, and so does a row where both answered with no
+  tick recording which answered first. `BRIDGED`
   and `ForeignType` (`LIVING_DROWN_EVENT`) rows as for breathing; the switch is again only
-  `-Dforbric.unifiedEvents=off`.
+  `-Dforbric.unifiedEvents=off`. Both bridges, with MinecraftForge's field getters and its fluids' own types (§5.3),
+  are measured in game against the native loaders by gate-m57 (§16, results in §19).
 - **Audits** — `HookCallSiteCensus` (which hooks of both families' hook classes the merged base still calls, and
   which events are therefore never posted), `DeadEventAudit` + `ForgeBusSubscriptions` (who listens to a dead
   event, including subscriptions an annotation scan cannot see), `DeadHookWorklist` (the join, ordered by how many
@@ -2034,10 +2048,10 @@ java -cp <boot-cp> net.forbric.kernel.boot.Main --scan --mods <dir> --report out
   read the staged jars; gate-m0 fails on *any* skipped test, because a skip there means the tests did not look at the
   real base. The weave tests (`mixin/weave/`) run synthetic mods with unrelated names through the real Mixin and
   MixinExtras, each with its mechanism switched off as the control. Tests must pass on JDK 21 as well as 25 (the CI unstaged job is JDK 21).
-- **Gates.** 59 scripts, `forbric-kernel/run/gate-m*.sh`, each asserting on the real logs and files of a real
+- **Gates.** 60 scripts, `forbric-kernel/run/gate-m*.sh`, each asserting on the real logs and files of a real
   instance, most with named negative controls (a `-D…=off` or input removal that must turn exactly the named
   checks red). `run/compat/gates-all.sh` discovers them by glob; `gates-parallel.py` overlaps them using each
-  gate's `# GATE-PARALLEL: rundirs=… mem=…` line (56 of 59 carry one; a gate without it runs alone), giving each
+  gate's `# GATE-PARALLEL: rundirs=… mem=…` line (57 of 60 carry one; a gate without it runs alone), giving each
   slot its own port block. Their time bounds are wall-clock seconds sized on a machine with cores to spare, and most
   count from the launcher's start, its Gradle build included; gate-m22's client window counts from the JVM's own
   start instead. On a busy machine they measure the machine. Run as two `-j 5` batches side by side, one on a
@@ -2081,6 +2095,7 @@ java -cp <boot-cp> net.forbric.kernel.boot.Main --scan --mods <dir> --report out
 | m54 | a NeoForge mod's play-phase packet reaches the server: Carry On, with fabric-api installed, carries a chest and a pig through real key and mouse input; the same run with the repair off must pick nothing up (third-party jars: `M54_CARRYON`, `M54_FABRIC_API`) |
 | m55 | the creative inventory's search finds items after a Fabric mod refreshed the search trees the vanilla way, judged from the screen's own grid, with a switched-off negative control |
 | m56 | with no Mod Menu, Fabric mods' config screens open through the kernel Mods screen's Config button (own entrypoint, a provided factory, two mods carried inside a jar — one under the heading it names, positions read from the screen's own list widget), as do a universal jar's NeoForge screen, the game's options and NeoForge's own settings (its row named `NeoForge`, listed because the set has a NeoForge mod), all driven through the game's keyboard and mouse handlers (arrow keys, clicks, double clicks); `-Dforbric.modMenuStandIn=off` must take the Fabric canaries' buttons away; with Fabric canaries only, NeoForge's row must be absent. With Mod Menu installed (required: `M56_MODMENU`/`M56_FABRIC_API`, default `run/modmenu/`, else SKIP-FATAL), Mod Menu's API answers for the universal canary with its `fabric.mod.json` name and description and NeoForge's screen (its list screen is not opened), and Mod Menu's own factory answers the game's row once; `-Dforbric.modMenuForeignScreens=off` is that phase's control. Canaries built from `canary/modmenu-config` |
+| m57 | MinecraftForge's breathing, drowning, damage and liquids against the native loaders: a dedicated server with a MinecraftForge and a NeoForge canary plays 53 scenarios — each family's breathe and drown listeners alone and both in one pack (NeoForge's answer first, then MinecraftForge's, also from NeoForge listeners at `LOW` registered from common setup, after the kernel's bridges, which a bridge above `LOWEST` would answer before, and at `LOWEST` registered in the NeoForge canary's constructor, before them, which bridges installed before the mods are constructed would answer before), MinecraftForge `@SubscribeEvent` listeners that cancel by returning true, a MinecraftForge bubble count that must leave the body's random draws as they are, Breath of the Nautilus alone in water, in a bubble column and in MinecraftForge's liquid (where MinecraftForge's listeners are told whether the body may refill), each clause of MinecraftForge's refill rule as the only one that says yes where a NeoForge listener refills nothing (water breathing in water, Breath of the Nautilus alone in open air, a bubble column), a pig drowning in each family's own liquid and breathing in a MinecraftForge liquid built `canDrown(false)`, where only its type's `canDrownIn` keeps it from drowning, and with Breath of the Nautilus alone in it, the owner's vanilla refill pinned as a documented difference (it refills as open air does natively, and the reference must still show native MinecraftForge holding the air), the probe's player drowning three times through MinecraftForge's attack, hurt and damage events and NeoForge's incoming damage, and each family's liquid block placed, taken up and poured out with its bucket. Each row's air and health (or a liquid row's result) and the listener views it names are compared with the same jar on the native loader whose answer stands (`canary/forge-breath-drown/native-reference.json`: three runs per native loader that agree on every stored field, regenerated by `run/compat/breath-drown.py reference`); a tick where MinecraftForge's listener answers before a NeoForge one fails, and so does a row where both answered with no tick recording which answered first; the body's random draws are compared only where a row must draw what another row draws, and only once the probe counted them on every sampled tick; the entity events never. `-Dforbric.unifiedEvents=off`, `-Dforbric.forgeFieldGetters=off`, `-Dforbric.forgeFluidOwnType=off` and `-Dforbric.forgeDamageSeams=off` must each fail exactly the rows they decide, each for that switch's cause. Canaries built from `canary/forge-breath-drown` |
 
 - **Compatibility sweeps.** `run/compat/PROTOCOL.md` is the procedure for running random/popular Modrinth sets on
   a Windows machine through the installed profile (`push-and-run.sh`, `win/*.py`, `pick_mods.py`, `evidence.py`),
@@ -2135,8 +2150,10 @@ measurement, and every repair of a mod's behaviour is held to three proofs:
    (its callers, and the kernel's uncalled table), what in-game probes report (counts per frame, values, screenshots),
    and the warnings. The same instruction, run on the same executions, with the same effect, is equivalent; anything
    else is a named gap, or comes with a proof that no structural trigger can close it. The per-mod harness for this
-   lives on the developer machine, not in the repository; `rename-mod.py census`/`compare` and
-   `run/compat/control-diff.sh` are the parts that are.
+   lives on the developer machine, not in the repository; `rename-mod.py census`/`compare`,
+   `run/compat/control-diff.sh` and `run/compat/breath-drown.py` (gate-m57's native reference: it runs the native
+   MinecraftForge and NeoForge servers itself and writes the reference only when all three runs of each agree on every
+   stored field, and stops, naming the differences, when they do not) are the parts that are.
 
 The last round's results are in §19.
 
@@ -2361,6 +2378,96 @@ Break one and the failure usually surfaces far from the cause.
   without the bridge, 3 in the others): the chunk system's timing differs from build to build and run to run, and the
   probe no longer measures it.
 
+  Then these changes were put in game together, as gate-m57 (§16) and a developer probe built from its canaries
+  (`canary/forge-breath-drown`, plus two builds that stay out of the repository: a Fabric build of the same probe that
+  records fabric-api's `ALLOW_DAMAGE` and `AFTER_DAMAGE`, fabric-api being a third-party jar, and a NeoForge build
+  with two `LOWEST` drown listeners, one registered in its constructor and one from common setup, which only measures
+  an order): 53 scenarios (54 in the Fabric build, 55 in the NeoForge one), three runs per arm, and every arm
+  identical across its three runs, including the random draws and entity events below. The probe ticks its player as a
+  server ticks one — `tick()`, which counts the hurt cooldown down (`LivingEntity.baseTick` leaves that to it for a
+  `ServerPlayer`), then `doTick()`; with `doTick()` alone, as the gate's first version did, only the first of three
+  drownings got past the cooldown, on every loader alike — and gives it an entity tracker of its own, so the server's
+  broadcasts for it are measured as a pig's are. The arms: native MinecraftForge, NeoForge and Fabric with their own
+  canary, and Forbric with each canary alone, with the MinecraftForge and NeoForge canaries together (the gate's
+  pack), with all three and fabric-api, and with the gate's pack and the NeoForge build. With one family alone Forbric
+  matches its native loader in air, health, every listener's view and every liquid row of every scenario that loader
+  can run (MinecraftForge 51, NeoForge 47, Fabric 46; the rest use another family's liquid) but where the vanilla
+  refill the owner chose (§6) decides — one MinecraftForge and two NeoForge scenarios: a pig with water breathing in
+  water refills there, where native NeoForge holds its air; with a NeoForge listener that refills nothing there, the
+  air is the same but that listener is offered vanilla's 4 where native NeoForge offers 0; and a pig with Breath of
+  the Nautilus alone in MinecraftForge's `canDrown(false)` liquid refills, where native MinecraftForge holds its air
+  (below). The only other differences are the drowning path's random draws and entity events (below). In the mixed
+  packs each scenario is judged against the native loader whose answer stands, and all 53 pass in all nine runs.
+  MinecraftForge's
+  listeners answer after NeoForge's in the same tick and are handed NeoForge's answer: a NeoForge damage of 3 or
+  bubble count of 0 reaches them, a NeoForge cancel or "not drowning" keeps them from being asked, and a NeoForge
+  listener that makes a body drown at air 0 gets them asked from air 0 on (a design choice: no native loader has both
+  families). The NeoForge canary's breathe and drown listeners at `LOW`, registered from common setup after the
+  kernel's bridges, also answer first in every tick of every run: MinecraftForge's listener is handed the damage of 3
+  and the refill of 0 they set, and their cancel keeps it from being asked; so do its listeners at `LOWEST`, registered
+  in its constructor before the bridges, whose damage of 3 and refill of 0 MinecraftForge's listener is handed in
+  turn. That order holds for every NeoForge
+  listener above `LOWEST` and every one at `LOWEST` registered before
+  the kernel's bridges, and not for one registered at `LOWEST` later: the NeoForge build's constructor listener sets a
+  drowning pig's damage to 5, MinecraftForge's listener is handed 5 and sets 3, and the pig takes 3; its common-setup
+  listener is asked after MinecraftForge's, which is handed 2 and sets 3, and the pig takes 5. MinecraftForge
+  `@SubscribeEvent` listeners that return true cancel drowning and damage as natively. A MinecraftForge bubble count
+  of 0 or 50 leaves the body's random draws exactly as with none, as natively; the gate judges this, since a count
+  carried back would make NeoForge's hook draw 0 or 300 numbers. With Breath of the Nautilus alone, MinecraftForge's
+  listeners are told the body may not refill in water and in MinecraftForge's liquid and may in a bubble column, and a
+  refill of 2 they set in water is not taken while one they set with "may refill" is, as natively; where a NeoForge
+  listener refills nothing in a bubble column, MinecraftForge's is offered that nothing, may refill, and its refill of
+  2 is taken; the same where a NeoForge listener refills nothing with water breathing in water or with Breath of the
+  Nautilus alone in open air (MinecraftForge's rule says yes there by its effects clause and by its eye clause, each
+  alone), as natively. A pig drowns in MinecraftForge's own liquid at the native ticks, with the native listener
+  events (not the native entity events: as for every drowning here, no entity event 67 is broadcast and the body draws
+  NeoForge's 99 steps on the drowning tick where native MinecraftForge's draws 3, below), and in a
+  MinecraftForge liquid built `canDrown(false)` it breathes and refills 4 a tick, as natively: only that type's
+  `canDrownIn` says so, which NeoForge's view of the type asks. With Breath of the Nautilus alone in that liquid the
+  body refills 4 a tick up to 300, as in open air, and MinecraftForge's listener reads `canRefillAir` true while it
+  does (false once the air is full), where native MinecraftForge reads false and holds the air at 200: the owner's
+  vanilla refill (§6, §8.1), a difference the gate pins (the row must refill as open air does natively, and the
+  reference must still show the native hold). The probe's
+  player drowns three times, each through MinecraftForge's attack, hurt and damage events with the native amounts (20
+  to 18, 16 and 14; a halved hurt halves each, a cancelled damage event keeps the health); a NeoForge incoming-damage
+  cancel stops MinecraftForge's hurt and damage but not its attack, which MinecraftForge posts first, at the head of
+  `hurtServer`, for the player and for a pig alike; and fabric-api's `ALLOW_DAMAGE` sees and denies those drownings as
+  on native Fabric. A MinecraftForge `LiquidBlock` built from a supplier is placed (no exception, a source block),
+  taken up with an empty bucket into its own bucket and poured out again, as natively. No defect was found. The gate's
+  negative controls each fail exactly their rows, each for its cause: `-Dforbric.unifiedEvents=off` the 43 judged on
+  what a MinecraftForge breathe or drown listener heard or was handed, each on that view;
+  `-Dforbric.forgeFieldGetters=off` the six in or with MinecraftForge's two liquids, each because its block throws
+  `"this.fluid" is null` when placed (its basin does not build, and every scenario in it fails with that cause);
+  `-Dforbric.forgeFluidOwnType=off` the three with a body in its drowning liquid, which refills there (in the
+  `canDrown(false)` one a body breathes and refills either way, natively too: without its own type that liquid is air
+  to NeoForge); `-Dforbric.forgeDamageSeams=off`
+  the ten judged on a MinecraftForge Hurt listener, each on a damage-chain view (MinecraftForge's attack is the
+  edit-spliced base's own call, so the incoming-damage cancel rows hold). Four mutations of the breathe and drown
+  bridges in scratch copies of the tree each turn the gate red: a refill taken where MinecraftForge said the body may
+  not refill (the positive phase fails the one row where MinecraftForge's listener sets a refill in water with Breath
+  of the Nautilus), MinecraftForge's refill rule always yes (it fails the four Breath of the Nautilus rows in water
+  and in MinecraftForge's liquid), its bubble-column clause dropped (both bubble-column rows), and the bubble count
+  carried back (both bubble-count rows: their bodies draw 3 and 603 steps on a drowning tick where drown-late's draws
+  99). A review then found three changes the gate's first 44 rows let through; each now turns it red: NeoForge's view
+  of a MinecraftForge type without its `canDrownIn` (the `canDrown(false)` row fails: the pig loses air and drowns),
+  and the breathe and drown bridges registered at `NORMAL` or at `LOW` instead of `LOWEST` (the rows with the
+  setup-registered `LOW` listener fail on their values — MinecraftForge handed 2, not that listener's 3, the pig hurt
+  by 3, a refill of 0 that stands — and every row with both families on the answering order).
+  `KernelBreatheBridgeTest` and `KernelDrownBridgeTest` now drive both priorities on real buses as well (at `NORMAL`
+  three of their tests fail, at `LOW` two). The review also passed the bubble-count rows with their random draws
+  emptied, or set to -1, on both sides; the judge now takes draws as evidence only where the probe counted them on
+  every sampled tick, as it did in every run above. A third review found two more holes, now closed: MinecraftForge's
+  refill rule without its effects clause left the gate green (no row had that clause alone saying yes: the water
+  breathing row starts at air 5 and never reaches the full air at which NeoForge refills nothing), and the order
+  check passed rows whose order the probe had not recorded (every row's order removed: still green). Each clause of
+  the rule now decides one row alone, and in scratch copies of the tree the effects clause dropped fails the water
+  breathing row, the eye clause dropped the open-air Breath of the Nautilus row, each on its air, under every phase
+  but bridges-off; the breathe and drown bridges installed before the mods are constructed (still at `LOWEST`) fail
+  both `LOWEST` rows on their values (the pig hurt by 3, a refill of 0 that stands) and every row with both families
+  on the answering order; and a row where a NeoForge listener and MinecraftForge's both answered with no recorded
+  order fails (the gate's own positive result with every order removed fails all 50 rows that have one). Not
+  measured: single player, a rendered client, lava, and a MinecraftForge fluid in the water tag.
+
 **What is still not native-equivalent.** Proven not closable by any structural trigger (each proof kept):
 
 - Forge Config API Port's own `config/forgeconfigapiport.toml` is never written: the only code that reads or writes it
@@ -2454,9 +2561,22 @@ Located, not yet fixed (no impossibility proof):
   to a superclass listener unless it is `InheritableEvent`), so such a listener is not told at all. Both buses'
   dispatch was checked on their real classes (a child event posted, a parent listener on each bus); the placement
   itself was not measured in game.
-- Drowning, on a client: the merged hook (NeoForge's) sends no entity event 67 when a body drowns, so a client does
-  not show vanilla's burst of drowning bubbles; native MinecraftForge and vanilla send it, native NeoForge does not.
-  Read from the bytecode, not measured.
+- Drowning, in every pack: the merged `LivingEntity` hands a drowning body to NeoForge's hook alone, and that hook,
+  unlike MinecraftForge's and vanilla's, never broadcasts entity event 67 — so a client shows no burst of drowning
+  bubbles — and on the server draws six `nextDouble`s from the body's random source per bubble (48 with the default 8)
+  before it asks the level for a particle, which a server level ignores. After every drowning the body's random
+  sequence (the pitch of its hurt sound in that tick, its later AI and ambient sounds) is not the one native
+  MinecraftForge or Fabric gives it; air, health and every listener's view are unchanged. Native NeoForge does the
+  same. Measured with gate-m57's canary (each scenario seeds the body's random source and counts the
+  linear-congruential steps from tick to tick; a stand-in in the body's entity tracker records the entity events the
+  server sends), three runs per arm: a pig drowning in water moves its random source 3 steps on a drowning tick on
+  native MinecraftForge and native Fabric, and 99 — 96 more, 48 `nextDouble`s — on native NeoForge and on Forbric with
+  only MinecraftForge mods, only NeoForge mods, only Fabric mods, both Forge families, or all three; the probe's
+  player moves 0 steps against 96 on each of its three drownings. Native MinecraftForge and Fabric broadcast event 67
+  on each drowning tick, for the pig and for the probe's player (which the probe gives an entity tracker of its own,
+  as a player in a level has), native NeoForge and Forbric none. Left as it is: sending the event and dropping the
+  draws would take NeoForge packs off native NeoForge, a random-sequence trade-off for the owner to decide. gate-m57
+  judges neither (it judges the random draws only where a MinecraftForge bubble count must leave them as they are).
 - Experience: a MinecraftForge `BreakEvent` listener that only reads `getExpToDrop` sees MinecraftForge's own draw, not
   the one NeoForge drops (a listener that sets it decides correctly). The relay of `tryDropExperience` (§7.4) declines,
   with a WARN, a hook that reads or changes the raw draw or replaces the `popExperience` call, and runs for a block

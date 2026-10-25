@@ -117,6 +117,50 @@ change: NeoForge's, then MinecraftForge mods' rules at the same neighbour), imme
 canaries must report the same firings there; where both rules match one block, exactly one runs. `--mods --unfixed`
 must go RED.
 
+## MinecraftForge breathing, drowning and liquids (gate-m57)
+
+`breath-drown.py` is gate-m57's measuring tool. Its canaries (`canary/forge-breath-drown`, one MinecraftForge and one
+NeoForge mod, built by `run/build-breath-drown-canary.sh`) play 53 scenarios on a dedicated server and write one JSON
+result: air and health every tick, what each family's breathe, drown and damage listeners saw, a liquid's bucket round
+trip, the body's random-source steps per tick, and the entity events the server sent for the body (the probe's player
+gets an entity tracker of its own for that, as a player in a level has one).
+
+- `breath-drown.py reference [--runs 3] [--port N]` rebuilds the canaries and runs native MinecraftForge 26.2-65.0.1
+  and NeoForge 26.2.0.88 (the images `native-controls.py prepare` installs; `M57_NATIVE` points elsewhere) `--runs`
+  times each, in fresh instances under `build/m57-reference/`. Every run of one loader must agree with its first on
+  every stored field — what is judged, and the random draws — or it stops and names the differences; nothing is
+  filtered. It then writes `canary/forge-breath-drown/native-reference.json` with the canary sources' digest. Run it
+  after any change to the canaries; the gate refuses a reference measured with other sources (`check-sources`). The
+  native images are cloned with `cp -c` on macOS and copied elsewhere, and the NeoForge and MinecraftForge servers
+  start from their installers' `unix_args.txt` (`win_args.txt` on Windows); the canary build reads the game's
+  libraries from `MC_DIR` (default: the macOS launcher directory), as every canary builder does.
+- `breath-drown.py judge --result R.json --phase positive|bridges-off|getters-off|own-type-off|seams-off` is the gate's
+  verdict: every row against the native loader whose answer stands, plus what MinecraftForge was handed in the mixed
+  rows, plus the order the families answered in within each tick (no MinecraftForge listener before a NeoForge one,
+  the NeoForge canary's `LOW` listeners from common setup and `LOWEST` listeners from its constructor included; a row
+  where a NeoForge listener and MinecraftForge's both answered an event must record the order of a tick they both
+  answered, so an order the probe failed to record is a failure, never a pass), plus the random draws where a row must
+  draw what another draws (`rng-as`; draws the probe did not count on every sampled tick — none recorded, `-1`, fewer
+  counts than samples, an unreadable seed — are a failure, never a match), plus one documented deliberate difference
+  (`owner-refill`: Breath of the Nautilus alone in MinecraftForge's `canDrown(false)` liquid refills as open air does
+  natively, the owner's vanilla refill, and the reference must still show native MinecraftForge holding the air there).
+  Exit 1 unless the failed rows are
+  exactly the ones the phase predicts and each failed for the phase's cause (a MinecraftForge breathe or drown view; a
+  liquid block that threw with `"this.fluid" is null`; a body in MinecraftForge's drowning liquid whose air or breathe
+  view moved — its `canDrown(false)` liquid is air to NeoForge without its own type and reads as with it, so
+  own-type-off holds those rows; a MinecraftForge attack, hurt or damage view).
+- `breath-drown.py run --engine native-forge|native-neo|native-fabric|forbric --mods JAR... --driver forge|neo|fabric
+  --out DIR --port N [--jvm=-D...] [--tree WT --staged OLD]` is one server, for a developer probe (a Fabric build of the
+  same canary with fabric-api's damage events stays out of the repository); `compare A.json B.json` lists every
+  difference, the unjudged fields included. `properties` prints the server.properties lines every arm uses. The
+  Forbric engine runs `run/launch-kernel-server.sh`, so it needs bash.
+
+`test_breath_drown.py` holds the judge's row table to the canary's plan (and the liquid rows to the rows the plan puts
+in MinecraftForge's liquids), the order it reads to the kinds the probe records (`Core.ORDERED`) and the canaries
+report, the gate to every row and phase, the committed reference to the canary sources (line endings ignored), to
+every row it is compared on and to the documented difference, and each phase's verdict to "exact both ways, for the
+phase's cause"; it needs no game files and runs in `tools/dev.py tool-test`.
+
 ## Fabric menu codec verification
 
 `menu-codec-gate.py --farmers-delight <FarmersDelight-26.2-3.6.26+refabricated.jar>`
