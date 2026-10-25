@@ -17,11 +17,15 @@ view of the listener families the row names in EXPECT, each against that family'
 A tag of the other family does nothing on a native loader, so the native run of a row is what its deciding family's
 listeners produce alone: where both families act, EXPECT names the one whose answer stands, and adds what the other
 family must have seen. NeoForge's listeners answer first, then MinecraftForge's, because the kernel posts
-MinecraftForge's events from NeoForge's at LOWEST before any mod's setup runs: that holds for every NeoForge listener
-above LOWEST and every one registered before the kernel's bridges (a mod's constructor, an @EventBusSubscriber class).
-The NeoForge canary's LOW listeners, registered from common setup (after the bridges), hold the first half: a bridge
-at any priority above LOWEST would answer before them. A NeoForge listener registered at LOWEST later answers after
-MinecraftForge's, and the gate's canaries have none (introduction §19). The body's random draws are judged only where
+MinecraftForge's events from NeoForge's at LOWEST after every mod is constructed and before any mod's setup runs: that
+holds for every NeoForge listener above LOWEST and every one registered before the kernel's bridges (a mod's
+constructor, an @EventBusSubscriber class). The NeoForge canary holds both: its LOW listeners, registered from common
+setup (after the bridges), would answer after a bridge at any priority above LOWEST, and its LOWEST listeners,
+registered in its constructor, after bridges installed before the mods are constructed. A NeoForge listener
+registered at LOWEST later answers after MinecraftForge's, and the gate's canaries have none (introduction §19). The
+order is recorded, never assumed: a row where a NeoForge listener and MinecraftForge's both answered an event must
+record the order of a tick they both answered. One row is a documented deliberate difference ('owner-refill': the
+owner's vanilla refill, which the reference must still show natively). The body's random draws are judged only where
 a row must draw what another row draws ('rng-as': a MinecraftForge listener's bubble count, which natively nothing
 reads), and only once the probe read them on every tick; the entity events never are (both documented in
 introduction §19).
@@ -56,6 +60,12 @@ F, N = 'forge', 'neo'
 #   ('sees', family, kind, text)  that family's first note of that kind contains text (it was handed the other's answer)
 #   ('rng-as', row)               the body drew from its random source what <row>'s body drew, tick for tick, here and
 #                                 in every native run the row is judged against
+#   ('owner-refill', row, native, merged)
+#                                 a deliberate difference (the owner's vanilla refill, introduction §6 and §8.1): the
+#                                 body's air is what <row>'s body does on native MinecraftForge (the vanilla refill) and
+#                                 MinecraftForge's breathe listener's first note contains <merged>, where this row's own
+#                                 native run holds the air and its note contains <native> (the reference must still show
+#                                 that); the rest of the row (health, every view's count and ticks) is judged as native
 EXPECT = {
     'drown-read': ({F, N}, []),
     'drown-late': ({F, N}, []),
@@ -88,6 +98,9 @@ EXPECT = {
     # MinecraftForge's all the same (a bridge above LOWEST would answer before them, and these rows would fail).
     'drown-nlow-damage3-f-damage0': ({F}, [('sees', F, 'drown', 'damage=3.0 ')]),
     'drown-nlow-cancel-f-damage3': ({N}, [('none', F, 'drown'), ('none', F, 'drown-ann')]),
+    # NeoForge's LOWEST listeners, registered in its constructor, before the kernel's bridges: they answer before
+    # MinecraftForge's (bridges installed before the mods are constructed would answer before them, and these rows fail).
+    'drown-nlowest-damage3-f-damage0': ({F}, [('sees', F, 'drown', 'damage=3.0 ')]),
     'breathe-read': ({F, N}, []),
     'breathe-f-refill2': ({F}, []),
     'breathe-f-cant': ({F}, []),
@@ -98,6 +111,12 @@ EXPECT = {
     'breathe-n-refill0-f-refill2': ({F}, [('sees', F, 'breathe', 'refill=0 ->')]),
     'breathe-n-cant-f-can': ({F}, [('sees', F, 'breathe', 'forge can=false ')]),
     'breathe-nlow-refill0-f-refill2': ({F}, [('sees', F, 'breathe', 'refill=0 ->')]),
+    'breathe-nlowest-refill0-f-refill2': ({F}, [('sees', F, 'breathe', 'refill=0 ->')]),
+    # NeoForge refills nothing, so MinecraftForge's own rule decides canRefillAir, each row by the one clause that says
+    # yes: water breathing in water (the effects), Breath of the Nautilus alone in open air (the eye in air); the
+    # bubble column below. MinecraftForge's listener is offered NeoForge's nothing, may refill, and its refill of 2 is taken.
+    'breathe-waterbreathing-water-n-refill0-f-refill2': ({F}, [('sees', F, 'breathe', 'forge can=true canRefill=true consume=1 refill=0 ->')]),
+    'breathe-nautilus-air-n-refill0-f-refill2': ({F}, [('sees', F, 'breathe', 'forge can=true canRefill=true consume=1 refill=0 ->')]),
     # Breath of the Nautilus alone: the body breathes; in water MinecraftForge's listeners are told it may not refill
     # (canRefillAir false: a refill they set is not taken, unless they also let it refill), in a bubble column that it may.
     'breathe-nautilus-water': ({F, N}, []),
@@ -113,6 +132,9 @@ EXPECT = {
     'drown-read-neomurk': ({N}, []),
     # MinecraftForge's liquid built canDrown(false): only its type's canDrownIn says a body does not drown there.
     'drown-read-forgecalm': ({F}, []),
+    # Breath of the Nautilus alone in that liquid: the owner's vanilla refill (§6) refills as in open air (breathe-read)
+    # and MinecraftForge's listener reads canRefillAir true; native MinecraftForge reads false and holds the air.
+    'breathe-nautilus-forgecalm': ({F}, [('owner-refill', 'breathe-read', 'canRefill=false', 'canRefill=true')]),
     'player-drown-read': ({F, N}, []),
     'player-drown-f-hurt-halve': ({F}, []),
     'player-drown-f-ann-damage-cancel': ({F}, []),
@@ -127,12 +149,16 @@ EXPECT = {
 # they saw (the first half of each note) is not what they see natively; their counts and ticks are still compared, and
 # what they were handed is checked by the 'sees' checks above.
 HANDED_NEOFORGES_ANSWER = {'drown-n-damage3-f-damage0', 'drown-n-damage3-f-cancel', 'breathe-n-refill0-f-refill2', 'breathe-n-cant-f-can',
-                           'breathe-nautilus-bubbles-n-refill0-f-refill2', 'drown-nlow-damage3-f-damage0', 'breathe-nlow-refill0-f-refill2'}
+                           'breathe-nautilus-bubbles-n-refill0-f-refill2', 'drown-nlow-damage3-f-damage0', 'breathe-nlow-refill0-f-refill2',
+                           'drown-nlowest-damage3-f-damage0', 'breathe-nlowest-refill0-f-refill2',
+                           'breathe-waterbreathing-water-n-refill0-f-refill2', 'breathe-nautilus-air-n-refill0-f-refill2'}
 # The rows in or with MinecraftForge's liquids, which the getters decide (each liquid block is built from a supplier).
-FORGE_LIQUID_ROWS = {'drown-read-forgemurk', 'drown-f-damage3-forgemurk', 'breathe-nautilus-forgemurk', 'drown-read-forgecalm', 'forge-bucket'}
+FORGE_LIQUID_ROWS = {'drown-read-forgemurk', 'drown-f-damage3-forgemurk', 'breathe-nautilus-forgemurk', 'drown-read-forgecalm',
+                     'breathe-nautilus-forgecalm', 'forge-bucket'}
 # The rows with a body in MinecraftForge's drowning liquid, which its own type decides: without it the untagged liquid is
 # air to NeoForge and the body breathes there. (In the liquid built canDrown(false) a body breathes either way, natively
-# too, and refills as in any liquid but water: own-type-off holds that row; only the type's canDrownIn decides it.)
+# too, and refills as in any liquid but water: own-type-off holds those rows; only the type's canDrownIn decides the
+# first, and the second refills as the owner's vanilla refill does wherever the eye is not in water.)
 FORGE_LIQUID_BODY_ROWS = {'drown-read-forgemurk', 'drown-f-damage3-forgemurk', 'breathe-nautilus-forgemurk'}
 JUDGED = ('air', 'health', 'result')
 # Stored in the reference besides what is judged directly: the random draws, for the 'rng-as' checks.
@@ -140,6 +166,10 @@ STORED = JUDGED + ('rng',)
 # MinecraftForge's events each phase switches off: breathe and drown (the bridges), hurt (the damage seams).
 BRIDGED_KINDS = ('breathe', 'breathe-ann', 'drown', 'drown-ann')
 SEAM_KINDS = ('attack', 'hurt', 'damage-ann')
+# The NeoForge kinds whose answering order against MinecraftForge's the probe records (Core.ORDERED), by the event
+# they answer, with the name it records them under; MinecraftForge's answers are its 'breathe' and 'drown' kinds.
+NEO_ORDERED = {'breathe': (('breathe', N), ('breathe-low', N + '-low'), ('breathe-lowest', N + '-lowest')),
+               'drown': (('drown', N), ('drown-low', N + '-low'), ('drown-lowest', N + '-lowest'))}
 FORGE_MURK = 'forbricbreathforge:murk'
 PHASES = ('positive', 'bridges-off', 'getters-off', 'own-type-off', 'seams-off')
 
@@ -276,8 +306,10 @@ def judge_rows(reference, result):
                 reasons.append(f'the {family} reference has no measured row (regenerate it)'); continue
             native = {k: v for k, v in native.items() if k not in STORED or k in JUDGED}
             mine = judged_row(row, {family})
-            if name in HANDED_NEOFORGES_ANSWER and family == F:
+            if family == F and (name in HANDED_NEOFORGES_ANSWER or owner_refill(checks)):
                 native, mine = without_notes(native, family), without_notes(mine, family)
+            if family == F and owner_refill(checks):
+                native.pop('air', None); mine.pop('air', None)   # judged by the 'owner-refill' check below
             reasons += [f'vs native {family}: {d}' for d in diff(native, mine)]
         views = row.get('views', {})
         for check in checks:
@@ -309,14 +341,45 @@ def judge_rows(reference, result):
                 elif row.get('rng') != theirs.get('rng'):
                     reasons.append(f'rng: the body did not draw what {other}\'s drew '
                                    f'({first_difference(row.get("rng", []), theirs.get("rng", []))})')
-        for kind, orders in row.get('order', {}).items():
-            # Every distinct order of a tick more than one family answered; N-low: a NeoForge LOW listener from common setup.
-            for order in [orders] if isinstance(orders, str) else orders:
-                fams = order.split(',')
-                if F in fams and any(f.split('-')[0] == N and fams.index(f) > fams.index(F) for f in fams):
-                    reasons.append(f'{kind}: MinecraftForge answered before a NeoForge listener in one tick ({order})')
+            elif check[0] == 'owner-refill':
+                _, other, native_text, merged_text = check
+                held, vanilla = native_of(F, name) or {}, (native_of(F, other) or {}).get('air')
+                notes = held.get('views', {}).get(F, {}).get('breathe', {}).get('notes', [])
+                if not vanilla or held.get('air') == vanilla or not notes or native_text not in notes[0]:
+                    reasons.append(f'the native {F} reference does not show the documented difference ({name} holding its air, '
+                                   f'its breathe note with {native_text!r}; regenerate it, or the expectation is stale)')
+                if row.get('air') != vanilla:
+                    reasons.append(f'air: not the vanilla refill {other} shows natively ({first_difference(vanilla or [], row.get("air", []))})')
+                told = views.get(F, {}).get('breathe', {}).get('notes', [])
+                if not told or merged_text not in told[0]:
+                    reasons.append(f'{F} breathe first note must contain {merged_text!r}: {told[:1]}')
+        reasons += order_reasons(row)
         verdicts[name] = reasons
     return verdicts
+
+
+def owner_refill(checks):
+    return any(c[0] == 'owner-refill' for c in checks)
+
+
+def order_reasons(row):
+    """What is wrong with a row's answering order: MinecraftForge before a NeoForge listener in some tick, or a NeoForge
+    listener and MinecraftForge's that both answered one event with no tick recording which answered first."""
+    reasons, views = [], row.get('views', {})
+    recorded = {event: [orders] if isinstance(orders, str) else list(orders) for event, orders in row.get('order', {}).items()}
+    for event, orders in recorded.items():
+        # Every distinct order of a tick more than one listener answered; neo-low, neo-lowest: the NeoForge canary's
+        # LOW listener from common setup and LOWEST listener from its constructor.
+        for order in orders:
+            fams = order.split(',')
+            if F in fams and any(f.split('-')[0] == N and fams.index(f) > fams.index(F) for f in fams):
+                reasons.append(f'{event}: MinecraftForge answered before a NeoForge listener in one tick ({order})')
+    for event, kinds in NEO_ORDERED.items():
+        if not views.get(F, {}).get(event, {}).get('count'): continue
+        for kind, label in kinds:
+            if views.get(N, {}).get(kind, {}).get('count') and not any({F, label} <= set(o.split(',')) for o in recorded.get(event, [])):
+                reasons.append(f'{event}: {label} and {F} both answered, but no tick records which answered first')
+    return reasons
 
 
 def native_forge_kinds(reference, name):

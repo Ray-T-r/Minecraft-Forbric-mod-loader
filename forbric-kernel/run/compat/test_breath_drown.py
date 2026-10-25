@@ -38,7 +38,8 @@ def view(count, notes, at=None):
 
 def reference():
     """A small reference: every EXPECT row measured by each family it names, with drown and breathe views, a hurt view
-    for MinecraftForge's drowning rows, and the same random draws everywhere (so every 'rng-as' holds natively)."""
+    for MinecraftForge's drowning rows, and the same random draws everywhere (so every 'rng-as' holds natively); an
+    'owner-refill' row holds its air natively and its MinecraftForge breathe note says so."""
     families = {}
     for family in (bd.F, bd.N):
         rows = {}
@@ -52,6 +53,10 @@ def reference():
                 for c in checks:
                     if c[0] == 'none' and c[1] == family: views.pop(c[2], None)
                 rows[name] = {'air': [5, 4], 'health': [10.0, 8.0], 'rng': [1, 3], 'views': {family: views}}
+                for c in checks:
+                    if c[0] == 'owner-refill' and family == bd.F:
+                        rows[name]['air'] = [200, 200]
+                        views['breathe'] = view(2, [f'forge breathe {c[2]} x'])
         families[family] = {'rows': rows}
     return {'canarySources': 'x', 'families': families}
 
@@ -78,8 +83,21 @@ def mixed_result(ref):
                 kinds = row['views'].setdefault(check[1], {})
                 if check[2] in kinds: kinds[check[2]]['notes'] = [f'{check[1]} {text} -> x']
                 else: kinds[check[2]] = view(1, [f'{check[1]} {text} -> x'], [1])
+            if check[0] == 'owner-refill':
+                row['air'] = copy.deepcopy(ref['families'][bd.F]['rows'][check[1]]['air'])
+                row['views'][bd.F]['breathe']['notes'] = [f'forge breathe {check[3]} x']
+        row['order'] = recorded_order(row)
         rows.append(row)
     return {'driver': 'neo', 'error': None, 'rows': rows}
+
+
+def recorded_order(row):
+    """The order the probe records where a NeoForge listener and MinecraftForge's both answered: NeoForge's first."""
+    order, views = {}, row['views']
+    for event, kinds in bd.NEO_ORDERED.items():
+        neo = [label for kind, label in kinds if views.get(bd.N, {}).get(kind, {}).get('count')]
+        if neo and views.get(bd.F, {}).get(event, {}).get('count'): order[event] = [','.join(neo + [bd.F])]
+    return order
 
 
 class PlanAndTable(unittest.TestCase):
@@ -142,10 +160,39 @@ class PlanAndTable(unittest.TestCase):
             (root / 'common/src/Core.java').write_bytes((root / 'common/src/Core.java').read_bytes() + b'//\r\n')
             self.assertNotEqual(bd.sources_digest(root), bd.sources_digest())
 
+    def test_the_judge_reads_the_order_of_every_listener_the_probe_orders(self):
+        # The probe records an answering order for the kinds in Core.ORDERED, under the name the judge looks for; a kind
+        # renamed on one side only would make the order check pass on no data.
+        core = (KERNEL / 'canary/forge-breath-drown/common/src/Core.java').read_text(encoding='utf-8')
+        ordered = core[core.index('Map<String, String> ORDERED = Map.of('):]
+        pairs = re.findall(r'"([a-z-]+)", "([a-z-]+)"', ordered[:ordered.index(');')])
+        self.assertEqual(dict(pairs), {kind: event for event, kinds in bd.NEO_ORDERED.items() for kind, _ in kinds})
+        for event, kinds in bd.NEO_ORDERED.items():
+            for kind, label in kinds: self.assertEqual(label, bd.N + kind[len(event):])   # Core: family + kind.substring(event.length())
+        canaries = (KERNEL / 'canary/forge-breath-drown').rglob('*Canary.java')
+        reported = {kind for c in canaries for kind in re.findall(r'Core\.report\(FAMILY, "([a-z-]+)"', c.read_text(encoding='utf-8'))}
+        self.assertLessEqual(set(dict(pairs)), reported)
+        self.assertEqual({k for k in reported if k.split('-')[0] in bd.NEO_ORDERED} - set(dict(pairs)), set())
+
+    def test_the_committed_reference_shows_every_documented_difference(self):
+        ref = json.loads(bd.REFERENCE.read_text(encoding='utf-8'))
+        rows = ref['families'][bd.F]['rows']
+        for name, (_, checks) in bd.EXPECT.items():
+            for c in checks:
+                if c[0] != 'owner-refill': continue
+                self.assertNotEqual(rows[name]['air'], rows[c[1]]['air'], name)
+                self.assertIn(c[2], rows[name]['views'][bd.F]['breathe']['notes'][0], name)
+                self.assertEqual(verdict(ref, name), [], name)
+
     def test_the_gate_writes_the_same_server_properties_as_the_reference_runs(self):
         gate = (KERNEL / 'run/gate-m57-forge-breath-drown.sh').read_text(encoding='utf-8')
         self.assertIn('"$TOOL" properties >> "$SERVER_DIR/server.properties"', gate)
         self.assertIn('level-seed=forbrickernel', bd.PROPERTIES)   # what seed_server_properties writes first
+
+
+def verdict(ref, name):
+    """The judge's reasons for one row of a result as native, built from <ref> (empty: the row passes)."""
+    return [r for r in bd.judge_rows(ref, mixed_result(ref))[name] if 'reference' in r]
 
 
 class Judge(unittest.TestCase):
@@ -183,20 +230,64 @@ class Judge(unittest.TestCase):
         self.assertEqual(self.failed(), {'drown-n-damage3'})
 
     def test_minecraftforge_answering_before_neoforge_fails(self):
-        self.row('drown-read')['order'] = {'drown': 'forge,neo'}
+        self.row('drown-read')['order']['drown'] = 'forge,neo'
         self.assertEqual(self.failed(), {'drown-read'})
-        self.row('drown-read')['order'] = {'drown': 'neo,forge'}
+        self.row('drown-read')['order']['drown'] = 'neo,forge'
         self.assertEqual(self.failed(), set())
 
     def test_minecraftforge_answering_before_a_neoforge_low_listener_fails(self):
         # The NeoForge canary's LOW listeners, registered from common setup: a bridge above LOWEST answers before them.
-        self.row('breathe-read')['order'] = {'breathe': ['neo,forge,neo-low']}
+        self.row('breathe-read')['order']['breathe'] = ['neo,forge,neo-low']
         self.assertEqual(self.failed(), {'breathe-read'})
-        self.row('breathe-read')['order'] = {'breathe': ['neo,neo-low,forge']}
+        self.row('breathe-read')['order']['breathe'] = ['neo,neo-low,forge']
         self.assertEqual(self.failed(), set())
         # Every distinct order is judged, not the first tick's alone (that one may be NeoForge's without MinecraftForge).
-        self.row('drown-read')['order'] = {'drown': ['neo,neo-low', 'neo,forge,neo-low']}
+        self.row('drown-read')['order']['drown'] = ['neo,neo-low', 'neo,forge,neo-low']
         self.assertEqual(self.failed(), {'drown-read'})
+
+    def test_a_neoforge_lowest_listener_from_the_constructor_answering_after_minecraftforge_fails(self):
+        # Bridges installed before the mods are constructed would answer before the canary's constructor LOWEST listeners.
+        self.row('drown-read')['order']['drown'] = ['neo,neo-low,forge,neo-lowest']
+        self.assertEqual(self.failed(), {'drown-read'})
+
+    def test_both_families_answering_with_no_recorded_order_fails(self):
+        # An order check that reads no order passes everything: a row where both answered must record their order.
+        self.row('drown-read')['order'] = {}
+        self.assertEqual(self.failed(), {'drown-read'})
+        self.setUp()
+        result = copy.deepcopy(self.result)
+        for r in result['rows']: r['order'] = {}
+        both = {r['name'] for r in result['rows']
+                if any(r['views'].get(bd.F, {}).get(e, {}).get('count') and any(r['views'].get(bd.N, {}).get(k, {}).get('count') for k, _ in kinds)
+                       for e, kinds in bd.NEO_ORDERED.items())}
+        self.assertTrue(both)
+        self.assertEqual(self.failed(result), both)
+        # ...and must name every NeoForge listener that answered: neo-low missing from the only tick recorded.
+        r = self.row('breathe-f-refill2')   # judged on MinecraftForge's view alone; NeoForge's listeners answered too
+        r['views'][bd.N] = {'breathe': view(2, ['neo x']), 'breathe-low': view(2, ['neo-low x'])}
+        r['order'] = {'breathe': ['neo,forge']}
+        verdicts = bd.judge_rows(self.ref, self.result)
+        self.assertEqual({n for n, v in verdicts.items() if v}, {'breathe-f-refill2'})
+        self.assertIn('neo-low and forge both answered', ' '.join(verdicts['breathe-f-refill2']))
+        r['order'] = {'breathe': ['neo,neo-low,forge']}
+        self.assertEqual(self.failed(), set())
+
+    def test_the_owner_refill_row_must_differ_from_native_as_documented(self):
+        name, other = next((n, c[1]) for n, (_, checks) in bd.EXPECT.items() for c in checks if c[0] == 'owner-refill')
+        row = self.row(name)
+        # As native MinecraftForge (air held, told it may not refill): the deliberate difference is gone, which is red.
+        row['air'] = copy.deepcopy(self.ref['families'][bd.F]['rows'][name]['air'])
+        self.assertIn('not the vanilla refill', ' '.join(bd.judge_rows(self.ref, self.result)[name]))
+        self.setUp(); row = self.row(name)
+        row['views'][bd.F]['breathe']['notes'] = ['forge breathe canRefill=false x']
+        self.assertEqual(self.failed(), {name})
+        # Its health and counts are still native.
+        self.setUp(); self.row(name)['health'] = [10.0, 7.0]
+        self.assertEqual(self.failed(), {name})
+        # A reference in which native MinecraftForge refills there too no longer documents the difference.
+        self.setUp()
+        self.ref['families'][bd.F]['rows'][name]['air'] = copy.deepcopy(self.ref['families'][bd.F]['rows'][other]['air'])
+        self.assertIn('does not show the documented difference', ' '.join(bd.judge_rows(self.ref, self.result)[name]))
 
     def test_a_row_that_must_draw_what_another_draws_fails_when_it_does_not(self):
         name, other = next((n, c[1]) for n, (_, checks) in bd.EXPECT.items() for c in checks if c[0] == 'rng-as')

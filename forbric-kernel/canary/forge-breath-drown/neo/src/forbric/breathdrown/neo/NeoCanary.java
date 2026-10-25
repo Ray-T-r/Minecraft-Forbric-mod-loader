@@ -29,9 +29,10 @@ import net.neoforged.neoforge.registries.NeoForgeRegistries;
 
 /**
  * gate-m57's NeoForge mod, using NeoForge's API only: a drowning liquid of its own and a bucket for it, listeners for
- * breathing, drowning and the damage chain at normal priority, registered in the constructor, and a breathe and a drown
- * listener at {@code LOW}, registered from common setup (after the constructor, as a mod may). Each reports what it saw
- * to the probe and acts on the body's {@code n-*} tags; the {@code LOW} ones on {@code n-low-*} alone.
+ * breathing, drowning and the damage chain at normal priority and a breathe and a drown listener at {@code LOWEST}, all
+ * registered in the constructor, and a breathe and a drown listener at {@code LOW}, registered from common setup (after
+ * the constructor, as a mod may). Each reports what it saw to the probe and acts on the body's {@code n-*} tags; the
+ * {@code LOW} ones on {@code n-low-*} alone, the {@code LOWEST} ones on {@code n-lowest-*} alone.
  */
 @Mod(NeoCanary.ID)
 public final class NeoCanary {
@@ -72,6 +73,8 @@ public final class NeoCanary {
 		NeoForge.EVENT_BUS.addListener(LivingDrownEvent.class, NeoCanary::drown);
 		NeoForge.EVENT_BUS.addListener(LivingIncomingDamageEvent.class, NeoCanary::incoming);
 		NeoForge.EVENT_BUS.addListener(LivingDamageEvent.Pre.class, NeoCanary::damage);
+		NeoForge.EVENT_BUS.addListener(EventPriority.LOWEST, false, LivingBreatheEvent.class, NeoCanary::breatheLowest);
+		NeoForge.EVENT_BUS.addListener(EventPriority.LOWEST, false, LivingDrownEvent.class, NeoCanary::drownLowest);
 		bus.addListener(FMLCommonSetupEvent.class, e -> {
 			NeoForge.EVENT_BUS.addListener(EventPriority.LOW, false, LivingBreatheEvent.class, NeoCanary::breatheLow);
 			NeoForge.EVENT_BUS.addListener(EventPriority.LOW, false, LivingDrownEvent.class, NeoCanary::drownLow);
@@ -110,6 +113,20 @@ public final class NeoCanary {
 		if (Core.tagged(entity, "n-low-cancel")) e.setCanceled(true);
 		if (Core.tagged(entity, "n-low-damage3")) e.setDamageAmount(3f);
 		Core.report(FAMILY, "drown-low", entity, seen + " -> cancel=" + e.isCanceled() + " drowning=" + e.isDrowning() + " damage=" + e.getDamageAmount() + " bubbles=" + e.getBubbleCount());
+	}
+
+	static void breatheLowest(LivingBreatheEvent e) {
+		LivingEntity entity = e.getEntity();
+		String seen = "neo-lowest can=" + e.canBreathe() + " consume=" + e.getConsumeAirAmount() + " refill=" + e.getRefillAirAmount();
+		if (Core.tagged(entity, "n-lowest-refill0")) e.setRefillAirAmount(0);
+		Core.report(FAMILY, "breathe-lowest", entity, seen + " -> can=" + e.canBreathe() + " consume=" + e.getConsumeAirAmount() + " refill=" + e.getRefillAirAmount());
+	}
+
+	static void drownLowest(LivingDrownEvent e) {
+		LivingEntity entity = e.getEntity();
+		String seen = "neo-lowest drown drowning=" + e.isDrowning() + " damage=" + e.getDamageAmount() + " bubbles=" + e.getBubbleCount() + " air=" + entity.getAirSupply();
+		if (Core.tagged(entity, "n-lowest-damage3")) e.setDamageAmount(3f);
+		Core.report(FAMILY, "drown-lowest", entity, seen + " -> cancel=" + e.isCanceled() + " drowning=" + e.isDrowning() + " damage=" + e.getDamageAmount() + " bubbles=" + e.getBubbleCount());
 	}
 
 	static void incoming(LivingIncomingDamageEvent e) {

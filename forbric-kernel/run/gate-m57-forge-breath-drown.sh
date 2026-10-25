@@ -7,19 +7,25 @@
 # built from a supplier reads its fluid through MinecraftForge's getters (NativeCoremodParity, Family.FORGE); and
 # MinecraftForge's Hurt and Damage events sit in NeoForge's damage pipeline through seams (ForgeDamageSeamsInjector). A
 # dedicated server with a MinecraftForge canary and a NeoForge canary (canary/forge-breath-drown, both built here)
-# plays 48 scenarios (Core.plan): pigs drowning in water with each family's drown listeners acting alone and both
+# plays 53 scenarios (Core.plan): pigs drowning in water with each family's drown listeners acting alone and both
 # acting (NeoForge's answer first, then MinecraftForge's, also from NeoForge listeners at LOW that the NeoForge canary
-# registers from common setup, after the kernel's bridges), including MinecraftForge's @SubscribeEvent listeners that
-# cancel by returning true and a MinecraftForge bubble count that must leave the body's random draws as they are;
-# breathing in open air the same way, and with Breath of the Nautilus alone in water, in a bubble column and in
-# MinecraftForge's liquid, where MinecraftForge's listeners are told whether the body may refill; a pig drowning in each
-# family's own liquid, and in a MinecraftForge liquid built canDrown(false), where only its type's canDrownIn keeps the
-# body from drowning; the probe's player drowning three times through the damage chain (MinecraftForge's attack, hurt
-# and damage, NeoForge's incoming damage); and each family's liquid placed, taken up and poured out with its bucket
-# through the server's own use-item path. Every row's air and health (or a liquid row's result) and the listener views
-# it names are compared with the same jar on the native loader whose answer stands
-# (canary/forge-breath-drown/native-reference.json, three agreeing native runs each; regenerate it with
-# run/compat/breath-drown.py reference), and the mixed rows also with what the other family must have been handed.
+# registers from common setup, after the kernel's bridges, and at LOWEST that it registers in its constructor, before
+# them), including MinecraftForge's @SubscribeEvent listeners that cancel by returning true and a MinecraftForge bubble
+# count that must leave the body's random draws as they are; breathing in open air the same way, and with Breath of
+# the Nautilus alone in water, in a bubble column and in MinecraftForge's liquid, where MinecraftForge's listeners are
+# told whether the body may refill — and where NeoForge's listener refills nothing, each clause of MinecraftForge's own
+# refill rule (the effects, the eye in air, a bubble column) the only one that says yes in one row; a pig drowning in
+# each family's own liquid, and in a MinecraftForge liquid built canDrown(false), where only its type's canDrownIn keeps
+# the body from drowning, and with Breath of the Nautilus alone in that liquid, where the owner's vanilla refill refills
+# and native MinecraftForge holds the air (a documented deliberate difference, pinned both ways: the row must refill as
+# open air does natively and the reference must still hold); the probe's player drowning three times through the
+# damage chain (MinecraftForge's attack, hurt and damage, NeoForge's incoming damage); and each family's liquid placed,
+# taken up and poured out with its bucket through the server's own use-item path. Every row's air and health (or a
+# liquid row's result) and the listener views it names are compared with the same jar on the native loader whose
+# answer stands (canary/forge-breath-drown/native-reference.json, three agreeing native runs each; regenerate it with
+# run/compat/breath-drown.py reference), and the mixed rows also with what the other family must have been handed and
+# the answering order: a tick where MinecraftForge's listener answers before a NeoForge one fails, and so does a row
+# where both answered with no tick recording which answered first.
 #
 #   0. the reference was measured with the canary sources in this tree.
 #   1. positive — STRICT: every row as native, zero confirmed required findings.
@@ -27,8 +33,9 @@
 #      sees fail, each on a MinecraftForge breathe or drown view.
 #   3. getters-off — -Dforbric.forgeFieldGetters=off: exactly the rows in or with MinecraftForge's liquids fail, each
 #      because its liquid block threw with "this.fluid" is null.
-#   4. own-type-off — -Dforbric.forgeFluidOwnType=off: exactly the rows with a body in MinecraftForge's liquids fail,
-#      each with the body in one and its air or MinecraftForge breathe view off native.
+#   4. own-type-off — -Dforbric.forgeFluidOwnType=off: exactly the rows with a body in MinecraftForge's drowning liquid
+#      fail, each with the body in it and its air or MinecraftForge breathe view off native (in the canDrown(false) one a
+#      body breathes and refills either way: without its own type that liquid is air to NeoForge).
 #   5. seams-off — -Dforbric.forgeDamageSeams=off: exactly the rows judged on a MinecraftForge Hurt listener fail, each
 #      on a MinecraftForge attack, hurt or damage view. (MinecraftForge's attack is asked by the edit-spliced base itself
 #      at the head of hurtServer, so the NeoForge incoming-damage cancel rows hold; a base without that call would fail
@@ -38,8 +45,9 @@
 # Not judged (measured, documented in introduction §19): the entity events the server broadcasts, and the random draws
 # elsewhere — merged drowning goes through NeoForge's hook, as native NeoForge's does. Not covered: a rendered client,
 # single player, a NeoForge listener registered at LOWEST after the kernel's bridges (it answers after
-# MinecraftForge's; the canary's setup-registered listeners are at LOW), Fabric's damage events (fabric-api is a
-# third-party jar; the developer probe covers them).
+# MinecraftForge's, a documented difference; the canary's setup-registered listeners are at LOW, its LOWEST ones are
+# registered before the bridges), Fabric's damage events (fabric-api is a third-party jar; the developer probe covers
+# them), lava (the owner's refill differs there as in the canDrown(false) liquid, and only that liquid is played).
 # GATE-PARALLEL: rundirs=server-breath-m57 mem=2500
 set -uo pipefail
 . "$(cd "$(dirname "$0")" && pwd)/lib.sh"
@@ -78,7 +86,7 @@ run_server() {
 judge() {
   local phase="$1" what="$2"
   check "$phase: the server started" 'Done \(' "$RESULTS/$phase.log"
-  check "$phase: the probe played every scenario" '\[BreathDrown\] DONE rows=48 error=null' "$RESULTS/$phase.log"
+  check "$phase: the probe played every scenario" '\[BreathDrown\] DONE rows=53 error=null' "$RESULTS/$phase.log"
   if python3 "$TOOL" judge --result "$RESULTS/$phase.json" --phase "$phase"
   then echo "[kernel] PASS $phase: $what"
   else echo "[kernel] FAIL $phase: $what (see $RESULTS/$phase.json)"; FAIL=1; fi
@@ -106,7 +114,7 @@ check "getters-off: ...because its LiquidBlock has no fluid without the getter" 
 
 step "4. own-type-off: NeoForge's view of MinecraftForge's own fluid type switched off"
 run_server own-type-off continue "-Dforbric.forgeFluidOwnType=off"
-judge own-type-off "exactly the rows with a body in MinecraftForge's liquids fail, each with the body in one"
+judge own-type-off "exactly the rows with a body in MinecraftForge's drowning liquid fail, each with the body in it"
 
 step "5. seams-off: MinecraftForge's damage seams switched off"
 run_server seams-off continue "-Dforbric.forgeDamageSeams=off"

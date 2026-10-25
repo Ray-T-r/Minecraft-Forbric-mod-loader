@@ -78,13 +78,15 @@ public final class Core {
 	private static final long SEED = 0x5EED_DA7AL;
 	private static final long LCG_MULTIPLIER = 0x5DEECE66DL, LCG_INCREMENT = 0xBL, LCG_MASK = (1L << 48) - 1;
 	/** Kinds a listener reports every tick: counted, their ticks not recorded. */
-	private static final Set<String> EVERY_TICK = Set.of("breathe", "breathe-ann", "breathe-low");
+	private static final Set<String> EVERY_TICK = Set.of("breathe", "breathe-ann", "breathe-low", "breathe-lowest");
 	/**
-	 * The kinds whose answering order within one tick is recorded, by the event they answer: a NeoForge {@code LOW}
-	 * listener's ({@code *-low}) answer is recorded under its event as family {@code <family>-low}. Every distinct order
-	 * of a tick that more than one family answered is kept, first seen first.
+	 * The kinds whose answering order within one tick is recorded, by the event they answer: a NeoForge {@code LOW} or
+	 * {@code LOWEST} listener's ({@code *-low}, {@code *-lowest}) answer is recorded under its event as family
+	 * {@code <family>-low} or {@code <family>-lowest}. Every distinct order of a tick that more than one listener answered
+	 * is kept, first seen first.
 	 */
-	private static final Map<String, String> ORDERED = Map.of("breathe", "breathe", "drown", "drown", "breathe-low", "breathe", "drown-low", "drown");
+	private static final Map<String, String> ORDERED = Map.of("breathe", "breathe", "drown", "drown", "breathe-low", "breathe", "drown-low", "drown",
+			"breathe-lowest", "breathe", "drown-lowest", "drown");
 	/** Each pool's place, by fluid, fixed so a loader that lacks one family's fluid builds the others where every loader does. */
 	private static final List<String> POOL_ORDER = List.of("minecraft:water", "minecraft:air", "forbricbreathforge:murk", "forbricbreathneo:murk",
 			"minecraft:bubble_column", "forbricbreathforge:calm");
@@ -125,7 +127,7 @@ public final class Core {
 		if (!EVERY_TICK.contains(kind)) view.at.add(s.air.size());
 		if (view.notes.size() < 4 && (view.notes.isEmpty() || !view.notes.get(view.notes.size() - 1).equals(line))) view.notes.add(line);
 		String event = ORDERED.get(kind);
-		if (event != null) s.thisTick.computeIfAbsent(event, k -> new ArrayList<>()).add(kind.endsWith("-low") ? family + "-low" : family);
+		if (event != null) s.thisTick.computeIfAbsent(event, k -> new ArrayList<>()).add(family + kind.substring(event.length()));
 	}
 
 	static final class View {
@@ -181,7 +183,8 @@ public final class Core {
 
 	/**
 	 * The scenarios. Tags: {@code f-*} act in the MinecraftForge listeners, {@code n-*} in the NeoForge ones ({@code n-low-*}
-	 * in its {@code LOW} listeners, which it registers from common setup). Drown rows
+	 * in its {@code LOW} listeners, which it registers from common setup, {@code n-lowest-*} in its {@code LOWEST} ones,
+	 * registered in its constructor). Drown rows
 	 * start a pig in water at air -15 (five ticks short of the point MinecraftForge asks at), the read rows at air 5 so
 	 * the first drowning shows; breathe rows start at 200 of 300, in open air where both native loaders refill the same
 	 * way, or with Breath of the Nautilus alone, where MinecraftForge's listeners are told the body may not refill.
@@ -214,6 +217,9 @@ public final class Core {
 		// MinecraftForge's all the same, as every NeoForge listener above LOWEST does.
 		queue.add(pig("drown-nlow-damage3-f-damage0", water, -15, 30, "n-low-damage3", "f-damage0"));
 		queue.add(pig("drown-nlow-cancel-f-damage3", water, -15, 30, "n-low-cancel", "f-damage3"));
+		// A NeoForge listener at LOWEST, registered in its constructor (the kernel's bridges go on after every mod is
+		// constructed): it answers before MinecraftForge's too. Registered after the bridges, it would answer after.
+		queue.add(pig("drown-nlowest-damage3-f-damage0", water, -15, 30, "n-lowest-damage3", "f-damage0"));
 		// Breathing in open air.
 		queue.add(pig("breathe-read", air, 200, 30));
 		queue.add(pig("breathe-f-refill2", air, 200, 30, "f-refill2"));
@@ -225,6 +231,12 @@ public final class Core {
 		queue.add(pig("breathe-n-refill0-f-refill2", air, 200, 30, "n-refill0", "f-refill2"));
 		queue.add(pig("breathe-n-cant-f-can", air, 200, 30, "n-cant", "f-can"));
 		queue.add(pig("breathe-nlow-refill0-f-refill2", air, 200, 30, "n-low-refill0", "f-refill2"));
+		queue.add(pig("breathe-nlowest-refill0-f-refill2", air, 200, 30, "n-lowest-refill0", "f-refill2"));
+		// Where NeoForge's answer refills nothing, MinecraftForge's own rule says whether the body may refill: the effects
+		// (here water breathing, in water), and the eye in air (here Breath of the Nautilus alone, in open air), each the
+		// only clause that says yes; the bubble column is the third, below.
+		queue.add(pig("breathe-waterbreathing-water-n-refill0-f-refill2", water, 200, 30, "n-refill0", "f-refill2").effect("water_breathing"));
+		queue.add(pig("breathe-nautilus-air-n-refill0-f-refill2", air, 200, 30, "n-refill0", "f-refill2").effect("breath_of_the_nautilus"));
 		// Breath of the Nautilus alone: the body breathes but may not refill where its eyes are in a fluid (MinecraftForge's
 		// canRefillAir false), unless that fluid is a bubble column.
 		queue.add(pig("breathe-nautilus-water", water, 200, 30).effect("breath_of_the_nautilus"));
@@ -239,6 +251,9 @@ public final class Core {
 		queue.add(pig("drown-read-neomurk", neoMurk, 5, 50));
 		// MinecraftForge's liquid no body drowns in: only its type's canDrownIn says so.
 		queue.add(pig("drown-read-forgecalm", forgeCalm, 5, 50));
+		// Breath of the Nautilus alone in it: the owner's vanilla refill refills here, where native MinecraftForge holds
+		// the air (a deliberate difference, introduction §8.1).
+		queue.add(pig("breathe-nautilus-forgecalm", forgeCalm, 200, 30).effect("breath_of_the_nautilus"));
 		// The probe's player drowning three times: the whole damage chain, each time.
 		queue.add(new Scenario("player-drown-read", water, "player", 5, 70));
 		queue.add(new Scenario("player-drown-f-hurt-halve", water, "player", 5, 70).tag("f-hurt-halve"));
