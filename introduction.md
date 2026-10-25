@@ -2236,17 +2236,21 @@ java -cp <boot-cp> net.forbric.kernel.boot.Main --scan --mods <dir> --report out
   Team Reborn Energy 5.0.0 pinned by SHA-256 (`run/energy-api/energy-5.0.0.jar` or `-Pforbric.rebornEnergy`).
   Without the staged jars `compileRuntimeJava` is skipped and `jar` produces a boot jar with no game side — which
   is what CI builds. `KernelRuntimeClasses.verify` is what catches such a jar at launch.
-- **Unit tests.** Counted from source: `src/test` has 5 549 `@Test` methods (23 of them spelled
-  `@org.junit.jupiter.api.Test`), 57 `@TestFactory` and 6 `@ParameterizedTest` methods in 1 046 `*Test.java` files;
+- **Unit tests.** Counted from source: `src/test` has 5 626 `@Test` methods (23 of them spelled
+  `@org.junit.jupiter.api.Test`), 57 `@TestFactory` and 6 `@ParameterizedTest` methods in 1 055 `*Test.java` files;
   `src/transferTest` has 76 `@Test` methods in 7 files (annotations at line start after indentation, `git grep` over
-  tracked files). A full run (`cleanTest test`, no daemon) on a staged root cloned whole from the developer's
-  `forbric-loader/run` — its merged base, runtimes and test fixtures — with this tree's tracked report in it, and the
-  third-party mod packs that machine still has, reported 6 660 tests in its JUnit XML, 74 of them skipped: 72 for
-  third-party packs the machine no longer has, 2 opt-in. How many run and skip depends on the root and the fixtures
-  present (some tests generate one case per fixture; a root cloned from an older copy skipped five more). Many tests
-  read the staged jars; gate-m0 fails on *any* skipped test, because a skip there means the tests did not look at the
-  real base. The weave tests (`mixin/weave/`) run synthetic mods with unrelated names through the real Mixin and
-  MixinExtras, each with its mechanism switched off as the control. Tests must pass on JDK 21 as well as 25 (the CI unstaged job is JDK 21).
+  tracked files). How many run and skip depends on the staged root and the fixtures present (some tests generate one
+  case per fixture), so each count names its root. Full runs of this tree's code (`cleanTest test`, no daemon, JDK 25)
+  reported 6 737 tests in their JUnit XML, 74 of them skipped — 72 for third-party packs the developer's machine no
+  longer has, 2 opt-in — both on a root cloned whole on 2026-10-25 from the developer's `forbric-loader/run` (its
+  merged base, runtimes and test fixtures, with this tree's tracked merge report) and kept outside any checkout, and
+  on a checkout's own `forbric-loader/run` holding the same files (the default root), the same tests skipped on both;
+  `transferTest` ran its 76, none skipped. Before this round's merges, at 5fbf7de1, a root cloned a day earlier
+  skipped 77 (75 third-party, 2 opt-in) and gate-m0 on a checkout's default root 70 (all third-party): a skip count
+  follows the root's fixtures and how the run is set up, not the tree alone. Many tests read the staged jars; gate-m0
+  fails on *any* skipped test, because a skip there means the tests did not look at the real base. The weave tests
+  (`mixin/weave/`) run synthetic mods with unrelated names through the real Mixin and MixinExtras, each with its
+  mechanism switched off as the control. Tests must pass on JDK 21 as well as 25 (the CI unstaged job is JDK 21).
 - **Gates.** 60 scripts, `forbric-kernel/run/gate-m*.sh`, each asserting on the real logs and files of a real
   instance, most with named negative controls (a `-D…=off` or input removal that must turn exactly the named
   checks red). `run/compat/gates-all.sh` discovers them by glob; `gates-parallel.py` overlaps them using each
