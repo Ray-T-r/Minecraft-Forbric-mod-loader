@@ -136,7 +136,7 @@ public final class KernelTransferInterop {
 			Class<?> source = (Class<?>) issue.getClass().getMethod("source").invoke(issue);
 			// A finding with no provider object has no class to look up: it is the kernel's own, attributed to forbric
 			// without asking a class loader for a class that does not exist.
-			String shown = provider == null ? "unknown" : provider;
+			String shown = subject(provider, source);
 			CompatibilityFindings.record(new CompatibilityFinding("transfer:" + code + ":" + shown,
 					provider == null ? "forbric" : owner(loader, provider, source),
 					"Cross-ecosystem storage", "transfer:" + shown, CompatibilityFinding.Confidence.CONFIRMED,
@@ -145,6 +145,16 @@ public final class KernelTransferInterop {
 		} catch (ReflectiveOperationException unreadable) {
 			Caught.warn(unreadable, "[Forbric/Transfer] could not attribute transfer finding: %s", String.valueOf(issue));
 		}
+	}
+
+	/**
+	 * What a finding is about, as its id and its log line name it: the offered class, and when another class answers
+	 * for it (a dynamic proxy's handler), that class too. A proxy class is shared by every handler behind the same
+	 * interfaces in one class loader, so two mods' proxies carry one name; by that name alone their findings had one id.
+	 */
+	static String subject(String provider, Class<?> source) {
+		if (provider == null) return "unknown";
+		return source == null || source.getName().equals(provider) ? provider : provider + " via " + source.getName();
 	}
 
 	/**

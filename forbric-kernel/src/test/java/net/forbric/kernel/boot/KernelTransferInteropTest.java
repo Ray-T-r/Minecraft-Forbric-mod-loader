@@ -245,7 +245,7 @@ class KernelTransferInteropTest {
 			Class<?> handler = loader.loadClass("p.Handler");
 			KernelTransferInterop.recordIssue(getClass().getClassLoader(),
 					new Issue("FORGE_HANDLER_NOT_ROLLBACK_SAFE", "jdk.proxy9.$Proxy1", "detail", handler));
-			assertEquals("handlermod", attributed("transfer:FORGE_HANDLER_NOT_ROLLBACK_SAFE:jdk.proxy9.$Proxy1"),
+			assertEquals("handlermod", attributed("transfer:FORGE_HANDLER_NOT_ROLLBACK_SAFE:jdk.proxy9.$Proxy1 via p.Handler"),
 					"the source is used as it is: the name is never looked up");
 			Class<?> lambda = loader.loadClass("p.Anchor").getMethod("make").invoke(null).getClass();
 			assertTrue(lambda.isHidden(), "the shape this case is about");
@@ -254,6 +254,40 @@ class KernelTransferInteropTest {
 		} finally {
 			net.forbric.api.ModCatalog.publish(List.of());
 		}
+	}
+	/**
+	 * One proxy class, two mods' handlers: the JDK defines a single jdk.proxyN.$ProxyM per class loader and interface
+	 * list, so the offered name is the same for both. Each finding is its handler's -- its own id, its own mod -- and
+	 * neither stands in for the other.
+	 */
+	@Test void twoModsHandlersBehindOneProxyClassAreTwoFindingsEachItsOwnMods() throws Exception {
+		Path first = directory.resolve("first.jar");
+		Path second = directory.resolve("second.jar");
+		try (JarOutputStream out = new JarOutputStream(Files.newOutputStream(first))) { add(out, "a/Handler"); }
+		try (JarOutputStream out = new JarOutputStream(Files.newOutputStream(second))) { add(out, "b/Handler"); }
+		net.forbric.api.ModCatalog.publish(List.of(
+				new net.forbric.api.ModCatalog.Entry(net.forbric.api.Ecosystem.FABRIC, "firstmod", "First", "1", "", List.of(), "first.jar", "", ""),
+				new net.forbric.api.ModCatalog.Entry(net.forbric.api.Ecosystem.FORGE, "secondmod", "Second", "1", "", List.of(), "second.jar", "", "")));
+		try (var a = new java.net.URLClassLoader(new java.net.URL[] { first.toUri().toURL() }, null);
+				var b = new java.net.URLClassLoader(new java.net.URL[] { second.toUri().toURL() }, null)) {
+			String shared = "jdk.proxy3.$Proxy7";
+			KernelTransferInterop.recordIssue(getClass().getClassLoader(),
+					new Issue("FORGE_HANDLER_NOT_ROLLBACK_SAFE", shared, "first", a.loadClass("a.Handler")));
+			KernelTransferInterop.recordIssue(getClass().getClassLoader(),
+					new Issue("FORGE_HANDLER_NOT_ROLLBACK_SAFE", shared, "second", b.loadClass("b.Handler")));
+			assertEquals("firstmod", attributed("transfer:FORGE_HANDLER_NOT_ROLLBACK_SAFE:" + shared + " via a.Handler"));
+			assertEquals("secondmod", attributed("transfer:FORGE_HANDLER_NOT_ROLLBACK_SAFE:" + shared + " via b.Handler"));
+			assertEquals(2, CompatibilityFindings.all().stream().filter(f -> f.id().startsWith("transfer:")).count(),
+					CompatibilityFindings.all()::toString);
+		} finally {
+			net.forbric.api.ModCatalog.publish(List.of());
+		}
+	}
+	/** An ordinary provider is its own source, and its finding is named exactly as before. */
+	@Test void anOrdinaryProvidersFindingIsNamedByItsClassAlone() {
+		assertEquals("p.Storage", KernelTransferInterop.subject("p.Storage", null));
+		assertEquals("java.lang.String", KernelTransferInterop.subject("java.lang.String", String.class));
+		assertEquals("unknown", KernelTransferInterop.subject(null, null));
 	}
 	/** Only a name that resolves to no class at all is a failure to attribute, and it still says so. */
 	@Test @net.forbric.kernel.ExpectCaught("could not tell which mod ships no.such.Provider")

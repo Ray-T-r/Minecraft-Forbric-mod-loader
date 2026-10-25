@@ -45,6 +45,32 @@ class TransferIssuesTest {
 		assertSame(ModHandler.class, issues.getFirst().source());
 	}
 
+	/** Another mod's handler. */
+	static final class OtherModHandler implements InvocationHandler {
+		@Override public Object invoke(Object proxy, java.lang.reflect.Method method, Object[] arguments) { return null; }
+	}
+
+	/**
+	 * The JDK defines one proxy class per class loader and interface list, so two mods' handlers behind the same
+	 * interfaces are offered as one jdk.proxyN.$ProxyM. Deduplicated by that name, the second mod's finding was dropped
+	 * and the first mod's handler stood for both.
+	 */
+	@Test void twoHandlersBehindOneProxyClassAreTwoFindings() {
+		capture();
+		Object first = Proxy.newProxyInstance(getClass().getClassLoader(), new Class<?>[] { Runnable.class }, new ModHandler());
+		Object second = Proxy.newProxyInstance(getClass().getClassLoader(), new Class<?>[] { Runnable.class }, new OtherModHandler());
+		assertSame(first.getClass(), second.getClass(), "the shape this case is about: one proxy class for both handlers");
+		TransferIssues.report("FORGE_HANDLER_NOT_ROLLBACK_SAFE", first, "first");
+		TransferIssues.report("FORGE_HANDLER_NOT_ROLLBACK_SAFE", second, "second");
+		assertEquals(2, issues.size(), issues::toString);
+		assertSame(ModHandler.class, issues.get(0).source());
+		assertSame(OtherModHandler.class, issues.get(1).source());
+		// Still once per finding: the same handler class offered again, through another instance, is not a new one.
+		TransferIssues.report("FORGE_HANDLER_NOT_ROLLBACK_SAFE",
+				Proxy.newProxyInstance(getClass().getClassLoader(), new Class<?>[] { Runnable.class }, new ModHandler()), "again");
+		assertEquals(2, issues.size(), issues::toString);
+	}
+
 	@Test void aLambdaHandlersSourceIsTheLambdaItself() {
 		capture();
 		InvocationHandler lambda = (proxy, method, arguments) -> null;

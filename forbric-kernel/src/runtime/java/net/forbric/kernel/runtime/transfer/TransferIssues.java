@@ -28,10 +28,19 @@ public final class TransferIssues {
 	public static void setReporter(Consumer<Issue> sink) { reporter = java.util.Objects.requireNonNull(sink); }
 	/** Forgets which findings were reported, so a test sees its own. */
 	static void resetForTests() { REPORTED.clear(); }
+	/**
+	 * Once per finding: its code, what was offered, and the class that answers for it. The last is part of the key
+	 * because a proxy class is shared -- the JDK defines one per class loader and interface list, so every mod's
+	 * handler behind the same interfaces is offered as the same {@code jdk.proxyN.$ProxyM}. Keyed by that name alone,
+	 * the first mod to report took the finding and every other mod's was dropped.
+	 */
 	public static void report(String code, Object provider, String detail) {
 		if (provider == null) { reportType(code, null, detail); return; }
-		String owner = provider.getClass().getName();
-		if (REPORTED.add(code + ":" + owner)) reporter.accept(new Issue(code, owner, detail, source(provider)));
+		Class<?> type = provider.getClass();
+		Class<?> source = source(provider);
+		String owner = type.getName();
+		String key = code + ":" + owner + (source == type ? "" : ":" + source.getName());
+		if (REPORTED.add(key)) reporter.accept(new Issue(code, owner, detail, source));
 	}
 	public static void reportType(String code, String owner, String detail) {
 		if (REPORTED.add(code + ":" + owner)) reporter.accept(new Issue(code, owner, detail));
