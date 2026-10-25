@@ -754,7 +754,37 @@ classpath (first-URL-wins would otherwise let it shadow the winner and contribut
   is decided as on NeoForge, and vanilla's and a Fabric fluid already have NeoForge's water or lava type. Registered
   before `NativeTagTrackerSourceInjector` (which keeps vanilla's tag trackers beside the type trackers for a Fabric
   fluid behaviour's tags, from the same cells), because that one proves the constructor and `update` it copies from as
-  they are after this edit. `-Dforbric.forgeEntityFluids=off`.
+  they are after this edit. The record does not ask a fluid already known to hold the kernel's stand-in again (its
+  MinecraftForge getter keeps no cache for a stand-in and would derive it from the fluid's tags for every cell of every
+  entity in it, every tick). The injector names the queries it matches by name and descriptor together: the
+  uncalled-method census (§7.3) reads a kernel string that spells a method's bare name as a possible call of every method
+  of that name, and the first version's `"isInFluid"` took EntityFluidInteraction's uncalled `isInFluid(TagKey)` out of
+  `uncalled-methods.txt`. NeoForge's no-argument `isInFluidType()` now answers MinecraftForge's way — any fluid cell the
+  walk reads, also one whose fluid tops out below the body — where native NeoForge's is `isInAnyFluid()` (a tracker
+  with height), which says no there (measured, §19; not changed: one method, two meanings, and the only caller in the
+  local corpus is a MinecraftForge mod's). `-Dforbric.forgeEntityFluids=off`.
+- **A type the kernel derived claims nothing** — two places where a fluid type the kernel gave a fluid acted as a claim
+  that fluid's own loader never makes. First, MinecraftForge and NeoForge each patched `Fluid.entityInside` and
+  `BucketItem.playEmptySound` to ask the fluid's type, and the merge kept both clauses side by side; here every fluid
+  answers both families — a NeoForge mod's fluid MinecraftForge's question with the kernel's tag-derived stand-in, a
+  Fabric mod's both questions with stand-ins. So a NeoForge fluid in `minecraft:water` whose own type says
+  `canExtinguish(false)` put out a body's fire (MinecraftForge's water type, its stand-in, says yes), so did a Fabric
+  fluid in that tag (vanilla puts fire out only in `WaterFluid`, whose `entityInside` overrides `Fluid`'s empty one), and
+  a NeoForge fluid's own bucket sound gave way to water's or lava's. `OwnFluidTypeClausesInjector` finds such methods by
+  their shape — calls of both `Fluid.getFluidType()` getters in one body; on today's base exactly those two, which
+  `OwnFluidTypeClausesInjectorTest` re-derives over the merged base and both carriers — and follows each getter with
+  `KernelFluidTypes.ownForgeType` / `ownNeoType`: the type itself, or that family's empty type, which claims nothing,
+  where the kernel's stand-in answered (`forgeTypeIsStandIn`; `neoTypeIsStandIn`, recorded by `foreignNeoLookup` when
+  no view of a MinecraftForge type of the fluid's own answers). A MinecraftForge mod's fluid keeps its own type and
+  NeoForge's view of it, a NeoForge mod's its own, vanilla's both. `-Dforbric.ownFluidTypeClauses=off`. Second,
+  NeoForge's walk gives every non-empty cell's type a tracker; on NeoForge only the empty fluid state has the empty type,
+  but the kernel gives that type to a Fabric fluid in no tag (and in no Fabric behaviour's tag), meaning "entities do not
+  interact with it", and the walk tracked it all the same: `shouldTravelInFluid` asks `isInFluidType(state)`, so a body
+  in such a fluid moved as through lava (the merged `travelInFluid` is MinecraftForge's, which sends every fluid but water
+  there) where on Fabric it falls through it as through air. `EmptyFluidTypeTrackerInjector` makes NeoForge's private
+  `getTrackerFor(FluidType)` — which only the walk calls, and the walk passes over a cell with no tracker — answer null
+  for the empty type, so no native cell is treated differently; MinecraftForge's record of the cell is taken before the
+  lookup. `-Dforbric.emptyFluidTypeTracker=off`.
 - **Configs** — `KernelForgeConfigLoad` opens genuine MinecraftForge configs one at a time, keeping Forge's reader,
   events, save and file watcher; the watchers are stopped on exit by `interop.ClientShutdown`
   (`ExitHookInjector`: `Minecraft.close` on the client, `DedicatedServer.onServerExit` on the server). A watcher
@@ -2039,11 +2069,11 @@ java -cp <boot-cp> net.forbric.kernel.boot.Main --scan --mods <dir> --report out
   Team Reborn Energy 5.0.0 pinned by SHA-256 (`run/energy-api/energy-5.0.0.jar` or `-Pforbric.rebornEnergy`).
   Without the staged jars `compileRuntimeJava` is skipped and `jar` produces a boot jar with no game side — which
   is what CI builds. `KernelRuntimeClasses.verify` is what catches such a jar at launch.
-- **Unit tests.** Counted from source: `src/test` has 5 560 `@Test` methods (23 of them spelled
-  `@org.junit.jupiter.api.Test`), 57 `@TestFactory` and 6 `@ParameterizedTest` methods in 1 048 `*Test.java` files;
+- **Unit tests.** Counted from source: `src/test` has 5 572 `@Test` methods (23 of them spelled
+  `@org.junit.jupiter.api.Test`), 57 `@TestFactory` and 6 `@ParameterizedTest` methods in 1 050 `*Test.java` files;
   `src/transferTest` has 71 `@Test` methods in 6 files (annotations at line start after indentation, `git grep` over
   tracked files). A full run on the staged base (`forbric-loader/run` with its current merged base and report, and
-  the third-party mod packs the developer's machine still has) reported 6 671 tests in its JUnit XML, 72 of them
+  the third-party mod packs the developer's machine still has) reported 6 683 tests in its JUnit XML, 72 of them
   skipped: 70 for third-party packs that machine no longer has, 2 opt-in. How many run depends on the fixtures
   present, since some tests generate one case per fixture. Many tests read the staged jars; gate-m0 fails on *any*
   skipped test, because a skip there means the tests did not look at the real base. The weave tests (`mixin/weave/`)
@@ -2223,7 +2253,8 @@ developer reaches for:
 `forbric.forgeCapabilities`, `forbric.forgeWorldgen`, `forbric.transferBridge`, `forbric.hopperFabricStorage`,
 `forbric.clientResourcePreload`, `forbric.earlyConfigs`, `forbric.fabricHooks`, `forbric.fabricImpl`,
 `forbric.kernelBundledFirst`, `forbric.modDataPacks`, `forbric.modMenuStandIn`, `forbric.forgeBreakExperience`,
-`forbric.forgeFieldGetters`, `forbric.forgeFluidOwnType`, `forbric.forgeEntityFluids` (all three §5.3),
+`forbric.forgeFieldGetters`, `forbric.forgeFluidOwnType`, `forbric.forgeEntityFluids`, `forbric.ownFluidTypeClauses`,
+`forbric.emptyFluidTypeTracker` (all five §5.3),
 `forbric.supersededMixins`.
 `forbric.kernel.registryRedirect=true` enables an experimental registry-wrapper redirect.
 
@@ -2373,41 +2404,76 @@ Break one and the failure usually surfaces far from the cause.
   (§5.3), all 162 rows are identical to native, and so are the MinecraftForge queries' answers in each. World behaviour
   — spread, new sources, obsidian, stone and cobblestone, Biomes O' Plenty's flesh and null block, buckets, the nether —
   was already identical (with `-Dforbric.forgeFluidOwnType=off`, a fluid in `minecraft:water` makes obsidian next to
-  lava, which native MinecraftForge does not). The same scenarios with NeoForge test fluids on native NeoForge 26.2.0.88
-  and on Forbric came out identical before and after these changes in every row; NeoForge's `isInFluidType()` now says
-  in-fluid as native NeoForge does (it said no everywhere); 26 rows still differ from native NeoForge as before — the
-  vanilla air refill (§6, by design) and, in NeoForge's own custom fluids, a body that native NeoForge holds still at
-  the surface falling under gravity in Forbric (not examined further). On the client, native MinecraftForge against
-  Forbric with Biomes O' Plenty, each fluid seen from inside and from above: at 5fbf7de1 its blood and liquid null had
-  the sky's fog colour and no eye overlay, and a MinecraftForge fluid in `minecraft:water` had water's fog but not
-  water's overlay; with the changes the twelve frames have native's centre colours — exactly in two of four runs, in
-  the other two within the three colour steps by which two native runs differ in animated lava, except one frame where
-  the flying player had moved off the spot it was put on (no gravity there, so by movement input; not seen again in
-  the repeat) — and what the client reported in each (eyes in water, under water, in shallow water, MinecraftForge's
-  eye type, the camera's fog type) is identical. Biomes O' Plenty's fluids draw as the missing texture on native MinecraftForge too: 26.2's model set has no
-  model for them and the mod supplies none. The two NeoForge test fluids were compared on the client on Forbric alone,
-  before against after: the same state in every frame and centre colours within one step, apart from one more frame
-  where the player had moved the same way. Not measured: a native NeoForge client, a Fabric fluid on the client,
-  multiplayer, Windows and real launchers. Known gaps: the view answers `isWaterLike` and the tag half of `canSwim` per
+  lava, which native MinecraftForge does not). The probe's current version (L) adds a sprinting player wading in a pool
+  one cell deep (body in, eyes out), a still body held above the top cell's fluid surface in that cell's own block,
+  and each player's `Player.wasUnderwater` (what the two water rules set; the client's `LocalPlayer.isUnderWater`
+  reads it): the MinecraftForge set is 189 of 189 rows identical to native MinecraftForge, before and after this
+  round's additions. The same scenarios with NeoForge test fluids, on native NeoForge 26.2.0.88 and on Forbric: the
+  sample rows are identical before and after the first of these changes (149 of 149), but NeoForge's own entity view,
+  which the probe prints beside the samples (its no-argument `isInFluidType()`, eye type and tallest type), changed
+  in 70 rows: the merged `Entity` answers `isInFluidType()` with MinecraftForge's body, which said no everywhere and
+  now says MinecraftForge's "any fluid cell the walk read". Native NeoForge's is `isInAnyFluid()`, a tracker with
+  height: the still body above the surface is in no fluid on native NeoForge and in one on Forbric, in all seven
+  fluids, vanilla water and lava included; a body in a fluid answers alike. Left so: one JVM method with two meanings,
+  nothing in the merged game calls it, and among the 1 976 local jars only a MinecraftForge mod does (Tombstone's AI
+  goals), no NeoForge mod. A NeoForge test fluid in `minecraft:water` whose type does not extinguish kept a pig burning
+  on native NeoForge and put it out on its first tick on Forbric, before and after the first changes: the merged
+  `Fluid.entityInside` also asked MinecraftForge's type, for a NeoForge fluid the kernel's water stand-in (§5.3); with
+  each family asked only its own type, that row is native's. 30 rows still differ from native NeoForge: 5 are the
+  vanilla air refill (§6, by design), and 25 are motion in NeoForge's own fluids — native NeoForge's `travelInFluid`
+  moves a body in a type that is neither water nor lava only through the type's `move`, which these types do not
+  implement, so the body does not move at all (a falling pig stops in mid-air at the surface, its fall distance
+  halving every tick), while the merged `travelInFluid` is MinecraftForge's, which moves it as through lava. Not
+  changed: the merge kept one of two travel rules for one method, and native NeoForge's leaves a body hanging.
+
+  Fabric fluids had not been measured on this branch; they are now, against native Fabric (Loader 0.19.5 with
+  fabric-api 0.161.0), with four Fabric test fluids written as Fabric mods write them (a `FlowingFluid` with no
+  loader's type: one in no tag, two in `minecraft:water` — one that makes new sources like water, one that does not —
+  and one in `minecraft:lava`) plus water and lava, through the same scenarios (129 rows). The base tree 5fbf7de1 and
+  this branch's first version were identical in all 129 rows, entity views included, and 10 rows differed from native
+  Fabric: both water-tagged fluids put out a burning pig, which vanilla does only in `WaterFluid` (the merged
+  `Fluid.entityInside` asked both families' stand-ins), the untagged one moved bodies as through lava where native
+  Fabric lets them fall through as through air (five rows; NeoForge's walk tracked the empty type), and a sprinting
+  player in water and in both water-tagged fluids starts swimming on its first tick instead of its second. With each
+  family asked only its own type and the empty type untracked (§5.3) the first seven rows are native's. The three left
+  are the merged game's swim start, NeoForge's and MinecraftForge's alike ("under water, or eyes in a type it can swim
+  in", where vanilla's `isUnderWater()` reads the eye flag of the tick before), the same in vanilla water; not changed.
+  MinecraftForge's `isInFluidType()` now says yes in a Fabric fluid, as MinecraftForge says for any fluid cell.
+
+  On the client, native MinecraftForge against Forbric with Biomes O' Plenty, each fluid seen from inside and from
+  above: at 5fbf7de1 its blood and liquid null had the sky's fog colour and no eye overlay, and a MinecraftForge fluid
+  in `minecraft:water` had water's fog but not water's overlay. With the changes, in the run on this round's tree, all
+  twelve MinecraftForge and vanilla frames have native's centre colours exactly (animated lava from inside equals the
+  second native run, which differs from the first by three steps), and what the client reported in each (eyes in
+  water, under water, in shallow water, MinecraftForge's eye type, the camera's fog type) is identical to the earlier
+  runs; the earlier runs had two frames within three steps and one where the flying player had moved off its spot
+  (no gravity there, so by movement input; not seen in this run). Biomes O' Plenty's fluids draw as the missing
+  texture on native MinecraftForge too: 26.2's model set has no model for them and the mod supplies none. The two
+  NeoForge test fluids' frames were compared on Forbric alone and are identical to the run before. Not measured: a
+  native NeoForge client, a Fabric fluid on the client (no native Fabric client here), the bucket sound of a NeoForge
+  fluid with a sound of its own (held by the staged edit test; no probe scenario plays a custom sound), multiplayer,
+  Windows and real launchers. Known gaps: the view answers `isWaterLike` and the tag half of `canSwim` per
   MinecraftForge type, not per fluid (a type whose source is in `minecraft:water` and whose flowing form is not counts
   as water in both); it does not forward a MinecraftForge type's positional getters (`getLightLevel(state, level, pos)`
-  and the three beside it), its `FluidStack` overloads or `shouldUpdateWhileBoating`; and tag trackers a MinecraftForge
-  mod registers through `EntityFluidInteraction.register` are not recorded (no jar in the local corpus calls it). Off
-  game no entity, world or fluid state can exist (their classes need the bootstrapped registries), so
+  and the three beside it), its `FluidStack` overloads or `shouldUpdateWhileBoating`; tag trackers a MinecraftForge mod
+  registers through `EntityFluidInteraction.register` are not recorded (no jar in the local corpus calls it); and
+  NeoForge's `isInFluidType()`, native NeoForge's travel in its own fluids and the swim start, above.
+
+  Tests. Off game no entity, world or fluid state can exist (their classes need the bootstrapped registries), so
   `KernelForgeEntityFluidsTest` drives the record's own steps with what the merged `update` hands them — the body's
   heights and column, each cell's fluid, position and height — over mod fluids compiled as a MinecraftForge mod's are.
-  A reviewer's mutation run on the first version found 19 of its 24 changes passing every test (the eye bounds, the
-  interaction-box threshold, the stand-in and vanilla's fluid kept out of the tags, the widening rules and the reset
-  among them), and the lane's own run had found a Fabric or NeoForge fluid recorded showing only on the client, as
-  water's overlay through MinecraftForge's branch. Of the 44 changes in the two sets together, 8 still pass every unit
-  test, each a step that needs a live entity or a bootstrapped registry and is held by the probes alone: which NeoForge
-  type is the water or lava type a tag widens, and that NeoForge's three queries pass through the widening at all; the
-  eye height a body is read for; MinecraftForge's empty eye type when the eyes are in none; the "under water" half of
-  the view's `canSwim`; and, for a type that is not a view, NeoForge's own answer in the two water rules. Measured again
-  once those steps were made testable (85d8e8fd): the 162 server scenario rows and each fluid's type row identical to
-  native MinecraftForge, the NeoForge set and both switches identical to their earlier runs, and the client's twelve
-  MinecraftForge and vanilla frames at native's centre colours (eleven exactly, water from above one step off) with
-  the same reported state.
+  Mutations of the code, a change at a time, against the focused test classes (70 tests): of a reviewer's five
+  changes that passed every test in the last round (the eyes' column checked by x alone, a tracker's height
+  overwritten instead of kept at its greatest, for the type and for the tag, water-likeness from the first fluid seen
+  with a type, MinecraftForge's fog handed a blank colour), each now fails a test. The eight that need a live entity or
+  a bootstrapped registry still pass every unit test; until now six of them had only been reasoned to be held by the
+  probe. Each was run in game this round, against an unmutated run of the same copy: MinecraftForge's empty eye type
+  dropped (36 rows, the probe's own type questions throw), the water type widened by the lava tag (36 rows), the eyes
+  read at the feet (26), the swim start counting "in water" for "under water" (1, the sprinting player in a fluid in
+  `minecraft:water` whose type is unswimmable), NeoForge's own answer dropped for a non-view type in the underwater rule
+  (1 with MinecraftForge's driver — the `wasUnderwater` flag in water — and 4 with NeoForge's) and in the shallow-water
+  rule (9, NeoForge's own swimmable fluids, NeoForge's driver), the swim start by type alone (1), NeoForge's three
+  queries skipping the tag widening (27). Of this round's own changes, each family's clause left unfiltered for a stand-in — MinecraftForge's (1 row with NeoForge's driver, the fire row; 2 with Fabric's, both fire rows) or NeoForge's (2) — the NeoForge stand-ins left unrecorded (2) and NeoForge's getters left unedited (2) pass every unit test (neither family's empty type can be made off-game) and are caught in game; tracking the empty type again (5 rows, the untagged Fabric fluid) and leaving NeoForge's getters unedited also fail the execution and staged tests, dropping either registration fails the registration test, and the census's bare-name keys put back fail the census test. The record's stand-in pre-check, a performance change, changes no row in game (189 of 189 the same with it removed) and is held by its own unit test. On this round's tree, with `-Dforbric.forgeFluidOwnType=off` 40 of the 189 rows differ from native MinecraftForge (the MinecraftForge fluids go back to their tags: an untagged one is no fluid to NeoForge's entity code, and one in `minecraft:water` makes obsidian next to lava), with `-Dforbric.forgeEntityFluids=off` 27 (every scenario of the three test fluids in `minecraft:water` or `minecraft:lava` with a body in it).
 
 **What is still not native-equivalent.** Proven not closable by any structural trigger (each proof kept):
 
