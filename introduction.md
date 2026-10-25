@@ -1466,7 +1466,10 @@ both events itself, and a bridge must not post the same one again (§8.1).
     for a pass a transformer lands, a kernel method records the bridge as installed — and what that reaches, through the
     kernel's methods and then the carriers, constructs the event. A `REPAIRED` row's event is constructed by the
     kernel's own code, or posted by the game only as the merged-base repairs leave it. Measured: 116 bridge rows
-    through 104 bridges, and 19 repaired rows. Until 2026-10-25 only `DEAD` was held both ways: moving
+    through 104 bridges, and 19 repaired rows. A `STAND_DOWN` row is proved by its bridge, not by a native post: the
+    two tables do not split on whether the merged game still posts the event (15 of `STAND_DOWN`'s 44 rows have no
+    native path left and their bridge is their only delivery; 34 of `BRIDGED`'s 72 are posted natively on some path).
+    Until 2026-10-25 only `DEAD` was held both ways: moving
     `PlayerXpEvent$XpChange` into any of the other three left the suite green, and each would have silenced the audit
     for every mod waiting on it;
   - `PARTIAL` is exactly the events a hook of any of the seven classes lost game call sites for — against its own

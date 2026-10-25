@@ -611,9 +611,14 @@ public final class DeadEventAudit {
 	 * render ticks, each level's load, save and unload, the client's log-in and log-out, system chat, mouse buttons,
 	 * fog and block overlays twice — once from the game and once from the bridge.
 	 *
-	 * <p>Not {@link #BRIDGED}, because that table is also the dead-event judgement's, and none of these is "never
-	 * posted": each bridge here installs on every boot of its side, and a CLIENT_GAME_BUS row there would name every mod
-	 * listening for its event DEGRADED on every dedicated server, which never installs it. The portal bridge is not here
+	 * <p>Why these are not {@link #BRIDGED} rows is history. That table was once the dead-event judgement's alone, and a
+	 * CLIENT_GAME_BUS row there named every mod listening for its event DEGRADED on every dedicated server, which never
+	 * installs it. The judgement now reads the two alike ({@link #bridgeOf}: judged by the bridge, a client's bridge not on
+	 * a dedicated server), and {@code HookCallSiteCensusStagedTest} holds both to the same proof: the bridge is installed and
+	 * what it reaches constructs the event. A row here is not a claim that the merged game still posts the event natively,
+	 * and the two tables do not split on that: measured on 2026-10-25, fifteen of the 44 rows here (the chat, screen key
+	 * and mouse, fog colour, field-of-view, boss bar and item-use-finish forwards) have no native path left and their bridge
+	 * is their only delivery, while 34 of BRIDGED's 72 rows are posted natively on some path. The portal bridge is not here
 	 * either: {@code PortalSpawnInjector} composes its two families' calls itself.
 	 */
 	static final Map<String, GameEventBridge> STAND_DOWN = standDown();
