@@ -121,9 +121,8 @@ for i in $(seq 1 25); do
 done
 
 # ONLY this gate's own process tree.
-for pid in $(pgrep -P "$CLIENT_PID" 2>/dev/null) "$CLIENT_PID"; do kill "$pid" 2>/dev/null; done
-sleep 2
-for pid in $(pgrep -P "$CLIENT_PID" 2>/dev/null) "$CLIENT_PID"; do kill -9 "$pid" 2>/dev/null; done
+stop_tree "$CLIENT_PID"   # the whole tree: lib.sh says why children-only orphans a JVM
+wait "$CLIENT_PID" 2>/dev/null
 
 # The launcher log already carries the console appender, so this mostly duplicates it — deliberately, because
 # the file appender is the only place some detail lands. Duplication cannot change a verdict: check is >=1

@@ -321,6 +321,51 @@ kill_tree() {
   kill -9 "$root" 2>/dev/null
 }
 
+# stop_tree <pid> [grace-seconds] — the same whole tree, asked first: TERM to every process in it, up to <grace>
+# seconds (default 2) for them to go, then SIGKILL for whatever is left. For a client a gate is done with, whose JVM
+# should get to run its shutdown hooks (Caught's per-site counts are written there).
+#
+# The clients had kept the children-only form kill_tree replaced for servers. Where the launcher execs java that is
+# the JVM itself and it worked; gate-m17 runs the resolved command as `tr … | xargs -0 env … java` in a subshell, so
+# java is the subshell's grandchild. TERM reached the subshell, tr and xargs, and the client lived on re-parented to
+# launchd with its window open. Measured on a loaded run: the gate gave up on it, printed "CAUGHT none" and exited;
+# two minutes later the orphan hit two failures (the gate's last step had reinstalled the libraries under it) and
+# wrote them into the gate's caught file, reached its world 14 s after that, and quit. A JVM that outlives its gate
+# is reported by nobody.
+#
+# The tree is frozen (STOP, parents before children, as kill_tree does) before anything is signalled, so a process
+# killed first cannot orphan a child the snapshot has not seen, and none can start a new one in between.
+stop_tree() {
+  local root="$1" grace="${2:-2}" pids pid alive i
+  case "$root" in ''|*[!0-9]*) return 0;; esac
+  pids="$(_freeze_tree "$root")"
+  [ -n "$pids" ] || return 0
+  for pid in $pids; do kill -TERM "$pid" 2>/dev/null; done
+  for pid in $pids; do kill -CONT "$pid" 2>/dev/null; done
+  for i in $(seq 1 $((grace * 4))); do
+    alive=""
+    for pid in $pids; do _running "$pid" && alive="$alive $pid"; done
+    [ -n "$alive" ] || return 0
+    sleep 0.25
+  done
+  for pid in $pids; do _running "$pid" && kill_tree "$pid"; done
+  return 0
+}
+# _freeze_tree <pid> — STOP <pid>, then each child's tree; prints every pid stopped, parents first.
+_freeze_tree() {
+  local root="$1" child
+  kill -STOP "$root" 2>/dev/null || return 0
+  echo "$root"
+  for child in $(pgrep -P "$root" 2>/dev/null); do _freeze_tree "$child"; done
+}
+# _running <pid> — alive and not a zombie (an exited child the gate has not waited for yet still answers kill -0).
+_running() {
+  local state
+  state="$(ps -o stat= -p "$1" 2>/dev/null)" || return 1
+  case "$state" in ''|Z*) return 1;; esac
+  return 0
+}
+
 # reap_stale_server <rundir> — clean up a server left running by an INTERRUPTED earlier run of this same gate.
 # Replaces the old blanket pkill pre-clean, which could never have found anything anyway.
 reap_stale_server() {

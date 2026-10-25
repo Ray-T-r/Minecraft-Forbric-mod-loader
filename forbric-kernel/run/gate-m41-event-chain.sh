@@ -60,7 +60,7 @@ echo "[kernel] client pid=$CLIENT_PID (this gate never kills by name — another
 for i in $(seq 1 480); do kill -0 "$CLIENT_PID" 2>/dev/null || break; sleep 1; done
 if kill -0 "$CLIENT_PID" 2>/dev/null; then
   echo "[kernel] FAIL the client did not finish in 480 s"; FAIL=1
-  kill_owned_descendants "$CLIENT_PID"; sleep 5; kill -9 "$CLIENT_PID" 2>/dev/null || true
+  stop_tree "$CLIENT_PID" 5   # kill_owned_descendants was never defined in this gate; lib.sh stops the whole tree
 fi
 wait "$CLIENT_PID" 2>/dev/null || true
 check "the client left the world cleanly" 'ClientSmoke\] clean disconnect observed' "$CLIENT_DIR/logs/latest.log"
