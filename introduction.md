@@ -2039,11 +2039,11 @@ java -cp <boot-cp> net.forbric.kernel.boot.Main --scan --mods <dir> --report out
   Team Reborn Energy 5.0.0 pinned by SHA-256 (`run/energy-api/energy-5.0.0.jar` or `-Pforbric.rebornEnergy`).
   Without the staged jars `compileRuntimeJava` is skipped and `jar` produces a boot jar with no game side — which
   is what CI builds. `KernelRuntimeClasses.verify` is what catches such a jar at launch.
-- **Unit tests.** Counted from source: `src/test` has 5 554 `@Test` methods (23 of them spelled
+- **Unit tests.** Counted from source: `src/test` has 5 560 `@Test` methods (23 of them spelled
   `@org.junit.jupiter.api.Test`), 57 `@TestFactory` and 6 `@ParameterizedTest` methods in 1 048 `*Test.java` files;
   `src/transferTest` has 71 `@Test` methods in 6 files (annotations at line start after indentation, `git grep` over
   tracked files). A full run on the staged base (`forbric-loader/run` with its current merged base and report, and
-  the third-party mod packs the developer's machine still has) reported 6 665 tests in its JUnit XML, 72 of them
+  the third-party mod packs the developer's machine still has) reported 6 671 tests in its JUnit XML, 72 of them
   skipped: 70 for third-party packs that machine no longer has, 2 opt-in. How many run depends on the fixtures
   present, since some tests generate one case per fixture. Many tests read the staged jars; gate-m0 fails on *any*
   skipped test, because a skip there means the tests did not look at the real base. The weave tests (`mixin/weave/`)
@@ -2392,11 +2392,22 @@ Break one and the failure usually surfaces far from the cause.
   MinecraftForge type, not per fluid (a type whose source is in `minecraft:water` and whose flowing form is not counts
   as water in both); it does not forward a MinecraftForge type's positional getters (`getLightLevel(state, level, pos)`
   and the three beside it), its `FluidStack` overloads or `shouldUpdateWhileBoating`; and tag trackers a MinecraftForge
-  mod registers through `EntityFluidInteraction.register` are not recorded (no jar in the local corpus calls it). In
-  the unit tests no entity can exist off-game, so the "under water" half of the view's `canSwim` and the water and lava
-  widening of NeoForge's queries are held by the server probe alone, and leaving a Fabric or NeoForge fluid out of
-  MinecraftForge's record by the client probe alone (recorded, a NeoForge fluid in `minecraft:water` gets water's overlay
-  through MinecraftForge's branch): switching any of the three off changes no unit test.
+  mod registers through `EntityFluidInteraction.register` are not recorded (no jar in the local corpus calls it). Off
+  game no entity, world or fluid state can exist (their classes need the bootstrapped registries), so
+  `KernelForgeEntityFluidsTest` drives the record's own steps with what the merged `update` hands them — the body's
+  heights and column, each cell's fluid, position and height — over mod fluids compiled as a MinecraftForge mod's are.
+  A reviewer's mutation run on the first version found 19 of its 24 changes passing every test (the eye bounds, the
+  interaction-box threshold, the stand-in and vanilla's fluid kept out of the tags, the widening rules and the reset
+  among them), and the lane's own run had found a Fabric or NeoForge fluid recorded showing only on the client, as
+  water's overlay through MinecraftForge's branch. Of the 44 changes in the two sets together, 8 still pass every unit
+  test, each a step that needs a live entity or a bootstrapped registry and is held by the probes alone: which NeoForge
+  type is the water or lava type a tag widens, and that NeoForge's three queries pass through the widening at all; the
+  eye height a body is read for; MinecraftForge's empty eye type when the eyes are in none; the "under water" half of
+  the view's `canSwim`; and, for a type that is not a view, NeoForge's own answer in the two water rules. Measured again
+  once those steps were made testable (85d8e8fd): the 162 server scenario rows and each fluid's type row identical to
+  native MinecraftForge, the NeoForge set and both switches identical to their earlier runs, and the client's twelve
+  MinecraftForge and vanilla frames at native's centre colours (eleven exactly, water from above one step off) with
+  the same reported state.
 
 **What is still not native-equivalent.** Proven not closable by any structural trigger (each proof kept):
 
