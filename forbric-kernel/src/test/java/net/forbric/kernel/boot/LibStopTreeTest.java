@@ -10,7 +10,6 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.Optional;
 import java.util.concurrent.TimeUnit;
 
 import org.junit.jupiter.api.AfterEach;
@@ -98,15 +97,17 @@ class LibStopTreeTest {
 		return pid;
 	}
 
-	private static boolean alive(long pid) {
-		return ProcessHandle.of(pid).map(ProcessHandle::isAlive).orElse(false);
+	/** Running: present and not a zombie. An orphan's exit is reaped by whoever adopted it, not by us. */
+	private static boolean alive(long pid) throws IOException, InterruptedException {
+		Process ps = new ProcessBuilder("ps", "-o", "stat=", "-p", Long.toString(pid)).redirectErrorStream(true).start();
+		String state = new String(ps.getInputStream().readAllBytes(), StandardCharsets.UTF_8).trim();
+		return ps.waitFor() == 0 && !state.isEmpty() && !state.startsWith("Z");
 	}
 
-	/** Gone within a few seconds: an orphan is reaped by launchd, not by us. */
-	private static boolean gone(long pid) throws InterruptedException {
+	/** No longer running within a few seconds. */
+	private static boolean gone(long pid) throws IOException, InterruptedException {
 		for (int i = 0; i < 50; i++) {
-			Optional<ProcessHandle> handle = ProcessHandle.of(pid);
-			if (handle.isEmpty() || !handle.get().isAlive()) return true;
+			if (!alive(pid)) return true;
 			Thread.sleep(100);
 		}
 		return false;
