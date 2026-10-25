@@ -2028,7 +2028,7 @@ java -cp <boot-cp> net.forbric.kernel.boot.Main --scan --mods <dir> --report out
   `src/transferTest` has 76 `@Test` methods in 7 files (annotations at line start after indentation, `git grep` over
   tracked files). A full run (`cleanTest test`, no daemon) on a staged root cloned whole from the developer's
   `forbric-loader/run` — its merged base, runtimes and test fixtures — with this tree's tracked report in it, and the
-  third-party mod packs that machine still has, reported 6 654 tests in its JUnit XML, 74 of them skipped: 72 for
+  third-party mod packs that machine still has, reported 6 660 tests in its JUnit XML, 74 of them skipped: 72 for
   third-party packs the machine no longer has, 2 opt-in. How many run and skip depends on the root and the fixtures
   present (some tests generate one case per fixture; a root cloned from an older copy skipped five more). Many tests
   read the staged jars; gate-m0 fails on *any* skipped test, because a skip there means the tests did not look at the
@@ -2047,7 +2047,12 @@ java -cp <boot-cp> net.forbric.kernel.boot.Main --scan --mods <dir> --report out
   against 150 s and 90 s counted from the launch, and m4's own stop feeder stops waiting 150 s after the launch and
   writes `stop` into a boot that has not reached `Done`, where the console drops it ("An unexpected error occurred
   while trying to execute that command"; `server_ready` in `run/lib.sh` exists for exactly this, and m4 does not use
-  it). A full `-j 5` run at load averages 44–163 turned m8, m17, m18 and m40 red on the same kind of timeout. A red
+  it). A full `-j 5` run at load averages 44–163 turned m8, m17, m18 and m40 red on the same kind of timeout. The one
+  performance assertion, `check_kept_up` (vanilla's "Can't keep up!" while a player is on), measures the machine the
+  same way: a loaded server logs it once, 2.0–3.6 s behind, one to six seconds after the player joins. With m12–m16 run
+  as the same pair of side-by-side batches (median load averages 23–39), m12 went red on it on both trees in all three
+  rounds and m15 on each tree in two of three, and in a `-j 5` batch with the full test suites beside it m12 and m16
+  did. A red
   gate from a loaded parallel run says nothing about the kernel until the boot times in its logs have been read. The
   clock can also bite by date: the game's log4j configuration rolls `logs/latest.log` at midnight, eleven gates read
   that file, and m9 went red once because its session crossed midnight and the reload line it looks for went to the
