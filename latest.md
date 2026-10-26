@@ -1,15 +1,15 @@
-Latest nightly: [results/2026-10-26/summary.md](results/2026-10-26/summary.md)
+Latest nightly: [results/2026-10-27/summary.md](results/2026-10-27/summary.md)
 
-# Forbric nightly 2026-10-26: FAIL
+# Forbric nightly 2026-10-27: FAIL
 
 | | |
 | --- | --- |
 | commit | [`f7f4ff92f67f`](https://github.com/Ray-T-r/Minecraft-Forbric-mod-loader/commit/f7f4ff92f67fe8de1a5957efda5cceb4c55d5057) Say the title screen's Forbric line stays, and what its count counts |
 | tested | `origin/main` on the developer's Mac (commit status `nightly/dev-mac`) |
-| started | 2026-10-26 02:30 +0800 |
+| started | 2026-10-27 02:30 +0800 |
 | soak (`gate-m34-soak.sh`) | skipped: it runs on Sundays |
 | integration | FAILED (exit 1) in 8 min |
-| gates | FAILED (exit 1) in 42 min: 53 GREEN, 4 RED, 1 SKIP |
+| gates | FAILED (exit 1) in 45 min: 53 GREEN, 4 RED, 1 SKIP |
 
 ## Integration: `python3 tools/dev.py integration`
 
@@ -17,14 +17,13 @@ Latest nightly: [results/2026-10-26/summary.md](results/2026-10-26/summary.md)
 
 | suite | tests | executed | skipped | skip % | failed |
 | --- | ---: | ---: | ---: | ---: | ---: |
-| test | 6525 | 6525 | 0 | 0.0 | 73 |
+| test | 6525 | 6525 | 0 | 0.0 | 72 |
 
 Did not execute (no results): `transferTest`
 
-**Failed (73):**
+**Failed (72):**
 - `test` net.forbric.kernel.boot.KernelBundledMixinExtrasStagedTest.[1] true (org.opentest4j.AssertionFailedError)
 - `test` net.forbric.kernel.boot.KernelBundledMixinExtrasStagedTest.[2] false (org.opentest4j.AssertionFailedError)
-- `test` net.forbric.kernel.boot.MergedLambdaCaptureTest.noCapturedLambdaComesFromTheOtherSideOfTheMerge() (org.opentest4j.AssertionFailedError)
 - `test` net.forbric.kernel.mixin.AdapterPointSpellingTest.redirect hotbar keys (org.opentest4j.AssertionFailedError)
 - `test` net.forbric.kernel.mixin.AdapterPointSpellingTest.redirect item use (org.opentest4j.AssertionFailedError)
 - `test` net.forbric.kernel.mixin.AdapterPointSpellingTest.redirect shovel path (org.opentest4j.AssertionFailedError)
@@ -72,6 +71,7 @@ Did not execute (no results): `transferTest`
 - `test` net.forbric.kernel.mixin.FabricClientMixinAnchorsTest.releasedLiquidBounceDrawsItsMenuWithTheCanvasTheGatewayDraws() (org.opentest4j.AssertionFailedError)
 - `test` net.forbric.kernel.mixin.MixinRetargetRenamedBodyCorpusTest.r3MovesExactlyThePinnedInjectorsOverTheAuditCorpus() (org.opentest4j.AssertionFailedError)
 - `test` net.forbric.kernel.mixin.MixinTwinRebindTest.releasedLiquidBounceMovesItsFaceTestAndNothingElse() (org.opentest4j.AssertionFailedError)
+- `test` net.forbric.kernel.mixin.ReplacedCallRedirectsTest.releasedViaFabricPlusMovesItsThreeRedirects() (org.opentest4j.AssertionFailedError)
 
 ## Gates: `bash forbric-kernel/run/compat/gates-all.sh -j auto --skip gate-m34-soak.sh`
 
