@@ -1,15 +1,15 @@
-Latest nightly: [results/2026-10-27/summary.md](results/2026-10-27/summary.md)
+Latest nightly: [results/2026-10-29/summary.md](results/2026-10-29/summary.md)
 
-# Forbric nightly 2026-10-27: FAIL
+# Forbric nightly 2026-10-29: FAIL
 
 | | |
 | --- | --- |
 | commit | [`f7f4ff92f67f`](https://github.com/Ray-T-r/Minecraft-Forbric-mod-loader/commit/f7f4ff92f67fe8de1a5957efda5cceb4c55d5057) Say the title screen's Forbric line stays, and what its count counts |
 | tested | `origin/main` on the developer's Mac (commit status `nightly/dev-mac`) |
-| started | 2026-10-27 02:30 +0800 |
+| started | 2026-10-29 02:30 +0800 |
 | soak (`gate-m34-soak.sh`) | skipped: it runs on Sundays |
-| integration | FAILED (exit 1) in 8 min |
-| gates | FAILED (exit 1) in 45 min: 53 GREEN, 4 RED, 1 SKIP |
+| integration | FAILED (exit 1) in 10 min |
+| gates | FAILED (exit 1) in 55 min: 53 GREEN, 4 RED, 1 SKIP |
 
 ## Integration: `python3 tools/dev.py integration`
 
