@@ -4,6 +4,7 @@ import hashlib
 import io
 import json
 import os
+import shutil
 from pathlib import Path
 import subprocess
 import tempfile
@@ -229,7 +230,7 @@ class DevelopmentWorkflowTest(unittest.TestCase):
         self.assertNotIn('-XstartOnFirstThread', linux)
         self.assertIn('-XstartOnFirstThread', mac)
         self.assertIn('Minecraft With Spaces', win[win.index('--assetsDir')+1])
-        with zipfile.ZipFile(stage / 'merged-base/forbric-game-metadata.jar') as archive:
+        with zipfile.ZipFile(stage / dev.STAGED_GAME_METADATA) as archive:
             self.assertEqual(archive.namelist(), ['version.json'])
 
     def test_runtime_jars_are_named_by_role_and_the_forge_carrier_is_optional(self):
@@ -244,6 +245,92 @@ class DevelopmentWorkflowTest(unittest.TestCase):
         with patch.dict(os.environ, {}, clear=True):
             neo = dev.launch_arguments('server', info, mc, stage, self.root, self.root, pathsep=';')
         self.assertEqual(str(stage / dev.STAGED_NEO_CARRIER), neo[neo.index('--runtimeJar')+1])
+
+    def shell_forge_carrier(self, launcher, stage):
+        """The MinecraftForge carrier launcher's own selection lines pick on stage, run by bash: '' for none."""
+        lines = [line for line in (dev.KERNEL / 'run' / launcher).read_text().splitlines()
+                 if line.startswith('FORGE_RT=') or line.startswith('[ -f "$FORGE_RT" ]')]
+        self.assertGreaterEqual(len(lines), 3, launcher + ' no longer picks its carrier in the lines this test runs')
+        script = '\n'.join(lines + ['printf %s "$FORGE_RT"'])
+        environment = {'PATH': os.environ.get('PATH', ''), 'STAGE': str(stage)}
+        return subprocess.run(['bash', '-c', script], env=environment, capture_output=True, text=True, check=True).stdout
+
+    @unittest.skipIf(os.name == 'nt' or not shutil.which('bash'), 'runs the POSIX launchers selection lines in bash')
+    def test_the_launch_owns_the_carriers_the_shell_launchers_pick(self):
+        _, _, stage = self.launch_fixture(forge_carrier=False)
+        (stage / dev.STAGED_FORGE_CARRIER).parent.mkdir(parents=True)
+        cases = []
+        for present in ((dev.STAGED_FORGE_INTEROP, dev.STAGED_FORGE_CARRIER), (dev.STAGED_FORGE_CARRIER,), ()):
+            for name in (dev.STAGED_FORGE_INTEROP, dev.STAGED_FORGE_CARRIER):
+                (stage / name).unlink(missing_ok=True)
+            for name in present:
+                (stage / name).write_bytes(b'carrier')
+            picked = dev.launch_carriers(stage)
+            self.assertEqual(dev.STAGED_NEO_CARRIER, picked[-1])
+            for launcher in ('launch-kernel-server.sh', 'launch-kernel-client.sh'):
+                shell = self.shell_forge_carrier(launcher, stage)
+                self.assertEqual([str(stage / name) for name in picked[:-1]], [shell] if shell else [], (launcher, present))
+            cases.append(picked)
+        # The interop jar first, then the assembled carrier, then none: the three answers are all different.
+        self.assertEqual([[dev.STAGED_FORGE_INTEROP, dev.STAGED_NEO_CARRIER], [dev.STAGED_FORGE_CARRIER, dev.STAGED_NEO_CARRIER],
+                          [dev.STAGED_NEO_CARRIER]], cases)
+
+    def test_the_profile_without_a_forge_carrier_owns_only_neoforges(self):
+        info, mc, stage = self.launch_fixture()
+        self.assertEqual([dev.STAGED_NEO_CARRIER], dev.launch_carriers(stage, forge=False))
+        with patch.dict(os.environ, {}, clear=True):
+            neo = dev.launch_arguments('server', info, mc, stage, self.root, self.root, pathsep=';', forge=False)
+        self.assertEqual(str(stage / dev.STAGED_NEO_CARRIER), neo[neo.index('--runtimeJar')+1])
+        self.assertTrue(dev.forge_carrier_expected(argparse.Namespace(no_forge_carrier=False), {}))
+        self.assertFalse(dev.forge_carrier_expected(argparse.Namespace(no_forge_carrier=True), {}))
+        self.assertFalse(dev.forge_carrier_expected(argparse.Namespace(), {'FORBRIC_NO_FORGE_CARRIER': '1'}))
+
+    def prepared_stage(self, forge):
+        """Every input ready() checks for a dedicated server, with or without MinecraftForge's staged files."""
+        mc, stage, natives, state = self.root / 'mc', self.root / 'stage/run', self.root / 'natives', self.root / 'state'
+        stamp = dev.pins_stamp()
+        for name in dev.staged_files(forge):
+            (stage / name).parent.mkdir(parents=True, exist_ok=True)
+            (stage / name).write_text(stamp + ' tools=abc\n' if name in dev.STAMPED_FILES else 'staged')
+        (state / 'api').mkdir(parents=True)
+        (state / 'api/pinned.jar').write_bytes(b'api')
+        version = mc / f'versions/{dev.MC_VERSION}/{dev.MC_VERSION}.json'
+        version.parent.mkdir(parents=True)
+        version.write_text(json.dumps({'assetIndex': {'id': '32'}, 'libraries': []}))
+        for name, _ in dev.CONSOLE_PINS:
+            jline = mc / f'libraries/org/jline/{name}/3.25.1/{name}-3.25.1.jar'
+            jline.parent.mkdir(parents=True)
+            jline.write_bytes(b'jline')
+        natives.mkdir()
+        (natives / 'liblwjgl.dylib').write_bytes(b'native')
+        pins = (('pinned.jar', '', hashlib.sha256(b'api').hexdigest()),)
+        return mc, stage, natives, patch.multiple(dev, STATE=state, API_PINS=pins)
+
+    def test_a_stage_without_minecraftforge_is_ready_only_when_the_profile_says_so(self):
+        mc, stage, natives, pinned = self.prepared_stage(forge=False)
+        with pinned:
+            # Today's strictness by default: a stage missing MinecraftForge's files is not prepared.
+            self.assertFalse(dev.ready(mc, stage, natives, assets=False))
+            self.assertTrue(dev.ready(mc, stage, natives, assets=False, forge=False))
+            self.assertEqual([], dev.stale_stamps(stage, forge=False))
+            self.assertIn('forge-patched/patched-mc-forge-26.2.jar.pins', dev.stale_stamps(stage))
+            # The profile still demands everything that is not MinecraftForge's.
+            (stage / dev.STAGED_NEO_CARRIER).unlink()
+            self.assertFalse(dev.ready(mc, stage, natives, assets=False, forge=False))
+        self.assertEqual(set(dev.STAGED_FILES) - set(dev.staged_files(False)), set(dev.FORGE_STAGED_FILES))
+        self.assertTrue(all('forge-runtime' in name or 'forge-patched' in name or 'forge-runtime-interop' in name
+                            for name in dev.FORGE_STAGED_FILES))
+
+    def test_a_stage_with_minecraftforge_is_ready_either_way(self):
+        mc, stage, natives, pinned = self.prepared_stage(forge=True)
+        with pinned:
+            self.assertTrue(dev.ready(mc, stage, natives, assets=False))
+            self.assertTrue(dev.ready(mc, stage, natives, assets=False, forge=False))
+
+    def test_the_metadata_jar_is_named_once_and_beside_the_base_as_the_shell_writes_it(self):
+        self.assertEqual(str(Path(dev.STAGED_BASE).parent / dev.GAME_METADATA_JAR), str(Path(dev.STAGED_GAME_METADATA)))
+        script = (dev.KERNEL / 'run/game-metadata-jar.sh').read_text()
+        self.assertIn('OUT="${GAME_METADATA_JAR:-$(dirname "$MERGED")/' + dev.GAME_METADATA_JAR + '}"', script)
 
     def test_boot_only_jar_is_refused(self):
         info, mc, stage = self.launch_fixture(False)
