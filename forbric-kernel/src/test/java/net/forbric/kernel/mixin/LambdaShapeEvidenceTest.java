@@ -71,12 +71,17 @@ class LambdaShapeEvidenceTest {
 	}
 
 	@Test void thePrunersRecordStillCountsAndIsMarkedAsSuch() {
-		String owner = "net/example/LambdaShapeEvidenceTestTarget";
-		net.forbric.kernel.transform.DuplicateLambdaPruneInjector.recordDroppedForTest(owner, SKY, VANILLA_SKY);
-		ClassNode target = node(method(SKY, NEO_SKY));
-		target.name = owner;
-		assertEquals(List.of(new LambdaShapeEvidence.Shape(VANILLA_SKY, true)), LambdaShapeEvidence.vanished(target, SKY),
-				"unbound references (no game): the pruner's record alone, as before");
+		var saved = net.forbric.kernel.transform.DuplicateLambdaPruneInjector.droppedForTest();
+		try {
+			String owner = "net/example/LambdaShapeEvidenceTestTarget";
+			net.forbric.kernel.transform.DuplicateLambdaPruneInjector.recordDroppedForTest(owner, SKY, VANILLA_SKY);
+			ClassNode target = node(method(SKY, NEO_SKY));
+			target.name = owner;
+			assertEquals(List.of(new LambdaShapeEvidence.Shape(VANILLA_SKY, true)), LambdaShapeEvidence.vanished(target, SKY),
+					"unbound references (no game): the pruner's record alone, as before");
+		} finally {
+			net.forbric.kernel.transform.DuplicateLambdaPruneInjector.restoreDroppedForTest(saved);
+		}
 	}
 
 	private static ClassNode node(MethodNode... methods) {

@@ -206,6 +206,27 @@ class DuplicateLambdaPruneInjectorTest {
 		return out;
 	}
 
+	/**
+	 * The save-and-restore seam a test uses to hand the next test class the record it found: whatever the test did in
+	 * between — forget everything, record more — the record afterwards is exactly the copy.
+	 */
+	@Test
+	void aSavedRecordIsPutBackExactly() {
+		java.util.Map<String, List<String>> outer = DuplicateLambdaPruneInjector.droppedForTest();
+		try {
+			DuplicateLambdaPruneInjector.recordDroppedForTest(OWNER, "lambda$kept$0", "()V");
+			java.util.Map<String, List<String>> saved = DuplicateLambdaPruneInjector.droppedForTest();
+			DuplicateLambdaPruneInjector.forgetDroppedForTest();
+			DuplicateLambdaPruneInjector.recordDroppedForTest(OWNER, "lambda$added$0", "(I)V");
+			DuplicateLambdaPruneInjector.restoreDroppedForTest(saved);
+			assertEquals(List.of("()V"), DuplicateLambdaPruneInjector.droppedDescriptors(OWNER, "lambda$kept$0"), "what was saved is back");
+			assertEquals(List.of(), DuplicateLambdaPruneInjector.droppedDescriptors(OWNER, "lambda$added$0"), "what came after is gone");
+			assertEquals(saved, DuplicateLambdaPruneInjector.droppedForTest());
+		} finally {
+			DuplicateLambdaPruneInjector.restoreDroppedForTest(outer);
+		}
+	}
+
 	@SuppressWarnings("unused")
 	private static Supplier<?> unusedSoTheImportIsReal() {
 		return () -> null;

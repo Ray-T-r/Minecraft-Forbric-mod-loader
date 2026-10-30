@@ -28,6 +28,7 @@ import java.util.zip.ZipInputStream;
 import java.util.zip.ZipOutputStream;
 
 import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import org.junit.jupiter.api.parallel.ResourceLock;
@@ -68,9 +69,17 @@ class LambdaShapeEvidenceStagedTest {
 	private static final String CI = "Lorg/spongepowered/asm/mixin/injection/callback/CallbackInfo;";
 	private static final String VANILLA_SKY_ARGS = "Lcom/mojang/blaze3d/buffers/GpuBufferSlice;Lnet/minecraft/client/renderer/state/level/SkyRenderState;";
 
+	/** The pruner's process-wide record as this test found it: every pass below clears or fills it. */
+	private Map<String, List<String>> droppedBefore;
+
+	@BeforeEach void save() {
+		droppedBefore = DuplicateLambdaPruneInjector.droppedForTest();
+	}
+
 	@AfterEach void reset() {
 		System.clearProperty(LambdaShapeEvidence.PROPERTY);
 		bind(null);
+		DuplicateLambdaPruneInjector.restoreDroppedForTest(droppedBefore);
 	}
 
 	// ---------------------------------------------------------------------------------------------------------------
@@ -89,7 +98,7 @@ class LambdaShapeEvidenceStagedTest {
 			StringBuilder report = new StringBuilder();
 			int wraps = 0, decisions = 0;
 			List<String> different = new ArrayList<>();
-			// The pruner off first: each pass starts from no record, and the last leaves the record a real boot would.
+			// The pruner off first; each pass starts from no record, and reset() puts back the record this test found.
 			for (boolean pruner : new boolean[] { false, true }) {
 				DuplicateLambdaPruneInjector.forgetDroppedForTest();
 				Map<String, byte[]> classes = new HashMap<>();
