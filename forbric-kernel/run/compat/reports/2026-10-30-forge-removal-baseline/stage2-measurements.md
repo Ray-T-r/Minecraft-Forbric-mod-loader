@@ -64,3 +64,50 @@ client-neo-pack is stale on both .88 and .93: jei 30.14.0.87, sophisticatedcore 
 3.25.83 call `ContainerScreenEvent$Render$Foreground`, removed in NeoForge 26.2.0.40-beta, so STRICT stops the client;
 with them removed the integrated server crashes on `earthmobsmod:mud` in `EntityFluidInteraction.getFluidTypeByTag`
 (the merged base's Forge fluid tracker). No gate uses this pack.
+
+## Behaviour changes on the merged base
+
+Stage 2 is behaviour-preserving on the merged base with one deliberate exception, from lane relocate (the kernel's own
+server duties no longer ride the MinecraftForge bridge pass). It shows only under `-Dforbric.unifiedEvents=off`, or when
+something in the bridge pass fails; with the switch on and every bridge installed, the listeners, their events, priorities
+and order are what they were.
+
+- **The duties now run with the switch off.** `KernelServerDutiesInstaller` puts them on NeoForge's bus from
+  `KernelLifecycle.startGameBuses`, right after `GameEventMultiplexer.install`, whatever the switch says. Before, three
+  of them were installed inside that pass, after its switch check, so the switch silently dropped them: the dedicated
+  server's Fabric game-instance fallback (`ServerAboutToStartEvent`, HIGHEST), the load report and dedicated-server
+  compatibility decision (`ServerStartedEvent`, LOWEST), and the `Block.tryDropExperience` relay (`BlockDropsEvent`,
+  LOWEST; it was inside the MinecraftForge break bridge). The data-map watch already ran with the switch off and still
+  does. Pinned by `KernelServerDutiesGenuineBaseTest.withTheBridgesSwitchedOffTheProductionPassStillInstallsEveryDuty`,
+  which runs the production pass under the switch on both bases.
+- **A STRICT run with the switch off halts at ServerStarted.** With confirmed findings, the compatibility decision now
+  stops a dedicated server from its `ServerStartedEvent` listener ("FATAL: a required feature failed during world
+  loading"), not at the first tick from `LateServerCompatibility`, which applied the same decision one tick later and
+  still does. Of the gates that switch the bridges off, m47, m48, m49 and m57 use the `continue` policy, m4's control
+  passed under the lane's run, m25 only names the switch as a RED recipe, and m41's negative control (default policy,
+  one canary mod) was not rerun.
+- **The dead-event judgement and the report are separate listeners.** `KernelGameServerLifecycle.installStartedDuties`
+  (MinecraftForge's: the login gate, `DeadEventAudit.judgePending`) and `KernelServerDuties.installStartedDuties` (the
+  kernel's: the report and the decision) are two LOWEST listeners on `ServerStartedEvent`, the kernel's added after the
+  whole bridge pass and so run after the judgement (NeoForge runs one priority's listeners in the order they were added;
+  pinned by `onTheMergedBaseTheProductionPassPutsTheKernelsWorkAfterMinecraftForgesDuties`, read off NeoForge's own
+  listener list). A throw in the judgement no longer skips the report and the decision. With the switch off the
+  judgement is not installed at all (it is part of the switched-off pass, as before), so the report written then carries
+  no dead-event findings.
+- **The relay is on NeoForge's bus itself**, not on the break bridge's stand-down view. Equivalent, because MinecraftForge's
+  `BreakEvent` is in `DeadEventAudit.NO_NATIVE_PATH` and no scope stands it down; pinned by
+  `theExperienceRelayIsNotStoodDownWithTheBreakBridge`.
+- **Log lines.** The partial-mixin and unmodelled-accessor censuses (gate-m12 reads the first) are logged by
+  `KernelLifecycle.reportGuestCensuses` right after the subscriber pass, in the same words, each isolated; they now also
+  print when that pass returns early (no bus API of either family). `KernelServerDutiesInstaller`'s own lines say
+  `[Forbric/Duties]`; the data-map-watch lines it took over said `[Forbric/EventMux]` (only failure and debug lines; no
+  gate or test greps them). `RegistryRevertInjector`'s transform-time line now prints after `RegistrySyncParityInjector`'s
+  flush line; no gate reads their order. The multiplexer's started-duties install warning names only the judgement and
+  the login gate now.
+
+The `[Forbric/EBS] registered N @EventBusSubscriber class(es) on the game bus` line gate-m4-canary reads was not moved,
+because it is not on the MinecraftForge path: without MinecraftForge `ForgeBusApi.resolve` answers null, the loop skips
+that family's subscribers one by one, and the line is printed before the two MinecraftForge passes (`reportDeadEvents`,
+`CapabilityUseAudit`). The throwaway boot above printed it on the genuine base (carriers `none, neoforge-runtime.jar`:
+"registered 38 @EventBusSubscriber class(es) on the game bus"), and `KernelEventSubscribersGenuineBaseTest` prints it there
+for a NeoForge subscriber and counts it with gate-m4-canary's own grep.
