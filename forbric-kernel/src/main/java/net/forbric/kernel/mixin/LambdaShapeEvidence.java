@@ -6,6 +6,7 @@ import java.util.Arrays;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.function.Function;
 
 import org.objectweb.asm.Type;
 import org.objectweb.asm.tree.ClassNode;
@@ -76,19 +77,35 @@ public final class LambdaShapeEvidence {
 	/**
 	 * The shapes of lambda {@code name} that {@code current} — the class as Mixin will see it — no longer has: the pruner's
 	 * record for it first, then the native reference's. Distinct by descriptor; empty for anything else.
+	 *
+	 * <p>Every bare selector of every handler that does not bind as compiled asks this, so what it costs for the names it
+	 * can say nothing about is checked first, before the reference is read (which re-reads, re-hashes and re-parses the
+	 * class each time): a name that is not a lambda's, or a lambda the class does not declare. The pruner records lambdas
+	 * only, so the first check changes no answer the record gave.
 	 */
 	public static List<Shape> vanished(ClassNode current, String name) {
-		if (current == null || name == null) return List.of();
+		return vanished(current, name, owner -> NativeGameReferences.reference(Ecosystem.FABRIC, owner));
+	}
+
+	/** {@link #vanished(ClassNode, String)} with {@code fabricReference} reading the class a Fabric mod was compiled against. */
+	static List<Shape> vanished(ClassNode current, String name, Function<String, ClassNode> fabricReference) {
+		if (current == null || name == null || !name.startsWith("lambda$")) return List.of();
 		Map<String, Shape> shapes = new LinkedHashMap<>();
 		for (String dropped : DuplicateLambdaPruneInjector.droppedDescriptors(current.name, name)) {
 			shapes.putIfAbsent(dropped, new Shape(dropped, true));
 		}
-		if (referenceEnabled()) {
-			for (String reshaped : reshaped(current, NativeGameReferences.reference(Ecosystem.FABRIC, current.name), name)) {
+		if (referenceEnabled() && declares(current, name)) {
+			for (String reshaped : reshaped(current, fabricReference.apply(current.name), name)) {
 				shapes.putIfAbsent(reshaped, new Shape(reshaped, false));
 			}
 		}
 		return List.copyOf(shapes.values());
+	}
+
+	private static boolean declares(ClassNode current, String name) {
+		if (current.methods == null) return false;
+		for (MethodNode m : current.methods) if (m.name.equals(name)) return true;
+		return false;
 	}
 
 	/** {@link #vanished}'s descriptors. */
