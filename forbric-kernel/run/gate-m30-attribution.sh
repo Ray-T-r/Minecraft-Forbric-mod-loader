@@ -18,16 +18,20 @@
 #   forbricabicanary        compiled against net.neoforged.neoforge.event.ForbricVanishedEvent, absent here; its
 #                           common-setup deferred task touches it (the bucket_of_frog shape)
 #
-# THE DEAD-EVENT ROW STAYS ON A SYNTHETIC MinecraftForge FIXTURE, BY DECISION (2026-10-30, Stage 2.5 of dropping
-# MinecraftForge). Three of the four attributions are already the families that stay (a Fabric mixin canary, two
-# NeoForge canaries). The fourth asks DeadEventAudit, and there is no NeoForge event to move it onto: the audit's rows
-# are MinecraftForge events the merged base no longer posts; its only NeoForge rows (FinalizeSpawnEvent,
-# InitializeClientRegistriesEvent) are PARTIAL paths the kernel itself posts, so a listener for either is never named;
-# and on the genuine NeoForge base every NeoForge event is posted by NeoForge's own patch -- HookCallSiteCensus already
-# refuses a row for an event its own family's game never posts. So forbricforgecanary's listener for Forge's
-# CreateFluidSourceEvent stays as the synthetic dead event, and DeadEventAudit, its -Dforbric.deadEventAudit control and
-# the two checks that read it ("the dead event named its listener", "the dead event") go together when Stage 4 deletes
-# MinecraftForge; the other three canaries and their controls carry this gate on unchanged.
+# THE DEAD-EVENT ROW STAYS ON A SYNTHETIC MinecraftForge FIXTURE -- PROPOSED, pending the owner's decision. The plan
+# (Stage 2.5 of dropping MinecraftForge) lists "m30's dead-event case" among what moves to the NeoForge canary; this
+# keeps it where it is instead, and that change of scope is the owner's to accept, not a lane's. The reasoning: three of
+# the four attributions are already the families that stay (a Fabric mixin canary, two NeoForge canaries). The fourth
+# asks DeadEventAudit, and there is no NeoForge event to move it onto: the audit's rows are MinecraftForge events the
+# merged base no longer posts; its only NeoForge rows (FinalizeSpawnEvent, InitializeClientRegistriesEvent) are PARTIAL
+# paths the kernel itself posts, so a listener for either is never named; and on the genuine NeoForge base every
+# NeoForge event is posted by NeoForge's own patch -- HookCallSiteCensus already refuses a row for an event its own
+# family's game never posts. So, if accepted, forbricforgecanary's listener for Forge's CreateFluidSourceEvent stays as
+# the synthetic dead event, and DeadEventAudit, its -Dforbric.deadEventAudit control and the two checks that read it
+# ("the dead event named its listener", "the dead event") go together when Stage 4 deletes MinecraftForge; the other
+# three canaries and their controls carry this gate on unchanged. If refused, the row needs a NeoForge event the base
+# does not post, which today means inventing one (a synthetic event class only the canary references), and the audit
+# has to learn a NeoForge row that names its listener, which none of its two NeoForge rows does.
 #
 # RED demonstrations (measured 2026-09-20: green 30/30; each switch fails exactly the checks named — 3, 4, 2, 2):
 #   M30_EXTRA_JVM=-Dforbric.loadReportRewrite=off     the report is written once at load-complete, so 'ApplyFailingMixin
