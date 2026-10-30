@@ -38,11 +38,13 @@ public final class EnergyMachines {
 	/** Only NORTH and the null face reach a cell's provider; SOUTH (and every other face) must stay refused. */
 	public static boolean permits(Direction side) { return side == null || side == Direction.NORTH; }
 
-	// Positions. The primary three are the conservation census; everything else is outside it.
+	// Positions. The primary cells (and NEO_PEER where it is placed) are the conservation census; everything else is
+	// outside it. Since Stage 3 of dropping MinecraftForge the gate stages no Forge cell (forbricenergyforge is refused),
+	// so nothing places a cell at a Forge position below any more.
 	public static final BlockPos FABRIC_CELL = new BlockPos(16, 80, 48), NEO_CELL = new BlockPos(18, 80, 48), FORGE_CELL = new BlockPos(20, 80, 48);
 	/** A Forge cell on which NeoForge ALSO registers a native provider (the cell's neo store). */
 	public static final BlockPos PRIORITY_FORGE = new BlockPos(22, 80, 48);
-	/** A Fabric cell on which NeoForge and Forge ALSO register native providers (Reborn phases only). */
+	/** A Fabric cell on which NeoForge ALSO registers a native provider (Reborn phases only; forbricenergyforge, refused now, added Forge's). */
 	public static final BlockPos PRIORITY_FABRIC = new BlockPos(24, 80, 48);
 	/** A Forge cell whose Forge provider is a custom IEnergyStorage: no write bridge for it. */
 	public static final BlockPos ROGUE = new BlockPos(26, 80, 48);
@@ -55,6 +57,11 @@ public final class EnergyMachines {
 	public static final BlockPos EXPLICIT = new BlockPos(40, 80, 48);
 	/** A Forge battery loaded with more energy than its capacity, as Forge's own deserializeNBT allows. */
 	public static final BlockPos OVERFULL = new BlockPos(42, 80, 48);
+	/**
+	 * A second NeoForge cell, in the census, for the pack without Reborn: the Forge consumer, which owns no cell, moves
+	 * between it and the NeoForge cell, so its committed writes and extracts on a NeoForge store still run there.
+	 */
+	public static final BlockPos NEO_PEER = new BlockPos(44, 80, 48);
 	/** Its own chunk: nothing else dirties it. */
 	public static final BlockPos DIRTY = new BlockPos(112, 80, 48);
 
