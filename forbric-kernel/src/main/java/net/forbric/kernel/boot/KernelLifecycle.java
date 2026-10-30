@@ -642,7 +642,11 @@ public final class KernelLifecycle {
 		// The side decides whether the CLIENT-only game-bus bridges go on: they name NeoForge's client event
 		// package, which a dedicated server must never be made to resolve.
 		GameEventMultiplexer.install(cl, side.isClient());
-		GameEventMultiplexer.installDataMapWatch(cl);
+		// The kernel's own server duties (Fabric's game instance, the load report and compatibility decision once a world
+		// is up, the tryDropExperience relay, the data-map watch) go on unconditionally: they forward nothing to
+		// MinecraftForge, so neither its absence nor -Dforbric.unifiedEvents=off may take them away. After the bridges, so
+		// each keeps its place among the kernel's listeners on its event — the server-started work after MinecraftForge's.
+		KernelServerDutiesInstaller.install(cl);
 		startBus(cl, "net.neoforged.neoforge.common.NeoForge", "EVENT_BUS",
 				"net.neoforged.bus.api.IEventBus", "start", "NeoForge.EVENT_BUS");
 		startBus(cl, "net.minecraftforge.eventbus.api.bus.BusGroup", "DEFAULT",

@@ -698,7 +698,7 @@ public final class DeadEventAudit {
 	 * ticks, the level's load and save, logging in and out, and dozens more itself, and the bridge only stands down there —
 	 * offline, on the popular pack with no bridge installed, 45 of the 76 listener and event pairs it would have called never
 	 * posted are posted by the merged game itself. ({@code -Dforbric.unifiedEvents=off} does not reach this judgement: with
-	 * the switch off {@code GameEventMultiplexer.install} returns before it installs the kernel's server-started work.) So a
+	 * the switch off {@code GameEventMultiplexer.install} returns before it installs MinecraftForge's server-started duties.) So a
 	 * missing bridge is now judged by what the merged game does without
 	 * it: an event in this set is never posted ("never posts", the bridge's own cost sentence); one the merged game posts
 	 * itself is posted on the paths {@link #PARTIAL} counts when it has a row there, and on every path its family's game posts

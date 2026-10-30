@@ -27,7 +27,6 @@ import net.minecraftforge.server.ServerLifecycleHooks;
 import net.neoforged.bus.api.EventPriority;
 import net.neoforged.bus.api.IEventBus;
 import net.neoforged.neoforge.event.server.ServerLifecycleEvent;
-import net.neoforged.neoforge.event.server.ServerAboutToStartEvent;
 import net.neoforged.neoforge.event.server.ServerStartedEvent;
 import net.neoforged.neoforge.event.server.ServerStartingEvent;
 import net.neoforged.neoforge.event.server.ServerStoppedEvent;
@@ -51,9 +50,10 @@ import net.neoforged.neoforge.event.server.ServerStoppingEvent;
  * twice to each MinecraftForge mod, PermissionAPI was initialised twice, and so on. These forwards are
  * {@code DeadEventAudit.BRIDGED} rows, so {@code NativeDualEventInjector} scopes such a NeoForge call with the
  * MinecraftForge event delivered natively there, and the forward installed through {@code GameEventMultiplexer}'s
- * guard stands down for exactly that event. What the kernel does at server start for itself, rather than for
- * MinecraftForge, is no forward and must not stand down with one: {@link #installStartedDuties} holds it, on NeoForge's
- * bus itself.
+ * guard stands down for exactly that event. What the kernel does at server start for MinecraftForge, rather than as a
+ * forward, must not stand down with one: {@link #installStartedDuties} holds it, on NeoForge's bus itself. What it does
+ * there for itself and for NeoForge and Fabric is not in this class at all but in {@link KernelServerDuties}, which names
+ * nothing of MinecraftForge and is installed whether or not anything forwards.
  *
  * <h2>Ordering, which is the whole point of this class</h2>
  *
@@ -76,12 +76,6 @@ import net.neoforged.neoforge.event.server.ServerStoppingEvent;
  * pre-opens.
  */
 public final class KernelGameServerLifecycle {
-	/** Invoked by the fixed tick return seam, independently of optional cross-ecosystem event forwarding. */
-	public static void onCompatibilityTick(Object value) {
-		MinecraftServer server = (MinecraftServer) value;
-		net.forbric.kernel.boot.LateServerCompatibility.tick(server, server.isDedicatedServer(), () -> server.halt(false));
-	}
-
 	private KernelGameServerLifecycle() {
 	}
 
@@ -98,28 +92,23 @@ public final class KernelGameServerLifecycle {
 	}
 
 	/**
-	 * What the kernel does once a server is up, whoever delivered MinecraftForge's {@code ServerStartedEvent}.
+	 * What the kernel does for MinecraftForge once a server is up, whoever delivered MinecraftForge's
+	 * {@code ServerStartedEvent}.
 	 *
 	 * <p>Registered on NeoForge's bus itself, never on the guarded view a forward gets, and after the forward, so it
 	 * runs once per start whether the forward ran or stood down: the gate opened (idempotent; a native
-	 * {@code handleServerStarted} opens it as its last action), the pending dead-event judgement, the load report, and
-	 * on a dedicated server the compatibility decision.
+	 * {@code handleServerStarted} opens it as its last action), and the pending dead-event judgement of MinecraftForge's
+	 * listeners. The rest of the kernel's server-started work — the load report, and on a dedicated server the
+	 * compatibility decision — is no MinecraftForge duty: {@link KernelServerDuties#installStartedDuties} holds it, on the
+	 * same event and priority, registered after this one, so it still runs after the judgement and reports what it found.
 	 *
 	 * @param neoBus NeoForge's {@code IEventBus} itself, not a bridge's guarded view of it
 	 */
 	public static void installStartedDuties(Object neoBus) {
-		installStartedDuties(neoBus, server -> {
-			// The world is up, so whatever failed on the way there — a mixin applying to a class first loaded at world
-			// creation, a deferred task on the server thread — is known now. Integrated servers post this too, so the
-			// client's world load is covered.
-			net.forbric.kernel.boot.DeadEventAudit.judgePending();
-			net.forbric.kernel.boot.KernelLoadReport.write();
-			if (!net.forbric.kernel.boot.KernelFabricEcosystem.physicalSide().isClient()
-					&& !net.forbric.kernel.ui.CompatibilityDecision.check(false)) {
-				net.forbric.kernel.util.ForbricLog.error("[Forbric/Compatibility] FATAL: a required feature failed during world loading; stopping the server normally");
-				server.halt(false);
-			}
-		});
+		// The world is up, so whatever failed on the way there — a mixin applying to a class first loaded at world
+		// creation, a deferred task on the server thread — is known now. Integrated servers post this too, so the
+		// client's world load is covered.
+		installStartedDuties(neoBus, server -> net.forbric.kernel.boot.DeadEventAudit.judgePending());
 	}
 
 	/** {@link #installStartedDuties(Object)} with the kernel's own work handed in, so a test can see it run. */
@@ -133,22 +122,6 @@ public final class KernelGameServerLifecycle {
 			}
 		};
 		((IEventBus) neoBus).addListener(EventPriority.LOWEST, false, ServerStartedEvent.class, listener);
-	}
-
-	/**
-	 * A dedicated server is Fabric Loader's game instance once it exists: Fabric sets it from the server's own
-	 * construction, and {@code FabricLoader.getGameInstance()} answers it from then on (a client's is the Minecraft
-	 * instance, set by {@code Hooks.startClient}; an integrated server never replaces it). The server entry does that
-	 * itself, as Fabric patches it ({@code LifecycleHookInjector} emits {@code Hooks.setGameInstance} after the server's
-	 * constructor); this listener, on NeoForge's {@code ServerAboutToStartEvent} (the earliest event that carries the
-	 * server), is only the fallback for an entry where that constructor was not found or the Fabric hooks are off.
-	 */
-	public static void installGameInstance(Object neoBus) {
-		Consumer<ServerAboutToStartEvent> listener = neoEvent -> {
-			MinecraftServer server = neoEvent.getServer();
-			if (server != null && server.isDedicatedServer()) net.forbric.kernel.boot.KernelFabricEcosystem.setGameInstance(server);
-		};
-		((IEventBus) neoBus).addListener(EventPriority.HIGHEST, false, ServerAboutToStartEvent.class, listener);
 	}
 
 	/** NeoForge {@code ServerStoppingEvent} → MinecraftForge {@code handleServerStopping}. */
