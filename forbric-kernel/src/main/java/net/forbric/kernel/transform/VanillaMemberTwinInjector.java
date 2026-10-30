@@ -69,7 +69,7 @@ import net.forbric.kernel.util.ForbricLog;
  *       moves Fabric injectors along keeps working; a vanilla-compiled caller gets NeoForge's live body;</li>
  *   <li>VANILLA_BODY — vanilla's own method, copied from the vanilla reference ({@code native-reference/FABRIC}, the
  *       hash-pinned vanilla classes the kernel already resolves Fabric mixins against) where the consumers anchor
- *       INSIDE vanilla's body: fabric-rendering's eight {@code @WrapOperation}s on
+ *       INSIDE vanilla's body: fabric-rendering's seven {@code @WrapOperation}s on
  *       {@code Hud.extractHotbarAndDecorations}' calls, its {@code @ModifyVariable} on the renderer stored in
  *       {@code GuiRenderer.preparePictureInPictureState}, balm's wrap of the moisture read in
  *       {@code CropBlock.getGrowthSpeed(Block, …)}. A stub has none of those points, so a delegate would turn each into
@@ -127,7 +127,7 @@ public final class VanillaMemberTwinInjector implements ClassTransformer {
 							+ "fallback is cloned from its lookup"),
 			new Row(HUD, Kind.VANILLA_BODY, "extractHotbarAndDecorations",
 					"(Lnet/minecraft/client/gui/GuiGraphicsExtractor;Lnet/minecraft/client/DeltaTracker;)V", null,
-					Opcodes.ACC_PRIVATE, "fabric-rendering's HudMixin wraps eight of its calls; apoli, bettermounthud and "
+					Opcodes.ACC_PRIVATE, "fabric-rendering's HudMixin wraps seven of its calls; apoli, bettermounthud and "
 							+ "tcdcommons hook it"),
 			new Row(PARTICLE_RESOURCES, Kind.FIELD, "providers", "Lit/unimi/dsi/fastutil/ints/Int2ObjectMap;", null,
 					Opcodes.ACC_PRIVATE | Opcodes.ACC_FINAL,
@@ -151,11 +151,30 @@ public final class VanillaMemberTwinInjector implements ClassTransformer {
 
 	private final Function<String, ClassNode> vanilla;
 	private final Set<String> missingReferences = java.util.concurrent.ConcurrentHashMap.newKeySet();
-	private int twins;
+	/** Bumped from transform(), which concurrent class loading may run on several threads at once. */
+	private final java.util.concurrent.atomic.AtomicInteger twins = new java.util.concurrent.atomic.AtomicInteger();
 
-	/** Production: vanilla's classes from the base's {@code native-reference/FABRIC} index, frames expanded. */
+	/**
+	 * Vanilla's classes from the reader Mixin binds, frames expanded. Not what KernelBoot uses: the twins run before Mixin
+	 * binds that reader, so production builds its own over the game's resources with {@link #vanillaReferences}.
+	 */
 	public VanillaMemberTwinInjector() {
 		this(owner -> NativeGameReferences.referenceWithFrames(Ecosystem.FABRIC, owner));
+	}
+
+	/**
+	 * What KernelBoot hands the twins as vanilla: the FABRIC native references over {@code gameResources}, through the
+	 * sources this launch configured ({@link NativeGameReferences#over}) — the vanilla-reference sidecar wherever the
+	 * launch has one, the base's embedded index otherwise — read with {@link ClassReader#EXPAND_FRAMES}. Over the resources
+	 * alone (the reader's one-argument constructor) only an embedded index answers, and the genuine NeoForge base embeds
+	 * none, so every copied body would stand down there and {@code PayloadCodecFunnelInjector}'s REQUIRED anchor would miss
+	 * for want of vanilla's {@code codec} overload. Call it after {@link NativeGameReferences#configure}.
+	 *
+	 * @param gameResources the game's resources by path, as the loader serves them before any transformer
+	 */
+	public static Function<String, ClassNode> vanillaReferences(Function<String, byte[]> gameResources) {
+		NativeGameReferences references = NativeGameReferences.over(gameResources);
+		return owner -> references.getWithFrames(Ecosystem.FABRIC, owner);
 	}
 
 	/**
@@ -219,7 +238,7 @@ public final class VanillaMemberTwinInjector implements ClassTransformer {
 			if (landed) added.add(row.name() + row.desc());
 		}
 		if (added.isEmpty()) return bytes;
-		twins += added.size();
+		twins.addAndGet(added.size());
 		ForbricLog.info("[Forbric/VanillaTwins] %s: added vanilla's %s — this base lacks them, and vanilla-compiled code "
 				+ "names them", className, String.join(", ", added));
 		ClassWriter writer = new ClassWriter(0);
@@ -413,6 +432,6 @@ public final class VanillaMemberTwinInjector implements ClassTransformer {
 
 	/** Twins added so far. */
 	public int twinsAdded() {
-		return twins;
+		return twins.get();
 	}
 }

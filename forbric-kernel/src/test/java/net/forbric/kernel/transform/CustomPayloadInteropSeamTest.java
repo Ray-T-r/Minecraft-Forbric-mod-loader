@@ -28,8 +28,8 @@ import net.forbric.kernel.TestFixtures;
  * one the jar has, not one this test names.
  */
 class CustomPayloadInteropSeamTest {
-	private static final Path MERGED = TestFixtures.stagedRoot().resolve("merged-base/patched-mc-merged-26.2.jar").normalize();
-	private static final Path GENUINE = TestFixtures.stagedRoot().resolve("neoforge-patched/patched-mc-neoforge-26.2.jar").normalize();
+	private static final Path MERGED = TestFixtures.stagedBase().normalize();
+	private static final Path GENUINE = TestFixtures.genuineBase().normalize();
 	private static final String PAYLOAD = CustomPayloadInteropSeam.PAYLOAD;
 
 	@AfterEach void reset() { System.clearProperty(CustomPayloadInteropSeam.PROPERTY); }

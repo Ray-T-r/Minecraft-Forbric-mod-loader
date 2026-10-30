@@ -64,7 +64,7 @@ class GenuineNativeReferencesStagedTest {
 
 	/** Configures and binds the references for a launch on {@code base} with {@code sidecar} (may be null), as KernelBoot does. */
 	private void launch(Path base, Path sidecar) throws Exception {
-		Path neo = TestFixtures.stagedRoot().resolve("neoforge-runtime/neoforge-runtime.jar");
+		Path neo = TestFixtures.neoCarrier();
 		TestFixtures.requireFiles(Fixture.STAGED, "the NeoForge carrier", neo);
 		NativeGameReferences.configure(NativeReferenceSources.open(base, sidecar));
 		loader = new ForbricClassLoader(new URL[] {base.toUri().toURL(), neo.toUri().toURL()},
