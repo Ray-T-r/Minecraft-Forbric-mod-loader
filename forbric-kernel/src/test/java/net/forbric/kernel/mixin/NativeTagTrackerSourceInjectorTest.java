@@ -41,11 +41,13 @@ class NativeTagTrackerSourceInjectorTest {
 		InjectorExecution.invokeStatic(controller,"metric",null,2,2,3,3,0.8,0.0,1.0,0.0,0,null);
 	}
 	@Test void theActualCollectorTransformsAndVerifiesWhileOffAndMissingSourceDoNot()throws Exception{
+		TestFixtures.requireForgeCarrierWhereTheBaseNamesIt("the base classes this defines and verifies");
 		Inputs input=inputs();byte[]original=bytes(input.classes().apply(OWNER));NativeTagTrackerSourceInjector injector=new NativeTagTrackerSourceInjector(input.original(),input.classes());byte[]output=InjectorExecution.transform(injector,OWNER.replace('/','.'),original,EnvType.SERVER);assertNotSame(original,output);
 		ClassLoader loader=load(Map.of(OWNER,output));assertEquals("",InjectorExecution.verify(output,loader));
 		assertSame(original,InjectorExecution.transform(new NativeTagTrackerSourceInjector(name->null,input.classes()),OWNER.replace('/','.'),original,EnvType.SERVER));System.setProperty(NativeTagTrackerSourceInjector.PROPERTY,"off");assertSame(original,InjectorExecution.transform(injector,OWNER.replace('/','.'),original,EnvType.SERVER));
 	}
 	@Test void theActualConstructorExtractionKeepsOrderAndReusesEveryAllocatedTracker(@TempDir Path work)throws Throwable{
+		TestFixtures.requireForgeCarrierWhereTheBaseNamesIt("the base classes this defines and verifies");
 		Inputs input=inputs();byte[]output=InjectorExecution.transform(new NativeTagTrackerSourceInjector(input.original(),input.classes()),OWNER.replace('/','.'),bytes(input.classes().apply(OWNER)),EnvType.SERVER);
 		Map<String,byte[]>classes=new HashMap<>(InjectorExecution.compile(work,Map.of("net.forbric.kernel.runtime.KernelFabricFluidBehaviors","package net.forbric.kernel.runtime;public class KernelFabricFluidBehaviors{public static boolean enabled(){return true;}public static boolean ownsNeoType(net.neoforged.neoforge.fluids.FluidType type){return false;}}"),dependencies()));
 		classes.put(OWNER,output);classes.put(TRACKER,bytes(input.classes().apply(TRACKER)));classes.put("net/forbric/kernel/runtime/KernelFabricTagViews",resource("net/forbric/kernel/runtime/KernelFabricTagViews.class"));ClassLoader loader=load(classes);
@@ -73,6 +75,7 @@ class NativeTagTrackerSourceInjectorTest {
 	 * shape without that proof still declines on the same runtime class.
 	 */
 	@Test void aVectorWhoseCoordinatesLostFinalKeepsTheViewOnlyWhereTheWindowIsProved(@TempDir Path work)throws Throwable{
+		TestFixtures.requireForgeCarrierWhereTheBaseNamesIt("the base classes this defines and verifies");
 		Inputs input=inputs();byte[]output=InjectorExecution.transform(new NativeTagTrackerSourceInjector(input.original(),input.classes()),OWNER.replace('/','.'),bytes(input.classes().apply(OWNER)),EnvType.SERVER);
 		ClassNode emitted=parse(output);String key=null;for(MethodNode method:emitted.methods)if(method.name.endsWith("Extract"))for(var instruction:method.instructions)if(instruction instanceof LdcInsnNode ldc&&ldc.cst instanceof String value)key=value;assertNotNull(key);
 		var schema=KernelTagSourceContracts.schema(key);assertNotNull(schema);String vector="net/minecraft/world/phys/Vec3";

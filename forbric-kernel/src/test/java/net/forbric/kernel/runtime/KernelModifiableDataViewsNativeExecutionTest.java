@@ -8,11 +8,13 @@ import java.net.URLClassLoader;
 import java.util.*;
 import java.util.function.*;
 import net.forbric.kernel.classloading.ForbricClassLoader;
+import net.forbric.kernel.TestFixtures;
 import org.junit.jupiter.api.Test;
 
 /** Compare the complete native SDK pass with the projected pass on valid records, including phase order and writes. */
 class KernelModifiableDataViewsNativeExecutionTest {
     @Test void nativeModifierPhasesAndTheirPublishedStateMatchAcrossBothViews()throws Exception{
+        TestFixtures.requireForgeCarrier("MinecraftForge's Modifiable*Info, the view NeoForge's is projected onto");
         List<URL> urls=StagedGameClassLoader.urls();
         try(var parent=new URLClassLoader(urls.toArray(URL[]::new),getClass().getClassLoader());var loader=new ForbricClassLoader(urls.toArray(URL[]::new),parent)){
             loader.setTransformer((name,bytes)->{

@@ -106,6 +106,7 @@ class CarrierMethodReferencesStagedTest {
 	}
 
 	@Test void theTablesRedirectMovesOntoTheMethodReferencesCallAndRunsTheNativeLambdaThere() throws Exception {
+		TestFixtures.requireForgeCarrierWhereTheBaseNamesIt("the method reference's declaring hierarchy in the base");
 		ClassNode mixin = fabric();
 		MethodNode handler = StagedFabricMixinFixture.method(mixin, "useCustomEnchantingChecks");
 		String desc = handler.desc, written = MixinInstructionFingerprint.hash(handler);
@@ -134,6 +135,7 @@ class CarrierMethodReferencesStagedTest {
 	}
 
 	@Test void theMaterializedReferenceTakesTheLambdasParametersAndReadsTheFoldedValueFromItsLocal() throws Exception {
+		TestFixtures.requireForgeCarrierWhereTheBaseNamesIt("the method reference's declaring hierarchy in the base");
 		List<CarrierMethodReferences.Plan> plans = new ArrayList<>();
 		assertEquals(1, adapt(fabric(), game(), plans));
 		CarrierMethodReferences.Plan plan = plans.getFirst();
@@ -161,6 +163,7 @@ class CarrierMethodReferencesStagedTest {
 	}
 
 	@Test void theMoveKnowsNoName() throws Exception {
+		TestFixtures.requireForgeCarrierWhereTheBaseNamesIt("the method reference's declaring hierarchy in the base");
 		ClassNode mixin = fabric();
 		mixin.name = "org/example/forge/TableHook";
 		MixinStubRebind.noteEcosystem(mixin.name, Ecosystem.FABRIC);
@@ -178,6 +181,7 @@ class CarrierMethodReferencesStagedTest {
 	 * ("does not first test the captured boolean") for every pack that installed such a widener.
 	 */
 	@Test void aWidenerThatOnlyMakesTheStackExtendableStillMoves() throws Exception {
+		TestFixtures.requireForgeCarrierWhereTheBaseNamesIt("the method reference's declaring hierarchy in the base");
 		Function<String, ClassNode> game = game();
 		ClassNode stack = game.apply("net/minecraft/world/item/ItemStack");
 		assertTrue((stack.access & Opcodes.ACC_FINAL) != 0, "the merged ItemStack is final as built");

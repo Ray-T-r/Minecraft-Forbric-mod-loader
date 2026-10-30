@@ -5,9 +5,11 @@ import java.util.*;
 import org.junit.jupiter.api.Test;
 import net.forbric.api.VirtualProperties;
 import net.forbric.kernel.classloading.ForbricClassLoader;
+import net.forbric.kernel.TestFixtures;
 /** Executable native SDK objects, with no game initialization needed for their immutable record inputs. */
 class KernelModifiableDataViewsTest {
     @Test void nativeOriginalIdentityAndLiveCanonicalChangesArePreserved()throws Exception{
+        TestFixtures.requireForgeCarrier("MinecraftForge's Modifiable*Info, the view NeoForge's is projected onto");
         List<URL> urls=StagedGameClassLoader.urls();
         try(var parent=new java.net.URLClassLoader(urls.toArray(URL[]::new),getClass().getClassLoader());
             var loader=new ForbricClassLoader(urls.toArray(URL[]::new),parent)){

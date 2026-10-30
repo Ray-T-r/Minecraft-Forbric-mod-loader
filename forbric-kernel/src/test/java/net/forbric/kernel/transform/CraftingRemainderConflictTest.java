@@ -34,6 +34,7 @@ class CraftingRemainderConflictTest {
 	private static final String REMAINDER = "getCraftingRemainder";
 
 	@Test void theTweakedItemGetsARemainderThatAsksNeoForgesOverload() throws Exception {
+		TestFixtures.requireForgeCarrierWhereTheBaseNamesIt("Item's hierarchy, which declares the remainder defaults");
 		byte[] fabricItem = fabricItem();
 		InterfaceDefaultConflictRepair repair = new InterfaceDefaultConflictRepair(name -> name.equals(FABRIC_ITEM) ? fabricItem : game(name));
 		byte[] jarItem = game(ITEM);
@@ -67,6 +68,7 @@ class CraftingRemainderConflictTest {
 	}
 
 	@Test void allThreeDefaultsAnswerTheSameNoArgumentCall() throws Exception {
+		TestFixtures.requireForgeCarrierWhereTheBaseNamesIt("Item's hierarchy, which declares the remainder defaults");
 		for (byte[] iface : List.of(fabricItem(), game("net/minecraftforge/common/extensions/IForgeItem"),
 				game("net/neoforged/neoforge/common/extensions/IItemExtension"))) {
 			ClassNode node = new ClassNode();

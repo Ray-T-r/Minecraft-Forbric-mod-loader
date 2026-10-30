@@ -77,6 +77,7 @@ class UnboundHolderDataInjectorTest {
 	 * key — the path NeoForge's loaded data maps take is the one it always took.
 	 */
 	@Test void theRepairedReferenceRunsOnTheStagedGame() throws Throwable {
+		TestFixtures.requireForgeCarrierWhereTheBaseNamesIt("the base classes this defines");
 		byte[] original = NativeCoremodParityTest.read(MERGED, REFERENCE);
 		byte[] repaired = new UnboundHolderDataInjector().transform(UnboundHolderDataInjector.TARGET, original, null);
 		assertNotSame(original, repaired);
@@ -119,6 +120,7 @@ class UnboundHolderDataInjectorTest {
 	 * now), and the guard's report calls the registry closed.
 	 */
 	@Test void theReportJudgesTheStagedRegistrysOwnFrozenFlag() throws Throwable {
+		TestFixtures.requireForgeCarrierWhereTheBaseNamesIt("the base classes this defines");
 		byte[] repaired = new UnboundHolderDataInjector().transform(UnboundHolderDataInjector.TARGET,
 				NativeCoremodParityTest.read(MERGED, REFERENCE), null);
 		try (URLClassLoader game = net.forbric.kernel.runtime.StagedGameClassLoader.create(List.of(bootSide()))) {

@@ -10,6 +10,7 @@ import java.util.function.BiFunction;
 import java.util.function.Consumer;
 
 import net.forbric.api.Ecosystem;
+import net.forbric.kernel.TestFixtures;
 import org.junit.jupiter.api.Test;
 import org.objectweb.asm.MethodVisitor;
 import org.objectweb.asm.Opcodes;
@@ -157,6 +158,7 @@ class MixinCallbackTargetArgumentTest {
 	}
 
 	@Test void aBuilderCallbackAtTheCallIsReadAsMixinReadsItsTarget() throws Exception {
+		TestFixtures.requireForgeCarrierWhereTheBaseNamesIt("the classes the base's useOn reaches");
 		for (String target : List.of(" net.minecraft.world.item.Item . " + USE_ON, USE_ON, "Lnet/minecraft/world/item/Item;useOn")) {
 			CallbackSourceFixture source = new CallbackSourceFixture("org/example/mason/mixin/TrowelMixin", STACK);
 			source.handler("beforeLaying", "(" + CONTEXT + CIR + ")V", INJECT, "method", List.of("useOn"), "at", List.of(at("INVOKE", target)))
@@ -168,6 +170,7 @@ class MixinCallbackTargetArgumentTest {
 	}
 
 	@Test void twoBuilderCallbacksAtTheCallAreOnePointHoweverEachIsWritten() throws Exception {
+		TestFixtures.requireForgeCarrierWhereTheBaseNamesIt("the classes the base's useOn reaches");
 		CallbackSourceFixture source = new CallbackSourceFixture("org/example/mason/mixin/TwoTrowelsMixin", STACK);
 		source.handler("first", "(" + CONTEXT + CIR + ")V", INJECT, "method", List.of("useOn"), "at", List.of(at("INVOKE", CALL)))
 				.code(code -> code.visitInsn(Opcodes.RETURN));

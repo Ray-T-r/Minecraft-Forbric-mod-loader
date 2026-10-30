@@ -231,6 +231,7 @@ class TransferTransactionHooksTest {
 		assertFalse(node(ForgeTransferShapeAudit.certify(name, writer.toByteArray())).methods.stream().anyMatch(method -> method.name.equals(ForgeTransferShapeAudit.MARKER)), "energy field");
 	}
 	@Test @ResourceLock("native-game-references") void itemStackTooltipChangesRemainAllowedButCountMutationDoesNot() throws Exception {
+		TestFixtures.requireForgeCarrierWhereTheBaseNamesIt("ItemStack's hierarchy in the base");
 		String name = "net.minecraft.world.item.ItemStack";
 		Path jar = TestFixtures.stagedBase();
 		byte[] original = bytes(jar, name);
@@ -290,6 +291,7 @@ class TransferTransactionHooksTest {
 		return path -> extra.containsKey(path) ? extra.get(path) : game.resources().apply(path);
 	}
 	@Test @ResourceLock("native-game-references") void redundantMixinHierarchySignatureIsIgnoredWithoutErasingNewGenericOrExecutableContracts() throws Exception {
+		TestFixtures.requireForgeCarrierWhereTheBaseNamesIt("ItemStack's hierarchy in the base");
 		String name = "net.minecraft.world.item.ItemStack";
 		Path game = TestFixtures.stagedBase();
 		byte[] original = bytes(game, name); ClassNode woven = node(original);

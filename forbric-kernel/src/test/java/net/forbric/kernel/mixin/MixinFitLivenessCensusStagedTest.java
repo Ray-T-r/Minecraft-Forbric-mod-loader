@@ -548,6 +548,7 @@ class MixinFitLivenessCensusStagedTest {
 	}
 
     @Test void theNewRawRowsNameActualNativePredicateAndAbiChangesWithoutInventingEquivalence()throws Exception {
+        TestFixtures.requireForgeCarrier("the census reads MinecraftForge's carrier among its artifacts");
         ClassNode vanillaHud=StagedFabricMixinFixture.game("net/minecraft/client/gui/Hud",true),hud=StagedFabricMixinFixture.game("net/minecraft/client/gui/Hud",false);
         String water="Lnet/minecraft/world/entity/player/Player;isEyeInFluid(Lnet/minecraft/tags/TagKey;)Z";
         MethodNode original=StagedFabricMixinFixture.method(vanillaHud,"extractAirBubbles"),current=StagedFabricMixinFixture.method(hud,"extractAirBubbles");

@@ -64,6 +64,7 @@ class MergedBaseNoUnwrittenDuplicateFieldTest {
 
 	@Test
 	void everyDuplicatedFieldNameHasAWriterForEveryOneOfItsTypes() throws Exception {
+		TestFixtures.requireForgeCarrier("the merge's field writers in MinecraftForge's carrier");
 		TestFixtures.requireFile(Fixture.STAGED, MERGED_BASE, "staged merged base absent — skipping whole-artifact scan");
 
 		List<String> dead = new ArrayList<>();

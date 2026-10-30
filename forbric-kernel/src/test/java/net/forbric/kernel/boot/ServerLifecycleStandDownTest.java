@@ -138,6 +138,7 @@ class ServerLifecycleStandDownTest {
 	 */
 	@Test
 	void theMergedServersPairedLifecycleCallsAreEachScopedWithTheirMinecraftForgeEvent() throws Exception {
+		TestFixtures.requireForgeCarrier("the MinecraftForge lifecycle events each NeoForge call is scoped with");
 		Path root = TestFixtures.stagedRoot();
 		Path base = root.resolve(TestFixtures.BASE_JAR);
 		TestFixtures.requireFile(Fixture.STAGED, base, "staged merged base absent");

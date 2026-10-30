@@ -18,6 +18,7 @@ import java.util.function.IntSupplier;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import net.forbric.kernel.TestFixtures;
 
 /**
  * MinecraftForge's breathe event, posted from NeoForge's (KernelGameWorldEvents.installBreathe), driven for real.
@@ -36,6 +37,7 @@ class KernelBreatheBridgeTest {
 	private Class<?> breath, neoBreath;
 
 	@BeforeEach void load() throws Exception {
+		TestFixtures.requireForgeCarrier("MinecraftForge's LivingBreatheEvent, which the bridge hands NeoForge's answer to");
 		loader = StagedGameClassLoader.create(List.of());
 		breath = Class.forName("net.forbric.kernel.runtime.KernelGameWorldEvents$ForgeBreath", true, loader);
 		neoBreath = Class.forName("net.forbric.kernel.runtime.KernelGameWorldEvents$NeoBreath", true, loader);

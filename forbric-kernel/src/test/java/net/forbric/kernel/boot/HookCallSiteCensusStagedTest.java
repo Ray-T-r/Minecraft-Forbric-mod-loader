@@ -313,6 +313,7 @@ class HookCallSiteCensusStagedTest {
 	 */
 	@Test
 	void theClientOnlyTableIsWhereTheNativeLoaderPostsOnlyOnTheClient() throws Exception {
+		TestFixtures.requireForgeCarrier("MinecraftForge's event classes and hooks, which this census reads from the carrier");
 		TestFixtures.requireFile(Fixture.STAGED, base(), "staged merged base absent");
 		Map<String, Set<HookCallSiteCensus.PostingSite>> sites = new TreeMap<>();
 		for (Map.Entry<String, Map<String, Path>> side : nativeSides().entrySet()) {
@@ -356,6 +357,7 @@ class HookCallSiteCensusStagedTest {
 	 */
 	@Test
 	void theCensusSeesTheCallsTheMergedBaseRepairsMove() throws Exception {
+		TestFixtures.requireForgeCarrier("MinecraftForge's event classes and hooks, which this census reads from the carrier");
 		TestFixtures.requireFile(Fixture.STAGED, base(), "staged merged base absent");
 		TestFixtures.require(Fixture.GAME_SIDE, Files.isDirectory(kernelRuntime()), "the kernel's game side is not compiled");
 		Map<String, HookCallSiteCensus.Census> loaded = censusAll();
@@ -433,6 +435,7 @@ class HookCallSiteCensusStagedTest {
 	 */
 	@Test
 	void everyRowThatSilencesTheAuditProvesItsDelivery() throws Exception {
+		TestFixtures.requireForgeCarrier("MinecraftForge's event classes and hooks, which this census reads from the carrier");
 		TestFixtures.requireFile(Fixture.STAGED, base(), "staged merged base absent");
 		TestFixtures.require(Fixture.GAME_SIDE, Files.isDirectory(kernelRuntime()) && Files.isDirectory(kernelMain()),
 				"the kernel is not compiled");
@@ -504,6 +507,7 @@ class HookCallSiteCensusStagedTest {
 	 */
 	@Test
 	void theNoNativePathTableIsWhereTheMergedGamePostsNothingItself() throws Exception {
+		TestFixtures.requireForgeCarrier("MinecraftForge's event classes and hooks, which this census reads from the carrier");
 		TestFixtures.requireFile(Fixture.STAGED, base(), "staged merged base absent");
 		Map<String, HookCallSiteCensus.Census> all = censusAll();
 		TestFixtures.require(Fixture.STAGED, !all.isEmpty(), "staged carriers absent");
@@ -545,6 +549,7 @@ class HookCallSiteCensusStagedTest {
 	 */
 	@Test
 	void minecraftForgesBreatheAndDrownEventsAreMeasuredDeadAndBridged() throws Exception {
+		TestFixtures.requireForgeCarrier("MinecraftForge's event classes and hooks, which this census reads from the carrier");
 		TestFixtures.requireFile(Fixture.STAGED, base(), "staged merged base absent");
 		TestFixtures.require(Fixture.GAME_SIDE, Files.isDirectory(kernelRuntime()), "the kernel's game side is not compiled");
 		Map<String, HookCallSiteCensus.Census> all = censusAll();
@@ -581,6 +586,7 @@ class HookCallSiteCensusStagedTest {
 
 	@Test
 	void everyRowOfTheDeadTableIsStillDeadInTheBytecode() throws Exception {
+		TestFixtures.requireForgeCarrier("MinecraftForge's event classes and hooks, which this census reads from the carrier");
 		TestFixtures.requireFile(Fixture.STAGED, base(), "staged merged base absent");
 		Map<String, HookCallSiteCensus.Census> all = censusAll();
 		TestFixtures.require(Fixture.STAGED, !all.isEmpty(), "staged carriers absent");
@@ -637,6 +643,7 @@ class HookCallSiteCensusStagedTest {
 	 */
 	@Test
 	void thePartialTableIsExactlyWhatTheCallSitesSay() throws Exception {
+		TestFixtures.requireForgeCarrier("MinecraftForge's event classes and hooks, which this census reads from the carrier");
 		TestFixtures.requireFile(Fixture.STAGED, base(), "staged merged base absent");
 		TestFixtures.require(Fixture.STAGED, Files.isRegularFile(forgePatchedGame()) && Files.isRegularFile(neoForgePatchedGame()),
 				"a family's own patched game is absent");
@@ -1193,6 +1200,7 @@ class HookCallSiteCensusStagedTest {
 	 */
 	@Test
 	void noSinglePathPostsABridgedEventTwice() throws Exception {
+		TestFixtures.requireForgeCarrier("MinecraftForge's event classes and hooks, which this census reads from the carrier");
 		TestFixtures.requireFile(Fixture.STAGED, base(), "staged merged base absent");
 		List<String> both = candidateMethods();
 		System.out.println("[Forbric/Hooks] methods calling a MinecraftForge hook and delivering through NeoForge: " + both.size());
@@ -1314,6 +1322,7 @@ class HookCallSiteCensusStagedTest {
 	 */
 	@Test
 	void aPairWithoutItsNativeDeliveryIsNotStoodDown() throws Exception {
+		TestFixtures.requireForgeCarrier("MinecraftForge's event classes and hooks, which this census reads from the carrier");
 		TestFixtures.requireFile(Fixture.STAGED, base(), "staged merged base absent");
 		Set<String> forwarded = DeadEventAudit.forwardedForgeEvents();
 		NativeDualEventInjector injector = new NativeDualEventInjector(HookCallSiteCensusStagedTest::protocolBytes, forwarded);

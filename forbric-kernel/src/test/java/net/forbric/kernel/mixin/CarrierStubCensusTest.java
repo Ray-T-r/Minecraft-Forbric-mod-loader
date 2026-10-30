@@ -53,6 +53,7 @@ class CarrierStubCensusTest {
 	private static final Path KERNEL_RUNTIME = Path.of(System.getProperty("forbric.test.runtimeClasses", "build/classes/java/runtime"));
 
 	@Test void theShippedTableIsExactlyWhatTheArtifactsSay() throws Exception {
+		TestFixtures.requireForgeCarrier("the census is of every staged carrier, MinecraftForge's included");
 		TestFixtures.requireFile(Fixture.STAGED, MERGED, "merged base and vanilla jar required");
 		TestFixtures.require(Fixture.MC_LIBRARIES, Files.isRegularFile(VANILLA), "merged base and vanilla jar required");
 		// The rows themselves need only the merged base and vanilla; each row's forge=/neo= columns need both carriers.

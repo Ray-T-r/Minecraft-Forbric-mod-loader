@@ -127,7 +127,10 @@ class AdapterPointSpellingTest {
 						"Ljava/util/List;isEmpty()Z")))));
 		// CarrierDefaultChains: fabric-api's bed occupancy redirect, bound to the sleep start and the wake-up lambda, under
 		// unrelated names.
-		cases.add(new Case("fabric-api beds", () -> StagedFabricMixinFixture.mixin("fabric-entity-events-v1", root + "LivingEntityMixin"), true,
+		cases.add(new Case("fabric-api beds", () -> {
+					TestFixtures.requireForgeCarrierWhereTheBaseNamesIt("the state's setBedOccupied defaults, through the base's hierarchy");
+					return StagedFabricMixinFixture.mixin("fabric-entity-events-v1", root + "LivingEntityMixin");
+				}, true,
 				Ecosystem.FABRIC, LIVING, CarrierDefaultChains::adapt, 1,
 				List.of("Lnet/minecraft/world/level/Level;setBlock(Lnet/minecraft/core/BlockPos;" + STATE + "I)Z"),
 				mixin -> assertTrue(atTargets(mixin).contains("Lnet/minecraft/world/level/block/state/BlockState;setBedOccupied(Lnet/minecraft/world/level/Level;"
