@@ -143,6 +143,14 @@ public final class NativeGameReferences {
 		return reader == null ? null : reader.get(ecosystem, owner, ClassReader.EXPAND_FRAMES);
 	}
 
+	/**
+	 * As {@link #referenceWithFrames}, from this reader rather than the bound one — for a pre-Mixin transformer that copies a
+	 * native body into a class, which may run before Mixin binds the loader's reader.
+	 */
+	public ClassNode getWithFrames(Ecosystem ecosystem, String owner) {
+		return get(ecosystem, owner, ClassReader.EXPAND_FRAMES);
+	}
+
 	private synchronized ClassNode get(Ecosystem ecosystem, String owner, int flags) {
 		if (ecosystem == null || owner == null) return null;
 		byte[] bytes = pins(ecosystem).bytes(owner);

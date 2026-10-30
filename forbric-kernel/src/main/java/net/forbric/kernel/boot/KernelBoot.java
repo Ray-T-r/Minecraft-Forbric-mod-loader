@@ -534,6 +534,37 @@ public final class KernelBoot {
 				return null;
 			}
 		}));
+		// Both sides, before the merged-base compatibility repairs, which find the vanilla members these add and wire them to
+		// NeoForge's live ones: the vanilla members only the merge's MinecraftForge half kept (the PiP map, the int-keyed
+		// particle providers, vanilla's payload codec, Hud's hotbar-and-decorations…), added where a base lacks them.
+		// Nothing is missing on the merged base, so nothing lands there.
+		if (net.forbric.kernel.transform.VanillaMemberTwinInjector.enabled()) {
+			net.forbric.kernel.mixin.NativeGameReferences vanillaBodies = new net.forbric.kernel.mixin.NativeGameReferences(path -> {
+				try (java.io.InputStream in = loader.getGameResourceAsStream(path)) {
+					return in == null ? null : in.readAllBytes();
+				} catch (java.io.IOException unreadable) {
+					Caught.warn(unreadable, "[Forbric/Boot] could not read game resource %s for the vanilla member twins;"
+							+ " it reads as absent", path);
+					return null;
+				}
+			});
+			chain.register(TransformPhase.COREMOD, new net.forbric.kernel.transform.VanillaMemberTwinInjector(
+					owner -> vanillaBodies.getWithFrames(net.forbric.api.Ecosystem.FABRIC, owner)));
+		}
+		// Both sides: NeoForge's custom-payload codec looks codecs up by the payload's class across every ecosystem — the
+		// splice the merged base was built with (its builder's PASS 4b), on a base that never was. Pre-Mixin, so the post-Mixin
+		// codec arbitration finds the seam around fabric-networking's wrap. It stands down on the merged base.
+		if (net.forbric.kernel.transform.CustomPayloadInteropSeam.enabled()) {
+			chain.register(TransformPhase.COREMOD, new net.forbric.kernel.transform.CustomPayloadInteropSeam(path -> {
+				try (java.io.InputStream in = loader.getGameResourceAsStream(path)) {
+					return in == null ? null : in.readAllBytes();
+				} catch (java.io.IOException unreadable) {
+					Caught.warn(unreadable, "[Forbric/Boot] could not read game class %s for the custom-payload codec seam;"
+							+ " it reads as absent", path);
+					return null;
+				}
+			}));
+		}
 		chain.register(TransformPhase.COREMOD, new ForbricMergedBaseCompatTransformer(path -> {
 			try (java.io.InputStream in = loader.getGameResourceAsStream(path)) {
 				return in == null ? null : in.readAllBytes();
