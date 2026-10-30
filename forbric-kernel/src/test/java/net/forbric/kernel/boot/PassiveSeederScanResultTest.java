@@ -21,6 +21,7 @@ import static net.forbric.kernel.boot.PassiveSeederLoadingModListTest.seededList
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -32,7 +33,9 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.attribute.FileTime;
 import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipOutputStream;
@@ -44,11 +47,14 @@ import org.objectweb.asm.AnnotationVisitor;
 import org.objectweb.asm.ClassWriter;
 import org.objectweb.asm.Opcodes;
 
+import net.forbric.api.DiscoveredMod;
+import net.forbric.api.Ecosystem;
 import net.forbric.api.ModPresence;
 import net.forbric.kernel.ExpectCaught;
 import net.forbric.kernel.TestFixtures;
 import net.forbric.kernel.TestFixtures.Fixture;
 import net.forbric.kernel.discovery.ForbricModDiscoverer;
+import net.forbric.kernel.discovery.MetadataFailures;
 import net.forbric.kernel.discovery.ModFileScanner;
 
 /**
@@ -61,9 +67,11 @@ import net.forbric.kernel.discovery.ModFileScanner;
  * out of its own constructor and every RollingGate and Server++ rule was missing.
  *
  * <p>The claims, each its own failure mode: a NeoForge jar answers with ITS index, and with the same object
- * {@code KernelModFile} hands out for that jar; nothing is scanned until a mod asks; a Fabric presence entry and a
- * MinecraftForge entry answer empty, never with the index of a jar another ecosystem is running; a jar that cannot
- * be indexed answers empty instead of throwing; and {@code -Dforbric.seededScanData=off} is the old throw.
+ * {@code KernelModFile} hands out for that jar; nothing is scanned until a mod asks; a Fabric presence entry answers
+ * empty, never with the index of a jar another ecosystem is running, and so does a universal jar whose MinecraftForge
+ * half is set aside and which runs as Fabric; a MinecraftForge-only jar is refused (Stage 3) and has no entry at all;
+ * a jar that cannot be indexed answers empty instead of throwing; and {@code -Dforbric.seededScanData=off} is the old
+ * throw.
  */
 class PassiveSeederScanResultTest {
 	private static final String RULES = "Lprobe/Rules;";
@@ -77,6 +85,7 @@ class PassiveSeederScanResultTest {
 		ModPresence.publishFabric(List.of());
 		ModPresence.publishForgeFamily(List.of());
 		MultiLoaderArbiter.reset();
+		MetadataFailures.reset();
 	}
 
 	@Test
@@ -85,15 +94,26 @@ class PassiveSeederScanResultTest {
 			Path mods = Files.createDirectories(tmp.resolve("mods"));
 			Path neoJar = mods.resolve("neoprobe.jar");
 			writeJar(neoJar, "META-INF/neoforge.mods.toml", toml("neoprobe"), "probe/neo/RuleContainer");
-			// MinecraftForge jar, annotated the same way: it is in this list for presence, and its index is the
-			// other FML's business.
-			writeJar(mods.resolve("forgeprobe.jar"), "META-INF/mods.toml", toml("forgeprobe"),
-					"probe/forge/RuleContainer");
+			// A MinecraftForge-only jar, annotated the same way. It used to be listed for presence with an empty
+			// index; Stage 3 refuses it, so it has no entry at all (Stage 4 deletes the Forge seeding with the rest).
+			Path forgeJar = mods.resolve("forgeprobe.jar");
+			writeJar(forgeJar, "META-INF/mods.toml", toml("forgeprobe"), "probe/forge/RuleContainer");
 			// A Fabric jar, listed for presence only; outside mods/ as the Fabric side's own jars are.
 			Path fabricJar = Files.createDirectories(tmp.resolve("fabric")).resolve("fabricprobe.jar");
 			writeJar(fabricJar, "fabric.mod.json",
 					"{\"schemaVersion\":1,\"id\":\"fabricprobe\",\"version\":\"1.0.0\"}", "probe/fabric/RuleContainer");
-			ModPresence.publishFabric(new ForbricModDiscoverer().discoverJar(fabricJar));
+			// A universal jar in mods/: a MinecraftForge half carrying the annotated class beside a library Fabric
+			// half. Its Forge half is set aside and it runs as Fabric, so it too is listed for presence only.
+			Path universalJar = mods.resolve("uniprobe.jar");
+			Map<String, String> manifests = new LinkedHashMap<>();
+			manifests.put("META-INF/mods.toml", toml("uniprobe"));
+			manifests.put("fabric.mod.json", "{\"schemaVersion\":1,\"id\":\"uniprobe\",\"version\":\"1.0.0\"}");
+			writeJar(universalJar, manifests, "probe/uni/RuleContainer");
+			List<DiscoveredMod> fabricSide = new ArrayList<>(new ForbricModDiscoverer().discoverJar(fabricJar));
+			// What the Fabric side runs of the universal jar: its Fabric mod, not the Forge one discovery also reports.
+			new ForbricModDiscoverer().discoverJar(universalJar).stream()
+					.filter(mod -> mod.getEcosystem() == Ecosystem.FABRIC).forEach(fabricSide::add);
+			ModPresence.publishFabric(fabricSide);
 
 			Object list = seed(game, mods);
 
@@ -110,8 +130,18 @@ class PassiveSeederScanResultTest {
 
 			assertTrue(((Set<?>) call(scanOf(list, "fabricprobe"), "getAnnotations")).isEmpty(),
 					"a Fabric presence entry must not expose the annotations of a jar Fabric is running");
-			assertTrue(((Set<?>) call(scanOf(list, "forgeprobe"), "getAnnotations")).isEmpty(),
-					"a MinecraftForge entry must not expose its jar to NeoForge annotation walkers");
+			assertEquals(Ecosystem.FABRIC, MultiLoaderArbiter.ownerOf(universalJar));
+			assertTrue(((Set<?>) call(scanOf(list, "uniprobe"), "getAnnotations")).isEmpty(),
+					"a universal jar Fabric runs must not expose its set-aside MinecraftForge half to NeoForge "
+							+ "annotation walkers");
+
+			assertTrue(MultiLoaderArbiter.refused(forgeJar));
+			assertNull(call(list, "getModFileById", String.class, "forgeprobe"),
+					"a refused MinecraftForge-only jar is not seeded, not even for presence");
+			List<Object> ids = new ArrayList<>();
+			for (Object mod : (List<?>) call(list, "getMods")) ids.add(call(mod, "getModId"));
+			assertEquals(Set.of("neoprobe", "fabricprobe", "uniprobe"), Set.copyOf(ids));
+			assertEquals(3, ids.size(), "each mod once: " + ids);
 		}
 	}
 
@@ -246,8 +276,15 @@ class PassiveSeederScanResultTest {
 	/** A jar with one metadata file and, optionally, one class carrying a CLASS-retention {@code @probe.Rules}. */
 	private static void writeJar(Path jar, String metadataName, String metadata, String annotatedClass)
 			throws Exception {
+		writeJar(jar, Map.of(metadataName, metadata), annotatedClass);
+	}
+
+	/** The same, with one metadata file per loader half. */
+	private static void writeJar(Path jar, Map<String, String> metadata, String annotatedClass) throws Exception {
 		try (ZipOutputStream zip = new ZipOutputStream(Files.newOutputStream(jar))) {
-			PassiveSeederLoadingModListTest.put(zip, metadataName, metadata);
+			for (Map.Entry<String, String> file : metadata.entrySet()) {
+				PassiveSeederLoadingModListTest.put(zip, file.getKey(), file.getValue());
+			}
 			if (annotatedClass != null) {
 				zip.putNextEntry(new ZipEntry(annotatedClass + ".class"));
 				zip.write(annotated(annotatedClass));
