@@ -17,7 +17,7 @@ import net.forbric.kernel.classloading.ForbricClassLoader;
 import net.forbric.kernel.mixin.NativeGameReferences;
 
 /**
- * The staged merged base and both carriers as the game serves them: raw class files by resource path, and the native
+ * The staged merged base and its carriers as the game serves them: raw class files by resource path, and the native
  * reference index bound the way the kernel binds it at boot. What {@link NativeMergeShapeRepair} needs to prove a
  * merge delegate, so a test can ask the same proof the game asks. Hold {@code @ResourceLock("native-game-references")}
  * while one is open: binding is process-wide.
@@ -38,15 +38,17 @@ final class StagedGameClasses implements AutoCloseable {
 		return new StagedGameClasses(jars());
 	}
 
-	/** The merged base, the MinecraftForge carrier (its interop jar when staged) and the NeoForge carrier. */
+	/**
+	 * The base, the MinecraftForge carrier (its interop jar when staged) and the NeoForge carrier, in the order the
+	 * kernel owns them. The MinecraftForge carrier only when staged: the base and the NeoForge carrier are what every
+	 * staged root has, and a root without the Forge carrier (the genuine base's layout) is served as those two.
+	 */
 	static List<Path> jars() {
-		Path root = TestFixtures.stagedRoot();
-		Path merged = root.resolve("merged-base/patched-mc-merged-26.2.jar").normalize();
-		Path interop = root.resolve("merged-base/forge-runtime-interop.jar").normalize();
-		Path forge = Files.isRegularFile(interop) ? interop : root.resolve("forge-runtime/forge-runtime.jar").normalize();
-		Path neo = root.resolve("neoforge-runtime/neoforge-runtime.jar").normalize();
-		TestFixtures.requireFiles(Fixture.STAGED, "the merged base and both carriers", merged, forge, neo);
-		return List.of(merged, forge, neo);
+		Path merged = TestFixtures.stagedBase().normalize();
+		Path forge = TestFixtures.forgeCarrier().normalize();
+		Path neo = TestFixtures.neoCarrier().normalize();
+		TestFixtures.requireFiles(Fixture.STAGED, "the merged base and both carriers", merged, neo);
+		return Files.isRegularFile(forge) ? List.of(merged, forge, neo) : List.of(merged, neo);
 	}
 
 	/**

@@ -54,6 +54,14 @@ public final class TestFixtures {
 		MC_LIBRARIES("mc-libraries"),
 		/** A JDK that links the class-file 69 game. */
 		JAVA_25("java-25"),
+		/**
+		 * The MinecraftForge carrier under {@link #stagedRoot()} ({@link #FORGE_CARRIER_JAR}, or the merge's
+		 * {@link #FORGE_INTEROP_JAR}). Its own kind rather than part of {@link #STAGED}, because the stage is meant to
+		 * lose it: a root without it is the genuine NeoForge base's layout, {@code -Pforbric.hideForgeCarrier}
+		 * reproduces that root on a machine that has the carrier, and on such a root a test that needs MinecraftForge
+		 * must say so as a Forge skip, not fail a run that requires {@code staged}.
+		 */
+		FORGE_CARRIER("forge-carrier"),
 		/** Third-party mod jars and packs, under run/ or build/compat-inputs/. */
 		THIRD_PARTY("third-party"),
 		/** A test that only runs when asked for, such as a long soak or a live network probe. */
@@ -134,9 +142,18 @@ public final class TestFixtures {
 		throw new TestAbortedException(tag(kind) + what);
 	}
 
-	/** {@link #require(Fixture, boolean, String)} for files: every path must be a regular file. */
+	/**
+	 * {@link #require(Fixture, boolean, String)} for files: every path must be a regular file.
+	 *
+	 * <p>A missing MinecraftForge carrier ({@link #isForgeCarrier}) is a {@link Fixture#FORGE_CARRIER} skip whatever
+	 * {@code kind} the caller named, and is judged after every other file: about a hundred tests list the carrier
+	 * beside the base as one "staged" requirement, and on a root that has the base but not the carrier (the genuine
+	 * base's layout, or {@code -Pforbric.hideForgeCarrier}) that requirement is a Forge one. With nothing staged the
+	 * base is what is missing, so the skip still names {@code kind}.
+	 */
 	public static void requireFiles(Fixture kind, String what, Path... files) {
-		for (Path file : files) require(kind, Files.isRegularFile(file), what + ": " + file);
+		for (Path file : files) if (!isForgeCarrier(file)) require(kind, Files.isRegularFile(file), what + ": " + file);
+		for (Path file : files) if (isForgeCarrier(file)) require(Fixture.FORGE_CARRIER, Files.isRegularFile(file), what + ": " + file);
 	}
 
 	/** {@link #require(Fixture, boolean, String)} for a directory, such as a local mod pack. */
@@ -150,7 +167,7 @@ public final class TestFixtures {
 	 * the test, and skipping would hide exactly the drift a pinned fixture exists to catch.
 	 */
 	public static byte[] requireEntry(Fixture kind, Path jar, String entry) {
-		require(kind, Files.isRegularFile(jar), jar + " absent (reading " + entry + ")");
+		require(isForgeCarrier(jar) ? Fixture.FORGE_CARRIER : kind, Files.isRegularFile(jar), jar + " absent (reading " + entry + ")");
 		try (ZipFile zip = new ZipFile(jar.toFile())) {
 			ZipEntry found = zip.getEntry(entry);
 			if (found == null) throw new AssertionFailedError("content drift: " + jar + " has no " + entry);
@@ -173,6 +190,89 @@ public final class TestFixtures {
 		String old = System.getenv("FORBRIC_OLD");
 		if (old != null && !old.isBlank()) return Path.of(old, "run");
 		return Path.of(System.getProperty("user.dir"), "..", "forbric-loader", "run").normalize();
+	}
+
+	/**
+	 * The game base under {@link #stagedRoot()}: the jar the game side compiles against and the kernel launches as
+	 * {@code --gameJar}. Today that is the merged base (vanilla + MinecraftForge + NeoForge patches); switching the
+	 * base to the genuine NeoForge jar is this one constant, not the ~265 tests that read it. Relative, for a test
+	 * that resolves it against a root of its own.
+	 */
+	public static final String BASE_JAR = "merged-base/patched-mc-merged-26.2.jar";
+
+	/**
+	 * The genuine NeoForge-patched game, NFRT's {@code gameJarNoRecomp}: what tools/dev.py stages beside the merged base
+	 * as the merge's NeoForge input, and the base the kernel is moving to. Relative, like {@link #BASE_JAR}.
+	 */
+	public static final String GENUINE_BASE_JAR = "neoforge-patched/patched-mc-neoforge-26.2.jar";
+
+	/** The NeoForge carrier, the one runtime jar every staged root has. */
+	public static final String NEO_CARRIER_JAR = "neoforge-runtime/neoforge-runtime.jar";
+
+	/** The MinecraftForge carrier as assembled. */
+	public static final String FORGE_CARRIER_JAR = "forge-runtime/forge-runtime.jar";
+
+	/** The MinecraftForge carrier as the merge rewrote it to link against the merged base; launched in preference. */
+	public static final String FORGE_INTEROP_JAR = "merged-base/forge-runtime-interop.jar";
+
+	/** {@link #BASE_JAR} under {@link #stagedRoot()}. */
+	public static Path stagedBase() {
+		return stagedRoot().resolve(BASE_JAR);
+	}
+
+	/** {@link #GENUINE_BASE_JAR} under {@link #stagedRoot()}. */
+	public static Path genuineBase() {
+		return stagedRoot().resolve(GENUINE_BASE_JAR);
+	}
+
+	/** {@link #NEO_CARRIER_JAR} under {@link #stagedRoot()}. */
+	public static Path neoCarrier() {
+		return stagedRoot().resolve(NEO_CARRIER_JAR);
+	}
+
+	/**
+	 * The MinecraftForge carrier the kernel would own under {@link #stagedRoot()}: the interop jar when staged, else
+	 * the assembled one, which is also the path returned when neither is there. Never throws: tests read it into
+	 * static fields, and a skip from a class initialiser is an error, not a skip. {@link #requireFiles} judges it as
+	 * {@link Fixture#FORGE_CARRIER}.
+	 */
+	public static Path forgeCarrier() {
+		Path interop = stagedRoot().resolve(FORGE_INTEROP_JAR);
+		return Files.isRegularFile(interop) ? interop : stagedRoot().resolve(FORGE_CARRIER_JAR);
+	}
+
+	/** Whether a MinecraftForge carrier is staged at all. */
+	public static boolean forgeCarrierStaged() {
+		return Files.isRegularFile(forgeCarrier());
+	}
+
+	/** Skips (or fails, when {@code forge-carrier} is required) a test that cannot run without MinecraftForge. */
+	public static void requireForgeCarrier(String what) {
+		require(Fixture.FORGE_CARRIER, forgeCarrierStaged(), what + ": " + forgeCarrier());
+	}
+
+	/**
+	 * Whether {@code file} is a MinecraftForge carrier artifact: anything in a {@code forge-runtime/} directory (the
+	 * carrier and the Forge canary built beside it) or the merge's interop copy. Judged by name, not against
+	 * {@link #stagedRoot()}, because tests build these paths from roots of their own ({@code FORBRIC_OLD}, a
+	 * {@code RUN} constant, a canary's parent directory).
+	 */
+	public static boolean isForgeCarrier(Path file) {
+		Path name = file.getFileName();
+		if (name == null) return false;
+		if (name.toString().equals(Path.of(FORGE_INTEROP_JAR).getFileName().toString())) return true;
+		Path parent = file.normalize().getParent();
+		return parent != null && parent.getFileName() != null && parent.getFileName().toString().equals("forge-runtime");
+	}
+
+	/**
+	 * Whether this run hides the MinecraftForge carrier on purpose ({@code -Pforbric.hideForgeCarrier}, the
+	 * {@code ci-prepared-noforge} profile). Gradle then hands the tests a {@link #stagedRoot()} that mirrors the real
+	 * one without {@code forge-runtime/} or {@link #FORGE_INTEROP_JAR}, so every path built from it already sees the
+	 * carrier absent; this is for a test that has to tell a hidden carrier from a machine that never staged one.
+	 */
+	public static boolean forgeCarrierHidden() {
+		return Boolean.getBoolean("forbric.hideForgeCarrier");
 	}
 
 	/**
@@ -208,7 +308,7 @@ public final class TestFixtures {
     private static final java.util.Map<String,Boolean> NATIVE_INPUT_MATCHES=new java.util.concurrent.ConcurrentHashMap<>();
     public static Path forgeMergeInput() {
         Path staged=stagedRoot().resolve("forge-patched/patched-mc-forge-26.2.jar");
-        Path merged=stagedRoot().resolve("merged-base/patched-mc-merged-26.2.jar");
+        Path merged=stagedBase();
         Path launcher=minecraftDir().resolve("libraries/net/forbric/patched-mc-forge/26.2-65.0.1/patched-mc-forge-26.2-65.0.1.jar");
         try {
             if(Files.isRegularFile(merged))try(ZipFile jar=new ZipFile(merged.toFile())){
