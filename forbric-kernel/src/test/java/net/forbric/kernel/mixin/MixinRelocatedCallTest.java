@@ -39,6 +39,28 @@ class MixinRelocatedCallTest {
 		assertEquals(0, MixinRelocatedCall.adapt(mixin, name -> stack), "a second pass changes nothing");
 	}
 
+	/**
+	 * The genuine NeoForge base: its useOn posts ITEM_AFTER_BLOCK itself and makes the call in the same two places
+	 * MinecraftForge's does, so fabric-api's wrap had nothing to bind until ItemUseOnInjector routed NeoForge's body too.
+	 */
+	@Test void onTheGenuineBaseFabricsUseOnWrapSelectsTheRelay() throws Exception {
+		byte[] raw = net.forbric.kernel.transform.ChainReferences.read(net.forbric.kernel.transform.ChainReferences.genuineJars(),
+				"net/minecraft/world/item/ItemStack");
+		ClassNode genuine = node(raw), mixin = fabric();
+		assertEquals(0, MixinRelocatedCall.adapt(mixin, name -> genuine), "premise: NeoForge's body alone has no relay to move to");
+		assertEquals(List.of("useOn"), selectors(mixin, "handleUseOnEvent"));
+		ClassNode stack = node(new ItemUseOnInjector().transform("net.minecraft.world.item.ItemStack", raw, null));
+		assertEquals(1, MixinRelocatedCall.adapt(mixin, name -> stack));
+		assertEquals(List.of(RELAY), selectors(mixin, "handleUseOnEvent"));
+		assertEquals(List.of("use"), selectors(mixin, "handleUseEvent"), "the use wrap binds in use and is not touched");
+	}
+
+	private static ClassNode node(byte[] bytes) {
+		ClassNode node = new ClassNode();
+		new ClassReader(bytes).accept(node, 0);
+		return node;
+	}
+
 	@Test void nothingMovesWithoutTheRelay() throws Exception {
 		ClassNode mixin = fabric(), merged = merged(false);
 		assertEquals(0, MixinRelocatedCall.adapt(mixin, name -> merged), "the transformer did not run: no proof");

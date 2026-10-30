@@ -45,12 +45,26 @@ import org.objectweb.asm.tree.VarInsnNode;
  *       {@code onPlaceItemIntoWorld} itself read the item from.</li>
  * </ul>
  *
- * <p>Each edit checks the reviewed shape and declines on anything else: {@code useOn} must be MinecraftForge's (no
- * {@code Item.useOn}, no {@code UseItemOnBlockEvent}, one {@code onPlaceItemIntoWorld}, one lambda whose body is
+ * <p>NeoForge's own body — the genuine base's, which Stage 4 switches to — already posts {@code ITEM_AFTER_BLOCK} at its
+ * head and otherwise is MinecraftForge's body with NeoForge's hook: one {@code onPlaceItemIntoWorld} and the same client
+ * lambda. Fabric's wrap is lost there just the same, so it is routed the same way; only the post is not put back, because
+ * it is already there and a second one would fire every listener twice.
+ *
+ * <p>The relay and its bridge are added to every {@code ItemStack}, whatever its body. {@link #relayServerCall} points each
+ * family's {@code onPlaceItemIntoWorld} at the bridge without seeing {@code ItemStack} — the two classes are transformed
+ * whenever each happens to load — so the only way the two halves cannot come apart is for the bridge never to depend on
+ * {@code useOn}'s shape. Both are pass-throughs to {@code Item.useOn}: on a body this does not route, the server's call
+ * reaches the item through them unchanged and nothing else calls them, and MixinRelocatedCall moves no injector, because
+ * {@code useOn} still makes the call. Before this the bridge came only with the {@code useOn} edit, and on NeoForge's body,
+ * where that edit stood down, {@code CommonHooks} was still pointed at it: a {@code NoSuchMethodError} on every item used
+ * on a block.
+ *
+ * <p>Each {@code useOn} edit checks the reviewed shape and declines on anything else: {@code useOn} must be
+ * MinecraftForge's or NeoForge's (no {@code Item.useOn}, one {@code onPlaceItemIntoWorld}, one lambda whose body is
  * exactly {@code getItem().useOn(context)}); {@code onPlaceItemIntoWorld} must make exactly one {@code Item.useOn}
  * call. Both families' {@code onPlaceItemIntoWorld} are relayed, NeoForge's because useOn calls it and MinecraftForge's
- * because a mod may call it itself. On NeoForge's or vanilla's body nothing is changed. {@code -Dforbric.itemUseOn=off}
- * leaves all three classes alone.
+ * because a mod may call it itself — MinecraftForge's is a HEDGE, there only while its carrier is. On vanilla's body
+ * {@code useOn} is not changed. {@code -Dforbric.itemUseOn=off} leaves all three classes alone.
  */
 public final class ItemUseOnInjector implements ClassTransformer {
 	public static final String PROPERTY = "forbric.itemUseOn";
@@ -82,8 +96,46 @@ public final class ItemUseOnInjector implements ClassTransformer {
 				new AnchorSet.Anchor(STACK, AnchorSet.Severity.REQUIRED, "NeoForge's UseItemOnBlockEvent ITEM_AFTER_BLOCK phase "
 						+ "and fabric-api's ItemEvents.USE_ON never fire"),
 				new AnchorSet.Anchor(NEO_HOOKS, AnchorSet.Severity.REQUIRED, "fabric-api's ItemEvents.USE_ON never fires on a server"),
-				new AnchorSet.Anchor(FORGE_HOOKS, AnchorSet.Severity.REQUIRED, "fabric-api's ItemEvents.USE_ON never fires when a mod "
+				// MinecraftForge's hooks exist only while its carrier does; NeoForge's genuine base has none to relay.
+				new AnchorSet.Anchor(FORGE_HOOKS, AnchorSet.Severity.HEDGE, "fabric-api's ItemEvents.USE_ON never fires when a mod "
 						+ "calls MinecraftForge's onPlaceItemIntoWorld itself"));
+	}
+
+	/** The {@code useOn} edit on its own line: the class anchor alone is hit by the relay, which always goes in. */
+	static final String ROUTED_CLAIM = "forbric-item-use-on#useOnCallRouted";
+
+	@Override public List<Claim> claims() {
+		if (!enabled()) return List.of();
+		return List.of(new Claim(ROUTED_CLAIM, AnchorSet.of(new AnchorSet.Anchor(STACK, AnchorSet.Severity.REQUIRED,
+				"fabric-api's ItemEvents.USE_ON never fires, and on MinecraftForge's body NeoForge's ITEM_AFTER_BLOCK phase neither"))));
+	}
+
+	@Override public byte[] transform(String className, byte[] bytes, TransformContext context, ClaimReporter reporter) {
+		byte[] result = transform(className, bytes, context);
+		if (enabled() && STACK.equals(className) && result != null && result.length > 0 && routed(result)) reporter.hit(ROUTED_CLAIM);
+		return result;
+	}
+
+	/**
+	 * Whether {@code useOn} makes no {@code Item.useOn} call itself and its client lambda reaches the item through the
+	 * relay: the end state, whichever pass made it.
+	 */
+	static boolean routed(byte[] stackBytes) {
+		ClassNode stack = new ClassNode();
+		new ClassReader(stackBytes).accept(stack, 0);
+		MethodNode useOn = method(stack, "useOn", USE_ON_DESC);
+		if (useOn == null || method(stack, RELAY, RELAY_DESC) == null) return false;
+		boolean throughRelay = false;
+		for (AbstractInsnNode insn : useOn.instructions) {
+			if (insn instanceof MethodInsnNode call && call.owner.equals(ITEM) && call.name.equals("useOn")) return false;
+			MethodNode lambda = insn instanceof InvokeDynamicInsnNode indy ? implementation(stack, indy) : null;
+			if (lambda == null) continue;
+			for (AbstractInsnNode inner : lambda.instructions) {
+				throughRelay |= inner instanceof MethodInsnNode call && call.owner.equals(STACK_INTERNAL) && call.name.equals(RELAY)
+						&& call.desc.equals(RELAY_DESC);
+			}
+		}
+		return throughRelay;
 	}
 
 	@Override public byte[] transform(String className, byte[] bytes, TransformContext context) {
@@ -96,55 +148,80 @@ public final class ItemUseOnInjector implements ClassTransformer {
 		if (changed <= 0) return bytes;
 		ClassWriter writer = new ClassWriter(ClassWriter.COMPUTE_MAXS);
 		node.accept(writer);
-		ForbricLog.info(stack
-				? "[Forbric/Item] ItemStack.useOn posts NeoForge's UseItemOnBlockEvent (ITEM_AFTER_BLOCK) again, and its "
-						+ "Item.useOn call is one Fabric's ItemEvents.USE_ON can wrap"
-				: "[Forbric/Item] " + className.substring(className.lastIndexOf('.') + 1) + ".onPlaceItemIntoWorld calls Item.useOn "
-						+ "through ItemStack, where Fabric's ItemEvents.USE_ON wraps it");
+		if (!stack) {
+			ForbricLog.info("[Forbric/Item] " + className.substring(className.lastIndexOf('.') + 1) + ".onPlaceItemIntoWorld calls Item.useOn "
+					+ "through ItemStack, where Fabric's ItemEvents.USE_ON wraps it");
+		} else if (changed == POSTED_AND_ROUTED) {
+			ForbricLog.info("[Forbric/Item] ItemStack.useOn posts NeoForge's UseItemOnBlockEvent (ITEM_AFTER_BLOCK) again, and its "
+					+ "Item.useOn call is one Fabric's ItemEvents.USE_ON can wrap");
+		} else if (changed == ROUTED) {
+			ForbricLog.info("[Forbric/Item] ItemStack.useOn is NeoForge's, which posts UseItemOnBlockEvent (ITEM_AFTER_BLOCK) itself; "
+					+ "its Item.useOn call is now one Fabric's ItemEvents.USE_ON can wrap");
+		}
 		return writer.toByteArray();
 	}
 
-	/** ItemStack: the NeoForge post at the head of useOn, the relay, its static bridge, and the lambda through the relay. */
+	/** {@link #adaptStack}: only the relay and its bridge went in; {@code useOn} is as it was. */
+	static final int RELAY_ONLY = 1;
+	/** {@link #adaptStack}: NeoForge's body, which posts its event itself; its lambda now calls the relay. */
+	static final int ROUTED = 2;
+	/** {@link #adaptStack}: MinecraftForge's body; NeoForge's post went in at its head and its lambda calls the relay. */
+	static final int POSTED_AND_ROUTED = 3;
+
+	/**
+	 * ItemStack: the relay and its static bridge always; then, on MinecraftForge's or NeoForge's body, the lambda
+	 * through the relay, and on MinecraftForge's the NeoForge post at the head of useOn. Returns 0 when already done,
+	 * else {@link #RELAY_ONLY}, {@link #ROUTED} or {@link #POSTED_AND_ROUTED}.
+	 */
 	static int adaptStack(ClassNode stack) {
+		if (method(stack, RELAY, RELAY_DESC) != null) return 0;   // already done
+		stack.methods.add(relay());
+		stack.methods.add(bridge());
 		MethodNode useOn = method(stack, "useOn", USE_ON_DESC);
 		if (useOn == null) return declined("ItemStack.useOn(UseOnContext) is missing");
-		if (method(stack, RELAY, RELAY_DESC) != null) return 0;   // already done
 		MethodNode lambda = null;
 		int placeCalls = 0;
+		boolean posted = false;
 		for (AbstractInsnNode insn : useOn.instructions) {
 			if (insn instanceof MethodInsnNode call) {
-				if (call.owner.equals(ITEM) && call.name.equals("useOn")) return 0;   // vanilla's or a vanilla-shaped body
+				if (call.owner.equals(ITEM) && call.name.equals("useOn")) return RELAY_ONLY;   // vanilla's or a vanilla-shaped body
 				if (call.name.equals("onPlaceItemIntoWorld")) placeCalls++;
-				if (call.owner.equals(EVENT)) return 0;                            // NeoForge's body
+				if (call.owner.equals(EVENT)) posted = true;                                      // NeoForge's body
 			}
-			if (insn instanceof TypeInsnNode type && type.desc.equals(EVENT)) return 0;
+			if (insn instanceof TypeInsnNode type && type.desc.equals(EVENT)) posted = true;
 			if (insn instanceof InvokeDynamicInsnNode indy) {
 				if (lambda != null) return declined("ItemStack.useOn makes more than one lambda");
 				lambda = implementation(stack, indy);
 				if (lambda == null) return declined("ItemStack.useOn's lambda is not one of its own methods");
 			}
 		}
-		if (placeCalls != 1 || lambda == null) return declined("ItemStack.useOn is not MinecraftForge's reviewed body");
-		for (AbstractInsnNode insn : useOn.instructions) {
-			if (insn.getOpcode() >= 0) break;
-			if (insn instanceof FrameNode) return declined("ItemStack.useOn's first instruction is a branch target");
+		if (placeCalls != 1 || lambda == null) {
+			return declined("ItemStack.useOn is not MinecraftForge's or NeoForge's reviewed body");
+		}
+		if (!posted) {
+			for (AbstractInsnNode insn : useOn.instructions) {
+				if (insn.getOpcode() >= 0) break;
+				if (insn instanceof FrameNode) return declined("ItemStack.useOn's first instruction is a branch target");
+			}
 		}
 		MethodInsnNode relayed = onlyUseOnCall(lambda);
 		if (relayed == null || !lambdaShape(lambda, relayed)) return declined("ItemStack.useOn's lambda is not getItem().useOn(context)");
 
-		stack.methods.add(relay());
-		stack.methods.add(bridge());
 		lambda.instructions.insert(new VarInsnNode(Opcodes.ALOAD, 0));
 		lambda.instructions.set(relayed, new MethodInsnNode(Opcodes.INVOKEVIRTUAL, STACK_INTERNAL, RELAY, RELAY_DESC, false));
+		if (posted) return ROUTED;
 		useOn.instructions.insert(neoForgePost());
-		return 1;
+		return POSTED_AND_ROUTED;
 	}
 
-	/** Either family's hooks: onPlaceItemIntoWorld's one Item.useOn call goes through ItemStack's static bridge. */
+	/**
+	 * Either family's hooks: onPlaceItemIntoWorld's one Item.useOn call goes through ItemStack's static bridge — which
+	 * {@link #adaptStack} adds to every ItemStack, so this edit never points at a member the game lacks.
+	 */
 	static int relayServerCall(ClassNode hooks) {
 		String owner = hooks.name.substring(hooks.name.lastIndexOf('/') + 1);
 		MethodNode place = method(hooks, "onPlaceItemIntoWorld", USE_ON_DESC);
-		if (place == null) return declined(owner + ".onPlaceItemIntoWorld(UseOnContext) is missing");
+		if (place == null) return hooksDeclined(owner, "there is no onPlaceItemIntoWorld(UseOnContext)");
 		List<MethodInsnNode> calls = new ArrayList<>();
 		for (AbstractInsnNode insn : place.instructions) {
 			if (!(insn instanceof MethodInsnNode call)) continue;
@@ -152,7 +229,7 @@ public final class ItemUseOnInjector implements ClassTransformer {
 			if (call.owner.equals(ITEM) && call.name.equals("useOn") && call.desc.equals(USE_ON_DESC)) calls.add(call);
 		}
 		if (calls.size() != 1 || calls.getFirst().getOpcode() != Opcodes.INVOKEVIRTUAL) {
-			return declined(owner + ".onPlaceItemIntoWorld does not make exactly one Item.useOn call");
+			return hooksDeclined(owner, "it does not make exactly one Item.useOn call");
 		}
 		place.instructions.set(calls.getFirst(), new MethodInsnNode(Opcodes.INVOKESTATIC, STACK_INTERNAL, BRIDGE, RELAY_DESC, false));
 		return 1;
@@ -247,9 +324,17 @@ public final class ItemUseOnInjector implements ClassTransformer {
 				&& real.get(4).getOpcode() == Opcodes.ARETURN;
 	}
 
+	/** A {@code useOn} edit stood down; the relay and bridge, already added, still go in. */
 	private static int declined(String reason) {
 		ForbricLog.warn("[Forbric/Item] left ItemStack.useOn as merged: %s — NeoForge's ITEM_AFTER_BLOCK phase and Fabric's "
 				+ "ItemEvents.USE_ON stay silent", reason);
+		return RELAY_ONLY;
+	}
+
+	/** {@link #relayServerCall} stood down: nothing in the hooks class changes. */
+	private static int hooksDeclined(String owner, String reason) {
+		ForbricLog.warn("[Forbric/Item] left %s.onPlaceItemIntoWorld as it is: %s — Fabric's ItemEvents.USE_ON stays silent "
+				+ "when it runs", owner, reason);
 		return -1;
 	}
 
