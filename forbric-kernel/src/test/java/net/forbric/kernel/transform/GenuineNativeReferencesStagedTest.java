@@ -108,7 +108,7 @@ class GenuineNativeReferencesStagedTest {
 
 	/** The staged merged base, open; skips like the genuine one when it is not staged. */
 	private static ZipFile merged() throws IOException {
-		Path merged = TestFixtures.stagedBase();
+		Path merged = TestFixtures.mergedBase();
 		TestFixtures.requireFiles(Fixture.STAGED, "the merged base whose embedded NEOFORGE index is the old evidence", merged);
 		return new ZipFile(merged.toFile());
 	}

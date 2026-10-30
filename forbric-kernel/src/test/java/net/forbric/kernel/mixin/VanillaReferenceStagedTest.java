@@ -37,7 +37,7 @@ class VanillaReferenceStagedTest {
 			"net/minecraft/world/level/block/state/BlockBehaviour");
 
 	private static Path merged() {
-		Path merged = TestFixtures.stagedBase();
+		Path merged = TestFixtures.mergedBase();
 		TestFixtures.requireFiles(Fixture.STAGED, "the staged merged base", merged);
 		try (ZipFile zip = new ZipFile(merged.toFile())) {
 			TestFixtures.require(Fixture.STAGED, zip.getEntry(FABRIC + "index.tsv") != null,
