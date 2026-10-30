@@ -314,6 +314,7 @@ class DevelopmentWorkflowTest(unittest.TestCase):
         (forge / 'assets/live/setup_probe.txt').write_text('probe')
         (neo / 'META-INF').mkdir()
         (neo / 'META-INF/neoforge.mods.toml').write_text('modLoader="javafml"')
+        (neo / 'forbricneolive.mixins.json').write_text('{}')
         # What an earlier prepare left must not survive in either place.
         (stage / 'livemod-src/stale').mkdir(parents=True)
 
@@ -326,7 +327,10 @@ class DevelopmentWorkflowTest(unittest.TestCase):
         self.assertFalse({'live/Probe.java', 'notes.txt'} & names)
         with zipfile.ZipFile(stage / 'neoforge-runtime/forbricneolive.jar') as archive:
             names = set(archive.namelist())
-        self.assertTrue({'live/Probe.class', 'META-INF/neoforge.mods.toml', 'data/live/probe.json'} <= names, names)
+        self.assertTrue({'live/Probe.class', 'META-INF/neoforge.mods.toml', 'forbricneolive.mixins.json',
+                         'data/live/probe.json'} <= names, names)
+        # Each canary carries only its own mixin config.
+        self.assertNotIn('forbriclive.mixins.json', names)
         self.assertEqual((stage / 'livemod-src/live/Probe.java').read_text(), (forge / 'live/Probe.java').read_text())
         self.assertFalse((stage / 'livemod-src/stale').exists())
         self.assertTrue((stage / 'livemod-src-neoforge/data/live/probe.json').is_file())

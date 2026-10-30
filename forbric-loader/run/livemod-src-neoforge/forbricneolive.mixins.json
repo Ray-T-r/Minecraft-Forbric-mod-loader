@@ -1,0 +1,9 @@
+{
+  "required": true,
+  "package": "forbric.live.neoforge.mixin",
+  "compatibilityLevel": "JAVA_21",
+  "plugin": "forbric.live.neoforge.ForbricNeoLiveMixinPlugin",
+  "mixins": [],
+  "client": [],
+  "injectors": { "defaultRequire": 0 }
+}

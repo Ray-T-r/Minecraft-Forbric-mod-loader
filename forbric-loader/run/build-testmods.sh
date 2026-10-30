@@ -54,8 +54,10 @@ build_neo() { # <src-dir> <out-jar>
   classes="$WORK/testmod-classes-$(basename "$out" .jar)"
   rm -rf "$classes"; mkdir -p "$classes/META-INF"
   find "$src" -name '*.java' -print0 | xargs -0 javac --release 21 -proc:none \
-    -cp "$neo_rt:$neo_mc:$ANNOT:$VLIBS" -d "$classes"
+    -cp "$neo_rt:$neo_mc:$ANNOT:$MIXIN:$VLIBS" -d "$classes"
   cp "$src/META-INF/neoforge.mods.toml" "$classes/META-INF/neoforge.mods.toml"
+  # Its mixin config at the jar root too, for the same reason as the Forge canary's above.
+  [ -f "$src/forbricneolive.mixins.json" ] && cp "$src/forbricneolive.mixins.json" "$classes/"
   if [ -d "$src/data" ]; then cp -R "$src/data" "$classes/"; fi
   # assets/ too: the client canary reads one of its OWN assets from client setup, which is the shape that
   # found the resource-manager timing gap. Without this the file is not in the jar and the probe is vacuous.
