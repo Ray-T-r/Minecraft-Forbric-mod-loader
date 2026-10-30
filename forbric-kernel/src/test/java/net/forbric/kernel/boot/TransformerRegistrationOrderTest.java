@@ -158,6 +158,22 @@ class TransformerRegistrationOrderTest {
 		return out;
 	}
 
+	/**
+	 * The twins' vanilla source is the one VanillaMemberTwinInjectorTest proves on the genuine base: built by
+	 * {@code VanillaMemberTwinInjector.vanillaReferences}, which reads through the launch's configured sources. A reader
+	 * built here from the game's resources alone reads only an embedded index, so on a base that embeds none every copied
+	 * body would stand down while every test of the factory stayed green.
+	 */
+	@Test
+	void theTwinsReadVanillaThroughTheLaunchsNativeReferenceSources() throws Exception {
+		boolean found = false;
+		for (AbstractInsnNode insn : launch().instructions) {
+			found |= insn instanceof MethodInsnNode call && call.getOpcode() == Opcodes.INVOKESTATIC
+					&& call.owner.equals("net/forbric/kernel/transform/VanillaMemberTwinInjector") && call.name.equals("vanillaReferences");
+		}
+		assertTrue(found, "launch() no longer builds the vanilla member twins' source with VanillaMemberTwinInjector.vanillaReferences");
+	}
+
 	private static MethodNode launch() throws Exception {
 		Path compiled = Path.of(System.getProperty("user.dir"), "build", "classes", "java", "main",
 				"net", "forbric", "kernel", "boot", "KernelBoot.class");

@@ -18,6 +18,7 @@ import java.util.zip.ZipInputStream;
 
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.parallel.ResourceLock;
 import org.objectweb.asm.AnnotationVisitor;
 import org.objectweb.asm.ClassReader;
 import org.objectweb.asm.ClassWriter;
@@ -38,6 +39,8 @@ import org.objectweb.asm.tree.analysis.BasicVerifier;
 import net.forbric.kernel.TestFixtures;
 import net.forbric.kernel.TestFixtures.Fixture;
 import net.forbric.kernel.mixin.MixinFit;
+import net.forbric.kernel.mixin.NativeGameReferences;
+import net.forbric.kernel.mixin.NativeReferenceSources;
 
 /**
  * The vanilla members only the merged base's MinecraftForge half kept, added back where a base lacks them: nothing on
@@ -46,9 +49,9 @@ import net.forbric.kernel.mixin.MixinFit;
  * that name them bind — the real fabric-api and balm mixins where one exists, a fixture mixin for the rest.
  */
 class VanillaMemberTwinInjectorTest {
-	private static final Path MERGED = TestFixtures.stagedRoot().resolve("merged-base/patched-mc-merged-26.2.jar").normalize();
-	private static final Path GENUINE = TestFixtures.stagedRoot().resolve("neoforge-patched/patched-mc-neoforge-26.2.jar").normalize();
-	private static final Path NEO_RUNTIME = TestFixtures.stagedRoot().resolve("neoforge-runtime/neoforge-runtime.jar").normalize();
+	private static final Path MERGED = TestFixtures.stagedBase().normalize();
+	private static final Path GENUINE = TestFixtures.genuineBase().normalize();
+	private static final Path NEO_RUNTIME = TestFixtures.neoCarrier().normalize();
 	private static final Path BALM = Path.of(System.getProperty("forbric.balmFabricJar",
 			Path.of("run/client-popular/mods/balm-fabric-26.2-26.2.0.8.jar").toString()));
 
@@ -172,6 +175,60 @@ class VanillaMemberTwinInjectorTest {
 		}
 	}
 
+	/**
+	 * The vanilla source KernelBoot builds ({@link VanillaMemberTwinInjector#vanillaReferences} over the game's resources)
+	 * on the genuine base, which embeds no native-reference index, launched as KernelBoot launches it: its sources
+	 * configured from the base and a vanilla-reference sidecar the installer's own writer built. Every copied body lands
+	 * with vanilla's original, and the payload-codec funnel finds vanilla's {@code codec} overload to route NeoForge's
+	 * through. Without the launch's sources — a reader of the game's resources alone, which is what KernelBoot built
+	 * before — none of them lands and the funnel's REQUIRED anchor has nothing to route through.
+	 */
+	@Test @ResourceLock("native-game-references")
+	void kernelBootsVanillaSourceGivesEveryCopiedBodyItsVanillaOriginalOnTheGenuineBase() {
+		Function<String, byte[]> genuine = reader(GENUINE);
+		Function<String, byte[]> carrier = reader(NEO_RUNTIME);
+		// The game's resources as the loader serves them: the base, then its carrier.
+		Function<String, byte[]> gameResources = path -> {
+			byte[] bytes = genuine.apply(path);
+			return bytes != null ? bytes : carrier.apply(path);
+		};
+		assertNull(gameResources.apply("META-INF/forbric/native-reference/FABRIC/index.tsv"),
+				"premise: neither the genuine base nor its carrier embeds a FABRIC index");
+		List<VanillaMemberTwinInjector.Row> copied = VanillaMemberTwinInjector.ROWS.stream()
+				.filter(row -> row.kind() == VanillaMemberTwinInjector.Kind.VANILLA_BODY).toList();
+		assertEquals(5, copied.size(), "premise: five rows copy vanilla's body");
+		Path sidecar = TestFixtures.vanillaReference(GENUINE);
+		Function<String, ClassNode> vanillaJar = vanilla();
+		String payload = VanillaMemberTwinInjector.PAYLOAD;
+		try {
+			NativeGameReferences.configure(NativeReferenceSources.open(GENUINE, sidecar));
+			VanillaMemberTwinInjector twins = new VanillaMemberTwinInjector(VanillaMemberTwinInjector.vanillaReferences(gameResources));
+			Map<String, ClassNode> twinned = new HashMap<>();
+			for (String owner : owners()) twinned.put(owner, node(twins.transform(owner.replace('/', '.'), genuine.apply(owner + ".class"), null)));
+			for (VanillaMemberTwinInjector.Row row : copied) {
+				MethodNode copy = VanillaMemberTwinInjector.method(twinned.get(row.owner()), row.name(), row.desc());
+				assertNotNull(copy, row.owner() + "." + row.name() + row.desc() + " lands from the sidecar");
+				MethodNode original = VanillaMemberTwinInjector.method(vanillaJar.apply(row.owner()), row.name(), row.desc());
+				assertEquals(opcodes(original), opcodes(copy), row.name() + " is vanilla's own body");
+			}
+			assertEquals(VanillaMemberTwinInjector.ROWS.size(), twins.twinsAdded(), "and every other row with them");
+			ClassNode funnelled = node(twins.transform(payload.replace('/', '.'), genuine.apply(payload + ".class"), null));
+			assertTrue(PayloadCodecFunnelInjector.repair(funnelled), "the funnel finds vanilla's codec overload");
+
+			NativeGameReferences.configure(null);
+			VanillaMemberTwinInjector bare = new VanillaMemberTwinInjector(VanillaMemberTwinInjector.vanillaReferences(gameResources));
+			for (VanillaMemberTwinInjector.Row row : copied) {
+				ClassNode after = node(bare.transform(row.owner().replace('/', '.'), genuine.apply(row.owner() + ".class"), null));
+				assertNull(VanillaMemberTwinInjector.method(after, row.name(), row.desc()),
+						"premise: over the game's resources alone " + row.name() + " has no vanilla body to copy");
+			}
+			assertFalse(PayloadCodecFunnelInjector.repair(node(bare.transform(payload.replace('/', '.'), genuine.apply(payload + ".class"), null))),
+					"premise: and the funnel has no vanilla overload to route through");
+		} finally {
+			NativeGameReferences.configure(null);
+		}
+	}
+
 	@Test void theSwitchLeavesTheBaseAlone() {
 		byte[] raw = reader(GENUINE).apply(VanillaMemberTwinInjector.HUD + ".class");
 		System.setProperty(VanillaMemberTwinInjector.PROPERTY, "off");
@@ -190,6 +247,34 @@ class VanillaMemberTwinInjectorTest {
 	 * each anchor — on the genuine base as the chain leaves it with and without the twins.
 	 */
 	@Test void theMixinsThatNameTheTwinsBindOnTheGenuineBase() throws Exception {
+		Map<String, byte[]> mixins = new java.util.LinkedHashMap<>();
+		mixins.put("fabric-rendering GuiRendererMixin", fabricApiClass("fabric-rendering-v1", "net/fabricmc/fabric/mixin/client/rendering/GuiRendererMixin"));
+		mixins.put("fabric-rendering HudMixin", fabricApiClass("fabric-rendering-v1", "net/fabricmc/fabric/mixin/client/rendering/HudMixin"));
+		mixins.put("fixture AxeItem HEAD", headMixin(VanillaMemberTwinInjector.AXE, "evaluateNewBlockState",
+				VanillaMemberTwinInjector.ROWS.stream().filter(r -> r.owner().equals(VanillaMemberTwinInjector.AXE)).findFirst().orElseThrow().desc(), false));
+		mixins.put("fixture CustomPacketPayload$1 constructor RETURN", headMixin(VanillaMemberTwinInjector.PAYLOAD_CODEC, "<init>",
+				"(Ljava/util/Map;Lnet/minecraft/network/protocol/common/custom/CustomPacketPayload$FallbackProvider;)V", true));
+		mixins.put("fixture ParticleResources.getProviders HEAD", headMixin(VanillaMemberTwinInjector.PARTICLE_RESOURCES, "getProviders",
+				"()Lit/unimi/dsi/fastutil/ints/Int2ObjectMap;", false));
+		assertTheTwinsResolve(mixins);
+	}
+
+	/**
+	 * balm-fabric's wrap of the moisture read in {@code CropBlock.getGrowthSpeed(Block, …)}, the one consumer of that twin:
+	 * its own test, so a machine without the jar skips it by name ({@code [fixture:third-party]}) instead of passing the
+	 * test above without ever judging it.
+	 */
+	@Test void balmsCropMixinBindsOnTheGenuineBase() throws Exception {
+		TestFixtures.requireFiles(Fixture.THIRD_PARTY, "balm-fabric, whose FabricCropBlockMixin wraps CropBlock.getGrowthSpeed", BALM);
+		assertTheTwinsResolve(Map.of("balm FabricCropBlockMixin", jarClass(BALM, "net/blay09/mods/balm/fabric/internal/mixin/FabricCropBlockMixin")));
+	}
+
+	/**
+	 * Each of {@code mixins} judged by MixinFit on the genuine base as the chain leaves it, with and without the twins:
+	 * the twins must resolve something that was missing, a fixture must fit outright, and a real mod's mixin must have
+	 * nothing left unresolved on a twinned member.
+	 */
+	private static void assertTheTwinsResolve(Map<String, byte[]> mixins) {
 		Function<String, byte[]> genuine = reader(GENUINE);
 		Function<String, byte[]> neo = reader(NEO_RUNTIME);
 		VanillaMemberTwinInjector twins = new VanillaMemberTwinInjector(vanilla());
@@ -208,17 +293,6 @@ class VanillaMemberTwinInjectorTest {
 			return chained.containsKey(name) ? compat.transform(name.replace('/', '.'), genuine.apply(path), null)
 					: fallback(genuine, neo).apply(name);
 		};
-
-		Map<String, byte[]> mixins = new java.util.LinkedHashMap<>();
-		mixins.put("fabric-rendering GuiRendererMixin", fabricApiClass("fabric-rendering-v1", "net/fabricmc/fabric/mixin/client/rendering/GuiRendererMixin"));
-		mixins.put("fabric-rendering HudMixin", fabricApiClass("fabric-rendering-v1", "net/fabricmc/fabric/mixin/client/rendering/HudMixin"));
-		if (Files.isRegularFile(BALM)) mixins.put("balm FabricCropBlockMixin", jarClass(BALM, "net/blay09/mods/balm/fabric/internal/mixin/FabricCropBlockMixin"));
-		mixins.put("fixture AxeItem HEAD", headMixin(VanillaMemberTwinInjector.AXE, "evaluateNewBlockState",
-				VanillaMemberTwinInjector.ROWS.stream().filter(r -> r.owner().equals(VanillaMemberTwinInjector.AXE)).findFirst().orElseThrow().desc(), false));
-		mixins.put("fixture CustomPacketPayload$1 constructor RETURN", headMixin(VanillaMemberTwinInjector.PAYLOAD_CODEC, "<init>",
-				"(Ljava/util/Map;Lnet/minecraft/network/protocol/common/custom/CustomPacketPayload$FallbackProvider;)V", true));
-		mixins.put("fixture ParticleResources.getProviders HEAD", headMixin(VanillaMemberTwinInjector.PARTICLE_RESOURCES, "getProviders",
-				"()Lit/unimi/dsi/fastutil/ints/Int2ObjectMap;", false));
 
 		StringBuilder report = new StringBuilder();
 		for (var mixin : mixins.entrySet()) {
@@ -308,7 +382,12 @@ class VanillaMemberTwinInjectorTest {
 		}
 	}
 
-	/** Vanilla's classes, frames expanded, as the production reader serves them from the native-reference index. */
+	/**
+	 * Vanilla's classes, frames expanded, read straight from the launcher's vanilla jar: the bytes the vanilla-reference
+	 * sidecar's FABRIC index pins, which VanillaReferenceStagedTest proves is the merged base's own index. Not the
+	 * production reader — on the genuine base that one answers only through the sidecar, and
+	 * {@link #kernelBootsVanillaSourceGivesEveryCopiedBodyItsVanillaOriginalOnTheGenuineBase} drives it.
+	 */
 	static Function<String, ClassNode> vanilla() {
 		Path jar = TestFixtures.vanillaJar();
 		TestFixtures.requireFiles(Fixture.MC_LIBRARIES, "the vanilla client jar", jar);

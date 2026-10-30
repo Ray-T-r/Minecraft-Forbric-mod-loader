@@ -173,11 +173,14 @@ must save and shut down normally. See [the menu probe instructions](../../canary
 
 ## Run and collect
 
-1. Build the four staged artifacts and canaries. Do not run a gate while a Windows
+1. Build the five staged artifacts and canaries: the kernel jar, the base, both carriers, and the vanilla-reference
+   sidecar measured against that base (`tools/dev.py prepare` stages it; push-and-run builds one with
+   `run/vanilla-reference-jar.sh` when the staged one records another base). Do not run a gate while a Windows
    sweep is using those artifacts; gates rebuild the kernel jar in place.
 2. Use `push-and-run.sh --label <label> --mods <mods-dir> --manifest <manifest.json>`.
    Preview with `--dry-run --version-json <installed-profile.json>`. The dry run names
-   all four artifact uploads, sanitized mod names, PID stop, cleanup, and evidence.
+   all five artifact uploads, sanitized mod names, PID stop, cleanup, and evidence. A profile an older installer
+   wrote gains the sidecar's library and its own `--nativeReference` game argument (`PROFILE_ADDS`).
 3. Stop only PIDs read from `.forbric-sweep.pid` / `.forbric-gate.pid`, including the
    server subdirectory's gate file. Never kill all Java/Python/game processes by name.
    Those PIDs include the client and bisect drivers, so a stop also skips their own restore of the player's
@@ -198,8 +201,9 @@ must save and shut down normally. See [the menu probe instructions](../../canary
    jar on the Windows side from its own URL, verifying size and SHA-1 against the manifest; an upload whose remote
    SHA-256 already matches is skipped either way. `COMPAT_CALL_TIMEOUT` (default 240) raises the per-call ceiling
    for such a tunnel; whether a stalled call may be repeated is the `WINSH`/`WINFILE` command's own decision.
-5. `version-json-sync.py` updates SHA-1/size for exactly four supplied `group:artifact`
-   pairs. It keeps library order and all other metadata. A missing pair is an error.
+5. `version-json-sync.py` updates SHA-1/size for every supplied `group:artifact` pair — the five
+   push-and-run supplies, `net.forbric:vanilla-reference` among them. It keeps library order and all other
+   metadata. A missing pair is an error.
    Upload the artifacts and refreshed profile, then the driver tools and mod archive.
    Windows-illegal jar characters are replaced with `_`; collisions fail before upload.
 6. `win/run-server-test.py` drives `win/forbric-server.py` through world generation,

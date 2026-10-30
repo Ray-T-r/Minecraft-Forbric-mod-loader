@@ -61,6 +61,35 @@ class PushAndRunTest {
     }
 
     /**
+     * The staged vanilla reference goes out only with the base it records: an --artifact override naming another base
+     * (the genuine jar staged beside the merged one, a rebuilt merge) gets one measured against itself from
+     * run/vanilla-reference-jar.sh instead, whatever the two files' ages.
+     */
+    @Test
+    void theStagedVanillaReferenceGoesOutOnlyWithTheBaseItRecords() throws Exception {
+        var result = python("""
+                import hashlib, zipfile
+                merged = output / 'merged.jar'; merged.write_bytes(b'the merged base')
+                other = output / 'other.jar'; other.write_bytes(b'another base')
+                staged = output / 'vanilla-reference-26.2.jar'
+                with zipfile.ZipFile(staged, 'w') as jar:
+                    jar.writestr('META-INF/forbric/vanilla-reference.properties',
+                                 'format=1\\nvanilla-sha1=0\\nbase-sha1=' + hashlib.sha1(merged.read_bytes()).hexdigest() + '\\n')
+                m.ARTIFACTS[m.VANILLA_REFERENCE] = staged
+                built = []
+                def check_output(command, **options):
+                    built.append(command[-1])
+                    return str(output / 'built' / 'vanilla-reference-26.2.jar') + '\\n'
+                m.subprocess.check_output = check_output
+                assert m.local_vanilla_reference(merged) == staged and built == [], built
+                assert m.local_vanilla_reference(other) == output / 'built' / 'vanilla-reference-26.2.jar', built
+                assert built == [str(other)], built
+                assert m.recorded_base_sha1(other) is None
+                """);
+        assertEquals(0, result.exit(), result.output());
+    }
+
+    /**
      * The stop kills every recorded PID, the client and bisect drivers among them, so their own restore of the
      * player's options.txt never runs, and the stop does it instead. Before its kill it notes whether the record's writer
      * (pid and start time) is alive; after the kill, a writer it saw alive gets its restore done for it, whole, over

@@ -329,6 +329,19 @@ def validate_trace(rows, result, nonce, seconds, control, process_seconds, min_s
     return {'status': expected, 'releaseAccepted': not control, **activity}
 
 
+def vanilla_reference(kernel, base, mc):
+    """run/vanilla-reference-jar.sh's sidecar for base — staged by prepare or built once into build/, and only one that
+    records this base — or None, said on stdout, when it can provide none."""
+    result = subprocess.run(['bash', str(kernel / 'run/vanilla-reference-jar.sh'), str(base)], text=True,
+                            stdout=subprocess.PIPE, stderr=subprocess.PIPE, env={**os.environ, 'MC_DIR': str(mc)})
+    named = result.stdout.strip().splitlines()
+    if result.returncode or not named:
+        print(f'[M34] no vanilla reference for {base}; launching without --nativeReference: {result.stderr.strip()[-500:]}',
+              flush=True)
+        return None
+    return Path(named[-1])
+
+
 def launch(args):
     if args.seconds < 1 or (not args.control and args.seconds < MIN_SECONDS):
         raise ValueError('release soak requires >=7200 seconds; --control is explicitly non-release')
@@ -384,6 +397,11 @@ def launch(args):
     if not forge_source.is_file(): forge_source = staged / 'forge-runtime/forge-runtime.jar'
     forge = copy_frozen(forge_source, frozen / 'forge.jar', records)
     neo = copy_frozen(Path(args.neo) if args.neo else staged / 'neoforge-runtime/neoforge-runtime.jar', frozen / 'neo.jar', records)
+    # The kernel's FABRIC native references (--nativeReference), handed over as on every other launch path and frozen
+    # with the rest: the sidecar recording this base. Without one the soak still runs, on the base's embedded index.
+    reference_source = (Path(args.native_reference) if args.native_reference
+                        else vanilla_reference(kernel, Path(args.merged) if args.merged else staged / 'merged-base/patched-mc-merged-26.2.jar', mc))
+    native_reference = copy_frozen(reference_source, frozen / 'vanilla-reference.jar', records) if reference_source else None
     parent = [boot]
     cp_raw = Path(args.boot_classpath).read_text().strip().split(os.pathsep)
     for index, item in enumerate(cp_raw):
@@ -438,6 +456,8 @@ def launch(args):
     command += [f'-D{key}={value}' for key, value in properties.items()]
     command += ['-cp', os.pathsep.join(map(str, parent)), 'net.forbric.kernel.boot.KernelClientLaunch', '--gameJar', str(merged),
                 '--runtimeJar', str(forge), '--runtimeJar', str(neo), '--libraryPath', os.pathsep.join(map(str, game_libraries)),
+                # Its own flag, never a second --gameJar: the resources-only sidecar is not a game.
+                *(['--nativeReference', str(native_reference)] if native_reference else []),
                 '--', '--version', version['id'] + '-forbric-kernel', '--gameDir', str(run), '--assetsDir', str(mc / 'assets'),
                 '--assetIndex', version['assetIndex']['id'], '--accessToken', '0', '--username', 'ForbricKernel',
                 '--uuid', '00000000000000000000000000000000', '--userType', 'legacy', '--versionType', 'release',
@@ -511,6 +531,7 @@ def main():
     parser.add_argument('--minecraft', default=str(Path.home() / 'Library/Application Support/minecraft'))
     parser.add_argument('--world-source')
     parser.add_argument('--merged'); parser.add_argument('--forge'); parser.add_argument('--neo'); parser.add_argument('--natives')
+    parser.add_argument('--native-reference', help='the vanilla-reference sidecar for the base (default: run/vanilla-reference-jar.sh)')
     parser.add_argument('--seconds', type=int, default=7200)
     parser.add_argument('--control', action='store_true')
     parser.add_argument('--sessions', type=int, default=3)

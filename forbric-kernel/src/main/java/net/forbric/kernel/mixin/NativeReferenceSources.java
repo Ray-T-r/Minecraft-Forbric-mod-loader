@@ -32,7 +32,9 @@ import org.objectweb.asm.ClassReader;
  *   <li><b>The vanilla-reference sidecar</b> ({@code --nativeReference}, built by the installer from the vanilla jar and
  *       the base): the references of every ecosystem whose index it carries — FABRIC, in what the installer writes. It
  *       is preferred over the base's embedded index for those ecosystems: on the merged base the two are equal row for
- *       row (VanillaReferenceStagedTest), and on any other base only the sidecar exists.</li>
+ *       row (VanillaReferenceStagedTest), and on any other base only the sidecar exists. Where the base embeds the same
+ *       index, that index still answers, class by class, whatever the sidecar cannot verify against it: a sidecar built
+ *       against another base never costs the merged base evidence it carries itself.</li>
  *   <li><b>The base's embedded index</b>, for every other ecosystem it carries — FORGE and NEOFORGE on the merged base.
  *       Read through the game class loader exactly as before.</li>
  *   <li><b>The base itself</b>, for the base's own ecosystem when it embeds no index at all: a NeoForge-patched base IS
@@ -141,6 +143,19 @@ public final class NativeReferenceSources {
 		return has(baseJar, owner + ".class");
 	}
 
+	/** An entry of the base jar itself, e.g. its own {@code META-INF/forbric/native-reference/FABRIC/index.tsv}, or null. */
+	byte[] baseResource(String path) {
+		return read(baseJar, path, "the game jar");
+	}
+
+	/**
+	 * Whether the base jar embeds {@code ecosystem}'s index itself — the merged base does, for all three. Where the
+	 * sidecar is that ecosystem's source, the embedded index answers every class the sidecar cannot verify.
+	 */
+	boolean baseEmbeds(Ecosystem ecosystem) {
+		return ecosystem != null && has(baseJar, index(ecosystem));
+	}
+
 	/**
 	 * The boot line naming every ecosystem's source. Gates assert {@code native references: FABRIC from the
 	 * vanilla-reference sidecar}; keep that wording.
@@ -149,7 +164,8 @@ public final class NativeReferenceSources {
 		List<String> parts = new ArrayList<>();
 		for (Ecosystem ecosystem : Ecosystem.values()) {
 			String from = switch (source(ecosystem)) {
-				case SIDECAR -> "from the vanilla-reference sidecar " + sidecar.getFileName();
+				case SIDECAR -> "from the vanilla-reference sidecar " + sidecar.getFileName()
+						+ (baseEmbeds(ecosystem) ? " (the base's embedded index answers what it cannot verify)" : "");
 				case EMBEDDED -> "from the base's embedded index";
 				case BASE -> "from the base's own bytes (" + base.getFileName() + " is " + ecosystem.displayName()
 						+ "'s compile)";

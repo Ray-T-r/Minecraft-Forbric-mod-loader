@@ -37,7 +37,7 @@ class VanillaReferenceStagedTest {
 			"net/minecraft/world/level/block/state/BlockBehaviour");
 
 	private static Path merged() {
-		Path merged = TestFixtures.stagedRoot().resolve("merged-base/patched-mc-merged-26.2.jar");
+		Path merged = TestFixtures.stagedBase();
 		TestFixtures.requireFiles(Fixture.STAGED, "the staged merged base", merged);
 		try (ZipFile zip = new ZipFile(merged.toFile())) {
 			TestFixtures.require(Fixture.STAGED, zip.getEntry(FABRIC + "index.tsv") != null,
@@ -91,6 +91,113 @@ class VanillaReferenceStagedTest {
 				}
 			}
 		}
+	}
+
+	/**
+	 * A sidecar measured against another base — here the genuine NeoForge jar, the likeliest mix-up, since both are
+	 * staged side by side — changes no FABRIC answer on the merged base. Its hash-only rows for classes the merged base
+	 * changed and the genuine one did not can no longer verify, and alone they would answer nothing (what the kernel did
+	 * before); the merged base's own embedded index answers them instead, byte for byte what it answers with no sidecar.
+	 */
+	@Test
+	void aSidecarBuiltAgainstAnotherBaseChangesNoFabricAnswerOnTheMergedBase() throws Exception {
+		Path merged = merged();
+		Path genuine = TestFixtures.genuineBase();
+		TestFixtures.requireFiles(Fixture.STAGED, "the genuine NeoForge-patched base the stale sidecar is built against", genuine);
+		Path stale = TestFixtures.vanillaReference(genuine);
+		try (ZipFile base = new ZipFile(merged.toFile()); ZipFile sidecar = new ZipFile(stale.toFile())) {
+			java.util.function.Function<String, byte[]> resources = path -> entry(base, path);
+			// The premise, read off the two files: hash-only rows of the stale sidecar the merged base's bytes do not match.
+			List<String> unverifiable = new java.util.ArrayList<>();
+			for (String row : new String(entry(sidecar, FABRIC + "index.tsv"), java.nio.charset.StandardCharsets.UTF_8)
+					.lines().skip(1).toList()) {
+				String owner = row.substring(0, row.indexOf('\t'));
+				if (sidecar.getEntry(FABRIC + owner + ".class.bin") != null) continue;
+				byte[] bytes = entry(base, owner + ".class");
+				if (bytes == null || !row.endsWith("\t" + sha256(bytes))) unverifiable.add(owner);
+			}
+			assertFalse(unverifiable.isEmpty(), "premise: the genuine-built sidecar leaves some merged class unverifiable");
+
+			NativeGameReferences embeddedOnly = new NativeGameReferences(resources);
+			NativeGameReferences withStale = new NativeGameReferences(resources, null, NativeReferenceSources.open(merged, stale));
+			List<String> owners = new java.util.ArrayList<>(ADAPTER_CLASSES);
+			owners.addAll(unverifiable);
+			for (String owner : owners) {
+				ClassNode before = embeddedOnly.get(Ecosystem.FABRIC, owner), after = withStale.get(Ecosystem.FABRIC, owner);
+				assertNotNull(before, "FABRIC " + owner + " is answered by the embedded index");
+				assertNotNull(after, "FABRIC " + owner + " is still answered with the stale sidecar");
+				assertArrayEquals(write(before), write(after), "FABRIC " + owner);
+			}
+			assertTrue(NativeGameReferences.sidecarFallbackReported(), "and the fallback was said");
+			System.out.println("[VanillaReferenceStagedTest] " + unverifiable.size()
+					+ " merged classes the genuine-built sidecar cannot verify, all answered by the embedded index");
+		}
+	}
+
+	/**
+	 * The other way a sidecar goes wrong: a row that pins other bytes than the base's own index does (a sidecar built from
+	 * another vanilla jar). Its copy verifies against its own row, so only the embedded index can tell; it answers.
+	 */
+	@Test
+	void aSidecarRowPinningOtherBytesIsAnsweredByTheEmbeddedIndex(@org.junit.jupiter.api.io.TempDir Path work) throws Exception {
+		Path merged = merged();
+		String living = ADAPTER_CLASSES.getFirst(), other = ADAPTER_CLASSES.get(1);
+		Path forged = work.resolve("vanilla-reference-26.2.jar");
+		try (ZipFile current = new ZipFile(TestFixtures.vanillaReference(merged).toFile());
+				ZipFile base = new ZipFile(merged.toFile());
+				java.util.zip.ZipOutputStream out = new java.util.zip.ZipOutputStream(java.nio.file.Files.newOutputStream(forged))) {
+			// LivingEntity's row and copy become another class's vanilla bytes: self-consistent, and wrong.
+			byte[] foreign = entry(current, FABRIC + other + ".class.bin");
+			if (foreign == null) foreign = entry(base, other + ".class");
+			assertNotNull(foreign, other);
+			String livingRow = null;
+			for (var entries = current.entries(); entries.hasMoreElements(); ) {
+				ZipEntry entry = entries.nextElement();
+				byte[] bytes = entry(current, entry.getName());
+				if (entry.getName().equals(FABRIC + living + ".class.bin")) continue;
+				if (entry.getName().equals(FABRIC + "index.tsv")) {
+					StringBuilder index = new StringBuilder();
+					for (String row : new String(bytes, java.nio.charset.StandardCharsets.UTF_8).lines().toList()) {
+						if (row.startsWith(living + "\t")) {
+							livingRow = row;
+							row = living + "\t" + sha256(foreign);
+						}
+						index.append(row).append('\n');
+					}
+					bytes = index.toString().getBytes(java.nio.charset.StandardCharsets.UTF_8);
+				}
+				out.putNextEntry(new ZipEntry(entry.getName()));
+				out.write(bytes);
+				out.closeEntry();
+			}
+			assertNotNull(livingRow, "premise: the sidecar indexes " + living);
+			out.putNextEntry(new ZipEntry(FABRIC + living + ".class.bin"));
+			out.write(foreign);
+			out.closeEntry();
+		}
+		try (ZipFile base = new ZipFile(merged.toFile())) {
+			java.util.function.Function<String, byte[]> resources = path -> entry(base, path);
+			NativeReferenceSources sources = NativeReferenceSources.open(merged, forged);
+			assertTrue(sources.describe().contains("(the base's embedded index answers what it cannot verify)"), sources.describe());
+			ClassNode answered = new NativeGameReferences(resources, null, sources).get(Ecosystem.FABRIC, living);
+			assertNotNull(answered, living);
+			assertEquals(living, answered.name, "not the other class the forged row pins");
+			assertArrayEquals(write(new NativeGameReferences(resources).get(Ecosystem.FABRIC, living)), write(answered));
+		}
+	}
+
+	private static byte[] entry(ZipFile zip, String path) {
+		ZipEntry entry = zip.getEntry(path);
+		if (entry == null) return null;
+		try (InputStream in = zip.getInputStream(entry)) {
+			return in.readAllBytes();
+		} catch (IOException unreadable) {
+			throw new AssertionError(unreadable);
+		}
+	}
+
+	private static String sha256(byte[] bytes) throws Exception {
+		return HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256").digest(bytes));
 	}
 
 	/** The FABRIC tree of {@code jar}: each entry's SHA-256, by name. */

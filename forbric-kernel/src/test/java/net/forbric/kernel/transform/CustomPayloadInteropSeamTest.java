@@ -28,8 +28,8 @@ import net.forbric.kernel.TestFixtures;
  * one the jar has, not one this test names.
  */
 class CustomPayloadInteropSeamTest {
-	private static final Path MERGED = TestFixtures.stagedRoot().resolve(TestFixtures.MERGED_BASE_JAR).normalize();
-	private static final Path GENUINE = TestFixtures.stagedRoot().resolve(TestFixtures.GENUINE_BASE_JAR).normalize();
+	private static final Path MERGED = TestFixtures.mergedBase().normalize();
+	private static final Path GENUINE = TestFixtures.genuineBase().normalize();
 	private static final String PAYLOAD = CustomPayloadInteropSeam.PAYLOAD;
 
 	@AfterEach void reset() { System.clearProperty(CustomPayloadInteropSeam.PROPERTY); }

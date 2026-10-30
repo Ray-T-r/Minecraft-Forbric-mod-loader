@@ -31,6 +31,8 @@ public final class NativeGameReferences {
 	private static volatile NativeReferenceSources configured;
 	/** Said once per process: a sidecar measured against another base answers nothing for what that base changed. */
 	private static final AtomicBoolean staleSidecarReported = new AtomicBoolean();
+	/** Said once per process: where the base embeds the same index, a sidecar row that does not verify is answered by it. */
+	private static final AtomicBoolean sidecarFallbackReported = new AtomicBoolean();
 	private final Function<String, byte[]> resources;
 	private final Function<String, byte[]> currentClasses;
 	private final NativeReferenceSources sources;
@@ -183,10 +185,17 @@ public final class NativeGameReferences {
 		return switch (source) {
 			// The sidecar's hash-only rows are classes the base holds unchanged: answered from the base jar itself, the
 			// file the sidecar was measured against, and accepted only while they still hash to the row.
-			case SIDECAR -> indexed(ecosystem, sources::sidecarResource, owner -> {
-				byte[] base = sources.baseClass(owner);
-				return base != null ? base : resources.apply(owner + ".class");
-			}, true);
+			case SIDECAR -> {
+				boolean embeds = sources.baseEmbeds(ecosystem);
+				Indexed sidecar = indexed(ecosystem, sources::sidecarResource, owner -> {
+					byte[] base = sources.baseClass(owner);
+					return base != null ? base : resources.apply(owner + ".class");
+				}, !embeds);
+				// A base that embeds this ecosystem's index too (the merged base) holds the authority the sidecar was proven
+				// equal to: what the sidecar cannot verify, that index answers, read from the base jar itself.
+				yield embeds ? verifiedAgainst(sidecar, indexed(ecosystem, sources::baseResource, sources::baseClass, false))
+						: sidecar;
+			}
 			case EMBEDDED -> indexed(ecosystem, resources, owner -> resources.apply(owner + ".class"), false);
 			// The base is this ecosystem's compile: every class it holds is a reference, exactly as it is on disk. There
 			// is no index to verify against and none is needed -- the bytes come from the one file they are about.
@@ -199,15 +208,62 @@ public final class NativeGameReferences {
 	}
 
 	/**
-	 * Pins read from a {@code META-INF/forbric/native-reference/<ECO>/} tree: the index's hash decides, whether the bytes
-	 * come from the class's own {@code .class.bin} copy or, for a class the base did not change, from {@code unchanged}.
+	 * The sidecar's answers, each held to the base's own embedded index for the same ecosystem: an answer is taken when
+	 * the embedded index has no row for the class or pins the very hash the sidecar's row pins. Otherwise — a hash-only
+	 * row the base's bytes no longer match (a sidecar built against another base), or a row pinning other bytes (one
+	 * built from another vanilla jar) — the embedded index answers instead. On the merged base the two are equal row for
+	 * row (VanillaReferenceStagedTest), so with a current sidecar this never fires; with a stale one, the evidence every
+	 * adapter compares against is still the merged base's own rather than silently missing.
 	 */
-	private static Pins indexed(Ecosystem ecosystem, Function<String, byte[]> entries, Function<String, byte[]> unchanged,
-			boolean sidecar) {
-		Map<String, String> index = index(entries.apply(prefix(ecosystem) + "index.tsv"));
+	private static Pins verifiedAgainst(Indexed sidecar, Indexed embedded) {
 		return new Pins() {
 			@Override public boolean has(String owner) {
+				return sidecar.has(owner) || embedded.has(owner);
+			}
+
+			@Override public byte[] bytes(String owner) {
+				byte[] answer = sidecar.bytes(owner);
+				String authority = embedded.row(owner);
+				if (authority == null || (answer != null && authority.equals(sidecar.row(owner)))) return answer;
+				byte[] fallback = embedded.bytes(owner);
+				if (fallback != null && sidecarFallbackReported.compareAndSet(false, true)) {
+					ForbricLog.warn("[Forbric/Mixin] the vanilla-reference sidecar does not verify against this base for %s "
+							+ "(it was built against another base, or from another vanilla jar), so that class's FABRIC "
+							+ "reference, and every other one like it, comes from the base's embedded index. Rebuild the "
+							+ "sidecar (reinstall, or tools/dev.py prepare)", owner);
+				}
+				return fallback;
+			}
+		};
+	}
+
+	/** Whether this process has answered a sidecar row from the base's embedded index (and so said it once). */
+	static boolean sidecarFallbackReported() {
+		return sidecarFallbackReported.get();
+	}
+
+	/** Pins over one index, which can also say the hash it pins for a class. */
+	private interface Indexed extends Pins {
+		/** The SHA-256 the index pins for {@code owner}, or null when it has no row for it. */
+		String row(String owner);
+	}
+
+	/**
+	 * Pins read from a {@code META-INF/forbric/native-reference/<ECO>/} tree: the index's hash decides, whether the bytes
+	 * come from the class's own {@code .class.bin} copy or, for a class the base did not change, from {@code unchanged}.
+	 *
+	 * @param sidecar a sidecar nothing else verifies, which says once when one of its rows goes unanswered
+	 */
+	private static Indexed indexed(Ecosystem ecosystem, Function<String, byte[]> entries, Function<String, byte[]> unchanged,
+			boolean sidecar) {
+		Map<String, String> index = index(entries.apply(prefix(ecosystem) + "index.tsv"));
+		return new Indexed() {
+			@Override public boolean has(String owner) {
 				return index.containsKey(owner);
+			}
+
+			@Override public String row(String owner) {
+				return index.get(owner);
 			}
 
 			@Override public byte[] bytes(String owner) {

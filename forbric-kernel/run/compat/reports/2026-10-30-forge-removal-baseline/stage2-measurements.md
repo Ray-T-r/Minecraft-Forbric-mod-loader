@@ -111,3 +111,62 @@ that family's subscribers one by one, and the line is printed before the two Min
 `CapabilityUseAudit`). The throwaway boot above printed it on the genuine base (carriers `none, neoforge-runtime.jar`:
 "registered 38 @EventBusSubscriber class(es) on the game bus"), and `KernelEventSubscribersGenuineBaseTest` prints it there
 for a NeoForge subscriber and counts it with gate-m4-canary's own grep.
+
+## Access census: one more merged-only wider member
+
+`Hud.extractHotbarAndDecorations(GuiGraphicsExtractor, DeltaTracker)` is `public` on the merged base and `private` in
+vanilla; the genuine base does not declare it at all. The Stage 2.4 twin copies vanilla's declaration, so on the genuine
+base it comes back `private`, narrower than the merged base's. Nothing in the merged or genuine jar calls it (it is dead
+on both), and its consumers are Mixin injectors (fabric-rendering's seven `@WrapOperation`s, apoli, bettermounthud,
+tcdcommons), which do not care about access. It belongs on the 2.0 access list all the same: a mod that linked against
+the merged base's `public` would get an IllegalAccessError on the genuine base.
+
+## Stage 4 obligations (recorded during the Stage 2 fix round)
+
+The vanilla-reference sidecar is measured against a base and versioned like it. Today every place that produces,
+names or locates it is keyed to the merged base, the artifact Stage 4/5 removes; each must follow the new base:
+
+- `Installer.artifactVersion`: `net.forbric:vanilla-reference` takes `patched-mc-merged`'s version
+  (`Pins.FORGE-Pins.NEOFORGE`), not the plan's bare `<mc>`, because a published coordinate's bytes never change and
+  the sidecar's bytes depend on the base. With the genuine base it must take that base's version.
+- `Installer` (supplied `--artifacts` path) builds a missing sidecar from `artifacts.get(ArtifactBuilder.MERGED)`;
+  `ArtifactBuilder.build` measures it against `merged.file`; `DevPrepare` stages it beside the merged base.
+- `run/compat/push-and-run.py`: `with_native_reference` derives the library's version from the profile's
+  `net.forbric:patched-mc-merged` entry (a profile without one is a ValueError); `local_vanilla_reference` is handed the
+  `patched-mc-merged` artifact (default or `--artifact` override) and now checks the staged sidecar's recorded base SHA-1
+  against it.
+- `run/vanilla-reference-jar.sh` locates the staged copy as `<dir of base>/../vanilla-reference/`, one path for both the
+  merged and the genuine base (which sit side by side in a stage); since this round it hands one out only while its
+  recorded base SHA-1 matches the base being launched, so the two cannot be mixed up silently, but Stage 4 must stage the
+  sidecar measured against the genuine base there. `run/compat/soak-run.py` and `tools/dev.py` launch with the merged
+  base path (`STAGED_BASE`) and the sidecar built for it.
+- On a base that embeds no index the kernel has no second opinion: `NativeGameReferences` falls back per class to the
+  base's embedded index only where the base embeds one (the merged base). With the genuine base a stale sidecar costs
+  evidence (a changed class without a copy has no FABRIC reference, said once), so its provenance must be right.
+
+Twins that are added at run time (`VanillaMemberTwinInjector`) are absent from the raw genuine jar: the Stage 4 census
+regenerations (carrier-stubs, uncalled-methods, native-only-methods, MixinFit liveness) must read the base after that
+transformer, or the AxeItem carrier-stubs row vanishes and twinned members read as absent.
+
+On the genuine base with the twins but with `-Dforbric.customPayloadInteropSeam=off`, a vanilla-compiled caller of
+`CustomPacketPayload.codec(FallbackProvider, List)` reaches NeoForge's own `$1.findCodec`, which calls
+`NetworkRegistry.getCodec(id, null, null)` (the delegate twin passes no protocol or flow). With the seam on, the lookup is
+`PayloadInterop.findCodec` with that null context, which VanillaCallerPayloadLookupTest runs. Whether NeoForge's
+`getCodec` tolerates the nulls was not measured; the switch should not be offered on the genuine base until it is.
+
+**Deferred twin: `RegistryDataLoader.load(LoaderFactory, List, List, Executor)`.** Measured: vanilla and the merged base
+declare the private four-argument loader, and the merged base also keeps vanilla's `lambda$load$0..5` beside NeoForge's
+same-named lambdas (vanilla's `lambda$load$0(List, LoaderFactory, List, Executor)` and NeoForge's
+`lambda$load$0(List, LoaderFactory, List, Executor, boolean)`; `lambda$load$3/4/5` likewise collide by name with other
+descriptors). The genuine base has only the five-argument `(…, boolean)` overload and NeoForge's lambdas. Nothing calls
+the four-argument loader on the merged base either: it is the dead loader `FabricRegistryLoaderMixinAdapter` exists for,
+which moves fabric-registry-sync's injectors that name it (and its call) onto the live widened pair, reading each
+selector against the class the mod was compiled against (the FABRIC reference) rather than by spelling. A twin would
+copy vanilla's body together with its lambdas; `VanillaMemberTwinInjector` keeps a lambda's name when the class has no
+method of that name and descriptor, so `lambda$load$0` would come back as a second overload of NeoForge's live lambda —
+re-creating on the genuine base the very ambiguity that adapter has to refuse on the merged base (a bare name-only
+`lambda$load$0` selector that "binds a single method but matches several"), where today it matches NeoForge's one live
+lambda. So the twin is not a member to add blindly: the adapter's owner decides, on the genuine base, whether its move
+(callee `C` → the one called overload `C'` whose parameters are `C`'s followed by the carrier's) needs `C` declared in the
+target at all, or works from the FABRIC reference alone. If it needs it, the twin's lambdas must be renamed
+(`forbric$vanilla$…`) rather than kept, and the adapter's selector reading checked against that.
