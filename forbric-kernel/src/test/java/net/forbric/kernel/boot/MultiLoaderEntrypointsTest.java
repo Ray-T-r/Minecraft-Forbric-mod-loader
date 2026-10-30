@@ -143,7 +143,45 @@ class MultiLoaderEntrypointsTest {
 		assertEquals(Ecosystem.NEOFORGE, MultiLoaderArbiter.ownerOf(fabricOnly), "negative control: bare preference");
 	}
 
+	/**
+	 * A NeoForge half with no @Mod is not codeless when FML runs code of it anyway: an @EventBusSubscriber class or a
+	 * NeoForge service provider. The mixin narrowing then stands aside and the preference keeps NeoForge, as before it
+	 * existed. Red-checked: without the subscriber/service test both jars answered FABRIC.
+	 */
+	@Test void aNeoForgeHalfThatRunsThroughSubscribersOrServicesIsNotCodeless() throws Exception {
+		ClassWriter subscriber = new ClassWriter(0);
+		subscriber.visit(Opcodes.V21, Opcodes.ACC_PUBLIC, "q/Events", null, "java/lang/Object", null);
+		subscriber.visitAnnotation("Lnet/neoforged/fml/common/EventBusSubscriber;", true).visitEnd();
+		subscriber.visitEnd();
+		Path ebs = mixinJar("ebs.jar", false, Map.of("q/Events.class", subscriber.toByteArray()));
+		assertEquals(Ecosystem.NEOFORGE, MultiLoaderArbiter.ownerOf(ebs));
+		MultiLoaderArbiter.reset();
+		Path service = mixinJar("service.jar", false, Map.of(
+				"META-INF/services/net.neoforged.neoforge.common.util.Something", "q.Impl\n".getBytes(StandardCharsets.UTF_8)));
+		assertEquals(Ecosystem.NEOFORGE, MultiLoaderArbiter.ownerOf(service));
+	}
+
+	/**
+	 * A jar whose classes cannot all be inspected is "unknown", not "no initializer": the warning says no family is
+	 * suppressed, so the mixin narrowing must not suppress one either. Red-checked: with the inspection failure returning
+	 * an empty list, the jar answered FABRIC.
+	 */
+	@Test @net.forbric.kernel.ExpectCaught({"could not inspect entrypoints", "could not be parsed"})
+	void anUninspectableJarIsLeftToThePreference() throws Exception {
+		ClassWriter future = new ClassWriter(0);
+		future.visit(Opcodes.V21, Opcodes.ACC_PUBLIC, "q/Future", null, "java/lang/Object", null);
+		future.visitEnd();
+		byte[] bytes = future.toByteArray();
+		bytes[7] = 99; // a class-file major version no ASM reads
+		Path jar = mixinJar("future.jar", false, Map.of("q/Future.class", bytes));
+		assertEquals(Ecosystem.NEOFORGE, MultiLoaderArbiter.ownerOf(jar));
+	}
+
 	private Path mixinJar(String name, boolean neoDeclaresMixins) throws Exception {
+		return mixinJar(name, neoDeclaresMixins, Map.of());
+	}
+
+	private Path mixinJar(String name, boolean neoDeclaresMixins, Map<String, byte[]> extra) throws Exception {
 		Map<String, byte[]> entries = new LinkedHashMap<>();
 		entries.put("META-INF/mods.toml", ("modLoader=\"javafml\"\nloaderVersion=\"[1,)\"\n[[mods]]\nmodId=\"qubes\"\n"
 				+ "version=\"1\"\n").getBytes(StandardCharsets.UTF_8));
@@ -154,6 +192,7 @@ class MultiLoaderEntrypointsTest {
 				+ "\"mixins\":[{\"config\":\"qubes.mixins.json\",\"environment\":\"client\"}]}").getBytes(StandardCharsets.UTF_8));
 		entries.put("qubes.mixins.json", "{\"package\":\"q.mixin\",\"client\":[\"MouseMixin\"]}".getBytes(StandardCharsets.UTF_8));
 		entries.put("q/mixin/MouseMixin.class", type("q/mixin/MouseMixin", null, null, null, true));
+		entries.putAll(extra);
 		Path path = temporary.resolve(name);
 		try (JarOutputStream out = new JarOutputStream(Files.newOutputStream(path))) {
 			for (var entry : entries.entrySet()) {

@@ -278,6 +278,91 @@ class LoaderHalfJudgeTest {
 	}
 
 	/**
+	 * Wherever the manifest puts the config and however leniently it is written, the mixins it lists are found: a
+	 * Forge-bound mixin refuses the half from a subdirectory config, from a config that lives only in a JarJar child,
+	 * and from a config with a comment and a trailing comma (Mixin reads configs leniently), exactly as from the root.
+	 * Red-checked: reading configs from the outer root only, strictly, kept the three non-root variants.
+	 */
+	@Test void aForgeBoundMixinIsFoundWhereverItsConfigLives() throws Exception {
+		byte[] config = mixins("example.mixin", "PlayerMixin");
+		byte[] commented = "{\n  // forge mixins\n  \"package\": \"example.mixin\",\n  \"mixins\": [\"PlayerMixin\",],\n}"
+				.getBytes(StandardCharsets.UTF_8);
+		for (String shape : List.of("root", "subdirectory", "jarjar", "commented")) {
+			String path = switch (shape) {
+				case "subdirectory" -> "mixins/common/mx.mixins.json";
+				default -> "mx.mixins.json";
+			};
+			JarBuilder jar = forgeEntryWithMixins(path)
+					.put("example/mixin/PlayerMixin.class", referencing("example/mixin/PlayerMixin",
+							"net/minecraftforge/registries/RegistryObject"));
+			switch (shape) {
+				case "jarjar" -> jar.put("META-INF/jarjar/cfg.jar", jar().put(path, config).build());
+				case "commented" -> jar.put(path, commented);
+				default -> jar.put(path, config);
+			}
+			LoaderHalfJudge.Verdict verdict = judge(jar);
+			assertTrue(verdict.refused(), shape + ": " + verdict.describe());
+			assertTrue(verdict.half(Ecosystem.NEOFORGE).orElseThrow().reason().contains(
+					"the mixins it ships link against MinecraftForge (example.mixin.PlayerMixin)"), shape + ": " + verdict.describe());
+		}
+	}
+
+	/** The config's plugin is constructed by Mixin whatever it lists, so a Forge-bound plugin refuses the half too. */
+	@Test void aForgeBoundMixinPluginRefusesTheHalf() throws Exception {
+		LoaderHalfJudge.Verdict verdict = judge(forgeEntryWithMixins("mx.mixins.json")
+				.put("mx.mixins.json", ("{\"package\":\"example.mixin\",\"plugin\":\"example.mixin.Plugin\","
+						+ "\"mixins\":[\"Hook\"]}").getBytes(StandardCharsets.UTF_8))
+				.put("example/mixin/Hook.class", plain("example/mixin/Hook", null, true))
+				.put("example/mixin/Plugin.class", referencing("example/mixin/Plugin",
+						"net/minecraftforge/fml/loading/LoadingModList")));
+		assertTrue(verdict.refused(), verdict.describe());
+		assertTrue(verdict.half(Ecosystem.NEOFORGE).orElseThrow().reason().contains("example.mixin.Plugin"), verdict.describe());
+	}
+
+	/**
+	 * A config that cannot be read clears nothing: the half is judged as if it shipped no mixins, so a Forge entry that
+	 * uses MinecraftForge is refused, and a dummy entry over vanilla code is kept.
+	 */
+	@Test void anUnreadableMixinConfigCountsAsNoMixins() throws Exception {
+		byte[] broken = "{ this is not json".getBytes(StandardCharsets.UTF_8);
+		LoaderHalfJudge.Verdict forgeEntry = judge(forgeEntryWithMixins("mx.mixins.json").put("mx.mixins.json", broken));
+		assertTrue(forgeEntry.refused(), forgeEntry.describe());
+		assertTrue(forgeEntry.half(Ecosystem.NEOFORGE).orElseThrow().reason().contains(
+				"with no mixin config beside it that can be read"), forgeEntry.describe());
+		LoaderHalfJudge.Verdict dummy = judge(jar()
+				.forgeToml("mx", "Mx").neoToml("mx", "Mx", "mx.mixins.json")
+				.put("mx.mixins.json", broken)
+				.put("example/Mx.class", annotated("example/Mx", FORGE_MOD, "mx", "()V"))
+				.put("example/mixin/Hook.class", plain("example/mixin/Hook", null, true)));
+		assertFalse(dummy.refused(), dummy.describe());
+	}
+
+	/** lowcodefml makes the MinecraftForge entry irrelevant, but NeoForge still applies the half's mixins. */
+	@Test void aLowcodeHalfIsStillJudgedByItsMixins() throws Exception {
+		byte[] toml = new String(JarBuilder.toml("mx", "Mx", "neoforge", "mx.mixins.json"), StandardCharsets.UTF_8)
+				.replace("modLoader=\"javafml\"", "modLoader=\"lowcodefml\"").getBytes(StandardCharsets.UTF_8);
+		LoaderHalfJudge.Verdict forgeMixin = judge(jar()
+				.forgeToml("mx", "Mx").put("META-INF/neoforge.mods.toml", toml)
+				.put("mx.mixins.json", mixins("example.mixin", "PlayerMixin"))
+				.put("example/Mx.class", forgeMod("example/Mx", "mx"))
+				.put("example/mixin/PlayerMixin.class", referencing("example/mixin/PlayerMixin",
+						"net/minecraftforge/registries/RegistryObject")));
+		assertTrue(forgeMixin.refused(), forgeMixin.describe());
+		LoaderHalfJudge.Verdict vanillaMixin = judge(jar()
+				.forgeToml("mx", "Mx").put("META-INF/neoforge.mods.toml", toml)
+				.put("mx.mixins.json", mixins("example.mixin", "PlayerMixin"))
+				.put("example/Mx.class", forgeMod("example/Mx", "mx"))
+				.put("example/mixin/PlayerMixin.class", plain("example/mixin/PlayerMixin", null, true)));
+		assertFalse(vanillaMixin.refused(), vanillaMixin.describe());
+	}
+
+	/** A Forge+NeoForge jar whose only @Mod is MinecraftForge's and uses it, declaring {@code config} as its mixins. */
+	private static JarBuilder forgeEntryWithMixins(String config) {
+		return jar().forgeToml("mx", "Mx").neoToml("mx", "Mx", config)
+				.put("example/Mx.class", forgeMod("example/Mx", "mx"));
+	}
+
+	/**
 	 * A dummy MinecraftForge @Mod decides nothing, even beside a Forge-only helper: what NeoForge runs of the half is its
 	 * vanilla-only mixins or its data/, and both work. The same jar without the dummy is kept too.
 	 */

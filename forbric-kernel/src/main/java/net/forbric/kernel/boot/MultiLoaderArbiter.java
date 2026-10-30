@@ -153,11 +153,12 @@ public final class MultiLoaderArbiter {
 			boolean byInitialization = false;
 			if (!"off".equalsIgnoreCase(System.getProperty(ENTRYPOINT_SWITCH, "on"))) {
 				List<Ecosystem> initialized = initializationFamilies(jar, declared);
-				// No initializer anywhere is a legitimate data-only/library jar, not a reason to reject it.
-				if (!initialized.isEmpty()) {
+				// No initializer anywhere is a legitimate data-only/library jar, not a reason to reject it; and a jar
+				// that could not be inspected (null) is left to the preference, as the warning then says.
+				if (initialized != null && !initialized.isEmpty()) {
 					candidates = initialized;
 					byInitialization = true;
-				} else {
+				} else if (initialized != null) {
 					// But a mixin-only mod runs through its mixins, and only the halves that ship a mixin config can
 					// apply them. qubes-mouse-fix declares its client mixins in fabric.mod.json and nowhere a NeoForge
 					// half reads (its MinecraftForge half had them in the manifest's MixinConfigs); chosen by preference
@@ -195,7 +196,10 @@ public final class MultiLoaderArbiter {
 		return owner;
 	}
 
-	/** Read the same annotations and Fabric declarations the actual loaders consume; never initialize a class. */
+	/**
+	 * Read the same annotations and Fabric declarations the actual loaders consume; never initialize a class. Null when
+	 * the jar could not be inspected — "unknown", which must not be read as "no initializer".
+	 */
 	private static List<Ecosystem> initializationFamilies(Path jar, List<Ecosystem> declared) {
 		Set<Ecosystem> found = new HashSet<>();
 		try (JarFile zip = new JarFile(jar.toFile())) {
@@ -226,19 +230,22 @@ public final class MultiLoaderArbiter {
 			// Incomplete evidence must not suppress a possibly valid family. Discovery reports malformed metadata.
 			Caught.warn(error, "[Forbric/MultiLoader] could not inspect entrypoints in %s; no family of it is suppressed",
 					jar.getFileName());
-			return List.of();
+			return null;
 		}
 		return declared.stream().filter(found::contains).toList();
 	}
 
 	/**
 	 * The declared families whose manifest names a mixin config the jar ships: NeoForge's {@code [[mixins]]} and
-	 * Fabric's {@code mixins}. Asked only when no half has initialization code, so a mixin-only mod is given to a half
-	 * that applies its mixins. Unreadable evidence suppresses nothing.
+	 * Fabric's {@code mixins}. Asked only when no half has an entry point, so a mixin-only mod is given to a half that
+	 * applies its mixins. Empty — nothing narrowed — when the NeoForge half has code FML runs without an {@code @Mod}:
+	 * an {@code @EventBusSubscriber} class or a {@code META-INF/services} provider of a NeoForge interface; such a half
+	 * is not codeless, and the preference keeps it. Unreadable evidence suppresses nothing.
 	 */
 	private static List<Ecosystem> mixinFamilies(Path jar, List<Ecosystem> declared) {
 		Set<Ecosystem> found = new HashSet<>();
 		try (JarFile zip = new JarFile(jar.toFile())) {
+			if (declared.contains(Ecosystem.NEOFORGE) && neoForgeRunsWithoutMod(zip)) return List.of();
 			if (declared.contains(Ecosystem.NEOFORGE)) {
 				try (var in = zip.getInputStream(zip.getJarEntry(ForbricModDiscoverer.NEOFORGE_MANIFEST))) {
 					if (ModsTomlParser.parse(in).getMixinConfigs().stream().anyMatch(config -> zip.getJarEntry(config) != null)) {
@@ -265,6 +272,21 @@ public final class MultiLoaderArbiter {
 					+ "so that half loads it", jar.getFileName(), families);
 		}
 		return families;
+	}
+
+	/** Whether the jar has NeoForge code FML runs with no {@code @Mod}: a NeoForge subscriber class or service. */
+	private static boolean neoForgeRunsWithoutMod(JarFile zip) throws java.io.IOException {
+		for (var entries = zip.entries(); entries.hasMoreElements(); ) {
+			var entry = entries.nextElement();
+			String name = entry.getName();
+			if (name.startsWith("META-INF/services/net.neoforged.")) return true;
+			if (!name.endsWith(".class") || name.startsWith("META-INF/versions/")) continue;
+			byte[] bytes;
+			try (var in = zip.getInputStream(entry)) { bytes = in.readAllBytes(); }
+			KernelEventSubscribers.Subscriber subscriber = KernelEventSubscribers.scanClassBytes(bytes);
+			if (subscriber != null && subscriber.family() == Ecosystem.NEOFORGE) return true;
+		}
+		return false;
 	}
 
 	private static boolean fabricEntryCanInitialize(JarFile zip, String key,
