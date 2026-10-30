@@ -57,7 +57,7 @@ import net.forbric.kernel.ExpectCaught;
  */
 class MergedBaseFrameRecomputerTest {
 	private static final Path RUN = TestFixtures.stagedRoot();
-	private static final Path MERGED = RUN.resolve("merged-base/patched-mc-merged-26.2.jar");
+	private static final Path MERGED = RUN.resolve(TestFixtures.BASE_JAR);
 	private static final Path FORGE_RT = RUN.resolve("forge-runtime/forge-runtime.jar");
 	private static final Path NEO_RT = RUN.resolve("neoforge-runtime/neoforge-runtime.jar");
 	private static final Path IPN = RUN.resolve("mods/InventoryProfilesNext-forge-26.2-2.3.7.jar");

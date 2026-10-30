@@ -78,8 +78,8 @@ import org.objectweb.asm.tree.VarInsnNode;
  */
 class MergedLambdaCaptureTest {
 	private static final Path STAGED = TestFixtures.stagedRoot().toAbsolutePath().normalize();
-	private static final Path MERGED = STAGED.resolve("merged-base/patched-mc-merged-26.2.jar");
-	private static final Path NEO = patched("patched-mc-neoforge-26.2.jar", "neoforge-patched");
+	private static final Path MERGED = STAGED.resolve(TestFixtures.BASE_JAR);
+	private static final Path NEO = patched(Path.of(TestFixtures.GENUINE_BASE_JAR).getFileName().toString(), "neoforge-patched");
 	private static final Path FORGE = patched("patched-mc-forge-26.2.jar", "forge-patched");
 	private static final Path REPORT = STAGED.resolve("merged-base/merge-conflicts.txt");
 	/** The heading MergedBaseBuilder.KEPT_AS_ONE_SECTION writes above the lambdas it proved one lambda on both sides. */

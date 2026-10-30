@@ -50,7 +50,7 @@ class UncalledDecisionEntriesStagedTest {
 	}
 
 	private static Path merged() {
-		Path jar = TestFixtures.stagedRoot().resolve("merged-base/patched-mc-merged-26.2.jar");
+		Path jar = TestFixtures.stagedBase();
 		TestFixtures.require(TestFixtures.Fixture.STAGED, Files.isRegularFile(jar), "actual game required");
 		return jar;
 	}

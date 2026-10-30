@@ -84,7 +84,7 @@ class HookCallSiteCensusStagedTest {
 	}
 
 	private static Path base() {
-		return root().resolve("merged-base/patched-mc-merged-26.2.jar");
+		return root().resolve(TestFixtures.BASE_JAR);
 	}
 
 	/** The kernel's own game-side classes, compiled beside these tests: the fourth place an event can come from. */
@@ -183,7 +183,7 @@ class HookCallSiteCensusStagedTest {
 
 	/** NeoForge's own patched game, as it was before the merge. */
 	private static Path neoForgePatchedGame() {
-		return root().resolve("neoforge-patched/patched-mc-neoforge-26.2.jar");
+		return root().resolve(TestFixtures.GENUINE_BASE_JAR);
 	}
 
 	private static boolean forgeFamily(String internalName) {

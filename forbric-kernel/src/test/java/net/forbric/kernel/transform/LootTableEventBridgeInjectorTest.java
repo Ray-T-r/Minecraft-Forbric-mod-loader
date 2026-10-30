@@ -47,7 +47,7 @@ import net.forbric.kernel.TestFixtures.Fixture;
 
 /** The two owner swaps over the REAL merged {@code ReloadableServerRegistries}, and the seam shape they rely on. */
 class LootTableEventBridgeInjectorTest {
-	private static final Path MERGED_BASE = TestFixtures.stagedRoot().resolve("merged-base/patched-mc-merged-26.2.jar");
+	private static final Path MERGED_BASE = TestFixtures.stagedBase();
 	private static final String OWNER = LootTableEventBridgeInjector.TARGET.replace('.', '/');
 
 	@AfterEach

@@ -55,7 +55,7 @@ import net.forbric.kernel.TestFixtures.Fixture;
  * so a merged base that moves either one silently reopens one of those two failures. Neither injector had a test.
  */
 class ClientWindowOrderTest {
-	private static final Path MERGED_BASE = TestFixtures.stagedRoot().resolve("merged-base/patched-mc-merged-26.2.jar");
+	private static final Path MERGED_BASE = TestFixtures.stagedBase();
 
 	private static final String MINECRAFT = "net.minecraft.client.Minecraft";
 	private static final String OPTIONS = "net/minecraft/client/Options";

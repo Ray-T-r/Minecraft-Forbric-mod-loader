@@ -47,7 +47,7 @@ import org.objectweb.asm.tree.MethodNode;
 @ResourceLock("system-properties")
 class ClientPartTrackingFlowTest {
 	private static final Path STAGED = TestFixtures.stagedRoot();
-	private static final Path MERGED = STAGED.resolve("merged-base/patched-mc-merged-26.2.jar");
+	private static final Path MERGED = STAGED.resolve(TestFixtures.BASE_JAR);
 	private static final Path GATE = Path.of("run/gate-m9-client.sh");
 	private static final String CALLBACKS = ClientPartTrackingInjector.CALLBACKS;
 	private static final String CALLBACKS_INTERNAL = ClientPartTrackingInjector.CALLBACKS_INTERNAL;

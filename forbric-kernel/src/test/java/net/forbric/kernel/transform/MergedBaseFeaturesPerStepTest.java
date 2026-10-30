@@ -19,7 +19,7 @@ import org.objectweb.asm.tree.*;
 
 /** The rebuilt base keeps both public field descriptors while the stronger view reads the live Supplier cell. */
 class MergedBaseFeaturesPerStepTest {
-    private static final Path RUN=TestFixtures.stagedRoot(),MERGED=RUN.resolve("merged-base/patched-mc-merged-26.2.jar"),INTEROP=RUN.resolve("merged-base/forge-runtime-interop.jar"),NEO=RUN.resolve("neoforge-runtime/neoforge-runtime.jar");
+    private static final Path RUN=TestFixtures.stagedRoot(),MERGED=RUN.resolve(TestFixtures.BASE_JAR),INTEROP=RUN.resolve("merged-base/forge-runtime-interop.jar"),NEO=RUN.resolve("neoforge-runtime/neoforge-runtime.jar");
     private static final String OWNER="net/minecraft/world/level/chunk/ChunkGenerator",BINARY=OWNER.replace('/','.'),SUPPLIER="Ljava/util/function/Supplier;",STRONG="Lnet/minecraftforge/common/util/ClearableLazy;";
     @Test void theFieldCarriesVanillasDescriptorAndOnlyThatOne()throws Exception{
         ClassNode node=node(original());List<String> descriptors=node.fields.stream().filter(f->f.name.equals("featuresPerStep")).map(f->f.desc).sorted().toList();

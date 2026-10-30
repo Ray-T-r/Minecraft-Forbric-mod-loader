@@ -47,7 +47,7 @@ class CompatibilityPromptTickInjectorTest {
 	}
 
 	@Test void gameUiCallsExistOnTheActualMinecraft262Base() throws Exception {
-		Path game = TestFixtures.stagedRoot().resolve("merged-base/patched-mc-merged-26.2.jar");
+		Path game = TestFixtures.stagedBase();
 		TestFixtures.require(Fixture.STAGED, Files.isRegularFile(game), "staged game absent");
 		try (ZipFile zip = new ZipFile(game.toFile())) {
 			ClassNode minecraft = parse(zip.getInputStream(zip.getEntry("net/minecraft/client/Minecraft.class")).readAllBytes());

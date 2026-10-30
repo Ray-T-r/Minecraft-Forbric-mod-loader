@@ -42,10 +42,10 @@ import net.forbric.api.Ecosystem;
  * moved off the shape it expects.
  */
 class CarrierHelperCensusTest {
-	private static final Path MERGED = TestFixtures.stagedRoot().resolve("merged-base/patched-mc-merged-26.2.jar");
+	private static final Path MERGED = TestFixtures.stagedBase();
 	private static final Path VANILLA = TestFixtures.vanillaJar();
 	private static final Path FORGE = TestFixtures.stagedRoot().resolve("forge-patched/patched-mc-forge-26.2.jar");
-	private static final Path NEOFORGE = TestFixtures.stagedRoot().resolve("neoforge-patched/patched-mc-neoforge-26.2.jar");
+	private static final Path NEOFORGE = TestFixtures.genuineBase();
 
 	@Test void theShippedTableIsExactlyWhatTheArtifactsSay() throws Exception {
 		for (Path jar : List.of(MERGED, VANILLA, FORGE, NEOFORGE)) {

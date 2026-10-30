@@ -40,8 +40,8 @@ import net.forbric.kernel.ExpectCaught;
 
 /** The composition shim over the real staged roots, and every call site it re-creates. */
 class ForgeCapabilityCompositionTransformerTest {
-	private static final Path MERGED = TestFixtures.stagedRoot().resolve("merged-base/patched-mc-merged-26.2.jar");
-	private static final Path NEO = TestFixtures.stagedRoot().resolve("neoforge-patched/patched-mc-neoforge-26.2.jar");
+	private static final Path MERGED = TestFixtures.stagedBase();
+	private static final Path NEO = TestFixtures.genuineBase();
 	private static final List<String> ROOTS = List.of(ForgeCapabilityCompositionTransformer.ENTITY,
 			ForgeCapabilityCompositionTransformer.BLOCK_ENTITY, ForgeCapabilityCompositionTransformer.LEVEL);
 

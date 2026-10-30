@@ -51,7 +51,7 @@ import net.forbric.kernel.TestFixtures.Fixture;
  */
 @ExecutesInjector(LifecycleHookInjector.class)
 class LifecycleHookInjectorTest {
-	private static final Path MERGED_BASE = TestFixtures.stagedRoot().resolve("merged-base/patched-mc-merged-26.2.jar");
+	private static final Path MERGED_BASE = TestFixtures.stagedBase();
 
 	private final LifecycleHookInjector injector = new LifecycleHookInjector();
 

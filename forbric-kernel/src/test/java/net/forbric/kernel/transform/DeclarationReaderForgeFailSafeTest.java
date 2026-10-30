@@ -236,7 +236,7 @@ class DeclarationReaderForgeFailSafeTest {
 		Path compiled = Path.of(System.getProperty("forbric.testRuntimeClasses", "build/classes/java/runtime"));
 		Path run = TestFixtures.stagedRoot();
 		Path neo = run.resolve("neoforge-runtime/neoforge-runtime.jar");
-		Path merged = run.resolve("merged-base/patched-mc-merged-26.2.jar");
+		Path merged = run.resolve(TestFixtures.BASE_JAR);
 		TestFixtures.require(Fixture.STAGED, Files.isRegularFile(neo) && Files.isRegularFile(merged),
 				"the staged artifacts are absent");
 		TestFixtures.require(Fixture.GAME_SIDE, Files.isDirectory(compiled), "the game side is not compiled");

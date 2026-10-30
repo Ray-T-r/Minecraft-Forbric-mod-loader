@@ -46,7 +46,7 @@ import net.forbric.kernel.TestFixtures.Fixture;
  * merge emits, and the exact instruction the repair has to land BEFORE is in that emitted {@code <init>}.
  */
 class MergedBaseParticleProvidersTest {
-	private static final Path MERGED_BASE = TestFixtures.stagedRoot().resolve("merged-base/patched-mc-merged-26.2.jar");
+	private static final Path MERGED_BASE = TestFixtures.stagedBase();
 	private static final String ENTRY = "net/minecraft/client/particle/ParticleResources.class";
 	private static final String ID_KEYED = "Lit/unimi/dsi/fastutil/ints/Int2ObjectMap;";
 	private static final String NAME_KEYED = "Ljava/util/Map;";

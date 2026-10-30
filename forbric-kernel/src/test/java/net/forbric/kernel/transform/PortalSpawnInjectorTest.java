@@ -31,7 +31,7 @@ class PortalSpawnInjectorTest {
 	@AfterEach void reset() { System.clearProperty(PortalSpawnInjector.PROPERTY); }
 
 	@Test void onlyTheHookOwnerChangesOnTheRealMergedBase() throws Exception {
-		byte[] original = staged("merged-base/patched-mc-merged-26.2.jar", PortalSpawnInjector.TARGET.replace('.', '/'));
+		byte[] original = staged(TestFixtures.BASE_JAR, PortalSpawnInjector.TARGET.replace('.', '/'));
 		// A base whose merge restored MinecraftForge's own call carries the proved pair: each family's call is routed
 		// through its own runtime entry, in the base's own order (NeoForge's first behind its barrier, or MinecraftForge's
 		// first where the merge kept both sides' edits). A base that lost it gets the wrapper that forwards to Forge
@@ -55,7 +55,7 @@ class PortalSpawnInjectorTest {
 	}
 
 	@Test void switchedOffTheRealMergedBaseCarriesOnlyTheReviewedNeoForgeCaller() throws Exception {
-		byte[] original = staged("merged-base/patched-mc-merged-26.2.jar", PortalSpawnInjector.TARGET.replace('.', '/'));
+		byte[] original = staged(TestFixtures.BASE_JAR, PortalSpawnInjector.TARGET.replace('.', '/'));
 		boolean restored = calls(host(parse(original))).stream().anyMatch(c -> c.owner.equals(PortalSpawnInjector.FORGE));
 		System.setProperty(PortalSpawnInjector.PROPERTY, "off");
 		byte[] changed = injector.transform(PortalSpawnInjector.TARGET, original, context);

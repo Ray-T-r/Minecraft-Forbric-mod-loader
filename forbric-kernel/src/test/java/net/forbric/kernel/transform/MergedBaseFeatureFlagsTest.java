@@ -41,7 +41,7 @@ import net.forbric.kernel.TestFixtures.Fixture;
 
 /** The merged FeatureFlags.<clinit> calls NeoForge's modded-flag loader once; after the repair it calls the kernel's. */
 class MergedBaseFeatureFlagsTest {
-	private static final Path MERGED = TestFixtures.stagedRoot().resolve("merged-base/patched-mc-merged-26.2.jar");
+	private static final Path MERGED = TestFixtures.stagedBase();
 
 	@Test
 	void theModdedFlagLoaderCallIsSentToTheKernel() throws Exception {

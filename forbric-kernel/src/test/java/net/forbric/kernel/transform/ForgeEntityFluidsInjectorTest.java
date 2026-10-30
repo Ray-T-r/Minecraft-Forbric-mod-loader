@@ -33,7 +33,7 @@ class ForgeEntityFluidsInjectorTest {
 	private static final String INTERACTION = "net/minecraft/world/entity/EntityFluidInteraction";
 
 	private static Path merged() {
-		return TestFixtures.stagedRoot().resolve("merged-base/patched-mc-merged-26.2.jar");
+		return TestFixtures.stagedBase();
 	}
 
 	@AfterEach void reset() { System.clearProperty(ForgeEntityFluidsInjector.PROPERTY); }

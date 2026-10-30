@@ -146,7 +146,7 @@ class KernelCreativePagerMergedScreenTest {
 	/** The merged game, both carriers, the libraries they link against, the compiled pager, and the bridged screen. */
 	private static URLClassLoader gameLoader() throws Exception {
 		Path compiled = Path.of(System.getProperty("forbric.test.runtimeClasses", "build/classes/java/runtime"));
-		Path merged = RUN.resolve("merged-base/patched-mc-merged-26.2.jar");
+		Path merged = RUN.resolve(TestFixtures.BASE_JAR);
 		Path neo = RUN.resolve("neoforge-runtime/neoforge-runtime.jar");
 		Path forge = RUN.resolve("merged-base/forge-runtime-interop.jar");
 		TestFixtures.require(Fixture.STAGED, Files.isRegularFile(merged) && Files.isRegularFile(neo) && Files.isRegularFile(forge),

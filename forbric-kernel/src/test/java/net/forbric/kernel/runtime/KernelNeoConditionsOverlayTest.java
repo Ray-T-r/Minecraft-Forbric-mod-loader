@@ -151,7 +151,7 @@ class KernelNeoConditionsOverlayTest {
 		Path run = TestFixtures.stagedRoot();
 		Path forgeRt = run.resolve("forge-runtime/forge-runtime.jar");
 		Path neoRt = run.resolve("neoforge-runtime/neoforge-runtime.jar");
-		Path merged = run.resolve("merged-base/patched-mc-merged-26.2.jar");
+		Path merged = run.resolve(TestFixtures.BASE_JAR);
 		TestFixtures.require(TestFixtures.Fixture.STAGED, Files.isRegularFile(forgeRt) && Files.isRegularFile(neoRt) && Files.isRegularFile(merged),
 				"the staged artifacts are absent");
 		TestFixtures.require(TestFixtures.Fixture.GAME_SIDE, Files.isDirectory(compiled), "the game-side set is not compiled");

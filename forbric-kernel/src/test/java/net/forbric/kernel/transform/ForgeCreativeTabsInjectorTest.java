@@ -64,7 +64,7 @@ class ForgeCreativeTabsInjectorTest {
 	}
 
 	@Test void realMergedMethodKeepsEveryInstructionAndFrame() throws Exception {
-		byte[] real = staged("merged-base/patched-mc-merged-26.2.jar", INTERNAL);
+		byte[] real = staged(TestFixtures.BASE_JAR, INTERNAL);
 		assertEquals(22, opcodes(method(parse(real))).size(), "re-check the staged premise if the method moves");
 		assertOnlyOneExchange(real);
 	}

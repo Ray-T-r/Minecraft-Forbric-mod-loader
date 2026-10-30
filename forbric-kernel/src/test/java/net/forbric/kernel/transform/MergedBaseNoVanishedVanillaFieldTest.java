@@ -67,7 +67,7 @@ import org.objectweb.asm.tree.FieldNode;
  * <p>The comparison is made AFTER the kernel's compat transformer has run, because that is what the game sees.
  */
 class MergedBaseNoVanishedVanillaFieldTest {
-	private static final Path MERGED_BASE = TestFixtures.stagedRoot().resolve("merged-base/patched-mc-merged-26.2.jar");
+	private static final Path MERGED_BASE = TestFixtures.stagedBase();
 
 	/**
 	 * Stock Minecraft, from the same local install the staged artifacts were derived from — the same lookup the

@@ -42,6 +42,6 @@ class BarrelRollCameraAdapterTest {
 	private static void check(ClassNode n,String name,String target,int ordinal){AnnotationNode at=MixinFit.atNodes(MixinFit.injectorOf(handler(n,name))).getFirst();assertEquals(target,MixinFit.value(at,"target"));assertEquals(ordinal,MixinFit.value(at,"ordinal"));}
 	private static MethodNode handler(ClassNode n,String name){return n.methods.stream().filter(m->m.name.equals(name)).findFirst().orElseThrow();}
 	private static ClassNode mixin() throws Exception {return read(Fixture.THIRD_PARTY,Path.of("build/compat-inputs/c2me-barrel-20261001/do_a_barrel_roll-fabric-3.8.4+26.2.jar"),"nl/enjarai/doabarrelroll/mixin/client/roll/CameraMixin");}
-	private static ClassNode camera() throws Exception {return read(Fixture.STAGED,TestFixtures.stagedRoot().resolve("merged-base/patched-mc-merged-26.2.jar"),MixinCameraRollAdapter.CAMERA);}
+	private static ClassNode camera() throws Exception {return read(Fixture.STAGED,TestFixtures.stagedBase(),MixinCameraRollAdapter.CAMERA);}
 	private static ClassNode read(Fixture kind,Path p,String name) throws Exception {TestFixtures.require(kind,Files.exists(p),p+" absent");try(ZipFile z=new ZipFile(p.toFile())){ClassNode n=new ClassNode();new ClassReader(z.getInputStream(z.getEntry(name+".class")).readAllBytes()).accept(n,ClassReader.EXPAND_FRAMES);return n;}}
 }

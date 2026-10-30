@@ -38,7 +38,7 @@ import net.forbric.kernel.TestFixtures.Fixture;
  */
 @ResourceLock("system-properties")
 class ThinnedCallOrdinalsSpellingTest {
-	private static final Path MERGED = TestFixtures.stagedRoot().resolve("merged-base/patched-mc-merged-26.2.jar");
+	private static final Path MERGED = TestFixtures.stagedBase();
 	private static final Path VIAFABRICPLUS = Path.of("../build/lb-vfp/jars/ViaFabricPlus-5.0.2.jar");
 	private static final String OWNER = "net/minecraft/client/multiplayer/MultiPlayerGameMode";
 	private static final String CALL = "Lnet/minecraft/world/item/ItemStack;isEmpty()Z";

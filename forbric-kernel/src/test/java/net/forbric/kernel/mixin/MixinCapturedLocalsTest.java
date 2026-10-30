@@ -26,7 +26,7 @@ class MixinCapturedLocalsTest {
 	private static final String MINECRAFT = "net/minecraft/client/Minecraft";
 
 	@Test void architecturysRightClickAirReadsTheHeldItemPastNeoForgesEvent() throws Exception {
-		ClassNode merged = full(TestFixtures.stagedRoot().resolve("merged-base/patched-mc-merged-26.2.jar"));
+		ClassNode merged = full(TestFixtures.stagedBase());
 		ClassNode vanilla = full(TestFixtures.vanillaJar());
 		ClassNode mixin = architectury();
 		assertEquals(1, MixinCapturedLocals.adapt(mixin, name -> name.equals(MINECRAFT) ? merged : null,

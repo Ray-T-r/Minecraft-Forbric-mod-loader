@@ -329,7 +329,7 @@ class VerifierTypeDeferralTest {
 		Path mod = Path.of("build/compat-inputs/player-loading/mods/iris-neoforge-1.11.4+mc26.2.jar");
 		TestFixtures.requireFiles(Fixture.THIRD_PARTY, "a mod whose config plugins reach its platform provider", mod);
 		Path staged = TestFixtures.stagedRoot();
-		Path merged = staged.resolve("merged-base/patched-mc-merged-26.2.jar");
+		Path merged = staged.resolve(TestFixtures.BASE_JAR);
 		Path neoforge = staged.resolve("neoforge-runtime/neoforge-runtime.jar");
 		Path forge = staged.resolve("forge-runtime/forge-runtime.jar");
 		TestFixtures.requireFiles(Fixture.STAGED, "the merged game the provider names", merged, neoforge, forge);

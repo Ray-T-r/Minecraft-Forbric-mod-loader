@@ -55,7 +55,7 @@ import net.forbric.kernel.TestFixtures.Fixture;
  * {@code pictureInPictureRendererPools} instead, so those renderers draw nothing with no error anywhere.
  */
 class MergedBasePipBridgeTest {
-	private static final Path MERGED_BASE = TestFixtures.stagedRoot().resolve("merged-base/patched-mc-merged-26.2.jar");
+	private static final Path MERGED_BASE = TestFixtures.stagedBase();
 
 	private static final String GUI_RENDERER = "net/minecraft/client/gui/render/GuiRenderer";
 	private static final String BRIDGE = "forbric$prepareOrphanedPip";

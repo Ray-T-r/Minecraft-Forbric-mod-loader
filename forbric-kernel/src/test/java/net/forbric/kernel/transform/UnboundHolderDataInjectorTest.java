@@ -36,7 +36,7 @@ import org.objectweb.asm.tree.VarInsnNode;
 @ResourceLock("system-properties")
 class UnboundHolderDataInjectorTest {
 	private static final Path RUN = TestFixtures.stagedRoot();
-	private static final Path MERGED = RUN.resolve("merged-base/patched-mc-merged-26.2.jar");
+	private static final Path MERGED = RUN.resolve(TestFixtures.BASE_JAR);
 	private static final Path NEO = RUN.resolve("neoforge-runtime/neoforge-runtime.jar");
 	private static final String REFERENCE = UnboundHolderDataInjector.OWNER;
 

@@ -334,7 +334,7 @@ class DatapackRegistryDeclarationTest {
 	@Test
 	void theReconcilesReflectiveTargetsExistWithTheseShapes() throws Exception {
 		Path runtime = staged("neoforge-runtime", "neoforge-runtime.jar");
-		Path merged = staged("merged-base", "patched-mc-merged-26.2.jar");
+		Path merged = TestFixtures.stagedBase().normalize();
 		TestFixtures.require(Fixture.STAGED, Files.isRegularFile(runtime) && Files.isRegularFile(merged),
 				"carrier or merged base not staged");
 

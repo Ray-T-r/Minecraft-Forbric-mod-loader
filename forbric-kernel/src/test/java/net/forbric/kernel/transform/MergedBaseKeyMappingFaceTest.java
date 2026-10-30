@@ -49,7 +49,7 @@ import org.objectweb.asm.tree.MethodNode;
  * conflict context ignored, which is worse.
  */
 class MergedBaseKeyMappingFaceTest {
-	private static final Path MERGED = TestFixtures.stagedRoot().resolve("merged-base/patched-mc-merged-26.2.jar");
+	private static final Path MERGED = TestFixtures.stagedBase();
 	private static final String KEY_MAPPING = "net/minecraft/client/KeyMapping";
 	private static final String MF_CONTEXT = "Lnet/minecraftforge/client/settings/IKeyConflictContext;";
 	private static final String NEO_CONTEXT = "Lnet/neoforged/neoforge/client/settings/IKeyConflictContext;";

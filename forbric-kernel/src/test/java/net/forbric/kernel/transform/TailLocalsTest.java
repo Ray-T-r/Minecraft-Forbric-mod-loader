@@ -171,7 +171,7 @@ class TailLocalsTest {
 	 */
 	@Test void theMergedRenderLayersTailHoldsVanillasNextOrderAgain() {
 		String owner = "net/minecraft/client/renderer/entity/layers/EquipmentLayerRenderer";
-		java.nio.file.Path merged = net.forbric.kernel.TestFixtures.stagedRoot().resolve("merged-base/patched-mc-merged-26.2.jar");
+		java.nio.file.Path merged = net.forbric.kernel.TestFixtures.stagedBase();
 		ClassNode node = node(net.forbric.kernel.TestFixtures.requireEntry(net.forbric.kernel.TestFixtures.Fixture.STAGED, merged, owner + ".class"));
 		ClassNode vanilla = node(net.forbric.kernel.TestFixtures.requireEntry(net.forbric.kernel.TestFixtures.Fixture.STAGED, merged,
 				"META-INF/forbric/native-reference/FABRIC/" + owner + ".class.bin"));

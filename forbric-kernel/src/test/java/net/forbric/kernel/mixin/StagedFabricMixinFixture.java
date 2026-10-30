@@ -21,7 +21,7 @@ final class StagedFabricMixinFixture {
   return game("net/minecraft/world/entity/LivingEntity",vanilla);
  }
  static ClassNode game(String name,boolean vanilla)throws Exception{
-  Path p=vanilla?TestFixtures.vanillaJar():TestFixtures.stagedRoot().resolve("merged-base/patched-mc-merged-26.2.jar");
+  Path p=vanilla?TestFixtures.vanillaJar():TestFixtures.stagedBase();
   TestFixtures.require(vanilla?Fixture.MC_LIBRARIES:Fixture.STAGED,Files.isRegularFile(p),"actual game required");
   try(ZipFile z=new ZipFile(p.toFile())){return MixinFit.parse(z.getInputStream(z.getEntry(name+".class")).readAllBytes());}
  }

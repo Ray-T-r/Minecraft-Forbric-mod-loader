@@ -94,7 +94,7 @@ class KernelRuntimePackMetadataTest {
 	}
 
 	private static Path merged() {
-		return TestFixtures.stagedRoot().resolve("merged-base/patched-mc-merged-26.2.jar");
+		return TestFixtures.stagedBase();
 	}
 
 	/**

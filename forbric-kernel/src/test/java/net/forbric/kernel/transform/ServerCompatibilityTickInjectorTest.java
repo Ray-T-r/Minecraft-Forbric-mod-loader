@@ -8,7 +8,7 @@ import org.objectweb.asm.*;
 import org.objectweb.asm.tree.*;
 class ServerCompatibilityTickInjectorTest {
  @Test void everyNormalReturnInTheActualServerHasOneCheckAndSecondPassDoesNothing() throws Exception {
-  Path jar=TestFixtures.stagedRoot().resolve("merged-base/patched-mc-merged-26.2.jar");
+  Path jar=TestFixtures.stagedBase();
   TestFixtures.require(Fixture.STAGED,Files.isRegularFile(jar),"actual game fixture required");
   byte[] bytes=TestFixtures.requireEntry(Fixture.STAGED,jar,"net/minecraft/server/MinecraftServer.class");
   var injector=new ServerCompatibilityTickInjector();byte[] transformed=injector.transform("net.minecraft.server.MinecraftServer",bytes,null);

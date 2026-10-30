@@ -27,7 +27,7 @@ class MixinBuilderStubRebindTest {
 			+ "Lnet/minecraft/client/renderer/block/dispatch/ModelState;Lnet/minecraft/client/resources/model/ModelDebugName;Ljava/util/function/Function;)V";
 
 	@Test void createsNormalsWrapMovesToTheOverloadThatBakesTheQuads() throws Exception {
-		ClassNode merged = full(TestFixtures.stagedRoot().resolve("merged-base/patched-mc-merged-26.2.jar")), vanilla = full(TestFixtures.vanillaJar());
+		ClassNode merged = full(TestFixtures.stagedBase()), vanilla = full(TestFixtures.vanillaJar());
 		ClassNode mixin = create();
 		assertEquals(1, MixinBuilderStubRebind.adapt(mixin, name -> name.equals(GEOMETRY) ? merged : null, (e, name) -> name.equals(GEOMETRY) ? vanilla : null));
 		MethodNode handler = mixin.methods.stream().filter(m -> m.name.equals("bakeQuad")).findFirst().orElseThrow();
@@ -35,7 +35,7 @@ class MixinBuilderStubRebindTest {
 	}
 
 	@Test void onVanillaOrSwitchedOffNothingMoves() throws Exception {
-		ClassNode merged = full(TestFixtures.stagedRoot().resolve("merged-base/patched-mc-merged-26.2.jar")), vanilla = full(TestFixtures.vanillaJar());
+		ClassNode merged = full(TestFixtures.stagedBase()), vanilla = full(TestFixtures.vanillaJar());
 		assertEquals(0, MixinBuilderStubRebind.adapt(create(), name -> vanilla, (e, name) -> vanilla), "vanilla's bake is the body");
 		String old = System.setProperty(MixinBuilderStubRebind.PROPERTY, "off");
 		try {

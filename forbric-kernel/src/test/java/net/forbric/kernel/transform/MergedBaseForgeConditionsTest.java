@@ -69,7 +69,7 @@ import net.forbric.kernel.TestFixtures.Fixture;
 class MergedBaseForgeConditionsTest {
 	private static final Path STAGED = TestFixtures.stagedRoot();
 	private static final Path FORGE_CARRIER = STAGED.resolve("forge-runtime/forge-runtime.jar");
-	private static final Path MERGED_BASE = STAGED.resolve("merged-base/patched-mc-merged-26.2.jar");
+	private static final Path MERGED_BASE = STAGED.resolve(TestFixtures.BASE_JAR);
 	private static final String ENTRY = "net/minecraftforge/common/crafting/conditions/ICondition.class";
 	private static final String BINARY = "net.minecraftforge.common.crafting.conditions.ICondition";
 	private static final String KERNEL = "net/forbric/kernel/runtime/KernelForgeConditions";

@@ -56,7 +56,7 @@ import net.forbric.kernel.TestFixtures.Fixture;
  * notice. So one test defines the transformed class for real and calls it.
  */
 public class MergedBaseShutdownSaveTest {
-	private static final Path MERGED_BASE = TestFixtures.stagedRoot().resolve("merged-base/patched-mc-merged-26.2.jar");
+	private static final Path MERGED_BASE = TestFixtures.stagedBase();
 
 	private static final String INTEGRATED_SERVER = "net/minecraft/client/server/IntegratedServer";
 

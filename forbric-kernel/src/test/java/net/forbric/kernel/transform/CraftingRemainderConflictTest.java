@@ -26,7 +26,7 @@ import org.objectweb.asm.tree.MethodNode;
  */
 class CraftingRemainderConflictTest {
 	private static final Path STAGED = TestFixtures.stagedRoot();
-	private static final List<Path> JARS = List.of(STAGED.resolve("merged-base/patched-mc-merged-26.2.jar"),
+	private static final List<Path> JARS = List.of(STAGED.resolve(TestFixtures.BASE_JAR),
 			STAGED.resolve("merged-base/forge-runtime-interop.jar"), STAGED.resolve("neoforge-runtime/neoforge-runtime.jar"));
 	private static final Path FABRIC_API = TestFixtures.fabricApi();
 	private static final String ITEM = "net/minecraft/world/item/Item";

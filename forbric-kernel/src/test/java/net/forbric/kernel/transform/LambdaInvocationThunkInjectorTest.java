@@ -118,7 +118,7 @@ class LambdaInvocationThunkInjectorTest {
 	}
 
 	@Test void theActualHudReferencesAcquireExactSingleCallThunks() throws Exception {
-		Path jar = TestFixtures.stagedRoot().resolve("merged-base/patched-mc-merged-26.2.jar");
+		Path jar = TestFixtures.stagedBase();
 		TestFixtures.require(Fixture.STAGED, Files.isRegularFile(jar), "actual merged game required");
 		byte[] bytes;
 		try (ZipFile zip = new ZipFile(jar.toFile())) { bytes = zip.getInputStream(zip.getEntry("net/minecraft/client/gui/Hud.class")).readAllBytes(); }

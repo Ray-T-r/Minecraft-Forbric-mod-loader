@@ -58,7 +58,7 @@ import net.forbric.kernel.TestFixtures.Fixture;
  * generated ones, where vanilla against itself differed in 0 and 10.
  */
 class MergedBaseRandomSourcePrecisionTest {
-	private static final Path MERGED_BASE = TestFixtures.stagedRoot().resolve("merged-base/patched-mc-merged-26.2.jar");
+	private static final Path MERGED_BASE = TestFixtures.stagedBase();
 	private static final List<String> SOURCES = List.of(
 			"net/minecraft/world/level/levelgen/XoroshiroRandomSource",
 			"net/minecraft/world/level/levelgen/BitRandomSource");

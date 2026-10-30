@@ -173,7 +173,7 @@ class MixinNullableCompositeSpellingTest {
 	/** fabric-api's hopper mixin under other names, the merged and NeoForge classes, and vanilla as the mod was compiled against it. */
 	private static Inputs inputs() throws Exception {
 		Path api = Path.of(System.getProperty("forbric.fabricApi", TestFixtures.fabricApi().toString()));
-		Path base = Path.of(System.getProperty("forbric.predicateBase", TestFixtures.stagedRoot().resolve("merged-base/patched-mc-merged-26.2.jar").toString()));
+		Path base = Path.of(System.getProperty("forbric.predicateBase", TestFixtures.stagedBase().toString()));
 		Path neo = TestFixtures.stagedRoot().resolve("neoforge-runtime/neoforge-runtime.jar");
 		TestFixtures.requireFiles(TestFixtures.Fixture.STAGED, "actual API/indexed base/runtime required", api, base, neo);
 		ClassNode released = null;

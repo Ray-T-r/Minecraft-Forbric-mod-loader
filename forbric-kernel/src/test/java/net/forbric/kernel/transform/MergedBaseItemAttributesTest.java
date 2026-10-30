@@ -55,8 +55,8 @@ import net.forbric.kernel.TestFixtures.Fixture;
  * the other, and the attribute sat at its {@code false} default forever.
  */
 class MergedBaseItemAttributesTest {
-	private static final Path MERGED_BASE = TestFixtures.stagedRoot().resolve("merged-base/patched-mc-merged-26.2.jar");
-	private static final Path NEO_BASE = TestFixtures.stagedRoot().resolve("neoforge-patched/patched-mc-neoforge-26.2.jar");
+	private static final Path MERGED_BASE = TestFixtures.stagedBase();
+	private static final Path NEO_BASE = TestFixtures.genuineBase();
 
 	private static final String ITEM_STACK = "net/minecraft/world/item/ItemStack";
 

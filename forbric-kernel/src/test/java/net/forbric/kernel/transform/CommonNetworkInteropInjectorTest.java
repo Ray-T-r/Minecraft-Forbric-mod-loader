@@ -54,7 +54,7 @@ import net.forbric.kernel.TestFixtures.Fixture;
  * {@code isOther} test, a site NeoForge already guards is left alone, and the real merged class still verifies.
  */
 class CommonNetworkInteropInjectorTest {
-	private static final Path MERGED_BASE = TestFixtures.stagedRoot().resolve("merged-base/patched-mc-merged-26.2.jar");
+	private static final Path MERGED_BASE = TestFixtures.stagedBase();
 	private static final String LISTENER = "net/minecraft/client/multiplayer/ClientConfigurationPacketListenerImpl";
 	private static final String LISTENER_NAME = LISTENER.replace('/', '.');
 	private static final String CONNECTION_TYPE = "net/neoforged/neoforge/network/connection/ConnectionType";

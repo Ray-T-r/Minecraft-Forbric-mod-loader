@@ -261,7 +261,7 @@ class CreativePagerControlsExecutionTest {
 
 	/** The real merged screen has exactly the two blocks, in the shapes above. */
 	@Test void theMergedScreenHasExactlyTheTwoControlBlocks() throws Exception {
-		Path merged = TestFixtures.stagedRoot().resolve("merged-base/patched-mc-merged-26.2.jar");
+		Path merged = TestFixtures.stagedBase();
 		byte[] screen = TestFixtures.requireEntry(Fixture.STAGED, merged, CreativePagerBridgeInjector.SCREEN + ".class");
 		ClassNode node = new ClassNode();
 		new ClassReader(screen).accept(node, 0);

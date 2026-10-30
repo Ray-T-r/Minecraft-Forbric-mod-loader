@@ -27,7 +27,7 @@ import net.forbric.kernel.TestFixtures.Fixture;
 
 /** ThinnedCallOrdinals' row for ViaFabricPlus' 1.12.2 placement hook, on the real jars and on its own. */
 class ThinnedCallOrdinalsTest {
-	private static final Path MERGED = TestFixtures.stagedRoot().resolve("merged-base/patched-mc-merged-26.2.jar");
+	private static final Path MERGED = TestFixtures.stagedBase();
 	private static final Path VANILLA = TestFixtures.vanillaJar();
 	private static final Path VIAFABRICPLUS = Path.of("../build/lb-vfp/jars/ViaFabricPlus-5.0.2.jar");
 	private static final ThinnedCallOrdinals.Site SITE = new ThinnedCallOrdinals.Site(

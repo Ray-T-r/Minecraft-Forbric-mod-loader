@@ -45,7 +45,7 @@ class NativeDecisionIslandStagedTest {
 		return owner -> {
 			try {
 				return owner.startsWith("net/neoforged/") ? staged("neoforge-runtime/neoforge-runtime.jar", owner + ".class")
-						: staged("merged-base/patched-mc-merged-26.2.jar", owner + ".class");
+						: staged(TestFixtures.BASE_JAR, owner + ".class");
 			} catch (AssertionError | RuntimeException absent) {
 				return null;
 			}
@@ -53,8 +53,8 @@ class NativeDecisionIslandStagedTest {
 	}
 
 	@Test void vanillasBreathingChecksComeBackInFrontOfTheCarriersHookWithTheEffectCheckRelayed() throws Exception {
-		ClassNode merged = staged("merged-base/patched-mc-merged-26.2.jar", LIVING + ".class");
-		ClassNode vanilla = staged("merged-base/patched-mc-merged-26.2.jar", "META-INF/forbric/native-reference/FABRIC/" + LIVING + ".class.bin");
+		ClassNode merged = staged(TestFixtures.BASE_JAR, LIVING + ".class");
+		ClassNode vanilla = staged(TestFixtures.BASE_JAR, "META-INF/forbric/native-reference/FABRIC/" + LIVING + ".class.bin");
 		MethodNode host = NativeCallInlining.method(merged, "baseTick()V"), was = NativeCallInlining.method(vanilla, "baseTick()V");
 		assertNotNull(host);
 		assertNotNull(was);
@@ -97,8 +97,8 @@ class NativeDecisionIslandStagedTest {
 	 * that way. Both read the compiled refill class through the same class view the island plans with.
 	 */
 	@Test void theVanillaRefillInTheHookLeavesTheEyeCheckToTheIsland() throws Exception {
-		ClassNode merged = staged("merged-base/patched-mc-merged-26.2.jar", LIVING + ".class");
-		ClassNode vanilla = staged("merged-base/patched-mc-merged-26.2.jar", "META-INF/forbric/native-reference/FABRIC/" + LIVING + ".class.bin");
+		ClassNode merged = staged(TestFixtures.BASE_JAR, LIVING + ".class");
+		ClassNode vanilla = staged(TestFixtures.BASE_JAR, "META-INF/forbric/native-reference/FABRIC/" + LIVING + ".class.bin");
 		MethodNode host = NativeCallInlining.method(merged, "baseTick()V"), was = NativeCallInlining.method(vanilla, "baseTick()V");
 		String hook = "net/neoforged/neoforge/common/CommonHooks", refill = net.forbric.kernel.transform.VanillaAirRefillInjector.RUNTIME;
 		ClassNode decorated = new ClassNode();
@@ -150,8 +150,8 @@ class NativeDecisionIslandStagedTest {
 	@Test void aCallTheCarrierMovedIntoItsOwnStaticCalleeIsCarriedAndNotRelayed() throws Exception {
 		String owner = "net/minecraft/client/resources/model/SimpleModelWrapper";
 		String sprites = "L" + owner + ";findNonBlockSprites(Lnet/minecraft/client/resources/model/geometry/QuadCollection;)Lcom/google/common/collect/Multimap;";
-		ClassNode merged = staged("merged-base/patched-mc-merged-26.2.jar", owner + ".class");
-		ClassNode vanilla = staged("merged-base/patched-mc-merged-26.2.jar", "META-INF/forbric/native-reference/FABRIC/" + owner + ".class.bin");
+		ClassNode merged = staged(TestFixtures.BASE_JAR, owner + ".class");
+		ClassNode vanilla = staged(TestFixtures.BASE_JAR, "META-INF/forbric/native-reference/FABRIC/" + owner + ".class.bin");
 		String bake = "bake(Lnet/minecraft/client/resources/model/ModelBaker;Lnet/minecraft/resources/Identifier;"
 				+ "Lnet/minecraft/client/renderer/block/dispatch/ModelState;)Lnet/minecraft/client/renderer/block/dispatch/BlockStateModelPart;";
 		MethodNode host = NativeCallInlining.method(merged, bake), was = NativeCallInlining.method(vanilla, bake);
@@ -164,7 +164,7 @@ class NativeDecisionIslandStagedTest {
 	}
 
 	@Test void theRelayedEffectCheckAnswersAnOpenFrameAndOtherwiseRunsAsAlways() throws Exception {
-		ClassNode util = staged("merged-base/patched-mc-merged-26.2.jar", "net/minecraft/world/effect/MobEffectUtil.class");
+		ClassNode util = staged(TestFixtures.BASE_JAR, "net/minecraft/world/effect/MobEffectUtil.class");
 		MethodNode effect = NativeCallInlining.method(util, "hasWaterBreathing(L" + LIVING + ";)Z");
 		assertNotNull(effect);
 		assertTrue((effect.access & Opcodes.ACC_STATIC) != 0);

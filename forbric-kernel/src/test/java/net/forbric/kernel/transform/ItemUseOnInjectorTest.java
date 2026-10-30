@@ -20,9 +20,9 @@ import org.objectweb.asm.tree.analysis.BasicVerifier;
 @ResourceLock("system-properties")
 class ItemUseOnInjectorTest {
 	private static final Path STAGED = Path.of(System.getProperty("forbric.stagedRoot", "../forbric-loader/run"));
-	private static final Path MERGED = STAGED.resolve("merged-base/patched-mc-merged-26.2.jar");
+	private static final Path MERGED = STAGED.resolve(TestFixtures.BASE_JAR);
 	private static final Path FORGE_RUNTIME = STAGED.resolve("merged-base/forge-runtime-interop.jar");
-	private static final Path NEO_PATCHED = STAGED.resolve("neoforge-patched/patched-mc-neoforge-26.2.jar");
+	private static final Path NEO_PATCHED = STAGED.resolve(TestFixtures.GENUINE_BASE_JAR);
 	private static final Path VANILLA = TestFixtures.vanillaJar();
 	private static final String STACK = "net/minecraft/world/item/ItemStack";
 	private static final String HOOKS = "net/minecraftforge/common/ForgeHooks";

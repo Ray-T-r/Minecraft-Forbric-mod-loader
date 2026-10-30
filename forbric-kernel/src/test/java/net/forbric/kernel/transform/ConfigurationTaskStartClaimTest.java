@@ -35,7 +35,7 @@ import org.objectweb.asm.util.TraceMethodVisitor;
  * task(s)"). A body still handing any task the Consumer overload, or a null context, stays a miss.
  */
 class ConfigurationTaskStartClaimTest {
-	private static final Path MERGED = TestFixtures.stagedRoot().resolve("merged-base/patched-mc-merged-26.2.jar");
+	private static final Path MERGED = TestFixtures.stagedBase();
 	private static final Path GATE = Path.of("run/gate-m9-client.sh");
 	private static final String LISTENER = "net/minecraft/server/network/ServerConfigurationPacketListenerImpl";
 	private static final String LISTENER_NAME = LISTENER.replace('/', '.');

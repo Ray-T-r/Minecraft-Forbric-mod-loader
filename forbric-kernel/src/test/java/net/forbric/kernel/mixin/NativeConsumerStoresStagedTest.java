@@ -28,7 +28,7 @@ import net.forbric.kernel.TestFixtures.Fixture;
  */
 class NativeConsumerStoresStagedTest {
 	private static ClassNode staged(String entry) {
-		Path jar = TestFixtures.stagedRoot().resolve("merged-base/patched-mc-merged-26.2.jar");
+		Path jar = TestFixtures.stagedBase();
 		ClassNode node = new ClassNode();
 		new ClassReader(TestFixtures.requireEntry(Fixture.STAGED, jar, entry)).accept(node, 0);
 		return node;

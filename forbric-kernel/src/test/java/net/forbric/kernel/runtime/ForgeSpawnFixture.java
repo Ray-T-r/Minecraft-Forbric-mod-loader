@@ -54,8 +54,8 @@ final class ForgeSpawnFixture extends ClassLoader {
 			put(FORGE + suffix, staged("forge-runtime/forge-runtime.jar", FORGE + suffix));
 			put(NEO + suffix, staged("neoforge-runtime/neoforge-runtime.jar", NEO + suffix));
 		}
-		put(SPAWN + "$Data", staged("merged-base/patched-mc-merged-26.2.jar", SPAWN + "$Data"));
-		put(SPAWN + "$SpawnPredicate", staged("merged-base/patched-mc-merged-26.2.jar", SPAWN + "$SpawnPredicate"));
+		put(SPAWN + "$Data", staged(TestFixtures.BASE_JAR, SPAWN + "$Data"));
+		put(SPAWN + "$SpawnPredicate", staged(TestFixtures.BASE_JAR, SPAWN + "$SpawnPredicate"));
 		for (String name : new String[] {"net.minecraft.world.entity.Entity", "net.minecraft.world.entity.EntityType",
 				"net.minecraft.world.level.ServerLevelAccessor", "net.minecraft.world.entity.EntitySpawnReason",
 				"net.minecraft.core.BlockPos", "net.minecraft.util.RandomSource", "net.minecraft.world.entity.SpawnPlacementType",

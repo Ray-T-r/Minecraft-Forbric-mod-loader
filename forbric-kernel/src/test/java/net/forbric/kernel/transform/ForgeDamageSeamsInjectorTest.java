@@ -19,7 +19,7 @@ import org.objectweb.asm.tree.analysis.BasicVerifier;
 @ResourceLock("system-properties")
 class ForgeDamageSeamsInjectorTest {
 	private static final Path STAGED = Path.of(System.getProperty("forbric.stagedRoot", "../forbric-loader/run"));
-	private static final Path MERGED = STAGED.resolve("merged-base/patched-mc-merged-26.2.jar");
+	private static final Path MERGED = STAGED.resolve(net.forbric.kernel.TestFixtures.BASE_JAR);
 	private static final Path FORGE = STAGED.resolve("forge-patched/patched-mc-forge-26.2.jar");
 	private static final String LIVING = ForgeDamageSeamsInjector.LIVING, PLAYER = ForgeDamageSeamsInjector.PLAYER;
 

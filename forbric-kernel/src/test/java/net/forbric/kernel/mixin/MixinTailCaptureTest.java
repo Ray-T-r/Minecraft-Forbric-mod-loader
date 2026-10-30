@@ -29,7 +29,7 @@ class MixinTailCaptureTest {
 	private static final String SUBMIT = "Lnet/minecraft/client/renderer/state/gui/GuiRenderState;addItem(Lnet/minecraft/client/renderer/state/gui/GuiItemRenderState;)V";
 
 	private static byte[] merged() throws Exception {
-		Path jar = TestFixtures.stagedRoot().resolve("merged-base/patched-mc-merged-26.2.jar");
+		Path jar = TestFixtures.stagedBase();
 		TestFixtures.require(Fixture.STAGED, Files.isRegularFile(jar), "merged base required: " + jar);
 		try (ZipFile zip = new ZipFile(jar.toFile())) { return zip.getInputStream(zip.getEntry(GUI + ".class")).readAllBytes(); }
 	}

@@ -139,7 +139,7 @@ class ServerLifecycleStandDownTest {
 	@Test
 	void theMergedServersPairedLifecycleCallsAreEachScopedWithTheirMinecraftForgeEvent() throws Exception {
 		Path root = TestFixtures.stagedRoot();
-		Path base = root.resolve("merged-base/patched-mc-merged-26.2.jar");
+		Path base = root.resolve(TestFixtures.BASE_JAR);
 		TestFixtures.require(Fixture.STAGED, Files.isRegularFile(base), "staged merged base absent");
 		NativeDualEventInjector injector = new NativeDualEventInjector(path -> bytes(root, path), DeadEventAudit.forwardedForgeEvents());
 		Map<String, java.util.Set<String>> proved = new TreeMap<>(), named = new TreeMap<>();
@@ -202,7 +202,7 @@ class ServerLifecycleStandDownTest {
 
 	/** A class from the staged base or a carrier, as the kernel's injector reads hook bodies at boot. */
 	private static byte[] bytes(Path root, String path) {
-		for (Path jar : List.of(root.resolve("merged-base/patched-mc-merged-26.2.jar"), root.resolve("forge-runtime/forge-runtime.jar"),
+		for (Path jar : List.of(root.resolve(TestFixtures.BASE_JAR), root.resolve("forge-runtime/forge-runtime.jar"),
 				root.resolve("merged-base/forge-runtime-interop.jar"), root.resolve("neoforge-runtime/neoforge-runtime.jar"))) {
 			if (!Files.isRegularFile(jar)) continue;
 			try (ZipFile zip = new ZipFile(jar.toFile())) {

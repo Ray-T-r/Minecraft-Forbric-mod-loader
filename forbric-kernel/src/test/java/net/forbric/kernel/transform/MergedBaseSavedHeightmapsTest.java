@@ -54,7 +54,7 @@ import org.objectweb.asm.tree.MethodNode;
  * by one bush each, in different places — the same noise vanilla has against itself.
  */
 class MergedBaseSavedHeightmapsTest {
-	private static final Path MERGED_BASE = TestFixtures.stagedRoot().resolve("merged-base/patched-mc-merged-26.2.jar");
+	private static final Path MERGED_BASE = TestFixtures.stagedBase();
 	private static final Path VANILLA = TestFixtures.vanillaJar();
 	private static final String CHUNK_STATUS = "net/minecraft/world/level/chunk/status/ChunkStatus";
 	private static final String WIDENED = "chunkSaveHeightmaps";

@@ -38,7 +38,7 @@ final class TransportSpellings {
 	static Path mergedBase() {
 		String configured = System.getProperty("forbric.predicateBase");
 		Path base = configured == null || configured.isBlank()
-				? TestFixtures.stagedRoot().resolve("merged-base/patched-mc-merged-26.2.jar") : Path.of(configured);
+				? TestFixtures.stagedBase() : Path.of(configured);
 		TestFixtures.require(Fixture.STAGED, Files.isRegularFile(base), "staged merged base required: " + base);
 		return base;
 	}

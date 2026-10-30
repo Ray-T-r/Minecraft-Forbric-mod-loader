@@ -32,7 +32,7 @@ import net.forbric.kernel.TestFixtures.Fixture;
  * through {@code KernelForgeReload}, which calls NeoForge's hook and then the carrier's own Forge post.
  */
 class MergedBaseForgeReloadListenersTest {
-	private static final Path MERGED_BASE = TestFixtures.stagedRoot().resolve("merged-base/patched-mc-merged-26.2.jar");
+	private static final Path MERGED_BASE = TestFixtures.stagedBase();
 	private static final String RSR = "net/minecraft/server/ReloadableServerResources";
 	private static final String NEO_HOOKS = "net/neoforged/neoforge/event/EventHooks";
 	private static final String KERNEL = "net/forbric/kernel/runtime/KernelForgeReload";

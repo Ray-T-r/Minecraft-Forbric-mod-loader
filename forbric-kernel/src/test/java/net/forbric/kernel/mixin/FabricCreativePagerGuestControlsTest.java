@@ -30,7 +30,7 @@ import net.forbric.kernel.transform.CreativePagerFixtures;
  */
 @ResourceLock("system-properties")
 class FabricCreativePagerGuestControlsTest {
-	private static final Path MERGED = TestFixtures.stagedRoot().resolve("merged-base/patched-mc-merged-26.2.jar");
+	private static final Path MERGED = TestFixtures.stagedBase();
 
 	@BeforeEach @AfterEach void reset() {
 		FabricCreativePagerMixinAdapter.forgetSelectionHooks();

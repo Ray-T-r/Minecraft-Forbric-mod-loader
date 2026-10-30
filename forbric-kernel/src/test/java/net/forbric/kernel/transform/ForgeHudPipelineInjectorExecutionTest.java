@@ -35,7 +35,7 @@ import net.forbric.kernel.TestFixtures.Fixture;
 @ExecutesInjector(ForgeHudPipelineInjector.class)
 class ForgeHudPipelineInjectorExecutionTest {
 	private static final String HUD = ForgeHudPipelineInjector.TARGET;
-	private static final Path MERGED_BASE = TestFixtures.stagedRoot().resolve("merged-base/patched-mc-merged-26.2.jar");
+	private static final Path MERGED_BASE = TestFixtures.stagedBase();
 
 	private enum Shape { BOTH, NEOFORGE_ONLY, FORGE_ONLY }
 

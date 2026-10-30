@@ -58,7 +58,7 @@ class RegistryLoaderCompanionBindingTest {
 
 	/** Every case reads the staged merged loader, and its native classes through the merged base's native-reference index. */
 	@BeforeEach void stagedMergedBase() {
-		TestFixtures.requireFiles(Fixture.STAGED, "the staged merged base", TestFixtures.stagedRoot().resolve("merged-base/patched-mc-merged-26.2.jar"));
+		TestFixtures.requireFiles(Fixture.STAGED, "the staged merged base", TestFixtures.stagedBase());
 	}
 
 	@AfterEach void reset() {

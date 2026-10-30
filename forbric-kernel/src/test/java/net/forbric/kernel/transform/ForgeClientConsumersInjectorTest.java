@@ -34,7 +34,7 @@ import net.forbric.kernel.TestFixtures.Fixture;
 @ResourceLock("system-properties")
 class ForgeClientConsumersInjectorTest {
     private static final Path STAGED = TestFixtures.stagedRoot();
-    private static final Path MERGED = STAGED.resolve("merged-base/patched-mc-merged-26.2.jar");
+    private static final Path MERGED = STAGED.resolve(TestFixtures.BASE_JAR);
     private static final Path FORGE = STAGED.resolve("forge-runtime/forge-runtime.jar");
     private static final Path NEO = STAGED.resolve("neoforge-runtime/neoforge-runtime.jar");
     private static final List<String> SWITCHES = List.of("forbric.forgeClientConsumers", "forbric.forgeClientInit");

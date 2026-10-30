@@ -35,7 +35,7 @@ import net.forbric.kernel.TestFixtures.Fixture;
  * player's world — re-read the field, do not re-bless the count.
  */
 class MergedBaseLeftNullFieldsTest {
-	private static final Path MERGED_BASE = TestFixtures.stagedRoot().resolve("merged-base/patched-mc-merged-26.2.jar");
+	private static final Path MERGED_BASE = TestFixtures.stagedBase();
 	private static final Path FORGE_RUNTIME = TestFixtures.stagedRoot().resolve("forge-runtime/forge-runtime.jar");
 
 	/** owner#field → expected GETFIELD readers anywhere in the merged base. */

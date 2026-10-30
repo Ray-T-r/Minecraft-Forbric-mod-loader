@@ -457,7 +457,7 @@ class AdapterPointSpellingTest {
 	 */
 	static ClassNode merged(String name) {
 		byte[] bytes = MERGED.computeIfAbsent(name, n -> {
-			for (String jarName : List.of("merged-base/patched-mc-merged-26.2.jar", "neoforge-runtime/neoforge-runtime.jar", "merged-base/forge-runtime-interop.jar")) {
+			for (String jarName : List.of(TestFixtures.BASE_JAR, "neoforge-runtime/neoforge-runtime.jar", "merged-base/forge-runtime-interop.jar")) {
 				Path jar = TestFixtures.stagedRoot().resolve(jarName);
 				if (!Files.isRegularFile(jar)) continue;
 				try (ZipFile zip = new ZipFile(jar.toFile())) {

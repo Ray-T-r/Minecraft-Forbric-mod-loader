@@ -55,7 +55,7 @@ import net.forbric.kernel.TestFixtures.Fixture;
  * dropping them.
  */
 class MergedBaseUnwrittenStaticsTest {
-	private static final Path MERGED_BASE = TestFixtures.stagedRoot().resolve("merged-base/patched-mc-merged-26.2.jar");
+	private static final Path MERGED_BASE = TestFixtures.stagedBase();
 
 	/**
 	 * What the merge leaves unassigned today, each with what reading it costs.

@@ -32,7 +32,7 @@ import org.objectweb.asm.tree.MethodInsnNode;
 class KernelClientResourcesShapeTest {
 	private static final Path RUNTIME =
 			Path.of(System.getProperty("forbric.testRuntimeClasses", "build/classes/java/runtime"));
-	private static final Path MERGED = TestFixtures.stagedRoot().resolve("merged-base/patched-mc-merged-26.2.jar");
+	private static final Path MERGED = TestFixtures.stagedBase();
 	private static final String RELOADABLE = "net/minecraft/server/packs/resources/ReloadableResourceManager";
 	private static final String MULTI = "net/minecraft/server/packs/resources/MultiPackResourceManager";
 

@@ -71,7 +71,7 @@ import org.objectweb.asm.tree.VarInsnNode;
  * one. ~1s over 94k methods.
  */
 class MergedBasePipelineDriftTest {
-	private static final Path MERGED_BASE = TestFixtures.stagedRoot().resolve("merged-base/patched-mc-merged-26.2.jar");
+	private static final Path MERGED_BASE = TestFixtures.stagedBase();
 	private static final Path VANILLA = TestFixtures.vanillaJar();
 
 	/**

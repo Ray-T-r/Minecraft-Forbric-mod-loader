@@ -52,7 +52,7 @@ import org.objectweb.asm.tree.analysis.BasicVerifier;
  * <p>Regenerate with {@code FORBRIC_WRITE_EARLY_RETURNS=1} after a base rebuild.
  */
 class VanillaEarlyReturnsCensusTest {
-	private static final Path MERGED_BASE = TestFixtures.stagedRoot().resolve("merged-base/patched-mc-merged-26.2.jar");
+	private static final Path MERGED_BASE = TestFixtures.stagedBase();
 	private static final Path VANILLA = TestFixtures.vanillaJar();
 	private static final String CAMERA_UPDATE = "net/minecraft/client/Camera#update(Lnet/minecraft/client/DeltaTracker;)V";
 

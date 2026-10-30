@@ -61,7 +61,7 @@ import net.forbric.kernel.TestFixtures.Fixture;
  * {@code return}; RETURN: before every one). The shape half runs on the real merged base.
  */
 class MergedBaseNestedBootstrapTest {
-	private static final Path MERGED_BASE = TestFixtures.stagedRoot().resolve("merged-base/patched-mc-merged-26.2.jar");
+	private static final Path MERGED_BASE = TestFixtures.stagedBase();
 	private static final String BOOTSTRAP = "net/minecraft/server/Bootstrap";
 
 	@Test

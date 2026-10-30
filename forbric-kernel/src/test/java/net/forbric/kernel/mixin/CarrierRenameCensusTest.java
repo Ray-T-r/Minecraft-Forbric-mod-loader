@@ -43,10 +43,10 @@ import net.forbric.kernel.TestFixtures.Fixture;
  * its kind says whether the renamed method carries the whole of that jar's body or a piece.
  */
 class CarrierRenameCensusTest {
-	private static final Path MERGED = TestFixtures.stagedRoot().resolve("merged-base/patched-mc-merged-26.2.jar");
+	private static final Path MERGED = TestFixtures.stagedBase();
 	private static final Path VANILLA = TestFixtures.vanillaJar();
 	private static final Path FORGE = TestFixtures.forgeMergeInput();
-	private static final Path NEOFORGE = TestFixtures.stagedRoot().resolve("neoforge-patched/patched-mc-neoforge-26.2.jar");
+	private static final Path NEOFORGE = TestFixtures.genuineBase();
 
 	@Test void theShippedTableIsExactlyWhatTheArtifactsSay() throws Exception {
 		TreeSet<String> rows = derive();

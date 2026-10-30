@@ -56,7 +56,7 @@ import net.forbric.kernel.TestFixtures.Fixture;
  * send from a Forbric client threw. The kernel stores the protocol at the head of the method instead.
  */
 class MergedBaseConnectionProtocolTest {
-	private static final Path MERGED_BASE = TestFixtures.stagedRoot().resolve("merged-base/patched-mc-merged-26.2.jar");
+	private static final Path MERGED_BASE = TestFixtures.stagedBase();
 
 	private static final String CONNECTION = "net/minecraft/network/Connection";
 	private static final String PROTOCOL_INFO = "Lnet/minecraft/network/ProtocolInfo;";

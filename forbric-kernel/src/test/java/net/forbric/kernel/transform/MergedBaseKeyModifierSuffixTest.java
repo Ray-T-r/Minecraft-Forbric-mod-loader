@@ -60,7 +60,7 @@ import net.forbric.kernel.TestFixtures.Fixture;
  */
 @org.junit.jupiter.api.parallel.ResourceLock("system-properties")
 class MergedBaseKeyModifierSuffixTest {
-	private static final Path MERGED_BASE = TestFixtures.stagedRoot().resolve("merged-base/patched-mc-merged-26.2.jar");
+	private static final Path MERGED_BASE = TestFixtures.stagedBase();
 	private static final String INPUT_CONSTANTS = "com/mojang/blaze3d/platform/InputConstants";
 	private static final String KEY = INPUT_CONSTANTS + "$Key";
 	private static final String GET_KEY_DESC = "(Ljava/lang/String;)L" + KEY + ";";

@@ -60,7 +60,7 @@ import net.forbric.kernel.TestFixtures.Fixture;
  * one. That distinction is structural and is asserted in {@link MergedBaseParticleProvidersTest}.
  */
 class MergedBaseNoUnwrittenDuplicateFieldTest {
-	private static final Path MERGED_BASE = TestFixtures.stagedRoot().resolve("merged-base/patched-mc-merged-26.2.jar");
+	private static final Path MERGED_BASE = TestFixtures.stagedBase();
 
 	@Test
 	void everyDuplicatedFieldNameHasAWriterForEveryOneOfItsTypes() throws Exception {

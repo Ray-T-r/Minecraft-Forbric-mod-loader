@@ -79,7 +79,7 @@ class MixinRetargetSubstitutedCallTest {
 	private static final String PLAIN = "(" + ENTRY + MixinRetarget.CALLBACK_INFO_RETURNABLE + ")V";
 
 	private static final Path SWEEP = Path.of("build/compat-inputs/sweep90/mods");
-	private static final Path MERGED = TestFixtures.stagedRoot().resolve("merged-base/patched-mc-merged-26.2.jar");
+	private static final Path MERGED = TestFixtures.stagedBase();
 
 	@AfterEach
 	void reset() {

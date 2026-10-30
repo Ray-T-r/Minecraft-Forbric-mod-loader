@@ -190,7 +190,7 @@ class MixinDecodeScopeSpellingTest {
 
 	/** The staged merged classes, each read afresh. */
 	private static Function<String, ClassNode> classes() {
-		Path base = Path.of(System.getProperty("forbric.predicateBase", TestFixtures.stagedRoot().resolve("merged-base/patched-mc-merged-26.2.jar").toString()));
+		Path base = Path.of(System.getProperty("forbric.predicateBase", TestFixtures.stagedBase().toString()));
 		TestFixtures.requireFiles(TestFixtures.Fixture.STAGED, "indexed game base required", base);
 		return name -> {
 			try (ZipFile game = new ZipFile(base.toFile())) {

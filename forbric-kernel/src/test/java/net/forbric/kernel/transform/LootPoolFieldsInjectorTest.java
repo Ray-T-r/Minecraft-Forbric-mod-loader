@@ -16,7 +16,7 @@ import net.forbric.kernel.TestFixtures.Fixture;
 
 /** On the real merged LootPool: each family's constructor ends up writing the other family's fields. */
 class LootPoolFieldsInjectorTest {
-	private static final Path MERGED = TestFixtures.stagedRoot().resolve("merged-base/patched-mc-merged-26.2.jar");
+	private static final Path MERGED = TestFixtures.stagedBase();
 
 	@Test void bothConstructorsFillBothFamiliesFields() throws Exception {
 		byte[] original = lootPool();

@@ -52,7 +52,7 @@ import org.objectweb.asm.tree.MethodNode;
  */
 class CarrierAccessTransformerTest {
 	private static final Path RUN = TestFixtures.stagedRoot();
-	private static final Path MERGED_BASE = RUN.resolve("merged-base/patched-mc-merged-26.2.jar");
+	private static final Path MERGED_BASE = RUN.resolve(TestFixtures.BASE_JAR);
 	private static final Path FORGE_CARRIER = RUN.resolve("forge-runtime/forge-runtime.jar");
 
 	private static final String MENU_SCREENS = "net/minecraft/client/gui/screens/MenuScreens.class";

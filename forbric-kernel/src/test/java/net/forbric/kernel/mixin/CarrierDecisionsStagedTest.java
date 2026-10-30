@@ -47,7 +47,7 @@ class CarrierDecisionsStagedTest {
 
 	/** The merged class with its local variable tables, as the mixin service hands it to the adapters. */
 	private static ClassNode game(String owner) throws Exception {
-		Path jar = TestFixtures.stagedRoot().resolve("merged-base/patched-mc-merged-26.2.jar");
+		Path jar = TestFixtures.stagedBase();
 		TestFixtures.require(TestFixtures.Fixture.STAGED, Files.isRegularFile(jar), "actual game required");
 		try (ZipFile zip = new ZipFile(jar.toFile())) {
 			ClassNode node = new ClassNode();
@@ -57,7 +57,7 @@ class CarrierDecisionsStagedTest {
 	}
 
 	private static BiFunction<Ecosystem, String, ClassNode> natives() {
-		Path jar = TestFixtures.stagedRoot().resolve("merged-base/patched-mc-merged-26.2.jar");
+		Path jar = TestFixtures.stagedBase();
 		TestFixtures.require(TestFixtures.Fixture.STAGED, Files.isRegularFile(jar), "actual game required");
 		NativeGameReferences references = new NativeGameReferences(path -> {
 			try (ZipFile zip = new ZipFile(jar.toFile())) {

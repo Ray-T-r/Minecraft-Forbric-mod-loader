@@ -39,7 +39,7 @@ import org.objectweb.asm.tree.MethodNode;
  * handler its arguments along the row, and a row that is a guess hands it the wrong object without a word.
  */
 class LambdaPermutationCensusTest {
-	private static final Path MERGED = TestFixtures.stagedRoot().resolve("merged-base/patched-mc-merged-26.2.jar");
+	private static final Path MERGED = TestFixtures.stagedBase();
 	private static final Path VANILLA = TestFixtures.vanillaJar();
 
 	@Test void theShippedTableIsExactlyWhatTheArtifactsSay() throws Exception {

@@ -47,7 +47,7 @@ import net.forbric.kernel.TestFixtures.Fixture;
 
 /** Every return of {@code Minecraft.close()} and {@code DedicatedServer.onServerExit()} calls the loader's watcher sweep; nothing else is touched. */
 class ExitHookInjectorTest {
-	private static final Path MERGED_BASE = TestFixtures.stagedRoot().resolve("merged-base/patched-mc-merged-26.2.jar");
+	private static final Path MERGED_BASE = TestFixtures.stagedBase();
 	private static final String MINECRAFT = "net/minecraft/client/Minecraft";
 	private static final String MINECRAFT_NAME = "net.minecraft.client.Minecraft";
 	private static final String HOOK_OWNER = "net/forbric/kernel/interop/ClientShutdown";

@@ -226,7 +226,7 @@ class SupersededMixinsTest {
 	/** The hopper entry's proof matches what HopperFabricStorageInjector writes into the real merged hopper. */
 	@Test
 	void theHopperProofMatchesWhatTheRealRepairWritesIntoTheRealClass() throws Exception {
-		java.nio.file.Path merged = TestFixtures.stagedRoot().resolve("merged-base/patched-mc-merged-26.2.jar");
+		java.nio.file.Path merged = TestFixtures.stagedBase();
 		TestFixtures.require(Fixture.STAGED, java.nio.file.Files.isRegularFile(merged), "actual game required");
 		byte[] original;
 		try (var zip = new java.util.zip.ZipFile(merged.toFile())) {

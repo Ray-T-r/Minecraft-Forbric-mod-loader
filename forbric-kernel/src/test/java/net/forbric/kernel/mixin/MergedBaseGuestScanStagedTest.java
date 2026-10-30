@@ -33,7 +33,7 @@ import org.junit.jupiter.api.parallel.ResourceLock;
  */
 @ResourceLock("system-properties")
 class MergedBaseGuestScanStagedTest {
-	private static final Path MERGED = TestFixtures.stagedRoot().resolve("merged-base/patched-mc-merged-26.2.jar");
+	private static final Path MERGED = TestFixtures.stagedBase();
 	private static final String LIVING = "net/minecraft/world/entity/LivingEntity";
 	private static final String VEC3 = "Lnet/minecraft/world/phys/Vec3;";
 	private static final String DEAD = "(" + VEC3 + ")V";

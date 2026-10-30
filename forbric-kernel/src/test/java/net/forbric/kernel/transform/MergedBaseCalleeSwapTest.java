@@ -77,11 +77,11 @@ import net.forbric.kernel.mixin.MergedBaseCalleeSwaps;
  */
 class MergedBaseCalleeSwapTest {
 	private static final Path RUN = TestFixtures.stagedRoot();
-	private static final Path MERGED = RUN.resolve("merged-base/patched-mc-merged-26.2.jar");
+	private static final Path MERGED = RUN.resolve(TestFixtures.BASE_JAR);
 	private static final Path FORGE_RT = RUN.resolve("forge-runtime/forge-runtime.jar");
 	private static final Path NEO_RT = RUN.resolve("neoforge-runtime/neoforge-runtime.jar");
 	private static final Path FORGE_PATCHED = TestFixtures.forgeMergeInput();
-	private static final Path NEO_PATCHED = RUN.resolve("neoforge-patched/patched-mc-neoforge-26.2.jar");
+	private static final Path NEO_PATCHED = RUN.resolve(TestFixtures.GENUINE_BASE_JAR);
 
 	/** {@code owner.method | callee-owner.vanilla→merged desc}, one line per swap — 25 on the staged base. */
 	static final Set<String> PINNED = new TreeSet<>(List.of(

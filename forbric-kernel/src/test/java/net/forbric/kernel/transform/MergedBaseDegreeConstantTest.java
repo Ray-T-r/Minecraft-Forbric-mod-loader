@@ -51,7 +51,7 @@ import org.objectweb.asm.tree.MethodNode;
  * and the whole point of the defect is that a plausible-looking number was the wrong one.
  */
 class MergedBaseDegreeConstantTest {
-	private static final Path MERGED_BASE = TestFixtures.stagedRoot().resolve("merged-base/patched-mc-merged-26.2.jar");
+	private static final Path MERGED_BASE = TestFixtures.stagedBase();
 	private static final Path VANILLA = TestFixtures.vanillaJar();
 	private static final String ENTITY = "net/minecraft/world/entity/Entity";
 	private static final double HALF_TURN = 180.0;

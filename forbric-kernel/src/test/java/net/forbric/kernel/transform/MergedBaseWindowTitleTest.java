@@ -49,7 +49,7 @@ import net.forbric.kernel.TestFixtures.Fixture;
  * running all three; the brand and its separator go, the asterisk vanilla uses for a modified game stays.
  */
 class MergedBaseWindowTitleTest {
-	private static final Path MERGED_BASE = TestFixtures.stagedRoot().resolve("merged-base/patched-mc-merged-26.2.jar");
+	private static final Path MERGED_BASE = TestFixtures.stagedBase();
 
 	private static final String MINECRAFT = "net/minecraft/client/Minecraft";
 

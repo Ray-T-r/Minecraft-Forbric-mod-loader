@@ -80,7 +80,7 @@ import net.forbric.kernel.mixin.MergedBaseMixinCompat;
  */
 class RegistryDirectoryOwnerInjectorTest {
 	private static final Path STAGED = TestFixtures.stagedRoot();
-	private static final Path MERGED_BASE = STAGED.resolve("merged-base/patched-mc-merged-26.2.jar");
+	private static final Path MERGED_BASE = STAGED.resolve(TestFixtures.BASE_JAR);
 	private static final Path FORGE_PATCHED = STAGED.resolve("forge-patched/patched-mc-forge-26.2.jar");
 	private static final Path NEO_RUNTIME = STAGED.resolve("neoforge-runtime/neoforge-runtime.jar");
 	private static final Path VANILLA = TestFixtures.vanillaJar();

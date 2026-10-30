@@ -27,7 +27,7 @@ class ZeroNameTagMigrationInjectorTest {
  private ClassNode corpse()throws Exception{Path jar=Path.of("run/client-merged-pack/mods/corpse-neoforge-1.1.17+26.2.jar");TestFixtures.requireFiles(Fixture.THIRD_PARTY,"local merged mod pack",jar);return read(jar,TARGET);}
  private Map<String,ClassNode> declarations()throws Exception{return new HashMap<>(Map.of(
   ZeroNameTagMigrationInjector.NATIVE,read(OLD.resolve("run/neoforge-runtime/neoforge-runtime.jar"),ZeroNameTagMigrationInjector.NATIVE),
-  ZeroNameTagMigrationInjector.ATTRIBUTES,read(OLD.resolve("run/merged-base/patched-mc-merged-26.2.jar"),ZeroNameTagMigrationInjector.ATTRIBUTES)));}
+  ZeroNameTagMigrationInjector.ATTRIBUTES,read(OLD.resolve("run").resolve(net.forbric.kernel.TestFixtures.BASE_JAR),ZeroNameTagMigrationInjector.ATTRIBUTES)));}
  private byte[] adapt(ClassNode c,Map<String,ClassNode> declarations){return new ZeroNameTagMigrationInjector(declarations::get).transform(c.name.replace('/','.'),bytes(c),null);}
  private MethodNode constructor(ClassNode c){return c.methods.stream().filter(m->m.name.equals("<init>")&&m.desc.equals(CONSTRUCTOR)).findFirst().orElseThrow();}
  @Test void actualReviewedConstructorMovesOneReadAndKeepsTheOriginalJarAndOtherInstructions()throws Exception{

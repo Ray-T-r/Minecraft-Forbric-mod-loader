@@ -135,7 +135,7 @@ class KernelForgeGatherStatesTest {
 	@Test
 	void sheetsIsTheOnlyReaderOfTheCompletedStates() throws Exception {
 		Path run = run();
-		List<Path> jars = List.of(run.resolve("merged-base/patched-mc-merged-26.2.jar"), carrier(),
+		List<Path> jars = List.of(run.resolve(TestFixtures.BASE_JAR), carrier(),
 				run.resolve("neoforge-runtime/neoforge-runtime.jar"));
 		for (Path jar : jars) TestFixtures.require(Fixture.STAGED, Files.isRegularFile(jar), jar + " absent");
 		TreeSet<String> readers = new TreeSet<>();

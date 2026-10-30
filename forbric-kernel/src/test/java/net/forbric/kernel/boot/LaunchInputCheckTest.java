@@ -423,7 +423,7 @@ class LaunchInputCheckTest {
 	 */
 	@Test
 	void theStagedMergedBaseAndBothStagedCarrierSpellingsPass() {
-		Path base = staged("merged-base/patched-mc-merged-26.2.jar");
+		Path base = staged(TestFixtures.BASE_JAR);
 		Path neo = staged("neoforge-runtime/neoforge-runtime.jar");
 		Path forge = staged("forge-runtime/forge-runtime.jar");
 		Path interop = staged("merged-base/forge-runtime-interop.jar");

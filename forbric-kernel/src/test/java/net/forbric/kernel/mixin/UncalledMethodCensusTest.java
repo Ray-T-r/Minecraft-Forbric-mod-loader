@@ -50,13 +50,13 @@ import net.forbric.kernel.transform.ForgeOverlayNeuterInjector;
  */
 class UncalledMethodCensusTest {
 	private static final Path STAGED = TestFixtures.stagedRoot();
-	private static final Path MERGED = STAGED.resolve("merged-base/patched-mc-merged-26.2.jar");
+	private static final Path MERGED = STAGED.resolve(TestFixtures.BASE_JAR);
 	private static final Path INTEROP = STAGED.resolve("merged-base/forge-runtime-interop.jar");
 	private static final Path NEO_RUNTIME = STAGED.resolve("neoforge-runtime/neoforge-runtime.jar");
 	private static final Path FORGE_RUNTIME = STAGED.resolve("forge-runtime/forge-runtime.jar");
 	private static final Path VANILLA = TestFixtures.vanillaJar();
 	private static final Path FORGE = STAGED.resolve("forge-patched/patched-mc-forge-26.2.jar");
-	private static final Path NEOFORGE = STAGED.resolve("neoforge-patched/patched-mc-neoforge-26.2.jar");
+	private static final Path NEOFORGE = STAGED.resolve(TestFixtures.GENUINE_BASE_JAR);
 	private static final Path KERNEL_MAIN = mainClasses();
 	private static final Path KERNEL_RUNTIME = Path.of(System.getProperty("forbric.test.runtimeClasses", "build/classes/java/runtime"));
     private static Path mainClasses() {

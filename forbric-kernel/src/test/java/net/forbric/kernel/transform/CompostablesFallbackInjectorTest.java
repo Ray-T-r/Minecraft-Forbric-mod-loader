@@ -32,7 +32,7 @@ import org.objectweb.asm.tree.analysis.BasicVerifier;
  */
 @ResourceLock("system-properties")
 class CompostablesFallbackInjectorTest {
-	private static final Path MERGED = TestFixtures.stagedRoot().resolve("merged-base/patched-mc-merged-26.2.jar");
+	private static final Path MERGED = TestFixtures.stagedBase();
 	private static final Path MODS = Path.of("build/compat-inputs/sweep90/mods");
 	private static final String COMPOSTER = "net/minecraft/world/level/block/ComposterBlock";
 	private static final String INPUT = COMPOSTER + "$InputContainer";

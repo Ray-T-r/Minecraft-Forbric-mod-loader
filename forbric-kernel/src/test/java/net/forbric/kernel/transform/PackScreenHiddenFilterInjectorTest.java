@@ -50,7 +50,7 @@ import net.forbric.kernel.TestFixtures.Fixture;
  * resource-pack screen that they did not add and cannot remove.
  */
 class PackScreenHiddenFilterInjectorTest {
-	private static final Path MERGED_BASE = TestFixtures.stagedRoot().resolve("merged-base/patched-mc-merged-26.2.jar");
+	private static final Path MERGED_BASE = TestFixtures.stagedBase();
 
 	@Test
 	void theStagedScreenStillForEachesWithoutFiltering() throws Exception {

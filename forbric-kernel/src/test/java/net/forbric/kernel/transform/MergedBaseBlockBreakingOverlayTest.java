@@ -56,7 +56,7 @@ import net.forbric.kernel.TestFixtures.Fixture;
  */
 @ResourceLock("system-properties")
 class MergedBaseBlockBreakingOverlayTest {
-	private static final Path MERGED_BASE = TestFixtures.stagedRoot().resolve("merged-base/patched-mc-merged-26.2.jar");
+	private static final Path MERGED_BASE = TestFixtures.stagedBase();
 
 	private static final String EXTRACTOR = "net/minecraft/client/renderer/extract/LevelExtractor";
 	private static final String FORGE_MANAGER = "net/minecraftforge/client/model/data/ModelDataManager";

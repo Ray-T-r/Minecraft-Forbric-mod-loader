@@ -27,7 +27,7 @@ import net.forbric.kernel.TestFixtures.Fixture;
 
 /** The reload event exposes the active context through the public Forge interface. */
 class MergedBaseForgeReloadContextTest {
-	private static final Path MERGED_BASE = TestFixtures.stagedRoot().resolve("merged-base/patched-mc-merged-26.2.jar");
+	private static final Path MERGED_BASE = TestFixtures.stagedBase();
 	private static final Path FORGE_RUNTIME = TestFixtures.stagedRoot().resolve("forge-runtime/forge-runtime.jar");
 	private static final String EVENT = "net/minecraftforge/event/AddReloadListenerEvent";
 	private static final String RSR = "net/minecraft/server/ReloadableServerResources";

@@ -64,7 +64,7 @@ class FabricFreezeHookSpellingTest {
 	 * native-reference index; Create Fly's mixin is its own third-party fixture.
 	 */
 	@BeforeEach void registrySyncIsInTheGame() {
-		TestFixtures.requireFiles(Fixture.STAGED, "the staged merged base", TestFixtures.stagedRoot().resolve("merged-base/patched-mc-merged-26.2.jar"));
+		TestFixtures.requireFiles(Fixture.STAGED, "the staged merged base", TestFixtures.stagedBase());
 		registrySync = FabricFreezeHookMixinAdapter.deferredFreezes;
 		FabricFreezeHookMixinAdapter.deferredFreezes = () -> java.util.Set.of("ledger.mixins.json:org.quarry.ledger.mixin.StartupMixin");
 	}

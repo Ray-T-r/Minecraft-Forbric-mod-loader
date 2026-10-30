@@ -44,7 +44,7 @@ class DeclarationReaderCensusTest {
 	@Test
 	void noPlatformClassIsEdited() throws IOException {
 		Path run = TestFixtures.stagedRoot();
-		List<Path> platform = List.of(run.resolve("merged-base/patched-mc-merged-26.2.jar"),
+		List<Path> platform = List.of(run.resolve(TestFixtures.BASE_JAR),
 				run.resolve("neoforge-runtime/neoforge-runtime.jar"), run.resolve("forge-runtime/forge-runtime.jar"));
 		for (Path jar : platform) TestFixtures.require(Fixture.STAGED, Files.isRegularFile(jar), jar + " is absent");
 		TreeSet<String> edited = new TreeSet<>();

@@ -29,7 +29,7 @@ import net.forbric.kernel.TestFixtures.Fixture;
  */
 @ResourceLock("system-properties")
 class MergedBaseForgeModelDataFlowTest {
-	private static final Path MERGED_BASE = TestFixtures.stagedRoot().resolve("merged-base/patched-mc-merged-26.2.jar");
+	private static final Path MERGED_BASE = TestFixtures.stagedBase();
 	private static final String RENDERER = "net/minecraft/client/renderer/block/ModelBlockRenderer";
 	private static final String TESSELATE_ARGS = "Lnet/minecraft/client/renderer/block/BlockQuadOutput;FFF"
 			+ "Lnet/minecraft/client/renderer/block/BlockAndTintGetter;Lnet/minecraft/core/BlockPos;"

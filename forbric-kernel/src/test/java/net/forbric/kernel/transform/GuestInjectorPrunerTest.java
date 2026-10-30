@@ -57,7 +57,7 @@ import net.forbric.kernel.mixin.MixinFit;
 class GuestInjectorPrunerTest {
     private static final String MODEL_MANAGER_MIXIN="net.fabricmc.fabric.mixin.client.model.loading.ModelManagerMixin";
     private static final String ITEM_STACK_MIXIN="net.fabricmc.fabric.mixin.item.ItemStackMixin";
-	private static final Path MERGED_BASE = TestFixtures.stagedRoot().resolve("merged-base/patched-mc-merged-26.2.jar");
+	private static final Path MERGED_BASE = TestFixtures.stagedBase();
 	private static final Path CLIENT_MODS =
 			Path.of(System.getProperty("user.dir"), "run", "client-kernel", "mods").normalize();
 	private static final String MIXIN_ENTRY =

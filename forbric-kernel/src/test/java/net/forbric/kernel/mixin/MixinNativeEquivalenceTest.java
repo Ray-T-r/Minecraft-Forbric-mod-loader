@@ -342,7 +342,7 @@ class MixinNativeEquivalenceTest {
     }
 
     private static ClassNode stagedWithDebug(String name) throws Exception {
-        java.nio.file.Path base = net.forbric.kernel.TestFixtures.stagedRoot().resolve("merged-base/patched-mc-merged-26.2.jar");
+        java.nio.file.Path base = net.forbric.kernel.TestFixtures.stagedBase();
         net.forbric.kernel.TestFixtures.require(net.forbric.kernel.TestFixtures.Fixture.STAGED,
                 java.nio.file.Files.isRegularFile(base), "actual staged carrier required");
         try (java.util.zip.ZipFile jar = new java.util.zip.ZipFile(base.toFile())) {

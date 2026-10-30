@@ -66,7 +66,7 @@ class RestoredAccessTransformerTest {
 	}
 
 	@Test void actualMergedFeatureFieldIsReconciledAfterItsDescriptorRepair() throws Exception {
-		var staged = TestFixtures.stagedRoot().resolve("merged-base/patched-mc-merged-26.2.jar");
+		var staged = TestFixtures.stagedBase();
 		String owner = "net/minecraft/world/level/chunk/ChunkGenerator";
 		byte[] original = TestFixtures.requireEntry(Fixture.STAGED, staged, owner + ".class");
 		String rules = "accessWidener v2 named\naccessible field " + owner + " featuresPerStep " + SUPPLIER

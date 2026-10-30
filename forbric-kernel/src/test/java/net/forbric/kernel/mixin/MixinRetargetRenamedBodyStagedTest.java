@@ -39,7 +39,7 @@ import net.forbric.kernel.TestFixtures.Fixture;
  * nothing calls: they move there again, now saying the injector never runs.
  */
 class MixinRetargetRenamedBodyStagedTest {
-	private static final Path MERGED_BASE = TestFixtures.stagedRoot().resolve("merged-base/patched-mc-merged-26.2.jar").normalize();
+	private static final Path MERGED_BASE = TestFixtures.stagedBase().normalize();
 	private static final String TOOLTIP = CarrierRenameCensusTest.TOOLTIP;
 	private static final String ITEM_STACK = "net/minecraft/world/item/ItemStack";
 

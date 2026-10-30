@@ -11,7 +11,7 @@ import net.forbric.kernel.TestFixtures.Fixture;
 
 class MergedBaseAbsorbedCallsTest {
     @Test void actualFogHookCannotReorderTheSourceCallbackPastFluidAndEventEffects()throws Exception{
-        Path root=TestFixtures.stagedRoot(),merged=root.resolve("merged-base/patched-mc-merged-26.2.jar"),nativeJar=TestFixtures.vanillaJar(),runtime=root.resolve("neoforge-runtime/neoforge-runtime.jar");
+        Path root=TestFixtures.stagedRoot(),merged=root.resolve(TestFixtures.BASE_JAR),nativeJar=TestFixtures.vanillaJar(),runtime=root.resolve("neoforge-runtime/neoforge-runtime.jar");
         TestFixtures.requireFiles(Fixture.STAGED,"merged and carrier",merged,runtime);TestFixtures.requireFiles(Fixture.MC_LIBRARIES,"vanilla",nativeJar);
         String owner="net/minecraft/client/renderer/fog/FogRenderer",signature="computeFogColor(Lnet/minecraft/client/Camera;FLnet/minecraft/client/multiplayer/ClientLevel;IFLorg/joml/Vector4f;)V";
         String member="Lorg/joml/Vector4f;set(FFFF)Lorg/joml/Vector4f;";

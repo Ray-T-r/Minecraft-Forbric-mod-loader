@@ -25,7 +25,7 @@ import net.forbric.kernel.TestFixtures.Fixture;
 @ResourceLock("system-properties")
 class ForeignPayloadReceiveInjectorTest {
 	private static final Path MERGED = TestFixtures.stagedRoot()
-			.resolve("merged-base/patched-mc-merged-26.2.jar");
+			.resolve(TestFixtures.BASE_JAR);
 
 	@AfterEach void reset() { System.clearProperty(ForeignPayloadReceiveInjector.PROPERTY); }
 

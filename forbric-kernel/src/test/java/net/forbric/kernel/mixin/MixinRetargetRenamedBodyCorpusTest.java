@@ -43,7 +43,7 @@ import net.forbric.kernel.TestFixtures.Fixture;
  */
 @ResourceLock("system-properties")
 class MixinRetargetRenamedBodyCorpusTest {
-	private static final Path MERGED = TestFixtures.stagedRoot().resolve("merged-base/patched-mc-merged-26.2.jar");
+	private static final Path MERGED = TestFixtures.stagedBase();
 	private static final Path INTEROP = TestFixtures.stagedRoot().resolve("merged-base/forge-runtime-interop.jar");
 	private static final Path NEO_RUNTIME = TestFixtures.stagedRoot().resolve("neoforge-runtime/neoforge-runtime.jar");
 	/** The audit's corpus — the packs, the sweeps and the random Modrinth sample — and the pure-Fabric A/B's mods, each walked whole. */
