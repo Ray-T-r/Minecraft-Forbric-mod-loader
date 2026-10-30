@@ -59,6 +59,12 @@ final class Pins {
 	 * packet size cap in {@code GenericPacketSplitter}, default 128 MB), language files and the jar-in-jar index. Of
 	 * the libraries only sponge-mixin (0.17.3 → 0.17.4) and MixinExtras (0.5.4 → 0.5.5) move, and both come from the
 	 * parent classpath rather than this carrier. Newer NeoForge exists only for Minecraft 26.3.
+ *
+ * <p>The kernel stays on sponge-mixin 0.17.3 and MixinExtras 0.5.4 although native NeoForge {@code .93} (and Fabric
+ * Loader 0.19.5) ship 0.17.4 / 0.5.5. Measured on 2026-10-30: with 0.17.4 / 0.5.5 three weave suites change verdict
+ * (MixinAtShapeWeaveTest, NativeOccurrencePointWeaveTest, MixinStubRebindSliceWeaveTest — six tests whose controls no
+ * longer separate the runs) and 0.17.4 adds compatibility level 17004, which FabricMixinCompat's table does not
+ * name. That is a weave change to adapt to on its own, not something to carry inside a carrier bump.
 	 */
 	static final String NEOFORGE = "26.2.0.93";
 
