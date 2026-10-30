@@ -335,6 +335,8 @@ def vanilla_reference(kernel, base, mc):
     result = subprocess.run(['bash', str(kernel / 'run/vanilla-reference-jar.sh'), str(base)], text=True,
                             stdout=subprocess.PIPE, stderr=subprocess.PIPE, env={**os.environ, 'MC_DIR': str(mc)})
     named = result.stdout.strip().splitlines()
+    if result.returncode == 6:
+        raise SystemExit(f'[M34] FATAL: the vanilla reference was refused: {result.stderr.strip()[-500:]}')
     if result.returncode or not named:
         print(f'[M34] no vanilla reference for {base}; launching without --nativeReference: {result.stderr.strip()[-500:]}',
               flush=True)

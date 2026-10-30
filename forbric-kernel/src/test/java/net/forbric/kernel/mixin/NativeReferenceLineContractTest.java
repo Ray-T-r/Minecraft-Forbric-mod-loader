@@ -48,11 +48,14 @@ class NativeReferenceLineContractTest {
 		for (String launcher : new String[] {server, client}) {
 			assertTrue(launcher.contains("--nativeReference \"$NATIVE_REF\""), "a launcher stopped passing the sidecar");
 			assertEquals(1, launcher.split("--gameJar ", -1).length - 1, "the sidecar is never a second --gameJar");
+			// A refused sidecar (exit 6) stops the launch: falling back to none would cost every FABRIC reference.
+			assertTrue(launcher.contains("[ \"$rc\" = 6 ] && exit 6"), "a launcher launches on after the sidecar was refused");
 		}
 		// gate-m34's soak builds its own java command: it hands the sidecar over too, under its own flag.
 		String soak = Files.readString(RUN.resolve("compat/soak-run.py"), StandardCharsets.UTF_8);
 		assertTrue(soak.contains("'--nativeReference', str(native_reference)"), "soak-run.py stopped passing the sidecar");
 		assertTrue(soak.contains("run/vanilla-reference-jar.sh"), "soak-run.py no longer asks the script for the base's sidecar");
+		assertTrue(soak.contains("if result.returncode == 6:\n        raise SystemExit("), "soak-run.py soaks on after a refusal");
 	}
 
 	/**

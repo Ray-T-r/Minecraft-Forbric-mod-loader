@@ -71,7 +71,11 @@ JLINE="$(find "$MC/libraries/org/jline" -name 'jline-*-3.25.1.jar' 2>/dev/null |
 # version it finds there — get null under Forbric otherwise, because the merged base belongs to
 # ForbricClassLoader. See run/game-metadata-jar.sh for why this must never carry class files.
 META_JAR="$("$HERE/game-metadata-jar.sh" "$MERGED" 2>/dev/null)" || META_JAR=""
-[ -n "$NATIVE_REF" ] || NATIVE_REF="$(MC_DIR="$MC" "$HERE/vanilla-reference-jar.sh" "$MERGED")" || NATIVE_REF=""
+if [ -z "$NATIVE_REF" ]; then
+  # Exit 6 is a refusal (an explicitly named sidecar that records another base): stop rather than launch with none,
+  # which on a base without an embedded index would cost every FABRIC reference, not only the ones it cannot verify.
+  NATIVE_REF="$(MC_DIR="$MC" "$HERE/vanilla-reference-jar.sh" "$MERGED")" || { rc=$?; [ "$rc" = 6 ] && exit 6; NATIVE_REF=""; }
+fi
 [ "$NATIVE_REF" = none ] && NATIVE_REF=""
 CP="$BOOT_JAR:$BOOT_DEPS:$VANILLA_CP${JLINE:+:$JLINE}${META_JAR:+:$META_JAR}"
 
