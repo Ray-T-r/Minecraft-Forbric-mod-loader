@@ -60,6 +60,21 @@ FORBRIC-ONLY, BOTH, NATIVE-ONLY or NEITHER, and INCONCLUSIVE when an arm did not
 Run each with `--help` for its argument list. API usage must be proved from the downloaded candidate
 jar before treating the selection as final; metadata resolution alone cannot prove it.
 
+## MinecraftForge refusal sweep (Stage 3 of dropping MinecraftForge)
+
+`stage3-sweep.py --classpath <kernel classpath> --out DIR [--root DIR ...]` asks two kernels' own arbitration how every
+local mod jar loads: the `tri-eco-26.2-final` tag's (`before`) and this tree's (`after`, which refuses a MinecraftForge
+build with no usable Fabric or NeoForge half). It writes one TSV row per distinct SHA-1 with each declared loader half's
+verdict and reason, and prints every transition, every refused jar and every jar that now loads as Fabric with a
+mandatory dependency its pack does not supply. Without `--root` it sweeps the main checkout's `forbric-kernel/run`,
+`forbric-kernel/build` and `forbric-loader/run` (`FORBRIC_SWEEP_HOME` overrides where that checkout is).
+`stage3-refused-check.py <stage3-sweep.tsv> <out.tsv> [--offline]` reads each refused jar independently of the kernel
+(manifests, `@Mod` classes, entrypoints, mixin configs, package references, nested jars) and, online, asks Modrinth
+whether the mod has a NeoForge or Fabric build for 26.2 — the evidence for the hand check that no refusal is false.
+`stage3-logcheck.py <stage3-sweep.tsv> [--since ...] [--exclude SUBSTRING ...]` cross-checks the `before` column against
+what real boots logged for multi-manifest jars and exits 1 when a current log disagrees. The committed results and the
+exact commands are in `reports/2026-10-30-forge-removal-baseline/stage3-sweep.md`.
+
 ## Rename experiment
 
 A fix must not recognise a mod by name, so the same mod under other names must be treated exactly like the original.

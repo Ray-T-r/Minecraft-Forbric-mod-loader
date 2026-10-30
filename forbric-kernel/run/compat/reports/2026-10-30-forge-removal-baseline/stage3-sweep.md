@@ -1,8 +1,17 @@
 # Stage 3 sweep: every local mod jar, tri-eco kernel vs the MinecraftForge refusal (2026-10-30)
 
 Result: **0 false refusals.** 90 distinct jars are refused. I checked each one by hand, and none of them has a Fabric
-or NeoForge half that works. 10 jars change loader (MinecraftForge → NeoForge). No real jar moves from MinecraftForge
-to Fabric. The detection rule (`LoaderHalfJudge` at `s3/core` `f2989d49`) needed no change for this corpus.
+or NeoForge half that works. 10 jars change loader: 9 MinecraftForge → NeoForge, and qubes-mouse-fix MinecraftForge →
+Fabric (the half that ships its mixins; see below). No Forge+Fabric universal jar exists in the corpus.
+
+**Rerun 2026-10-30 evening, after the review rounds** (tip `19d26a66` plus the arbiter's mixin rule): `LoaderHalfJudge`
+now judges a NeoForge half by what NeoForge would run of it (its listed mixins, else its entry, else its data/) instead
+of by stray Forge classes, and an absent Fabric integration-key class counts for nothing. Over the 1,953 jars the
+refused set is **identical** — the same 90 SHA-1s; owl is now refused because its listed `PlayerMixin` and
+`PlayerRendererMixin` link against MinecraftForge, bison and the plain Forge builds for the same reasons as before. The
+arbiter now gives a jar with no initialiser in any half to the half that ships its mixin config, which moves exactly
+one jar, qubes-mouse-fix, from NeoForge (where it did nothing) to Fabric; its Fabric needs (`fabricloader`,
+`minecraft`) are met. The six new rows are the NeoForge builds the fixture swap added (`run/neoforge-builds`).
 
 Files beside this one:
 - `stage3-sweep.tsv`: one row per distinct jar (SHA-1), with the packs it sits in, before, after, the per-half reasons,
@@ -32,7 +41,8 @@ nested in another is written `<parent path>!/<entry>`, and `stage3-refused-check
 - **Corpus**: every `*.jar` under the main checkout's `forbric-kernel/run`, `forbric-kernel/build` and
   `forbric-loader/run`. Symlinks are followed, each directory is read once, and `libraries/`, `versions/` and `.gradle/`
   are skipped. Jars nested in those (`META-INF/jars`, `META-INF/jarjar`, recursively) are added too, because the kernel
-  arbitrates nested candidates as well. Totals: 11,689 mod jar files, **1,947 distinct by SHA-1**. That is 1,587
+  arbitrates nested candidates as well. Totals (first run): 11,689 mod jar files, **1,947 distinct by SHA-1** (the rerun: 11,701 and 1,953, the six
+NeoForge builds the fixture swap added). That is 1,587
   top-level mod jars, 254 jars found only nested in another jar, and 106 jars the old loader rewrote into its
   `.forbric/cache` (more on those below). Set aside: 643 jars with no loader manifest at their root, and 246 staged
   game, carrier or kernel jars, matched by exact name (`patched-mc-*`, `forge-runtime*`, `neoforge-runtime*`,
@@ -150,11 +160,12 @@ then listed the loaders its project ships for 26.2.
 **Refused nested jars and their parents.** Every refused nested jar sits in a parent that is refused too. The single
 exception is the old loader's rewritten `xaerominimap-b2529…` cache jar, which is not an input.
 
-## What players will see change (FORGE → NEOFORGE, 10 jars)
+## What players will see change (FORGE → NEOFORGE 9 jars, FORGE → FABRIC 1 jar)
 
 Each one carries all three manifests. The tri-eco kernel chose MinecraftForge because only that half had an
-initialiser: a dummy MinecraftForge `@Mod`. Now the NeoForge half (no `@Mod`; its code does not stand on
-MinecraftForge) is chosen by preference over the equally usable library Fabric half.
+initialiser: a dummy MinecraftForge `@Mod`. Now the NeoForge half (no `@Mod`; what NeoForge would run of it does not
+stand on MinecraftForge) is chosen by preference over the equally usable library Fabric half — except where only one
+half ships the mod's mixin config, which then wins (qubes-mouse-fix).
 
 | jar | what it is | after |
 | --- | --- | --- |
@@ -162,7 +173,7 @@ MinecraftForge) is chosen by preference over the equally usable library Fabric h
 | CLMG-[UNIVERSAL]-1.21-26.2-1.1.0 | the same shape, with one empty `@Mod` class plus data | same |
 | minechess-v1.1.3 | datapack with per-version overlays, `@Mod` dummy `ModId` | same |
 | SimpleRPC-4.1.4 | CraterLib-based; `@Mod` is `DummyForgeEntrypoint` | NeoForge half requires `craterlib`. In `compat-inputs/random` the only CraterLib is the Forge build, which is now refused, so SimpleRPC's dependency is missing there |
-| **qubes-mouse-fix-1.1** | client mixin mod. The Forge half's config came from the MANIFEST `MixinConfigs`. `neoforge.mods.toml` declares no `[[mixins]]`. The Fabric half (library, `qubes_mouse_fix.mixins.json`, client) is the working one | **loads as NeoForge with no mixin at all, so it silently does nothing.** Native NeoForge 26.2 behaves the same: no FML class mentions `MixinConfigs`, checked in the staged carrier. Native Fabric works. See owner question 2 |
+| **qubes-mouse-fix-1.1** | client mixin mod. The Forge half's config came from the MANIFEST `MixinConfigs`. `neoforge.mods.toml` declares no `[[mixins]]`. The Fabric half (library, `qubes_mouse_fix.mixins.json`, client) is the working one | first run: loaded as NeoForge with no mixin at all, so it silently did nothing (native NeoForge 26.2 behaves the same: no FML class mentions `MixinConfigs`). **Now loads as Fabric**, the half that ships its mixins, as native Fabric does (decision 2 below) |
 
 Mandatory dependencies of these 10, checked pack by pack against the ids the other jars in the same directory supply
 (nested jars included; presence only, version ranges not compared): all satisfied, except SimpleRPC → `craterlib`
@@ -196,13 +207,19 @@ inputs, and the old loader is due to be deleted. They do show that the plan's ru
 usable) lets a MinecraftForge mod that ships an entrypoint-less `fabric.mod.json` load as Fabric, with its Forge
 classes and mixins. No real jar in the corpus has that shape. See owner question 3.
 
-## Owner questions
+## Owner questions, decided (2026-10-30)
 
-1. Zero-class MinecraftForge-only datapack jars (`lowcodefml`, only `mods.toml`): keep refusing them as the plan
-   says, or load them as plain data? Native NeoForge does not load them, and Modrinth has NeoForge builds.
-2. qubes-mouse-fix shape: both remaining halves are usable, neither has an initialiser, and only the Fabric half
-   declares a mixin config. Should arbitration prefer the half that ships its mixins over the NEOFORGE-first
-   preference? Today Forbric matches native NeoForge here, and the mod does nothing.
-3. Should a library-style Fabric half count as usable when the jar's only `@Mod` is MinecraftForge's and its classes
-   name `net.minecraftforge` but not `net.fabricmc`? That is the old-loader cache shape. Refusing it would close the
-   false-negative class above, at the risk of refusing an Architectury library whose Fabric side is mixin-only.
+Decided by the integrator inside the approved plan ("a MinecraftForge-only jar is refused and explained"); each is
+reversible and recorded so it can be revisited.
+
+1. **Zero-class MinecraftForge-only datapack jars** (`lowcodefml`, only `mods.toml`): **refused**, as the plan says.
+   Native NeoForge reads only `neoforge.mods.toml` and does not load them either, and Modrinth has NeoForge builds of
+   all three. (A `lowcodefml` *NeoForge* half beside a Forge one is kept: that is NeoForge's own statement that the half
+   has no code.)
+2. **qubes-mouse-fix shape** (no initialiser in any half, only one half ships the mixin config): **the half that ships
+   the mixins wins** over the NEOFORGE-first preference (`MultiLoaderArbiter.mixinFamilies`, test
+   `aMixinOnlyJarLoadsThroughTheHalfThatShipsItsMixins`). It worked as MinecraftForge before Stage 3; matching native
+   NeoForge's silent no-op would have been a regression. Exactly one jar in the corpus moves.
+3. **Library-style Fabric half on a Forge-only mod** (the old loader's cache shape): **stays usable.** No real jar has the
+   shape, the cache jars go with the old loader in Stage 5, and refusing it would risk Architectury libraries whose
+   Fabric side is mixin-only.
