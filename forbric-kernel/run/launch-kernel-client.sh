@@ -22,6 +22,8 @@ STAGE="$OLD/run"
 MERGED="${MERGED:-$STAGE/merged-base/patched-mc-merged-26.2.jar}"
 FORGE_RT="${FORGE_RT:-$STAGE/merged-base/forge-runtime-interop.jar}"
 [ -f "$FORGE_RT" ] || FORGE_RT="$STAGE/forge-runtime/forge-runtime.jar"
+# The MinecraftForge carrier is owned only while it is staged; without it the NeoForge carrier is the only one.
+[ -f "$FORGE_RT" ] || FORGE_RT=""
 NEO_RT="${NEO_RT:-$STAGE/neoforge-runtime/neoforge-runtime.jar}"
 RUNDIR="${RUNDIR:-$KERNEL/run/client-kernel}"
 NATIVES="${NATIVES_DIR:-$MC/versions/26.2/26.2-natives}"
@@ -90,7 +92,7 @@ exec java -XstartOnFirstThread -Djava.library.path="$NATIVES" \
   -Dforbric.compatibilityPolicy="${FORBRIC_COMPAT_POLICY:-strict}" \
   -Dforbric.dependencyDialog="${FORBRIC_DEP_DIALOG:-off}" ${FORBRIC_JVM:-} \
   -cp "$CP" net.forbric.kernel.boot.KernelClientLaunch \
-  --gameJar "$MERGED" --runtimeJar "$FORGE_RT" --runtimeJar "$NEO_RT" \
+  --gameJar "$MERGED" ${FORGE_RT:+--runtimeJar "$FORGE_RT"} --runtimeJar "$NEO_RT" \
   --libraryPath "$VANILLA_CP" \
   -- --version 26.2-forbric-kernel --gameDir "$RUNDIR" --assetsDir "$ASSETS" --assetIndex "$ASSET_INDEX" \
   --accessToken 0 --username ForbricKernel --uuid 00000000000000000000000000000000 \

@@ -19,6 +19,8 @@ STAGE="$OLD/run"
 MERGED="${MERGED:-$STAGE/merged-base/patched-mc-merged-26.2.jar}"
 FORGE_RT="${FORGE_RT:-$STAGE/merged-base/forge-runtime-interop.jar}"
 [ -f "$FORGE_RT" ] || FORGE_RT="$STAGE/forge-runtime/forge-runtime.jar"
+# The MinecraftForge carrier is owned only while it is staged; without it the NeoForge carrier is the only one.
+[ -f "$FORGE_RT" ] || FORGE_RT=""
 NEO_RT="${NEO_RT:-$STAGE/neoforge-runtime/neoforge-runtime.jar}"
 RUNDIR="${RUNDIR:-$KERNEL/run/server-kernel}"
 mkdir -p "$RUNDIR"
@@ -75,7 +77,7 @@ CP="$BOOT_JAR:$BOOT_DEPS:$VANILLA_CP${JLINE:+:$JLINE}${META_JAR:+:$META_JAR}"
 
 echo "[kernel-launch] rundir=$RUNDIR"
 echo "[kernel-launch] merged base = $MERGED"
-echo "[kernel-launch] owned carriers: $(basename "$FORGE_RT"), $(basename "$NEO_RT")"
+echo "[kernel-launch] owned carriers: ${FORGE_RT:+$(basename "$FORGE_RT"), }$(basename "$NEO_RT")"
 cd "$RUNDIR"
 
 # The MC libraries go BOTH on the parent -cp and to the kernel as owned jars (--libraryPath): mods mixin into
@@ -84,6 +86,6 @@ cd "$RUNDIR"
 # Developer runs use strict compatibility decisions; installed profiles retain the product default (ask).
 exec java -Djava.awt.headless=true -Dforbric.compatibilityPolicy="${FORBRIC_COMPAT_POLICY:-strict}" ${FORBRIC_JVM:-} \
   -cp "$CP" net.forbric.kernel.boot.KernelServerLaunch \
-  --gameJar "$MERGED" --runtimeJar "$FORGE_RT" --runtimeJar "$NEO_RT" \
+  --gameJar "$MERGED" ${FORGE_RT:+--runtimeJar "$FORGE_RT"} --runtimeJar "$NEO_RT" \
   --libraryPath "$VANILLA_CP${JLINE:+:$JLINE}" \
   -- --gameDir "$RUNDIR" --nogui "$@"
