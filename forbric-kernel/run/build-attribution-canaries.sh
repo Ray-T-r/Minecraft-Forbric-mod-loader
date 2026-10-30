@@ -1,8 +1,9 @@
 #!/usr/bin/env bash
-# Builds the four attribution canaries gate-m30 stages: a Fabric mod with two mixins that go wrong (one unfit,
-# one failing at apply on a class first loaded at world creation), a NeoForge mod with a subscriber whose <clinit>
-# throws and one waiting on a dead event, and a NeoForge mod compiled against a class this instance does not
-# carry, touched from a deferred setup task. Each is ONE defect, so the gate can assert ONE attribution each.
+# Builds the four jars gate-m30 stages: a Fabric mod with two mixins that go wrong (one unfit, one failing at apply
+# on a class first loaded at world creation), a NeoForge mod with a subscriber whose <clinit> throws, a NeoForge mod
+# compiled against a class this instance does not carry, touched from a deferred setup task, and a MinecraftForge mod
+# waiting on a dead event. Each is ONE defect, so the gate can assert ONE attribution each. Since Stage 3 of dropping
+# MinecraftForge the last one is refused, and the gate stages it only in a boot of its own that asserts the refusal.
 set -uo pipefail
 . "$(cd "$(dirname "$0")" && pwd)/lib.sh"
 
