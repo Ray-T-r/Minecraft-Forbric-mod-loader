@@ -180,3 +180,9 @@ so other branches still see the old pack; switching it is a step for whenever th
   to NeoForge, which the owner declined); `DeadEventAudit` keeps its unit tests and goes in Stage 4.
 - gate-m33's bridge dirty-notification probe and gate-m40's Forge cell are gone with their Forge machines; both gates
   now run Fabric ↔ NeoForge (m40 keeps a Forge *consumer* reading both cells through the carrier).
+
+**Under a Chinese locale** (`-I lang-zh.gradle --rerun --no-build-cache`; gates with
+`FORBRIC_JVM="-Duser.language=zh -Duser.country=CN"`): the suite fails the same six tests and nothing else; the gate
+sweep has gate-m0 RED for the R3 corpus only and gate-m14 RED once because its pure Fabric server's installer lost an
+HTTPS handshake while downloading (`SSLHandshakeException: Remote host terminated the handshake`, before the game
+started); rerun alone under zh it is GREEN. Every other gate GREEN.
