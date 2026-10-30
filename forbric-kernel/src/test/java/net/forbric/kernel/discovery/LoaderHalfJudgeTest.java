@@ -317,7 +317,9 @@ class LoaderHalfJudgeTest {
 	// ----------------------------------------------------------------------------------------------- real jars
 
 	@Test void theThreeRealMultiManifestForgeBuildsAreRefusedAndTheirRealSiblingsAreNot() throws Exception {
-		Path popular = Path.of("run/client-popular/mods");
+		// The popular pack's MinecraftForge builds were swapped for their NeoForge builds in Stage 3; the Forge jars
+		// themselves are kept beside the pack, in forge-refused/, as the refusal's real-jar fixtures.
+		Path popular = Path.of("run/client-popular/forge-refused");
 		Path owl = popular.resolve("animalgarden-owl-1.2.8-forge-26.2-65.0.0.jar");
 		Path aquarius = popular.resolve("aquariuslibs-1.2.0-forge-26.2-65.0.0.jar");
 		Path journeymap = popular.resolve("journeymap-forge-26.2-6.0.8.jar");

@@ -12,6 +12,10 @@
 # contains its content, so the second boot has to resolve references to a mod that is no longer there. Dropping
 # a mod whose content never reached the region files would make this gate pass without asking anything.
 #
+# Stage 3 of dropping MinecraftForge: mcw-bridges is now its NeoForge build ($NEO_BUILDS, same version 3.1.2). Its
+# MinecraftForge build is refused, and a refused jar stops a dedicated server, so the first boot would never have
+# written the save this gate drops it from. The question asked is the same.
+#
 # GATE-PARALLEL: rundirs=savedrop mem=2500
 set -uo pipefail
 . "$(cd "$(dirname "$0")" && pwd)/lib.sh"
@@ -27,7 +31,7 @@ LOG_DROPPED="$BUILD/gate-m32-dropped.log"
 mkdir -p "$BUILD"
 
 DL="$RUN_OLD/downloads"
-DROPPED_JAR="$DL/forge-26.2/mcw-bridges-3.1.2-mc26.2forge.jar"
+DROPPED_JAR="$NEO_BUILDS/mcw-bridges-3.1.2-mc26.2neoforge.jar"
 KEPT=(
   "$DL/fabric-26.2/fabric-api-0.154.0+26.2.jar"
   "$DL/forge-26.2/collective-26.2.0-8.39.jar"

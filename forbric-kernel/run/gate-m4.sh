@@ -3,6 +3,17 @@
 # MinecraftForge + NeoForge all live SIMULTANEOUSLY in ONE instance on the merged 3-ABI base, with no genuine
 # loader lifecycle for any of them.
 #
+# STAGE 3 OF DROPPING MinecraftForge (what changed and why). Forbric now refuses a jar whose only usable half is
+# MinecraftForge's, and a dedicated server stops on that refusal, so the five Forge-only jars this gate staged would
+# stop the boot it exists to look at. Each was replaced by the same mod's NeoForge 26.2 build, same version, from
+# Modrinth ($NEO_BUILDS, recorded in stage3-fixtures.md): they now construct as NeoForge @Mods, and the catalogue must
+# hold NO MinecraftForge mod at all. The merged base, the MinecraftForge carrier and its bridges are unchanged and still
+# run with zero MinecraftForge mods, so the traditional-Forge baseline mod and the tick-bridge checks below stay as
+# they were: they are what "zero deletion" means, and they go with the carrier in Stage 4. The two universal jars
+# (FallingTree, collective) still declare all three loaders; with MinecraftForge set aside they land on NeoForge, as
+# they did before by preference, and the gate now also asserts that their MinecraftForge half was set aside.
+# Content counts were re-derived from the NeoForge builds' own registrations.
+#
 # The proof is real mods registering real content, one ecosystem per family, all at once:
 #   • Fabric         fabric-api (38 JiJ modules) + Jade — main entrypoints run, Jade registers content + loads its
 #                    server plugins
@@ -39,24 +50,26 @@ RUNDIR="$KERNEL/run/server-tri-real"
 DL="$RUN_OLD/downloads"
 FABRIC_API="$DL/fabric-26.2/fabric-api-0.154.0+26.2.jar"
 JADE="$DL/fabric-26.2/Jade-mc26.2-Fabric-26.2.9.jar"
-# Seven real MinecraftForge-distribution mods, all server-side (5 Forge-only + 2 universal tri-loader) (side="BOTH"): a content mod, a profiler, a worldgen library, an
-# animation library, a chat mod and a gameplay mod — a real cross-section, not one hand-picked easy case.
-FORGE_MODS=(
-  "$DL/forge-26.2/mcw-bridges-3.1.2-mc26.2forge.jar"
-  "$DL/forge-26.2/spark-1.10.173-forge.jar"
-  "$DL/forge-26.2/TerraBlender-forge-26.2-26.2.0.0.1.jar"
-  "$DL/forge-26.2/geckolib-forge-26.2-5.5.3.jar"
-  "$DL/forge-26.2/NoChatReports-FORGE-26.2-v2.20.0.jar"
+# Seven real mods, all server-side (side="BOTH"): a content mod, a profiler, a worldgen library, an animation
+# library, a chat mod and a gameplay mod — a real cross-section, not one hand-picked easy case. The first five were
+# MinecraftForge-only builds until Stage 3 and are now the same mods' NeoForge builds; the last two are universal
+# tri-loader jars, read from the directory they always came from.
+NEO_MODS=(
+  "$NEO_BUILDS/mcw-bridges-3.1.2-mc26.2neoforge.jar"
+  "$NEO_BUILDS/spark-1.10.173-neoforge.jar"
+  "$NEO_BUILDS/TerraBlender-neoforge-26.2-26.2.0.0.1.jar"
+  "$NEO_BUILDS/geckolib-neoforge-26.2-5.5.3.jar"
+  "$NEO_BUILDS/NoChatReports-NEOFORGE-26.2-v2.20.0.jar"
   "$DL/forge-26.2/FallingTree-26.2-25.jar"
   "$DL/forge-26.2/collective-26.2.0-8.39.jar"
 )
 
-step "stage real mods (Fabric: fabric-api + Jade; MinecraftForge: 5 Forge-only + 2 universal; NeoForge: baseline)"
+step "stage real mods (Fabric: fabric-api + Jade; NeoForge: 5 NeoForge builds + 2 universal + the baseline)"
 reap_stale_server "$RUNDIR"
 rm -rf "$RUNDIR/world" "$RUNDIR/mods" "$RUNDIR/.forbric-kernel" 2>/dev/null
 mkdir -p "$RUNDIR/mods"
 miss=0
-for jar in "$FABRIC_API" "$JADE" "${FORGE_MODS[@]}"; do
+for jar in "$FABRIC_API" "$JADE" "${NEO_MODS[@]}"; do
   if [ -f "$jar" ]; then cp "$jar" "$RUNDIR/mods/"; else echo "[kernel] MISSING: $jar"; miss=1; fi
 done
 [ "$miss" -eq 0 ] || { echo "[kernel] FAIL a real mod jar is missing (see $DL)"; exit 1; }
@@ -116,40 +129,44 @@ if [ -n "$CAT" ]; then
   assert_eq "the catalogue counts add up"  "$1" "$(( $2 + $3 + $4 ))"
   [ "${2:-0}" -ge 1 ] && echo "[kernel] PASS Fabric mods in the catalogue ($2)"        || { echo "[kernel] FAIL no Fabric mod in the catalogue"; FAIL=1; }
   [ "${3:-0}" -ge 1 ] && echo "[kernel] PASS NeoForge mods in the catalogue ($3)"      || { echo "[kernel] FAIL no NeoForge mod in the catalogue"; FAIL=1; }
-  [ "${4:-0}" -ge 1 ] && echo "[kernel] PASS MinecraftForge mods in the catalogue ($4)" || { echo "[kernel] FAIL no MinecraftForge mod in the catalogue"; FAIL=1; }
+  # Stage 3: nothing here is a MinecraftForge mod any more, and nothing may load as one.
+  assert_eq "no MinecraftForge mod in the catalogue" 0 "${4:-missing}"
 else
   echo "[kernel] FAIL the unified mod catalogue was never published"; FAIL=1
 fi
 
-step "all three ecosystems' REAL mods brought up in ONE instance (must PASS)"
+step "both shipping ecosystems' REAL mods brought up in ONE instance, on the carrier that still holds MinecraftForge (must PASS)"
 check "both Forge-family baselines"            "constructed NeoForge baseline mod" "$LOG"
+# The MinecraftForge carrier's own mod still comes up with zero MinecraftForge mods: Stage 3 deletes nothing.
 check "traditional-Forge baseline"             "constructed traditional-Forge baseline mod ForgeMod" "$LOG"
-check "all 5 Forge-only real @Mods"            "constructed @Mod [a-z_]+ \(traditional-Forge," "$LOG" 5
-check "real MinecraftForge @Mod (mcw-bridges)" "constructed @Mod mcwbridges \(traditional-Forge," "$LOG"
-check "real MinecraftForge @Mod (TerraBlender)" "constructed @Mod terrablender \(traditional-Forge," "$LOG"
-check "real MinecraftForge @Mod (GeckoLib)"    "constructed @Mod geckolib \(traditional-Forge," "$LOG"
-# The two UNIVERSAL jars (FallingTree, collective) are claimed for exactly one family and give the gate its real
-# third-party NeoForge @Mods. collective loads at all only because guest-config relaxation is now general (its
-# Fabric-side PlayerMixin cannot apply on the merged base and would otherwise be a fatal MixinApplyError).
-# Two, not three. The third line was FallingTree's CLIENT-only @Mod class being constructed on a DEDICATED
-# SERVER — its own annotation says dist = {CLIENT}, and the kernel ignored that. Counting it made the gate assert
-# the defect. FallingTree and collective are the two that belong here; the client half is asserted skipped below.
-check "real third-party NeoForge @Mods"        "constructed @Mod [a-z_]+ \(NeoForge," "$LOG" 2
+check_absent "no third-party mod constructed as MinecraftForge" "constructed @Mod [a-z_]+ \(traditional-Forge," "$LOG"
+check_absent "and nothing was refused"         "\[Forbric/Unsupported\] refusing" "$LOG"
+check "real NeoForge @Mod (mcw-bridges)"       "constructed @Mod mcwbridges \(NeoForge," "$LOG"
+check "real NeoForge @Mod (TerraBlender)"      "constructed @Mod terrablender \(NeoForge," "$LOG"
+check "real NeoForge @Mod (GeckoLib)"          "constructed @Mod geckolib \(NeoForge," "$LOG"
+# The two UNIVERSAL jars (FallingTree, collective) are claimed for exactly one family. collective loads at all only
+# because guest-config relaxation is now general (its Fabric-side PlayerMixin cannot apply on the merged base and
+# would otherwise be a fatal MixinApplyError). FallingTree's CLIENT-only @Mod class is not constructed on a
+# DEDICATED SERVER — its own annotation says dist = {CLIENT}; the client half is asserted skipped below. So seven:
+# the five NeoForge builds and the two universal jars.
+check "real third-party NeoForge @Mods (5 builds + 2 universal)" "constructed @Mod [a-z_]+ \(NeoForge," "$LOG" 7
 check "and FallingTree's client half stays off the server" \
   "@Mod fallingtree \(.*FallingTreeClient\) declares it belongs to \[CLIENT\]" "$LOG"
-check "universal jars arbitrated to ONE family" "declares 3 loaders — loading it as" "$LOG" 2
+check "universal jars arbitrated to ONE family" "declares 3 loaders — loading it as NEOFORGE only" "$LOG" 2
+check "their MinecraftForge half was set aside, not chosen" \
+  "\[Forbric/MultiLoader\] (FallingTree|collective)[^ ]*\.jar: its MinecraftForge half is set aside" "$LOG" 2
 check "Fabric side yields the universal jars"  "skipped [1-9][0-9]* Fabric registration\(s\)" "$LOG"
 check "real Fabric mods discovered"            "discovered [1-9][0-9]* Fabric mod\(s\)" "$LOG"
 check "real Fabric main entrypoints ran"       "invoked [1-9][0-9]* Fabric main entrypoint\(s\)" "$LOG"
 
 step "each ecosystem registered its REAL content into the one shared registry set (must PASS)"
-check "MinecraftForge content (Macaw's 304)"   "registered content: mcwbridges: 304 entr" "$LOG"
+check "NeoForge content (Macaw's 304)"         "registered content: mcwbridges: 304 entr" "$LOG"
 # 151 blocks + 152 items + its CreativeModeTab. The tab is the whole point of the +1: creative_mode_tab has no Forge
 # wrapper, and while RegisterEvent was fired only for wrapper-backed registries the tab was never created — the mod's
 # 303 blocks/items existed but were unreachable in the creative menu and its search. Assert the tab by name so a
 # regression shows up as "the content is invisible in game" rather than as a count that still looks plausible.
 check "Macaw's CreativeModeTab exists"         "registered content: mcwbridges: .*creative_mode_tab=1" "$LOG"
-check "MinecraftForge content (GeckoLib)"      "registered content: geckolib: [1-9][0-9]* entr" "$LOG"
+check "NeoForge content (GeckoLib)"            "registered content: geckolib: [1-9][0-9]* entr" "$LOG"
 # 35 until NeoForge 26.2.0.88, which adds incoming_rpc_method=3 (its new server/jsonrpc API) and
 # changes nothing else in the breakdown. The number is a canary for "NeoForge still registers its own built-ins",
 # so it is pinned exactly and re-derived from the log when the carrier moves.
@@ -224,7 +241,7 @@ else
   TICK_PROVEN="both families tick 1:1"
 fi
 if [ "$FAIL" -eq 0 ]; then
-  echo "[kernel] ✅ M4 TRI-IN-ONE GATE GREEN — REAL third-party Fabric + MinecraftForge + NeoForge mods run in one instance, $TICK_PROVEN"
+  echo "[kernel] ✅ M4 TRI-IN-ONE GATE GREEN — REAL third-party Fabric + NeoForge mods run in one instance on the carrier that still holds MinecraftForge, $TICK_PROVEN"
 else
   echo "[kernel] ❌ GATE RED"
 fi

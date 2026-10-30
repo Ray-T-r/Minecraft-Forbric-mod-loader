@@ -206,7 +206,8 @@ class FmlTomlShapeOracleTest {
 	 * The manifests of the mods that read these seams, through the kernel and through their own FML: every top-level
 	 * key and every key of every {@code [[mods]]} entry answers the same value of the same class. Not Enough Crashes
 	 * and Puzzles Lib are NeoForge mods, wthit a MinecraftForge one. Arrays of tables are left out: both wrappers
-	 * throw for them, and nothing asks.
+	 * throw for them, and nothing asks. wthit's MinecraftForge build left the popular pack for its NeoForge build in
+	 * Stage 3 and sits beside it in forge-refused/; the manifest is a checked-in copy either way.
 	 */
 	@Test
 	void theReadersOwnManifestsAnswerAsTheirOwnFmlDoes() throws Exception {
@@ -214,7 +215,7 @@ class FmlTomlShapeOracleTest {
 				"build/compat-inputs/sweep90/mods/notenoughcrashes-neoforge-4.4.9+26.2.jar", "META-INF/neoforge.mods.toml");
 		String puzzles = fixture("puzzleslib.neoforge.mods.toml",
 				"run/client-popular/mods/PuzzlesLib-v26.2.4-mc26.2.x-NeoForge.jar", "META-INF/neoforge.mods.toml");
-		String wthit = fixture("wthit.mods.toml", "run/client-popular/mods/wthit-26.2-forge-20.0.0.jar", "META-INF/mods.toml");
+		String wthit = fixture("wthit.mods.toml", "run/client-popular/forge-refused/wthit-26.2-forge-20.0.0.jar", "META-INF/mods.toml");
 
 		try (URLClassLoader neo = neoOracle()) {
 			for (String toml : List.of(nec, puzzles)) {

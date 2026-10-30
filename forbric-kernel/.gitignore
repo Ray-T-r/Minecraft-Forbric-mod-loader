@@ -26,6 +26,10 @@
 /run/energy-api/
 /run/carry-on/
 /run/modmenu/
+# The NeoForge builds that replaced the gates' MinecraftForge jars in Stage 3 of dropping MinecraftForge (lib.sh
+# NEO_BUILDS). No trailing slash: a worktree links it to the main checkout's, and a pattern ending in / never matches
+# a symlink.
+/run/neoforge-builds
 /run/.gate-downloads/
 /run/.gate-clones/
 
