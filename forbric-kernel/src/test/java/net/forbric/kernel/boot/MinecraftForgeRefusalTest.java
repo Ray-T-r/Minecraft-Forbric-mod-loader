@@ -240,6 +240,26 @@ class MinecraftForgeRefusalTest {
 				CompatibilityFindings.all().toString());
 	}
 
+	/**
+	 * With duplicate arbitration switched off there is no candidate plan and Fabric discovery lists mods/ itself; a
+	 * refused jar that carries a (fake) fabric.mod.json must still not become a Fabric candidate or reach the classpath.
+	 * Red-checked: with the refusal taken out of the scan's skip test the refused jar was a Fabric classpath jar.
+	 */
+	@Test void aRefusedJarWithAFabricManifestStaysOffTheClasspathWithoutAPlan() throws Exception {
+		Path fake = jar(mods.resolve("wrongloader-1.0-forge.jar"), new String[][] {
+				{"META-INF/mods.toml", toml("wrongloader", "Wrong Loader", "forge")},
+				{"fabric.mod.json", "{\"schemaVersion\":1,\"id\":\"wrongloader\",\"version\":\"1\","
+						+ "\"entrypoints\":{\"main\":[\"example.Missing\"]}}"}},
+				"example/WrongLoader.class", mod("example/WrongLoader", "Lnet/minecraftforge/fml/common/Mod;", "wrongloader"));
+		assertTrue(MultiLoaderArbiter.refused(fake));
+		var discovery = KernelFabricEcosystem.scan(net.fabricmc.api.EnvType.SERVER, temporary,
+				DuplicateModArbiter.Decision.none(), "26.2", List.of());
+		List<Path> classpath = discovery.getClasspathJars().stream().map(p -> p.toAbsolutePath().normalize()).toList();
+		assertFalse(classpath.contains(fake.toAbsolutePath().normalize()), classpath.toString());
+		assertTrue(classpath.contains(universal.toAbsolutePath().normalize()), "the universal jar still loads as Fabric: "
+				+ classpath);
+	}
+
 	@Test void minecraftForgeInThePreferenceIsIgnored() throws Exception {
 		System.setProperty("forbric.multiLoaderPreference", "minecraftforge,fabric");
 		try {

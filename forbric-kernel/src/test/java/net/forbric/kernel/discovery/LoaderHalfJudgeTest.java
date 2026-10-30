@@ -58,7 +58,8 @@ class LoaderHalfJudgeTest {
 		assertTrue(verdict.refused(), verdict.describe());
 		String neo = verdict.half(Ecosystem.NEOFORGE).orElseThrow().reason();
 		assertTrue(neo.contains("its only entry is MinecraftForge's"), neo);
-		assertTrue(neo.contains("links only against MinecraftForge (1 class(es) beyond the entry"), neo);
+		assertTrue(neo.contains("that entry uses net.minecraftforge itself, with no mixins beside it"), neo);
+		assertTrue(neo.contains("1 class(es) beyond the entry use net.minecraftforge"), neo);
 		assertTrue(neo.contains("its @Mod(\"owl\") is MinecraftForge's example.ModSetup"), neo);
 		String fabric = verdict.half(Ecosystem.FABRIC).orElseThrow().reason();
 		assertTrue(fabric.contains("has no public no-argument constructor"), fabric);
@@ -95,8 +96,8 @@ class LoaderHalfJudgeTest {
 				.forgeToml("libs", "Libs").neoToml("libs", "Libs", null)
 				.put("example/Libs.class", forgeMod("example/Libs", "libs")));
 		assertTrue(entryOnly.refused(), entryOnly.describe());
-		assertTrue(entryOnly.half(Ecosystem.NEOFORGE).orElseThrow().reason().contains("the whole mod is its MinecraftForge "
-				+ "entry class"), entryOnly.describe());
+		assertTrue(entryOnly.half(Ecosystem.NEOFORGE).orElseThrow().reason().contains("that entry uses net.minecraftforge "
+				+ "itself"), entryOnly.describe());
 	}
 
 	/** journeymap-forge's shape: a Fabric half whose only entrypoint throws "wrong loader". */
@@ -261,14 +262,113 @@ class LoaderHalfJudgeTest {
 		assertFalse(single.refused(), single.describe());
 	}
 
-	/** But a MinecraftForge @Mod whose mixins hook MinecraftForge code is MinecraftForge's mod: refused. */
-	@Test void aForgeModWhoseOtherCodeHooksMinecraftForgeIsRefused() throws Exception {
+	/**
+	 * But a MinecraftForge @Mod whose mixins hook MinecraftForge code is MinecraftForge's mod: refused. The mixins are
+	 * what NeoForge would run of it (animalgarden-owl's PlayerMixin links against RegistryObject).
+	 */
+	@Test void aForgeModWhoseMixinsHookMinecraftForgeIsRefused() throws Exception {
 		LoaderHalfJudge.Verdict verdict = judge(jar()
 				.forgeToml("mx", "Mx").neoToml("mx", "Mx", "mx.mixins.json")
-				.put("mx.mixins.json", "{}".getBytes(StandardCharsets.UTF_8))
+				.put("mx.mixins.json", mixins("example.mixin", "Hook"))
 				.put("example/Mx.class", forgeMod("example/Mx", "mx"))
 				.put("example/mixin/Hook.class", referencing("example/mixin/Hook", "net/minecraftforge/event/ForgeEventFactory")));
 		assertTrue(verdict.refused(), verdict.describe());
+		assertTrue(verdict.half(Ecosystem.NEOFORGE).orElseThrow().reason().contains(
+				"the mixins it ships link against MinecraftForge (example.mixin.Hook)"), verdict.describe());
+	}
+
+	/**
+	 * A dummy MinecraftForge @Mod decides nothing, even beside a Forge-only helper: what NeoForge runs of the half is its
+	 * vanilla-only mixins or its data/, and both work. The same jar without the dummy is kept too.
+	 */
+	@Test void aDummyForgeModBesideAForgeHelperKeepsAMixinOrDataHalf() throws Exception {
+		for (boolean dummy : new boolean[] {false, true}) {
+			JarBuilder mixin = jar().forgeToml("mx", "Mx").neoToml("mx", "Mx", "mx.mixins.json")
+					.put("mx.mixins.json", mixins("example.mixin", "Hook"))
+					.put("example/mixin/Hook.class", plain("example/mixin/Hook", null, true))
+					.put("example/compat/ForgeCompat.class", referencing("example/compat/ForgeCompat",
+							"net/minecraftforge/common/MinecraftForge"));
+			JarBuilder data = jar().forgeToml("dp", "Dp").neoToml("dp", "Dp", null)
+					.put("data/dp/recipe/a.json", "{}".getBytes(StandardCharsets.UTF_8))
+					.put("example/ForgeOnlyHelper.class", referencing("example/ForgeOnlyHelper",
+							"net/minecraftforge/common/MinecraftForge"));
+			if (dummy) {
+				mixin.put("example/Mx.class", annotated("example/Mx", FORGE_MOD, "mx", "()V"));
+				data.put("example/Dp.class", annotated("example/Dp", FORGE_MOD, "dp", "()V"));
+			}
+			for (LoaderHalfJudge.Verdict verdict : List.of(judge(mixin), judge(data))) {
+				assertFalse(verdict.refused(), "dummy=" + dummy + ": " + verdict.describe());
+				assertEquals(List.of(Ecosystem.NEOFORGE), verdict.usableFamilies(), verdict.describe());
+			}
+		}
+	}
+
+	/**
+	 * Vanilla-only mixins are the mod: a Forge entry that uses MinecraftForge and a Forge config-screen class beside them
+	 * do not make the half fake, because NeoForge runs the mixins and ignores the rest.
+	 */
+	@Test void vanillaMixinsBesideAForgeEntryThatUsesForgeAreKept() throws Exception {
+		LoaderHalfJudge.Verdict verdict = judge(jar()
+				.forgeToml("tw", "Tweak").neoToml("tw", "Tweak", "tw.mixins.json")
+				.put("tw.mixins.json", mixins("example.mixin", "A", "B"))
+				.put("example/mixin/A.class", plain("example/mixin/A", null, true))
+				.put("example/mixin/B.class", plain("example/mixin/B", null, true))
+				.put("example/Tweak.class", forgeMod("example/Tweak", "tw"))
+				.put("example/TweakForgeConfigScreen.class", referencing("example/TweakForgeConfigScreen",
+						"net/minecraftforge/client/ConfigScreenHandler")));
+		assertFalse(verdict.refused(), verdict.describe());
+	}
+
+	/** aquariuslibs' real entry is an annotation-only dummy: what refuses it is Forge-only code with no mixins or data/. */
+	@Test void aDummyEntryOverForgeOnlyCodeWithNothingElseIsRefused() throws Exception {
+		LoaderHalfJudge.Verdict verdict = judge(jar()
+				.forgeToml("libs", "Libs").neoToml("libs", "Libs", null)
+				.put("example/Libs.class", annotated("example/Libs", FORGE_MOD, "libs", "()V"))
+				.put("example/RegisterFunctions.class", referencing("example/RegisterFunctions",
+						"net/minecraftforge/registries/DeferredRegister")));
+		assertTrue(verdict.refused(), verdict.describe());
+		assertTrue(verdict.half(Ecosystem.NEOFORGE).orElseThrow().reason().contains("with no mixins and no data/ beside it"),
+				verdict.describe());
+	}
+
+	/** lowcodefml is NeoForge's own statement that the half has no code; a MinecraftForge entry beside it is irrelevant. */
+	@Test void aLowcodeNeoForgeHalfIsKept() throws Exception {
+		byte[] toml = new String(JarBuilder.toml("lc", "Lc", "neoforge", null), StandardCharsets.UTF_8)
+				.replace("modLoader=\"javafml\"", "modLoader=\"lowcodefml\"").getBytes(StandardCharsets.UTF_8);
+		LoaderHalfJudge.Verdict verdict = judge(jar()
+				.forgeToml("lc", "Lc").put("META-INF/neoforge.mods.toml", toml)
+				.put("data/lc/x.json", "{}".getBytes(StandardCharsets.UTF_8))
+				.put("example/Lc.class", forgeMod("example/Lc", "lc")));
+		assertFalse(verdict.refused(), verdict.describe());
+	}
+
+	/**
+	 * The price of refusing bison's shape, pinned so a change to it is a decision: a Forge entry that uses MinecraftForge,
+	 * no mixins, and data/ — NeoForge would serve the data, but the content it names is registered by that Forge code.
+	 */
+	@Test void aForgeEntryThatUsesForgeWithOnlyDataBesideItIsRefused() throws Exception {
+		LoaderHalfJudge.Verdict verdict = judge(jar()
+				.forgeToml("bison", "Bison").neoToml("bison", "Bison", null)
+				.put("data/bison/loot_table/entities/bison.json", "{}".getBytes(StandardCharsets.UTF_8))
+				.put("example/ModSetup.class", forgeMod("example/ModSetup", "bison")));
+		assertTrue(verdict.refused(), verdict.describe());
+	}
+
+	/** An integration key whose class is absent counts for nothing: the Fabric half is a library, so the jar loads as Fabric. */
+	@Test void aFabricHalfWhoseOnlyEntrypointIsAnAbsentIntegrationClassIsALibrary() throws Exception {
+		LoaderHalfJudge.Verdict verdict = judge(jar()
+				.forgeToml("dg", "Dg")
+				.fabricJson("dg", "{\"fabric-datagen\":[\"l.DataGen\"]}", null)
+				.put("example/Common.class", plain("example/Common", null, true))
+				.put("example/Dg.class", forgeMod("example/Dg", "dg")));
+		assertFalse(verdict.refused(), verdict.describe());
+		assertEquals(List.of(Ecosystem.FABRIC), verdict.usableFamilies(), verdict.describe());
+		// A contract key whose class is absent still fails.
+		LoaderHalfJudge.Verdict main = judge(jar()
+				.forgeToml("dg", "Dg")
+				.fabricJson("dg", "{\"main\":[\"l.Main\"]}", null)
+				.put("example/Dg.class", forgeMod("example/Dg", "dg")));
+		assertTrue(main.refused(), main.describe());
 	}
 
 	/**
@@ -363,6 +463,12 @@ class LoaderHalfJudgeTest {
 		return LoaderHalfJudge.judge("fixture.jar", jar);
 	}
 
+	/** A mixin config listing {@code classes} under {@code pkg}, as the mixins json a real jar ships. */
+	private static byte[] mixins(String pkg, String... classes) {
+		return ("{\"package\":\"" + pkg + "\",\"mixins\":[" + String.join(",",
+				java.util.Arrays.stream(classes).map(c -> "\"" + c + "\"").toList()) + "]}").getBytes(StandardCharsets.UTF_8);
+	}
+
 	private static JarBuilder nestedForge() {
 		return jar().forgeToml("inner", "Inner").put("inner/InnerMod.class", forgeMod("inner/InnerMod", "inner"));
 	}
@@ -410,7 +516,7 @@ class LoaderHalfJudgeTest {
 			return file;
 		}
 
-		private static byte[] toml(String id, String name, String loader, String mixins) {
+		static byte[] toml(String id, String name, String loader, String mixins) {
 			return ("modLoader=\"javafml\"\nloaderVersion=\"[1,)\"\nlicense=\"MIT\"\n[[mods]]\nmodId=\"" + id
 					+ "\"\nversion=\"1\"\ndisplayName=\"" + name + "\"\n"
 					+ (mixins == null ? "" : "[[mixins]]\nconfig=\"" + mixins + "\"\n")

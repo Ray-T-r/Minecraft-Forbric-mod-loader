@@ -152,7 +152,9 @@ public final class KernelFabricEcosystem {
 			String gameVersion, List<net.forbric.kernel.fabric.NestedFabricRequirements.Requirement> requiredElsewhere) {
 		Path cacheDir = gameDir.resolve(".forbric-kernel").resolve("jij");
 		FabricModDiscovery discovery = new FabricModDiscovery(envType, cacheDir);
-		discovery.setSkip(dupes::suppressed);
+		// A refused MinecraftForge build never enters the plan; with arbitration switched off there is no plan, and the
+		// walk lists mods/ itself, so the refusal has to be applied here too or its classes would reach the classpath.
+		discovery.setSkip(jar -> dupes.suppressed(jar) || MultiLoaderArbiter.refused(jar));
 		discovery.setPlatform(net.forbric.kernel.fabric.NestedFabricRequirements.Platform.running(gameVersion));
 		discovery.setRequiredElsewhere(requiredElsewhere);
 		discovery.discover(gameDir.resolve("mods"));

@@ -54,7 +54,8 @@ public final class FabricModDiscovery {
 	private final List<Path> classpathJars = new ArrayList<>();
 
 	/**
-	 * Top-level jars this scan must pretend are not installed — the losers of cross-jar mod-id arbitration.
+	 * Top-level jars this scan must pretend are not installed — the losers of cross-jar mod-id arbitration, and the
+	 * refused MinecraftForge builds.
 	 * Applied only to top-level jars: a suppressed jar never gets far enough for its nested children to matter,
 	 * and the winner brings its own.
 	 */
@@ -130,7 +131,7 @@ public final class FabricModDiscovery {
 		Map<Integer, String> leftOut = new LinkedHashMap<>();
 		for (Path jar : jars) {
 			if (skip.test(jar)) {
-				ForbricLog.debug("[Forbric/Fabric] skipping %s — superseded by another jar's copy of the same mod",
+				ForbricLog.debug("[Forbric/Fabric] skipping %s — superseded by another jar's copy of the same mod, or refused",
 						jar.getFileName());
 				continue;
 			}
