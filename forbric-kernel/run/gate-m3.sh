@@ -12,7 +12,7 @@ set -uo pipefail
 
 LOG="$BUILD/gate-m3-boot.log"; mkdir -p "$BUILD"
 RUNDIR="$KERNEL/run/server-kernel"
-CANARY="$OLD/run/neoforge-runtime/forbricneolive.jar"
+CANARY="$NEOLIVE"
 
 step "stage a real NeoForge @Mod + boot under the kernel"
 "$KERNEL/gradlew" --offline -q -p "$KERNEL" jar >/dev/null 2>&1

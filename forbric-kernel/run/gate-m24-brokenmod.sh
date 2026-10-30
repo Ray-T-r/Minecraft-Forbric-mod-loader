@@ -26,7 +26,7 @@ REPORT="$RUNDIR/.forbric-kernel/load-report.txt"
 COMPAT="$RUNDIR/.forbric-kernel/compatibility-report.json"
 BROKEN="$KERNEL/run/canary/forbricbrokencanary.jar"
 FABRIC="$KERNEL/run/canary/forbricfabriclive.jar"
-NEO="$RUN_OLD/neoforge-runtime/forbricneolive.jar"
+NEO="$NEOLIVE"
 mkdir -p "$BUILD"
 
 step "stage the broken mod and two healthy ones"

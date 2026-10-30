@@ -20,7 +20,7 @@ step "stage the two worldgen canaries into a fresh fixed-seed world"
 reap_stale_server "$RUNDIR"
 rm -rf "$RUNDIR/world" "$RUNDIR/mods" "$RUNDIR/.forbric-kernel" "$RUNDIR/logs"
 mkdir -p "$RUNDIR/mods"
-for jar in "$RUN_OLD/forge-runtime/forbriclive.jar" "$RUN_OLD/neoforge-runtime/forbricneolive.jar"; do
+for jar in "$RUN_OLD/forge-runtime/forbriclive.jar" "$NEOLIVE"; do
   [ -f "$jar" ] || { echo "[kernel] FATAL: missing $jar; run build-testmods.sh" >&2; exit 3; }
   cp "$jar" "$RUNDIR/mods/" || exit 3
 done

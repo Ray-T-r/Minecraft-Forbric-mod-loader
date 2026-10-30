@@ -18,7 +18,7 @@ LOG="$BUILD/gate-m4-canary-boot.log"; mkdir -p "$BUILD"
 RUNDIR="$KERNEL/run/server-tri"
 FABRIC="$KERNEL/run/canary/forbricfabriclive.jar"
 FORGE="$RUN_OLD/server-merged/mods/forbriclive.jar"
-NEO="$RUN_OLD/neoforge-runtime/forbricneolive.jar"
+NEO="$NEOLIVE"
 
 step "stage one canary per ecosystem"
 "$KERNEL/run/build-fabric-canary.sh" >"$BUILD/gate-m4-canary.log" 2>&1
