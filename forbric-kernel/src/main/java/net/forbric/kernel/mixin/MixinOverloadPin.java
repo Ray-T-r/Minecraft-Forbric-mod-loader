@@ -324,7 +324,9 @@ public final class MixinOverloadPin {
 
 			for (LambdaShapeEvidence.Shape gone : LambdaShapeEvidence.vanished(target, selector)) {
 				String dropped = gone.descriptor();
-				if (!fits(handler.desc, dropped)) continue;
+				// A shape the reference alone knows is told only where no MinecraftForge compile of the class is in the game:
+				// on the merged base these diagnoses say what they said before the reference was evidence.
+				if (!fits(handler.desc, dropped) || !LambdaShapeEvidence.diagnosable(target, gone)) continue;
 				if (!gone.dropped()) {
 					ForbricLog.warn("[Forbric/Mixin] %s.%s cannot bind to %s.%s: the shape it was written for, %s, is "
 							+ "vanilla's — a carrier patch changed the captures of that lambda of %s, which here takes %s, so "

@@ -51,9 +51,11 @@ import net.forbric.kernel.transform.DuplicateLambdaPruneInjector;
  * <p>The first source is the one that survives the switch to NeoForge's own base, where nothing is carried twice and the
  * pruner has nothing to record: there {@code LevelRenderer}'s only {@code lambda$addSkyPass$0} is NeoForge's
  * {@code (SkyRenderState, Matrix4fc, GpuBufferSlice)}, vanilla's {@code (GpuBufferSlice, SkyRenderState)} is in the
- * reference, and Apoli's sky-skip is shimmed exactly as on the merged base. On the merged base it decides nothing the
- * record did not: LambdaShapeEvidenceStagedTest replays every lambda selector of every guest mixin in the local corpus
- * through the four consumers with the reference on and off, the pruner on and off, and the decisions are the same.
+ * reference, and Apoli's sky-skip is shimmed exactly as on the merged base. On the merged base it decides and says
+ * nothing the record did not ({@link #diagnosable} keeps the words): LambdaShapeEvidenceStagedTest replays every guest
+ * mixin of the local corpus with a lambda selector or a {@code LevelRenderer} target, against the classes the pre-Mixin
+ * chain hands Mixin, through the four consumers with the reference on and off and the pruner on and off, and finds the
+ * same decisions and words as each other and as the code before the reference (b37e6ae0, a recorded table).
  * {@code -Dforbric.lambdaShapeEvidence=off} leaves the reference out; the record still counts.
  */
 public final class LambdaShapeEvidence {
@@ -100,6 +102,24 @@ public final class LambdaShapeEvidence {
 			}
 		}
 		return List.copyOf(shapes.values());
+	}
+
+	/**
+	 * Whether a diagnosis — MixinOverloadPin's warning and the compatibility reason it hands on, MixinFit's reason — may tell
+	 * {@code shape} as a lambda a carrier patch reshaped from vanilla's. A decision never asks this: what MixinHandlerShim
+	 * wraps, InsertedLambdaArgumentShim moves and MixinFit decides is the same with it either way.
+	 *
+	 * <p>Always for a shape the pruner dropped, which is what the diagnoses said before the reference was evidence. For one
+	 * known from the reference alone, only on a class the game holds no MinecraftForge compile of. A class that has one is
+	 * the merged base's, where the pruner's record is the only story these diagnoses have told, and a shape the reference
+	 * adds there would be new merged-base output: measured over the local corpus it is one, fabric-api's resource-conditions
+	 * {@code skipData} on {@code SimpleJsonResourceReloadListener.lambda$scanDirectory$0}, with the pruner on and off alike,
+	 * which would gain a warning and a compatibility reason it never had (LambdaShapeEvidenceStagedTest holds the merged
+	 * base's words to the record's). On NeoForge's own base no class has a MinecraftForge compile, and the reference's
+	 * diagnosis is the only one there is.
+	 */
+	public static boolean diagnosable(ClassNode current, Shape shape) {
+		return shape.dropped() || current == null || !NativeGameReferences.has(Ecosystem.FORGE, current.name);
 	}
 
 	private static boolean declares(ClassNode current, String name) {

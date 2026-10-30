@@ -1,0 +1,174 @@
+/* Copyright 2026 The Forbric Project. Licensed under the Apache License, Version 2.0. */
+package net.forbric.kernel.mixin;
+
+import java.net.URL;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.security.MessageDigest;
+import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.HexFormat;
+import java.util.List;
+import java.util.Map;
+import java.util.function.Function;
+
+import org.junit.jupiter.api.Test;
+import org.objectweb.asm.ClassReader;
+import org.objectweb.asm.ClassWriter;
+import org.objectweb.asm.tree.AnnotationNode;
+import org.objectweb.asm.tree.ClassNode;
+import org.objectweb.asm.tree.MethodNode;
+
+import net.forbric.api.Ecosystem;
+import net.forbric.kernel.classloading.ForbricClassLoader;
+import net.forbric.kernel.transform.DuplicateLambdaPruneInjector;
+
+/**
+ * NOT COMPILED: the generator of lambda-decisions-b37e6ae0.tsv, kept so its rows can be made again. Copy it to
+ * src/test/java/net/forbric/kernel/mixin/OldLambdaDecisionsGenerator.java in a checkout of b37e6ae0 (the parent of the
+ * Stage 2 lane that grounded lambda-shape evidence on the FABRIC reference), with FORBRIC_LAMBDA_DUMP naming the directory
+ * LambdaShapeEvidenceStagedTest wrote with the same variable set, and run it as a test. It replays the staged test's
+ * decide() over those inputs (the pre-Mixin chain's classes per pruner arm, the pruner's record, the guests) and writes
+ * old-table.tsv (the table's rows, unsorted) and old-<n>.txt per arm beside new-<n>.txt. decide(), signature() and the
+ * digest are copied from the staged test character for character.
+ */
+class OldLambdaDecisionsGenerator {
+	static final Path DUMP = Path.of(System.getenv("FORBRIC_LAMBDA_DUMP"));
+
+	record Guest(ClassNode mixin, byte[] raw, String jar, Ecosystem ecosystem) {
+		List<String> targets() {
+			return MixinOverloadPin.targetsOf(mixin);
+		}
+	}
+
+	@Test @SuppressWarnings("unchecked") void generate() throws Exception {
+		List<URL> urls = new ArrayList<>();
+		for (String line : Files.readAllLines(DUMP.resolve("jars.txt"))) if (!line.isBlank()) urls.add(Path.of(line).toUri().toURL());
+		Map<Integer, Guest> guests = new HashMap<>();
+		for (String line : Files.readAllLines(DUMP.resolve("guests.tsv"))) {
+			if (line.isBlank()) continue;
+			String[] p = line.split("\t");
+			byte[] raw = Files.readAllBytes(DUMP.resolve("guests/" + p[0] + ".class"));
+			ClassNode node = new ClassNode();
+			new ClassReader(raw).accept(node, 0);
+			guests.put(Integer.parseInt(p[0]), new Guest(node, raw, p[1], p[2].equals("-") ? null : Ecosystem.valueOf(p[2])));
+		}
+		java.lang.reflect.Field droppedField = DuplicateLambdaPruneInjector.class.getDeclaredField("DROPPED");
+		droppedField.setAccessible(true);
+		Map<String, List<String>> dropped = (Map<String, List<String>>) droppedField.get(null);
+		Map<String, List<String>> before = new HashMap<>();
+		dropped.forEach((k, v) -> before.put(k, new ArrayList<>(v)));
+		StringBuilder table = new StringBuilder();
+		try (ForbricClassLoader loader = new ForbricClassLoader(urls.toArray(URL[]::new), getClass().getClassLoader())) {
+			NativeGameReferences.bind(loader);
+			for (String arm : List.of("off", "on")) {
+				Path dir = DUMP.resolve("arm-" + arm);
+				dropped.clear();
+				for (String line : Files.readAllLines(dir.resolve("dropped.tsv"))) {
+					if (line.isBlank()) continue;
+					String[] p = line.split("\t");
+					String key = p[0];
+					int hash = key.indexOf('#');
+					DuplicateLambdaPruneInjector.recordDroppedForTest(key.substring(0, hash), key.substring(hash + 1), p[1]);
+				}
+				Map<String, byte[]> classes = new HashMap<>();
+				Path classesDir = dir.resolve("classes");
+				try (var files = Files.walk(classesDir)) {
+					for (Path f : files.filter(Files::isRegularFile).toList()) {
+						String rel = classesDir.relativize(f).toString();
+						classes.put(rel.substring(0, rel.length() - ".class".length()), Files.readAllBytes(f));
+					}
+				}
+				for (String line : Files.readAllLines(dir.resolve("rows.tsv"))) {
+					if (line.isBlank()) continue;
+					String[] p = line.split("\t");
+					Guest guest = guests.get(Integer.parseInt(p[0]));
+					Decisions old = decide(guest, classes);
+					table.append(arm).append('\t').append(p[1]).append('\t').append(p[2]).append('\t').append(old.digest()).append('\n');
+					Files.writeString(dir.resolve("old-" + p[0] + ".txt"),
+							String.join("\n", old.decided()) + "\n--\n" + String.join("\n", old.explained()));
+				}
+			}
+		} finally {
+			NativeGameReferences.bind(null);
+			dropped.clear();
+			before.forEach((k, v) -> dropped.put(k, java.util.Collections.synchronizedList(new ArrayList<>(v))));
+		}
+		Files.writeString(DUMP.resolve("old-table.tsv"), table);
+	}
+
+	record Decisions(List<String> decided, List<String> explained, int wrapped) {
+		String digest() {
+			MessageDigest digest = sha256();
+			digest.update(String.join("\n", decided).getBytes(StandardCharsets.UTF_8));
+			digest.update("\n--\n".getBytes(StandardCharsets.UTF_8));
+			digest.update(String.join("\n", explained).getBytes(StandardCharsets.UTF_8));
+			return HexFormat.of().formatHex(digest.digest()).substring(0, 16);
+		}
+	}
+
+	private static Decisions decide(Guest guest, Map<String, byte[]> classes) {
+		Function<String, ClassNode> targets = name -> classes.get(name) == null ? null : MixinFit.parse(classes.get(name));
+		Function<String, byte[]> resolver = path -> path.endsWith(".class") ? classes.get(path.substring(0, path.length() - 6)) : null;
+		Function<String, ClassNode> natives = owner -> guest.ecosystem() == null ? null : NativeGameReferences.reference(guest.ecosystem(), owner);
+		List<String> decided = new ArrayList<>(), explained = new ArrayList<>();
+
+		for (MethodNode handler : guest.mixin().methods) {
+			if (injected(handler) == null) continue;
+			for (String target : guest.targets()) {
+				ClassNode node = targets.apply(target);
+				MethodNode lands = node == null ? null : MixinHandlerShim.destination(handler, node);
+				decided.add("destination " + handler.name + handler.desc + " in " + target + " = " + (lands == null ? "-" : lands.name + lands.desc));
+			}
+			for (String selector : MixinFit.stringList(MixinFit.value(injected(handler), "method"))) {
+				if (!selector.startsWith("lambda$") || selector.indexOf('(') >= 0) continue;
+				MixinOverloadPin.clearReasons();
+				boolean said = MixinOverloadPin.explain(guest.mixin(), handler, selector, guest.targets(), targets);
+				explained.add(handler.name + " " + selector + " " + said + " " + MixinOverloadPin.reasonFor(guest.mixin().name));
+			}
+		}
+		ClassNode shimmed = copy(guest.mixin());
+		int wrapped = MixinHandlerShim.adapt(shimmed, targets);
+		decided.add("MixinHandlerShim wraps " + wrapped + ": " + signature(shimmed));
+		ClassNode expanded = copy(guest.mixin());
+		decided.add("InsertedLambdaArgumentShim moves " + InsertedLambdaArgumentShim.adapt(expanded, targets, natives) + ": " + signature(expanded));
+		MixinFit.Result fit = MixinFit.evaluate(bytes(guest.mixin()), resolver);
+		decided.add("MixinFit " + fit.verdict() + " " + fit.resolved() + "/" + fit.total());
+		explained.add("MixinFit unresolved " + fit.unresolved() + " rejected " + fit.rejected());
+		return new Decisions(decided, explained, wrapped);
+	}
+
+	private static AnnotationNode injected(MethodNode method) {
+		AnnotationNode injector = MixinFit.injectorOf(method);
+		return injector == null || MixinFit.value(injector, "method") == null ? null : injector;
+	}
+
+	private static String signature(ClassNode mixin) {
+		List<String> out = new ArrayList<>();
+		for (MethodNode m : mixin.methods) {
+			AnnotationNode injector = injected(m);
+			out.add(m.name + m.desc + (injector == null ? "" : " " + MixinFit.stringList(MixinFit.value(injector, "method"))));
+		}
+		out.sort(null);
+		return String.join("; ", out);
+	}
+
+	private static ClassNode copy(ClassNode mixin) {
+		return MixinFit.parse(bytes(mixin));
+	}
+
+	private static byte[] bytes(ClassNode mixin) {
+		ClassWriter writer = new ClassWriter(0);
+		mixin.accept(writer);
+		return writer.toByteArray();
+	}
+
+	private static MessageDigest sha256() {
+		try {
+			return MessageDigest.getInstance("SHA-256");
+		} catch (java.security.NoSuchAlgorithmException impossible) {
+			throw new AssertionError(impossible);
+		}
+	}
+}
