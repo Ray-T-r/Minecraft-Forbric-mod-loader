@@ -38,18 +38,25 @@ import org.junit.jupiter.api.Test;
  *
  * <p>A spelling is a staged path inside one string literal ({@code "forge-runtime/forge-runtime.jar"}, with or without
  * text around it inside the quotes), or the same path split into its directory and its file name across one
- * statement ({@code staged("neoforge-runtime", "neoforge-runtime.jar")}, {@code .resolve("merged-base").resolve(...)}).
+ * statement ({@code staged("neoforge-runtime", "neoforge-runtime.jar")}, {@code .resolve("merged-base").resolve(...)}),
+ * in either order, including a directory literal whose file name a TestFixtures constant supplies
+ * ({@code patched(Path.of(GENUINE_BASE_JAR).getFileName().toString(), "neoforge-patched")}).
  * A bare file name alone is not one: the fabricated game and carrier jars (LaunchInputCheckTest, KernelDataPacksTest)
  * and the synthetic crash logs (CrashAttributionTest) name jars of their own making in directories of their own.
  *
  * <p>The same holds for the reads only the merge can answer: its {@code .pins} stamp, an embedded
- * {@code META-INF/forbric/native-reference/} entry, a {@code .class.bin} copy. Read through {@link TestFixtures#BASE_JAR}
+ * {@code META-INF/forbric/native-reference/} entry, a {@code .class.bin} copy, its {@code merge-conflicts.txt} report,
+ * and above all a native-reference reader the test binds or builds over the base ({@code NativeGameReferences.bind},
+ * {@code new NativeGameReferences}, {@code NativeGameReferences.over}, {@code NativeReferenceSources.open}, or the
+ * construction of a class that builds one over what it is handed), which answers from the embedded index and spells
+ * no entry name at all. Read through {@link TestFixtures#BASE_JAR}
  * or {@link TestFixtures#stagedBase()}, they would read the genuine jar, which has none of them, once {@code BASE_JAR}
  * moves; those go through {@link TestFixtures#MERGED_BASE_JAR} / {@link TestFixtures#mergedBase()}. Judged per file,
  * not per line: the entry is usually a constant declared at the top ({@code NEOFORGE_PREFIX}) and the jar a local named
  * {@code merged} a hundred lines below, and a line-local check let exactly that through. A file is flagged when its code
- * both reaches such a marker (a string literal holding one, or a constant another source declares to hold one) and reads
- * the moving base, and names the merged base nowhere; a line that does both is flagged even then.
+ * both reaches such a marker (a string literal holding one, a constant another source declares to hold one, or a
+ * reader) and reads the moving base, and names the merged base nowhere; a line that does both is flagged even then.
+ * Data-flow-light: a test helper's static method that builds a reader for its caller is not followed.
  *
  * <p>Source text, not bytecode: the constants are compile-time constants, so the compiled tests cannot tell the two
  * spellings apart, and a check of the class files would see every converted read as a raw one. Comments are blanked
@@ -79,14 +86,26 @@ class StagedJarLiteralGuardTest {
 	private static final Map<String, String> ALLOWED_MERGED_ONLY = Map.of(
 			"net/forbric/kernel/mixin/weave/LootSourceCallbacksSpellingTest.java",
 			"either base: reads the base's embedded index only when it has one, else the vanilla-reference sidecar",
-			// TODO stage2-round2: the refs fix lane converts these to mergedBase() in parallel; drop each entry once merged.
+			// TODO stage2-round2: the refs and lambda fix lanes convert these to mergedBase() in parallel; drop each entry once merged.
 			"net/forbric/kernel/mixin/VanillaReferenceStagedTest.java", "stage2-round2: converted by the refs fix lane",
 			"net/forbric/kernel/transform/GenuineNativeReferencesStagedTest.java", "stage2-round2: converted by the refs fix lane",
-			"net/forbric/kernel/transform/VanillaMemberTwinInjectorTest.java", "stage2-round2: converted by the refs fix lane");
+			"net/forbric/kernel/transform/VanillaMemberTwinInjectorTest.java", "stage2-round2: converted by the refs fix lane",
+			"net/forbric/kernel/mixin/LambdaShapeEvidenceStagedTest.java", "stage2-round2: converted by the lambda fix lane");
 
-	/** What only the merge produces, as a string literal spells it. */
-	private static final Pattern MERGED_ONLY_LITERAL =
-			Pattern.compile("\"[^\"\\n]*(?:META-INF/forbric/native-reference/|\\.pins|\\.class\\.bin)[^\"\\n]*\"");
+	/** What only the merge produces, as a string literal spells it: its index entries, its stamp, its report. */
+	private static final Pattern MERGED_ONLY_LITERAL = Pattern.compile(
+			"\"[^\"\\n]*(?:META-INF/forbric/native-reference/|\\.pins|\\.class\\.bin|merge-conflicts\\.txt)[^\"\\n]*\"");
+	/**
+	 * A reader of the native references bound or built by the test itself. With no {@link
+	 * net.forbric.kernel.mixin.NativeReferenceSources} configured (no test configures one unless it says so), it answers
+	 * from the base's embedded index alone, so over the genuine base it answers nothing: the commonest merged-only read
+	 * there is, and it spells no entry name. {@code bind(null)} unbinds, which reads nothing.
+	 */
+	private static final Pattern READER = Pattern.compile("\\bNativeGameReferences\\s*\\.\\s*(?:bind|over)\\s*\\((?!\\s*null\\s*\\))"
+			+ "|\\bnew\\s+NativeGameReferences\\s*\\(|\\bNativeReferenceSources\\s*\\.\\s*open\\s*\\(");
+	/** A main source that builds a reader over resources it is handed ({@code ModifiableDataViewsTransformer}). */
+	private static final Pattern BUILDS_A_READER =
+			Pattern.compile("\\bNativeGameReferences\\s*\\.\\s*over\\s*\\(|\\bnew\\s+NativeGameReferences\\s*\\(");
 	private static final Pattern MOVING_BASE = Pattern.compile("(?<!MERGED_)\\bBASE_JAR\\b|\\bstagedBase\\(\\)");
 	private static final Pattern MERGED_BASE = Pattern.compile("\\bMERGED_BASE_JAR\\b|\\bmergedBase\\(\\)");
 	private static final Pattern MARKER_CONSTANT = Pattern.compile(
@@ -99,19 +118,43 @@ class StagedJarLiteralGuardTest {
 	}
 
 	/**
-	 * A staged path split into its directory literal and its file-name literal within one statement. The directory
-	 * may carry a prefix ({@code "run/merged-base"}) or a trailing slash; the boundary keeps {@code "neoforge-runtime"}
-	 * from passing for {@code "forge-runtime"}, and the exact file name keeps {@code "neoforge-runtime-26.2.jar"}, a
-	 * fabricated carrier's bare name, from passing for the staged one.
+	 * A staged jar's directory as a whole literal: {@code "neoforge-patched"}, with a prefix ending in a slash
+	 * ({@code "run/merged-base"}) or a trailing slash. A whole literal, so {@code "neoforge-runtime"} does not pass for
+	 * {@code "forge-runtime"} and {@code "run/forge-runtime/forbriclive.jar"}, the Forge canary, is not a directory.
 	 */
-	static Pattern splitSpelling() {
-		List<String> pairs = new ArrayList<>();
-		for (String jar : STAGED_JARS) {
-			int slash = jar.lastIndexOf('/');
-			pairs.add("\"[^\"\\n]*(?<![\\w.-])" + Pattern.quote(jar.substring(0, slash)) + "/?\"[^;]{0,200}?\"/?"
-					+ Pattern.quote(jar.substring(slash + 1)) + "\"");
+	private static Pattern directoryLiteral(String jar) {
+		return Pattern.compile("\"(?:[^\"\\n]*/)?" + Pattern.quote(jar.substring(0, jar.lastIndexOf('/'))) + "/?\"");
+	}
+
+	/** What names a staged jar's file within a statement that also spells its directory. */
+	private static Pattern fileNameOf(String jar) {
+		return Pattern.compile("\"/?" + Pattern.quote(jar.substring(jar.lastIndexOf('/') + 1)) + "\""
+				+ "|\\b(?:MERGED_BASE_JAR|BASE_JAR|GENUINE_BASE_JAR|NEO_CARRIER_JAR|FORGE_CARRIER_JAR|FORGE_INTEROP_JAR)\\b"
+				+ "|\\.getFileName\\(\\)");
+	}
+
+	/**
+	 * Every staged path split into its directory and its file name within one statement, in either order: a directory
+	 * literal ({@link #directoryLiteral}) beside that jar's exact file-name literal, or beside a TestFixtures jar
+	 * constant or a {@code getFileName()} that supplies the name ({@code patched(Path.of(GENUINE_BASE_JAR).getFileName()
+	 * .toString(), "neoforge-patched")}, which re-spells the directory the constant already names). The exact file name
+	 * keeps {@code "neoforge-runtime-26.2.jar"}, a fabricated carrier's bare name, from passing for the staged one, and a
+	 * statement ends at a {@code ;}, {@code {} or {@code }}, so a directory and a name in neighbouring statements are not
+	 * one path. Offsets into {@code code}.
+	 */
+	static List<Integer> splitSpellings(String code) {
+		List<Integer> found = new ArrayList<>();
+		Matcher statement = Pattern.compile("[^;{}]+").matcher(code);
+		while (statement.find()) {
+			String text = statement.group();
+			int first = -1;
+			for (String jar : STAGED_JARS) {
+				Matcher directory = directoryLiteral(jar).matcher(text);
+				if (directory.find() && fileNameOf(jar).matcher(text).find() && (first < 0 || directory.start() < first)) first = directory.start();
+			}
+			if (first >= 0) found.add(statement.start() + first);
 		}
-		return Pattern.compile(String.join("|", pairs));
+		return found;
 	}
 
 	/**
@@ -151,29 +194,50 @@ class StagedJarLiteralGuardTest {
 
 	/** A line reading a merged-only artifact through the moving base constant. */
 	static boolean mergedOnlyReadThroughTheBase(String line) {
-		return MOVING_BASE.matcher(line).find() && MERGED_ONLY_LITERAL.matcher(line).find();
+		return MOVING_BASE.matcher(line).find() && (MERGED_ONLY_LITERAL.matcher(line).find() || READER.matcher(line).find());
 	}
 
 	/**
-	 * The constants, by declaring class's simple name, whose value is a merged-only marker and that another file can
-	 * name ({@code NativeReferenceSources.PREFIX}). A private one is reached only by its own file, whose literal is
-	 * already in view.
+	 * What reaches a merged-only marker from another file: the constants whose value is one and that another file can
+	 * name ({@code NativeReferenceSources.PREFIX}), keyed by the declaring class's simple name, and the classes that
+	 * build a reader over resources they are handed, whose construction is a reader as much as {@link #READER} is.
+	 * A private constant is reached only by its own file, whose literal is already in view.
 	 */
-	static Map<String, Set<String>> markerConstants(Map<String, String> codeByFile) {
-		Map<String, Set<String>> constants = new TreeMap<>();
-		codeByFile.forEach((name, code) -> {
-			Matcher m = MARKER_CONSTANT.matcher(code);
-			String owner = name.substring(name.lastIndexOf('/') + 1).replace(".java", "");
-			while (m.find()) constants.computeIfAbsent(owner, o -> new TreeSet<>()).add(m.group(1));
-		});
-		return constants;
+	record Markers(Map<String, Set<String>> constants, Set<String> readerBuilders) {
+		static final Markers NONE = new Markers(Map.of(), Set.of());
+
+		static Markers of(Map<String, String> codeByFile) {
+			Map<String, Set<String>> constants = new TreeMap<>();
+			Set<String> builders = new TreeSet<>();
+			codeByFile.forEach((name, code) -> {
+				String owner = name.substring(name.lastIndexOf('/') + 1).replace(".java", "");
+				Matcher m = MARKER_CONSTANT.matcher(code);
+				while (m.find()) constants.computeIfAbsent(owner, o -> new TreeSet<>()).add(m.group(1));
+				if (!owner.equals("NativeGameReferences") && BUILDS_A_READER.matcher(code).find()) builders.add(owner);
+			});
+			return new Markers(constants, builders);
+		}
+
+		/** Where {@code code} first reaches a marker, or -1. */
+		int first(String code) {
+			int first = -1;
+			List<Pattern> patterns = new ArrayList<>(List.of(MERGED_ONLY_LITERAL, READER));
+			constants.forEach((owner, names) -> names.forEach(constant ->
+					patterns.add(Pattern.compile("\\b" + Pattern.quote(owner) + "\\s*\\.\\s*" + constant + "\\b"))));
+			readerBuilders.forEach(owner -> patterns.add(Pattern.compile("\\bnew\\s+" + Pattern.quote(owner) + "\\s*[(<]")));
+			for (Pattern pattern : patterns) {
+				Matcher m = pattern.matcher(code);
+				if (m.find() && (first < 0 || m.start() < first)) first = m.start();
+			}
+			return first;
+		}
 	}
 
 	/**
 	 * The merged-only reads through the moving base in one file's comment-blanked {@code code}: every line that does
 	 * both, and, when the file names the merged base nowhere, the first marker and the first base read wherever they are.
 	 */
-	static List<String> mergedOnlyReads(String code, Map<String, Set<String>> markerConstants) {
+	static List<String> mergedOnlyReads(String code, Markers markers) {
 		List<String> found = new ArrayList<>();
 		String[] lines = code.split("\n", -1);
 		for (int i = 0; i < lines.length; i++) {
@@ -182,23 +246,11 @@ class StagedJarLiteralGuardTest {
 		if (!found.isEmpty() || MERGED_BASE.matcher(code).find()) return found;
 		Matcher base = MOVING_BASE.matcher(code);
 		if (!base.find()) return found;
-		int marker = firstMarker(code, markerConstants);
+		int marker = markers.first(code);
 		if (marker < 0) return found;
 		found.add(lineAt(lines, code, marker) + " reaches what only the merged base has, and " + lineAt(lines, code, base.start())
 				+ " reads the base that moves");
 		return found;
-	}
-
-	private static int firstMarker(String code, Map<String, Set<String>> markerConstants) {
-		Matcher literal = MERGED_ONLY_LITERAL.matcher(code);
-		int first = literal.find() ? literal.start() : -1;
-		for (Map.Entry<String, Set<String>> owner : markerConstants.entrySet()) {
-			for (String constant : owner.getValue()) {
-				Matcher m = Pattern.compile("\\b" + Pattern.quote(owner.getKey()) + "\\s*\\.\\s*" + constant + "\\b").matcher(code);
-				if (m.find() && (first < 0 || m.start() < first)) first = m.start();
-			}
-		}
-		return first;
 	}
 
 	private static String lineAt(String[] lines, String code, int offset) {
@@ -210,9 +262,11 @@ class StagedJarLiteralGuardTest {
 	static List<String> spellings(String code) {
 		List<String> found = new ArrayList<>();
 		String[] lines = code.split("\n", -1);
-		for (Pattern pattern : List.of(rawLiteral(), splitSpelling())) {
-			Matcher m = pattern.matcher(code);
-			while (m.find()) found.add(lineAt(lines, code, m.start()) + ": " + m.group().replaceAll("\\s+", " "));
+		Matcher m = rawLiteral().matcher(code);
+		while (m.find()) found.add(lineAt(lines, code, m.start()) + ": " + m.group().replaceAll("\\s+", " "));
+		for (int offset : splitSpellings(code)) {
+			int end = code.indexOf(';', offset);
+			found.add(lineAt(lines, code, offset) + ": " + code.substring(offset, end < 0 ? code.length() : end).replaceAll("\\s+", " "));
 		}
 		return found;
 	}
@@ -233,14 +287,14 @@ class StagedJarLiteralGuardTest {
 		assertTrue(Files.isDirectory(SOURCES), "run from forbric-kernel, where " + SOURCES + " is");
 		Map<String, String> tests = codeUnder(SOURCES), everything = new TreeMap<>(codeUnder(MAIN_SOURCES));
 		everything.putAll(tests);
-		Map<String, Set<String>> constants = markerConstants(everything);
+		Markers markers = Markers.of(everything);
 		Map<String, List<String>> found = new TreeMap<>(), mergedOnly = new TreeMap<>();
 		tests.forEach((name, code) -> {
 			// TestFixtures is where the paths are spelled; this file spells every pattern to test it.
 			if (name.equals("net/forbric/kernel/TestFixtures.java") || name.equals("net/forbric/kernel/StagedJarLiteralGuardTest.java")) return;
 			List<String> spelled = spellings(code);
 			if (!spelled.isEmpty()) found.put(name, spelled);
-			List<String> reads = mergedOnlyReads(code, constants);
+			List<String> reads = mergedOnlyReads(code, markers);
 			if (!reads.isEmpty()) mergedOnly.put(name, reads);
 		});
 		Map<String, List<String>> unexplained = new TreeMap<>(found);
@@ -282,6 +336,16 @@ class StagedJarLiteralGuardTest {
 		assertEquals(1, spellings(code("root.resolve(" + q + "merged-base/" + q + ").resolve(" + q + "patched-mc-merged-26.2.jar" + q + ");")).size());
 		assertEquals(1, spellings(code("root.resolve(" + q + "run/neoforge-patched" + q + ").resolve(" + q + "patched-mc-neoforge-26.2.jar" + q + ");")).size());
 		assertEquals(1, spellings(code("root.resolve(" + q + "merged-base" + q + ").resolve(" + q + "forge-runtime-interop.jar" + q + ");")).size());
+		assertEquals(1, spellings(code("NEO = patched(Path.of(TestFixtures.GENUINE_BASE_JAR).getFileName().toString(), " + q + "neoforge-patched" + q + ");")).size(),
+				"a directory re-spelled beside the constant that names it, after it");
+		assertEquals(1, spellings(code("stagedRoot().resolve(" + q + "neoforge-patched" + q + ")\n\t.resolve(Path.of(TestFixtures.GENUINE_BASE_JAR).getFileName());")).size(),
+				"a directory literal with the file name taken from the constant");
+		assertEquals(1, spellings(code("Path p = root.resolve(" + q + "forge-runtime.jar" + q + ").resolve(" + q + "run/forge-runtime/" + q + ");")).size(),
+				"the name first");
+		assertEquals(List.of(), spellings(code("inspect(" + q + "forge" + q + ", " + q + "forbriclive" + q + ", " + q + "livemod-src" + q + ", " + q + "forge-runtime" + q + ");")),
+				"a directory alone");
+		assertEquals(List.of(), spellings(code("Path d = root.resolve(" + q + "merged-base" + q + "); Path j = STAGED.resolve(TestFixtures.BASE_JAR);")),
+				"a directory and a constant in neighbouring statements");
 		assertEquals(List.of(), spellings(code("staged(" + q + "neoforge-runtime" + q + ", " + q + "forge-runtime.jar" + q + ");")),
 				"a directory and another jar's name are not a staged path");
 		assertEquals(List.of(), spellings(code("dir.resolve(" + q + "forge-runtime-interop.jar" + q + "); jar(" + q + "neoforge-runtime.jar" + q + ");")),
@@ -298,7 +362,7 @@ class StagedJarLiteralGuardTest {
 	@Test
 	void theGuardFollowsAMergedOnlyMarkerAcrossTheFile() {
 		String q = "\"";
-		Map<String, Set<String>> none = Map.of();
+		Markers none = Markers.NONE;
 		assertTrue(mergedOnlyReadThroughTheBase("STAGED.resolve(TestFixtures.BASE_JAR + " + q + ".pins" + q + ")"));
 		assertTrue(mergedOnlyReadThroughTheBase("staged(TestFixtures.BASE_JAR, " + q + "META-INF/forbric/native-reference/FABRIC/x" + q + ")"));
 		assertTrue(!mergedOnlyReadThroughTheBase("STAGED.resolve(TestFixtures.MERGED_BASE_JAR + " + q + ".pins" + q + ")"));
@@ -323,11 +387,11 @@ class StagedJarLiteralGuardTest {
 		assertEquals(1, mergedOnlyReads(code(pins), none).size(), ".pins on the next line");
 
 		// A constant another source declares: the marker is nowhere in this file's own literals.
-		Map<String, Set<String>> constants = markerConstants(Map.of("net/forbric/kernel/mixin/NativeReferenceSources.java",
+		Markers constants = Markers.of(Map.of("net/forbric/kernel/mixin/NativeReferenceSources.java",
 				code("final class NativeReferenceSources {\n\tstatic final String PREFIX = " + q + "META-INF/forbric/native-reference/" + q + ";\n}\n"),
 				"net/forbric/kernel/mixin/Hidden.java",
 				code("class Hidden {\n\tprivate static final String SECRET = " + q + "x.pins" + q + ";\n}\n")));
-		assertEquals(Map.of("NativeReferenceSources", Set.of("PREFIX")), constants, "a private constant reaches only its own file");
+		assertEquals(Map.of("NativeReferenceSources", Set.of("PREFIX")), constants.constants(), "a private constant reaches only its own file");
 		String elsewhere = "Path merged = TestFixtures.stagedBase();\nString entry = NativeReferenceSources.PREFIX + " + q + "FABRIC/index.tsv" + q + ";\n";
 		assertEquals(1, mergedOnlyReads(code(elsewhere), constants).size(), "through another file's constant");
 		assertEquals(List.of(), mergedOnlyReads(code(elsewhere), none), "without the constant known, nothing reaches a marker");
@@ -341,5 +405,52 @@ class StagedJarLiteralGuardTest {
 		assertEquals(List.of(), mergedOnlyReads(code(mixed), none), "the merged-only read already goes through the merged base");
 		assertEquals(1, mergedOnlyReads(code(mixed + "staged(TestFixtures.BASE_JAR, " + q + "x.pins" + q + ");\n"), none).size(),
 				"a line that reads a marker through the moving base is flagged even in a file that names the merged base");
+
+		// The merge's report beside the base it describes (MergedLambdaCaptureTest's shape before its conversion).
+		String report = "Path merged = STAGED.resolve(TestFixtures.BASE_JAR);\nPath report = STAGED.resolve(" + q + "merged-base/merge-conflicts.txt" + q + ");\n";
+		assertEquals(1, mergedOnlyReads(code(report), none).size(), "the merge's conflict report");
+	}
+
+	/**
+	 * A reader the test binds or builds itself reads the embedded index, which only the merge has: the shapes of
+	 * MergedBaseDiscoveryFamilyTest, MixinStubRebindSharedRedirectTest and NativeOwnedComponentInitializersTest before
+	 * their conversion, none of which spells an entry name.
+	 */
+	@Test
+	void aReaderOverTheMovingBaseIsAMergedOnlyRead() {
+		Markers none = Markers.NONE;
+		String bound = "class T {\n"
+				+ "\tvoid t() throws Exception {\n"
+				+ "\t\tPath merged = TestFixtures.stagedBase();\n"
+				+ "\t\tvar loader = new ForbricClassLoader(new URL[]{merged.toUri().toURL()}, null);\n"
+				+ "\t\tNativeGameReferences.bind(loader);\n"
+				+ "\t\tassertNotNull(NativeGameReferences.reference(Ecosystem.FABRIC, BOOTSTRAP));\n"
+				+ "\t}\n}\n";
+		List<String> reads = mergedOnlyReads(code(bound), none);
+		assertEquals(1, reads.size(), reads.toString());
+		assertTrue(reads.get(0).contains("line 5") && reads.get(0).contains("line 3"), reads.get(0));
+		assertEquals(List.of(), mergedOnlyReads(code(bound.replace("stagedBase()", "mergedBase()")), none), "through the merged base");
+		for (String reader : List.of("new NativeGameReferences(p -> bytes(jar, p))", "NativeGameReferences.over(resources)",
+				"NativeReferenceSources.open(base, null)")) {
+			assertEquals(1, mergedOnlyReads(code("Path base = TestFixtures.stagedBase();\nvar r = " + reader + ";\n"), none).size(), reader);
+		}
+		assertEquals(1, mergedOnlyReads(code("var r = new NativeGameReferences(read(TestFixtures.stagedBase()));\n"), none).size(),
+				"on one line");
+		assertEquals(List.of(), mergedOnlyReads(code("Path base = TestFixtures.stagedBase();\nNativeGameReferences.bind(null);\n"), none),
+				"unbinding reads nothing");
+
+		// A class that builds a reader over what it is handed: constructing it is a reader too.
+		Markers builders = Markers.of(Map.of("net/forbric/kernel/transform/Views.java",
+				code("public final class Views {\n\tpublic Views(Function<String,byte[]> r){refs=NativeGameReferences.over(r);}\n}\n"),
+				"net/forbric/kernel/mixin/NativeGameReferences.java",
+				code("public final class NativeGameReferences {\n\tstatic X over(F r){return new NativeGameReferences(r);}\n}\n")));
+		assertEquals(Set.of("Views"), builders.readerBuilders(), "the reader itself is not a builder of one");
+		String views = "Function<String,byte[]> r = resources(TestFixtures.stagedBase());\nbyte[] out = new Views(r).transform(owner, raw);\n";
+		assertEquals(1, mergedOnlyReads(code(views), builders).size(), "through a class that builds a reader");
+		assertEquals(List.of(), mergedOnlyReads(code(views), none), "without the builder known");
+		assertEquals(List.of(), mergedOnlyReads(code("Path base = TestFixtures.stagedBase();\nvar v = new ViewsTest();\n"), builders),
+				"a longer name is not the builder");
+		assertEquals(List.of(), mergedOnlyReads(code("/** {@link NativeGameReferences#bind} */\nPath base = TestFixtures.stagedBase();\n"), none),
+				"prose naming the reader");
 	}
 }
