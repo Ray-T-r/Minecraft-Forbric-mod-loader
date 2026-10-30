@@ -673,6 +673,8 @@ test	net.forbric.kernel.mixin.KernelClientHookMixinAnchorsTest	fancyMenusOrigina
 test	net.forbric.kernel.mixin.KernelClientHookMixinAnchorsTest	originalHooksAndDisabledAdapterAreLeftAsCompiled()	[fixture:third-party] local game or mod fixture unavailable
 test	net.forbric.kernel.mixin.KeyActionExitsTest	vanillaReleaseIsOrdinalFourAndItsFinalReturnOrdinalFive()	[fixture:staged] actual game required
 test	net.forbric.kernel.mixin.LambdaPermutationCensusTest	theShippedTableIsExactlyWhatTheArtifactsSay()	[fixture:staged] merged base and vanilla jar required
+test	net.forbric.kernel.mixin.LambdaShapeEvidenceStagedTest	onTheGenuineBaseAHandlerWrittenForVanillasSkyLambdaIsStillShimmed(Path)	[fixture:staged] the genuine NeoForge base and its carrier: $ROOT/forbric-loader/run/neoforge-patched/patched-mc-neoforge-26.2.jar
+test	net.forbric.kernel.mixin.LambdaShapeEvidenceStagedTest	onTheMergedBaseTheReferenceChangesNoDecisionWithThePrunerOnOrOff()	[fixture:staged] the merged base: $ROOT/forbric-loader/run/merged-base/patched-mc-merged-26.2.jar
 test	net.forbric.kernel.mixin.LootSupersessionProofTest	aNameOrAnUnmodifiedLoaderCannotResolveTheMissingLootMixin()	[fixture:staged] actual game required
 test	net.forbric.kernel.mixin.LootSupersessionProofTest	aStructurallyProvedSourceGroupWaitsForEveryActualDefinition()	[fixture:staged] current raw loot source: $ROOT/forbric-kernel/run/client-merged-pack/mods/fabric-api-0.155.2+26.2.jar
 test	net.forbric.kernel.mixin.MergedBaseAbsorbedCallsTest	actualFogHookCannotReorderTheSourceCallbackPastFluidAndEventEffects()	[fixture:staged] merged and carrier: $ROOT/forbric-loader/run/merged-base/patched-mc-merged-26.2.jar
@@ -1260,6 +1262,7 @@ test	net.forbric.kernel.mixin.MixinPredicateDelegateSpellingTest	with whitespace
 test	net.forbric.kernel.mixin.MixinRelocatedCallTest	anInjectAtTheCallStaysPut()	[fixture:staged] actual Fabric API fixture required
 test	net.forbric.kernel.mixin.MixinRelocatedCallTest	fabricsUseOnWrapSelectsTheRelayAndItsUseWrapStays()	[fixture:staged] actual Fabric API fixture required
 test	net.forbric.kernel.mixin.MixinRelocatedCallTest	nothingMovesWithoutTheRelay()	[fixture:staged] actual Fabric API fixture required
+test	net.forbric.kernel.mixin.MixinRelocatedCallTest	onTheGenuineBaseFabricsUseOnWrapSelectsTheRelay()	[fixture:staged] the genuine NeoForge base and its carrier: $ROOT/forbric-loader/run/neoforge-patched/patched-mc-neoforge-26.2.jar
 test	net.forbric.kernel.mixin.MixinRelocatedCallTest	theSwitchLeavesItAlone()	[fixture:staged] actual Fabric API fixture required
 test	net.forbric.kernel.mixin.MixinRenamedBodyEdgesTest	aMethodThatLeavesTheBodyToALaterContinuationKeepsItsEdge()	[fixture:staged] actual game required
 test	net.forbric.kernel.mixin.MixinRenamedBodyEdgesTest	aRenamedBodyOnlyTheNamedMethodReachesKeepsTheEdgeWhereItWas()	[fixture:staged] actual game required
@@ -1979,6 +1982,9 @@ test	net.forbric.kernel.transform.FabricHooksCallTest	onTheRealMinecraftTheGameD
 test	net.forbric.kernel.transform.FabricHooksCallTest	owosOwnFreezeMixinsFitTheRealGameOnBothSides()	[fixture:staged] $ROOT/forbric-loader/run/merged-base/patched-mc-merged-26.2.jar absent (reading net/minecraft/server/Main.class)
 test	net.forbric.kernel.transform.FabricModelContextTransformerTest	defaultEmissionPassesTheRealLevelPositionAndStateToNativeModels()	[fixture:third-party] actual Fabric API fixture required
 test	net.forbric.kernel.transform.FabricModelContextTransformerTest	missingNativeContextContractDoesNotInventACall()	[fixture:third-party] actual Fabric API fixture required
+test	net.forbric.kernel.transform.FlowerPotRepairInjectorTest	onTheGenuineBaseTheConstructorEditLandsAloneAndLinks()	[fixture:staged] the genuine NeoForge base and its carrier: $ROOT/forbric-loader/run/neoforge-patched/patched-mc-neoforge-26.2.jar
+test	net.forbric.kernel.transform.FlowerPotRepairInjectorTest	onTheMergedBaseAllThreeEditsLand()	[fixture:staged] $ROOT/forbric-loader/run/merged-base/patched-mc-merged-26.2.jar absent (reading net/minecraft/world/level/block/FlowerPotBlock.class)
+test	net.forbric.kernel.transform.FlowerPotRepairInjectorTest	vanillasClassIsNotThisRepairs()	[fixture:mc-libraries] $ROOT/.minecraft/versions/26.2/26.2.jar absent
 test	net.forbric.kernel.transform.FluidInteractionsInjectorTest	aMinecraftForgeModsInteractionRunsFromBothEntryPoints()	[fixture:staged] $ROOT/forbric-loader/run/neoforge-runtime/neoforge-runtime.jar absent (reading net/neoforged/neoforge/fluids/FluidInteractionRegistry.class)
 test	net.forbric.kernel.transform.FluidInteractionsInjectorTest	aMinecraftForgeRuleThatFailsToLinkIsLeftOutOfNeighbourChangesOnce()	[fixture:staged] $ROOT/forbric-loader/run/neoforge-runtime/neoforge-runtime.jar absent (reading net/neoforged/neoforge/fluids/FluidInteractionRegistry.class)
 test	net.forbric.kernel.transform.FluidInteractionsInjectorTest	aModsRuleAtAnEarlierNeighbourBeatsVanillasAtALaterOneAsInItsOwnFamily()	[fixture:staged] $ROOT/forbric-loader/run/neoforge-runtime/neoforge-runtime.jar absent (reading net/neoforged/neoforge/fluids/FluidInteractionRegistry.class)
@@ -2134,9 +2140,11 @@ test	net.forbric.kernel.transform.HudElementBridgeInjectorTest	isIdempotent()	[f
 test	net.forbric.kernel.transform.HudElementBridgeInjectorTest	noAddOverloadIsRouted()	[fixture:staged] staged neoforge-runtime.jar absent
 test	net.forbric.kernel.transform.HudElementBridgeInjectorTest	transformedMethodsAnalyseCleanly()	[fixture:staged] staged neoforge-runtime.jar absent
 test	net.forbric.kernel.transform.ItemUseOnInjectorTest	bothFamiliesServerCallsGoThroughTheStackTheItemWasReadFrom()	[fixture:staged] $ROOT/forbric-loader/run/merged-base/forge-runtime-interop.jar absent (reading net/minecraftforge/common/ForgeHooks.class)
-test	net.forbric.kernel.transform.ItemUseOnInjectorTest	neoForgesAndVanillasOwnBodiesAreLeftAlone()	[fixture:staged] $ROOT/forbric-loader/run/neoforge-patched/patched-mc-neoforge-26.2.jar absent (reading net/minecraft/world/item/ItemStack.class)
+test	net.forbric.kernel.transform.ItemUseOnInjectorTest	onTheGenuineBaseNeoForgesBodyIsRoutedOncePostedAndBothHalvesLink()	[fixture:staged] the genuine NeoForge base and its carrier: $ROOT/forbric-loader/run/neoforge-patched/patched-mc-neoforge-26.2.jar
+test	net.forbric.kernel.transform.ItemUseOnInjectorTest	theRoutedClaimIsReportedForTheEndStateAndOnlyForIt()	[fixture:staged] $ROOT/forbric-loader/run/merged-base/patched-mc-merged-26.2.jar absent (reading net/minecraft/world/item/ItemStack.class)
 test	net.forbric.kernel.transform.ItemUseOnInjectorTest	theSwitchLeavesBothAlone()	[fixture:staged] $ROOT/forbric-loader/run/merged-base/patched-mc-merged-26.2.jar absent (reading net/minecraft/world/item/ItemStack.class)
 test	net.forbric.kernel.transform.ItemUseOnInjectorTest	useOnPostsNeoForgesAfterBlockPhaseFirstAndItsLambdaCallsTheRelay()	[fixture:staged] $ROOT/forbric-loader/run/merged-base/patched-mc-merged-26.2.jar absent (reading net/minecraft/world/item/ItemStack.class)
+test	net.forbric.kernel.transform.ItemUseOnInjectorTest	vanillasBodyKeepsItsCallAndOnlyGainsThePassThroughs()	[fixture:mc-libraries] $ROOT/.minecraft/versions/26.2/26.2.jar absent
 test	net.forbric.kernel.transform.LambdaInvocationThunkInjectorTest	theActualHudReferencesAcquireExactSingleCallThunks()	[fixture:staged] actual merged game required
 test	net.forbric.kernel.transform.LifecycleHookInjectorTest	excisesServerModLoaderFromRealMain()	[fixture:staged] $ROOT/forbric-loader/run/merged-base/patched-mc-merged-26.2.jar absent (reading net/minecraft/server/Main.class)
 test	net.forbric.kernel.transform.LifecycleHookInjectorTest	theRealClientMainReportsItsEarlyFailuresToTheKernelFirst()	[fixture:staged] $ROOT/forbric-loader/run/merged-base/patched-mc-merged-26.2.jar absent (reading net/minecraft/client/main/Main.class)
@@ -2482,6 +2490,7 @@ test	net.forbric.kernel.transform.UnboundHolderDataInjectorTest	holderReferenceI
 test	net.forbric.kernel.transform.UnboundHolderDataInjectorTest	theRepairedReferenceRunsOnTheStagedGame()	[fixture:staged] $ROOT/forbric-loader/run/merged-base/patched-mc-merged-26.2.jar absent (reading net/minecraft/core/Holder$Reference.class)
 test	net.forbric.kernel.transform.UnboundHolderDataInjectorTest	theReportJudgesTheStagedRegistrysOwnFrozenFlag()	[fixture:staged] $ROOT/forbric-loader/run/merged-base/patched-mc-merged-26.2.jar absent (reading net/minecraft/core/Holder$Reference.class)
 test	net.forbric.kernel.transform.UntrackedFluidEyeQueryInjectorTest	eyeQueriesUseTheInteractionAndKeepNativeQueriesBehindTheUntrackedGuard()	[fixture:staged] $ROOT/forbric-loader/run/merged-base/patched-mc-merged-26.2.jar absent (reading net/minecraft/world/entity/Entity.class)
+test	net.forbric.kernel.transform.UntrackedFluidEyeQueryInjectorTest	onTheGenuineBaseBothGuardsLandAndLink()	[fixture:staged] the genuine NeoForge base and its carrier: $ROOT/forbric-loader/run/neoforge-patched/patched-mc-neoforge-26.2.jar
 test	net.forbric.kernel.transform.VanillaAirRefillInjectorExecutionTest	aBodyThatBreathesInItsFluidRefillsAsInVanilla(Path)	[fixture:staged] actual NeoForge CommonHooks required
 test	net.forbric.kernel.transform.VanillaAirRefillInjectorExecutionTest	aHookOfAnotherShapeIsLeftAsItIs()	[fixture:staged] actual NeoForge CommonHooks required
 test	net.forbric.kernel.transform.VanillaAirRefillInjectorExecutionTest	airAboveTheMaximumStaysAsInVanilla(Path)	[fixture:staged] actual NeoForge CommonHooks required
