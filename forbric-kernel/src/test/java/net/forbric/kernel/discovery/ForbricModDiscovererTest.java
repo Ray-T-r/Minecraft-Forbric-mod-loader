@@ -128,8 +128,9 @@ class ForbricModDiscovererTest {
 
 	@Test
 	void dualTomlJarReportsBothFamilies(@TempDir Path mods) throws Exception {
-		// A multiloader build shipping one toml per Forge family: BOTH are reported truthfully, each under
-		// its own ecosystem — the boot policy (active game base) picks which one loads.
+		// A multiloader build shipping one toml per Forge family: BOTH are reported truthfully, each under its own
+		// ecosystem. Discovery does not choose; MultiLoaderArbiter does, and since Stage 3 it sets the MinecraftForge
+		// half aside, so the NeoForge one loads.
 		Map<String, String> entries = entry("META-INF/mods.toml", FORGE_TOML);
 		entries.put("META-INF/neoforge.mods.toml", FORGE_TOML.replace("mandatory=true", "type=\"required\""));
 		Path jar = writeJar(mods, "dual-mod.jar", entries, "5.6.7");
@@ -229,8 +230,8 @@ class ForbricModDiscovererTest {
 
 	@Test
 	void dropsDeclaredButAbsentMixinConfig(@TempDir Path mods) throws Exception {
-		// Multiloader jars often over-declare a sibling loader's mixin config (a NeoForge-style [[mixins]] block
-		// listing a *.neoforge.mixins.json that only ships in the NeoForge jar). Handing such a phantom config to
+		// Multiloader jars often over-declare a sibling build's mixin config (a [[mixins]] block listing a config that
+		// only ships in the sibling loader's jar). Handing such a phantom config to
 		// Mixin aborts the game, so a declared config that isn't present in the jar must be dropped; one that is
 		// present is kept.
 		String toml = "modLoader=\"javafml\"\n"

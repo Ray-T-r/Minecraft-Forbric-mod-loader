@@ -77,17 +77,19 @@ class PassiveSeederForgeConfigTest {
 		MetadataFailures.reset();
 	}
 
-	// What used to reach the seeder: wthit's MinecraftForge build alone. It is refused now, so the seeder has nothing.
+	// What used to reach the seeder: wthit's MinecraftForge build alone. It is refused now: discovery yields no mod of
+	// it, and the boot's Forge-family walk — what feeds the seeder — never lists it.
 	@Test
-	void theMinecraftForgeOnlyBuildIsRefusedAndSeedsNothing() throws Exception {
-		Path forgeOnly = jar(tmp.resolve("wthit.jar"), fixture("wthit.mods.toml"), false);
-		List<DiscoveredMod> mods = new ForbricModDiscoverer().discoverJar(forgeOnly);
-		assertEquals(List.of(), mods);
+	void theMinecraftForgeOnlyBuildIsRefusedBeforeTheSeederSeesIt() throws Exception {
+		Path modsDir = java.nio.file.Files.createDirectories(tmp.resolve("mods"));
+		Path forgeOnly = jar(modsDir.resolve("wthit.jar"), fixture("wthit.mods.toml"), false);
+		assertEquals(List.of(), new ForbricModDiscoverer().discoverJar(forgeOnly));
 		assertTrue(MetadataFailures.unsupported(forgeOnly));
-		try (URLClassLoader game = forgeLoader()) {
-			PassiveSeeder.ForgeLoadingLists lists = PassiveSeeder.buildForgeLoadingLists(game, mods);
-			assertEquals(List.of(), lists.files());
-			assertEquals(List.of(), lists.modInfos());
+		MultiLoaderArbiter.reset();
+		try {
+			assertEquals(List.of(), KernelBoot.discoverForgeFamilyModJars(modsDir, DuplicateModArbiter.Decision.none()).jars());
+		} finally {
+			MultiLoaderArbiter.reset();
 		}
 	}
 
