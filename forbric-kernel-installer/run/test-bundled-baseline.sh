@@ -39,7 +39,7 @@ same "the rebuilt bundle holds the CHANGED baseline" "$BUNDLED"
 echo "[test-bundled-baseline] 3/3 NEGATIVE CONTROL: a stale tools jar is refused, not bundled"
 printf '# reviewed: a second change\n' >> "$BASELINE"
 touch -r "$BUNDLED" "$MERGETOOLS"
-(cd "$WORK/forbric-kernel-installer" && ./gradlew --offline -q bundleTools -x buildMergeTools -x buildLoaderJars) \
+(cd "$WORK/forbric-kernel-installer" && ./gradlew --offline -q bundleTools -x buildMergeTools) \
     > "$WORK/stale.log" 2>&1
 if [ $? -ne 0 ] && grep -aq "different link baseline" "$WORK/stale.log"; then
   echo "  PASS bundleTools refuses a jar whose baseline is not the tracked one"

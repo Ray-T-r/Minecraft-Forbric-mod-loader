@@ -30,8 +30,6 @@ def moduleVersion = { File dir ->
 	m[0][1]
 }
 def kernelJar  = { "forbric-kernel-${moduleVersion(kernelDir)}.jar" }
-def loaderJar  = { "forbric-loader-${moduleVersion(loaderDir)}.jar" }
-def runtimeJar = { "forbricruntime-${moduleVersion(loaderDir)}.jar" }
 def genResources = layout.buildDirectory.dir('generated-resources')
 // The merge tools ride in EVERY build, slim included. They are 284 KB and they are what turns a
 // machine with no prebuilt artifacts into one that can make them; fetching them over the network
@@ -51,19 +49,6 @@ tasks.register('buildForbricJars', Exec) {
 	outputs.dir("${kernelDir}/build/libs")
 }
 
-// The loader's two jars, which the installer ALSO bundles and which nothing here used to build. Without this
-// the task below consumed whatever happened to be in the loader's build/libs — on this machine, jars from four
-// days before the release — and a clean clone had nothing to consume at all.
-tasks.register('buildLoaderJars', Exec) {
-	description = "Build the forbric-loader jars the installer bundles."
-	workingDir loaderDir
-	commandLine(isWindows ? ['cmd', '/c', 'gradlew.bat', 'jar', 'runtimeJar']
-			: ['./gradlew', 'jar', 'runtimeJar'])
-	inputs.dir("${loaderDir}/src/main")
-	inputs.file("${loaderDir}/build.gradle")
-	outputs.dir("${loaderDir}/build/libs")
-}
-
 // The byte-merge tools, shaded with the ASM they need. Not a library of the installer's — it is run as a
 // subprocess (4 GB heap, which this JVM cannot grant itself), so it travels as a resource and is unpacked.
 tasks.register('buildMergeTools', Exec) {
@@ -76,7 +61,7 @@ tasks.register('buildMergeTools', Exec) {
 	// cover: a baseline-only change left this task UP-TO-DATE and the installer shipping the previous baseline,
 	// so players' installs judged the merge against a different list than every gate in the tree.
 	inputs.file(linkBaseline).withPropertyName('linkBaseline')
-	// The one file this task makes. Declaring the shared build/libs let buildLoaderJars' output decide whether
+	// The one file this task makes. Declaring the shared build/libs let the loader-jar task's output decide whether
 	// this task was up to date.
 	outputs.file(mergeToolsJar)
 }
@@ -127,13 +112,11 @@ tasks.named('test') { failOnNoDiscoveredTests = false }
 
 tasks.register('bundleForbric') {
 	description = "Copy Forbric's own jars into the installer's resources, with a manifest describing them."
-	dependsOn 'buildForbricJars', 'buildLoaderJars', 'buildMergeTools'
+	dependsOn 'buildForbricJars', 'buildMergeTools'
 	// Without these the task is "up to date" the moment its output directory exists, and the installer keeps
 	// shipping whichever kernel jar it bundled first — an install that silently predates the fix you just made.
 	inputs.files(
 			file("${kernelDir}/build/libs/${kernelJar()}"),
-			file("${loaderDir}/build/libs/${loaderJar()}"),
-			file("${loaderDir}/build/libs/${runtimeJar()}"),
 			mergeToolsJar)
 			.withPropertyName('forbricJars')
 			.withPathSensitivity(PathSensitivity.NONE)
@@ -161,9 +144,11 @@ tasks.register('bundleForbric') {
 		}
 
 		// Forbric's own code (Apache-2.0).
+		// The old loader's forbric-loader and forbricruntime jars used to ride along: bundled when the kernel still
+		// needed them at run time (2026-09-09), left in after it stopped (2026-09-12). Nothing in a pack or in the
+		// kernel resolves a class only they provide, and they put 48 duplicate net.fabricmc.* classes on the
+		// player's classpath, where classpath order decided which copy won.
 		add('net.forbric:forbric-kernel:' + project.version, new File(kernelDir, "build/libs/${kernelJar()}"))
-		add('net.forbric:forbric-loader:' + project.version, new File(loaderDir, "build/libs/${loaderJar()}"))
-		add('net.forbric:forbricruntime:' + project.version, new File(loaderDir, "build/libs/${runtimeJar()}"))
 
 		// The kernel's own third-party dependencies, taken from the classpath the kernel itself reports so the
 		// installed profile cannot drift from what the gates run. All permissively licensed; staged locally so a
@@ -195,7 +180,7 @@ tasks.register('bundleForbric') {
 // runs as a subprocess, not something the installed profile puts on a classpath.
 tasks.register('bundleTools') {
 	description = "Copy the merge-tools jar into the installer's resources."
-	dependsOn 'buildMergeTools', 'buildLoaderJars'
+	dependsOn 'buildMergeTools'
 	// The loader dropped the -SNAPSHOT qualifier at 0.1.0, so this is the name :mergeToolsJar writes. Asking
 	// for the old one still "worked" for as long as a jar built before that release sat in build/libs: the
 	// bundled tools would have been whatever was last built under the old name, silently, forever.
