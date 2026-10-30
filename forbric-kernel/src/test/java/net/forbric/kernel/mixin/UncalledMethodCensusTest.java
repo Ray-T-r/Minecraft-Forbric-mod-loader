@@ -359,6 +359,14 @@ class UncalledMethodCensusTest {
 	 * Reads every class of a jar or class directory: shapes into {@code shapes} (and {@code merged}), and, when asked, what the
 	 * code names into {@code named}.
 	 */
+	/**
+	 * Kernel classes whose strings name game members to copy, not to call: {@code VanillaMemberTwinInjector}'s rows spell
+	 * vanilla's {@code Hud.extractHotbarAndDecorations}, {@code AxeItem.evaluateNewBlockState} and the rest so it can add
+	 * them where a base lacks them, and it adds nothing where the base declares them (the merged base). Read as names,
+	 * they would make every twinned member, and what only it calls, look live; nothing in them calls a game method.
+	 */
+	private static final Set<String> COPIES_ONLY = Set.of("net/forbric/kernel/transform/VanillaMemberTwinInjector");
+
 	private static void scan(Path code, Visitor visitor, Map<String, Shape> shapes, Map<String, Shape> merged, Names named) throws IOException {
 		List<byte[]> classes = new ArrayList<>();
 		if (Files.isDirectory(code)) {
@@ -385,9 +393,10 @@ class UncalledMethodCensusTest {
 			if (merged != null) merged.put(c.name, shape);
 			Set<String> held = new HashSet<>();
 			boolean looksUp = false;
+			boolean copiesOnly = COPIES_ONLY.contains(c.name.contains("$") ? c.name.substring(0, c.name.indexOf('$')) : c.name);
 			for (MethodNode m : c.methods) {
 				visitor.method(c, m);
-				if (named == null) continue;
+				if (named == null || copiesOnly) continue;
 				String site = c.name + "#" + m.name + m.desc;
 				for (AbstractInsnNode insn : m.instructions) {
 					for (Call call : calls(c, m, insn)) {
