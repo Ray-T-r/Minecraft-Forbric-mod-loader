@@ -1,54 +1,59 @@
 #!/usr/bin/env bash
-# M57 — MinecraftForge's breathing, drowning and liquids in the merged game, judged against the native loaders.
+# M57 — breathing, drowning and liquids in the merged game, judged against native NeoForge.
 #
-# The merged LivingEntity hands its air to NeoForge's hook alone, so MinecraftForge's breathe and drown events are
-# posted from NeoForge's (KernelGameWorldEvents.installBreathe / installDrown, at LOWEST); a MinecraftForge liquid is
-# asked for its type through NeoForge's lookup (KernelForgeFluidTypeViews); a MinecraftForge LiquidBlock or bucket
-# built from a supplier reads its fluid through MinecraftForge's getters (NativeCoremodParity, Family.FORGE); and
-# MinecraftForge's Hurt and Damage events sit in NeoForge's damage pipeline through seams (ForgeDamageSeamsInjector). A
-# dedicated server with a MinecraftForge canary and a NeoForge canary (canary/forge-breath-drown, both built here)
-# plays 53 scenarios (Core.plan): pigs drowning in water with each family's drown listeners acting alone and both
-# acting (NeoForge's answer first, then MinecraftForge's, also from NeoForge listeners at LOW that the NeoForge canary
-# registers from common setup, after the kernel's bridges, and at LOWEST that it registers in its constructor, before
-# them), including MinecraftForge's @SubscribeEvent listeners that cancel by returning true and a MinecraftForge bubble
-# count that must leave the body's random draws as they are; breathing in open air the same way, and with Breath of
-# the Nautilus alone in water, in a bubble column and in MinecraftForge's liquid, where MinecraftForge's listeners are
-# told whether the body may refill — and where NeoForge's listener refills nothing, each clause of MinecraftForge's own
-# refill rule (the effects, the eye in air, a bubble column) the only one that says yes in one row; a pig drowning in
-# each family's own liquid, and in a MinecraftForge liquid built canDrown(false), where only its type's canDrownIn keeps
-# the body from drowning, and with Breath of the Nautilus alone in that liquid, where the owner's vanilla refill refills
-# and native MinecraftForge holds the air (a documented deliberate difference, pinned both ways: the row must refill as
-# open air does natively, and the reference must still show native MinecraftForge not refilling so and told it may not
-# refill — that its air holds still is not judged); the probe's player drowning three times through the
-# damage chain (MinecraftForge's attack, hurt and damage, NeoForge's incoming damage); and each family's liquid placed,
-# taken up and poured out with its bucket through the server's own use-item path. Every row's air and health (or a
-# liquid row's result) and the listener views it names are compared with the same jar on the native loader whose
-# answer stands (canary/forge-breath-drown/native-reference.json, three agreeing native runs each; regenerate it with
-# run/compat/breath-drown.py reference), and the mixed rows also with what the other family must have been handed and
-# the answering order: a tick where MinecraftForge's listener answers before a NeoForge one fails, and so does a row
-# where both answered with no tick recording which answered first.
+# The merged LivingEntity hands its air to NeoForge's hook (CommonHooks.onLivingBreathe), where the kernel gives a body
+# that breathes with its eye in a fluid vanilla's refill (VanillaAirRefillInjector), and its damage to NeoForge's
+# pipeline. A dedicated server with the NeoForge canary (canary/forge-breath-drown, built here) plays 53 scenarios
+# (Core.plan): pigs drowning in water with NeoForge's drown listeners acting at NORMAL, at LOW (registered from common
+# setup) and at LOWEST (registered in its constructor); breathing in open air the same way, with water breathing in
+# water, and with Breath of the Nautilus alone in open air, in water and in a bubble column; a pig drowning in NeoForge's
+# own liquid; the probe's player drowning three times through the damage chain (NeoForge's incoming-damage and damage
+# events); and water and NeoForge's liquid each placed, taken up and poured out with its bucket through the server's own
+# use-item path. Every row's air and health (or a liquid row's result) and what NeoForge's listeners saw are compared
+# with the same jar on native NeoForge (canary/forge-breath-drown/native-reference.json, three agreeing native runs each;
+# regenerate it with run/compat/breath-drown.py reference). Two rows are the owner's deliberate difference, pinned both
+# ways ('vanilla-refill'): a body that breathes with its eye in water refills as vanilla does, so NeoForge's breathe
+# listener is handed vanilla's refill where native NeoForge hands it nothing, and the water-breathing pig, which keeps
+# that refill, has the air native MinecraftForge gives the same row (its hook refills as vanilla does there, and no
+# MinecraftForge listener acts in that row); the reference must still show native NeoForge handing nothing and holding.
 #
 #   0. the reference was measured with the canary sources in this tree.
-#   1. positive — STRICT: every row as native, zero confirmed required findings.
-#   2. bridges-off — -Dforbric.unifiedEvents=off: exactly the rows a MinecraftForge breathe or drown listener decides or
-#      sees fail, each on a MinecraftForge breathe or drown view.
-#   3. getters-off — -Dforbric.forgeFieldGetters=off: exactly the rows in or with MinecraftForge's liquids fail, each
-#      because its liquid block threw with "this.fluid" is null.
-#   4. own-type-off — -Dforbric.forgeFluidOwnType=off: exactly the rows with a body in MinecraftForge's drowning liquid
-#      fail, each with the body in it and its air or MinecraftForge breathe view off native (in the canDrown(false) one a
-#      body breathes and refills either way: without its own type that liquid is air to NeoForge).
-#   5. seams-off — -Dforbric.forgeDamageSeams=off: exactly the rows judged on a MinecraftForge Hurt listener fail, each
-#      on a MinecraftForge attack, hurt or damage view. (MinecraftForge's attack is asked by the edit-spliced base itself
-#      at the head of hurtServer, so the NeoForge incoming-damage cancel rows hold; a base without that call would fail
-#      them here too, and the phase names them.)
-# Judged only where a row says so: the body's random draws (the bubble-count rows must draw what drown-late draws, the
-# draws counted on every sampled tick).
-# Not judged (measured, documented in introduction §19): the entity events the server broadcasts, and the random draws
-# elsewhere — merged drowning goes through NeoForge's hook, as native NeoForge's does. Not covered: a rendered client,
-# single player, a NeoForge listener registered at LOWEST after the kernel's bridges (it answers after
-# MinecraftForge's, a documented difference; the canary's setup-registered listeners are at LOW, its LOWEST ones are
-# registered before the bridges), Fabric's damage events (fabric-api is a third-party jar; the developer probe covers
-# them), lava (the owner's refill differs there as in the canDrown(false) liquid, and only that liquid is played).
+#   1. positive — the NeoForge canary alone, STRICT: every row as native NeoForge (the two vanilla-refill rows as above),
+#      no listener of the MinecraftForge canary in any row, its six liquid rows skipped as on native NeoForge, zero
+#      confirmed required findings, and the breathing hook names the vanilla refill.
+#   2. refused — the MinecraftForge canary staged beside it, continue policy: it is refused by name and every row is
+#      judged as in 1. Its f-* tags change no row (its listeners would cancel, re-damage, recount or refill there), none
+#      of its listeners hears a body, and the six rows in its liquids are skipped because its blocks and items were never
+#      registered.
+#   3. vanilla-refill-off — -Dforbric.vanillaAirRefill=off, the NeoForge canary alone: exactly the two vanilla-refill
+#      rows fail, each because NeoForge's breathe listener is handed NeoForge's own refill, and the hook names no
+#      vanilla refill.
+# Not judged (measured, documented in introduction §19): the entity events the server broadcasts, and the body's random
+# draws. Not covered: a rendered client, single player, Fabric's damage events (fabric-api is a third-party jar; the
+# developer probe covers them), lava.
+#
+# STAGE 3 OF DROPPING MinecraftForge (what changed and why). This gate judged MinecraftForge's breathing, drowning,
+# damage and liquids in the merged game against native MinecraftForge: a MinecraftForge canary (forbricbreathforge: its
+# breathe, drown, attack, hurt and damage listeners, and two liquids built from suppliers, murk and calm) beside the
+# NeoForge one, with the mixed rows' answering order and what MinecraftForge was handed, a MinecraftForge bubble count's
+# random draws, and four switch-off phases (bridges-off, getters-off, own-type-off, seams-off), each predicting exactly
+# the rows a MinecraftForge listener, liquid or Hurt seam decides. Forbric now refuses forbricbreathforge.jar (a
+# MinecraftForge-only jar) and a STRICT server stops on the refusal (exit 78), so the positive boot never reached Done.
+# What only that canary produced is gone: its listeners' views and the checks on them, the answering order, the bubble
+# rows' random draws, the comparison with native MinecraftForge, its six liquid rows as parity rows (with the
+# 'owner-refill' row in its calm liquid), and the getters-off "this.fluid" is null check. Every other row is now judged
+# against native NeoForge, the 27 that were judged against native MinecraftForge alone included: with the MinecraftForge
+# canary refused, their f-* tags do nothing, as on native NeoForge. Vanilla breathing on the merged base is the kernel's
+# code and runs with no MinecraftForge mod, so the water-breathing rows stay, pinned against native NeoForge as the
+# vanilla-refill difference (what NeoForge's listener is handed there was never judged before; only its air was, against
+# native MinecraftForge, and the one row whose body keeps the refill still reads that air from it). The four switch-off
+# phases are dropped: measured with the NeoForge canary alone, -Dforbric.unifiedEvents=off, -Dforbric.forgeFieldGetters=off,
+# -Dforbric.forgeFluidOwnType=off and -Dforbric.forgeDamageSeams=off each leave all 53 rows judged as in phase 1, every one
+# passing, because what each turns off (MinecraftForge's events posted from NeoForge's, its LiquidBlock and BucketItem
+# field getters, NeoForge's view of a MinecraftForge fluid's own type, its Hurt and Damage seams) serves only
+# MinecraftForge listeners and liquids; no row can turn red there, so each phase would only repeat phase 1. The kernel
+# still installs all four (Stage 4 deletes them), and phase 1 is what proves they leave NeoForge's and vanilla's rows as
+# native. Phase 3 is the RED control in their place, and phase 2 proves a refused MinecraftForge jar takes no part.
 # GATE-PARALLEL: rundirs=server-breath-m57 mem=2500
 set -uo pipefail
 . "$(cd "$(dirname "$0")" && pwd)/lib.sh"
@@ -56,24 +61,29 @@ set -uo pipefail
 SERVER_DIR="$KERNEL/run/server-breath-m57"
 RESULTS="$BUILD/verification/m57-forge-breath-drown"
 TOOL="$KERNEL/run/compat/breath-drown.py"
+NEO="$KERNEL/run/canary/forbricbreathneo.jar"
+FORGE="$KERNEL/run/canary/forbricbreathforge.jar"
+REFILL='\[Forbric/Fluid\] a body that breathes in its fluid refills its air as in vanilla'
 FAIL=0
 rm -rf "$RESULTS"; mkdir -p "$RESULTS"
 
 kernel_jar
 bash "$KERNEL/run/build-breath-drown-canary.sh" > "$RESULTS/build.log" 2>&1 || { cat "$RESULTS/build.log"; exit 1; }
 
-# run_server <phase> <policy> <extra jvm flags>
+# run_server <phase> <policy> <extra jvm flags> <jar>...
 run_server() {
   local phase="$1" policy="$2" extra="$3" pid
+  shift 3
   mkdir -p "$SERVER_DIR"
   reap_stale_server "$SERVER_DIR"
   rm -rf "$SERVER_DIR/world" "$SERVER_DIR/mods" "$SERVER_DIR/.forbric-kernel" "$SERVER_DIR/logs"
   mkdir -p "$SERVER_DIR/mods"
-  cp "$KERNEL/run/canary/forbricbreathforge.jar" "$KERNEL/run/canary/forbricbreathneo.jar" "$SERVER_DIR/mods/"
+  cp "$@" "$SERVER_DIR/mods/"
+  echo "[kernel] $phase staged: $(ls -1 "$SERVER_DIR/mods" | tr '\n' ' ')"
   echo "eula=true" > "$SERVER_DIR/eula.txt"
   seed_server_properties "$SERVER_DIR"
   python3 "$TOOL" properties >> "$SERVER_DIR/server.properties"
-  # The NeoForge canary drives: MinecraftForge's tick event is itself a bridge, which phase 2 switches off.
+  # The NeoForge canary drives (the probe in the MinecraftForge one never runs: Forbric refuses that jar).
   RUNDIR="$SERVER_DIR" FORBRIC_COMPAT_POLICY="$policy" \
     FORBRIC_JVM="-Dforbric.breathDrownDriver=neo -Dforbric.breathDrownProbe=$RESULTS/$phase.json $extra" \
     "$KERNEL/run/launch-kernel-server.sh" < /dev/null > "$RESULTS/$phase.log" 2>&1 &
@@ -96,33 +106,28 @@ judge() {
 step "0. the native reference belongs to these canaries"
 python3 "$TOOL" check-sources || FAIL=1
 
-step "1. positive: every row as the native loader whose answer stands"
-run_server positive strict ""
-judge positive "breathing, drowning, the damage chain and both liquids behave natively"
+step "1. positive: the NeoForge canary alone, every row as native NeoForge"
+run_server positive strict "" "$NEO"
+judge positive "breathing, drowning, the damage chain and NeoForge's liquid behave as on native NeoForge"
 if python3 -c "import json,sys; r=json.load(open(sys.argv[1])); sys.exit(0 if r['confirmedRequired']==0 else 1)" "$RESULTS/positive-compatibility.json" 2>/dev/null
 then echo "[kernel] PASS positive: zero confirmed required findings under STRICT"
 else echo "[kernel] FAIL positive: STRICT report missing or has confirmed required findings"; FAIL=1; fi
 check_absent "positive: no breathe, drown or damage forward failed" '\[Forbric/EventMux\] (LivingBreatheEvent|LivingDrownEvent|LivingIncomingDamageEvent) forward failed' "$RESULTS/positive.log"
+check "positive: the breathing hook gives a body that breathes in its fluid vanilla's refill" "$REFILL" "$RESULTS/positive.log"
 
-step "2. bridges-off: MinecraftForge's events from NeoForge's switched off"
-run_server bridges-off continue "-Dforbric.unifiedEvents=off"
-judge bridges-off "exactly the rows a MinecraftForge breathe or drown listener decides or sees fail, each on its view"
+step "2. refused: the MinecraftForge canary staged beside it takes no part"
+run_server refused continue "" "$NEO" "$FORGE"
+check "refused: the MinecraftForge canary is refused by name" \
+  '\[Forbric/Unsupported\] refusing forbricbreathforge\.jar \(forbricbreathforge\)' "$RESULTS/refused.log"
+judge refused "every row as in 1: no f-* tag acts, no MinecraftForge listener hears a body, its liquids never registered"
 
-step "3. getters-off: MinecraftForge's field getters switched off"
-run_server getters-off continue "-Dforbric.forgeFieldGetters=off"
-judge getters-off "exactly the rows in or with MinecraftForge's liquids fail, each on its liquid block's missing fluid"
-check "getters-off: ...because its LiquidBlock has no fluid without the getter" 'Cannot invoke "net\.minecraft\.world\.level\.material\.FlowingFluid\.[A-Za-z]+\(.*because "this\.fluid" is null' "$RESULTS/getters-off.log"
-
-step "4. own-type-off: NeoForge's view of MinecraftForge's own fluid type switched off"
-run_server own-type-off continue "-Dforbric.forgeFluidOwnType=off"
-judge own-type-off "exactly the rows with a body in MinecraftForge's drowning liquid fail, each with the body in it"
-
-step "5. seams-off: MinecraftForge's damage seams switched off"
-run_server seams-off continue "-Dforbric.forgeDamageSeams=off"
-judge seams-off "exactly the rows judged on a MinecraftForge Hurt listener fail, each on a damage-chain view"
+step "3. vanilla-refill-off: the breathing hook keeps NeoForge's own refill"
+run_server vanilla-refill-off continue "-Dforbric.vanillaAirRefill=off" "$NEO"
+judge vanilla-refill-off "exactly the two vanilla-refill rows fail, each on what NeoForge's breathe listener is handed"
+check_absent "vanilla-refill-off: the breathing hook names no vanilla refill" "$REFILL" "$RESULTS/vanilla-refill-off.log"
 
 if [ "$FAIL" -eq 0 ]; then
-  echo "[kernel] ✅ M57 FORGE BREATH/DROWN GATE GREEN — MinecraftForge's breathing, drowning, damage and liquids behave as on its own loader"
+  echo "[kernel] ✅ M57 BREATH/DROWN GATE GREEN — breathing, drowning, damage and liquids behave as on native NeoForge, a refused MinecraftForge jar takes no part"
 else
   echo "[kernel] ❌ M57 GATE RED — inspect $RESULTS"
 fi

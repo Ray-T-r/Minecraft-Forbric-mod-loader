@@ -26,4 +26,10 @@ native servers that `run/compat/native-controls.py prepare` installs:
 python3 forbric-kernel/run/compat/breath-drown.py reference      # M57_NATIVE=<dir> if the images live elsewhere
 ```
 
+Since Stage 3 of dropping MinecraftForge, Forbric refuses `forbricbreathforge` (a MinecraftForge-only jar), so on
+Forbric the NeoForge canary plays alone and gate-m57 judges every row against native NeoForge; the MinecraftForge half
+of the reference is read only for the air of the water-breathing row, where native MinecraftForge refills as vanilla
+does. The MinecraftForge canary stays: the gate stages it once to prove a refused jar takes no part, and the reference
+still runs it on its own loader.
+
 Test fixtures only.
