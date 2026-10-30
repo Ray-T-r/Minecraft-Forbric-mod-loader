@@ -114,8 +114,7 @@ public final class Installer {
 		Files.createDirectories(mods);
 		log.accept("");
 		log.accept("Installed. In your launcher, pick the version \"" + id + "\".");
-		log.accept("Fabric, MinecraftForge and NeoForge mods all go in " + mods
-				+ " (a launcher with per-version isolation uses versions/" + id + "/mods instead).");
+		log.accept(InstallerText.modsFolder(mods, id));
 		return id;
 	}
 
@@ -175,21 +174,24 @@ public final class Installer {
 	 * downloaded through the launcher landed in a directory the instance does not read, and the path had to be
 	 * corrected by hand every time.
 	 *
-	 * <p>ONE coordinate, not three. A launcher's detection is a first-match chain over one string, so listing all
-	 * three ecosystems would not make it answer "all three" — it would make the answer depend on which branch
-	 * that launcher happens to test first. Fabric is declared because it is the ecosystem most of a Forbric pack
-	 * comes from in practice and because that is the API level the kernel implements most completely; the other
-	 * two are named in {@code ecosystems} below in prose, deliberately NOT as coordinates, so they carry the
-	 * truth without moving the answer. Swap {@link #DECLARED_LOADER} to change which one a launcher sees.
+	 * <p>ONE coordinate, not two. A launcher's detection is a first-match chain over one string, so listing both
+	 * ecosystems would not make it answer "both" — it would make the answer depend on which branch that launcher
+	 * happens to test first. Fabric is declared because it is the ecosystem most of a Forbric pack comes from in
+	 * practice and because that is the API level the kernel implements most completely; NeoForge is named in
+	 * {@code ecosystems} below in prose, deliberately NOT as a coordinate, so it carries the truth without moving the
+	 * answer. Swap {@link #DECLARED_LOADER} to change which one a launcher sees.
 	 */
 	private static Map<String, Object> launcherIdentity() {
 		Map<String, Object> identity = new LinkedHashMap<>();
-		identity.put("comment", "Metadata for launchers, not classpath. Forbric runs Fabric, traditional Forge and "
-				+ "NeoForge mods in one instance; a launcher can only be told about one loader, so it is told "
-				+ "about the one below. Change 'declares' if you want the launcher to offer a different "
-				+ "ecosystem's builds by default.");
+		identity.put("comment", "Metadata for launchers, not classpath. Forbric runs Fabric and NeoForge mods in one "
+				+ "instance (it no longer loads MinecraftForge mods); a launcher can only be told about one loader, so "
+				+ "it is told about the one below. Change 'declares' if you want the launcher to offer NeoForge "
+				+ "builds by default.");
 		identity.put("declares", DECLARED_LOADER);
-		identity.put("ecosystems", List.of("fabric", "forge", "neoforge"));
+		// Fabric and NeoForge only since Stage 3 of dropping MinecraftForge: the kernel refuses a MinecraftForge-only mod,
+		// so naming "forge" here would tell a launcher, and the player reading this file, the one thing that is no longer
+		// true. The runtime still carries MinecraftForge until Stage 4; that is classpath, and this is not.
+		identity.put("ecosystems", List.of("fabric", "neoforge"));
 		return identity;
 	}
 
