@@ -138,18 +138,33 @@ public class MixinHandlerShimTest {
 	/**
 	 * A type the target offers TWICE cannot be mapped: choosing is a coin toss, and a coin toss here hands the
 	 * injection the wrong object silently, which is worse than the exception it would replace.
+	 *
+	 * <p>The name is lambda-shaped because the evidence only ever is: the pruner records nothing else, and
+	 * LambdaShapeEvidence answers nothing for any other name, so a plain name would be left alone before the mapping
+	 * is reached and the refusal would go untested. The control is the same handler, the same record and a target that
+	 * offers the String once: that one IS wrapped, so the refusal is the only thing that tells the two apart.
 	 */
 	@Test
 	void anAmbiguousParameterTypeIsRefused() {
+		String name = "lambda$ambiguous$0";
 		net.forbric.kernel.transform.DuplicateLambdaPruneInjector.recordDroppedForTest(
-				TARGET, "ambiguous", "(Ljava/lang/String;)V");
+				TARGET, name, "(Ljava/lang/String;)V");
+
+		ClassNode once = new ClassNode();
+		once.name = TARGET;
+		once.methods = new ArrayList<>(List.of(instanceMethod(name, "(Ljava/lang/String;I)V")));
+		ClassNode control = mixin("(Ljava/lang/String;" + CI + ")V", true);
+		setSelector(control, name);
+		assertEquals(1, MixinHandlerShim.adapt(control, targets(once)),
+				"premise: with the String offered once, the record is evidence and the handler is wrapped");
+
 		ClassNode mixin = mixin("(Ljava/lang/String;" + CI + ")V", true);
-		setSelector(mixin, "ambiguous");
+		setSelector(mixin, name);
 		ClassNode target = new ClassNode();
 		target.name = TARGET;
 		target.methods = new ArrayList<>(List.of(
-				instanceMethod("ambiguous", "(Ljava/lang/String;Ljava/lang/String;)V")));
-		assertEquals(0, MixinHandlerShim.adapt(mixin, targets(target)));
+				instanceMethod(name, "(Ljava/lang/String;Ljava/lang/String;)V")));
+		assertEquals(0, MixinHandlerShim.adapt(mixin, targets(target)), "offered twice, the String is not guessed at");
 	}
 
 	@Test
