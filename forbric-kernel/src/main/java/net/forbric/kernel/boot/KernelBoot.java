@@ -714,6 +714,10 @@ public final class KernelBoot {
 		// types of the public methods of each class it searches, so one naming an absent class makes a mod's
 		// registry.getClass().getMethod throw whenever the search reaches the wrapper (forGameLoader decides it).
 		chain.register(TransformPhase.COREMOD, net.forbric.kernel.transform.RegistrySyncParityInjector.forGameLoader(loader));
+		// NeoForge's disconnect-time revert (RegistryManager.revertToFrozen) puts back the kernel's own pre-connection
+		// snapshot. It used to be one of the edits above; it is NeoForge's lifecycle on any base, so it is its own. After
+		// them: where the wrapper sync's applySnapshot prologue already captures the ids, its own capture stands down.
+		chain.register(TransformPhase.COREMOD, new net.forbric.kernel.transform.RegistryRevertInjector());
 		// …and their register never reaches MappedRegistry.register, where fabric-registry-sync fires
 		// RegistryEntryAddedCallback, so fabric-menu-api had no codec for a Fabric mod's menu registered after its own
 		// main entrypoint, and Farmer's Delight's cooking pot never opened. The wrapper fires the event itself.
@@ -1418,7 +1422,7 @@ public final class KernelBoot {
 		// Leaving a world, Minecraft.disconnect calls NeoForge's RegistryManager.revertToFrozen — the client-only
 		// undo of server-synced registry ids back to a "frozen" snapshot. NeoForge's own body cannot run here: the
 		// kernel owns the freeze, so GameData.freezeData never took the snapshot it re-applies (frozenSnapshot null
-		// → NPE). It used to be neutered for that; it is no longer, because RegistrySyncParityInjector REWRITES the
+		// → NPE). It used to be neutered for that; it is no longer, because RegistryRevertInjector REWRITES the
 		// body to apply the kernel's own pre-connection snapshot (KernelRegistryRevert) — and this neuter, registered
 		// after that injector, was emptying the rewritten body again. Do not add it back.
 

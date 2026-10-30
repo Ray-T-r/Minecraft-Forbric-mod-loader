@@ -7,7 +7,7 @@ import org.objectweb.asm.tree.*;
 /** At every normal completed server tick, outside event dispatch and save callbacks. */
 public final class ServerCompatibilityTickInjector implements ClassTransformer {
  private static final String TARGET="net.minecraft.server.MinecraftServer";
- private static final String OWNER="net/forbric/kernel/runtime/KernelGameServerLifecycle";
+ private static final String OWNER="net/forbric/kernel/runtime/KernelServerDuties";
  @Override public String name(){return "forbric-late-server-compatibility";}
  @Override public AnchorSet anchors(){return AnchorSet.of(new AnchorSet.Anchor(TARGET,AnchorSet.Severity.REQUIRED,
    "confirmed required losses discovered after startup must stop a strict dedicated server through normal saving"));}

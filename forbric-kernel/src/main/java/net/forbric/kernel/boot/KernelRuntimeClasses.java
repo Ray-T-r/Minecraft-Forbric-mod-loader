@@ -203,7 +203,10 @@ public final class KernelRuntimeClasses {
 				new Call("afterClose", void.class, Object.class, Throwable.class),
 				new Call("fabricFinal", void.class, Object.class, Object.class), new Call("neoFinal", void.class, Object.class))));
 		CLASSES.put("net.forbric.kernel.runtime.KernelForgeReload", new Entry(Origin.COMPILED, List.of()));
-		CLASSES.put("net.forbric.kernel.runtime.KernelLootBridge", new Entry(Origin.COMPILED, List.of(
+		// The loot-table chain is routed to by LootTableEventBridgeInjector and named by nothing else; MinecraftForge's link in it
+		// is its own class, put in by the LOOT_TABLE_LOAD bridge, so the chain does not need MinecraftForge to be there.
+		CLASSES.put("net.forbric.kernel.runtime.KernelLootBridge", new Entry(Origin.COMPILED, List.of()));
+		CLASSES.put("net.forbric.kernel.runtime.KernelForgeLootLink", new Entry(Origin.COMPILED, List.of(
 				new Call("install", void.class))));
 		CLASSES.put("net.forbric.kernel.runtime.KernelLootModifiers", new Entry(Origin.COMPILED, List.of()));
 		CLASSES.put("net.forbric.kernel.runtime.KernelFeatureFlags", new Entry(Origin.COMPILED, List.of()));
@@ -422,11 +425,19 @@ public final class KernelRuntimeClasses {
 		// The Neo->Forge server start/stop re-emission, which also opens MinecraftForge's login gate. Separate
 		// from the tick bridge so a carrier missing one pair's types cannot take the other down with it.
 		CLASSES.put("net.forbric.kernel.runtime.KernelGameServerLifecycle", new Entry(Origin.COMPILED, List.of(
-				new Call("onCompatibilityTick", void.class, Object.class),
 				new Call("installStarting", void.class, Object.class),
 				new Call("installStarted", void.class, Object.class),
+				new Call("installStartedDuties", void.class, Object.class),
 				new Call("installStopping", void.class, Object.class),
 				new Call("installStopped", void.class, Object.class))));
+		// The kernel's own server duties, which are no forward to MinecraftForge and so are installed whether or not it is
+		// there (KernelServerDutiesInstaller): the game instance, the server-started work, the experience relay; and the
+		// compatibility tick, an ASM owner the tick return seam calls (ServerCompatibilityTickInjector).
+		CLASSES.put("net.forbric.kernel.runtime.KernelServerDuties", new Entry(Origin.COMPILED, List.of(
+				new Call("onCompatibilityTick", void.class, Object.class),
+				new Call("installGameInstance", void.class, Object.class),
+				new Call("installStartedDuties", void.class, Object.class),
+				new Call("installExperienceRelay", void.class, Object.class))));
 		// MinecraftForge's about-to-start, forwarded in three separately guarded pieces because its middle
 		// piece always throws under the kernel. See KernelGameServerAboutToStart.
 		CLASSES.put("net.forbric.kernel.runtime.KernelGameServerAboutToStart", new Entry(Origin.COMPILED, List.of(

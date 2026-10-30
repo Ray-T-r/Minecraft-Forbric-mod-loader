@@ -23,7 +23,6 @@ import java.util.HashMap;
 import net.forbric.api.DiscoveredMod;
 import net.forbric.kernel.util.Caught;
 import net.forbric.kernel.util.ForbricLog;
-import net.minecraftforge.unsafe.UnsafeHacks;
 import net.neoforged.bus.api.IEventBus;
 import net.neoforged.fml.ModContainer;
 import net.neoforged.fml.javafmlmod.FMLModContainer;
@@ -120,10 +119,16 @@ public final class KernelContainers {
 	 *
 	 * <p>Returns null — caller falls back to {@link KernelModContainer} — if anything is missing, so a runtime
 	 * without javafmlmod still boots.
+	 *
+	 * <p>Allocated and filled with the JDK's own means, not MinecraftForge's {@code UnsafeHacks}, which this used until
+	 * the genuine NeoForge base was measured: there, with no MinecraftForge on the classpath, every one of 74 NeoForge
+	 * mods fell back to the kernel's subclass and failed {@code instanceof FMLModContainer}. {@code UnsafeHacks.newInstance}
+	 * is {@code Unsafe.allocateInstance} and {@code setField} an {@code Unsafe.putObject} at the field's offset; this is
+	 * the same allocation and, for these non-static fields, the same write.
 	 */
 	private static ModContainer genuineFmlContainer(String modId, IModInfo modInfo, IEventBus bus) {
 		try {
-			FMLModContainer container = UnsafeHacks.newInstance(FMLModContainer.class);
+			FMLModContainer container = allocate(FMLModContainer.class);
 			set(FMLModContainer.class, "eventBus", container, bus);
 			set(ModContainer.class, "modId", container, modId);
 			set(ModContainer.class, "namespace", container, modId);
@@ -139,8 +144,23 @@ public final class KernelContainers {
 		}
 	}
 
+	/**
+	 * Writes one instance field, final included: {@code setAccessible(true)} is enough for a NON-STATIC final field of an
+	 * ordinary class (the carve-out deserialization relies on), the technique {@code PassiveSeeder} and
+	 * {@code KernelFmlTransformerView} already use on the same loader.
+	 */
 	private static void set(Class<?> owner, String name, Object target, Object value) throws Exception {
 		Field field = owner.getDeclaredField(name);
-		UnsafeHacks.setField(field, target, value);
+		field.setAccessible(true);
+		field.set(target, value);
+	}
+
+	/** An instance with no constructor run, from {@code sun.misc.Unsafe.allocateInstance} — the class IS initialised. */
+	static <T> T allocate(Class<T> type) throws ReflectiveOperationException {
+		Class<?> unsafeType = Class.forName("sun.misc.Unsafe");
+		Field theUnsafe = unsafeType.getDeclaredField("theUnsafe");
+		theUnsafe.setAccessible(true);
+		Object unsafe = theUnsafe.get(null);
+		return type.cast(unsafeType.getMethod("allocateInstance", Class.class).invoke(unsafe, type));
 	}
 }

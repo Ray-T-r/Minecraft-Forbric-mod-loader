@@ -167,10 +167,22 @@ public final class KernelMixinBootstrap {
 		// UncalledValueRelay after the fixups: a vanilla method the merged game never calls, into which guest hooks were woven, gets
 		// a relay of its woven body the carrier's own place runs (Block.tryDropExperience, from NeoForge's drops event). It needs
 		// the bytes Mixin was handed, to tell what was woven.
-		loader.setMixinTransformer((name, bytes) -> net.forbric.kernel.transform.ForgeTransferShapeAudit.certify(name,
-				callbackPriority.transform(name, codecReturns.transform(name, conflicts.transform(name, bytes, UncalledValueRelay.apply(name, bytes,
-						PostMixinFixups.apply(name, net.forbric.kernel.transform.NativeCoremodParity.apply(name,
-								MixinWeaverSlot.currentOr(transformer).transformClassBytes(name, name, bytes))))), null), null), gameClasses));
+		//
+		// One step per line, in the order they run. The transfer audit is MinecraftForge's (it certifies the shapes its
+		// transfer interop was reviewed against) and runs last, on the finished bytes, as it always has; it is its own
+		// line rather than the call wrapped around all the others, so it goes with MinecraftForge as a line, and nothing
+		// that serves NeoForge or Fabric has to be unwrapped from it.
+		loader.setMixinTransformer((name, bytes) -> {
+			byte[] woven = net.forbric.kernel.transform.NativeCoremodParity.apply(name,
+					MixinWeaverSlot.currentOr(transformer).transformClassBytes(name, name, bytes));
+			woven = PostMixinFixups.apply(name, woven);
+			woven = UncalledValueRelay.apply(name, bytes, woven);
+			woven = conflicts.transform(name, bytes, woven);
+			woven = codecReturns.transform(name, woven, null);
+			woven = callbackPriority.transform(name, woven, null);
+			woven = net.forbric.kernel.transform.ForgeTransferShapeAudit.certify(name, woven, gameClasses);
+			return woven;
+		});
 
 		// Leave PREINIT so the registered configs are prepared and their targets become weavable.
 		gotoPhase(MixinEnvironment.Phase.INIT);

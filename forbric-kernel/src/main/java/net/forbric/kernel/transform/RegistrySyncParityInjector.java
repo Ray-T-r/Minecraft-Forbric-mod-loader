@@ -81,6 +81,11 @@ import net.forbric.kernel.util.Caught;
  * {@code unfreeze(false)} clears the INHERITED flag, not that one — so NeoForge's per-registry freeze is a no-op
  * here, and the flush after the loop is the only write.
  *
+ * <p>The prologue also captures the pre-connection ids ({@code KernelRegistryRevert.captureIfNeeded}, through
+ * {@code beginSnapshotApplication}). What puts them back on a disconnect — {@code RegistryManager.revertToFrozen}'s body —
+ * is NeoForge's business on any base and is {@link RegistryRevertInjector}'s, registered after this one; it captures at the
+ * same head itself where nothing here does.
+ *
  * <p>Frame-safe by construction: the added methods are straight-line, and the {@code applySnapshot} splices add no
  * branch target — a static call at the head, and {@code DUP; INVOKESTATIC} in front of an {@code ARETURN} whose
  * operand stays on the stack. {@code COMPUTE_MAXS} for the extra stack slot.
@@ -108,8 +113,6 @@ public final class RegistrySyncParityInjector implements ClassTransformer {
 
 	private static final String APPLY_SNAPSHOT = "applySnapshot";
 	private static final String APPLY_SNAPSHOT_DESC = "(Ljava/util/Map;Z)Ljava/util/Set;";
-	private static final String REVERT_TO_FROZEN = "revertToFrozen";
-	private static final String REVERT_OWNER = "net/forbric/kernel/boot/KernelRegistryRevert";
 
 	/** The server's ids, by entry name, as a remap contract takes them. */
 	private static final String IDS = "Lit/unimi/dsi/fastutil/objects/Object2IntMap;";
@@ -284,8 +287,8 @@ public final class RegistrySyncParityInjector implements ClassTransformer {
 						"nothing today: this carrier already implements contents(). Kept for one that does not, "
 								+ "where its absence would kill a world load inside NeoForge's condition context"),
 				new AnchorSet.Anchor(NEO_REGISTRY_MANAGER, AnchorSet.Severity.REQUIRED,
-						"the kernel's own pre-connection registry snapshot would never be applied, so ids would "
-								+ "not revert after a multiplayer disconnect"));
+						"NeoForge's registry sync would stage the server's ids on the Forge-wrapped registries and never "
+								+ "apply them, so a client that joins a server keeps its own ids for every wrapped registry"));
 	}
 
 	@Override
@@ -495,23 +498,8 @@ public final class RegistrySyncParityInjector implements ClassTransformer {
 		}
 		target.maxStack = Math.max(target.maxStack, 2);
 
-		// revertToFrozen(): NeoForge's disconnect-time revert, which re-applies a snapshot GameData.freezeData takes
-		// — a freeze the kernel owns, so the snapshot never existed and the call used to be neutered. The kernel
-		// captures its own at the first remap (the head hook above) and this body now puts it back.
-		for (MethodNode m : node.methods) {
-			if (!m.name.equals(REVERT_TO_FROZEN) || !m.desc.equals("()V") || (m.access & Opcodes.ACC_STATIC) == 0) continue;
-			InsnList body = new InsnList();
-			body.add(new LdcInsnNode(org.objectweb.asm.Type.getObjectType(node.name)));
-			body.add(new MethodInsnNode(Opcodes.INVOKESTATIC, REVERT_OWNER, "revertToPreConnection", "(Ljava/lang/Class;)V", false));
-			body.add(new InsnNode(Opcodes.RETURN));
-			m.instructions = body;
-			m.tryCatchBlocks = null;
-			m.localVariables = null;
-			m.maxStack = 1;
-			m.maxLocals = 0;
-			ForbricLog.info("[Forbric/RegistrySync] %s.%s() now restores the kernel's own pre-connection snapshot", className,
-					REVERT_TO_FROZEN);
-		}
+		// revertToFrozen() is not rewritten here any more: NeoForge's disconnect-time revert needs the kernel's snapshot on
+		// any base, MinecraftForge or not, and RegistryRevertInjector (registered after this) gives its body that.
 
 		ForbricLog.info("[Forbric/RegistrySync] flushing the Forge-wrapped registries' staged ids at %d return(s) of "
 				+ "%s.%s", returns, className, APPLY_SNAPSHOT);

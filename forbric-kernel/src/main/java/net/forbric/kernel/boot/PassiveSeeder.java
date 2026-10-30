@@ -286,7 +286,7 @@ public final class PassiveSeeder {
 	/** Escape hatch: {@code -Dforbric.seedLoadingModList=off} restores the pre-fix EMPTY list. */
 	static final String SEED_SWITCH = "forbric.seedLoadingModList";
 
-	/** Lazily-resolved {@code sun.misc.Unsafe}, the JDK-only fallback for constructor-free allocation. */
+	/** Lazily-resolved {@code sun.misc.Unsafe}, what constructor-free allocation goes through. */
 	private static volatile Object jdkUnsafe;
 	/**
 	 * The Forge-family mods this boot discovered, kept from the NeoForge seeding so traditional Forge's list can be
@@ -601,7 +601,7 @@ public final class PassiveSeeder {
 		Map<String, Object> fileById = new LinkedHashMap<>();
 
 		for (Map.Entry<String, List<DiscoveredMod>> jar : byJar.entrySet()) {
-			Object fileInfo = allocate(gameLoader, fileInfoCls);
+			Object fileInfo = allocate(fileInfoCls);
 			List<Object> ownMods = new ArrayList<>();
 			for (DiscoveredMod mod : jar.getValue()) {
 				Object modInfo = buildModInfo(gameLoader, modInfoCls, fileInfo, mod);
@@ -711,8 +711,8 @@ public final class PassiveSeeder {
 		int annotations = 0;
 		long startedAt = System.nanoTime();
 		for (Map.Entry<String, List<DiscoveredMod>> jar : byJar.entrySet()) {
-			Object modFile = allocate(gameLoader, modFileCls);
-			Object fileInfo = allocate(gameLoader, fileInfoCls);
+			Object modFile = allocate(modFileCls);
+			Object fileInfo = allocate(fileInfoCls);
 			List<Object> ownMods = new ArrayList<>();
 			for (DiscoveredMod mod : jar.getValue()) {
 				Object modInfo = buildForgeModInfo(gameLoader, modInfoCls, fileInfo, mod);
@@ -1201,7 +1201,7 @@ public final class PassiveSeeder {
 			Class<?> contentsCls = Class.forName("net.neoforged.fml.jarcontents.JarContents", false, gameLoader);
 			Class<?> typeCls = Class.forName(ForeignType.MOD_FILE_TYPE.binary(Ecosystem.NEOFORGE), false, gameLoader);
 
-			Object modFile = allocate(gameLoader, modFileCls);
+			Object modFile = allocate(modFileCls);
 			setInstanceField(modFileCls, "contents", modFile, lazyContents(gameLoader, contentsCls, jar));
 			setInstanceField(modFileCls, "id", modFile, id);
 			setInstanceField(modFileCls, "jarVersion", modFile, version);
@@ -1356,7 +1356,7 @@ public final class PassiveSeeder {
 	 */
 	private static Object buildModInfo(ClassLoader gameLoader, Class<?> modInfoCls, Object owningFile,
 			DiscoveredMod mod) throws Exception {
-		Object modInfo = allocate(gameLoader, modInfoCls);
+		Object modInfo = allocate(modInfoCls);
 		String id = mod.getId();
 
 		setInstanceField(modInfoCls, "owningFile", modInfo, owningFile);
@@ -1399,26 +1399,21 @@ public final class PassiveSeeder {
 	/**
 	 * Allocates {@code type} WITHOUT running any constructor.
 	 *
-	 * <p>Forge's {@code UnsafeHacks} first — that is already the kernel's technique on the Forge side
-	 * ({@code KernelModContainerFactory}) and it lives on the game loader, so it is the right tool when the game
-	 * runtime is present. {@code sun.misc.Unsafe} is the JDK-only fallback, which is what makes this reachable when
-	 * only the NeoForge jar is on the classloader (unit tests, tooling) — never a reason to skip seeding.
+	 * <p>{@code sun.misc.Unsafe.allocateInstance}, from the JDK itself. It used to go through MinecraftForge's
+	 * {@code UnsafeHacks.newInstance} first, which is exactly that call behind a MinecraftForge class ({@code javap}:
+	 * {@code getstatic UNSAFE; aload_0; invokevirtual Unsafe.allocateInstance}), with this as the fallback where there was no
+	 * MinecraftForge; the fallback is now the only way, so the seeding needs nothing of MinecraftForge and allocates the
+	 * same object either way.
 	 */
-	private static Object allocate(ClassLoader gameLoader, Class<?> type) throws Exception {
-		try {
-			Class<?> unsafeHacks = Class.forName("net.minecraftforge.unsafe.UnsafeHacks", false, gameLoader);
-			return unsafeHacks.getMethod("newInstance", Class.class).invoke(null, type);
-		} catch (Throwable noForgeUnsafe) {
-			Caught.expected(noForgeUnsafe);
-			Object unsafe = jdkUnsafe;
-			if (unsafe == null) {
-				Class<?> unsafeCls = Class.forName("sun.misc.Unsafe");
-				Field theUnsafe = unsafeCls.getDeclaredField("theUnsafe");
-				theUnsafe.setAccessible(true);
-				jdkUnsafe = unsafe = theUnsafe.get(null);
-			}
-			return unsafe.getClass().getMethod("allocateInstance", Class.class).invoke(unsafe, type);
+	private static Object allocate(Class<?> type) throws Exception {
+		Object unsafe = jdkUnsafe;
+		if (unsafe == null) {
+			Class<?> unsafeCls = Class.forName("sun.misc.Unsafe");
+			Field theUnsafe = unsafeCls.getDeclaredField("theUnsafe");
+			theUnsafe.setAccessible(true);
+			jdkUnsafe = unsafe = theUnsafe.get(null);
 		}
+		return unsafe.getClass().getMethod("allocateInstance", Class.class).invoke(unsafe, type);
 	}
 
 	/**

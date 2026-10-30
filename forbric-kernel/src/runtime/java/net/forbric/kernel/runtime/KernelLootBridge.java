@@ -16,6 +16,8 @@
 
 package net.forbric.kernel.runtime;
 
+import java.util.function.BiFunction;
+
 import net.minecraft.core.HolderLookup;
 import net.minecraft.core.WritableRegistry;
 import net.minecraft.core.registries.Registries;
@@ -40,34 +42,37 @@ import net.neoforged.neoforge.event.EventHooks;
  * bridge uses, with the surviving hook's listeners first — and each link may drop the table or replace it, which
  * is what those mods are for: a loot mod that adds to or replaces a table on load had no effect at all before.
  *
- * <p>It is registered as {@link net.forbric.api.GameEventBridge#LOOT_TABLE_LOAD} rather than simply called, so
- * {@code -Dforbric.unifiedEvents=off} leaves the old behaviour and the dead-event audit keeps naming a waiting
- * mod when the link is not there.
+ * <p>MinecraftForge's link is its own class, {@link KernelForgeLootLink}, registered as
+ * {@link net.forbric.api.GameEventBridge#LOOT_TABLE_LOAD} rather than simply called, so {@code -Dforbric.unifiedEvents=off}
+ * leaves the old behaviour and the dead-event audit keeps naming a waiting mod when the link is not there. This class
+ * names nothing of MinecraftForge: the NeoForge-then-Fabric chain runs whether or not the link was put in, on a base with
+ * no MinecraftForge at all as on today's.
  */
 public final class KernelLootBridge {
 	/**
-	 * Whether MinecraftForge's link is in the chain.
+	 * MinecraftForge's link in the chain, or null when it is not there.
 	 *
-	 * <p>Flipped by {@link #install()} rather than read from the carrier's presence: the chain runs on every
-	 * loaded table, on a worker thread, long after boot, and a per-table {@code Class.forName} in a
+	 * <p>Set by {@link KernelForgeLootLink#install()} rather than read from the carrier's presence: the chain runs on
+	 * every loaded table, on a worker thread, long after boot, and a per-table {@code Class.forName} in a
 	 * {@code catch} is both slower and quieter than one decision made once at the point the rest of the bridges
 	 * are installed.
 	 */
-	private static volatile boolean forgeLinked;
+	private static volatile BiFunction<Identifier, LootTable, LootTable> forgeLink;
 
 	private KernelLootBridge() {
 	}
 
-	/** Puts MinecraftForge's {@code LootTableLoadEvent} into the chain. Called once, with the other bridges. */
-	public static void install() {
-		forgeLinked = true;
+	/** Puts MinecraftForge's link into the chain, between NeoForge's hook and Fabric's. Called once, by that link. */
+	static void link(BiFunction<Identifier, LootTable, LootTable> link) {
+		forgeLink = link;
 	}
 
 	/** {@code ReloadableServerRegistries.lambda$scheduleRegistryLoad$1}'s call, for every loaded table. */
 	public static LootTable loadLootTable(HolderLookup.Provider provider, Identifier id, LootTable table) {
 		LootTable neo = EventHooks.loadLootTable(provider, id, table);
 		if (neo == null) return null;
-		LootTable forge = forgeLinked ? net.minecraftforge.event.ForgeEventFactory.onLoadLootTable(id, neo) : neo;
+		BiFunction<Identifier, LootTable, LootTable> link = forgeLink;
+		LootTable forge = link == null ? neo : link.apply(id, neo);
 		// null means a MinecraftForge mod cancelled the load, which drops the table — the same answer NeoForge's
 		// own hook gives for a cancelled event, so the caller needs no new case.
 		if (forge == null) return null;

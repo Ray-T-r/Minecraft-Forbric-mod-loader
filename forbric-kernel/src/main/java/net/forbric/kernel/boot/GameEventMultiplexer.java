@@ -227,7 +227,8 @@ public final class GameEventMultiplexer {
 					bus -> blockBridge(cl, "installRightClickItem").invoke(null, bus));
 			// Loot tables. Not a bus forward: the merged ReloadableServerRegistries is already routed through
 			// KernelLootBridge, which chains NeoForge then Fabric, and this puts MinecraftForge's event in
-			// between. Installed here so the switch and the dead-event audit treat it like every other bridge.
+			// between (KernelForgeLootLink). Installed here so the switch and the dead-event audit treat it like every
+			// other bridge; the NeoForge-then-Fabric chain does not depend on it.
 			install(cl, neoBus, GameEventBridge.LOOT_TABLE_LOAD, bus -> lootBridge(cl).invoke(null));
 			// Placing a block. The merged ItemStack.useOn calls only NeoForge's onPlaceItemIntoWorld, because the
 			// snapshot list it drains is NeoForge-typed, so the MinecraftForge event went with it.
@@ -252,19 +253,16 @@ public final class GameEventMultiplexer {
 			install(cl, neoBus, GameEventBridge.SERVER_STARTING,
 					bus -> lifecycleBridge(cl, "installStarting").invoke(null, bus));
 			install(cl, neoBus, GameEventBridge.SERVER_STARTED, bus -> lifecycleBridge(cl, "installStarted").invoke(null, bus));
-			// The kernel's own work at server start is no forward, so it goes on NeoForge's bus itself, after the
-			// forward, and runs whether the forward ran or stood down.
-			try {
-				lifecycleBridge(cl, "installGameInstance").invoke(null, neoBus);
-			} catch (Throwable t) {
-				Caught.warn(t, "[Forbric/EventMux] the dedicated server will not be Fabric Loader's game instance — "
-						+ "FabricLoader.getGameInstance() stays null there");
-			}
+			// What the kernel does at server start for MinecraftForge is no forward, so it goes on NeoForge's bus itself,
+			// after the forward, and runs whether the forward ran or stood down. The kernel's work there for itself, NeoForge
+			// and Fabric (the game instance, the load report, the compatibility decision) is not installed here: it is no
+			// business of MinecraftForge's, and KernelServerDutiesInstaller puts it on after this whole pass, whether or not
+			// MinecraftForge is present or these bridges are switched off.
 			try {
 				lifecycleBridge(cl, "installStartedDuties").invoke(null, neoBus);
 			} catch (Throwable t) {
 				Caught.warn(t, "[Forbric/EventMux] the kernel's server-started work did not install — no dead-event "
-						+ "judgement, load report or compatibility decision once a world is up");
+						+ "judgement once a world is up, and MinecraftForge's login gate is left to its own hook");
 			}
 			install(cl, neoBus, GameEventBridge.SERVER_STOPPING,
 					bus -> lifecycleBridge(cl, "installStopping").invoke(null, bus));
@@ -373,25 +371,6 @@ public final class GameEventMultiplexer {
 	 * @param modBus the NeoForge mod bus the game posts client mod-bus events to; {@code AddClientReloadListenersEvent}
 	 *               is an {@code IModBusEvent}, so the game bus would never see it
 	 */
-	/**
-	 * Watches NeoForge's own data-map reload path (registration, apply per reload, dispatch) so the kernel's
-	 * about-to-start fallback can stand down when it ran. Not a {@link GameEventBridge}: it forwards nothing.
-	 */
-	public static void installDataMapWatch(ClassLoader cl) {
-		try {
-			Object neoBus = Class.forName("net.neoforged.neoforge.common.NeoForge", false, cl).getField("EVENT_BUS").get(null);
-			Class.forName("net.forbric.kernel.runtime.KernelNeoDataMapWatch", true, cl)
-					.getMethod("installDataMapWatch", Object.class).invoke(null, neoBus);
-			ForbricLog.debug("[Forbric/EventMux] watching NeoForge's data-map reload path");
-		} catch (ClassNotFoundException absent) {
-			// No NeoForge bus — no data-map path to watch.
-			Caught.expected(absent);
-		} catch (Throwable t) {
-			Caught.warn(t, "[Forbric/EventMux] could not watch NeoForge's data-map reload path — the kernel's fallback "
-					+ "will load the data maps as before");
-		}
-	}
-
 	public static void installClientReloadBridge(ClassLoader cl, Object modBus) {
 		if (!EventBridges.enabled()) {
 			ForbricLog.info("[Forbric/EventMux] -D%s=off — skipping the client reload-listener bridge",
@@ -498,7 +477,7 @@ public final class GameEventMultiplexer {
 
 	/** The loot-table chain's MinecraftForge link. Complete literal, for the reason above. */
 	private static Method lootBridge(ClassLoader cl) throws Exception {
-		return Class.forName("net.forbric.kernel.runtime.KernelLootBridge", true, cl).getMethod("install");
+		return Class.forName("net.forbric.kernel.runtime.KernelForgeLootLink", true, cl).getMethod("install");
 	}
 
 	/** One entry point on the game-side cancellable-block bridge. Complete literal, for the reason above. */

@@ -540,16 +540,46 @@ class RegistrySyncParityInjectorExecutionTest {
 		return repaired(original, original::containsKey);
 	}
 
-	/** {@code gameHasClass} is what the injector is told the game loader has, as KernelBoot tells it from its loader. */
+	/**
+	 * {@code gameHasClass} is what the injector is told the game loader has, as KernelBoot tells it from its loader. The
+	 * disconnect revert of {@code RegistryManager} is {@link RegistryRevertInjector}'s since the split, registered right after
+	 * this injector, so the chain here is both, in that order — the revert's own capture standing down for the wrapper sync's.
+	 */
 	private static Map<String, byte[]> repaired(Map<String, byte[]> original, java.util.function.Predicate<String> gameHasClass) {
 		Map<String, byte[]> classes = new HashMap<>(original);
 		for (String target : TARGETS) {
 			String internal = target.replace('.', '/');
 			byte[] out = InjectorExecution.transform(new RegistrySyncParityInjector(gameHasClass, contracts(original)), target, original.get(internal), EnvType.CLIENT);
 			assertNotSame(original.get(internal), out, target + " is the merged shape");
+			if (target.equals(MANAGER)) {
+				byte[] synced = out;
+				out = InjectorExecution.transform(new RegistryRevertInjector(), target, synced, EnvType.CLIENT);
+				assertNotSame(synced, out, "the revert's body is rewritten");
+			}
 			classes.put(internal, out);
 		}
 		return classes;
+	}
+
+	/**
+	 * Without the revert injector the wrapper sync still moves the ids, and leaving the server dies in NeoForge's own
+	 * {@code revertToFrozen}: the edit that puts the client's ids back is the revert injector's alone, as KernelBoot registers it.
+	 */
+	@Test void withoutTheRevertInjectorTheDisconnectDiesInNeoForgesOwnRevert(@TempDir Path work) throws Throwable {
+		Map<String, byte[]> original = merged(work);
+		Map<String, byte[]> classes = new HashMap<>(original);
+		for (String target : TARGETS) {
+			String internal = target.replace('.', '/');
+			classes.put(internal, InjectorExecution.transform(new RegistrySyncParityInjector(original::containsKey, contracts(original)),
+					target, original.get(internal), EnvType.CLIENT));
+		}
+		ClassLoader loader = InjectorExecution.load(classes);
+		assertEquals(List.of(0, 1, 2), ids(loader));
+		assertEquals(Set.of(), neoForgeSync(loader), "nothing missing");
+		assertEquals(List.of(2, 0, 1), ids(loader), "the wrapper sync is the parity injector's");
+		Throwable thrown = assertThrows(Throwable.class, () -> InjectorExecution.invokeStatic(loader.loadClass(MANAGER), "revertToFrozen"));
+		while (thrown.getCause() != null && !(thrown instanceof IllegalStateException)) thrown = thrown.getCause();
+		assertEquals("no frozen snapshot", thrown.getMessage(), "NeoForge's own body ran");
 	}
 
 	/** The remap contract the mod's mixin (RemapContractSamples.mixin()) adds, read against the compiled stand-ins. */

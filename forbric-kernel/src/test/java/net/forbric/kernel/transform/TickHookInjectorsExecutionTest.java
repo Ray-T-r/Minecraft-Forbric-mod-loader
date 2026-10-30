@@ -100,12 +100,12 @@ class TickHookInjectorsExecutionTest {
 						}
 					}
 					""",
-			"net.forbric.kernel.runtime.KernelGameServerLifecycle", """
+			"net.forbric.kernel.runtime.KernelServerDuties", """
 					package net.forbric.kernel.runtime;
 
 					import fixture.Trace;
 
-					public final class KernelGameServerLifecycle {
+					public final class KernelServerDuties {
 						public static void onCompatibilityTick(Object server) {
 							Trace.events.add("late compatibility sees " + server.getClass().getSimpleName());
 						}
