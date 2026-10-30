@@ -227,7 +227,8 @@ public final class GameEventMultiplexer {
 					bus -> blockBridge(cl, "installRightClickItem").invoke(null, bus));
 			// Loot tables. Not a bus forward: the merged ReloadableServerRegistries is already routed through
 			// KernelLootBridge, which chains NeoForge then Fabric, and this puts MinecraftForge's event in
-			// between. Installed here so the switch and the dead-event audit treat it like every other bridge.
+			// between (KernelForgeLootLink). Installed here so the switch and the dead-event audit treat it like every
+			// other bridge; the NeoForge-then-Fabric chain does not depend on it.
 			install(cl, neoBus, GameEventBridge.LOOT_TABLE_LOAD, bus -> lootBridge(cl).invoke(null));
 			// Placing a block. The merged ItemStack.useOn calls only NeoForge's onPlaceItemIntoWorld, because the
 			// snapshot list it drains is NeoForge-typed, so the MinecraftForge event went with it.
@@ -498,7 +499,7 @@ public final class GameEventMultiplexer {
 
 	/** The loot-table chain's MinecraftForge link. Complete literal, for the reason above. */
 	private static Method lootBridge(ClassLoader cl) throws Exception {
-		return Class.forName("net.forbric.kernel.runtime.KernelLootBridge", true, cl).getMethod("install");
+		return Class.forName("net.forbric.kernel.runtime.KernelForgeLootLink", true, cl).getMethod("install");
 	}
 
 	/** One entry point on the game-side cancellable-block bridge. Complete literal, for the reason above. */

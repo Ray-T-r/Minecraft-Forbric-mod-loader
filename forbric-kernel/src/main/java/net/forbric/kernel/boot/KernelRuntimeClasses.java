@@ -203,7 +203,10 @@ public final class KernelRuntimeClasses {
 				new Call("afterClose", void.class, Object.class, Throwable.class),
 				new Call("fabricFinal", void.class, Object.class, Object.class), new Call("neoFinal", void.class, Object.class))));
 		CLASSES.put("net.forbric.kernel.runtime.KernelForgeReload", new Entry(Origin.COMPILED, List.of()));
-		CLASSES.put("net.forbric.kernel.runtime.KernelLootBridge", new Entry(Origin.COMPILED, List.of(
+		// The loot-table chain is routed to by LootTableEventBridgeInjector and named by nothing else; MinecraftForge's link in it
+		// is its own class, put in by the LOOT_TABLE_LOAD bridge, so the chain does not need MinecraftForge to be there.
+		CLASSES.put("net.forbric.kernel.runtime.KernelLootBridge", new Entry(Origin.COMPILED, List.of()));
+		CLASSES.put("net.forbric.kernel.runtime.KernelForgeLootLink", new Entry(Origin.COMPILED, List.of(
 				new Call("install", void.class))));
 		CLASSES.put("net.forbric.kernel.runtime.KernelLootModifiers", new Entry(Origin.COMPILED, List.of()));
 		CLASSES.put("net.forbric.kernel.runtime.KernelFeatureFlags", new Entry(Origin.COMPILED, List.of()));
