@@ -295,10 +295,13 @@ public class ForbricNeoLiveMod {
 	 * NeoForge's documented way to register a JSON data loader: {@code AddServerReloadListenersEvent} on the game
 	 * bus, then a listener over {@code data/<ns>/forbricneolive_probe/*.json}.
 	 *
-	 * <p>On the merged base this event is not posted by the game: {@code ReloadableServerResources} hands its reload
-	 * to the kernel ({@code KernelForgeReload}), which asks NeoForge's {@code onResourceReload} on the way. So this
-	 * is the probe that says that route still reaches a NeoForge mod — and on the genuine base, where NeoForge
-	 * posts it from its own patch, it is the probe that says nothing was lost when the route went away.
+	 * <p>On the merged base the game's own NeoForge hook posts it. The merged {@code ReloadableServerResources} calls
+	 * NeoForge's {@code EventHooks.onResourceReload}, as the genuine base does; the kernel only redirects that one
+	 * call to {@code KernelForgeReload}, which calls NeoForge's hook first and then MinecraftForge's. With that
+	 * routing off ({@code -Dforbric.forgeReloadListeners=off}) the merged class calls NeoForge's hook directly and
+	 * this probe stays green, which gate-m21 records: it rests on NeoForge's hook, not on the MinecraftForge
+	 * bridge, and no kernel switch takes it out. So it is the probe that says a NeoForge mod's data loader still
+	 * runs when the MinecraftForge half of that route goes away.
 	 */
 	private static void registerReloadProbe() {
 		NeoForge.EVENT_BUS.addListener(net.neoforged.neoforge.event.AddServerReloadListenersEvent.class, event -> {

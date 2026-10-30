@@ -378,7 +378,9 @@ check "MinecraftForge's recipe conditions read this reload's tags" "MinecraftFor
 #                                                merged ReloadableServerResources calls NeoForge's own onResourceReload,
 #                                                so no kernel switch takes the NeoForge data loader out -- the measurement
 #                                                that it rests on NeoForge's hook, not on the MinecraftForge bridge
-# The SELF, PLUGIN and SERVER-config checks have no kernel switch either, like their MinecraftForge twins here.
+# So the three NeoForge RELOAD checks are POSITIVE-ONLY: no kernel switch turns them red, and what drives them is the
+# canary's listener on NeoForge's own hook. The SELF, PLUGIN and SERVER-config checks have no kernel switch either,
+# like their MinecraftForge twins here.
 step "the NeoForge canary finds its OWN members through both readers of the scan index (must PASS)"
 for reader in ModList LoadingModList; do
   check "NeoForge ($reader): the index carries the mod's own annotation" \
@@ -402,9 +404,11 @@ check_exactly "NeoForge (ModList): its own annotation is found in one entry, not
 check_absent "NeoForge: neither reader failed" "ForbricNeoLive/SCAN\] (could not read|LoadingModList has no file)" "$LOG"
 
 step "a NeoForge mod's server data loader is registered and runs (must PASS)"
-# NeoForge's AddServerReloadListenersEvent. The merged ReloadableServerResources hands its reload to the kernel
-# (KernelForgeReload), which asks NeoForge's onResourceReload on the way, so this is the NeoForge half of the route the
-# MinecraftForge RELOAD checks above cover -- and the probe that says nothing was lost when that route goes away.
+# NeoForge's AddServerReloadListenersEvent, posted by NeoForge's own EventHooks.onResourceReload, which the merged
+# ReloadableServerResources calls as the genuine base does. The kernel redirects that one call to KernelForgeReload,
+# which calls NeoForge's hook first and MinecraftForge's after it; with that routing off the merged class calls
+# NeoForge's hook directly. So this is the NeoForge half of the route the MinecraftForge RELOAD checks above cover, and
+# the probe that says nothing is lost when the MinecraftForge half goes away. Positive-only (see the header).
 check "NeoForge: the event was delivered"          '\[ForbricNeoLive/RELOAD\] AddServerReloadListenersEvent DELIVERED' "$LOG"
 check "NeoForge: the registered data loader ran"   '\[ForbricNeoLive/RELOAD\] reload listener ran over [1-9][0-9]* file' "$LOG"
 check "NeoForge: the event hands out a live condition context" '\[ForbricNeoLive/RELOAD\] context=live' "$LOG"
