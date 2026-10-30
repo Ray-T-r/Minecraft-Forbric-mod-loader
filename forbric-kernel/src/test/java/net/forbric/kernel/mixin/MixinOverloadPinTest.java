@@ -53,6 +53,7 @@ import org.objectweb.asm.tree.MethodNode;
  * first, is pinned to the one overload its handler was written for — only when the first cannot take the handler, and
  * only when exactly one other can.
  */
+@org.junit.jupiter.api.extension.ExtendWith(net.forbric.kernel.DroppedLambdaRecordRestore.class)
 class MixinOverloadPinTest {
 	private static final String TARGET = "net/minecraft/client/renderer/LevelRenderer";
 	private static final String SLICE = "Lcom/mojang/blaze3d/buffers/GpuBufferSlice;";

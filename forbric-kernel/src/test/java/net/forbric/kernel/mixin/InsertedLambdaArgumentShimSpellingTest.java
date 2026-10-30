@@ -29,6 +29,7 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
  * a handler taking two arguments, an anchor on another class.
  */
 @org.junit.jupiter.api.parallel.ResourceLock("system-properties")
+@org.junit.jupiter.api.extension.ExtendWith(net.forbric.kernel.DroppedLambdaRecordRestore.class)
 class InsertedLambdaArgumentShimSpellingTest {
 	private static final String TARGET = "spry/Canvas", LAMBDA = "lambda$paint$4", BRUSH = "spry/Brush";
 	private static final String OLD = "(ILjava/lang/String;)V", NEW = "(ILjava/lang/Object;Ljava/lang/String;)V";

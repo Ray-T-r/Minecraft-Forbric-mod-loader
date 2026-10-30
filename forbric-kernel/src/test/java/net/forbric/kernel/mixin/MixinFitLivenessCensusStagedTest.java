@@ -64,6 +64,7 @@ import net.forbric.kernel.TestFixtures.Fixture;
  */
 @ResourceLock("system-properties")
 @ResourceLock("native-game-references")
+@org.junit.jupiter.api.extension.ExtendWith(net.forbric.kernel.DroppedLambdaRecordRestore.class)
 class MixinFitLivenessCensusStagedTest {
 	private static final Path MERGED = TestFixtures.stagedBase();
 	private static final Path INTEROP = TestFixtures.stagedRoot().resolve("merged-base/forge-runtime-interop.jar");

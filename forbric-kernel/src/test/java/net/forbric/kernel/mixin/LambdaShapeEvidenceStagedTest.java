@@ -77,6 +77,7 @@ import net.forbric.kernel.transform.TransformContext;
 @ExpectCaught("cannot prove a frame repair")
 @ResourceLock("native-game-references")
 @ResourceLock("system-properties")
+@org.junit.jupiter.api.extension.ExtendWith(net.forbric.kernel.DroppedLambdaRecordRestore.class)
 class LambdaShapeEvidenceStagedTest {
 	private static final String MIXIN_DESC = "Lorg/spongepowered/asm/mixin/Mixin;";
 	private static final String INJECT = "Lorg/spongepowered/asm/mixin/injection/Inject;";
@@ -213,10 +214,15 @@ class LambdaShapeEvidenceStagedTest {
 	 * Measures the corpus on the merged base, once: the targets through the pre-Mixin chain under each pruner arm, then each
 	 * guest's decisions with the reference off and on. Leaves the pruner's record as the last arm left it; the caller's
 	 * {@link #reset} puts back what it found.
+	 *
+	 * <p>On the merged base as such ({@link TestFixtures#mergedBase()}, {@link ChainReferences#mergedJars()}), never on
+	 * {@link TestFixtures#BASE_JAR}: what is measured — the FABRIC/FORGE references embedded in the base, the duplicate
+	 * lambdas the pruner drops — only the merge produces. Once Stage 4 points BASE_JAR at the genuine base, these two tests
+	 * keep measuring the merged one while it is staged, and skip when it is not.
 	 */
 	private static synchronized Measured merged() throws Exception {
 		if (measured != null) return measured;
-		Path merged = TestFixtures.stagedBase().normalize();
+		Path merged = TestFixtures.mergedBase().normalize();
 		TestFixtures.requireFiles(Fixture.STAGED, "the merged base", merged);
 		List<Guest> guests = corpus(merged);
 		TestFixtures.require(Fixture.THIRD_PARTY, !guests.isEmpty(), "no guest mixin with a lambda selector in the local packs");
@@ -232,7 +238,7 @@ class LambdaShapeEvidenceStagedTest {
 		TestFixtures.require(Fixture.THIRD_PARTY, absent.isEmpty(), "Stage 2.4's named mods with no LevelRenderer mixin in the local packs: "
 				+ absent + " (present: " + named + ")");
 
-		List<Path> jars = ChainReferences.stagedJars();
+		List<Path> jars = ChainReferences.mergedJars();
 		List<Row> rows = new ArrayList<>();
 		try (ForbricClassLoader loader = new ForbricClassLoader(jars.stream().map(LambdaShapeEvidenceStagedTest::url).toArray(URL[]::new),
 				LambdaShapeEvidenceStagedTest.class.getClassLoader())) {
@@ -255,6 +261,10 @@ class LambdaShapeEvidenceStagedTest {
 				System.clearProperty(PRUNER);
 				if (pruner) assertCensusAndRecordAreDisjoint(classes);
 				Map<String, List<String>> dropped = DuplicateLambdaPruneInjector.droppedForTest();
+				// What makes this the merged base: it carries addSkyPass's lambda twice and the pruner drops one. Any other
+				// base measured here would be equality over the wrong jar, and stayed green when it was the genuine one.
+				if (pruner) assertTrue(dropped.containsKey(LEVEL_RENDERER + "#" + SKY), "premise: the pruner drops the merge's "
+						+ "second " + SKY + "; " + merged + " is not the merged base (dropped: " + dropped.keySet() + ")");
 				for (Guest guest : guests) {
 					System.setProperty(LambdaShapeEvidence.PROPERTY, "off");
 					Decisions recordOnly = decide(guest, classes);

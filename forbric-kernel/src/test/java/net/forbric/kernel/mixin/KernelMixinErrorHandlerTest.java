@@ -44,6 +44,7 @@ import net.forbric.api.ModCatalog;
 
 /** The handler over a proxied IMixinInfo: the owner is marked, the action is never changed, and the bootstrap registers it. */
 @org.junit.jupiter.api.parallel.ResourceLock("ModCatalog")
+@org.junit.jupiter.api.extension.ExtendWith(net.forbric.kernel.DroppedLambdaRecordRestore.class)
 class KernelMixinErrorHandlerTest {
 	@org.junit.jupiter.api.BeforeEach
 	@org.junit.jupiter.api.AfterEach

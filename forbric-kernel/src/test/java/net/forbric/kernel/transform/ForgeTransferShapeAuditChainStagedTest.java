@@ -54,6 +54,7 @@ import net.forbric.kernel.TestFixtures;
  * state (worker declarations, the guest loader) is left out and named in the output.
  */
 @ResourceLock("native-game-references")
+@org.junit.jupiter.api.extension.ExtendWith(net.forbric.kernel.DroppedLambdaRecordRestore.class)
 class ForgeTransferShapeAuditChainStagedTest {
 	private static final String KERNEL_BOOT = "net/forbric/kernel/boot/KernelBoot";
 	private static final String CHAIN = "net/forbric/kernel/transform/TransformChain";

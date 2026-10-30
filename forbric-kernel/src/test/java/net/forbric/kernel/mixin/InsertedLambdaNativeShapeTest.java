@@ -29,6 +29,7 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
  * screenshot-capture mixin failed. The fixture is invented: a camera whose lambda gained an {@code Object}.
  */
 @ResourceLock("system-properties")
+@org.junit.jupiter.api.extension.ExtendWith(net.forbric.kernel.DroppedLambdaRecordRestore.class)
 class InsertedLambdaNativeShapeTest {
 	private static final String LAMBDA = "lambda$snap$3", LENS = "spry/Lens";
 	private static final String OLD = "(ILjava/lang/String;)V", NEW = "(ILjava/lang/Object;Ljava/lang/String;)V";

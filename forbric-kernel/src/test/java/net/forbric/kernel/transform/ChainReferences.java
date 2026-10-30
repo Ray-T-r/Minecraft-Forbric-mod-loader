@@ -80,6 +80,21 @@ public final class ChainReferences {
 	}
 
 	/**
+	 * The merged base as such ({@link TestFixtures#mergedBase()}) and its carriers, in {@link #stagedJars()}'s order: for a
+	 * test about what only the merge produces — the native-reference index embedded in it, the duplicate lambdas the pruner
+	 * drops from it. Today the same jars as {@link #stagedJars()}; when Stage 4 points {@link TestFixtures#BASE_JAR} at the
+	 * genuine base these stay on the merged one, and a root that no longer stages it skips the test instead of running it
+	 * against a base that has neither.
+	 */
+	public static List<Path> mergedJars() {
+		Path merged = TestFixtures.mergedBase().normalize();
+		Path forge = TestFixtures.forgeCarrier().normalize();
+		Path neo = TestFixtures.neoCarrier().normalize();
+		TestFixtures.requireFiles(Fixture.STAGED, "the merged base and its carriers", merged, neo);
+		return Files.isRegularFile(forge) ? List.of(merged, forge, neo) : List.of(merged, neo);
+	}
+
+	/**
 	 * The transformers KernelBoot registers before Mixin, read off KernelBoot's own bytecode in its phases, sort indexes
 	 * and order ({@link ForgeTransferShapeAuditChainStagedTest#chain}), with game resources served from {@code jars}:
 	 * what hands a class to Mixin, for a test outside this package. Hold {@code @ResourceLock("native-game-references")}
