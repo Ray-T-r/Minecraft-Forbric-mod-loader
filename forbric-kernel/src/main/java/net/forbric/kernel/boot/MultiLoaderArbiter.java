@@ -150,10 +150,21 @@ public final class MultiLoaderArbiter {
 			owner = declared.get(0);
 		} else if (declared.size() > 1) {
 			List<Ecosystem> candidates = declared;
+			boolean byInitialization = false;
 			if (!"off".equalsIgnoreCase(System.getProperty(ENTRYPOINT_SWITCH, "on"))) {
 				List<Ecosystem> initialized = initializationFamilies(jar, declared);
 				// No initializer anywhere is a legitimate data-only/library jar, not a reason to reject it.
-				if (!initialized.isEmpty()) candidates = initialized;
+				if (!initialized.isEmpty()) {
+					candidates = initialized;
+					byInitialization = true;
+				} else {
+					// But a mixin-only mod runs through its mixins, and only the halves that ship a mixin config can
+					// apply them. qubes-mouse-fix declares its client mixins in fabric.mod.json and nowhere a NeoForge
+					// half reads (its MinecraftForge half had them in the manifest's MixinConfigs); chosen by preference
+					// it loaded as NeoForge and silently did nothing, where it used to work as MinecraftForge.
+					List<Ecosystem> mixins = mixinFamilies(jar, declared);
+					if (!mixins.isEmpty()) candidates = mixins;
+				}
 			}
 			for (Ecosystem candidate : preference()) {
 				if (candidates.contains(candidate)) {
@@ -162,7 +173,7 @@ public final class MultiLoaderArbiter {
 				}
 			}
 			if (owner == null) owner = candidates.get(0); // preference listed none of them — stay deterministic
-			if (!candidates.equals(declared)) {
+			if (byInitialization && !candidates.equals(declared)) {
 				List<Ecosystem> metadataOnly = new ArrayList<>(declared);
 				metadataOnly.removeAll(candidates);
 				ForbricLog.info("[Forbric/MultiLoader] %s has initialization code for %s; ignoring manifest-only "
@@ -218,6 +229,42 @@ public final class MultiLoaderArbiter {
 			return List.of();
 		}
 		return declared.stream().filter(found::contains).toList();
+	}
+
+	/**
+	 * The declared families whose manifest names a mixin config the jar ships: NeoForge's {@code [[mixins]]} and
+	 * Fabric's {@code mixins}. Asked only when no half has initialization code, so a mixin-only mod is given to a half
+	 * that applies its mixins. Unreadable evidence suppresses nothing.
+	 */
+	private static List<Ecosystem> mixinFamilies(Path jar, List<Ecosystem> declared) {
+		Set<Ecosystem> found = new HashSet<>();
+		try (JarFile zip = new JarFile(jar.toFile())) {
+			if (declared.contains(Ecosystem.NEOFORGE)) {
+				try (var in = zip.getInputStream(zip.getJarEntry(ForbricModDiscoverer.NEOFORGE_MANIFEST))) {
+					if (ModsTomlParser.parse(in).getMixinConfigs().stream().anyMatch(config -> zip.getJarEntry(config) != null)) {
+						found.add(Ecosystem.NEOFORGE);
+					}
+				}
+			}
+			if (declared.contains(Ecosystem.FABRIC)) {
+				try (var in = zip.getInputStream(zip.getJarEntry(ForbricModDiscoverer.FABRIC_MANIFEST))) {
+					if (FabricModMetadataParser.read(in).getMixinConfigs().stream()
+							.anyMatch(config -> zip.getJarEntry(config.config()) != null)) {
+						found.add(Ecosystem.FABRIC);
+					}
+				}
+			}
+		} catch (Exception error) {
+			Caught.warn(error, "[Forbric/MultiLoader] could not inspect mixin configs in %s; no family of it is suppressed",
+					jar.getFileName());
+			return List.of();
+		}
+		List<Ecosystem> families = declared.stream().filter(found::contains).toList();
+		if (!families.isEmpty() && families.size() < declared.size()) {
+			ForbricLog.info("[Forbric/MultiLoader] %s has no initialization code in any half; only %s ships its mixins, "
+					+ "so that half loads it", jar.getFileName(), families);
+		}
+		return families;
 	}
 
 	private static boolean fabricEntryCanInitialize(JarFile zip, String key,

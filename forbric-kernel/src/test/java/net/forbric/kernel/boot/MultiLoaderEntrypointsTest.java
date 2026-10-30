@@ -125,6 +125,44 @@ class MultiLoaderEntrypointsTest {
 		assertEquals(Ecosystem.FABRIC, MultiLoaderArbiter.ownerOf(jar));
 	}
 
+	/**
+	 * qubes-mouse-fix's shape: no half has an initializer, and only fabric.mod.json names the mixin config the jar ships
+	 * (its MinecraftForge half had it in the manifest's MixinConfigs). The mod is its mixins, so it loads through the half
+	 * that applies them; with both halves naming the config, or with the entrypoint switch off, preference decides.
+	 * Red-checked: without the mixin narrowing the first assertion answered NEOFORGE.
+	 */
+	@Test void aMixinOnlyJarLoadsThroughTheHalfThatShipsItsMixins() throws Exception {
+		Path fabricOnly = mixinJar("qubes.jar", false);
+		assertEquals(Ecosystem.FABRIC, MultiLoaderArbiter.ownerOf(fabricOnly));
+		assertTrue(MultiLoaderArbiter.suppressedFor(fabricOnly, Ecosystem.NEOFORGE));
+		MultiLoaderArbiter.reset();
+		assertEquals(Ecosystem.NEOFORGE, MultiLoaderArbiter.ownerOf(mixinJar("both.jar", true)),
+				"both halves apply the mixins: the preference stands");
+		MultiLoaderArbiter.reset();
+		System.setProperty(MultiLoaderArbiter.ENTRYPOINT_SWITCH, "off");
+		assertEquals(Ecosystem.NEOFORGE, MultiLoaderArbiter.ownerOf(fabricOnly), "negative control: bare preference");
+	}
+
+	private Path mixinJar(String name, boolean neoDeclaresMixins) throws Exception {
+		Map<String, byte[]> entries = new LinkedHashMap<>();
+		entries.put("META-INF/mods.toml", ("modLoader=\"javafml\"\nloaderVersion=\"[1,)\"\n[[mods]]\nmodId=\"qubes\"\n"
+				+ "version=\"1\"\n").getBytes(StandardCharsets.UTF_8));
+		entries.put("META-INF/neoforge.mods.toml", ("modLoader=\"javafml\"\nloaderVersion=\"[1,)\"\n[[mods]]\n"
+				+ "modId=\"qubes\"\nversion=\"1\"\n" + (neoDeclaresMixins ? "[[mixins]]\nconfig=\"qubes.mixins.json\"\n" : ""))
+				.getBytes(StandardCharsets.UTF_8));
+		entries.put("fabric.mod.json", ("{\"schemaVersion\":1,\"id\":\"qubes\",\"version\":\"1\","
+				+ "\"mixins\":[{\"config\":\"qubes.mixins.json\",\"environment\":\"client\"}]}").getBytes(StandardCharsets.UTF_8));
+		entries.put("qubes.mixins.json", "{\"package\":\"q.mixin\",\"client\":[\"MouseMixin\"]}".getBytes(StandardCharsets.UTF_8));
+		entries.put("q/mixin/MouseMixin.class", type("q/mixin/MouseMixin", null, null, null, true));
+		Path path = temporary.resolve(name);
+		try (JarOutputStream out = new JarOutputStream(Files.newOutputStream(path))) {
+			for (var entry : entries.entrySet()) {
+				out.putNextEntry(new JarEntry(entry.getKey())); out.write(entry.getValue()); out.closeEntry();
+			}
+		}
+		return path;
+	}
+
 	@Test void aDependencyMaySupplyTheFabricInitializerHierarchy() throws Exception {
 		Path jar = fixture("external-parent.jar", "example.DependentEntry", Map.of("example/DependentEntry.class",
 				type("example/DependentEntry", null, null, "dependency/InitializerContract", true)));
