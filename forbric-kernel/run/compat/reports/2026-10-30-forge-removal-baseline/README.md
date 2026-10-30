@@ -81,3 +81,39 @@ entries. `patched-mc-neoforge-26.2.jar` is byte-identical (sha1 `67bbf24f…`, N
 - Native NeoForge 26.2.0.93 control installed from the official installer (upstream SHA-1 verified).
 - sponge-mixin 0.17.4 / MixinExtras 0.5.5 tried and reverted: six weave tests in three suites change verdict and
   0.17.4 adds compatibility level 17004; recorded in `Pins.java`.
+
+## Stage 2: preparation on the merged base (lanes merged at 559f0d2a, two fix rounds, tip below)
+
+Six lanes (harness, native-refs, relocate, adapters-a, adapters-b, canary), each reviewed adversarially; the reviews'
+findings fixed in two rounds of isolated fix lanes (s2fix/*, s2fix2/*), each reviewed again. What was measured, the
+deliberate behaviour changes and the Stage 4 obligations are in `stage2-measurements.md`.
+
+**Unit suite, test by test against Stage 1's tip (b37e6ae0)**, same staged root, `integrationTest`:
+
+| | tests | failed | changed against b37e6ae0 |
+| --- | ---: | ---: | --- |
+| b37e6ae0 | 6,737 | 6 | — (the six lost-fixture failures above; two KernelBundledMixinExtrasStagedTest failures in the first run were a fresh worktree without the boot jar, passing once it was built) |
+| Stage 2 tip | 6,851 | 6 | 116 tests added, 2 renamed; one regression found and fixed (below); the same six failures, no other verdict changed |
+
+The regression: `UncalledMethodCensusTest` asked for five rows to leave `uncalled-methods.txt`, because the census read
+`VanillaMemberTwinInjector`'s rows (the members it copies where a base lacks them) as names, which made the twinned
+members look live. Regenerating the table would have changed what `MixinExecutionPathRetarget`, `UncalledValueRelay` and
+`MixinSplitBodyEdges` do on the merged base; the census now reads that injector as copying, not calling (9ad625f6).
+
+**Gates** (`gates-all.sh -j auto --skip gate-m34-soak.sh`, then the reds again): 58 GREEN, gate-m0 RED for the R3 corpus
+test only (as in Stages 0 and 1), m34 skipped. The first sweep had ten reds, every one explained:
+
+| gate(s) | cause | outcome |
+| --- | --- | --- |
+| m35 m36 m37 m38 m43 m46 m53 m55 | environment: the sweep set `MC_DIR` to the stage's Minecraft tree, which has no sponge-mixin; the canary builders read it from `MC_DIR` | without the override: GREEN |
+| m17 | gate defect since the version moved to 0.4.0-dev: it took the first `forbric-kernel-installer-*.jar` in build/libs, the stale 0.3.1-beta2 one, so it (Stage 1 included) tested the old installer; the new sidecar checks caught it | gate reads the version from build.gradle (da558b8a): GREEN |
+| m0 | `test_soak` lacked the new `native_reference` argument; the installer link gate's source list lacked `VanillaReferenceTest`; the census above; the R3 corpus | first three fixed (f763deab, 9ad625f6); RED for the corpus only |
+
+gate-m21's `-Dforbric.neoScanData=off` control turns exactly eleven checks red (the header said nine; corrected).
+
+**Skip baselines**: `ci-unstaged.tsv`, `ci-prepared.tsv` and the new `ci-prepared-noforge.tsv` (the prepared suite again
+with the MinecraftForge carrier hidden, `-Pforbric.hideForgeCarrier`) are CI's own skips-actual lists, from runs of
+branch `ci/remove-forge-stage2` (runs 41012697382 and 41017826904; ci-prepared gained two [fixture:third-party] rows, new tests needing local mod packs CI does not have).
+
+**Decision pending with the owner**: gate-m30's dead-event row stays on the synthetic MinecraftForge fixture until Stage 4
+deletes it with `DeadEventAudit` (the gate header says PROPOSED), instead of moving to a NeoForge canary as the plan said.
