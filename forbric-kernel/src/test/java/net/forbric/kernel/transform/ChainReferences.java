@@ -60,17 +60,34 @@ public final class ChainReferences {
 	private ChainReferences() {
 	}
 
-	/** NeoForge's own patched game for 26.2 — the base Stage 4 switches to — as the staged root carries it. */
-	public static Path genuineBase() {
-		return TestFixtures.stagedRoot().resolve("neoforge-patched/patched-mc-neoforge-26.2.jar").normalize();
-	}
-
-	/** The genuine base and the one carrier it runs with: the jar set a staged genuine-base test links against. */
+	/**
+	 * The genuine base ({@link TestFixtures#genuineBase()}, NeoForge's own patched game for 26.2, the base Stage 4
+	 * switches to) and the one carrier it runs with: the jar set a staged genuine-base test links against.
+	 */
 	public static List<Path> genuineJars() {
-		Path base = genuineBase();
-		Path neo = TestFixtures.stagedRoot().resolve("neoforge-runtime/neoforge-runtime.jar").normalize();
+		Path base = TestFixtures.genuineBase().normalize();
+		Path neo = TestFixtures.neoCarrier().normalize();
 		TestFixtures.requireFiles(Fixture.STAGED, "the genuine NeoForge base and its carrier", base, neo);
 		return List.of(base, neo);
+	}
+
+	/**
+	 * The staged base and its carriers as the game owns them ({@link StagedGameClasses#jars()}): the base, the MinecraftForge
+	 * carrier when staged, the NeoForge carrier.
+	 */
+	public static List<Path> stagedJars() {
+		return StagedGameClasses.jars();
+	}
+
+	/**
+	 * The transformers KernelBoot registers before Mixin, read off KernelBoot's own bytecode in its phases, sort indexes
+	 * and order ({@link ForgeTransferShapeAuditChainStagedTest#chain}), with game resources served from {@code jars}:
+	 * what hands a class to Mixin, for a test outside this package. Hold {@code @ResourceLock("native-game-references")}
+	 * with the jars' references bound, as the merged-base repair proves against them. The transformers that need
+	 * KernelBoot's runtime state are left out and named in {@code skipped}.
+	 */
+	public static TransformChain preMixinChain(List<Path> jars, List<String> registered, List<String> skipped) throws Exception {
+		return ForgeTransferShapeAuditChainStagedTest.chain(jars, registered, skipped);
 	}
 
 	/** {@code internalName}'s class file from the first of {@code jars} that has it; a missing class fails. */
