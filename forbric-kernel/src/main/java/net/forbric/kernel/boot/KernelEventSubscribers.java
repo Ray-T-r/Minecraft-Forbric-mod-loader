@@ -233,6 +233,10 @@ public final class KernelEventSubscribers {
 		}
 
 		// gate-m4-canary greps "registered [0-9]+ @EventBusSubscriber" — keep this wording verbatim.
+		// It is not on the MinecraftForge path, and needs no moving off it: without MinecraftForge ForgeBusApi.resolve answers
+		// null and the loop skips that family's subscribers one by one, so this prints for NeoForge's alone, and it comes
+		// before the two passes below that are about MinecraftForge. KernelEventSubscribersGenuineBaseTest prints it on the
+		// genuine NeoForge base, with no MinecraftForge class on the loader.
 		int total = forgeClasses + neoMethods;
 		if (total > 0) {
 			ForbricLog.info("[Forbric/EBS] registered %d @EventBusSubscriber class(es) on the game bus", total);

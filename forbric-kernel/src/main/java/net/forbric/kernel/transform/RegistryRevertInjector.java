@@ -51,6 +51,12 @@ import net.forbric.kernel.util.ForbricLog;
  * with {@code KernelForgeWrapperSync.beginSnapshotApplication}, which resets the wrappers' staging and captures; so this
  * adds {@code KernelRegistryRevert.captureIfNeeded} only where nothing there captures yet, and on today's base stands down
  * for it, leaving {@code applySnapshot} exactly as that hook made it. Without MinecraftForge the head call is this one.
+ *
+ * <p><b>Its log line moved.</b> {@code RegistryManager.revertToFrozen() now restores the kernel's own pre-connection snapshot},
+ * word for word as before, now prints after {@link RegistrySyncParityInjector}'s {@code flushing the Forge-wrapped registries'
+ * staged ids ...} line rather than before it: the two edits were one transformer's, and this one now runs second. No gate
+ * reads either line or their order; gate-m12 and gate-m14 read what happens at run time ({@code Forge-wrapped registr.*
+ * followed the server's ids}, {@code reverted .* registr.* to their pre-connection ids}), each line on its own.
  */
 public final class RegistryRevertInjector implements ClassTransformer {
 	private static final String NEO_REGISTRY_MANAGER = ForeignType.REGISTRY_MANAGER.binary(Ecosystem.NEOFORGE);

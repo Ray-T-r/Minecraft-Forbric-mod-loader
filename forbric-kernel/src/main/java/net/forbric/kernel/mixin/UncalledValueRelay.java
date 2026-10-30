@@ -47,9 +47,10 @@ import net.forbric.kernel.util.ForbricLog;
  * with three calls replaced by the kernel's: the provider's draw answers nothing (the carrier already drew), the processing
  * answers the value the carrier computed (the event's experience as it stands when the relay runs), and the pop records the
  * amount instead of popping it. Every guest hook woven into the method stays where Mixin put it and runs in the relay, in its
- * order, on the carrier's value. The kernel's drops listener ({@code KernelGameBlockEvents}, at {@code LOWEST}) runs the
- * relay for a block whose native {@code spawnAfterBreak} asked the method (the census's callers, through a class that only
- * forwards to its parent's), and the event drops what the relay would have popped: once, where NeoForge pops it.
+ * order, on the carrier's value. The kernel's drops listener ({@code KernelServerDuties.installExperienceRelay}, on NeoForge's
+ * bus itself at {@code LOWEST}, installed whether or not MinecraftForge or its break bridge is there) runs the relay for a
+ * block whose native {@code spawnAfterBreak} asked the method (the census's callers, through a class that only forwards to
+ * its parent's), and the event drops what the relay would have popped: once, where NeoForge pops it.
  *
  * <p>The relay is made only when it can stand for the method exactly: guest code was woven into it; every hook woven there is
  * a mixin of an ecosystem whose native game calls the method (the census's row — a NeoForge mod's hook there never runs
