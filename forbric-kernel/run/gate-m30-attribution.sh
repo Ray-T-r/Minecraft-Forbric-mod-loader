@@ -18,6 +18,17 @@
 #   forbricabicanary        compiled against net.neoforged.neoforge.event.ForbricVanishedEvent, absent here; its
 #                           common-setup deferred task touches it (the bucket_of_frog shape)
 #
+# THE DEAD-EVENT ROW STAYS ON A SYNTHETIC MinecraftForge FIXTURE, BY DECISION (2026-10-30, Stage 2.5 of dropping
+# MinecraftForge). Three of the four attributions are already the families that stay (a Fabric mixin canary, two
+# NeoForge canaries). The fourth asks DeadEventAudit, and there is no NeoForge event to move it onto: the audit's rows
+# are MinecraftForge events the merged base no longer posts; its only NeoForge rows (FinalizeSpawnEvent,
+# InitializeClientRegistriesEvent) are PARTIAL paths the kernel itself posts, so a listener for either is never named;
+# and on the genuine NeoForge base every NeoForge event is posted by NeoForge's own patch -- HookCallSiteCensus already
+# refuses a row for an event its own family's game never posts. So forbricforgecanary's listener for Forge's
+# CreateFluidSourceEvent stays as the synthetic dead event, and DeadEventAudit, its -Dforbric.deadEventAudit control and
+# the two checks that read it ("the dead event named its listener", "the dead event") go together when Stage 4 deletes
+# MinecraftForge; the other three canaries and their controls carry this gate on unchanged.
+#
 # RED demonstrations (measured 2026-09-20: green 30/30; each switch fails exactly the checks named — 3, 4, 2, 2):
 #   M30_EXTRA_JVM=-Dforbric.loadReportRewrite=off     the report is written once at load-complete, so 'ApplyFailingMixin
 #                                                     failed to apply' never reaches the file, and no [Forbric/Load]
@@ -37,7 +48,7 @@ CONTROL="$BUILD/gate-m30-control.log"
 RUNDIR="$KERNEL/run/server-attribution"
 REPORT="$RUNDIR/.forbric-kernel/load-report.txt"
 FABRIC="$KERNEL/run/canary/forbricfabriclive.jar"
-NEO="$RUN_OLD/neoforge-runtime/forbricneolive.jar"
+NEO="$NEOLIVE"
 CANARIES="$KERNEL/run/canary/forbricmixincanary.jar $KERNEL/run/canary/forbricsubscribercanary.jar $KERNEL/run/canary/forbricabicanary.jar $KERNEL/run/canary/forbricforgecanary.jar"
 mkdir -p "$BUILD"
 
