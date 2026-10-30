@@ -35,11 +35,11 @@ final class TransportSpellings {
 
 	private TransportSpellings() { }
 
-	static Path mergedBase() {
+	static Path base() {
 		String configured = System.getProperty("forbric.predicateBase");
 		Path base = configured == null || configured.isBlank()
 				? TestFixtures.stagedBase() : Path.of(configured);
-		TestFixtures.requireFile(Fixture.STAGED, base, "staged merged base required: " + base);
+		TestFixtures.requireFile(Fixture.STAGED, base, "staged base required: " + base);
 		return base;
 	}
 
@@ -65,7 +65,7 @@ final class TransportSpellings {
 
 	/** {@code name} as the merged base defines it. */
 	static ClassNode merged(String name) throws IOException {
-		try (ZipFile jar = new ZipFile(mergedBase().toFile())) {
+		try (ZipFile jar = new ZipFile(base().toFile())) {
 			ZipEntry entry = jar.getEntry(name + ".class");
 			TestFixtures.require(Fixture.STAGED, entry != null, name + " in the merged base");
 			return parse(jar.getInputStream(entry).readAllBytes());
@@ -74,7 +74,7 @@ final class TransportSpellings {
 
 	/** Like {@link #merged}, null where the merged base does not define it. */
 	static ClassNode mergedOrNull(String name) throws IOException {
-		try (ZipFile jar = new ZipFile(mergedBase().toFile())) {
+		try (ZipFile jar = new ZipFile(base().toFile())) {
 			ZipEntry entry = jar.getEntry(name + ".class");
 			return entry == null ? null : parse(jar.getInputStream(entry).readAllBytes());
 		}
@@ -82,7 +82,7 @@ final class TransportSpellings {
 
 	/** {@code name} as the class a mod of {@code ecosystem} was compiled against: the hash-pinned copy the merged base indexes. */
 	static ClassNode nativeClass(Ecosystem ecosystem, String name) throws IOException {
-		try (ZipFile jar = new ZipFile(mergedBase().toFile())) {
+		try (ZipFile jar = new ZipFile(base().toFile())) {
 			NativeGameReferences references = new NativeGameReferences(path -> {
 				try {
 					ZipEntry entry = jar.getEntry(path);
@@ -90,7 +90,7 @@ final class TransportSpellings {
 				} catch (IOException unreadable) {
 					return null;
 				}
-			}, null, TestFixtures.launchSources(mergedBase()));
+			}, null, TestFixtures.launchSources(base()));
 			ClassNode node = references.get(ecosystem, name);
 			TestFixtures.require(Fixture.STAGED, node != null, "the hash-pinned native " + name + " the merged base indexes");
 			return node;

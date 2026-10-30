@@ -51,7 +51,7 @@ import net.forbric.kernel.TestFixtures.Fixture;
  * is erroneous for the rest of the run. Physics Mod's Forge build hit exactly this.
  */
 class ForgeLauncherInfoInjectorTest {
-	private static final Path CARRIER = TestFixtures.stagedRoot().resolve("forge-runtime/forge-runtime.jar");
+	private static final Path CARRIER = TestFixtures.stagedRoot().resolve(TestFixtures.FORGE_CARRIER_JAR);
 	private static final String FML_LOADER = "net.minecraftforge.fml.loading.FMLLoader";
 
 	private final ForgeLauncherInfoInjector injector = new ForgeLauncherInfoInjector();

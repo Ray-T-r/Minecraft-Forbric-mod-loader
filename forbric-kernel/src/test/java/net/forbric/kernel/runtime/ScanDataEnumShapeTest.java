@@ -36,7 +36,7 @@ import net.forbric.kernel.discovery.ModFileScanner;
 class ScanDataEnumShapeTest {
 	private static final Path RUNTIME =
 			Path.of(System.getProperty("forbric.testRuntimeClasses", "build/classes/java/runtime"));
-	private static final Path FORGE = TestFixtures.stagedRoot().resolve("forge-runtime/forge-runtime.jar");
+	private static final Path FORGE = TestFixtures.stagedRoot().resolve(TestFixtures.FORGE_CARRIER_JAR);
 	private static final Path NEO = TestFixtures.stagedRoot().resolve(TestFixtures.NEO_CARRIER_JAR);
 	private static final String ENUM_DESC = "Lcom/supermartijn642/core/registry/RegistryEntryAcceptor$Registry;";
 

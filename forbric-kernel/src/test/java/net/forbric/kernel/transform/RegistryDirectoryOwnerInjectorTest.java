@@ -81,7 +81,7 @@ import net.forbric.kernel.mixin.MergedBaseMixinCompat;
 class RegistryDirectoryOwnerInjectorTest {
 	private static final Path STAGED = TestFixtures.stagedRoot();
 	private static final Path MERGED_BASE = STAGED.resolve(TestFixtures.BASE_JAR);
-	private static final Path FORGE_PATCHED = STAGED.resolve("forge-patched/patched-mc-forge-26.2.jar");
+	private static final Path FORGE_PATCHED = STAGED.resolve(TestFixtures.FORGE_PATCHED_JAR);
 	private static final Path NEO_RUNTIME = STAGED.resolve(TestFixtures.NEO_CARRIER_JAR);
 	private static final Path VANILLA = TestFixtures.vanillaJar();
 	private static final Path SWEEP = Path.of("build/compat-inputs/sweep90/mods");

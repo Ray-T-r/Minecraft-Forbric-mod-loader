@@ -39,7 +39,7 @@ class KernelForgeFluidTypeViewsTest {
 	 * prepared job stages under {@code forbric-kernel/.dev/staged}, where a path naming the sibling forbric-loader
 	 * checkout finds nothing (and on a machine that has both, mixes two roots).
 	 */
-	private static final Path FORGE_PATCHED = TestFixtures.stagedRoot().resolve("forge-patched/patched-mc-forge-26.2.jar");
+	private static final Path FORGE_PATCHED = TestFixtures.stagedRoot().resolve(TestFixtures.FORGE_PATCHED_JAR);
 
 	private static final Map<String, String> MOD = Map.of(
 			"example.forge.TypedFluid", """
@@ -139,7 +139,7 @@ class KernelForgeFluidTypeViewsTest {
 	private Class<?> runtime, entity, living;
 
 	private void load() throws Exception {
-		Path forgeRuntime = TestFixtures.stagedRoot().resolve("merged-base/forge-runtime-interop.jar");
+		Path forgeRuntime = TestFixtures.stagedRoot().resolve(TestFixtures.FORGE_INTEROP_JAR);
 		TestFixtures.requireFiles(Fixture.STAGED,
 				"MinecraftForge's patched game or its runtime is absent", FORGE_PATCHED, forgeRuntime);
 		// The client extensions a mod's type gives take JOML's vectors, as MinecraftForge's do.

@@ -33,7 +33,7 @@ import org.junit.jupiter.api.parallel.ResourceLock;
  */
 @ResourceLock("system-properties")
 class KernelForgeEntityFluidsTest {
-	private static final Path FORGE_PATCHED = TestFixtures.stagedRoot().resolve("forge-patched/patched-mc-forge-26.2.jar");
+	private static final Path FORGE_PATCHED = TestFixtures.stagedRoot().resolve(TestFixtures.FORGE_PATCHED_JAR);
 
 	private static final Map<String, String> MOD = Map.of(
 			"example.forge.OwnFluid", """
@@ -90,7 +90,7 @@ class KernelForgeEntityFluidsTest {
 
 	/** {@link #load} with the mod fluids above, compiled against MinecraftForge's patched game as a mod's are. */
 	private void loadWithFluids() throws Exception {
-		Path forgeRuntime = TestFixtures.stagedRoot().resolve("merged-base/forge-runtime-interop.jar");
+		Path forgeRuntime = TestFixtures.stagedRoot().resolve(TestFixtures.FORGE_INTEROP_JAR);
 		TestFixtures.requireFiles(Fixture.STAGED,
 				"MinecraftForge's patched game or its runtime is absent", FORGE_PATCHED, forgeRuntime);
 		Map<String, byte[]> classes = InjectorExecution.compile(temp.resolve("work"), MOD, List.of(FORGE_PATCHED, forgeRuntime));

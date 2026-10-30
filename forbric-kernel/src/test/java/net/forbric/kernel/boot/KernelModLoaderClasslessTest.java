@@ -293,7 +293,7 @@ class KernelModLoaderClasslessTest {
 	private static URLClassLoader gameLoader(Path modJar) throws Exception {
 		Path compiled = Path.of(System.getProperty("forbric.testRuntimeClasses", "build/classes/java/runtime"));
 		Path neo = STAGED.resolve(TestFixtures.NEO_CARRIER_JAR);
-		Path forge = STAGED.resolve("forge-runtime/forge-runtime.jar");
+		Path forge = STAGED.resolve(TestFixtures.FORGE_CARRIER_JAR);
 		TestFixtures.requireFiles(Fixture.STAGED,
 				"staged runtime classes/carriers absent", neo, forge);
 		TestFixtures.require(Fixture.GAME_SIDE, Files.isDirectory(compiled), "staged runtime classes/carriers absent");

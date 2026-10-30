@@ -58,7 +58,7 @@ import net.forbric.kernel.ExpectCaught;
  */
 class PassiveSeederForgeConfigTest {
 	private static final Path FORGE_RUNTIME =
-			TestFixtures.stagedRoot().resolve("forge-runtime/forge-runtime.jar").normalize();
+			TestFixtures.stagedRoot().resolve(TestFixtures.FORGE_CARRIER_JAR).normalize();
 
 	@TempDir
 	Path tmp;

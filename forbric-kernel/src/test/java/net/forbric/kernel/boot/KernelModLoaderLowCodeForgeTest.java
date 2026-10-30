@@ -109,7 +109,7 @@ class KernelModLoaderLowCodeForgeTest {
 	void theContainerIsMinecraftForgesOwnLowCodeModContainer() throws Exception {
 		Path compiled = Path.of(System.getProperty("forbric.testRuntimeClasses", "build/classes/java/runtime"),
 				"net/forbric/kernel/runtime/KernelForgeContainers.class");
-		Path forge = STAGED.resolve("forge-runtime/forge-runtime.jar");
+		Path forge = STAGED.resolve(TestFixtures.FORGE_CARRIER_JAR);
 		TestFixtures.requireFiles(Fixture.STAGED, "compiled game side/carrier absent", forge);
 		TestFixtures.require(Fixture.GAME_SIDE, Files.isRegularFile(compiled), "compiled game side/carrier absent");
 

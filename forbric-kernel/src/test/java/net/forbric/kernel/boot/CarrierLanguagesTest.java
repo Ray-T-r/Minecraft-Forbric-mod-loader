@@ -165,8 +165,8 @@ class CarrierLanguagesTest {
 
 	@Test
 	void everyCarriersLoaderAndTableAreWhereTheTableSaysTheyAre() throws IOException {
-		Path neoforge = staged("neoforge-runtime", "neoforge-runtime.jar");
-		Path forge = staged("forge-runtime", "forge-runtime.jar");
+		Path neoforge = staged(TestFixtures.NEO_CARRIER_JAR);
+		Path forge = staged(TestFixtures.FORGE_CARRIER_JAR);
 		TestFixtures.requireFiles(Fixture.STAGED, "staged carriers absent", neoforge, forge);
 
 		List<String> wrong = new ArrayList<>();
@@ -188,8 +188,8 @@ class CarrierLanguagesTest {
 				+ "leaves the carrier's own screens rendering raw keys: " + wrong);
 	}
 
-	private static Path staged(String dir, String jar) {
-		return TestFixtures.stagedRoot().resolve(dir).resolve(jar).normalize();
+	private static Path staged(String jar) {
+		return TestFixtures.stagedRoot().resolve(jar).normalize();
 	}
 
 	private static boolean hasMethod(Path jar, String binary, String name, String descriptor) throws IOException {

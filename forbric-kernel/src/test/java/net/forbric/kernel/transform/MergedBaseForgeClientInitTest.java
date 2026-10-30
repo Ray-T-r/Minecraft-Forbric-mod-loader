@@ -150,7 +150,7 @@ class MergedBaseForgeClientInitTest {
         }
         ClassNode options = parse(game("net/minecraft/client/Options"));
         assertTrue((method(options, "load", "(Z)V").access & Opcodes.ACC_PUBLIC) != 0);
-        ClassNode forgeModels = parse(read(STAGE.resolve("forge-patched/patched-mc-forge-26.2.jar"), MODELS));
+        ClassNode forgeModels = parse(read(STAGE.resolve(TestFixtures.FORGE_PATCHED_JAR), MODELS));
         MethodInsnNode first = (MethodInsnNode) code(method(forgeModels, "reload", RELOAD).instructions.getFirst());
         assertEquals("net/minecraftforge/client/model/geometry/GeometryLoaderManager", first.owner);
         assertEquals("init", first.name);

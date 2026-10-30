@@ -55,7 +55,7 @@ import org.objectweb.asm.Opcodes;
  * <p>Self-skips when the carrier is not staged.
  */
 class PassiveSeederForgeFmlEnvironmentTest {
-	private static final Path FORGE_RUNTIME = TestFixtures.stagedRoot().resolve("forge-runtime/forge-runtime.jar")
+	private static final Path FORGE_RUNTIME = TestFixtures.stagedRoot().resolve(TestFixtures.FORGE_CARRIER_JAR)
 			.toAbsolutePath().normalize();
 
 	@TempDir

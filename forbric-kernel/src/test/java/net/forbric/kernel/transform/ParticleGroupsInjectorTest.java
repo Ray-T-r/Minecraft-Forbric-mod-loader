@@ -19,7 +19,7 @@ import org.objectweb.asm.tree.analysis.BasicVerifier;
 class ParticleGroupsInjectorTest {
 	private static final Path STAGED = Path.of(System.getProperty("forbric.stagedRoot", "../forbric-loader/run"));
 	private static final Path MERGED = STAGED.resolve(net.forbric.kernel.TestFixtures.BASE_JAR);
-	private static final Path FORGE = STAGED.resolve("forge-patched/patched-mc-forge-26.2.jar");
+	private static final Path FORGE = STAGED.resolve(net.forbric.kernel.TestFixtures.FORGE_PATCHED_JAR);
 	private static final String ENGINE = "net/minecraft/client/particle/ParticleEngine";
 
 	@AfterEach void reset() { System.clearProperty(ParticleGroupsInjector.PROPERTY); }

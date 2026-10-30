@@ -57,14 +57,14 @@ class HookCallSiteCensusStagedTest {
 
 	/** Hook classes and the carrier that declares each. */
 	private static final Map<String, String> HOOK_CLASSES = Map.of(
-			"net/minecraftforge/event/ForgeEventFactory", "forge-runtime/forge-runtime.jar",
-			"net/minecraftforge/client/event/ForgeEventFactoryClient", "forge-runtime/forge-runtime.jar",
+			"net/minecraftforge/event/ForgeEventFactory", TestFixtures.FORGE_CARRIER_JAR,
+			"net/minecraftforge/client/event/ForgeEventFactoryClient", TestFixtures.FORGE_CARRIER_JAR,
 			// ForgeHooks posts the damage family (attack, hurt, damage) and more; left out, the census was blind to
 			// every one of them and the dead table never grew rows for them.
-			"net/minecraftforge/common/ForgeHooks", "forge-runtime/forge-runtime.jar",
+			"net/minecraftforge/common/ForgeHooks", TestFixtures.FORGE_CARRIER_JAR,
 			// And the rest of both families' hook classes: the client's (the F3 text, tooltips, sounds) and NeoForge's
 			// own two, so that a dead event of either family has no hook class left to hide in.
-			"net/minecraftforge/client/ForgeHooksClient", "forge-runtime/forge-runtime.jar",
+			"net/minecraftforge/client/ForgeHooksClient", TestFixtures.FORGE_CARRIER_JAR,
 			"net/neoforged/neoforge/event/EventHooks", TestFixtures.NEO_CARRIER_JAR,
 			"net/neoforged/neoforge/common/CommonHooks", TestFixtures.NEO_CARRIER_JAR,
 			"net/neoforged/neoforge/client/ClientHooks", TestFixtures.NEO_CARRIER_JAR);
@@ -76,7 +76,7 @@ class HookCallSiteCensusStagedTest {
 	/** The two ecosystem runtimes, for the third state. */
 	private static List<Path> carriers() {
 		List<Path> out = new ArrayList<>();
-		for (String rel : List.of("forge-runtime/forge-runtime.jar", TestFixtures.NEO_CARRIER_JAR)) {
+		for (String rel : List.of(TestFixtures.FORGE_CARRIER_JAR, TestFixtures.NEO_CARRIER_JAR)) {
 			Path jar = root().resolve(rel);
 			if (Files.isRegularFile(jar)) out.add(jar);
 		}
@@ -1576,8 +1576,8 @@ class HookCallSiteCensusStagedTest {
 	}
 
 	private static byte[] protocolBytes(String path) {
-		for (Path jar : List.of(base(), root().resolve("forge-runtime/forge-runtime.jar"),
-				root().resolve("merged-base/forge-runtime-interop.jar"), root().resolve(TestFixtures.NEO_CARRIER_JAR))) {
+		for (Path jar : List.of(base(), root().resolve(TestFixtures.FORGE_CARRIER_JAR),
+				root().resolve(TestFixtures.FORGE_INTEROP_JAR), root().resolve(TestFixtures.NEO_CARRIER_JAR))) {
 			if (!Files.isRegularFile(jar)) continue;
 			try (var zip = new java.util.zip.ZipFile(jar.toFile())) {
 				var entry = zip.getEntry(path);

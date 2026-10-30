@@ -48,7 +48,7 @@ class AxeStripCallbacksInjectorTest {
     @Test void bothNativeCarriersRouteOnlyTheStrippingDecision()throws Exception {
         var repair=new AxeStripCallbacksInjector();
         Path staged=Path.of(System.getProperty("forbric.stagedRoot","../forbric-loader/run"));
-        for(var entry:Map.of("net.neoforged.neoforge.common.extensions.IBlockExtension",staged.resolve(TestFixtures.NEO_CARRIER_JAR),"net.minecraftforge.common.extensions.IForgeBlock",staged.resolve("merged-base/forge-runtime-interop.jar")).entrySet()) {
+        for(var entry:Map.of("net.neoforged.neoforge.common.extensions.IBlockExtension",staged.resolve(TestFixtures.NEO_CARRIER_JAR),"net.minecraftforge.common.extensions.IForgeBlock",staged.resolve(TestFixtures.FORGE_INTEROP_JAR)).entrySet()) {
             byte[] original=NativeCoremodParityTest.read(entry.getValue(),entry.getKey().replace('.','/')); byte[] bytes=repair.transform(entry.getKey(),original,null);
             assertNotSame(original,bytes); ClassNode node=new ClassNode();new ClassReader(bytes).accept(node,0);
             MethodNode tool=node.methods.stream().filter(m->m.name.equals("getToolModifiedState")).findFirst().orElseThrow();new Analyzer<>(new BasicVerifier()).analyze(node.name,tool);

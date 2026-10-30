@@ -58,7 +58,7 @@ import org.objectweb.asm.Opcodes;
  * replay that binds the provider's fallbacks, so they run on a checkout with no carrier at all.
  */
 class PassiveSeederForgeImmediateWindowTest {
-	private static final Path FORGE_RUNTIME = TestFixtures.stagedRoot().resolve("forge-runtime/forge-runtime.jar")
+	private static final Path FORGE_RUNTIME = TestFixtures.stagedRoot().resolve(TestFixtures.FORGE_CARRIER_JAR)
 			.toAbsolutePath().normalize();
 	private static final String HANDLER = PassiveSeeder.FORGE_IMMEDIATE_WINDOW_HANDLER;
 

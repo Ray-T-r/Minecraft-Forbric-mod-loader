@@ -67,7 +67,7 @@ class ForgeCarrierFixtureTest {
 		assertFalse(TestFixtures.isForgeCarrier(tmp.resolve("run").resolve(TestFixtures.BASE_JAR)));
 		assertFalse(TestFixtures.isForgeCarrier(tmp.resolve("run").resolve(TestFixtures.NEO_CARRIER_JAR)));
 		assertFalse(TestFixtures.isForgeCarrier(tmp.resolve("run").resolve(TestFixtures.GENUINE_BASE_JAR)));
-		assertFalse(TestFixtures.isForgeCarrier(tmp.resolve("run/forge-patched/patched-mc-forge-26.2.jar")),
+		assertFalse(TestFixtures.isForgeCarrier(tmp.resolve("run").resolve(TestFixtures.FORGE_PATCHED_JAR)),
 				"MinecraftForge's patched game is a merge input, not a carrier");
 	}
 

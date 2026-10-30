@@ -425,8 +425,8 @@ class LaunchInputCheckTest {
 	void theStagedMergedBaseAndBothStagedCarrierSpellingsPass() {
 		Path base = staged(TestFixtures.BASE_JAR);
 		Path neo = staged(TestFixtures.NEO_CARRIER_JAR);
-		Path forge = staged("forge-runtime/forge-runtime.jar");
-		Path interop = staged("merged-base/forge-runtime-interop.jar");
+		Path forge = staged(TestFixtures.FORGE_CARRIER_JAR);
+		Path interop = staged(TestFixtures.FORGE_INTEROP_JAR);
 		TestFixtures.requireFiles(Fixture.STAGED,
 				"staged game artifacts absent: " + base.getParent().getParent(), base, neo, forge);
 

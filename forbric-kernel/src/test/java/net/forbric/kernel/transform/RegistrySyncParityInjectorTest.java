@@ -56,7 +56,7 @@ import net.forbric.kernel.TestFixtures.Fixture;
  * is a live upgrade hazard, not a hypothetical. It should go red here instead.
  */
 class RegistrySyncParityInjectorTest {
-	private static final Path FORGE_RUNTIME = TestFixtures.stagedRoot().resolve("forge-runtime/forge-runtime.jar");
+	private static final Path FORGE_RUNTIME = TestFixtures.stagedRoot().resolve(TestFixtures.FORGE_CARRIER_JAR);
 
 	private static final String WRAPPER = "net.minecraftforge.registries.NamespacedWrapper";
 	private static final String WRAPPER_PENDING_TAGS = WRAPPER + "$3";

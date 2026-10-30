@@ -28,7 +28,7 @@ import net.forbric.kernel.TestFixtures.Fixture;
 /** The reload event exposes the active context through the public Forge interface. */
 class MergedBaseForgeReloadContextTest {
 	private static final Path MERGED_BASE = TestFixtures.stagedBase();
-	private static final Path FORGE_RUNTIME = TestFixtures.stagedRoot().resolve("forge-runtime/forge-runtime.jar");
+	private static final Path FORGE_RUNTIME = TestFixtures.stagedRoot().resolve(TestFixtures.FORGE_CARRIER_JAR);
 	private static final String EVENT = "net/minecraftforge/event/AddReloadListenerEvent";
 	private static final String RSR = "net/minecraft/server/ReloadableServerResources";
 	private static final String FORGE_CONTEXT = "Lnet/minecraftforge/common/crafting/conditions/ICondition$IContext;";

@@ -31,8 +31,8 @@ import org.objectweb.asm.util.Printer;
 class DeliveryBookkeepingStagedTest {
 	private static List<Path> jars() {
 		Path root = TestFixtures.stagedRoot().normalize();
-		Path forge = root.resolve("merged-base/forge-runtime-interop.jar");
-		if (!Files.isRegularFile(forge)) forge = root.resolve("forge-runtime/forge-runtime.jar");
+		Path forge = root.resolve(TestFixtures.FORGE_INTEROP_JAR);
+		if (!Files.isRegularFile(forge)) forge = root.resolve(TestFixtures.FORGE_CARRIER_JAR);
 		// The merged base, not BASE_JAR: the FORGE native references read below are the index only the merge embeds.
 		return List.of(root.resolve(TestFixtures.MERGED_BASE_JAR), forge, root.resolve(TestFixtures.NEO_CARRIER_JAR));
 	}

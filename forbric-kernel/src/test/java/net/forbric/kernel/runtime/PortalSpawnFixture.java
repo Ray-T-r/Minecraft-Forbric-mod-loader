@@ -51,7 +51,7 @@ final class PortalSpawnFixture implements AutoCloseable {
 			ClassWriter writer = new ClassWriter(0); shell.accept(writer); Files.write(target, writer.toByteArray());
 		}
 		if (realCarrierHooks) {
-			copyCarrierHook(classes, "forge-runtime/forge-runtime.jar", "net.minecraftforge.event.ForgeEventFactory");
+			copyCarrierHook(classes, TestFixtures.FORGE_CARRIER_JAR, "net.minecraftforge.event.ForgeEventFactory");
 			copyCarrierHook(classes, TestFixtures.NEO_CARRIER_JAR, "net.neoforged.neoforge.event.EventHooks");
 		}
 		Path runtime = Path.of(System.getProperty("forbric.test.runtimeClasses", "build/classes/java/runtime"));

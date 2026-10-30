@@ -148,7 +148,7 @@ class KernelCreativePagerMergedScreenTest {
 		Path compiled = Path.of(System.getProperty("forbric.test.runtimeClasses", "build/classes/java/runtime"));
 		Path merged = RUN.resolve(TestFixtures.BASE_JAR);
 		Path neo = RUN.resolve(TestFixtures.NEO_CARRIER_JAR);
-		Path forge = RUN.resolve("merged-base/forge-runtime-interop.jar");
+		Path forge = RUN.resolve(TestFixtures.FORGE_INTEROP_JAR);
 		TestFixtures.requireFiles(Fixture.STAGED,
 				"the staged game is absent", merged, neo, forge);
 		TestFixtures.require(Fixture.GAME_SIDE, Files.isRegularFile(compiled.resolve("net/forbric/kernel/runtime/KernelCreativePager.class")),

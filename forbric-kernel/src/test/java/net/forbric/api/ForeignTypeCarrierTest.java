@@ -47,11 +47,11 @@ import org.junit.jupiter.api.Test;
  * <p>Skips when the carriers are not staged, so a fresh clone still builds.
  */
 class ForeignTypeCarrierTest {
-	private static final Path NEOFORGE = staged("neoforge-runtime", "neoforge-runtime.jar");
-	private static final Path FORGE = staged("forge-runtime", "forge-runtime.jar");
+	private static final Path NEOFORGE = staged(TestFixtures.NEO_CARRIER_JAR);
+	private static final Path FORGE = staged(TestFixtures.FORGE_CARRIER_JAR);
 
-	private static Path staged(String dir, String jar) {
-		return TestFixtures.stagedRoot().resolve(dir).resolve(jar);
+	private static Path staged(String jar) {
+		return TestFixtures.stagedRoot().resolve(jar);
 	}
 
 	@Test

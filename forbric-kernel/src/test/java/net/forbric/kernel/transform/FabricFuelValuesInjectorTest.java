@@ -287,7 +287,7 @@ class FabricFuelValuesInjectorTest {
 			byte[] woven = shortCircuit ? FabricFuelValuesInjector.shortCircuitTheBody(original) : original;
 			byte[] bytes = headCancel ? cancelledAtHead(woven) : withReturnHook(woven);
 			byte[] hookBytes = returnHookClass();
-			Path forge = RUN.resolve("merged-base/forge-runtime-interop.jar");
+			Path forge = RUN.resolve(TestFixtures.FORGE_INTEROP_JAR);
 			TestFixtures.requireFiles(Fixture.STAGED, "the carriers are absent", NEO_RT, forge);
 			List<URL> urls = new ArrayList<>(List.of(compiled.toUri().toURL(), MERGED.toUri().toURL(),
 					NEO_RT.toUri().toURL(), forge.toUri().toURL()));

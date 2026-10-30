@@ -39,7 +39,7 @@ class KernelForgeConfigLoadTest {
     private static final String HOOK = "net.forbric.kernel.runtime.KernelForgeConfigLoad";
     private static final String CONFIG = "net/minecraftforge/fml/config/ModConfig";
     private static final String TRACKER = "net/minecraftforge/fml/config/ConfigTracker";
-    private static final Path FORGE = TestFixtures.stagedRoot().resolve("forge-runtime/forge-runtime.jar");
+    private static final Path FORGE = TestFixtures.stagedRoot().resolve(TestFixtures.FORGE_CARRIER_JAR);
     @TempDir Path temporary;
 
     @Test

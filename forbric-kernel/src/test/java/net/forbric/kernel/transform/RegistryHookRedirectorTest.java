@@ -51,7 +51,7 @@ import net.forbric.kernel.TestFixtures.Fixture;
  */
 class RegistryHookRedirectorTest {
 	// The forge-runtime jar carries net.minecraftforge.registries.GameData (a passive ABI carrier for the kernel).
-	private static final Path FORGE_RUNTIME = TestFixtures.stagedRoot().resolve("forge-runtime/forge-runtime.jar");
+	private static final Path FORGE_RUNTIME = TestFixtures.stagedRoot().resolve(TestFixtures.FORGE_CARRIER_JAR);
 
 	private final RegistryHookRedirector redirector = new RegistryHookRedirector();
 

@@ -107,7 +107,7 @@ class RestoredHookCompensationStagedTest {
 
 	/** The family event classes the hook's own body in its carrier constructs. */
 	private static Set<String> events(Path root, Hook hook) throws IOException {
-		String carrier = hook.owner().startsWith("net/minecraftforge/") ? "forge-runtime/forge-runtime.jar"
+		String carrier = hook.owner().startsWith("net/minecraftforge/") ? TestFixtures.FORGE_CARRIER_JAR
 				: TestFixtures.NEO_CARRIER_JAR;
 		Path jar = root.resolve(carrier);
 		TestFixtures.requireFile(Fixture.STAGED, jar, "staged carrier absent: " + jar);

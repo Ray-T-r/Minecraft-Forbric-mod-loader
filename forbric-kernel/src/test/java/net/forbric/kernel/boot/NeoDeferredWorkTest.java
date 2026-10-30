@@ -190,7 +190,7 @@ class NeoDeferredWorkTest {
 		Path run = TestFixtures.stagedRoot().normalize();
 		for (String[] carrier : new String[][] {
 				{ TestFixtures.NEO_CARRIER_JAR, "net/neoforged/fml/DeferredWorkQueue" },
-				{ "forge-runtime/forge-runtime.jar", "net/minecraftforge/fml/DeferredWorkQueue" } }) {
+				{ TestFixtures.FORGE_CARRIER_JAR, "net/minecraftforge/fml/DeferredWorkQueue" } }) {
 			Path jar = run.resolve(carrier[0]);
 			TestFixtures.requireFile(Fixture.STAGED, jar, "staged carrier absent: " + jar);
 			try (ZipFile zip = new ZipFile(jar.toFile())) {

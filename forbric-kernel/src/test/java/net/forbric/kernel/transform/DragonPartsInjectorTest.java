@@ -11,7 +11,7 @@ import org.objectweb.asm.tree.*;
 /** The actual rebuilt base keeps both native part contracts; the retired compatibility name is inert. */
 class DragonPartsInjectorTest {
     private static final Path STAGED=Path.of(System.getProperty("forbric.stagedRoot","../forbric-loader/run"));
-    private static final Path MERGED=STAGED.resolve(net.forbric.kernel.TestFixtures.BASE_JAR),FORGE=STAGED.resolve("merged-base/forge-runtime-interop.jar");
+    private static final Path MERGED=STAGED.resolve(net.forbric.kernel.TestFixtures.BASE_JAR),FORGE=STAGED.resolve(net.forbric.kernel.TestFixtures.FORGE_INTEROP_JAR);
     @Test void thePartIsANeoForgePartEntity()throws Exception{
         byte[] original=NativeCoremodParityTest.read(MERGED,DragonPartsInjector.PART_INTERNAL);assertSame(original,new DragonPartsInjector().transform(DragonPartsInjector.PART,original,null));
         assertEquals(DragonPartsInjector.FORGE_PART,node(original).superName);assertEquals(DragonPartsInjector.NEO_PART,node(NativeCoremodParityTest.read(FORGE,DragonPartsInjector.FORGE_PART)).superName,"the proved runtime ancestor bridge preserves both API types");

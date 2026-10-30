@@ -333,7 +333,7 @@ class DatapackRegistryDeclarationTest {
 	 */
 	@Test
 	void theReconcilesReflectiveTargetsExistWithTheseShapes() throws Exception {
-		Path runtime = staged("neoforge-runtime", "neoforge-runtime.jar");
+		Path runtime = staged(TestFixtures.NEO_CARRIER_JAR);
 		Path merged = TestFixtures.stagedBase().normalize();
 		TestFixtures.require(Fixture.STAGED, Files.isRegularFile(runtime) && Files.isRegularFile(merged),
 				"carrier or merged base not staged");
@@ -539,8 +539,8 @@ class DatapackRegistryDeclarationTest {
 		return (List<String>) Class.forName(FakeHooks.class.getName(), true, fresh).getField("NEO").get(null);
 	}
 
-	private static Path staged(String dir, String jar) {
-		return TestFixtures.stagedRoot().resolve(dir).resolve(jar).normalize();
+	private static Path staged(String jar) {
+		return TestFixtures.stagedRoot().resolve(jar).normalize();
 	}
 
 	private static ClassNode classIn(Path jar, String internalName) throws Exception {

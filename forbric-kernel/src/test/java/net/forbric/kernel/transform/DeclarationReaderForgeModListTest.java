@@ -95,7 +95,7 @@ class DeclarationReaderForgeModListTest {
 
 	@Test
 	void aMinecraftForgeReaderMeetsTheDeclaringFabricMod() throws Throwable {
-		Path forge = TestFixtures.stagedRoot().resolve("forge-runtime/forge-runtime.jar");
+		Path forge = TestFixtures.stagedRoot().resolve(TestFixtures.FORGE_CARRIER_JAR);
 		TestFixtures.requireFiles(Fixture.STAGED, "the staged MinecraftForge carrier is absent", forge);
 		Map<String, byte[]> compiled = InjectorExecution.compile(work, LIBRARY, List.of(forge));
 		DeclarationReaderModListInjector injector = new DeclarationReaderModListInjector();

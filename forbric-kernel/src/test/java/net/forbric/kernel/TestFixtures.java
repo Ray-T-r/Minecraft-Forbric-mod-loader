@@ -227,6 +227,11 @@ public final class TestFixtures {
 	 * as the merge's NeoForge input, and the base the kernel is moving to. Relative, like {@link #BASE_JAR}.
 	 */
 	public static final String GENUINE_BASE_JAR = "neoforge-patched/patched-mc-neoforge-26.2.jar";
+	/**
+	 * MinecraftForge's patched game, the merge's Forge input, relative to {@link #stagedRoot()}: read only by the
+	 * MinecraftForge tests Stage 4 deletes (see {@link #forgeMergeInput()} for the copy the merge itself read).
+	 */
+	public static final String FORGE_PATCHED_JAR = "forge-patched/patched-mc-forge-26.2.jar";
 
 	/** The NeoForge carrier, the one runtime jar every staged root has. */
 	public static final String NEO_CARRIER_JAR = "neoforge-runtime/neoforge-runtime.jar";
@@ -424,7 +429,7 @@ public final class TestFixtures {
 	 */
     private static final java.util.Map<String,Boolean> NATIVE_INPUT_MATCHES=new java.util.concurrent.ConcurrentHashMap<>();
     public static Path forgeMergeInput() {
-        Path staged=stagedRoot().resolve("forge-patched/patched-mc-forge-26.2.jar");
+        Path staged=stagedRoot().resolve(FORGE_PATCHED_JAR);
         Path merged=mergedBase();
         Path launcher=minecraftDir().resolve("libraries/net/forbric/patched-mc-forge/26.2-65.0.1/patched-mc-forge-26.2-65.0.1.jar");
         try {

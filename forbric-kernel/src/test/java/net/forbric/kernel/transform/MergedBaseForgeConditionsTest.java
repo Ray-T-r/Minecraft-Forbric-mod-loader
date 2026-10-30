@@ -68,7 +68,7 @@ import net.forbric.kernel.TestFixtures.Fixture;
 @org.junit.jupiter.api.parallel.ResourceLock("system-properties")
 class MergedBaseForgeConditionsTest {
 	private static final Path STAGED = TestFixtures.stagedRoot();
-	private static final Path FORGE_CARRIER = STAGED.resolve("forge-runtime/forge-runtime.jar");
+	private static final Path FORGE_CARRIER = STAGED.resolve(TestFixtures.FORGE_CARRIER_JAR);
 	private static final Path MERGED_BASE = STAGED.resolve(TestFixtures.BASE_JAR);
 	private static final String ENTRY = "net/minecraftforge/common/crafting/conditions/ICondition.class";
 	private static final String BINARY = "net.minecraftforge.common.crafting.conditions.ICondition";

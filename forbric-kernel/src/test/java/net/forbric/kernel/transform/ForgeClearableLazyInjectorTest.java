@@ -39,7 +39,7 @@ import net.fabricmc.api.EnvType;
 @ExecutesInjector(ForgeClearableLazyInjector.class)
 @ResourceLock(Resources.SYSTEM_PROPERTIES)
 class ForgeClearableLazyInjectorTest {
-	private static final Path FORGE_RUNTIME = TestFixtures.stagedRoot().resolve("forge-runtime/forge-runtime.jar");
+	private static final Path FORGE_RUNTIME = TestFixtures.stagedRoot().resolve(TestFixtures.FORGE_CARRIER_JAR);
 	private static final String ENTRY = "net/minecraftforge/common/util/ClearableLazy$Concurrent.class";
 	private static final String INTERNAL = "net/minecraftforge/common/util/ClearableLazy$Concurrent";
 	/** The idiom with its flaw: the locked check that finds the value set falls through to the first, null read. */

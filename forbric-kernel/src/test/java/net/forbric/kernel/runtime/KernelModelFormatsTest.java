@@ -67,7 +67,7 @@ class KernelModelFormatsTest {
 	private static final Path MERGED_BASE = STAGED.resolve(TestFixtures.BASE_JAR);
 	private static final Path NEO_CARRIER = STAGED.resolve(TestFixtures.NEO_CARRIER_JAR);
 	/** The merged base names MinecraftForge types in signatures, so reflecting on it needs this carrier too. */
-	private static final Path FORGE_CARRIER = STAGED.resolve("forge-runtime/forge-runtime.jar");
+	private static final Path FORGE_CARRIER = STAGED.resolve(TestFixtures.FORGE_CARRIER_JAR);
 	/** The fabric-api jar build.gradle compiles the game side's transfer bridge against, found the same way. */
 	private static final Path FABRIC_API = TestFixtures.fabricApi();
 	private static final Path RUNTIME = Path.of(System.getProperty("forbric.testRuntimeClasses", "build/classes/java/runtime"));

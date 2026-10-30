@@ -37,7 +37,7 @@ import org.objectweb.asm.Opcodes;
 class ClientPartTrackingClaimTest {
 	private static final Path STAGED = TestFixtures.stagedRoot();
 	private static final Path MERGED = STAGED.resolve(TestFixtures.BASE_JAR);
-	private static final Path FORGE = STAGED.resolve("forge-patched/patched-mc-forge-26.2.jar");
+	private static final Path FORGE = STAGED.resolve(TestFixtures.FORGE_PATCHED_JAR);
 	private static final Path NEO = STAGED.resolve(TestFixtures.GENUINE_BASE_JAR);
 	private static final Path GATE = Path.of("run/gate-m9-client.sh");
 	private static final String CALLBACKS = ClientPartTrackingInjector.CALLBACKS;

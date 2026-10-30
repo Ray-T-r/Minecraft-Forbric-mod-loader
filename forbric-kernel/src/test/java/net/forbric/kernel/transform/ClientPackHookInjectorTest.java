@@ -163,7 +163,7 @@ class ClientPackHookInjectorTest {
 	private static byte[] carrier(Ecosystem eco) throws Exception {
 		Path jar = eco == Ecosystem.NEOFORGE
 				? RUN.resolve(TestFixtures.NEO_CARRIER_JAR)
-				: RUN.resolve("forge-runtime/forge-runtime.jar");
+				: RUN.resolve(TestFixtures.FORGE_CARRIER_JAR);
 		return TestFixtures.requireEntry(Fixture.STAGED, jar, ForeignType.CLIENT_MOD_LOADER.internal(eco) + ".class");
 	}
 

@@ -61,7 +61,7 @@ class SpawnerFinalizeInjectorTest {
 	@Test void nativeNeoCallerAlsoWorksAndItsEventResultIsNotUsedAsASpawnVeto() throws Exception {
 		byte[] nativeNeo = staged(TestFixtures.GENUINE_BASE_JAR, "net/minecraft/world/level/BaseSpawner");
 		verifyExchange(nativeNeo);
-		for (String jar : List.of("forge-patched/patched-mc-forge-26.2.jar", TestFixtures.GENUINE_BASE_JAR)) {
+		for (String jar : List.of(TestFixtures.FORGE_PATCHED_JAR, TestFixtures.GENUINE_BASE_JAR)) {
 			MethodNode tick = host(parse(staged(jar, "net/minecraft/world/level/BaseSpawner")));
 			assertTrue(calls(tick).stream().anyMatch(c -> c.name.equals("tryAddFreshEntityWithPassengers")));
 			assertFalse(calls(tick).stream().anyMatch(c -> c.name.equals("isCanceled")),

@@ -48,7 +48,7 @@ import net.forbric.kernel.TestFixtures.Fixture;
 /** Both carriers' LootModifierManager after the repair: NeoForge's synthesized prepare, MinecraftForge's wrapped one. */
 class MergedBaseLootModifierIndexTest {
 	private static final Path RUN = TestFixtures.stagedRoot();
-	private static final Path FORGE_RT = RUN.resolve("forge-runtime/forge-runtime.jar");
+	private static final Path FORGE_RT = RUN.resolve(TestFixtures.FORGE_CARRIER_JAR);
 	private static final Path NEO_RT = RUN.resolve(TestFixtures.NEO_CARRIER_JAR);
 
 	@Test

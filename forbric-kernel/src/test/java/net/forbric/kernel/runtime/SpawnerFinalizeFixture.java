@@ -40,7 +40,7 @@ final class SpawnerFinalizeFixture implements AutoCloseable {
 		}
 		ByteArrayOutputStream errors = new ByteArrayOutputStream();
 		assertEquals(0, ToolProvider.getSystemJavaCompiler().run(null, errors, errors, args.toArray(String[]::new)), errors.toString());
-		copyHook(classes, "forge-runtime/forge-runtime.jar", "net.minecraftforge.event.ForgeEventFactory", "onFinalizeSpawnSpawner");
+		copyHook(classes, TestFixtures.FORGE_CARRIER_JAR, "net.minecraftforge.event.ForgeEventFactory", "onFinalizeSpawnSpawner");
 		copyHook(classes, TestFixtures.NEO_CARRIER_JAR, "net.neoforged.neoforge.event.EventHooks", "finalizeMobSpawnSpawner");
 		Path caller = classes.resolve("net/minecraft/world/level/BaseSpawner.class");
 		byte[] before = Files.readAllBytes(caller);

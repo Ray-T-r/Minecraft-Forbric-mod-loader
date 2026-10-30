@@ -35,7 +35,7 @@ class KernelForgeLoadingStateTest {
     }
 
     @Test void theActualForgeCarrierStillOwnsItsGuardAndFailurePaths() throws Exception {
-        Path jar = TestFixtures.stagedRoot().resolve("forge-runtime/forge-runtime.jar");
+        Path jar = TestFixtures.stagedRoot().resolve(TestFixtures.FORGE_CARRIER_JAR);
         TestFixtures.requireFiles(Fixture.STAGED, jar + " absent", jar);
         ClassNode node = new ClassNode();
         try (ZipFile zip = new ZipFile(jar.toFile())) {

@@ -44,7 +44,7 @@ import net.forbric.api.Ecosystem;
 class CarrierHelperCensusTest {
 	private static final Path MERGED = TestFixtures.stagedBase();
 	private static final Path VANILLA = TestFixtures.vanillaJar();
-	private static final Path FORGE = TestFixtures.stagedRoot().resolve("forge-patched/patched-mc-forge-26.2.jar");
+	private static final Path FORGE = TestFixtures.stagedRoot().resolve(TestFixtures.FORGE_PATCHED_JAR);
 	private static final Path NEOFORGE = TestFixtures.genuineBase();
 
 	@Test void theShippedTableIsExactlyWhatTheArtifactsSay() throws Exception {

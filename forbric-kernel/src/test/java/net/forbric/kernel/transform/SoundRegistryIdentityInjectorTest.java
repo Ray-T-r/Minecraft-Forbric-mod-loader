@@ -14,7 +14,7 @@ import org.objectweb.asm.tree.analysis.BasicVerifier;
 
 class SoundRegistryIdentityInjectorTest {
 	@Test void stagedForgeConstructorReplacesAllValueIndexesAndRemainsVerifiable() throws Exception {
-		Path staged = TestFixtures.stagedRoot().resolve("forge-runtime/forge-runtime.jar");
+		Path staged = TestFixtures.stagedRoot().resolve(TestFixtures.FORGE_CARRIER_JAR);
 		byte[] original = TestFixtures.requireEntry(Fixture.STAGED, staged, "net/minecraftforge/registries/ForgeRegistry.class");
 		var transformer = new SoundRegistryIdentityInjector();
 		assertSame(original, transformer.transform("unrelated.Class", original, null));
