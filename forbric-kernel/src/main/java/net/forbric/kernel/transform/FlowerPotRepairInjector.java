@@ -35,6 +35,11 @@ import org.objectweb.asm.tree.VarInsnNode;
  *   <li>{@code addPlant} records its entry in {@code fullPots}, as MinecraftForge's does.</li>
  * </ul>
  * The table itself is filled when the registration window closes (KernelFlowerPots.rebuildTable).
+ *
+ * <p>Only the last two are the merge's doing. The constructor's null is NeoForge's own: the genuine NeoForge base, which
+ * Stage 4 switches to, stores null into {@code potted} just the same, and a Fabric mod reading {@code potted} or
+ * {@code POTTED_BY_CONTENT} there finds nothing. So the constructor edit keys on NeoForge's half alone and lands on
+ * either base; the two MinecraftForge edits key on {@code fullPots} and stand down where it does not exist.
  * {@code -Dforbric.flowerPotRepair=off} leaves the class as merged.
  */
 public final class FlowerPotRepairInjector implements ClassTransformer {
@@ -67,10 +72,14 @@ public final class FlowerPotRepairInjector implements ClassTransformer {
 		if (!enabled() || !TARGET.equals(className) || bytes == null || bytes.length == 0) return bytes;
 		ClassNode node = new ClassNode();
 		new ClassReader(bytes).accept(node, 0);
-		if (!hasField(node, "potted", "L" + BLOCK + ";") || !hasField(node, "fullPots", "L" + MAP + ";")) {
-			return bytes;   // not the merged class this is about (vanilla's has neither the supplier nor fullPots)
-		}
-		int constructor = storePlant(node), lookup = lookUpAllFamilies(node), addPlant = recordAddedPlant(node);
+		// The constructor's null is NeoForge's own, on the genuine base as on the merged one, so that edit needs only
+		// NeoForge's half: potted beside the plant's supplier. The other two serve MinecraftForge's half — its fullPots map
+		// and the useItemOn that reads it — and stand down where there is no fullPots, as on the genuine base: an edit that
+		// wrote to it there would not link. Vanilla's class has neither half and is not this repair's.
+		boolean forgeHalf = hasField(node, "fullPots", "L" + MAP + ";");
+		if (!hasField(node, "potted", "L" + BLOCK + ";")
+				|| !forgeHalf && !hasField(node, "flowerDelegate", "Ljava/util/function/Supplier;")) return bytes;
+		int constructor = storePlant(node), lookup = forgeHalf ? lookUpAllFamilies(node) : 0, addPlant = forgeHalf ? recordAddedPlant(node) : 0;
 		if (constructor + lookup + addPlant == 0) {
 			ForbricLog.warn("[Forbric/FlowerPot] left FlowerPotBlock as merged: none of its constructor, useItemOn or addPlant "
 					+ "is the reviewed shape");

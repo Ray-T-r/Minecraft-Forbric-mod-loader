@@ -267,6 +267,57 @@ class ItemUseOnInjectorExecutionTest {
 				"premise: as merged, the calls Fabric's wrap targets are in two other places");
 	}
 
+	/** NeoForge's own useOn, the genuine base's: it posts ITEM_AFTER_BLOCK itself, keeping the event in a local. */
+	private static final String NEOFORGE_STACK = """
+			package net.minecraft.world.item;
+
+			import net.minecraft.world.InteractionResult;
+			import net.minecraft.world.item.context.UseOnContext;
+			import net.minecraftforge.common.ForgeHooks;
+			import net.neoforged.neoforge.common.CommonHooks;
+			import net.neoforged.neoforge.common.NeoForge;
+			import net.neoforged.neoforge.event.entity.player.UseItemOnBlockEvent;
+
+			public class ItemStack {
+				private final Item item;
+
+				public ItemStack(Item item) {
+					this.item = item;
+				}
+
+				public Item getItem() {
+					return item;
+				}
+
+				public InteractionResult useOn(UseOnContext context) {
+					UseItemOnBlockEvent event = NeoForge.EVENT_BUS.post(new UseItemOnBlockEvent(context, UseItemOnBlockEvent.UsePhase.ITEM_AFTER_BLOCK));
+					if (event.isCanceled()) return event.getCancellationResult();
+					if (!context.clientSide) return CommonHooks.onPlaceItemIntoWorld(context);
+					return ForgeHooks.onItemUse(context, c -> getItem().useOn(context));
+				}
+			}
+			""";
+
+	/**
+	 * On NeoForge's own body the event is already posted, so it is posted once — not twice — and both sides still reach
+	 * the item through the relay. The relayed CommonHooks runs against the very ItemStack the same pass produced: before,
+	 * the ItemStack half stood down here and the server's use threw NoSuchMethodError.
+	 */
+	@Test void neoForgesOwnBodyPostsOnceAndReachesTheItemThroughTheRelay(@TempDir Path work) throws Throwable {
+		Map<String, String> sources = new HashMap<>(STAND_INS);
+		sources.put(STACK, NEOFORGE_STACK);
+		Map<String, byte[]> original = InjectorExecution.compile(work, sources);
+		ClassLoader loader = transformed(original);
+		List<String> phases = new ArrayList<>();
+		listeners(loader).add(event -> phases.add(String.valueOf(call(event, "getUsePhase"))));
+
+		assertEquals("SUCCESS", String.valueOf(use(loader, false)));
+		assertEquals("SUCCESS", String.valueOf(use(loader, true)));
+		assertEquals(List.of("ITEM_AFTER_BLOCK", "ITEM_AFTER_BLOCK"), phases, "one post per use, NeoForge's own");
+		assertEquals(List.of(ItemUseOnInjector.RELAY, ItemUseOnInjector.RELAY), callers(loader),
+				"server and client both reach Item.useOn through the relay Fabric's wrap is pointed at");
+	}
+
 	@Test void aListenerThatCancelsDecidesTheResultAndTheItemIsNotUsed(@TempDir Path work) throws Throwable {
 		ClassLoader loader = transformed(InjectorExecution.compile(work, STAND_INS));
 		Object fail = Enum.valueOf(loader.loadClass("net.minecraft.world.InteractionResult").asSubclass(Enum.class), "FAIL");

@@ -143,6 +143,67 @@ class UntrackedFluidEyeQueryInjectorExecutionTest {
 		}
 	}
 
+	/**
+	 * NeoForge's own interaction, the genuine base's: trackers per fluid type and no {@code getTracker(TagKey)}. The guards
+	 * still answer false for an untracked tag and leave NeoForge's answer for one it has a type for — and the entity's guard
+	 * links, which it did not while it called {@code getTracker} itself.
+	 */
+	@Test void onNeoForgesOwnInteractionTheEntityGuardLinksAndAnswersFalse(@TempDir Path work) throws Throwable {
+		Map<String, String> sources = new HashMap<>(STAND_INS);
+		sources.put(INTERACTION, """
+				package net.minecraft.world.entity;
+
+				import java.util.HashMap;
+				import java.util.Map;
+				import java.util.Set;
+				import net.minecraft.tags.TagKey;
+
+				public class EntityFluidInteraction {
+					public static class Tracker {
+					}
+
+					/** NeoForge's: keyed by fluid type, never by tag. */
+					private final Map<String, Tracker> trackerByFluid = new HashMap<>();
+					Set<String> eyeIn = Set.of("water");
+
+					public static String getFluidTypeByTag(TagKey tag) {
+						return switch (tag.id()) {
+							case "minecraft:water" -> "water";
+							case "minecraft:lava" -> "lava";
+							default -> throw new IllegalStateException("no fluid type for " + tag.id());
+						};
+					}
+
+					public boolean isEyeInType(String type) {
+						return eyeIn.contains(type);
+					}
+
+					public boolean isEyeInFluid(TagKey tag) {
+						return isEyeInType(getFluidTypeByTag(tag));
+					}
+				}
+				""");
+		Map<String, byte[]> original = InjectorExecution.compile(work, sources);
+		Map<String, byte[]> classes = new HashMap<>(original);
+		for (String target : List.of(ENTITY, INTERACTION)) {
+			String internal = target.replace('.', '/');
+			classes.put(internal, InjectorExecution.transform(new UntrackedFluidEyeQueryInjector(), target, original.get(internal),
+					EnvType.CLIENT));
+		}
+		ClassLoader loader = InjectorExecution.load(classes);
+		for (String target : List.of(ENTITY, INTERACTION)) {
+			assertEquals("", InjectorExecution.verify(classes.get(target.replace('.', '/')), loader), target);
+		}
+		Object entity = InjectorExecution.construct(loader.loadClass(ENTITY));
+		assertEquals(false, InjectorExecution.invoke(entity, "isEyeInFluid", tag(loader, "c:oil")),
+				"an untracked tag answers false, as on vanilla — no NoSuchMethodError from a getTracker NeoForge lacks");
+		assertEquals(true, InjectorExecution.invoke(entity, "isEyeInFluid", tag(loader, "minecraft:water")));
+		Object interaction = InjectorExecution.construct(loader.loadClass(INTERACTION));
+		assertEquals(false, InjectorExecution.invoke(interaction, "isEyeInFluid", tag(loader, "c:oil")));
+		assertEquals(false, InjectorExecution.invoke(interaction, UntrackedFluidEyeQueryInjector.TRACKS_TAG, tag(loader, "minecraft:water")),
+				"NeoForge's interaction tracks no tag");
+	}
+
 	@Test void switchedOffBothClassesAreLeftNative(@TempDir Path work) throws Exception {
 		Map<String, byte[]> original = InjectorExecution.compile(work, STAND_INS);
 		System.setProperty(UntrackedFluidEyeQueryInjector.PROPERTY, "off");
