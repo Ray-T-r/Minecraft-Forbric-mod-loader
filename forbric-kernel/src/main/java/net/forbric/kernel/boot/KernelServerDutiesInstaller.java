@@ -37,6 +37,11 @@ import net.forbric.kernel.util.ForbricLog;
  * must still run after MinecraftForge's own started duties (the login gate, the dead-event judgement whose findings the load
  * report carries), and each listener here keeps the place it had among the kernel's listeners on its event. The data-map watch
  * came last before and still does.
+ *
+ * <p>Its own lines say {@code [Forbric/Duties]}, since none of this is the multiplexer's. The game-instance, started-work and
+ * data-map lines said {@code [Forbric/EventMux]} while {@link GameEventMultiplexer} installed them; no gate or test greps
+ * them under either prefix (only failure and debug lines, checked against {@code run/*.sh}, {@code run/compat} and the unit
+ * tests). The runtime warnings in {@code KernelServerDuties} keep the words they had, prefix included.
  */
 public final class KernelServerDutiesInstaller {
 	/** The duties, in the order they go on the bus; what {@link #install} answers when all of them did. */
@@ -71,7 +76,7 @@ public final class KernelServerDutiesInstaller {
 					.invoke(null, neoBus);
 			installed.add("game-instance");
 		} catch (Throwable t) {
-			Caught.warn(t, "[Forbric/EventMux] the dedicated server will not be Fabric Loader's game instance — "
+			Caught.warn(t, "[Forbric/Duties] the dedicated server will not be Fabric Loader's game instance — "
 					+ "FabricLoader.getGameInstance() stays null there");
 		}
 		try {
@@ -79,7 +84,7 @@ public final class KernelServerDutiesInstaller {
 					.invoke(null, neoBus);
 			installed.add("started-duties");
 		} catch (Throwable t) {
-			Caught.warn(t, "[Forbric/EventMux] the kernel's server-started work did not install — no load report or "
+			Caught.warn(t, "[Forbric/Duties] the kernel's server-started work did not install — no load report or "
 					+ "compatibility decision once a world is up");
 		}
 		try {
@@ -105,10 +110,10 @@ public final class KernelServerDutiesInstaller {
 		try {
 			Class.forName("net.forbric.kernel.runtime.KernelNeoDataMapWatch", true, cl)
 					.getMethod("installDataMapWatch", Object.class).invoke(null, neoBus);
-			ForbricLog.debug("[Forbric/EventMux] watching NeoForge's data-map reload path");
+			ForbricLog.debug("[Forbric/Duties] watching NeoForge's data-map reload path");
 			return true;
 		} catch (Throwable t) {
-			Caught.warn(t, "[Forbric/EventMux] could not watch NeoForge's data-map reload path — the kernel's fallback "
+			Caught.warn(t, "[Forbric/Duties] could not watch NeoForge's data-map reload path — the kernel's fallback "
 					+ "will load the data maps as before");
 			return false;
 		}
