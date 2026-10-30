@@ -14,6 +14,8 @@ compile_game = pathlib.Path(os.environ.get('M36_COMPILE_GAME', old / 'run/neofor
 merged = pathlib.Path(os.environ.get('MERGED', old / 'run/merged-base/patched-mc-merged-26.2.jar'))
 forge = pathlib.Path(os.environ.get('FORGE_RT', old / 'run/merged-base/forge-runtime-interop.jar'))
 if not forge.is_file(): forge = old / 'run/forge-runtime/forge-runtime.jar'
+# Optional for a NeoForge canary: on the compile classpath when staged, left out (and recorded as null) when not.
+forge = [forge] if forge.is_file() else []
 neo = pathlib.Path(os.environ.get('NEO_RT', old / 'run/neoforge-runtime/neoforge-runtime.jar'))
 libraries = []
 for entry in json.loads((mc / 'versions/26.2/26.2.json').read_text())['libraries']:
@@ -25,7 +27,7 @@ if not mixin.is_file() and os.environ.get('FORBRIC_SPONGE_MIXIN'): mixin = pathl
 asm = [pathlib.Path(p) for p in os.environ['M36_BUILD_CP'].split(os.pathsep)
        if pathlib.Path(p).is_file() and pathlib.Path(p).name.startswith('asm-')]
 if not any(p.name.startswith('asm-tree-') for p in asm): raise SystemExit('resolved ASM tree dependency missing')
-classpath = [compile_game, forge, neo, mixin, *asm, *libraries]
+classpath = [compile_game, *forge, neo, mixin, *asm, *libraries]
 for path in [*classpath, merged]:
     if not path.is_file(): raise SystemExit(f'M36 prerequisite absent: {path}')
 root = kernel / 'canary/mixin-outcome'
@@ -40,6 +42,6 @@ with zipfile.ZipFile(jar, 'w', zipfile.ZIP_DEFLATED) as target:
 def record(path):
     path = path.resolve(); return {'path': str(path), 'sha256': hashlib.sha256(path.read_bytes()).hexdigest()}
 (output / 'm36-build-inputs.json').write_text(json.dumps({'mod': record(jar), 'compileGame': record(compile_game),
-    'compileClasspath': [record(path) for path in classpath], 'merged': record(merged), 'forge': record(forge), 'neo': record(neo)}, indent=2) + '\n')
+    'compileClasspath': [record(path) for path in classpath], 'merged': record(merged), 'forge': record(forge[0]) if forge else None, 'neo': record(neo)}, indent=2) + '\n')
 print('[M36Outcome] built actual final Mixin application fixture')
 PY

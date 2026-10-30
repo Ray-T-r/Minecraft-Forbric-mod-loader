@@ -14,6 +14,8 @@ mc = pathlib.Path(os.environ.get('MC_DIR', pathlib.Path.home() / 'Library/Applic
 compile_game = pathlib.Path(os.environ.get('M53_COMPILE_GAME', old / 'run/neoforge-patched/patched-mc-neoforge-26.2.jar'))
 forge = pathlib.Path(os.environ.get('FORGE_RT', old / 'run/merged-base/forge-runtime-interop.jar'))
 if not forge.is_file(): forge = old / 'run/forge-runtime/forge-runtime.jar'
+# Optional for a NeoForge canary: on the compile classpath when staged, left out (and recorded as null) when not.
+forge = [forge] if forge.is_file() else []
 neo = pathlib.Path(os.environ.get('NEO_RT', old / 'run/neoforge-runtime/neoforge-runtime.jar'))
 fapi = pathlib.Path(os.environ.get('M53_FABRIC_API', kernel / 'run/client-merged-pack/mods/fabric-api-0.155.2+26.2.jar'))
 vanilla = mc / 'versions/26.2/26.2.jar'
@@ -25,7 +27,7 @@ libraries = []
 for entry in json.loads((mc / 'versions/26.2/26.2.json').read_text())['libraries']:
     artifact = entry.get('downloads', {}).get('artifact', {}).get('path')
     if artifact and (mc / 'libraries' / artifact).is_file(): libraries.append(mc / 'libraries' / artifact)
-for path in [compile_game, forge, neo, fapi, vanilla, kernel_jar, mixin]:
+for path in [compile_game, *forge, neo, fapi, vanilla, kernel_jar, mixin]:
     if not path.is_file(): raise SystemExit(f'M53 prerequisite absent: {path}')
 modules = kernel / 'run/canary/m53-modules'
 shutil.rmtree(modules, ignore_errors=True); modules.mkdir(parents=True)
@@ -48,12 +50,12 @@ def build(name, sources, classpath, extra):
     jar = output / (name + '.jar'); os.replace(staged, jar); return jar
 probe = build('forbricnewprobe', root / 'probe/src', [vanilla, kernel_jar, mixin, *libraries],
               [(root / 'probe/fabric.mod.json', 'fabric.mod.json'), (root / 'probe/forbricnewprobe.mixins.json', 'forbricnewprobe.mixins.json')])
-driver = build('forbricnewdriver', root / 'driver/src', [compile_game, forge, neo, *selected, *libraries],
+driver = build('forbricnewdriver', root / 'driver/src', [compile_game, *forge, neo, *selected, *libraries],
                [(root / 'driver/META-INF/neoforge.mods.toml', 'META-INF/neoforge.mods.toml')])
 def record(path):
     path = path.resolve(); return {'path': str(path), 'sha256': hashlib.sha256(path.read_bytes()).hexdigest()}
 (output / 'm53-build-inputs.json').write_text(json.dumps({'probe': record(probe), 'driver': record(driver), 'vanilla': record(vanilla),
-    'compileGame': record(compile_game), 'forge': record(forge), 'neo': record(neo), 'fabricApi': record(fapi),
+    'compileGame': record(compile_game), 'forge': record(forge[0]) if forge else None, 'neo': record(neo), 'fabricApi': record(fapi),
     'modules': [record(p) for p in selected]}, indent=2) + '\n')
 print('[M53New] built the widened-construction probes')
 PY

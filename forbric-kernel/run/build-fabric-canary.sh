@@ -17,6 +17,8 @@ MERGED="$OLD/run/merged-base/patched-mc-merged-26.2.jar"
 # The merged Block implements Forge's IForgeBlock and NeoForge's IBlockExtension, so a canary that touches
 # Block needs both carriers on the compile classpath — the same jars the launchers put on the runtime one.
 FORGE_RT="$OLD/run/merged-base/forge-runtime-interop.jar"; [ -f "$FORGE_RT" ] || FORGE_RT="$OLD/run/forge-runtime/forge-runtime.jar"
+# Only while it is staged: a base without MinecraftForge patches (the genuine NeoForge jar) needs none of it.
+[ -f "$FORGE_RT" ] || FORGE_RT=""
 NEO_RT="$OLD/run/neoforge-runtime/neoforge-runtime.jar"
 
 step "prerequisites"
@@ -71,7 +73,7 @@ FAPI_CP="$(ls "$WORK"/fapi/*.jar | paste -sd: -)"
 echo "[kernel] fabric-api modules for the probes: $(ls "$WORK"/fapi | tr '\n' ' ')"
 
 javac -nowarn -proc:none --release 21 \
-      -cp "$MERGED:$KERNEL_JAR:$FORGE_RT:$NEO_RT:$DFU:$FAPI_CP" \
+      -cp "$MERGED:$KERNEL_JAR:${FORGE_RT:+$FORGE_RT:}$NEO_RT:$DFU:$FAPI_CP" \
       -d "$WORK/live/classes" \
       $(find "$SRC/forbricfabriclive/src" -name '*.java') 2>&1 | grep -v '^Note:' || true
 [ -n "$(find "$WORK/live/classes" -name '*.class')" ] || { echo "[kernel] FAIL canary did not compile"; exit 1; }

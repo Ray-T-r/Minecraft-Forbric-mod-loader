@@ -12,16 +12,18 @@ mc = pathlib.Path(os.environ.get('MC_DIR', pathlib.Path.home() / 'Library/Applic
 compile_game = pathlib.Path(os.environ.get('M49_COMPILE_GAME', old / 'run/neoforge-patched/patched-mc-neoforge-26.2.jar'))
 forge = pathlib.Path(os.environ.get('FORGE_RT', old / 'run/merged-base/forge-runtime-interop.jar'))
 if not forge.is_file(): forge = old / 'run/forge-runtime/forge-runtime.jar'
+# Optional for a NeoForge canary: on the compile classpath when staged, left out (and recorded as null) when not.
+forge = [forge] if forge.is_file() else []
 neo = pathlib.Path(os.environ.get('NEO_RT', old / 'run/neoforge-runtime/neoforge-runtime.jar'))
 libraries = []
 for entry in json.loads((mc / 'versions/26.2/26.2.json').read_text())['libraries']:
     artifact = entry.get('downloads', {}).get('artifact', {}).get('path')
     if artifact and (mc / 'libraries' / artifact).is_file(): libraries.append(mc / 'libraries' / artifact)
-for path in [compile_game, forge, neo]:
+for path in [compile_game, *forge, neo]:
     if not path.is_file(): raise SystemExit(f'M49 prerequisite absent: {path}')
 root = kernel / 'canary/world-events'
 classes = work / 'classes'; classes.mkdir()
-subprocess.run(['javac', '-proc:none', '--release', '21', '-cp', os.pathsep.join(map(str, [compile_game, forge, neo, *libraries])),
+subprocess.run(['javac', '-proc:none', '--release', '21', '-cp', os.pathsep.join(map(str, [compile_game, *forge, neo, *libraries])),
                 '-d', str(classes), *map(str, sorted((root / 'src').rglob('*.java')))], check=True)
 output = kernel / 'run/canary'; output.mkdir(exist_ok=True)
 staged = work / 'forbricworldevents.jar'
@@ -33,6 +35,6 @@ os.replace(staged, jar)
 def record(path):
     path = path.resolve(); return {'path': str(path), 'sha256': hashlib.sha256(path.read_bytes()).hexdigest()}
 (output / 'm49-build-inputs.json').write_text(json.dumps({'mod': record(jar), 'compileGame': record(compile_game),
-    'forge': record(forge), 'neo': record(neo)}, indent=2) + '\n')
+    'forge': record(forge[0]) if forge else None, 'neo': record(neo)}, indent=2) + '\n')
 print('[M49World] built the world-events probe')
 PY
