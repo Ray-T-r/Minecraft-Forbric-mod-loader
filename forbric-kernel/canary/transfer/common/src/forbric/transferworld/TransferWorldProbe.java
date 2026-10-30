@@ -36,11 +36,13 @@ import net.neoforged.neoforge.transfer.item.ItemResource;
  *
  * <p>Two families since Stage 3 of dropping MinecraftForge: Forbric refuses the MinecraftForge machine mod
  * (forbrictransferforge), and only a MinecraftForge mod asks MinecraftForge's capabilities, so every route, provider
- * and consumer on MinecraftForge's side went with it. Fabric and NeoForge keep every route between them, and the two
- * checks that stood on a Forge machine (replacement invalidation, the clean-chunk dirty probe) now stand on a NeoForge
- * and a Fabric one. The MinecraftForge carrier still runs: its generic InvWrapper is still composed into every
- * BaseContainerBlockEntity, and the bridge's Forge leg still reads it, so a NeoForge consumer of the NeoForge cabinet's
- * refused face must still get nothing.
+ * and consumer on MinecraftForge's side went with it. Fabric and NeoForge keep every route between them. Replacement
+ * invalidation, which stood on a Forge machine, now stands on a NeoForge and a Fabric one. The clean-chunk dirty probe
+ * used to prove the bridge's own dirty notification on commit, for a Forge host whose handlers never mark it changed;
+ * only the Forge adapters reach that notification, so it is no longer exercised, and the probe now stands on a NeoForge
+ * machine that marks itself changed. The MinecraftForge carrier still runs: its generic InvWrapper is still composed
+ * into every BaseContainerBlockEntity, and the bridge's Forge leg still reads it, so a NeoForge consumer of the
+ * NeoForge cabinet's refused face must still get nothing.
  */
 public final class TransferWorldProbe {
 	private static final List<String> FAMILIES = List.of(Machines.FABRIC, Machines.NEO);
@@ -213,7 +215,9 @@ public final class TransferWorldProbe {
 	/**
 	 * A NeoForge machine in a chunk of its own, written only through public Fabric queries. Its handlers mark it changed
 	 * when NeoForge's own root transaction commits, and nothing else does: an aborted Fabric write must leave the chunk
-	 * clean, a committed one must dirty it, and the save that follows must carry the new amounts.
+	 * clean, a committed one must dirty it, and the save that follows must carry the new amounts. This does not reach the
+	 * bridge's own dirty notification (only a MinecraftForge handler's adapter does); it proves the bridge commits
+	 * NeoForge's root exactly when the Fabric transaction commits, and never when it aborts.
 	 */
 	private static void checkDirtyCommit(ServerLevel level, MinecraftServer server) {
 		Machines.Machine be = place(level, DIRTY_PROBE, Machines.NEO); be.seed(tagged(1), 81);

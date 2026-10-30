@@ -13,16 +13,23 @@
 # finding the bridge only raises for a Forge owner), a Forge consumer's view of the NeoForge cabinet and of a Fabric
 # bin, and every Forge LazyOptional. What stays is everything between Fabric and NeoForge: face/null preservation and
 # SOUTH refusal, native priority, owner precedence over Fabric's generic Container view, both directed routes on NORTH
-# and null with the 17-unit fractional return, the real chunk unload, save/reload, and the bridge-off control. Two checks
-# stood on a Forge machine and were moved, not dropped: replacement invalidation now caches a Fabric consumer's views of
-# a NeoForge machine and a NeoForge consumer's views of a Fabric machine, and the clean-chunk dirty probe is a NeoForge
-# machine written through public Fabric queries. The MinecraftForge carrier still runs and still composes its generic
-# InvWrapper into every BaseContainerBlockEntity, so the probe now also asks NeoForge for the NeoForge cabinet on the
-# face its owner refuses: the bridge's Forge leg reads that InvWrapper there and must hand NeoForge nothing, and the
+# and null with the 17-unit fractional return, the real chunk unload, save/reload, and the bridge-off control.
+# Replacement invalidation stood on a Forge machine and was moved, not dropped: it now caches a Fabric consumer's views
+# of a NeoForge machine and a NeoForge consumer's views of a Fabric machine. The clean-chunk dirty probe was not carried
+# over intact. Its Forge machine's ItemStackHandler/FluidTank never mark their host changed, so only the bridge's own
+# dirty notification on commit (BlockTransferBridge.Endpoint.committed, reached only through the Forge item, fluid and
+# energy adapters) could dirty that chunk and carry the writes through save/reload; with no MinecraftForge handler
+# aboard that notification is no longer reached, and that check is dropped. The probe that replaces it is a NeoForge
+# machine, which marks itself changed when its own handlers' contents change, written through public Fabric queries: it
+# proves an aborted Fabric transaction leaves the chunk clean (the bridge does not commit NeoForge's root) and a
+# committed one dirties it and survives save/reload. The MinecraftForge carrier still runs and still composes its
+# generic InvWrapper into every BaseContainerBlockEntity, so the probe now also asks NeoForge for the NeoForge cabinet on
+# the face its owner refuses: the bridge's Forge leg reads that InvWrapper there and must hand NeoForge nothing, and the
 # check that no InvWrapper is ever refused as an unaudited handler keeps a query that reaches it. The kernel's own
-# "initialized cross-ecosystem block transfer" line, which prints whatever the pack, is now asserted on both boots and
-# asserted absent with the bridge off. The census is two primary machines now: 40 items, 32,417 Fabric fluid units,
-# 4 item and 4 fluid routes.
+# "initialized cross-ecosystem block transfer" line does not depend on a MinecraftForge mod (it prints when Fabric's and
+# NeoForge's transfer APIs and the kernel's transfer classes are present and -Dforbric.transferBridge is not off), so it
+# is now asserted on both boots and asserted absent with the bridge off. The census is two primary machines now:
+# 40 items, 32,417 Fabric fluid units, 4 item and 4 fluid routes.
 # GATE-PARALLEL: rundirs=server-transfer-m33 mem=2000
 set -uo pipefail
 GATE_PORT="${GATE_PORT:-25593}"

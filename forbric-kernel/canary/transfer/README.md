@@ -38,7 +38,11 @@ quantities survived, and world queries still work. A separate NeoForge machine a
 chunk. The gate saves its seeded baseline and asserts the chunk is clean, then performs only public Fabric
 queries: aborted item/fluid writes must leave it clean; committed writes must mark it dirty. There is no
 explicit setChanged after the baseline save. The next boot checks that the new amounts (7 items, 9 mB)
-and components persisted, including reads through the machine's own NeoForge handlers.
+and components persisted, including reads through the machine's own NeoForge handlers. The NeoForge machine marks
+itself changed when its handlers' contents change, so this proves the bridge commits NeoForge's root exactly when the
+Fabric transaction commits. Before Stage 3 of dropping MinecraftForge this probe stood on a Forge machine whose
+handlers never mark their host changed, which proved the bridge's own dirty notification on commit; only the Forge
+adapters reach that notification, so with no MinecraftForge mod aboard it is no longer exercised.
 
 Finally, the gate creates another owned test world with the bridge disabled. The same positive assertions
 must fail at a foreign public lookup; its acceptance command and recorded probe result must be red. Each run
