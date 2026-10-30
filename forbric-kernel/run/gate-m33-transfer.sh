@@ -1,5 +1,28 @@
 #!/usr/bin/env bash
-# M33: public world lookup routing, six directed transfers, invalidation, and two-boot persistence.
+# M33: public world lookup routing between Fabric and NeoForge, both directed transfers, invalidation, and two-boot
+# persistence.
+#
+# STAGE 3 OF DROPPING MinecraftForge (what changed and why). Three machine mods rode in this gate, one per ecosystem,
+# and the probe moved items and fluids along all six directed routes between them. Forbric now refuses a
+# MinecraftForge-only jar, and the strict launch this gate uses stops on that refusal (exit 78) before the world loads,
+# so the MinecraftForge machine mod (forbrictransferforge) is no longer staged; the shared build script still builds it
+# (gate-m40 builds through the same script) and nothing here copies it. With it went every check whose provider or
+# consumer was MinecraftForge's -- the probe no longer asks MinecraftForge's capabilities either, since only a
+# MinecraftForge mod would: the four routes with a Forge end, the Forge crate, Forge's InvWrapper as a Forge bin's
+# whole Container (NeoForge's own Container view of it, and none for the Forge kiln, whose CONTAINER_WRITES_NOT_VANILLA
+# finding the bridge only raises for a Forge owner), a Forge consumer's view of the NeoForge cabinet and of a Fabric
+# bin, and every Forge LazyOptional. What stays is everything between Fabric and NeoForge: face/null preservation and
+# SOUTH refusal, native priority, owner precedence over Fabric's generic Container view, both directed routes on NORTH
+# and null with the 17-unit fractional return, the real chunk unload, save/reload, and the bridge-off control. Two checks
+# stood on a Forge machine and were moved, not dropped: replacement invalidation now caches a Fabric consumer's views of
+# a NeoForge machine and a NeoForge consumer's views of a Fabric machine, and the clean-chunk dirty probe is a NeoForge
+# machine written through public Fabric queries. The MinecraftForge carrier still runs and still composes its generic
+# InvWrapper into every BaseContainerBlockEntity, so the probe now also asks NeoForge for the NeoForge cabinet on the
+# face its owner refuses: the bridge's Forge leg reads that InvWrapper there and must hand NeoForge nothing, and the
+# check that no InvWrapper is ever refused as an unaudited handler keeps a query that reaches it. The kernel's own
+# "initialized cross-ecosystem block transfer" line, which prints whatever the pack, is now asserted on both boots and
+# asserted absent with the bridge off. The census is two primary machines now: 40 items, 32,417 Fabric fluid units,
+# 4 item and 4 fluid routes.
 # GATE-PARALLEL: rundirs=server-transfer-m33 mem=2000
 set -uo pipefail
 GATE_PORT="${GATE_PORT:-25593}"
@@ -26,13 +49,13 @@ with open(sys.argv[1], encoding='utf-8') as stream: result = json.load(stream)
 assert result['phase'] == sys.argv[2], result
 assert result['runToken'] == sys.argv[3], 'stale or foreign probe result'
 assert result['pass'] is True, result
-assert result['items'] == 60 and result['fluidFabricUnits'] == 48617, result
-if result['phase'] != 'reload': assert result['itemRoutes'] == result['fluidRoutes'] == 12, result
+assert result['items'] == 40 and result['fluidFabricUnits'] == 32417, result
+if result['phase'] != 'reload': assert result['itemRoutes'] == result['fluidRoutes'] == 4, result
 PY
   exit "$?"
 fi
 
-step "build three independently declared ecosystem canaries"
+step "build the independently declared ecosystem canaries (the MinecraftForge one is not staged)"
 bash "$KERNEL/run/build-transfer-world-canaries.sh" > "$RESULTS/build.log" 2>&1 || { cat "$RESULTS/build.log"; exit 1; }
 INPUTS="$KERNEL/run/canary/m33-build-inputs.json"
 FAPI="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["fabricApi"]["path"])' "$INPUTS")"
@@ -62,8 +85,7 @@ fresh_world() {
   rm -rf "$RUNDIR/world" "$RUNDIR/mods" "$RUNDIR/.forbric-kernel"
   mkdir -p "$RUNDIR/mods"
   python3 -c 'import uuid; print(uuid.uuid4())' > "$RUNDIR/.m33-owned"
-  cp "$FAPI" "$KERNEL/run/canary/forbrictransferfabric.jar" "$KERNEL/run/canary/forbrictransferforge.jar" \
-    "$KERNEL/run/canary/forbrictransferneo.jar" "$RUNDIR/mods/"
+  cp "$FAPI" "$KERNEL/run/canary/forbrictransferfabric.jar" "$KERNEL/run/canary/forbrictransferneo.jar" "$RUNDIR/mods/"
   seed_server_properties "$RUNDIR"
   printf '\nlevel-name=world\nlevel-type=minecraft:flat\ngenerate-structures=false\nmax-tick-time=-1\npause-when-empty-seconds=-1\n' >> "$RUNDIR/server.properties"
 }
@@ -118,7 +140,7 @@ assert outcome['commandPassed'] is expected, outcome
 assert probe['pass'] is expected and probe['phase'] == phase, probe
 assert probe['runToken'] == sys.argv[4], 'stale or foreign probe result'
 if expected:
-    assert outcome['exitCode'] == 0 and probe['items'] == 60 and probe['fluidFabricUnits'] == 48617, (outcome, probe)
+    assert outcome['exitCode'] == 0 and probe['items'] == 40 and probe['fluidFabricUnits'] == 32417, (outcome, probe)
 else:
     assert outcome['exitCode'] != 0 and 'missing ' in probe['detail'] and ' provider for ' in probe['detail'], (outcome, probe)
 (root / (phase + '-probe.sha256')).write_text(hashlib.sha256(probe_path.read_bytes()).hexdigest() + '\n')
@@ -129,16 +151,17 @@ PY
 }
 
 fresh_world
-step "positive: six directed routes through real public block queries"
+step "positive: both directed Fabric/NeoForge routes through real public block queries"
 run_phase prepare on
 assert_phase prepare pass
 check_absent "positive probe emitted no failure marker" "M33Transfer\] FAIL" "$RESULTS/prepare-inputs.log"
-for family in fabric forge neo; do check "the independent $family canary initialized" "M33Transfer\] REGISTERED $family " "$RESULTS/prepare-inputs.log"; done
-check "public API face/null coverage ran" "PASS all three public APIs preserve NORTH/null" "$RESULTS/prepare-inputs.log"
+for family in fabric neo; do check "the independent $family canary initialized" "M33Transfer\] REGISTERED $family " "$RESULTS/prepare-inputs.log"; done
+check_absent "nothing was refused" "\[Forbric/Unsupported\] refusing" "$RESULTS/prepare-inputs.log"
+check "the kernel connected the bridge after native registration" "\[Forbric/Transfer\] initialized cross-ecosystem block transfer" "$RESULTS/prepare-inputs.log"
+check "public API face/null coverage ran" "PASS the Fabric and NeoForge public APIs preserve NORTH/null" "$RESULTS/prepare-inputs.log"
 check "native priority ran" "PASS native providers take priority" "$RESULTS/prepare-inputs.log"
 check "owner providers precede generic Container wrappers" "PASS owner providers precede Fabric's generic Container view" "$RESULTS/prepare-inputs.log"
-check "Forge's own InvWrapper answers only as its owner's whole Container" "PASS Forge's generic InvWrapper: NeoForge's own Container view" "$RESULTS/prepare-inputs.log"
-check "a Container with its own writes was kept from NeoForge's wrapper" "CONTAINER_WRITES_NOT_VANILLA: forbric\.transferworld\.Machines.Kiln" "$RESULTS/prepare-inputs.log"
+check "the carrier's InvWrapper answers no NeoForge consumer" "the carrier's InvWrapper answers no NeoForge consumer" "$RESULTS/prepare-inputs.log"
 check_absent "Forge's own InvWrapper was never refused as an unaudited handler" "FORGE_HANDLER_NOT_ROLLBACK_SAFE: net\.minecraftforge\.items\.wrapper\.InvWrapper" "$RESULTS/prepare-inputs.log"
 check "actual fractional return was rolled back and retried" "PASS world fluid quantization retains 17 units" "$RESULTS/prepare-inputs.log"
 check "world replacement invalidation ran" "PASS cached foreign views" "$RESULTS/prepare-inputs.log"
@@ -151,6 +174,7 @@ run_phase reload on
 assert_phase reload pass
 check_absent "reload probe emitted no failure marker" "M33Transfer\] FAIL" "$RESULTS/reload-inputs.log"
 check "real deserialization was verified" "PASS save/reload:" "$RESULTS/reload-inputs.log"
+check "the kernel connected the bridge again on the second boot" "\[Forbric/Transfer\] initialized cross-ecosystem block transfer" "$RESULTS/reload-inputs.log"
 
 step "negative control: bridge off must make the same world-query assertions RED"
 fresh_world
@@ -158,9 +182,10 @@ run_phase negative off
 assert_phase negative fail
 check "negative failed in a foreign public lookup" "M33Transfer\] FAIL phase=negative.*missing .* provider" "$RESULTS/negative-inputs.log"
 check_absent "negative never claimed probe success" "M33Transfer\] PASS phase=negative" "$RESULTS/negative-inputs.log"
+check_absent "the switched-off bridge was never connected" "\[Forbric/Transfer\] initialized cross-ecosystem block transfer" "$RESULTS/negative-inputs.log"
 
 if [ "$FAIL" -eq 0 ]; then
-  echo "[kernel] ✅ M33 TRANSFER WORLD GATE GREEN — public routing, save/reload and red bridge-off control proved"
+  echo "[kernel] ✅ M33 TRANSFER WORLD GATE GREEN — Fabric/NeoForge public routing, save/reload and red bridge-off control proved"
 else
   echo "[kernel] ❌ M33 GATE RED — evidence and phase logs: $RESULTS"
 fi
