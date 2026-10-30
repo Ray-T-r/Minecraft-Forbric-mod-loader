@@ -65,3 +65,19 @@ Alone, one at a time: gate-m12 GREEN ×3, gate-m22 GREEN ×2 (plus GREEN in the 
 511f2582 by itself. The nightly keeps only summaries, so its f7f4ff92 logs cannot be read back; m12's known failure mode
 is the parallel-load `check_kept_up` above. Stage 1 touches the two network anchors m12 exercises, so m12 is re-run
 alone (and three times) after the bump, and a RED there is investigated, not attributed to load without its log.
+
+## Stage 1: NeoForge 26.2.0.93 (commits 8bb2f38c, 01a60bee)
+
+Stage rebuilt through DevPrepare at the new pins. Against the .88 stage, by entry CRC: the merged base, the
+MinecraftForge runtime, its interop jar and both patched jars are identical; `neoforge-runtime.jar` differs in 18
+entries. `patched-mc-neoforge-26.2.jar` is byte-identical (sha1 `67bbf24f…`, NFRT `gameJarNoRecomp`).
+
+- Unit suite: 6,737 tests, 7 failed — the baseline's lost fixtures (LiquidBounce ×3, R3 corpus ×1, opt-in ×2) and
+  one pinned expectation (`MixinFitReportManifestTest` used 26.2.0.90 as "newer than the table's game"; now .94).
+  The two IPN/ShoulderSurfing staged tests pass, because the worktree stage links `forbric-loader/run/mods`.
+- Gates (`-j auto`): 58 GREEN, gate-m0 RED for the same corpus test as the baseline, m34 skipped. gate-m12 alone
+  ×3: GREEN. No gate log contains NeoForge's new ad-hoc channel refusal (`neoforge.network.adhoc_channels.too_many`).
+- Link check: 7 known, 0 new; provenance re-recorded for this build.
+- Native NeoForge 26.2.0.93 control installed from the official installer (upstream SHA-1 verified).
+- sponge-mixin 0.17.4 / MixinExtras 0.5.5 tried and reverted: six weave tests in three suites change verdict and
+  0.17.4 adds compatibility level 17004; recorded in `Pins.java`.
