@@ -52,7 +52,7 @@ class WrapperEntryAddedInjectorTest {
 	private static final Path STAGED = TestFixtures.stagedRoot();
 	private static final Path MERGED = STAGED.resolve(TestFixtures.BASE_JAR);
 	private static final Path NEO_CARRIER = STAGED.resolve(TestFixtures.NEO_CARRIER_JAR);
-	private static final Path FORGE_CARRIER = STAGED.resolve("merged-base/forge-runtime-interop.jar");
+	private static final Path FORGE_CARRIER = STAGED.resolve(TestFixtures.FORGE_INTEROP_JAR);
 	private static final Path FABRIC_API = TestFixtures.fabricApi();
 	private static final String WRAPPER = "net/minecraftforge/registries/NamespacedWrapper";
 	private static final String FORGE_REGISTRY = "net/minecraftforge/registries/ForgeRegistry";

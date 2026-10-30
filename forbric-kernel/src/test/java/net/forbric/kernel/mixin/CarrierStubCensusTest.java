@@ -43,7 +43,7 @@ class CarrierStubCensusTest {
 	private static final Path FORGE = TestFixtures.forgeMergeInput();
 	private static final Path NEO = TestFixtures.genuineBase();
 	private static final Path VANILLA = MC.resolve("versions/26.2/26.2.jar");
-	private static final Path INTEROP = TestFixtures.stagedRoot().resolve("merged-base/forge-runtime-interop.jar");
+	private static final Path INTEROP = TestFixtures.stagedRoot().resolve(TestFixtures.FORGE_INTEROP_JAR);
 	private static final Path NEO_RUNTIME = TestFixtures.stagedRoot().resolve(TestFixtures.NEO_CARRIER_JAR);
 	private static final Path KERNEL_MAIN = mainClasses();
     private static Path mainClasses(){

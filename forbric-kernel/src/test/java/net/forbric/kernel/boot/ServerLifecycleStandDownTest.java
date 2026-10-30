@@ -203,8 +203,8 @@ class ServerLifecycleStandDownTest {
 
 	/** A class from the staged base or a carrier, as the kernel's injector reads hook bodies at boot. */
 	private static byte[] bytes(Path root, String path) {
-		for (Path jar : List.of(root.resolve(TestFixtures.BASE_JAR), root.resolve("forge-runtime/forge-runtime.jar"),
-				root.resolve("merged-base/forge-runtime-interop.jar"), root.resolve(TestFixtures.NEO_CARRIER_JAR))) {
+		for (Path jar : List.of(root.resolve(TestFixtures.BASE_JAR), root.resolve(TestFixtures.FORGE_CARRIER_JAR),
+				root.resolve(TestFixtures.FORGE_INTEROP_JAR), root.resolve(TestFixtures.NEO_CARRIER_JAR))) {
 			if (!Files.isRegularFile(jar)) continue;
 			try (ZipFile zip = new ZipFile(jar.toFile())) {
 				var entry = zip.getEntry(path);
@@ -266,8 +266,8 @@ class ServerLifecycleStandDownTest {
 		static Map<String, byte[]> classes() throws Exception {
 			Path run = TestFixtures.stagedRoot();
 			Path neo = run.resolve(TestFixtures.NEO_CARRIER_JAR);
-			Path forge = run.resolve("merged-base/forge-runtime-interop.jar");
-			if (!Files.isRegularFile(forge)) forge = run.resolve("forge-runtime/forge-runtime.jar");
+			Path forge = run.resolve(TestFixtures.FORGE_INTEROP_JAR);
+			if (!Files.isRegularFile(forge)) forge = run.resolve(TestFixtures.FORGE_CARRIER_JAR);
 			TestFixtures.requireFiles(Fixture.STAGED, "the staged carriers are absent", neo, forge);
 			Map<String, byte[]> out = new HashMap<>();
 			out.put(NEO_HOOKS, lifted(neo, NEO_HOOKS, List.of(), "handleServerStarted", "handleServerStopping"));

@@ -226,7 +226,7 @@ class DeclarationReaderForgeFailSafeTest {
 	}
 
 	private static Path forgeCarrier() {
-		Path forge = TestFixtures.stagedRoot().resolve("forge-runtime/forge-runtime.jar");
+		Path forge = TestFixtures.stagedRoot().resolve(TestFixtures.FORGE_CARRIER_JAR);
 		TestFixtures.requireFiles(Fixture.STAGED, "the staged MinecraftForge carrier is absent", forge);
 		return forge;
 	}

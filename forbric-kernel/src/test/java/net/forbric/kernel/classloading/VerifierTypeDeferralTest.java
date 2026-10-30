@@ -331,7 +331,7 @@ class VerifierTypeDeferralTest {
 		Path staged = TestFixtures.stagedRoot();
 		Path merged = staged.resolve(TestFixtures.BASE_JAR);
 		Path neoforge = staged.resolve(TestFixtures.NEO_CARRIER_JAR);
-		Path forge = staged.resolve("forge-runtime/forge-runtime.jar");
+		Path forge = staged.resolve(TestFixtures.FORGE_CARRIER_JAR);
 		TestFixtures.requireFiles(Fixture.STAGED, "the merged game the provider names", merged, neoforge, forge);
 		URL[] owned = {mod.toUri().toURL(), merged.toUri().toURL(), neoforge.toUri().toURL(), forge.toUri().toURL()};
 		// What ServiceLoader does to a provider before it constructs one: look up its constructor, which links it.

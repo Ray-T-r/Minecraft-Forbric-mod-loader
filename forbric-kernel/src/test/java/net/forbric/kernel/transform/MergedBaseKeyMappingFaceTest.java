@@ -363,7 +363,7 @@ class MergedBaseKeyMappingFaceTest {
 	private static java.net.URLClassLoader gameSideLoader() throws IOException {
 		Path compiled = Path.of(System.getProperty("user.dir"), "build", "classes", "java", "runtime").normalize();
 		Path run = TestFixtures.stagedRoot();
-		Path forgeRt = run.resolve("forge-runtime/forge-runtime.jar");
+		Path forgeRt = run.resolve(TestFixtures.FORGE_CARRIER_JAR);
 		Path neoRt = run.resolve(TestFixtures.NEO_CARRIER_JAR);
 		TestFixtures.require(Fixture.GAME_SIDE, Files.isDirectory(compiled), "the game-side set is not compiled");
 		TestFixtures.requireFiles(Fixture.STAGED,

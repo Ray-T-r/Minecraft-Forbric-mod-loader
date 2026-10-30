@@ -70,7 +70,7 @@ class PortalSpawnInjectorTest {
 	}
 
 	@Test void bothActualCarrierHooksHaveTheRedirectedStaticDescriptor() throws Exception {
-		for (String[] entry : List.of(new String[] {"forge-runtime/forge-runtime.jar", PortalSpawnInjector.FORGE},
+		for (String[] entry : List.of(new String[] {TestFixtures.FORGE_CARRIER_JAR, PortalSpawnInjector.FORGE},
 				new String[] {TestFixtures.NEO_CARRIER_JAR, PortalSpawnInjector.NEO})) {
 			ClassNode carrier = parse(staged(entry[0], entry[1]));
 			MethodNode method = carrier.methods.stream().filter(m -> m.name.equals("onTrySpawnPortal") && m.desc.equals(PortalSpawnInjector.HOOK_DESC)).findFirst().orElseThrow();

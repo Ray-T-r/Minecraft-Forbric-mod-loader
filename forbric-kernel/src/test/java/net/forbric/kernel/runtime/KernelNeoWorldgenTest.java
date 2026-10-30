@@ -156,7 +156,7 @@ class KernelNeoWorldgenTest {
 	private static URLClassLoader gameSideLoader() throws Exception {
 		Path compiled = RUNTIME;
 		Path run = TestFixtures.stagedRoot();
-		Path forgeRt = run.resolve("forge-runtime/forge-runtime.jar");
+		Path forgeRt = run.resolve(TestFixtures.FORGE_CARRIER_JAR);
 		Path neoRt = run.resolve(TestFixtures.NEO_CARRIER_JAR);
 		Path merged = run.resolve(TestFixtures.BASE_JAR);
 		TestFixtures.requireFiles(Fixture.STAGED,

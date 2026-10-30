@@ -212,7 +212,7 @@ class KernelForgeGatherStatesTest {
 	}
 
 	private static Path carrier() {
-		return run().resolve("merged-base/forge-runtime-interop.jar");
+		return run().resolve(TestFixtures.FORGE_INTEROP_JAR);
 	}
 
 	private static Object state(ClassLoader cl, String holder, String field) throws Exception {

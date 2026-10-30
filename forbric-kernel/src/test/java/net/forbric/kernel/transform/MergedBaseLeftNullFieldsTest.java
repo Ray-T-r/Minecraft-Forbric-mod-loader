@@ -36,7 +36,7 @@ import net.forbric.kernel.TestFixtures.Fixture;
  */
 class MergedBaseLeftNullFieldsTest {
 	private static final Path MERGED_BASE = TestFixtures.stagedBase();
-	private static final Path FORGE_RUNTIME = TestFixtures.stagedRoot().resolve("forge-runtime/forge-runtime.jar");
+	private static final Path FORGE_RUNTIME = TestFixtures.stagedRoot().resolve(TestFixtures.FORGE_CARRIER_JAR);
 
 	/** owner#field → expected GETFIELD readers anywhere in the merged base. */
 	private static final Map<String, Integer> PINNED = Map.ofEntries(

@@ -28,7 +28,7 @@ class RuntimeMixinConfigsTest {
 	}
 
 	@Test void minecraftForgesRuntimeDeclaresNone() {
-		Path forge = STAGED.resolve("merged-base/forge-runtime-interop.jar");
+		Path forge = STAGED.resolve(TestFixtures.FORGE_INTEROP_JAR);
 		TestFixtures.requireFiles(Fixture.STAGED, "staged MinecraftForge runtime absent", forge);
 		assertEquals(List.of(), KernelBoot.discoverForgeMixinConfigs(List.of(forge), "runtime jar"));
 	}

@@ -45,7 +45,7 @@ class DeclarationReaderCensusTest {
 	void noPlatformClassIsEdited() throws IOException {
 		Path run = TestFixtures.stagedRoot();
 		List<Path> platform = List.of(run.resolve(TestFixtures.BASE_JAR),
-				run.resolve(TestFixtures.NEO_CARRIER_JAR), run.resolve("forge-runtime/forge-runtime.jar"));
+				run.resolve(TestFixtures.NEO_CARRIER_JAR), run.resolve(TestFixtures.FORGE_CARRIER_JAR));
 		for (Path jar : platform) TestFixtures.requireFile(Fixture.STAGED, jar, jar + " is absent");
 		TreeSet<String> edited = new TreeSet<>();
 		int classes = 0;
@@ -104,7 +104,7 @@ class DeclarationReaderCensusTest {
 		TestFixtures.require(Fixture.GAME_SIDE, Files.isDirectory(compiled), "the game side is not compiled");
 		java.util.Map<net.forbric.api.Ecosystem, Path> carriers = java.util.Map.of(
 				net.forbric.api.Ecosystem.NEOFORGE, run.resolve(TestFixtures.NEO_CARRIER_JAR),
-				net.forbric.api.Ecosystem.FORGE, run.resolve("forge-runtime/forge-runtime.jar"));
+				net.forbric.api.Ecosystem.FORGE, run.resolve(TestFixtures.FORGE_CARRIER_JAR));
 		List<String> missing = new ArrayList<>();
 		int checked = 0;
 		for (DeclarationReaderModListInjector.Family family : DeclarationReaderModListInjector.FAMILIES) {

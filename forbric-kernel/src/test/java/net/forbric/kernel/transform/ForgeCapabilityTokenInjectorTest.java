@@ -29,7 +29,7 @@ import net.forbric.kernel.TestFixtures.Fixture;
 
 /** The carrier's own CapabilityTokenSubclass plugin, driven by the kernel over the carrier's own token classes. */
 class ForgeCapabilityTokenInjectorTest {
-	private static final Path FORGE = TestFixtures.stagedRoot().resolve("forge-runtime/forge-runtime.jar");
+	private static final Path FORGE = TestFixtures.stagedRoot().resolve(TestFixtures.FORGE_CARRIER_JAR);
 
 	@Test
 	void theItemHandlerTokenGetsAGetTypeReturningItsTypeArgument() throws Exception {

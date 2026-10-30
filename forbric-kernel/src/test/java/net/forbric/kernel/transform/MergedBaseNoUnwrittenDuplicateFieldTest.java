@@ -74,7 +74,7 @@ class MergedBaseNoUnwrittenDuplicateFieldTest {
 				try {
 					ZipEntry local = jar.getEntry(path);
 					if (local != null) try (InputStream in = jar.getInputStream(local)) { return in.readAllBytes(); }
-					for (Path platform : List.of(TestFixtures.stagedRoot().resolve("forge-runtime/forge-runtime.jar"),TestFixtures.stagedRoot().resolve(TestFixtures.NEO_CARRIER_JAR))) {
+					for (Path platform : List.of(TestFixtures.stagedRoot().resolve(TestFixtures.FORGE_CARRIER_JAR),TestFixtures.stagedRoot().resolve(TestFixtures.NEO_CARRIER_JAR))) {
 						try (ZipFile runtime = new ZipFile(platform.toFile())) { ZipEntry entry = runtime.getEntry(path); if(entry!=null)try(InputStream in=runtime.getInputStream(entry)){return in.readAllBytes();} }
 					}
 					return null;

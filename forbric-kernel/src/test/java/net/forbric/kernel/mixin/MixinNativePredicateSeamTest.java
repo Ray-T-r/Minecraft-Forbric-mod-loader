@@ -37,7 +37,7 @@ class MixinNativePredicateSeamTest{
 	private static Inputs inputs()throws Exception{
 		Path base=Path.of(System.getProperty("forbric.predicateBase",TestFixtures.stagedBase().toString()));
 		TestFixtures.requireFiles(Fixture.STAGED,"hash-pinned native predicate base",base);
-		List<Path>jars=List.of(base,TestFixtures.stagedRoot().resolve(TestFixtures.NEO_CARRIER_JAR),TestFixtures.stagedRoot().resolve("forge-runtime/forge-runtime.jar"));
+		List<Path>jars=List.of(base,TestFixtures.stagedRoot().resolve(TestFixtures.NEO_CARRIER_JAR),TestFixtures.stagedRoot().resolve(TestFixtures.FORGE_CARRIER_JAR));
 		Function<String,byte[]>resource=name->{try{for(Path path:jars)try(ZipFile zip=new ZipFile(path.toFile())){var entry=zip.getEntry(name);if(entry!=null)return zip.getInputStream(entry).readAllBytes();}return null;}catch(java.io.IOException unavailable){throw new RuntimeException(unavailable);}};
 		NativeGameReferences refs=new NativeGameReferences(resource);
 		Path api=Path.of(System.getProperty("forbric.fabricApi",TestFixtures.fabricApi().toString()));TestFixtures.requireFiles(Fixture.STAGED,"actual Fabric API",api);ClassNode guest=null;

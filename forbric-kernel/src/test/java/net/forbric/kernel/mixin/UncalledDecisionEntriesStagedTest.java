@@ -57,7 +57,7 @@ class UncalledDecisionEntriesStagedTest {
 
 	private static Function<String, ClassNode> game() {
 		List<Path> jars = List.of(merged(), TestFixtures.stagedRoot().resolve(TestFixtures.NEO_CARRIER_JAR),
-				TestFixtures.stagedRoot().resolve("merged-base/forge-runtime-interop.jar"));
+				TestFixtures.stagedRoot().resolve(TestFixtures.FORGE_INTEROP_JAR));
 		Map<String, ClassNode> read = new HashMap<>();
 		return owner -> read.computeIfAbsent(owner, name -> {
 			for (Path jar : jars) {

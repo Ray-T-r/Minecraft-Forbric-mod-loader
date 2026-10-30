@@ -51,7 +51,7 @@ import net.forbric.kernel.TestFixtures;
 
 @ResourceLock("system-properties")
 class KernelForgeInternalSubscribersTest {
-    private static final Path FORGE = TestFixtures.stagedRoot().resolve("forge-runtime/forge-runtime.jar");
+    private static final Path FORGE = TestFixtures.stagedRoot().resolve(TestFixtures.FORGE_CARRIER_JAR);
     private static final String GROUP = "net/minecraftforge/eventbus/api/bus/BusGroup";
     private static final String LOGIC = KernelForgeInternalSubscribers.FML_LOGIC.replace('.', '/');
     private static final String CONTEXT = "net/minecraftforge/fml/ModLoadingContext";

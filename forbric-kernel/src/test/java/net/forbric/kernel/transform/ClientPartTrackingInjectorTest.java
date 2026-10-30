@@ -46,7 +46,7 @@ class ClientPartTrackingInjectorTest {
 	private static final Path MERGED = STAGED.resolve(TestFixtures.BASE_JAR);
 	private static final Path NEO = STAGED.resolve(TestFixtures.GENUINE_BASE_JAR);
 	private static final Path NEO_CARRIER = STAGED.resolve(TestFixtures.NEO_CARRIER_JAR);
-	private static final Path FORGE_CARRIER = STAGED.resolve("merged-base/forge-runtime-interop.jar");
+	private static final Path FORGE_CARRIER = STAGED.resolve(TestFixtures.FORGE_INTEROP_JAR);
 	private static final String CALLBACKS = ClientPartTrackingInjector.CALLBACKS_INTERNAL;
 	private static final String LEVEL = ClientPartTrackingInjector.LEVEL;
 	private static final String ENTITY = ClientPartTrackingInjector.ENTITY;

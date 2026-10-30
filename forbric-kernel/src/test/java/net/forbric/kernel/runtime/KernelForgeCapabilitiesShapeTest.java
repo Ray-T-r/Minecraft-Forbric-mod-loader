@@ -30,7 +30,7 @@ import org.objectweb.asm.tree.TypeInsnNode;
  */
 class KernelForgeCapabilitiesShapeTest {
 	private static final Path RUNTIME = Path.of(System.getProperty("forbric.testRuntimeClasses", "build/classes/java/runtime"));
-	private static final Path FORGE = TestFixtures.stagedRoot().resolve("forge-runtime/forge-runtime.jar");
+	private static final Path FORGE = TestFixtures.stagedRoot().resolve(TestFixtures.FORGE_CARRIER_JAR);
 	private static final Map<String, String> TWINS = Map.of(
 			"KernelForgeCapabilities$Entities", "net/minecraftforge/common/capabilities/CapabilityProvider$Entities",
 			"KernelForgeCapabilities$BlockEntities", "net/minecraftforge/common/capabilities/CapabilityProvider$BlockEntities",

@@ -51,9 +51,9 @@ import net.forbric.kernel.transform.ForgeOverlayNeuterInjector;
 class UncalledMethodCensusTest {
 	private static final Path STAGED = TestFixtures.stagedRoot();
 	private static final Path MERGED = STAGED.resolve(TestFixtures.BASE_JAR);
-	private static final Path INTEROP = STAGED.resolve("merged-base/forge-runtime-interop.jar");
+	private static final Path INTEROP = STAGED.resolve(TestFixtures.FORGE_INTEROP_JAR);
 	private static final Path NEO_RUNTIME = STAGED.resolve(TestFixtures.NEO_CARRIER_JAR);
-	private static final Path FORGE_RUNTIME = STAGED.resolve("forge-runtime/forge-runtime.jar");
+	private static final Path FORGE_RUNTIME = STAGED.resolve(TestFixtures.FORGE_CARRIER_JAR);
 	private static final Path VANILLA = TestFixtures.vanillaJar();
 	private static final Path FORGE = STAGED.resolve("forge-patched/patched-mc-forge-26.2.jar");
 	private static final Path NEOFORGE = STAGED.resolve(TestFixtures.GENUINE_BASE_JAR);

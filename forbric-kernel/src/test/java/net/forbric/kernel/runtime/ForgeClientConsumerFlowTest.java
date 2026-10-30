@@ -210,7 +210,7 @@ class ForgeClientConsumerFlowTest {
             defineInterface("net.minecraftforge.eventbus.internal.Event");
             defineInterface("net.minecraftforge.eventbus.api.bus.EventBus");
             defineUnusedInitializationEvent();
-            Path jar = TestFixtures.stagedRoot().resolve("forge-runtime/forge-runtime.jar");
+            Path jar = TestFixtures.stagedRoot().resolve(TestFixtures.FORGE_CARRIER_JAR);
             TestFixtures.requireFiles(Fixture.STAGED, "staged Forge carrier absent", jar);
             String binary = "net.minecraftforge.client.gui.ClientTooltipComponentManager";
             byte[] bytes = TestFixtures.requireEntry(Fixture.STAGED, jar, binary.replace('.', '/') + ".class");

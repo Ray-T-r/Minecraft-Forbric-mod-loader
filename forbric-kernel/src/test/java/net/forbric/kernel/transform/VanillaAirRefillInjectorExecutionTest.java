@@ -349,7 +349,7 @@ class VanillaAirRefillInjectorExecutionTest {
 
 	/** The game's class resources by path, as the chain hands them to the delivery bookkeeping. */
 	private static byte[] stagedResource(String path) {
-		for (String jar : List.of(TestFixtures.BASE_JAR, TestFixtures.NEO_CARRIER_JAR, "merged-base/forge-runtime-interop.jar")) {
+		for (String jar : List.of(TestFixtures.BASE_JAR, TestFixtures.NEO_CARRIER_JAR, TestFixtures.FORGE_INTEROP_JAR)) {
 			Path file = TestFixtures.stagedRoot().resolve(jar);
 			if (!Files.isRegularFile(file)) continue;
 			try (ZipFile z = new ZipFile(file.toFile())) {

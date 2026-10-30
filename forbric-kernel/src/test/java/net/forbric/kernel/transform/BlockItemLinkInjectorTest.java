@@ -36,7 +36,7 @@ import org.objectweb.asm.tree.analysis.BasicVerifier;
 class BlockItemLinkInjectorTest {
 	private static final Path STAGED = TestFixtures.stagedRoot();
 	private static final Path MERGED = STAGED.resolve(TestFixtures.BASE_JAR);
-	private static final Path FORGE_CARRIER = STAGED.resolve("merged-base/forge-runtime-interop.jar");
+	private static final Path FORGE_CARRIER = STAGED.resolve(TestFixtures.FORGE_INTEROP_JAR);
 	private static final Path FORGE_GAME = STAGED.resolve("forge-patched/patched-mc-forge-26.2.jar");
 	private static final String CALLBACKS = "net/minecraftforge/registries/GameData$ItemCallbacks";
 	private static final String ITEM = "net/minecraft/world/item/Item";

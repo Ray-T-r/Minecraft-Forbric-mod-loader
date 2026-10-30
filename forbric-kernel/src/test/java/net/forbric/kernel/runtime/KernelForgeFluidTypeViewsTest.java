@@ -139,7 +139,7 @@ class KernelForgeFluidTypeViewsTest {
 	private Class<?> runtime, entity, living;
 
 	private void load() throws Exception {
-		Path forgeRuntime = TestFixtures.stagedRoot().resolve("merged-base/forge-runtime-interop.jar");
+		Path forgeRuntime = TestFixtures.stagedRoot().resolve(TestFixtures.FORGE_INTEROP_JAR);
 		TestFixtures.requireFiles(Fixture.STAGED,
 				"MinecraftForge's patched game or its runtime is absent", FORGE_PATCHED, forgeRuntime);
 		// The client extensions a mod's type gives take JOML's vectors, as MinecraftForge's do.

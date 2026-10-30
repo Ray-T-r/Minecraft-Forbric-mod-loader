@@ -135,7 +135,7 @@ class ForgeSpawnPlacementsInjectorTest {
 		assertNotNull(named(data, "<init>", "(" + height + placement + predicate + ")V"));
 		for (Ecosystem family : List.of(Ecosystem.FORGE, Ecosystem.NEOFORGE)) {
 			String owner = ForeignType.SPAWN_PLACEMENT_EVENT.internal(family);
-			String jar = family == Ecosystem.FORGE ? "forge-runtime/forge-runtime.jar" : TestFixtures.NEO_CARRIER_JAR;
+			String jar = family == Ecosystem.FORGE ? TestFixtures.FORGE_CARRIER_JAR : TestFixtures.NEO_CARRIER_JAR;
 			ClassNode event = parse(staged(jar, owner)); field(event, "map", "Ljava/util/Map;", false);
 			assertTrue((named(event, "<init>", "(Ljava/util/Map;)V").access & Opcodes.ACC_PUBLIC) != 0);
 			ClassNode merged = parse(staged(jar, owner + "$MergedSpawnPredicate"));

@@ -78,7 +78,7 @@ import net.forbric.kernel.mixin.MergedBaseCalleeSwaps;
 class MergedBaseCalleeSwapTest {
 	private static final Path RUN = TestFixtures.stagedRoot();
 	private static final Path MERGED = RUN.resolve(TestFixtures.BASE_JAR);
-	private static final Path FORGE_RT = RUN.resolve("forge-runtime/forge-runtime.jar");
+	private static final Path FORGE_RT = RUN.resolve(TestFixtures.FORGE_CARRIER_JAR);
 	private static final Path NEO_RT = RUN.resolve(TestFixtures.NEO_CARRIER_JAR);
 	private static final Path FORGE_PATCHED = TestFixtures.forgeMergeInput();
 	private static final Path NEO_PATCHED = RUN.resolve(TestFixtures.GENUINE_BASE_JAR);

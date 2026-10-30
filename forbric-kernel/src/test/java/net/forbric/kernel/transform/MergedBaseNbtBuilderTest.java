@@ -38,7 +38,7 @@ import net.forbric.kernel.TestFixtures.Fixture;
  */
 class MergedBaseNbtBuilderTest {
 	private static final Path MERGED_BASE = TestFixtures.stagedBase();
-	private static final Path FORGE_RUNTIME = TestFixtures.stagedRoot().resolve("forge-runtime/forge-runtime.jar");
+	private static final Path FORGE_RUNTIME = TestFixtures.stagedRoot().resolve(TestFixtures.FORGE_CARRIER_JAR);
 	private static final String COMPOUND_TAG = "net/minecraft/nbt/CompoundTag";
 	private static final String BUILDER = "net/minecraftforge/common/util/INBTBuilder$Builder";
 	private static final String DESC = "()L" + BUILDER + ";";

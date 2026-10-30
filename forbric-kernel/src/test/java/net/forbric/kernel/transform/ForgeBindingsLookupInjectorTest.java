@@ -59,7 +59,7 @@ import net.forbric.kernel.TestFixtures.Fixture;
  * the first test here asserts the service declaration, not the bytecode.
  */
 class ForgeBindingsLookupInjectorTest {
-	private static final Path FORGE_RUNTIME = TestFixtures.stagedRoot().resolve("forge-runtime/forge-runtime.jar");
+	private static final Path FORGE_RUNTIME = TestFixtures.stagedRoot().resolve(TestFixtures.FORGE_CARRIER_JAR);
 
 	private static final String BINDINGS = "net.minecraftforge.fml.Bindings";
 	private static final String SERVICE_FILE = "META-INF/services/net.minecraftforge.fml.IBindingsProvider";

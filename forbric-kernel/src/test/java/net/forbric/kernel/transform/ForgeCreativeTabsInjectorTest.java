@@ -116,7 +116,7 @@ class ForgeCreativeTabsInjectorTest {
 	}
 
 	@Test void realCarriersPreserveTheParentAndSearchVisibilityUnion() throws Exception {
-		ClassNode forge = parse(staged("forge-runtime/forge-runtime.jar", FORGE));
+		ClassNode forge = parse(staged(TestFixtures.FORGE_CARRIER_JAR, FORGE));
 		ClassNode neo = parse(staged(TestFixtures.NEO_CARRIER_JAR, NEO));
 		MethodNode forgeHook = named(forge, HOOK, DESC);
 		MethodNode neoHook = named(neo, HOOK, DESC);
@@ -153,7 +153,7 @@ class ForgeCreativeTabsInjectorTest {
 		}
 		assertEquals(List.of("PARENT_TAB_ONLY", "SEARCH_TAB_ONLY"), emitted);
 		assertEquals(2, outputs, "Neo's separate parent/search emissions must both enter Forge's collector");
-		ClassNode map = parse(staged("forge-runtime/forge-runtime.jar", "net/minecraftforge/common/util/MutableHashedLinkedMap"));
+		ClassNode map = parse(staged(TestFixtures.FORGE_CARRIER_JAR, "net/minecraftforge/common/util/MutableHashedLinkedMap"));
 		MethodNode put = named(map, "put", "(Ljava/lang/Object;Ljava/lang/Object;)Ljava/lang/Object;");
 		assertTrue(java.util.Arrays.stream(put.instructions.toArray()).anyMatch(i -> i instanceof MethodInsnNode c
 				&& c.owner.equals("net/minecraftforge/common/util/MutableHashedLinkedMap$MergeFunction") && c.name.equals("apply")),

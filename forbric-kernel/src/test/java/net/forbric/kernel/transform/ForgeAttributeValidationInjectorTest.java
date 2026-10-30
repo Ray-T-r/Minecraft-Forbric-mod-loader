@@ -22,7 +22,7 @@ import net.forbric.kernel.TestFixtures.Fixture;
 @ResourceLock("system-properties")
 class ForgeAttributeValidationInjectorTest {
 	private static final Path FORGE = TestFixtures.stagedRoot()
-			.resolve("forge-runtime/forge-runtime.jar");
+			.resolve(TestFixtures.FORGE_CARRIER_JAR);
 
 	@AfterEach void reset() { System.clearProperty(ForgeAttributeValidationInjector.PROPERTY); }
 

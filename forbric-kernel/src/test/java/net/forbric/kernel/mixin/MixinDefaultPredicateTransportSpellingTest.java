@@ -58,7 +58,7 @@ class MixinDefaultPredicateTransportSpellingTest {
 				TransportSpellings.fabricMixin("fabric-rendering-fluids-v1", "net/fabricmc/fabric/mixin/client/rendering/fluid/FluidRendererMixin"));
 		ZipFile game = open(TransportSpellings.mergedBase());
 		ZipFile neo = open(TestFixtures.stagedRoot().resolve(TestFixtures.NEO_CARRIER_JAR));
-		ZipFile forge = open(TestFixtures.stagedRoot().resolve("forge-runtime/forge-runtime.jar"));
+		ZipFile forge = open(TestFixtures.stagedRoot().resolve(TestFixtures.FORGE_CARRIER_JAR));
 		NativeGameReferences references = new NativeGameReferences(name -> read(game, name));
 		ClassNode host = references.get(Ecosystem.FABRIC, HOST);
 		TestFixtures.require(Fixture.STAGED, host != null, "the hash-pinned native " + HOST + " the merged base indexes");

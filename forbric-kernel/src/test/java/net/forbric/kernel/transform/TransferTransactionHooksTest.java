@@ -178,7 +178,7 @@ class TransferTransactionHooksTest {
 		assertSame(original, transformer.transform("net.minecraft.world.level.block.entity.ChestBlockEntity", original, null));
 	}
 	@Test void standardForgeCertificateRejectsInjectedBehaviorEvenIfClassNameIsUnchanged() throws Exception {
-		Path forge = TestFixtures.stagedRoot().resolve("forge-runtime/forge-runtime.jar");
+		Path forge = TestFixtures.stagedRoot().resolve(TestFixtures.FORGE_CARRIER_JAR);
 		for (String name : List.of("net.minecraftforge.items.ItemStackHandler", "net.minecraftforge.fluids.capability.templates.FluidTank")) {
 			byte[] original = bytes(forge, name);
 			byte[] approved = ForgeTransferShapeAudit.certify(name, original);
@@ -201,7 +201,7 @@ class TransferTransactionHooksTest {
 		// The game classes the audit proves a merge delegate against, as KernelMixinBootstrap hands them over.
 		try (StagedGameClasses game = StagedGameClasses.open()) {
 			for (String name : helpers) {
-				Path jar = name.startsWith("net.minecraftforge.") ? stage.resolve("forge-runtime/forge-runtime.jar")
+				Path jar = name.startsWith("net.minecraftforge.") ? stage.resolve(TestFixtures.FORGE_CARRIER_JAR)
 						: name.startsWith("net.neoforged.") ? stage.resolve(TestFixtures.NEO_CARRIER_JAR)
 						: stage.resolve(TestFixtures.BASE_JAR);
 				byte[] approved = ForgeTransferShapeAudit.certify(name, bytes(jar, name), game.resources());
@@ -215,7 +215,7 @@ class TransferTransactionHooksTest {
 	 */
 	@Test void forgeEnergyStorageCertificateCoversItsWholeTransferContract() throws Exception {
 		String name = "net.minecraftforge.energy.EnergyStorage";
-		byte[] original = bytes(TestFixtures.stagedRoot().resolve("forge-runtime/forge-runtime.jar"), name);
+		byte[] original = bytes(TestFixtures.stagedRoot().resolve(TestFixtures.FORGE_CARRIER_JAR), name);
 		assertTrue(ForgeTransferShapeAudit.ENERGY_HELPERS.contains(name));
 		assertTrue(node(ForgeTransferShapeAudit.certify(name, original)).methods.stream().anyMatch(method -> method.name.equals(ForgeTransferShapeAudit.MARKER)));
 		for (String changedMethod : List.of("receiveEnergy", "extractEnergy", "getEnergyStored", "getMaxEnergyStored", "canReceive", "canExtract", "<init>")) {

@@ -33,7 +33,7 @@ import net.forbric.kernel.TestFixtures.Fixture;
 /** Real carrier bytecode: the two Forge builder repairs, the two splices into NeoForge's pass, and the switch. */
 class ForgeWorldModifierInjectorTest {
 	private static final Path RUN = TestFixtures.stagedRoot();
-	private static final Path FORGE = RUN.resolve("forge-runtime/forge-runtime.jar");
+	private static final Path FORGE = RUN.resolve(TestFixtures.FORGE_CARRIER_JAR);
 	private static final Path NEO = RUN.resolve(TestFixtures.NEO_CARRIER_JAR);
 	private static final Path MERGED = RUN.resolve(TestFixtures.BASE_JAR);
 	private static final String SPAWN_BUILDER = "net/minecraftforge/common/world/MobSpawnSettingsBuilder";
