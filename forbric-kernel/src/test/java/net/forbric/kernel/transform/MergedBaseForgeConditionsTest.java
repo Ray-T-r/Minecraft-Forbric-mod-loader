@@ -399,7 +399,7 @@ class MergedBaseForgeConditionsTest {
 	}
 
 	private static byte[] conditionalOps() throws Exception {
-		return TestFixtures.requireEntry(Fixture.STAGED, STAGED.resolve("neoforge-runtime/neoforge-runtime.jar"), CONDITIONAL_OPS_ENTRY);
+		return TestFixtures.requireEntry(Fixture.STAGED, STAGED.resolve(TestFixtures.NEO_CARRIER_JAR), CONDITIONAL_OPS_ENTRY);
 	}
 
 	/** The kernel calls right before the factory's only exit, in order. */

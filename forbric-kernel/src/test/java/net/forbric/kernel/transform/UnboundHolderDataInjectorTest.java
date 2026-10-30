@@ -37,7 +37,7 @@ import org.objectweb.asm.tree.VarInsnNode;
 class UnboundHolderDataInjectorTest {
 	private static final Path RUN = TestFixtures.stagedRoot();
 	private static final Path MERGED = RUN.resolve(TestFixtures.BASE_JAR);
-	private static final Path NEO = RUN.resolve("neoforge-runtime/neoforge-runtime.jar");
+	private static final Path NEO = RUN.resolve(TestFixtures.NEO_CARRIER_JAR);
 	private static final String REFERENCE = UnboundHolderDataInjector.OWNER;
 
 	@AfterEach void reset() { System.clearProperty(UnboundHolderDataInjector.PROPERTY); }

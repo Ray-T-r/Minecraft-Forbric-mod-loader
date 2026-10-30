@@ -366,7 +366,7 @@ class GuestInjectorPrunerSpellingTest {
 		Function<String, ClassNode> classes = owner -> {
 			try {
 				if (owner.equals("net/neoforged/neoforge/common/tooltip/ItemTooltipHandler")) {
-					byte[] bytes = readFromJar(TestFixtures.stagedRoot().resolve("neoforge-runtime/neoforge-runtime.jar"), owner + ".class");
+					byte[] bytes = readFromJar(TestFixtures.stagedRoot().resolve(TestFixtures.NEO_CARRIER_JAR), owner + ".class");
 					return bytes == null ? null : read(new NeoTooltipAppendersInjector().transform(owner.replace('/', '.'), bytes, null));
 				}
 				if (owner.equals("net/fabricmc/fabric/impl/item/ItemComponentTooltipProviderRegistryImpl")) {

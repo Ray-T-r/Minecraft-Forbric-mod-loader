@@ -36,7 +36,7 @@ import net.forbric.kernel.TestFixtures.Fixture;
 class MergedBaseCapabilityLinkTest {
 	private static final Path MERGED = TestFixtures.stagedBase();
 	private static final Path FORGE = TestFixtures.stagedRoot().resolve("forge-runtime/forge-runtime.jar");
-	private static final Path NEO = TestFixtures.stagedRoot().resolve("neoforge-runtime/neoforge-runtime.jar");
+	private static final Path NEO = TestFixtures.stagedRoot().resolve(TestFixtures.NEO_CARRIER_JAR);
 	private static final Set<String> NAMES = Set.of("getCapability", "invalidateCaps", "reviveCaps", "gatherCapabilities",
 			"getCapabilities", "serializeCaps", "deserializeCaps", "initCapabilities", "initInternal", "serializeInternal",
 			"deserializeInternal", "writeCapsToNBT", "readCapsFromNBT");

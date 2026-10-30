@@ -21,7 +21,7 @@ import static org.junit.jupiter.api.Assertions.*;
 
 class TransferTransactionHooksTest {
 	private static Path neo() {
-		return TestFixtures.stagedRoot().resolve("neoforge-runtime/neoforge-runtime.jar");
+		return TestFixtures.stagedRoot().resolve(TestFixtures.NEO_CARRIER_JAR);
 	}
 	private static Path fabric() throws Exception {
 		Path modules = Path.of("build/transfer-api-compile");
@@ -202,7 +202,7 @@ class TransferTransactionHooksTest {
 		try (StagedGameClasses game = StagedGameClasses.open()) {
 			for (String name : helpers) {
 				Path jar = name.startsWith("net.minecraftforge.") ? stage.resolve("forge-runtime/forge-runtime.jar")
-						: name.startsWith("net.neoforged.") ? stage.resolve("neoforge-runtime/neoforge-runtime.jar")
+						: name.startsWith("net.neoforged.") ? stage.resolve(TestFixtures.NEO_CARRIER_JAR)
 						: stage.resolve(TestFixtures.BASE_JAR);
 				byte[] approved = ForgeTransferShapeAudit.certify(name, bytes(jar, name), game.resources());
 				assertTrue(node(approved).methods.stream().anyMatch(method -> method.name.equals(ForgeTransferShapeAudit.MARKER)), name);

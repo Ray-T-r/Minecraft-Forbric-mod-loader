@@ -69,7 +69,7 @@ import net.forbric.kernel.metadata.forge.FmlConfigElements;
  */
 class FmlTomlShapeOracleTest {
 	private static final Path RUN = TestFixtures.stagedRoot().normalize();
-	private static final Path NEO_CARRIER = RUN.resolve("neoforge-runtime/neoforge-runtime.jar");
+	private static final Path NEO_CARRIER = RUN.resolve(TestFixtures.NEO_CARRIER_JAR);
 	private static final Path FORGE_CARRIER = RUN.resolve("merged-base/forge-runtime-interop.jar");
 
 	private static final String NEO_WRAPPER = "net.neoforged.fml.loading.moddiscovery.NightConfigWrapper";

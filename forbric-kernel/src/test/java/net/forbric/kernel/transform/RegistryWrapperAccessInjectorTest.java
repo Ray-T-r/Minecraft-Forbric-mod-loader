@@ -64,7 +64,7 @@ import org.objectweb.asm.tree.TypeInsnNode;
 class RegistryWrapperAccessInjectorTest {
 	private static final Path STAGED = TestFixtures.stagedRoot();
 	private static final Path MERGED = STAGED.resolve(TestFixtures.BASE_JAR);
-	private static final Path NEO_CARRIER = STAGED.resolve("neoforge-runtime/neoforge-runtime.jar");
+	private static final Path NEO_CARRIER = STAGED.resolve(TestFixtures.NEO_CARRIER_JAR);
 	private static final Path FORGE_CARRIER = STAGED.resolve("merged-base/forge-runtime-interop.jar");
 	private static final String REGISTRY = "net/minecraft/core/Registry";
 	private static final String WRAPPER = "net/minecraftforge/registries/NamespacedWrapper";

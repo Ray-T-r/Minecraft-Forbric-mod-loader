@@ -18,7 +18,7 @@ class RuntimeMixinConfigsTest {
 	private static final Path STAGED = TestFixtures.stagedRoot();
 
 	@Test void neoForgesRuntimeJarContributesItsOwnAccessorConfig() {
-		Path neo = STAGED.resolve("neoforge-runtime/neoforge-runtime.jar");
+		Path neo = STAGED.resolve(TestFixtures.NEO_CARRIER_JAR);
 		TestFixtures.requireFile(Fixture.STAGED, neo, "staged NeoForge runtime absent");
 		List<KernelForgeFamilyMixins.ForgeMixinConfig> configs = KernelBoot.discoverForgeMixinConfigs(List.of(neo), "runtime jar");
 		assertEquals(List.of(new KernelForgeFamilyMixins.ForgeMixinConfig("neoforge.mixins.json", "neoforge", neo, Ecosystem.NEOFORGE)), configs);

@@ -67,7 +67,7 @@ class RegistrationEventStepsTest {
 	private static final String REGISTRY_MANAGER = RegistrationEventSteps.DATA_MAPS.owner();
 	private static final String POI = "net/neoforged/neoforge/common/world/poi/PoiTypeExtender";
 	private static final Path NEOFORGE_RUNTIME =
-			TestFixtures.stagedRoot().resolve("neoforge-runtime/neoforge-runtime.jar").normalize();
+			TestFixtures.stagedRoot().resolve(TestFixtures.NEO_CARRIER_JAR).normalize();
 
 	@BeforeEach
 	@AfterEach

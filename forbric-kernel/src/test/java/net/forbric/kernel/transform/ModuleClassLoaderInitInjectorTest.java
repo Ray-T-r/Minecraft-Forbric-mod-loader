@@ -61,7 +61,7 @@ import net.forbric.kernel.mixin.MixinWeaverSlot;
  */
 @ExecutesInjector(ModuleClassLoaderInitInjector.class)
 class ModuleClassLoaderInitInjectorTest {
-	private static final Path CARRIER = TestFixtures.stagedRoot().resolve("neoforge-runtime/neoforge-runtime.jar");
+	private static final Path CARRIER = TestFixtures.stagedRoot().resolve(TestFixtures.NEO_CARRIER_JAR);
 	private static final String INTERNAL = "net/neoforged/fml/classloading/ModuleClassLoader";
 	/** The guarded lookup the repair keys on: it catches three reflective failures, not the module system's refusal. */
 	private static final String STAND_IN = """

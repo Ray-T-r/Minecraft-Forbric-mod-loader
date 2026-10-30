@@ -117,7 +117,7 @@ class ForgeCreativeTabsInjectorTest {
 
 	@Test void realCarriersPreserveTheParentAndSearchVisibilityUnion() throws Exception {
 		ClassNode forge = parse(staged("forge-runtime/forge-runtime.jar", FORGE));
-		ClassNode neo = parse(staged("neoforge-runtime/neoforge-runtime.jar", NEO));
+		ClassNode neo = parse(staged(TestFixtures.NEO_CARRIER_JAR, NEO));
 		MethodNode forgeHook = named(forge, HOOK, DESC);
 		MethodNode neoHook = named(neo, HOOK, DESC);
 		assertNotNull(forgeHook); assertNotNull(neoHook);

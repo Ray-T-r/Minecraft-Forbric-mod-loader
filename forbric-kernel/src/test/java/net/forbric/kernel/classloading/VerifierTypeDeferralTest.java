@@ -330,7 +330,7 @@ class VerifierTypeDeferralTest {
 		TestFixtures.requireFiles(Fixture.THIRD_PARTY, "a mod whose config plugins reach its platform provider", mod);
 		Path staged = TestFixtures.stagedRoot();
 		Path merged = staged.resolve(TestFixtures.BASE_JAR);
-		Path neoforge = staged.resolve("neoforge-runtime/neoforge-runtime.jar");
+		Path neoforge = staged.resolve(TestFixtures.NEO_CARRIER_JAR);
 		Path forge = staged.resolve("forge-runtime/forge-runtime.jar");
 		TestFixtures.requireFiles(Fixture.STAGED, "the merged game the provider names", merged, neoforge, forge);
 		URL[] owned = {mod.toUri().toURL(), merged.toUri().toURL(), neoforge.toUri().toURL(), forge.toUri().toURL()};

@@ -49,7 +49,7 @@ import net.forbric.kernel.TestFixtures.Fixture;
 @org.junit.jupiter.api.parallel.ResourceLock("system-properties")
 class ModelFormatFunnelInjectorTest {
 	private static final Path STAGED = TestFixtures.stagedRoot();
-	private static final Path NEO_CARRIER = STAGED.resolve("neoforge-runtime/neoforge-runtime.jar");
+	private static final Path NEO_CARRIER = STAGED.resolve(TestFixtures.NEO_CARRIER_JAR);
 	private static final String ENTRY = ModelFormatFunnelInjector.TARGET + ".class";
 	private static final String BINARY = ModelFormatFunnelInjector.TARGET.replace('/', '.');
 

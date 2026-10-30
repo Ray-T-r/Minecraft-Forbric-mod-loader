@@ -110,7 +110,7 @@ class KernelConditionKillSwitchesTest {
 		Path compiled = Path.of(System.getProperty("user.dir"), "build", "classes", "java", "runtime").normalize();
 		Path run = TestFixtures.stagedRoot();
 		Path forgeRt = run.resolve("forge-runtime/forge-runtime.jar");
-		Path neoRt = run.resolve("neoforge-runtime/neoforge-runtime.jar");
+		Path neoRt = run.resolve(TestFixtures.NEO_CARRIER_JAR);
 		Path merged = run.resolve(TestFixtures.BASE_JAR);
 		TestFixtures.requireFiles(Fixture.STAGED,
 				"the staged artifacts are absent", forgeRt, neoRt, merged);

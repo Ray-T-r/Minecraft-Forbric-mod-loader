@@ -33,7 +33,7 @@ class DeliveryBookkeepingStagedTest {
 		Path root = TestFixtures.stagedRoot().normalize();
 		Path forge = root.resolve("merged-base/forge-runtime-interop.jar");
 		if (!Files.isRegularFile(forge)) forge = root.resolve("forge-runtime/forge-runtime.jar");
-		return List.of(root.resolve(TestFixtures.BASE_JAR), forge, root.resolve("neoforge-runtime/neoforge-runtime.jar"));
+		return List.of(root.resolve(TestFixtures.BASE_JAR), forge, root.resolve(TestFixtures.NEO_CARRIER_JAR));
 	}
 
 	/** The game's resources as the kernel reads them at boot: the merged base first, then the two carriers. */

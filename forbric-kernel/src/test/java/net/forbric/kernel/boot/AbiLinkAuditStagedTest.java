@@ -39,7 +39,7 @@ class AbiLinkAuditStagedTest {
 	void theStagedClientPackHasNoDanglingForgeFamilyReference() throws Exception {
 		Path mods = Path.of(System.getProperty("user.dir"), "run", "client-merged-pack", "mods").normalize();
 		Path run = TestFixtures.stagedRoot().normalize();
-		List<Path> against = List.of(run.resolve("forge-runtime/forge-runtime.jar"), run.resolve("neoforge-runtime/neoforge-runtime.jar"),
+		List<Path> against = List.of(run.resolve("forge-runtime/forge-runtime.jar"), run.resolve(TestFixtures.NEO_CARRIER_JAR),
 				run.resolve(TestFixtures.BASE_JAR));
 		TestFixtures.requireFiles(Fixture.STAGED, "staged pack or carriers absent", against.toArray(Path[]::new));
 		TestFixtures.require(Fixture.THIRD_PARTY, Files.isDirectory(mods), "staged pack or carriers absent");

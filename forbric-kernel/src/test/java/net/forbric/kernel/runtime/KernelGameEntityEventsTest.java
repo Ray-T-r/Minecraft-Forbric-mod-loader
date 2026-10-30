@@ -101,7 +101,7 @@ class KernelGameEntityEventsTest {
 		Path compiled = Path.of(System.getProperty("user.dir"), "build", "classes", "java", "runtime").normalize();
 		Path run = TestFixtures.stagedRoot();
 		Path forgeRt = run.resolve("forge-runtime/forge-runtime.jar");
-		Path neoRt = run.resolve("neoforge-runtime/neoforge-runtime.jar");
+		Path neoRt = run.resolve(TestFixtures.NEO_CARRIER_JAR);
 		TestFixtures.requireFiles(Fixture.STAGED, "the staged carriers are absent", forgeRt, neoRt);
 		TestFixtures.require(Fixture.GAME_SIDE, Files.isDirectory(compiled), "the game-side set is not compiled");
 		List<URL> urls = new ArrayList<>(List.of(compiled.toUri().toURL(), forgeRt.toUri().toURL(),

@@ -197,7 +197,7 @@ class SupersededMixinsTest {
 	 */
 	@Test
 	void theProofMatchesWhatTheRealRepairWritesIntoTheRealClass() throws Exception {
-		Path carrier = TestFixtures.stagedRoot().resolve("neoforge-runtime/neoforge-runtime.jar").normalize();
+		Path carrier = TestFixtures.stagedRoot().resolve(TestFixtures.NEO_CARRIER_JAR).normalize();
 		TestFixtures.requireFile(Fixture.STAGED, carrier, "staged NeoForge carrier absent");
 		byte[] original;
 		try (var zip = new java.util.zip.ZipFile(carrier.toFile())) {

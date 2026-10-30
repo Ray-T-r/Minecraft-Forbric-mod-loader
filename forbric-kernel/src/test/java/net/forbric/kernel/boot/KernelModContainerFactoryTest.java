@@ -50,7 +50,7 @@ import org.objectweb.asm.tree.MethodNode;
  */
 class KernelModContainerFactoryTest {
 	private static final Path NEOFORGE =
-			TestFixtures.stagedRoot().resolve("neoforge-runtime/neoforge-runtime.jar").normalize();
+			TestFixtures.stagedRoot().resolve(TestFixtures.NEO_CARRIER_JAR).normalize();
 	private static final Path FORGE = TestFixtures.stagedRoot().resolve("forge-runtime/forge-runtime.jar").normalize();
 
 	/** The four types the factory resolves by name, and the visibility its typed use of them needs. */

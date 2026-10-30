@@ -31,7 +31,7 @@ class KernelCompostablesTest {
 		Path compiled = Path.of(System.getProperty("user.dir"), "build", "classes", "java", "runtime").normalize();
 		Path fastutil = TestFixtures.minecraftDir().resolve("libraries/it/unimi/dsi/fastutil/8.5.18/fastutil-8.5.18.jar");
 		Path run = TestFixtures.stagedRoot();
-		Path merged = run.resolve(TestFixtures.BASE_JAR), neoRt = run.resolve("neoforge-runtime/neoforge-runtime.jar");
+		Path merged = run.resolve(TestFixtures.BASE_JAR), neoRt = run.resolve(TestFixtures.NEO_CARRIER_JAR);
 		TestFixtures.require(Fixture.STAGED, Files.isRegularFile(merged) && Files.isRegularFile(neoRt), "the staged game required");
 		TestFixtures.require(Fixture.GAME_SIDE, Files.isDirectory(compiled), "game-side classes required");
 		TestFixtures.require(Fixture.MC_LIBRARIES, Files.isRegularFile(fastutil), "fastutil required: " + fastutil);

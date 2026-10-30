@@ -47,7 +47,7 @@ import net.forbric.kernel.TestFixtures.Fixture;
  * overlay stack before each of its returns, and that no {@code add} overload is routed any more.
  */
 class HudElementBridgeInjectorTest {
-	private static final Path NEOFORGE_RUNTIME = TestFixtures.stagedRoot().resolve("neoforge-runtime/neoforge-runtime.jar");
+	private static final Path NEOFORGE_RUNTIME = TestFixtures.stagedRoot().resolve(TestFixtures.NEO_CARRIER_JAR);
 
 	private static final String TARGET = "net.neoforged.neoforge.client.gui.GuiLayerManager";
 	private static final String ENTRY = "net/neoforged/neoforge/client/gui/GuiLayerManager.class";

@@ -37,7 +37,7 @@ class BarrelRollCameraAdapterTest {
 		assertEquals(MixinCameraRollAdapter.SHORT,MixinFit.value(MixinFit.atNodes(MixinFit.injectorOf(handler(mixin,"doABarrelRoll$addRoll1"))).getFirst(),"target"));
 	}
     private static ClassNode nativeCamera(){try{return read(Fixture.MC_LIBRARIES,TestFixtures.vanillaJar(),MixinCameraRollAdapter.CAMERA);}catch(Exception invalid){return null;}}
-    private static ClassNode event(){try{return read(Fixture.STAGED,TestFixtures.stagedRoot().resolve("neoforge-runtime/neoforge-runtime.jar"),"net/neoforged/neoforge/client/event/ViewportEvent$ComputeCameraAngles");}catch(Exception invalid){return null;}}
+    private static ClassNode event(){try{return read(Fixture.STAGED,TestFixtures.stagedRoot().resolve(TestFixtures.NEO_CARRIER_JAR),"net/neoforged/neoforge/client/event/ViewportEvent$ComputeCameraAngles");}catch(Exception invalid){return null;}}
 
 	private static void check(ClassNode n,String name,String target,int ordinal){AnnotationNode at=MixinFit.atNodes(MixinFit.injectorOf(handler(n,name))).getFirst();assertEquals(target,MixinFit.value(at,"target"));assertEquals(ordinal,MixinFit.value(at,"ordinal"));}
 	private static MethodNode handler(ClassNode n,String name){return n.methods.stream().filter(m->m.name.equals(name)).findFirst().orElseThrow();}

@@ -62,7 +62,7 @@ class ModsButtonRedirectorTest {
 	 * all — it is in the runtime jar. So these tests FIND the carriers the same way the transformer does, by
 	 * marker, across both staged jars, and then assert against whatever they turn out to be.
 	 */
-	private static final Path NEO_RUNTIME = TestFixtures.stagedRoot().resolve("neoforge-runtime/neoforge-runtime.jar");
+	private static final Path NEO_RUNTIME = TestFixtures.stagedRoot().resolve(TestFixtures.NEO_CARRIER_JAR);
 
 	private static final String PAUSE = "net/minecraft/client/gui/screens/PauseScreen";
 	private static final String NEO = ForeignType.MOD_LIST_SCREEN.internal(Ecosystem.NEOFORGE);

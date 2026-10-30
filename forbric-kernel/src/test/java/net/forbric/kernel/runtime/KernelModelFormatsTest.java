@@ -65,7 +65,7 @@ import net.forbric.kernel.transform.ModelFormatFunnelInjector;
 class KernelModelFormatsTest {
 	private static final Path STAGED = TestFixtures.stagedRoot();
 	private static final Path MERGED_BASE = STAGED.resolve(TestFixtures.BASE_JAR);
-	private static final Path NEO_CARRIER = STAGED.resolve("neoforge-runtime/neoforge-runtime.jar");
+	private static final Path NEO_CARRIER = STAGED.resolve(TestFixtures.NEO_CARRIER_JAR);
 	/** The merged base names MinecraftForge types in signatures, so reflecting on it needs this carrier too. */
 	private static final Path FORGE_CARRIER = STAGED.resolve("forge-runtime/forge-runtime.jar");
 	/** The fabric-api jar build.gradle compiles the game side's transfer bridge against, found the same way. */

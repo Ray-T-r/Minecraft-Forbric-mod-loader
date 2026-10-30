@@ -46,7 +46,7 @@ import net.forbric.kernel.TestFixtures.Fixture;
 class ModsButtonRedirectorExecutionTest {
 	private static final String MENU = "fixture.Menu";
 	private static final Path MERGED_BASE = TestFixtures.stagedBase();
-	private static final Path NEO_RUNTIME = TestFixtures.stagedRoot().resolve("neoforge-runtime/neoforge-runtime.jar");
+	private static final Path NEO_RUNTIME = TestFixtures.stagedRoot().resolve(TestFixtures.NEO_CARRIER_JAR);
 	private static final String NEO = ForeignType.MOD_LIST_SCREEN.internal(Ecosystem.NEOFORGE);
 	private static final String FORGE = ForeignType.MOD_LIST_SCREEN.internal(Ecosystem.FORGE);
 

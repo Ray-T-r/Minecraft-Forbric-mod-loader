@@ -33,7 +33,7 @@ class CarpetMixinAdapterTest {
 	}
 	static Path jarOf(String name) {
 		Path root=TestFixtures.stagedRoot();
-		return root.resolve(name.startsWith("net/minecraftforge/")?"forge-runtime/forge-runtime.jar":name.startsWith("net/neoforged/")?"neoforge-runtime/neoforge-runtime.jar":TestFixtures.BASE_JAR);
+		return root.resolve(name.startsWith("net/minecraftforge/")?"forge-runtime/forge-runtime.jar":name.startsWith("net/neoforged/")?TestFixtures.NEO_CARRIER_JAR:TestFixtures.BASE_JAR);
 	}
 	static ClassNode target(String name) {
         try{

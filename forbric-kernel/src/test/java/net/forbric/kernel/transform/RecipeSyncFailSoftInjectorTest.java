@@ -26,7 +26,7 @@ import net.forbric.kernel.TestFixtures.Fixture;
 @ResourceLock("system-properties")
 class RecipeSyncFailSoftInjectorTest {
 	private static final Path NEOFORGE_RUNTIME = TestFixtures.stagedRoot()
-			.resolve("neoforge-runtime/neoforge-runtime.jar");
+			.resolve(TestFixtures.NEO_CARRIER_JAR);
 	private static final String HOOKS = "net/neoforged/neoforge/common/CommonHooks";
 
 	@AfterEach void reset() { System.clearProperty(RecipeSyncFailSoftInjector.PROPERTY); }

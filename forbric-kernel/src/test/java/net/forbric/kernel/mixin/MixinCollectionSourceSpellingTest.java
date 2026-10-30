@@ -238,7 +238,7 @@ class MixinCollectionSourceSpellingTest {
 
 		static Real open() throws Exception {
 			Path base = TestFixtures.stagedBase();
-			Path neo = TestFixtures.stagedRoot().resolve("neoforge-runtime/neoforge-runtime.jar");
+			Path neo = TestFixtures.stagedRoot().resolve(TestFixtures.NEO_CARRIER_JAR);
 			Path api = TestFixtures.fabricApi();
 			TestFixtures.requireFiles(TestFixtures.Fixture.STAGED, "staged merged base, NeoForge runtime and the actual Fabric API", base, neo, api);
 			Map<String, byte[]> cache = new HashMap<>();

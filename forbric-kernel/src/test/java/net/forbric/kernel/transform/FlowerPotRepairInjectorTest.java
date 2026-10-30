@@ -32,7 +32,7 @@ class FlowerPotRepairInjectorTest {
 	private static final String FULL_POT = "(L" + FlowerPotRepairInjector.BLOCK + ";)L" + FlowerPotRepairInjector.BLOCK + ";";
 
 	@Test void onTheMergedBaseAllThreeEditsLand() throws Exception {
-		Path merged = TestFixtures.stagedRoot().resolve("merged-base/patched-mc-merged-26.2.jar");
+		Path merged = TestFixtures.stagedRoot().resolve(TestFixtures.MERGED_BASE_JAR);
 		byte[] original = NativeCoremodParityTest.read(merged, POT);
 		ClassNode pot = node(new FlowerPotRepairInjector().transform(FlowerPotRepairInjector.TARGET, original, null));
 		assertTrue(storesThePlant(pot), "the vanilla-shaped constructor stores its plant");

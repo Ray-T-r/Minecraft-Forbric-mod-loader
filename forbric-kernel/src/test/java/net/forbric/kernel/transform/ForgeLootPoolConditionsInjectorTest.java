@@ -14,6 +14,7 @@ import org.objectweb.asm.Opcodes;
 import org.objectweb.asm.tree.*;
 import org.objectweb.asm.tree.analysis.Analyzer;
 import org.objectweb.asm.tree.analysis.BasicVerifier;
+import net.forbric.kernel.TestFixtures;
 
 /** MinecraftForge's pool conditions, carried by the builder and judged by the pool decoder, on the real classes. */
 @ResourceLock("system-properties")
@@ -21,7 +22,7 @@ class ForgeLootPoolConditionsInjectorTest {
 	private static final Path STAGED = Path.of(System.getProperty("forbric.stagedRoot", "../forbric-loader/run"));
 	private static final Path MERGED = STAGED.resolve(net.forbric.kernel.TestFixtures.BASE_JAR);
 	private static final Path FORGE = STAGED.resolve("forge-patched/patched-mc-forge-26.2.jar");
-	private static final Path NEO = STAGED.resolve("neoforge-runtime/neoforge-runtime.jar");
+	private static final Path NEO = STAGED.resolve(TestFixtures.NEO_CARRIER_JAR);
 	private static final String BUILDER = "net/minecraft/world/level/storage/loot/LootPool$Builder";
 	private static final String HOOKS = "net/neoforged/neoforge/common/CommonHooks";
 

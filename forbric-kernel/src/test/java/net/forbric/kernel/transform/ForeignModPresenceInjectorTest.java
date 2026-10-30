@@ -49,7 +49,7 @@ import net.forbric.kernel.TestFixtures.Fixture;
 @ExecutesInjector(ForeignModPresenceInjector.class)
 class ForeignModPresenceInjectorTest {
 	private static final Path STAGE = TestFixtures.stagedRoot();
-	private static final Path NEOFORGE = STAGE.resolve("neoforge-runtime/neoforge-runtime.jar");
+	private static final Path NEOFORGE = STAGE.resolve(TestFixtures.NEO_CARRIER_JAR);
 	private static final Path FORGE = STAGE.resolve("forge-runtime/forge-runtime.jar");
 	private static final String PRESENCE = "net/forbric/api/ModPresence";
 	private static final String NEO_MOD_LIST = "net.neoforged.fml.ModList";

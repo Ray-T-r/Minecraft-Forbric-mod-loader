@@ -274,7 +274,7 @@ class ConfigApiAbiInjectorTest {
 
 	private static ConfigApiAbiInjector injector() {
 		return new ConfigApiAbiInjector(name -> {
-			Path jar=TestFixtures.stagedRoot().resolve("neoforge-runtime/neoforge-runtime.jar");
+			Path jar=TestFixtures.stagedRoot().resolve(TestFixtures.NEO_CARRIER_JAR);
 			TestFixtures.requireFiles(Fixture.GAME_SIDE,"native config API declarations",jar);
 			try(java.util.zip.ZipFile zip=new java.util.zip.ZipFile(jar.toFile())) {
 				var entry=zip.getEntry(name+".class");if(entry==null)return null;

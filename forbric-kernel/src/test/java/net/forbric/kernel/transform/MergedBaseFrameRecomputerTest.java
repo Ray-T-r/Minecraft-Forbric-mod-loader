@@ -59,7 +59,7 @@ class MergedBaseFrameRecomputerTest {
 	private static final Path RUN = TestFixtures.stagedRoot();
 	private static final Path MERGED = RUN.resolve(TestFixtures.BASE_JAR);
 	private static final Path FORGE_RT = RUN.resolve("forge-runtime/forge-runtime.jar");
-	private static final Path NEO_RT = RUN.resolve("neoforge-runtime/neoforge-runtime.jar");
+	private static final Path NEO_RT = RUN.resolve(TestFixtures.NEO_CARRIER_JAR);
 	private static final Path IPN = RUN.resolve("mods/InventoryProfilesNext-forge-26.2-2.3.7.jar");
 	private static final String VICTIM = "org/anti_ad/mc/ipnext/item/ItemTypeExtensionsKt";
 	private static final String LOST = "net/minecraftforge/common/capabilities/CapabilityProvider";

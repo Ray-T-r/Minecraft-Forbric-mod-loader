@@ -35,7 +35,7 @@ import org.objectweb.asm.tree.analysis.BasicVerifier;
 @ResourceLock("system-properties")
 class FabricFuelValuesInjectorTest {
 	private static final Path RUN = TestFixtures.stagedRoot();
-	private static final Path NEO_RT = RUN.resolve("neoforge-runtime/neoforge-runtime.jar");
+	private static final Path NEO_RT = RUN.resolve(TestFixtures.NEO_CARRIER_JAR);
 	private static final Path MERGED = RUN.resolve(TestFixtures.BASE_JAR);
 	private static final String HOOKS = "net/neoforged/neoforge/common/DataMapHooks";
 	private static final String FUEL_VALUES = FabricFuelValuesInjector.FUEL_VALUES;

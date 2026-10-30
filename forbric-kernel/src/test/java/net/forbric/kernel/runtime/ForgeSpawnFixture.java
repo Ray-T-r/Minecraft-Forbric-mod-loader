@@ -52,7 +52,7 @@ final class ForgeSpawnFixture extends ClassLoader {
 				"runtime source set not compiled");
 		for (String suffix : new String[] {"", "$MergedSpawnPredicate", "$Operation"}) {
 			put(FORGE + suffix, staged("forge-runtime/forge-runtime.jar", FORGE + suffix));
-			put(NEO + suffix, staged("neoforge-runtime/neoforge-runtime.jar", NEO + suffix));
+			put(NEO + suffix, staged(TestFixtures.NEO_CARRIER_JAR, NEO + suffix));
 		}
 		put(SPAWN + "$Data", staged(TestFixtures.BASE_JAR, SPAWN + "$Data"));
 		put(SPAWN + "$SpawnPredicate", staged(TestFixtures.BASE_JAR, SPAWN + "$SpawnPredicate"));

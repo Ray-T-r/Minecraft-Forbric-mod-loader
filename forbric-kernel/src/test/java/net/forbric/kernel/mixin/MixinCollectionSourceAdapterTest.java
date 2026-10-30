@@ -167,7 +167,7 @@ class MixinCollectionSourceAdapterTest {
 		throw new AssertionError("actual registry mixin absent");
 	}
 	private static Function<String,ClassNode> actualClasses()throws Exception{
-		Map<String,ClassNode> map=new HashMap<>();for(String[] source:List.of(new String[]{TestFixtures.BASE_JAR,"net/minecraft/data/registries/RegistryPatchGenerator","net/minecraft/resources/RegistryDataLoader"},new String[]{"neoforge-runtime/neoforge-runtime.jar","net/neoforged/neoforge/registries/DataPackRegistriesHooks"})){
+		Map<String,ClassNode> map=new HashMap<>();for(String[] source:List.of(new String[]{TestFixtures.BASE_JAR,"net/minecraft/data/registries/RegistryPatchGenerator","net/minecraft/resources/RegistryDataLoader"},new String[]{TestFixtures.NEO_CARRIER_JAR,"net/neoforged/neoforge/registries/DataPackRegistriesHooks"})){
 			Path jar=TestFixtures.stagedRoot().resolve(source[0]);TestFixtures.requireFile(Fixture.STAGED, jar,"actual staged source required");try(ZipFile z=new ZipFile(jar.toFile())){for(int i=1;i<source.length;i++)map.put(source[i],parse(z.getInputStream(z.getEntry(source[i]+".class")).readAllBytes()));}
 		}return map::get;
 	}

@@ -67,7 +67,7 @@ class PassiveSeederLoadingModListTest {
 	 * Through {@link TestFixtures#stagedRoot()}, the root the game side compiled against: this class hardcoded the
 	 * relative path, so in a second worktree every case here skipped and the suite reported green.
 	 */
-	static final Path NEO_RUNTIME = TestFixtures.stagedRoot().resolve("neoforge-runtime/neoforge-runtime.jar").normalize();
+	static final Path NEO_RUNTIME = TestFixtures.stagedRoot().resolve(TestFixtures.NEO_CARRIER_JAR).normalize();
 
 	@TempDir
 	Path tmp;

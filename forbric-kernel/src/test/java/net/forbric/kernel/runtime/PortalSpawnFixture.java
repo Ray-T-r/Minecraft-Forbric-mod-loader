@@ -52,7 +52,7 @@ final class PortalSpawnFixture implements AutoCloseable {
 		}
 		if (realCarrierHooks) {
 			copyCarrierHook(classes, "forge-runtime/forge-runtime.jar", "net.minecraftforge.event.ForgeEventFactory");
-			copyCarrierHook(classes, "neoforge-runtime/neoforge-runtime.jar", "net.neoforged.neoforge.event.EventHooks");
+			copyCarrierHook(classes, TestFixtures.NEO_CARRIER_JAR, "net.neoforged.neoforge.event.EventHooks");
 		}
 		Path runtime = Path.of(System.getProperty("forbric.test.runtimeClasses", "build/classes/java/runtime"));
 		TestFixtures.requireFiles(TestFixtures.Fixture.GAME_SIDE, "this behavioral probe requires the compiled GAME runtime",

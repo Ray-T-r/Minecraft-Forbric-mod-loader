@@ -48,7 +48,7 @@ class ForgeTransferShapeAuditStagedTest {
 		Path merged = root.resolve(TestFixtures.BASE_JAR).normalize();
 		Path interop = root.resolve("merged-base/forge-runtime-interop.jar").normalize();
 		Path forge = Files.isRegularFile(interop) ? interop : root.resolve("forge-runtime/forge-runtime.jar").normalize();
-		Path neo = root.resolve("neoforge-runtime/neoforge-runtime.jar").normalize();
+		Path neo = root.resolve(TestFixtures.NEO_CARRIER_JAR).normalize();
 		TestFixtures.requireFiles(Fixture.STAGED, "the merged base and both carriers", merged, forge, neo);
 		Map<String, byte[]> found = new TreeMap<>();
 		List<String> missing = new ArrayList<>();

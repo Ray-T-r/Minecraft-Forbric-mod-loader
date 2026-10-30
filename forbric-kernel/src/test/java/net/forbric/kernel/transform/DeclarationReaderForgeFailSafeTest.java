@@ -235,7 +235,7 @@ class DeclarationReaderForgeFailSafeTest {
 	private static URLClassLoader forgeGameSide() throws Exception {
 		Path compiled = Path.of(System.getProperty("forbric.testRuntimeClasses", "build/classes/java/runtime"));
 		Path run = TestFixtures.stagedRoot();
-		Path neo = run.resolve("neoforge-runtime/neoforge-runtime.jar");
+		Path neo = run.resolve(TestFixtures.NEO_CARRIER_JAR);
 		Path merged = run.resolve(TestFixtures.BASE_JAR);
 		TestFixtures.require(Fixture.STAGED, Files.isRegularFile(neo) && Files.isRegularFile(merged),
 				"the staged artifacts are absent");

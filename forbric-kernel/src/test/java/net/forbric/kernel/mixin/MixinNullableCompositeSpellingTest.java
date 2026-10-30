@@ -174,7 +174,7 @@ class MixinNullableCompositeSpellingTest {
 	private static Inputs inputs() throws Exception {
 		Path api = Path.of(System.getProperty("forbric.fabricApi", TestFixtures.fabricApi().toString()));
 		Path base = Path.of(System.getProperty("forbric.predicateBase", TestFixtures.stagedBase().toString()));
-		Path neo = TestFixtures.stagedRoot().resolve("neoforge-runtime/neoforge-runtime.jar");
+		Path neo = TestFixtures.stagedRoot().resolve(TestFixtures.NEO_CARRIER_JAR);
 		TestFixtures.requireFiles(TestFixtures.Fixture.STAGED, "actual API/indexed base/runtime required", api, base, neo);
 		ClassNode released = null;
 		try (ZipFile jar = new ZipFile(api.toFile())) {

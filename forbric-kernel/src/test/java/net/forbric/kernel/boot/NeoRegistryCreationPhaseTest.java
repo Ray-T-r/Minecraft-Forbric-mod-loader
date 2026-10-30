@@ -12,7 +12,7 @@ import org.objectweb.asm.tree.*;
 /** Pin the native ordering: created registries are filled before mods attach their registry callbacks. */
 class NeoRegistryCreationPhaseTest {
     @Test void registryModificationFollowsCreationAsOnNativeNeoForge() throws Exception {
-        Path nativeJar = TestFixtures.stagedRoot().resolve("neoforge-runtime/neoforge-runtime.jar");
+        Path nativeJar = TestFixtures.stagedRoot().resolve(TestFixtures.NEO_CARRIER_JAR);
         Path kernel = Path.of("build/classes/java/runtime/net/forbric/kernel/runtime/KernelNeoRegistries.class");
         TestFixtures.requireFile(Fixture.STAGED, nativeJar, "staged runtime absent");
         TestFixtures.require(Fixture.GAME_SIDE, Files.isRegularFile(kernel), "staged runtime absent");

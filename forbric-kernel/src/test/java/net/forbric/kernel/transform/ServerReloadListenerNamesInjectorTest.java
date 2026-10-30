@@ -12,7 +12,7 @@ import org.objectweb.asm.tree.analysis.*;
 
 class ServerReloadListenerNamesInjectorTest {
 	@Test void realServerEventNamesForeignListenersButKeepsTheNativeGuardAndGraph() throws Exception {
-		Path jar = TestFixtures.stagedRoot().resolve("neoforge-runtime/neoforge-runtime.jar");
+		Path jar = TestFixtures.stagedRoot().resolve(TestFixtures.NEO_CARRIER_JAR);
 		byte[] original = TestFixtures.requireEntry(Fixture.STAGED, jar, "net/neoforged/neoforge/event/AddServerReloadListenersEvent.class");
 		var transform = new ServerReloadListenerNamesInjector();
 		byte[] patched = transform.transform(ServerReloadListenerNamesInjector.TARGET, original, null);

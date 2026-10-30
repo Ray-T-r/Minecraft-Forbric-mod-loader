@@ -65,9 +65,9 @@ class HookCallSiteCensusStagedTest {
 			// And the rest of both families' hook classes: the client's (the F3 text, tooltips, sounds) and NeoForge's
 			// own two, so that a dead event of either family has no hook class left to hide in.
 			"net/minecraftforge/client/ForgeHooksClient", "forge-runtime/forge-runtime.jar",
-			"net/neoforged/neoforge/event/EventHooks", "neoforge-runtime/neoforge-runtime.jar",
-			"net/neoforged/neoforge/common/CommonHooks", "neoforge-runtime/neoforge-runtime.jar",
-			"net/neoforged/neoforge/client/ClientHooks", "neoforge-runtime/neoforge-runtime.jar");
+			"net/neoforged/neoforge/event/EventHooks", TestFixtures.NEO_CARRIER_JAR,
+			"net/neoforged/neoforge/common/CommonHooks", TestFixtures.NEO_CARRIER_JAR,
+			"net/neoforged/neoforge/client/ClientHooks", TestFixtures.NEO_CARRIER_JAR);
 
 	private static Path root() {
 		return TestFixtures.stagedRoot().normalize();
@@ -76,7 +76,7 @@ class HookCallSiteCensusStagedTest {
 	/** The two ecosystem runtimes, for the third state. */
 	private static List<Path> carriers() {
 		List<Path> out = new ArrayList<>();
-		for (String rel : List.of("forge-runtime/forge-runtime.jar", "neoforge-runtime/neoforge-runtime.jar")) {
+		for (String rel : List.of("forge-runtime/forge-runtime.jar", TestFixtures.NEO_CARRIER_JAR)) {
 			Path jar = root().resolve(rel);
 			if (Files.isRegularFile(jar)) out.add(jar);
 		}
@@ -1577,7 +1577,7 @@ class HookCallSiteCensusStagedTest {
 
 	private static byte[] protocolBytes(String path) {
 		for (Path jar : List.of(base(), root().resolve("forge-runtime/forge-runtime.jar"),
-				root().resolve("merged-base/forge-runtime-interop.jar"), root().resolve("neoforge-runtime/neoforge-runtime.jar"))) {
+				root().resolve("merged-base/forge-runtime-interop.jar"), root().resolve(TestFixtures.NEO_CARRIER_JAR))) {
 			if (!Files.isRegularFile(jar)) continue;
 			try (var zip = new java.util.zip.ZipFile(jar.toFile())) {
 				var entry = zip.getEntry(path);

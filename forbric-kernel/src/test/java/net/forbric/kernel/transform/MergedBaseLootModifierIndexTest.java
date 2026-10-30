@@ -49,7 +49,7 @@ import net.forbric.kernel.TestFixtures.Fixture;
 class MergedBaseLootModifierIndexTest {
 	private static final Path RUN = TestFixtures.stagedRoot();
 	private static final Path FORGE_RT = RUN.resolve("forge-runtime/forge-runtime.jar");
-	private static final Path NEO_RT = RUN.resolve("neoforge-runtime/neoforge-runtime.jar");
+	private static final Path NEO_RT = RUN.resolve(TestFixtures.NEO_CARRIER_JAR);
 
 	@Test
 	void neoForgesManagerGetsAPrepareThatScansThroughTheHidingView() throws Exception {

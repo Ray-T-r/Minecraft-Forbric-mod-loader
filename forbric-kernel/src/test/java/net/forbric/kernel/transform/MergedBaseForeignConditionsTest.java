@@ -43,7 +43,7 @@ import net.forbric.kernel.TestFixtures.Fixture;
  * the list form — which is the one {@code neoforge:conditions} actually uses — and wrapping after it would not.
  */
 class MergedBaseForeignConditionsTest {
-	private static final Path NEO_CARRIER = TestFixtures.stagedRoot().resolve("neoforge-runtime/neoforge-runtime.jar");
+	private static final Path NEO_CARRIER = TestFixtures.stagedRoot().resolve(TestFixtures.NEO_CARRIER_JAR);
 	private static final String ENTRY = "net/neoforged/neoforge/common/conditions/ICondition.class";
 	private static final String BINARY = "net.neoforged.neoforge.common.conditions.ICondition";
 	private static final String KERNEL = "net/forbric/kernel/runtime/KernelNeoConditions";

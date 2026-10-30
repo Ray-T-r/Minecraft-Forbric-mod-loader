@@ -51,7 +51,7 @@ import net.forbric.kernel.TestFixtures.Fixture;
 class MergedBaseRepairClaimsStagedTest {
 	private static final Path RUN = TestFixtures.stagedRoot();
 	private static final List<Path> JARS = List.of(RUN.resolve(TestFixtures.BASE_JAR),
-			RUN.resolve("neoforge-runtime/neoforge-runtime.jar"), RUN.resolve("forge-runtime/forge-runtime.jar"));
+			RUN.resolve(TestFixtures.NEO_CARRIER_JAR), RUN.resolve("forge-runtime/forge-runtime.jar"));
 	private static final TransformContext CTX = new TransformContext(EnvType.CLIENT, false, "intermediary");
 	private static final String KEY_MAPPING = "net.minecraft.client.KeyMapping";
 	private static final String LOOKUP_CLAIM = "forbric-merged-base-compat#addMissingForgeKeyMappingLookupInitializer";

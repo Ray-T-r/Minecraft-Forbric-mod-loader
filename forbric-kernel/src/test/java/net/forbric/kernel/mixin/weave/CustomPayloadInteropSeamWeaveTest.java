@@ -46,8 +46,8 @@ class CustomPayloadInteropSeamWeaveTest {
 	@TempDir Path work;
 
 	@Test void fabricNetworkingsWrapIsArbitratedAroundTheSeamOnTheGenuineBase() throws Exception {
-		Path genuine = TestFixtures.stagedRoot().resolve("neoforge-patched/patched-mc-neoforge-26.2.jar").normalize();
-		Path neo = TestFixtures.stagedRoot().resolve("neoforge-runtime/neoforge-runtime.jar").normalize();
+		Path genuine = TestFixtures.stagedRoot().resolve(TestFixtures.GENUINE_BASE_JAR).normalize();
+		Path neo = TestFixtures.stagedRoot().resolve(TestFixtures.NEO_CARRIER_JAR).normalize();
 		Path vanillaJar = TestFixtures.vanillaJar();
 		TestFixtures.requireFiles(Fixture.STAGED, "the genuine NeoForge base and its carrier", genuine, neo);
 		TestFixtures.requireFiles(Fixture.MC_LIBRARIES, "the vanilla client jar", vanillaJar);

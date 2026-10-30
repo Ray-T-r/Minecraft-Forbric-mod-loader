@@ -55,7 +55,7 @@ class CarrierDefaultChainsStagedTest {
 
 	/** Every class of the merged base and both carriers, as the mixin service hands them to the adapters. */
 	private static Function<String, ClassNode> game() {
-		List<Path> jars = List.of(merged(), TestFixtures.stagedRoot().resolve("neoforge-runtime/neoforge-runtime.jar"),
+		List<Path> jars = List.of(merged(), TestFixtures.stagedRoot().resolve(TestFixtures.NEO_CARRIER_JAR),
 				TestFixtures.stagedRoot().resolve("merged-base/forge-runtime-interop.jar"));
 		Map<String, ClassNode> read = new HashMap<>();
 		return owner -> read.computeIfAbsent(owner, name -> {
@@ -209,7 +209,7 @@ class CarrierDefaultChainsStagedTest {
 	 */
 	@Test void aConstantsModifierMovesOntoTheCallWhoseDefaultPushesIt() throws Exception {
 		TestFixtures.requireForgeCarrierWhereTheBaseNamesIt("the defaults a carrier chain walks to, through the base's hierarchy");
-		TestFixtures.require(TestFixtures.Fixture.STAGED, Files.isRegularFile(TestFixtures.stagedRoot().resolve("neoforge-runtime/neoforge-runtime.jar")),
+		TestFixtures.require(TestFixtures.Fixture.STAGED, Files.isRegularFile(TestFixtures.stagedRoot().resolve(TestFixtures.NEO_CARRIER_JAR)),
 				"the NeoForge carrier declares the default");
 		ClassNode mixin = aea();
 		MixinStubRebind.noteEcosystem(mixin.name, Ecosystem.FABRIC);

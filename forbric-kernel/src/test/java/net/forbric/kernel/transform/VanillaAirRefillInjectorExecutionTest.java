@@ -349,7 +349,7 @@ class VanillaAirRefillInjectorExecutionTest {
 
 	/** The game's class resources by path, as the chain hands them to the delivery bookkeeping. */
 	private static byte[] stagedResource(String path) {
-		for (String jar : List.of(TestFixtures.BASE_JAR, "neoforge-runtime/neoforge-runtime.jar", "merged-base/forge-runtime-interop.jar")) {
+		for (String jar : List.of(TestFixtures.BASE_JAR, TestFixtures.NEO_CARRIER_JAR, "merged-base/forge-runtime-interop.jar")) {
 			Path file = TestFixtures.stagedRoot().resolve(jar);
 			if (!Files.isRegularFile(file)) continue;
 			try (ZipFile z = new ZipFile(file.toFile())) {
@@ -363,7 +363,7 @@ class VanillaAirRefillInjectorExecutionTest {
 	}
 
 	private static byte[] staged(String entry) throws Exception {
-		Path jar = TestFixtures.stagedRoot().resolve("neoforge-runtime/neoforge-runtime.jar");
+		Path jar = TestFixtures.stagedRoot().resolve(TestFixtures.NEO_CARRIER_JAR);
 		TestFixtures.requireFile(Fixture.STAGED, jar, "actual NeoForge CommonHooks required");
 		try (ZipFile z = new ZipFile(jar.toFile())) { return z.getInputStream(z.getEntry(entry + ".class")).readAllBytes(); }
 	}

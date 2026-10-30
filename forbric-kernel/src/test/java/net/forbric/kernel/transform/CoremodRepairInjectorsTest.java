@@ -22,7 +22,7 @@ import org.objectweb.asm.tree.analysis.BasicVerifier;
 class CoremodRepairInjectorsTest {
 	private static final Path STAGED = TestFixtures.stagedRoot();
 	private static final Path MERGED = STAGED.resolve(TestFixtures.BASE_JAR);
-	private static final Path NEO = STAGED.resolve("neoforge-runtime/neoforge-runtime.jar");
+	private static final Path NEO = STAGED.resolve(TestFixtures.NEO_CARRIER_JAR);
 	private static final Path VANILLA = TestFixtures.vanillaJar();
 
 	@AfterEach void reset() {
