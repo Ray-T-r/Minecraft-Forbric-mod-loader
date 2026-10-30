@@ -286,7 +286,7 @@ public final class ModFileScanner {
 	 *
 	 * <p>{@code -Dforbric.seededScanData.realPath=off} keys on the normalised absolute path alone, as before.
 	 */
-	static Path cacheKey(Path jar) {
+	public static Path cacheKey(Path jar) {
 		Path spelled = jar.toAbsolutePath().normalize();
 		if ("off".equalsIgnoreCase(System.getProperty(REAL_PATH_KEY_PROPERTY, "on"))) return spelled;
 		try {

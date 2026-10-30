@@ -348,18 +348,26 @@ public class ForbricNeoLiveMod {
 	 * object for each list, so each is asked separately. And the SHAPE: NeoForge stores an enum member as
 	 * {@code ModAnnotation.EnumHolder}, MinecraftForge as {@code ModFileScanData.EnumData}, and a bare String would
 	 * also print "SECOND"; the constant is read through the holder's own accessor so only the right shape passes.
+	 *
+	 * <p>And how many times the index lists THIS jar. It declares two mods (this one and the client-only
+	 * {@code forbricneoclientonly}), and natively that is one {@code ModFile}: {@code getAllScanData()} streams each
+	 * mod's owning file through {@code distinct()}, so the jar is listed once. A count of two is the kernel building a
+	 * file per mod, and a mod walking the index (JEI, Jade) then meets every class of the jar twice.
 	 */
 	private static void reportScanIndex() {
 		try {
 			int files = 0;
 			int annotations = 0;
+			int ownJar = 0;
 			for (net.neoforged.neoforgespi.language.ModFileScanData scan : net.neoforged.fml.ModList.get().getAllScanData()) {
 				files++;
 				annotations += scan.getAnnotations().size();
-				reportOwnAnnotation("ModList", scan);
+				if (reportOwnAnnotation("ModList", scan)) ownJar++;
 			}
 			System.out.println("[ForbricNeoLive/SCAN] ModList.getAllScanData(): " + files + " file(s), "
 					+ annotations + " annotation(s)");
+			System.out.println("[ForbricNeoLive/SCAN] ModList.getAllScanData() lists forbricneolive's jar " + ownJar
+					+ " time(s)");
 		} catch (Throwable t) {
 			System.out.println("[ForbricNeoLive/SCAN] could not read the ModList scan index: " + t);
 		}
@@ -375,9 +383,12 @@ public class ForbricNeoLiveMod {
 		}
 	}
 
-	private static void reportOwnAnnotation(String reader, net.neoforged.neoforgespi.language.ModFileScanData scan) {
+	/** @return whether {@code scan} is this jar's index, i.e. carries this mod's own annotation */
+	private static boolean reportOwnAnnotation(String reader, net.neoforged.neoforgespi.language.ModFileScanData scan) {
+		boolean own = false;
 		for (net.neoforged.neoforgespi.language.ModFileScanData.AnnotationData data : scan.getAnnotations()) {
 			if (!data.annotationType().getDescriptor().equals("Lforbric/live/neoforge/NeoLiveScanned;")) continue;
+			own = true;
 			System.out.println("[ForbricNeoLive/SCAN] " + reader + " found its own @NeoLiveScanned on "
 					+ data.targetType() + " " + data.memberName() + " of " + data.clazz().getClassName());
 			Object kind = data.annotationData().get("kind");
@@ -394,6 +405,7 @@ public class ForbricNeoLiveMod {
 			System.out.println("[ForbricNeoLive/SCAN] " + reader + " string member note is "
 					+ data.annotationData().get("note"));
 		}
+		return own;
 	}
 
 	/** Link client-only event types only on the client, through a class-name boundary. */

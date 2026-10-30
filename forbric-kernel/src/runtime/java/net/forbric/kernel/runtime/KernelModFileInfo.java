@@ -59,7 +59,8 @@ public final class KernelModFileInfo implements IModFileInfo {
 	 */
 	KernelModFileInfo(String modId, Path jar, IModInfo[] owner, IConfigurable config) {
 		this.modId = modId;
-		this.file = new KernelModFile(modId, jar);
+		// The jar's one file, shared with every other mod the jar declares (KernelModFile.of says why).
+		this.file = KernelModFile.of(modId, jar);
 		this.file.setModFileInfo(this);
 		this.owner = owner;
 		this.config = config;

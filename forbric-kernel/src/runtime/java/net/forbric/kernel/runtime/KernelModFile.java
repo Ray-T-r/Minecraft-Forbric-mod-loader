@@ -19,6 +19,7 @@ package net.forbric.kernel.runtime;
 import java.nio.file.Path;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.function.Supplier;
 
 import net.forbric.kernel.discovery.ModFileScanner;
@@ -47,16 +48,59 @@ import net.neoforged.neoforgespi.locating.ModFileDiscoveryAttributes;
  * now answer with the values a real mod file has. Each was null, and null is not a value any consumer expects
  * from them: a mod filtering the file list by type dropped every kernel-loaded mod, and a mod walking from a
  * file back to its info — the direction NeoForge's own error path takes — dereferenced null.
+ *
+ * <h2>One per jar</h2>
+ *
+ * <p>FML builds ONE {@code ModFile} per jar, however many {@code [[mods]]} it declares, and every one of those mods'
+ * {@code getOwningFile().getFile()} is that object. {@link #of} keeps that: a jar's file is built once and handed to
+ * every mod of the jar. It used to be one per mod, and the place that shows is {@code ModList.getAllScanData()}, which
+ * natively streams {@code sortedList → getOwningFile → getFile → distinct → getScanResult} (javap on the carrier's
+ * {@code ModList}) — the {@code distinct()} is by identity, and two file objects for one jar are two entries. The
+ * NeoForge canary has a second {@code @Mod} in its jar, and the index listed that jar twice (gate-m21 printed
+ * "2 file(s)" with one jar staged), so a mod that walks the index — JEI collecting {@code @JeiPlugin}s, Jade its
+ * providers — met every class of such a jar twice. The two entries were the same index object
+ * ({@code ModFileScanner.scanShared}), so nothing was scanned twice; the walk was.
  */
 public final class KernelModFile implements IModFile {
+	/**
+	 * Every jar's file, by the real path {@code ModFileScanner} keys its shared index on, so a symlink or
+	 * {@code /tmp} for {@code /private/tmp} cannot make one jar two files. A jar-less presence alias has no file to
+	 * share and is never here.
+	 */
+	private static final Map<Path, KernelModFile> BY_JAR = new ConcurrentHashMap<>();
+
+	/**
+	 * The file for {@code jar}: the one already built for it, or a new one. With {@code jar} null (a presence alias)
+	 * it is always a new placeholder, since there is no jar for two mods to share.
+	 *
+	 * <p>{@code -Dforbric.modFilePerJar=off} builds one per mod again, the old shape, which is the RED control for
+	 * the gate-m21 check that counts the canary's jar in {@code getAllScanData()}.
+	 *
+	 * @param modId the mod asking; the first mod of a jar names the file ({@link #getId}), as the first
+	 *              {@code [[mods]]} entry does natively
+	 */
+	public static KernelModFile of(String modId, Path jar) {
+		if (jar == null || !perJar()) return new KernelModFile(modId, jar);
+		return BY_JAR.computeIfAbsent(ModFileScanner.cacheKey(jar), key -> new KernelModFile(modId, jar));
+	}
+
+	/** The switch {@link #of} reads; on unless set to {@code off}. */
+	static final String PER_JAR_SWITCH = "forbric.modFilePerJar";
+
+	static boolean perJar() {
+		return !"off".equalsIgnoreCase(System.getProperty(PER_JAR_SWITCH, "on"));
+	}
+
 	private final String modId;
 	private final Path path;
 	private final JarContents contents;
 	private final Path jar;
 
 	/**
-	 * The info that owns this file. Set by {@link KernelModFileInfo}'s constructor, which is what builds this
-	 * object: the two refer to each other, so one of them has to be filled in second.
+	 * The info that owns this file. Set by {@link KernelModFileInfo}'s constructor, which is what asks for this
+	 * object: the two refer to each other, so one of them has to be filled in second. When a jar's file is shared,
+	 * the first mod's info keeps it — a jar has one file info natively too, and the walk back up
+	 * ({@code getFilePath()} on NeoForge's error path) reads only what every mod of the jar has in common.
 	 */
 	private IModFileInfo modFileInfo;
 
@@ -157,9 +201,9 @@ public final class KernelModFile implements IModFile {
 		return modFileInfo;
 	}
 
-	/** Called once by {@link KernelModFileInfo}'s constructor. */
-	void setModFileInfo(IModFileInfo info) {
-		this.modFileInfo = info;
+	/** Called by every {@link KernelModFileInfo} that is handed this file; the first one keeps it. */
+	synchronized void setModFileInfo(IModFileInfo info) {
+		if (this.modFileInfo == null) this.modFileInfo = info;
 	}
 
 	// --- answered the way the proxy's defaultReturn answered them -----------------------------------------

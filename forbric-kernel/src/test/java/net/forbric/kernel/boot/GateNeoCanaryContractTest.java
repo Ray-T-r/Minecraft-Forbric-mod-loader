@@ -30,7 +30,8 @@ class GateNeoCanaryContractTest {
 			"[ForbricNeoLive/SCAN] ModList found its own @NeoLiveScanned on FIELD PROBE of forbric.live.neoforge.ForbricNeoLiveMod",
 			"[ForbricNeoLive/SCAN] ModList enum member kind is " + SCAN_HOLDER + " with value SECOND",
 			"[ForbricNeoLive/SCAN] ModList string member note is probe",
-			"[ForbricNeoLive/SCAN] ModList.getAllScanData(): 2 file(s), 10 annotation(s)",
+			"[ForbricNeoLive/SCAN] ModList.getAllScanData(): 1 file(s), 5 annotation(s)",
+			"[ForbricNeoLive/SCAN] ModList.getAllScanData() lists forbricneolive's jar 1 time(s)",
 			"[ForbricNeoLive/SCAN] LoadingModList found its own @NeoLiveScanned on FIELD PROBE of forbric.live.neoforge.ForbricNeoLiveMod",
 			"[ForbricNeoLive/SCAN] LoadingModList enum member kind is " + SCAN_HOLDER + " with value SECOND",
 			"[ForbricNeoLive/SCAN] LoadingModList string member note is probe",
@@ -62,6 +63,29 @@ class GateNeoCanaryContractTest {
 		assertRed(twice, "its SERVER config loads once");
 		Result failed = m21(green + "[ForbricNeoLive/SCAN] could not read the LoadingModList scan index: java.lang.IllegalStateException\n");
 		assertRed(failed, "neither reader failed");
+	}
+
+	/**
+	 * The shape the kernel had until 2026-10-30, and has again with {@code -Dforbric.modFilePerJar=off}: one file per
+	 * MOD, so the canary's jar (two mods) is listed twice, with its own annotation found in both entries. The count
+	 * line alone says only "2 file(s)", which the old check's {@code [1-9][0-9]*} took as green.
+	 */
+	@Test
+	void m21NeoBlockTellsOneJarFromTheSameJarListedOncePerMod() throws Exception {
+		List<String> twice = new java.util.ArrayList<>();
+		for (String line : M21_GREEN) {
+			if (line.contains("lists forbricneolive's jar")) {
+				twice.add(line.replace("1 time(s)", "2 time(s)"));
+			} else if (line.contains("getAllScanData(): ")) {
+				twice.add("[ForbricNeoLive/SCAN] ModList.getAllScanData(): 2 file(s), 10 annotation(s)");
+			} else {
+				twice.add(line);
+				if (line.startsWith("[ForbricNeoLive/SCAN] ModList found its own")) twice.add(line);
+			}
+		}
+		Result result = m21(String.join("\n", twice) + "\n");
+		assertRed(result, "the index lists the canary's jar once, as one IModFile");
+		assertTrue(result.output().contains("its own annotation is found in one entry, not one per mod"), result.output());
 	}
 
 	private static final List<String> M26_GREEN = m26Green();
