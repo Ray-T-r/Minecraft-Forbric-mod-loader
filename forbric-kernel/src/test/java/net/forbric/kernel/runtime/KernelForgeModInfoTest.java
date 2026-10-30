@@ -47,7 +47,10 @@ import org.junit.jupiter.api.io.TempDir;
 
 import net.forbric.api.ModPresence;
 import net.forbric.kernel.discovery.ForbricModDiscoverer;
+import net.forbric.kernel.discovery.MetadataFailures;
 import net.forbric.kernel.metadata.forge.FmlConfigElements;
+import net.forbric.kernel.metadata.forge.ForgeMetadataMapper;
+import net.forbric.kernel.metadata.forge.ModsTomlParser;
 
 /** wthit's read: getModInfo().getOwningFile().getConfig().getConfigElement("issueTrackerURL") answers from the jar's mods.toml. */
 class KernelForgeModInfoTest {
@@ -84,16 +87,28 @@ class KernelForgeModInfoTest {
 	 * that map as an {@code ImmutableMap} of the table's entries — shallow, so a nested table is still
 	 * night-config's {@code Config} and an array of tables a {@code List} of them. The kernel handed
 	 * {@code LinkedHashMap}s, which a {@code (Config)} cast rejects.
+	 *
+	 * <p>Since Stage 3 discovery refuses this jar — a {@code mods.toml} and nothing else is a MinecraftForge-only build —
+	 * so no mod reaches this info through a boot any more, and that is asserted first. The mod is published from the
+	 * same parser and mapper discovery used for it, which is still the code every {@code [modproperties]} table goes
+	 * through (NeoForge's twin is {@code KernelModInfoDeclaredTest}'s LibJF case); Stage 4 deletes this info.
 	 */
 	@Test
 	void modPropertiesKeepMinecraftForgesValueTypes(@TempDir Path dir) throws Exception {
-		Path jar = jar(dir.resolve("iceberg.jar"), "modLoader = \"javafml\"\nloaderVersion = \"[65,)\"\nlicense = \"MIT\"\n\n"
+		String toml = "modLoader = \"javafml\"\nloaderVersion = \"[65,)\"\nlicense = \"MIT\"\n\n"
 				+ "[[mods]]\nmodId = \"iceberg\"\nversion = \"1.4.2.2\"\n\n"
 				+ "[modproperties.iceberg]\n"
 				+ "configuredProviders=[\n\"com.anthonyhilyard.iceberg.compat.configured.IcebergConfigProvider\"\n]\n"
 				+ "[modproperties.iceberg.nested]\ninner = \"yes\"\n"
-				+ "[[modproperties.iceberg.entries]]\nvalue = \"example.Entry\"\n");
-		ModPresence.publishForgeFamily(new ForbricModDiscoverer().discoverJar(jar));
+				+ "[[modproperties.iceberg.entries]]\nvalue = \"example.Entry\"\n";
+		Path jar = jar(dir.resolve("iceberg.jar"), toml);
+		try {
+			assertEquals(List.of(), new ForbricModDiscoverer().discoverJar(jar), "a MinecraftForge-only jar yields no mod");
+			assertTrue(MetadataFailures.unsupported(jar), "it is refused, not merely empty");
+		} finally {
+			MetadataFailures.reset();
+		}
+		ModPresence.publishForgeFamily(ForgeMetadataMapper.toDiscoveredMods(ModsTomlParser.parse(toml), null, jar.toString()));
 		try (URLClassLoader cl = gameSideLoader()) {
 			Object info = Class.forName("net.forbric.kernel.runtime.KernelForgeModInfo", true, cl)
 					.getConstructor(String.class, Path.class).newInstance("iceberg", jar);
