@@ -37,6 +37,9 @@ with zipfile.ZipFile(fapi) as archive:
         if len(names) != 1: raise SystemExit('required actual Fabric module missing or ambiguous: ' + prefix)
         target = modules / pathlib.PurePosixPath(names[0]).name; target.write_bytes(archive.read(names[0])); selected.append(target)
 root = kernel / 'canary/stub-rebind'
+# Without a MinecraftForge carrier only a canary whose own sources name none of it compiles: say so, not javac.
+if not forge and any('net.minecraftforge' in source.read_text(errors='replace') for source in root.rglob('*.java')):
+    raise SystemExit(f'M46 prerequisite absent: no MinecraftForge carrier is staged, and {root} still names net.minecraftforge')
 output = kernel / 'run/canary'; output.mkdir(exist_ok=True)
 def build(name, sources, classpath, extra):
     classes = work / (name + '-classes'); classes.mkdir()

@@ -22,6 +22,9 @@ for entry in json.loads((mc / 'versions/26.2/26.2.json').read_text())['libraries
 for path in [compile_game, *forge, neo]:
     if not path.is_file(): raise SystemExit(f'M48 prerequisite absent: {path}')
 root = kernel / 'canary/server-events'
+# Without a MinecraftForge carrier only a canary whose own sources name none of it compiles: say so, not javac.
+if not forge and any('net.minecraftforge' in source.read_text(errors='replace') for source in root.rglob('*.java')):
+    raise SystemExit(f'M48 prerequisite absent: no MinecraftForge carrier is staged, and {root} still names net.minecraftforge')
 classes = work / 'classes'; classes.mkdir()
 subprocess.run(['javac', '-proc:none', '--release', '21', '-cp', os.pathsep.join(map(str, [compile_game, *forge, neo, *libraries])),
                 '-d', str(classes), *map(str, sorted((root / 'src').rglob('*.java')))], check=True)

@@ -52,6 +52,17 @@ def forgeCarrierCompiled = stagedForgeRuntime.isFile()
 def gameSideCompileJars = stagedGameJars + (hideForgeCarrier && forgeCarrierCompiled ? [stagedForgeRuntime] : [])
 // What a test reads as its staged root: the real one, or the Forge-less mirror of it.
 def testStagedRoot = hideForgeCarrier ? layout.buildDirectory.dir("staged-noforge/run").get().asFile : stagedRoot
+// The carrier is optional to the stage, not yet to every source set: while a set's sources still name MinecraftForge,
+// a root without the carrier cannot compile it. Say so by name, instead of leaving javac to list every file (74 of the
+// game side's today). Read at execution, from the sources as they are then.
+def requireForgeCarrierFor = { String what, File sources ->
+	if (forgeCarrierCompiled) return
+	def naming = fileTree(sources) { include '**/*.java' }.files.findAll { it.getText('UTF-8').contains('net.minecraftforge') }
+	if (naming) throw new GradleException("No MinecraftForge carrier is staged under ${stagedRoot} (forge-runtime/" +
+			"${stagedForgeRuntime.name}), and ${what} still names MinecraftForge in ${naming.size()} sources (" +
+			"${naming*.name.sort().take(3).join(', ')}${naming.size() > 3 ? ', ...' : ''}). The stage needs the base and " +
+			"the NeoForge carrier; this set needs the MinecraftForge one too until those sources are gone. Run prepareDev.")
+}
 
 // Compile the transfer bridge against the exact API staged for the compatibility pack. These modules remain
 // supplied by the installed Fabric API mod; none is bundled in either kernel jar.
@@ -324,6 +335,7 @@ tasks.named('compileRuntimeJava') {
 		if (!stagedGameComplete) throw new GradleException("Incomplete staged game inputs: "
 				+ stagedGameJars*.name + " under ${stagedRoot}, which needs at least the base and the NeoForge carrier. "
 				+ "Run prepareDev before building the game side.")
+		requireForgeCarrierFor('the game side', file('src/runtime/java'))
 		if (!stagedFabricApi.isFile()) throw new GradleException("The kernel game side includes its transfer " +
 				"component and compiles it against Fabric API's transfer modules, but ${stagedFabricApi} does not " +
 				"exist. Pass -Pforbric.fabricApi=<a fabric-api jar for 26.2> (the compatibility pack's is the default).")
@@ -530,6 +542,15 @@ test {
 // The engine tests need the whole game side. Without staged game jars they are skipped and say so, except in an
 // integration run, where -Pforbric.requireTransfer=true turns that skip into a failure.
 def transferSuiteRuns = { String task ->
+	// The engines' scenarios link MinecraftForge's energy and item handlers when JUnit loads them (NativeEnergyScenarios
+	// extends its EnergyStorage), so with the carrier hidden no class of the suite can even be loaded: the executor dies
+	// on the first one and reports nothing per test. Skip it as a whole, and say why; the ratchet then records the suite
+	// as not executed. An integration run that requires it gets the named error below instead.
+	if (hideForgeCarrier && !requireTransfer) {
+		logger.lifecycle("${task}: SKIPPED — -Pforbric.hideForgeCarrier: the transfer scenarios link MinecraftForge's " +
+				"energy and item handlers, so none of them can load without the carrier")
+		return false
+	}
 	if (stagedGameComplete || requireTransfer) return true
 	logger.lifecycle("${task}: SKIPPED — staged game jars absent (${stagedGameJars*.name} under ${stagedRoot})")
 	return false
@@ -541,6 +562,9 @@ tasks.named('compileTransferTestJava') {
 		if (!stagedGameComplete) throw new GradleException("The staged game jars are absent (" +
 				"${stagedGameJars*.name} under ${stagedRoot}), and -Pforbric.requireTransfer=true forbids skipping " +
 				"the transfer engine tests")
+		if (hideForgeCarrier) throw new GradleException("-Pforbric.hideForgeCarrier and -Pforbric.requireTransfer=true " +
+				"cannot both hold: the transfer scenarios link MinecraftForge's energy and item handlers")
+		requireForgeCarrierFor('the transfer engine tests', file('src/transferTest/java'))
 	}
 }
 tasks.register('transferTest', Test) {
