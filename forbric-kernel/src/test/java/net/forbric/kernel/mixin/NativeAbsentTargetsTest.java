@@ -169,7 +169,7 @@ class NativeAbsentTargetsTest {
 		NativeAbsentTargets.Table table = NativeAbsentTargets.shipped();
 		assertEquals(Map.of("minecraft", "26.2"), table.of(Ecosystem.FABRIC).versions());
 		assertEquals(Map.of("minecraft", "26.2", "forge", "65.0.1"), table.of(Ecosystem.FORGE).versions());
-		assertEquals(Map.of("minecraft", "26.2", "neoforge", "26.2.0.88"), table.of(Ecosystem.NEOFORGE).versions());
+		assertEquals(Map.of("minecraft", "26.2", "neoforge", "26.2.0.93"), table.of(Ecosystem.NEOFORGE).versions());
 	}
 
 	/**
@@ -196,7 +196,7 @@ class NativeAbsentTargetsTest {
 				new Case(Ecosystem.FORGE, required("forge", ">=65.1"), false),
 				new Case(Ecosystem.FORGE, required("minecraft", "=26.3"), false),
 				new Case(Ecosystem.NEOFORGE, required("neoforge", ">=26.2.0.80"), true),
-				new Case(Ecosystem.NEOFORGE, required("NeoForge", ">=26.2.0.90"), false),
+				new Case(Ecosystem.NEOFORGE, required("NeoForge", ">=26.2.0.94"), false),
 				new Case(Ecosystem.NEOFORGE, required("minecraft", ">=26.3"), false));
 		List<String> wrong = new java.util.ArrayList<>();
 		for (Case one : cases) {

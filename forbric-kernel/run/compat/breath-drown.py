@@ -47,7 +47,7 @@ CANARY = KERNEL / 'canary/forge-breath-drown'
 REFERENCE = CANARY / 'native-reference.json'
 NATIVE = Path(os.environ.get('M57_NATIVE', KERNEL / 'build/native-controls/native'))
 JARS = {'forge': 'forbricbreathforge.jar', 'neo': 'forbricbreathneo.jar'}
-NATIVE_VERSIONS = {'forge': ('net/minecraftforge/forge', '26.2-65.0.1'), 'neo': ('net/neoforged/neoforge', '26.2.0.88')}
+NATIVE_VERSIONS = {'forge': ('net/minecraftforge/forge', '26.2-65.0.1'), 'neo': ('net/neoforged/neoforge', '26.2.0.93')}
 FABRIC_LAUNCHER = 'fabric-server-mc26.2-loader0.19.5-launcher1.1.2.jar'
 # The server.properties every arm runs with (gate-m57.sh writes the same lines; the port is the caller's).
 PROPERTIES = ['level-seed=forbrickernel', 'level-name=world', 'level-type=minecraft:flat', 'generate-structures=false',

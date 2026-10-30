@@ -180,8 +180,23 @@ public final class Installer {
 		return identity;
 	}
 
-	private static String coordinate(String groupAndName, String version) {
-		return groupAndName + ":" + version;
+	/**
+	 * A game artifact's coordinate, versioned by the build that produced it rather than by the Minecraft version
+	 * alone. Under {@code <mc>} every pin bump overwrote the staged files in place, so a second Forbric profile, or an
+	 * install interrupted between staging and writing the profile, was left naming a jar whose bytes and sha1 had
+	 * changed under it. Keyed by its inputs, a published coordinate's bytes never change.
+	 */
+	private static String coordinate(String groupAndName, String mcVersion) {
+		return groupAndName + ":" + artifactVersion(groupAndName, mcVersion);
+	}
+
+	static String artifactVersion(String groupAndName, String mcVersion) {
+		return switch (groupAndName) {
+			case "net.forbric:neoforge-runtime" -> Pins.NEOFORGE;
+			case "net.forbric:forge-runtime" -> Pins.FORGE;
+			case "net.forbric:patched-mc-merged" -> Pins.FORGE + "-" + Pins.NEOFORGE;
+			default -> mcVersion;
+		};
 	}
 
 	private static String libraryRef(String coordinate) {

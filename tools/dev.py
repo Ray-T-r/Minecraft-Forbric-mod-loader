@@ -38,7 +38,13 @@ STAGED_FILES = ('merged-base/patched-mc-merged-26.2.jar', 'forge-runtime/forge-r
                 # and the two canary mods (see CANARIES).
                 'merged-base/merge-conflicts.txt', 'merged-base/patched-mc-merged-26.2.jar.pins',
                 'forge-patched/patched-mc-forge-26.2.jar.pins',
-                'forge-runtime/forbriclive.jar', 'neoforge-runtime/forbricneolive.jar')
+                'forge-runtime/forbriclive.jar', 'neoforge-runtime/forbricneolive.jar',
+                'neoforge-runtime/neoforge-runtime.jar.pins')
+# The build stamps beside staged artifacts. Each begins with the installer's Pins.stamp(); an artifact whose stamp
+# names other pins was built from another NeoForge (or Forge, or NFRT) and must be rebuilt, not tested.
+STAMPED_FILES = ('merged-base/patched-mc-merged-26.2.jar.pins', 'forge-patched/patched-mc-forge-26.2.jar.pins',
+                 'neoforge-runtime/neoforge-runtime.jar.pins')
+PINS_JAVA = ROOT / 'forbric-kernel-installer/src/main/java/net/forbric/installer/kernel/Pins.java'
 # forbric-loader/run/build-testmods.sh's two canary mods, built the same way into the stage: (sources, jar, javac
 # --release, the staged game jars they compile against). Their sources go beside them, as in forbric-loader/run/,
 # because the tests check the packaged data against the source it was built from.
@@ -380,8 +386,30 @@ def prepare(args, java, env):
     print('[dev] Prepared. Launch with python3 tools/dev.py client (Windows: py tools/dev.py client).', flush=True)
 
 
+def pins_stamp(pins_java=PINS_JAVA):
+    """The installer's Pins.stamp(), read from Pins.java: 'mc=… forge=… neoforge=… nfrt=… result=…'."""
+    text = pins_java.read_text(encoding='utf-8')
+    value = {name: re.search(r'static final String ' + name + r' = "([^"]+)"', text).group(1)
+             for name in ('MINECRAFT', 'FORGE', 'NEOFORGE', 'NFRT', 'NFRT_RESULT')}
+    return (f"mc={value['MINECRAFT']} forge={value['FORGE']} neoforge={value['NEOFORGE']}"
+            f" nfrt={value['NFRT']} result={value['NFRT_RESULT']}")
+
+
+def stale_stamps(stage, stamp=None):
+    """Staged build stamps that do not begin with the current pins (a missing stamp counts as stale)."""
+    stamp = stamp or pins_stamp()
+    stale = []
+    for name in STAMPED_FILES:
+        path = stage / name
+        if not path.is_file() or not path.read_text(encoding='utf-8').strip().startswith(stamp):
+            stale.append(name)
+    return stale
+
+
 def ready(mc, stage, natives, arch=None, assets=True):
     """Prepared for this use. assets=False is for tests and dedicated servers, which never read them."""
+    if stale_stamps(stage):
+        return False
     basic = (all((stage / p).is_file() for p in STAGED_FILES)
             and all((STATE / 'api' / name).is_file() and digest(STATE / 'api' / name) == sha
                     for name, _, sha in API_PINS)

@@ -30,11 +30,11 @@ class MixinFitReportManifestTest {
 
 	@Test void aForgeFamilyUnitIsReadAsItsOwnPlatformWithItsRangeTranslated() {
 		String toml = "modLoader=\"javafml\"\nloaderVersion=\"[1,)\"\nlicense=\"MIT\"\n[[mods]]\nmodId=\"one\"\nversion=\"1\"\n"
-				+ "[[dependencies.one]]\nmodId=\"neoforge\"\ntype=\"required\"\nversionRange=\"[26.2.0.90,)\"\n";
+				+ "[[dependencies.one]]\nmodId=\"neoforge\"\ntype=\"required\"\nversionRange=\"[26.2.0.94,)\"\n";
 		DiscoveredMod mod = MixinFitReport.modOf(Map.of("META-INF/neoforge.mods.toml", bytes(toml)), Ecosystem.NEOFORGE, "one.jar");
 		assertEquals(Ecosystem.NEOFORGE, mod.getEcosystem());
-		assertEquals(">=26.2.0.90", mod.getDependencies().get(0).getVersionConstraint());
-		assertEquals("neoforge >=26.2.0.90", NativeAbsentTargets.unmetRequirement(
+		assertEquals(">=26.2.0.94", mod.getDependencies().get(0).getVersionConstraint());
+		assertEquals("neoforge >=26.2.0.94", NativeAbsentTargets.unmetRequirement(
 				NativeAbsentTargets.shipped().of(Ecosystem.NEOFORGE), mod), "the game the table describes fails it");
 	}
 

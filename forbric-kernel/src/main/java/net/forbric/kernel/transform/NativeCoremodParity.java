@@ -141,7 +141,7 @@ public final class NativeCoremodParity {
 		OUTSIDE_ROUTABLE.clear();
 	}
 
-	/** NeoForge 26.2.0.88's {@code finalize_spawn_targets.json}; MinecraftForge's list is the same plus TrialSpawner. */
+	/** NeoForge 26.2.0.88's {@code finalize_spawn_targets.json} (the coremods jar of 26.2.0.93 is entry-for-entry the same); MinecraftForge's list is the same plus TrialSpawner. */
 	static final Set<String> FINALIZE_TARGETS = Set.of(
 			"net/minecraft/gametest/framework/GameTestEntityBuilder",
 			"net/minecraft/server/commands/RaidCommand",

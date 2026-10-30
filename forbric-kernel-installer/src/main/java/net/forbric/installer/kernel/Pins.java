@@ -51,8 +51,16 @@ final class Pins {
 	 * caught is that {@code client.gui.ModListScreen} moved to {@code client.gui.modlist} — which the kernel's
 	 * mods-button redirect names, and which would have failed silently. {@code ForeignTypeCarrierTest} now checks
 	 * every such name against the carrier.
+	 *
+	 * <p>{@code .88 → .93} (the newest build for Minecraft 26.2): the userdev jar changes only its
+	 * {@code config.json} — {@code patches.lzma} and both access-transformer files are byte-identical, so the patched
+	 * game does not change. The universal jar adds and removes no class; its 18 changed entries are network
+	 * hardening (an ad-hoc channel cap in {@code NetworkRegistry.onMinecraftRegister}, default 2048, and a split
+	 * packet size cap in {@code GenericPacketSplitter}, default 128 MB), language files and the jar-in-jar index. Of
+	 * the libraries only sponge-mixin (0.17.3 → 0.17.4) and MixinExtras (0.5.4 → 0.5.5) move, and both come from the
+	 * parent classpath rather than this carrier. Newer NeoForge exists only for Minecraft 26.3.
 	 */
-	static final String NEOFORGE = "26.2.0.88";
+	static final String NEOFORGE = "26.2.0.93";
 
 	/**
 	 * NeoFormRuntime, pinned to the build actually validated rather than the newest published one.

@@ -17,8 +17,8 @@ FORGE_RT="${FORGE_RT:-$HERE/forge-runtime/forge-runtime.jar}"
 NEO_RT="${NEO_RT:-$HERE/neoforge-runtime/neoforge-runtime.jar}"
 # Each ecosystem's userdev artifact: its source patches say which instructions of a patched method are that
 # ecosystem's edit, so a method both patched keeps both edits (EditSplicer). The installer downloads both.
-FORGE_USERDEV="${FORGE_USERDEV:-$MC/.forbric-build/dl/forge-userdev.jar}"
-NEO_USERDEV="${NEO_USERDEV:-$MC/.forbric-build/dl/neoforge-userdev.jar}"
+FORGE_USERDEV="${FORGE_USERDEV:-$MC/.forbric-build/dl/forge-26.2-65.0.1-userdev.jar}"
+NEO_USERDEV="${NEO_USERDEV:-$MC/.forbric-build/dl/neoforge-26.2.0.93-userdev.jar}"
 OUT="${OUT:-$HERE/merged-base/patched-mc-merged-26.2.jar}"
 REPORT="${REPORT:-$HERE/merged-base/merge-conflicts.txt}"
 

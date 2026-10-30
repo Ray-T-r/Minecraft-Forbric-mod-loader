@@ -14,7 +14,8 @@
 # Output: $OUT (default run/neoforge-runtime/neoforge-runtime.jar), cached — rebuilt only if missing, so
 # DELETE IT when bumping the version below or you will keep shipping the old NeoForge.
 #
-# Pinned to NeoForge 26.2.0.88. The runtime lib versions below come from ITS userdev config.json; bump
+# Pinned to NeoForge 26.2.0.93 (.88 -> .93 moved no library this script lists: only sponge-mixin and MixinExtras
+# changed, and both are provided elsewhere). The runtime lib versions below come from ITS userdev config.json; bump
 # NF_VERSION and those versions together. (Six of the fourteen moved at this bump: fancymodloader
 # loader/earlydisplay 11.0.13 -> 11.0.16, JarJarSelector/JarJarMetadata 0.5.0 -> 0.5.1, maven-artifact
 # 3.9.9 -> 3.9.16, plexus-utils 3.5.1 -> 3.6.1. The config still lists exactly 40 entries and the same 14
@@ -58,7 +59,7 @@
 #                          to find last time.
 set -euo pipefail
 
-NF_VERSION="${NF_VERSION:-26.2.0.88}"
+NF_VERSION="${NF_VERSION:-26.2.0.93}"
 HERE="$(cd "$(dirname "$0")" && pwd)"
 OUT="${OUT:-$HERE/neoforge-runtime/neoforge-runtime.jar}"
 WORK="${WORK:-$HERE/neoforge-runtime/work}"

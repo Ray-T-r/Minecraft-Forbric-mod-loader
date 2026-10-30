@@ -55,7 +55,7 @@ public final class SuppliedArtifactContentTest {
 				"net/minecraftforge/installer/SimpleInstaller.class", "installer"));
 		Path neoInstaller = jar(work.resolve("neoforge-installer.jar"), entries(
 				"install_profile.json", "{}",
-				"version.json", "{\"id\": \"neoforge-26.2.0.88\"}",
+				"version.json", "{\"id\": \"neoforge-26.2.0.93\"}",
 				"net/minecraftforge/installer/SimpleInstaller.class", "installer",
 				"net/neoforged/cliutils/progress/ProgressReporter.class", "installer"));
 		Path fabricInstaller = jar(work.resolve("fabric-installer.jar"), entries(

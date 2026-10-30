@@ -40,6 +40,10 @@ public final class DevPrepare {
 		copy(mc.resolve(".forbric-build/out/patched-mc-forge-26.2.jar.pins"),
 				stage.resolve("forge-patched/patched-mc-forge-26.2.jar.pins"));
 		// The merge's own report of what it could not reconcile; the tests check the kernel accounts for each loss.
+		// And beside the NeoForge carrier, so tools/dev.py can tell a carrier built from an older NeoForge pin from the
+		// current one; without it a stale neoforge-runtime.jar is indistinguishable from a fresh one by file name.
+		copy(mc.resolve(".forbric-build/out/neoforge-runtime.jar.pins"),
+				stage.resolve("neoforge-runtime/neoforge-runtime.jar.pins"));
 		copy(mc.resolve(".forbric-build/out/merge-conflicts.txt"), stage.resolve("merged-base/merge-conflicts.txt"));
 		System.out.println("Development artifacts staged under " + stage);
 	}

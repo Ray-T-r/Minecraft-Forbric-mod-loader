@@ -285,9 +285,9 @@ assert_eq "the profile resolved like a launcher would" "0" "$PY_RC"
 # The profile has to survive that dedup with every ecosystem intact. It did not always: two --runtimeJar flags
 # collapsed into one, MinecraftForge's runtime never reached the kernel, and the game died on the first
 # net.minecraftforge class — after the kernel had logged a clean boot, so the game's own log said nothing.
-check "MinecraftForge's runtime survived the dedup" "/forge-runtime-[0-9.]+\.jar"     "$CMD_FILE"
+check "MinecraftForge's runtime survived the dedup" "/forge-runtime-[0-9.-]+\.jar"     "$CMD_FILE"
 check "NeoForge's runtime survived the dedup"       "/neoforge-runtime-[0-9.]+\.jar"  "$CMD_FILE"
-check "the merged base survived the dedup"          "/patched-mc-merged-[0-9.]+\.jar" "$CMD_FILE"
+check "the merged base survived the dedup"          "/patched-mc-merged-[0-9.-]+\.jar" "$CMD_FILE"
 
 if [ "$PY_RC" -eq 0 ]; then
   echo "[kernel] launching the resolved command (mainClass $(grep -c . "$CMD_FILE") argv entries)"

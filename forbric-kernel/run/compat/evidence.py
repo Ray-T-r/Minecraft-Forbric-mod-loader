@@ -27,7 +27,7 @@ RELEASE_ROLES = frozenset({"vanilla", "forge-patched", "neo-patched", "merged", 
 
 # The fixed platform (PLAN P0). A release reads each value out of the artifact it describes; a name, a path or a
 # stamp beside the file is not the version of the bytes being accepted.
-PINS = {"minecraft": "26.2", "forge": "26.2-65.0.1", "neoforge": "26.2.0.88"}
+PINS = {"minecraft": "26.2", "forge": "26.2-65.0.1", "neoforge": "26.2.0.93"}
 # Which roles carry which reading: the game jars their own version.json, the carriers their manifest.
 MINECRAFT_ROLES = ("vanilla", "forge-patched", "neo-patched", "merged")
 FORGE_ROLES = ("forge-runtime", "forge-interop")

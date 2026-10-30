@@ -145,7 +145,7 @@ class EvidenceTest(unittest.TestCase):
         return {"META-INF/MANIFEST.MF": f"Manifest-Version: 1.0\nImplementation-Title: {title}\n"
                                         f"Implementation-Version: {version}\n\nName: x/\nImplementation-Version: 0\n"}
 
-    def release_artifacts(self, neo_version="26.2.0.88", provenance=True, **provenance_changes):
+    def release_artifacts(self, neo_version="26.2.0.93", provenance=True, **provenance_changes):
         """A complete, consistent release set: pinned readings, staged build inputs, merged-base provenance."""
         game = {"version.json": json.dumps({"id": "26.2"})}
         artifacts = {name: self.jar(name + ".jar", dict(game, **{"marker": name}))
@@ -188,7 +188,7 @@ class EvidenceTest(unittest.TestCase):
         self.assertEqual({"vanilla": "26.2", "forge-patched": "26.2", "neo-patched": "26.2", "merged": "26.2"},
                          recorded["platform"]["readings"]["minecraft"])
         self.assertEqual("26.2-65.0.1", recorded["platform"]["readings"]["forge"]["forge-interop"])
-        self.assertEqual("26.2.0.88", recorded["platform"]["readings"]["neoforge"]["neo-runtime"])
+        self.assertEqual("26.2.0.93", recorded["platform"]["readings"]["neoforge"]["neo-runtime"])
         wrong = self.release_artifacts(neo_version="26.2.0.38-beta")
         with self.assertRaisesRegex(ValueError, "not the pinned platform: neo-runtime=26.2.0.38-beta"):
             evidence.capture(self.source, wrong, [self.mods], self.report, release=True)

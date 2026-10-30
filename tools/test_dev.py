@@ -21,6 +21,22 @@ class DevelopmentWorkflowTest(unittest.TestCase):
         self.addCleanup(self.temporary.cleanup)
         self.root = Path(self.temporary.name)
 
+    def test_a_stage_built_from_other_pins_is_not_ready(self):
+        stamp = dev.pins_stamp()
+        self.assertRegex(stamp, r'^mc=\S+ forge=\S+ neoforge=\S+ nfrt=\S+ result=\S+$')
+        stage = self.root / 'run'
+        for name in dev.STAMPED_FILES:
+            (stage / name).parent.mkdir(parents=True, exist_ok=True)
+            (stage / name).write_text(stamp + ' tools=abc\n')
+        self.assertEqual([], dev.stale_stamps(stage))
+        # A carrier from the previous NeoForge pin: same file name, older stamp. The stage must be rebuilt.
+        older = stamp.replace('neoforge=', 'neoforge=0.0.0.0-').split(' nfrt=')[0] + ' nfrt=x result=y'
+        (stage / dev.STAMPED_FILES[2]).write_text(older)
+        self.assertEqual([dev.STAMPED_FILES[2]], dev.stale_stamps(stage))
+        (stage / dev.STAMPED_FILES[0]).unlink()
+        self.assertEqual([dev.STAMPED_FILES[0], dev.STAMPED_FILES[2]], dev.stale_stamps(stage))
+        self.assertFalse(dev.ready(self.root / 'mc', stage, self.root / 'natives'))
+
     def test_platform_defaults(self):
         self.assertEqual(dev.default_minecraft_dir('windows', {'APPDATA': 'C:/Users/A B/Roaming'}, self.root),
                          Path('C:/Users/A B/Roaming/.minecraft'))

@@ -5,11 +5,11 @@
   "pins": {
     "minecraft": "26.2",
     "forge": "26.2-65.0.1",
-    "neoforge": "26.2.0.88"
+    "neoforge": "26.2.0.93"
   },
-  "toolCommit": "bdfc679dade7d3d00e83b0b23bd331fd99079950",
+  "toolCommit": "f395dba33a22d2132621068bd79ce14ded434db3",
   "toolSources": {
-    "MergedBaseBuilder.java": "9f554bf40ac5cc060a6bbd69e7af197fffa37c7453d5f9b85285dfeed72f6381",
+    "MergedBaseBuilder.java": "79c7502af4a705df5721e1191e0b25bf009abd5a8731d549abd1f3b2868982f2",
     "AdditiveMethodMerger.java": "02c966264ae6b29671c4c2f9c3b99a2fef7d49301d261e555e5b2d659e7fffbd",
     "RuntimeInteropPatcher.java": "86d90b07beb65e38dfca640aa9d46dbb195d9819c5f57e84af3914993d15b520",
     "MergedLinkChecker.java": "187b3dfca3eca9d9d1ef23de8986050e7a692dad1d71f842084cc37126e4926c",
@@ -23,7 +23,7 @@
     "EmptyArrayContractBridge.java": "dc2d518411451a76a11178fef7212e85ffdd586fab5561d58e8aa43d88cdd1a0",
     "PatchLineProvenance.java": "b152efc2759da76597ae28a01cf2de486f243561a3435ed8cf03cfe12f51e4a6",
     "EditSplicer.java": "8a020659d026f43368e3e07871a1e9ccf93f358f8923eec25ec42dbd20d7e945",
-    "DelegateTwinRoutes.java": "c55afc23b624b29dec28fb20f5f0b0f865f8eeec2f0e3ac0022eb3c6f57bde56"
+    "DelegateTwinRoutes.java": "4cae89b93dd7302f3c45012e9fc9b4b674ec7af209c1a0dacc0213400b4c3996"
   },
   "mergeInputs": {
     "vanilla": {
@@ -32,7 +32,7 @@
     },
     "forge-patched": {
       "file": "patched-mc-forge-26.2.jar",
-      "sha256": "daaa0756408811c6da23036697bf2fe1efc86f008ddccbb8a793fa21d19f6dbc"
+      "sha256": "fc0d706b04feee3856dd688e6e0266a25a634b36f2043d629208b6337e6929ec"
     },
     "neo-patched": {
       "file": "patched-mc-neoforge-26.2.jar",
@@ -40,42 +40,42 @@
     },
     "forge-runtime": {
       "file": "forge-runtime.jar",
-      "sha256": "590978f8288207a992cfba4723ae76b57d624c98b58f040afd4a303fce575a73"
+      "sha256": "9f50fa694b15ba7b68acfa2e1d12f63d62c31dc676b6e440cbbdd09d74adb1df"
     },
     "neo-runtime": {
       "file": "neoforge-runtime.jar",
-      "sha256": "d8b591acaa23e4ec3f2995900fa10584bc75a9977bfebd0ddb60aaf21437eaf0"
+      "sha256": "ecceeb77afa51ddd37bcfea7237ad69aeb4840fe50438ed8780a5deeecc97f6b"
     },
     "forge-userdev": {
-      "file": "forge-userdev.jar",
+      "file": "forge-26.2-65.0.1-userdev.jar",
       "sha256": "661d1f18070aacbd58eff588f631b95659ce59740e97a25b417427cf2026ad20"
     },
     "neo-userdev": {
-      "file": "neoforge-userdev.jar",
-      "sha256": "9e4baada142094ae39670b76ddc225125ec079136105373fc702683e810b100f"
+      "file": "neoforge-26.2.0.93-userdev.jar",
+      "sha256": "973eaa6ccd05117bc573b18d8719f93dddb8cfe7591b2ab72225e2a232f24fa9"
     }
   },
   "inputs": {
     "merged": {
       "file": "patched-mc-merged-26.2.jar",
-      "sha256": "84aa6fe93c5240ae1824f038493c29dd46649b741b6a94903de8f203f4e718e3"
+      "sha256": "a5a3ef1801b3347e03968125cd9eef60b55a85ddb61b7e81f7d81356fd10489a"
     },
     "neoRuntime": {
       "file": "neoforge-runtime.jar",
-      "sha256": "d8b591acaa23e4ec3f2995900fa10584bc75a9977bfebd0ddb60aaf21437eaf0"
+      "sha256": "ecceeb77afa51ddd37bcfea7237ad69aeb4840fe50438ed8780a5deeecc97f6b"
     },
     "forgeInterop": {
       "file": "forge-runtime-interop.jar",
-      "sha256": "395145d21521b4f3bcbef87b355acf4ed623aa32d76a736fd641f136c255f20c"
+      "sha256": "ad47183992cd1c5ebdda2a87a9cd9e575d16ef9a7efae238e8af1f49bcea550b"
     }
   },
   "mergeReport": {
     "file": "merge-conflicts.txt",
-    "sha256": "7ef2a1cb4ef993a5ac11e64fcc76a9d642c63f4a9d2167c76f87c5d5e37eb77e"
+    "sha256": "5ca6814a070c0048f25902d9135f90288d17e05db59090ec68163445a3d9952c"
   },
   "result": "dangling references: 7 (known 7, new 0); 17 raw references require explicit final-definition native ancestor composition; baseline entries now fixed: 0",
   "reproduction": "inputs.merged, inputs.forgeInterop and mergeReport are what forbric-loader/run/build-merged-base.sh wrote from the seven mergeInputs with the toolSources at toolCommit (committed, link check enforced); evidence.py merge-provenance recorded that build beside the merged base, and this record is folded from it. Re-running run/check-merged-links.sh on inputs.merged, inputs.neoRuntime and inputs.forgeInterop gives the result above. ZIP timestamps differ across rebuilds; compare entry contents and CRCs.",
-  "review": "The 7 retained raw exceptions are unchanged: the anonymous direction switch field, the Forge NBT builder and the GameTest cleanup references. The edit splice carries MinecraftForge's own runs into methods both ecosystems patched, among them capability calls (gatherCapabilities, getCapabilities, serializeCaps) in Entity, BlockEntity and ClientLevel, whose declaring ancestor the merged class does not extend: 17 references require explicit final-definition native ancestor composition. This build differs from the one before it (tools df0eb1f4) in one class: the delegate-twin pass (DelegateTwinRoutes) points Block.playerDestroy's call to MinecraftForge's dropResources(..., false) back at the merged dropResources, NeoForge's; every other entry of the merged jar and of the interop jar has the same contents, and the report gains the pass's section, which names that site and the MinecraftForge edit given up there. MinecraftForge's dropResources(..., boolean) stays in the jar and links; no reference was added or lost, so the dangling references and the composition obligations are the same. They are composition obligations the kernel must certify before final definition, not baseline exceptions; no exception licenses a new reference or a silently discarded protocol.",
+  "review": "The 7 retained raw exceptions are unchanged: the anonymous direction switch field, the Forge NBT builder and the GameTest cleanup references. The edit splice carries MinecraftForge's own runs into methods both ecosystems patched, among them capability calls (gatherCapabilities, getCapabilities, serializeCaps) in Entity, BlockEntity and ClientLevel, whose declaring ancestor the merged class does not extend: 17 references require explicit final-definition native ancestor composition. This build differs from the one before it (tools df0eb1f4) in one class: the delegate-twin pass (DelegateTwinRoutes) points Block.playerDestroy's call to MinecraftForge's dropResources(..., false) back at the merged dropResources, NeoForge's; every other entry of the merged jar and of the interop jar has the same contents, and the report gains the pass's section, which names that site and the MinecraftForge edit given up there. MinecraftForge's dropResources(..., boolean) stays in the jar and links; no reference was added or lost, so the dangling references and the composition obligations are the same. They are composition obligations the kernel must certify before final definition, not baseline exceptions; no exception licenses a new reference or a silently discarded protocol. Re-checked on 2026-10-30 after the NeoForge 26.2.0.88 -> 26.2.0.93 bump, with the merge tools at toolCommit (MergedBaseBuilder and DelegateTwinRoutes had changed since the previous record without it being re-recorded): the .93 userdev's patches and access transformers are byte-identical to .88's, the merged jar and the interop jar have the same entries with the same CRCs as the .88 build, and only neoforge-runtime.jar changed (18 entries). The link check gives the same 7 known references, 0 new.",
   "toolWorkingTree": "committed sources: toolSources are the files at toolCommit",
   "requiredCompositions": [
     "net/minecraft/client/multiplayer/ClientLevel.gatherCapabilities()V requires net/minecraft/world/level/Level native ancestor net/minecraftforge/common/capabilities/CapabilityProvider$Levels",

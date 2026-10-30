@@ -1011,4 +1011,4 @@ neoforge net/minecraft/server/network/ServerLoginPacketListenerImpl$1#<init>(Lne
 neoforge net/minecraft/world/item/Items#lambda$registerBlock$1(Lnet/minecraft/world/level/block/Block;[Lnet/minecraft/world/level/block/Block;Lnet/minecraft/world/item/Item$Properties;)Lnet/minecraft/world/item/Item;
 platform fabric minecraft=26.2
 platform forge forge=65.0.1 minecraft=26.2
-platform neoforge minecraft=26.2 neoforge=26.2.0.88
+platform neoforge minecraft=26.2 neoforge=26.2.0.93

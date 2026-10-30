@@ -96,7 +96,7 @@ final class ArtifactBuilder {
 		log.accept("");
 		log.accept("== MinecraftForge " + Pins.FORGE + " ==");
 		ForgeArtifacts fa = new ForgeArtifacts(mcVersion, Pins.FORGE);
-		Path forgeUserdev = dl.resolve("forge-userdev.jar");
+		Path forgeUserdev = dl.resolve(userdevFile("forge", Pins.FORGE));
 		http.ensureWithFallback(fa.forgeUrl(fa.userdevCoordinate()), fa.centralUrl(fa.userdevCoordinate()),
 				forgeUserdev);
 		ForgeArtifacts.UserdevConfig forgeCfg = ForgeArtifacts.readConfig(forgeUserdev);
@@ -111,7 +111,7 @@ final class ArtifactBuilder {
 		log.accept("");
 		log.accept("== NeoForge " + Pins.NEOFORGE + " ==");
 		NeoForgeArtifacts nfa = new NeoForgeArtifacts(mcVersion, Pins.NEOFORGE);
-		Path neoUserdev = dl.resolve("neoforge-userdev.jar");
+		Path neoUserdev = dl.resolve(userdevFile("neoforge", Pins.NEOFORGE));
 		http.ensureWithFallback(nfa.neoforgedUrl(nfa.userdevCoordinate()), nfa.centralUrl(nfa.userdevCoordinate()),
 				neoUserdev);
 		// The same NeoForm userdev config shape on both sides, so the Forge reader serves; see NeoForgeArtifacts.
@@ -193,4 +193,14 @@ final class ArtifactBuilder {
 		if (!(parsed instanceof Map)) throw new IOException(json + " is not a version JSON");
 		return (Map<String, Object>) parsed;
 	}
+
+	/**
+	 * Where a userdev jar is cached: named by the build it is, never a fixed name. The cache keeps a file as soon as
+	 * it exists, so a fixed {@code neoforge-userdev.jar} survived a pin bump and every later install read the old
+	 * build's {@code config.json} while the build stamp claimed the new one.
+	 */
+	static String userdevFile(String artifact, String version) {
+		return artifact + "-" + version + "-userdev.jar";
+	}
+
 }

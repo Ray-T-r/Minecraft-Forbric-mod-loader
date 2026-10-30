@@ -25,10 +25,10 @@ SOURCE = KERNEL / "canary/native-controls"
 ORIGINAL = Path(os.environ.get("NATIVE_CONTROL_CACHE", Path(os.environ["FORBRIC_OLD"]).resolve().parent
                               if os.environ.get("FORBRIC_OLD") else KERNEL.parent))
 MC = Path(os.environ.get("MC_DIR", Path.home() / "Library/Application Support/minecraft"))
-VERSIONS = {"fabric": "0.19.5", "forge": "65.0.1", "neo": "26.2.0.88"}
+VERSIONS = {"fabric": "0.19.5", "forge": "65.0.1", "neo": "26.2.0.93"}
 INSTALLERS = {
     "forge": "https://maven.minecraftforge.net/net/minecraftforge/forge/26.2-65.0.1/forge-26.2-65.0.1-installer.jar",
-    "neo": "https://maven.neoforged.net/releases/net/neoforged/neoforge/26.2.0.88/neoforge-26.2.0.88-installer.jar",
+    "neo": "https://maven.neoforged.net/releases/net/neoforged/neoforge/26.2.0.93/neoforge-26.2.0.93-installer.jar",
 }
 FABRIC_LAUNCHER = "fabric-server-mc26.2-loader0.19.5-launcher1.1.2.jar"
 SEED = 8035262
@@ -157,7 +157,7 @@ def compile_canaries():
             game = image / "libraries/net/minecraftforge/forge/26.2-65.0.1/forge-26.2-65.0.1-server.jar"
             classpath = [game, *jars(image)]
         else:
-            game = image / "libraries/net/neoforged/minecraft-server-patched/26.2.0.88/minecraft-server-patched-26.2.0.88.jar"
+            game = image / "libraries/net/neoforged/minecraft-server-patched/26.2.0.93/minecraft-server-patched-26.2.0.93.jar"
             classpath = [game, *jars(image)]
         destination = BASE / "compile" / family
         if destination.exists():
@@ -185,7 +185,7 @@ def compile_canaries():
 def native_command(family, image, java_args):
     if family == "fabric":
         return ["java", *java_args, "-jar", FABRIC_LAUNCHER, "--nogui"]
-    group, version = ("net/minecraftforge/forge", "26.2-65.0.1") if family == "forge" else ("net/neoforged/neoforge", "26.2.0.88")
+    group, version = ("net/minecraftforge/forge", "26.2-65.0.1") if family == "forge" else ("net/neoforged/neoforge", "26.2.0.93")
     return ["java", *java_args, f"@libraries/{group}/{version}/unix_args.txt", "nogui"]
 
 

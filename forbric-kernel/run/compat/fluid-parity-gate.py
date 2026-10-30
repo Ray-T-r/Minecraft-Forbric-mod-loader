@@ -23,7 +23,7 @@ back the neuter of MinecraftForge's FluidInteractionRegistry.canInteract that th
 lava and are washed over by water, D and E stay lava, both generators make nothing — 14 scores and 6 cells differ from
 vanilla, and this gate is RED. Only C, F and I (paths that never asked that registry) still match.
 
---mods compares against the loaders themselves: native NeoForge 26.2.0.88 with a NeoForge canary mod (lava next to an
+--mods compares against the loaders themselves: native NeoForge 26.2.0.93 with a NeoForge canary mod (lava next to an
 iron or emerald block -> glowstone) and native MinecraftForge 26.2-65.0.1 with a MinecraftForge canary mod (lava next to
 a lapis or emerald block -> shroomlight; water next to lapis -> sponge), both compiled from canary/fluid-interactions
 against that loader's own jars, and the kernel with both jars, unchanged. The native images are the ones
@@ -96,8 +96,8 @@ MOD_CASES = [  # name, the loader whose server decides it, commands
     ('V_place', 'both', ['setblock {xp} {y} {z} water', 'setblock {x} {y} {z} lava']),
     ('V_neighbour', 'both', ['setblock {x} {y} {z} lava', 'setblock {xp} {y} {z} water']),
 ]
-NATIVE = {'neoforge': ('neo', 'net/neoforged/neoforge/26.2.0.88',
-                       'libraries/net/neoforged/minecraft-server-patched/26.2.0.88/minecraft-server-patched-26.2.0.88.jar'),
+NATIVE = {'neoforge': ('neo', 'net/neoforged/neoforge/26.2.0.93',
+                       'libraries/net/neoforged/minecraft-server-patched/26.2.0.93/minecraft-server-patched-26.2.0.93.jar'),
           'minecraftforge': ('forge', 'net/minecraftforge/forge/26.2-65.0.1',
                              'libraries/net/minecraftforge/forge/26.2-65.0.1/forge-26.2-65.0.1-server.jar')}
 FIRED = re.compile(r'\[FluidCanary\] (neoforge|minecraftforge) \w+ rule fired at (-?\d+), (-?\d+), (-?\d+)')
