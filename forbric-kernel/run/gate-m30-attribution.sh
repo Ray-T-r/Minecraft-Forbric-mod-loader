@@ -18,9 +18,9 @@
 #   forbricabicanary        compiled against net.neoforged.neoforge.event.ForbricVanishedEvent, absent here; its
 #                           common-setup deferred task touches it (the bucket_of_frog shape)
 #
-# THE DEAD-EVENT ROW STAYS ON A SYNTHETIC MinecraftForge FIXTURE -- PROPOSED, pending the owner's decision. The plan
-# (Stage 2.5 of dropping MinecraftForge) lists "m30's dead-event case" among what moves to the NeoForge canary; this
-# keeps it where it is instead, and that change of scope is the owner's to accept, not a lane's. The reasoning: three of
+# THE DEAD-EVENT ROW STAYS ON A SYNTHETIC MinecraftForge FIXTURE -- the owner's decision of 2026-10-30, and Stage 4
+# deletes it together with DeadEventAudit. The plan (Stage 2.5 of dropping MinecraftForge) listed "m30's dead-event
+# case" among what moves to the NeoForge canary; the owner accepted keeping it where it is instead. The reasoning: three of
 # the four attributions are already the families that stay (a Fabric mixin canary, two NeoForge canaries). The fourth
 # asks DeadEventAudit, and there is no NeoForge event to move it onto: the audit's rows are MinecraftForge events the
 # merged base no longer posts; its only NeoForge rows (FinalizeSpawnEvent, InitializeClientRegistriesEvent) are PARTIAL

@@ -115,5 +115,6 @@ gate-m21's `-Dforbric.neoScanData=off` control turns exactly eleven checks red (
 with the MinecraftForge carrier hidden, `-Pforbric.hideForgeCarrier`) are CI's own skips-actual lists, from runs of
 branch `ci/remove-forge-stage2` (runs 41012697382 and 41017826904; ci-prepared gained two [fixture:third-party] rows, new tests needing local mod packs CI does not have).
 
-**Decision pending with the owner**: gate-m30's dead-event row stays on the synthetic MinecraftForge fixture until Stage 4
-deletes it with `DeadEventAudit` (the gate header says PROPOSED), instead of moving to a NeoForge canary as the plan said.
+**Owner's decision (2026-10-30)**: gate-m30's dead-event row stays on the synthetic MinecraftForge fixture until Stage 4
+deletes it with `DeadEventAudit`, instead of moving to a NeoForge canary as the plan said. No public "last with
+MinecraftForge" release: Stage 3 starts from the tag `tri-eco-26.2-final` alone.
