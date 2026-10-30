@@ -203,12 +203,24 @@ public final class TestFixtures {
 	}
 
 	/**
-	 * The game base under {@link #stagedRoot()}: the jar the game side compiles against and the kernel launches as
-	 * {@code --gameJar}. Today that is the merged base (vanilla + MinecraftForge + NeoForge patches); switching the
-	 * base to the genuine NeoForge jar is this one constant, not the ~265 tests that read it. Relative, for a test
-	 * that resolves it against a root of its own.
+	 * The merged base (vanilla + MinecraftForge + NeoForge patches) under {@link #stagedRoot()}, whatever the base is.
+	 * For reads of what only the merge produces: its {@code .pins} build stamp, the FABRIC and FORGE native-reference
+	 * indexes it embeds under {@code META-INF/forbric/native-reference/}, its merge report. A genuine NeoForge jar has
+	 * none of them, so these reads must not follow {@link #BASE_JAR} when it moves. Relative, like {@link #BASE_JAR}.
 	 */
-	public static final String BASE_JAR = "merged-base/patched-mc-merged-26.2.jar";
+	public static final String MERGED_BASE_JAR = "merged-base/patched-mc-merged-26.2.jar";
+
+	/**
+	 * The game base under {@link #stagedRoot()}: the jar the game side compiles against and the kernel launches as
+	 * {@code --gameJar}. Today that is the merged base, {@link #MERGED_BASE_JAR}; Stage 4 points it at the genuine
+	 * NeoForge jar. That switch is this constant for every read that holds on either base (a class's bytes, a
+	 * hierarchy, a resource vanilla ships), not the ~265 tests that read it. It is not the whole switch: a read of an
+	 * artifact only the merge produces goes through {@link #MERGED_BASE_JAR} instead, and the tests about the merge
+	 * itself (the Merged*-named ones, which read the merge's repairs, conflicts and lost calls through this constant)
+	 * stop meaning anything on the genuine jar and are Stage 4's to delete or rewrite. Relative, for a test that
+	 * resolves it against a root of its own.
+	 */
+	public static final String BASE_JAR = MERGED_BASE_JAR;
 
 	/**
 	 * The genuine NeoForge-patched game, NFRT's {@code gameJarNoRecomp}: what tools/dev.py stages beside the merged base
@@ -228,6 +240,11 @@ public final class TestFixtures {
 	/** {@link #BASE_JAR} under {@link #stagedRoot()}. */
 	public static Path stagedBase() {
 		return stagedRoot().resolve(BASE_JAR);
+	}
+
+	/** {@link #MERGED_BASE_JAR} under {@link #stagedRoot()}. */
+	public static Path mergedBase() {
+		return stagedRoot().resolve(MERGED_BASE_JAR);
 	}
 
 	/** {@link #GENUINE_BASE_JAR} under {@link #stagedRoot()}. */
@@ -337,7 +354,7 @@ public final class TestFixtures {
     private static final java.util.Map<String,Boolean> NATIVE_INPUT_MATCHES=new java.util.concurrent.ConcurrentHashMap<>();
     public static Path forgeMergeInput() {
         Path staged=stagedRoot().resolve("forge-patched/patched-mc-forge-26.2.jar");
-        Path merged=stagedBase();
+        Path merged=mergedBase();
         Path launcher=minecraftDir().resolve("libraries/net/forbric/patched-mc-forge/26.2-65.0.1/patched-mc-forge-26.2-65.0.1.jar");
         try {
             if(Files.isRegularFile(merged))try(ZipFile jar=new ZipFile(merged.toFile())){

@@ -80,10 +80,10 @@ class NativeOnlyMethodsCensusTest {
 			Ecosystem.FORGE, TestFixtures.forgeMergeInput(),
 			Ecosystem.NEOFORGE, STAGED.resolve(TestFixtures.GENUINE_BASE_JAR)));
 
-	/** The merge's own build pins: which vanilla, MinecraftForge and NeoForge it read. */
-	private static final Path PINS = STAGED.resolve(TestFixtures.BASE_JAR + ".pins");
-	private static final Path FORGE_RUNTIME = STAGED.resolve("forge-runtime/forge-runtime.jar");
-	private static final Path NEO_RUNTIME = STAGED.resolve("neoforge-runtime/neoforge-runtime.jar");
+	/** The merge's own build pins: which vanilla, MinecraftForge and NeoForge it read. Only the merged base has them. */
+	private static final Path PINS = STAGED.resolve(TestFixtures.MERGED_BASE_JAR + ".pins");
+	private static final Path FORGE_RUNTIME = STAGED.resolve(TestFixtures.FORGE_CARRIER_JAR);
+	private static final Path NEO_RUNTIME = STAGED.resolve(TestFixtures.NEO_CARRIER_JAR);
 	private static final Path VERSION_JSON = TestFixtures.minecraftDir().resolve("versions/26.2/26.2.json");
 
 	/** platform → class in vanilla's packages → its methods' {@code name + desc}. */

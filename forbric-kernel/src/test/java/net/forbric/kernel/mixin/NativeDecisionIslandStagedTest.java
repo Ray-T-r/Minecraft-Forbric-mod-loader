@@ -44,7 +44,7 @@ class NativeDecisionIslandStagedTest {
 	private static Function<String, ClassNode> classes() {
 		return owner -> {
 			try {
-				return owner.startsWith("net/neoforged/") ? staged("neoforge-runtime/neoforge-runtime.jar", owner + ".class")
+				return owner.startsWith("net/neoforged/") ? staged(TestFixtures.NEO_CARRIER_JAR, owner + ".class")
 						: staged(TestFixtures.BASE_JAR, owner + ".class");
 			} catch (AssertionError | RuntimeException absent) {
 				return null;
@@ -54,7 +54,7 @@ class NativeDecisionIslandStagedTest {
 
 	@Test void vanillasBreathingChecksComeBackInFrontOfTheCarriersHookWithTheEffectCheckRelayed() throws Exception {
 		ClassNode merged = staged(TestFixtures.BASE_JAR, LIVING + ".class");
-		ClassNode vanilla = staged(TestFixtures.BASE_JAR, "META-INF/forbric/native-reference/FABRIC/" + LIVING + ".class.bin");
+		ClassNode vanilla = staged(TestFixtures.MERGED_BASE_JAR, "META-INF/forbric/native-reference/FABRIC/" + LIVING + ".class.bin");
 		MethodNode host = NativeCallInlining.method(merged, "baseTick()V"), was = NativeCallInlining.method(vanilla, "baseTick()V");
 		assertNotNull(host);
 		assertNotNull(was);
@@ -98,12 +98,12 @@ class NativeDecisionIslandStagedTest {
 	 */
 	@Test void theVanillaRefillInTheHookLeavesTheEyeCheckToTheIsland() throws Exception {
 		ClassNode merged = staged(TestFixtures.BASE_JAR, LIVING + ".class");
-		ClassNode vanilla = staged(TestFixtures.BASE_JAR, "META-INF/forbric/native-reference/FABRIC/" + LIVING + ".class.bin");
+		ClassNode vanilla = staged(TestFixtures.MERGED_BASE_JAR, "META-INF/forbric/native-reference/FABRIC/" + LIVING + ".class.bin");
 		MethodNode host = NativeCallInlining.method(merged, "baseTick()V"), was = NativeCallInlining.method(vanilla, "baseTick()V");
 		String hook = "net/neoforged/neoforge/common/CommonHooks", refill = net.forbric.kernel.transform.VanillaAirRefillInjector.RUNTIME;
 		ClassNode decorated = new ClassNode();
 		new ClassReader(new net.forbric.kernel.transform.VanillaAirRefillInjector().transform(hook.replace('/', '.'),
-				TestFixtures.requireEntry(Fixture.STAGED, TestFixtures.stagedRoot().resolve("neoforge-runtime/neoforge-runtime.jar"), hook + ".class"), null)).accept(decorated, 0);
+				TestFixtures.requireEntry(Fixture.STAGED, TestFixtures.neoCarrier(), hook + ".class"), null)).accept(decorated, 0);
 		Path compiled = Path.of(System.getProperty("forbric.test.runtimeClasses", "build/classes/java/runtime")).resolve(refill + ".class");
 		TestFixtures.require(Fixture.GAME_SIDE, java.nio.file.Files.isRegularFile(compiled), "compiled KernelAirRefill required");
 		ClassNode runtime = new ClassNode();
@@ -151,7 +151,7 @@ class NativeDecisionIslandStagedTest {
 		String owner = "net/minecraft/client/resources/model/SimpleModelWrapper";
 		String sprites = "L" + owner + ";findNonBlockSprites(Lnet/minecraft/client/resources/model/geometry/QuadCollection;)Lcom/google/common/collect/Multimap;";
 		ClassNode merged = staged(TestFixtures.BASE_JAR, owner + ".class");
-		ClassNode vanilla = staged(TestFixtures.BASE_JAR, "META-INF/forbric/native-reference/FABRIC/" + owner + ".class.bin");
+		ClassNode vanilla = staged(TestFixtures.MERGED_BASE_JAR, "META-INF/forbric/native-reference/FABRIC/" + owner + ".class.bin");
 		String bake = "bake(Lnet/minecraft/client/resources/model/ModelBaker;Lnet/minecraft/resources/Identifier;"
 				+ "Lnet/minecraft/client/renderer/block/dispatch/ModelState;)Lnet/minecraft/client/renderer/block/dispatch/BlockStateModelPart;";
 		MethodNode host = NativeCallInlining.method(merged, bake), was = NativeCallInlining.method(vanilla, bake);
