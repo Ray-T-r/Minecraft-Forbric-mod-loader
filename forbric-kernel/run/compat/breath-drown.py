@@ -10,26 +10,22 @@ bucket round trip, each family's listeners alone and both in one pack.
   judge      one Forbric result against the reference, for a gate phase: prints a line per row and exits 1 unless the
              rows that failed are exactly the ones that phase predicts, each for that phase's cause
   compare    two results field by field, including what the gate does not judge (the entity events the server
-             broadcast, and the random draws outside the rows that check them) — for the developer probe
+             broadcast, and the random draws) — for the developer probe
 
-What the gate judges, per row: the air and health sampled at the end of every tick (or a liquid row's result), and the
-view of the listener families the row names in EXPECT, each against that family's native loader running the same jar.
-A tag of the other family does nothing on a native loader, so the native run of a row is what its deciding family's
-listeners produce alone: where both families act, EXPECT names the one whose answer stands, and adds what the other
-family must have seen. NeoForge's listeners answer first, then MinecraftForge's, because the kernel posts
-MinecraftForge's events from NeoForge's at LOWEST after every mod is constructed and before any mod's setup runs: that
-holds for every NeoForge listener above LOWEST and every one registered before the kernel's bridges (a mod's
-constructor, an @EventBusSubscriber class). The NeoForge canary holds both: its LOW listeners, registered from common
-setup (after the bridges), would answer after a bridge at any priority above LOWEST, and its LOWEST listeners,
-registered in its constructor, after bridges installed before the mods are constructed. A NeoForge listener
-registered at LOWEST later answers after MinecraftForge's, and the gate's canaries have none (introduction §19). The
-order is recorded, never assumed: a row where a NeoForge listener and MinecraftForge's both answered an event must
-record the order of a tick they both answered. One row is a documented deliberate difference ('owner-refill': the
-owner's vanilla refill, which the reference must still show native MinecraftForge not doing: its air apart from the
-vanilla refill and its listener told it may not refill; whether that air holds still is not judged). The body's
-random draws are judged only where a row must draw what another row draws ('rng-as': a MinecraftForge listener's
-bubble count, which natively nothing reads), and only once the probe read them on every tick; the entity events never
-are (both documented in introduction §19).
+What the gate judges, per row: the air and health sampled at the end of every tick (or a liquid row's result), and what
+the NeoForge canary's listeners saw, against native NeoForge running the same jar. Since Stage 3 of dropping
+MinecraftForge, Forbric refuses the MinecraftForge canary (a MinecraftForge-only jar), so the NeoForge canary is the
+only one that runs: its listeners, vanilla, and the kernel's repairs of the merged game make every row, and a row's
+f-* tags do nothing, as they do on native NeoForge. What only the MinecraftForge canary produced is no longer judged:
+its listeners' views, the answering order against NeoForge's, its bubble count's random draws, its liquids' rows, and
+the comparison with native MinecraftForge (the reference still holds it: a native loader runs its own jar). Instead,
+no row may carry a view of a MinecraftForge listener, and the rows in its liquids must be skipped because the block or
+item is not registered, as on native NeoForge. Two rows are a documented deliberate difference ('vanilla-refill': the
+owner's vanilla refill, which the merged breathing hook gives a body that breathes with its eye in water, where native
+NeoForge holds the air; NeoForge's breathe listener is handed vanilla's refill, and the reference must still show
+native NeoForge handing it nothing, and where the body keeps that refill its air must be what native MinecraftForge's
+hook, which refills as vanilla does, gives the same row, and not native NeoForge's). The random draws and the entity
+events are not judged (introduction §19).
 """
 import argparse
 import hashlib
@@ -55,125 +51,98 @@ PROPERTIES = ['level-seed=forbrickernel', 'level-name=world', 'level-type=minecr
               'view-distance=3', 'simulation-distance=3', 'spawn-protection=0', 'sync-chunk-writes=false']
 
 F, N = 'forge', 'neo'
-# Row -> (families whose native run of the row is the expectation, checks on the other family in a mixed pack).
-#   ('none', family, kind)        that family's listener was never asked for this body (NeoForge's answer stopped it)
-#   ('asked', family, kind)       that family's listener was asked
-#   ('sees', family, kind, text)  that family's first note of that kind contains text (it was handed the other's answer)
-#   ('rng-as', row)               the body drew from its random source what <row>'s body drew, tick for tick, here and
-#                                 in every native run the row is judged against
-#   ('owner-refill', row, native, merged)
-#                                 a deliberate difference (the owner's vanilla refill, introduction §6 and §8.1): the
-#                                 body's air is what <row>'s body does on native MinecraftForge (the vanilla refill) and
-#                                 MinecraftForge's breathe listener's first note contains <merged>, where this row's own
-#                                 native run does not refill so (its air is not <row>'s native air) and its note contains
-#                                 <native> (the reference must still show that; that its air holds still is not checked);
-#                                 the rest of the row (health, every view's count and ticks) is judged as native
+# Row -> checks, every row judged against native NeoForge running the same jar (STAGE 3 OF DROPPING MinecraftForge: the
+# MinecraftForge canary is refused, so its f-* tags do nothing on Forbric, as on native NeoForge), and no row may carry a
+# view of a MinecraftForge listener (nothing of the refused jar runs). On a native loader every row is what that loader's
+# own canary's listeners do alone, so the native NeoForge run is the expectation of every row, the mixed ones included.
+#   ('none', family, kind)   that family's listener was never asked for this body
+#   ('vanilla-refill', air)  a deliberate difference (the owner's vanilla refill, VanillaAirRefillInjector, introduction
+#                            §6): a body that breathes with its eye in water refills as vanilla does, so NeoForge's breathe
+#                            listener's first note contains VANILLA_REFILL where native NeoForge's contains NEO_REFILL (the
+#                            reference must still show that). With air=True the body keeps that refill: its air is what
+#                            native MinecraftForge, whose hook refills as vanilla does there, gives the same row (no
+#                            MinecraftForge listener acts in it), and native NeoForge's air must differ from it. With
+#                            air=False a NeoForge listener takes the refill and the air is native NeoForge's. The rest of the
+#                            row (health, every NeoForge view's count and ticks) is judged as native NeoForge.
+#   ('refused',)             a row in the MinecraftForge canary's liquids: it is played only where that jar runs, so it must
+#                            be skipped because its block or item is not registered, as on native NeoForge
 EXPECT = {
-    'drown-read': ({F, N}, []),
-    'drown-late': ({F, N}, []),
-    'drown-f-cancel': ({F}, []),
-    'drown-f-notdrowning': ({F}, []),
-    'drown-f-damage3': ({F}, []),
-    'drown-f-damage0': ({F}, []),
-    # A MinecraftForge listener's bubble count: MinecraftForge's hook never reads it, so natively the body draws what it
-    # draws with none (drown-late); NeoForge's hook draws six numbers per bubble, so a count carried back would not.
-    'drown-f-bubbles0': ({F}, [('rng-as', 'drown-late')]),
-    'drown-f-bubbles50': ({F}, [('rng-as', 'drown-late')]),
-    'drown-f-ann-cancel': ({F}, []),
-    # Water breathing: nobody drowns. Native NeoForge also holds the air (its hook refills nothing where the eye is in
-    # water); the merged hook refills like vanilla and MinecraftForge, the owner's choice (introduction §6).
-    'drown-read-waterbreathing': ({F}, [('none', F, 'drown'), ('none', N, 'drown')]),
-    'drown-n-cancel': ({N}, [('none', F, 'drown'), ('none', F, 'drown-ann')]),
-    'drown-n-notdrowning': ({N}, [('none', F, 'drown'), ('none', F, 'drown-ann')]),
-    'drown-n-damage3': ({N}, [('sees', F, 'drown', 'damage=3.0 ')]),
-    'drown-n-bubbles0': ({N}, [('sees', F, 'drown', 'bubbles=0 ')]),
-    # A NeoForge listener that makes a body drown before air -20: MinecraftForge's listeners are asked from then on,
-    # with the air the body has (natively MinecraftForge asks only from -20; no native loader has both families).
-    'drown-n-drowning': ({N}, [('sees', F, 'drown', 'drowning=true damage=2.0 bubbles=8 air=0 ')]),
-    # MinecraftForge's attack event is posted at the head of hurtServer, its own position and before NeoForge's
-    # incoming-damage event, so a NeoForge cancel there stops MinecraftForge's hurt and damage but not its attack.
-    'drown-n-incoming-cancel': ({N}, [('asked', F, 'attack'), ('none', F, 'hurt'), ('none', F, 'damage-ann')]),
-    'drown-n-damage3-f-damage0': ({F}, [('sees', F, 'drown', 'damage=3.0 ')]),
-    'drown-n-cancel-f-damage3': ({N}, [('none', F, 'drown'), ('none', F, 'drown-ann')]),
-    'drown-n-damage3-f-cancel': ({F}, [('sees', F, 'drown', 'damage=3.0 ')]),
-    # NeoForge's LOW listeners, registered from common setup, after the kernel's bridges: they answer before
-    # MinecraftForge's all the same (a bridge above LOWEST would answer before them, and these rows would fail).
-    'drown-nlow-damage3-f-damage0': ({F}, [('sees', F, 'drown', 'damage=3.0 ')]),
-    'drown-nlow-cancel-f-damage3': ({N}, [('none', F, 'drown'), ('none', F, 'drown-ann')]),
-    # NeoForge's LOWEST listeners, registered in its constructor, before the kernel's bridges: they answer before
-    # MinecraftForge's (bridges installed before the mods are constructed would answer before them, and these rows fail).
-    'drown-nlowest-damage3-f-damage0': ({F}, [('sees', F, 'drown', 'damage=3.0 ')]),
-    'breathe-read': ({F, N}, []),
-    'breathe-f-refill2': ({F}, []),
-    'breathe-f-cant': ({F}, []),
-    'breathe-f-ann-refill2': ({F}, []),
-    'breathe-f-can-water': ({F}, []),
-    'breathe-n-refill0': ({N}, [('sees', F, 'breathe', 'refill=0 ->')]),
-    'breathe-n-cant': ({N}, [('sees', F, 'breathe', 'forge can=false canRefill=true consume=3 ')]),
-    'breathe-n-refill0-f-refill2': ({F}, [('sees', F, 'breathe', 'refill=0 ->')]),
-    'breathe-n-cant-f-can': ({F}, [('sees', F, 'breathe', 'forge can=false ')]),
-    'breathe-nlow-refill0-f-refill2': ({F}, [('sees', F, 'breathe', 'refill=0 ->')]),
-    'breathe-nlowest-refill0-f-refill2': ({F}, [('sees', F, 'breathe', 'refill=0 ->')]),
-    # NeoForge refills nothing, so MinecraftForge's own rule decides canRefillAir, each row by the one clause that says
-    # yes: water breathing in water (the effects), Breath of the Nautilus alone in open air (the eye in air); the
-    # bubble column below. MinecraftForge's listener is offered NeoForge's nothing, may refill, and its refill of 2 is taken.
-    'breathe-waterbreathing-water-n-refill0-f-refill2': ({F}, [('sees', F, 'breathe', 'forge can=true canRefill=true consume=1 refill=0 ->')]),
-    'breathe-nautilus-air-n-refill0-f-refill2': ({F}, [('sees', F, 'breathe', 'forge can=true canRefill=true consume=1 refill=0 ->')]),
-    # Breath of the Nautilus alone: the body breathes; in water MinecraftForge's listeners are told it may not refill
-    # (canRefillAir false: a refill they set is not taken, unless they also let it refill), in a bubble column that it may.
-    'breathe-nautilus-water': ({F, N}, []),
-    'breathe-nautilus-water-f-refill2': ({F}, []),
-    'breathe-nautilus-water-f-can': ({F}, []),
-    'breathe-nautilus-bubbles': ({F, N}, []),
-    # NeoForge refills nothing, so MinecraftForge's own rule decides canRefillAir — the bubble column says yes — and
-    # NeoForge's nothing is what MinecraftForge's listener is offered.
-    'breathe-nautilus-bubbles-n-refill0-f-refill2': ({F}, [('sees', F, 'breathe', 'forge can=true canRefill=true consume=1 refill=0 ->')]),
-    'drown-read-forgemurk': ({F}, []),
-    'drown-f-damage3-forgemurk': ({F}, []),
-    'breathe-nautilus-forgemurk': ({F}, []),
-    'drown-read-neomurk': ({N}, []),
-    # MinecraftForge's liquid built canDrown(false): only its type's canDrownIn says a body does not drown there.
-    'drown-read-forgecalm': ({F}, []),
-    # Breath of the Nautilus alone in that liquid: the owner's vanilla refill (§6) refills as in open air (breathe-read)
-    # and MinecraftForge's listener reads canRefillAir true; native MinecraftForge reads false and holds the air.
-    'breathe-nautilus-forgecalm': ({F}, [('owner-refill', 'breathe-read', 'canRefill=false', 'canRefill=true')]),
-    'player-drown-read': ({F, N}, []),
-    'player-drown-f-hurt-halve': ({F}, []),
-    'player-drown-f-ann-damage-cancel': ({F}, []),
-    # MinecraftForge's attack event is posted at the head of Player.hurtServer, its own position and before NeoForge's
-    # incoming-damage event, so a NeoForge cancel there stops MinecraftForge's hurt and damage but not its attack.
-    'player-drown-n-incoming-cancel': ({N}, [('asked', F, 'attack'), ('none', F, 'hurt'), ('none', F, 'damage-ann')]),
-    'water-bucket': ({F, N}, []),
-    'forge-bucket': ({F}, []),
-    'neo-bucket': ({N}, []),
+    'drown-read': [],
+    'drown-late': [],
+    # The f-* rows: the MinecraftForge canary's listeners would cancel, change or count here; with it refused, the body
+    # drowns as on native NeoForge, where those tags do nothing either.
+    'drown-f-cancel': [],
+    'drown-f-notdrowning': [],
+    'drown-f-damage3': [],
+    'drown-f-damage0': [],
+    'drown-f-bubbles0': [],
+    'drown-f-bubbles50': [],
+    'drown-f-ann-cancel': [],
+    # Water breathing: nobody drowns. Native NeoForge holds the air (its hook refills nothing where the eye is in water);
+    # the merged hook refills as vanilla does, the owner's choice.
+    'drown-read-waterbreathing': [('none', N, 'drown'), ('vanilla-refill', True)],
+    'drown-n-cancel': [],
+    'drown-n-notdrowning': [],
+    'drown-n-damage3': [],
+    'drown-n-bubbles0': [],
+    # A NeoForge listener that makes a body drown before air -20.
+    'drown-n-drowning': [],
+    'drown-n-incoming-cancel': [],
+    'drown-n-damage3-f-damage0': [],
+    'drown-n-cancel-f-damage3': [],
+    'drown-n-damage3-f-cancel': [],
+    # NeoForge's LOW listeners, registered from common setup, and its LOWEST ones, registered in its constructor.
+    'drown-nlow-damage3-f-damage0': [],
+    'drown-nlow-cancel-f-damage3': [],
+    'drown-nlowest-damage3-f-damage0': [],
+    'breathe-read': [],
+    'breathe-f-refill2': [],
+    'breathe-f-cant': [],
+    'breathe-f-ann-refill2': [],
+    'breathe-f-can-water': [],
+    'breathe-n-refill0': [],
+    'breathe-n-cant': [],
+    'breathe-n-refill0-f-refill2': [],
+    'breathe-n-cant-f-can': [],
+    'breathe-nlow-refill0-f-refill2': [],
+    'breathe-nlowest-refill0-f-refill2': [],
+    # Water breathing in water: NeoForge's listener is handed the vanilla refill and takes it (refill 0), so the air holds
+    # as on native NeoForge, where the hook handed it nothing.
+    'breathe-waterbreathing-water-n-refill0-f-refill2': [('vanilla-refill', False)],
+    'breathe-nautilus-air-n-refill0-f-refill2': [],
+    # Breath of the Nautilus alone: the body breathes, and in water holds its air (vanilla holds it there too), in a
+    # bubble column refills.
+    'breathe-nautilus-water': [],
+    'breathe-nautilus-water-f-refill2': [],
+    'breathe-nautilus-water-f-can': [],
+    'breathe-nautilus-bubbles': [],
+    'breathe-nautilus-bubbles-n-refill0-f-refill2': [],
+    'drown-read-forgemurk': [('refused',)],
+    'drown-f-damage3-forgemurk': [('refused',)],
+    'breathe-nautilus-forgemurk': [('refused',)],
+    'drown-read-neomurk': [],
+    'drown-read-forgecalm': [('refused',)],
+    'breathe-nautilus-forgecalm': [('refused',)],
+    'player-drown-read': [],
+    'player-drown-f-hurt-halve': [],
+    'player-drown-f-ann-damage-cancel': [],
+    'player-drown-n-incoming-cancel': [],
+    'water-bucket': [],
+    'forge-bucket': [('refused',)],
+    'neo-bucket': [],
 }
-# Rows where both families act and MinecraftForge's answer stands: its listeners were handed NeoForge's answer, so what
-# they saw (the first half of each note) is not what they see natively; their counts and ticks are still compared, and
-# what they were handed is checked by the 'sees' checks above.
-HANDED_NEOFORGES_ANSWER = {'drown-n-damage3-f-damage0', 'drown-n-damage3-f-cancel', 'breathe-n-refill0-f-refill2', 'breathe-n-cant-f-can',
-                           'breathe-nautilus-bubbles-n-refill0-f-refill2', 'drown-nlow-damage3-f-damage0', 'breathe-nlow-refill0-f-refill2',
-                           'drown-nlowest-damage3-f-damage0', 'breathe-nlowest-refill0-f-refill2',
-                           'breathe-waterbreathing-water-n-refill0-f-refill2', 'breathe-nautilus-air-n-refill0-f-refill2'}
-# The rows in or with MinecraftForge's liquids, which the getters decide (each liquid block is built from a supplier).
-FORGE_LIQUID_ROWS = {'drown-read-forgemurk', 'drown-f-damage3-forgemurk', 'breathe-nautilus-forgemurk', 'drown-read-forgecalm',
-                     'breathe-nautilus-forgecalm', 'forge-bucket'}
-# The rows with a body in MinecraftForge's drowning liquid, which its own type decides: without it the untagged liquid is
-# air to NeoForge and the body breathes there. (In the liquid built canDrown(false) a body breathes either way, natively
-# too, and refills as in any liquid but water: own-type-off holds those rows; only the type's canDrownIn decides the
-# first, and the second refills as the owner's vanilla refill does wherever the eye is not in water.)
-FORGE_LIQUID_BODY_ROWS = {'drown-read-forgemurk', 'drown-f-damage3-forgemurk', 'breathe-nautilus-forgemurk'}
+# The rows in or with MinecraftForge's liquids (each liquid block and bucket is the MinecraftForge canary's).
+FORGE_LIQUID_ROWS = {name for name, checks in EXPECT.items() if ('refused',) in checks}
+# The rows the owner's vanilla refill decides.
+VANILLA_REFILL_ROWS = {name for name, checks in EXPECT.items() if any(c[0] == 'vanilla-refill' for c in checks)}
+# The refill NeoForge's breathe listener is handed with its eye in water: vanilla's, and native NeoForge's (nothing).
+VANILLA_REFILL, NEO_REFILL = 'refill=4 ->', 'refill=0 ->'
 JUDGED = ('air', 'health', 'result')
-# Stored in the reference besides what is judged directly: the random draws, for the 'rng-as' checks.
+# Stored in the reference besides what is judged: the random draws, which every run of one loader must agree on.
 STORED = JUDGED + ('rng',)
-# MinecraftForge's events each phase switches off: breathe and drown (the bridges), hurt (the damage seams).
-BRIDGED_KINDS = ('breathe', 'breathe-ann', 'drown', 'drown-ann')
-SEAM_KINDS = ('attack', 'hurt', 'damage-ann')
-# The NeoForge kinds whose answering order against MinecraftForge's the probe records (Core.ORDERED), by the event
-# they answer, with the name it records them under; MinecraftForge's answers are its 'breathe' and 'drown' kinds.
-NEO_ORDERED = {'breathe': (('breathe', N), ('breathe-low', N + '-low'), ('breathe-lowest', N + '-lowest')),
-               'drown': (('drown', N), ('drown-low', N + '-low'), ('drown-lowest', N + '-lowest'))}
-FORGE_MURK = 'forbricbreathforge:murk'
-PHASES = ('positive', 'bridges-off', 'getters-off', 'own-type-off', 'seams-off')
+# The MinecraftForge canary's blocks and items: a row in them is skipped where that jar does not run.
+REFUSED_SKIPS = ('no block forbricbreathforge:', 'no item forbricbreathforge:')
+PHASES = ('positive', 'refused', 'vanilla-refill-off')
 
 
 def sha256(path):
@@ -282,150 +251,81 @@ def first_difference(a, b):
     return f'lengths {len(a)} vs {len(b)}'
 
 
-def unreadable_rng(row):
-    """Why a row's random draws cannot be compared, or None: the probe counted the body's draws on every sampled tick."""
-    rng = row.get('rng')
-    if not isinstance(rng, list) or not rng: return 'no random draws recorded'
-    if row.get('rngNote'): return f'the seed was not readable ({row["rngNote"]})'
-    if len(rng) != len(row.get('air', [])): return f'{len(rng)} draw counts for {len(row.get("air", []))} samples'
-    if any(type(x) is not int or x < 0 for x in rng): return 'a tick whose draws were not counted (-1)'
-    return None
-
-
 def judge_rows(reference, result):
     """{row: [reasons]} for every row EXPECT names; an empty list is a pass."""
     rows = {row['name']: row for row in result['rows']}
-    native_of = lambda family, name: reference['families'][family]['rows'].get(name)
     verdicts = {}
-    for name, (families, checks) in EXPECT.items():
-        reasons = []
+    for name, checks in EXPECT.items():
         row = rows.get(name)
+        native = reference['families'][N]['rows'].get(name)
         if row is None: verdicts[name] = ['no such row in the Forbric result']; continue
+        if ('refused',) in checks: verdicts[name] = refused_reasons(row, native); continue
         if 'skipped' in row: verdicts[name] = [f'skipped on Forbric: {row["skipped"]}']; continue
-        for family in sorted(families):
-            native = native_of(family, name)
-            if native is None or 'skipped' in native:
-                reasons.append(f'the {family} reference has no measured row (regenerate it)'); continue
-            native = {k: v for k, v in native.items() if k not in STORED or k in JUDGED}
-            mine = judged_row(row, {family})
-            if family == F and (name in HANDED_NEOFORGES_ANSWER or owner_refill(checks)):
-                native, mine = without_notes(native, family), without_notes(mine, family)
-            if family == F and owner_refill(checks):
-                native.pop('air', None); mine.pop('air', None)   # judged by the 'owner-refill' check below
-            reasons += [f'vs native {family}: {d}' for d in diff(native, mine)]
+        if native is None or 'skipped' in native:
+            verdicts[name] = [f'the {N} reference has no measured row (regenerate it)']; continue
+        reasons = []
+        native = {k: v for k, v in native.items() if k not in STORED or k in JUDGED}
+        mine = judged_row(row, {N})
+        refill = next((c for c in checks if c[0] == 'vanilla-refill'), None)
+        if refill:
+            native, mine = without_notes(native, N), without_notes(mine, N)   # what the listener was handed: checked below
+            if refill[1]: native.pop('air', None); mine.pop('air', None)      # the vanilla refill: checked below
+        reasons += [f'vs native {N}: {d}' for d in diff(native, mine)]
         views = row.get('views', {})
         for check in checks:
             if check[0] == 'none':
                 _, family, kind = check
                 if views.get(family, {}).get(kind, {}).get('count', 0):
                     reasons.append(f'{family} {kind} was asked {views[family][kind]["count"]}x; it must not be')
-            elif check[0] == 'asked':
-                _, family, kind = check
-                if not views.get(family, {}).get(kind, {}).get('count', 0):
-                    reasons.append(f'{family} {kind} was never asked; it must be')
-            elif check[0] == 'sees':
-                _, family, kind, text = check
-                notes = views.get(family, {}).get(kind, {}).get('notes', [])
-                if not notes or text not in notes[0]:
-                    reasons.append(f'{family} {kind} first note must contain {text!r}: {notes[:1]}')
-            elif check[0] == 'rng-as':
-                _, other = check
-                for family in sorted(families):
-                    a, b = (native_of(family, n) or {} for n in (name, other))
-                    why = unreadable_rng(a) or unreadable_rng(b)
-                    if why or a.get('rng') != b.get('rng'):
-                        reasons.append(f'the native {family} reference does not show {name} drawing what {other} draws '
-                                       f'({why or "they differ"}; regenerate it, or the expectation is wrong)')
-                theirs = rows.get(other, {})
-                unread = [f'{n}: {why}' for n, why in ((name, unreadable_rng(row)), (other, unreadable_rng(theirs))) if why]
-                if unread:
-                    reasons.append(f'rng: the probe did not count the body\'s draws ({"; ".join(unread)})')
-                elif row.get('rng') != theirs.get('rng'):
-                    reasons.append(f'rng: the body did not draw what {other}\'s drew '
-                                   f'({first_difference(row.get("rng", []), theirs.get("rng", []))})')
-            elif check[0] == 'owner-refill':
-                _, other, native_text, merged_text = check
-                held, vanilla = native_of(F, name) or {}, (native_of(F, other) or {}).get('air')
-                notes = held.get('views', {}).get(F, {}).get('breathe', {}).get('notes', [])
-                if not vanilla or held.get('air') == vanilla or not notes or native_text not in notes[0]:
-                    reasons.append(f'the native {F} reference does not show the documented difference ({name} holding its air, '
-                                   f'its breathe note with {native_text!r}; regenerate it, or the expectation is stale)')
-                if row.get('air') != vanilla:
-                    reasons.append(f'air: not the vanilla refill {other} shows natively ({first_difference(vanilla or [], row.get("air", []))})')
-                told = views.get(F, {}).get('breathe', {}).get('notes', [])
-                if not told or merged_text not in told[0]:
-                    reasons.append(f'{F} breathe first note must contain {merged_text!r}: {told[:1]}')
-        reasons += order_reasons(row)
+            elif check[0] == 'vanilla-refill':
+                reasons += vanilla_refill_reasons(reference, name, row, check[1])
+        heard = sorted(kind for kind, v in views.get(F, {}).items() if v.get('count'))
+        if heard: reasons.append(f'{F} {", ".join(heard)}: a listener of the refused MinecraftForge canary heard this body')
         verdicts[name] = reasons
     return verdicts
 
 
-def owner_refill(checks):
-    return any(c[0] == 'owner-refill' for c in checks)
+def refused_reasons(row, native):
+    """A row in the MinecraftForge canary's liquids: skipped because the block or item is not registered, as natively."""
+    skip = row.get('skipped', '')
+    if not skip.startswith(REFUSED_SKIPS):
+        return ['the refused MinecraftForge canary\'s liquid was there: ' + (f'skipped for another cause ({skip})' if skip else 'the row was played')]
+    if (native or {}).get('skipped') != skip:
+        return [f'native {N} does not skip it so ({(native or {}).get("skipped")!r}; regenerate the reference)']
+    return []
 
 
-def order_reasons(row):
-    """What is wrong with a row's answering order: MinecraftForge before a NeoForge listener in some tick, or a NeoForge
-    listener and MinecraftForge's that both answered one event with no tick recording which answered first."""
-    reasons, views = [], row.get('views', {})
-    recorded = {event: [orders] if isinstance(orders, str) else list(orders) for event, orders in row.get('order', {}).items()}
-    for event, orders in recorded.items():
-        # Every distinct order of a tick more than one listener answered; neo-low, neo-lowest: the NeoForge canary's
-        # LOW listener from common setup and LOWEST listener from its constructor.
-        for order in orders:
-            fams = order.split(',')
-            if F in fams and any(f.split('-')[0] == N and fams.index(f) > fams.index(F) for f in fams):
-                reasons.append(f'{event}: MinecraftForge answered before a NeoForge listener in one tick ({order})')
-    for event, kinds in NEO_ORDERED.items():
-        if not views.get(F, {}).get(event, {}).get('count'): continue
-        for kind, label in kinds:
-            if views.get(N, {}).get(kind, {}).get('count') and not any({F, label} <= set(o.split(',')) for o in recorded.get(event, [])):
-                reasons.append(f'{event}: {label} and {F} both answered, but no tick records which answered first')
+def vanilla_refill_reasons(reference, name, row, keeps):
+    """The owner's vanilla refill: NeoForge's breathe listener handed vanilla's refill, and the body's air the vanilla refill
+    (native MinecraftForge's, which refills as vanilla does) where it keeps it; the reference must still show native NeoForge
+    handing it nothing and, where the body keeps the refill, holding air that is not the vanilla refill."""
+    reasons = []
+    held, vanilla = reference['families'][N]['rows'].get(name) or {}, (reference['families'][F]['rows'].get(name) or {}).get('air')
+    given = held.get('views', {}).get(N, {}).get('breathe', {}).get('notes', [])
+    if not given or NEO_REFILL not in given[0] or (keeps and (not vanilla or held.get('air') == vanilla)):
+        reasons.append(f'the native reference does not show the documented difference (native {N} handing its breathe listener '
+                       f'{NEO_REFILL!r}' + (f', and its air not native {F}\'s vanilla refill' if keeps else '') +
+                       '; regenerate it, or the expectation is stale)')
+    if keeps and row.get('air') != vanilla:
+        reasons.append(f'air: not the vanilla refill native {F} shows for this row ({first_difference(vanilla or [], row.get("air", []))})')
+    told = row.get('views', {}).get(N, {}).get('breathe', {}).get('notes', [])
+    if not told or VANILLA_REFILL not in told[0]:
+        reasons.append(f'{N} breathe first note must contain {VANILLA_REFILL!r}: {told[:1]}')
     return reasons
 
 
-def native_forge_kinds(reference, name):
-    """The MinecraftForge listener kinds the native MinecraftForge run of a row heard from."""
-    native = reference['families'][F]['rows'].get(name, {})
-    return {kind for kind, view in native.get('views', {}).get(F, {}).items() if view.get('count')}
-
-
-def predicted_failures(reference, phase):
-    """Which rows a phase must fail, read from EXPECT and the reference; exact both ways."""
-    if phase == 'positive': return set()
-    if phase == 'bridges-off':
-        # Every row judged on what a MinecraftForge listener heard natively, and every row where MinecraftForge must be
-        # handed NeoForge's answer ('sees'). Not the 'asked' attack checks: MinecraftForge's attack is posted at its own
-        # position in hurtServer, no bridge of NeoForge's.
-        out = set()
-        for name, (families, checks) in EXPECT.items():
-            if F in families and native_forge_kinds(reference, name): out.add(name)
-            if any(c[0] == 'sees' and c[1] == F for c in checks): out.add(name)
-        return out
-    if phase == 'getters-off': return set(FORGE_LIQUID_ROWS)
-    if phase == 'own-type-off': return set(FORGE_LIQUID_BODY_ROWS)
-    if phase == 'seams-off':
-        # MinecraftForge's Hurt has a seam on every merged base (NeoForge's actuallyHurt never reads its answer), so every
-        # row whose native MinecraftForge run heard it, judged on MinecraftForge's view, loses it.
-        return {name for name, (families, _) in EXPECT.items() if F in families and 'hurt' in native_forge_kinds(reference, name)}
+def predicted_failures(phase):
+    """Which rows a phase must fail; exact both ways."""
+    if phase in ('positive', 'refused'): return set()
+    if phase == 'vanilla-refill-off': return set(VANILLA_REFILL_ROWS)
     raise SystemExit(f'unknown phase {phase}')
 
 
 def phase_cause(phase, row, reasons):
     """Whether a row a phase predicted to fail failed for that phase's cause, not for another; with what was looked for."""
-    if phase == 'bridges-off':
-        hit = any(f'views.{F}.{kind}' in r or f'{F} {kind} ' in r for r in reasons for kind in BRIDGED_KINDS)
-        return hit, "a MinecraftForge breathe or drown listener's view differs (it was not asked)"
-    if phase == 'getters-off':
-        text = ' '.join([str(row.get('skipped', ''))] + [str(r) for r in row.get('result', [])])
-        return '"this.fluid" is null' in text, 'its liquid block threw with "this.fluid" is null (no fluid without the getter)'
-    if phase == 'own-type-off':
-        inside = f'blockAtEye={FORGE_MURK} ' in (row.get('first') or '')
-        moved = any(r.startswith(f'vs native {F}: air') or f'views.{F}.breathe' in r for r in reasons)
-        return inside and moved, f'the body was in {FORGE_MURK} and its air or MinecraftForge breathe view differs'
-    if phase == 'seams-off':
-        hit = any(f'views.{F}.{kind}' in r or f'{F} {kind} ' in r for r in reasons for kind in SEAM_KINDS)
-        return hit, "a MinecraftForge attack, hurt or damage listener's view differs"
+    if phase == 'vanilla-refill-off':
+        hit = any(r.startswith(f'{N} breathe first note must contain {VANILLA_REFILL!r}') for r in reasons)
+        return hit, "NeoForge's breathe listener was handed NeoForge's own refill, not vanilla's"
     return True, ''
 
 
@@ -442,7 +342,7 @@ def cmd_judge(args):
         print(f'[kernel]   {args.phase}: {"ok  " if not reasons else "FAIL"} {name}' + ('' if not reasons else ' — ' + '; '.join(reasons[:3])[:600]))
     extra = sorted({row['name'] for row in result['rows']} - set(EXPECT))
     if extra: print(f'[kernel]   {args.phase}: rows the gate does not judge: {", ".join(extra)}')
-    predicted = predicted_failures(reference, args.phase)
+    predicted = predicted_failures(args.phase)
     rows = {row['name']: row for row in result['rows']}
     wrong_cause = []
     for name in sorted(failed & predicted):
