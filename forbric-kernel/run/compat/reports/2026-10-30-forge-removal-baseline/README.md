@@ -118,3 +118,65 @@ branch `ci/remove-forge-stage2` (runs 41012697382 and 41017826904; ci-prepared g
 **Owner's decision (2026-10-30)**: gate-m30's dead-event row stays on the synthetic MinecraftForge fixture until Stage 4
 deletes it with `DeadEventAudit`, instead of moving to a NeoForge canary as the plan said. No public "last with
 MinecraftForge" release: Stage 3 starts from the tag `tri-eco-26.2-final` alone.
+
+## Stage 3: MinecraftForge-only jars are refused (no code deleted; tip 3fb99f8e)
+
+Three lanes (core, sweep, gates), each reviewed adversarially, merged at 29fa47e8; then four integration rounds, each
+reviewed again, and two fan-outs that converted the remaining unit tests and gates.
+
+**What a player sees.** A jar whose only usable loader half is MinecraftForge's is refused by name, with the build to
+get instead, in the player's language (`DialogLang`, 10 tables): a Lost row, a CONFIRMED required finding, the load
+report; a client asks, a dedicated server or a strict launch stops (exit 78), `-Dforbric.compatibilityPolicy=continue`
+launches anyway. A Forge build beside the NeoForge or Fabric build of the same mod is only a note. A universal jar keeps
+loading through its NeoForge half (preferred) or its Fabric half; the MinecraftForge half is set aside and logged.
+
+**The rule** (`LoaderHalfJudge`, bytes only, the same answer for the boot and the sweep): a jar is refused only when
+it has a MinecraftForge half and no usable Fabric or NeoForge half. A NeoForge half whose only `@Mod` is
+MinecraftForge's is judged by what NeoForge would run of it — its listed mixins and their config's plugin (configs
+found wherever the manifest says, nested jars included, read as leniently as Mixin reads them; an unreadable one counts
+as none), else its entry class, else its `data/`; `lowcodefml` exempts only the entry. The arbiter gives a jar with no
+initializer in any half to the half that ships its mixin config, unless the NeoForge half runs through an
+`@EventBusSubscriber` or a NeoForge service. The review rounds found and fixed: a dummy MinecraftForge `@Mod` getting
+a mixin/data mod refused; non-root, nested or commented mixin configs clearing a Forge build unchecked; a Forge-bound
+plugin never looked at; `lowcodefml` skipping the mixin check; an uninspectable jar read as "no initializer"; a refused
+jar's fake `fabric.mod.json` reaching the classpath with `-Dforbric.duplicateArbitration=off`.
+
+**Sweep** (`stage3-sweep.md`, `stage3-sweep.tsv`): 1,953 distinct local jars, both kernels' own arbitration. 90
+refused, every one hand-checked, **0 false refusals**; 9 jars move MinecraftForge → NeoForge (datapack wrappers,
+SimpleRPC), 1 MinecraftForge → Fabric (qubes-mouse-fix, the half that ships its mixins; it did nothing as NeoForge).
+The refused set did not change across the four rule revisions. Its three open questions are decided there.
+
+**Unit suite** (`integrationTest`, same staged root): 6,890 tests, 6 failed — exactly the six lost-fixture failures of
+Stages 0–2 (LiquidBounce ×3, the R3 corpus, the two opt-in shared-final tests). 14 tests that staged MinecraftForge-only
+fixtures were converted (7 classes, each reviewed): shared parser/selection behaviour is reached through a universal
+jar's Forge half or the NeoForge dialect, and each now also asserts the Forge-only variant is refused; no test removed.
+
+**Gates** (`gates-all.sh -j auto --skip gate-m34-soak.sh`): 58 GREEN, gate-m0 RED for the R3 corpus test only (its
+oracle steps pass), m34 skipped — the Stage 2 picture. Every gate that staged a MinecraftForge-only canary was converted
+(m4 m4-canary m12 m13 m14 m15 m16 m17 m18 m19 m21 m25 m26 m28 m29 m30 m32 m33 m40 m41 m47 m48 m49 m55 m57, and the m0
+oracle), each with
+a "STAGE 3" header paragraph saying what went and why. The rule throughout: only checks the refused jar alone could
+produce go; every kernel rewrite or carrier-plumbing line that still prints with no MinecraftForge mod aboard stays
+asserted (two review rounds restored such checks in m16 m21 m25 m26 m28 m29). New proofs: gate-m29 is the server
+refusal (en and zh, strict stop, Lost rows) plus the carrier's capability rewrites; gate-m26 phase 2 the client
+question; gate-m14 a Forge+Fabric jar loading as Fabric; gate-m19 a refused parent's nested library taking no part; the
+m0 oracle accepts a missing MinecraftForge mod only on the kernel's own refusal of its jar (with a negative control).
+Red controls re-measured where touched (m21 `forgeScanData=off` turns exactly the restored index check red).
+
+**Skip baselines**: CI run 41079405021 at 3fb99f8e is green on every job. The three TSVs are CI's lists; three tests
+whose skip reason came from `Map.of`/`Set.of` iteration order (random per JVM) now read their fixtures sorted — the
+Stage 2 lists had matched by chance.
+
+**Fixtures**: `run/neoforge-builds` (new, in the main checkout) holds the twelve NeoForge builds the gates now stage;
+`run/client-popular` in this worktree is a clone with its eighteen MinecraftForge jars moved to `forge-refused/` and
+their NeoForge builds in `mods/` (`stage3-fixtures.md`). The main checkout's shared `run/client-popular` is unchanged,
+so other branches still see the old pack; switching it is a step for whenever this line lands.
+
+**Decisions taken in Stage 3** (each reversible):
+- A refused jar nested in a mod that loads stays on the classpath as a library (its `@Mod`, mixins, AT, subscribers and
+  packs are skipped), as native NeoForge treats a nested jar it does not read as a mod; a parent may call into it.
+- gate-m30's dead-event row: the owner's keep-until-Stage-4 decision could not hold — Stage 3 refuses its synthetic
+  MinecraftForge fixture, so its subscriber never registers and the row cannot run. The row went in Stage 3 (not moved
+  to NeoForge, which the owner declined); `DeadEventAudit` keeps its unit tests and goes in Stage 4.
+- gate-m33's bridge dirty-notification probe and gate-m40's Forge cell are gone with their Forge machines; both gates
+  now run Fabric ↔ NeoForge (m40 keeps a Forge *consumer* reading both cells through the carrier).
