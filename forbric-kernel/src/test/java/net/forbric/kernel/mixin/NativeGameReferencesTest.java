@@ -62,24 +62,65 @@ class NativeGameReferencesTest {
    assertFalse(loader.isClassLoadedByName(OWNER.replace('/','.')));
   }finally{NativeGameReferences.bind(null);}
  }
- /** The vanilla-reference sidecar answers FABRIC: its copies for what the base changed, the base itself for the rest. */
- @Test void theSidecarAnswersFabricInPreferenceToTheEmbeddedIndex(@TempDir java.nio.file.Path work) throws Exception {
-  String same="unlisted/Same";byte[] original=bytes(OWNER,7),merged=bytes(OWNER,11),unchanged=bytes(same,3);
+ /**
+  * The vanilla-reference sidecar answers FABRIC, held class by class to the base's own embedded FABRIC index where the
+  * base has one (the merged base): a sidecar row is taken when the embedded index pins the same hash, or has no row for
+  * the class at all; a row the embedded index pins otherwise is answered by the embedded index, and that is said once
+  * for the whole process, not once per class. The base keeps answering for the ecosystems only it carries.
+  *
+  * <p>Each case has bytes of its own, so only the source the contract names can produce the answer asserted: where the
+  * two agree the embedded tree carries no copy (only the sidecar's can answer), where they disagree the two copies
+  * differ, and where the embedded index is silent the answer exists only in the sidecar.
+  */
+ @Test @ResourceLock("native-game-references")
+ void theSidecarAnswersFabricWhereTheEmbeddedIndexAgreesOrIsSilentAndTheEmbeddedIndexWhereItDisagrees(@TempDir java.nio.file.Path work) throws Exception {
+  String agreed="unlisted/Agreed",also="unlisted/AlsoPinnedOtherwise",copied="unlisted/SidecarOnly",same="unlisted/Same";
+  byte[] original=bytes(OWNER,7),embeddedCopy=bytes(OWNER,99),merged=bytes(OWNER,11);
+  byte[] agreedVanilla=bytes(agreed,5),agreedMerged=bytes(agreed,13);
+  byte[] alsoSidecar=bytes(also,21),alsoEmbedded=bytes(also,22),alsoMerged=bytes(also,23);
+  byte[] copiedVanilla=bytes(copied,31),copiedMerged=bytes(copied,32),unchanged=bytes(same,3);
   Map<String,byte[]> sidecarEntries=new HashMap<>();
-  sidecarEntries.put(PREFIX+"index.tsv",("# forbric-native-reference-v1\n"+OWNER+"\t"+sha(original)+"\n"+same+"\t"+sha(unchanged)+"\n").getBytes(StandardCharsets.UTF_8));
-  sidecarEntries.put(PREFIX+OWNER+".class.bin",original);
-  // The base embeds a FABRIC index that disagrees, which the sidecar must win over, and a NEOFORGE one it must keep.
-  Map<String,byte[]> baseEntries=new HashMap<>(index(bytes(OWNER,99)));baseEntries.put(PREFIX+OWNER+".class.bin",bytes(OWNER,99));
-  baseEntries.put(OWNER+".class",merged);baseEntries.put(same+".class",unchanged);
-  baseEntries.put("META-INF/forbric/native-reference/NEOFORGE/index.tsv",("# forbric-native-reference-v1\n"+OWNER+"\t"+sha(merged)+"\n").getBytes(StandardCharsets.UTF_8));
+  sidecarEntries.put(PREFIX+"index.tsv",tsv(Map.of(OWNER,sha(original),agreed,sha(agreedVanilla),also,sha(alsoSidecar),
+    copied,sha(copiedVanilla),same,sha(unchanged))));
+  sidecarEntries.put(PREFIX+OWNER+".class.bin",original);sidecarEntries.put(PREFIX+agreed+".class.bin",agreedVanilla);
+  sidecarEntries.put(PREFIX+also+".class.bin",alsoSidecar);sidecarEntries.put(PREFIX+copied+".class.bin",copiedVanilla);
+  // The base's embedded FABRIC index: agrees on `agreed` (and keeps no copy of it), pins other bytes for OWNER and `also`
+  // (with copies of its own), and has no row for `copied` or `same`. Its NEOFORGE index is the sidecar's to leave alone.
+  Map<String,byte[]> baseEntries=new HashMap<>();
+  baseEntries.put(PREFIX+"index.tsv",tsv(Map.of(OWNER,sha(embeddedCopy),agreed,sha(agreedVanilla),also,sha(alsoEmbedded))));
+  baseEntries.put(PREFIX+OWNER+".class.bin",embeddedCopy);baseEntries.put(PREFIX+also+".class.bin",alsoEmbedded);
+  baseEntries.put(OWNER+".class",merged);baseEntries.put(agreed+".class",agreedMerged);baseEntries.put(also+".class",alsoMerged);
+  baseEntries.put(copied+".class",copiedMerged);baseEntries.put(same+".class",unchanged);
+  baseEntries.put("META-INF/forbric/native-reference/NEOFORGE/index.tsv",tsv(Map.of(OWNER,sha(merged))));
   java.nio.file.Path base=jar(work.resolve("base.jar"),baseEntries),sidecar=jar(work.resolve("sidecar.jar"),sidecarEntries);
   NativeReferenceSources sources=NativeReferenceSources.open(base,sidecar);
-  assertTrue(sources.describe().contains("native references: FABRIC from the vanilla-reference sidecar sidecar.jar, FORGE none, NEOFORGE from the base's embedded index"),sources.describe());
+  assertEquals("[Forbric/Mixin] native references: FABRIC from the vanilla-reference sidecar sidecar.jar (the base's "
+    +"embedded index answers what it cannot verify), FORGE none, NEOFORGE from the base's embedded index",sources.describe());
   var reader=new NativeGameReferences(baseEntries::get,null,sources);
-  assertEquals(7,constant(reader.get(Ecosystem.FABRIC,OWNER)),"the sidecar's copy, not the embedded one");
-  assertEquals(3,constant(reader.get(Ecosystem.FABRIC,same)),"a hash-only row is answered from the base and verified");
+  var embeddedOnly=new NativeGameReferences(baseEntries::get);
+  // Agree: the embedded index pins the sidecar's very hash. Alone it cannot answer (no copy, and the base changed the
+  // class); with the sidecar, the sidecar's copy answers.
+  assertNull(embeddedOnly.get(Ecosystem.FABRIC,agreed),"premise: the embedded tree holds no copy of "+agreed);
+  assertEquals(5,constant(reader.get(Ecosystem.FABRIC,agreed)),"agree: the sidecar's copy");
+  // Silent: the embedded index has no row, so the sidecar answers, by its copy or by its hash-only row over the base.
+  assertNull(embeddedOnly.get(Ecosystem.FABRIC,copied),"premise: the embedded index has no row for "+copied);
+  assertEquals(31,constant(reader.get(Ecosystem.FABRIC,copied)),"no embedded row: the sidecar's copy");
+  assertEquals(3,constant(reader.get(Ecosystem.FABRIC,same)),"no embedded row: a hash-only row is answered from the base and verified");
+  // Disagree: the embedded index pins other bytes; its copy answers, and the fallback is said exactly once even though
+  // two classes take it.
+  // The flag is the process's, and another test may have set it: cleared here, so this test sees its own one line.
+  var reported=NativeGameReferences.class.getDeclaredField("sidecarFallbackReported");reported.setAccessible(true);
+  ((java.util.concurrent.atomic.AtomicBoolean)reported.get(null)).set(false);
+  String[] log=new String[1];
+  int[] answers=net.forbric.kernel.GateLogContract.capture(()->new int[]{constant(reader.get(Ecosystem.FABRIC,OWNER)),
+    constant(reader.get(Ecosystem.FABRIC,also)),constant(reader.get(Ecosystem.FABRIC,OWNER))},log);
+  assertArrayEquals(new int[]{99,22,99},answers,"disagree: the embedded copies, not the sidecar's 7 and 21");
+  assertEquals(1,log[0].split("the vanilla-reference sidecar does not verify against this base for ",-1).length-1,
+    "the fallback is said once, not once per class or per read:\n"+log[0]);
+  assertTrue(log[0].contains("[Forbric/WARN] [Forbric/Mixin] the vanilla-reference sidecar does not verify against this base for "+OWNER+" "),log[0]);
+  assertTrue(NativeGameReferences.sidecarFallbackReported());
   assertEquals(11,constant(reader.get(Ecosystem.NEOFORGE,OWNER)),"the base keeps answering for what only it carries");
-  assertEquals(99,constant(new NativeGameReferences(baseEntries::get).get(Ecosystem.FABRIC,OWNER)),"without sources: the embedded index");
+  assertEquals(99,constant(embeddedOnly.get(Ecosystem.FABRIC,OWNER)),"without sources: the embedded index");
   // Measured against another base: a hash-only row whose class this base changed is no answer, never a wrong one.
   baseEntries.put(same+".class",bytes(same,4));java.nio.file.Path other=jar(work.resolve("other.jar"),baseEntries);
   assertNull(new NativeGameReferences(baseEntries::get,null,NativeReferenceSources.open(other,sidecar)).get(Ecosystem.FABRIC,same));
@@ -108,6 +149,12 @@ class NativeGameReferencesTest {
   assertNull(reader.get(Ecosystem.NEOFORGE,OWNER));assertNull(reader.get(Ecosystem.FABRIC,OWNER),"the embedded row does not verify against the base bytes");
  }
  private static int constant(org.objectweb.asm.tree.ClassNode node){assertNotNull(node);return (Integer)((org.objectweb.asm.tree.LdcInsnNode)node.methods.getFirst().instructions.getFirst()).cst;}
+ /** An index file over {@code rows} (owner to SHA-256), in name order. */
+ private static byte[] tsv(Map<String,String> rows){
+  StringBuilder text=new StringBuilder("# forbric-native-reference-v1\n");
+  new java.util.TreeMap<>(rows).forEach((owner,hash)->text.append(owner).append('\t').append(hash).append('\n'));
+  return text.toString().getBytes(StandardCharsets.UTF_8);
+ }
  private static String sha(byte[] bytes) throws Exception {return HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256").digest(bytes));}
  private static byte[] type(String name,String[] interfaces){ClassWriter writer=new ClassWriter(0);writer.visit(Opcodes.V21,Opcodes.ACC_PUBLIC,name,null,"java/lang/Object",interfaces);writer.visitEnd();return writer.toByteArray();}
  private static java.nio.file.Path jar(java.nio.file.Path file,Map<String,byte[]> entries) throws Exception {
