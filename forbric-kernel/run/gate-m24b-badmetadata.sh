@@ -26,7 +26,7 @@ COMPAT="$RUNDIR/.forbric-kernel/compatibility-report.json"
 BADNEO="$KERNEL/run/canary/forbricbadmetaneo.jar"
 BADMULTI="$KERNEL/run/canary/forbricbadmetamulti.jar"
 FABRIC="$KERNEL/run/canary/forbricfabriclive.jar"
-NEO="$RUN_OLD/neoforge-runtime/forbricneolive.jar"
+NEO="$NEOLIVE"
 mkdir -p "$BUILD"
 
 step "stage two jars with an unreadable manifest and two healthy mods"

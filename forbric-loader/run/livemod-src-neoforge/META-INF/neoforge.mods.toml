@@ -10,7 +10,14 @@ displayName="Forbric NeoForge Live Canary"
 description='''
 Tri-in-one B-5 canary: counts NeoForge's own ServerTickEvent on the merged base, to verify (alongside the
 traditional-Forge canary) that both ecosystems' tick listeners fire and the Neo->Forge event bridge does not double-fire.
+Also carries the shared contracts the traditional-Forge canary used to be the only fixture for: configs and their
+watcher, per-world SERVER config sync, client registrations, a server data loader, the scan index and a mixin plugin.
 '''
+
+# A config with no mixins and a plugin: what is asserted is that NeoForge's [[mixins]] declaration reaches Mixin and
+# that the plugin, constructed while Mixin prepares configs, gets a real answer about the side.
+[[mixins]]
+config="forbricneolive.mixins.json"
 
 [[dependencies.forbricneolive]]
 modId="neoforge"

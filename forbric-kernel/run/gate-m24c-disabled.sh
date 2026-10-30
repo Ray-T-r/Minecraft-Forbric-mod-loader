@@ -23,7 +23,7 @@ REPORT="$RUNDIR/.forbric-kernel/load-report.txt"
 PENDING="$RUNDIR/.forbric-kernel/crash-suspects.json"
 DISABLED="$RUNDIR/forbric-disabled.txt"
 FABRIC="$KERNEL/run/canary/forbricfabriclive.jar"
-NEO="$RUN_OLD/neoforge-runtime/forbricneolive.jar"
+NEO="$NEOLIVE"
 mkdir -p "$BUILD"
 
 step "stage the two canaries"

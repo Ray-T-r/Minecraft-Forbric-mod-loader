@@ -16,7 +16,7 @@ RUNDIR="$KERNEL/run/server-forgecaps"
 LOG="$BUILD/gate-m29-forgecaps.log"
 OFF_LOG="$BUILD/gate-m29-forgecaps-off.log"
 mkdir -p "$BUILD"
-for jar in "$RUN_OLD/forge-runtime/forbriclive.jar" "$RUN_OLD/neoforge-runtime/forbricneolive.jar"; do
+for jar in "$RUN_OLD/forge-runtime/forbriclive.jar" "$NEOLIVE"; do
   [ -f "$jar" ] || { echo "[kernel] FATAL: missing $jar; run build-testmods.sh" >&2; exit 3; }
 done
 kernel_jar
@@ -26,7 +26,7 @@ boot() { # <log> <extra jvm>
   reap_stale_server "$RUNDIR"
   rm -rf "$RUNDIR/world" "$RUNDIR/mods" "$RUNDIR/.forbric-kernel" "$RUNDIR/logs" "$RUNDIR/config"
   mkdir -p "$RUNDIR/mods"
-  cp "$RUN_OLD/forge-runtime/forbriclive.jar" "$RUN_OLD/neoforge-runtime/forbricneolive.jar" "$RUNDIR/mods/"
+  cp "$RUN_OLD/forge-runtime/forbriclive.jar" "$NEOLIVE" "$RUNDIR/mods/"
   seed_server_properties "$RUNDIR"
   printf 'online-mode=false\nlevel-type=minecraft\\:flat\nmax-tick-time=-1\nview-distance=2\n' >> "$RUNDIR/server.properties"
   : > "$log"

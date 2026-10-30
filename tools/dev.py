@@ -65,8 +65,9 @@ CANARIES = (
      ('neoforge-runtime/neoforge-runtime.jar', 'neoforge-patched/patched-mc-neoforge-26.2.jar')),
 )
 # What build-testmods.sh packages besides classes. The mixin config goes at the jar root: Forge drops a declared
-# config whose entry is missing with only a warning, so a misplaced one makes the canary silently do nothing.
-CANARY_RESOURCES = ('META-INF', 'forbriclive.mixins.json', 'data', 'assets')
+# config whose entry is missing with only a warning, so a misplaced one makes the canary silently do nothing. Each
+# canary carries its own config, and a name the other tree lacks is skipped, so one list serves both.
+CANARY_RESOURCES = ('META-INF', 'forbriclive.mixins.json', 'forbricneolive.mixins.json', 'data', 'assets')
 CONSOLE_PINS = (
     ('jline-reader', '26333a275de502adf1dd9e6ea50aa0b4021412c71490df9ed5e88a648886ee89'),
     ('jline-terminal', 'c0f5d70901255da66a94e59778b265d19f9308342578e34c88fc92d1b0c65fef'),

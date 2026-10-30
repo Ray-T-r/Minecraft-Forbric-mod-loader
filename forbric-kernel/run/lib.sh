@@ -21,6 +21,11 @@ else
 fi
 RUN_OLD="$OLD/run"
 BUILD="$KERNEL/build"
+# The NeoForge live canary every gate stages. The stage's copy is built by DevPrepare from whichever tree prepared
+# the stage, which other working trees may share read-only; a tree that changes the canary's sources builds its own
+# (run/build-neolive-canary.sh) and points FORBRIC_NEOLIVE at it. The file name stays forbricneolive.jar either way:
+# gate-m18 asserts the mod resolves its own jar by that name.
+NEOLIVE="${FORBRIC_NEOLIVE:-$RUN_OLD/neoforge-runtime/forbricneolive.jar}"
 FAIL=0
 
 # What the kernel caught and carried on from, in every JVM a gate starts. Caught.java appends each failure site to

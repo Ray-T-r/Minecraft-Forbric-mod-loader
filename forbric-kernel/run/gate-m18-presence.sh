@@ -21,7 +21,7 @@ CONTROL="$BUILD/gate-m18-control.log"
 RUNDIR="$KERNEL/run/server-presence"
 FABRIC="$KERNEL/run/canary/forbricfabriclive.jar"
 FORGE="$RUN_OLD/forge-runtime/forbriclive.jar"
-NEO="$RUN_OLD/neoforge-runtime/forbricneolive.jar"
+NEO="$NEOLIVE"
 mkdir -p "$BUILD"
 
 step "stage one canary per ecosystem"
@@ -107,6 +107,13 @@ check "the control booted"                       "Done \("                      
 check "a Fabric mod is told the Forge mod is absent"  "\[ForbricFabricLive\] foreign .*forbriclive=false"  "$CONTROL"
 check "a NeoForge mod is told the Fabric mod is absent" \
   "\[ForbricNeoLive\] foreign forbricfabriclive isLoaded=false" "$CONTROL"
+# The NeoForge twins of the two controls above that only the MinecraftForge mod carried: a Fabric mod asking about the
+# NeoForge mod, and the NeoForge mod's LoadingModList lookup (Physics Mod's). Without these, the control proved the
+# switch reaches ModList.isLoaded and Fabric's answer about MinecraftForge only -- the two paths that go with
+# MinecraftForge would have been the only ones with teeth.
+check "a Fabric mod is told the NeoForge mod is absent" "\[ForbricFabricLive\] foreign .*forbricneolive=false" "$CONTROL"
+check "a NeoForge mod's LoadingModList lookup is told the Fabric mod is absent" \
+  "\[ForbricNeoLive\] foreign forbricfabriclive .*modFile=false" "$CONTROL"
 # Not check_absent on the phrase: the line is still printed, with a zero in it. The zero is the assertion.
 check "and no Fabric mod is seeded into the NeoForge list" \
   "Forge-family, 0 Fabric for presence\)" "$CONTROL"

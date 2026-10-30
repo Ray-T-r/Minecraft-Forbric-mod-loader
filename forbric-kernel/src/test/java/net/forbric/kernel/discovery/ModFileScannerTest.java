@@ -327,6 +327,44 @@ class ModFileScannerTest {
 		assertEquals(link.toAbsolutePath().normalize(), ModFileScanner.cacheKey(link));
 	}
 
+	/**
+	 * {@code -Dforbric.neoScanData=off} is the RED demonstration gate-m21 uses for the NeoForge canary's scan checks, so
+	 * it has to take out BOTH readers' index: {@code scan} and {@code scanShared} build nothing, and never so much as ask
+	 * the game loader for the builder — an index that was built anyway and dropped would leave the gate's control
+	 * proving a different thing from what it says.
+	 */
+	@Test
+	void neoScanDataOffBuildsNoNeoForgeIndexForEitherReader(@TempDir Path dir) throws Exception {
+		Path jar = dir.resolve("mod.jar");
+		try (OutputStream out = Files.newOutputStream(jar); ZipOutputStream zip = new ZipOutputStream(out)) {
+			ClassWriter cw = new ClassWriter(0);
+			cw.visit(Opcodes.V17, Opcodes.ACC_PUBLIC, "com/example/Plugin", null, "java/lang/Object", null);
+			cw.visitAnnotation(INVISIBLE, false).visitEnd();
+			cw.visitEnd();
+			write(zip, "com/example/Plugin.class", cw.toByteArray());
+		}
+		List<String> asked = new ArrayList<>();
+		ClassLoader recording = new ClassLoader(null) {
+			@Override
+			protected Class<?> loadClass(String name, boolean resolve) throws ClassNotFoundException {
+				asked.add(name);
+				throw new ClassNotFoundException(name);
+			}
+		};
+		assertTrue(ModFileScanner.neoIndexEnabled(), "on unless switched off");
+		System.setProperty(ModFileScanner.NEO_INDEX_PROPERTY, "off");
+		try {
+			assertTrue(!ModFileScanner.neoIndexEnabled());
+			assertNull(ModFileScanner.scan(jar, recording));
+			assertNull(ModFileScanner.scanShared(jar, recording));
+			assertEquals(List.of(), asked, "an index that is switched off must not be built and then dropped");
+		} finally {
+			System.clearProperty(ModFileScanner.NEO_INDEX_PROPERTY);
+		}
+		// The MinecraftForge index has its own switch and is not taken out with this one.
+		assertTrue(ModFileScanner.forgeIndexEnabled());
+	}
+
 	private interface JarBody {
 		void fill(ZipOutputStream zip) throws Exception;
 	}
