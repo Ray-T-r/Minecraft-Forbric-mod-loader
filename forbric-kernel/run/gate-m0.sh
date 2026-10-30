@@ -5,8 +5,21 @@
 #   2. ported unit tests green (transform / access / mapping / metadata / discovery), with nothing skipped
 #   3. kernel --scan produces well-formed JSON discovering mods across all 3 ecosystems (both merged sets)
 #   4. differential oracle: kernel parser ≡ independent ground-truth parser on the real mod sets
+#      (step 5), and its negative control (step 5b): with the kernel's refusals withheld it fails on exactly those mods
 #   6. the evidence, soak and link-gate tools' own tests, and the transfer-engine suite, all actually executed
 # This is the differential-oracle foundation every later milestone builds on.
+#
+# STAGE 3 OF DROPPING MinecraftForge (what changed and why). The kernel now refuses a MinecraftForge-only jar, naming it
+# on a "[Forbric/Unsupported] refusing <jar> (<id>)" line and reporting none of its mods. Both merged sets hold such
+# jars (server-merged: forbric-bridge, forbriclive, spark; client-merged: forbric-bridge, xaerominimap), and the
+# oracle's independent reader still reads every mods.toml as FORGE, so step 5 went red with those mods "MISSED". No
+# check is dropped. diff-oracle.sh now accepts a missing FORGE mod only as an asserted divergence -- every jar declaring
+# it refused by name on the kernel's own line, naming an id that jar declares, the jar declaring no Fabric or NeoForge
+# mod, and nothing reported from it -- and its PASS line names each refused mod; every other difference (a FORGE mod
+# missing with no refusal, any Fabric or NeoForge miss, anything spurious, an unsound refusal) still fails. Step 5b is
+# new: the same scans with the refusal lines withheld must fail on exactly the mods step 5 named, so the acceptance is
+# shown to rest on the refusals. Step 3 is unchanged and still sees FORGE: the carrier forge-runtime.jar is not
+# refused (it has a Fabric half), and its own mods.toml is still discovered.
 # GATE-PARALLEL: rundirs=server-m0-definitions mem=2000  (builds and runs the unit suite)
 set -uo pipefail
 . "$(cd "$(dirname "$0")" && pwd)/lib.sh"
@@ -190,7 +203,46 @@ else
 fi
 
 step "5. differential oracle (kernel parser vs independent ground truth)"
-"$KERNEL/run/diff-oracle.sh" "$RUN_OLD/server-merged/mods" "$RUN_OLD/client-merged/mods" || FAIL=1
+ORACLELOG="$BUILD/gate-m0-oracle.log"
+"$KERNEL/run/diff-oracle.sh" "$RUN_OLD/server-merged/mods" "$RUN_OLD/client-merged/mods" >"$ORACLELOG" 2>&1 || FAIL=1
+cat "$ORACLELOG"
+
+step "5b. negative control: the same sets with the kernel's refusal lines withheld (must FAIL on exactly the refused mods)"
+# Step 5 accepts a MinecraftForge mod the kernel left out only on the kernel's own refusal of its jar. Withhold those
+# lines and the same scans must turn into misses -- exactly the mods step 5 named as refused, in each set, and nothing
+# else. If the oracle still passed, its acceptance would not be reading the refusals at all; and with no refused mod in
+# either set the acceptance (and this control) would be measuring nothing, which is a failure here too.
+CONTROLLOG="$BUILD/gate-m0-oracle-control.log"
+if ORACLE_CONTROL=unrefused "$KERNEL/run/diff-oracle.sh" "$RUN_OLD/server-merged/mods" "$RUN_OLD/client-merged/mods" \
+    >"$CONTROLLOG" 2>&1; then
+  echo "[kernel] FAIL the oracle passed with the refusal lines withheld — see $CONTROLLOG"; FAIL=1
+fi
+python3 - "$ORACLELOG" "$CONTROLLOG" <<'PY' || FAIL=1
+import ast, re, sys
+main, control = (open(p, errors="replace").read().splitlines() for p in sys.argv[1:3])
+refused = {}  # set -> {(FORGE, id)} step 5 accepted as refused by name
+for line in main:
+    m = re.match(r"\[oracle\] PASS (\S+): .*refused them by name: (.*)$", line)
+    if m:
+        refused[m.group(1)] = {("FORGE", part.split(" (")[0]) for part in m.group(2).split(", ")}
+missed, other = {}, []
+for line in control:
+    m = re.match(r"\[oracle\] FAIL (\S+): kernel MISSED (\[.*?\]) \(", line)
+    if m:
+        missed[m.group(1)] = set(ast.literal_eval(m.group(2)))
+    elif line.startswith("[oracle] FAIL"):
+        other.append(line)
+ok = bool(refused) and missed == refused and not other
+total = sum(len(v) for v in refused.values())
+if ok:
+    print(f"[kernel] PASS withholding the refusals fails the oracle on exactly the {total} refused mod(s) "
+          f"of {len(refused)} set(s), and on nothing else")
+else:
+    print(f"[kernel] FAIL withholding the refusals did not fail the oracle on exactly the refused mods: "
+          f"refused={sorted((s, sorted(v)) for s, v in refused.items())} "
+          f"control missed={sorted((s, sorted(v)) for s, v in missed.items())} other={other}")
+sys.exit(0 if ok else 1)
+PY
 
 step "6. the evidence, soak and link-gate tools' own tests"
 # These tools decide what a release is. Their tests used to run only by hand, so a regression in the recorder
