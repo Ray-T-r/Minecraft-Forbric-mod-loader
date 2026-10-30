@@ -1062,9 +1062,15 @@ public final class DuplicateModArbiter {
 		// why parsing goes through Ecosystem.parse rather than valueOf — the constant is FORGE, but an override
 		// someone wrote months ago must still read back.
 		Ecosystem parsed = Ecosystem.parse(raw);
+		if (parsed == Ecosystem.FORGE) {
+			// Still read — a line someone wrote months ago is told why it stopped working — and not obeyed: no jar is
+			// ever owned by MinecraftForge now, so the pin could only fail to apply further down, without a word.
+			ForbricLog.warn("[Forbric/DupeId] %s: '%s' is ignored — Forbric no longer loads MinecraftForge mods; use "
+					+ "fabric or neoforge", where, raw.trim());
+			return null;
+		}
 		if (parsed == null) {
-			ForbricLog.warn("[Forbric/DupeId] %s: '%s' is not a loader — use fabric, neoforge or minecraftforge",
-					where, raw.trim());
+			ForbricLog.warn("[Forbric/DupeId] %s: '%s' is not a loader — use fabric or neoforge", where, raw.trim());
 		}
 		return parsed;
 	}
@@ -1124,6 +1130,10 @@ public final class DuplicateModArbiter {
 	static Claim claimOf(ForbricModDiscoverer discoverer, Path jar, EnvType envType, List<Alias> aliasesOut) {
 		Ecosystem owner = MultiLoaderArbiter.ownerOf(jar);
 		if (owner == null) return null;
+		// A refused MinecraftForge build claims nothing: it cannot win an id from the NeoForge or Fabric build of the
+		// same mod beside it, have its nested jars inventoried as a mod's, or publish presence aliases from its fake
+		// halves. Its refusal is reported by discovery.
+		if (MultiLoaderArbiter.refused(jar)) return null;
 		Map<String, String> versions = new LinkedHashMap<>();
 		List<String> ids = owner == Ecosystem.FABRIC
 				? fabricIds(jar, envType, versions)
@@ -1147,6 +1157,9 @@ public final class DuplicateModArbiter {
 
 		for (Ecosystem lost : declared) {
 			if (lost == owner) continue;
+			// No MinecraftForge mod is loaded, so no MinecraftForge mod list exists for an alias to answer in: the half
+			// is set aside, not lost to another family.
+			if (lost == Ecosystem.FORGE) continue;
 			Map<String, String> versions = new LinkedHashMap<>();
 			List<String> ids = lost == Ecosystem.FABRIC
 					? fabricIds(jar, envType, versions)

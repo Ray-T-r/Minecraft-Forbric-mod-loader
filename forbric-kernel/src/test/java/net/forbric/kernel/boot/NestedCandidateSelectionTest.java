@@ -384,15 +384,27 @@ class NestedCandidateSelectionTest {
 	}
 
 	@Test void aStalePinForAnEcosystemWithNoCandidateIsWarnedAboutNotObeyedAtEveryContractsExpense() throws Exception {
+		// The addon has only a Fabric build, so a NeoForge pin names an ecosystem with no candidate. (This used to pin
+		// jade to minecraftforge; such a pin is now dropped as it is read, see aMinecraftForgePinIsDroppedAsItIsRead.)
 		Path[] jade = jadePair();
-		System.setProperty("forbric.modOwner", "jade=minecraftforge");
+		System.setProperty("forbric.modOwner", "addon=neoforge");
 		var decision = decide(); var result = DuplicateModArbiter.currentPlan().selection();
 		assertEquals(JointCandidateSelector.Status.SOLVED, result.status());
 		assertFalse(decision.suppressed(jade[1]));
 		assertTrue(result.unsatisfied().isEmpty());
 		assertTrue(CompatibilityFindings.confirmedRequired().isEmpty(), () -> CompatibilityFindings.all().toString());
-		assertTrue(CompatibilityFindings.all().stream().anyMatch(f -> f.modId().equals("jade")
+		assertTrue(CompatibilityFindings.all().stream().anyMatch(f -> f.modId().equals("addon")
 				&& f.confidence() == net.forbric.api.CompatibilityFinding.Confidence.SUSPECTED), "the ignored pin stays visible");
+	}
+
+	@Test void aMinecraftForgePinIsDroppedAsItIsRead() throws Exception {
+		Path[] jade = jadePair();
+		System.setProperty("forbric.modOwner", "jade=minecraftforge");
+		var decision = decide(); var result = DuplicateModArbiter.currentPlan().selection();
+		assertEquals(JointCandidateSelector.Status.SOLVED, result.status());
+		assertFalse(decision.suppressed(jade[1]));
+		assertTrue(CompatibilityFindings.all().stream().noneMatch(f -> f.modId().equals("jade")),
+				() -> "a pin read as absent is no pin to report: " + CompatibilityFindings.all());
 	}
 
 	@Test void theSelectionDoesNotDependOnTheMachinesSpeed() throws Exception {

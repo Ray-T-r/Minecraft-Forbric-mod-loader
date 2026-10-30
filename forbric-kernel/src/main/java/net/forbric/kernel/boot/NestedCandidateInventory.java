@@ -411,7 +411,10 @@ public final class NestedCandidateInventory {
 									String unmet = NestedFabricRequirements.unmet(fabricManifest(child), running);
 									if (unmet != null) { excluded = true; leftOut.put(child, unmet); leftOutParent.put(child, parent.path()); }
 								}
-								if (claim == null && !excluded && MultiLoaderArbiter.ownerOf(child) != null) issues.add(new Issue(child, "nested mod identity was unreadable; retaining its physical library without claiming a valid mod"));
+								// A refused MinecraftForge build claims nothing either, and that is a verdict, not an
+								// unreadable identity: it is kept as a library (KernelBoot) and discovery reports it.
+								if (claim == null && !excluded && MultiLoaderArbiter.ownerOf(child) != null
+										&& !MultiLoaderArbiter.refused(child)) issues.add(new Issue(child, "nested mod identity was unreadable; retaining its physical library without claiming a valid mod"));
 								nodes.put(child, new Node(child, hash, claim, false, excluded)); content.put(hash, child);
 							}
 							if (!fabricRoute) admitOutsideFabric(child);

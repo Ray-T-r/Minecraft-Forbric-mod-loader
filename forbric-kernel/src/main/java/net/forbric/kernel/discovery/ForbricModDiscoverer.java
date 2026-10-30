@@ -98,7 +98,8 @@ public final class ForbricModDiscoverer {
 	 */
 	private final java.util.Map<Path, Parsed> discovered = new java.util.concurrent.ConcurrentHashMap<>();
 
-	private record Parsed(List<DiscoveredMod> mods, List<MetadataFailures.Failure> failures) {
+	private record Parsed(List<DiscoveredMod> mods, List<MetadataFailures.Failure> failures,
+			LoaderHalfJudge.Verdict verdict) {
 	}
 
 	/**
@@ -107,6 +108,12 @@ public final class ForbricModDiscoverer {
 	 * <p>Each manifest is read on its own. One that cannot be read — a malformed version range, TOML or JSON —
 	 * is recorded in {@link MetadataFailures} and leaves the jar's other manifests, and every other jar, alone.
 	 * Only a jar that cannot be opened at all throws.
+	 *
+	 * <p>A jar carrying a MinecraftForge {@code mods.toml} is first put to {@link LoaderHalfJudge}. One it refuses —
+	 * nothing but a MinecraftForge half to load through — yields no mod at all and is recorded as an
+	 * {@link MetadataFailures.Kind#UNSUPPORTED} failure, which is what makes it a Lost row and a required finding.
+	 * Every other such jar is discovered as before, its MinecraftForge mods included: discovery stays truthful about
+	 * what a jar declares, and {@code MultiLoaderArbiter} is what keeps the MinecraftForge half from loading.
 	 */
 	public List<DiscoveredMod> discoverJar(Path jarPath) throws IOException {
 		Path key = MetadataFailures.key(jarPath);
@@ -116,19 +123,34 @@ public final class ForbricModDiscoverer {
 			// change what the other six see. Any such caller fails here and immediately rather than later and
 			// somewhere else.
 			List<MetadataFailures.Failure> failures = new ArrayList<>();
-			remembered = new Parsed(List.copyOf(parseJar(jarPath, failures)), List.copyOf(failures));
+			LoaderHalfJudge.Verdict[] verdict = new LoaderHalfJudge.Verdict[1];
+			remembered = new Parsed(List.copyOf(parseJar(jarPath, failures, verdict)), List.copyOf(failures), verdict[0]);
 			discovered.put(key, remembered);
 		}
+		MetadataFailures.judged(key, remembered.verdict());
 		remembered.failures().forEach(MetadataFailures::record);
 		return remembered.mods();
 	}
 
-	private List<DiscoveredMod> parseJar(Path jarPath, List<MetadataFailures.Failure> failures) throws IOException {
+	private List<DiscoveredMod> parseJar(Path jarPath, List<MetadataFailures.Failure> failures,
+			LoaderHalfJudge.Verdict[] verdictOut) throws IOException {
 		List<DiscoveredMod> result = new ArrayList<>();
 		String source = jarPath.toString();
 
 		try (JarFile jar = new JarFile(jarPath.toFile())) {
 			String jarVersion = manifestVersion(jar.getManifest());
+
+			// Judged before any manifest is parsed: a refused jar's halves are not loaded, so reading them would only
+			// print their version and language audits for a mod that is not there. Its halves' reasons are the
+			// refusal's evidence instead.
+			if (jar.getEntry(FORGE_MANIFEST) != null) {
+				LoaderHalfJudge.Verdict verdict = LoaderHalfJudge.judge(jarPath);
+				verdictOut[0] = verdict;
+				if (verdict.refused()) {
+					failures.add(MetadataFailures.Failure.unsupported(jarPath, verdict));
+					return result;
+				}
+			}
 
 			// Fabric side
 			ZipEntry fabricEntry = jar.getEntry(FABRIC_MANIFEST);
@@ -202,13 +224,16 @@ public final class ForbricModDiscoverer {
 		// MinecraftForge/ModLauncher convention: NeoForge reads [[mixins]] from the toml and never looks at the
 		// manifest. Feeding it to BOTH families made a universal jar's NeoForge mod claim the Forge-side config too
 		// (collective would have registered collective_forge.mixins.json AND collective_neoforge.mixins.json).
+		//
+		// And since Forbric stopped loading MinecraftForge mods nobody reads it at all: the one family it belongs to never
+		// loads, so a config named only there is a MinecraftForge config, and handing it to the mod would put Forge-only
+		// mixins on the game through whichever half did load.
 		List<String> manifestMixins = new ArrayList<>();
 		Manifest manifest = jar.getManifest();
 		String attr = manifest == null ? null : manifest.getMainAttributes().getValue("MixinConfigs");
 		if (attr != null && ecosystem == Ecosystem.FORGE) {
-			for (String config : attr.split(",")) {
-				if (!config.strip().isEmpty()) manifestMixins.add(config.strip());
-			}
+			ForbricLog.debug("[Forbric] ignoring manifest MixinConfigs '%s' for the MinecraftForge side of %s — Forbric no "
+					+ "longer loads MinecraftForge mods", attr, source);
 		} else if (attr != null) {
 			ForbricLog.debug("[Forbric] ignoring manifest MixinConfigs '%s' for the %s side of %s — that attribute "
 					+ "is a MinecraftForge convention; NeoForge declares mixins in [[mixins]]", attr, ecosystem, source);

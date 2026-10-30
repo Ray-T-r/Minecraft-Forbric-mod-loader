@@ -282,6 +282,10 @@ class DuplicateModArbiterTest {
 
 	@Test
 	void threeWayContestLeavesExactlyOneSurvivor() {
+		// "minecraftforge" leads the order and is ignored (Forbric no longer loads MinecraftForge mods), so the order
+		// read is fabric, neoforge. A FORGE claim cannot arise from a real jar any more (MultiLoaderArbiter never owns
+		// one by MinecraftForge unless it is refused, and a refused jar claims nothing); this synthetic one only shows
+		// the knob cannot bring it back.
 		System.setProperty("forbric.multiLoaderPreference", "minecraftforge,fabric,neoforge");
 
 		Decision d = DuplicateModArbiter.arbitrate(List.of(
@@ -290,7 +294,8 @@ class DuplicateModArbiterTest {
 				claim("/mods/x-forge.jar", Ecosystem.FORGE, "x")));
 
 		assertEquals(2, d.suppressedJars().size());
-		assertFalse(d.suppressed(Path.of("/mods/x-forge.jar")));
+		assertFalse(d.suppressed(Path.of("/mods/x-fabric.jar")));
+		assertTrue(d.suppressed(Path.of("/mods/x-forge.jar")));
 	}
 
 	@Test

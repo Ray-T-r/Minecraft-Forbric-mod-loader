@@ -192,12 +192,27 @@ class NestedDuplicateModArbiterTest {
 
 	@Test
 	void theOwnerOverrideStillWins() {
-		System.setProperty(DuplicateModArbiter.OWNER_OVERRIDE, "xaerolib=forge");
+		// Against the nested default (NeoForge before Fabric), so only the pin can be what chooses Fabric.
+		System.setProperty(DuplicateModArbiter.OWNER_OVERRIDE, "xaerolib=fabric");
+		Decision d = nested(List.of(), List.of(
+				claim(FORGE_NESTED, Ecosystem.NEOFORGE, "xaerolib", "1.7.3"),
+				claim(FABRIC_NESTED, Ecosystem.FABRIC, "xaerolib", "1.7.3")));
+
+		assertTrue(d.suppressed(Path.of(FORGE_NESTED)), "-Dforbric.modOwner must reach a nested jar too");
+		assertFalse(d.suppressed(Path.of(FABRIC_NESTED)));
+	}
+
+	@Test
+	void aMinecraftForgePinIsIgnored() {
+		// Forbric no longer loads MinecraftForge mods: the pin is warned about and read as absent, so the nested
+		// default decides between the builds that can load.
+		System.setProperty(DuplicateModArbiter.OWNER_OVERRIDE, "xaerolib=minecraftforge");
 		Decision d = nested(List.of(), List.of(
 				claim(FORGE_NESTED, Ecosystem.FORGE, "xaerolib", "1.7.3"),
 				claim(FABRIC_NESTED, Ecosystem.FABRIC, "xaerolib", "1.7.3")));
 
-		assertTrue(d.suppressed(Path.of(FABRIC_NESTED)), "-Dforbric.modOwner must reach a nested jar too");
+		assertTrue(d.suppressed(Path.of(FORGE_NESTED)));
+		assertFalse(d.suppressed(Path.of(FABRIC_NESTED)));
 	}
 
 	@Test

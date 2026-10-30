@@ -282,6 +282,18 @@ public final class DialogLang {
 					+ ".forbric-kernel/crash-analysis.txt.",
 			"button.isolation.without", "Start without {0}",
 			"button.isolation.everything", "Start with everything",
+			// A MinecraftForge jar Forbric refuses ({0} the mod's name, {1} its file). The detail is the line the
+			// confirmation window, the Mods screen and the in-game prompt show; the report lines are the load report's.
+			"unsupported.forge.feature", "MinecraftForge mod",
+			"unsupported.forge.detail", "{0} ({1}) is a MinecraftForge mod. Forbric no longer supports MinecraftForge, "
+					+ "so it is not loaded. Get the NeoForge or Fabric build of {0} instead.",
+			"unsupported.forge.bundled", "{0} ({1}) is a MinecraftForge build that another mod bundles. Forbric no "
+					+ "longer supports MinecraftForge, so it is kept only as a library.",
+			"report.unsupported.what", "not loaded: Forbric no longer supports MinecraftForge",
+			"report.unsupported.fix", "Get the NeoForge or Fabric build of {0} and put it in the mods folder in place "
+					+ "of {1}.",
+			"report.unsupported.advice", "Forbric now loads Fabric and NeoForge mods only. Most mods publish a NeoForge "
+					+ "or Fabric build for the same Minecraft version; that build is the one to use.",
 			"details.log", "The same findings are in logs/latest.log, under [Forbric/Deps]."));
 
 	// ---------------------------------------------------------------------------------------------------------
@@ -346,6 +358,15 @@ public final class DialogLang {
 			"isolation.details.report", "崩溃报告在 crash-reports/{0}，分析在 .forbric-kernel/crash-analysis.txt。",
 			"button.isolation.without", "不加载 {0} 启动",
 			"button.isolation.everything", "全部照常启动",
+			"unsupported.forge.feature", "MinecraftForge mod",
+			"unsupported.forge.detail", "{0}（{1}）是 MinecraftForge mod。Forbric 已不再支持 MinecraftForge，所以它不会被加载。"
+					+ "请改用 {0} 的 NeoForge 或 Fabric 版本。",
+			"unsupported.forge.bundled", "{0}（{1}）是另一个 mod 内嵌的 MinecraftForge 版本。Forbric 已不再支持 "
+					+ "MinecraftForge，它只作为库保留。",
+			"report.unsupported.what", "没有加载：Forbric 已不再支持 MinecraftForge",
+			"report.unsupported.fix", "请下载 {0} 的 NeoForge 或 Fabric 版本，放进 mods 文件夹替换 {1}。",
+			"report.unsupported.advice", "Forbric 现在只加载 Fabric 和 NeoForge mod。大多数 mod 在同一个 Minecraft "
+					+ "版本上都发布了 NeoForge 或 Fabric 版本，换成那个就行。",
 			"details.log", "同样的内容也在 logs/latest.log 里，搜 [Forbric/Deps] 就能找到。"));
 
 	// -------------------------------------------------------------------------------------------------------
@@ -411,6 +432,15 @@ public final class DialogLang {
 			"isolation.details.report", "崩潰報告在 crash-reports/{0}，分析在 .forbric-kernel/crash-analysis.txt。",
 			"button.isolation.without", "不載入 {0} 啟動",
 			"button.isolation.everything", "全部照常啟動",
+			"unsupported.forge.feature", "MinecraftForge mod",
+			"unsupported.forge.detail", "{0}（{1}）是 MinecraftForge mod。Forbric 已不再支援 MinecraftForge，所以不會載入它。"
+					+ "請改用 {0} 的 NeoForge 或 Fabric 版本。",
+			"unsupported.forge.bundled", "{0}（{1}）是另一個 mod 內嵌的 MinecraftForge 版本。Forbric 已不再支援 "
+					+ "MinecraftForge，它只作為函式庫保留。",
+			"report.unsupported.what", "沒有載入：Forbric 已不再支援 MinecraftForge",
+			"report.unsupported.fix", "請下載 {0} 的 NeoForge 或 Fabric 版本，放進 mods 資料夾取代 {1}。",
+			"report.unsupported.advice", "Forbric 現在只載入 Fabric 和 NeoForge mod。大多數 mod 在同一個 Minecraft "
+					+ "版本上都有 NeoForge 或 Fabric 版本，改用那個即可。",
 			"details.log", "同樣的內容也記在 logs/latest.log 的 [Forbric/Deps] 底下。"));
 
 	// -------------------------------------------------------------------------------------------------------
@@ -483,6 +513,15 @@ public final class DialogLang {
 					+ ".forbric-kernel/crash-analysis.txt にあります。",
 			"button.isolation.without", "{0} なしで起動",
 			"button.isolation.everything", "すべて読み込んで起動",
+			"unsupported.forge.feature", "MinecraftForge mod",
+			"unsupported.forge.detail", "{0}（{1}）は MinecraftForge 用の mod です。Forbric は MinecraftForge のサポートを"
+					+ "終了したため、読み込まれません。{0} の NeoForge 版か Fabric 版を使ってください。",
+			"unsupported.forge.bundled", "{0}（{1}）は別の mod に同梱された MinecraftForge 版です。Forbric は "
+					+ "MinecraftForge のサポートを終了したため、ライブラリとしてのみ残します。",
+			"report.unsupported.what", "読み込まれませんでした：Forbric は MinecraftForge のサポートを終了しました",
+			"report.unsupported.fix", "{0} の NeoForge 版か Fabric 版をダウンロードし、mods フォルダの {1} と置き換えてください。",
+			"report.unsupported.advice", "Forbric が読み込むのは Fabric と NeoForge の mod だけになりました。ほとんどの mod "
+					+ "は同じ Minecraft バージョン向けに NeoForge 版か Fabric 版も公開しているので、そちらを使ってください。",
 			"details.log", "同じ内容は logs/latest.log の [Forbric/Deps] にも記録されています。"));
 
 	// -------------------------------------------------------------------------------------------------------
@@ -552,6 +591,15 @@ public final class DialogLang {
 					+ ".forbric-kernel/crash-analysis.txt에 있습니다.",
 			"button.isolation.without", "{0} 없이 실행",
 			"button.isolation.everything", "모두 불러와 실행",
+			"unsupported.forge.feature", "MinecraftForge 모드",
+			"unsupported.forge.detail", "{0}({1})은(는) MinecraftForge 모드입니다. Forbric은 더 이상 MinecraftForge를 "
+					+ "지원하지 않으므로 이 모드를 불러오지 않습니다. {0}의 NeoForge 또는 Fabric 버전을 사용하세요.",
+			"unsupported.forge.bundled", "{0}({1})은(는) 다른 모드에 포함된 MinecraftForge 버전입니다. Forbric은 더 이상 "
+					+ "MinecraftForge를 지원하지 않으므로 라이브러리로만 남겨 둡니다.",
+			"report.unsupported.what", "불러오지 않음: Forbric은 더 이상 MinecraftForge를 지원하지 않습니다",
+			"report.unsupported.fix", "{0}의 NeoForge 또는 Fabric 버전을 받아 mods 폴더의 {1} 대신 넣으세요.",
+			"report.unsupported.advice", "이제 Forbric은 Fabric과 NeoForge 모드만 불러옵니다. 대부분의 모드는 같은 "
+					+ "Minecraft 버전용 NeoForge 또는 Fabric 버전도 배포하므로 그 버전을 사용하세요.",
 			"details.log", "같은 내용이 logs/latest.log의 [Forbric/Deps] 항목에도 기록되어 있습니다."));
 
 	// -------------------------------------------------------------------------------------------------------
@@ -621,6 +669,15 @@ public final class DialogLang {
 			"isolation.details.report", "Отчёт о вылете: crash-reports/{0}; разбор: .forbric-kernel/crash-analysis.txt.",
 			"button.isolation.without", "Запустить без {0}",
 			"button.isolation.everything", "Запустить со всеми модами",
+			"unsupported.forge.feature", "Мод MinecraftForge",
+			"unsupported.forge.detail", "{0} ({1}) — мод для MinecraftForge. Forbric больше не поддерживает MinecraftForge, "
+					+ "поэтому он не загружается. Возьмите версию {0} для NeoForge или Fabric.",
+			"unsupported.forge.bundled", "{0} ({1}) — сборка для MinecraftForge, встроенная в другой мод. Forbric больше "
+					+ "не поддерживает MinecraftForge, поэтому она оставлена только как библиотека.",
+			"report.unsupported.what", "не загружен: Forbric больше не поддерживает MinecraftForge",
+			"report.unsupported.fix", "Скачайте версию {0} для NeoForge или Fabric и положите её в папку mods вместо {1}.",
+			"report.unsupported.advice", "Теперь Forbric загружает только моды для Fabric и NeoForge. У большинства модов "
+					+ "есть версия для NeoForge или Fabric под ту же версию Minecraft — используйте её.",
 			"details.log", "Те же сведения есть в logs/latest.log, в разделе [Forbric/Deps]."));
 
 	// -------------------------------------------------------------------------------------------------------
@@ -691,6 +748,16 @@ public final class DialogLang {
 					+ ".forbric-kernel/crash-analysis.txt.",
 			"button.isolation.without", "Ohne {0} starten",
 			"button.isolation.everything", "Mit allen Mods starten",
+			"unsupported.forge.feature", "MinecraftForge-Mod",
+			"unsupported.forge.detail", "{0} ({1}) ist eine MinecraftForge-Mod. Forbric unterstützt MinecraftForge nicht "
+					+ "mehr, daher wird sie nicht geladen. Nimm stattdessen die NeoForge- oder Fabric-Version von {0}.",
+			"unsupported.forge.bundled", "{0} ({1}) ist eine MinecraftForge-Version, die eine andere Mod mitbringt. "
+					+ "Forbric unterstützt MinecraftForge nicht mehr, daher bleibt sie nur als Bibliothek erhalten.",
+			"report.unsupported.what", "nicht geladen: Forbric unterstützt MinecraftForge nicht mehr",
+			"report.unsupported.fix", "Lade die NeoForge- oder Fabric-Version von {0} herunter und lege sie anstelle von "
+					+ "{1} in den mods-Ordner.",
+			"report.unsupported.advice", "Forbric lädt jetzt nur noch Fabric- und NeoForge-Mods. Die meisten Mods "
+					+ "veröffentlichen für dieselbe Minecraft-Version auch eine NeoForge- oder Fabric-Version; nimm diese.",
 			"details.log", "Dieselben Ergebnisse stehen in logs/latest.log unter [Forbric/Deps]."));
 
 	// -------------------------------------------------------------------------------------------------------
@@ -763,6 +830,16 @@ public final class DialogLang {
 					+ ".forbric-kernel/crash-analysis.txt.",
 			"button.isolation.without", "Démarrer sans {0}",
 			"button.isolation.everything", "Démarrer avec tout",
+			"unsupported.forge.feature", "Mod MinecraftForge",
+			"unsupported.forge.detail", "{0} ({1}) est un mod MinecraftForge. Forbric ne prend plus en charge "
+					+ "MinecraftForge, il n’est donc pas chargé. Prenez plutôt la version NeoForge ou Fabric de {0}.",
+			"unsupported.forge.bundled", "{0} ({1}) est une version MinecraftForge embarquée par un autre mod. Forbric ne "
+					+ "prend plus en charge MinecraftForge, elle est donc conservée seulement comme bibliothèque.",
+			"report.unsupported.what", "non chargé : Forbric ne prend plus en charge MinecraftForge",
+			"report.unsupported.fix", "Téléchargez la version NeoForge ou Fabric de {0} et mettez-la dans le dossier mods "
+					+ "à la place de {1}.",
+			"report.unsupported.advice", "Forbric ne charge plus que les mods Fabric et NeoForge. La plupart des mods "
+					+ "publient une version NeoForge ou Fabric pour la même version de Minecraft ; c’est celle-là qu’il faut.",
 			"details.log", "Les mêmes informations se trouvent dans logs/latest.log, sous [Forbric/Deps]."));
 
 	// -------------------------------------------------------------------------------------------------------
@@ -833,6 +910,16 @@ public final class DialogLang {
 					+ ".forbric-kernel/crash-analysis.txt.",
 			"button.isolation.without", "Iniciar sin {0}",
 			"button.isolation.everything", "Iniciar con todo",
+			"unsupported.forge.feature", "Mod de MinecraftForge",
+			"unsupported.forge.detail", "{0} ({1}) es un mod de MinecraftForge. Forbric ya no es compatible con "
+					+ "MinecraftForge, así que no se carga. Usa en su lugar la versión de {0} para NeoForge o Fabric.",
+			"unsupported.forge.bundled", "{0} ({1}) es una versión de MinecraftForge incluida en otro mod. Forbric ya no "
+					+ "es compatible con MinecraftForge, así que se conserva solo como biblioteca.",
+			"report.unsupported.what", "no se cargó: Forbric ya no es compatible con MinecraftForge",
+			"report.unsupported.fix", "Descarga la versión de {0} para NeoForge o Fabric y ponla en la carpeta mods en "
+					+ "lugar de {1}.",
+			"report.unsupported.advice", "Forbric ahora solo carga mods de Fabric y NeoForge. La mayoría de los mods "
+					+ "publican una versión para NeoForge o Fabric de la misma versión de Minecraft; usa esa.",
 			"details.log", "Los mismos resultados están en logs/latest.log, bajo [Forbric/Deps]."));
 
 	// -------------------------------------------------------------------------------------------------------
@@ -903,5 +990,15 @@ public final class DialogLang {
 					+ ".forbric-kernel/crash-analysis.txt.",
 			"button.isolation.without", "Iniciar sem {0}",
 			"button.isolation.everything", "Iniciar com tudo",
+			"unsupported.forge.feature", "Mod de MinecraftForge",
+			"unsupported.forge.detail", "{0} ({1}) é um mod de MinecraftForge. O Forbric não oferece mais suporte ao "
+					+ "MinecraftForge, então ele não é carregado. Use a versão de {0} para NeoForge ou Fabric.",
+			"unsupported.forge.bundled", "{0} ({1}) é uma versão de MinecraftForge incluída em outro mod. O Forbric não "
+					+ "oferece mais suporte ao MinecraftForge, então ela fica apenas como biblioteca.",
+			"report.unsupported.what", "não carregado: o Forbric não oferece mais suporte ao MinecraftForge",
+			"report.unsupported.fix", "Baixe a versão de {0} para NeoForge ou Fabric e coloque-a na pasta mods no lugar "
+					+ "de {1}.",
+			"report.unsupported.advice", "Agora o Forbric carrega apenas mods de Fabric e NeoForge. A maioria dos mods "
+					+ "publica uma versão para NeoForge ou Fabric da mesma versão do Minecraft; use essa.",
 			"details.log", "As mesmas informações estão em logs/latest.log, sob [Forbric/Deps]."));
 }

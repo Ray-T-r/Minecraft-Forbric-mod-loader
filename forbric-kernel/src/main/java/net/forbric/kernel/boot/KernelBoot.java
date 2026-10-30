@@ -307,7 +307,10 @@ public final class KernelBoot {
 		forgeMixinDecls.addAll(discoverForgeMixinConfigs(runtimeJars, "runtime jar"));
 		// Every jar has been read and has an owner. A manifest that could not be read cost that jar alone; say
 		// which, at the same weight as any other mod that did not load (see MetadataFailures).
-		net.forbric.kernel.discovery.MetadataFailures.recordFindings(MultiLoaderArbiter::ownerOf, runtimeJars);
+		// A refused MinecraftForge jar is recorded the same way: installed in mods/, a required loss; bundled, a note;
+		// switched off by the player, nothing.
+		net.forbric.kernel.discovery.MetadataFailures.recordFindings(MultiLoaderArbiter::ownerOf, runtimeJars,
+				gameDir.resolve("mods"), topLevelDupes::suppressed);
 
 		// Game-side bundled libraries (MixinExtras) and the kernel's own runtime jar. The latter also carries
 		// the kernel's client assets -- the Mods button's icon lives in it -- so its extracted path is handed to
@@ -330,6 +333,18 @@ public final class KernelBoot {
 		}
 
 		owned = KernelOwnedClasspath.compose(owned, minecraftLibraries, modJars, fabricJars, bundled);
+		// A MinecraftForge-only build another mod bundles is refused like one in mods/, but it is not the player's
+		// mod and its parent may call into it. It stays on the class path above, as native NeoForge keeps a nested jar
+		// it does not read as a mod — a library — and leaves every pass from here on: no @Mod, mixins, access
+		// transformer, event subscribers or packs of it, and no probe family. The refused jars in mods/ never got
+		// this far: discovery yielded no mod of theirs.
+		List<Path> refusedNested = nested.stream().filter(MultiLoaderArbiter::refused).toList();
+		if (!refusedNested.isEmpty()) {
+			modJars.removeAll(refusedNested);
+			ForbricLog.info("[Forbric/Unsupported] %d bundled MinecraftForge build(s) kept only as libraries — Forbric no "
+					+ "longer loads MinecraftForge mods: %s", refusedNested.size(),
+					refusedNested.stream().map(jar -> String.valueOf(jar.getFileName())).toList());
+		}
 		KernelLifecycle.setKernelAssetJars(bundled);
 		if (!KernelOwnedClasspath.bundledFirst()) {
 			ForbricLog.warn("[Forbric/Boot] -D%s=off — guest jars precede kernel-supplied game libraries",
@@ -1981,6 +1996,10 @@ public final class KernelBoot {
 		java.util.Set<String> seen = new java.util.LinkedHashSet<>();
 		for (DiscoveredMod mod : discoverer.discoverJar(jar)) {
 			if (!mod.getEcosystem().isForgeFamily()) continue;
+			// Forbric no longer loads MinecraftForge mods. A jar whose only Forge-family mod is a MinecraftForge one is
+			// not a Forge-family jar any more — a Forge+Fabric jar loads through Fabric's discovery instead — and a
+			// MinecraftForge mod's mixin configs are not collected for anyone.
+			if (mod.getEcosystem() == Ecosystem.FORGE) continue;
 			forgeFamily = true;
 			for (String config : mod.getMixinConfigs()) {
 				// The mod id is part of the key on purpose. ForgeMetadataMapper copies one manifest's config list

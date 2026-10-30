@@ -114,7 +114,8 @@ public final class KernelModCatalog {
 		for (MetadataFailures.Lost lost : MetadataFailures.lost()) {
 			String file = lost.jar().getFileName().toString();
 			if (!dir.equals(lost.jar().getParent()) || entries.stream().anyMatch(e -> e.jar().equals(file))) continue;
-			entries.add(new ModCatalog.Entry(lost.ecosystem(), lost.modId(), lost.modId(), "", "", List.of(), file, "", "")
+			// The name the manifest gives, where it gives one: a refused MinecraftForge mod is named to the player by it.
+			entries.add(new ModCatalog.Entry(lost.ecosystem(), lost.modId(), lost.name(), "", "", List.of(), file, "", "")
 					.withStatus(ModCatalog.Status.FAILED, lost.detail()));
 		}
 	}

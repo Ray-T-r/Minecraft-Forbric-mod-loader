@@ -26,26 +26,47 @@ class MultiLoaderEntrypointsTest {
 	@TempDir Path temporary;
 	@BeforeEach @AfterEach void reset() {
 		MultiLoaderArbiter.reset();
+		net.forbric.kernel.discovery.MetadataFailures.reset();
 		System.clearProperty("forbric.multiLoaderPreference");
 		System.clearProperty(MultiLoaderArbiter.ENTRYPOINT_SWITCH);
 	}
 
-	@Test void aForgeConstructorWinsOverBothLeftoverManifests() throws Exception {
+	/**
+	 * A jar whose only constructor is MinecraftForge's used to be owned by MinecraftForge. Forbric no longer loads
+	 * MinecraftForge mods, and its other two manifests are leftovers, so it is refused: FORGE as a refused state,
+	 * suppressed for every family including MinecraftForge's own, whatever the preference or the entrypoint switch.
+	 */
+	@Test void aJarWhoseOnlyConstructorIsMinecraftForgesIsRefused() throws Exception {
 		Path jar = fixture("forge.jar", "example.ForgeEntry", Map.of("example/ForgeEntry.class",
 				type("example/ForgeEntry", Ecosystem.FORGE, "example", null, false)));
-		assertEquals(Ecosystem.FORGE, MultiLoaderArbiter.ownerOf(jar));
+		assertEquals(Ecosystem.FORGE, MultiLoaderArbiter.ownerOf(jar), "refused is FORGE, never null (a library)");
+		assertTrue(MultiLoaderArbiter.refused(jar));
 		assertEquals(List.of(Ecosystem.NEOFORGE, Ecosystem.FORGE, Ecosystem.FABRIC), MultiLoaderArbiter.declaredBy(jar),
-				"declarations still provide presence aliases; only initialization ownership changes");
-		assertFalse(MultiLoaderArbiter.suppressedFor(jar, Ecosystem.FORGE));
-		assertTrue(MultiLoaderArbiter.suppressedFor(jar, Ecosystem.NEOFORGE));
-		MultiLoaderArbiter.reset();
-		System.setProperty("forbric.multiLoaderPreference", "fabric");
-		assertEquals(Ecosystem.FORGE, MultiLoaderArbiter.ownerOf(jar),
-				"a Forge-only constructor cannot be instantiated by Fabric's default adapter");
+				"declarations are still reported as they are");
+		for (Ecosystem family : Ecosystem.values()) assertTrue(MultiLoaderArbiter.suppressedFor(jar, family), family.name());
+		for (String setting : List.of("fabric", "minecraftforge,neoforge,fabric")) {
+			MultiLoaderArbiter.reset();
+			System.setProperty("forbric.multiLoaderPreference", setting);
+			assertTrue(MultiLoaderArbiter.refused(jar), "no preference revives it: " + setting);
+		}
 		MultiLoaderArbiter.reset();
 		System.setProperty(MultiLoaderArbiter.ENTRYPOINT_SWITCH, "off");
 		System.clearProperty("forbric.multiLoaderPreference");
-		assertEquals(Ecosystem.NEOFORGE, MultiLoaderArbiter.ownerOf(jar), "the control restores the original loss");
+		assertTrue(MultiLoaderArbiter.refused(jar), "the judgement is the loader halves', not the entrypoint switch's");
+	}
+
+	/** Control: the same fixture with a real Fabric initializer beside the Forge constructor loads as Fabric. */
+	@Test void aForgeAndFabricJarNowLoadsAsFabric() throws Exception {
+		Path jar = fixture("arch.jar", "example.FabricEntry", Map.of(
+				"example/ForgeEntry.class", type("example/ForgeEntry", Ecosystem.FORGE, "example", null, false),
+				"example/FabricEntry.class", type("example/FabricEntry", null, null, "net/fabricmc/api/ModInitializer", true)));
+		assertEquals(Ecosystem.FABRIC, MultiLoaderArbiter.ownerOf(jar));
+		assertFalse(MultiLoaderArbiter.refused(jar));
+		assertFalse(MultiLoaderArbiter.suppressedFor(jar, Ecosystem.FABRIC));
+		assertTrue(MultiLoaderArbiter.suppressedFor(jar, Ecosystem.FORGE));
+		MultiLoaderArbiter.reset();
+		System.setProperty("forbric.multiLoaderPreference", "minecraftforge,neoforge,fabric");
+		assertEquals(Ecosystem.FABRIC, MultiLoaderArbiter.ownerOf(jar), "minecraftforge in the preference is ignored");
 	}
 
 	@Test void aFabricInitializerWinsOverLowcodeAndJavaManifestTemplates() throws Exception {
@@ -60,6 +81,7 @@ class MultiLoaderEntrypointsTest {
 				type("example/ForgeEntry", Ecosystem.FORGE, "example", null, true)));
 		System.setProperty("forbric.multiLoaderPreference", "fabric");
 		assertEquals(Ecosystem.FORGE, MultiLoaderArbiter.ownerOf(jar));
+		assertTrue(MultiLoaderArbiter.refused(jar), "its Fabric entrypoint is the Forge class, so nothing else can load it");
 	}
 
 	@Test void theFabricContractMayBeInheritedFromAnOwnSuperclass() throws Exception {
@@ -84,7 +106,10 @@ class MultiLoaderEntrypointsTest {
 		Path jar = fixture("shaded.jar", null, Map.of(
 				"example/ForgeEntry.class", type("example/ForgeEntry", Ecosystem.FORGE, "example", null, true),
 				"shaded/Library.class", type("shaded/Library", Ecosystem.NEOFORGE, "another_library", null, true)));
-		assertEquals(Ecosystem.FORGE, MultiLoaderArbiter.ownerOf(jar));
+		// The shaded NeoForge @Mod names another id, so the NeoForge manifest stays unvalidated; with MinecraftForge
+		// set aside the jar loads through its library-style fabric.mod.json, the one usable half left.
+		assertEquals(Ecosystem.FABRIC, MultiLoaderArbiter.ownerOf(jar));
+		assertTrue(MultiLoaderArbiter.suppressedFor(jar, Ecosystem.NEOFORGE));
 	}
 
 	@Test void dataOnlyJarsKeepTheirExistingPreference() throws Exception {
@@ -108,12 +133,18 @@ class MultiLoaderEntrypointsTest {
 				"aquariuslibs-1.2.0-forge-26.2-65.0.0.jar", "bannerstone-0.1.2.jar");
 		boolean available = names.stream().allMatch(name -> Files.isRegularFile(mods.resolve(name)));
 		TestFixtures.require(Fixture.THIRD_PARTY, available, "requires the prepared random baseline jars");
+		// The two animalgarden/aquarius Forge builds have nothing but a MinecraftForge initializer and are refused now;
+		// bannerstone's Fabric entrypoint is real. With the entrypoint switch off, the refusals stand (they are the
+		// loader halves' verdict) and bannerstone falls back to the bare preference among its usable halves.
 		for (int i = 0; i < names.size(); i++) {
 			Path jar = mods.resolve(names.get(i));
 			assertEquals(i < 2 ? Ecosystem.FORGE : Ecosystem.FABRIC, MultiLoaderArbiter.ownerOf(jar), names.get(i));
+			assertEquals(i < 2, MultiLoaderArbiter.refused(jar), names.get(i));
 			MultiLoaderArbiter.reset();
 			System.setProperty(MultiLoaderArbiter.ENTRYPOINT_SWITCH, "off");
-			assertEquals(Ecosystem.NEOFORGE, MultiLoaderArbiter.ownerOf(jar), "negative control: " + names.get(i));
+			assertEquals(i < 2 ? Ecosystem.FORGE : Ecosystem.NEOFORGE, MultiLoaderArbiter.ownerOf(jar),
+					"negative control: " + names.get(i));
+			assertEquals(i < 2, MultiLoaderArbiter.refused(jar), names.get(i));
 			System.clearProperty(MultiLoaderArbiter.ENTRYPOINT_SWITCH);
 			MultiLoaderArbiter.reset();
 		}

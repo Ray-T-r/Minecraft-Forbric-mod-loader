@@ -154,7 +154,13 @@ public final class KernelLoadReport {
 			}
 			// Noticed and not proved. Notes, not failures: they mark no mod and never stop the success line.
 			List<CompatibilityFinding> suspected = CompatibilityFindings.suspected();
-			String rendered = render(chinese(), failures, unattributed, suspected, disabled);
+			java.util.Set<String> unsupported = new java.util.HashSet<>();
+			for (net.forbric.kernel.discovery.MetadataFailures.Lost lost : net.forbric.kernel.discovery.MetadataFailures.lost()) {
+				if (lost.kind() == net.forbric.kernel.discovery.MetadataFailures.Kind.UNSUPPORTED) {
+					unsupported.add(String.valueOf(lost.jar().getFileName()));
+				}
+			}
+			String rendered = render(chinese(), failures, unattributed, suspected, disabled, unsupported);
 			synchronized (KernelLoadReport.class) {
 				if (rendered.equals(lastRendered)) return;
 				if (lastRendered != null && !rewriteEnabled()) return;
@@ -243,6 +249,19 @@ public final class KernelLoadReport {
 	/** @param disabled the jars {@link DisabledMods} switched off this boot, by file name */
 	static String render(boolean zh, List<ModCatalog.Entry> failures, List<CompatibilityFinding> unattributed,
 			List<CompatibilityFinding> suspected, List<String> disabled) {
+		return render(zh, failures, unattributed, suspected, disabled, java.util.Set.of());
+	}
+
+	/**
+	 * @param unsupported the file names of the jars refused as MinecraftForge mods ({@code MetadataFailures}). Their
+	 *                    rows say so, and what to get instead, in the report's language through {@code DialogLang}
+	 *                    rather than "did not finish loading": none of them started. The general advice below — a
+	 *                    wrong Minecraft version, a missing dependency, "their classes did load" — is not true of
+	 *                    them, so a report whose every failure is a refusal leaves it out.
+	 */
+	static String render(boolean zh, List<ModCatalog.Entry> failures, List<CompatibilityFinding> unattributed,
+			List<CompatibilityFinding> suspected, List<String> disabled, java.util.Set<String> unsupported) {
+		net.forbric.kernel.ui.DialogLang lang = zh ? net.forbric.kernel.ui.DialogLang.ZH_CN : net.forbric.kernel.ui.DialogLang.EN;
 		StringBuilder sb = new StringBuilder();
 		boolean headline = !failures.isEmpty() || (unattributed.isEmpty() && suspected.isEmpty() && disabled.isEmpty());
 		if (zh) {
@@ -266,6 +285,11 @@ public final class KernelLoadReport {
 			if (!e.modId().equals(e.name())) sb.append("  (").append(e.modId()).append(')');
 			sb.append('\n');
 			if (!e.jar().isEmpty()) sb.append("    ").append(e.jar()).append('\n');
+			if (unsupported.contains(e.jar())) {
+				sb.append("    ").append(lang.get("report.unsupported.what")).append('\n');
+				sb.append("    ").append(lang.get("report.unsupported.fix", e.name(), e.jar())).append("\n\n");
+				continue;
+			}
 			String what = e.status() == ModCatalog.Status.FAILED
 					? (zh ? "没有完成加载" : "did not finish loading")
 					: (zh ? "有一部分没有跑起来" : "partly did not run");
@@ -326,6 +350,9 @@ public final class KernelLoadReport {
 			}
 			return sb.toString();
 		}
+		boolean anyRefused = failures.stream().anyMatch(e -> unsupported.contains(e.jar()));
+		if (anyRefused) sb.append(lang.get("report.unsupported.advice")).append("\n\n");
+		if (anyRefused && failures.stream().allMatch(e -> unsupported.contains(e.jar()))) return sb.toString();
 
 		if (zh) {
 			sb.append("怎么办\n");

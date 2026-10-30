@@ -32,6 +32,7 @@ import org.objectweb.asm.Opcodes;
 
 import net.forbric.api.Ecosystem;
 import net.forbric.kernel.discovery.ForbricModDiscoverer;
+import net.forbric.kernel.discovery.LoaderHalfJudge;
 import net.forbric.kernel.discovery.MetadataFailures;
 import net.forbric.kernel.discovery.ModAnnotationScanner;
 import net.forbric.kernel.fabric.FabricModMetadataParser;
@@ -55,20 +56,30 @@ import net.forbric.kernel.util.ForbricLog;
  * <p>Discovery deliberately reports every manifest truthfully ("which family actually loads is a boot-time
  * policy" — {@link ForbricModDiscoverer}); this class is that policy. It picks by a documented preference order,
  * logs the choice and what it suppressed, and is overridable with
- * {@code -Dforbric.multiLoaderPreference=neoforge,minecraftforge,fabric}.
+ * {@code -Dforbric.multiLoaderPreference=neoforge,fabric}.
  *
- * <p>The default order prefers a Forge-family claim over Fabric because the Forge/NeoForge baselines are ALWAYS
- * present on the merged base, whereas a jar's Fabric side typically declares a dependency on fabric-api that the
- * user may not have installed; and NeoForge before traditional Forge because NeoForge won most of the byte-merge,
- * so its glue's hooks are the most likely to be intact.
+ * <p>The default order prefers NeoForge over Fabric because the NeoForge baseline is ALWAYS present on the base,
+ * whereas a jar's Fabric side typically declares a dependency on fabric-api that the user may not have installed.
+ *
+ * <h2>MinecraftForge is refused, not arbitrated</h2>
+ *
+ * <p>Forbric no longer loads MinecraftForge mods. A jar's MinecraftForge half is never a candidate: a jar that also has
+ * a usable Fabric or NeoForge half (as {@link LoaderHalfJudge} judges it) is chosen among those alone — a Forge+Fabric
+ * Architectury-style jar now loads as Fabric and says so — and a jar with nothing else to load through is REFUSED.
+ * A refused jar's owner is {@link Ecosystem#FORGE}, held as a refused state: {@link #suppressedFor} is true for every
+ * family, FORGE included, so no loader constructs it, registers its mixins or reads its access transformer. It must
+ * not be {@code null}: null is this class's word for "a plain library, nobody claims it", and every pass treats an
+ * unowned jar as one to keep — it would put the refused jar's Forge classes, mixins and ATs on the game.
+ * {@code minecraftforge} in {@code -Dforbric.multiLoaderPreference} is warned about and ignored.
  */
 public final class MultiLoaderArbiter {
-	private static final List<Ecosystem> DEFAULT_PREFERENCE =
-			List.of(Ecosystem.NEOFORGE, Ecosystem.FORGE, Ecosystem.FABRIC);
+	private static final List<Ecosystem> DEFAULT_PREFERENCE = List.of(Ecosystem.NEOFORGE, Ecosystem.FABRIC);
 	static final String ENTRYPOINT_SWITCH = "forbric.multiLoaderEntrypoints";
 
 	/** jar path -> the ecosystem that owns it. Computed once per jar; discovery order is stable. */
 	private static final Map<String, Ecosystem> OWNERS = new LinkedHashMap<>();
+	/** The jars refused as MinecraftForge-only builds; their entry in {@link #OWNERS} is FORGE. */
+	private static final Set<String> REFUSED = new HashSet<>();
 
 	private MultiLoaderArbiter() {
 	}
@@ -76,19 +87,51 @@ public final class MultiLoaderArbiter {
 	/** Forgets every decision — for tests, and so a re-launch in one process re-arbitrates. */
 	public static synchronized void reset() {
 		OWNERS.clear();
+		REFUSED.clear();
+	}
+
+	/**
+	 * Whether {@code jar} is refused: a MinecraftForge build with no usable Fabric or NeoForge half. Nothing of it
+	 * loads; discovery has recorded why ({@link MetadataFailures#unsupported(Path)}).
+	 */
+	public static synchronized boolean refused(Path jar) {
+		ownerOf(jar);
+		return REFUSED.contains(jar.toAbsolutePath().toString());
 	}
 
 	/**
 	 * The ecosystem that owns {@code jar}. A jar declaring exactly one family is owned by it (the common case, no
 	 * log); a jar declaring several is arbitrated by preference and logged ONCE, naming what was suppressed.
 	 * Returns {@code null} when the jar declares no loader manifest at all (a plain library — nobody claims it, and
-	 * every path should treat it as unowned rather than as "not mine").
+	 * every path should treat it as unowned rather than as "not mine"). Never returns FORGE except for a
+	 * {@linkplain #refused refused} jar.
 	 */
 	public static synchronized Ecosystem ownerOf(Path jar) {
 		String key = jar.toAbsolutePath().toString();
 		if (OWNERS.containsKey(key)) return OWNERS.get(key);
 
 		List<Ecosystem> declared = declaredBy(jar);
+		// Every manifest the jar carries, for the log line that says what was suppressed: `declared` itself narrows to
+		// the halves that can load it.
+		List<Ecosystem> manifests = declared;
+		boolean forgeSetAside = false;
+		if (declared.contains(Ecosystem.FORGE)) {
+			LoaderHalfJudge.Verdict verdict = MetadataFailures.verdict(jar);
+			if (verdict == null || verdict.refused()) {
+				// Discovery recorded the refusal (or could not open the jar at all); here it only has to hold.
+				REFUSED.add(key);
+				OWNERS.put(key, Ecosystem.FORGE);
+				ForbricLog.warn("[Forbric/MultiLoader] %s is refused — a MinecraftForge build with no usable Fabric or "
+						+ "NeoForge half; no loader loads any of it (%s)", jar.getFileName(),
+						verdict == null ? "the jar could not be judged" : verdict.describe());
+				return Ecosystem.FORGE;
+			}
+			List<Ecosystem> usable = verdict.usableFamilies();
+			declared = declared.stream().filter(family -> family != Ecosystem.FORGE && usable.contains(family)).toList();
+			forgeSetAside = true;
+			ForbricLog.info("[Forbric/MultiLoader] %s: its MinecraftForge half is set aside — Forbric no longer loads "
+					+ "MinecraftForge mods — choosing among its usable %s half(s)", jar.getFileName(), declared);
+		}
 		if (declared.size() > 1) {
 			// A family whose manifest cannot be read cannot load the jar either. Choosing it by preference left the
 			// jar to nobody: EntityCount ships a valid fabric.mod.json and a neoforge.mods.toml with the range
@@ -125,11 +168,16 @@ public final class MultiLoaderArbiter {
 				ForbricLog.info("[Forbric/MultiLoader] %s has initialization code for %s; ignoring manifest-only "
 						+ "claims %s so its real entrypoint is not suppressed", jar.getFileName(), candidates, metadataOnly);
 			}
-			List<Ecosystem> suppressed = new ArrayList<>(declared);
+		}
+		// The universal-jar line, over every manifest the jar carries: a set-aside MinecraftForge half is named among
+		// what was suppressed, so a Forge+Fabric jar that now loads as Fabric says so in the same words.
+		if (owner != null && (declared.size() > 1 || forgeSetAside && manifests.size() > 1)) {
+			List<Ecosystem> named = forgeSetAside ? manifests : declared;
+			List<Ecosystem> suppressed = new ArrayList<>(named);
 			suppressed.remove(owner);
 			ForbricLog.info("[Forbric/MultiLoader] %s declares %d loaders — loading it as %s only, suppressing %s "
 					+ "(a universal jar would otherwise initialise once per live ecosystem)",
-					jar.getFileName(), declared.size(), owner, suppressed);
+					jar.getFileName(), named.size(), owner, suppressed);
 		}
 
 		OWNERS.put(key, owner);
@@ -223,7 +271,9 @@ public final class MultiLoaderArbiter {
 	/** True when {@code jar} is claimed by another family, so {@code mine} must skip it. Unowned jars are never skipped. */
 	public static boolean suppressedFor(Path jar, Ecosystem mine) {
 		Ecosystem owner = ownerOf(jar);
-		return owner != null && owner != mine;
+		// A refused jar is suppressed for every family, MinecraftForge's own included: its owner FORGE is a refusal,
+		// not a claim.
+		return owner != null && (owner != mine || refused(jar));
 	}
 
 	/**
@@ -260,7 +310,12 @@ public final class MultiLoaderArbiter {
 			// Ecosystem.parse, not valueOf: this knob has always taken "minecraftforge", and the constant is now
 			// spelled FORGE because run/diff-oracle.sh pins that spelling independently of kernel code.
 			Ecosystem parsed = Ecosystem.parse(raw);
-			if (parsed != null) {
+			if (parsed == Ecosystem.FORGE) {
+				// Read, so an old launch profile that names it is told why it no longer means anything, and not
+				// obeyed: preferring MinecraftForge would choose a half that is never loaded.
+				ForbricLog.warn("[Forbric/MultiLoader] ignoring '%s' in -Dforbric.multiLoaderPreference — Forbric no "
+						+ "longer loads MinecraftForge mods; the order is read as if it were not there", raw.trim());
+			} else if (parsed != null) {
 				order.add(parsed);
 			} else {
 				ForbricLog.warn("[Forbric/MultiLoader] ignoring unknown ecosystem '%s' in "
