@@ -525,6 +525,23 @@ public final class KernelBoot {
 				return null;
 			}
 		}));
+		// Both sides, before the merged-base compatibility repairs, which find the vanilla members these add and wire them to
+		// NeoForge's live ones: the vanilla members only the merge's MinecraftForge half kept (the PiP map, the int-keyed
+		// particle providers, vanilla's payload codec, Hud's hotbar-and-decorations…), added where a base lacks them.
+		// Nothing is missing on the merged base, so nothing lands there.
+		if (net.forbric.kernel.transform.VanillaMemberTwinInjector.enabled()) {
+			net.forbric.kernel.mixin.NativeGameReferences vanillaBodies = new net.forbric.kernel.mixin.NativeGameReferences(path -> {
+				try (java.io.InputStream in = loader.getGameResourceAsStream(path)) {
+					return in == null ? null : in.readAllBytes();
+				} catch (java.io.IOException unreadable) {
+					Caught.warn(unreadable, "[Forbric/Boot] could not read game resource %s for the vanilla member twins;"
+							+ " it reads as absent", path);
+					return null;
+				}
+			});
+			chain.register(TransformPhase.COREMOD, new net.forbric.kernel.transform.VanillaMemberTwinInjector(
+					owner -> vanillaBodies.getWithFrames(net.forbric.api.Ecosystem.FABRIC, owner)));
+		}
 		chain.register(TransformPhase.COREMOD, new ForbricMergedBaseCompatTransformer(path -> {
 			try (java.io.InputStream in = loader.getGameResourceAsStream(path)) {
 				return in == null ? null : in.readAllBytes();

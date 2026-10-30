@@ -101,6 +101,19 @@ class TransformerRegistrationOrderTest {
 						+ "lifecycle stubs stand down on their own. Full order: " + order);
 	}
 
+	@Test
+	void theVanillaMemberTwinsComeBeforeTheCompatTransformerThatWiresThem() throws Exception {
+		List<String> order = transformerConstructionOrder();
+		int twins = order.indexOf("net/forbric/kernel/transform/VanillaMemberTwinInjector");
+		int compat = order.indexOf("net/forbric/kernel/transform/ForbricMergedBaseCompatTransformer");
+		assertTrue(twins >= 0 && compat >= 0, "one of the two is no longer constructed in launch(). Full order: " + order);
+		// bridgeOrphanedPipRenderers and giveTheVanillaParticleMapAViewOfTheLiveOne act only where the vanilla member
+		// exists. On a base without it, twins registered after them land as fields nothing writes and a lookup nothing
+		// falls back to — while every test of each transformer alone stays green.
+		assertTrue(twins < compat, "the vanilla member twins must be registered before the compat transformer, so its "
+				+ "repairs find the members they wire. Full order: " + order);
+	}
+
 	/**
 	 * The merged base lists Entity/BlockEntity/Level in required-ancestor-compositions.tsv and the loader refuses to
 	 * define them without a registered proof; the capability composition is that proof. It used to be constructed
