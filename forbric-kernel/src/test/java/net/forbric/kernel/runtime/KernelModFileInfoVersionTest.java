@@ -21,6 +21,7 @@ import net.forbric.api.ModPresence;
 import net.forbric.kernel.TestFixtures;
 import net.forbric.kernel.TestFixtures.Fixture;
 import net.forbric.kernel.discovery.ForbricModDiscoverer;
+import net.forbric.kernel.discovery.MetadataFailures;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
@@ -37,6 +38,7 @@ class KernelModFileInfoVersionTest {
     void clearMetadata() {
         ModPresence.publishForgeFamily(List.of());
         ModPresence.publishFabric(List.of());
+        MetadataFailures.reset();
     }
 
     @Test
@@ -73,9 +75,14 @@ class KernelModFileInfoVersionTest {
 
     @Test
     void forgeDeclaredVersionIsRetainedWithoutAManifestVersion() throws Exception {
-        Path jar = fixture("forge.jar", "META-INF/mods.toml", "3.8.7", null);
+        // A MinecraftForge-only jar is refused (Stage 3): no mod, so no version for any ModInfo to carry.
+        assertRefused(fixture("forge.jar", "META-INF/mods.toml", "3.8.7", null));
+        // The mods.toml dialect is still read where a jar has a real NeoForge half beside it: discovery stays
+        // truthful about what a universal jar declares, and only MultiLoaderArbiter sets its Forge half aside.
+        Path jar = universal("universal.jar", "3.8.7", null);
         try (URLClassLoader runtime = runtimeLoader()) {
             assertEquals("3.8.7", version(info(runtime, jar)));
+            assertFalse(MetadataFailures.unsupported(jar), "a jar with a usable NeoForge half is not refused");
         }
     }
 
@@ -83,11 +90,14 @@ class KernelModFileInfoVersionTest {
     void bothTomlDialectsUseTheResolvedManifestPlaceholder() throws Exception {
         try (URLClassLoader runtime = runtimeLoader()) {
             for (String metadata : List.of("META-INF/mods.toml", "META-INF/neoforge.mods.toml")) {
-                Path jar = fixture(metadata.contains("neoforge") ? "neo.jar" : "forge.jar",
-                        metadata, "${file.jarVersion}", "7.6.5-dev");
+                // mods.toml sits in a universal jar: on its own it is a MinecraftForge-only jar, which is refused.
+                Path jar = metadata.contains("neoforge")
+                        ? fixture("neo.jar", metadata, "${file.jarVersion}", "7.6.5-dev")
+                        : universal("universal.jar", "${file.jarVersion}", "7.6.5-dev");
                 assertEquals("7.6.5-dev", version(info(runtime, jar)), "discovery must resolve " + metadata);
             }
         }
+        assertRefused(fixture("forge.jar", "META-INF/mods.toml", "${file.jarVersion}", "7.6.5-dev"));
     }
 
     @Test
@@ -161,18 +171,43 @@ class KernelModFileInfoVersionTest {
     }
 
     private Path fixture(String name, String metadata, String version, String manifestVersion) throws Exception {
+        return jar(name, manifestVersion, metadata, toml("versionprobe", version));
+    }
+
+    /**
+     * A universal jar: its mods.toml declares versionprobe, beside a NeoForge half of another id with no @Mod at all
+     * (a data or library half NeoForge loads), which is what keeps the jar from being refused. The NeoForge half's own
+     * version differs, so reading the wrong manifest cannot pass for the right one.
+     */
+    private Path universal(String name, String forgeVersion, String manifestVersion) throws Exception {
+        return jar(name, manifestVersion, "META-INF/mods.toml", toml("versionprobe", forgeVersion),
+                "META-INF/neoforge.mods.toml", toml("neohalf", "1.0.0"));
+    }
+
+    private Path jar(String name, String manifestVersion, String... entries) throws Exception {
         Manifest manifest = new Manifest();
         manifest.getMainAttributes().put(Attributes.Name.MANIFEST_VERSION, "1.0");
         if (manifestVersion != null) manifest.getMainAttributes().put(Attributes.Name.IMPLEMENTATION_VERSION, manifestVersion);
         Path path = temp.resolve(name);
         try (JarOutputStream output = new JarOutputStream(Files.newOutputStream(path), manifest)) {
-            output.putNextEntry(new ZipEntry(metadata));
-            String toml = "modLoader=\"javafml\"\nloaderVersion=\"[1,)\"\nlicense=\"test\"\n[[mods]]\nmodId=\"versionprobe\"\n"
-                    + (version == null ? "" : "version=\"" + version + "\"\n");
-            output.write(toml.getBytes(StandardCharsets.UTF_8));
-            output.closeEntry();
+            for (int i = 0; i < entries.length; i += 2) {
+                output.putNextEntry(new ZipEntry(entries[i]));
+                output.write(entries[i + 1].getBytes(StandardCharsets.UTF_8));
+                output.closeEntry();
+            }
         }
         return path;
+    }
+
+    private static String toml(String modId, String version) {
+        return "modLoader=\"javafml\"\nloaderVersion=\"[1,)\"\nlicense=\"test\"\n[[mods]]\nmodId=\"" + modId + "\"\n"
+                + (version == null ? "" : "version=\"" + version + "\"\n");
+    }
+
+    /** Stage 3: discovery yields nothing of a MinecraftForge-only jar and records it as unsupported. */
+    private static void assertRefused(Path jar) throws Exception {
+        assertEquals(List.of(), new ForbricModDiscoverer().discoverJar(jar), "a MinecraftForge-only jar yields no mod");
+        assertTrue(MetadataFailures.unsupported(jar), MetadataFailures.of(jar).toString());
     }
 
     private static URLClassLoader runtimeLoader() throws Exception {
