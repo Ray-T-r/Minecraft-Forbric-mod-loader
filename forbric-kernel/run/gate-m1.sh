@@ -54,6 +54,7 @@ else
   echo "[kernel] FAIL kernel's own game-side classes linked (got ${LINKED:-none})"; FAIL=1
 fi
 check "genuine server-loading lifecycle redirected"       "(redirected|excised) genuine loader trigger .*ServerModLoader.load" "$LOG"
+check "FABRIC references come from the vanilla-reference sidecar" "$NATIVE_REFS_FROM_SIDECAR" "$LOG"
 check "native ecosystem registration ran"                 "fired RegisterEvent x[1-9][0-9]* on [1-9][0-9]* bus" "$LOG"
 check "server reached Done"                               "Done \(" "$LOG"
 # "Stopping the server" is the /stop command's OWN feedback (commands.stop.stopping in en_us), and the console

@@ -54,7 +54,9 @@ step "the install wrote what a launcher needs (must PASS)"
 assert_eq "the installer exited cleanly" "0" "$INSTALL_RC"
 check "it wrote a version profile"     "wrote .*versions/26.2-forbric/26.2-forbric.json" "$LOG"
 check "it staged Forbric's own jars"   "staged [1-9][0-9]* Forbric and kernel-dependency jar" "$LOG"
-check "it staged the game artifacts"   "staged 3 game artifact"                          "$LOG"
+# Four: the three game jars and the vanilla reference the kernel reads beside the base (VanillaReference).
+check "it staged the game artifacts"   "staged 4 game artifact"                          "$LOG"
+check "it built the vanilla reference" "^\[vanilla-reference\] wrote vanilla-reference-26.2.jar: [1-9][0-9]* vanilla classes" "$LOG"
 check_absent "it never claimed to ship Minecraft" "bundled (merged|game) base"            "$LOG"
 [ -f "$DEST/versions/26.2-forbric/26.2-forbric.json" ] && echo "[kernel] PASS the profile exists" \
   || { echo "[kernel] FAIL the profile exists"; FAIL=1; }
@@ -288,6 +290,11 @@ assert_eq "the profile resolved like a launcher would" "0" "$PY_RC"
 check "MinecraftForge's runtime survived the dedup" "/forge-runtime-[0-9.-]+\.jar"     "$CMD_FILE"
 check "NeoForge's runtime survived the dedup"       "/neoforge-runtime-[0-9.]+\.jar"  "$CMD_FILE"
 check "the merged base survived the dedup"          "/patched-mc-merged-[0-9.-]+\.jar" "$CMD_FILE"
+# The vanilla reference rides in its own flag. Were it a second --gameJar, the dedup above would keep only the last
+# value and hand the kernel a resources-only jar as the game, which is exactly what PCL2 would do.
+check "the vanilla reference survived the dedup"    "/vanilla-reference-[0-9.-]+\.jar" "$CMD_FILE"
+check_exactly "one game jar, and it is the base"    "^--gameJar$"                    "$CMD_FILE" 1
+check_exactly "the reference has its own flag"      "^--nativeReference$"            "$CMD_FILE" 1
 
 if [ "$PY_RC" -eq 0 ]; then
   echo "[kernel] launching the resolved command (mainClass $(grep -c . "$CMD_FILE") argv entries)"
@@ -312,6 +319,7 @@ fi
 step "the installed version runs the tri-ecosystem game (must PASS)"
 check "the kernel booted from the profile" "Forbric/Boot\] sovereign kernel — client" "$CLOG"
 check "it opened the merged base"          "Forbric/Boot\] merged base"               "$CLOG"
+check "FABRIC references come from the vanilla-reference sidecar" "$NATIVE_REFS_FROM_SIDECAR"  "$CLOG"
 check "mods from all three ecosystems"     "Forbric/Boot\] sovereign kernel .*Forge-family mod\(s\), [1-9]" "$CLOG"
 check "the smoke controller armed"         "ClientSmoke\] armed on Minecraft.tick"    "$CLOG"
 check "it entered the world"               "ClientSmoke\] client-ready after"         "$CLOG"
@@ -335,6 +343,9 @@ step "a second install into the same directory reuses what is already built"
 java -jar "$JAR" --dir "$DEST" --mc 26.2 > "$BUILD/gate-m17-install-2.log" 2>&1
 REUSED=$(grep -cE "^\[(forge-runtime|patched|neoforge-runtime|neoform|merge|interop)\] up-to-date" "$BUILD/gate-m17-install-2.log")
 assert_eq "every artifact came from the cache" "6" "$REUSED"
+# Reused by what it records -- the SHA-1 of the vanilla jar and of the base -- not by the pins: rebuilt only when either
+# input changed, and neither did.
+check "the vanilla reference came from the cache too" "^\[vanilla-reference\] up-to-date" "$BUILD/gate-m17-install-2.log"
 
 step "and a pin that no longer matches is NOT served from it"
 # Only forge-runtime's stamp is disturbed, because the stamp is the whole pin set: in real use all six move
@@ -417,6 +428,7 @@ else
   REUSED=$(grep -acE "^\[(forge-runtime|patched|neoforge-runtime|neoform|merge|interop)\] up-to-date" "$BUILD/gate-m17-install-5.log")
   assert_eq "every artifact came from the cache" "6" "$REUSED"
   check_absent "it fetched no library" "downloaded [0-9]+ Minecraft librar" "$BUILD/gate-m17-install-5.log"
+  check "and it measured no new vanilla reference" "^\[vanilla-reference\] up-to-date" "$BUILD/gate-m17-install-5.log"
   [ ! -e "$GONE" ] && echo "[kernel] PASS the removed library is still absent: nothing went to the network for it" \
     || { echo "[kernel] FAIL the removed library came back: the install fetched it although nothing merged"; FAIL=$((FAIL+1)); }
 fi

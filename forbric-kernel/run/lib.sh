@@ -116,6 +116,13 @@ seed_server_properties() {
 
 step() { printf '\n[kernel] ==== %s ====\n' "$1"; }
 
+# The kernel's one boot line saying where FABRIC's native references come from (NativeReferenceSources.describe). Every
+# launch path hands it the vanilla-reference sidecar (--nativeReference): launch-kernel-{client,server}.sh through
+# run/vanilla-reference-jar.sh, an installed profile through its own library. On the merged base a launch without it
+# still works -- the base embeds the same index -- so only this line tells a launch path that dropped the flag from one
+# that kept it, and only the sidecar exists on a base that is not the merge. gate-m1 and gate-m17 assert it.
+NATIVE_REFS_FROM_SIDECAR='Forbric/Mixin\] native references: FABRIC from the vanilla-reference sidecar'
+
 # Is there anything here to read at all? A log the run never wrote, or wrote empty, is not evidence either way,
 # and the two helpers below must not pretend otherwise.
 #

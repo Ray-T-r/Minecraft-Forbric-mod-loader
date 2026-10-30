@@ -23,6 +23,10 @@ MERGED="${MERGED:-$STAGE/merged-base/patched-mc-merged-26.2.jar}"
 FORGE_RT="${FORGE_RT:-$STAGE/merged-base/forge-runtime-interop.jar}"
 [ -f "$FORGE_RT" ] || FORGE_RT="$STAGE/forge-runtime/forge-runtime.jar"
 NEO_RT="${NEO_RT:-$STAGE/neoforge-runtime/neoforge-runtime.jar}"
+# The vanilla reference the kernel reads beside the base (--nativeReference): staged by prepare, else built once into
+# build/ by run/vanilla-reference-jar.sh. Without one the kernel says so in its "native references:" line and the merged
+# base's own embedded index answers; NATIVE_REF=none launches without it on purpose.
+NATIVE_REF="${NATIVE_REF:-}"
 RUNDIR="${RUNDIR:-$KERNEL/run/client-kernel}"
 NATIVES="${NATIVES_DIR:-$MC/versions/26.2/26.2-natives}"
 ASSETS="$MC/assets"
@@ -65,6 +69,8 @@ ASSET_INDEX="$(python3 -c "import json;print(json.load(open('$MC/versions/26.2/2
 # version it finds there — get null under Forbric otherwise, because the merged base belongs to
 # ForbricClassLoader. See run/game-metadata-jar.sh for why this must never carry class files.
 META_JAR="$("$HERE/game-metadata-jar.sh" "$MERGED" 2>/dev/null)" || META_JAR=""
+[ -n "$NATIVE_REF" ] || NATIVE_REF="$(MC_DIR="$MC" "$HERE/vanilla-reference-jar.sh" "$MERGED")" || NATIVE_REF=""
+[ "$NATIVE_REF" = none ] && NATIVE_REF=""
 CP="$BOOT_JAR:$BOOT_DEPS:$VANILLA_CP${META_JAR:+:$META_JAR}"
 
 # Guest mixins are written against VANILLA bytecode; the merged base is vanilla+Forge+NeoForge byte-merged, so an
@@ -76,6 +82,7 @@ CP="$BOOT_JAR:$BOOT_DEPS:$VANILLA_CP${META_JAR:+:$META_JAR}"
 
 echo "[kernel-launch] CLIENT rundir=$RUNDIR  assetIndex=$ASSET_INDEX"
 echo "[kernel-launch] merged base = $MERGED"
+echo "[kernel-launch] vanilla reference = ${NATIVE_REF:-none}"
 echo "[kernel-launch] natives = $NATIVES"
 echo "[kernel-launch] mods: $(ls "$RUNDIR/mods" 2>/dev/null | paste -sd' ' -)"
 cd "$RUNDIR"
@@ -90,7 +97,7 @@ exec java -XstartOnFirstThread -Djava.library.path="$NATIVES" \
   -Dforbric.compatibilityPolicy="${FORBRIC_COMPAT_POLICY:-strict}" \
   -Dforbric.dependencyDialog="${FORBRIC_DEP_DIALOG:-off}" ${FORBRIC_JVM:-} \
   -cp "$CP" net.forbric.kernel.boot.KernelClientLaunch \
-  --gameJar "$MERGED" --runtimeJar "$FORGE_RT" --runtimeJar "$NEO_RT" \
+  --gameJar "$MERGED" --runtimeJar "$FORGE_RT" --runtimeJar "$NEO_RT" ${NATIVE_REF:+--nativeReference "$NATIVE_REF"} \
   --libraryPath "$VANILLA_CP" \
   -- --version 26.2-forbric-kernel --gameDir "$RUNDIR" --assetsDir "$ASSETS" --assetIndex "$ASSET_INDEX" \
   --accessToken 0 --username ForbricKernel --uuid 00000000000000000000000000000000 \

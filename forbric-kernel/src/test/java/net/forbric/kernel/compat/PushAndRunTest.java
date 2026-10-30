@@ -33,7 +33,7 @@ class PushAndRunTest {
     }
 
     @Test
-    void dryRunStagesExactlyFourArtifactsAndKeepsLauncherFiles() throws Exception {
+    void dryRunStagesExactlyFiveArtifactsAndKeepsLauncherFiles() throws Exception {
         Path mods = Files.createDirectory(temp.resolve("mods"));
         Files.writeString(mods.resolve("a?b.jar"), "fixture");
         Path profile = profile();
@@ -41,7 +41,12 @@ class PushAndRunTest {
                 "--mc", "D:\\FixtureMC", "--version", "test-profile", "--mods", mods.toString(),
                 "--version-json", profile.toString(), "--output", temp.resolve("unused-output").toString());
         assertEquals(0, result.exit(), result.output());
-        assertEquals(4, result.output().lines().filter(line -> line.startsWith("PUT_ARTIFACT ")).count());
+        assertEquals(5, result.output().lines().filter(line -> line.startsWith("PUT_ARTIFACT ")).count());
+        // A profile an older installer wrote gains the vanilla reference and its own flag, never a second --gameJar.
+        assertTrue(result.output().contains("PROFILE_ADDS library net.forbric:vanilla-reference:"), result.output());
+        assertTrue(result.output().contains("; --nativeReference"), result.output());
+        assertTrue(result.output().lines().anyMatch(line -> line.startsWith("PUT_ARTIFACT net.forbric:vanilla-reference ")
+                && line.contains("vanilla-reference")), result.output());
         String clean = result.output().lines().filter(line -> line.startsWith("CLEAN ")).findFirst().orElseThrow();
         assertTrue(clean.contains("\"config\"") && clean.contains("\"saves\"") && clean.contains("\"mods\""));
         assertTrue(clean.contains("\"replay_recordings\""), clean);
@@ -131,6 +136,7 @@ class PushAndRunTest {
                 m.put = lambda *arguments: touched.append(arguments)
                 m.stage_tools = lambda args, output: 'D:\\\\tools'
                 m.subprocess.run = lambda *arguments, **options: None
+                m.local_vanilla_reference = lambda merged: m.ARTIFACTS[m.VANILLA_REFERENCE]
                 def run_job(args, stage, tools, output, driver, extra=()):
                     jobs.append((driver, list(extra)))
                     return 0

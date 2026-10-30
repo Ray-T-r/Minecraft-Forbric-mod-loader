@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Update sha1 and size of four named artifacts in a launcher version JSON, atomically."""
+"""Update sha1 and size of named artifacts in a launcher version JSON, atomically."""
 import argparse
 import hashlib
 import json
@@ -11,7 +11,7 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('version_json', type=Path)
     parser.add_argument('--artifact', action='append', required=True, metavar='GROUP:ARTIFACT=JAR',
-                        help='Repeat exactly four times; coordinates ignore version/classifier')
+                        help='Repeat once per artifact; coordinates ignore version/classifier')
     parser.add_argument('--output', type=Path, help='Write here instead of updating version_json in place')
     args = parser.parse_args()
     artifacts = {}
@@ -23,8 +23,9 @@ def main():
             parser.error('duplicate artifact: ' + coordinate)
         data = Path(path).read_bytes()
         artifacts[coordinate] = (hashlib.sha1(data).hexdigest(), len(data))
-    if len(artifacts) != 4:
-        parser.error('exactly four artifacts are required')
+    # push-and-run stages the kernel, the three game jars and the vanilla reference; each must already be in the profile.
+    if not artifacts:
+        parser.error('at least one artifact is required')
     document = json.loads(args.version_json.read_text(encoding='utf-8-sig'))
     found = set()
     for library in document.get('libraries', []):

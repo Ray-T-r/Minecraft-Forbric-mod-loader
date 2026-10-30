@@ -38,7 +38,11 @@ ARTIFACTS = {
                                 if (STAGED / 'merged-base/forge-runtime-interop.jar').is_file()
                                 else STAGED / 'forge-runtime/forge-runtime.jar'),
     'net.forbric:neoforge-runtime': STAGED / 'neoforge-runtime/neoforge-runtime.jar',
+    # How vanilla compiled each class, measured against the base above: the kernel's FABRIC native references
+    # (--nativeReference). tools/dev.py prepare stages it; local_vanilla_reference builds it for a stage that predates it.
+    'net.forbric:vanilla-reference': STAGED / 'vanilla-reference/vanilla-reference-26.2.jar',
 }
+VANILLA_REFERENCE = 'net.forbric:vanilla-reference'
 
 
 def ps(value):
@@ -164,6 +168,47 @@ def clean_command(instance):
     return '; '.join("if (Test-Path -LiteralPath " + ps(ntpath.join(instance, child)) +
                      ') { Remove-Item -LiteralPath ' + ps(ntpath.join(instance, child)) +
                      ' -Force -Recurse }' for child in CLEAN)
+
+
+def with_native_reference(profile):
+    """Give a profile an older installer wrote the vanilla reference it lacks: the library and its own game flag.
+
+    Versioned like the base it is measured against, as the installer versions it. Returns what was added (empty when the
+    profile already had both), so a dry run can say it and a real run writes the profile before staging into it. The
+    flag is never a second --gameJar: a launcher keeping the last value of a repeated flag would then launch the
+    resources-only jar as the game."""
+    added = []
+    libraries = profile.setdefault('libraries', [])
+    entry = next((e for e in libraries if ':'.join(e.get('name', '').split(':')[:2]) == VANILLA_REFERENCE), None)
+    if entry is None:
+        base = next((e for e in libraries if e.get('name', '').startswith('net.forbric:patched-mc-merged:')), None)
+        if base is None:
+            raise ValueError('profile has no net.forbric:patched-mc-merged library to measure a vanilla reference against')
+        version = base['name'].split(':')[2]
+        path = f'net/forbric/vanilla-reference/{version}/vanilla-reference-{version}.jar'
+        entry = dict(name=f'{VANILLA_REFERENCE}:{version}', downloads=dict(artifact=dict(path=path, sha1='', size=0)))
+        libraries.append(entry)
+        added.append('library ' + entry['name'])
+    game = profile.setdefault('arguments', {}).setdefault('game', [])
+    if '--nativeReference' not in game:
+        game += ['--nativeReference', '${library_directory}/' + entry['downloads']['artifact']['path']]
+        added.append('--nativeReference')
+    return added
+
+
+def local_vanilla_reference(merged):
+    """The sidecar for the local base: the staged one, else run/vanilla-reference-jar.sh's (built once into build/)."""
+    staged = ARTIFACTS[VANILLA_REFERENCE]
+    if staged.is_file() or not Path(merged).is_file():
+        return staged
+    try:
+        built = subprocess.check_output(['bash', str(KERNEL / 'run/vanilla-reference-jar.sh'), str(merged)], text=True,
+                                        stderr=subprocess.PIPE)
+    except subprocess.CalledProcessError as failed:
+        raise RuntimeError('could not build the vanilla reference for ' + str(merged) + ':\n' + (failed.stderr or '')[-2000:])
+    if not built.strip():
+        raise RuntimeError('run/vanilla-reference-jar.sh named no vanilla reference for ' + str(merged))
+    return Path(built.strip().splitlines()[-1])
 
 
 def resolve_artifacts(profile, overrides):
@@ -588,7 +633,7 @@ def main():
         parser.error('--remote-mods fetches from the manifest, so --manifest is required')
     files = mod_files(args.mods)
     if args.dry_run and not args.version_json:
-        parser.error('--dry-run needs --version-json so all four artifact destinations can be verified')
+        parser.error('--dry-run needs --version-json so every artifact destination can be verified')
     if not args.dry_run:
         if output.exists() and any(output.iterdir()):
             parser.error('output already contains evidence; choose a new --label or --output')
@@ -606,9 +651,18 @@ def main():
     else:
         profile_path = args.version_json
     profile = json.loads(profile_path.read_text(encoding='utf-8-sig'))
+    added = with_native_reference(profile)
+    if added and not args.dry_run:
+        profile_path.write_text(json.dumps(profile, ensure_ascii=False, indent=2) + '\n', encoding='utf-8')
+    if not args.dry_run and not any(item.startswith(VANILLA_REFERENCE + '=') for item in args.artifact):
+        merged = next((item.split('=', 1)[1] for item in args.artifact if item.startswith('net.forbric:patched-mc-merged=')),
+                      ARTIFACTS['net.forbric:patched-mc-merged'])
+        ARTIFACTS[VANILLA_REFERENCE] = local_vanilla_reference(merged)
     entries = resolve_artifacts(profile, args.artifact)
     if args.dry_run:
         print('STOP_BY_PID ' + stop_command(args.instance))
+        if added:
+            print('PROFILE_ADDS ' + '; '.join(added))
         print('CLEAN ' + json.dumps(CLEAN))
         for coordinate, (local, path) in entries.items():
             print('PUT_ARTIFACT ' + coordinate + ' ' + str(local) + ' -> ' + ntpath.join(args.mc, 'libraries', path))
@@ -637,7 +691,7 @@ def main():
     server, client, errors = -1, -1, []
     try:
         remote(stop_command(args.instance))
-        # Keep prior logs/worlds until the four verified binary transfers and profile synchronization succeed.
+        # Keep prior logs/worlds until the verified binary transfers and profile synchronization succeed.
         for coordinate, (local, path) in entries.items():
             destination = ntpath.join(args.mc, 'libraries', path.replace('/', '\\'))
             remote(f'New-Item -ItemType Directory -Force -Path {ps(ntpath.dirname(destination))} | Out-Null')

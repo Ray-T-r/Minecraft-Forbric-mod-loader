@@ -39,7 +39,11 @@ STAGED_FILES = ('merged-base/patched-mc-merged-26.2.jar', 'forge-runtime/forge-r
                 'merged-base/merge-conflicts.txt', 'merged-base/patched-mc-merged-26.2.jar.pins',
                 'forge-patched/patched-mc-forge-26.2.jar.pins',
                 'forge-runtime/forbriclive.jar', 'neoforge-runtime/forbricneolive.jar',
-                'neoforge-runtime/neoforge-runtime.jar.pins')
+                'neoforge-runtime/neoforge-runtime.jar.pins',
+                # Launched (--nativeReference): how vanilla compiled each class, measured against the merged base. Last,
+                # so the positions launch reads above do not move.
+                'vanilla-reference/vanilla-reference-26.2.jar')
+VANILLA_REFERENCE = STAGED_FILES[-1]
 # The build stamps beside staged artifacts. Each begins with the installer's Pins.stamp(); an artifact whose stamp
 # names other pins was built from another NeoForge (or Forge, or NFRT) and must be rebuilt, not tested.
 STAMPED_FILES = ('merged-base/patched-mc-merged-26.2.jar.pins', 'forge-patched/patched-mc-forge-26.2.jar.pins',
@@ -464,7 +468,11 @@ def launch_arguments(side, info, mc, stage, instance, natives, jvm=(), game=(), 
     args += list(jvm) + ['-cp', cp, 'net.forbric.kernel.boot.Kernel' + side.title() + 'Launch',
                         '--gameJar', str(stage / STAGED_FILES[0]),
                         '--runtimeJar', pathsep.join([str(stage / STAGED_FILES[2]), str(stage / STAGED_FILES[3])]),
-                        '--libraryPath', pathsep.join(owned), '--', '--gameDir', str(instance)]
+                        '--libraryPath', pathsep.join(owned),
+                        # Its own flag, never a second --gameJar: a launcher keeping the last value of a repeated flag
+                        # would hand the kernel this resources-only jar as the game.
+                        '--nativeReference', str(stage / VANILLA_REFERENCE),
+                        '--', '--gameDir', str(instance)]
     if side == 'client':
         args += ['--version', '26.2-forbric-dev', '--assetsDir', str(mc / 'assets'),
                  '--assetIndex', metadata['assetIndex']['id'], '--accessToken', '0',
