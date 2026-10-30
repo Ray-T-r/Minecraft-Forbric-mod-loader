@@ -17,6 +17,7 @@
 package net.forbric.kernel.boot;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -42,9 +43,11 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
 import net.forbric.api.DiscoveredMod;
+import net.forbric.api.Ecosystem;
 import net.forbric.kernel.TestFixtures;
 import net.forbric.kernel.TestFixtures.Fixture;
 import net.forbric.kernel.discovery.ForbricModDiscoverer;
+import net.forbric.kernel.discovery.MetadataFailures;
 import net.forbric.kernel.metadata.forge.FmlConfigElements;
 import net.forbric.kernel.ExpectCaught;
 
@@ -55,6 +58,11 @@ import net.forbric.kernel.ExpectCaught;
  * {@code ImmutableMap}. Both answered empty.
  *
  * <p>The oracle is MinecraftForge's {@code NightConfigWrapper} from the same carrier, over the same parsed file.
+ *
+ * <p>Since Stage 3 no MinecraftForge mod is seeded at boot: a MinecraftForge-only jar is refused at discovery, and a
+ * universal jar's MinecraftForge half is discovered but never arbitrated. The seeder stays until Stage 4 swaps the base
+ * and deletes it, so it is still fed here, with wthit's MinecraftForge half as discovery reads it from a universal jar
+ * (beside a Fabric library half) — and the MinecraftForge-only build is pinned as refused, with nothing to seed.
  */
 class PassiveSeederForgeConfigTest {
 	private static final Path FORGE_RUNTIME =
@@ -66,6 +74,21 @@ class PassiveSeederForgeConfigTest {
 	@AfterEach
 	void reset() {
 		System.clearProperty(FmlConfigElements.SWITCH);
+		MetadataFailures.reset();
+	}
+
+	// What used to reach the seeder: wthit's MinecraftForge build alone. It is refused now, so the seeder has nothing.
+	@Test
+	void theMinecraftForgeOnlyBuildIsRefusedAndSeedsNothing() throws Exception {
+		Path forgeOnly = jar(tmp.resolve("wthit.jar"), fixture("wthit.mods.toml"), false);
+		List<DiscoveredMod> mods = new ForbricModDiscoverer().discoverJar(forgeOnly);
+		assertEquals(List.of(), mods);
+		assertTrue(MetadataFailures.unsupported(forgeOnly));
+		try (URLClassLoader game = forgeLoader()) {
+			PassiveSeeder.ForgeLoadingLists lists = PassiveSeeder.buildForgeLoadingLists(game, mods);
+			assertEquals(List.of(), lists.files());
+			assertEquals(List.of(), lists.modInfos());
+		}
 	}
 
 	// The fixture's loader holds no game-side kernel classes, so the scan the seed also runs cannot; config elements
@@ -74,7 +97,7 @@ class PassiveSeederForgeConfigTest {
 	@Test
 	void theSeededFileAndModsAnswerAsMinecraftForgeDoes() throws Exception {
 		String toml = fixture("wthit.mods.toml");
-		List<DiscoveredMod> mods = new ForbricModDiscoverer().discoverJar(jar(tmp.resolve("wthit.jar"), toml));
+		List<DiscoveredMod> mods = forgeHalf(jar(tmp.resolve("wthit.jar"), toml, true));
 		UnmodifiableConfig root = new TomlParser().parse(toml);
 
 		try (URLClassLoader game = forgeLoader()) {
@@ -114,7 +137,7 @@ class PassiveSeederForgeConfigTest {
 	@Test
 	void switchedOffTheyAnswerNothing() throws Exception {
 		System.setProperty(FmlConfigElements.SWITCH, "off");
-		List<DiscoveredMod> mods = new ForbricModDiscoverer().discoverJar(jar(tmp.resolve("wthit.jar"), fixture("wthit.mods.toml")));
+		List<DiscoveredMod> mods = forgeHalf(jar(tmp.resolve("wthit.jar"), fixture("wthit.mods.toml"), true));
 		try (URLClassLoader game = forgeLoader()) {
 			PassiveSeeder.ForgeLoadingLists lists = PassiveSeeder.buildForgeLoadingLists(game, mods);
 			assertEquals(Optional.empty(), single(call(lists.files().get(0), "getModFileInfo"), "issueTrackerURL"));
@@ -180,11 +203,28 @@ class PassiveSeederForgeConfigTest {
 		}
 	}
 
-	private static Path jar(Path jar, String toml) throws Exception {
+	/**
+	 * wthit's {@code mods.toml}; {@code universal} adds a Fabric library half (no entrypoint, so usable), which is what
+	 * keeps the jar from being refused and its MinecraftForge half in discovery's answer.
+	 */
+	private static Path jar(Path jar, String toml, boolean universal) throws Exception {
 		try (ZipOutputStream zip = new ZipOutputStream(Files.newOutputStream(jar))) {
 			KernelModLoaderDeclaredTest.put(zip, "META-INF/mods.toml", toml);
+			if (universal) {
+				KernelModLoaderDeclaredTest.put(zip, "fabric.mod.json",
+						"{\"schemaVersion\":1,\"id\":\"wthit\",\"version\":\"20.0.0\"}");
+			}
 		}
 		return jar;
+	}
+
+	/** The jar's MinecraftForge mods as discovery reads them: what the seeder's MinecraftForge lists are built from. */
+	private static List<DiscoveredMod> forgeHalf(Path jar) throws Exception {
+		List<DiscoveredMod> all = new ForbricModDiscoverer().discoverJar(jar);
+		assertFalse(MetadataFailures.unsupported(jar), "a universal jar is not refused");
+		List<DiscoveredMod> forge = all.stream().filter(mod -> mod.getEcosystem() == Ecosystem.FORGE).toList();
+		assertEquals(List.of("wthit", "waila"), forge.stream().map(DiscoveredMod::getId).toList());
+		return forge;
 	}
 
 	private static String fixture(String name) throws Exception {
