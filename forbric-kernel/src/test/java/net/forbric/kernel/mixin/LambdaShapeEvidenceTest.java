@@ -71,12 +71,37 @@ class LambdaShapeEvidenceTest {
 	}
 
 	@Test void thePrunersRecordStillCountsAndIsMarkedAsSuch() {
-		String owner = "net/example/LambdaShapeEvidenceTestTarget";
-		net.forbric.kernel.transform.DuplicateLambdaPruneInjector.recordDroppedForTest(owner, SKY, VANILLA_SKY);
-		ClassNode target = node(method(SKY, NEO_SKY));
-		target.name = owner;
-		assertEquals(List.of(new LambdaShapeEvidence.Shape(VANILLA_SKY, true)), LambdaShapeEvidence.vanished(target, SKY),
-				"unbound references (no game): the pruner's record alone, as before");
+		var saved = net.forbric.kernel.transform.DuplicateLambdaPruneInjector.droppedForTest();
+		try {
+			String owner = "net/example/LambdaShapeEvidenceTestTarget";
+			net.forbric.kernel.transform.DuplicateLambdaPruneInjector.recordDroppedForTest(owner, SKY, VANILLA_SKY);
+			ClassNode target = node(method(SKY, NEO_SKY));
+			target.name = owner;
+			assertEquals(List.of(new LambdaShapeEvidence.Shape(VANILLA_SKY, true)), LambdaShapeEvidence.vanished(target, SKY),
+					"unbound references (no game): the pruner's record alone, as before");
+		} finally {
+			net.forbric.kernel.transform.DuplicateLambdaPruneInjector.restoreDroppedForTest(saved);
+		}
+	}
+
+	/**
+	 * The reference is read only for a lambda the class declares. Every bare selector of a handler that does not bind as
+	 * compiled reaches {@link LambdaShapeEvidence#vanished}, and a read re-reads, re-hashes and re-parses the whole class:
+	 * for a method name, or a lambda this class has no lambda of, it could say nothing, so it must not cost anything.
+	 */
+	@Test void theReferenceIsReadOnlyForALambdaTheClassDeclares() {
+		List<String> reads = new ArrayList<>();
+		ClassNode vanilla = node(method(SKY, VANILLA_SKY), method("render", "()V"));
+		java.util.function.Function<String, ClassNode> reference = owner -> {
+			reads.add(owner);
+			return vanilla;
+		};
+		ClassNode genuine = node(method(SKY, NEO_SKY), method("render", "(I)V"));
+		assertEquals(List.of(), LambdaShapeEvidence.vanished(genuine, "render", reference));
+		assertEquals(List.of(), LambdaShapeEvidence.vanished(genuine, "lambda$addSkyPass$7", reference));
+		assertEquals(List.of(), reads, "a method's name, or a lambda the class does not declare, reads nothing");
+		assertEquals(List.of(new LambdaShapeEvidence.Shape(VANILLA_SKY, false)), LambdaShapeEvidence.vanished(genuine, SKY, reference));
+		assertEquals(List.of(genuine.name), reads, "the declared lambda reads its class once");
 	}
 
 	private static ClassNode node(MethodNode... methods) {

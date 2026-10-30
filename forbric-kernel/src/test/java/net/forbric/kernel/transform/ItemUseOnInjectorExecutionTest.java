@@ -318,6 +318,28 @@ class ItemUseOnInjectorExecutionTest {
 				"server and client both reach Item.useOn through the relay Fabric's wrap is pointed at");
 	}
 
+	/**
+	 * A body the edit declines: MinecraftForge's, but its client lambda reads the item into a local first. The relayed
+	 * CommonHooks still links, through a bridge that calls Item.useOn itself, and nothing reaches the item through a relay:
+	 * there is none, so fabric-api's wrap is not moved onto a method only the server's call would reach.
+	 */
+	@Test void aDeclinedBodyStillLinksAndReachesTheItemThroughNoRelay(@TempDir Path work) throws Throwable {
+		Map<String, String> sources = new HashMap<>(STAND_INS);
+		sources.put(STACK, STAND_INS.get(STACK).replace("c -> getItem().useOn(c)", "c -> { Item item = getItem(); return item.useOn(c); }"));
+		assertNotEquals(STAND_INS.get(STACK), sources.get(STACK), "premise: the lambda was rewritten");
+		ClassLoader loader = transformed(InjectorExecution.compile(work, sources));
+		List<String> phases = new ArrayList<>();
+		listeners(loader).add(event -> phases.add("posted"));
+
+		assertEquals("SUCCESS", String.valueOf(use(loader, false)));
+		assertEquals("SUCCESS", String.valueOf(use(loader, true)));
+		assertEquals(List.of(ItemUseOnInjector.BRIDGE, "lambda$useOn$0"), callers(loader),
+				"the server's call reaches the item from the bridge itself, the client's from its lambda: no relay anywhere");
+		assertEquals(List.of(), phases, "the declined edit put no post in");
+		assertThrows(NoSuchMethodException.class, () -> loader.loadClass(STACK).getMethod(ItemUseOnInjector.RELAY,
+				loader.loadClass("net.minecraft.world.item.Item"), loader.loadClass(CONTEXT)));
+	}
+
 	@Test void aListenerThatCancelsDecidesTheResultAndTheItemIsNotUsed(@TempDir Path work) throws Throwable {
 		ClassLoader loader = transformed(InjectorExecution.compile(work, STAND_INS));
 		Object fail = Enum.valueOf(loader.loadClass("net.minecraft.world.InteractionResult").asSubclass(Enum.class), "FAIL");

@@ -96,6 +96,27 @@ public final class DuplicateLambdaPruneInjector implements ClassTransformer {
 	}
 
 	/**
+	 * Test seam: a copy of every recorded drop, for {@link #restoreDroppedForTest}. The record is process-wide and test
+	 * classes share one JVM, so a test that clears or fills it hands the next test class whatever it left unless it puts
+	 * back what it found.
+	 */
+	public static java.util.Map<String, java.util.List<String>> droppedForTest() {
+		java.util.Map<String, java.util.List<String>> copy = new HashMap<>();
+		DROPPED.forEach((key, descriptors) -> {
+			synchronized (descriptors) {
+				copy.put(key, java.util.List.copyOf(descriptors));
+			}
+		});
+		return copy;
+	}
+
+	/** Test seam: the record becomes exactly {@code saved}, a {@link #droppedForTest} copy. */
+	public static void restoreDroppedForTest(java.util.Map<String, java.util.List<String>> saved) {
+		DROPPED.clear();
+		saved.forEach((key, descriptors) -> DROPPED.put(key, java.util.Collections.synchronizedList(new ArrayList<>(descriptors))));
+	}
+
+	/**
 	 * The descriptors dropped for {@code owner.lambdaName}, newest boot only. Empty when none were. Read through
 	 * {@code LambdaShapeEvidence}, which adds the shapes the native reference knows, so the evidence does not end with
 	 * the merge.

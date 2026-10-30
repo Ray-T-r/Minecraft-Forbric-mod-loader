@@ -69,6 +69,22 @@ class MixinRelocatedCallTest {
 		assertEquals(0, MixinRelocatedCall.adapt(mixin, name -> vanilla), "vanilla's useOn makes the call itself");
 	}
 
+	/**
+	 * A merged useOn ItemUseOnInjector declines — its client lambda does one thing more than {@code getItem().useOn(context)}
+	 * — keeps fabric-api's wrap where it was compiled: the class gains only a bridge that calls Item.useOn itself and no
+	 * relay. useOn still makes no Item.useOn call, which is the half of the proof a declined body always meets, so the
+	 * relay is the whole of what stops the move. Measured before: the relay went in ahead of the decline, and the wrap
+	 * moved onto a method only the server's call reached.
+	 */
+	@Test void aDeclinedBodyGivesTheWrapNoRelayToMoveTo() throws Exception {
+		ClassNode declined = merged(true, true), routed = relayed();
+		assertTrue(declined.methods.stream().anyMatch(m -> m.name.equals("forbric$useOnItemFor")), "premise: the bridge went in");
+		ClassNode mixin = fabric();
+		assertEquals(0, MixinRelocatedCall.adapt(mixin, name -> declined));
+		assertEquals(List.of("useOn"), selectors(mixin, "handleUseOnEvent"), "the wrap stays on useOn");
+		assertEquals(1, MixinRelocatedCall.adapt(mixin, name -> routed), "control: the same wrap moves onto a routed body");
+	}
+
 	@Test void theSwitchLeavesItAlone() throws Exception {
 		System.setProperty(MixinRelocatedCall.PROPERTY, "off");
 		ClassNode mixin = fabric(), stack = relayed();
@@ -114,15 +130,33 @@ class MixinRelocatedCallTest {
 	}
 
 	private static ClassNode merged(boolean relayed) throws Exception {
+		return merged(relayed, false);
+	}
+
+	/** {@code declined}: the client lambda gets a {@code dup; pop} after {@code getItem()}, which is not the reviewed shape. */
+	private static ClassNode merged(boolean relayed, boolean declined) throws Exception {
 		Path jar = TestFixtures.stagedBase();
 		TestFixtures.requireFile(Fixture.STAGED, jar, "actual game required");
 		try (ZipFile zip = new ZipFile(jar.toFile())) {
 			byte[] bytes = zip.getInputStream(zip.getEntry("net/minecraft/world/item/ItemStack.class")).readAllBytes();
+			if (declined) bytes = offShape(bytes);
 			if (relayed) bytes = new ItemUseOnInjector().transform("net.minecraft.world.item.ItemStack", bytes, null);
 			ClassNode node = new ClassNode();
 			new ClassReader(bytes).accept(node, 0);
 			return node;
 		}
+	}
+
+	private static byte[] offShape(byte[] bytes) {
+		ClassNode stack = node(bytes);
+		MethodNode lambda = stack.methods.stream().filter(m -> m.name.equals("lambda$useOn$0")).findFirst().orElseThrow();
+		org.objectweb.asm.tree.AbstractInsnNode getItem = java.util.Arrays.stream(lambda.instructions.toArray())
+				.filter(i -> i instanceof org.objectweb.asm.tree.MethodInsnNode call && call.name.equals("getItem")).findFirst().orElseThrow();
+		lambda.instructions.insert(getItem, new org.objectweb.asm.tree.InsnNode(org.objectweb.asm.Opcodes.POP));
+		lambda.instructions.insert(getItem, new org.objectweb.asm.tree.InsnNode(org.objectweb.asm.Opcodes.DUP));
+		org.objectweb.asm.ClassWriter writer = new org.objectweb.asm.ClassWriter(org.objectweb.asm.ClassWriter.COMPUTE_MAXS);
+		stack.accept(writer);
+		return writer.toByteArray();
 	}
 
 	private static ClassNode game(Path jar) throws Exception {

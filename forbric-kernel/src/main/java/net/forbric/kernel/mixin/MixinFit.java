@@ -1037,7 +1037,7 @@ public final class MixinFit {
 		}
 		for (LambdaShapeEvidence.Shape gone : LambdaShapeEvidence.vanished(target, name)) {
 			String dropped = gone.descriptor();
-			if (!MixinOverloadPin.fits(handler.desc, dropped)) continue;
+			if (!MixinOverloadPin.fits(handler.desc, dropped) || !LambdaShapeEvidence.diagnosable(target, gone)) continue;
 			if (!gone.dropped()) {
 				return name + " " + binds + "; the shape it was written for, " + dropped + ", is vanilla's, whose captures a "
 						+ "carrier patch of " + MixinOverloadPin.enclosing(name) + " changed";

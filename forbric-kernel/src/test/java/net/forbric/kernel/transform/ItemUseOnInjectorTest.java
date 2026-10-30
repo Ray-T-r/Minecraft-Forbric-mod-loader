@@ -21,13 +21,12 @@ import org.objectweb.asm.tree.analysis.BasicVerifier;
 /** MinecraftForge's ItemStack.useOn and onPlaceItemIntoWorld, on the real classes. */
 @ResourceLock("system-properties")
 class ItemUseOnInjectorTest {
-	private static final Path STAGED = Path.of(System.getProperty("forbric.stagedRoot", "../forbric-loader/run"));
-	private static final Path MERGED = STAGED.resolve(TestFixtures.BASE_JAR);
-	private static final Path FORGE_RUNTIME = STAGED.resolve("merged-base/forge-runtime-interop.jar");
+	private static final Path MERGED = TestFixtures.stagedBase();
+	private static final Path FORGE_RUNTIME = TestFixtures.forgeCarrier();
 	private static final Path VANILLA = TestFixtures.vanillaJar();
 	private static final String STACK = "net/minecraft/world/item/ItemStack";
 	private static final String HOOKS = "net/minecraftforge/common/ForgeHooks";
-	private static final Path NEO_RUNTIME = STAGED.resolve("neoforge-runtime/neoforge-runtime.jar");
+	private static final Path NEO_RUNTIME = TestFixtures.neoCarrier();
 	private static final String NEO_HOOKS = "net/neoforged/neoforge/common/CommonHooks";
 
 	@AfterEach void reset() { System.clearProperty(ItemUseOnInjector.PROPERTY); }
@@ -67,6 +66,7 @@ class ItemUseOnInjectorTest {
 	}
 
 	@Test void bothFamiliesServerCallsGoThroughTheStackTheItemWasReadFrom() throws Exception {
+		TestFixtures.requireForgeCarrier("MinecraftForge's ForgeHooks");
 		for (Object[] hooks : new Object[][] { { FORGE_RUNTIME, HOOKS, ItemUseOnInjector.FORGE_HOOKS }, { NEO_RUNTIME, NEO_HOOKS, ItemUseOnInjector.NEO_HOOKS } }) {
 			byte[] original = NativeCoremodParityTest.read((Path) hooks[0], (String) hooks[1]);
 			byte[] out = new ItemUseOnInjector().transform((String) hooks[2], original, null);
@@ -115,14 +115,59 @@ class ItemUseOnInjectorTest {
 		assertTrue(alone.getFirst().contains("MEMBER_ABSENT M " + STACK + " " + ItemUseOnInjector.BRIDGE), alone.toString());
 	}
 
-	@Test void vanillasBodyKeepsItsCallAndOnlyGainsThePassThroughs() throws Exception {
+	@Test void vanillasBodyKeepsItsCallAndOnlyGainsTheBridge() throws Exception {
 		byte[] vanilla = NativeCoremodParityTest.read(VANILLA, STACK);
 		byte[] out = new ItemUseOnInjector().transform(ItemUseOnInjector.STACK, vanilla, null);
 		assertFalse(ItemUseOnInjector.routed(out), "vanilla's useOn makes the call itself, so nothing is routed or moved");
 		assertEquals(real(method(node(vanilla), "useOn", ItemUseOnInjector.USE_ON_DESC)).size(),
 				real(method(node(out), "useOn", ItemUseOnInjector.USE_ON_DESC)).size(), "and useOn is left as it was");
-		assertNotNull(method(node(out), ItemUseOnInjector.BRIDGE, ItemUseOnInjector.RELAY_DESC),
-				"the bridge goes in whatever the body, so a relayed onPlaceItemIntoWorld always links");
+		assertOnlyTheDirectBridge(vanilla, out);
+	}
+
+	/**
+	 * A body that looks like MinecraftForge's but whose lambda is not exactly {@code getItem().useOn(context)}: the edit
+	 * stands down before it changes anything, and the class gains only the bridge, which calls {@code Item.useOn} itself.
+	 * No relay, so MixinRelocatedCall has nothing to move fabric-api's wrap onto (MixinRelocatedCallTest runs that half).
+	 * Measured before: the relay and a bridge through it went in ahead of the decision, so the server's call reached a
+	 * relay the client's never did.
+	 */
+	@Test void aDeclinedBodyGainsOnlyTheBridgeAndNoRelay() throws Exception {
+		byte[] declined = declinedLambda(NativeCoremodParityTest.read(MERGED, STACK));
+		byte[] out = new ItemUseOnInjector().transform(ItemUseOnInjector.STACK, declined, null);
+		assertFalse(ItemUseOnInjector.routed(out));
+		MethodNode useOn = method(node(out), "useOn", ItemUseOnInjector.USE_ON_DESC);
+		assertFalse(calls(useOn, ItemUseOnInjector.EVENT, "<init>"), "no post went in: the edit stood down first");
+		assertEquals(real(method(node(declined), "useOn", ItemUseOnInjector.USE_ON_DESC)).size(), real(useOn).size());
+		assertOnlyTheDirectBridge(declined, out);
+	}
+
+	/**
+	 * {@code before} with its client lambda's {@code getItem().useOn(context)} given one more instruction ahead of the
+	 * call — a {@code dup; pop} on the item — so the reviewed shape no longer matches and nothing else changes.
+	 */
+	private static byte[] declinedLambda(byte[] before) {
+		ClassNode stack = node(before);
+		MethodNode lambda = method(stack, "lambda$useOn$0", "(L" + ItemUseOnInjector.CONTEXT + ";L" + ItemUseOnInjector.CONTEXT
+				+ ";)L" + ItemUseOnInjector.RESULT + ";");
+		AbstractInsnNode getItem = real(lambda).get(1);
+		assertTrue(getItem instanceof MethodInsnNode call && call.name.equals("getItem"), "premise: the reviewed lambda");
+		lambda.instructions.insert(getItem, new InsnNode(Opcodes.POP));
+		lambda.instructions.insert(getItem, new InsnNode(Opcodes.DUP));
+		org.objectweb.asm.ClassWriter writer = new org.objectweb.asm.ClassWriter(org.objectweb.asm.ClassWriter.COMPUTE_MAXS);
+		stack.accept(writer);
+		return writer.toByteArray();
+	}
+
+	/** {@code out} is {@code before} plus the static bridge alone, and that bridge makes the Item.useOn call itself. */
+	private static void assertOnlyTheDirectBridge(byte[] before, byte[] out) throws Exception {
+		ClassNode stack = node(out);
+		assertEquals(node(before).methods.size() + 1, stack.methods.size(), "exactly one method went in");
+		assertTrue(stack.methods.stream().noneMatch(m -> m.name.equals(ItemUseOnInjector.RELAY)),
+				"no relay: nothing for MixinRelocatedCall to move an injector onto");
+		MethodNode bridge = method(stack, ItemUseOnInjector.BRIDGE, ItemUseOnInjector.RELAY_DESC);
+		assertNotEquals(0, bridge.access & Opcodes.ACC_STATIC);
+		assertTrue(calls(bridge, ItemUseOnInjector.ITEM, "useOn"), "the bridge calls Item.useOn itself");
+		new Analyzer<>(new BasicVerifier()).analyze(STACK, bridge);
 		assertSame(out, new ItemUseOnInjector().transform(ItemUseOnInjector.STACK, out, null), "a second pass changes nothing");
 	}
 
@@ -135,10 +180,11 @@ class ItemUseOnInjectorTest {
 		repair.transform(ItemUseOnInjector.STACK, once, null, hits::add);
 		assertEquals(2, hits.size(), "an already-routed class still reports the end state");
 		repair.transform(ItemUseOnInjector.STACK, vanilla, null, hits::add);
-		assertEquals(2, hits.size(), "the pass-throughs alone are not the repair");
+		assertEquals(2, hits.size(), "the bridge alone is not the repair");
 	}
 
 	@Test void theSwitchLeavesBothAlone() throws Exception {
+		TestFixtures.requireForgeCarrier("MinecraftForge's ForgeHooks");
 		System.setProperty(ItemUseOnInjector.PROPERTY, "off");
 		byte[] stack = NativeCoremodParityTest.read(MERGED, STACK), hooks = NativeCoremodParityTest.read(FORGE_RUNTIME, HOOKS),
 				neo = NativeCoremodParityTest.read(NEO_RUNTIME, NEO_HOOKS);
