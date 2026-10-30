@@ -891,8 +891,9 @@ Notable repairs by family (read each class's javadoc for the case that motivated
   (TCDCommons, on every join) left every creative search empty; the current base keeps NeoForge's delegating bodies
   for those two. Whichever bodies still read MinecraftForge's store now call `KernelCreativeSearch`, which goes
   through NeoForge's keyed methods (for a producer, for every tab with a search bar); on the current base that is
-  `getSearchTree` alone. `-Dforbric.creativeSearchTrees=off`. gate-m55 calls `getSearchTree` from a MinecraftForge
-  canary. `-Dforbric.clientSmokeCreativeSearch=<tick>[,query…]` types into the real creative screen and logs the grid.
+  `getSearchTree` alone. `-Dforbric.creativeSearchTrees=off`. Nothing but a MinecraftForge mod calls `getSearchTree`, so
+  since Stage 3 gate-m55 asserts the rewrite and a unit test what the body answers.
+  `-Dforbric.clientSmokeCreativeSearch=<tick>[,query…]` types into the real creative screen and logs the grid.
 - **The native shape back** — repairs that give the merged body back a shape the platform's own body has, so guest
   injectors written against it land and run as natively (§7.4): `VanillaEarlyReturns` (the early `return`s vanilla
   compiled, where a carrier folded a guard into one join or split the body; a split body's last piece gets its
