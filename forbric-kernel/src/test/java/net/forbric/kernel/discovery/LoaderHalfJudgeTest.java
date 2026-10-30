@@ -55,7 +55,8 @@ class LoaderHalfJudgeTest {
 				.put("example/ClientInit.class", plain("example/ClientInit", null, true)));
 		assertTrue(verdict.refused(), verdict.describe());
 		String neo = verdict.half(Ecosystem.NEOFORGE).orElseThrow().reason();
-		assertTrue(neo.contains("the only @Mod(\"owl\") is MinecraftForge's"), neo);
+		assertTrue(neo.contains("links only against MinecraftForge"), neo);
+		assertTrue(neo.contains("its @Mod(\"owl\") is MinecraftForge's example.ModSetup"), neo);
 		String fabric = verdict.half(Ecosystem.FABRIC).orElseThrow().reason();
 		assertTrue(fabric.contains("has no public no-argument constructor"), fabric);
 		assertTrue(fabric.contains("does not implement net.fabricmc.api.ClientModInitializer"), fabric);
@@ -95,6 +96,22 @@ class LoaderHalfJudgeTest {
 	}
 
 	// ----------------------------------------------------------------------------------------------- kept
+
+	/**
+	 * The Modrinth datapack wrapper's shape (glowing-glow-squids, dragon-egg-recipe, norocketusage …): all three
+	 * manifests, a library fabric.mod.json, and one no-argument dummy class carrying a MinecraftForge @Mod and nothing
+	 * else of Forge. NeoForge ignores that annotation and loads the data, so the NeoForge half is usable too — and the
+	 * jar keeps loading through NeoForge, whose data packs are served whether or not fabric-api is installed.
+	 */
+	@Test void aDatapackWrapperWhoseOnlyForgeTraceIsADummyModAnnotationKeepsItsNeoForgeHalf() throws Exception {
+		LoaderHalfJudge.Verdict verdict = judge(jar()
+				.forgeToml("mr_wrapped", "Wrapped").neoToml("mr_wrapped", "Wrapped", null).fabricJson("mr_wrapped", null, null)
+				.put("com/modrinth/x/ModrinthWrapper.class", annotated("com/modrinth/x/ModrinthWrapper", FORGE_MOD, "mr_wrapped", "()V"))
+				.put("data/mr_wrapped/recipe/x.json", "{}".getBytes(StandardCharsets.UTF_8)));
+		assertFalse(verdict.refused(), verdict.describe());
+		assertEquals(List.of(Ecosystem.FABRIC, Ecosystem.NEOFORGE), verdict.usableFamilies(), verdict.describe());
+		assertTrue(verdict.half(Ecosystem.NEOFORGE).orElseThrow().reason().contains("which NeoForge ignores"), verdict.describe());
+	}
 
 	@Test void anArchitecturyStyleForgeAndFabricJarLoadsThroughFabric() throws Exception {
 		LoaderHalfJudge.Verdict verdict = judge(jar()
@@ -247,6 +264,17 @@ class LoaderHalfJudgeTest {
 		for (Path jar : List.of(neoAquarius, neoJourneymap)) {
 			LoaderHalfJudge.Verdict verdict = LoaderHalfJudge.judge(jar);
 			assertFalse(verdict.refused(), jar.getFileName() + ": " + verdict.describe());
+		}
+	}
+
+	@Test void realDatapackWrappersAndSimpleRpcAreNotRefused() throws Exception {
+		Path wrapper = Path.of("build/compat-inputs/mix80/mods/glowing-glow-squids-3.jar");
+		Path rpc = Path.of("build/compat-inputs/random/mods/SimpleRPC-4.1.4.jar");
+		TestFixtures.requireFiles(Fixture.THIRD_PARTY, "a Modrinth datapack wrapper and SimpleRPC", wrapper, rpc);
+		for (Path jar : List.of(wrapper, rpc)) {
+			LoaderHalfJudge.Verdict verdict = LoaderHalfJudge.judge(jar);
+			assertFalse(verdict.refused(), jar.getFileName() + ": " + verdict.describe());
+			assertTrue(verdict.usableFamilies().contains(Ecosystem.NEOFORGE), jar.getFileName() + ": " + verdict.describe());
 		}
 	}
 

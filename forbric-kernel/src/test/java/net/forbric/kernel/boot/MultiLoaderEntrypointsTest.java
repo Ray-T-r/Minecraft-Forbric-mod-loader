@@ -80,8 +80,12 @@ class MultiLoaderEntrypointsTest {
 		Path jar = fixture("wrong-interface.jar", "example.ForgeEntry", Map.of("example/ForgeEntry.class",
 				type("example/ForgeEntry", Ecosystem.FORGE, "example", null, true)));
 		System.setProperty("forbric.multiLoaderPreference", "fabric");
-		assertEquals(Ecosystem.FORGE, MultiLoaderArbiter.ownerOf(jar));
-		assertTrue(MultiLoaderArbiter.refused(jar), "its Fabric entrypoint is the Forge class, so nothing else can load it");
+		// Even preferred, Fabric cannot construct the Forge class. The class is a no-argument dummy that uses nothing of
+		// Forge beyond its @Mod annotation (the Modrinth datapack-wrapper shape), so the NeoForge half is a data mod
+		// NeoForge loads without an entry class — that is the one left.
+		assertEquals(Ecosystem.NEOFORGE, MultiLoaderArbiter.ownerOf(jar));
+		assertFalse(MultiLoaderArbiter.refused(jar));
+		assertTrue(MultiLoaderArbiter.suppressedFor(jar, Ecosystem.FABRIC));
 	}
 
 	@Test void theFabricContractMayBeInheritedFromAnOwnSuperclass() throws Exception {
@@ -106,10 +110,11 @@ class MultiLoaderEntrypointsTest {
 		Path jar = fixture("shaded.jar", null, Map.of(
 				"example/ForgeEntry.class", type("example/ForgeEntry", Ecosystem.FORGE, "example", null, true),
 				"shaded/Library.class", type("shaded/Library", Ecosystem.NEOFORGE, "another_library", null, true)));
-		// The shaded NeoForge @Mod names another id, so the NeoForge manifest stays unvalidated; with MinecraftForge
-		// set aside the jar loads through its library-style fabric.mod.json, the one usable half left.
-		assertEquals(Ecosystem.FABRIC, MultiLoaderArbiter.ownerOf(jar));
-		assertTrue(MultiLoaderArbiter.suppressedFor(jar, Ecosystem.NEOFORGE));
+		// The shaded NeoForge @Mod names another id, so it validates nothing as an initializer; the NeoForge half is
+		// usable as a data mod (nothing here stands on Forge), and with MinecraftForge set aside the bare preference
+		// chooses it over the library fabric.mod.json. The Forge constructor no longer outranks anything.
+		assertEquals(Ecosystem.NEOFORGE, MultiLoaderArbiter.ownerOf(jar));
+		assertTrue(MultiLoaderArbiter.suppressedFor(jar, Ecosystem.FORGE));
 	}
 
 	@Test void dataOnlyJarsKeepTheirExistingPreference() throws Exception {

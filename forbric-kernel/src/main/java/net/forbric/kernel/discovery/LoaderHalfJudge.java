@@ -85,9 +85,12 @@ import net.forbric.kernel.util.Caught;
  *       custom language adapter or a {@code ::} member reference is positive evidence on its own; an integration key
  *       (any other key) counts when its class is present.</li>
  *   <li><b>NeoForge</b> — the manifest reads, and: a {@code net.neoforged} {@code @Mod} for one of its ids exists; or,
- *       with no {@code @Mod} of any loader for its ids (a data, mixin or library mod), the jar's own classes do not link
- *       against MinecraftForge while never naming NeoForge. A mod id whose only {@code @Mod} is MinecraftForge's is not
- *       a NeoForge mod: NeoForge would load it without its initialiser.</li>
+ *       without one (NeoForge loads a data, mixin or library mod with no entry class), the jar's own classes do not
+ *       stand on MinecraftForge: none uses {@code net.minecraftforge} beyond a MinecraftForge {@code @Mod} annotation,
+ *       or some class names NeoForge. A MinecraftForge {@code @Mod} on its own decides nothing — NeoForge ignores it,
+ *       and the Modrinth datapack wrappers and SimpleRPC put one on a no-argument dummy class and use nothing else of
+ *       Forge — while aquariuslibs' helpers and animalgarden-owl's {@code FMLJavaModLoadingContext} constructor are
+ *       MinecraftForge code a NeoForge half cannot run.</li>
  *   <li><b>MinecraftForge</b> — never usable: Forbric no longer loads MinecraftForge mods.</li>
  * </ul>
  * <p>A jar is REFUSED only when it has a MinecraftForge half and NO usable Fabric or NeoForge half. Every other jar is
@@ -117,7 +120,7 @@ public final class LoaderHalfJudge {
 	private static final String MOD_NEO = ModAnnotationScanner.MOD_DESC_NEOFORGE;
 	private static final byte[] FORGE_PACKAGE = "net/minecraftforge/".getBytes(StandardCharsets.US_ASCII);
 	private static final byte[] NEO_PACKAGE = "net/neoforged/".getBytes(StandardCharsets.US_ASCII);
-	private static final byte[] FABRIC_PACKAGE = "net/fabricmc/".getBytes(StandardCharsets.US_ASCII);
+	private static final byte[] FORGE_MOD_DESCRIPTOR = MOD_FORGE.getBytes(StandardCharsets.US_ASCII);
 
 	/** The Fabric entrypoint keys whose contract is the loader's own, and the method that contract calls. */
 	private static final Map<String, String[]> CONTRACTS = Map.of(
@@ -333,21 +336,27 @@ public final class LoaderHalfJudge {
 						"net.neoforged @Mod(\"" + id + "\") is " + neo.replace('/', '.') + absent);
 			}
 		}
+		// No NeoForge @Mod: NeoForge loads such a mod without an entry class (data, mixins, services). A MinecraftForge
+		// @Mod for the id is ignored by NeoForge, so on its own it decides nothing — the Modrinth datapack wrappers and
+		// SimpleRPC carry one on a no-argument dummy class and nothing else of Forge. What decides is whether the code
+		// stands on MinecraftForge: classes that use net.minecraftforge beyond that annotation, and none naming NeoForge.
+		String forgeMod = null;
 		for (String id : ids) {
 			String forge = contents.modClass(MOD_FORGE, id);
 			if (forge != null) {
-				return new Half(Ecosystem.NEOFORGE, NEOFORGE_MANIFEST, ids, name, false,
-						"the only @Mod(\"" + id + "\") is MinecraftForge's (" + forge.replace('/', '.')
-								+ "); NeoForge would load the mod without its initialiser" + absent);
+				forgeMod = " (its @Mod(\"" + id + "\") is MinecraftForge's " + forge.replace('/', '.') + ")";
+				break;
 			}
 		}
-		if (contents.forgeReferences > 0 && contents.neoReferences == 0) {
+		if (contents.forgeBound > 0 && contents.neoReferences == 0) {
 			return new Half(Ecosystem.NEOFORGE, NEOFORGE_MANIFEST, ids, name, false,
-					"no @Mod, and its code links only against MinecraftForge (" + contents.forgeReferences
-							+ " class(es) name net.minecraftforge, none names net.neoforged)" + absent);
+					"no NeoForge @Mod, and its code links only against MinecraftForge (" + contents.forgeBound
+							+ " class(es) use net.minecraftforge beyond a @Mod annotation, none names net.neoforged)"
+							+ (forgeMod == null ? "" : forgeMod) + absent);
 		}
 		return new Half(Ecosystem.NEOFORGE, NEOFORGE_MANIFEST, ids, name, true,
-				"no @Mod: a data, mixin or library mod, and its code does not stand on MinecraftForge" + absent);
+				"no NeoForge @Mod: a data, mixin or library mod, and its code does not stand on MinecraftForge"
+						+ (forgeMod == null ? "" : forgeMod + ", which NeoForge ignores") + absent);
 	}
 
 	private static Half forgeHalf(Contents contents) {
@@ -452,10 +461,12 @@ public final class LoaderHalfJudge {
 		final Set<String> names = new HashSet<>();
 		/** Every class, the nested jars' included; the outer jar's copy wins a name both carry. */
 		final Map<String, ClassFacts> classes = new HashMap<>();
-		/** How many of the OUTER jar's classes name each loader's package. */
-		int forgeReferences;
+		/**
+		 * How many of the OUTER jar's classes use net.minecraftforge for anything but a MinecraftForge {@code @Mod}
+		 * annotation — a dummy entry class that is only annotated stands on nothing — and how many name NeoForge.
+		 */
+		int forgeBound;
 		int neoReferences;
-		int fabricReferences;
 
 		boolean hasFile(String name) {
 			return names.contains(name);
@@ -527,9 +538,10 @@ public final class LoaderHalfJudge {
 			ClassFacts facts = ClassFacts.of(bytes);
 			if (facts == null) return;
 			contents.classes.putIfAbsent(facts.name, facts);
-			if (contains(bytes, FORGE_PACKAGE)) contents.forgeReferences++;
-			if (contains(bytes, NEO_PACKAGE)) contents.neoReferences++;
-			if (contains(bytes, FABRIC_PACKAGE)) contents.fabricReferences++;
+			// A constant-pool string appears once per class, so a class whose only net.minecraftforge string is the
+			// @Mod descriptor has exactly as many of the one as of the other.
+			if (count(bytes, FORGE_PACKAGE) > count(bytes, FORGE_MOD_DESCRIPTOR)) contents.forgeBound++;
+			if (count(bytes, NEO_PACKAGE) > 0) contents.neoReferences++;
 		} else if (depth < MAX_NESTING && name.endsWith(".jar")
 				&& (name.startsWith("META-INF/jarjar/") || name.startsWith("META-INF/jars/"))) {
 			nested.add(in.readAllBytes());
@@ -552,16 +564,18 @@ public final class LoaderHalfJudge {
 		return contents;
 	}
 
-	private static boolean contains(byte[] haystack, byte[] needle) {
+	/** How many times {@code needle} occurs in {@code haystack}; the strings searched for are plain ASCII. */
+	private static int count(byte[] haystack, byte[] needle) {
+		int found = 0;
 		outer:
 		for (int i = 0, last = haystack.length - needle.length; i <= last; i++) {
 			if (haystack[i] != needle[0]) continue;
 			for (int j = 1; j < needle.length; j++) {
 				if (haystack[i + j] != needle[j]) continue outer;
 			}
-			return true;
+			found++;
 		}
-		return false;
+		return found;
 	}
 
 	/** What a judgement needs to know about one class: its shape, its {@code @Mod}s, and which entry methods only throw. */
