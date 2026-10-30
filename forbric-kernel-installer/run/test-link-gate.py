@@ -21,6 +21,7 @@ with tempfile.TemporaryDirectory(prefix="forbric-installer-links-") as temporary
     sources += sorted((project / "src/test/java").rglob("SuppliedArtifactContentTest.java"))
     sources += sorted((project / "src/test/java").rglob("InstallerWindowInputTest.java"))
     sources += sorted((project / "src/test/java").rglob("MinecraftLibrariesTest.java"))
+    sources += sorted((project / "src/test/java").rglob("VanillaReferenceTest.java"))
     subprocess.run(["javac", "--release", "17", "-d", str(classes), *map(str, sources)], check=True)
     resource = classes / "forbric/tools/forbric-merge-tools.jar"
     resource.parent.mkdir(parents=True)

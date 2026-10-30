@@ -257,7 +257,7 @@ class SoakVerifierTest(unittest.TestCase):
             metadata={'id':'26.2','assetIndex':{'id':'test'},'libraries':[{'name':'group:test:1','downloads':{'artifact':{'path':'test.jar'}}}]}
             put(mc/'versions/26.2/26.2.json',json.dumps(metadata).encode());put(mc/'libraries/test.jar');put(mc/'assets/indexes/test.json',b'{}');put(mc/'versions/26.2/26.2-natives/probe.dylib')
             cp=put(root/'boot-classpath.txt',str(put(root/'dependency.jar')).encode())
-            args=argparse.Namespace(kernel=str(kernel),staged=str(staged),fixture=str(pack),minecraft=str(mc),world_source=None,merged=str(merged),forge=None,neo=None,natives=None,boot_classpath=str(cp),seconds=1,control=True,sessions=2,dwell_ticks=20,between_seconds=0,settle_seconds=0,timeout=60,policy='strict',heap='1G',java='unused-test-java')
+            args=argparse.Namespace(kernel=str(kernel),staged=str(staged),fixture=str(pack),minecraft=str(mc),world_source=None,merged=str(merged),forge=None,neo=None,natives=None,boot_classpath=str(cp),seconds=1,control=True,sessions=2,dwell_ticks=20,between_seconds=0,settle_seconds=0,timeout=60,policy='strict',heap='1G',java='unused-test-java',native_reference=None)
             source={'root':str(root),'commit':'test','sha256':'source-content','files':{},'dirty':False}
             manifests=[]
             class Child:
@@ -275,7 +275,7 @@ class SoakVerifierTest(unittest.TestCase):
                 def wait(self,timeout=None):return 0
                 def poll(self):return 0
             gate=put(root/'gate-m34-soak.1.tsv',b'')
-            with patch.object(soak,'source_record',return_value=source),patch.object(soak.subprocess,'Popen',Child),patch.object(soak,'wait_for_client',return_value=0),patch.object(soak.time,'monotonic',side_effect=[0,24]),patch.dict(soak.os.environ,{'FORBRIC_CAUGHT_FILE':str(gate)}):
+            with patch.object(soak,'source_record',return_value=source),patch.object(soak,'vanilla_reference',return_value=None),patch.object(soak.subprocess,'Popen',Child),patch.object(soak,'wait_for_client',return_value=0),patch.object(soak.time,'monotonic',side_effect=[0,24]),patch.dict(soak.os.environ,{'FORBRIC_CAUGHT_FILE':str(gate)}):
                 self.assertEqual(0,soak.launch(args))
             self.assertEqual(source,manifests[0]['source'])
             acceptance=json.loads((kernel/'build/verification/m34-soak/last-control.json').read_text())['acceptance']
