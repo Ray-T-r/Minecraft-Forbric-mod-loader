@@ -31,6 +31,16 @@
 #
 # Not covered here: call-site composites (portal, spawner, loot, fuel, tooltips — M35 and friends) and result
 # fields other than cancellation.
+#
+# STAGE 3 OF DROPPING MinecraftForge (what changed and why). Nothing was deleted here, on purpose. The plan listed this
+# gate among the MinecraftForge ones to turn into a refusal check or cut down, but its probe (forbricchainprobe.jar, canary/event-chain; and the 97-mod client pack, which holds no MinecraftForge-only jar) is a NeoForge mod
+# -- a neoforge.mods.toml and a NeoForge @Mod -- that registers listeners on MinecraftForge's bus, and Forbric refuses
+# only a jar with no usable Fabric or NeoForge half: LoaderHalfJudge keeps a NeoForge @Mod whatever API it calls
+# (judged KEPT [NEOFORGE] on 2026-10-30). So the probe still loads, the Neo->Forge bridges it exercises still run on
+# every boot with zero MinecraftForge mods (Stage 3 deletes no plumbing), and a NeoForge mod that uses MinecraftForge's
+# API can still reach them -- every check here still describes reachable behaviour, and stays until Stage 4 deletes the
+# bridges and this gate with them. What Stage 3 adds is the other direction: the probe must NOT be refused, on every
+# boot that loads it, so a refusal rule that started sweeping up NeoForge mods would turn this gate red.
 # GATE-PARALLEL: clone=client-merged-pack:M41_RUNDIR rundirs=server-chain-m41 mem=3000
 set -uo pipefail
 . "$(cd "$(dirname "$0")" && pwd)/lib.sh"
@@ -65,6 +75,7 @@ fi
 wait "$CLIENT_PID" 2>/dev/null || true
 check "the client left the world cleanly" 'ClientSmoke\] clean disconnect observed' "$CLIENT_DIR/logs/latest.log"
 check "the mouse drill drove a container screen" 'ClientSmoke\] opened a container screen' "$CLIENT_DIR/logs/latest.log"
+check_absent "nothing in the 97-mod pack was refused" '\[Forbric/Unsupported\] refusing|\[Forbric/MultiLoader\] .* is refused' "$CLIENT_DIR/logs/latest.log"
 if python3 - "$RESULTS/client.json" <<'PY'
 import json, sys
 report = json.load(open(sys.argv[1]))
@@ -177,6 +188,7 @@ run_server() {
 step "2. cancel: a MinecraftForge veto on a NeoForge entity join"
 run_server positive ""
 check "the veto probe ran" '\[M41Chain\] RESULT' "$RESULTS/positive.log"
+check_absent "the NeoForge probe that listens on MinecraftForge's bus was not refused" '\[Forbric/Unsupported\] refusing|\[Forbric/MultiLoader\] .* is refused' "$RESULTS/positive.log"
 if python3 - "$RESULTS/positive.json" "$RESULTS/positive-probe.json" <<'PY'
 import json, sys
 report, probe = json.load(open(sys.argv[1])), json.load(open(sys.argv[2]))
@@ -198,6 +210,7 @@ else echo "[kernel] FAIL the veto did not travel the chain (see $RESULTS/positiv
 
 step "3. negative control: the same server with the bridges off"
 run_server bridges-off "-Dforbric.unifiedEvents=off"
+check_absent "bridges-off: the probe was not refused either" '\[Forbric/Unsupported\] refusing|\[Forbric/MultiLoader\] .* is refused' "$RESULTS/bridges-off.log"
 if python3 - "$RESULTS/bridges-off.json" "$RESULTS/bridges-off-probe.json" <<'PY'
 import json, sys
 report, probe = json.load(open(sys.argv[1])), json.load(open(sys.argv[2]))
