@@ -110,7 +110,8 @@ jobs:
   # disassembled game code into a test message).
   kernel-prepared:
     runs-on: ubuntu-latest
-    timeout-minutes: 60
+    # 60 before the hidden-carrier pass, which runs the unit suite a second time (about 7 minutes on a laptop).
+    timeout-minutes: 75
     steps:
       - uses: actions/checkout@v5
       - uses: actions/setup-java@v5
@@ -132,10 +133,12 @@ jobs:
         run: python tools/dev.py prepare --no-assets
       # Same ratchet as the boot-only job, against its own baseline: what still skips here needs third-party mod
       # packs that are not in this repository. Every other kind of fixture is prepared above, so requireFixtures
-      # turns a skip for any of them (or an untagged skip) into a failure at the test that skipped.
+      # turns a skip for any of them (or an untagged skip) into a failure at the test that skipped. That includes the
+      # MinecraftForge carrier: prepare stages it beside the merged base, so a test that skips for want of it here has
+      # lost it, and forge-carrier keeps that a failure (a missing carrier is its own fixture kind, not part of staged).
       - name: Unit and transfer tests with the game files
         shell: bash
-        run: cd forbric-kernel && ./gradlew jar test transferTest skipRatchet -Pforbric.skipBaseline=ci-prepared -Pforbric.requireTransfer=true -Pforbric.requireFixtures=staged,game-side,mc-libraries,java-25
+        run: cd forbric-kernel && ./gradlew jar test transferTest skipRatchet -Pforbric.skipBaseline=ci-prepared -Pforbric.requireTransfer=true -Pforbric.requireFixtures=staged,game-side,mc-libraries,java-25,forge-carrier
       # forbric-loader's merge-loss ratchet (MergedBaseHookLossRatchetTest) holds the merge to the platform calls the
       # edit splice keeps. It reads a merged base together with the build record run/build-merged-base.sh writes
       # beside it, which pairs the jar with its report; anywhere without one it skips, so this is the one place it
@@ -190,6 +193,26 @@ jobs:
           python tools/junit_report.py summary --title 'Kernel tests (game files prepared on this runner)'
           --results forbric-kernel/build/test-results --root "$GITHUB_WORKSPACE"
           --baseline forbric-kernel/src/test/skip-baseline/ci-prepared.tsv >> "$GITHUB_STEP_SUMMARY"
+      # The same unit suite as if the MinecraftForge carrier were not staged, which is the genuine NeoForge base's layout:
+      # -Pforbric.hideForgeCarrier hands the tests a mirror of the stage without forge-runtime/ or the merge's interop jar
+      # and keeps the carrier off every classpath a test runs with. A test that needs MinecraftForge skips as
+      # forge-carrier; one that fails here reaches the carrier without saying so. transferTest cannot load a class
+      # without it and is recorded as not executed. The fixture policy is the step above's, less the carrier it hides;
+      # ci-prepared-noforge.tsv then holds what moving off the carrier costs in skipped tests, and ratchets it. The
+      # results directory is the step above's, so it is cleared first: the summary must not read that run's transferTest.
+      - name: Unit tests with the MinecraftForge carrier hidden
+        if: ${{ !cancelled() }}
+        shell: bash
+        run: |
+          rm -rf forbric-kernel/build/test-results
+          cd forbric-kernel && ./gradlew test transferTest skipRatchet -Pforbric.hideForgeCarrier -Pforbric.skipBaseline=ci-prepared-noforge -Pforbric.requireFixtures=staged,game-side,mc-libraries,java-25
+      - name: Test summary (MinecraftForge carrier hidden)
+        if: ${{ !cancelled() }}
+        shell: bash
+        run: >-
+          python tools/junit_report.py summary --title 'Kernel tests (game files prepared, MinecraftForge carrier hidden)'
+          --results forbric-kernel/build/test-results --root "$GITHUB_WORKSPACE"
+          --baseline forbric-kernel/src/test/skip-baseline/ci-prepared-noforge.tsv >> "$GITHUB_STEP_SUMMARY"
       - name: Refuse to publish game-derived files
         if: always()
         shell: bash
