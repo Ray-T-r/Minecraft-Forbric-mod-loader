@@ -54,9 +54,13 @@ public final class KernelContainers {
 	 *
 	 * <p>Returns {@code Object} because the caller is boot-side and cannot name the type. This is the only cast
 	 * in the chain, and it sits exactly at the boundary that is untyped by construction.
+	 *
+	 * <p>Every mod this class describes is a NeoForge mod (the MinecraftForge ones go through
+	 * {@code KernelForgeContainers}), so with {@code -Dforbric.modFilePerJar=on} it shares its jar's one file with the
+	 * jar's other NeoForge mods ({@link KernelModInfo#neoForge}).
 	 */
 	public static Object modInfo(String modId, Path jar) {
-		return new KernelModInfo(modId, jar);
+		return KernelModInfo.neoForge(modId, jar, null);
 	}
 
 	/**
@@ -95,7 +99,7 @@ public final class KernelContainers {
 	 */
 	public static Object container(String modId, Object bus, Path jar, Object declared) {
 		IEventBus eventBus = (IEventBus) bus;
-		IModInfo modInfo = new KernelModInfo(modId, jar,
+		IModInfo modInfo = KernelModInfo.neoForge(modId, jar,
 				declared instanceof DiscoveredMod mod ? mod : null);
 
 		ModContainer genuine = genuineFmlContainer(modId, modInfo, eventBus);
