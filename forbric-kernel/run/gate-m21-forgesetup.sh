@@ -378,8 +378,10 @@ check "the per-jar boot reached Done" "Done \(" "$LOG_PERJAR"
 #   M21_EXTRA_JVM='-Dforbric.neoScanData=off'    the NeoForge index is the empty one it once was: both readers' "found
 #                                                its own" lines, both shape lines and both member lines are gone,
 #                                                ModList's count line says 0 annotations and lists the jar 0 times --
-#                                                exactly the nine NeoForge scan checks go red -- and the kernel names
-#                                                the switch ("NeoForge scan index DISABLED (-Dforbric.neoScanData=off)")
+#                                                eleven checks go red: the nine NeoForge scan checks of the default boot
+#                                                and the per-jar boot's two, which the switch reaches too (measured
+#                                                2026-10-30) -- and the kernel names the switch ("NeoForge scan index
+#                                                DISABLED (-Dforbric.neoScanData=off)")
 #   M21_PERJAR_JVM='-Dforbric.modFilePerJar=off' the second boot keeps one IModFile per MOD, the default: the canary's
 #                                                jar holds two @Mod classes, NeoForge's own distinct() keeps both
 #                                                entries, and the index lists the jar twice -- exactly the two per-jar
