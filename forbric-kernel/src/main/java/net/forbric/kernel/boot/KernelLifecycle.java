@@ -613,6 +613,23 @@ public final class KernelLifecycle {
 	}
 
 	/**
+	 * The two census lines gates read once every mod's subscribers are wired: how many guest mixins apply only partially
+	 * (gate-m12 holds the count under a ceiling) and which mod-info questions were answered empty.
+	 *
+	 * <p>They used to be the last lines of {@code KernelEventSubscribers.registerAll}, whose pass ends with MinecraftForge's
+	 * dead-event and capability audits and returns early when neither family's bus API is there; neither census is about
+	 * MinecraftForge, or about subscribers at all. Logged at the same moment, right after that pass, with the same words.
+	 */
+	static void reportGuestCensuses() {
+		// Ninety individual lines on a client boot, none of them totalled anywhere, for the state MixinFit's javadoc
+		// calls worse than either extreme.
+		ForbricLog.info("%s", net.forbric.kernel.mixin.KernelGuestMixinAdapter.partialSummary());
+		// And questions the kernel was asked and could only answer empty — where "I do not know" and "there is none"
+		// are the same value to the caller.
+		ForbricLog.info("%s", PassiveSeeder.unmodelledSummary());
+	}
+
+	/**
 	 * Starts NeoForge's global game bus + Forge's DEFAULT BusGroup so game-event listeners dispatch.
 	 *
 	 * <p>Absent and failed are split here for the same reason as in {@link #invokeGameDataOn}: a single-family
@@ -759,6 +776,8 @@ public final class KernelLifecycle {
 				Caught.warn(t, "[Forbric/Lifecycle] could not wire guest @EventBusSubscriber classes — mods that "
 						+ "declare their registry or attribute handlers there will not be reached");
 			}
+			// Where the subscriber pass used to end, and whether or not it got that far.
+			reportGuestCensuses();
 
 			// FMLConstructModEvent, the phase genuine FML posts to each container the moment it is built. The
 			// kernel constructed the mods and went straight on, so anything a mod does there — and it is the
