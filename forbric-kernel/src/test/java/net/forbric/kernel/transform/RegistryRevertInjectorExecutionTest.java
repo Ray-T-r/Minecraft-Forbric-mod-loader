@@ -10,6 +10,7 @@ import java.util.Map;
 
 import net.fabricmc.api.EnvType;
 import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
@@ -58,18 +59,46 @@ class RegistryRevertInjectorExecutionTest {
 			}
 			""");
 
+	/** What this JVM's mixin discovery had noted before this test set it aside, put back after it. */
+	private Map<String, List<RegistrySyncParityInjector.RemapContract>> discoveredElsewhere;
+
+	/**
+	 * The remap contracts the kernel's mixin discovery noted are the process's, and earlier tests in the same JVM note
+	 * real ones (MergedBaseMixinCompatPinnedContractsTest reads every fabric-api mixin config, fabric-registry-sync's
+	 * {@code RemappableRegistry} among them). The revert's unmap pass would then load that contract's owner and walk
+	 * {@code BuiltInRegistries.REGISTRY} from a loader that holds only the stand-in, which is not what this test is
+	 * about, and the test would pass or fail on which classes ran before it. So it runs with none noted, and puts back
+	 * what it found.
+	 */
+	@BeforeEach
+	void setTheDiscoveredContractsAside() throws Exception {
+		Map<String, List<RegistrySyncParityInjector.RemapContract>> discovered = discovered();
+		discoveredElsewhere = new HashMap<>(discovered);
+		discovered.clear();
+	}
+
 	@AfterEach
 	void forgetTheCapture() throws Exception {
 		// KernelRegistryRevert's capture is the process's; a failure between capture and revert must not leak it.
 		var originals = Class.forName("net.forbric.kernel.boot.KernelRegistryRevert").getDeclaredField("originals");
 		originals.setAccessible(true);
 		originals.set(null, null);
+		Map<String, List<RegistrySyncParityInjector.RemapContract>> discovered = discovered();
+		discovered.clear();
+		discovered.putAll(discoveredElsewhere);
+	}
+
+	@SuppressWarnings("unchecked")
+	private static Map<String, List<RegistrySyncParityInjector.RemapContract>> discovered() throws Exception {
+		var field = RegistrySyncParityInjector.class.getDeclaredField("DISCOVERED");
+		field.setAccessible(true);
+		return (Map<String, List<RegistrySyncParityInjector.RemapContract>>) field.get(null);
 	}
 
 	@Test
 	void aRemapThenTheDisconnectsRevertPutsTheIdsBack(@TempDir Path work) throws Throwable {
 		assertEquals(List.of(), RegistrySyncParityInjector.discoveredContracts(),
-				"premise: no remap contract is noted in this JVM, so the revert's unmap pass has nothing to look for");
+				"premise: no remap contract is noted while this test runs, so the revert's unmap pass has nothing to look for");
 		Map<String, byte[]> original = InjectorExecution.compile(work, STAND_INS);
 		String internal = MANAGER.replace('.', '/');
 
