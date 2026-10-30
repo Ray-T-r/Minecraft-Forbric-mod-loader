@@ -6,6 +6,7 @@ import static org.junit.jupiter.api.Assertions.*;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.Map;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import java.util.zip.ZipEntry;
@@ -75,6 +76,52 @@ class NativeReferenceLineContractTest {
 		assertEquals("", script(base, noVanilla, work), "newer, but measured against another base");
 	}
 
+	/**
+	 * A sidecar named in {@code $VANILLA_REFERENCE_JAR} is used while it records the base being launched, and refused —
+	 * exit 6, nothing on stdout, the reason on stderr — when it records another: the genuine base embeds no index, so
+	 * nothing would answer for the classes such a sidecar cannot verify. {@code FORBRIC_VANILLA_REFERENCE_ANY_BASE=1}
+	 * lets a deliberate experiment use it anyway, and says so.
+	 */
+	@Test
+	void anExplicitlyNamedSidecarRecordingAnotherBaseIsRefusedUnlessTheExperimentSaysSo(@TempDir Path work) throws Exception {
+		Path base = jar(work.resolve("stage/merged-base/base.jar"), "net/minecraft/Fixture.class");
+		Path noVanilla = work.resolve("no-such/26.2.jar");
+		Path named = work.resolve("elsewhere/vanilla-reference-26.2.jar");
+
+		provenance(named, sha1(base));
+		Run matching = script(base, noVanilla, work, Map.of("VANILLA_REFERENCE_JAR", named.toString()));
+		assertEquals(new Run(0, named.toString()), matching.withoutErr(), "named, and measured against this base: used");
+		assertFalse(matching.err().contains("REFUSED"), matching.err());
+
+		provenance(named, "0".repeat(40));
+		Run refused = script(base, noVanilla, work, Map.of("VANILLA_REFERENCE_JAR", named.toString()));
+		assertEquals(new Run(6, ""), refused.withoutErr(), "named, but measured against another base: refused, " + refused.err());
+		assertTrue(refused.err().contains("[vanilla-reference] REFUSED: $VANILLA_REFERENCE_JAR=" + named + " records another base"),
+				refused.err());
+		assertTrue(refused.err().contains("FORBRIC_VANILLA_REFERENCE_ANY_BASE=1"), "the refusal names the way out: " + refused.err());
+
+		Run experiment = script(base, noVanilla, work,
+				Map.of("VANILLA_REFERENCE_JAR", named.toString(), "FORBRIC_VANILLA_REFERENCE_ANY_BASE", "1"));
+		assertEquals(new Run(0, named.toString()), experiment.withoutErr(), "the opt-out uses it as named");
+		assertTrue(experiment.err().contains("records another base than " + base), "and says what it is using: " + experiment.err());
+		assertFalse(experiment.err().contains("REFUSED"), experiment.err());
+
+		Run notOne = script(base, noVanilla, work,
+				Map.of("VANILLA_REFERENCE_JAR", named.toString(), "FORBRIC_VANILLA_REFERENCE_ANY_BASE", "yes"));
+		assertEquals(6, notOne.exit(), "only 1 opts out: " + notOne.err());
+	}
+
+	/** What the script did: its exit code, its stdout (stripped) and its stderr. */
+	private record Run(int exit, String out, String err) {
+		Run(int exit, String out) {
+			this(exit, out, "");
+		}
+
+		Run withoutErr() {
+			return new Run(exit, out);
+		}
+	}
+
 	private static void provenance(Path sidecar, String baseSha1) throws Exception {
 		Files.createDirectories(sidecar.getParent());
 		try (ZipOutputStream out = new ZipOutputStream(Files.newOutputStream(sidecar))) {
@@ -89,13 +136,21 @@ class NativeReferenceLineContractTest {
 
 	/** What run/vanilla-reference-jar.sh prints on stdout for {@code base}, with {@code vanilla} as the vanilla jar. */
 	private static String script(Path base, Path vanilla, Path work) throws Exception {
+		return script(base, vanilla, work, Map.of()).out();
+	}
+
+	/** The script run for {@code base} with {@code env} set (and neither of its two variables inherited). */
+	private static Run script(Path base, Path vanilla, Path work, Map<String, String> env) throws Exception {
+		Path err = work.resolve("script.err");
 		ProcessBuilder builder = new ProcessBuilder("bash", RUN.resolve("vanilla-reference-jar.sh").toAbsolutePath().toString(),
-				base.toString(), vanilla.toString()).redirectError(work.resolve("script.err").toFile());
+				base.toString(), vanilla.toString()).redirectError(err.toFile());
 		builder.environment().remove("VANILLA_REFERENCE_JAR");
+		builder.environment().remove("FORBRIC_VANILLA_REFERENCE_ANY_BASE");
+		builder.environment().putAll(env);
 		Process process = builder.start();
 		String out = new String(process.getInputStream().readAllBytes(), StandardCharsets.UTF_8).strip();
 		assertTrue(process.waitFor(60, java.util.concurrent.TimeUnit.SECONDS), "the script finished");
-		return out;
+		return new Run(process.exitValue(), out, Files.readString(err, StandardCharsets.UTF_8));
 	}
 
 	private static String sha1(Path file) throws Exception {
