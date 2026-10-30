@@ -72,6 +72,7 @@ public final class ModFileScanner {
 	private static final String GAME_SIDE = "net.forbric.kernel.runtime.KernelScanData";
 	private static final String GAME_SIDE_FORGE = "net.forbric.kernel.runtime.KernelForgeScanData";
 	public static final String FORGE_INDEX_PROPERTY = "forbric.forgeScanData";
+	public static final String NEO_INDEX_PROPERTY = "forbric.neoScanData";
 	public static final String SEEDED_INDEX_PROPERTY = "forbric.seededScanData";
 	public static final String REAL_PATH_KEY_PROPERTY = "forbric.seededScanData.realPath";
 
@@ -157,6 +158,7 @@ public final class ModFileScanner {
 	 * @param gameLoader the loader holding the NeoForge SPI
 	 */
 	public static Object scan(Path jar, ClassLoader gameLoader) {
+		if (!neoIndexEnabled()) return null;
 		return materialise(jar, gameLoader, GAME_SIDE, "NeoForge");
 	}
 
@@ -185,6 +187,17 @@ public final class ModFileScanner {
 	 */
 	public static boolean forgeIndexEnabled() {
 		return !"off".equalsIgnoreCase(System.getProperty(FORGE_INDEX_PROPERTY, "on"));
+	}
+
+	/**
+	 * {@code -Dforbric.neoScanData=off} puts the NeoForge index back to the empty one it was: {@link #scan} builds
+	 * nothing, so {@code ModList.getAllScanData()} and the seeded {@code LoadingModList} both answer with empty
+	 * indexes. It is the NeoForge twin of {@link #forgeIndexEnabled}, and the RED demonstration for every check that
+	 * asserts a NeoForge mod found itself through the index — the check that has to outlive the MinecraftForge
+	 * canary's.
+	 */
+	public static boolean neoIndexEnabled() {
+		return !"off".equalsIgnoreCase(System.getProperty(NEO_INDEX_PROPERTY, "on"));
 	}
 
 	/**
