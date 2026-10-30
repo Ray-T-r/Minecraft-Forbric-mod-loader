@@ -91,6 +91,14 @@ public final class Installer {
 		log.accept(mcLibraries.size() + " Minecraft libraries the kernel will own");
 
 		if (artifacts == null) artifacts = obtainGameArtifacts(mcDir, mcVersion, null, explicitJdk);
+		// A supplied set has a base but no vanilla reference: that is built from the base and the vanilla jar, which a
+		// supplied set never needed until now. The builder made its own beside the base; this makes the same one.
+		if (!artifacts.containsKey(ArtifactBuilder.VANILLA_REFERENCE)) {
+			artifacts = new LinkedHashMap<>(artifacts);
+			artifacts.put(ArtifactBuilder.VANILLA_REFERENCE, ArtifactBuilder.vanillaReference(
+					versions.resolve(mcVersion).resolve(mcVersion + ".jar"), artifacts.get(ArtifactBuilder.MERGED),
+					mcDir.resolve(".forbric-build").resolve("out").resolve(VanillaReference.fileName(mcVersion)), log).file);
+		}
 
 		List<Map<String, Object>> libraryEntries = new ArrayList<>();
 		libraryEntries.addAll(stageBundledJars(libraries, remote));
@@ -195,6 +203,9 @@ public final class Installer {
 			case "net.forbric:neoforge-runtime" -> Pins.NEOFORGE;
 			case "net.forbric:forge-runtime" -> Pins.FORGE;
 			case "net.forbric:patched-mc-merged" -> Pins.FORGE + "-" + Pins.NEOFORGE;
+			// Versioned by the base it was measured against, like that base: which classes carry their vanilla bytes
+			// depends on the base, so a second profile on another base must not overwrite this one's in place.
+			case VanillaReference.COORDINATE -> artifactVersion("net.forbric:patched-mc-merged", mcVersion);
 			default -> mcVersion;
 		};
 	}
@@ -416,7 +427,10 @@ public final class Installer {
 		return new ArtifactBuilder(log).build(mcDir, mcVersion, jvm);
 	}
 
-	/** The three locally built jars, copied under net.forbric coordinates so the profile can name them. */
+	/**
+	 * The locally built jars -- the three game jars and the vanilla reference -- copied under net.forbric coordinates so
+	 * the profile can name them.
+	 */
 	private List<Map<String, Object>> stageGameArtifacts(Path libraries, Map<String, Path> artifacts,
 			String mcVersion) throws IOException {
 		List<Map<String, Object>> written = new ArrayList<>();

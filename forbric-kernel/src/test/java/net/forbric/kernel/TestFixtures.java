@@ -198,6 +198,30 @@ public final class TestFixtures {
 		return minecraftDir().resolve("versions/26.2/26.2.jar");
 	}
 
+	/** The genuine NeoForge-patched game, as tools/dev.py stages it beside the merged base. */
+	public static Path genuineBase() {
+		return stagedRoot().resolve("neoforge-patched/patched-mc-neoforge-26.2.jar");
+	}
+
+	/**
+	 * The vanilla-reference sidecar for {@code base}, built by the installer's own writer (compiled into these tests; see
+	 * build.gradle's installerSidecarSource) from {@link #vanillaJar()}, under build/vanilla-reference/, and reused while
+	 * it records these two inputs. Built here rather than read from the staged root, because a staged root is read-only
+	 * to the tests and the genuine one never had a sidecar. Skips (or fails, by policy) without either input.
+	 */
+	public static synchronized Path vanillaReference(Path base) {
+		requireFiles(Fixture.STAGED, "the base a vanilla reference is measured against", base);
+		requireFiles(Fixture.MC_LIBRARIES, "the vanilla jar a vanilla reference is built from", vanillaJar());
+		Path out = Path.of(System.getProperty("user.dir"), "build", "vanilla-reference",
+				Integer.toHexString(base.toAbsolutePath().normalize().toString().hashCode()),
+				net.forbric.installer.kernel.VanillaReference.fileName("26.2"));
+		try {
+			return net.forbric.installer.kernel.VanillaReference.ensure(vanillaJar(), base, out).file();
+		} catch (IOException unbuildable) {
+			throw new AssertionFailedError("could not build the vanilla reference for " + base, unbuildable);
+		}
+	}
+
 	/**
 	 * MinecraftForge's patched game exactly as the merged base under {@link #stagedRoot()} took it. tools/dev.py stages
 	 * the one its own merge read as {@code forge-patched/}, with the installer's build pins beside it and beside the

@@ -25,6 +25,10 @@ public final class DevPrepare {
 		copy(artifacts.get(ArtifactBuilder.MERGED), stage.resolve("merged-base/patched-mc-merged-26.2.jar"));
 		copy(artifacts.get(ArtifactBuilder.FORGE_RUNTIME), stage.resolve("merged-base/forge-runtime-interop.jar"));
 		copy(artifacts.get(ArtifactBuilder.NEOFORGE_RUNTIME), stage.resolve("neoforge-runtime/neoforge-runtime.jar"));
+		// What every launch path hands the kernel as --nativeReference, and what the staged tests prove equal to the
+		// index the merged base embeds.
+		copy(artifacts.get(ArtifactBuilder.VANILLA_REFERENCE),
+				stage.resolve("vanilla-reference/" + VanillaReference.fileName(Pins.MINECRAFT)));
 		// Compilation and bytecode tests read the raw carrier, while launch uses the interop-patched carrier.
 		copy(mc.resolve(".forbric-build/out/forge-runtime.jar"), stage.resolve("forge-runtime/forge-runtime.jar"));
 		// Both patched sides too: the bytecode tests compare the merged base against each of them.

@@ -17,6 +17,7 @@ import net.forbric.kernel.TestFixtures.Fixture;
 import net.forbric.kernel.boot.LootSourceCallbacks;
 import net.forbric.kernel.boot.LootSourceContracts;
 import net.forbric.kernel.mixin.NativeGameReferences;
+import net.forbric.kernel.mixin.NativeReferenceSources;
 import net.forbric.kernel.transform.LootTableEventBridgeInjector;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
@@ -121,7 +122,12 @@ class LootSourceCallbacksSpellingTest {
 			jar = new ZipFile(base.toFile());
 			host = new LootTableEventBridgeInjector().transform(HOST.replace('/', '.'), bytes(HOST + ".class"), null);
 			bridge = Files.readAllBytes(bridgePath);
-			nativeNode = new NativeGameReferences(this::bytes).get(Ecosystem.FABRIC, HOST);
+			// The sources a launch on this base has: its embedded index (the merged base), else the vanilla-reference
+			// sidecar every launch path passes (the genuine base embeds none).
+			Path sidecar = jar.getEntry("META-INF/forbric/native-reference/FABRIC/index.tsv") != null ? null
+					: TestFixtures.vanillaReference(base);
+			nativeNode = new NativeGameReferences(this::bytes, null, NativeReferenceSources.open(base, sidecar))
+					.get(Ecosystem.FABRIC, HOST);
 			assertNotNull(nativeNode);
 		}
 

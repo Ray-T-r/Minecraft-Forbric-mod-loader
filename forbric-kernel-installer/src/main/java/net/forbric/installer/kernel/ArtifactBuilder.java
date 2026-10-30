@@ -44,6 +44,7 @@ import java.util.function.Consumer;
  *   vanilla 26.2.jar ───────────────────────────────────────────────────┘
  *
  *   forge-runtime ────────────────────────────────→ forge-runtime-interop   (what actually gets staged)
+ *   vanilla 26.2.jar + patched-mc-merged ──────────→ vanilla-reference       (resources only; see VanillaReference)
  *
  *   versions/26.2/26.2.json's libraries ──→ read by the merge and the interop patch, fetched only if they run
  * </pre>
@@ -57,6 +58,8 @@ final class ArtifactBuilder {
 	static final String MERGED = "net.forbric:patched-mc-merged";
 	static final String FORGE_RUNTIME = "net.forbric:forge-runtime";
 	static final String NEOFORGE_RUNTIME = "net.forbric:neoforge-runtime";
+	/** Not a game jar: the resources-only vanilla reference the kernel reads beside the base; see {@link VanillaReference}. */
+	static final String VANILLA_REFERENCE = VanillaReference.COORDINATE;
 
 	private final Consumer<String> log;
 
@@ -139,6 +142,8 @@ final class ArtifactBuilder {
 				libraries);
 		// After the interop patch, not before: the check resolves against what actually gets staged.
 		merge.linkCheck(jvm, merged.file, neoRuntime.file, interop.file);
+		ArtifactResult reference = vanillaReference(vanilla, merged.file, out.resolve(VanillaReference.fileName(mcVersion)),
+				log);
 
 		Map<String, Path> result = new LinkedHashMap<>();
 		result.put(MERGED, merged.file);
@@ -146,6 +151,7 @@ final class ArtifactBuilder {
 		// jar's own classes no longer satisfy. It keeps the forge-runtime coordinate so nothing downstream moves.
 		result.put(FORGE_RUNTIME, interop.file);
 		result.put(NEOFORGE_RUNTIME, neoRuntime.file);
+		result.put(VANILLA_REFERENCE, reference.file);
 
 		log.accept("");
 		log.accept("game artifacts ready:");
@@ -154,6 +160,24 @@ final class ArtifactBuilder {
 					+ " (" + (Files.size(e.getValue()) / (1024 * 1024)) + " MB)");
 		}
 		return result;
+	}
+
+	/**
+	 * The vanilla-reference sidecar for {@code base}: how vanilla compiled each class, beside the base rather than inside
+	 * it, so the kernel's FABRIC references do not depend on the base being the merge that used to embed them. Built
+	 * in-process — it is a zip, a byte comparison and SHA-256 — and reused when it records these two inputs, which the
+	 * pins stamp cannot say: a base can be rebuilt, or supplied, without a pin moving.
+	 *
+	 * <p>Shared by the build above and by an install from supplied artifacts ({@link Installer}), which has a base but
+	 * never runs this builder.
+	 */
+	static ArtifactResult vanillaReference(Path vanilla, Path base, Path out, Consumer<String> log) throws IOException {
+		VanillaReference.Result built = VanillaReference.ensure(vanilla, base, out);
+		log.accept(built.reused() ? "[vanilla-reference] up-to-date: " + out.getFileName()
+				: "[vanilla-reference] wrote " + out.getFileName() + ": " + built.classes() + " vanilla classes, "
+						+ built.differing() + " of them differ from " + base.getFileName() + " and carry their vanilla bytes");
+		return new ArtifactResult(VANILLA_REFERENCE + ":" + Installer.artifactVersion(VANILLA_REFERENCE, ""), out,
+				Util.sha1(out), Files.size(out));
 	}
 
 	/**

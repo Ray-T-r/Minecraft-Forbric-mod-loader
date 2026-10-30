@@ -207,6 +207,16 @@ sourceSets {
 	}
 }
 
+// The vanilla-reference sidecar is WRITTEN by the installer, on the player's machine, and READ here
+// (NativeReferenceSources). Its writer is one self-contained, JDK-only file, and the tests compile that very file: the
+// staged proof that what it writes equals the index the merged base embeds has to run the writer the installer ships,
+// and a read-only staged root (the genuine base's) has no sidecar of its own, so the tests build one with it.
+def installerSidecarSource = tasks.register('installerSidecarSource', Sync) {
+	from('../forbric-kernel-installer/src/main/java') { include 'net/forbric/installer/kernel/VanillaReference.java' }
+	into layout.buildDirectory.dir('generated/installer-sidecar')
+}
+sourceSets.test.java.srcDir(installerSidecarSource)
+
 repositories {
 	maven {
 		name = 'Fabric'
