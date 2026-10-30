@@ -71,7 +71,7 @@ import org.objectweb.asm.tree.VarInsnNode;
  * one. ~1s over 94k methods.
  */
 class MergedBasePipelineDriftTest {
-	private static final Path MERGED_BASE = TestFixtures.stagedRoot().resolve("merged-base/patched-mc-merged-26.2.jar");
+	private static final Path MERGED_BASE = TestFixtures.stagedBase();
 	private static final Path VANILLA = TestFixtures.vanillaJar();
 
 	/**
@@ -118,7 +118,7 @@ class MergedBasePipelineDriftTest {
 
 	@Test
 	void everyNumericDifferenceFromVanillaIsOneTheKernelRepairs() throws Exception {
-		TestFixtures.require(Fixture.STAGED, Files.isRegularFile(MERGED_BASE), "merged base not staged: " + MERGED_BASE);
+		TestFixtures.requireFile(Fixture.STAGED, MERGED_BASE, "merged base not staged: " + MERGED_BASE);
 		TestFixtures.require(Fixture.MC_LIBRARIES, Files.isRegularFile(VANILLA), "no vanilla 26.2 jar at " + VANILLA);
 
 		List<String> unrepaired = new ArrayList<>();

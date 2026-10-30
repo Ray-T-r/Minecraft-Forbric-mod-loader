@@ -164,8 +164,8 @@ class PassiveSeederForgeFmlEnvironmentTest {
 	 * {@code com.mojang.logging} without shipping them; empty stand-ins satisfy the static initializers.
 	 */
 	private ClassLoader forgeLoader() throws Exception {
-		TestFixtures.require(Fixture.STAGED, Files.isRegularFile(FORGE_RUNTIME),
-				"staged forge-runtime.jar absent — skipping the real-bytecode FMLEnvironment check");
+		TestFixtures.requireFiles(Fixture.STAGED,
+				"staged forge-runtime.jar absent — skipping the real-bytecode FMLEnvironment check", FORGE_RUNTIME);
 		Path stubs = Files.createDirectories(tmp.resolve("stubs"));
 		writeClass(stubs, "org/slf4j/Logger", emptyInterface("org/slf4j/Logger"));
 		writeClass(stubs, "org/slf4j/Marker", emptyInterface("org/slf4j/Marker"));

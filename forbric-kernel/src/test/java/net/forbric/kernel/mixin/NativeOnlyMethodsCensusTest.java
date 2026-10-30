@@ -70,7 +70,7 @@ import org.objectweb.asm.tree.ClassNode;
 @ResourceLock(Resources.SYSTEM_PROPERTIES)
 class NativeOnlyMethodsCensusTest {
 	private static final Path STAGED = TestFixtures.stagedRoot();
-	private static final Path MERGED = STAGED.resolve("merged-base/patched-mc-merged-26.2.jar");
+	private static final Path MERGED = STAGED.resolve(TestFixtures.BASE_JAR);
 	private static final Path BLOCK_ENTITY_SOURCE = TestFixtures.vanillaJar();
 	private static final String BLOCK_ENTITY = "net/minecraft/world/level/block/entity/BlockEntity";
 
@@ -78,10 +78,10 @@ class NativeOnlyMethodsCensusTest {
 	private static final Map<Ecosystem, Path> NATIVE = new EnumMap<>(Map.of(
 			Ecosystem.FABRIC, TestFixtures.vanillaJar(),
 			Ecosystem.FORGE, TestFixtures.forgeMergeInput(),
-			Ecosystem.NEOFORGE, STAGED.resolve("neoforge-patched/patched-mc-neoforge-26.2.jar")));
+			Ecosystem.NEOFORGE, STAGED.resolve(TestFixtures.GENUINE_BASE_JAR)));
 
 	/** The merge's own build pins: which vanilla, MinecraftForge and NeoForge it read. */
-	private static final Path PINS = STAGED.resolve("merged-base/patched-mc-merged-26.2.jar.pins");
+	private static final Path PINS = STAGED.resolve(TestFixtures.BASE_JAR + ".pins");
 	private static final Path FORGE_RUNTIME = STAGED.resolve("forge-runtime/forge-runtime.jar");
 	private static final Path NEO_RUNTIME = STAGED.resolve("neoforge-runtime/neoforge-runtime.jar");
 	private static final Path VERSION_JSON = TestFixtures.minecraftDir().resolve("versions/26.2/26.2.json");
@@ -96,7 +96,7 @@ class NativeOnlyMethodsCensusTest {
 	private static Map<String, Path> libraries;
 
 	@BeforeAll static void read() throws Exception {
-		TestFixtures.require(Fixture.STAGED, Files.isRegularFile(MERGED), "staged merged base required: " + MERGED);
+		TestFixtures.requireFile(Fixture.STAGED, MERGED, "staged merged base required: " + MERGED);
 		TestFixtures.requireFiles(Fixture.STAGED, "the merge's build pins and both carriers", PINS, FORGE_RUNTIME, NEO_RUNTIME);
 		TestFixtures.require(Fixture.MC_LIBRARIES, Files.isRegularFile(VERSION_JSON), "vanilla's version JSON: " + VERSION_JSON);
 		for (Map.Entry<Ecosystem, Path> platform : NATIVE.entrySet()) {

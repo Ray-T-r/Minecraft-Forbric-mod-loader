@@ -30,8 +30,8 @@ import net.forbric.kernel.TestFixtures.Fixture;
  */
 @ResourceLock("system-properties")
 class CreativeSearchTreesInjectorTest {
-	private static final Path MERGED = TestFixtures.stagedRoot().resolve("merged-base/patched-mc-merged-26.2.jar");
-	private static final Path NEOFORGE_PATCHED = TestFixtures.stagedRoot().resolve("neoforge-patched/patched-mc-neoforge-26.2.jar");
+	private static final Path MERGED = TestFixtures.stagedBase();
+	private static final Path NEOFORGE_PATCHED = TestFixtures.genuineBase();
 	private static final Path HELPER_CLASS = Path.of(System.getProperty("forbric.test.runtimeClasses","build/classes/java/runtime")).resolve("net/forbric/kernel/runtime/KernelCreativeSearch.class");
 	private static final String TREES = CreativeSearchTreesInjector.TREES;
 

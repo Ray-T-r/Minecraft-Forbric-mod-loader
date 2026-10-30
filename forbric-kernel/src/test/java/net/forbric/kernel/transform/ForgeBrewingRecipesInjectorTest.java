@@ -18,7 +18,7 @@ import org.objectweb.asm.tree.analysis.BasicVerifier;
 @ResourceLock("system-properties")
 class ForgeBrewingRecipesInjectorTest {
 	private static final Path MERGED = Path.of(System.getProperty("forbric.stagedRoot", "../forbric-loader/run"))
-			.resolve("merged-base/patched-mc-merged-26.2.jar");
+			.resolve(net.forbric.kernel.TestFixtures.BASE_JAR);
 	private static final String BUILDER = "net/minecraft/world/item/alchemy/PotionBrewing$Builder";
 
 	@AfterEach void reset() { System.clearProperty(ForgeBrewingRecipesInjector.PROPERTY); }

@@ -65,7 +65,7 @@ import net.forbric.kernel.TestFixtures.Fixture;
 @ResourceLock("system-properties")
 @ResourceLock("native-game-references")
 class MixinFitLivenessCensusStagedTest {
-	private static final Path MERGED = TestFixtures.stagedRoot().resolve("merged-base/patched-mc-merged-26.2.jar");
+	private static final Path MERGED = TestFixtures.stagedBase();
 	private static final Path INTEROP = TestFixtures.stagedRoot().resolve("merged-base/forge-runtime-interop.jar");
 	private static final Path NEO_RUNTIME = TestFixtures.stagedRoot().resolve("neoforge-runtime/neoforge-runtime.jar");
 	private static final Map<String, Path> PACKS = new LinkedHashMap<>();
@@ -150,7 +150,7 @@ class MixinFitLivenessCensusStagedTest {
 
 	@Test
 	void exactlyThePinnedMixinsChangeVerdict() throws Exception {
-		for (Path p : List.of(MERGED, INTEROP, NEO_RUNTIME)) TestFixtures.require(Fixture.STAGED, Files.isRegularFile(p), p + " required");
+		for (Path p : List.of(MERGED, INTEROP, NEO_RUNTIME)) TestFixtures.requireFile(Fixture.STAGED, p, p + " required");
 		for (Path p : PACKS.values()) TestFixtures.require(Fixture.THIRD_PARTY, Files.isDirectory(p), p + " required (symlink it from the main checkout)");
 		// KernelGuestMixinAdapter judges with the merged base's native references bound: MixinStubRebind's move of a
 		// state-sharing @Redirect counts the calls it replaces against the mod's own platform there, and MixinFit asks the
@@ -492,10 +492,10 @@ class MixinFitLivenessCensusStagedTest {
 	@Test
 	void vanillaAnchorsTheMergedBaseLostArePinned() throws Exception {
 		Path vanilla = TestFixtures.vanillaJar();
-		for (Path p : List.of(MERGED, INTEROP, NEO_RUNTIME)) TestFixtures.require(Fixture.STAGED, Files.isRegularFile(p), p + " required");
+		for (Path p : List.of(MERGED, INTEROP, NEO_RUNTIME)) TestFixtures.requireFile(Fixture.STAGED, p, p + " required");
 		TestFixtures.require(Fixture.MC_LIBRARIES, Files.isRegularFile(vanilla), vanilla + " required");
 		Path fabricApi = TestFixtures.fabricApi();
-		TestFixtures.require(Fixture.STAGED, Files.isRegularFile(fabricApi), fabricApi + " required");
+		TestFixtures.requireFile(Fixture.STAGED, fabricApi, fabricApi + " required");
 		Map<String, List<Path>> corpora = new LinkedHashMap<>();
 		corpora.put("fabric-api", List.of(fabricApi));
 		String other = System.getenv(ANCHOR_PACKS);
@@ -570,7 +570,7 @@ class MixinFitLivenessCensusStagedTest {
 	@Test
 	void theAnchorCensusSeesALostAnchorAndItsRepair() throws Exception {
 		Path vanilla = TestFixtures.vanillaJar();
-		for (Path p : List.of(MERGED, INTEROP, NEO_RUNTIME)) TestFixtures.require(Fixture.STAGED, Files.isRegularFile(p), p + " required");
+		for (Path p : List.of(MERGED, INTEROP, NEO_RUNTIME)) TestFixtures.requireFile(Fixture.STAGED, p, p + " required");
 		TestFixtures.require(Fixture.MC_LIBRARIES, Files.isRegularFile(vanilla), vanilla + " required");
 		Function<String, byte[]> before = vanillaResolver(vanilla), after = mergedResolver();
 		byte[] debugify = debugifyShaped();
@@ -593,7 +593,7 @@ class MixinFitLivenessCensusStagedTest {
 	@Test
 	void theAnchorCensusSeesANameTheCarrierTookOver() throws Exception {
 		Path vanilla = TestFixtures.vanillaJar();
-		for (Path p : List.of(MERGED, INTEROP, NEO_RUNTIME)) TestFixtures.require(Fixture.STAGED, Files.isRegularFile(p), p + " required");
+		for (Path p : List.of(MERGED, INTEROP, NEO_RUNTIME)) TestFixtures.requireFile(Fixture.STAGED, p, p + " required");
 		TestFixtures.require(Fixture.MC_LIBRARIES, Files.isRegularFile(vanilla), vanilla + " required");
 		Function<String, byte[]> before = vanillaResolver(vanilla), after = mergedResolver();
 		byte[] head = moogsHeadShaped();

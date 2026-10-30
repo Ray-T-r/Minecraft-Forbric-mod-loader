@@ -82,7 +82,7 @@ class RegistrationEventStepsTest {
 	/** The real carrier's method, when it is staged: seven calls, and the two the kernel keys on among them. */
 	@Test
 	void theRealMethodIsAStraightRunOfSevenCalls() throws Exception {
-		TestFixtures.require(Fixture.STAGED, Files.isRegularFile(NEOFORGE_RUNTIME), "neoforge-runtime.jar not staged");
+		TestFixtures.requireFile(Fixture.STAGED, NEOFORGE_RUNTIME, "neoforge-runtime.jar not staged");
 		byte[] real;
 		try (ZipFile zip = new ZipFile(NEOFORGE_RUNTIME.toFile())) {
 			var entry = zip.getEntry(EVENTS + ".class");

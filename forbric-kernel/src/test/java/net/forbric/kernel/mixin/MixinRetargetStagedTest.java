@@ -39,7 +39,7 @@ import org.junit.jupiter.api.Test;
  * {@code @Local}s that only the stub's parameter list carries.
  */
 class MixinRetargetStagedTest {
-	private static final Path MERGED_BASE = TestFixtures.stagedRoot().resolve("merged-base/patched-mc-merged-26.2.jar").normalize();
+	private static final Path MERGED_BASE = TestFixtures.stagedBase().normalize();
 	private static final Path CLIENT_MODS = Path.of(System.getProperty("user.dir"), "run", "client-kernel", "mods").normalize();
 
 	private static final String SIMPLE_CONTAINER_MIXIN = "net/fabricmc/fabric/mixin/transfer/SimpleContainerMixin.class";
@@ -102,7 +102,7 @@ class MixinRetargetStagedTest {
 	// ---------------------------------------------------------------------------------------------------------------
 
 	private static Function<String, byte[]> mergedResolver() {
-		TestFixtures.require(Fixture.STAGED, Files.isRegularFile(MERGED_BASE), "staged merged base absent");
+		TestFixtures.requireFile(Fixture.STAGED, MERGED_BASE, "staged merged base absent");
 		return name -> {
 			try {
 				return readFromJar(MERGED_BASE, name);

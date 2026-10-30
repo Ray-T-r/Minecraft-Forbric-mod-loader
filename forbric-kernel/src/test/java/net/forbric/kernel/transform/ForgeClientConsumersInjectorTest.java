@@ -34,7 +34,7 @@ import net.forbric.kernel.TestFixtures.Fixture;
 @ResourceLock("system-properties")
 class ForgeClientConsumersInjectorTest {
     private static final Path STAGED = TestFixtures.stagedRoot();
-    private static final Path MERGED = STAGED.resolve("merged-base/patched-mc-merged-26.2.jar");
+    private static final Path MERGED = STAGED.resolve(TestFixtures.BASE_JAR);
     private static final Path FORGE = STAGED.resolve("forge-runtime/forge-runtime.jar");
     private static final Path NEO = STAGED.resolve("neoforge-runtime/neoforge-runtime.jar");
     private static final List<String> SWITCHES = List.of("forbric.forgeClientConsumers", "forbric.forgeClientInit");
@@ -321,7 +321,7 @@ class ForgeClientConsumersInjectorTest {
     private static ClassNode node(byte[] bytes) { ClassNode node = new ClassNode(); new ClassReader(bytes).accept(node, 0); return node; }
     private static byte[] write(ClassNode node) { ClassWriter writer = new ClassWriter(0); node.accept(writer); return writer.toByteArray(); }
     private static byte[] bytes(Path jar, String entry) throws Exception {
-        TestFixtures.require(Fixture.STAGED, Files.isRegularFile(jar), "staged carrier absent: " + jar);
+        TestFixtures.requireFile(Fixture.STAGED, jar, "staged carrier absent: " + jar);
         try (ZipFile zip = new ZipFile(jar.toFile())) {
             var value = zip.getEntry(entry); assertNotNull(value, entry); return zip.getInputStream(value).readAllBytes();
         }

@@ -48,8 +48,8 @@ class ClientSetupRefusalTest {
 	}
 
 	private static Path merged() {
-		Path jar = TestFixtures.stagedRoot().resolve("merged-base/patched-mc-merged-26.2.jar").normalize();
-		TestFixtures.require(Fixture.STAGED, Files.isRegularFile(jar), "staged merged base absent");
+		Path jar = TestFixtures.stagedBase().normalize();
+		TestFixtures.requireFile(Fixture.STAGED, jar, "staged merged base absent");
 		return jar;
 	}
 

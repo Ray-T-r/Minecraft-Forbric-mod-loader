@@ -24,7 +24,7 @@ class NestHostFieldWritesTest {
 		FieldInsnNode assignment=(FieldInsnNode)method.instructions.get(2);assignment.owner=writer;h.methods.add(method);classes.put(host+".class",bytes(h));assertEquals(MixinFit.Verdict.HAZARD,MixinFit.evaluate(mixin,classes::get,n->true).verdict(),"same-name sibling field must not count as a write to this member");
 	}
 	@Test void actualC2meVolatileAndSynchronizedGuardsAreNotSuppressed() throws Exception {
-		Path base=TestFixtures.stagedRoot().resolve("merged-base/patched-mc-merged-26.2.jar");TestFixtures.require(Fixture.STAGED,Files.exists(base),base+" absent");
+		Path base=TestFixtures.stagedBase();TestFixtures.require(Fixture.STAGED,Files.exists(base),base+" absent");
 		for(String version:List.of("alpha","beta")) {
 			Path mod=Path.of("build/compat-inputs/c2me-barrel-20261001/"+version+"-worldgen.jar");TestFixtures.require(Fixture.THIRD_PARTY,Files.exists(mod),mod+" absent");
 			try(ZipFile game=new ZipFile(base.toFile());ZipFile c2me=new ZipFile(mod.toFile())) {

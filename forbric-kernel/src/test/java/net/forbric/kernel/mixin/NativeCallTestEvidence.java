@@ -14,7 +14,7 @@ public final class NativeCallTestEvidence {
  private NativeCallTestEvidence(){}
  private static byte[] read(Path jar,String path){try(ZipFile zip=new ZipFile(jar.toFile())){var entry=zip.getEntry(path);return entry==null?null:zip.getInputStream(entry).readAllBytes();}catch(Exception absent){return null;}}
  public static BiFunction<Ecosystem,String,ClassNode> staged(){
-  Path root=TestFixtures.stagedRoot(),merged=root.resolve("merged-base/patched-mc-merged-26.2.jar");NativeGameReferences refs=new NativeGameReferences(path->read(merged,path));
+  Path root=TestFixtures.stagedRoot(),merged=root.resolve(TestFixtures.BASE_JAR);NativeGameReferences refs=new NativeGameReferences(path->read(merged,path));
   Map<String,ClassNode> cache=new HashMap<>();
   return (family,owner)->{
    if(family==null||owner==null)return null;
@@ -23,7 +23,7 @@ public final class NativeCallTestEvidence {
     byte[] bytes=null;
     if(owner.startsWith("java/")){try(var stream=ClassLoader.getSystemResourceAsStream(owner+".class")){bytes=stream==null?null:stream.readAllBytes();}catch(Exception absent){}}
     else {
-     Path nativeJar=switch(family){case FABRIC->TestFixtures.vanillaJar();case FORGE->TestFixtures.forgeMergeInput();case NEOFORGE->root.resolve("neoforge-patched/patched-mc-neoforge-26.2.jar");};
+     Path nativeJar=switch(family){case FABRIC->TestFixtures.vanillaJar();case FORGE->TestFixtures.forgeMergeInput();case NEOFORGE->root.resolve(TestFixtures.GENUINE_BASE_JAR);};
      bytes=read(nativeJar,owner+".class");
      if(bytes==null&&family==Ecosystem.NEOFORGE)bytes=read(root.resolve("neoforge-runtime/neoforge-runtime.jar"),owner+".class");
      if(bytes==null&&family==Ecosystem.FORGE)bytes=read(root.resolve("forge-runtime/forge-runtime.jar"),owner+".class");
@@ -45,7 +45,7 @@ public final class NativeCallTestEvidence {
  public static MixinRetarget.Plan plan(ClassNode mixin,Function<String,byte[]> current){return MixinRetarget.plan(mixin,current,staged());}
  public static MergedBaseCalleeSwaps.Substitution modelRow(){
   String owner="net/minecraft/client/resources/model/ModelManager";
-  byte[] bytes=read(TestFixtures.stagedRoot().resolve("merged-base/patched-mc-merged-26.2.jar"),owner+".class");
+  byte[] bytes=read(TestFixtures.stagedBase(),owner+".class");
   if(bytes==null)throw new AssertionError("staged model fixture required");
   try(var scope=MergedBaseCalleeSwaps.using(name->name.equals(owner)?withDebug(bytes):null,staged())){
    var row=MergedBaseCalleeSwaps.substitution(owner,"lambda$loadBlockModels$2(Ljava/util/Map$Entry;)Lcom/mojang/datafixers/util/Pair;","Lnet/minecraft/client/resources/model/cuboid/CuboidModel;fromStream(Ljava/io/Reader;)Lnet/minecraft/client/resources/model/cuboid/CuboidModel;",Ecosystem.FABRIC);
@@ -53,7 +53,7 @@ public final class NativeCallTestEvidence {
   }
  }
  public static MergedBaseCalleeSwaps.Replaced structureRow(){
-  Path root=TestFixtures.stagedRoot();String owner="net/minecraft/world/level/levelgen/structure/templatesystem/StructureTemplate";byte[] bytes=read(root.resolve("merged-base/patched-mc-merged-26.2.jar"),owner+".class");
+  Path root=TestFixtures.stagedRoot();String owner="net/minecraft/world/level/levelgen/structure/templatesystem/StructureTemplate";byte[] bytes=read(root.resolve(TestFixtures.BASE_JAR),owner+".class");
   if(bytes==null)throw new AssertionError("staged structure fixture required");
   try(var scope=MergedBaseCalleeSwaps.using(name->name.equals(owner)?MixinFit.parse(bytes):null,staged())){var row=MergedBaseCalleeSwaps.replaced(owner,"placeEntities",null,Ecosystem.FABRIC);if(row==null)throw new AssertionError("actual native/current structure replacement proof failed");return row;}
  }

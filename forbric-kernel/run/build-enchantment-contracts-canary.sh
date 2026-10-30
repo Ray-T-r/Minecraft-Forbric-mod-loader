@@ -12,6 +12,8 @@ compile_game = pathlib.Path(os.environ.get('M38_COMPILE_GAME', old / 'run/neofor
 merged = pathlib.Path(os.environ.get('MERGED', old / 'run/merged-base/patched-mc-merged-26.2.jar'))
 forge = pathlib.Path(os.environ.get('FORGE_RT', old / 'run/merged-base/forge-runtime-interop.jar'))
 if not forge.is_file(): forge = old / 'run/forge-runtime/forge-runtime.jar'
+# Optional for a NeoForge canary: on the compile classpath when staged, left out (and recorded as null) when not.
+forge = [forge] if forge.is_file() else []
 neo = pathlib.Path(os.environ.get('NEO_RT', old / 'run/neoforge-runtime/neoforge-runtime.jar'))
 libraries = []
 for entry in json.loads((mc / 'versions/26.2/26.2.json').read_text())['libraries']:
@@ -41,7 +43,7 @@ with zipfile.ZipFile(fapi) as archive:
             if dependency in candidates:pending.append(dependency)
             elif dependency.startswith('fabric-'):raise SystemExit('required upstream module missing: '+dependency)
     print('[M38Enchant] actual module dependency closure:', ', '.join(sorted(seen)))
-classpath = [compile_game, forge, neo, mixin, kernel / "build/libs/forbric-kernel-0.1.0-SNAPSHOT.jar", *selected, *libraries]
+classpath = [compile_game, *forge, neo, mixin, kernel / "build/libs/forbric-kernel-0.1.0-SNAPSHOT.jar", *selected, *libraries]
 for path in [*classpath, merged]:
     if not path.is_file(): raise SystemExit(f'M38 prerequisite absent: {path}')
 root = kernel / 'canary/enchantment-contracts'
@@ -61,6 +63,6 @@ selected.append(language)
 def record(path):
     path = path.resolve(); return {'path': str(path), 'sha256': hashlib.sha256(path.read_bytes()).hexdigest()}
 (output / 'm38-build-inputs.json').write_text(json.dumps({'mod': record(jar), 'compileGame': record(compile_game),
-    'compileClasspath': [record(path) for path in classpath], 'fabricApi': record(fapi), 'modules': [record(path) for path in selected], 'merged': record(merged), 'forge': record(forge), 'neo': record(neo)}, indent=2) + '\n')
+    'compileClasspath': [record(path) for path in classpath], 'fabricApi': record(fapi), 'modules': [record(path) for path in selected], 'merged': record(merged), 'forge': record(forge[0]) if forge else None, 'neo': record(neo)}, indent=2) + '\n')
 print('[M38Enchant] built real enchantment fixture')
 PY

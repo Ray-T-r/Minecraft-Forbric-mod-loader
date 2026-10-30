@@ -92,8 +92,8 @@ class MixinRelocatedCallTest {
 	}
 
 	private static ClassNode merged(boolean relayed) throws Exception {
-		Path jar = TestFixtures.stagedRoot().resolve("merged-base/patched-mc-merged-26.2.jar");
-		TestFixtures.require(Fixture.STAGED, Files.isRegularFile(jar), "actual game required");
+		Path jar = TestFixtures.stagedBase();
+		TestFixtures.requireFile(Fixture.STAGED, jar, "actual game required");
 		try (ZipFile zip = new ZipFile(jar.toFile())) {
 			byte[] bytes = zip.getInputStream(zip.getEntry("net/minecraft/world/item/ItemStack.class")).readAllBytes();
 			if (relayed) bytes = new ItemUseOnInjector().transform("net.minecraft.world.item.ItemStack", bytes, null);

@@ -38,7 +38,7 @@ import net.forbric.kernel.TestFixtures.Fixture;
  * asked a second time; the stack proof is ASM's verifier over the rewritten method.
  */
 class MergedBaseForgeFluidModelsTest {
-	private static final Path MERGED_BASE = TestFixtures.stagedRoot().resolve("merged-base/patched-mc-merged-26.2.jar");
+	private static final Path MERGED_BASE = TestFixtures.stagedBase();
 	private static final String RENDERER = "net/minecraft/client/renderer/block/FluidRenderer";
 	private static final String KERNEL = "net/forbric/kernel/runtime/KernelForgeFluids";
 	private static final String TESSELATE = "(Lnet/minecraft/client/renderer/block/BlockAndTintGetter;Lnet/minecraft/core/BlockPos;"
@@ -234,7 +234,7 @@ class MergedBaseForgeFluidModelsTest {
 	}
 
 	private static byte[] bytesOf(String internal) throws Exception {
-		TestFixtures.require(Fixture.STAGED, Files.isRegularFile(MERGED_BASE), "staged merged base absent");
+		TestFixtures.requireFile(Fixture.STAGED, MERGED_BASE, "staged merged base absent");
 		try (ZipFile zip = new ZipFile(MERGED_BASE.toFile())) {
 			ZipEntry entry = zip.getEntry(internal + ".class");
 			assertNotNull(entry, internal);

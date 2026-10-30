@@ -80,7 +80,7 @@ class MixinDefaultPredicateTransportSpellingTest {
 	}
 
 	private static ZipFile open(Path jar) throws Exception {
-		TestFixtures.require(Fixture.STAGED, Files.isRegularFile(jar), "staged input required: " + jar);
+		TestFixtures.requireFile(Fixture.STAGED, jar, "staged input required: " + jar);
 		ZipFile zip = new ZipFile(jar.toFile());
 		OPEN.add(zip);
 		return zip;

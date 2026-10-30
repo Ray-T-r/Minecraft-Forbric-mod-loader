@@ -59,7 +59,7 @@ class MergedBaseGateSpellingTest {
 	 * native classes of its native-reference index; the loader cases also against vanilla's own classes.
 	 */
 	@BeforeEach void fixtures() {
-		TestFixtures.requireFiles(Fixture.STAGED, "the staged merged base", TestFixtures.stagedRoot().resolve("merged-base/patched-mc-merged-26.2.jar"));
+		TestFixtures.requireFiles(Fixture.STAGED, "the staged merged base", TestFixtures.stagedBase());
 		TestFixtures.requireFiles(Fixture.MC_LIBRARIES, "vanilla Minecraft 26.2", TestFixtures.vanillaJar());
 		TestFixtures.requireFiles(Fixture.THIRD_PARTY, "fabric-registry-sync's released mixins", REGISTRY_SYNC);
 	}
@@ -246,7 +246,7 @@ class MergedBaseGateSpellingTest {
 
 	/** The staged merged base's classes, as the gate's resources read them. */
 	private static Function<String, byte[]> merged() {
-		return jar(TestFixtures.stagedRoot().resolve("merged-base/patched-mc-merged-26.2.jar"), Fixture.STAGED);
+		return jar(TestFixtures.stagedBase(), Fixture.STAGED);
 	}
 
 	private static Function<String, ClassNode> classes(Function<String, byte[]> resources) {

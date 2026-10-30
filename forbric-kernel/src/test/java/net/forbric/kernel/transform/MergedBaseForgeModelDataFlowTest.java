@@ -29,7 +29,7 @@ import net.forbric.kernel.TestFixtures.Fixture;
  */
 @ResourceLock("system-properties")
 class MergedBaseForgeModelDataFlowTest {
-	private static final Path MERGED_BASE = TestFixtures.stagedRoot().resolve("merged-base/patched-mc-merged-26.2.jar");
+	private static final Path MERGED_BASE = TestFixtures.stagedBase();
 	private static final String RENDERER = "net/minecraft/client/renderer/block/ModelBlockRenderer";
 	private static final String TESSELATE_ARGS = "Lnet/minecraft/client/renderer/block/BlockQuadOutput;FFF"
 			+ "Lnet/minecraft/client/renderer/block/BlockAndTintGetter;Lnet/minecraft/core/BlockPos;"
@@ -156,7 +156,7 @@ class MergedBaseForgeModelDataFlowTest {
 	}
 
 	private static byte[] merged(String owner) throws Exception {
-		TestFixtures.require(Fixture.STAGED, Files.isRegularFile(MERGED_BASE), "staged merged base absent");
+		TestFixtures.requireFile(Fixture.STAGED, MERGED_BASE, "staged merged base absent");
 		try (ZipFile zip = new ZipFile(MERGED_BASE.toFile())) {
 			ZipEntry entry = zip.getEntry(owner + ".class");
 			assertNotNull(entry, owner + " missing from the staged merged base");

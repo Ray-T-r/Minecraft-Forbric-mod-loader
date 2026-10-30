@@ -50,7 +50,7 @@ import org.objectweb.asm.tree.analysis.BasicVerifier;
 @ResourceLock("system-properties")
 class WrapperEntryAddedInjectorTest {
 	private static final Path STAGED = TestFixtures.stagedRoot();
-	private static final Path MERGED = STAGED.resolve("merged-base/patched-mc-merged-26.2.jar");
+	private static final Path MERGED = STAGED.resolve(TestFixtures.BASE_JAR);
 	private static final Path NEO_CARRIER = STAGED.resolve("neoforge-runtime/neoforge-runtime.jar");
 	private static final Path FORGE_CARRIER = STAGED.resolve("merged-base/forge-runtime-interop.jar");
 	private static final Path FABRIC_API = TestFixtures.fabricApi();
@@ -182,7 +182,7 @@ class WrapperEntryAddedInjectorTest {
 
 		Game(boolean repaired, boolean fabric) throws Exception {
 			TestFixtures.require(Fixture.JAVA_25, Runtime.version().feature() >= 25, "the merged game is class-file 69, which only Java 25 links");
-			for (Path jar : List.of(MERGED, NEO_CARRIER, FORGE_CARRIER)) TestFixtures.require(Fixture.STAGED, Files.isRegularFile(jar), jar + " absent");
+			for (Path jar : List.of(MERGED, NEO_CARRIER, FORGE_CARRIER)) TestFixtures.requireFile(Fixture.STAGED, jar, jar + " absent");
 			Map<String, byte[]> defined = new HashMap<>();
 			byte[] wrapperBytes = NativeCoremodParityTest.read(FORGE_CARRIER, WRAPPER);
 			defined.put(dotted(WRAPPER), repaired ? new WrapperEntryAddedInjector().transform(WrapperEntryAddedInjector.WRAPPER, wrapperBytes, null) : wrapperBytes);

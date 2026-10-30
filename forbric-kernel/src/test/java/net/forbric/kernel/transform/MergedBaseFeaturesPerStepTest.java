@@ -19,7 +19,7 @@ import org.objectweb.asm.tree.*;
 
 /** The rebuilt base keeps both public field descriptors while the stronger view reads the live Supplier cell. */
 class MergedBaseFeaturesPerStepTest {
-    private static final Path RUN=TestFixtures.stagedRoot(),MERGED=RUN.resolve("merged-base/patched-mc-merged-26.2.jar"),INTEROP=RUN.resolve("merged-base/forge-runtime-interop.jar"),NEO=RUN.resolve("neoforge-runtime/neoforge-runtime.jar");
+    private static final Path RUN=TestFixtures.stagedRoot(),MERGED=RUN.resolve(TestFixtures.BASE_JAR),INTEROP=RUN.resolve("merged-base/forge-runtime-interop.jar"),NEO=RUN.resolve("neoforge-runtime/neoforge-runtime.jar");
     private static final String OWNER="net/minecraft/world/level/chunk/ChunkGenerator",BINARY=OWNER.replace('/','.'),SUPPLIER="Ljava/util/function/Supplier;",STRONG="Lnet/minecraftforge/common/util/ClearableLazy;";
     @Test void theFieldCarriesVanillasDescriptorAndOnlyThatOne()throws Exception{
         ClassNode node=node(original());List<String> descriptors=node.fields.stream().filter(f->f.name.equals("featuresPerStep")).map(f->f.desc).sorted().toList();
@@ -59,7 +59,7 @@ class MergedBaseFeaturesPerStepTest {
     }
     private record World(URLClassLoader loader,Class<?> type,Object owner,Field strong,AtomicInteger computations)implements AutoCloseable{public void close()throws IOException{loader.close();}}
     private static World world()throws Exception{
-        TestFixtures.require(Fixture.JAVA_25,Runtime.version().feature()>=25,"actual classfile 69 needs Java 25");for(Path jar:List.of(MERGED,INTEROP,NEO))TestFixtures.require(Fixture.STAGED,Files.isRegularFile(jar),jar+" required");
+        TestFixtures.require(Fixture.JAVA_25,Runtime.version().feature()>=25,"actual classfile 69 needs Java 25");for(Path jar:List.of(MERGED,INTEROP,NEO))TestFixtures.requireFile(Fixture.STAGED, jar,jar+" required");
         Map<String,byte[]> definitions=new HashMap<>();ClassNode host=node(widened());host.methods.removeIf(m->m.name.equals("<clinit>"));host.access&=~Opcodes.ACC_ABSTRACT;
         // Exercise the actual game readers/reset bodies while avoiding unrelated bootstrap/biome construction.
         for(MethodNode method:host.methods)if((method.access&Opcodes.ACC_ABSTRACT)!=0){
@@ -81,7 +81,7 @@ class MergedBaseFeaturesPerStepTest {
         String file="accessWidener v2 official\naccessible field "+OWNER+" featuresPerStep "+SUPPLIER+"\nmutable field "+OWNER+" featuresPerStep "+SUPPLIER+"\n";
         return ClassTweakerTransformer.create(List.of(file.getBytes(java.nio.charset.StandardCharsets.UTF_8)),(n,b)->{}).transform(BINARY,original(),null);
     }
-    private static byte[] original()throws IOException{TestFixtures.require(Fixture.STAGED,Files.isRegularFile(MERGED),"staged merged base absent — skipping real-bytecode check");return read(MERGED,OWNER);}
+    private static byte[] original()throws IOException{TestFixtures.requireFile(Fixture.STAGED, MERGED,"staged merged base absent — skipping real-bytecode check");return read(MERGED,OWNER);}
     private static byte[] read(Path jar,String owner)throws IOException{try(ZipFile zip=new ZipFile(jar.toFile())){var entry=zip.getEntry(owner+".class");assertNotNull(entry,owner);try(var input=zip.getInputStream(entry)){return input.readAllBytes();}}}
     private static ClassNode node(byte[] bytes){ClassNode node=new ClassNode();new ClassReader(bytes).accept(node,0);return node;}
 }

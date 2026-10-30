@@ -51,7 +51,7 @@ import net.forbric.kernel.TestFixtures.Fixture;
  */
 class MergedBaseWorldgenDriversTest {
 	private static final Path STAGED = TestFixtures.stagedRoot();
-	private static final Path MERGED_BASE = STAGED.resolve("merged-base/patched-mc-merged-26.2.jar");
+	private static final Path MERGED_BASE = STAGED.resolve(TestFixtures.BASE_JAR);
 	private static final Path NEO_CARRIER = STAGED.resolve("neoforge-runtime/neoforge-runtime.jar");
 	private static final String KERNEL = "net/forbric/kernel/runtime/KernelNeoWorldgen";
 
@@ -99,7 +99,7 @@ class MergedBaseWorldgenDriversTest {
 
 	@Test
 	void neoForgesModifierPassIsGuardedAtItsCallSite() throws Exception {
-		TestFixtures.require(Fixture.STAGED, Files.isRegularFile(NEO_CARRIER), "staged NeoForge carrier absent");
+		TestFixtures.requireFile(Fixture.STAGED, NEO_CARRIER, "staged NeoForge carrier absent");
 		ClassNode node = repaired(NEO_CARRIER, "net/neoforged/neoforge/server/ServerLifecycleHooks.class");
 
 		boolean guarded = false;

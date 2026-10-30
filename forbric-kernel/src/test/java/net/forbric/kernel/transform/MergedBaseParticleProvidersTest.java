@@ -46,7 +46,7 @@ import net.forbric.kernel.TestFixtures.Fixture;
  * merge emits, and the exact instruction the repair has to land BEFORE is in that emitted {@code <init>}.
  */
 class MergedBaseParticleProvidersTest {
-	private static final Path MERGED_BASE = TestFixtures.stagedRoot().resolve("merged-base/patched-mc-merged-26.2.jar");
+	private static final Path MERGED_BASE = TestFixtures.stagedBase();
 	private static final String ENTRY = "net/minecraft/client/particle/ParticleResources.class";
 	private static final String ID_KEYED = "Lit/unimi/dsi/fastutil/ints/Int2ObjectMap;";
 	private static final String NAME_KEYED = "Ljava/util/Map;";
@@ -134,7 +134,7 @@ class MergedBaseParticleProvidersTest {
 
 	@Test
 	void anotherClassIsUntouched() throws Exception {
-		TestFixtures.require(Fixture.STAGED, Files.isRegularFile(MERGED_BASE), "staged merged base absent");
+		TestFixtures.requireFile(Fixture.STAGED, MERGED_BASE, "staged merged base absent");
 		byte[] other = readClass("net/minecraft/client/particle/ParticleProvider.class");
 		assertNotNull(other, "content drift: ParticleProvider absent from this base");
 		assertSame(other, new ForbricMergedBaseCompatTransformer()
@@ -150,7 +150,7 @@ class MergedBaseParticleProvidersTest {
 	}
 
 	private static byte[] original() throws IOException {
-		TestFixtures.require(Fixture.STAGED, Files.isRegularFile(MERGED_BASE), "staged merged base absent — skipping real-bytecode check");
+		TestFixtures.requireFile(Fixture.STAGED, MERGED_BASE, "staged merged base absent — skipping real-bytecode check");
 		byte[] in = readClass(ENTRY);
 		assertNotNull(in, "content drift: ParticleResources absent from this base");
 		ClassNode node = new ClassNode();

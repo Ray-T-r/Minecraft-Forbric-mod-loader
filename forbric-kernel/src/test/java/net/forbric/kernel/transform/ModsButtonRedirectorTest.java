@@ -53,7 +53,7 @@ import net.forbric.kernel.TestFixtures.Fixture;
  * and, on a real sixteen-jar Forbric pack, three of them.
  */
 class ModsButtonRedirectorTest {
-	private static final Path MERGED_BASE = TestFixtures.stagedRoot().resolve("merged-base/patched-mc-merged-26.2.jar");
+	private static final Path MERGED_BASE = TestFixtures.stagedBase();
 
 	/**
 	 * The Forge-family button does not live in one fixed class, and pinning it to one is the mistake the
@@ -116,7 +116,7 @@ class ModsButtonRedirectorTest {
 	/** The constructor call has to move with the NEW, or the class does not link. */
 	@Test
 	void theConstructorCallMovesWithTheAllocation() throws Exception {
-		TestFixtures.require(Fixture.STAGED, Files.isRegularFile(MERGED_BASE), "staged merged base absent");
+		TestFixtures.requireFile(Fixture.STAGED, MERGED_BASE, "staged merged base absent");
 		ClassNode node = parse(transform(PAUSE, readClass(MERGED_BASE, PAUSE + ".class")));
 		for (MethodNode method : node.methods) {
 			if (method.instructions == null) continue;
@@ -226,7 +226,7 @@ class ModsButtonRedirectorTest {
 
 	@Test
 	void aSecondPassLeavesTheRedirectedClassAlone() throws Exception {
-		TestFixtures.require(Fixture.STAGED, Files.isRegularFile(MERGED_BASE), "staged merged base absent");
+		TestFixtures.requireFile(Fixture.STAGED, MERGED_BASE, "staged merged base absent");
 		byte[] once = transform(PAUSE, readClass(MERGED_BASE, PAUSE + ".class"));
 		assertSame(once, transform(PAUSE, once), "nothing left to re-point means nothing to rewrite");
 	}
@@ -234,7 +234,7 @@ class ModsButtonRedirectorTest {
 	/** Only the two screens that carry a mods button are touched; everything else is handed back unchanged. */
 	@Test
 	void anyOtherClassIsHandedBackUntouched() throws Exception {
-		TestFixtures.require(Fixture.STAGED, Files.isRegularFile(MERGED_BASE), "staged merged base absent");
+		TestFixtures.requireFile(Fixture.STAGED, MERGED_BASE, "staged merged base absent");
 		byte[] unrelated = readClass(MERGED_BASE, "net/minecraft/client/gui/screens/ChatScreen.class");
 		assertSame(unrelated, transform("net/minecraft/client/gui/screens/ChatScreen", unrelated));
 	}

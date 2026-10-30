@@ -62,7 +62,7 @@ class ForgeCapabilityProtocolTest {
     }
     private static ClassNode parse(byte[] b){ClassNode n=new ClassNode();new ClassReader(b).accept(n,0);return n;}
     private static Function<String,byte[]> reader()throws Exception{
-        Path root=TestFixtures.stagedRoot(),merged=root.resolve("merged-base/patched-mc-merged-26.2.jar"),forge=root.resolve("forge-runtime/forge-runtime.jar"),runtime=Path.of(System.getProperty("forbric.testRuntimeClasses","build/classes/java/runtime"));
+        Path root=TestFixtures.stagedRoot(),merged=root.resolve(TestFixtures.BASE_JAR),forge=root.resolve("forge-runtime/forge-runtime.jar"),runtime=Path.of(System.getProperty("forbric.testRuntimeClasses","build/classes/java/runtime"));
         TestFixtures.requireFiles(Fixture.STAGED,"composition source and platform",merged,forge);TestFixtures.require(Fixture.GAME_SIDE,Files.isDirectory(runtime),"compiled game runtime");
         // On demand, with the same precedence (compiled game side, then merged base, then carrier): the merged base
         // alone is ~200 MB unpacked, and holding it whole per test ran the suite's test JVM out of heap.

@@ -179,7 +179,7 @@ class KernelModInfoDeclaredTest {
 	private static URLClassLoader runtimeLoader() throws Exception {
 		Path compiled = Path.of(System.getProperty("forbric.testRuntimeClasses", "build/classes/java/runtime"));
 		Path carrier = STAGED.resolve("neoforge-runtime/neoforge-runtime.jar");
-		TestFixtures.require(Fixture.STAGED, Files.isRegularFile(carrier), "staged carrier absent");
+		TestFixtures.requireFile(Fixture.STAGED, carrier, "staged carrier absent");
 		TestFixtures.require(Fixture.GAME_SIDE, Files.isDirectory(compiled), "staged runtime classes absent");
 		return new URLClassLoader(new URL[] {compiled.toUri().toURL(), carrier.toUri().toURL()},
 				KernelModInfoDeclaredTest.class.getClassLoader());

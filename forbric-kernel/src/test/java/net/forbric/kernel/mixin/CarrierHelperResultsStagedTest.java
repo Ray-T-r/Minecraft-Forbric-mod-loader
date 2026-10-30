@@ -205,8 +205,8 @@ class CarrierHelperResultsStagedTest {
 
 	/** The class each ecosystem's mods were compiled against, from the staged merged base's native references. */
 	private static java.util.function.BiFunction<net.forbric.api.Ecosystem, String, ClassNode> natives() {
-		Path jar = TestFixtures.stagedRoot().resolve("merged-base/patched-mc-merged-26.2.jar");
-		TestFixtures.require(Fixture.STAGED, Files.isRegularFile(jar), "actual game required");
+		Path jar = TestFixtures.stagedBase();
+		TestFixtures.requireFile(Fixture.STAGED, jar, "actual game required");
 		NativeGameReferences references = new NativeGameReferences(path -> {
 			try (ZipFile zip = new ZipFile(jar.toFile())) {
 				ZipEntry entry = zip.getEntry(path);
@@ -229,7 +229,7 @@ class CarrierHelperResultsStagedTest {
 	}
 
 	private static ClassNode merged() throws Exception {
-		return game(Fixture.STAGED, TestFixtures.stagedRoot().resolve("merged-base/patched-mc-merged-26.2.jar"));
+		return game(Fixture.STAGED, TestFixtures.stagedBase());
 	}
 
 	private static ClassNode vanilla() throws Exception {

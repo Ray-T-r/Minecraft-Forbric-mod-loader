@@ -33,7 +33,7 @@ import net.forbric.kernel.TestFixtures.Fixture;
  * codec through the carrier's own Forge dispatch; every other store in {@code <clinit>} is left exactly alone.
  */
 class MergedBaseForgeIngredientsTest {
-	private static final Path MERGED_BASE = TestFixtures.stagedRoot().resolve("merged-base/patched-mc-merged-26.2.jar");
+	private static final Path MERGED_BASE = TestFixtures.stagedBase();
 	private static final String INGREDIENT = "net/minecraft/world/item/crafting/Ingredient";
 	private static final String NEO_FACTORY = "net/neoforged/neoforge/common/crafting/IngredientCodecs";
 	private static final String KERNEL = "net/forbric/kernel/runtime/KernelForgeIngredients";
@@ -134,7 +134,7 @@ class MergedBaseForgeIngredientsTest {
 	}
 
 	private static byte[] bytesOf(String internal) throws Exception {
-		TestFixtures.require(Fixture.STAGED, Files.isRegularFile(MERGED_BASE), "staged merged base absent");
+		TestFixtures.requireFile(Fixture.STAGED, MERGED_BASE, "staged merged base absent");
 		try (ZipFile zip = new ZipFile(MERGED_BASE.toFile())) {
 			ZipEntry entry = zip.getEntry(internal + ".class");
 			assertNotNull(entry, internal);

@@ -12,13 +12,15 @@ mc = pathlib.Path(os.environ.get('MC_DIR', pathlib.Path.home() / 'Library/Applic
 compile_game = old / 'run/neoforge-patched/patched-mc-neoforge-26.2.jar'
 forge = pathlib.Path(os.environ.get('FORGE_RT', old / 'run/merged-base/forge-runtime-interop.jar'))
 if not forge.is_file(): forge = old / 'run/forge-runtime/forge-runtime.jar'
+# Optional for a NeoForge canary: on the compile classpath when staged, left out (and recorded as null) when not.
+forge = [forge] if forge.is_file() else []
 neo = pathlib.Path(os.environ.get('NEO_RT', old / 'run/neoforge-runtime/neoforge-runtime.jar'))
 libraries = []
 for entry in json.loads((mc / 'versions/26.2/26.2.json').read_text())['libraries']:
     artifact = entry.get('downloads', {}).get('artifact', {}).get('path')
     if artifact and (mc / 'libraries' / artifact).is_file(): libraries.append(mc / 'libraries' / artifact)
-classpath = [compile_game, forge, neo, *libraries]
-for path in classpath[:3]:
+classpath = [compile_game, *forge, neo, *libraries]
+for path in [compile_game, *forge, neo]:
     if not path.is_file(): raise SystemExit(f'M41 prerequisite absent: {path}')
 root = kernel / 'canary/event-chain'
 classes = work / 'classes'; classes.mkdir()
@@ -34,6 +36,6 @@ os.replace(staged, jar)
 def record(path):
     path = path.resolve(); return {'path': str(path), 'sha256': hashlib.sha256(path.read_bytes()).hexdigest()}
 (output / 'm41-build-inputs.json').write_text(json.dumps({'mod': record(jar), 'compileGame': record(compile_game),
-    'forge': record(forge), 'neo': record(neo)}, indent=2) + '\n')
+    'forge': record(forge[0]) if forge else None, 'neo': record(neo)}, indent=2) + '\n')
 print('[M41Chain] built the entity-join veto fixture')
 PY

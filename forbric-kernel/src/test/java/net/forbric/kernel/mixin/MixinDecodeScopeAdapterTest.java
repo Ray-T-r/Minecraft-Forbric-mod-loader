@@ -5,7 +5,7 @@ import org.junit.jupiter.api.Test;import org.objectweb.asm.*;import org.objectwe
 import net.forbric.kernel.TestFixtures;
 class MixinDecodeScopeAdapterTest {
  @Test void theActualRegistryGuardAndClosedJsonMarkerPairAreTransported()throws Exception{
-  Path api=Path.of(System.getProperty("forbric.fabricApi",TestFixtures.fabricApi().toString()));Path base=Path.of(System.getProperty("forbric.predicateBase","../forbric-loader/run/merged-base/patched-mc-merged-26.2.jar"));
+  Path api=Path.of(System.getProperty("forbric.fabricApi",TestFixtures.fabricApi().toString()));Path base=Path.of(System.getProperty("forbric.predicateBase",TestFixtures.stagedBase().toString()));
   TestFixtures.requireFiles(TestFixtures.Fixture.STAGED,"actual Fabric API and indexed game base required",api,base);
   try(ZipFile game=new ZipFile(base.toFile())){
    var classes=(java.util.function.Function<String,ClassNode>)(name->{var entry=game.getEntry(name+".class");if(entry==null)return null;try{return read(game.getInputStream(entry).readAllBytes());}catch(Exception e){throw new IllegalStateException(e);}});
@@ -82,7 +82,7 @@ class MixinDecodeScopeAdapterTest {
  }
  private interface Check{void run(Path api,java.util.function.Function<String,ClassNode>classes)throws Exception;}
  private void withBase(Check check)throws Exception{
-  Path api=Path.of(System.getProperty("forbric.fabricApi",TestFixtures.fabricApi().toString())),base=Path.of(System.getProperty("forbric.predicateBase","../forbric-loader/run/merged-base/patched-mc-merged-26.2.jar"));
+  Path api=Path.of(System.getProperty("forbric.fabricApi",TestFixtures.fabricApi().toString())),base=Path.of(System.getProperty("forbric.predicateBase",TestFixtures.stagedBase().toString()));
   TestFixtures.requireFiles(TestFixtures.Fixture.STAGED,"actual Fabric API and indexed game base required",api,base);
   try(ZipFile game=new ZipFile(base.toFile())){check.run(api,name->{var entry=game.getEntry(name+".class");if(entry==null)return null;try{return read(game.getInputStream(entry).readAllBytes());}catch(Exception e){throw new IllegalStateException(e);}});}
  }

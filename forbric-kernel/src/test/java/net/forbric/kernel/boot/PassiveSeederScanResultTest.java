@@ -158,7 +158,7 @@ class PassiveSeederScanResultTest {
 	void aJarThatCannotBeIndexedAnswersEmptyInsteadOfThrowing() throws Exception {
 		// A game loader without the kernel's game-side classes, so the index cannot be materialised: the one way
 		// ModFileScanner.scan hands back null for a perfectly readable jar.
-		TestFixtures.require(Fixture.STAGED, Files.isRegularFile(PassiveSeederLoadingModListTest.NEO_RUNTIME),
+		TestFixtures.requireFile(Fixture.STAGED, PassiveSeederLoadingModListTest.NEO_RUNTIME,
 				"staged neoforge-runtime absent");
 		Path stubs = PassiveSeederLoadingModListTest.loggingStubs(tmp.resolve("stubs"));
 		try (URLClassLoader game = new URLClassLoader(new URL[] {stubs.toUri().toURL(),
@@ -228,7 +228,7 @@ class PassiveSeederScanResultTest {
 	 */
 	private URLClassLoader runtimeLoader() throws Exception {
 		Path compiled = Path.of(System.getProperty("forbric.testRuntimeClasses", "build/classes/java/runtime"));
-		TestFixtures.require(Fixture.STAGED, Files.isRegularFile(PassiveSeederLoadingModListTest.NEO_RUNTIME),
+		TestFixtures.requireFile(Fixture.STAGED, PassiveSeederLoadingModListTest.NEO_RUNTIME,
 				"staged neoforge-runtime or compiled game side absent");
 		TestFixtures.require(Fixture.GAME_SIDE, Files.isDirectory(compiled),
 				"staged neoforge-runtime or compiled game side absent");

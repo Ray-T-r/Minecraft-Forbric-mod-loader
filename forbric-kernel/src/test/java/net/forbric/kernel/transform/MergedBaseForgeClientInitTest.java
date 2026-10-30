@@ -185,9 +185,9 @@ class MergedBaseForgeClientInitTest {
     private static byte[] transform(String owner, byte[] input) {
         return new ForbricMergedBaseCompatTransformer().transform(owner.replace('/', '.'), input, null);
     }
-    private static byte[] game(String owner) throws Exception {return read(STAGE.resolve("merged-base/patched-mc-merged-26.2.jar"), owner);}
+    private static byte[] game(String owner) throws Exception {return read(STAGE.resolve(TestFixtures.BASE_JAR), owner);}
     private static byte[] read(Path jar, String owner) throws Exception {
-        TestFixtures.require(Fixture.STAGED, Files.isRegularFile(jar), "staged jar absent: " + jar);
+        TestFixtures.requireFile(Fixture.STAGED, jar, "staged jar absent: " + jar);
         try (ZipFile zip = new ZipFile(jar.toFile())) {return zip.getInputStream(zip.getEntry(owner + ".class")).readAllBytes();}
     }
     private static ClassNode parse(byte[] bytes) {ClassNode node = new ClassNode();new ClassReader(bytes).accept(node, 0);return node;}

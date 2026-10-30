@@ -41,7 +41,7 @@ import net.forbric.kernel.util.ForbricBranding;
 @ResourceLock("ModCatalog")
 class ForbricBrandingInjectorTest {
 	private static final Path STAGED = TestFixtures.stagedRoot();
-	private static final Path MERGED = STAGED.resolve("merged-base/patched-mc-merged-26.2.jar");
+	private static final Path MERGED = STAGED.resolve(TestFixtures.BASE_JAR);
 	private static final Path NEOFORGE_RUNTIME = STAGED.resolve("neoforge-runtime/neoforge-runtime.jar");
 
 	/** NeoForge's own line counts NeoForge's ModList (one mod here); F3 shows the launcher profile and the sent brand. */
@@ -186,7 +186,7 @@ class ForbricBrandingInjectorTest {
 	}
 
 	@Test void theTitleScreenNamesForbricAndCountsEveryInstalledMod() throws Exception {
-		TestFixtures.require(Fixture.STAGED, Files.isRegularFile(NEOFORGE_RUNTIME), "neoforge runtime not staged: " + NEOFORGE_RUNTIME);
+		TestFixtures.requireFile(Fixture.STAGED, NEOFORGE_RUNTIME, "neoforge runtime not staged: " + NEOFORGE_RUNTIME);
 		String internal = ForbricBrandingInjector.BRANDING_CONTROL.replace('.', '/');
 		byte[] original = NativeCoremodParityTest.read(NEOFORGE_RUNTIME, internal);
 		byte[] out = new ForbricBrandingInjector().transform(ForbricBrandingInjector.BRANDING_CONTROL, original, null);
@@ -204,7 +204,7 @@ class ForbricBrandingInjectorTest {
 	}
 
 	@Test void f3ShowsForbricsReleaseAndBrand() throws Exception {
-		TestFixtures.require(Fixture.STAGED, Files.isRegularFile(MERGED), "merged base not staged: " + MERGED);
+		TestFixtures.requireFile(Fixture.STAGED, MERGED, "merged base not staged: " + MERGED);
 		String internal = ForbricBrandingInjector.DEBUG_VERSION.replace('.', '/');
 		byte[] original = NativeCoremodParityTest.read(MERGED, internal);
 		byte[] out = new ForbricBrandingInjector().transform(ForbricBrandingInjector.DEBUG_VERSION, original, null);

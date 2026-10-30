@@ -56,7 +56,7 @@ import net.forbric.kernel.TestFixtures.Fixture;
  * send from a Forbric client threw. The kernel stores the protocol at the head of the method instead.
  */
 class MergedBaseConnectionProtocolTest {
-	private static final Path MERGED_BASE = TestFixtures.stagedRoot().resolve("merged-base/patched-mc-merged-26.2.jar");
+	private static final Path MERGED_BASE = TestFixtures.stagedBase();
 
 	private static final String CONNECTION = "net/minecraft/network/Connection";
 	private static final String PROTOCOL_INFO = "Lnet/minecraft/network/ProtocolInfo;";
@@ -65,7 +65,7 @@ class MergedBaseConnectionProtocolTest {
 
 	@Test
 	void theMergedSetupStoresForgesOutboundProtocolFirst() throws Exception {
-		TestFixtures.require(Fixture.STAGED, Files.isRegularFile(MERGED_BASE), "staged merged base absent — skipping real-bytecode check");
+		TestFixtures.requireFile(Fixture.STAGED, MERGED_BASE, "staged merged base absent — skipping real-bytecode check");
 		byte[] in = readClass(CONNECTION + ".class");
 		byte[] out = transform(in);
 		assertTrue(out != in, "the staged merged base must still need the repair — if it stopped, re-derive the test");
@@ -80,7 +80,7 @@ class MergedBaseConnectionProtocolTest {
 
 	@Test
 	void aSecondPassLeavesTheRepairedClassAlone() throws Exception {
-		TestFixtures.require(Fixture.STAGED, Files.isRegularFile(MERGED_BASE), "staged merged base absent — skipping real-bytecode check");
+		TestFixtures.requireFile(Fixture.STAGED, MERGED_BASE, "staged merged base absent — skipping real-bytecode check");
 		byte[] once = transform(readClass(CONNECTION + ".class"));
 		assertSame(once, transform(once), "a body that already stores the field is coherent and must not be touched");
 	}

@@ -39,7 +39,7 @@ class NeoPostRegisterTailCensusTest {
 	}
 
 	@Test void everyStepAfterNeoForgesRegisterLoopIsOneTheKernelTakes() throws Exception {
-		TestFixtures.require(Fixture.STAGED, Files.isRegularFile(NEO_RT), NEO_RT + " absent");
+		TestFixtures.requireFile(Fixture.STAGED, NEO_RT, NEO_RT + " absent");
 		ClassNode gameData = new ClassNode();
 		try (ZipFile zip = new ZipFile(NEO_RT.toFile())) {
 			new ClassReader(zip.getInputStream(zip.getEntry("net/neoforged/neoforge/registries/GameData.class")).readAllBytes())

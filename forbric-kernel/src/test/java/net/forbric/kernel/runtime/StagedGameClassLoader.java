@@ -13,7 +13,8 @@ import net.forbric.kernel.TestFixtures.Fixture;
 
 /**
  * The compiled game-side classes over the staged game and Minecraft 26.2's own libraries, for tests that initialise
- * game classes off-game; they skip when any of it is absent.
+ * game classes off-game; they skip when any of it is absent. The MinecraftForge carrier is not part of "any of it":
+ * it joins the loader when staged and is left out when not (see {@link TestFixtures.Fixture#FORGE_CARRIER}).
  *
  * <p>The libraries are the ones 26.2's version JSON names, as build.gradle resolves them for the transfer tests — not
  * the newest-looking cached jar per artifact: by name "9.0.19" sorts after "10.0.21", and that picked a
@@ -29,13 +30,17 @@ public final class StagedGameClassLoader {
 		Path run = TestFixtures.stagedRoot();
 		Path compiled = Path.of(System.getProperty("forbric.test.runtimeClasses",
 				Path.of(System.getProperty("user.dir"), "build", "classes", "java", "runtime").toString())).normalize();
-		Path merged = run.resolve("merged-base/patched-mc-merged-26.2.jar"), neo = run.resolve("neoforge-runtime/neoforge-runtime.jar");
-		Path forge = run.resolve("merged-base/forge-runtime-interop.jar");
-		if (!Files.isRegularFile(forge)) forge = run.resolve("forge-runtime/forge-runtime.jar");
-		TestFixtures.require(Fixture.STAGED, Files.isRegularFile(merged) && Files.isRegularFile(neo) && Files.isRegularFile(forge),
+		Path merged = run.resolve(TestFixtures.BASE_JAR), neo = run.resolve(TestFixtures.NEO_CARRIER_JAR);
+		Path forge = TestFixtures.forgeCarrier();
+		TestFixtures.require(Fixture.STAGED, Files.isRegularFile(merged) && Files.isRegularFile(neo),
 				"the staged game is absent");
 		TestFixtures.require(Fixture.GAME_SIDE, Files.isDirectory(compiled), "the compiled game side is absent");
-		List<URL> urls = new ArrayList<>(List.of(compiled.toUri().toURL(), merged.toUri().toURL(), neo.toUri().toURL(), forge.toUri().toURL()));
+		List<URL> urls = new ArrayList<>(List.of(compiled.toUri().toURL(), merged.toUri().toURL(), neo.toUri().toURL()));
+		// The MinecraftForge carrier when staged, last, as before. Without it the loader is the genuine base's layout:
+		// a test whose class links a MinecraftForge type fails there with NoClassDefFoundError, which is the hidden
+		// dependency -Pforbric.hideForgeCarrier exists to list. One that knows it needs MinecraftForge says so with
+		// TestFixtures.requireForgeCarrier.
+		if (Files.isRegularFile(forge)) urls.add(forge.toUri().toURL());
 		Path libraries = TestFixtures.minecraftDir().resolve("libraries");
 		Path version = libraries.resolveSibling("versions/26.2/26.2.json");
 		TestFixtures.require(Fixture.MC_LIBRARIES, Files.isRegularFile(version), "no local Minecraft 26.2 version JSON");

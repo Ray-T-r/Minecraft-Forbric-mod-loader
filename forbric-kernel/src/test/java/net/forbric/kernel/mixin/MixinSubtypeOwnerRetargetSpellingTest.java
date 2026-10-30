@@ -119,7 +119,7 @@ class MixinSubtypeOwnerRetargetSpellingTest {
 
 	/** The pending registration as the kernel reads it, local variable table included (the handler names its local). */
 	private static ClassNode game(boolean vanilla) throws Exception {
-		Path jar = vanilla ? TestFixtures.vanillaJar() : TestFixtures.stagedRoot().resolve("merged-base/patched-mc-merged-26.2.jar");
+		Path jar = vanilla ? TestFixtures.vanillaJar() : TestFixtures.stagedBase();
 		TestFixtures.require(vanilla ? Fixture.MC_LIBRARIES : Fixture.STAGED, Files.isRegularFile(jar), "actual game required");
 		try (ZipFile zip = new ZipFile(jar.toFile())) {
 			ClassNode node = new ClassNode();

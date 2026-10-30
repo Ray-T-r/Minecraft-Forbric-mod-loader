@@ -41,8 +41,8 @@ class BracketedTargetAdaptersStagedTest {
 			Path root = TestFixtures.stagedRoot().normalize();
 			Path forge = root.resolve("merged-base/forge-runtime-interop.jar");
 			if (!Files.isRegularFile(forge)) forge = root.resolve("forge-runtime/forge-runtime.jar");
-			for (Path jar : List.of(root.resolve("merged-base/patched-mc-merged-26.2.jar"), forge, root.resolve("neoforge-runtime/neoforge-runtime.jar"))) {
-				TestFixtures.require(Fixture.STAGED, Files.isRegularFile(jar), "staged jar absent: " + jar);
+			for (Path jar : List.of(root.resolve(TestFixtures.BASE_JAR), forge, root.resolve("neoforge-runtime/neoforge-runtime.jar"))) {
+				TestFixtures.requireFile(Fixture.STAGED, jar, "staged jar absent: " + jar);
 				zips.add(new ZipFile(jar.toFile()));
 			}
 		}

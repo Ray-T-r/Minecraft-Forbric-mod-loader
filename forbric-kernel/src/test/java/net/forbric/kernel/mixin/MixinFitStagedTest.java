@@ -34,7 +34,7 @@ import org.junit.jupiter.api.Test;
 
 /** The three anchor kinds over REAL fabric-api mixins and the RAW merged base — the verdicts before any repair. */
 class MixinFitStagedTest {
-	static final Path MERGED_BASE = TestFixtures.stagedRoot().resolve("merged-base/patched-mc-merged-26.2.jar").normalize();
+	static final Path MERGED_BASE = TestFixtures.stagedBase().normalize();
 	static final Path CLIENT_MODS = Path.of(System.getProperty("user.dir"), "run", "client-kernel", "mods").normalize();
 
 	static final String RENDER_PIPELINE_BUILDER_MIXIN = "net/fabricmc/fabric/mixin/client/rendering/RenderPipelineBuilderMixin.class";
@@ -87,7 +87,7 @@ class MixinFitStagedTest {
 	// ---------------------------------------------------------------------------------------------------------------
 
 	static Function<String, byte[]> rawResolver() {
-		TestFixtures.require(Fixture.STAGED, Files.isRegularFile(MERGED_BASE), "staged merged base absent");
+		TestFixtures.requireFile(Fixture.STAGED, MERGED_BASE, "staged merged base absent");
 		return name -> {
 			try {
 				return readFromJar(MERGED_BASE, name);

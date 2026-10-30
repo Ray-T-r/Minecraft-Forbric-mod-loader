@@ -44,7 +44,7 @@ class RepairDriftCensusStagedTest {
 	@TempDir Path temporary;
 
 	private static List<Path> stagedJars() {
-		return List.of(RUN.resolve("merged-base/patched-mc-merged-26.2.jar"),
+		return List.of(RUN.resolve(TestFixtures.BASE_JAR),
 				RUN.resolve("neoforge-runtime/neoforge-runtime.jar"),
 				RUN.resolve("forge-runtime/forge-runtime.jar"));
 	}
@@ -52,7 +52,7 @@ class RepairDriftCensusStagedTest {
 	@Test
 	void theBuildThisTreeIsCalibratedAgainstMovesNoAnchor() throws Exception {
 		List<Path> jars = stagedJars();
-		TestFixtures.require(Fixture.STAGED, jars.stream().allMatch(Files::isRegularFile), "staged merged base or carriers absent");
+		TestFixtures.requireFiles(Fixture.STAGED, "staged merged base or carriers absent", jars.toArray(Path[]::new));
 		RepairDriftCensus.Drift drift = RepairDriftCensus.replay(jars);
 		System.out.println(drift.summary());
 		assertTrue(drift.declared() > 0, "no claims declared — the census did not run");
@@ -64,7 +64,7 @@ class RepairDriftCensusStagedTest {
 	@Test
 	void aCandidateThatMovesOneAnchorIsNamedBeforeItIsAdopted() throws Exception {
 		List<Path> jars = stagedJars();
-		TestFixtures.require(Fixture.STAGED, jars.stream().allMatch(Files::isRegularFile), "staged merged base or carriers absent");
+		TestFixtures.requireFiles(Fixture.STAGED, "staged merged base or carriers absent", jars.toArray(Path[]::new));
 		byte[] real = RepairDriftCensus.bytesOf(jars, KEY_MAPPING);
 		assertNotNull(real, "the staged base carries KeyMapping");
 

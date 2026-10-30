@@ -34,7 +34,7 @@ import net.forbric.kernel.TestFixtures.Fixture;
  * changes the answer fails here, not in a player's log; after the shim and the compat transformer it is empty.
  */
 class MergedBaseCapabilityLinkTest {
-	private static final Path MERGED = TestFixtures.stagedRoot().resolve("merged-base/patched-mc-merged-26.2.jar");
+	private static final Path MERGED = TestFixtures.stagedBase();
 	private static final Path FORGE = TestFixtures.stagedRoot().resolve("forge-runtime/forge-runtime.jar");
 	private static final Path NEO = TestFixtures.stagedRoot().resolve("neoforge-runtime/neoforge-runtime.jar");
 	private static final Set<String> NAMES = Set.of("getCapability", "invalidateCaps", "reviveCaps", "gatherCapabilities",
@@ -111,7 +111,7 @@ class MergedBaseCapabilityLinkTest {
 	}
 
 	private static Result scan(boolean transformed) throws Exception {
-		TestFixtures.require(Fixture.STAGED, Files.isRegularFile(MERGED) && Files.isRegularFile(FORGE) && Files.isRegularFile(NEO), "staged artifacts absent");
+		TestFixtures.requireFiles(Fixture.STAGED, "staged artifacts absent", MERGED, FORGE, NEO);
 		Map<String, ClassNode> cache = new HashMap<>();
 		Set<String> unresolved = new LinkedHashSet<>();
 		int scanned = 0;

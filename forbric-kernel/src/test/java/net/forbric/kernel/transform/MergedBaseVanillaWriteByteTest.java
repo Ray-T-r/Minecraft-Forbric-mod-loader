@@ -35,7 +35,7 @@ import org.objectweb.asm.tree.MethodNode;
  * the same owners, the same descriptors, as often.
  */
 class MergedBaseVanillaWriteByteTest {
-	private static final Path MERGED_BASE = TestFixtures.stagedRoot().resolve("merged-base/patched-mc-merged-26.2.jar");
+	private static final Path MERGED_BASE = TestFixtures.stagedBase();
 	private static final Path NEO_RUNTIME = TestFixtures.stagedRoot().resolve("neoforge-runtime/neoforge-runtime.jar");
 	private static final Path VANILLA = TestFixtures.vanillaJar();
 	private static final String EXTENSION = "net/neoforged/neoforge/common/extensions/IFriendlyByteBufExtension";
@@ -51,7 +51,7 @@ class MergedBaseVanillaWriteByteTest {
 
 	/** The swap is behaviour-preserving only because NeoForge's overload is nothing but the forward. */
 	@Test void theExtensionsOverloadOnlyForwardsToVanillas() throws Exception {
-		TestFixtures.require(Fixture.STAGED, Files.isRegularFile(NEO_RUNTIME), "NeoForge runtime not staged: " + NEO_RUNTIME);
+		TestFixtures.requireFile(Fixture.STAGED, NEO_RUNTIME, "NeoForge runtime not staged: " + NEO_RUNTIME);
 		ClassNode extension = read(entry(NEO_RUNTIME, EXTENSION + ".class"));
 		MethodNode overload = extension.methods.stream().filter(m -> m.name.equals("writeByte") && m.desc.equals(BYTE))
 				.findFirst().orElseThrow(() -> new AssertionError("NeoForge's extension no longer declares writeByte(byte); "
@@ -66,7 +66,7 @@ class MergedBaseVanillaWriteByteTest {
 	}
 
 	@Test void everyMergedSiteBecomesTheCallVanillaMakes() throws Exception {
-		TestFixtures.require(Fixture.STAGED, Files.isRegularFile(MERGED_BASE), "merged base not staged: " + MERGED_BASE);
+		TestFixtures.requireFile(Fixture.STAGED, MERGED_BASE, "merged base not staged: " + MERGED_BASE);
 		TestFixtures.require(Fixture.MC_LIBRARIES, Files.isRegularFile(VANILLA), "no vanilla 26.2 jar at " + VANILLA);
 		Map<String, Integer> repaired = new TreeMap<>();
 		try (ZipFile merged = new ZipFile(MERGED_BASE.toFile()); ZipFile vanilla = new ZipFile(VANILLA.toFile())) {

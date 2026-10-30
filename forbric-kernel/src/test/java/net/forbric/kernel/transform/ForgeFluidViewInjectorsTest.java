@@ -30,7 +30,7 @@ class ForgeFluidViewInjectorsTest {
 
 	@AfterEach void reset() { System.clearProperty(ForgeFluidViewExtensionsInjector.PROPERTY); }
 
-	private static Path merged() { return TestFixtures.stagedRoot().resolve("merged-base/patched-mc-merged-26.2.jar"); }
+	private static Path merged() { return TestFixtures.stagedBase(); }
 	private static Path neoRuntime() { return TestFixtures.stagedRoot().resolve("neoforge-runtime/neoforge-runtime.jar"); }
 
 	private static ClassNode parse(byte[] bytes) {

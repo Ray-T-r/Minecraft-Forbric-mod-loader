@@ -38,7 +38,7 @@ import net.forbric.kernel.TestFixtures.Fixture;
  */
 @ResourceLock("system-properties")
 class ThinnedCallOrdinalsSpellingTest {
-	private static final Path MERGED = TestFixtures.stagedRoot().resolve("merged-base/patched-mc-merged-26.2.jar");
+	private static final Path MERGED = TestFixtures.stagedBase();
 	private static final Path VIAFABRICPLUS = Path.of("../build/lb-vfp/jars/ViaFabricPlus-5.0.2.jar");
 	private static final String OWNER = "net/minecraft/client/multiplayer/MultiPlayerGameMode";
 	private static final String CALL = "Lnet/minecraft/world/item/ItemStack;isEmpty()Z";
@@ -170,7 +170,7 @@ class ThinnedCallOrdinalsSpellingTest {
 
 	/** ViaFabricPlus' hook under other names, the merged class, and the class as the mod was compiled against it. */
 	private static Hook hook() throws Exception {
-		TestFixtures.require(Fixture.STAGED, Files.isRegularFile(MERGED), "actual game required");
+		TestFixtures.requireFile(Fixture.STAGED, MERGED, "actual game required");
 		TestFixtures.require(Fixture.THIRD_PARTY, Files.isRegularFile(VIAFABRICPLUS), VIAFABRICPLUS + " absent");
 		ClassNode released, merged;
 		try (ZipFile zip = new ZipFile(VIAFABRICPLUS.toFile())) {

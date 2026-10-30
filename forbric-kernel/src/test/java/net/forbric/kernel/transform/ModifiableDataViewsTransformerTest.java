@@ -93,7 +93,7 @@ class ModifiableDataViewsTransformerTest {
     }
     private static ClassNode parse(byte[] b){ClassNode n=new ClassNode();new ClassReader(b).accept(n,0);return n;}
     private static Function<String,byte[]> resources()throws Exception{
-        Path jar=TestFixtures.stagedRoot().resolve("merged-base/patched-mc-merged-26.2.jar");TestFixtures.requireFiles(Fixture.STAGED,"native source data views",jar);
+        Path jar=TestFixtures.stagedBase();TestFixtures.requireFiles(Fixture.STAGED,"native source data views",jar);
         Map<String,byte[]> entries=new HashMap<>();try(var zip=new ZipFile(jar.toFile())){var all=zip.entries();while(all.hasMoreElements()){var e=all.nextElement();if(!e.isDirectory())try(var in=zip.getInputStream(e)){entries.put(e.getName(),in.readAllBytes());}}}return entries::get;
     }
 }

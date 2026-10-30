@@ -55,7 +55,7 @@ import org.objectweb.asm.util.TraceMethodVisitor;
  * does it, run over the transformed merged {@code ItemStack} and over stock 26.2's: the two lists must be equal.
  */
 class MergedBaseTooltipOrderScrapeTest {
-	private static final Path MERGED_BASE = TestFixtures.stagedRoot().resolve("merged-base/patched-mc-merged-26.2.jar");
+	private static final Path MERGED_BASE = TestFixtures.stagedBase();
 	private static final String ITEM_STACK = "net/minecraft/world/item/ItemStack";
 
 	@AfterEach
@@ -66,7 +66,7 @@ class MergedBaseTooltipOrderScrapeTest {
 	@Test
 	void theScrapeOfTheTransformedMergedItemStackEqualsVanillas() throws Exception {
 		Path vanilla = vanillaJar();
-		TestFixtures.require(Fixture.STAGED, Files.isRegularFile(MERGED_BASE), "staged merged base absent");
+		TestFixtures.requireFile(Fixture.STAGED, MERGED_BASE, "staged merged base absent");
 		TestFixtures.require(Fixture.MC_LIBRARIES, Files.isRegularFile(vanilla), "stock 26.2 absent: " + vanilla);
 		List<String> expected = scrape(parse(bytesOf(vanilla, ITEM_STACK)));
 		assertTrue(expected.size() >= 20 && expected.contains("ATTRIBUTE_MODIFIERS"), "premise: vanilla's order is scrapeable: " + expected);
@@ -79,7 +79,7 @@ class MergedBaseTooltipOrderScrapeTest {
 
 	@Test
 	void theInsertedHeadIsOnlyGetstaticPopPairsAndTheRestIsUntouched() throws Exception {
-		TestFixtures.require(Fixture.STAGED, Files.isRegularFile(MERGED_BASE), "staged merged base absent");
+		TestFixtures.requireFile(Fixture.STAGED, MERGED_BASE, "staged merged base absent");
 		byte[] original = bytesOf(MERGED_BASE, ITEM_STACK);
 		ClassNode before = parse(original), after = parse(new TooltipOrderScrapeInjector().transform(ITEM_STACK.replace('/', '.'), original, null));
 		MethodNode was = find(before, TooltipOrderScrapeInjector.METHOD, TooltipOrderScrapeInjector.DESC);
@@ -104,7 +104,7 @@ class MergedBaseTooltipOrderScrapeTest {
 
 	@Test
 	void aSecondPassChangesNothingFurther() throws Exception {
-		TestFixtures.require(Fixture.STAGED, Files.isRegularFile(MERGED_BASE), "staged merged base absent");
+		TestFixtures.requireFile(Fixture.STAGED, MERGED_BASE, "staged merged base absent");
 		byte[] once = new TooltipOrderScrapeInjector().transform(ITEM_STACK.replace('/', '.'), bytesOf(MERGED_BASE, ITEM_STACK), null);
 		assertSame(once, new TooltipOrderScrapeInjector().transform(ITEM_STACK.replace('/', '.'), once, null));
 	}
@@ -126,7 +126,7 @@ class MergedBaseTooltipOrderScrapeTest {
 
 	@Test
 	void switchedOffItStandsDownAndDeclaresNoAnchor() throws Exception {
-		TestFixtures.require(Fixture.STAGED, Files.isRegularFile(MERGED_BASE), "staged merged base absent");
+		TestFixtures.requireFile(Fixture.STAGED, MERGED_BASE, "staged merged base absent");
 		System.setProperty(TooltipOrderScrapeInjector.PROPERTY, "off");
 		byte[] bytes = bytesOf(MERGED_BASE, ITEM_STACK);
 		assertSame(bytes, new TooltipOrderScrapeInjector().transform(ITEM_STACK.replace('/', '.'), bytes, null));

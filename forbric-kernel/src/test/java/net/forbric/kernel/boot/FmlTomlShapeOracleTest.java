@@ -370,13 +370,13 @@ class FmlTomlShapeOracleTest {
 	// --- the oracle -------------------------------------------------------------------------------------------
 
 	private static URLClassLoader neoOracle() throws IOException {
-		TestFixtures.require(Fixture.STAGED, Files.isRegularFile(NEO_CARRIER), "staged neoforge-runtime.jar absent");
+		TestFixtures.requireFile(Fixture.STAGED, NEO_CARRIER, "staged neoforge-runtime.jar absent");
 		return new URLClassLoader(new URL[] {NEO_CARRIER.toUri().toURL()}, FmlTomlShapeOracleTest.class.getClassLoader());
 	}
 
 	/** MinecraftForge's wrapper builds its answer with Guava, which Minecraft supplies and the kernel never ships. */
 	private static URLClassLoader forgeOracle() throws IOException {
-		TestFixtures.require(Fixture.STAGED, Files.isRegularFile(FORGE_CARRIER), "staged forge-runtime-interop.jar absent");
+		TestFixtures.requireFiles(Fixture.STAGED, "staged forge-runtime-interop.jar absent", FORGE_CARRIER);
 		Path guava = newestGuava();
 		TestFixtures.require(Fixture.MC_LIBRARIES, guava != null, "no Guava in the local Minecraft library tree");
 		return new URLClassLoader(new URL[] {FORGE_CARRIER.toUri().toURL(), guava.toUri().toURL()},

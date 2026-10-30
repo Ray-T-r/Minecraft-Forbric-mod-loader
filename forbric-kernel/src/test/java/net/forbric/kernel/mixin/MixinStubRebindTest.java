@@ -34,7 +34,7 @@ import net.forbric.api.Ecosystem;
 @ResourceLock("system-properties")
 @ResourceLock("ModCatalog")
 class MixinStubRebindTest {
-	private static final Path MERGED = TestFixtures.stagedRoot().resolve("merged-base/patched-mc-merged-26.2.jar");
+	private static final Path MERGED = TestFixtures.stagedBase();
 	private static final Path POPULAR = Path.of("run/client-popular/mods");
 	private static final Path MERGED_PACK = Path.of("run/client-merged-pack/mods");
 
@@ -394,7 +394,7 @@ class MixinStubRebindTest {
 	/** MixinFit asks the same rule: the ResolvedModels anchor reads found for the MinecraftForge mod, missing otherwise. */
 	@Test void fusionsVerdictFindsTheAnchorWhereTheRebindPutsIt() throws Exception {
 		Path jar = SWEEP.resolve("fusion-1.3.15a-forge-mc26.2.jar");
-		TestFixtures.require(Fixture.STAGED, Files.isRegularFile(MERGED), "fusion and the merged base required");
+		TestFixtures.requireFile(Fixture.STAGED, MERGED, "fusion and the merged base required");
 		TestFixtures.require(Fixture.THIRD_PARTY, Files.isRegularFile(jar), "fusion and the merged base required");
 		byte[] mixin, manager;
 		try (ZipFile zip = new ZipFile(jar.toFile())) {
@@ -513,7 +513,7 @@ class MixinStubRebindTest {
 	/** MixinFit asks the same group rule: owo's lang mixin reads FIT where the three move, PARTIAL where they cannot. */
 	@Test void owosVerdictFollowsTheGroup() throws Exception {
 		Path jar = SWEEP.resolve("owo-lib-0.13.1+26.2.jar");
-		TestFixtures.require(Fixture.STAGED, Files.isRegularFile(MERGED), "owo and the merged base required");
+		TestFixtures.requireFile(Fixture.STAGED, MERGED, "owo and the merged base required");
 		TestFixtures.require(Fixture.THIRD_PARTY, Files.isRegularFile(jar), "owo and the merged base required");
 		byte[] mixin, language;
 		try (ZipFile zip = new ZipFile(jar.toFile())) {
@@ -1035,7 +1035,7 @@ class MixinStubRebindTest {
 	}
 
 	private static ClassNode merged(String name) throws Exception {
-		TestFixtures.require(Fixture.STAGED, Files.isRegularFile(MERGED), "actual game required");
+		TestFixtures.requireFile(Fixture.STAGED, MERGED, "actual game required");
 		try (ZipFile zip = new ZipFile(MERGED.toFile())) {
 			ClassNode node = new ClassNode();
 			new ClassReader(zip.getInputStream(zip.getEntry(name + ".class")).readAllBytes()).accept(node, 0);

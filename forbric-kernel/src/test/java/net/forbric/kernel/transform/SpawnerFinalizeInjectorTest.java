@@ -36,7 +36,7 @@ class SpawnerFinalizeInjectorTest {
 		String property = "forbric.spawnerFinalize";
 		String previous = System.getProperty(property);
 		try {
-			byte[] raw = staged("merged-base/patched-mc-merged-26.2.jar", "net/minecraft/world/level/BaseSpawner");
+			byte[] raw = staged(TestFixtures.BASE_JAR, "net/minecraft/world/level/BaseSpawner");
 			byte[] legacy = new ForbricMergedBaseCompatTransformer().transform(SpawnerFinalizeInjector.TARGET, raw, context);
 			System.setProperty(property, "off");
 			assertSame(legacy, injector.transform(SpawnerFinalizeInjector.TARGET, legacy, context));
@@ -52,16 +52,16 @@ class SpawnerFinalizeInjectorTest {
 	}
 
 	@Test void realMergedCallerSuppliesTheSameInputThatLoadedItsMobAfterTheLegacyRepair() throws Exception {
-		byte[] raw = staged("merged-base/patched-mc-merged-26.2.jar", "net/minecraft/world/level/BaseSpawner");
+		byte[] raw = staged(TestFixtures.BASE_JAR, "net/minecraft/world/level/BaseSpawner");
 		byte[] legacy = new ForbricMergedBaseCompatTransformer().transform(SpawnerFinalizeInjector.TARGET, raw, context);
 		assertEquals(SpawnerFinalizeInjector.RUNTIME, hook(host(parse(legacy))).owner);
 		verifyExchange(legacy);
 	}
 
 	@Test void nativeNeoCallerAlsoWorksAndItsEventResultIsNotUsedAsASpawnVeto() throws Exception {
-		byte[] nativeNeo = staged("neoforge-patched/patched-mc-neoforge-26.2.jar", "net/minecraft/world/level/BaseSpawner");
+		byte[] nativeNeo = staged(TestFixtures.GENUINE_BASE_JAR, "net/minecraft/world/level/BaseSpawner");
 		verifyExchange(nativeNeo);
-		for (String jar : List.of("forge-patched/patched-mc-forge-26.2.jar", "neoforge-patched/patched-mc-neoforge-26.2.jar")) {
+		for (String jar : List.of("forge-patched/patched-mc-forge-26.2.jar", TestFixtures.GENUINE_BASE_JAR)) {
 			MethodNode tick = host(parse(staged(jar, "net/minecraft/world/level/BaseSpawner")));
 			assertTrue(calls(tick).stream().anyMatch(c -> c.name.equals("tryAddFreshEntityWithPassengers")));
 			assertFalse(calls(tick).stream().anyMatch(c -> c.name.equals("isCanceled")),
@@ -85,7 +85,7 @@ class SpawnerFinalizeInjectorTest {
 					conditional.add(new VarInsnNode(Opcodes.ASTORE, slot)); conditional.add(join);
 					m.instructions.insertBefore(hook(m), conditional); m.maxStack++;
 				})) {
-			ClassNode n = parse(staged("merged-base/patched-mc-merged-26.2.jar", "net/minecraft/world/level/BaseSpawner"));
+			ClassNode n = parse(staged(TestFixtures.BASE_JAR, "net/minecraft/world/level/BaseSpawner"));
 			mutation.accept(n); byte[] bytes = write(n);
 			assertSame(bytes, injector.transform(SpawnerFinalizeInjector.TARGET, bytes, context));
 			assertTrue(CompatibilityFindings.all().stream().anyMatch(f -> f.detail().contains("no unique live ValueInput")));
@@ -98,7 +98,7 @@ class SpawnerFinalizeInjectorTest {
 	 * both sides' edits writes it: handed the mob and level NeoForge's call gets ({@code sameMob}), or handed no mob.
 	 */
 	private static byte[] restoredSpawner(boolean sameMob) throws Exception {
-		ClassNode restored = parse(staged("merged-base/patched-mc-merged-26.2.jar", "net/minecraft/world/level/BaseSpawner"));
+		ClassNode restored = parse(staged(TestFixtures.BASE_JAR, "net/minecraft/world/level/BaseSpawner"));
 		MethodNode tick = host(restored);
 		var frames = new org.objectweb.asm.tree.analysis.Analyzer<>(new org.objectweb.asm.tree.analysis.SourceInterpreter()).analyze(restored.name, tick);
 		var frame = frames[tick.instructions.indexOf(hook(tick))];
@@ -138,7 +138,7 @@ class SpawnerFinalizeInjectorTest {
 
 		// Negative control: the same caller without the restored call is still routed through the kernel.
 		CompatibilityFindings.reset();
-		byte[] plain = staged("merged-base/patched-mc-merged-26.2.jar", "net/minecraft/world/level/BaseSpawner");
+		byte[] plain = staged(TestFixtures.BASE_JAR, "net/minecraft/world/level/BaseSpawner");
 		byte[] routed = injector.transform(SpawnerFinalizeInjector.TARGET,
 				new ForbricMergedBaseCompatTransformer().transform(SpawnerFinalizeInjector.TARGET, plain, context), context);
 		assertEquals(SpawnerFinalizeInjector.RUNTIME, hook(host(parse(routed))).owner);
@@ -159,7 +159,7 @@ class SpawnerFinalizeInjectorTest {
 				n -> host(n).access |= Opcodes.ACC_STATIC,
 				n -> host(n).instructions.insert(hook(host(n)), new InsnNode(Opcodes.NOP)),
 				n -> host(n).instructions.insert(hook(host(n)).clone(null)))) {
-			ClassNode n = parse(staged("merged-base/patched-mc-merged-26.2.jar", "net/minecraft/world/level/BaseSpawner"));
+			ClassNode n = parse(staged(TestFixtures.BASE_JAR, "net/minecraft/world/level/BaseSpawner"));
 			mutation.accept(n); byte[] bytes = write(n); assertSame(bytes, injector.transform(SpawnerFinalizeInjector.TARGET, bytes, context));
 		}
 	}
@@ -191,7 +191,7 @@ class SpawnerFinalizeInjectorTest {
 	private static String trace(ClassNode n) { StringWriter out = new StringWriter(); n.accept(new TraceClassVisitor(new PrintWriter(out))); return out.toString(); }
 	private static byte[] staged(String jar, String entry) throws Exception {
 		Path run = TestFixtures.stagedRoot();
-		Path path = run.resolve(jar); TestFixtures.require(Fixture.STAGED, Files.isRegularFile(path), "staged artifact absent: " + path);
+		Path path = run.resolve(jar); TestFixtures.requireFile(Fixture.STAGED, path, "staged artifact absent: " + path);
 		try (ZipFile zip = new ZipFile(path.toFile())) { return zip.getInputStream(zip.getEntry(entry + ".class")).readAllBytes(); }
 	}
 }

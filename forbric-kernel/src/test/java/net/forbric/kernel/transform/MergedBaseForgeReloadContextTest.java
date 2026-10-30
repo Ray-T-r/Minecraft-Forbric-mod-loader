@@ -27,7 +27,7 @@ import net.forbric.kernel.TestFixtures.Fixture;
 
 /** The reload event exposes the active context through the public Forge interface. */
 class MergedBaseForgeReloadContextTest {
-	private static final Path MERGED_BASE = TestFixtures.stagedRoot().resolve("merged-base/patched-mc-merged-26.2.jar");
+	private static final Path MERGED_BASE = TestFixtures.stagedBase();
 	private static final Path FORGE_RUNTIME = TestFixtures.stagedRoot().resolve("forge-runtime/forge-runtime.jar");
 	private static final String EVENT = "net/minecraftforge/event/AddReloadListenerEvent";
 	private static final String RSR = "net/minecraft/server/ReloadableServerResources";
@@ -112,7 +112,7 @@ class MergedBaseForgeReloadContextTest {
 	}
 
 	private static byte[] bytesOf(Path jar, String internal) throws Exception {
-		TestFixtures.require(Fixture.STAGED, Files.isRegularFile(jar), "staged artifact absent: " + jar);
+		TestFixtures.requireFile(Fixture.STAGED, jar, "staged artifact absent: " + jar);
 		try (ZipFile zip = new ZipFile(jar.toFile())) {
 			ZipEntry entry = zip.getEntry(internal + ".class");
 			assertNotNull(entry, internal + " not in " + jar.getFileName());

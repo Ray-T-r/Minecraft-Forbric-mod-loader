@@ -30,8 +30,13 @@ API_PINS = (
     ('energy-5.0.0.jar', 'https://maven.modmuss50.me/teamreborn/energy/5.0.0/energy-5.0.0.jar',
      '889afc438d3e4add5cfdac76517da7987a2c495e4731690a56f2c5dee775db59'),
 )
-STAGED_FILES = ('merged-base/patched-mc-merged-26.2.jar', 'forge-runtime/forge-runtime.jar',
-                'merged-base/forge-runtime-interop.jar', 'neoforge-runtime/neoforge-runtime.jar',
+# The staged files a launch reads, by role. Named rather than picked out of STAGED_FILES by position: dropping the
+# MinecraftForge entries from that tuple would otherwise have moved the NeoForge carrier into the Forge one's slot.
+STAGED_BASE = 'merged-base/patched-mc-merged-26.2.jar'
+STAGED_FORGE_CARRIER = 'forge-runtime/forge-runtime.jar'
+STAGED_FORGE_INTEROP = 'merged-base/forge-runtime-interop.jar'
+STAGED_NEO_CARRIER = 'neoforge-runtime/neoforge-runtime.jar'
+STAGED_FILES = (STAGED_BASE, STAGED_FORGE_CARRIER, STAGED_FORGE_INTEROP, STAGED_NEO_CARRIER,
                 # Not launched, but the bytecode tests compare the merge against both patched sides.
                 'forge-patched/patched-mc-forge-26.2.jar', 'neoforge-patched/patched-mc-neoforge-26.2.jar',
                 # Also only read by tests: the merge's own report, the pins that tie the Forge side to this merge,
@@ -435,6 +440,11 @@ def ready(mc, stage, natives, arch=None, assets=True):
     return any(p.is_file() for p in natives.iterdir())
 
 
+def launch_carriers(stage):
+    """The runtime jars a launch owns: the merge's MinecraftForge carrier while it is staged, then the NeoForge one."""
+    return ([STAGED_FORGE_INTEROP] if (stage / STAGED_FORGE_INTEROP).is_file() else []) + [STAGED_NEO_CARRIER]
+
+
 def launch_arguments(side, info, mc, stage, instance, natives, jvm=(), game=(), system=None, pathsep=None, arch=None):
     system, pathsep = system or system_name(), pathsep or os.pathsep
     metadata = json.loads((mc / f'versions/{MC_VERSION}/{MC_VERSION}.json').read_text())
@@ -448,7 +458,7 @@ def launch_arguments(side, info, mc, stage, instance, natives, jvm=(), game=(), 
     with zipfile.ZipFile(boot) as archive:
         if 'META-INF/jars/forbric-kernel-runtime.jar' not in archive.namelist():
             raise RuntimeError('refusing to launch a boot-only kernel jar; run prepare and rebuild')
-    merged = stage / STAGED_FILES[0]
+    merged = stage / STAGED_BASE
     metadata_jar = merged.parent / 'forbric-game-metadata.jar'
     with zipfile.ZipFile(merged) as archive:
         version = archive.read('version.json')
@@ -462,8 +472,8 @@ def launch_arguments(side, info, mc, stage, instance, natives, jvm=(), game=(), 
     args += [f'-Dforbric.compatibilityPolicy={os.environ.get("FORBRIC_COMPAT_POLICY", "strict")}',
              f'-Dforbric.dependencyDialog={os.environ.get("FORBRIC_DEP_DIALOG", "off")}']
     args += list(jvm) + ['-cp', cp, 'net.forbric.kernel.boot.Kernel' + side.title() + 'Launch',
-                        '--gameJar', str(stage / STAGED_FILES[0]),
-                        '--runtimeJar', pathsep.join([str(stage / STAGED_FILES[2]), str(stage / STAGED_FILES[3])]),
+                        '--gameJar', str(stage / STAGED_BASE),
+                        '--runtimeJar', pathsep.join(str(stage / name) for name in launch_carriers(stage)),
                         '--libraryPath', pathsep.join(owned), '--', '--gameDir', str(instance)]
     if side == 'client':
         args += ['--version', '26.2-forbric-dev', '--assetsDir', str(mc / 'assets'),

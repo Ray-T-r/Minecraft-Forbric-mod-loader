@@ -27,7 +27,7 @@ import net.forbric.kernel.TestFixtures.Fixture;
 
 /** {@code WeightedVariants.first}: one Forge reader in the base, zero writers — the merge dropped Forge's write. */
 class MergedBaseWeightedVariantsFirstTest {
-	private static final Path MERGED_BASE = TestFixtures.stagedRoot().resolve("merged-base/patched-mc-merged-26.2.jar");
+	private static final Path MERGED_BASE = TestFixtures.stagedBase();
 	private static final String OWNER = "net/minecraft/client/renderer/block/dispatch/WeightedVariants";
 
 	@Test
@@ -112,7 +112,7 @@ class MergedBaseWeightedVariantsFirstTest {
 	}
 
 	private static byte[] bytesOf(String internal) throws Exception {
-		TestFixtures.require(Fixture.STAGED, Files.isRegularFile(MERGED_BASE), "staged merged base absent");
+		TestFixtures.requireFile(Fixture.STAGED, MERGED_BASE, "staged merged base absent");
 		try (ZipFile zip = new ZipFile(MERGED_BASE.toFile())) {
 			ZipEntry entry = zip.getEntry(internal + ".class");
 			assertNotNull(entry, internal);

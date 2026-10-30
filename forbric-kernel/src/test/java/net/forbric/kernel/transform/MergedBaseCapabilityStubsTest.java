@@ -47,7 +47,7 @@ import net.forbric.kernel.TestFixtures.Fixture;
  * links against something that is not there.
  */
 class MergedBaseCapabilityStubsTest {
-	private static final Path MERGED_BASE = TestFixtures.stagedRoot().resolve("merged-base/patched-mc-merged-26.2.jar");
+	private static final Path MERGED_BASE = TestFixtures.stagedBase();
 
 	private static final List<String> ROOTS = List.of(
 			"net/minecraft/world/entity/Entity",

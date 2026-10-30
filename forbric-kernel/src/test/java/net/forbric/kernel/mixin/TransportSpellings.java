@@ -38,15 +38,15 @@ final class TransportSpellings {
 	static Path mergedBase() {
 		String configured = System.getProperty("forbric.predicateBase");
 		Path base = configured == null || configured.isBlank()
-				? TestFixtures.stagedRoot().resolve("merged-base/patched-mc-merged-26.2.jar") : Path.of(configured);
-		TestFixtures.require(Fixture.STAGED, Files.isRegularFile(base), "staged merged base required: " + base);
+				? TestFixtures.stagedBase() : Path.of(configured);
+		TestFixtures.requireFile(Fixture.STAGED, base, "staged merged base required: " + base);
 		return base;
 	}
 
 	static Path fabricApi() {
 		String configured = System.getProperty("forbric.fabricApi");
 		Path api = configured == null || configured.isBlank() ? TestFixtures.fabricApi() : Path.of(configured);
-		TestFixtures.require(Fixture.STAGED, Files.isRegularFile(api), "actual Fabric API required: " + api);
+		TestFixtures.requireFile(Fixture.STAGED, api, "actual Fabric API required: " + api);
 		return api;
 	}
 

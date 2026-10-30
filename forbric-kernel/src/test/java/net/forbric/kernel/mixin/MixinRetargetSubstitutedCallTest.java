@@ -79,7 +79,7 @@ class MixinRetargetSubstitutedCallTest {
 	private static final String PLAIN = "(" + ENTRY + MixinRetarget.CALLBACK_INFO_RETURNABLE + ")V";
 
 	private static final Path SWEEP = Path.of("build/compat-inputs/sweep90/mods");
-	private static final Path MERGED = TestFixtures.stagedRoot().resolve("merged-base/patched-mc-merged-26.2.jar");
+	private static final Path MERGED = TestFixtures.stagedBase();
 
 	@AfterEach
 	void reset() {
@@ -213,7 +213,7 @@ class MixinRetargetSubstitutedCallTest {
 	@Test
 	void fusionsRealMixinOnTheRealMergedBase() throws Exception {
 		Path fusion = SWEEP.resolve("fusion-1.3.15a-forge-mc26.2.jar");
-		TestFixtures.require(Fixture.STAGED, Files.isRegularFile(MERGED), "sweep pack or staged merged base absent");
+		TestFixtures.requireFile(Fixture.STAGED, MERGED, "sweep pack or staged merged base absent");
 		TestFixtures.require(Fixture.THIRD_PARTY, Files.isRegularFile(fusion), "sweep pack or staged merged base absent");
 		byte[] mixin = read(fusion, "com/supermartijn642/fusion/mixin/ModelManagerMixin.class");
 		Function<String, byte[]> resolver = name -> {

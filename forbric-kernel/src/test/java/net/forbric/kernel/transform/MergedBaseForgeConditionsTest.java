@@ -69,7 +69,7 @@ import net.forbric.kernel.TestFixtures.Fixture;
 class MergedBaseForgeConditionsTest {
 	private static final Path STAGED = TestFixtures.stagedRoot();
 	private static final Path FORGE_CARRIER = STAGED.resolve("forge-runtime/forge-runtime.jar");
-	private static final Path MERGED_BASE = STAGED.resolve("merged-base/patched-mc-merged-26.2.jar");
+	private static final Path MERGED_BASE = STAGED.resolve(TestFixtures.BASE_JAR);
 	private static final String ENTRY = "net/minecraftforge/common/crafting/conditions/ICondition.class";
 	private static final String BINARY = "net.minecraftforge.common.crafting.conditions.ICondition";
 	private static final String KERNEL = "net/forbric/kernel/runtime/KernelForgeConditions";
@@ -119,7 +119,7 @@ class MergedBaseForgeConditionsTest {
 	void minecraftForgesEvaluatorIsStillOnTheDatapackPathAtAll() throws Exception {
 		// The premise. If the merge ever stops carrying MinecraftForge's half of this method, the repair above is
 		// dead weight and should be removed rather than left looking useful.
-		TestFixtures.require(Fixture.STAGED, Files.isRegularFile(MERGED_BASE), "staged merged base absent");
+		TestFixtures.requireFile(Fixture.STAGED, MERGED_BASE, "staged merged base absent");
 
 		List<String> callers = new ArrayList<>();
 		for (String owner : List.of("net/minecraft/resources/ResourceManagerRegistryLoadTask",
@@ -427,7 +427,7 @@ class MergedBaseForgeConditionsTest {
 	}
 
 	private static byte[] original() throws IOException {
-		TestFixtures.require(Fixture.STAGED, Files.isRegularFile(FORGE_CARRIER), "staged MinecraftForge carrier absent");
+		TestFixtures.requireFiles(Fixture.STAGED, "staged MinecraftForge carrier absent", FORGE_CARRIER);
 		byte[] bytes = read(FORGE_CARRIER, ENTRY);
 		assertTrue(bytes != null, "content drift: ICondition absent from this carrier");
 		return bytes;

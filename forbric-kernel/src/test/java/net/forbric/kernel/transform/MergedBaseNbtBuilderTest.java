@@ -37,7 +37,7 @@ import net.forbric.kernel.TestFixtures.Fixture;
  * constructor, and idempotence.
  */
 class MergedBaseNbtBuilderTest {
-	private static final Path MERGED_BASE = TestFixtures.stagedRoot().resolve("merged-base/patched-mc-merged-26.2.jar");
+	private static final Path MERGED_BASE = TestFixtures.stagedBase();
 	private static final Path FORGE_RUNTIME = TestFixtures.stagedRoot().resolve("forge-runtime/forge-runtime.jar");
 	private static final String COMPOUND_TAG = "net/minecraft/nbt/CompoundTag";
 	private static final String BUILDER = "net/minecraftforge/common/util/INBTBuilder$Builder";
@@ -73,7 +73,7 @@ class MergedBaseNbtBuilderTest {
 
 	@Test
 	void everyCarrierCallSiteNowResolves() throws Exception {
-		TestFixtures.require(Fixture.STAGED, Files.isRegularFile(FORGE_RUNTIME), "staged Forge carrier absent: " + FORGE_RUNTIME);
+		TestFixtures.requireFiles(Fixture.STAGED, "staged Forge carrier absent: " + FORGE_RUNTIME, FORGE_RUNTIME);
 		ClassNode after = parse(transform(COMPOUND_TAG));
 		List<String> unresolved = new ArrayList<>();
 		int sites = 0;
@@ -96,7 +96,7 @@ class MergedBaseNbtBuilderTest {
 
 	@Test
 	void theCarrierTypeItNewsStillHasAPublicNoArgConstructor() throws Exception {
-		TestFixtures.require(Fixture.STAGED, Files.isRegularFile(FORGE_RUNTIME), "staged Forge carrier absent: " + FORGE_RUNTIME);
+		TestFixtures.requireFiles(Fixture.STAGED, "staged Forge carrier absent: " + FORGE_RUNTIME, FORGE_RUNTIME);
 		ClassNode builder = parse(bytesOf(FORGE_RUNTIME, BUILDER));
 		MethodNode ctor = declared(builder, "<init>", "()V");
 		assertNotNull(ctor, BUILDER + " lost its no-arg constructor — the emitted body would NoSuchMethodError");
@@ -133,7 +133,7 @@ class MergedBaseNbtBuilderTest {
 	}
 
 	private static byte[] bytesOf(Path jar, String internal) throws Exception {
-		TestFixtures.require(Fixture.STAGED, Files.isRegularFile(jar), "staged artifact absent: " + jar);
+		TestFixtures.requireFile(Fixture.STAGED, jar, "staged artifact absent: " + jar);
 		try (ZipFile zip = new ZipFile(jar.toFile())) {
 			ZipEntry entry = zip.getEntry(internal + ".class");
 			assertNotNull(entry, internal + " not in " + jar.getFileName());

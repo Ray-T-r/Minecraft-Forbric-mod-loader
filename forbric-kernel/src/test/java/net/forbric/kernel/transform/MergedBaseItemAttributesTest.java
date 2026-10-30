@@ -55,14 +55,14 @@ import net.forbric.kernel.TestFixtures.Fixture;
  * the other, and the attribute sat at its {@code false} default forever.
  */
 class MergedBaseItemAttributesTest {
-	private static final Path MERGED_BASE = TestFixtures.stagedRoot().resolve("merged-base/patched-mc-merged-26.2.jar");
-	private static final Path NEO_BASE = TestFixtures.stagedRoot().resolve("neoforge-patched/patched-mc-neoforge-26.2.jar");
+	private static final Path MERGED_BASE = TestFixtures.stagedBase();
+	private static final Path NEO_BASE = TestFixtures.genuineBase();
 
 	private static final String ITEM_STACK = "net/minecraft/world/item/ItemStack";
 
 	@Test
 	void theRebuiltBaseAlreadyUsesTheNativeComputedAttributes() throws Exception {
-		TestFixtures.require(Fixture.STAGED, Files.isRegularFile(MERGED_BASE), "staged merged base absent");
+		TestFixtures.requireFile(Fixture.STAGED, MERGED_BASE, "staged merged base absent");
 		ClassNode node = parse(readClass(MERGED_BASE));
 		List<MethodNode> each = overloads(node);
 		assertEquals(2, each.size(), "both forEachModifier overloads must still be there");
@@ -75,7 +75,7 @@ class MergedBaseItemAttributesTest {
 	/** What the repair produces has to be what the family that owns the consumer actually does. */
 	@Test
 	void theNeoForgeBaseIsWhatTheRepairReproduces() throws Exception {
-		TestFixtures.require(Fixture.STAGED, Files.isRegularFile(NEO_BASE), "staged NeoForge base absent");
+		TestFixtures.requireFile(Fixture.STAGED, NEO_BASE, "staged NeoForge base absent");
 		for (MethodNode m : overloads(parse(readClass(NEO_BASE)))) {
 			assertTrue(callsNeoForge(m), "NeoForge's own base must call getAttributeModifiers in " + m.desc);
 			assertTrue(!readsRawComponent(m), "and must not read the raw component");
@@ -84,7 +84,7 @@ class MergedBaseItemAttributesTest {
 
 	@Test
 	void bothOverloadsAskNeoForgeAfterTheRepair() throws Exception {
-		TestFixtures.require(Fixture.STAGED, Files.isRegularFile(MERGED_BASE), "staged merged base absent");
+		TestFixtures.requireFile(Fixture.STAGED, MERGED_BASE, "staged merged base absent");
 		byte[] in = readClass(MERGED_BASE);
 		byte[] out = transform(in);
 		assertTrue(out != in, "the staged base must still need the repair");
@@ -108,14 +108,14 @@ class MergedBaseItemAttributesTest {
 	 */
 	@Test
 	void readsOutsideForEachModifierAreLeftAlone() throws Exception {
-		TestFixtures.require(Fixture.STAGED, Files.isRegularFile(MERGED_BASE), "staged merged base absent");
+		TestFixtures.requireFile(Fixture.STAGED, MERGED_BASE, "staged merged base absent");
 		ClassNode before = parse(readClass(MERGED_BASE));
 		ClassNode after = parse(transform(readClass(MERGED_BASE)));
 		int removed = rawReads(before) - rawReads(after);
 		assertEquals(0, removed, "native computed readers need no edit; unrelated raw component reads remain intact");
 	}
 	@Test void anActualRawReaderRegressionIsStillRepairedWithoutOtherBodyChanges() throws Exception {
-		TestFixtures.require(Fixture.STAGED, Files.isRegularFile(MERGED_BASE), "staged merged base absent");
+		TestFixtures.requireFile(Fixture.STAGED, MERGED_BASE, "staged merged base absent");
 		ClassNode nativeNode=parse(readClass(MERGED_BASE));java.util.Map<String,String> expected=new java.util.HashMap<>();
 		for(MethodNode m:overloads(nativeNode)){
 			expected.put(m.desc,net.forbric.kernel.mixin.MixinInstructionFingerprint.hash(m));
@@ -129,14 +129,14 @@ class MergedBaseItemAttributesTest {
 
 	@Test
 	void aSecondPassLeavesTheRepairedClassAlone() throws Exception {
-		TestFixtures.require(Fixture.STAGED, Files.isRegularFile(MERGED_BASE), "staged merged base absent");
+		TestFixtures.requireFile(Fixture.STAGED, MERGED_BASE, "staged merged base absent");
 		byte[] once = transform(readClass(MERGED_BASE));
 		assertSame(once, transform(once), "a body that already asks NeoForge must not be rewritten");
 	}
 
 	@Test
 	void anyOtherClassIsHandedBackUntouchedByTHISRepair() throws Exception {
-		TestFixtures.require(Fixture.STAGED, Files.isRegularFile(MERGED_BASE), "staged merged base absent");
+		TestFixtures.requireFile(Fixture.STAGED, MERGED_BASE, "staged merged base absent");
 		byte[] other = readEntry(MERGED_BASE, "net/minecraft/world/entity/LivingEntity.class");
 		// Byte identity used to be the assertion here, and it stopped being available the moment a LATER repair
 		// found something of its own in LivingEntity (the radians-to-degrees constant, in

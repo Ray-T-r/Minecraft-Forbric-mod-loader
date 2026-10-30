@@ -77,11 +77,11 @@ import net.forbric.kernel.mixin.MergedBaseCalleeSwaps;
  */
 class MergedBaseCalleeSwapTest {
 	private static final Path RUN = TestFixtures.stagedRoot();
-	private static final Path MERGED = RUN.resolve("merged-base/patched-mc-merged-26.2.jar");
+	private static final Path MERGED = RUN.resolve(TestFixtures.BASE_JAR);
 	private static final Path FORGE_RT = RUN.resolve("forge-runtime/forge-runtime.jar");
 	private static final Path NEO_RT = RUN.resolve("neoforge-runtime/neoforge-runtime.jar");
 	private static final Path FORGE_PATCHED = TestFixtures.forgeMergeInput();
-	private static final Path NEO_PATCHED = RUN.resolve("neoforge-patched/patched-mc-neoforge-26.2.jar");
+	private static final Path NEO_PATCHED = RUN.resolve(TestFixtures.GENUINE_BASE_JAR);
 
 	/** {@code owner.method | callee-owner.vanilla→merged desc}, one line per swap — 25 on the staged base. */
 	static final Set<String> PINNED = new TreeSet<>(List.of(
@@ -124,7 +124,7 @@ class MergedBaseCalleeSwapTest {
 	@Test
 	void theCensusOfCalleeSwapsIsExactlyThePinnedSet() throws Exception {
 		Path vanilla = vanillaJar();
-		TestFixtures.require(Fixture.STAGED, Files.isRegularFile(MERGED), "staged merged base absent");
+		TestFixtures.requireFile(Fixture.STAGED, MERGED, "staged merged base absent");
 		TestFixtures.require(Fixture.MC_LIBRARIES, Files.isRegularFile(vanilla), "stock 26.2 absent: " + vanilla);
 		Set<String> found = new TreeSet<>();
 		for (Swap swap : swaps(vanilla)) found.add(swap.line());
@@ -139,8 +139,7 @@ class MergedBaseCalleeSwapTest {
 	@Test
 	void everyAdmittedSwapIsEitherRewrittenOrExplained() throws Exception {
 		Path vanilla = vanillaJar();
-		TestFixtures.require(Fixture.STAGED, Files.isRegularFile(MERGED) && Files.isRegularFile(FORGE_RT)
-				&& Files.isRegularFile(NEO_RT), "staged merged base or carriers absent");
+		TestFixtures.requireFiles(Fixture.STAGED, "staged merged base or carriers absent", MERGED, FORGE_RT, NEO_RT);
 		TestFixtures.require(Fixture.MC_LIBRARIES, Files.isRegularFile(vanilla), "stock 26.2 absent: " + vanilla);
 		Map<String, ClassNode> world = new HashMap<>();
 		List<String> admitted = new ArrayList<>();
@@ -204,7 +203,7 @@ class MergedBaseCalleeSwapTest {
 	@Test
 	void everySubstitutionIsOneCallInAnOtherwiseUnchangedBody() throws Exception {
 		Path vanilla = vanillaJar();
-		for (Path jar : List.of(MERGED, FORGE_PATCHED, NEO_PATCHED)) TestFixtures.require(Fixture.STAGED, Files.isRegularFile(jar), jar + " absent");
+		for (Path jar : List.of(MERGED, FORGE_PATCHED, NEO_PATCHED)) TestFixtures.requireFile(Fixture.STAGED, jar, jar + " absent");
 		TestFixtures.require(Fixture.MC_LIBRARIES, Files.isRegularFile(vanilla), vanilla + " absent");
 		var derivedSubstitution=net.forbric.kernel.mixin.NativeCallTestEvidence.modelRow();
 		assertNotNull(derivedSubstitution);
@@ -249,7 +248,7 @@ class MergedBaseCalleeSwapTest {
 	@Test
 	void everyReplacementIsOneCallWhoseVanillaArgumentsAreReadOffTheReplacements() throws Exception {
 		Path vanilla = vanillaJar();
-		TestFixtures.require(Fixture.STAGED, Files.isRegularFile(MERGED), MERGED + " absent");
+		TestFixtures.requireFile(Fixture.STAGED, MERGED, MERGED + " absent");
 		TestFixtures.require(Fixture.MC_LIBRARIES, Files.isRegularFile(vanilla), vanilla + " absent");
 		var derivedReplacement=net.forbric.kernel.mixin.NativeCallTestEvidence.structureRow();
 		assertNotNull(derivedReplacement);

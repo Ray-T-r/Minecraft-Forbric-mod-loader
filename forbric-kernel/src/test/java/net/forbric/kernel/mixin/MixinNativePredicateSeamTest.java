@@ -35,7 +35,7 @@ class MixinNativePredicateSeamTest{
 	}
 	private record Inputs(ClassNode guest,Function<String,ClassNode>classes,Function<String,ClassNode>originals){ }
 	private static Inputs inputs()throws Exception{
-		Path base=Path.of(System.getProperty("forbric.predicateBase",TestFixtures.stagedRoot().resolve("merged-base/patched-mc-merged-26.2.jar").toString()));
+		Path base=Path.of(System.getProperty("forbric.predicateBase",TestFixtures.stagedBase().toString()));
 		TestFixtures.requireFiles(Fixture.STAGED,"hash-pinned native predicate base",base);
 		List<Path>jars=List.of(base,TestFixtures.stagedRoot().resolve("neoforge-runtime/neoforge-runtime.jar"),TestFixtures.stagedRoot().resolve("forge-runtime/forge-runtime.jar"));
 		Function<String,byte[]>resource=name->{try{for(Path path:jars)try(ZipFile zip=new ZipFile(path.toFile())){var entry=zip.getEntry(name);if(entry!=null)return zip.getInputStream(entry).readAllBytes();}return null;}catch(java.io.IOException unavailable){throw new RuntimeException(unavailable);}};

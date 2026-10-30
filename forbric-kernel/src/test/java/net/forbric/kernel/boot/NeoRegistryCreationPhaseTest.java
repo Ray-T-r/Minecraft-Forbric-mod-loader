@@ -14,7 +14,7 @@ class NeoRegistryCreationPhaseTest {
     @Test void registryModificationFollowsCreationAsOnNativeNeoForge() throws Exception {
         Path nativeJar = TestFixtures.stagedRoot().resolve("neoforge-runtime/neoforge-runtime.jar");
         Path kernel = Path.of("build/classes/java/runtime/net/forbric/kernel/runtime/KernelNeoRegistries.class");
-        TestFixtures.require(Fixture.STAGED, Files.isRegularFile(nativeJar), "staged runtime absent");
+        TestFixtures.requireFile(Fixture.STAGED, nativeJar, "staged runtime absent");
         TestFixtures.require(Fixture.GAME_SIDE, Files.isRegularFile(kernel), "staged runtime absent");
         ClassNode nativeNode = new ClassNode();
         try (ZipFile zip = new ZipFile(nativeJar.toFile())) {

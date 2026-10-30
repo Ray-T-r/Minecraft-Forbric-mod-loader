@@ -48,7 +48,7 @@ import org.objectweb.asm.tree.ClassNode;
  */
 @ResourceLock("system-properties")
 class MixinMergedTwinTest {
-	private static final Path MERGED_BASE = TestFixtures.stagedRoot().resolve("merged-base/patched-mc-merged-26.2.jar").normalize();
+	private static final Path MERGED_BASE = TestFixtures.stagedBase().normalize();
 	private static final String TARGET = "net.minecraft.network.protocol.common.custom.CustomPacketPayload$1";
 
 	@Test
@@ -151,7 +151,7 @@ class MixinMergedTwinTest {
 
 	@Test
 	void theMergedBaseReallyCarriesTheTwinThisIsAbout() throws Exception {
-		TestFixtures.require(Fixture.STAGED, Files.isRegularFile(MERGED_BASE), "staged merged base absent");
+		TestFixtures.requireFile(Fixture.STAGED, MERGED_BASE, "staged merged base absent");
 		try (ZipFile zip = new ZipFile(MERGED_BASE.toFile())) {
 			assertNotNull(zip.getEntry(TARGET.replace('.', '/') + ".class"), "the vanilla-named half must exist");
 			assertNotNull(zip.getEntry((TARGET + MixinMergedTwin.NEO_SUFFIX).replace('.', '/') + ".class"),

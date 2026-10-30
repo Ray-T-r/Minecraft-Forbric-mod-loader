@@ -50,7 +50,7 @@ import net.forbric.kernel.mixin.MergedBaseAnonymousDrift;
  * plus its superclass; the constructor descriptor and the {@code val$} captures are javac's plumbing.
  */
 class MergedBaseAnonymousDriftTest {
-	private static final Path MERGED = TestFixtures.stagedRoot().resolve("merged-base/patched-mc-merged-26.2.jar");
+	private static final Path MERGED = TestFixtures.stagedBase();
 	private static final Pattern ANONYMOUS = Pattern.compile("^(net/minecraft/|com/mojang/).*\\$\\d+\\.class$");
 
 	record Shape(String superName, Set<String> methods, String ctorDesc, Set<String> captures) {
@@ -67,7 +67,7 @@ class MergedBaseAnonymousDriftTest {
 	@Test
 	void theThreeBucketsAreExactlyThePinnedConstants() throws Exception {
 		Path vanilla = vanillaJar();
-		TestFixtures.require(Fixture.STAGED, Files.isRegularFile(MERGED), "staged merged base absent");
+		TestFixtures.requireFile(Fixture.STAGED, MERGED, "staged merged base absent");
 		TestFixtures.require(Fixture.MC_LIBRARIES, Files.isRegularFile(vanilla), "stock 26.2 absent: " + vanilla);
 		Map<String, Shape> vanillaShapes = shapes(vanilla), mergedShapes = shapes(MERGED);
 		assertTrue(vanillaShapes.size() > 500, "this does not look like a full vanilla jar (" + vanillaShapes.size() + " anonymous classes)");

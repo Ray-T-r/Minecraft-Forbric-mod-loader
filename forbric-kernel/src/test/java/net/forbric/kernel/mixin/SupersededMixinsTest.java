@@ -198,7 +198,7 @@ class SupersededMixinsTest {
 	@Test
 	void theProofMatchesWhatTheRealRepairWritesIntoTheRealClass() throws Exception {
 		Path carrier = TestFixtures.stagedRoot().resolve("neoforge-runtime/neoforge-runtime.jar").normalize();
-		TestFixtures.require(Fixture.STAGED, Files.isRegularFile(carrier), "staged NeoForge carrier absent");
+		TestFixtures.requireFile(Fixture.STAGED, carrier, "staged NeoForge carrier absent");
 		byte[] original;
 		try (var zip = new java.util.zip.ZipFile(carrier.toFile())) {
 			var entry = zip.getEntry("net/neoforged/neoforge/common/conditions/ConditionalOps.class");
@@ -226,7 +226,7 @@ class SupersededMixinsTest {
 	/** The hopper entry's proof matches what HopperFabricStorageInjector writes into the real merged hopper. */
 	@Test
 	void theHopperProofMatchesWhatTheRealRepairWritesIntoTheRealClass() throws Exception {
-		java.nio.file.Path merged = TestFixtures.stagedRoot().resolve("merged-base/patched-mc-merged-26.2.jar");
+		java.nio.file.Path merged = TestFixtures.stagedBase();
 		TestFixtures.require(Fixture.STAGED, java.nio.file.Files.isRegularFile(merged), "actual game required");
 		byte[] original;
 		try (var zip = new java.util.zip.ZipFile(merged.toFile())) {

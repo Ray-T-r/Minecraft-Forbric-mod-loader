@@ -100,7 +100,7 @@ class KernelBusSupportTest {
 
 	/** The class, or null when the carrier, which must be staged, no longer has it. */
 	private static ClassNode carrier(String internalName) throws Exception {
-		TestFixtures.require(Fixture.STAGED, Files.isRegularFile(NEOFORGE), "staged NeoForge carrier absent");
+		TestFixtures.requireFile(Fixture.STAGED, NEOFORGE, "staged NeoForge carrier absent");
 		try (ZipFile zip = new ZipFile(NEOFORGE.toFile())) {
 			ZipEntry e = zip.getEntry(internalName + ".class");
 			if (e == null) return null;

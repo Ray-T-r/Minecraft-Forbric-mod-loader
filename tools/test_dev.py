@@ -194,7 +194,7 @@ class DevelopmentWorkflowTest(unittest.TestCase):
             with self.assertRaisesRegex(RuntimeError, 'unsafe artifact path'):
                 dev.confined(self.root, relative)
 
-    def launch_fixture(self, with_runtime=True):
+    def launch_fixture(self, with_runtime=True, forge_carrier=True):
         mc, stage = self.root / 'Minecraft With Spaces', self.root / 'stage/run'
         version = mc / 'versions/26.2/26.2.json'
         version.parent.mkdir(parents=True)
@@ -203,11 +203,13 @@ class DevelopmentWorkflowTest(unittest.TestCase):
         with zipfile.ZipFile(boot, 'w') as archive:
             if with_runtime:
                 archive.writestr('META-INF/jars/forbric-kernel-runtime.jar', b'runtime')
-        merged = stage / dev.STAGED_FILES[0]
+        merged = stage / dev.STAGED_BASE
         merged.parent.mkdir(parents=True)
         with zipfile.ZipFile(merged, 'w') as archive:
             archive.writestr('version.json', '{"protocol_version":776}')
             archive.writestr('net/minecraft/NotParentLoaded.class', b'bytecode')
+        if forge_carrier:
+            (stage / dev.STAGED_FORGE_INTEROP).write_bytes(b'carrier')
         return {'bootJar': str(boot), 'dependencies': ['dependency.jar']}, mc, stage
 
     def test_windows_classpaths_and_mac_only_flag(self):
@@ -224,6 +226,19 @@ class DevelopmentWorkflowTest(unittest.TestCase):
         self.assertIn('Minecraft With Spaces', win[win.index('--assetsDir')+1])
         with zipfile.ZipFile(stage / 'merged-base/forbric-game-metadata.jar') as archive:
             self.assertEqual(archive.namelist(), ['version.json'])
+
+    def test_runtime_jars_are_named_by_role_and_the_forge_carrier_is_optional(self):
+        info, mc, stage = self.launch_fixture()
+        with patch.dict(os.environ, {}, clear=True):
+            both = dev.launch_arguments('server', info, mc, stage, self.root, self.root, pathsep=';')
+        self.assertEqual(str(stage / dev.STAGED_BASE), both[both.index('--gameJar')+1])
+        self.assertEqual([str(stage / dev.STAGED_FORGE_INTEROP), str(stage / dev.STAGED_NEO_CARRIER)],
+                         both[both.index('--runtimeJar')+1].split(';'))
+        # Without the MinecraftForge carrier the NeoForge one is the only runtime jar, never left in another's slot.
+        (stage / dev.STAGED_FORGE_INTEROP).unlink()
+        with patch.dict(os.environ, {}, clear=True):
+            neo = dev.launch_arguments('server', info, mc, stage, self.root, self.root, pathsep=';')
+        self.assertEqual(str(stage / dev.STAGED_NEO_CARRIER), neo[neo.index('--runtimeJar')+1])
 
     def test_boot_only_jar_is_refused(self):
         info, mc, stage = self.launch_fixture(False)

@@ -54,7 +54,7 @@ import org.objectweb.asm.tree.MethodNode;
  * by one bush each, in different places — the same noise vanilla has against itself.
  */
 class MergedBaseSavedHeightmapsTest {
-	private static final Path MERGED_BASE = TestFixtures.stagedRoot().resolve("merged-base/patched-mc-merged-26.2.jar");
+	private static final Path MERGED_BASE = TestFixtures.stagedBase();
 	private static final Path VANILLA = TestFixtures.vanillaJar();
 	private static final String CHUNK_STATUS = "net/minecraft/world/level/chunk/status/ChunkStatus";
 	private static final String WIDENED = "chunkSaveHeightmaps";
@@ -72,7 +72,7 @@ class MergedBaseSavedHeightmapsTest {
 
 	@Test
 	void theGetterReadsTheVanillaShapedFieldAfterTheRepair() throws Exception {
-		TestFixtures.require(Fixture.STAGED, Files.isRegularFile(MERGED_BASE), "merged base not staged: " + MERGED_BASE);
+		TestFixtures.requireFile(Fixture.STAGED, MERGED_BASE, "merged base not staged: " + MERGED_BASE);
 		byte[] before = entry(MERGED_BASE);
 		assertEquals(List.of(WIDENED), reads(read(before)), "the merged getter no longer reads NeoForge's widened "
 				+ "set — if the base changed, delete the repair rather than leaving a claim on a shape that is gone");
@@ -90,7 +90,7 @@ class MergedBaseSavedHeightmapsTest {
 
 	@Test
 	void theSwitchStandsTheRepairDown() throws Exception {
-		TestFixtures.require(Fixture.STAGED, Files.isRegularFile(MERGED_BASE), "merged base not staged: " + MERGED_BASE);
+		TestFixtures.requireFile(Fixture.STAGED, MERGED_BASE, "merged base not staged: " + MERGED_BASE);
 		String property = ForbricMergedBaseCompatTransformer.SAVED_HEIGHTMAPS_PROPERTY;
 		String previous = System.getProperty(property);
 		System.setProperty(property, "off");
@@ -109,7 +109,7 @@ class MergedBaseSavedHeightmapsTest {
 
 	@Test
 	void itLeavesAnotherClassAlone() throws Exception {
-		TestFixtures.require(Fixture.STAGED, Files.isRegularFile(MERGED_BASE), "merged base not staged: " + MERGED_BASE);
+		TestFixtures.requireFile(Fixture.STAGED, MERGED_BASE, "merged base not staged: " + MERGED_BASE);
 		byte[] other = entry(MERGED_BASE, "net/minecraft/world/level/chunk/status/ChunkType.class");
 		assertTrue(other != null, "content drift: ChunkType absent from this base");
 		List<String> hits = new ArrayList<>();

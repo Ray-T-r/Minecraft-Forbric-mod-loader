@@ -35,7 +35,7 @@ class ForgeWorldModifierInjectorTest {
 	private static final Path RUN = TestFixtures.stagedRoot();
 	private static final Path FORGE = RUN.resolve("forge-runtime/forge-runtime.jar");
 	private static final Path NEO = RUN.resolve("neoforge-runtime/neoforge-runtime.jar");
-	private static final Path MERGED = RUN.resolve("merged-base/patched-mc-merged-26.2.jar");
+	private static final Path MERGED = RUN.resolve(TestFixtures.BASE_JAR);
 	private static final String SPAWN_BUILDER = "net/minecraftforge/common/world/MobSpawnSettingsBuilder";
 	private static final String REMOVE_SPAWNS = "net/minecraftforge/common/world/ForgeBiomeModifiers$RemoveSpawnsBiomeModifier";
 	private static final String HOOKS = "net/neoforged/neoforge/server/ServerLifecycleHooks";
@@ -190,7 +190,7 @@ class ForgeWorldModifierInjectorTest {
 	}
 
 	private static byte[] bytesOf(Path jar, String internal) throws Exception {
-		TestFixtures.require(Fixture.STAGED, Files.isRegularFile(jar), "staged artifact absent: " + jar);
+		TestFixtures.requireFile(Fixture.STAGED, jar, "staged artifact absent: " + jar);
 		try (ZipFile zip = new ZipFile(jar.toFile())) {
 			ZipEntry entry = zip.getEntry(internal + ".class");
 			assertNotNull(entry, internal + " not in " + jar.getFileName());

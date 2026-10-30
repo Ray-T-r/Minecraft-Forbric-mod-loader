@@ -31,7 +31,7 @@ class PortalSpawnInjectorTest {
 	@AfterEach void reset() { System.clearProperty(PortalSpawnInjector.PROPERTY); }
 
 	@Test void onlyTheHookOwnerChangesOnTheRealMergedBase() throws Exception {
-		byte[] original = staged("merged-base/patched-mc-merged-26.2.jar", PortalSpawnInjector.TARGET.replace('.', '/'));
+		byte[] original = staged(TestFixtures.BASE_JAR, PortalSpawnInjector.TARGET.replace('.', '/'));
 		// A base whose merge restored MinecraftForge's own call carries the proved pair: each family's call is routed
 		// through its own runtime entry, in the base's own order (NeoForge's first behind its barrier, or MinecraftForge's
 		// first where the merge kept both sides' edits). A base that lost it gets the wrapper that forwards to Forge
@@ -55,7 +55,7 @@ class PortalSpawnInjectorTest {
 	}
 
 	@Test void switchedOffTheRealMergedBaseCarriesOnlyTheReviewedNeoForgeCaller() throws Exception {
-		byte[] original = staged("merged-base/patched-mc-merged-26.2.jar", PortalSpawnInjector.TARGET.replace('.', '/'));
+		byte[] original = staged(TestFixtures.BASE_JAR, PortalSpawnInjector.TARGET.replace('.', '/'));
 		boolean restored = calls(host(parse(original))).stream().anyMatch(c -> c.owner.equals(PortalSpawnInjector.FORGE));
 		System.setProperty(PortalSpawnInjector.PROPERTY, "off");
 		byte[] changed = injector.transform(PortalSpawnInjector.TARGET, original, context);
@@ -122,7 +122,7 @@ class PortalSpawnInjectorTest {
 	private static String trace(ClassNode n) { StringWriter out = new StringWriter(); n.accept(new TraceClassVisitor(new PrintWriter(out))); return out.toString(); }
 	private static byte[] staged(String jar, String entry) throws Exception {
 		Path run = TestFixtures.stagedRoot();
-		Path path = run.resolve(jar); TestFixtures.require(Fixture.STAGED, Files.isRegularFile(path), "staged artifact absent: " + path);
+		Path path = run.resolve(jar); TestFixtures.requireFile(Fixture.STAGED, path, "staged artifact absent: " + path);
 		try (ZipFile zip = new ZipFile(path.toFile())) { return zip.getInputStream(zip.getEntry(entry + ".class")).readAllBytes(); }
 	}
 }

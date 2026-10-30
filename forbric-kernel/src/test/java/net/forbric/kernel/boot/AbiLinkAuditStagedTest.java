@@ -40,9 +40,8 @@ class AbiLinkAuditStagedTest {
 		Path mods = Path.of(System.getProperty("user.dir"), "run", "client-merged-pack", "mods").normalize();
 		Path run = TestFixtures.stagedRoot().normalize();
 		List<Path> against = List.of(run.resolve("forge-runtime/forge-runtime.jar"), run.resolve("neoforge-runtime/neoforge-runtime.jar"),
-				run.resolve("merged-base/patched-mc-merged-26.2.jar"));
-		TestFixtures.require(Fixture.STAGED, against.stream().allMatch(Files::isRegularFile),
-				"staged pack or carriers absent");
+				run.resolve(TestFixtures.BASE_JAR));
+		TestFixtures.requireFiles(Fixture.STAGED, "staged pack or carriers absent", against.toArray(Path[]::new));
 		TestFixtures.require(Fixture.THIRD_PARTY, Files.isDirectory(mods), "staged pack or carriers absent");
 		List<Path> jars = new ArrayList<>();
 		try (Stream<Path> list = Files.list(mods)) {

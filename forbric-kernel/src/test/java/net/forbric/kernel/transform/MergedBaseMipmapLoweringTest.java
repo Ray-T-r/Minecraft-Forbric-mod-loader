@@ -15,7 +15,7 @@ import net.forbric.kernel.TestFixtures;
 class MergedBaseMipmapLoweringTest {
     @TempDir Path root;
     @Test void theRealGateKeepsItsGetterAndOnlyTheSelectedLevelIsBounded() throws Exception {
-        Path base=TestFixtures.stagedRoot().resolve("merged-base/patched-mc-merged-26.2.jar");
+        Path base=TestFixtures.stagedBase();
         TestFixtures.requireFiles(TestFixtures.Fixture.STAGED,"real atlas allocation",base);
         byte[] raw;try(var zip=new java.util.zip.ZipFile(base.toFile())){raw=zip.getInputStream(zip.getEntry("net/minecraft/client/renderer/texture/SpriteLoader.class")).readAllBytes();}
         byte[] result=new ForbricMergedBaseCompatTransformer().transform("net.minecraft.client.renderer.texture.SpriteLoader",raw,null);

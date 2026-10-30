@@ -14,6 +14,8 @@ mc = pathlib.Path(os.environ.get('MC_DIR', pathlib.Path.home() / 'Library/Applic
 compile_game = pathlib.Path(os.environ.get('M42_COMPILE_GAME', old / 'run/neoforge-patched/patched-mc-neoforge-26.2.jar'))
 forge = pathlib.Path(os.environ.get('FORGE_RT', old / 'run/merged-base/forge-runtime-interop.jar'))
 if not forge.is_file(): forge = old / 'run/forge-runtime/forge-runtime.jar'
+# Optional for a NeoForge canary: on the compile classpath when staged, left out (and recorded as null) when not.
+forge = [forge] if forge.is_file() else []
 neo = pathlib.Path(os.environ.get('NEO_RT', old / 'run/neoforge-runtime/neoforge-runtime.jar'))
 fapi = pathlib.Path(os.environ.get('M42_FABRIC_API', kernel / 'run/client-merged-pack/mods/fabric-api-0.155.2+26.2.jar'))
 libraries = []
@@ -27,8 +29,8 @@ with zipfile.ZipFile(fapi) as archive:
         names = [n for n in archive.namelist() if n.startswith('META-INF/jars/' + prefix) and n.endswith('.jar')]
         if len(names) != 1: raise SystemExit('required actual Fabric module missing or ambiguous: ' + prefix)
         target = modules / pathlib.PurePosixPath(names[0]).name; target.write_bytes(archive.read(names[0])); selected.append(target)
-classpath = [compile_game, forge, neo, *selected, *libraries]
-for path in [compile_game, forge, neo, fapi]:
+classpath = [compile_game, *forge, neo, *selected, *libraries]
+for path in [compile_game, *forge, neo, fapi]:
     if not path.is_file(): raise SystemExit(f'M42 prerequisite absent: {path}')
 root = kernel / 'canary/coremod-parity'
 classes = work / 'classes'; classes.mkdir()
@@ -45,6 +47,6 @@ os.replace(staged, jar)
 def record(path):
     path = path.resolve(); return {'path': str(path), 'sha256': hashlib.sha256(path.read_bytes()).hexdigest()}
 (output / 'm42-build-inputs.json').write_text(json.dumps({'mod': record(jar), 'compileGame': record(compile_game),
-    'forge': record(forge), 'neo': record(neo), 'fabricApi': record(fapi), 'modules': [record(p) for p in selected]}, indent=2) + '\n')
+    'forge': record(forge[0]) if forge else None, 'neo': record(neo), 'fabricApi': record(fapi), 'modules': [record(p) for p in selected]}, indent=2) + '\n')
 print('[M42Coremod] built the coremod parity probe')
 PY

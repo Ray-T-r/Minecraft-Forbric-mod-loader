@@ -16,7 +16,7 @@ import org.objectweb.asm.tree.*;
 @ResourceLock("system-properties")
 class NeoConversionPostInjectorTest {
 	private static final Path MERGED = Path.of(System.getProperty("forbric.stagedRoot", "../forbric-loader/run"))
-			.resolve("merged-base/patched-mc-merged-26.2.jar");
+			.resolve(net.forbric.kernel.TestFixtures.BASE_JAR);
 	private static final String ZOMBIE = "net/minecraft/world/entity/monster/zombie/Zombie";
 
 	@AfterEach void reset() { System.clearProperty(NeoConversionPostInjector.PROPERTY); }

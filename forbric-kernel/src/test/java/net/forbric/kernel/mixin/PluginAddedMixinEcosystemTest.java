@@ -75,7 +75,7 @@ class PluginAddedMixinEcosystemTest {
 	}
 
 	@Test void createsPluginAddedModelMixinLandsOnNeoForgesParser() throws Exception {
-		ClassNode merged = full(TestFixtures.stagedRoot().resolve("merged-base/patched-mc-merged-26.2.jar"), MODELS);
+		ClassNode merged = full(TestFixtures.stagedBase(), MODELS);
 		ClassNode vanilla = full(TestFixtures.vanillaJar(), MODELS);
 		// As in production: no ecosystem, no native reference.
 		java.util.function.BiFunction<Ecosystem, String, ClassNode> references = (ecosystem, name) -> ecosystem == Ecosystem.FABRIC

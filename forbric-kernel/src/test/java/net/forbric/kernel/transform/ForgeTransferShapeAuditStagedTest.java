@@ -45,7 +45,7 @@ class ForgeTransferShapeAuditStagedTest {
 	/** Every audited class, as the staged jars hold it. */
 	private static Map<String, byte[]> staged() throws Exception {
 		Path root = TestFixtures.stagedRoot();
-		Path merged = root.resolve("merged-base/patched-mc-merged-26.2.jar").normalize();
+		Path merged = root.resolve(TestFixtures.BASE_JAR).normalize();
 		Path interop = root.resolve("merged-base/forge-runtime-interop.jar").normalize();
 		Path forge = Files.isRegularFile(interop) ? interop : root.resolve("forge-runtime/forge-runtime.jar").normalize();
 		Path neo = root.resolve("neoforge-runtime/neoforge-runtime.jar").normalize();

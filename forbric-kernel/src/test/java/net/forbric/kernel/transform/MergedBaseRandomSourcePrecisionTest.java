@@ -58,7 +58,7 @@ import net.forbric.kernel.TestFixtures.Fixture;
  * generated ones, where vanilla against itself differed in 0 and 10.
  */
 class MergedBaseRandomSourcePrecisionTest {
-	private static final Path MERGED_BASE = TestFixtures.stagedRoot().resolve("merged-base/patched-mc-merged-26.2.jar");
+	private static final Path MERGED_BASE = TestFixtures.stagedBase();
 	private static final List<String> SOURCES = List.of(
 			"net/minecraft/world/level/levelgen/XoroshiroRandomSource",
 			"net/minecraft/world/level/levelgen/BitRandomSource");
@@ -69,7 +69,7 @@ class MergedBaseRandomSourcePrecisionTest {
 
 	@Test
 	void theMergedBaseScalesItsRandomBitsInFloatAndTheRepairPutsItBackInDouble() throws Exception {
-		TestFixtures.require(Fixture.STAGED, Files.isRegularFile(MERGED_BASE), "merged base not staged: " + MERGED_BASE);
+		TestFixtures.requireFile(Fixture.STAGED, MERGED_BASE, "merged base not staged: " + MERGED_BASE);
 		for (String source : SOURCES) {
 			byte[] before = entry(source + ".class");
 			assertTrue(scalesInFloat(read(before)), source + " no longer carries the float-rounded nextDouble() this "

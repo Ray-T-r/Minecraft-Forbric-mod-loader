@@ -12,13 +12,15 @@ compile_game = pathlib.Path(os.environ.get('M35_COMPILE_GAME', old / 'run/neofor
 merged = pathlib.Path(os.environ.get('MERGED', old / 'run/merged-base/patched-mc-merged-26.2.jar'))
 forge = pathlib.Path(os.environ.get('FORGE_RT', old / 'run/merged-base/forge-runtime-interop.jar'))
 if not forge.is_file(): forge = old / 'run/forge-runtime/forge-runtime.jar'
+# Optional for a NeoForge canary: on the compile classpath when staged, left out (and recorded as null) when not.
+forge = [forge] if forge.is_file() else []
 neo = pathlib.Path(os.environ.get('NEO_RT', old / 'run/neoforge-runtime/neoforge-runtime.jar'))
 libraries = []
 for entry in json.loads((mc / 'versions/26.2/26.2.json').read_text())['libraries']:
     artifact = entry.get('downloads', {}).get('artifact', {}).get('path')
     if artifact and (mc / 'libraries' / artifact).is_file(): libraries.append(mc / 'libraries' / artifact)
 mixin = mc / 'libraries/net/fabricmc/sponge-mixin/0.17.3+mixin.0.8.7/sponge-mixin-0.17.3+mixin.0.8.7.jar'
-classpath = [compile_game, forge, neo, mixin, *libraries]
+classpath = [compile_game, *forge, neo, mixin, *libraries]
 for path in [*classpath, merged]:
     if not path.is_file(): raise SystemExit(f'M35 prerequisite absent: {path}')
 root = kernel / 'canary/behavior'
@@ -33,6 +35,6 @@ with zipfile.ZipFile(jar, 'w', zipfile.ZIP_DEFLATED) as target:
 def record(path):
     path = path.resolve(); return {'path': str(path), 'sha256': hashlib.sha256(path.read_bytes()).hexdigest()}
 (output / 'm35-build-inputs.json').write_text(json.dumps({'mod': record(jar), 'compileGame': record(compile_game),
-    'compileClasspath': [record(path) for path in classpath], 'merged': record(merged), 'forge': record(forge), 'neo': record(neo)}, indent=2) + '\n')
+    'compileClasspath': [record(path) for path in classpath], 'merged': record(merged), 'forge': record(forge[0]) if forge else None, 'neo': record(neo)}, indent=2) + '\n')
 print('[M35Behavior] built actual world portal/spawner/item fixture')
 PY

@@ -26,7 +26,7 @@ import org.objectweb.asm.tree.MethodNode;
  */
 class CraftingRemainderConflictTest {
 	private static final Path STAGED = TestFixtures.stagedRoot();
-	private static final List<Path> JARS = List.of(STAGED.resolve("merged-base/patched-mc-merged-26.2.jar"),
+	private static final List<Path> JARS = List.of(STAGED.resolve(TestFixtures.BASE_JAR),
 			STAGED.resolve("merged-base/forge-runtime-interop.jar"), STAGED.resolve("neoforge-runtime/neoforge-runtime.jar"));
 	private static final Path FABRIC_API = TestFixtures.fabricApi();
 	private static final String ITEM = "net/minecraft/world/item/Item";
@@ -96,7 +96,7 @@ class CraftingRemainderConflictTest {
 
 	private static byte[] fabricItem() throws Exception {
 		TestFixtures.require(Fixture.THIRD_PARTY, Files.isRegularFile(FABRIC_API), "actual Fabric API required: " + FABRIC_API);
-		TestFixtures.require(Fixture.STAGED, Files.isRegularFile(JARS.getFirst()), "actual game required: " + JARS.getFirst());
+		TestFixtures.requireFile(Fixture.STAGED, JARS.getFirst(), "actual game required: " + JARS.getFirst());
 		try (ZipFile zip = new ZipFile(FABRIC_API.toFile())) {
 			ZipEntry nested = zip.stream().filter(e -> e.getName().startsWith("META-INF/jars/fabric-item-api-v1-")).findFirst().orElseThrow();
 			try (ZipInputStream in = new ZipInputStream(zip.getInputStream(nested))) {

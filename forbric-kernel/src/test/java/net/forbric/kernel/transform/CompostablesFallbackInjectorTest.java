@@ -32,7 +32,7 @@ import org.objectweb.asm.tree.analysis.BasicVerifier;
  */
 @ResourceLock("system-properties")
 class CompostablesFallbackInjectorTest {
-	private static final Path MERGED = TestFixtures.stagedRoot().resolve("merged-base/patched-mc-merged-26.2.jar");
+	private static final Path MERGED = TestFixtures.stagedBase();
 	private static final Path MODS = Path.of("build/compat-inputs/sweep90/mods");
 	private static final String COMPOSTER = "net/minecraft/world/level/block/ComposterBlock";
 	private static final String INPUT = COMPOSTER + "$InputContainer";
@@ -219,7 +219,7 @@ class CompostablesFallbackInjectorTest {
 
 	static byte[] entry(Path jar, String internal) throws Exception {
 		TestFixtures.require(Fixture.THIRD_PARTY, Files.isRegularFile(jar), "sweep pack absent: " + jar);
-		TestFixtures.require(Fixture.STAGED, Files.isRegularFile(MERGED), "merged base absent: " + MERGED);
+		TestFixtures.requireFile(Fixture.STAGED, MERGED, "merged base absent: " + MERGED);
 		try (ZipFile zip = new ZipFile(jar.toFile())) {
 			ZipEntry entry = zip.getEntry(internal + ".class");
 			assertNotNull(entry, internal + " in " + jar);

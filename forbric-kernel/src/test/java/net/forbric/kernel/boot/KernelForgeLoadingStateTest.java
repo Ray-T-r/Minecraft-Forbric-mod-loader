@@ -36,7 +36,7 @@ class KernelForgeLoadingStateTest {
 
     @Test void theActualForgeCarrierStillOwnsItsGuardAndFailurePaths() throws Exception {
         Path jar = TestFixtures.stagedRoot().resolve("forge-runtime/forge-runtime.jar");
-        TestFixtures.require(Fixture.STAGED, Files.isRegularFile(jar), jar + " absent");
+        TestFixtures.requireFiles(Fixture.STAGED, jar + " absent", jar);
         ClassNode node = new ClassNode();
         try (ZipFile zip = new ZipFile(jar.toFile())) {
             new ClassReader(zip.getInputStream(zip.getEntry("net/minecraftforge/fml/ModLoader.class")).readAllBytes()).accept(node, 0);

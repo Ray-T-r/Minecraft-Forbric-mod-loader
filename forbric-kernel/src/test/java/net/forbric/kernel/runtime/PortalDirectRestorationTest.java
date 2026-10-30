@@ -63,7 +63,7 @@ class PortalDirectRestorationTest {
 		Path runtime = Path.of(System.getProperty("forbric.test.runtimeClasses", "build/classes/java/runtime"));
 		TestFixtures.requireFiles(TestFixtures.Fixture.GAME_SIDE, "compiled game side", runtime.resolve(binary.replace('.', '/') + ".class"));
 		byte[] compiled = Files.readAllBytes(runtime.resolve(binary.replace('.', '/') + ".class"));
-		byte[] nativeCaller = ForgeSpawnFixture.staged("merged-base/patched-mc-merged-26.2.jar", TARGET);
+		byte[] nativeCaller = ForgeSpawnFixture.staged(TestFixtures.BASE_JAR, TARGET);
 		List<byte[]> callers = new ArrayList<>(List.of(adapt(nativeCaller)));
 		for (Order order : Order.values()) callers.add(adapt(write(restoredCaller(order))));
 		for (byte[] caller : callers) {
@@ -279,7 +279,7 @@ class PortalDirectRestorationTest {
 	 * NeoForge-only body ({@link #neoOnly}) with that order restored by hand.
 	 */
 	private static ClassNode restoredCaller(Order order) throws Exception {
-		ClassNode caller = new ClassNode(); new ClassReader(ForgeSpawnFixture.staged("merged-base/patched-mc-merged-26.2.jar", TARGET)).accept(caller, 0);
+		ClassNode caller = new ClassNode(); new ClassReader(ForgeSpawnFixture.staged(TestFixtures.BASE_JAR, TARGET)).accept(caller, 0);
 		MethodNode host = host(caller);
 		boolean forge = host.instructions.size() > 0 && java.util.Arrays.stream(host.instructions.toArray())
 				.anyMatch(i -> i instanceof MethodInsnNode call && call.owner.equals(FORGE) && call.name.equals("onTrySpawnPortal"));

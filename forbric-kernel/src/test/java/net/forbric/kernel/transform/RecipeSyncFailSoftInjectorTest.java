@@ -32,7 +32,7 @@ class RecipeSyncFailSoftInjectorTest {
 	@AfterEach void reset() { System.clearProperty(RecipeSyncFailSoftInjector.PROPERTY); }
 
 	@Test void thePayloadIsFilteredBetweenItsCreationAndItsSending() throws Exception {
-		TestFixtures.require(Fixture.STAGED, Files.isRegularFile(NEOFORGE_RUNTIME), "neoforge runtime not staged: " + NEOFORGE_RUNTIME);
+		TestFixtures.requireFile(Fixture.STAGED, NEOFORGE_RUNTIME, "neoforge runtime not staged: " + NEOFORGE_RUNTIME);
 		byte[] original = NativeCoremodParityTest.read(NEOFORGE_RUNTIME, HOOKS);
 		byte[] out = new RecipeSyncFailSoftInjector().transform(RecipeSyncFailSoftInjector.COMMON_HOOKS, original, null);
 		assertNotSame(original, out);

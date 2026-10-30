@@ -131,7 +131,7 @@ class ForgeRegistrationA2ContractTest {
     void clientGateSeedsF6AndBothScriptsParse() throws Exception {
         // The options section reads the world version out of the merged base, exactly as the gate does.
         TestFixtures.requireFiles(Fixture.STAGED, "staged merged base", System.getenv("MERGED") != null ? Path.of(System.getenv("MERGED"))
-                : CANARY.toAbsolutePath().getParent().getParent().resolve("merged-base/patched-mc-merged-26.2.jar"));
+                : CANARY.toAbsolutePath().getParent().getParent().resolve(TestFixtures.BASE_JAR));
         String script = Files.readString(M26);
         String options = section(script, "M26_OPTIONS");
         Path result = temporary.resolve("options-command.log");

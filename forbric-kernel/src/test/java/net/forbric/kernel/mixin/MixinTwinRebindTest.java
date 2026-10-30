@@ -34,7 +34,7 @@ import net.forbric.kernel.TestFixtures.Fixture;
  * {@code (level, pos, state, direction, neighborPos)} and nothing calls.
  */
 class MixinTwinRebindTest {
-	private static final Path MERGED = TestFixtures.stagedRoot().resolve("merged-base/patched-mc-merged-26.2.jar");
+	private static final Path MERGED = TestFixtures.stagedBase();
 	private static final Path LIQUIDBOUNCE = Path.of("../build/lb-vfp/jars/liquidbounce-0.40.1+26.2-20260925.jar");
 	private static final String RENDERER = "net/minecraft/client/renderer/block/ModelBlockRenderer";
 	private static final String GETTER = "Lnet/minecraft/client/renderer/block/BlockAndTintGetter;";
@@ -201,7 +201,7 @@ class MixinTwinRebindTest {
 
 	/** The released jar on the staged merged class: the face test moves, wrapped; nothing else in the mixin is touched. */
 	@Test void releasedLiquidBounceMovesItsFaceTestAndNothingElse() throws Exception {
-		TestFixtures.require(Fixture.STAGED, Files.isRegularFile(MERGED), "actual game required");
+		TestFixtures.requireFile(Fixture.STAGED, MERGED, "actual game required");
 		TestFixtures.require(Fixture.THIRD_PARTY, Files.isRegularFile(LIQUIDBOUNCE), LIQUIDBOUNCE + " absent");
 		ClassNode renderer;
 		try (ZipFile zip = new ZipFile(MERGED.toFile())) {

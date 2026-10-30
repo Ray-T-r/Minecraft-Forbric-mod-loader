@@ -44,7 +44,7 @@ import net.forbric.kernel.TestFixtures.Fixture;
  * the other would give a MinecraftForge mod's entity attributes that the game never looks for.
  */
 class MergedBaseDefaultAttributesTest {
-	private static final Path MERGED_BASE = TestFixtures.stagedRoot().resolve("merged-base/patched-mc-merged-26.2.jar");
+	private static final Path MERGED_BASE = TestFixtures.stagedBase();
 	private static final String ENTRY = "net/minecraft/world/entity/ai/attributes/DefaultAttributes.class";
 	private static final String BINARY = "net.minecraft.world.entity.ai.attributes.DefaultAttributes";
 	private static final String KERNEL = "net/forbric/kernel/runtime/KernelForgeAttributes";

@@ -80,7 +80,7 @@ import net.forbric.kernel.mixin.MergedBaseMixinCompat;
  */
 class RegistryDirectoryOwnerInjectorTest {
 	private static final Path STAGED = TestFixtures.stagedRoot();
-	private static final Path MERGED_BASE = STAGED.resolve("merged-base/patched-mc-merged-26.2.jar");
+	private static final Path MERGED_BASE = STAGED.resolve(TestFixtures.BASE_JAR);
 	private static final Path FORGE_PATCHED = STAGED.resolve("forge-patched/patched-mc-forge-26.2.jar");
 	private static final Path NEO_RUNTIME = STAGED.resolve("neoforge-runtime/neoforge-runtime.jar");
 	private static final Path VANILLA = TestFixtures.vanillaJar();
@@ -115,7 +115,7 @@ class RegistryDirectoryOwnerInjectorTest {
 
 	@Test
 	void theMergedBodyIsNeoForgesAndTheEditHandsEveryAnswerToTheOwner() throws Exception {
-		TestFixtures.require(Fixture.STAGED, Files.isRegularFile(MERGED_BASE), "staged merged base absent — skipping real-bytecode check");
+		TestFixtures.requireFile(Fixture.STAGED, MERGED_BASE, "staged merged base absent — skipping real-bytecode check");
 		byte[] in = classBytes(MERGED_BASE, REGISTRIES);
 		assertTrue(calls(method(node(in), "registryDirPath"), COMMON_HOOKS, "prefixNamespace"),
 				"the merged body prefixes through NeoForge's hook — if it stopped, re-derive the repair");
@@ -208,7 +208,7 @@ class RegistryDirectoryOwnerInjectorTest {
 
 	@Test
 	void switchedOffRegistriesStaysAsMerged() throws Exception {
-		TestFixtures.require(Fixture.STAGED, Files.isRegularFile(MERGED_BASE), "staged merged base absent");
+		TestFixtures.requireFile(Fixture.STAGED, MERGED_BASE, "staged merged base absent");
 		System.setProperty(RegistryDirectoryOwnerInjector.PROPERTY, "off");
 		byte[] in = classBytes(MERGED_BASE, REGISTRIES);
 		assertSame(in, transform(in));

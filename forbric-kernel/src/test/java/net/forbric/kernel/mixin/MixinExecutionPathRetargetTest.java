@@ -200,7 +200,7 @@ class MixinExecutionPathRetargetTest {
 	}
 	private static ClassNode gameWithDebug(String owner, boolean vanilla) throws Exception {
 		java.nio.file.Path jar = vanilla ? net.forbric.kernel.TestFixtures.vanillaJar()
-				: net.forbric.kernel.TestFixtures.stagedRoot().resolve("merged-base/patched-mc-merged-26.2.jar");
+				: net.forbric.kernel.TestFixtures.stagedBase();
 		net.forbric.kernel.TestFixtures.require(vanilla ? net.forbric.kernel.TestFixtures.Fixture.MC_LIBRARIES
 				: net.forbric.kernel.TestFixtures.Fixture.STAGED, java.nio.file.Files.isRegularFile(jar), "actual game with LVT required");
 		try (java.util.zip.ZipFile zip = new java.util.zip.ZipFile(jar.toFile())) {

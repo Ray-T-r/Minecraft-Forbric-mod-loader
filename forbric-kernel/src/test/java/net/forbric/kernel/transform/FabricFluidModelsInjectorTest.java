@@ -44,7 +44,7 @@ class FabricFluidModelsInjectorTest {
 	@AfterEach void reset() { System.clearProperty(FabricFluidModelsInjector.PROPERTY); }
 
 	@Test void theWarningsCheckAsksTheKernelAndOnlyIt() throws Exception {
-		TestFixtures.require(Fixture.STAGED, Files.isRegularFile(NEO_RT), NEO_RT + " absent");
+		TestFixtures.requireFile(Fixture.STAGED, NEO_RT, NEO_RT + " absent");
 		byte[] original = NativeCoremodParityTest.read(NEO_RT, HOOKS);
 		byte[] out = new FabricFluidModelsInjector().transform(FabricFluidModelsInjector.HOOKS, original, null);
 		assertNotSame(original, out);

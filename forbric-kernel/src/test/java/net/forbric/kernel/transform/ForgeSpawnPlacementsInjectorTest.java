@@ -64,7 +64,7 @@ class ForgeSpawnPlacementsInjectorTest {
 	 * exactly as it is, and the claim still lands, because MinecraftForge's registration reaches the table.
 	 */
 	@Test void realMergedSeedAndWritebackRemainUnchanged() throws Exception {
-		byte[] original = staged("merged-base/patched-mc-merged-26.2.jar", INTERNAL);
+		byte[] original = staged(TestFixtures.BASE_JAR, INTERNAL);
 		MethodNode host = method(parse(original));
 		if (ForgeSpawnPlacementsInjector.postsMinecraftForgesEvent(host)) {
 			int forgePost = -1, neoPost = -1;
@@ -128,9 +128,9 @@ class ForgeSpawnPlacementsInjectorTest {
 	@Test void realCarrierFieldsAndConstructorsMatchTheReadOnlyBridge() throws Exception {
 		String predicate = "L" + INTERNAL + "$SpawnPredicate;", placement = "Lnet/minecraft/world/entity/SpawnPlacementType;",
 				height = "Lnet/minecraft/world/level/levelgen/Heightmap$Types;";
-		ClassNode vanilla = parse(staged("merged-base/patched-mc-merged-26.2.jar", INTERNAL));
+		ClassNode vanilla = parse(staged(TestFixtures.BASE_JAR, INTERNAL));
 		field(vanilla, "DATA_BY_TYPE", "Ljava/util/Map;", true);
-		ClassNode data = parse(staged("merged-base/patched-mc-merged-26.2.jar", INTERNAL + "$Data"));
+		ClassNode data = parse(staged(TestFixtures.BASE_JAR, INTERNAL + "$Data"));
 		field(data, "predicate", predicate, false); field(data, "placement", placement, false); field(data, "heightMap", height, false);
 		assertNotNull(named(data, "<init>", "(" + height + placement + predicate + ")V"));
 		for (Ecosystem family : List.of(Ecosystem.FORGE, Ecosystem.NEOFORGE)) {
@@ -186,7 +186,7 @@ class ForgeSpawnPlacementsInjectorTest {
 	private static TransformContext context() { return new TransformContext(EnvType.CLIENT, false, "mojmap"); }
 	private static byte[] staged(String jar, String entry) throws Exception {
 		Path run = TestFixtures.stagedRoot();
-		Path path = run.resolve(jar); TestFixtures.require(Fixture.STAGED, Files.isRegularFile(path), "staged artifact absent: " + path);
+		Path path = run.resolve(jar); TestFixtures.requireFile(Fixture.STAGED, path, "staged artifact absent: " + path);
 		try (ZipFile zip = new ZipFile(path.toFile())) { assertNotNull(zip.getEntry(entry + ".class")); return zip.getInputStream(zip.getEntry(entry + ".class")).readAllBytes(); }
 	}
 }

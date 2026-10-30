@@ -162,7 +162,7 @@ class KernelLifecycleForgeConfigTest {
 	@Test
 	void realForgeCarrierHasTheTwoArgumentPrivateStaticOpenerAndTheExpectedTypeOrder() throws Exception {
 		Path jar = TestFixtures.stagedRoot().resolve("forge-runtime/forge-runtime.jar");
-		TestFixtures.require(Fixture.STAGED, Files.isRegularFile(jar), "optional staged Forge carrier absent: " + jar);
+		TestFixtures.requireFiles(Fixture.STAGED, "optional staged Forge carrier absent: " + jar, jar);
 		try (JarFile carrier = new JarFile(jar.toFile())) {
 			ClassNode tracker = read(carrier, TRACKER.replace('.', '/'));
 			var openers = tracker.methods.stream().filter(m -> m.name.equals("openConfig")).toList();

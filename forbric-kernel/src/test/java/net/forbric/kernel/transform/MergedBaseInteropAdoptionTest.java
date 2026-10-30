@@ -53,12 +53,12 @@ import net.forbric.kernel.TestFixtures.Fixture;
  * changed underneath it.
  */
 class MergedBaseInteropAdoptionTest {
-	private static final Path MERGED_BASE = TestFixtures.stagedRoot().resolve("merged-base/patched-mc-merged-26.2.jar");
+	private static final Path MERGED_BASE = TestFixtures.stagedBase();
 	private static final String LEGACY = "net/forbric/loader/impl/";
 
 	@Test
 	void everyCallTheBaseMakesUnderTheOldNameIsAdoptedAndResolves() throws Exception {
-		TestFixtures.require(Fixture.STAGED, Files.isRegularFile(MERGED_BASE), "staged merged base absent — skipping real-bytecode check");
+		TestFixtures.requireFile(Fixture.STAGED, MERGED_BASE, "staged merged base absent — skipping real-bytecode check");
 
 		List<String> carriers = entriesNaming(LEGACY);
 		assertFalse(carriers.isEmpty(),
@@ -81,7 +81,7 @@ class MergedBaseInteropAdoptionTest {
 	 */
 	@Test
 	void theReAddedForgeFluidTypeBridgeResolves() throws Exception {
-		TestFixtures.require(Fixture.STAGED, Files.isRegularFile(MERGED_BASE), "staged merged base absent — skipping real-bytecode check");
+		TestFixtures.requireFile(Fixture.STAGED, MERGED_BASE, "staged merged base absent — skipping real-bytecode check");
 
 		String fluid = null;
 		for (String entry : entriesUnder("net/minecraft/world/level/material/")) {

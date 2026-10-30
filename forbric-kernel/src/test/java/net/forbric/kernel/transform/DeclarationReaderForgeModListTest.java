@@ -96,7 +96,7 @@ class DeclarationReaderForgeModListTest {
 	@Test
 	void aMinecraftForgeReaderMeetsTheDeclaringFabricMod() throws Throwable {
 		Path forge = TestFixtures.stagedRoot().resolve("forge-runtime/forge-runtime.jar");
-		TestFixtures.require(Fixture.STAGED, Files.isRegularFile(forge), "the staged MinecraftForge carrier is absent");
+		TestFixtures.requireFiles(Fixture.STAGED, "the staged MinecraftForge carrier is absent", forge);
 		Map<String, byte[]> compiled = InjectorExecution.compile(work, LIBRARY, List.of(forge));
 		DeclarationReaderModListInjector injector = new DeclarationReaderModListInjector();
 		Map<String, byte[]> out = new TreeMap<>();
@@ -141,7 +141,7 @@ class DeclarationReaderForgeModListTest {
 		Path compiled = Path.of(System.getProperty("forbric.testRuntimeClasses", "build/classes/java/runtime"));
 		Path run = TestFixtures.stagedRoot();
 		Path neo = run.resolve("neoforge-runtime/neoforge-runtime.jar");
-		Path merged = run.resolve("merged-base/patched-mc-merged-26.2.jar");
+		Path merged = run.resolve(TestFixtures.BASE_JAR);
 		TestFixtures.require(Fixture.STAGED, Files.isRegularFile(neo) && Files.isRegularFile(merged),
 				"the staged artifacts are absent");
 		TestFixtures.require(Fixture.GAME_SIDE, Files.isDirectory(compiled), "the game side is not compiled");

@@ -35,7 +35,7 @@ import net.forbric.kernel.TestFixtures.Fixture;
  * them, and fabric-rendering-v1's HudMixin, whose four R3 moves out of the same dispatcher must not change.
  */
 class MixinRetargetCarrierHelperStagedTest {
-	private static final Path MERGED_BASE = TestFixtures.stagedRoot().resolve("merged-base/patched-mc-merged-26.2.jar").normalize();
+	private static final Path MERGED_BASE = TestFixtures.stagedBase().normalize();
 	private static final Path NEO_RUNTIME = TestFixtures.stagedRoot().resolve("neoforge-runtime/neoforge-runtime.jar").normalize();
 	private static final Path SWEEP = Path.of(System.getProperty("user.dir"), "build", "compat-inputs", "sweep90", "mods").normalize();
 	private static final String G = "(Lnet/minecraft/client/gui/GuiGraphicsExtractor;)V";
@@ -172,7 +172,7 @@ class MixinRetargetCarrierHelperStagedTest {
 	// ---------------------------------------------------------------------------------------------------------------
 
 	static Function<String, byte[]> mergedResolver() {
-		TestFixtures.require(Fixture.STAGED, Files.isRegularFile(MERGED_BASE), "staged merged base absent");
+		TestFixtures.requireFile(Fixture.STAGED, MERGED_BASE, "staged merged base absent");
 		return name -> {
 			try {
 				return readFromJar(MERGED_BASE, name);

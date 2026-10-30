@@ -25,12 +25,12 @@ import net.forbric.kernel.TestFixtures.Fixture;
 @ResourceLock("system-properties")
 class ForeignPayloadReceiveInjectorTest {
 	private static final Path MERGED = TestFixtures.stagedRoot()
-			.resolve("merged-base/patched-mc-merged-26.2.jar");
+			.resolve(TestFixtures.BASE_JAR);
 
 	@AfterEach void reset() { System.clearProperty(ForeignPayloadReceiveInjector.PROPERTY); }
 
 	@Test void bothCommonListenersAskTheKernelAfterNeoForge() throws Exception {
-		TestFixtures.require(Fixture.STAGED, Files.isRegularFile(MERGED), "merged base not staged: " + MERGED);
+		TestFixtures.requireFile(Fixture.STAGED, MERGED, "merged base not staged: " + MERGED);
 		for (String target : ForeignPayloadReceiveInjector.TARGETS) {
 			byte[] original = NativeCoremodParityTest.read(MERGED, target.replace('.', '/'));
 			byte[] out = new ForeignPayloadReceiveInjector().transform(target, original, null);

@@ -43,7 +43,7 @@ import net.forbric.kernel.TestFixtures.Fixture;
  * Unrepaired, one condition-gated data file whose condition is false stops the server starting.
  */
 class MergedBaseSkipMarkerTest {
-	private static final Path MERGED_BASE = TestFixtures.stagedRoot().resolve("merged-base/patched-mc-merged-26.2.jar");
+	private static final Path MERGED_BASE = TestFixtures.stagedBase();
 	private static final String ENTRY = "net/minecraft/server/packs/resources/SimpleJsonResourceReloadListener.class";
 	private static final String BINARY = "net.minecraft.server.packs.resources.SimpleJsonResourceReloadListener";
 	private static final String KERNEL = "net/forbric/kernel/runtime/KernelFabricConditions";

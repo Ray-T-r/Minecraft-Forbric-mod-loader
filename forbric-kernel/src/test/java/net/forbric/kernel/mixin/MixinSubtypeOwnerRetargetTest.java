@@ -48,7 +48,7 @@ class MixinSubtypeOwnerRetargetTest {
 
 	/** The target as ForbricMixinService reads it: with its local variable table (the fixture skips debug info). */
 	private static ClassNode withLocals(boolean vanilla) throws Exception {
-		Path jar = vanilla ? TestFixtures.vanillaJar() : TestFixtures.stagedRoot().resolve("merged-base/patched-mc-merged-26.2.jar");
+		Path jar = vanilla ? TestFixtures.vanillaJar() : TestFixtures.stagedBase();
 		TestFixtures.require(vanilla ? Fixture.MC_LIBRARIES : Fixture.STAGED, Files.isRegularFile(jar), "actual game required");
 		try (ZipFile zip = new ZipFile(jar.toFile())) {
 			ClassNode node = new ClassNode();
@@ -99,7 +99,7 @@ class MixinSubtypeOwnerRetargetTest {
 
 	/** One game's classes as the kernel serves them: the merged goal after the twin injector, which debugify's @Shadow needs. */
 	private static Function<String, byte[]> game(boolean vanilla) throws Exception {
-		Path jar = vanilla ? TestFixtures.vanillaJar() : TestFixtures.stagedRoot().resolve("merged-base/patched-mc-merged-26.2.jar");
+		Path jar = vanilla ? TestFixtures.vanillaJar() : TestFixtures.stagedBase();
 		TestFixtures.require(vanilla ? Fixture.MC_LIBRARIES : Fixture.STAGED, Files.isRegularFile(jar), "actual game required");
 		Map<String, byte[]> classes = new HashMap<>();
 		try (ZipFile zip = new ZipFile(jar.toFile())) {

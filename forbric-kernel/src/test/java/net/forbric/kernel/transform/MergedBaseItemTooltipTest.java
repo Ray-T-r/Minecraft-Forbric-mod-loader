@@ -53,7 +53,7 @@ import net.forbric.kernel.TestFixtures.Fixture;
  * own work is exercised whichever shape the staged base has.
  */
 class MergedBaseItemTooltipTest {
-	private static final Path MERGED_BASE = TestFixtures.stagedRoot().resolve("merged-base/patched-mc-merged-26.2.jar");
+	private static final Path MERGED_BASE = TestFixtures.stagedBase();
 	private static final String ITEM_STACK = "net/minecraft/world/item/ItemStack";
 	private static final String BRIDGE = "net/forbric/kernel/runtime/KernelItemTooltips";
 	private static final String FORGE_FACTORY = "net/minecraftforge/event/ForgeEventFactory";

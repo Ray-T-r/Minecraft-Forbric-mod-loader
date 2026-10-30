@@ -35,7 +35,7 @@ class ForgeClientCanaryTest {
 	@Test
 	void packagedCanarySubscribesTheThreeEventsOnlyBehindItsClientClassBoundary() throws Exception {
 		Path jar = WorldgenCanaryDataTest.STAGED.resolve("forge-runtime/forbriclive.jar");
-		TestFixtures.require(Fixture.STAGED, Files.isRegularFile(jar),
+		TestFixtures.requireFile(Fixture.STAGED, jar,
 				"build canaries with forbric-loader/run/build-testmods.sh");
 		try (ZipFile zip = new ZipFile(jar.toFile())) {
 			ClassNode client = new ClassNode();
@@ -78,7 +78,7 @@ class ForgeClientCanaryTest {
 	@Test
 	void presetListenerUsesTheModsBusGroupAndTheGateRequiresItsDelivery() throws Exception {
 		Path jar = WorldgenCanaryDataTest.STAGED.resolve("forge-runtime/forbriclive.jar");
-		TestFixtures.require(Fixture.STAGED, Files.isRegularFile(jar),
+		TestFixtures.requireFile(Fixture.STAGED, jar,
 				"build canaries with forbric-loader/run/build-testmods.sh");
 		try (ZipFile zip = new ZipFile(jar.toFile())) {
 			ClassNode client = new ClassNode();

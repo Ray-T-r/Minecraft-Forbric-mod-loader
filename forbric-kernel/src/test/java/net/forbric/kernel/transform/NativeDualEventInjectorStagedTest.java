@@ -47,7 +47,7 @@ class NativeDualEventInjectorStagedTest {
 	private static List<Path> jars() {
 		Path forge = root().resolve("merged-base/forge-runtime-interop.jar");
 		if (!Files.isRegularFile(forge)) forge = root().resolve("forge-runtime/forge-runtime.jar");
-		return List.of(root().resolve("merged-base/patched-mc-merged-26.2.jar"), forge, root().resolve("neoforge-runtime/neoforge-runtime.jar"));
+		return List.of(root().resolve(TestFixtures.BASE_JAR), forge, root().resolve("neoforge-runtime/neoforge-runtime.jar"));
 	}
 
 	/** The game's resources as the kernel reads them at boot: the merged base first, then the two carriers. */
@@ -56,7 +56,7 @@ class NativeDualEventInjectorStagedTest {
 
 		Resources() throws IOException {
 			for (Path jar : jars()) {
-				TestFixtures.require(Fixture.STAGED, Files.isRegularFile(jar), "staged jar absent: " + jar);
+				TestFixtures.requireFile(Fixture.STAGED, jar, "staged jar absent: " + jar);
 				zips.add(new ZipFile(jar.toFile()));
 			}
 		}

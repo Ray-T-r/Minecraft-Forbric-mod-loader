@@ -29,8 +29,8 @@ import net.forbric.kernel.TestFixtures.Fixture;
 @ResourceLock("system-properties")
 class FurnaceTickCallsInjectorTest {
 	private static final Path STAGED = TestFixtures.stagedRoot();
-	private static final Path MERGED = STAGED.resolve("merged-base/patched-mc-merged-26.2.jar");
-	private static final Path NEO = STAGED.resolve("neoforge-patched/patched-mc-neoforge-26.2.jar");
+	private static final Path MERGED = STAGED.resolve(TestFixtures.BASE_JAR);
+	private static final Path NEO = STAGED.resolve(TestFixtures.GENUINE_BASE_JAR);
 	private static final Path FORGE = STAGED.resolve("forge-patched/patched-mc-forge-26.2.jar");
 	private static final String FURNACE = "net/minecraft/world/level/block/entity/AbstractFurnaceBlockEntity";
 
@@ -77,7 +77,7 @@ class FurnaceTickCallsInjectorTest {
 	 * fails here instead of in a player's world.
 	 */
 	@Test void theFurnaceIsTheMergedBasesOnlyStaticInstanceMismatch() throws Exception {
-		TestFixtures.require(Fixture.STAGED, Files.isRegularFile(MERGED), "actual game required");
+		TestFixtures.requireFile(Fixture.STAGED, MERGED, "actual game required");
 		Map<String, ClassNode> classes = new HashMap<>();
 		try (ZipFile zip = new ZipFile(MERGED.toFile())) {
 			for (ZipEntry entry : Collections.list(zip.entries())) {

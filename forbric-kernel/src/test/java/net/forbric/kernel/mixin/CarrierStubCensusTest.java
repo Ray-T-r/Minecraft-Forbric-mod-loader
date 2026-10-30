@@ -34,14 +34,14 @@ import org.objectweb.asm.tree.MethodNode;
  * same stub.
  */
 class CarrierStubCensusTest {
-	private static final Path MERGED = TestFixtures.stagedRoot().resolve("merged-base/patched-mc-merged-26.2.jar");
+	private static final Path MERGED = TestFixtures.stagedBase();
 	private static final Path MC = TestFixtures.minecraftDir();
 	/**
 	 * The two jars the merge merged. For MinecraftForge that is {@link TestFixtures#forgeMergeInput}, never whatever sits
 	 * in forge-patched/: forbric-loader's is an older build, and its LivingEntity differs from the one the merge took.
 	 */
 	private static final Path FORGE = TestFixtures.forgeMergeInput();
-	private static final Path NEO = TestFixtures.stagedRoot().resolve("neoforge-patched/patched-mc-neoforge-26.2.jar");
+	private static final Path NEO = TestFixtures.genuineBase();
 	private static final Path VANILLA = MC.resolve("versions/26.2/26.2.jar");
 	private static final Path INTEROP = TestFixtures.stagedRoot().resolve("merged-base/forge-runtime-interop.jar");
 	private static final Path NEO_RUNTIME = TestFixtures.stagedRoot().resolve("neoforge-runtime/neoforge-runtime.jar");
@@ -53,7 +53,7 @@ class CarrierStubCensusTest {
 	private static final Path KERNEL_RUNTIME = Path.of(System.getProperty("forbric.test.runtimeClasses", "build/classes/java/runtime"));
 
 	@Test void theShippedTableIsExactlyWhatTheArtifactsSay() throws Exception {
-		TestFixtures.require(Fixture.STAGED, Files.isRegularFile(MERGED), "merged base and vanilla jar required");
+		TestFixtures.requireFile(Fixture.STAGED, MERGED, "merged base and vanilla jar required");
 		TestFixtures.require(Fixture.MC_LIBRARIES, Files.isRegularFile(VANILLA), "merged base and vanilla jar required");
 		// The rows themselves need only the merged base and vanilla; each row's forge=/neo= columns need both carriers.
 		boolean carriers = Files.isRegularFile(FORGE) && Files.isRegularFile(NEO);

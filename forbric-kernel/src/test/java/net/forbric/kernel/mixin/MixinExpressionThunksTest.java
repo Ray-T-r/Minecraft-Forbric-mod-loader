@@ -66,8 +66,8 @@ class MixinExpressionThunksTest {
 	}
 
 	private static ClassNode thunked(String name, boolean thunks) throws Exception {
-		Path jar = TestFixtures.stagedRoot().resolve("merged-base/patched-mc-merged-26.2.jar");
-		TestFixtures.require(Fixture.STAGED, Files.isRegularFile(jar), "staged merged base");
+		Path jar = TestFixtures.stagedBase();
+		TestFixtures.requireFile(Fixture.STAGED, jar, "staged merged base");
 		byte[] bytes;
 		try (ZipFile zip = new ZipFile(jar.toFile())) {
 			bytes = zip.getInputStream(zip.getEntry(name + ".class")).readAllBytes();

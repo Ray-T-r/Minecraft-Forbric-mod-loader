@@ -36,9 +36,9 @@ import org.objectweb.asm.Opcodes;
 @ResourceLock("system-properties")
 class ClientPartTrackingClaimTest {
 	private static final Path STAGED = TestFixtures.stagedRoot();
-	private static final Path MERGED = STAGED.resolve("merged-base/patched-mc-merged-26.2.jar");
+	private static final Path MERGED = STAGED.resolve(TestFixtures.BASE_JAR);
 	private static final Path FORGE = STAGED.resolve("forge-patched/patched-mc-forge-26.2.jar");
-	private static final Path NEO = STAGED.resolve("neoforge-patched/patched-mc-neoforge-26.2.jar");
+	private static final Path NEO = STAGED.resolve(TestFixtures.GENUINE_BASE_JAR);
 	private static final Path GATE = Path.of("run/gate-m9-client.sh");
 	private static final String CALLBACKS = ClientPartTrackingInjector.CALLBACKS;
 	private static final String CALLBACKS_INTERNAL = ClientPartTrackingInjector.CALLBACKS_INTERNAL;

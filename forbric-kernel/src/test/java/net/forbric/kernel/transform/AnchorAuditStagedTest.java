@@ -51,7 +51,7 @@ import net.forbric.kernel.TestFixtures.Fixture;
  */
 class AnchorAuditStagedTest {
 	private static final Path STAGED = TestFixtures.stagedRoot();
-	private static final Path MERGED_BASE = STAGED.resolve("merged-base/patched-mc-merged-26.2.jar");
+	private static final Path MERGED_BASE = STAGED.resolve(TestFixtures.BASE_JAR);
 	private static final String MINECRAFT = "net.minecraft.client.Minecraft";
 	private static final String ENTRY = "net/minecraft/client/Minecraft.class";
 	private static final String OPTIONS = "net/minecraft/client/Options";

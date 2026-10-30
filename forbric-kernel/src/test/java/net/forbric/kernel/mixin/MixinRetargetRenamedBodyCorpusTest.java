@@ -43,7 +43,7 @@ import net.forbric.kernel.TestFixtures.Fixture;
  */
 @ResourceLock("system-properties")
 class MixinRetargetRenamedBodyCorpusTest {
-	private static final Path MERGED = TestFixtures.stagedRoot().resolve("merged-base/patched-mc-merged-26.2.jar");
+	private static final Path MERGED = TestFixtures.stagedBase();
 	private static final Path INTEROP = TestFixtures.stagedRoot().resolve("merged-base/forge-runtime-interop.jar");
 	private static final Path NEO_RUNTIME = TestFixtures.stagedRoot().resolve("neoforge-runtime/neoforge-runtime.jar");
 	/** The audit's corpus — the packs, the sweeps and the random Modrinth sample — and the pure-Fabric A/B's mods, each walked whole. */
@@ -113,7 +113,7 @@ class MixinRetargetRenamedBodyCorpusTest {
 
 	@Test
 	void r3MovesExactlyThePinnedInjectorsOverTheAuditCorpus() throws Exception {
-		for (Path p : List.of(MERGED, INTEROP, NEO_RUNTIME)) TestFixtures.require(Fixture.STAGED, Files.isRegularFile(p), p + " required");
+		for (Path p : List.of(MERGED, INTEROP, NEO_RUNTIME)) TestFixtures.requireFile(Fixture.STAGED, p, p + " required");
 		for (Path p : CORPUS) TestFixtures.require(Fixture.THIRD_PARTY, Files.isDirectory(p), p + " required (symlink it from the main checkout)");
 		Function<String, byte[]> resolver = resolver();
 

@@ -167,8 +167,7 @@ class CarrierLanguagesTest {
 	void everyCarriersLoaderAndTableAreWhereTheTableSaysTheyAre() throws IOException {
 		Path neoforge = staged("neoforge-runtime", "neoforge-runtime.jar");
 		Path forge = staged("forge-runtime", "forge-runtime.jar");
-		TestFixtures.require(Fixture.STAGED, Files.isRegularFile(neoforge) && Files.isRegularFile(forge),
-				"staged carriers absent: " + neoforge + " / " + forge);
+		TestFixtures.requireFiles(Fixture.STAGED, "staged carriers absent", neoforge, forge);
 
 		List<String> wrong = new ArrayList<>();
 		for (CarrierLanguages.Carrier carrier : CarrierLanguages.carriers()) {

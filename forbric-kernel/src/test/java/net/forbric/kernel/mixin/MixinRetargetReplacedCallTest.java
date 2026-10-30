@@ -66,8 +66,8 @@ class MixinRetargetReplacedCallTest {
 	}
 
 	private static Function<String, byte[]> merged() throws Exception {
-		Path jar = TestFixtures.stagedRoot().resolve("merged-base/patched-mc-merged-26.2.jar");
-		TestFixtures.require(Fixture.STAGED, Files.isRegularFile(jar), "staged merged base required");
+		Path jar = TestFixtures.stagedBase();
+		TestFixtures.requireFile(Fixture.STAGED, jar, "staged merged base required");
 		byte[] template;
 		try (ZipFile zip = new ZipFile(jar.toFile())) {
 			template = zip.getInputStream(zip.getEntry(TEMPLATE + ".class")).readAllBytes();

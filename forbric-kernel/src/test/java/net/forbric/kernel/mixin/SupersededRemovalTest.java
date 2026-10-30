@@ -157,7 +157,7 @@ class SupersededRemovalTest {
 		var plan = net.forbric.kernel.boot.LootSourceCallbacks.plan(source);
 		assertNotNull(plan);
 		java.nio.file.Path base = java.nio.file.Path.of(System.getProperty("forbric.predicateBase",
-				net.forbric.kernel.TestFixtures.stagedRoot().resolve("merged-base/patched-mc-merged-26.2.jar").toString()));
+				net.forbric.kernel.TestFixtures.stagedBase().toString()));
 		net.forbric.kernel.TestFixtures.requireFiles(net.forbric.kernel.TestFixtures.Fixture.STAGED, "native-indexed actual loot source proof", base);
 		String config = "loot.mixins.json", pkg = plan.sourceName().substring(0, plan.sourceName().lastIndexOf('.'));
 		String entry = plan.sourceName().substring(pkg.length() + 1);

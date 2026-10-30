@@ -45,10 +45,10 @@ import org.objectweb.asm.tree.MethodNode;
  * </ul>
  */
 class CarrierTwinCensusTest {
-	private static final Path MERGED = TestFixtures.stagedRoot().resolve("merged-base/patched-mc-merged-26.2.jar");
+	private static final Path MERGED = TestFixtures.stagedBase();
 
 	@Test void theShippedTableIsExactlyWhatTheArtifactsSay() throws Exception {
-		TestFixtures.require(Fixture.STAGED, Files.isRegularFile(MERGED), "merged base required");
+		TestFixtures.requireFile(Fixture.STAGED, MERGED, "merged base required");
 		java.util.Set<String> needed = new java.util.HashSet<>();
 		for (MergedBaseUncalledMethods.Row uncalled : MergedBaseUncalledMethods.rows()) {
 			needed.add(uncalled.owner());

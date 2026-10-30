@@ -162,13 +162,13 @@ class MixinCollectionSourceAdapterTest {
 	private static void set(AnnotationNode a,String key,Object value){a.values.add(key);a.values.add(value);}
 	private static ClassNode parse(byte[] bytes){ClassNode c=new ClassNode();new ClassReader(bytes).accept(c,0);return c;}
 	private static ClassNode actualMixin()throws Exception{
-		String configured=System.getProperty("forbric.fabricApi");Path api=configured==null?TestFixtures.fabricApi():Path.of(configured);TestFixtures.require(Fixture.STAGED,Files.isRegularFile(api),"actual Fabric API required");
+		String configured=System.getProperty("forbric.fabricApi");Path api=configured==null?TestFixtures.fabricApi():Path.of(configured);TestFixtures.requireFile(Fixture.STAGED, api,"actual Fabric API required");
 		try(ZipFile z=new ZipFile(api.toFile())){var entry=z.stream().filter(e->e.getName().startsWith("META-INF/jars/fabric-registry-sync-v0-")).findFirst().orElseThrow();try(ZipInputStream inner=new ZipInputStream(z.getInputStream(entry))){for(var e=inner.getNextEntry();e!=null;e=inner.getNextEntry())if(e.getName().equals("net/fabricmc/fabric/mixin/registry/sync/RegistryPatchGeneratorMixin.class"))return parse(inner.readAllBytes());}}
 		throw new AssertionError("actual registry mixin absent");
 	}
 	private static Function<String,ClassNode> actualClasses()throws Exception{
-		Map<String,ClassNode> map=new HashMap<>();for(String[] source:List.of(new String[]{"merged-base/patched-mc-merged-26.2.jar","net/minecraft/data/registries/RegistryPatchGenerator","net/minecraft/resources/RegistryDataLoader"},new String[]{"neoforge-runtime/neoforge-runtime.jar","net/neoforged/neoforge/registries/DataPackRegistriesHooks"})){
-			Path jar=TestFixtures.stagedRoot().resolve(source[0]);TestFixtures.require(Fixture.STAGED,Files.isRegularFile(jar),"actual staged source required");try(ZipFile z=new ZipFile(jar.toFile())){for(int i=1;i<source.length;i++)map.put(source[i],parse(z.getInputStream(z.getEntry(source[i]+".class")).readAllBytes()));}
+		Map<String,ClassNode> map=new HashMap<>();for(String[] source:List.of(new String[]{TestFixtures.BASE_JAR,"net/minecraft/data/registries/RegistryPatchGenerator","net/minecraft/resources/RegistryDataLoader"},new String[]{"neoforge-runtime/neoforge-runtime.jar","net/neoforged/neoforge/registries/DataPackRegistriesHooks"})){
+			Path jar=TestFixtures.stagedRoot().resolve(source[0]);TestFixtures.requireFile(Fixture.STAGED, jar,"actual staged source required");try(ZipFile z=new ZipFile(jar.toFile())){for(int i=1;i<source.length;i++)map.put(source[i],parse(z.getInputStream(z.getEntry(source[i]+".class")).readAllBytes()));}
 		}return map::get;
 	}
 }

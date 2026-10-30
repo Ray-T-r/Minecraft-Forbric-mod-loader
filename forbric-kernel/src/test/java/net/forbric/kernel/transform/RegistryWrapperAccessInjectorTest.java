@@ -63,7 +63,7 @@ import org.objectweb.asm.tree.TypeInsnNode;
 @ResourceLock("system-properties")
 class RegistryWrapperAccessInjectorTest {
 	private static final Path STAGED = TestFixtures.stagedRoot();
-	private static final Path MERGED = STAGED.resolve("merged-base/patched-mc-merged-26.2.jar");
+	private static final Path MERGED = STAGED.resolve(TestFixtures.BASE_JAR);
 	private static final Path NEO_CARRIER = STAGED.resolve("neoforge-runtime/neoforge-runtime.jar");
 	private static final Path FORGE_CARRIER = STAGED.resolve("merged-base/forge-runtime-interop.jar");
 	private static final String REGISTRY = "net/minecraft/core/Registry";
@@ -93,7 +93,7 @@ class RegistryWrapperAccessInjectorTest {
 	@Test void theWrappersAreTheOnlyNonPublicRegistriesInEitherCarrier() throws IOException {
 		Map<String, Header> classes = new HashMap<>();
 		for (Path jar : List.of(MERGED, NEO_CARRIER, FORGE_CARRIER)) {
-			TestFixtures.require(Fixture.STAGED, Files.isRegularFile(jar), jar + " absent");
+			TestFixtures.requireFile(Fixture.STAGED, jar, jar + " absent");
 			headers(jar, classes);
 		}
 		assertTrue(classes.get("net/minecraft/core/MappedRegistry").isPublic() && classes.get("net/minecraft/core/DefaultedMappedRegistry").isPublic(),
@@ -272,7 +272,7 @@ class RegistryWrapperAccessInjectorTest {
 	/** fabric-api's registry-sync module, the one jar of the pinned fabric-api that declares {@code RemapMode}. */
 	private static Path fabricRegistrySync(Path work) throws IOException {
 		Path api = TestFixtures.fabricApi();
-		TestFixtures.require(Fixture.STAGED, Files.isRegularFile(api), "the pinned Fabric API " + api + " absent");
+		TestFixtures.requireFile(Fixture.STAGED, api, "the pinned Fabric API " + api + " absent");
 		try (ZipFile zip = new ZipFile(api.toFile())) {
 			ZipEntry nested = zip.stream().filter(e -> e.getName().startsWith("META-INF/jars/fabric-registry-sync-v0-")).findFirst()
 					.orElseThrow(() -> new AssertionError(api + " nests no fabric-registry-sync-v0"));
@@ -323,7 +323,7 @@ class RegistryWrapperAccessInjectorTest {
 
 		Game(Wrappers wrappers, Path fabricRegistrySync) throws Exception {
 			TestFixtures.require(Fixture.JAVA_25, Runtime.version().feature() >= 25, "the merged game is class-file 69, which only Java 25 links");
-			for (Path jar : List.of(MERGED, NEO_CARRIER, FORGE_CARRIER)) TestFixtures.require(Fixture.STAGED, Files.isRegularFile(jar), jar + " absent");
+			for (Path jar : List.of(MERGED, NEO_CARRIER, FORGE_CARRIER)) TestFixtures.requireFile(Fixture.STAGED, jar, jar + " absent");
 			Map<String, byte[]> carrier = new HashMap<>();
 			for (String wrapper : List.of(WRAPPER, DEFAULTED_WRAPPER)) carrier.put(wrapper.replace('/', '.'), NativeCoremodParityTest.read(FORGE_CARRIER, wrapper));
 			byte[] fixture = fixtureRegistry();

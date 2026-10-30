@@ -18,7 +18,7 @@ import org.objectweb.asm.tree.analysis.BasicVerifier;
 /** The merged BaseSpawner, rewritten, on the real staged jars; architectury's real mixin is the witness. */
 class SpawnPositionCallsInjectorTest {
 	private static final Path STAGED = TestFixtures.stagedRoot();
-	private static final Path MERGED = STAGED.resolve("merged-base/patched-mc-merged-26.2.jar");
+	private static final Path MERGED = STAGED.resolve(TestFixtures.BASE_JAR);
 	private static final Path NEO = STAGED.resolve("neoforge-runtime/neoforge-runtime.jar");
 	private static final Path ARCHITECTURY = Path.of("run/client-popular/mods/architectury-fabric-21.1.10.jar");
 

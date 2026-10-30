@@ -49,7 +49,7 @@ import org.objectweb.asm.tree.MethodNode;
  * conflict context ignored, which is worse.
  */
 class MergedBaseKeyMappingFaceTest {
-	private static final Path MERGED = TestFixtures.stagedRoot().resolve("merged-base/patched-mc-merged-26.2.jar");
+	private static final Path MERGED = TestFixtures.stagedBase();
 	private static final String KEY_MAPPING = "net/minecraft/client/KeyMapping";
 	private static final String MF_CONTEXT = "Lnet/minecraftforge/client/settings/IKeyConflictContext;";
 	private static final String NEO_CONTEXT = "Lnet/neoforged/neoforge/client/settings/IKeyConflictContext;";
@@ -366,8 +366,8 @@ class MergedBaseKeyMappingFaceTest {
 		Path forgeRt = run.resolve("forge-runtime/forge-runtime.jar");
 		Path neoRt = run.resolve("neoforge-runtime/neoforge-runtime.jar");
 		TestFixtures.require(Fixture.GAME_SIDE, Files.isDirectory(compiled), "the game-side set is not compiled");
-		TestFixtures.require(Fixture.STAGED, Files.isRegularFile(forgeRt) && Files.isRegularFile(neoRt) && Files.isRegularFile(MERGED),
-				"the staged artifacts are absent");
+		TestFixtures.requireFiles(Fixture.STAGED,
+				"the staged artifacts are absent", forgeRt, neoRt, MERGED);
 		List<java.net.URL> urls = new ArrayList<>(List.of(compiled.toUri().toURL(), forgeRt.toUri().toURL(),
 				neoRt.toUri().toURL(), MERGED.toUri().toURL()));
 		// Touching the carrier's KeyModifier initialises it, and its display name reaches into the game — which

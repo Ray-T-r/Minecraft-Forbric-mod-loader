@@ -47,7 +47,7 @@ import net.forbric.kernel.TestFixtures.Fixture;
 
 /** The two owner swaps over the REAL merged {@code ReloadableServerRegistries}, and the seam shape they rely on. */
 class LootTableEventBridgeInjectorTest {
-	private static final Path MERGED_BASE = TestFixtures.stagedRoot().resolve("merged-base/patched-mc-merged-26.2.jar");
+	private static final Path MERGED_BASE = TestFixtures.stagedBase();
 	private static final String OWNER = LootTableEventBridgeInjector.TARGET.replace('.', '/');
 
 	@AfterEach
@@ -184,7 +184,7 @@ class LootTableEventBridgeInjectorTest {
 	}
 
 	private static byte[] bytesOf(String internal) throws Exception {
-		TestFixtures.require(Fixture.STAGED, Files.isRegularFile(MERGED_BASE), "staged merged base absent");
+		TestFixtures.requireFile(Fixture.STAGED, MERGED_BASE, "staged merged base absent");
 		try (ZipFile zip = new ZipFile(MERGED_BASE.toFile())) {
 			ZipEntry entry = zip.getEntry(internal + ".class");
 			assertNotNull(entry, internal);

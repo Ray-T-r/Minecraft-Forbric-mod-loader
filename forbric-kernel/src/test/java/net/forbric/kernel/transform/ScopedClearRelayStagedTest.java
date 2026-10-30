@@ -34,8 +34,8 @@ class ScopedClearRelayStagedTest {
 	private static final Path BALM = Path.of("build/compat-inputs/sweep90/mods/balm-fabric-26.2-26.2.0.9.jar");
 
 	private static Path merged() {
-		Path jar = TestFixtures.stagedRoot().resolve("merged-base/patched-mc-merged-26.2.jar");
-		TestFixtures.require(TestFixtures.Fixture.STAGED, Files.isRegularFile(jar), "actual game required");
+		Path jar = TestFixtures.stagedBase();
+		TestFixtures.requireFile(TestFixtures.Fixture.STAGED, jar, "actual game required");
 		return jar;
 	}
 
@@ -123,7 +123,7 @@ class ScopedClearRelayStagedTest {
 
 	private static ClassNode fabricMixin(String module, String name) throws Exception {
 		Path api = TestFixtures.fabricApi();
-		TestFixtures.require(TestFixtures.Fixture.STAGED, Files.isRegularFile(api), "actual Fabric API fixture required");
+		TestFixtures.requireFile(TestFixtures.Fixture.STAGED, api, "actual Fabric API fixture required");
 		try (ZipFile outer = new ZipFile(api.toFile())) {
 			ZipEntry jar = outer.stream().filter(e -> e.getName().startsWith("META-INF/jars/" + module + "-")).findFirst().orElseThrow();
 			try (ZipInputStream inner = new ZipInputStream(new ByteArrayInputStream(outer.getInputStream(jar).readAllBytes()))) {

@@ -40,7 +40,7 @@ import net.forbric.kernel.TestFixtures.Fixture;
 @ResourceLock("system-properties")
 @ResourceLock("ModCatalog")
 class MixinStubRebindSpellingTest {
-	private static final Path MERGED = TestFixtures.stagedRoot().resolve("merged-base/patched-mc-merged-26.2.jar");
+	private static final Path MERGED = TestFixtures.stagedBase();
 	private static final Path OWO = Path.of("build/compat-inputs/sweep90/mods/owo-lib-0.13.1+26.2.jar");
 	private static final String LIVING = "net/minecraft/world/entity/LivingEntity";
 	private static final String BODY = "canGlide(Z)Z";
@@ -218,7 +218,7 @@ class MixinStubRebindSpellingTest {
 	}
 
 	private static ClassNode merged(String name) throws Exception {
-		TestFixtures.require(Fixture.STAGED, Files.isRegularFile(MERGED), "actual game required");
+		TestFixtures.requireFile(Fixture.STAGED, MERGED, "actual game required");
 		try (ZipFile zip = new ZipFile(MERGED.toFile())) {
 			return MixinFit.parse(zip.getInputStream(zip.getEntry(name + ".class")).readAllBytes());
 		}

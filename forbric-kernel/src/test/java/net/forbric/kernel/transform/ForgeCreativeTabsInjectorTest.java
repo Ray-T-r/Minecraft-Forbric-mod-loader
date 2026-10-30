@@ -64,7 +64,7 @@ class ForgeCreativeTabsInjectorTest {
 	}
 
 	@Test void realMergedMethodKeepsEveryInstructionAndFrame() throws Exception {
-		byte[] real = staged("merged-base/patched-mc-merged-26.2.jar", INTERNAL);
+		byte[] real = staged(TestFixtures.BASE_JAR, INTERNAL);
 		assertEquals(22, opcodes(method(parse(real))).size(), "re-check the staged premise if the method moves");
 		assertOnlyOneExchange(real);
 	}
@@ -215,7 +215,7 @@ class ForgeCreativeTabsInjectorTest {
 	private static byte[] staged(String jar, String entry) throws Exception {
 		Path run = TestFixtures.stagedRoot();
 		Path path = run.resolve(jar);
-		TestFixtures.require(Fixture.STAGED, Files.isRegularFile(path), "staged artifact absent: " + path);
+		TestFixtures.requireFile(Fixture.STAGED, path, "staged artifact absent: " + path);
 		try (ZipFile zip = new ZipFile(path.toFile())) {
 			assertNotNull(zip.getEntry(entry + ".class"), entry + " missing from " + path);
 			return zip.getInputStream(zip.getEntry(entry + ".class")).readAllBytes();

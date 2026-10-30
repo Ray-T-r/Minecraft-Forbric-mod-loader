@@ -235,9 +235,9 @@ class DefaultPredicateTransportTest {
         net.forbric.kernel.TestFixtures.require(net.forbric.kernel.TestFixtures.Fixture.STAGED,
                 java.nio.file.Files.isRegularFile(api), "actual Fabric API required");
         ActualApi out = new ActualApi();
-        for (String jar : List.of("merged-base/patched-mc-merged-26.2.jar", "neoforge-runtime/neoforge-runtime.jar", "forge-runtime/forge-runtime.jar")) {
-            var path = root.resolve(jar); net.forbric.kernel.TestFixtures.require(net.forbric.kernel.TestFixtures.Fixture.STAGED,
-                    java.nio.file.Files.isRegularFile(path), "actual staged carrier required");
+        for (String jar : List.of(net.forbric.kernel.TestFixtures.BASE_JAR, "neoforge-runtime/neoforge-runtime.jar", "forge-runtime/forge-runtime.jar")) {
+            var path = root.resolve(jar); net.forbric.kernel.TestFixtures.requireFile(net.forbric.kernel.TestFixtures.Fixture.STAGED,
+                    path, "actual staged carrier required");
             try (java.util.zip.ZipFile zip = new java.util.zip.ZipFile(path.toFile())) {
                 for (var entry : zip.stream().filter(e -> e.getName().endsWith(".class")).toList())
                     out.bytes.putIfAbsent(entry.getName().substring(0, entry.getName().length() - 6), zip.getInputStream(entry).readAllBytes());

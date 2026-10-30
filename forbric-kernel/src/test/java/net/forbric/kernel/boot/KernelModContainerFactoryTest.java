@@ -140,7 +140,7 @@ class KernelModContainerFactoryTest {
 
 	/** The class out of a staged carrier; one the carrier no longer has fails the test, it does not skip it. */
 	private static ClassNode readClass(Path jar, String internalName) throws Exception {
-		TestFixtures.require(Fixture.STAGED, Files.isRegularFile(jar),
+		TestFixtures.requireFile(Fixture.STAGED, jar,
 				"staged " + (jar.equals(FORGE) ? "MinecraftForge" : "NeoForge") + " carrier absent");
 		try (ZipFile zip = new ZipFile(jar.toFile())) {
 			ZipEntry e = zip.getEntry(internalName + ".class");

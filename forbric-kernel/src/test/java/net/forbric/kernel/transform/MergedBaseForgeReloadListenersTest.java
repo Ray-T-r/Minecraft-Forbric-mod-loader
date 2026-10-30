@@ -32,7 +32,7 @@ import net.forbric.kernel.TestFixtures.Fixture;
  * through {@code KernelForgeReload}, which calls NeoForge's hook and then the carrier's own Forge post.
  */
 class MergedBaseForgeReloadListenersTest {
-	private static final Path MERGED_BASE = TestFixtures.stagedRoot().resolve("merged-base/patched-mc-merged-26.2.jar");
+	private static final Path MERGED_BASE = TestFixtures.stagedBase();
 	private static final String RSR = "net/minecraft/server/ReloadableServerResources";
 	private static final String NEO_HOOKS = "net/neoforged/neoforge/event/EventHooks";
 	private static final String KERNEL = "net/forbric/kernel/runtime/KernelForgeReload";
@@ -96,7 +96,7 @@ class MergedBaseForgeReloadListenersTest {
 	}
 
 	private static byte[] bytesOf(String internal) throws Exception {
-		TestFixtures.require(Fixture.STAGED, Files.isRegularFile(MERGED_BASE), "staged merged base absent");
+		TestFixtures.requireFile(Fixture.STAGED, MERGED_BASE, "staged merged base absent");
 		try (ZipFile zip = new ZipFile(MERGED_BASE.toFile())) {
 			ZipEntry entry = zip.getEntry(internal + ".class");
 			assertNotNull(entry, internal);

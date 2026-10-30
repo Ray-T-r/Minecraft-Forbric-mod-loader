@@ -57,7 +57,7 @@ class AddedCallOccurrencesTest {
 	 */
 	@Test void puzzleslibsBreedingHookCountsVanillasStoreOnly() throws Exception {
 		String animal = "net/minecraft/world/entity/animal/Animal";
-		ClassNode merged = full(net.forbric.kernel.TestFixtures.stagedRoot().resolve("merged-base/patched-mc-merged-26.2.jar"), animal);
+		ClassNode merged = full(net.forbric.kernel.TestFixtures.stagedBase(), animal);
 		ClassNode vanilla = full(net.forbric.kernel.TestFixtures.vanillaJar(), animal);
 		java.nio.file.Path jar = java.nio.file.Path.of("build/compat-inputs/sweep90/mods/PuzzlesLib-v26.2.4-mc26.2.x-Fabric.jar");
 		net.forbric.kernel.TestFixtures.require(net.forbric.kernel.TestFixtures.Fixture.THIRD_PARTY, java.nio.file.Files.isRegularFile(jar), "sweep PuzzlesLib fixture");
@@ -79,7 +79,7 @@ class AddedCallOccurrencesTest {
 	 */
 	@Test void architecturysRightClickAirKeepsVanillasIsEmptyByNumber() throws Exception {
 		String minecraft = "net/minecraft/client/Minecraft";
-		ClassNode merged = full(net.forbric.kernel.TestFixtures.stagedRoot().resolve("merged-base/patched-mc-merged-26.2.jar"), minecraft);
+		ClassNode merged = full(net.forbric.kernel.TestFixtures.stagedBase(), minecraft);
 		ClassNode vanilla = full(net.forbric.kernel.TestFixtures.vanillaJar(), minecraft);
 		java.nio.file.Path jar = java.nio.file.Path.of("run/client-popular/mods/architectury-fabric-21.1.10.jar");
 		net.forbric.kernel.TestFixtures.require(net.forbric.kernel.TestFixtures.Fixture.THIRD_PARTY, java.nio.file.Files.isRegularFile(jar), "popular Architectury fixture");
@@ -107,7 +107,7 @@ class AddedCallOccurrencesTest {
 	 */
 	@Test void anOrdinalPickedLocalCountsVanillasStoreOnly() throws Exception {
 		String entity = "net/minecraft/world/entity/Entity";
-		ClassNode merged = full(net.forbric.kernel.TestFixtures.stagedRoot().resolve("merged-base/patched-mc-merged-26.2.jar"), entity);
+		ClassNode merged = full(net.forbric.kernel.TestFixtures.stagedBase(), entity);
 		ClassNode vanilla = full(net.forbric.kernel.TestFixtures.vanillaJar(), entity);
 		ClassNode mixin = puzzleslib("fuzs/puzzleslib/fabric/mixin/EntityFabricMixin");
 		assertTrue(AddedCallOccurrences.adapt(mixin, name -> name.equals(entity) ? merged : null,

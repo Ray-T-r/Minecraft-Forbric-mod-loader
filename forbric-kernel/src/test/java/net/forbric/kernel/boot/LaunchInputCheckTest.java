@@ -423,12 +423,12 @@ class LaunchInputCheckTest {
 	 */
 	@Test
 	void theStagedMergedBaseAndBothStagedCarrierSpellingsPass() {
-		Path base = staged("merged-base/patched-mc-merged-26.2.jar");
+		Path base = staged(TestFixtures.BASE_JAR);
 		Path neo = staged("neoforge-runtime/neoforge-runtime.jar");
 		Path forge = staged("forge-runtime/forge-runtime.jar");
 		Path interop = staged("merged-base/forge-runtime-interop.jar");
-		TestFixtures.require(Fixture.STAGED, Files.isRegularFile(base) && Files.isRegularFile(neo) && Files.isRegularFile(forge),
-				"staged game artifacts absent: " + base.getParent().getParent());
+		TestFixtures.requireFiles(Fixture.STAGED,
+				"staged game artifacts absent: " + base.getParent().getParent(), base, neo, forge);
 
 		assertEquals(List.of(), LaunchInputCheck.problems(List.of(base), List.of(forge, neo)));
 		if (Files.isRegularFile(interop)) {

@@ -38,7 +38,7 @@ class KernelForgeCapabilitiesShapeTest {
 
 	@Test
 	void eachComposedProviderFiresAndAsksExactlyWhatTheCarriersOwnDoes() throws Exception {
-		TestFixtures.require(Fixture.STAGED, Files.isRegularFile(FORGE), "staged Forge carrier absent");
+		TestFixtures.requireFiles(Fixture.STAGED, "staged Forge carrier absent", FORGE);
 		TestFixtures.require(Fixture.GAME_SIDE, Files.isDirectory(RUNTIME.resolve("net/forbric/kernel/runtime")),
 				"runtime not compiled: " + RUNTIME);
 		for (Map.Entry<String, String> twin : TWINS.entrySet()) {

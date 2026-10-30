@@ -21,7 +21,7 @@ class GuiItemCaptureMixinAdapterTest {
         return read(Fixture.THIRD_PARTY, Path.of("build/sweep80-mac/v020-rounds/r3/mods/itemglintrelight-fabric-26.2-0.3.0+26.2.jar"), "celia/adwadg/itemglintrelight/mixin/client/GuiGraphicsItemOutlineMixin");
     }
     @Test void theCaptureSelectsTheSubmissionAndDoesNotMoveTheTooltipCallback() throws Exception {
-        ClassNode mixin = mixin(), target = read(Fixture.STAGED, TestFixtures.stagedRoot().resolve("merged-base/patched-mc-merged-26.2.jar"), "net/minecraft/client/gui/GuiGraphicsExtractor");
+        ClassNode mixin = mixin(), target = read(Fixture.STAGED, TestFixtures.stagedBase(), "net/minecraft/client/gui/GuiGraphicsExtractor");
         assertEquals(1, MixinGuiItemCaptureAdapter.adapt(mixin, name -> target));
         MethodNode capture = mixin.methods.stream().filter(m -> m.name.equals("itemglintrelight$captureGuiItem")).findFirst().orElseThrow();
         assertEquals("INVOKE", MixinFit.value(MixinFit.atNodes(MixinFit.injectorOf(capture)).getFirst(), "value"));

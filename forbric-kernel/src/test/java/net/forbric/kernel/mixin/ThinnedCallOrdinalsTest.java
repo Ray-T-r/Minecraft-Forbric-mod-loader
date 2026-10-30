@@ -27,7 +27,7 @@ import net.forbric.kernel.TestFixtures.Fixture;
 
 /** ThinnedCallOrdinals' row for ViaFabricPlus' 1.12.2 placement hook, on the real jars and on its own. */
 class ThinnedCallOrdinalsTest {
-	private static final Path MERGED = TestFixtures.stagedRoot().resolve("merged-base/patched-mc-merged-26.2.jar");
+	private static final Path MERGED = TestFixtures.stagedBase();
 	private static final Path VANILLA = TestFixtures.vanillaJar();
 	private static final Path VIAFABRICPLUS = Path.of("../build/lb-vfp/jars/ViaFabricPlus-5.0.2.jar");
 	private static final ThinnedCallOrdinals.Site SITE = new ThinnedCallOrdinals.Site(
@@ -49,7 +49,7 @@ class ThinnedCallOrdinalsTest {
 	 * keeps are followed by the row's next call; the merged body makes it as often as the row keeps, each followed by it.
 	 */
 	@Test void theRowIsWhatVanillaAndTheMergedBaseSay() throws Exception {
-		TestFixtures.require(Fixture.STAGED, Files.isRegularFile(MERGED), "actual game required");
+		TestFixtures.requireFile(Fixture.STAGED, MERGED, "actual game required");
 		TestFixtures.require(Fixture.MC_LIBRARIES, Files.isRegularFile(VANILLA), "vanilla jar required");
 		MethodNode vanilla = method(read(VANILLA, SITE.owner()), SITE.method());
 		List<Boolean> followed = new ArrayList<>();
@@ -63,7 +63,7 @@ class ThinnedCallOrdinalsTest {
 	}
 
 	@Test void releasedViaFabricPlusCountsOnTheMergedBody() throws Exception {
-		TestFixtures.require(Fixture.STAGED, Files.isRegularFile(MERGED), "actual game required");
+		TestFixtures.requireFile(Fixture.STAGED, MERGED, "actual game required");
 		TestFixtures.require(Fixture.THIRD_PARTY, Files.isRegularFile(VIAFABRICPLUS), VIAFABRICPLUS + " absent");
 		ClassNode target = read(MERGED, SITE.owner());
 		ClassNode mixin = read(VIAFABRICPLUS, "com/viaversion/viafabricplus/injection/mixin/features/v1_12_2/MixinMultiPlayerGameMode");

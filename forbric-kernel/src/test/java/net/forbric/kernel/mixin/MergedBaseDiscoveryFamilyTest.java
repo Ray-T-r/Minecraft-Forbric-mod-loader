@@ -55,7 +55,7 @@ class MergedBaseDiscoveryFamilyTest {
 	private ForbricClassLoader loader;
 
 	@BeforeEach void bindTheMergedBasesNativeReferences() throws Exception {
-		merged = TestFixtures.stagedRoot().resolve("merged-base/patched-mc-merged-26.2.jar");
+		merged = TestFixtures.stagedBase();
 		TestFixtures.requireFiles(Fixture.STAGED, "the staged merged base and its native-reference index", merged);
 		MergedBaseMixinCompat.reset();
 		MixinConfigOwners.reset();

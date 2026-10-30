@@ -161,7 +161,7 @@ class PassiveSeederForgeConfigTest {
 	 * classes so there is one night-config — as at runtime.
 	 */
 	private URLClassLoader forgeLoader() throws Exception {
-		TestFixtures.require(Fixture.STAGED, Files.isRegularFile(FORGE_RUNTIME), "staged forge-runtime.jar absent");
+		TestFixtures.requireFiles(Fixture.STAGED, "staged forge-runtime.jar absent", FORGE_RUNTIME);
 		Path guava = newestLibrary("com/google/guava/guava");
 		Path lang = newestLibrary("org/apache/commons/commons-lang3");
 		TestFixtures.require(Fixture.MC_LIBRARIES, guava != null && lang != null,

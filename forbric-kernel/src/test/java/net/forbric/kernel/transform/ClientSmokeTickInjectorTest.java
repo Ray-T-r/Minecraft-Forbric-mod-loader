@@ -53,7 +53,7 @@ import net.forbric.kernel.boot.KernelClientSmoke;
  * <p>So the first test asserts the input is handed back by IDENTITY, not merely unchanged in content.
  */
 class ClientSmokeTickInjectorTest {
-	private static final Path MERGED_BASE = TestFixtures.stagedRoot().resolve("merged-base/patched-mc-merged-26.2.jar");
+	private static final Path MERGED_BASE = TestFixtures.stagedBase();
 
 	private static final String MINECRAFT = "net.minecraft.client.Minecraft";
 	private static final String HOOK_OWNER = "net/forbric/kernel/boot/KernelClientSmoke";

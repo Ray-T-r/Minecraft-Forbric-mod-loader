@@ -139,8 +139,8 @@ class ServerLifecycleStandDownTest {
 	@Test
 	void theMergedServersPairedLifecycleCallsAreEachScopedWithTheirMinecraftForgeEvent() throws Exception {
 		Path root = TestFixtures.stagedRoot();
-		Path base = root.resolve("merged-base/patched-mc-merged-26.2.jar");
-		TestFixtures.require(Fixture.STAGED, Files.isRegularFile(base), "staged merged base absent");
+		Path base = root.resolve(TestFixtures.BASE_JAR);
+		TestFixtures.requireFile(Fixture.STAGED, base, "staged merged base absent");
 		NativeDualEventInjector injector = new NativeDualEventInjector(path -> bytes(root, path), DeadEventAudit.forwardedForgeEvents());
 		Map<String, java.util.Set<String>> proved = new TreeMap<>(), named = new TreeMap<>();
 		for (String owner : List.of("net/minecraft/server/dedicated/DedicatedServer", "net/minecraft/client/server/IntegratedServer",
@@ -202,7 +202,7 @@ class ServerLifecycleStandDownTest {
 
 	/** A class from the staged base or a carrier, as the kernel's injector reads hook bodies at boot. */
 	private static byte[] bytes(Path root, String path) {
-		for (Path jar : List.of(root.resolve("merged-base/patched-mc-merged-26.2.jar"), root.resolve("forge-runtime/forge-runtime.jar"),
+		for (Path jar : List.of(root.resolve(TestFixtures.BASE_JAR), root.resolve("forge-runtime/forge-runtime.jar"),
 				root.resolve("merged-base/forge-runtime-interop.jar"), root.resolve("neoforge-runtime/neoforge-runtime.jar"))) {
 			if (!Files.isRegularFile(jar)) continue;
 			try (ZipFile zip = new ZipFile(jar.toFile())) {
@@ -267,7 +267,7 @@ class ServerLifecycleStandDownTest {
 			Path neo = run.resolve("neoforge-runtime/neoforge-runtime.jar");
 			Path forge = run.resolve("merged-base/forge-runtime-interop.jar");
 			if (!Files.isRegularFile(forge)) forge = run.resolve("forge-runtime/forge-runtime.jar");
-			TestFixtures.require(Fixture.STAGED, Files.isRegularFile(neo) && Files.isRegularFile(forge), "the staged carriers are absent");
+			TestFixtures.requireFiles(Fixture.STAGED, "the staged carriers are absent", neo, forge);
 			Map<String, byte[]> out = new HashMap<>();
 			out.put(NEO_HOOKS, lifted(neo, NEO_HOOKS, List.of(), "handleServerStarted", "handleServerStopping"));
 			// MinecraftForge's started hook opens its login gate, a field of its own class, as its last action.

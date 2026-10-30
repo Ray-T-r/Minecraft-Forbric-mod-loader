@@ -115,7 +115,7 @@ class LootSourceCallbacksSpellingTest {
 		private final ClassNode nativeNode;
 
 		Evidence() throws Exception {
-			Path base = TestFixtures.stagedRoot().resolve("merged-base/patched-mc-merged-26.2.jar");
+			Path base = TestFixtures.stagedBase();
 			Path bridgePath = Path.of(System.getProperty("forbric.test.runtimeClasses", "build/classes/java/runtime")).resolve(BRIDGE);
 			TestFixtures.requireFiles(Fixture.STAGED, "verified native loot target and compiled typed seam", base, bridgePath);
 			jar = new ZipFile(base.toFile());

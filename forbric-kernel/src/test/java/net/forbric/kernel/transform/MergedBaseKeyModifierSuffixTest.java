@@ -60,7 +60,7 @@ import net.forbric.kernel.TestFixtures.Fixture;
  */
 @org.junit.jupiter.api.parallel.ResourceLock("system-properties")
 class MergedBaseKeyModifierSuffixTest {
-	private static final Path MERGED_BASE = TestFixtures.stagedRoot().resolve("merged-base/patched-mc-merged-26.2.jar");
+	private static final Path MERGED_BASE = TestFixtures.stagedBase();
 	private static final String INPUT_CONSTANTS = "com/mojang/blaze3d/platform/InputConstants";
 	private static final String KEY = INPUT_CONSTANTS + "$Key";
 	private static final String GET_KEY_DESC = "(Ljava/lang/String;)L" + KEY + ";";
@@ -88,7 +88,7 @@ class MergedBaseKeyModifierSuffixTest {
 
 	@Test
 	void theRealMergedBaseStillNeedsItAndStaysVerifiable() throws Exception {
-		TestFixtures.require(Fixture.STAGED, Files.isRegularFile(MERGED_BASE), "staged merged base absent — skipping real-bytecode check");
+		TestFixtures.requireFile(Fixture.STAGED, MERGED_BASE, "staged merged base absent — skipping real-bytecode check");
 		byte[] in = readClass(INPUT_CONSTANTS + ".class");
 		byte[] out = transform(in);
 		assertTrue(out != in, "the staged merged base must still need the repair — if it stopped, re-derive the test");

@@ -39,7 +39,7 @@ import net.forbric.kernel.TestFixtures.Fixture;
  * nothing calls: they move there again, now saying the injector never runs.
  */
 class MixinRetargetRenamedBodyStagedTest {
-	private static final Path MERGED_BASE = TestFixtures.stagedRoot().resolve("merged-base/patched-mc-merged-26.2.jar").normalize();
+	private static final Path MERGED_BASE = TestFixtures.stagedBase().normalize();
 	private static final String TOOLTIP = CarrierRenameCensusTest.TOOLTIP;
 	private static final String ITEM_STACK = "net/minecraft/world/item/ItemStack";
 
@@ -327,7 +327,7 @@ class MixinRetargetRenamedBodyStagedTest {
 	/** Every mixin class in the pinned Fabric API's modules. */
 	private static List<ClassNode> fabricApiMixins() throws Exception {
 		Path api = TestFixtures.fabricApi();
-		TestFixtures.require(Fixture.STAGED, Files.isRegularFile(api), "actual Fabric API fixture required: " + api);
+		TestFixtures.requireFile(Fixture.STAGED, api, "actual Fabric API fixture required: " + api);
 		List<ClassNode> mixins = new java.util.ArrayList<>();
 		try (ZipFile outer = new ZipFile(api.toFile())) {
 			for (ZipEntry nested : Collections.list(outer.entries())) {
@@ -363,7 +363,7 @@ class MixinRetargetRenamedBodyStagedTest {
 
 	/** The staged merged base, each class read once: the Fabric API scan resolves thousands of targets and supertypes. */
 	private static Function<String, byte[]> mergedResolver() {
-		TestFixtures.require(Fixture.STAGED, Files.isRegularFile(MERGED_BASE), "staged merged base absent");
+		TestFixtures.requireFile(Fixture.STAGED, MERGED_BASE, "staged merged base absent");
 		java.util.Map<String, java.util.Optional<byte[]>> read = new java.util.HashMap<>();
 		return name -> read.computeIfAbsent(name, entry -> {
 			try (ZipFile zip = new ZipFile(MERGED_BASE.toFile())) {

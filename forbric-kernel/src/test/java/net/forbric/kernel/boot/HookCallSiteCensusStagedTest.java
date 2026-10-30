@@ -84,7 +84,7 @@ class HookCallSiteCensusStagedTest {
 	}
 
 	private static Path base() {
-		return root().resolve("merged-base/patched-mc-merged-26.2.jar");
+		return root().resolve(TestFixtures.BASE_JAR);
 	}
 
 	/** The kernel's own game-side classes, compiled beside these tests: the fourth place an event can come from. */
@@ -183,7 +183,7 @@ class HookCallSiteCensusStagedTest {
 
 	/** NeoForge's own patched game, as it was before the merge. */
 	private static Path neoForgePatchedGame() {
-		return root().resolve("neoforge-patched/patched-mc-neoforge-26.2.jar");
+		return root().resolve(TestFixtures.GENUINE_BASE_JAR);
 	}
 
 	private static boolean forgeFamily(String internalName) {
@@ -210,7 +210,7 @@ class HookCallSiteCensusStagedTest {
 		Set<String> dead = new TreeSet<>(), live = new TreeSet<>();
 		for (Map.Entry<String, Map<String, Path>> side : nativeSides().entrySet()) {
 			Path game = Path.of(side.getKey());
-			TestFixtures.require(Fixture.STAGED, Files.isRegularFile(game), "a family's own patched game is absent: " + game);
+			TestFixtures.requireFile(Fixture.STAGED, game, "a family's own patched game is absent: " + game);
 			if (side.getValue().isEmpty()) continue;
 			for (HookCallSiteCensus.Census c : HookCallSiteCensus.all(side.getValue(), List.of(game),
 					List.copyOf(new java.util.LinkedHashSet<>(side.getValue().values())), List.of()).values()) {
@@ -248,7 +248,7 @@ class HookCallSiteCensusStagedTest {
 	 */
 	@Test
 	void everyEventTheCensusMeasuresDeadHasARow() throws Exception {
-		TestFixtures.require(Fixture.STAGED, Files.isRegularFile(base()), "staged merged base absent");
+		TestFixtures.requireFile(Fixture.STAGED, base(), "staged merged base absent");
 		TestFixtures.require(Fixture.GAME_SIDE, Files.isDirectory(kernelRuntime()), "the kernel's game side is not compiled");
 		Map<String, HookCallSiteCensus.Census> all = censusAll();
 		TestFixtures.require(Fixture.STAGED, !all.isEmpty(), "staged carriers absent");
@@ -287,7 +287,7 @@ class HookCallSiteCensusStagedTest {
 	 */
 	@Test
 	void noTableNamesAnEventItsOwnFamilyNeverPosts() throws Exception {
-		TestFixtures.require(Fixture.STAGED, Files.isRegularFile(base()), "staged merged base absent");
+		TestFixtures.requireFile(Fixture.STAGED, base(), "staged merged base absent");
 		Set<String> nativelyDead = nativelyNeverPosted();
 		System.out.println("[Forbric/Hooks] never posted by their own family's patched game: " + nativelyDead);
 		Map<String, String> named = new TreeMap<>();
@@ -313,11 +313,11 @@ class HookCallSiteCensusStagedTest {
 	 */
 	@Test
 	void theClientOnlyTableIsWhereTheNativeLoaderPostsOnlyOnTheClient() throws Exception {
-		TestFixtures.require(Fixture.STAGED, Files.isRegularFile(base()), "staged merged base absent");
+		TestFixtures.requireFile(Fixture.STAGED, base(), "staged merged base absent");
 		Map<String, Set<HookCallSiteCensus.PostingSite>> sites = new TreeMap<>();
 		for (Map.Entry<String, Map<String, Path>> side : nativeSides().entrySet()) {
 			Path game = Path.of(side.getKey());
-			TestFixtures.require(Fixture.STAGED, Files.isRegularFile(game), "a family's own patched game is absent: " + game);
+			TestFixtures.requireFile(Fixture.STAGED, game, "a family's own patched game is absent: " + game);
 			if (side.getValue().isEmpty()) continue;
 			sites.putAll(HookCallSiteCensus.postingSites(side.getValue(), List.of(game),
 					List.copyOf(new java.util.LinkedHashSet<>(side.getValue().values()))));
@@ -356,7 +356,7 @@ class HookCallSiteCensusStagedTest {
 	 */
 	@Test
 	void theCensusSeesTheCallsTheMergedBaseRepairsMove() throws Exception {
-		TestFixtures.require(Fixture.STAGED, Files.isRegularFile(base()), "staged merged base absent");
+		TestFixtures.requireFile(Fixture.STAGED, base(), "staged merged base absent");
 		TestFixtures.require(Fixture.GAME_SIDE, Files.isDirectory(kernelRuntime()), "the kernel's game side is not compiled");
 		Map<String, HookCallSiteCensus.Census> loaded = censusAll();
 		TestFixtures.require(Fixture.STAGED, !loaded.isEmpty(), "staged carriers absent");
@@ -397,7 +397,7 @@ class HookCallSiteCensusStagedTest {
 			if (DeadEventAudit.PARTIAL.containsKey(event)) elsewhere.put(event, "PARTIAL");
 		}
 		assertEquals(Map.of(), elsewhere, "DEAD rows for events another table says are delivered");
-		TestFixtures.require(Fixture.STAGED, Files.isRegularFile(base()), "staged merged base absent");
+		TestFixtures.requireFile(Fixture.STAGED, base(), "staged merged base absent");
 		TestFixtures.require(Fixture.GAME_SIDE, Files.isDirectory(kernelRuntime()), "the kernel's game side is not compiled");
 		Map<String, HookCallSiteCensus.Census> all = censusAll();
 		TestFixtures.require(Fixture.STAGED, !all.isEmpty(), "staged carriers absent");
@@ -433,7 +433,7 @@ class HookCallSiteCensusStagedTest {
 	 */
 	@Test
 	void everyRowThatSilencesTheAuditProvesItsDelivery() throws Exception {
-		TestFixtures.require(Fixture.STAGED, Files.isRegularFile(base()), "staged merged base absent");
+		TestFixtures.requireFile(Fixture.STAGED, base(), "staged merged base absent");
 		TestFixtures.require(Fixture.GAME_SIDE, Files.isDirectory(kernelRuntime()) && Files.isDirectory(kernelMain()),
 				"the kernel is not compiled");
 		Map<String, HookCallSiteCensus.Census> all = censusAll();
@@ -504,7 +504,7 @@ class HookCallSiteCensusStagedTest {
 	 */
 	@Test
 	void theNoNativePathTableIsWhereTheMergedGamePostsNothingItself() throws Exception {
-		TestFixtures.require(Fixture.STAGED, Files.isRegularFile(base()), "staged merged base absent");
+		TestFixtures.requireFile(Fixture.STAGED, base(), "staged merged base absent");
 		Map<String, HookCallSiteCensus.Census> all = censusAll();
 		TestFixtures.require(Fixture.STAGED, !all.isEmpty(), "staged carriers absent");
 		Set<String> gameConstructs = all.values().iterator().next().gameConstructs();
@@ -545,7 +545,7 @@ class HookCallSiteCensusStagedTest {
 	 */
 	@Test
 	void minecraftForgesBreatheAndDrownEventsAreMeasuredDeadAndBridged() throws Exception {
-		TestFixtures.require(Fixture.STAGED, Files.isRegularFile(base()), "staged merged base absent");
+		TestFixtures.requireFile(Fixture.STAGED, base(), "staged merged base absent");
 		TestFixtures.require(Fixture.GAME_SIDE, Files.isDirectory(kernelRuntime()), "the kernel's game side is not compiled");
 		Map<String, HookCallSiteCensus.Census> all = censusAll();
 		TestFixtures.require(Fixture.STAGED, !all.isEmpty(), "staged carriers absent");
@@ -561,7 +561,7 @@ class HookCallSiteCensusStagedTest {
 
 	@Test
 	void theCensusRunsAndTheSurfaceIsNotAllAlive() throws Exception {
-		TestFixtures.require(Fixture.STAGED, Files.isRegularFile(base()), "staged merged base absent");
+		TestFixtures.requireFile(Fixture.STAGED, base(), "staged merged base absent");
 		Map<String, HookCallSiteCensus.Census> all = censusAll();
 		TestFixtures.require(Fixture.STAGED, !all.isEmpty(), "staged carriers absent");
 		int declared = 0;
@@ -581,7 +581,7 @@ class HookCallSiteCensusStagedTest {
 
 	@Test
 	void everyRowOfTheDeadTableIsStillDeadInTheBytecode() throws Exception {
-		TestFixtures.require(Fixture.STAGED, Files.isRegularFile(base()), "staged merged base absent");
+		TestFixtures.requireFile(Fixture.STAGED, base(), "staged merged base absent");
 		Map<String, HookCallSiteCensus.Census> all = censusAll();
 		TestFixtures.require(Fixture.STAGED, !all.isEmpty(), "staged carriers absent");
 
@@ -637,7 +637,7 @@ class HookCallSiteCensusStagedTest {
 	 */
 	@Test
 	void thePartialTableIsExactlyWhatTheCallSitesSay() throws Exception {
-		TestFixtures.require(Fixture.STAGED, Files.isRegularFile(base()), "staged merged base absent");
+		TestFixtures.requireFile(Fixture.STAGED, base(), "staged merged base absent");
 		TestFixtures.require(Fixture.STAGED, Files.isRegularFile(forgePatchedGame()) && Files.isRegularFile(neoForgePatchedGame()),
 				"a family's own patched game is absent");
 		TestFixtures.require(Fixture.GAME_SIDE, Files.isDirectory(kernelRuntime()), "the kernel's game side is not compiled");
@@ -713,7 +713,7 @@ class HookCallSiteCensusStagedTest {
 	 */
 	@Test
 	void aBridgedPartialRowIsSilentOnlyWhereItsBridgeCoversEveryLostPath() throws Exception {
-		TestFixtures.require(Fixture.STAGED, Files.isRegularFile(base()), "staged merged base absent");
+		TestFixtures.requireFile(Fixture.STAGED, base(), "staged merged base absent");
 		TestFixtures.require(Fixture.STAGED, Files.isRegularFile(forgePatchedGame()) && Files.isRegularFile(neoForgePatchedGame()),
 				"a family's own patched game is absent");
 		TestFixtures.require(Fixture.GAME_SIDE, Files.isDirectory(kernelRuntime()) && Files.isDirectory(kernelMain()), "the kernel is not compiled");
@@ -852,9 +852,11 @@ class HookCallSiteCensusStagedTest {
 	 */
 	@Test
 	void everyHookThatLostGameCallSitesHasItsEventsNamed() throws Exception {
-		TestFixtures.require(Fixture.STAGED, Files.isRegularFile(base()), "staged merged base absent");
+		TestFixtures.requireFile(Fixture.STAGED, base(), "staged merged base absent");
 		TestFixtures.require(Fixture.STAGED, Files.isRegularFile(forgePatchedGame()) && Files.isRegularFile(neoForgePatchedGame()),
 				"a family's own patched game is absent");
+		// Every hook class, MinecraftForge's among them: without that carrier the count below can never match.
+		TestFixtures.requireForgeCarrier("the MinecraftForge hooks in HOOK_CLASSES");
 		Map<String, Path> hooks = stagedHooks(hook -> true);
 		TestFixtures.require(Fixture.STAGED, hooks.size() == HOOK_CLASSES.size(), "staged carriers absent");
 		// hook -> events it constructs (its family's types named ...Event), and hook -> the hooks it calls.
@@ -988,7 +990,7 @@ class HookCallSiteCensusStagedTest {
 	 */
 	@Test
 	void everyEventLiveOnlyThroughACarrierCallerIsReachedForAReason() throws Exception {
-		TestFixtures.require(Fixture.STAGED, Files.isRegularFile(base()), "staged merged base absent");
+		TestFixtures.requireFile(Fixture.STAGED, base(), "staged merged base absent");
 		Map<String, HookCallSiteCensus.Census> all = censusAll();
 		TestFixtures.require(Fixture.STAGED, !all.isEmpty(), "staged carriers absent");
 		Map<String, Path> hooks = stagedHooks(hook -> true);
@@ -1191,7 +1193,7 @@ class HookCallSiteCensusStagedTest {
 	 */
 	@Test
 	void noSinglePathPostsABridgedEventTwice() throws Exception {
-		TestFixtures.require(Fixture.STAGED, Files.isRegularFile(base()), "staged merged base absent");
+		TestFixtures.requireFile(Fixture.STAGED, base(), "staged merged base absent");
 		List<String> both = candidateMethods();
 		System.out.println("[Forbric/Hooks] methods calling a MinecraftForge hook and delivering through NeoForge: " + both.size());
 		Set<String> forwarded = DeadEventAudit.forwardedForgeEvents();
@@ -1282,7 +1284,7 @@ class HookCallSiteCensusStagedTest {
 
 	@Test
 	void aDualFamilyPortalCallerWithoutTheProvedShapeIsStillReported() throws Exception {
-		TestFixtures.require(Fixture.STAGED, Files.isRegularFile(base()), "staged merged base absent");
+		TestFixtures.requireFile(Fixture.STAGED, base(), "staged merged base absent");
 		ClassNode node = new ClassNode();
 		new ClassReader(classBytes(PORTAL_OWNER)).accept(node, 0);
 		MethodNode host = node.methods.stream().filter(m -> (m.name + m.desc).equals(PORTAL_METHOD)).findFirst().orElseThrow();
@@ -1312,7 +1314,7 @@ class HookCallSiteCensusStagedTest {
 	 */
 	@Test
 	void aPairWithoutItsNativeDeliveryIsNotStoodDown() throws Exception {
-		TestFixtures.require(Fixture.STAGED, Files.isRegularFile(base()), "staged merged base absent");
+		TestFixtures.requireFile(Fixture.STAGED, base(), "staged merged base absent");
 		Set<String> forwarded = DeadEventAudit.forwardedForgeEvents();
 		NativeDualEventInjector injector = new NativeDualEventInjector(HookCallSiteCensusStagedTest::protocolBytes, forwarded);
 		Map<String, String[]> found = new LinkedHashMap<>();

@@ -124,7 +124,7 @@ class TransferTransactionHooksTest {
 		assertEquals(1, hooks);
 	}
 	@Test void forgeFallbackFollowsTheExistingCapabilityCompositionAndKeepsInvalidation() throws Exception {
-		Path merged = TestFixtures.stagedRoot().resolve("merged-base/patched-mc-merged-26.2.jar");
+		Path merged = TestFixtures.stagedBase();
 		byte[] original = bytes(merged, ForgeTransferCapabilityFallback.TARGET);
 		var transformer = new ForgeTransferCapabilityFallback();
 		// Running before composition must decline, rather than claim a hook that never reaches a native provider.
@@ -151,7 +151,7 @@ class TransferTransactionHooksTest {
 	 * before any provider is asked. Every result it returns must pass the owner-first hook, and nothing else changes.
 	 */
 	@Test void baseContainerItemQueryPassesTheOwnerFirstHook() throws Exception {
-		Path merged = TestFixtures.stagedRoot().resolve("merged-base/patched-mc-merged-26.2.jar");
+		Path merged = TestFixtures.stagedBase();
 		byte[] original = bytes(merged, ForgeTransferCapabilityFallback.BASE_CONTAINER);
 		var transformer = new ForgeTransferCapabilityFallback();
 		byte[] changed = transformer.transform(ForgeTransferCapabilityFallback.BASE_CONTAINER, original, null);
@@ -203,7 +203,7 @@ class TransferTransactionHooksTest {
 			for (String name : helpers) {
 				Path jar = name.startsWith("net.minecraftforge.") ? stage.resolve("forge-runtime/forge-runtime.jar")
 						: name.startsWith("net.neoforged.") ? stage.resolve("neoforge-runtime/neoforge-runtime.jar")
-						: stage.resolve("merged-base/patched-mc-merged-26.2.jar");
+						: stage.resolve(TestFixtures.BASE_JAR);
 				byte[] approved = ForgeTransferShapeAudit.certify(name, bytes(jar, name), game.resources());
 				assertTrue(node(approved).methods.stream().anyMatch(method -> method.name.equals(ForgeTransferShapeAudit.MARKER)), name);
 			}
@@ -232,7 +232,7 @@ class TransferTransactionHooksTest {
 	}
 	@Test @ResourceLock("native-game-references") void itemStackTooltipChangesRemainAllowedButCountMutationDoesNot() throws Exception {
 		String name = "net.minecraft.world.item.ItemStack";
-		Path jar = TestFixtures.stagedRoot().resolve("merged-base/patched-mc-merged-26.2.jar");
+		Path jar = TestFixtures.stagedBase();
 		byte[] original = bytes(jar, name);
 		try (StagedGameClasses game = StagedGameClasses.open()) {
 			for (String changedMethod : List.of("getTooltipLines", "setCount")) {
@@ -247,7 +247,7 @@ class TransferTransactionHooksTest {
 	}
 	@Test void theRealNbtBuilderRepairIsOutsideTransferButCopyChangesAreNot() throws Exception {
 		String name = "net.minecraft.nbt.CompoundTag";
-		Path game = TestFixtures.stagedRoot().resolve("merged-base/patched-mc-merged-26.2.jar");
+		Path game = TestFixtures.stagedBase();
 		byte[] original = bytes(game, name);
 		byte[] repaired = new ForbricMergedBaseCompatTransformer().transform(name, original,
 				new TransformContext(net.fabricmc.api.EnvType.SERVER, false, "intermediary"));
@@ -291,7 +291,7 @@ class TransferTransactionHooksTest {
 	}
 	@Test @ResourceLock("native-game-references") void redundantMixinHierarchySignatureIsIgnoredWithoutErasingNewGenericOrExecutableContracts() throws Exception {
 		String name = "net.minecraft.world.item.ItemStack";
-		Path game = TestFixtures.stagedRoot().resolve("merged-base/patched-mc-merged-26.2.jar");
+		Path game = TestFixtures.stagedBase();
 		byte[] original = bytes(game, name); ClassNode woven = node(original);
 		assertNull(woven.signature, "the real staged class has no generic signature");
 		// A mod's two interfaces: one of default methods named like nothing the audit reviews, one with only a static.
@@ -329,7 +329,7 @@ class TransferTransactionHooksTest {
 	 */
 	@Test @ResourceLock("native-game-references") void addedItemInterfacesDoNotHideAnEffectfulGetterOrAReviewedName() throws Exception {
 		String name = "net.minecraft.world.item.Item";
-		Path game = TestFixtures.stagedRoot().resolve("merged-base/patched-mc-merged-26.2.jar");
+		Path game = TestFixtures.stagedBase();
 		byte[] original = bytes(game, name);
 		var mod = java.util.Map.of(
 				"org/quarry/duck/Remembers.class", contract("org/quarry/duck/Remembers", "quarry$remembered", "()Ljava/lang/Object;", "abstract"),

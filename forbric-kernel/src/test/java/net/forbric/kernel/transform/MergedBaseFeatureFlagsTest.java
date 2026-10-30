@@ -41,11 +41,11 @@ import net.forbric.kernel.TestFixtures.Fixture;
 
 /** The merged FeatureFlags.<clinit> calls NeoForge's modded-flag loader once; after the repair it calls the kernel's. */
 class MergedBaseFeatureFlagsTest {
-	private static final Path MERGED = TestFixtures.stagedRoot().resolve("merged-base/patched-mc-merged-26.2.jar");
+	private static final Path MERGED = TestFixtures.stagedBase();
 
 	@Test
 	void theModdedFlagLoaderCallIsSentToTheKernel() throws Exception {
-		TestFixtures.require(Fixture.STAGED, Files.isRegularFile(MERGED), "staged merged base absent");
+		TestFixtures.requireFile(Fixture.STAGED, MERGED, "staged merged base absent");
 		byte[] original;
 		try (ZipFile zip = new ZipFile(MERGED.toFile())) {
 			ZipEntry entry = zip.getEntry(ForbricMergedBaseCompatTransformer.FEATURE_FLAGS + ".class");

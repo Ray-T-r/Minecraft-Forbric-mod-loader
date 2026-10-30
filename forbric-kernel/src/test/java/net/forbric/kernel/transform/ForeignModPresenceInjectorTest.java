@@ -89,13 +89,13 @@ class ForeignModPresenceInjectorTest {
 
 	@Test
 	void theRealNeoForgeModListIsRewrittenAndStillVerifies() throws Exception {
-		TestFixtures.require(Fixture.STAGED, Files.isRegularFile(NEOFORGE), "staged NeoForge runtime absent — skipping real-bytecode check");
+		TestFixtures.requireFile(Fixture.STAGED, NEOFORGE, "staged NeoForge runtime absent — skipping real-bytecode check");
 		assertRewritten(NEO_MOD_LIST, readClass(NEOFORGE, "net/neoforged/fml/ModList.class"));
 	}
 
 	@Test
 	void theRealMinecraftForgeModListIsRewrittenAndStillVerifies() throws Exception {
-		TestFixtures.require(Fixture.STAGED, Files.isRegularFile(FORGE), "staged MinecraftForge runtime absent — skipping real-bytecode check");
+		TestFixtures.requireFiles(Fixture.STAGED, "staged MinecraftForge runtime absent — skipping real-bytecode check", FORGE);
 		assertRewritten(FORGE_MOD_LIST, readClass(FORGE, "net/minecraftforge/fml/ModList.class"));
 	}
 

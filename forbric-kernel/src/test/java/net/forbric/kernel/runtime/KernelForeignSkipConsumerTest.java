@@ -12,7 +12,7 @@ import org.junit.jupiter.api.Test;
 /** Actual compiled filter + real DataResult. The baseline consumer demonstrates the cast failure. */
 class KernelForeignSkipConsumerTest {
  @Test void knownMarkerSkipsDataWhileNormalOptionalAndDecodeErrorsRemainIntact()throws Exception{
-  Path game=TestFixtures.stagedRoot().resolve("merged-base/patched-mc-merged-26.2.jar");
+  Path game=TestFixtures.stagedBase();
   Path compiled=Path.of("build/classes/java/runtime");
   TestFixtures.require(Fixture.STAGED,Files.exists(game),"the staged merged base required");
   TestFixtures.require(Fixture.GAME_SIDE,Files.exists(compiled),"actual game-side compilation required");

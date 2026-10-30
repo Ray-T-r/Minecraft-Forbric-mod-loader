@@ -32,7 +32,7 @@ class MixinReturnOrdinalsTest {
 	private static final String TARGET = "net/minecraft/server/level/ServerPlayerGameMode";
 
 	@Test void apolisLastReturnOfDestroyBlockIsTheMergedLastReturn() throws Exception {
-		ClassNode merged = game(Fixture.STAGED, TestFixtures.stagedRoot().resolve("merged-base/patched-mc-merged-26.2.jar"));
+		ClassNode merged = game(Fixture.STAGED, TestFixtures.stagedBase());
 		ClassNode vanilla = game(Fixture.MC_LIBRARIES, TestFixtures.vanillaJar());
 		MethodNode live = destroyBlock(merged), original = destroyBlock(vanilla);
 		List<AbstractInsnNode> returns = returns(live);
@@ -60,7 +60,7 @@ class MixinReturnOrdinalsTest {
 	}
 
 	@Test void theSwitchLeavesTheOrdinalAsCompiled() throws Exception {
-		ClassNode merged = game(Fixture.STAGED, TestFixtures.stagedRoot().resolve("merged-base/patched-mc-merged-26.2.jar"));
+		ClassNode merged = game(Fixture.STAGED, TestFixtures.stagedBase());
 		ClassNode vanilla = game(Fixture.MC_LIBRARIES, TestFixtures.vanillaJar());
 		String old = System.setProperty(MixinReturnOrdinals.PROPERTY, "off");
 		try {

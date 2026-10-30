@@ -48,24 +48,23 @@ import org.junit.jupiter.api.Test;
 class StagedArtifactCoverageTest {
 
 	/**
-	 * Where the staged artifacts live.
+	 * Where the staged artifacts live: {@link TestFixtures#stagedRoot()}, the root Gradle hands every test task.
 	 *
-	 * <p>{@code FORBRIC_OLD} first, because that is what lets a second worktree run against the real tree —
-	 * {@code run/lib.sh} has supported it for exactly that reason, while the tests have all hardcoded the
-	 * relative path and ignored it. A worktree therefore skipped every one of these and reported green.
+	 * <p>This used to resolve {@code FORBRIC_OLD} itself, which was right when every other test hardcoded the
+	 * relative path and a worktree skipped them all; it now has to agree with the root the tests it counts read,
+	 * including the Forge-less one {@code -Pforbric.hideForgeCarrier} hands them.
 	 */
 	static Path stagedRoot() {
-		String override = System.getenv("FORBRIC_OLD");
-		if (override != null && !override.isBlank()) return Path.of(override, "run").normalize();
-		return Path.of(System.getenv().getOrDefault("FORBRIC_OLD", System.getProperty("user.dir") + "/../forbric-loader"), "run").normalize();
+		return TestFixtures.stagedRoot().normalize();
 	}
 
+	/**
+	 * The artifacts whose presence means the real-bytecode tests must have run: the base and the NeoForge carrier,
+	 * which every staged root has. The MinecraftForge carrier is reported but does not decide it: a root without it
+	 * (the genuine base's layout) still runs every test that does not need MinecraftForge.
+	 */
 	private static List<Path> artifacts() {
-		Path root = stagedRoot();
-		return List.of(
-				root.resolve("merged-base/patched-mc-merged-26.2.jar"),
-				root.resolve("forge-runtime/forge-runtime.jar"),
-				root.resolve("neoforge-runtime/neoforge-runtime.jar"));
+		return List.of(TestFixtures.stagedBase(), TestFixtures.neoCarrier());
 	}
 
 	@Test
@@ -97,6 +96,7 @@ class StagedArtifactCoverageTest {
 				// TestFixtures is the one place that resolves the staged root now; a test reading the staged
 				// artifacts says so with stagedRoot() or Fixture.STAGED. The two spellings it replaced still count.
 				if (text.contains("stagedRoot()") || text.contains("Fixture.STAGED")
+						|| text.contains("stagedBase()") || text.contains("genuineBase()") || text.contains("BASE_JAR")
 						|| text.contains("forbric-loader") || text.contains("FORBRIC_OLD")) {
 					readers.add(file.getFileName().toString());
 				}
@@ -111,8 +111,13 @@ class StagedArtifactCoverageTest {
 						+ "and either way the bytecode claims are no longer being checked: " + readers);
 
 		if (!missing.isEmpty()) {
-			System.out.println("[staged] present: " + present.size() + "/3, missing: " + missing
+			System.out.println("[staged] present: " + present.size() + "/" + artifacts().size() + ", missing: " + missing
 					+ " — the assertions that read the missing one(s) skipped.");
+		}
+		if (!TestFixtures.forgeCarrierStaged()) {
+			System.out.println("[staged] no MinecraftForge carrier ("
+					+ (TestFixtures.forgeCarrierHidden() ? "hidden by -Pforbric.hideForgeCarrier" : "not staged")
+					+ ") — the assertions that need it skipped as [fixture:forge-carrier].");
 		}
 	}
 }

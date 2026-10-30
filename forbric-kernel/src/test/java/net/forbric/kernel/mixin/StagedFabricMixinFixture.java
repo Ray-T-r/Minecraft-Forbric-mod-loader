@@ -10,7 +10,7 @@ import static org.junit.jupiter.api.Assertions.*;
 /** Reads unmodified upstream modules; no test-written stand-in for their injection contracts. */
 final class StagedFabricMixinFixture {
  static ClassNode mixin(String module,String name)throws Exception{
-  Path api=TestFixtures.fabricApi();TestFixtures.require(Fixture.STAGED,Files.isRegularFile(api),"actual Fabric API fixture required");
+  Path api=TestFixtures.fabricApi();TestFixtures.requireFile(Fixture.STAGED, api,"actual Fabric API fixture required");
   try(ZipFile z=new ZipFile(api.toFile())){
    ZipEntry e=z.stream().filter(x->x.getName().startsWith("META-INF/jars/"+module+"-")).findFirst().orElseThrow();
    try(ZipInputStream inner=new ZipInputStream(z.getInputStream(e))){for(ZipEntry entry;(entry=inner.getNextEntry())!=null;)if(entry.getName().equals(name+".class"))return MixinFit.parse(inner.readAllBytes());}
@@ -21,7 +21,7 @@ final class StagedFabricMixinFixture {
   return game("net/minecraft/world/entity/LivingEntity",vanilla);
  }
  static ClassNode game(String name,boolean vanilla)throws Exception{
-  Path p=vanilla?TestFixtures.vanillaJar():TestFixtures.stagedRoot().resolve("merged-base/patched-mc-merged-26.2.jar");
+  Path p=vanilla?TestFixtures.vanillaJar():TestFixtures.stagedBase();
   TestFixtures.require(vanilla?Fixture.MC_LIBRARIES:Fixture.STAGED,Files.isRegularFile(p),"actual game required");
   try(ZipFile z=new ZipFile(p.toFile())){return MixinFit.parse(z.getInputStream(z.getEntry(name+".class")).readAllBytes());}
  }
