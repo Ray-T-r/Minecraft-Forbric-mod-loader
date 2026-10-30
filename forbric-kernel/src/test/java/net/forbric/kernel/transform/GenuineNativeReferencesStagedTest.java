@@ -41,6 +41,8 @@ class GenuineNativeReferencesStagedTest {
 	private static final String LIVING = "net/minecraft/world/entity/LivingEntity";
 	private static final String FUEL = "net/minecraft/world/level/block/entity/FuelValues";
 	private static final String FLUID_RENDERER = "net/minecraft/client/renderer/block/FluidRenderer";
+	private static final String NEOFORGE_PREFIX = "META-INF/forbric/native-reference/NEOFORGE/";
+	private static final String NEOFORGE_INDEX = NEOFORGE_PREFIX + "index.tsv";
 	/** Classes the measured adapters and repairs read references of, on both sides. */
 	private static final List<String> ADAPTER_CLASSES = List.of(LIVING, FUEL, FLUID_RENDERER,
 			"net/minecraft/server/ReloadableServerRegistries", "net/minecraft/server/WorldLoader",
@@ -86,19 +88,95 @@ class GenuineNativeReferencesStagedTest {
 				.contains("FABRIC none"), "a sidecar that does not exist is no source, and no failure");
 	}
 
+	/**
+	 * The merged base's embedded NEOFORGE references, read as every adapter read them before the switch: the evidence the
+	 * genuine base's own bytes must reproduce. Its index was measured against this very jar (the merge's NeoForge input),
+	 * so on a staged root whose two bases belong together the answers are equal class for class.
+	 */
+	private static NativeGameReferences mergedNeoForgeIndex(ZipFile merged) {
+		assertNotNull(merged.getEntry(NEOFORGE_INDEX), "premise: the staged merged base embeds a NEOFORGE index: " + merged.getName());
+		return new NativeGameReferences(path -> {
+			ZipEntry entry = merged.getEntry(path);
+			if (entry == null) return null;
+			try (InputStream in = merged.getInputStream(entry)) {
+				return in.readAllBytes();
+			} catch (IOException unreadable) {
+				throw new AssertionError(unreadable);
+			}
+		});
+	}
+
+	/** The staged merged base, open; skips like the genuine one when it is not staged. */
+	private static ZipFile merged() throws IOException {
+		Path merged = TestFixtures.stagedBase();
+		TestFixtures.requireFiles(Fixture.STAGED, "the merged base whose embedded NEOFORGE index is the old evidence", merged);
+		return new ZipFile(merged.toFile());
+	}
+
 	@Test
 	void bothHalvesAnswerForTheClassesTheAdaptersRead() throws Exception {
 		Path genuine = genuine();
+		try (ZipFile merged = merged()) {
+			bothHalvesAnswer(genuine, mergedNeoForgeIndex(merged));
+		}
+	}
+
+	private void bothHalvesAnswer(Path genuine, NativeGameReferences before) throws Exception {
 		launch(genuine, TestFixtures.vanillaReference(genuine));
 		for (String owner : ADAPTER_CLASSES) {
 			assertArrayEquals(write(node(entry(TestFixtures.vanillaJar(), owner + ".class"))),
 					write(NativeGameReferences.reference(Ecosystem.FABRIC, owner)), "FABRIC " + owner + " is vanilla's compile");
-			assertArrayEquals(write(node(entry(genuine, owner + ".class"))),
-					write(NativeGameReferences.reference(Ecosystem.NEOFORGE, owner)), "NEOFORGE " + owner + " is the base's own");
+			assertArrayEquals(write(before.get(Ecosystem.NEOFORGE, owner)),
+					write(NativeGameReferences.reference(Ecosystem.NEOFORGE, owner)),
+					"NEOFORGE " + owner + " answers as the merged base's embedded index did");
 			assertNull(NativeGameReferences.reference(Ecosystem.FORGE, owner), "no FORGE compile exists here");
 			assertTrue(NativeGameReferences.has(Ecosystem.FABRIC, owner) && NativeGameReferences.has(Ecosystem.NEOFORGE, owner));
 			assertEquals(2, NativeGameReferences.peers(Ecosystem.FORGE, owner).size(), owner);
 		}
+	}
+
+	/**
+	 * The NEOFORGE half over the whole index, not a handful of classes. BASE mode answers from the genuine jar's raw bytes,
+	 * so comparing it with that same jar would prove nothing; it is compared with the merged base's embedded NEOFORGE index
+	 * instead, a different file read by a different path (index row, hash check, {@code .class.bin} copy or the merged
+	 * class). The genuine base pins exactly the classes that index pins, and every class the merge changed — the ones the
+	 * index had to keep a NeoForge copy of, where the two bases' bytes differ — answers with the same bytes.
+	 */
+	@Test
+	void theGenuineBasesOwnBytesAnswerAsTheMergedBasesEmbeddedNeoForgeIndexDid() throws Exception {
+		Path genuine = genuine();
+		try (ZipFile mergedJar = merged()) {
+			neoForgeAnswersMatch(genuine, mergedJar);
+		}
+	}
+
+	private void neoForgeAnswersMatch(Path genuine, ZipFile mergedJar) throws Exception {
+		NativeGameReferences before = mergedNeoForgeIndex(mergedJar);
+		List<String> indexed = new java.util.ArrayList<>(), copied = new java.util.ArrayList<>();
+		java.util.Set<String> genuineClasses = new java.util.HashSet<>();
+		try (ZipFile genuineJar = new ZipFile(genuine.toFile())) {
+			for (String row : new String(mergedJar.getInputStream(mergedJar.getEntry(NEOFORGE_INDEX)).readAllBytes(),
+					java.nio.charset.StandardCharsets.UTF_8).lines().skip(1).toList()) {
+				String owner = row.substring(0, row.indexOf('\t'));
+				indexed.add(owner);
+				if (mergedJar.getEntry(NEOFORGE_PREFIX + owner + ".class.bin") != null) copied.add(owner);
+			}
+			genuineJar.stream().map(ZipEntry::getName).filter(name -> name.endsWith(".class"))
+					.forEach(name -> genuineClasses.add(name.substring(0, name.length() - ".class".length())));
+		}
+		assertFalse(copied.isEmpty(), "premise: the merge changed classes it had to keep NeoForge's copy of");
+		launch(genuine, null);
+		assertEquals(new java.util.HashSet<>(indexed), genuineClasses,
+				"the genuine base holds exactly the classes the merged base's NEOFORGE index pins");
+		for (String owner : indexed) assertTrue(NativeGameReferences.has(Ecosystem.NEOFORGE, owner), "NEOFORGE pins " + owner);
+		List<String> differing = new java.util.ArrayList<>();
+		for (String owner : copied) {
+			if (!java.util.Arrays.equals(write(before.get(Ecosystem.NEOFORGE, owner)),
+					write(NativeGameReferences.reference(Ecosystem.NEOFORGE, owner)))) differing.add(owner);
+		}
+		assertEquals(List.of(), differing, "NEOFORGE answers that differ from the merged base's embedded index");
+		System.out.println("[GenuineNativeReferencesStagedTest] NEOFORGE: " + indexed.size() + " classes pinned on both, "
+				+ copied.size() + " merge-changed classes answer identically");
 	}
 
 	@Test
