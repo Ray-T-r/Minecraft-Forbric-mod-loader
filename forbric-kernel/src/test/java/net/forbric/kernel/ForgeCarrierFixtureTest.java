@@ -13,7 +13,6 @@ import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
-import static org.junit.jupiter.api.Assumptions.assumeFalse;
 
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -35,6 +34,13 @@ import net.forbric.kernel.TestFixtures.Fixture;
  */
 class ForgeCarrierFixtureTest {
 	private static final boolean LEGACY_ALL = "1".equals(System.getenv("FORBRIC_COMPAT_FIXTURES_REQUIRED"));
+
+	/**
+	 * What a missing fixture this run does not require throws: a skip. {@code FORBRIC_COMPAT_FIXTURES_REQUIRED=1}
+	 * requires every kind, so there the same miss is a failure; it carries the same tag, which is what these tests
+	 * judge, so they check the routing under that spelling too instead of passing without looking.
+	 */
+	private static final Class<? extends Throwable> SKIPPED = LEGACY_ALL ? AssertionFailedError.class : TestAbortedException.class;
 
 	@TempDir
 	Path tmp;
@@ -70,16 +76,14 @@ class ForgeCarrierFixtureTest {
 		Path run = Files.createDirectories(tmp.resolve("run"));
 		Path base = file(run.resolve(TestFixtures.BASE_JAR)), neo = file(run.resolve(TestFixtures.NEO_CARRIER_JAR));
 		Path forge = run.resolve(TestFixtures.FORGE_CARRIER_JAR);
-		// That spelling requires forge-carrier too (the point of a separate kind), so the skip this checks cannot happen.
-		assumeFalse(LEGACY_ALL, "FORBRIC_COMPAT_FIXTURES_REQUIRED=1 requires forge-carrier, so a missing carrier fails there");
 
-		TestAbortedException files = assertThrows(TestAbortedException.class,
+		Throwable files = assertThrows(SKIPPED,
 				() -> TestFixtures.requireFiles(Fixture.STAGED, "the base and both carriers", base, forge, neo));
 		assertTrue(files.getMessage().startsWith(TestFixtures.tag(Fixture.FORGE_CARRIER)), files.getMessage());
-		TestAbortedException file = assertThrows(TestAbortedException.class,
+		Throwable file = assertThrows(SKIPPED,
 				() -> TestFixtures.requireFile(Fixture.STAGED, forge, "the Forge carrier"));
 		assertTrue(file.getMessage().startsWith(TestFixtures.tag(Fixture.FORGE_CARRIER)), file.getMessage());
-		TestAbortedException entry = assertThrows(TestAbortedException.class,
+		Throwable entry = assertThrows(SKIPPED,
 				() -> TestFixtures.requireEntry(Fixture.STAGED, forge, "net/minecraftforge/common/ForgeHooks.class"));
 		assertTrue(entry.getMessage().startsWith(TestFixtures.tag(Fixture.FORGE_CARRIER)), entry.getMessage());
 		assertDoesNotThrow(() -> TestFixtures.requireFile(Fixture.STAGED, neo, "the NeoForge carrier"));
@@ -104,7 +108,6 @@ class ForgeCarrierFixtureTest {
 	 */
 	@Test
 	void aRunThatRequiresTheCarrierFailsWithoutIt() throws Exception {
-		assumeFalse(LEGACY_ALL, "FORBRIC_COMPAT_FIXTURES_REQUIRED=1 requires staged too, so the routing cannot be told apart");
 		System.setProperty(TestFixtures.POLICY, "forge-carrier");
 		Path run = tmp.resolve("run");
 		Path forge = run.resolve(TestFixtures.FORGE_INTEROP_JAR), base = run.resolve(TestFixtures.BASE_JAR);
@@ -122,7 +125,7 @@ class ForgeCarrierFixtureTest {
 				() -> TestFixtures.require(Fixture.FORGE_CARRIER, false, "asked for by name"));
 		assertTrue(asked.getMessage().startsWith(carrier), asked.getMessage());
 
-		TestAbortedException missingBase = assertThrows(TestAbortedException.class,
+		Throwable missingBase = assertThrows(SKIPPED,
 				() -> TestFixtures.requireFile(Fixture.STAGED, base, "the base"));
 		assertTrue(missingBase.getMessage().startsWith(TestFixtures.tag(Fixture.STAGED)), missingBase.getMessage());
 	}
@@ -134,7 +137,6 @@ class ForgeCarrierFixtureTest {
 	 */
 	@Test
 	void onlyABaseThatLinksMinecraftForgeNeedsTheCarrierForItsOwnClasses() throws Exception {
-		assumeFalse(LEGACY_ALL, "FORBRIC_COMPAT_FIXTURES_REQUIRED=1 requires forge-carrier, so the missing carrier fails there");
 		String handed = System.getProperty("forbric.stagedRoot");
 		try {
 			Path merged = Files.createDirectories(tmp.resolve("merged/run")), genuine = Files.createDirectories(tmp.resolve("genuine/run"));
@@ -143,7 +145,7 @@ class ForgeCarrierFixtureTest {
 
 			System.setProperty("forbric.stagedRoot", merged.toString());
 			assertTrue(TestFixtures.baseNamesMinecraftForge());
-			TestAbortedException skipped = assertThrows(TestAbortedException.class,
+			Throwable skipped = assertThrows(SKIPPED,
 					() -> TestFixtures.requireForgeCarrierWhereTheBaseNamesIt("a NeoForge default reached through Entity"));
 			assertTrue(skipped.getMessage().startsWith(TestFixtures.tag(Fixture.FORGE_CARRIER)), skipped.getMessage());
 			file(merged.resolve(TestFixtures.FORGE_INTEROP_JAR));
