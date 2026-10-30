@@ -253,7 +253,7 @@ class MixinNativePredicateSeamSpellingTest {
 			} catch (java.io.IOException unreadable) { throw new IllegalStateException(unreadable); }
 			return null;
 		});
-		NativeGameReferences references = new NativeGameReferences(resource);
+		NativeGameReferences references = new NativeGameReferences(resource, null, TestFixtures.launchSources(base));
 		TestFixtures.require(TestFixtures.Fixture.STAGED, references.get(Ecosystem.FABRIC, HOST) != null, "native-indexed vanilla AbstractBoat required");
 		byte[] guest = null;
 		try (ZipFile outer = new ZipFile(api.toFile())) {

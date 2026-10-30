@@ -47,7 +47,8 @@ class NativeDualEventInjectorStagedTest {
 	private static List<Path> jars() {
 		Path forge = root().resolve("merged-base/forge-runtime-interop.jar");
 		if (!Files.isRegularFile(forge)) forge = root().resolve("forge-runtime/forge-runtime.jar");
-		return List.of(root().resolve(TestFixtures.BASE_JAR), forge, root().resolve(TestFixtures.NEO_CARRIER_JAR));
+		// The merged base, not BASE_JAR: the FORGE native references read below are the index only the merge embeds.
+		return List.of(root().resolve(TestFixtures.MERGED_BASE_JAR), forge, root().resolve(TestFixtures.NEO_CARRIER_JAR));
 	}
 
 	/** The game's resources as the kernel reads them at boot: the merged base first, then the two carriers. */

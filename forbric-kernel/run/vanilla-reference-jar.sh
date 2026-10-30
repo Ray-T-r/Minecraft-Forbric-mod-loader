@@ -11,8 +11,12 @@
 # that predates it, or one this checkout must not write into.
 #
 # WHERE IT COMES FROM, in order:
-#   1. $VANILLA_REFERENCE_JAR, when set and present — a gate or a developer naming one explicitly. Used as named; one
-#      that records another base is said on stderr.
+#   1. $VANILLA_REFERENCE_JAR, when set and present — a gate or a developer naming one explicitly. Used as named while
+#      it records this base. One that records another base is REFUSED (exit 6, the reason on stderr, nothing on
+#      stdout): on the genuine NeoForge base no embedded index stands behind the sidecar, so a sidecar measured against
+#      another base silently costs every changed class without a vanilla copy its FABRIC reference. The launchers then
+#      start without the flag, which the kernel's "native references:" line reports. For a deliberate experiment,
+#      FORBRIC_VANILLA_REFERENCE_ANY_BASE=1 uses it anyway, with the mismatch said on stderr.
 #   2. <stage>/vanilla-reference/vanilla-reference-26.2.jar, when it records THIS base (what prepare staged).
 #   3. build/vanilla-reference/<base-key>/vanilla-reference-26.2.jar in this checkout, built by the installer's own
 #      VanillaReference.java run as a single-file program: the same writer, so the same bytes. Reused while it records
@@ -50,8 +54,17 @@ current() {
 }
 
 if [ -n "${VANILLA_REFERENCE_JAR:-}" ] && [ -f "$VANILLA_REFERENCE_JAR" ]; then
-  current "$VANILLA_REFERENCE_JAR" || echo "[vanilla-reference] $VANILLA_REFERENCE_JAR records another base than $BASE;" \
-    "using it as named (on a base that embeds its own index the kernel answers what it cannot verify from that index)" >&2
+  if ! current "$VANILLA_REFERENCE_JAR"; then
+    if [ "${FORBRIC_VANILLA_REFERENCE_ANY_BASE:-}" != 1 ]; then
+      echo "[vanilla-reference] REFUSED: \$VANILLA_REFERENCE_JAR=$VANILLA_REFERENCE_JAR records another base (or vanilla" \
+        "jar) than $BASE; a base without an embedded index has nothing to answer what it cannot verify. Unset it to get" \
+        "this base's sidecar, or set FORBRIC_VANILLA_REFERENCE_ANY_BASE=1 to use it anyway" >&2
+      exit 6
+    fi
+    echo "[vanilla-reference] $VANILLA_REFERENCE_JAR records another base than $BASE; using it as named because" \
+      "FORBRIC_VANILLA_REFERENCE_ANY_BASE=1 (on a base that embeds its own index the kernel answers what it cannot" \
+      "verify from that index; on any other base those classes have no FABRIC reference)" >&2
+  fi
   echo "$VANILLA_REFERENCE_JAR"; exit 0
 fi
 

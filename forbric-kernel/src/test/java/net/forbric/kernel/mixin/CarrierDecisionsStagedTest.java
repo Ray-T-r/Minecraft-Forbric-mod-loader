@@ -66,7 +66,7 @@ class CarrierDecisionsStagedTest {
 			} catch (Exception unreadable) {
 				return null;
 			}
-		});
+		}, null, TestFixtures.launchSources(jar));
 		return references::get;
 	}
 

@@ -49,7 +49,7 @@ import net.forbric.kernel.mixin.NativeReferenceSources;
  * that name them bind — the real fabric-api and balm mixins where one exists, a fixture mixin for the rest.
  */
 class VanillaMemberTwinInjectorTest {
-	private static final Path MERGED = TestFixtures.stagedBase().normalize();
+	private static final Path MERGED = TestFixtures.mergedBase().normalize();
 	private static final Path GENUINE = TestFixtures.genuineBase().normalize();
 	private static final Path NEO_RUNTIME = TestFixtures.neoCarrier().normalize();
 	private static final Path BALM = Path.of(System.getProperty("forbric.balmFabricJar",

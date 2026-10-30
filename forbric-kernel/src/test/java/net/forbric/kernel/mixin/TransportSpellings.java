@@ -90,7 +90,7 @@ final class TransportSpellings {
 				} catch (IOException unreadable) {
 					return null;
 				}
-			});
+			}, null, TestFixtures.launchSources(mergedBase()));
 			ClassNode node = references.get(ecosystem, name);
 			TestFixtures.require(Fixture.STAGED, node != null, "the hash-pinned native " + name + " the merged base indexes");
 			return node;

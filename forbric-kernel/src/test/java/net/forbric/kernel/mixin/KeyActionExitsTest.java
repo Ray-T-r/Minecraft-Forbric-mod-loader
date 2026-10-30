@@ -307,7 +307,7 @@ class KeyActionExitsTest {
 				} catch (java.io.IOException unavailable) {
 					return null;
 				}
-			});
+			}, null, TestFixtures.launchSources(merged));
 			original = references.get(Ecosystem.FABRIC, MixinKeyActionAdapter.TARGET);
 			forge = references.get(Ecosystem.FORGE, MixinKeyActionAdapter.TARGET);
 			neoforge = references.get(Ecosystem.NEOFORGE, MixinKeyActionAdapter.TARGET);

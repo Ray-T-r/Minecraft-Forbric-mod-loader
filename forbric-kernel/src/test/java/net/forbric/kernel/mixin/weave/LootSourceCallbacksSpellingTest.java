@@ -55,6 +55,29 @@ class LootSourceCallbacksSpellingTest {
 		}
 	}
 
+	/**
+	 * The same group on the genuine NeoForge base, which embeds no native-reference index: its FABRIC
+	 * {@code ReloadableServerRegistries} comes only through the source layer a launch on that base has, the
+	 * vanilla-reference sidecar the installer's own writer builds, measured against that base (hash-only rows answered
+	 * from the genuine jar's bytes, copies for what NeoForge changed). Each pair still binds its one host there. This is
+	 * the native-reference switch's proof on the genuine base, runnable without re-rooting the staged tree.
+	 */
+	@Test
+	void eachPairSpelledApartIsStillOneHostOnTheGenuineBase() throws Exception {
+		try (Evidence evidence = new Evidence(TestFixtures.genuineBase())) {
+			assertNull(evidence.jar.getEntry("META-INF/forbric/native-reference/FABRIC/index.tsv"),
+					"premise: the genuine base embeds no FABRIC index, so only the sidecar can answer");
+			assertTrue(evidence.sources.describe().contains("native references: FABRIC from the vanilla-reference sidecar "
+					+ net.forbric.installer.kernel.VanillaReference.fileName("26.2") + ", "), evidence.sources.describe());
+			MethodNode reload = evidence.nativeMethod("reload"), tags = evidence.nativeMethod(LAMBDA);
+			ClassNode source = respelled(List.of("L" + HOST + ";reload"), List.of("net.minecraft.server.ReloadableServerRegistries.reload " + reload.desc),
+					List.of(" " + LAMBDA + " "), List.of(LAMBDA + tags.desc, "L" + HOST + ";" + LAMBDA));
+			var plan = LootSourceCallbacks.plan(source);
+			assertNotNull(plan, "the group itself is spelling-blind");
+			assertTrue(LootSourceContracts.offer(plan, evidence.reader(), evidence.nativeNode()), "each pair binds its one host in both classes");
+		}
+	}
+
 	@Test
 	void aPairWhoseCallbacksBindTwoMethodsIsNoGroup() throws Exception {
 		try (Evidence evidence = new Evidence()) {
@@ -109,14 +132,19 @@ class LootSourceCallbacksSpellingTest {
 		throw new AssertionError("missing original loot source");
 	}
 
-	/** The staged merged base, the bridged current host, the compiled typed bridge and the native host. */
+	/** A staged base, the bridged current host, the compiled typed bridge and the native host. */
 	private static final class Evidence implements AutoCloseable {
 		private final ZipFile jar;
 		private final byte[] host, bridge;
+		private final NativeReferenceSources sources;
 		private final ClassNode nativeNode;
 
+		/** On the staged base, whichever base that is. */
 		Evidence() throws Exception {
-			Path base = TestFixtures.stagedBase();
+			this(TestFixtures.stagedBase());
+		}
+
+		Evidence(Path base) throws Exception {
 			Path bridgePath = Path.of(System.getProperty("forbric.test.runtimeClasses", "build/classes/java/runtime")).resolve(BRIDGE);
 			TestFixtures.requireFiles(Fixture.STAGED, "verified native loot target and compiled typed seam", base, bridgePath);
 			jar = new ZipFile(base.toFile());
@@ -126,8 +154,8 @@ class LootSourceCallbacksSpellingTest {
 			// sidecar every launch path passes (the genuine base embeds none).
 			Path sidecar = jar.getEntry("META-INF/forbric/native-reference/FABRIC/index.tsv") != null ? null
 					: TestFixtures.vanillaReference(base);
-			nativeNode = new NativeGameReferences(this::bytes, null, NativeReferenceSources.open(base, sidecar))
-					.get(Ecosystem.FABRIC, HOST);
+			sources = NativeReferenceSources.open(base, sidecar);
+			nativeNode = new NativeGameReferences(this::bytes, null, sources).get(Ecosystem.FABRIC, HOST);
 			assertNotNull(nativeNode);
 		}
 

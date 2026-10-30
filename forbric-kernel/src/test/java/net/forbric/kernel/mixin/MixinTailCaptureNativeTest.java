@@ -99,7 +99,7 @@ class MixinTailCaptureNativeTest {
 			} catch (java.io.IOException unreadable) {
 				return null;
 			}
-		});
+		}, null, TestFixtures.launchSources(jar));
 		for (Ecosystem ecosystem : List.of(Ecosystem.FABRIC, Ecosystem.NEOFORGE, Ecosystem.FORGE)) {
 			ClassNode own = references.get(ecosystem, GUI);
 			assertNotNull(own, ecosystem.name());
