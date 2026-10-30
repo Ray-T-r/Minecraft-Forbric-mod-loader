@@ -279,6 +279,48 @@ public final class TestFixtures {
 	}
 
 	/**
+	 * {@link #requireForgeCarrier} only where the staged base itself links MinecraftForge. The merged base's vanilla
+	 * classes implement MinecraftForge's extension interfaces and call its hooks, which only the carrier declares, so
+	 * on it a NeoForge or Fabric test that defines a game class, walks a hierarchy to a default or follows a call
+	 * cannot see what it is about without the carrier: it reads a hierarchy cut short and fails for a reason that is
+	 * not its own. A base that names no MinecraftForge (the genuine NeoForge jar) needs nothing of the carrier, and the
+	 * test runs there; a plain {@link #requireForgeCarrier} would skip it for good once the carrier is no longer staged.
+	 */
+	public static void requireForgeCarrierWhereTheBaseNamesIt(String what) {
+		if (baseNamesMinecraftForge()) requireForgeCarrier(what + " (the staged base links MinecraftForge's classes)");
+	}
+
+	/** {@link #baseNamesMinecraftForge}'s answer per base path, size and time: it reads one class, but on every call. */
+	private static final java.util.Map<String, Boolean> BASE_NAMES_FORGE = new java.util.concurrent.ConcurrentHashMap<>();
+
+	/**
+	 * Whether {@link #stagedBase()}'s {@code Entity} names any {@code net/minecraftforge/} class: true of the merged
+	 * base (its Entity implements MinecraftForge's entity extension), false of the genuine NeoForge jar, and false when
+	 * there is no base to read, which a test's own {@link Fixture#STAGED} requirement then reports.
+	 */
+	public static boolean baseNamesMinecraftForge() {
+		Path base = stagedBase();
+		if (!Files.isRegularFile(base)) return false;
+		try {
+			String key = base.toAbsolutePath() + ":" + Files.size(base) + ":" + Files.getLastModifiedTime(base);
+			Boolean known = BASE_NAMES_FORGE.get(key);
+			if (known != null) return known;
+			boolean names;
+			try (ZipFile zip = new ZipFile(base.toFile())) {
+				ZipEntry entity = zip.getEntry("net/minecraft/world/entity/Entity.class");
+				if (entity == null) throw new AssertionFailedError("content drift: " + base + " has no Entity class");
+				try (InputStream in = zip.getInputStream(entity)) {
+					names = new String(in.readAllBytes(), java.nio.charset.StandardCharsets.ISO_8859_1).contains("net/minecraftforge/");
+				}
+			}
+			BASE_NAMES_FORGE.put(key, names);
+			return names;
+		} catch (IOException unreadable) {
+			throw new AssertionFailedError("content drift: " + base + " is present but is not a readable jar", unreadable);
+		}
+	}
+
+	/**
 	 * Whether {@code file} is a MinecraftForge carrier artifact: anything in a {@code forge-runtime/} directory (the
 	 * carrier and the Forge canary built beside it) or the merge's interop copy. Judged by name, not against
 	 * {@link #stagedRoot()}, because tests build these paths from roots of their own ({@code FORBRIC_OLD}, a

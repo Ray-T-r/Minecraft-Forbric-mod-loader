@@ -13,6 +13,7 @@ import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assumptions.assumeFalse;
 
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -69,7 +70,8 @@ class ForgeCarrierFixtureTest {
 		Path run = Files.createDirectories(tmp.resolve("run"));
 		Path base = file(run.resolve(TestFixtures.BASE_JAR)), neo = file(run.resolve(TestFixtures.NEO_CARRIER_JAR));
 		Path forge = run.resolve(TestFixtures.FORGE_CARRIER_JAR);
-		if (LEGACY_ALL) return; // that spelling requires forge-carrier too, which is the point of a separate kind
+		// That spelling requires forge-carrier too (the point of a separate kind), so the skip this checks cannot happen.
+		assumeFalse(LEGACY_ALL, "FORBRIC_COMPAT_FIXTURES_REQUIRED=1 requires forge-carrier, so a missing carrier fails there");
 
 		TestAbortedException files = assertThrows(TestAbortedException.class,
 				() -> TestFixtures.requireFiles(Fixture.STAGED, "the base and both carriers", base, forge, neo));
@@ -94,11 +96,76 @@ class ForgeCarrierFixtureTest {
 		assertThrows(AssertionFailedError.class, () -> TestFixtures.requireFile(Fixture.STAGED, base, "the base"));
 	}
 
+	/**
+	 * A policy that requires {@code forge-carrier} and not {@code staged}: the missing carrier fails, and only because
+	 * every way of asking for it is routed to {@link Fixture#FORGE_CARRIER} (the caller names {@code staged}, which this
+	 * run would let skip). The missing base under the same policy is still a {@code staged} skip, so the routing is by
+	 * file, not a blanket upgrade.
+	 */
 	@Test
 	void aRunThatRequiresTheCarrierFailsWithoutIt() throws Exception {
-		System.setProperty(TestFixtures.POLICY, "staged,forge-carrier");
-		Path forge = tmp.resolve("run").resolve(TestFixtures.FORGE_INTEROP_JAR);
-		assertThrows(AssertionFailedError.class, () -> TestFixtures.requireFile(Fixture.STAGED, forge, "the Forge carrier"));
+		assumeFalse(LEGACY_ALL, "FORBRIC_COMPAT_FIXTURES_REQUIRED=1 requires staged too, so the routing cannot be told apart");
+		System.setProperty(TestFixtures.POLICY, "forge-carrier");
+		Path run = tmp.resolve("run");
+		Path forge = run.resolve(TestFixtures.FORGE_INTEROP_JAR), base = run.resolve(TestFixtures.BASE_JAR);
+		String carrier = TestFixtures.tag(Fixture.FORGE_CARRIER);
+		AssertionFailedError file = assertThrows(AssertionFailedError.class,
+				() -> TestFixtures.requireFile(Fixture.STAGED, forge, "the Forge carrier"));
+		assertTrue(file.getMessage().startsWith(carrier), file.getMessage());
+		AssertionFailedError files = assertThrows(AssertionFailedError.class,
+				() -> TestFixtures.requireFiles(Fixture.STAGED, "the Forge carrier", run.resolve(TestFixtures.FORGE_CARRIER_JAR)));
+		assertTrue(files.getMessage().startsWith(carrier), files.getMessage());
+		AssertionFailedError entry = assertThrows(AssertionFailedError.class,
+				() -> TestFixtures.requireEntry(Fixture.STAGED, forge, "net/minecraftforge/common/ForgeHooks.class"));
+		assertTrue(entry.getMessage().startsWith(carrier), entry.getMessage());
+		AssertionFailedError asked = assertThrows(AssertionFailedError.class,
+				() -> TestFixtures.require(Fixture.FORGE_CARRIER, false, "asked for by name"));
+		assertTrue(asked.getMessage().startsWith(carrier), asked.getMessage());
+
+		TestAbortedException missingBase = assertThrows(TestAbortedException.class,
+				() -> TestFixtures.requireFile(Fixture.STAGED, base, "the base"));
+		assertTrue(missingBase.getMessage().startsWith(TestFixtures.tag(Fixture.STAGED)), missingBase.getMessage());
+	}
+
+	/**
+	 * Where only the merged base's own classes link MinecraftForge, a NeoForge or Fabric test that reads them needs the
+	 * carrier there and nowhere else: on a base whose Entity names no {@code net/minecraftforge/} class (the genuine
+	 * NeoForge jar) the same test runs without one, instead of skipping for good once the carrier is gone.
+	 */
+	@Test
+	void onlyABaseThatLinksMinecraftForgeNeedsTheCarrierForItsOwnClasses() throws Exception {
+		assumeFalse(LEGACY_ALL, "FORBRIC_COMPAT_FIXTURES_REQUIRED=1 requires forge-carrier, so the missing carrier fails there");
+		String handed = System.getProperty("forbric.stagedRoot");
+		try {
+			Path merged = Files.createDirectories(tmp.resolve("merged/run")), genuine = Files.createDirectories(tmp.resolve("genuine/run"));
+			base(merged.resolve(TestFixtures.BASE_JAR), "Lnet/minecraftforge/common/extensions/IForgeEntity;");
+			base(genuine.resolve(TestFixtures.BASE_JAR), "Lnet/neoforged/neoforge/common/extensions/IEntityExtension;");
+
+			System.setProperty("forbric.stagedRoot", merged.toString());
+			assertTrue(TestFixtures.baseNamesMinecraftForge());
+			TestAbortedException skipped = assertThrows(TestAbortedException.class,
+					() -> TestFixtures.requireForgeCarrierWhereTheBaseNamesIt("a NeoForge default reached through Entity"));
+			assertTrue(skipped.getMessage().startsWith(TestFixtures.tag(Fixture.FORGE_CARRIER)), skipped.getMessage());
+			file(merged.resolve(TestFixtures.FORGE_INTEROP_JAR));
+			assertDoesNotThrow(() -> TestFixtures.requireForgeCarrierWhereTheBaseNamesIt("with the carrier staged"));
+
+			System.setProperty("forbric.stagedRoot", genuine.toString());
+			assertFalse(TestFixtures.baseNamesMinecraftForge());
+			assertDoesNotThrow(() -> TestFixtures.requireForgeCarrierWhereTheBaseNamesIt("a NeoForge default reached through Entity"));
+		} finally {
+			if (handed == null) System.clearProperty("forbric.stagedRoot");
+			else System.setProperty("forbric.stagedRoot", handed);
+		}
+	}
+
+	/** A base jar whose Entity class names {@code descriptor} (its bytes need only carry the name, as a class's pool does). */
+	private static void base(Path jar, String descriptor) throws Exception {
+		Files.createDirectories(jar.getParent());
+		try (java.util.zip.ZipOutputStream out = new java.util.zip.ZipOutputStream(Files.newOutputStream(jar))) {
+			out.putNextEntry(new java.util.zip.ZipEntry("net/minecraft/world/entity/Entity.class"));
+			out.write(("\u00ca\u00fe\u00ba\u00be net/minecraft/world/entity/Entity " + descriptor).getBytes(java.nio.charset.StandardCharsets.ISO_8859_1));
+			out.closeEntry();
+		}
 	}
 
 	private static Path file(Path path) throws Exception {
