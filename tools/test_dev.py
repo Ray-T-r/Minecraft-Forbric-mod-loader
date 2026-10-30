@@ -220,6 +220,11 @@ class DevelopmentWorkflowTest(unittest.TestCase):
             linux = dev.launch_arguments('client', info, mc, stage, self.root, self.root, system='linux', pathsep=':')
         self.assertIn(';dependency.jar;', win[win.index('-cp')+1])
         self.assertIn(';', win[win.index('--runtimeJar')+1])
+        # The vanilla reference travels in its own flag, so a launcher's last-value-wins dedup cannot replace the game.
+        for argv in (win, mac, linux):
+            self.assertEqual(1, argv.count('--gameJar'))
+            self.assertEqual(str(stage / 'vanilla-reference/vanilla-reference-26.2.jar'), argv[argv.index('--nativeReference')+1])
+            self.assertLess(argv.index('--nativeReference'), argv.index('--'))
         self.assertNotIn('-XstartOnFirstThread', win)
         self.assertNotIn('-XstartOnFirstThread', linux)
         self.assertIn('-XstartOnFirstThread', mac)

@@ -34,9 +34,9 @@ import java.util.function.Consumer;
  *
  * <p>The profile inherits from vanilla, which is what lets the launcher resolve assets, natives and the base
  * libraries by itself; on top of that it carries the kernel as {@code mainClass}, Forbric's jars and the kernel's
- * dependencies as libraries, and — as game arguments — the three jars the kernel opens the game with. The
- * kernel's own argument parser takes those four flags out and forwards everything else to the game, so the
- * launcher's own arguments can arrive in any order around them.
+ * dependencies as libraries, and — as game arguments — the three jars the kernel opens the game with and the vanilla
+ * reference it reads beside them. The kernel's own argument parser takes those flags out and forwards everything else
+ * to the game, so the launcher's own arguments can arrive in any order around them.
  *
  * <p>The Minecraft libraries are listed explicitly rather than left to the classpath: the kernel has to OWN them
  * (mods weave into DataFixerUpper and friends), and only the version JSON knows which ones this version uses.
@@ -91,6 +91,14 @@ public final class Installer {
 		log.accept(mcLibraries.size() + " Minecraft libraries the kernel will own");
 
 		if (artifacts == null) artifacts = obtainGameArtifacts(mcDir, mcVersion, null, explicitJdk);
+		// A supplied set has a base but no vanilla reference: that is built from the base and the vanilla jar, which a
+		// supplied set never needed until now. The builder made its own beside the base; this makes the same one.
+		if (!artifacts.containsKey(ArtifactBuilder.VANILLA_REFERENCE)) {
+			artifacts = new LinkedHashMap<>(artifacts);
+			artifacts.put(ArtifactBuilder.VANILLA_REFERENCE, ArtifactBuilder.vanillaReference(
+					versions.resolve(mcVersion).resolve(mcVersion + ".jar"), artifacts.get(ArtifactBuilder.MERGED),
+					mcDir.resolve(".forbric-build").resolve("out").resolve(VanillaReference.fileName(mcVersion)), log).file);
+		}
 
 		List<Map<String, Object>> libraryEntries = new ArrayList<>();
 		libraryEntries.addAll(stageBundledJars(libraries, remote));
@@ -133,6 +141,11 @@ public final class Installer {
 				+ libraryRef(coordinate("net.forbric:neoforge-runtime", mcVersion)));
 		game.add("--libraryPath");
 		game.add(String.join(java.io.File.pathSeparator, mcLibraries));
+		// The vanilla reference is its own flag, never a second --gameJar: a launcher that keeps the last value of a
+		// repeated flag (PCL2) would then hand the kernel a resources-only jar as the game. It is a library like the
+		// others, so the launcher also puts it on the classpath, where it is inert -- it holds no classes.
+		game.add("--nativeReference");
+		game.add(libraryRef(coordinate(ArtifactBuilder.VANILLA_REFERENCE, mcVersion)));
 
 		Map<String, Object> arguments = new LinkedHashMap<>();
 		arguments.put("game", game);
@@ -195,6 +208,9 @@ public final class Installer {
 			case "net.forbric:neoforge-runtime" -> Pins.NEOFORGE;
 			case "net.forbric:forge-runtime" -> Pins.FORGE;
 			case "net.forbric:patched-mc-merged" -> Pins.FORGE + "-" + Pins.NEOFORGE;
+			// Versioned by the base it was measured against, like that base: which classes carry their vanilla bytes
+			// depends on the base, so a second profile on another base must not overwrite this one's in place.
+			case VanillaReference.COORDINATE -> artifactVersion("net.forbric:patched-mc-merged", mcVersion);
 			default -> mcVersion;
 		};
 	}
@@ -416,7 +432,10 @@ public final class Installer {
 		return new ArtifactBuilder(log).build(mcDir, mcVersion, jvm);
 	}
 
-	/** The three locally built jars, copied under net.forbric coordinates so the profile can name them. */
+	/**
+	 * The locally built jars -- the three game jars and the vanilla reference -- copied under net.forbric coordinates so
+	 * the profile can name them.
+	 */
 	private List<Map<String, Object>> stageGameArtifacts(Path libraries, Map<String, Path> artifacts,
 			String mcVersion) throws IOException {
 		List<Map<String, Object>> written = new ArrayList<>();

@@ -22,6 +22,10 @@ FORGE_RT="${FORGE_RT:-$STAGE/merged-base/forge-runtime-interop.jar}"
 # The MinecraftForge carrier is owned only while it is staged; without it the NeoForge carrier is the only one.
 [ -f "$FORGE_RT" ] || FORGE_RT=""
 NEO_RT="${NEO_RT:-$STAGE/neoforge-runtime/neoforge-runtime.jar}"
+# The vanilla reference the kernel reads beside the base (--nativeReference): staged by prepare, else built once into
+# build/ by run/vanilla-reference-jar.sh. Without one the kernel says so in its "native references:" line and the merged
+# base's own embedded index answers; NATIVE_REF=none launches without it on purpose.
+NATIVE_REF="${NATIVE_REF:-}"
 RUNDIR="${RUNDIR:-$KERNEL/run/server-kernel}"
 mkdir -p "$RUNDIR"
 
@@ -67,6 +71,8 @@ JLINE="$(find "$MC/libraries/org/jline" -name 'jline-*-3.25.1.jar' 2>/dev/null |
 # version it finds there — get null under Forbric otherwise, because the merged base belongs to
 # ForbricClassLoader. See run/game-metadata-jar.sh for why this must never carry class files.
 META_JAR="$("$HERE/game-metadata-jar.sh" "$MERGED" 2>/dev/null)" || META_JAR=""
+[ -n "$NATIVE_REF" ] || NATIVE_REF="$(MC_DIR="$MC" "$HERE/vanilla-reference-jar.sh" "$MERGED")" || NATIVE_REF=""
+[ "$NATIVE_REF" = none ] && NATIVE_REF=""
 CP="$BOOT_JAR:$BOOT_DEPS:$VANILLA_CP${JLINE:+:$JLINE}${META_JAR:+:$META_JAR}"
 
 # Guest mixins are written against VANILLA bytecode; the merged base is vanilla+Forge+NeoForge byte-merged, so an
@@ -77,6 +83,7 @@ CP="$BOOT_JAR:$BOOT_DEPS:$VANILLA_CP${JLINE:+:$JLINE}${META_JAR:+:$META_JAR}"
 
 echo "[kernel-launch] rundir=$RUNDIR"
 echo "[kernel-launch] merged base = $MERGED"
+echo "[kernel-launch] vanilla reference = ${NATIVE_REF:-none}"
 echo "[kernel-launch] owned carriers: ${FORGE_RT:+$(basename "$FORGE_RT"), }$(basename "$NEO_RT")"
 cd "$RUNDIR"
 
@@ -86,6 +93,6 @@ cd "$RUNDIR"
 # Developer runs use strict compatibility decisions; installed profiles retain the product default (ask).
 exec java -Djava.awt.headless=true -Dforbric.compatibilityPolicy="${FORBRIC_COMPAT_POLICY:-strict}" ${FORBRIC_JVM:-} \
   -cp "$CP" net.forbric.kernel.boot.KernelServerLaunch \
-  --gameJar "$MERGED" ${FORGE_RT:+--runtimeJar "$FORGE_RT"} --runtimeJar "$NEO_RT" \
+  --gameJar "$MERGED" ${FORGE_RT:+--runtimeJar "$FORGE_RT"} --runtimeJar "$NEO_RT" ${NATIVE_REF:+--nativeReference "$NATIVE_REF"} \
   --libraryPath "$VANILLA_CP${JLINE:+:$JLINE}" \
   -- --gameDir "$RUNDIR" --nogui "$@"

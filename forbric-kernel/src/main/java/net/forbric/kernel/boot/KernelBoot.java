@@ -137,9 +137,9 @@ public final class KernelBoot {
 
 	/**
 	 * Runs the shared boot for {@code side}. {@code args} are the raw process args:
-	 * {@code --gameJar}/{@code --runtimeJar}/{@code --libraryPath} are consumed here ({@code --runtimeJar} takes
-	 * either one jar or several joined by the platform path separator); everything after {@code --}
-	 * (and any unrecognized token) is forwarded to the game's {@code Main.main}.
+	 * {@code --gameJar}/{@code --runtimeJar}/{@code --libraryPath}/{@code --nativeReference} are consumed here
+	 * ({@code --runtimeJar} takes either one jar or several joined by the platform path separator); everything after
+	 * {@code --} (and any unrecognized token) is forwarded to the game's {@code Main.main}.
 	 */
 	public static void launch(Side side, String[] args) throws Throwable {
 		// Before any switch is read: a renamed or retired -Dforbric.* flag is named in the log even when the mechanism
@@ -155,6 +155,7 @@ public final class KernelBoot {
 		List<Path> gameJars = new ArrayList<>();
 		Path gameJar = null;
 		String libraryPath = null;
+		Path nativeReference = null;
 		boolean afterSep = false;
 
 		for (int i = 0; i < args.length; i++) {
@@ -187,6 +188,10 @@ public final class KernelBoot {
 					}
 				}
 				case "--libraryPath" -> libraryPath = req(args, ++i, a);
+				// The vanilla-reference sidecar: read by NativeReferenceSources, never owned -- it holds no classes and
+				// is not part of the game. Its own flag rather than a second --gameJar, because a launcher that keeps the
+				// last value of a repeated flag would hand the kernel the sidecar as the game.
+				case "--nativeReference" -> nativeReference = new File(req(args, ++i, a)).toPath();
 				case "--" -> afterSep = true;
 				default -> gameArgs.add(a);
 			}
@@ -202,6 +207,10 @@ public final class KernelBoot {
 		// "runtime" jar holding no Forge or NeoForge used to pass every step below with an empty answer and take the
 		// boot down at KernelRuntimeClasses.verify, on stderr, with nothing in latest.log (issue #13).
 		LaunchInputCheck.require(gameJars, runtimeJars);
+		// Where every ecosystem's native references come from, decided from these files before anything reads one, and
+		// said in one line: on a base that embeds no index the FABRIC half is the sidecar or nothing.
+		net.forbric.kernel.mixin.NativeGameReferences.configure(
+				net.forbric.kernel.mixin.NativeReferenceSources.open(gameJar, nativeReference));
 
 		Path gameDir = extractGameDir(gameArgs, side.stripGameDir);
 		String gameVersion = detectGameVersion(gameJar);

@@ -53,6 +53,8 @@ public final class MergedBaseLinkGateTest {
 		InstallerWindowInputTest.main(new String[] { work.resolve("window").toString() });
 		// And the libraries the merge reads, which a fresh directory does not have until the installer fetches them.
 		MinecraftLibrariesTest.main(new String[] { work.resolve("libraries").toString() });
+		// And the vanilla reference every install now builds beside the base, which needs no game inputs to check.
+		VanillaReferenceTest.main(new String[] { work.resolve("vanilla-reference").toString() });
 	}
 
 	/**
