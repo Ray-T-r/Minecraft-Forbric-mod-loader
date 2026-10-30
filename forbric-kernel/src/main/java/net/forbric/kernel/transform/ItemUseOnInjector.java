@@ -50,14 +50,16 @@ import org.objectweb.asm.tree.VarInsnNode;
  * lambda. Fabric's wrap is lost there just the same, so it is routed the same way; only the post is not put back, because
  * it is already there and a second one would fire every listener twice.
  *
- * <p>The relay and its bridge are added to every {@code ItemStack}, whatever its body. {@link #relayServerCall} points each
- * family's {@code onPlaceItemIntoWorld} at the bridge without seeing {@code ItemStack} — the two classes are transformed
- * whenever each happens to load — so the only way the two halves cannot come apart is for the bridge never to depend on
- * {@code useOn}'s shape. Both are pass-throughs to {@code Item.useOn}: on a body this does not route, the server's call
- * reaches the item through them unchanged and nothing else calls them, and MixinRelocatedCall moves no injector, because
- * {@code useOn} still makes the call. Before this the bridge came only with the {@code useOn} edit, and on NeoForge's body,
- * where that edit stood down, {@code CommonHooks} was still pointed at it: a {@code NoSuchMethodError} on every item used
- * on a block.
+ * <p>The bridge is added to every {@code ItemStack}, whatever its body; the relay only with the {@code useOn} edit.
+ * {@link #relayServerCall} points each family's {@code onPlaceItemIntoWorld} at the bridge without seeing
+ * {@code ItemStack} — the two classes are transformed whenever each happens to load — so the only way the two halves
+ * cannot come apart is for the bridge's presence never to depend on {@code useOn}'s shape. Its body does: on a body this
+ * routes it goes through the relay, and on any other (vanilla's, or one an edit below stood down on) it makes the
+ * {@code Item.useOn} call itself and the class gets no relay at all. MixinRelocatedCall moves an injector only onto a
+ * relay the class declares, so nothing moves Fabric's wrap onto a body that was not reviewed: on a declined body the
+ * server's call would reach a relay the client's never does, half a repair the decline's warning says is not there.
+ * Before this the bridge came only with the {@code useOn} edit, and on NeoForge's body, where that edit stood down,
+ * {@code CommonHooks} was still pointed at it: a {@code NoSuchMethodError} on every item used on a block.
  *
  * <p>Each {@code useOn} edit checks the reviewed shape and declines on anything else: {@code useOn} must be
  * MinecraftForge's or NeoForge's (no {@code Item.useOn}, one {@code onPlaceItemIntoWorld}, one lambda whose body is
@@ -101,7 +103,7 @@ public final class ItemUseOnInjector implements ClassTransformer {
 						+ "calls MinecraftForge's onPlaceItemIntoWorld itself"));
 	}
 
-	/** The {@code useOn} edit on its own line: the class anchor alone is hit by the relay, which always goes in. */
+	/** The {@code useOn} edit on its own line: the class anchor alone is hit by the bridge, which always goes in. */
 	static final String ROUTED_CLAIM = "forbric-item-use-on#useOnCallRouted";
 
 	@Override public List<Claim> claims() {
@@ -161,22 +163,36 @@ public final class ItemUseOnInjector implements ClassTransformer {
 		return writer.toByteArray();
 	}
 
-	/** {@link #adaptStack}: only the relay and its bridge went in; {@code useOn} is as it was. */
-	static final int RELAY_ONLY = 1;
+	/** {@link #adaptStack}: only the bridge went in, calling {@code Item.useOn} itself; {@code useOn} is as it was. */
+	static final int BRIDGE_ONLY = 1;
 	/** {@link #adaptStack}: NeoForge's body, which posts its event itself; its lambda now calls the relay. */
 	static final int ROUTED = 2;
 	/** {@link #adaptStack}: MinecraftForge's body; NeoForge's post went in at its head and its lambda calls the relay. */
 	static final int POSTED_AND_ROUTED = 3;
 
 	/**
-	 * ItemStack: the relay and its static bridge always; then, on MinecraftForge's or NeoForge's body, the lambda
-	 * through the relay, and on MinecraftForge's the NeoForge post at the head of useOn. Returns 0 when already done,
-	 * else {@link #RELAY_ONLY}, {@link #ROUTED} or {@link #POSTED_AND_ROUTED}.
+	 * ItemStack: the static bridge always. On MinecraftForge's or NeoForge's body the relay with it, the bridge and the
+	 * lambda going through the relay, and on MinecraftForge's the NeoForge post at the head of useOn; on any other body
+	 * a bridge that calls {@code Item.useOn} itself, and no relay. Returns 0 when already done, else
+	 * {@link #BRIDGE_ONLY}, {@link #ROUTED} or {@link #POSTED_AND_ROUTED}.
 	 */
 	static int adaptStack(ClassNode stack) {
-		if (method(stack, RELAY, RELAY_DESC) != null) return 0;   // already done
+		if (method(stack, BRIDGE, RELAY_DESC) != null) return 0;   // already done
+		int routed = route(stack);
+		if (routed == BRIDGE_ONLY) {
+			stack.methods.add(directBridge());
+			return BRIDGE_ONLY;
+		}
 		stack.methods.add(relay());
 		stack.methods.add(bridge());
+		return routed;
+	}
+
+	/**
+	 * The {@code useOn} edit alone: on the reviewed bodies the lambda through the relay {@link #adaptStack} then adds
+	 * and, on MinecraftForge's, the post; on any other body nothing at all, and {@link #BRIDGE_ONLY}.
+	 */
+	private static int route(ClassNode stack) {
 		MethodNode useOn = method(stack, "useOn", USE_ON_DESC);
 		if (useOn == null) return declined("ItemStack.useOn(UseOnContext) is missing");
 		MethodNode lambda = null;
@@ -184,9 +200,9 @@ public final class ItemUseOnInjector implements ClassTransformer {
 		boolean posted = false;
 		for (AbstractInsnNode insn : useOn.instructions) {
 			if (insn instanceof MethodInsnNode call) {
-				if (call.owner.equals(ITEM) && call.name.equals("useOn")) return RELAY_ONLY;   // vanilla's or a vanilla-shaped body
+				if (call.owner.equals(ITEM) && call.name.equals("useOn")) return BRIDGE_ONLY;   // vanilla's or a vanilla-shaped body
 				if (call.name.equals("onPlaceItemIntoWorld")) placeCalls++;
-				if (call.owner.equals(EVENT)) posted = true;                                      // NeoForge's body
+				if (call.owner.equals(EVENT)) posted = true;                                       // NeoForge's body
 			}
 			if (insn instanceof TypeInsnNode type && type.desc.equals(EVENT)) posted = true;
 			if (insn instanceof InvokeDynamicInsnNode indy) {
@@ -216,7 +232,8 @@ public final class ItemUseOnInjector implements ClassTransformer {
 
 	/**
 	 * Either family's hooks: onPlaceItemIntoWorld's one Item.useOn call goes through ItemStack's static bridge — which
-	 * {@link #adaptStack} adds to every ItemStack, so this edit never points at a member the game lacks.
+	 * {@link #adaptStack} adds to every ItemStack, through the relay or not, so this edit never points at a member the
+	 * game lacks.
 	 */
 	static int relayServerCall(ClassNode hooks) {
 		String owner = hooks.name.substring(hooks.name.lastIndexOf('/') + 1);
@@ -258,6 +275,23 @@ public final class ItemUseOnInjector implements ClassTransformer {
 		bridge.instructions.add(new MethodInsnNode(Opcodes.INVOKEVIRTUAL, STACK_INTERNAL, RELAY, RELAY_DESC, false));
 		bridge.instructions.add(new InsnNode(Opcodes.ARETURN));
 		bridge.maxStack = 3;
+		bridge.maxLocals = 2;
+		return bridge;
+	}
+
+	/**
+	 * {@code public static InteractionResult forbric$useOnItemFor(Item item, UseOnContext c) { return item.useOn(c); }}: the
+	 * bridge of a body that is not routed. It makes the call {@code onPlaceItemIntoWorld} made, on the same receiver with
+	 * the same argument, and leaves no relay for an injector to be moved onto.
+	 */
+	static MethodNode directBridge() {
+		MethodNode bridge = new MethodNode(Opcodes.ASM9, Opcodes.ACC_PUBLIC | Opcodes.ACC_STATIC | Opcodes.ACC_SYNTHETIC, BRIDGE,
+				RELAY_DESC, null, null);
+		bridge.instructions.add(new VarInsnNode(Opcodes.ALOAD, 0));
+		bridge.instructions.add(new VarInsnNode(Opcodes.ALOAD, 1));
+		bridge.instructions.add(new MethodInsnNode(Opcodes.INVOKEVIRTUAL, ITEM, "useOn", USE_ON_DESC, false));
+		bridge.instructions.add(new InsnNode(Opcodes.ARETURN));
+		bridge.maxStack = 2;
 		bridge.maxLocals = 2;
 		return bridge;
 	}
@@ -324,11 +358,11 @@ public final class ItemUseOnInjector implements ClassTransformer {
 				&& real.get(4).getOpcode() == Opcodes.ARETURN;
 	}
 
-	/** A {@code useOn} edit stood down; the relay and bridge, already added, still go in. */
+	/** A {@code useOn} edit stood down before it changed anything: only the bridge that calls Item.useOn itself goes in. */
 	private static int declined(String reason) {
 		ForbricLog.warn("[Forbric/Item] left ItemStack.useOn as merged: %s — NeoForge's ITEM_AFTER_BLOCK phase and Fabric's "
 				+ "ItemEvents.USE_ON stay silent", reason);
-		return RELAY_ONLY;
+		return BRIDGE_ONLY;
 	}
 
 	/** {@link #relayServerCall} stood down: nothing in the hooks class changes. */
