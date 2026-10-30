@@ -19,9 +19,12 @@ Usage (from forbric-kernel/):
   ./gradlew -q compileJava printBootClasspath $(cat <props>) | tail -1 > /tmp/cp.txt
   python3 run/compat/stage3-sweep.py --classpath "$(cat /tmp/cp.txt)" --out <dir> [--root DIR ...]
 
-Without --root it sweeps ../forbric-kernel/run, ../forbric-kernel/build and ../forbric-loader/run of the main
-checkout (FORBRIC_SWEEP_HOME, default /Users/jerry/Documents/Forbric). libraries/, versions/ and .gradle/ are
-skipped, as are the staged game and carrier jars and jars with no loader manifest at their root (counted).
+Without --root it sweeps forbric-kernel/run, forbric-kernel/build and forbric-loader/run of the main checkout:
+FORBRIC_SWEEP_HOME when set, else the checkout that owns this repository's common git directory (a worktree's local
+fixtures are symlinks into it, and the packs only exist there). libraries/, versions/ and .gradle/ are skipped, as
+are the staged game and carrier jars (by exact name, see STAGED) and jars with no loader manifest at their root
+(counted). The TSV's `path` column is relative to that checkout; a jar found only nested in another is written as
+`<parent path>!/<entry>`, which stage3-refused-check.py opens without the sweep's work directory.
 """
 
 import argparse
@@ -45,13 +48,33 @@ BEFORE_SOURCES = [
 ]
 MANIFESTS = ('fabric.mod.json', 'META-INF/neoforge.mods.toml', 'META-INF/mods.toml')
 SKIP_DIRS = {'libraries', 'versions', '.gradle'}
-# The game and carrier jars a launch stages, and the kernel's own jars: not mods.
-STAGED = re.compile(r'^(patched-mc-.*|forge-runtime.*|neoforge-runtime.*|server|client|minecraft-.*|'
+# The game and carrier jars a launch stages, and the kernel's own jars: not mods. Only names those jars really have:
+# an earlier `minecraft-.*` alternative matched no game jar at all, only a player's mod
+# (minecraft-server-updater+forge-0.2.1-alpha.1.jar, a MinecraftForge mods.toml), and silently left it out.
+STAGED = re.compile(r'^(patched-mc-.*|forge-runtime.*|neoforge-runtime.*|server|client|'
                     r'forbric-kernel.*|forbric-installer.*|vanilla-reference.*)\.jar$')
 # What the kernel supplies itself (net.forbric.kernel.util.PlatformIds) plus fabric-loader's own provides.
 PLATFORM = {'minecraft', 'java', 'fabricloader', 'mixinextras', 'forge', 'neoforge', 'fml', 'fabric-loader'}
 COLUMNS = ['jar', 'sha1', 'kind', 'packs', 'declared', 'before', 'after', 'halves', 'before_owner', 'after_owner',
            'mods', 'mandatory_deps', 'path']
+
+
+def main_checkout():
+    """The checkout whose run/ and build/ hold the local packs: FORBRIC_SWEEP_HOME, else the parent of this
+    repository's common git directory (the main checkout, also when this script runs from a worktree)."""
+    if os.environ.get('FORBRIC_SWEEP_HOME'):
+        return Path(os.environ['FORBRIC_SWEEP_HOME'])
+    common = subprocess.run(['git', '-C', str(HERE), 'rev-parse', '--path-format=absolute', '--git-common-dir'],
+                            check=True, capture_output=True, text=True).stdout.strip()
+    return Path(common).parent
+
+
+def locator_of(path, home):
+    """A top-level jar's path relative to `home` (absolute when it lies outside)."""
+    try:
+        return str(Path(path).relative_to(home))
+    except ValueError:
+        return str(path)
 
 
 def sha1(path):
@@ -95,10 +118,11 @@ def collect(roots, home):
     return by_sha, skipped
 
 
-def extract_nested(by_sha, into):
+def extract_nested(by_sha, into, locators):
     """Adds every jar nested in a collected jar (META-INF/jars, META-INF/jarjar, recursively) that carries a loader
     manifest: the kernel arbitrates those too (NestedCandidateInventory asks MultiLoaderArbiter about the extracted
-    file). Returns sha1 -> names of the jars it is nested in; a nested copy of a top-level jar only gains that note."""
+    file). Returns sha1 -> names of the jars it is nested in; a nested copy of a top-level jar only gains that note.
+    `locators` (extracted file -> portable name) gains `<parent locator>!/<entry>` for every jar it extracts."""
     import io
     into.mkdir(parents=True, exist_ok=True)
     nested_in = collections.defaultdict(set)
@@ -128,6 +152,7 @@ def extract_nested(by_sha, into):
                 target.parent.mkdir(exist_ok=True)
                 target.write_bytes(data)
                 by_sha[child_digest] = [str(target)]
+                locators[str(target)] = f'{locators[path]}!/{name}'
                 queue.append((child_digest, str(target), depth + 1))
     return nested_in
 
@@ -233,7 +258,7 @@ def main():
                         'control, e.g. a LoaderHalfJudge compiled with a rule deliberately broken')
     args = parser.parse_args()
 
-    home = Path(os.environ.get('FORBRIC_SWEEP_HOME', '/Users/jerry/Documents/Forbric'))
+    home = main_checkout()
     roots = args.root or [str(home / 'forbric-kernel/run'), str(home / 'forbric-kernel/build'),
                           str(home / 'forbric-loader/run')]
     args.out.mkdir(parents=True, exist_ok=True)
@@ -241,7 +266,8 @@ def main():
     work.mkdir(exist_ok=True)
 
     by_sha, skipped = collect(roots, home)
-    nested_in = extract_nested(by_sha, work / 'nested')
+    locators = {path: locator_of(path, home) for paths in by_sha.values() for path in paths}
+    nested_in = extract_nested(by_sha, work / 'nested', locators)
     representative = {digest: paths[0] for digest, paths in by_sha.items()}
     (work / 'jars.txt').write_text('\n'.join(representative.values()) + '\n', encoding='utf-8')
 
@@ -261,7 +287,7 @@ def main():
             'jar': os.path.basename(path), 'sha1': digest, 'packs': ';'.join(packs),
             'declared': a.get('declared', '?'), 'before': b.get('verdict', '?'), 'after': a.get('verdict', '?'),
             'halves': a.get('halves', '?'), 'before_owner': b.get('owner', '?'), 'after_owner': a.get('owner', '?'),
-            'mods': a.get('mods', ''), 'mandatory_deps': a.get('deps', ''), 'path': path,
+            'mods': a.get('mods', ''), 'mandatory_deps': a.get('deps', ''), 'path': locators[path], '_file': path,
             '_aliases': a.get('aliases', ''), '_paths': paths,
         })
     rows.sort(key=lambda r: (r['after'] != 'refused', r['before'] == r['after'], r['jar'].lower()))
@@ -336,7 +362,7 @@ def main():
         if row['after'] != 'refused':
             continue
         # A refused jar discovers nothing now; its ids are the ones its manifests declare (the before run saw them).
-        ids = {m.split(':', 1)[1] for m in before.get(row['path'], {}).get('mods', '').split(',') if ':' in m}
+        ids = {m.split(':', 1)[1] for m in before.get(row['_file'], {}).get('mods', '').split(',') if ':' in m}
         for path in row['_paths']:
             refused_ids_by_dir[str(Path(path).parent)] |= ids
     print('\nloaded jars whose mandatory dependency, in their pack, only a refused jar supplied:')

@@ -12,11 +12,16 @@ prints what a reviewer needs to decide whether the refusal is right:
     (POST /v2/version_files), else by a search on the mod's display name / id.
 
 Usage: python3 run/compat/stage3-refused-check.py <stage3-sweep.tsv> <out.tsv> [--offline]
+
+The sweep's `path` column is relative to the main checkout (FORBRIC_SWEEP_HOME, else the parent of the common git
+directory, as in stage3-sweep.py); a nested-only jar is `<parent path>!/<entry>` and is read out of its parent.
 """
 
 import csv
 import io
 import json
+import os
+from pathlib import Path
 import re
 import sys
 import time
@@ -57,6 +62,25 @@ def lenient_json(text):
         text = re.sub(r'/\*.*?\*/', '', text, flags=re.S)
         text = re.sub(r'(?m)^\s*//.*$', '', text)
         return json.loads(re.sub(r',(\s*[}\]])', r'\1', text), strict=False)
+
+
+def main_checkout():
+    if os.environ.get('FORBRIC_SWEEP_HOME'):
+        return Path(os.environ['FORBRIC_SWEEP_HOME'])
+    common = subprocess.run(['git', '-C', str(Path(__file__).resolve().parent), 'rev-parse', '--path-format=absolute',
+                             '--git-common-dir'], check=True, capture_output=True, text=True).stdout.strip()
+    return Path(common).parent
+
+
+def open_source(locator, home):
+    """What zipfile can open for a sweep locator: the file itself, or the bytes of a nested entry read out of its
+    parent (recursively, for `a.jar!/META-INF/jars/b.jar!/META-INF/jarjar/c.jar`)."""
+    outer, *entries = locator.split('!/')
+    source = Path(outer) if Path(outer).is_absolute() else home / outer
+    for entry in entries:
+        with zipfile.ZipFile(source) as jar:
+            source = io.BytesIO(jar.read(entry))
+    return source
 
 
 def class_name(entry):
@@ -132,6 +156,7 @@ def modrinth_builds(project):
 def main():
     source, out = sys.argv[1], sys.argv[2]
     offline = '--offline' in sys.argv
+    home = main_checkout()
     csv.field_size_limit(1 << 30)
     with open(source, encoding='utf-8') as stream:
         rows = [r for r in csv.DictReader(stream, delimiter='\t') if r['after'] == 'refused']
@@ -145,7 +170,7 @@ def main():
     with open(out, 'w', encoding='utf-8') as stream:
         stream.write('\t'.join(columns) + '\n')
         for row in rows:
-            facts = inspect(row['path'])
+            facts = inspect(open_source(row['path'], home))
             facts.update({k: row[k] for k in ('jar', 'sha1', 'kind', 'packs')})
             project, match = '-', '-'
             if not offline and row['sha1'] in by_hash:
