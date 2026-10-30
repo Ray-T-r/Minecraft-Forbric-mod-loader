@@ -22,9 +22,11 @@ class GateWorldgenContractTest {
 		String script = Files.readString(gate);
 		String forge = WorldgenCanaryDataTest.inspect("forge", "forbriclive", "livemod-src", "forge-runtime");
 		String neo = WorldgenCanaryDataTest.inspect("neoforge", "forbricneolive", "livemod-src-neoforge", "neoforge-runtime");
-		for (String block : List.of(forge, neo)) {
-			assertTrue(script.contains("'^" + block + ": [1-9][0-9]*'"), "missing positive gate assertion for " + block);
-		}
+		// Stage 3 of dropping MinecraftForge: the MinecraftForge canary is refused, so the gate no longer stages it, and
+		// its marker is neither asserted nor probed for; the NeoForge canary's marker is the one the gate reads.
+		assertTrue(script.contains("'^" + neo + ": [1-9][0-9]*'"), "missing positive gate assertion for " + neo);
+		assertFalse(script.contains("'^" + forge + ": [1-9][0-9]*'"), "a positive assertion on the refused canary's marker " + forge);
+		assertFalse(script.contains("forge-runtime/forbriclive.jar"), "gate-m25 still stages the refused MinecraftForge canary");
 
 		// Run the production shell command, intercepting only Python. This observes quoting, the real region
 		// directory and every actual needle; merely retaining the check's regex cannot satisfy this contract.
@@ -44,14 +46,14 @@ class GateWorldgenContractTest {
 		recorder.environment().put("CAPTURE", capture.toString());
 		assertSuccessful(recorder);
 		assertEquals(List.of(kernel.resolve("run/compat/region-probe.py").toString(),
-				rundir.resolve("world/dimensions/minecraft/overworld/region").toString(), neo, forge),
+				rundir.resolve("world/dimensions/minecraft/overworld/region").toString(), neo),
 				List.of(Files.readString(capture).split("\\x00")),
-				"the real probe argv must read the current overworld layout and both packaged markers");
+				"the real probe argv must read the current overworld layout and the NeoForge canary's marker");
 
 		assertTrue(script.contains("'^unreadable: 0"));
 		assertTrue(script.contains("\"$CHUNKS\" -ge 20"));
-		// Phase 1 D landed: the Forge half is green, the expected-red escape is gone, and a switch-off boot is the
-		// negative control that proves each MinecraftForge claim can still go red on its own.
+		// The expected-red escape stays gone, and the -Dforbric.forgeWorldgen=off boot stays: since Stage 3 it shows that
+		// switching the MinecraftForge worldgen bridge off takes nothing from NeoForge.
 		assertFalse(script.contains("EXPECTED: RED"), "the expected-red header must go when the gap closes");
 		assertFalse(script.contains("EXPECTED-RED"));
 		assertTrue(script.contains("M25_NO_DATA"));

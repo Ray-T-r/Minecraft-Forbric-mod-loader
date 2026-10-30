@@ -16,6 +16,16 @@
 #   2. off — -Dforbric.unifiedEvents=off -Dforbric.forgeDamageSeams=off: exactly the repaired cases fail and the
 #      controls hold — less the cases whose MinecraftForge hook the merged base calls itself, read from the base.
 # Not covered here: shield blocking (ShieldBlockEvent is forwarded; driving a block needs a raised shield).
+#
+# STAGE 3 OF DROPPING MinecraftForge (what changed and why). Nothing was deleted here, on purpose. The plan listed this
+# gate among the MinecraftForge ones to turn into a refusal check or cut down, but its probe (forbricdamageprobe.jar, canary/damage-events) is a NeoForge mod
+# -- a neoforge.mods.toml and a NeoForge @Mod -- that registers listeners on MinecraftForge's bus, and Forbric refuses
+# only a jar with no usable Fabric or NeoForge half: LoaderHalfJudge keeps a NeoForge @Mod whatever API it calls
+# (judged KEPT [NEOFORGE] on 2026-10-30). So the probe still loads, the Neo->Forge bridges it exercises still run on
+# every boot with zero MinecraftForge mods (Stage 3 deletes no plumbing), and a NeoForge mod that uses MinecraftForge's
+# API can still reach them -- every check here still describes reachable behaviour, and stays until Stage 4 deletes the
+# bridges and this gate with them. What Stage 3 adds is the other direction: the probe must NOT be refused, on every
+# boot that loads it, so a refusal rule that started sweeping up NeoForge mods would turn this gate red.
 # GATE-PARALLEL: rundirs=server-damage-m47 mem=2000
 set -uo pipefail
 . "$(cd "$(dirname "$0")" && pwd)/lib.sh"
@@ -53,6 +63,7 @@ run_server() {
 judge() {
   local phase="$1" rule="$2" what="$3"
   check "$phase: the server started" 'Done \(' "$RESULTS/$phase.log"
+  check_absent "$phase: the NeoForge probe that listens on MinecraftForge's bus was not refused" '\[Forbric/Unsupported\] refusing|\[Forbric/MultiLoader\] .* is refused' "$RESULTS/$phase.log"
   if python3 - "$RESULTS/$phase.json" "$phase" "$rule" <<'PY'
 import json, sys
 report, phase, rule = json.load(open(sys.argv[1])), sys.argv[2], sys.argv[3]

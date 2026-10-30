@@ -121,11 +121,12 @@ class ForgeClientCanaryTest {
 		int end = script.indexOf("# CLIENT_CANARY_STAGE_END", begin);
 		assertTrue(begin >= 0 && end > begin, "missing executable client fixture staging contract");
 		ProcessBuilder builder = new ProcessBuilder("bash", "-c", script.substring(begin, end));
-		builder.environment().put("FORGE", source.toString());
+		// Since Stage 3 of dropping MinecraftForge the block stages the NeoForge canary: the MinecraftForge one is refused.
+		builder.environment().put("NEOLIVE", source.toString());
 		builder.environment().put("RUNDIR", rundir.toString());
 		assertSuccessful(builder);
 		assertArrayEquals(original, Files.readAllBytes(source), "worldgen canary source must remain byte-for-byte intact");
-		try (ZipFile staged = new ZipFile(rundir.resolve("mods/forbriclive.jar").toFile());
+		try (ZipFile staged = new ZipFile(rundir.resolve("mods/forbricneolive.jar").toFile());
 				ZipFile unmodified = new ZipFile(source.toFile())) {
 			assertEquals(List.of("forbric/live/ForbricLiveClient.class", "META-INF/mods.toml", "assets/forbriclive/retained.txt"),
 					staged.stream().map(ZipEntry::getName).toList());

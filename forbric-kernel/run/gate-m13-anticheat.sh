@@ -40,9 +40,11 @@ PAPER="$DL/paper-26.2/paper-26.2-121.jar"
 GRIM="$DL/paper-26.2/grimac-bukkit-2.3.74-61caa53.jar"
 PLAYER="ForbricKernel"
 # Same client mod set as gate-m12: the question is what the CLIENT looks like on the wire, with real mods loaded.
+# Since Stage 3 of dropping MinecraftForge, mcw-bridges is its NeoForge build (same version): the MinecraftForge
+# build is refused, and the client would stop on the refusal before it ever reached the wire.
 MODS=(
   "$DL/fabric-26.2/fabric-api-0.154.0+26.2.jar"
-  "$DL/forge-26.2/mcw-bridges-3.1.2-mc26.2forge.jar"
+  "$NEO_BUILDS/mcw-bridges-3.1.2-mc26.2neoforge.jar"
   "$DL/forge-26.2/collective-26.2.0-8.39.jar"
 )
 if [ -n "${M13_MODS:-}" ]; then read -r -a MODS <<< "$M13_MODS"; fi

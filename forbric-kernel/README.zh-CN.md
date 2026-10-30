@@ -62,17 +62,17 @@ RuntimeInteropPatcher}` + `run/{build-merged-base,assemble-*-runtime}.sh` 产出
 | `gate-m0` | 构建 + 整个单元测试套件（依据 JUnit XML 断言，不看 gradle 的退出码）+ 发现结果与一个独立解析器的比对 |
 | `gate-m1` / `gate-m3` | 合并基底在零 mod 下启动到 Done；两个 Forge 系的基线 + 一个真实的 `@Mod`，以原生方式加载 |
 | `gate-m2` / `gate-m2b` | 先是一个真实的 Fabric mod，再是完整的 fabric-api，全程没有任何 Fabric Loader |
-| `gate-m4` / `gate-m4-canary` / `gate-m7-neo` | 三个生态的真实第三方 mod 同在一个服务端；纯 NeoForge |
+| `gate-m4` / `gate-m4-canary` / `gate-m7-neo` | 真实的第三方 Fabric 和 NeoForge mod 同在一个服务端（运行时里仍带着 MinecraftForge）；纯 NeoForge |
 | `gate-m9-client` | 客户端这一半：97 个 jar 的整合包进入世界、统一的 Mods 界面、干净退出 |
-| `gate-m12` … `gate-m16` | 走真实 socket 的多人游戏、一款反作弊的判定、纯 Fabric 服务端、两个 Forge 系的网络 |
+| `gate-m12` … `gate-m16` | 走真实 socket 的多人游戏、一款反作弊的判定、纯 Fabric 服务端（带一个必须按 Fabric 加载的 Forge+Fabric 通用 jar）、通用 jar 经 NeoForge 半边的网络频道、NeoForge 配置阶段的配置同步 |
 | `gate-m17` | 安装器，按启动器的方式解析并启动 |
 | `gate-m24` | 一个故意失败的 mod：其余 mod 照常加载，失败也能归因 |
 | `gate-m24c` | 写进 `forbric-disabled.txt` 的 jar 谁都不加载，并在 `load-report.txt` 里点名；对照组照常加载它 |
-| `gate-m25-worldgen` | 两个 Forge 系的生物群系修改器金丝雀 mod 在保存下来的区域文件里留下各自不同的方块 |
-| `gate-m26-forgeclient` | Forge 客户端收到按键、渲染器、着色（tint）、提示框、几何加载器和创造模式物品栏的注册事件，并且 CLIENT_INIT/REGISTRATION 的桥清单报告完整 |
+| `gate-m25-worldgen` | NeoForge 的生物群系和结构修改器在保存下来的区域文件里留下金丝雀 mod 的方块，它的方块和交互事件原样返回 |
+| `gate-m26-forgeclient` | NeoForge 和 Fabric 的客户端金丝雀 mod 收到各自的注册事件，并能从实际使用的表里读回；客户端上只有 MinecraftForge 半边的 mod 被拒绝，并在游戏里询问玩家 |
 | `gate-m27-frame` | 97 个 jar 的客户端产出一张新生成的、不是黑屏的 Minecraft 截图 |
-| `gate-m28-forgeconfig` | Forge 的 COMMON 配置只加载一次，随后它原生的文件监视器读到对文件的实时修改；专用服务器从不打开 CLIENT 配置 |
-| `gate-m29-forgecaps` | 合并基底上的 MinecraftForge capability：僵尸和熔炉的 item-handler capability，并补跑了丢失的字段初始化器 |
+| `gate-m28-forgeconfig` | NeoForge 的 COMMON 配置只加载一次，随后它原生的文件监视器读到对文件的实时修改；专用服务器从不打开 CLIENT 配置 |
+| `gate-m29-forgecaps` | 只有 MinecraftForge 半边的 jar（金丝雀 mod，以及一个 Fabric 和 NeoForge 半边都是假的真实构建）被点名拒绝，中英文各一遍，记为 CONFIRMED 的必需项并有一行 FAILED，strict 服务端因此停下；只装 NeoForge 金丝雀 mod 时照常到 Done |
 | `gate-m30-attribution` | 只丢了自身**一部分**的 mod（某个 mixin 被排除或在创建世界时失败、某个订阅者无法注册、某个监听器挂在死事件上、某个延迟任务抛出异常、某个 jar 针对另一版 NeoForge 编译），日志、Mods 界面和 `load-report.txt` 都会点名该 mod 并给出原因；`load-report.txt` 会在世界启动后重写一次 |
 | `gate-m31-vanilla-parity` | 在零 mod、同一种子下，Forbric 的主世界和旁边同时生成的纯原版 26.2 服务端有相同的生物群系和相同的结构起点 |
 

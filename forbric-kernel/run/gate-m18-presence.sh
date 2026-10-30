@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# M18 gate — the three ecosystems can SEE each other.
+# M18 gate — the ecosystems can SEE each other.
 #
 # WHY THIS EXISTS. Every mod that integrates with another mod starts by asking its own loader "is X installed",
 # and branches on the answer. In this instance each loader keeps its own list, so that question used to be
@@ -12,6 +12,14 @@
 # So this gate asserts the ANSWER, from inside real mods, in both directions, in one instance — and runs the same
 # instance again with -Dforbric.crossEcosystemPresence=off as the negative control, because an assertion that
 # something is true is worth little unless the run that should make it false does.
+#
+# STAGE 3 OF DROPPING MinecraftForge (what changed and why). This gate staged one canary per ecosystem, three of them.
+# Forbric now refuses a MinecraftForge-only jar and a dedicated server stops on the refusal, so the MinecraftForge
+# canary (forbriclive) is no longer staged, and the three checks that read it are gone: a Fabric mod seeing it, it
+# seeing the Fabric mod, and the control telling the Fabric mod it is absent. Each had a NeoForge twin already (the
+# control's was added in Stage 2.5 for exactly this), and every Fabric<->NeoForge check, both directions and both
+# controls, is unchanged. The "Forge-family" wording in the kernel's lines below is the kernel's own (it counts the
+# NeoForge mods there) and is matched as before.
 # GATE-PARALLEL: rundirs=server-presence mem=1500
 set -uo pipefail
 . "$(cd "$(dirname "$0")" && pwd)/lib.sh"
@@ -20,11 +28,10 @@ LOG="$BUILD/gate-m18-presence.log"
 CONTROL="$BUILD/gate-m18-control.log"
 RUNDIR="$KERNEL/run/server-presence"
 FABRIC="$KERNEL/run/canary/forbricfabriclive.jar"
-FORGE="$RUN_OLD/forge-runtime/forbriclive.jar"
 NEO="$NEOLIVE"
 mkdir -p "$BUILD"
 
-step "stage one canary per ecosystem"
+step "stage one canary per shipping ecosystem"
 "$KERNEL/run/build-fabric-canary.sh" >"$BUILD/gate-m18-canary.log" 2>&1
 [ -f "$FABRIC" ] || { echo "[kernel] FAIL Fabric canary build (see $BUILD/gate-m18-canary.log)"; exit 1; }
 
@@ -32,7 +39,7 @@ reap_stale_server "$RUNDIR"
 rm -rf "$RUNDIR/world" "$RUNDIR/mods" "$RUNDIR/.forbric-kernel" 2>/dev/null
 mkdir -p "$RUNDIR/mods"
 miss=0
-for jar in "$FABRIC" "$FORGE" "$NEO"; do
+for jar in "$FABRIC" "$NEO"; do
   if [ -f "$jar" ]; then cp "$jar" "$RUNDIR/mods/"; else echo "[kernel] MISSING: $jar"; miss=1; fi
 done
 [ "$miss" -eq 0 ] || { echo "[kernel] FAIL a canary jar is missing"; exit 1; }
@@ -48,7 +55,7 @@ boot() { # boot <log> [extra jvm flags]
   await_server "$pid" "$log" 130
 }
 
-step "boot all three ecosystems in one instance"
+step "boot both ecosystems in one instance"
 boot "$LOG"
 
 step "every ecosystem's mods reach every ecosystem's list (must PASS)"
@@ -60,15 +67,13 @@ check "both families' isLoaded gained the cross-ecosystem answer" \
   "ModList.isLoaded now answers for the other ecosystems" "$LOG" 2
 
 step "and the mods themselves get the right answer (must PASS — this is the whole point)"
-# Asked through the three APIs a real mod actually uses: FabricLoader.isModLoaded, ModList.isLoaded (the Forge
-# families' presence check) and LoadingModList.getModFileById (what Physics Mod reads).
-check "a Fabric mod sees the MinecraftForge mod"  "\[ForbricFabricLive\] foreign .*forbriclive=true"    "$LOG"
+# Asked through the three APIs a real mod actually uses: FabricLoader.isModLoaded, ModList.isLoaded (NeoForge's
+# presence check) and LoadingModList.getModFileById (what Physics Mod reads).
 check "a Fabric mod sees the NeoForge mod"        "\[ForbricFabricLive\] foreign .*forbricneolive=true" "$LOG"
 check "a NeoForge mod sees the Fabric mod (ModList)" \
   "\[ForbricNeoLive\] foreign forbricfabriclive isLoaded=true" "$LOG"
 check "a NeoForge mod sees the Fabric mod (LoadingModList)" \
   "\[ForbricNeoLive\] foreign forbricfabriclive .*modFile=true" "$LOG"
-check "a MinecraftForge mod sees the Fabric mod"  "\[ForbricLive\] foreign forbricfabriclive isLoaded=true" "$LOG"
 
 # A3: ModList.get().getModFileById(MODID).getFile() — the lookup a mod makes about ITSELF. The kernel filled that
 # map for the NeoForge baseline alone, so every kernel-loaded mod got null and the next dereference NPE'd.
@@ -104,13 +109,10 @@ rm -rf "$RUNDIR/world" "$RUNDIR/.forbric-kernel" 2>/dev/null
 boot "$CONTROL" "-Dforbric.crossEcosystemPresence=off"
 
 check "the control booted"                       "Done \("                                        "$CONTROL"
-check "a Fabric mod is told the Forge mod is absent"  "\[ForbricFabricLive\] foreign .*forbriclive=false"  "$CONTROL"
 check "a NeoForge mod is told the Fabric mod is absent" \
   "\[ForbricNeoLive\] foreign forbricfabriclive isLoaded=false" "$CONTROL"
-# The NeoForge twins of the two controls above that only the MinecraftForge mod carried: a Fabric mod asking about the
-# NeoForge mod, and the NeoForge mod's LoadingModList lookup (Physics Mod's). Without these, the control proved the
-# switch reaches ModList.isLoaded and Fabric's answer about MinecraftForge only -- the two paths that go with
-# MinecraftForge would have been the only ones with teeth.
+# A Fabric mod asking about the NeoForge mod, and the NeoForge mod's LoadingModList lookup (Physics Mod's): added in
+# Stage 2.5 as the NeoForge twins of controls only the MinecraftForge canary carried, which Stage 3 removed.
 check "a Fabric mod is told the NeoForge mod is absent" "\[ForbricFabricLive\] foreign .*forbricneolive=false" "$CONTROL"
 check "a NeoForge mod's LoadingModList lookup is told the Fabric mod is absent" \
   "\[ForbricNeoLive\] foreign forbricfabriclive .*modFile=false" "$CONTROL"
@@ -122,7 +124,7 @@ check_absent "and the Fabric side registers none of theirs either" \
 
 step "M18 result"
 if [ "$FAIL" -eq 0 ]; then
-  echo "[kernel] ✅ M18 PRESENCE GATE GREEN — a mod of any ecosystem gets the truth about the other two, and the switch still turns it off"
+  echo "[kernel] ✅ M18 PRESENCE GATE GREEN — a Fabric mod and a NeoForge mod get the truth about each other, and the switch still turns it off"
 else
   echo "[kernel] ❌ M18 GATE RED — run $LOG / control $CONTROL"
 fi

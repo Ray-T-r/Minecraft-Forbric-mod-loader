@@ -106,17 +106,17 @@ onwards as unfinished long after their gates were passing — so the scripts the
 | `gate-m0` | build + the whole unit suite (asserted from the JUnit XML, not gradle's exit code) + discovery vs an independent parser |
 | `gate-m1` / `gate-m3` | merged base boots to Done with zero mods; both Forge-family baselines + a real `@Mod`, natively |
 | `gate-m2` / `gate-m2b` | a real Fabric mod, then full fabric-api, with no Fabric Loader anywhere |
-| `gate-m4` / `gate-m4-canary` / `gate-m7-neo` | real third-party mods of all three families in one server; pure NeoForge |
+| `gate-m4` / `gate-m4-canary` / `gate-m7-neo` | real third-party Fabric and NeoForge mods in one server, on the carrier that still holds MinecraftForge; pure NeoForge |
 | `gate-m9-client` | the client half: a 97-jar pack into a world, the unified Mods screen, a clean exit |
-| `gate-m12` … `gate-m16` | multiplayer over a real socket, an anti-cheat's opinion, a pure Fabric server, both Forge families' networking |
+| `gate-m12` … `gate-m16` | multiplayer over a real socket, an anti-cheat's opinion, a pure Fabric server (with a Forge+Fabric universal jar that must load as Fabric), a universal jar's channel on its NeoForge half, NeoForge's configuration-phase config sync |
 | `gate-m17` | the installer, resolved and launched the way a launcher does it |
 | `gate-m24` | a mod that fails on purpose: the others still load and the failure is attributed |
 | `gate-m24c` | a jar listed in `forbric-disabled.txt` is loaded by nobody and named in `load-report.txt`; the control loads it |
-| `gate-m25-worldgen` | biome modifier canaries of both Forge families leave distinct blocks in saved regions |
-| `gate-m26-forgeclient` | the Forge client receives key, renderer, tint, tooltip, geometry-loader and creative-tab registration events, and the CLIENT_INIT/REGISTRATION bridge inventory reports complete |
+| `gate-m25-worldgen` | NeoForge's biome and structure modifiers leave the canary's blocks in saved regions, and its block and interaction events come back untouched |
+| `gate-m26-forgeclient` | the NeoForge and Fabric client canaries receive their registration events and read them back from the live tables; a MinecraftForge-only mod on a client is refused and asked about in the game |
 | `gate-m27-frame` | the 97-jar client produces a fresh, non-black Minecraft screenshot |
-| `gate-m28-forgeconfig` | Forge COMMON configs load once, then its native watcher reads a live file edit; dedicated servers never open CLIENT configs |
-| `gate-m29-forgecaps` | MinecraftForge capabilities on the merged base: the item-handler capability of a zombie and a furnace, with the lost field initializers replayed |
+| `gate-m28-forgeconfig` | NeoForge COMMON configs load once, then its native watcher reads a live file edit; dedicated servers never open CLIENT configs |
+| `gate-m29-forgecaps` | a MinecraftForge-only jar (the canary, and a real build whose Fabric and NeoForge halves are fake) is refused by name, in English and Chinese, as a CONFIRMED required finding with a FAILED row, and a strict server stops on it; the NeoForge canary alone reaches Done |
 | `gate-m30-attribution` | a mod that loses PART of itself — a mixin left out or failing at world creation, a subscriber that cannot register, a listener on a dead event, a throwing deferred task, a jar compiled against another NeoForge — is named with the reason in the log, on the Mods screen and in `load-report.txt`, which is rewritten once the world is up |
 | `gate-m31-vanilla-parity` | with zero mods and the same seed, a Forbric overworld carries the same biomes and the same structure starts as a pure-vanilla 26.2 server generating beside it |
 

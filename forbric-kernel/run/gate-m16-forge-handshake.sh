@@ -41,6 +41,20 @@
 # The sending half (SyncConfig itself) has no control that leaves the server up, as measured above; the synced shape
 # (path=null) is what ties the client's value to the payload rather than to a file of its own.
 #
+# STAGE 3 OF DROPPING MinecraftForge (what changed and why). Until Stage 3 the MinecraftForge canary (forbriclive) rode
+# on both ends and carried most of this gate: MinecraftForge's own handshake (a MODDED peer, the channel and mod lists,
+# the per-world SERVER config pushed through its configuration-phase sync, its CLIENT config loading once), its
+# LoadingModList published before Mixin, FMLEnvironment.dist decided before the first guest mixin plugin, and its play
+# channel's ping/pong. Forbric now refuses a MinecraftForge-only jar, and a dedicated server stops on that refusal, so
+# none of that can run: those checks and the jar are gone (the M16_CLIENT_CONFIG block with them). The NeoForge half
+# below -- written in Stage 2.5 to outlive them -- is unchanged, and so are the generic checks: the join, the absence of
+# every encode/decode, configuration-task, registry-sync and channel-list failure, and the clean leave. The absence
+# checks that name MinecraftForge's dispatcher and channel declaration stay too: its plumbing still runs with zero
+# MinecraftForge mods, and a failure in it would still break the connection. FallingTree stays on both ends: it is a
+# universal jar, and with its MinecraftForge half set aside it now loads through its NeoForge half, which this gate
+# asserts. The -Dforbric.forgeHandshake=off control below took out MinecraftForge's handshake only; with nothing
+# MinecraftForge-shaped left on the wire it has no check left to turn red.
+#
 # Port 25604, not the default — a developer or another agent session may have a server on 25565.
 # GATE-PARALLEL: rundirs=fhs-server,fhs-client mem=3500
 set -uo pipefail
@@ -56,7 +70,6 @@ mkdir -p "$BUILD"
 DL="$RUN_OLD/downloads"
 PLAYER="ForbricKernel"
 MODS=(
-  "$RUN_OLD/forge-runtime/forbriclive.jar"
   "$DL/forge-26.2/FallingTree-26.2-25.jar"
   "$NEOLIVE"
 )
@@ -72,10 +85,9 @@ reap_stale_server "$SRV"
 rm -rf "$SRV" "$CLI"
 mkdir -p "$SRV/mods" "$CLI/mods" "$CLI/quickPlay"
 for m in "${MODS[@]}"; do cp "$m" "$SRV/mods/"; cp "$m" "$CLI/mods/"; done
-# The value the client must end up seeing. Written into the world BEFORE the server boots, so Forge's own
+# The value the client must end up seeing. Written into the world BEFORE the server boots, so NeoForge's own
 # per-world config load picks it up and its sync is the only way it can reach the client.
 mkdir -p "$SRV/FhsWorld/serverconfig"
-printf '# pre-written by gate-m16 BEFORE the server booted: the client must see THIS value, not its own default\ngreeting = "from-the-gate"\n' > "$SRV/FhsWorld/serverconfig/forbriclive-server.toml"
 # M16_NEO_PREWRITE=off is the negative control in the header: the server then holds the default, and so must the client.
 if [ "${M16_NEO_PREWRITE:-on}" != off ]; then
   printf '# pre-written by gate-m16 BEFORE the server booted: the client must see THIS value, not its own default\ngreeting = "from-the-gate"\n' > "$SRV/FhsWorld/serverconfig/forbricneolive-server.toml"
@@ -109,7 +121,7 @@ if [ "$READY" -ne 1 ]; then
   step "M16 result"; echo "[kernel] ❌ M16 GATE RED — see $SLOG"; exit 1
 fi
 
-step "connect a real client and let the canary ping it"
+step "connect a real client and let it play"
 # Ready at 60, the server pings within a second of seeing the player, the pong comes straight back; 200 ticks is
 # ample and keeps the run short.
 FORBRIC_JVM="-Dforbric.clientSmoke=true -Dforbric.clientSmokeWorld=127.0.0.1:$PORT -Dforbric.clientSmokeReadyTicks=60 -Dforbric.clientSmokeDisconnectTicks=200 ${M16_EXTRA_JVM:-}" \
@@ -139,109 +151,24 @@ await_server "$SRVPID" "$SLOG" 90
 rm -f "$FIFO" "$(_pidfile "$SRV")"
 
 echo "[kernel] the canary's network lines:"
-grep -aE 'ForbricLive/(NET|CFG|HS)|ForbricNeoLive/CFG' "$SLOG" "$CLOG" | sed 's#^.*gate-m16-\(server\|client\).log:#[kernel]   \1: #' | cut -c1-200 | sort -u
+grep -aE 'ForbricNeoLive/CFG' "$SLOG" "$CLOG" | sed 's#^.*gate-m16-\(server\|client\).log:#[kernel]   \1: #' | cut -c1-200 | sort -u
 
-step "a real client joined a real server, with Forge mods on both ends (must PASS)"
+step "a real client joined a real server, with the same NeoForge mods on both ends (must PASS)"
 check "client dialled the address"    "Connecting to 127.0.0.1"                           "$CLOG"
 check "server accepted the login"     "logged in with entity id"                          "$SLOG"
 check_kept_up "server kept up while the player was on" "$SLOG"
 check "client finished configuring"   "ClientSmoke\] joined world via quick-play"         "$CLOG"
-check "the canary built its channel on the server" "ForbricLive/NET\] channel forbriclive:net built" "$SLOG"
-check "the canary built its channel on the client" "ForbricLive/NET\] channel forbriclive:net built" "$CLOG"
+check_absent "nothing was refused on the server" "\[Forbric/Unsupported\] refusing" "$SLOG"
+check_absent "nothing was refused on the client" "\[Forbric/Unsupported\] refusing" "$CLOG"
 
-step "a Forge mod's packet still crosses the wire in both directions (must PASS)"
-check "server sent the ping"          "ForbricLive/NET\] PING sent from the server"       "$SLOG"
-check "client received the ping"      "ForbricLive/NET\] PING received on the client"     "$CLOG"
-check "client sent the pong"          "ForbricLive/NET\] PONG sent from the client"       "$CLOG"
-check "server received the pong"      "ForbricLive/NET\] PONG received on the server"     "$SLOG"
+step "FallingTree, a universal jar, loads through its NeoForge half on both ends (must PASS)"
+# All three manifests, and MinecraftForge's half is set aside (Stage 3); NeoForge wins over Fabric by preference.
+check "server: its MinecraftForge half is set aside" "FallingTree-26\.2-25\.jar: its MinecraftForge half is set aside" "$SLOG"
+check "server: it loads as NeoForge only" "FallingTree-26\.2-25\.jar declares 3 loaders — loading it as NEOFORGE only" "$SLOG"
+check "client: its MinecraftForge half is set aside" "FallingTree-26\.2-25\.jar: its MinecraftForge half is set aside" "$CLOG"
+check "client: it loads as NeoForge only" "FallingTree-26\.2-25\.jar declares 3 loaders — loading it as NEOFORGE only" "$CLOG"
 
-step "the server read its per-world Forge config (must PASS)"
-check "the SERVER config came from the world" "ForbricLive/CFG\] LOADING forbriclive-server.toml: .*path=.*FhsWorld/serverconfig" "$SLOG"
-check "and it holds the pre-written value"    "ForbricLive/CFG\] LOADING forbriclive-server.toml: greeting=from-the-gate" "$SLOG"
-check "the server still holds it in play"     "ForbricLive/CFG\] greeting on the server at PING: from-the-gate"          "$SLOG"
-
-# M16_CLIENT_CONFIG_BEGIN — the kernel's summary is logged (CGAME); the canary's CFG lines are System.out prints.
-#
-# That sentence used to end "and only exist in the launch stdout (CLOG), where latest.log's appended copy cannot
-# duplicate them", and the count below relied on it. It stopped being true when System.out was routed into
-# log4j: the same print now reaches CLOG twice, once through the stdout redirect and once through the appended
-# copy of latest.log, and this gate has been red ever since for a config that loads exactly ONCE — measured,
-# not assumed: latest.log holds one such line, CLOG holds the identical line twice at different offsets.
-#
-# So the COUNT reads CGAME (latest.log), where each print appears once per occurrence, while the check that the
-# value was read still reads CLOG. Counting distinct lines in CLOG instead would have collapsed a genuine
-# second load into one, which is the thing this assertion exists to catch.
-step "Forge CLIENT config loads once on the client and never on the dedicated server"
-check "Forge CLIENT configs were applied" 'loaded MinecraftForge configs \(CLIENT\): applied [1-9][0-9]*, already loaded [0-9]+, failed 0 from ' "$CGAME"
-check "CLIENT default was read from the loaded spec" 'ForbricLive/CFG\] LOADING forbriclive-client\.toml: probe=17 loaded=true([[:space:]]|$)' "$CLOG"
-assert_eq "CLIENT Loading fired exactly once" 1 "$(grep -acE 'ForbricLive/CFG\] LOADING forbriclive-client\.toml:' "$CGAME" || true)"
-if [ -s "$CLI/config/forbriclive-client.toml" ]; then echo "[kernel] PASS CLIENT file was created on the client"
-else echo "[kernel] FAIL CLIENT file was not created on the client"; FAIL=1; fi
-if [ ! -e "$SRV/config/forbriclive-client.toml" ]; then echo "[kernel] PASS no CLIENT file on the dedicated server"
-else echo "[kernel] FAIL dedicated server opened a CLIENT config"; FAIL=1; fi
-check_absent "no CLIENT Loading on the dedicated server" 'ForbricLive/CFG\] LOADING forbriclive-client\.toml:' "$SLOG"
-# M16_CLIENT_CONFIG_END
-
-step "MinecraftForge's handshake ran, so the client has the server's config and mod list (must PASS)"
-check "the client was told the server's config" "ForbricLive/CFG\] RELOADING forbriclive-server.toml: greeting=from-the-gate" "$CLOG"
-check "the client reads the server's value"     "ForbricLive/CFG\] greeting seen on the client at PING: from-the-gate"      "$CLOG"
-check_absent "the client is not on its own default" "greeting seen on the client at PING: (default|<unloaded>)"             "$CLOG"
-check "the client sees a modded peer"           "ForbricLive/HS\] client NetworkContext type=MODDED"                        "$CLOG"
-check "the server sees a modded peer"           "ForbricLive/HS\] server NetworkContext type=MODDED"                        "$SLOG"
-check "the client learned the server's channels"  "ForbricLive/HS\] client NetworkContext .*remoteChannels=[1-9]"           "$CLOG"
-check "the server learned the client's channels"  "ForbricLive/HS\] server NetworkContext .*remoteChannels=[1-9]"           "$SLOG"
-# The mod list itself. It is built from traditional Forge's ModList.getMods(), whose contents are derived once at
-# class-initialisation time from the LoadingModList the kernel seeds — so an empty seed used to make both ends
-# announce that they run no mods at all. Both ends must now name each other's Forge-family mods.
-check "the client knows the server's Forge mods" "ForbricLive/HS\] client NetworkContext .*mods=\[[^]]*forbriclive" "$CLOG"
-check "the server knows the client's Forge mods" "ForbricLive/HS\] server NetworkContext .*mods=\[[^]]*forbriclive" "$SLOG"
-check "the list is the whole Forge family, not just this mod" "ForbricLive/HS\] client NetworkContext .*mods=\[[^]]*fallingtree" "$CLOG"
-check "the server knows the client's whole family too" "ForbricLive/HS\] server NetworkContext .*mods=\[[^]]*fallingtree" "$SLOG"
-# Each end logs its PEER's list, so CLOG holds what the SERVER announced and SLOG what the CLIENT announced.
-# "Neither end" needs both files, and this one read only CLOG — the client announcing an empty list was never
-# checked at all. The canary logs this once per run, so the checks above already redden on mods=[]; these keep
-# the claim true on the day it logs once per connection instead.
-check_absent "the server announced no empty mod list" "NetworkContext .*mods=\[\]" "$CLOG"
-check_absent "the client announced no empty mod list" "NetworkContext .*mods=\[\]" "$SLOG"
-check "the kernel seeded MinecraftForge's loading list for real" "Seed\] seeded traditional-Forge LoadingModList with [1-9]" "$SLOG"
-# ...and that the list exists BEFORE anything can ask for it. The seed above runs in the mod-loading window, and
-# MinecraftForge's list is built by a one-shot class initializer with no exception table: whoever touches
-# LoadingModList before that seed used to NPE inside it and leave the class permanently erroneous, which costs the
-# whole run its Forge mod list and puts mods=[] on the wire. Nothing in this gate happens to touch it early, so
-# without these four lines the gate is green with or without the fix — it would only catch the regression on the
-# day some mod's mixin plugin asked first.
-check "the list exists before Mixin starts (server)" "ForgeList\] published MinecraftForge's LoadingModList BEFORE Mixin starts — [1-9]" "$SLOG"
-check "the list exists before Mixin starts (client)" "ForgeList\] published MinecraftForge's LoadingModList BEFORE Mixin starts — [1-9]" "$CLOG"
-check_absent "and not late, from the mod-loading window (server)" "ForgeList\] .*published LATE" "$SLOG"
-check_absent "and not late, from the mod-loading window (client)" "ForgeList\] .*published LATE" "$CLOG"
-check "the lazy holder no longer reads temp (server)" "ForgeList\] .*LazyInit now builds MinecraftForge's LoadingModList from the kernel's published list" "$SLOG"
-check "the lazy holder no longer reads temp (client)" "ForgeList\] .*LazyInit now builds MinecraftForge's LoadingModList from the kernel's published list" "$CLOG"
-# The read side. Seeding succeeds whether or not the holder is already poisoned — LoadingModListImpl's own
-# initializer always succeeds, so only reading the list back can tell the two apart.
-check_absent "the list reads back as the kernel built it (server)" "ForgeList\] .*(UNREADABLE|but the kernel built)" "$SLOG"
-check_absent "the list reads back as the kernel built it (client)" "ForgeList\] .*(UNREADABLE|but the kernel built)" "$CLOG"
-
-# The same trap one class over, and the reason the canary now ships a mixin config plugin whose <clinit> reads
-# FMLEnvironment.dist. FMLEnvironment caches FMLLoader's answers into public static final fields, decided once by
-# whoever touches the class first — and Mixin constructs every declared IMixinConfigPlugin while preparing
-# configs, which is before the kernel's main seeding pass. Seeded afterwards, dist is null for the whole run and
-# nothing throws: AutomaticEventSubscriber's Set.contains(null) skips every @EventBusSubscriber, and every
-# DistExecutor branch takes the wrong side. Asserting non-null separately from the VALUE, because a null dist and
-# a wrong-side dist are different bugs and one check cannot tell them apart.
-check "the Forge dist is decided before the first guest mixin plugin (server)" \
-  "ForbricLive/PLUGIN\] prepareConfigs saw dist=DEDICATED_SERVER" "$SLOG"
-check "the Forge dist is decided before the first guest mixin plugin (client)" \
-  "ForbricLive/PLUGIN\] prepareConfigs saw dist=CLIENT" "$CLOG"
-check_absent "and it is never null (server)" "ForbricLive/PLUGIN\] prepareConfigs saw dist=null" "$SLOG"
-check_absent "and it is never null (client)" "ForbricLive/PLUGIN\] prepareConfigs saw dist=null" "$CLOG"
-check_absent "the kernel's own read-back agrees (server)" "Seed\] MinecraftForge FMLEnvironment (is null|disagrees)" "$SLOG"
-check_absent "the kernel's own read-back agrees (client)" "Seed\] MinecraftForge FMLEnvironment (is null|disagrees)" "$CLOG"
-# The independent second detector: the canary's config-screen registration is behind its own dist==CLIENT guard
-# and returns silently when the dist is wrong, which is precisely the shape of the damage.
-check "a dist-gated registration actually ran (client)" \
-  "ForbricLive/CFG\] registered a traditional-Forge config screen factory" "$CLOG"
-
-# M16_NEO_CONFIG_BEGIN — the NeoForge canary's twin of the config checks above.
+# M16_NEO_CONFIG_BEGIN — the NeoForge canary's config contracts (they were the MinecraftForge checks' twins until Stage 3).
 step "the server read its per-world NeoForge config (must PASS)"
 check "NeoForge: the SERVER config came from the world" "ForbricNeoLive/CFG\] LOADING forbricneolive-server.toml: .*path=.*FhsWorld/serverconfig" "$SLOG"
 check "NeoForge: and it holds the pre-written value"    "ForbricNeoLive/CFG\] LOADING forbricneolive-server.toml: greeting=from-the-gate loaded=true" "$SLOG"
@@ -259,7 +186,8 @@ check_absent "NeoForge: the client is not on its own default" "ForbricNeoLive/CF
 check_absent "NeoForge: the client registered its SERVER config" "ForbricNeoLive/CFG\] SERVER config NOT registered on this client" "$CLOG"
 
 step "NeoForge CLIENT config loads once on the client and never on the dedicated server"
-# Counted in CGAME for the same reason as the MinecraftForge count above.
+# Counted in CGAME, not CLOG: since System.out was routed into log4j each canary print reaches CLOG twice (the stdout
+# redirect and latest.log's appended copy), and latest.log holds it once per occurrence.
 check "NeoForge: CLIENT default was read from the loaded spec" 'ForbricNeoLive/CFG\] LOADING forbricneolive-client\.toml: probe=17 loaded=true([[:space:]]|$)' "$CLOG"
 assert_eq "NeoForge: CLIENT Loading fired exactly once" 1 "$(grep -acE 'ForbricNeoLive/CFG\] LOADING forbricneolive-client\.toml:' "$CGAME" || true)"
 if [ -s "$CLI/config/forbricneolive-client.toml" ]; then echo "[kernel] PASS NeoForge CLIENT file was created on the client"
@@ -304,7 +232,7 @@ check_absent "no thread leaked past main" "Client shutdown from post-main"      
 
 step "M16 result"
 if [ "$FAIL" -eq 0 ]; then
-  echo "[kernel] ✅ M16 GATE GREEN — MinecraftForge's handshake ran over the socket: both ends report a modded peer, and the server's per-world config reached the client"
+  echo "[kernel] ✅ M16 GATE GREEN — NeoForge's configuration-phase sync ran over the socket: the server's per-world config reached the client, and nothing in the handshake failed"
 else
   echo "[kernel] ❌ M16 GATE RED — server $SLOG / client $CLOG"
 fi

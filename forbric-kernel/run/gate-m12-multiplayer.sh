@@ -54,10 +54,13 @@ mkdir -p "$BUILD"
 DL="$RUN_OLD/downloads"
 # One mod per family, all side=BOTH, chosen so the sync has real work to do: fabric-api carries the registry-sync
 # module under test, mcw-bridges registers 303 blocks/items (a registry payload worth syncing), and collective is
-# a universal jar so multi-loader arbitration runs on both ends.
+# a universal jar so multi-loader arbitration runs on both ends. Since Stage 3 of dropping MinecraftForge mcw-bridges
+# is its NeoForge build, same version ($NEO_BUILDS): the MinecraftForge build is refused, and a refusal stops the
+# dedicated server. Its 303 blocks/items still land in the seventeen MinecraftForge-wrapped builtin registries the
+# merged base keeps, so the wrapper sync below still has real work to do.
 MODS=(
   "$DL/fabric-26.2/fabric-api-0.154.0+26.2.jar"
-  "$DL/forge-26.2/mcw-bridges-3.1.2-mc26.2forge.jar"
+  "$NEO_BUILDS/mcw-bridges-3.1.2-mc26.2neoforge.jar"
   "$DL/forge-26.2/collective-26.2.0-8.39.jar"
 )
 # M12_MODS replaces that set wholesale (space-separated paths). The reason it exists: when this gate goes red the

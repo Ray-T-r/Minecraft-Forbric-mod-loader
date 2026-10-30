@@ -50,6 +50,9 @@ FIXTURES = (
     # gate-m56's phase 3: a Mod Menu jar for 26.2 (and the fabric-api beside it). The gate requires it -- SKIP-FATAL,
     # exit 3, RED -- rather than passing with Mod Menu's list untested, so a main checkout without it shows here.
     'forbric-kernel/run/modmenu',
+    # The NeoForge builds of the real mods the gates staged as MinecraftForge jars until Stage 3 of dropping MinecraftForge
+    # (lib.sh NEO_BUILDS: gate-m4, m12, m13, m32). A gate without it stops on a missing jar.
+    'forbric-kernel/run/neoforge-builds',
     # Two more the tests read by path (GuiItemCaptureMixinAdapterTest, KernelClientHookMixinAnchorsTest,
     # CompatPluginPlatformInjectorTest). Without them the first nightly's strict run failed those tests as skipped.
     'forbric-kernel/build/sweep80-mac',

@@ -15,6 +15,17 @@
 # that syncs its config to the client on join over its own channel — so the gate also asserts that nothing in
 # that traffic failed to encode or decode.
 #
+# STAGE 3 OF DROPPING MinecraftForge (what changed and why). Forbric now refuses a MinecraftForge-only jar, and a
+# dedicated server stops on that refusal, so the canary forbriclive can no longer be staged: every check that read its
+# lines went with it -- its SimpleChannel's ping and pong and both ends seeing the other's declaration, FML client setup
+# delivered to a traditional-Forge mod and what it deferred, and MinecraftForge's branch of the Mods list's Config
+# button. No MinecraftForge mod can reach any of those paths now. What stays is the half that never depended on it:
+# FallingTree, a real mod that syncs its config to the client on join over its own channel, on both ends of a real
+# socket. It is a universal jar; with its MinecraftForge half set aside it loads through its NeoForge half (asserted
+# below), so its channel is now NeoForge's payload path, and every encode/decode absence check stays as it was. So do
+# the join, the clean leave, the config watchers' shutdown and the absence checks that name MinecraftForge's dispatcher
+# and channel declaration: that plumbing still runs with zero MinecraftForge mods. The file keeps its name until Stage 4.
+#
 # Port 25603, not the default — a developer or another agent session may have a server on 25565.
 # GATE-PARALLEL: rundirs=fnet-server,fnet-client mem=3500
 set -uo pipefail
@@ -30,7 +41,6 @@ mkdir -p "$BUILD"
 DL="$RUN_OLD/downloads"
 PLAYER="ForbricKernel"
 MODS=(
-  "$RUN_OLD/forge-runtime/forbriclive.jar"
   "$DL/forge-26.2/FallingTree-26.2-25.jar"
 )
 if [ -n "${M15_MODS:-}" ]; then read -r -a MODS <<< "$M15_MODS"; fi
@@ -72,9 +82,8 @@ if [ "$READY" -ne 1 ]; then
   step "M15 result"; echo "[kernel] ❌ M15 GATE RED — see $SLOG"; exit 1
 fi
 
-step "connect a real client and let the canary ping it"
-# Ready at 60, the server pings within a second of seeing the player, the pong comes straight back; 200 ticks is
-# ample and keeps the run short.
+step "connect a real client and let FallingTree sync its config"
+# Ready at 60; FallingTree's config sync goes out on join, so 200 ticks is ample and keeps the run short.
 FORBRIC_JVM="-Dforbric.clientSmoke=true -Dforbric.clientSmokeWorld=127.0.0.1:$PORT -Dforbric.clientSmokeModsScreen=80 -Dforbric.clientSmokeReadyTicks=60 -Dforbric.clientSmokeDisconnectTicks=200 ${M15_EXTRA_JVM:-}" \
 RUNDIR="$CLI" "$KERNEL/run/launch-kernel-client.sh" \
   --quickPlayPath "$CLI/quickPlay/log.json" --quickPlayMultiplayer "127.0.0.1:$PORT" > "$CLOG" 2>&1 &
@@ -101,22 +110,21 @@ exec 9>&-
 await_server "$SRVPID" "$SLOG" 90
 rm -f "$FIFO" "$(_pidfile "$SRV")"
 
-echo "[kernel] the canary's network lines:"
-grep -a 'ForbricLive/NET' "$SLOG" "$CLOG" | sed 's#^.*gate-m15-\(server\|client\).log:#[kernel]   \1: #' | cut -c1-200 | sort -u
-
-step "a real client joined a real server, with Forge mods on both ends (must PASS)"
+step "a real client joined a real server, with the same mods on both ends (must PASS)"
 check "client dialled the address"    "Connecting to 127.0.0.1"                           "$CLOG"
 check "server accepted the login"     "logged in with entity id"                          "$SLOG"
 check_kept_up "server kept up while the player was on" "$SLOG"
 check "client finished configuring"   "ClientSmoke\] joined world via quick-play"         "$CLOG"
-check "the canary built its channel on the server" "ForbricLive/NET\] channel forbriclive:net built" "$SLOG"
-check "the canary built its channel on the client" "ForbricLive/NET\] channel forbriclive:net built" "$CLOG"
+check_absent "nothing was refused on the server" "\[Forbric/Unsupported\] refusing" "$SLOG"
+check_absent "nothing was refused on the client" "\[Forbric/Unsupported\] refusing" "$CLOG"
 
-step "a Forge mod's packet crosses the wire in both directions (must PASS)"
-check "server sent the ping"          "ForbricLive/NET\] PING sent from the server"       "$SLOG"
-check "client received the ping"      "ForbricLive/NET\] PING received on the client"     "$CLOG"
-check "client sent the pong"          "ForbricLive/NET\] PONG sent from the client"       "$CLOG"
-check "server received the pong"      "ForbricLive/NET\] PONG received on the server"     "$SLOG"
+step "FallingTree, a universal jar, loads through its NeoForge half on both ends (must PASS)"
+check "server: its MinecraftForge half is set aside" "FallingTree-26\.2-25\.jar: its MinecraftForge half is set aside" "$SLOG"
+check "server: it loads as NeoForge only" "FallingTree-26\.2-25\.jar declares 3 loaders — loading it as NEOFORGE only" "$SLOG"
+check "client: its MinecraftForge half is set aside" "FallingTree-26\.2-25\.jar: its MinecraftForge half is set aside" "$CLOG"
+check "client: it loads as NeoForge only" "FallingTree-26\.2-25\.jar declares 3 loaders — loading it as NEOFORGE only" "$CLOG"
+
+step "nothing in a real mod's traffic fails to encode, decode or dispatch (must be ABSENT)"
 check_absent "every payload encodes (server)"  "Failed to encode packet"                  "$SLOG"
 check_absent "every payload encodes (client)"  "Failed to encode packet"                  "$CLOG"
 check_absent "every payload decodes"  "Failed to decode packet|Failed decoding custom payload|Unknown custom packet" "$CLOG"
@@ -124,32 +132,6 @@ check_absent "no Forge dispatch error (server)" "dispatcher threw|no MinecraftFo
 check_absent "no Forge dispatch error (client)" "dispatcher threw|no MinecraftForge handler took" "$CLOG"
 check_absent "client declared its Forge channels" "could not declare MinecraftForge's channels" "$CLOG"
 check_absent "server declared its Forge channels" "could not declare MinecraftForge's channels" "$SLOG"
-# Channel.isRemotePresent is what real mods gate their sends on — it must see the peer's declaration on BOTH ends.
-check "server sees the client's channel"  "PING sent from the server .*peer declares the channel: true"     "$SLOG"
-check "client sees the server's channel"  "PING received on the client.*peer declares the channel: true"   "$CLOG"
-
-step "the CLIENT half of the setup lifecycle reached the Forge mod (must PASS)"
-# M21 proves the five server-side phases; FMLClientSetupEvent only exists on a client, and this gate is already
-# booting one with the Forge canary in it. The phase is where a traditional-Forge mod builds its renderers, its
-# key mappings and its screens — the kernel posted it to NeoForge mods only, and the mod that found it was a
-# world map whose client init never ran, which surfaced as a crash on world join rather than as a missing feature.
-check "client setup delivered to the Forge mod"  "ForbricLive/SETUP\] client setup DELIVERED to a traditional-Forge mod" "$CLOG"
-check "and what it deferred ran"                 "ForbricLive/SETUP\] client setup DEFERRED work ran"                    "$CLOG"
-check "the kernel says which family it posted to" "posted FML client setup to [1-9][0-9]* traditional-Forge mod\(s\)"   "$CLOG"
-
-step "a traditional-Forge mod's config screen opens from the unified Mods list (must PASS)"
-# The third branch of the Config button, and the one with no other coverage. Fabric's answer is Mod Menu's and
-# NeoForge's is an extension point on its own container; MinecraftForge's is a third registry with a third shape
-# (a record holding a BiFunction<Minecraft, Screen, Screen>), and no client pack in these gates carries a
-# traditional-Forge mod that registers one -- so the canary registers one the way a real Forge mod does.
-check "the Forge mod registered a config factory" \
-  "ForbricLive/CFG\] registered a traditional-Forge config screen factory" "$CLOG"
-check "the unified list counted it"   "config screen, by ecosystem: .*[1-9][0-9]* MinecraftForge" "$CLOG"
-check "and opening it ran the mod's own screen" \
-  "ForbricLive/CFG\] the traditional-Forge config screen opened"           "$CLOG"
-check "the smoke says which family it came from" \
-  "opened forbriclive's config screen from the unified list \(FORGE\)"     "$CLOG"
-
 step "it played and left cleanly (must PASS)"
 check "survived real simulation"     "ClientSmoke\] client-ready after"                 "$CLOG"
 check "left cleanly"                 "ClientSmoke\] clean disconnect observed"          "$CLOG"
@@ -167,7 +149,7 @@ check_absent "no thread leaked past main" "Client shutdown from post-main"      
 
 step "M15 result"
 if [ "$FAIL" -eq 0 ]; then
-  echo "[kernel] ✅ M15 GATE GREEN — a MinecraftForge mod's own channel carried a ping and a pong between a real client and a real server"
+  echo "[kernel] ✅ M15 GATE GREEN — FallingTree on its NeoForge half, on both ends of a real socket: the client joined, played and left with nothing in its traffic failing"
 else
   echo "[kernel] ❌ M15 GATE RED — server $SLOG / client $CLOG"
 fi

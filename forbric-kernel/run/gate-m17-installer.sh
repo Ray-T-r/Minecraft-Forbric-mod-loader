@@ -13,6 +13,10 @@
 #
 # The world, the assets and the LWJGL natives come from the real Minecraft install, exactly as a launcher would
 # supply them. The install directory itself is fresh every run.
+#
+# Stage 3 of dropping MinecraftForge: the installer's which-mods sentence and the profile's ecosystems list now name
+# Fabric and NeoForge only (the kernel refuses a MinecraftForge-only mod); both are asserted below. The installed game
+# itself still carries the MinecraftForge runtime until Stage 4, so the dedup check for its jar stays.
 # GATE-PARALLEL: rundirs=installed mem=3000
 set -uo pipefail
 . "$(cd "$(dirname "$0")" && pwd)/lib.sh"
@@ -60,6 +64,11 @@ check "it wrote a version profile"     "wrote .*versions/26.2-forbric/26.2-forbr
 check "it staged Forbric's own jars"   "staged [1-9][0-9]* Forbric and kernel-dependency jar" "$LOG"
 # Four: the three game jars and the vanilla reference the kernel reads beside the base (VanillaReference).
 check "it staged the game artifacts"   "staged 4 game artifact"                          "$LOG"
+# Stage 3 of dropping MinecraftForge: the install's last line names the two ecosystems the kernel loads, and says it no
+# longer loads MinecraftForge mods. The old line ("Fabric, MinecraftForge and NeoForge mods all go in") sent a player
+# straight into the kernel's refusal of a MinecraftForge-only jar.
+check "it says Fabric and NeoForge mods go in the mods folder" "Fabric and NeoForge mods go in .*Forbric no longer loads MinecraftForge mods" "$LOG"
+check_absent "and no longer offers MinecraftForge mods" "MinecraftForge and NeoForge mods all go in" "$LOG"
 check "it built the vanilla reference" "^\[vanilla-reference\] wrote vanilla-reference-26.2.jar: [1-9][0-9]* vanilla classes" "$LOG"
 check_absent "it never claimed to ship Minecraft" "bundled (merged|game) base"            "$LOG"
 [ -f "$DEST/versions/26.2-forbric/26.2-forbric.json" ] && echo "[kernel] PASS the profile exists" \
@@ -86,6 +95,12 @@ for other in 'net\.neoforge' 'minecraftforge'; do
     echo "[kernel] PASS the profile does not also name $other"
   fi
 done
+# The ecosystems the profile names in prose (not as coordinates): Fabric and NeoForge since Stage 3.
+if python3 -c "import json,sys; j=json.load(open(sys.argv[1])); sys.exit(0 if j['forbric']['ecosystems'] == ['fabric', 'neoforge'] else 1)" "$PROFILE"; then
+  echo "[kernel] PASS the profile names exactly the two ecosystems Forbric loads (fabric, neoforge)"
+else
+  echo "[kernel] FAIL the profile's ecosystems are not [fabric, neoforge]"; FAIL=1
+fi
 # And the declaration must not have become classpath: a real fabric-loader on -cp would fight the kernel.
 if python3 -c "import json,sys; j=json.load(open(sys.argv[1])); sys.exit(0 if not any('fabric-loader' in str(l.get('name','')) for l in j['libraries']) else 1)" "$PROFILE"; then
   echo "[kernel] PASS it is metadata, not a library the launcher would put on the classpath"
@@ -320,11 +335,11 @@ if [ "$PY_RC" -eq 0 ]; then
   cat "$CGAME" >> "$CLOG" 2>/dev/null || true
 fi
 
-step "the installed version runs the tri-ecosystem game (must PASS)"
+step "the installed version runs the Fabric + NeoForge game (must PASS)"
 check "the kernel booted from the profile" "Forbric/Boot\] sovereign kernel — client" "$CLOG"
 check "it opened the merged base"          "Forbric/Boot\] merged base"               "$CLOG"
 check "FABRIC references come from the vanilla-reference sidecar" "$NATIVE_REFS_FROM_SIDECAR"  "$CLOG"
-check "mods from all three ecosystems"     "Forbric/Boot\] sovereign kernel .*Forge-family mod\(s\), [1-9]" "$CLOG"
+check "mods from both ecosystems"          "Forbric/Boot\] sovereign kernel .*Forge-family mod\(s\), [1-9]" "$CLOG"
 check "the smoke controller armed"         "ClientSmoke\] armed on Minecraft.tick"    "$CLOG"
 check "it entered the world"               "ClientSmoke\] client-ready after"         "$CLOG"
 check "it left cleanly"                    "ClientSmoke\] clean disconnect observed"  "$CLOG"
@@ -439,7 +454,7 @@ fi
 
 step "M17 result"
 if [ "$FAIL" -eq 0 ]; then
-  echo "[kernel] ✅ M17 GATE GREEN — the installer's own version profile, resolved the way a launcher resolves it, boots the tri-ecosystem game"
+  echo "[kernel] ✅ M17 GATE GREEN — the installer's own version profile, resolved the way a launcher resolves it, boots the Fabric + NeoForge game"
 else
   echo "[kernel] ❌ M17 GATE RED — install $LOG / client $CLOG / command $CMD_FILE"
 fi

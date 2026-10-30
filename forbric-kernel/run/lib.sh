@@ -26,6 +26,14 @@ BUILD="$KERNEL/build"
 # (run/build-neolive-canary.sh) and points FORBRIC_NEOLIVE at it. The file name stays forbricneolive.jar either way:
 # gate-m18 asserts the mod resolves its own jar by that name.
 NEOLIVE="${FORBRIC_NEOLIVE:-$RUN_OLD/neoforge-runtime/forbricneolive.jar}"
+# The NeoForge builds of the real mods the gates used to stage as MinecraftForge jars from $RUN_OLD/downloads/forge-26.2.
+# Forbric refuses a MinecraftForge-only jar since Stage 3 of dropping MinecraftForge, so a gate that staged one would
+# now stop on the refusal instead of testing what it was written for; each such jar was replaced by the same mod's
+# NeoForge 26.2 build from Modrinth (same version where Modrinth has one; sha1s and version ids are recorded in
+# run/compat/reports/2026-10-30-forge-removal-baseline/stage3-fixtures.md). Local, like run/carry-on and run/modmenu:
+# not in git, linked into a worktree from the main checkout. The universal jars of that directory (FallingTree,
+# collective, starterkit), whose NeoForge half is usable, are still read from it.
+NEO_BUILDS="${FORBRIC_NEO_BUILDS:-$KERNEL/run/neoforge-builds}"
 FAIL=0
 
 # What the kernel caught and carried on from, in every JVM a gate starts. Caught.java appends each failure site to
