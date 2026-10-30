@@ -76,7 +76,7 @@ public final class MergeReport {
 					"#",
 					"# 下面列出了所有这样的 mod,以及内核当前选用的那一份。",
 					"# 想换成另一边,把那一行前面的 # 去掉,并把等号后面改成想要的加载器。",
-					"#   可填:fabric / neoforge / minecraftforge",
+					"#   可填:fabric / neoforge(Forbric 已不再加载 MinecraftForge mod)",
 					"#",
 					"# 详细说明(谁依赖谁、出问题怎么办)见 .forbric-kernel/" + FILE,
 					"");
@@ -87,7 +87,7 @@ public final class MergeReport {
 				"#",
 				"# Every such mod is listed below with the copy the kernel chose.",
 				"# To use the other one, remove the leading # and set the loader you want.",
-				"#   values: fabric / neoforge / minecraftforge",
+				"#   values: fabric / neoforge (Forbric no longer loads MinecraftForge mods)",
 				"#",
 				"# The full explanation (who depends on what, what to do if something is missing) is in",
 				"# .forbric-kernel/" + FILE,
