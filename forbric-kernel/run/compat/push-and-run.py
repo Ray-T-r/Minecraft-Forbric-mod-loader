@@ -196,10 +196,30 @@ def with_native_reference(profile):
     return added
 
 
+def recorded_base_sha1(sidecar):
+    """The base SHA-1 a vanilla-reference sidecar records it was measured against, or None for a file that is not one."""
+    try:
+        with zipfile.ZipFile(sidecar) as jar:
+            provenance = jar.read('META-INF/forbric/vanilla-reference.properties').decode('utf-8')
+    except (OSError, KeyError, zipfile.BadZipFile):
+        return None
+    for line in provenance.splitlines():
+        if line.startswith('base-sha1='):
+            return line.split('=', 1)[1].strip()
+    return None
+
+
 def local_vanilla_reference(merged):
-    """The sidecar for the local base: the staged one, else run/vanilla-reference-jar.sh's (built once into build/)."""
+    """The sidecar for the base being staged: the staged one while it records that base's SHA-1, else
+    run/vanilla-reference-jar.sh's (which checks the same provenance, and builds one into build/ when nothing matches).
+
+    Provenance, not presence or age: an --artifact override can name a base the staged sidecar was never measured
+    against, and handing that sidecar out with it silently costs the run its evidence for every class the two bases
+    disagree on."""
     staged = ARTIFACTS[VANILLA_REFERENCE]
-    if staged.is_file() or not Path(merged).is_file():
+    if not Path(merged).is_file():
+        return staged
+    if staged.is_file() and recorded_base_sha1(staged) == hashlib.sha1(Path(merged).read_bytes()).hexdigest():
         return staged
     try:
         built = subprocess.check_output(['bash', str(KERNEL / 'run/vanilla-reference-jar.sh'), str(merged)], text=True,
