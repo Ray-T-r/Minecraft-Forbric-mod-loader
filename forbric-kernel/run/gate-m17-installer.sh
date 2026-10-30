@@ -37,7 +37,11 @@ if ! (cd "$INSTALLER" && ./gradlew -q jar > "$BUILD/gate-m17-installer-build.log
   grep -vE 'WARNING|^$' "$BUILD/gate-m17-installer-build.log" | tail -20 >&2
   exit 3
 fi
-JAR="$(ls "$INSTALLER"/build/libs/forbric-kernel-installer-*.jar | head -1)"
+# The jar of the version this tree builds, by name: build/libs keeps every earlier version's jar, and the first one a
+# glob listed was 0.3.1-beta2's, which this gate kept testing after the version moved on.
+VERSION="$(sed -n "s/^version = '\(.*\)'$/\1/p" "$INSTALLER/build.gradle")"
+JAR="$INSTALLER/build/libs/forbric-kernel-installer-$VERSION.jar"
+[ -n "$VERSION" ] && [ -f "$JAR" ] || { echo "[kernel] FATAL: no installer jar for version '$VERSION' in $INSTALLER/build/libs" >&2; exit 2; }
 echo "[kernel] installer: $JAR ($(du -h "$JAR" | cut -f1))"
 
 step "install into an empty directory"
