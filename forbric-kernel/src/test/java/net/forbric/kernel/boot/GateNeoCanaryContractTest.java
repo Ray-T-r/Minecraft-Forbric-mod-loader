@@ -132,7 +132,30 @@ class GateNeoCanaryContractTest {
 				"client canary initialized successfully");
 	}
 
+	/** The Fabric canary's late block in gate-m26: the refill's proof that outlives the MinecraftForge canary. */
+	private static final List<String> M26_FABRIC_GREEN = List.of(
+			"[ForbricFabricLive/LATEBLOCK] registered forbricfabriclive:late_block from onInitializeClient at raw id 1183",
+			"[12:00:00] [Render thread/INFO]: [Forbric/Lifecycle] rebuilt NeoForge blockstate→id map (32368 states, was 32367) — 1 more state(s) were registered after the first pass, and Block.getId answered 0 (AIR) for every one of them",
+			"[ForbricFabricLive/LATEBLOCK] forbricfabriclive:late_block id=32367 roundTrip=Block{forbricfabriclive:late_block}");
+
+	@Test
+	void m26FabricBlockIsGreenOnTheLiveLinesAndRedOnAirOrAMissingRefill() throws Exception {
+		String green = String.join("\n", M26_FABRIC_GREEN) + "\n";
+		assertGreen(m26Fabric(green));
+		for (String line : M26_FABRIC_GREEN) {
+			List<String> without = new java.util.ArrayList<>(M26_FABRIC_GREEN);
+			without.remove(line);
+			assertEquals(1, m26Fabric(String.join("\n", without) + "\n").exit(), "still green without: " + line);
+		}
+		// -Dforbric.blockStateIdRefill=off: no rebuild of the late wave, and the late block reads as AIR.
+		assertRed(m26Fabric(green.replace("id=32367 roundTrip=Block{forbricfabriclive:late_block}",
+				"id=0 roundTrip=Block{minecraft:air}")), "the late block has a real id, read back in the world");
+		assertRed(m26Fabric(green + "[ForbricFabricLive/LATEBLOCK] read-back FAILED: no world within six minutes\n"),
+				"the late-block probe never failed");
+	}
+
 	private Result m21(String log) throws Exception { return block(M21, "M21_NEO_CONTRACTS", log); }
+	private Result m26Fabric(String log) throws Exception { return block(M26, "M26_FABRIC_ASSERTIONS", log); }
 	private Result m26(String log) throws Exception { return block(M26, "M26_NEO_ASSERTIONS", log); }
 
 	private Result block(Path gate, String name, String log) throws Exception {
