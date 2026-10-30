@@ -619,14 +619,31 @@ public final class KernelLifecycle {
 	 * <p>They used to be the last lines of {@code KernelEventSubscribers.registerAll}, whose pass ends with MinecraftForge's
 	 * dead-event and capability audits and returns early when neither family's bus API is there; neither census is about
 	 * MinecraftForge, or about subscribers at all. Logged at the same moment, right after that pass, with the same words.
+	 *
+	 * <p>Isolated as that pass is: the call sits inside {@code registerNeoForgeContent}'s try, where an escape would abort the
+	 * whole registration window — RegisterEvent, the Fabric mains, every step after it — for a log line. Each census on its
+	 * own, too, so one that throws costs only its own line, and the gate reading the other still finds it.
 	 */
 	static void reportGuestCensuses() {
-		// Ninety individual lines on a client boot, none of them totalled anywhere, for the state MixinFit's javadoc
-		// calls worse than either extreme.
-		ForbricLog.info("%s", net.forbric.kernel.mixin.KernelGuestMixinAdapter.partialSummary());
-		// And questions the kernel was asked and could only answer empty — where "I do not know" and "there is none"
-		// are the same value to the caller.
-		ForbricLog.info("%s", PassiveSeeder.unmodelledSummary());
+		reportGuestCensuses(List.of(
+				// Ninety individual lines on a client boot, none of them totalled anywhere, for the state MixinFit's javadoc
+				// calls worse than either extreme.
+				Map.entry("partial-mixin", net.forbric.kernel.mixin.KernelGuestMixinAdapter::partialSummary),
+				// And questions the kernel was asked and could only answer empty — where "I do not know" and "there is
+				// none" are the same value to the caller.
+				Map.entry("unmodelled-accessor", PassiveSeeder::unmodelledSummary)));
+	}
+
+	/** Logs each census's line in order; one that throws is named and skipped, never thrown on. */
+	static void reportGuestCensuses(List<Map.Entry<String, java.util.function.Supplier<String>>> censuses) {
+		for (Map.Entry<String, java.util.function.Supplier<String>> census : censuses) {
+			try {
+				ForbricLog.info("%s", census.getValue().get());
+			} catch (Throwable t) {
+				Caught.warn(t, "[Forbric/Lifecycle] could not take the %s census — its line is missing from this log; the "
+						+ "registration window goes on", census.getKey());
+			}
+		}
 	}
 
 	/**
