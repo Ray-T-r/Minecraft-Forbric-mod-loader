@@ -1,0 +1,40 @@
+every log: 1615 logs, 186 jar names logged, 156 of them in the sweep; 142 logged only with the "before" owner, 14 logged at least once with another
+logs modified at or after 2026-09-20 10:31:58 +0800, not under ['per-mod-v020-']: 1562 logs, 161 jar names logged, 131 of them in the sweep; 131 logged only with the "before" owner, 0 logged at least once with another
+
+disagreeing log lines (jar, logged owner, sweep before, log date, log):
+  EXCLUDE 26.2-fabric-1.2.7.jar: logged FORGE, before FABRIC, 2026-09-27 12:45, forbric-kernel/build/sweep80-mac/per-mod-v020-r1/EntityCrosshair-2.3.0-26.2+_fabric.jar/client-console.log
+  EXCLUDE 26.2-fabric-1.2.7.jar: logged FORGE, before FABRIC, 2026-09-27 12:48, forbric-kernel/build/sweep80-mac/per-mod-v020-r1/OneConfig-26.2-fabric-1.2.7.jar/client-console.log
+  older   SimpleRPC-4.1.4.jar: logged NEOFORGE, before FORGE, 2026-09-20 00:04, forbric-kernel/build/compat/random-baseline/artifacts/instance/server-gen/server-console.log
+  older   SimpleRPC-4.1.4.jar: logged NEOFORGE, before FORGE, 2026-09-20 00:04, forbric-kernel/build/compat/random-baseline/artifacts/instance/server-gen/logs/latest.log
+  older   animalgarden-bison-1.0.0-forge-26.2-65.0.0.jar: logged NEOFORGE, before FORGE, 2026-09-20 00:04, forbric-kernel/build/compat/random-baseline/artifacts/instance/server-gen/server-console.log
+  older   animalgarden-bison-1.0.0-forge-26.2-65.0.0.jar: logged NEOFORGE, before FORGE, 2026-09-20 00:04, forbric-kernel/build/compat/random-baseline/artifacts/instance/server-gen/logs/latest.log
+  older   animalgarden-owl-1.2.8-forge-26.2-65.0.0.jar: logged NEOFORGE, before FORGE, 2026-09-19 23:51, forbric-kernel/build/compat/popular-baseline/artifacts/instance/server-gen/server-console.log
+  older   animalgarden-owl-1.2.8-forge-26.2-65.0.0.jar: logged NEOFORGE, before FORGE, 2026-09-19 23:51, forbric-kernel/build/compat/popular-baseline/artifacts/instance/server-gen/logs/latest.log
+  older   aquariuslibs-1.2.0-forge-26.2-65.0.0.jar: logged NEOFORGE, before FORGE, 2026-09-19 23:51, forbric-kernel/build/compat/popular-baseline/artifacts/instance/server-gen/server-console.log
+  older   aquariuslibs-1.2.0-forge-26.2-65.0.0.jar: logged NEOFORGE, before FORGE, 2026-09-19 23:51, forbric-kernel/build/compat/popular-baseline/artifacts/instance/server-gen/logs/latest.log
+  older   aquariuslibs-1.2.0-forge-26.2-65.0.0.jar: logged NEOFORGE, before FORGE, 2026-09-20 00:04, forbric-kernel/build/compat/random-baseline/artifacts/instance/server-gen/server-console.log
+  older   aquariuslibs-1.2.0-forge-26.2-65.0.0.jar: logged NEOFORGE, before FORGE, 2026-09-20 00:04, forbric-kernel/build/compat/random-baseline/artifacts/instance/server-gen/logs/latest.log
+  older   bannerstone-0.1.2.jar: logged NEOFORGE, before FABRIC, 2026-09-20 00:04, forbric-kernel/build/compat/random-baseline/artifacts/instance/server-gen/server-console.log
+  older   bannerstone-0.1.2.jar: logged NEOFORGE, before FABRIC, 2026-09-20 00:04, forbric-kernel/build/compat/random-baseline/artifacts/instance/server-gen/logs/latest.log
+  older   collective-26.2.0-8.39.jar: logged FABRIC, before NEOFORGE, 2026-08-07 20:19, forbric-kernel/run/client-kernel/logs/latest.log
+  EXCLUDE dragon-egg-recipe-1.0.jar: logged NEOFORGE, before FORGE, 2026-09-27 14:24, forbric-kernel/build/sweep80-mac/per-mod-v020-r2/dragon-egg-recipe-1.0.jar/client-console.log
+  older   lambdynamiclights-api-4.12.2+26.2.jar: logged FABRIC, before NEOFORGE, 2026-08-07 20:19, forbric-kernel/run/client-kernel/logs/latest.log
+  EXCLUDE minechess-v1.1.3.jar: logged NEOFORGE, before FORGE, 2026-09-27 13:12, forbric-kernel/build/sweep80-mac/per-mod-v020-r1/minechess-v1.1.3.jar/client-console.log
+  older   pridelib-1.7.0+26.2.jar: logged FABRIC, before NEOFORGE, 2026-08-07 20:19, forbric-kernel/run/client-kernel/logs/latest.log
+  EXCLUDE qubes-mouse-fix-1.1.jar: logged NEOFORGE, before FORGE, 2026-09-27 14:38, forbric-kernel/build/sweep80-mac/per-mod-v020-r2/qubes-mouse-fix-1.1.jar/client-console.log
+  older   spruceui-11.0.0+26.2.jar: logged FABRIC, before NEOFORGE, 2026-08-07 20:19, forbric-kernel/run/client-kernel/logs/latest.log
+  older   yumi-mc-foundation-1.1.1+26.2.jar: logged NEOFORGE, before FABRIC, 2026-08-16 01:20, forbric-kernel/run/client-neo-pack/logs/latest.log
+  older   yumi-mc-foundation-1.1.1+26.2.jar: logged NEOFORGE, before FABRIC, 2026-09-19 21:19, forbric-kernel/build/compat-validation/K13-no-shot/gate-m27-frame.log
+  older   yumi-mc-foundation-1.1.1+26.2.jar: logged NEOFORGE, before FABRIC, 2026-09-19 21:19, forbric-kernel/build/compat-validation/K13-no-shot/gate-m27-frame.log
+  older   yumi-mc-foundation-1.1.1+26.2.jar: logged NEOFORGE, before FABRIC, 2026-09-19 21:19, forbric-kernel/build/compat-validation/K13-no-shot/gate-m27-frame.log
+  older   yumi-mc-foundation-1.1.1+26.2.jar: logged NEOFORGE, before FABRIC, 2026-09-19 21:19, forbric-kernel/build/compat-validation/K13-no-shot/gate-m27-frame.log
+  older   yumi-mc-foundation-1.1.1+26.2.jar: logged NEOFORGE, before FABRIC, 2026-09-19 21:20, forbric-kernel/build/compat-validation/K13-black/gate-m27-frame.log
+  older   yumi-mc-foundation-1.1.1+26.2.jar: logged NEOFORGE, before FABRIC, 2026-09-19 21:20, forbric-kernel/build/compat-validation/K13-black/gate-m27-frame.log
+  older   yumi-mc-foundation-1.1.1+26.2.jar: logged NEOFORGE, before FABRIC, 2026-09-19 21:20, forbric-kernel/build/compat-validation/K13-black/gate-m27-frame.log
+  older   yumi-mc-foundation-1.1.1+26.2.jar: logged NEOFORGE, before FABRIC, 2026-09-19 21:20, forbric-kernel/build/compat-validation/K13-black/gate-m27-frame.log
+  older   yumi-mc-foundation-1.1.1+26.2.jar: logged NEOFORGE, before FABRIC, 2026-09-20 00:04, forbric-kernel/build/compat/random-baseline/artifacts/instance/server-gen/server-console.log
+  older   yumi-mc-foundation-1.1.1+26.2.jar: logged NEOFORGE, before FABRIC, 2026-09-20 00:04, forbric-kernel/build/compat/random-baseline/artifacts/instance/server-gen/server-console.log
+  older   yumi-mc-foundation-1.1.1+26.2.jar: logged NEOFORGE, before FABRIC, 2026-09-20 00:04, forbric-kernel/build/compat/random-baseline/artifacts/instance/server-gen/logs/latest.log
+  older   yumi-mc-foundation-1.1.1+26.2.jar: logged NEOFORGE, before FABRIC, 2026-09-20 00:04, forbric-kernel/build/compat/random-baseline/artifacts/instance/server-gen/logs/latest.log
+  EXCLUDE yumi-mc-foundation-1.1.1+26.2.jar: logged NEOFORGE, before FABRIC, 2026-09-27 16:16, forbric-kernel/build/sweep80-mac/per-mod-v020-r3/lambdynamiclights-4.12.4+26.2.jar/client-console.log
+  EXCLUDE yumi-mc-foundation-1.1.1+26.2.jar: logged NEOFORGE, before FABRIC, 2026-09-27 16:16, forbric-kernel/build/sweep80-mac/per-mod-v020-r3/lambdynamiclights-4.12.4+26.2.jar/client-console.log

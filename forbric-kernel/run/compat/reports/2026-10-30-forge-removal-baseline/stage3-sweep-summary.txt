@@ -1,8 +1,8 @@
-jars: 11688 mod jar files, 1946 distinct by SHA-1; set aside: {'no loader manifest at its root': 643, 'staged game/carrier/kernel jar': 247}
+jars: 11689 mod jar files, 1947 distinct by SHA-1; set aside: {'no loader manifest at its root': 643, 'staged game/carrier/kernel jar': 246}
 before -> after, by kind:
   mod jar                    FABRIC -> FABRIC           1013
   mod jar                     FORGE -> NEOFORGE         10
-  mod jar                     FORGE -> refused          86
+  mod jar                     FORGE -> refused          87
   mod jar                  NEOFORGE -> NEOFORGE         477
   nested only                FABRIC -> FABRIC           239
   nested only                 FORGE -> refused          2
@@ -75,6 +75,7 @@ refused:
   libIPN-forge-26.2-6.8.3.jar  [forbric-kernel/build/compat-inputs/mix80;forbric-kernel/build/compat-inputs/sweep90;forbric-kernel/build/compat-inputs/sweep90-nowover;forbric-kernel/build/sweep80-mac/v020-rounds/r1;forbric-kernel/build/sweep90-mac/client;forbric-kernel/build/sweep90-mac/server;forbric-kernel/build/sweep90-mac/server-interim;forbric-loader/run]  META-INF/mods.toml: MinecraftForge (a MinecraftForge mods.toml declaring libipn — Forbric no longer loads MinecraftForge mods)
   lucid-dreams-1.9.6.jar  [forbric-kernel/build/compat-inputs/mix80]  META-INF/mods.toml: MinecraftForge (a MinecraftForge mods.toml declaring luciddreams — Forbric no longer loads MinecraftForge mods)
   mcw-bridges-3.1.2-mc26.2forge.jar  [forbric-kernel/run/ac-client;forbric-kernel/run/mp-client;forbric-kernel/run/mp-server;forbric-kernel/run/server-tri-real;forbric-loader/run/client-forge-26.2;forbric-loader/run/downloads/forge-26.2;forbric-loader/run/server-forge-26.2-live]  META-INF/mods.toml: MinecraftForge (a MinecraftForge mods.toml declaring mcwbridges — Forbric no longer loads MinecraftForge mods)
+  minecraft-server-updater+forge-0.2.1-alpha.1.jar  [forbric-kernel/build/sweep80-mac/v020-rounds/r2]  META-INF/mods.toml: MinecraftForge (a MinecraftForge mods.toml declaring minecraft_server_updater — Forbric no longer loads MinecraftForge mods)
   mixinextras-forge-0.3.5.jar  [forbric-kernel/run/client-popular/.forbric-kernel/jarjar;forbric-kernel/run/server-popular/.forbric-kernel/jarjar;nested:badpackets-forge-0.12.2.jar]  META-INF/mods.toml: MinecraftForge (a MinecraftForge mods.toml declaring mixinextras — Forbric no longer loads MinecraftForge mods)
   MoogsStructureLib-forge-26.2-3.3.0.jar  [forbric-kernel/build/compat-inputs/mix80]  META-INF/mods.toml: MinecraftForge (a MinecraftForge mods.toml declaring moogs_structures — Forbric no longer loads MinecraftForge mods)
   MouseTweaks-forge-mc26.2-2.31.jar  [forbric-kernel/build/compat-inputs/mix80;forbric-loader/run/downloads/forge-26.2]  META-INF/mods.toml: MinecraftForge (a MinecraftForge mods.toml declaring mousetweaks — Forbric no longer loads MinecraftForge mods)
