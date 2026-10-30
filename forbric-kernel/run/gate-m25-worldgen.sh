@@ -80,6 +80,13 @@ check "NeoForge canary data was served" 'DataPacks\] served .*forbric/data/forbr
 check "NeoForge probe ran"          'ForbricNeoLive/WORLDGEN\] probe ran: plains has [0-9]+ feature' "$LOG"
 check "NeoForge probe saw its feature" 'ForbricNeoLive/WORLDGEN\] plains underground_ores has forbricneolive:probe = true' "$LOG"
 
+step "the MinecraftForge modifier registries are still declared, and the bridge did not stand down"
+# Kernel code Stage 3 keeps runs on every boot: the declaration of forge:biome_modifier / forge:structure_modifier as
+# datapack registries is what lets a world load at all once the carrier's registries are on NeoForge's list. RED: the
+# -Dforbric.forgeWorldgen=off boot below prints no declaration line, and its check_absent says so.
+check "forge:biome_modifier is declared" 'posted datapack-registry declaration for MinecraftForge.s modifier registries — 2 declared' "$LOG"
+check_absent "the bridge did not stand down" 'Forbric/Worldgen\] MinecraftForge modifier bridge standing down' "$LOG"
+
 step "NeoForge's structure modifier reached a structure (D6)"
 check "NeoForge structure probe saw its spawn" 'ForbricNeoLive/WORLDGEN\] mineshaft creature override has minecraft:llama = true' "$LOG"
 
@@ -115,6 +122,8 @@ CONTROL_LOG="$BUILD/gate-m25-worldgen-off.log"
 CONTROL_PROBE="$BUILD/gate-m25-region-off.log"
 boot "$CONTROL_LOG" "-Dforbric.forgeWorldgen=off"
 check "control server reached Done" 'Done \(' "$CONTROL_LOG"
+check_absent "control: the switch really took the MinecraftForge declaration out" \
+  'posted datapack-registry declaration for MinecraftForge.s modifier registries' "$CONTROL_LOG"
 check "control: NeoForge still applied its modifier" "applied NeoForge's [1-9][0-9]* biome modifier" "$CONTROL_LOG"
 check "control: NeoForge probe still true" 'ForbricNeoLive/WORLDGEN\] plains underground_ores has forbricneolive:probe = true' "$CONTROL_LOG"
 check "control: NeoForge structure probe still true" 'ForbricNeoLive/WORLDGEN\] mineshaft creature override has minecraft:llama = true' "$CONTROL_LOG"

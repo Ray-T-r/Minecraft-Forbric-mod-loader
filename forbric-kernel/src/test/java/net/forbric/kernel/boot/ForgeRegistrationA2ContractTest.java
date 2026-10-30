@@ -150,9 +150,67 @@ class ForgeRegistrationA2ContractTest {
 
     // Stage 3 of dropping MinecraftForge took the MinecraftForge canary out of gate-m26 and gate-m21: Forbric refuses it
     // now, so its client and common registration checks (the M26_ASSERTIONS block and the canary rows of
-    // M21_REGISTRATION_ASSERTIONS) went, and the five tests that ran those blocks against synthetic logs went with them.
+    // M21_REGISTRATION_ASSERTIONS) went, and the tests that ran those blocks against synthetic logs went with them; the
+    // session block below, which outlives the canary, has its own.
     // The canary's own bytecode contracts above stay until Stage 4 deletes the canary. The NeoForge and Fabric blocks of
     // both gates are GateNeoCanaryContractTest's.
+
+    private static final List<String> SESSION_GREEN = List.of(
+            "[ClientSmoke] joined world via quick-play", "[ClientSmoke] client-ready after 60 ticks",
+            "[ClientSmoke] clean disconnect observed",
+            "[Forbric/ClientResources] client resource manager preloaded with 3 selected pack(s)",
+            "[Forbric/Bridges] all 3 CLIENT_INIT bridge(s) installed", "[Forbric/Bridges] all 2 REGISTRATION bridge(s) installed",
+            "[Forbric/HudBridge] MinecraftForge's overlay stack is on NeoForge's layer manager — silenced 23 vanilla leaf/leaves",
+            "[Forbric/MergedBaseCompat] gave GuiRenderer's pooled picture-in-picture lookup a fallback to the orphaned vanilla "
+                    + "map, and gave that map its only writer",
+            "[ForbricNeoLive/FLUID] water at 3 64 -2: Block{minecraft:water}",
+            "[Forbric/Fluids] MinecraftForge client extensions consulted for 4 fluid(s) so far");
+
+    /**
+     * The session block keeps every kernel line that prints with no MinecraftForge mod aboard — the HUD drop, the overlay
+     * stack, the picture-in-picture writer and the fluid funnel are rewrites of vanilla and NeoForge code that guard
+     * NeoForge, Fabric and vanilla drawing — and each row is load-bearing.
+     */
+    @Test
+    void theSessionBlockAssertsTheRewritesThatRunWithNoMinecraftForgeMod() throws Exception {
+        String green = String.join("\n", SESSION_GREEN) + "\n";
+        assertEquals(0, gate(M26, "M26_SESSION_ASSERTIONS", green, 0, "HUD_TREE=absent").exit());
+        for (String line : SESSION_GREEN) {
+            assertEquals(1, gate(M26, "M26_SESSION_ASSERTIONS", green.replace(line + "\n", ""), 0, "HUD_TREE=absent").exit(),
+                    "a missing row is red: " + line);
+        }
+        assertEquals(1, gate(M26, "M26_SESSION_ASSERTIONS", "", 0, "HUD_TREE=absent").exit());
+        assertEquals(1, gate(M26, "M26_SESSION_ASSERTIONS", green, 1, "HUD_TREE=absent").exit(),
+                "a preceding failure stays red");
+    }
+
+    /**
+     * The HUD drop row follows the base the gate read before its assertions: where the merged Hud kept MinecraftForge's
+     * overlay tree the kernel's drop line is required, and where it did not the same line is red.
+     */
+    @Test
+    void theHudDropRowFollowsTheBaseTheGateRead() throws Exception {
+        String green = String.join("\n", SESSION_GREEN) + "\n";
+        String dropped = "[Forbric/HudBridge] net.minecraft.client.gui.Hud kept MinecraftForge's own overlay tree (built in 1 "
+                + "place(s), drawn instead of NeoForge's layer manager in 1) — dropped: the kernel builds that tree once "
+                + "every mod is loaded and puts it on NeoForge's manager, the one HUD pipeline\n";
+        assertEquals(0, gate(M26, "M26_SESSION_ASSERTIONS", green + dropped, 0, "HUD_TREE=kept").exit());
+        assertEquals(1, gate(M26, "M26_SESSION_ASSERTIONS", green, 0, "HUD_TREE=kept").exit(),
+                "a base that kept the tree and no drop: both pipelines still run");
+        assertEquals(0, gate(M26, "M26_SESSION_ASSERTIONS", green, 0, "HUD_TREE=absent").exit());
+        assertEquals(1, gate(M26, "M26_SESSION_ASSERTIONS", green + dropped, 0, "HUD_TREE=absent").exit(),
+                "a drop on a base that never carried the tree is a drop of something else");
+    }
+
+    /** {@code preamble}: what the gate computes before the fragment, from the base rather than the log. */
+    private Result gate(Path gate, String fragment, String log, int precedingFailure, String preamble) throws Exception {
+        Path input = temporary.resolve("input.log");
+        Files.writeString(input, log);
+        String program = ". \"$1\"\nLOG=\"$2\"\nFAIL=" + precedingFailure + "\n" + preamble + "\n"
+                + section(Files.readString(gate), fragment) + "\nexit \"$FAIL\"\n";
+        return execute(new ProcessBuilder("bash", "-c", program, "a2-contract",
+                Path.of("run/lib.sh").toAbsolutePath().toString(), input.toString()), temporary.resolve("result.log"));
+    }
 
     private static int subscriptions(MethodNode method, String owner) {
         int result = 0;

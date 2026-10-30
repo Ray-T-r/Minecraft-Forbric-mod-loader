@@ -50,7 +50,9 @@
 # below -- written in Stage 2.5 to outlive them -- is unchanged, and so are the generic checks: the join, the absence of
 # every encode/decode, configuration-task, registry-sync and channel-list failure, and the clean leave. The absence
 # checks that name MinecraftForge's dispatcher and channel declaration stay too: its plumbing still runs with zero
-# MinecraftForge mods, and a failure in it would still break the connection. FallingTree stays on both ends: it is a
+# MinecraftForge mods, and a failure in it would still break the connection. So do the LoadingModList publication and
+# FMLEnvironment checks (published before Mixin, read back as built, dist decided by the kernel): those lines print on
+# every boot until Stage 4 deletes the carrier; only the canary's own dist read-back went with the canary. FallingTree stays on both ends: it is a
 # universal jar, and with its MinecraftForge half set aside it now loads through its NeoForge half, which this gate
 # asserts. The -Dforbric.forgeHandshake=off control below took out MinecraftForge's handshake only; with nothing
 # MinecraftForge-shaped left on the wire it has no check left to turn red.
@@ -160,6 +162,27 @@ check_kept_up "server kept up while the player was on" "$SLOG"
 check "client finished configuring"   "ClientSmoke\] joined world via quick-play"         "$CLOG"
 check_absent "nothing was refused on the server" "\[Forbric/Unsupported\] refusing" "$SLOG"
 check_absent "nothing was refused on the client" "\[Forbric/Unsupported\] refusing" "$CLOG"
+
+step "MinecraftForge's loading list and FMLEnvironment are still published early, on both ends (must PASS)"
+# These run with zero MinecraftForge mods: the carrier's LoadingModList and FMLEnvironment are read by its own plumbing
+# on every boot, and both are one-shot class initializers. Whoever touches LoadingModList before the seed used to NPE
+# inside it and leave the class permanently erroneous; FMLEnvironment caches dist into a static final decided by the
+# first toucher, and Mixin constructs every guest config plugin before the kernel's main seeding pass. Until Stage 4
+# deletes the carrier these are kernel rewrites that must keep landing.
+check "the kernel seeded MinecraftForge's loading list for real" "Seed\] seeded traditional-Forge LoadingModList with [1-9]" "$SLOG"
+check "the list exists before Mixin starts (server)" "ForgeList\] published MinecraftForge's LoadingModList BEFORE Mixin starts — [1-9]" "$SLOG"
+check "the list exists before Mixin starts (client)" "ForgeList\] published MinecraftForge's LoadingModList BEFORE Mixin starts — [1-9]" "$CLOG"
+check_absent "and not late, from the mod-loading window (server)" "ForgeList\] .*published LATE" "$SLOG"
+check_absent "and not late, from the mod-loading window (client)" "ForgeList\] .*published LATE" "$CLOG"
+check "the lazy holder no longer reads temp (server)" "ForgeList\] .*LazyInit now builds MinecraftForge's LoadingModList from the kernel's published list" "$SLOG"
+check "the lazy holder no longer reads temp (client)" "ForgeList\] .*LazyInit now builds MinecraftForge's LoadingModList from the kernel's published list" "$CLOG"
+check_absent "the list reads back as the kernel built it (server)" "ForgeList\] .*(UNREADABLE|but the kernel built)" "$SLOG"
+check_absent "the list reads back as the kernel built it (client)" "ForgeList\] .*(UNREADABLE|but the kernel built)" "$CLOG"
+# The value, positively, so the absences below cannot pass on a boot that never decided it.
+check "the kernel decided FMLEnvironment's dist (server)" "Seed\] MinecraftForge FMLEnvironment decided here: dist=DEDICATED_SERVER" "$SLOG"
+check "the kernel decided FMLEnvironment's dist (client)" "Seed\] MinecraftForge FMLEnvironment decided here: dist=CLIENT" "$CLOG"
+check_absent "the kernel's own read-back agrees (server)" "Seed\] MinecraftForge FMLEnvironment (is null|disagrees)" "$SLOG"
+check_absent "the kernel's own read-back agrees (client)" "Seed\] MinecraftForge FMLEnvironment (is null|disagrees)" "$CLOG"
 
 step "FallingTree, a universal jar, loads through its NeoForge half on both ends (must PASS)"
 # All three manifests, and MinecraftForge's half is set aside (Stage 3); NeoForge wins over Fabric by preference.

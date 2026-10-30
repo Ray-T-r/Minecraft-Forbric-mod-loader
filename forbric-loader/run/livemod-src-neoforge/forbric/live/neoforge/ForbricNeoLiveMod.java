@@ -159,6 +159,7 @@ public class ForbricNeoLiveMod {
 			} catch (Throwable failure) {
 				System.out.println("[ForbricNeoLive/WORLDGEN] structure probe FAILED: " + failure);
 			}
+			if (Boolean.getBoolean("forbricneolive.placeWater")) placeWater(event.getServer());
 		});
 		NeoForge.EVENT_BUS.addListener(ServerTickEvent.Post.class, event -> {
 			int n = TICKS.incrementAndGet();
@@ -168,6 +169,37 @@ public class ForbricNeoLiveMod {
 				reportActiveContainerFallback();
 			}
 		});
+	}
+
+	/**
+	 * Puts one vanilla water source where the joining player will see it, so gate-m26 can prove the client's
+	 * FluidRenderer funnel is on the render path whatever its once-generated save happens to contain (the MinecraftForge
+	 * canary did this until Stage 3 refused it). Opt-in ({@code -Dforbricneolive.placeWater=true}): every other gate
+	 * that stages this canary keeps its world untouched.
+	 */
+	private static void placeWater(net.minecraft.server.MinecraftServer server) {
+		try {
+			var level = server.overworld();
+			var spawn = level.getRespawnData().pos();
+			// At ServerStarted the chunk beside spawn may not be generated yet (its heightmap answers the world floor),
+			// so load it first and then walk up to the first air block that has ground under it.
+			var column = spawn.offset(3, 0, 3);
+			level.getChunk(column.getX() >> 4, column.getZ() >> 4);
+			var pos = column;
+			for (int y = spawn.getY() - 4; y <= spawn.getY() + 24; y++) {
+				var at = new net.minecraft.core.BlockPos(column.getX(), y, column.getZ());
+				if (level.getBlockState(at).isAir() && !level.getBlockState(at.below()).isAir()) {
+					pos = at;
+					break;
+				}
+			}
+			// Unconditionally: the save is generated once and reused, and the client saves on exit.
+			level.setBlock(pos, net.minecraft.world.level.block.Blocks.WATER.defaultBlockState(), 3);
+			System.out.println("[ForbricNeoLive/FLUID] water at " + pos.getX() + " " + pos.getY() + " " + pos.getZ()
+					+ ": " + level.getBlockState(pos).getBlock());
+		} catch (Throwable failure) {
+			System.out.println("[ForbricNeoLive/FLUID] water placement FAILED: " + failure);
+		}
 	}
 
 	/**

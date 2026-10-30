@@ -33,8 +33,15 @@
 #   fluid step), and so is the -Dforbric.forgeOverlayLayers / forgePipRenderers / forgeFluidModels / forgeCtorGameInstance
 #   / forgeCreativeTabs RED list, which only those checks could show. Unchanged: the NeoForge half and the Fabric half
 #   (written in Stage 2.5 to outlive them) and the session checks every client gate makes, kept in M26_SESSION_ASSERTIONS
-#   with the plumbing lines that still print with no MinecraftForge mod (both bridge sets installed, the client resource
-#   manager preloaded). The CLIENT_CANARY_STAGE block now stages the NeoForge canary, its data/ stripped as before, and
+#   with every kernel line that still prints with no MinecraftForge mod aboard, because each is a rewrite of vanilla or
+#   NeoForge code that runs on every boot: both bridge sets installed, the client resource manager preloaded, the merged
+#   Hud's own MinecraftForge overlay build and draw dropped (without that drop no NeoForge, Fabric or vanilla HUD layer
+#   draws), MinecraftForge's overlay stack put on NeoForge's layer manager, GuiRenderer's orphaned picture-in-picture
+#   map given its only writer (Xaero's minimap and malilib read it), and the fluid funnel consulted for vanilla water —
+#   which the NeoForge canary now places beside spawn (-Dforbricneolive.placeWater=true), as the MinecraftForge canary
+#   did, because the once-generated save has a random seed. Their RED controls stand:
+#   M26_EXTRA_JVM='-Dforbric.forgeOverlayLayers=off' (the stack check) and '-Dforbric.forgeFluidModels=off' (the fluid
+#   check); the HUD drop is exact both ways against the base the run read (HUD_TREE). The CLIENT_CANARY_STAGE block now stages the NeoForge canary, its data/ stripped as before, and
 #   the persisted key binding is the NeoForge canary's F9.
 #   In its place, phase 2 puts the canary in front of the user-visible switch on the CLIENT side, where the answer is a
 #   question rather than a stop: launched without quick-play under the ask policy, with the confirmation window unable
@@ -99,7 +106,7 @@ Path(sys.argv[2]).write_text(f'version:{version}\nonboardAccessibility:false\nke
 PY_OPTIONS
 # M26_OPTIONS_END
 : > "$LOG"
-FORBRIC_JVM="-Dforbric.clientSmoke=true -Dforbric.clientSmokeWorld=$WORLD -Dforbric.clientSmokeReadyTicks=60 -Dforbric.clientSmokeDisconnectTicks=160 -Dforbricfabriclive.lateBlock=true ${M26_EXTRA_JVM:-}" \
+FORBRIC_JVM="-Dforbric.clientSmoke=true -Dforbric.clientSmokeWorld=$WORLD -Dforbric.clientSmokeReadyTicks=60 -Dforbric.clientSmokeDisconnectTicks=160 -Dforbricfabriclive.lateBlock=true -Dforbricneolive.placeWater=true ${M26_EXTRA_JVM:-}" \
 RUNDIR="$RUNDIR" "$KERNEL/run/launch-kernel-client.sh" \
   --quickPlayPath "$RUNDIR/quickPlay/log.json" --quickPlaySingleplayer "$WORLD" > "$LOG" 2>&1 &
 CLIENT_PID=$!
@@ -107,6 +114,17 @@ record_server_pid "$RUNDIR" "$CLIENT_PID"
 await_server "$CLIENT_PID" "$LOG" 360 30
 rm -f "$RUNDIR/.forbric-gate.pid"
 cat "$RUNDIR/logs/latest.log" >> "$LOG" 2>/dev/null || true
+
+# Whether the merged Hud names MinecraftForge's overlay tree (a both-edits base builds and draws it there itself),
+# for the HUD assertion below.
+HUD_MERGED="${MERGED:-$RUN_OLD/merged-base/patched-mc-merged-26.2.jar}"
+if ! javap -cp "$HUD_MERGED" net.minecraft.client.gui.Hud >/dev/null 2>&1; then
+  echo "[kernel] FAIL cannot read Hud from the merged base ($HUD_MERGED)"; FAIL=1; HUD_TREE=unread
+elif javap -c -p -cp "$HUD_MERGED" net.minecraft.client.gui.Hud 2>/dev/null | grep -aq 'Method net/minecraftforge/client/gui/overlay/ForgeLayeredDraw\.'; then
+  HUD_TREE=kept
+else
+  HUD_TREE=absent
+fi
 
 # M26_NEO_ASSERTIONS_BEGIN — the NeoForge canary's registrations and consumer read-backs (the MinecraftForge checks they twinned went in Stage 3).
 step "the NeoForge canary's client registrations arrived and reached the live consumer tables"
@@ -159,6 +177,35 @@ check "the kernel says how many packs it preloaded" \
   'Forbric/ClientResources\] client resource manager preloaded with [1-9][0-9]* selected pack' "$LOG"
 check "client initialization bridges report installed" 'all 3 CLIENT_INIT bridge\(s\) installed' "$LOG"
 check "registration bridges report installed" 'all 2 REGISTRATION bridge\(s\) installed' "$LOG"
+
+step "1b. the HUD, picture-in-picture and fluid rewrites that run with no MinecraftForge mod (must PASS)"
+# A merged Hud that kept both families' edits builds MinecraftForge's overlay tree in Hud.<init> and draws it in place of
+# NeoForge's layer manager, returning before the manager draws -- so no NeoForge or Fabric layer drew, and once the
+# kernel silenced the tree's vanilla leaves, no vanilla HUD either. The kernel drops those two calls
+# (ForgeHudPipelineInjector) and puts the tree on NeoForge's manager. Exact both ways against the base this run booted
+# (HUD_TREE, read before these assertions so they stay a function of the log). RED with
+# M26_EXTRA_JVM='-Dforbric.forgeOverlayLayers=off' (the stack is not built).
+check "the stack is on NeoForge's layer manager" \
+  "Forbric/HudBridge\] MinecraftForge's overlay stack is on NeoForge's layer manager" "$LOG"
+if [ "${HUD_TREE:-absent}" = kept ]; then
+  check "the merged Hud's own MinecraftForge build and draw were dropped" \
+    "Forbric/HudBridge\] net.minecraft.client.gui.Hud kept MinecraftForge's own overlay tree \(built in 1 place\(s\), drawn instead of NeoForge's layer manager in 1\)" "$LOG"
+else
+  check_absent "a merged Hud without MinecraftForge's tree had nothing dropped" \
+    "Forbric/HudBridge\] net.minecraft.client.gui.Hud kept MinecraftForge's own overlay tree" "$LOG"
+fi
+# GuiRenderer declares vanilla's Class -> renderer map, reads it in ONE place and writes it NOWHERE: NeoForge's
+# constructor won the byte merge and fills its pooled map instead, and the kernel's pooled-miss fallback would read that
+# map with no null check. A transform-time repair with no switch.
+check "the map now has a writer at all" \
+  "MergedBaseCompat\] gave GuiRenderer's pooled picture-in-picture lookup a fallback.*only writer" "$LOG"
+# FluidRenderer.tesselate asks IClientFluidTypeExtensions.of(state) for its model and tint (vanilla water answers
+# DEFAULT and is counted). Not asserted in gate-m9: its pack carries sodium, which replaces vanilla's fluid meshing.
+# RED with M26_EXTRA_JVM='-Dforbric.forgeFluidModels=off' (water still placed, no Forbric/Fluids line).
+check "the NeoForge canary placed its water source" \
+  'ForbricNeoLive/FLUID\] water at -?[0-9]+ -?[0-9]+ -?[0-9]+: Block\{minecraft:water\}' "$LOG"
+check "MinecraftForge fluid extensions were consulted while rendering" \
+  'Forbric/Fluids\] MinecraftForge client extensions consulted for [1-9][0-9]* fluid' "$LOG"
 # M26_SESSION_ASSERTIONS_END
 
 # M26_REFUSAL_BEGIN — phase 2 (header): a MinecraftForge-only mod on a client is put to the player, not swallowed.
