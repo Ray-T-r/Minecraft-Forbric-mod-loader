@@ -170,3 +170,27 @@ lambda. So the twin is not a member to add blindly: the adapter's owner decides,
 (callee `C` → the one called overload `C'` whose parameters are `C`'s followed by the carrier's) needs `C` declared in the
 target at all, or works from the FABRIC reference alone. If it needs it, the twin's lambdas must be renamed
 (`forbric$vanilla$…`) rather than kept, and the adapter's selector reading checked against that.
+
+**Turn `-Dforbric.modFilePerJar` on: one `IModFile` per jar for NeoForge mods.** Stage 2 builds the native shape and
+leaves it OFF, because turning it on changes what a mod walking `ModList.getAllScanData()` meets on the merged base.
+Stage 4 flips the default (`KernelModFile.perJar()`), on either base. The evidence:
+
+- Native semantics, from the 26.2.0.93 carrier's own bytecode (`javap -c` on `ModFile` and `ModFileInfo` in
+  `neoforge-runtime.jar`). FML builds one `ModFile` and one `ModFileInfo` per jar. `ModFileInfo.mods` is
+  `getConfigList("mods").stream().map(ModInfo::new).toList()`, every `[[mods]]` entry in file order. `ModFile.id` is
+  `modFileInfo.getMods().getFirst().getModId()`, and `getModInfos()` is `modFileInfo.getMods()`. `ModList.getAllScanData()`
+  streams `sortedList → getOwningFile → getFile → distinct → getScanResult`, so a jar holding several mods is one entry.
+- What the switch gives: every NeoForge declaration of a jar shares the jar's one `KernelModFile` and one
+  `KernelModFileInfo`. The info lists all of them in `[[mods]]` order, with any `@Mod`-only id after them (the kernel
+  gives such a class a container). The file is named after the first entry, whichever mod was built first. A Fabric
+  mod the kernel describes over the same universal jar (`KernelDeclarationReaders`) keeps a file of its own, and so does
+  a NeoForge-path info whose declaration names another ecosystem. `KernelModFilePerJarTest` pins each of these: the
+  walk-up, the id, the cross-ecosystem case, and the default. Each test was red-checked by breaking its code path.
+- Measured on gate-m21. Its default boot prints `[ForbricNeoLive/SCAN] ModList.getAllScanData(): 2 file(s), 10 annotation(s)`
+  and lists the canary's jar 2 times, which is today's behaviour. Its second boot, with the switch on, prints
+  `1 file(s), 5 annotation(s)` and lists the jar once. The MinecraftForge canary's line is `2 file(s), 22 annotation(s)`
+  in both boots (its files come from `KernelForgeContainers`, which this switch does not touch).
+- When the default flips: `KernelModFilePerJarTest.byDefaultEveryModKeepsAFileOfItsOwn…` inverts (or goes), gate-m21's
+  two "default" checks move to "1 time(s)" / exactly 1, and its second boot can go. Not measured with the switch on: the
+  m9 pack and the real packs (JEI's `@JeiPlugin` sweep, Jade's provider walk). Those walks now meet each multi-mod
+  NeoForge jar once; on the merged base today they meet it once per mod, over the same shared index object.

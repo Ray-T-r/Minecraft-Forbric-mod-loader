@@ -26,6 +26,7 @@ import org.apache.maven.artifact.versioning.ArtifactVersion;
 import org.apache.maven.artifact.versioning.DefaultArtifactVersion;
 
 import net.forbric.api.DiscoveredMod;
+import net.forbric.api.Ecosystem;
 import net.forbric.kernel.metadata.forge.FmlConfigElements;
 import net.neoforged.neoforgespi.language.IConfigurable;
 import net.neoforged.neoforgespi.language.IModFileInfo;
@@ -63,6 +64,24 @@ public final class KernelModInfo implements IModInfo {
 	 *                 of a mod nested inside another mod's jar. See {@code KernelModMetadata.resolve}.
 	 */
 	public KernelModInfo(String modId, Path jar, DiscoveredMod declared) {
+		this(modId, jar, declared, false);
+	}
+
+	/**
+	 * A NeoForge mod's info: the one {@link KernelContainers} builds for every container and for
+	 * {@code KernelContainers.modInfo}. With {@code -Dforbric.modFilePerJar=on} its owning file is its jar's one
+	 * file, shared with the jar's other NeoForge mods ({@link KernelModFileInfo#forMod}); the public constructors,
+	 * which {@code KernelDeclarationReaders} uses for the Fabric mods it describes, always give a mod its own.
+	 *
+	 * @param declared as {@link #KernelModInfo(String, Path, DiscoveredMod)}; one that names another ecosystem is
+	 *                 not a NeoForge declaration, and gets a file of its own
+	 */
+	static KernelModInfo neoForge(String modId, Path jar, DiscoveredMod declared) {
+		return new KernelModInfo(modId, jar, declared,
+				declared == null || declared.getEcosystem() == Ecosystem.NEOFORGE);
+	}
+
+	private KernelModInfo(String modId, Path jar, DiscoveredMod declared, boolean neoForge) {
 		this.modId = modId;
 		this.declared = declared;
 		boolean answers = FmlConfigElements.enabled();
@@ -75,8 +94,9 @@ public final class KernelModInfo implements IModInfo {
 
 		// The owning file's getMods() has to return THIS object, so it is handed a slot to read back from.
 		IModInfo[] self = new IModInfo[1];
-		this.owningFile = new KernelModFileInfo(modId, jar, self,
-				answers ? new KernelConfigurable(modId, KernelModMetadata.fileConfigElementsOf(modId, declared)) : null);
+		this.owningFile = KernelModFileInfo.forMod(modId, jar, self,
+				answers ? new KernelConfigurable(modId, KernelModMetadata.fileConfigElementsOf(modId, declared)) : null,
+				neoForge);
 		self[0] = this;
 	}
 
