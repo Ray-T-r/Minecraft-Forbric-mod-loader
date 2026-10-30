@@ -14,7 +14,7 @@ import org.objectweb.asm.tree.*;
 public final class NativeConstructorFacadeRestorer implements ClassTransformer {
  public static final String PROPERTY="forbric.nativeConstructorFacades";
  private final NativeGameReferences references;
- public NativeConstructorFacadeRestorer(Function<String,byte[]> resources){references=new NativeGameReferences(resources);}
+ public NativeConstructorFacadeRestorer(Function<String,byte[]> resources){references=NativeGameReferences.over(resources);}
  @Override public AnchorSet anchors(){return AnchorSet.scanned("constructor closures whose expanded executable body equals an indexed native method");}
  @Override public byte[] transform(String name,byte[] bytes,TransformContext context){
   if(bytes==null||"off".equalsIgnoreCase(System.getProperty(PROPERTY,"on")))return bytes;

@@ -31,7 +31,8 @@ public final class LootSourceContracts implements Opcodes {
     private LootSourceContracts(){}
     public static void reset(){contract=null;observed.clear();}
     static boolean offer(LootSourceCallbacks.Plan plan,Function<String,byte[]> reader,ClassLoader loader){
-        ClassNode nativeNode=new NativeGameReferences(reader).get(Ecosystem.FABRIC,plan.targetName().replace('.','/'));
+        // Through this launch's sources, so the vanilla host comes from the sidecar wherever the base embeds no index.
+        ClassNode nativeNode=NativeGameReferences.over(reader).get(Ecosystem.FABRIC,plan.targetName().replace('.','/'));
         return offer(plan,reader,nativeNode,loader);
     }
     /** Injectable native snapshot for isolated proof tests; production uses hash-verified native-reference resources. */

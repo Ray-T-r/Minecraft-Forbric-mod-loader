@@ -39,7 +39,7 @@ public final class ModifiableDataViewsTransformer implements ClassTransformer {
     private static final String RUNTIME="net/forbric/kernel/runtime/KernelModifiableDataViews";
     private final NativeGameReferences references;
     private final Function<String,byte[]> resources;
-    public ModifiableDataViewsTransformer(Function<String,byte[]> resources){this.resources=resources;references=new NativeGameReferences(resources);}
+    public ModifiableDataViewsTransformer(Function<String,byte[]> resources){this.resources=resources;references=NativeGameReferences.over(resources);}
     @Override public String name(){return "forbric-modifiable-data-views";}
     @Override public AnchorSet anchors(){return AnchorSet.scanned("source-proved public mutable data views");}
     @Override public byte[] transform(String name,byte[] bytes,TransformContext context){

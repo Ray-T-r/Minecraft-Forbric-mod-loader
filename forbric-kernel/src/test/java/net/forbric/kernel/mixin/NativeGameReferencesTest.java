@@ -62,6 +62,57 @@ class NativeGameReferencesTest {
    assertFalse(loader.isClassLoadedByName(OWNER.replace('/','.')));
   }finally{NativeGameReferences.bind(null);}
  }
+ /** The vanilla-reference sidecar answers FABRIC: its copies for what the base changed, the base itself for the rest. */
+ @Test void theSidecarAnswersFabricInPreferenceToTheEmbeddedIndex(@TempDir java.nio.file.Path work) throws Exception {
+  String same="unlisted/Same";byte[] original=bytes(OWNER,7),merged=bytes(OWNER,11),unchanged=bytes(same,3);
+  Map<String,byte[]> sidecarEntries=new HashMap<>();
+  sidecarEntries.put(PREFIX+"index.tsv",("# forbric-native-reference-v1\n"+OWNER+"\t"+sha(original)+"\n"+same+"\t"+sha(unchanged)+"\n").getBytes(StandardCharsets.UTF_8));
+  sidecarEntries.put(PREFIX+OWNER+".class.bin",original);
+  // The base embeds a FABRIC index that disagrees, which the sidecar must win over, and a NEOFORGE one it must keep.
+  Map<String,byte[]> baseEntries=new HashMap<>(index(bytes(OWNER,99)));baseEntries.put(PREFIX+OWNER+".class.bin",bytes(OWNER,99));
+  baseEntries.put(OWNER+".class",merged);baseEntries.put(same+".class",unchanged);
+  baseEntries.put("META-INF/forbric/native-reference/NEOFORGE/index.tsv",("# forbric-native-reference-v1\n"+OWNER+"\t"+sha(merged)+"\n").getBytes(StandardCharsets.UTF_8));
+  java.nio.file.Path base=jar(work.resolve("base.jar"),baseEntries),sidecar=jar(work.resolve("sidecar.jar"),sidecarEntries);
+  NativeReferenceSources sources=NativeReferenceSources.open(base,sidecar);
+  assertTrue(sources.describe().contains("native references: FABRIC from the vanilla-reference sidecar sidecar.jar, FORGE none, NEOFORGE from the base's embedded index"),sources.describe());
+  var reader=new NativeGameReferences(baseEntries::get,null,sources);
+  assertEquals(7,constant(reader.get(Ecosystem.FABRIC,OWNER)),"the sidecar's copy, not the embedded one");
+  assertEquals(3,constant(reader.get(Ecosystem.FABRIC,same)),"a hash-only row is answered from the base and verified");
+  assertEquals(11,constant(reader.get(Ecosystem.NEOFORGE,OWNER)),"the base keeps answering for what only it carries");
+  assertEquals(99,constant(new NativeGameReferences(baseEntries::get).get(Ecosystem.FABRIC,OWNER)),"without sources: the embedded index");
+  // Measured against another base: a hash-only row whose class this base changed is no answer, never a wrong one.
+  baseEntries.put(same+".class",bytes(same,4));java.nio.file.Path other=jar(work.resolve("other.jar"),baseEntries);
+  assertNull(new NativeGameReferences(baseEntries::get,null,NativeReferenceSources.open(other,sidecar)).get(Ecosystem.FABRIC,same));
+ }
+ /** A base with no index answers for its own ecosystem from its own bytes; which one is read off its Block. */
+ @Test void aBaseWithoutAnIndexAnswersForItsOwnEcosystemFromItsBytes(@TempDir java.nio.file.Path work) throws Exception {
+  String block="net/minecraft/world/level/block/Block";
+  Map<String,String[]> cases=new java.util.LinkedHashMap<>();
+  cases.put("NEOFORGE",new String[]{"net/minecraft/world/level/ItemLike","net/neoforged/neoforge/common/extensions/IBlockExtension"});
+  cases.put("FORGE",new String[]{"net/minecraftforge/common/extensions/IForgeBlock"});
+  cases.put("FABRIC",new String[]{"net/minecraft/world/level/ItemLike"});
+  cases.put("none",new String[]{"net/neoforged/neoforge/common/extensions/IBlockExtension","net/minecraftforge/common/extensions/IForgeBlock"});
+  for(var c:cases.entrySet()){
+   Map<String,byte[]> entries=new HashMap<>();entries.put(block+".class",type(block,c.getValue()));entries.put(OWNER+".class",bytes(OWNER,5));
+   java.nio.file.Path base=jar(work.resolve(c.getKey()+".jar"),entries);NativeReferenceSources sources=NativeReferenceSources.open(base,null);
+   var reader=new NativeGameReferences(entries::get,null,sources);
+   for(Ecosystem ecosystem:Ecosystem.values()){
+    boolean own=ecosystem.name().equals(c.getKey());
+    assertEquals(own,reader.get(ecosystem,OWNER)!=null,c.getKey()+" base, "+ecosystem);
+    assertEquals(own,java.util.regex.Pattern.compile("\\b"+ecosystem.name()+" from the base's own bytes").matcher(sources.describe()).find(),sources.describe());
+   }
+  }
+  // A base that embeds any index is the merge: it answers through the index, never through its bytes.
+  Map<String,byte[]> entries=new HashMap<>(index(bytes(OWNER,7)));entries.put(block+".class",type(block,cases.get("NEOFORGE")));entries.put(OWNER+".class",bytes(OWNER,5));
+  var reader=new NativeGameReferences(entries::get,null,NativeReferenceSources.open(jar(work.resolve("merged.jar"),entries),null));
+  assertNull(reader.get(Ecosystem.NEOFORGE,OWNER));assertNull(reader.get(Ecosystem.FABRIC,OWNER),"the embedded row does not verify against the base bytes");
+ }
+ private static int constant(org.objectweb.asm.tree.ClassNode node){assertNotNull(node);return (Integer)((org.objectweb.asm.tree.LdcInsnNode)node.methods.getFirst().instructions.getFirst()).cst;}
+ private static String sha(byte[] bytes) throws Exception {return HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256").digest(bytes));}
+ private static byte[] type(String name,String[] interfaces){ClassWriter writer=new ClassWriter(0);writer.visit(Opcodes.V21,Opcodes.ACC_PUBLIC,name,null,"java/lang/Object",interfaces);writer.visitEnd();return writer.toByteArray();}
+ private static java.nio.file.Path jar(java.nio.file.Path file,Map<String,byte[]> entries) throws Exception {
+  try(var out=new java.util.zip.ZipOutputStream(java.nio.file.Files.newOutputStream(file))){for(var e:entries.entrySet()){out.putNextEntry(new java.util.zip.ZipEntry(e.getKey()));out.write(e.getValue());out.closeEntry();}}return file;
+ }
  private static Map<String,byte[]> index(byte[] source) throws Exception {
   Map<String,byte[]> result=new HashMap<>();String hash=HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256").digest(source));
   result.put(PREFIX+"index.tsv",("# forbric-native-reference-v1\n"+OWNER+"\t"+hash+"\n").getBytes(StandardCharsets.UTF_8));return result;
