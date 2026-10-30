@@ -60,7 +60,7 @@ class ScopedClearRelayStagedTest {
 			} catch (Exception unreadable) {
 				return null;
 			}
-		});
+		}, null, TestFixtures.launchSources(jar));
 		byte[] raw = entry(jar, LIVING + ".class");
 		byte[] relayed = new ScopedClearRelayInjector(references::get).transform(LIVING.replace('/', '.'), raw, null);
 		assertNotSame(raw, relayed, "the relay applies to the real merged body");

@@ -206,7 +206,7 @@ class MixinNullableCompositeSpellingTest {
 			byte[] bytes = raw.apply(n + ".class");
 			return bytes == null ? runtime.apply(n) : parse(bytes);
 		});
-		NativeGameReferences originals = new NativeGameReferences(raw);
+		NativeGameReferences originals = new NativeGameReferences(raw, null, TestFixtures.launchSources(base));
 		assertNotNull(originals.get(Ecosystem.FABRIC, HOPPER), "the hopper as the mod was compiled against it");
 		ClassNode mixin = MixinCallbackSelectorSpellingTest.unrelatedNames(released);
 		assertTrue(mixin.methods.stream().filter(MixinNullableCompositeSpellingTest::hook).allMatch(m -> m.name.startsWith("respelled")), "renamed");

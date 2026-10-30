@@ -186,7 +186,7 @@ class MixinPredicateDelegateSpellingTest {
 				} catch (Exception e) {
 					return null;
 				}
-			}).get(Ecosystem.FABRIC, LIST);
+			}, null, TestFixtures.launchSources(base)).get(Ecosystem.FABRIC, LIST);
 		}
 		try (ZipFile jar = new ZipFile(neo.toFile())) {
 			String owner = "net/neoforged/neoforge/client/ClientHooks";

@@ -386,6 +386,35 @@ public final class TestFixtures {
 		}
 	}
 
+	private static final java.util.Map<Path, net.forbric.kernel.mixin.NativeReferenceSources> LAUNCH_SOURCES =
+			new java.util.HashMap<>();
+
+	/**
+	 * The native-reference sources a launch on {@code base} has, for a test that builds its own
+	 * {@code NativeGameReferences} over {@code base}'s resources. On a base that embeds a FABRIC index (the merged base)
+	 * that is the base alone, with no sidecar: every ecosystem it indexes is answered from its embedded index through the
+	 * test's own resource reader, exactly as a reader built with no sources answers, so the test reads what it always
+	 * read. On a base that embeds none (the genuine NeoForge base) it is {@link #vanillaReference} beside it, the sidecar
+	 * every launch path passes, and FABRIC is answered from that. Without this, a reader over {@link #stagedBase()} reads
+	 * the embedded index through the base Stage 4 moves, and on the genuine jar every FABRIC answer it gives is null.
+	 * Opened once per base and kept open for the JVM, as a launch keeps its own.
+	 */
+	public static synchronized net.forbric.kernel.mixin.NativeReferenceSources launchSources(Path base) {
+		requireFiles(Fixture.STAGED, "the base whose native references a launch reads", base);
+		Path key = base.toAbsolutePath().normalize();
+		var known = LAUNCH_SOURCES.get(key);
+		if (known != null) return known;
+		boolean embeds;
+		try (ZipFile jar = new ZipFile(key.toFile())) {
+			embeds = jar.getEntry("META-INF/forbric/native-reference/FABRIC/index.tsv") != null;
+		} catch (IOException unreadable) {
+			throw new AssertionFailedError("could not open the base " + base, unreadable);
+		}
+		var sources = net.forbric.kernel.mixin.NativeReferenceSources.open(key, embeds ? null : vanillaReference(key));
+		LAUNCH_SOURCES.put(key, sources);
+		return sources;
+	}
+
 	/**
 	 * MinecraftForge's patched game exactly as the merged base under {@link #stagedRoot()} took it. tools/dev.py stages
 	 * the one its own merge read as {@code forge-patched/}, with the installer's build pins beside it and beside the

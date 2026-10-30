@@ -254,7 +254,7 @@ class MixinCollectionSourceSpellingTest {
 					var entry = zip.getEntry(path);
 					return entry == null ? null : zip.getInputStream(entry).readAllBytes();
 				} catch (java.io.IOException unreadable) { throw new IllegalStateException(unreadable); }
-			});
+			}, null, TestFixtures.launchSources(base));
 			Function<String, ClassNode> references = owner -> natives.get(Ecosystem.FABRIC, owner);
 			TestFixtures.require(TestFixtures.Fixture.STAGED, references.apply(TARGET) != null, "native-indexed vanilla RegistryPatchGenerator required");
 			byte[] released = null;

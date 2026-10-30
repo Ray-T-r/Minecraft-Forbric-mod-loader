@@ -385,7 +385,7 @@ class GuestInjectorPrunerSpellingTest {
 			} catch (Exception unavailable) {
 				return null;
 			}
-		});
+		}, null, TestFixtures.launchSources(MERGED_BASE));
 		return new GuestInjectorPruner(classes, (mixin, owner) -> references.get(Ecosystem.FABRIC, owner));
 	}
 

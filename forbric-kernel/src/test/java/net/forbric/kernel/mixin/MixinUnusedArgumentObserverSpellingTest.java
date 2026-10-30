@@ -212,7 +212,7 @@ class MixinUnusedArgumentObserverSpellingTest {
 				} catch (Exception e) {
 					return null;
 				}
-			}).get(Ecosystem.FABRIC, LIVING);
+			}, null, TestFixtures.launchSources(base)).get(Ecosystem.FABRIC, LIVING);
 		}
 		assertNotNull(original, "LivingEntity as the mod was compiled against it");
 		ClassNode mixin = MixinCallbackSelectorSpellingTest.unrelatedNames(released);

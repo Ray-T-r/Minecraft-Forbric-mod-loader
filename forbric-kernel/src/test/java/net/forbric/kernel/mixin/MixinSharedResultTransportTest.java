@@ -202,7 +202,7 @@ class MixinSharedResultTransportTest {
             NativeGameReferences references = new NativeGameReferences(path -> {
                 try { var entry = jar.getEntry(path); return entry == null ? null : jar.getInputStream(entry).readAllBytes(); }
                 catch (java.io.IOException unavailable) { return null; }
-            });
+            }, null, net.forbric.kernel.TestFixtures.launchSources(base));
             reference = references.get(Ecosystem.FABRIC, owner);
         }
         net.forbric.kernel.TestFixtures.require(net.forbric.kernel.TestFixtures.Fixture.STAGED, reference != null, "hash-pinned original platform required");

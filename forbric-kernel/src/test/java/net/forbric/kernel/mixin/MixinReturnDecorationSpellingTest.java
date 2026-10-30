@@ -167,7 +167,7 @@ class MixinReturnDecorationSpellingTest {
 			NativeGameReferences references = new NativeGameReferences(path -> {
 				try { var e = game.getEntry(path); return e == null ? null : game.getInputStream(e).readAllBytes(); }
 				catch (java.io.IOException unreadable) { throw new IllegalStateException(unreadable); }
-			});
+			}, null, TestFixtures.launchSources(base));
 			ClassNode node = references.get(Ecosystem.FABRIC, HOST);
 			TestFixtures.require(TestFixtures.Fixture.STAGED, node != null, "native-indexed vanilla ScreenEffectRenderer required");
 			original = CarpetMixinAdapterTest.bytes(node);

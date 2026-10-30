@@ -59,7 +59,7 @@ class MixinDefaultPredicateTransportSpellingTest {
 		ZipFile game = open(TransportSpellings.mergedBase());
 		ZipFile neo = open(TestFixtures.stagedRoot().resolve(TestFixtures.NEO_CARRIER_JAR));
 		ZipFile forge = open(TestFixtures.stagedRoot().resolve("forge-runtime/forge-runtime.jar"));
-		NativeGameReferences references = new NativeGameReferences(name -> read(game, name));
+		NativeGameReferences references = new NativeGameReferences(name -> read(game, name), null, TestFixtures.launchSources(TransportSpellings.mergedBase()));
 		ClassNode host = references.get(Ecosystem.FABRIC, HOST);
 		TestFixtures.require(Fixture.STAGED, host != null, "the hash-pinned native " + HOST + " the merged base indexes");
 		Map<String, ClassNode> currentCache = new HashMap<>(), nativeCache = new HashMap<>();
