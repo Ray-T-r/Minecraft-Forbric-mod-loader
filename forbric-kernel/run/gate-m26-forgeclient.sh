@@ -30,8 +30,9 @@
 #   client extensions, its asset read from client setup, its creative injection, and where its @Mod was constructed.
 #   Forbric now refuses a MinecraftForge-only jar, and a client launched straight into a world (quick-play) with a
 #   refused jar stops, so the canary cannot join; every check that read it is gone (the M26_ASSERTIONS block and the H5
-#   fluid step), and so is the -Dforbric.forgeOverlayLayers / forgePipRenderers / forgeFluidModels / forgeCtorGameInstance
-#   / forgeCreativeTabs RED list, which only those checks could show. Unchanged: the NeoForge half and the Fabric half
+#   fluid step), and so are the -Dforbric.forgePipRenderers / forgeCtorGameInstance / forgeCreativeTabs RED controls,
+#   which only those checks could show; forgeOverlayLayers and forgeFluidModels are RED controls again for the session
+#   checks below (step 1b). Unchanged: the NeoForge half and the Fabric half
 #   (written in Stage 2.5 to outlive them) and the session checks every client gate makes, kept in M26_SESSION_ASSERTIONS
 #   with every kernel line that still prints with no MinecraftForge mod aboard, because each is a rewrite of vanilla or
 #   NeoForge code that runs on every boot: both bridge sets installed, the client resource manager preloaded, the merged

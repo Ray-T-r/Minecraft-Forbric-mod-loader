@@ -183,6 +183,9 @@ check "the kernel decided FMLEnvironment's dist (server)" "Seed\] MinecraftForge
 check "the kernel decided FMLEnvironment's dist (client)" "Seed\] MinecraftForge FMLEnvironment decided here: dist=CLIENT" "$CLOG"
 check_absent "the kernel's own read-back agrees (server)" "Seed\] MinecraftForge FMLEnvironment (is null|disagrees)" "$SLOG"
 check_absent "the kernel's own read-back agrees (client)" "Seed\] MinecraftForge FMLEnvironment (is null|disagrees)" "$CLOG"
+# The carrier's own CLIENT config (MinecraftForge registers one with no mod aboard). Counted in CGAME, not CLOG: since
+# System.out was routed into log4j each print reaches CLOG twice.
+check "Forge CLIENT configs were applied" 'loaded MinecraftForge configs \(CLIENT\): applied [1-9][0-9]*, already loaded [0-9]+, failed 0 from ' "$CGAME"
 
 step "FallingTree, a universal jar, loads through its NeoForge half on both ends (must PASS)"
 # All three manifests, and MinecraftForge's half is set aside (Stage 3); NeoForge wins over Fabric by preference.

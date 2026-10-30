@@ -81,9 +81,11 @@ check "NeoForge probe ran"          'ForbricNeoLive/WORLDGEN\] probe ran: plains
 check "NeoForge probe saw its feature" 'ForbricNeoLive/WORLDGEN\] plains underground_ores has forbricneolive:probe = true' "$LOG"
 
 step "the MinecraftForge modifier registries are still declared, and the bridge did not stand down"
-# Kernel code Stage 3 keeps runs on every boot: the declaration of forge:biome_modifier / forge:structure_modifier as
-# datapack registries is what lets a world load at all once the carrier's registries are on NeoForge's list. RED: the
-# -Dforbric.forgeWorldgen=off boot below prints no declaration line, and its check_absent says so.
+# Kernel code Stage 3 keeps runs on every boot: with the MinecraftForge carrier present, KernelLifecycle declares
+# forge:biome_modifier / forge:structure_modifier on NeoForge's datapack-registry list. That declaration is what makes
+# the merged RegistryDataLoader read a universal jar's data/<ns>/forge/biome_modifier and forge/structure_modifier files
+# at all; without it those files are silently ignored, though the world still loads, as the off boot below shows. RED:
+# the -Dforbric.forgeWorldgen=off boot below prints no declaration line, and its check_absent says so.
 check "forge:biome_modifier is declared" 'posted datapack-registry declaration for MinecraftForge.s modifier registries — 2 declared' "$LOG"
 check_absent "the bridge did not stand down" 'Forbric/Worldgen\] MinecraftForge modifier bridge standing down' "$LOG"
 

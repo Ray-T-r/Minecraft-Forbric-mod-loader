@@ -44,9 +44,11 @@
 # forge:condition still appears in the data of universal jars that now load as NeoForge, and the funnel is kernel code
 # Stage 3 keeps; the runtime carriers' access transformers; and the plumbing lines that still print with no
 # MinecraftForge mod (the registration bridges installed, no phase failing to post). The absence checks for the old
-# H1/H2 link errors stay as absences. The RED controls above that switch off a MinecraftForge path
-# (forgeSpawnPlacements, forgeCreativeTabs, forgeScanData) have no check left to turn red; forgeConditions and the
-# funnel's controls (below) still do.
+# H1/H2 link errors stay as absences, and so do two carrier lines that print with no MinecraftForge mod: the kernel's
+# index of the carrier's own annotations (ModList.getAllScanData() still answers from it) and the bridging of the
+# carrier's own server reload listeners into NeoForge's reload. The RED controls above that switch off a MinecraftForge
+# path for a mod (forgeSpawnPlacements, forgeCreativeTabs) have no check left to turn red; forgeScanData turns the index
+# check red again, and forgeConditions and the funnel's controls (below) still do.
 # GATE-PARALLEL: rundirs=server-forgesetup mem=1500
 set -uo pipefail
 . "$(cd "$(dirname "$0")" && pwd)/lib.sh"
@@ -202,6 +204,13 @@ check "and the earliest phase, construct, reaches them" "posted FML construct to
 # client setup, came out private. The carriers' files are now applied too.
 check "the runtime carriers' access transformers are applied" \
   "Forbric/AT\] applying [0-9]+ Forge-family access-transformer directive\(s\) from [0-9]+ jar\(s\), [1-9][0-9]* of them from the runtime carriers" "$LOG"
+
+# The carrier's own scan index and reload listeners: kernel plumbing that runs on every boot until Stage 4.
+# RED with M21_EXTRA_JVM='-Dforbric.forgeScanData=off' (the index check).
+check "the kernel indexed the MinecraftForge carrier's annotations" \
+  'Forbric/Seed\] indexed [1-9][0-9]* annotation\(s\) across [1-9][0-9]* MinecraftForge jar\(s\)' "$LOG"
+check "the carrier's server reload listeners were bridged" \
+  'EventMux\] bridged [1-9][0-9]* MinecraftForge server reload listener' "$LOG"
 
 step "nothing quietly broken by the extra posts (must be ABSENT)"
 check_absent "no NoClassDefFound"        "NoClassDefFoundError"                          "$LOG"

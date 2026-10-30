@@ -14,7 +14,10 @@
 # M28_ASSERTIONS blocks and its jar -- is gone (Stage 2.5 had already given the NeoForge canary the same contract, and
 # the -Dforbric.earlyConfigs=off control turns the NeoForge half red on its own). Three checks of that block were not
 # about MinecraftForge and moved into the NeoForge block unchanged: the server reached Done, it stopped cleanly, and no
-# startup or watcher failure. What a refused MinecraftForge jar does to a server is gate-m29's.
+# startup or watcher failure. MinecraftForge's OWN config (forge-common.toml) is not the canary's: the carrier
+# registers it on every boot, and the kernel opens it early with no MinecraftForge mod aboard, so its loading line, the
+# absence of a failed config and the file itself are still asserted (step "the carrier's own COMMON config"). What a
+# refused MinecraftForge jar does to a server is gate-m29's.
 # GATE-PARALLEL: rundirs=server-forge-config mem=1500
 set -uo pipefail
 . "$(cd "$(dirname "$0")" && pwd)/lib.sh"
@@ -99,6 +102,12 @@ if kill -0 "$SRVPID" 2>/dev/null; then printf 'stop\n' >&9; fi
 exec 9>&-
 await_server "$SRVPID" "$LOG" 90
 SRVPID=
+
+step "the carrier's own COMMON config still loads early with no MinecraftForge mod (must PASS)"
+check "Forge COMMON configs were applied" 'loaded MinecraftForge configs \(COMMON\): applied [1-9][0-9]*, already loaded [0-9]+, failed 0 from ' "$LOG"
+check_absent "no Forge config failed" 'loaded MinecraftForge configs \([^)]*\): .*failed [1-9]' "$LOG"
+if [ -s "$RUNDIR/config/forge-common.toml" ]; then echo "[kernel] PASS config/forge-common.toml was created"
+else echo "[kernel] FAIL config/forge-common.toml was not created"; FAIL=1; fi
 
 # M28_NEO_ASSERTIONS_BEGIN — run against log/file fixtures as well as the live gate's authoritative stdout log.
 step "NeoForge COMMON loading, one Loading event, and real watcher readback"

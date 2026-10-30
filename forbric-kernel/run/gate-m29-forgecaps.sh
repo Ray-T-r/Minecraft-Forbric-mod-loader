@@ -191,6 +191,9 @@ check "control: levels were composed" 'Capabilities\] composed MinecraftForge ca
 check "control: ServerLevel gathers" 'Capabilities\] ServerLevel\.<init> (gathers MinecraftForge level capabilities again|already gathers MinecraftForge level capabilities in the merged base.s own bytes)' "$CONTROL_LOG"
 check "control: LevelChunk writes its provider" 'Capabilities\] LevelChunk\.<init> (writes Forge.s own capability provider again|already writes Forge.s own capability provider in the merged base.s own bytes)' "$CONTROL_LOG"
 check "control: the lost LivingEntity initializer was replayed" 'Capabilities\] net\.minecraft\.world\.entity\.LivingEntity\.<init> (assigns handlers again|already assigns handlers in the merged base.s own bytes)' "$CONTROL_LOG"
+check "control: the lost furnace initializer was replayed" 'Capabilities\] net\.minecraft\.world\.level\.block\.entity\.AbstractFurnaceBlockEntity\.<init> (assigns handlers again|already assigns handlers in the merged base.s own bytes)' "$CONTROL_LOG"
+check "control: the lost bookshelf initializer was replayed" 'Capabilities\] net\.minecraft\.world\.level\.block\.entity\.ChiseledBookShelfBlockEntity\.<init> (assigns itemHandler again|already assigns itemHandler in the merged base.s own bytes)' "$CONTROL_LOG"
+check_absent "control: no lost initializer left unrepaired" 'Capabilities\] .*(not repaired|initializer not replayed)' "$CONTROL_LOG"
 # Thrown exceptions print as java.lang.X: the kernel's own stub line mentions "AbstractMethodError" in prose.
 check_absent "control: no capability error signature" 'java\.lang\.(ExceptionInInitializerError|AbstractMethodError)|NoSuchMethodError.*Caps|NullPointerException.*capProvider|This will be implemented by a transformer|which the merged game does not carry' "$CONTROL_LOG"
 check "control: the server saved cleanly" 'All dimensions are saved' "$CONTROL_LOG"

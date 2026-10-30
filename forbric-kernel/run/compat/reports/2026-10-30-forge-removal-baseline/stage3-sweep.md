@@ -4,9 +4,10 @@ Result: **0 false refusals.** 90 distinct jars are refused. I checked each one b
 or NeoForge half that works. 10 jars change loader: 9 MinecraftForge → NeoForge, and qubes-mouse-fix MinecraftForge →
 Fabric (the half that ships its mixins; see below). No Forge+Fabric universal jar exists in the corpus.
 
-**Rerun 2026-10-30 evening, after the review rounds** (tip `19d26a66` plus the arbiter's mixin rule): `LoaderHalfJudge`
-now judges a NeoForge half by what NeoForge would run of it (its listed mixins, else its entry, else its data/) instead
-of by stray Forge classes, and an absent Fabric integration-key class counts for nothing. Over the 1,953 jars the
+**Rerun 2026-10-30 evening, after the review rounds** (tip `13b3bcef`): `LoaderHalfJudge` now judges a NeoForge half
+by what NeoForge would run of it (its listed mixins and their config's plugin, wherever the config lives and read as
+leniently as Mixin reads it; else its entry; else its data/) instead of by stray Forge classes, and an absent Fabric
+integration-key class counts for nothing. Over the 1,953 jars the
 refused set is **identical** — the same 90 SHA-1s; owl is now refused because its listed `PlayerMixin` and
 `PlayerRendererMixin` link against MinecraftForge, bison and the plain Forge builds for the same reasons as before. The
 arbiter now gives a jar with no initialiser in any half to the half that ships its mixin config, which moves exactly
