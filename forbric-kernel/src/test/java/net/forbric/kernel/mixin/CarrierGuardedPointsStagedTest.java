@@ -33,7 +33,7 @@ class CarrierGuardedPointsStagedTest {
 	}
 
 	private static BiFunction<Ecosystem, String, ClassNode> natives() {
-		Path jar = TestFixtures.mergedBase();
+		Path jar = TestFixtures.stagedBase();
 		TestFixtures.requireFile(TestFixtures.Fixture.STAGED, jar, "actual game required");
 		NativeGameReferences references = new NativeGameReferences(path -> {
 			try (ZipFile zip = new ZipFile(jar.toFile())) {

@@ -65,7 +65,7 @@ class MixinNullableCompositeCallbackTest {
 	}
 	private static int adapt(Inputs input){return MixinNullableCompositeCallback.adapt(input.mixin,input.current,input.source,input.nativeSource,input.runtimeSource);}
 	private static Inputs inputs()throws Exception{
-		Path api=Path.of(System.getProperty("forbric.fabricApi",TestFixtures.fabricApi().toString())),base=Path.of(System.getProperty("forbric.predicateBase",TestFixtures.mergedBase().toString())),neo=TestFixtures.stagedRoot().resolve(TestFixtures.NEO_CARRIER_JAR);
+		Path api=Path.of(System.getProperty("forbric.fabricApi",TestFixtures.fabricApi().toString())),base=Path.of(System.getProperty("forbric.predicateBase",TestFixtures.stagedBase().toString())),neo=TestFixtures.stagedRoot().resolve(TestFixtures.NEO_CARRIER_JAR);
 		TestFixtures.requireFiles(TestFixtures.Fixture.STAGED,"actual API/indexed base/runtime required",api,base,neo);
 		ClassNode mixin=null,reference;Map<String,ClassNode> classes=new HashMap<>();String owner="net/minecraft/world/level/block/entity/HopperBlockEntity";
 		try(ZipFile jar=new ZipFile(api.toFile())){var module=jar.stream().filter(e->e.getName().startsWith("META-INF/jars/fabric-transfer-api-v1-")).findFirst().orElseThrow();try(ZipInputStream nested=new ZipInputStream(jar.getInputStream(module))){for(var e=nested.getNextEntry();e!=null;e=nested.getNextEntry())if(e.getName().equals("net/fabricmc/fabric/mixin/transfer/HopperBlockEntityMixin.class"))mixin=parse(nested.readAllBytes());}}

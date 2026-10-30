@@ -189,7 +189,7 @@ class MixinUnusedArgumentObserverSpellingTest {
 	/** fabric-api's fluid mixin under other names, the merged classes it reads, and LivingEntity as the mod was compiled against it. */
 	private static Inputs inputs() throws Exception {
 		Path api = Path.of(System.getProperty("forbric.fabricApi", TestFixtures.fabricApi().toString()));
-		Path base = Path.of(System.getProperty("forbric.predicateBase", TestFixtures.mergedBase().toString()));
+		Path base = Path.of(System.getProperty("forbric.predicateBase", TestFixtures.stagedBase().toString()));
 		TestFixtures.requireFiles(TestFixtures.Fixture.STAGED, "actual unused-argument observer inputs required", api, base);
 		ClassNode released = null;
 		try (ZipFile jar = new ZipFile(api.toFile())) {

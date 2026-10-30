@@ -34,7 +34,7 @@ class ScopedClearRelayStagedTest {
 	private static final Path BALM = Path.of("build/compat-inputs/sweep90/mods/balm-fabric-26.2-26.2.0.9.jar");
 
 	private static Path merged() {
-		Path jar = TestFixtures.mergedBase();
+		Path jar = TestFixtures.stagedBase();
 		TestFixtures.requireFile(TestFixtures.Fixture.STAGED, jar, "actual game required");
 		return jar;
 	}

@@ -45,7 +45,7 @@ class CarrierReturnedCallsStagedTest {
 	}
 
 	private static Path merged() {
-		Path jar = TestFixtures.mergedBase();
+		Path jar = TestFixtures.stagedBase();
 		TestFixtures.requireFile(TestFixtures.Fixture.STAGED, jar, "actual game required");
 		return jar;
 	}
