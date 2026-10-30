@@ -1,0 +1,328 @@
+jars: 11688 mod jar files, 1946 distinct by SHA-1; set aside: {'no loader manifest at its root': 643, 'staged game/carrier/kernel jar': 247}
+before -> after, by kind:
+  mod jar                    FABRIC -> FABRIC           1013
+  mod jar                     FORGE -> NEOFORGE         10
+  mod jar                     FORGE -> refused          86
+  mod jar                  NEOFORGE -> NEOFORGE         477
+  nested only                FABRIC -> FABRIC           239
+  nested only                 FORGE -> refused          2
+  nested only              NEOFORGE -> NEOFORGE         13
+  old-loader cache            FORGE -> FABRIC           82
+  old-loader cache            FORGE -> refused          1
+  old-loader cache         NEOFORGE -> NEOFORGE         23
+
+refused although the tri-eco kernel loaded them as Fabric or NeoForge: 0
+
+refused:
+  AdvancementPlaques-26.2-forge-1.7.2.jar  [forbric-loader/run/downloads/forge-26.2]  META-INF/mods.toml: MinecraftForge (a MinecraftForge mods.toml declaring advancementplaques — Forbric no longer loads MinecraftForge mods)
+  animalgarden-bison-1.0.0-forge-26.2-65.0.0.jar  [forbric-kernel/build/compat-inputs/random]  fabric.mod.json: not usable (no entrypoint can initialise: client aquariusplayz.animalgarden.bison.setup.ClientSetup is not in the jar; main aquariusplayz.animalgarden.bison.setup.ModSetup has no public no-argument constructor ((Lnet/minecraftforge/fml/javafmlmod/FMLJavaModLoadingContext;)V)); META-INF/neoforge.mods.toml: not usable (no NeoForge @Mod, its only entry is MinecraftForge's, and its code links only against MinecraftForge (4 class(es) beyond the entry use net.minecraftforge, none names net.neoforged) (its @Mod("animalgarden_bison") is MinecraftForge's aquariusplayz.animalgarden.bison.setup.ModSetup)); META-INF/mods.toml: MinecraftForge (a MinecraftForge mods.toml declaring animalgarden_bison — Forbric no longer loads MinecraftForge mods)
+  animalgarden-owl-1.2.8-forge-26.2-65.0.0.jar  [forbric-kernel/build/compat-inputs/popular;forbric-kernel/build/compat-inputs/popular/candidates;forbric-kernel/run/client-popular;forbric-kernel/run/server-popular]  fabric.mod.json: not usable (no entrypoint can initialise: client aquariusplayz.animalgarden.owl.setup.ClientInit does not implement net.fabricmc.api.ClientModInitializer; main aquariusplayz.animalgarden.owl.setup.ModSetup has no public no-argument constructor ((Lnet/minecraftforge/fml/javafmlmod/FMLJavaModLoadingContext;)V)); META-INF/neoforge.mods.toml: not usable (no NeoForge @Mod, its only entry is MinecraftForge's, and its code links only against MinecraftForge (9 class(es) beyond the entry use net.minecraftforge, none names net.neoforged) (its @Mod("animalgarden_owl") is MinecraftForge's aquariusplayz.animalgarden.owl.setup.ModSetup)); META-INF/mods.toml: MinecraftForge (a MinecraftForge mods.toml declaring animalgarden_owl — Forbric no longer loads MinecraftForge mods)
+  antiblocksrechiseled-forge-26.2.1.1.jar  [forbric-kernel/build/compat-inputs/sweep90;forbric-kernel/build/compat-inputs/sweep90-nowover;forbric-kernel/build/sweep90-mac/client;forbric-kernel/build/sweep90-mac/server;forbric-kernel/build/sweep90-mac/server-interim]  META-INF/mods.toml: MinecraftForge (a MinecraftForge mods.toml declaring antiblocksrechiseled — Forbric no longer loads MinecraftForge mods)
+  aquariuslibs-1.2.0-forge-26.2-65.0.0.jar  [forbric-kernel/build/compat-inputs/popular;forbric-kernel/build/compat-inputs/popular/candidates;forbric-kernel/build/compat-inputs/random;forbric-kernel/run/client-popular;forbric-kernel/run/server-popular]  META-INF/neoforge.mods.toml: not usable (no NeoForge @Mod, its only entry is MinecraftForge's, and its code links only against MinecraftForge (2 class(es) beyond the entry use net.minecraftforge, none names net.neoforged) (its @Mod("aquarius_libs") is MinecraftForge's aquariusplayz.libs.setup.ModLibSetup)); META-INF/mods.toml: MinecraftForge (a MinecraftForge mods.toml declaring aquarius_libs — Forbric no longer loads MinecraftForge mods)
+  badpackets-forge-0.12.2.jar  [forbric-kernel/build/compat-inputs/popular;forbric-kernel/build/compat-inputs/popular/candidates;forbric-kernel/run/client-popular;forbric-kernel/run/server-popular]  META-INF/mods.toml: MinecraftForge (a MinecraftForge mods.toml declaring badpackets — Forbric no longer loads MinecraftForge mods)
+  better-party-forge-26.2-1.1.7.jar  [forbric-kernel/build/sweep80-mac/v020-rounds/r1]  META-INF/mods.toml: MinecraftForge (a MinecraftForge mods.toml declaring better_party — Forbric no longer loads MinecraftForge mods)
+  BetterAdvancements-Forge-26.2-0.6.0.72.jar  [forbric-kernel/build/compat-inputs/sweep90;forbric-kernel/build/compat-inputs/sweep90-nowover;forbric-kernel/build/sweep90-mac/client;forbric-kernel/build/sweep90-mac/server;forbric-kernel/build/sweep90-mac/server-interim]  META-INF/mods.toml: MinecraftForge (a MinecraftForge mods.toml declaring betteradvancements — Forbric no longer loads MinecraftForge mods)
+  biolith-forge-3.7.0-beta.1.jar  [forbric-kernel/build/compat-inputs/random]  META-INF/mods.toml: MinecraftForge (a MinecraftForge mods.toml declaring biolith — Forbric no longer loads MinecraftForge mods)
+  BiomesOPlenty-forge-26.2-26.2.0.0.28.jar  [forbric-kernel/build/compat-inputs/mix80;forbric-kernel/build/compat-inputs/popular;forbric-kernel/run/client-popular;forbric-kernel/run/server-popular]  META-INF/mods.toml: MinecraftForge (a MinecraftForge mods.toml declaring biomesoplenty — Forbric no longer loads MinecraftForge mods)
+  boatiview-forge-0.0.9-26.2.jar  [forbric-loader/run/downloads/forge-26.2]  META-INF/mods.toml: MinecraftForge (a MinecraftForge mods.toml declaring boatiview — Forbric no longer loads MinecraftForge mods)
+  brickfurnace-forge-26.2-5.2.1.0.jar  [forbric-kernel/build/compat-inputs/popular;forbric-kernel/build/compat-inputs/popular/candidates;forbric-kernel/run/client-popular;forbric-kernel/run/server-popular]  META-INF/mods.toml: MinecraftForge (a MinecraftForge mods.toml declaring brickfurnace — Forbric no longer loads MinecraftForge mods)
+  census-forge.jar  [forbric-kernel/build/sweep90-mac/native-forge]  META-INF/mods.toml: MinecraftForge (a MinecraftForge mods.toml declaring censusforge — Forbric no longer loads MinecraftForge mods)
+  Chunky-Forge-1.5.4.jar  [forbric-kernel/build/compat-inputs/random]  META-INF/mods.toml: MinecraftForge (a MinecraftForge mods.toml declaring chunky — Forbric no longer loads MinecraftForge mods)
+  classicpipes-forge-26.2-1.1.6.jar  [forbric-kernel/build/compat-inputs/popular/candidates/classic-pipes-carrier-fit]  META-INF/mods.toml: MinecraftForge (a MinecraftForge mods.toml declaring classicpipes — Forbric no longer loads MinecraftForge mods)
+  classicpipes-forge-26.2-1.1.7.jar  [forbric-kernel/build/compat-inputs/popular;forbric-kernel/build/compat-inputs/popular/candidates;forbric-kernel/build/compat-inputs/popular/candidates/classic-pipes-carrier-fit;forbric-kernel/run/client-popular;forbric-kernel/run/server-popular]  META-INF/mods.toml: MinecraftForge (a MinecraftForge mods.toml declaring classicpipes — Forbric no longer loads MinecraftForge mods)
+  clickmanaita_hopperable_26.2-forge-1.0.0.jar  [forbric-kernel/build/compat-inputs/mix80]  META-INF/mods.toml: MinecraftForge (a MinecraftForge mods.toml declaring clickmanaita_hopper — Forbric no longer loads MinecraftForge mods)
+  colorblindnessclient-forge-26.2-2.1.0.0.jar  [forbric-kernel/build/compat-inputs/random]  META-INF/mods.toml: MinecraftForge (a MinecraftForge mods.toml declaring colorblindnessclient — Forbric no longer loads MinecraftForge mods)
+  common-networking-forge-26.2-1.1.0.jar  [forbric-kernel/run/client-popular/.forbric-kernel/jarjar;forbric-kernel/run/server-popular/.forbric-kernel/jarjar;nested:journeymap-forge-26.2-6.0.0.jar;nested:journeymap-forge-26.2-6.0.8.jar]  META-INF/mods.toml: MinecraftForge (a MinecraftForge mods.toml declaring commonnetworking — Forbric no longer loads MinecraftForge mods)
+  crafting_smithing_armor_iron_to_diamond_v4.12-forge.jar  [forbric-kernel/build/compat-inputs/mix80]  META-INF/mods.toml: MinecraftForge (a MinecraftForge mods.toml declaring crafting_smithing_armor_iron_to_diamond — Forbric no longer loads MinecraftForge mods)
+  crash_assistant-forge.jar  [nested:CrashAssistant-forge-26.2-26.3-1.11.14.jar]  META-INF/mods.toml: MinecraftForge (a MinecraftForge mods.toml declaring crash_assistant — Forbric no longer loads MinecraftForge mods)
+  CrashAssistant-forge-26.2-26.3-1.11.14.jar  [forbric-kernel/build/sweep100-mac-network]  META-INF/mods.toml: MinecraftForge (a MinecraftForge mods.toml declaring crash_assistant — Forbric no longer loads MinecraftForge mods)
+  CraterLib-Forge-26.2-3.1.3.jar  [forbric-kernel/build/compat-inputs/random]  META-INF/mods.toml: MinecraftForge (a MinecraftForge mods.toml declaring craterlib — Forbric no longer loads MinecraftForge mods)
+  Decorativeterracottalattices 26.2 - v1.0 - Forge.jar  [forbric-kernel/build/compat-inputs/mix80]  META-INF/mods.toml: MinecraftForge (a MinecraftForge mods.toml declaring decorativeterracottalattices — Forbric no longer loads MinecraftForge mods)
+  dungeons-and-taverns-5.3.2.jar  [forbric-kernel/build/compat-inputs/sweep90;forbric-kernel/build/compat-inputs/sweep90-nowover;forbric-kernel/build/sweep90-mac/client;forbric-kernel/build/sweep90-mac/native-forge;forbric-kernel/build/sweep90-mac/server;forbric-kernel/build/sweep90-mac/server-interim]  META-INF/mods.toml: MinecraftForge (a MinecraftForge mods.toml declaring mr_dungeons_andtaverns — Forbric no longer loads MinecraftForge mods)
+  durabilitytooltip-1.1.6-forge-mc26.2.jar  [forbric-loader/run/downloads/forge-26.2]  META-INF/mods.toml: MinecraftForge (a MinecraftForge mods.toml declaring durabilitytooltip — Forbric no longer loads MinecraftForge mods)
+  effective_tools_hoe_cactus_v3.12-forge.jar  [forbric-kernel/build/compat-inputs/mix80]  META-INF/mods.toml: MinecraftForge (a MinecraftForge mods.toml declaring effective_tools_hoe_cactus — Forbric no longer loads MinecraftForge mods)
+  forbric-bridge.jar  [forbric-loader/run/client-forge-26.2;forbric-loader/run/client-merged;forbric-loader/run/client-merged-smoke-current;forbric-loader/run/client-merged-smoke-minimal;forbric-loader/run/client-merged-smoke-norender;forbric-loader/run/client-merged-smoke-nosodiumiris;forbric-loader/run/client-merged-smoke-physicsonly;forbric-loader/run/client-merged-smoke-sodiumneo;forbric-loader/run/client-merged-smoke-sodiumonly;forbric-loader/run/forge-runtime;forbric-loader/run/server-forge-26.2;forbric-loader/run/server-forge-26.2-live;forbric-loader/run/server-merged]  META-INF/mods.toml: MinecraftForge (a MinecraftForge mods.toml declaring forbric — Forbric no longer loads MinecraftForge mods)
+  forbric-probe-forge.jar  [forbric-loader/run/_parked-forge-probes]  META-INF/mods.toml: MinecraftForge (a MinecraftForge mods.toml declaring forbric_probe_forge — Forbric no longer loads MinecraftForge mods)
+  forbricenergyforge.jar  [forbric-kernel/build/energy-canary;forbric-kernel/run/server-energy-m40]  META-INF/mods.toml: MinecraftForge (a MinecraftForge mods.toml declaring forbricenergyforge — Forbric no longer loads MinecraftForge mods)
+  forbricforgecanary.jar  [forbric-kernel/run/canary]  META-INF/mods.toml: MinecraftForge (a MinecraftForge mods.toml declaring forbricforgecanary — Forbric no longer loads MinecraftForge mods)
+  forbriclive.jar  [forbric-kernel/run/client-forge-registration]  META-INF/mods.toml: MinecraftForge (a MinecraftForge mods.toml declaring forbriclive — Forbric no longer loads MinecraftForge mods)
+  forbriclive.jar  [forbric-kernel/run/fhs-client;forbric-kernel/run/fhs-server;forbric-kernel/run/fnet-client;forbric-kernel/run/fnet-server;forbric-kernel/run/server-forge-config;forbric-kernel/run/server-forgesetup;forbric-kernel/run/server-presence;forbric-kernel/run/server-worldgen-canaries]  META-INF/mods.toml: MinecraftForge (a MinecraftForge mods.toml declaring forbriclive — Forbric no longer loads MinecraftForge mods)
+  forbriclive.jar  [forbric-kernel/run/server-forgecaps;forbric-loader/run/forge-runtime]  META-INF/mods.toml: MinecraftForge (a MinecraftForge mods.toml declaring forbriclive — Forbric no longer loads MinecraftForge mods)
+  forbriclive.jar  [forbric-kernel/run/server-tri;forbric-loader/run/server-merged]  META-INF/mods.toml: MinecraftForge (a MinecraftForge mods.toml declaring forbriclive — Forbric no longer loads MinecraftForge mods)
+  forbriclive.jar  [forbric-loader/run/server-forge-26.2-live]  META-INF/mods.toml: MinecraftForge (a MinecraftForge mods.toml declaring forbriclive — Forbric no longer loads MinecraftForge mods)
+  forbricnestforge.jar  [forbric-kernel/run/canary]  META-INF/mods.toml: MinecraftForge (a MinecraftForge mods.toml declaring forbricnestforge — Forbric no longer loads MinecraftForge mods)
+  forbricnestforge.jar  [forbric-kernel/run/server-nesteddupe]  META-INF/mods.toml: MinecraftForge (a MinecraftForge mods.toml declaring forbricnestforge — Forbric no longer loads MinecraftForge mods)
+  forbricnestlib-forge.jar  [forbric-kernel/run/server-nesteddupe/.forbric-kernel/candidates/cc531c970768e5a42b16e5c0f8c22a4409ef3898e43131d75268d46c34a40073;forbric-kernel/run/server-nesteddupe/.forbric-kernel/jarjar;nested:forbricnestforge.jar]  META-INF/mods.toml: MinecraftForge (a MinecraftForge mods.toml declaring forbricnestlib — Forbric no longer loads MinecraftForge mods)
+  forbricnestlib-forge.jar  [forbric-kernel/build/canary-nesteddupe;forbric-kernel/build/canary-nesteddupe/parforge/META-INF/jarjar]  META-INF/mods.toml: MinecraftForge (a MinecraftForge mods.toml declaring forbricnestlib — Forbric no longer loads MinecraftForge mods)
+  forbrictest-raw.jar  [forbric-loader/run/client-forge-26.2;forbric-loader/run/server-forge-26.2;forbric-loader/run/server-forge-26.2-live]  META-INF/mods.toml: MinecraftForge (a MinecraftForge mods.toml declaring forbrictest — Forbric no longer loads MinecraftForge mods)
+  forbrictransferforge.jar  [forbric-kernel/run/canary;forbric-kernel/run/server-transfer-m33]  META-INF/mods.toml: MinecraftForge (a MinecraftForge mods.toml declaring forbrictransferforge — Forbric no longer loads MinecraftForge mods)
+  forbrictransferforge.jar  [forbric-kernel/build/energy-canary]  META-INF/mods.toml: MinecraftForge (a MinecraftForge mods.toml declaring forbrictransferforge — Forbric no longer loads MinecraftForge mods)
+  forge-26.2-65.0.1-universal.jar  [forbric-kernel/build/sweep80-mac/mc-v020/.forbric-build/dl;forbric-kernel/build/sweep80-mac/mc-v030/.forbric-build/dl;forbric-kernel/run/installed/.forbric-build/dl;forbric-loader/run/forge-runtime/work/dl]  META-INF/mods.toml: MinecraftForge (a MinecraftForge mods.toml declaring forge — Forbric no longer loads MinecraftForge mods)
+  ForgeConfigAPIPort-v26.2.1-mc26.2.x-Forge.jar  [forbric-kernel/build/compat-inputs/mix80]  META-INF/mods.toml: MinecraftForge (a MinecraftForge mods.toml declaring forgeconfigapiport — Forbric no longer loads MinecraftForge mods)
+  fusion-1.3.15a-forge-mc26.2.jar  [forbric-kernel/build/compat-inputs/sweep90;forbric-kernel/build/compat-inputs/sweep90-nowover;forbric-kernel/build/sweep90-mac/client;forbric-kernel/build/sweep90-mac/server;forbric-kernel/build/sweep90-mac/server-interim]  META-INF/mods.toml: MinecraftForge (a MinecraftForge mods.toml declaring fusion — Forbric no longer loads MinecraftForge mods)
+  geckolib-forge-26.2-5.5.3.jar  [forbric-kernel/run/server-tri-real;forbric-loader/run/client-forge-26.2;forbric-loader/run/downloads/forge-26.2;forbric-loader/run/server-forge-26.2-live]  META-INF/mods.toml: MinecraftForge (a MinecraftForge mods.toml declaring geckolib — Forbric no longer loads MinecraftForge mods)
+  geckolib-forge-26.2-5.5.6.jar  [forbric-kernel/build/compat-inputs/mix80;forbric-kernel/build/compat-inputs/popular;forbric-kernel/run/client-popular;forbric-kernel/run/server-popular]  META-INF/mods.toml: MinecraftForge (a MinecraftForge mods.toml declaring geckolib — Forbric no longer loads MinecraftForge mods)
+  GlitchCore-forge-26.2-26.2.0.0.0.jar  [forbric-kernel/build/compat-inputs/mix80;forbric-kernel/build/compat-inputs/popular;forbric-kernel/run/client-popular;forbric-kernel/run/server-popular]  META-INF/mods.toml: MinecraftForge (a MinecraftForge mods.toml declaring glitchcore — Forbric no longer loads MinecraftForge mods)
+  happygolucky-forge-26.1-1.0.9.jar  [forbric-kernel/build/compat-inputs/random]  META-INF/mods.toml: MinecraftForge (a MinecraftForge mods.toml declaring happygolucky — Forbric no longer loads MinecraftForge mods)
+  Highlighter-26.2-forge-1.2.2.jar  [forbric-kernel/build/compat-inputs/sweep90;forbric-kernel/build/compat-inputs/sweep90-nowover;forbric-kernel/build/sweep90-mac/client;forbric-kernel/build/sweep90-mac/server;forbric-kernel/build/sweep90-mac/server-interim;forbric-loader/run/downloads/forge-26.2]  META-INF/mods.toml: MinecraftForge (a MinecraftForge mods.toml declaring highlighter — Forbric no longer loads MinecraftForge mods)
+  Iceberg-26.2-forge-1.4.2.2.jar  [forbric-kernel/build/compat-inputs/sweep90;forbric-kernel/build/compat-inputs/sweep90-nowover;forbric-kernel/build/sweep90-mac/client;forbric-kernel/build/sweep90-mac/native-forge;forbric-kernel/build/sweep90-mac/server;forbric-kernel/build/sweep90-mac/server-interim]  META-INF/mods.toml: MinecraftForge (a MinecraftForge mods.toml declaring iceberg — Forbric no longer loads MinecraftForge mods)
+  inventoryhud.forge.26.2-3.4.34.jar  [forbric-kernel/build/compat-inputs/popular;forbric-kernel/build/compat-inputs/popular/candidates;forbric-kernel/run/client-popular;forbric-kernel/run/server-popular]  META-INF/mods.toml: MinecraftForge (a MinecraftForge mods.toml declaring inventoryhud — Forbric no longer loads MinecraftForge mods)
+  InventoryProfilesNext-forge-26.2-2.3.7.jar  [forbric-kernel/build/compat-inputs/mix80;forbric-kernel/build/compat-inputs/sweep90;forbric-kernel/build/compat-inputs/sweep90-nowover;forbric-kernel/build/sweep80-mac/v020-rounds/r1;forbric-kernel/build/sweep90-mac/client;forbric-kernel/build/sweep90-mac/server;forbric-kernel/build/sweep90-mac/server-interim;forbric-loader/run]  META-INF/mods.toml: MinecraftForge (a MinecraftForge mods.toml declaring inventoryprofilesnext — Forbric no longer loads MinecraftForge mods)
+  journeymap-api-forge-26.2-2.0.0.jar  [forbric-kernel/run/client-popular/.forbric-kernel/jarjar;forbric-kernel/run/server-popular/.forbric-kernel/jarjar;nested:journeymap-forge-26.2-6.0.8.jar]  META-INF/mods.toml: MinecraftForge (a MinecraftForge mods.toml declaring journeymap_api — Forbric no longer loads MinecraftForge mods)
+  journeymap-api-forge-26.2-2.0.0.jar  [nested:journeymap-forge-26.2-6.0.0.jar]  META-INF/mods.toml: MinecraftForge (a MinecraftForge mods.toml declaring journeymap_api — Forbric no longer loads MinecraftForge mods)
+  journeymap-forge-26.2-6.0.0.jar  [forbric-loader/run/_parked;forbric-loader/run/downloads/forge-26.2]  fabric.mod.json: not usable (no entrypoint can initialise: preLaunch journeymap.common.FabricError.onPreLaunch does nothing but throw (a wrong-loader notice, not a mod)); META-INF/mods.toml: MinecraftForge (a MinecraftForge mods.toml declaring journeymap — Forbric no longer loads MinecraftForge mods)
+  journeymap-forge-26.2-6.0.8.jar  [forbric-kernel/build/compat-inputs/popular;forbric-kernel/run/client-popular;forbric-kernel/run/server-popular]  fabric.mod.json: not usable (no entrypoint can initialise: preLaunch journeymap.common.FabricError.onPreLaunch does nothing but throw (a wrong-loader notice, not a mod)); META-INF/mods.toml: MinecraftForge (a MinecraftForge mods.toml declaring journeymap — Forbric no longer loads MinecraftForge mods)
+  libIPN-forge-26.2-6.8.3.jar  [forbric-kernel/build/compat-inputs/mix80;forbric-kernel/build/compat-inputs/sweep90;forbric-kernel/build/compat-inputs/sweep90-nowover;forbric-kernel/build/sweep80-mac/v020-rounds/r1;forbric-kernel/build/sweep90-mac/client;forbric-kernel/build/sweep90-mac/server;forbric-kernel/build/sweep90-mac/server-interim;forbric-loader/run]  META-INF/mods.toml: MinecraftForge (a MinecraftForge mods.toml declaring libipn — Forbric no longer loads MinecraftForge mods)
+  lucid-dreams-1.9.6.jar  [forbric-kernel/build/compat-inputs/mix80]  META-INF/mods.toml: MinecraftForge (a MinecraftForge mods.toml declaring luciddreams — Forbric no longer loads MinecraftForge mods)
+  mcw-bridges-3.1.2-mc26.2forge.jar  [forbric-kernel/run/ac-client;forbric-kernel/run/mp-client;forbric-kernel/run/mp-server;forbric-kernel/run/server-tri-real;forbric-loader/run/client-forge-26.2;forbric-loader/run/downloads/forge-26.2;forbric-loader/run/server-forge-26.2-live]  META-INF/mods.toml: MinecraftForge (a MinecraftForge mods.toml declaring mcwbridges — Forbric no longer loads MinecraftForge mods)
+  mixinextras-forge-0.3.5.jar  [forbric-kernel/run/client-popular/.forbric-kernel/jarjar;forbric-kernel/run/server-popular/.forbric-kernel/jarjar;nested:badpackets-forge-0.12.2.jar]  META-INF/mods.toml: MinecraftForge (a MinecraftForge mods.toml declaring mixinextras — Forbric no longer loads MinecraftForge mods)
+  MoogsStructureLib-forge-26.2-3.3.0.jar  [forbric-kernel/build/compat-inputs/mix80]  META-INF/mods.toml: MinecraftForge (a MinecraftForge mods.toml declaring moogs_structures — Forbric no longer loads MinecraftForge mods)
+  MouseTweaks-forge-mc26.2-2.31.jar  [forbric-kernel/build/compat-inputs/mix80;forbric-loader/run/downloads/forge-26.2]  META-INF/mods.toml: MinecraftForge (a MinecraftForge mods.toml declaring mousetweaks — Forbric no longer loads MinecraftForge mods)
+  NoChatReports-FORGE-26.2-v2.20.0.jar  [forbric-kernel/run/server-tri-real;forbric-loader/run/downloads/forge-26.2;forbric-loader/run/server-forge-26.2-live]  META-INF/mods.toml: MinecraftForge (a MinecraftForge mods.toml declaring nochatreports — Forbric no longer loads MinecraftForge mods)
+  NoChatReports-FORGE-26.2-v2.20.2.jar  [forbric-kernel/build/compat-inputs/mix80]  META-INF/mods.toml: MinecraftForge (a MinecraftForge mods.toml declaring nochatreports — Forbric no longer loads MinecraftForge mods)
+  packedup-1.1.1-forge-mc26.2.jar  [forbric-kernel/build/compat-inputs/popular;forbric-kernel/build/compat-inputs/popular/candidates;forbric-kernel/run/client-popular;forbric-kernel/run/server-popular]  META-INF/mods.toml: MinecraftForge (a MinecraftForge mods.toml declaring packedup — Forbric no longer loads MinecraftForge mods)
+  physics-mod-3.1.45-mc-26.2-forge.jar  [forbric-loader/run/client-merged-smoke-current;forbric-loader/run/client-merged-smoke-nosodiumiris;forbric-loader/run/client-merged-smoke-physicsonly]  META-INF/mods.toml: MinecraftForge (a MinecraftForge mods.toml declaring physicsmod — Forbric no longer loads MinecraftForge mods)
+  previews-forge-1.jar  [forbric-kernel/build/compat-inputs/random]  META-INF/mods.toml: MinecraftForge (a MinecraftForge mods.toml declaring previews — Forbric no longer loads MinecraftForge mods)
+  Prism-26.2-forge-1.1.2.jar  [forbric-kernel/build/sweep80-mac/v020-rounds/r3]  META-INF/mods.toml: MinecraftForge (a MinecraftForge mods.toml declaring prism — Forbric no longer loads MinecraftForge mods)
+  Safra-forge-26.2-3.0.jar  [forbric-kernel/build/sweep100-mac-network;forbric-kernel/build/sweep100-mac-network/ddmin-inst;forbric-kernel/build/sweep100-mac-network/diagnostic-final-inst;forbric-kernel/build/sweep100-mac-network/diagnostic-two-inst;forbric-kernel/build/sweep100-mac-network/diagnostic-two-interrupted/interrupted-instance;forbric-kernel/build/sweep100-mac-network/final-diagnostic-inst;forbric-kernel/build/sweep100-mac-network/mixed-diagnostic-inst;forbric-kernel/build/sweep100-mac-network/mixed-final-inst;forbric-kernel/build/sweep100-mac-network/mixed-inst;forbric-kernel/build/sweep100-mac-network/mixed-issue39-inst;forbric-kernel/build/sweep100-mac-network/mixed-issue39-without-cwb-inst;forbric-kernel/build/sweep100-mac-network/plugin-probe-inst;forbric-kernel/build/sweep100-mac-network/spectre-diagnostic-inst]  META-INF/mods.toml: MinecraftForge (a MinecraftForge mods.toml declaring safra — Forbric no longer loads MinecraftForge mods)
+  ShoulderSurfing-Forge-26.2-5.0.4.jar  [forbric-loader/run/downloads/forge-26.2]  META-INF/mods.toml: MinecraftForge (a MinecraftForge mods.toml declaring shouldersurfing — Forbric no longer loads MinecraftForge mods)
+  Slidingdoors 26.2 - v1.0 - Forge.jar  [forbric-kernel/build/compat-inputs/random]  META-INF/mods.toml: MinecraftForge (a MinecraftForge mods.toml declaring slidingdoors — Forbric no longer loads MinecraftForge mods)
+  sound-physics-remastered-forge-1.5.1+26.2.jar  [forbric-kernel/build/compat-inputs/mix80]  META-INF/mods.toml: MinecraftForge (a MinecraftForge mods.toml declaring sound_physics_remastered — Forbric no longer loads MinecraftForge mods)
+  spark-1.10.173-forge.jar  [forbric-kernel/run/server-tri-real;forbric-loader/run/downloads/forge-26.2;forbric-loader/run/server-forge-26.2-live;forbric-loader/run/server-merged]  META-INF/mods.toml: MinecraftForge (a MinecraftForge mods.toml declaring spark — Forbric no longer loads MinecraftForge mods)
+  supermartijn642configlib-1.1.8-forge-mc26.2.jar  [forbric-kernel/build/compat-inputs/popular;forbric-kernel/build/compat-inputs/popular/candidates;forbric-kernel/build/sweep80-mac;forbric-kernel/run/client-popular;forbric-kernel/run/server-popular]  META-INF/mods.toml: MinecraftForge (a MinecraftForge mods.toml declaring supermartijn642configlib — Forbric no longer loads MinecraftForge mods)
+  supermartijn642corelib-1.1.24a-forge-mc26.2.jar  [forbric-kernel/build/compat-inputs/popular;forbric-kernel/build/compat-inputs/popular/candidates;forbric-kernel/run/client-popular;forbric-kernel/run/server-popular]  META-INF/mods.toml: MinecraftForge (a MinecraftForge mods.toml declaring supermartijn642corelib — Forbric no longer loads MinecraftForge mods)
+  teamhearts-1.1.0+26.2-forge.jar  [forbric-kernel/build/sweep80-mac;forbric-kernel/build/sweep80-mac/inst]  META-INF/mods.toml: MinecraftForge (a MinecraftForge mods.toml declaring teamhearts — Forbric no longer loads MinecraftForge mods)
+  TerraBlender-forge-26.2-26.2.0.0.1.jar  [forbric-kernel/run/server-tri-real;forbric-loader/run/downloads/forge-26.2;forbric-loader/run/server-forge-26.2-live]  META-INF/mods.toml: MinecraftForge (a MinecraftForge mods.toml declaring terrablender — Forbric no longer loads MinecraftForge mods)
+  TerraBlender-forge-26.2-26.2.0.0.2.jar  [forbric-kernel/build/compat-inputs/mix80;forbric-kernel/build/compat-inputs/popular;forbric-kernel/run/client-popular;forbric-kernel/run/server-popular]  META-INF/mods.toml: MinecraftForge (a MinecraftForge mods.toml declaring terrablender — Forbric no longer loads MinecraftForge mods)
+  tombstone-forge-26.2-9.9.3.jar  [forbric-kernel/build/compat-inputs/popular;forbric-kernel/build/compat-inputs/popular/candidates;forbric-kernel/run/client-popular;forbric-kernel/run/server-popular]  META-INF/mods.toml: MinecraftForge (a MinecraftForge mods.toml declaring tombstone — Forbric no longer loads MinecraftForge mods)
+  transmog-forge-1.8.1+26.2.jar  [forbric-kernel/build/compat-inputs/random]  META-INF/mods.toml: MinecraftForge (a MinecraftForge mods.toml declaring transmog — Forbric no longer loads MinecraftForge mods)
+  voicechat-forge-2.6.24+26.2.jar  [forbric-kernel/build/compat-inputs/mix80;forbric-kernel/run/client-voicechat]  META-INF/mods.toml: MinecraftForge (a MinecraftForge mods.toml declaring voicechat, voicechat_api — Forbric no longer loads MinecraftForge mods)
+  wthit-26.2-forge-20.0.0.jar  [forbric-kernel/build/compat-inputs/popular;forbric-kernel/build/compat-inputs/popular/candidates;forbric-kernel/run/client-popular;forbric-kernel/run/server-popular]  META-INF/mods.toml: MinecraftForge (a MinecraftForge mods.toml declaring wthit, waila — Forbric no longer loads MinecraftForge mods)
+  xaerolib-forge-1.21.11-1.1.15.jar  [forbric-loader/run/client-merged-smoke-current/.forbric/cache;forbric-loader/run/client-merged-smoke-norender/.forbric/cache;forbric-loader/run/client-merged-smoke-nosodiumiris/.forbric/cache;forbric-loader/run/client-merged-smoke-sodiumonly/.forbric/cache;forbric-loader/run/client-merged/.forbric/cache;nested:xaerominimap-b2529986510624b8.jar;nested:xaerominimap-forge-1.21.11-26.1.4.jar]  META-INF/mods.toml: MinecraftForge (a MinecraftForge mods.toml declaring xaerolib — Forbric no longer loads MinecraftForge mods)
+  xaerolib-forge-26.2-1.7.3.jar  [forbric-kernel/run/client-popular/.forbric-kernel/jarjar;forbric-kernel/run/server-popular/.forbric-kernel/jarjar;nested:xaerominimap-forge-26.2-26.5.1.jar;nested:xaeroworldmap-forge-26.2-1.46.1.jar]  META-INF/mods.toml: MinecraftForge (a MinecraftForge mods.toml declaring xaerolib — Forbric no longer loads MinecraftForge mods)
+  xaerominimap-forge-1.21.11-26.1.4.jar  [forbric-loader/run/client-merged;forbric-loader/run/client-merged-smoke-current;forbric-loader/run/client-merged-smoke-norender;forbric-loader/run/client-merged-smoke-nosodiumiris;forbric-loader/run/client-merged-smoke-sodiumonly]  META-INF/mods.toml: MinecraftForge (a MinecraftForge mods.toml declaring xaerominimap — Forbric no longer loads MinecraftForge mods)
+  xaerominimap-forge-26.2-26.5.1.jar  [forbric-kernel/build/compat-inputs/popular;forbric-kernel/run/client-popular;forbric-kernel/run/server-popular]  META-INF/mods.toml: MinecraftForge (a MinecraftForge mods.toml declaring xaerominimap — Forbric no longer loads MinecraftForge mods)
+  xaeroworldmap-forge-26.2-1.46.1.jar  [forbric-kernel/build/compat-inputs/popular;forbric-kernel/run/client-popular;forbric-kernel/run/server-popular]  META-INF/mods.toml: MinecraftForge (a MinecraftForge mods.toml declaring xaeroworldmap — Forbric no longer loads MinecraftForge mods)
+
+changed (not refused):
+  better-furnaces-saplings-1.4.0.jar: FORGE -> NEOFORGE  [forbric-kernel/build/sweep100-mac-network;forbric-kernel/build/sweep100-mac-network/ddmin-inst;forbric-kernel/build/sweep100-mac-network/diagnostic-final-inst;forbric-kernel/build/sweep100-mac-network/diagnostic-two-inst;forbric-kernel/build/sweep100-mac-network/diagnostic-two-interrupted/interrupted-instance;forbric-kernel/build/sweep100-mac-network/final-diagnostic-inst;forbric-kernel/build/sweep100-mac-network/mixed-diagnostic-inst;forbric-kernel/build/sweep100-mac-network/mixed-final-inst;forbric-kernel/build/sweep100-mac-network/mixed-inst;forbric-kernel/build/sweep100-mac-network/mixed-issue39-inst;forbric-kernel/build/sweep100-mac-network/mixed-issue39-without-cwb-inst;forbric-kernel/build/sweep100-mac-network/plugin-probe-inst;forbric-kernel/build/sweep100-mac-network/spectre-diagnostic-inst]
+  CLMG-[UNIVERSAL]-1.21-26.2-1.1.0.jar: FORGE -> NEOFORGE  [forbric-kernel/build/purefabric-2026-10-03;forbric-kernel/build/purefabric-2026-10-03/probe]
+  dragon-egg-recipe-1.0.jar: FORGE -> NEOFORGE  [forbric-kernel/build/sweep80-mac/v020-rounds/r2]
+  fastpath-og-1.jar: FORGE -> NEOFORGE  [forbric-kernel/build/compat-inputs/sweep90;forbric-kernel/build/compat-inputs/sweep90-nowover;forbric-kernel/build/sweep90-mac/client;forbric-kernel/build/sweep90-mac/native-fabric;forbric-kernel/build/sweep90-mac/server;forbric-kernel/build/sweep90-mac/server-interim]
+  forbric-5119bc9a80ad2197.jar: FORGE -> FABRIC  [forbric-loader/run/server-forge-26.2/.forbric/cache]
+  forbric-5119bc9a80ad2197.jar: FORGE -> FABRIC  [forbric-loader/run/server-forge-26.2-live/.forbric/cache]
+  forbric-cc286860b7b14d78.jar: FORGE -> FABRIC  [forbric-loader/run/server-forge-26.2/.forbric/cache]
+  forbric-cc286860b7b14d78.jar: FORGE -> FABRIC  [forbric-loader/run/server-forge-26.2-live/.forbric/cache]
+  forbric-d11d8c60b2314ba1.jar: FORGE -> FABRIC  [forbric-loader/run/client-merged/.forbric/cache]
+  forbric-d11d8c60b2314ba1.jar: FORGE -> FABRIC  [forbric-loader/run/client-merged-smoke-current/.forbric/cache]
+  forbric-d11d8c60b2314ba1.jar: FORGE -> FABRIC  [forbric-loader/run/client-merged-smoke-minimal/.forbric/cache]
+  forbric-d11d8c60b2314ba1.jar: FORGE -> FABRIC  [forbric-loader/run/client-merged-smoke-norender/.forbric/cache]
+  forbric-d11d8c60b2314ba1.jar: FORGE -> FABRIC  [forbric-loader/run/client-merged-smoke-nosodiumiris/.forbric/cache]
+  forbric-d11d8c60b2314ba1.jar: FORGE -> FABRIC  [forbric-loader/run/client-merged-smoke-physicsonly/.forbric/cache]
+  forbric-d11d8c60b2314ba1.jar: FORGE -> FABRIC  [forbric-loader/run/client-merged-smoke-sodiumneo/.forbric/cache]
+  forbric-d11d8c60b2314ba1.jar: FORGE -> FABRIC  [forbric-loader/run/client-merged-smoke-sodiumonly/.forbric/cache]
+  forbric-d11d8c60b2314ba1.jar: FORGE -> FABRIC  [forbric-loader/run/server-forge-26.2/.forbric/cache]
+  forbric-d11d8c60b2314ba1.jar: FORGE -> FABRIC  [forbric-loader/run/server-forge-26.2-live/.forbric/cache]
+  forbric-d11d8c60b2314ba1.jar: FORGE -> FABRIC  [forbric-loader/run/server-merged/.forbric/cache]
+  forbric-ef21c3c18e02f390.jar: FORGE -> FABRIC  [forbric-loader/run/server-forge-26.2/.forbric/cache]
+  forbric-ef21c3c18e02f390.jar: FORGE -> FABRIC  [forbric-loader/run/server-forge-26.2-live/.forbric/cache]
+  forbric-f0d02ded4d3ce147.jar: FORGE -> FABRIC  [forbric-loader/run/client-forge-26.2/.forbric/cache]
+  forbric-f0d02ded4d3ce147.jar: FORGE -> FABRIC  [forbric-loader/run/server-forge-26.2/.forbric/cache]
+  forbric-f0d02ded4d3ce147.jar: FORGE -> FABRIC  [forbric-loader/run/server-forge-26.2-live/.forbric/cache]
+  forbriclive-38fe39af87b73b6b.jar: FORGE -> FABRIC  [forbric-loader/run/server-forge-26.2-live/.forbric/cache]
+  forbriclive-68f13bb0c94be46f.jar: FORGE -> FABRIC  [forbric-loader/run/server-forge-26.2-live/.forbric/cache]
+  forbriclive-dccec828bae63613.jar: FORGE -> FABRIC  [forbric-loader/run/server-merged/.forbric/cache]
+  forbriclive-e3b6150c60017fda.jar: FORGE -> FABRIC  [forbric-loader/run/server-forge-26.2-live/.forbric/cache]
+  forbriclive-eb35adaf172edf40.jar: FORGE -> FABRIC  [forbric-loader/run/server-forge-26.2-live/.forbric/cache]
+  forbriclive-ffb2613bf37aa127.jar: FORGE -> FABRIC  [forbric-loader/run/server-forge-26.2-live/.forbric/cache]
+  forbrictest-0c323497e97cd3eb.jar: FORGE -> FABRIC  [forbric-loader/run/server-forge-26.2/.forbric/cache]
+  forbrictest-0c323497e97cd3eb.jar: FORGE -> FABRIC  [forbric-loader/run/server-forge-26.2-live/.forbric/cache]
+  forbrictest-1d62bae52073d435.jar: FORGE -> FABRIC  [forbric-loader/run/server-forge-26.2/.forbric/cache]
+  forbrictest-55b6efb28526fd48.jar: FORGE -> FABRIC  [forbric-loader/run/server-forge-26.2/.forbric/cache]
+  forbrictest-55b6efb28526fd48.jar: FORGE -> FABRIC  [forbric-loader/run/server-forge-26.2-live/.forbric/cache]
+  forbrictest-8e1d95d7b42902c1.jar: FORGE -> FABRIC  [forbric-loader/run/client-forge-26.2/.forbric/cache]
+  forbrictest-8e1d95d7b42902c1.jar: FORGE -> FABRIC  [forbric-loader/run/server-forge-26.2/.forbric/cache]
+  forbrictest-8e1d95d7b42902c1.jar: FORGE -> FABRIC  [forbric-loader/run/server-forge-26.2-live/.forbric/cache]
+  forbrictest-9eadf759def589a2.jar: FORGE -> FABRIC  [forbric-loader/run/server-forge-26.2/.forbric/cache]
+  forbrictest-b820b2f3f20de2d3.jar: FORGE -> FABRIC  [forbric-loader/run/server-forge-26.2/.forbric/cache]
+  forbrictest-b820b2f3f20de2d3.jar: FORGE -> FABRIC  [forbric-loader/run/server-forge-26.2-live/.forbric/cache]
+  forbrictest-bbf57c4274b0cb46.jar: FORGE -> FABRIC  [forbric-loader/run/server-forge-26.2/.forbric/cache]
+  forbrictest-bbf57c4274b0cb46.jar: FORGE -> FABRIC  [forbric-loader/run/server-forge-26.2-live/.forbric/cache]
+  forge-c6ddd8f2f8c113c6.jar: FORGE -> FABRIC  [forbric-loader/run/server-forge-26.2/.forbric/cache]
+  geckolib-127d5aa524b4f8af.jar: FORGE -> FABRIC  [forbric-loader/run/server-forge-26.2-live/.forbric/cache]
+  geckolib-2b1fef3956328d10.jar: FORGE -> FABRIC  [forbric-loader/run/server-forge-26.2-live/.forbric/cache]
+  geckolib-4020b804b2039369.jar: FORGE -> FABRIC  [forbric-loader/run/client-forge-26.2/.forbric/cache]
+  geckolib-4020b804b2039369.jar: FORGE -> FABRIC  [forbric-loader/run/server-forge-26.2-live/.forbric/cache]
+  geckolib-5ccd6e0b8509778d.jar: FORGE -> FABRIC  [forbric-loader/run/server-forge-26.2-live/.forbric/cache]
+  geckolib-b3de38917c8e87ae.jar: FORGE -> FABRIC  [forbric-loader/run/server-forge-26.2-live/.forbric/cache]
+  glowing-glow-squids-3.jar: FORGE -> NEOFORGE  [forbric-kernel/build/compat-inputs/mix80]
+  mcwbridges-1616bea4af073ae8.jar: FORGE -> FABRIC  [forbric-loader/run/server-forge-26.2-live/.forbric/cache]
+  mcwbridges-a221c920cb995e5b.jar: FORGE -> FABRIC  [forbric-loader/run/server-forge-26.2-live/.forbric/cache]
+  mcwbridges-baf2e9ce8844514b.jar: FORGE -> FABRIC  [forbric-loader/run/server-forge-26.2-live/.forbric/cache]
+  mcwbridges-f788c18f6298e2e8.jar: FORGE -> FABRIC  [forbric-loader/run/server-forge-26.2-live/.forbric/cache]
+  mcwbridges-f7b8a8de176a3f13.jar: FORGE -> FABRIC  [forbric-loader/run/client-forge-26.2/.forbric/cache]
+  mcwbridges-f7b8a8de176a3f13.jar: FORGE -> FABRIC  [forbric-loader/run/server-forge-26.2-live/.forbric/cache]
+  minechess-v1.1.3.jar: FORGE -> NEOFORGE  [forbric-kernel/build/sweep80-mac/v020-rounds/r1]
+  nochatreports-17b81f09500bdaa5.jar: FORGE -> FABRIC  [forbric-loader/run/server-forge-26.2-live/.forbric/cache]
+  nochatreports-6d18169d17ef53f5.jar: FORGE -> FABRIC  [forbric-loader/run/server-forge-26.2-live/.forbric/cache]
+  nochatreports-98c56922044c2e25.jar: FORGE -> FABRIC  [forbric-loader/run/server-forge-26.2-live/.forbric/cache]
+  nochatreports-e76e2b3c1ee5fd50.jar: FORGE -> FABRIC  [forbric-loader/run/server-forge-26.2-live/.forbric/cache]
+  nochatreports-f1a7314ce9cbaea8.jar: FORGE -> FABRIC  [forbric-loader/run/server-forge-26.2-live/.forbric/cache]
+  norocketusage-26.9.0.jar: FORGE -> NEOFORGE  [forbric-kernel/build/sweep100-mac-network;forbric-kernel/build/sweep100-mac-network/ddmin-inst;forbric-kernel/build/sweep100-mac-network/diagnostic-final-inst;forbric-kernel/build/sweep100-mac-network/diagnostic-two-inst;forbric-kernel/build/sweep100-mac-network/diagnostic-two-interrupted/interrupted-instance;forbric-kernel/build/sweep100-mac-network/final-diagnostic-inst;forbric-kernel/build/sweep100-mac-network/mixed-diagnostic-inst;forbric-kernel/build/sweep100-mac-network/mixed-final-inst;forbric-kernel/build/sweep100-mac-network/mixed-inst;forbric-kernel/build/sweep100-mac-network/mixed-issue39-inst;forbric-kernel/build/sweep100-mac-network/mixed-issue39-without-cwb-inst;forbric-kernel/build/sweep100-mac-network/plugin-probe-inst;forbric-kernel/build/sweep100-mac-network/spectre-diagnostic-inst]
+  physicsmod-985e9dfd29873150.jar: FORGE -> FABRIC  [forbric-loader/run/client-merged/.forbric/cache]
+  physicsmod-985e9dfd29873150.jar: FORGE -> FABRIC  [forbric-loader/run/client-merged-smoke-current/.forbric/cache]
+  physicsmod-985e9dfd29873150.jar: FORGE -> FABRIC  [forbric-loader/run/client-merged-smoke-nosodiumiris/.forbric/cache]
+  physicsmod-985e9dfd29873150.jar: FORGE -> FABRIC  [forbric-loader/run/client-merged-smoke-physicsonly/.forbric/cache]
+  qubes-mouse-fix-1.1.jar: FORGE -> NEOFORGE  [forbric-kernel/build/sweep80-mac/v020-rounds/r2]
+  silvers-better-wood-cutting-stone-cutter-1.7.jar: FORGE -> NEOFORGE  [forbric-kernel/build/purefabric-2026-10-03;forbric-kernel/build/purefabric-2026-10-03/probe]
+  SimpleRPC-4.1.4.jar: FORGE -> NEOFORGE  [forbric-kernel/build/compat-inputs/random]
+  spark-01f863b2f715563c.jar: FORGE -> FABRIC  [forbric-loader/run/server-forge-26.2-live/.forbric/cache]
+  spark-4f7eb46e464a55bd.jar: FORGE -> FABRIC  [forbric-loader/run/server-forge-26.2-live/.forbric/cache]
+  spark-4f7eb46e464a55bd.jar: FORGE -> FABRIC  [forbric-loader/run/server-merged/.forbric/cache]
+  spark-70c2bece2a7db014.jar: FORGE -> FABRIC  [forbric-loader/run/server-forge-26.2-live/.forbric/cache]
+  spark-88748279e3897452.jar: FORGE -> FABRIC  [forbric-loader/run/server-forge-26.2-live/.forbric/cache]
+  spark-a5b18d2ddce92ad4.jar: FORGE -> FABRIC  [forbric-loader/run/server-forge-26.2-live/.forbric/cache]
+  terrablender-01d3a637d195df26.jar: FORGE -> FABRIC  [forbric-loader/run/server-forge-26.2-live/.forbric/cache]
+  terrablender-12287a6703d22068.jar: FORGE -> FABRIC  [forbric-loader/run/server-forge-26.2-live/.forbric/cache]
+  terrablender-beb68e5e31066f58.jar: FORGE -> FABRIC  [forbric-loader/run/server-forge-26.2-live/.forbric/cache]
+  terrablender-ea3c90a7517b66bc.jar: FORGE -> FABRIC  [forbric-loader/run/server-forge-26.2-live/.forbric/cache]
+  terrablender-f62b3d2f732818b6.jar: FORGE -> FABRIC  [forbric-loader/run/server-forge-26.2-live/.forbric/cache]
+  xaerolib-ec365bcf70e2a25d.jar: FORGE -> FABRIC  [forbric-loader/run/client-merged/.forbric/cache]
+  xaerolib-ec365bcf70e2a25d.jar: FORGE -> FABRIC  [forbric-loader/run/client-merged-smoke-current/.forbric/cache]
+  xaerolib-ec365bcf70e2a25d.jar: FORGE -> FABRIC  [forbric-loader/run/client-merged-smoke-norender/.forbric/cache]
+  xaerolib-ec365bcf70e2a25d.jar: FORGE -> FABRIC  [forbric-loader/run/client-merged-smoke-nosodiumiris/.forbric/cache]
+  xaerolib-ec365bcf70e2a25d.jar: FORGE -> FABRIC  [forbric-loader/run/client-merged-smoke-sodiumonly/.forbric/cache]
+  xaerominimap-b2529986510624b8.jar: FORGE -> FABRIC  [forbric-loader/run/client-merged/.forbric/cache]
+  xaerominimap-b2529986510624b8.jar: FORGE -> FABRIC  [forbric-loader/run/client-merged-smoke-current/.forbric/cache]
+  xaerominimap-b2529986510624b8.jar: FORGE -> FABRIC  [forbric-loader/run/client-merged-smoke-norender/.forbric/cache]
+  xaerominimap-b2529986510624b8.jar: FORGE -> FABRIC  [forbric-loader/run/client-merged-smoke-nosodiumiris/.forbric/cache]
+  xaerominimap-b2529986510624b8.jar: FORGE -> FABRIC  [forbric-loader/run/client-merged-smoke-sodiumonly/.forbric/cache]
+
+now loaded by another family, mandatory dependencies of the family it loads as, per pack:
+  mod jar          better-furnaces-saplings-1.4.0.jar as NEOFORGE  [forbric-kernel/build/sweep100-mac-network/ddmin-inst]  needs -  missing -
+  mod jar          better-furnaces-saplings-1.4.0.jar as NEOFORGE  [forbric-kernel/build/sweep100-mac-network/diagnostic-final-inst]  needs -  missing -
+  mod jar          better-furnaces-saplings-1.4.0.jar as NEOFORGE  [forbric-kernel/build/sweep100-mac-network/diagnostic-two-inst]  needs -  missing -
+  mod jar          better-furnaces-saplings-1.4.0.jar as NEOFORGE  [forbric-kernel/build/sweep100-mac-network/diagnostic-two-interrupted/interrupted-instance]  needs -  missing -
+  mod jar          better-furnaces-saplings-1.4.0.jar as NEOFORGE  [forbric-kernel/build/sweep100-mac-network/final-diagnostic-inst]  needs -  missing -
+  mod jar          better-furnaces-saplings-1.4.0.jar as NEOFORGE  [forbric-kernel/build/sweep100-mac-network/mixed-diagnostic-inst]  needs -  missing -
+  mod jar          better-furnaces-saplings-1.4.0.jar as NEOFORGE  [forbric-kernel/build/sweep100-mac-network/mixed-final-inst]  needs -  missing -
+  mod jar          better-furnaces-saplings-1.4.0.jar as NEOFORGE  [forbric-kernel/build/sweep100-mac-network/mixed-inst]  needs -  missing -
+  mod jar          better-furnaces-saplings-1.4.0.jar as NEOFORGE  [forbric-kernel/build/sweep100-mac-network/mixed-issue39-inst]  needs -  missing -
+  mod jar          better-furnaces-saplings-1.4.0.jar as NEOFORGE  [forbric-kernel/build/sweep100-mac-network/mixed-issue39-without-cwb-inst]  needs -  missing -
+  mod jar          better-furnaces-saplings-1.4.0.jar as NEOFORGE  [forbric-kernel/build/sweep100-mac-network]  needs -  missing -
+  mod jar          better-furnaces-saplings-1.4.0.jar as NEOFORGE  [forbric-kernel/build/sweep100-mac-network/plugin-probe-inst]  needs -  missing -
+  mod jar          better-furnaces-saplings-1.4.0.jar as NEOFORGE  [forbric-kernel/build/sweep100-mac-network/spectre-diagnostic-inst]  needs -  missing -
+  mod jar          CLMG-[UNIVERSAL]-1.21-26.2-1.1.0.jar as NEOFORGE  [forbric-kernel/build/purefabric-2026-10-03]  needs ['minecraft', 'neoforge']  missing -
+  mod jar          CLMG-[UNIVERSAL]-1.21-26.2-1.1.0.jar as NEOFORGE  [forbric-kernel/build/purefabric-2026-10-03/probe]  needs ['minecraft', 'neoforge']  missing -
+  mod jar          dragon-egg-recipe-1.0.jar as NEOFORGE  [forbric-kernel/build/sweep80-mac/v020-rounds/r2]  needs -  missing -
+  mod jar          fastpath-og-1.jar as NEOFORGE  [forbric-kernel/build/compat-inputs/sweep90]  needs -  missing -
+  mod jar          fastpath-og-1.jar as NEOFORGE  [forbric-kernel/build/compat-inputs/sweep90-nowover]  needs -  missing -
+  mod jar          fastpath-og-1.jar as NEOFORGE  [forbric-kernel/build/sweep90-mac/client]  needs -  missing -
+  mod jar          fastpath-og-1.jar as NEOFORGE  [forbric-kernel/build/sweep90-mac/native-fabric]  needs -  missing -
+  mod jar          fastpath-og-1.jar as NEOFORGE  [forbric-kernel/build/sweep90-mac/server]  needs -  missing -
+  mod jar          fastpath-og-1.jar as NEOFORGE  [forbric-kernel/build/sweep90-mac/server-interim]  needs -  missing -
+  old-loader cache forbric-5119bc9a80ad2197.jar as FABRIC  [forbric-loader/run/server-forge-26.2/.forbric/cache]  needs -  missing -
+  old-loader cache forbric-5119bc9a80ad2197.jar as FABRIC  [forbric-loader/run/server-forge-26.2-live/.forbric/cache]  needs -  missing -
+  old-loader cache forbric-cc286860b7b14d78.jar as FABRIC  [forbric-loader/run/server-forge-26.2/.forbric/cache]  needs -  missing -
+  old-loader cache forbric-cc286860b7b14d78.jar as FABRIC  [forbric-loader/run/server-forge-26.2-live/.forbric/cache]  needs -  missing -
+  old-loader cache forbric-d11d8c60b2314ba1.jar as FABRIC  [forbric-loader/run/client-merged/.forbric/cache]  needs -  missing -
+  old-loader cache forbric-d11d8c60b2314ba1.jar as FABRIC  [forbric-loader/run/client-merged-smoke-current/.forbric/cache]  needs -  missing -
+  old-loader cache forbric-d11d8c60b2314ba1.jar as FABRIC  [forbric-loader/run/client-merged-smoke-minimal/.forbric/cache]  needs -  missing -
+  old-loader cache forbric-d11d8c60b2314ba1.jar as FABRIC  [forbric-loader/run/client-merged-smoke-norender/.forbric/cache]  needs -  missing -
+  old-loader cache forbric-d11d8c60b2314ba1.jar as FABRIC  [forbric-loader/run/client-merged-smoke-nosodiumiris/.forbric/cache]  needs -  missing -
+  old-loader cache forbric-d11d8c60b2314ba1.jar as FABRIC  [forbric-loader/run/client-merged-smoke-physicsonly/.forbric/cache]  needs -  missing -
+  old-loader cache forbric-d11d8c60b2314ba1.jar as FABRIC  [forbric-loader/run/client-merged-smoke-sodiumneo/.forbric/cache]  needs -  missing -
+  old-loader cache forbric-d11d8c60b2314ba1.jar as FABRIC  [forbric-loader/run/client-merged-smoke-sodiumonly/.forbric/cache]  needs -  missing -
+  old-loader cache forbric-d11d8c60b2314ba1.jar as FABRIC  [forbric-loader/run/server-forge-26.2/.forbric/cache]  needs -  missing -
+  old-loader cache forbric-d11d8c60b2314ba1.jar as FABRIC  [forbric-loader/run/server-forge-26.2-live/.forbric/cache]  needs -  missing -
+  old-loader cache forbric-d11d8c60b2314ba1.jar as FABRIC  [forbric-loader/run/server-merged/.forbric/cache]  needs -  missing -
+  old-loader cache forbric-ef21c3c18e02f390.jar as FABRIC  [forbric-loader/run/server-forge-26.2/.forbric/cache]  needs -  missing -
+  old-loader cache forbric-ef21c3c18e02f390.jar as FABRIC  [forbric-loader/run/server-forge-26.2-live/.forbric/cache]  needs -  missing -
+  old-loader cache forbric-f0d02ded4d3ce147.jar as FABRIC  [forbric-loader/run/client-forge-26.2/.forbric/cache]  needs -  missing -
+  old-loader cache forbric-f0d02ded4d3ce147.jar as FABRIC  [forbric-loader/run/server-forge-26.2/.forbric/cache]  needs -  missing -
+  old-loader cache forbric-f0d02ded4d3ce147.jar as FABRIC  [forbric-loader/run/server-forge-26.2-live/.forbric/cache]  needs -  missing -
+  old-loader cache forbriclive-38fe39af87b73b6b.jar as FABRIC  [forbric-loader/run/server-forge-26.2-live/.forbric/cache]  needs -  missing -
+  old-loader cache forbriclive-68f13bb0c94be46f.jar as FABRIC  [forbric-loader/run/server-forge-26.2-live/.forbric/cache]  needs -  missing -
+  old-loader cache forbriclive-dccec828bae63613.jar as FABRIC  [forbric-loader/run/server-merged/.forbric/cache]  needs -  missing -
+  old-loader cache forbriclive-e3b6150c60017fda.jar as FABRIC  [forbric-loader/run/server-forge-26.2-live/.forbric/cache]  needs -  missing -
+  old-loader cache forbriclive-eb35adaf172edf40.jar as FABRIC  [forbric-loader/run/server-forge-26.2-live/.forbric/cache]  needs -  missing -
+  old-loader cache forbriclive-ffb2613bf37aa127.jar as FABRIC  [forbric-loader/run/server-forge-26.2-live/.forbric/cache]  needs -  missing -
+  old-loader cache forbrictest-0c323497e97cd3eb.jar as FABRIC  [forbric-loader/run/server-forge-26.2/.forbric/cache]  needs -  missing -
+  old-loader cache forbrictest-0c323497e97cd3eb.jar as FABRIC  [forbric-loader/run/server-forge-26.2-live/.forbric/cache]  needs -  missing -
+  old-loader cache forbrictest-1d62bae52073d435.jar as FABRIC  [forbric-loader/run/server-forge-26.2/.forbric/cache]  needs -  missing -
+  old-loader cache forbrictest-55b6efb28526fd48.jar as FABRIC  [forbric-loader/run/server-forge-26.2/.forbric/cache]  needs -  missing -
+  old-loader cache forbrictest-55b6efb28526fd48.jar as FABRIC  [forbric-loader/run/server-forge-26.2-live/.forbric/cache]  needs -  missing -
+  old-loader cache forbrictest-8e1d95d7b42902c1.jar as FABRIC  [forbric-loader/run/client-forge-26.2/.forbric/cache]  needs -  missing -
+  old-loader cache forbrictest-8e1d95d7b42902c1.jar as FABRIC  [forbric-loader/run/server-forge-26.2/.forbric/cache]  needs -  missing -
+  old-loader cache forbrictest-8e1d95d7b42902c1.jar as FABRIC  [forbric-loader/run/server-forge-26.2-live/.forbric/cache]  needs -  missing -
+  old-loader cache forbrictest-9eadf759def589a2.jar as FABRIC  [forbric-loader/run/server-forge-26.2/.forbric/cache]  needs -  missing -
+  old-loader cache forbrictest-b820b2f3f20de2d3.jar as FABRIC  [forbric-loader/run/server-forge-26.2/.forbric/cache]  needs -  missing -
+  old-loader cache forbrictest-b820b2f3f20de2d3.jar as FABRIC  [forbric-loader/run/server-forge-26.2-live/.forbric/cache]  needs -  missing -
+  old-loader cache forbrictest-bbf57c4274b0cb46.jar as FABRIC  [forbric-loader/run/server-forge-26.2/.forbric/cache]  needs -  missing -
+  old-loader cache forbrictest-bbf57c4274b0cb46.jar as FABRIC  [forbric-loader/run/server-forge-26.2-live/.forbric/cache]  needs -  missing -
+  old-loader cache forge-c6ddd8f2f8c113c6.jar as FABRIC  [forbric-loader/run/server-forge-26.2/.forbric/cache]  needs -  missing -
+  old-loader cache geckolib-127d5aa524b4f8af.jar as FABRIC  [forbric-loader/run/server-forge-26.2-live/.forbric/cache]  needs -  missing -
+  old-loader cache geckolib-2b1fef3956328d10.jar as FABRIC  [forbric-loader/run/server-forge-26.2-live/.forbric/cache]  needs -  missing -
+  old-loader cache geckolib-4020b804b2039369.jar as FABRIC  [forbric-loader/run/client-forge-26.2/.forbric/cache]  needs -  missing -
+  old-loader cache geckolib-4020b804b2039369.jar as FABRIC  [forbric-loader/run/server-forge-26.2-live/.forbric/cache]  needs -  missing -
+  old-loader cache geckolib-5ccd6e0b8509778d.jar as FABRIC  [forbric-loader/run/server-forge-26.2-live/.forbric/cache]  needs -  missing -
+  old-loader cache geckolib-b3de38917c8e87ae.jar as FABRIC  [forbric-loader/run/server-forge-26.2-live/.forbric/cache]  needs -  missing -
+  mod jar          glowing-glow-squids-3.jar as NEOFORGE  [forbric-kernel/build/compat-inputs/mix80]  needs -  missing -
+  old-loader cache mcwbridges-1616bea4af073ae8.jar as FABRIC  [forbric-loader/run/server-forge-26.2-live/.forbric/cache]  needs -  missing -
+  old-loader cache mcwbridges-a221c920cb995e5b.jar as FABRIC  [forbric-loader/run/server-forge-26.2-live/.forbric/cache]  needs -  missing -
+  old-loader cache mcwbridges-baf2e9ce8844514b.jar as FABRIC  [forbric-loader/run/server-forge-26.2-live/.forbric/cache]  needs -  missing -
+  old-loader cache mcwbridges-f788c18f6298e2e8.jar as FABRIC  [forbric-loader/run/server-forge-26.2-live/.forbric/cache]  needs -  missing -
+  old-loader cache mcwbridges-f7b8a8de176a3f13.jar as FABRIC  [forbric-loader/run/client-forge-26.2/.forbric/cache]  needs -  missing -
+  old-loader cache mcwbridges-f7b8a8de176a3f13.jar as FABRIC  [forbric-loader/run/server-forge-26.2-live/.forbric/cache]  needs -  missing -
+  mod jar          minechess-v1.1.3.jar as NEOFORGE  [forbric-kernel/build/sweep80-mac/v020-rounds/r1]  needs -  missing -
+  old-loader cache nochatreports-17b81f09500bdaa5.jar as FABRIC  [forbric-loader/run/server-forge-26.2-live/.forbric/cache]  needs -  missing -
+  old-loader cache nochatreports-6d18169d17ef53f5.jar as FABRIC  [forbric-loader/run/server-forge-26.2-live/.forbric/cache]  needs -  missing -
+  old-loader cache nochatreports-98c56922044c2e25.jar as FABRIC  [forbric-loader/run/server-forge-26.2-live/.forbric/cache]  needs -  missing -
+  old-loader cache nochatreports-e76e2b3c1ee5fd50.jar as FABRIC  [forbric-loader/run/server-forge-26.2-live/.forbric/cache]  needs -  missing -
+  old-loader cache nochatreports-f1a7314ce9cbaea8.jar as FABRIC  [forbric-loader/run/server-forge-26.2-live/.forbric/cache]  needs -  missing -
+  mod jar          norocketusage-26.9.0.jar as NEOFORGE  [forbric-kernel/build/sweep100-mac-network/ddmin-inst]  needs -  missing -
+  mod jar          norocketusage-26.9.0.jar as NEOFORGE  [forbric-kernel/build/sweep100-mac-network/diagnostic-final-inst]  needs -  missing -
+  mod jar          norocketusage-26.9.0.jar as NEOFORGE  [forbric-kernel/build/sweep100-mac-network/diagnostic-two-inst]  needs -  missing -
+  mod jar          norocketusage-26.9.0.jar as NEOFORGE  [forbric-kernel/build/sweep100-mac-network/diagnostic-two-interrupted/interrupted-instance]  needs -  missing -
+  mod jar          norocketusage-26.9.0.jar as NEOFORGE  [forbric-kernel/build/sweep100-mac-network/final-diagnostic-inst]  needs -  missing -
+  mod jar          norocketusage-26.9.0.jar as NEOFORGE  [forbric-kernel/build/sweep100-mac-network/mixed-diagnostic-inst]  needs -  missing -
+  mod jar          norocketusage-26.9.0.jar as NEOFORGE  [forbric-kernel/build/sweep100-mac-network/mixed-final-inst]  needs -  missing -
+  mod jar          norocketusage-26.9.0.jar as NEOFORGE  [forbric-kernel/build/sweep100-mac-network/mixed-inst]  needs -  missing -
+  mod jar          norocketusage-26.9.0.jar as NEOFORGE  [forbric-kernel/build/sweep100-mac-network/mixed-issue39-inst]  needs -  missing -
+  mod jar          norocketusage-26.9.0.jar as NEOFORGE  [forbric-kernel/build/sweep100-mac-network/mixed-issue39-without-cwb-inst]  needs -  missing -
+  mod jar          norocketusage-26.9.0.jar as NEOFORGE  [forbric-kernel/build/sweep100-mac-network]  needs -  missing -
+  mod jar          norocketusage-26.9.0.jar as NEOFORGE  [forbric-kernel/build/sweep100-mac-network/plugin-probe-inst]  needs -  missing -
+  mod jar          norocketusage-26.9.0.jar as NEOFORGE  [forbric-kernel/build/sweep100-mac-network/spectre-diagnostic-inst]  needs -  missing -
+  old-loader cache physicsmod-985e9dfd29873150.jar as FABRIC  [forbric-loader/run/client-merged/.forbric/cache]  needs -  missing -
+  old-loader cache physicsmod-985e9dfd29873150.jar as FABRIC  [forbric-loader/run/client-merged-smoke-current/.forbric/cache]  needs -  missing -
+  old-loader cache physicsmod-985e9dfd29873150.jar as FABRIC  [forbric-loader/run/client-merged-smoke-nosodiumiris/.forbric/cache]  needs -  missing -
+  old-loader cache physicsmod-985e9dfd29873150.jar as FABRIC  [forbric-loader/run/client-merged-smoke-physicsonly/.forbric/cache]  needs -  missing -
+  mod jar          qubes-mouse-fix-1.1.jar as NEOFORGE  [forbric-kernel/build/sweep80-mac/v020-rounds/r2]  needs ['neoforge']  missing -
+  mod jar          silvers-better-wood-cutting-stone-cutter-1.7.jar as NEOFORGE  [forbric-kernel/build/purefabric-2026-10-03]  needs -  missing -
+  mod jar          silvers-better-wood-cutting-stone-cutter-1.7.jar as NEOFORGE  [forbric-kernel/build/purefabric-2026-10-03/probe]  needs -  missing -
+  mod jar          SimpleRPC-4.1.4.jar as NEOFORGE  [forbric-kernel/build/compat-inputs/random]  needs ['craterlib', 'minecraft', 'neoforge']  missing ['craterlib']
+  old-loader cache spark-01f863b2f715563c.jar as FABRIC  [forbric-loader/run/server-forge-26.2-live/.forbric/cache]  needs -  missing -
+  old-loader cache spark-4f7eb46e464a55bd.jar as FABRIC  [forbric-loader/run/server-forge-26.2-live/.forbric/cache]  needs -  missing -
+  old-loader cache spark-4f7eb46e464a55bd.jar as FABRIC  [forbric-loader/run/server-merged/.forbric/cache]  needs -  missing -
+  old-loader cache spark-70c2bece2a7db014.jar as FABRIC  [forbric-loader/run/server-forge-26.2-live/.forbric/cache]  needs -  missing -
+  old-loader cache spark-88748279e3897452.jar as FABRIC  [forbric-loader/run/server-forge-26.2-live/.forbric/cache]  needs -  missing -
+  old-loader cache spark-a5b18d2ddce92ad4.jar as FABRIC  [forbric-loader/run/server-forge-26.2-live/.forbric/cache]  needs -  missing -
+  old-loader cache terrablender-01d3a637d195df26.jar as FABRIC  [forbric-loader/run/server-forge-26.2-live/.forbric/cache]  needs -  missing -
+  old-loader cache terrablender-12287a6703d22068.jar as FABRIC  [forbric-loader/run/server-forge-26.2-live/.forbric/cache]  needs -  missing -
+  old-loader cache terrablender-beb68e5e31066f58.jar as FABRIC  [forbric-loader/run/server-forge-26.2-live/.forbric/cache]  needs -  missing -
+  old-loader cache terrablender-ea3c90a7517b66bc.jar as FABRIC  [forbric-loader/run/server-forge-26.2-live/.forbric/cache]  needs -  missing -
+  old-loader cache terrablender-f62b3d2f732818b6.jar as FABRIC  [forbric-loader/run/server-forge-26.2-live/.forbric/cache]  needs -  missing -
+  old-loader cache xaerolib-ec365bcf70e2a25d.jar as FABRIC  [forbric-loader/run/client-merged/.forbric/cache]  needs -  missing -
+  old-loader cache xaerolib-ec365bcf70e2a25d.jar as FABRIC  [forbric-loader/run/client-merged-smoke-current/.forbric/cache]  needs -  missing -
+  old-loader cache xaerolib-ec365bcf70e2a25d.jar as FABRIC  [forbric-loader/run/client-merged-smoke-norender/.forbric/cache]  needs -  missing -
+  old-loader cache xaerolib-ec365bcf70e2a25d.jar as FABRIC  [forbric-loader/run/client-merged-smoke-nosodiumiris/.forbric/cache]  needs -  missing -
+  old-loader cache xaerolib-ec365bcf70e2a25d.jar as FABRIC  [forbric-loader/run/client-merged-smoke-sodiumonly/.forbric/cache]  needs -  missing -
+  old-loader cache xaerominimap-b2529986510624b8.jar as FABRIC  [forbric-loader/run/client-merged/.forbric/cache]  needs -  missing -
+  old-loader cache xaerominimap-b2529986510624b8.jar as FABRIC  [forbric-loader/run/client-merged-smoke-current/.forbric/cache]  needs -  missing -
+  old-loader cache xaerominimap-b2529986510624b8.jar as FABRIC  [forbric-loader/run/client-merged-smoke-norender/.forbric/cache]  needs -  missing -
+  old-loader cache xaerominimap-b2529986510624b8.jar as FABRIC  [forbric-loader/run/client-merged-smoke-nosodiumiris/.forbric/cache]  needs -  missing -
+  old-loader cache xaerominimap-b2529986510624b8.jar as FABRIC  [forbric-loader/run/client-merged-smoke-sodiumonly/.forbric/cache]  needs -  missing -
+
+loaded jars whose mandatory dependency, in their pack, only a refused jar supplied:
+  SimpleRPC-4.1.4.jar as NEOFORGE  [forbric-kernel/build/compat-inputs/random]  needs ['craterlib']
+  MoogsOceanStructures-universal-1.21-1.1.1.jar as NEOFORGE  [forbric-kernel/build/compat-inputs/mix80]  needs ['moogs_structures']
