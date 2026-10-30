@@ -84,13 +84,21 @@ import net.forbric.kernel.util.Caught;
  *       calls, may implement the contract, and its contract method does not consist of nothing but a {@code throw}. A
  *       custom language adapter or a {@code ::} member reference is positive evidence on its own; an integration key
  *       (any other key) counts when its class is present.</li>
- *   <li><b>NeoForge</b> — the manifest reads, and: a {@code net.neoforged} {@code @Mod} for one of its ids exists; or,
- *       without one (NeoForge loads a data, mixin or library mod with no entry class), the jar's own classes do not
- *       stand on MinecraftForge: none uses {@code net.minecraftforge} beyond a MinecraftForge {@code @Mod} annotation,
- *       or some class names NeoForge. A MinecraftForge {@code @Mod} on its own decides nothing — NeoForge ignores it,
- *       and the Modrinth datapack wrappers and SimpleRPC put one on a no-argument dummy class and use nothing else of
- *       Forge — while aquariuslibs' helpers and animalgarden-owl's {@code FMLJavaModLoadingContext} constructor are
- *       MinecraftForge code a NeoForge half cannot run.</li>
+ *   <li><b>NeoForge</b> — the manifest reads, and: a {@code net.neoforged} {@code @Mod} for one of its ids exists; or
+ *       it has no {@code @Mod} at all (NeoForge loads a data, mixin or library mod with no entry class, whatever
+ *       optional compatibility code sits beside it — the half is judged by its entry, as a Fabric half is, not by stray
+ *       classes); or its only {@code @Mod} is MinecraftForge's but the code beyond that entry class does not stand on
+ *       MinecraftForge (none of it uses {@code net.minecraftforge}), or some class names NeoForge — unless there is no
+ *       code beyond it at all, the entry class itself uses MinecraftForge and no mixin config ships beside it, which is
+ *       a MinecraftForge mod with nothing NeoForge would ever run. A MinecraftForge
+ *       {@code @Mod} on its own decides nothing — NeoForge ignores it, and the Modrinth datapack wrappers and SimpleRPC
+ *       put one on a no-argument dummy class and use nothing else of Forge, as a mixin-only multiloader jar keeps the
+ *       MDK's {@code FMLJavaModLoadingContext} constructor and nothing else — while aquariuslibs' {@code RegisterFunctions}
+ *       and animalgarden-owl's registrations and networking are MinecraftForge code its NeoForge half cannot run. The
+ *       price of judging by the entry: a MinecraftForge build with no {@code @Mod} anywhere and a stray
+ *       {@code neoforge.mods.toml} is not refused; it loads through NeoForge, as it did before MinecraftForge was
+ *       dropped, and fails where it calls MinecraftForge. No such jar is in the measured corpus; refusing a jar native
+ *       NeoForge runs would be the worse error.</li>
  *   <li><b>MinecraftForge</b> — never usable: Forbric no longer loads MinecraftForge mods.</li>
  * </ul>
  * <p>A jar is REFUSED only when it has a MinecraftForge half and NO usable Fabric or NeoForge half. Every other jar is
@@ -121,6 +129,8 @@ public final class LoaderHalfJudge {
 	private static final byte[] FORGE_PACKAGE = "net/minecraftforge/".getBytes(StandardCharsets.US_ASCII);
 	private static final byte[] NEO_PACKAGE = "net/neoforged/".getBytes(StandardCharsets.US_ASCII);
 	private static final byte[] FORGE_MOD_DESCRIPTOR = MOD_FORGE.getBytes(StandardCharsets.US_ASCII);
+	/** What follows a manifest's file name in the reason of a half whose manifest does not parse; see {@link Half#unreadable}. */
+	private static final String CANNOT_BE_READ = " cannot be read: ";
 
 	/** The Fabric entrypoint keys whose contract is the loader's own, and the method that contract calls. */
 	private static final Map<String, String[]> CONTRACTS = Map.of(
@@ -149,6 +159,16 @@ public final class LoaderHalfJudge {
 			name = name == null ? "" : name;
 		}
 
+		/**
+		 * Whether this half failed because its manifest could not be parsed at all — not because what it declares is
+		 * fake. A refused jar with such a half is not a MinecraftForge build whose other halves are notices: it is a
+		 * build whose Fabric or NeoForge manifest is broken, and the player is told that ({@code MetadataFailures}).
+		 */
+		public boolean unreadable() {
+			return !usable && family != Ecosystem.FORGE
+					&& reason.startsWith(manifest.substring(manifest.lastIndexOf('/') + 1) + CANNOT_BE_READ);
+		}
+
 		@Override
 		public String toString() {
 			return manifest + ": " + (family == Ecosystem.FORGE ? "MinecraftForge" : usable ? "usable" : "not usable")
@@ -174,6 +194,11 @@ public final class LoaderHalfJudge {
 		/** The Fabric / NeoForge halves that can load the jar, in preference-independent order. */
 		public List<Ecosystem> usableFamilies() {
 			return halves.stream().filter(h -> h.family() != Ecosystem.FORGE && h.usable()).map(Half::family).toList();
+		}
+
+		/** The Fabric / NeoForge halves whose manifest does not parse at all; see {@link Half#unreadable}. */
+		public List<Half> unreadableHalves() {
+			return halves.stream().filter(Half::unreadable).toList();
 		}
 
 		/** THE rule: a MinecraftForge half, and no usable Fabric or NeoForge half to load the jar through instead. */
@@ -236,13 +261,13 @@ public final class LoaderHalfJudge {
 	private static Half fabricHalf(Contents contents) {
 		UnmodifiableConfig json;
 		try {
-			json = JsonFormat.minimalInstance().createParser().parse(
+			json = JsonFormat.fancyInstance().createParser().parse(
 					new String(contents.files.get(FABRIC_MANIFEST), StandardCharsets.UTF_8));
 		} catch (RuntimeException unreadable) {
 			// The manifest cannot be read, which is this half's answer: Fabric cannot load the jar through it.
 			Caught.expected(unreadable);
 			return new Half(Ecosystem.FABRIC, FABRIC_MANIFEST, List.of(), "", false,
-					"fabric.mod.json cannot be read: " + message(unreadable));
+					FABRIC_MANIFEST + CANNOT_BE_READ + message(unreadable));
 		}
 		String id = string(json.get("id"));
 		List<String> ids = id == null ? List.of() : List.of(id);
@@ -324,7 +349,7 @@ public final class LoaderHalfJudge {
 		} catch (RuntimeException unreadable) {
 			Caught.expected(unreadable);
 			return new Half(Ecosystem.NEOFORGE, NEOFORGE_MANIFEST, List.of(), "", false,
-					"neoforge.mods.toml cannot be read: " + message(unreadable));
+					"neoforge.mods.toml" + CANNOT_BE_READ + message(unreadable));
 		}
 		List<String> ids = ids(toml);
 		String name = name(toml);
@@ -336,27 +361,57 @@ public final class LoaderHalfJudge {
 						"net.neoforged @Mod(\"" + id + "\") is " + neo.replace('/', '.') + absent);
 			}
 		}
-		// No NeoForge @Mod: NeoForge loads such a mod without an entry class (data, mixins, services). A MinecraftForge
-		// @Mod for the id is ignored by NeoForge, so on its own it decides nothing — the Modrinth datapack wrappers and
-		// SimpleRPC carry one on a no-argument dummy class and nothing else of Forge. What decides is whether the code
-		// stands on MinecraftForge: classes that use net.minecraftforge beyond that annotation, and none naming NeoForge.
+		// No NeoForge @Mod: NeoForge loads such a mod without an entry class (data, mixins, services), so the half is
+		// judged the way a Fabric half is — by its entry — and not by stray classes. With no @Mod at all it is a data,
+		// mixin or library mod, usable whatever optional compatibility code sits beside it (NeoForge never loads a class
+		// nobody calls; a Fabric half is not judged by its Forge compat classes either). What makes it fake is the shape
+		// animalgarden-owl and aquariuslibs share: the id's only @Mod is MinecraftForge's, so the mod's initialiser is one
+		// NeoForge ignores, AND the mod's work beyond that entry class is MinecraftForge code (owl's registrations and
+		// networking, aquariuslibs' RegisterFunctions), AND no class names NeoForge. Or, with no class beside it: the
+		// whole mod is a MinecraftForge entry class that stands on MinecraftForge, and the half declares no mixin config
+		// the jar carries — so on NeoForge nothing of it would ever run. A MinecraftForge @Mod alone decides nothing:
+		// the Modrinth datapack wrappers and SimpleRPC carry one on a dummy class and nothing else of Forge, and a
+		// mixin-only multiloader jar keeps the MDK's FMLJavaModLoadingContext constructor beside the mixins it ships.
 		String forgeMod = null;
+		Set<String> entries = new HashSet<>();
 		for (String id : ids) {
+			for (ClassFacts type : contents.classes.values()) {
+				if (id.equals(type.mods.get(MOD_FORGE))) entries.add(type.name);
+			}
 			String forge = contents.modClass(MOD_FORGE, id);
-			if (forge != null) {
+			if (forge != null && forgeMod == null) {
 				forgeMod = " (its @Mod(\"" + id + "\") is MinecraftForge's " + forge.replace('/', '.') + ")";
-				break;
 			}
 		}
-		if (contents.forgeBound > 0 && contents.neoReferences == 0) {
+		long beyondEntry = contents.forgeBound.stream().filter(type -> !entryOrNested(type, entries)).count();
+		if (forgeMod != null && beyondEntry > 0 && contents.neoReferences == 0) {
 			return new Half(Ecosystem.NEOFORGE, NEOFORGE_MANIFEST, ids, name, false,
-					"no NeoForge @Mod, and its code links only against MinecraftForge (" + contents.forgeBound
-							+ " class(es) use net.minecraftforge beyond a @Mod annotation, none names net.neoforged)"
-							+ (forgeMod == null ? "" : forgeMod) + absent);
+					"no NeoForge @Mod, its only entry is MinecraftForge's, and its code links only against MinecraftForge ("
+							+ beyondEntry + " class(es) beyond the entry use net.minecraftforge, none names net.neoforged)"
+							+ forgeMod + absent);
+		}
+		boolean entryOnly = !entries.isEmpty() && contents.outerClasses.stream().allMatch(type -> entryOrNested(type, entries));
+		boolean entryStandsOnForge = entries.stream().anyMatch(contents.forgeBound::contains);
+		boolean carriesMixins = toml.getMixinConfigs().stream().anyMatch(contents::hasFile);
+		if (forgeMod != null && entryOnly && entryStandsOnForge && !carriesMixins && contents.neoReferences == 0) {
+			return new Half(Ecosystem.NEOFORGE, NEOFORGE_MANIFEST, ids, name, false,
+					"no NeoForge @Mod, and the whole mod is its MinecraftForge entry class, which uses net.minecraftforge, "
+							+ "with no mixin config beside it: nothing of it runs on NeoForge" + forgeMod + absent);
 		}
 		return new Half(Ecosystem.NEOFORGE, NEOFORGE_MANIFEST, ids, name, true,
-				"no NeoForge @Mod: a data, mixin or library mod, and its code does not stand on MinecraftForge"
-						+ (forgeMod == null ? "" : forgeMod + ", which NeoForge ignores") + absent);
+				(forgeMod == null
+						? "no @Mod: a data, mixin or library mod"
+						: "no NeoForge @Mod, and its code beyond the entry does not stand on MinecraftForge" + forgeMod
+								+ ", which NeoForge ignores")
+						+ absent);
+	}
+
+	/** Whether {@code name} is one of the {@code @Mod} entry classes, or a class nested in one ({@code Entry$1}). */
+	private static boolean entryOrNested(String name, Set<String> entries) {
+		for (String entry : entries) {
+			if (name.equals(entry) || name.startsWith(entry + "$")) return true;
+		}
+		return false;
 	}
 
 	private static Half forgeHalf(Contents contents) {
@@ -403,7 +458,9 @@ public final class LoaderHalfJudge {
 	}
 
 	// -------------------------------------------------------------------------------------------------------------
-	// fabric.mod.json, read leniently: real files carry comments and trailing commas
+	// fabric.mod.json, read with the parser the kernel's own Fabric discovery uses (FabricModMetadataParser,
+	// JsonFormat.fancyInstance()), so a half is unreadable here exactly when Fabric discovery could not read it either.
+	// That parser is strict JSON: a // or /* */ comment or a trailing comma makes the manifest unreadable.
 	// -------------------------------------------------------------------------------------------------------------
 
 	private static List<String> fabricMixins(Object value) {
@@ -462,11 +519,13 @@ public final class LoaderHalfJudge {
 		/** Every class, the nested jars' included; the outer jar's copy wins a name both carry. */
 		final Map<String, ClassFacts> classes = new HashMap<>();
 		/**
-		 * How many of the OUTER jar's classes use net.minecraftforge for anything but a MinecraftForge {@code @Mod}
-		 * annotation — a dummy entry class that is only annotated stands on nothing — and how many name NeoForge.
+		 * The OUTER jar's classes that use net.minecraftforge for anything but a MinecraftForge {@code @Mod} annotation
+		 * — a dummy entry class that is only annotated stands on nothing — and how many of its classes name NeoForge.
 		 */
-		int forgeBound;
+		final Set<String> forgeBound = new HashSet<>();
 		int neoReferences;
+		/** Every class of the OUTER jar, by internal name. */
+		final Set<String> outerClasses = new HashSet<>();
 
 		boolean hasFile(String name) {
 			return names.contains(name);
@@ -538,9 +597,10 @@ public final class LoaderHalfJudge {
 			ClassFacts facts = ClassFacts.of(bytes);
 			if (facts == null) return;
 			contents.classes.putIfAbsent(facts.name, facts);
+			contents.outerClasses.add(facts.name);
 			// A constant-pool string appears once per class, so a class whose only net.minecraftforge string is the
 			// @Mod descriptor has exactly as many of the one as of the other.
-			if (count(bytes, FORGE_PACKAGE) > count(bytes, FORGE_MOD_DESCRIPTOR)) contents.forgeBound++;
+			if (count(bytes, FORGE_PACKAGE) > count(bytes, FORGE_MOD_DESCRIPTOR)) contents.forgeBound.add(facts.name);
 			if (count(bytes, NEO_PACKAGE) > 0) contents.neoReferences++;
 		} else if (depth < MAX_NESTING && name.endsWith(".jar")
 				&& (name.startsWith("META-INF/jarjar/") || name.startsWith("META-INF/jars/"))) {

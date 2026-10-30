@@ -58,7 +58,9 @@ import net.forbric.kernel.util.ForbricLog;
  * is asked and a dedicated server or a strict launch stops; the words name the mod, say that MinecraftForge is no
  * longer supported, and point at its NeoForge or Fabric build, in the player's language ({@code DialogLang}). Silently
  * leaving it out was the one answer the owner ruled out. A MinecraftForge build another mod merely bundles is not
- * something the player chose, and its parent still loads, so it is only noted.
+ * something the player chose, and its parent still loads, so it is only noted. Nor is a MinecraftForge build whose mod
+ * another installed jar supplies — the NeoForge or Fabric build of the same mod beside it: the mod loads, so the
+ * refusal is a note naming the file it loads from, and nothing stops.
  */
 public final class MetadataFailures {
 	/** Why a half does not load: its manifest could not be read, or it is a loader Forbric no longer supports. */
@@ -228,12 +230,29 @@ public final class MetadataFailures {
 	 */
 	public static void recordFindings(java.util.function.Function<Path, Ecosystem> owner, Collection<Path> carriers,
 			Path modsDir, java.util.function.Predicate<Path> notLoaded) {
+		recordFindings(owner, carriers, modsDir, notLoaded, modId -> null);
+	}
+
+	/**
+	 * As above, knowing which jar this boot loads for a mod id ({@code DuplicateModArbiter.loadedClaimant}).
+	 *
+	 * @param loadedFrom the jar that loads {@code modId}, or {@code null}. A refused MinecraftForge jar whose mod
+	 *                   another jar supplies — the player put the NeoForge or Fabric build of the same mod beside it —
+	 *                   costs nothing: the mod loads. It is a note naming the file the mod loads from, with no Lost row,
+	 *                   and not a required finding, which would stop a dedicated server over a mod that loads and, being
+	 *                   keyed by the shared id, mark the row of the build that loads as "not loaded". Before
+	 *                   MinecraftForge was refused, the same pair was a duplicate the boot set aside without a word.
+	 */
+	public static void recordFindings(java.util.function.Function<Path, Ecosystem> owner, Collection<Path> carriers,
+			Path modsDir, java.util.function.Predicate<Path> notLoaded,
+			java.util.function.Function<String, Path> loadedFrom) {
 		Set<Path> kernelJars = ConcurrentHashMap.newKeySet();
 		for (Path carrier : carriers) kernelJars.add(key(carrier));
 		for (Failure failure : all()) {
 			if (failure.kind() == Kind.UNSUPPORTED) {
 				if (!kernelJars.contains(failure.jar()) && !notLoaded.test(failure.jar())) {
-					recordRefusal(failure, modsDir == null || key(modsDir).equals(failure.jar().getParent()));
+					recordRefusal(failure, modsDir == null || key(modsDir).equals(failure.jar().getParent()),
+							suppliedBy(failure, loadedFrom));
 				}
 				continue;
 			}
@@ -268,22 +287,54 @@ public final class MetadataFailures {
 	 * in the player's language ({@code DialogLang}, which {@code -Dforbric.dialogLanguage} also steers); the evidence
 	 * stays machine words, so a bug report reads the same in any language.
 	 */
-	private static void recordRefusal(Failure failure, boolean installed) {
+	private static void recordRefusal(Failure failure, boolean installed, Path suppliedBy) {
 		net.forbric.kernel.ui.DialogLang lang = net.forbric.kernel.ui.DialogLang.ofSystem();
 		String file = failure.jar().getFileName().toString();
 		String modId = failure.modIds().isEmpty() ? "jar:" + file : failure.modIds().get(0);
 		String name = failure.name().isBlank() ? modId : failure.name();
-		String detail = lang.get(installed ? "unsupported.forge.detail" : "unsupported.forge.bundled", name, file);
-		if (installed && LOST.stream().noneMatch(l -> l.jar().equals(failure.jar()))) {
+		// Only a refusal that costs the player a mod is a loss: installed by them, and not supplied by another build.
+		boolean loss = installed && suppliedBy == null;
+		// A Fabric or NeoForge manifest that does not even parse is why this jar has no usable half: telling the player
+		// to "get the Fabric build" of what may be the Fabric build would be wrong, so the broken file is named instead.
+		LoaderHalfJudge.Verdict verdict = VERDICTS.get(failure.jar());
+		String broken = verdict == null || verdict.unreadableHalves().isEmpty() ? null
+				: verdict.unreadableHalves().get(0).manifest();
+		String detail = suppliedBy != null
+				? lang.get("unsupported.forge.superseded", name, file, String.valueOf(suppliedBy.getFileName()))
+				: !installed ? lang.get("unsupported.forge.bundled", name, file)
+				: broken != null ? lang.get("unsupported.forge.unreadable", name, file, broken)
+				: lang.get("unsupported.forge.detail", name, file);
+		if (suppliedBy != null) {
+			ForbricLog.info("[Forbric/Unsupported] %s is the MinecraftForge build of %s, which loads from %s — left out "
+					+ "without stopping anything", file, modId, suppliedBy.getFileName());
+		}
+		if (loss && LOST.stream().noneMatch(l -> l.jar().equals(failure.jar()))) {
 			LOST.add(new Lost(failure.jar(), Ecosystem.FORGE, modId, name, detail, Kind.UNSUPPORTED));
 		}
 		CompatibilityFindings.record(new CompatibilityFinding(UNSUPPORTED_FINDING, modId,
 				lang.get("unsupported.forge.feature"), "ForbricModDiscoverer " + failure.manifest(),
-				installed ? CompatibilityFinding.Confidence.CONFIRMED : CompatibilityFinding.Confidence.SUSPECTED,
-				installed, detail,
-				List.of("jar=" + file, "manifest=" + failure.manifest(), "family=" + failure.ecosystem(), "loads=nothing",
+				loss ? CompatibilityFinding.Confidence.CONFIRMED : CompatibilityFinding.Confidence.SUSPECTED,
+				loss, detail,
+				List.of("jar=" + file, "manifest=" + failure.manifest(), "family=" + failure.ecosystem(),
+						suppliedBy == null ? "loads=nothing" : "loads=" + suppliedBy.getFileName(),
 						"unsupported=minecraftforge", installed ? "installed=mods" : "installed=bundled",
 						failure.message())));
+	}
+
+	/**
+	 * The jar this boot loads in place of a refused one: every id the refused jar declares is supplied by a jar that
+	 * loads (a refused jar claims none itself), so the player loses nothing by its refusal. {@code null} when any id is
+	 * left unsupplied, or the refusal named no id at all.
+	 */
+	private static Path suppliedBy(Failure failure, java.util.function.Function<String, Path> loadedFrom) {
+		if (failure.modIds().isEmpty()) return null;
+		Path first = null;
+		for (String id : failure.modIds()) {
+			Path jar = loadedFrom.apply(id);
+			if (jar == null || key(jar).equals(failure.jar())) return null;
+			if (first == null) first = jar;
+		}
+		return first;
 	}
 
 	/**

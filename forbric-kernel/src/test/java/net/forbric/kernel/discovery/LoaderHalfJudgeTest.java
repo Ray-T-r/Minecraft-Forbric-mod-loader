@@ -52,30 +52,51 @@ class LoaderHalfJudgeTest {
 				.forgeToml("owl", "Owl").neoToml("owl", "Owl", null)
 				.fabricJson("owl", "{\"main\":[\"example.ModSetup\"],\"client\":[\"example.ClientInit\"]}", null)
 				.put("example/ModSetup.class", forgeMod("example/ModSetup", "owl"))
+				.put("example/Registrations.class", referencing("example/Registrations",
+						"net/minecraftforge/registries/DeferredRegister"))
 				.put("example/ClientInit.class", plain("example/ClientInit", null, true)));
 		assertTrue(verdict.refused(), verdict.describe());
 		String neo = verdict.half(Ecosystem.NEOFORGE).orElseThrow().reason();
-		assertTrue(neo.contains("links only against MinecraftForge"), neo);
+		assertTrue(neo.contains("its only entry is MinecraftForge's"), neo);
+		assertTrue(neo.contains("links only against MinecraftForge (1 class(es) beyond the entry"), neo);
 		assertTrue(neo.contains("its @Mod(\"owl\") is MinecraftForge's example.ModSetup"), neo);
 		String fabric = verdict.half(Ecosystem.FABRIC).orElseThrow().reason();
 		assertTrue(fabric.contains("has no public no-argument constructor"), fabric);
 		assertTrue(fabric.contains("does not implement net.fabricmc.api.ClientModInitializer"), fabric);
 	}
 
-	/** aquariuslibs' shape: a neoforge.mods.toml beside the Forge one, and not one class naming net.neoforged. */
+	/**
+	 * aquariuslibs' shape: a neoforge.mods.toml beside the Forge one, the id's only @Mod MinecraftForge's
+	 * ({@code ModLibSetup}), helpers beyond it that call MinecraftForge ({@code RegisterFunctions}), and not one class
+	 * naming net.neoforged.
+	 */
 	@Test void aNeoForgeManifestOverForgeOnlyCodeIsRefused() throws Exception {
 		LoaderHalfJudge.Verdict verdict = judge(jar()
 				.forgeToml("libs", "Libs").neoToml("libs", "Libs", null)
-				.put("example/Libs.class", forgeMod("example/Libs", "libs")));
+				.put("example/Libs.class", forgeMod("example/Libs", "libs"))
+				.put("example/RegisterFunctions.class", referencing("example/RegisterFunctions",
+						"net/minecraftforge/registries/ForgeRegistries")));
 		assertTrue(verdict.refused(), verdict.describe());
+	}
 
-		// Without any @Mod at all the NeoForge half is a data or library mod, and it is judged by what its code stands on.
-		LoaderHalfJudge.Verdict noMod = judge(jar()
+	/** The entry class is not counted against itself: an MDK-style Forge @Mod with nothing Forge beyond it is kept. */
+	@Test void aForgeModClassAloneDoesNotMakeTheNeoForgeHalfFake() throws Exception {
+		LoaderHalfJudge.Verdict verdict = judge(jar()
+				.forgeToml("libs", "Libs").neoToml("libs", "Libs", "libs.mixins.json")
+				.put("libs.mixins.json", "{}".getBytes(StandardCharsets.UTF_8))
+				.put("example/Libs.class", forgeMod("example/Libs", "libs"))
+				.put("example/mixin/Hook.class", plain("example/mixin/Hook", null, true)));
+		assertFalse(verdict.refused(), verdict.describe());
+		assertEquals(List.of(Ecosystem.NEOFORGE), verdict.usableFamilies(), verdict.describe());
+
+		// But with nothing beside it — no other class, no mixin config — the whole mod is that MinecraftForge entry, and
+		// nothing of it would run on NeoForge: refused.
+		LoaderHalfJudge.Verdict entryOnly = judge(jar()
 				.forgeToml("libs", "Libs").neoToml("libs", "Libs", null)
-				.put("example/Helper.class", referencing("example/Helper", "net/minecraftforge/common/MinecraftForge")));
-		assertTrue(noMod.refused(), noMod.describe());
-		assertTrue(noMod.half(Ecosystem.NEOFORGE).orElseThrow().reason().contains("links only against MinecraftForge"),
-				noMod.describe());
+				.put("example/Libs.class", forgeMod("example/Libs", "libs")));
+		assertTrue(entryOnly.refused(), entryOnly.describe());
+		assertTrue(entryOnly.half(Ecosystem.NEOFORGE).orElseThrow().reason().contains("the whole mod is its MinecraftForge "
+				+ "entry class"), entryOnly.describe());
 	}
 
 	/** journeymap-forge's shape: a Fabric half whose only entrypoint throws "wrong loader". */
@@ -217,13 +238,65 @@ class LoaderHalfJudgeTest {
 		assertTrue(verdict.describe().contains("mx.neoforge.mixins.json not in the jar"), verdict.describe());
 	}
 
-	/** And a half whose only evidence is a mixin config is still judged by what its code stands on. */
-	@Test void aMixinOnlyNeoForgeHalfOverForgeOnlyCodeIsStillRefused() throws Exception {
+	/**
+	 * A Forge+NeoForge jar with no @Mod at all — a mixin, data or library mod — is judged by its entry, as a Fabric half
+	 * is, and not by stray classes: optional MinecraftForge compatibility code NeoForge never loads does not make its
+	 * NeoForge half fake. Native NeoForge loads this jar, and so did the kernel before MinecraftForge was dropped.
+	 */
+	@Test void aMixinOnlyNeoForgeHalfWithOptionalForgeCompatCodeIsKept() throws Exception {
 		LoaderHalfJudge.Verdict verdict = judge(jar()
 				.forgeToml("mx", "Mx").neoToml("mx", "Mx", "mx.mixins.json")
 				.put("mx.mixins.json", "{}".getBytes(StandardCharsets.UTF_8))
+				.put("example/mixin/Hook.class", plain("example/mixin/Hook", null, true))
+				.put("example/compat/ForgeCompat.class", referencing("example/compat/ForgeCompat",
+						"net/minecraftforge/common/MinecraftForge")));
+		assertFalse(verdict.refused(), verdict.describe());
+		assertEquals(List.of(Ecosystem.NEOFORGE), verdict.usableFamilies(), verdict.describe());
+		assertTrue(verdict.half(Ecosystem.NEOFORGE).orElseThrow().reason().startsWith("no @Mod"), verdict.describe());
+
+		// Even when the one class in it uses MinecraftForge: with no entry to judge, the half is NeoForge's to load.
+		LoaderHalfJudge.Verdict single = judge(jar()
+				.forgeToml("mx", "Mx").neoToml("mx", "Mx", null)
+				.put("example/Helper.class", referencing("example/Helper", "net/minecraftforge/common/MinecraftForge")));
+		assertFalse(single.refused(), single.describe());
+	}
+
+	/** But a MinecraftForge @Mod whose mixins hook MinecraftForge code is MinecraftForge's mod: refused. */
+	@Test void aForgeModWhoseOtherCodeHooksMinecraftForgeIsRefused() throws Exception {
+		LoaderHalfJudge.Verdict verdict = judge(jar()
+				.forgeToml("mx", "Mx").neoToml("mx", "Mx", "mx.mixins.json")
+				.put("mx.mixins.json", "{}".getBytes(StandardCharsets.UTF_8))
+				.put("example/Mx.class", forgeMod("example/Mx", "mx"))
 				.put("example/mixin/Hook.class", referencing("example/mixin/Hook", "net/minecraftforge/event/ForgeEventFactory")));
 		assertTrue(verdict.refused(), verdict.describe());
+	}
+
+	/**
+	 * fabric.mod.json is read by the parser the kernel's own Fabric discovery uses, which is strict JSON: a comment or a
+	 * trailing comma makes the half unreadable here exactly as it is unreadable there, and the half says so — so the
+	 * refusal can name the broken file instead of telling the player to fetch the Fabric build they may already have.
+	 */
+	@Test void aFabricManifestWithACommentIsUnreadableAndSaysSo() throws Exception {
+		for (String json : List.of(
+				"{\"schemaVersion\":1,\"id\":\"c\",\"version\":\"1\" // a comment\n}",
+				"{\"schemaVersion\":1,\"id\":\"c\",\"version\":\"1\",}")) {
+			LoaderHalfJudge.Verdict verdict = judge(jar()
+					.forgeToml("c", "C")
+					.put("fabric.mod.json", json.getBytes(StandardCharsets.UTF_8))
+					.put("example/C.class", forgeMod("example/C", "c")));
+			assertTrue(verdict.refused(), verdict.describe());
+			LoaderHalfJudge.Half fabric = verdict.half(Ecosystem.FABRIC).orElseThrow();
+			assertTrue(fabric.unreadable(), fabric.toString());
+			assertEquals(List.of(fabric), verdict.unreadableHalves());
+			assertThrows(RuntimeException.class, () -> com.electronwill.nightconfig.json.JsonFormat.fancyInstance()
+					.createParser().parse(json), "the kernel's Fabric parser rejects it too");
+		}
+		// A half that reads but is fake is not "unreadable".
+		LoaderHalfJudge.Verdict fake = judge(jar()
+				.forgeToml("journeymap", "JourneyMap")
+				.fabricJson("journeymap-wrongloader", "{\"preLaunch\":[\"example.FabricError\"]}", null)
+				.put("example/FabricError.class", throwingEntrypoint("example/FabricError")));
+		assertEquals(List.of(), fake.unreadableHalves());
 	}
 
 	@Test void anUnreadableManifestIsAReasonNotAnException() throws Exception {

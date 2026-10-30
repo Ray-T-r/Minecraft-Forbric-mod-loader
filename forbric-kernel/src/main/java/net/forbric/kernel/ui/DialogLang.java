@@ -289,6 +289,11 @@ public final class DialogLang {
 					+ "so it is not loaded. Get the NeoForge or Fabric build of {0} instead.",
 			"unsupported.forge.bundled", "{0} ({1}) is a MinecraftForge build that another mod bundles. Forbric no "
 					+ "longer supports MinecraftForge, so it is kept only as a library.",
+			"unsupported.forge.superseded", "{0} ({1}) is the MinecraftForge build. Forbric no longer supports "
+					+ "MinecraftForge, so it is left out; {0} loads from {2} instead.",
+			"unsupported.forge.unreadable", "{0} ({1}) is a MinecraftForge mod, and its {2} cannot be read, so it "
+					+ "does not load through that either. Forbric no longer supports MinecraftForge, so it is not "
+					+ "loaded. Tell the author of {0} that the {2} in {1} is broken.",
 			"report.unsupported.what", "not loaded: Forbric no longer supports MinecraftForge",
 			"report.unsupported.fix", "Get the NeoForge or Fabric build of {0} and put it in the mods folder in place "
 					+ "of {1}.",
@@ -363,6 +368,10 @@ public final class DialogLang {
 					+ "请改用 {0} 的 NeoForge 或 Fabric 版本。",
 			"unsupported.forge.bundled", "{0}（{1}）是另一个 mod 内嵌的 MinecraftForge 版本。Forbric 已不再支持 "
 					+ "MinecraftForge，它只作为库保留。",
+			"unsupported.forge.superseded", "{0}（{1}）是 MinecraftForge 版本。Forbric 已不再支持 MinecraftForge，所以它被略过；{0} 改由 "
+					+ "{2} 加载。",
+			"unsupported.forge.unreadable", "{0}（{1}）是 MinecraftForge mod，而它的 {2} 无法读取，所以也不能通过它加载。Forbric 已不再支持 "
+					+ "MinecraftForge，所以它不会被加载。请告诉 {0} 的作者：{1} 里的 {2} 已损坏。",
 			"report.unsupported.what", "没有加载：Forbric 已不再支持 MinecraftForge",
 			"report.unsupported.fix", "请下载 {0} 的 NeoForge 或 Fabric 版本，放进 mods 文件夹替换 {1}。",
 			"report.unsupported.advice", "Forbric 现在只加载 Fabric 和 NeoForge mod。大多数 mod 在同一个 Minecraft "
@@ -437,6 +446,10 @@ public final class DialogLang {
 					+ "請改用 {0} 的 NeoForge 或 Fabric 版本。",
 			"unsupported.forge.bundled", "{0}（{1}）是另一個 mod 內嵌的 MinecraftForge 版本。Forbric 已不再支援 "
 					+ "MinecraftForge，它只作為函式庫保留。",
+			"unsupported.forge.superseded", "{0}（{1}）是 MinecraftForge 版本。Forbric 已不再支援 MinecraftForge，所以略過它；{0} 改由 "
+					+ "{2} 載入。",
+			"unsupported.forge.unreadable", "{0}（{1}）是 MinecraftForge mod，而它的 {2} 無法讀取，所以也不能透過它載入。Forbric 已不再支援 "
+					+ "MinecraftForge，所以不會載入它。請告訴 {0} 的作者：{1} 裡的 {2} 已損壞。",
 			"report.unsupported.what", "沒有載入：Forbric 已不再支援 MinecraftForge",
 			"report.unsupported.fix", "請下載 {0} 的 NeoForge 或 Fabric 版本，放進 mods 資料夾取代 {1}。",
 			"report.unsupported.advice", "Forbric 現在只載入 Fabric 和 NeoForge mod。大多數 mod 在同一個 Minecraft "
@@ -518,6 +531,10 @@ public final class DialogLang {
 					+ "終了したため、読み込まれません。{0} の NeoForge 版か Fabric 版を使ってください。",
 			"unsupported.forge.bundled", "{0}（{1}）は別の mod に同梱された MinecraftForge 版です。Forbric は "
 					+ "MinecraftForge のサポートを終了したため、ライブラリとしてのみ残します。",
+			"unsupported.forge.superseded", "{0}（{1}）は MinecraftForge 版です。Forbric は MinecraftForge "
+					+ "のサポートを終了したため、これは読み込まず、{0} は {2} から読み込みます。",
+			"unsupported.forge.unreadable", "{0}（{1}）は MinecraftForge 用の mod で、その {2} も読み取れないため、そちらからも読み込めません。Forbric "
+					+ "は MinecraftForge のサポートを終了したため、読み込まれません。{1} の {2} が壊れていることを {0} の作者に伝えてください。",
 			"report.unsupported.what", "読み込まれませんでした：Forbric は MinecraftForge のサポートを終了しました",
 			"report.unsupported.fix", "{0} の NeoForge 版か Fabric 版をダウンロードし、mods フォルダの {1} と置き換えてください。",
 			"report.unsupported.advice", "Forbric が読み込むのは Fabric と NeoForge の mod だけになりました。ほとんどの mod "
@@ -596,6 +613,10 @@ public final class DialogLang {
 					+ "지원하지 않으므로 이 모드를 불러오지 않습니다. {0}의 NeoForge 또는 Fabric 버전을 사용하세요.",
 			"unsupported.forge.bundled", "{0}({1})은(는) 다른 모드에 포함된 MinecraftForge 버전입니다. Forbric은 더 이상 "
 					+ "MinecraftForge를 지원하지 않으므로 라이브러리로만 남겨 둡니다.",
+			"unsupported.forge.superseded", "{0}({1})은(는) MinecraftForge 버전입니다. Forbric은 더 이상 MinecraftForge를 지원하지 "
+					+ "않으므로 이 파일은 건너뛰고, {0}은(는) {2}에서 불러옵니다.",
+			"unsupported.forge.unreadable", "{0}({1})은(는) MinecraftForge 모드이고, {2}도 읽을 수 없어 그쪽으로도 불러올 수 없습니다. "
+					+ "Forbric은 더 이상 MinecraftForge를 지원하지 않으므로 불러오지 않습니다. {1}의 {2}이(가) 손상되었다고 {0} 제작자에게 알려 주세요.",
 			"report.unsupported.what", "불러오지 않음: Forbric은 더 이상 MinecraftForge를 지원하지 않습니다",
 			"report.unsupported.fix", "{0}의 NeoForge 또는 Fabric 버전을 받아 mods 폴더의 {1} 대신 넣으세요.",
 			"report.unsupported.advice", "이제 Forbric은 Fabric과 NeoForge 모드만 불러옵니다. 대부분의 모드는 같은 "
@@ -674,6 +695,11 @@ public final class DialogLang {
 					+ "поэтому он не загружается. Возьмите версию {0} для NeoForge или Fabric.",
 			"unsupported.forge.bundled", "{0} ({1}) — сборка для MinecraftForge, встроенная в другой мод. Forbric больше "
 					+ "не поддерживает MinecraftForge, поэтому она оставлена только как библиотека.",
+			"unsupported.forge.superseded", "{0} ({1}) — сборка для MinecraftForge. Forbric больше не поддерживает "
+					+ "MinecraftForge, поэтому она пропущена; {0} загружается из {2}.",
+			"unsupported.forge.unreadable", "{0} ({1}) — мод для MinecraftForge, а его {2} не читается, поэтому "
+					+ "загрузить его и так нельзя. Forbric больше не поддерживает MinecraftForge, поэтому он не "
+					+ "загружен. Сообщите автору {0}, что {2} в {1} повреждён.",
 			"report.unsupported.what", "не загружен: Forbric больше не поддерживает MinecraftForge",
 			"report.unsupported.fix", "Скачайте версию {0} для NeoForge или Fabric и положите её в папку mods вместо {1}.",
 			"report.unsupported.advice", "Теперь Forbric загружает только моды для Fabric и NeoForge. У большинства модов "
@@ -753,6 +779,11 @@ public final class DialogLang {
 					+ "mehr, daher wird sie nicht geladen. Nimm stattdessen die NeoForge- oder Fabric-Version von {0}.",
 			"unsupported.forge.bundled", "{0} ({1}) ist eine MinecraftForge-Version, die eine andere Mod mitbringt. "
 					+ "Forbric unterstützt MinecraftForge nicht mehr, daher bleibt sie nur als Bibliothek erhalten.",
+			"unsupported.forge.superseded", "{0} ({1}) ist die MinecraftForge-Version. Forbric unterstützt "
+					+ "MinecraftForge nicht mehr, daher wird sie übersprungen; {0} wird stattdessen aus {2} geladen.",
+			"unsupported.forge.unreadable", "{0} ({1}) ist eine MinecraftForge-Mod, und ihre {2} kann nicht gelesen "
+					+ "werden, daher lädt sie auch darüber nicht. Forbric unterstützt MinecraftForge nicht mehr, "
+					+ "daher wird sie nicht geladen. Teile dem Autor von {0} mit, dass die {2} in {1} beschädigt ist.",
 			"report.unsupported.what", "nicht geladen: Forbric unterstützt MinecraftForge nicht mehr",
 			"report.unsupported.fix", "Lade die NeoForge- oder Fabric-Version von {0} herunter und lege sie anstelle von "
 					+ "{1} in den mods-Ordner.",
@@ -835,6 +866,12 @@ public final class DialogLang {
 					+ "MinecraftForge, il n’est donc pas chargé. Prenez plutôt la version NeoForge ou Fabric de {0}.",
 			"unsupported.forge.bundled", "{0} ({1}) est une version MinecraftForge embarquée par un autre mod. Forbric ne "
 					+ "prend plus en charge MinecraftForge, elle est donc conservée seulement comme bibliothèque.",
+			"unsupported.forge.superseded", "{0} ({1}) est la version MinecraftForge. Forbric ne prend plus en charge "
+					+ "MinecraftForge, elle est donc ignorée ; {0} est chargé depuis {2} à la place.",
+			"unsupported.forge.unreadable", "{0} ({1}) est un mod MinecraftForge, et son {2} est illisible, il ne "
+					+ "peut donc pas non plus être chargé par ce biais. Forbric ne prend plus en charge "
+					+ "MinecraftForge, il n'est donc pas chargé. Signalez à l'auteur de {0} que le {2} de {1} est "
+					+ "corrompu.",
 			"report.unsupported.what", "non chargé : Forbric ne prend plus en charge MinecraftForge",
 			"report.unsupported.fix", "Téléchargez la version NeoForge ou Fabric de {0} et mettez-la dans le dossier mods "
 					+ "à la place de {1}.",
@@ -915,6 +952,11 @@ public final class DialogLang {
 					+ "MinecraftForge, así que no se carga. Usa en su lugar la versión de {0} para NeoForge o Fabric.",
 			"unsupported.forge.bundled", "{0} ({1}) es una versión de MinecraftForge incluida en otro mod. Forbric ya no "
 					+ "es compatible con MinecraftForge, así que se conserva solo como biblioteca.",
+			"unsupported.forge.superseded", "{0} ({1}) es la versión de MinecraftForge. Forbric ya no es compatible "
+					+ "con MinecraftForge, así que se omite; {0} se carga desde {2}.",
+			"unsupported.forge.unreadable", "{0} ({1}) es un mod de MinecraftForge, y su {2} no se puede leer, así "
+					+ "que tampoco se carga por esa vía. Forbric ya no es compatible con MinecraftForge, así que no "
+					+ "se carga. Avisa al autor de {0} de que el {2} de {1} está dañado.",
 			"report.unsupported.what", "no se cargó: Forbric ya no es compatible con MinecraftForge",
 			"report.unsupported.fix", "Descarga la versión de {0} para NeoForge o Fabric y ponla en la carpeta mods en "
 					+ "lugar de {1}.",
@@ -995,6 +1037,11 @@ public final class DialogLang {
 					+ "MinecraftForge, então ele não é carregado. Use a versão de {0} para NeoForge ou Fabric.",
 			"unsupported.forge.bundled", "{0} ({1}) é uma versão de MinecraftForge incluída em outro mod. O Forbric não "
 					+ "oferece mais suporte ao MinecraftForge, então ela fica apenas como biblioteca.",
+			"unsupported.forge.superseded", "{0} ({1}) é a versão de MinecraftForge. O Forbric não oferece mais "
+					+ "suporte ao MinecraftForge, então ela é ignorada; {0} é carregado a partir de {2}.",
+			"unsupported.forge.unreadable", "{0} ({1}) é um mod de MinecraftForge, e seu {2} não pode ser lido, então "
+					+ "também não carrega por ele. O Forbric não oferece mais suporte ao MinecraftForge, então ele "
+					+ "não é carregado. Avise o autor de {0} que o {2} em {1} está corrompido.",
 			"report.unsupported.what", "não carregado: o Forbric não oferece mais suporte ao MinecraftForge",
 			"report.unsupported.fix", "Baixe a versão de {0} para NeoForge ou Fabric e coloque-a na pasta mods no lugar "
 					+ "de {1}.",

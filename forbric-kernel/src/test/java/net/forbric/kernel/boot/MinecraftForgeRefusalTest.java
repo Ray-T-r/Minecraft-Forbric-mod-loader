@@ -47,6 +47,7 @@ class MinecraftForgeRefusalTest {
 
 	@BeforeEach @AfterEach void reset() {
 		MetadataFailures.reset();
+		DuplicateModArbiter.reset();
 		MultiLoaderArbiter.reset();
 		CompatibilityFindings.reset();
 		CompatibilityDecision.reset();
@@ -166,6 +167,77 @@ class MinecraftForgeRefusalTest {
 		assertEquals(List.of(), CompatibilityFindings.confirmedRequired());
 		assertEquals(1, CompatibilityFindings.suspected().size(), CompatibilityFindings.all().toString());
 		assertEquals(List.of(), MetadataFailures.lost());
+	}
+
+	/**
+	 * The player downloaded every file the mod page offered: the MinecraftForge build and the NeoForge build of the same
+	 * mod sit side by side. The mod loads, from the NeoForge build, so the refusal of the other file costs nothing — a
+	 * note naming the file the mod loads from, no Lost row, no required finding, and above all nothing on the row of the
+	 * build that loads and nothing that stops a dedicated server. Red-checked: with {@code recordFindings} handed
+	 * {@code id -> null} instead of {@code DuplicateModArbiter::loadedClaimant} the refusal was a confirmed required
+	 * finding on {@code foo}, the NeoForge build's row was DEGRADED and the dedicated server stopped.
+	 */
+	@Test void aMinecraftForgeBuildBesideTheNeoForgeBuildOfTheSameModIsOnlyANote() throws Exception {
+		Path pair = Files.createDirectories(temporary.resolve("pair").resolve("mods"));
+		Path forge = jar(pair.resolve("foo-1.0-forge.jar"), new String[][] {
+				{"META-INF/mods.toml", toml("foo", "Foo", "forge")}},
+				"x/FooForge.class", mod("x/FooForge", "Lnet/minecraftforge/fml/common/Mod;", "foo"));
+		Path neoBuild = jar(pair.resolve("foo-1.0-neoforge.jar"), new String[][] {
+				{"META-INF/neoforge.mods.toml", toml("foo", "Foo", "neoforge")}},
+				"x/FooNeo.class", mod("x/FooNeo", "Lnet/neoforged/fml/common/Mod;", "foo"));
+		System.setProperty(DialogLang.SWITCH, "en");
+		DuplicateModArbiter.Decision decision = DuplicateModArbiter.arbitrate(pair, net.fabricmc.api.EnvType.SERVER, null);
+		assertFalse(decision.suppressed(neoBuild), "the NeoForge build loads");
+		assertEquals(neoBuild.toAbsolutePath(), DuplicateModArbiter.loadedClaimant("foo"));
+		new ForbricModDiscoverer().discoverJar(forge);
+		assertTrue(MetadataFailures.unsupported(forge));
+
+		MetadataFailures.recordFindings(MultiLoaderArbiter::ownerOf, List.of(), pair, decision::suppressed,
+				DuplicateModArbiter::loadedClaimant);
+		assertEquals(List.of(), CompatibilityFindings.confirmedRequired());
+		assertEquals(List.of(), MetadataFailures.lost(), "the mod is not lost: it loads");
+		List<CompatibilityFinding> notes = CompatibilityFindings.suspected().stream()
+				.filter(f -> f.id().equals(MetadataFailures.UNSUPPORTED_FINDING)).toList();
+		assertEquals(1, notes.size(), CompatibilityFindings.all().toString());
+		assertEquals("Foo (foo-1.0-forge.jar) is the MinecraftForge build. Forbric no longer supports MinecraftForge, so "
+				+ "it is left out; Foo loads from foo-1.0-neoforge.jar instead.", notes.get(0).detail());
+		assertFalse(notes.get(0).required());
+
+		KernelModCatalog.publish(new ForbricModDiscoverer().discoverJar(neoBuild), pair);
+		ModCatalog.Entry row = ModCatalog.all().stream().filter(e -> e.modId().equals("foo")).findFirst()
+				.orElseThrow(() -> new AssertionError("no row: " + ModCatalog.all()));
+		assertEquals("foo-1.0-neoforge.jar", row.jar());
+		assertNotEquals(ModCatalog.Status.DEGRADED, row.status(), row.statusDetail());
+		assertNotEquals(ModCatalog.Status.FAILED, row.status(), row.statusDetail());
+
+		System.setProperty(CompatibilityDecision.PROPERTY, "ask");
+		assertTrue(CompatibilityDecision.check(false), "a dedicated server does not stop over a mod that loads");
+		System.setProperty(CompatibilityDecision.PROPERTY, "strict");
+		assertTrue(CompatibilityDecision.check(true), "nor does a strict launch");
+	}
+
+	/**
+	 * A MinecraftForge jar whose fabric.mod.json does not parse has no usable half because that file is broken — and it
+	 * may be the Fabric build. The player is told which file is broken, not to fetch "the Fabric build".
+	 */
+	@Test void aRefusalCausedByABrokenFabricManifestNamesTheBrokenFile() throws Exception {
+		Path broken = jar(mods.resolve("brk-1.0.jar"), new String[][] {
+				{"META-INF/mods.toml", toml("brk", "Broken", "forge")},
+				{"fabric.mod.json", "{\"schemaVersion\":1,\"id\":\"brk\",\"version\":\"1\", // a comment\n}"}},
+				"example/Brk.class", mod("example/Brk", "Lnet/minecraftforge/fml/common/Mod;", "brk"));
+		new ForbricModDiscoverer().discoverJar(broken);
+		System.setProperty(DialogLang.SWITCH, "en");
+		MetadataFailures.recordFindings(MultiLoaderArbiter::ownerOf, List.of(), mods, jar -> false);
+		CompatibilityFinding finding = CompatibilityFindings.confirmedRequired().stream()
+				.filter(f -> f.modId().equals("brk")).findFirst().orElseThrow(() -> new AssertionError(CompatibilityFindings.all()));
+		assertEquals("Broken (brk-1.0.jar) is a MinecraftForge mod, and its fabric.mod.json cannot be read, so it does not "
+				+ "load through that either. Forbric no longer supports MinecraftForge, so it is not loaded. Tell the author "
+				+ "of Broken that the fabric.mod.json in brk-1.0.jar is broken.", finding.detail());
+		System.setProperty(DialogLang.SWITCH, "zh_cn");
+		CompatibilityFindings.reset();
+		MetadataFailures.recordFindings(MultiLoaderArbiter::ownerOf, List.of(), mods, jar -> false);
+		assertTrue(CompatibilityFindings.confirmedRequired().get(0).detail().contains("brk-1.0.jar 里的 fabric.mod.json 已损坏"),
+				CompatibilityFindings.all().toString());
 	}
 
 	@Test void minecraftForgeInThePreferenceIsIgnored() throws Exception {

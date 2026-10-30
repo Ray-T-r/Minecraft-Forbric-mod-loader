@@ -163,6 +163,36 @@ public final class DuplicateModArbiter {
 		return cached != null ? cached : Decision.none();
 	}
 
+	/**
+	 * The jar this boot loads that declares {@code modId} (spelling-normalised as arbitration compares ids), or
+	 * {@code null} when none does or arbitration has not run.
+	 *
+	 * <p>Asked about a refused MinecraftForge build. A refused jar claims nothing ({@link #claimOf}), so it never
+	 * becomes the losing duplicate of the NeoForge or Fabric build of the same mod beside it — which is exactly the
+	 * shape of a player who downloaded every file a mod page offered. Without this question its refusal was a
+	 * confirmed, required finding on the shared id: it stopped a dedicated server over a mod that loads, and marked the
+	 * row of the build that does load DEGRADED with "it is not loaded". With it, the refusal is a note naming the file
+	 * that supplies the mod.
+	 *
+	 * <p>Read from the whole-instance plan when there is one — nested candidates included, only what it selected —
+	 * and from the top-level claims otherwise; a suppressed or switched-off jar never answers.
+	 */
+	public static synchronized Path loadedClaimant(String modId) {
+		if (modId == null || modId.isBlank()) return null;
+		String wanted = JointCandidateSelector.key(modId);
+		Decision decision = current();
+		NestedCandidatePlan plan = wholeInstancePlan;
+		List<Claim> claims = plan != null ? plan.inventory().claims() : topLevelClaims;
+		for (Claim claim : claims) {
+			if (decision.suppressed(claim.jar())) continue;
+			if (plan != null && !plan.selected().contains(claim.jar())) continue;
+			for (String id : claim.modIds()) {
+				if (JointCandidateSelector.key(id).equals(wanted)) return claim.jar().toAbsolutePath();
+			}
+		}
+		return null;
+	}
+
 	/** Forgets the decision — for tests, and so a re-launch in one process re-arbitrates. */
 	public static synchronized void reset() {
 		DisabledMods.reset();

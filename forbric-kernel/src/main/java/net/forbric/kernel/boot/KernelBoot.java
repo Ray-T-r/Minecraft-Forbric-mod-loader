@@ -308,9 +308,9 @@ public final class KernelBoot {
 		// Every jar has been read and has an owner. A manifest that could not be read cost that jar alone; say
 		// which, at the same weight as any other mod that did not load (see MetadataFailures).
 		// A refused MinecraftForge jar is recorded the same way: installed in mods/, a required loss; bundled, a note;
-		// switched off by the player, nothing.
+		// switched off by the player, nothing; supplied by the NeoForge or Fabric build of the same mod beside it, a note.
 		net.forbric.kernel.discovery.MetadataFailures.recordFindings(MultiLoaderArbiter::ownerOf, runtimeJars,
-				gameDir.resolve("mods"), topLevelDupes::suppressed);
+				gameDir.resolve("mods"), topLevelDupes::suppressed, DuplicateModArbiter::loadedClaimant);
 
 		// Game-side bundled libraries (MixinExtras) and the kernel's own runtime jar. The latter also carries
 		// the kernel's client assets -- the Mods button's icon lives in it -- so its extracted path is handed to
