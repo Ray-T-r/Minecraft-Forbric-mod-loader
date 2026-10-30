@@ -12,6 +12,11 @@
 #
 # Output: run/canary/forbricnestfab.jar   (contains META-INF/jars/forbricnestlib-fabric.jar)
 #         run/canary/forbricnestforge.jar (contains META-INF/jarjar/forbricnestlib-forge.jar)
+#         run/canary/forbricnestneo.jar   (contains META-INF/jarjar/forbricnestlib-neoforge.jar)
+#
+# The NeoForge parent is the same shape on the family that stays: the MinecraftForge pair proves the cross-ecosystem
+# contest only while MinecraftForge exists, and a NeoForge JarJar child contesting a Fabric JiJ child is what remains
+# of it afterwards.
 set -uo pipefail
 . "$(cd "$(dirname "$0")" && pwd)/lib.sh"
 
@@ -20,16 +25,18 @@ OUT="$KERNEL/run/canary"
 canary_scratch nesteddupe
 FORGE_RT="$OLD/run/merged-base/forge-runtime-interop.jar"
 [ -f "$FORGE_RT" ] || FORGE_RT="$OLD/run/forge-runtime/forge-runtime.jar"
+NEO_RT="$OLD/run/neoforge-runtime/neoforge-runtime.jar"
 
 step "prerequisites"
 [ -f "$FORGE_RT" ] || { echo "[kernel] FAIL forge runtime absent: $FORGE_RT"; exit 1; }
+[ -f "$NEO_RT" ] || { echo "[kernel] FAIL neoforge runtime absent: $NEO_RT"; exit 1; }
 mkdir -p "$BUILD"
 kernel_jar
 KERNEL_JAR="$BUILD/libs/forbric-kernel-0.1.0-SNAPSHOT.jar"
 [ -f "$KERNEL_JAR" ] || { echo "[kernel] FAIL kernel jar not built"; exit 1; }
 echo "[kernel] forge runtime + kernel jar present"
 
-mkdir -p "$WORK"/{libfab,libforge,parfab,parforge} "$OUT"
+mkdir -p "$WORK"/{libfab,libforge,libneo,parfab,parforge,parneo} "$OUT"
 
 # The registry class is compiled into BOTH library jars, byte-identical, exactly as a real multiloader library
 # ships its shared half twice. On a classpath carrying both, one copy is defined (first URL wins) and both
@@ -43,12 +50,18 @@ javac -nowarn -proc:none --release 21 -cp "$FORGE_RT" -d "$WORK/libforge" \
       "$SRC/lib/src/forbric/nestlib/NestLibForge.java" 2>&1 | grep -v '^Note:' || true
 [ -f "$WORK/libfab/forbric/nestlib/NestLibFabric.class" ] || { echo "[kernel] FAIL fabric lib did not compile"; exit 1; }
 [ -f "$WORK/libforge/forbric/nestlib/NestLibForge.class" ] || { echo "[kernel] FAIL forge lib did not compile"; exit 1; }
+javac -nowarn -proc:none --release 21 -cp "$NEO_RT" -d "$WORK/libneo" \
+      "$SRC/lib/src/forbric/nestlib/NestLibRegistry.java" \
+      "$SRC/lib/src/forbric/nestlib/NestLibNeoForge.java" 2>&1 | grep -v '^Note:' || true
+[ -f "$WORK/libneo/forbric/nestlib/NestLibNeoForge.class" ] || { echo "[kernel] FAIL neoforge lib did not compile"; exit 1; }
 
 cp "$SRC/lib/fabric.mod.json" "$WORK/libfab/"
 mkdir -p "$WORK/libforge/META-INF" && cp "$SRC/lib/mods.toml" "$WORK/libforge/META-INF/"
 (cd "$WORK/libfab"   && jar --create --file "$WORK/forbricnestlib-fabric.jar" .) || exit 1
 (cd "$WORK/libforge" && jar --create --file "$WORK/forbricnestlib-forge.jar" .) || exit 1
-echo "[kernel] built both builds of forbricnestlib"
+mkdir -p "$WORK/libneo/META-INF" && cp "$SRC/lib/neoforge.mods.toml" "$WORK/libneo/META-INF/"
+(cd "$WORK/libneo"   && jar --create --file "$WORK/forbricnestlib-neoforge.jar" .) || exit 1
+echo "[kernel] built all three builds of forbricnestlib"
 
 step "compile the two parents and nest their own build"
 javac -nowarn -proc:none --release 21 -cp "$KERNEL_JAR" -d "$WORK/parfab" \
@@ -57,6 +70,9 @@ javac -nowarn -proc:none --release 21 -cp "$FORGE_RT" -d "$WORK/parforge" \
       "$SRC/parentforge/src/forbric/nestparent/NestParentForge.java" 2>&1 | grep -v '^Note:' || true
 [ -f "$WORK/parfab/forbric/nestparent/NestParentFabric.class" ] || { echo "[kernel] FAIL fabric parent did not compile"; exit 1; }
 [ -f "$WORK/parforge/forbric/nestparent/NestParentForge.class" ] || { echo "[kernel] FAIL forge parent did not compile"; exit 1; }
+javac -nowarn -proc:none --release 21 -cp "$NEO_RT" -d "$WORK/parneo" \
+      "$SRC/parentneoforge/src/forbric/nestparent/NestParentNeoForge.java" 2>&1 | grep -v '^Note:' || true
+[ -f "$WORK/parneo/forbric/nestparent/NestParentNeoForge.class" ] || { echo "[kernel] FAIL neoforge parent did not compile"; exit 1; }
 
 cp "$SRC/parentfabric/fabric.mod.json" "$WORK/parfab/"
 mkdir -p "$WORK/parfab/META-INF/jars"
@@ -72,12 +88,21 @@ cp "$SRC/parentforge/mods.toml" "$WORK/parforge/META-INF/"
 cp "$SRC/parentforge/metadata.json" "$WORK/parforge/META-INF/jarjar/"
 cp "$WORK/forbricnestlib-forge.jar" "$WORK/parforge/META-INF/jarjar/"
 
+# The NeoForge parent the same way: JarJar's metadata.json names its own platform artifact, and the jar beside it.
+mkdir -p "$WORK/parneo/META-INF/jarjar"
+cp "$SRC/parentneoforge/neoforge.mods.toml" "$WORK/parneo/META-INF/"
+cp "$SRC/parentneoforge/metadata.json" "$WORK/parneo/META-INF/jarjar/"
+cp "$WORK/forbricnestlib-neoforge.jar" "$WORK/parneo/META-INF/jarjar/"
+
 (cd "$WORK/parfab"   && jar --create --file "$WORK/forbricnestfab.jar" .)   || exit 1
 (cd "$WORK/parforge" && jar --create --file "$WORK/forbricnestforge.jar" .) || exit 1
+(cd "$WORK/parneo"   && jar --create --file "$WORK/forbricnestneo.jar" .)   || exit 1
 publish_canary "$WORK/forbricnestfab.jar"   "$OUT/forbricnestfab.jar"   || exit 1
 publish_canary "$WORK/forbricnestforge.jar" "$OUT/forbricnestforge.jar" || exit 1
+publish_canary "$WORK/forbricnestneo.jar"   "$OUT/forbricnestneo.jar"   || exit 1
 
 step "result"
-echo "[kernel] ✅ built $OUT/forbricnestfab.jar + $OUT/forbricnestforge.jar"
+echo "[kernel] ✅ built $OUT/forbricnestfab.jar + $OUT/forbricnestforge.jar + $OUT/forbricnestneo.jar"
 unzip -l "$OUT/forbricnestfab.jar"   | grep -E 'jars/|fabric.mod.json'
 unzip -l "$OUT/forbricnestforge.jar" | grep -E 'jarjar/|mods.toml'
+unzip -l "$OUT/forbricnestneo.jar"   | grep -E 'jarjar/|neoforge.mods.toml'

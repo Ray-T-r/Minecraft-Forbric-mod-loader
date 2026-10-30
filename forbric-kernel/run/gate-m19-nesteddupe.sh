@@ -155,10 +155,69 @@ check "the pinned build outside the range is explicitly unsatisfiable" 'Forbric/
 check "strict policy refuses the unsatisfied selection" 'launch stopped by compatibility policy|launch stopped: required mod initialization or features are unavailable' "$CONFLICT"
 check_absent "a manual preference did not turn the invalid combination into a world" 'Done \(' "$CONFLICT"
 
+# M19_NEO_BEGIN — the same contest on the family that stays.
+#
+# Everything above pits a Fabric JiJ child against a MinecraftForge JarJar child. When MinecraftForge goes, that pair
+# goes, and with it the only proof that the arbitration reaches a nested jar of the other ecosystem at all. The
+# NeoForge parent nests its own build of the same library through NeoForge's JarJar, exactly as the MinecraftForge
+# parent does, so this is the pair that keeps the proof: one construction, both parents up, both sides still seeing
+# the library -- and the negative control that the duplicate really happens without arbitration.
+step "a Fabric JiJ child against a NeoForge JarJar child: one construction (must PASS)"
+NEOPAIR="$BUILD/gate-m19-neo.log"
+NEOCONTROL="$BUILD/gate-m19-neo-control.log"
+NEOPARENT="$KERNEL/run/canary/forbricnestneo.jar"
+[ -f "$NEOPARENT" ] || { echo "[kernel] FAIL canary build (see $BUILD/gate-m19-canary.log): $NEOPARENT"; FAIL=1; }
+reap_stale_server "$RUNDIR"
+rm -rf "$RUNDIR/world" "$RUNDIR/mods" "$RUNDIR/.forbric-kernel" 2>/dev/null
+mkdir -p "$RUNDIR/mods"
+cp "$FAB" "$NEOPARENT" "$RUNDIR/mods/" 2>/dev/null
+echo "[kernel] staged: $(ls -1 "$RUNDIR/mods" | tr '\n' ' ')"
+boot "$NEOPAIR"
+check "the whole-instance constraints were satisfied" \
+  "Forbric/Arbitration\] status=SOLVED;.*confirmed violations=0; unproved contracts=0" "$NEOPAIR"
+# NeoForge's build wins here where the Fabric build won against MinecraftForge's: the nested preference puts NeoForge
+# first (measured 2026-10-30), so the side that loses its jar and must still see the library is the FABRIC one.
+check "both nested candidates participated and the NeoForge build won" \
+  "mod id 'forbricnestlib' claimed by 2 jars.*loading forbricnestlib-neoforge.jar \(NEOFORGE\)" "$NEOPAIR"
+check "exactly one nested jar was withdrawn" \
+  "cross-jar arbitration \(whole-instance\): 1 duplicate mod id\(s\), 1 jar\(s\) suppressed" "$NEOPAIR"
+assert_eq "the canary library was claimed once" "1" "$(grep -acE '\[ForbricNestLib\] claimed by' "$NEOPAIR")"
+check "by the build that won" "ForbricNestLib\] claimed by neoforge" "$NEOPAIR"
+check_absent "no duplicate registration" "ForbricNestLib\] DUPLICATE registration" "$NEOPAIR"
+check "the Fabric parent came up"   "ForbricNestParent\] fabric parent up"   "$NEOPAIR"
+check "the NeoForge parent came up" "ForbricNestParent\] neoforge parent up" "$NEOPAIR"
+check "the NeoForge side can still see the library" "ForbricNestParent\] neoforge sees forbricnestlib=true" "$NEOPAIR"
+check "the Fabric side can see it too"              "ForbricNestParent\] fabric sees forbricnestlib=true"   "$NEOPAIR"
+check_absent "neither side was told it is absent" "ForbricNestParent\] (neoforge|fabric) sees forbricnestlib=false" "$NEOPAIR"
+check_absent "no crash report" "Preparing crash report" "$NEOPAIR"
+check_absent "no entrypoint failure" "entrypoint of .* failed" "$NEOPAIR"
+
+step "negative control: with arbitration off, the NeoForge pair duplicates too"
+boot "$NEOCONTROL" "-Dforbric.crossJarArbitration=off"
+check "the control really disabled arbitration" "cross-jar arbitration DISABLED" "$NEOCONTROL"
+check "and the library was then claimed twice, or tried to be" \
+  "ForbricNestLib\] DUPLICATE registration|ForbricNestLib\] claimed by" "$NEOCONTROL" 2
+
+step "the Fabric side's sight of the NeoForge-owned library does NOT hang on ModPresence"
+# The opposite of the MinecraftForge pair's control 2, and measured, not assumed (2026-10-30): there the losing side
+# went dark without ModPresence because Decision.aliasesFor(Ecosystem.FORGE) has no consumer. Here the losing side is
+# Fabric, and the arbiter's "aliased into [FABRIC]" DOES have one -- the Fabric loader registers the alias -- so with
+# ModPresence off both sides must still see the library. A Fabric side that went dark here would be a lost alias that
+# the presence rewrite had been hiding.
+NEOPRESENCE="$BUILD/gate-m19-neo-nopresence.log"
+boot "$NEOPRESENCE" "-Dforbric.crossEcosystemPresence=off"
+check "the arbiter aliased the NeoForge-owned id into Fabric" \
+  "mod id 'forbricnestlib' claimed by 2 jars.*loading forbricnestlib-neoforge.jar \(NEOFORGE\), aliased into \[FABRIC\]" "$NEOPRESENCE"
+check "the Fabric side still sees it, through that alias" \
+  "ForbricNestParent\] fabric sees forbricnestlib=true" "$NEOPRESENCE"
+check "and the side that owns the container still sees it" \
+  "ForbricNestParent\] neoforge sees forbricnestlib=true" "$NEOPRESENCE"
+# M19_NEO_END
+
 step "M19 result"
 if [ "${FAIL:-0}" -eq 0 ]; then
-  echo "[kernel] ✅ M19 GATE GREEN — a library nested by a Fabric mod and a MinecraftForge mod is constructed once"
+  echo "[kernel] ✅ M19 GATE GREEN — a library nested by a Fabric mod and a MinecraftForge mod is constructed once, and so is one nested by a Fabric mod and a NeoForge mod"
 else
-  echo "[kernel] ❌ M19 GATE RED — see $LOG / $CONTROL / $BUILD/gate-m19-flipped.log / $BUILD/gate-m19-nopresence.log / $BUILD/gate-m19-ranged.log / $BUILD/gate-m19-unsatisfiable.log"
+  echo "[kernel] ❌ M19 GATE RED — see $LOG / $CONTROL / $BUILD/gate-m19-flipped.log / $BUILD/gate-m19-nopresence.log / $BUILD/gate-m19-ranged.log / $BUILD/gate-m19-unsatisfiable.log / $BUILD/gate-m19-neo.log / $BUILD/gate-m19-neo-control.log / $BUILD/gate-m19-neo-nopresence.log"
   exit 1
 fi

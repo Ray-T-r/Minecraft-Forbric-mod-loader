@@ -1,0 +1,9 @@
+modLoader="javafml"
+loaderVersion="[1,)"
+license="Apache-2.0"
+
+[[mods]]
+modId="forbricnestneo"
+version="1.0.0"
+displayName="Forbric Nested-Duplicate Canary (NeoForge parent)"
+description='''Nests the NeoForge build of forbricnestlib through JarJar, the way the MinecraftForge parent nests the Forge build.'''
