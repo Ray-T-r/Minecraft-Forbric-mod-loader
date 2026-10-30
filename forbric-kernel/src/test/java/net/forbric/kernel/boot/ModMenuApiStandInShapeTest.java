@@ -89,14 +89,15 @@ class ModMenuApiStandInShapeTest {
 	}
 
 	@Test void everyPublicMemberMatchesModMenu() throws Exception {
-		for (var expected : MOD_MENU_20_0_3.entrySet()) {
+		// Sorted: the first class read decides a skip's reason, and the skip baselines compare reasons exactly.
+		for (var expected : new java.util.TreeMap<>(MOD_MENU_20_0_3).entrySet()) {
 			ClassNode node = read(expected.getKey());
 			assertEquals(new TreeSet<>(expected.getValue()), publicMembers(node), expected.getKey());
 		}
 	}
 
 	@Test void everyTypeIsTheSameKindOfType() throws Exception {
-		for (var expected : KIND.entrySet()) {
+		for (var expected : new java.util.TreeMap<>(KIND).entrySet()) {
 			ClassNode node = read(expected.getKey());
 			assertTrue((node.access & Opcodes.ACC_PUBLIC) != 0, expected.getKey());
 			String kind = (node.access & Opcodes.ACC_ENUM) != 0 ? "enum"

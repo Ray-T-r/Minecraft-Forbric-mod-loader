@@ -120,7 +120,8 @@ class NativeCoremodParityTest {
 
 	@Test void everyFinalizeSpawnInNeoForgesListIsRedirectedAndNothingElse() throws Exception {
 		int before = 0, after = 0;
-		for (String target : NativeCoremodParity.FINALIZE_TARGETS) {
+		// Sorted: the first class read decides a skip's reason, and the skip baselines compare reasons exactly.
+		for (String target : new TreeSet<>(NativeCoremodParity.FINALIZE_TARGETS)) {
 			ClassNode original = node(read(MERGED, target));
 			int raw = virtualFinalize(original), supers = specialFinalize(original);
 			assertTrue(raw >= 1, target + " has a finalizeSpawn call on the merged base");
