@@ -1,15 +1,21 @@
 #!/usr/bin/env bash
 # M26 — traditional Forge's client event buses must receive the game's real registration events.
 # NeoForge half (forbricneolive rides along): the same registration events in NeoForge's shape, read back from the
-#   same consumer tables, plus its block's id. These outlive the MinecraftForge canary, and no kernel switch turns them
-#   red, which is itself the measurement (2026-10-30): M26_EXTRA_JVM='-Dforbric.blockStateIdRefill=off' leaves the
-#   NeoForge block's id alone, because a NeoForge block is registered in the first wave and the map's first fill covers
-#   it; and with '-Dforbric.forgeClientInit=off' Minecraft.<init> calls NeoForge's own ClientHooks.initClientHooks
-#   directly, so all eleven NeoForge registrations made before the world still arrive (the MinecraftForge canary's
-#   client then never reaches its world, so the in-world read-backs cannot be judged in that run). So the twelve
-#   NeoForge registrations and their read-backs are POSITIVE-ONLY checks with no red control: what drives them is the
-#   canary's own listeners on NeoForge's own hooks, not any kernel behaviour a switch can take away. What they prove is
-#   that each registration reaches its table on the merged base, through whichever route the base takes.
+#   same consumer tables, plus its block's id. These outlive the MinecraftForge canary. NeoForge posts all twelve
+#   itself, through ModLoader.postEvent, whose only fan-out is ModList.forEachModInOrder -- so the one kernel behaviour
+#   under them is publishing the canary's container into NeoForge's ModList, and that has a switch.
+#   RED with M26_EXTRA_JVM='-Dforbric.publishModList=off' (measured 2026-10-30, 21 of 77 red): the twelve NeoForge
+#   "received" checks and the eight read-backs that follow from them (key in Options, the F9 binding, the baked layer,
+#   the tint, both reload checks, the tooltip factory, the gui layer's frames), plus the MinecraftForge canary's
+#   RegisterPresetEditorsEvent, which arrives off NeoForge's. The client still reaches its world: the canary subscribes
+#   (on the bus its constructor is handed), reaches world tick 100, its block has an id, its plugin sees the client.
+#   Those four NeoForge checks stay POSITIVE-ONLY, with no switch that turns them red: M26_EXTRA_JVM=
+#   '-Dforbric.blockStateIdRefill=off' leaves the NeoForge block's id alone, because a NeoForge block is registered in
+#   the first wave and the map's first fill covers it; and with '-Dforbric.forgeClientInit=off' Minecraft.<init> calls
+#   NeoForge's own ClientHooks.initClientHooks directly, so all eleven NeoForge registrations made before the world
+#   still arrive (the MinecraftForge canary's client then never reaches its world, so the in-world read-backs cannot be
+#   judged in that run). What these prove is that each registration reaches its table on the merged base, through
+#   whichever route the base takes.
 # Fabric half (forbricfabriclive rides along, with -Dforbricfabriclive.lateBlock=true): the refill's own proof, moved
 #   off MinecraftForge. The late registration wave the blockstate→id refill exists for is MinecraftForge's today and a
 #   Fabric client entrypoint's after it, so the Fabric canary registers a block from onInitializeClient and reads its id

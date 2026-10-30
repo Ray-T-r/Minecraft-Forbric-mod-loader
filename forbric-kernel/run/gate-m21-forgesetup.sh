@@ -394,11 +394,21 @@ check "the per-jar boot reached Done" "Done \(" "$LOG_PERJAR"
 #   M21_EXTRA_JVM='-Dforbric.forgeReloadListeners=off' turns the four MinecraftForge RELOAD checks red and leaves the
 #                                                three NeoForge ones green: with the kernel's reload routing off, the
 #                                                merged ReloadableServerResources calls NeoForge's own onResourceReload,
-#                                                so no kernel switch takes the NeoForge data loader out -- the measurement
-#                                                that it rests on NeoForge's hook, not on the MinecraftForge bridge
-# So the three NeoForge RELOAD checks are POSITIVE-ONLY: no kernel switch turns them red, and what drives them is the
-# canary's listener on NeoForge's own hook. The SELF, PLUGIN and SERVER-config checks have no kernel switch either,
-# like their MinecraftForge twins here.
+#                                                so the NeoForge listener is not on the MinecraftForge bridge
+#   M21_EXTRA_JVM='-Dforbric.modDataPacks=off'   the kernel serves no Forge-family mod's own data/ (ModList.modFiles is
+#                                                empty, so NeoForge's own pack finder finds none; KernelDataPacks is the
+#                                                only server of it): the canary's listener still runs, over 0 files, and
+#                                                "NeoForge: the registered data loader ran" goes red, with the four
+#                                                MinecraftForge checks that read its canary's data ("the Forge-registered
+#                                                data loader ran", the forge:intersection recipe and its count line, the
+#                                                leniency on a real element). Measured 2026-10-30 together with
+#                                                -Dforbric.modFilePerJar=on (whose two default checks went red too):
+#                                                exactly those 7 of 110 red, "DELIVERED" and "context=live" green
+# So of the three NeoForge RELOAD checks only the data loader has a red control. "DELIVERED" and "context=live" are
+# POSITIVE-ONLY: no kernel switch turns them red, because the event is posted by NeoForge's own EventHooks.onResourceReload
+# on NeoForge's own game bus, where the canary's constructor registers its listener, and its condition context is
+# NeoForge's own. The SELF, PLUGIN and SERVER-config checks have no kernel switch either, like their MinecraftForge twins
+# here.
 step "the NeoForge canary finds its OWN members through both readers of the scan index (must PASS)"
 for reader in ModList LoadingModList; do
   check "NeoForge ($reader): the index carries the mod's own annotation" \
@@ -434,7 +444,8 @@ step "a NeoForge mod's server data loader is registered and runs (must PASS)"
 # ReloadableServerResources calls as the genuine base does. The kernel redirects that one call to KernelForgeReload,
 # which calls NeoForge's hook first and MinecraftForge's after it; with that routing off the merged class calls
 # NeoForge's hook directly. So this is the NeoForge half of the route the MinecraftForge RELOAD checks above cover, and
-# the probe that says nothing is lost when the MinecraftForge half goes away. Positive-only (see the header).
+# the probe that says nothing is lost when the MinecraftForge half goes away. Only the file count has a red control
+# (-Dforbric.modDataPacks=off); the delivery and the context are positive-only (see the header).
 check "NeoForge: the event was delivered"          '\[ForbricNeoLive/RELOAD\] AddServerReloadListenersEvent DELIVERED' "$LOG"
 check "NeoForge: the registered data loader ran"   '\[ForbricNeoLive/RELOAD\] reload listener ran over [1-9][0-9]* file' "$LOG"
 check "NeoForge: the event hands out a live condition context" '\[ForbricNeoLive/RELOAD\] context=live' "$LOG"
