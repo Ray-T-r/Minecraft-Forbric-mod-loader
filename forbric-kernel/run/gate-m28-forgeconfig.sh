@@ -1,34 +1,37 @@
 #!/usr/bin/env bash
-# M28 — Forge COMMON configs load once and the carrier's native file watcher reads a live edit.
+# M28 — NeoForge COMMON configs load once and the carrier's native file watcher reads a live edit.
 # RED control: M28_EXTRA_JVM='-Dforbric.earlyConfigs=off' (no assertion is relaxed).
 #
-# Both families, from one server: the MinecraftForge canary (forbriclive) and the NeoForge canary (forbricneolive) each
-# register a COMMON config with probe=11, and the gate edits both files to 73 while the server runs. The NeoForge half
-# is the one that outlives MinecraftForge: the contract -- the kernel's early pass opens COMMON exactly once, and the
-# carrier's own watcher (NeoForge's ConfigWatcher) reads a live edit back -- is the same, and so is the RED control:
-# with -Dforbric.earlyConfigs=off nothing opens a NeoForge COMMON config (NeoForge's registerConfig opens STARTUP only),
-# so no Loading, no file, nothing to edit and no Reloading.
+# The NeoForge canary (forbricneolive) registers a COMMON config with probe=11, and the gate edits the file to 73 while
+# the server runs. The contract: the kernel's early pass opens COMMON exactly once, and the carrier's own watcher
+# (NeoForge's ConfigWatcher) reads a live edit back. With -Dforbric.earlyConfigs=off nothing opens a NeoForge COMMON
+# config (NeoForge's registerConfig opens STARTUP only), so no Loading, no file, nothing to edit and no Reloading.
+#
+# STAGE 3 OF DROPPING MinecraftForge (what changed and why). Both families rode in this gate: the MinecraftForge canary
+# (forbriclive) made the same edit on its own COMMON file and was asserted the same way, plus MinecraftForge's own
+# forge-common.toml. Forbric now refuses a MinecraftForge-only jar and a dedicated server stops on the refusal, so the
+# canary would stop the server before either half could be read. Its half -- the M28_EDIT / M28_WATCH /
+# M28_ASSERTIONS blocks and its jar -- is gone (Stage 2.5 had already given the NeoForge canary the same contract, and
+# the -Dforbric.earlyConfigs=off control turns the NeoForge half red on its own). Three checks of that block were not
+# about MinecraftForge and moved into the NeoForge block unchanged: the server reached Done, it stopped cleanly, and no
+# startup or watcher failure. What a refused MinecraftForge jar does to a server is gate-m29's.
 # GATE-PARALLEL: rundirs=server-forge-config mem=1500
 set -uo pipefail
 . "$(cd "$(dirname "$0")" && pwd)/lib.sh"
 
 RUNDIR="$KERNEL/run/server-forge-config"
 LOG="$BUILD/gate-m28-forgeconfig.log"
-WATCH_LOG="$BUILD/gate-m28-config-reload.log"
-FORGE="$RUN_OLD/forge-runtime/forbriclive.jar"
-CONFIG="$RUNDIR/config/forbriclive-common.toml"
 NEO_WATCH_LOG="$BUILD/gate-m28-neo-config-reload.log"
 NEO_CONFIG="$RUNDIR/config/forbricneolive-common.toml"
 mkdir -p "$BUILD"
-[ -f "$FORGE" ] || { echo "[kernel] FATAL: missing $FORGE; run build-testmods.sh" >&2; exit 3; }
 [ -f "$NEOLIVE" ] || { echo "[kernel] FATAL: missing $NEOLIVE; run build-testmods.sh or run/build-neolive-canary.sh" >&2; exit 3; }
 kernel_jar
 
-step "start with no Forge config files and hold the dedicated server open"
+step "start with no config files and hold the dedicated server open"
 reap_stale_server "$RUNDIR"
 rm -rf "$RUNDIR"
 mkdir -p "$RUNDIR/mods"
-cp "$FORGE" "$NEOLIVE" "$RUNDIR/mods/"
+cp "$NEOLIVE" "$RUNDIR/mods/"
 printf 'eula=true\n' > "$RUNDIR/eula.txt"
 printf 'server-port=%s\nonline-mode=false\nlevel-type=minecraft\\:flat\nlevel-name=ConfigWorld\nmax-tick-time=-1\nview-distance=2\nsync-chunk-writes=false\n' "${M28_PORT:-25608}" > "$RUNDIR/server.properties"
 FIFO="$RUNDIR/.stdin"
@@ -40,7 +43,6 @@ cleanup() {
 }
 trap 'rc=$?; cleanup; _gate_exit "$rc"' EXIT
 trap 'exit 130' INT TERM
-: > "$WATCH_LOG"
 : > "$NEO_WATCH_LOG"
 FORBRIC_JVM="${M28_EXTRA_JVM:-}" RUNDIR="$RUNDIR" \
   "$KERNEL/run/launch-kernel-server.sh" < "$FIFO" > "$LOG" 2>&1 &
@@ -53,45 +55,6 @@ for i in $(seq 1 240); do
   if grep -qaE 'Done \(' "$LOG"; then READY=1; break; fi
   sleep 1
 done
-
-step "edit the actual COMMON file while the server is running"
-EDITED=0
-if [ "$READY" -eq 1 ]; then
-  # M28_EDIT_BEGIN — offline contracts execute this exact mutation, with a real temporary TOML file.
-  BEFORE_LINES=$(wc -l < "$LOG" | tr -d ' ')
-  if python3 - "$CONFIG" <<'PY_EDIT'
-from pathlib import Path
-import os, re, sys
-path = Path(sys.argv[1])
-text = path.read_text()
-text, count = re.subn(r'(?m)^(\s*probe\s*=\s*)11(\s*(?:#.*)?)$', r'\g<1>73\2', text)
-if count != 1:
-    raise SystemExit(f'expected exactly one default probe=11 before the edit, found {count}')
-# Write the existing file in place so Forge/NightConfig observes the ordinary file modification event.
-with path.open('w') as output:
-    output.write(text)
-    output.flush()
-    os.fsync(output.fileno())
-print('[kernel] changed live COMMON probe from 11 to 73')
-PY_EDIT
-  then EDITED=1; else FAIL=1; fi
-  # M28_EDIT_END
-fi
-
-RELOADED=0
-if [ "$EDITED" -eq 1 ]; then
-  # M28_WATCH_BEGIN — only events appended AFTER the live edit can satisfy the watcher observation.
-  for i in $(seq 1 40); do
-    kill -0 "$SRVPID" 2>/dev/null || break
-    tail -n "+$((BEFORE_LINES + 1))" "$LOG" > "$WATCH_LOG"
-    if grep -qaE 'ForbricLive/CFG\] RELOADING forbriclive-common\.toml: probe=73 loaded=true([[:space:]]|$)' "$WATCH_LOG"; then
-      RELOADED=1
-      break
-    fi
-    sleep 1
-  done
-  # M28_WATCH_END
-fi
 
 step "edit the NeoForge canary's COMMON file while the server is running"
 NEO_EDITED=0
@@ -137,38 +100,9 @@ exec 9>&-
 await_server "$SRVPID" "$LOG" 90
 SRVPID=
 
-# M28_ASSERTIONS_BEGIN — run against log/file fixtures as well as the live gate's authoritative stdout log.
-step "COMMON loading, one Loading event, and real watcher readback"
-assert_eq "the dedicated server reached Done" 1 "$READY"
-assert_eq "the gate changed the live COMMON file" 1 "$EDITED"
-assert_eq "native Reloading read back 73 within 40 seconds" 1 "$RELOADED"
-check "Forge COMMON configs were applied" 'loaded MinecraftForge configs \(COMMON\): applied [1-9][0-9]*, already loaded [0-9]+, failed 0 from ' "$LOG"
-check_absent "no Forge config failed" 'loaded MinecraftForge configs \([^)]*\): .*failed [1-9]' "$LOG"
-check "the COMMON default was read from the loaded spec" 'ForbricLive/CFG\] LOADING forbriclive-common\.toml: probe=11 loaded=true([[:space:]]|$)' "$LOG"
-assert_eq "COMMON Loading fired exactly once" 1 "$(grep -acE 'ForbricLive/CFG\] LOADING forbriclive-common\.toml:' "$LOG" || true)"
-check "a new native Reloading event read the changed value" 'ForbricLive/CFG\] RELOADING forbriclive-common\.toml: probe=73 loaded=true([[:space:]]|$)' "$WATCH_LOG"
-for name in forbriclive-common.toml forge-common.toml; do
-  if [ -s "$RUNDIR/config/$name" ]; then echo "[kernel] PASS config/$name was created"
-  else echo "[kernel] FAIL config/$name was not created"; FAIL=1; fi
-done
-if python3 - "$CONFIG" <<'PY_READBACK'
-from pathlib import Path
-import sys, tomllib
-value = tomllib.loads(Path(sys.argv[1]).read_text()).get('probe')
-if type(value) is not int or value != 73:
-    raise SystemExit(f'COMMON file readback was {value!r}, expected 73')
-print('[kernel] PASS COMMON file still contains probe=73')
-PY_READBACK
-then :; else FAIL=1; fi
-if [ ! -e "$RUNDIR/config/forbriclive-client.toml" ]; then echo "[kernel] PASS no CLIENT file on the dedicated server"
-else echo "[kernel] FAIL dedicated server opened a CLIENT config"; FAIL=1; fi
-check_absent "no CLIENT Loading on the dedicated server" 'ForbricLive/CFG\] LOADING forbriclive-client\.toml:' "$LOG"
-check "server stopped cleanly" 'All dimensions are saved' "$LOG"
-check_absent "no startup or watcher failure" 'Preparing crash report|Encountered an unexpected exception|Exception caught by file watcher|Failed to (load|reload) config' "$LOG"
-# M28_ASSERTIONS_END
-
-# M28_NEO_ASSERTIONS_BEGIN — the NeoForge canary's twin of every assertion above.
+# M28_NEO_ASSERTIONS_BEGIN — run against log/file fixtures as well as the live gate's authoritative stdout log.
 step "NeoForge COMMON loading, one Loading event, and real watcher readback"
+assert_eq "the dedicated server reached Done" 1 "$READY"
 assert_eq "the gate changed the live NeoForge COMMON file" 1 "$NEO_EDITED"
 assert_eq "NeoForge's native Reloading read back 73 within 40 seconds" 1 "$NEO_RELOADED"
 check "the kernel opened the NeoForge COMMON configs" 'loaded NeoForge configs \(COMMON\) from .* opened [1-9][0-9]* of [1-9][0-9]* config\(s\)' "$LOG"
@@ -191,12 +125,14 @@ if [ ! -e "$RUNDIR/config/forbricneolive-client.toml" ]; then echo "[kernel] PAS
 else echo "[kernel] FAIL dedicated server opened a NeoForge CLIENT config"; FAIL=1; fi
 check_absent "no NeoForge CLIENT Loading on the dedicated server" 'ForbricNeoLive/CFG\] LOADING forbricneolive-client\.toml:' "$LOG"
 check_absent "no NeoForge config opened twice" 'Opening a config that was already loaded' "$LOG"
+check "server stopped cleanly" 'All dimensions are saved' "$LOG"
+check_absent "no startup or watcher failure" 'Preparing crash report|Encountered an unexpected exception|Exception caught by file watcher|Failed to (load|reload) config' "$LOG"
 # M28_NEO_ASSERTIONS_END
 
 step "M28 result"
 if [ "$FAIL" -eq 0 ]; then
-  echo "[kernel] M28 FORGE-CONFIG GATE GREEN — COMMON loaded once and the native watcher read back the live edit"
+  echo "[kernel] M28 CONFIG GATE GREEN — NeoForge COMMON loaded once and the native watcher read back the live edit"
 else
-  echo "[kernel] M28 FORGE-CONFIG GATE RED — see $LOG, $WATCH_LOG and $NEO_WATCH_LOG"
+  echo "[kernel] M28 CONFIG GATE RED — see $LOG and $NEO_WATCH_LOG"
 fi
 exit "$FAIL"

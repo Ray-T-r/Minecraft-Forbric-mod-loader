@@ -40,8 +40,6 @@ class ForgeRegistrationA2ContractTest {
             "RegisterColorHandlersEvent$Block", "RegisterClientReloadListenersEvent",
             "RegisterClientTooltipComponentFactoriesEvent", "ModelEvent$RegisterGeometryLoaders",
             "RegisterPresetEditorsEvent");
-    private static final String CLIENT = "[ForbricLive/CLIENT] ";
-    private static final String COMMON = "[ForbricLive/REGISTRATION] ";
     @TempDir Path temporary;
 
     @Test
@@ -128,7 +126,7 @@ class ForgeRegistrationA2ContractTest {
     }
 
     @Test
-    void clientGateSeedsF6AndBothScriptsParse() throws Exception {
+    void clientGateSeedsTheNeoForgeF9AndBothScriptsParse() throws Exception {
         // The options section reads the world version out of the merged base, exactly as the gate does.
         TestFixtures.requireFiles(Fixture.STAGED, "staged merged base", System.getenv("MERGED") != null ? Path.of(System.getenv("MERGED"))
                 : CANARY.toAbsolutePath().getParent().getParent().resolve(TestFixtures.BASE_JAR));
@@ -140,7 +138,7 @@ class ForgeRegistrationA2ContractTest {
         builder.environment().put("RUN_OLD", CANARY.toAbsolutePath().getParent().getParent().toString());
         assertEquals(0, execute(builder, result).exit());
         String seeded = Files.readString(temporary.resolve("options.txt"));
-        assertTrue(seeded.matches("version:[1-9][0-9]*\\nonboardAccessibility:false\\nkey_key\\.forbriclive\\.probe:key\\.keyboard\\.f6\\n"), seeded);
+        assertTrue(seeded.matches("version:[1-9][0-9]*\\nonboardAccessibility:false\\nkey_key\\.forbricneolive\\.probe:key\\.keyboard\\.f9\\n"), seeded);
         for (Path gate : List.of(M21, M26)) {
             Result parsed = execute(new ProcessBuilder("bash", "-n", gate.toString()), result);
             assertEquals(0, parsed.exit(), parsed.output());
@@ -150,184 +148,11 @@ class ForgeRegistrationA2ContractTest {
         assertTrue(script.contains("SRC_MODS=\"$RUNDIR/empty-mods\""));
     }
 
-    @Test
-    void allClientRegistrationResultsPassTogether() throws Exception {
-        Result result = gate(M26, "M26_ASSERTIONS", clientGreen(), 0);
-        assertEquals(0, result.exit(), result.output());
-        assertTrue(result.output().contains("M26 FORGE-CLIENT GATE GREEN"));
-    }
-
-    @Test
-    void eachMissingClientEventAndEachFalseConsumerIsRed() throws Exception {
-        for (String event : CLIENT_EVENTS) {
-            String missing = clientGreen().replace(CLIENT + event.replace('$', '.') + " RECEIVED\n", "");
-            Result result = gate(M26, "M26_ASSERTIONS", missing, 0);
-            assertEquals(1, result.exit(), event + ": " + result.output());
-        }
-        for (String row : List.of("BuildCreativeModeTabContentsEvent RECEIVED", "key in Options.keyMappings: true",
-                "key saved binding: key.keyboard.f6", "layer forbriclive:probe baked: true", "stone tint sources: 1",
-                "stone probe tint present: true", "reload posts=1", "reload listener applies=1",
-                "tooltip factory consumed: true", "forbriclive:probe geometry loader present: true",
-                "forge:obj geometry loader present: true")) {
-            Result result = gate(M26, "M26_ASSERTIONS", clientGreen().replace(CLIENT + row + "\n", ""), 0);
-            assertEquals(1, result.exit(), row + ": " + result.output());
-        }
-        assertEquals(1, gate(M26, "M26_ASSERTIONS", clientGreen().replace(
-                "EntityRenderersEvent.RegisterLayerDefinitions RECEIVED",
-                "EntityRenderersEventXRegisterLayerDefinitions RECEIVED"), 0).exit(),
-                "the event name separator must be literal, not a regex wildcard");
-        for (String replacement : List.of("key saved binding: key.keyboard.f7", "key saved binding: key.keyboard.f60")) {
-            assertEquals(1, gate(M26, "M26_ASSERTIONS", clientGreen().replace(
-                    "key saved binding: key.keyboard.f6", replacement), 0).exit());
-        }
-        // 0 is AIR, and is exactly what Block.getId answers for a state that carries no id at all. A gate that
-        // only asserted the line was printed would stay green on the defect it exists to catch.
-        assertEquals(1, gate(M26, "M26_ASSERTIONS", clientGreen().replace(
-                "probe_block id=32366", "probe_block id=0"), 0).exit());
-        for (String replacement : List.of("injection VISIBLE: false search=true", "injection VISIBLE: true search=false")) {
-            assertEquals(1, gate(M26, "M26_ASSERTIONS", clientGreen().replace(
-                    "injection VISIBLE: true search=true", replacement), 0).exit());
-        }
-        for (String pass : List.of("all 3 CLIENT_INIT bridge(s) installed", "all 2 REGISTRATION bridge(s) installed",
-                "setup resource PRESENT: forbriclive:setup_probe.txt = forbric-live-setup-probe",
-                "client resource manager preloaded with 140 selected pack(s)",
-                "AddGuiOverlayLayersEvent RECEIVED", "overlay layer DREW 20 frames",
-                "MinecraftForge's overlay stack is on NeoForge's layer manager",
-                "RegisterPictureInPictureRendererEvent RECEIVED",
-                "1 MinecraftForge picture-in-picture renderer(s) registered", "only writer",
-                "traditional-Forge mod(s) in the Minecraft.<init> window",
-                "states, was 32366", "id=32366 roundTrip=Block{forbriclive:probe_block}")) {
-            assertEquals(1, gate(M26, "M26_ASSERTIONS", clientGreen().replace(pass, ""), 0).exit());
-        }
-        // ABSENT is its own row, not the negation of PRESENT: an empty manager makes the canary print it, and a
-        // gate that only asserted PRESENT would stay green on a log carrying both.
-        assertEquals(1, gate(M26, "M26_ASSERTIONS", clientGreen()
-                + CLIENT + "setup resource ABSENT: forbriclive:setup_probe.txt\n", 0).exit());
-    }
-
-    /**
-     * The HUD drop row follows the base the gate read before its assertions: where the merged Hud kept MinecraftForge's
-     * overlay tree the kernel's drop line is required, and where it did not the same line is red.
-     */
-    @Test
-    void theHudDropRowFollowsTheBaseTheGateRead() throws Exception {
-        String dropped = "[Forbric/HudBridge] net.minecraft.client.gui.Hud kept MinecraftForge's own overlay tree (built in 1 "
-                + "place(s), drawn instead of NeoForge's layer manager in 1) — dropped: the kernel builds that tree once "
-                + "every mod is loaded and puts it on NeoForge's manager, the one HUD pipeline\n";
-        assertEquals(0, gate(M26, "M26_ASSERTIONS", clientGreen() + dropped, 0, "HUD_TREE=kept").exit());
-        assertEquals(1, gate(M26, "M26_ASSERTIONS", clientGreen(), 0, "HUD_TREE=kept").exit(),
-                "a base that kept the tree and no drop: both pipelines still run");
-        assertEquals(0, gate(M26, "M26_ASSERTIONS", clientGreen(), 0, "HUD_TREE=absent").exit());
-        assertEquals(1, gate(M26, "M26_ASSERTIONS", clientGreen() + dropped, 0, "HUD_TREE=absent").exit(),
-                "a drop on a base that never carried the tree is a drop of something else");
-    }
-
-    @Test
-    void clientControlFailuresEmptyLogsAndDuplicateReloadsAreOrdinaryRed() throws Exception {
-        for (String log : List.of("", clientGreen().replace("registration observations completed at world tick 100", "lost probe"),
-                clientGreen().replace("ClientSmoke] joined world via quick-play", "world failed"),
-                clientGreen().replace("reload posts=1", "reload posts=2"),
-                clientGreen().replace("reload posts=1", "reload posts=10"),
-                clientGreen() + "NoClassDefFoundError: missing.game.Type\n")) {
-            Result result = gate(M26, "M26_ASSERTIONS", log, 0);
-            assertEquals(1, result.exit(), result.output());
-            assertFalse(result.output().contains("EXPECTED-RED"), result.output());
-        }
-    }
-
-    @Test
-    void commonRegistrationRequiresBothEventsAndBothMaterializedResults() throws Exception {
-        Result green = gate(M21, "M21_REGISTRATION_ASSERTIONS", commonGreen(), 0);
-        assertEquals(0, green.exit(), green.output());
-        for (String row : List.of("SpawnPlacementRegisterEvent RECEIVED", "zombie heightmap=WORLD_SURFACE",
-                "BuildCreativeModeTabContentsEvent RECEIVED: minecraft:building_blocks",
-                "injection VISIBLE: true search=true phase=server started")) {
-            Result result = gate(M21, "M21_REGISTRATION_ASSERTIONS", commonGreen().replace(COMMON + row + "\n", ""), 0);
-            assertEquals(1, result.exit(), row + ": " + result.output());
-        }
-        // 0 is AIR, and is exactly what Block.getId answers for a state that carries no id at all. A gate that
-        // only asserted the line was printed would stay green on the defect it exists to catch.
-        assertEquals(1, gate(M26, "M26_ASSERTIONS", clientGreen().replace(
-                "probe_block id=32366", "probe_block id=0"), 0).exit());
-        for (String replacement : List.of("injection VISIBLE: false search=true", "injection VISIBLE: true search=false")) {
-            assertEquals(1, gate(M21, "M21_REGISTRATION_ASSERTIONS", commonGreen().replace(
-                    "injection VISIBLE: true search=true", replacement), 0).exit());
-        }
-        assertEquals(1, gate(M21, "M21_REGISTRATION_ASSERTIONS", commonGreen(), 1).exit(),
-                "a preceding setup regression stays red on its own");
-        assertEquals(1, gate(M21, "M21_REGISTRATION_ASSERTIONS", "", 0).exit());
-        assertEquals(1, gate(M21, "M21_REGISTRATION_ASSERTIONS", commonGreen().replace(
-                "common registration observations completed", "probe aborted"), 0).exit());
-    }
-
-    private Result gate(Path gate, String fragment, String log, int precedingFailure) throws Exception {
-        return gate(gate, fragment, log, precedingFailure, "");
-    }
-
-    /** {@code preamble}: what the gate computes before the fragment, from the base rather than the log. */
-    private Result gate(Path gate, String fragment, String log, int precedingFailure, String preamble) throws Exception {
-        Path input = temporary.resolve("input.log");
-        Files.writeString(input, log);
-        String program = ". \"$1\"\nLOG=\"$2\"\nFAIL=" + precedingFailure + "\n" + preamble + "\n"
-                + section(Files.readString(gate), fragment);
-        return execute(new ProcessBuilder("bash", "-c", program, "a2-contract",
-                Path.of("run/lib.sh").toAbsolutePath().toString(), input.toString()), temporary.resolve("result.log"));
-    }
-
-    private static String clientGreen() {
-        List<String> lines = new ArrayList<>(List.of(
-                CLIENT + "subscribed to ten Forge registration events",
-                "[ClientSmoke] joined world via quick-play", "[ClientSmoke] client-ready after 60 ticks",
-                CLIENT + "creative contents builder exercised in a live world",
-                CLIENT + "registration observations completed at world tick 100", "[ClientSmoke] clean disconnect observed"));
-        for (String event : CLIENT_EVENTS) lines.add(CLIENT + event.replace('$', '.') + " RECEIVED");
-        for (String result : List.of("BuildCreativeModeTabContentsEvent RECEIVED", "key in Options.keyMappings: true",
-                "key saved binding: key.keyboard.f6", "layer forbriclive:probe baked: true", "stone tint sources: 1",
-                "stone probe tint present: true", "reload posts=1", "reload listener applies=1",
-                "tooltip factory consumed: true", "forbriclive:probe geometry loader present: true",
-                "forge:obj geometry loader present: true")) lines.add(CLIENT + result);
-        // The client-setup resource read, and the kernel line that says the manager was given its packs. Both
-        // are load-bearing: the kernel's mod-loading window is BEFORE vanilla's first resource reload, which is
-        // where MinecraftForge runs its own, so without the preload this read comes back empty.
-        lines.add(CLIENT + "setup resource PRESENT: forbriclive:setup_probe.txt = forbric-live-setup-probe");
-        lines.add("[Forbric/ClientResources] client resource manager preloaded with 140 selected pack(s)");
-        lines.add(COMMON + "injection VISIBLE: true search=true phase=client tick 100");
-        lines.add("[EventMux] all 3 CLIENT_INIT bridge(s) installed");
-        lines.add("[EventMux] all 2 REGISTRATION bridge(s) installed");
-        // MinecraftForge's HUD overlay stack. DRAWS is its own row: the event arriving proves only that a tree
-        // exists to register into, and the merged base built no tree at all before this.
-        lines.add(CLIENT + "AddGuiOverlayLayersEvent RECEIVED");
-        lines.add(CLIENT + "overlay layer DREW 20 frames");
-        lines.add("[Forbric/HudBridge] MinecraftForge's overlay stack is on NeoForge's layer manager");
-        // The picture-in-picture map, whose only writer is the kernel's.
-        lines.add(CLIENT + "RegisterPictureInPictureRendererEvent RECEIVED");
-        lines.add("[Forbric/PipRenderers] 1 MinecraftForge picture-in-picture renderer(s) registered");
-        lines.add("[Forbric/MergedBaseCompat] gave GuiRenderer's pooled picture-in-picture lookup a fallback to the "
-                + "orphaned vanilla map, and gave that map its only writer");
-        // Where the canary's own @Mod constructor ran. MinecraftForge's ClientModLoader.begin takes the Minecraft,
-        // so its mods construct inside Minecraft.<init>; the thread name is what tells the two windows apart.
-        lines.add("[Render thread/INFO]: [Forbric/Lifecycle] constructed 2 traditional-Forge mod(s) in the "
-                + "Minecraft.<init> window, where MinecraftForge constructs its own, and fired RegisterEvent x40 "
-                + "for them");
-        // That window registers blocks, so the blockstate->id map has to be refilled AFTER it; the id read back
-        // from the canary's own block is the row that makes the claim, because 0 is AIR and is what a missing
-        // entry answers.
-        lines.add("[Forbric/Lifecycle] rebuilt NeoForge blockstate\u2192id map (32367 states, was 32366) \u2014 1 more "
-                + "state(s) were registered after the first pass, and Block.getId answered 0 (AIR) for every one "
-                + "of them");
-        lines.add("[ForbricLive/BLOCKID] forbriclive:probe_block id=32366 roundTrip=Block{forbriclive:probe_block}");
-        return String.join("\n", lines) + "\n";
-    }
-
-    private static String commonGreen() {
-        return COMMON + "subscribed to Forge spawn and creative registration events\n"
-                + COMMON + "common registration observations completed\n"
-                + COMMON + "SpawnPlacementRegisterEvent RECEIVED\n"
-                + COMMON + "zombie heightmap=WORLD_SURFACE\n"
-                + COMMON + "BuildCreativeModeTabContentsEvent RECEIVED: minecraft:building_blocks\n"
-                + COMMON + "injection VISIBLE: true search=true phase=server started\n"
-                + "[EventMux] all 2 REGISTRATION bridge(s) installed\n";
-    }
+    // Stage 3 of dropping MinecraftForge took the MinecraftForge canary out of gate-m26 and gate-m21: Forbric refuses it
+    // now, so its client and common registration checks (the M26_ASSERTIONS block and the canary rows of
+    // M21_REGISTRATION_ASSERTIONS) went, and the five tests that ran those blocks against synthetic logs went with them.
+    // The canary's own bytecode contracts above stay until Stage 4 deletes the canary. The NeoForge and Fabric blocks of
+    // both gates are GateNeoCanaryContractTest's.
 
     private static int subscriptions(MethodNode method, String owner) {
         int result = 0;

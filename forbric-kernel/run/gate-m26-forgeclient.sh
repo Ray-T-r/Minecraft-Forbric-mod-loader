@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# M26 — traditional Forge's client event buses must receive the game's real registration events.
+# M26 — the client event buses must receive the game's real registration events, and a refused MinecraftForge mod is
+# put to the player.
 # NeoForge half (forbricneolive rides along): the same registration events in NeoForge's shape, read back from the
 #   same consumer tables, plus its block's id. These outlive the MinecraftForge canary. NeoForge posts all twelve
 #   itself, through ModLoader.postEvent, whose only fan-out is ModList.forEachModInOrder -- so the one kernel behaviour
@@ -22,37 +23,40 @@
 #   back in the world. RED with M26_EXTRA_JVM='-Dforbric.blockStateIdRefill=off': the late block's id is 0 (AIR) --
 #   measured with the MinecraftForge pair beside it, the two Forge checks and the two Fabric ones below go red, and
 #   that is the demonstration that survives Stage 4 deleting the MinecraftForge canary.
-# RED controls after A3/A6/A7: M26_EXTRA_JVM='-Dforbric.forgeClientInit=off' loses client registrations;
-#   M26_EXTRA_JVM='-Dforbric.clientResourcePreload=off' — the client resource manager is empty at mod setup again;
-#   M26_EXTRA_JVM='-Dforbric.forgeOverlayLayers=off' — a MinecraftForge mod's HUD overlays never draw (3 red);
-#   M26_EXTRA_JVM='-Dforbric.forgePipRenderers=off' — a MinecraftForge picture-in-picture renderer is nowhere (2 red);
-#   M26_EXTRA_JVM='-Dforbric.blockStateIdRefill=off' — the blockstate→id map keeps whatever the first pass built,
-#     so the blocks a MinecraftForge mod registers in the Minecraft.<init> window get no id and Block.getId
-#     answers 0, which is AIR (2 red);
-#   M26_EXTRA_JVM='-Dforbric.forgeCtorGameInstance=off' — a MinecraftForge @Mod is constructed in NeoForge's
-#     pre-Minecraft window again, where Minecraft.getInstance() is null (2 red). MinecraftForge's own
-#     ClientModLoader.begin takes (Minecraft, PackRepository, ReloadableResourceManager), which exist
-#     together only inside Minecraft.<init>; NeoForge's begin() takes nothing and runs in Main.main.
-# M26_EXTRA_JVM='-Dforbric.forgeCreativeTabs=off' loses command_block in parent/search collections;
-# M21_EXTRA_JVM='-Dforbric.forgeSpawnPlacements=off' loses the zombie WORLD_SURFACE result in M21.
 # Green since Phase 1 A landed (A3–A9 hooks, A8 bridge inventory); any red is a regression, exit 1.
-# GATE-PARALLEL: rundirs=client-forge-registration mem=3000
+# STAGE 3 OF DROPPING MinecraftForge (what changed and why). Until Stage 3 the MinecraftForge canary (forbriclive)
+#   joined this world too, and most of this gate was its: ten traditional-Forge client registration events and their
+#   consumer read-backs, its HUD overlay layer drawing and its picture-in-picture renderer, a MinecraftForge fluid's
+#   client extensions, its asset read from client setup, its creative injection, and where its @Mod was constructed.
+#   Forbric now refuses a MinecraftForge-only jar, and a client launched straight into a world (quick-play) with a
+#   refused jar stops, so the canary cannot join; every check that read it is gone (the M26_ASSERTIONS block and the H5
+#   fluid step), and so is the -Dforbric.forgeOverlayLayers / forgePipRenderers / forgeFluidModels / forgeCtorGameInstance
+#   / forgeCreativeTabs RED list, which only those checks could show. Unchanged: the NeoForge half and the Fabric half
+#   (written in Stage 2.5 to outlive them) and the session checks every client gate makes, kept in M26_SESSION_ASSERTIONS
+#   with the plumbing lines that still print with no MinecraftForge mod (both bridge sets installed, the client resource
+#   manager preloaded). The CLIENT_CANARY_STAGE block now stages the NeoForge canary, its data/ stripped as before, and
+#   the persisted key binding is the NeoForge canary's F9.
+#   In its place, phase 2 puts the canary in front of the user-visible switch on the CLIENT side, where the answer is a
+#   question rather than a stop: launched without quick-play under the ask policy, with the confirmation window unable
+#   to draw (FORBRIC_DEP_DIALOG=dryRun, as gate-m20 does), the refusal is a confirmed required finding naming the mod,
+#   the question moves into the game's own window, and nothing stops the launch before the player has answered.
+#   The server side of the switch (a stop) is gate-m29's. The file keeps its name until Stage 4. The red counts in the
+#   notes above were measured with the MinecraftForge canary aboard; the NeoForge and Fabric checks they name are unchanged.
+# GATE-PARALLEL: rundirs=client-forge-registration,client-forge-refusal mem=3000
 set -uo pipefail
 . "$(cd "$(dirname "$0")" && pwd)/lib.sh"
 
 LOG="$BUILD/gate-m26-forgeclient.log"
 RUNDIR="$KERNEL/run/client-forge-registration"
 WORLD="ForgeClientProbe"
-FORGE="$RUN_OLD/forge-runtime/forbriclive.jar"
 FABRIC="$KERNEL/run/canary/forbricfabriclive.jar"
 mkdir -p "$BUILD" "$RUNDIR/quickPlay" "$RUNDIR/empty-mods"
-[ -f "$FORGE" ] || { echo "[kernel] FATAL: missing $FORGE; run build-testmods.sh" >&2; exit 3; }
 [ -f "$NEOLIVE" ] || { echo "[kernel] FATAL: missing $NEOLIVE; run build-testmods.sh or run/build-neolive-canary.sh" >&2; exit 3; }
 # The Fabric canary is built from this tree every run, as gate-m4/m18/m30 build it.
 "$KERNEL/run/build-fabric-canary.sh" > "$BUILD/gate-m26-fabric-canary.log" 2>&1
 [ -f "$FABRIC" ] || { echo "[kernel] FATAL: the Fabric canary did not build (see $BUILD/gate-m26-fabric-canary.log)" >&2; exit 3; }
 
-step "generate a zero-mod save once, then join it with the Forge client canary"
+step "generate a zero-mod save once, then join it with the NeoForge and Fabric client canaries"
 reap_stale_server "$RUNDIR"
 if [ ! -f "$RUNDIR/saves/$WORLD/level.dat" ]; then
   TARGET="$RUNDIR" WORLD="$WORLD" SRC_MODS="$RUNDIR/empty-mods" \
@@ -67,7 +71,7 @@ rm -rf "$RUNDIR/mods" "$RUNDIR/.forbric-kernel" "$RUNDIR/logs"
 mkdir -p "$RUNDIR/mods"
 # A zero-mod save must not acquire a new worldgen datapack during quick-play. M25 exercises the full data.
 # CLIENT_CANARY_STAGE_BEGIN — the test executes this exact staging step against a fixture jar.
-python3 - "$FORGE" "$RUNDIR/mods/forbriclive.jar" <<'PY_STAGE' || exit 3
+python3 - "$NEOLIVE" "$RUNDIR/mods/forbricneolive.jar" <<'PY_STAGE' || exit 3
 from pathlib import Path
 import sys, zipfile
 source, target = map(Path, sys.argv[1:])
@@ -79,22 +83,10 @@ with zipfile.ZipFile(source) as original, zipfile.ZipFile(target, 'w') as staged
             staged.writestr(entry, original.read(entry))
 PY_STAGE
 # CLIENT_CANARY_STAGE_END
-# The NeoForge canary the same way, for the same reason: its worldgen data would give the zero-mod save a new datapack.
-python3 - "$NEOLIVE" "$RUNDIR/mods/forbricneolive.jar" <<'PY_NEO_STAGE' || exit 3
-from pathlib import Path
-import sys, zipfile
-source, target = map(Path, sys.argv[1:])
-if source.resolve() == target.resolve():
-    raise SystemExit('the client fixture must not overwrite its source canary')
-with zipfile.ZipFile(source) as original, zipfile.ZipFile(target, 'w') as staged:
-    for entry in original.infolist():
-        if not entry.filename.startswith('data/'):
-            staged.writestr(entry, original.read(entry))
-PY_NEO_STAGE
 # The Fabric canary as built: it carries no data/ at all, so nothing in it can give the save a datapack.
 cp "$FABRIC" "$RUNDIR/mods/forbricfabriclive.jar" || exit 3
 # Skip the first-run accessibility screen so quick-play can reach the saved world.
-# M26_OPTIONS_BEGIN — the default canary key is F7; this persisted F6 must survive late registration.
+# M26_OPTIONS_BEGIN — the NeoForge canary's key defaults to F8; this persisted F9 must survive its registration.
 python3 - "${MERGED:-$RUN_OLD/merged-base/patched-mc-merged-26.2.jar}" "$RUNDIR/options.txt" <<'PY_OPTIONS' || exit 3
 import json, sys, zipfile
 from pathlib import Path
@@ -103,11 +95,9 @@ with zipfile.ZipFile(sys.argv[1]) as game:
 if not isinstance(version, int) or version <= 0:
     raise SystemExit('game metadata has no valid options data version')
 # Without version, OptionsKeyLwjgl3Fix treats the modern key name as a legacy integer key code.
-Path(sys.argv[2]).write_text(f'version:{version}\nonboardAccessibility:false\nkey_key.forbriclive.probe:key.keyboard.f6\n')
+Path(sys.argv[2]).write_text(f'version:{version}\nonboardAccessibility:false\nkey_key.forbricneolive.probe:key.keyboard.f9\n')
 PY_OPTIONS
 # M26_OPTIONS_END
-# The NeoForge canary's key defaults to F8; this persisted F9 must survive its registration the same way.
-printf 'key_key.forbricneolive.probe:key.keyboard.f9\n' >> "$RUNDIR/options.txt"
 : > "$LOG"
 FORBRIC_JVM="-Dforbric.clientSmoke=true -Dforbric.clientSmokeWorld=$WORLD -Dforbric.clientSmokeReadyTicks=60 -Dforbric.clientSmokeDisconnectTicks=160 -Dforbricfabriclive.lateBlock=true ${M26_EXTRA_JVM:-}" \
 RUNDIR="$RUNDIR" "$KERNEL/run/launch-kernel-client.sh" \
@@ -118,27 +108,7 @@ await_server "$CLIENT_PID" "$LOG" 360 30
 rm -f "$RUNDIR/.forbric-gate.pid"
 cat "$RUNDIR/logs/latest.log" >> "$LOG" 2>/dev/null || true
 
-step "a MinecraftForge fluid's client extensions are asked on the render path (H5)"
-# The Forge canary places one water source beside the respawn point from ServerStartedEvent; the client's
-# FluidRenderer.tesselate then asks IClientFluidTypeExtensions.of(state) for its model and tint (vanilla water
-# answers DEFAULT and is counted as consulted). Not asserted in gate-m9: its pack carries sodium, which replaces
-# vanilla's fluid meshing entirely. RED control: M26_EXTRA_JVM='-Dforbric.forgeFluidModels=off' (water still
-# placed, no Forbric/Fluids line).
-check "the canary placed its water source" 'ForbricLive/FLUID\] water at -?[0-9]+ -?[0-9]+ -?[0-9]+: Block\{minecraft:water\}' "$LOG"
-check "MinecraftForge fluid extensions were consulted while rendering" 'Forbric/Fluids\] MinecraftForge client extensions consulted for [1-9][0-9]* fluid' "$LOG"
-
-# Whether the merged Hud names MinecraftForge's overlay tree (a both-edits base builds and draws it there itself),
-# for the HUD assertion below.
-HUD_MERGED="${MERGED:-$RUN_OLD/merged-base/patched-mc-merged-26.2.jar}"
-if ! javap -cp "$HUD_MERGED" net.minecraft.client.gui.Hud >/dev/null 2>&1; then
-  echo "[kernel] FAIL cannot read Hud from the merged base ($HUD_MERGED)"; FAIL=1; HUD_TREE=unread
-elif javap -c -p -cp "$HUD_MERGED" net.minecraft.client.gui.Hud 2>/dev/null | grep -aq 'Method net/minecraftforge/client/gui/overlay/ForgeLayeredDraw\.'; then
-  HUD_TREE=kept
-else
-  HUD_TREE=absent
-fi
-
-# M26_NEO_ASSERTIONS_BEGIN — the NeoForge canary's twin of the registration and consumer checks below.
+# M26_NEO_ASSERTIONS_BEGIN — the NeoForge canary's registrations and consumer read-backs (the MinecraftForge checks they twinned went in Stage 3).
 step "the NeoForge canary's client registrations arrived and reached the live consumer tables"
 check "NeoForge: client canary subscribed" 'ForbricNeoLive/CLIENT\] subscribed to twelve NeoForge client registration events' "$LOG"
 check_absent "NeoForge: client canary initialized successfully" 'ForbricNeoLive/CLIENT\] FAILED initialization' "$LOG"
@@ -178,112 +148,76 @@ check "Fabric: the late block has a real id, read back in the world" \
 check_absent "Fabric: the late-block probe never failed" 'ForbricFabricLive/LATEBLOCK\] (registration|read-back) FAILED' "$LOG"
 # M26_FABRIC_ASSERTIONS_END
 
-# M26_ASSERTIONS_BEGIN — exercised against synthetic logs without launching the game.
-step "the canary subscribed, entered its save and completed real consumer observations"
-# The thread name is the assertion: "main" is the pre-Minecraft window, "Render thread" is Minecraft.<init>.
-check "the MinecraftForge canary is constructed where MinecraftForge constructs it" \
-  '\[Render thread/INFO\]: \[Forbric/Lifecycle\] constructed [1-9][0-9]* traditional-Forge mod\(s\) in the Minecraft.<init> window' "$LOG"
-check_absent "and not in the pre-Minecraft window" \
-  '\[main/INFO\]: \[Forbric/ModLoader\] constructed @Mod .* \(traditional-Forge' "$LOG"
-
-# Being constructed there means the canary's BLOCK arrives in a SECOND wave, after the kernel has already
-# repaired the registries once. Everything that walks every block in the game therefore has to run again. The
-# blockstate→id map did not: it stopped at "already non-empty", so Block.getId answered 0 — AIR — for every
-# block of that wave, and every block_update packet about one of them described air.
-check "the blockstate→id map is refilled after the late wave of registrations" \
-  '\[Forbric/Lifecycle\] rebuilt NeoForge blockstate→id map \([1-9][0-9]* states, was [1-9][0-9]*\)' "$LOG"
-# The id itself, not the log line that claims it: 0 is AIR and is what a missing entry answers.
-check "and the canary's own block has a real id in it" \
-  'ForbricLive/BLOCKID\] forbriclive:probe_block id=[1-9][0-9]* roundTrip=Block\{forbriclive:probe_block\}' "$LOG"
-check "client canary subscribed" 'ForbricLive/CLIENT\] subscribed to ten Forge registration events' "$LOG"
+# M26_SESSION_ASSERTIONS_BEGIN — the session itself, and the plumbing that still prints with no MinecraftForge mod.
+step "1. the client entered its save, played and left, with nothing missing"
 check "joined world" 'ClientSmoke\] joined world via quick-play' "$LOG"
 check "simulation survived" 'ClientSmoke\] client-ready after' "$LOG"
-check "creative contents were requested" 'ForbricLive/CLIENT\] creative contents builder exercised in a live world' "$LOG"
-check "observations reached world tick 100" 'ForbricLive/CLIENT\] registration observations completed at world tick 100' "$LOG"
 check "clean disconnect" 'ClientSmoke\] clean disconnect observed' "$LOG"
-check_absent "client canary initialized successfully" 'ForbricLive/CLIENT\] FAILED initialization' "$LOG"
 check_absent "no missing client classes or crashes" 'NoClassDefFoundError|Preparing crash report|Mod Loading has failed' "$LOG"
-check_absent "reload registration was not duplicated" 'ForbricLive/CLIENT\] reload posts=([2-9]|[1-9][0-9]+)([[:space:]]|$)' "$LOG"
-
-step "all ten traditional-Forge registration events arrived"
-for event in 'RegisterKeyMappingsEvent' 'EntityRenderersEvent.RegisterRenderers' 'BuildCreativeModeTabContentsEvent' \
-  'EntityRenderersEvent.RegisterLayerDefinitions' 'RegisterParticleProvidersEvent' 'RegisterColorHandlersEvent.Block' \
-  'RegisterClientReloadListenersEvent' 'RegisterClientTooltipComponentFactoriesEvent' 'ModelEvent.RegisterGeometryLoaders' \
-  'RegisterPresetEditorsEvent'; do
-  check "$event received" "ForbricLive/CLIENT\] ${event//./\\.} RECEIVED" "$LOG"
-done
-step "a MinecraftForge mod can read its OWN asset from client setup"
-# MinecraftForge runs mod loading INSIDE the first resource reload, so by the time a mod's client setup runs the
-# resource manager holds its packs. The kernel's window is genuine NeoForge's, which is BEFORE that reload, so
-# this read came back empty -- and Xaero's World Map calls get() on it with no isPresent check, which is
-# "Xaero's World Map has crashed!" out of a deferred setup task, naming the mod and not the moment.
-check "the setup-time resource read finds the mod's own file" \
-  'ForbricLive/CLIENT\] setup resource PRESENT: forbriclive:setup_probe\.txt = forbric-live-setup-probe' "$LOG"
-check_absent "and never reports it missing" \
-  'ForbricLive/CLIENT\] setup resource ABSENT' "$LOG"
+check_absent "nothing was refused" '\[Forbric/Unsupported\] refusing' "$LOG"
 check "the kernel says how many packs it preloaded" \
   'Forbric/ClientResources\] client resource manager preloaded with [1-9][0-9]* selected pack' "$LOG"
-
-step "registered content reached the live consumer tables"
-check "key is in Options" 'ForbricLive/CLIENT\] key in Options\.keyMappings: true' "$LOG"
-check "persisted F6 binding was reloaded" 'ForbricLive/CLIENT\] key saved binding: key\.keyboard\.f6([[:space:]]|$)' "$LOG"
-check "registered layer was baked" 'ForbricLive/CLIENT\] layer forbriclive:probe baked: true' "$LOG"
-check "stone has tint sources" 'ForbricLive/CLIENT\] stone tint sources: [1-9][0-9]*' "$LOG"
-
-step "a MinecraftForge mod's HUD overlay actually draws (must PASS)"
-# A merged base whose Hud is NeoForge's alone carries ZERO references to ForgeLayeredDraw: nothing built
-# MinecraftForge's overlay tree, nothing posted AddGuiOverlayLayersEvent, and a mod that added a HUD overlay
-# registered it into an object the game never renders. One that kept both families' edits builds that tree in
-# Hud.<init> and draws it in place of NeoForge's layer manager, returning before the manager draws — so no NeoForge
-# or Fabric layer drew, and once the kernel silenced the tree's vanilla leaves, no vanilla HUD either. The kernel
-# drops those two calls there (ForgeHudPipelineInjector) and builds the tree itself onto NeoForge's manager.
-#
-# DRAWS, not registrations. The event arriving proves only that a tree exists to register into; the canary's own
-# layer counting twenty real frames is what proves it reaches the screen. RED with
-# M26_EXTRA_JVM='-Dforbric.forgeOverlayLayers=off' (3 red — the stack is not built, so the event is never posted).
-check "the overlay registration event reached the canary" \
-  'ForbricLive/CLIENT\] AddGuiOverlayLayersEvent RECEIVED' "$LOG"
-check "and its layer drew real frames" \
-  'ForbricLive/CLIENT\] overlay layer DREW 20 frames' "$LOG"
-check "the stack is on NeoForge's layer manager" \
-  "Forbric/HudBridge\] MinecraftForge's overlay stack is on NeoForge's layer manager" "$LOG"
-# Exact both ways against the base this run booted (HUD_TREE, read before these assertions so they stay a function
-# of the log): a Hud that kept MinecraftForge's tree must have had its own build and draw dropped, and one that did not
-# must have had nothing to drop.
-if [ "${HUD_TREE:-absent}" = kept ]; then
-  check "the merged Hud's own MinecraftForge build and draw were dropped" \
-    "Forbric/HudBridge\] net.minecraft.client.gui.Hud kept MinecraftForge's own overlay tree \(built in 1 place\(s\), drawn instead of NeoForge's layer manager in 1\)" "$LOG"
-else
-  check_absent "a merged Hud without MinecraftForge's tree had nothing dropped" \
-    "Forbric/HudBridge\] net.minecraft.client.gui.Hud kept MinecraftForge's own overlay tree" "$LOG"
-fi
-
-step "a MinecraftForge picture-in-picture renderer has somewhere to be found (must PASS)"
-# GuiRenderer declares vanilla's Class -> renderer map, reads it in ONE place and writes it NOWHERE: NeoForge's
-# constructor won the byte merge and fills its pooled map instead. Two failures in one — the event that would
-# have filled vanilla's map is posted by nobody, and the kernel's own pooled-miss fallback reads that map with no
-# null check, so the first frame reaching a state class with no pool would have thrown in the render loop.
-#
-# RED with M26_EXTRA_JVM='-Dforbric.forgePipRenderers=off' (2 red: the event is not posted, so nothing registers).
-check "the registration event reached the canary" \
-  'ForbricLive/CLIENT\] RegisterPictureInPictureRendererEvent RECEIVED' "$LOG"
-check "and its renderer is in the map the game reads" \
-  'Forbric/PipRenderers\] [1-9][0-9]* MinecraftForge picture-in-picture renderer\(s\) registered' "$LOG"
-check "the map now has a writer at all" \
-  "MergedBaseCompat\] gave GuiRenderer's pooled picture-in-picture lookup a fallback.*only writer" "$LOG"
-check "stone has the registered canary tint" 'ForbricLive/CLIENT\] stone probe tint present: true' "$LOG"
-check "reload registration happened exactly once" 'ForbricLive/CLIENT\] reload posts=1([[:space:]]|$)' "$LOG"
-check "registered listener really applied" 'ForbricLive/CLIENT\] reload listener applies=[1-9][0-9]*' "$LOG"
-check "tooltip factory is consumed" 'ForbricLive/CLIENT\] tooltip factory consumed: true' "$LOG"
-check "canary geometry loader is published" 'ForbricLive/CLIENT\] forbriclive:probe geometry loader present: true' "$LOG"
-check "Forge internal geometry loader is published" 'ForbricLive/CLIENT\] forge:obj geometry loader present: true' "$LOG"
-check "creative injection reached both collections" 'ForbricLive/REGISTRATION\] injection VISIBLE: true search=true phase=client tick 100' "$LOG"
 check "client initialization bridges report installed" 'all 3 CLIENT_INIT bridge\(s\) installed' "$LOG"
 check "registration bridges report installed" 'all 2 REGISTRATION bridge\(s\) installed' "$LOG"
-if [ "$FAIL" -eq 0 ]; then
-  echo "[kernel] M26 FORGE-CLIENT GATE GREEN — real registration events and consumer results agree"
+# M26_SESSION_ASSERTIONS_END
+
+# M26_REFUSAL_BEGIN — phase 2 (header): a MinecraftForge-only mod on a client is put to the player, not swallowed.
+step "2. a MinecraftForge-only mod on a client: the refusal is asked about in the game (must PASS)"
+PROMPT_DIR="$KERNEL/run/client-forge-refusal"
+PROMPT_LOG="$BUILD/gate-m26-refusal.log"
+reap_stale_server "$PROMPT_DIR"
+rm -rf "$PROMPT_DIR"; mkdir -p "$PROMPT_DIR/mods"
+cp "$RUN_OLD/forge-runtime/forbriclive.jar" "$PROMPT_DIR/mods/" || exit 3
+cp "$RUNDIR/options.txt" "$PROMPT_DIR/options.txt" || exit 3
+: > "$PROMPT_LOG"
+# No quick-play: a launch told to open a world at once is refused instead of asked (gate-m20 says why).
+FORBRIC_COMPAT_POLICY=ask FORBRIC_DEP_DIALOG=dryRun FORBRIC_JVM="-Duser.language=en -Duser.country=US ${M26_EXTRA_JVM:-}" \
+  RUNDIR="$PROMPT_DIR" "$KERNEL/run/launch-kernel-client.sh" > "$PROMPT_LOG" 2>&1 &
+PROMPT_PID=$!
+record_server_pid "$PROMPT_DIR" "$PROMPT_PID"
+for i in $(seq 1 240); do
+  kill -0 "$PROMPT_PID" 2>/dev/null || { echo "[kernel] the refusal client left on its own after ~${i}s"; break; }
+  grep -qaE 'asking in the game|launch stopped|Game crashed|Mod Loading has failed' "$PROMPT_DIR/logs/latest.log" 2>/dev/null \
+    && { echo "[kernel] the refusal client reached its decision after ~${i}s"; sleep 3; break; }
+  sleep 1
+done
+if kill -0 "$PROMPT_PID" 2>/dev/null; then
+  PROMPT_EXIT=waiting; stop_tree "$PROMPT_PID"
 else
-  echo "[kernel] M26 FORGE-CLIENT GATE RED — see $LOG"
+  wait "$PROMPT_PID"; PROMPT_EXIT=$?
+fi
+wait "$PROMPT_PID" 2>/dev/null
+rm -f "$PROMPT_DIR/.forbric-gate.pid"
+cat "$PROMPT_DIR/logs/latest.log" >> "$PROMPT_LOG" 2>/dev/null || true
+cp "$PROMPT_DIR/.forbric-kernel/compatibility-report.json" "$PROMPT_LOG.json" 2>/dev/null || : > "$PROMPT_LOG.json"
+check "the client refuses the canary by name" \
+  '\[Forbric/Unsupported\] refusing forbriclive\.jar \(forbriclive\): it is a MinecraftForge mod with no usable Fabric or NeoForge half' "$PROMPT_LOG"
+if python3 - "$PROMPT_LOG.json" <<'PY_REFUSAL'
+import json, sys
+report = json.load(open(sys.argv[1], encoding='utf-8'))
+assert report['policy'] == 'ASK', report['policy']
+found = [f for f in report['findings'] if f['id'] == 'unsupported:minecraftforge' and f['modId'] == 'forbriclive']
+assert len(found) == 1 and found[0]['confidence'] == 'CONFIRMED' and found[0]['required'] is True, found
+assert 'Forbric Live Canary (forbriclive.jar) is a MinecraftForge mod. Forbric no longer supports MinecraftForge' in found[0]['detail'], found
+# No mods inventory yet: this report is the one the launch-time decision writes, before the catalogue exists (measured:
+# mods=[] here). The FAILED MinecraftForge row of a refused jar is gate-m29's, read from a server's report at its stop.
+print('[kernel]   the client report holds the refusal as a CONFIRMED required finding, in the player-facing wording')
+PY_REFUSAL
+then echo "[kernel] PASS the client report names the refused mod as a required loss"
+else echo "[kernel] FAIL the client report (see $PROMPT_LOG.json)"; FAIL=1; fi
+check "the confirmation window could not draw, so the question moved into the game" \
+  "Forbric/Compatibility\] the confirmation window could not be shown; [1-9][0-9]* required feature loss\(es\) will be asked about in the game's own window" "$PROMPT_LOG"
+check "and the game asked" \
+  "Forbric/Compatibility\] asking in the game about [1-9][0-9]* required feature loss\(es\) the launch could not ask about in a window" "$PROMPT_LOG"
+check_absent "nothing stopped the launch before the player was asked" "Forbric/Compatibility\] launch stopped" "$PROMPT_LOG"
+assert_eq "and it was still waiting for the answer when the gate stopped it" "waiting" "$PROMPT_EXIT"
+check_absent "nothing of the refused canary ran" 'constructed @Mod forbriclive|\[ForbricLive' "$PROMPT_LOG"
+check_absent "no crash" "Preparing crash report|Game crashed" "$PROMPT_LOG"
+# M26_REFUSAL_END
+
+if [ "$FAIL" -eq 0 ]; then
+  echo "[kernel] M26 CLIENT GATE GREEN — real registration events and consumer results agree, and a refused MinecraftForge mod is put to the player"
+else
+  echo "[kernel] M26 CLIENT GATE RED — see $LOG and $PROMPT_LOG"
 fi
 exit "$FAIL"
-# M26_ASSERTIONS_END
