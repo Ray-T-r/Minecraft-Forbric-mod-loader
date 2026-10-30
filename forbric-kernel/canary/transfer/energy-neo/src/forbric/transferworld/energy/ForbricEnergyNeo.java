@@ -44,10 +44,8 @@ public final class ForbricEnergyNeo {
 		for (var type : java.util.List.of(CELL.get(), SINK.get())) event.registerBlockEntity(Capabilities.Energy.BLOCK, type, (cell, face) -> {
 			cell.face(face); return EnergyMachines.permits(face) ? cell.neoStore() : null;
 		});
-		// Competing native providers, only at the priority probes: NeoForge's own answer must win over any bridge.
-		var forge = (BlockEntityType<EnergyMachines.EnergyCell>) EnergyMachines.TYPES.get(EnergyMachines.FORGE + ":cell");
-		if (forge == null) throw new IllegalStateException("the Forge energy cell was not registered before capability registration");
-		event.registerBlockEntity(Capabilities.Energy.BLOCK, forge, (cell, face) -> cell.getBlockPos().equals(EnergyMachines.PRIORITY_FORGE) ? cell.neoStore() : null);
+		// A competing native provider, only at the priority probe: NeoForge's own answer must win over any bridge. (Until
+		// Stage 3 of dropping MinecraftForge there was a second one on the Forge cell; forbricenergyforge is refused now.)
 		var fabric = (BlockEntityType<net.minecraft.world.level.block.entity.BlockEntity>) EnergyMachines.TYPES.get(EnergyMachines.FABRIC + ":cell");
 		if (fabric != null) event.registerBlockEntity(Capabilities.Energy.BLOCK, fabric,
 				(entity, face) -> entity.getBlockPos().equals(EnergyMachines.PRIORITY_FABRIC) ? ((EnergyMachines.Cell) entity).neoStore() : null);
