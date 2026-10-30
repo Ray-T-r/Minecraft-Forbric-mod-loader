@@ -14,6 +14,20 @@
 # configuration-phase sync ran end to end; if the handshake is off, it reads its own default — which is exactly
 # what the negative control (-Dforbric.forgeHandshake=off) asserts.
 #
+# THE NEOFORGE HALF. The NeoForge canary (forbricneolive) rides along on both ends and carries the same two contracts
+# in its own family's shape: a per-world SERVER config whose pre-written value must reach the client (NeoForge's
+# SyncConfig configuration task and ConfigFilePayload, not MinecraftForge's handshake), and a CLIENT config that loads
+# once on the client and never on the dedicated server. These are the checks that outlive the MinecraftForge canary.
+# Their negative control is not -Dforbric.forgeHandshake=off -- that switch takes out MinecraftForge's handshake only:
+# measured 2026-10-30, it turns exactly ten MinecraftForge checks red and none of the NeoForge ones, which is the
+# evidence this half does not lean on MinecraftForge. NeoForge's sync rests on NeoForge's own configuration tasks, and
+# the kernel's whole part in it is wiring NeoForge's internal @EventBusSubscriber classes (KernelEventSubscribers.
+# registerNeoForgeInternal). Unwiring just net.neoforged.neoforge.network.ConfigurationInitialization was measured too:
+# it is not a clean control, because NeoForge's two halves are coupled -- the task that collects the configs never
+# runs, and ConfigSync's login listener then crashes the server ("configsToSync should contain an entry for player")
+# the moment the client joins. So there is no switch that leaves the client on its default with everything else up;
+# the synced shape (path=null) and check_absent on the default below are what tie the value to the sync.
+#
 # Port 25604, not the default — a developer or another agent session may have a server on 25565.
 # GATE-PARALLEL: rundirs=fhs-server,fhs-client mem=3500
 set -uo pipefail
@@ -31,6 +45,7 @@ PLAYER="ForbricKernel"
 MODS=(
   "$RUN_OLD/forge-runtime/forbriclive.jar"
   "$DL/forge-26.2/FallingTree-26.2-25.jar"
+  "$NEOLIVE"
 )
 if [ -n "${M16_MODS:-}" ]; then read -r -a MODS <<< "$M16_MODS"; fi
 for m in "${MODS[@]}"; do
@@ -48,6 +63,7 @@ for m in "${MODS[@]}"; do cp "$m" "$SRV/mods/"; cp "$m" "$CLI/mods/"; done
 # per-world config load picks it up and its sync is the only way it can reach the client.
 mkdir -p "$SRV/FhsWorld/serverconfig"
 printf '# pre-written by gate-m16 BEFORE the server booted: the client must see THIS value, not its own default\ngreeting = "from-the-gate"\n' > "$SRV/FhsWorld/serverconfig/forbriclive-server.toml"
+printf '# pre-written by gate-m16 BEFORE the server booted: the client must see THIS value, not its own default\ngreeting = "from-the-gate"\n' > "$SRV/FhsWorld/serverconfig/forbricneolive-server.toml"
 printf 'eula=true\n' > "$SRV/eula.txt"
 printf 'server-port=%s\nonline-mode=false\nlevel-type=minecraft\\:flat\nlevel-name=FhsWorld\nmax-tick-time=-1\nview-distance=6\nspawn-protection=0\nsync-chunk-writes=false\n' "$PORT" > "$SRV/server.properties"
 cp "$KERNEL/run/client-merged-pack/options.txt" "$CLI/options.txt" 2>/dev/null \
@@ -105,7 +121,7 @@ await_server "$SRVPID" "$SLOG" 90
 rm -f "$FIFO" "$(_pidfile "$SRV")"
 
 echo "[kernel] the canary's network lines:"
-grep -aE 'ForbricLive/(NET|CFG|HS)' "$SLOG" "$CLOG" | sed 's#^.*gate-m16-\(server\|client\).log:#[kernel]   \1: #' | cut -c1-200 | sort -u
+grep -aE 'ForbricLive/(NET|CFG|HS)|ForbricNeoLive/CFG' "$SLOG" "$CLOG" | sed 's#^.*gate-m16-\(server\|client\).log:#[kernel]   \1: #' | cut -c1-200 | sort -u
 
 step "a real client joined a real server, with Forge mods on both ends (must PASS)"
 check "client dialled the address"    "Connecting to 127.0.0.1"                           "$CLOG"
@@ -206,6 +222,38 @@ check_absent "the kernel's own read-back agrees (client)" "Seed\] MinecraftForge
 # and returns silently when the dist is wrong, which is precisely the shape of the damage.
 check "a dist-gated registration actually ran (client)" \
   "ForbricLive/CFG\] registered a traditional-Forge config screen factory" "$CLOG"
+
+# M16_NEO_CONFIG_BEGIN — the NeoForge canary's twin of the config checks above.
+step "the server read its per-world NeoForge config (must PASS)"
+check "NeoForge: the SERVER config came from the world" "ForbricNeoLive/CFG\] LOADING forbricneolive-server.toml: .*path=.*FhsWorld/serverconfig" "$SLOG"
+check "NeoForge: and it holds the pre-written value"    "ForbricNeoLive/CFG\] LOADING forbricneolive-server.toml: greeting=from-the-gate loaded=true" "$SLOG"
+check_exactly "NeoForge: the per-world SERVER config loads once on the server" "ForbricNeoLive/CFG\] LOADING forbricneolive-server\.toml" "$SLOG" 1
+
+step "NeoForge's configuration-phase sync delivered the server's config to the client (must PASS)"
+# What the client holds in a world, read out of the spec a hundred ticks in: the server's value arrives only through
+# NeoForge's SyncConfig task, and without it the client reads its own default.
+# path=null is the synced shape: ConfigTracker.acceptSyncedConfig builds the client's copy from the payload's bytes,
+# with no file behind it, so the value cannot have come from a file of the client's own.
+check "NeoForge: the client was handed the server's config" "ForbricNeoLive/CFG\] (LOADING|RELOADING) forbricneolive-server.toml: greeting=from-the-gate loaded=true path=null" "$CLOG"
+check "NeoForge: the client reads the server's value"     "ForbricNeoLive/CFG\] greeting seen on the client in a world: from-the-gate" "$CLOG"
+check_absent "NeoForge: the client is not on its own default" "ForbricNeoLive/CFG\] greeting seen on the client in a world: (default|<unloaded>)" "$CLOG"
+
+step "NeoForge CLIENT config loads once on the client and never on the dedicated server"
+# Counted in CGAME for the same reason as the MinecraftForge count above.
+check "NeoForge: CLIENT default was read from the loaded spec" 'ForbricNeoLive/CFG\] LOADING forbricneolive-client\.toml: probe=17 loaded=true([[:space:]]|$)' "$CLOG"
+assert_eq "NeoForge: CLIENT Loading fired exactly once" 1 "$(grep -acE 'ForbricNeoLive/CFG\] LOADING forbricneolive-client\.toml:' "$CGAME" || true)"
+if [ -s "$CLI/config/forbricneolive-client.toml" ]; then echo "[kernel] PASS NeoForge CLIENT file was created on the client"
+else echo "[kernel] FAIL NeoForge CLIENT file was not created on the client"; FAIL=1; fi
+if [ ! -e "$SRV/config/forbricneolive-client.toml" ]; then echo "[kernel] PASS no NeoForge CLIENT file on the dedicated server"
+else echo "[kernel] FAIL dedicated server opened a NeoForge CLIENT config"; FAIL=1; fi
+check_absent "NeoForge: no CLIENT Loading on the dedicated server" 'ForbricNeoLive/CFG\] LOADING forbricneolive-client\.toml:' "$SLOG"
+
+step "a NeoForge mod's mixin config plugin asks the side before any mod exists, and gets it (must PASS)"
+check "NeoForge: the plugin saw the dedicated server" "ForbricNeoLive/PLUGIN\] prepareConfigs saw dist=DEDICATED_SERVER" "$SLOG"
+check "NeoForge: the plugin saw the client"           "ForbricNeoLive/PLUGIN\] prepareConfigs saw dist=CLIENT" "$CLOG"
+check_absent "NeoForge: and never failed to ask (server)" "ForbricNeoLive/PLUGIN\] prepareConfigs saw dist=(null|FAILED)" "$SLOG"
+check_absent "NeoForge: and never failed to ask (client)" "ForbricNeoLive/PLUGIN\] prepareConfigs saw dist=(null|FAILED)" "$CLOG"
+# M16_NEO_CONFIG_END
 
 step "nothing in that handshake failed (must be ABSENT)"
 check_absent "every payload encodes (server)"  "Failed to encode packet"                  "$SLOG"

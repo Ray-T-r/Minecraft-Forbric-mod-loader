@@ -1,5 +1,15 @@
 #!/usr/bin/env bash
 # M26 — traditional Forge's client event buses must receive the game's real registration events.
+# NeoForge half (forbricneolive rides along): the same registration events in NeoForge's shape, read back from the
+#   same consumer tables, plus its block's id. These outlive the MinecraftForge canary, and no kernel switch turns them
+#   red, which is itself the measurement (2026-10-30): M26_EXTRA_JVM='-Dforbric.blockStateIdRefill=off' fails exactly
+#   the two MinecraftForge checks named below and leaves the NeoForge block's id alone, because a NeoForge block is
+#   registered in the first wave and the map's first fill covers it -- the late wave the refill exists for is
+#   MinecraftForge's today and a Fabric client entrypoint's after it, so that control cannot move to this canary; and
+#   with '-Dforbric.forgeClientInit=off' Minecraft.<init> calls NeoForge's own ClientHooks.initClientHooks directly, so
+#   all eleven NeoForge registrations made before the world still arrive (the MinecraftForge canary's client then
+#   never reaches its world, so the in-world read-backs cannot be judged in that run). What the NeoForge half proves is
+#   that each registration reaches its table on the merged base, through whichever route the base takes.
 # RED controls after A3/A6/A7: M26_EXTRA_JVM='-Dforbric.forgeClientInit=off' loses client registrations;
 #   M26_EXTRA_JVM='-Dforbric.clientResourcePreload=off' — the client resource manager is empty at mod setup again;
 #   M26_EXTRA_JVM='-Dforbric.forgeOverlayLayers=off' — a MinecraftForge mod's HUD overlays never draw (3 red);
@@ -24,6 +34,7 @@ WORLD="ForgeClientProbe"
 FORGE="$RUN_OLD/forge-runtime/forbriclive.jar"
 mkdir -p "$BUILD" "$RUNDIR/quickPlay" "$RUNDIR/empty-mods"
 [ -f "$FORGE" ] || { echo "[kernel] FATAL: missing $FORGE; run build-testmods.sh" >&2; exit 3; }
+[ -f "$NEOLIVE" ] || { echo "[kernel] FATAL: missing $NEOLIVE; run build-testmods.sh or run/build-neolive-canary.sh" >&2; exit 3; }
 
 step "generate a zero-mod save once, then join it with the Forge client canary"
 reap_stale_server "$RUNDIR"
@@ -52,6 +63,18 @@ with zipfile.ZipFile(source) as original, zipfile.ZipFile(target, 'w') as staged
             staged.writestr(entry, original.read(entry))
 PY_STAGE
 # CLIENT_CANARY_STAGE_END
+# The NeoForge canary the same way, for the same reason: its worldgen data would give the zero-mod save a new datapack.
+python3 - "$NEOLIVE" "$RUNDIR/mods/forbricneolive.jar" <<'PY_NEO_STAGE' || exit 3
+from pathlib import Path
+import sys, zipfile
+source, target = map(Path, sys.argv[1:])
+if source.resolve() == target.resolve():
+    raise SystemExit('the client fixture must not overwrite its source canary')
+with zipfile.ZipFile(source) as original, zipfile.ZipFile(target, 'w') as staged:
+    for entry in original.infolist():
+        if not entry.filename.startswith('data/'):
+            staged.writestr(entry, original.read(entry))
+PY_NEO_STAGE
 # Skip the first-run accessibility screen so quick-play can reach the saved world.
 # M26_OPTIONS_BEGIN — the default canary key is F7; this persisted F6 must survive late registration.
 python3 - "${MERGED:-$RUN_OLD/merged-base/patched-mc-merged-26.2.jar}" "$RUNDIR/options.txt" <<'PY_OPTIONS' || exit 3
@@ -65,6 +88,8 @@ if not isinstance(version, int) or version <= 0:
 Path(sys.argv[2]).write_text(f'version:{version}\nonboardAccessibility:false\nkey_key.forbriclive.probe:key.keyboard.f6\n')
 PY_OPTIONS
 # M26_OPTIONS_END
+# The NeoForge canary's key defaults to F8; this persisted F9 must survive its registration the same way.
+printf 'key_key.forbricneolive.probe:key.keyboard.f9\n' >> "$RUNDIR/options.txt"
 : > "$LOG"
 FORBRIC_JVM="-Dforbric.clientSmoke=true -Dforbric.clientSmokeWorld=$WORLD -Dforbric.clientSmokeReadyTicks=60 -Dforbric.clientSmokeDisconnectTicks=160 ${M26_EXTRA_JVM:-}" \
 RUNDIR="$RUNDIR" "$KERNEL/run/launch-kernel-client.sh" \
@@ -94,6 +119,31 @@ elif javap -c -p -cp "$HUD_MERGED" net.minecraft.client.gui.Hud 2>/dev/null | gr
 else
   HUD_TREE=absent
 fi
+
+# M26_NEO_ASSERTIONS_BEGIN — the NeoForge canary's twin of the registration and consumer checks below.
+step "the NeoForge canary's client registrations arrived and reached the live consumer tables"
+check "NeoForge: client canary subscribed" 'ForbricNeoLive/CLIENT\] subscribed to twelve NeoForge client registration events' "$LOG"
+check_absent "NeoForge: client canary initialized successfully" 'ForbricNeoLive/CLIENT\] FAILED initialization' "$LOG"
+for event in 'RegisterKeyMappingsEvent' 'EntityRenderersEvent.RegisterRenderers' 'BuildCreativeModeTabContentsEvent' \
+  'EntityRenderersEvent.RegisterLayerDefinitions' 'RegisterParticleProvidersEvent' 'RegisterColorHandlersEvent.BlockTintSources' \
+  'AddClientReloadListenersEvent' 'RegisterClientTooltipComponentFactoriesEvent' 'ModelEvent.RegisterLoaders' \
+  'RegisterPresetEditorsEvent' 'RegisterPictureInPictureRenderersEvent' 'RegisterGuiLayersEvent'; do
+  check "NeoForge: $event received" "ForbricNeoLive/CLIENT\] ${event//./\\.} RECEIVED" "$LOG"
+done
+check "NeoForge: observations reached world tick 100" 'ForbricNeoLive/CLIENT\] registration observations completed at world tick 100' "$LOG"
+check "NeoForge: key is in Options" 'ForbricNeoLive/CLIENT\] key in Options\.keyMappings: true' "$LOG"
+check "NeoForge: persisted F9 binding was reloaded" 'ForbricNeoLive/CLIENT\] key saved binding: key\.keyboard\.f9([[:space:]]|$)' "$LOG"
+check "NeoForge: registered layer was baked" 'ForbricNeoLive/CLIENT\] layer forbricneolive:probe baked: true' "$LOG"
+check "NeoForge: granite has the registered canary tint" 'ForbricNeoLive/CLIENT\] granite probe tint present: true' "$LOG"
+check "NeoForge: reload registration happened exactly once" 'ForbricNeoLive/CLIENT\] reload posts=1([[:space:]]|$)' "$LOG"
+check "NeoForge: registered reload listener really applied" 'ForbricNeoLive/CLIENT\] reload listener applies=[1-9][0-9]*' "$LOG"
+check "NeoForge: tooltip factory is consumed" 'ForbricNeoLive/CLIENT\] tooltip factory consumed: true' "$LOG"
+# DRAWS, not the registration: the event proves only that a layer stack exists to register into.
+check "NeoForge: its gui layer drew real frames" 'ForbricNeoLive/CLIENT\] gui layer DREW 20 frames' "$LOG"
+check "NeoForge: the canary's own block has a real id" \
+  'ForbricNeoLive/BLOCKID\] forbricneolive:probe_block id=[1-9][0-9]* roundTrip=Block\{forbricneolive:probe_block\}' "$LOG"
+check "NeoForge: its mixin config plugin saw the client" 'ForbricNeoLive/PLUGIN\] prepareConfigs saw dist=CLIENT' "$LOG"
+# M26_NEO_ASSERTIONS_END
 
 # M26_ASSERTIONS_BEGIN — exercised against synthetic logs without launching the game.
 step "the canary subscribed, entered its save and completed real consumer observations"

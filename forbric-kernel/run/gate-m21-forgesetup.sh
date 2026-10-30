@@ -36,7 +36,7 @@ set -uo pipefail
 LOG="$BUILD/gate-m21-forgesetup.log"
 RUNDIR="$KERNEL/run/server-forgesetup"
 FORGE="$RUN_OLD/forge-runtime/forbriclive.jar"
-NEO="$RUN_OLD/neoforge-runtime/forbricneolive.jar"
+NEO="$NEOLIVE"
 mkdir -p "$BUILD"
 
 step "stage one canary per Forge family"
@@ -351,6 +351,64 @@ check_probe "and one whose tag is empty is not" "recipe empty_tag" 'Test failed'
 check_exactly "exactly the canary pack's five false elements were rejected -- not the dual-dialect biome modifier" \
   "\[Forbric/Conditions\] forge:condition(al)? said no to a data file" "$LOG" 5
 check "MinecraftForge's recipe conditions read this reload's tags" "MinecraftForge's recipe conditions read the tags this reload loads again" "$LOG"
+
+# M21_NEO_CONTRACTS_BEGIN — the shared contracts above, asked of the NeoForge canary as well.
+#
+# Everything this gate asserts of a MinecraftForge mod that is a contract the kernel gives BOTH families -- the scan
+# index, a server data loader, a mod finding its own container, a mixin config plugin, a per-world SERVER config --
+# was proved by the MinecraftForge canary alone. That canary goes when its family goes, and its checks with it; these
+# are what stays. Each is the MinecraftForge check's twin, read out of NeoForge's own API by forbricneolive.
+#
+# RED controls, measured:
+#   M21_EXTRA_JVM='-Dforbric.neoScanData=off'    the NeoForge index is the empty one it once was: both readers' "found
+#                                                its own" lines, both shape lines and both member lines are gone, and
+#                                                ModList's count line says 0 annotations
+#   M21_EXTRA_JVM='-Dforbric.seededScanData=off' the seeded LoadingModList's ModFile has no index again, so its reader
+#                                                throws FML's "Scanning of this mod file has not started yet." and the
+#                                                three LoadingModList lines are gone; ModList's reader is untouched
+#   M21_EXTRA_JVM='-Dforbric.forgeReloadListeners=off' turns the four MinecraftForge RELOAD checks red and leaves the
+#                                                three NeoForge ones green: with the kernel's reload routing off, the
+#                                                merged ReloadableServerResources calls NeoForge's own onResourceReload,
+#                                                so no kernel switch takes the NeoForge data loader out -- the measurement
+#                                                that it rests on NeoForge's hook, not on the MinecraftForge bridge
+# The SELF, PLUGIN and SERVER-config checks have no kernel switch either, like their MinecraftForge twins here.
+step "the NeoForge canary finds its OWN members through both readers of the scan index (must PASS)"
+for reader in ModList LoadingModList; do
+  check "NeoForge ($reader): the index carries the mod's own annotation" \
+    "ForbricNeoLive/SCAN\] $reader found its own @NeoLiveScanned on FIELD PROBE of forbric.live.neoforge.ForbricNeoLiveMod" "$LOG"
+  # NeoForge's shape, not MinecraftForge's and not a bare String: a String would also print SECOND.
+  check "NeoForge ($reader): an enum member has NeoForge's own EnumHolder shape" \
+    "ForbricNeoLive/SCAN\] $reader enum member kind is net\.neoforged\.fml\.loading\.modscan\.ModAnnotation[$]EnumHolder with value SECOND" "$LOG"
+  check "NeoForge ($reader): a plain member is still a plain value" \
+    "ForbricNeoLive/SCAN\] $reader string member note is probe" "$LOG"
+done
+check "NeoForge: and the index is not one file's worth by accident" \
+  "ForbricNeoLive/SCAN\] ModList.getAllScanData\(\): [1-9][0-9]* file\(s\), [1-9][0-9]* annotation\(s\)" "$LOG"
+check_absent "NeoForge: neither reader failed" "ForbricNeoLive/SCAN\] (could not read|LoadingModList has no file)" "$LOG"
+
+step "a NeoForge mod's server data loader is registered and runs (must PASS)"
+# NeoForge's AddServerReloadListenersEvent. The merged ReloadableServerResources hands its reload to the kernel
+# (KernelForgeReload), which asks NeoForge's onResourceReload on the way, so this is the NeoForge half of the route the
+# MinecraftForge RELOAD checks above cover -- and the probe that says nothing was lost when that route goes away.
+check "NeoForge: the event was delivered"          '\[ForbricNeoLive/RELOAD\] AddServerReloadListenersEvent DELIVERED' "$LOG"
+check "NeoForge: the registered data loader ran"   '\[ForbricNeoLive/RELOAD\] reload listener ran over [1-9][0-9]* file' "$LOG"
+check "NeoForge: the event hands out a live condition context" '\[ForbricNeoLive/RELOAD\] context=live' "$LOG"
+
+step "a NeoForge mod finds its OWN container during its constructor (must PASS)"
+check "NeoForge: own container resolvable from its own ctor" \
+  "\[ForbricNeoLive/SELF\] own container during ctor: present=true fmlContainer=true eventBus=true" "$LOG"
+check "NeoForge: and it is the active namespace during that ctor" \
+  "\[ForbricNeoLive/SELF\].*activeNamespace=forbricneolive" "$LOG"
+
+step "a NeoForge mod's mixin config plugin is constructed, and asks the side and gets it (must PASS)"
+check "NeoForge: the plugin saw the dedicated server" "ForbricNeoLive/PLUGIN\] prepareConfigs saw dist=DEDICATED_SERVER" "$LOG"
+check_absent "NeoForge: and never failed to ask" "ForbricNeoLive/PLUGIN\] prepareConfigs saw dist=(null|FAILED)" "$LOG"
+
+step "a NeoForge mod's per-world SERVER config loads exactly once (must PASS)"
+check_exactly "NeoForge: its SERVER config loads once" "ForbricNeoLive/CFG\] LOADING forbricneolive-server\.toml" "$LOG" 1
+check "NeoForge: and its value was read from the loaded spec" \
+  "ForbricNeoLive/CFG\] LOADING forbricneolive-server\.toml: greeting=default loaded=true" "$LOG"
+# M21_NEO_CONTRACTS_END
 
 # M21_REGISTRATION_ASSERTIONS_BEGIN — the Phase 1 A registration hooks; green since A8 landed the bridge inventory.
 check "common registration canary subscribed" 'ForbricLive/REGISTRATION\] subscribed to Forge spawn and creative registration events' "$LOG"
