@@ -1,9 +1,12 @@
 # M33 world-transfer fixture
 
-Run `bash forbric-kernel/run/gate-m33-transfer.sh` after building/staging the kernel inputs. It builds three
-separate mods, each with only its own ecosystem metadata and registration entrypoint. Common fixture classes
-are shipped only by the Fabric jar. The selected Fabric API jar defaults to the same 0.155.2+26.2 fixture as
-the kernel's runtime build; `M33_FABRIC_API` can point at an explicitly prepared equivalent fixture.
+Run `bash forbric-kernel/run/gate-m33-transfer.sh` after building/staging the kernel inputs. The build script builds
+three separate mods, each with only its own ecosystem metadata and registration entrypoint; the gate stages the
+Fabric and NeoForge ones. Since Stage 3 of dropping MinecraftForge, Forbric refuses the MinecraftForge one
+(`forbrictransferforge`) and a strict launch stops on it, so it is built (gate-m40 builds through the same script) but
+never staged, and the probe moves nothing to or from MinecraftForge. Common fixture classes are shipped only by the
+Fabric jar. The selected Fabric API jar defaults to the same 0.155.2+26.2 fixture as the kernel's runtime build;
+`M33_FABRIC_API` can point at an explicitly prepared equivalent fixture.
 The upstream NeoForge-patched game is the compile view (`M33_COMPILE_GAME`); the merged game is the runtime
 input. This preserves normal upstream compilation of a custom Block subclass without hiding the merged
 interfaces' conflicting defaults behind canary-only overrides. Both game inputs are hashed.
@@ -13,36 +16,33 @@ server's actual world path must all agree before the canary changes blocks. With
 `DISARMED` and does nothing. An existing unowned world is never removed.
 
 Each mod registers its own block and block-entity type. Native provider registration uses Fabric's block API
-lookup, NeoForge's `RegisterCapabilitiesEvent`, or Forge's attachment event with exact standard Forge handlers.
-Transfers query `ItemStorage/FluidStorage.SIDED`, `ServerLevel.getCapability`, and
-`ICapabilityProvider.getCapability`; this fixture never calls a kernel transfer adapter directly.
+lookup or NeoForge's `RegisterCapabilitiesEvent`. Transfers query `ItemStorage/FluidStorage.SIDED` and
+`ServerLevel.getCapability`; this fixture never calls a kernel transfer adapter directly.
 
-The positive phase checks all six directed item/fluid routes with BOTH NORTH and null (12 operations per
-resource family), face preservation, SOUTH refusal, native
-provider priority (including competing providers), and cached views after replacing a real block entity.
-Container-shaped machines check ownership precedence: a Forge crate and a NeoForge crate are plain Containers
-whose owners expose a separate handler on NORTH/null only, and a NeoForge cabinet extends BaseContainerBlockEntity.
-Fabric API's generic Container fallback and the merged Forge override's generic wrapper must not answer for
-them: a refused face stays refused for NeoForge and Forge consumers, and every foreign consumer on the permitted
-face reaches the owner's handler (and the cabinet's fluid handler) without one write into the Container slots.
-Three more BaseContainerBlockEntity machines leave getCapability alone, the shape of most mod chests, so Forge
-answers each with its own InvWrapper over the whole Container. A NeoForge consumer of the Forge bin gets
-NeoForge's own Container wrapper on every face: an aborted insert leaves the bin empty and committed moves land in
-its slots. It gets nothing for the Forge kiln, whose Container declares its own setItem. A Forge consumer of the
-Fabric bin (no Fabric storage of its own) keeps the native InvWrapper. The gate also requires the kiln's
-CONTAINER_WRITES_NOT_VANILLA finding and forbids any "InvWrapper is not rollback-safe" finding. The
-three primary inventories retain 60 component-tagged cobblestone and 48,617 Fabric fluid units, including a
-17-unit remainder. A Neo query also requests 201 mB from the real Fabric store holding 200 mB plus 17 units,
-forcing an actual fractional return, nested rollback/retry, then outer rollback. Temporary priority/invalidation
-fixtures are outside this conservation census. Legacy
-Forge simulate/execute calls are checked as separate calls; they are not claimed to form a transaction.
+The positive phase checks both directed item/fluid routes (Fabric -> NeoForge, NeoForge -> Fabric) with BOTH NORTH
+and null (4 operations per resource family), face preservation, SOUTH refusal, native provider priority (including
+competing providers), and cached views after replacing a real block entity. Container-shaped machines check ownership
+precedence: a NeoForge crate is a plain Container whose owner exposes a separate handler on NORTH/null only, and a
+NeoForge cabinet extends BaseContainerBlockEntity. Fabric API's generic Container fallback must not answer for them:
+a refused face stays refused for NeoForge, and a Fabric consumer on the permitted face reaches the owner's item handler
+(and the cabinet's fluid handler) without one write into the Container slots. The MinecraftForge carrier still
+composes its generic InvWrapper into every BaseContainerBlockEntity, and the bridge's Forge leg reads it on the face
+the cabinet's owner refuses; it is no owner's handler, so NeoForge gets nothing there, and the gate forbids any
+"InvWrapper is not rollback-safe" finding. The two primary inventories retain 40 component-tagged cobblestone and
+32,417 Fabric fluid units, including a 17-unit remainder. A Neo query also requests 201 mB from the real Fabric store
+holding 200 mB plus 17 units, forcing an actual fractional return, nested rollback/retry, then outer rollback.
+Temporary priority/invalidation fixtures are outside this conservation census.
 
 A second server loads the same world and verifies `loadAdditional` really ran, item components and per-machine
-quantities survived, and world queries still work. A separate Forge machine at (112,80,16) occupies its own
+quantities survived, and world queries still work. A separate NeoForge machine at (112,80,16) occupies its own
 chunk. The gate saves its seeded baseline and asserts the chunk is clean, then performs only public Fabric
 queries: aborted item/fluid writes must leave it clean; committed writes must mark it dirty. There is no
 explicit setChanged after the baseline save. The next boot checks that the new amounts (7 items, 9 mB)
-and components persisted, including reads through the native Forge providers.
+and components persisted, including reads through the machine's own NeoForge handlers. The NeoForge machine marks
+itself changed when its handlers' contents change, so this proves the bridge commits NeoForge's root exactly when the
+Fabric transaction commits. Before Stage 3 of dropping MinecraftForge this probe stood on a Forge machine whose
+handlers never mark their host changed, which proved the bridge's own dirty notification on commit; only the Forge
+adapters reach that notification, so with no MinecraftForge mod aboard it is no longer exercised.
 
 Finally, the gate creates another owned test world with the bridge disabled. The same positive assertions
 must fail at a foreign public lookup; its acceptance command and recorded probe result must be red. Each run
@@ -50,11 +50,11 @@ uses `run/compat/evidence.py` to retain source, kernel, carrier, Fabric API and 
 command, logs and input-drift verdict under `build/verification/m33-transfer/`.
 
 Replacement is checked without calling invalidateCapabilities by hand: removing the block entity must invalidate
-every cached view by itself. After the save, three more machines stand in a chunk at (4096, 4096) that nothing
-else touches. Every foreign view of them is cached, and the probe keeps ticking until the server has unloaded
-that chunk on its own. While it is unloaded and after it is reloaded, every cached view must move nothing and
-every cached Forge LazyOptional must be empty; the reloaded machines keep their contents, and fresh public
-queries reach them. The phase result is written only when this finishes (at most 1200 ticks).
+every cached view by itself (a Fabric consumer's views of a NeoForge machine, a NeoForge consumer's views of a Fabric
+machine). After the save, two more machines stand in a chunk at (4096, 4096) that nothing else touches. Every foreign
+view of them is cached, and the probe keeps ticking until the server has unloaded that chunk on its own. While it is
+unloaded and after it is reloaded, every cached view must move nothing; the reloaded machines keep their contents,
+and fresh public queries reach them. The phase result is written only when this finishes (at most 1200 ticks).
 
 These assertions supplement the lower-level transaction/alias canary; they do not replace it. No Gradle or
 game run is implied merely by creating these sources.
