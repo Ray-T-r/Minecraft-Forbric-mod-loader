@@ -12,6 +12,7 @@ import org.objectweb.asm.*;
 import org.objectweb.asm.tree.*;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 @org.junit.jupiter.api.parallel.ResourceLock("system-properties")
+@org.junit.jupiter.api.extension.ExtendWith(net.forbric.kernel.DroppedLambdaRecordRestore.class)
 class InsertedLambdaArgumentShimTest {
  private static final String OLD="(JLjava/lang/Object;Ljava/lang/Object;D)V",NEW="(JLjava/lang/Object;Ljava/lang/String;Ljava/lang/Object;D)V",CI="Lorg/spongepowered/asm/mixin/injection/callback/CallbackInfo;";
  @AfterEach void reset(){System.clearProperty(InsertedLambdaArgumentShim.PROPERTY);}

@@ -16,6 +16,7 @@ import org.objectweb.asm.tree.MethodNode;
  * merely renumbered (that name is a different lambda now) or one whose captures were only reordered (the permutation
  * census's case, proven by local names).
  */
+@org.junit.jupiter.api.extension.ExtendWith(net.forbric.kernel.DroppedLambdaRecordRestore.class)
 class LambdaShapeEvidenceTest {
 	private static final String SKY = "lambda$addSkyPass$0";
 	private static final String VANILLA_SKY = "(Lcom/mojang/blaze3d/buffers/GpuBufferSlice;Lnet/minecraft/client/renderer/state/level/SkyRenderState;)V";

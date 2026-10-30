@@ -33,6 +33,7 @@ import net.fabricmc.api.EnvType;
  */
 @ExecutesInjector(DuplicateLambdaPruneInjector.class)
 @ResourceLock("system-properties")
+@org.junit.jupiter.api.extension.ExtendWith(net.forbric.kernel.DroppedLambdaRecordRestore.class)
 class DuplicateLambdaPruneInjectorExecutionTest {
 	private static final String TASK = "net.minecraft.resources.ResourceManagerRegistryLoadTask";
 	private static final String TASK_INTERNAL = TASK.replace('.', '/');

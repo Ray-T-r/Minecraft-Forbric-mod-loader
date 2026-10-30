@@ -48,6 +48,7 @@ import org.objectweb.asm.tree.MethodNode;
  * test fails on a mapping that compiles and hands over the wrong object — which is the only failure mode of this
  * class that matters.
  */
+@org.junit.jupiter.api.extension.ExtendWith(net.forbric.kernel.DroppedLambdaRecordRestore.class)
 public class MixinHandlerShimTest {
 	private static final String TARGET = "net/example/Renderer";
 	private static final String MIXIN = "net/example/RendererMixin";

@@ -77,6 +77,7 @@ import net.forbric.kernel.transform.TransformContext;
 @ExpectCaught("cannot prove a frame repair")
 @ResourceLock("native-game-references")
 @ResourceLock("system-properties")
+@org.junit.jupiter.api.extension.ExtendWith(net.forbric.kernel.DroppedLambdaRecordRestore.class)
 class LambdaShapeEvidenceStagedTest {
 	private static final String MIXIN_DESC = "Lorg/spongepowered/asm/mixin/Mixin;";
 	private static final String INJECT = "Lorg/spongepowered/asm/mixin/injection/Inject;";

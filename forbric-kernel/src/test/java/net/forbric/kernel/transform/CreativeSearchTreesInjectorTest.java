@@ -29,6 +29,7 @@ import net.forbric.kernel.TestFixtures.Fixture;
  * are, and NeoForge's own patched class, whose producers already delegate, is not touched.
  */
 @ResourceLock("system-properties")
+@org.junit.jupiter.api.extension.ExtendWith(net.forbric.kernel.DroppedLambdaRecordRestore.class)
 class CreativeSearchTreesInjectorTest {
 	private static final Path MERGED = TestFixtures.stagedBase();
 	private static final Path NEOFORGE_PATCHED = TestFixtures.genuineBase();

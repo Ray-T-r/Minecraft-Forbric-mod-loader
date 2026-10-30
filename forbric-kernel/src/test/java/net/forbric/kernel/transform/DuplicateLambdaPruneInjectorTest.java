@@ -41,6 +41,7 @@ import org.objectweb.asm.tree.MethodNode;
  * not just direct calls — a dead chain reaches its own first link that way and looks alive if you stop at depth
  * one. The "dead chain is self-referential" test is the one that catches that.
  */
+@org.junit.jupiter.api.extension.ExtendWith(net.forbric.kernel.DroppedLambdaRecordRestore.class)
 class DuplicateLambdaPruneInjectorTest {
 	private static final String OWNER = "com/example/Merged";
 	private static final Handle METAFACTORY = new Handle(Opcodes.H_INVOKESTATIC,

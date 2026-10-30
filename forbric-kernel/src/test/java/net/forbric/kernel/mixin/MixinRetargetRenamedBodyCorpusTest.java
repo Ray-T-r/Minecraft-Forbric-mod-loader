@@ -42,6 +42,7 @@ import net.forbric.kernel.TestFixtures.Fixture;
  * full list of moves is written to {@code build/reports/r3-renamed-body-corpus.txt}.
  */
 @ResourceLock("system-properties")
+@org.junit.jupiter.api.extension.ExtendWith(net.forbric.kernel.DroppedLambdaRecordRestore.class)
 class MixinRetargetRenamedBodyCorpusTest {
 	private static final Path MERGED = TestFixtures.stagedBase();
 	private static final Path INTEROP = TestFixtures.stagedRoot().resolve("merged-base/forge-runtime-interop.jar");

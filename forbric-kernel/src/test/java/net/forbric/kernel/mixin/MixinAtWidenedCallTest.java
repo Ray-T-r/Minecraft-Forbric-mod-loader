@@ -50,6 +50,7 @@ import org.objectweb.asm.tree.TypeInsnNode;
  * call must never be pointed at a different call.
  */
 @org.junit.jupiter.api.parallel.ResourceLock("system-properties")
+@org.junit.jupiter.api.extension.ExtendWith(net.forbric.kernel.DroppedLambdaRecordRestore.class)
 class MixinAtWidenedCallTest {
 	private static final String OWNER = "net/minecraft/network/protocol/common/custom/CustomPacketPayload";
 	private static final String SHORT = "L" + OWNER + ";codec(Ljava/util/List;)Lnet/minecraft/network/codec/StreamCodec;";
