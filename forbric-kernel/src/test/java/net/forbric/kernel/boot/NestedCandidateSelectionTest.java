@@ -232,10 +232,25 @@ class NestedCandidateSelectionTest {
 		}
 	}
 
-	/** The real xaero pair: two Forge-family parents name their own platform artifact of one shared mod id. */
+	/**
+	 * The xaero pair on the families that load: two parents name their own platform artifact of one shared mod id.
+	 * The real pair was a MinecraftForge minimap, now refused (see {@link #xaeroForgePair}); its Fabric build nests
+	 * through JiJ, and here also names the artifact in JarJar metadata, as a multiloader-built Fabric jar can.
+	 */
 	private void xaeroPair() throws Exception {
-		install("xaerominimap-forge.jar", forge("xaerominimap", "26.5.1", Map.of("META-INF/jarjar/xaerolib-forge.jar", forge("xaerolib", "1.7.3", Map.of(), Map.of(), Map.of())),
+		install("xaerominimap-fabric.jar", fabric("xaerominimap", "26.5.1", Map.of("META-INF/jars/xaerolib-fabric.jar", fabric("xaerolib", "1.7.3", Map.of(), "", Map.of())), "",
+				Map.of("META-INF/jarjar/metadata.json", jarJar(Map.of("META-INF/jars/xaerolib-fabric.jar",
+						new NestedCandidateInventory.Coordinate("xaero.lib:xaerolib-fabric-26.2", "[1.7.3,)", "1.7.3"))))));
+		xaeroWorldMap();
+	}
+	/** The real xaero pair: the MinecraftForge minimap that Stage 3 refuses, beside the NeoForge world map. */
+	private Path xaeroForgePair() throws Exception {
+		Path minimap = install("xaerominimap-forge.jar", forge("xaerominimap", "26.5.1", Map.of("META-INF/jarjar/xaerolib-forge.jar", forge("xaerolib", "1.7.3", Map.of(), Map.of(), Map.of())),
 				Map.of("META-INF/jarjar/xaerolib-forge.jar", new NestedCandidateInventory.Coordinate("xaero.lib:xaerolib-forge-26.2", "[1.7.3,)", "1.7.3")), Map.of()));
+		xaeroWorldMap();
+		return minimap;
+	}
+	private void xaeroWorldMap() throws Exception {
 		install("xaeroworldmap-neoforge.jar", neo("xaeroworldmap", "1.46.0", Map.of("META-INF/jarjar/xaerolib-neoforge.jar", neo("xaerolib", "1.7.3", Map.of(), Map.of(), Map.of())),
 				Map.of("META-INF/jarjar/xaerolib-neoforge.jar", new NestedCandidateInventory.Coordinate("xaero.lib:xaerolib-neoforge-26.2", "[1.7.0,1.8)", "1.7.3")), Map.of()));
 	}
@@ -254,23 +269,38 @@ class NestedCandidateSelectionTest {
 		assertEquals(net.forbric.api.Ecosystem.NEOFORGE, selectedFamily("xaerolib"));
 		assertTrue(CompatibilityFindings.confirmedRequired().isEmpty(), () -> CompatibilityFindings.all().toString());
 		// The order is a preference among satisfying builds, not an artifact the first-sorted identity forced.
-		reset(); System.setProperty("forbric.nestedDupePreference", "minecraftforge,neoforge,fabric");
+		reset(); System.setProperty("forbric.nestedDupePreference", "fabric,neoforge");
 		xaeroPair(); decide();
 		assertEquals(JointCandidateSelector.Status.SOLVED, DuplicateModArbiter.currentPlan().selection().status());
-		assertEquals(net.forbric.api.Ecosystem.FORGE, selectedFamily("xaerolib"));
-		reset(); System.setProperty("forbric.modOwner", "xaerolib=minecraftforge");
+		assertEquals(net.forbric.api.Ecosystem.FABRIC, selectedFamily("xaerolib"));
+		reset(); System.setProperty("forbric.modOwner", "xaerolib=fabric");
 		xaeroPair(); decide();
 		assertEquals(JointCandidateSelector.Status.SOLVED, DuplicateModArbiter.currentPlan().selection().status());
-		assertEquals(net.forbric.api.Ecosystem.FORGE, selectedFamily("xaerolib"));
+		assertEquals(net.forbric.api.Ecosystem.FABRIC, selectedFamily("xaerolib"));
+		// The real MinecraftForge minimap is refused, so its xaerolib-forge never enters the contest: neither a
+		// MinecraftForge-first order nor a pin to it (dropped as it is read) can choose it.
+		for (String setting : List.of("forbric.nestedDupePreference=minecraftforge,neoforge,fabric", "forbric.modOwner=xaerolib=minecraftforge")) {
+			reset(); Files.deleteIfExists(mods().resolve("xaerominimap-fabric.jar"));
+			System.setProperty(setting.substring(0, setting.indexOf('=')), setting.substring(setting.indexOf('=') + 1));
+			Path minimap = xaeroForgePair(); decide(); var plan = DuplicateModArbiter.currentPlan();
+			assertTrue(MultiLoaderArbiter.refused(minimap), setting);
+			assertEquals(JointCandidateSelector.Status.SOLVED, plan.selection().status(), setting);
+			assertEquals(net.forbric.api.Ecosystem.NEOFORGE, selectedFamily("xaerolib"), setting);
+			assertEquals(1, plan.inventory().nodes().values().stream().filter(n -> n.claim() != null && n.claim().modIds().contains("xaerolib")).count(),
+					() -> setting + ": a refused parent's nested build is not a candidate");
+		}
 	}
 
-	@Test void aFabricBuildWithoutJarJarMetadataCanStandInForAForgeCoordinate() throws Exception {
-		// Real Fabric JiJ parents ship no META-INF/jarjar/metadata.json (xaerominimap-fabric), yet the MinecraftForge
-		// parent's coordinate is met by any build of the same mod whose version is in range.
+	@Test void aFabricBuildWithoutJarJarMetadataCanStandInForAForgeFamilyCoordinate() throws Exception {
+		// Real Fabric JiJ parents ship no META-INF/jarjar/metadata.json (xaerominimap-fabric), yet the NeoForge
+		// parent's coordinate is met by any build of the same mod whose version is in range. (The parent was a
+		// MinecraftForge build, refused now, which left its coordinate nothing to constrain.) The Fabric parent's
+		// dependency forces the Fabric build against the NeoForge-first nested preference, and that is SOLVED only
+		// because the Fabric build may stand in for the NeoForge parent's artifact.
 		install("parent-fabric.jar", fabric("parentfabric", "1", Map.of("META-INF/jars/lib-fabric.jar", fabric("lib", "2.0.0", Map.of(), "", Map.of())),
 				",\"depends\":{\"lib\":\">=2.0.0\"}", Map.of()));
-		install("parent-forge.jar", forge("parentforge", "1", Map.of("META-INF/jarjar/lib-forge.jar", forge("lib", "1.5.0", Map.of(), Map.of(), Map.of())),
-				Map.of("META-INF/jarjar/lib-forge.jar", new NestedCandidateInventory.Coordinate("example:lib-forge", "[1.5,)", "1.5.0")), Map.of()));
+		install("parent-neo.jar", neo("parentneo", "1", Map.of("META-INF/jarjar/lib-neoforge.jar", neo("lib", "1.5.0", Map.of(), Map.of(), Map.of())),
+				Map.of("META-INF/jarjar/lib-neoforge.jar", new NestedCandidateInventory.Coordinate("example:lib-neoforge", "[1.5,)", "1.5.0")), Map.of()));
 		for (String pin : List.of("", "lib=fabric")) {
 			reset(); if (!pin.isEmpty()) System.setProperty("forbric.modOwner", pin);
 			decide();
@@ -311,23 +341,39 @@ class NestedCandidateSelectionTest {
 		assertEquals("2.0.4", plan.inventory().nodes().get(plan.nestedFiles().getFirst()).claim().versionOf("fabric-screen-api-v1"));
 	}
 
-	@Test void aNestedForgeMixinExtrasNoNewerThanTheKernelsOwnIsNotLoaded() throws Exception {
+	@Test void aNestedForgeFamilyMixinExtrasNoNewerThanTheKernelsOwnIsNotLoaded() throws Exception {
 		// badpackets-forge nests mixinextras-forge 0.3.5, whose @Mod constructor calls ModList.get(), gone from
 		// MinecraftForge 26.2. MinecraftForge ships 0.5.3 and its JarJar selection closes the nested copy unopened.
-		Map<String, NestedCandidateInventory.Coordinate> coordinate = Map.of("META-INF/jarjar/mixinextras-forge.jar",
-				new NestedCandidateInventory.Coordinate("io.github.llamalad7:mixinextras-forge", "[0.3.5,)", "0.3.5"));
+		// That build is refused now (below); the rule is the Forge family's, so a NeoForge parent's nested
+		// mixinextras-neoforge no newer than the kernel's own is what it still closes.
+		Map<String, NestedCandidateInventory.Coordinate> coordinate = Map.of("META-INF/jarjar/mixinextras-neoforge.jar",
+				new NestedCandidateInventory.Coordinate("io.github.llamalad7:mixinextras-neoforge", "[0.3.5,)", "0.3.5"));
 		for (String nested : List.of("0.3.5", "0.5.4", "0.6.0")) for (String kernel : List.of("0.5.4", "")) {
 			reset(); Files.deleteIfExists(mods().resolve("badpackets.jar"));
 			KernelBundledJars.mixinExtrasVersionForTests(kernel);
-			byte[] wrapper = forge("mixinextras", nested, Map.of(), Map.of(),
-					Map.of("com/llamalad7/mixinextras/platform/forge/MixinExtrasMod.class", type("com/llamalad7/mixinextras/platform/forge/MixinExtrasMod")));
-			install("badpackets.jar", forge("badpackets", "0.12.2", Map.of("META-INF/jarjar/mixinextras-forge.jar", wrapper), coordinate, Map.of()));
+			byte[] wrapper = neo("mixinextras", nested, Map.of(), Map.of(),
+					Map.of("com/llamalad7/mixinextras/platform/neoforge/MixinExtrasMod.class", type("com/llamalad7/mixinextras/platform/neoforge/MixinExtrasMod")));
+			install("badpackets.jar", neo("badpackets", "0.12.2", Map.of("META-INF/jarjar/mixinextras-neoforge.jar", wrapper), coordinate, Map.of()));
 			decide(); var plan = DuplicateModArbiter.currentPlan(); String label = "nested " + nested + ", kernel " + kernel;
 			assertEquals(JointCandidateSelector.Status.SOLVED, plan.selection().status(), label);
 			boolean superseded = !kernel.isEmpty() && !nested.equals("0.6.0");
 			assertEquals(superseded ? 0 : 1, plan.nestedFiles().size(), label);
 			assertTrue(plan.verify(plan.nestedFiles()), label);
 		}
+		// The real badpackets-forge is a MinecraftForge-only build: refused, it claims nothing, so neither it nor the
+		// MixinExtras it nests is inventoried at all.
+		reset(); Files.deleteIfExists(mods().resolve("badpackets.jar")); KernelBundledJars.mixinExtrasVersionForTests("0.5.4");
+		byte[] forgeWrapper = forge("mixinextras", "0.3.5", Map.of(), Map.of(),
+				Map.of("com/llamalad7/mixinextras/platform/forge/MixinExtrasMod.class", type("com/llamalad7/mixinextras/platform/forge/MixinExtrasMod")));
+		Path forgeOnly = install("badpackets.jar", forge("badpackets", "0.12.2", Map.of("META-INF/jarjar/mixinextras-forge.jar", forgeWrapper),
+				Map.of("META-INF/jarjar/mixinextras-forge.jar", new NestedCandidateInventory.Coordinate("io.github.llamalad7:mixinextras-forge", "[0.3.5,)", "0.3.5")), Map.of()));
+		var refused = decide();
+		assertTrue(MultiLoaderArbiter.refused(forgeOnly));
+		assertNull(DuplicateModArbiter.currentPlan(), "a refused jar is no claim, so there is nothing to plan");
+		assertTrue(refused.ownerByModId().isEmpty());
+		// The rule's MinecraftForge side, which no mod reaches any more; Stage 4 deletes it with the rest of that code.
+		assertTrue(NestedCandidateInventory.supersededByKernelMixinExtras(new DuplicateModArbiter.Claim(root, net.forbric.api.Ecosystem.FORGE,
+				List.of("mixinextras"), Map.of("mixinextras", "0.3.5")), "0.5.4"));
 		// A Fabric mod's own nested mixinextras-fabric is the Fabric dependency graph's business, not this rule's.
 		reset(); KernelBundledJars.mixinExtrasVersionForTests("0.5.4");
 		assertFalse(NestedCandidateInventory.supersededByKernelMixinExtras(new DuplicateModArbiter.Claim(root, net.forbric.api.Ecosystem.FABRIC,
@@ -660,31 +706,51 @@ class NestedCandidateSelectionTest {
 		assertTrue(CompatibilityFindings.all().stream().anyMatch(f -> f.id().equals("arbitration:breaks:foo") && f.modId().equals("app")));
 	}
 
-	/** gate-m19's fixture: Fabric JiJ with no JarJar metadata, MinecraftForge JarJar naming its platform artifact. */
+	/** gate-m19's NeoForge pair: Fabric JiJ with no JarJar metadata, NeoForge JarJar naming its platform artifact. */
 	private void m19(String range, String artifactVersion) throws Exception {
-		install("forbricnestfab.jar", fabric("forbricnestfab", "1.0.0", Map.of("META-INF/jars/forbricnestlib-fabric.jar",
-				fabric("forbricnestlib", "1.0.0", Map.of(), "", Map.of())), "", Map.of()));
-		install("forbricnestforge.jar", forge("forbricnestforge", "1.0.0", Map.of("META-INF/jarjar/forbricnestlib-forge.jar",
+		m19Fabric();
+		install("forbricnestneo.jar", neo("forbricnestneo", "1.0.0", Map.of("META-INF/jarjar/forbricnestlib-neoforge.jar",
+				neo("forbricnestlib", "1.0.0", Map.of(), Map.of(), Map.of())), Map.of("META-INF/jarjar/forbricnestlib-neoforge.jar",
+				new NestedCandidateInventory.Coordinate("forbric.nestlib:forbricnestlib-neoforge", range, artifactVersion)), Map.of()));
+	}
+	/** gate-m19's original pair, whose MinecraftForge parent Stage 3 refuses. */
+	private Path m19MinecraftForge(String range, String artifactVersion) throws Exception {
+		m19Fabric();
+		return install("forbricnestforge.jar", forge("forbricnestforge", "1.0.0", Map.of("META-INF/jarjar/forbricnestlib-forge.jar",
 				forge("forbricnestlib", "1.0.0", Map.of(), Map.of(), Map.of())), Map.of("META-INF/jarjar/forbricnestlib-forge.jar",
 				new NestedCandidateInventory.Coordinate("forbric.nestlib:forbricnestlib-forge", range, artifactVersion)), Map.of()));
 	}
+	private void m19Fabric() throws Exception {
+		install("forbricnestfab.jar", fabric("forbricnestfab", "1.0.0", Map.of("META-INF/jars/forbricnestlib-fabric.jar",
+				fabric("forbricnestlib", "1.0.0", Map.of(), "", Map.of())), "", Map.of()));
+	}
 
 	@Test void theRealM19ShapeFollowsThePreferenceThePinAndTheRange() throws Exception {
+		// The NeoForge build wins by the nested preference, as gate-m19's NeoForge pair measures; the pin flips it.
 		m19("[1.0.0,)", "1.0.0"); decide();
 		assertEquals(JointCandidateSelector.Status.SOLVED, DuplicateModArbiter.currentPlan().selection().status());
-		assertEquals(net.forbric.api.Ecosystem.FABRIC, selectedFamily("forbricnestlib"));
+		assertEquals(net.forbric.api.Ecosystem.NEOFORGE, selectedFamily("forbricnestlib"));
 		assertTrue(CompatibilityFindings.all().isEmpty(), () -> CompatibilityFindings.all().toString());
-		reset(); System.setProperty("forbric.modOwner", "forbricnestlib=minecraftforge"); m19("[1.0.0,)", "1.0.0"); decide();
+		reset(); System.setProperty("forbric.modOwner", "forbricnestlib=fabric"); m19("[1.0.0,)", "1.0.0"); decide();
 		assertEquals(JointCandidateSelector.Status.SOLVED, DuplicateModArbiter.currentPlan().selection().status());
-		assertEquals(net.forbric.api.Ecosystem.FORGE, selectedFamily("forbricnestlib"));
-		reset(); m19("[2.0.0,)", "2.0.0"); decide();
+		assertEquals(net.forbric.api.Ecosystem.FABRIC, selectedFamily("forbricnestlib"));
+		// With the order turned Fabric-first, the range must be what keeps the NeoForge build.
+		reset(); System.setProperty("forbric.nestedDupePreference", "fabric,neoforge"); m19("[2.0.0,)", "2.0.0"); decide();
 		assertEquals(JointCandidateSelector.Status.SOLVED, DuplicateModArbiter.currentPlan().selection().status());
-		assertEquals(net.forbric.api.Ecosystem.FORGE, selectedFamily("forbricnestlib"), "the range, not the preference, decides");
+		assertEquals(net.forbric.api.Ecosystem.NEOFORGE, selectedFamily("forbricnestlib"), "the range, not the preference, decides");
 		reset(); System.setProperty("forbric.modOwner", "forbricnestlib=fabric"); m19("[2.0.0,)", "2.0.0"); decide();
 		assertEquals(JointCandidateSelector.Status.UNSATISFIABLE, DuplicateModArbiter.currentPlan().selection().status());
 		assertEquals(net.forbric.api.Ecosystem.FABRIC, selectedFamily("forbricnestlib"), "the explicit choice is kept and reported");
 		assertTrue(CompatibilityFindings.confirmedRequired().stream().anyMatch(f -> f.id().startsWith("arbitration:jarjar:")
-				&& f.modId().equals("forbricnestforge")), () -> CompatibilityFindings.all().toString());
+				&& f.modId().equals("forbricnestneo")), () -> CompatibilityFindings.all().toString());
+		// The original MinecraftForge parent is refused: its nested build is no candidate, a pin to it is dropped as it
+		// is read, and its range (one the Fabric build misses) constrains nothing.
+		reset(); Files.delete(mods().resolve("forbricnestneo.jar")); System.setProperty("forbric.modOwner", "forbricnestlib=minecraftforge");
+		Path forge = m19MinecraftForge("[2.0.0,)", "2.0.0"); decide();
+		assertTrue(MultiLoaderArbiter.refused(forge));
+		assertEquals(JointCandidateSelector.Status.SOLVED, DuplicateModArbiter.currentPlan().selection().status());
+		assertEquals(net.forbric.api.Ecosystem.FABRIC, selectedFamily("forbricnestlib"));
+		assertTrue(CompatibilityFindings.all().stream().noneMatch(f -> f.id().startsWith("arbitration:")), () -> CompatibilityFindings.all().toString());
 	}
 
 	private static byte[] api(String name, int access) {
@@ -736,13 +802,15 @@ class NestedCandidateSelectionTest {
 	private static byte[] neo(String id, String version, Map<String, byte[]> children, Map<String, NestedCandidateInventory.Coordinate> coordinates, Map<String, byte[]> resources, String extraToml) throws Exception {
 		Map<String, byte[]> all = new LinkedHashMap<>(resources); all.putAll(children);
 		all.put("META-INF/neoforge.mods.toml", ("modLoader=\"javafml\"\nloaderVersion=\"[1,)\"\nlicense=\"MIT\"\n[[mods]]\nmodId=\"" + id + "\"\nversion=\"" + version + "\"\n" + extraToml).getBytes(StandardCharsets.UTF_8));
-		if (!coordinates.isEmpty()) {
-			List<String> entries = new ArrayList<>();
-			for (var entry : coordinates.entrySet()) { String[] parts = entry.getValue().id().split(":", 2);
-				entries.add("{\"path\":\"" + entry.getKey() + "\",\"identifier\":{\"group\":\"" + parts[0] + "\",\"artifact\":\"" + parts[1] + "\"},\"version\":{\"range\":\"" + entry.getValue().range() + "\",\"artifactVersion\":\"" + entry.getValue().version() + "\"}}"); }
-			all.put("META-INF/jarjar/metadata.json", ("{\"jars\":[" + String.join(",", entries) + "]}").getBytes(StandardCharsets.UTF_8));
-		}
+		if (!coordinates.isEmpty()) all.put("META-INF/jarjar/metadata.json", jarJar(coordinates));
 		return bytes(all);
+	}
+	/** A {@code META-INF/jarjar/metadata.json} declaring {@code coordinates}, keyed by nested path. */
+	private static byte[] jarJar(Map<String, NestedCandidateInventory.Coordinate> coordinates) {
+		List<String> entries = new ArrayList<>();
+		for (var entry : coordinates.entrySet()) { String[] parts = entry.getValue().id().split(":", 2);
+			entries.add("{\"path\":\"" + entry.getKey() + "\",\"identifier\":{\"group\":\"" + parts[0] + "\",\"artifact\":\"" + parts[1] + "\"},\"version\":{\"range\":\"" + entry.getValue().range() + "\",\"artifactVersion\":\"" + entry.getValue().version() + "\"}}"); }
+		return ("{\"jars\":[" + String.join(",", entries) + "]}").getBytes(StandardCharsets.UTF_8);
 	}
 	private static byte[] bytes(Map<String, byte[]> resources) throws Exception {
 		ByteArrayOutputStream bytes = new ByteArrayOutputStream();
