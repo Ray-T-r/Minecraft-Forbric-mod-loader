@@ -65,7 +65,7 @@ import net.forbric.kernel.TestFixtures.Fixture;
 @ResourceLock("system-properties")
 @ResourceLock("native-game-references")
 class MixinFitLivenessCensusStagedTest {
-	private static final Path MERGED = TestFixtures.stagedBase();
+	private static final Path MERGED = TestFixtures.mergedBase();
 	private static final Path INTEROP = TestFixtures.stagedRoot().resolve(TestFixtures.FORGE_INTEROP_JAR);
 	private static final Path NEO_RUNTIME = TestFixtures.stagedRoot().resolve(TestFixtures.NEO_CARRIER_JAR);
 	private static final Map<String, Path> PACKS = new LinkedHashMap<>();

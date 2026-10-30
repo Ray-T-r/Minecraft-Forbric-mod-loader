@@ -143,7 +143,7 @@ class GuestInjectorPrunerSpellingTest {
 	// ---------------------------------------------------------------------------------------------------------------
 	// fabric-api's two mixins, respelled
 
-	private static final Path MERGED_BASE = TestFixtures.stagedBase();
+	private static final Path MERGED_BASE = TestFixtures.mergedBase();
 	private static final String MODEL_MANAGER_MIXIN = "net/fabricmc/fabric/mixin/client/model/loading/ModelManagerMixin";
 	private static final String ITEM_STACK_MIXIN = "net/fabricmc/fabric/mixin/item/ItemStackMixin";
 	private static final String MODEL_MANAGER = "net/minecraft/client/resources/model/ModelManager";

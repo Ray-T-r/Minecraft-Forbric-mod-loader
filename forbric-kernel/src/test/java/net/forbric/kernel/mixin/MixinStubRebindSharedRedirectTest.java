@@ -39,7 +39,7 @@ class MixinStubRebindSharedRedirectTest {
 	private ForbricClassLoader loader;
 
 	@BeforeEach void bindTheMergedBasesNativeReferences() throws Exception {
-		Path merged = TestFixtures.stagedBase();
+		Path merged = TestFixtures.mergedBase();
 		TestFixtures.requireFiles(Fixture.STAGED, "the staged merged base and its native-reference index", merged);
 		MixinStubRebind.forget();
 		loader = new ForbricClassLoader(new java.net.URL[] {merged.toUri().toURL()}, getClass().getClassLoader());
@@ -59,7 +59,7 @@ class MixinStubRebindSharedRedirectTest {
 
 	private static ClassNode target() throws Exception {
 		ClassNode node = new ClassNode();
-		try (var zip = new java.util.zip.ZipFile(TestFixtures.stagedBase().toFile())) {
+		try (var zip = new java.util.zip.ZipFile(TestFixtures.mergedBase().toFile())) {
 			new org.objectweb.asm.ClassReader(zip.getInputStream(zip.getEntry(TARGET + ".class"))).accept(node, 0);
 		}
 		return node;

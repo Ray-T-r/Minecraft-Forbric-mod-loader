@@ -43,7 +43,7 @@ import net.forbric.kernel.TestFixtures.Fixture;
 /** The source/merged hierarchy census checks resource assignability directly; no list licenses a repair. */
 class MergedBaseLostAncestorsTest {
 	private static final Path RUN = TestFixtures.stagedRoot();
-	private static final Path MERGED = RUN.resolve(TestFixtures.BASE_JAR);
+	private static final Path MERGED = RUN.resolve(TestFixtures.MERGED_BASE_JAR);
 	private static final Path FORGE_BASE = RUN.resolve("forge-patched/patched-mc-forge-26.2.jar");
 	private static final Path NEO_BASE = RUN.resolve(TestFixtures.GENUINE_BASE_JAR);
 	private static final Path FORGE_RT = RUN.resolve(TestFixtures.FORGE_CARRIER_JAR);

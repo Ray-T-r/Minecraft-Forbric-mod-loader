@@ -47,7 +47,7 @@ class NativeDualEventInjectorStagedTest {
 	private static List<Path> jars() {
 		Path forge = root().resolve(TestFixtures.FORGE_INTEROP_JAR);
 		if (!Files.isRegularFile(forge)) forge = root().resolve(TestFixtures.FORGE_CARRIER_JAR);
-		return List.of(root().resolve(TestFixtures.BASE_JAR), forge, root().resolve(TestFixtures.NEO_CARRIER_JAR));
+		return List.of(root().resolve(TestFixtures.MERGED_BASE_JAR), forge, root().resolve(TestFixtures.NEO_CARRIER_JAR));
 	}
 
 	/** The game's resources as the kernel reads them at boot: the merged base first, then the two carriers. */

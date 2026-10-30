@@ -185,7 +185,7 @@ class MixinSharedResultTransportTest {
         String api = System.getProperty("forbric.fabricApi");
         java.nio.file.Path apiPath = api == null ? net.forbric.kernel.TestFixtures.fabricApi() : java.nio.file.Path.of(api);
         java.nio.file.Path base = java.nio.file.Path.of(System.getProperty("forbric.predicateBase",
-                net.forbric.kernel.TestFixtures.stagedBase().toString()));
+                net.forbric.kernel.TestFixtures.mergedBase().toString()));
         net.forbric.kernel.TestFixtures.require(net.forbric.kernel.TestFixtures.Fixture.STAGED,
                 java.nio.file.Files.isRegularFile(apiPath) && java.nio.file.Files.isRegularFile(base), "actual API and indexed base required");
         ClassNode mixin = null;

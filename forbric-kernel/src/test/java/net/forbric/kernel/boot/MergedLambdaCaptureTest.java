@@ -78,17 +78,19 @@ import org.objectweb.asm.tree.VarInsnNode;
  */
 class MergedLambdaCaptureTest {
 	private static final Path STAGED = TestFixtures.stagedRoot().toAbsolutePath().normalize();
-	private static final Path MERGED = STAGED.resolve(TestFixtures.BASE_JAR);
-	private static final Path NEO = patched(Path.of(TestFixtures.GENUINE_BASE_JAR).getFileName().toString(), "neoforge-patched");
-	private static final Path FORGE = patched("patched-mc-forge-26.2.jar", "forge-patched");
-	private static final Path REPORT = STAGED.resolve("merged-base/merge-conflicts.txt");
+	/** The merged ARTIFACT as such, with its own report beside it: this test has no meaning on any other base. */
+	private static final Path MERGED = STAGED.resolve(TestFixtures.MERGED_BASE_JAR);
+	private static final Path NEO = patched(TestFixtures.GENUINE_BASE_JAR);
+	private static final Path FORGE = patched("forge-patched/patched-mc-forge-26.2.jar");
+	private static final Path REPORT = MERGED.resolveSibling("merge-conflicts.txt");
 	/** The heading MergedBaseBuilder.KEPT_AS_ONE_SECTION writes above the lambdas it proved one lambda on both sides. */
 	private static final String KEPT_AS_ONE = "=== lambdas both sides compile as one vanilla lambda";
 
-	/** The installer's own build output when this checkout ran it, else the side staged beside the merged base. */
-	private static Path patched(String jar, String stagedDirectory) {
-		Path installed = staged("run", "installed", ".forbric-build", "out", jar);
-		return Files.isRegularFile(installed) ? installed : STAGED.resolve(stagedDirectory).resolve(jar);
+	/** The installer's own build output when this checkout ran it, else the side staged at {@code stagedPath}. */
+	private static Path patched(String stagedPath) {
+		Path staged = STAGED.resolve(stagedPath);
+		Path installed = staged("run", "installed", ".forbric-build", "out", staged.getFileName().toString());
+		return Files.isRegularFile(installed) ? installed : staged;
 	}
 
 	private static Path staged(String... parts) {

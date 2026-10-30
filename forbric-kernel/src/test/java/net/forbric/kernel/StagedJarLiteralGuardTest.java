@@ -77,10 +77,6 @@ class StagedJarLiteralGuardTest {
 	 * with why. Stale entries fail as above.
 	 */
 	private static final Map<String, String> ALLOWED_MERGED_ONLY = Map.of(
-			"net/forbric/kernel/transform/NativeOwnedComponentInitializersTest.java",
-			"fabricated index: writes native-reference entries into a jar it builds; reads only classes from the base",
-			"net/forbric/kernel/mixin/weave/MixinCrossHostPredicateIslandWeaveTest.java",
-			"fabricated index: puts native-reference entries in its weave fixture; reads only classes from the base",
 			"net/forbric/kernel/mixin/weave/LootSourceCallbacksSpellingTest.java",
 			"either base: reads the base's embedded index only when it has one, else the vanilla-reference sidecar",
 			// TODO stage2-round2: the refs fix lane converts these to mergedBase() in parallel; drop each entry once merged.

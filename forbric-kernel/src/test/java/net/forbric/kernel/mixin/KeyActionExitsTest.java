@@ -294,7 +294,7 @@ class KeyActionExitsTest {
 
 	/** Vanilla 26.2 against the staged merged base: the claim about ordinals 4 and 5, read off the real jars. */
 	@Test void vanillaReleaseIsOrdinalFourAndItsFinalReturnOrdinalFive() throws Exception {
-		Path merged = TestFixtures.stagedBase();
+		Path merged = TestFixtures.mergedBase();
 		TestFixtures.requireFile(Fixture.STAGED, merged, "actual game required");
 		ClassNode current = CarpetMixinAdapterTest.from(Fixture.STAGED, merged, MixinKeyActionAdapter.TARGET);
 		ClassNode original, forge, neoforge;

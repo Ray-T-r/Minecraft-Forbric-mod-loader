@@ -36,7 +36,7 @@ class MixinEquivalentImplementationsTest {
  private static Function<String,ClassNode> classes()throws Exception{
   TestFixtures.requireFiles(TestFixtures.Fixture.STAGED,"staged merged base, NeoForge carrier and Fabric API",neo(),TestFixtures.fabricApi());
   Map<String,byte[]> all=new HashMap<>();
-  for(Path jar:List.of(TestFixtures.stagedBase(),neo()))try(ZipFile z=new ZipFile(jar.toFile())){
+  for(Path jar:List.of(TestFixtures.mergedBase(),neo()))try(ZipFile z=new ZipFile(jar.toFile())){
    for(String name:List.of(WATCHDOG,"net/neoforged/neoforge/logging/ThreadInfoUtil","net/neoforged/neoforge/logging/ThreadInfoUtil$1")){ZipEntry e=z.getEntry(name+".class");if(e!=null)all.put(name,z.getInputStream(e).readAllBytes());}}
   try(ZipFile z=new ZipFile(TestFixtures.fabricApi().toFile())){ZipEntry module=z.stream().filter(e->e.getName().startsWith("META-INF/jars/fabric-crash-report-info-v1-")).findFirst().orElseThrow();
    try(ZipInputStream in=new ZipInputStream(z.getInputStream(module))){for(ZipEntry e=in.getNextEntry();e!=null;e=in.getNextEntry())if(e.getName().endsWith(".class"))all.put(e.getName().substring(0,e.getName().length()-6),in.readAllBytes());}}
@@ -86,7 +86,7 @@ class MixinEquivalentImplementationsTest {
   String config="fabric-crash-report-info-v1.mixins.json";
   MixinConfigOwners.publish(List.of(new MixinConfigOwners.Owned(config,"crash-info",Ecosystem.FABRIC)));
   MixinCompatibility.rememberOriginalConfig(config,"{\"required\":true,\"package\":\"net.fabricmc.fabric.mixin.crash.report.info\",\"mixins\":[\"ServerWatchdogMixin\"],\"injectors\":{\"defaultRequire\":1}}".getBytes(java.nio.charset.StandardCharsets.UTF_8));
-  try(var loader=new net.forbric.kernel.classloading.ForbricClassLoader(new java.net.URL[]{TestFixtures.stagedBase().toUri().toURL(),neo().toUri().toURL(),module.toUri().toURL()},getClass().getClassLoader())){
+  try(var loader=new net.forbric.kernel.classloading.ForbricClassLoader(new java.net.URL[]{TestFixtures.mergedBase().toUri().toURL(),neo().toUri().toURL(),module.toUri().toURL()},getClass().getClassLoader())){
    NativeGameReferences.bind(loader);
    ClassNode mixin=StagedFabricMixinFixture.mixin("fabric-crash-report-info-v1",DUMP_MIXIN);FinalMixinApplications.remember(mixin);
    ClassNode target=classes.apply(WATCHDOG);MethodNode original=StagedFabricMixinFixture.method(mixin,HANDLER),merged=new MethodNode(original.access,"modify$qzx$dump",original.desc,null,null);original.accept(merged);merged.name="modify$qzx$dump";

@@ -143,7 +143,7 @@ class NativeOwnedComponentInitializersTest implements Opcodes {
         return new World(loader.loadClass(OWNER.replace('/','.')),loader.loadClass(COMPONENT.replace('/','.')),loader.loadClass(PEER.replace('/','.')));
     }
     private static Function<String,byte[]> stagedResources(){
-        List<Path> jars=List.of(TestFixtures.stagedBase(),TestFixtures.stagedRoot().resolve(TestFixtures.FORGE_CARRIER_JAR),TestFixtures.stagedRoot().resolve(TestFixtures.NEO_CARRIER_JAR));
+        List<Path> jars=List.of(TestFixtures.mergedBase(),TestFixtures.stagedRoot().resolve(TestFixtures.FORGE_CARRIER_JAR),TestFixtures.stagedRoot().resolve(TestFixtures.NEO_CARRIER_JAR));
         TestFixtures.requireFiles(Fixture.STAGED,"native owned component initializers",jars.toArray(Path[]::new));
         return path->{for(Path jar:jars)try(var zip=new ZipFile(jar.toFile())){var entry=zip.getEntry(path);if(entry!=null)try(var in=zip.getInputStream(entry)){return in.readAllBytes();}}catch(java.io.IOException e){throw new java.io.UncheckedIOException(e);}return null;};
     }

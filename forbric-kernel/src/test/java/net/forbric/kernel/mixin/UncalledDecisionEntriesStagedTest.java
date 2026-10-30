@@ -50,7 +50,7 @@ class UncalledDecisionEntriesStagedTest {
 	}
 
 	private static Path merged() {
-		Path jar = TestFixtures.stagedBase();
+		Path jar = TestFixtures.mergedBase();
 		TestFixtures.requireFile(TestFixtures.Fixture.STAGED, jar, "actual game required");
 		return jar;
 	}

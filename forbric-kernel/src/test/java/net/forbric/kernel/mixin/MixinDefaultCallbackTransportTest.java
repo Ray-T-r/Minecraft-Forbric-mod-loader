@@ -119,7 +119,7 @@ class MixinDefaultCallbackTransportTest {
     }
     private static Inputs inputs() throws Exception {
         Path api = Path.of(System.getProperty("forbric.fabricApi", net.forbric.kernel.TestFixtures.fabricApi().toString()));
-        Path base = Path.of(System.getProperty("forbric.predicateBase", net.forbric.kernel.TestFixtures.stagedBase().toString()));
+        Path base = Path.of(System.getProperty("forbric.predicateBase", net.forbric.kernel.TestFixtures.mergedBase().toString()));
         Path neo = net.forbric.kernel.TestFixtures.stagedRoot().resolve(TestFixtures.NEO_CARRIER_JAR);
         net.forbric.kernel.TestFixtures.require(net.forbric.kernel.TestFixtures.Fixture.STAGED,
                 Files.isRegularFile(api) && Files.isRegularFile(base) && Files.isRegularFile(neo), "actual API and indexed native runtimes required");

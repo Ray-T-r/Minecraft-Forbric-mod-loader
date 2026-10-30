@@ -237,7 +237,7 @@ class MixinCollectionSourceSpellingTest {
 		static final String TARGET = "net/minecraft/data/registries/RegistryPatchGenerator";
 
 		static Real open() throws Exception {
-			Path base = TestFixtures.stagedBase();
+			Path base = TestFixtures.mergedBase();
 			Path neo = TestFixtures.stagedRoot().resolve(TestFixtures.NEO_CARRIER_JAR);
 			Path api = TestFixtures.fabricApi();
 			TestFixtures.requireFiles(TestFixtures.Fixture.STAGED, "staged merged base, NeoForge runtime and the actual Fabric API", base, neo, api);

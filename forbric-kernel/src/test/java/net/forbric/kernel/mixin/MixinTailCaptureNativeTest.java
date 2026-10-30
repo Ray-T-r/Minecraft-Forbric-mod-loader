@@ -32,7 +32,7 @@ class MixinTailCaptureNativeTest {
 	private static final String ITEM = "item(Lnet/minecraft/world/entity/LivingEntity;Lnet/minecraft/world/level/Level;Lnet/minecraft/world/item/ItemStack;III)V";
 
 	private static byte[] merged() throws Exception {
-		Path jar = TestFixtures.stagedBase();
+		Path jar = TestFixtures.mergedBase();
 		TestFixtures.requireFile(Fixture.STAGED, jar, "merged base required: " + jar);
 		try (ZipFile zip = new ZipFile(jar.toFile())) { return zip.getInputStream(zip.getEntry(GUI + ".class")).readAllBytes(); }
 	}
@@ -91,7 +91,7 @@ class MixinTailCaptureNativeTest {
 	 */
 	@Test void eachPlatformsOwnGuiItemTailDecidesTheMove() throws Exception {
 		ClassNode split = node(new VanillaEarlyReturns().transform(GUI.replace('/', '.'), merged(), null));
-		Path jar = TestFixtures.stagedBase();
+		Path jar = TestFixtures.mergedBase();
 		NativeGameReferences references = new NativeGameReferences(path -> {
 			try (ZipFile zip = new ZipFile(jar.toFile())) {
 				var entry = zip.getEntry(path);

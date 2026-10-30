@@ -205,7 +205,7 @@ class CarrierHelperResultsStagedTest {
 
 	/** The class each ecosystem's mods were compiled against, from the staged merged base's native references. */
 	private static java.util.function.BiFunction<net.forbric.api.Ecosystem, String, ClassNode> natives() {
-		Path jar = TestFixtures.stagedBase();
+		Path jar = TestFixtures.mergedBase();
 		TestFixtures.requireFile(Fixture.STAGED, jar, "actual game required");
 		NativeGameReferences references = new NativeGameReferences(path -> {
 			try (ZipFile zip = new ZipFile(jar.toFile())) {
@@ -229,7 +229,7 @@ class CarrierHelperResultsStagedTest {
 	}
 
 	private static ClassNode merged() throws Exception {
-		return game(Fixture.STAGED, TestFixtures.stagedBase());
+		return game(Fixture.STAGED, TestFixtures.mergedBase());
 	}
 
 	private static ClassNode vanilla() throws Exception {

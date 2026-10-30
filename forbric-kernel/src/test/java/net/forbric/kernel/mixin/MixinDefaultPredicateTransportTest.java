@@ -78,7 +78,7 @@ class MixinDefaultPredicateTransportTest {
 
 	private record Context(Function<String,ClassNode>current,Function<String,ClassNode>nativeClasses){}
 	private static Context context()throws Exception{
-		String configured=System.getProperty("forbric.predicateBase");Path base=configured==null?TestFixtures.stagedBase():Path.of(configured);
+		String configured=System.getProperty("forbric.predicateBase");Path base=configured==null?TestFixtures.mergedBase():Path.of(configured);
 		TestFixtures.requireFile(Fixture.STAGED, base,"native-referenced merged base required");
 		ZipFile game=new ZipFile(base.toFile());OPEN.add(game);
 		Path runtime=TestFixtures.stagedRoot().resolve(TestFixtures.NEO_CARRIER_JAR);TestFixtures.requireFile(Fixture.STAGED, runtime,"actual carrier required");ZipFile carrier=new ZipFile(runtime.toFile());OPEN.add(carrier);

@@ -70,7 +70,7 @@ class LootSourceCallbacksWeaveTest implements Opcodes {
     }
     @Test void onlyTheActuallyDefinedHelperTypedBridgeAndHostClosureProveTheReplacement()throws Exception{
         var plan=LootSourceCallbacks.plan(source());assertNotNull(plan);
-        Path base=Path.of(System.getProperty("forbric.predicateBase",net.forbric.kernel.TestFixtures.stagedBase().toString()));net.forbric.kernel.TestFixtures.requireFiles(net.forbric.kernel.TestFixtures.Fixture.STAGED,"verified native loot target",base);
+        Path base=Path.of(System.getProperty("forbric.predicateBase",net.forbric.kernel.TestFixtures.mergedBase().toString()));net.forbric.kernel.TestFixtures.requireFiles(net.forbric.kernel.TestFixtures.Fixture.STAGED,"verified native loot target",base);
         try(ZipFile jar=new ZipFile(base.toFile())){
             byte[] raw=bytes(jar,plan.targetName().replace('.','/')+".class"),host=new LootTableEventBridgeInjector().transform(plan.targetName(),raw,null);
             Path bridgePath=Path.of(System.getProperty("forbric.test.runtimeClasses","build/classes/java/runtime")).resolve("net/forbric/kernel/runtime/KernelLootBridge.class");
@@ -86,7 +86,7 @@ class LootSourceCallbacksWeaveTest implements Opcodes {
         }
     }
     @Test void aliasesUnknownValuesAndChangedDomainDefinitionsKeepTheSourceUnproved()throws Exception{
-        var plan=LootSourceCallbacks.plan(source());Path base=Path.of(System.getProperty("forbric.predicateBase",net.forbric.kernel.TestFixtures.stagedBase().toString()));net.forbric.kernel.TestFixtures.requireFiles(net.forbric.kernel.TestFixtures.Fixture.STAGED,"native-indexed domain guard",base);
+        var plan=LootSourceCallbacks.plan(source());Path base=Path.of(System.getProperty("forbric.predicateBase",net.forbric.kernel.TestFixtures.mergedBase().toString()));net.forbric.kernel.TestFixtures.requireFiles(net.forbric.kernel.TestFixtures.Fixture.STAGED,"native-indexed domain guard",base);
         try(ZipFile jar=new ZipFile(base.toFile())){
             byte[] host=new LootTableEventBridgeInjector().transform(plan.targetName(),bytes(jar,plan.targetName().replace('.','/')+".class"),null);Path bridgePath=Path.of(System.getProperty("forbric.test.runtimeClasses","build/classes/java/runtime")).resolve("net/forbric/kernel/runtime/KernelLootBridge.class");byte[] bridge=Files.readAllBytes(bridgePath);var nativeNode=new NativeGameReferences(path->bytes(jar,path)).get(Ecosystem.FABRIC,plan.targetName().replace('.','/'));
             String dataPath="net/minecraft/world/level/storage/loot/LootDataType.class";ClassNode aliases=node(bytes(jar,dataPath));MethodNode init=aliases.methods.stream().filter(m->m.name.equals("<clinit>")).findFirst().orElseThrow();for(AbstractInsnNode instruction:init.instructions)if(instruction instanceof FieldInsnNode f&&f.getOpcode()==GETSTATIC&&f.owner.equals("net/minecraft/core/registries/Registries")&&f.name.equals("PREDICATE"))f.name="LOOT_TABLE";byte[] aliased=write(aliases);
@@ -100,7 +100,7 @@ class LootSourceCallbacksWeaveTest implements Opcodes {
         }
     }
     @Test void finalEvidenceCannotBeBorrowedFromAnotherLoaderWithTheSameClassNames()throws Exception{
-        var plan=LootSourceCallbacks.plan(source());Path base=Path.of(System.getProperty("forbric.predicateBase",net.forbric.kernel.TestFixtures.stagedBase().toString()));net.forbric.kernel.TestFixtures.requireFiles(net.forbric.kernel.TestFixtures.Fixture.STAGED,"same-loader evidence",base);
+        var plan=LootSourceCallbacks.plan(source());Path base=Path.of(System.getProperty("forbric.predicateBase",net.forbric.kernel.TestFixtures.mergedBase().toString()));net.forbric.kernel.TestFixtures.requireFiles(net.forbric.kernel.TestFixtures.Fixture.STAGED,"same-loader evidence",base);
         class EqualLoader extends ClassLoader{EqualLoader(){super(null);}@Override public boolean equals(Object other){return other instanceof EqualLoader;}@Override public int hashCode(){return 1;}}
         ClassLoader actual=new EqualLoader(),foreign=new EqualLoader();
         try(ZipFile jar=new ZipFile(base.toFile())){
@@ -117,7 +117,7 @@ class LootSourceCallbacksWeaveTest implements Opcodes {
         }
     }
     @Test void unrelatedDirectoryWeavesDoNotChangeTheRegistryKeyDomainButAKeyFactoryChangeDoes()throws Exception{
-        var plan=LootSourceCallbacks.plan(source());Path base=Path.of(System.getProperty("forbric.predicateBase",net.forbric.kernel.TestFixtures.stagedBase().toString()));net.forbric.kernel.TestFixtures.requireFiles(net.forbric.kernel.TestFixtures.Fixture.STAGED,"domain dependency closure",base);
+        var plan=LootSourceCallbacks.plan(source());Path base=Path.of(System.getProperty("forbric.predicateBase",net.forbric.kernel.TestFixtures.mergedBase().toString()));net.forbric.kernel.TestFixtures.requireFiles(net.forbric.kernel.TestFixtures.Fixture.STAGED,"domain dependency closure",base);
         try(ZipFile jar=new ZipFile(base.toFile())){
             byte[] host=new LootTableEventBridgeInjector().transform(plan.targetName(),bytes(jar,plan.targetName().replace('.','/')+".class"),null);Path bridgePath=Path.of(System.getProperty("forbric.test.runtimeClasses","build/classes/java/runtime")).resolve("net/forbric/kernel/runtime/KernelLootBridge.class");byte[] bridge=Files.readAllBytes(bridgePath);var original=new NativeGameReferences(path->bytes(jar,path)).get(Ecosystem.FABRIC,plan.targetName().replace('.','/'));
             java.util.function.Function<String,byte[]> reader=path->path.equals("net/forbric/kernel/runtime/KernelLootBridge.class")?bridge:path.equals(plan.targetName().replace('.','/')+".class")?host:bytes(jar,path);
