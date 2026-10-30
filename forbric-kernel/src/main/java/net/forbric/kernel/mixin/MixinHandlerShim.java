@@ -56,10 +56,12 @@ import net.forbric.kernel.util.ForbricLog;
  * producing not a single warning between them. Mixin's acceptance is looser than either; a wrap that is not
  * needed is not a repair, it is churn in the middle of every mod's injections.
  *
- * <p>The evidence is {@link net.forbric.kernel.transform.DuplicateLambdaPruneInjector}'s record. The handler must
- * fit EXACTLY a descriptor that pruner removed from this very class, and must not fit the one that survived. That
- * is not an inference about Mixin: it is the fact that the shape the mod was written for was in this class until
- * the merge chose the other ecosystem's body of the enclosing method.
+ * <p>The evidence is {@link LambdaShapeEvidence}: a shape the lambda had in vanilla — the game a Fabric mod is compiled
+ * against, read from the FABRIC native reference — that this class no longer gives it, or one the duplicate-lambda
+ * pruner removed from this very class. The handler must fit EXACTLY such a descriptor, and must not fit the one that
+ * is there. That is not an inference about Mixin: it is the fact that the shape the mod was written for is the name's
+ * in the game the mod was built against, and a carrier patch reshaped it. The pruner's record was the only evidence
+ * while the base was merged; the reference is what remains on NeoForge's own base, where nothing is carried twice.
  *
  * <h2>The second evidence: a lambda the merge kept once, with its captures reordered</h2>
  *
@@ -78,6 +80,11 @@ import net.forbric.kernel.util.ForbricLog;
  * its vanilla descriptor, does not fit the live one, and the live descriptor IS the row's merged one: a table left
  * stale by a base rebuild is a no-op, never a wrong mapping. A selector that spells the vanilla descriptor is
  * rewritten to the live one. {@code -Dforbric.lambdaPermutations=off} turns this source off alone.
+ *
+ * <p>A row is asked before the shape evidence. A reordering is the table's case, and the shape evidence leaves a pure
+ * reordering out for that reason; asking the row first means a lambda both could speak for is mapped by the proven
+ * order, never by the type-only guard. On the merged base no row names a lambda the pruner dropped, so the order
+ * decides nothing there.
  *
  * <h2>The mapping guard</h2>
  *
@@ -141,10 +148,14 @@ public final class MixinHandlerShim {
 			MethodNode outer = wrap(mixin, handler, plan);
 			added.add(outer);
 			wrapped++;
-			if (plan.row() == null) {
+			if (plan.row() == null && plan.dropped()) {
 				ForbricLog.warn("[Forbric/Mixin] %s.%s was written for a differently shaped %s — the merge kept the "
 						+ "other ecosystem's, which takes %s. Its handler is wrapped so it still receives the values it "
 						+ "asked for, in the order it asked for them", mixin.name, outer.name, selector, plan.live().desc);
+			} else if (plan.row() == null) {
+				ForbricLog.warn("[Forbric/Mixin] %s.%s was written for a differently shaped %s — vanilla's; this base's "
+						+ "takes %s (a carrier patch changed its captures). Its handler is wrapped so it still receives the "
+						+ "values it asked for, in the order it asked for them", mixin.name, outer.name, selector, plan.live().desc);
 			} else {
 				ForbricLog.warn("[Forbric/Mixin] %s.%s was written for a differently shaped %s — vanilla's %s; the merged "
 						+ "base keeps the same parameters in another order, %s (a carrier patch uses a capture earlier). Its "
@@ -170,9 +181,10 @@ public final class MixinHandlerShim {
 
 	/**
 	 * One wrap, decided: the injector, the one method it lands on, which target argument each handler argument is,
-	 * the selector to write when the mod spelled vanilla's descriptor, and the census row when that was the evidence.
+	 * the selector to write when the mod spelled vanilla's descriptor, the census row when that was the evidence, and
+	 * whether the shape it was written for is one the duplicate-lambda pruner dropped from this class.
 	 */
-	private record Plan(AnnotationNode inject, MethodNode live, int[] mapping, String selector, Permutation row) {
+	private record Plan(AnnotationNode inject, MethodNode live, int[] mapping, String selector, Permutation row, boolean dropped) {
 	}
 
 	private static Plan plan(MethodNode handler, List<String> targetNames, Function<String, ClassNode> targets) {
@@ -198,27 +210,31 @@ public final class MixinHandlerShim {
 		boolean handlerStatic = (handler.access & Opcodes.ACC_STATIC) != 0;
 		if (targetStatic && !handlerStatic) return null;    // no receiver to call the inner one on
 
-		// The pruner's record first, for a bare name only: its guard maps by type and refuses a repeated one.
-		if (paren < 0 && wasWrittenForAShapeTheMergeDropped(handler, name, target, targetNames, targets)) {
-			int[] mapping = new int[wanted.length - 1];
-			for (int i = 0; i < mapping.length; i++) {
-				int found = -1;
-				for (int j = 0; j < available.length; j++) {
-					if (!available[j].equals(wanted[i])) continue;
-					if (found >= 0) return null;    // twice: a coin toss, and a coin toss hands over the wrong object
-					found = j;
-				}
-				if (found < 0) return null;
-				mapping[i] = found;
-			}
-			return new Plan(inject, target, mapping, null, null);
+		// The census first: a row's order is proven by name and type when it was derived, and a lambda whose captures
+		// were only reordered is the census's case even where the other evidence would also speak for it (the type-only
+		// guard below refuses WorldLoader's, which repeats two types).
+		Permutation row = rowFor(owner[0], name, paren < 0 ? null : selector.substring(paren), handler, target);
+		if (row != null && row.perm().length == wanted.length - 1) {
+			boolean typed = true;
+			for (int i = 0; i < row.perm().length; i++) typed &= available[row.perm()[i]].equals(wanted[i]);
+			if (typed) return new Plan(inject, target, row.perm().clone(), paren < 0 ? null : name + target.desc, row, false);
 		}
 
-		// Then the census: the row's own order, proven by name and type when it was derived.
-		Permutation row = rowFor(owner[0], name, paren < 0 ? null : selector.substring(paren), handler, target);
-		if (row == null || row.perm().length != wanted.length - 1) return null;
-		for (int i = 0; i < row.perm().length; i++) if (!available[row.perm()[i]].equals(wanted[i])) return null;
-		return new Plan(inject, target, row.perm().clone(), paren < 0 ? null : name + target.desc, row);
+		// Then the shape evidence, for a bare name only: its guard maps by type and refuses a repeated one.
+		Boolean dropped = paren < 0 ? wasWrittenForAShapeThisBaseLacks(handler, name, target, targetNames, targets) : null;
+		if (dropped == null) return null;
+		int[] mapping = new int[wanted.length - 1];
+		for (int i = 0; i < mapping.length; i++) {
+			int found = -1;
+			for (int j = 0; j < available.length; j++) {
+				if (!available[j].equals(wanted[i])) continue;
+				if (found >= 0) return null;    // twice: a coin toss, and a coin toss hands over the wrong object
+				found = j;
+			}
+			if (found < 0) return null;
+			mapping[i] = found;
+		}
+		return new Plan(inject, target, mapping, null, null, dropped);
 	}
 
 	/**
@@ -488,24 +504,24 @@ public final class MixinHandlerShim {
 	}
 
 	/**
-	 * Whether the handler fits a shape the pruner removed from the class the selector names, and not the one left.
+	 * Whether the handler fits a shape this class's lambda no longer has ({@link LambdaShapeEvidence}), and not the one it
+	 * has: null when it does not, else whether that shape is one the duplicate-lambda pruner dropped from this class.
 	 *
-	 * <p>Both halves. "Fits what was dropped" alone would wrap a handler that also binds to what survived, which
-	 * needs nothing; "does not fit what survived" alone is every handler Mixin accepts by its own looser rules,
-	 * which is the mistake this replaced.
+	 * <p>Both halves. "Fits what is gone" alone would wrap a handler that also binds to what is there, which needs
+	 * nothing; "does not fit what is there" alone is every handler Mixin accepts by its own looser rules, which is the
+	 * mistake this replaced.
 	 */
-	private static boolean wasWrittenForAShapeTheMergeDropped(MethodNode handler, String selector, MethodNode target,
+	private static Boolean wasWrittenForAShapeThisBaseLacks(MethodNode handler, String selector, MethodNode target,
 			List<String> targetNames, Function<String, ClassNode> targets) {
-		if (MixinOverloadPin.fits(handler.desc, target.desc)) return false;
+		if (MixinOverloadPin.fits(handler.desc, target.desc)) return null;
 		for (String targetName : targetNames) {
 			ClassNode node = targets.apply(targetName);
 			if (node == null) continue;
-			for (String dropped : net.forbric.kernel.transform.DuplicateLambdaPruneInjector
-					.droppedDescriptors(targetName, selector)) {
-				if (MixinOverloadPin.fits(handler.desc, dropped)) return true;
+			for (LambdaShapeEvidence.Shape gone : LambdaShapeEvidence.vanished(node, selector)) {
+				if (MixinOverloadPin.fits(handler.desc, gone.descriptor())) return gone.dropped();
 			}
 		}
-		return false;
+		return null;
 	}
 
 	/**

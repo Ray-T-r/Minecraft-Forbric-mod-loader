@@ -90,7 +90,16 @@ public final class DuplicateLambdaPruneInjector implements ClassTransformer {
 				k -> java.util.Collections.synchronizedList(new ArrayList<>())).add(descriptor);
 	}
 
-	/** The descriptors dropped for {@code owner.lambdaName}, newest boot only. Empty when none were. */
+	/** Test seam: forgets every recorded drop, as a boot with the pruner off would have none. */
+	public static void forgetDroppedForTest() {
+		DROPPED.clear();
+	}
+
+	/**
+	 * The descriptors dropped for {@code owner.lambdaName}, newest boot only. Empty when none were. Read through
+	 * {@code LambdaShapeEvidence}, which adds the shapes the native reference knows, so the evidence does not end with
+	 * the merge.
+	 */
 	public static java.util.List<String> droppedDescriptors(String ownerInternalName, String lambdaName) {
 		return DROPPED.getOrDefault(ownerInternalName + "#" + lambdaName, java.util.List.of());
 	}

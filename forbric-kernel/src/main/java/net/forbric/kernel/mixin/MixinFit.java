@@ -1029,17 +1029,21 @@ public final class MixinFit {
 			}
 		}
 		// What the handler was written for, when the class says: a later overload of the name, or (MixinOverloadPin's
-		// evidence) a body of it the duplicate-lambda pruner dropped.
+		// evidence, LambdaShapeEvidence) a shape of it the pruner dropped or vanilla had and a carrier patch changed.
 		for (MethodNode m : target.methods) {
 			if (m != bound && m.name.equals(name) && handlerFits(handler, m.desc)) {
 				return name + " " + binds + "; it fits " + name + m.desc + ", declared later, and Mixin binds the first";
 			}
 		}
-		for (String dropped : net.forbric.kernel.transform.DuplicateLambdaPruneInjector.droppedDescriptors(target.name, name)) {
-			if (MixinOverloadPin.fits(handler.desc, dropped)) {
-				return name + " " + binds + "; the shape it was written for, " + dropped + ", was a lambda of the "
-						+ MixinOverloadPin.enclosing(name) + " body the byte merge did not keep";
+		for (LambdaShapeEvidence.Shape gone : LambdaShapeEvidence.vanished(target, name)) {
+			String dropped = gone.descriptor();
+			if (!MixinOverloadPin.fits(handler.desc, dropped)) continue;
+			if (!gone.dropped()) {
+				return name + " " + binds + "; the shape it was written for, " + dropped + ", is vanilla's, whose captures a "
+						+ "carrier patch of " + MixinOverloadPin.enclosing(name) + " changed";
 			}
+			return name + " " + binds + "; the shape it was written for, " + dropped + ", was a lambda of the "
+					+ MixinOverloadPin.enclosing(name) + " body the byte merge did not keep";
 		}
 		return name + " " + binds;
 	}

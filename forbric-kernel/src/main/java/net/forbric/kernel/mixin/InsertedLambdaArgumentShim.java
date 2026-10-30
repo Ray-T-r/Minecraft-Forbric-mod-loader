@@ -3,12 +3,11 @@ package net.forbric.kernel.mixin;
 
 import java.util.*;
 import java.util.function.Function;
-import net.forbric.kernel.transform.DuplicateLambdaPruneInjector;
 import net.forbric.kernel.util.ForbricLog;
 import org.objectweb.asm.*;
 import org.objectweb.asm.tree.*;
 
-/** Restores explicit lambda selectors only when the pruner proved their old body is dead.
+/** Restores explicit lambda selectors only when their old shape is proven gone (the pruner dropped it, or vanilla had it).
  * The old parameter sequence must have exactly one order-preserving embedding in the live one.
  * Unlike a type-only map this preserves repeated resource handles, while refusing ambiguous insertions.
  */
@@ -148,21 +147,22 @@ public final class InsertedLambdaArgumentShim {
     }
 
     /**
-     * The lambda ({@code name + desc}) the handler's selectors name as Mixin reads them, where it is one the pruner
-     * dropped from {@code target}: spelled with its descriptor — whitespace, an owner prefix (the target's) or a dotted
+     * The lambda ({@code name + desc}) the handler's selectors name as Mixin reads them, where it is a shape
+     * {@code target}'s lambda has lost ({@link LambdaShapeEvidence}: the pruner dropped it, or it is vanilla's and a
+     * carrier patch reshaped it): spelled with its descriptor — whitespace, an owner prefix (the target's) or a dotted
      * owner, one spelling or several of the same member — or bound by a bare name in the class the mod was compiled
-     * against. Null for anything else: another owner, a pattern, a member the pruner did not drop.
+     * against. Null for anything else: another owner, a pattern, a shape the lambda still has or never had.
      */
     private static String dropped(MethodNode handler, ClassNode target, Function<String, ClassNode> natives) {
         String member = MixinTargetSelectors.nativeMember(handler, null, target.name);
         ClassNode nativeClass = null;
         if (member == null && natives != null) {
-            // A bare name binds the live lambda in the merged class: only where the pruner dropped a lambda of the name
-            // it reaches, or the class the mod was compiled against has that lambda in another shape, is that class worth
-            // reading.
+            // A bare name binds the live lambda in the merged class: only where a lambda of the name it reaches has lost a
+            // shape (LambdaShapeEvidence: the pruner dropped it, or vanilla's was reshaped), or the class the mod was
+            // compiled against has that lambda in another shape, is that class worth reading.
             List<MixinTargetSelectors.Reach> reach = MixinTargetSelectors.reach(handler, target);
             boolean pruned = reach != null && !reach.isEmpty() && reach.stream().allMatch(r -> r.matched().stream()
-                    .anyMatch(m -> !DuplicateLambdaPruneInjector.droppedDescriptors(target.name, m.name).isEmpty()));
+                    .anyMatch(m -> !LambdaShapeEvidence.vanished(target, m.name).isEmpty()));
             if (pruned || (reach != null && !reach.isEmpty() && nativeShapes())) {
                 nativeClass = natives.apply(target.name);
                 member = MixinTargetSelectors.nativeMember(handler, nativeClass, target.name);
@@ -172,7 +172,7 @@ public final class InsertedLambdaArgumentShim {
         int split = member.indexOf('(');
         if (split <= 0) return null;
         String name = member.substring(0, split), desc = member.substring(split);
-        if (DuplicateLambdaPruneInjector.droppedDescriptors(target.name, name).contains(desc)) return member;
+        if (LambdaShapeEvidence.descriptors(target, name).contains(desc)) return member;
         // The second evidence: the class the mod was compiled against (its own platform's native game) declares the lambda
         // in exactly the shape the selector names, and the merged class, whose one lambda of that name the selector binds,
         // has it in no such shape. The pruner never saw that shape: the merge carried the name twice, both carriers'

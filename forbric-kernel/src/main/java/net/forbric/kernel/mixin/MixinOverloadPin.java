@@ -282,8 +282,9 @@ public final class MixinOverloadPin {
 	}
 
 	/**
-	 * Logs why {@code selector} cannot bind, when the kernel knows: a lambda chain the merge dropped, or overloads the
-	 * merge put side by side with the other ecosystem's first.
+	 * Logs why {@code selector} cannot bind, when the kernel knows: a lambda chain the merge dropped or a lambda a carrier
+	 * patch reshaped from vanilla's ({@link LambdaShapeEvidence}), or overloads the merge put side by side with the other
+	 * ecosystem's first.
 	 *
 	 * <p>Says nothing at all in every other case — including a selector that binds perfectly well, which is
 	 * almost all of them. Whether it binds is judged on the overload Mixin actually picks, the first of that name; an
@@ -321,9 +322,18 @@ public final class MixinOverloadPin {
 				return true;
 			}
 
-			for (String dropped : net.forbric.kernel.transform.DuplicateLambdaPruneInjector
-					.droppedDescriptors(targetName, selector)) {
+			for (LambdaShapeEvidence.Shape gone : LambdaShapeEvidence.vanished(target, selector)) {
+				String dropped = gone.descriptor();
 				if (!fits(handler.desc, dropped)) continue;
+				if (!gone.dropped()) {
+					ForbricLog.warn("[Forbric/Mixin] %s.%s cannot bind to %s.%s: the shape it was written for, %s, is "
+							+ "vanilla's — a carrier patch changed the captures of that lambda of %s, which here takes %s, so "
+							+ "this injection has no target of its shape", mixin.name, handler.name, targetName, selector, dropped,
+							enclosing(selector), named.get(0).desc);
+					REASONS.put(mixin.name, "its " + handler.name + " targets " + selector + ", a lambda of "
+							+ enclosing(selector) + " whose captures a carrier patch changed from vanilla's");
+					return true;
+				}
 				ForbricLog.warn("[Forbric/Mixin] %s.%s cannot bind to %s.%s: the shape it was written for, %s, was "
 						+ "a lambda of the body the byte merge did NOT keep — the merge took the other ecosystem's "
 						+ "%s, whose lambda has a different shape, so this injection has no live target here",
