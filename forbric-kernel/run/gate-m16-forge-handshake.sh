@@ -25,8 +25,21 @@
 # registerNeoForgeInternal). Unwiring just net.neoforged.neoforge.network.ConfigurationInitialization was measured too:
 # it is not a clean control, because NeoForge's two halves are coupled -- the task that collects the configs never
 # runs, and ConfigSync's login listener then crashes the server ("configsToSync should contain an entry for player")
-# the moment the client joins. So there is no switch that leaves the client on its default with everything else up;
-# the synced shape (path=null) and check_absent on the default below are what tie the value to the sync.
+# the moment the client joins. So no KERNEL switch leaves the client unsynced with everything else up. The live negative
+# controls are on the canary and the gate instead, and both were run (2026-10-30):
+#   M16_EXTRA_JVM='-Dforbricneolive.clientServerConfig=off'  the client does not register its SERVER config (the server
+#       ignores the flag), so NeoForge's ConfigFilePayload arrives with nothing to land in and the client reads
+#       <unloaded> in the world. Server, payload and join all stay up. RED: exactly "the client was handed the server's
+#       config", "the client reads the server's value", "the client is not on its own default" (on <unloaded>) and "the
+#       client registered its SERVER config" -- the receiving half of the sync, taken away alone.
+#   M16_NEO_PREWRITE=off  the gate does not pre-write the world's forbricneolive-server.toml, so the server holds the
+#       default and syncs THAT (the client logs "RELOADING ... greeting=default loaded=true path=null"). RED: exactly
+#       "the SERVER config came from the world" (with no world file NeoForge keeps it in config/), "and it holds the
+#       pre-written value", "the client was handed the server's config", "the client reads the server's value" and "the
+#       client is not on its own default" (on default) -- the client's value follows the server's world file, and
+#       check_absent's default alternative matches the real line.
+# The sending half (SyncConfig itself) has no control that leaves the server up, as measured above; the synced shape
+# (path=null) is what ties the client's value to the payload rather than to a file of its own.
 #
 # Port 25604, not the default — a developer or another agent session may have a server on 25565.
 # GATE-PARALLEL: rundirs=fhs-server,fhs-client mem=3500
@@ -63,7 +76,12 @@ for m in "${MODS[@]}"; do cp "$m" "$SRV/mods/"; cp "$m" "$CLI/mods/"; done
 # per-world config load picks it up and its sync is the only way it can reach the client.
 mkdir -p "$SRV/FhsWorld/serverconfig"
 printf '# pre-written by gate-m16 BEFORE the server booted: the client must see THIS value, not its own default\ngreeting = "from-the-gate"\n' > "$SRV/FhsWorld/serverconfig/forbriclive-server.toml"
-printf '# pre-written by gate-m16 BEFORE the server booted: the client must see THIS value, not its own default\ngreeting = "from-the-gate"\n' > "$SRV/FhsWorld/serverconfig/forbricneolive-server.toml"
+# M16_NEO_PREWRITE=off is the negative control in the header: the server then holds the default, and so must the client.
+if [ "${M16_NEO_PREWRITE:-on}" != off ]; then
+  printf '# pre-written by gate-m16 BEFORE the server booted: the client must see THIS value, not its own default\ngreeting = "from-the-gate"\n' > "$SRV/FhsWorld/serverconfig/forbricneolive-server.toml"
+else
+  echo "[kernel] M16_NEO_PREWRITE=off: the NeoForge SERVER config is NOT pre-written (negative control)"
+fi
 printf 'eula=true\n' > "$SRV/eula.txt"
 printf 'server-port=%s\nonline-mode=false\nlevel-type=minecraft\\:flat\nlevel-name=FhsWorld\nmax-tick-time=-1\nview-distance=6\nspawn-protection=0\nsync-chunk-writes=false\n' "$PORT" > "$SRV/server.properties"
 cp "$KERNEL/run/client-merged-pack/options.txt" "$CLI/options.txt" 2>/dev/null \
@@ -237,6 +255,8 @@ step "NeoForge's configuration-phase sync delivered the server's config to the c
 check "NeoForge: the client was handed the server's config" "ForbricNeoLive/CFG\] (LOADING|RELOADING) forbricneolive-server.toml: greeting=from-the-gate loaded=true path=null" "$CLOG"
 check "NeoForge: the client reads the server's value"     "ForbricNeoLive/CFG\] greeting seen on the client in a world: from-the-gate" "$CLOG"
 check_absent "NeoForge: the client is not on its own default" "ForbricNeoLive/CFG\] greeting seen on the client in a world: (default|<unloaded>)" "$CLOG"
+# The canary's own negative control (header) left on would make this run prove the opposite of what it says.
+check_absent "NeoForge: the client registered its SERVER config" "ForbricNeoLive/CFG\] SERVER config NOT registered on this client" "$CLOG"
 
 step "NeoForge CLIENT config loads once on the client and never on the dedicated server"
 # Counted in CGAME for the same reason as the MinecraftForge count above.

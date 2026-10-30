@@ -211,13 +211,32 @@ public class ForbricNeoLiveMod {
 		return SERVER_SPEC.isLoaded() ? GREETING.get() : "<unloaded>";
 	}
 
+	/**
+	 * gate-m16's live negative control for NeoForge's SERVER-config sync ({@code -Dforbricneolive.clientServerConfig=off}).
+	 *
+	 * <p>On a CLIENT only, the canary does not register its SERVER config, so the server's {@code ConfigFilePayload}
+	 * for {@code forbricneolive-server.toml} arrives and finds nothing to land in: {@code ConfigSync.receiveSyncedConfig}
+	 * looks the file name up in {@code ModConfigs.getFileMap()} and applies the bytes only if a config is there. The
+	 * client then reads {@code <unloaded>} in the world, and everything else -- the server, its own copy of the config,
+	 * the payload, the join -- stays up. No kernel switch can do this: the kernel's whole part in the sync is wiring
+	 * NeoForge's own subscribers, and unwiring the configuration task crashes the server at login instead (gate-m16's
+	 * header). A dedicated server ignores the property, so one flag set for both ends affects only the receiver.
+	 */
+	static final String CLIENT_SERVER_CONFIG_SWITCH = "forbricneolive.clientServerConfig";
+
 	private static void registerSidedConfigs() {
 		try {
 			net.neoforged.fml.ModContainer container = net.neoforged.fml.ModLoadingContext.get().getActiveContainer();
-			container.registerConfig(net.neoforged.fml.config.ModConfig.Type.SERVER, SERVER_SPEC);
+			boolean client = net.neoforged.fml.loading.FMLEnvironment.getDist() == net.neoforged.api.distmarker.Dist.CLIENT;
+			if (client && "off".equalsIgnoreCase(System.getProperty(CLIENT_SERVER_CONFIG_SWITCH, "on"))) {
+				System.out.println("[ForbricNeoLive/CFG] SERVER config NOT registered on this client (-D"
+						+ CLIENT_SERVER_CONFIG_SWITCH + "=off): a synced forbricneolive-server.toml has nothing to land in");
+			} else {
+				container.registerConfig(net.neoforged.fml.config.ModConfig.Type.SERVER, SERVER_SPEC);
+				System.out.println("[ForbricNeoLive/CFG] registered SERVER config forbricneolive-server.toml (greeting default 'default')");
+			}
 			container.registerConfig(net.neoforged.fml.config.ModConfig.Type.COMMON, COMMON_SPEC);
 			container.registerConfig(net.neoforged.fml.config.ModConfig.Type.CLIENT, CLIENT_SPEC);
-			System.out.println("[ForbricNeoLive/CFG] registered SERVER config forbricneolive-server.toml (greeting default 'default')");
 			System.out.println("[ForbricNeoLive/CFG] registered COMMON config forbricneolive-common.toml (probe default 11)");
 			System.out.println("[ForbricNeoLive/CFG] registered CLIENT config forbricneolive-client.toml (probe default 17)");
 		} catch (Throwable t) {
