@@ -13,7 +13,9 @@ import java.util.List;
 import java.util.function.Consumer;
 import java.util.function.Predicate;
 
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import net.forbric.kernel.TestFixtures;
 
 /**
  * MinecraftForge's drown event, posted from NeoForge's (KernelGameWorldEvents.installDrown), driven for real.
@@ -36,6 +38,10 @@ import org.junit.jupiter.api.Test;
 class KernelDrownBridgeTest {
 	private static final String NEO = "net.neoforged.neoforge.event.entity.living.LivingDrownEvent";
 	private static final String FORGE = "net.minecraftforge.event.entity.living.LivingDrownEvent";
+
+	@BeforeEach void minecraftForge() {
+		TestFixtures.requireForgeCarrier("MinecraftForge's LivingDrownEvent, which the bridge hands NeoForge's answer to");
+	}
 
 	// ---- the carry-back, called directly ----
 

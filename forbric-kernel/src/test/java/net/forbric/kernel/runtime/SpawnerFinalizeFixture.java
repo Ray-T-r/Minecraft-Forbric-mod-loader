@@ -23,6 +23,7 @@ import org.objectweb.asm.Opcodes;
 import net.fabricmc.api.EnvType;
 import net.forbric.kernel.transform.SpawnerFinalizeInjector;
 import net.forbric.kernel.transform.TransformContext;
+import net.forbric.kernel.TestFixtures;
 
 /** Actual carrier hook bytecode and compiled runtime helper; controllable events/world at the boundary. */
 final class SpawnerFinalizeFixture implements AutoCloseable {
@@ -40,7 +41,7 @@ final class SpawnerFinalizeFixture implements AutoCloseable {
 		ByteArrayOutputStream errors = new ByteArrayOutputStream();
 		assertEquals(0, ToolProvider.getSystemJavaCompiler().run(null, errors, errors, args.toArray(String[]::new)), errors.toString());
 		copyHook(classes, "forge-runtime/forge-runtime.jar", "net.minecraftforge.event.ForgeEventFactory", "onFinalizeSpawnSpawner");
-		copyHook(classes, "neoforge-runtime/neoforge-runtime.jar", "net.neoforged.neoforge.event.EventHooks", "finalizeMobSpawnSpawner");
+		copyHook(classes, TestFixtures.NEO_CARRIER_JAR, "net.neoforged.neoforge.event.EventHooks", "finalizeMobSpawnSpawner");
 		Path caller = classes.resolve("net/minecraft/world/level/BaseSpawner.class");
 		byte[] before = Files.readAllBytes(caller);
 		// Keep an otherwise identical, untransformed caller for behavioral comparisons with the native hook.

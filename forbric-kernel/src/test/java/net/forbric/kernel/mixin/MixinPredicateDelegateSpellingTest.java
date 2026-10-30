@@ -163,7 +163,7 @@ class MixinPredicateDelegateSpellingTest {
 	private static Inputs inputs() throws Exception {
 		Path api = Path.of(System.getProperty("forbric.fabricApi", TestFixtures.fabricApi().toString()));
 		Path base = Path.of(System.getProperty("forbric.predicateBase", TestFixtures.stagedBase().toString()));
-		Path neo = TestFixtures.stagedRoot().resolve("neoforge-runtime/neoforge-runtime.jar");
+		Path neo = TestFixtures.stagedRoot().resolve(TestFixtures.NEO_CARRIER_JAR);
 		TestFixtures.require(TestFixtures.Fixture.STAGED, Files.isRegularFile(api) && Files.isRegularFile(base) && Files.isRegularFile(neo), "actual predicate inputs required");
 		ClassNode released = null;
 		try (ZipFile jar = new ZipFile(api.toFile())) {

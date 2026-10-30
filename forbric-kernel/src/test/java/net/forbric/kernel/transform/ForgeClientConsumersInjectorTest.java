@@ -36,7 +36,7 @@ class ForgeClientConsumersInjectorTest {
     private static final Path STAGED = TestFixtures.stagedRoot();
     private static final Path MERGED = STAGED.resolve(TestFixtures.BASE_JAR);
     private static final Path FORGE = STAGED.resolve("forge-runtime/forge-runtime.jar");
-    private static final Path NEO = STAGED.resolve("neoforge-runtime/neoforge-runtime.jar");
+    private static final Path NEO = STAGED.resolve(TestFixtures.NEO_CARRIER_JAR);
     private static final List<String> SWITCHES = List.of("forbric.forgeClientConsumers", "forbric.forgeClientInit");
     private final ForgeClientConsumersInjector injector = new ForgeClientConsumersInjector();
 

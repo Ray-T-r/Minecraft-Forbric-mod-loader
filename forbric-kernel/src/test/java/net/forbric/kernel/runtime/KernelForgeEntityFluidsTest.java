@@ -229,6 +229,7 @@ class KernelForgeEntityFluidsTest {
 	}
 
 	@Test void minecraftForgesQueriesReadTheRecord() throws Exception {
+		TestFixtures.requireForgeCarrier("MinecraftForge's FluidType");
 		load();
 		Object state = state(), water = type("water"), blood = type("blood");
 		assertEquals(false, call("forgeInFluid", state), "nothing recorded: in no fluid");
@@ -248,6 +249,7 @@ class KernelForgeEntityFluidsTest {
 	 * earlier and left (height 0, its tracker kept) answers false: MinecraftForge keeps every tracker it ever made.
 	 */
 	@Test void matchingIsMinecraftForgesLoop() throws Exception {
+		TestFixtures.requireForgeCarrier("MinecraftForge's FluidType");
 		load();
 		Object state = state(), water = type("water"), blood = type("blood");
 		record(state, water, 0.5, false);
@@ -264,6 +266,7 @@ class KernelForgeEntityFluidsTest {
 
 	/** NeoForge's own answers pass through untouched while no MinecraftForge mod's fluid in water or lava was recorded. */
 	@Test void neoForgesAnswersPassThroughWhenNoTaggedFluidWasRecorded() throws Exception {
+		TestFixtures.requireForgeCarrier("MinecraftForge's FluidType");
 		load();
 		Object state = state();
 		assertEquals(0.7, call("neoHeight", state, null, 0.7));
@@ -471,6 +474,7 @@ class KernelForgeEntityFluidsTest {
 
 	/** Switched off, no record is made, and every MinecraftForge query answers "no fluid" as merged. */
 	@Test void switchedOffThereIsNoRecord() throws Exception {
+		TestFixtures.requireForgeCarrier("MinecraftForge's FluidType");
 		load();
 		System.setProperty("forbric.forgeEntityFluids", "off");
 		assertNull(state());

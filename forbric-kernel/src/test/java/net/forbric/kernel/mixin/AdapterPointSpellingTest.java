@@ -127,7 +127,10 @@ class AdapterPointSpellingTest {
 						"Ljava/util/List;isEmpty()Z")))));
 		// CarrierDefaultChains: fabric-api's bed occupancy redirect, bound to the sleep start and the wake-up lambda, under
 		// unrelated names.
-		cases.add(new Case("fabric-api beds", () -> StagedFabricMixinFixture.mixin("fabric-entity-events-v1", root + "LivingEntityMixin"), true,
+		cases.add(new Case("fabric-api beds", () -> {
+					TestFixtures.requireForgeCarrierWhereTheBaseNamesIt("the state's setBedOccupied defaults, through the base's hierarchy");
+					return StagedFabricMixinFixture.mixin("fabric-entity-events-v1", root + "LivingEntityMixin");
+				}, true,
 				Ecosystem.FABRIC, LIVING, CarrierDefaultChains::adapt, 1,
 				List.of("Lnet/minecraft/world/level/Level;setBlock(Lnet/minecraft/core/BlockPos;" + STATE + "I)Z"),
 				mixin -> assertTrue(atTargets(mixin).contains("Lnet/minecraft/world/level/block/state/BlockState;setBedOccupied(Lnet/minecraft/world/level/Level;"
@@ -457,7 +460,7 @@ class AdapterPointSpellingTest {
 	 */
 	static ClassNode merged(String name) {
 		byte[] bytes = MERGED.computeIfAbsent(name, n -> {
-			for (String jarName : List.of(TestFixtures.BASE_JAR, "neoforge-runtime/neoforge-runtime.jar", "merged-base/forge-runtime-interop.jar")) {
+			for (String jarName : List.of(TestFixtures.BASE_JAR, TestFixtures.NEO_CARRIER_JAR, "merged-base/forge-runtime-interop.jar")) {
 				Path jar = TestFixtures.stagedRoot().resolve(jarName);
 				if (!Files.isRegularFile(jar)) continue;
 				try (ZipFile zip = new ZipFile(jar.toFile())) {

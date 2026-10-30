@@ -31,7 +31,7 @@ class MixinEquivalentImplementationsTest {
 
  // ---- the value modifier the merged method already applies -----------------------------------------------------------
 
- private static Path neo(){return TestFixtures.stagedRoot().resolve("neoforge-runtime/neoforge-runtime.jar");}
+ private static Path neo(){return TestFixtures.stagedRoot().resolve(TestFixtures.NEO_CARRIER_JAR);}
  /** A class by internal name from the merged base, the NeoForge carrier, or fabric-api's crash-report module. */
  private static Function<String,ClassNode> classes()throws Exception{
   TestFixtures.requireFiles(TestFixtures.Fixture.STAGED,"staged merged base, NeoForge carrier and Fabric API",neo(),TestFixtures.fabricApi());

@@ -45,7 +45,7 @@ import net.forbric.kernel.TestFixtures.Fixture;
 class MixinRetargetRenamedBodyCorpusTest {
 	private static final Path MERGED = TestFixtures.stagedBase();
 	private static final Path INTEROP = TestFixtures.stagedRoot().resolve("merged-base/forge-runtime-interop.jar");
-	private static final Path NEO_RUNTIME = TestFixtures.stagedRoot().resolve("neoforge-runtime/neoforge-runtime.jar");
+	private static final Path NEO_RUNTIME = TestFixtures.stagedRoot().resolve(TestFixtures.NEO_CARRIER_JAR);
 	/** The audit's corpus — the packs, the sweeps and the random Modrinth sample — and the pure-Fabric A/B's mods, each walked whole. */
 	private static final List<Path> CORPUS = List.of(Path.of("build/compat-inputs"), Path.of("run/client-merged-pack/mods"),
 			Path.of("run/client-neo-pack/mods"), Path.of("run/client-popular/mods"), Path.of("build/sweep100-mac-network/mods"),

@@ -136,7 +136,7 @@ class KernelForgeGatherStatesTest {
 	void sheetsIsTheOnlyReaderOfTheCompletedStates() throws Exception {
 		Path run = run();
 		List<Path> jars = List.of(run.resolve(TestFixtures.BASE_JAR), carrier(),
-				run.resolve("neoforge-runtime/neoforge-runtime.jar"));
+				run.resolve(TestFixtures.NEO_CARRIER_JAR));
 		for (Path jar : jars) TestFixtures.requireFile(Fixture.STAGED, jar, jar + " absent");
 		TreeSet<String> readers = new TreeSet<>();
 		byte[] needle = "hasCompletedState".getBytes(java.nio.charset.StandardCharsets.US_ASCII);

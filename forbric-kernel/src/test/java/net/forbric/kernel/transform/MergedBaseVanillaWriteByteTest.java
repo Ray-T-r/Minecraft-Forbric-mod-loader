@@ -36,7 +36,7 @@ import org.objectweb.asm.tree.MethodNode;
  */
 class MergedBaseVanillaWriteByteTest {
 	private static final Path MERGED_BASE = TestFixtures.stagedBase();
-	private static final Path NEO_RUNTIME = TestFixtures.stagedRoot().resolve("neoforge-runtime/neoforge-runtime.jar");
+	private static final Path NEO_RUNTIME = TestFixtures.stagedRoot().resolve(TestFixtures.NEO_CARRIER_JAR);
 	private static final Path VANILLA = TestFixtures.vanillaJar();
 	private static final String EXTENSION = "net/neoforged/neoforge/common/extensions/IFriendlyByteBufExtension";
 	private static final String BUF = "net/minecraft/network/FriendlyByteBuf";

@@ -259,7 +259,7 @@ class PlayLevelSoundBridgeTest {
 
 		static Map<String, byte[]> classes() throws Exception {
 			Path run = TestFixtures.stagedRoot();
-			Path neo = run.resolve("neoforge-runtime/neoforge-runtime.jar");
+			Path neo = run.resolve(TestFixtures.NEO_CARRIER_JAR);
 			Path forge = run.resolve("merged-base/forge-runtime-interop.jar");
 			if (!Files.isRegularFile(forge)) forge = run.resolve("forge-runtime/forge-runtime.jar");
 			TestFixtures.requireFiles(Fixture.STAGED, "the staged carriers are absent", neo, forge);

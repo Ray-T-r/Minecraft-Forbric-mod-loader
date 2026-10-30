@@ -147,7 +147,7 @@ class KernelCreativePagerMergedScreenTest {
 	private static URLClassLoader gameLoader() throws Exception {
 		Path compiled = Path.of(System.getProperty("forbric.test.runtimeClasses", "build/classes/java/runtime"));
 		Path merged = RUN.resolve(TestFixtures.BASE_JAR);
-		Path neo = RUN.resolve("neoforge-runtime/neoforge-runtime.jar");
+		Path neo = RUN.resolve(TestFixtures.NEO_CARRIER_JAR);
 		Path forge = RUN.resolve("merged-base/forge-runtime-interop.jar");
 		TestFixtures.requireFiles(Fixture.STAGED,
 				"the staged game is absent", merged, neo, forge);

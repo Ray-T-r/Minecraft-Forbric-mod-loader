@@ -42,6 +42,7 @@ class ForgeCapabilityDispatchOffExecutionTest {
 
 	@Test
 	void withDispatchOffTheRequiredRootsDefineThroughTheRealLoader() throws Exception {
+		TestFixtures.requireForgeCarrier("MinecraftForge's capability classes");
 		List<URL> urls = StagedGameClassLoader.urls();
 		System.setProperty(ForgeCapabilityCompositionTransformer.PROPERTY, "off");
 		try (var parent = new URLClassLoader(urls.toArray(URL[]::new), getClass().getClassLoader());
@@ -71,6 +72,7 @@ class ForgeCapabilityDispatchOffExecutionTest {
 
 	@Test
 	void theInertProviderNeverReachesTheAttachBusAndAnswersEveryAskEmpty() throws Exception {
+		TestFixtures.requireForgeCarrier("MinecraftForge's capability classes");
 		try (URLClassLoader game = StagedGameClassLoader.create(List.of())) {
 			Class<?> capabilities = game.loadClass("net.forbric.kernel.runtime.KernelForgeCapabilities");
 			Class<?> asField = game.loadClass("net.minecraftforge.common.capabilities.CapabilityProvider$AsField");

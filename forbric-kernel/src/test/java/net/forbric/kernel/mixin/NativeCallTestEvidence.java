@@ -14,7 +14,7 @@ public final class NativeCallTestEvidence {
  private NativeCallTestEvidence(){}
  private static byte[] read(Path jar,String path){try(ZipFile zip=new ZipFile(jar.toFile())){var entry=zip.getEntry(path);return entry==null?null:zip.getInputStream(entry).readAllBytes();}catch(Exception absent){return null;}}
  public static BiFunction<Ecosystem,String,ClassNode> staged(){
-  Path root=TestFixtures.stagedRoot(),merged=root.resolve(TestFixtures.BASE_JAR);NativeGameReferences refs=new NativeGameReferences(path->read(merged,path));
+  Path root=TestFixtures.stagedRoot(),merged=root.resolve(TestFixtures.MERGED_BASE_JAR);NativeGameReferences refs=new NativeGameReferences(path->read(merged,path)); // the indexes the merge embeds
   Map<String,ClassNode> cache=new HashMap<>();
   return (family,owner)->{
    if(family==null||owner==null)return null;
@@ -25,8 +25,8 @@ public final class NativeCallTestEvidence {
     else {
      Path nativeJar=switch(family){case FABRIC->TestFixtures.vanillaJar();case FORGE->TestFixtures.forgeMergeInput();case NEOFORGE->root.resolve(TestFixtures.GENUINE_BASE_JAR);};
      bytes=read(nativeJar,owner+".class");
-     if(bytes==null&&family==Ecosystem.NEOFORGE)bytes=read(root.resolve("neoforge-runtime/neoforge-runtime.jar"),owner+".class");
-     if(bytes==null&&family==Ecosystem.FORGE)bytes=read(root.resolve("forge-runtime/forge-runtime.jar"),owner+".class");
+     if(bytes==null&&family==Ecosystem.NEOFORGE)bytes=read(root.resolve(TestFixtures.NEO_CARRIER_JAR),owner+".class");
+     if(bytes==null&&family==Ecosystem.FORGE)bytes=read(root.resolve(TestFixtures.FORGE_CARRIER_JAR),owner+".class");
     }
     if(bytes!=null)result=verified(family,owner,bytes);
    }

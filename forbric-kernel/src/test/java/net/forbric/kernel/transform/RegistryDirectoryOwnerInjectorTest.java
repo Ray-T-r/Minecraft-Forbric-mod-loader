@@ -82,7 +82,7 @@ class RegistryDirectoryOwnerInjectorTest {
 	private static final Path STAGED = TestFixtures.stagedRoot();
 	private static final Path MERGED_BASE = STAGED.resolve(TestFixtures.BASE_JAR);
 	private static final Path FORGE_PATCHED = STAGED.resolve("forge-patched/patched-mc-forge-26.2.jar");
-	private static final Path NEO_RUNTIME = STAGED.resolve("neoforge-runtime/neoforge-runtime.jar");
+	private static final Path NEO_RUNTIME = STAGED.resolve(TestFixtures.NEO_CARRIER_JAR);
 	private static final Path VANILLA = TestFixtures.vanillaJar();
 	private static final Path SWEEP = Path.of("build/compat-inputs/sweep90/mods");
 	private static final Path FABRIC_API = SWEEP.resolve("fabric-api-0.161.0+26.2.jar");

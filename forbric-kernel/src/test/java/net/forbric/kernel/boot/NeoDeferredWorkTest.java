@@ -189,7 +189,7 @@ class NeoDeferredWorkTest {
 	void bothCarriersDeferredWorkQueuesStillHaveTheFieldsTheFailureReadNeeds() throws Exception {
 		Path run = TestFixtures.stagedRoot().normalize();
 		for (String[] carrier : new String[][] {
-				{ "neoforge-runtime/neoforge-runtime.jar", "net/neoforged/fml/DeferredWorkQueue" },
+				{ TestFixtures.NEO_CARRIER_JAR, "net/neoforged/fml/DeferredWorkQueue" },
 				{ "forge-runtime/forge-runtime.jar", "net/minecraftforge/fml/DeferredWorkQueue" } }) {
 			Path jar = run.resolve(carrier[0]);
 			TestFixtures.requireFile(Fixture.STAGED, jar, "staged carrier absent: " + jar);
@@ -249,7 +249,7 @@ class NeoDeferredWorkTest {
 	/** If the carrier ever drops this, {@link NeoDeferredWork#syncExecutor} goes quiet and the bug comes back. */
 	@Test
 	void theCarrierStillOffersTheExecutorNeoForgeRunsDeferredWorkOn() throws Exception {
-		Path carrier = TestFixtures.stagedRoot().resolve("neoforge-runtime/neoforge-runtime.jar").normalize();
+		Path carrier = TestFixtures.stagedRoot().resolve(TestFixtures.NEO_CARRIER_JAR).normalize();
 		TestFixtures.requireFile(Fixture.STAGED, carrier, "staged NeoForge carrier absent");
 
 		try (ZipFile jar = new ZipFile(carrier.toFile())) {

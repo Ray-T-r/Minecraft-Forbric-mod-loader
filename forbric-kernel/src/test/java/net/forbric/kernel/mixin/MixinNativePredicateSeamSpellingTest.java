@@ -242,7 +242,7 @@ class MixinNativePredicateSeamSpellingTest {
 
 	private static Inputs inputs() throws Exception {
 		Path base = Path.of(System.getProperty("forbric.predicateBase", TestFixtures.stagedBase().toString()));
-		Path neo = TestFixtures.stagedRoot().resolve("neoforge-runtime/neoforge-runtime.jar"), forge = TestFixtures.stagedRoot().resolve("forge-runtime/forge-runtime.jar");
+		Path neo = TestFixtures.stagedRoot().resolve(TestFixtures.NEO_CARRIER_JAR), forge = TestFixtures.stagedRoot().resolve("forge-runtime/forge-runtime.jar");
 		Path api = Path.of(System.getProperty("forbric.fabricApi", TestFixtures.fabricApi().toString()));
 		TestFixtures.requireFiles(TestFixtures.Fixture.STAGED, "hash-pinned native predicate base, runtimes and the actual Fabric API", base, neo, forge, api);
 		Map<String, byte[]> cache = new HashMap<>();

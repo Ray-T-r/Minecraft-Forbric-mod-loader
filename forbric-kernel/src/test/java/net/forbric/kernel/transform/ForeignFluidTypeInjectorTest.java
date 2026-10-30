@@ -22,7 +22,7 @@ class ForeignFluidTypeInjectorTest {
   }assertSame(out,transform.transform(ForeignFluidTypeInjector.FLUID,out,null));
  }
  @Test void eachSdkUnsupportedTailRetainsAllBuiltinBranchesAndItsActualOriginalExceptionForNullInput()throws Exception{
-  for(var family:List.of(new String[]{"forge-runtime/forge-runtime.jar",ForeignFluidTypeInjector.FORGE_HOOKS,ForeignFluidTypeInjector.FORGE_TYPE,"foreignForgeLookup"},new String[]{"neoforge-runtime/neoforge-runtime.jar",ForeignFluidTypeInjector.NEO_HOOKS,ForeignFluidTypeInjector.TYPE,"foreignNeoLookup"})){
+  for(var family:List.of(new String[]{"forge-runtime/forge-runtime.jar",ForeignFluidTypeInjector.FORGE_HOOKS,ForeignFluidTypeInjector.FORGE_TYPE,"foreignForgeLookup"},new String[]{TestFixtures.NEO_CARRIER_JAR,ForeignFluidTypeInjector.NEO_HOOKS,ForeignFluidTypeInjector.TYPE,"foreignNeoLookup"})){
    byte[] bytes=NativeCoremodParityTest.read(STAGED.resolve(family[0]),family[1]);byte[] out=new ForeignFluidTypeInjector().transform(family[1].replace('/','.'),bytes,null);assertNotSame(bytes,out);
    MethodNode before=find(read(bytes),"getVanillaFluidType","(L"+ForeignFluidTypeInjector.FLUID_INTERNAL+";)L"+family[2]+";"),after=find(read(out),before.name,before.desc);
    List<String> previous=realCalls(before),current=realCalls(after).stream().filter(c->!c.startsWith(ForeignFluidTypeInjector.RUNTIME)&&!c.startsWith(ForeignFluidTypeInjector.SCOPES)).toList();assertEquals(previous,current,"all native provider/optional/milk and original exception-constructor calls remain in order");
@@ -30,7 +30,7 @@ class ForeignFluidTypeInjectorTest {
    new Analyzer<>(new BasicVerifier()).analyze(family[1],after);assertSame(out,new ForeignFluidTypeInjector().transform(family[1].replace('/','.'),out,null));
   }
  }
- @Test void switchedOffAllPublicLookupAndCacheContractsRemainUnchanged(){System.setProperty(ForeignFluidTypeInjector.PROPERTY,"off");for(var entry:List.of(new String[]{TestFixtures.BASE_JAR,ForeignFluidTypeInjector.FLUID_INTERNAL},new String[]{"forge-runtime/forge-runtime.jar",ForeignFluidTypeInjector.FORGE_HOOKS},new String[]{"neoforge-runtime/neoforge-runtime.jar",ForeignFluidTypeInjector.NEO_HOOKS})){byte[] bytes=NativeCoremodParityTest.read(STAGED.resolve(entry[0]),entry[1]);assertSame(bytes,new ForeignFluidTypeInjector().transform(entry[1].replace('/','.'),bytes,null));}}
+ @Test void switchedOffAllPublicLookupAndCacheContractsRemainUnchanged(){System.setProperty(ForeignFluidTypeInjector.PROPERTY,"off");for(var entry:List.of(new String[]{TestFixtures.BASE_JAR,ForeignFluidTypeInjector.FLUID_INTERNAL},new String[]{"forge-runtime/forge-runtime.jar",ForeignFluidTypeInjector.FORGE_HOOKS},new String[]{TestFixtures.NEO_CARRIER_JAR,ForeignFluidTypeInjector.NEO_HOOKS})){byte[] bytes=NativeCoremodParityTest.read(STAGED.resolve(entry[0]),entry[1]);assertSame(bytes,new ForeignFluidTypeInjector().transform(entry[1].replace('/','.'),bytes,null));}}
  private static List<String> realCalls(MethodNode method){return Arrays.stream(method.instructions.toArray()).filter(MethodInsnNode.class::isInstance).map(MethodInsnNode.class::cast).map(c->c.owner+"."+c.name+c.desc).toList();}
  private static ClassNode read(byte[] bytes){ClassNode node=new ClassNode();new ClassReader(bytes).accept(node,0);return node;}
  private static MethodNode find(ClassNode owner,String name,String desc){return owner.methods.stream().filter(m->m.name.equals(name)&&m.desc.equals(desc)).findFirst().orElseThrow();}

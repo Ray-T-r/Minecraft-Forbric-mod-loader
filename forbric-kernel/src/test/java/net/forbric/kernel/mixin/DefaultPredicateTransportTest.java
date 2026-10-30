@@ -15,6 +15,7 @@ import org.objectweb.asm.tree.*;
 
 import net.forbric.kernel.boot.DefaultPredicateDispatch;
 import net.forbric.kernel.boot.DefinedMethodContracts;
+import net.forbric.kernel.TestFixtures;
 
 @ResourceLock("DefinedMethodContracts")
 class DefaultPredicateTransportTest {
@@ -235,7 +236,7 @@ class DefaultPredicateTransportTest {
         net.forbric.kernel.TestFixtures.require(net.forbric.kernel.TestFixtures.Fixture.STAGED,
                 java.nio.file.Files.isRegularFile(api), "actual Fabric API required");
         ActualApi out = new ActualApi();
-        for (String jar : List.of(net.forbric.kernel.TestFixtures.BASE_JAR, "neoforge-runtime/neoforge-runtime.jar", "forge-runtime/forge-runtime.jar")) {
+        for (String jar : List.of(net.forbric.kernel.TestFixtures.BASE_JAR, TestFixtures.NEO_CARRIER_JAR, "forge-runtime/forge-runtime.jar")) {
             var path = root.resolve(jar); net.forbric.kernel.TestFixtures.requireFile(net.forbric.kernel.TestFixtures.Fixture.STAGED,
                     path, "actual staged carrier required");
             try (java.util.zip.ZipFile zip = new java.util.zip.ZipFile(path.toFile())) {

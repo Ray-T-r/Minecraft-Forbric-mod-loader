@@ -7,6 +7,7 @@ import java.util.Arrays;
 import java.util.List;
 
 import net.forbric.kernel.boot.KernelLifecycle;
+import net.forbric.kernel.TestFixtures;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.parallel.ResourceLock;
@@ -20,7 +21,7 @@ import org.objectweb.asm.tree.analysis.BasicVerifier;
 @ResourceLock("system-properties")
 class NeoTooltipAppendersInjectorTest {
 	private static final Path STAGED = Path.of(System.getProperty("forbric.stagedRoot", "../forbric-loader/run"));
-	private static final Path NEO_RT = STAGED.resolve("neoforge-runtime/neoforge-runtime.jar");
+	private static final Path NEO_RT = STAGED.resolve(TestFixtures.NEO_CARRIER_JAR);
 	private static final String HANDLER = "net/neoforged/neoforge/common/tooltip/ItemTooltipHandler";
 
 	@AfterEach void reset() {

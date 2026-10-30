@@ -22,6 +22,7 @@ import org.objectweb.asm.tree.ClassNode;
 import org.objectweb.asm.tree.MethodNode;
 
 import net.forbric.kernel.boot.KernelSharedPredicateContracts;
+import net.forbric.kernel.TestFixtures;
 
 /**
  * {@link MixinSharedPredicateSeam} reads the source pair's host and anchors as Mixin reads them: fabric-api's released
@@ -145,6 +146,7 @@ class MixinSharedPredicateSeamSpellingTest {
 	// ---- reading ----------------------------------------------------------------------------------------------------------
 
 	private static void assertRestored(Pair pair, Function<String, ClassNode> source) {
+		TestFixtures.requireForgeCarrierWhereTheBaseNamesIt("Entity's hierarchy, where the shared predicate's default lives");
 		var input = pair.input();
 		String underBody = MixinInstructionFingerprint.hash(pair.under()), groundBody = MixinInstructionFingerprint.hash(pair.ground());
 		assertEquals(2, MixinSharedPredicateSeam.adapt(pair.mixin(), input.classes(), source, input.carrier()));

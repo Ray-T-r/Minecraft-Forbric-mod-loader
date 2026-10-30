@@ -424,7 +424,7 @@ class LaunchInputCheckTest {
 	@Test
 	void theStagedMergedBaseAndBothStagedCarrierSpellingsPass() {
 		Path base = staged(TestFixtures.BASE_JAR);
-		Path neo = staged("neoforge-runtime/neoforge-runtime.jar");
+		Path neo = staged(TestFixtures.NEO_CARRIER_JAR);
 		Path forge = staged("forge-runtime/forge-runtime.jar");
 		Path interop = staged("merged-base/forge-runtime-interop.jar");
 		TestFixtures.requireFiles(Fixture.STAGED,

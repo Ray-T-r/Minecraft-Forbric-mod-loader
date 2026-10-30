@@ -48,7 +48,7 @@ class MixinDefaultCallbackTransportSpellingTest {
 		Map<String, ClassNode> types = new HashMap<>();
 		types.put(LIVING, TransportSpellings.merged(LIVING));
 		types.put("net/minecraft/world/level/block/LadderBlock", TransportSpellings.merged("net/minecraft/world/level/block/LadderBlock"));
-		Path neo = TestFixtures.stagedRoot().resolve("neoforge-runtime/neoforge-runtime.jar");
+		Path neo = TestFixtures.stagedRoot().resolve(TestFixtures.NEO_CARRIER_JAR);
 		TestFixtures.requireFile(Fixture.STAGED, neo, "the staged NeoForge runtime required: " + neo);
 		try (ZipFile jar = new ZipFile(neo.toFile())) {
 			ZipEntry entry = jar.getEntry(EXTENSION + ".class");

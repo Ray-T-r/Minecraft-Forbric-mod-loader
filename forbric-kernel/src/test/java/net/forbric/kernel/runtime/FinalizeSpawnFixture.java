@@ -19,6 +19,7 @@ import javax.tools.ToolProvider;
 import org.objectweb.asm.ClassReader;
 import org.objectweb.asm.ClassWriter;
 import org.objectweb.asm.tree.ClassNode;
+import net.forbric.kernel.TestFixtures;
 
 /**
  * The compiled KernelFinalizeSpawn against NeoForge's actual spawner hook bytecode, with the game and both buses
@@ -40,7 +41,7 @@ final class FinalizeSpawnFixture implements AutoCloseable {
 		assertEquals(0, ToolProvider.getSystemJavaCompiler().run(null, errors, errors, args.toArray(String[]::new)), errors.toString());
 		// NeoForge's own spawner hook, the one finalizeTrialSpawner calls with initialize=false.
 		ClassNode original = new ClassNode();
-		new ClassReader(ForgeSpawnFixture.staged("neoforge-runtime/neoforge-runtime.jar", "net.neoforged.neoforge.event.EventHooks")).accept(original, 0);
+		new ClassReader(ForgeSpawnFixture.staged(TestFixtures.NEO_CARRIER_JAR, "net.neoforged.neoforge.event.EventHooks")).accept(original, 0);
 		var hook = original.methods.stream().filter(m -> m.name.equals("finalizeMobSpawnSpawner")).findFirst().orElseThrow();
 		ClassWriter writer = new ClassWriter(0); writer.visit(original.version, original.access, original.name, null, "java/lang/Object", null);
 		hook.accept(writer); writer.visitEnd();

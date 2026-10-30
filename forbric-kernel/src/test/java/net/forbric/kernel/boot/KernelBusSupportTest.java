@@ -51,7 +51,7 @@ import org.objectweb.asm.tree.MethodNode;
  */
 class KernelBusSupportTest {
 	private static final Path NEOFORGE =
-			TestFixtures.stagedRoot().resolve("neoforge-runtime/neoforge-runtime.jar").normalize();
+			TestFixtures.stagedRoot().resolve(TestFixtures.NEO_CARRIER_JAR).normalize();
 
 	/** The four calls makeModBus makes, two of which fail silently if they are gone. */
 	@Test

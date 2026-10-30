@@ -33,6 +33,9 @@ classpath = [compile_game, *forge, neo, *selected, *libraries]
 for path in [compile_game, *forge, neo, fapi]:
     if not path.is_file(): raise SystemExit(f'M42 prerequisite absent: {path}')
 root = kernel / 'canary/coremod-parity'
+# Without a MinecraftForge carrier only a canary whose own sources name none of it compiles: say so, not javac.
+if not forge and any('net.minecraftforge' in source.read_text(errors='replace') for source in root.rglob('*.java')):
+    raise SystemExit(f'M42 prerequisite absent: no MinecraftForge carrier is staged, and {root} still names net.minecraftforge')
 classes = work / 'classes'; classes.mkdir()
 subprocess.run(['javac', '-proc:none', '--release', '21', '-cp', os.pathsep.join(map(str, classpath)),
                 '-d', str(classes), *map(str, sorted((root / 'src').rglob('*.java')))], check=True)

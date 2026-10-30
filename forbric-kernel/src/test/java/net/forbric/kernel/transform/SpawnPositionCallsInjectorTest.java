@@ -19,7 +19,7 @@ import org.objectweb.asm.tree.analysis.BasicVerifier;
 class SpawnPositionCallsInjectorTest {
 	private static final Path STAGED = TestFixtures.stagedRoot();
 	private static final Path MERGED = STAGED.resolve(TestFixtures.BASE_JAR);
-	private static final Path NEO = STAGED.resolve("neoforge-runtime/neoforge-runtime.jar");
+	private static final Path NEO = STAGED.resolve(TestFixtures.NEO_CARRIER_JAR);
 	private static final Path ARCHITECTURY = Path.of("run/client-popular/mods/architectury-fabric-21.1.10.jar");
 
 	@Test void theVanillaCallsAreBackInServerTickAfterNeoForgesEvent() throws Exception {

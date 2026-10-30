@@ -15,6 +15,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import org.objectweb.asm.ClassWriter;
 import org.objectweb.asm.Opcodes;
+import net.forbric.kernel.TestFixtures;
 
 /** Real event buses: widget mutations reach the live screen list and keyboard consumption crosses the bridge once. */
 class KernelGameScreenEventsTest {
@@ -23,6 +24,7 @@ class KernelGameScreenEventsTest {
  private static final String FORGE="net.minecraftforge.client.event.ScreenEvent$";
 
  @Test void initCallbacksChangeTheOriginalWidgetList() throws Exception {
+  TestFixtures.requireForgeCarrier("MinecraftForge's screen events and their bus");
   for(String phase:List.of("Pre","Post")) try(var cl=loader()) {
    Object bus=bus(cl);
    install(cl,bus,"installScreenInit"+phase);
@@ -60,6 +62,7 @@ class KernelGameScreenEventsTest {
  }
 
  @Test void allFourKeyPhasesForwardTheSameKeyAndRespectCancellation() throws Exception {
+  TestFixtures.requireForgeCarrier("MinecraftForge's screen events and their bus");
   for(String phase:List.of("KeyPressed$Pre","KeyPressed$Post","KeyReleased$Pre","KeyReleased$Post")) try(var cl=loader()) {
    Object bus=bus(cl);
    install(cl,bus,"installScreen"+phase.replace("$",""));

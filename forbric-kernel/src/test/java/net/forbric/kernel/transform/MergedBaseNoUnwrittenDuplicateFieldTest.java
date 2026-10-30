@@ -64,6 +64,7 @@ class MergedBaseNoUnwrittenDuplicateFieldTest {
 
 	@Test
 	void everyDuplicatedFieldNameHasAWriterForEveryOneOfItsTypes() throws Exception {
+		TestFixtures.requireForgeCarrier("the merge's field writers in MinecraftForge's carrier");
 		TestFixtures.requireFile(Fixture.STAGED, MERGED_BASE, "staged merged base absent — skipping whole-artifact scan");
 
 		List<String> dead = new ArrayList<>();
@@ -73,7 +74,7 @@ class MergedBaseNoUnwrittenDuplicateFieldTest {
 				try {
 					ZipEntry local = jar.getEntry(path);
 					if (local != null) try (InputStream in = jar.getInputStream(local)) { return in.readAllBytes(); }
-					for (Path platform : List.of(TestFixtures.stagedRoot().resolve("forge-runtime/forge-runtime.jar"),TestFixtures.stagedRoot().resolve("neoforge-runtime/neoforge-runtime.jar"))) {
+					for (Path platform : List.of(TestFixtures.stagedRoot().resolve("forge-runtime/forge-runtime.jar"),TestFixtures.stagedRoot().resolve(TestFixtures.NEO_CARRIER_JAR))) {
 						try (ZipFile runtime = new ZipFile(platform.toFile())) { ZipEntry entry = runtime.getEntry(path); if(entry!=null)try(InputStream in=runtime.getInputStream(entry)){return in.readAllBytes();} }
 					}
 					return null;

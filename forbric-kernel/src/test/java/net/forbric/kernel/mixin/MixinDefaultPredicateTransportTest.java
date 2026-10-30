@@ -81,7 +81,7 @@ class MixinDefaultPredicateTransportTest {
 		String configured=System.getProperty("forbric.predicateBase");Path base=configured==null?TestFixtures.stagedBase():Path.of(configured);
 		TestFixtures.requireFile(Fixture.STAGED, base,"native-referenced merged base required");
 		ZipFile game=new ZipFile(base.toFile());OPEN.add(game);
-		Path runtime=TestFixtures.stagedRoot().resolve("neoforge-runtime/neoforge-runtime.jar");TestFixtures.requireFile(Fixture.STAGED, runtime,"actual carrier required");ZipFile carrier=new ZipFile(runtime.toFile());OPEN.add(carrier);
+		Path runtime=TestFixtures.stagedRoot().resolve(TestFixtures.NEO_CARRIER_JAR);TestFixtures.requireFile(Fixture.STAGED, runtime,"actual carrier required");ZipFile carrier=new ZipFile(runtime.toFile());OPEN.add(carrier);
 		Path forgeRuntime=TestFixtures.stagedRoot().resolve("forge-runtime/forge-runtime.jar");TestFixtures.requireFiles(Fixture.STAGED,"both actual carrier hierarchies required", forgeRuntime);ZipFile forge=new ZipFile(forgeRuntime.toFile());OPEN.add(forge);
 		NativeGameReferences references=new NativeGameReferences(name->read(game,name));ClassNode host=references.get(Ecosystem.FABRIC,HOST);TestFixtures.require(Fixture.STAGED,host!=null,"hash-pinned native host required (old bases deliberately cannot transport predicates)");
 		Map<String,ClassNode> currentCache=new HashMap<>(),nativeCache=new HashMap<>();nativeCache.put(HOST,host);

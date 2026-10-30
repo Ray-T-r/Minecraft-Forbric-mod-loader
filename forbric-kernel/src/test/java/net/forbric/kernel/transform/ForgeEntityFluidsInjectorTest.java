@@ -101,6 +101,7 @@ class ForgeEntityFluidsInjectorTest {
 
 	/** The JVM's own verifier, frames included: the class is defined over the staged game. */
 	@Test void theRepairedClassPassesTheJvmVerifier() throws Exception {
+		TestFixtures.requireForgeCarrier("MinecraftForge's extension interfaces the repaired class is verified against");
 		byte[] out = InjectorExecution.transform(new ForgeEntityFluidsInjector(), ForgeEntityFluidsInjector.INTERACTION,
 				NativeCoremodParityTest.read(merged(), INTERACTION), EnvType.SERVER);
 		try (URLClassLoader game = net.forbric.kernel.runtime.StagedGameClassLoader.create(List.of())) {

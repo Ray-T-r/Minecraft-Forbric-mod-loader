@@ -45,7 +45,7 @@ class RepairDriftCensusStagedTest {
 
 	private static List<Path> stagedJars() {
 		return List.of(RUN.resolve(TestFixtures.BASE_JAR),
-				RUN.resolve("neoforge-runtime/neoforge-runtime.jar"),
+				RUN.resolve(TestFixtures.NEO_CARRIER_JAR),
 				RUN.resolve("forge-runtime/forge-runtime.jar"));
 	}
 

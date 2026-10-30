@@ -36,7 +36,7 @@ import net.forbric.kernel.TestFixtures.Fixture;
  */
 class MixinRetargetCarrierHelperStagedTest {
 	private static final Path MERGED_BASE = TestFixtures.stagedBase().normalize();
-	private static final Path NEO_RUNTIME = TestFixtures.stagedRoot().resolve("neoforge-runtime/neoforge-runtime.jar").normalize();
+	private static final Path NEO_RUNTIME = TestFixtures.stagedRoot().resolve(TestFixtures.NEO_CARRIER_JAR).normalize();
 	private static final Path SWEEP = Path.of(System.getProperty("user.dir"), "build", "compat-inputs", "sweep90", "mods").normalize();
 	private static final String G = "(Lnet/minecraft/client/gui/GuiGraphicsExtractor;)V";
 

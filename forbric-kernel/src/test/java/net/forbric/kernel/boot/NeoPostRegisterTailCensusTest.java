@@ -25,7 +25,7 @@ import org.objectweb.asm.tree.*;
  */
 class NeoPostRegisterTailCensusTest {
 	private static final Path STAGED = TestFixtures.stagedRoot();
-	private static final Path NEO_RT = STAGED.resolve("neoforge-runtime/neoforge-runtime.jar");
+	private static final Path NEO_RT = STAGED.resolve(TestFixtures.NEO_CARRIER_JAR);
 
 	/** NeoForge's step → the strings the kernel's copy uses to take it. */
 	private static final Map<String, List<String>> REPLICATED = new LinkedHashMap<>();

@@ -46,7 +46,10 @@ kernel_jar
 bash "$KERNEL/run/build-behavior-canary.sh" > "$RESULTS/build.log" 2>&1 || { cat "$RESULTS/build.log"; exit 1; }
 INPUTS="$KERNEL/run/canary/m35-build-inputs.json"
 MERGED="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["merged"]["path"])' "$INPUTS")"
-FORGE_RT="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["forge"]["path"])' "$INPUTS")"
+# The builder records "forge": null when no MinecraftForge carrier is staged. This gate's cases veto and finalize through
+# MinecraftForge's own portal and spawner events, so it has nothing to run without one: say so instead of a TypeError.
+FORGE_RT="$(python3 -c 'import json,sys; forge = json.load(open(sys.argv[1]))["forge"]; print(forge["path"] if forge else "")' "$INPUTS")"
+[ -n "$FORGE_RT" ] || { echo "[kernel] FAIL M35 needs the MinecraftForge carrier: $INPUTS records \"forge\": null (none staged under $OLD/run)"; exit 1; }
 NEO_RT="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["neo"]["path"])' "$INPUTS")"
 COMPILE_GAME="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["compileGame"]["path"])' "$INPUTS")"
 export MERGED FORGE_RT NEO_RT

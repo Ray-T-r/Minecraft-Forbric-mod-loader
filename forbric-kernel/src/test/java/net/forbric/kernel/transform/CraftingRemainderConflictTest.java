@@ -27,13 +27,14 @@ import org.objectweb.asm.tree.MethodNode;
 class CraftingRemainderConflictTest {
 	private static final Path STAGED = TestFixtures.stagedRoot();
 	private static final List<Path> JARS = List.of(STAGED.resolve(TestFixtures.BASE_JAR),
-			STAGED.resolve("merged-base/forge-runtime-interop.jar"), STAGED.resolve("neoforge-runtime/neoforge-runtime.jar"));
+			STAGED.resolve("merged-base/forge-runtime-interop.jar"), STAGED.resolve(TestFixtures.NEO_CARRIER_JAR));
 	private static final Path FABRIC_API = TestFixtures.fabricApi();
 	private static final String ITEM = "net/minecraft/world/item/Item";
 	private static final String FABRIC_ITEM = "net/fabricmc/fabric/api/item/v1/FabricItem";
 	private static final String REMAINDER = "getCraftingRemainder";
 
 	@Test void theTweakedItemGetsARemainderThatAsksNeoForgesOverload() throws Exception {
+		TestFixtures.requireForgeCarrierWhereTheBaseNamesIt("Item's hierarchy, which declares the remainder defaults");
 		byte[] fabricItem = fabricItem();
 		InterfaceDefaultConflictRepair repair = new InterfaceDefaultConflictRepair(name -> name.equals(FABRIC_ITEM) ? fabricItem : game(name));
 		byte[] jarItem = game(ITEM);
@@ -67,6 +68,7 @@ class CraftingRemainderConflictTest {
 	}
 
 	@Test void allThreeDefaultsAnswerTheSameNoArgumentCall() throws Exception {
+		TestFixtures.requireForgeCarrierWhereTheBaseNamesIt("Item's hierarchy, which declares the remainder defaults");
 		for (byte[] iface : List.of(fabricItem(), game("net/minecraftforge/common/extensions/IForgeItem"),
 				game("net/neoforged/neoforge/common/extensions/IItemExtension"))) {
 			ClassNode node = new ClassNode();

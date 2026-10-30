@@ -125,7 +125,7 @@ class CommonNetworkInteropInjectorTest {
 
 	/** NeoForge's own guard: {@code runConnectionInitialization} consults {@code isConnectionInitialized}. */
 	private static boolean neoForgeGuardsInitialisationItself() throws Exception {
-		java.nio.file.Path carrier = TestFixtures.stagedRoot().resolve("neoforge-runtime/neoforge-runtime.jar");
+		java.nio.file.Path carrier = TestFixtures.stagedRoot().resolve(TestFixtures.NEO_CARRIER_JAR);
 		if (!Files.isRegularFile(carrier)) return true; // nothing staged to contradict it
 		try (java.util.zip.ZipFile zip = new java.util.zip.ZipFile(carrier.toFile())) {
 			java.util.zip.ZipEntry e = zip.getEntry(

@@ -42,7 +42,7 @@ import net.forbric.kernel.util.ForbricBranding;
 class ForbricBrandingInjectorTest {
 	private static final Path STAGED = TestFixtures.stagedRoot();
 	private static final Path MERGED = STAGED.resolve(TestFixtures.BASE_JAR);
-	private static final Path NEOFORGE_RUNTIME = STAGED.resolve("neoforge-runtime/neoforge-runtime.jar");
+	private static final Path NEOFORGE_RUNTIME = STAGED.resolve(TestFixtures.NEO_CARRIER_JAR);
 
 	/** NeoForge's own line counts NeoForge's ModList (one mod here); F3 shows the launcher profile and the sent brand. */
 	private static final Map<String, String> STAND_INS = Map.of(

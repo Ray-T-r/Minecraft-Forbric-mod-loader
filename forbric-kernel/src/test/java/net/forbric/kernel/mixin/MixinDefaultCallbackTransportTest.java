@@ -8,6 +8,7 @@ import org.objectweb.asm.*;
 import org.objectweb.asm.tree.*;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
 import net.forbric.api.Ecosystem;
+import net.forbric.kernel.TestFixtures;
 
 class MixinDefaultCallbackTransportTest {
     private record Inputs(ClassNode source, Map<String, ClassNode> types, ClassNode original) { }
@@ -119,7 +120,7 @@ class MixinDefaultCallbackTransportTest {
     private static Inputs inputs() throws Exception {
         Path api = Path.of(System.getProperty("forbric.fabricApi", net.forbric.kernel.TestFixtures.fabricApi().toString()));
         Path base = Path.of(System.getProperty("forbric.predicateBase", net.forbric.kernel.TestFixtures.stagedBase().toString()));
-        Path neo = net.forbric.kernel.TestFixtures.stagedRoot().resolve("neoforge-runtime/neoforge-runtime.jar");
+        Path neo = net.forbric.kernel.TestFixtures.stagedRoot().resolve(TestFixtures.NEO_CARRIER_JAR);
         net.forbric.kernel.TestFixtures.require(net.forbric.kernel.TestFixtures.Fixture.STAGED,
                 Files.isRegularFile(api) && Files.isRegularFile(base) && Files.isRegularFile(neo), "actual API and indexed native runtimes required");
         ClassNode source = null; Map<String, ClassNode> types = new HashMap<>(); ClassNode original;

@@ -37,11 +37,11 @@ class EventChainAuditTest {
 		System.setProperty(EventChainAudit.PROPERTY, "unused-in-tests.json");
 		EventChainAudit.reset();
 		Path staged = Path.of(System.getProperty("forbric.stagedRoot"));
-		TestFixtures.requireFiles(TestFixtures.Fixture.STAGED, "staged carriers", staged.resolve("neoforge-runtime/neoforge-runtime.jar"),
+		TestFixtures.requireFiles(TestFixtures.Fixture.STAGED, "staged carriers", staged.resolve(TestFixtures.NEO_CARRIER_JAR),
 				staged.resolve("forge-runtime/forge-runtime.jar"));
 		String log4j = System.getProperty("forbric.log4jApiForTests", "");
 		assertFalse(log4j.isBlank(), "the build passes the log4j-api jar the real buses need");
-		var loader = new AuditedBuses(List.of(staged.resolve("neoforge-runtime/neoforge-runtime.jar"), staged.resolve("forge-runtime/forge-runtime.jar"), Path.of(log4j)));
+		var loader = new AuditedBuses(List.of(staged.resolve(TestFixtures.NEO_CARRIER_JAR), staged.resolve("forge-runtime/forge-runtime.jar"), Path.of(log4j)));
 		neoProbe = loader.loadClass(NEO_PROBE); forgeProbe = loader.loadClass(FORGE_PROBE);
 		neoChild = loader.loadClass(NEO_CHILD); forgeChild = loader.loadClass(FORGE_CHILD);
 		neoBus = loader.loadClass("net.neoforged.bus.api.BusBuilder").getMethod("builder").invoke(null);

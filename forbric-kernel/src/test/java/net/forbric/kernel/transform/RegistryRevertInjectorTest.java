@@ -50,7 +50,7 @@ import net.forbric.kernel.TestFixtures.Fixture;
  * before the split.
  */
 class RegistryRevertInjectorTest {
-	private static final Path NEO_RUNTIME = TestFixtures.stagedRoot().resolve("neoforge-runtime/neoforge-runtime.jar");
+	private static final Path NEO_RUNTIME = TestFixtures.stagedRoot().resolve(TestFixtures.NEO_CARRIER_JAR);
 	private static final String MANAGER = "net.neoforged.neoforge.registries.RegistryManager";
 	private static final String REVERT = "net/forbric/kernel/boot/KernelRegistryRevert";
 	private static final String SYNC = "net/forbric/kernel/boot/KernelForgeWrapperSync";

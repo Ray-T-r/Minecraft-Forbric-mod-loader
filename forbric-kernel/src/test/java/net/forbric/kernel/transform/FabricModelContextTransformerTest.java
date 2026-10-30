@@ -27,7 +27,7 @@ class FabricModelContextTransformerTest {
 	}
 
 	private static byte[] game(String name) throws Exception {
-		Path jar = TestFixtures.stagedRoot().resolve(name.equals(FabricModelContextTransformer.MODEL + ".class") ? TestFixtures.BASE_JAR : "neoforge-runtime/neoforge-runtime.jar");
+		Path jar = TestFixtures.stagedRoot().resolve(name.equals(FabricModelContextTransformer.MODEL + ".class") ? TestFixtures.BASE_JAR : TestFixtures.NEO_CARRIER_JAR);
 		return TestFixtures.requireEntry(Fixture.STAGED, jar, name);
 	}
 

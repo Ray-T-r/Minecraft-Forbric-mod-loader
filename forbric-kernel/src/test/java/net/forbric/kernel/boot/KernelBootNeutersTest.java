@@ -31,7 +31,7 @@ class KernelBootNeutersTest {
 	private static final String REGISTRY = ForeignType.FLUID_INTERACTION_REGISTRY.binary(Ecosystem.FORGE);
 	private static final String CAN_INTERACT = "(Lnet/minecraft/world/level/Level;Lnet/minecraft/core/BlockPos;)Z";
 	private static final Path FORGE_CARRIER = TestFixtures.stagedRoot().resolve("forge-runtime/forge-runtime.jar");
-	private static final Path NEO_CARRIER = TestFixtures.stagedRoot().resolve("neoforge-runtime/neoforge-runtime.jar");
+	private static final Path NEO_CARRIER = TestFixtures.stagedRoot().resolve(TestFixtures.NEO_CARRIER_JAR);
 
 	@Test void withTheRepairOnNoSideNeutersMinecraftForgesFluidRegistry() {
 		for (KernelBoot.Side side : KernelBoot.Side.values()) {

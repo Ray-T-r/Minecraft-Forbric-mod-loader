@@ -292,7 +292,7 @@ class KernelModLoaderClasslessTest {
 	/** The game side as a boot sees it: the kernel's runtime classes, both carriers and the mod jar. */
 	private static URLClassLoader gameLoader(Path modJar) throws Exception {
 		Path compiled = Path.of(System.getProperty("forbric.testRuntimeClasses", "build/classes/java/runtime"));
-		Path neo = STAGED.resolve("neoforge-runtime/neoforge-runtime.jar");
+		Path neo = STAGED.resolve(TestFixtures.NEO_CARRIER_JAR);
 		Path forge = STAGED.resolve("forge-runtime/forge-runtime.jar");
 		TestFixtures.requireFiles(Fixture.STAGED,
 				"staged runtime classes/carriers absent", neo, forge);

@@ -47,6 +47,9 @@ classpath = [compile_game, *forge, neo, mixin, kernel / "build/libs/forbric-kern
 for path in [*classpath, merged]:
     if not path.is_file(): raise SystemExit(f'M38 prerequisite absent: {path}')
 root = kernel / 'canary/enchantment-contracts'
+# Without a MinecraftForge carrier only a canary whose own sources name none of it compiles: say so, not javac.
+if not forge and any('net.minecraftforge' in source.read_text(errors='replace') for source in root.rglob('*.java')):
+    raise SystemExit(f'M38 prerequisite absent: no MinecraftForge carrier is staged, and {root} still names net.minecraftforge')
 classes = work / 'classes'; classes.mkdir()
 subprocess.run(['javac', '-proc:none', '--release', '21', '-cp', os.pathsep.join(map(str, classpath)),
                 '-d', str(classes), *map(str, sorted((root / 'src').rglob('*.java')))], check=True)

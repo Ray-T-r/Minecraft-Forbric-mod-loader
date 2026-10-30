@@ -67,7 +67,7 @@ import net.forbric.kernel.TestFixtures.Fixture;
 class MixinFitLivenessCensusStagedTest {
 	private static final Path MERGED = TestFixtures.stagedBase();
 	private static final Path INTEROP = TestFixtures.stagedRoot().resolve("merged-base/forge-runtime-interop.jar");
-	private static final Path NEO_RUNTIME = TestFixtures.stagedRoot().resolve("neoforge-runtime/neoforge-runtime.jar");
+	private static final Path NEO_RUNTIME = TestFixtures.stagedRoot().resolve(TestFixtures.NEO_CARRIER_JAR);
 	private static final Map<String, Path> PACKS = new LinkedHashMap<>();
 	static {
 		String other = System.getenv("FORBRIC_LIVENESS_PACKS");    // "name=dir;name=dir": census those instead, report only
@@ -548,6 +548,7 @@ class MixinFitLivenessCensusStagedTest {
 	}
 
     @Test void theNewRawRowsNameActualNativePredicateAndAbiChangesWithoutInventingEquivalence()throws Exception {
+        TestFixtures.requireForgeCarrier("the census reads MinecraftForge's carrier among its artifacts");
         ClassNode vanillaHud=StagedFabricMixinFixture.game("net/minecraft/client/gui/Hud",true),hud=StagedFabricMixinFixture.game("net/minecraft/client/gui/Hud",false);
         String water="Lnet/minecraft/world/entity/player/Player;isEyeInFluid(Lnet/minecraft/tags/TagKey;)Z";
         MethodNode original=StagedFabricMixinFixture.method(vanillaHud,"extractAirBubbles"),current=StagedFabricMixinFixture.method(hud,"extractAirBubbles");

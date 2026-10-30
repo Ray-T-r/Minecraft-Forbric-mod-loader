@@ -203,12 +203,24 @@ public final class TestFixtures {
 	}
 
 	/**
-	 * The game base under {@link #stagedRoot()}: the jar the game side compiles against and the kernel launches as
-	 * {@code --gameJar}. Today that is the merged base (vanilla + MinecraftForge + NeoForge patches); switching the
-	 * base to the genuine NeoForge jar is this one constant, not the ~265 tests that read it. Relative, for a test
-	 * that resolves it against a root of its own.
+	 * The merged base (vanilla + MinecraftForge + NeoForge patches) under {@link #stagedRoot()}, whatever the base is.
+	 * For reads of what only the merge produces: its {@code .pins} build stamp, the FABRIC and FORGE native-reference
+	 * indexes it embeds under {@code META-INF/forbric/native-reference/}, its merge report. A genuine NeoForge jar has
+	 * none of them, so these reads must not follow {@link #BASE_JAR} when it moves. Relative, like {@link #BASE_JAR}.
 	 */
-	public static final String BASE_JAR = "merged-base/patched-mc-merged-26.2.jar";
+	public static final String MERGED_BASE_JAR = "merged-base/patched-mc-merged-26.2.jar";
+
+	/**
+	 * The game base under {@link #stagedRoot()}: the jar the game side compiles against and the kernel launches as
+	 * {@code --gameJar}. Today that is the merged base, {@link #MERGED_BASE_JAR}; Stage 4 points it at the genuine
+	 * NeoForge jar. That switch is this constant for every read that holds on either base (a class's bytes, a
+	 * hierarchy, a resource vanilla ships), not the ~265 tests that read it. It is not the whole switch: a read of an
+	 * artifact only the merge produces goes through {@link #MERGED_BASE_JAR} instead, and the tests about the merge
+	 * itself (the Merged*-named ones, which read the merge's repairs, conflicts and lost calls through this constant)
+	 * stop meaning anything on the genuine jar and are Stage 4's to delete or rewrite. Relative, for a test that
+	 * resolves it against a root of its own.
+	 */
+	public static final String BASE_JAR = MERGED_BASE_JAR;
 
 	/**
 	 * The genuine NeoForge-patched game, NFRT's {@code gameJarNoRecomp}: what tools/dev.py stages beside the merged base
@@ -228,6 +240,11 @@ public final class TestFixtures {
 	/** {@link #BASE_JAR} under {@link #stagedRoot()}. */
 	public static Path stagedBase() {
 		return stagedRoot().resolve(BASE_JAR);
+	}
+
+	/** {@link #MERGED_BASE_JAR} under {@link #stagedRoot()}. */
+	public static Path mergedBase() {
+		return stagedRoot().resolve(MERGED_BASE_JAR);
 	}
 
 	/** {@link #GENUINE_BASE_JAR} under {@link #stagedRoot()}. */
@@ -259,6 +276,48 @@ public final class TestFixtures {
 	/** Skips (or fails, when {@code forge-carrier} is required) a test that cannot run without MinecraftForge. */
 	public static void requireForgeCarrier(String what) {
 		require(Fixture.FORGE_CARRIER, forgeCarrierStaged(), what + ": " + forgeCarrier());
+	}
+
+	/**
+	 * {@link #requireForgeCarrier} only where the staged base itself links MinecraftForge. The merged base's vanilla
+	 * classes implement MinecraftForge's extension interfaces and call its hooks, which only the carrier declares, so
+	 * on it a NeoForge or Fabric test that defines a game class, walks a hierarchy to a default or follows a call
+	 * cannot see what it is about without the carrier: it reads a hierarchy cut short and fails for a reason that is
+	 * not its own. A base that names no MinecraftForge (the genuine NeoForge jar) needs nothing of the carrier, and the
+	 * test runs there; a plain {@link #requireForgeCarrier} would skip it for good once the carrier is no longer staged.
+	 */
+	public static void requireForgeCarrierWhereTheBaseNamesIt(String what) {
+		if (baseNamesMinecraftForge()) requireForgeCarrier(what + " (the staged base links MinecraftForge's classes)");
+	}
+
+	/** {@link #baseNamesMinecraftForge}'s answer per base path, size and time: it reads one class, but on every call. */
+	private static final java.util.Map<String, Boolean> BASE_NAMES_FORGE = new java.util.concurrent.ConcurrentHashMap<>();
+
+	/**
+	 * Whether {@link #stagedBase()}'s {@code Entity} names any {@code net/minecraftforge/} class: true of the merged
+	 * base (its Entity implements MinecraftForge's entity extension), false of the genuine NeoForge jar, and false when
+	 * there is no base to read, which a test's own {@link Fixture#STAGED} requirement then reports.
+	 */
+	public static boolean baseNamesMinecraftForge() {
+		Path base = stagedBase();
+		if (!Files.isRegularFile(base)) return false;
+		try {
+			String key = base.toAbsolutePath() + ":" + Files.size(base) + ":" + Files.getLastModifiedTime(base);
+			Boolean known = BASE_NAMES_FORGE.get(key);
+			if (known != null) return known;
+			boolean names;
+			try (ZipFile zip = new ZipFile(base.toFile())) {
+				ZipEntry entity = zip.getEntry("net/minecraft/world/entity/Entity.class");
+				if (entity == null) throw new AssertionFailedError("content drift: " + base + " has no Entity class");
+				try (InputStream in = zip.getInputStream(entity)) {
+					names = new String(in.readAllBytes(), java.nio.charset.StandardCharsets.ISO_8859_1).contains("net/minecraftforge/");
+				}
+			}
+			BASE_NAMES_FORGE.put(key, names);
+			return names;
+		} catch (IOException unreadable) {
+			throw new AssertionFailedError("content drift: " + base + " is present but is not a readable jar", unreadable);
+		}
 	}
 
 	/**
@@ -337,7 +396,7 @@ public final class TestFixtures {
     private static final java.util.Map<String,Boolean> NATIVE_INPUT_MATCHES=new java.util.concurrent.ConcurrentHashMap<>();
     public static Path forgeMergeInput() {
         Path staged=stagedRoot().resolve("forge-patched/patched-mc-forge-26.2.jar");
-        Path merged=stagedBase();
+        Path merged=mergedBase();
         Path launcher=minecraftDir().resolve("libraries/net/forbric/patched-mc-forge/26.2-65.0.1/patched-mc-forge-26.2-65.0.1.jar");
         try {
             if(Files.isRegularFile(merged))try(ZipFile jar=new ZipFile(merged.toFile())){

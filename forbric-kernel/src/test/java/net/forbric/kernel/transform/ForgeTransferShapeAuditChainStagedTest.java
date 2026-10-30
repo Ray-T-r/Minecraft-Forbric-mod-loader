@@ -34,6 +34,7 @@ import org.objectweb.asm.tree.MethodInsnNode;
 import org.objectweb.asm.tree.MethodNode;
 import org.objectweb.asm.tree.TypeInsnNode;
 import net.forbric.kernel.ExpectCaught;
+import net.forbric.kernel.TestFixtures;
 
 /**
  * Every class the transfer audit certifies, read from the staged jars and put through the transformers KernelBoot
@@ -133,6 +134,7 @@ class ForgeTransferShapeAuditChainStagedTest {
 	// DataComponentPatch; it abstains there, as the chain's last step, and the audit is about the steps before it.
 	@ExpectCaught("cannot prove a frame repair")
 	@Test void everyAuditedClassIsCertifiedAfterKernelBootsPreMixinChain() throws Exception {
+		TestFixtures.requireForgeCarrier("MinecraftForge's capability and item-handler classes the transfer audit certifies");
 		Map<String, String> refused = new TreeMap<>();
 		TreeSet<String> rewritten = new TreeSet<>();
 		// The merged-base repair proves a dropped delegate against the merged base's native-reference index, as at boot,
@@ -162,6 +164,7 @@ class ForgeTransferShapeAuditChainStagedTest {
 	}
 
 	@Test void aThunkThatForwardsSomewhereElseIsStillRefused() throws Exception {
+		TestFixtures.requireForgeCarrier("MinecraftForge's capability and item-handler classes the transfer audit certifies");
 		// Folding the kernel's own thunks back to the handle they replaced must not make the audit blind to where a
 		// thunk really goes: the same chain output, with the thunk behind FluidStack's isFluidEqual method reference
 		// forwarding to isFluidStackIdentical instead, folds to a different handle and is refused.
@@ -191,6 +194,7 @@ class ForgeTransferShapeAuditChainStagedTest {
 	 * AbstractMethodError. Both must be refused, though each is a pure {@code I.super.m()} to a direct interface.
 	 */
 	@Test void aDelegateTheRepairCannotProveIsRefusedOnTheRealItemStack() throws Exception {
+		TestFixtures.requireForgeCarrier("MinecraftForge's capability and item-handler classes the transfer audit certifies");
 		String name = "net.minecraft.world.item.ItemStack";
 		byte[] merged, defined;
 		try (StagedGameClasses game = StagedGameClasses.open()) {

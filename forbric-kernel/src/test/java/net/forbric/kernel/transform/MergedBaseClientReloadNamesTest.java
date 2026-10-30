@@ -42,7 +42,7 @@ import net.forbric.kernel.TestFixtures.Fixture;
  * class's point is that the listener still runs.
  */
 class MergedBaseClientReloadNamesTest {
-	private static final Path NEO_CARRIER = TestFixtures.stagedRoot().resolve("neoforge-runtime/neoforge-runtime.jar");
+	private static final Path NEO_CARRIER = TestFixtures.stagedRoot().resolve(TestFixtures.NEO_CARRIER_JAR);
 	private static final String ENTRY = "net/neoforged/neoforge/client/event/AddClientReloadListenersEvent.class";
 	private static final String BINARY = "net.neoforged.neoforge.client.event.AddClientReloadListenersEvent";
 	private static final String KERNEL = "net/forbric/kernel/runtime/KernelClientReloadNames";

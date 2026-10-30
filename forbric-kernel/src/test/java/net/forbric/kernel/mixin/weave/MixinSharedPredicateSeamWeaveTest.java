@@ -13,6 +13,7 @@ import org.objectweb.asm.tree.*;
 import net.fabricmc.api.EnvType;
 import net.forbric.api.Ecosystem;
 import net.forbric.kernel.mixin.*;
+import net.forbric.kernel.TestFixtures;
 
 /** Real Mixin execution of the actual API pair and the native-derived explicit-reference helpers.
  * Full native activation/final-token execution is separately covered by the physical fluid probe and scope tests. */
@@ -23,6 +24,7 @@ class MixinSharedPredicateSeamWeaveTest {
  private static final String RAW_HOST="net/minecraft/world/entity/Entity",RAW_SOURCE="net/fabricmc/fabric/mixin/content/registry/fluid/EntityMixin";
  private static Path onJar; private static WeaveHarness.Result on,off;
  @BeforeAll static void weave()throws Exception{
+  TestFixtures.requireForgeCarrierWhereTheBaseNamesIt("Entity's hierarchy, where the shared predicate's default lives");
   Path src=Files.createDirectories(work.resolve("src"));List<Path>files=new ArrayList<>();
   files.add(write(src,"Token.java","package fixture.shared;public final class Token<T>{public final String name;public Token(String name){this.name=name;}public String toString(){return name;}}"));
   files.add(write(src,"Tags.java","package fixture.shared;public class Tags{public static final Token<Object> WATER=new Token<>(\"water\"),A=new Token<>(\"a\"),B=new Token<>(\"b\");}"));

@@ -138,6 +138,7 @@ class ServerLifecycleStandDownTest {
 	 */
 	@Test
 	void theMergedServersPairedLifecycleCallsAreEachScopedWithTheirMinecraftForgeEvent() throws Exception {
+		TestFixtures.requireForgeCarrier("the MinecraftForge lifecycle events each NeoForge call is scoped with");
 		Path root = TestFixtures.stagedRoot();
 		Path base = root.resolve(TestFixtures.BASE_JAR);
 		TestFixtures.requireFile(Fixture.STAGED, base, "staged merged base absent");
@@ -203,7 +204,7 @@ class ServerLifecycleStandDownTest {
 	/** A class from the staged base or a carrier, as the kernel's injector reads hook bodies at boot. */
 	private static byte[] bytes(Path root, String path) {
 		for (Path jar : List.of(root.resolve(TestFixtures.BASE_JAR), root.resolve("forge-runtime/forge-runtime.jar"),
-				root.resolve("merged-base/forge-runtime-interop.jar"), root.resolve("neoforge-runtime/neoforge-runtime.jar"))) {
+				root.resolve("merged-base/forge-runtime-interop.jar"), root.resolve(TestFixtures.NEO_CARRIER_JAR))) {
 			if (!Files.isRegularFile(jar)) continue;
 			try (ZipFile zip = new ZipFile(jar.toFile())) {
 				var entry = zip.getEntry(path);
@@ -264,7 +265,7 @@ class ServerLifecycleStandDownTest {
 
 		static Map<String, byte[]> classes() throws Exception {
 			Path run = TestFixtures.stagedRoot();
-			Path neo = run.resolve("neoforge-runtime/neoforge-runtime.jar");
+			Path neo = run.resolve(TestFixtures.NEO_CARRIER_JAR);
 			Path forge = run.resolve("merged-base/forge-runtime-interop.jar");
 			if (!Files.isRegularFile(forge)) forge = run.resolve("forge-runtime/forge-runtime.jar");
 			TestFixtures.requireFiles(Fixture.STAGED, "the staged carriers are absent", neo, forge);

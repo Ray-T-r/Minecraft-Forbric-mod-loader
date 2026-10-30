@@ -34,9 +34,13 @@ for phase in ('positive','off'):
    # runs there with fabric-api's handler, its "|| isBook" kept); both know no mod and have their own switches: the negative
    # control turns them off too, or a deciding listener still lands without the contracts.
    +(' -Dforbric.carrierDecisions=off -Dforbric.carrierMethodReferences=off' if phase=='off' else ''))
- for key,role in [('MERGED','merged'),('FORGE_RT','forge'),('NEO_RT','neo')]:env[key]=inputs[role]['path']
+ # The canary builder records "forge": null when no MinecraftForge carrier was staged: launch with the NeoForge carrier
+ # alone (launch-kernel-server.sh finds none at the same staged paths) and attest no forge-interop jar.
+ for key,role in [('MERGED','merged'),('FORGE_RT','forge'),('NEO_RT','neo')]:
+  if inputs.get(role) is None:env.pop(key,None)
+  else:env[key]=inputs[role]['path']
  command=['python3',str(kernel/'run/compat/evidence.py'),'run','--source',str(root),'--mods',str(run/'mods'),'--output',str(results/(phase+'.json'))]
- for role,path in [('merged',env['MERGED']),('forge-interop',env['FORGE_RT']),('neo-runtime',env['NEO_RT']),('fabric-api',inputs['fabricApi']['path']),('kernel',str(kernel/'build/libs/forbric-kernel-0.1.0-SNAPSHOT.jar')),('kernel-runtime',str(kernel/'build/libs/forbric-kernel-runtime-0.1.0-SNAPSHOT.jar'))]:command+=['--artifact',role+'='+path]
+ for role,path in [('merged',env['MERGED']),*([('forge-interop',env['FORGE_RT'])] if 'FORGE_RT' in env else []),('neo-runtime',env['NEO_RT']),('fabric-api',inputs['fabricApi']['path']),('kernel',str(kernel/'build/libs/forbric-kernel-0.1.0-SNAPSHOT.jar')),('kernel-runtime',str(kernel/'build/libs/forbric-kernel-runtime-0.1.0-SNAPSHOT.jar'))]:command+=['--artifact',role+'='+path]
  command+=['--','bash',str(kernel/'run/gate-m38-enchantment-contracts.sh'),'--execute']
  (results/(phase+'.log')).unlink(missing_ok=True)  # the lost-port check below must not read an earlier run's log
  with (results/(phase+'-driver.log')).open('w') as output:

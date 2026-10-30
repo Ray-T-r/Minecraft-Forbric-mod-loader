@@ -40,7 +40,7 @@ import org.objectweb.asm.Opcodes;
  */
 @ResourceLock("system-properties")
 class NeoGraphicsBootstrappersTest {
-	private static final Path NEO_RUNTIME = TestFixtures.stagedRoot().resolve("neoforge-runtime/neoforge-runtime.jar")
+	private static final Path NEO_RUNTIME = TestFixtures.stagedRoot().resolve(TestFixtures.NEO_CARRIER_JAR)
 			.toAbsolutePath().normalize();
 
 	@TempDir

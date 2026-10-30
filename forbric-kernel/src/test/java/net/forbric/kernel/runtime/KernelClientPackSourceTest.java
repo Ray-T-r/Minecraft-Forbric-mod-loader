@@ -60,7 +60,7 @@ import org.objectweb.asm.tree.MethodNode;
 class KernelClientPackSourceTest {
 	private static final Path STAGED = TestFixtures.stagedRoot();
 	private static final Path MERGED_BASE = STAGED.resolve(TestFixtures.BASE_JAR);
-	private static final Path NEO_CARRIER = STAGED.resolve("neoforge-runtime/neoforge-runtime.jar");
+	private static final Path NEO_CARRIER = STAGED.resolve(TestFixtures.NEO_CARRIER_JAR);
 	private static final Path FORGE_CARRIER = STAGED.resolve("forge-runtime/forge-runtime.jar");
 	private static final Path RUNTIME = Path.of(System.getProperty("forbric.testRuntimeClasses", "build/classes/java/runtime"));
 	private static final Path MC = TestFixtures.minecraftDir();

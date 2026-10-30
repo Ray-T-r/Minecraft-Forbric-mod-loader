@@ -51,7 +51,7 @@ class FluidInteractionsInjectorTest {
 	private static final Path MERGED = STAGED.resolve(TestFixtures.BASE_JAR);
 	private static final Path NEO_GAME = STAGED.resolve(TestFixtures.GENUINE_BASE_JAR);
 	private static final Path FORGE_GAME = STAGED.resolve("forge-patched/patched-mc-forge-26.2.jar");
-	private static final Path NEO_CARRIER = STAGED.resolve("neoforge-runtime/neoforge-runtime.jar");
+	private static final Path NEO_CARRIER = STAGED.resolve(TestFixtures.NEO_CARRIER_JAR);
 	private static final Path FORGE_CARRIER = STAGED.resolve("forge-runtime/forge-runtime.jar");
 	private static final String LIQUID = "net/minecraft/world/level/block/LiquidBlock";
 	private static final String NEO = FluidInteractionsInjector.NEO_INTERNAL;
