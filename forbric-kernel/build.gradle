@@ -35,7 +35,23 @@ def stagedRoot         = file(project.findProperty('forbric.stagedRoot')
 def stagedMergedBase   = new File(stagedRoot, 'merged-base/patched-mc-merged-26.2.jar')
 def stagedForgeRuntime = new File(stagedRoot, 'forge-runtime/forge-runtime.jar')
 def stagedNeoRuntime   = new File(stagedRoot, 'neoforge-runtime/neoforge-runtime.jar')
-def stagedGameJars = [stagedMergedBase, stagedForgeRuntime, stagedNeoRuntime].findAll { it.isFile() }
+// The MinecraftForge carrier is optional. A staged root is complete with the base (the merged one, or the genuine
+// NeoForge jar put in its place) and the NeoForge carrier; the Forge carrier is a third jar when it is there.
+//
+// -Pforbric.hideForgeCarrier (CI profile ci-prepared-noforge) makes the build and its tests behave as if it were
+// not staged, on a machine where it is: the carrier is left out of stagedGameJars and of every classpath a test
+// runs with, and the tests get a root that mirrors the real one without forge-runtime/ or the merge's interop copy
+// (maskForgeCarrier, below). The one place it cannot reach is javac: today's game side still names MinecraftForge
+// types (74 of its 159 sources), so while it does the hidden carrier stays on the runtime set's COMPILE classpath
+// (gameSideCompileJars), the jar built that way is the same jar, and nothing that runs sees the carrier. What then
+// skips is what needs MinecraftForge and says so; what fails is a hard Forge dependency nobody declared.
+def hideForgeCarrier = project.hasProperty('forbric.hideForgeCarrier') && project.property('forbric.hideForgeCarrier') != 'false'
+def stagedGameJars = (hideForgeCarrier ? [stagedMergedBase, stagedNeoRuntime] : [stagedMergedBase, stagedForgeRuntime, stagedNeoRuntime]).findAll { it.isFile() }
+def stagedGameComplete = stagedMergedBase.isFile() && stagedNeoRuntime.isFile()
+def forgeCarrierCompiled = stagedForgeRuntime.isFile()
+def gameSideCompileJars = stagedGameJars + (hideForgeCarrier && forgeCarrierCompiled ? [stagedForgeRuntime] : [])
+// What a test reads as its staged root: the real one, or the Forge-less mirror of it.
+def testStagedRoot = hideForgeCarrier ? layout.buildDirectory.dir("staged-noforge/run").get().asFile : stagedRoot
 
 // Compile the transfer bridge against the exact API staged for the compatibility pack. These modules remain
 // supplied by the installed Fabric API mod; none is bundled in either kernel jar.
@@ -179,13 +195,14 @@ sourceSets {
 	// the build script to run, and `compileRuntimeJava` / `test` skip it so M0 (boot-side only) still builds.
 	runtime {
 		java { srcDir 'src/runtime/java' }
-		compileClasspath += sourceSets.main.output + files(stagedGameJars) + files(stagedMcLibraries) + transferModuleFiles + files(stagedRebornEnergy)
+		compileClasspath += sourceSets.main.output + files(gameSideCompileJars) + files(stagedMcLibraries) + transferModuleFiles + files(stagedRebornEnergy)
 		runtimeClasspath += sourceSets.main.output + files(stagedGameJars) + files(stagedMcLibraries) + transferModuleFiles + files(stagedRebornEnergy)
 	}
 	transferTest {
 		java { srcDir 'src/transferTest/java' }
 		compileClasspath += sourceSets.runtime.output + sourceSets.runtime.compileClasspath
-		runtimeClasspath += sourceSets.runtime.output + sourceSets.runtime.compileClasspath + files(stagedTransferTestLibraries)
+		// Without a carrier -Pforbric.hideForgeCarrier hides: the runtime set compiles against it, these engines must not run with it.
+		runtimeClasspath += sourceSets.runtime.output + sourceSets.runtime.compileClasspath.filter { !(hideForgeCarrier && it == stagedForgeRuntime) } + files(stagedTransferTestLibraries)
 	}
 	// A stand-in for Mod Menu's API (com.terraformersmc.modmenu.api): the interface every Fabric mod with a config
 	// screen implements, and the only place a Fabric mod ever says it has one. Compiled against the game side, and
@@ -195,7 +212,7 @@ sourceSets {
 	// bytes only after every owned jar has missed, so a real Mod Menu always wins.
 	modMenuApi {
 		java { srcDir 'src/modmenuApi/java' }
-		compileClasspath += sourceSets.runtime.output + sourceSets.main.output + files(stagedGameJars) + files(stagedMcLibraries)
+		compileClasspath += sourceSets.runtime.output + sourceSets.main.output + files(gameSideCompileJars) + files(stagedMcLibraries)
 	}
 	// The kernel's own "modmenu" entrypoint (KernelModMenuPlugin): game-side code that IMPLEMENTS Mod Menu's API, so it
 	// compiles against the stand-in above and links at run time against whichever ModMenuApi the game loader defines --
@@ -203,7 +220,7 @@ sourceSets {
 	// Shipped as ordinary classes in the game-side jar: they are net.forbric names, and nothing of Mod Menu's.
 	modMenuPlugin {
 		java { srcDir 'src/modmenuPlugin/java' }
-		compileClasspath += sourceSets.modMenuApi.output + sourceSets.runtime.output + sourceSets.main.output + files(stagedGameJars) + files(stagedMcLibraries)
+		compileClasspath += sourceSets.modMenuApi.output + sourceSets.runtime.output + sourceSets.main.output + files(gameSideCompileJars) + files(stagedMcLibraries)
 	}
 }
 
@@ -294,8 +311,9 @@ tasks.named('compileRuntimeJava') {
 	}
 	// Here rather than in extractTransferApis: with no jar that task has no source, and Gradle skips it unrun.
 	doFirst {
-		if (stagedGameJars.size() != 3) throw new GradleException("Incomplete staged game inputs: "
-				+ stagedGameJars.size() + "/3 under ${stagedRoot}. Run prepareDev before building the game side.")
+		if (!stagedGameComplete) throw new GradleException("Incomplete staged game inputs: "
+				+ stagedGameJars*.name + " under ${stagedRoot}, which needs at least the base and the NeoForge carrier. "
+				+ "Run prepareDev before building the game side.")
 		if (!stagedFabricApi.isFile()) throw new GradleException("The kernel game side includes its transfer " +
 				"component and compiles it against Fabric API's transfer modules, but ${stagedFabricApi} does not " +
 				"exist. Pass -Pforbric.fabricApi=<a fabric-api jar for 26.2> (the compatibility pack's is the default).")
@@ -325,6 +343,47 @@ tasks.named('compileModMenuApiJava') {
 }
 tasks.named('compileModMenuPluginJava') {
 	onlyIf { !stagedGameJars.isEmpty() }
+}
+
+// The staged root as a machine without the MinecraftForge carrier has it, for -Pforbric.hideForgeCarrier: a
+// directory of symbolic links to every entry of the real root except forge-runtime/, with merged-base/ rebuilt the
+// same way without the merge's forge-runtime-interop.jar. Links, not copies: the base alone is ~90 MB, and a link
+// cannot drift from the file it names. Rebuilt on every hidden run, and only links are ever removed (Files.walk
+// does not follow them, and deleting a link never touches its target), so the real root is never written.
+def maskForgeCarrier = tasks.register('maskForgeCarrier') {
+	description = 'Builds the Forge-less mirror of the staged root that -Pforbric.hideForgeCarrier hands the tests.'
+	onlyIf { hideForgeCarrier }
+	outputs.upToDateWhen { false }
+	doLast {
+		def nio = java.nio.file.Files
+		def mask = testStagedRoot.toPath()
+		if (nio.exists(mask, java.nio.file.LinkOption.NOFOLLOW_LINKS)) {
+			nio.walk(mask).withCloseable { walk -> walk.sorted(Comparator.reverseOrder()).toList() }.each { nio.delete(it) }
+		}
+		if (!stagedRoot.isDirectory()) return
+		def link = { java.nio.file.Path at, java.nio.file.Path target ->
+			try {
+				nio.createSymbolicLink(at, target.toAbsolutePath())
+			} catch (IOException | UnsupportedOperationException refused) {
+				throw new GradleException("-Pforbric.hideForgeCarrier mirrors the staged root with symbolic links, and this " +
+						"file system refused one (${at} -> ${target}): ${refused}", refused)
+			}
+		}
+		nio.createDirectories(mask)
+		nio.list(stagedRoot.toPath()).withCloseable { it.toList() }.each { entry ->
+			def name = entry.fileName.toString()
+			if (name == 'forge-runtime') return
+			if (name == 'merged-base' && nio.isDirectory(entry)) {
+				def merged = nio.createDirectories(mask.resolve(name))
+				nio.list(entry).withCloseable { it.toList() }.each { file ->
+					if (file.fileName.toString() != 'forge-runtime-interop.jar') link(merged.resolve(file.fileName.toString()), file)
+				}
+			} else {
+				link(mask.resolve(name), entry)
+			}
+		}
+		logger.lifecycle("[forbric] -Pforbric.hideForgeCarrier: tests read ${mask}, the staged root without its MinecraftForge carrier")
+	}
 }
 
 test {
@@ -431,8 +490,15 @@ test {
 	// The bytecode tests find the staged jars themselves, through FORBRIC_OLD, so hand them the root this build
 	// compiled against. -Pforbric.stagedRoot used to move the compile and the declared inputs and leave the tests
 	// reading another base, the same divergence a release capture now refuses (evidence.py stagedBuildInputs).
-	environment 'FORBRIC_OLD', stagedRoot.parentFile.absolutePath
-	systemProperty 'forbric.stagedRoot', stagedRoot.absolutePath
+	//
+	// Under -Pforbric.hideForgeCarrier that root is maskForgeCarrier's mirror, so a test building any path from it
+	// finds no MinecraftForge carrier, the way it would on a root that never had one. The inputs above stay the real
+	// files; the flag itself is an input, so switching it re-runs the suite instead of keeping the other verdict.
+	environment 'FORBRIC_OLD', testStagedRoot.parentFile.absolutePath
+	systemProperty 'forbric.stagedRoot', testStagedRoot.absolutePath
+	systemProperty 'forbric.hideForgeCarrier', String.valueOf(hideForgeCarrier)
+	inputs.property('hideForgeCarrier', hideForgeCarrier)
+	if (hideForgeCarrier) dependsOn maskForgeCarrier
 	// The same for Minecraft's own jar and libraries (TestFixtures.minecraftDir): the directory the game side compiled
 	// against, so a prepared .dev/minecraft or -Pforbric.mcLibraries reaches the tests instead of a platform default.
 	environment 'MC_DIR', mcLibraries.parentFile.absolutePath
@@ -454,16 +520,16 @@ test {
 // The engine tests need the whole game side. Without staged game jars they are skipped and say so, except in an
 // integration run, where -Pforbric.requireTransfer=true turns that skip into a failure.
 def transferSuiteRuns = { String task ->
-	if (stagedGameJars.size() == 3 || requireTransfer) return true
-	logger.lifecycle("${task}: SKIPPED — staged game jars absent (${stagedGameJars.size()}/3 under ${stagedRoot})")
+	if (stagedGameComplete || requireTransfer) return true
+	logger.lifecycle("${task}: SKIPPED — staged game jars absent (${stagedGameJars*.name} under ${stagedRoot})")
 	return false
 }
 tasks.named('compileTransferTestJava') {
 	onlyIf { transferSuiteRuns('compileTransferTestJava') }
 	// Thrown from an action, not from onlyIf, where Gradle would bury the message under "could not evaluate spec".
 	doFirst {
-		if (stagedGameJars.size() != 3) throw new GradleException("The staged game jars are absent (" +
-				"${stagedGameJars.size()}/3 under ${stagedRoot}), and -Pforbric.requireTransfer=true forbids skipping " +
+		if (!stagedGameComplete) throw new GradleException("The staged game jars are absent (" +
+				"${stagedGameJars*.name} under ${stagedRoot}), and -Pforbric.requireTransfer=true forbids skipping " +
 				"the transfer engine tests")
 	}
 }
@@ -547,8 +613,10 @@ tasks.register('runtimeJar', Jar) {
 		if (standIn) throw new GradleException("forbric-kernel-runtime.jar was built without its Mod Menu API stand-in: ${standIn}")
 		if (!entries.contains('net/forbric/kernel/runtime/modmenu/KernelModMenuPlugin.class'))
 			throw new GradleException("forbric-kernel-runtime.jar was built without the kernel's Mod Menu entrypoint (KernelModMenuPlugin)")
-		def missing = ['BlockTransferBridge', 'TransferIssues', 'PairedTransactions', 'RebornEnergyBridge',
-				'RebornEnergyAdapters', 'ForgeEnergyAdapters', 'EnergyUnits']
+		// ForgeEnergyAdapters adapts MinecraftForge's energy capability, so it is only owed by a game side that was
+		// compiled against the MinecraftForge carrier; one built on the base and the NeoForge carrier alone has none.
+		def missing = (['BlockTransferBridge', 'TransferIssues', 'PairedTransactions', 'RebornEnergyBridge',
+				'RebornEnergyAdapters', 'EnergyUnits'] + (forgeCarrierCompiled ? ['ForgeEnergyAdapters'] : []))
 				.collect { "net/forbric/kernel/runtime/transfer/${it}.class".toString() }.findAll { !entries.contains(it) }
 		if (missing) throw new GradleException("forbric-kernel-runtime.jar was built without its transfer component: ${missing}")
 		// Team Reborn Energy is the player's mod, compiled against and never shipped.
@@ -663,7 +731,7 @@ tasks.register('integrationTest') {
 	description = 'Run unit, transfer and tool tests strictly: missing game inputs or skipped assertions fail.'
 	dependsOn 'test', 'transferTest', 'toolTest', 'linkToolTest'
 	doFirst {
-		if (stagedGameJars.size() != 3) throw new GradleException('integrationTest needs prepareDev first')
+		if (!stagedGameComplete) throw new GradleException('integrationTest needs prepareDev first')
 	}
 	doLast {
 		// Test callbacks are not invoked for NO-SOURCE tasks. Require concrete, nonempty results from both suites.
@@ -721,7 +789,7 @@ tasks.register('writeDevClasspath') {
 		workingDir projectDir.parentFile
 		standardInput = System.in
 		doFirst {
-			if (stagedGameJars.size() != 3) throw new GradleException('Run prepareDev first, then runClient/runServer in a second invocation')
+			if (!stagedGameComplete) throw new GradleException('Run prepareDev first, then runClient/runServer in a second invocation')
 			def arguments = [devPython, devDriver, side.toLowerCase(), '--no-build',
 					'--java', System.getProperty('java.home'), '--staged', stagedRoot.parentFile.absolutePath,
 					'--mc-dir', mcLibraries.parentFile.absolutePath]
