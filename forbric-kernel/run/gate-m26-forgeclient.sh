@@ -2,14 +2,20 @@
 # M26 — traditional Forge's client event buses must receive the game's real registration events.
 # NeoForge half (forbricneolive rides along): the same registration events in NeoForge's shape, read back from the
 #   same consumer tables, plus its block's id. These outlive the MinecraftForge canary, and no kernel switch turns them
-#   red, which is itself the measurement (2026-10-30): M26_EXTRA_JVM='-Dforbric.blockStateIdRefill=off' fails exactly
-#   the two MinecraftForge checks named below and leaves the NeoForge block's id alone, because a NeoForge block is
-#   registered in the first wave and the map's first fill covers it -- the late wave the refill exists for is
-#   MinecraftForge's today and a Fabric client entrypoint's after it, so that control cannot move to this canary; and
-#   with '-Dforbric.forgeClientInit=off' Minecraft.<init> calls NeoForge's own ClientHooks.initClientHooks directly, so
-#   all eleven NeoForge registrations made before the world still arrive (the MinecraftForge canary's client then
-#   never reaches its world, so the in-world read-backs cannot be judged in that run). What the NeoForge half proves is
+#   red, which is itself the measurement (2026-10-30): M26_EXTRA_JVM='-Dforbric.blockStateIdRefill=off' leaves the
+#   NeoForge block's id alone, because a NeoForge block is registered in the first wave and the map's first fill covers
+#   it; and with '-Dforbric.forgeClientInit=off' Minecraft.<init> calls NeoForge's own ClientHooks.initClientHooks
+#   directly, so all eleven NeoForge registrations made before the world still arrive (the MinecraftForge canary's
+#   client then never reaches its world, so the in-world read-backs cannot be judged in that run). So the twelve
+#   NeoForge registrations and their read-backs are POSITIVE-ONLY checks with no red control: what drives them is the
+#   canary's own listeners on NeoForge's own hooks, not any kernel behaviour a switch can take away. What they prove is
 #   that each registration reaches its table on the merged base, through whichever route the base takes.
+# Fabric half (forbricfabriclive rides along, with -Dforbricfabriclive.lateBlock=true): the refill's own proof, moved
+#   off MinecraftForge. The late registration wave the blockstate→id refill exists for is MinecraftForge's today and a
+#   Fabric client entrypoint's after it, so the Fabric canary registers a block from onInitializeClient and reads its id
+#   back in the world. RED with M26_EXTRA_JVM='-Dforbric.blockStateIdRefill=off': the late block's id is 0 (AIR) --
+#   measured with the MinecraftForge pair beside it, the two Forge checks and the two Fabric ones below go red, and
+#   that is the demonstration that survives Stage 4 deleting the MinecraftForge canary.
 # RED controls after A3/A6/A7: M26_EXTRA_JVM='-Dforbric.forgeClientInit=off' loses client registrations;
 #   M26_EXTRA_JVM='-Dforbric.clientResourcePreload=off' — the client resource manager is empty at mod setup again;
 #   M26_EXTRA_JVM='-Dforbric.forgeOverlayLayers=off' — a MinecraftForge mod's HUD overlays never draw (3 red);
@@ -32,9 +38,13 @@ LOG="$BUILD/gate-m26-forgeclient.log"
 RUNDIR="$KERNEL/run/client-forge-registration"
 WORLD="ForgeClientProbe"
 FORGE="$RUN_OLD/forge-runtime/forbriclive.jar"
+FABRIC="$KERNEL/run/canary/forbricfabriclive.jar"
 mkdir -p "$BUILD" "$RUNDIR/quickPlay" "$RUNDIR/empty-mods"
 [ -f "$FORGE" ] || { echo "[kernel] FATAL: missing $FORGE; run build-testmods.sh" >&2; exit 3; }
 [ -f "$NEOLIVE" ] || { echo "[kernel] FATAL: missing $NEOLIVE; run build-testmods.sh or run/build-neolive-canary.sh" >&2; exit 3; }
+# The Fabric canary is built from this tree every run, as gate-m4/m18/m30 build it.
+"$KERNEL/run/build-fabric-canary.sh" > "$BUILD/gate-m26-fabric-canary.log" 2>&1
+[ -f "$FABRIC" ] || { echo "[kernel] FATAL: the Fabric canary did not build (see $BUILD/gate-m26-fabric-canary.log)" >&2; exit 3; }
 
 step "generate a zero-mod save once, then join it with the Forge client canary"
 reap_stale_server "$RUNDIR"
@@ -75,6 +85,8 @@ with zipfile.ZipFile(source) as original, zipfile.ZipFile(target, 'w') as staged
         if not entry.filename.startswith('data/'):
             staged.writestr(entry, original.read(entry))
 PY_NEO_STAGE
+# The Fabric canary as built: it carries no data/ at all, so nothing in it can give the save a datapack.
+cp "$FABRIC" "$RUNDIR/mods/forbricfabriclive.jar" || exit 3
 # Skip the first-run accessibility screen so quick-play can reach the saved world.
 # M26_OPTIONS_BEGIN — the default canary key is F7; this persisted F6 must survive late registration.
 python3 - "${MERGED:-$RUN_OLD/merged-base/patched-mc-merged-26.2.jar}" "$RUNDIR/options.txt" <<'PY_OPTIONS' || exit 3
@@ -91,7 +103,7 @@ PY_OPTIONS
 # The NeoForge canary's key defaults to F8; this persisted F9 must survive its registration the same way.
 printf 'key_key.forbricneolive.probe:key.keyboard.f9\n' >> "$RUNDIR/options.txt"
 : > "$LOG"
-FORBRIC_JVM="-Dforbric.clientSmoke=true -Dforbric.clientSmokeWorld=$WORLD -Dforbric.clientSmokeReadyTicks=60 -Dforbric.clientSmokeDisconnectTicks=160 ${M26_EXTRA_JVM:-}" \
+FORBRIC_JVM="-Dforbric.clientSmoke=true -Dforbric.clientSmokeWorld=$WORLD -Dforbric.clientSmokeReadyTicks=60 -Dforbric.clientSmokeDisconnectTicks=160 -Dforbricfabriclive.lateBlock=true ${M26_EXTRA_JVM:-}" \
 RUNDIR="$RUNDIR" "$KERNEL/run/launch-kernel-client.sh" \
   --quickPlayPath "$RUNDIR/quickPlay/log.json" --quickPlaySingleplayer "$WORLD" > "$LOG" 2>&1 &
 CLIENT_PID=$!
@@ -144,6 +156,21 @@ check "NeoForge: the canary's own block has a real id" \
   'ForbricNeoLive/BLOCKID\] forbricneolive:probe_block id=[1-9][0-9]* roundTrip=Block\{forbricneolive:probe_block\}' "$LOG"
 check "NeoForge: its mixin config plugin saw the client" 'ForbricNeoLive/PLUGIN\] prepareConfigs saw dist=CLIENT' "$LOG"
 # M26_NEO_ASSERTIONS_END
+
+# M26_FABRIC_ASSERTIONS_BEGIN — the blockstate→id refill's proof on the family that registers late after MinecraftForge.
+step "a block a Fabric client entrypoint registers gets a real blockstate id (must PASS)"
+# The kernel fills the blockstate→id map when its registration window closes, before Minecraft.<init>; Fabric's client
+# entrypoints run inside Minecraft.<init> with the registries reopened, so their blocks are a second wave the map has
+# to be rebuilt for. A map that stops at "already non-empty" answers 0 -- AIR -- for every one of them.
+check "Fabric: the canary registered its block from onInitializeClient" \
+  'ForbricFabricLive/LATEBLOCK\] registered forbricfabriclive:late_block from onInitializeClient at raw id [1-9][0-9]*' "$LOG"
+check "Fabric: the blockstate→id map is rebuilt after the client entrypoints' wave" \
+  '\[Forbric/Lifecycle\] rebuilt NeoForge blockstate→id map \([1-9][0-9]* states, was [1-9][0-9]*\)' "$LOG"
+# The id itself, read in the world on the render thread: 0 is AIR and is what a missing entry answers.
+check "Fabric: the late block has a real id, read back in the world" \
+  'ForbricFabricLive/LATEBLOCK\] forbricfabriclive:late_block id=[1-9][0-9]* roundTrip=Block\{forbricfabriclive:late_block\}' "$LOG"
+check_absent "Fabric: the late-block probe never failed" 'ForbricFabricLive/LATEBLOCK\] (registration|read-back) FAILED' "$LOG"
+# M26_FABRIC_ASSERTIONS_END
 
 # M26_ASSERTIONS_BEGIN — exercised against synthetic logs without launching the game.
 step "the canary subscribed, entered its save and completed real consumer observations"

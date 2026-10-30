@@ -158,8 +158,34 @@ public final class ModFileScanner {
 	 * @param gameLoader the loader holding the NeoForge SPI
 	 */
 	public static Object scan(Path jar, ClassLoader gameLoader) {
-		if (!neoIndexEnabled()) return null;
+		if (!neoIndexEnabled()) {
+			reportNeoIndexOff();
+			return null;
+		}
 		return materialise(jar, gameLoader, GAME_SIDE, "NeoForge");
+	}
+
+	/** Whether {@link #reportNeoIndexOff} has spoken yet: once per run, however many jars are asked for. */
+	private static final java.util.concurrent.atomic.AtomicBoolean NEO_INDEX_OFF_REPORTED =
+			new java.util.concurrent.atomic.AtomicBoolean();
+
+	/**
+	 * The one line that says the NeoForge index is empty BECAUSE it was switched off. Without it the switch was
+	 * silent: every NeoForge mod found an empty index, and the only lines in the log were the seeded list's per-jar
+	 * "could not index" warnings, which name a failed scan rather than the switch. MinecraftForge's twin names its
+	 * switch in its own {@code [Forbric/Seed]} line (PassiveSeeder); this is that line for the state it describes.
+	 */
+	private static void reportNeoIndexOff() {
+		if (!NEO_INDEX_OFF_REPORTED.compareAndSet(false, true)) return;
+		ForbricLog.warn("[Forbric/Seed] NeoForge scan index DISABLED (-D%s=off): ModList.getAllScanData() and the "
+				+ "seeded LoadingModList answer with EMPTY indexes, so a NeoForge mod that finds its own members "
+				+ "through them (JEI's @JeiPlugin, Jade's providers, RollingGate's rule containers) finds nothing",
+				NEO_INDEX_PROPERTY);
+	}
+
+	/** Test seam: let the next switched-off scan speak again. */
+	static void forgetNeoIndexOffReport() {
+		NEO_INDEX_OFF_REPORTED.set(false);
 	}
 
 	/**
@@ -260,7 +286,7 @@ public final class ModFileScanner {
 	 *
 	 * <p>{@code -Dforbric.seededScanData.realPath=off} keys on the normalised absolute path alone, as before.
 	 */
-	static Path cacheKey(Path jar) {
+	public static Path cacheKey(Path jar) {
 		Path spelled = jar.toAbsolutePath().normalize();
 		if ("off".equalsIgnoreCase(System.getProperty(REAL_PATH_KEY_PROPERTY, "on"))) return spelled;
 		try {

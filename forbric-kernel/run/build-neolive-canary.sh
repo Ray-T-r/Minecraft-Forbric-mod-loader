@@ -12,6 +12,12 @@
 #
 # Same compile classpath as the stage build: the NeoForge carrier and NeoForge's own patched game (the GENUINE base,
 # not the merged one — a NeoForge mod is built against what NeoForge ships), plus Mixin and ASM for the config plugin.
+# Mixin and ASM come from where dev.py's stage_canaries takes them, the kernel's own boot classpath
+# (printBootClasspath, through lib.sh's kernel_classpath): the versions the kernel itself runs, chosen by Gradle, on
+# any machine that can build the kernel. Picking the "newest" jar out of Gradle's cache by name did neither — a
+# lexicographic sort puts asm 9.10 before 9.7, and a fresh machine's cache may hold nothing for that path at all.
+# MC_DIR defaults as every other canary builder's does (build-fabric-canary.sh, build-attribution-canaries.sh, the
+# launchers); point it at a prepared tree (tools/dev.py's .dev/minecraft, a stage's minecraft/) anywhere else.
 set -uo pipefail
 . "$(cd "$(dirname "$0")" && pwd)/lib.sh"
 
@@ -22,26 +28,33 @@ NEO_RT="$OLD/run/neoforge-runtime/neoforge-runtime.jar"
 NEO_MC="$OLD/run/neoforge-patched/patched-mc-neoforge-26.2.jar"
 MC_DIR="${MC_DIR:-$HOME/Library/Application Support/minecraft}"
 VLIBS="$(find "$MC_DIR/libraries" -name '*.jar' 2>/dev/null | paste -sd: -)"
-GRADLE_JARS="$HOME/.gradle/caches/modules-2/files-2.1"
 
 step "prerequisites"
 for f in "$NEO_RT" "$NEO_MC" "$SRC/META-INF/neoforge.mods.toml"; do
   [ -f "$f" ] || { echo "[kernel] FAIL missing: $f"; exit 1; }
 done
-# Mixin and ASM are not among a launcher's libraries for 26.2; the kernel's own build resolved them into Gradle's cache.
-newest() { find "$@" -name '*.jar' ! -name '*sources*' 2>/dev/null | sort | tail -1; }
-MIXIN="$(newest "$MC_DIR/libraries/net/fabricmc/sponge-mixin")"
-[ -n "$MIXIN" ] || MIXIN="$(newest "$GRADLE_JARS/net.fabricmc/sponge-mixin")"
-ASM="$(newest "$GRADLE_JARS/org.ow2.asm/asm")"
-ASM_TREE="$(newest "$GRADLE_JARS/org.ow2.asm/asm-tree")"
-for f in "$MIXIN" "$ASM" "$ASM_TREE"; do
-  [ -n "$f" ] || { echo "[kernel] FAIL sponge-mixin / asm / asm-tree jar not found"; exit 1; }
+[ -n "$VLIBS" ] || { echo "[kernel] FAIL no Minecraft libraries under $MC_DIR/libraries — set MC_DIR"; exit 1; }
+# Mixin and ASM are not among a launcher's libraries for 26.2. Exactly the jars dev.py keeps: every sponge-mixin-* and
+# asm-* entry of the kernel's boot classpath, and it refuses to go on without sponge-mixin and asm-tree.
+kernel_classpath
+PLUGIN_CP=""
+IFS=: read -r -a boot_entries <<< "$KERNEL_CP"
+for entry in "${boot_entries[@]}"; do
+  name="${entry##*/}"
+  if [[ "$name" == sponge-mixin-*.jar || "$name" == asm-*.jar ]] && [ -f "$entry" ]; then
+    PLUGIN_CP="${PLUGIN_CP:+$PLUGIN_CP:}$entry"
+  fi
 done
+for prefix in sponge-mixin- asm-tree-; do
+  [[ ":$PLUGIN_CP" == *"/$prefix"* ]] \
+    || { echo "[kernel] FAIL the kernel's boot classpath has no ${prefix}*.jar for the canary's mixin plugin"; exit 1; }
+done
+echo "[kernel] mixin plugin classpath from the kernel's boot classpath: $(printf '%s' "$PLUGIN_CP" | tr ':' '\n' | xargs -n1 basename | paste -sd' ' -)"
 
 step "compile and package"
 classes="$WORK/classes"
 mkdir -p "$classes/META-INF"
-javac -nowarn -proc:none --release 21 -cp "$NEO_RT:$NEO_MC:$MIXIN:$ASM:$ASM_TREE:$VLIBS" -d "$classes" \
+javac -nowarn -proc:none --release 21 -cp "$NEO_RT:$NEO_MC:$PLUGIN_CP:$VLIBS" -d "$classes" \
       $(find "$SRC" -name '*.java') 2>&1 | grep -v '^Note:' || true
 [ -f "$classes/forbric/live/neoforge/ForbricNeoLiveMod.class" ] || { echo "[kernel] FAIL the canary did not compile"; exit 1; }
 cp "$SRC/META-INF/neoforge.mods.toml" "$classes/META-INF/"

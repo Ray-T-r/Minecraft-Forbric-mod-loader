@@ -1274,7 +1274,9 @@ public final class PassiveSeeder {
 		return new LazyScanFuture(() -> {
 			if (indexed) {
 				Object real = null;
-				String why = "the scan produced no index";
+				// The switch, when it is the reason, rather than a scan that failed: ModFileScanner names it once too.
+				String why = ModFileScanner.neoIndexEnabled() ? "the scan produced no index"
+						: "-D" + ModFileScanner.NEO_INDEX_PROPERTY + "=off";
 				try {
 					real = ModFileScanner.scanShared(jar, gameLoader);
 				} catch (Throwable t) {

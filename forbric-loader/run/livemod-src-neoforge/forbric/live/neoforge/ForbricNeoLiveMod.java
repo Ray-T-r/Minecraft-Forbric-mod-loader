@@ -211,13 +211,32 @@ public class ForbricNeoLiveMod {
 		return SERVER_SPEC.isLoaded() ? GREETING.get() : "<unloaded>";
 	}
 
+	/**
+	 * gate-m16's live negative control for NeoForge's SERVER-config sync ({@code -Dforbricneolive.clientServerConfig=off}).
+	 *
+	 * <p>On a CLIENT only, the canary does not register its SERVER config, so the server's {@code ConfigFilePayload}
+	 * for {@code forbricneolive-server.toml} arrives and finds nothing to land in: {@code ConfigSync.receiveSyncedConfig}
+	 * looks the file name up in {@code ModConfigs.getFileMap()} and applies the bytes only if a config is there. The
+	 * client then reads {@code <unloaded>} in the world, and everything else -- the server, its own copy of the config,
+	 * the payload, the join -- stays up. No kernel switch can do this: the kernel's whole part in the sync is wiring
+	 * NeoForge's own subscribers, and unwiring the configuration task crashes the server at login instead (gate-m16's
+	 * header). A dedicated server ignores the property, so one flag set for both ends affects only the receiver.
+	 */
+	static final String CLIENT_SERVER_CONFIG_SWITCH = "forbricneolive.clientServerConfig";
+
 	private static void registerSidedConfigs() {
 		try {
 			net.neoforged.fml.ModContainer container = net.neoforged.fml.ModLoadingContext.get().getActiveContainer();
-			container.registerConfig(net.neoforged.fml.config.ModConfig.Type.SERVER, SERVER_SPEC);
+			boolean client = net.neoforged.fml.loading.FMLEnvironment.getDist() == net.neoforged.api.distmarker.Dist.CLIENT;
+			if (client && "off".equalsIgnoreCase(System.getProperty(CLIENT_SERVER_CONFIG_SWITCH, "on"))) {
+				System.out.println("[ForbricNeoLive/CFG] SERVER config NOT registered on this client (-D"
+						+ CLIENT_SERVER_CONFIG_SWITCH + "=off): a synced forbricneolive-server.toml has nothing to land in");
+			} else {
+				container.registerConfig(net.neoforged.fml.config.ModConfig.Type.SERVER, SERVER_SPEC);
+				System.out.println("[ForbricNeoLive/CFG] registered SERVER config forbricneolive-server.toml (greeting default 'default')");
+			}
 			container.registerConfig(net.neoforged.fml.config.ModConfig.Type.COMMON, COMMON_SPEC);
 			container.registerConfig(net.neoforged.fml.config.ModConfig.Type.CLIENT, CLIENT_SPEC);
-			System.out.println("[ForbricNeoLive/CFG] registered SERVER config forbricneolive-server.toml (greeting default 'default')");
 			System.out.println("[ForbricNeoLive/CFG] registered COMMON config forbricneolive-common.toml (probe default 11)");
 			System.out.println("[ForbricNeoLive/CFG] registered CLIENT config forbricneolive-client.toml (probe default 17)");
 		} catch (Throwable t) {
@@ -295,10 +314,13 @@ public class ForbricNeoLiveMod {
 	 * NeoForge's documented way to register a JSON data loader: {@code AddServerReloadListenersEvent} on the game
 	 * bus, then a listener over {@code data/<ns>/forbricneolive_probe/*.json}.
 	 *
-	 * <p>On the merged base this event is not posted by the game: {@code ReloadableServerResources} hands its reload
-	 * to the kernel ({@code KernelForgeReload}), which asks NeoForge's {@code onResourceReload} on the way. So this
-	 * is the probe that says that route still reaches a NeoForge mod — and on the genuine base, where NeoForge
-	 * posts it from its own patch, it is the probe that says nothing was lost when the route went away.
+	 * <p>On the merged base the game's own NeoForge hook posts it. The merged {@code ReloadableServerResources} calls
+	 * NeoForge's {@code EventHooks.onResourceReload}, as the genuine base does; the kernel only redirects that one
+	 * call to {@code KernelForgeReload}, which calls NeoForge's hook first and then MinecraftForge's. With that
+	 * routing off ({@code -Dforbric.forgeReloadListeners=off}) the merged class calls NeoForge's hook directly and
+	 * this probe stays green, which gate-m21 records: it rests on NeoForge's hook, not on the MinecraftForge
+	 * bridge, and no kernel switch takes it out. So it is the probe that says a NeoForge mod's data loader still
+	 * runs when the MinecraftForge half of that route goes away.
 	 */
 	private static void registerReloadProbe() {
 		NeoForge.EVENT_BUS.addListener(net.neoforged.neoforge.event.AddServerReloadListenersEvent.class, event -> {
@@ -348,18 +370,26 @@ public class ForbricNeoLiveMod {
 	 * object for each list, so each is asked separately. And the SHAPE: NeoForge stores an enum member as
 	 * {@code ModAnnotation.EnumHolder}, MinecraftForge as {@code ModFileScanData.EnumData}, and a bare String would
 	 * also print "SECOND"; the constant is read through the holder's own accessor so only the right shape passes.
+	 *
+	 * <p>And how many times the index lists THIS jar. It declares two mods (this one and the client-only
+	 * {@code forbricneoclientonly}), and natively that is one {@code ModFile}: {@code getAllScanData()} streams each
+	 * mod's owning file through {@code distinct()}, so the jar is listed once. A count of two is the kernel building a
+	 * file per mod, and a mod walking the index (JEI, Jade) then meets every class of the jar twice.
 	 */
 	private static void reportScanIndex() {
 		try {
 			int files = 0;
 			int annotations = 0;
+			int ownJar = 0;
 			for (net.neoforged.neoforgespi.language.ModFileScanData scan : net.neoforged.fml.ModList.get().getAllScanData()) {
 				files++;
 				annotations += scan.getAnnotations().size();
-				reportOwnAnnotation("ModList", scan);
+				if (reportOwnAnnotation("ModList", scan)) ownJar++;
 			}
 			System.out.println("[ForbricNeoLive/SCAN] ModList.getAllScanData(): " + files + " file(s), "
 					+ annotations + " annotation(s)");
+			System.out.println("[ForbricNeoLive/SCAN] ModList.getAllScanData() lists forbricneolive's jar " + ownJar
+					+ " time(s)");
 		} catch (Throwable t) {
 			System.out.println("[ForbricNeoLive/SCAN] could not read the ModList scan index: " + t);
 		}
@@ -375,9 +405,12 @@ public class ForbricNeoLiveMod {
 		}
 	}
 
-	private static void reportOwnAnnotation(String reader, net.neoforged.neoforgespi.language.ModFileScanData scan) {
+	/** @return whether {@code scan} is this jar's index, i.e. carries this mod's own annotation */
+	private static boolean reportOwnAnnotation(String reader, net.neoforged.neoforgespi.language.ModFileScanData scan) {
+		boolean own = false;
 		for (net.neoforged.neoforgespi.language.ModFileScanData.AnnotationData data : scan.getAnnotations()) {
 			if (!data.annotationType().getDescriptor().equals("Lforbric/live/neoforge/NeoLiveScanned;")) continue;
+			own = true;
 			System.out.println("[ForbricNeoLive/SCAN] " + reader + " found its own @NeoLiveScanned on "
 					+ data.targetType() + " " + data.memberName() + " of " + data.clazz().getClassName());
 			Object kind = data.annotationData().get("kind");
@@ -394,6 +427,7 @@ public class ForbricNeoLiveMod {
 			System.out.println("[ForbricNeoLive/SCAN] " + reader + " string member note is "
 					+ data.annotationData().get("note"));
 		}
+		return own;
 	}
 
 	/** Link client-only event types only on the client, through a class-name boundary. */

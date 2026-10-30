@@ -361,8 +361,15 @@ check "MinecraftForge's recipe conditions read this reload's tags" "MinecraftFor
 #
 # RED controls, measured:
 #   M21_EXTRA_JVM='-Dforbric.neoScanData=off'    the NeoForge index is the empty one it once was: both readers' "found
-#                                                its own" lines, both shape lines and both member lines are gone, and
-#                                                ModList's count line says 0 annotations
+#                                                its own" lines, both shape lines and both member lines are gone,
+#                                                ModList's count line says 0 annotations and lists the jar 0 times --
+#                                                exactly the nine NeoForge scan checks go red -- and the kernel names
+#                                                the switch ("NeoForge scan index DISABLED (-Dforbric.neoScanData=off)")
+#   M21_EXTRA_JVM='-Dforbric.modFilePerJar=off'  one IModFile per MOD again, as the kernel built them until 2026-10-30:
+#                                                the canary's jar declares two mods, NeoForge's own distinct() keeps
+#                                                both entries, and the index lists the jar twice -- exactly the two
+#                                                checks that count the jar go red ("lists the canary's jar once", 2 for
+#                                                1; "found in one entry", exactly 1 got 2)
 #   M21_EXTRA_JVM='-Dforbric.seededScanData=off' the seeded LoadingModList's ModFile has no index again, so its reader
 #                                                throws FML's "Scanning of this mod file has not started yet." and the
 #                                                three LoadingModList lines are gone; ModList's reader is untouched
@@ -371,7 +378,9 @@ check "MinecraftForge's recipe conditions read this reload's tags" "MinecraftFor
 #                                                merged ReloadableServerResources calls NeoForge's own onResourceReload,
 #                                                so no kernel switch takes the NeoForge data loader out -- the measurement
 #                                                that it rests on NeoForge's hook, not on the MinecraftForge bridge
-# The SELF, PLUGIN and SERVER-config checks have no kernel switch either, like their MinecraftForge twins here.
+# So the three NeoForge RELOAD checks are POSITIVE-ONLY: no kernel switch turns them red, and what drives them is the
+# canary's listener on NeoForge's own hook. The SELF, PLUGIN and SERVER-config checks have no kernel switch either,
+# like their MinecraftForge twins here.
 step "the NeoForge canary finds its OWN members through both readers of the scan index (must PASS)"
 for reader in ModList LoadingModList; do
   check "NeoForge ($reader): the index carries the mod's own annotation" \
@@ -382,14 +391,24 @@ for reader in ModList LoadingModList; do
   check "NeoForge ($reader): a plain member is still a plain value" \
     "ForbricNeoLive/SCAN\] $reader string member note is probe" "$LOG"
 done
-check "NeoForge: and the index is not one file's worth by accident" \
+check "NeoForge: ModList's index holds annotations at all" \
   "ForbricNeoLive/SCAN\] ModList.getAllScanData\(\): [1-9][0-9]* file\(s\), [1-9][0-9]* annotation\(s\)" "$LOG"
+# One jar declaring two mods (forbricneolive and its client-only forbricneoclientonly) is ONE file to NeoForge:
+# getAllScanData() streams each mod's owning file through distinct(), so the jar is listed once. The count line above
+# cannot tell 1 from 2 (it said "2 file(s)" with this one jar staged, while the kernel built a file per mod); this can,
+# and so can the reader line counted exactly once.
+check "NeoForge: the index lists the canary's jar once, as one IModFile" \
+  "ForbricNeoLive/SCAN\] ModList.getAllScanData\(\) lists forbricneolive's jar 1 time\(s\)" "$LOG"
+check_exactly "NeoForge (ModList): its own annotation is found in one entry, not one per mod" \
+  "ForbricNeoLive/SCAN\] ModList found its own @NeoLiveScanned" "$LOG" 1
 check_absent "NeoForge: neither reader failed" "ForbricNeoLive/SCAN\] (could not read|LoadingModList has no file)" "$LOG"
 
 step "a NeoForge mod's server data loader is registered and runs (must PASS)"
-# NeoForge's AddServerReloadListenersEvent. The merged ReloadableServerResources hands its reload to the kernel
-# (KernelForgeReload), which asks NeoForge's onResourceReload on the way, so this is the NeoForge half of the route the
-# MinecraftForge RELOAD checks above cover -- and the probe that says nothing was lost when that route goes away.
+# NeoForge's AddServerReloadListenersEvent, posted by NeoForge's own EventHooks.onResourceReload, which the merged
+# ReloadableServerResources calls as the genuine base does. The kernel redirects that one call to KernelForgeReload,
+# which calls NeoForge's hook first and MinecraftForge's after it; with that routing off the merged class calls
+# NeoForge's hook directly. So this is the NeoForge half of the route the MinecraftForge RELOAD checks above cover, and
+# the probe that says nothing is lost when the MinecraftForge half goes away. Positive-only (see the header).
 check "NeoForge: the event was delivered"          '\[ForbricNeoLive/RELOAD\] AddServerReloadListenersEvent DELIVERED' "$LOG"
 check "NeoForge: the registered data loader ran"   '\[ForbricNeoLive/RELOAD\] reload listener ran over [1-9][0-9]* file' "$LOG"
 check "NeoForge: the event hands out a live condition context" '\[ForbricNeoLive/RELOAD\] context=live' "$LOG"

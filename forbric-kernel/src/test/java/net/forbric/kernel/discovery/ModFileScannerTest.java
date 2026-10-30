@@ -353,14 +353,24 @@ class ModFileScannerTest {
 		};
 		assertTrue(ModFileScanner.neoIndexEnabled(), "on unless switched off");
 		System.setProperty(ModFileScanner.NEO_INDEX_PROPERTY, "off");
+		String[] log = new String[1];
 		try {
 			assertTrue(!ModFileScanner.neoIndexEnabled());
-			assertNull(ModFileScanner.scan(jar, recording));
-			assertNull(ModFileScanner.scanShared(jar, recording));
+			ModFileScanner.forgetNeoIndexOffReport();
+			net.forbric.kernel.GateLogContract.capture(() -> {
+				assertNull(ModFileScanner.scan(jar, recording));
+				assertNull(ModFileScanner.scanShared(jar, recording));
+				return null;
+			}, log);
 			assertEquals(List.of(), asked, "an index that is switched off must not be built and then dropped");
 		} finally {
 			System.clearProperty(ModFileScanner.NEO_INDEX_PROPERTY);
+			ModFileScanner.forgetNeoIndexOffReport();
 		}
+		// The switch says so, by name, once: two jars' worth of asks (scan and scanShared) is still one line. Before
+		// this, an empty NeoForge index with the switch off had no line explaining it at all.
+		assertEquals(1, log[0].split("NeoForge scan index DISABLED \\(-Dforbric\\.neoScanData=off\\)", -1).length - 1,
+				log[0]);
 		// The MinecraftForge index has its own switch and is not taken out with this one.
 		assertTrue(ModFileScanner.forgeIndexEnabled());
 	}

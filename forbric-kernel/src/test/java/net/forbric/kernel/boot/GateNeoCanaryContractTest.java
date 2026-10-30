@@ -30,7 +30,8 @@ class GateNeoCanaryContractTest {
 			"[ForbricNeoLive/SCAN] ModList found its own @NeoLiveScanned on FIELD PROBE of forbric.live.neoforge.ForbricNeoLiveMod",
 			"[ForbricNeoLive/SCAN] ModList enum member kind is " + SCAN_HOLDER + " with value SECOND",
 			"[ForbricNeoLive/SCAN] ModList string member note is probe",
-			"[ForbricNeoLive/SCAN] ModList.getAllScanData(): 2 file(s), 10 annotation(s)",
+			"[ForbricNeoLive/SCAN] ModList.getAllScanData(): 1 file(s), 5 annotation(s)",
+			"[ForbricNeoLive/SCAN] ModList.getAllScanData() lists forbricneolive's jar 1 time(s)",
 			"[ForbricNeoLive/SCAN] LoadingModList found its own @NeoLiveScanned on FIELD PROBE of forbric.live.neoforge.ForbricNeoLiveMod",
 			"[ForbricNeoLive/SCAN] LoadingModList enum member kind is " + SCAN_HOLDER + " with value SECOND",
 			"[ForbricNeoLive/SCAN] LoadingModList string member note is probe",
@@ -62,6 +63,29 @@ class GateNeoCanaryContractTest {
 		assertRed(twice, "its SERVER config loads once");
 		Result failed = m21(green + "[ForbricNeoLive/SCAN] could not read the LoadingModList scan index: java.lang.IllegalStateException\n");
 		assertRed(failed, "neither reader failed");
+	}
+
+	/**
+	 * The shape the kernel had until 2026-10-30, and has again with {@code -Dforbric.modFilePerJar=off}: one file per
+	 * MOD, so the canary's jar (two mods) is listed twice, with its own annotation found in both entries. The count
+	 * line alone says only "2 file(s)", which the old check's {@code [1-9][0-9]*} took as green.
+	 */
+	@Test
+	void m21NeoBlockTellsOneJarFromTheSameJarListedOncePerMod() throws Exception {
+		List<String> twice = new java.util.ArrayList<>();
+		for (String line : M21_GREEN) {
+			if (line.contains("lists forbricneolive's jar")) {
+				twice.add(line.replace("1 time(s)", "2 time(s)"));
+			} else if (line.contains("getAllScanData(): ")) {
+				twice.add("[ForbricNeoLive/SCAN] ModList.getAllScanData(): 2 file(s), 10 annotation(s)");
+			} else {
+				twice.add(line);
+				if (line.startsWith("[ForbricNeoLive/SCAN] ModList found its own")) twice.add(line);
+			}
+		}
+		Result result = m21(String.join("\n", twice) + "\n");
+		assertRed(result, "the index lists the canary's jar once, as one IModFile");
+		assertTrue(result.output().contains("its own annotation is found in one entry, not one per mod"), result.output());
 	}
 
 	private static final List<String> M26_GREEN = m26Green();
@@ -108,7 +132,30 @@ class GateNeoCanaryContractTest {
 				"client canary initialized successfully");
 	}
 
+	/** The Fabric canary's late block in gate-m26: the refill's proof that outlives the MinecraftForge canary. */
+	private static final List<String> M26_FABRIC_GREEN = List.of(
+			"[ForbricFabricLive/LATEBLOCK] registered forbricfabriclive:late_block from onInitializeClient at raw id 1183",
+			"[12:00:00] [Render thread/INFO]: [Forbric/Lifecycle] rebuilt NeoForge blockstate→id map (32368 states, was 32367) — 1 more state(s) were registered after the first pass, and Block.getId answered 0 (AIR) for every one of them",
+			"[ForbricFabricLive/LATEBLOCK] forbricfabriclive:late_block id=32367 roundTrip=Block{forbricfabriclive:late_block}");
+
+	@Test
+	void m26FabricBlockIsGreenOnTheLiveLinesAndRedOnAirOrAMissingRefill() throws Exception {
+		String green = String.join("\n", M26_FABRIC_GREEN) + "\n";
+		assertGreen(m26Fabric(green));
+		for (String line : M26_FABRIC_GREEN) {
+			List<String> without = new java.util.ArrayList<>(M26_FABRIC_GREEN);
+			without.remove(line);
+			assertEquals(1, m26Fabric(String.join("\n", without) + "\n").exit(), "still green without: " + line);
+		}
+		// -Dforbric.blockStateIdRefill=off: no rebuild of the late wave, and the late block reads as AIR.
+		assertRed(m26Fabric(green.replace("id=32367 roundTrip=Block{forbricfabriclive:late_block}",
+				"id=0 roundTrip=Block{minecraft:air}")), "the late block has a real id, read back in the world");
+		assertRed(m26Fabric(green + "[ForbricFabricLive/LATEBLOCK] read-back FAILED: no world within six minutes\n"),
+				"the late-block probe never failed");
+	}
+
 	private Result m21(String log) throws Exception { return block(M21, "M21_NEO_CONTRACTS", log); }
+	private Result m26Fabric(String log) throws Exception { return block(M26, "M26_FABRIC_ASSERTIONS", log); }
 	private Result m26(String log) throws Exception { return block(M26, "M26_NEO_ASSERTIONS", log); }
 
 	private Result block(Path gate, String name, String log) throws Exception {
