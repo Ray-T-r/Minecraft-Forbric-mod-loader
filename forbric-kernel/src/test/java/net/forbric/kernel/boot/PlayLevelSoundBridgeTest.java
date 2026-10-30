@@ -262,7 +262,7 @@ class PlayLevelSoundBridgeTest {
 			Path neo = run.resolve("neoforge-runtime/neoforge-runtime.jar");
 			Path forge = run.resolve("merged-base/forge-runtime-interop.jar");
 			if (!Files.isRegularFile(forge)) forge = run.resolve("forge-runtime/forge-runtime.jar");
-			TestFixtures.require(Fixture.STAGED, Files.isRegularFile(neo) && Files.isRegularFile(forge), "the staged carriers are absent");
+			TestFixtures.requireFiles(Fixture.STAGED, "the staged carriers are absent", neo, forge);
 			Map<String, byte[]> out = new HashMap<>();
 			out.put(NEO_HOOKS, lifted(neo, NEO_HOOKS, "onPlaySoundAtEntity", "onPlaySoundAtPosition"));
 			out.put(FORGE_HOOKS, lifted(forge, FORGE_HOOKS, "onPlaySoundAtEntity", "onPlaySoundAtPosition"));

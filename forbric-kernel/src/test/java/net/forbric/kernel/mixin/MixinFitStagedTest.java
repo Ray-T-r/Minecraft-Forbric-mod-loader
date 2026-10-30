@@ -87,7 +87,7 @@ class MixinFitStagedTest {
 	// ---------------------------------------------------------------------------------------------------------------
 
 	static Function<String, byte[]> rawResolver() {
-		TestFixtures.require(Fixture.STAGED, Files.isRegularFile(MERGED_BASE), "staged merged base absent");
+		TestFixtures.requireFile(Fixture.STAGED, MERGED_BASE, "staged merged base absent");
 		return name -> {
 			try {
 				return readFromJar(MERGED_BASE, name);

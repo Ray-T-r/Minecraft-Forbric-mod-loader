@@ -219,7 +219,7 @@ class CompostablesFallbackInjectorTest {
 
 	static byte[] entry(Path jar, String internal) throws Exception {
 		TestFixtures.require(Fixture.THIRD_PARTY, Files.isRegularFile(jar), "sweep pack absent: " + jar);
-		TestFixtures.require(Fixture.STAGED, Files.isRegularFile(MERGED), "merged base absent: " + MERGED);
+		TestFixtures.requireFile(Fixture.STAGED, MERGED, "merged base absent: " + MERGED);
 		try (ZipFile zip = new ZipFile(jar.toFile())) {
 			ZipEntry entry = zip.getEntry(internal + ".class");
 			assertNotNull(entry, internal + " in " + jar);

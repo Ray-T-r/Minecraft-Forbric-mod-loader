@@ -115,7 +115,7 @@ class RegistryDirectoryOwnerInjectorTest {
 
 	@Test
 	void theMergedBodyIsNeoForgesAndTheEditHandsEveryAnswerToTheOwner() throws Exception {
-		TestFixtures.require(Fixture.STAGED, Files.isRegularFile(MERGED_BASE), "staged merged base absent — skipping real-bytecode check");
+		TestFixtures.requireFile(Fixture.STAGED, MERGED_BASE, "staged merged base absent — skipping real-bytecode check");
 		byte[] in = classBytes(MERGED_BASE, REGISTRIES);
 		assertTrue(calls(method(node(in), "registryDirPath"), COMMON_HOOKS, "prefixNamespace"),
 				"the merged body prefixes through NeoForge's hook — if it stopped, re-derive the repair");
@@ -208,7 +208,7 @@ class RegistryDirectoryOwnerInjectorTest {
 
 	@Test
 	void switchedOffRegistriesStaysAsMerged() throws Exception {
-		TestFixtures.require(Fixture.STAGED, Files.isRegularFile(MERGED_BASE), "staged merged base absent");
+		TestFixtures.requireFile(Fixture.STAGED, MERGED_BASE, "staged merged base absent");
 		System.setProperty(RegistryDirectoryOwnerInjector.PROPERTY, "off");
 		byte[] in = classBytes(MERGED_BASE, REGISTRIES);
 		assertSame(in, transform(in));

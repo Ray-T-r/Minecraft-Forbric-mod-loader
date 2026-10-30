@@ -55,7 +55,7 @@ class MergedBaseWindowTitleTest {
 
 	@Test
 	void noLoaderNamesTheWindowAnyMore() throws Exception {
-		TestFixtures.require(Fixture.STAGED, Files.isRegularFile(MERGED_BASE), "staged merged base absent — skipping real-bytecode check");
+		TestFixtures.requireFile(Fixture.STAGED, MERGED_BASE, "staged merged base absent — skipping real-bytecode check");
 		byte[] in = readClass(MINECRAFT + ".class");
 		MethodNode before = title(parse(in));
 		assertTrue(brands(before).size() == 1, "the merged base must still name one loader: " + brands(before));
@@ -73,7 +73,7 @@ class MergedBaseWindowTitleTest {
 
 	@Test
 	void aSecondPassLeavesTheRepairedTitleAlone() throws Exception {
-		TestFixtures.require(Fixture.STAGED, Files.isRegularFile(MERGED_BASE), "staged merged base absent — skipping real-bytecode check");
+		TestFixtures.requireFile(Fixture.STAGED, MERGED_BASE, "staged merged base absent — skipping real-bytecode check");
 		byte[] once = new ForbricMergedBaseCompatTransformer()
 				.transform(MINECRAFT.replace('/', '.'), readClass(MINECRAFT + ".class"), null);
 		assertSame(once, new ForbricMergedBaseCompatTransformer().transform(MINECRAFT.replace('/', '.'), once, null));

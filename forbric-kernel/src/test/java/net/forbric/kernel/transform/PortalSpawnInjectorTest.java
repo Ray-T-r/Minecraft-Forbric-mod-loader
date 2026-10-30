@@ -122,7 +122,7 @@ class PortalSpawnInjectorTest {
 	private static String trace(ClassNode n) { StringWriter out = new StringWriter(); n.accept(new TraceClassVisitor(new PrintWriter(out))); return out.toString(); }
 	private static byte[] staged(String jar, String entry) throws Exception {
 		Path run = TestFixtures.stagedRoot();
-		Path path = run.resolve(jar); TestFixtures.require(Fixture.STAGED, Files.isRegularFile(path), "staged artifact absent: " + path);
+		Path path = run.resolve(jar); TestFixtures.requireFile(Fixture.STAGED, path, "staged artifact absent: " + path);
 		try (ZipFile zip = new ZipFile(path.toFile())) { return zip.getInputStream(zip.getEntry(entry + ".class")).readAllBytes(); }
 	}
 }

@@ -58,7 +58,7 @@ class VanillaEarlyReturnsCensusTest {
 
 	@Test
 	void theShippedTableIsExactlyWhatTheArtifactsSay() throws Exception {
-		TestFixtures.require(Fixture.STAGED, Files.isRegularFile(MERGED_BASE), "merged base not staged: " + MERGED_BASE);
+		TestFixtures.requireFile(Fixture.STAGED, MERGED_BASE, "merged base not staged: " + MERGED_BASE);
 		TestFixtures.require(Fixture.MC_LIBRARIES, Files.isRegularFile(VANILLA), "no vanilla 26.2 jar at " + VANILLA);
 
 		TreeSet<String> rows = new TreeSet<>();
@@ -132,7 +132,7 @@ class VanillaEarlyReturnsCensusTest {
 	 */
 	@Test
 	void everySplitIsOneTheVerifierAccepts() throws Exception {
-		TestFixtures.require(Fixture.STAGED, Files.isRegularFile(MERGED_BASE), "merged base not staged: " + MERGED_BASE);
+		TestFixtures.requireFile(Fixture.STAGED, MERGED_BASE, "merged base not staged: " + MERGED_BASE);
 		Map<String, Map<String, Map<String, List<String>>>> table = VanillaEarlyReturns.table();
 		assertFalse(table.isEmpty(), "the shipped table is empty");
 

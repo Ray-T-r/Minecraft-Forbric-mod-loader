@@ -151,7 +151,7 @@ class ClientPartTrackingInjectorTest {
 
 		Game(boolean repaired) throws Exception {
 			TestFixtures.require(Fixture.JAVA_25, Runtime.version().feature() >= 25, "the merged game is class-file 69, which only Java 25 links");
-			for (Path jar : List.of(MERGED, NEO_CARRIER, FORGE_CARRIER)) TestFixtures.require(Fixture.STAGED, Files.isRegularFile(jar), jar + " absent");
+			for (Path jar : List.of(MERGED, NEO_CARRIER, FORGE_CARRIER)) TestFixtures.requireFile(Fixture.STAGED, jar, jar + " absent");
 			Map<String, byte[]> defined = new HashMap<>();
 			byte[] callbacks = NativeCoremodParityTest.read(MERGED, CALLBACKS);
 			if(repaired){callbacks=new ClientPartTrackingInjector().transform(ClientPartTrackingInjector.CALLBACKS,callbacks,null);callbacks=forgeRepair().transform(ClientPartTrackingInjector.CALLBACKS,callbacks,null);}

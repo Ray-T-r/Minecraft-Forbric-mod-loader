@@ -364,7 +364,7 @@ class VanillaAirRefillInjectorExecutionTest {
 
 	private static byte[] staged(String entry) throws Exception {
 		Path jar = TestFixtures.stagedRoot().resolve("neoforge-runtime/neoforge-runtime.jar");
-		TestFixtures.require(Fixture.STAGED, Files.isRegularFile(jar), "actual NeoForge CommonHooks required");
+		TestFixtures.requireFile(Fixture.STAGED, jar, "actual NeoForge CommonHooks required");
 		try (ZipFile z = new ZipFile(jar.toFile())) { return z.getInputStream(z.getEntry(entry + ".class")).readAllBytes(); }
 	}
 

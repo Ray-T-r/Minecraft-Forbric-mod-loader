@@ -290,7 +290,7 @@ class GuestInjectorPrunerTest {
 	 */
 	@Test
 	void thePrunedMixinFitsTheMergedModelManagerWhereTheOriginalWasPartial() throws Exception {
-		TestFixtures.require(Fixture.STAGED, Files.isRegularFile(MERGED_BASE), "staged merged base absent");
+		TestFixtures.requireFile(Fixture.STAGED, MERGED_BASE, "staged merged base absent");
 		byte[] original = realMixin();
 		Function<String, byte[]> resolver = mergedBaseResolver();
 

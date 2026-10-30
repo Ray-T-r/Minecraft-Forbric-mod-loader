@@ -71,7 +71,7 @@ class MixinLambdaThunkRetargetTest {
 	}
 	private static ClassNode actualMixin(String module,String owner)throws Exception{
 		String configured=System.getProperty("forbric.fabricApi","");if(configured.isBlank())return StagedFabricMixinFixture.mixin(module,owner);
-		Path api=Path.of(configured);net.forbric.kernel.TestFixtures.require(net.forbric.kernel.TestFixtures.Fixture.STAGED,Files.isRegularFile(api),"configured Fabric API fixture required: "+api);
+		Path api=Path.of(configured);net.forbric.kernel.TestFixtures.requireFile(net.forbric.kernel.TestFixtures.Fixture.STAGED, api,"configured Fabric API fixture required: "+api);
 		try(ZipFile zip=new ZipFile(api.toFile())){var moduleEntry=zip.stream().filter(e->e.getName().startsWith("META-INF/jars/"+module+"-")).findFirst().orElseThrow();
 			try(ZipInputStream inner=new ZipInputStream(zip.getInputStream(moduleEntry))){for(ZipEntry entry;(entry=inner.getNextEntry())!=null;)if(entry.getName().equals(owner+".class"))return MixinFit.parse(inner.readAllBytes());}}
 		throw new AssertionError("configured upstream mixin absent: "+owner);

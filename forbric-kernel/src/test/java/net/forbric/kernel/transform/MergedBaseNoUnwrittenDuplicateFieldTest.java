@@ -64,7 +64,7 @@ class MergedBaseNoUnwrittenDuplicateFieldTest {
 
 	@Test
 	void everyDuplicatedFieldNameHasAWriterForEveryOneOfItsTypes() throws Exception {
-		TestFixtures.require(Fixture.STAGED, Files.isRegularFile(MERGED_BASE), "staged merged base absent — skipping whole-artifact scan");
+		TestFixtures.requireFile(Fixture.STAGED, MERGED_BASE, "staged merged base absent — skipping whole-artifact scan");
 
 		List<String> dead = new ArrayList<>();
 		int scanned = 0;

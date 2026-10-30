@@ -206,7 +206,7 @@ class CarrierHelperResultsStagedTest {
 	/** The class each ecosystem's mods were compiled against, from the staged merged base's native references. */
 	private static java.util.function.BiFunction<net.forbric.api.Ecosystem, String, ClassNode> natives() {
 		Path jar = TestFixtures.stagedBase();
-		TestFixtures.require(Fixture.STAGED, Files.isRegularFile(jar), "actual game required");
+		TestFixtures.requireFile(Fixture.STAGED, jar, "actual game required");
 		NativeGameReferences references = new NativeGameReferences(path -> {
 			try (ZipFile zip = new ZipFile(jar.toFile())) {
 				ZipEntry entry = zip.getEntry(path);

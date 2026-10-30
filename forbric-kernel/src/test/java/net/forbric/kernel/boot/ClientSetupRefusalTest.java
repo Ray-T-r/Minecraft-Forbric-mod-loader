@@ -49,7 +49,7 @@ class ClientSetupRefusalTest {
 
 	private static Path merged() {
 		Path jar = TestFixtures.stagedBase().normalize();
-		TestFixtures.require(Fixture.STAGED, Files.isRegularFile(jar), "staged merged base absent");
+		TestFixtures.requireFile(Fixture.STAGED, jar, "staged merged base absent");
 		return jar;
 	}
 

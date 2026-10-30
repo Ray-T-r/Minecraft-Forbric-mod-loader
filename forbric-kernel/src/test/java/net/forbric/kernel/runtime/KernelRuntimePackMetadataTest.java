@@ -104,7 +104,7 @@ class KernelRuntimePackMetadataTest {
 	 */
 	private static URLClassLoader gameLoader() throws Exception {
 		Path merged = merged();
-		TestFixtures.require(Fixture.STAGED, Files.isRegularFile(merged), "the staged merged game is absent");
+		TestFixtures.requireFile(Fixture.STAGED, merged, "the staged merged game is absent");
 		Path libraries = TestFixtures.minecraftDir().resolve("libraries");
 		Path versionJson = libraries.getParent().resolve("versions/26.2/26.2.json");
 		TestFixtures.require(Fixture.MC_LIBRARIES, Files.isRegularFile(versionJson), "no 26.2 version JSON beside the local Minecraft libraries");

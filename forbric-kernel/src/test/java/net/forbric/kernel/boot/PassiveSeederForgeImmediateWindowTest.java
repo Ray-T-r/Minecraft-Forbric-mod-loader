@@ -202,8 +202,8 @@ class PassiveSeederForgeImmediateWindowTest {
 	 * Minecraft library tree; slf4j and com.mojang.logging get empty stand-ins, as in the FMLEnvironment test.
 	 */
 	private ClassLoader forgeLoader() throws Exception {
-		TestFixtures.require(Fixture.STAGED, Files.isRegularFile(FORGE_RUNTIME),
-				"staged forge-runtime.jar absent — skipping the real-bytecode ImmediateWindowHandler check");
+		TestFixtures.requireFiles(Fixture.STAGED,
+				"staged forge-runtime.jar absent — skipping the real-bytecode ImmediateWindowHandler check", FORGE_RUNTIME);
 		TestFixtures.require(Fixture.JAVA_25, Runtime.version().feature() >= 25,
 				"the carrier's classes are class-file 69, which only Java 25 links");
 		Path gson = newestLibrary("com/google/code/gson/gson");

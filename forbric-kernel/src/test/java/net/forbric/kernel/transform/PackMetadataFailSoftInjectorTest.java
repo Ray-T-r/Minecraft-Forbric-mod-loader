@@ -143,7 +143,7 @@ class PackMetadataFailSoftInjectorTest {
 
 	@Test
 	void exactlyOneNestMemberParsesJson() throws Exception {
-		TestFixtures.require(Fixture.STAGED, Files.isRegularFile(MERGED_BASE), "staged merged base absent — skipping real-bytecode check");
+		TestFixtures.requireFile(Fixture.STAGED, MERGED_BASE, "staged merged base absent — skipping real-bytecode check");
 
 		List<String> matched = new ArrayList<>();
 		for (String member : nestMembers()) {
@@ -160,7 +160,7 @@ class PackMetadataFailSoftInjectorTest {
 
 	@Test
 	void wrapsTheParseInsteadOfReimplementingIt() throws Exception {
-		TestFixtures.require(Fixture.STAGED, Files.isRegularFile(MERGED_BASE), "staged merged base absent — skipping real-bytecode check");
+		TestFixtures.requireFile(Fixture.STAGED, MERGED_BASE, "staged merged base absent — skipping real-bytecode check");
 
 		String target = jsonBackedMember();
 		ClassNode node = transformed(target);
@@ -195,7 +195,7 @@ class PackMetadataFailSoftInjectorTest {
 
 	@Test
 	void transformedMethodsAnalyseCleanly() throws Exception {
-		TestFixtures.require(Fixture.STAGED, Files.isRegularFile(MERGED_BASE), "staged merged base absent — skipping real-bytecode check");
+		TestFixtures.requireFile(Fixture.STAGED, MERGED_BASE, "staged merged base absent — skipping real-bytecode check");
 
 		ClassNode node = transformed(jsonBackedMember());
 
@@ -210,7 +210,7 @@ class PackMetadataFailSoftInjectorTest {
 
 	@Test
 	void theHandAuthoredHandlerFrameHasTheRightShape() throws Exception {
-		TestFixtures.require(Fixture.STAGED, Files.isRegularFile(MERGED_BASE), "staged merged base absent — skipping real-bytecode check");
+		TestFixtures.requireFile(Fixture.STAGED, MERGED_BASE, "staged merged base absent — skipping real-bytecode check");
 
 		ClassNode node = transformed(jsonBackedMember());
 		MethodNode getSection = method(node, "getSection");
@@ -232,7 +232,7 @@ class PackMetadataFailSoftInjectorTest {
 
 	@Test
 	void isIdempotent() throws Exception {
-		TestFixtures.require(Fixture.STAGED, Files.isRegularFile(MERGED_BASE), "staged merged base absent — skipping real-bytecode check");
+		TestFixtures.requireFile(Fixture.STAGED, MERGED_BASE, "staged merged base absent — skipping real-bytecode check");
 
 		String target = jsonBackedMember();
 		byte[] once = new PackMetadataFailSoftInjector().transform(dotted(target), readClass(target), null);

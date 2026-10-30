@@ -196,7 +196,7 @@ class CarrierRenameCensusTest {
 		}
 		String tooltip = "net/minecraft/world/item/ItemStack#addDetailsToTooltip" + TOOLTIP + " -> addDetailsToTooltipComponents" + TOOLTIP;
 		assertEquals(Set.of(tooltip), uncalled);
-		TestFixtures.require(Fixture.STAGED, Files.isRegularFile(MERGED), MERGED + " required");
+		TestFixtures.requireFile(Fixture.STAGED, MERGED, MERGED + " required");
 		try (ZipFile zip = new ZipFile(MERGED.toFile())) {
 			ClassNode stack = read(zip, "net/minecraft/world/item/ItemStack.class");
 			MethodNode renamed = CarrierHelpers.declared(stack, "addDetailsToTooltipComponents", TOOLTIP);

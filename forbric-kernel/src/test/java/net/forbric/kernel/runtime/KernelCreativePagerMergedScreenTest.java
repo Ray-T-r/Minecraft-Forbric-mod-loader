@@ -149,8 +149,8 @@ class KernelCreativePagerMergedScreenTest {
 		Path merged = RUN.resolve(TestFixtures.BASE_JAR);
 		Path neo = RUN.resolve("neoforge-runtime/neoforge-runtime.jar");
 		Path forge = RUN.resolve("merged-base/forge-runtime-interop.jar");
-		TestFixtures.require(Fixture.STAGED, Files.isRegularFile(merged) && Files.isRegularFile(neo) && Files.isRegularFile(forge),
-				"the staged game is absent");
+		TestFixtures.requireFiles(Fixture.STAGED,
+				"the staged game is absent", merged, neo, forge);
 		TestFixtures.require(Fixture.GAME_SIDE, Files.isRegularFile(compiled.resolve("net/forbric/kernel/runtime/KernelCreativePager.class")),
 				"the compiled runtime set is absent");
 		Map<String, byte[]> defined = new HashMap<>();

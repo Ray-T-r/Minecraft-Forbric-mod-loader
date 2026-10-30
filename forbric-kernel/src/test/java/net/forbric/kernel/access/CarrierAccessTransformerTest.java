@@ -114,7 +114,7 @@ class CarrierAccessTransformerTest {
 
 	/** Every {@code META-INF/accesstransformer*.cfg} in the traditional MinecraftForge carrier. */
 	private static List<AtDirective> carrierDirectives() throws IOException {
-		TestFixtures.require(Fixture.STAGED, Files.isRegularFile(FORGE_CARRIER), "staged MinecraftForge carrier absent");
+		TestFixtures.requireFiles(Fixture.STAGED, "staged MinecraftForge carrier absent", FORGE_CARRIER);
 
 		List<AtDirective> directives = new ArrayList<>();
 		try (ZipFile jar = new ZipFile(FORGE_CARRIER.toFile())) {

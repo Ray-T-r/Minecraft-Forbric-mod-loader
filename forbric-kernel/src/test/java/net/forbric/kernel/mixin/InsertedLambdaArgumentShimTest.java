@@ -126,7 +126,7 @@ class InsertedLambdaArgumentShimTest {
   ClassNode mixin;try(ZipFile z=new ZipFile(jar.toFile())){mixin=MixinFit.parse(z.getInputStream(z.getEntry("com/supermartijn642/fusion/mixin/SpriteResourceLoaderMixin.class")).readAllBytes());}
   String owner="net/minecraft/client/renderer/texture/atlas/SpriteResourceLoader";
   // The raw class, local variable table included: the fixture's parse drops it, and the live table is the proof.
-  Path merged=TestFixtures.stagedBase();TestFixtures.require(Fixture.STAGED,Files.isRegularFile(merged),"actual game required");
+  Path merged=TestFixtures.stagedBase();TestFixtures.requireFile(Fixture.STAGED, merged,"actual game required");
   byte[] raw;try(ZipFile z=new ZipFile(merged.toFile())){raw=z.getInputStream(z.getEntry(owner+".class")).readAllBytes();}
   byte[] pruned=new DuplicateLambdaPruneInjector().transform(owner.replace('/','.'),raw,null);
   ClassNode target=new ClassNode();new ClassReader(pruned).accept(target,ClassReader.SKIP_FRAMES);

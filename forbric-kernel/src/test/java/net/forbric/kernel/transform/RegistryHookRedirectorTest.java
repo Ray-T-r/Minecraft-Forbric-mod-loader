@@ -57,8 +57,8 @@ class RegistryHookRedirectorTest {
 
 	@Test
 	void rewritesRealGameDataGetWrapperToIdentity() throws Exception {
-		TestFixtures.require(Fixture.STAGED, Files.isRegularFile(FORGE_RUNTIME),
-				"staged forge-runtime.jar absent — skipping real-bytecode redirect check");
+		TestFixtures.requireFiles(Fixture.STAGED,
+				"staged forge-runtime.jar absent — skipping real-bytecode redirect check", FORGE_RUNTIME);
 
 		byte[] original = readClass(FORGE_RUNTIME, "net/minecraftforge/registries/GameData.class");
 		assertTrue(original != null, "content drift: GameData not found in forge-runtime.jar");

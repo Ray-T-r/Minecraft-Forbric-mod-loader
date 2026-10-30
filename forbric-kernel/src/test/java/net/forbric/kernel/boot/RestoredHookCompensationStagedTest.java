@@ -61,7 +61,7 @@ class RestoredHookCompensationStagedTest {
 	void noRestoredHookIsAlsoDeliveredByTheKernel() throws Exception {
 		Path root = TestFixtures.stagedRoot();
 		Path report = root.resolve("merged-base/merge-conflicts.txt");
-		TestFixtures.require(Fixture.STAGED, Files.isRegularFile(report), "staged merge report absent");
+		TestFixtures.requireFile(Fixture.STAGED, report, "staged merge report absent");
 		List<Hook> restored = new ArrayList<>();
 		for (String line : Files.readAllLines(report)) {
 			Matcher m = RESTORED.matcher(line);
@@ -110,7 +110,7 @@ class RestoredHookCompensationStagedTest {
 		String carrier = hook.owner().startsWith("net/minecraftforge/") ? "forge-runtime/forge-runtime.jar"
 				: "neoforge-runtime/neoforge-runtime.jar";
 		Path jar = root.resolve(carrier);
-		TestFixtures.require(Fixture.STAGED, Files.isRegularFile(jar), "staged carrier absent: " + jar);
+		TestFixtures.requireFile(Fixture.STAGED, jar, "staged carrier absent: " + jar);
 		String family = hook.owner().substring(0, hook.owner().indexOf('/', hook.owner().indexOf('/') + 1) + 1);
 		Set<String> out = new TreeSet<>();
 		try (ZipFile zip = new ZipFile(jar.toFile())) {

@@ -224,7 +224,7 @@ class PassiveSeederLoadingModListTest {
 	 * are enough; the test self-skips when the staged jar is absent.
 	 */
 	private ClassLoader neoForgeLoader() throws Exception {
-		TestFixtures.require(Fixture.STAGED, Files.isRegularFile(NEO_RUNTIME),
+		TestFixtures.requireFile(Fixture.STAGED, NEO_RUNTIME,
 				"staged neoforge-runtime.jar absent — skipping real-bytecode LoadingModList seeding check");
 		Path stubs = loggingStubs(tmp.resolve("stubs"));
 		return new URLClassLoader(new URL[] {stubs.toUri().toURL(), NEO_RUNTIME.toUri().toURL()},

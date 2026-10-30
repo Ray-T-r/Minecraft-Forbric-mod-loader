@@ -42,7 +42,7 @@ class ScanDataEnumShapeTest {
 
 	@Test
 	void minecraftForgeGetsEnumDataOfTypeAndConstantName() throws Exception {
-		TestFixtures.require(Fixture.STAGED, Files.isRegularFile(FORGE), "staged Forge carrier absent");
+		TestFixtures.requireFiles(Fixture.STAGED, "staged Forge carrier absent", FORGE);
 		Object value = registryMember("net.forbric.kernel.runtime.KernelForgeScanData", FORGE);
 
 		assertEquals("net.minecraftforge.forgespi.language.ModFileScanData$EnumData", value.getClass().getName(),
@@ -53,7 +53,7 @@ class ScanDataEnumShapeTest {
 
 	@Test
 	void neoForgeGetsEnumHolderOfDescriptorAndConstantName() throws Exception {
-		TestFixtures.require(Fixture.STAGED, Files.isRegularFile(NEO), "staged NeoForge carrier absent");
+		TestFixtures.requireFile(Fixture.STAGED, NEO, "staged NeoForge carrier absent");
 		Object value = registryMember("net.forbric.kernel.runtime.KernelScanData", NEO);
 
 		assertEquals("net.neoforged.fml.loading.modscan.ModAnnotation$EnumHolder", value.getClass().getName(),

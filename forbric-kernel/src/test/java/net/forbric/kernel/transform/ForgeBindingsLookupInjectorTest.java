@@ -73,7 +73,7 @@ class ForgeBindingsLookupInjectorTest {
 	/** The premise. Without this file the classpath lookup the rewrite installs resolves to nothing. */
 	@Test
 	void theCarrierStillDeclaresTheProviderOnTheClasspath() throws Exception {
-		TestFixtures.require(Fixture.STAGED, Files.isRegularFile(FORGE_RUNTIME), "staged forge-runtime absent");
+		TestFixtures.requireFiles(Fixture.STAGED, "staged forge-runtime absent", FORGE_RUNTIME);
 
 		byte[] decl = entry(SERVICE_FILE);
 		assertNotNull(decl, SERVICE_FILE + " is gone from the carrier — the classpath-keyed ServiceLoader lookup "
@@ -88,7 +88,7 @@ class ForgeBindingsLookupInjectorTest {
 
 	@Test
 	void theRealBindingsClassIsRewrittenAndStillVerifies() throws Exception {
-		TestFixtures.require(Fixture.STAGED, Files.isRegularFile(FORGE_RUNTIME), "staged forge-runtime absent");
+		TestFixtures.requireFiles(Fixture.STAGED, "staged forge-runtime absent", FORGE_RUNTIME);
 		byte[] in = entry(BINDINGS.replace('.', '/') + ".class");
 		assertNotNull(in, "content drift: Bindings moved out of the staged forge-runtime");
 

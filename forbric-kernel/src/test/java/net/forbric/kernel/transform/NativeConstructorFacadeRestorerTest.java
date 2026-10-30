@@ -23,7 +23,7 @@ class NativeConstructorFacadeRestorerTest {
   assertEquals(0,NativeConstructorFacadeRestorer.restore(node,eco->parse(bytes)));
  }
  @Test void actualFuelFacadeBodyMatchesTheOriginalExactlyAndRetainsAllThreeContextArguments()throws Exception{
-  Path base=Path.of(System.getProperty("forbric.predicateBase"));TestFixtures.require(TestFixtures.Fixture.STAGED,Files.isRegularFile(base),"native-indexed game required");
+  Path base=Path.of(System.getProperty("forbric.predicateBase"));TestFixtures.requireFile(TestFixtures.Fixture.STAGED, base,"native-indexed game required");
   try(ZipFile z=new ZipFile(base.toFile())){
    String owner="net/minecraft/world/level/block/entity/FuelValues";byte[] bytes=z.getInputStream(z.getEntry(owner+".class")).readAllBytes();var injector=new NativeConstructorFacadeRestorer(path->{try{var e=z.getEntry(path);return e==null?null:z.getInputStream(e).readAllBytes();}catch(Exception bad){throw new IllegalStateException(bad);}});
    byte[] result=injector.transform(owner.replace('/','.'),bytes,null);assertFalse(Arrays.equals(bytes,result));ClassNode node=parse(result);MethodNode wrapper=node.methods.stream().filter(m->Type.getArgumentTypes(m.desc).length==3&&m.name.equals("vanillaBurnTimes")).findFirst().orElseThrow();

@@ -282,13 +282,13 @@ class FabricFuelValuesInjectorTest {
 		Game(boolean shortCircuit, boolean headCancel) throws Exception {
 			Path compiled = Path.of(System.getProperty("user.dir"), "build", "classes", "java", "runtime").normalize();
 			TestFixtures.require(Fixture.GAME_SIDE, Files.isDirectory(compiled), "the game side is absent");
-			TestFixtures.require(Fixture.STAGED, Files.isRegularFile(MERGED), "the merged game is absent");
+			TestFixtures.requireFile(Fixture.STAGED, MERGED, "the merged game is absent");
 			byte[] original = NativeCoremodParityTest.read(MERGED, FUEL_VALUES);
 			byte[] woven = shortCircuit ? FabricFuelValuesInjector.shortCircuitTheBody(original) : original;
 			byte[] bytes = headCancel ? cancelledAtHead(woven) : withReturnHook(woven);
 			byte[] hookBytes = returnHookClass();
 			Path forge = RUN.resolve("merged-base/forge-runtime-interop.jar");
-			TestFixtures.require(Fixture.STAGED, Files.isRegularFile(NEO_RT) && Files.isRegularFile(forge), "the carriers are absent");
+			TestFixtures.requireFiles(Fixture.STAGED, "the carriers are absent", NEO_RT, forge);
 			List<URL> urls = new ArrayList<>(List.of(compiled.toUri().toURL(), MERGED.toUri().toURL(),
 					NEO_RT.toUri().toURL(), forge.toUri().toURL()));
 			urls.addAll(libraries());

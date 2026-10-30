@@ -50,7 +50,7 @@ class MergedBaseLeftNullFieldsTest {
 
 	@Test
 	void theReaderCountsOverTheWholeBaseAreExactlyThePinnedOnes() throws Exception {
-		TestFixtures.require(Fixture.STAGED, Files.isRegularFile(MERGED_BASE), "staged merged base absent");
+		TestFixtures.requireFile(Fixture.STAGED, MERGED_BASE, "staged merged base absent");
 		Map<String, Integer> counts = new LinkedHashMap<>();
 		for (String key : PINNED.keySet()) counts.put(key, 0);
 		try (ZipFile zip = new ZipFile(MERGED_BASE.toFile())) {
@@ -102,7 +102,7 @@ class MergedBaseLeftNullFieldsTest {
 	/** forgeData is left alone for a reason that lives in the carrier, so the reason is pinned in bytecode too. */
 	@Test
 	void forgeDataIsWrittenByForgesOwnPingHookAndNullGuardedByItsOnlyReader() throws Exception {
-		TestFixtures.require(Fixture.STAGED, Files.isRegularFile(FORGE_RUNTIME), "staged Forge carrier absent: " + FORGE_RUNTIME);
+		TestFixtures.requireFiles(Fixture.STAGED, "staged Forge carrier absent: " + FORGE_RUNTIME, FORGE_RUNTIME);
 		ClassNode hooks = new ClassNode();
 		new ClassReader(bytesOf(FORGE_RUNTIME, "net/minecraftforge/client/ForgeHooksClient")).accept(hooks, 0);
 		int writes = 0;
@@ -132,7 +132,7 @@ class MergedBaseLeftNullFieldsTest {
 	}
 
 	private static byte[] bytesOf(Path jar, String internal) throws Exception {
-		TestFixtures.require(Fixture.STAGED, Files.isRegularFile(jar), "staged artifact absent: " + jar);
+		TestFixtures.requireFile(Fixture.STAGED, jar, "staged artifact absent: " + jar);
 		try (ZipFile zip = new ZipFile(jar.toFile())) {
 			ZipEntry entry = zip.getEntry(internal + ".class");
 			assertNotNull(entry, internal + " not in " + jar.getFileName());

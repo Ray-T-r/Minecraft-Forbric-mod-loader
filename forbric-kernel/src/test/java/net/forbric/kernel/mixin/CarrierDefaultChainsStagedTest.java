@@ -49,7 +49,7 @@ class CarrierDefaultChainsStagedTest {
 
 	private static Path merged() {
 		Path jar = TestFixtures.stagedBase();
-		TestFixtures.require(TestFixtures.Fixture.STAGED, Files.isRegularFile(jar), "actual game required");
+		TestFixtures.requireFile(TestFixtures.Fixture.STAGED, jar, "actual game required");
 		return jar;
 	}
 

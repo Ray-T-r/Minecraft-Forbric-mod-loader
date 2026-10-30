@@ -79,10 +79,10 @@ class MixinDefaultPredicateTransportTest {
 	private record Context(Function<String,ClassNode>current,Function<String,ClassNode>nativeClasses){}
 	private static Context context()throws Exception{
 		String configured=System.getProperty("forbric.predicateBase");Path base=configured==null?TestFixtures.stagedBase():Path.of(configured);
-		TestFixtures.require(Fixture.STAGED,Files.isRegularFile(base),"native-referenced merged base required");
+		TestFixtures.requireFile(Fixture.STAGED, base,"native-referenced merged base required");
 		ZipFile game=new ZipFile(base.toFile());OPEN.add(game);
-		Path runtime=TestFixtures.stagedRoot().resolve("neoforge-runtime/neoforge-runtime.jar");TestFixtures.require(Fixture.STAGED,Files.isRegularFile(runtime),"actual carrier required");ZipFile carrier=new ZipFile(runtime.toFile());OPEN.add(carrier);
-		Path forgeRuntime=TestFixtures.stagedRoot().resolve("forge-runtime/forge-runtime.jar");TestFixtures.require(Fixture.STAGED,Files.isRegularFile(forgeRuntime),"both actual carrier hierarchies required");ZipFile forge=new ZipFile(forgeRuntime.toFile());OPEN.add(forge);
+		Path runtime=TestFixtures.stagedRoot().resolve("neoforge-runtime/neoforge-runtime.jar");TestFixtures.requireFile(Fixture.STAGED, runtime,"actual carrier required");ZipFile carrier=new ZipFile(runtime.toFile());OPEN.add(carrier);
+		Path forgeRuntime=TestFixtures.stagedRoot().resolve("forge-runtime/forge-runtime.jar");TestFixtures.requireFiles(Fixture.STAGED,"both actual carrier hierarchies required", forgeRuntime);ZipFile forge=new ZipFile(forgeRuntime.toFile());OPEN.add(forge);
 		NativeGameReferences references=new NativeGameReferences(name->read(game,name));ClassNode host=references.get(Ecosystem.FABRIC,HOST);TestFixtures.require(Fixture.STAGED,host!=null,"hash-pinned native host required (old bases deliberately cannot transport predicates)");
 		Map<String,ClassNode> currentCache=new HashMap<>(),nativeCache=new HashMap<>();nativeCache.put(HOST,host);
 		Function<String,ClassNode> current=name->{if(currentCache.containsKey(name))return currentCache.get(name);byte[]b=read(game,name+".class");if(b==null)b=read(carrier,name+".class");if(b==null)b=read(forge,name+".class");if(b==null)try(InputStream in=ClassLoader.getSystemResourceAsStream(name+".class")){if(in!=null)b=in.readAllBytes();}catch(Exception unavailable){return null;}if(b==null)return null;ClassNode node=parse(b);currentCache.put(name,node);return node;};
@@ -90,7 +90,7 @@ class MixinDefaultPredicateTransportTest {
 	}
 	private static byte[]read(ZipFile zip,String name){try{var entry=zip.getEntry(name);return entry==null?null:zip.getInputStream(entry).readAllBytes();}catch(Exception unavailable){throw new IllegalStateException(unavailable);}}
 	private static ClassNode actualMixin()throws Exception{
-		String configured=System.getProperty("forbric.fabricApi");Path api=configured==null?TestFixtures.fabricApi():Path.of(configured);TestFixtures.require(Fixture.STAGED,Files.isRegularFile(api),"actual Fabric API required");
+		String configured=System.getProperty("forbric.fabricApi");Path api=configured==null?TestFixtures.fabricApi():Path.of(configured);TestFixtures.requireFile(Fixture.STAGED, api,"actual Fabric API required");
 		try(ZipFile z=new ZipFile(api.toFile())){var nested=z.stream().filter(e->e.getName().startsWith("META-INF/jars/fabric-rendering-fluids-v1-")).findFirst().orElseThrow();try(ZipInputStream inner=new ZipInputStream(z.getInputStream(nested))){for(var e=inner.getNextEntry();e!=null;e=inner.getNextEntry())if(e.getName().equals("net/fabricmc/fabric/mixin/client/rendering/fluid/FluidRendererMixin.class"))return parse(inner.readAllBytes());}}throw new AssertionError("actual fluid mixin absent");
 	}
 	private static MethodNode handler(ClassNode mixin){return mixin.methods.stream().filter(m->m.name.equals("modifyNonOverlayCheck")).findFirst().orElseThrow();}

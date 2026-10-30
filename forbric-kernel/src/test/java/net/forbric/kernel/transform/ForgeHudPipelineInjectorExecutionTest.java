@@ -156,7 +156,7 @@ class ForgeHudPipelineInjectorExecutionTest {
 	 * MinecraftForge's tree nowhere — not on a base that never carried it, and not on one that spliced it in.
 	 */
 	@Test void theStagedHudDrawsThroughOnePipeline() throws Exception {
-		TestFixtures.require(Fixture.STAGED, Files.isRegularFile(MERGED_BASE), "staged merged base absent — skipping real-bytecode check");
+		TestFixtures.requireFile(Fixture.STAGED, MERGED_BASE, "staged merged base absent — skipping real-bytecode check");
 		byte[] in;
 		try (ZipFile zip = new ZipFile(MERGED_BASE.toFile())) {
 			ZipEntry entry = zip.getEntry(HUD.replace('.', '/') + ".class");

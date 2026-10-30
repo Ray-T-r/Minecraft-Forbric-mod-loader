@@ -73,7 +73,7 @@ class MergedBaseNbtBuilderTest {
 
 	@Test
 	void everyCarrierCallSiteNowResolves() throws Exception {
-		TestFixtures.require(Fixture.STAGED, Files.isRegularFile(FORGE_RUNTIME), "staged Forge carrier absent: " + FORGE_RUNTIME);
+		TestFixtures.requireFiles(Fixture.STAGED, "staged Forge carrier absent: " + FORGE_RUNTIME, FORGE_RUNTIME);
 		ClassNode after = parse(transform(COMPOUND_TAG));
 		List<String> unresolved = new ArrayList<>();
 		int sites = 0;
@@ -96,7 +96,7 @@ class MergedBaseNbtBuilderTest {
 
 	@Test
 	void theCarrierTypeItNewsStillHasAPublicNoArgConstructor() throws Exception {
-		TestFixtures.require(Fixture.STAGED, Files.isRegularFile(FORGE_RUNTIME), "staged Forge carrier absent: " + FORGE_RUNTIME);
+		TestFixtures.requireFiles(Fixture.STAGED, "staged Forge carrier absent: " + FORGE_RUNTIME, FORGE_RUNTIME);
 		ClassNode builder = parse(bytesOf(FORGE_RUNTIME, BUILDER));
 		MethodNode ctor = declared(builder, "<init>", "()V");
 		assertNotNull(ctor, BUILDER + " lost its no-arg constructor — the emitted body would NoSuchMethodError");
@@ -133,7 +133,7 @@ class MergedBaseNbtBuilderTest {
 	}
 
 	private static byte[] bytesOf(Path jar, String internal) throws Exception {
-		TestFixtures.require(Fixture.STAGED, Files.isRegularFile(jar), "staged artifact absent: " + jar);
+		TestFixtures.requireFile(Fixture.STAGED, jar, "staged artifact absent: " + jar);
 		try (ZipFile zip = new ZipFile(jar.toFile())) {
 			ZipEntry entry = zip.getEntry(internal + ".class");
 			assertNotNull(entry, internal + " not in " + jar.getFileName());

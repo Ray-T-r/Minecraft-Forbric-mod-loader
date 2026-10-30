@@ -33,7 +33,7 @@ class WorldgenCanaryDataTest {
 
 	static String inspect(String family, String namespace, String source, String runtime) throws Exception {
 		Path jar = STAGED.resolve(runtime + "/" + namespace + ".jar");
-		TestFixtures.require(Fixture.STAGED, Files.isRegularFile(jar),
+		TestFixtures.requireFile(Fixture.STAGED, jar,
 				"build canaries with forbric-loader/run/build-testmods.sh");
 		try (ZipFile zip = new ZipFile(jar.toFile())) {
 			String base = "data/" + namespace + "/";

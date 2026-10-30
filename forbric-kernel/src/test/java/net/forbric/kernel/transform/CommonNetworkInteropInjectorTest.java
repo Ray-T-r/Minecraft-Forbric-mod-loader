@@ -90,7 +90,7 @@ class CommonNetworkInteropInjectorTest {
 
 	@Test
 	void theRealMergedListenerGetsExactlyTwoNewGuardsAndVerifies() throws Exception {
-		TestFixtures.require(Fixture.STAGED, Files.isRegularFile(MERGED_BASE), "staged merged base absent — skipping real-bytecode check");
+		TestFixtures.requireFile(Fixture.STAGED, MERGED_BASE, "staged merged base absent — skipping real-bytecode check");
 		byte[] in = readClass(LISTENER + ".class");
 		ClassNode before = parse(in);
 		byte[] out = new CommonNetworkInteropInjector().transform(LISTENER_NAME, in, null);
@@ -158,7 +158,7 @@ class CommonNetworkInteropInjectorTest {
 	 */
 	@Test
 	void thePlayServerHandlerReachesNeoForgesDispatcher() throws Exception {
-		TestFixtures.require(Fixture.STAGED, Files.isRegularFile(MERGED_BASE), "staged merged base absent — skipping real-bytecode check");
+		TestFixtures.requireFile(Fixture.STAGED, MERGED_BASE, "staged merged base absent — skipping real-bytecode check");
 		String listener = "net/minecraft/server/network/ServerGamePacketListenerImpl";
 		ClassNode node = transformed(listener);
 		MethodNode handler = method(node, "handleCustomPayload",
@@ -219,7 +219,7 @@ class CommonNetworkInteropInjectorTest {
 	 */
 	@Test
 	void everyListenerOffersMinecraftForgeOnlyItsOwnPayloadThroughOnePath() throws Exception {
-		TestFixtures.require(Fixture.STAGED, Files.isRegularFile(MERGED_BASE), "staged merged base absent — skipping real-bytecode check");
+		TestFixtures.requireFile(Fixture.STAGED, MERGED_BASE, "staged merged base absent — skipping real-bytecode check");
 		String hook = "(Lnet/minecraft/network/protocol/common/custom/CustomPacketPayload;Lnet/minecraft/network/Connection;)Z";
 		for (String[] site : new String[][] {
 				{"net/minecraft/client/multiplayer/ClientCommonPacketListenerImpl", "Lnet/minecraft/network/protocol/common/ClientboundCustomPayloadPacket;", "common"},
@@ -334,7 +334,7 @@ class CommonNetworkInteropInjectorTest {
 
 	@Test
 	void theMergedConnectionStartsForgesNetworkingWhenItGoesActive() throws Exception {
-		TestFixtures.require(Fixture.STAGED, Files.isRegularFile(MERGED_BASE), "staged merged base absent — skipping real-bytecode check");
+		TestFixtures.requireFile(Fixture.STAGED, MERGED_BASE, "staged merged base absent — skipping real-bytecode check");
 		String connection = "net/minecraft/network/Connection";
 		ClassNode node = transformed(connection);
 		MethodNode active = method(node, "channelActive", "(Lio/netty/channel/ChannelHandlerContext;)V");
@@ -357,7 +357,7 @@ class CommonNetworkInteropInjectorTest {
 
 	@Test
 	void theMergedServerGathersForgesConfigurationTasksAfterNeoForges() throws Exception {
-		TestFixtures.require(Fixture.STAGED, Files.isRegularFile(MERGED_BASE), "staged merged base absent — skipping real-bytecode check");
+		TestFixtures.requireFile(Fixture.STAGED, MERGED_BASE, "staged merged base absent — skipping real-bytecode check");
 		ClassNode node = transformed("net/minecraft/server/network/ServerConfigurationPacketListenerImpl");
 		MethodNode run = method(node, "runConfiguration", "()V");
 
@@ -376,7 +376,7 @@ class CommonNetworkInteropInjectorTest {
 
 	@Test
 	void configurationTasksStartThroughForgesContextInstead() throws Exception {
-		TestFixtures.require(Fixture.STAGED, Files.isRegularFile(MERGED_BASE), "staged merged base absent — skipping real-bytecode check");
+		TestFixtures.requireFile(Fixture.STAGED, MERGED_BASE, "staged merged base absent — skipping real-bytecode check");
 		ClassNode node = transformed("net/minecraft/server/network/ServerConfigurationPacketListenerImpl");
 		MethodNode start = method(node, "startNextTask", "()V");
 
@@ -407,7 +407,7 @@ class CommonNetworkInteropInjectorTest {
 
 	@Test
 	void theClientRunsForgesConfigurationCompleteBeforeItEntersPlay() throws Exception {
-		TestFixtures.require(Fixture.STAGED, Files.isRegularFile(MERGED_BASE), "staged merged base absent — skipping real-bytecode check");
+		TestFixtures.requireFile(Fixture.STAGED, MERGED_BASE, "staged merged base absent — skipping real-bytecode check");
 		ClassNode node = transformed("net/minecraft/client/multiplayer/ClientConfigurationPacketListenerImpl");
 		MethodNode finished = method(node, "handleConfigurationFinished",
 				"(Lnet/minecraft/network/protocol/configuration/ClientboundFinishConfigurationPacket;)V");
@@ -436,7 +436,7 @@ class CommonNetworkInteropInjectorTest {
 	 */
 	@Test
 	void everyHookSplicedIntoTheRealListenersResolves() throws Exception {
-		TestFixtures.require(Fixture.STAGED, Files.isRegularFile(MERGED_BASE), "staged merged base absent — skipping real-bytecode check");
+		TestFixtures.requireFile(Fixture.STAGED, MERGED_BASE, "staged merged base absent — skipping real-bytecode check");
 		for (String entry : List.of(
 				"net/minecraft/network/Connection",
 				"net/minecraft/server/network/ServerConfigurationPacketListenerImpl",

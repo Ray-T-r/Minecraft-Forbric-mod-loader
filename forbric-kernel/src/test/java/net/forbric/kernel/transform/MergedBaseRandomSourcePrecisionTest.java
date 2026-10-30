@@ -69,7 +69,7 @@ class MergedBaseRandomSourcePrecisionTest {
 
 	@Test
 	void theMergedBaseScalesItsRandomBitsInFloatAndTheRepairPutsItBackInDouble() throws Exception {
-		TestFixtures.require(Fixture.STAGED, Files.isRegularFile(MERGED_BASE), "merged base not staged: " + MERGED_BASE);
+		TestFixtures.requireFile(Fixture.STAGED, MERGED_BASE, "merged base not staged: " + MERGED_BASE);
 		for (String source : SOURCES) {
 			byte[] before = entry(source + ".class");
 			assertTrue(scalesInFloat(read(before)), source + " no longer carries the float-rounded nextDouble() this "

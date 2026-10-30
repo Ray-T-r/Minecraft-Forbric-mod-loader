@@ -77,7 +77,7 @@ class FurnaceTickCallsInjectorTest {
 	 * fails here instead of in a player's world.
 	 */
 	@Test void theFurnaceIsTheMergedBasesOnlyStaticInstanceMismatch() throws Exception {
-		TestFixtures.require(Fixture.STAGED, Files.isRegularFile(MERGED), "actual game required");
+		TestFixtures.requireFile(Fixture.STAGED, MERGED, "actual game required");
 		Map<String, ClassNode> classes = new HashMap<>();
 		try (ZipFile zip = new ZipFile(MERGED.toFile())) {
 			for (ZipEntry entry : Collections.list(zip.entries())) {

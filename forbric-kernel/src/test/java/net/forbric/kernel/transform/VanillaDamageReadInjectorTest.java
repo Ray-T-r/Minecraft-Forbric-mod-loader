@@ -41,7 +41,7 @@ class VanillaDamageReadInjectorTest {
 	 * must come first, and the first {@code fload 3} — the one a mod's injector binds to — must be the read's.
 	 */
 	@Test void livingEntityReadsBeforeArmourAndBeforeTheForgeSeam() throws Exception {
-		TestFixtures.require(Fixture.STAGED, Files.isRegularFile(MERGED), "merged base not staged: " + MERGED);
+		TestFixtures.requireFile(Fixture.STAGED, MERGED, "merged base not staged: " + MERGED);
 		byte[] original = NativeCoremodParityTest.read(MERGED, "net/minecraft/world/entity/LivingEntity");
 		byte[] seamed = new ForgeDamageSeamsInjector().transform("net.minecraft.world.entity.LivingEntity", original, null);
 		assertTrue(forgeHurt(code(hurt(seamed))) >= 0, "premise: MinecraftForge's Hurt is in actuallyHurt, natively or by the seam");
@@ -65,7 +65,7 @@ class VanillaDamageReadInjectorTest {
 	}
 
 	@Test void playerOverridesTheSameWayAndGetsTheSameRead() throws Exception {
-		TestFixtures.require(Fixture.STAGED, Files.isRegularFile(MERGED), "merged base not staged: " + MERGED);
+		TestFixtures.requireFile(Fixture.STAGED, MERGED, "merged base not staged: " + MERGED);
 		byte[] original = NativeCoremodParityTest.read(MERGED, "net/minecraft/world/entity/player/Player");
 		byte[] out = new VanillaDamageReadInjector().transform("net.minecraft.world.entity.player.Player", original, null);
 		assertNotSame(original, out);

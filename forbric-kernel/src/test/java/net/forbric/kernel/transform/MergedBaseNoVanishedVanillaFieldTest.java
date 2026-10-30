@@ -88,7 +88,7 @@ class MergedBaseNoVanishedVanillaFieldTest {
 
 	@Test
 	void noVanillaFieldDescriptorHasVanishedBeyondTheKnownSet() throws Exception {
-		TestFixtures.require(Fixture.STAGED, Files.isRegularFile(MERGED_BASE), "staged merged base absent — skipping whole-artifact scan");
+		TestFixtures.requireFile(Fixture.STAGED, MERGED_BASE, "staged merged base absent — skipping whole-artifact scan");
 		TestFixtures.require(Fixture.MC_LIBRARIES, Files.isRegularFile(VANILLA),
 				"stock 26.2 absent at " + VANILLA + " — set MC_DIR to a Minecraft install to run this scan");
 

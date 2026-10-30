@@ -88,7 +88,7 @@ class MergedBaseKeyModifierSuffixTest {
 
 	@Test
 	void theRealMergedBaseStillNeedsItAndStaysVerifiable() throws Exception {
-		TestFixtures.require(Fixture.STAGED, Files.isRegularFile(MERGED_BASE), "staged merged base absent — skipping real-bytecode check");
+		TestFixtures.requireFile(Fixture.STAGED, MERGED_BASE, "staged merged base absent — skipping real-bytecode check");
 		byte[] in = readClass(INPUT_CONSTANTS + ".class");
 		byte[] out = transform(in);
 		assertTrue(out != in, "the staged merged base must still need the repair — if it stopped, re-derive the test");

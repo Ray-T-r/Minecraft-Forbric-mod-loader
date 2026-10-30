@@ -27,7 +27,7 @@ class ForgeAttributeValidationInjectorTest {
 	@AfterEach void reset() { System.clearProperty(ForgeAttributeValidationInjector.PROPERTY); }
 
 	@Test void onValidateGoesThroughTheKernel() throws Exception {
-		TestFixtures.require(Fixture.STAGED, Files.isRegularFile(FORGE), "forge runtime not staged: " + FORGE);
+		TestFixtures.requireFiles(Fixture.STAGED, "forge runtime not staged: " + FORGE, FORGE);
 		String target = ForgeAttributeValidationInjector.TARGET;
 		byte[] original = NativeCoremodParityTest.read(FORGE, target.replace('.', '/'));
 		byte[] out = new ForgeAttributeValidationInjector().transform(target, original, null);

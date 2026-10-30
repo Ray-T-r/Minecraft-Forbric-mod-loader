@@ -64,7 +64,7 @@ class DeadEventAuditStagedTest {
 
 	private static byte[] stagedItemStack() throws Exception {
 		Path merged = TestFixtures.stagedBase().normalize();
-		TestFixtures.require(Fixture.STAGED, Files.isRegularFile(merged), "staged merged base absent");
+		TestFixtures.requireFile(Fixture.STAGED, merged, "staged merged base absent");
 		try (ZipFile zip = new ZipFile(merged.toFile())) {
 			ZipEntry entry = zip.getEntry(ITEM_STACK + ".class");
 			assertNotNull(entry, "ItemStack is missing from the staged merged base " + merged);

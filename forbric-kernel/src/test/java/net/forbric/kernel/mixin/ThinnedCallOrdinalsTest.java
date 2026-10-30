@@ -49,7 +49,7 @@ class ThinnedCallOrdinalsTest {
 	 * keeps are followed by the row's next call; the merged body makes it as often as the row keeps, each followed by it.
 	 */
 	@Test void theRowIsWhatVanillaAndTheMergedBaseSay() throws Exception {
-		TestFixtures.require(Fixture.STAGED, Files.isRegularFile(MERGED), "actual game required");
+		TestFixtures.requireFile(Fixture.STAGED, MERGED, "actual game required");
 		TestFixtures.require(Fixture.MC_LIBRARIES, Files.isRegularFile(VANILLA), "vanilla jar required");
 		MethodNode vanilla = method(read(VANILLA, SITE.owner()), SITE.method());
 		List<Boolean> followed = new ArrayList<>();
@@ -63,7 +63,7 @@ class ThinnedCallOrdinalsTest {
 	}
 
 	@Test void releasedViaFabricPlusCountsOnTheMergedBody() throws Exception {
-		TestFixtures.require(Fixture.STAGED, Files.isRegularFile(MERGED), "actual game required");
+		TestFixtures.requireFile(Fixture.STAGED, MERGED, "actual game required");
 		TestFixtures.require(Fixture.THIRD_PARTY, Files.isRegularFile(VIAFABRICPLUS), VIAFABRICPLUS + " absent");
 		ClassNode target = read(MERGED, SITE.owner());
 		ClassNode mixin = read(VIAFABRICPLUS, "com/viaversion/viafabricplus/injection/mixin/features/v1_12_2/MixinMultiPlayerGameMode");

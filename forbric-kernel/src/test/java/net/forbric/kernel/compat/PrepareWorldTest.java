@@ -168,7 +168,7 @@ class PrepareWorldTest {
 
     @Test void theCarrierReadsThisFlagAndUsesItToSuppressOnlyTheExperimentalBackupPrompt() throws Exception {
         Path merged = TestFixtures.stagedBase();
-        TestFixtures.require(Fixture.STAGED, Files.isRegularFile(merged), "requires current staged merged base");
+        TestFixtures.requireFile(Fixture.STAGED, merged, "requires current staged merged base");
         try (ZipFile zip = new ZipFile(merged.toFile())) {
             ClassNode data = read(zip, "net/minecraft/world/level/storage/PrimaryLevelData");
             MethodNode parse = data.methods.stream().filter(m -> m.name.equals("parse")).findFirst().orElseThrow();

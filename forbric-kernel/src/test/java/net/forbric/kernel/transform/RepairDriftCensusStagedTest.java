@@ -52,7 +52,7 @@ class RepairDriftCensusStagedTest {
 	@Test
 	void theBuildThisTreeIsCalibratedAgainstMovesNoAnchor() throws Exception {
 		List<Path> jars = stagedJars();
-		TestFixtures.require(Fixture.STAGED, jars.stream().allMatch(Files::isRegularFile), "staged merged base or carriers absent");
+		TestFixtures.requireFiles(Fixture.STAGED, "staged merged base or carriers absent", jars.toArray(Path[]::new));
 		RepairDriftCensus.Drift drift = RepairDriftCensus.replay(jars);
 		System.out.println(drift.summary());
 		assertTrue(drift.declared() > 0, "no claims declared — the census did not run");
@@ -64,7 +64,7 @@ class RepairDriftCensusStagedTest {
 	@Test
 	void aCandidateThatMovesOneAnchorIsNamedBeforeItIsAdopted() throws Exception {
 		List<Path> jars = stagedJars();
-		TestFixtures.require(Fixture.STAGED, jars.stream().allMatch(Files::isRegularFile), "staged merged base or carriers absent");
+		TestFixtures.requireFiles(Fixture.STAGED, "staged merged base or carriers absent", jars.toArray(Path[]::new));
 		byte[] real = RepairDriftCensus.bytesOf(jars, KEY_MAPPING);
 		assertNotNull(real, "the staged base carries KeyMapping");
 

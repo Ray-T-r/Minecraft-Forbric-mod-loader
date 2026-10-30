@@ -111,7 +111,7 @@ class MergedBaseCapabilityLinkTest {
 	}
 
 	private static Result scan(boolean transformed) throws Exception {
-		TestFixtures.require(Fixture.STAGED, Files.isRegularFile(MERGED) && Files.isRegularFile(FORGE) && Files.isRegularFile(NEO), "staged artifacts absent");
+		TestFixtures.requireFiles(Fixture.STAGED, "staged artifacts absent", MERGED, FORGE, NEO);
 		Map<String, ClassNode> cache = new HashMap<>();
 		Set<String> unresolved = new LinkedHashSet<>();
 		int scanned = 0;

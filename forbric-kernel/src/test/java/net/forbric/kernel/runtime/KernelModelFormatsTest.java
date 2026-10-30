@@ -236,8 +236,7 @@ class KernelModelFormatsTest {
 	}
 
 	private Game game(boolean funnelled, boolean fabricApi) throws Exception {
-		TestFixtures.require(Fixture.STAGED, Files.isRegularFile(MERGED_BASE) && Files.isRegularFile(NEO_CARRIER)
-				&& Files.isRegularFile(FORGE_CARRIER), "staged game jars absent");
+		TestFixtures.requireFiles(Fixture.STAGED, "staged game jars absent", MERGED_BASE, NEO_CARRIER, FORGE_CARRIER);
 		TestFixtures.require(Fixture.GAME_SIDE, Files.isDirectory(RUNTIME.resolve("net/forbric/kernel/runtime")), "game side not compiled");
 		TestFixtures.require(Fixture.THIRD_PARTY, Files.isRegularFile(FABRIC_API), "staged fabric-api absent at " + FABRIC_API);
 		byte[] shipped = TestFixtures.requireEntry(Fixture.STAGED, NEO_CARRIER, TARGET + ".class");

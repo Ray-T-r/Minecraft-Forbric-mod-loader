@@ -113,7 +113,7 @@ class MixinRetargetRenamedBodyCorpusTest {
 
 	@Test
 	void r3MovesExactlyThePinnedInjectorsOverTheAuditCorpus() throws Exception {
-		for (Path p : List.of(MERGED, INTEROP, NEO_RUNTIME)) TestFixtures.require(Fixture.STAGED, Files.isRegularFile(p), p + " required");
+		for (Path p : List.of(MERGED, INTEROP, NEO_RUNTIME)) TestFixtures.requireFile(Fixture.STAGED, p, p + " required");
 		for (Path p : CORPUS) TestFixtures.require(Fixture.THIRD_PARTY, Files.isDirectory(p), p + " required (symlink it from the main checkout)");
 		Function<String, byte[]> resolver = resolver();
 

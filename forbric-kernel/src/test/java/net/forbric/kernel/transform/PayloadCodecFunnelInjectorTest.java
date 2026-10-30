@@ -35,7 +35,7 @@ class PayloadCodecFunnelInjectorTest {
 	@AfterEach void reset() { System.clearProperty(PayloadCodecFunnelInjector.PROPERTY); }
 
 	@Test void neoForgesOverloadGoesThroughVanillasAndVanillasHandsBack() throws Exception {
-		TestFixtures.require(Fixture.STAGED, Files.isRegularFile(MERGED), "merged base not staged: " + MERGED);
+		TestFixtures.requireFile(Fixture.STAGED, MERGED, "merged base not staged: " + MERGED);
 		byte[] original = NativeCoremodParityTest.read(MERGED, PayloadCodecFunnelInjector.OWNER);
 		byte[] out = new PayloadCodecFunnelInjector().transform(PayloadCodecFunnelInjector.TARGET, original, null);
 		assertNotSame(original, out);

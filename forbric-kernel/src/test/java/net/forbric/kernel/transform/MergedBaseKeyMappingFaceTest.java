@@ -366,8 +366,8 @@ class MergedBaseKeyMappingFaceTest {
 		Path forgeRt = run.resolve("forge-runtime/forge-runtime.jar");
 		Path neoRt = run.resolve("neoforge-runtime/neoforge-runtime.jar");
 		TestFixtures.require(Fixture.GAME_SIDE, Files.isDirectory(compiled), "the game-side set is not compiled");
-		TestFixtures.require(Fixture.STAGED, Files.isRegularFile(forgeRt) && Files.isRegularFile(neoRt) && Files.isRegularFile(MERGED),
-				"the staged artifacts are absent");
+		TestFixtures.requireFiles(Fixture.STAGED,
+				"the staged artifacts are absent", forgeRt, neoRt, MERGED);
 		List<java.net.URL> urls = new ArrayList<>(List.of(compiled.toUri().toURL(), forgeRt.toUri().toURL(),
 				neoRt.toUri().toURL(), MERGED.toUri().toURL()));
 		// Touching the carrier's KeyModifier initialises it, and its display name reaches into the game — which

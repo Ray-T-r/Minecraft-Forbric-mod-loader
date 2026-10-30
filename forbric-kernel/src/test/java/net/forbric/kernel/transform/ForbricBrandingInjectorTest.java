@@ -186,7 +186,7 @@ class ForbricBrandingInjectorTest {
 	}
 
 	@Test void theTitleScreenNamesForbricAndCountsEveryInstalledMod() throws Exception {
-		TestFixtures.require(Fixture.STAGED, Files.isRegularFile(NEOFORGE_RUNTIME), "neoforge runtime not staged: " + NEOFORGE_RUNTIME);
+		TestFixtures.requireFile(Fixture.STAGED, NEOFORGE_RUNTIME, "neoforge runtime not staged: " + NEOFORGE_RUNTIME);
 		String internal = ForbricBrandingInjector.BRANDING_CONTROL.replace('.', '/');
 		byte[] original = NativeCoremodParityTest.read(NEOFORGE_RUNTIME, internal);
 		byte[] out = new ForbricBrandingInjector().transform(ForbricBrandingInjector.BRANDING_CONTROL, original, null);
@@ -204,7 +204,7 @@ class ForbricBrandingInjectorTest {
 	}
 
 	@Test void f3ShowsForbricsReleaseAndBrand() throws Exception {
-		TestFixtures.require(Fixture.STAGED, Files.isRegularFile(MERGED), "merged base not staged: " + MERGED);
+		TestFixtures.requireFile(Fixture.STAGED, MERGED, "merged base not staged: " + MERGED);
 		String internal = ForbricBrandingInjector.DEBUG_VERSION.replace('.', '/');
 		byte[] original = NativeCoremodParityTest.read(MERGED, internal);
 		byte[] out = new ForbricBrandingInjector().transform(ForbricBrandingInjector.DEBUG_VERSION, original, null);

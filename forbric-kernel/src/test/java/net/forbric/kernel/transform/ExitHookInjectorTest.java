@@ -67,7 +67,7 @@ class ExitHookInjectorTest {
 
 	@Test
 	void theRealMergedCloseIsHookedAndStillVerifies() throws Exception {
-		TestFixtures.require(Fixture.STAGED, Files.isRegularFile(MERGED_BASE), "staged merged base absent — skipping real-bytecode check");
+		TestFixtures.requireFile(Fixture.STAGED, MERGED_BASE, "staged merged base absent — skipping real-bytecode check");
 		byte[] in = readClass(MINECRAFT + ".class");
 		byte[] out = transform(MINECRAFT_NAME, in);
 		assertTrue(out != in);
@@ -81,7 +81,7 @@ class ExitHookInjectorTest {
 
 	@Test
 	void theRealMergedDedicatedServerExitIsHookedAndStillVerifies() throws Exception {
-		TestFixtures.require(Fixture.STAGED, Files.isRegularFile(MERGED_BASE), "staged merged base absent — skipping real-bytecode check");
+		TestFixtures.requireFile(Fixture.STAGED, MERGED_BASE, "staged merged base absent — skipping real-bytecode check");
 		String server = "net/minecraft/server/dedicated/DedicatedServer";
 		byte[] in = readClass(server + ".class");
 		byte[] out = transform(server.replace('/', '.'), in);

@@ -35,7 +35,7 @@ class ScopedClearRelayStagedTest {
 
 	private static Path merged() {
 		Path jar = TestFixtures.stagedBase();
-		TestFixtures.require(TestFixtures.Fixture.STAGED, Files.isRegularFile(jar), "actual game required");
+		TestFixtures.requireFile(TestFixtures.Fixture.STAGED, jar, "actual game required");
 		return jar;
 	}
 
@@ -123,7 +123,7 @@ class ScopedClearRelayStagedTest {
 
 	private static ClassNode fabricMixin(String module, String name) throws Exception {
 		Path api = TestFixtures.fabricApi();
-		TestFixtures.require(TestFixtures.Fixture.STAGED, Files.isRegularFile(api), "actual Fabric API fixture required");
+		TestFixtures.requireFile(TestFixtures.Fixture.STAGED, api, "actual Fabric API fixture required");
 		try (ZipFile outer = new ZipFile(api.toFile())) {
 			ZipEntry jar = outer.stream().filter(e -> e.getName().startsWith("META-INF/jars/" + module + "-")).findFirst().orElseThrow();
 			try (ZipInputStream inner = new ZipInputStream(new ByteArrayInputStream(outer.getInputStream(jar).readAllBytes()))) {

@@ -43,7 +43,7 @@ class LambdaPermutationCensusTest {
 	private static final Path VANILLA = TestFixtures.vanillaJar();
 
 	@Test void theShippedTableIsExactlyWhatTheArtifactsSay() throws Exception {
-		TestFixtures.require(Fixture.STAGED, Files.isRegularFile(MERGED), "merged base and vanilla jar required");
+		TestFixtures.requireFile(Fixture.STAGED, MERGED, "merged base and vanilla jar required");
 		TestFixtures.require(Fixture.MC_LIBRARIES, Files.isRegularFile(VANILLA), "merged base and vanilla jar required");
 		Map<String, ClassNode> vanilla = read(VANILLA);
 		TreeSet<String> rows = new TreeSet<>();

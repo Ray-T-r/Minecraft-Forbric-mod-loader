@@ -42,7 +42,7 @@ class DeliveryBookkeepingStagedTest {
 
 		Resources() throws IOException {
 			for (Path jar : jars()) {
-				TestFixtures.require(Fixture.STAGED, Files.isRegularFile(jar), "staged jar absent: " + jar);
+				TestFixtures.requireFile(Fixture.STAGED, jar, "staged jar absent: " + jar);
 				zips.add(new ZipFile(jar.toFile()));
 			}
 		}

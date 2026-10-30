@@ -46,7 +46,7 @@ class DeclarationReaderCensusTest {
 		Path run = TestFixtures.stagedRoot();
 		List<Path> platform = List.of(run.resolve(TestFixtures.BASE_JAR),
 				run.resolve("neoforge-runtime/neoforge-runtime.jar"), run.resolve("forge-runtime/forge-runtime.jar"));
-		for (Path jar : platform) TestFixtures.require(Fixture.STAGED, Files.isRegularFile(jar), jar + " is absent");
+		for (Path jar : platform) TestFixtures.requireFile(Fixture.STAGED, jar, jar + " is absent");
 		TreeSet<String> edited = new TreeSet<>();
 		int classes = 0;
 		for (Path jar : platform) classes += scan(jar.getFileName().toString(), Files.readAllBytes(jar), edited, 0);
@@ -109,7 +109,7 @@ class DeclarationReaderCensusTest {
 		int checked = 0;
 		for (DeclarationReaderModListInjector.Family family : DeclarationReaderModListInjector.FAMILIES) {
 			Path carrier = carriers.get(family.ecosystem());
-			TestFixtures.require(Fixture.STAGED, Files.isRegularFile(carrier), carrier + " is absent");
+			TestFixtures.requireFile(Fixture.STAGED, carrier, carrier + " is absent");
 			org.objectweb.asm.tree.ClassNode modList = node(classIn(Files.readAllBytes(carrier), family.modList() + ".class"));
 			org.objectweb.asm.tree.ClassNode hook = node(Files.readAllBytes(compiled.resolve(family.hook() + ".class")));
 			for (var member : family.members().entrySet()) {

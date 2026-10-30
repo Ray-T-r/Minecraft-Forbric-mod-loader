@@ -42,7 +42,7 @@ class LootPoolFieldsInjectorTest {
 	}
 
 	private static byte[] lootPool() throws Exception {
-		TestFixtures.require(Fixture.STAGED, Files.isRegularFile(MERGED), "staged merged base absent");
+		TestFixtures.requireFile(Fixture.STAGED, MERGED, "staged merged base absent");
 		try (ZipFile zip = new ZipFile(MERGED.toFile()); var in = zip.getInputStream(zip.getEntry("net/minecraft/world/level/storage/loot/LootPool.class"))) {
 			return in.readAllBytes();
 		}

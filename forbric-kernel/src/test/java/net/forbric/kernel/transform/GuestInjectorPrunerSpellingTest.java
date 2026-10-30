@@ -354,7 +354,7 @@ class GuestInjectorPrunerSpellingTest {
 	private static byte[] realMixin(String module, String mixin) throws Exception {
 		Path fabricApi = TestFixtures.fabricApi();
 		TestFixtures.require(Fixture.THIRD_PARTY, Files.isRegularFile(fabricApi), "fabric-api jar absent: " + fabricApi);
-		TestFixtures.require(Fixture.STAGED, Files.isRegularFile(MERGED_BASE), "staged merged base absent: " + MERGED_BASE);
+		TestFixtures.requireFile(Fixture.STAGED, MERGED_BASE, "staged merged base absent: " + MERGED_BASE);
 		byte[] bytes = readFromNestedJar(fabricApi, module, mixin + ".class");
 		TestFixtures.require(Fixture.THIRD_PARTY, bytes != null, mixin + " absent from the nested " + module + " module");
 		net.forbric.kernel.mixin.MixinStubRebind.noteEcosystem(mixin, Ecosystem.FABRIC, module + ".mixins.json");

@@ -173,7 +173,7 @@ class MergedBaseSpawnReasonTest {
 	void anotherClassKeepsItsOwnSpawnFields() throws Exception {
 		// The rule is pinned to Mob by name. A subclass cannot read Mob's private field anyway, but a rule that
 		// rewrote by field name alone would be a rule waiting to hit an unrelated class.
-		TestFixtures.require(Fixture.STAGED, Files.isRegularFile(MERGED_BASE), "staged merged base absent");
+		TestFixtures.requireFile(Fixture.STAGED, MERGED_BASE, "staged merged base absent");
 		byte[] other = readClass("net/minecraft/world/entity/LivingEntity.class");
 		assertNotNull(other, "content drift: LivingEntity absent from this base");
 
@@ -219,7 +219,7 @@ class MergedBaseSpawnReasonTest {
 	}
 
 	private static byte[] original() throws IOException {
-		TestFixtures.require(Fixture.STAGED, Files.isRegularFile(MERGED_BASE), "staged merged base absent — skipping real-bytecode check");
+		TestFixtures.requireFile(Fixture.STAGED, MERGED_BASE, "staged merged base absent — skipping real-bytecode check");
 		byte[] in = readClass(ENTRY);
 		assertNotNull(in, "content drift: Mob absent from this base");
 		ClassNode node = new ClassNode();

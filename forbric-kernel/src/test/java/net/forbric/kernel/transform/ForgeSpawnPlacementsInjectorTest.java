@@ -186,7 +186,7 @@ class ForgeSpawnPlacementsInjectorTest {
 	private static TransformContext context() { return new TransformContext(EnvType.CLIENT, false, "mojmap"); }
 	private static byte[] staged(String jar, String entry) throws Exception {
 		Path run = TestFixtures.stagedRoot();
-		Path path = run.resolve(jar); TestFixtures.require(Fixture.STAGED, Files.isRegularFile(path), "staged artifact absent: " + path);
+		Path path = run.resolve(jar); TestFixtures.requireFile(Fixture.STAGED, path, "staged artifact absent: " + path);
 		try (ZipFile zip = new ZipFile(path.toFile())) { assertNotNull(zip.getEntry(entry + ".class")); return zip.getInputStream(zip.getEntry(entry + ".class")).readAllBytes(); }
 	}
 }

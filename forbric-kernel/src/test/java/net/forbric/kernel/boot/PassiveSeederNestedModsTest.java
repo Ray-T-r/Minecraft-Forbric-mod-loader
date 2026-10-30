@@ -201,7 +201,7 @@ class PassiveSeederNestedModsTest {
 	}
 
 	private URLClassLoader neoForgeLoader() throws Exception {
-		TestFixtures.require(Fixture.STAGED, Files.isRegularFile(PassiveSeederLoadingModListTest.NEO_RUNTIME),
+		TestFixtures.requireFile(Fixture.STAGED, PassiveSeederLoadingModListTest.NEO_RUNTIME,
 				"staged neoforge-runtime.jar absent");
 		Path stubs = PassiveSeederLoadingModListTest.loggingStubs(tmp.resolve("stubs"));
 		return new URLClassLoader(new URL[] {stubs.toUri().toURL(), PassiveSeederLoadingModListTest.NEO_RUNTIME.toUri()

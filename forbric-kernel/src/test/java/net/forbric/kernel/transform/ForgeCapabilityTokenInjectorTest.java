@@ -75,7 +75,7 @@ class ForgeCapabilityTokenInjectorTest {
 	}
 
 	private static ForgeCapabilityTokenInjector injector() throws Exception {
-		TestFixtures.require(Fixture.STAGED, Files.isRegularFile(FORGE), "staged Forge carrier absent: " + FORGE);
+		TestFixtures.requireFiles(Fixture.STAGED, "staged Forge carrier absent: " + FORGE, FORGE);
 		URLClassLoader loader = new URLClassLoader(new URL[] { FORGE.toUri().toURL() }, ForgeCapabilityTokenInjectorTest.class.getClassLoader());
 		ForgeCapabilityTokenInjector injector = ForgeCapabilityTokenInjector.create(loader);
 		assertNotNull(injector, "content drift: the carrier's CapabilityTokenSubclass plugin could not be created");

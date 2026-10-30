@@ -33,7 +33,7 @@ class MixinTailCaptureNativeTest {
 
 	private static byte[] merged() throws Exception {
 		Path jar = TestFixtures.stagedBase();
-		TestFixtures.require(Fixture.STAGED, Files.isRegularFile(jar), "merged base required: " + jar);
+		TestFixtures.requireFile(Fixture.STAGED, jar, "merged base required: " + jar);
 		try (ZipFile zip = new ZipFile(jar.toFile())) { return zip.getInputStream(zip.getEntry(GUI + ".class")).readAllBytes(); }
 	}
 

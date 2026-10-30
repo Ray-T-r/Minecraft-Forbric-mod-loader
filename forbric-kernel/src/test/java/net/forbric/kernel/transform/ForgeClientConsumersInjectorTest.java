@@ -321,7 +321,7 @@ class ForgeClientConsumersInjectorTest {
     private static ClassNode node(byte[] bytes) { ClassNode node = new ClassNode(); new ClassReader(bytes).accept(node, 0); return node; }
     private static byte[] write(ClassNode node) { ClassWriter writer = new ClassWriter(0); node.accept(writer); return writer.toByteArray(); }
     private static byte[] bytes(Path jar, String entry) throws Exception {
-        TestFixtures.require(Fixture.STAGED, Files.isRegularFile(jar), "staged carrier absent: " + jar);
+        TestFixtures.requireFile(Fixture.STAGED, jar, "staged carrier absent: " + jar);
         try (ZipFile zip = new ZipFile(jar.toFile())) {
             var value = zip.getEntry(entry); assertNotNull(value, entry); return zip.getInputStream(value).readAllBytes();
         }

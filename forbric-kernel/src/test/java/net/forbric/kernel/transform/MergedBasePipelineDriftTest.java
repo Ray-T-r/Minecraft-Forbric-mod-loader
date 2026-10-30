@@ -118,7 +118,7 @@ class MergedBasePipelineDriftTest {
 
 	@Test
 	void everyNumericDifferenceFromVanillaIsOneTheKernelRepairs() throws Exception {
-		TestFixtures.require(Fixture.STAGED, Files.isRegularFile(MERGED_BASE), "merged base not staged: " + MERGED_BASE);
+		TestFixtures.requireFile(Fixture.STAGED, MERGED_BASE, "merged base not staged: " + MERGED_BASE);
 		TestFixtures.require(Fixture.MC_LIBRARIES, Files.isRegularFile(VANILLA), "no vanilla 26.2 jar at " + VANILLA);
 
 		List<String> unrepaired = new ArrayList<>();

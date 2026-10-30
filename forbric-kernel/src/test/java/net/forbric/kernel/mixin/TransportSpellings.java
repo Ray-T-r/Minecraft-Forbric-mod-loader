@@ -39,14 +39,14 @@ final class TransportSpellings {
 		String configured = System.getProperty("forbric.predicateBase");
 		Path base = configured == null || configured.isBlank()
 				? TestFixtures.stagedBase() : Path.of(configured);
-		TestFixtures.require(Fixture.STAGED, Files.isRegularFile(base), "staged merged base required: " + base);
+		TestFixtures.requireFile(Fixture.STAGED, base, "staged merged base required: " + base);
 		return base;
 	}
 
 	static Path fabricApi() {
 		String configured = System.getProperty("forbric.fabricApi");
 		Path api = configured == null || configured.isBlank() ? TestFixtures.fabricApi() : Path.of(configured);
-		TestFixtures.require(Fixture.STAGED, Files.isRegularFile(api), "actual Fabric API required: " + api);
+		TestFixtures.requireFile(Fixture.STAGED, api, "actual Fabric API required: " + api);
 		return api;
 	}
 

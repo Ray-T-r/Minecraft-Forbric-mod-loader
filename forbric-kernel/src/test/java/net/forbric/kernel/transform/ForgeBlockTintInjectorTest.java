@@ -62,7 +62,7 @@ class ForgeBlockTintInjectorTest {
 	 */
 	@Test void theActualMergedClassHasExactlyThisSeam() throws Exception {
 		Path jar = TestFixtures.stagedBase();
-		TestFixtures.require(Fixture.STAGED, Files.isRegularFile(jar), "requires merged base");
+		TestFixtures.requireFile(Fixture.STAGED, jar, "requires merged base");
 		try (ZipFile zip = new ZipFile(jar.toFile())) {
 			byte[] before = zip.getInputStream(zip.getEntry(ForgeBlockTintInjector.TARGET.replace('.', '/') + ".class")).readAllBytes();
 			assertEquals(1, posts(createDefault(before), ForeignType.FML_MOD_LOADER.internal(Ecosystem.NEOFORGE)));

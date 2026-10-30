@@ -91,7 +91,7 @@ class HudElementBridgeInjectorTest {
 
 	@Test
 	void isIdempotent() throws Exception {
-		TestFixtures.require(Fixture.STAGED, Files.isRegularFile(NEOFORGE_RUNTIME), "staged neoforge-runtime.jar absent");
+		TestFixtures.requireFile(Fixture.STAGED, NEOFORGE_RUNTIME, "staged neoforge-runtime.jar absent");
 
 		byte[] once = new HudElementBridgeInjector().transform(TARGET, readClass(), null);
 		assertSame(once, new HudElementBridgeInjector().transform(TARGET, once, null),
@@ -110,7 +110,7 @@ class HudElementBridgeInjectorTest {
 	// --- helpers -------------------------------------------------------------------------------------------------
 
 	private static ClassNode transformed() throws Exception {
-		TestFixtures.require(Fixture.STAGED, Files.isRegularFile(NEOFORGE_RUNTIME), "staged neoforge-runtime.jar absent");
+		TestFixtures.requireFile(Fixture.STAGED, NEOFORGE_RUNTIME, "staged neoforge-runtime.jar absent");
 
 		byte[] out = new HudElementBridgeInjector().transform(TARGET, readClass(), null);
 		ClassNode node = new ClassNode();

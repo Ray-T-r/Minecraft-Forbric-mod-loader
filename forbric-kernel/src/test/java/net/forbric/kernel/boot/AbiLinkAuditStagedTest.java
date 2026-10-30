@@ -41,8 +41,7 @@ class AbiLinkAuditStagedTest {
 		Path run = TestFixtures.stagedRoot().normalize();
 		List<Path> against = List.of(run.resolve("forge-runtime/forge-runtime.jar"), run.resolve("neoforge-runtime/neoforge-runtime.jar"),
 				run.resolve(TestFixtures.BASE_JAR));
-		TestFixtures.require(Fixture.STAGED, against.stream().allMatch(Files::isRegularFile),
-				"staged pack or carriers absent");
+		TestFixtures.requireFiles(Fixture.STAGED, "staged pack or carriers absent", against.toArray(Path[]::new));
 		TestFixtures.require(Fixture.THIRD_PARTY, Files.isDirectory(mods), "staged pack or carriers absent");
 		List<Path> jars = new ArrayList<>();
 		try (Stream<Path> list = Files.list(mods)) {

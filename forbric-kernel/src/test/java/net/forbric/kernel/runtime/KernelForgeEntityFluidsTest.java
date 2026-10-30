@@ -91,8 +91,8 @@ class KernelForgeEntityFluidsTest {
 	/** {@link #load} with the mod fluids above, compiled against MinecraftForge's patched game as a mod's are. */
 	private void loadWithFluids() throws Exception {
 		Path forgeRuntime = TestFixtures.stagedRoot().resolve("merged-base/forge-runtime-interop.jar");
-		TestFixtures.require(Fixture.STAGED, Files.isRegularFile(FORGE_PATCHED) && Files.isRegularFile(forgeRuntime),
-				"MinecraftForge's patched game or its runtime is absent");
+		TestFixtures.requireFiles(Fixture.STAGED,
+				"MinecraftForge's patched game or its runtime is absent", FORGE_PATCHED, forgeRuntime);
 		Map<String, byte[]> classes = InjectorExecution.compile(temp.resolve("work"), MOD, List.of(FORGE_PATCHED, forgeRuntime));
 		Path out = temp.resolve("mod");
 		for (var entry : classes.entrySet()) {

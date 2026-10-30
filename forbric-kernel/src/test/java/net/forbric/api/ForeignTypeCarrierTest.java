@@ -65,7 +65,7 @@ class ForeignTypeCarrierTest {
 	}
 
 	private static void assertNamesResolve(Ecosystem eco, Path carrier) throws IOException {
-		TestFixtures.require(Fixture.STAGED, Files.isRegularFile(carrier), "staged carrier absent: " + carrier);
+		TestFixtures.requireFile(Fixture.STAGED, carrier, "staged carrier absent: " + carrier);
 
 		Set<String> classes = classesIn(carrier);
 		List<String> missing = new ArrayList<>();

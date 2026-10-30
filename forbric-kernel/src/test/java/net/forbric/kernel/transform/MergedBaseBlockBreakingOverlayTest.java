@@ -69,7 +69,7 @@ class MergedBaseBlockBreakingOverlayTest {
 
 	@Test
 	void withTheManagerRestoredTheOverlayAsksItAsMinecraftForgeDoes() throws Exception {
-		TestFixtures.require(Fixture.STAGED, Files.isRegularFile(MERGED_BASE), "staged merged base absent — skipping real-bytecode check");
+		TestFixtures.requireFile(Fixture.STAGED, MERGED_BASE, "staged merged base absent — skipping real-bytecode check");
 		byte[] in = readClass(EXTRACTOR + ".class");
 		assertTrue(callsForgeManager(parse(transform(in))), "the overlay's own lookup stays: the level answers it");
 	}
@@ -77,7 +77,7 @@ class MergedBaseBlockBreakingOverlayTest {
 	@Test
 	void theOverlayNoLongerAsksForAManagerThatIsAlwaysNull() throws Exception {
 		System.setProperty(ForgeModelDataFlowTransformer.PROPERTY, "off");
-		TestFixtures.require(Fixture.STAGED, Files.isRegularFile(MERGED_BASE), "staged merged base absent — skipping real-bytecode check");
+		TestFixtures.requireFile(Fixture.STAGED, MERGED_BASE, "staged merged base absent — skipping real-bytecode check");
 		byte[] in = readClass(EXTRACTOR + ".class");
 		assertTrue(callsForgeManager(parse(in)), "the merged base must still carry the crash — if not, re-derive this");
 
@@ -101,7 +101,7 @@ class MergedBaseBlockBreakingOverlayTest {
 	@Test
 	void aSecondPassLeavesTheRepairedClassAlone() throws Exception {
 		System.setProperty(ForgeModelDataFlowTransformer.PROPERTY, "off");
-		TestFixtures.require(Fixture.STAGED, Files.isRegularFile(MERGED_BASE), "staged merged base absent — skipping real-bytecode check");
+		TestFixtures.requireFile(Fixture.STAGED, MERGED_BASE, "staged merged base absent — skipping real-bytecode check");
 		byte[] once = transform(readClass(EXTRACTOR + ".class"));
 		assertSame(once, transform(once), "a class with no such lookup left is coherent and must not be touched");
 	}

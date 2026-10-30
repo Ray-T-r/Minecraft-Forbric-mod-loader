@@ -111,7 +111,7 @@ class MergedBaseFabricConditionsTest {
 	 */
 	@Test
 	void everyConsumerInTheMergedBaseGoesThroughConditionalOps() throws Exception {
-		TestFixtures.require(Fixture.STAGED, Files.isRegularFile(MERGED_BASE), "staged merged base absent");
+		TestFixtures.requireFile(Fixture.STAGED, MERGED_BASE, "staged merged base absent");
 		Set<String> consumers = new LinkedHashSet<>();
 		try (ZipFile zip = new ZipFile(MERGED_BASE.toFile())) {
 			var entries = zip.entries();

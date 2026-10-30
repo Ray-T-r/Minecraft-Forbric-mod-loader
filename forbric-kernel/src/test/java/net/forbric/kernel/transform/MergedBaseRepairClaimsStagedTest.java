@@ -58,7 +58,7 @@ class MergedBaseRepairClaimsStagedTest {
 
 	@Test
 	void everyClaimLandsOnItsStagedTargetAndTheLedgerIsClean() throws Exception {
-		TestFixtures.require(Fixture.STAGED, JARS.stream().allMatch(Files::isRegularFile), "staged merged base or carriers absent");
+		TestFixtures.requireFiles(Fixture.STAGED, "staged merged base or carriers absent", JARS.toArray(Path[]::new));
 		TransformChain chain = new TransformChain();
 		ForbricMergedBaseCompatTransformer compat = new ForbricMergedBaseCompatTransformer(MergedBaseRepairClaimsStagedTest::bytesOf);
 		chain.register(TransformPhase.COREMOD, compat);
@@ -76,7 +76,7 @@ class MergedBaseRepairClaimsStagedTest {
 
 	@Test
 	void whenOneRepairDeclinesTheLedgerNamesExactlyThatClaim() throws Exception {
-		TestFixtures.require(Fixture.STAGED, JARS.stream().allMatch(Files::isRegularFile), "staged merged base or carriers absent");
+		TestFixtures.requireFiles(Fixture.STAGED, "staged merged base or carriers absent", JARS.toArray(Path[]::new));
 		TransformChain chain = new TransformChain();
 		ForbricMergedBaseCompatTransformer compat = new ForbricMergedBaseCompatTransformer(MergedBaseRepairClaimsStagedTest::bytesOf);
 		chain.register(TransformPhase.COREMOD, compat);

@@ -53,10 +53,8 @@ class MergedBaseLostAncestorsTest {
 
 	@Test
 	void theTransformersListIsExactlyWhatTheArtifactsSay() throws IOException {
-		TestFixtures.require(Fixture.STAGED, Files.isRegularFile(MERGED) && Files.isRegularFile(FORGE_BASE)
-						&& Files.isRegularFile(NEO_BASE) && Files.isRegularFile(FORGE_RT)
-						&& Files.isRegularFile(FORGE_INTEROP) && Files.isRegularFile(NEO_RT),
-				"the merged base, both patched sides and both carriers must be staged");
+		TestFixtures.requireFiles(Fixture.STAGED,
+				"the merged base, both patched sides and both carriers must be staged", MERGED, FORGE_BASE, NEO_BASE, FORGE_RT, FORGE_INTEROP, NEO_RT);
 
 		Map<String, String> merged = supers(MERGED, FORGE_INTEROP, NEO_RT);
 		Map<String, String> forge = supers(FORGE_BASE, FORGE_RT);
@@ -92,8 +90,8 @@ class MergedBaseLostAncestorsTest {
 	 */
 	@Test
 	void theTypeItemStackKeptIsNotInTheList() throws IOException {
-		TestFixtures.require(Fixture.STAGED, Files.isRegularFile(MERGED) && Files.isRegularFile(FORGE_RT) && Files.isRegularFile(FORGE_INTEROP) && Files.isRegularFile(NEO_RT),
-				"staged jars absent");
+		TestFixtures.requireFiles(Fixture.STAGED,
+				"staged jars absent", MERGED, FORGE_RT, FORGE_INTEROP, NEO_RT);
 		Map<String, String> merged = supers(MERGED, FORGE_INTEROP, NEO_RT);
 
 		assertTrue(chain("net/minecraft/world/item/ItemStack", merged)
@@ -109,8 +107,7 @@ class MergedBaseLostAncestorsTest {
 	 */
 	@Test
 	void everyStructuralConflictTheBuilderReportedIsAccountedFor() throws IOException {
-		TestFixtures.require(Fixture.STAGED, Files.isRegularFile(CONFLICTS) && Files.isRegularFile(MERGED)
-				&& Files.isRegularFile(FORGE_RT) && Files.isRegularFile(FORGE_INTEROP) && Files.isRegularFile(NEO_RT), "the merge report is absent");
+		TestFixtures.requireFiles(Fixture.STAGED, "the merge report is absent", CONFLICTS, MERGED, FORGE_RT, FORGE_INTEROP, NEO_RT);
 		Map<String, String> merged = supers(MERGED, FORGE_INTEROP, NEO_RT);
 
 		List<String> unaccounted = new ArrayList<>();

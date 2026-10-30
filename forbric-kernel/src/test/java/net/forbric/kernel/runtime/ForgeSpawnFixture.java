@@ -163,7 +163,7 @@ final class ForgeSpawnFixture extends ClassLoader {
 	private void put(String name, byte[] bytes) { definitions.put(name, bytes); }
 	static byte[] staged(String jar, String name) throws Exception {
 		Path path = TestFixtures.stagedRoot().resolve(jar);
-		TestFixtures.require(Fixture.STAGED, Files.isRegularFile(path), "staged artifact absent: " + path);
+		TestFixtures.requireFile(Fixture.STAGED, path, "staged artifact absent: " + path);
 		return TestFixtures.requireEntry(Fixture.STAGED, path, name.replace('.', '/') + ".class");
 	}
 	private static Object objectMethod(Object self, Method method, Object[] args) {

@@ -72,7 +72,7 @@ class MergedBaseSavedHeightmapsTest {
 
 	@Test
 	void theGetterReadsTheVanillaShapedFieldAfterTheRepair() throws Exception {
-		TestFixtures.require(Fixture.STAGED, Files.isRegularFile(MERGED_BASE), "merged base not staged: " + MERGED_BASE);
+		TestFixtures.requireFile(Fixture.STAGED, MERGED_BASE, "merged base not staged: " + MERGED_BASE);
 		byte[] before = entry(MERGED_BASE);
 		assertEquals(List.of(WIDENED), reads(read(before)), "the merged getter no longer reads NeoForge's widened "
 				+ "set — if the base changed, delete the repair rather than leaving a claim on a shape that is gone");
@@ -90,7 +90,7 @@ class MergedBaseSavedHeightmapsTest {
 
 	@Test
 	void theSwitchStandsTheRepairDown() throws Exception {
-		TestFixtures.require(Fixture.STAGED, Files.isRegularFile(MERGED_BASE), "merged base not staged: " + MERGED_BASE);
+		TestFixtures.requireFile(Fixture.STAGED, MERGED_BASE, "merged base not staged: " + MERGED_BASE);
 		String property = ForbricMergedBaseCompatTransformer.SAVED_HEIGHTMAPS_PROPERTY;
 		String previous = System.getProperty(property);
 		System.setProperty(property, "off");
@@ -109,7 +109,7 @@ class MergedBaseSavedHeightmapsTest {
 
 	@Test
 	void itLeavesAnotherClassAlone() throws Exception {
-		TestFixtures.require(Fixture.STAGED, Files.isRegularFile(MERGED_BASE), "merged base not staged: " + MERGED_BASE);
+		TestFixtures.requireFile(Fixture.STAGED, MERGED_BASE, "merged base not staged: " + MERGED_BASE);
 		byte[] other = entry(MERGED_BASE, "net/minecraft/world/level/chunk/status/ChunkType.class");
 		assertTrue(other != null, "content drift: ChunkType absent from this base");
 		List<String> hits = new ArrayList<>();

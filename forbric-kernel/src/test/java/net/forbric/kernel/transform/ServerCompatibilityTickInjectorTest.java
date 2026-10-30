@@ -9,7 +9,7 @@ import org.objectweb.asm.tree.*;
 class ServerCompatibilityTickInjectorTest {
  @Test void everyNormalReturnInTheActualServerHasOneCheckAndSecondPassDoesNothing() throws Exception {
   Path jar=TestFixtures.stagedBase();
-  TestFixtures.require(Fixture.STAGED,Files.isRegularFile(jar),"actual game fixture required");
+  TestFixtures.requireFile(Fixture.STAGED, jar,"actual game fixture required");
   byte[] bytes=TestFixtures.requireEntry(Fixture.STAGED,jar,"net/minecraft/server/MinecraftServer.class");
   var injector=new ServerCompatibilityTickInjector();byte[] transformed=injector.transform("net.minecraft.server.MinecraftServer",bytes,null);
   assertNotSame(bytes,transformed);assertSame(transformed,injector.transform("net.minecraft.server.MinecraftServer",transformed,null));

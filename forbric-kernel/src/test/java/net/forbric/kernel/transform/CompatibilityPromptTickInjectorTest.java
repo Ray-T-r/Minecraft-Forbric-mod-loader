@@ -48,7 +48,7 @@ class CompatibilityPromptTickInjectorTest {
 
 	@Test void gameUiCallsExistOnTheActualMinecraft262Base() throws Exception {
 		Path game = TestFixtures.stagedBase();
-		TestFixtures.require(Fixture.STAGED, Files.isRegularFile(game), "staged game absent");
+		TestFixtures.requireFile(Fixture.STAGED, game, "staged game absent");
 		try (ZipFile zip = new ZipFile(game.toFile())) {
 			ClassNode minecraft = parse(zip.getInputStream(zip.getEntry("net/minecraft/client/Minecraft.class")).readAllBytes());
 			for (String method : java.util.List.of("disconnectWithSavingScreen", "stop", "tick")) {

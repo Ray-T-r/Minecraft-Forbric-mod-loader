@@ -61,7 +61,7 @@ class KernelForgeInternalSubscribersTest {
     @Test
     void realCarrierContainsTwoClientSubscribersWithTheirActualEventsAndNativeRegistrar() throws Exception {
         // Qualified: this class has its own Fixture record.
-        TestFixtures.require(TestFixtures.Fixture.STAGED, Files.isRegularFile(FORGE), "staged Forge carrier absent");
+        TestFixtures.requireFiles(TestFixtures.Fixture.STAGED, "staged Forge carrier absent", FORGE);
         var subscribers = KernelForgeInternalSubscribers.scan(List.of(FORGE, FORGE));
         var internal = subscribers.stream().filter(s -> s.family() == Ecosystem.FORGE && "forge".equals(s.modId())).toList();
         assertEquals(Set.of("net.minecraftforge.client.ClientForgeMod", "net.minecraftforge.client.model.data.ModelDataManager"),

@@ -218,7 +218,7 @@ class MixinStubRebindSpellingTest {
 	}
 
 	private static ClassNode merged(String name) throws Exception {
-		TestFixtures.require(Fixture.STAGED, Files.isRegularFile(MERGED), "actual game required");
+		TestFixtures.requireFile(Fixture.STAGED, MERGED, "actual game required");
 		try (ZipFile zip = new ZipFile(MERGED.toFile())) {
 			return MixinFit.parse(zip.getInputStream(zip.getEntry(name + ".class")).readAllBytes());
 		}

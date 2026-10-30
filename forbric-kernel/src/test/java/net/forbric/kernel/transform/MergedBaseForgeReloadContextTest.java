@@ -112,7 +112,7 @@ class MergedBaseForgeReloadContextTest {
 	}
 
 	private static byte[] bytesOf(Path jar, String internal) throws Exception {
-		TestFixtures.require(Fixture.STAGED, Files.isRegularFile(jar), "staged artifact absent: " + jar);
+		TestFixtures.requireFile(Fixture.STAGED, jar, "staged artifact absent: " + jar);
 		try (ZipFile zip = new ZipFile(jar.toFile())) {
 			ZipEntry entry = zip.getEntry(internal + ".class");
 			assertNotNull(entry, internal + " not in " + jar.getFileName());

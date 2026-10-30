@@ -38,7 +38,7 @@ class KernelClientResourcesShapeTest {
 
 	@Test
 	void everyVanillaNameThePreloadSpellsIsOneTheMergedBaseDeclares() throws Exception {
-		TestFixtures.require(Fixture.STAGED, Files.isRegularFile(MERGED), "merged base absent");
+		TestFixtures.requireFile(Fixture.STAGED, MERGED, "merged base absent");
 		Path compiled = RUNTIME.resolve("net/forbric/kernel/runtime/KernelClientResources.class");
 		TestFixtures.require(Fixture.GAME_SIDE, Files.isRegularFile(compiled), "game-side class not compiled: " + compiled);
 

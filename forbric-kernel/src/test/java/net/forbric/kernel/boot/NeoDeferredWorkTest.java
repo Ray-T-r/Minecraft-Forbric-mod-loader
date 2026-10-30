@@ -192,7 +192,7 @@ class NeoDeferredWorkTest {
 				{ "neoforge-runtime/neoforge-runtime.jar", "net/neoforged/fml/DeferredWorkQueue" },
 				{ "forge-runtime/forge-runtime.jar", "net/minecraftforge/fml/DeferredWorkQueue" } }) {
 			Path jar = run.resolve(carrier[0]);
-			TestFixtures.require(Fixture.STAGED, Files.isRegularFile(jar), "staged carrier absent: " + jar);
+			TestFixtures.requireFile(Fixture.STAGED, jar, "staged carrier absent: " + jar);
 			try (ZipFile zip = new ZipFile(jar.toFile())) {
 				assertTrue(declaresField(zip, carrier[1], "tasks"), carrier[1] + ".tasks");
 				assertTrue(declaresField(zip, carrier[1] + "$TaskInfo", "owner"), carrier[1] + "$TaskInfo.owner");
@@ -250,7 +250,7 @@ class NeoDeferredWorkTest {
 	@Test
 	void theCarrierStillOffersTheExecutorNeoForgeRunsDeferredWorkOn() throws Exception {
 		Path carrier = TestFixtures.stagedRoot().resolve("neoforge-runtime/neoforge-runtime.jar").normalize();
-		TestFixtures.require(Fixture.STAGED, Files.isRegularFile(carrier), "staged NeoForge carrier absent");
+		TestFixtures.requireFile(Fixture.STAGED, carrier, "staged NeoForge carrier absent");
 
 		try (ZipFile jar = new ZipFile(carrier.toFile())) {
 			ZipEntry entry = jar.getEntry("net/neoforged/fml/ModWorkManager.class");

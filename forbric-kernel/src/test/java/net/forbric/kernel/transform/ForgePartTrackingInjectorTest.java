@@ -470,7 +470,7 @@ class ForgePartTrackingInjectorTest {
 	 */
 	private static URLClassLoader gameLoader(Map<String, byte[]> defined) throws Exception {
 		TestFixtures.require(Fixture.JAVA_25, Runtime.version().feature() >= 25, "the merged game is class-file 69, which only Java 25 links");
-		for (Path jar : List.of(MERGED, NEO_CARRIER, FORGE_CARRIER)) TestFixtures.require(Fixture.STAGED, Files.isRegularFile(jar), jar + " absent");
+		for (Path jar : List.of(MERGED, NEO_CARRIER, FORGE_CARRIER)) TestFixtures.requireFile(Fixture.STAGED, jar, jar + " absent");
 		// The actual coherent runtime hierarchy supports both native part arrays.
 		defined.put(dotted(DRAGON_PART), NativeCoremodParityTest.read(MERGED, DRAGON_PART));
 		defined.put(dotted(DRAGON), withoutInitializer(NativeCoremodParityTest.read(MERGED, DRAGON)));

@@ -124,7 +124,7 @@ class MergedBaseCalleeSwapTest {
 	@Test
 	void theCensusOfCalleeSwapsIsExactlyThePinnedSet() throws Exception {
 		Path vanilla = vanillaJar();
-		TestFixtures.require(Fixture.STAGED, Files.isRegularFile(MERGED), "staged merged base absent");
+		TestFixtures.requireFile(Fixture.STAGED, MERGED, "staged merged base absent");
 		TestFixtures.require(Fixture.MC_LIBRARIES, Files.isRegularFile(vanilla), "stock 26.2 absent: " + vanilla);
 		Set<String> found = new TreeSet<>();
 		for (Swap swap : swaps(vanilla)) found.add(swap.line());
@@ -139,8 +139,7 @@ class MergedBaseCalleeSwapTest {
 	@Test
 	void everyAdmittedSwapIsEitherRewrittenOrExplained() throws Exception {
 		Path vanilla = vanillaJar();
-		TestFixtures.require(Fixture.STAGED, Files.isRegularFile(MERGED) && Files.isRegularFile(FORGE_RT)
-				&& Files.isRegularFile(NEO_RT), "staged merged base or carriers absent");
+		TestFixtures.requireFiles(Fixture.STAGED, "staged merged base or carriers absent", MERGED, FORGE_RT, NEO_RT);
 		TestFixtures.require(Fixture.MC_LIBRARIES, Files.isRegularFile(vanilla), "stock 26.2 absent: " + vanilla);
 		Map<String, ClassNode> world = new HashMap<>();
 		List<String> admitted = new ArrayList<>();
@@ -204,7 +203,7 @@ class MergedBaseCalleeSwapTest {
 	@Test
 	void everySubstitutionIsOneCallInAnOtherwiseUnchangedBody() throws Exception {
 		Path vanilla = vanillaJar();
-		for (Path jar : List.of(MERGED, FORGE_PATCHED, NEO_PATCHED)) TestFixtures.require(Fixture.STAGED, Files.isRegularFile(jar), jar + " absent");
+		for (Path jar : List.of(MERGED, FORGE_PATCHED, NEO_PATCHED)) TestFixtures.requireFile(Fixture.STAGED, jar, jar + " absent");
 		TestFixtures.require(Fixture.MC_LIBRARIES, Files.isRegularFile(vanilla), vanilla + " absent");
 		var derivedSubstitution=net.forbric.kernel.mixin.NativeCallTestEvidence.modelRow();
 		assertNotNull(derivedSubstitution);
@@ -249,7 +248,7 @@ class MergedBaseCalleeSwapTest {
 	@Test
 	void everyReplacementIsOneCallWhoseVanillaArgumentsAreReadOffTheReplacements() throws Exception {
 		Path vanilla = vanillaJar();
-		TestFixtures.require(Fixture.STAGED, Files.isRegularFile(MERGED), MERGED + " absent");
+		TestFixtures.requireFile(Fixture.STAGED, MERGED, MERGED + " absent");
 		TestFixtures.require(Fixture.MC_LIBRARIES, Files.isRegularFile(vanilla), vanilla + " absent");
 		var derivedReplacement=net.forbric.kernel.mixin.NativeCallTestEvidence.structureRow();
 		assertNotNull(derivedReplacement);

@@ -156,6 +156,16 @@ public final class TestFixtures {
 		for (Path file : files) if (isForgeCarrier(file)) require(Fixture.FORGE_CARRIER, Files.isRegularFile(file), what + ": " + file);
 	}
 
+	/**
+	 * {@link #require(Fixture, boolean, String)} for one file, with {@code what} as given: the shape of the ~270
+	 * {@code require(kind, Files.isRegularFile(file), what)} calls this replaced, which could not tell a missing
+	 * MinecraftForge carrier from a missing base. Like {@link #requireFiles}, a Forge carrier is judged as
+	 * {@link Fixture#FORGE_CARRIER}.
+	 */
+	public static void requireFile(Fixture kind, Path file, String what) {
+		require(isForgeCarrier(file) ? Fixture.FORGE_CARRIER : kind, Files.isRegularFile(file), what);
+	}
+
 	/** {@link #require(Fixture, boolean, String)} for a directory, such as a local mod pack. */
 	public static void requireDirectory(Fixture kind, String what, Path directory) {
 		require(kind, Files.isDirectory(directory), what + ": " + directory);

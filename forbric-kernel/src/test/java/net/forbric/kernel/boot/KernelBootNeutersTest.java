@@ -143,7 +143,7 @@ class KernelBootNeutersTest {
 	}
 
 	private static byte[] read(Path jar, String internalName) throws Exception {
-		TestFixtures.require(Fixture.STAGED, Files.isRegularFile(jar), jar + " absent");
+		TestFixtures.requireFile(Fixture.STAGED, jar, jar + " absent");
 		try (ZipFile zip = new ZipFile(jar.toFile())) {
 			ZipEntry entry = zip.getEntry(internalName + ".class");
 			assertNotNull(entry, internalName + " in " + jar);

@@ -96,7 +96,7 @@ class CraftingRemainderConflictTest {
 
 	private static byte[] fabricItem() throws Exception {
 		TestFixtures.require(Fixture.THIRD_PARTY, Files.isRegularFile(FABRIC_API), "actual Fabric API required: " + FABRIC_API);
-		TestFixtures.require(Fixture.STAGED, Files.isRegularFile(JARS.getFirst()), "actual game required: " + JARS.getFirst());
+		TestFixtures.requireFile(Fixture.STAGED, JARS.getFirst(), "actual game required: " + JARS.getFirst());
 		try (ZipFile zip = new ZipFile(FABRIC_API.toFile())) {
 			ZipEntry nested = zip.stream().filter(e -> e.getName().startsWith("META-INF/jars/fabric-item-api-v1-")).findFirst().orElseThrow();
 			try (ZipInputStream in = new ZipInputStream(zip.getInputStream(nested))) {

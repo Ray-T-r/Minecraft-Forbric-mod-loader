@@ -44,7 +44,7 @@ class KernelForgeConfigLoadTest {
 
     @Test
     void actualCarrierHasOnlyTheThreeForgeTypesAndThePrivateStaticTwoArgumentOpen() throws Exception {
-        TestFixtures.require(TestFixtures.Fixture.STAGED, Files.isRegularFile(FORGE), "staged Forge carrier absent");
+        TestFixtures.requireFiles(TestFixtures.Fixture.STAGED, "staged Forge carrier absent", FORGE);
         try (ZipFile zip = new ZipFile(FORGE.toFile())) {
             ClassNode tracker = read(zip, TRACKER);
             var open = tracker.methods.stream().filter(m -> m.name.equals("openConfig")).findFirst().orElseThrow();

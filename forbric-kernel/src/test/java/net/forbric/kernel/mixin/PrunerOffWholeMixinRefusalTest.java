@@ -36,7 +36,7 @@ class PrunerOffWholeMixinRefusalTest {
 	void theRealModelPairIsLeftOutWholeOnlyWhileThePrunerIsOff() throws Exception {
 		ClassNode mixin = StagedFabricMixinFixture.mixin("fabric-model-loading-api-v1", MIXIN);
 		var merged = TestFixtures.stagedBase();
-		TestFixtures.require(Fixture.STAGED, Files.isRegularFile(merged), "actual merged base required");
+		TestFixtures.requireFile(Fixture.STAGED, merged, "actual merged base required");
 		try (ZipFile game = new ZipFile(merged.toFile())) {
 			Function<String, byte[]> resources = name -> {
 				ZipEntry entry = game.getEntry(name);

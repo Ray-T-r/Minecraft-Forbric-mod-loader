@@ -66,7 +66,7 @@ class CarrierOwnModTest {
 	void neoForgesOwnContainerAnswersWhatTheStagedCarriersManifestSays() throws Exception {
 		Path carrier = TestFixtures.stagedRoot().resolve("neoforge-runtime/neoforge-runtime.jar").normalize();
 		Path compiled = Path.of(System.getProperty("forbric.testRuntimeClasses", "build/classes/java/runtime"));
-		TestFixtures.require(Fixture.STAGED, Files.isRegularFile(carrier), "staged carrier absent");
+		TestFixtures.requireFile(Fixture.STAGED, carrier, "staged carrier absent");
 		TestFixtures.require(Fixture.GAME_SIDE, Files.isDirectory(compiled), "staged runtime classes absent");
 		ForgeModEntry manifest;
 		try (ZipFile zip = new ZipFile(carrier.toFile())) {

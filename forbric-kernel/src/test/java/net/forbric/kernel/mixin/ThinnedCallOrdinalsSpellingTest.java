@@ -170,7 +170,7 @@ class ThinnedCallOrdinalsSpellingTest {
 
 	/** ViaFabricPlus' hook under other names, the merged class, and the class as the mod was compiled against it. */
 	private static Hook hook() throws Exception {
-		TestFixtures.require(Fixture.STAGED, Files.isRegularFile(MERGED), "actual game required");
+		TestFixtures.requireFile(Fixture.STAGED, MERGED, "actual game required");
 		TestFixtures.require(Fixture.THIRD_PARTY, Files.isRegularFile(VIAFABRICPLUS), VIAFABRICPLUS + " absent");
 		ClassNode released, merged;
 		try (ZipFile zip = new ZipFile(VIAFABRICPLUS.toFile())) {

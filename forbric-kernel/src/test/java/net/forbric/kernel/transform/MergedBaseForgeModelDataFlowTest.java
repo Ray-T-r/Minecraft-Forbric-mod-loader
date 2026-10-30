@@ -156,7 +156,7 @@ class MergedBaseForgeModelDataFlowTest {
 	}
 
 	private static byte[] merged(String owner) throws Exception {
-		TestFixtures.require(Fixture.STAGED, Files.isRegularFile(MERGED_BASE), "staged merged base absent");
+		TestFixtures.requireFile(Fixture.STAGED, MERGED_BASE, "staged merged base absent");
 		try (ZipFile zip = new ZipFile(MERGED_BASE.toFile())) {
 			ZipEntry entry = zip.getEntry(owner + ".class");
 			assertNotNull(entry, owner + " missing from the staged merged base");

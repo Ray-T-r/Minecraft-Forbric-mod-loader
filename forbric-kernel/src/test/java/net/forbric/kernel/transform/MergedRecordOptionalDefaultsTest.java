@@ -36,7 +36,7 @@ class MergedRecordOptionalDefaultsTest {
 	@AfterEach void reset() { System.clearProperty(MergedRecordOptionalDefaults.PROPERTY); }
 
 	@Test void everyServerStatusConstructorSetsForgeData() throws Exception {
-		TestFixtures.require(Fixture.STAGED, Files.isRegularFile(MERGED), "merged base not staged: " + MERGED);
+		TestFixtures.requireFile(Fixture.STAGED, MERGED, "merged base not staged: " + MERGED);
 		byte[] original = NativeCoremodParityTest.read(MERGED, "net/minecraft/network/protocol/status/ServerStatus");
 		assertEquals(List.of("forgeData in (Lnet/minecraft/network/chat/Component;Ljava/util/Optional;Ljava/util/Optional;"
 				+ "Ljava/util/Optional;ZZ)V"), MergedRecordOptionalDefaults.unsetOptionals(node(original)),
@@ -56,7 +56,7 @@ class MergedRecordOptionalDefaultsTest {
 	}
 
 	@Test void targetsNameEveryMergedRecordLeavingAnOptionalNull() throws Exception {
-		TestFixtures.require(Fixture.STAGED, Files.isRegularFile(MERGED), "merged base not staged: " + MERGED);
+		TestFixtures.requireFile(Fixture.STAGED, MERGED, "merged base not staged: " + MERGED);
 		TreeSet<String> found = new TreeSet<>();
 		try (ZipFile zip = new ZipFile(MERGED.toFile())) {
 			for (ZipEntry entry : Collections.list(zip.entries())) {

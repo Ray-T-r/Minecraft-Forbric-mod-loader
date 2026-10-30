@@ -54,7 +54,7 @@ class PackScreenHiddenFilterInjectorTest {
 
 	@Test
 	void theStagedScreenStillForEachesWithoutFiltering() throws Exception {
-		TestFixtures.require(Fixture.STAGED, Files.isRegularFile(MERGED_BASE), "staged merged base absent");
+		TestFixtures.requireFile(Fixture.STAGED, MERGED_BASE, "staged merged base absent");
 		MethodNode update = update(parse(readClass()));
 		assertNotNull(update, "updateList must still exist with that descriptor");
 		assertEquals(0, countCall(update, "filter"),
@@ -64,7 +64,7 @@ class PackScreenHiddenFilterInjectorTest {
 
 	@Test
 	void theFilterIsRestoredAheadOfTheForEach() throws Exception {
-		TestFixtures.require(Fixture.STAGED, Files.isRegularFile(MERGED_BASE), "staged merged base absent");
+		TestFixtures.requireFile(Fixture.STAGED, MERGED_BASE, "staged merged base absent");
 		byte[] in = readClass();
 		byte[] out = transform(in);
 		assertTrue(out != in, "the staged base must still need the repair");
@@ -80,7 +80,7 @@ class PackScreenHiddenFilterInjectorTest {
 	/** The predicate must be the interface's own {@code notHidden}, which is the method the merge orphaned. */
 	@Test
 	void thePredicateIsTheOrphanedNotHiddenMethod() throws Exception {
-		TestFixtures.require(Fixture.STAGED, Files.isRegularFile(MERGED_BASE), "staged merged base absent");
+		TestFixtures.requireFile(Fixture.STAGED, MERGED_BASE, "staged merged base absent");
 		MethodNode update = update(parse(transform(readClass())));
 		InvokeDynamicInsnNode indy = null;
 		for (AbstractInsnNode insn : update.instructions) {
@@ -96,14 +96,14 @@ class PackScreenHiddenFilterInjectorTest {
 
 	@Test
 	void aSecondPassLeavesTheFilteredMethodAlone() throws Exception {
-		TestFixtures.require(Fixture.STAGED, Files.isRegularFile(MERGED_BASE), "staged merged base absent");
+		TestFixtures.requireFile(Fixture.STAGED, MERGED_BASE, "staged merged base absent");
 		byte[] once = transform(readClass());
 		assertSame(once, transform(once), "a body that already filters is coherent and must not be touched");
 	}
 
 	@Test
 	void anyOtherClassIsHandedBackUntouched() throws Exception {
-		TestFixtures.require(Fixture.STAGED, Files.isRegularFile(MERGED_BASE), "staged merged base absent");
+		TestFixtures.requireFile(Fixture.STAGED, MERGED_BASE, "staged merged base absent");
 		byte[] other = readClass("net/minecraft/client/gui/screens/ChatScreen.class");
 		assertSame(other, new PackScreenHiddenFilterInjector()
 				.transform("net.minecraft.client.gui.screens.ChatScreen", other, null));

@@ -198,7 +198,7 @@ class ModuleClassLoaderInitInjectorTest {
 	}
 
 	private static byte[] carrierClass() throws Exception {
-		TestFixtures.require(Fixture.STAGED, Files.isRegularFile(CARRIER), "NeoForge carrier not staged");
+		TestFixtures.requireFile(Fixture.STAGED, CARRIER, "NeoForge carrier not staged");
 		try (ZipFile zip = new ZipFile(CARRIER.toFile());
 				InputStream in = zip.getInputStream(zip.getEntry("net/neoforged/fml/classloading/ModuleClassLoader.class"))) {
 			return in.readAllBytes();

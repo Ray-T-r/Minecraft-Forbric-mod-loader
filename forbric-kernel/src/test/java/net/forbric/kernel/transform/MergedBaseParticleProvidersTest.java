@@ -134,7 +134,7 @@ class MergedBaseParticleProvidersTest {
 
 	@Test
 	void anotherClassIsUntouched() throws Exception {
-		TestFixtures.require(Fixture.STAGED, Files.isRegularFile(MERGED_BASE), "staged merged base absent");
+		TestFixtures.requireFile(Fixture.STAGED, MERGED_BASE, "staged merged base absent");
 		byte[] other = readClass("net/minecraft/client/particle/ParticleProvider.class");
 		assertNotNull(other, "content drift: ParticleProvider absent from this base");
 		assertSame(other, new ForbricMergedBaseCompatTransformer()
@@ -150,7 +150,7 @@ class MergedBaseParticleProvidersTest {
 	}
 
 	private static byte[] original() throws IOException {
-		TestFixtures.require(Fixture.STAGED, Files.isRegularFile(MERGED_BASE), "staged merged base absent — skipping real-bytecode check");
+		TestFixtures.requireFile(Fixture.STAGED, MERGED_BASE, "staged merged base absent — skipping real-bytecode check");
 		byte[] in = readClass(ENTRY);
 		assertNotNull(in, "content drift: ParticleResources absent from this base");
 		ClassNode node = new ClassNode();

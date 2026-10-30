@@ -96,7 +96,7 @@ class NativeOnlyMethodsCensusTest {
 	private static Map<String, Path> libraries;
 
 	@BeforeAll static void read() throws Exception {
-		TestFixtures.require(Fixture.STAGED, Files.isRegularFile(MERGED), "staged merged base required: " + MERGED);
+		TestFixtures.requireFile(Fixture.STAGED, MERGED, "staged merged base required: " + MERGED);
 		TestFixtures.requireFiles(Fixture.STAGED, "the merge's build pins and both carriers", PINS, FORGE_RUNTIME, NEO_RUNTIME);
 		TestFixtures.require(Fixture.MC_LIBRARIES, Files.isRegularFile(VERSION_JSON), "vanilla's version JSON: " + VERSION_JSON);
 		for (Map.Entry<Ecosystem, Path> platform : NATIVE.entrySet()) {

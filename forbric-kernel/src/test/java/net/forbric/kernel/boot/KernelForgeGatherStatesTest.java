@@ -111,7 +111,7 @@ class KernelForgeGatherStatesTest {
 	@Test
 	void theCarrierKeepsTheSetAndTheseAreItsGatherStates() throws Exception {
 		Path jar = carrier();
-		TestFixtures.require(Fixture.STAGED, Files.isRegularFile(jar), jar + " absent");
+		TestFixtures.requireFile(Fixture.STAGED, jar, jar + " absent");
 		try (ZipFile zip = new ZipFile(jar.toFile())) {
 			ClassNode loader = read(zip, MOD_LOADER);
 			FieldNode set = loader.fields.stream().filter(f -> f.name.equals("COMPLETED_STATES")).findFirst().orElseThrow();
@@ -137,7 +137,7 @@ class KernelForgeGatherStatesTest {
 		Path run = run();
 		List<Path> jars = List.of(run.resolve(TestFixtures.BASE_JAR), carrier(),
 				run.resolve("neoforge-runtime/neoforge-runtime.jar"));
-		for (Path jar : jars) TestFixtures.require(Fixture.STAGED, Files.isRegularFile(jar), jar + " absent");
+		for (Path jar : jars) TestFixtures.requireFile(Fixture.STAGED, jar, jar + " absent");
 		TreeSet<String> readers = new TreeSet<>();
 		byte[] needle = "hasCompletedState".getBytes(java.nio.charset.StandardCharsets.US_ASCII);
 		for (Path jar : jars) {

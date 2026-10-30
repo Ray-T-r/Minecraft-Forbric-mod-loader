@@ -99,7 +99,7 @@ class MergedBaseWorldgenDriversTest {
 
 	@Test
 	void neoForgesModifierPassIsGuardedAtItsCallSite() throws Exception {
-		TestFixtures.require(Fixture.STAGED, Files.isRegularFile(NEO_CARRIER), "staged NeoForge carrier absent");
+		TestFixtures.requireFile(Fixture.STAGED, NEO_CARRIER, "staged NeoForge carrier absent");
 		ClassNode node = repaired(NEO_CARRIER, "net/neoforged/neoforge/server/ServerLifecycleHooks.class");
 
 		boolean guarded = false;

@@ -111,7 +111,7 @@ class UncalledMethodCensusTest {
 
 	@Test void theShippedTableIsExactlyWhatTheArtifactsSay() throws Exception {
 		for (Path jar : List.of(MERGED, INTEROP, NEO_RUNTIME, FORGE_RUNTIME, VANILLA, FORGE, NEOFORGE)) {
-			TestFixtures.require(jar == VANILLA ? Fixture.MC_LIBRARIES : Fixture.STAGED, Files.isRegularFile(jar), jar + " required");
+			TestFixtures.requireFile(jar == VANILLA ? Fixture.MC_LIBRARIES : Fixture.STAGED, jar, jar + " required");
 		}
 		TestFixtures.require(Fixture.GAME_SIDE, Files.isDirectory(KERNEL_RUNTIME), "the game-side classes are compiled only with staged jars");
 

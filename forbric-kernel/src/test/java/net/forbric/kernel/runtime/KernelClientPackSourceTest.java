@@ -154,8 +154,7 @@ class KernelClientPackSourceTest {
 	// ---------------------------------------------------------------------------------------------------------
 
 	private Game game() throws Exception {
-		TestFixtures.require(Fixture.STAGED, Files.isRegularFile(MERGED_BASE) && Files.isRegularFile(NEO_CARRIER)
-				&& Files.isRegularFile(FORGE_CARRIER), "staged game jars absent");
+		TestFixtures.requireFiles(Fixture.STAGED, "staged game jars absent", MERGED_BASE, NEO_CARRIER, FORGE_CARRIER);
 		TestFixtures.require(Fixture.GAME_SIDE, Files.isDirectory(RUNTIME.resolve("net/forbric/kernel/runtime")), "game side not compiled");
 		List<URL> urls = new ArrayList<>(List.of(RUNTIME.toUri().toURL(), MERGED_BASE.toUri().toURL(),
 				NEO_CARRIER.toUri().toURL(), FORGE_CARRIER.toUri().toURL()));

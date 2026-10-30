@@ -57,7 +57,7 @@ class MixinCapturedLocalsTest {
 	}
 
 	private static ClassNode full(Path jar) throws Exception {
-		TestFixtures.require(TestFixtures.Fixture.STAGED, Files.isRegularFile(jar), "game jar");
+		TestFixtures.requireFile(TestFixtures.Fixture.STAGED, jar, "game jar");
 		try (ZipFile zip = new ZipFile(jar.toFile())) {
 			ClassNode node = new ClassNode();
 			new ClassReader(zip.getInputStream(zip.getEntry(MINECRAFT + ".class")).readAllBytes()).accept(node, ClassReader.SKIP_FRAMES);

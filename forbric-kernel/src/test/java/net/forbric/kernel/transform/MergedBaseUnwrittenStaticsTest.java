@@ -77,7 +77,7 @@ class MergedBaseUnwrittenStaticsTest {
 
 	@Test
 	void theCensusHasNotChanged() throws Exception {
-		TestFixtures.require(Fixture.STAGED, Files.isRegularFile(MERGED_BASE), "staged merged base absent");
+		TestFixtures.requireFile(Fixture.STAGED, MERGED_BASE, "staged merged base absent");
 
 		Set<String> found = unwrittenObjectStatics();
 		assertTrue(writesStatic(parse(readClass("net/minecraft/world/item/ItemDisplayContext.class")), "ADD_CALLBACK"),
@@ -91,7 +91,7 @@ class MergedBaseUnwrittenStaticsTest {
 
 	@Test
 	void theLoggerIsRepaired() throws Exception {
-		TestFixtures.require(Fixture.STAGED, Files.isRegularFile(MERGED_BASE), "staged merged base absent");
+		TestFixtures.requireFile(Fixture.STAGED, MERGED_BASE, "staged merged base absent");
 		String owner = "net/minecraft/resources/ResourceManagerRegistryLoadTask";
 		byte[] in = readClass(owner + ".class");
 		assertTrue(in != null, "content drift: that class is absent from this base");
@@ -114,7 +114,7 @@ class MergedBaseUnwrittenStaticsTest {
 
 	@Test
 	void aClassWithAWrittenLoggerIsLeftAlone() throws Exception {
-		TestFixtures.require(Fixture.STAGED, Files.isRegularFile(MERGED_BASE), "staged merged base absent");
+		TestFixtures.requireFile(Fixture.STAGED, MERGED_BASE, "staged merged base absent");
 		// Any class whose logger IS assigned must come back byte-identical, or the repair is rewriting the base
 		// wholesale instead of filling one gap.
 		byte[] in = readClass("net/minecraft/server/MinecraftServer.class");

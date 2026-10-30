@@ -140,7 +140,7 @@ class MergedBasePipBridgeTest {
 
 	@Test
 	void isIdempotent() throws Exception {
-		TestFixtures.require(Fixture.STAGED, Files.isRegularFile(MERGED_BASE), "staged merged base absent — skipping real-bytecode check");
+		TestFixtures.requireFile(Fixture.STAGED, MERGED_BASE, "staged merged base absent — skipping real-bytecode check");
 
 		byte[] original = readClass(GUI_RENDERER + ".class");
 		byte[] once = transform(original);
@@ -149,7 +149,7 @@ class MergedBasePipBridgeTest {
 
 	@Test
 	void leavesClassesWithoutBothMapsAlone() throws Exception {
-		TestFixtures.require(Fixture.STAGED, Files.isRegularFile(MERGED_BASE), "staged merged base absent — skipping real-bytecode check");
+		TestFixtures.requireFile(Fixture.STAGED, MERGED_BASE, "staged merged base absent — skipping real-bytecode check");
 
 		// Hud is heavily merged but has no picture-in-picture maps; the bridge must not touch it.
 		byte[] hud = readClass("net/minecraft/client/gui/Hud.class");
@@ -161,7 +161,7 @@ class MergedBasePipBridgeTest {
 	// --- helpers -------------------------------------------------------------------------------------------------
 
 	private static ClassNode transformedGuiRenderer() throws Exception {
-		TestFixtures.require(Fixture.STAGED, Files.isRegularFile(MERGED_BASE), "staged merged base absent — skipping real-bytecode check");
+		TestFixtures.requireFile(Fixture.STAGED, MERGED_BASE, "staged merged base absent — skipping real-bytecode check");
 
 		byte[] out = transform(readClass(GUI_RENDERER + ".class"));
 		ClassNode node = new ClassNode();

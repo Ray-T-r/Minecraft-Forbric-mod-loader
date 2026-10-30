@@ -475,7 +475,7 @@ class ForgeCapabilityCompositionTransformerTest {
 	 */
 	@Test
 	void theCensusOfLostInitializersMatchesTheTable() throws Exception {
-		TestFixtures.require(Fixture.STAGED, Files.isRegularFile(MERGED), "staged merged base absent");
+		TestFixtures.requireFile(Fixture.STAGED, MERGED, "staged merged base absent");
 		java.util.Map<String, String> found = new java.util.TreeMap<>();
 		try (ZipFile zip = new ZipFile(MERGED.toFile())) {
 			var entries = zip.entries();
@@ -759,7 +759,7 @@ class ForgeCapabilityCompositionTransformerTest {
 	}
 
 	private static byte[] entry(Path jar, String internal) throws Exception {
-		TestFixtures.require(Fixture.STAGED, Files.isRegularFile(jar), "staged jar absent: " + jar);
+		TestFixtures.requireFile(Fixture.STAGED, jar, "staged jar absent: " + jar);
 		try (ZipFile zip = new ZipFile(jar.toFile())) {
 			ZipEntry entry = zip.getEntry(internal + ".class");
 			assertNotNull(entry, internal);
