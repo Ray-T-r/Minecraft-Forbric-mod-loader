@@ -27,6 +27,20 @@
 # one id along — and the placed block read back with the wrong connection state. With the remap: 303 ids moved,
 # 0 lost, 34393 block states re-numbered, and both read back as themselves.
 #
+# A FORGE+FABRIC UNIVERSAL JAR (Stage 3 of dropping MinecraftForge). Forbric no longer loads MinecraftForge mods, and a
+# jar that carries a MinecraftForge half beside a usable Fabric half -- the Architectury-style universal build -- must
+# load through its Fabric half, not be refused and not be half-loaded as MinecraftForge. A pure Fabric server is the
+# oracle for that: it loads only the Fabric half, so a Forbric client that loaded anything else would disagree with it on
+# the wire. No such jar is in the local corpora (the census of 188 jars with a mods.toml found none whose only other half
+# is Fabric's), so the gate derives one from FallingTree, a real three-loader jar: the same bytes without
+# META-INF/neoforge.mods.toml, which leaves a real MinecraftForge half (its mods.toml and @Mod) and a real Fabric half
+# (its fabric.mod.json, entrypoints and mixins). It rides on both ends, and the client must say it set the MinecraftForge
+# half aside and loaded the jar as FABRIC only; the server must list it among its Fabric mods. RED, measured 2026-10-30:
+# M14_UNIVERSAL_KEEP_NEO=1 keeps neoforge.mods.toml in the derived jar. The client then loads it as NEOFORGE (its
+# preference), so the two "as FABRIC" checks go red -- and the oracle says why it matters: the client disconnects
+# right after configuring, so the join, the probe read-backs, the id remap and the clean-leave checks go red with them
+# (fourteen in all). The "as FABRIC" pair is the arbitration, not a coincidence of the jar's shape.
+#
 # Port 25602, not the default — a developer or another agent session may have a server on 25565.
 # GATE-PARALLEL: rundirs=fab-server,fab-client mem=3500
 set -uo pipefail
@@ -43,17 +57,38 @@ DL="$RUN_OLD/downloads"
 LAUNCHER="$DL/fabric-server-26.2/fabric-server-mc26.2-loader0.19.5-launcher1.1.2.jar"
 FABRIC_API="$DL/fabric-26.2/fabric-api-0.154.0+26.2.jar"
 SHARED="$DL/fabric-26.2/mcw-bridges-3.1.2-mc26.2fabric.jar"
+# The three-loader jar the Forge+Fabric universal jar is derived from (header).
+UNIVERSAL_SOURCE="$DL/forge-26.2/FallingTree-26.2-25.jar"
+UNIVERSAL="$BUILD/gate-m14/FallingTree-26.2-25-forge+fabric.jar"
 CANARY="$KERNEL/run/canary/forbricfabriclive.jar"
 PLAYER="ForbricKernel"
 # A block the shared mod registers, and a vanilla control. Placed by the server, read back by the client.
 MOD_BLOCK="mcwbridges:andesite_bridge"
 MOD_ITEM="mcwbridges:andesite_bridge"
 VANILLA_BLOCK="minecraft:diamond_block"
-for f in "$LAUNCHER" "$FABRIC_API" "$SHARED" "$CANARY"; do
+for f in "$LAUNCHER" "$FABRIC_API" "$SHARED" "$CANARY" "$UNIVERSAL_SOURCE"; do
   [ -f "$f" ] || { echo "[kernel] SKIP-FATAL: missing $f (run/build-fabric-canary.sh builds the canary)" >&2; exit 3; }
 done
 
 kernel_jar
+
+step "derive a Forge+Fabric universal jar: FallingTree without its NeoForge manifest"
+mkdir -p "$(dirname "$UNIVERSAL")"
+python3 - "$UNIVERSAL_SOURCE" "$UNIVERSAL" "${M14_UNIVERSAL_KEEP_NEO:-0}" <<'PY_UNIVERSAL' || exit 3
+from pathlib import Path
+import sys, zipfile
+source, target, keep_neo = Path(sys.argv[1]), Path(sys.argv[2]), sys.argv[3] == '1'
+with zipfile.ZipFile(source) as original, zipfile.ZipFile(target, 'w', zipfile.ZIP_DEFLATED) as derived:
+    names = original.namelist()
+    for manifest in ('fabric.mod.json', 'META-INF/mods.toml'):
+        if manifest not in names:
+            raise SystemExit(f'{source.name} has no {manifest}: it is not the universal jar this gate derives from')
+    for entry in original.infolist():
+        if entry.filename == 'META-INF/neoforge.mods.toml' and not keep_neo:
+            continue
+        derived.writestr(entry, original.read(entry))
+print(f'[kernel] derived {target.name} from {source.name}' + (' (neoforge.mods.toml KEPT: the RED control)' if keep_neo else ''))
+PY_UNIVERSAL
 
 step "stage a pure Fabric server (fabric-loader 0.19.5 + fabric-api + Macaw's Bridges) and a Forbric client with one mod more"
 reap_stale_server "$SRV"
@@ -62,8 +97,8 @@ stash_downloads "$SRV" fab-server .fabric
 rm -rf "$SRV" "$CLI"
 mkdir -p "$SRV/mods" "$CLI/mods" "$CLI/quickPlay"
 restore_downloads "$SRV" fab-server .fabric
-cp "$FABRIC_API" "$SHARED" "$SRV/mods/"
-cp "$FABRIC_API" "$SHARED" "$CANARY" "$CLI/mods/"
+cp "$FABRIC_API" "$SHARED" "$UNIVERSAL" "$SRV/mods/"
+cp "$FABRIC_API" "$SHARED" "$UNIVERSAL" "$CANARY" "$CLI/mods/"
 printf 'eula=true\n' > "$SRV/eula.txt"
 printf 'server-port=%s\nonline-mode=false\nlevel-type=minecraft\\:flat\nlevel-name=FabWorld\ngamemode=survival\ndifficulty=peaceful\nspawn-monsters=false\nspawn-protection=0\nview-distance=6\nsimulation-distance=6\nenforce-secure-profile=false\nmax-players=5\nmotd=forbric-fabric-gate\n' "$PORT" > "$SRV/server.properties"
 cp "$KERNEL/run/client-merged-pack/options.txt" "$CLI/options.txt" 2>/dev/null \
@@ -153,6 +188,14 @@ check "ModelModifier.OnLoad saw a model"      "ForbricFabricLive\] ModelModifier
 check "fabric-item-api's tooltip order scraped on the client" "ForbricFabricLive\] fabric-item-api tooltip order: ok" "$CLOG"
 check_absent "…and found component types"     "Found no component types"                            "$CLOG"
 check_absent "block models still parse"       "JSON data was null or empty"                "$CLOG"
+
+step "the Forge+Fabric universal jar loads as Fabric on the Forbric client, as the Fabric server loads it (must PASS)"
+check "client: its MinecraftForge half is set aside, the Fabric half chosen" \
+  "FallingTree-26\.2-25-forge\+fabric\.jar: its MinecraftForge half is set aside — Forbric no longer loads MinecraftForge mods — choosing among its usable \[FABRIC\] half" "$CLOG"
+check "client: it loads as FABRIC only" \
+  "FallingTree-26\.2-25-forge\+fabric\.jar declares 2 loaders — loading it as FABRIC only, suppressing \[FORGE\]" "$CLOG"
+check_absent "client: it is not refused" "\[Forbric/Unsupported\] refusing" "$CLOG"
+check "server: the pure Fabric server lists it among its mods" "[-] fallingtree [0-9]" "$SLOG"
 
 step "the difference was real and the remap corrected it (must PASS)"
 check "the canary shifted the client's block ids" "ForbricFabricLive\] registered block forbricfabriclive:canary_block" "$CLOG"
