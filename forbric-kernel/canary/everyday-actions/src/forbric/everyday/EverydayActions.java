@@ -45,7 +45,7 @@ public final class EverydayActions {
  public EverydayActions(IEventBus bus){
   // A NeoForge mod deciding how long something burns, the way balm does: NeoForge posts FurnaceFuelBurnTimeEvent from
   // ItemStack.getBurnTime, the question the furnace asks. -Dforbric.everydayWithholdFuelEvent=true withholds the
-  // listener, so its two cases go red.
+  // listener, so its three cases go red.
   if(!Boolean.getBoolean("forbric.everydayWithholdFuelEvent"))NeoForge.EVENT_BUS.addListener(FurnaceFuelBurnTimeEvent.class,e->{
    if(e.getItemStack().is(Items.COBBLESTONE))e.setBurnTime(NEO_COBBLESTONE_BURN);
    if(e.getItemStack().is(Items.DIRT))dirtSeenByNeo=e.getBurnTime();});
