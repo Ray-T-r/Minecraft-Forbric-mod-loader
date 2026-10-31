@@ -53,6 +53,7 @@ class NativeGameReferencesTest {
   try(var loader=new net.forbric.kernel.classloading.ForbricClassLoader(new java.net.URL[]{jar.toUri().toURL()},getClass().getClassLoader())){
    loader.setTransformer((name,input)->current);NativeGameReferences.bind(loader);
    assertNull(NativeGameReferences.runtime(Ecosystem.NEOFORGE,OWNER),"unclassified resources are not platform evidence");
+   assertNull(NativeGameReferences.runtime(Ecosystem.FORGE,OWNER),"nor are they MinecraftForge's, which has no loader family");
    loader.addRuntimeJarFamily(jar,net.forbric.kernel.classloading.LoaderProbePolicy.Family.NEOFORGE);
    var original=NativeGameReferences.runtime(Ecosystem.NEOFORGE,OWNER);var transformed=NativeGameReferences.current(OWNER);
    assertNotNull(original);assertNotNull(transformed);

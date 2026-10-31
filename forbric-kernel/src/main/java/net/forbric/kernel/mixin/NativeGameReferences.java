@@ -120,7 +120,9 @@ public final class NativeGameReferences {
 	public static ClassNode runtime(Ecosystem ecosystem,String owner){
 		NativeGameReferences reader=active;if(reader==null||reader.resourceFamilies==null||ecosystem==null||owner==null)return null;
 		var expected=net.forbric.kernel.classloading.LoaderProbePolicy.familyOf(ecosystem);
-		if(reader.resourceFamilies.apply(owner)!=expected)return null;byte[]bytes=reader.resources.apply(owner+".class");if(bytes==null)return null;ClassNode node=new ClassNode();new ClassReader(bytes).accept(node,0);return owner.equals(node.name)?node:null;
+		// An ecosystem with no loader family (MinecraftForge, refused) owns no runtime jar; without this, its null family
+		// would equal an unclassified resource's and the base's or a library's bytes would answer for it.
+		if(expected==null||reader.resourceFamilies.apply(owner)!=expected)return null;byte[]bytes=reader.resources.apply(owner+".class");if(bytes==null)return null;ClassNode node=new ClassNode();new ClassReader(bytes).accept(node,0);return owner.equals(node.name)?node:null;
 	}
 
 	public synchronized ClassNode get(Ecosystem ecosystem, String owner) {
