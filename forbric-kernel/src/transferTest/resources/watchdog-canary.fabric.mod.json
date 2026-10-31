@@ -1,0 +1,9 @@
+{
+  "schemaVersion": 1,
+  "id": "forbric_watchdog_canary",
+  "version": "1.0.0",
+  "name": "Forbric watchdog diagnostic fixture",
+  "environment": "server",
+  "entrypoints": { "main": ["net.forbric.kernel.transfer.WatchdogCanary"] },
+  "depends": { "minecraft": "26.2", "fabric-crash-report-info-v1": "*" }
+}
