@@ -32,7 +32,8 @@ import org.junit.jupiter.api.Test;
  * The false-positive pin: over the staged 97-jar client pack, resolved against the NeoForge carrier, the base and
  * the pack itself, the audit finds NOTHING. A real pack has CustomSkinLoader naming fml/loading and fml/relauncher,
  * universal jars naming both families, Fabric ports shipping net.minecraftforge.* for their dependants — every one
- * of those is a shape a naive audit cries wolf on.
+ * of those is a shape a naive audit cries wolf on. Judged as {@link AbiLinkAudit#scan} judges it, universal jars'
+ * set-aside MinecraftForge halves skipped.
  */
 class AbiLinkAuditStagedTest {
 	@Test
@@ -50,7 +51,10 @@ class AbiLinkAuditStagedTest {
 		TestFixtures.require(Fixture.THIRD_PARTY, jars.size() >= 50, "the staged pack is not the real one");
 		List<Path> universe = new ArrayList<>(against);
 		universe.addAll(jars);
-		List<AbiLinkAudit.Finding> findings = AbiLinkAudit.audit(jars, AbiLinkAudit.classesOf(universe));
+		// The predicate production's scan passes: a universal jar's MinecraftForge half is set aside by arbitration and
+		// never loaded, so its net/minecraftforge/ references are not judged (doubledoors and collective carry one).
+		List<AbiLinkAudit.Finding> findings = AbiLinkAudit.audit(jars, AbiLinkAudit.classesOf(universe),
+				MultiLoaderArbiter::carriesMinecraftForgeHalf);
 		assertEquals(List.of(), findings, "measured 0 over the staged pack; a finding here is a false positive to scope out, "
 				+ "or a real mod compiled against another Forge that has just been staged");
 	}
