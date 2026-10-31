@@ -919,8 +919,12 @@ public final class DuplicateModArbiter {
 		if (csv == null || csv.isBlank()) return MultiLoaderArbiter.preference();
 
 		List<Ecosystem> order = new ArrayList<>();
+		boolean namedMinecraftForge = false;
 		for (String raw : csv.split(",")) {
-			if (ignoredMinecraftForge(raw, "-Dforbric.dupeIdPreference")) continue;
+			if (ignoredMinecraftForge(raw, "-Dforbric.dupeIdPreference")) {
+				namedMinecraftForge = true;
+				continue;
+			}
 			Ecosystem parsed = Ecosystem.parse(raw);
 			if (parsed != null) {
 				order.add(parsed);
@@ -929,7 +933,7 @@ public final class DuplicateModArbiter {
 						raw.trim());
 			}
 		}
-		return order.isEmpty() ? MultiLoaderArbiter.preference() : order;
+		return order.isEmpty() && !namedMinecraftForge ? MultiLoaderArbiter.preference() : order;
 	}
 
 	/**
@@ -976,8 +980,12 @@ public final class DuplicateModArbiter {
 		if (csv == null || csv.isBlank()) return NESTED_DEFAULT;
 
 		List<Ecosystem> order = new ArrayList<>();
+		boolean namedMinecraftForge = false;
 		for (String raw : csv.split(",")) {
-			if (ignoredMinecraftForge(raw, "-Dforbric.nestedDupePreference")) continue;
+			if (ignoredMinecraftForge(raw, "-Dforbric.nestedDupePreference")) {
+				namedMinecraftForge = true;
+				continue;
+			}
 			Ecosystem parsed = Ecosystem.parse(raw);
 			if (parsed != null) {
 				order.add(parsed);
@@ -986,7 +994,7 @@ public final class DuplicateModArbiter {
 						raw.trim());
 			}
 		}
-		return order.isEmpty() ? NESTED_DEFAULT : order;
+		return order.isEmpty() && !namedMinecraftForge ? NESTED_DEFAULT : order;
 	}
 
 	/**
@@ -994,6 +1002,10 @@ public final class DuplicateModArbiter {
 	 * not there. No jar is ever claimed by MinecraftForge now, so the entry could only rank a family nothing belongs to;
 	 * an old launch profile that names it is told why it stopped meaning anything, as
 	 * {@code -Dforbric.multiLoaderPreference} tells it.
+	 *
+	 * <p>An order that names nothing but MinecraftForge is still an order, and an empty one rather than none: it used to
+	 * rank only a family no claim has, so every claim tied and the first by path won. It still does; falling back to the
+	 * default order instead would have made NeoForge win where it never did.
 	 */
 	private static boolean ignoredMinecraftForge(String raw, String where) {
 		if (!Ecosystem.namesMinecraftForge(raw)) return false;

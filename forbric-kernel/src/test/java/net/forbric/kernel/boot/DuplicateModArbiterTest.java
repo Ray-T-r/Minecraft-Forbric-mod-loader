@@ -380,6 +380,22 @@ class DuplicateModArbiterTest {
 		assertEquals(1, d.aliasesFor(Ecosystem.NEOFORGE).size());
 	}
 
+	/**
+	 * A knob naming nothing but MinecraftForge ranks no claim a boot can have, so the claims tie and the first by path
+	 * wins, as it did while the entry still parsed to FORGE. Falling back to the default order would make NeoForge win.
+	 */
+	@Test
+	void aPreferenceNamingOnlyMinecraftForgeLeavesTheClaimsTied() {
+		System.setProperty("forbric.dupeIdPreference", "minecraftforge");
+
+		Decision d = DuplicateModArbiter.arbitrate(List.of(
+				claim("/mods/x-fabric.jar", Ecosystem.FABRIC, "x"),
+				claim("/mods/x-neoforge.jar", Ecosystem.NEOFORGE, "x")));
+
+		assertFalse(d.suppressed(Path.of("/mods/x-fabric.jar")));
+		assertTrue(d.suppressed(Path.of("/mods/x-neoforge.jar")));
+	}
+
 	@Test
 	void aSameEcosystemTieNeedsNoAlias() {
 		// Both jars are NeoForge, so nothing lost its identity — the surviving jar already provides it.

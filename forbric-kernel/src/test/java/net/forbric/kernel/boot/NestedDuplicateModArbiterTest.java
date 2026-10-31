@@ -241,6 +241,20 @@ class NestedDuplicateModArbiterTest {
 		assertEquals(List.of(Ecosystem.FABRIC), DuplicateModArbiter.preference());
 	}
 
+	/** As at top level: a knob naming nothing but MinecraftForge leaves the claims tied, not the default order. */
+	@Test
+	void aPreferenceNamingOnlyMinecraftForgeLeavesTheClaimsTied() {
+		System.setProperty("forbric.nestedDupePreference", "minecraftforge");
+		String fabricFirst = "/g/.forbric-kernel/jij/entityculling/transition-fabric.jar";
+
+		Decision d = nested(List.of(), List.of(
+				claim(fabricFirst, Ecosystem.FABRIC, "transition", "1.0.25"),
+				claim(NEO_NESTED, Ecosystem.NEOFORGE, "transition", "1.0.25")));
+
+		assertFalse(d.suppressed(Path.of(fabricFirst)));
+		assertTrue(d.suppressed(Path.of(NEO_NESTED)));
+	}
+
 	@Test
 	void aSingleClaimantIsNeverSuppressed() {
 		// The invariant that keeps every existing gate green: no gate stages one mod id twice across ecosystems,
