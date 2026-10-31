@@ -9,7 +9,6 @@ import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
 import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.core.registries.Registries;
-import net.minecraft.nbt.IntTag;
 import net.minecraft.resources.Identifier;
 import net.minecraft.resources.ResourceKey;
 import net.minecraft.server.level.ServerLevel;
@@ -21,7 +20,6 @@ import net.minecraft.world.level.block.state.BlockBehaviour;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.level.storage.ValueInput;
 import net.minecraft.world.level.storage.ValueOutput;
-import net.minecraftforge.energy.EnergyStorage;
 import net.neoforged.neoforge.transfer.energy.SimpleEnergyHandler;
 
 /**
@@ -31,46 +29,31 @@ import net.neoforged.neoforge.transfer.energy.SimpleEnergyHandler;
  */
 public final class EnergyMachines {
 	private EnergyMachines() { }
-	public static final String FABRIC = "forbricenergyfabric", NEO = "forbricenergyneo", FORGE = "forbricenergyforge";
+	public static final String FABRIC = "forbricenergyfabric", NEO = "forbricenergyneo";
 	/** Every block and block-entity type, keyed "owner:path", as each mod registers them. */
 	public static final Map<String, Block> BLOCKS = new ConcurrentHashMap<>();
 	public static final Map<String, BlockEntityType<?>> TYPES = new ConcurrentHashMap<>();
 	/** Only NORTH and the null face reach a cell's provider; SOUTH (and every other face) must stay refused. */
 	public static boolean permits(Direction side) { return side == null || side == Direction.NORTH; }
 
-	// Positions. The primary cells (and NEO_PEER where it is placed) are the conservation census; everything else is
-	// outside it. Since Stage 3 of dropping MinecraftForge the gate stages no Forge cell (forbricenergyforge is refused),
-	// so nothing places a cell at a Forge position below any more.
-	public static final BlockPos FABRIC_CELL = new BlockPos(16, 80, 48), NEO_CELL = new BlockPos(18, 80, 48), FORGE_CELL = new BlockPos(20, 80, 48);
-	/** A Forge cell on which NeoForge ALSO registers a native provider (the cell's neo store). */
-	public static final BlockPos PRIORITY_FORGE = new BlockPos(22, 80, 48);
-	/** A Fabric cell on which NeoForge ALSO registers a native provider (Reborn phases only; forbricenergyforge, refused now, added Forge's). */
+	// Positions. The primary cells are the conservation census; everything else is outside it.
+	public static final BlockPos FABRIC_CELL = new BlockPos(16, 80, 48), NEO_CELL = new BlockPos(18, 80, 48);
+	/** A Fabric cell on which NeoForge ALSO registers a native provider (Reborn phases only). */
 	public static final BlockPos PRIORITY_FABRIC = new BlockPos(24, 80, 48);
-	/** A Forge cell whose Forge provider is a custom IEnergyStorage: no write bridge for it. */
-	public static final BlockPos ROGUE = new BlockPos(26, 80, 48);
-	public static final BlockPos BATTERY = new BlockPos(28, 80, 48);
-	public static final BlockPos INVALIDATE_FORGE = new BlockPos(30, 80, 48), INVALIDATE_NEO = new BlockPos(32, 80, 48);
+	public static final BlockPos INVALIDATE_NEO = new BlockPos(32, 80, 48);
 	public static final BlockPos RESERVOIR = new BlockPos(34, 80, 48), SINK = new BlockPos(36, 80, 48);
-	/** A Fabric (Reborn) cell whose cached NeoForge and Forge views must stop writing once it is replaced (Reborn phases). */
+	/** A Fabric (Reborn) cell whose cached NeoForge views must stop writing once it is replaced (Reborn phases). */
 	public static final BlockPos INVALIDATE_FABRIC = new BlockPos(38, 80, 48);
 	/** A NeoForge-owned block with no energy of its own, on which a Fabric addon registers a Reborn store (Reborn phases). */
 	public static final BlockPos EXPLICIT = new BlockPos(40, 80, 48);
-	/** A Forge battery loaded with more energy than its capacity, as Forge's own deserializeNBT allows. */
-	public static final BlockPos OVERFULL = new BlockPos(42, 80, 48);
-	/**
-	 * A second NeoForge cell, in the census, for the pack without Reborn: the Forge consumer, which owns no cell, moves
-	 * between it and the NeoForge cell, so its committed writes and extracts on a NeoForge store still run there.
-	 */
-	public static final BlockPos NEO_PEER = new BlockPos(44, 80, 48);
 	/** Its own chunk: nothing else dirties it. */
 	public static final BlockPos DIRTY = new BlockPos(112, 80, 48);
 
 	/** Capacity and limits of a store, chosen by block type. */
-	public record Spec(long capacity, long maxInsert, long maxExtract, boolean battery) {
-		public static final Spec CELL = new Spec(100_000, 5_000, 4_000, false);
-		public static final Spec BATTERY = new Spec(1_000, 1_000, 1_000, true);
-		public static final Spec SINK = new Spec(Integer.MAX_VALUE, Integer.MAX_VALUE, Integer.MAX_VALUE, false);
-		public static final Spec RESERVOIR = new Spec(10_000_000_000L, Long.MAX_VALUE, Long.MAX_VALUE, false);
+	public record Spec(long capacity, long maxInsert, long maxExtract) {
+		public static final Spec CELL = new Spec(100_000, 5_000, 4_000);
+		public static final Spec SINK = new Spec(Integer.MAX_VALUE, Integer.MAX_VALUE, Integer.MAX_VALUE);
+		public static final Spec RESERVOIR = new Spec(10_000_000_000L, Long.MAX_VALUE, Long.MAX_VALUE);
 		public int intCapacity() { return (int) Math.min(capacity, Integer.MAX_VALUE); }
 		public int intInsert() { return (int) Math.min(maxInsert, Integer.MAX_VALUE); }
 		public int intExtract() { return (int) Math.min(maxExtract, Integer.MAX_VALUE); }
@@ -83,8 +66,6 @@ public final class EnergyMachines {
 		long energy();
 		/** Sets the owner's own store; placement and loading only. */
 		void seed(long energy);
-		/** What a Forge provider hands out on this cell (the owner's store for a Forge cell). */
-		EnergyStorage forgeStore();
 		/** What a NeoForge provider hands out on this cell. */
 		SimpleEnergyHandler neoStore();
 		/** The Reborn store on a Fabric cell; null elsewhere. */
@@ -96,17 +77,9 @@ public final class EnergyMachines {
 		void resetChanges();
 	}
 
-	/** A Forge-standard store plus state of its own: structurally Forge's EnergyStorage, so it is bridged. */
-	public static final class PlainBattery extends EnergyStorage {
-		public String label = "m40-battery";
-		public PlainBattery(int capacity, int maxReceive, int maxExtract) { super(capacity, maxReceive, maxExtract, 0); }
-		public String describe() { return label + ":" + energy; }
-	}
-
-	/** The Forge and NeoForge cell. Its Forge store is Forge's exact EnergyStorage (or a PlainBattery), never a subclass that overrides anything. */
+	/** The NeoForge cell. */
 	public static final class EnergyCell extends BlockEntity implements Cell {
 		private final String family;
-		public final EnergyStorage forgeEnergy;
 		public final SimpleEnergyHandler neoEnergy;
 		private boolean loadedFromDisk;
 		private Direction lastFace = Direction.UP;
@@ -114,21 +87,17 @@ public final class EnergyMachines {
 		public EnergyCell(BlockEntityType<?> type, String family, Spec spec, BlockPos pos, BlockState state) {
 			super(type, pos, state);
 			this.family = family;
-			this.forgeEnergy = spec.battery() ? new PlainBattery(spec.intCapacity(), spec.intInsert(), spec.intExtract())
-					: new EnergyStorage(spec.intCapacity(), spec.intInsert(), spec.intExtract(), 0);
 			this.neoEnergy = new SimpleEnergyHandler(spec.intCapacity(), spec.intInsert(), spec.intExtract(), 0) {
 				@Override protected void onEnergyChanged(int previous) { setChanged(); }
 			};
 		}
 		public String family() { return family; }
-		public long energy() { return family.equals(FORGE) ? forgeEnergy.getEnergyStored() : neoEnergy.getAmountAsLong(); }
+		public long energy() { return neoEnergy.getAmountAsLong(); }
 		public void seed(long energy) {
-			// Forge's own persistence entry point sets the field; NeoForge's own setter notifies its owner.
-			if (family.equals(FORGE)) forgeEnergy.deserializeNBT(null, IntTag.valueOf(Math.toIntExact(energy)));
-			else neoEnergy.set(Math.toIntExact(energy));
+			// NeoForge's own setter notifies its owner.
+			neoEnergy.set(Math.toIntExact(energy));
 			setChanged();
 		}
-		public EnergyStorage forgeStore() { return forgeEnergy; }
 		public SimpleEnergyHandler neoStore() { return neoEnergy; }
 		public Object fabricStore() { return null; }
 		public boolean loadedFromDisk() { return loadedFromDisk; }
@@ -152,7 +121,7 @@ public final class EnergyMachines {
 		Block block = new CellBlock(key, BlockBehaviour.Properties.of().setId(ResourceKey.create(Registries.BLOCK, id(owner, path))).strength(1));
 		BLOCKS.put(key, block); return block;
 	}
-	/** A Forge or NeoForge cell type for {@code block}. */
+	/** A NeoForge cell type for {@code block}. */
 	public static BlockEntityType<EnergyCell> cellType(String owner, String path, Spec spec, Block block) {
 		AtomicReference<BlockEntityType<EnergyCell>> self = new AtomicReference<>();
 		BlockEntityType<EnergyCell> type = new BlockEntityType<>((pos, state) -> new EnergyCell(self.get(), owner, spec, pos, state), Set.of(block));
@@ -179,14 +148,14 @@ public final class EnergyMachines {
 		Object find(ServerLevel level, BlockPos pos, Direction face);
 		long amount(Object port);
 		long capacity(Object port);
-		/** One operation in its own root transaction (Forge: simulate unless {@code commit}). */
+		/** One operation in its own root transaction, committed only if {@code commit}. */
 		long insert(Object port, long max, boolean commit);
 		long extract(Object port, long max, boolean commit);
 		/** The ecosystem's own move helper, committed. */
 		long move(Object from, Object to, long max);
 		/**
 		 * One root: a nested move that commits, then a nested move that aborts, then the root aborts. Returns what the
-		 * committed child moved. Forge has no transactions and answers -1.
+		 * committed child moved.
 		 */
 		long nestedThenAbort(Object from, Object to, long max);
 	}

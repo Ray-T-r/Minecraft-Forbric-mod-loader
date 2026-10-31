@@ -17,7 +17,6 @@ import net.minecraft.world.level.block.entity.BlockEntityType;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.level.storage.ValueInput;
 import net.minecraft.world.level.storage.ValueOutput;
-import net.minecraftforge.energy.EnergyStorage;
 import net.neoforged.neoforge.transfer.energy.SimpleEnergyHandler;
 import team.reborn.energy.api.EnergyStorageUtil;
 import team.reborn.energy.api.base.SimpleEnergyStorage;
@@ -46,9 +45,8 @@ public final class ForbricEnergyFabric implements ModInitializer {
 
 	public static final class RebornCell extends BlockEntity implements EnergyMachines.Cell {
 		public final SimpleEnergyStorage fabricEnergy;
-		// NeoForge and Forge stores of their own, handed out only at the priority probe.
+		// A NeoForge store of its own, handed out only at the priority probe.
 		private final SimpleEnergyHandler neoExtra = new SimpleEnergyHandler(1000);
-		private final EnergyStorage forgeExtra = new EnergyStorage(1000);
 		private boolean loadedFromDisk;
 		private Direction lastFace = Direction.UP;
 		private int changes;
@@ -61,7 +59,6 @@ public final class ForbricEnergyFabric implements ModInitializer {
 		public String family() { return EnergyMachines.FABRIC; }
 		public long energy() { return fabricEnergy.amount; }
 		public void seed(long energy) { fabricEnergy.amount = energy; setChanged(); }
-		public EnergyStorage forgeStore() { return forgeExtra; }
 		public SimpleEnergyHandler neoStore() { return neoExtra; }
 		public Object fabricStore() { return fabricEnergy; }
 		public boolean loadedFromDisk() { return loadedFromDisk; }

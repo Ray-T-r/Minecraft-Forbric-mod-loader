@@ -1,15 +1,13 @@
 # M33 world-transfer fixture
 
 Run `bash forbric-kernel/run/gate-m33-transfer.sh` after building/staging the kernel inputs. The build script builds
-three separate mods, each with only its own ecosystem metadata and registration entrypoint; the gate stages the
-Fabric and NeoForge ones. Since Stage 3 of dropping MinecraftForge, Forbric refuses the MinecraftForge one
-(`forbrictransferforge`) and a strict launch stops on it, so it is built (gate-m40 builds through the same script) but
-never staged, and the probe moves nothing to or from MinecraftForge. Common fixture classes are shipped only by the
-Fabric jar. The selected Fabric API jar defaults to the same 0.155.2+26.2 fixture as the kernel's runtime build;
-`M33_FABRIC_API` can point at an explicitly prepared equivalent fixture.
-The upstream NeoForge-patched game is the compile view (`M33_COMPILE_GAME`); the merged game is the runtime
-input. This preserves normal upstream compilation of a custom Block subclass without hiding the merged
-interfaces' conflicting defaults behind canary-only overrides. Both game inputs are hashed.
+two separate mods, each with only its own ecosystem metadata and registration entrypoint, and the gate stages both:
+Fabric's and NeoForge's. (The MinecraftForge one, `forbrictransferforge`, went in Stage 4 of dropping MinecraftForge;
+Forbric refuses a MinecraftForge-only mod, and no stage carries MinecraftForge to compile it against.) Common fixture
+classes are shipped only by the Fabric jar. The selected Fabric API jar defaults to the same 0.155.2+26.2 fixture as
+the kernel's runtime build; `M33_FABRIC_API` can point at an explicitly prepared equivalent fixture.
+NeoForge's patched game is the compile view (`M33_COMPILE_GAME`) and, by default, the runtime base the build records
+(`BASE`, the launchers' default); both game inputs are hashed.
 
 The gate uses only `run/server-transfer-m33/world`. A nonce in `.m33-owned`, explicit JVM parameters and the
 server's actual world path must all agree before the canary changes blocks. Without this proof it prints
@@ -25,10 +23,8 @@ competing providers), and cached views after replacing a real block entity. Cont
 precedence: a NeoForge crate is a plain Container whose owner exposes a separate handler on NORTH/null only, and a
 NeoForge cabinet extends BaseContainerBlockEntity. Fabric API's generic Container fallback must not answer for them:
 a refused face stays refused for NeoForge, and a Fabric consumer on the permitted face reaches the owner's item handler
-(and the cabinet's fluid handler) without one write into the Container slots. The MinecraftForge carrier still
-composes its generic InvWrapper into every BaseContainerBlockEntity, and the bridge's Forge leg reads it on the face
-the cabinet's owner refuses; it is no owner's handler, so NeoForge gets nothing there, and the gate forbids any
-"InvWrapper is not rollback-safe" finding. The two primary inventories retain 40 component-tagged cobblestone and
+(and the cabinet's fluid handler) without one write into the Container slots. The two primary inventories retain 40
+component-tagged cobblestone and
 32,417 Fabric fluid units, including a 17-unit remainder. A Neo query also requests 201 mB from the real Fabric store
 holding 200 mB plus 17 units, forcing an actual fractional return, nested rollback/retry, then outer rollback.
 Temporary priority/invalidation fixtures are outside this conservation census.
@@ -61,7 +57,7 @@ game run is implied merely by creating these sources.
 
 # M40 energy fixture
 
-Run `bash forbric-kernel/run/gate-m40-energy.sh`. It builds the same three jars plus three energy cells
+Run `bash forbric-kernel/run/gate-m40-energy.sh`. It builds the same two jars plus two energy cells
 (`TRANSFER_CANARY_ENERGY=1`) into `build/energy-canary/`, never into `run/canary/`, so it cannot rewrite what M33 reads.
 The shared `EnergyMachines` and `EnergyWorldProbe` ship in the M33 Fabric jar and name no Team Reborn Energy type.
 `forbricenergyfabric` (a Reborn `SimpleEnergyStorage` on `EnergyStorage.SIDED`) is the only fixture that depends on
@@ -70,28 +66,21 @@ Reborn; `forbricenergyneo` registers a `SimpleEnergyHandler` on `Capabilities.En
 request it registers Reborn's `EnergyStorage.SIDED` for another mod's block (`registerForBlocks`, stores kept in
 memory). Every provider answers NORTH and null only. The Reborn jar is copied from `M40_REBORN_ENERGY` (default
 `forbric-kernel/run/energy-api/energy-5.0.0.jar` beside the staged tree); the gate fails if it is missing.
-`forbricenergyforge` (Forge's exact `EnergyStorage` on `ForgeCapabilities.ENERGY`) is still built, but since Stage 3 of
-dropping MinecraftForge it is not staged: it is a MinecraftForge-only mod, Forbric refuses it, and the gate's strict
-servers would stop on it. So there is no Forge cell. The probe still has a Forge consumer: its own code asking
-MinecraftForge's public `ICapabilityProvider`/`ForgeCapabilities.ENERGY`, which the merged base and the kernel's bridge
-answer with no MinecraftForge mod aboard. It owns no cell, so its routes go between two cells foreign to it.
+There is no MinecraftForge cell and, since Stage 4 of dropping MinecraftForge, no MinecraftForge consumer: the probe's
+own code asking MinecraftForge's `ICapabilityProvider`/`ForgeCapabilities.ENERGY` was answered only by the merged base.
 
-The probe uses only public lookups. `prepare` seeds 20,000 E in the Fabric and the NeoForge cell and checks: every
-consumer (Fabric, NeoForge, Forge) sees every cell on NORTH/null with the face passed through, and SOUTH refused; each
-cell-owning consumer's native store wins where another ecosystem could be bridged, and on a Fabric cell where NeoForge
-also registers a store the Forge consumer reaches the owner (Fabric) first; each store's capacity/maxInsert/maxExtract
-applies; eight routes (1,000 E each, the consumer's own move helper, NORTH and null: Fabric -> NeoForge, NeoForge ->
-Fabric, and the Forge consumer's simulate-then-committed move both ways between those two cells) keep the total at
-40,000; a committed nested move under an aborted root restores every cell on both engines; replacing a block entity
-makes every cached view move nothing (the Fabric and Forge views of a NeoForge cell, the NeoForge handler and Forge
-LazyOptional of a Reborn cell, the Reborn half's own path), and fresh queries then reach the new cell; a NeoForge
-write into a Reborn cell in a clean chunk stays clean on abort and dirties it exactly once per root commit, and one
-Forge execute dirties it once more; the Fabric addon's explicit Reborn provider on the NeoForge `bare` block (nothing
-answers there before it registers) is reached by NeoForge and Forge consumers on NORTH and null with the face passed
-through, SOUTH refused, and moves land in the addon's store; a 5,000,000,000 E Reborn cell reads as Integer.MAX_VALUE
-through int APIs and moving all of it into an int cell moves exactly 2,147,483,647 and keeps the rest. `reload`
-checks every amount after a real save and runs the routes again. `noreborn` removes Reborn and the Fabric cell: the
-NeoForge cell, read by NeoForge and Forge consumers, and a second NeoForge cell (`NEO_PEER`) that the Forge consumer
-moves into and back out of on both faces (four routes, 40,000 E), and the JVM's own class-load log must contain no
+The probe uses only public lookups. `prepare` seeds 20,000 E in the Fabric and the NeoForge cell and checks: both
+consumers (Fabric, NeoForge) see both cells on NORTH/null with the face passed through, and SOUTH refused; each
+consumer's native store wins where another ecosystem could be bridged; each store's capacity/maxInsert/maxExtract
+applies; four routes (1,000 E each, the consumer's own move helper, NORTH and null: Fabric -> NeoForge, NeoForge ->
+Fabric) keep the total at 40,000; a committed nested move under an aborted root restores every cell on both engines;
+replacing a block entity makes every cached view move nothing (the Fabric view of a NeoForge cell, the NeoForge
+handler of a Reborn cell), and fresh queries then reach the new cell; a NeoForge write into a Reborn cell in a clean
+chunk stays clean on abort and dirties it exactly once per root commit; the Fabric addon's explicit Reborn provider on
+the NeoForge `bare` block (nothing answers there before it registers) is reached by the NeoForge consumer on NORTH and
+null with the face passed through, SOUTH refused, and moves land in the addon's store; a 5,000,000,000 E Reborn cell
+reads as Integer.MAX_VALUE through int APIs and moving all of it into an int cell moves exactly 2,147,483,647 and
+keeps the rest. `reload` checks every amount after a real save and runs the routes again. `noreborn` removes Reborn
+and the Fabric cell: the NeoForge cell, read by the NeoForge consumer, and the JVM's own class-load log must contain no
 `team.reborn` class and no Reborn half of the bridge. `negative` turns the bridge off and must fail at a foreign
 lookup. Evidence: `build/verification/m40-energy/`.
