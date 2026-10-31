@@ -29,6 +29,7 @@ import net.neoforged.bus.api.IEventBus;
 import net.neoforged.fml.common.Mod;
 import net.neoforged.neoforge.common.NeoForge;
 import net.neoforged.neoforge.common.util.FakePlayer;
+import net.neoforged.neoforge.event.furnace.FurnaceFuelBurnTimeEvent;
 import net.neoforged.neoforge.event.server.ServerStartedEvent;
 import net.neoforged.neoforge.event.tick.ServerTickEvent;
 
@@ -38,7 +39,16 @@ public final class EverydayActions {
  static final String ID="forbriceveryday";
  private static final List<Map<String,Object>> CASES=new ArrayList<>();
  private static MinecraftServer server; private static int ticks; private static EnderDragon dragon;
+ // What this mod's FurnaceFuelBurnTimeEvent listener makes cobblestone burn for, and the burn time the event brought for
+ // the Fabric mod's dirt fuel (-1: the listener never heard dirt).
+ static final int NEO_COBBLESTONE_BURN=321; private static volatile int dirtSeenByNeo=-1;
  public EverydayActions(IEventBus bus){
+  // A NeoForge mod deciding how long something burns, the way balm does: NeoForge posts FurnaceFuelBurnTimeEvent from
+  // ItemStack.getBurnTime, the question the furnace asks. -Dforbric.everydayWithholdFuelEvent=true withholds the
+  // listener, so its two cases go red.
+  if(!Boolean.getBoolean("forbric.everydayWithholdFuelEvent"))NeoForge.EVENT_BUS.addListener(FurnaceFuelBurnTimeEvent.class,e->{
+   if(e.getItemStack().is(Items.COBBLESTONE))e.setBurnTime(NEO_COBBLESTONE_BURN);
+   if(e.getItemStack().is(Items.DIRT))dirtSeenByNeo=e.getBurnTime();});
   NeoForge.EVENT_BUS.addListener(ServerStartedEvent.class,e->{server=e.getServer();server.overworld().setChunkForced(0,0,true);});
   NeoForge.EVENT_BUS.addListener(ServerTickEvent.Post.class,e->{if(e.getServer()!=server)return;ticks++;
    if(ticks==20)first();
@@ -90,6 +100,18 @@ public final class EverydayActions {
   test("fuel.vanilla",()->{var f=server.fuelValues();return expect(f.burnDuration(new ItemStack(Items.COAL))==1600,"coal burns "+f.burnDuration(new ItemStack(Items.COAL)));});
   test("fuel.fabric",()->{var f=server.fuelValues();ItemStack dirt=new ItemStack(Items.DIRT);return expect(f.isFuel(dirt)&&f.burnDuration(dirt)==300,"the Fabric mod's dirt fuel burns "+f.burnDuration(dirt));});
   test("fuel.exclusion",()->{var f=server.fuelValues();ItemStack carpet=new ItemStack(Items.CARPET.white());return expect(!f.isFuel(carpet),"the Fabric mod's excluded carpet still burns "+f.burnDuration(carpet));});
+  // A NeoForge mod's burn time: this mod's listener makes cobblestone a fuel, asked the way the furnace asks
+  // (ItemStack.getBurnTime with the server's FuelValues) and in a lit furnace that smelts raw iron on cobblestone alone.
+  test("fuel.neoEvent",()->{int t=new ItemStack(Items.COBBLESTONE).getBurnTime(RecipeType.SMELTING,server.fuelValues());
+   return expect(t==NEO_COBBLESTONE_BURN,"cobblestone burns "+t+" ticks; the NeoForge listener said "+NEO_COBBLESTONE_BURN);});
+  test("fuel.neoEventFurnace",()->{BlockPos pos=new BlockPos(2,100,8);level.setBlock(pos,Blocks.FURNACE.defaultBlockState(),3);FurnaceBlockEntity f=(FurnaceBlockEntity)level.getBlockEntity(pos);
+   try{f.setItem(0,new ItemStack(Items.RAW_IRON,1));f.setItem(1,new ItemStack(Items.COBBLESTONE,1));
+    for(int i=0;i<250;i++)AbstractFurnaceBlockEntity.serverTick(level,pos,level.getBlockState(pos),f);
+    return expect(id(f.getItem(2)).equals("1 minecraft:iron_ingot"),"output="+id(f.getItem(2))+" fuel="+id(f.getItem(1))+" input="+id(f.getItem(0)));}
+   finally{f.clearContent();level.setBlock(pos,Blocks.AIR.defaultBlockState(),3);}});
+  // The Fabric mod's dirt fuel reaches NeoForge's event too, with the burn time fabric-content-registries gave it.
+  test("fuel.fabricInNeoEvent",()->{dirtSeenByNeo=-1;int t=new ItemStack(Items.DIRT).getBurnTime(RecipeType.SMELTING,server.fuelValues());
+   return expect(dirtSeenByNeo==300&&t==300,"NeoForge's event saw the Fabric dirt fuel as "+dirtSeenByNeo+", the furnace's question answered "+t);});
   // The Ender Dragon: added to a world, found by its parts, hurt through one, removed.
   test("dragon.add",()->{dragon=EntityTypes.ENDER_DRAGON.create(level,EntitySpawnReason.COMMAND);dragon.snapTo(8,120,8);
    boolean added=level.addFreshEntity(dragon);var part=dragon.getSubEntities()[0];

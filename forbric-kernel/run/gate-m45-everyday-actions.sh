@@ -22,6 +22,10 @@
 #     game never calls (it builds fuels from NeoForge's data map), so a Fabric mod's fuel could not go in a furnace
 #     (FabricFuelValuesInjector runs them on NeoForge's builder): coal (control), the probe mod's dirt fuel, and the
 #     carpets its exclusion removes.
+#   NeoForge burn times — the probe mod's FurnaceFuelBurnTimeEvent listener makes cobblestone burn 321 ticks: asked the
+#     way the furnace asks (ItemStack.getBurnTime), in a lit furnace that smelts on cobblestone alone, and the Fabric
+#     mod's dirt fuel reaching the same event with its 300 ticks. The game posts the event itself; on the merged base a
+#     compat repair (letBothEcosystemsSetBurnTime) also asked NeoForge from MinecraftForge's FuelValues overload.
 #   Fabric fluids — a Fabric mod's fluid declares no NeoForge FluidType, and NeoForge's lookup threw "Mod fluids must
 #     override getFluidType" at the first entity to touch one: 'Ticking entity' took the server down
 #     (ForeignFluidTypeInjector gives it the type its fluid tags imply).
@@ -35,6 +39,8 @@
 #      stays off to show the dragon does not lean on that runtime guard (it reads a null NeoForge getParts() as "no
 #      parts"; with the bridge the dragon's NeoForge getParts() answers its real parts, so the guard is never needed).
 #      The old -Dforbric.dragonParts switch was removed with the runtime rewrite it controlled.
+#   3. withhold — -Dforbric.everydayWithholdFuelEvent=true: the probe mod registers no burn-time listener, so exactly the
+#      three NeoForge burn-time cases fail (the control that shows they measure the listener).
 # Not covered here: a client (the dragon's parts in the client's entity lookups), and a native server as an oracle.
 # GATE-PARALLEL: rundirs=server-everyday-m45 mem=2000
 set -uo pipefail
@@ -45,9 +51,12 @@ RESULTS="$BUILD/verification/m45-everyday-actions"
 FAIL=0
 # The cases a runtime repair (switched off in phase 2) is responsible for. The dragon's three are not among them: the
 # merged base's ancestor bridge carries them, and phase 2 asserts they hold without any runtime repair.
-REPAIRED="{'remainder.stack', 'remainder.item', 'craft.cake', 'furnace.smelt', 'brewing.awkward', 'fuel.fabric', 'fuel.exclusion', 'fluid.minecraftForgeType', 'fluid.untagged', 'fluid.water'}"
+# fuel.neoEventFurnace smelts in a lit furnace, so it fails with the remainder conflict unsettled, as furnace.smelt does.
+REPAIRED="{'remainder.stack', 'remainder.item', 'craft.cake', 'furnace.smelt', 'brewing.awkward', 'fuel.fabric', 'fuel.exclusion', 'fuel.fabricInNeoEvent', 'fuel.neoEventFurnace', 'fluid.minecraftForgeType', 'fluid.untagged', 'fluid.water'}"
 # The loader's line for the bridge the dragon's parts depend on: MinecraftForge's PartEntity, as served, extends
 # NeoForge's. Both names are the platforms' public API types, and the line is the generic cross-carrier edge report.
+# The cases the probe mod's own burn-time listener answers (phase 3 withholds it).
+NEO_FUEL="{'fuel.neoEvent', 'fuel.neoEventFurnace', 'fuel.fabricInNeoEvent'}"
 PART_BRIDGE='\[Forbric/Hierarchy\] net\.minecraftforge\.entity\.PartEntity, served by the FORGE runtime, extends net\.neoforged\.neoforge\.entity\.PartEntity, served by the NEOFORGE runtime'
 rm -rf "$RESULTS"; mkdir -p "$RESULTS"
 
@@ -83,7 +92,7 @@ import json, sys
 report, phase, rule = json.load(open(sys.argv[1])), sys.argv[2], sys.argv[3]
 assert report['phase'] == phase, report['phase']
 cases = {c['name']: c for c in report['cases']}
-assert len(cases) == 16, sorted(cases)
+assert len(cases) == 18, sorted(cases)
 failed = {name for name, c in cases.items() if not c['pass']}
 for name in sorted(failed): print(f"[kernel]   {phase}: {name} failed — {cases[name]['detail'][:240]}")
 assert eval(rule, {'failed': failed, 'cases': cases}), (phase, sorted(failed))
@@ -94,7 +103,7 @@ PY
 
 step "1. positive: crafting, smelting, brewing and the dragon work"
 run_server positive strict ""
-judge positive "not failed" "all 16 cases pass"
+judge positive "not failed" "all 18 cases pass"
 check_absent "positive: the server stopped without an exception" 'Exception stopping the server|still alive .* after announcing its stop' "$RESULTS/positive.log"
 if python3 -c "import json,sys; r=json.load(open(sys.argv[1])); sys.exit(0 if r['confirmedRequired']==0 else 1)" "$RESULTS/positive-compatibility.json" 2>/dev/null
 then echo "[kernel] PASS positive: zero confirmed required findings under STRICT"
@@ -110,6 +119,10 @@ run_server off continue "-Dforbric.defaultConflictRepair=off -Dforbric.furnaceTi
 judge off "failed == $REPAIRED" "exactly the runtime-repaired cases fail; the controls and the dragon hold"
 check "off: the PartEntity bridge has no runtime switch and is still in effect" "$PART_BRIDGE" "$RESULTS/off.log"
 check_absent "off: the foreign-fluid repair really was switched off" 'Forbric/Fluid\] .*gets the one its fluid tags imply' "$RESULTS/off.log"
+
+step "3. withhold: the same server with the probe mod's burn-time listener withheld"
+run_server withhold continue "-Dforbric.everydayWithholdFuelEvent=true"
+judge withhold "failed == $NEO_FUEL" "exactly the NeoForge burn-time cases fail; every other case holds"
 
 if [ "$FAIL" -eq 0 ]; then
   echo "[kernel] ✅ M45 EVERYDAY GATE GREEN — crafting, smelting, brewing and mod fluids work, each by its repair; the dragon by the merged base's ancestor bridge"
