@@ -46,7 +46,7 @@ class MixinShearsRelayTest {
 	}
 
 	@Test void aWrapWhoseCallIsGoneMovesToTheCarrierCall() throws Exception {
-		for (String name : List.of("PumpkinBlockMixin", "TripWireBlockMixin", "SheepMixin", "SnowGolemMixin")) {
+		for (String name : List.of("PumpkinBlockMixin", "TripWireBlockMixin")) {
 			ClassNode mixin = fabric(name);
 			MixinShearsRelay.Row row = rowFor(mixin);
 			ClassNode target = StagedFabricMixinFixture.game(row.target(), false);
@@ -68,7 +68,7 @@ class MixinShearsRelayTest {
 	}
 
 	@Test void aWrapStillBoundToOtherIsCallsKeepsThemAndAnswersTheCarrierToo() throws Exception {
-		for (String name : List.of("BeehiveBlockMixin", "MushroomCowMixin")) {
+		for (String name : List.of("BeehiveBlockMixin")) {
 			ClassNode mixin = fabric(name);
 			MixinShearsRelay.Row row = rowFor(mixin);
 			ClassNode target = StagedFabricMixinFixture.game(row.target(), false);

@@ -169,20 +169,6 @@ test	net.forbric.kernel.mixin.AdapterPointSpellingTest	shears BeehiveBlock / no 
 test	net.forbric.kernel.mixin.AdapterPointSpellingTest	shears BeehiveBlock / owner-qualified selector	[fixture:third-party] build/compat-inputs/sweep90/mods/bclib-26.201.2.jar absent
 test	net.forbric.kernel.mixin.AdapterPointSpellingTest	shears BeehiveBlock / selector in two spellings	[fixture:third-party] build/compat-inputs/sweep90/mods/bclib-26.201.2.jar absent
 test	net.forbric.kernel.mixin.AdapterPointSpellingTest	shears BeehiveBlock / with whitespace	[fixture:third-party] build/compat-inputs/sweep90/mods/bclib-26.201.2.jar absent
-test	net.forbric.kernel.mixin.AdapterPointSpellingTest	shears MushroomCow	[fixture:third-party] build/compat-inputs/sweep90/mods/bclib-26.201.2.jar absent
-test	net.forbric.kernel.mixin.AdapterPointSpellingTest	shears MushroomCow / a selector binding another method	[fixture:third-party] build/compat-inputs/sweep90/mods/bclib-26.201.2.jar absent
-test	net.forbric.kernel.mixin.AdapterPointSpellingTest	shears MushroomCow / another owner	[fixture:third-party] build/compat-inputs/sweep90/mods/bclib-26.201.2.jar absent
-test	net.forbric.kernel.mixin.AdapterPointSpellingTest	shears MushroomCow / dotted owner	[fixture:third-party] build/compat-inputs/sweep90/mods/bclib-26.201.2.jar absent
-test	net.forbric.kernel.mixin.AdapterPointSpellingTest	shears MushroomCow / dotted owner, no descriptor	[fixture:third-party] build/compat-inputs/sweep90/mods/bclib-26.201.2.jar absent
-test	net.forbric.kernel.mixin.AdapterPointSpellingTest	shears MushroomCow / dotted-owner selector	[fixture:third-party] build/compat-inputs/sweep90/mods/bclib-26.201.2.jar absent
-test	net.forbric.kernel.mixin.AdapterPointSpellingTest	shears MushroomCow / no descriptor	[fixture:third-party] build/compat-inputs/sweep90/mods/bclib-26.201.2.jar absent
-test	net.forbric.kernel.mixin.AdapterPointSpellingTest	shears MushroomCow / no descriptor, another overload there too	[fixture:third-party] build/compat-inputs/sweep90/mods/bclib-26.201.2.jar absent
-test	net.forbric.kernel.mixin.AdapterPointSpellingTest	shears MushroomCow / no owner	[fixture:third-party] build/compat-inputs/sweep90/mods/bclib-26.201.2.jar absent
-test	net.forbric.kernel.mixin.AdapterPointSpellingTest	shears MushroomCow / no owner, another owner's member there too	[fixture:third-party] build/compat-inputs/sweep90/mods/bclib-26.201.2.jar absent
-test	net.forbric.kernel.mixin.AdapterPointSpellingTest	shears MushroomCow / no owner, without the class it was compiled against	[fixture:third-party] build/compat-inputs/sweep90/mods/bclib-26.201.2.jar absent
-test	net.forbric.kernel.mixin.AdapterPointSpellingTest	shears MushroomCow / owner-qualified selector	[fixture:third-party] build/compat-inputs/sweep90/mods/bclib-26.201.2.jar absent
-test	net.forbric.kernel.mixin.AdapterPointSpellingTest	shears MushroomCow / selector in two spellings	[fixture:third-party] build/compat-inputs/sweep90/mods/bclib-26.201.2.jar absent
-test	net.forbric.kernel.mixin.AdapterPointSpellingTest	shears MushroomCow / with whitespace	[fixture:third-party] build/compat-inputs/sweep90/mods/bclib-26.201.2.jar absent
 test	net.forbric.kernel.mixin.AdapterPointSpellingTest	shears PumpkinBlock	[fixture:third-party] build/compat-inputs/sweep90/mods/bclib-26.201.2.jar absent
 test	net.forbric.kernel.mixin.AdapterPointSpellingTest	shears PumpkinBlock / a selector binding another method	[fixture:third-party] build/compat-inputs/sweep90/mods/bclib-26.201.2.jar absent
 test	net.forbric.kernel.mixin.AdapterPointSpellingTest	shears PumpkinBlock / another owner	[fixture:third-party] build/compat-inputs/sweep90/mods/bclib-26.201.2.jar absent
@@ -197,34 +183,6 @@ test	net.forbric.kernel.mixin.AdapterPointSpellingTest	shears PumpkinBlock / no 
 test	net.forbric.kernel.mixin.AdapterPointSpellingTest	shears PumpkinBlock / owner-qualified selector	[fixture:third-party] build/compat-inputs/sweep90/mods/bclib-26.201.2.jar absent
 test	net.forbric.kernel.mixin.AdapterPointSpellingTest	shears PumpkinBlock / selector in two spellings	[fixture:third-party] build/compat-inputs/sweep90/mods/bclib-26.201.2.jar absent
 test	net.forbric.kernel.mixin.AdapterPointSpellingTest	shears PumpkinBlock / with whitespace	[fixture:third-party] build/compat-inputs/sweep90/mods/bclib-26.201.2.jar absent
-test	net.forbric.kernel.mixin.AdapterPointSpellingTest	shears Sheep	[fixture:third-party] build/compat-inputs/sweep90/mods/bclib-26.201.2.jar absent
-test	net.forbric.kernel.mixin.AdapterPointSpellingTest	shears Sheep / a selector binding another method	[fixture:third-party] build/compat-inputs/sweep90/mods/bclib-26.201.2.jar absent
-test	net.forbric.kernel.mixin.AdapterPointSpellingTest	shears Sheep / another owner	[fixture:third-party] build/compat-inputs/sweep90/mods/bclib-26.201.2.jar absent
-test	net.forbric.kernel.mixin.AdapterPointSpellingTest	shears Sheep / dotted owner	[fixture:third-party] build/compat-inputs/sweep90/mods/bclib-26.201.2.jar absent
-test	net.forbric.kernel.mixin.AdapterPointSpellingTest	shears Sheep / dotted owner, no descriptor	[fixture:third-party] build/compat-inputs/sweep90/mods/bclib-26.201.2.jar absent
-test	net.forbric.kernel.mixin.AdapterPointSpellingTest	shears Sheep / dotted-owner selector	[fixture:third-party] build/compat-inputs/sweep90/mods/bclib-26.201.2.jar absent
-test	net.forbric.kernel.mixin.AdapterPointSpellingTest	shears Sheep / no descriptor	[fixture:third-party] build/compat-inputs/sweep90/mods/bclib-26.201.2.jar absent
-test	net.forbric.kernel.mixin.AdapterPointSpellingTest	shears Sheep / no descriptor, another overload there too	[fixture:third-party] build/compat-inputs/sweep90/mods/bclib-26.201.2.jar absent
-test	net.forbric.kernel.mixin.AdapterPointSpellingTest	shears Sheep / no owner	[fixture:third-party] build/compat-inputs/sweep90/mods/bclib-26.201.2.jar absent
-test	net.forbric.kernel.mixin.AdapterPointSpellingTest	shears Sheep / no owner, another owner's member there too	[fixture:third-party] build/compat-inputs/sweep90/mods/bclib-26.201.2.jar absent
-test	net.forbric.kernel.mixin.AdapterPointSpellingTest	shears Sheep / no owner, without the class it was compiled against	[fixture:third-party] build/compat-inputs/sweep90/mods/bclib-26.201.2.jar absent
-test	net.forbric.kernel.mixin.AdapterPointSpellingTest	shears Sheep / owner-qualified selector	[fixture:third-party] build/compat-inputs/sweep90/mods/bclib-26.201.2.jar absent
-test	net.forbric.kernel.mixin.AdapterPointSpellingTest	shears Sheep / selector in two spellings	[fixture:third-party] build/compat-inputs/sweep90/mods/bclib-26.201.2.jar absent
-test	net.forbric.kernel.mixin.AdapterPointSpellingTest	shears Sheep / with whitespace	[fixture:third-party] build/compat-inputs/sweep90/mods/bclib-26.201.2.jar absent
-test	net.forbric.kernel.mixin.AdapterPointSpellingTest	shears SnowGolem	[fixture:third-party] build/compat-inputs/sweep90/mods/bclib-26.201.2.jar absent
-test	net.forbric.kernel.mixin.AdapterPointSpellingTest	shears SnowGolem / a selector binding another method	[fixture:third-party] build/compat-inputs/sweep90/mods/bclib-26.201.2.jar absent
-test	net.forbric.kernel.mixin.AdapterPointSpellingTest	shears SnowGolem / another owner	[fixture:third-party] build/compat-inputs/sweep90/mods/bclib-26.201.2.jar absent
-test	net.forbric.kernel.mixin.AdapterPointSpellingTest	shears SnowGolem / dotted owner	[fixture:third-party] build/compat-inputs/sweep90/mods/bclib-26.201.2.jar absent
-test	net.forbric.kernel.mixin.AdapterPointSpellingTest	shears SnowGolem / dotted owner, no descriptor	[fixture:third-party] build/compat-inputs/sweep90/mods/bclib-26.201.2.jar absent
-test	net.forbric.kernel.mixin.AdapterPointSpellingTest	shears SnowGolem / dotted-owner selector	[fixture:third-party] build/compat-inputs/sweep90/mods/bclib-26.201.2.jar absent
-test	net.forbric.kernel.mixin.AdapterPointSpellingTest	shears SnowGolem / no descriptor	[fixture:third-party] build/compat-inputs/sweep90/mods/bclib-26.201.2.jar absent
-test	net.forbric.kernel.mixin.AdapterPointSpellingTest	shears SnowGolem / no descriptor, another overload there too	[fixture:third-party] build/compat-inputs/sweep90/mods/bclib-26.201.2.jar absent
-test	net.forbric.kernel.mixin.AdapterPointSpellingTest	shears SnowGolem / no owner	[fixture:third-party] build/compat-inputs/sweep90/mods/bclib-26.201.2.jar absent
-test	net.forbric.kernel.mixin.AdapterPointSpellingTest	shears SnowGolem / no owner, another owner's member there too	[fixture:third-party] build/compat-inputs/sweep90/mods/bclib-26.201.2.jar absent
-test	net.forbric.kernel.mixin.AdapterPointSpellingTest	shears SnowGolem / no owner, without the class it was compiled against	[fixture:third-party] build/compat-inputs/sweep90/mods/bclib-26.201.2.jar absent
-test	net.forbric.kernel.mixin.AdapterPointSpellingTest	shears SnowGolem / owner-qualified selector	[fixture:third-party] build/compat-inputs/sweep90/mods/bclib-26.201.2.jar absent
-test	net.forbric.kernel.mixin.AdapterPointSpellingTest	shears SnowGolem / selector in two spellings	[fixture:third-party] build/compat-inputs/sweep90/mods/bclib-26.201.2.jar absent
-test	net.forbric.kernel.mixin.AdapterPointSpellingTest	shears SnowGolem / with whitespace	[fixture:third-party] build/compat-inputs/sweep90/mods/bclib-26.201.2.jar absent
 test	net.forbric.kernel.mixin.AdapterPointSpellingTest	shears TripWireBlock	[fixture:third-party] build/compat-inputs/sweep90/mods/bclib-26.201.2.jar absent
 test	net.forbric.kernel.mixin.AdapterPointSpellingTest	shears TripWireBlock / a selector binding another method	[fixture:third-party] build/compat-inputs/sweep90/mods/bclib-26.201.2.jar absent
 test	net.forbric.kernel.mixin.AdapterPointSpellingTest	shears TripWireBlock / another owner	[fixture:third-party] build/compat-inputs/sweep90/mods/bclib-26.201.2.jar absent

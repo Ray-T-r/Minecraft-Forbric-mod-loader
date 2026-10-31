@@ -22,9 +22,8 @@ public final class KernelShears {
 	}
 
 	/**
-	 * @param carrier the merged call's operation: {@code (ItemStack, ItemAbility|ToolAction) → Boolean}
-	 * @param ability the carrier constant the merged site passes (NeoForge's {@code ItemAbilities.SHEARS_*} or
-	 *                MinecraftForge's {@code ToolActions.SHEARS_HARVEST})
+	 * @param carrier the carrier call's operation: {@code (ItemStack, ItemAbility) → Boolean}
+	 * @param ability the carrier constant the site passes (NeoForge's {@code ItemAbilities.SHEARS_*})
 	 */
 	@SuppressWarnings({ "rawtypes", "unchecked" })
 	public static Operation<Boolean> relay(Operation<Boolean> carrier, Object ability) {

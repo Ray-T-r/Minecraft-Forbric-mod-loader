@@ -152,7 +152,7 @@ class AdapterPointSpellingTest {
 				"Lnet/neoforged/neoforge/common/CommonHooks;canContinueUsing(L" + STACK + ";L" + STACK + ";)Z"));
 		cases.add(via("shovel path", via + "v1_8/item/MixinShovelItem", "net/minecraft/world/item/ShovelItem", "Ljava/util/Map;get(Ljava/lang/Object;)Ljava/lang/Object;",
 				STATE + "getToolModifiedState(Lnet/minecraft/world/item/context/UseOnContext;Lnet/neoforged/neoforge/common/ItemAbility;Z)" + STATE));
-		// MixinShearsRelay: BCLib's six wraps of is(Items.SHEARS).
+		// MixinShearsRelay: BCLib's wraps of is(Items.SHEARS) in the three blocks NeoForge rewrote.
 		for (MixinShearsRelay.Row row : MixinShearsRelay.ROWS) {
 			String name = row.target().substring(row.target().lastIndexOf('/') + 1);
 			cases.add(new Case("shears " + name, () -> jar(Fixture.THIRD_PARTY, BCLIB, "org/betterx/bclib/mixin/common/shears/" + name + "Mixin"), true,
