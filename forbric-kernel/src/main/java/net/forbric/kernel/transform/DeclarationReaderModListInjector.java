@@ -38,8 +38,7 @@ import net.forbric.kernel.util.ForbricLog;
  * In such a class each of those {@code ModList} calls — {@code getMods}, {@code getSortedMods}/{@code getLoadedMods},
  * {@code getModContainerById}, {@code getModFileById}, {@code forEachModContainer}, {@code forEachModInOrder},
  * {@code applyForEachModContainer}, again as a call or a method reference — goes through the game side's
- * {@code KernelDeclarationReaders} (NeoForge) or {@code KernelForgeDeclarationReaders} (MinecraftForge), which
- * answers what {@code ModList} answers and then the declaring Fabric mods. The by-id lookups are included because a
+ * {@code KernelDeclarationReaders}, which answers what {@code ModList} answers and then the declaring Fabric mods. The by-id lookups are included because a
  * reader that found a mod in the list resolves it again by id (Sodium reads the name and version for the options page
  * that way), and the list must not contradict itself.
  *
@@ -64,7 +63,7 @@ import net.forbric.kernel.util.ForbricLog;
  * reached either; on the packs measured, every reader has both in one class.
  */
 public final class DeclarationReaderModListInjector implements ClassTransformer {
-	/** One family's names, and how it calls its {@code ModList}: NeoForge's is an object, MinecraftForge's static. */
+	/** One family's names, and how it calls its {@code ModList} (NeoForge's is an object; MinecraftForge's, static, went with it). */
 	record Family(Ecosystem ecosystem, String modList, List<String> infoTypes, String hook, boolean staticList,
 			Map<String, String> members) {
 	}
@@ -82,8 +81,7 @@ public final class DeclarationReaderModListInjector implements ClassTransformer 
 			"applyForEachModContainer", "(Ljava/util/function/Function;)");
 
 	static final List<Family> FAMILIES = List.of(
-			family(Ecosystem.NEOFORGE, "net/forbric/kernel/runtime/KernelDeclarationReaders", false, "getSortedMods"),
-			family(Ecosystem.FORGE, "net/forbric/kernel/runtime/KernelForgeDeclarationReaders", true, "getLoadedMods"));
+			family(Ecosystem.NEOFORGE, "net/forbric/kernel/runtime/KernelDeclarationReaders", false, "getSortedMods"));
 
 	private static Family family(Ecosystem ecosystem, String hook, boolean staticList, String containerList) {
 		Map<String, String> members = new java.util.HashMap<>(SHARED_MEMBERS);
@@ -95,8 +93,7 @@ public final class DeclarationReaderModListInjector implements ClassTransformer 
 
 	private static final byte[][] NEEDLES = {
 			ByteScan.poolEntry(PROPERTIES),
-			ByteScan.poolEntry(FAMILIES.get(0).modList()),
-			ByteScan.poolEntry(FAMILIES.get(1).modList())};
+			ByteScan.poolEntry(FAMILIES.get(0).modList())};
 
 	@Override
 	public String name() {
@@ -124,7 +121,7 @@ public final class DeclarationReaderModListInjector implements ClassTransformer 
 		for (Family family : FAMILIES) {
 			if (!readsProperties(node, family)) continue;
 			reader = true;
-			if (names[1] || names[2]) rewritten += redirect(node, family);
+			if (names[1]) rewritten += redirect(node, family);
 		}
 		// Recorded for every reader, also one that reads LoadingModList and never ModList, and before it can run.
 		if (reader) {

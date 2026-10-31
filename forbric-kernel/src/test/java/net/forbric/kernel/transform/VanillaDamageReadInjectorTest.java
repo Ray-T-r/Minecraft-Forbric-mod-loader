@@ -36,15 +36,14 @@ class VanillaDamageReadInjectorTest {
 	@AfterEach void reset() { System.clearProperty(VanillaDamageReadInjector.PROPERTY); }
 
 	/**
-	 * MinecraftForge's Hurt sits in this body either as the kernel's seam or, on a merge that keeps both sides' edits,
-	 * as Forge's own {@code ForgeHooks.onLivingHurt} right after the invulnerability check. Either way the vanilla read
-	 * must come first, and the first {@code fload 3} — the one a mod's injector binds to — must be the read's.
+	 * The vanilla read is placed right after the invulnerability check, ahead of armour, and the first {@code fload 3} —
+	 * the one a mod's injector binds to — is the read's. (MinecraftForge's Hurt seam, which the read used to be placed
+	 * ahead of, went with MinecraftForge.)
 	 */
-	@Test void livingEntityReadsBeforeArmourAndBeforeTheForgeSeam() throws Exception {
+	@Test void livingEntityReadsBeforeArmour() throws Exception {
 		TestFixtures.requireFile(Fixture.STAGED, MERGED, "merged base not staged: " + MERGED);
 		byte[] original = NativeCoremodParityTest.read(MERGED, "net/minecraft/world/entity/LivingEntity");
-		byte[] seamed = new ForgeDamageSeamsInjector().transform("net.minecraft.world.entity.LivingEntity", original, null);
-		assertTrue(forgeHurt(code(hurt(seamed))) >= 0, "premise: MinecraftForge's Hurt is in actuallyHurt, natively or by the seam");
+		byte[] seamed = original;
 		byte[] out = new VanillaDamageReadInjector().transform("net.minecraft.world.entity.LivingEntity", seamed, null);
 		assertNotSame(seamed, out, "NeoForge's body armours the container: the read must be placed");
 		MethodNode hurt = hurt(out);
@@ -52,9 +51,8 @@ class VanillaDamageReadInjectorTest {
 		int firstRead = firstIndex(code, i -> i instanceof VarInsnNode v && v.getOpcode() == Opcodes.FLOAD && v.var == 3);
 		int armour = firstIndex(code, i -> i instanceof MethodInsnNode c && c.name.equals("getDamageAfterArmorAbsorb"));
 		int read = firstIndex(code, i -> i instanceof MethodInsnNode c && c.name.equals("vanillaRead"));
-		int seam = forgeHurt(code);
 		assertTrue(firstRead >= 0 && firstRead < armour, "first read " + firstRead + " vs armour " + armour);
-		assertTrue(read > firstRead && read < seam, "vanillaRead " + read + " must come before MinecraftForge's Hurt " + seam);
+		assertTrue(read > firstRead && read < armour, "vanillaRead " + read + " must come before armour " + armour);
 		assertTrue(code.get(read - 2) == code.get(firstRead), "the first fload 3 is the read's own argument");
 		assertEquals(Opcodes.IFNE, code.get(4).getOpcode());
 		assertTrue(code.get(5) instanceof VarInsnNode v && v.getOpcode() == Opcodes.ALOAD && v.var == 0, "placed right after the invulnerability check");
@@ -133,11 +131,6 @@ class VanillaDamageReadInjectorTest {
 		return m;
 	}
 
-	/** MinecraftForge's Hurt: the kernel's seam, or the merged body's own ForgeHooks.onLivingHurt. */
-	private static int forgeHurt(List<AbstractInsnNode> code) {
-		return firstIndex(code, i -> i instanceof MethodInsnNode c && (c.owner.equals(ForgeDamageSeamsInjector.RUNTIME) && c.name.equals("hurt")
-				|| c.owner.equals("net/minecraftforge/common/ForgeHooks") && c.name.equals("onLivingHurt")));
-	}
 
 	private static MethodNode hurt(byte[] bytes) {
 		ClassNode node = new ClassNode();

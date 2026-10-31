@@ -376,9 +376,9 @@ class VanillaEarlyReturnsTest {
 
 	@Test
 	void anEarlyReturnAKernelHookAddedDoesNotUnpairTheRest() throws Exception {
-		// Player.hurtServer: ForgeDamageSeamsInjector puts "if (!playerAttack(...)) return false;" at the head before
-		// this runs, a third iconst_0 where vanilla has two. Paired lead by lead, the seam's is nobody's pair and the
-		// other two still go where vanilla sends them.
+		// A kernel hook that adds an early return at the head before this runs (as the MinecraftForge player-attack seam
+		// did in Player.hurtServer: "if (!playerAttack(...)) return false;") makes a third iconst_0 where vanilla has two.
+		// Paired lead by lead, the hook's is nobody's pair and the other two still go where vanilla sends them.
 		ClassNode node = read(Folded.class);
 		MethodNode same = method(node, "same");
 		org.objectweb.asm.tree.LabelNode go = new org.objectweb.asm.tree.LabelNode();

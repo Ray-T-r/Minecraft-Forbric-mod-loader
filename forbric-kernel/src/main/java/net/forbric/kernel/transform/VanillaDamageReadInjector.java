@@ -46,8 +46,7 @@ import net.forbric.kernel.util.ForbricLog;
  * {@code LOAD} handler creates the {@code LivingHurtEvent} it {@code @Share}s, its {@code @Inject} at the armour call
  * reads it, and the read now runs first: every hit on a living entity was a NullPointerException on the server thread.
  *
- * <p>So right after the invulnerability check — before MinecraftForge's Hurt seam, which reads the container —
- * {@code KernelLivingDamage.vanillaRead(this, container, damage, damage)} is called. Its first {@code fload 3} is the
+ * <p>So right after the invulnerability check {@code KernelLivingDamage.vanillaRead(this, container, damage, damage)} is called. Its first {@code fload 3} is the
  * one such an injector binds to; the second is the parameter as it came. Only when the two differ does the helper move
  * the container by the difference, so with no such mod NeoForge's damage is untouched, bit for bit — including the
  * invulnerability-frame call, whose parameter and container already differ by a reduction other mods may modify.
@@ -56,9 +55,8 @@ import net.forbric.kernel.util.ForbricLog;
  * with the invulnerability check and armours the container's amount rather than the parameter. A read of the
  * parameter before armour does not make the body vanilla's: the edit-splicing merge keeps MinecraftForge's
  * {@code damage = ForgeHooks.onLivingHurt(this, source, damage)} right after the check, whose result NeoForge's body
- * never reads again, so a mod rewriting that first read would still change nothing. Registered after
- * {@code ForgeDamageSeamsInjector}, and placed right after the invulnerability check, so the read lands ahead of
- * MinecraftForge's Hurt — the seam's or the merged body's own. {@code -Dforbric.vanillaDamageRead=off}.
+ * never reads again, so a mod rewriting that first read would still change nothing. Placed right after the
+ * invulnerability check, so the read lands ahead of that merged Hurt call. {@code -Dforbric.vanillaDamageRead=off}.
  *
  * <p>The same for vanilla's value at the absorption call. Vanilla holds the damage left after absorption in the parameter
  * when it calls {@code setAbsorptionAmount}, and goes on to the health with that value; NeoForge's body stores the
@@ -77,7 +75,7 @@ public final class VanillaDamageReadInjector implements ClassTransformer {
 	static final String LIVING = "net/minecraft/world/entity/LivingEntity";
 	/** NeoForge's per-hit damage record, which its {@code actuallyHurt} keeps the amount in. */
 	static final String CONTAINER = "net/neoforged/neoforge/common/damagesource/DamageContainer";
-	/** The game-side helpers both reads call, and MinecraftForge's damage seams too, for as long as they exist. */
+	/** The game-side helpers both reads call. */
 	static final String HELPER = "net/forbric/kernel/runtime/KernelLivingDamage";
 	private static final String SOURCE = "Lnet/minecraft/world/damagesource/DamageSource;";
 	/** {@code actuallyHurt(ServerLevel, DamageSource, float)}. */

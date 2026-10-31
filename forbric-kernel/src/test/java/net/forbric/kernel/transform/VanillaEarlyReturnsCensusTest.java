@@ -36,8 +36,7 @@ import org.objectweb.asm.tree.analysis.BasicVerifier;
  * table equals it, and checks that every split it causes is one the JVM will accept.
  *
  * <p>The merged side is read after {@link ForbricMergedBaseCompatTransformer}, the transformer that reshapes the most
- * bodies before {@link VanillaEarlyReturns}. Kernel hooks that also run earlier (ForgeDamageSeamsInjector's attack seam
- * in {@code Player.hurtServer}) are not replayed: an early return one adds has a lead vanilla lacks and pairs with
+ * bodies before {@link VanillaEarlyReturns}. Kernel hooks that also run earlier are not replayed: an early return one adds has a lead vanilla lacks and pairs with
  * nothing, so the rest of its key still pairs. A row is written for any method an edge of which pairs with an edge vanilla
  * sent to an early return while the merged body sends it to the tail — not only one whose last return more edges reach
  * than vanilla's: NeoForge rewrote {@code Hud.extractRenderState} to draw through its layer manager, its tail has fewer

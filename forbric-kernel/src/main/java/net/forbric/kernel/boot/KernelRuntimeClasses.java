@@ -248,8 +248,6 @@ public final class KernelRuntimeClasses {
 		// per-container delivery NeoTooltipAppendersInjector sends ItemTooltipHandler.init's event through.
 		CLASSES.put("net.forbric.kernel.runtime.KernelNeoTooltips", new Entry(Origin.COMPILED, List.of(
 				new Call("init", void.class))));
-		// A MinecraftForge brewing recipe as NeoForge's registry reads it; wrapped in PotionBrewing.Builder.add.
-		CLASSES.put("net.forbric.kernel.runtime.KernelBrewing", new Entry(Origin.COMPILED, List.of()));
 		// NeoForge's recipe-sync payload without the recipes their own serializer cannot encode; CommonHooks.sendRecipes.
 		CLASSES.put("net.forbric.kernel.runtime.KernelRecipeSync", new Entry(Origin.COMPILED, List.of()));
 		// MinecraftForge's picture-in-picture renderers. The merged GuiRenderer's constructor and close() call these
@@ -356,7 +354,6 @@ public final class KernelRuntimeClasses {
 		// A class that reads [modproperties] out of a Forge-family ModList calls these instead of that ModList
 		// (DeclarationReaderModListInjector). Rewritten calls with the family's own ModList/IModInfo descriptors.
 		CLASSES.put("net.forbric.kernel.runtime.KernelDeclarationReaders", new Entry(Origin.COMPILED, List.of()));
-		CLASSES.put("net.forbric.kernel.runtime.KernelForgeDeclarationReaders", new Entry(Origin.COMPILED, List.of()));
 		CLASSES.put("net.forbric.kernel.runtime.KernelSharedPredicateScopes", new Entry(Origin.COMPILED, List.of()));
 		CLASSES.put("net.forbric.kernel.runtime.KernelFluidPredicateIslands", new Entry(Origin.COMPILED, List.of()));
 		CLASSES.put("net.forbric.kernel.runtime.KernelSourceDecodeScopes", new Entry(Origin.COMPILED, List.of()));

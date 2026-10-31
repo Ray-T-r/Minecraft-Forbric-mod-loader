@@ -138,7 +138,17 @@ public final class ForbricSwitches {
 			Map.entry("forbric.forgeModelData", "Forbric loads no MinecraftForge mod, so no block model asks MinecraftForge's model data; the client "
 					+ "level keeps NeoForge's own"),
 			Map.entry("forbric.forgeModelDataEdge", "Forbric loads no MinecraftForge mod, so no injector needs an edge twin of MinecraftForge's "
-					+ "model-data overload"));
+					+ "model-data overload"),
+			// Stage 4: MinecraftForge's server-side and loader-side repairs are gone with its carrier.
+			Map.entry("forbric.clearableLazyRace", "Forbric loads no MinecraftForge runtime, so there is no MinecraftForge ClearableLazy whose lock "
+					+ "hands a waiting thread null"),
+			Map.entry("forbric.forgeAttributeValidation", "Forbric loads no MinecraftForge mod, so no freeze waits for MinecraftForge's held attribute events"),
+			Map.entry("forbric.forgeBrewingRecipes", "Forbric loads no MinecraftForge mod, so no MinecraftForge brewing recipe needs wrapping as "
+					+ "NeoForge's"),
+			Map.entry("forbric.forgeDamageSeams", "Forbric loads no MinecraftForge mod, so there are no MinecraftForge Hurt, Damage or player-Attack "
+					+ "events to post; vanilla's damage read stays (-Dforbric.vanillaDamageRead)"),
+			Map.entry("forbric.forgeLauncherInfo", "Forbric loads no MinecraftForge runtime, so there is no MinecraftForge FMLLoader whose launcher "
+					+ "methods need answering"));
 
 	private static final ForbricSwitches SYSTEM =
 			new ForbricSwitches(RENAMED, RETIRED, System::getProperty, ForbricLog::warn);

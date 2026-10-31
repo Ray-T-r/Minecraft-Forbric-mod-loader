@@ -103,8 +103,7 @@ class DeclarationReaderCensusTest {
 		Path compiled = Path.of(System.getProperty("forbric.testRuntimeClasses", "build/classes/java/runtime"));
 		TestFixtures.require(Fixture.GAME_SIDE, Files.isDirectory(compiled), "the game side is not compiled");
 		java.util.Map<net.forbric.api.Ecosystem, Path> carriers = java.util.Map.of(
-				net.forbric.api.Ecosystem.NEOFORGE, run.resolve(TestFixtures.NEO_CARRIER_JAR),
-				net.forbric.api.Ecosystem.FORGE, run.resolve(TestFixtures.FORGE_CARRIER_JAR));
+				net.forbric.api.Ecosystem.NEOFORGE, run.resolve(TestFixtures.NEO_CARRIER_JAR));
 		List<String> missing = new ArrayList<>();
 		int checked = 0;
 		for (DeclarationReaderModListInjector.Family family : DeclarationReaderModListInjector.FAMILIES) {
@@ -131,7 +130,7 @@ class DeclarationReaderCensusTest {
 			}
 		}
 		assertEquals(List.of(), missing);
-		assertEquals(14, checked, "seven ModList members in each of the two families");
+		assertEquals(7, checked, "seven ModList members in NeoForge's family");
 	}
 
 	private static org.objectweb.asm.tree.ClassNode node(byte[] bytes) {
