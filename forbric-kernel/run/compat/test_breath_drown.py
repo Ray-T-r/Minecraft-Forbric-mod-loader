@@ -112,10 +112,14 @@ class PlanAndTable(unittest.TestCase):
         # judge does not read would make "no MinecraftForge listener heard a body" pass on no data.
         build = (KERNEL / 'run/build-breath-drown-canary.sh').read_text(encoding='utf-8')
         families = dict(re.findall(r"^    '([a-z]+)': \[old / 'run/([a-z]+)-patched/", build, re.M))
-        self.assertEqual(families, {bd.F: 'forge', bd.N: 'neoforge'})
+        self.assertEqual(families, {bd.N: 'neoforge'})
         core = (KERNEL / 'canary/forge-breath-drown/common/src/Core.java').read_text(encoding='utf-8')
         self.assertIn('public static final String FAMILY = "PKG";', core)
         self.assertIn("core.replace('PKG', family)", build)
+        # The MinecraftForge canary is the refusal fixtures' build, its Core under the package (and so the family) F.
+        refused = (KERNEL / 'run/build-forge-refusal-fixtures.sh').read_text(encoding='utf-8')
+        self.assertIn(f"sed 's/PKG/{bd.F}/g' \"$BREATH/common/src/Core.java\"", refused)
+        self.assertEqual(bd.JARS[bd.F], 'forge-refused/forbricbreathforge.jar')
         forge = (KERNEL / 'canary/forge-breath-drown/forge/src/forbric/breathdrown/forge/ForgeCanary.java').read_text(encoding='utf-8')
         self.assertTrue(re.findall(r'Core\.report\(FAMILY, "(breathe|drown)"', forge))
 

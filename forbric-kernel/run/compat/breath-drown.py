@@ -42,7 +42,10 @@ KERNEL = Path(__file__).resolve().parents[2]
 CANARY = KERNEL / 'canary/forge-breath-drown'
 REFERENCE = CANARY / 'native-reference.json'
 NATIVE = Path(os.environ.get('M57_NATIVE', KERNEL / 'build/native-controls/native'))
-JARS = {'forge': 'forbricbreathforge.jar', 'neo': 'forbricbreathneo.jar'}
+# Under run/canary: the NeoForge canary from build-breath-drown-canary.sh, the MinecraftForge one from
+# build-forge-refusal-fixtures.sh (compiled against stand-ins for MinecraftForge; entry-for-entry the jar the real
+# carrier gave, so native MinecraftForge runs the same bytes it always ran).
+JARS = {'forge': 'forge-refused/forbricbreathforge.jar', 'neo': 'forbricbreathneo.jar'}
 NATIVE_VERSIONS = {'forge': ('net/minecraftforge/forge', '26.2-65.0.1'), 'neo': ('net/neoforged/neoforge', '26.2.0.93')}
 FABRIC_LAUNCHER = 'fabric-server-mc26.2-loader0.19.5-launcher1.1.2.jar'
 # The server.properties every arm runs with (gate-m57.sh writes the same lines; the port is the caller's).
@@ -363,6 +366,7 @@ def cmd_reference(args):
     env = os.environ.copy()
     if args.staged: env['FORBRIC_OLD'] = str(args.staged)
     subprocess.run(['bash', str(KERNEL / 'run/build-breath-drown-canary.sh')], check=True, env=env)
+    subprocess.run(['bash', str(KERNEL / 'run/build-forge-refusal-fixtures.sh')], check=True, env=env)
     built = json.loads((KERNEL / 'run/canary/m57-build-inputs.json').read_text(encoding='utf-8'))
     work = Path(args.work); work.mkdir(parents=True, exist_ok=True)
     families = {}

@@ -1,6 +1,8 @@
 # Breath and drown canaries (gate-m57)
 
-Two mods, each using only its own loader's API, built by `run/build-breath-drown-canary.sh` into `run/canary/`:
+Two mods, each using only its own loader's API. `run/build-breath-drown-canary.sh` builds the NeoForge one into
+`run/canary/`; `run/build-forge-refusal-fixtures.sh` builds the MinecraftForge one, against stand-ins for
+MinecraftForge, into `run/canary/forge-refused/` (entry-for-entry the jar the real MinecraftForge carrier gave):
 
 - `forge/` — `forbricbreathforge`, MinecraftForge: a drowning liquid `murk` (MinecraftForge fluid type, a
   `LiquidBlock` and a `BucketItem` built from suppliers), a liquid `calm` whose type is built `canDrown(false)` (no

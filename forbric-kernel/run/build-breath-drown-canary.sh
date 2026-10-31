@@ -1,10 +1,14 @@
 #!/usr/bin/env bash
-# Builds gate-m57's two canaries from canary/forge-breath-drown into run/canary/:
-#   forbricbreathforge.jar — a MinecraftForge mod, compiled against MinecraftForge's patched game and its runtime;
-#   forbricbreathneo.jar   — a NeoForge mod, compiled against NeoForge's patched game and its runtime.
-# Each carries its own copy of common/src/Core.java under its own package, so both can sit in one pack.
-# Only javac/jar; no kernel Gradle. The gate owns the separately scheduled kernel build. The same jars run unchanged
-# on the native loaders (run/compat/breath-drown.py reference).
+# Builds gate-m57's NeoForge canary from canary/forge-breath-drown into run/canary/:
+#   forbricbreathneo.jar — a NeoForge mod, compiled against NeoForge's patched game and its runtime, with its own copy
+#                          of common/src/Core.java under its own package.
+# The MinecraftForge canary (forge/src, the same Core under package forge) is built by build-forge-refusal-fixtures.sh,
+# against stand-ins for MinecraftForge, into run/canary/forge-refused/forbricbreathforge.jar: no stage carries
+# MinecraftForge any more, and that build is entry-for-entry the jar the real MinecraftForge carrier gave (measured in
+# Stage 4 against the last merged stage). The gate stages it as the refused jar; run/compat/breath-drown.py reference
+# runs it on native MinecraftForge.
+# Only javac/jar; no kernel Gradle. The gate owns the separately scheduled kernel build. The same jar runs unchanged on
+# native NeoForge (run/compat/breath-drown.py reference).
 set -euo pipefail
 . "$(cd "$(dirname "$0")" && pwd)/lib.sh"
 canary_scratch breath-drown
@@ -14,10 +18,9 @@ import hashlib, json, os, pathlib, subprocess, zipfile
 kernel, old, work = (pathlib.Path(os.environ[key]) for key in ('M57_KERNEL', 'M57_OLD', 'M57_WORK'))
 mc = pathlib.Path(os.environ.get('MC_DIR', pathlib.Path.home() / 'Library/Application Support/minecraft'))
 inputs = {
-    'forge': [old / 'run/forge-patched/patched-mc-forge-26.2.jar', old / 'run/forge-runtime/forge-runtime.jar'],
     'neo': [old / 'run/neoforge-patched/patched-mc-neoforge-26.2.jar', old / 'run/neoforge-runtime/neoforge-runtime.jar'],
 }
-mods = {'forge': ('forbricbreathforge', 'META-INF/mods.toml'), 'neo': ('forbricbreathneo', 'META-INF/neoforge.mods.toml')}
+mods = {'neo': ('forbricbreathneo', 'META-INF/neoforge.mods.toml')}
 libraries = []
 for entry in json.loads((mc / 'versions/26.2/26.2.json').read_text())['libraries']:
     artifact = entry.get('downloads', {}).get('artifact', {}).get('path')
@@ -49,5 +52,5 @@ sources = sorted(p for p in root.rglob('*') if p.is_file() and p.suffix in ('.ja
 digest = hashlib.sha256(b''.join(p.relative_to(root).as_posix().encode() + b'\0' + p.read_bytes().replace(b'\r\n', b'\n')
                                  for p in sources)).hexdigest()   # as breath-drown.py's sources_digest: CRLF reads as LF
 (output / 'm57-build-inputs.json').write_text(json.dumps({'canarySources': digest, **built}, indent=2) + '\n')
-print('[M57BreathDrown] built forbricbreathforge.jar and forbricbreathneo.jar, sources ' + digest[:12])
+print('[M57BreathDrown] built forbricbreathneo.jar, sources ' + digest[:12])
 PY
