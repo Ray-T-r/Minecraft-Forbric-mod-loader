@@ -1058,8 +1058,8 @@ public final class PassiveSeeder {
 		// list here would only invite NeoForge-side re-checking of a decision that is not its to make.
 		setInstanceField(modInfoCls, "dependencies", modInfo, List.of());
 		setInstanceField(modInfoCls, "features", modInfo, List.of());
-		// As in buildForgeModInfo: the declared table, so a NeoForge mod asking a kernel-built IModInfo about
-		// its properties gets the truth rather than silence. A Fabric mod listed here for presence answers with what
+		// The declared table, so a NeoForge mod asking a kernel-built IModInfo about its properties gets the truth
+		// rather than silence. A Fabric mod listed here for presence answers with what
 		// its fabric.mod.json declares, in this spelling (CrossEcosystemDeclarations).
 		setInstanceField(modInfoCls, "properties", modInfo, CrossEcosystemDeclarations.declarationsOf(mod));
 		setInstanceField(modInfoCls, "config", modInfo, configElementsEnabled()
