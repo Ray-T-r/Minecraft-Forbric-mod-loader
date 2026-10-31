@@ -63,14 +63,14 @@ class RegistrySyncParityInjectorTest {
 	private static final String PENDING_TAGS_INTERFACE = "net/minecraft/core/Registry$PendingTags";
 
 	/** A mod's remap mixin under unrelated names (RemapContractSamples); every type its contract names is on the loader. */
-	private static final java.util.List<RegistrySyncParityInjector.RemapContract> CONTRACTS =
+	private static final java.util.List<RegistryRemapContracts.RemapContract> CONTRACTS =
 			RemapContractSamples.contracts(java.util.Map.of(RemapContractSamples.INTERFACE, RemapContractSamples.rebinds()));
 	private final RegistrySyncParityInjector injector = new RegistrySyncParityInjector(type -> true, RemapContractSamples.lookup(CONTRACTS));
 
 	/** What makes a remap contract is the mixin's shape: a shadowed-storage method taking the ids, declared by its interface. */
 	@Test
 	void aRemapContractIsReadOffTheMixinNotItsNames() {
-		assertEquals(java.util.List.of(new RegistrySyncParityInjector.RemapContract(RemapContractSamples.TARGET, RemapContractSamples.INTERFACE,
+		assertEquals(java.util.List.of(new RegistryRemapContracts.RemapContract(RemapContractSamples.TARGET, RemapContractSamples.INTERFACE,
 				RemapContractSamples.NAME, RemapContractSamples.DESC, 0, RemapContractSamples.UNDO)), CONTRACTS,
 				"rebind is one, forgetAll its undo; note, which touches no shadowed field, is not");
 		assertEquals(java.util.List.of(), RemapContractSamples.contracts(java.util.Map.of()), "an interface that cannot be read declares nothing");
@@ -88,12 +88,12 @@ class RegistrySyncParityInjectorTest {
 				for (java.util.zip.ZipEntry entry; (entry = in.getNextEntry()) != null; ) entries.put(entry.getName(), in.readAllBytes());
 			}
 		}
-		java.util.List<RegistrySyncParityInjector.RemapContract> found = new java.util.ArrayList<>();
+		java.util.List<RegistryRemapContracts.RemapContract> found = new java.util.ArrayList<>();
 		for (var entry : entries.entrySet()) {
 			if (!entry.getKey().endsWith(".class")) continue;
 			ClassNode node = parse(entry.getValue());
 			if (net.forbric.kernel.mixin.MixinFit.mixinTargets(node).isEmpty()) continue;
-			found.addAll(RegistrySyncParityInjector.remapContracts(node, entries::get));
+			found.addAll(RegistryRemapContracts.remapContracts(node, entries::get));
 		}
 		assertEquals(1, found.size(), found::toString);
 		assertEquals("net/minecraft/core/MappedRegistry", found.getFirst().target());

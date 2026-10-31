@@ -517,7 +517,7 @@ class RegistrySyncParityInjectorExecutionTest {
 
 	@SuppressWarnings("unchecked")
 	private static Map<String, Object> discovered() throws ReflectiveOperationException {
-		java.lang.reflect.Field field = RegistrySyncParityInjector.class.getDeclaredField("DISCOVERED");
+		java.lang.reflect.Field field = RegistryRemapContracts.class.getDeclaredField("DISCOVERED");
 		field.setAccessible(true);
 		return (Map<String, Object>) field.get(null);
 	}
@@ -583,8 +583,8 @@ class RegistrySyncParityInjectorExecutionTest {
 	}
 
 	/** The remap contract the mod's mixin (RemapContractSamples.mixin()) adds, read against the compiled stand-ins. */
-	private static java.util.function.Function<String, List<RegistrySyncParityInjector.RemapContract>> contracts(Map<String, byte[]> classes) {
-		List<RegistrySyncParityInjector.RemapContract> found = RemapContractSamples.contracts(classes);
+	private static java.util.function.Function<String, List<RegistryRemapContracts.RemapContract>> contracts(Map<String, byte[]> classes) {
+		List<RegistryRemapContracts.RemapContract> found = RemapContractSamples.contracts(classes);
 		assertEquals(1, found.size(), "premise: the stand-in mixin carries one remap contract");
 		return RemapContractSamples.lookup(found);
 	}
@@ -691,7 +691,7 @@ class RegistrySyncParityInjectorExecutionTest {
 		Map<String, byte[]> original = merged(work.resolve("compiled"));
 		byte[] wrapper = original.get(WRAPPER.replace('.', '/'));
 		String config = "quarry-registry.mixins.json";
-		RegistrySyncParityInjector.noteMixin(config, RemapContractSamples.mixin(), path -> original.get(path.substring(0, path.length() - 6)));
+		RegistryRemapContracts.noteMixin(config, RemapContractSamples.mixin(), path -> original.get(path.substring(0, path.length() - 6)));
 		try {
 			for (boolean mod : List.of(true, false)) {
 				Path game = work.resolve(mod ? "with-mod" : "without-mod");
@@ -715,7 +715,7 @@ class RegistrySyncParityInjectorExecutionTest {
 				}
 			}
 		} finally {
-			RegistrySyncParityInjector.forgetMixins(config);
+			RegistryRemapContracts.forgetMixins(config);
 		}
 	}
 

@@ -18,7 +18,7 @@ import org.objectweb.asm.tree.VarInsnNode;
 /**
  * A mod's registry-remap mixin under names no loader knows: {@code org/quarry/registry/mixin/LedgerMixin} targets
  * {@code MappedRegistry}, implements {@code org/quarry/registry/Rebinds}, shadows the registry's {@code toId} and adds
- * {@code rebind(Object2IntMap, Rebinds$Policy)} and its undo {@code forgetAll()} over it. What {@link RegistrySyncParityInjector} reads a remap contract
+ * {@code rebind(Object2IntMap, Rebinds$Policy)} and its undo {@code forgetAll()} over it. What {@link RegistryRemapContracts} reads a remap contract
  * from, with nothing of fabric-api's in it.
  */
 final class RemapContractSamples {
@@ -84,13 +84,13 @@ final class RemapContractSamples {
 	}
 
 	/** The contracts the injector reads off {@link #mixin()}, its interface served from {@code classes} (internal name to bytes). */
-	static List<RegistrySyncParityInjector.RemapContract> contracts(Map<String, byte[]> classes) {
+	static List<RegistryRemapContracts.RemapContract> contracts(Map<String, byte[]> classes) {
 		Function<String, byte[]> resources = path -> path.endsWith(".class") ? classes.get(path.substring(0, path.length() - 6)) : null;
-		return RegistrySyncParityInjector.remapContracts(mixin(), resources);
+		return RegistryRemapContracts.remapContracts(mixin(), resources);
 	}
 
 	/** The injector's contract lookup over {@code contracts}: by target, every one for {@code null}. */
-	static Function<String, List<RegistrySyncParityInjector.RemapContract>> lookup(List<RegistrySyncParityInjector.RemapContract> contracts) {
+	static Function<String, List<RegistryRemapContracts.RemapContract>> lookup(List<RegistryRemapContracts.RemapContract> contracts) {
 		return target -> contracts.stream().filter(contract -> target == null || contract.target().equals(target)).toList();
 	}
 }

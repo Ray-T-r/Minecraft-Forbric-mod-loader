@@ -20,7 +20,6 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.function.Function;
 import java.util.function.Predicate;
 
@@ -30,8 +29,6 @@ import org.objectweb.asm.Opcodes;
 import org.objectweb.asm.Type;
 import org.objectweb.asm.tree.AbstractInsnNode;
 import org.objectweb.asm.tree.ClassNode;
-import org.objectweb.asm.tree.FieldInsnNode;
-import org.objectweb.asm.tree.FieldNode;
 import org.objectweb.asm.tree.InsnList;
 import org.objectweb.asm.tree.InsnNode;
 import org.objectweb.asm.tree.LdcInsnNode;
@@ -41,10 +38,9 @@ import org.objectweb.asm.tree.VarInsnNode;
 
 import net.forbric.api.Ecosystem;
 import net.forbric.api.ForeignType;
-import net.forbric.kernel.mixin.MixinFit;
+import net.forbric.kernel.transform.RegistryRemapContracts.RemapContract;
 import net.forbric.kernel.util.ByteScan;
 import net.forbric.kernel.util.ForbricLog;
-import net.forbric.kernel.util.Caught;
 
 /**
  * Lets NeoForge's registry sync remap the registries that MinecraftForge wraps.
@@ -114,25 +110,7 @@ public final class RegistrySyncParityInjector implements ClassTransformer {
 	private static final String APPLY_SNAPSHOT = "applySnapshot";
 	private static final String APPLY_SNAPSHOT_DESC = "(Ljava/util/Map;Z)Ljava/util/Set;";
 
-	/** The server's ids, by entry name, as a remap contract takes them. */
-	private static final String IDS = "Lit/unimi/dsi/fastutil/objects/Object2IntMap;";
-	private static final String SHADOW = "Lorg/spongepowered/asm/mixin/Shadow;";
-
-	/**
-	 * A remap a mod's mixin adds to a registry class: a public {@code void} method the mixin implements for one of its
-	 * interfaces ({@code owner}), that takes the server's ids as an {@code Object2IntMap} (argument {@code idsArgument})
-	 * and works on the registry's own entry storage through the mixin's {@code @Shadow} fields. fabric-api's registry
-	 * sync is one; whatever its interface and method are called, the wrapper that inherits it from {@code target} has
-	 * empty copies of those fields and needs its own. {@code undo}, when the same interface declares one, is the
-	 * argument-free {@code void} method the mixin implements over the same storage: what puts the registry back after a
-	 * remap (null when there is none, or several). Internal names.
-	 */
-	public record RemapContract(String target, String owner, String name, String desc, int idsArgument, String undo) {
-	}
-
 	private static final Map<RemapContract, byte[][]> NEEDLES = new ConcurrentHashMap<>();
-	/** Per mixin config, the remap contracts its mixins add, as the kernel's mixin discovery read them. */
-	private static final Map<String, List<RemapContract>> DISCOVERED = new ConcurrentHashMap<>();
 
 	/**
 	 * Whether the loader that defines the wrapper has a class, by internal name. Asked when the wrapper is
@@ -147,11 +125,12 @@ public final class RegistrySyncParityInjector implements ClassTransformer {
 	 * resolves the types its methods name. It is asked for each type's {@code .class} resource when the wrapper is
 	 * transformed, and a remap contract is added only when every type it names is there. The decision lives here, not
 	 * in KernelBoot, so that {@code RegistryWrapperAccessInjectorTest} runs the very predicate the game does. The
-	 * contracts are the ones the mixin configs were seen to add ({@link #noteMixin}). See {@link #giveWrapperBothContracts}.
+	 * contracts are the ones the mixin configs were seen to add ({@link RegistryRemapContracts#noteMixin}). See
+	 * {@link #giveWrapperBothContracts}.
 	 */
 	public static RegistrySyncParityInjector forGameLoader(ClassLoader game) {
 		if (game == null) throw new NullPointerException("game");
-		return new RegistrySyncParityInjector(type -> game.getResource(type + ".class") != null, RegistrySyncParityInjector::discovered);
+		return new RegistrySyncParityInjector(type -> game.getResource(type + ".class") != null, RegistryRemapContracts::discovered);
 	}
 
 	/**
@@ -165,105 +144,6 @@ public final class RegistrySyncParityInjector implements ClassTransformer {
 		if (remapContracts == null) throw new NullPointerException("remapContracts");
 		this.gameHasClass = gameHasClass;
 		this.remapContracts = remapContracts;
-	}
-
-	/** Records the remap contracts {@code mixin}, of {@code config}, adds; {@code resources} reads its interfaces. */
-	public static void noteMixin(String config, ClassNode mixin, Function<String, byte[]> resources) {
-		List<RemapContract> found = remapContracts(mixin, resources);
-		if (!found.isEmpty()) DISCOVERED.computeIfAbsent(config, ignored -> new CopyOnWriteArrayList<>()).addAll(found);
-	}
-
-	/** Forgets what {@code config}'s mixins were seen to add, before it is read again. */
-	public static void forgetMixins(String config) {
-		DISCOVERED.remove(config);
-	}
-
-	/** Every remap contract the kernel's mixin discovery noted, for whichever registry class. */
-	public static List<RemapContract> discoveredContracts() {
-		return discovered(null);
-	}
-
-	/** The discovered remap contracts mixins add to {@code target}; every one of them for {@code null}. */
-	static List<RemapContract> discovered(String target) {
-		List<RemapContract> out = new ArrayList<>();
-		for (List<RemapContract> contracts : DISCOVERED.values()) {
-			for (RemapContract contract : contracts) if (target == null || contract.target().equals(target)) out.add(contract);
-		}
-		return out;
-	}
-
-	/**
-	 * The remap contracts {@code mixin} adds to each of its targets (see {@link RemapContract}). Read off the mixin class
-	 * and the interfaces it implements ({@code resources}: class files by resource path); whose mixin it is plays no part.
-	 */
-	public static List<RemapContract> remapContracts(ClassNode mixin, Function<String, byte[]> resources) {
-		if (mixin == null || mixin.interfaces == null || mixin.interfaces.isEmpty() || resources == null) return List.of();
-		List<String> targets = MixinFit.mixinTargets(mixin);
-		if (targets.isEmpty()) return List.of();
-		java.util.Set<String> shadows = new java.util.HashSet<>();
-		for (FieldNode field : mixin.fields) {
-			if ((field.access & Opcodes.ACC_STATIC) == 0 && (annotated(field.visibleAnnotations) || annotated(field.invisibleAnnotations))) shadows.add(field.name);
-		}
-		if (shadows.isEmpty()) return List.of();
-		List<RemapContract> out = new ArrayList<>();
-		for (MethodNode method : mixin.methods) {
-			if ((method.access & (Opcodes.ACC_PUBLIC | Opcodes.ACC_STATIC | Opcodes.ACC_SYNTHETIC | Opcodes.ACC_BRIDGE)) != Opcodes.ACC_PUBLIC
-					|| method.name.startsWith("<") || !method.desc.endsWith(")V")) continue;
-			Type[] arguments = Type.getArgumentTypes(method.desc);
-			int ids = -1;
-			for (int i = 0; i < arguments.length; i++) {
-				if (!arguments[i].getDescriptor().equals(IDS)) continue;
-				if (ids >= 0) { ids = -2; break; }
-				ids = i;
-			}
-			if (ids < 0) continue;
-			if (!touchesShadows(mixin, method, shadows)) continue;
-			String owner = declaring(mixin.interfaces, method.name, method.desc, resources, new java.util.HashSet<>());
-			if (owner == null) continue;
-			String undo = null;
-			for (MethodNode other : mixin.methods) {
-				if ((other.access & (Opcodes.ACC_PUBLIC | Opcodes.ACC_STATIC | Opcodes.ACC_SYNTHETIC | Opcodes.ACC_BRIDGE)) != Opcodes.ACC_PUBLIC
-						|| !other.desc.equals("()V") || !touchesShadows(mixin, other, shadows)
-						|| !owner.equals(declaring(mixin.interfaces, other.name, other.desc, resources, new java.util.HashSet<>()))) continue;
-				undo = undo == null ? other.name : "";
-			}
-			if ("".equals(undo)) undo = null;
-			for (String target : targets) out.add(new RemapContract(target, owner, method.name, method.desc, ids, undo));
-		}
-		return out;
-	}
-
-	/** Whether {@code method} reads or writes one of {@code mixin}'s {@code @Shadow} instance fields. */
-	private static boolean touchesShadows(ClassNode mixin, MethodNode method, java.util.Set<String> shadows) {
-		for (AbstractInsnNode insn : method.instructions) {
-			if (insn instanceof FieldInsnNode field && field.owner.equals(mixin.name) && shadows.contains(field.name)) return true;
-		}
-		return false;
-	}
-
-	private static boolean annotated(List<org.objectweb.asm.tree.AnnotationNode> annotations) {
-		if (annotations == null) return false;
-		for (var annotation : annotations) if (SHADOW.equals(annotation.desc)) return true;
-		return false;
-	}
-
-	/** The interface among {@code interfaces} (or their superinterfaces) that declares {@code name desc}, or null. */
-	private static String declaring(List<String> interfaces, String name, String desc, Function<String, byte[]> resources, java.util.Set<String> seen) {
-		for (String contract : interfaces) {
-			if (!seen.add(contract)) continue;
-			byte[] bytes;
-			try { bytes = resources.apply(contract + ".class"); } catch (RuntimeException unreadable) { Caught.warn(unreadable, "[Forbric/RegistrySync] could not read %s; it is not checked as a remap contract", contract); bytes = null; }
-			if (bytes == null) continue;
-			ClassNode node = new ClassNode();
-			new ClassReader(bytes).accept(node, ClassReader.SKIP_CODE | ClassReader.SKIP_DEBUG | ClassReader.SKIP_FRAMES);
-			if ((node.access & Opcodes.ACC_INTERFACE) == 0) continue;
-			for (MethodNode method : node.methods) {
-				if (method.name.equals(name) && method.desc.equals(desc) && (method.access & Opcodes.ACC_STATIC) == 0) return node.name;
-			}
-			String inherited = declaring(node.interfaces, name, desc, resources, seen);
-			if (inherited != null) return inherited;
-		}
-		return null;
 	}
 
 	@Override

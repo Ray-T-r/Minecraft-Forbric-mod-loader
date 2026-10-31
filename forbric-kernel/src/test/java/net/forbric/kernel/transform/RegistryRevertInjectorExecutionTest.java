@@ -60,7 +60,7 @@ class RegistryRevertInjectorExecutionTest {
 			""");
 
 	/** What this JVM's mixin discovery had noted before this test set it aside, put back after it. */
-	private Map<String, List<RegistrySyncParityInjector.RemapContract>> discoveredElsewhere;
+	private Map<String, List<RegistryRemapContracts.RemapContract>> discoveredElsewhere;
 
 	/**
 	 * The remap contracts the kernel's mixin discovery noted are the process's, and earlier tests in the same JVM note
@@ -72,7 +72,7 @@ class RegistryRevertInjectorExecutionTest {
 	 */
 	@BeforeEach
 	void setTheDiscoveredContractsAside() throws Exception {
-		Map<String, List<RegistrySyncParityInjector.RemapContract>> discovered = discovered();
+		Map<String, List<RegistryRemapContracts.RemapContract>> discovered = discovered();
 		discoveredElsewhere = new HashMap<>(discovered);
 		discovered.clear();
 	}
@@ -83,21 +83,21 @@ class RegistryRevertInjectorExecutionTest {
 		var originals = Class.forName("net.forbric.kernel.boot.KernelRegistryRevert").getDeclaredField("originals");
 		originals.setAccessible(true);
 		originals.set(null, null);
-		Map<String, List<RegistrySyncParityInjector.RemapContract>> discovered = discovered();
+		Map<String, List<RegistryRemapContracts.RemapContract>> discovered = discovered();
 		discovered.clear();
 		discovered.putAll(discoveredElsewhere);
 	}
 
 	@SuppressWarnings("unchecked")
-	private static Map<String, List<RegistrySyncParityInjector.RemapContract>> discovered() throws Exception {
-		var field = RegistrySyncParityInjector.class.getDeclaredField("DISCOVERED");
+	private static Map<String, List<RegistryRemapContracts.RemapContract>> discovered() throws Exception {
+		var field = RegistryRemapContracts.class.getDeclaredField("DISCOVERED");
 		field.setAccessible(true);
-		return (Map<String, List<RegistrySyncParityInjector.RemapContract>>) field.get(null);
+		return (Map<String, List<RegistryRemapContracts.RemapContract>>) field.get(null);
 	}
 
 	@Test
 	void aRemapThenTheDisconnectsRevertPutsTheIdsBack(@TempDir Path work) throws Throwable {
-		assertEquals(List.of(), RegistrySyncParityInjector.discoveredContracts(),
+		assertEquals(List.of(), RegistryRemapContracts.discoveredContracts(),
 				"premise: no remap contract is noted while this test runs, so the revert's unmap pass has nothing to look for");
 		Map<String, byte[]> original = InjectorExecution.compile(work, STAND_INS);
 		String internal = MANAGER.replace('.', '/');

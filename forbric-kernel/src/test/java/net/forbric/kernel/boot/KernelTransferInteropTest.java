@@ -63,7 +63,8 @@ class KernelTransferInteropTest {
 	 */
 	@Test void aBuiltGameSideAlwaysCarriesTheTransferComponent() {
 		Path classes = Path.of("build/classes/java/runtime");
-		boolean gameSide = Files.isRegularFile(classes.resolve("net/forbric/kernel/runtime/KernelGameLookupHelper.class"));
+		// Any game-side class that is there whatever the base: the mod datapack source every NeoForge mod's data/ rides on.
+		boolean gameSide = Files.isRegularFile(classes.resolve("net/forbric/kernel/runtime/KernelDataPackSource.class"));
 		TestFixtures.require(Fixture.GAME_SIDE, gameSide, "no staged game jars, so no game side was built");
 		for (String name : List.of(KernelTransferInterop.BRIDGE, KernelTransferInterop.ISSUES, KernelTransferInterop.TRANSACTIONS,
 				KernelTransferInterop.ENERGY, KernelTransferInterop.HOPPER)) {

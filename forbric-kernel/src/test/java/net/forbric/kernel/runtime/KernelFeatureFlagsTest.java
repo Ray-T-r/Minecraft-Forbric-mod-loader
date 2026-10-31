@@ -34,9 +34,13 @@ import java.util.zip.ZipOutputStream;
 
 import net.forbric.kernel.TestFixtures;
 import net.forbric.kernel.TestFixtures.Fixture;
+import net.forbric.kernel.boot.MultiLoaderArbiter;
+import net.forbric.kernel.discovery.MetadataFailures;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
+import org.objectweb.asm.ClassWriter;
+import org.objectweb.asm.Opcodes;
 
 /** A NeoForge jar's declared flags land in the registry builder; a foreign namespace is refused; off registers nothing. */
 @org.junit.jupiter.api.parallel.ResourceLock("system-properties")
@@ -44,6 +48,8 @@ class KernelFeatureFlagsTest {
 	@AfterEach
 	void reset() {
 		System.clearProperty("forbric.moddedFeatureFlags");
+		MultiLoaderArbiter.reset();
+		MetadataFailures.reset();
 	}
 
 	@Test
@@ -55,6 +61,26 @@ class KernelFeatureFlagsTest {
 			assertTrue(flags.containsKey(parse.invoke(null, "tofu:extra")), flags.toString());
 			assertTrue(flags.containsKey(parse.invoke(null, "tofu:more")), "an object entry with a flag key");
 			assertFalse(flags.containsKey(parse.invoke(null, "other:stolen")), "a namespace no mod in the jar owns");
+		}
+	}
+
+	/**
+	 * A refused MinecraftForge build that ships a {@code neoforge.mods.toml} naming a flag file registers nothing: its
+	 * NeoForge half is fake (its only {@code @Mod} is MinecraftForge's), nothing of it loads, and a refusal is not read as
+	 * an unowned jar, whose flags would be read. Red-checked: with the jar loop keeping jars without an owner, the
+	 * refused jar's flag was registered.
+	 */
+	@Test
+	void aRefusedJarRegistersNoFlag(@TempDir Path dir) throws Exception {
+		Path jar = modJar(dir.resolve("onlyforge.jar"), "tofu", "{\"flags\": [\"tofu:extra\"]}", Map.of(
+				"META-INF/mods.toml", ("modLoader=\"javafml\"\nloaderVersion=\"[1,)\"\nlicense=\"x\"\n\n[[mods]]\nmodId=\"tofu\"\n"
+						+ "version=\"1\"\n").getBytes(StandardCharsets.UTF_8),
+				"example/Tofu.class", forgeMod("example/Tofu", "tofu")));
+		assertTrue(MultiLoaderArbiter.refused(jar), "the fixture is a refused jar");
+		try (URLClassLoader cl = gameSideLoader()) {
+			Map<?, ?> flags = flagsAfter(cl, List.of(jar));
+			Method parse = Class.forName("net.minecraft.resources.Identifier", true, cl).getMethod("parse", String.class);
+			assertFalse(flags.containsKey(parse.invoke(null, "tofu:extra")), flags.toString());
 		}
 	}
 
@@ -82,7 +108,16 @@ class KernelFeatureFlagsTest {
 	}
 
 	private static Path modJar(Path file, String modId, String flagsJson) throws Exception {
+		return modJar(file, modId, flagsJson, Map.of());
+	}
+
+	private static Path modJar(Path file, String modId, String flagsJson, Map<String, byte[]> more) throws Exception {
 		try (OutputStream out = Files.newOutputStream(file); ZipOutputStream zip = new ZipOutputStream(out)) {
+			for (Map.Entry<String, byte[]> entry : more.entrySet()) {
+				zip.putNextEntry(new ZipEntry(entry.getKey()));
+				zip.write(entry.getValue());
+				zip.closeEntry();
+			}
 			zip.putNextEntry(new ZipEntry("META-INF/neoforge.mods.toml"));
 			zip.write(("modLoader=\"javafml\"\nloaderVersion=\"[3,)\"\nlicense=\"x\"\nfeatureFlags = \"META-INF/feature_flags.json\"\n\n[[mods]]\nmodId=\""
 					+ modId + "\"\nversion=\"1\"\n").getBytes(StandardCharsets.UTF_8));
@@ -92,6 +127,25 @@ class KernelFeatureFlagsTest {
 			zip.closeEntry();
 		}
 		return file;
+	}
+
+	/** A MinecraftForge {@code @Mod} whose constructor takes Forge's mod loading context, and nothing else. */
+	private static byte[] forgeMod(String name, String id) {
+		ClassWriter out = new ClassWriter(0);
+		out.visit(Opcodes.V21, Opcodes.ACC_PUBLIC, name, null, "java/lang/Object", null);
+		var mod = out.visitAnnotation("Lnet/minecraftforge/fml/common/Mod;", true);
+		mod.visit("value", id);
+		mod.visitEnd();
+		var ctor = out.visitMethod(Opcodes.ACC_PUBLIC, "<init>", "(Lnet/minecraftforge/fml/javafmlmod/FMLJavaModLoadingContext;)V",
+				null, null);
+		ctor.visitCode();
+		ctor.visitVarInsn(Opcodes.ALOAD, 0);
+		ctor.visitMethodInsn(Opcodes.INVOKESPECIAL, "java/lang/Object", "<init>", "()V", false);
+		ctor.visitInsn(Opcodes.RETURN);
+		ctor.visitMaxs(1, 2);
+		ctor.visitEnd();
+		out.visitEnd();
+		return out.toByteArray();
 	}
 
 	private static URLClassLoader gameSideLoader() throws Exception {

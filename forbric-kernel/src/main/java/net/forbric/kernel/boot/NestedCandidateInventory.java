@@ -411,10 +411,11 @@ public final class NestedCandidateInventory {
 									String unmet = NestedFabricRequirements.unmet(fabricManifest(child), running);
 									if (unmet != null) { excluded = true; leftOut.put(child, unmet); leftOutParent.put(child, parent.path()); }
 								}
-								// A refused MinecraftForge build claims nothing either, and that is a verdict, not an
-								// unreadable identity: it is kept as a library (KernelBoot) and discovery reports it.
-								if (claim == null && !excluded && MultiLoaderArbiter.ownerOf(child) != null
-										&& !MultiLoaderArbiter.refused(child)) issues.add(new Issue(child, "nested mod identity was unreadable; retaining its physical library without claiming a valid mod"));
+								// Only an owned jar has an identity to read. A refused MinecraftForge build claims nothing
+								// either, and that is a verdict, not an unreadable identity: it is kept as a library
+								// (KernelBoot) and discovery reports it.
+								if (claim == null && !excluded
+										&& MultiLoaderArbiter.claimOf(child) instanceof JarClaim.Owned) issues.add(new Issue(child, "nested mod identity was unreadable; retaining its physical library without claiming a valid mod"));
 								nodes.put(child, new Node(child, hash, claim, false, excluded)); content.put(hash, child);
 							}
 							if (!fabricRoute) admitOutsideFabric(child);
@@ -565,7 +566,7 @@ public final class NestedCandidateInventory {
 		}
 
 		private boolean excludedBySide(Path child) {
-			if (side == null || MultiLoaderArbiter.ownerOf(child) != Ecosystem.FABRIC) return false;
+			if (side == null || !MultiLoaderArbiter.claimOf(child).ownedBy(Ecosystem.FABRIC)) return false;
 			try (ZipFile zip = new ZipFile(child.toFile())) {
 				ZipEntry manifest = zip.getEntry("fabric.mod.json"); if (manifest == null) return false;
 				try (InputStream in = zip.getInputStream(manifest)) { return !FabricModMetadataParser.read(in).getEnvironment().matches(side); }

@@ -366,6 +366,8 @@ class DuplicateModArbiterTest {
 
 	@Test
 	void aThreeWayContestAliasesBothLosingEcosystems() {
+		// minecraftforge in the knob is warned about and read as if it were not there (no jar is claimed by
+		// MinecraftForge in a real boot), so Fabric wins and both other claims are aliased.
 		System.setProperty("forbric.dupeIdPreference", "minecraftforge,fabric,neoforge");
 
 		Decision d = DuplicateModArbiter.arbitrate(List.of(
@@ -374,8 +376,24 @@ class DuplicateModArbiterTest {
 				claim("/mods/x-forge.jar", Ecosystem.FORGE, "x")));
 
 		assertEquals(2, d.aliases().size());
-		assertEquals(1, d.aliasesFor(Ecosystem.FABRIC).size());
+		assertEquals(0, d.aliasesFor(Ecosystem.FABRIC).size());
 		assertEquals(1, d.aliasesFor(Ecosystem.NEOFORGE).size());
+	}
+
+	/**
+	 * A knob naming nothing but MinecraftForge ranks no claim a boot can have, so the claims tie and the first by path
+	 * wins, as it did while the entry still parsed to FORGE. Falling back to the default order would make NeoForge win.
+	 */
+	@Test
+	void aPreferenceNamingOnlyMinecraftForgeLeavesTheClaimsTied() {
+		System.setProperty("forbric.dupeIdPreference", "minecraftforge");
+
+		Decision d = DuplicateModArbiter.arbitrate(List.of(
+				claim("/mods/x-fabric.jar", Ecosystem.FABRIC, "x"),
+				claim("/mods/x-neoforge.jar", Ecosystem.NEOFORGE, "x")));
+
+		assertFalse(d.suppressed(Path.of("/mods/x-fabric.jar")));
+		assertTrue(d.suppressed(Path.of("/mods/x-neoforge.jar")));
 	}
 
 	@Test

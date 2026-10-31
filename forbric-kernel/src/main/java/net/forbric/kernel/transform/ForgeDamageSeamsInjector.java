@@ -57,10 +57,12 @@ public final class ForgeDamageSeamsInjector implements ClassTransformer {
 	public static final String PROPERTY = "forbric.forgeDamageSeams";
 	static final String LIVING = "net/minecraft/world/entity/LivingEntity";
 	static final String PLAYER = "net/minecraft/world/entity/player/Player";
-	static final String CONTAINER = "net/neoforged/neoforge/common/damagesource/DamageContainer";
-	static final String RUNTIME = "net/forbric/kernel/runtime/KernelLivingDamage";
+	// The three shared with VanillaDamageReadInjector live there: that one adapts NeoForge's body for Fabric mods and
+	// stays when this one, MinecraftForge's, goes.
+	static final String CONTAINER = VanillaDamageReadInjector.CONTAINER;
+	static final String RUNTIME = VanillaDamageReadInjector.HELPER;
 	static final String SOURCE = "Lnet/minecraft/world/damagesource/DamageSource;";
-	static final String HURT_DESC = "(Lnet/minecraft/server/level/ServerLevel;" + SOURCE + "F)V";
+	static final String HURT_DESC = VanillaDamageReadInjector.HURT_DESC;
 	static final String SERVER_DESC = "(Lnet/minecraft/server/level/ServerLevel;" + SOURCE + "F)Z";
 	static final String FORGE_HOOKS = "net/minecraftforge/common/ForgeHooks";
 	static final String NEO_COMMON_HOOKS = "net/neoforged/neoforge/common/CommonHooks";

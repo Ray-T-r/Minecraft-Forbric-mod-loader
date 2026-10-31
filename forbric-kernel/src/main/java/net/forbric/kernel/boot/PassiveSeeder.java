@@ -470,13 +470,14 @@ public final class PassiveSeeder {
 				continue;
 			}
 
-			Ecosystem owner = MultiLoaderArbiter.ownerOf(jar);
+			JarClaim claim = MultiLoaderArbiter.claimOf(jar);
 			for (DiscoveredMod mod : declared) {
 				if (!mod.getEcosystem().isForgeFamily()) continue;
 				if (mod.getId() == null || mod.getId().isBlank() || mod.getSource() == null) continue;
-				// owner == null means "no loader manifest at all", which cannot happen for a Forge-family mod; treat
-				// it as unowned (keep) rather than as "not mine", per the arbiter's own contract.
-				if (owner != null && owner != mod.getEcosystem()) continue;
+				// Unowned means "no loader manifest at all", which cannot happen for a Forge-family mod; it is kept
+				// rather than read as "not mine", per the arbiter's own contract. A refused jar is left out for every
+				// family: nothing of it loads, so none of it is listed.
+				if (claim.suppresses(mod.getEcosystem())) continue;
 				if (!seen.add(mod.getId())) continue;
 				out.add(mod);
 			}
@@ -536,11 +537,11 @@ public final class PassiveSeeder {
 						jar.getFileName());
 				continue;
 			}
-			Ecosystem owner = MultiLoaderArbiter.ownerOf(jar);
+			JarClaim claim = MultiLoaderArbiter.claimOf(jar);
 			for (DiscoveredMod mod : declared) {
 				if (!mod.getEcosystem().isForgeFamily()) continue;
 				if (mod.getId() == null || mod.getId().isBlank() || mod.getSource() == null) continue;
-				if (owner != null && owner != mod.getEcosystem()) continue;
+				if (claim.suppresses(mod.getEcosystem())) continue;
 				if (!seen.add(mod.getId())) continue;
 				out.add(mod);
 			}

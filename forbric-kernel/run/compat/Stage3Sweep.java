@@ -40,8 +40,9 @@ import net.forbric.kernel.discovery.MetadataFailures;
  * family counts as lost when the owner's own manifest is one {@code MetadataFailures} recorded as unreadable, which is
  * how {@code MetadataFailures.recordFindings} turns it into a "nothing of this jar loads" finding at boot.
  *
- * <p>Written against both versions at once: what only the new kernel has ({@code MultiLoaderArbiter.refused},
- * {@code LoaderHalfJudge}) is reached by reflection, and answers {@code -} on the old one.
+ * <p>Written against both versions at once: what only a newer kernel has ({@code MultiLoaderArbiter.refused} and
+ * {@code claimOf}, {@code JarClaim}, {@code LoaderHalfJudge}) is reached by reflection, and answers {@code -} on an
+ * older one. Nothing names those types, so this file compiles against every kernel the sweep runs.
  *
  * <p>Usage: {@code java -cp <kernel classpath> Stage3Sweep.java <jar-list.txt> <out.tsv>}; one absolute jar path per
  * line in the list. Columns: path, declared manifests, owner, failed families, refused, verdict (owner / refused /
@@ -51,6 +52,7 @@ public final class Stage3Sweep {
 	public static void main(String[] args) throws Exception {
 		List<String> jars = Files.readAllLines(Path.of(args[0]), StandardCharsets.UTF_8);
 		Method refused = method(MultiLoaderArbiter.class, "refused", Path.class);
+		Method claimOf = method(MultiLoaderArbiter.class, "claimOf", Path.class);
 		Class<?> judge = type("net.forbric.kernel.discovery.LoaderHalfJudge");
 		Method judgeJar = judge == null ? null : judge.getMethod("judge", Path.class);
 		Method describe = judge == null ? null : type("net.forbric.kernel.discovery.LoaderHalfJudge$Verdict").getMethod("describe");
@@ -63,7 +65,11 @@ public final class Stage3Sweep {
 				row.add(jar.toString());
 				try {
 					List<Ecosystem> declared = MultiLoaderArbiter.declaredBy(jar);
-					Ecosystem owner = MultiLoaderArbiter.ownerOf(jar);
+					// A kernel that holds a refusal as a claim of its own has no owner for it — ownerOf will not answer
+					// for a refused jar — and no failed family; the table writes it as the owner and failed family it
+					// was while the refusal borrowed FORGE, so a sweep's columns compare across that change.
+					String refusedAs = claimOf == null ? null : refusedAs(claimOf.invoke(null, jar));
+					Ecosystem owner = refusedAs != null ? null : MultiLoaderArbiter.ownerOf(jar);
 					Set<Ecosystem> failed = MetadataFailures.failedFamilies(jar);
 					String isRefused = refused == null ? "-" : String.valueOf(refused.invoke(null, jar));
 					String verdict;
@@ -81,8 +87,8 @@ public final class Stage3Sweep {
 						for (String alias : mod.getAliases()) aliases.add(mod.getEcosystem() + ":" + alias);
 					}
 					row.add(join(declared));
-					row.add(owner == null ? "-" : owner.name());
-					row.add(join(failed));
+					row.add(owner != null ? owner.name() : refusedAs != null ? refusedAs : "-");
+					row.add(refusedAs != null && failed.isEmpty() ? refusedAs : join(failed));
 					row.add(isRefused);
 					row.add(verdict);
 					row.add(clean(halves));
@@ -104,6 +110,13 @@ public final class Stage3Sweep {
 				out.println(String.join("\t", row));
 			}
 		}
+	}
+
+	/** The spelling of the loader a {@code JarClaim} refuses, or {@code null} when the claim is not a refusal. */
+	private static String refusedAs(Object claim) throws ReflectiveOperationException {
+		if (claim == null || !(Boolean) claim.getClass().getMethod("refused").invoke(claim)) return null;
+		Object loader = claim.getClass().getMethod("loader").invoke(claim);
+		return (String) loader.getClass().getMethod("spelling").invoke(loader);
 	}
 
 	private static String join(Iterable<Ecosystem> families) {

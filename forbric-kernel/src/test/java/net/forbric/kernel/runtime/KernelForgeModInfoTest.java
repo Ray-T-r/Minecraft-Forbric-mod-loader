@@ -247,19 +247,9 @@ class KernelForgeModInfoTest {
 				"it/unimi/dsi/fastutil", "org/slf4j/slf4j-api", "org/apache/logging/log4j/log4j-api", "org/apache/maven/maven-artifact",
 				"io/netty/netty-common", "io/netty/netty-buffer", TestFixtures.nettyCodecLibrary(), "io/netty/netty-transport", "io/netty/netty-handler",
 				"org/joml/joml", "com/mojang/authlib", "org/apache/commons/commons-lang3")) {
-			Path library = newestUnder(pattern);
+			Path library = TestFixtures.newestLibrary(pattern);
 			if (library != null) urls.add(library.toUri().toURL());
 		}
 		return new URLClassLoader(urls.toArray(new URL[0]), KernelForgeModInfoTest.class.getClassLoader());
-	}
-
-	static Path newestUnder(String pattern) throws java.io.IOException {
-		Path root = TestFixtures.minecraftDir().resolve("libraries");
-		Path under = root.resolve(pattern);
-		if (!Files.isDirectory(under)) return null;
-		try (var stream = Files.walk(under)) {
-			return stream.filter(f -> f.toString().endsWith(".jar") && !f.toString().contains("sources"))
-					.sorted(java.util.Comparator.comparing(f -> f.getFileName().toString())).reduce((a, b) -> b).orElse(null);
-		}
 	}
 }

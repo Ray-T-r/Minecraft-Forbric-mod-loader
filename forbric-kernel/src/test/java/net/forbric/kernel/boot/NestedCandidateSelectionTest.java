@@ -46,6 +46,29 @@ class NestedCandidateSelectionTest {
 		}
 	}
 
+	/**
+	 * A refused MinecraftForge build is never read as a plain library. Its jar can carry JarJar metadata too (a
+	 * kotlinforforge-style {@code -all} jar, or any Forge mod with jar-in-jar), and a manifestless bundle's children are
+	 * kept and loaded; a refused jar's must not be. Red-checked: with the bundle test asking for no owner instead of an
+	 * unowned claim, the refused jar was selected and its child extracted.
+	 */
+	@Test void aRefusedMinecraftForgeBuildIsNotALibraryBundle() throws Exception {
+		String path = "META-INF/jarjar/stdlib.jar";
+		String metadata = "{\"jars\":[{\"path\":\"" + path + "\",\"identifier\":{\"group\":\"example\",\"artifact\":\"stdlib\"},"
+				+ "\"version\":{\"range\":\"[1,2)\",\"artifactVersion\":\"1\"}}]}";
+		String toml = "modLoader=\"javafml\"\nloaderVersion=\"[1,)\"\nlicense=\"MIT\"\n[[mods]]\nmodId=\"onlyforge\"\nversion=\"1\"\n";
+		Path refused = install("onlyforge-all.jar", bytes(Map.of(path, bytes(Map.of("example/Runtime.class", type("example/Runtime"))),
+				"META-INF/jarjar/metadata.json", metadata.getBytes(StandardCharsets.UTF_8),
+				"META-INF/mods.toml", toml.getBytes(StandardCharsets.UTF_8))));
+		install("other.jar", fabric("other", "1", Map.of(), "", Map.of()));
+		decide(); var plan = DuplicateModArbiter.currentPlan();
+		assertTrue(MultiLoaderArbiter.refused(refused));
+		assertFalse(MultiLoaderArbiter.claimOf(refused).unowned());
+		assertNotNull(plan);
+		assertFalse(plan.selected().contains(refused.toAbsolutePath()), "a refused jar is not a candidate");
+		assertEquals(List.of(), plan.nestedFiles(), "nor are the jars it carries");
+	}
+
 	@Test void sameBasenameWithDifferentContentGetsTwoStablePhysicalFiles() throws Exception {
 		byte[] a = fabric("lib_a", "1", Map.of(), "", Map.of());
 		byte[] b = fabric("lib_b", "1", Map.of(), "", Map.of());

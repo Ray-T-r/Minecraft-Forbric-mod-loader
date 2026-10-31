@@ -148,14 +148,15 @@ public final class LoaderHalfJudge {
 	/**
 	 * One declared half and what was found.
 	 *
-	 * @param family   FABRIC, NEOFORGE, or FORGE (which here, as everywhere, means traditional MinecraftForge)
+	 * @param family   the loader the manifest is written for; a MinecraftForge half is {@link LoaderKind#MINECRAFTFORGE},
+	 *                 never an {@link Ecosystem}, because nothing loads it
 	 * @param manifest the manifest path that declares it
 	 * @param modIds   the ids the manifest declares (empty when it could not be read)
 	 * @param name     the display name the manifest gives its first mod, else its first id, else empty
 	 * @param usable   whether this half can load the jar on Forbric
 	 * @param reason   why, in one English clause — for logs, the sweep tool and the finding's evidence
 	 */
-	public record Half(Ecosystem family, String manifest, List<String> modIds, String name, boolean usable,
+	public record Half(LoaderKind family, String manifest, List<String> modIds, String name, boolean usable,
 			String reason) {
 		public Half {
 			modIds = List.copyOf(modIds);
@@ -168,13 +169,14 @@ public final class LoaderHalfJudge {
 		 * build whose Fabric or NeoForge manifest is broken, and the player is told that ({@code MetadataFailures}).
 		 */
 		public boolean unreadable() {
-			return !usable && family != Ecosystem.FORGE
+			return !usable && family != LoaderKind.MINECRAFTFORGE
 					&& reason.startsWith(manifest.substring(manifest.lastIndexOf('/') + 1) + CANNOT_BE_READ);
 		}
 
 		@Override
 		public String toString() {
-			return manifest + ": " + (family == Ecosystem.FORGE ? "MinecraftForge" : usable ? "usable" : "not usable")
+			return manifest + ": "
+					+ (family == LoaderKind.MINECRAFTFORGE ? "MinecraftForge" : usable ? "usable" : "not usable")
 					+ " (" + reason + ")";
 		}
 	}
@@ -185,18 +187,19 @@ public final class LoaderHalfJudge {
 			halves = List.copyOf(halves);
 		}
 
-		public Optional<Half> half(Ecosystem family) {
+		public Optional<Half> half(LoaderKind family) {
 			return halves.stream().filter(h -> h.family() == family).findFirst();
 		}
 
 		/** Whether the jar declares a MinecraftForge half at all. */
 		public boolean hasMinecraftForge() {
-			return half(Ecosystem.FORGE).isPresent();
+			return half(LoaderKind.MINECRAFTFORGE).isPresent();
 		}
 
 		/** The Fabric / NeoForge halves that can load the jar, in preference-independent order. */
 		public List<Ecosystem> usableFamilies() {
-			return halves.stream().filter(h -> h.family() != Ecosystem.FORGE && h.usable()).map(Half::family).toList();
+			return halves.stream().filter(h -> h.family().ecosystem() != null && h.usable())
+					.map(h -> h.family().ecosystem()).toList();
 		}
 
 		/** The Fabric / NeoForge halves whose manifest does not parse at all; see {@link Half#unreadable}. */
@@ -211,7 +214,7 @@ public final class LoaderHalfJudge {
 
 		/** The id that names this mod to a player: the MinecraftForge half's first, else any half's, else the file. */
 		public String modId() {
-			for (Ecosystem family : List.of(Ecosystem.FORGE, Ecosystem.NEOFORGE, Ecosystem.FABRIC)) {
+			for (LoaderKind family : List.of(LoaderKind.MINECRAFTFORGE, LoaderKind.NEOFORGE, LoaderKind.FABRIC)) {
 				Optional<Half> half = half(family);
 				if (half.isPresent() && !half.get().modIds().isEmpty()) return half.get().modIds().get(0);
 			}
@@ -220,7 +223,7 @@ public final class LoaderHalfJudge {
 
 		/** The display name that names this mod to a player, by the same order as {@link #modId()}. */
 		public String displayName() {
-			for (Ecosystem family : List.of(Ecosystem.FORGE, Ecosystem.NEOFORGE, Ecosystem.FABRIC)) {
+			for (LoaderKind family : List.of(LoaderKind.MINECRAFTFORGE, LoaderKind.NEOFORGE, LoaderKind.FABRIC)) {
 				Optional<Half> half = half(family);
 				if (half.isPresent() && !half.get().name().isBlank()) return half.get().name();
 			}
@@ -269,7 +272,7 @@ public final class LoaderHalfJudge {
 		} catch (RuntimeException unreadable) {
 			// The manifest cannot be read, which is this half's answer: Fabric cannot load the jar through it.
 			Caught.expected(unreadable);
-			return new Half(Ecosystem.FABRIC, FABRIC_MANIFEST, List.of(), "", false,
+			return new Half(LoaderKind.FABRIC, FABRIC_MANIFEST, List.of(), "", false,
 					FABRIC_MANIFEST + CANNOT_BE_READ + message(unreadable));
 		}
 		String id = string(json.get("id"));
@@ -281,7 +284,7 @@ public final class LoaderHalfJudge {
 
 		Map<String, List<String[]>> entrypoints = fabricEntrypoints(json.get("entrypoints"));
 		if (entrypoints.values().stream().allMatch(List::isEmpty)) {
-			return new Half(Ecosystem.FABRIC, FABRIC_MANIFEST, ids, name, true,
+			return new Half(LoaderKind.FABRIC, FABRIC_MANIFEST, ids, name, true,
 					"a library: no entrypoints, it contributes classes and resources" + absent);
 		}
 		List<String> failures = new ArrayList<>();
@@ -297,18 +300,18 @@ public final class LoaderHalfJudge {
 				}
 				String verdict = fabricEntrypoint(contents, group.getKey(), adapter, value);
 				if (verdict == null) {
-					return new Half(Ecosystem.FABRIC, FABRIC_MANIFEST, ids, name, true,
+					return new Half(LoaderKind.FABRIC, FABRIC_MANIFEST, ids, name, true,
 							"entrypoint " + group.getKey() + " " + value + " can initialise" + absent);
 				}
 				failures.add(verdict);
 			}
 		}
 		if (failures.isEmpty()) {
-			return new Half(Ecosystem.FABRIC, FABRIC_MANIFEST, ids, name, true,
+			return new Half(LoaderKind.FABRIC, FABRIC_MANIFEST, ids, name, true,
 					"a library: its only entrypoints are integration keys whose class is not in the jar ("
 							+ String.join(", ", unconsumed) + "), which Fabric resolves only on request" + absent);
 		}
-		return new Half(Ecosystem.FABRIC, FABRIC_MANIFEST, ids, name, false,
+		return new Half(LoaderKind.FABRIC, FABRIC_MANIFEST, ids, name, false,
 				"no entrypoint can initialise: " + String.join("; ", failures) + absent);
 	}
 
@@ -369,7 +372,7 @@ public final class LoaderHalfJudge {
 			toml = ModsTomlParser.parse(new ByteArrayInputStream(contents.files.get(NEOFORGE_MANIFEST)));
 		} catch (RuntimeException unreadable) {
 			Caught.expected(unreadable);
-			return new Half(Ecosystem.NEOFORGE, NEOFORGE_MANIFEST, List.of(), "", false,
+			return new Half(LoaderKind.NEOFORGE, NEOFORGE_MANIFEST, List.of(), "", false,
 					"neoforge.mods.toml" + CANNOT_BE_READ + message(unreadable));
 		}
 		List<String> ids = ids(toml);
@@ -378,7 +381,7 @@ public final class LoaderHalfJudge {
 		for (String id : ids) {
 			String neo = contents.modClass(MOD_NEO, id);
 			if (neo != null) {
-				return new Half(Ecosystem.NEOFORGE, NEOFORGE_MANIFEST, ids, name, true,
+				return new Half(LoaderKind.NEOFORGE, NEOFORGE_MANIFEST, ids, name, true,
 						"net.neoforged @Mod(\"" + id + "\") is " + neo.replace('/', '.') + absent);
 			}
 		}
@@ -417,10 +420,10 @@ public final class LoaderHalfJudge {
 		String fake = forgeMod == null || contents.neoReferences > 0
 				? null : fakeNeoForgePayload(contents, toml, entries, "lowcodefml".equals(toml.getModLoader()));
 		if (fake != null) {
-			return new Half(Ecosystem.NEOFORGE, NEOFORGE_MANIFEST, ids, name, false,
+			return new Half(LoaderKind.NEOFORGE, NEOFORGE_MANIFEST, ids, name, false,
 					"no NeoForge @Mod, its only entry is MinecraftForge's, and " + fake + forgeMod + absent);
 		}
-		return new Half(Ecosystem.NEOFORGE, NEOFORGE_MANIFEST, ids, name, true,
+		return new Half(LoaderKind.NEOFORGE, NEOFORGE_MANIFEST, ids, name, true,
 				(forgeMod == null
 						? "no @Mod: a data, mixin or library mod"
 						: "no NeoForge @Mod, and what NeoForge would run of it does not stand on MinecraftForge" + forgeMod
@@ -560,7 +563,7 @@ public final class LoaderHalfJudge {
 			Caught.expected(unreadable);
 			detail = "a MinecraftForge mods.toml that cannot be read (" + message(unreadable) + ")";
 		}
-		return new Half(Ecosystem.FORGE, FORGE_MANIFEST, ids, name, false,
+		return new Half(LoaderKind.MINECRAFTFORGE, FORGE_MANIFEST, ids, name, false,
 				detail + " — Forbric no longer loads MinecraftForge mods");
 	}
 

@@ -75,11 +75,16 @@ public final class VanillaDamageReadInjector implements ClassTransformer {
 	/** {@code -Dforbric.vanillaDamageRead.absorbed=off}: no read at the absorption call. */
 	public static final String ABSORBED_PROPERTY = "forbric.vanillaDamageRead.absorbed";
 	static final String LIVING = "net/minecraft/world/entity/LivingEntity";
-	static final String ABSORBED_DESC = "(L" + LIVING + ";L" + ForgeDamageSeamsInjector.CONTAINER + ";FF)F";
+	/** NeoForge's per-hit damage record, which its {@code actuallyHurt} keeps the amount in. */
+	static final String CONTAINER = "net/neoforged/neoforge/common/damagesource/DamageContainer";
+	/** The game-side helpers both reads call, and MinecraftForge's damage seams too, for as long as they exist. */
+	static final String HELPER = "net/forbric/kernel/runtime/KernelLivingDamage";
+	private static final String SOURCE = "Lnet/minecraft/world/damagesource/DamageSource;";
+	/** {@code actuallyHurt(ServerLevel, DamageSource, float)}. */
+	static final String HURT_DESC = "(Lnet/minecraft/server/level/ServerLevel;" + SOURCE + "F)V";
+	static final String ABSORBED_DESC = "(L" + LIVING + ";L" + CONTAINER + ";FF)F";
 	static final List<String> TARGETS = List.of("net.minecraft.world.entity.LivingEntity", "net.minecraft.world.entity.player.Player");
-	static final String HURT_DESC = ForgeDamageSeamsInjector.HURT_DESC;
-	static final String HELPER = ForgeDamageSeamsInjector.RUNTIME;
-	static final String HELPER_DESC = "(L" + LIVING + ";L" + ForgeDamageSeamsInjector.CONTAINER + ";FF)V";
+	static final String HELPER_DESC = "(L" + LIVING + ";L" + CONTAINER + ";FF)V";
 
 	public static boolean enabled() {
 		return !"off".equalsIgnoreCase(System.getProperty(PROPERTY, "on"));
@@ -152,7 +157,7 @@ public final class VanillaDamageReadInjector implements ClassTransformer {
 		read.add(new VarInsnNode(Opcodes.ALOAD, 0));
 		read.add(new FieldInsnNode(Opcodes.GETFIELD, containers.owner, "damageContainers", "Ljava/util/Stack;"));
 		read.add(new MethodInsnNode(Opcodes.INVOKEVIRTUAL, "java/util/Stack", "peek", "()Ljava/lang/Object;", false));
-		read.add(new TypeInsnNode(Opcodes.CHECKCAST, ForgeDamageSeamsInjector.CONTAINER));
+		read.add(new TypeInsnNode(Opcodes.CHECKCAST, CONTAINER));
 		read.add(new VarInsnNode(Opcodes.FLOAD, 3));
 		read.add(new VarInsnNode(Opcodes.FLOAD, 3));
 		read.add(new MethodInsnNode(Opcodes.INVOKESTATIC, HELPER, "vanillaRead", HELPER_DESC, false));
@@ -188,7 +193,7 @@ public final class VanillaDamageReadInjector implements ClassTransformer {
 			}
 		}
 		if (containers == null || store < 0 || !(code.get(store - 1) instanceof MethodInsnNode amount)
-				|| !amount.owner.equals(ForgeDamageSeamsInjector.CONTAINER) || !amount.name.equals("getNewDamage") || !amount.desc.equals("()F")) return false;
+				|| !amount.owner.equals(CONTAINER) || !amount.name.equals("getNewDamage") || !amount.desc.equals("()F")) return false;
 		for (int i = call + 1; i < store - 1; i++) if (code.get(i) instanceof MethodInsnNode || code.get(i) instanceof org.objectweb.asm.tree.JumpInsnNode
 				|| code.get(i) instanceof VarInsnNode v && v.var != 0) {
 			if (!(code.get(i) instanceof MethodInsnNode m && m.owner.equals("java/util/Stack") && m.name.equals("peek"))) return false;
@@ -217,7 +222,7 @@ public final class VanillaDamageReadInjector implements ClassTransformer {
 		method.maxLocals = read + 1;
 		InsnList before = new InsnList();
 		before.add(container(containers));
-		before.add(new MethodInsnNode(Opcodes.INVOKEVIRTUAL, ForgeDamageSeamsInjector.CONTAINER, "getNewDamage", "()F", false));
+		before.add(new MethodInsnNode(Opcodes.INVOKEVIRTUAL, CONTAINER, "getNewDamage", "()F", false));
 		before.add(new org.objectweb.asm.tree.InsnNode(Opcodes.DUP));
 		before.add(new VarInsnNode(Opcodes.FSTORE, 3));
 		before.add(new VarInsnNode(Opcodes.FSTORE, read));
@@ -279,7 +284,7 @@ public final class VanillaDamageReadInjector implements ClassTransformer {
 		out.add(new VarInsnNode(Opcodes.ALOAD, 0));
 		out.add(new FieldInsnNode(Opcodes.GETFIELD, containers.owner, "damageContainers", "Ljava/util/Stack;"));
 		out.add(new MethodInsnNode(Opcodes.INVOKEVIRTUAL, "java/util/Stack", "peek", "()Ljava/lang/Object;", false));
-		out.add(new TypeInsnNode(Opcodes.CHECKCAST, ForgeDamageSeamsInjector.CONTAINER));
+		out.add(new TypeInsnNode(Opcodes.CHECKCAST, CONTAINER));
 		return out;
 	}
 

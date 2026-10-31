@@ -115,7 +115,10 @@ public final class KernelModCatalog {
 			String file = lost.jar().getFileName().toString();
 			if (!dir.equals(lost.jar().getParent()) || entries.stream().anyMatch(e -> e.jar().equals(file))) continue;
 			// The name the manifest gives, where it gives one: a refused MinecraftForge mod is named to the player by it.
-			entries.add(new ModCatalog.Entry(lost.ecosystem(), lost.modId(), lost.name(), "", "", List.of(), file, "", "")
+			// A refusal has no ecosystem (nothing loads it); its row is still shown under MinecraftForge, the loader it
+			// was built for, until the Mods screen and the catalogue count give a refused row a label of their own.
+			Ecosystem shownAs = lost.kind() == MetadataFailures.Kind.UNSUPPORTED ? Ecosystem.FORGE : lost.ecosystem();
+			entries.add(new ModCatalog.Entry(shownAs, lost.modId(), lost.name(), "", "", List.of(), file, "", "")
 					.withStatus(ModCatalog.Status.FAILED, lost.detail()));
 		}
 	}

@@ -971,6 +971,7 @@ test	net.forbric.kernel.runtime.KernelFabricFluidBehaviorsTest	minecraftForgesFa
 test	net.forbric.kernel.runtime.KernelFabricFluidBehaviorsTest	offReportsNoBehaviourType()	[fixture:third-party] sweep pack absent
 test	net.forbric.kernel.runtime.KernelFabricFluidBehaviorsTest	withoutFabricApiNoTagHasAType()	[fixture:third-party] sweep pack absent
 test	net.forbric.kernel.runtime.KernelFeatureFlagsTest	aDeclaredFlagIsRegisteredAndAForeignOneIsNot(Path)	[fixture:forge-carrier] the staged artifacts are absent: $ROOT/forbric-kernel/build/staged-noforge/run/forge-runtime/forge-runtime.jar
+test	net.forbric.kernel.runtime.KernelFeatureFlagsTest	aRefusedJarRegistersNoFlag(Path)	[fixture:forge-carrier] the staged artifacts are absent: $ROOT/forbric-kernel/build/staged-noforge/run/forge-runtime/forge-runtime.jar
 test	net.forbric.kernel.runtime.KernelFeatureFlagsTest	switchedOffNothingIsRegistered(Path)	[fixture:forge-carrier] the staged artifacts are absent: $ROOT/forbric-kernel/build/staged-noforge/run/forge-runtime/forge-runtime.jar
 test	net.forbric.kernel.runtime.KernelForgeCapabilitiesShapeTest	eachComposedProviderFiresAndAsksExactlyWhatTheCarriersOwnDoes()	[fixture:forge-carrier] staged Forge carrier absent: $ROOT/forbric-kernel/build/staged-noforge/run/forge-runtime/forge-runtime.jar
 test	net.forbric.kernel.runtime.KernelForgeConditionFunnelTest	aCodecThatJudgesTheKeyItselfIsNeverAskedAround()	[fixture:forge-carrier] the staged artifacts are absent: $ROOT/forbric-kernel/build/staged-noforge/run/forge-runtime/forge-runtime.jar

@@ -153,16 +153,16 @@ class RegistryWrapperAccessInjectorTest {
 	@Test void aModInvokesWhatItLookedUpOnTheWrappersTheGameDefinesWithAndWithoutFabricApi(@TempDir Path work) throws Exception {
 		// The contract the kernel's mixin discovery reads off fabric-api's own registry-sync mixins, as at boot.
 		Path sync = fabricRegistrySync(work);
-		List<RegistrySyncParityInjector.RemapContract> contracts = noteRegistrySyncMixins(sync);
+		List<RegistryRemapContracts.RemapContract> contracts = noteRegistrySyncMixins(sync);
 		assertEquals(1, contracts.size(), "premise: fabric-api's registry-sync mixins carry one remap contract: " + contracts);
 		try {
 			aModInvokesWhatItLookedUp(work, sync, contracts);
 		} finally {
-			RegistrySyncParityInjector.forgetMixins(SYNC_CONFIG);
+			RegistryRemapContracts.forgetMixins(SYNC_CONFIG);
 		}
 	}
 
-	private void aModInvokesWhatItLookedUp(Path work, Path sync, List<RegistrySyncParityInjector.RemapContract> contracts) throws Exception {
+	private void aModInvokesWhatItLookedUp(Path work, Path sync, List<RegistryRemapContracts.RemapContract> contracts) throws Exception {
 		try (Game noFabricApi = new Game(Wrappers.bootChain(RegistrySyncParityInjector::forGameLoader), null)) {
 			assertEquals(Optional.of("diamond ore"), noFabricApi.lookUpAndInvoke("getOptional", "diamond_ore"));
 			assertEquals("diamond ore", noFabricApi.lookUpAndInvoke("getValue", "diamond_ore"));
@@ -248,7 +248,7 @@ class RegistryWrapperAccessInjectorTest {
 	private static final String SYNC_CONFIG = "fabric-registry-sync-v0.mixins.json";
 
 	/** Notes every mixin class in {@code jar} with the parity injector, as the kernel's discovery does; what it read. */
-	private static List<RegistrySyncParityInjector.RemapContract> noteRegistrySyncMixins(Path jar) throws IOException {
+	private static List<RegistryRemapContracts.RemapContract> noteRegistrySyncMixins(Path jar) throws IOException {
 		java.util.Map<String, byte[]> entries = new java.util.HashMap<>();
 		try (ZipFile zip = new ZipFile(jar.toFile())) {
 			for (ZipEntry entry : java.util.Collections.list(zip.entries())) {
@@ -256,15 +256,15 @@ class RegistryWrapperAccessInjectorTest {
 				try (InputStream in = zip.getInputStream(entry)) { entries.put(entry.getName(), in.readAllBytes()); }
 			}
 		}
-		List<RegistrySyncParityInjector.RemapContract> found = new java.util.ArrayList<>();
-		RegistrySyncParityInjector.forgetMixins(SYNC_CONFIG);
+		List<RegistryRemapContracts.RemapContract> found = new java.util.ArrayList<>();
+		RegistryRemapContracts.forgetMixins(SYNC_CONFIG);
 		for (var entry : entries.entrySet()) {
 			if (!entry.getKey().endsWith(".class")) continue;
 			org.objectweb.asm.tree.ClassNode node = new org.objectweb.asm.tree.ClassNode();
 			new org.objectweb.asm.ClassReader(entry.getValue()).accept(node, 0);
 			if (net.forbric.kernel.mixin.MixinFit.mixinTargets(node).isEmpty()) continue;
-			found.addAll(RegistrySyncParityInjector.remapContracts(node, entries::get));
-			RegistrySyncParityInjector.noteMixin(SYNC_CONFIG, node, entries::get);
+			found.addAll(RegistryRemapContracts.remapContracts(node, entries::get));
+			RegistryRemapContracts.noteMixin(SYNC_CONFIG, node, entries::get);
 		}
 		return found;
 	}

@@ -309,8 +309,11 @@ public final class KernelBoot {
 		// which, at the same weight as any other mod that did not load (see MetadataFailures).
 		// A refused MinecraftForge jar is recorded the same way: installed in mods/, a required loss; bundled, a note;
 		// switched off by the player, nothing; supplied by the NeoForge or Fabric build of the same mod beside it, a note.
-		net.forbric.kernel.discovery.MetadataFailures.recordFindings(MultiLoaderArbiter::ownerOf, runtimeJars,
-				gameDir.resolve("mods"), topLevelDupes::suppressed, DuplicateModArbiter::loadedClaimant);
+		// A finding asks which family loads a jar: none for a library, and none for a refused jar, whose refusal it
+		// reports on its own.
+		net.forbric.kernel.discovery.MetadataFailures.recordFindings(
+				jar -> MultiLoaderArbiter.claimOf(jar) instanceof JarClaim.Owned loads ? loads.ecosystem() : null,
+				runtimeJars, gameDir.resolve("mods"), topLevelDupes::suppressed, DuplicateModArbiter::loadedClaimant);
 
 		// Game-side bundled libraries (MixinExtras) and the kernel's own runtime jar. The latter also carries
 		// the kernel's client assets -- the Mods button's icon lives in it -- so its extracted path is handed to
@@ -1388,7 +1391,7 @@ public final class KernelBoot {
 		// before the game builds its own. Here, with Mixin up and the FML identities seeded (NeoForge's config already
 		// says no early window is coming), and before any game class -- the window is made inside Minecraft.<init>.
 		NeoGraphicsBootstrappers.run(loader, topLevelForgeFamilyJars,
-				jar -> MultiLoaderArbiter.ownerOf(jar) == Ecosystem.NEOFORGE, gameArgs.toArray(new String[0]));
+				jar -> MultiLoaderArbiter.claimOf(jar).ownedBy(Ecosystem.NEOFORGE), gameArgs.toArray(new String[0]));
 
 		// Fabric preLaunch entrypoints, after Mixin is up and before any game class loads (their contract).
 		KernelFabricEcosystem.runPreLaunch();
@@ -1564,8 +1567,8 @@ public final class KernelBoot {
 	 * "Dev Version (Unsupported)" banner across the screen, because the version string it fell back to is the one
 	 * that decides {@code isDevMode()}.
 	 *
-	 * <p>A jar declaring no loader manifest at all is a plain library: {@code ownerOf} returns {@code null} and it
-	 * stays unowned, along with the merged base, the runtime carriers and the MC libraries.
+	 * <p>A jar declaring no loader manifest at all is a plain library: its claim is unowned and it stays unowned, along
+	 * with the merged base, the runtime carriers and the MC libraries.
 	 */
 	private static Map<Path, LoaderProbePolicy.Family> probeFamilies(List<Path> fabricJars, List<Path> modJars) {
 		Map<Path, LoaderProbePolicy.Family> families = new java.util.LinkedHashMap<>();
@@ -1574,12 +1577,14 @@ public final class KernelBoot {
 			for (Path jar : group) {
 				if (families.containsKey(jar)) continue;
 
-				Ecosystem owner = MultiLoaderArbiter.ownerOf(jar);
-				if (owner == null) continue;
+				// A plain library stays unowned. A refused jar gets no probe family either, and never gets here: the
+				// refused nested ones left modJars above, Fabric discovery skips them, and discovery yields no mod of
+				// the refused ones in mods/.
+				if (!(MultiLoaderArbiter.claimOf(jar) instanceof JarClaim.Owned owned)) continue;
 
 				// One for one with the arbitrated ecosystem. It used to collapse both Forge families into one
 				// constant, which told a NeoForge-only mod that traditional MinecraftForge's loader class exists.
-				families.put(jar, LoaderProbePolicy.familyOf(owner));
+				families.put(jar, LoaderProbePolicy.familyOf(owned.ecosystem()));
 			}
 		}
 		return families;
@@ -1590,7 +1595,10 @@ public final class KernelBoot {
 		java.util.Set<Path> universal = new java.util.LinkedHashSet<>();
 		for (List<Path> group : List.of(fabricJars, modJars)) {
 			for (Path jar : group) {
-				if (MultiLoaderArbiter.declaredBy(jar).size() > 1 && MultiLoaderArbiter.ownerOf(jar) != null) universal.add(jar);
+				if (MultiLoaderArbiter.declaredBy(jar).size() > 1
+						&& MultiLoaderArbiter.claimOf(jar) instanceof JarClaim.Owned) {
+					universal.add(jar);
+				}
 			}
 		}
 		return universal;

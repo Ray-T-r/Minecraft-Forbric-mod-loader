@@ -241,7 +241,9 @@ public final class KernelDataPacks {
 			ids.add(mod.getId());
 			versions.add(String.valueOf(mod.getVersion()));
 		}
-		return knownPack(MultiLoaderArbiter.ownerOf(jar), ids, versions);
+		// NeoForge's form for a jar NeoForge owns; no other claim declares one.
+		return MultiLoaderArbiter.claimOf(jar).ownedBy(Ecosystem.NEOFORGE) ? knownPack(Ecosystem.NEOFORGE, ids, versions)
+				: null;
 	}
 
 	/**
@@ -326,11 +328,14 @@ public final class KernelDataPacks {
 		}
 		List<Path> serve = new ArrayList<>();
 		for (Path jar : jars) {
-			Ecosystem owner = MultiLoaderArbiter.ownerOf(jar);
-			if (owner != Ecosystem.NEOFORGE
-					&& owner != Ecosystem.FORGE) {
-				continue;
-			}
+			// Owned by NeoForge: a Fabric jar is served by fabric-api and a library has no mod identity. No jar is owned
+			// by MinecraftForge any more. A refused jar never gets here in a boot — discovery yields no mod of one in
+			// mods/, and KernelBoot takes every refused nested jar out of the mod jars before they are handed on — so
+			// the refused arm is reached only by a test that calls this directly, and is kept so its verdict holds
+			// while the refusal is spelled as a claim instead of an owner of FORGE. A refused jar serves no data
+			// (interop-misc); the arm goes with the FORGE spelling.
+			JarClaim claim = MultiLoaderArbiter.claimOf(jar);
+			if (!claim.ownedBy(Ecosystem.NEOFORGE) && !claim.refused()) continue;
 			if (!carriesData(jar)) continue;
 			List<String> failed = failedModsOf(jar);
 			if (failed != null) {

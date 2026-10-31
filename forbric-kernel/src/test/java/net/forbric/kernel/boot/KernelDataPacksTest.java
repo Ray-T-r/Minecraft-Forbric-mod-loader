@@ -240,6 +240,27 @@ class KernelDataPacksTest {
 		assertEquals(List.of(forge, neo), KernelDataPacks.carriersWithData(List.of(forge, neo)));
 	}
 
+	/**
+	 * NeoForge's carrier ranks 2 because it is NeoForge's, read off its own {@code data/neoforge}, not because of where it
+	 * stands among the carriers: alone, beside MinecraftForge's, and listed first or last, its pack id is
+	 * {@code forbric/carrier/2-neoforge-runtime}. Worlds record that id in {@code level.dat}'s enabled datapacks, and
+	 * gate-m9 and gate-m10 pin it, so a launch with one carrier must not renumber it to 1.
+	 */
+	@Test
+	void theNeoForgeCarriersRankIsItsOwnWhetherOrNotMinecraftForgesIsThere() throws Exception {
+		Path neo = jar("neoforge-runtime.jar", null, "data/neoforge/damage_type/thing.json", "data/c/tags/item/ingots.json");
+		Path forge = jar("forge-runtime-interop.jar", null, "data/forge/tags/item/tools.json");
+
+		assertEquals(2, KernelDataPacks.carrierRank(neo));
+		assertEquals("forbric/carrier/2-neoforge-runtime", KernelDataPacks.carrierPackId(neo));
+		assertEquals(List.of(neo), KernelDataPacks.carriersWithData(List.of(neo)), "the only carrier");
+		for (List<Path> carriers : List.of(List.of(neo, forge), List.of(forge, neo))) {
+			List<Path> served = KernelDataPacks.carriersWithData(carriers);
+			assertEquals(neo, served.get(served.size() - 1), "beside MinecraftForge's, listed " + carriers);
+			assertEquals("forbric/carrier/2-neoforge-runtime", KernelDataPacks.carrierPackId(served.get(served.size() - 1)));
+		}
+	}
+
 	@Test
 	void aCarrierWithNoDataIsNotServed() throws Exception {
 		Path empty = jar("carrier-no-data.jar", null, "net/neoforged/Thing.class");

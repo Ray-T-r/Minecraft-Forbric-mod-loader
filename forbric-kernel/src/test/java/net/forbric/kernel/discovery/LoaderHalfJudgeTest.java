@@ -56,12 +56,12 @@ class LoaderHalfJudgeTest {
 						"net/minecraftforge/registries/DeferredRegister"))
 				.put("example/ClientInit.class", plain("example/ClientInit", null, true)));
 		assertTrue(verdict.refused(), verdict.describe());
-		String neo = verdict.half(Ecosystem.NEOFORGE).orElseThrow().reason();
+		String neo = verdict.half(LoaderKind.NEOFORGE).orElseThrow().reason();
 		assertTrue(neo.contains("its only entry is MinecraftForge's"), neo);
 		assertTrue(neo.contains("that entry uses net.minecraftforge itself, with no mixins beside it"), neo);
 		assertTrue(neo.contains("1 class(es) beyond the entry use net.minecraftforge"), neo);
 		assertTrue(neo.contains("its @Mod(\"owl\") is MinecraftForge's example.ModSetup"), neo);
-		String fabric = verdict.half(Ecosystem.FABRIC).orElseThrow().reason();
+		String fabric = verdict.half(LoaderKind.FABRIC).orElseThrow().reason();
 		assertTrue(fabric.contains("has no public no-argument constructor"), fabric);
 		assertTrue(fabric.contains("does not implement net.fabricmc.api.ClientModInitializer"), fabric);
 	}
@@ -96,7 +96,7 @@ class LoaderHalfJudgeTest {
 				.forgeToml("libs", "Libs").neoToml("libs", "Libs", null)
 				.put("example/Libs.class", forgeMod("example/Libs", "libs")));
 		assertTrue(entryOnly.refused(), entryOnly.describe());
-		assertTrue(entryOnly.half(Ecosystem.NEOFORGE).orElseThrow().reason().contains("that entry uses net.minecraftforge "
+		assertTrue(entryOnly.half(LoaderKind.NEOFORGE).orElseThrow().reason().contains("that entry uses net.minecraftforge "
 				+ "itself"), entryOnly.describe());
 	}
 
@@ -108,7 +108,7 @@ class LoaderHalfJudgeTest {
 				.put("example/FabricError.class", throwingEntrypoint("example/FabricError"))
 				.put("example/JourneymapForge.class", forgeMod("example/JourneymapForge", "journeymap")));
 		assertTrue(verdict.refused(), verdict.describe());
-		assertTrue(verdict.half(Ecosystem.FABRIC).orElseThrow().reason().contains("does nothing but throw"), verdict.describe());
+		assertTrue(verdict.half(LoaderKind.FABRIC).orElseThrow().reason().contains("does nothing but throw"), verdict.describe());
 		assertEquals("journeymap", verdict.modId(), "the player is told the mod they installed, not the marker id");
 	}
 
@@ -132,7 +132,7 @@ class LoaderHalfJudgeTest {
 				.put("data/mr_wrapped/recipe/x.json", "{}".getBytes(StandardCharsets.UTF_8)));
 		assertFalse(verdict.refused(), verdict.describe());
 		assertEquals(List.of(Ecosystem.FABRIC, Ecosystem.NEOFORGE), verdict.usableFamilies(), verdict.describe());
-		assertTrue(verdict.half(Ecosystem.NEOFORGE).orElseThrow().reason().contains("which NeoForge ignores"), verdict.describe());
+		assertTrue(verdict.half(LoaderKind.NEOFORGE).orElseThrow().reason().contains("which NeoForge ignores"), verdict.describe());
 	}
 
 	@Test void anArchitecturyStyleForgeAndFabricJarLoadsThroughFabric() throws Exception {
@@ -181,7 +181,7 @@ class LoaderHalfJudgeTest {
 				.put("example/Library.class", plain("example/Library", null, true))
 				.put("example/ForgeMod.class", forgeMod("example/ForgeMod", "lib")));
 		assertFalse(verdict.refused(), verdict.describe());
-		assertTrue(verdict.half(Ecosystem.FABRIC).orElseThrow().reason().startsWith("a library"), verdict.describe());
+		assertTrue(verdict.half(LoaderKind.FABRIC).orElseThrow().reason().startsWith("a library"), verdict.describe());
 	}
 
 	@Test void aForgeJarNestedInANeoForgeJarDoesNotRefuseTheNeoForgeMod() throws Exception {
@@ -253,7 +253,7 @@ class LoaderHalfJudgeTest {
 						"net/minecraftforge/common/MinecraftForge")));
 		assertFalse(verdict.refused(), verdict.describe());
 		assertEquals(List.of(Ecosystem.NEOFORGE), verdict.usableFamilies(), verdict.describe());
-		assertTrue(verdict.half(Ecosystem.NEOFORGE).orElseThrow().reason().startsWith("no @Mod"), verdict.describe());
+		assertTrue(verdict.half(LoaderKind.NEOFORGE).orElseThrow().reason().startsWith("no @Mod"), verdict.describe());
 
 		// Even when the one class in it uses MinecraftForge: with no entry to judge, the half is NeoForge's to load.
 		LoaderHalfJudge.Verdict single = judge(jar()
@@ -273,7 +273,7 @@ class LoaderHalfJudgeTest {
 				.put("example/Mx.class", forgeMod("example/Mx", "mx"))
 				.put("example/mixin/Hook.class", referencing("example/mixin/Hook", "net/minecraftforge/event/ForgeEventFactory")));
 		assertTrue(verdict.refused(), verdict.describe());
-		assertTrue(verdict.half(Ecosystem.NEOFORGE).orElseThrow().reason().contains(
+		assertTrue(verdict.half(LoaderKind.NEOFORGE).orElseThrow().reason().contains(
 				"the mixins it ships link against MinecraftForge (example.mixin.Hook)"), verdict.describe());
 	}
 
@@ -302,7 +302,7 @@ class LoaderHalfJudgeTest {
 			}
 			LoaderHalfJudge.Verdict verdict = judge(jar);
 			assertTrue(verdict.refused(), shape + ": " + verdict.describe());
-			assertTrue(verdict.half(Ecosystem.NEOFORGE).orElseThrow().reason().contains(
+			assertTrue(verdict.half(LoaderKind.NEOFORGE).orElseThrow().reason().contains(
 					"the mixins it ships link against MinecraftForge (example.mixin.PlayerMixin)"), shape + ": " + verdict.describe());
 		}
 	}
@@ -316,7 +316,7 @@ class LoaderHalfJudgeTest {
 				.put("example/mixin/Plugin.class", referencing("example/mixin/Plugin",
 						"net/minecraftforge/fml/loading/LoadingModList")));
 		assertTrue(verdict.refused(), verdict.describe());
-		assertTrue(verdict.half(Ecosystem.NEOFORGE).orElseThrow().reason().contains("example.mixin.Plugin"), verdict.describe());
+		assertTrue(verdict.half(LoaderKind.NEOFORGE).orElseThrow().reason().contains("example.mixin.Plugin"), verdict.describe());
 	}
 
 	/**
@@ -327,7 +327,7 @@ class LoaderHalfJudgeTest {
 		byte[] broken = "{ this is not json".getBytes(StandardCharsets.UTF_8);
 		LoaderHalfJudge.Verdict forgeEntry = judge(forgeEntryWithMixins("mx.mixins.json").put("mx.mixins.json", broken));
 		assertTrue(forgeEntry.refused(), forgeEntry.describe());
-		assertTrue(forgeEntry.half(Ecosystem.NEOFORGE).orElseThrow().reason().contains(
+		assertTrue(forgeEntry.half(LoaderKind.NEOFORGE).orElseThrow().reason().contains(
 				"with no mixin config beside it that can be read"), forgeEntry.describe());
 		LoaderHalfJudge.Verdict dummy = judge(jar()
 				.forgeToml("mx", "Mx").neoToml("mx", "Mx", "mx.mixins.json")
@@ -412,7 +412,7 @@ class LoaderHalfJudgeTest {
 				.put("example/RegisterFunctions.class", referencing("example/RegisterFunctions",
 						"net/minecraftforge/registries/DeferredRegister")));
 		assertTrue(verdict.refused(), verdict.describe());
-		assertTrue(verdict.half(Ecosystem.NEOFORGE).orElseThrow().reason().contains("with no mixins and no data/ beside it"),
+		assertTrue(verdict.half(LoaderKind.NEOFORGE).orElseThrow().reason().contains("with no mixins and no data/ beside it"),
 				verdict.describe());
 	}
 
@@ -470,7 +470,7 @@ class LoaderHalfJudgeTest {
 					.put("fabric.mod.json", json.getBytes(StandardCharsets.UTF_8))
 					.put("example/C.class", forgeMod("example/C", "c")));
 			assertTrue(verdict.refused(), verdict.describe());
-			LoaderHalfJudge.Half fabric = verdict.half(Ecosystem.FABRIC).orElseThrow();
+			LoaderHalfJudge.Half fabric = verdict.half(LoaderKind.FABRIC).orElseThrow();
 			assertTrue(fabric.unreadable(), fabric.toString());
 			assertEquals(List.of(fabric), verdict.unreadableHalves());
 			assertThrows(RuntimeException.class, () -> com.electronwill.nightconfig.json.JsonFormat.fancyInstance()
@@ -489,7 +489,7 @@ class LoaderHalfJudgeTest {
 				.put("META-INF/mods.toml", "[[mods]\nmodId=".getBytes(StandardCharsets.UTF_8))
 				.put("fabric.mod.json", "{\"schemaVersion\":1,".getBytes(StandardCharsets.UTF_8)));
 		assertTrue(verdict.refused(), verdict.describe());
-		assertTrue(verdict.half(Ecosystem.FABRIC).orElseThrow().reason().startsWith("fabric.mod.json cannot be read"),
+		assertTrue(verdict.half(LoaderKind.FABRIC).orElseThrow().reason().startsWith("fabric.mod.json cannot be read"),
 				verdict.describe());
 	}
 
@@ -513,7 +513,7 @@ class LoaderHalfJudgeTest {
 			LoaderHalfJudge.Verdict verdict = LoaderHalfJudge.judge(jar);
 			assertTrue(verdict.refused(), jar.getFileName() + ": " + verdict.describe());
 		}
-		assertTrue(LoaderHalfJudge.judge(journeymap).half(Ecosystem.FABRIC).orElseThrow().reason()
+		assertTrue(LoaderHalfJudge.judge(journeymap).half(LoaderKind.FABRIC).orElseThrow().reason()
 				.contains("journeymap.common.FabricError.onPreLaunch does nothing but throw"));
 
 		// The NeoForge builds of the same two mods, where the corpus has them, load: the rule is about the build.

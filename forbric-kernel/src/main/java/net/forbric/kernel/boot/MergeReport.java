@@ -214,8 +214,9 @@ public final class MergeReport {
 		}
 
 		for (Path jar : jars) {
-			Ecosystem owner = MultiLoaderArbiter.ownerOf(jar);
-			if (owner == null) continue;
+			// A library has no mod to name, and a refused jar loads none: discovery yields nothing of it.
+			if (!(MultiLoaderArbiter.claimOf(jar) instanceof JarClaim.Owned owned)) continue;
+			Ecosystem owner = owned.ecosystem();
 			if (owner == Ecosystem.FABRIC) {
 				addFabric(byId, jar, owner);
 			} else {

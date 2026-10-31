@@ -217,12 +217,42 @@ class NestedDuplicateModArbiterTest {
 
 	@Test
 	void thePreferenceKnobReplacesTheOrder() {
-		System.setProperty("forbric.nestedDupePreference", "forge,fabric");
+		System.setProperty("forbric.nestedDupePreference", "fabric,neoforge");
 		Decision d = nested(List.of(), List.of(
-				claim(FORGE_NESTED, Ecosystem.FORGE, "xaerolib", "1.7.3"),
-				claim(FABRIC_NESTED, Ecosystem.FABRIC, "xaerolib", "1.7.3")));
+				claim(NEO_NESTED, Ecosystem.NEOFORGE, "transition", "1.0.25"),
+				claim(FABRIC_NESTED, Ecosystem.FABRIC, "transition", "1.0.25")));
 
-		assertTrue(d.suppressed(Path.of(FABRIC_NESTED)));
+		assertTrue(d.suppressed(Path.of(NEO_NESTED)));
+		assertFalse(d.suppressed(Path.of(FABRIC_NESTED)));
+	}
+
+	@Test
+	void minecraftForgeInThePreferenceKnobIsReadAsIfItWereNotThere() {
+		// No jar is claimed by MinecraftForge any more: the entry is warned about and skipped, and the rest of the
+		// order still decides.
+		System.setProperty("forbric.nestedDupePreference", "minecraftforge,fabric,neoforge");
+		Decision d = nested(List.of(), List.of(
+				claim(NEO_NESTED, Ecosystem.NEOFORGE, "transition", "1.0.25"),
+				claim(FABRIC_NESTED, Ecosystem.FABRIC, "transition", "1.0.25")));
+
+		assertTrue(d.suppressed(Path.of(NEO_NESTED)));
+		assertEquals(List.of(Ecosystem.FABRIC, Ecosystem.NEOFORGE), DuplicateModArbiter.nestedPreference());
+		System.setProperty("forbric.dupeIdPreference", "forge, Fabric");
+		assertEquals(List.of(Ecosystem.FABRIC), DuplicateModArbiter.preference());
+	}
+
+	/** As at top level: a knob naming nothing but MinecraftForge leaves the claims tied, not the default order. */
+	@Test
+	void aPreferenceNamingOnlyMinecraftForgeLeavesTheClaimsTied() {
+		System.setProperty("forbric.nestedDupePreference", "minecraftforge");
+		String fabricFirst = "/g/.forbric-kernel/jij/entityculling/transition-fabric.jar";
+
+		Decision d = nested(List.of(), List.of(
+				claim(fabricFirst, Ecosystem.FABRIC, "transition", "1.0.25"),
+				claim(NEO_NESTED, Ecosystem.NEOFORGE, "transition", "1.0.25")));
+
+		assertFalse(d.suppressed(Path.of(fabricFirst)));
+		assertTrue(d.suppressed(Path.of(NEO_NESTED)));
 	}
 
 	@Test
