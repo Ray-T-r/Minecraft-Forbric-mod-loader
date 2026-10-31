@@ -110,10 +110,14 @@ class InstallerLoaderBrandTest {
 				"a NeoForge coordinate here would be a second answer to a one-answer question");
 		assertFalse(block.contains("minecraftforge"),
 				"a MinecraftForge coordinate here would be a second answer to a one-answer question");
-		// Both are still SUPPOSED to be named, just not as something a launcher matches on.
-		assertTrue(block.contains("\"forge\"") && block.contains("\"neoforge\""),
-				"the other two ecosystems must still be named — the block is what a reader opens to find out "
-						+ "what this instance runs");
+		// The other ecosystem it runs is still SUPPOSED to be named, just not as something a launcher matches on; and
+		// MinecraftForge, whose mods the kernel refuses, is not named as one at all. Read from the code, not the comments
+		// (a comment explaining why "forge" is absent used to satisfy a check that it was present).
+		String code = block.replaceAll("//[^\n]*", "");
+		assertTrue(code.contains("List.of(\"fabric\", \"neoforge\")"),
+				"the block must name the two ecosystems this instance runs — it is what a reader opens to find out");
+		assertFalse(code.contains("\"forge\""),
+				"MinecraftForge must not be named as an ecosystem this instance runs: the kernel refuses its mods");
 	}
 
 	/** The {@code launcherIdentity} method body, which is the only place a coordinate may legitimately appear. */
