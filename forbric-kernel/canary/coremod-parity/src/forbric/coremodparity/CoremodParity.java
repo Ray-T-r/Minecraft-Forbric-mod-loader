@@ -37,6 +37,7 @@ import net.neoforged.neoforge.common.world.ModifiableBiomeInfo;
 import net.neoforged.neoforge.common.world.ModifiableStructureInfo;
 import net.neoforged.neoforge.common.world.StructureModifier;
 import net.neoforged.neoforge.event.entity.EntityAttributeCreationEvent;
+import net.neoforged.neoforge.event.entity.living.LivingConversionEvent;
 import net.neoforged.neoforge.event.entity.living.FinalizeSpawnEvent;
 import net.neoforged.neoforge.event.server.ServerStartedEvent;
 import net.neoforged.neoforge.event.tick.ServerTickEvent;
@@ -63,7 +64,9 @@ public final class CoremodParity {
  private static final DeferredHolder<Block,Block> SECOND=BLOCKS.register("second",()->new Block(props("second")));
  // NeoForge's constructor: the empty pot and the plant as suppliers, the way a NeoForge mod declares a pot.
  private static final DeferredHolder<Block,FlowerPotBlock> POTTED_MARKER=BLOCKS.register("potted_marker",()->new FlowerPotBlock(()->(FlowerPotBlock)Blocks.FLOWER_POT,MARKER,props("potted_marker")));
- // Declared only through addPlant (the API NeoForge keeps from MinecraftForge): its own plant supplier names a different block.
+ // Declared only through addPlant, whose own plant supplier names a different block. Genuine NeoForge 26.2.0.93 keeps
+ // addPlant as a no-op (it checks it was asked on the empty pot and returns; only the constructors fill GameData's pot
+ // table), so natively this plant never goes into a pot: the case expects exactly that.
  private static final DeferredHolder<Block,FlowerPotBlock> POTTED_SECOND=BLOCKS.register("potted_second",()->new FlowerPotBlock(()->(FlowerPotBlock)Blocks.FLOWER_POT,()->Blocks.BEDROCK,props("potted_second")));
  private static final DeferredHolder<Item,BlockItem> MARKER_ITEM=ITEMS.register("marker",()->new BlockItem(MARKER.get(),new Item.Properties().setId(ResourceKey.create(Registries.ITEM,Identifier.fromNamespaceAndPath(ID,"marker")))));
  private static final DeferredHolder<Item,BlockItem> SECOND_ITEM=ITEMS.register("second",()->new BlockItem(SECOND.get(),new Item.Properties().setId(ResourceKey.create(Registries.ITEM,Identifier.fromNamespaceAndPath(ID,"second")))));
@@ -85,9 +88,11 @@ public final class CoremodParity {
    if(phase==Phase.MODIFY&&structure.is(BuiltinStructures.PILLAGER_OUTPOST))builder.getStructureSettings().setTerrainAdaptation(TerrainAdjustment.BURY);}
   public MapCodec<? extends StructureModifier> codec(){return MapCodec.unit(INSTANCE);}}
 
+ /** What the NeoForge listener hands the finalization, so the one finalization is seen to receive it. */
+ static final SpawnGroupData NEO_DATA=new SpawnGroupData(){};
  private static final Map<String,Object> OUT=new LinkedHashMap<>();
  private static final List<Map<String,Object>> CASES=new ArrayList<>();
- private static int neo; private static String mode="";
+ private static int neo,drowned; private static String mode=""; private static Entity drownedOutcome;
  private static MinecraftServer server; private static int ticks;
  public CoremodParity(IEventBus bus){
   BLOCKS.register(bus);ITEMS.register(bus);BIOME_MODIFIERS.register(bus);STRUCTURE_MODIFIERS.register(bus);TYPES.register(bus);
@@ -96,9 +101,12 @@ public final class CoremodParity {
   BiomeModifications.create(Identifier.fromNamespaceAndPath(ID,"cool_desert")).add(ModificationPhase.POST_PROCESSING,
    BiomeSelectors.includeByKey(Biomes.DESERT),context->context.getWeather().setTemperature(FABRIC_DESERT_TEMPERATURE));
   // Only the probe mob counts: anything a spawn brings along (a jockey, a passenger) is its own finalization.
-  NeoForge.EVENT_BUS.addListener(FinalizeSpawnEvent.class,e->{if(!(e.getEntity() instanceof SpawnProbe))return;neo++;
+  NeoForge.EVENT_BUS.addListener(FinalizeSpawnEvent.class,e->{if(!(e.getEntity() instanceof SpawnProbe))return;neo++;e.setSpawnData(NEO_DATA);
    if(mode.equals("neo-cancel"))e.setCanceled(true);if(mode.equals("neo-veto"))e.setSpawnCancelled(true);});
 
+  // NeoForge's own conversion Post, as a NeoForge mod hears it (its attachments ride this event): moved here from
+  // gate-m49's world-events probe, whose other listeners were MinecraftForge's.
+  NeoForge.EVENT_BUS.addListener(LivingConversionEvent.Post.class,e->{if(e.getEntity().entityTags().contains("m42_drown")){drowned++;drownedOutcome=e.getOutcome();}});
   NeoForge.EVENT_BUS.addListener(ServerStartedEvent.class,e->{server=e.getServer();lateWrite(server);});
   NeoForge.EVENT_BUS.addListener(ServerTickEvent.Post.class,e->{if(e.getServer()!=server||++ticks!=20)return;try{run();}finally{finish();}});
  }
@@ -134,18 +142,26 @@ public final class CoremodParity {
   test("pot.neoforge.plant",()->{Use u=use.apply(Blocks.FLOWER_POT,new ItemStack(MARKER_ITEM.get()));return expect(u.block().equals(ID+":potted_marker"),"planting a NeoForge-declared plant gave "+u);});
   test("pot.neoforge.take",()->{Use u=use.apply(POTTED_MARKER.get(),ItemStack.EMPTY);return expect(u.block().equals("minecraft:flower_pot")&&player.getInventory().countItem(MARKER_ITEM.get())==1,"taking a NeoForge-declared plant out gave "+u);});
   test("pot.neoforge.pick",()->{ItemStack s=pick.apply(POTTED_MARKER.get());return expect(s.is(MARKER_ITEM.get()),"pick-block on a NeoForge-declared pot gave "+s);});
-  test("pot.forge.addPlant",()->{Use u=use.apply(Blocks.FLOWER_POT,new ItemStack(SECOND_ITEM.get()));return expect(u.block().equals(ID+":potted_second"),"planting an addPlant-declared plant gave "+u);});
+  test("pot.neoforge.addPlantOnly",()->{Use u=use.apply(Blocks.FLOWER_POT,new ItemStack(SECOND_ITEM.get()));return expect(u.block().equals("minecraft:flower_pot")&&u.held().is(SECOND_ITEM.get())&&u.held().getCount()==1,"a plant declared only through addPlant (a no-op on NeoForge) gave "+u);});
   test("pot.neoforge.api",()->{Block full=((FlowerPotBlock)Blocks.FLOWER_POT).getFullPot(Blocks.POPPY);return expect(full==Blocks.POTTED_POPPY,"NeoForge's getFullPot(poppy) answered "+id(full));});
 
-  record Spawned(SpawnProbe mob,int neo){public String toString(){return "entity "+(mob==null?"none":mob.finalizations+" finalization(s) with "+mob.finalizedWith)+", NeoForge events "+neo;}}
+  record Spawned(SpawnProbe mob,int neo){public String toString(){return "entity "+(mob==null?"none":mob.finalizations+" finalization(s) with "+(mob.finalizedWith==NEO_DATA?"the NeoForge listener's data":mob.finalizedWith))+", NeoForge events "+neo;}}
   java.util.function.Function<String,Spawned> spawn=m->{mode=m;neo=0;SpawnProbe p=PROBE.get().spawn(level,new BlockPos(4,101,4),EntitySpawnReason.COMMAND);mode="";
    Spawned s=new Spawned(p,neo);if(p!=null)p.discard();return s;};
-  test("spawn.command",()->{Spawned s=spawn.apply("");return expect(s.mob()!=null&&s.neo()==1&&s.mob().finalizations==1,"EntityType.spawn: "+s);});
+  test("spawn.command",()->{Spawned s=spawn.apply("");return expect(s.mob()!=null&&s.neo()==1&&s.mob().finalizations==1&&s.mob().finalizedWith==NEO_DATA,"EntityType.spawn: "+s);});
   test("spawn.summon",()->{neo=0;server.getCommands().performPrefixedCommand(server.createCommandSourceStack().withSuppressedOutput(),"summon "+ID+":spawn_probe 6 101 6");
    List<SpawnProbe> found=level.getEntitiesOfClass(SpawnProbe.class,new AABB(new BlockPos(6,101,6)).inflate(2));Spawned s=new Spawned(found.isEmpty()?null:found.getFirst(),neo);found.forEach(Entity::discard);
-   return expect(s.mob()!=null&&s.neo()==1&&s.mob().finalizations==1,"/summon: "+s);});
+   return expect(s.mob()!=null&&s.neo()==1&&s.mob().finalizations==1&&s.mob().finalizedWith==NEO_DATA,"/summon: "+s);});
   test("spawn.neoCancel",()->{Spawned s=spawn.apply("neo-cancel");return expect(s.mob()!=null&&s.neo()==1&&s.mob().finalizations==0,"a NeoForge cancel (skips finalization, not the spawn): "+s);});
   test("spawn.neoVeto",()->{Spawned s=spawn.apply("neo-veto");return expect(s.mob()==null&&s.neo()==1,"a NeoForge veto: "+s);});
+  // A zombie drowning the way the game drowns one (Zombie.convertToZombieType): NeoForge's conversion Post, once.
+  test("drown.neo",()->{drowned=0;drownedOutcome=null;Mob zombie=EntityTypes.ZOMBIE.create(level,EntitySpawnReason.COMMAND);if(zombie==null)return "no zombie";
+   zombie.snapTo(8.5,101,8.5);zombie.addTag("m42_drown");if(!level.addFreshEntity(zombie))return "zombie insertion";
+   java.lang.reflect.Method convert=net.minecraft.world.entity.monster.zombie.Zombie.class.getDeclaredMethod("convertToZombieType",ServerLevel.class,EntityType.class);
+   convert.setAccessible(true);convert.invoke(zombie,level,EntityTypes.DROWNED);
+   String verdict=expect(zombie.isRemoved()&&drowned==1&&drownedOutcome!=null&&drownedOutcome.getType()==EntityTypes.DROWNED,
+    "zombie removed "+zombie.isRemoved()+", NeoForge heard the drowning "+drowned+" time(s), outcome "+drownedOutcome);
+   if(!zombie.isRemoved())zombie.discard();if(drownedOutcome!=null)drownedOutcome.discard();return verdict;});
 
   Registry<Biome> biomes=level.registryAccess().lookupOrThrow(Registries.BIOME);
   Biome plains=biomes.getValueOrThrow(Biomes.PLAINS),desert=biomes.getValueOrThrow(Biomes.DESERT);
