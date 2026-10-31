@@ -42,7 +42,7 @@ import net.forbric.kernel.transform.TransformContext;
  * ecosystem classes, applying the unified transform pipeline as each class is defined.
  *
  * <p>This replaces Fabric's Knot (and Forge's ModLauncher/securemodules) with one flat, JPMS-free loader. It is
- * child-first for the jars it owns (the merged base + the Forge/NeoForge runtime carriers + the kernel's game-side
+ * child-first for the jars it owns (the game base + the NeoForge runtime carrier + the kernel's game-side
  * runtime jar + mod jars) and parent-first for everything shared with the boot side (ASM, Mixin, logging, the
  * kernel boot classes) — see {@link DelegationPolicy}.
  *
@@ -698,7 +698,7 @@ public final class ForbricClassLoader extends URLClassLoader {
 	 * Declares which owned jars belong to exactly one loader family, so {@link LoaderProbePolicy} can answer a
 	 * guest's platform probe for the loader that guest was actually loaded as. A universal jar carrying more than one
 	 * manifest belongs to the one ecosystem {@code MultiLoaderArbiter} chose for it. Jars absent from the map — the
-	 * merged base, the Forge/NeoForge runtime carriers, MC libraries, and any jar declaring no loader at all — are
+	 * game base, the NeoForge runtime carrier, MC libraries, and any jar declaring no loader at all — are
 	 * unowned and see every probe answer yes, as before. Call once, before any class loads.
 	 */
 	public void setJarFamilies(java.util.Map<java.nio.file.Path, LoaderProbePolicy.Family> byJar) {

@@ -103,7 +103,8 @@ public final class PayloadInterop {
 	private static volatile ClassLoader mirroredLoader;
 
 	/**
-	 * Called from bytecode patched into merged {@code CustomPacketPayload$1$forbricneo.findCodec(...)}.
+	 * Called from bytecode patched into NeoForge's {@code CustomPacketPayload$1.findCodec(...)} (on the merged base, its
+	 * renamed twin {@code CustomPacketPayload$1$forbricneo}).
 	 *
 	 * @return an object implementing the live {@code net.minecraft.network.codec.StreamCodec} interface.
 	 */

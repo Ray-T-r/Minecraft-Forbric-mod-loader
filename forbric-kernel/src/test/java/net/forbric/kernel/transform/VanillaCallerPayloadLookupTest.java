@@ -20,9 +20,10 @@ import org.junit.jupiter.api.io.TempDir;
  * same fixture lookup with no protocol and no flow.
  *
  * <p>What it must do is what vanilla's own lookup does, plus what needs no protocol to know: a codec the caller handed it
- * for the id wins, an id nobody registered goes to the caller's fallback (asked once), and the registries that are not
- * keyed by protocol — NeoForge's built-in payloads, MinecraftForge's channels — still encode their own payloads. Fabric's
- * registries are one per protocol and flow, so with neither known none of them is consulted, and nothing throws.
+ * for the id wins, an id nobody registered goes to the caller's fallback (asked once), and the registry that is not
+ * keyed by protocol — NeoForge's built-in payloads — still encodes its own payloads. Fabric's registries are one per
+ * protocol and flow, so with neither known none of them is consulted, and nothing throws. The MinecraftForge stand-in
+ * stays registered and is pinned never to write: Forbric no longer consults it.
  * (The merged base never reaches this: its vanilla-shaped {@code $1} keeps vanilla's id-only lookup.)
  */
 class VanillaCallerPayloadLookupTest {
