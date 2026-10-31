@@ -56,11 +56,12 @@ import net.forbric.kernel.util.ForbricLog;
  *
  * <ul>
  *   <li>The game jar is NeoForge's patched game: its {@code Block} implements NeoForge's extension interface
- *       ({@code IBlockExtension}). Vanilla's implements none, and a jar that is not Minecraft has no {@code Block}.</li>
- *   <li>Every {@code --runtimeJar} carries NeoForge completely: the loader SPI, {@code ModContainer}, {@code FMLLoader},
- *       {@code FMLEnvironment} and NeoForge's manifest. A jar with some of that is a broken carrier; a jar with only the
- *       manifest is a NeoForge mod, which carries the same manifest; a jar with none of it is something else wearing a
- *       carrier's name.</li>
+ *       ({@code IBlockExtension}). Vanilla's implements none, and a jar that is not Minecraft has no
+ *       {@code Block}.</li>
+ *   <li>Every {@code --runtimeJar} carries NeoForge completely: the loader SPI, {@code ModContainer},
+ *       {@code FMLLoader}, {@code FMLEnvironment} and NeoForge's manifest. A jar with some of that is a broken carrier;
+ *       a jar with only the manifest is a NeoForge mod, which carries the same manifest; a jar with none of it is
+ *       something else wearing a carrier's name.</li>
  *   <li>NeoForge is carried by something this launch owns. The base and the kernel's own game side name it, so a
  *       launch without it cannot start -- that includes no {@code --runtimeJar} at all.</li>
  * </ul>
@@ -72,16 +73,17 @@ import net.forbric.kernel.util.ForbricLog;
  *
  * <h2>An install made by Forbric 0.4 or earlier</h2>
  *
- * <p>Those installs ran a MERGED base (NeoForge's and MinecraftForge's patches in one jar) with a MinecraftForge carrier
- * beside the NeoForge one. The merged base is NeoForge-patched too -- its {@code Block} implements
+ * <p>Those installs ran a MERGED base (NeoForge's and MinecraftForge's patches in one jar) with a MinecraftForge
+ * carrier beside the NeoForge one. The merged base is NeoForge-patched too -- its {@code Block} implements
  * {@code IBlockExtension} -- and its NeoForge carrier is complete, so the checks above would let it through, and this
  * kernel, which carries no MinecraftForge, would fail far away on the first MinecraftForge class the base names. So
  * an old install is recognised first, by three signals spelled here as plain strings (they must outlive the kernel's
  * own knowledge of MinecraftForge): the base's {@code Block} implements an interface under {@code net/minecraftforge/};
- * the base embeds MinecraftForge's native-reference index ({@value #OLD_FORGE_INDEX}); or a {@code --runtimeJar} (or an
- * extra {@code --gameJar}) is a complete MinecraftForge carrier ({@link #OLD_FORGE_CARRIER}). Any one of them gives
- * exactly one problem, {@link #OLD_INSTALL}, and the fix is to run the new installer over the same game directory. That
- * refusal is enforced even with {@code -Dforbric.launchInputCheck=off}: no switch makes the old game run on this kernel.
+ * the base embeds MinecraftForge's native-reference index ({@value #OLD_FORGE_INDEX}); or a {@code --runtimeJar} (or
+ * an extra {@code --gameJar}) is a complete MinecraftForge carrier ({@link #OLD_FORGE_CARRIER}). Any one of them gives
+ * exactly one problem, {@link #OLD_INSTALL}, and the fix is to run the new installer over the same game directory.
+ * That refusal is enforced even with {@code -Dforbric.launchInputCheck=off}: no switch makes the old game run on this
+ * kernel.
  *
  * <h2>What it does not catch</h2>
  *
@@ -179,7 +181,7 @@ final class LaunchInputCheck {
 	 */
 	static void require(List<Path> gameJars, List<Path> runtimeJars) {
 		String old = oldInstall(gameJars, runtimeJars);
-		List<String> problems = old != null ? List.of(old) : problems(gameJars, runtimeJars);
+		List<String> problems = old != null ? List.of(old) : currentInstallProblems(gameJars, runtimeJars);
 		if (problems.isEmpty()) return;
 
 		// An old install is refused whatever the switch says: the merged game cannot run on a kernel without
@@ -260,8 +262,11 @@ final class LaunchInputCheck {
 	 */
 	static List<String> problems(List<Path> gameJars, List<Path> runtimeJars) {
 		String old = oldInstall(gameJars, runtimeJars);
-		if (old != null) return List.of(old);
+		return old != null ? List.of(old) : currentInstallProblems(gameJars, runtimeJars);
+	}
 
+	/** {@link #problems} for inputs {@link #oldInstall} has already found no old install in. */
+	private static List<String> currentInstallProblems(List<Path> gameJars, List<Path> runtimeJars) {
 		List<String> problems = new ArrayList<>();
 		Set<Ecosystem> carried = EnumSet.noneOf(Ecosystem.class);
 

@@ -51,14 +51,14 @@ import net.forbric.kernel.TestFixtures;
 import net.forbric.kernel.TestFixtures.Fixture;
 
 /**
- * The check that the jars a launch was handed are a Forbric game, by content (issue #13), and that an install made by
- * Forbric 0.4 or earlier -- a merged base with a MinecraftForge carrier -- is refused with the one line that says how to
- * fix it.
+ * The check that the jars a launch was handed are a Forbric game, by content (issue #13), and that an install made
+ * by Forbric 0.4 or earlier -- a merged base with a MinecraftForge carrier -- is refused with the one line that says
+ * how to fix it.
  *
  * <p>The jars here are built to the check's own definition -- {@link LaunchInputCheck#markers} for a carrier, a
  * {@code Block} with NeoForge's extension interface for the base, {@link LaunchInputCheck#OLD_FORGE_CARRIER} and
- * {@link LaunchInputCheck#OLD_FORGE_INDEX} for an old install -- and the staged test at the bottom holds that definition
- * to the real artifacts, so the two cannot agree with each other while disagreeing with the game.
+ * {@link LaunchInputCheck#OLD_FORGE_INDEX} for an old install -- and the staged test at the bottom holds that
+ * definition to the real artifacts, so the two cannot agree with each other while disagreeing with the game.
  */
 @ResourceLock("system-properties")
 class LaunchInputCheckTest {
@@ -361,7 +361,8 @@ class LaunchInputCheckTest {
 				"META-INF/forbric/native-reference/NEOFORGE/index.tsv"), NEO_EXTENSION);
 
 		String problem = oldInstallProblem(List.of(indexed), List.of(neo(dir)));
-		assertTrue(problem.contains("game jar patched-mc-merged-26.2.jar embeds " + LaunchInputCheck.OLD_FORGE_INDEX), problem);
+		assertTrue(problem.contains("game jar patched-mc-merged-26.2.jar embeds " + LaunchInputCheck.OLD_FORGE_INDEX),
+				problem);
 		assertFalse(problem.contains("Block implements"), problem);
 		// NeoForge's own half of that index is no signal: only MinecraftForge's is.
 		Path neoIndex = base(dir.resolve("neo-indexed.jar"), List.of("META-INF/forbric/native-reference/NEOFORGE/index.tsv",
@@ -378,7 +379,8 @@ class LaunchInputCheckTest {
 		Path forge = forgeCarrier(dir.resolve("forge-runtime-26.2-65.0.1.jar"));
 
 		String problem = oldInstallProblem(List.of(genuine(dir)), List.of(forge, neo(dir)));
-		assertTrue(problem.contains("runtime jar forge-runtime-26.2-65.0.1.jar is a complete MinecraftForge runtime"), problem);
+		assertTrue(problem.contains("runtime jar forge-runtime-26.2-65.0.1.jar is a complete MinecraftForge runtime"),
+				problem);
 		assertFalse(problem.contains("Block implements") || problem.contains(" embeds "), problem);
 
 		assertTrue(oldInstallProblem(List.of(genuine(dir), forge), List.of(neo(dir)))

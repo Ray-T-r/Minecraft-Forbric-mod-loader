@@ -1193,8 +1193,8 @@ public final class KernelBoot {
 					+ "-loading lifecycle trigger was NOT redirected from the game base (its shape changed). "
 					+ "See LifecycleHookInjector.");
 		}
-		// gate-m17 greps this line for "the installed profile opened the base"; the wording follows the base (NeoForge's
-		// patched game since Forbric stopped merging MinecraftForge in), so the gate's pattern follows it too.
+		// gate-m17-installer.sh:340 greps this line ("it opened the merged base") and still names the old wording; C5
+		// changes its pattern to "game base". The wording follows the base: NeoForge's patched game, merged with nothing.
 		ForbricLog.info("[Forbric/Boot] game base %s entry loaded through kernel loader; lifecycle redirected to "
 				+ "the kernel — handing to vanilla boot", side.name().toLowerCase());
 
