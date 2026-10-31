@@ -22,6 +22,7 @@ import net.forbric.api.CompatibilityFindings;
 import net.forbric.api.Ecosystem;
 import net.forbric.api.ModCatalog;
 import net.forbric.kernel.discovery.ForbricModDiscoverer;
+import net.forbric.kernel.discovery.LoaderKind;
 import net.forbric.kernel.discovery.MetadataFailures;
 import net.forbric.kernel.ui.CompatibilityDecision;
 import net.forbric.kernel.ui.DialogLang;
@@ -80,10 +81,13 @@ class MinecraftForgeRefusalTest {
 		assertTrue(MetadataFailures.unsupported(forgeOnly));
 		assertFalse(MetadataFailures.unsupported(universal));
 
-		// Arbitration: refused is FORGE (never null), suppressed for everyone; the universal jar is Fabric's.
-		assertEquals(Ecosystem.FORGE, MultiLoaderArbiter.ownerOf(forgeOnly));
+		// Arbitration: refused is a claim of its own — no owner, never unowned (a library) — suppressed for everyone;
+		// the universal jar is Fabric's.
+		assertEquals(new JarClaim.Refused(LoaderKind.MINECRAFTFORGE), MultiLoaderArbiter.claimOf(forgeOnly));
+		assertNull(MultiLoaderArbiter.ownerOf(forgeOnly));
+		assertFalse(MultiLoaderArbiter.claimOf(forgeOnly).unowned(), "a refused jar is not a plain library");
 		assertTrue(MultiLoaderArbiter.refused(forgeOnly));
-		assertTrue(MultiLoaderArbiter.suppressedFor(forgeOnly, Ecosystem.FORGE));
+		for (Ecosystem family : Ecosystem.values()) assertTrue(MultiLoaderArbiter.suppressedFor(forgeOnly, family), family.name());
 		assertEquals(Ecosystem.FABRIC, MultiLoaderArbiter.ownerOf(universal));
 		assertFalse(MultiLoaderArbiter.suppressedFor(universal, Ecosystem.FABRIC));
 		assertNull(DuplicateModArbiter.claimOf(new ForbricModDiscoverer(), forgeOnly, null, new java.util.ArrayList<>()),

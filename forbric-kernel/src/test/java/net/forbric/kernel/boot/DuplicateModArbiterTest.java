@@ -366,6 +366,8 @@ class DuplicateModArbiterTest {
 
 	@Test
 	void aThreeWayContestAliasesBothLosingEcosystems() {
+		// minecraftforge in the knob is warned about and read as if it were not there (no jar is claimed by
+		// MinecraftForge in a real boot), so Fabric wins and both other claims are aliased.
 		System.setProperty("forbric.dupeIdPreference", "minecraftforge,fabric,neoforge");
 
 		Decision d = DuplicateModArbiter.arbitrate(List.of(
@@ -374,7 +376,7 @@ class DuplicateModArbiterTest {
 				claim("/mods/x-forge.jar", Ecosystem.FORGE, "x")));
 
 		assertEquals(2, d.aliases().size());
-		assertEquals(1, d.aliasesFor(Ecosystem.FABRIC).size());
+		assertEquals(0, d.aliasesFor(Ecosystem.FABRIC).size());
 		assertEquals(1, d.aliasesFor(Ecosystem.NEOFORGE).size());
 	}
 

@@ -326,11 +326,13 @@ public final class KernelDataPacks {
 		}
 		List<Path> serve = new ArrayList<>();
 		for (Path jar : jars) {
-			Ecosystem owner = MultiLoaderArbiter.ownerOf(jar);
-			if (owner != Ecosystem.NEOFORGE
-					&& owner != Ecosystem.FORGE) {
-				continue;
-			}
+			// Owned by NeoForge: a Fabric jar is served by fabric-api and a library has no mod identity. No jar is owned
+			// by MinecraftForge any more. A refused jar is served as it was while its refusal was spelled as an owner of
+			// FORGE: top-level refused jars never get here (discovery leaves them out of the mod jars), but a refused
+			// build nested in another mod is kept as that mod's library and its data/ is served. Whether it should be is
+			// Stage 4's question, not this marker's; the claim says so instead of an Ecosystem constant.
+			JarClaim claim = MultiLoaderArbiter.claimOf(jar);
+			if (claim.owner() != Ecosystem.NEOFORGE && !claim.refused()) continue;
 			if (!carriesData(jar)) continue;
 			List<String> failed = failedModsOf(jar);
 			if (failed != null) {

@@ -1676,6 +1676,7 @@ test	net.forbric.kernel.runtime.KernelFabricFluidBehaviorsTest	minecraftForgesFa
 test	net.forbric.kernel.runtime.KernelFabricFluidBehaviorsTest	offReportsNoBehaviourType()	[fixture:third-party] sweep pack absent
 test	net.forbric.kernel.runtime.KernelFabricFluidBehaviorsTest	withoutFabricApiNoTagHasAType()	[fixture:third-party] sweep pack absent
 test	net.forbric.kernel.runtime.KernelFeatureFlagsTest	aDeclaredFlagIsRegisteredAndAForeignOneIsNot(Path)	[fixture:staged] the staged artifacts are absent: $ROOT/forbric-loader/run/neoforge-runtime/neoforge-runtime.jar
+test	net.forbric.kernel.runtime.KernelFeatureFlagsTest	aRefusedJarRegistersNoFlag(Path)	[fixture:staged] the staged artifacts are absent: $ROOT/forbric-loader/run/neoforge-runtime/neoforge-runtime.jar
 test	net.forbric.kernel.runtime.KernelFeatureFlagsTest	switchedOffNothingIsRegistered(Path)	[fixture:staged] the staged artifacts are absent: $ROOT/forbric-loader/run/neoforge-runtime/neoforge-runtime.jar
 test	net.forbric.kernel.runtime.KernelFinalizeSpawnTest	aMinecraftForgeCancelAtTheTrialSpawnerCancelsNeoForgesEvent()	[fixture:staged] staged artifact absent: $ROOT/forbric-loader/run/neoforge-runtime/neoforge-runtime.jar
 test	net.forbric.kernel.runtime.KernelFinalizeSpawnTest	aMinecraftForgeCancelSkipsTheFinalization()	[fixture:staged] staged artifact absent: $ROOT/forbric-loader/run/neoforge-runtime/neoforge-runtime.jar

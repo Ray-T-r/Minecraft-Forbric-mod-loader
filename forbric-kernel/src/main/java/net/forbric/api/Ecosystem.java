@@ -102,4 +102,20 @@ public enum Ecosystem {
 			default -> null;
 		};
 	}
+
+	/**
+	 * Whether a user- or manifest-supplied name means traditional MinecraftForge, in any of the spellings
+	 * {@link #parse(String)} accepts for it.
+	 *
+	 * <p>Forbric no longer loads MinecraftForge mods, so a knob or a file that names it is warned about and the entry
+	 * read as absent — {@code -Dforbric.multiLoaderPreference}, {@code -Dforbric.dupeIdPreference},
+	 * {@code -Dforbric.nestedDupePreference}, {@code -Dforbric.modOwner} and the player's {@code forbric-mods.txt}. They
+	 * ask this, by the name itself, rather than compare what {@code parse} returns with a constant: the warning has to
+	 * say "no longer supported" whatever this type comes to hold, not "unknown ecosystem".
+	 */
+	public static boolean namesMinecraftForge(String raw) {
+		if (raw == null) return false;
+		String s = raw.trim().toLowerCase(Locale.ROOT);
+		return s.equals("forge") || s.equals("minecraftforge");
+	}
 }

@@ -1574,12 +1574,14 @@ public final class KernelBoot {
 			for (Path jar : group) {
 				if (families.containsKey(jar)) continue;
 
-				Ecosystem owner = MultiLoaderArbiter.ownerOf(jar);
-				if (owner == null) continue;
+				JarClaim claim = MultiLoaderArbiter.claimOf(jar);
+				if (claim.unowned()) continue;
 
 				// One for one with the arbitrated ecosystem. It used to collapse both Forge families into one
 				// constant, which told a NeoForge-only mod that traditional MinecraftForge's loader class exists.
-				families.put(jar, LoaderProbePolicy.familyOf(owner));
+				// A refused jar loads nothing, but its file is still a MinecraftForge build's, and probes as one.
+				families.put(jar, claim instanceof JarClaim.Refused refused
+						? LoaderProbePolicy.familyOfLoader(refused.loader()) : LoaderProbePolicy.familyOf(claim.owner()));
 			}
 		}
 		return families;
@@ -1590,7 +1592,9 @@ public final class KernelBoot {
 		java.util.Set<Path> universal = new java.util.LinkedHashSet<>();
 		for (List<Path> group : List.of(fabricJars, modJars)) {
 			for (Path jar : group) {
-				if (MultiLoaderArbiter.declaredBy(jar).size() > 1 && MultiLoaderArbiter.ownerOf(jar) != null) universal.add(jar);
+				if (MultiLoaderArbiter.declaredBy(jar).size() > 1 && !MultiLoaderArbiter.claimOf(jar).unowned()) {
+					universal.add(jar);
+				}
 			}
 		}
 		return universal;

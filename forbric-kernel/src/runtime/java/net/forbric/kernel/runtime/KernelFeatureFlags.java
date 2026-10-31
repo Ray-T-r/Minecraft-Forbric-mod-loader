@@ -84,8 +84,8 @@ public final class KernelFeatureFlags {
 		List<String> registered = new ArrayList<>();
 		int jarsWithFlags = 0;
 		for (Path jar : jars.get()) {
-			Ecosystem owner = MultiLoaderArbiter.ownerOf(jar);
-			if (owner != null && owner != Ecosystem.NEOFORGE) continue;
+			// Another family's jar, or a refused one, declares no flag NeoForge would register; a plain library is read.
+			if (MultiLoaderArbiter.suppressedFor(jar, Ecosystem.NEOFORGE)) continue;
 			List<String> fromJar = register(builder, jar);
 			if (fromJar == null) continue;
 			jarsWithFlags++;

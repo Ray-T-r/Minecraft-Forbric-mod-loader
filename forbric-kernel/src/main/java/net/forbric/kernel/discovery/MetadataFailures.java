@@ -69,6 +69,8 @@ public final class MetadataFailures {
 	/**
 	 * One manifest that could not be read, or one MinecraftForge half that will not be loaded. {@code modIds} is empty
 	 * when the file did not even parse; {@code name} is the display name the manifest gives, when there is one.
+	 * {@code ecosystem} is the family whose manifest failed, and {@code null} for a refusal: no ecosystem loads a
+	 * MinecraftForge half, so a refused jar is never filed under one — {@link #loader()} names its half instead.
 	 */
 	public record Failure(Path jar, Ecosystem ecosystem, String manifest, List<String> modIds, String message, Kind kind,
 			String name) {
@@ -85,16 +87,22 @@ public final class MetadataFailures {
 
 		/** The refusal of a jar {@link LoaderHalfJudge} found has nothing but a MinecraftForge half to load through. */
 		static Failure unsupported(Path jar, LoaderHalfJudge.Verdict verdict) {
-			List<String> ids = verdict.half(Ecosystem.FORGE).map(LoaderHalfJudge.Half::modIds).orElse(List.of());
-			return new Failure(jar, Ecosystem.FORGE, LoaderHalfJudge.FORGE_MANIFEST,
+			List<String> ids = verdict.half(LoaderKind.MINECRAFTFORGE).map(LoaderHalfJudge.Half::modIds).orElse(List.of());
+			return new Failure(jar, null, LoaderHalfJudge.FORGE_MANIFEST,
 					ids.isEmpty() ? List.of(verdict.modId()) : ids, verdict.describe(), Kind.UNSUPPORTED,
 					verdict.displayName());
+		}
+
+		/** The half that failed: the failed family's, or {@link LoaderKind#MINECRAFTFORGE} for every refusal. */
+		public LoaderKind loader() {
+			return kind == Kind.UNSUPPORTED ? LoaderKind.MINECRAFTFORGE : LoaderKind.of(ecosystem);
 		}
 	}
 
 	/**
 	 * A jar nothing could load because its loading family's manifest failed, or because it is a MinecraftForge build
-	 * Forbric refuses; the catalogue gives it a row, shown as {@code name}.
+	 * Forbric refuses; the catalogue gives it a row, shown as {@code name}. As in {@link Failure}, {@code ecosystem} is
+	 * {@code null} for a refusal ({@link Kind#UNSUPPORTED}).
 	 */
 	public record Lost(Path jar, Ecosystem ecosystem, String modId, String name, String detail, Kind kind) {
 		public Lost(Path jar, Ecosystem ecosystem, String modId, String detail) {
@@ -105,7 +113,7 @@ public final class MetadataFailures {
 	/** The finding id every refused MinecraftForge jar carries, on the mod's own id. */
 	public static final String UNSUPPORTED_FINDING = "unsupported:minecraftforge";
 
-	private static final Map<Path, Map<Ecosystem, Failure>> FAILURES = new ConcurrentHashMap<>();
+	private static final Map<Path, Map<LoaderKind, Failure>> FAILURES = new ConcurrentHashMap<>();
 	private static final Set<Path> INSPECTED = ConcurrentHashMap.newKeySet();
 	private static final List<Lost> LOST = new java.util.concurrent.CopyOnWriteArrayList<>();
 	/**
@@ -123,10 +131,10 @@ public final class MetadataFailures {
 
 	/** Remembers {@code failure}; warns the first time this jar and family fail, not once per pass that reads it. */
 	public static void record(Failure failure) {
-		Map<Ecosystem, Failure> byFamily = FAILURES.computeIfAbsent(failure.jar(), k -> new EnumMap<>(Ecosystem.class));
+		Map<LoaderKind, Failure> byFamily = FAILURES.computeIfAbsent(failure.jar(), k -> new EnumMap<>(LoaderKind.class));
 		Failure previous;
 		synchronized (byFamily) {
-			previous = byFamily.putIfAbsent(failure.ecosystem(), failure);
+			previous = byFamily.putIfAbsent(failure.loader(), failure);
 		}
 		if (previous == null && failure.kind() == Kind.UNSUPPORTED) {
 			ForbricLog.warn("[Forbric/Unsupported] refusing %s (%s): it is a MinecraftForge mod with no usable Fabric or "
@@ -164,15 +172,15 @@ public final class MetadataFailures {
 	}
 
 	public static boolean failed(Path jar, Ecosystem ecosystem) {
-		Map<Ecosystem, Failure> byFamily = FAILURES.get(key(jar));
+		Map<LoaderKind, Failure> byFamily = FAILURES.get(key(jar));
 		if (byFamily == null) return false;
 		synchronized (byFamily) {
-			return byFamily.containsKey(ecosystem);
+			return byFamily.containsKey(LoaderKind.of(ecosystem));
 		}
 	}
 
 	public static List<Failure> of(Path jar) {
-		Map<Ecosystem, Failure> byFamily = FAILURES.get(key(jar));
+		Map<LoaderKind, Failure> byFamily = FAILURES.get(key(jar));
 		if (byFamily == null) return List.of();
 		synchronized (byFamily) {
 			return List.copyOf(byFamily.values());
@@ -182,13 +190,14 @@ public final class MetadataFailures {
 	public static List<Failure> all() {
 		List<Failure> all = new ArrayList<>();
 		for (Path jar : FAILURES.keySet()) all.addAll(of(jar));
-		all.sort(Comparator.comparing((Failure f) -> f.jar().toString()).thenComparing(Failure::ecosystem));
+		all.sort(Comparator.comparing((Failure f) -> f.jar().toString()).thenComparing(Failure::loader));
 		return all;
 	}
 
 	/**
 	 * The families of {@code jar} whose manifest failed, reading the jar first if no pass has yet. A caller that
-	 * arbitrates between a jar's families (MultiLoaderArbiter) can run before discovery has opened that jar.
+	 * arbitrates between a jar's families (MultiLoaderArbiter) can run before discovery has opened that jar. A refusal
+	 * is not a family's failure and is not among them: ask {@link #unsupported(Path)}.
 	 */
 	public static Set<Ecosystem> failedFamilies(Path jar) {
 		if (INSPECTED.add(key(jar))) {
@@ -200,7 +209,9 @@ public final class MetadataFailures {
 			}
 		}
 		Set<Ecosystem> failed = java.util.EnumSet.noneOf(Ecosystem.class);
-		for (Failure failure : of(jar)) failed.add(failure.ecosystem());
+		for (Failure failure : of(jar)) {
+			if (failure.ecosystem() != null) failed.add(failure.ecosystem());
+		}
 		return failed;
 	}
 
@@ -309,13 +320,13 @@ public final class MetadataFailures {
 					+ "without stopping anything", file, modId, suppliedBy.getFileName());
 		}
 		if (loss && LOST.stream().noneMatch(l -> l.jar().equals(failure.jar()))) {
-			LOST.add(new Lost(failure.jar(), Ecosystem.FORGE, modId, name, detail, Kind.UNSUPPORTED));
+			LOST.add(new Lost(failure.jar(), null, modId, name, detail, Kind.UNSUPPORTED));
 		}
 		CompatibilityFindings.record(new CompatibilityFinding(UNSUPPORTED_FINDING, modId,
 				lang.get("unsupported.forge.feature"), "ForbricModDiscoverer " + failure.manifest(),
 				loss ? CompatibilityFinding.Confidence.CONFIRMED : CompatibilityFinding.Confidence.SUSPECTED,
 				loss, detail,
-				List.of("jar=" + file, "manifest=" + failure.manifest(), "family=" + failure.ecosystem(),
+				List.of("jar=" + file, "manifest=" + failure.manifest(), "family=" + failure.loader().spelling(),
 						suppliedBy == null ? "loads=nothing" : "loads=" + suppliedBy.getFileName(),
 						"unsupported=minecraftforge", installed ? "installed=mods" : "installed=bundled",
 						failure.message())));

@@ -20,6 +20,7 @@ import java.util.Map;
 
 import net.forbric.api.Ecosystem;
 import net.forbric.api.ForeignType;
+import net.forbric.kernel.discovery.LoaderKind;
 import net.forbric.kernel.util.ForbricLog;
 
 /**
@@ -105,6 +106,16 @@ public final class LoaderProbePolicy {
 		return switch (ecosystem) {
 			case FABRIC -> Family.FABRIC;
 			case FORGE -> Family.FORGE;
+			case NEOFORGE -> Family.NEOFORGE;
+		};
+	}
+
+	/** The {@link Family} for the loader a jar's manifest is written for — a refused jar's MinecraftForge among them. */
+	public static Family familyOfLoader(LoaderKind loader) {
+		if (loader == null) return null;
+		return switch (loader) {
+			case FABRIC -> Family.FABRIC;
+			case MINECRAFTFORGE -> Family.FORGE;
 			case NEOFORGE -> Family.NEOFORGE;
 		};
 	}
