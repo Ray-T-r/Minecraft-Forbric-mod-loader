@@ -13,14 +13,11 @@ import org.objectweb.asm.tree.*;
  * interaction tracks, goes on to NeoForge's answer; any other answers false.
  *
  * <p>"Tracks" is asked of {@code EntityFluidInteraction} itself, through {@code forbric$tracksTag(TagKey)}, which this
- * adds to that class. On the merged base the interaction is MinecraftForge's, which keeps a tracker per tag and answers
- * {@code getTracker(TagKey)}, so the method returns {@code getTracker(tag) != null} — exactly the query the
- * {@code Entity} guard used to make inline. NeoForge's interaction keeps trackers per fluid type and has no
- * {@code getTracker}: there no tag is tracked and the method returns false, so only the kernel's types go on. The
- * {@code Entity} guard used to call {@code getTracker} directly, which on the genuine NeoForge base is a reference to
- * nothing — a {@code NoSuchMethodError} on the first untracked query. {@code Entity} is edited without seeing
- * {@code EntityFluidInteraction}, so the method goes into that class whenever it is transformed, whatever else stands
- * down there; the {@code Entity} edit can then never point at what the game lacks.
+ * adds to that class. NeoForge's interaction keeps trackers per fluid type, not per tag, so no tag is tracked and the
+ * method returns false: only the kernel's types go on. (MinecraftForge's interaction kept a tracker per tag, and the
+ * method answered its {@code getTracker(TagKey)}; that half went with MinecraftForge.) {@code Entity} is edited without
+ * seeing {@code EntityFluidInteraction}, so the method goes into that class whenever it is transformed, whatever else
+ * stands down there; the {@code Entity} edit can then never point at what the game lacks.
  */
 public final class UntrackedFluidEyeQueryInjector implements ClassTransformer {
     public static final String PROPERTY = "forbric.untrackedFluidEyes";
@@ -31,7 +28,6 @@ public final class UntrackedFluidEyeQueryInjector implements ClassTransformer {
     static final String DESC = "(" + TAG + ")Z";
     /** Whether the interaction keeps a tracker for a tag; added to {@code EntityFluidInteraction}, asked by {@code Entity}. */
     static final String TRACKS_TAG = "forbric$tracksTag";
-    static final String GET_TRACKER_DESC = "(" + TAG + ")L" + OWNER + "$Tracker;";
     @Override public String name() { return "forbric-untracked-fluid-eyes"; }
     private static boolean enabled() { return !"off".equalsIgnoreCase(System.getProperty(PROPERTY, "on")); }
     @Override public AnchorSet anchors() {
@@ -49,23 +45,11 @@ public final class UntrackedFluidEyeQueryInjector implements ClassTransformer {
         ClassWriter writer = new ClassWriter(ClassWriter.COMPUTE_MAXS); node.accept(writer); return writer.toByteArray();
     }
 
-    /**
-     * {@code public boolean forbric$tracksTag(TagKey tag)}: {@code Objects.nonNull(getTracker(tag))} where the class
-     * declares MinecraftForge's per-tag {@code getTracker}, else {@code false}. Added when absent.
-     */
+    /** {@code public boolean forbric$tracksTag(TagKey tag)}: {@code false}, NeoForge tracking no tag. Added when absent. */
     static boolean addTracksTag(ClassNode node) {
         for (MethodNode m : node.methods) if (m.name.equals(TRACKS_TAG) && m.desc.equals(DESC)) return false;
-        boolean perTag = node.methods.stream().anyMatch(m -> m.name.equals("getTracker") && m.desc.equals(GET_TRACKER_DESC)
-                && (m.access & Opcodes.ACC_STATIC) == 0);
         MethodNode tracks = new MethodNode(Opcodes.ACC_PUBLIC | Opcodes.ACC_SYNTHETIC, TRACKS_TAG, DESC, null, null);
-        if (perTag) {
-            tracks.instructions.add(new VarInsnNode(Opcodes.ALOAD, 0));
-            tracks.instructions.add(new VarInsnNode(Opcodes.ALOAD, 1));
-            tracks.instructions.add(new MethodInsnNode(Opcodes.INVOKEVIRTUAL, OWNER, "getTracker", GET_TRACKER_DESC, false));
-            tracks.instructions.add(new MethodInsnNode(Opcodes.INVOKESTATIC, "java/util/Objects", "nonNull", "(Ljava/lang/Object;)Z", false));
-        } else {
-            tracks.instructions.add(new InsnNode(Opcodes.ICONST_0));
-        }
+        tracks.instructions.add(new InsnNode(Opcodes.ICONST_0));
         tracks.instructions.add(new InsnNode(Opcodes.IRETURN));
         node.methods.add(tracks);
         return true;

@@ -30,7 +30,7 @@ class UntrackedFluidEyeQueryInjectorTest {
                 assertTrue(java.util.Arrays.stream(method.instructions.toArray()).anyMatch(i -> i instanceof MethodInsnNode c && c.name.equals("containsKey")));
                 assertTrue(java.util.Arrays.stream(method.instructions.toArray()).anyMatch(i -> i instanceof MethodInsnNode c && c.name.equals("getFluidTypeByTag")), "registered trackers keep their native path");
                 MethodNode tracks = tracksTag(node);
-                assertTrue(calls(tracks, "getTracker"), "on the merged base a tracked tag is MinecraftForge's per-tag tracker, as the guard asked inline before");
+                assertFalse(calls(tracks, "getTracker"), "the interaction answers no tracked tag of its own, as NeoForge's tracks none");
                 new Analyzer<>(new BasicVerifier()).analyze(node.name, tracks);
             } else {
                 assertTrue(calls(method, UntrackedFluidEyeQueryInjector.TRACKS_TAG), "the entity asks its interaction whether the tag is tracked");
@@ -76,7 +76,8 @@ class UntrackedFluidEyeQueryInjectorTest {
         ClassNode node = node(bytes);
         for (MethodNode m : node.methods) for (AbstractInsnNode i : m.instructions.toArray()) {
             if (i instanceof MethodInsnNode c && c.name.equals(UntrackedFluidEyeQueryInjector.TRACKS_TAG)) {
-                m.instructions.set(c, new MethodInsnNode(Opcodes.INVOKEVIRTUAL, c.owner, "getTracker", UntrackedFluidEyeQueryInjector.GET_TRACKER_DESC, false));
+                m.instructions.set(c, new MethodInsnNode(Opcodes.INVOKEVIRTUAL, c.owner, "getTracker",
+						"(Lnet/minecraft/tags/TagKey;)L" + UntrackedFluidEyeQueryInjector.OWNER + "$Tracker;", false));
             }
         }
         org.objectweb.asm.ClassWriter w = new org.objectweb.asm.ClassWriter(0); node.accept(w); return w.toByteArray();

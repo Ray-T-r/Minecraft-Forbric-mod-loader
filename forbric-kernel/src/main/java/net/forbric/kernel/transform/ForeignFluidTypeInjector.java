@@ -12,37 +12,33 @@ import net.forbric.kernel.util.ForbricLog;
 public final class ForeignFluidTypeInjector implements ClassTransformer {
     public static final String PROPERTY="forbric.foreignFluidTypes";
     static final String FLUID="net.minecraft.world.level.material.Fluid",FLUID_INTERNAL=FLUID.replace('.','/');
-    static final String TYPE=ForeignType.FLUID_TYPE.internal(Ecosystem.NEOFORGE),FORGE_TYPE=ForeignType.FLUID_TYPE.internal(Ecosystem.FORGE);
+    static final String TYPE=ForeignType.FLUID_TYPE.internal(Ecosystem.NEOFORGE);
     static final String RUNTIME="net/forbric/kernel/runtime/KernelFluidTypes",SCOPES="net/forbric/api/LookupOutcomes";
-    static final String NEO_HOOKS="net/neoforged/neoforge/common/CommonHooks",FORGE_HOOKS="net/minecraftforge/common/ForgeHooks";
+    static final String NEO_HOOKS="net/neoforged/neoforge/common/CommonHooks";
     private static final Set<String> REPORTED=java.util.concurrent.ConcurrentHashMap.newKeySet();
     static boolean enabled(){return !"off".equalsIgnoreCase(System.getProperty(PROPERTY,"on"));}
     @Override public String name(){return "forbric-foreign-fluid-types";}
     @Override public AnchorSet anchors(){return !enabled()?AnchorSet.scanned("foreign fluid lookups disabled with -D"+PROPERTY):AnchorSet.of(new AnchorSet.Anchor(FLUID,AnchorSet.Severity.REQUIRED,"foreign fluid types require an uncached fallback for each retained SDK getter"));}
     @Override public byte[] transform(String binary,byte[] bytes,TransformContext context){
         if(!enabled()||bytes==null||bytes.length==0)return bytes;String owner=binary.replace('.','/');
-        if(!owner.equals(FLUID_INTERNAL)&&!owner.equals(NEO_HOOKS)&&!owner.equals(FORGE_HOOKS))return bytes;
+        if(!owner.equals(FLUID_INTERNAL)&&!owner.equals(NEO_HOOKS))return bytes;
         ClassNode node=new ClassNode();new ClassReader(bytes).accept(node,ClassReader.EXPAND_FRAMES);int changed;
-        if(owner.equals(FLUID_INTERNAL))changed=repair(node);else changed=unsupportedDefault(node,owner.equals(NEO_HOOKS)?TYPE:FORGE_TYPE,owner.equals(NEO_HOOKS)?"foreignNeoLookup":"foreignForgeLookup");
+        if(owner.equals(FLUID_INTERNAL))changed=repair(node);else changed=unsupportedDefault(node,TYPE,"foreignNeoLookup");
         if(changed==0)return bytes;ClassWriter out=new ClassWriter(ClassWriter.COMPUTE_MAXS);node.accept(out);
         if(REPORTED.add(owner))ForbricLog.info("[Forbric/Fluid] %s: %d source-proved fluid-type lookup/cache contract(s) repaired — a fluid with no type of "
                 +"a platform's own gets the one its fluid tags imply, instead of \"Mod fluids must override getFluidType\"",binary,changed);
         return out.toByteArray();
     }
     static int repair(ClassNode fluid){
-        int changed=0;for(String type:List.of(TYPE,FORGE_TYPE)){MethodNode getter=find(fluid,"getFluidType","()L"+type+";");if(getter!=null&&cacheScope(fluid,getter,type))changed++;}
-        // Older merged inputs omitted the concrete Forge getter. Preserve its actual public lookup, without a cache.
-        if(find(fluid,"getFluidType","()L"+FORGE_TYPE+";")==null&&fluid.interfaces.contains("net/minecraftforge/common/extensions/IForgeFluid")){
-            MethodNode getter=new MethodNode(Opcodes.ACC_PUBLIC,"getFluidType","()L"+FORGE_TYPE+";",null,null);getter.instructions.add(new VarInsnNode(Opcodes.ALOAD,0));getter.instructions.add(new MethodInsnNode(Opcodes.INVOKESTATIC,FORGE_HOOKS,"getVanillaFluidType","(L"+FLUID_INTERNAL+";)L"+FORGE_TYPE+";",false));getter.instructions.add(new InsnNode(Opcodes.ARETURN));getter.maxLocals=1;getter.maxStack=1;fluid.methods.add(getter);changed++;
-        }return changed;
+        MethodNode getter=find(fluid,"getFluidType","()L"+TYPE+";");return getter!=null&&cacheScope(fluid,getter,TYPE)?1:0;
     }
-    /** Both families have the same public cache contract; private field names and exception text are irrelevant. */
+    /** NeoForge's public cache contract; private field names and exception text are irrelevant. */
     private static boolean cacheScope(ClassNode owner,MethodNode method,String type){
         if((method.access&(Opcodes.ACC_STATIC|Opcodes.ACC_ABSTRACT|Opcodes.ACC_NATIVE|Opcodes.ACC_SYNCHRONIZED))!=0||!method.tryCatchBlocks.isEmpty())return false;
         List<AbstractInsnNode> code=real(method);if(code.size()!=10)return false;
         if(!load(code.get(0),0)||!(code.get(1)instanceof FieldInsnNode first)||first.getOpcode()!=Opcodes.GETFIELD||!first.owner.equals(owner.name)||!first.desc.equals("L"+type+";")
             ||!(code.get(2)instanceof JumpInsnNode cached)||cached.getOpcode()!=Opcodes.IFNONNULL||!load(code.get(3),0)||!load(code.get(4),0)
-            ||!(code.get(5)instanceof MethodInsnNode lookup)||lookup.getOpcode()!=Opcodes.INVOKESTATIC||!lookup.name.equals("getVanillaFluidType")||!lookup.owner.equals(type.equals(TYPE)?NEO_HOOKS:FORGE_HOOKS)||!lookup.desc.equals("(L"+FLUID_INTERNAL+";)L"+type+";")
+            ||!(code.get(5)instanceof MethodInsnNode lookup)||lookup.getOpcode()!=Opcodes.INVOKESTATIC||!lookup.name.equals("getVanillaFluidType")||!lookup.owner.equals(NEO_HOOKS)||!lookup.desc.equals("(L"+FLUID_INTERNAL+";)L"+type+";")
             ||!(code.get(6)instanceof FieldInsnNode write)||write.getOpcode()!=Opcodes.PUTFIELD||!same(first,write)||!load(code.get(7),0)
             ||!(code.get(8)instanceof FieldInsnNode last)||last.getOpcode()!=Opcodes.GETFIELD||!same(first,last)||code.get(9).getOpcode()!=Opcodes.ARETURN||next(cached.label)!=code.get(7))return false;
         int flag=method.maxLocals,value=flag+1;LabelNode nativeCache=new LabelNode(),shared=new LabelNode(),nativeAnswer=new LabelNode(),answer=new LabelNode();

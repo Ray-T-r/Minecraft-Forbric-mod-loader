@@ -26,8 +26,8 @@ class CoremodRepairInjectorsTest {
 	private static final Path VANILLA = TestFixtures.vanillaJar();
 
 	@AfterEach void reset() {
-		for (String key : List.of(NativeCoremodParity.PROPERTY, NativeCoremodParity.FLOWER_POT, NativeCoremodParity.BIOME,
-				LiquidBlockFluidInjector.PROPERTY)) System.clearProperty(key);
+		for (String key : List.of(NativeCoremodParity.PROPERTY, NativeCoremodParity.FLOWER_POT, NativeCoremodParity.BIOME))
+			System.clearProperty(key);
 	}
 
 	@Test void theFlowerPotStoresItsPlantLooksUpEveryFamilyAndRecordsAddPlant() throws Exception {
@@ -59,42 +59,6 @@ class CoremodRepairInjectorsTest {
 		System.setProperty(NativeCoremodParity.FLOWER_POT, "off");
 		byte[] merged = NativeCoremodParityTest.read(MERGED, FlowerPotRepairInjector.OWNER);
 		assertSame(merged, new FlowerPotRepairInjector().transform(FlowerPotRepairInjector.TARGET, merged, null));
-	}
-
-	/**
-	 * Read from the staged base, exact both ways: where one of its constructors leaves the supplier unfilled the getter
-	 * is repaired to read the field first; where every constructor fills it (a both-edits merge) the repair stands by.
-	 * Either way the claim is met, and the stand-by is only taken where this test's own reading agrees.
-	 */
-	@Test void theLiquidBlocksGetterReadsTheFieldBeforeTheSupplier() throws Exception {
-		byte[] original = NativeCoremodParityTest.read(MERGED, LiquidBlockFluidInjector.OWNER);
-		List<String> hits = new java.util.ArrayList<>();
-		byte[] out = new LiquidBlockFluidInjector().transform(LiquidBlockFluidInjector.TARGET, original, null, hits::add);
-		assertEquals(List.of(LiquidBlockFluidInjector.CLAIM), hits, "the getter answers every liquid once through");
-		boolean everyConstructorFills = true;
-		for (MethodNode init : node(original).methods) {
-			if (!init.name.equals("<init>")) continue;
-			boolean delegates = find(init, MethodInsnNode.class, c -> c.getOpcode() == Opcodes.INVOKESPECIAL
-					&& c.owner.equals(LiquidBlockFluidInjector.OWNER) && c.name.equals("<init>")) != null;
-			FieldInsnNode put = find(init, FieldInsnNode.class, f -> f.getOpcode() == Opcodes.PUTFIELD && f.name.equals("supplier"));
-			AbstractInsnNode value = put == null ? null : put.getPrevious();
-			while (value != null && value.getOpcode() < 0) value = value.getPrevious();
-			if (!delegates && (put == null || value.getOpcode() == Opcodes.ACONST_NULL)) everyConstructorFills = false;
-		}
-		if (everyConstructorFills) {
-			assertSame(original, out, "every constructor of the staged LiquidBlock fills the supplier: nothing to repair");
-			return;
-		}
-		assertNotSame(original, out);
-		MethodNode getter = method(node(out), "getFluid", "()L" + LiquidBlockFluidInjector.FLUID + ";");
-		List<AbstractInsnNode> real = java.util.Arrays.stream(getter.instructions.toArray()).filter(i -> i.getOpcode() >= 0).toList();
-		assertTrue(real.get(1) instanceof FieldInsnNode f && f.name.equals("fluid"), "the field first");
-		assertTrue(real.get(3) instanceof JumpInsnNode j && j.getOpcode() == Opcodes.IFNONNULL);
-		assertNotNull(find(getter, FieldInsnNode.class, f -> f.name.equals("supplier")), "then the supplier");
-		new Analyzer<>(new BasicVerifier()).analyze(LiquidBlockFluidInjector.OWNER, getter);
-		assertSame(out, new LiquidBlockFluidInjector().transform(LiquidBlockFluidInjector.TARGET, out, null), "a second pass changes nothing");
-		System.setProperty(LiquidBlockFluidInjector.PROPERTY, "off");
-		assertSame(original, new LiquidBlockFluidInjector().transform(LiquidBlockFluidInjector.TARGET, original, null));
 	}
 
 	@Test void neoForgesBiomePassStartsFromTheBiomesCurrentInfo() throws Exception {
@@ -141,26 +105,6 @@ class CoremodRepairInjectorsTest {
 		assertEquals(16, views - before);
 		System.setProperty(NativeCoremodParity.BIOME, "off");
 		assertSame(original, new BiomeLateWriteInjector().transform(BiomeLateWriteInjector.TARGET, original, null));
-	}
-
-	/**
-	 * The coremod master switch leaves the liquid repair on; only its own switch turns it off. It is a merge repair, not
-	 * one of NeoForge's coremods, and on a base that needs it the game cannot start without it: Blocks.<clinit> asks a
-	 * liquid block for its fluid, so -Dforbric.coremodParity=off used to take the whole boot down with it, and
-	 * gate-m42's off phase -- which exists to show every coremod repair failing -- had no server to show it on.
-	 */
-	@Test void theMasterSwitchLeavesTheLiquidRepairOnAndOnlyItsOwnSwitchTurnsItOff() throws Exception {
-		byte[] original = NativeCoremodParityTest.read(MERGED, LiquidBlockFluidInjector.OWNER);
-		System.setProperty(NativeCoremodParity.PROPERTY, "off");
-		// Judged by the claim, not by changed bytes: on a base whose constructors all fill the supplier the repair still
-		// runs and stands by (theLiquidBlocksGetterReadsTheFieldBeforeTheSupplier holds which one this base is).
-		List<String> hits = new java.util.ArrayList<>();
-		new LiquidBlockFluidInjector().transform(LiquidBlockFluidInjector.TARGET, original, null, hits::add);
-		assertEquals(List.of(LiquidBlockFluidInjector.CLAIM), hits, "the master switch does not reach the liquid repair");
-		System.setProperty(LiquidBlockFluidInjector.PROPERTY, "off");
-		hits.clear();
-		assertSame(original, new LiquidBlockFluidInjector().transform(LiquidBlockFluidInjector.TARGET, original, null, hits::add));
-		assertEquals(List.of(), hits, "its own switch turns it off");
 	}
 
 	private static <T extends AbstractInsnNode> T find(MethodNode m, Class<T> type, java.util.function.Predicate<T> test) {

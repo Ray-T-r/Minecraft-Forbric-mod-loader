@@ -359,13 +359,6 @@ public final class KernelRuntimeClasses {
 		// Asked by the merged Fluid.getFluidType() (ForeignFluidTypeInjector) before NeoForge's throwing lookup, and by
 		// EntityFluidInteraction.getFluidTypeByTag before its throw (FabricFluidBehaviorInjector).
 		CLASSES.put("net.forbric.kernel.runtime.KernelFluidTypes", new Entry(Origin.COMPILED, List.of()));
-		// MinecraftForge's half of EntityFluidInteraction.update and its queries (ForgeEntityFluidsInjector): called from the
-		// merged class's constructor, update and query bodies, with game types no boot-side descriptor can name.
-		CLASSES.put("net.forbric.kernel.runtime.KernelForgeEntityFluids", new Entry(Origin.COMPILED, List.of()));
-		// Asked by the predicates of Player.updateIsUnderwater and Entity.isInShallowWater (ForgeFluidWaterRulesInjector).
-		CLASSES.put("net.forbric.kernel.runtime.KernelForgeFluidTypeViews", new Entry(Origin.COMPILED, List.of()));
-		// Asked first thing in NeoForge's IClientFluidTypeExtensions.of(FluidType) (ForgeFluidViewExtensionsInjector).
-		CLASSES.put("net.forbric.kernel.runtime.KernelForgeFluidClientViews", new Entry(Origin.COMPILED, List.of()));
 		CLASSES.put("net.forbric.kernel.runtime.KernelFabricTagViews", new Entry(Origin.COMPILED, List.of()));
 		CLASSES.put("net.forbric.kernel.runtime.KernelTagFacadeSources", new Entry(Origin.COMPILED, List.of()));
 		// Asked by NeoForge's breathing hook where it would hold the air of a body that breathes in its fluid (VanillaAirRefillInjector),
@@ -379,12 +372,6 @@ public final class KernelRuntimeClasses {
 		CLASSES.put("net.forbric.kernel.runtime.KernelSharedPredicateScopes", new Entry(Origin.COMPILED, List.of()));
 		CLASSES.put("net.forbric.kernel.runtime.KernelFluidPredicateIslands", new Entry(Origin.COMPILED, List.of()));
 		CLASSES.put("net.forbric.kernel.runtime.KernelSourceDecodeScopes", new Entry(Origin.COMPILED, List.of()));
-		// Asked in NeoForge's FluidInteractionRegistry.canInteract at each neighbour its own rules missed, handed
-		// MinecraftForge's map by its initializer and told of each addInteraction (FluidInteractionsInjector). Inserted
-		// calls with game-typed descriptors.
-		CLASSES.put("net.forbric.kernel.runtime.KernelFluidInteractions", new Entry(Origin.COMPILED, List.of()));
-		// Called from NeoForge's ParticleEngine constructor after its group event (ParticleGroupsInjector).
-		CLASSES.put("net.forbric.kernel.runtime.KernelParticleGroups", new Entry(Origin.COMPILED, List.of()));
 		// MinecraftForge's Hurt, Damage and player Attack, from the seams ForgeDamageSeamsInjector writes into the merged
 		// actuallyHurt and Player.hurtServer; Player.<clinit> reports the attack seam in.
 		CLASSES.put("net.forbric.kernel.runtime.KernelLivingDamage", new Entry(Origin.COMPILED, List.of()));

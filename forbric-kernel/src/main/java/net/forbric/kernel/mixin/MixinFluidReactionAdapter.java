@@ -22,7 +22,6 @@ import org.objectweb.asm.tree.analysis.SourceInterpreter;
 import org.objectweb.asm.tree.analysis.SourceValue;
 import net.forbric.api.Ecosystem;
 import net.forbric.api.ForeignType;
-import net.forbric.kernel.transform.FluidInteractionsInjector;
 import net.forbric.kernel.util.Caught;
 import net.forbric.kernel.util.ForbricLog;
 
@@ -94,15 +93,6 @@ public final class MixinFluidReactionAdapter {
 			code.add(new MethodInsnNode(Opcodes.INVOKEINTERFACE,OPERATION,"call","([Ljava/lang/Object;)Ljava/lang/Object;",true));
 			code.add(new TypeInsnNode(Opcodes.CHECKCAST,"java/lang/Boolean"));code.add(new MethodInsnNode(Opcodes.INVOKEVIRTUAL,"java/lang/Boolean","booleanValue","()Z",false));
 			LabelNode handled=new LabelNode();code.add(new JumpInsnNode(Opcodes.IFNE,handled));
-			// Only with -Dforbric.fluidInteractions=off: onPlace's MinecraftForge registry is then neutered. Give NeoForge
-			// the unhandled reaction before applying the source tail rule. With the repair on, MinecraftForge's registry
-			// answers placement itself (vanilla's rules and its mods'), as on MinecraftForge, and asking NeoForge's too
-			// would run NeoForge mods' rules on placement, which NeoForge's own onPlace never does.
-			if(call.owner.equals(REGISTRIES.get(1))&&!FluidInteractionsInjector.enabled()) {
-				code.add(new VarInsnNode(Opcodes.ALOAD,1));code.add(new VarInsnNode(Opcodes.ALOAD,2));
-				code.add(new MethodInsnNode(Opcodes.INVOKESTATIC,REGISTRIES.getFirst(),"canInteract",INTERACT,false));
-				code.add(new JumpInsnNode(Opcodes.IFNE,handled));
-			}
 			callback(code,4);
 			code.add(new VarInsnNode(Opcodes.ALOAD,0));code.add(new VarInsnNode(Opcodes.ALOAD,1));code.add(new VarInsnNode(Opcodes.ALOAD,2));
 			state(code,1,2);code.add(new VarInsnNode(Opcodes.ALOAD,4));
@@ -153,10 +143,10 @@ public final class MixinFluidReactionAdapter {
 		MethodNode onPlace=named(liquid,"onPlace");
 		if(onPlace==null||REGISTRIES.stream().noneMatch(r->count(onPlace,"L"+r+";canInteract"+INTERACT)==1))return 0;
 		List<AnnotationNode> points=new ArrayList<>();
-		// Placement asks MinecraftForge's registry and a neighbour change NeoForge's (FluidInteractionsInjector), so the
-		// rule goes into both. With -Dforbric.fluidInteractions=off MinecraftForge's is neutered — no interact call to
-		// inject at — and the blackstone fallback hands placement to NeoForge's, which then carries it alone.
-		List<String> registries=FluidInteractionsInjector.enabled()?REGISTRIES:List.of(REGISTRIES.getFirst());
+		// The merged LiquidBlock's placement asks MinecraftForge's registry and a neighbour change NeoForge's, so the rule
+		// goes into both. (The kernel's MinecraftForge fluid repair, and its -Dforbric.fluidInteractions=off control that
+		// neutered MinecraftForge's registry, went with MinecraftForge.)
+		List<String> registries=REGISTRIES;
 		String interact="interact(L"+LEVEL+";"+POS+POS+"L"+FLUID_STATE+";)V";
 		for(String registry:registries) {
 			ClassNode target=targets.apply(registry);if(target==null)return 0;

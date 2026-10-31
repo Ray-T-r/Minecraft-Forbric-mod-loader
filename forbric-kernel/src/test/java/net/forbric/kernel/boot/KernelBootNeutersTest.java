@@ -24,34 +24,17 @@ import org.objectweb.asm.tree.MethodNode;
 
 /**
  * The neuter KernelBoot registers, as {@link KernelBoot#neuters} builds it for each side. MinecraftForge's
- * {@code FluidInteractionRegistry.canInteract} must not be on it with the fluid repair on: a MinecraftForge mod's fluid
- * rules run through that method, and a neuter there silenced them while every other test and gate stayed green.
+ * {@code FluidInteractionRegistry.canInteract} is not on it: the neuter was the off half of the MinecraftForge fluid
+ * repair, and both went with MinecraftForge.
  */
 class KernelBootNeutersTest {
 	private static final String REGISTRY = ForeignType.FLUID_INTERACTION_REGISTRY.binary(Ecosystem.FORGE);
-	private static final String CAN_INTERACT = "(Lnet/minecraft/world/level/Level;Lnet/minecraft/core/BlockPos;)Z";
 	private static final Path FORGE_CARRIER = TestFixtures.stagedRoot().resolve(TestFixtures.FORGE_CARRIER_JAR);
 	private static final Path NEO_CARRIER = TestFixtures.stagedRoot().resolve(TestFixtures.NEO_CARRIER_JAR);
 
-	@Test void withTheRepairOnNoSideNeutersMinecraftForgesFluidRegistry() {
+	@Test void noSideNeutersMinecraftForgesFluidRegistry() {
 		for (KernelBoot.Side side : KernelBoot.Side.values()) {
-			assertFalse(owners(KernelBoot.neuters(side, true)).contains(REGISTRY), side + ": " + owners(KernelBoot.neuters(side, true)));
-		}
-	}
-
-	@Test void withTheRepairOffEverySideNeutersItAgain() {
-		for (KernelBoot.Side side : KernelBoot.Side.values()) {
-			assertTrue(owners(KernelBoot.neuters(side, false)).contains(REGISTRY), side.toString());
-		}
-	}
-
-	@Test void onTheRealRegistryTheRepairOnLeavesCanInteractWholeAndOffEmptiesIt() throws Exception {
-		byte[] registry = read(FORGE_CARRIER, REGISTRY.replace('.', '/'));
-		for (KernelBoot.Side side : KernelBoot.Side.values()) {
-			assertSame(registry, KernelBoot.neuters(side, true).transform(REGISTRY, registry, null), side + ": the repair on leaves it alone");
-			MethodNode emptied = canInteract(KernelBoot.neuters(side, false).transform(REGISTRY, registry, null));
-			assertEquals(List.of(Opcodes.ICONST_0, Opcodes.IRETURN), real(emptied), side + ": off, it answers false as before the repair");
-			assertTrue(real(canInteract(registry)).size() > 2, "premise: the carrier's canInteract walks its interactions");
+			assertFalse(owners(KernelBoot.neuters(side)).contains(REGISTRY), side + ": " + owners(KernelBoot.neuters(side)));
 		}
 	}
 
@@ -66,15 +49,15 @@ class KernelBootNeutersTest {
 		byte[] loader = read(FORGE_CARRIER, forge.replace('.', '/'));
 		assertTrue(real(method(loader, "begin", KernelBoot.FORGE_CLIENT_BEGIN_DESC)).size() > 2,
 				"premise: the carrier's begin runs MinecraftForge's lifecycle");
-		MethodNode emptied = method(KernelBoot.neuters(KernelBoot.Side.CLIENT, true).transform(forge, loader, null),
+		MethodNode emptied = method(KernelBoot.neuters(KernelBoot.Side.CLIENT).transform(forge, loader, null),
 				"begin", KernelBoot.FORGE_CLIENT_BEGIN_DESC);
 		assertEquals(List.of(Opcodes.RETURN), real(emptied));
-		assertSame(loader, KernelBoot.neuters(KernelBoot.Side.SERVER, true).transform(forge, loader, null),
+		assertSame(loader, KernelBoot.neuters(KernelBoot.Side.SERVER).transform(forge, loader, null),
 				"a dedicated server never runs the client loader, and its neuter has nothing for it");
 
 		String neo = ForeignType.CLIENT_MOD_LOADER.binary(Ecosystem.NEOFORGE);
 		byte[] neoLoader = read(NEO_CARRIER, neo.replace('.', '/'));
-		MethodNode neoBegin = method(KernelBoot.neuters(KernelBoot.Side.CLIENT, true).transform(neo, neoLoader, null),
+		MethodNode neoBegin = method(KernelBoot.neuters(KernelBoot.Side.CLIENT).transform(neo, neoLoader, null),
 				"begin", "()V");
 		assertEquals(real(method(neoLoader, "begin", "()V")), real(neoBegin),
 				"NeoForge's begin is the Main.main trigger the lifecycle injector redirects; its body stays whole");
@@ -93,7 +76,7 @@ class KernelBootNeutersTest {
 		assertTrue(real(method(original, KernelBoot.FORGE_RUN_MODIFIERS, KernelBoot.FORGE_RUN_MODIFIERS_DESC)).size() > 2,
 				"premise: the carrier's runModifiers walks the modifier registries");
 		for (KernelBoot.Side side : KernelBoot.Side.values()) {
-			byte[] served = KernelBoot.neuters(side, true).transform(hooks, original, null);
+			byte[] served = KernelBoot.neuters(side).transform(hooks, original, null);
 			assertEquals(List.of(Opcodes.RETURN),
 					real(method(served, KernelBoot.FORGE_RUN_MODIFIERS, KernelBoot.FORGE_RUN_MODIFIERS_DESC)), side.toString());
 			assertEquals(real(method(original, "handleServerAboutToStart", aboutToStart)),
@@ -112,7 +95,7 @@ class KernelBootNeutersTest {
 		assertTrue(real(method(original, "loadResourcePacks", KernelBoot.FORGE_LOAD_RESOURCE_PACKS_DESC)).size() > 1,
 				"premise: the carrier's loadResourcePacks adds a pack finder");
 		for (KernelBoot.Side side : KernelBoot.Side.values()) {
-			byte[] served = KernelBoot.neuters(side, true).transform(loader, original, null);
+			byte[] served = KernelBoot.neuters(side).transform(loader, original, null);
 			assertEquals(List.of(Opcodes.RETURN),
 					real(method(served, "loadResourcePacks", KernelBoot.FORGE_LOAD_RESOURCE_PACKS_DESC)), side.toString());
 			assertEquals(real(method(original, "getPackNames", "()Ljava/util/List;")),
@@ -130,12 +113,6 @@ class KernelBootNeutersTest {
 	private static List<String> owners(MethodBodyNeuter neuter) {
 		AnchorSet anchors = neuter.anchors();
 		return anchors.anchors() == null ? List.of() : anchors.anchors().stream().map(AnchorSet.Anchor::binaryName).toList();
-	}
-
-	private static MethodNode canInteract(byte[] bytes) {
-		ClassNode node = new ClassNode();
-		new ClassReader(bytes).accept(node, 0);
-		return node.methods.stream().filter(m -> m.name.equals("canInteract") && m.desc.equals(CAN_INTERACT)).findFirst().orElseThrow();
 	}
 
 	private static List<Integer> real(MethodNode method) {

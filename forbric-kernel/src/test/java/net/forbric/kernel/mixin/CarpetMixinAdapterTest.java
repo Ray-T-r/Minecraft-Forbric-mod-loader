@@ -107,40 +107,6 @@ class CarpetMixinAdapterTest {
 				MixinFit.atNodes(MixinFit.injectorOf(outer)).stream().map(a->MixinFit.value(a,"target")).toList(),"the one interact call in either registry");assertNotNull(method(c,"forbric$fluidReactionFizz").desc);
 		verify(c);assertEquals(0,adapt(c));
 	}
-	/**
-	 * What Mixin is handed in the game: LiquidBlock as merged (placement asks MinecraftForge's registry, a neighbour change
-	 * NeoForge's) and both registries as FluidInteractionsInjector leaves them; and, with the repair off, MinecraftForge's
-	 * neutered, so placement falls back to NeoForge's and the deepslate rule lives there alone.
-	 */
-	@Test void fluidAdaptersBindToTheHostsTheFluidRepairLeaves()throws Exception {
-		String neo=MixinFluidReactionAdapter.REGISTRIES.getFirst(),forge=MixinFluidReactionAdapter.REGISTRIES.get(1);
-		java.util.function.Function<String,ClassNode> repaired=name->{ClassNode t=target(name);
-			if(!MixinFluidReactionAdapter.REGISTRIES.contains(name))return t;
-			byte[] out=new net.forbric.kernel.transform.FluidInteractionsInjector().transform(name.replace('/','.'),bytes(t),null);
-			ClassNode c=new ClassNode();new ClassReader(out).accept(c,0);return c;};
-		ClassNode liquid=repaired.apply(MixinFluidReactionAdapter.LIQUID);
-		Map<String,String> asks=Map.of("onPlace",forge,"neighborChanged",neo);
-		for(var host:asks.entrySet())assertEquals(1,MixinPlayerWorldCallbackAdapter.count(method(liquid,host.getKey()),
-				"L"+host.getValue()+";canInteract"+MixinFluidReactionAdapter.INTERACT),"premise: "+host.getKey()+" asks "+host.getValue());
-		ClassNode blackstone=mixin(NAMES.get(3));assertEquals(2,MixinFluidReactionAdapter.adapt(blackstone,repaired));
-		for(var host:asks.entrySet()){MethodNode m=method(blackstone,"forbric$unhandledFluidReaction$"+host.getKey());
-			assertEquals("L"+host.getValue()+";canInteract"+MixinFluidReactionAdapter.INTERACT,MixinFit.value(MixinFit.atNodes(MixinFit.injectorOf(m)).getFirst(),"target"));
-			for(var i:m.instructions)assertFalse(i instanceof MethodInsnNode c&&c.name.equals("canInteract"),
-					host.getKey()+": no fallback to the other registry — NeoForge's own placement runs no mod's rule");}
-		ClassNode deepslate=mixin(NAMES.get(4));assertEquals(1,MixinFluidReactionAdapter.adapt(deepslate,repaired));
-		assertEquals(Set.of(neo,forge),new HashSet<>(MixinFit.mixinTargets(deepslate)));
-		verify(blackstone);verify(deepslate);
-		String old=System.setProperty(net.forbric.kernel.transform.FluidInteractionsInjector.PROPERTY,"off");
-		try{
-			ClassNode off=mixin(NAMES.get(3));assertEquals(2,MixinFluidReactionAdapter.adapt(off,CarpetMixinAdapterTest::target));
-			assertTrue(Arrays.stream(method(off,"forbric$unhandledFluidReaction$onPlace").instructions.toArray()).anyMatch(i->i instanceof MethodInsnNode c
-					&&c.name.equals("canInteract")&&c.owner.equals(neo)),"repair off: MinecraftForge's is neutered, so placement falls back to NeoForge's");
-			ClassNode offDeepslate=mixin(NAMES.get(4));assertEquals(1,MixinFluidReactionAdapter.adapt(offDeepslate,CarpetMixinAdapterTest::target));
-			assertEquals(Set.of(neo),new HashSet<>(MixinFit.mixinTargets(offDeepslate)),"no interact call to inject at in a neutered registry");
-			verify(off);verify(offDeepslate);
-		}finally{if(old==null)System.clearProperty(net.forbric.kernel.transform.FluidInteractionsInjector.PROPERTY);
-			else System.setProperty(net.forbric.kernel.transform.FluidInteractionsInjector.PROPERTY,old);}
-	}
 	@Test void reshapedNativeFluidLocalRefusesTheWholeRetarget()throws Exception {
 		ClassNode c=mixin(NAMES.get(4));byte[] before=bytes(c);
 		assertEquals(0,MixinFluidReactionAdapter.adapt(c,name->{ClassNode t=target(name);if(MixinFluidReactionAdapter.REGISTRIES.contains(name))for(var m:t.methods)for(var i:m.instructions)if(i instanceof VarInsnNode v&&v.getOpcode()==Opcodes.ASTORE&&v.var==5)v.var=9;return t;}));

@@ -839,17 +839,6 @@ public final class KernelBoot {
 		// as in vanilla; NeoForge's breathing hook held it, and its breathe event now starts from vanilla's refill.
 		chain.register(TransformPhase.COREMOD, new net.forbric.kernel.transform.VanillaAirRefillInjector());
 		chain.register(TransformPhase.COREMOD, new net.forbric.kernel.transform.UntrackedFluidEyeQueryInjector());
-		// MinecraftForge's half of EntityFluidInteraction.update, which the merge dropped: its entity-fluid queries read what
-		// it records, and a MinecraftForge mod's fluid in minecraft:water or minecraft:lava is water or lava to NeoForge's
-		// entity code, as MinecraftForge decides by those tags. Before the native tag-tracker source below, which proves the
-		// update and constructor it copies from as they are after this edit.
-		chain.register(TransformPhase.COREMOD, new net.forbric.kernel.transform.ForgeEntityFluidsInjector());
-		// NeoForge's client extensions of a MinecraftForge fluid's type (the kernel's view of it) are the type's own: its
-		// fog colour, which the merged client asks NeoForge alone.
-		chain.register(TransformPhase.COREMOD, new net.forbric.kernel.transform.ForgeFluidViewExtensionsInjector());
-		// Two water rules NeoForge has and MinecraftForge does not (a player is under water in any type it can swim in; a
-		// body in such a type, eyes out, is in shallow water) answer a MinecraftForge fluid as MinecraftForge does.
-		chain.register(TransformPhase.COREMOD, new net.forbric.kernel.transform.ForgeFluidWaterRulesInjector());
 		chain.register(TransformPhase.COREMOD, new net.forbric.kernel.transform.PredicateGetterResultRecorder());
 		chain.register(TransformPhase.COREMOD, new net.forbric.kernel.mixin.NativeTagTrackerSourceInjector());
 		chain.register(TransformPhase.COREMOD, new net.forbric.kernel.mixin.NativeTagSourceFacadeInjector());
@@ -862,20 +851,6 @@ public final class KernelBoot {
 		chain.register(TransformPhase.COREMOD, new net.forbric.kernel.transform.EmptyFluidTypeTrackerInjector());
 		chain.register(TransformPhase.COREMOD, new net.forbric.kernel.mixin.CrossHostPredicateIslandInjector());
 		chain.register(TransformPhase.COREMOD, new net.forbric.kernel.transform.AxeStripCallbacksInjector());
-		// Lava placed or flowing next to water: the merged LiquidBlock.onPlace (MinecraftForge's) asked MinecraftForge's
-		// registry, which the neuter below used to empty, so only water arriving next to lava reacted. It asks it whole
-		// now, as on MinecraftForge (vanilla's rules and MinecraftForge mods'; NeoForge's own placement runs no mod's).
-		// neighborChanged (NeoForge's) asks NeoForge's registry, and at each neighbour its rules miss, MinecraftForge
-		// mods' — once one adds a rule. Off, the neuter is registered again and placement is as broken as before.
-		boolean fluidInteractions = net.forbric.kernel.transform.FluidInteractionsInjector.enabled();
-		if (fluidInteractions) {
-			chain.register(TransformPhase.COREMOD, new net.forbric.kernel.transform.FluidInteractionsInjector());
-		} else {
-			ForbricLog.warn("[Forbric/Fluid] -D%s=off — LiquidBlock.onPlace asks MinecraftForge's neutered FluidInteractionRegistry: "
-					+ "lava placed or flowing next to water stays lava", net.forbric.kernel.transform.FluidInteractionsInjector.PROPERTY);
-		}
-		// MinecraftForge's ParticleEngine.registerParticleGroup against NeoForge's engine: its statics, merged in on build.
-		chain.register(TransformPhase.COREMOD, new net.forbric.kernel.transform.ParticleGroupsInjector());
 		// MinecraftForge's Hurt, Damage and player-Attack events have no NeoForge event at their positions to bridge
 		// from; seams in the merged actuallyHurt and Player.hurtServer post them where MinecraftForge did.
 		chain.register(TransformPhase.COREMOD, new net.forbric.kernel.transform.ForgeDamageSeamsInjector());
@@ -941,8 +916,6 @@ public final class KernelBoot {
 		chain.register(TransformPhase.COREMOD, new net.forbric.kernel.transform.FlowerPotRepairInjector());
 		chain.register(TransformPhase.COREMOD, new net.forbric.kernel.transform.BiomeInfoRebaseInjector());
 		chain.register(TransformPhase.COREMOD, new net.forbric.kernel.transform.BiomeLateWriteInjector());
-		// A merge repair beside them, not a coremod: MinecraftForge's liquid getter over NeoForge's constructor.
-		chain.register(TransformPhase.COREMOD, new net.forbric.kernel.transform.LiquidBlockFluidInjector());
 		// The only performance measurement in the tree. Beside the smoke tick because it is the same shape:
 		// one static call at the head of a tick, no mixin config, nothing new in the list a gate asserts on.
 		chain.register(TransformPhase.COREMOD, new net.forbric.kernel.transform.ServerTickSamplerInjector());
@@ -1115,11 +1088,7 @@ public final class KernelBoot {
 		//     meant no dungeon, no spawner and no dungeon chest in EVERY world, for everyone, mods or no mods.
 		//     KernelNeoWorldgen loads the data maps for real and the mob pick falls back to vanilla's own set.
 		// A neuter is a promise that the method cannot work here; both promises had expired.
-		// So had a third: MinecraftForge's FluidInteractionRegistry.canInteract. Its AbstractMethodError went once the
-		// merged fluids answered MinecraftForge's getFluidType() (the per-class bridge, ForeignFluidTypeInjector), and the
-		// "vanilla fluid behaviour proceeds" it promised did not: the merged LiquidBlock.onPlace asks exactly this method,
-		// so placing lava next to water never reacted. It runs whole with FluidInteractionsInjector; off, it is put back.
-		MethodBodyNeuter neuter = neuters(side, fluidInteractions);
+		MethodBodyNeuter neuter = neuters(side);
 		chain.register(TransformPhase.COREMOD, neuter);
 
 		// A NeoForge mod adds constants to vanilla enums by declaring them in META-INF/enumextensions.json; FML
@@ -1326,20 +1295,10 @@ public final class KernelBoot {
 
 	/**
 	 * Every method the kernel empties on {@code side}: built here, outside {@link #launch}, so a test can read the list
-	 * KernelBoot really registers. MinecraftForge's {@code FluidInteractionRegistry.canInteract} is on it only with
-	 * {@code -Dforbric.fluidInteractions=off} ({@code fluidInteractions} false): with the repair on, a MinecraftForge
-	 * mod's fluid rules run through exactly that method, and a neuter there silences them with every test still green.
+	 * KernelBoot really registers.
 	 */
-	static MethodBodyNeuter neuters(Side side, boolean fluidInteractions) {
+	static MethodBodyNeuter neuters(Side side) {
 		MethodBodyNeuter neuter = new MethodBodyNeuter();
-		if (!fluidInteractions) {
-			neuter.add(new MethodBodyNeuter.Target("net.minecraftforge.fluids.FluidInteractionRegistry",
-					"canInteract", "(Lnet/minecraft/world/level/Level;Lnet/minecraft/core/BlockPos;)Z",
-					"MinecraftForge fluid-interaction hook calls its own getFluidType() (net.minecraftforge FluidType) "
-					+ "but the merged Fluid implements only NeoForge's IFluidExtension (getFluidType returns the "
-					+ "neoforged FluidType) → AbstractMethodError on WaterFluid.getFluidType during worldgen fluid "
-					+ "ticking. Return false so vanilla fluid behavior proceeds (Forge/Neo FluidType ABI split)"));
-		}
 		// MinecraftForge's own biome/structure modifier pass, on every side. Its modifiers ride inside NeoForge's single
 		// pass (ForgeWorldModifierInjector appends them to NeoForge's lists, KernelForgeWorldgen loads them), and two
 		// passes are two sources of truth. On a base whose initServer calls only NeoForge's about-to-start nothing

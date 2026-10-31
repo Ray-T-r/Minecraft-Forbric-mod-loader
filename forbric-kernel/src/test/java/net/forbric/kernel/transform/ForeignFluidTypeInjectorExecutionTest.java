@@ -19,10 +19,10 @@ import org.objectweb.asm.commons.SimpleRemapper;
 import net.fabricmc.api.EnvType;
 
 /**
- * {@link ForeignFluidTypeInjector}'s output, run: a Fabric mod's fluid answers both families' {@code getFluidType()}
- * from its fluid tags, where as merged both throw "Mod fluids must override getFluidType." and the first entity to touch
- * it stops the server. A vanilla fluid keeps NeoForge's cached lookup, and a MinecraftForge mod's fluid keeps its own
- * override.
+ * {@link ForeignFluidTypeInjector}'s output, run: a Fabric mod's fluid answers NeoForge's {@code getFluidType()} from
+ * its fluid tags, where as merged it throws "Mod fluids must override getFluidType." and the first entity to touch it
+ * stops the server. A vanilla fluid keeps NeoForge's cached lookup. MinecraftForge's getter in the merged stand-in is
+ * left exactly as compiled: its repair went with MinecraftForge.
  *
  * <p>The merged {@code Fluid} has two {@code getFluidType()}s that differ only in return type, which Java source cannot
  * declare, so NeoForge's is written as {@code getNeoFluidType} and renamed in the class files. {@code CommonHooks} and
@@ -34,7 +34,7 @@ import net.fabricmc.api.EnvType;
 class ForeignFluidTypeInjectorExecutionTest {
 	private static final String FLUID = ForeignFluidTypeInjector.FLUID;
 	private static final String NEO_TYPE = ForeignFluidTypeInjector.TYPE.replace('/', '.');
-	private static final String FORGE_TYPE = ForeignFluidTypeInjector.FORGE_TYPE.replace('/', '.');
+	private static final String FORGE_TYPE = "net.minecraftforge.fluids.FluidType";
 
 	private static final Map<String, String> STAND_INS = new HashMap<>(Map.of(
 			NEO_TYPE, """
@@ -209,14 +209,14 @@ class ForeignFluidTypeInjectorExecutionTest {
 		return InjectorExecution.getStatic(loader.loadClass(NEO_TYPE), constant);
 	}
 
-	@Test void aFabricFluidHasBothFamiliesTypesFromItsTags(@TempDir Path work) throws Throwable {
+	@Test void aFabricFluidHasNeoForgesTypeFromItsTags(@TempDir Path work) throws Throwable {
 		Map<String, byte[]> original = merged(work);
 		String internal = ForeignFluidTypeInjector.FLUID_INTERNAL;
 		byte[] repaired = InjectorExecution.transform(new ForeignFluidTypeInjector(), FLUID, original.get(internal), EnvType.SERVER);
 		assertNotSame(original.get(internal), repaired, "the reviewed shape was edited");
 		Map<String, byte[]> classes = new HashMap<>(original);
 		classes.put(internal, repaired);
-        for(String owner:new String[]{ForeignFluidTypeInjector.NEO_HOOKS,ForeignFluidTypeInjector.FORGE_HOOKS})classes.put(owner,InjectorExecution.transform(new ForeignFluidTypeInjector(),owner.replace('/','.'),original.get(owner),EnvType.SERVER));
+        for(String owner:new String[]{ForeignFluidTypeInjector.NEO_HOOKS})classes.put(owner,InjectorExecution.transform(new ForeignFluidTypeInjector(),owner.replace('/','.'),original.get(owner),EnvType.SERVER));
 		ClassLoader loader = InjectorExecution.load(classes);
 		assertEquals("", InjectorExecution.verify(repaired, loader));
 
@@ -225,8 +225,6 @@ class ForeignFluidTypeInjectorExecutionTest {
 		assertSame(neoType(loader, "WATER"), neoForge(loader, fabricOil), "a Fabric fluid in the water tag is water to NeoForge");
 		fluid.getField("tag").set(fabricOil, "minecraft:lava");
 		assertSame(neoType(loader, "LAVA"), neoForge(loader, fabricOil), "tags rebound on reload: the answer is not cached");
-		assertEquals("forge:minecraft:lava", InjectorExecution.invoke(minecraftForge(loader, fabricOil), "name"),
-				"MinecraftForge's getFluidType() answers from the tags too, instead of its throwing default");
 
 		Class<?> hooks = loader.loadClass("net.neoforged.neoforge.common.CommonHooks");
 		Object water = InjectorExecution.construct(fluid, "minecraft:water", "minecraft:water");
@@ -234,23 +232,16 @@ class ForeignFluidTypeInjectorExecutionTest {
 		assertSame(neoType(loader, "WATER"), neoForge(loader, water));
 		assertEquals(3, InjectorExecution.getStatic(hooks, "lookups"), "two foreign requests execute their SDK lookup and remain uncached; vanilla executes once then stays cached");
 
-		Object forgeOil = InjectorExecution.construct(loader.loadClass("fixture.ForgeOil"));
-		assertEquals("forgemod:own", InjectorExecution.invoke(minecraftForge(loader, forgeOil), "name"),
-				"a MinecraftForge fluid's override still wins");
-
 		ClassLoader stock = InjectorExecution.load(original);
 		Object mergedOil = InjectorExecution.construct(stock.loadClass(FLUID), "fabricmod:oil", "minecraft:water");
 		assertEquals("Mod fluids must override getFluidType.",
 				assertThrows(RuntimeException.class, () -> neoForge(stock, mergedOil)).getMessage(),
 				"premise: as merged, NeoForge's lookup throws for a Fabric fluid");
-		assertEquals("an arbitrary unsupported message",
-				assertThrows(RuntimeException.class, () -> minecraftForge(stock, mergedOil)).getMessage(),
-				"premise: as merged, MinecraftForge's interface default throws too");
 		assertSame(repaired, InjectorExecution.transform(new ForeignFluidTypeInjector(), FLUID, repaired, EnvType.SERVER),
 				"a getter that already asks the kernel is left alone");
 	}
 
-    @Test void bothPublicGettersLinkAndRunThroughTheActualTransformingClassLoader(@TempDir Path work)throws Throwable {
+    @Test void neoForgesPublicGetterLinksAndRunsThroughTheActualTransformingClassLoader(@TempDir Path work)throws Throwable {
         Map<String,byte[]> classes=merged(work);Path jar=work.resolve("public-sdk-shape.jar");
         try(var zip=new java.util.zip.ZipOutputStream(java.nio.file.Files.newOutputStream(jar))){for(var entry:classes.entrySet()){zip.putNextEntry(new java.util.zip.ZipEntry(entry.getKey()+".class"));zip.write(entry.getValue());zip.closeEntry();}}
         try(var loader=new net.forbric.kernel.classloading.ForbricClassLoader(new java.net.URL[]{jar.toUri().toURL()},ForeignFluidTypeInjectorExecutionTest.class.getClassLoader())){
@@ -258,11 +249,9 @@ class ForeignFluidTypeInjectorExecutionTest {
             Class<?> fluid=loader.loadClass(FLUID);assertEquals(2,java.util.Arrays.stream(fluid.getDeclaredMethods()).filter(method->method.getName().equals("getFluidType")).count());
             Object value=InjectorExecution.construct(fluid,"minecraft:unrecognized","minecraft:water");
             assertSame(neoType(loader,"WATER"),neoForge(loader,value),"a namespace never substitutes for the actual SDK unsupported branch");
-            assertEquals("forge:minecraft:water",InjectorExecution.invoke(minecraftForge(loader,value),"name"));
-            fluid.getField("tag").set(value,"minecraft:lava");assertSame(neoType(loader,"LAVA"),neoForge(loader,value));assertEquals("forge:minecraft:lava",InjectorExecution.invoke(minecraftForge(loader,value),"name"));
-            Object milk=InjectorExecution.construct(fluid,"sdk:milk","minecraft:water");Object first=minecraftForge(loader,milk),second=minecraftForge(loader,milk);assertSame(first,second);assertEquals("builtin-milk",InjectorExecution.invoke(first,"name"));
-            Object broken=InjectorExecution.construct(fluid,"sdk:broken","minecraft:water");assertEquals("provider broke",assertThrows(IllegalStateException.class,()->minecraftForge(loader,broken)).getMessage(),"another native failure must remain visible");
-            assertSame(neoType(loader,"LAVA"),neoForge(loader,value),"a prior native failure does not change a later live lookup");
+            fluid.getField("tag").set(value,"minecraft:lava");assertSame(neoType(loader,"LAVA"),neoForge(loader,value));
+            assertEquals("an arbitrary unsupported message",assertThrows(RuntimeException.class,()->minecraftForge(loader,value)).getMessage(),
+                    "MinecraftForge's getter is left as compiled: its own lookup still throws for a fluid it does not know");
         }
     }
 

@@ -119,7 +119,14 @@ public final class ForbricSwitches {
 					+ "fabric-registry-sync resolves aliases in"),
 			// Stage 4: MinecraftForge's capability composition, its enum and token plugins and its transfer audit are gone with its carrier.
 			Map.entry("forbric.transferShapeDump", "Forbric loads no MinecraftForge runtime, so the MinecraftForge transfer audit that dumped the shapes "
-					+ "it refused is gone"));
+					+ "it refused is gone"),
+			// Stage 4: MinecraftForge's fluid and particle repairs are gone with its carrier.
+			Map.entry("forbric.fluidInteractions", "Forbric loads no MinecraftForge runtime, so there is no MinecraftForge fluid-interaction registry to "
+					+ "ask beside NeoForge's"),
+			Map.entry("forbric.forgeParticleGroups", "Forbric loads no MinecraftForge runtime, so there are no MinecraftForge particle groups to hand "
+					+ "NeoForge's particle engine"),
+			Map.entry("forbric.liquidBlockFluid", "Forbric loads no MinecraftForge runtime, so no liquid block keeps its fluid in a MinecraftForge "
+					+ "supplier"));
 
 	private static final ForbricSwitches SYSTEM =
 			new ForbricSwitches(RENAMED, RETIRED, System::getProperty, ForbricLog::warn);
