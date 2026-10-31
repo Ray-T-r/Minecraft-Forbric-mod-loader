@@ -17,25 +17,23 @@
 package net.forbric.kernel.metadata.forge;
 
 import java.util.Collections;
-import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.Optional;
-import java.util.function.UnaryOperator;
 
 import com.electronwill.nightconfig.core.UnmodifiableConfig;
 
 /**
- * What {@code IConfigurable.getConfigElement} answers, the way each FML's own {@code NightConfigWrapper} answers it,
+ * What {@code IConfigurable.getConfigElement} answers, the way NeoForge's own {@code NightConfigWrapper} answers it,
  * for every object the kernel hands a mod in place of the one its FML would have built.
  *
- * <h2>Why this is one class and not four answers</h2>
+ * <h2>Why this is one class and not several answers</h2>
  *
  * <p>A mod reads a {@code mods.toml} back through two different objects, and neither is optional. The mod's own
  * {@code [[mods]]} entry is {@code IModInfo.getConfig()}; the whole FILE is the owning {@code ModFileInfo}, which
  * natively delegates {@code getConfigElement} to a wrapper over the file's root table and answers
- * {@code getConfig()} with itself. The kernel builds four of each — the seeded NeoForge and MinecraftForge
- * {@code LoadingModList} entries, and its own {@code KernelModInfo}/{@code KernelForgeModInfo} — and the file side of
- * all four answered empty (or, on {@code KernelModFileInfo}, null).
+ * {@code getConfig()} with itself. The kernel builds two of each — the seeded NeoForge {@code LoadingModList} entries
+ * and its own {@code KernelModInfo} — and the file side of both answered empty (or, on {@code KernelModFileInfo},
+ * null).
  *
  * <p>That is not an abstract gap. Unlit Campfire keeps a lit campfire's burn time on its block entity, and declares a
  * top-level {@code ["lithium:options"]} table asking Lithium to switch off
@@ -46,27 +44,22 @@ import com.electronwill.nightconfig.core.UnmodifiableConfig;
  * campfire mixins anyway. Not Enough Crashes asks {@code getOwningFile().getConfig()} for {@code issueTrackerURL} of
  * every mod it lists, and on a kernel mod that {@code getConfig()} was null.
  *
- * <h2>The two answers</h2>
+ * <h2>The answer</h2>
  *
- * <p>Both FMLs look the path up as a LIST of literal keys ({@code getOptional(List)} / {@code get(List)}), so
- * {@code "lithium:options"} and iris' {@code "mixin.features.render.world.sky"} are one key each, never split on a
- * dot. Both answer a scalar or a list as itself and a missing path as empty. They differ in one thing, the table:
- * NeoForge ({@code fancymodloader} 11.0.x) answers its {@code valueMap()}; MinecraftForge ({@code fmlloader}
- * 26.2-65.0.x) answers an {@code ImmutableMap} of the same entries. Neither descends, so a table one level further
- * down is still night-config's own {@code Config}. Lithium only needs a {@code Map}, but a MinecraftForge mod is
- * entitled to the Guava type it has always been given, so the MinecraftForge answer takes the copy function from
- * the caller: this class is boot-side and does not link Guava, the game does.
+ * <p>NeoForge ({@code fancymodloader} 11.0.x) looks the path up as a LIST of literal keys ({@code getOptional(List)}),
+ * so {@code "lithium:options"} and iris' {@code "mixin.features.render.world.sky"} are one key each, never split on a
+ * dot. It answers a scalar or a list as itself, a missing path as empty, and a table as its {@code valueMap()}, which
+ * does not descend, so a table one level further down is still night-config's own {@code Config}.
  *
- * <p>Not modelled: both wrappers THROW {@code InvalidModFileException} for a path that lands on an array of tables
+ * <p>Not modelled: the wrapper THROWS {@code InvalidModFileException} for a path that lands on an array of tables
  * ({@code "mods"}, {@code "mixins"}); this answers the list. A mod that asked for one would crash natively, so none
  * does.
  */
 public final class FmlConfigElements {
 	/**
 	 * {@code -Dforbric.fileConfigElements=off} answers every file-level {@code getConfigElement} empty again (and
-	 * {@code KernelModFileInfo.getConfig()} null), gives the kernel's own {@code KernelModInfo} and the seeded
-	 * MinecraftForge {@code ModInfo} their empty {@code [[mods]]} answers back, and returns
-	 * {@code KernelForgeModInfo} to its strings-only reading of the jar — each object's answer before this class.
+	 * {@code KernelModFileInfo.getConfig()} null) and gives the kernel's own {@code KernelModInfo} its empty
+	 * {@code [[mods]]} answers back — each object's answer before this class.
 	 * The older {@code -Dforbric.configElements=off} covers only the seeded NeoForge {@code ModInfo}; it does not
 	 * reach the {@code [[mods]]} answers this switch owns, so each switch restores just its own objects.
 	 */
@@ -85,23 +78,6 @@ public final class FmlConfigElements {
 		Object value = at(elements, path);
 		if (value == null) return Optional.empty();
 		return Optional.of(value instanceof UnmodifiableConfig table ? table.valueMap() : value);
-	}
-
-	/**
-	 * MinecraftForge's {@code NightConfigWrapper.getConfigElement}: a table comes back as {@code immutableCopy} of its
-	 * entries, which the game side makes an {@code ImmutableMap} as MinecraftForge does.
-	 */
-	public static Optional<Object> minecraftForge(Map<String, ?> elements, UnaryOperator<Map<String, Object>> immutableCopy,
-			String... path) {
-		Object value = at(elements, path);
-		if (value == null) return Optional.empty();
-		if (value instanceof UnmodifiableConfig table) return Optional.of(immutableCopy.apply(table.valueMap()));
-		return Optional.of(value);
-	}
-
-	/** The copy MinecraftForge's answer falls back to where Guava cannot be reached: unmodifiable, like the real one. */
-	public static Map<String, Object> unmodifiableCopy(Map<String, Object> entries) {
-		return Collections.unmodifiableMap(new LinkedHashMap<>(entries));
 	}
 
 	/**

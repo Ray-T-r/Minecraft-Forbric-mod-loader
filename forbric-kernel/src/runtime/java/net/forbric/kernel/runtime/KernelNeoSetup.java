@@ -41,12 +41,9 @@ import net.neoforged.fml.event.lifecycle.InterModProcessEvent;
  * The game side of a NEOFORGE setup phase: post one mod-lifecycle event at every NeoForge mod, then run what
  * they deferred.
  *
- * <p>The MinecraftForge twin is {@link KernelForgeSetup}, and the two stay apart on purpose: NeoForge dispatches
- * on an {@code IEventBus} instance held per mod, while EventBus 7 resolves a bus from the EVENT plus that mod's
- * {@code BusGroup}. Folding them would be the averaging-away this repo's {@code ForeignType} javadoc warns
- * about; the divergence stays as data at the call site, which is why every call above comes in pairs.
+ * <p>NeoForge dispatches on an {@code IEventBus} instance held per mod.
  *
- * <p>Like its twin, this takes the phase as a {@link ForeignType} rather than a class-name string, so the
+ * <p>This takes the phase as a {@link ForeignType} rather than a class-name string, so the
  * constructor for each of the six is named in code and checked.
  */
 public final class KernelNeoSetup {
@@ -86,8 +83,7 @@ public final class KernelNeoSetup {
 		// Off the caller's thread, because that is where NeoForge runs it and mods can tell the difference — see
 		// NeoDeferredWork for the resource-manager window this was landing in.
 		//
-		// GUARDED, and the MinecraftForge twin already was: KernelForgeSetup wraps its own drain and this one did
-		// not, which is the asymmetry that pairing exists to expose. DeferredWorkQueue.runTasks does NOT abort at
+		// GUARDED: DeferredWorkQueue.runTasks does NOT abort at
 		// the first failure — it collects each one as a suppressed cause (and NeoForge's own captureException has
 		// already logged "Mod '<id>' encountered an error in a deferred task") and throws at the END. Letting that
 		// escape cost the phase REPORT: bucket_of_frog's task threw NoClassDefFoundError for a class upstream

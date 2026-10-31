@@ -44,7 +44,7 @@ import net.neoforged.neoforge.registries.RegisterEvent;
  * The game side of NeoForge's registry phase: {@code NewRegistryEvent}, then {@code RegisterEvent} for every
  * registry, in NeoForge's own order.
  *
- * <p>The MinecraftForge twin is {@link KernelForgeRegistries}, and as there the boot side keeps what is policy —
+ * <p>The boot side keeps what is policy —
  * which buses, whether to honour NeoForge's order, and the unfreeze/freeze window all of this runs inside.
  *
  * <h2>What is still reflective</h2>

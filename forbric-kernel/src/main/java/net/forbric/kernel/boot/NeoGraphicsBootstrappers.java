@@ -46,8 +46,7 @@ import net.forbric.kernel.util.ForbricLog;
  * that throws gets. {@code -Dforbric.graphicsBootstrappers=off} leaves them unrun, as before.
  *
  * <p>MinecraftForge has no counterpart: its FML for this game version defines no graphics bootstrap SPI, its
- * {@code ImmediateWindowProvider} is chosen by name from {@code fml.toml} (the kernel gives it FML's own no-window
- * provider, {@code PassiveSeeder.seedForgeImmediateWindow}), and its {@code BootstrapClasspathModifier} /
+ * {@code ImmediateWindowProvider} is chosen by name from {@code fml.toml}, and its {@code BootstrapClasspathModifier} /
  * {@code BootstrapEntryPoint} are read from the launcher's class path, never from a mod.
  */
 public final class NeoGraphicsBootstrappers {

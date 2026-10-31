@@ -104,9 +104,6 @@ public final class KernelRuntimeClasses {
 				new Call("container", Object.class, String.class, Object.class, Path.class, Object.class),
 				new Call("modInfo", Object.class, String.class, Path.class),
 				new Call("minecraftContainer", Object.class))));
-		// The traditional-Forge loading context: BusGroup + FMLModContainer + FMLJavaModLoadingContext, and the
-		// IModInfo they carry. A separate factory from KernelContainers because traditional Forge differs from
-		// NeoForge at every joint the kernel touches. See KernelForgeModContext.
 		// Its one entry point takes six GAME types, which cannot be named from here — the descriptor the
 		// transformer writes is the contract, and TransformerAnchorCensusTest is what holds the two in step.
 		CLASSES.put("net.forbric.kernel.runtime.KernelItemTooltips", new Entry(Origin.COMPILED, List.of()));
@@ -116,24 +113,6 @@ public final class KernelRuntimeClasses {
 		CLASSES.put("net.forbric.kernel.runtime.KernelPacketContext", new Entry(Origin.COMPILED, List.of(
 				new Call("encodeInFabricContext", void.class, Object.class, Object.class, Object.class,
 						Object.class))));
-		CLASSES.put("net.forbric.kernel.runtime.KernelForgeContainers", new Entry(Origin.COMPILED, List.of(
-				new Call("create", KernelForgeModContext.Handle.class, String.class),
-				new Call("lowCode", Object.class, String.class, Path.class),
-				new Call("setActiveContainer", void.class, Object.class),
-				new Call("constructMod", Object.class, String.class, KernelForgeModContext.Handle.class),
-				new Call("startup", void.class, Object.class))));
-		// The traditional-Forge setup phases: build one mod-lifecycle event, post it at every MinecraftForge mod,
-		// drain the stage's deferred queue. Separate from KernelForgeContainers because a phase is a different
-		// question from a container, and because this one names six event types a NeoForge-only instance must never
-		// be made to resolve. See KernelForgeSetup.
-		CLASSES.put("net.forbric.kernel.runtime.KernelForgeSetup", new Entry(Origin.COMPILED, List.of(
-				new Call("firePhase", int.class, List.class, net.forbric.api.ForeignType.class, String.class))));
-		// Which registries traditional Forge's RegisterEvent is posted for, and how one is built and posted. The
-		// dispatch LOOP stays boot-side (KernelForgeModContext.dispatchIsolated) because it names no game type and
-		// the per-(registry, mod) isolation is the property worth asserting off-game. See KernelForgeRegistries.
-		CLASSES.put("net.forbric.kernel.runtime.KernelForgeRegistries", new Entry(Origin.COMPILED, List.of(
-				new Call("targets", List.class),
-				new Call("post", void.class, Object.class, Object[].class))));
 		// Serving a Forge-family mod jar's own data/ to the server datapack repository. The POLICY — which jars
 		// carry data, who owns them, what each pack is called and how they stack — stays boot-side in
 		// KernelDataPacks, where it names no game type and is tested as such. See KernelDataPackSource.
@@ -194,14 +173,12 @@ public final class KernelRuntimeClasses {
 		CLASSES.put("net.forbric.kernel.runtime.KernelSnippets", new Entry(Origin.COMPILED, List.of()));
 		CLASSES.put("net.forbric.kernel.runtime.KernelWidenedFields", new Entry(Origin.COMPILED, List.of()));
 		CLASSES.put("net.forbric.kernel.runtime.KernelCreativeSearch", new Entry(Origin.COMPILED, List.of()));
-		// The NeoForge setup phases. A twin of KernelForgeSetup rather than a merge of it: NeoForge dispatches on
-		// a per-mod IEventBus while EventBus 7 resolves a bus from the EVENT plus that mod's BusGroup, and folding
-		// the two would be the averaging-away ForeignType's javadoc warns about. See KernelNeoSetup.
+		// The NeoForge setup phases: NeoForge dispatches on a per-mod IEventBus. See KernelNeoSetup.
 		CLASSES.put("net.forbric.kernel.runtime.KernelNeoSetup", new Entry(Origin.COMPILED, List.of(
 				new Call("firePhase", int.class, Map.class, net.forbric.api.ForeignType.class, String.class))));
 		// NeoForge's registry phase: NewRegistryEvent, then RegisterEvent for every registry in NeoForge's own
-		// order. The twin of KernelForgeRegistries; which buses and which order stay boot-side, as does the
-		// unfreeze/freeze window it all runs inside. See KernelNeoRegistries.
+		// order. Which buses and which order stay boot-side, as does the unfreeze/freeze window it all runs inside.
+		// See KernelNeoRegistries.
 		CLASSES.put("net.forbric.kernel.runtime.KernelNeoRegistries", new Entry(Origin.COMPILED, List.of(
 				new Call("collect", List.class, boolean.class),
 				new Call("fireRegisterEvents", int.class, List.class, List.class),
@@ -209,11 +186,6 @@ public final class KernelRuntimeClasses {
 		// Materialises the kernel's own annotation scan into NeoForge's ModFileScanData. The scan itself is
 		// boot-side bytecode work; only this last step needs game types. See ModFileScanner.
 		CLASSES.put("net.forbric.kernel.runtime.KernelScanData", new Entry(Origin.COMPILED, List.of(
-				new Call("build", Object.class, List.class, List.class))));
-		// The same scan, materialised into MinecraftForge's own ModFileScanData. A second compiled file rather
-		// than a shared reflective builder: the two SPIs are separate classes with identical shapes, and javac
-		// checking each against the one it targets is the only thing that stops a reorder from going quiet.
-		CLASSES.put("net.forbric.kernel.runtime.KernelForgeScanData", new Entry(Origin.COMPILED, List.of(
 				new Call("build", Object.class, List.class, List.class))));
 		// Fills the client ResourceManager with its selected packs before mod setup, because MinecraftForge runs
 		// mod loading inside the first resource reload and the kernel's window is before it. See KernelClientResources.

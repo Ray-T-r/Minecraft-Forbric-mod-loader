@@ -70,14 +70,12 @@ class KernelLifecycleRegistrationWindowTest {
 	}
 
 	/**
-	 * The window registerNeoForgeContent fires RegisterEvent in is the one {@code openRegistrationWindow} opens, and
-	 * its close puts the MinecraftForge gates back before the freeze. What opening does is executed against stand-in
-	 * carriers in {@link RegistrationWindowForgeLockTest}; this pins that the real window goes through it — the open
-	 * it replaced cleared only the vanilla flag, and every NeoForge registration then hit a wrapper MinecraftForge's
-	 * bootstrap snapshot had locked.
+	 * The window registerNeoForgeContent fires RegisterEvent in is the one {@code openRegistrationWindow} opens: NeoForge's
+	 * vanilla snapshot first (its unfreeze callback empties the blockstate→id map, and the snapshot is what it is rebuilt
+	 * from), then the unfreeze.
 	 */
 	@Test
-	void theRegistrationWindowOpensEveryGateBeforeRegisterEventAndPutsThemBackBeforeTheFreeze() throws Exception {
+	void theRegistrationWindowSnapshotsAndOpensBeforeRegisterEvent() throws Exception {
 		ClassNode node = compiled();
 		assertTrue(node != null,
 				"KernelLifecycle not found in the compiled src/main classes, which exist before any test runs");
@@ -86,14 +84,17 @@ class KernelLifecycleRegistrationWindowTest {
 		int register = firstCall(content, "fireRegisterEvents");
 		assertTrue(open >= 0, "registerNeoForgeContent must open its window through openRegistrationWindow");
 		assertTrue(register > open, "the window must be open before RegisterEvent fires");
-		assertTrue(callsIn(method(node, "openRegistrationWindow")).contains("reopenForgeRegistries"),
-				"opening must clear the MinecraftForge gates, not only the vanilla frozen flag");
-
-		MethodNode close = method(node, "closeRegistrationWindow");
-		int reclose = firstCall(close, "recloseForgeRegistries");
-		int freeze = firstCall(close, "freeze");
-		assertTrue(reclose >= 0 && freeze > reclose,
-				"closing must put the cleared gates back, before the freeze, as the client entrypoint window does");
+		MethodNode opening = method(node, "openRegistrationWindow");
+		int snapshot = -1;
+		for (AbstractInsnNode insn : opening.instructions.toArray()) {
+			if (insn instanceof org.objectweb.asm.tree.LdcInsnNode ldc && "vanillaSnapshot".equals(ldc.cst)) {
+				snapshot = opening.instructions.indexOf(insn);
+				break;
+			}
+		}
+		int unfreeze = firstCall(opening, "unfreeze");
+		assertTrue(snapshot >= 0 && unfreeze > snapshot,
+				"opening must take NeoForge's vanilla snapshot before it unfreezes");
 	}
 
 	/**

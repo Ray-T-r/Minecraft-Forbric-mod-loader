@@ -51,8 +51,7 @@ import net.forbric.kernel.classloading.ForbricClassLoader;
  * NeoForge mod's subscriber.
  *
  * <p>{@code registerAll} returns early only under a loader that is not the kernel's or when NeoForge's bus API does not
- * resolve; nothing in it is about MinecraftForge. Its caller, {@code registerNeoForgeContent}, opens with
- * {@code setForgeLoadingState}, whose absent-class path is a debug line. Measured
+ * resolve; nothing in it is about MinecraftForge. Measured
  * the same way in Stage 2.0's throwaway boot of the genuine base (carriers {@code none, neoforge-runtime.jar}): {@code registered
  * 38 @EventBusSubscriber class(es) on the game bus} for the 77 server mods of client-merged-pack.
  */

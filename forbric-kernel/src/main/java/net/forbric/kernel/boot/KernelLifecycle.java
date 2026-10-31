@@ -103,9 +103,9 @@ public final class KernelLifecycle {
 	private static volatile List<Path> kernelAssetJars = List.of();
 
 	/**
-	 * Whether the kernel's mod-loading window has opened in this process. An entry can carry each ecosystem's own copy of
-	 * the trigger — a merge keeping both MinecraftForge's {@code ServerModLoader.load()} and NeoForge's
-	 * {@code ServerModLoader.load(false)} in {@code Main.main}, each redirected here — and the window must run once.
+	 * Whether the kernel's mod-loading window has opened in this process. Each entry has one trigger the kernel
+	 * redirects here (NeoForge's {@code ServerModLoader.load(false)} or {@code ClientModLoader.begin()}); the guard is
+	 * defensive, so that a second trigger reaching the kernel runs nothing instead of a second window.
 	 */
 	private static final java.util.concurrent.atomic.AtomicBoolean WINDOW_OPENED = new java.util.concurrent.atomic.AtomicBoolean();
 
@@ -158,18 +158,9 @@ public final class KernelLifecycle {
 		ClassLoader cl = gameLoader != null ? gameLoader : Thread.currentThread().getContextClassLoader();
 		ForbricLog.info("[Forbric/Lifecycle] kernel %s mod-loading window (native, no FancyModLoader) — "
 				+ "registering ecosystem baselines", side.distName());
-		// Step 0: seed traditional Forge's empty LoadingModList (ServerStatusPing / client status touch it later).
-		PassiveSeeder.seedForgeLoadingModList(cl);
-		// Step 0b: give traditional Forge its sided executors. Forge's LogicalSidedProvider hands a mod's network
-		// handler the main thread to run on (CustomPayloadEvent.Context.enqueueWork); Forge fills it from
-		// ClientModLoader / ServerLifecycleHooks, both of which the kernel owns and neither of which runs. Left
-		// empty, the first Forge packet a mod handled on its main thread died in an NPE inside the dispatcher
-		// (gate-m15). Both suppliers are lazy — the client one asks Minecraft for its instance each time, the
-		// server one asks NeoForge's ServerLifecycleHooks for the current server, which the merged base keeps.
-		bridgeForgeSidedProviders(cl);
 		// Step 0c (client only): load each carrier's own built-in translations. Their loader is called from
-		// ClientModLoader.begin(), whose call site the kernel redirects here, so the table FMLTranslations and
-		// ForgeI18n read was never filled and every FML-side string — the branding line under the logo, the loading
+		// ClientModLoader.begin(), whose call site the kernel redirects here, so the table FMLTranslations
+		// reads was never filled and every FML-side string — the branding line under the logo, the loading
 		// screen's continue button — rendered as its raw key. The dedicated server has its own entry point
 		// (LanguageHook.loadLanguagesOnServer, per world) and is not this window's business.
 		if (side.isClient()) CarrierLanguages.loadBuiltins(cl);
@@ -336,49 +327,6 @@ public final class KernelLifecycle {
 		// handlers live in a Dist.CLIENT @EventBusSubscriber that step 2c2 rightly skips on a server.
 		if (side.isClient()) invokeNetworkSetup(cl,
 				"net.neoforged.neoforge.client.network.registration.ClientNetworkRegistry");
-	}
-
-	/**
-	 * {@code LogicalSidedProvider.setClient(() -> Minecraft.getInstance())} and
-	 * {@code setServer(() -> ServerLifecycleHooks.getCurrentServer())} — traditional Forge's view of "the game on
-	 * this side", resolved lazily so that neither the client instance nor a server has to exist yet. Best-effort.
-	 */
-	private static void bridgeForgeSidedProviders(ClassLoader cl) {
-		try {
-			Class<?> provider = Class.forName("net.minecraftforge.common.util.LogicalSidedProvider", false, cl);
-			java.util.function.Supplier<Object> clientSupplier = () -> {
-				try {
-					return Class.forName("net.minecraft.client.Minecraft", false, cl).getMethod("getInstance").invoke(null);
-				} catch (ClassNotFoundException dedicatedServer) {
-					Caught.expected(dedicatedServer);
-					return null;
-				} catch (Throwable t) {
-					Caught.warn(t, "[Forbric/Lifecycle] LogicalSidedProvider could not reach Minecraft.getInstance(); "
-							+ "a Forge mod's client-side handler gets no client");
-					return null;
-				}
-			};
-			java.util.function.Supplier<Object> serverSupplier = () -> {
-				try {
-					return Class.forName(ForeignType.SERVER_LIFECYCLE_HOOKS.binary(Ecosystem.NEOFORGE), false, cl)
-							.getMethod("getCurrentServer").invoke(null);
-				} catch (Throwable t) {
-					Caught.warn(t, "[Forbric/Lifecycle] LogicalSidedProvider could not reach the current server; a "
-							+ "Forge mod's server-side handler gets no server");
-					return null;
-				}
-			};
-			provider.getMethod("setClient", java.util.function.Supplier.class).invoke(null, clientSupplier);
-			provider.getMethod("setServer", java.util.function.Supplier.class).invoke(null, serverSupplier);
-			ForbricLog.info("[Forbric/Lifecycle] bridged traditional Forge's LogicalSidedProvider to the live client / "
-					+ "NeoForge's current server — Forge network handlers can enqueue onto the main thread");
-		} catch (ClassNotFoundException absent) {
-			Caught.expected(absent);
-			ForbricLog.debug("[Forbric/Lifecycle] no traditional-Forge LogicalSidedProvider to bridge");
-		} catch (Throwable t) {
-			Caught.warn(t, "[Forbric/Lifecycle] could not bridge Forge's LogicalSidedProvider — a Forge mod's main-thread "
-					+ "packet handler will NPE");
-		}
 	}
 
 	/** Runs a NeoForge {@code *NetworkRegistry.setup()} — it posts its Register*PayloadHandlersEvent via ModLoader. */
@@ -657,10 +605,7 @@ public final class KernelLifecycle {
 	private static void registerNeoForgeContent(ClassLoader cl, Side side) {
 		// Whether the registration window was opened, and so whether the finally below owes it a close.
 		boolean closeWindow = false;
-		// The MinecraftForge gates the opening found already closed, which the close puts back.
-		ReopenedRegistries opened = ReopenedRegistries.NONE;
 		try {
-			setForgeLoadingState(cl, false);
 			Class<?> distClass = Class.forName(ForeignType.DIST.binary(Ecosystem.NEOFORGE), false, cl);
 			Object dist = Enum.valueOf(distClass.asSubclass(Enum.class), side.distName());
 
@@ -681,12 +626,9 @@ public final class KernelLifecycle {
 					side.distName());
 			Object baselineBus = bus;
 
-			// Real Forge-family @Mods, each on its own bus.
+			// Real NeoForge @Mods, each on its own bus.
 			List<KernelModLoader.ConstructedMod> mods =
 					KernelModLoader.constructMods(cl, modJars, side);
-			// constructMods has published the surviving Forge containers and their real bus groups. Native
-			// gatherAndInitializeMods normally opens this gate; it is replaced by this kernel-owned stage.
-			setForgeLoadingState(cl, true);
 
 			// Load the config specs those constructors just registered, BEFORE any RegisterEvent fires. Genuine
 			// NeoForge loads STARTUP/COMMON right after construction and only then posts the registry events, and
@@ -727,33 +669,14 @@ public final class KernelLifecycle {
 			// earliest mod-bus phase there is — never happened. Posted after the subscribers are wired, so a
 			// handler declared on an @EventBusSubscriber receives it too.
 			fireSetupPhase(cl, KernelModLoader.publishedNeoMods(), ForeignType.FML_CONSTRUCT_MOD_EVENT, "construct");
-			// The other family's half of the same phase. It had no half at all: the kernel named NeoForge's event
-			// class inline here, so every MinecraftForge mod went from construction straight to RegisterEvent and
-			// whatever it does in the earliest mod-bus phase never happened. Pairing the two names in ForeignType
-			// is what made the absence visible.
-			fireForgeSetupPhase(cl, ForeignType.FML_CONSTRUCT_MOD_EVENT, "construct");
 
-			// Each ecosystem's mods take their own RegisterEvent flavour: NeoForge's 2-arg event on an IEventBus, and
-			// traditional Forge's 3-arg (key, ForgeRegistry, Registry) on a BusGroup. Split them here; both streams
-			// run inside the one unfreeze/freeze window below.
+			// NeoForge's 2-arg RegisterEvent on each IEventBus: the baseline's, then every mod's, all inside the one
+			// unfreeze/freeze window below.
 			List<Object> buses = new ArrayList<>();
 			buses.add(baselineBus);
-			// The published map, not a per-entry list: it is already one handle per mod ID, it is the same source
-			// fireForgeSetupPhase reads, and two @Mod classes sharing an ID now share ONE handle — a per-entry
-			// list would hold it twice and fire the whole RegisterEvent stream twice on that BusGroup, so the
-			// mod's DeferredRegisters would register their content twice.
-			// Minus the ones held back for the constructor window: their DeferredRegisters are registered by a
-			// constructor that has not run, so firing RegisterEvent at them here would post to an empty bus and
-			// spend the one pass they get. constructDeferredForgeMods fires their stream once they exist.
-			List<KernelForgeModContext.Handle> forgeHandles = new ArrayList<>();
-			java.util.Set<String> deferredForge = KernelModLoader.deferredForgeModIds();
-			for (Map.Entry<String, KernelForgeModContext.Handle> entry
-					: KernelModLoader.publishedForgeMods().entrySet()) {
-				if (!deferredForge.contains(entry.getKey())) forgeHandles.add(entry.getValue());
-			}
 			buses.addAll(registrationBuses(mods, KernelModLoader.classlessNeoMods().values()));
 
-			opened = openRegistrationWindow(cl);
+			openRegistrationWindow(cl);
 			// From here the registries are OPEN, and everything that closes them again lives in the finally below.
 			// It used to live inline at the end of this try, so anything that threw in between — a Class.forName for
 			// a carrier type that was renamed, NeoForgeRegistries failing to initialise, an Error escaping the
@@ -779,8 +702,7 @@ public final class KernelLifecycle {
 			postNeoNewRegistryEvent(cl, buses.subList(1, buses.size()));
 			// Isolated for the same reason KernelEventSubscribers.registerAll above is, and this one is wider.
 			// fireRegisterEvents resolves a GAME-side class reflectively, so a LinkageError inside it escapes to
-			// the outer catch and skips EVERYTHING below: the traditional-Forge baseline, the Fabric mods' main
-			// entrypoints, the attribute events, the spawn-placement event, BlockEntityTypeAddBlocksEvent and the
+			// the outer catch and skips EVERYTHING below: the Fabric mods' main entrypoints, the attribute events, the spawn-placement event, BlockEntityTypeAddBlocksEvent and the
 			// modded creative-tab categories. The one WARN that reported it said "could not register ecosystem
 			// content", which names none of that -- it blames the window for what one call inside it did.
 			int n = 0;
@@ -791,11 +713,6 @@ public final class KernelLifecycle {
 						+ "through DeferredRegister or RegisterEvent will have none of it. The rest of the "
 						+ "registration window below still runs");
 			}
-			// Traditional-Forge baseline: construct ForgeMod + fire the 3-arg Forge RegisterEvent so ForgeMod's own
-			// DeferredRegisters (e.g. the empty forge:fluid_type read by EntityFluidInteraction) register. The real
-			// Forge mods' buses ride along: their DeferredRegisters flush off the same event stream, and it can only
-			// be fired once NewRegistryEvent (inside) has created Forge's custom registries.
-			KernelForgeBaseline.register(cl, forgeHandles);
 			// Fabric mods' onInitialize() calls Registry.register(...) directly, so it belongs in this same unfrozen
 			// span. It runs BEFORE the bake below so the bake sees Fabric-registered content. The root registry is
 			// opened right here because NewRegistryEvent.fill() above re-froze it: a Fabric mod declaring its own
@@ -829,10 +746,8 @@ public final class KernelLifecycle {
 				// lifecycle instead, where it is the "only what is still unopened" pass it claims to be — see
 				// driveNativeRegistration.
 			}
-			// Bake the ForgeRegistries. Note a DeferredRegister's RegistryObjects bind during their OWN registry's
-			// RegisterEvent above (DeferredRegister$EventDispatcher calls updateReference right after each register),
-			// not here — so a mod reading another mod's RegistryObject during RegisterEvent depends on the dispatch
-			// order, not on this bake.
+			// A DeferredRegister's holders bind during their OWN registry's RegisterEvent above, so a mod reading
+			// another mod's holder during RegisterEvent depends on the dispatch order.
 			// NeoForge's postRegisterEvents is NOT the bake — it is the dispatch loop the kernel REPLACES: it walks
 			// getRegistrationOrder() and re-fires RegisterEvent through ModLoader.postEventWrapContainerInModOrder.
 			// While ModList was empty that was a silent no-op, so calling it looked harmless. Once the kernel
@@ -859,146 +774,32 @@ public final class KernelLifecycle {
 				ForbricLog.warn("[Forbric/Tooltips] NeoForge's tooltip appenders left unbuilt with -D%s=off — item "
 						+ "tooltips show no component lines", NEO_TOOLTIP_APPENDERS);
 			}
-			ForbricLog.info("[Forbric/Lifecycle] fired RegisterEvent x%d on %d bus(es) [NeoForge baseline + %d mod(s)] "
-					+ "+ %d traditional-Forge mod bus(es) + baked Forge registries", n, buses.size(),
-					buses.size() - 1, forgeHandles.size());
+			ForbricLog.info("[Forbric/Lifecycle] fired RegisterEvent x%d on %d bus(es) [NeoForge baseline + %d mod(s)]",
+					n, buses.size(), buses.size() - 1);
 			logRegisteredContent(cl);
-			// A dedicated server has now run every MinecraftForge gather state. A client has not: the Forge mods
-			// that wait for Minecraft construct in its <init> window, so constructDeferredForgeMods records them.
-			if (!side.isClient()) publishForgeGatherStates(cl);
 		} catch (Throwable t) {
-			setForgeLoadingState(cl, false);
 			Caught.warn(t, "[Forbric/Lifecycle] could not register ecosystem content");
 		} finally {
 			// Only when the window was actually opened: before unfreeze there is nothing to put back, and freezing
 			// a registry the kernel never opened would close one the caller still owns.
-			if (closeWindow) closeRegistrationWindow(cl, opened);
+			if (closeWindow) closeRegistrationWindow(cl);
 			if (!side.isClient()) fabricFreezePoint(cl, FabricFreezePointInjector.TAIL_HOOK);
 		}
 	}
 
-	/** Keep the carrier's actual flag writable by its own failure paths; never replace its getter with true. */
-	static void setForgeLoadingState(ClassLoader cl, boolean ready) {
-		if ("off".equalsIgnoreCase(System.getProperty("forbric.forgeClientInit", "on"))) return;
-		try {
-			Class<?> loader = Class.forName(ForeignType.FML_MOD_LOADER.binary(Ecosystem.FORGE), false, cl);
-			Field state = loader.getDeclaredField("loadingStateValid");
-			state.setAccessible(true);
-			state.setBoolean(null, ready);
-			if (ready) ForbricLog.info("[Forbric/Lifecycle] MinecraftForge event delivery enabled after container construction");
-		} catch (ClassNotFoundException absent) {
-			Caught.expected(absent);
-			ForbricLog.debug("[Forbric/Lifecycle] no MinecraftForge loading state to publish");
-		} catch (ReflectiveOperationException failed) {
-			Caught.warn(failed, "[Forbric/Lifecycle] could not publish MinecraftForge loading state");
-		}
-	}
-
-	/** {@code off} leaves MinecraftForge's completed-state set empty, which is what it always was before. */
-	static final String FORGE_LOADING_STATES = "forbric.forgeLoadingStates";
 
 	/**
-	 * MinecraftForge's GATHER states, as {@code holder#field}: the core loader's two, then ForgeStatesProvider's
-	 * four. Every state {@code gatherAndInitializeMods} dispatches, and nothing past it: the LOAD and COMPLETE
-	 * phases (setup, IMC, FREEZE_DATA, NETWORK_LOCK) happen elsewhere and are not claimed here.
-	 */
-	static final List<String> FORGE_GATHER_STATES = List.of(
-			"net.minecraftforge.fml.core.ModStateProvider#VALIDATE",
-			"net.minecraftforge.fml.core.ModStateProvider#CONSTRUCT",
-			"net.minecraftforge.common.ForgeStatesProvider#CREATE_REGISTRIES",
-			"net.minecraftforge.common.ForgeStatesProvider#INJECT_CAPABILITIES",
-			"net.minecraftforge.common.ForgeStatesProvider#UNFREEZE_DATA",
-			"net.minecraftforge.common.ForgeStatesProvider#LOAD_REGISTRIES");
-
-	/**
-	 * Records MinecraftForge's GATHER states as completed, once the kernel has done what they stand for.
+	 * Opens the main registration window.
 	 *
-	 * <p>MinecraftForge marks a state done in {@code ModLoader.dispatchAndHandleError}, i.e. only when its own
-	 * {@code gatherAndInitializeMods} runs it. The kernel replaced that method with its own stage — it constructs the
-	 * mods, fires NewRegistryEvent, injects capabilities, unfreezes and fires the RegisterEvent stream itself — and
-	 * only ever flipped {@code loadingStateValid}. So {@code hasCompletedState} answered false for every state,
-	 * forever. The merged {@code Sheets.<clinit>} asks exactly that about {@code LOAD_REGISTRIES}, and every client
-	 * boot logged "net.minecraft.client.renderer.Sheets loaded too early, modded registry-based materials may not
-	 * work correctly" with a stack, after every Forge RegisterEvent had already run (107 of them in the sweep pack).
-	 * A MinecraftForge mod asking the same question would get the same wrong answer.
-	 *
-	 * <p>Only while {@code isLoadingStateValid()}: a failed registration window turns that off, and a failed
-	 * native load does not complete its states either. The instances are the carrier's own statics, read through
-	 * the game loader, because the set compares them by equality. Adding to a set is idempotent, so a second call
-	 * changes nothing and re-dispatches nothing.
-	 *
-	 * @return how many states were newly recorded
-	 */
-	@SuppressWarnings("unchecked")
-	static int publishForgeGatherStates(ClassLoader cl) {
-		if ("off".equalsIgnoreCase(System.getProperty(FORGE_LOADING_STATES, "on"))) return 0;
-		try {
-			Class<?> loader = Class.forName(ForeignType.FML_MOD_LOADER.binary(Ecosystem.FORGE), false, cl);
-			if (!Boolean.TRUE.equals(loader.getMethod("isLoadingStateValid").invoke(null))) {
-				ForbricLog.debug("[Forbric/Lifecycle] MinecraftForge's loading state is not valid — its gather "
-						+ "states stay uncompleted");
-				return 0;
-			}
-			Field completed = loader.getDeclaredField("COMPLETED_STATES");
-			completed.setAccessible(true);
-			java.util.Set<Object> states = (java.util.Set<Object>) completed.get(null);
-			int added = 0;
-			for (String state : FORGE_GATHER_STATES) {
-				int hash = state.indexOf('#');
-				Object instance = Class.forName(state.substring(0, hash), true, cl).getField(state.substring(hash + 1)).get(null);
-				if (instance != null && states.add(instance)) added++;
-			}
-			if (added > 0) {
-				ForbricLog.info("[Forbric/Lifecycle] recorded %d MinecraftForge gather state(s) as completed "
-						+ "(VALIDATE..LOAD_REGISTRIES) — the kernel ran them itself, and Sheets asks "
-						+ "ModLoader.hasCompletedState(LOAD_REGISTRIES)", added);
-			}
-			return added;
-		} catch (ClassNotFoundException absent) {
-			Caught.expected(absent);
-			ForbricLog.debug("[Forbric/Lifecycle] no MinecraftForge loading states to record");
-			return 0;
-		} catch (ReflectiveOperationException | RuntimeException | LinkageError failed) {
-			Caught.warn(failed, "[Forbric/Lifecycle] could not record MinecraftForge's gather states — Sheets will "
-					+ "report it was \"loaded too early\" although every registry event has run");
-			return 0;
-		}
-	}
-
-	/**
-	 * Opens the main registration window: every gate between a registration call and its registry, whoever closed it.
-	 *
-	 * <p>First the post-Bootstrap vanilla registry state is captured for NEOFORGE. NeoForge's unfreeze clear-callback
+	 * <p>First the post-Bootstrap vanilla registry state is captured for NeoForge. NeoForge's unfreeze clear-callback
 	 * empties its blockstate→id map, and {@code BlockCallbacks.onBake} only re-adds blocks that {@code onAdd} saw
 	 * during the window (none of vanilla's) — so without a snapshot to restore from, the map stays empty and the first
-	 * clientbound {@code block_update} cannot encode ("Can't find id for Block{minecraft:lava}"). The kernel never
-	 * calls MinecraftForge's {@code vanillaSnapshot}: it LOCKS the vanilla wrappers.
-	 *
-	 * <p>Then {@code unfreezeData}, which clears the vanilla {@code frozen} flag and nothing else, and then the two
-	 * MinecraftForge gates {@link #reopenForgeRegistries} clears: a {@code NamespacedWrapper}'s {@code locked} flag
-	 * and a frozen {@code ForgeRegistry}. Both used to be open when this window opened, because nothing before it
-	 * closed them. A merged {@code Bootstrap.bootStrap()} that keeps BOTH ecosystems' edits to vanilla's last call
-	 * runs MinecraftForge's {@code GameData.vanillaSnapshot()} next to NeoForge's, and its {@code LOCK_VANILLA}
-	 * locks every vanilla wrapper before any mod is constructed. NeoForge's {@code RegisterEvent.register} and a
-	 * Fabric mod's {@code Registry.register} both write through those wrappers, so every one of them threw "Can not
-	 * register to a locked registry": NeoForge's own attributes never registered, and the dedicated server died in
-	 * {@code DefaultAttributes.<clinit>} on "Trying to access unbound value: neoforge:swim_speed". MinecraftForge's
-	 * own {@code RegisterEvent} goes to the {@code ForgeRegistry} and never noticed. Clearing what is found closed,
-	 * rather than skipping one known caller, keeps the window open whatever closed a gate before it.
-	 *
-	 * @return the gates found closed, for {@link #closeRegistrationWindow} to put back
+	 * clientbound {@code block_update} cannot encode ("Can't find id for Block{minecraft:lava}"). Then
+	 * {@code unfreezeData}, which clears the vanilla {@code frozen} flag.
 	 */
-	static ReopenedRegistries openRegistrationWindow(ClassLoader cl) {
+	static void openRegistrationWindow(ClassLoader cl) {
 		invokeGameDataOn(cl, ForeignType.GAME_DATA.binary(Ecosystem.NEOFORGE), "vanillaSnapshot");
 		unfreeze(cl);
-		ReopenedRegistries opened = reopenForgeRegistries(cl);
-		if (opened.count() > 0) {
-			ForbricLog.info("[Forbric/Lifecycle] the registration window found %d MinecraftForge registry wrapper(s) "
-					+ "locked and %d ForgeRegistr(ies) frozen before it opened, and cleared them — NeoForge's "
-					+ "RegisterEvent and Fabric's Registry.register write through those wrappers; both go back "
-					+ "when the window closes", opened.lockedWrappers().size(), opened.frozenForgeRegistries().size());
-		}
-		return opened;
 	}
 
 	/**
@@ -1011,24 +812,15 @@ public final class KernelLifecycle {
 	 * {@code rebuildNeoForgeBlockStateIds} re-adds the blockstate ids the open window's clear callback dropped, and
 	 * {@code sortNeoCreativeTabs} puts window-registered tabs into the strip the creative screen actually reads.
 	 *
-	 * <p>Before the freeze it puts back the MinecraftForge gates {@link #openRegistrationWindow} found closed, by the
-	 * mechanism that opened them, as {@link #closeClientEntrypointWindow} does for its window.
-	 *
 	 * <p>Best-effort as a whole AND per step, because this runs in a finally: it must not replace the exception
 	 * that brought it here.
 	 */
-	static void closeRegistrationWindow(ClassLoader cl, ReopenedRegistries opened) {
+	static void closeRegistrationWindow(ClassLoader cl) {
 		try {
 			linkBlockItems(cl);
 		} catch (Throwable t) {
 			Caught.warn(t, "[Forbric/Lifecycle] could not link block->item mappings while closing the registration "
 					+ "window");
-		}
-		try {
-			recloseForgeRegistries(cl, opened);
-		} catch (Throwable t) {
-			Caught.warn(t, "[Forbric/Lifecycle] could not put back the MinecraftForge registry gates the window "
-					+ "cleared");
 		}
 		try {
 			freeze(cl);
@@ -1330,7 +1122,6 @@ public final class KernelLifecycle {
 			Method process = eventCls.getDeclaredMethod("process");
 			process.setAccessible(true);
 			process.invoke(event);
-			ForgeDatapackDeclarations.declare(cl, hooksCls);
 
 			// Name what landed, not just how many: on the merged pack a count alone could not distinguish "the
 			// registry a mod needs is present" from "nine OTHER registries are present", and that ambiguity cost a
@@ -1628,14 +1419,9 @@ public final class KernelLifecycle {
 	 */
 	private static void fireModSetupLifecycle(ClassLoader cl, Side side) {
 		java.util.Map<String, KernelModLoader.NeoIdentity> mods = KernelModLoader.publishedNeoMods();
-		// NOT an early return on an empty NeoForge set. Every fireForgeSetupPhase below belongs to the OTHER family,
-		// and fireRegistrationEvents belongs to neither: on a pack whose Forge-family mods are all traditional
-		// MinecraftForge (a classic Forge modpack), publishedNeoMods() is empty while publishedForgeMods() is not,
-		// and this return skipped all four MinecraftForge phases plus NeoForge's own RegistrationEvents.init.
-		// That is the BiomesOPlenty/TerraBlender "the world came out looking vanilla" failure this method's own
-		// javadoc describes, with nothing anywhere saying so. fireSetupPhase and fireForgeSetupPhase each no-op on
-		// an empty set of their own family, so the guard buys nothing. The CLIENT twin (fireClientSetupLifecycle)
-		// dropped the same guard for the same reason; the server path never followed.
+		// NOT an early return on an empty NeoForge set: fireRegistrationEvents runs NeoForge's own
+		// RegistrationEvents.init, which a pack with no NeoForge mod still needs (capabilities, data maps), and the
+		// load report below is written for every pack. fireSetupPhase no-ops on an empty set by itself.
 
 		// On the CLIENT every phase, common setup included, is deferred to fireClientSetupLifecycle. This method
 		// runs BEFORE `new Minecraft(...)`, so Minecraft.getInstance() is still null here — and common setup is
@@ -1646,18 +1432,13 @@ public final class KernelLifecycle {
 		if (side.isClient()) return;
 
 		fireSetupPhase(cl, mods, ForeignType.FML_COMMON_SETUP_EVENT, "common setup");
-		fireForgeSetupPhase(cl, ForeignType.FML_COMMON_SETUP_EVENT, "common setup");
 		// The sided phase. The kernel used to jump straight from common setup to load complete, so on a dedicated
 		// server this event was never posted to anyone at all.
 		fireSetupPhase(cl, mods, ForeignType.FML_DEDICATED_SERVER_SETUP_EVENT, "dedicated server setup");
-		fireForgeSetupPhase(cl, ForeignType.FML_DEDICATED_SERVER_SETUP_EVENT, "dedicated server setup");
 		fireRegistrationEvents(cl);
 		fireSetupPhase(cl, mods, ForeignType.INTER_MOD_ENQUEUE_EVENT, "IMC enqueue");
-		fireForgeSetupPhase(cl, ForeignType.INTER_MOD_ENQUEUE_EVENT, "IMC enqueue");
 		fireSetupPhase(cl, mods, ForeignType.INTER_MOD_PROCESS_EVENT, "IMC process");
-		fireForgeSetupPhase(cl, ForeignType.INTER_MOD_PROCESS_EVENT, "IMC process");
 		fireSetupPhase(cl, mods, ForeignType.FML_LOAD_COMPLETE_EVENT, "load complete");
-		fireForgeSetupPhase(cl, ForeignType.FML_LOAD_COMPLETE_EVENT, "load complete");
 
 		// Loading is over on this side, so whatever went wrong during it is now the whole story rather than a
 		// partial one. A clean run writes no file and says one line.
@@ -1833,16 +1614,13 @@ public final class KernelLifecycle {
 	private static void fireClientSetupLifecycle(ClassLoader cl) {
 		if (!CLIENT_SETUP_FIRED.compareAndSet(false, true)) return;
 		java.util.Map<String, KernelModLoader.NeoIdentity> mods = KernelModLoader.publishedNeoMods();
-		// NOT an early return on an empty NeoForge set any more: the traditional-Forge phases below are a
-		// different family's, and an instance carrying only MinecraftForge mods would have skipped them for a
-		// reason that has nothing to do with it.
+		// NOT an early return on an empty NeoForge set: the registration events, the shim delivery and the load
+		// report below run for every pack.
 		// Common setup FIRST, and on the client it is posted from here rather than from the pre-Minecraft window
-		// — the same move the client setup phases themselves already made, one phase earlier. Both families, and
-		// before the sided phase, which is the order genuine NeoForge's CommonModLoader.load uses.
+		// — the same move the client setup phases themselves already made, one phase earlier. Before the sided
+		// phase, which is the order genuine NeoForge's CommonModLoader.load uses.
 		fireSetupPhase(cl, mods, ForeignType.FML_COMMON_SETUP_EVENT, "common setup");
-		fireForgeSetupPhase(cl, ForeignType.FML_COMMON_SETUP_EVENT, "common setup");
 		fireSetupPhase(cl, mods, ForeignType.FML_CLIENT_SETUP_EVENT, "client setup");
-		fireForgeSetupPhase(cl, ForeignType.FML_CLIENT_SETUP_EVENT, "client setup");
 		// A mod that is not a NeoForge mod but was handed the NeoForge build of a multi-loader library registered
 		// on a bus of its own, which is in no ModList and which NeoForge's own fan-out therefore never reaches.
 		// Here, not from the window that handed out the container: that one is inside Minecraft.<init> and runs
@@ -1852,11 +1630,8 @@ public final class KernelLifecycle {
 		// registration events, then IMC, then load complete.
 		fireRegistrationEvents(cl);
 		fireSetupPhase(cl, mods, ForeignType.INTER_MOD_ENQUEUE_EVENT, "IMC enqueue");
-		fireForgeSetupPhase(cl, ForeignType.INTER_MOD_ENQUEUE_EVENT, "IMC enqueue");
 		fireSetupPhase(cl, mods, ForeignType.INTER_MOD_PROCESS_EVENT, "IMC process");
-		fireForgeSetupPhase(cl, ForeignType.INTER_MOD_PROCESS_EVENT, "IMC process");
 		fireSetupPhase(cl, mods, ForeignType.FML_LOAD_COMPLETE_EVENT, "load complete");
-		fireForgeSetupPhase(cl, ForeignType.FML_LOAD_COMPLETE_EVENT, "load complete");
 
 		// The client's own end of loading. Same reason as the server twin: at this point what went wrong is the
 		// whole story, and this is the last moment before the player is looking at a title screen.
@@ -1884,64 +1659,12 @@ public final class KernelLifecycle {
 		}
 	}
 
-	/**
-	 * The traditional-MinecraftForge half of a setup phase.
-	 *
-	 * <p>Separate from {@link #fireSetupPhase} because the two families' buses are not the same shape, not because
-	 * the phases differ: NeoForge posts on a per-mod {@code IEventBus}, EventBus 7 resolves the bus from the event
-	 * plus that mod's {@code BusGroup}. Folding them would be the averaging-away this repo's {@code ForeignType}
-	 * javadoc warns about; the divergence stays as data at the call site, which is why every call above comes in
-	 * pairs.
-	 *
-	 * <p>Best-effort: a family that is not present resolves no event class and says so once at debug.
-	 */
-	private static void fireForgeSetupPhase(ClassLoader cl, ForeignType event, String label) {
-		// Same exclusion as the RegisterEvent split: a mod whose constructor has not run yet has registered no
-		// listeners, and its bus group is not started, so a phase posted at it now reaches nobody and is gone.
-		java.util.Set<String> deferred = KernelModLoader.deferredForgeModIds();
-		java.util.List<KernelForgeModContext.Handle> handles = new java.util.ArrayList<>();
-		for (java.util.Map.Entry<String, KernelForgeModContext.Handle> entry
-				: KernelModLoader.publishedForgeMods().entrySet()) {
-			if (!deferred.contains(entry.getKey())) handles.add(entry.getValue());
-		}
-		fireForgeSetupPhase(cl, handles, event, label);
-	}
-
-	/**
-	 * The same phase at an explicit set of handles.
-	 *
-	 * <p>Shared with the deferred-construction pass so that a client whose MinecraftForge mods ALL wait for the
-	 * constructor window still reports the phase in the same words. Routing that pass around this method left the
-	 * sentence out of the log entirely, and the only thing distinguishing "every Forge mod waited" from "there are
-	 * no Forge mods" would have been a silence.
-	 */
-	private static void fireForgeSetupPhase(ClassLoader cl, java.util.List<KernelForgeModContext.Handle> handles,
-			ForeignType event, String label) {
-		if (handles.isEmpty()) return;
-		try {
-			int fired = KernelForgeModContext.fireSetupPhase(cl, handles, event, label);
-			if (fired > 0) {
-				ForbricLog.info("[Forbric/Lifecycle] posted FML %s to %d traditional-Forge mod(s), then ran what "
-						+ "they deferred — a mod that does its real work from this event did nothing at all before",
-						label, fired);
-			}
-		} catch (ClassNotFoundException | NoClassDefFoundError absent) {
-			// NoClassDefFoundError as well as CNFE: the event types are named game-side now, so a carrier without
-			// them fails when KernelForgeSetup links rather than when Class.forName is called.
-			Caught.expected(absent);
-			ForbricLog.debug("[Forbric/Lifecycle] no traditional-MinecraftForge %s on this carrier", label);
-		} catch (Throwable t) {
-			Caught.warn(t, "[Forbric/Lifecycle] could not post traditional-Forge " + label);
-		}
-	}
-
 	private static final java.util.concurrent.atomic.AtomicBoolean CLIENT_SETUP_FIRED =
 			new java.util.concurrent.atomic.AtomicBoolean();
 
 	private static void fireSetupPhase(ClassLoader cl, java.util.Map<String, KernelModLoader.NeoIdentity> mods,
 			ForeignType event, String label) {
-		// The NeoForge twin of fireForgeSetupPhase's own empty guard, and it comes before the game-side class is
-		// named for the same reason: without it every phase would build a DeferredWorkQueue, hand it to the sync
+		// The empty guard comes before the game-side class is named: without it every phase would build a DeferredWorkQueue, hand it to the sync
 		// executor and log "posted FML <phase> to 0 NeoForge mod(s)" eight times on a pack that has no NeoForge mod.
 		if (mods.isEmpty()) return;
 		try {
@@ -2056,8 +1779,7 @@ public final class KernelLifecycle {
 	 * Posts NeoForge's {@code NewRegistryEvent} to every mod bus, then fills it — the phase before
 	 * {@code RegisterEvent} where mods create their own registries.
 	 *
-	 * <p>The kernel fired this only on traditional Forge's global bus ({@code KernelForgeBaseline}) and drove
-	 * NeoForge's own handler directly in {@link PassiveSeeder}, so no NeoForge MOD ever received it. Two things
+	 * <p>The kernel used to drive NeoForge's own handler directly in {@link PassiveSeeder}, so no NeoForge MOD ever received it. Two things
 	 * break without it: a mod that declares a custom registry never gets one, and — less obviously — mods use this
 	 * earliest mod-bus phase for setup that later phases depend on. WhiteNoise loads its config here (its own spec,
 	 * outside NeoForge's ConfigTracker, so no amount of {@code ConfigTracker.loadConfigs} substitutes), which is why
@@ -2082,44 +1804,17 @@ public final class KernelLifecycle {
 		}
 	}
 
-	private static void unfreeze(ClassLoader cl) {
-		invokeGameData(cl, "unfreezeData");
-	}
 
-	/** {@code -Dforbric.freezeNeoForgeFirst=off}: freeze in {@link #GAME_DATA_CLASSES} order (MinecraftForge first), as before. */
-	static final String FREEZE_ORDER_PROPERTY = "forbric.freezeNeoForgeFirst";
+	private static void unfreeze(ClassLoader cl) {
+		invokeGameDataOn(cl, ForeignType.GAME_DATA.binary(Ecosystem.NEOFORGE), "unfreezeData");
+	}
 
 	/**
-	 * NeoForge first, then MinecraftForge — the one order in which both {@code freezeData()} calls finish.
-	 *
-	 * <p>Bytecode, both carriers: NeoForge's {@code GameData.freezeData} walks {@code BuiltInRegistries.REGISTRY},
-	 * and for every {@code MappedRegistry} calls {@code bindAllTagsToEmpty()} then {@code freeze()}, then
-	 * {@code RegistryManager.takeFrozenSnapshot()}. {@code bindAllTagsToEmpty} starts with {@code validateWrite},
-	 * which THROWS on a registry that is already frozen — and MinecraftForge's {@code freezeData} freezes every
-	 * plain {@code MappedRegistry} ({@code freeze()}, bc 73-89). Forge first therefore aborted NeoForge's pass at
-	 * the FIRST registry: the "GameData.freezeData() THREW" warning on every boot, no tag keys bound to empty
-	 * until the tag reload ({@code Trying to access unbound value} downstream), and the snapshot never taken.
-	 *
-	 * <p>NeoForge first: registries are still writable, so its bind + freeze + snapshot complete. MinecraftForge's
-	 * pass afterwards is provably non-destructive: on a plain {@code MappedRegistry} its {@code freeze()} early-returns
-	 * (bc 0-8, already frozen); the ≤3 {@code NamespacedWrapper}s it created itself are unfrozen and re-frozen
-	 * ({@code isFrozen→unfreeze→freeze}, bc 42-70) — {@code unfreeze()} touches only {@code frozen}/{@code frozenTags},
-	 * and {@code NamespacedWrapper.freeze()} never calls {@code super.freeze()}, so NeoForge's bake callbacks do not
-	 * run twice. The one declared delta: those wrappers are frozen twice ({@code onBindTags},
-	 * {@code refreshTagsInHoldersForge} and the {@code DataComponentLookup} rebuilt twice on the same tag map —
-	 * idempotent), and {@code RegistryManager.takeFrozenSnapshot()} now genuinely runs.
+	 * NeoForge's {@code GameData.freezeData}: for every {@code MappedRegistry} in {@code BuiltInRegistries.REGISTRY}
+	 * it calls {@code bindAllTagsToEmpty()} then {@code freeze()}, then {@code RegistryManager.takeFrozenSnapshot()}.
 	 */
-	private static final String[] FREEZE_ORDER = {
-		ForeignType.GAME_DATA.binary(Ecosystem.NEOFORGE),
-		ForeignType.GAME_DATA.binary(Ecosystem.FORGE),
-	};
-
-	private static String[] freezeOrder() {
-		return "off".equalsIgnoreCase(System.getProperty(FREEZE_ORDER_PROPERTY, "on")) ? GAME_DATA_CLASSES : FREEZE_ORDER;
-	}
-
 	private static void freeze(ClassLoader cl) {
-		for (String className : freezeOrder()) invokeGameDataOn(cl, className, "freezeData");
+		invokeGameDataOn(cl, ForeignType.GAME_DATA.binary(Ecosystem.NEOFORGE), "freezeData");
 		latchRegistriesLoaded(cl);
 		describeFreeze(cl);
 	}
@@ -2127,7 +1822,8 @@ public final class KernelLifecycle {
 	/**
 	 * One count line: how many registries were frozen and how many tag keys NeoForge bound to empty. Read from
 	 * {@code MappedRegistry.frozenTags}, NOT {@code getTags()}/{@code listTags()} — those read {@code allTags},
-	 * which stays unbound until the tag reload and would count zero on a correct boot.
+	 * which stays unbound until the tag reload and would count zero on a correct boot. The words
+	 * "froze the registries NeoForge-first" stay as they were when a second family's pass followed: gates read them.
 	 */
 	private static void describeFreeze(ClassLoader cl) {
 		int registries = 0;
@@ -2161,11 +1857,8 @@ public final class KernelLifecycle {
 			if (registries == 0) return;
 			boundText = "?";
 		}
-		boolean neoFirst = freezeOrder() == FREEZE_ORDER;
-		ForbricLog.info("[Forbric/Lifecycle] froze the registries %s: %d registr%s, %s tag key(s) bound to empty until the "
-				+ "tag reload%s", neoFirst ? "NeoForge-first" : "MinecraftForge-first", registries,
-				registries == 1 ? "y" : "ies", boundText,
-				neoFirst ? " (MinecraftForge's pass then re-froze the Forge-wrapped ones)" : "");
+		ForbricLog.info("[Forbric/Lifecycle] froze the registries NeoForge-first: %d registr%s, %s tag key(s) bound to "
+				+ "empty until the tag reload", registries, registries == 1 ? "y" : "ies", boundText);
 	}
 
 	/**
@@ -2222,7 +1915,7 @@ public final class KernelLifecycle {
 		try {
 			Class<?> builtIn = Class.forName("net.minecraft.core.registries.BuiltInRegistries", false, cl);
 
-			// REGISTRY is the public read view and on the merged base it is Forge-wrapped; WRITABLE_REGISTRY is the
+			// REGISTRY is the public read view (on a merged base it was Forge-wrapped); WRITABLE_REGISTRY is the
 			// plain MappedRegistry that Registry.register actually validates against. Reopening only the first is
 			// the mistake that leaves this looking fixed while "Registry is already frozen" keeps being thrown.
 			for (String fieldName : new String[] {"REGISTRY", "WRITABLE_REGISTRY"}) {
@@ -2271,166 +1964,6 @@ public final class KernelLifecycle {
 		frozen.setBoolean(registry, false);
 	}
 
-	/** What a reopened registration window has to put back when it closes. */
-	record ReopenedRegistries(List<Object> lockedWrappers, List<Object> frozenForgeRegistries) {
-		static final ReopenedRegistries NONE = new ReopenedRegistries(List.of(), List.of());
-
-		int count() {
-			return lockedWrappers.size() + frozenForgeRegistries.size();
-		}
-	}
-
-	/**
-	 * Opens all THREE gates that stand between a late {@code Registry.register} and the registry it targets.
-	 *
-	 * <p>{@code unfreezeData} clears only the first. On the merged base every vanilla registry is additionally
-	 * wrapped by MinecraftForge, and Forge closes registration twice more:
-	 *
-	 * <ol>
-	 *   <li>vanilla {@code MappedRegistry.frozen} — cleared by {@code GameData.unfreezeData}</li>
-	 *   <li>{@code NamespacedWrapper.locked} — set by {@code ForgeRegistry.freeze()}, so by every
-	 *       {@code GameData.freezeData}, and by {@code GameData.vanillaSnapshot()}'s {@code LOCK_VANILLA}, which
-	 *       leaves the {@code ForgeRegistry} itself unfrozen. {@code ILockableRegistry} declares {@code lock()} and
-	 *       deliberately nothing to undo it, so the flag is cleared directly. Symptom while set: "Can not register
-	 *       to a locked registry."</li>
-	 *   <li>{@code ForgeRegistry.isFrozen} on the backing registry in {@code RegistryManager.ACTIVE} — this one
-	 *       does have {@code unfreeze()}. Symptom while set: "… is being added too late."</li>
-	 * </ol>
-	 *
-	 * <p>All three are Forge's answer to "a Forge mod should use {@code DeferredRegister}, not register late". A
-	 * Fabric mod has no such contract — it calls {@code Registry.register} directly, and on Fabric that keeps
-	 * working right through client init — so a window the kernel opens for Fabric code has to open all three. So
-	 * does the main window ({@link #openRegistrationWindow}): NeoForge's {@code RegisterEvent.register} is a
-	 * {@code Registry.register} too.
-	 */
-	private static ReopenedRegistries reopenForgeRegistries(ClassLoader cl) {
-		List<Object> unlocked = new ArrayList<>();
-		List<Object> unfrozen = new ArrayList<>();
-
-		try {
-			Class<?> wrapper = Class.forName("net.minecraftforge.registries.NamespacedWrapper", false, cl);
-			Field lockedField = wrapper.getDeclaredField("locked");
-			lockedField.setAccessible(true);
-
-			for (Object registry : rootRegistries(cl)) {
-				if (!wrapper.isInstance(registry) || !lockedField.getBoolean(registry)) continue;
-
-				lockedField.setBoolean(registry, false);
-				unlocked.add(registry);
-			}
-		} catch (ClassNotFoundException | NoSuchFieldException absent) {
-			Caught.expected(absent);
-			ForbricLog.debug("[Forbric/Lifecycle] no MinecraftForge registry lock to clear — skipping");
-		} catch (Throwable t) {
-			Caught.warn(t, "[Forbric/Lifecycle] could not clear the MinecraftForge registry lock");
-		}
-
-		try {
-			Class<?> forgeRegistry = Class.forName("net.minecraftforge.registries.ForgeRegistry", false, cl);
-			Field isFrozen = forgeRegistry.getDeclaredField("isFrozen");
-			isFrozen.setAccessible(true);
-
-			for (Object registry : activeForgeRegistries(cl)) {
-				if (!isFrozen.getBoolean(registry)) continue;
-
-				forgeRegistry.getMethod("unfreeze").invoke(registry);
-				unfrozen.add(registry);
-			}
-		} catch (ClassNotFoundException | NoSuchFieldException absent) {
-			Caught.expected(absent);
-			ForbricLog.debug("[Forbric/Lifecycle] no MinecraftForge ForgeRegistry to unfreeze — skipping");
-		} catch (Throwable t) {
-			Caught.warn(t, "[Forbric/Lifecycle] could not unfreeze the MinecraftForge registries");
-		}
-
-		return new ReopenedRegistries(unlocked, unfrozen);
-	}
-
-	/**
-	 * Puts back exactly what {@link #reopenForgeRegistries} opened — each gate by the same mechanism that opened it.
-	 *
-	 * <p>{@code ForgeRegistry} is public, so {@code freeze()} is reachable by reflection. {@code NamespacedWrapper}
-	 * is NOT: it ships package-private (public only while {@code RegistryWrapperAccessInjector} is on), and
-	 * {@code Method.invoke} on a public method of a package-private class throws
-	 * {@code IllegalAccessException} from outside the package however public the method looks. Calling
-	 * {@code lock()} therefore failed on all 30 wrappers, every boot, and only said so at WARN — so the registration
-	 * window the kernel opens for late Fabric registration was never closed again on the MinecraftForge side.
-	 *
-	 * <p>The fix is the symmetric one rather than {@code setAccessible} on the method, because
-	 * {@link #reopenForgeRegistries} opens this gate by writing the {@code locked} field directly and
-	 * {@code NamespacedWrapper.lock()} is, verbatim, {@code this.locked = true} — nothing else. Reversing a field
-	 * write with a field write cannot drift from what it undoes; going through the method could, the day Forge gives
-	 * {@code lock()} a body.
-	 */
-	private static void recloseForgeRegistries(ClassLoader cl, ReopenedRegistries opened) {
-		for (Object registry : opened.frozenForgeRegistries()) {
-			invokeNoArg(registry, "freeze", "re-freeze a MinecraftForge registry");
-		}
-
-		List<Object> wrappers = opened.lockedWrappers();
-		if (wrappers.isEmpty()) return;
-
-		try {
-			Class<?> wrapper = Class.forName("net.minecraftforge.registries.NamespacedWrapper", false, cl);
-			Field lockedField = wrapper.getDeclaredField("locked");
-			lockedField.setAccessible(true);
-
-			for (Object registry : wrappers) {
-				lockedField.setBoolean(registry, true);
-			}
-			ForbricLog.debug("[Forbric/Lifecycle] re-locked %d MinecraftForge registry wrapper(s)", wrappers.size());
-		} catch (Throwable t) {
-			Caught.warn(t, "[Forbric/Lifecycle] could not re-lock %d MinecraftForge registry wrapper(s) — late "
-					+ "registration into them stays possible for the rest of this run", wrappers.size());
-		}
-	}
-
-	private static void invokeNoArg(Object target, String method, String what) {
-		try {
-			target.getClass().getMethod(method).invoke(target);
-		} catch (Throwable t) {
-			Caught.warn(t, "[Forbric/Lifecycle] could not " + what);
-		}
-	}
-
-	/** Every registry in the root {@code BuiltInRegistries.REGISTRY}, plus the root itself. */
-	private static List<Object> rootRegistries(ClassLoader cl) throws Exception {
-		Class<?> builtIn = Class.forName("net.minecraft.core.registries.BuiltInRegistries", false, cl);
-		Object root = builtIn.getField("REGISTRY").get(null);
-		List<Object> all = new ArrayList<>();
-		all.add(root);
-
-		for (Object registry : (Iterable<?>) root) all.add(registry);
-		return all;
-	}
-
-	/** The {@code ForgeRegistry} instances backing {@code RegistryManager.ACTIVE}. */
-	private static List<Object> activeForgeRegistries(ClassLoader cl) throws Exception {
-		Class<?> managerCls = Class.forName(ForeignType.REGISTRY_MANAGER.binary(Ecosystem.FORGE), false, cl);
-		Object active = managerCls.getField("ACTIVE").get(null);
-		Field registries = managerCls.getDeclaredField("registries");
-		registries.setAccessible(true);
-
-		return new ArrayList<>(((java.util.Map<?, ?>) registries.get(active)).values());
-	}
-
-	/**
-	 * BOTH ecosystems ship their own {@code GameData} (same API, different registry bookkeeping) and the kernel's
-	 * registration window must drive both — driving only MinecraftForge's left NeoForge's registry callbacks unfired,
-	 * so {@code NeoForgeRegistryCallbacks$BlockCallbacks.onBake} never rebuilt its blockstate→id map and the first
-	 * {@code clientbound/minecraft:block_update} failed to encode ("Can't find id for Block{minecraft:lava}").
-	 */
-	private static final String[] GAME_DATA_CLASSES = {
-		ForeignType.GAME_DATA.binary(Ecosystem.FORGE),
-		ForeignType.GAME_DATA.binary(Ecosystem.NEOFORGE),
-	};
-
-	private static void invokeGameData(ClassLoader cl, String method) {
-		for (String className : GAME_DATA_CLASSES) {
-			invokeGameDataOn(cl, className, method);
-		}
-	}
-
 	/**
 	 * NeoForge's entity-attribute events ({@code CommonHooks.modifyAttributes}), with {@code DefaultAttributes} initialised
 	 * first.
@@ -2465,11 +1998,10 @@ public final class KernelLifecycle {
 	}
 
 	/**
-	 * One ecosystem's {@code GameData} only — for steps whose semantics differ between the two families.
+	 * A no-arg static hook on one game-side class: NeoForge's {@code GameData} or another step of its loading.
 	 *
 	 * <p><b>ABSENT and FAILED are not the same thing, and this method used to report them the same way.</b> The
-	 * absence of a class is ordinary: only one Forge family may be present, and {@link #invokeGameData} deliberately
-	 * asks both. A method that is THERE and THREW is the opposite of ordinary, and every caller here is a whole
+	 * absence of a class is ordinary (a test loader, a carrier without the step). A method that is THERE and THREW is the opposite of ordinary, and every caller here is a whole
 	 * feature: the registry bake, the freeze/unfreeze pair, {@code CommonHooks.modifyAttributes},
 	 * {@code SpawnPlacements.fireSpawnPlacementEvent}, {@code GameRuleCategory.registerModdedCategories}.
 	 *
@@ -2545,11 +2077,6 @@ public final class KernelLifecycle {
 		KernelDataPacks.addTo(packRepository, packType, cl, modJars, runtimeJars);
 	}
 
-	/** Variant for a traditional-Forge {@code ServerModLoader.load()V} (no-arg) redirect. */
-	public static void onServerModLoadingNoArg() {
-		onServerModLoading(true);
-	}
-
 	/**
 	 * Fires the Fabric {@code client} entrypoints. Injected into {@code Minecraft.<init>} (by
 	 * {@code ClientEntrypointHookInjector}) just before {@code Options} is created — after the {@code Minecraft}
@@ -2600,25 +2127,17 @@ public final class KernelLifecycle {
 	 */
 	public static void onClientEntrypoints() {
 		ClassLoader cl = gameLoader;
-		ReopenedRegistries opened = ReopenedRegistries.NONE;
 		boolean reopened = false;
 
 		try {
 			unfreeze(cl);
 			rootRegistry(cl, true);
-			opened = reopenForgeRegistries(cl);
 			reopened = true;
-			ForbricLog.info("[Forbric/Lifecycle] registries reopened for the Fabric client entrypoints "
-					+ "(%d MinecraftForge gate(s) cleared)", opened.count());
+			ForbricLog.info("[Forbric/Lifecycle] registries reopened for the Fabric client entrypoints");
 		} catch (Throwable t) {
 			Caught.warn(t, "[Forbric/Lifecycle] could not reopen the registries for the Fabric client "
 					+ "entrypoints — a mod registering content from onInitializeClient will fail");
 		}
-
-		// Traditional-MinecraftForge constructs its own mods from ClientModLoader.begin(Minecraft, ...), i.e. in
-		// here. Any that reached for Minecraft in the early window were held back rather than withdrawn; this is
-		// the moment they were waiting for, and it is inside the reopened span so their DeferredRegisters land.
-		constructDeferredForgeMods(cl);
 
 		try {
 			// main first, then client — Fabric's own Hooks.startClient order, now at Fabric's own point in the
@@ -2632,7 +2151,7 @@ public final class KernelLifecycle {
 			// BuiltInRegistries.freeze() that FabricFreezeHookMixinAdapter moved run around the freeze that closes
 			// this window — the HEAD half while it is still open, the TAIL half once it is frozen.
 			fabricFreezePoint(cl, FabricFreezePointInjector.HEAD_HOOK);
-			if (reopened) closeClientEntrypointWindow(cl, opened);
+			if (reopened) closeClientEntrypointWindow(cl);
 			fabricFreezePoint(cl, FabricFreezePointInjector.TAIL_HOOK);
 			// A CLIENT config registered from a Fabric client entrypoint missed the early pass entirely, and
 			// nothing else opens one. Reading it then throws rather than returning a default.
@@ -2645,41 +2164,6 @@ public final class KernelLifecycle {
 		// dedicated server declares in. Before NeoForge's client setup, whose RegisterDataMapTypesEvent reads the
 		// declared list. A no-op when the pre-Minecraft window already declared.
 		registerDataPackRegistries(cl);
-	}
-
-	/**
-	 * Constructs the traditional-MinecraftForge mods held back from the pre-{@code Minecraft} window, then gives
-	 * them the two things that window would have: the construct phase and their own RegisterEvent stream.
-	 *
-	 * <p>Not {@code KernelForgeBaseline.register}: that reconstructs ForgeMod and re-fires NewRegistryEvent, and
-	 * both already happened. Newly added NewRegistryEvent listeners receive their own declaration pass;
-	 * existing listeners are excluded by identity, and only these handles receive RegisterEvent.
-	 */
-	private static void constructDeferredForgeMods(ClassLoader cl) {
-		if (!KernelForgeModContext.available(cl)) return;
-		try {
-			java.util.List<Object> earlyListeners = LateForgeRegistryDeclarations.snapshot(cl);
-			java.util.List<KernelForgeModContext.Handle> late = KernelModLoader.constructDeferredForgeMods(cl);
-			if (!late.isEmpty()) {
-				fireForgeSetupPhase(cl, late, ForeignType.FML_CONSTRUCT_MOD_EVENT, "construct");
-				LateForgeRegistryDeclarations.fire(cl, earlyListeners);
-				// A newly created vanilla-style registry may refreeze the root while declaring itself.
-				rootRegistry(cl, true);
-				unfreeze(cl);
-				int fired = KernelForgeModContext.fireRegisterEvents(cl, late);
-				ForbricLog.info("[Forbric/Lifecycle] constructed %d traditional-Forge mod(s) in the Minecraft.<init> "
-						+ "window, where MinecraftForge constructs its own, and fired RegisterEvent x%d for them",
-						late.size(), fired);
-			}
-		} catch (Throwable t) {
-			Caught.warn(t, "[Forbric/Lifecycle] could not construct the deferred traditional-Forge mods — they "
-					+ "stay unconstructed, which is where they were before");
-			return;
-		}
-		// The point MinecraftForge's own ClientModLoader.begin finishes gathering: every Forge mod is constructed
-		// and has had its RegisterEvent stream. Sheets, which asks whether LOAD_REGISTRIES completed, is first
-		// loaded later in this same constructor.
-		publishForgeGatherStates(cl);
 	}
 
 	/**
@@ -2784,10 +2268,9 @@ public final class KernelLifecycle {
 	}
 
 	/** Re-closes after the client entrypoints and redoes the id bookkeeping their registrations invalidated. */
-	private static void closeClientEntrypointWindow(ClassLoader cl, ReopenedRegistries opened) {
+	private static void closeClientEntrypointWindow(ClassLoader cl) {
 		try {
 			linkBlockItems(cl);
-			recloseForgeRegistries(cl, opened);
 			rootRegistry(cl, false);
 			freeze(cl);
 			rebuildNeoForgeBlockStateIds(cl);

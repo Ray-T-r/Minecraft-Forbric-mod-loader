@@ -31,23 +31,23 @@ import org.objectweb.asm.tree.MethodInsnNode;
 import org.objectweb.asm.tree.MethodNode;
 
 /**
- * The MinecraftForge half of the setup lifecycle must be reachable on a pack that has no NeoForge mod.
+ * NeoForge's own {@code RegistrationEvents.init} must be reachable on a pack that has no NeoForge mod.
  *
  * <p>This is a shape test on the compiled method rather than a behaviour test, because the behaviour needs a
  * live carrier: every call inside {@code fireModSetupLifecycle} resolves game classes reflectively, so the only
- * thing assertable off-game is the CONTROL FLOW — and the control flow is exactly what was wrong. The method
- * opened with {@code if (mods.isEmpty()) return;} over {@code publishedNeoMods()}, which on a classic
- * MinecraftForge pack is empty while {@code publishedForgeMods()} is full, so all four MinecraftForge phases
- * and NeoForge's own {@code RegistrationEvents.init} were skipped with no log line anywhere.
+ * thing assertable off-game is the CONTROL FLOW — and the control flow is exactly what was wrong once. The method
+ * opened with {@code if (mods.isEmpty()) return;} over {@code publishedNeoMods()}, so on a pack with no NeoForge
+ * mod NeoForge's own {@code RegistrationEvents.init} (capabilities, data maps) was skipped with no log line
+ * anywhere, along with the other family's phases that ran there then.
  *
- * <p>The invariant it pins: the only {@code RETURN} that may precede the first {@code fireForgeSetupPhase} call
+ * <p>The invariant it pins: the only {@code RETURN} that may precede the {@code fireRegistrationEvents} call
  * is the SIDE guard. The client's phases all live in {@code fireClientSetupLifecycle} now, common setup
  * included, so a return on {@code side.isClient()} is correct here — a return on "no NeoForge mods" is the
  * defect, and the two are told apart by what the branch tests.
  */
 class KernelLifecycleSetupPhaseReachTest {
 	@Test
-	void theMinecraftForgePhasesAreReachableWithNoNeoForgeModLoaded() throws Exception {
+	void theRegistrationEventsAreReachableWithNoNeoForgeModLoaded() throws Exception {
 		Path compiled = Path.of(System.getProperty("user.dir"), "build", "classes", "java", "main",
 				"net", "forbric", "kernel", "boot", "KernelLifecycle.class");
 		assertTrue(Files.isRegularFile(compiled),
@@ -59,26 +59,24 @@ class KernelLifecycleSetupPhaseReachTest {
 				.orElseThrow(() -> new AssertionError("fireModSetupLifecycle is gone"));
 
 		int firstReturn = -1;
-		int firstForgePhase = -1;
+		int registrationEvents = -1;
 		int firstIsClient = -1;
 		int firstIsEmpty = -1;
 		AbstractInsnNode[] insns = setup.instructions.toArray();
 		for (int i = 0; i < insns.length; i++) {
 			if (firstReturn < 0 && insns[i].getOpcode() == Opcodes.RETURN) firstReturn = i;
 			if (!(insns[i] instanceof MethodInsnNode call)) continue;
-			if (firstForgePhase < 0 && "fireForgeSetupPhase".equals(call.name)) firstForgePhase = i;
+			if (registrationEvents < 0 && "fireRegistrationEvents".equals(call.name)) registrationEvents = i;
 			if (firstIsClient < 0 && "isClient".equals(call.name)) firstIsClient = i;
 			if (firstIsEmpty < 0 && "isEmpty".equals(call.name)) firstIsEmpty = i;
 		}
 
-		assertTrue(firstForgePhase >= 0,
-				"fireModSetupLifecycle no longer posts any traditional-MinecraftForge setup phase");
-		assertTrue(firstIsEmpty < 0 || firstIsEmpty > firstForgePhase,
-				"fireModSetupLifecycle tests a collection for emptiness before it reaches the first "
-						+ "fireForgeSetupPhase — a pack whose Forge-family mods are all traditional MinecraftForge "
-						+ "then gets no FMLCommonSetupEvent at all, which is the 'the world came out looking "
-						+ "vanilla' failure");
-		assertTrue(firstReturn < 0 || firstReturn > firstForgePhase
+		assertTrue(registrationEvents >= 0,
+				"fireModSetupLifecycle no longer runs NeoForge's RegistrationEvents.init");
+		assertTrue(firstIsEmpty < 0 || firstIsEmpty > registrationEvents,
+				"fireModSetupLifecycle tests a collection for emptiness before it reaches fireRegistrationEvents — "
+						+ "a pack with no NeoForge mod then registers no capability and no data map");
+		assertTrue(firstReturn < 0 || firstReturn > registrationEvents
 						|| (firstIsClient >= 0 && firstIsClient < firstReturn),
 				"the only early return allowed here is the side guard — the client's phases, common setup "
 						+ "included, are posted from fireClientSetupLifecycle instead");

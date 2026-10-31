@@ -35,7 +35,6 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.TreeMap;
-import java.util.function.UnaryOperator;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipOutputStream;
 
@@ -59,25 +58,26 @@ import net.forbric.kernel.metadata.forge.FmlConfigElements;
  * What a mod reads out of a kernel-built {@code IModInfo} has the same value TYPES the mod's own FML would have
  * given it — checked against the real FML classes, not against a description of them.
  *
- * <p>Both FMLs build {@code getModProperties()} as {@code NightConfigWrapper.getConfigElement("modproperties", id)}:
- * NeoForge answers a table with its {@code valueMap()}, MinecraftForge with an {@code ImmutableMap} of the same
- * entries. Both are SHALLOW, so a table one level down is still night-config's own {@code Config}, and an array of
+ * <p>NeoForge builds {@code getModProperties()} as {@code NightConfigWrapper.getConfigElement("modproperties", id)} and
+ * answers a table with its {@code valueMap()}. That is SHALLOW, so a table one level down is still night-config's own {@code Config}, and an array of
  * tables is a {@code List} of them. The kernel used to flatten every level into {@code LinkedHashMap}/{@code
  * ArrayList}, and LibJF Config Core — which casts {@code getModProperties().get("libjf:config")} to {@code Config} —
  * failed to construct on every launch.
  *
- * <p>The oracle is the wrapper class out of each staged carrier, fed the same TOML night-config parses for the
+ * <p>The oracle is the wrapper class out of the staged NeoForge carrier, fed the same TOML night-config parses for the
  * kernel. Only the night-config on this test's classpath is used on both sides, which is also the truth at
  * runtime: {@link net.forbric.kernel.classloading.DelegationPolicy} pins {@code com.electronwill.nightconfig.} to
  * the one parent-loaded copy, so a carrier's bundled copy never defines a second {@code Config}.
+ *
+ * <p>MinecraftForge's own wrapper is no longer an oracle: Forbric stopped loading MinecraftForge mods, and the one
+ * reader of a MinecraftForge {@code mods.toml} left is the refusal path, which needs the ids and names discovery
+ * reads out of it ({@link #aMinecraftForgeManifestIsStillReadForWhatTheRefusalNames}).
  */
 class FmlTomlShapeOracleTest {
 	private static final Path RUN = TestFixtures.stagedRoot().normalize();
 	private static final Path NEO_CARRIER = RUN.resolve(TestFixtures.NEO_CARRIER_JAR);
-	private static final Path FORGE_CARRIER = RUN.resolve(TestFixtures.FORGE_INTEROP_JAR);
 
 	private static final String NEO_WRAPPER = "net.neoforged.fml.loading.moddiscovery.NightConfigWrapper";
-	private static final String FORGE_WRAPPER = "net.minecraftforge.fml.loading.moddiscovery.NightConfigWrapper";
 
 	/**
 	 * Every value shape a {@code [modproperties]} table can take, in a MinecraftForge {@code mods.toml}: Iceberg's
@@ -153,15 +153,15 @@ class FmlTomlShapeOracleTest {
 	}
 
 	/**
-	 * The owning file's {@code getConfigElement} answers every path of a mods.toml's top level the way BOTH FMLs'
-	 * {@code NightConfigWrapper} over the parsed file do — the same value, of the same class. That is a
-	 * {@code valueMap()} for a NeoForge table and Guava's {@code ImmutableMap} for a MinecraftForge one.
+	 * The owning file's {@code getConfigElement} answers every path of a mods.toml's top level the way NeoForge's
+	 * {@code NightConfigWrapper} over the parsed file does — the same value, of the same class ({@code valueMap()} for
+	 * a table).
 	 *
-	 * <p>The root each oracle wraps is parsed the way that FML parses it: NeoForge's {@code ModFileParser} wraps
-	 * {@code TomlFormat.createParser().parse(reader).unmodifiable()}, MinecraftForge's a loaded {@code FileConfig}.
+	 * <p>The root the oracle wraps is parsed the way NeoForge parses it: its {@code ModFileParser} wraps
+	 * {@code TomlFormat.createParser().parse(reader).unmodifiable()}.
 	 */
 	@Test
-	void fileConfigElementsAnswerEveryPathTheWayBothFmlsDo() throws Exception {
+	void fileConfigElementsAnswerEveryPathTheWayNeoForgeDoes() throws Exception {
 		Map<String, Object> kernel = discovered(FILE_TOML, "META-INF/neoforge.mods.toml").getFileConfigElements();
 		List<String[]> paths = List.of(new String[] {"modLoader"}, new String[] {"license"},
 				new String[] {"issueTrackerURL"}, new String[] {"showAsResourcePack"}, new String[] {"services"},
@@ -176,17 +176,6 @@ class FmlTomlShapeOracleTest {
 			for (String[] path : paths) {
 				assertSameAnswer(element(wrapper, path), FmlConfigElements.neoForge(kernel, path), "NeoForge " + String.join(".", path));
 			}
-		}
-		try (URLClassLoader forge = forgeOracle()) {
-			Object wrapper = wrapper(forge, FORGE_WRAPPER, root(FILE_TOML));
-			UnaryOperator<Map<String, Object>> guava = guavaCopy(forge);
-			for (String[] path : paths) {
-				assertSameAnswer(element(wrapper, path), FmlConfigElements.minecraftForge(kernel, guava, path),
-						"MinecraftForge " + String.join(".", path));
-			}
-			assertTrue(Class.forName("com.google.common.collect.ImmutableMap", false, forge)
-					.isInstance(FmlConfigElements.minecraftForge(kernel, guava, "custom").orElseThrow()),
-					"MinecraftForge hands a table out as Guava's ImmutableMap");
 		}
 	}
 
@@ -217,10 +206,7 @@ class FmlTomlShapeOracleTest {
 	/**
 	 * The manifests of the mods that read these seams, through the kernel and through their own FML: every top-level
 	 * key and every key of every {@code [[mods]]} entry answers the same value of the same class. Not Enough Crashes
-	 * and Puzzles Lib are NeoForge mods, wthit a MinecraftForge one. Arrays of tables are left out: both wrappers
-	 * throw for them, and nothing asks. wthit's MinecraftForge build left the popular pack for its NeoForge build in
-	 * Stage 3 and sits beside it in forge-refused/; the manifest is a checked-in copy either way, and since a jar
-	 * carrying only it is refused, the kernel reads it from a universal jar ({@link #discoveredForge}).
+	 * and Puzzles Lib are NeoForge mods. Arrays of tables are left out: the wrapper throws for them, and nothing asks.
 	 */
 	@Test
 	void theReadersOwnManifestsAnswerAsTheirOwnFmlDoes() throws Exception {
@@ -228,20 +214,13 @@ class FmlTomlShapeOracleTest {
 				"build/compat-inputs/sweep90/mods/notenoughcrashes-neoforge-4.4.9+26.2.jar", "META-INF/neoforge.mods.toml");
 		String puzzles = fixture("puzzleslib.neoforge.mods.toml",
 				"run/client-popular/mods/PuzzlesLib-v26.2.4-mc26.2.x-NeoForge.jar", "META-INF/neoforge.mods.toml");
-		String wthit = fixture("wthit.mods.toml", "run/client-popular/forge-refused/wthit-26.2-forge-20.0.0.jar", "META-INF/mods.toml");
 
 		try (URLClassLoader neo = neoOracle()) {
 			for (String toml : List.of(nec, puzzles)) {
 				UnmodifiableConfig root = TomlFormat.instance().createParser().parse(toml).unmodifiable();
 				everyKeyAnswersAlike(wrapper(neo, NEO_WRAPPER, root), root,
-						discoveredAll(toml, "META-INF/neoforge.mods.toml"), null);
+						discoveredAll(toml, "META-INF/neoforge.mods.toml"));
 			}
-		}
-		List<DiscoveredMod> wthitMods = discoveredForge(wthit);
-		assertEquals(List.of("wthit", "waila"), wthitMods.stream().map(DiscoveredMod::getId).toList());
-		try (URLClassLoader forge = forgeOracle()) {
-			UnmodifiableConfig root = root(wthit);
-			everyKeyAnswersAlike(wrapper(forge, FORGE_WRAPPER, root), root, wthitMods, guavaCopy(forge));
 		}
 
 		DiscoveredMod necMod = discovered(nec, "META-INF/neoforge.mods.toml");
@@ -252,21 +231,33 @@ class FmlTomlShapeOracleTest {
 		assertEquals(Optional.of("Fuzs"), FmlConfigElements.neoForge(puzzlesMod.getConfigElements(), "authors"));
 		assertEquals(Optional.of("https://modrinth.com/mod/puzzles-lib"),
 				FmlConfigElements.neoForge(puzzlesMod.getConfigElements(), "displayURL"));
-		assertEquals(Optional.of("https://github.com/badasintended/wthit/issues"), FmlConfigElements.minecraftForge(
-				wthitMods.get(0).getFileConfigElements(), FmlConfigElements::unmodifiableCopy, "issueTrackerURL"));
 	}
 
 	/**
-	 * The top level against {@code fileWrapper}; each mod's entry against a wrapper over that entry.
-	 *
-	 * @param guava null for NeoForge's answer, else MinecraftForge's with this copy
+	 * wthit's MinecraftForge {@code mods.toml}, the dialect only the refusal path still reads. wthit's MinecraftForge
+	 * build left the popular pack for its NeoForge build in Stage 3 and sits beside it in forge-refused/; the manifest
+	 * is a checked-in copy either way. Alone in a jar it is refused, with no mod; beside a NeoForge half (a universal
+	 * jar) discovery still reports its two mods, with the ids, names and file keys a refusal prompt or a set-aside half
+	 * is described with.
 	 */
-	private static void everyKeyAnswersAlike(Object fileWrapper, UnmodifiableConfig root, List<DiscoveredMod> mods,
-			UnaryOperator<Map<String, Object>> guava) throws Exception {
+	@Test
+	void aMinecraftForgeManifestIsStillReadForWhatTheRefusalNames() throws Exception {
+		String wthit = fixture("wthit.mods.toml", "run/client-popular/forge-refused/wthit-26.2-forge-20.0.0.jar", "META-INF/mods.toml");
+		List<DiscoveredMod> wthitMods = discoveredForge(wthit);
+		assertEquals(List.of("wthit", "waila"), wthitMods.stream().map(DiscoveredMod::getId).toList());
+		assertTrue(wthitMods.stream().allMatch(mod -> mod.getDisplayName() != null && !mod.getDisplayName().isBlank()),
+				"every mod keeps a display name: " + wthitMods);
+		assertEquals("https://github.com/badasintended/wthit/issues",
+				wthitMods.get(0).getFileConfigElements().get("issueTrackerURL"));
+	}
+
+	/** The top level against {@code fileWrapper}; each mod's entry against a wrapper over that entry. */
+	private static void everyKeyAnswersAlike(Object fileWrapper, UnmodifiableConfig root, List<DiscoveredMod> mods)
+			throws Exception {
 		DiscoveredMod first = mods.get(0);
 		for (Map.Entry<String, Object> entry : new TreeMap<>(root.valueMap()).entrySet()) {
 			if (isArrayOfTables(entry.getValue())) continue;
-			assertSameAnswer(element(fileWrapper, entry.getKey()), answer(first.getFileConfigElements(), guava,
+			assertSameAnswer(element(fileWrapper, entry.getKey()), FmlConfigElements.neoForge(first.getFileConfigElements(),
 					entry.getKey()), first.getId() + " file " + entry.getKey());
 		}
 		List<?> entries = (List<?>) root.get(List.of("mods"));
@@ -275,30 +266,10 @@ class FmlTomlShapeOracleTest {
 			UnmodifiableConfig table = (UnmodifiableConfig) entries.get(i);
 			Object entryWrapper = wrapper(fileWrapper.getClass().getClassLoader(), fileWrapper.getClass().getName(), table);
 			for (String key : new TreeMap<>(table.valueMap()).keySet()) {
-				assertSameAnswer(element(entryWrapper, key), answer(mods.get(i).getConfigElements(), guava, key),
+				assertSameAnswer(element(entryWrapper, key), FmlConfigElements.neoForge(mods.get(i).getConfigElements(), key),
 						mods.get(i).getId() + " [[mods]] " + key);
 			}
 		}
-	}
-
-	private static Optional<Object> answer(Map<String, Object> elements, UnaryOperator<Map<String, Object>> guava,
-			String... path) {
-		return guava == null ? FmlConfigElements.neoForge(elements, path)
-				: FmlConfigElements.minecraftForge(elements, guava, path);
-	}
-
-	/** {@code ImmutableMap.copyOf} from the Guava MinecraftForge's wrapper links against; the kernel's tests have none. */
-	static UnaryOperator<Map<String, Object>> guavaCopy(ClassLoader loader) throws Exception {
-		Method copyOf = Class.forName("com.google.common.collect.ImmutableMap", true, loader).getMethod("copyOf", Map.class);
-		return entries -> {
-			try {
-				@SuppressWarnings("unchecked")
-				Map<String, Object> copy = (Map<String, Object>) copyOf.invoke(null, entries);
-				return copy;
-			} catch (ReflectiveOperationException e) {
-				throw new AssertionError(e);
-			}
-		};
 	}
 
 	private static boolean isArrayOfTables(Object value) {
@@ -346,17 +317,13 @@ class FmlTomlShapeOracleTest {
 	}
 
 	@Test
-	void everyPropertyShapeMatchesBothFmls() throws Exception {
+	void everyPropertyShapeMatchesNeoForges() throws Exception {
 		UnmodifiableConfig root = root(FORGE_TOML);
 		Map<String, Object> kernel = only(discoveredForge(FORGE_TOML)).getModProperties();
 
 		try (URLClassLoader neo = neoOracle()) {
 			Object nativeProperties = element(wrapper(neo, NEO_WRAPPER, root), "modproperties", "shapetest").orElseThrow();
 			assertEquals(shape(nativeProperties), shape(kernel), "NeoForge's valueMap()");
-		}
-		try (URLClassLoader forge = forgeOracle()) {
-			Object nativeProperties = element(wrapper(forge, FORGE_WRAPPER, root), "modproperties", "shapetest").orElseThrow();
-			assertEquals(shape(nativeProperties), shape(kernel), "MinecraftForge's ImmutableMap of the same entries");
 		}
 	}
 
@@ -388,30 +355,10 @@ class FmlTomlShapeOracleTest {
 		return new URLClassLoader(new URL[] {NEO_CARRIER.toUri().toURL()}, FmlTomlShapeOracleTest.class.getClassLoader());
 	}
 
-	/** MinecraftForge's wrapper builds its answer with Guava, which Minecraft supplies and the kernel never ships. */
-	private static URLClassLoader forgeOracle() throws IOException {
-		TestFixtures.requireFiles(Fixture.STAGED, "staged forge-runtime-interop.jar absent", FORGE_CARRIER);
-		Path guava = newestGuava();
-		TestFixtures.require(Fixture.MC_LIBRARIES, guava != null, "no Guava in the local Minecraft library tree");
-		return new URLClassLoader(new URL[] {FORGE_CARRIER.toUri().toURL(), guava.toUri().toURL()},
-				FmlTomlShapeOracleTest.class.getClassLoader());
-	}
-
-	private static Path newestGuava() throws IOException {
-		Path root = TestFixtures.minecraftDir().resolve("libraries");
-		Path under = root.resolve("com/google/guava/guava");
-		if (!Files.isDirectory(under)) return null;
-		try (var stream = Files.walk(under)) {
-			return stream.filter(f -> f.toString().endsWith(".jar") && !f.toString().contains("sources"))
-					.sorted(java.util.Comparator.comparing(f -> f.getFileName().toString()))
-					.reduce((a, b) -> b).orElse(null);
-		}
-	}
-
-	/** The FML's own wrapper — both are constructed over a parsed config, exactly as their ModFileParser does. */
+	/** The FML's own wrapper, constructed over a parsed config exactly as its ModFileParser does. */
 	private static Object wrapper(ClassLoader loader, String name, UnmodifiableConfig config) throws Exception {
 		Constructor<?> ctor = Class.forName(name, true, loader).getConstructor(UnmodifiableConfig.class);
-		ctor.setAccessible(true); // MinecraftForge's class is package-private
+		ctor.setAccessible(true);
 		return ctor.newInstance(config);
 	}
 
@@ -446,8 +393,7 @@ class FmlTomlShapeOracleTest {
 	 * and an UNSUPPORTED failure. So the manifest is read where discovery still reads one: in a universal jar beside a
 	 * NeoForge half declaring the same mods (the same toml as {@code neoforge.mods.toml}, the shape FallingTree and
 	 * collective ship). Discovery reports that jar's MinecraftForge mods truthfully and only {@code MultiLoaderArbiter}
-	 * sets them aside; what MinecraftForge's FML would answer of them is held to its own wrapper until Stage 4 deletes
-	 * the MinecraftForge side ({@code FmlConfigElements.minecraftForge}, {@code KernelForgeModInfo}).
+	 * sets them aside.
 	 */
 	private List<DiscoveredMod> discoveredForge(String toml) throws IOException {
 		Path alone = jar("forge-only", "META-INF/mods.toml", toml);

@@ -41,39 +41,22 @@ import net.forbric.kernel.util.ForbricLog;
 import net.forbric.api.ModCatalog;
 
 /**
- * Constructs discovered Forge-family {@code @Mod} classes natively — the M3 keystone for real mods.
+ * Constructs discovered NeoForge {@code @Mod} classes natively — the M3 keystone for real mods.
  *
  * <p>For each mod jar it ASM-scans for {@code @Mod} classes ({@link ModAnnotationScanner}) and constructs each on
  * its own mod-event bus. No FancyModLoader discovery / module layer / sorting runs — the kernel owns construction.
  * Each constructed mod's bus is returned so the caller can fire {@code RegisterEvent} on it (flushing the mod's
  * {@code DeferredRegister}s).
  *
- * <p>The two Forge-family ecosystems are constructed differently and must not be confused:
- * <ul>
- *   <li><b>NeoForge</b> — a {@code BusBuilder} {@code IEventBus} + a kernel-manufactured {@code ModContainer}, with
- *       the ctor filled by parameter type ({@code IEventBus} → bus, {@code Dist} → dist, {@code ModContainer} →
- *       container);</li>
- *   <li><b>traditional MinecraftForge</b> — an EventBus 7 {@code BusGroup} + {@code FMLModContainer} +
- *       {@code FMLJavaModLoadingContext} triple ({@link KernelForgeModContext}), which every real Forge mod's ctor
- *       takes. That context used to be passed as {@code null} here, so mods like Macaw's Bridges and spark NPE'd in
- *       their own constructor and registered nothing.</li>
- * </ul>
+ * <p>Each mod gets a {@code BusBuilder} {@code IEventBus} + a kernel-manufactured {@code ModContainer}, with the ctor
+ * filled by parameter type ({@code IEventBus} → bus, {@code Dist} → dist, {@code ModContainer} → container).
  */
 public final class KernelModLoader {
 	private KernelModLoader() {
 	}
 
-	/**
-	 * A constructed mod and what the caller needs to fire {@code RegisterEvent} at it. Exactly one of {@code bus} (a
-	 * NeoForge {@code IEventBus}) and {@code forgeHandle} (a traditional-Forge context) is non-null — the two
-	 * ecosystems carry different {@code RegisterEvent} flavours and cannot be pooled.
-	 *
-	 * <p>The Forge side keeps the whole {@link KernelForgeModContext.Handle}, not just its bus: dispatch has to make
-	 * the mod's own container active, or the id-less {@code RegisterHelper.register(String, T)} overload namespaces
-	 * its content under whichever container was active last.
-	 */
-	public record ConstructedMod(String modId, String className, Ecosystem family, Object bus,
-			KernelForgeModContext.Handle forgeHandle) {}
+	/** A constructed mod and the NeoForge {@code IEventBus} the caller fires {@code RegisterEvent} at. */
+	public record ConstructedMod(String modId, String className, Ecosystem family, Object bus) {}
 
 	/**
 	 * A NeoForge mod's identity: ONE bus and ONE {@code ModContainer} per mod id, shared by every {@code @Mod} class
@@ -130,28 +113,6 @@ public final class KernelModLoader {
 		return only;
 	}
 
-	/**
-	 * The traditional-Forge mods this kernel constructed, by mod id — the MinecraftForge counterpart of
-	 * {@link #publishedNeoMods()}.
-	 *
-	 * <p>Exposed for {@link KernelEventSubscribers}, which needs a subscriber's owning mod to answer two questions
-	 * FML answers from its own container registry: which {@code BusGroup} a {@code bus = MOD} subscriber belongs on,
-	 * and which container must be ACTIVE while registering (Forge's {@code bus = BOTH} routing resolves the mod bus
-	 * through {@code FMLJavaModLoadingContext.get()}). The handle used to die as a local in {@link KernelLifecycle}.
-	 */
-	public static Map<String, KernelForgeModContext.Handle> publishedForgeMods() {
-		return publishedForge;
-	}
-
-	private static volatile Map<String, KernelForgeModContext.Handle> publishedForge = Map.of();
-
-	/**
-	 * MinecraftForge low-code mods' {@code LowCodeModContainer}s, by id. Not handles: such a container has no bus
-	 * group and no loading context, so nothing that walks {@link #publishedForgeMods()} has anything to do with
-	 * one — but every write of MinecraftForge's {@code ModList} carries them, because that write REPLACES.
-	 */
-	private static volatile Map<String, Object> lowCodeForge = Map.of();
-
 	/** Scans + constructs every {@code @Mod} in {@code modJars}. Best-effort per mod. */
 	public static List<ConstructedMod> constructMods(ClassLoader cl, List<Path> modJars, Side side) {
 		// Phase 1 — scan and ARBITRATE everything first, so the full NeoForge mod set is known before any mod's
@@ -188,8 +149,7 @@ public final class KernelModLoader {
 		// sort by dependency before they construct anything.
 		claimed = orderByDependency(claimed);
 
-		// Phase 2 — build every NeoForge mod's identity. Both families' identities are PUBLISHED below, before
-		// phase 3, because a mod's constructor may ask its family's ModList about ITSELF, and against the kernel's
+		// Phase 2 — build every NeoForge mod's identity. They are PUBLISHED below, before phase 3, because a mod's constructor may ask its family's ModList about ITSELF, and against the kernel's
 		// empty ModList that is fatal to that mod (Bookshelf: "Could not find mod 'bookshelf'" from getModBus;
 		// Architectury: "Mod 'architectury' is not available!"). Publishing both sets up front also makes inter-mod
 		// queries work regardless of construction order.
@@ -275,61 +235,11 @@ public final class KernelModLoader {
 		published.putAll(classless);
 		published.putAll(aliases);
 
-		// Phase 2b — the traditional-MinecraftForge twin of phase 2, and the reason it can exist at all: a
-		// MinecraftForge container needs only the mod ID (KernelForgeContainers.create), never the @Mod class,
-		// which constructMod marries in afterwards. Splitting those two halves is what lets the publish happen
-		// before ANY constructor runs.
-		//
-		// It has to. libraryferret and awesomedungeonocean both resolve their OWN container from a class
-		// initializer their constructor reaches — RegistryProviderForgeImpl.getIEventBus -> ModList
-		// .getModContainerById -> orElseThrow("Mod with ID \"...\" not found") — and a class initializer is a
-		// one-shot with an empty exception table, so it is erroneous for the rest of the run (the a56852b wall,
-		// one layer up). The cost is not those two mods: their structure_type/structure_placement registries never
-		// register, their data/ entries then fail to parse, and the SAVE will not open at all.
-		Map<String, KernelForgeModContext.Handle> forge;
-		if (KernelForgeModContext.available(cl)) {
-			forge = buildForgeHandles(claimed, modId -> KernelForgeModContext.create(cl, modId));
-			// The MinecraftForge twin of the declared-only NeoForge mods above, narrower because its loader is:
-			// MinecraftForge builds a container for a mod with no @Mod class only under lowcodefml (a
-			// LowCodeModContainer, no bus), and a javafml one is its own load error ("missingclasses"), which must
-			// not be papered over with a container here. Dungeons and Taverns ships exactly that low-code shape and
-			// is in native MinecraftForge's ModList; here it was in none.
-			Set<String> forgeTaken = new LinkedHashSet<>(taken);
-			forgeTaken.addAll(forge.keySet());
-			forgeTaken.addAll(classless.keySet());
-			Map<String, Object> lowCode = new LinkedHashMap<>();
-			for (Declared entry : declaredWithoutClass(declared, forgeTaken, Ecosystem.FORGE)) {
-				String modId = entry.mod().getId();
-				try {
-					lowCode.put(modId, KernelForgeModContext.lowCode(cl, modId, entry.jar()));
-				} catch (Throwable t) {
-					Caught.warn(t, "[Forbric/ModLoader] could not build a LowCodeModContainer for MinecraftForge mod %s",
-							modId);
-				}
-			}
-			if (!lowCode.isEmpty()) {
-				ForbricLog.info("[Forbric/ModLoader] %d MinecraftForge low-code mod(s) now have the "
-						+ "LowCodeModContainer MinecraftForge gives them (-D%s=off to go back): %s", lowCode.size(),
-						CLASSLESS_SWITCH, lowCode.keySet());
-			}
-			lowCodeForge = java.util.Collections.unmodifiableMap(lowCode);
-		} else {
-			forge = new LinkedHashMap<>();
-			for (ModAnnotationScanner.ModClassInfo info : claimed) {
-				if (info.family != Ecosystem.FORGE) continue;
-				ForbricLog.warn("[Forbric/ModLoader] traditional-Forge @Mod %s (%s) but the merged base carries no "
-						+ "javafmlmod — is the Forge family on this runtime?", safeId(info), info.className);
-			}
-		}
-
 		publishedNeo = Map.copyOf(withClassless(neo, classless));
 		publishNeoModList(cl, published, false);
-		publishedForge = Map.copyOf(forge);
-		publishForgeModList(cl, publishedForge, false);
 
 		// Phase 3 — construct.
 		List<ConstructedMod> built = new ArrayList<>();
-		Set<String> constructed = new LinkedHashSet<>();
 		// @Mod classes this side is not supposed to construct. They keep their container — the mod IS installed,
 		// and a neighbour asking about it must be told so — they simply do not run here.
 		Set<String> otherSide = new LinkedHashSet<>();
@@ -337,6 +247,10 @@ public final class KernelModLoader {
 		// from otherSide because one id can be in both: see settleNeo.
 		Map<String, List<String>> failedNeo = new LinkedHashMap<>();
 		for (ModAnnotationScanner.ModClassInfo info : claimed) {
+			// Never constructed: phase 2 built no identity for it either. Arbitration already suppresses every
+			// MinecraftForge @Mod (a refused jar for every family, a universal jar's MinecraftForge half because
+			// that family never owns it); this keeps the loop from handing one to the NeoForge constructor.
+			if (info.family == Ecosystem.FORGE) continue;
 			// NeoForge's @Mod declares which sides it belongs to, and the kernel constructed every class on every
 			// side regardless. Sodium's SodiumForgeMod says dist = {CLIENT}; on a dedicated server its constructor
 			// reaches a client-only type and dies with a NoClassDefFoundError blamed on the mod.
@@ -347,48 +261,16 @@ public final class KernelModLoader {
 						info.dists, side.distName());
 				continue;
 			}
-			if (constructedInTheGameConstructor(info, side)) {
-				// Kept IN ModList on purpose: the mod is here and will be constructed, just where MinecraftForge
-				// constructs it. Withdrawing it now and putting it back would make every neighbour that resolves
-				// it by id see a hole for the length of the window.
-				DEFERRED_FORGE.add(info);
-				constructed.add(safeId(info));
-				ForbricLog.info("[Forbric/ModLoader] @Mod %s (traditional-Forge) will be constructed in the "
-						+ "Minecraft.<init> window, where MinecraftForge's own ClientModLoader.begin(Minecraft, …) "
-						+ "constructs it — here there is no Minecraft for its constructor to read", safeId(info));
-				continue;
-			}
 			try {
-				ConstructedMod mod = info.family == Ecosystem.FORGE
-						? constructForgeFamilyMod(cl, info, forge.get(safeId(info)))
-						: constructNeoFamilyMod(cl, info, neo.get(safeId(info)), side);
+				ConstructedMod mod = constructNeoFamilyMod(cl, info, neo.get(safeId(info)), side);
 				built.add(mod);
-				if (mod.forgeHandle() != null) constructed.add(mod.modId());
 			} catch (Throwable t) {
 				recordNeoOutcome(info, true, t, otherSide, failedNeo);
 				Caught.warn(t, "[Forbric/ModLoader] failed to construct @Mod %s", info.className);
 			}
 		}
-		// A mod whose constructor threw must come back OUT. This cannot un-tell it anything it learned during its
-		// own construction, and it deliberately does not change isLoaded — ForeignModPresenceInjector rewrites
-		// MinecraftForge's isLoaded to OR in the kernel's discovery-fed ModPresence, which answers for a mod that
-		// is HERE whether or not its constructor ran. What it fixes is getModContainerById/getMods/size handing
-		// back a container that passes instanceof FMLModContainer and yields a live-looking BusGroup that nothing
-		// will ever post a RegisterEvent on.
-		if (constructed.size() != forge.size()) {
-			List<String> dropped = new ArrayList<>();
-			publishedForge = Map.copyOf(keepConstructed(forge, constructed, dropped));
-			// allowEmpty: "every MinecraftForge mod failed" must publish an EMPTY list, not leave the full one up.
-			publishForgeModList(cl, publishedForge, true);
-			ForbricLog.warn("[Forbric/ModLoader] withdrew %d MinecraftForge container(s) from ModList — their @Mod "
-					+ "constructor threw, so nothing will ever fire RegisterEvent on the bus those containers "
-					+ "hand out %s", dropped.size(), dropped);
-			markWithdrawn(dropped, "its @Mod constructor threw");
-		}
-
-		// The NeoForge twin of the withdrawal above, which only the MinecraftForge half used to have. A NeoForge
-		// mod whose constructor threw stayed in ModList holding a container that passes instanceof FMLModContainer
-		// and hands out a live-looking bus — so a LIBRARY mod resolving it and registering onto that bus was
+		// A mod whose constructor threw must come back OUT. A NeoForge mod whose constructor threw used to stay in
+		// ModList holding a container that passes instanceof FMLModContainer and hands out a live-looking bus — so a LIBRARY mod resolving it and registering onto that bus was
 		// registering into nothing, and a mod asking whether its dependency's container exists was told yes about
 		// a mod that never finished loading.
 		//
@@ -398,10 +280,10 @@ public final class KernelModLoader {
 		//
 		// Each id is settled from ALL of its @Mod classes (settleNeo): RollingGate's client-only class used to
 		// stand in for its common class that threw, and the mod read as fine everywhere a player could look.
+		// Every built mod is a NeoForge one (the loop above constructs nothing else), so every built id counts.
+		// An empty set here withdraws every NeoForge mod from ModList, silently.
 		Set<String> neoConstructed = new LinkedHashSet<>();
-		for (ConstructedMod mod : built) {
-			if (mod.forgeHandle() == null) neoConstructed.add(mod.modId());
-		}
+		for (ConstructedMod mod : built) neoConstructed.add(mod.modId());
 		NeoSettlement settled = settleNeo(otherSide, neoConstructed, failedNeo.keySet());
 		Set<String> neoBuilt = settled.kept();
 		markPartlyConstructed(settled.degraded(), failedNeo);
@@ -428,8 +310,7 @@ public final class KernelModLoader {
 	/**
 	 * The published entries whose {@code @Mod} constructor actually ran, in their original order.
 	 *
-	 * <p>Both families withdraw the same way, and the reason is the same on both: a container left standing for a
-	 * mod that never constructed passes {@code instanceof} and hands out a live-looking event bus that nothing
+	 * <p>The reason: a container left standing for a mod that never constructed passes {@code instanceof} and hands out a live-looking event bus that nothing
 	 * will ever post to. So a library mod resolving it registers into nothing, and the failure surfaces much
 	 * later somewhere that names neither mod.
 	 *
@@ -627,18 +508,14 @@ public final class KernelModLoader {
 	/**
 	 * Whether {@code family}'s own loader builds a container for a class-less mod written in {@code language}.
 	 *
-	 * <p>The two families differ, and each is read off its own carrier. NeoForge's FancyModLoader builds an
-	 * {@code FMLModContainer} for every mod of a {@code javafml} file and routes {@code lowcodefml} to the same
-	 * provider. MinecraftForge's {@code ModLoader.buildMods} gives a {@code javafml} mod with no {@code @Mod} class
-	 * the {@code fml.modloading.missingclasses} error instead, and only its {@code LowCodeModLanguageProvider}
-	 * builds a container — a {@code LowCodeModContainer} — for a mod with no class at all.
+	 * <p>NeoForge's FancyModLoader builds an {@code FMLModContainer} for every mod of a {@code javafml} file and routes
+	 * {@code lowcodefml} to the same provider. No other family gets one here.
 	 */
 	static boolean getsAContainer(Ecosystem family, String language) {
 		if (language == null) return false;
 		if (family == Ecosystem.NEOFORGE) {
 			return LanguageProviders.JAVA.equals(language) || LanguageProviders.LOW_CODE.equals(language);
 		}
-		if (family == Ecosystem.FORGE) return LanguageProviders.LOW_CODE.equals(language);
 		return false;
 	}
 
@@ -708,126 +585,6 @@ public final class KernelModLoader {
 			Caught.warn(t, "[Forbric/Order] could not order mods by dependency; using the order they were found in");
 			return claimed;
 		}
-	}
-
-	/** Makes a MinecraftForge loading context per mod ID. Separate from the game classes so a test can drive it. */
-	@FunctionalInterface
-	interface ForgeHandleFactory {
-		KernelForgeModContext.Handle create(String modId) throws Exception;
-	}
-
-	/**
-	 * One handle per traditional-MinecraftForge mod ID, in {@code claimed} order.
-	 *
-	 * <p>Deduped by ID, not by {@code @Mod} class: {@code ModList.setLoadedMods} builds its index with
-	 * {@code toUnmodifiableMap(ModContainer::getModId, identity())}, so two containers sharing an ID throw
-	 * "Duplicate key" and cost every mod its list. Deduping here also means one {@code BusGroup} per ID where
-	 * two {@code @Mod} classes with the same ID used to manufacture two groups under the same name.
-	 *
-	 * <p>A factory that throws costs only that mod its container; the rest still get theirs, and the mod that
-	 * failed is then rejected by {@link #constructForgeFamilyMod} rather than constructed against nothing.
-	 */
-	static Map<String, KernelForgeModContext.Handle> buildForgeHandles(
-			List<ModAnnotationScanner.ModClassInfo> claimed, ForgeHandleFactory factory) {
-		Map<String, KernelForgeModContext.Handle> forge = new LinkedHashMap<>();
-		for (ModAnnotationScanner.ModClassInfo info : claimed) {
-			if (info.family != Ecosystem.FORGE) continue;
-			String modId = safeId(info);
-			if (forge.containsKey(modId)) continue;
-			try {
-				forge.put(modId, factory.create(modId));
-			} catch (Throwable t) {
-				Caught.warn(t, "[Forbric/ModLoader] could not build the MinecraftForge loading context for %s", modId);
-			}
-		}
-		return forge;
-	}
-
-	/**
-	 * The traditional-Forge twin of {@link #publishNeoModList}: puts the constructed MinecraftForge mods into
-	 * {@code net.minecraftforge.fml.ModList} so its own {@code isLoaded} / {@code getModContainerById} answer.
-	 *
-	 * <p>That map is what a Forge mod asks about an optional dependency, and under the kernel it was empty — every
-	 * such question answered "absent" for mods that are right there. Separate from the loading list seeded in
-	 * {@link PassiveSeeder}: that one feeds {@code getMods()} (the mod INFO the handshake puts on the wire), this
-	 * one feeds the container lookups. Forge sorts the containers by their position in the loading list; a
-	 * container whose info is not in it sorts as -1, which is stable and harmless.
-	 */
-	private static void publishForgeModList(ClassLoader cl, Map<String, KernelForgeModContext.Handle> forge,
-			boolean allowEmpty) {
-		boolean enabled = !"off".equalsIgnoreCase(System.getProperty("forbric.publishModList", "on"));
-		if (!enabled) {
-			ForbricLog.warn("[Forbric/ModLoader] MinecraftForge ModList publishing DISABLED "
-					+ "(-Dforbric.publishModList=off) — a Forge mod that resolves its own container during "
-					+ "construction will now FAIL, not merely get \"absent\" from a later lookup");
-			return;
-		}
-		Map<String, Object> lowCode = lowCodeForge;
-		if (!allowEmpty && forge.isEmpty() && lowCode.isEmpty()) return;
-		try {
-			Class<?> modListCls = Class.forName(ForeignType.MOD_LIST.binary(Ecosystem.FORGE), false, cl);
-			Class<?> containerCls = Class.forName(ForeignType.MOD_CONTAINER.binary(Ecosystem.FORGE), false, cl);
-			List<Object> containers = forgeListContents(forge.values(), lowCode.values(), containerCls::isInstance);
-			Method setLoadedMods = modListCls.getDeclaredMethod("setLoadedMods", List.class);
-			boolean wrote = publishForgeContainers(containers, allowEmpty, list -> {
-				setLoadedMods.setAccessible(true);
-				setLoadedMods.invoke(null, list); // static on MinecraftForge; NeoForge's twin is an instance method
-			});
-			if (!wrote) return;
-			Set<String> ids = new LinkedHashSet<>(forge.keySet());
-			ids.addAll(lowCode.keySet());
-			ForbricLog.info("[Forbric/ModLoader] published %d MinecraftForge mod(s) into its ModList %s — its own "
-					+ "isLoaded/getModContainerById answered \"absent\" for every one of them until now",
-					containers.size(), ids);
-		} catch (ClassNotFoundException absent) {
-			// traditional-Forge ModList not present — nothing to publish
-			Caught.expected(absent);
-		} catch (Throwable t) {
-			Caught.warn(t, "[Forbric/ModLoader] could not publish into MinecraftForge's ModList — a Forge mod asking "
-					+ "whether another is loaded still gets no");
-		}
-	}
-
-	/**
-	 * What MinecraftForge's {@code ModList} is written with: each handle's container, then each low-code
-	 * container.
-	 *
-	 * <p>The low-code ones ride along on EVERY write, not only the first. {@code setLoadedMods} replaces the list,
-	 * and it is written three times in a boot — at publication, after a constructor throws, and after the deferred
-	 * client constructors — so a container added once would be dropped by whichever write came next.
-	 */
-	static List<Object> forgeListContents(java.util.Collection<KernelForgeModContext.Handle> handles,
-			java.util.Collection<Object> lowCode, java.util.function.Predicate<Object> isContainer) {
-		List<Object> containers = new ArrayList<>();
-		for (KernelForgeModContext.Handle handle : handles) {
-			if (isContainer.test(handle.container())) containers.add(handle.container());
-		}
-		for (Object container : lowCode) {
-			if (isContainer.test(container)) containers.add(container);
-		}
-		return containers;
-	}
-
-	/** Writes the container list into MinecraftForge's ModList. Split out so a test can drive the decision. */
-	@FunctionalInterface
-	interface ForgeListWriter {
-		void write(List<Object> containers) throws Exception;
-	}
-
-	/**
-	 * The decision half of {@link #publishForgeModList}: writes unless the list is empty and empty is not allowed.
-	 *
-	 * <p>{@code allowEmpty} exists for the withdrawal path. {@code setLoadedMods} REPLACES the list, so the only
-	 * way to take a failed mod's container back out is to write the survivors — and if there are no survivors,
-	 * an empty write is the correct answer and a skipped write leaves the full, wrong list standing.
-	 *
-	 * @return whether it wrote
-	 */
-	static boolean publishForgeContainers(List<Object> containers, boolean allowEmpty, ForgeListWriter writer)
-			throws Exception {
-		if (!allowEmpty && containers.isEmpty()) return false;
-		writer.write(containers);
-		return true;
 	}
 
 	/**
@@ -990,40 +747,6 @@ public final class KernelModLoader {
 		ForbricLog.debug("[Forbric/ModLoader] ModList.getMods() now answers with %d mod(s)", infos.size());
 	}
 
-	/**
-	 * Traditional MinecraftForge: constructs the {@code @Mod} class against the handle phase 2b already published.
-	 *
-	 * <p>The active container is set explicitly around the constructor, the way the NeoForge twin does it, rather
-	 * than left to the side effect {@code KernelForgeContainers.create} used to have. It has to be explicit now
-	 * that creation and construction are separated, and being explicit also closes the leak the side effect left:
-	 * nothing cleared it between the last Forge constructor and {@code fireRegisterEvents}' own finally.
-	 * {@code ModLoadingContext.getActiveNamespace()} answers "minecraft" when nothing is active rather than
-	 * throwing, so BOTH failure modes — the stale container and the missing one — are silent, and both put a mod's
-	 * id-less registrations under someone else's namespace.
-	 */
-	private static ConstructedMod constructForgeFamilyMod(ClassLoader cl, ModAnnotationScanner.ModClassInfo info,
-			KernelForgeModContext.Handle handle) throws Exception {
-		String modId = safeId(info);
-		if (handle == null) {
-			throw new IllegalStateException("no MinecraftForge loading context was built for @Mod " + info.className
-					+ " (id " + modId + ") — it is not in ModList, so anything resolving it by id is told it is "
-					+ "absent");
-		}
-		KernelForgeModContext.setActiveContainer(cl, handle.container());
-		Object instance;
-		try {
-			instance = KernelForgeModContext.constructMod(cl, info.className, handle);
-		} finally {
-			KernelForgeModContext.setActiveContainer(cl, null);
-		}
-		// The EventBus 7 startup() gate: the mod's ctor has registered its listeners (DeferredRegister etc.) by now,
-		// and nothing dispatches on the group until it opens.
-		KernelForgeModContext.startup(cl, handle.busGroup());
-		ForbricLog.info("[Forbric/ModLoader] constructed @Mod %s (traditional-Forge, %s) -> %s", modId, info.className,
-				instance);
-		return new ConstructedMod(modId, info.className, info.family, null, handle);
-	}
-
 	/** NeoForge: the mod's pre-published bus + ModContainer, ctor filled by parameter type. */
 	private static ConstructedMod constructNeoFamilyMod(ClassLoader cl, ModAnnotationScanner.ModClassInfo info,
 			NeoIdentity identity, Side side) throws Exception {
@@ -1034,7 +757,7 @@ public final class KernelModLoader {
 		Object bus = identity.bus();
 		Object container = identity.container();
 		Object instance;
-		// The NeoForge twin of the traditional-Forge active-container handling: a @Mod ctor that calls
+		// The active container: a @Mod ctor that calls
 		// ModLoadingContext.get().registerExtensionPoint(...) — the standard config-screen registration — reads
 		// getActiveContainer(), which without one set falls back to looking up the "minecraft" container in the
 		// (kernel-empty) ModList and throws "Where is minecraft???!". Set this mod's container for the duration of
@@ -1046,7 +769,7 @@ public final class KernelModLoader {
 			setNeoActiveContainer(cl, null);
 		}
 		ForbricLog.info("[Forbric/ModLoader] constructed @Mod %s (NeoForge, %s) -> %s", modId, info.className, instance);
-		return new ConstructedMod(modId, info.className, info.family, bus, null);
+		return new ConstructedMod(modId, info.className, info.family, bus);
 	}
 
 	/**
@@ -1148,93 +871,6 @@ public final class KernelModLoader {
 					modCls.getName());
 			return null;
 		}
-	}
-
-	/** The switch that constructs every traditional-MinecraftForge mod in the early window, as before. */
-	static final String DEFERRAL_SWITCH = "forbric.forgeCtorGameInstance";
-
-	/**
-	 * Traditional-MinecraftForge {@code @Mod} classes whose constructor wanted a {@code Minecraft} that does not
-	 * exist yet, waiting for the constructor window.
-	 */
-	private static final List<ModAnnotationScanner.ModClassInfo> DEFERRED_FORGE =
-			new java.util.concurrent.CopyOnWriteArrayList<>();
-
-	/**
-	 * Whether {@code info} belongs to the {@code Minecraft.<init>} window rather than to this one.
-	 *
-	 * <p>The two carriers do not agree on when a client's mods are constructed, and the merged base can only carry
-	 * one call site. NeoForge's {@code ClientModLoader.begin()} takes no arguments and runs in {@code Main.main},
-	 * before {@code new Minecraft} — so a NeoForge {@code @Mod} constructor sees a null {@code getInstance()} on
-	 * genuine NeoForge too, and belongs exactly where it is. Traditional MinecraftForge's is
-	 * {@code begin(Minecraft, PackRepository, ReloadableResourceManager)}: those three exist together only inside
-	 * {@code Minecraft.<init>}, so on genuine MinecraftForge a traditional-Forge constructor ALWAYS has a live
-	 * instance and a built pack repository. The kernel ran both families in NeoForge's window, and Simple Voice
-	 * Chat — which caches {@code Minecraft.getInstance()} and then asks it for the pack repository — died there.
-	 *
-	 * <p>Decided BEFORE the constructor runs, never after it throws. A constructor is not a pure function: Simple
-	 * Voice Chat registers its key binds first and its own guard answers "Registered key binds twice" on a second
-	 * attempt, so a failed try cannot be taken back and "retry it later" is not available as a repair.
-	 *
-	 * <p>A dedicated server is untouched — it has no {@code Minecraft}, and traditional MinecraftForge's server
-	 * path constructs its mods in exactly the window the kernel already uses.
-	 *
-	 * <p>{@code -Dforbric.forgeCtorGameInstance=off} constructs them here, as before.
-	 */
-	static boolean constructedInTheGameConstructor(ModAnnotationScanner.ModClassInfo info, Side side) {
-		if ("off".equalsIgnoreCase(System.getProperty(DEFERRAL_SWITCH, "on"))) return false;
-		return side != null && side.isClient() && info.family == Ecosystem.FORGE;
-	}
-
-	/** The mod ids waiting for the {@code Minecraft.<init>} window; their events must not fire before they do. */
-	public static Set<String> deferredForgeModIds() {
-		Set<String> ids = new LinkedHashSet<>();
-		for (ModAnnotationScanner.ModClassInfo info : DEFERRED_FORGE) ids.add(safeId(info));
-		return ids;
-	}
-
-
-	/**
-	 * Constructs the deferred traditional-Forge mods, now that {@code Minecraft.getInstance()} answers.
-	 *
-	 * <p>This is their FIRST construction, not a retry: they were held back before anything ran, so each still has
-	 * the untouched loading context that was published into {@code ModList} for it.
-	 *
-	 * @return the handles that constructed, for the caller to post the construct phase and RegisterEvent on
-	 */
-	public static List<KernelForgeModContext.Handle> constructDeferredForgeMods(ClassLoader cl) {
-		if (DEFERRED_FORGE.isEmpty()) return List.of();
-
-		List<ModAnnotationScanner.ModClassInfo> pending = new ArrayList<>(DEFERRED_FORGE);
-		DEFERRED_FORGE.clear();
-		Map<String, KernelForgeModContext.Handle> published = new LinkedHashMap<>(publishedForge);
-		List<KernelForgeModContext.Handle> built = new ArrayList<>();
-		List<String> failed = new ArrayList<>();
-
-		for (ModAnnotationScanner.ModClassInfo info : pending) {
-			String modId = safeId(info);
-			// Its own handle, the one published into ModList before the window opened. Nothing was ever
-			// constructed on it, so it is exactly as pristine as it was — no second BusGroup is needed and no
-			// container identity changes underneath a neighbour that already resolved this mod.
-			KernelForgeModContext.Handle handle = published.get(modId);
-			try {
-				if (handle == null) throw new IllegalStateException("no MinecraftForge loading context for " + modId);
-				constructForgeFamilyMod(cl, info, handle);
-				built.add(handle);
-			} catch (Throwable t) {
-				failed.add(modId);
-				Caught.warn(t, "[Forbric/ModLoader] failed to construct @Mod %s in the Minecraft.<init> window",
-						info.className);
-			}
-		}
-
-		if (!failed.isEmpty()) {
-			for (String modId : failed) published.remove(modId);
-			markWithdrawn(failed, "its @Mod constructor threw");
-		}
-		publishedForge = Map.copyOf(published);
-		publishForgeModList(cl, publishedForge, true);
-		return built;
 	}
 
 	private static String safeId(ModAnnotationScanner.ModClassInfo info) {

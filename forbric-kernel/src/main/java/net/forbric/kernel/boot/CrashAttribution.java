@@ -40,7 +40,7 @@ import net.forbric.kernel.util.ForbricLog;
  *
  * <p>Minecraft writes a crash report and nothing in it answers the only question a player has. The Forge line
  * that would — {@code Suspected Mods:} — is produced by walking a {@code ModuleLayer} of {@code IModInfo}, which
- * this kernel deliberately does not have ({@code KernelForgeModContext}), so on a Forbric instance it says
+ * this kernel deliberately does not have, so on a Forbric instance it says
  * {@code NONE} when it appears at all. Measured across every crash report in {@code run/}: not one names a mod.
  * Meanwhile the trace itself is full of the answer — the top frame of six of six crashes in {@code client-popular}
  * belongs to a mod jar by name.

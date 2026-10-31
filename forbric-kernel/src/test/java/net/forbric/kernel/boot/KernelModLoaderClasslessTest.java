@@ -148,10 +148,9 @@ class KernelModLoaderClasslessTest {
 		Object other = new Object();
 		Object classlessBus = new Object();
 		List<KernelModLoader.ConstructedMod> constructed = List.of(
-				new KernelModLoader.ConstructedMod("balm", "NeoForgeBalm", Ecosystem.NEOFORGE, shared, null),
-				new KernelModLoader.ConstructedMod("balm", "NeoForgeBalmClient", Ecosystem.NEOFORGE, shared, null),
-				new KernelModLoader.ConstructedMod("forge", "ForgeMod", Ecosystem.FORGE, null, null),
-				new KernelModLoader.ConstructedMod("other", "Other", Ecosystem.NEOFORGE, other, null));
+				new KernelModLoader.ConstructedMod("balm", "NeoForgeBalm", Ecosystem.NEOFORGE, shared),
+				new KernelModLoader.ConstructedMod("balm", "NeoForgeBalmClient", Ecosystem.NEOFORGE, shared),
+				new KernelModLoader.ConstructedMod("other", "Other", Ecosystem.NEOFORGE, other));
 
 		List<Object> buses = KernelLifecycle.registrationBuses(constructed,
 				List.of(new KernelModLoader.NeoIdentity(classlessBus, "container")));

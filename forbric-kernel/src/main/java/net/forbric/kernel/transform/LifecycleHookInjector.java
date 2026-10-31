@@ -185,9 +185,9 @@ public final class LifecycleHookInjector implements ClassTransformer {
 		boolean fabricHooks = fabricServerHook && fabricHooksEnabled();
 		for (MethodNode m : node.methods) {
 			if (!m.name.equals(transformMethod)) continue;
-			// One marker per method, after the first trigger. SERVER_TRIGGERS keeps both load forms, and a base
-			// carrying both would otherwise call Hooks.startServer twice -- owo's @Group(max = 1) then fails with
-			// "expected 1 but 2", losing the freeze the marker is there for. Fabric's own Main calls it once.
+			// One marker per method, after the first trigger. A base carrying the trigger twice would otherwise call
+			// Hooks.startServer twice -- owo's @Group(max = 1) then fails with "expected 1 but 2", losing the freeze
+			// the marker is there for. Fabric's own Main calls it once.
 			boolean marked = false;
 			for (var insn : m.instructions.toArray()) {
 				if (!(insn instanceof MethodInsnNode call) || call.getOpcode() != Opcodes.INVOKESTATIC) continue;

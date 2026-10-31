@@ -32,7 +32,7 @@ import org.objectweb.asm.tree.MethodNode;
 import org.objectweb.asm.tree.TryCatchBlockNode;
 
 /**
- * Two calls in the registration window that used to cost far more than themselves when they failed.
+ * Calls in the registration window that used to cost far more than themselves when they failed.
  *
  * <p>These are bytecode-shape assertions, in the idiom {@link KernelLifecycleFailureReportingTest} already uses,
  * because what is being pinned is structural: whether a call sits inside a handler of its own. Driving the real
@@ -46,8 +46,7 @@ class KernelRegistrationIsolationTest {
 	@Test
 	void fireRegisterEventsCannotTakeTheRestOfTheWindowWithIt() throws Exception {
 		// It resolves a GAME-side class reflectively, so a LinkageError inside it reaches the window's outer
-		// catch and skips everything after: the traditional-Forge baseline, the Fabric main entrypoints, the
-		// attribute events, the spawn-placement event, BlockEntityTypeAddBlocksEvent and the modded creative-tab
+		// catch and skips everything after: the Fabric main entrypoints, the attribute events, the spawn-placement event, BlockEntityTypeAddBlocksEvent and the modded creative-tab
 		// categories. The one WARN that reported it blamed the window rather than the call.
 		MethodNode window = method("net/forbric/kernel/boot/KernelLifecycle", "registerNeoForgeContent");
 		assertTrue(window != null,
@@ -56,11 +55,11 @@ class KernelRegistrationIsolationTest {
 
 		// "Is it inside SOME try block" is not the question, and asking it is how this assertion was toothless
 		// for its first draft: the whole window body already sits in one. The question is whether the handler
-		// that covers this call ALSO covers the work that has to survive it. KernelForgeBaseline.register is that
-		// work -- the traditional-Forge baseline is the first thing the old failure skipped.
-		assertTrue(isolatedFrom(window, "fireRegisterEvents", "register"),
-				"fireRegisterEvents must sit in a handler that does NOT also cover KernelForgeBaseline.register, "
-						+ "or a LinkageError inside it still takes the Forge baseline and everything after it");
+		// that covers this call ALSO covers the work that has to survive it. NeoForge's entity-attribute events
+		// (postAttributeEvents) are that work.
+		assertTrue(isolatedFrom(window, "fireRegisterEvents", "postAttributeEvents"),
+				"fireRegisterEvents must sit in a handler that does NOT also cover postAttributeEvents, or a "
+						+ "LinkageError inside it still takes the attribute events and everything after them");
 	}
 
 	@Test
@@ -72,33 +71,8 @@ class KernelRegistrationIsolationTest {
 				"KernelLifecycle.registerNeoForgeContent not found in the compiled src/main classes, which exist "
 						+ "before any test runs");
 
-		assertTrue(isolatedFrom(window, "registerAll", "register"),
+		assertTrue(isolatedFrom(window, "registerAll", "postAttributeEvents"),
 				"KernelEventSubscribers.registerAll is guarded for the same reason and its comment says so");
-	}
-
-	@Test
-	void oneForgeModsRegistryListenerCannotCostEveryOtherModsRegistries() throws Exception {
-		// Traditional Forge's NewRegistryEvent goes out on a GLOBAL bus, so there is no seam between listeners.
-		// There is one between the post and the fill, and that is where the cost was: a listener throwing used to
-		// skip fill() entirely, losing every Forge custom registry in the instance -- including those created by
-		// listeners that had already run.
-		MethodNode fire = method("net/forbric/kernel/boot/KernelForgeBaseline", "fireNewRegistryEvent");
-		assertTrue(fire != null,
-				"KernelForgeBaseline.fireNewRegistryEvent not found in the compiled src/main classes, which exist "
-						+ "before any test runs");
-
-		// The post is reflective -- KernelForgeModContext.single(bus.getClass(), "post").invoke(...) -- so it is
-		// located by the resolver call, not by a method named "post", which does not exist in the bytecode.
-		int post = indexOfCall(fire, "single");
-		int fill = indexOfCall(fire, "getDeclaredMethod");
-		assertTrue(post >= 0, "the event is still posted through KernelForgeModContext.single here");
-		assertTrue(fill >= 0, "and fill is still resolved here");
-
-		assertTrue(guardedRange(fire, post), "the post needs a handler of its own, or one mod's listener takes "
-				+ "fill() with it");
-		assertTrue(fill > post, "and fill must still be reached after it");
-		assertTrue(fire.tryCatchBlocks.size() >= 2,
-				"the outer handler alone means the post and the fill still share a fate");
 	}
 
 	/**
@@ -117,16 +91,6 @@ class KernelRegistrationIsolationTest {
 			int start = method.instructions.indexOf(block.start);
 			int end = method.instructions.indexOf(block.end);
 			if (at > start && at < end && !(survivor > start && survivor < end)) return true;
-		}
-		return false;
-	}
-
-	/** True when instruction {@code index} lies inside some try/catch range of this method. */
-	private static boolean guardedRange(MethodNode method, int index) {
-		for (TryCatchBlockNode block : method.tryCatchBlocks) {
-			int start = method.instructions.indexOf(block.start);
-			int end = method.instructions.indexOf(block.end);
-			if (index > start && index < end) return true;
 		}
 		return false;
 	}

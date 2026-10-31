@@ -31,12 +31,10 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 import java.util.concurrent.CompletableFuture;
-import java.util.function.UnaryOperator;
 
 import net.forbric.api.DiscoveredMod;
 import net.forbric.api.Ecosystem;
 import net.forbric.api.ForeignType;
-import net.forbric.api.ForgeLoadingList;
 import net.forbric.api.ModPresence;
 import net.forbric.api.Side;
 import net.forbric.kernel.discovery.ForbricModDiscoverer;
@@ -84,25 +82,6 @@ public final class PassiveSeeder {
 	private static final boolean PRODUCTION = true;
 
 	/**
-	 * Whether {@link #seedForgeFmlLoader} has COMPLETED. Kernel-owned rather than "is some foreign field set yet",
-	 * so a partial failure — the launch handler landed, {@code FMLConfig.load()} threw — still retries on the next
-	 * call instead of being mistaken for a finished job. What the guard actually prevents is a second
-	 * {@code FMLConfig.load()}: {@code loadFrom} builds a fresh {@code CommentedFileConfig} over the old one
-	 * without closing it and then saves.
-	 */
-	private static boolean forgeIdentitySeeded;
-
-	/** Whether {@link #seedForgeFmlLoader} ran to completion. Package-visible for the test that pins the retry. */
-	static boolean forgeIdentitySeeded() {
-		return forgeIdentitySeeded;
-	}
-
-	/** Puts the completion flag back, so a test can seed more than one classloader in one JVM. */
-	static void resetForgeIdentityForTests() {
-		forgeIdentitySeeded = false;
-	}
-
-	/**
 	 * Seeds every genuine-loader identity the merged base needs before the game entry runs. Best-effort per family.
 	 *
 	 * <p>{@code side} selects the seeded {@code Dist}. It is load-bearing: with the wrong dist, NeoForge's client
@@ -115,22 +94,12 @@ public final class PassiveSeeder {
 		seedNeoForgeLoader(gameLoader, gameDir, side);
 		seedNeoForgeModList(gameLoader);
 		seedNeoForgePaths(gameLoader, gameDir);
-		// Normally a no-op by now: KernelBoot seeds the MinecraftForge identity pre-Mixin, because its
-		// FMLEnvironment is a one-shot that the first guest mixin plugin's <clinit> would otherwise decide. Kept
-		// here so seedAll still means "every identity" on any path that skipped that block.
-		seedForgeFmlLoader(gameLoader, gameDir, side);
-		// The other half of what FMLLoader establishes before the game starts: the early-window provider every
-		// Forge-patched window call dereferences. Here and not pre-Mixin: nothing reads it until the game builds its
-		// window, and loaded here the handler is weavable like any other game class.
-		seedForgeImmediateWindow(gameLoader);
-		// NeoForge's half of the same fact: no early window, so its config must not promise one. Before the kernel runs
-		// NeoForge's GraphicsBootstrapper services (NeoGraphicsBootstrappers), which read it.
+		// No early window, so NeoForge's config must not promise one. Before the kernel runs NeoForge's
+		// GraphicsBootstrapper services (NeoGraphicsBootstrappers), which read it.
 		if (side.isClient()) seedNeoForgeNoEarlyWindow(gameLoader);
 		// NOTE: NeoForge baseline-registry registration is NOT done here — NeoForgeRegistriesSetup.<clinit> touches
 		// game registries and throws "Not bootstrapped" pre-Main. It runs post-Bootstrap via KernelLifecycle
 		// (the redirected ServerModLoader.load window). See KernelLifecycle.onServerModLoading.
-		// Traditional-Forge FMLEnvironment is no longer left to whoever touches it first: seedForgeFmlLoader
-		// decides it, from the pre-Mixin window in KernelBoot. See verifyForgeFmlEnvironment.
 	}
 
 	/**
@@ -288,12 +257,6 @@ public final class PassiveSeeder {
 
 	/** Lazily-resolved {@code sun.misc.Unsafe}, what constructor-free allocation goes through. */
 	private static volatile Object jdkUnsafe;
-	/**
-	 * The Forge-family mods this boot discovered, kept from the NeoForge seeding so traditional Forge's list can be
-	 * built from the SAME answer. Two independent passes over mods/ could disagree, and the two lists disagreeing
-	 * about which mods exist is precisely the bug this avoids.
-	 */
-	private static volatile List<DiscoveredMod> forgeFamilyMods = List.of();
 
 	/**
 	 * Seeds a {@code LoadingModList} that actually CONTAINS the Forge-family mods, so a mod that resolves ITSELF
@@ -342,7 +305,6 @@ public final class PassiveSeeder {
 		List<DiscoveredMod> mods;
 		try {
 			mods = arbitratedForgeFamilyMods(modsDir);
-			forgeFamilyMods = List.copyOf(mods);
 		} catch (Throwable t) {
 			Caught.warn(t, "[Forbric/Seed] could not discover Forge-family mods for the NeoForge LoadingModList — "
 					+ "falling back to the empty list");
@@ -354,15 +316,10 @@ public final class PassiveSeeder {
 		// other ecosystem is running. Physics Mod reads exactly this seam (LoadingModList.getModFileById) to decide
 		// whether to render through Sodium's pipeline or vanilla's; told no next to a live Fabric Sodium, it drew
 		// its debris and ragdolls into a path Sodium no longer runs, so they were simply never visible.
-		//
-		// forgeFamilyMods above is deliberately NOT extended: that list is what traditional Forge's ModList is
-		// built from, and a MinecraftForge ModList is announced to servers in the handshake. Presence must not
-		// turn into "this client claims to run those mods".
 		List<DiscoveredMod> presence = new ArrayList<>(mods);
 		Set<String> presenceIds = new LinkedHashSet<>();
 		for (DiscoveredMod mod : mods) presenceIds.add(mod.getId());
-		// The Forge-family mods that came out of another mod's jar go in beside them — into THIS list only, never into
-		// forgeFamilyMods above, for the same handshake reason as the Fabric mods below. See the method.
+		// The Forge-family mods that came out of another mod's jar go in beside them. See the method.
 		List<DiscoveredMod> nested = arbitratedNestedForgeFamilyMods(nestedJars, presenceIds);
 		presence.addAll(nested);
 		for (DiscoveredMod mod : ModPresence.fabricMods()) {
@@ -436,9 +393,9 @@ public final class PassiveSeeder {
 	 * being initialised as a Fabric mod. The arbiter is the single boot-time policy for that question; this asks it
 	 * rather than inventing a second answer.
 	 *
-	 * <p>Both Forge-family ecosystems are included, not just NeoForge: on the merged base a traditional
-	 * MinecraftForge mod really IS loaded, so "is X present" must answer yes for it too. De-duplicated by mod id,
-	 * first-wins, because {@code fileById} is a map and a duplicate id would otherwise silently shadow.
+	 * <p>A universal jar's MinecraftForge half is suppressed like any half the jar's owner is not, so what is listed is
+	 * NeoForge's. De-duplicated by mod id, first-wins, because {@code fileById} is a map and a duplicate id would
+	 * otherwise silently shadow.
 	 */
 	static List<DiscoveredMod> arbitratedForgeFamilyMods(Path modsDir) throws Exception {
 		List<DiscoveredMod> out = new ArrayList<>();
@@ -510,9 +467,7 @@ public final class PassiveSeeder {
 	 * {@code libjf_data_manipulation_v0}, is one of the nested twelve.
 	 *
 	 * <p>The source is the extracted list itself, whose paths are the files the classes are served from, so a
-	 * seeded file's contents and scan read the right bytes. Only the NeoForge list gains them: the list this feeds
-	 * is presence, and {@code forgeFamilyMods} — which becomes MinecraftForge's handshake list — is left alone,
-	 * because whether MinecraftForge announces a jar-in-jar mod is a separate question from whether it is here.
+	 * seeded file's contents and scan read the right bytes.
 	 *
 	 * @param nestedJars null when extraction has not run, which contributes nothing
 	 */
@@ -668,248 +623,6 @@ public final class PassiveSeeder {
 	}
 
 	/**
-	 * The two lists {@code LoadingModListImpl}'s constructor takes, built once and handed to BOTH readers: the
-	 * {@code ModSorter$State} MinecraftForge's own {@code init} path expects, and {@link ForgeLoadingList}, which
-	 * is what the rewritten lazy holder actually reads. Keeping them one value is what stops those two from being
-	 * independently derived and quietly disagreeing.
-	 *
-	 * @param files    MinecraftForge {@code ModFile}s, one per jar
-	 * @param modInfos MinecraftForge {@code ModInfo}s, one per declared mod
-	 */
-	record ForgeLoadingLists(List<Object> files, List<Object> modInfos) {
-	}
-
-	/**
-	 * Builds the contents of traditional Forge's loading list — one {@code ModFile}+{@code ModFileInfo} per jar, a
-	 * {@code ModInfo} per declared mod — from the same discovery answer the NeoForge list is seeded with.
-	 *
-	 * <p>What has to be right is narrow, because only one path ever reads these: {@code LoadingModListImpl}'s lazy
-	 * holder builds the list with {@code new LoadingModListImpl(files, mods)}, and that constructor
-	 * touches exactly {@code ModFile.getModFileInfo}, {@code ModFileInfo.getMods}, {@code ModInfo.getModId} and
-	 * {@code ModInfo.getOwningFile}. {@code ModList}'s own initializer then adds {@code ModFileInfo.getFile}, and the
-	 * handshake's {@code ModVersions.create} adds {@code getDisplayName} and {@code getVersion}. The remaining fields
-	 * are filled anyway, with truthful empties, so a consumer this kernel has not met does not meet a null.
-	 *
-	 * <p>Deliberately NOT reached: {@code LoadingModListImpl.init}, which walks each file's access transformers and
-	 * touches the jars. Nothing calls it here — the lazy holder is the only builder — and seeding must stay a
-	 * description of what was loaded, not a second loading pass.
-	 */
-	static ForgeLoadingLists buildForgeLoadingLists(ClassLoader gameLoader, List<DiscoveredMod> mods)
-			throws Exception {
-		Class<?> modFileCls = Class.forName(ForeignType.MOD_FILE.binary(Ecosystem.FORGE), false, gameLoader);
-		Class<?> fileInfoCls = Class.forName(ForeignType.MOD_FILE_INFO.binary(Ecosystem.FORGE), false, gameLoader);
-		Class<?> modInfoCls = Class.forName(ForeignType.MOD_INFO.binary(Ecosystem.FORGE), false, gameLoader);
-
-		// One file per JAR, N mods inside it: a mods.toml may declare several [[mods]], and the file is what the
-		// list keys its per-file map on.
-		Map<String, List<DiscoveredMod>> byJar = new LinkedHashMap<>();
-		for (DiscoveredMod mod : mods) {
-			byJar.computeIfAbsent(mod.getSource(), key -> new ArrayList<>()).add(mod);
-		}
-
-		List<Object> files = new ArrayList<>();
-		List<Object> modInfos = new ArrayList<>();
-		int annotations = 0;
-		long startedAt = System.nanoTime();
-		for (Map.Entry<String, List<DiscoveredMod>> jar : byJar.entrySet()) {
-			Object modFile = allocate(modFileCls);
-			Object fileInfo = allocate(fileInfoCls);
-			List<Object> ownMods = new ArrayList<>();
-			for (DiscoveredMod mod : jar.getValue()) {
-				Object modInfo = buildForgeModInfo(gameLoader, modInfoCls, fileInfo, mod);
-				ownMods.add(modInfo);
-				modInfos.add(modInfo);
-			}
-			fillForgeModFileInfo(gameLoader, fileInfoCls, fileInfo, modFile, List.copyOf(ownMods),
-					jar.getValue().get(0));
-			annotations += fillForgeModFile(modFileCls, modFile, fileInfo, Path.of(jar.getKey()),
-					version(jar.getValue().get(0)));
-			files.add(modFile);
-		}
-		if (ModFileScanner.forgeIndexEnabled()) {
-			ForbricLog.info("[Forbric/Seed] indexed %d annotation(s) across %d MinecraftForge jar(s) in %d ms — "
-					+ "ModList.getAllScanData() is how a traditional-Forge mod finds its OWN members "
-					+ "(SuperMartijn642 Core Lib's @RegistryEntryAcceptor field injection, Forge's own "
-					+ "@AutoRegisterCapability sweep), and it held nothing at all until now "
-					+ "(-Dforbric.forgeScanData=off to go back)",
-					annotations, byJar.size(), (System.nanoTime() - startedAt) / 1_000_000L);
-		}
-		return new ForgeLoadingLists(files, modInfos);
-	}
-
-	/**
-	 * The jar's own entry.
-	 *
-	 * <p>{@code modFileInfo} is what the list build reads; the rest are truthful empties — except the jar itself,
-	 * which is not optional and used to be missing.
-	 *
-	 * <p><b>The field that was written for years and does not exist.</b> This method ended with
-	 * {@code setOptionalInstanceField(modFileCls, "filePath", ...)}, and {@code ModFile} has no {@code filePath}
-	 * field: javap shows the path lives behind {@code private final SecureJar jar}, and every path accessor —
-	 * {@code getFilePath}, {@code getFileName}, {@code findResource}, {@code toString} — goes through it. Being
-	 * "optional", the write failed silently at debug level, so the seeded ModFile carried a NULL SecureJar and
-	 * every one of those accessors NPE'd. ShoulderSurfing-Forge walks {@code ModList.getModFiles()} calling
-	 * {@code findResource} on each from its config-loading listener, so its init never completed; and because
-	 * {@code toString} goes the same way, any attempt to LOG the failure NPE'd too and hid the real one.
-	 */
-	private static final Map<Path, Object> FORGE_SCAN_CACHE = new LinkedHashMap<>();
-
-	private static int fillForgeModFile(Class<?> modFileCls, Object modFile, Object fileInfo, Path jar, String version)
-			throws Exception {
-		setInstanceField(modFileCls, "modFileInfo", modFile, fileInfo);
-		setInstanceField(modFileCls, "jarVersion", modFile, version);
-		setInstanceField(modFileCls, "fileProperties", modFile, Map.of());
-		setInstanceField(modFileCls, "loaders", modFile, List.of());
-		// An empty list, not null: whoever walks a file's access transformers must find none rather than throw. The
-		// kernel applies them itself, from its own pass over the same jars.
-		setInstanceField(modFileCls, "accessTransformers", modFile, List.of());
-		// Real scan data, and an empty one rather than null if the scan could not be built: ModList.getAllScanData()
-		// maps every file through getScanResult(), and MinecraftForge's own CapabilityManager.injectCapabilities
-		// streams that list unguarded — a null entry NPE'd inside Forge's code on every boot.
-		//
-		// It was empty for years, which is a different bug with no error attached to it. The index is how a
-		// traditional-Forge mod finds its OWN members: SuperMartijn642's Core Lib injects every
-		// @RegistryEntryAcceptor static field from it, so Packed Up's MenuType field stayed null and the client
-		// died in Minecraft.<init> with "Container screen registered with null menu type!" — text that names
-		// neither the index nor the kernel. Forge's own @AutoRegisterCapability sweep read the same nothing.
-		int annotations = 0;
-		try {
-			// Cached per jar because this whole list is built TWICE — once before Mixin starts and once from the
-			// mod-loading window — and the index is a read-only answer about a file that did not change between
-			// them. Without it the ASM pass over every Forge-family jar runs twice for one boot.
-			Object scanData = FORGE_SCAN_CACHE.get(jar);
-			if (scanData == null) scanData = ModFileScanner.scanForge(jar, modFileCls.getClassLoader());
-			if (scanData == null) {
-				scanData = Class.forName(ForeignType.MOD_FILE_SCAN_DATA.binary(Ecosystem.FORGE), true,
-						modFileCls.getClassLoader()).getConstructor().newInstance();
-			}
-			setOptionalInstanceField(modFileCls, "fileModFileScanData", modFile, scanData);
-			FORGE_SCAN_CACHE.put(jar, scanData);
-			// Counted off the object itself, not off what was handed to it: the number in the boot log is then
-			// evidence about the index a mod will actually read, and goes to zero the moment one stops being built.
-			annotations = ((Set<?>) scanData.getClass().getMethod("getAnnotations").invoke(scanData)).size();
-		} catch (Throwable t) {
-			Caught.warn(t, "[Forbric/Seed] could not give the seeded MinecraftForge ModFile for %s its scan data; "
-					+ "its annotations are counted as 0", jar.getFileName());
-		}
-		fillForgeModFileJar(modFileCls, modFile, jar);
-		return annotations;
-	}
-
-	/**
-	 * Gives a seeded {@code ModFile} the real jar behind it, and marks it a MOD.
-	 *
-	 * <p>MinecraftForge's own {@code SecureJar.from(Path...)} is NOT used, and the reason is not a preference:
-	 * it initialises {@code cpw.mods.jarhandling.impl.Jar}, which demands ModLauncher's
-	 * {@code UnionFileSystemProvider} and throws without it. The kernel replaces ModLauncher, so that call throws
-	 * once and then hands back {@code NoClassDefFoundError} forever. {@link ForgeSecureJarStandIn} implements the
-	 * interface over a plain zip file system instead. The class is loaded without initialising it — only its
-	 * interface shape is wanted here.
-	 *
-	 * <p>Warn rather than debug on failure, and say what it costs. The previous silence is the whole reason this
-	 * was shipped broken: a mod walking the mod files got an NPE out of MinecraftForge's own accessor, and the
-	 * kernel's log said nothing at all.
-	 */
-	private static void fillForgeModFileJar(Class<?> modFileCls, Object modFile, Path jar) {
-		try {
-			Class<?> secureJar = Class.forName("cpw.mods.jarhandling.SecureJar", false, modFileCls.getClassLoader());
-			setInstanceField(modFileCls, "jar", modFile, ForgeSecureJarStandIn.create(secureJar, jar));
-		} catch (Throwable t) {
-			Caught.warn(t, "[Forbric/Seed] could not give the seeded MinecraftForge ModFile for %s its jar — "
-					+ "getFilePath, getFileName, findResource and toString all read it, so a mod walking "
-					+ "ModList.getModFiles() will NPE inside MinecraftForge's own accessor", jar.getFileName());
-		}
-		// Type.MOD, not null: a consumer filtering the list by type would otherwise drop every seeded file, and a
-		// null here reaches a switch in MinecraftForge's own code.
-		try {
-			Class<?> type = Class.forName(ForeignType.MOD_FILE_TYPE.binary(Ecosystem.FORGE), true,
-					modFileCls.getClassLoader());
-			setOptionalInstanceField(modFileCls, "modFileType", modFile,
-					Enum.valueOf(type.asSubclass(Enum.class), "MOD"));
-		} catch (Throwable t) {
-			Caught.warn(t, "[Forbric/Seed] could not set the seeded MinecraftForge ModFile's type for %s; it stays null",
-					jar.getFileName());
-		}
-	}
-
-	/**
-	 * {@code config} is the file's own top level (see {@link #fileConfigurable}): MinecraftForge's
-	 * {@code ModFileInfo.getConfigElement} delegates straight to it and {@code getConfig()} answers the file itself.
-	 */
-	private static void fillForgeModFileInfo(ClassLoader gameLoader, Class<?> fileInfoCls, Object fileInfo,
-			Object modFile, List<Object> ownMods, DiscoveredMod first) throws Exception {
-		setInstanceField(fileInfoCls, "modFile", fileInfo, modFile);
-		setInstanceField(fileInfoCls, "mods", fileInfo, ownMods);
-		setInstanceField(fileInfoCls, "config", fileInfo, fileConfigurable(gameLoader, Ecosystem.FORGE, first));
-		setInstanceField(fileInfoCls, "languageSpecs", fileInfo, List.of());
-		setInstanceField(fileInfoCls, "properties", fileInfo, Map.of());
-		setInstanceField(fileInfoCls, "usesServices", fileInfo, List.of());
-		// "" rather than null: the Mods screen writes the license into its info pane unguarded.
-		setInstanceField(fileInfoCls, "license", fileInfo, "");
-	}
-
-	/**
-	 * One mod's entry, through the record's own canonical constructor — {@code ModInfo} is a record, and a record's
-	 * fields refuse reflective writes however accessible they are made, so the field surgery that builds the two
-	 * classes around it is not an option here.
-	 *
-	 * <p>The arguments are matched by RECORD COMPONENT NAME rather than by position, so a carrier that adds or
-	 * reorders a component fails loudly on the one it cannot fill instead of silently putting a version where a
-	 * description belongs. {@code getDisplayName} and {@code getVersion} are what the handshake puts on the wire, so
-	 * they carry the discovered name and version; everything else is a truthful empty.
-	 */
-	private static Object buildForgeModInfo(ClassLoader gameLoader, Class<?> modInfoCls, Object owningFile,
-			DiscoveredMod mod) throws Exception {
-		Class<?> holderCls = Class.forName("net.minecraftforge.fml.loading.moddiscovery.ModInfo$Holder", false, gameLoader);
-		Constructor<?> holderCtor = holderCls.getDeclaredConstructor(Object.class);
-		holderCtor.setAccessible(true);
-
-		Map<String, Object> byComponent = new LinkedHashMap<>();
-		byComponent.put("getOwningFile", owningFile);
-		// The mod's own [[mods]] entry, as MinecraftForge's record holds it: the record's getConfigElement delegates
-		// here, and Forge's own mod list reads authors, credits and displayURL out of it. Empty with the file switch
-		// off, as before.
-		byComponent.put("getConfig", FmlConfigElements.enabled()
-				? configurableOver(gameLoader, Ecosystem.FORGE, mod.getConfigElements())
-				: emptyConfigurable(gameLoader, Ecosystem.FORGE));
-		byComponent.put("getModId", mod.getId());
-		byComponent.put("getNamespace", mod.getId());
-		byComponent.put("getVersion", artifactVersion(gameLoader, version(mod)));
-		byComponent.put("getDisplayName", displayName(mod));
-		byComponent.put("getDescription", "");
-		byComponent.put("getLogoFile", Optional.empty());
-		byComponent.put("getLogoBlur", Boolean.FALSE);
-		byComponent.put("getUpdateURL", Optional.empty());
-		byComponent.put("getModURL", Optional.empty());
-		// Empty holders rather than null ones: dependency resolution does not run here, but anything that asks must
-		// get a list saying "nothing declared" instead of an NPE.
-		byComponent.put("dependencies", holderCtor.newInstance(List.of()));
-		byComponent.put("forgeFeatures", holderCtor.newInstance(List.of()));
-		// The mod's own [modproperties.<id>] table, not an empty one: it is how a mod addresses ANOTHER mod, and
-		// Sodium reads its config entry point out of exactly this to build that mod's Video Settings page.
-		byComponent.put("getModProperties", mod.getModProperties());
-
-		java.lang.reflect.RecordComponent[] components = modInfoCls.getRecordComponents();
-		if (components == null) {
-			throw new IllegalStateException(modInfoCls.getName() + " is no longer a record — re-derive its construction");
-		}
-		Class<?>[] types = new Class<?>[components.length];
-		Object[] args = new Object[components.length];
-		for (int i = 0; i < components.length; i++) {
-			String name = components[i].getName();
-			if (!byComponent.containsKey(name)) {
-				throw new IllegalStateException(modInfoCls.getName() + " gained a component this kernel cannot fill: "
-						+ name + " (" + components[i].getType().getName() + ")");
-			}
-			types[i] = components[i].getType();
-			args[i] = byComponent.get(name);
-		}
-		Constructor<?> canonical = modInfoCls.getDeclaredConstructor(types);
-		canonical.setAccessible(true);
-		return canonical.newInstance(args);
-	}
-
-	/**
 	 * The answers an {@code IConfigurable} gives when the mod declares no config section — for EITHER family.
 	 *
 	 * <p>There were two of these, one per family, and only one of them was right. The Forge copy answered
@@ -1009,18 +722,13 @@ public final class PassiveSeeder {
 	 * {@code Loaded configuration file for Sodium: 37 options available, 0 override(s) found}. Lithium reads the
 	 * same kind of table one level up, from the owning FILE (see {@link #fileConfigurable}).
 	 *
-	 * <p>A MinecraftForge configurable answers a table as an {@code ImmutableMap}, as MinecraftForge's wrapper does
-	 * (see {@link FmlConfigElements}). Guava is the game's, reached through {@code gameLoader} once, here, rather than
-	 * inside the handler; where it cannot be reached the table is an unmodifiable map of the same entries.
-	 *
 	 * <p>Whether to answer at all is the caller's decision, because each seam has its own switch.
 	 *
 	 * <p>A PARALLEL path, not a re-route: {@link #EMPTY_CONFIGURABLE} stays the one shared instance for mods
 	 * with nothing to declare, which is what {@code EmptyConfigurableTest} asserts by identity.
 	 *
 	 * <p>Dispatches on the method NAME for the reason given on {@link #EMPTY_CONFIGURABLE}: a {@link Proxy}
-	 * routes DEFAULT methods to the handler too, and traditional Forge's interface declares two single-String
-	 * overloads NeoForge's does not. Each path element is a LITERAL key — never split on dots, because iris'
+	 * routes DEFAULT methods to the handler too. Each path element is a LITERAL key — never split on dots, because iris'
 	 * key is the single literal {@code mixin.features.render.world.sky}.
 	 */
 	private static Object configurableOver(ClassLoader gameLoader, Ecosystem family, Map<String, Object> elements)
@@ -1029,7 +737,6 @@ public final class PassiveSeeder {
 			return emptyConfigurable(gameLoader, family);
 		}
 		Class<?> iConfigurable = Class.forName(ForeignType.CONFIGURABLE.binary(family), false, gameLoader);
-		UnaryOperator<Map<String, Object>> immutable = family == Ecosystem.FORGE ? guavaImmutableCopy(gameLoader) : null;
 		InvocationHandler handler = (proxy, method, args) -> switch (method.getName()) {
 			// Unconditionally empty: building a nested IConfigurable here would mean Class.forName and a second
 			// Proxy inside the handler, on whatever thread happens to ask.
@@ -1037,8 +744,7 @@ public final class PassiveSeeder {
 			case "toString" -> "KernelSeededConfig";
 			case "hashCode" -> System.identityHashCode(proxy);
 			case "equals" -> proxy == (args == null ? null : args[0]);
-			case "getConfigElement" -> immutable == null ? lookup(elements, args)
-					: FmlConfigElements.minecraftForge(elements, immutable, path(args));
+			case "getConfigElement" -> lookup(elements, args);
 			default -> unmodelled("configurable", method);
 		};
 		return Proxy.newProxyInstance(gameLoader, new Class<?>[] {iConfigurable}, handler);
@@ -1063,30 +769,6 @@ public final class PassiveSeeder {
 			return emptyConfigurable(gameLoader, family);
 		}
 		return configurableOver(gameLoader, family, first.getFileConfigElements());
-	}
-
-	/**
-	 * {@code ImmutableMap.copyOf}, from the game's own Guava: MinecraftForge's wrapper answers a table with an
-	 * {@code ImmutableMap}. Resolved once per configurable, and an unmodifiable map where Guava is absent.
-	 */
-	private static UnaryOperator<Map<String, Object>> guavaImmutableCopy(ClassLoader gameLoader) {
-		Method copyOf;
-		try {
-			copyOf = Class.forName("com.google.common.collect.ImmutableMap", false, gameLoader).getMethod("copyOf", Map.class);
-		} catch (ReflectiveOperationException | LinkageError absent) {
-			Caught.expected(absent);
-			return FmlConfigElements::unmodifiableCopy;
-		}
-		return entries -> {
-			try {
-				@SuppressWarnings("unchecked")
-				Map<String, Object> copy = (Map<String, Object>) copyOf.invoke(null, entries);
-				return copy;
-			} catch (ReflectiveOperationException | RuntimeException refused) {
-				Caught.expected(refused);
-				return FmlConfigElements.unmodifiableCopy(entries);
-			}
-		};
 	}
 
 	/** A proxied {@code getConfigElement}'s arguments as a path: {@code String[]}, a bare {@code String}, or none. */
@@ -1526,398 +1208,6 @@ public final class PassiveSeeder {
 		}
 	}
 
-	/**
-	 * Publishes MinecraftForge's mod list to {@link ForgeLoadingList} BEFORE Mixin is installed, so the rewritten
-	 * {@code LoadingModListImpl$1LazyInit} has a real answer no matter who touches {@code LoadingModList} first.
-	 *
-	 * <p>This exists because the seed twenty lines below is too late and cannot tell that it is. That initializer
-	 * is a one-shot with an empty exception table: a caller arriving before {@link KernelLifecycle}'s mod-loading
-	 * window — a guest mixin plugin resolving "is mod X present" during {@code prepareConfigs},
-	 * {@code ServerStatusPing} on the first ping, anything reached from a static initializer — used to NPE inside
-	 * it and leave the class permanently erroneous. Seeding afterwards then still succeeded and still logged
-	 * success, because the class that goes erroneous is the nested holder, not {@code LoadingModListImpl}.
-	 *
-	 * <p><b>Its own discovery pass, not {@code forgeFamilyMods}.</b> That field is only written on the NeoForge
-	 * seeding path, which skips itself entirely when no NeoForge carrier is present — so on an instance carrying
-	 * MinecraftForge alone it is still {@code List.of()} here, and publishing from it would freeze an empty list
-	 * into a {@code static final} that can never be replaced. The trade this whole fix exists to refuse is exactly
-	 * "crash becomes silent empty list", and reading a field that is empty for a reason unrelated to the answer is
-	 * how that trade sneaks back in. {@code arbitratedForgeFamilyMods} is deterministic for a given mods directory,
-	 * so asking it again here agrees with the other caller by construction rather than by hope.
-	 *
-	 * <p>Nothing is published if discovery throws: {@link ForgeLoadingList} then keeps answering "no list yet",
-	 * which is loud. An empty list is published only when the directory genuinely holds no MinecraftForge-family
-	 * mod, which is a truthful answer and is logged as one.
-	 *
-	 * @param modsDir passed in rather than derived here, for the same reason
-	 *                {@code seedNeoForgeLoader} takes it: two derivations of "where the mods are" is how they drift
-	 */
-	public static void publishForgeLoadingList(ClassLoader gameLoader, Path modsDir) {
-		if ("off".equalsIgnoreCase(System.getProperty(SEED_SWITCH, "on"))) {
-			ForbricLog.debug("[Forbric/ForgeList] -D%s=off — not publishing MinecraftForge's LoadingModList",
-					SEED_SWITCH);
-			return;
-		}
-		try {
-			// Absence of the carrier, not a failure: with no MinecraftForge the holder is never defined, the
-			// transform never fires, and nobody will ever call ForgeLoadingList.
-			Class.forName("net.minecraftforge.fml.loading.LoadingModListImpl", false, gameLoader);
-		} catch (ClassNotFoundException absent) {
-			Caught.expected(absent);
-			return;
-		}
-		try {
-			List<DiscoveredMod> mods = arbitratedForgeFamilyMods(modsDir);
-			ForgeLoadingLists lists = mods.isEmpty()
-					? new ForgeLoadingLists(List.of(), List.of())
-					: buildForgeLoadingLists(gameLoader, mods);
-			ForgeLoadingList.publish(lists.files(), lists.modInfos());
-			// The timing claim is made HERE, by the only caller that can know it: this runs before
-			// KernelMixinBootstrap.init, and the late fallback in seedForgeLoadingModList does not. ForgeLoadingList
-			// .publish itself says nothing about when, because both callers reach it and a gate reading a timing
-			// guarantee out of a line the callee wrote would stay green through exactly this regression.
-			ForbricLog.info("[Forbric/ForgeList] published MinecraftForge's LoadingModList BEFORE Mixin starts — "
-					+ "%d mod(s). Its list is built by a one-shot class initializer, so the answer has to exist "
-					+ "before the first guest mixin plugin can ask for it.", lists.modInfos().size());
-		} catch (Throwable t) {
-			// Deliberately does NOT publish an empty list as a fallback. Reading an unpublished list throws with a
-			// stack naming the reader; publishing an empty one here would freeze "no mods" into a final field and
-			// put MinecraftForge's handshake on the wire saying this instance runs none.
-			Caught.warn(t, "[Forbric/ForgeList] could not build MinecraftForge's LoadingModList before Mixin — "
-					+ "nothing published, so the first read of LoadingModList will throw instead of quietly "
-					+ "reporting zero mods");
-		}
-	}
-
-	/**
-	 * Reads MinecraftForge's list back through the same door its mods do, and says so when the two disagree.
-	 *
-	 * <p>The seed above cannot detect its own failure: {@code LoadingModListImpl}'s initializer only fetches a
-	 * logger and always succeeds, so {@code Class.forName} resolves, the {@code temp} write lands, and the "seeded
-	 * N mod(s)" line prints — all while the nested holder is erroneous and every read fails. The write side is
-	 * green in both worlds. Only the READ side can tell them apart.
-	 */
-	private static void verifyForgeLoadingModList(ClassLoader gameLoader, int expectedMods) {
-		try {
-			Class<?> lml = Class.forName(ForeignType.LOADING_MOD_LIST.binary(Ecosystem.FORGE), true, gameLoader);
-			Object got = lml.getMethod("getMods").invoke(null);
-			int actual = got instanceof List<?> list ? list.size() : -1;
-			if (actual == expectedMods) {
-				ForbricLog.debug("[Forbric/ForgeList] LoadingModList.getMods() reads back %d mod(s) — the list the "
-						+ "handshake announces is the list the kernel built", actual);
-			} else {
-				ForbricLog.error("[Forbric/ForgeList] LoadingModList.getMods() reads back %d mod(s) but the kernel "
-						+ "built %d — MinecraftForge's mods will announce themselves wrongly to every peer",
-						actual, expectedMods);
-			}
-		} catch (ClassNotFoundException absent) {
-			// No carrier; the seed above already said so.
-			Caught.expected(absent);
-		} catch (Throwable t) {
-			Caught.error(t, "[Forbric/ForgeList] MinecraftForge's LoadingModList is UNREADABLE even though seeding "
-					+ "reported success — its lazy holder was poisoned by an earlier reader, so every mod list "
-					+ "query for the rest of this run fails and its handshake will say mods=[]");
-		}
-	}
-
-	/**
-	 * Seeds traditional Forge's {@code LoadingModListImpl.temp} with an empty {@code ModSorter$State} so
-	 * {@code LoadingModList.get()} doesn't NPE. Forge's {@code ServerStatusPing} touches
-	 * {@code ModList.<clinit>} → {@code LoadingModList.getModFiles()} right after {@code Done}. The NeoForge
-	 * LoadingModList was seeded separately; this is the traditional-Forge twin (avoids the poisoned-LazyInit wall).
-	 */
-	public static void seedForgeLoadingModList(ClassLoader gameLoader) {
-		try {
-			Class<?> stateCls = Class.forName("net.minecraftforge.fml.loading.ModSorter$State", false, gameLoader);
-			Constructor<?> stateCtor = stateCls.getDeclaredConstructor(List.class, List.class);
-			stateCtor.setAccessible(true);
-
-			List<DiscoveredMod> mods = "off".equalsIgnoreCase(System.getProperty(SEED_SWITCH, "on"))
-					? List.of()
-					: forgeFamilyMods;
-			ForgeLoadingLists lists = mods.isEmpty()
-					? new ForgeLoadingLists(List.of(), List.of())
-					: buildForgeLoadingLists(gameLoader, mods);
-			// LATE publish, as a fallback only. publishForgeLoadingList ran before Mixin and normally owns this;
-			// ForgeLoadingList.publish keeps the FIRST writer, so this is a no-op then. It matters when the early
-			// pass could not build a list: the holder still gets a real answer here, exactly as it did before this
-			// fix existed, instead of the run dying on a list that was computable all along.
-			boolean late = !ForgeLoadingList.isPublished();
-			ForgeLoadingList.publish(lists.files(), lists.modInfos());
-			if (late) {
-				// Everything downstream still works — but only because nothing happened to read LoadingModList
-				// during Mixin this run. Next run, with one more mod, it might.
-				ForbricLog.warn("[Forbric/ForgeList] MinecraftForge's LoadingModList was published LATE, from the "
-						+ "mod-loading window — the pre-Mixin pass did not produce one. Anything that reads "
-						+ "LoadingModList before this point poisons its one-shot holder for the whole run.");
-			}
-			Object state = stateCtor.newInstance(lists.files(), lists.modInfos());
-
-			// Still written, even though the rewritten holder no longer reads it: LoadingModListImpl.init is
-			// MinecraftForge's own path through this field and costs nothing to keep honest.
-			Class<?> lmlImpl = Class.forName("net.minecraftforge.fml.loading.LoadingModListImpl", true, gameLoader);
-			Field temp = lmlImpl.getDeclaredField("temp");
-			temp.setAccessible(true);
-			if (temp.get(null) == null) temp.set(null, state);
-			// The read side, because the write side above succeeds whether or not the holder is already poisoned.
-			verifyForgeLoadingModList(gameLoader, ForgeLoadingList.publishedModCount());
-			if (mods.isEmpty()) {
-				ForbricLog.debug("[Forbric/Seed] seeded empty traditional-Forge LoadingModList (zero mods)");
-			} else {
-				StringBuilder ids = new StringBuilder();
-				for (DiscoveredMod mod : mods) {
-					if (ids.length() > 0) ids.append(", ");
-					ids.append(mod.getId());
-				}
-				ForbricLog.info("[Forbric/Seed] seeded traditional-Forge LoadingModList with %d mod(s) — ModList.getMods() "
-						+ "derives its whole contents from this once, and an empty one is what left MinecraftForge's "
-						+ "handshake telling every peer it runs no mods. [%s]", mods.size(), ids);
-			}
-		} catch (ClassNotFoundException absent) {
-			Caught.expected(absent);
-		} catch (Throwable t) {
-			Caught.warn(t, "[Forbric/Seed] could not seed traditional-Forge LoadingModList — its ModList stays empty "
-					+ "and its mods tell every peer they are absent");
-		}
-
-		// Traditional-Forge ModList keeps mods/indexedMods/sortedContainers as STATIC fields, null until mod
-		// loading. ServerStatusPing → ModList.forEachModContainer iterates indexedMods → NPE. Seed empties.
-		try {
-			Class<?> modList = Class.forName(ForeignType.MOD_LIST.binary(Ecosystem.FORGE), true, gameLoader);
-			setStaticIfNull(modList, "mods", List.of());
-			setStaticIfNull(modList, "indexedMods", Map.of());
-			setStaticIfNull(modList, "sortedContainers", List.of());
-			ForbricLog.debug("[Forbric/Seed] seeded empty traditional-Forge ModList collections (zero mods)");
-		} catch (ClassNotFoundException absent) {
-			Caught.expected(absent);
-		} catch (Throwable t) {
-			Caught.warn(t, "[Forbric/Seed] could not seed traditional-Forge ModList collections");
-		}
-	}
-
-	/**
-	 * Seeds traditional-Forge {@code FMLLoader}'s static identity ({@code gamePath}, {@code dist}, {@code production},
-	 * {@code naming}) so its accessors answer instead of returning null. e.g. {@code UsernameCache.<clinit>} (touched
-	 * by {@code MinecraftForge.initialize} during ForgeMod construction) resolves {@code FMLLoader.getGamePath()}.
-	 * Identity only, no lifecycle.
-	 *
-	 * <p>The {@code dist} used to be the literal {@code DEDICATED_SERVER}, with no side argument to say otherwise.
-	 * On a Forbric CLIENT that made traditional MinecraftForge answer "dedicated server" to every question about
-	 * which half of the game it was on — {@code FMLEnvironment.dist}, {@code FMLLoader.getDist()},
-	 * {@code DistExecutor}'s branch selection, the runtime {@code @OnlyIn} checks. Nothing throws when that is
-	 * wrong; the mod simply takes its server branch on a client, which is the same silent shape as a mod told the
-	 * wrong thing about another mod's presence. The NeoForge seeder three methods up has carried a comment about
-	 * exactly this hazard for its own dist since it was written.
-	 *
-	 * <p>Reported at INFO rather than DEBUG for the same reason: this value decides which half of every
-	 * traditional-Forge mod runs, so it belongs in a log a user can hand over.
-	 *
-	 * <p><b>WHEN this runs is part of the contract.</b> It is called from {@code KernelBoot}'s pre-Mixin block,
-	 * not from {@link #seedAll}, because {@code FMLEnvironment} caches these values in {@code static final}
-	 * fields the first time anything touches it — and a guest mixin config may declare an
-	 * {@code IMixinConfigPlugin} whose own {@code <clinit>} reads {@code FMLEnvironment.dist} while Mixin is
-	 * preparing configs, which is before {@code seedAll}. Seeded afterwards, {@code dist} is null for the rest of
-	 * the run and nothing says so: supermartijn642's CoreLib lost every mixin to it ("Error loading companion
-	 * plugin class") and libIPN's Kotlin constructor died on "dist must not be null". NeoForge's
-	 * {@code FMLEnvironment} needs none of this — it is stateless, two static methods and no fields.
-	 */
-	public static void seedForgeFmlLoader(ClassLoader gameLoader, Path gameDir, Side side) {
-		if (forgeIdentitySeeded) {
-			ForbricLog.debug("[Forbric/Seed] traditional-Forge FMLLoader identity already seeded — not re-seeding");
-			return;
-		}
-		try {
-			Class<?> fmlLoader = Class.forName(ForeignType.FML_LOADER.binary(Ecosystem.FORGE), false, gameLoader);
-			setStaticIfNull(fmlLoader, "gamePath", gameDir.toAbsolutePath());
-			setStaticIfNull(fmlLoader, "naming", "mojmap");
-			Field productionField = fmlLoader.getDeclaredField("production");
-			productionField.setAccessible(true);
-			productionField.setBoolean(null, PRODUCTION);
-			Field distField = fmlLoader.getDeclaredField("dist");
-			distField.setAccessible(true);
-			Object existing = distField.get(null);
-			if (existing == null) {
-				Class<?> distClass = Class.forName(ForeignType.DIST.binary(Ecosystem.FORGE), false, gameLoader);
-				distField.set(null, Enum.valueOf(distClass.asSubclass(Enum.class), side.distName()));
-				ForbricLog.info("[Forbric/Seed] traditional-Forge dist seeded %s (production=%s) — this is what "
-						+ "every MinecraftForge mod's side check reads", side.distName(), PRODUCTION);
-			} else {
-				ForbricLog.info("[Forbric/Seed] traditional-Forge dist was already %s; leaving it (running %s)",
-						existing, side.distName());
-			}
-			// Immediately: FMLEnvironment caches exactly the three fields written above, and the rest of this
-			// method (launch handler, FMLPaths, FMLConfig) can fail without that being wrong. Deciding the
-			// one-shot here means a failure further down costs those things, not the dist.
-			verifyForgeFmlEnvironment(gameLoader, side);
-			seedForgeLaunchHandler(gameLoader, fmlLoader, side);
-
-			// Traditional-Forge FMLPaths + FMLConfig (ForgeMod's config registration reads FMLConfig; ConfigFileType
-			// Handler.<clinit> NPEs if FMLConfig.load() hasn't populated its backing file config).
-			Class<?> fmlPaths = Class.forName(ForeignType.FML_PATHS.binary(Ecosystem.FORGE), false, gameLoader);
-			fmlPaths.getMethod("loadAbsolutePaths", Path.class).invoke(null, gameDir.toAbsolutePath());
-			Class<?> fmlConfig = Class.forName(ForeignType.FML_CONFIG.binary(Ecosystem.FORGE), false, gameLoader);
-			fmlConfig.getMethod("load").invoke(null);
-			forgeIdentitySeeded = true;
-			ForbricLog.debug("[Forbric/Seed] seeded traditional-Forge FMLLoader identity + FMLPaths + FMLConfig");
-		} catch (ClassNotFoundException absent) {
-			Caught.expected(absent);
-		} catch (Throwable t) {
-			Caught.warn(t, "[Forbric/Seed] could not seed traditional-Forge FMLLoader identity");
-		}
-	}
-
-	/**
-	 * DECIDES {@code FMLEnvironment} here, one line after the values it caches were written, and reads it back.
-	 *
-	 * <p>{@code FMLEnvironment.<clinit>} is four assignments from {@code FMLLoader}'s getters into {@code public
-	 * static final} fields, with no exception table — it cannot fail and it cannot be repeated. That makes it
-	 * unlike the {@code LoadingModList} holder, which went ERRONEOUS and could at least be caught: here the first
-	 * reader simply wins, quietly, and every later {@code FMLEnvironment.dist} in the process is whatever that
-	 * reader saw. Forcing the initializer at a kernel-owned point ends the race rather than hoping to win it.
-	 *
-	 * <p>Then it checks the answer, because "seeded" and "is what we seeded" are different claims and only the
-	 * second one is the one mods depend on. Reported at ERROR when they disagree: with a null or wrong dist,
-	 * {@code AutomaticEventSubscriber} skips every {@code @EventBusSubscriber} and nothing throws.
-	 */
-	private static void verifyForgeFmlEnvironment(ClassLoader gameLoader, Side side) {
-		try {
-			Class<?> env = Class.forName(ForeignType.FML_ENVIRONMENT.binary(Ecosystem.FORGE), true, gameLoader);
-			Object seen = env.getField("dist").get(null);
-			if (seen == null) {
-				ForbricLog.error("[Forbric/Seed] MinecraftForge FMLEnvironment is null after seeding — something "
-						+ "read it before the kernel seeded FMLLoader, and its fields are static final, so dist is "
-						+ "null for the REST OF THIS RUN: every @EventBusSubscriber is skipped and every dist "
-						+ "branch takes the wrong side, all without throwing");
-			} else if (!side.distName().equals(String.valueOf(seen))) {
-				ForbricLog.error("[Forbric/Seed] MinecraftForge FMLEnvironment disagrees with this side: it says "
-						+ "dist=%s, the kernel is running %s — decided by an earlier reader and unchangeable",
-						seen, side.distName());
-			} else {
-				ForbricLog.info("[Forbric/Seed] MinecraftForge FMLEnvironment decided here: dist=%s production=%s",
-						seen, PRODUCTION);
-			}
-		} catch (ClassNotFoundException absent) {
-			Caught.expected(absent);
-		} catch (Throwable t) {
-			Caught.error(t, "[Forbric/Seed] could not read back MinecraftForge's FMLEnvironment");
-		}
-	}
-
-	/**
-	 * Gives traditional Forge its {@code CommonLaunchHandler}, which is null under the kernel because nothing runs
-	 * ModLauncher's {@code setupLaunchHandler}.
-	 *
-	 * <p>This was invisible for as long as the dist was hardcoded to {@code DEDICATED_SERVER}: {@code FluidType}'s
-	 * constructor calls {@code initClient()} only on the client, and {@code initClient} asks
-	 * {@code FMLLoader.getLaunchHandler().isData()}. Telling Forge the truth about the side therefore reached a
-	 * second thing the kernel had never seeded, and the NPE landed inside {@code ForgeMod}'s own
-	 * {@code RegisterEvent} handler — where it aborted the WHOLE traditional-Forge baseline registration, so
-	 * {@code ForgeMod.EMPTY_TYPE} was never bound and the first {@code ServerPlayer} construction died on
-	 * "Registry Object not present: minecraft:empty". The player was dropped with "Invalid player data", six
-	 * layers away from the cause.
-	 *
-	 * <p>Forge's own {@code ForgeProdLaunchHandler.Client}/{@code .Server} is used rather than a stand-in: its
-	 * constructor takes no arguments and does nothing but record the launch type, and using the real class means
-	 * the dist, the {@code isData} flag and the handler name all come from Forge's answer rather than the
-	 * kernel's guess at it. A Forbric instance is a shipped one — the dev handlers describe a Gradle workspace.
-	 */
-	private static void seedForgeLaunchHandler(ClassLoader gameLoader, Class<?> fmlLoader, Side side)
-			throws Exception {
-		Field handlerField = fmlLoader.getDeclaredField("commonLaunchHandler");
-		handlerField.setAccessible(true);
-		if (handlerField.get(null) != null) return;
-
-		Class<?> handlerClass = Class.forName("net.minecraftforge.fml.loading.targets.ForgeProdLaunchHandler$"
-				+ (side.isClient() ? "Client" : "Server"), false, gameLoader);
-		Object handler = handlerClass.getDeclaredConstructor().newInstance();
-		handlerField.set(null, handler);
-
-		String name = String.valueOf(handlerClass.getMethod("name").invoke(handler));
-		setStaticIfNull(fmlLoader, "launchHandlerName", name);
-		ForbricLog.info("[Forbric/Seed] traditional-Forge launch handler seeded (%s) — FluidType.initClient and "
-				+ "anything else asking getLaunchHandler() now gets an answer instead of null", name);
-	}
-
-	/** MinecraftForge's static front for the early window, which every Forge-patched caller of it goes through. */
-	static final String FORGE_IMMEDIATE_WINDOW_HANDLER = "net.minecraftforge.fml.loading.ImmediateWindowHandler";
-
-	/**
-	 * The launch target handed to {@code ImmediateWindowHandler.load}. FML reads exactly one thing from it — whether it
-	 * contains {@code "client"} — and only to decide whether it may open an early window. Forbric never opens one, so
-	 * the target is one FML's own test reads as "no window": its {@code DummyProvider}, without consulting
-	 * {@code fml.toml} or {@code ServiceLoader} (on the client those would look for a real provider, and switching the
-	 * config off instead would make FML save the player's {@code fml.toml}).
-	 */
-	static final String NO_EARLY_WINDOW_TARGET = "forbric_kernel";
-
-	/**
-	 * Gives MinecraftForge's {@code ImmediateWindowHandler} the provider genuine FML gives it whenever no early window
-	 * is shown: Forge's own {@code DummyProvider}, with that provider's vanilla fallbacks bound.
-	 *
-	 * <p>Genuine FML never lets the game see this handler empty: {@code FMLLoader} calls {@code load} before the game
-	 * starts and {@code acceptGameLayer} right before it launches, and every Forge-patched caller dereferences
-	 * {@code provider} without a null check. The kernel runs neither, so the field stayed null, and the first patched
-	 * caller to run took the client down: a merged {@code Window.<init>} that keeps MinecraftForge's
-	 * {@code if (!positionWindow(...))} guard around vanilla's window positioning died on an NPE inside
-	 * {@code Minecraft.<init>}, before a frame was drawn. The trigger is structural — the handler exists and its
-	 * provider is null — and the cure is Forge's own answer, not a stand-in: {@code positionWindow} then returns
-	 * false and vanilla positions the window, {@code updateFBSize} and {@code renderTick} do nothing, the window
-	 * hand-off creates the window the way vanilla does.
-	 *
-	 * <p>The fallbacks are bound by replaying the binding Forge's own {@code updateModuleReads} performs: it reads the
-	 * fallback class's static methods by name into the provider's {@code Method} fields. The one step of it the kernel
-	 * cannot take is the module lookup — it finds the fallback class through a module named in a module layer, and
-	 * the kernel's game loader has no module layer — so that step is answered by the game loader and everything else
-	 * (which fallback class, which name lands in which field) is read from the provider's own bytecode. A renamed field
-	 * therefore still binds, and a provider whose binding cannot be read says so instead of half-binding.
-	 *
-	 * <p>Checked by asking the seeded handler the question that crashed: {@code positionWindow} with no monitor must
-	 * answer false without touching the window. A seed that cannot answer it is reported at ERROR, because the next
-	 * caller to ask is the game constructing its window.
-	 */
-	static void seedForgeImmediateWindow(ClassLoader gameLoader) {
-		try {
-			Class<?> handler = Class.forName(FORGE_IMMEDIATE_WINDOW_HANDLER, false, gameLoader);
-			Field providerField = handler.getDeclaredField("provider");
-			providerField.setAccessible(true);
-			if (providerField.get(null) != null) {
-				ForbricLog.debug("[Forbric/Seed] MinecraftForge's ImmediateWindowHandler already has a provider — "
-						+ "leaving it");
-				return;
-			}
-			handler.getMethod("load", String.class, String[].class)
-					.invoke(null, NO_EARLY_WINDOW_TARGET, (Object) new String[0]);
-			Object provider = providerField.get(null);
-			if (provider == null) {
-				ForbricLog.error("[Forbric/Seed] MinecraftForge's ImmediateWindowHandler.load left its provider null — "
-						+ "every Forge-patched window call will throw");
-				return;
-			}
-			int bound = bindWindowFallbacks(gameLoader, provider.getClass());
-			java.util.function.IntConsumer ignore = value -> {
-			};
-			Object positioned = handler.getMethod("positionWindow", Optional.class,
-					java.util.function.IntConsumer.class, java.util.function.IntConsumer.class,
-					java.util.function.IntConsumer.class, java.util.function.IntConsumer.class)
-					.invoke(null, Optional.empty(), ignore, ignore, ignore, ignore);
-			if (Boolean.FALSE.equals(positioned)) {
-				ForbricLog.info("[Forbric/Seed] MinecraftForge's ImmediateWindowHandler given FML's own no-early-window "
-						+ "provider (%s, %d fallback(s) bound): positionWindow answers false, so vanilla positions the "
-						+ "window", providerName(provider), bound);
-			} else {
-				ForbricLog.error("[Forbric/Seed] MinecraftForge's ImmediateWindowHandler was given %s, but positionWindow "
-						+ "with no monitor answered %s rather than false — the game's window would be left unpositioned",
-						providerName(provider), positioned);
-			}
-		} catch (ClassNotFoundException absent) {
-			// No MinecraftForge ImmediateWindowHandler: nothing to seed.
-			Caught.expected(absent);
-		} catch (Throwable t) {
-			Caught.error(t, "[Forbric/Seed] could not give MinecraftForge's ImmediateWindowHandler a provider — the "
-					+ "first Forge-patched window call (Window.<init> on a merged base that keeps one) will throw");
-		}
-	}
-
 	/** NeoForge's FML config, whose {@code earlyWindowControl} says whether FML shows (and so controls) a window early. */
 	static final String NEO_FML_CONFIG = ForeignType.FML_CONFIG.binary(Ecosystem.NEOFORGE);
 	static final String NEO_EARLY_WINDOW_CONTROL = "EARLY_WINDOW_CONTROL";
@@ -2005,114 +1295,6 @@ public final class PassiveSeeder {
 			if (((Enum<?>) constant).name().equals(name)) return constant;
 		}
 		throw new IllegalArgumentException(enumType.getName() + " has no constant " + name);
-	}
-
-	private static String providerName(Object provider) {
-		try {
-			Method name = provider.getClass().getMethod("name");
-			name.setAccessible(true);
-			return String.valueOf(name.invoke(provider));
-		} catch (ReflectiveOperationException | RuntimeException unnamed) {
-			Caught.expected(unnamed);
-			return provider.getClass().getName();
-		}
-	}
-
-	/**
-	 * Binds {@code providerClass}'s fallback {@code Method} fields the way its own module-reads hook does, and returns
-	 * how many it bound. Fields already set are left alone.
-	 */
-	static int bindWindowFallbacks(ClassLoader gameLoader, Class<?> providerClass) throws Exception {
-		String resource = providerClass.getName().replace('.', '/') + ".class";
-		byte[] bytes;
-		try (java.io.InputStream in = gameLoader.getResourceAsStream(resource)) {
-			if (in == null) throw new IllegalStateException("no bytes for " + resource);
-			bytes = in.readAllBytes();
-		}
-		WindowFallbackBinding binding = readWindowFallbackBinding(bytes);
-		if (binding.fallbackClass() == null || binding.fieldToMethod().isEmpty()) {
-			throw new IllegalStateException(providerClass.getName() + " binds no fallback the kernel can read (fallback="
-					+ binding.fallbackClass() + ", fields=" + binding.fieldToMethod() + ")");
-		}
-		Class<?> fallback = Class.forName(binding.fallbackClass(), false, gameLoader);
-		Map<String, Method> statics = new LinkedHashMap<>();
-		for (Method m : fallback.getMethods()) {
-			if (java.lang.reflect.Modifier.isStatic(m.getModifiers())) statics.putIfAbsent(m.getName(), m);
-		}
-		int bound = 0;
-		for (Map.Entry<String, String> one : binding.fieldToMethod().entrySet()) {
-			Method target = statics.get(one.getValue());
-			if (target == null) {
-				throw new IllegalStateException(binding.fallbackClass() + " has no static " + one.getValue()
-						+ " for " + providerClass.getName() + "." + one.getKey());
-			}
-			Field field = providerClass.getDeclaredField(one.getKey());
-			field.setAccessible(true);
-			if (field.get(null) == null) {
-				field.set(null, target);
-				bound++;
-			}
-		}
-		return bound;
-	}
-
-	/** Which class a provider's fallbacks come from, and which of its fields each fallback method lands in. */
-	record WindowFallbackBinding(String fallbackClass, Map<String, String> fieldToMethod) {
-	}
-
-	/**
-	 * Reads a provider's fallback binding out of its bytecode: the class it resolves with
-	 * {@code Class.forName(Module, String)}, and every {@code ldc name; Map.get; checkcast Method; putstatic field}
-	 * run on its own static {@code Method} fields.
-	 */
-	static WindowFallbackBinding readWindowFallbackBinding(byte[] providerBytes) {
-		org.objectweb.asm.tree.ClassNode node = new org.objectweb.asm.tree.ClassNode();
-		new org.objectweb.asm.ClassReader(providerBytes).accept(node, org.objectweb.asm.ClassReader.SKIP_FRAMES);
-		String fallback = null;
-		Map<String, String> fields = new LinkedHashMap<>();
-		for (org.objectweb.asm.tree.MethodNode method : node.methods) {
-			for (org.objectweb.asm.tree.AbstractInsnNode insn : method.instructions) {
-				if (!(insn instanceof org.objectweb.asm.tree.MethodInsnNode call)) continue;
-				String name = stringLoadedBefore(insn);
-				if (name == null) continue;
-				if (call.getOpcode() == org.objectweb.asm.Opcodes.INVOKESTATIC && "java/lang/Class".equals(call.owner)
-						&& "forName".equals(call.name)
-						&& "(Ljava/lang/Module;Ljava/lang/String;)Ljava/lang/Class;".equals(call.desc)) {
-					fallback = name;
-				} else if ("java/util/Map".equals(call.owner) && "get".equals(call.name)) {
-					org.objectweb.asm.tree.AbstractInsnNode cast = realAfter(insn);
-					org.objectweb.asm.tree.AbstractInsnNode store = realAfter(cast);
-					if (cast instanceof org.objectweb.asm.tree.TypeInsnNode type
-							&& type.getOpcode() == org.objectweb.asm.Opcodes.CHECKCAST
-							&& "java/lang/reflect/Method".equals(type.desc)
-							&& store instanceof org.objectweb.asm.tree.FieldInsnNode put
-							&& put.getOpcode() == org.objectweb.asm.Opcodes.PUTSTATIC && node.name.equals(put.owner)
-							&& "Ljava/lang/reflect/Method;".equals(put.desc)) {
-						fields.put(put.name, name);
-					}
-				}
-			}
-		}
-		return new WindowFallbackBinding(fallback, fields);
-	}
-
-	private static String stringLoadedBefore(org.objectweb.asm.tree.AbstractInsnNode insn) {
-		org.objectweb.asm.tree.AbstractInsnNode before = insn.getPrevious();
-		while (before != null && before.getOpcode() < 0) before = before.getPrevious();
-		return before instanceof org.objectweb.asm.tree.LdcInsnNode ldc && ldc.cst instanceof String text ? text : null;
-	}
-
-	private static org.objectweb.asm.tree.AbstractInsnNode realAfter(org.objectweb.asm.tree.AbstractInsnNode insn) {
-		if (insn == null) return null;
-		org.objectweb.asm.tree.AbstractInsnNode after = insn.getNext();
-		while (after != null && after.getOpcode() < 0) after = after.getNext();
-		return after;
-	}
-
-	private static void setStaticIfNull(Class<?> owner, String field, Object value) throws Exception {
-		Field f = owner.getDeclaredField(field);
-		f.setAccessible(true);
-		if (f.get(null) == null) f.set(null, value);
 	}
 
 	/** The mods the audit will judge, held until Mixin has registered its configs. See above. */

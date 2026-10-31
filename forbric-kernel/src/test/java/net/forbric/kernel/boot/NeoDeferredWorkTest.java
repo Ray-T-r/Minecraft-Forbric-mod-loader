@@ -181,16 +181,15 @@ class NeoDeferredWorkTest {
 	}
 
 	/**
-	 * The private shape {@link DeferredWorkFailures} reads on BOTH carriers: a {@code tasks} deque on the queue,
+	 * The private shape {@link DeferredWorkFailures} reads on the NeoForge carrier: a {@code tasks} deque on the queue,
 	 * {@code owner} and {@code future} on its TaskInfo. A carrier bump that renames one goes red here rather than
 	 * silently losing the attribution of a throwing deferred task.
 	 */
 	@Test
-	void bothCarriersDeferredWorkQueuesStillHaveTheFieldsTheFailureReadNeeds() throws Exception {
+	void theCarriersDeferredWorkQueueStillHasTheFieldsTheFailureReadNeeds() throws Exception {
 		Path run = TestFixtures.stagedRoot().normalize();
 		for (String[] carrier : new String[][] {
-				{ TestFixtures.NEO_CARRIER_JAR, "net/neoforged/fml/DeferredWorkQueue" },
-				{ TestFixtures.FORGE_CARRIER_JAR, "net/minecraftforge/fml/DeferredWorkQueue" } }) {
+				{ TestFixtures.NEO_CARRIER_JAR, "net/neoforged/fml/DeferredWorkQueue" } }) {
 			Path jar = run.resolve(carrier[0]);
 			TestFixtures.requireFile(Fixture.STAGED, jar, "staged carrier absent: " + jar);
 			try (ZipFile zip = new ZipFile(jar.toFile())) {
@@ -201,10 +200,10 @@ class NeoDeferredWorkTest {
 		}
 	}
 
-	/** Both setup phases hand their queue to {@link DeferredWorkFailures#owners} after a drain that threw. */
+	/** The setup phase hands its queue to {@link DeferredWorkFailures#owners} after a drain that threw. */
 	@Test
-	void bothSetupPhasesAttributeAThrowingDeferredTask() throws Exception {
-		for (String helper : new String[] { "KernelNeoSetup", "KernelForgeSetup" }) {
+	void theSetupPhaseAttributesAThrowingDeferredTask() throws Exception {
+		for (String helper : new String[] { "KernelNeoSetup" }) {
 			Path compiled = Path.of(System.getProperty("user.dir"), "build", "classes", "java", "runtime",
 					"net", "forbric", "kernel", "runtime", helper + ".class");
 			TestFixtures.require(Fixture.GAME_SIDE, Files.isRegularFile(compiled),

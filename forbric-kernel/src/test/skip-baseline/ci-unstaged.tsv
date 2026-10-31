@@ -27,17 +27,14 @@ test	net.forbric.kernel.boot.DatapackRegistryDeclarationTest	theReconcilesReflec
 test	net.forbric.kernel.boot.DuplicateModArbiterStagedTest	theStagedJadePairReproducesTheJavadocsNumbers()	[fixture:third-party] staged pack absent
 test	net.forbric.kernel.boot.FabricGameInstanceTest	aDedicatedServerBecomesTheGameInstanceAsItStarts()	[fixture:game-side] compiled game side absent: $ROOT/forbric-kernel/build/classes/java/runtime/net/forbric/kernel/runtime/KernelServerDuties.class
 test	net.forbric.kernel.boot.FmlTomlShapeOracleTest	configElementsAnswerEveryPathTheWayNeoForgesWrapperDoes()	[fixture:staged] staged neoforge-runtime.jar absent
-test	net.forbric.kernel.boot.FmlTomlShapeOracleTest	everyPropertyShapeMatchesBothFmls()	[fixture:staged] staged neoforge-runtime.jar absent
-test	net.forbric.kernel.boot.FmlTomlShapeOracleTest	fileConfigElementsAnswerEveryPathTheWayBothFmlsDo()	[fixture:staged] staged neoforge-runtime.jar absent
+test	net.forbric.kernel.boot.FmlTomlShapeOracleTest	everyPropertyShapeMatchesNeoForges()	[fixture:staged] staged neoforge-runtime.jar absent
+test	net.forbric.kernel.boot.FmlTomlShapeOracleTest	fileConfigElementsAnswerEveryPathTheWayNeoForgeDoes()	[fixture:staged] staged neoforge-runtime.jar absent
 test	net.forbric.kernel.boot.FmlTomlShapeOracleTest	libjfTranslatesPropertiesHaveNeoForgesShape()	[fixture:staged] staged neoforge-runtime.jar absent
 test	net.forbric.kernel.boot.FmlTomlShapeOracleTest	theReadersOwnManifestsAnswerAsTheirOwnFmlDoes()	[fixture:staged] staged neoforge-runtime.jar absent
 test	net.forbric.kernel.boot.FmlTomlShapeOracleTest	unlitCampfiresLithiumOptionsAreTheMapNeoForgeGivesLithium()	[fixture:staged] staged neoforge-runtime.jar absent
 test	net.forbric.kernel.boot.ForgeClientCanaryTest	packagedCanarySubscribesTheThreeEventsOnlyBehindItsClientClassBoundary()	[fixture:forge-carrier] build canaries with forbric-loader/run/build-testmods.sh
 test	net.forbric.kernel.boot.ForgeClientCanaryTest	presetListenerUsesTheModsBusGroupAndTheGateRequiresItsDelivery()	[fixture:forge-carrier] build canaries with forbric-loader/run/build-testmods.sh
 test	net.forbric.kernel.boot.ForgeFamilyClassDeclarationsTest	onTheRealModJarsEveryClassShapedDeclarationIsTheModsOwn()	[fixture:third-party] build/compat-inputs is absent
-test	net.forbric.kernel.boot.ForgeRegistrationA2ContractTest	clientGateSeedsTheNeoForgeF9AndBothScriptsParse()	[fixture:staged] staged merged base: $ROOT/forbric-loader/run/merged-base/patched-mc-merged-26.2.jar
-test	net.forbric.kernel.boot.ForgeRegistrationA2ContractTest	commonProbeUsesTheGameTablesAndNoCanaryPostsItsOwnRegistrationEvents()	[fixture:forge-carrier] staged canary: $ROOT/forbric-loader/run/forge-runtime/forbriclive.jar
-test	net.forbric.kernel.boot.ForgeRegistrationA2ContractTest	realClientBusesRegisterContentAndRealConsumersAreRead()	[fixture:forge-carrier] staged canary: $ROOT/forbric-loader/run/forge-runtime/forbriclive.jar
 test	net.forbric.kernel.boot.FrapiRendererEvidenceTest	theRealSodiumBuildsAreToldApart()	[fixture:third-party] sodium fixtures absent: $ROOT/forbric-kernel/run/client-merged-pack/mods
 test	net.forbric.kernel.boot.GateWorldgenContractTest	theGateProbesExactlyTheBlocksThePackagedCanariesPlace()	[fixture:forge-carrier] build canaries with forbric-loader/run/build-testmods.sh
 test	net.forbric.kernel.boot.KernelBootNeutersTest	onEverySideMinecraftForgesOwnModPackFinderIsEmptied()	[fixture:forge-carrier] $ROOT/forbric-loader/run/forge-runtime/forge-runtime.jar absent
@@ -48,9 +45,6 @@ test	net.forbric.kernel.boot.KernelBundledMixinExtrasStagedTest	[2] false	[fixtu
 test	net.forbric.kernel.boot.KernelBusSupportTest	theCarrierStillOffersEveryBusBuilderCallMakeModBusMakes()	[fixture:staged] staged NeoForge carrier absent
 test	net.forbric.kernel.boot.KernelBusSupportTest	theModBusMarkerInterfaceStillExists()	[fixture:staged] staged NeoForge carrier absent
 test	net.forbric.kernel.boot.KernelEventSubscribersGenuineBaseTest	theSummaryGateM4CanaryReadsIsPrintedWithoutMinecraftForge()	[fixture:staged] the genuine NeoForge base or its carrier is absent: $ROOT/forbric-loader/run/neoforge-patched/patched-mc-neoforge-26.2.jar
-test	net.forbric.kernel.boot.KernelForgeGatherStatesTest	sheetsIsTheOnlyReaderOfTheCompletedStates()	[fixture:staged] $ROOT/forbric-loader/run/merged-base/patched-mc-merged-26.2.jar absent
-test	net.forbric.kernel.boot.KernelForgeGatherStatesTest	theCarrierKeepsTheSetAndTheseAreItsGatherStates()	[fixture:forge-carrier] $ROOT/forbric-loader/run/merged-base/forge-runtime-interop.jar absent
-test	net.forbric.kernel.boot.KernelForgeLoadingStateTest	theActualForgeCarrierStillOwnsItsGuardAndFailurePaths()	[fixture:forge-carrier] $ROOT/forbric-loader/run/forge-runtime/forge-runtime.jar absent: $ROOT/forbric-loader/run/forge-runtime/forge-runtime.jar
 test	net.forbric.kernel.boot.KernelLoadReportTest	theServerStartedHookWritesTheReportAgain()	[fixture:game-side] runtime helper not compiled
 test	net.forbric.kernel.boot.KernelModContainerFactoryTest	getEventBusIsStillAbstractOnModContainer()	[fixture:staged] staged NeoForge carrier absent
 test	net.forbric.kernel.boot.KernelModContainerFactoryTest	iModInfoStillDeclaresWhatTheProxyAnswers()	[fixture:staged] staged NeoForge carrier absent
@@ -60,7 +54,6 @@ test	net.forbric.kernel.boot.KernelModContainerFactoryTest	theFourResolvedTypesE
 test	net.forbric.kernel.boot.KernelModContainerFactoryTest	unsafeHacksStillOffersTheTwoMethodsTheFactoryCalls()	[fixture:forge-carrier] staged MinecraftForge carrier absent
 test	net.forbric.kernel.boot.KernelModLoaderClasslessTest	aClasslessModIsInModListBesideTheModsWithAClass()	[fixture:staged] staged runtime classes/carriers absent: $ROOT/forbric-loader/run/neoforge-runtime/neoforge-runtime.jar
 test	net.forbric.kernel.boot.KernelModLoaderClasslessTest	switchedOffTheClasslessModIsAbsentAgain()	[fixture:staged] staged runtime classes/carriers absent: $ROOT/forbric-loader/run/neoforge-runtime/neoforge-runtime.jar
-test	net.forbric.kernel.boot.KernelModLoaderLowCodeForgeTest	theContainerIsMinecraftForgesOwnLowCodeModContainer()	[fixture:forge-carrier] compiled game side/carrier absent: $ROOT/forbric-loader/run/forge-runtime/forge-runtime.jar
 test	net.forbric.kernel.boot.KernelRuntimeClassesTest	everyRegisteredCallIsOnTheCompiledGameSideClass()	[fixture:game-side] no staged game jars, so no game side was built
 test	net.forbric.kernel.boot.KernelServerDutiesGenuineBaseTest	aNeoForgeModGetsTheGenuineFmlContainerWithoutMinecraftForge()	[fixture:staged] the genuine NeoForge base or its carrier is absent: $ROOT/forbric-loader/run/neoforge-patched/patched-mc-neoforge-26.2.jar
 test	net.forbric.kernel.boot.KernelServerDutiesGenuineBaseTest	everyKernelServerDutyInstallsWithoutMinecraftForge()	[fixture:staged] the genuine NeoForge base or its carrier is absent: $ROOT/forbric-loader/run/neoforge-patched/patched-mc-neoforge-26.2.jar
@@ -78,8 +71,8 @@ test	net.forbric.kernel.boot.ModMenuApiStandInShapeTest	everyTypeIsTheSameKindOf
 test	net.forbric.kernel.boot.ModMenuApiStandInShapeTest	theNullScreenFactoryMatchesModMenu()	[fixture:game-side] the Mod Menu API stand-in is compiled before the tests: build/classes/java/modMenuApi/com/terraformersmc/modmenu/util/NullScreenFactory.class
 test	net.forbric.kernel.boot.ModMenuApiStandInShapeTest	theStandInIsTheWholeApiPackageAndOnlyIt()	[fixture:game-side] the Mod Menu API stand-in is compiled before the tests: build/classes/java/modMenuApi/com/terraformersmc/modmenu/api/ModMenuApi.class
 test	net.forbric.kernel.boot.MultiLoaderEntrypointsTest	actualBisonAquariusAndBannerstoneUseTheirExecutableFamilies()	[fixture:third-party] requires the prepared random baseline jars
-test	net.forbric.kernel.boot.NeoDeferredWorkTest	bothCarriersDeferredWorkQueuesStillHaveTheFieldsTheFailureReadNeeds()	[fixture:staged] staged carrier absent: $ROOT/forbric-loader/run/neoforge-runtime/neoforge-runtime.jar
-test	net.forbric.kernel.boot.NeoDeferredWorkTest	bothSetupPhasesAttributeAThrowingDeferredTask()	[fixture:game-side] KernelNeoSetup not compiled yet (no staged game jars)
+test	net.forbric.kernel.boot.NeoDeferredWorkTest	theCarriersDeferredWorkQueueStillHasTheFieldsTheFailureReadNeeds()	[fixture:staged] staged carrier absent: $ROOT/forbric-loader/run/neoforge-runtime/neoforge-runtime.jar
+test	net.forbric.kernel.boot.NeoDeferredWorkTest	theSetupPhaseAttributesAThrowingDeferredTask()	[fixture:game-side] KernelNeoSetup not compiled yet (no staged game jars)
 test	net.forbric.kernel.boot.NeoDeferredWorkTest	theCarrierStillOffersTheExecutorNeoForgeRunsDeferredWorkOn()	[fixture:staged] staged NeoForge carrier absent
 test	net.forbric.kernel.boot.NeoDeferredWorkTest	theNeoForgeSetupPhaseRunsItsQueueThroughThisHelper()	[fixture:game-side] KernelNeoSetup not compiled yet (no staged game jars)
 test	net.forbric.kernel.boot.NeoGraphicsBootstrappersTest	neoForgesConfigStopsPromisingAnEarlyWindowAndNothingElseChanges()	[fixture:staged] staged neoforge-runtime.jar absent
@@ -88,19 +81,6 @@ test	net.forbric.kernel.boot.NeoPostRegisterTailCensusTest	everyStepAfterNeoForg
 test	net.forbric.kernel.boot.NeoRegistryCreationPhaseTest	registryModificationFollowsCreationAsOnNativeNeoForge()	[fixture:staged] staged runtime absent
 test	net.forbric.kernel.boot.PassiveSeederFileConfigTest	theRealLithiumFindsUnlitCampfiresOverride()	[fixture:third-party] the player's pack is not here
 test	net.forbric.kernel.boot.PassiveSeederFileConfigTest	theSeededFileAnswersLithiumsQuestionFromUnlitCampfiresManifest()	[fixture:staged] staged neoforge-runtime.jar absent
-test	net.forbric.kernel.boot.PassiveSeederForgeConfigTest	switchedOffTheyAnswerNothing()	[fixture:forge-carrier] staged forge-runtime.jar absent: $ROOT/forbric-loader/run/forge-runtime/forge-runtime.jar
-test	net.forbric.kernel.boot.PassiveSeederForgeConfigTest	theSeededFileAndModsAnswerAsMinecraftForgeDoes()	[fixture:forge-carrier] staged forge-runtime.jar absent: $ROOT/forbric-loader/run/forge-runtime/forge-runtime.jar
-test	net.forbric.kernel.boot.PassiveSeederForgeFmlEnvironmentTest	aPartialSeedDoesNotArmTheGuardSoTheRepeatStillRetries()	[fixture:forge-carrier] staged forge-runtime.jar absent — skipping the real-bytecode FMLEnvironment check: $ROOT/forbric-loader/run/forge-runtime/forge-runtime.jar
-test	net.forbric.kernel.boot.PassiveSeederForgeFmlEnvironmentTest	anArmedGuardShortCircuits()	[fixture:forge-carrier] staged forge-runtime.jar absent — skipping the real-bytecode FMLEnvironment check: $ROOT/forbric-loader/run/forge-runtime/forge-runtime.jar
-test	net.forbric.kernel.boot.PassiveSeederForgeFmlEnvironmentTest	anEarlyReaderPoisonsDistPermanently()	[fixture:forge-carrier] staged forge-runtime.jar absent — skipping the real-bytecode FMLEnvironment check: $ROOT/forbric-loader/run/forge-runtime/forge-runtime.jar
-test	net.forbric.kernel.boot.PassiveSeederForgeFmlEnvironmentTest	andOnTheDedicatedServerSide()	[fixture:forge-carrier] staged forge-runtime.jar absent — skipping the real-bytecode FMLEnvironment check: $ROOT/forbric-loader/run/forge-runtime/forge-runtime.jar
-test	net.forbric.kernel.boot.PassiveSeederForgeFmlEnvironmentTest	theForeignTypeRowNamesARealClass()	[fixture:forge-carrier] staged forge-runtime.jar absent — skipping the real-bytecode FMLEnvironment check: $ROOT/forbric-loader/run/forge-runtime/forge-runtime.jar
-test	net.forbric.kernel.boot.PassiveSeederForgeFmlEnvironmentTest	theKernelDecidesDistOnTheClientSide()	[fixture:forge-carrier] staged forge-runtime.jar absent — skipping the real-bytecode FMLEnvironment check: $ROOT/forbric-loader/run/forge-runtime/forge-runtime.jar
-test	net.forbric.kernel.boot.PassiveSeederForgeImmediateWindowTest	aProviderAlreadyThereIsLeftAlone()	[fixture:forge-carrier] staged forge-runtime.jar absent — skipping the real-bytecode ImmediateWindowHandler check: $ROOT/forbric-loader/run/forge-runtime/forge-runtime.jar
-test	net.forbric.kernel.boot.PassiveSeederForgeImmediateWindowTest	anUnseededHandlerThrowsOnTheCallWindowInitMakes()	[fixture:forge-carrier] staged forge-runtime.jar absent — skipping the real-bytecode ImmediateWindowHandler check: $ROOT/forbric-loader/run/forge-runtime/forge-runtime.jar
-test	net.forbric.kernel.boot.PassiveSeederForgeImmediateWindowTest	everyFallbackFieldOfForgesProviderIsBound()	[fixture:forge-carrier] staged forge-runtime.jar absent — skipping the real-bytecode ImmediateWindowHandler check: $ROOT/forbric-loader/run/forge-runtime/forge-runtime.jar
-test	net.forbric.kernel.boot.PassiveSeederForgeImmediateWindowTest	loadWithoutTheFallbacksBoundStillThrows()	[fixture:forge-carrier] staged forge-runtime.jar absent — skipping the real-bytecode ImmediateWindowHandler check: $ROOT/forbric-loader/run/forge-runtime/forge-runtime.jar
-test	net.forbric.kernel.boot.PassiveSeederForgeImmediateWindowTest	theSeededHandlerAnswersFalseAndLeavesTheWindowToVanilla()	[fixture:forge-carrier] staged forge-runtime.jar absent — skipping the real-bytecode ImmediateWindowHandler check: $ROOT/forbric-loader/run/forge-runtime/forge-runtime.jar
 test	net.forbric.kernel.boot.PassiveSeederLoadingModListTest	aModReadsItsOwnFilesThroughTheSeededList()	[fixture:staged] staged neoforge-runtime.jar absent — skipping real-bytecode LoadingModList seeding check
 test	net.forbric.kernel.boot.PassiveSeederLoadingModListTest	offSwitchRestoresTheEmptyList()	[fixture:staged] staged neoforge-runtime.jar absent — skipping real-bytecode LoadingModList seeding check
 test	net.forbric.kernel.boot.PassiveSeederLoadingModListTest	seedsARealModFileInfoAndModInfoForANeoForgeJar()	[fixture:staged] staged neoforge-runtime.jar absent — skipping real-bytecode LoadingModList seeding check
@@ -1560,11 +1540,6 @@ test	net.forbric.kernel.runtime.KernelFeatureFlagsTest	aDeclaredFlagIsRegistered
 test	net.forbric.kernel.runtime.KernelFeatureFlagsTest	aRefusedJarRegistersNoFlag(Path)	[fixture:staged] the staged artifacts are absent: $ROOT/forbric-loader/run/neoforge-runtime/neoforge-runtime.jar
 test	net.forbric.kernel.runtime.KernelFeatureFlagsTest	switchedOffNothingIsRegistered(Path)	[fixture:staged] the staged artifacts are absent: $ROOT/forbric-loader/run/neoforge-runtime/neoforge-runtime.jar
 test	net.forbric.kernel.runtime.KernelForeignSkipConsumerTest	knownMarkerSkipsDataWhileNormalOptionalAndDecodeErrorsRemainIntact()	[fixture:staged] the staged merged base required
-test	net.forbric.kernel.runtime.KernelForgeModInfoTest	aJarWithoutAModsTomlStillHasAnOwningFileThatDeclaresNothing(Path)	[fixture:staged] the staged artifacts are absent: $ROOT/forbric-loader/run/neoforge-runtime/neoforge-runtime.jar
-test	net.forbric.kernel.runtime.KernelForgeModInfoTest	modPropertiesKeepMinecraftForgesValueTypes(Path)	[fixture:staged] the staged artifacts are absent: $ROOT/forbric-loader/run/neoforge-runtime/neoforge-runtime.jar
-test	net.forbric.kernel.runtime.KernelForgeModInfoTest	switchedOffTheManifestIsReadAsStringsAgain(Path)	[fixture:staged] the staged artifacts are absent: $ROOT/forbric-loader/run/neoforge-runtime/neoforge-runtime.jar
-test	net.forbric.kernel.runtime.KernelForgeModInfoTest	theOwningFileAnswersTheTopLevelKeysAndTheModItsOwnTable(Path)	[fixture:staged] the staged artifacts are absent: $ROOT/forbric-loader/run/neoforge-runtime/neoforge-runtime.jar
-test	net.forbric.kernel.runtime.KernelForgeModInfoTest	wthitsRealManifestAnswersEveryKeyAsMinecraftForgeDoes(Path)	[fixture:staged] the staged artifacts are absent: $ROOT/forbric-loader/run/neoforge-runtime/neoforge-runtime.jar
 test	net.forbric.kernel.runtime.KernelForgePipRenderersTest	mixedConstructorListRetainsSingletonIdentityAndNativeRegistrationsWithoutMutatingInput()	[fixture:game-side] runtime bridge not compiled
 test	net.forbric.kernel.runtime.KernelKeyMappingMapTest	theViewGroupsTheMappingsByTheirCurrentKey()	[fixture:staged] the staged artifacts are absent: $ROOT/forbric-loader/run/neoforge-runtime/neoforge-runtime.jar
 test	net.forbric.kernel.runtime.KernelLootModifiersTest	switchedOffTheOriginalManagerIsHandedBack()	[fixture:staged] the staged artifacts are absent: $ROOT/forbric-loader/run/neoforge-runtime/neoforge-runtime.jar
@@ -1625,7 +1600,6 @@ test	net.forbric.kernel.runtime.KernelWrapOperationsFramesTest	constantResolvesT
 test	net.forbric.kernel.runtime.KernelWrapOperationsTest	aStaticCallHasNoReceiverAndAPrefixKeepsItsOrder()	[fixture:game-side] game-side classes required
 test	net.forbric.kernel.runtime.KernelWrapOperationsTest	argumentsTheHandlerPassesLandWhereTheMergedCallTakesThem()	[fixture:game-side] game-side classes required
 test	net.forbric.kernel.runtime.KernelWrapOperationsTest	nothingIsCalledUntilTheHandlerCalls()	[fixture:game-side] game-side classes required
-test	net.forbric.kernel.runtime.ScanDataEnumShapeTest	minecraftForgeGetsEnumDataOfTypeAndConstantName()	[fixture:forge-carrier] staged Forge carrier absent: $ROOT/forbric-loader/run/forge-runtime/forge-runtime.jar
 test	net.forbric.kernel.runtime.ScanDataEnumShapeTest	neoForgeGetsEnumHolderOfDescriptorAndConstantName()	[fixture:staged] staged NeoForge carrier absent
 test	net.forbric.kernel.transform.AnchorAuditStagedTest	theClientEntrypointAnchorIsStillThereAndTheLedgerSaysSo()	[fixture:staged] $ROOT/forbric-loader/run/merged-base/patched-mc-merged-26.2.jar absent (reading net/minecraft/client/Minecraft.class)
 test	net.forbric.kernel.transform.AnchorAuditStagedTest	whenTheAnchorMovesTheInjectorGoesSilentAndTheLedgerCatchesIt()	[fixture:staged] $ROOT/forbric-loader/run/merged-base/patched-mc-merged-26.2.jar absent (reading net/minecraft/client/Minecraft.class)

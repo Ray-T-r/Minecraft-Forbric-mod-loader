@@ -371,8 +371,6 @@ class ModFileScannerTest {
 		// this, an empty NeoForge index with the switch off had no line explaining it at all.
 		assertEquals(1, log[0].split("NeoForge scan index DISABLED \\(-Dforbric\\.neoScanData=off\\)", -1).length - 1,
 				log[0]);
-		// The MinecraftForge index has its own switch and is not taken out with this one.
-		assertTrue(ModFileScanner.forgeIndexEnabled());
 	}
 
 	private interface JarBody {

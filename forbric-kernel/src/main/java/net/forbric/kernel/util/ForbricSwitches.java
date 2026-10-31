@@ -181,7 +181,20 @@ public final class ForbricSwitches {
 			Map.entry("forbric.worldgenAuditNormalise", "Forbric loads no MinecraftForge mod, so there is no MinecraftForge worldgen round-trip audit to normalise"),
 			// Stage 4: MinecraftForge's picture-in-picture registration event is gone with its carrier.
 			Map.entry("forbric.forgePipRenderers", "Forbric loads no MinecraftForge mod, so no picture-in-picture renderer is registered through "
-					+ "MinecraftForge's event; vanilla's plain map holds the constructor list's renderers"));
+					+ "MinecraftForge's event; vanilla's plain map holds the constructor list's renderers"),
+			// Stage 4: MinecraftForge's mod construction, loading state, registry gates and pre-Mixin seeds are gone with its carrier.
+			Map.entry("forbric.forgeClientInit", "Forbric loads no MinecraftForge mod, so there is no MinecraftForge loading state to open for "
+					+ "event delivery; NeoForge's client init runs as on NeoForge"),
+			Map.entry("forbric.forgeLoadingStates", "Forbric loads no MinecraftForge mod, so there are no MinecraftForge gather states to record as "
+					+ "completed"),
+			Map.entry("forbric.forgeCtorGameInstance", "Forbric loads no MinecraftForge mod, so no mod constructor waits for the Minecraft.<init> window; "
+					+ "NeoForge's mods are constructed where NeoForge constructs them"),
+			Map.entry("forbric.freezeNeoForgeFirst", "only NeoForge's GameData freezes the registries now, so there is no second family's freeze to "
+					+ "order it against"),
+			Map.entry("forbric.forgeScanData", "Forbric loads no MinecraftForge mod, so there is no MinecraftForge annotation index to fill; NeoForge's "
+					+ "has its own switch (-Dforbric.neoScanData)"),
+			Map.entry("forbric.forgeDatapackRegistries", "Forbric loads no MinecraftForge mod, so there is no MinecraftForge datapack-registry "
+					+ "declaration event to fire; NeoForge's own declares its registries"));
 
 	private static final ForbricSwitches SYSTEM =
 			new ForbricSwitches(RENAMED, RETIRED, System::getProperty, ForbricLog::warn);

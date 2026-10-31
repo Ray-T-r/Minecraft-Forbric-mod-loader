@@ -13,21 +13,18 @@ import java.util.Map;
 import java.util.Set;
 
 import org.junit.jupiter.api.Test;
-import org.objectweb.asm.Type;
 
 import net.forbric.kernel.TestFixtures;
 import net.forbric.kernel.TestFixtures.Fixture;
 import net.forbric.kernel.discovery.ModFileScanner;
 
 /**
- * The two index builders must wrap an enum-valued annotation member in the shape their OWN ecosystem's scanner
- * uses. The shapes differ, and neither is a String.
+ * The index builder must wrap an enum-valued annotation member in the shape NeoForge's own scanner uses, which is
+ * not a String.
  *
- * <p>This is not a style point. The MinecraftForge index was empty for the kernel's whole life, so nothing ever
- * read a value out of it; the first boot that filled it died in SuperMartijn642's Core Lib with
- * {@code ClassCastException: String cannot be cast to ModFileScanData$EnumData}, which Core Lib reports as
- * "Failed to register @RegistryEntryAcceptor annotation target" — text that names the mod, not the kernel. The
- * NeoForge half carried the same bare String and was one enum-reading mod away from the same thing.
+ * <p>This is not a style point. A mod reading an enum member casts it to its FML's holder type without checking,
+ * and a bare String there is a {@code ClassCastException} that names the mod, not the kernel (SuperMartijn642's
+ * Core Lib, on MinecraftForge's index, the first time that index was filled).
  *
  * <p>The builders are loaded from the compiled game-side output with the carrier on the classpath. Everything
  * else — {@code ModFileScanner}, {@code org.objectweb.asm.Type} — resolves through the parent, so the records
@@ -36,20 +33,8 @@ import net.forbric.kernel.discovery.ModFileScanner;
 class ScanDataEnumShapeTest {
 	private static final Path RUNTIME =
 			Path.of(System.getProperty("forbric.testRuntimeClasses", "build/classes/java/runtime"));
-	private static final Path FORGE = TestFixtures.stagedRoot().resolve(TestFixtures.FORGE_CARRIER_JAR);
 	private static final Path NEO = TestFixtures.stagedRoot().resolve(TestFixtures.NEO_CARRIER_JAR);
 	private static final String ENUM_DESC = "Lcom/supermartijn642/core/registry/RegistryEntryAcceptor$Registry;";
-
-	@Test
-	void minecraftForgeGetsEnumDataOfTypeAndConstantName() throws Exception {
-		TestFixtures.requireFiles(Fixture.STAGED, "staged Forge carrier absent", FORGE);
-		Object value = registryMember("net.forbric.kernel.runtime.KernelForgeScanData", FORGE);
-
-		assertEquals("net.minecraftforge.forgespi.language.ModFileScanData$EnumData", value.getClass().getName(),
-				"Core Lib casts this member straight to EnumData without an instanceof check");
-		assertEquals(Type.getType(ENUM_DESC), value.getClass().getMethod("clazz").invoke(value));
-		assertEquals("MENU_TYPES", value.getClass().getMethod("value").invoke(value));
-	}
 
 	@Test
 	void neoForgeGetsEnumHolderOfDescriptorAndConstantName() throws Exception {
