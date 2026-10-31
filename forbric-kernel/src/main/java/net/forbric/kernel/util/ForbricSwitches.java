@@ -126,7 +126,12 @@ public final class ForbricSwitches {
 			Map.entry("forbric.forgeParticleGroups", "Forbric loads no MinecraftForge runtime, so there are no MinecraftForge particle groups to hand "
 					+ "NeoForge's particle engine"),
 			Map.entry("forbric.liquidBlockFluid", "Forbric loads no MinecraftForge runtime, so no liquid block keeps its fluid in a MinecraftForge "
-					+ "supplier"));
+					+ "supplier"),
+			// Stage 4: the MinecraftForge spawner and finalization hooks and its field getters are gone with its carrier.
+			Map.entry("forbric.spawnerFinalize", "Forbric loads no MinecraftForge mod, so no spawner needs MinecraftForge's ValueInput; a spawner's "
+					+ "mob is finalized by NeoForge's own hook, as on NeoForge"),
+			Map.entry("forbric.forgeFieldGetters", "Forbric loads no MinecraftForge runtime, so no liquid block or bucket keeps its fluid in a "
+					+ "MinecraftForge supplier"));
 
 	private static final ForbricSwitches SYSTEM =
 			new ForbricSwitches(RENAMED, RETIRED, System::getProperty, ForbricLog::warn);

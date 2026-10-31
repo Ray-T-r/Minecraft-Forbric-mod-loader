@@ -92,7 +92,7 @@ public final class ForbricMergedBaseCompatTransformer implements ClassTransforme
 	}
 
 	/** The repairs {@link #transform} runs, in its order; a test pins the two lists against each other. */
-	static final List<String> REPAIRS = List.of("repairLambdaBootstrapHandles", "addBlockStateModelConflictResolvers", "addBlockStateAppearanceResolver", "addMissingForgeFluidTypeBridge", "addMissingForgeKeyMappingLookupInitializer", "routeKeyMappingClickToPopulatedLookup", "giveKeyMappingItsMinecraftForgeFace", "giveKeyMappingItsVanillaMap", "giveTheVanillaParticleMapAViewOfTheLiveOne", "letDungeonsGenerateWithoutTheDataMap", "restoreDoublePrecisionToTheRandomSources", "convertRadiansWithVanillasFoldedConstant", "callVanillasWriteByteAgain", "saveTheHeightmapsVanillaSaves", "guardNeoForgesWorldModifierPass", "letForeignResourceConditionsThrough", "letForeignResourceConditionsThroughMinecraftForge", "letFabricResourceConditionsDecide", "letMinecraftForgeResourceConditionsDecide", "judgeDataFilesWhereMinecraftForgeDid", "judgeRegistryElementsWhereMinecraftForgeDid", "giveMinecraftForgesRecipeConditionsTheirContext", "translateAGuestsPrivateSkipMarker", "serveDefaultAttributesBothEcosystems", "nameTheReloadListenersNeoForgeRefusesToName", "dropInterfaceDefaultShadowingOverrides", "tolerateEmptyCreativeTabStacks", "routePlaceItemHookToNeoForge", "bridgeOrphanedPipRenderers", "keepForgeOutboundProtocolCurrent", "surviveTheMissingForgeModelDataManager", "dropTheWindowTitlesLoaderBrand", "keepTheSaveOffTheTeardownsFailurePath", "postNeoForgesItemTooltipEvent", "askNeoForgeWhatAnItemsAttributesAre", "readTheSpawnReasonThatIsActuallyWritten", "giveTheUnwrittenLoggerAValue", "addTheMissingCapabilityLifecycleStubs", "addTheMissingNbtBuilderFactory", "giveMinecraftForgesReloadEventItsConditionContext", "letMinecraftForgeIngredientTypesDecode", "letMinecraftForgeFluidsChooseTheirModel", "giveMinecraftForgesParticleLookupItsFirstVariant", "dropStubsThatBypassARealSuperclassMethod", "inlineTheSwitchMapTheMergeLost", "vetoUnjudgeableOverlayConditions", "hideTheLegacyLootModifierIndexFromTheDirectoryScan", "letModdedFeatureFlagsRegister", "dropTheKeyModifierSuffixBeforeParsingAKeyName", "letTheAtlasLowerItsMipLevelLikeVanilla", "wrapTheStreamsVanillaWraps", "returnFromANestedBootstrapBeforeItsTail", "letBothEcosystemsSetBurnTime", "letMinecraftForgeSeeSpawnerMobs", "letMinecraftForgeAddPackFinders");
+	static final List<String> REPAIRS = List.of("repairLambdaBootstrapHandles", "addBlockStateModelConflictResolvers", "addBlockStateAppearanceResolver", "addMissingForgeFluidTypeBridge", "addMissingForgeKeyMappingLookupInitializer", "routeKeyMappingClickToPopulatedLookup", "giveKeyMappingItsMinecraftForgeFace", "giveKeyMappingItsVanillaMap", "giveTheVanillaParticleMapAViewOfTheLiveOne", "letDungeonsGenerateWithoutTheDataMap", "restoreDoublePrecisionToTheRandomSources", "convertRadiansWithVanillasFoldedConstant", "callVanillasWriteByteAgain", "saveTheHeightmapsVanillaSaves", "guardNeoForgesWorldModifierPass", "letForeignResourceConditionsThrough", "letForeignResourceConditionsThroughMinecraftForge", "letFabricResourceConditionsDecide", "letMinecraftForgeResourceConditionsDecide", "judgeDataFilesWhereMinecraftForgeDid", "judgeRegistryElementsWhereMinecraftForgeDid", "giveMinecraftForgesRecipeConditionsTheirContext", "translateAGuestsPrivateSkipMarker", "serveDefaultAttributesBothEcosystems", "nameTheReloadListenersNeoForgeRefusesToName", "dropInterfaceDefaultShadowingOverrides", "tolerateEmptyCreativeTabStacks", "routePlaceItemHookToNeoForge", "bridgeOrphanedPipRenderers", "keepForgeOutboundProtocolCurrent", "surviveTheMissingForgeModelDataManager", "dropTheWindowTitlesLoaderBrand", "keepTheSaveOffTheTeardownsFailurePath", "postNeoForgesItemTooltipEvent", "askNeoForgeWhatAnItemsAttributesAre", "readTheSpawnReasonThatIsActuallyWritten", "giveTheUnwrittenLoggerAValue", "addTheMissingCapabilityLifecycleStubs", "addTheMissingNbtBuilderFactory", "giveMinecraftForgesReloadEventItsConditionContext", "letMinecraftForgeIngredientTypesDecode", "letMinecraftForgeFluidsChooseTheirModel", "giveMinecraftForgesParticleLookupItsFirstVariant", "dropStubsThatBypassARealSuperclassMethod", "inlineTheSwitchMapTheMergeLost", "vetoUnjudgeableOverlayConditions", "hideTheLegacyLootModifierIndexFromTheDirectoryScan", "letModdedFeatureFlagsRegister", "dropTheKeyModifierSuffixBeforeParsingAKeyName", "letTheAtlasLowerItsMipLevelLikeVanilla", "wrapTheStreamsVanillaWraps", "returnFromANestedBootstrapBeforeItsTail", "letBothEcosystemsSetBurnTime", "letMinecraftForgeAddPackFinders");
 
 	private static final String NEO_EVENT_HOOKS_BINARY = "net.neoforged.neoforge.event.EventHooks";
 
@@ -255,9 +255,6 @@ public final class ForbricMergedBaseCompatTransformer implements ClassTransforme
 		out.add(fixed("letBothEcosystemsSetBurnTime", FUEL_VALUES,
 				"NeoForge's FurnaceFuelBurnTimeEvent is never posted, so a NeoForge mod cannot change how long "
 						+ "anything burns while a MinecraftForge one can"));
-		out.add(fixed("letMinecraftForgeSeeSpawnerMobs", BASE_SPAWNER,
-				"MobSpawnEvent$FinalizeSpawn is never posted, so a MinecraftForge mod can neither see nor refuse "
-						+ "a mob a spawner produces"));
 		out.add(scanned("letMinecraftForgeAddPackFinders",
 				"AddPackFindersEvent is never posted, so a MinecraftForge mod's own data pack is never offered "
 						+ "to any repository"));
@@ -350,7 +347,6 @@ public final class ForbricMergedBaseCompatTransformer implements ClassTransforme
 			changed |= claim(reporter, "wrapTheStreamsVanillaWraps", wrapTheStreamsVanillaWraps(node));
 			changed |= claim(reporter, "returnFromANestedBootstrapBeforeItsTail", returnFromANestedBootstrapBeforeItsTail(node));
 		changed |= claim(reporter, "letBothEcosystemsSetBurnTime", letBothEcosystemsSetBurnTime(node), bothEcosystemsSetBurnTime(node));
-		changed |= claim(reporter, "letMinecraftForgeSeeSpawnerMobs", letMinecraftForgeSeeSpawnerMobs(node));
 		changed |= claim(reporter, "letMinecraftForgeAddPackFinders", letMinecraftForgeAddPackFinders(node));
 			changed |= namedOldLoader && adoptInteropHooksTheBaseStillNamesAfterTheOldLoader(node);
 
@@ -439,10 +435,8 @@ public final class ForbricMergedBaseCompatTransformer implements ClassTransforme
 
 	private static final String KERNEL_NEO_WORLDGEN = "net/forbric/kernel/runtime/KernelNeoWorldgen";
 	private static final String KERNEL_FUEL_VALUES = "net/forbric/kernel/runtime/KernelFuelValues";
-	private static final String KERNEL_SPAWNER_FINALIZE = "net/forbric/kernel/runtime/KernelSpawnerFinalize";
 	private static final String KERNEL_PACK_FINDERS = "net/forbric/kernel/runtime/KernelPackFinders";
 	private static final String NEO_RESOURCE_PACK_LOADER = ForeignType.RESOURCE_PACK_LOADER.internal(Ecosystem.NEOFORGE);
-	private static final String BASE_SPAWNER = "net/minecraft/world/level/BaseSpawner";
 	private static final String NEO_EVENT_HOOKS = "net/neoforged/neoforge/event/EventHooks";
 	private static final String FUEL_VALUES = "net/minecraft/world/level/block/entity/FuelValues";
 	private static final String FORGE_BURN_TIME_DESC =
@@ -4219,42 +4213,6 @@ public final class ForbricMergedBaseCompatTransformer implements ClassTransforme
 			}
 		}
 		return any;
-	}
-
-	/**
-	 * Routes the spawner call to the kernel before SpawnerFinalizeInjector adds its proven ValueInput.
-	 *
-	 * <p>Both ecosystems patched {@code BaseSpawner.serverTick}, NeoForge's body won, and
-	 * {@code onFinalizeSpawnSpawner} is therefore called from nowhere — while {@code collective}, in the test
-	 * pack, subscribes to the event it posts. Putting MinecraftForge's own instruction run back would mean
-	 * splicing it into a body with NeoForge's local numbering, which is the three-way merge this tree does not
-	 * have. This first exchange preserves the descriptor. The following injector adds the actual ValueInput
-	 * from the entity-loading data flow; without it, the legacy entry reports the missing input rather than
-	 * inventing a null Forge argument or pretending an already-finalized mob can be changed retroactively.
-	 *
-	 * <p>A method that already calls MinecraftForge's own finalize hook for the same mob, on the same path, is left
-	 * alone: the kernel entry would post that event a second time. SpawnerFinalizeInjector reports such a caller.
-	 */
-	private static boolean letMinecraftForgeSeeSpawnerMobs(ClassNode node) {
-		if (!BASE_SPAWNER.equals(node.name)) return false;
-		int redirected = 0;
-		for (MethodNode method : node.methods) {
-			if (method.instructions == null || SpawnerFinalizeInjector.carriesForgeFinalize(node.name, method)) continue;
-			for (AbstractInsnNode insn = method.instructions.getFirst(); insn != null; insn = insn.getNext()) {
-				if (!(insn instanceof MethodInsnNode call) || call.getOpcode() != Opcodes.INVOKESTATIC
-						|| !NEO_EVENT_HOOKS.equals(call.owner)
-						|| !"finalizeMobSpawnSpawner".equals(call.name)
-						|| !SpawnerFinalizeInjector.OLD_DESC.equals(call.desc)) {
-					continue;
-				}
-				call.owner = KERNEL_SPAWNER_FINALIZE;
-				redirected++;
-			}
-		}
-		if (redirected == 0) return false;
-		ForbricLog.info("[Forbric/MergedBaseCompat] BaseSpawner finalization routed through the kernel "
-				+ "(%d call site(s)); the input injector supplies the Forge event's actual ValueInput", redirected);
-		return true;
 	}
 
 	/**
