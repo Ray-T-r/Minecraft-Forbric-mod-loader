@@ -50,15 +50,18 @@ LOG="$BUILD/gate-m29-refusal.log"
 ZH_LOG="$BUILD/gate-m29-refusal-zh.log"
 CONTROL_LOG="$BUILD/gate-m29-control.log"
 OFF_LOG="$BUILD/gate-m29-control-off.log"
-FORGE_CANARY="$RUN_OLD/forge-runtime/forbriclive.jar"
+# The live canary's manifest and @Mod, compiled against stand-ins for MinecraftForge (run/build-forge-refusal-fixtures.sh):
+# the refusal reads only those, and the stage needs no MinecraftForge carrier to build it.
+FORGE_CANARY="$KERNEL/run/canary/forge-refused/forbriclive.jar"
 # The real multi-manifest MinecraftForge build. It left the popular pack for its NeoForge build in Stage 3 and is kept
 # beside it as the refusal's real-jar fixture (local, like the pack: not in git).
 OWL="${M29_OWL:-$KERNEL/run/client-popular/forge-refused/animalgarden-owl-1.2.8-forge-26.2-65.0.0.jar}"
 REFUSED=("$FORGE_CANARY" "$OWL")
 if [ -n "${M29_REFUSED+set}" ]; then read -r -a REFUSED <<< "$M29_REFUSED"; fi
 mkdir -p "$BUILD"
+"$KERNEL/run/build-forge-refusal-fixtures.sh" > "$BUILD/gate-m29-canary.log" 2>&1
 for jar in "$FORGE_CANARY" "$OWL" "$NEOLIVE"; do
-  [ -f "$jar" ] || { echo "[kernel] SKIP-FATAL: missing $jar (build-testmods.sh builds the canaries; the owl jar is a local fixture)" >&2; exit 3; }
+  [ -f "$jar" ] || { echo "[kernel] SKIP-FATAL: missing $jar (build-forge-refusal-fixtures.sh builds forbriclive, see $BUILD/gate-m29-canary.log; build-testmods.sh the NeoForge canary; the owl jar is a local fixture)" >&2; exit 3; }
 done
 kernel_jar
 

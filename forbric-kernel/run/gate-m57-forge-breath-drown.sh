@@ -62,13 +62,17 @@ SERVER_DIR="$KERNEL/run/server-breath-m57"
 RESULTS="$BUILD/verification/m57-forge-breath-drown"
 TOOL="$KERNEL/run/compat/breath-drown.py"
 NEO="$KERNEL/run/canary/forbricbreathneo.jar"
-FORGE="$KERNEL/run/canary/forbricbreathforge.jar"
+# The refused phase's jar: the same sources compiled against stand-ins for MinecraftForge (build-forge-refusal-fixtures.sh),
+# so the phase needs no MinecraftForge carrier. build-breath-drown-canary.sh still builds the real-carrier copy beside
+# the NeoForge canary for the native references breath-drown.py records.
+FORGE="$KERNEL/run/canary/forge-refused/forbricbreathforge.jar"
 REFILL='\[Forbric/Fluid\] a body that breathes in its fluid refills its air as in vanilla'
 FAIL=0
 rm -rf "$RESULTS"; mkdir -p "$RESULTS"
 
 kernel_jar
 bash "$KERNEL/run/build-breath-drown-canary.sh" > "$RESULTS/build.log" 2>&1 || { cat "$RESULTS/build.log"; exit 1; }
+bash "$KERNEL/run/build-forge-refusal-fixtures.sh" >> "$RESULTS/build.log" 2>&1 || { cat "$RESULTS/build.log"; exit 1; }
 
 # run_server <phase> <policy> <extra jvm flags> <jar>...
 run_server() {

@@ -62,6 +62,7 @@ mkdir -p "$BUILD" "$RUNDIR/quickPlay" "$RUNDIR/empty-mods"
 [ -f "$NEOLIVE" ] || { echo "[kernel] FATAL: missing $NEOLIVE; run build-testmods.sh or run/build-neolive-canary.sh" >&2; exit 3; }
 # The Fabric canary is built from this tree every run, as gate-m4/m18/m30 build it.
 "$KERNEL/run/build-fabric-canary.sh" > "$BUILD/gate-m26-fabric-canary.log" 2>&1
+"$KERNEL/run/build-forge-refusal-fixtures.sh" > "$BUILD/gate-m26-refusal-fixtures.log" 2>&1
 [ -f "$FABRIC" ] || { echo "[kernel] FATAL: the Fabric canary did not build (see $BUILD/gate-m26-fabric-canary.log)" >&2; exit 3; }
 
 step "generate a zero-mod save once, then join it with the NeoForge and Fabric client canaries"
@@ -215,7 +216,7 @@ PROMPT_DIR="$KERNEL/run/client-forge-refusal"
 PROMPT_LOG="$BUILD/gate-m26-refusal.log"
 reap_stale_server "$PROMPT_DIR"
 rm -rf "$PROMPT_DIR"; mkdir -p "$PROMPT_DIR/mods"
-cp "$RUN_OLD/forge-runtime/forbriclive.jar" "$PROMPT_DIR/mods/" || exit 3
+cp "$KERNEL/run/canary/forge-refused/forbriclive.jar" "$PROMPT_DIR/mods/" || exit 3
 cp "$RUNDIR/options.txt" "$PROMPT_DIR/options.txt" || exit 3
 : > "$PROMPT_LOG"
 # No quick-play: a launch told to open a world at once is refused instead of asked (gate-m20 says why).

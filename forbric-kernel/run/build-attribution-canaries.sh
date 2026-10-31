@@ -1,9 +1,11 @@
 #!/usr/bin/env bash
-# Builds the four jars gate-m30 stages: a Fabric mod with two mixins that go wrong (one unfit, one failing at apply
-# on a class first loaded at world creation), a NeoForge mod with a subscriber whose <clinit> throws, a NeoForge mod
-# compiled against a class this instance does not carry, touched from a deferred setup task, and a MinecraftForge mod
-# waiting on a dead event. Each is ONE defect, so the gate can assert ONE attribution each. Since Stage 3 of dropping
-# MinecraftForge the last one is refused, and the gate stages it only in a boot of its own that asserts the refusal.
+# Builds three of the four jars gate-m30 stages: a Fabric mod with two mixins that go wrong (one unfit, one failing at
+# apply on a class first loaded at world creation), a NeoForge mod with a subscriber whose <clinit> throws, and a NeoForge
+# mod compiled against a class this instance does not carry, touched from a deferred setup task. Each is ONE defect, so
+# the gate can assert ONE attribution each. The fourth, the MinecraftForge mod waiting on a dead event
+# (canary/attribution/forbricforgecanary), is refused since Stage 3 of dropping MinecraftForge and the gate stages it only
+# in a boot of its own that asserts the refusal; build-forge-refusal-fixtures.sh builds it, against stand-ins for
+# MinecraftForge, into run/canary/forge-refused/.
 set -uo pipefail
 . "$(cd "$(dirname "$0")" && pwd)/lib.sh"
 
@@ -13,7 +15,6 @@ canary_scratch attribution
 MERGED="$OLD/run/merged-base/patched-mc-merged-26.2.jar"
 NEO_RT="$OLD/run/neoforge-runtime/neoforge-runtime.jar"
 NEO_MC="$OLD/run/neoforge-patched/patched-mc-neoforge-26.2.jar"
-FORGE_RT="$OLD/run/merged-base/forge-runtime-interop.jar"; [ -f "$FORGE_RT" ] || FORGE_RT="$OLD/run/forge-runtime/forge-runtime.jar"
 MC_DIR="${MC_DIR:-$HOME/Library/Application Support/minecraft}"
 VLIBS="$(find "$MC_DIR/libraries" -name '*.jar' 2>/dev/null | paste -sd: -)"
 
@@ -59,23 +60,12 @@ build_neo() { # <mod id> [stub dir]
   echo "[kernel] built $OUT/$id.jar"
 }
 
-build_forge() { # <mod id>
-  local id="$1" classes="$WORK/$1"
-  mkdir -p "$classes/META-INF"
-  javac -nowarn -proc:none --release 21 -cp "$FORGE_RT:$MERGED:$VLIBS" -d "$classes" \
-        $(find "$SRC/$id/src" -name '*.java') 2>&1 | grep -v '^Note:' || true
-  [ -n "$(find "$classes" -name '*.class')" ] || { echo "[kernel] FAIL $id did not compile"; exit 1; }
-  cp "$SRC/$id/META-INF/mods.toml" "$classes/META-INF/"
-  (cd "$classes" && jar --create --file "$WORK/$id.jar" .) || exit 1
-  publish_canary "$WORK/$id.jar" "$OUT/$id.jar" || exit 1
-  echo "[kernel] built $OUT/$id.jar"
-}
-
 step "compile the canaries"
 build_fabric forbricmixincanary
 build_neo forbricsubscribercanary
 build_neo forbricabicanary "$SRC/forbricabicanary/stub"
-build_forge forbricforgecanary
+# The real-carrier build this script used to make there; nothing may stage a stale one.
+rm -f "$OUT/forbricforgecanary.jar"
 
 step "result"
-echo "[kernel] ✅ built forbricmixincanary.jar, forbricsubscribercanary.jar, forbricabicanary.jar, forbricforgecanary.jar in $OUT"
+echo "[kernel] ✅ built forbricmixincanary.jar, forbricsubscribercanary.jar, forbricabicanary.jar in $OUT"

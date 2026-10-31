@@ -27,6 +27,8 @@
 # unsatisfiable boots now run on that pair (steps after M19_NEO_END). In the Forge pair's place, step 1 proves that a
 # refused parent's nested build of the library takes no part at all: under the continue policy the Forge parent is
 # refused by name, its forbricnestlib-forge child is never a candidate, and the library is constructed once, by Fabric.
+# The MinecraftForge parent and its nested library build come from run/build-forge-refusal-fixtures.sh, compiled against
+# stand-ins for the few MinecraftForge types they name, so the step needs no MinecraftForge carrier on the stage.
 # GATE-PARALLEL: rundirs=server-nesteddupe mem=1500
 set -uo pipefail
 . "$(cd "$(dirname "$0")" && pwd)/lib.sh"
@@ -34,12 +36,13 @@ set -uo pipefail
 LOG="$BUILD/gate-m19-nesteddupe.log"
 RUNDIR="$KERNEL/run/server-nesteddupe"
 FAB="$KERNEL/run/canary/forbricnestfab.jar"
-FORGE="$KERNEL/run/canary/forbricnestforge.jar"
+FORGE="$KERNEL/run/canary/forge-refused/forbricnestforge.jar"
 NEOPARENT="$KERNEL/run/canary/forbricnestneo.jar"
 mkdir -p "$BUILD"
 
 step "build the three parents"
 "$KERNEL/run/build-nested-dupe-canary.sh" >"$BUILD/gate-m19-canary.log" 2>&1
+"$KERNEL/run/build-forge-refusal-fixtures.sh" >>"$BUILD/gate-m19-canary.log" 2>&1
 for jar in "$FAB" "$FORGE" "$NEOPARENT"; do
   [ -f "$jar" ] || { echo "[kernel] FAIL canary build (see $BUILD/gate-m19-canary.log): $jar"; exit 1; }
 done

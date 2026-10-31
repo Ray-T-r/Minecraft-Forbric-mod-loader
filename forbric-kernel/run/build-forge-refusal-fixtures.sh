@@ -1,0 +1,140 @@
+#!/usr/bin/env bash
+# Builds the MinecraftForge-only jars the refusal gates stage, without MinecraftForge:
+#   run/canary/forge-refused/forbriclive.jar         gate-m26, gate-m29   the plain case: a mods.toml and its @Mod
+#   run/canary/forge-refused/forbricnestforge.jar    gate-m19             a MinecraftForge parent JarJar-nesting its own build
+#                                                                         of forbricnestlib
+#   run/canary/forge-refused/forbricforgecanary.jar  gate-m30             an @Mod.EventBusSubscriber waiting on a Forge event
+#   run/canary/forge-refused/forbricbreathforge.jar  gate-m57             a Forge liquid, bucket and breathe/drown listeners
+#
+# WHY STUBS. Forbric refuses a jar whose only usable loader half is MinecraftForge's (LoaderHalfJudge), and that refusal
+# stays a product behaviour after MinecraftForge itself leaves the stage: a player's old mods folder still holds such jars.
+# The gates that prove it used to compile their fixtures against the real MinecraftForge carrier (forge-runtime.jar and
+# its patched game), which a stage prepared without MinecraftForge does not have. The judge never loads a class: it reads
+# the manifests and the class bytes. So the fixtures compile against canary/forge-refusal-stubs/api — the few
+# net.minecraftforge types their sources name, with the real signatures, retention and element defaults — and against
+# canary/forge-refusal-stubs/patched-vanilla, the two constructors MinecraftForge patched into vanilla that the breath
+# canary calls. Neither is ever in a fixture jar (checked below), and every fixture keeps its own source and manifest:
+#   forbricnestforge, forbricforgecanary, forbricbreathforge  their sources in canary/nesteddupe, canary/attribution and
+#                                                             canary/forge-breath-drown, unchanged;
+#   forbriclive                                               canary/forge-refusal-stubs/forbriclive: the live canary's
+#                                                             mods.toml byte for byte and its @Mod entry. The canary's
+#                                                             own source (forbric-loader/run/livemod-src) probes a
+#                                                             hundred MinecraftForge types nothing runs any more.
+#
+# The rest of each classpath is NeoForge's patched game and runtime (the runtime only completes vanilla's supertypes:
+# NeoForge's patched Fluid implements its IFluidExtension) and the Minecraft libraries. A fixture that ends up naming
+# NeoForge is not a MinecraftForge-only jar any more, so that is a build failure too.
+set -uo pipefail
+. "$(cd "$(dirname "$0")" && pwd)/lib.sh"
+
+STUBS="$KERNEL/canary/forge-refusal-stubs"
+OUT="$KERNEL/run/canary/forge-refused"
+canary_scratch forge-refusal
+NEO_MC="$RUN_OLD/neoforge-patched/patched-mc-neoforge-26.2.jar"
+NEO_RT="$RUN_OLD/neoforge-runtime/neoforge-runtime.jar"
+MC_DIR="${MC_DIR:-$HOME/Library/Application Support/minecraft}"
+# The libraries 26.2 itself lists, as build-breath-drown-canary.sh reads them: every jar under libraries/ would put an
+# older Gson ahead of the one the breath canary's core is written against.
+VLIBS="$(python3 - "$MC_DIR" <<'PY'
+import json, pathlib, sys
+mc = pathlib.Path(sys.argv[1])
+try:
+    libraries = json.loads((mc / 'versions/26.2/26.2.json').read_text())['libraries']
+except (OSError, ValueError, KeyError):
+    libraries = []
+paths = [mc / 'libraries' / e['downloads']['artifact']['path'] for e in libraries
+         if e.get('downloads', {}).get('artifact', {}).get('path')]
+print(':'.join(str(p) for p in paths if p.is_file()))
+PY
+)"
+
+step "prerequisites"
+for f in "$NEO_MC" "$NEO_RT"; do
+  [ -f "$f" ] || { echo "[kernel] FAIL missing: $f"; exit 1; }
+done
+[ -n "$VLIBS" ] || { echo "[kernel] FAIL no 26.2 libraries under $MC_DIR (versions/26.2/26.2.json)"; exit 1; }
+mkdir -p "$WORK/stubs" "$OUT"
+
+# javac_quiet <javac args>... — javac without its "Note:" lines, keeping its exit code.
+javac_quiet() {
+  local out rc
+  out="$(javac -nowarn -proc:none --release 21 "$@" 2>&1)"; rc=$?
+  grep -v '^Note:' <<< "$out" | grep -v '^$'
+  return "$rc"
+}
+
+step "compile the MinecraftForge stand-ins"
+javac_quiet -cp "$NEO_MC:$NEO_RT:$VLIBS" -d "$WORK/stubs" $(find "$STUBS/api/src" "$STUBS/patched-vanilla/src" -name '*.java') \
+  || { echo "[kernel] FAIL the stubs did not compile"; exit 1; }
+# Stubs first: javac takes the first class of a name on the classpath, which is how patched-vanilla's LiquidBlock and
+# BucketItem hide NeoForge's.
+CP="$WORK/stubs:$NEO_MC:$NEO_RT:$VLIBS"
+
+# compile <classes dir> <source>... — fails the build on a compile error, never ships a half-compiled fixture.
+compile() {
+  local classes="$1"; shift
+  mkdir -p "$classes"
+  javac_quiet -cp "$CP" -d "$classes" "$@" || { echo "[kernel] FAIL $(basename "$classes") did not compile"; exit 1; }
+}
+
+# publish <staged jar> — checks the jar is what a MinecraftForge-only build is, then installs it into $OUT.
+publish() {
+  local jar="$1" name entries
+  name="$(basename "$jar")"
+  entries="$(unzip -Z1 "$jar")" || { echo "[kernel] FAIL $name is not a zip"; exit 1; }
+  if grep -qE '^net/(minecraftforge|minecraft)/' <<< "$entries"; then
+    echo "[kernel] FAIL a stub leaked into $name:"; grep -E '^net/(minecraftforge|minecraft)/' <<< "$entries"; exit 1
+  fi
+  grep -qx 'META-INF/mods.toml' <<< "$entries" || { echo "[kernel] FAIL $name has no META-INF/mods.toml"; exit 1; }
+  if grep -qxE 'fabric\.mod\.json|META-INF/neoforge\.mods\.toml' <<< "$entries"; then
+    echo "[kernel] FAIL $name declares a Fabric or NeoForge half"; exit 1
+  fi
+  # The judge's own test for a class naming NeoForge, on every class of the jar and of the jars nested in it.
+  if (cd "$WORK" && rm -rf scan && mkdir scan && cd scan && unzip -q "$jar" \
+        && for nested in $(find . -name '*.jar'); do unzip -qo "$nested" -d "${nested%.jar}.x"; done \
+        && find . -name '*.class' -exec grep -lq 'net/neoforged/' {} + 2>/dev/null); then
+    echo "[kernel] FAIL $name names NeoForge, so it is no longer a MinecraftForge-only build"; exit 1
+  fi
+  publish_canary "$jar" "$OUT/$name" || exit 1
+  echo "[kernel] built $OUT/$name"
+}
+
+step "forbriclive"
+compile "$WORK/live" $(find "$STUBS/forbriclive/src" -name '*.java')
+mkdir -p "$WORK/live/META-INF" && cp "$STUBS/forbriclive/META-INF/mods.toml" "$WORK/live/META-INF/"
+(cd "$WORK/live" && jar --create --file "$WORK/forbriclive.jar" .) || exit 1
+publish "$WORK/forbriclive.jar"
+
+step "forbricnestforge, nesting the MinecraftForge build of forbricnestlib"
+NEST="$KERNEL/canary/nesteddupe"
+compile "$WORK/nestlib" "$NEST/lib/src/forbric/nestlib/NestLibRegistry.java" "$NEST/lib/src/forbric/nestlib/NestLibForge.java"
+mkdir -p "$WORK/nestlib/META-INF" && cp "$NEST/lib/mods.toml" "$WORK/nestlib/META-INF/"
+(cd "$WORK/nestlib" && jar --create --file "$WORK/forbricnestlib-forge.jar" .) || exit 1
+compile "$WORK/nestparent" "$NEST/parentforge/src/forbric/nestparent/NestParentForge.java"
+# Both the metadata.json MinecraftForge's JarJarSelector reads and the jar itself, as build-nested-dupe-canary.sh nests
+# its Fabric and NeoForge children.
+mkdir -p "$WORK/nestparent/META-INF/jarjar"
+cp "$NEST/parentforge/mods.toml" "$WORK/nestparent/META-INF/"
+cp "$NEST/parentforge/metadata.json" "$WORK/forbricnestlib-forge.jar" "$WORK/nestparent/META-INF/jarjar/"
+(cd "$WORK/nestparent" && jar --create --file "$WORK/forbricnestforge.jar" .) || exit 1
+publish "$WORK/forbricnestforge.jar"
+
+step "forbricforgecanary"
+ATTR="$KERNEL/canary/attribution/forbricforgecanary"
+compile "$WORK/forgecanary" $(find "$ATTR/src" -name '*.java')
+mkdir -p "$WORK/forgecanary/META-INF" && cp "$ATTR/META-INF/mods.toml" "$WORK/forgecanary/META-INF/"
+(cd "$WORK/forgecanary" && jar --create --file "$WORK/forbricforgecanary.jar" .) || exit 1
+publish "$WORK/forbricforgecanary.jar"
+
+step "forbricbreathforge"
+BREATH="$KERNEL/canary/forge-breath-drown"
+# Its copy of the shared core under its own package, as build-breath-drown-canary.sh does for each family.
+mkdir -p "$WORK/breathsrc/forbric/breathdrown/forge"
+sed 's/PKG/forge/g' "$BREATH/common/src/Core.java" > "$WORK/breathsrc/forbric/breathdrown/forge/Core.java"
+compile "$WORK/breath" $(find "$BREATH/forge/src" -name '*.java') "$WORK/breathsrc/forbric/breathdrown/forge/Core.java"
+mkdir -p "$WORK/breath/META-INF" && cp "$BREATH/forge/META-INF/mods.toml" "$WORK/breath/META-INF/"
+(cd "$WORK/breath" && jar --create --no-manifest --file "$WORK/forbricbreathforge.jar" .) || exit 1
+publish "$WORK/forbricbreathforge.jar"
+
+step "result"
+echo "[kernel] ✅ built forbriclive.jar, forbricnestforge.jar, forbricforgecanary.jar, forbricbreathforge.jar in $OUT"

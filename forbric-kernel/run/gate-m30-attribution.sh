@@ -62,12 +62,13 @@ REPORT="$RUNDIR/.forbric-kernel/load-report.txt"
 FABRIC="$KERNEL/run/canary/forbricfabriclive.jar"
 NEO="$NEOLIVE"
 CANARIES="$KERNEL/run/canary/forbricmixincanary.jar $KERNEL/run/canary/forbricsubscribercanary.jar $KERNEL/run/canary/forbricabicanary.jar"
-FORGEFIXTURE="$KERNEL/run/canary/forbricforgecanary.jar"   # refused under Stage 3: only the refusal boot stages it
+FORGEFIXTURE="$KERNEL/run/canary/forge-refused/forbricforgecanary.jar"   # refused under Stage 3: only the refusal boot stages it
 mkdir -p "$BUILD"
 
 step "build three attribution canaries, the refused MinecraftForge fixture and two healthy ones"
 "$KERNEL/run/build-attribution-canaries.sh" >"$BUILD/gate-m30-canary.log" 2>&1
 "$KERNEL/run/build-fabric-canary.sh" >>"$BUILD/gate-m30-canary.log" 2>&1
+"$KERNEL/run/build-forge-refusal-fixtures.sh" >>"$BUILD/gate-m30-canary.log" 2>&1
 for jar in $CANARIES "$FORGEFIXTURE" "$FABRIC" "$NEO"; do
   [ -f "$jar" ] || { echo "[kernel] FAIL missing canary: $jar (see $BUILD/gate-m30-canary.log)"; exit 1; }
 done
