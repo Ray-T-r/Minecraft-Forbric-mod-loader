@@ -52,8 +52,9 @@ public final class DevPrepare {
 		} else {
 			for (String retired : RETIRED) {
 				if (Files.exists(stage.resolve(retired), LinkOption.NOFOLLOW_LINKS)) {
-					System.out.println("Left " + stage.resolve(retired) + " in place: this stage was named with --staged or "
-							+ "FORBRIC_OLD and may be shared, so nothing is removed from it.");
+					System.out.println("Left " + stage.resolve(retired) + " in place: this stage is not one this checkout "
+							+ "owns alone (named with --staged or FORBRIC_OLD, reached through a symbolic link, or read by "
+							+ "another git worktree), so nothing is removed from it.");
 				}
 			}
 		}
@@ -62,20 +63,21 @@ public final class DevPrepare {
 
 	/**
 	 * Removes the {@link #RETIRED} directories from a stage this preparation owns: the stage {@code tools/dev.py}
-	 * keeps for its own checkout ({@code forbric-kernel/.dev/staged/run}), which it says with {@code --owned-stage}.
-	 * A stage named with {@code --staged} or {@code FORBRIC_OLD} is never cleaned: it may serve another checkout
-	 * still on the merged base.
+	 * keeps for its own checkout ({@code forbric-kernel/.dev/staged/run}), which it says with {@code --owned-stage}
+	 * only when no other git worktree reads it ({@code dev.py owned_stage}). A stage named with {@code --staged} or
+	 * {@code FORBRIC_OLD} is never cleaned: it may serve another checkout still on the merged base.
 	 *
-	 * <p>Even an owned stage is cleaned only where nothing can lead outside it: a stage directory (or the
-	 * {@code staged} directory holding it) that is a symbolic link, or a retired directory that is one or that holds one anywhere inside, is left alone and named. A fixture
+	 * <p>Even an owned stage is cleaned only where nothing can lead outside it. A stage reached through a symbolic
+	 * link anywhere on its path (its real path is not the path it was named by) is left alone and named: every git
+	 * worktree's {@code forbric-kernel/.dev} is a link to the main checkout's, so a worktree's default stage is the
+	 * main checkout's shared one. So is a retired directory that is a link or holds one anywhere inside: a fixture
 	 * tree linked into a stage is someone else's data, and deleting through a link deletes it.
 	 */
 	static void removeRetired(Path stage, java.util.function.Consumer<String> log) throws IOException {
-		Path root = stage.getParent();
-		if (Files.isSymbolicLink(stage) || !Files.isDirectory(stage, LinkOption.NOFOLLOW_LINKS)
-				|| root == null || Files.isSymbolicLink(root)) {
-			log.accept("Left the retired directories in " + stage + ": the stage, or the directory holding it, is not a "
-					+ "plain directory.");
+		Path named = stage.toAbsolutePath().normalize();
+		if (!Files.isDirectory(named, LinkOption.NOFOLLOW_LINKS) || !named.toRealPath().equals(named)) {
+			log.accept("Left the retired directories in " + stage + ": the stage is not a plain directory reached "
+					+ "without a symbolic link, so it may be another checkout's.");
 			return;
 		}
 		for (String name : RETIRED) {

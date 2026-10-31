@@ -50,10 +50,39 @@ class DevelopmentWorkflowTest(unittest.TestCase):
         self.assertFalse(dev.ready(self.root / 'mc', stage, self.root / 'natives'))
 
     def test_only_the_checkouts_own_stage_is_owned(self):
-        self.assertTrue(dev.owned_stage(argparse.Namespace(staged=None), {}))
-        self.assertFalse(dev.owned_stage(argparse.Namespace(staged='/elsewhere'), {}))
-        self.assertFalse(dev.owned_stage(argparse.Namespace(staged=None), {'FORBRIC_OLD': '/shared'}))
-        self.assertFalse(dev.owned_stage(argparse.Namespace(), {'FORBRIC_OLD': '/shared'}))
+        root = self.root.resolve() / 'checkout'
+        state = root / 'forbric-kernel' / '.dev'
+        (state / 'staged' / 'run').mkdir(parents=True)
+        ns = argparse.Namespace(staged=None)
+        owned = lambda args=ns, environ={}, worktrees=(): dev.owned_stage(args, environ, root=root, state=state,
+                                                                          worktrees=list(worktrees))
+        self.assertTrue(owned())
+        self.assertFalse(owned(argparse.Namespace(staged='/elsewhere')))
+        self.assertFalse(owned(environ={'FORBRIC_OLD': '/shared'}))
+        self.assertFalse(owned(argparse.Namespace(), {'FORBRIC_OLD': '/shared'}))
+        # The main checkout's stage while a worktree's .dev is a link to it: every worktree reads it.
+        worktree = self.root.resolve() / 'worktree'
+        (worktree / 'forbric-kernel').mkdir(parents=True)
+        (worktree / 'forbric-kernel' / '.dev').symlink_to(state)
+        self.assertFalse(owned(worktrees=[worktree]))
+        self.assertTrue(owned(worktrees=[self.root.resolve() / 'unrelated']))
+        # A tree that is not a git checkout (a source archive) has no other worktrees to share its stage with.
+        self.assertTrue(dev.owned_stage(ns, {}, root=root, state=state))
+        # And from that worktree: its default stage is reached through the linked .dev, so it is the main checkout's.
+        self.assertFalse(dev.owned_stage(ns, {}, root=worktree, state=worktree / 'forbric-kernel' / '.dev', worktrees=[]))
+        # A stage whose staged/ is a link elsewhere is not this checkout's either.
+        other = self.root.resolve() / 'other'
+        (other / 'staged' / 'run').mkdir(parents=True)
+        linked = self.root.resolve() / 'linked'
+        (linked / 'forbric-kernel' / '.dev').mkdir(parents=True)
+        (linked / 'forbric-kernel' / '.dev' / 'staged').symlink_to(other / 'staged')
+        self.assertFalse(dev.owned_stage(ns, {}, root=linked, state=linked / 'forbric-kernel' / '.dev', worktrees=[]))
+
+    def test_git_worktrees_are_listed_without_this_checkout(self):
+        others = dev.other_worktrees()
+        if others is not None:
+            self.assertNotIn(dev.ROOT.resolve(), [tree.resolve() for tree in others])
+        self.assertEqual([], dev.other_worktrees(self.root))
 
     def test_platform_defaults(self):
         self.assertEqual(dev.default_minecraft_dir('windows', {'APPDATA': 'C:/Users/A B/Roaming'}, self.root),

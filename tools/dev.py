@@ -388,20 +388,61 @@ def build_properties(mc, stage):
             f'-Pforbric.rebornEnergy={STATE / "api" / API_PINS[1][0]}']
 
 
-def owned_stage(args, environ=None):
-    """True when the stage is this checkout's own (.dev/staged): not named with --staged or FORBRIC_OLD, which may point at
-    a stage another checkout still reads. Only an owned stage has the retired merged-base/, forge-runtime/ and
-    forge-patched/ directories removed by DevPrepare."""
+def other_worktrees(root=ROOT):
+    """The other git worktrees of this repository, or None when git cannot say (then no stage counts as owned). A tree
+    that is not a git checkout (a source archive) has none."""
+    if not (root / '.git').exists():
+        return []
+    try:
+        listing = subprocess.run(['git', '-C', str(root), 'worktree', 'list', '--porcelain'], check=True,
+                                 capture_output=True, text=True).stdout
+    except (OSError, subprocess.CalledProcessError):
+        return None
+    trees = [Path(line[len('worktree '):]) for line in listing.splitlines() if line.startswith('worktree ')]
+    return [tree for tree in trees if tree.resolve() != root.resolve()]
+
+
+def owned_stage(args, environ=None, root=ROOT, state=STATE, worktrees=None):
+    """True when the stage is this checkout's own (.dev/staged/run) and nobody else reads it. Only an owned stage has
+    the retired merged-base/, forge-runtime/ and forge-patched/ directories removed by DevPrepare (D12).
+
+    Not owned: a stage named with --staged or FORBRIC_OLD (it may serve a checkout still on the merged base); a stage
+    reached through a symbolic link anywhere between the checkout and it -- every worktree's forbric-kernel/.dev is a
+    link to the main checkout's, so a worktree's default stage IS the main checkout's; a stage whose real path is not
+    inside this checkout; and the main checkout's own stage while another worktree's .dev/staged resolves to it. A
+    reader that names the stage with FORBRIC_OLD from elsewhere cannot be seen from here."""
     environ = os.environ if environ is None else environ
-    return not (getattr(args, 'staged', None) or environ.get('FORBRIC_OLD'))
+    if getattr(args, 'staged', None) or environ.get('FORBRIC_OLD'):
+        return False
+    stage = state / 'staged' / 'run'
+    path = stage
+    while True:
+        if path.is_symlink():
+            return False
+        if path == root or path.parent == path:
+            break
+        path = path.parent
+    if path != root:
+        return False
+    try:
+        stage.resolve().relative_to(root.resolve())
+    except ValueError:
+        return False
+    others = other_worktrees(root) if worktrees is None else worktrees
+    if others is None:
+        return False
+    shared = (state / 'staged').resolve()
+    return not any((Path(tree) / state.relative_to(root) / 'staged').resolve() == shared for tree in others)
 
 
 def prepare(args, java, env):
     mc, stage, _, natives = options(args, env['FORBRIC_DEV_ARCH'])
     gradle('forbric-kernel-installer', ['devToolsJar'], env)
     tools = ROOT / 'forbric-kernel-installer/build/libs/forbric-dev-tools.jar'
-    subprocess.run([java, '-jar', str(tools), str(mc), str(stage), java] + (['--owned-stage'] if owned_stage(args) else []),
-                   cwd=ROOT, env=env, check=True)
+    # An owned stage is handed over as the path below this checkout, unresolved, so DevPrepare can check for links itself.
+    owned = owned_stage(args)
+    subprocess.run([java, '-jar', str(tools), str(mc), str(STATE / 'staged' / 'run' if owned else stage), java]
+                   + (['--owned-stage'] if owned else []), cwd=ROOT, env=env, check=True)
     stage_minecraft(mc, natives, env['FORBRIC_DEV_ARCH'], assets=not getattr(args, 'no_assets', False))
     for name, url, sha in API_PINS:
         fetch(url, STATE / 'api' / name, sha, 'sha256')

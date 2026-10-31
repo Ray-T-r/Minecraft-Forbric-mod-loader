@@ -12,7 +12,9 @@ import java.util.List;
  */
 public final class DevPrepareRetiredTest {
 	public static void main(String[] args) throws Exception {
-		Path work = Files.createDirectories(Path.of(args[0]));
+		// By its real path: a temporary directory under a linked one (macOS's /var, /tmp) would make every stage here
+		// one reached through a link.
+		Path work = Files.createDirectories(Path.of(args[0])).toRealPath();
 		int checks = 0;
 
 		// An owned stage holding all three, as an older prepare left it, beside what this one stages.
@@ -58,8 +60,23 @@ public final class DevPrepareRetiredTest {
 		require(Files.isDirectory(elsewhere.resolve("merged-base")), "a stage under a linked staged/ was cleaned: " + log);
 		checks++;
 
+		// What tools/dev.py hands over from a git worktree: its forbric-kernel/.dev is a link to the main checkout's, so
+		// the stage below it is the main checkout's shared one, though neither the stage nor staged/ is a link.
+		Path mainDev = Files.createDirectories(work.resolve("main/forbric-kernel/.dev"));
+		Path mainStage = Files.createDirectories(mainDev.resolve("staged/run"));
+		for (String retired : DevPrepare.RETIRED) Files.createDirectories(mainStage.resolve(retired));
+		Path worktreeKernel = Files.createDirectories(work.resolve("worktree/forbric-kernel"));
+		Files.createSymbolicLink(worktreeKernel.resolve(".dev"), mainDev);
+		log.clear();
+		DevPrepare.removeRetired(worktreeKernel.resolve(".dev/staged/run"), log::add);
+		for (String retired : DevPrepare.RETIRED) {
+			require(Files.isDirectory(mainStage.resolve(retired)), "a stage under a linked .dev was cleaned: " + log);
+		}
+		require(log.stream().anyMatch(l -> l.contains("symbolic link")), "the stage left alone was not named: " + log);
+		checks += 2;
+
 		System.out.println("PASS dev stage cleanup: " + checks + " checks (retired directories removed from an owned stage;"
-				+ " links, and stages reached through one, left alone)");
+				+ " links, and stages reached through one anywhere on their path, left alone)");
 	}
 
 	private static void require(boolean condition, String message) {
