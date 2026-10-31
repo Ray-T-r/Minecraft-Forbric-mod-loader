@@ -161,9 +161,9 @@ class ModAnnotationScannerTest {
 	}
 
 	@Test
-	void distinguishesTheTwoModAnnotationFamilies(@TempDir Path dir) throws Exception {
-		// The construction ABIs diverge entirely on this bit: a MINECRAFTFORGE @Mod needs an FMLJavaModLoadingContext
-		// on a BusGroup, a NEOFORGE one needs (IEventBus, Dist, ModContainer).
+	void onlyNeoForgesModAnnotationIsScannedFor(@TempDir Path dir) throws Exception {
+		// Forbric constructs no MinecraftForge mod, so its @Mod is not a mod class here; a class carrying both annotations
+		// (a universal jar's shared entry point) is NeoForge's, whichever annotation the class file lists first.
 		Path jar = dir.resolve("mod.jar");
 
 		try (ZipOutputStream zip = new ZipOutputStream(Files.newOutputStream(jar))) {
@@ -171,12 +171,24 @@ class ModAnnotationScannerTest {
 					classBytes("com/example/AForge", "aforge", ModAnnotationScanner.MOD_DESC_MINECRAFTFORGE));
 			write(zip, "com/example/BNeo.class",
 					classBytes("com/example/BNeo", "bneo", ModAnnotationScanner.MOD_DESC_NEOFORGE));
+			ClassWriter cw = new ClassWriter(0);
+			cw.visit(Opcodes.V17, Opcodes.ACC_PUBLIC, "com/example/CBoth", null, "java/lang/Object", null);
+			AnnotationVisitor neo = cw.visitAnnotation(ModAnnotationScanner.MOD_DESC_NEOFORGE, true);
+			neo.visit("value", "cboth");
+			neo.visitEnd();
+			AnnotationVisitor forge = cw.visitAnnotation(ModAnnotationScanner.MOD_DESC_MINECRAFTFORGE, true);
+			forge.visit("value", "cboth");
+			forge.visitEnd();
+			cw.visitEnd();
+			write(zip, "com/example/CBoth.class", cw.toByteArray());
 		}
 
 		List<ModAnnotationScanner.ModClassInfo> mods = ModAnnotationScanner.scan(jar);
 
-		assertEquals(2, mods.size());
-		assertEquals(Ecosystem.FORGE, mods.get(0).family);
+		assertEquals(2, mods.size(), String.valueOf(mods));
+		assertEquals("com.example.BNeo", mods.get(0).className);
+		assertEquals(Ecosystem.NEOFORGE, mods.get(0).family);
+		assertEquals("com.example.CBoth", mods.get(1).className);
 		assertEquals(Ecosystem.NEOFORGE, mods.get(1).family);
 	}
 

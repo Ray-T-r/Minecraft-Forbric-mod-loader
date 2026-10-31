@@ -44,9 +44,12 @@ import net.forbric.kernel.util.ForbricLog;
  * <p>A jar is classified by which descriptors it carries:
  * <ul>
  *   <li>{@code fabric.mod.json} (jar root) &rarr; a Fabric mod,</li>
- *   <li>{@code META-INF/mods.toml} or {@code META-INF/neoforge.mods.toml} &rarr; one or more Forge mods,</li>
+ *   <li>{@code META-INF/neoforge.mods.toml} &rarr; one or more NeoForge mods,</li>
  *   <li>a jar carrying both yields both (a multi-loader jar) &mdash; each side enters the unified list.</li>
  * </ul>
+ *
+ * <p>A MinecraftForge {@code META-INF/mods.toml} yields no mod: Forbric loads no MinecraftForge mod, and neither native
+ * loader reads that file. It is still opened, by {@link LoaderHalfJudge}, to refuse a jar that has nothing else.
  *
  * <p>This is the structural skeleton of the final discoverer. In the integrated build it is fused with
  * Fabric Loader's reused {@code ModDiscoverer} (parallel scan, nested JarInJar) and feeds the single SAT
@@ -103,7 +106,7 @@ public final class ForbricModDiscoverer {
 	}
 
 	/**
-	 * Discovers the mod(s) declared by a single jar. May return a Fabric mod, Forge mod(s), or both.
+	 * Discovers the mod(s) declared by a single jar. May return a Fabric mod, NeoForge mod(s), or both.
 	 *
 	 * <p>Each manifest is read on its own. One that cannot be read — a malformed version range, TOML or JSON —
 	 * is recorded in {@link MetadataFailures} and leaves the jar's other manifests, and every other jar, alone.
@@ -112,8 +115,9 @@ public final class ForbricModDiscoverer {
 	 * <p>A jar carrying a MinecraftForge {@code mods.toml} is first put to {@link LoaderHalfJudge}. One it refuses —
 	 * nothing but a MinecraftForge half to load through — yields no mod at all and is recorded as an
 	 * {@link MetadataFailures.Kind#UNSUPPORTED} failure, which is what makes it a Lost row and a required finding.
-	 * Every other such jar is discovered as before, its MinecraftForge mods included: discovery stays truthful about
-	 * what a jar declares, and {@code MultiLoaderArbiter} is what keeps the MinecraftForge half from loading.
+	 * Every other such jar is discovered through its other manifests only, as its own loader would read it; the
+	 * MinecraftForge half's manifest is not mapped into mods (an unreadable one is therefore not a failure either), and
+	 * {@code MultiLoaderArbiter} reads the jar's manifests itself to say what it set aside.
 	 */
 	public List<DiscoveredMod> discoverJar(Path jarPath) throws IOException {
 		Path key = MetadataFailures.key(jarPath);
@@ -165,18 +169,15 @@ public final class ForbricModDiscoverer {
 				}
 			}
 
-			// Forge / NeoForge side — a jar may carry either or both (multiloader builds ship one toml per
-			// family). Each present manifest is reported truthfully under its own ecosystem; which family
-			// actually loads is a boot-time policy (the active game base), not a discovery concern.
+			// NeoForge side. A universal jar's MinecraftForge mods.toml is not read here (see discoverJar).
 			discoverForgeFamily(jarPath, jar, NEOFORGE_MANIFEST, Ecosystem.NEOFORGE, jarVersion, source, result, failures);
-			discoverForgeFamily(jarPath, jar, FORGE_MANIFEST, Ecosystem.FORGE, jarVersion, source, result, failures);
 		}
 
 		return result;
 	}
 
 	/**
-	 * Reads one Forge-family manifest ({@code mods.toml} / {@code neoforge.mods.toml}) into {@code sink}, if
+	 * Reads one Forge-family manifest ({@code neoforge.mods.toml}) into {@code sink}, if
 	 * present. Nothing is added when it fails: every mod a manifest declares shares its dependency list and mixin
 	 * configs, so half a manifest is not a safer answer than none.
 	 */
@@ -222,19 +223,13 @@ public final class ForbricModDiscoverer {
 		// Most real MinecraftForge mods declare mixins via the manifest MixinConfigs attribute, not [[mixins]] —
 		// GeckoLib ships exactly `MixinConfigs: geckolib.mixins.json` and nothing in its toml. That attribute is a
 		// MinecraftForge/ModLauncher convention: NeoForge reads [[mixins]] from the toml and never looks at the
-		// manifest. Feeding it to BOTH families made a universal jar's NeoForge mod claim the Forge-side config too
-		// (collective would have registered collective_forge.mixins.json AND collective_neoforge.mixins.json).
-		//
-		// And since Forbric stopped loading MinecraftForge mods nobody reads it at all: the one family it belongs to never
-		// loads, so a config named only there is a MinecraftForge config, and handing it to the mod would put Forge-only
-		// mixins on the game through whichever half did load.
+		// manifest. Feeding it to the NeoForge half made a universal jar's NeoForge mod claim the Forge-side config
+		// too (collective would have registered collective_forge.mixins.json AND collective_neoforge.mixins.json), and
+		// with no MinecraftForge mod loaded a config named only there would put Forge-only mixins on the game.
 		List<String> manifestMixins = new ArrayList<>();
 		Manifest manifest = jar.getManifest();
 		String attr = manifest == null ? null : manifest.getMainAttributes().getValue("MixinConfigs");
-		if (attr != null && ecosystem == Ecosystem.FORGE) {
-			ForbricLog.debug("[Forbric] ignoring manifest MixinConfigs '%s' for the MinecraftForge side of %s — Forbric no "
-					+ "longer loads MinecraftForge mods", attr, source);
-		} else if (attr != null) {
+		if (attr != null) {
 			ForbricLog.debug("[Forbric] ignoring manifest MixinConfigs '%s' for the %s side of %s — that attribute "
 					+ "is a MinecraftForge convention; NeoForge declares mixins in [[mixins]]", attr, ecosystem, source);
 		}

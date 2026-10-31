@@ -93,13 +93,16 @@ public final class ModAnnotationScanner {
 		}
 	}
 
-	/** Traditional MinecraftForge {@code @Mod} descriptor (the primary target). */
+	/**
+	 * Traditional MinecraftForge {@code @Mod} descriptor. Not scanned for: Forbric constructs no MinecraftForge mod, and a
+	 * class carrying both annotations is NeoForge's to construct, as on NeoForge. Kept for {@code LoaderHalfJudge}, which
+	 * reads it to tell a MinecraftForge half apart.
+	 */
 	public static final String MOD_DESC_MINECRAFTFORGE = "Lnet/minecraftforge/fml/common/Mod;";
-	/** NeoForge {@code @Mod} descriptor (the parked NeoForge path). */
+	/** NeoForge {@code @Mod} descriptor. */
 	public static final String MOD_DESC_NEOFORGE = "Lnet/neoforged/fml/common/Mod;";
-	/** Both Forge-family {@code @Mod} annotations share the same shape ({@code String value()}); recognise either. */
+	/** The {@code @Mod} annotations scanned for, and the ecosystem each one declares. */
 	private static final java.util.Map<String, Ecosystem> MOD_DESCRIPTORS = java.util.Map.of(
-			MOD_DESC_MINECRAFTFORGE, Ecosystem.FORGE,
 			MOD_DESC_NEOFORGE, Ecosystem.NEOFORGE);
 
 	private ModAnnotationScanner() {

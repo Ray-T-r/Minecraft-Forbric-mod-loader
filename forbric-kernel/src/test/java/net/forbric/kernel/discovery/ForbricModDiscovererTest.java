@@ -30,6 +30,7 @@ import java.nio.file.Path;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.jar.Attributes;
 import java.util.jar.JarOutputStream;
 import java.util.jar.Manifest;
@@ -127,20 +128,26 @@ class ForbricModDiscovererTest {
 	}
 
 	@Test
-	void dualTomlJarReportsBothFamilies(@TempDir Path mods) throws Exception {
-		// A multiloader build shipping one toml per Forge family: BOTH are reported truthfully, each under its own
-		// ecosystem. Discovery does not choose; MultiLoaderArbiter does, and since Stage 3 it sets the MinecraftForge
-		// half aside, so the NeoForge one loads.
+	void aDualTomlJarIsDiscoveredAsItsNeoForgeHalfOnly(@TempDir Path mods) throws Exception {
+		// A multiloader build shipping one toml per Forge family is read as NeoForge reads it: its neoforge.mods.toml. The
+		// MinecraftForge mods.toml yields no mod (Forbric loads none), and MultiLoaderArbiter reads the jar's manifests
+		// itself to say it set that half aside.
 		Map<String, String> entries = entry("META-INF/mods.toml", FORGE_TOML);
 		entries.put("META-INF/neoforge.mods.toml", FORGE_TOML.replace("mandatory=true", "type=\"required\""));
 		Path jar = writeJar(mods, "dual-mod.jar", entries, "5.6.7");
 
 		List<DiscoveredMod> found = new ForbricModDiscoverer().discoverJar(jar);
 
-		assertEquals(2, found.size());
-		assertEquals(1, found.stream().filter(m -> m.getEcosystem() == Ecosystem.NEOFORGE).count());
-		assertEquals(1, found.stream().filter(m -> m.getEcosystem() == Ecosystem.FORGE).count());
-		assertTrue(found.stream().allMatch(m -> "exampleforge".equals(m.getId())));
+		assertEquals(1, found.size(), String.valueOf(found));
+		assertEquals(Ecosystem.NEOFORGE, found.get(0).getEcosystem());
+		assertEquals("exampleforge", found.get(0).getId());
+
+		// Its MinecraftForge manifest is not parsed into mods, so one NeoForge would never read cannot fail the jar either.
+		Map<String, String> broken = entry("META-INF/mods.toml", "modLoader=\"javafml\"\n[[mods]\nthis is not toml");
+		broken.put("META-INF/neoforge.mods.toml", FORGE_TOML.replace("mandatory=true", "type=\"required\""));
+		Path brokenJar = writeJar(mods, "dual-broken.jar", broken, "5.6.7");
+		assertEquals(1, new ForbricModDiscoverer().discoverJar(brokenJar).size());
+		assertEquals(Set.of(), MetadataFailures.failedFamilies(brokenJar), String.valueOf(MetadataFailures.of(brokenJar)));
 	}
 
 	@Test
@@ -193,9 +200,9 @@ class ForbricModDiscovererTest {
 
 	@Test
 	void aSingleJarMayDeclareBothLoaders(@TempDir Path mods) throws Exception {
-		// A Forge+Fabric universal jar. Discovery reports both halves truthfully, the MinecraftForge one included:
-		// MultiLoaderArbiter, not discovery, sets that half aside and loads the jar as Fabric. The Fabric half has to be
-		// real for the jar to be universal at all, so its main entrypoint is a class that can initialise.
+		// A Forge+Fabric universal jar is discovered as its Fabric half, as Fabric reads it: the MinecraftForge mods.toml
+		// yields no mod. The Fabric half has to be real for the jar to be universal at all (not refused), so its main
+		// entrypoint is a class that can initialise.
 		Map<String, String> both = new LinkedHashMap<>();
 		both.put("fabric.mod.json", FABRIC_JSON);
 		both.put("META-INF/mods.toml", FORGE_TOML);
@@ -205,18 +212,9 @@ class ForbricModDiscovererTest {
 
 		List<DiscoveredMod> found = new ForbricModDiscoverer().discoverJar(jar);
 
-		assertEquals(2, found.size());
-		assertEquals(1, found.stream().filter(m -> m.getEcosystem() == Ecosystem.FABRIC).count());
-		assertEquals(1, found.stream().filter(m -> m.getEcosystem() == Ecosystem.FORGE).count());
+		assertEquals(1, found.size(), String.valueOf(found));
+		assertEquals(Ecosystem.FABRIC, found.get(0).getEcosystem());
 		assertFalse(MetadataFailures.unsupported(jar), "a universal jar is not refused: " + MetadataFailures.of(jar));
-
-		// Its MinecraftForge manifest is still read in that dialect: mandatory=true, the placeholder, the range.
-		DiscoveredMod forge = found.stream().filter(m -> m.getEcosystem() == Ecosystem.FORGE).findFirst().orElseThrow();
-		assertEquals("9.9.9", forge.getVersion(), "${file.jarVersion} should resolve from the manifest");
-		UnifiedDependency forgeDep = forge.getDependencies().get(0);
-		assertEquals("forge", forgeDep.getModId());
-		assertEquals(">=47", forgeDep.getVersionConstraint(), "Maven range [47,) should translate to >=47");
-		assertTrue(forgeDep.isMandatory());
 
 		// Without that class the Fabric half names an entrypoint the jar lacks, and without fabric.mod.json there is no
 		// other half: either way the jar is a MinecraftForge-only build, refused, and nothing of it is discovered.
