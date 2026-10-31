@@ -17,26 +17,18 @@ import net.fabricmc.api.EnvType;
 import net.forbric.kernel.ExpectCaught;
 
 /**
- * {@link CommonNetworkInteropInjector}'s output, run against the kernel's real boot-side {@code PayloadInterop}: five of
- * its repairs, each on stand-ins for the class it edits, each with the merged failure it prevents. (A Fabric receiver
+ * {@link CommonNetworkInteropInjector}'s output, run against the kernel's real boot-side {@code PayloadInterop}: its
+ * repairs, each on stand-ins for the class it edits, each with the unrepaired failure it prevents. (A Fabric receiver
  * handed NeoForge's payload of a shared channel is {@code FabricReceiverArbitrationExecutionTest}'s.)
  * <ul>
  *   <li>the server finishing Fabric's {@code c:version} task while NeoForge's equivalent is current: the next task
  *       starts — as merged, "Unexpected request for task finish";</li>
- *   <li>the next task starting through MinecraftForge's task context, so a MinecraftForge task (which refuses the
- *       vanilla overload) starts and a vanilla-shaped one still does;</li>
- *   <li>a MinecraftForge payload reaching either common listener: it goes to {@code ForgeHooks.onCustomPayload} — as
- *       merged, NeoForge's body disconnects for an unknown channel;</li>
- *   <li>NeoForge's {@code checkPacket}: a MinecraftForge payload, and one another ecosystem negotiated, are not
- *       policed, and a NeoForge-registered or vanilla one still is;</li>
- *   <li>MinecraftForge's {@code SyncConfigTask} reading a per-world config that is gone: the kernel writes it back
- *       from the {@code ModConfig} — as merged, "Failed to read config on server";</li>
+ *   <li>NeoForge's {@code checkPacket}: a payload on a channel another ecosystem negotiated is not policed, and a
+ *       NeoForge-registered or vanilla one still is — unrepaired, Polymer's client could not send on its own channel;</li>
  *   <li>and, unclaimed, the client's register answered by fabric-api before NeoForge.</li>
  * </ul>
- * Not run here: the hooks that reflect into MinecraftForge's network registry and event factory
- * ({@code channelActive}, task gathering, configuration-finished, channel bookkeeping), the HEDGE initialisation guard
- * (inert since NeoForge 26.2.0.88), and the play-phase hand-over to NeoForge, which {@code PlayPayloadHandOverExecutionTest}
- * runs on stand-ins of its own. The injector has no switch of its own:
+ * Not run here: the HEDGE initialisation guard (inert since NeoForge 26.2.0.88), and the play-phase hand-over to
+ * NeoForge, which {@code PlayPayloadHandOverExecutionTest} runs on stand-ins of its own. The injector has no switch of its own:
  * {@code -Dforbric.commonNetworkInterop=off} is read where KernelBoot registers it.
  */
 @ExecutesInjector(CommonNetworkInteropInjector.class)
@@ -47,7 +39,7 @@ class CommonNetworkInteropInjectorExecutionTest {
 	private static final String CLIENT_CONFIG = "net.minecraft.client.multiplayer.ClientConfigurationPacketListenerImpl";
 	private static final String NEO_REGISTRY = "net.neoforged.neoforge.network.registration.NetworkRegistry";
 	private static final String SYNC_CONFIG = "net.minecraftforge.network.tasks.SyncConfigTask";
-	private static final List<String> TARGETS = List.of(SERVER_CONFIG, CLIENT_CONFIG);
+	private static final List<String> TARGETS = List.of(SERVER_CONFIG, CLIENT_CONFIG, NEO_REGISTRY);
 
 	private static String payload(String binaryName, String fields, String id) {
 		int dot = binaryName.lastIndexOf('.');
@@ -507,6 +499,35 @@ class CommonNetworkInteropInjectorExecutionTest {
 		Object stockVersion = InjectorExecution.construct(game.merged("net.minecraft.server.network.ConfigurationTask$Type"), "c:version");
 		assertTrue(assertThrows(IllegalStateException.class, () -> InjectorExecution.invoke(stock, "finishCurrentTask", stockVersion))
 				.getMessage().startsWith("Unexpected request for task finish"), "premise: as merged, the client is refused");
+	}
+
+	@Test void neoForgeDoesNotPoliceChannelsItDidNotNegotiate(@TempDir Path work) throws Throwable {
+		Game game = game(work);
+		java.util.function.Function<ClassLoader, java.util.function.Function<Object, Object>> send = loader -> payload -> {
+			try {
+				Object packet = InjectorExecution.construct(loader.loadClass("net.minecraft.network.protocol.common.ServerboundCustomPayloadPacket"), payload);
+				Object listener = java.lang.reflect.Proxy.newProxyInstance(loader,
+						new Class<?>[] {loader.loadClass("net.minecraft.network.protocol.common.ServerCommonPacketListener")}, (p, m, a) -> false);
+				InjectorExecution.invokeStatic(loader.loadClass(NEO_REGISTRY), "checkPacket", packet, listener);
+				return "sent";
+			} catch (Throwable refused) {
+				return refused.getMessage();
+			}
+		};
+		ClassLoader loader = game.repaired;
+		assertEquals("sent", send.apply(loader).apply(InjectorExecution.construct(loader.loadClass("fixture.ModPayload"), "polymer:hello")),
+				"a channel another ecosystem negotiated is not NeoForge's to police");
+		assertEquals("Payload neomod:sync may not be sent to the server!",
+				send.apply(loader).apply(InjectorExecution.construct(loader.loadClass("fixture.ModPayload"), "neomod:sync")),
+				"a channel NeoForge registered is still policed");
+		assertEquals("Payload minecraft:register may not be sent to the server!",
+				send.apply(loader).apply(InjectorExecution.construct(loader.loadClass("net.neoforged.neoforge.network.payload.MinecraftRegisterPayload"),
+						Set.of())), "and so is NeoForge's own");
+
+		ClassLoader stock = game.merged;
+		assertEquals("Payload polymer:hello may not be sent to the server!",
+				send.apply(stock).apply(InjectorExecution.construct(stock.loadClass("fixture.ModPayload"), "polymer:hello")),
+				"premise: unrepaired, a Polymer client cannot send on its own channel");
 	}
 
 	/** A server configuring a client: NeoForge's common-version task, then a vanilla-shaped one; the first started. */

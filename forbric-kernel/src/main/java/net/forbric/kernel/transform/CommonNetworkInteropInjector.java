@@ -157,8 +157,16 @@ public final class CommonNetworkInteropInjector implements ClassTransformer {
 			+ "Lnet/minecraft/network/protocol/common/ServerboundCustomPayloadPacket;)V";
 	private static final String SERVER_HANDLE_PAYLOAD_DESC = "(Lnet/minecraft/network/protocol/common/ServerboundCustomPayloadPacket;)V";
 
-	/** NeoForge's network registry, whose modded-payload dispatcher the play-phase fall-through calls. */
+	/**
+	 * NeoForge's network registry: its modded-payload dispatcher is what the play-phase fall-through calls, and its
+	 * {@code checkPacket} (client and server overloads) is NeoForge's channel police, which refuses to send any payload
+	 * whose channel NeoForge did not negotiate — including every channel another ecosystem negotiated on the same
+	 * connection (Polymer's {@code polymer:handshake}, Carpet's {@code carpet:hello}). Those are exempted at its head.
+	 */
 	private static final String NEO_NETWORK_REGISTRY = ForeignType.NETWORK_REGISTRY.binary(Ecosystem.NEOFORGE);
+	private static final String CHECK_PACKET = "checkPacket";
+	private static final String EXEMPT_HOOK = "exemptFromNeoChannelCheck";
+	private static final String EXEMPT_HOOK_DESC = "(Ljava/lang/Object;)Z";
 	private static final String HANDLE_PAYLOAD = "handleCustomPayload";
 	private static final String HANDLE_PAYLOAD_DESC = "(Lnet/minecraft/network/protocol/common/ClientboundCustomPayloadPacket;)V";
 	private static final String NEO_PACKAGE = "net/neoforged/";
@@ -217,21 +225,21 @@ public final class CommonNetworkInteropInjector implements ClassTransformer {
 
 	@Override
 	public AnchorSet anchors() {
-		// Eight target classes and about as many independent repairs behind one `changed` flag, and at least one
-		// of them is deliberately inert on the current carrier. So a matched class that comes back unedited is
-		// not yet evidence of anything; these need per-repair claims.
-		return AnchorSet.scanned("several independent repairs across eight classes, one of them (the client "
-				+ "connection-initialisation guard) intentionally inert since NeoForge 26.2.0.88");
+		// Five fixed target classes plus every Fabric receiver, and as many independent repairs behind one `changed`
+		// flag, at least one of them deliberately inert on the current carrier. So a matched class that comes back
+		// unedited is not yet evidence of anything; these need per-repair claims.
+		return AnchorSet.scanned("several independent repairs across five classes and every Fabric receiver, one of them "
+				+ "(the client connection-initialisation guard) intentionally inert since NeoForge 26.2.0.88");
 	}
 
 	/**
-	 * Claim ids, one per branch of {@link #transform}; each is reported beside its {@code changed = true}, except
-	 * {@link #CLAIM_START_NEXT_TASK}, which is reported when the method ends up starting tasks through MinecraftForge's
-	 * context, edited here or already merged that way ({@link #startsTasksThroughForgesContext}).
+	 * Claim ids, one per claimed branch of {@link #transform}; each is reported beside its {@code changed = true}. The
+	 * Fabric send stand-aside, the register sharing and the repeated-declaration filter are unclaimed.
 	 */
 	static final String CLAIM_FABRIC_ADDON = "forbric-common-network-interop#fabricAddonHandle";
 	static final String CLAIM_FINISH_TASK = "forbric-common-network-interop#finishCurrentTask";
 	static final String CLAIM_SERVER_GAME_FALL_THROUGH = "forbric-common-network-interop#serverGamePlayFallThrough";
+	static final String CLAIM_CHECK_PACKET = "forbric-common-network-interop#neoCheckPacket";
 	static final String CLAIM_GUARD_INITIALISATION = "forbric-common-network-interop#guardOtherConnectionInitialisation";
 
 	/**
@@ -250,6 +258,9 @@ public final class CommonNetworkInteropInjector implements ClassTransformer {
 						? AnchorSet.of(required(SERVER_GAME_LISTENER,
 								"a NeoForge mod's play-phase packet to the server reaches nobody when MinecraftForge does not take it — its server-side handler never runs"))
 						: AnchorSet.scanned("NeoForge mods' play-phase packets to the server left undelivered with -Dforbric.playPayloadFallThrough=off")),
+				new Claim(CLAIM_CHECK_PACKET, AnchorSet.of(required(NEO_NETWORK_REGISTRY,
+						"NeoForge's channel check refuses to send on a channel another ecosystem negotiated — a Polymer or Carpet "
+								+ "player is disconnected with \"Payload … may not be sent\""))),
 				// HEDGE: the merged listener on the current carrier already initialises once, so the guard finds
 				// nothing to do (never applied in any gate log); it is kept for a carrier where it does not.
 				new Claim(CLAIM_GUARD_INITIALISATION, AnchorSet.of(new AnchorSet.Anchor(CLIENT_CONFIG_LISTENER, AnchorSet.Severity.HEDGE,
@@ -273,7 +284,8 @@ public final class CommonNetworkInteropInjector implements ClassTransformer {
 		boolean clientConfig = CLIENT_CONFIG_LISTENER.equals(className);
 		boolean serverGame = SERVER_GAME_LISTENER.equals(className);
 		boolean connection = CONNECTION.equals(className);
-		if (!fabricAddon && !serverConfig && !clientConfig && !serverGame && !connection) return classBytes;
+		boolean neoRegistry = NEO_NETWORK_REGISTRY.equals(className);
+		if (!fabricAddon && !serverConfig && !clientConfig && !serverGame && !connection && !neoRegistry) return classBytes;
 
 		ClassNode node = new ClassNode();
 		// EXPAND_FRAMES so every original frame is an absolute F_NEW node; the explicit frames we author at our own
@@ -317,6 +329,14 @@ public final class CommonNetworkInteropInjector implements ClassTransformer {
 							+ "mod's play-phase packet to the server (Carry On's carry key, a GUI button) reached nobody "
 							+ "(-Dforbric.playPayloadFallThrough=off to leave it)", className, HANDLE_PAYLOAD);
 				}
+			} else if (neoRegistry && m.name.equals(CHECK_PACKET) && (m.access & Opcodes.ACC_STATIC) != 0
+					&& org.objectweb.asm.Type.getArgumentTypes(m.desc).length == 2) {
+				m.instructions.insert(channelCheckExemptionPrologue(m.desc));
+				bumpStack(m, 1);
+				changed = true;
+				reporter.hit(CLAIM_CHECK_PACKET);
+				ForbricLog.info("[Forbric/Net] exempting channels another ecosystem negotiated from NeoForge's channel check "
+						+ "at %s.%s%s", className, CHECK_PACKET, m.desc);
 			} else if (connection && m.name.equals(CONNECTION_SEND) && m.desc.equals(CONNECTION_SEND_DESC) && declarationsOnceEnabled()) {
 				if (dropRepeatedDeclarations(node, m)) {
 					bumpStack(m, 2);
@@ -388,6 +408,24 @@ public final class CommonNetworkInteropInjector implements ClassTransformer {
 		body.add(send);
 		body.add(new FrameNode(Opcodes.F_NEW, 3, new Object[] {owner, "net/minecraft/network/protocol/Packet",
 				"io/netty/channel/ChannelFutureListener"}, 0, new Object[] {}));
+		return body;
+	}
+
+	/**
+	 * {@code if (interop.exemptFromNeoChannelCheck(packet)) return;} at the head of a static
+	 * {@code checkPacket(Packet, <listener>)V}. Fall-through frame: the two parameters, empty stack — the entry frame.
+	 */
+	private static InsnList channelCheckExemptionPrologue(String desc) {
+		org.objectweb.asm.Type[] args = org.objectweb.asm.Type.getArgumentTypes(desc);
+		InsnList body = new InsnList();
+		LabelNode policed = new LabelNode();
+		body.add(new VarInsnNode(Opcodes.ALOAD, 0)); // the packet
+		body.add(new MethodInsnNode(Opcodes.INVOKESTATIC, INTEROP, EXEMPT_HOOK, EXEMPT_HOOK_DESC, false));
+		body.add(new JumpInsnNode(Opcodes.IFEQ, policed));
+		body.add(new InsnNode(Opcodes.RETURN));
+		body.add(policed);
+		body.add(new FrameNode(Opcodes.F_NEW, 2, new Object[] {args[0].getInternalName(), args[1].getInternalName()}, 0,
+				new Object[] {}));
 		return body;
 	}
 

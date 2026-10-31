@@ -1016,22 +1016,22 @@ public final class PayloadInterop {
 	}
 
 	/**
-	 * Called from the head of NeoForge's {@code NetworkRegistry.checkPacket} (both overloads): a ForgePayload is not
-	 * NeoForge's to police. Its check compares the payload's channel with what NeoForge negotiated, and a Forge
-	 * channel is not in that list by construction — so a Forge mod's client could not even SEND on its own channel
-	 * ("Payload … may not be sent to the server!"). Says whether the packet carries a ForgePayload.
+	 * Called from the head of NeoForge's {@code NetworkRegistry.checkPacket} (both overloads): a payload on a channel
+	 * another ecosystem negotiated is not NeoForge's to police ({@link #notNeoForgesToPolice}). Its check compares the
+	 * payload's channel with what NeoForge negotiated, and a channel Fabric or Polymer negotiated is not in that list by
+	 * construction — so the mod that owns it could not even SEND on it ("Payload polymer:handshake may not be sent to
+	 * the server!"). Says whether the packet's payload is exempt from that check.
 	 */
-	public static boolean isForgePayloadPacket(Object packet) {
+	public static boolean exemptFromNeoChannelCheck(Object packet) {
 		if (packet == null) return false;
 		Method accessor = payloadAccessor(packet.getClass());
 		if (accessor == null) return false;
 		try {
 			Object payload = accessor.invoke(packet);
 			if (payload == null) return false;
-			if (FORGE_PAYLOAD.equals(payload.getClass().getName())) return true;
 			return notNeoForgesToPolice(payload);
 		} catch (ReflectiveOperationException | RuntimeException e) {
-			Caught.warn(e, "[Forbric] could not read the payload of %s; not treated as a Forge payload",
+			Caught.warn(e, "[Forbric] could not read the payload of %s; it is left to NeoForge's channel check",
 					packet.getClass().getName());
 			return false;
 		}
@@ -1041,7 +1041,7 @@ public final class PayloadInterop {
 	 * Called right after NeoForge's {@code NetworkRegistry.isModdedPayload} where the common packet listeners decide
 	 * whether a RECEIVED payload goes to NeoForge's dispatcher ({@code ForeignPayloadReceiveInjector}). NeoForge's
 	 * dispatcher knows only the channels NeoForge registered and closes the connection on any other — the receiving
-	 * half of the verdict {@link #isForgePayloadPacket} already takes away from its send check. A channel another
+	 * half of the verdict {@link #exemptFromNeoChannelCheck} already takes away from its send check. A channel another
 	 * ecosystem negotiated goes down vanilla's path instead, where the mod that owns it listens: Carpet's client
 	 * takes {@code carpet:hello} at {@code ClientPacketListener.handleUnknownCustomPayload}, and was disconnected
 	 * with "No Channel for carpet:hello" before it got there.
@@ -1109,7 +1109,7 @@ public final class PayloadInterop {
 	/**
 	 * The {@code payload()} accessor for a packet class, resolved once per class and then remembered.
 	 *
-	 * <p>This is on the hot path and was not cached. {@link #isForgePayloadPacket} runs at the head of the
+	 * <p>This is on the hot path and was not cached. {@link #exemptFromNeoChannelCheck} runs at the head of the
 	 * outbound-packet check, so it is reached for EVERY packet the game sends — and it went through the generic
 	 * reflective lookup each time, which walks the class's whole superclass chain calling
 	 * {@code getDeclaredMethod} and then every interface. Most packets have no {@code payload()} at all, so the

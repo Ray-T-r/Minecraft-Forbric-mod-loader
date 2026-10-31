@@ -28,7 +28,7 @@ import org.junit.jupiter.api.Test;
 /**
  * The per-packet check at the head of the outbound-packet path.
  *
- * <p>{@code isForgePayloadPacket} is reached for EVERY packet the game sends, and it resolved the accessor
+ * <p>{@code exemptFromNeoChannelCheck} is reached for EVERY packet the game sends, and it resolved the accessor
  * reflectively each time — walking the class's whole superclass chain and then its interfaces, constructing and
  * discarding a {@code NoSuchMethodException} at each step. Most packets have no such accessor, so the common
  * case was the most expensive one.
@@ -67,7 +67,7 @@ class PayloadInteropAccessorCacheTest {
 		// the full walk from happening per packet.
 		assertNull(PayloadInterop.payloadAccessor(WithoutPayload.class));
 		assertNull(PayloadInterop.payloadAccessor(WithoutPayload.class));
-		assertFalse(PayloadInterop.isForgePayloadPacket(new WithoutPayload()));
+		assertFalse(PayloadInterop.exemptFromNeoChannelCheck(new WithoutPayload()));
 	}
 
 	@Test
@@ -80,11 +80,11 @@ class PayloadInteropAccessorCacheTest {
 	void aPayloadFromAnotherLoaderIsNotAForgeOne() {
 		// The answer itself, not the caching: a packet carrying some other payload must come back false, or the
 		// outbound check exempts packets it should be checking.
-		assertFalse(PayloadInterop.isForgePayloadPacket(new WithPayload()));
+		assertFalse(PayloadInterop.exemptFromNeoChannelCheck(new WithPayload()));
 	}
 
 	@Test
 	void aNullPacketIsNotAForgeOne() {
-		assertFalse(PayloadInterop.isForgePayloadPacket(null));
+		assertFalse(PayloadInterop.exemptFromNeoChannelCheck(null));
 	}
 }
