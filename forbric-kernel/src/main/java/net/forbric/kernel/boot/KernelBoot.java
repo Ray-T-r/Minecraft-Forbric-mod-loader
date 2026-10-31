@@ -692,7 +692,8 @@ public final class KernelBoot {
 		if (side == Side.CLIENT) chain.register(TransformPhase.COREMOD, new net.forbric.kernel.transform.HudContextQueryInjector());
 
 		// NeoForge's disconnect-time revert (RegistryManager.revertToFrozen) puts back the kernel's own pre-connection
-		// snapshot, which it captures at the head of NeoForge's applySnapshot.
+		// snapshot, which it captures at the head of NeoForge's applySnapshot and of every caller of a mod's remap
+		// contract (fabric-api's client registry sync), whichever runs first.
 		chain.register(TransformPhase.COREMOD, new net.forbric.kernel.transform.RegistryRevertInjector());
 
 		// A Fabric mod's registry reads its data where native Fabric reads it. The merged Registries body is

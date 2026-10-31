@@ -39,8 +39,7 @@ import net.forbric.kernel.util.ForbricLog;
  *
  * <p>This class takes NeoForge's snapshot itself — {@code RegistryManager.takeSnapshot(SYNC_TO_CLIENT)}, the
  * public API the server uses to build the sync — the first time a connection's remap begins, and
- * {@code revertToFrozen()} now applies it back: plain registries through NeoForge's own {@code applySnapshot}
- * loop, the Forge-wrapped ones through the staged path that loop already goes through on connect, and a remap
+ * {@code revertToFrozen()} now applies it back through NeoForge's own {@code applySnapshot} loop, with a remap
  * contract's undo (fabric-api's {@code unmap}) first, so the mod's own bookkeeping is left the way it would leave it
  * and its own call at the end of the disconnect finds nothing left to undo. A snapshot whose ids all still match is not applied at all — the common
  * case, and one where every registry would otherwise be torn down and rebuilt for nothing.
@@ -129,9 +128,8 @@ public final class KernelRegistryRevert {
 	/**
 	 * The undo of every remap contract a mixin adds to the registries ({@link RegistryRemapContracts.RemapContract}:
 	 * fabric-api's {@code unmap()} is one) on every plain registry that carries it, so the mod's own bookkeeping is left
-	 * the way its disconnect would leave it before NeoForge's snapshot goes back. The Forge-wrapped registries are
-	 * skipped: their ids live in the delegate, and the NeoForge pass that follows restores those through
-	 * the MinecraftForge wrapper sync. Without such a contract there is nothing to do. The contract is found by what the
+	 * the way its disconnect would leave it before NeoForge's snapshot goes back. A registry that is not a plain one
+	 * (the {@code WRAPPER} type, absent on the genuine base) is skipped. Without such a contract there is nothing to do. The contract is found by what the
 	 * mixin does, so its interface and method are called whatever the mod calls them.
 	 */
 	private static int unmapFabricPlainRegistries(ClassLoader cl) {

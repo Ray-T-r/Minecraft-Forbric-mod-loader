@@ -28,8 +28,13 @@ import org.objectweb.asm.tree.LdcInsnNode;
 import org.objectweb.asm.tree.MethodInsnNode;
 import org.objectweb.asm.tree.MethodNode;
 
+import java.util.ArrayList;
+import java.util.List;
+import java.util.function.Supplier;
+
 import net.forbric.api.Ecosystem;
 import net.forbric.api.ForeignType;
+import net.forbric.kernel.util.ByteScan;
 import net.forbric.kernel.util.ForbricLog;
 
 /**
@@ -46,9 +51,12 @@ import net.forbric.kernel.util.ForbricLog;
  * edits the MinecraftForge registry-sync injector made to the same class, beside the ones that gave MinecraftForge's
  * {@code NamespacedWrapper} NeoForge's remap contract; those went with MinecraftForge, and this stayed.
  *
- * <p><b>The capture.</b> The snapshot is captured at the head of {@code applySnapshot(Map, boolean)}, NeoForge's remap entry
- * point: this adds {@code KernelRegistryRevert.captureIfNeeded} there, unless that call is already in place (so running
- * it twice adds one capture). gate-m12 and gate-m14 read what happens at run time
+ * <p><b>The capture.</b> The snapshot is captured at the head of every remap entry point, whichever runs first on a
+ * connection: {@code applySnapshot(Map, boolean)}, NeoForge's, and every method outside the kernel that calls a remap
+ * contract a mod's mixin adds to the registries ({@link RegistryRemapContracts}: fabric-api's
+ * {@code ClientRegistrySyncHandler.apply} is one). A pure Fabric server never sends NeoForge's snapshot, so on it the
+ * second is the only entry point there is. This adds {@code KernelRegistryRevert.captureIfNeeded} there, unless that call
+ * is already in place (so running it twice adds one capture). gate-m12 and gate-m14 read what happens at run time
  * ({@code reverted .* registr.* to their pre-connection ids}).
  */
 public final class RegistryRevertInjector implements ClassTransformer {
@@ -58,6 +66,19 @@ public final class RegistryRevertInjector implements ClassTransformer {
 	static final String APPLY_SNAPSHOT = "applySnapshot";
 	static final String APPLY_SNAPSHOT_DESC = "(Ljava/util/Map;Z)Ljava/util/Set;";
 	static final String REVERT_OWNER = "net/forbric/kernel/boot/KernelRegistryRevert";
+
+	/** The remap contracts the kernel's mixin discovery noted, read when a class is transformed. */
+	private final Supplier<List<RegistryRemapContracts.RemapContract>> contracts;
+
+	public RegistryRevertInjector() {
+		this(RegistryRemapContracts::discoveredContracts);
+	}
+
+	/** @param contracts every remap contract known when a class is transformed (tests stand in for mixin discovery) */
+	RegistryRevertInjector(Supplier<List<RegistryRemapContracts.RemapContract>> contracts) {
+		if (contracts == null) throw new NullPointerException("contracts");
+		this.contracts = contracts;
+	}
 
 	@Override
 	public String name() {
@@ -74,7 +95,8 @@ public final class RegistryRevertInjector implements ClassTransformer {
 
 	@Override
 	public byte[] transform(String className, byte[] classBytes, TransformContext context) {
-		if (classBytes == null || classBytes.length == 0 || !NEO_REGISTRY_MANAGER.equals(className)) return classBytes;
+		if (classBytes == null || classBytes.length == 0) return classBytes;
+		if (!NEO_REGISTRY_MANAGER.equals(className)) return captureAtRemapCalls(className, classBytes);
 		ClassNode node = new ClassNode();
 		new ClassReader(classBytes).accept(node, 0);
 		boolean changed = false;
@@ -121,7 +143,55 @@ public final class RegistryRevertInjector implements ClassTransformer {
 		return writer.toByteArray();
 	}
 
-	/** Whether {@code applySnapshot} already captures the pre-connection ids. */
+	/**
+	 * The capture at the head of every method of {@code className} that calls a remap contract — fabric-api's client
+	 * registry sync, whatever it is called. Which methods those are is read from their calls, not their names; a class
+	 * that names no contract is handed back untouched after a constant-pool scan, and the kernel's own classes are never
+	 * edited.
+	 */
+	private byte[] captureAtRemapCalls(String className, byte[] classBytes) {
+		if (className.startsWith("net.forbric.")) return classBytes;
+		List<RegistryRemapContracts.RemapContract> known = contracts.get();
+		if (known == null || known.isEmpty()) return classBytes;
+		boolean named = false;
+		for (RegistryRemapContracts.RemapContract contract : known) {
+			named |= ByteScan.contains(classBytes, ByteScan.needle(contract.desc()))
+					&& ByteScan.contains(classBytes, ByteScan.needle(contract.owner()));
+		}
+		if (!named) return classBytes;
+		ClassNode node = new ClassNode();
+		new ClassReader(classBytes).accept(node, 0);
+		List<String> hooked = new ArrayList<>();
+		for (MethodNode method : node.methods) {
+			if (method.name.startsWith("<") || !callsAContract(method, known) || captures(method)) continue;
+			InsnList head = new InsnList();
+			head.add(new LdcInsnNode(Type.getObjectType(node.name))); // the caller's class, for its loader
+			head.add(new MethodInsnNode(Opcodes.INVOKESTATIC, REVERT_OWNER, "captureIfNeeded", "(Ljava/lang/Class;)V", false));
+			method.instructions.insert(head);
+			method.maxStack = Math.max(method.maxStack, 1);
+			hooked.add(method.name);
+		}
+		if (hooked.isEmpty()) return classBytes;
+		ForbricLog.info("[Forbric/RegistrySync] %s.%s now capture(s) the pre-connection ids the disconnect puts back before "
+				+ "calling a remap contract", className, String.join(", ", hooked));
+		ClassWriter writer = new ClassWriter(ClassWriter.COMPUTE_MAXS);
+		node.accept(writer);
+		return writer.toByteArray();
+	}
+
+	private static boolean callsAContract(MethodNode method, List<RegistryRemapContracts.RemapContract> known) {
+		for (AbstractInsnNode insn : method.instructions) {
+			if (!(insn instanceof MethodInsnNode call)) continue;
+			for (RegistryRemapContracts.RemapContract contract : known) {
+				if (call.owner.equals(contract.owner()) && call.name.equals(contract.name()) && call.desc.equals(contract.desc())) {
+					return true;
+				}
+			}
+		}
+		return false;
+	}
+
+	/** Whether {@code method} already captures the pre-connection ids. */
 	static boolean captures(MethodNode applySnapshot) {
 		for (AbstractInsnNode insn : applySnapshot.instructions) {
 			if (!(insn instanceof MethodInsnNode call) || call.getOpcode() != Opcodes.INVOKESTATIC) continue;
