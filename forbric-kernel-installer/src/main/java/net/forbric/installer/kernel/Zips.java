@@ -32,8 +32,8 @@ import java.util.zip.ZipOutputStream;
 
 /**
  * Dependency-free zip/jar primitives, replacing the {@code python3} heredocs in the dev build scripts
- * ({@code assemble-minecraftforge-runtime.sh} and {@code build-patched-forge.sh}). The Forge-specific merge/overlay
- * policy lives in {@link ForgeRuntimeBuilder}/{@link PatchedMcBuilder}; this class only reads, writes, and extracts.
+ * ({@code assemble-neoforge-runtime.sh}). The runtime's merge policy lives in {@link NeoForgeRuntimeBuilder}; this
+ * class only reads, writes, and extracts.
  */
 final class Zips {
 	private Zips() {}

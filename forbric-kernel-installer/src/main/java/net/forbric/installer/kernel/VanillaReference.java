@@ -28,9 +28,9 @@ import java.util.zip.ZipOutputStream;
  * <p><b>What it is for.</b> Fabric mods are written against vanilla bytecode, and the kernel's mixin adapters decide
  * what to do with a Fabric mixin by comparing the vanilla body it was written against with the body the base has
  * (the kernel's {@code NativeGameReferences}, ecosystem {@code FABRIC}). That evidence used to ride inside the merged
- * base: {@code MergedBaseBuilder.writeNativeReferences} embedded one {@code META-INF/forbric/native-reference/<ECO>/}
- * tree per ecosystem. A base that is not that merge — the genuine NeoForge-patched jar the project is moving to —
- * embeds nothing, and every adapter that compares against vanilla then stands down without a word: measured on the
+ * base Forbric 0.4 and earlier ran on: {@code MergedBaseBuilder.writeNativeReferences} embedded one
+ * {@code META-INF/forbric/native-reference/<ECO>/} tree per ecosystem. NeoForge's patched game, the base Forbric runs
+ * on now, embeds nothing, and every adapter that compares against vanilla would then stand down without a word: measured on the
  * genuine base, fabric-api alone left 13 vanilla datapack registries empty, and a resources-only jar with the FABRIC
  * half brought it back to Done. This class is that jar, built from the two files it is a function of, so it can sit
  * beside any base rather than inside one.
@@ -50,8 +50,8 @@ import java.util.zip.ZipOutputStream;
  * <p><b>Why it is self-contained.</b> It needs nothing but the JDK — a zip, a byte comparison and SHA-256 — and is kept
  * that way on purpose: the installer runs it in-process (no 4 GB subprocess, no ASM), the development launch scripts run
  * this one file as a single-file source program ({@code java VanillaReference.java <vanilla> <base> <out>}) when their
- * staged tree has no sidecar, and the kernel's staged tests compile it to prove that what it writes equals what the
- * merged base embeds.
+ * staged tree has no sidecar, and the kernel's tests compile it in ({@code build.gradle installerSidecarSource}) to
+ * build the sidecar of whatever base they run on.
  */
 public final class VanillaReference {
 
@@ -124,7 +124,7 @@ public final class VanillaReference {
 	 * Writes the sidecar for the vanilla classes {@code names} measured against {@code base} and returns
 	 * {@code {indexed, differing}}. The order and contents are {@code writeNativeReferences}' FABRIC half: classes in
 	 * name order, each one's vanilla bytes where they differ from the base's (absent counts as different), then the
-	 * index. Neither jar is held in memory: the merged base alone is a few hundred megabytes of class files.
+	 * index. Neither jar is held in memory: the base alone is tens of megabytes of class files.
 	 */
 	static int[] write(OutputStream target, ClassBytes vanilla, java.util.Collection<String> names, ClassBytes base,
 			String vanillaSha1, String baseSha1) throws IOException {

@@ -101,7 +101,7 @@ final class JdkLocator {
 		//    launcher's runtime, which keeps every tool on one Java.
 		int own = Runtime.version().feature();
 		if (own >= MINIMUM_FEATURE) {
-			return found(new Jvm(Path.of(ForgeTool.javaBin()), own, "the JVM running this installer"), log);
+			return found(new Jvm(Path.of(ToolProcess.javaBin()), own, "the JVM running this installer"), log);
 		}
 		rejected.add("this installer's own JVM (Java " + own + ")");
 

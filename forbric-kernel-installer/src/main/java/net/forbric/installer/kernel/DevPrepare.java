@@ -2,16 +2,31 @@
 package net.forbric.installer.kernel;
 
 import java.io.IOException;
+import java.nio.file.FileVisitResult;
 import java.nio.file.Files;
+import java.nio.file.LinkOption;
 import java.nio.file.Path;
+import java.nio.file.SimpleFileVisitor;
 import java.nio.file.StandardCopyOption;
+import java.nio.file.attribute.BasicFileAttributes;
+import java.util.List;
 import java.util.Map;
 
 /** Reuses the installer artifact pipeline without installing a player profile or release payload. */
 public final class DevPrepare {
 
+	/**
+	 * Where an older Forbric's development stage kept the merged base and the MinecraftForge side. Nothing writes
+	 * them any more; left in a stage, a script or test that still spells one of these paths keeps reading the old
+	 * merged base and Forge carrier instead of failing.
+	 */
+	static final List<String> RETIRED = List.of("merged-base", "forge-runtime", "forge-patched");
+
+	static final String USAGE = "usage: DevPrepare <mc-dir> <staged-run-dir> <java> [--owned-stage]";
+
 	public static void main(String[] args) throws Exception {
-		if (args.length != 3) throw new IllegalArgumentException("usage: DevPrepare <mc-dir> <staged-run-dir> <java>");
+		boolean owned = args.length == 4 && args[3].equals("--owned-stage");
+		if (args.length != 3 && !owned) throw new IllegalArgumentException(USAGE);
 		Path mc = Path.of(args[0]).toAbsolutePath();
 		Path stage = Path.of(args[1]).toAbsolutePath();
 		JdkLocator.Jvm jvm = JdkLocator.locate(mc, Path.of(args[2]), System.out::println);
@@ -22,34 +37,82 @@ public final class DevPrepare {
 			new MojangDownloader(System.out::println).downloadClient(Pins.MINECRAFT, version);
 		}
 		Map<String, Path> artifacts = new ArtifactBuilder(System.out::println).build(mc, Pins.MINECRAFT, jvm);
-		copy(artifacts.get(ArtifactBuilder.MERGED), stage.resolve("merged-base/patched-mc-merged-26.2.jar"));
-		copy(artifacts.get(ArtifactBuilder.FORGE_RUNTIME), stage.resolve("merged-base/forge-runtime-interop.jar"));
-		copy(artifacts.get(ArtifactBuilder.NEOFORGE_RUNTIME), stage.resolve("neoforge-runtime/neoforge-runtime.jar"));
-		// What every launch path hands the kernel as --nativeReference, and what the staged tests prove equal to the
-		// index the merged base embeds.
+		// The base with its build stamp: the pins it came from, which is how tools/dev.py tells a base built from another
+		// NeoForge or NFRT pin from the current one -- its file name says neither.
+		copyWithStamp(artifacts.get(ArtifactBuilder.BASE),
+				stage.resolve("neoforge-patched/patched-mc-neoforge-" + Pins.MINECRAFT + ".jar"));
+		// And the NeoForge carrier with its stamp, for the same reason.
+		copyWithStamp(artifacts.get(ArtifactBuilder.NEOFORGE_RUNTIME), stage.resolve("neoforge-runtime/neoforge-runtime.jar"));
+		// What every launch path hands the kernel as --nativeReference, measured against the staged base (its
+		// provenance records the base's SHA-1).
 		copy(artifacts.get(ArtifactBuilder.VANILLA_REFERENCE),
 				stage.resolve("vanilla-reference/" + VanillaReference.fileName(Pins.MINECRAFT)));
-		// Compilation and bytecode tests read the raw carrier, while launch uses the interop-patched carrier.
-		copy(mc.resolve(".forbric-build/out/forge-runtime.jar"), stage.resolve("forge-runtime/forge-runtime.jar"));
-		// Both patched sides too: the bytecode tests compare the merged base against each of them.
-		copy(mc.resolve(".forbric-build/out/patched-mc-forge-26.2.jar"),
-				stage.resolve("forge-patched/patched-mc-forge-26.2.jar"));
-		copy(mc.resolve(".forbric-build/out/patched-mc-neoforge-26.2.jar"),
-				stage.resolve("neoforge-patched/patched-mc-neoforge-26.2.jar"));
-		// The build pins beside the merged base and the Forge side say both came out of this one merge. A staged
-		// tree without them (forbric-loader's, whose forge-patched/ is an older build than the one its merge read)
-		// sends the tests to the Forge jar a launcher install keeps under libraries/ instead.
-		copy(mc.resolve(".forbric-build/out/patched-mc-merged-26.2.jar.pins"),
-				stage.resolve("merged-base/patched-mc-merged-26.2.jar.pins"));
-		copy(mc.resolve(".forbric-build/out/patched-mc-forge-26.2.jar.pins"),
-				stage.resolve("forge-patched/patched-mc-forge-26.2.jar.pins"));
-		// The merge's own report of what it could not reconcile; the tests check the kernel accounts for each loss.
-		// And beside the NeoForge carrier, so tools/dev.py can tell a carrier built from an older NeoForge pin from the
-		// current one; without it a stale neoforge-runtime.jar is indistinguishable from a fresh one by file name.
-		copy(mc.resolve(".forbric-build/out/neoforge-runtime.jar.pins"),
-				stage.resolve("neoforge-runtime/neoforge-runtime.jar.pins"));
-		copy(mc.resolve(".forbric-build/out/merge-conflicts.txt"), stage.resolve("merged-base/merge-conflicts.txt"));
+		if (owned) {
+			removeRetired(stage, System.out::println);
+		} else {
+			for (String retired : RETIRED) {
+				if (Files.exists(stage.resolve(retired), LinkOption.NOFOLLOW_LINKS)) {
+					System.out.println("Left " + stage.resolve(retired) + " in place: this stage was named with --staged or "
+							+ "FORBRIC_OLD and may be shared, so nothing is removed from it.");
+				}
+			}
+		}
 		System.out.println("Development artifacts staged under " + stage);
+	}
+
+	/**
+	 * Removes the {@link #RETIRED} directories from a stage this preparation owns: the stage {@code tools/dev.py}
+	 * keeps for its own checkout ({@code forbric-kernel/.dev/staged/run}), which it says with {@code --owned-stage}.
+	 * A stage named with {@code --staged} or {@code FORBRIC_OLD} is never cleaned: it may serve another checkout
+	 * still on the merged base.
+	 *
+	 * <p>Even an owned stage is cleaned only where nothing can lead outside it: a stage directory (or the
+	 * {@code staged} directory holding it) that is a symbolic link, or a retired directory that is one or that holds one anywhere inside, is left alone and named. A fixture
+	 * tree linked into a stage is someone else's data, and deleting through a link deletes it.
+	 */
+	static void removeRetired(Path stage, java.util.function.Consumer<String> log) throws IOException {
+		Path root = stage.getParent();
+		if (Files.isSymbolicLink(stage) || !Files.isDirectory(stage, LinkOption.NOFOLLOW_LINKS)
+				|| root == null || Files.isSymbolicLink(root)) {
+			log.accept("Left the retired directories in " + stage + ": the stage, or the directory holding it, is not a "
+					+ "plain directory.");
+			return;
+		}
+		for (String name : RETIRED) {
+			Path retired = stage.resolve(name);
+			if (!Files.exists(retired, LinkOption.NOFOLLOW_LINKS)) continue;
+			if (!Files.isDirectory(retired, LinkOption.NOFOLLOW_LINKS) || holdsALink(retired)) {
+				log.accept("Left " + retired + " in place: it is, or holds, a symbolic link.");
+				continue;
+			}
+			Files.walkFileTree(retired, new SimpleFileVisitor<>() {
+				@Override
+				public FileVisitResult visitFile(Path file, BasicFileAttributes attributes) throws IOException {
+					Files.delete(file);
+					return FileVisitResult.CONTINUE;
+				}
+
+				@Override
+				public FileVisitResult postVisitDirectory(Path dir, IOException failed) throws IOException {
+					if (failed != null) throw failed;
+					Files.delete(dir);
+					return FileVisitResult.CONTINUE;
+				}
+			});
+			log.accept("Removed " + retired + ": the merged base and MinecraftForge's files are not staged any more.");
+		}
+	}
+
+	private static boolean holdsALink(Path dir) throws IOException {
+		try (var walk = Files.walk(dir)) {
+			return walk.anyMatch(Files::isSymbolicLink);
+		}
+	}
+
+	/** {@code source} and its {@code .pins} build stamp, side by side, as the build wrote them. */
+	private static void copyWithStamp(Path source, Path target) throws IOException {
+		copy(source, target);
+		copy(source.resolveSibling(source.getFileName() + ".pins"), target.resolveSibling(target.getFileName() + ".pins"));
 	}
 
 	private static void copy(Path source, Path target) throws IOException {

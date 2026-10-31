@@ -42,13 +42,12 @@ import java.util.function.Consumer;
  * output was verified byte-for-byte against the reference, sha1
  * {@code 5b2970209ee12702117309576b08521aa38ae67b} — but it costs a 4 GB decompiler heap, a JDK new enough to
  * compile {@code --release 25}, and a couple of minutes, and its bytes depend on a compiler version nobody here
- * controls. That last part matters more than it looks: {@code MergedBaseBuilder} downstream was calibrated
- * against one observed NeoForge jar.
+ * controls. That last part matters more than it looks: this jar is the game base every Forbric instance runs on,
+ * and the kernel's tables are measured against one observed build of it.
  *
  * <p>{@link Pins#NFRT_RESULT} takes {@code gameJarNoRecomp} instead — {@code preProcessJar → binaryPatch →
- * copyUnpatchedClasses → applyDevTransforms}, no decompiler and no compiler. Measured: six seconds, the same
- * 10,963 classes, and a merge whose conflict report is identical <em>as a set</em> to the recompile path's with a
- * merged base carrying the same 30,471 entries. The class bytes do differ from the recompile path's, in one
+ * copyUnpatchedClasses → applyDevTransforms}, no decompiler and no compiler. Measured: six seconds and the same
+ * 10,963 classes. The class bytes do differ from the recompile path's, in one
  * systematic way — the binary-patched classes keep Mojang's {@code MethodParameters} attribute, which
  * {@code javac} drops without {@code -parameters} — which is metadata, not semantics.
  */
@@ -85,6 +84,8 @@ final class NfrtRunner {
 	 * @param jvm   a JVM to run NFRT under; NFRT's own classes are class-file major 65, so this must be Java 21+
 	 * @param mcDir the Minecraft directory, handed to NFRT as a {@code --launcher-dir} so it reuses the client
 	 *              and server jars the launcher already downloaded instead of fetching its own
+	 * @param serverJar where the server jar is cached: downloaded and SHA-1 verified here, and only when NFRT is
+	 *              about to run, so a reinstall served from the cache touches neither the jar nor the network
 	 */
 	ArtifactResult run(JdkLocator.Jvm jvm, Path mcDir, Path outJar, String coordinate, String mcVersion,
 			Path serverJar) throws IOException {
@@ -95,6 +96,9 @@ final class NfrtRunner {
 		Files.createDirectories(outJar.getParent());
 		Files.createDirectories(nfrtHome);
 		Files.createDirectories(workDir);
+		// After the freshness check, never before it: hashing (or, when it is missing, downloading) the 58 MB server
+		// jar on every reinstall would make a cached install depend on the network again.
+		new MojangDownloader(log).downloadServer(mcDir, mcVersion, serverJar);
 		seedArtifacts(mcDir, mcVersion, serverJar);
 
 		Path tool = fetchTool();
@@ -142,13 +146,13 @@ final class NfrtRunner {
 		return new ArtifactResult(coordinate, outJar, Util.sha1(outJar), size);
 	}
 
-	/** NeoFormRuntime's own fat jar, cached beside the other tools. */
 	/**
 	 * Hands NFRT the two Minecraft jars this install already has, instead of letting it fetch them again.
 	 *
 	 * <p>NFRT is a separate process with its own downloader and its own (absent) read timeout. It wants
 	 * {@code minecraft_<version>_{client,server}.jar}; the client jar is the user's own installed one and the
-	 * server jar has already been downloaded and SHA-1 verified by {@code PatchedMcBuilder} a step earlier. So
+	 * server jar has just been downloaded and SHA-1 verified by {@link #run}, from {@code <mc>.json}'s
+	 * {@code downloads.server}. So
 	 * the second fetch buys nothing and can cost everything: measured on a real machine, NFRT's own copy of that
 	 * 58 MB server jar sat at zero bytes for eleven minutes behind a proxy, with the installer's completed copy
 	 * on disk a few directories away. Nothing in the installer's own timeout work reaches inside a subprocess —
@@ -180,6 +184,7 @@ final class NfrtRunner {
 		}
 	}
 
+	/** NeoFormRuntime's own fat jar, cached beside the other tools. */
 	private Path fetchTool() throws IOException {
 		String coordinate = Pins.nfrtCoordinate();
 		String rel = Util.coordinateToPath(coordinate);

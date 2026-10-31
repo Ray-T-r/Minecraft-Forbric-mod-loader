@@ -26,7 +26,7 @@ import java.util.function.Consumer;
 /**
  * Answers "would an install work here, and what would it cost?" without touching the disk.
  *
- * <p>It exists because the expensive part of a Forbric install is not writing the profile — it is building three
+ * <p>It exists because the expensive part of a Forbric install is not writing the profile — it is building two
  * jars the project is not allowed to hand out, which takes a JVM, a few hundred megabytes of downloads and
  * several minutes. Finding out that the machine cannot do that <em>after</em> a user has waited through most of
  * it is the failure mode worth designing away, so every precondition is resolved up front and printed.
@@ -38,11 +38,11 @@ final class Doctor {
 	/**
 	 * Peak and resident disk, in megabytes, for a cold install.
 	 *
-	 * <p>Measured from the caches this project already produced rather than estimated: NFRT's artifacts and
-	 * intermediates for one version, the Forge download+work trees, and the six outputs. The binary-patch path
-	 * skips the decompiler, so the NFRT half is smaller than the recompile path's — but it has not been measured
-	 * cold yet, and the number below is still the recompile-path measurement, deliberately left high rather than
-	 * guessed down.
+	 * <p>Measured from the caches this project already produced rather than estimated, when the install still built
+	 * the merged base as well: NFRT's artifacts and intermediates for one version, the MinecraftForge download+work
+	 * trees, and six outputs. NeoForge alone needs less (its three outputs are about 68 MB of the old ~204 MB, and
+	 * the binary-patch path skips the decompiler), but that has not been measured cold yet, so the numbers below are
+	 * deliberately left high rather than guessed down.
 	 */
 	private static final int PEAK_MB = 730;
 	private static final int RESIDENT_MB = 190;
@@ -112,7 +112,7 @@ final class Doctor {
 		// Supplied artifacts replace the whole build, so say plainly which ones are here — and judge them the way an
 		// install would. A supplied set that is incomplete, or holds files that are not what their names say, is
 		// refused rather than built around, so "to build" would be a promise the install does not keep. Each file
-		// is judged on its own: one missing file does not make the other two missing, and the ones that are here
+		// is judged on its own: one missing file does not make the other one missing, and the ones that are here
 		// are opened even so, so the answer to a half-filled directory is everything wrong with it at once.
 		Map<String, Boolean> artifacts = new LinkedHashMap<>();
 		Map<String, Path> located = Map.of();
@@ -126,8 +126,7 @@ final class Doctor {
 				artifactProblem = supplied.refusal(wrong).getMessage();
 			}
 		}
-		for (String coordinate : new String[] {
-				"net.forbric:patched-mc-merged", "net.forbric:forge-runtime", "net.forbric:neoforge-runtime"}) {
+		for (String coordinate : new String[] {ArtifactBuilder.BASE, ArtifactBuilder.NEOFORGE_RUNTIME}) {
 			artifacts.put(coordinate, located.containsKey(coordinate));
 		}
 		log.accept("");
@@ -146,7 +145,7 @@ final class Doctor {
 					+ " MB kept afterwards");
 		} else if (allPresent && artifactProblem == null) {
 			log.accept("");
-			log.accept("disk          : nothing to build — the three artifacts are already here");
+			log.accept("disk          : nothing to build — both artifacts are already here");
 		}
 
 		log.accept("");

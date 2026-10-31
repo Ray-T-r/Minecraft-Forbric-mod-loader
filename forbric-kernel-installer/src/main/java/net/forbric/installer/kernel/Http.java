@@ -36,16 +36,16 @@ import java.util.function.Consumer;
 
 /**
  * Dependency-free HTTP helper (JDK {@code java.net.http} only), shared by {@link MojangDownloader} and the
- * install-time Forge builders. Follows redirects (Mojang piston-data + Forge Maven both 30x), reports non-200 as
+ * install-time NeoForge builders. Follows redirects (Mojang piston-data + NeoForged Maven both 30x), reports non-200 as
  * an {@link IOException}, and wraps transport failures with an actionable "offline?" message.
  *
  * <p>{@link #ensure} is the cached-download primitive: it is a no-op when the destination already exists, else it
  * streams to a {@code .part} temp and atomically moves it into place — mirroring the dev scripts' {@code get()}
  * ({@code [ -f "$out" ] && return 0; curl -L ...}). {@link #ensureWithFallback} adds the scripts'
- * "Forge Maven, then Maven Central" fallback.
+ * "NeoForged Maven, then Maven Central" fallback.
  *
  * <p>Every download reports progress through the log consumer. This is the only class that needs to: all of
- * them — the release jars, Mojang's client jar, Forge's Maven artifacts — funnel through the two methods
+ * them — the release jars, Mojang's client jar, NeoForge's Maven artifacts — funnel through the two methods
  * below. The bodies are streamed by hand rather than handed to {@code BodyHandlers.ofFile}, which writes the
  * whole response with nothing observable in between; on the multi-megabyte downloads that is several silent
  * minutes, indistinguishable from a hang.
@@ -155,7 +155,7 @@ final class Http {
 	}
 
 	/**
-	 * Cached download with a fallback URL (the scripts' Forge-Maven-then-Central pattern). Tries {@code primaryUrl}
+	 * Cached download with a fallback URL (the scripts' NeoForged-Maven-then-Central pattern). Tries {@code primaryUrl}
 	 * first; on a non-200/transport error and when {@code fallbackUrl} is non-null, tries the fallback. No-op if
 	 * {@code dest} already exists non-empty.
 	 */

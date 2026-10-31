@@ -32,9 +32,6 @@ final class Pins {
 	/** The only Minecraft version this generation supports. */
 	static final String MINECRAFT = "26.2";
 
-	/** MinecraftForge, in its own {@code <mc>-<fml>} coordinate form. */
-	static final String FORGE = "26.2-65.0.1";
-
 	/**
 	 * NeoForge, on the first release line rather than a beta.
 	 *
@@ -72,23 +69,28 @@ final class Pins {
 	 * NeoFormRuntime, pinned to the build actually validated rather than the newest published one.
 	 *
 	 * <p>NFRT's own jar digest is part of its cache key, so a different NFRT is entitled to produce different
-	 * bytes. 2.0.18 is the build whose {@code gameJar} result was checked byte-for-byte against the reference
-	 * {@code patched-mc-neoforge-26.2.jar} (sha1 {@code 5b2970209ee12702117309576b08521aa38ae67b}).
+	 * bytes — and those bytes are the game base every Forbric instance runs on, staged as
+	 * {@code net.forbric:patched-mc-neoforge:<mc>-<neoforge>} ({@link Installer#artifactVersion}). That coordinate
+	 * does not name NFRT, so an NFRT bump would rewrite a published coordinate's bytes in place, which the
+	 * coordinate rule forbids: bump NFRT together with NeoForge, or put the NFRT build into the coordinate.
+	 * {@code BaseCoordinatePinTest} fails when this pin (or {@link #NFRT_RESULT}) moves alone.
+	 *
+	 * <p>2.0.18 is the build whose {@code gameJar} result was checked byte-for-byte against the reference
+	 * {@code patched-mc-neoforge-26.2.jar} (sha1 {@code 5b2970209ee12702117309576b08521aa38ae67b}); its
+	 * {@link #NFRT_RESULT} output for NeoForge 26.2.0.93 is sha1 {@code 67bbf24f850965e5943a1bfe0295ecb701d4465b}.
 	 */
 	static final String NFRT = "2.0.18";
 
 	/**
-	 * The NeoForm result Forbric takes out of NFRT.
+	 * The NeoForm result Forbric takes out of NFRT: the game base it ships.
 	 *
 	 * <p>{@code gameJarNoRecomp} is the binary-patch path — {@code preProcessJar → binaryPatch →
 	 * copyUnpatchedClasses → applyDevTransforms} — and it produces the same 10,963 classes as the {@code gameJar}
-	 * recompile path in about six seconds, with no decompiler, no 4 GB heap and no {@code javac}. Merging from it
-	 * yields a conflict report that is identical to the recompile path's <em>as a set</em> and a merged base with
-	 * the same 30,471 entries.
+	 * recompile path in about six seconds, with no decompiler, no 4 GB heap and no {@code javac}.
 	 *
 	 * <p>It must not be {@code gameJarNoRecompWithNeoForge}: that variant routes through
 	 * {@code binaryWithNeoForge} and folds NeoForge's own classes into the jar, which would then define them
-	 * twice — once inside the merged base, once in {@code neoforge-runtime.jar}.
+	 * twice — once inside the base, once in {@code neoforge-runtime.jar}. {@link NfrtRunner} refuses such a jar.
 	 */
 	static final String NFRT_RESULT = "gameJarNoRecomp";
 
@@ -104,7 +106,6 @@ final class Pins {
 
 	/** A one-line summary for the build stamp, so a cached artifact records what produced it. */
 	static String stamp() {
-		return "mc=" + MINECRAFT + " forge=" + FORGE + " neoforge=" + NEOFORGE
-				+ " nfrt=" + NFRT + " result=" + NFRT_RESULT;
+		return "mc=" + MINECRAFT + " neoforge=" + NEOFORGE + " nfrt=" + NFRT + " result=" + NFRT_RESULT;
 	}
 }

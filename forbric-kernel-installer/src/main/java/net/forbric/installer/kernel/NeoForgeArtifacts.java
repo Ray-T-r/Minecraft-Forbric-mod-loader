@@ -16,14 +16,21 @@
 
 package net.forbric.installer.kernel;
 
+import java.io.IOException;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Path;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Map;
+
 /**
- * Where NeoForge's artifacts live, and what Forbric calls the things it builds out of them.
+ * Where NeoForge's artifacts live, what Forbric calls the things it builds out of them, and what the userdev jar's
+ * {@code config.json} says NeoForge's runtime is made of.
  *
- * <p>The counterpart to {@link ForgeArtifacts}, and deliberately thin: the <em>contents</em> of a NeoForge
- * release are described by the {@code config.json} inside its {@code -userdev} jar, which
- * {@link ForgeArtifacts#readConfig} already parses — that file is a NeoForm userdev config on both sides, and the
- * two fields this half needs ({@code libraries} and {@code universal}) are present in both. Re-parsing it here
- * would be a second place to fix when a field moves.
+ * <p>The <em>contents</em> of a NeoForge release are described by the {@code config.json} inside its
+ * {@code -userdev} jar, so retargeting another NeoForge build is data, not code. Only its {@code libraries} are read:
+ * the universal jar's coordinate is derived from the pin ({@link #universalCoordinate}), and NFRT reads the patches
+ * and access transformers itself.
  */
 final class NeoForgeArtifacts {
 
@@ -39,11 +46,11 @@ final class NeoForgeArtifacts {
 	}
 
 	String neoforgedUrl(String coordinate) {
-		return NEOFORGED_MVN + "/" + Util.coordinateToPath(ForgeArtifacts.stripExtension(coordinate));
+		return NEOFORGED_MVN + "/" + Util.coordinateToPath(stripExtension(coordinate));
 	}
 
 	String centralUrl(String coordinate) {
-		return CENTRAL + "/" + Util.coordinateToPath(ForgeArtifacts.stripExtension(coordinate));
+		return CENTRAL + "/" + Util.coordinateToPath(stripExtension(coordinate));
 	}
 
 	/** The jar carrying {@code config.json}, the patches and the library list. */
@@ -63,13 +70,42 @@ final class NeoForgeArtifacts {
 		return "net.neoforged:neoforge:" + neoforgeVersion + ":universal";
 	}
 
-	/** What Forbric stages the assembled runtime under. */
+	/** What Forbric stages the assembled runtime under: the coordinate the profile names. */
 	String runtimeCoordinate() {
-		return "net.forbric:neoforge-runtime:" + mcVersion;
+		return ArtifactBuilder.NEOFORGE_RUNTIME + ":" + Installer.artifactVersion(ArtifactBuilder.NEOFORGE_RUNTIME, mcVersion);
 	}
 
-	/** What Forbric stages NeoForm's patched Minecraft under. */
+	/** What Forbric stages NeoForm's patched Minecraft under: the game base the profile names. */
 	String patchedMcCoordinate() {
-		return "net.forbric:patched-mc-neoforge:" + mcVersion;
+		return ArtifactBuilder.BASE + ":" + Installer.artifactVersion(ArtifactBuilder.BASE, mcVersion);
+	}
+
+	/** Strip a Maven {@code @extension} suffix (e.g. {@code :universal@jar} → {@code :universal}). */
+	static String stripExtension(String coordinate) {
+		int at = coordinate.indexOf('@');
+		return at >= 0 ? coordinate.substring(0, at) : coordinate;
+	}
+
+	/**
+	 * The runtime library coordinates {@code config.json} in a NeoForge {@code -userdev} jar lists, in its order:
+	 * the superset {@link NeoForgeRuntimeBuilder} picks the carrier's libraries from.
+	 */
+	@SuppressWarnings("unchecked")
+	static List<String> readLibraries(Path userdevJar) throws IOException {
+		byte[] bytes = Zips.readEntry(userdevJar, "config.json");
+		if (bytes == null) {
+			throw new IOException("no config.json in " + userdevJar.getFileName() + " (not a NeoForge userdev jar?)");
+		}
+		Map<String, Object> root;
+		try {
+			root = (Map<String, Object>) Json.parse(new String(bytes, StandardCharsets.UTF_8));
+		} catch (RuntimeException e) {
+			throw new IOException("malformed config.json in " + userdevJar.getFileName() + ": " + e.getMessage(), e);
+		}
+		List<String> out = new ArrayList<>();
+		if (root.get("libraries") instanceof List<?> list) {
+			for (Object e : list) if (e instanceof String s) out.add(s);
+		}
+		return out;
 	}
 }

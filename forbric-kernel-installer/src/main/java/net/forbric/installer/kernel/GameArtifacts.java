@@ -16,8 +16,6 @@
 
 package net.forbric.installer.kernel;
 
-import java.io.ByteArrayInputStream;
-import java.io.DataInputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
@@ -35,15 +33,14 @@ import java.util.zip.ZipException;
 import java.util.zip.ZipFile;
 
 /**
- * The three heavy jars a Forbric instance runs on, when someone supplies them instead of letting the installer build
- * them: the byte-merged game base and one runtime per Forge family.
+ * The two heavy jars a Forbric instance runs on, when someone supplies them instead of letting the installer build
+ * them: NeoForge's patched game (the base) and the NeoForge runtime.
  *
- * <p>They are not in this installer and never will be. The merged base is Minecraft with two loaders' patches
- * applied and then merged, and the runtimes are assembled from MinecraftForge's and NeoForge's own distributions —
- * so all three embed code this project has no right to hand out. A player never needs this class: with no
- * directory given, {@link ArtifactBuilder} builds all three during the install. It serves developers who already
- * built them from source ({@code forbric-loader/run/build-merged-base.sh} and its two {@code assemble-*-runtime.sh}
- * siblings) and want to skip that.
+ * <p>They are not in this installer and never will be. The base is Minecraft with NeoForge's patches applied, and the
+ * runtime is assembled from NeoForge's own distribution — so both embed code this project has no right to hand out.
+ * A player never needs this class: with no directory given, {@link ArtifactBuilder} builds both during the install.
+ * It serves developers who already built them ({@code python3 tools/dev.py prepare} stages them, and an earlier
+ * install keeps them in {@code .forbric-build/out}) and want to skip that.
  *
  * <p>A missing artifact is reported by name and expected path rather than guessed at, because every later step —
  * the profile's game arguments above all — is a lie without it. A FOUND artifact is then opened and checked for
@@ -54,45 +51,35 @@ final class GameArtifacts {
 	private static final Map<String, String> WANTED = new LinkedHashMap<>();
 
 	static {
-		WANTED.put(ArtifactBuilder.MERGED, "patched-mc-merged-%s.jar");
-		// The INTEROP jar under the forge-runtime coordinate, as ArtifactBuilder stages it and as
-		// build-merged-base.sh and gate-m0 link-check it. The raw forge-runtime.jar lacks the bridge methods the
-		// merge makes necessary (an AbstractMethodError in game), and a link check cannot see a missing
-		// implementation -- so it is never picked up here, whichever directory holds it.
-		WANTED.put(ArtifactBuilder.FORGE_RUNTIME, "forge-runtime-interop.jar");
+		WANTED.put(ArtifactBuilder.BASE, "patched-mc-neoforge-%s.jar");
 		WANTED.put(ArtifactBuilder.NEOFORGE_RUNTIME, "neoforge-runtime.jar");
 	}
 
 	/**
 	 * What to do about any Built-artifacts error, said the same way everywhere. For everyone who is not developing
-	 * Forbric the answer is to supply nothing: the installer then builds all three itself.
+	 * Forbric the answer is to supply nothing: the installer then builds both itself.
 	 */
 	static final String LEAVE_EMPTY = "Leave \"Built artifacts\" empty (on the command line: leave out --artifacts) "
 			+ "and the installer downloads and builds these files itself.";
 
 	// What only the real artifacts carry; see problem() for how these were chosen.
 	private static final String MINECRAFT_CLIENT = "net/minecraft/client/Minecraft.class";
-	private static final String FORGE_CORE = "net/minecraftforge/common/MinecraftForge.class";
 	private static final String NEO_CORE = "net/neoforged/neoforge/common/NeoForge.class";
-	private static final List<String> FORGE_LOADER = List.of(
-			"net/minecraftforge/fml/loading/FMLLoader.class",
-			"net/minecraftforge/forgespi/language/IModInfo.class");
 	private static final List<String> NEO_LOADER = List.of(
 			"net/neoforged/fml/loading/FMLLoader.class",
 			"net/neoforged/neoforgespi/language/IModInfo.class");
-	private static final byte[] FORGE_REFERENCE = "net/minecraftforge/".getBytes(StandardCharsets.US_ASCII);
 	private static final byte[] NEO_REFERENCE = "net/neoforged/".getBytes(StandardCharsets.US_ASCII);
-
 	/**
-	 * The one method {@code RuntimeInteropPatcher} adds to MinecraftForge's runtime, and so the one thing that
-	 * tells {@code forge-runtime-interop.jar} from the {@code forge-runtime.jar} it is made from: same entries,
-	 * same manifest, and in the raw jar this class has no {@code contents()} at all. The {@code .pins} stamp is no
-	 * marker — only the installer's own build directory writes one; the development scripts' {@code run/} and an
-	 * installed {@code libraries/} tree have none.
+	 * MinecraftForge, by name only: this installer builds and accepts nothing of it. A base that still refers to it is
+	 * the merged game base Forbric 0.4 and earlier built, and a "runtime" holding its core class is a MinecraftForge
+	 * runtime picked up instead of NeoForge's.
 	 */
-	private static final String INTEROP_CLASS = "net/minecraftforge/registries/NamespacedWrapper$3.class";
-	private static final String INTEROP_METHOD = "contents";
-	private static final String INTEROP_DESCRIPTOR = "()Ljava/util/Map;";
+	private static final String FORGE_CORE = "net/minecraftforge/common/MinecraftForge.class";
+	private static final byte[] FORGE_REFERENCE = "net/minecraftforge/".getBytes(StandardCharsets.US_ASCII);
+	/** The merged base's embedded native-reference index for MinecraftForge; NeoForge's patched game has none. */
+	private static final String FORGE_NATIVE_INDEX = "META-INF/forbric/native-reference/FORGE/index.tsv";
+	/** The file name Forbric 0.4 and earlier gave its merged base, recognised only to say so. */
+	private static final String OLD_MERGED_BASE = "patched-mc-merged-%s.jar";
 
 	private final Path dir;
 	private final Map<String, Path> found = new LinkedHashMap<>();
@@ -103,9 +90,9 @@ final class GameArtifacts {
 	}
 
 	/**
-	 * Locates all three for {@code mcVersion} in {@code dir}, or in the subdirectories the build scripts write into
-	 * ({@code merged-base/}, {@code forge-runtime/}, {@code neoforge-runtime/}) — so the scripts' own
-	 * {@code forbric-loader/run} can be named as it is.
+	 * Locates both for {@code mcVersion} in {@code dir}, or in the subdirectories a development stage keeps them in
+	 * ({@code neoforge-patched/}, {@code neoforge-runtime/}) — so the stage {@code tools/dev.py prepare} writes can be
+	 * named as it is, as can an earlier install's {@code .forbric-build/out}.
 	 *
 	 * <p>Only the named directory. This used to fall back to the {@code run/} directory of whatever checkout the
 	 * installer jar sat in, from when that fallback was how the installer found anything at all. Since the
@@ -133,8 +120,7 @@ final class GameArtifacts {
 			Path hit = null;
 			for (Path candidate : new Path[] {
 					dir.resolve(fileName),
-					dir.resolve("merged-base").resolve(fileName),
-					dir.resolve("forge-runtime").resolve(fileName),
+					dir.resolve("neoforge-patched").resolve(fileName),
 					dir.resolve("neoforge-runtime").resolve(fileName)}) {
 				if (Files.isRegularFile(candidate)) {
 					hit = candidate;
@@ -196,39 +182,52 @@ final class GameArtifacts {
 		}
 		lines.add(LEAVE_EMPTY);
 		if (!missing.isEmpty()) {
-			lines.add("Developers: the directory must hold what forbric-loader/run/build-merged-base.sh and the two "
-					+ "assemble-*-runtime.sh scripts write (build-merged-base.sh also writes "
-					+ "merged-base/forge-runtime-interop.jar), or be that run/ directory itself.");
+			String oldBase = oldMergedBase();
+			if (oldBase != null) {
+				lines.add("This directory holds " + oldBase + ", the merged game base Forbric 0.4 or earlier built; it "
+						+ "still carries MinecraftForge's patches, and this installer runs on NeoForge's patched Minecraft.");
+			}
+			lines.add("Developers: the directory must hold what python3 tools/dev.py prepare stages "
+					+ "(neoforge-patched/patched-mc-neoforge-<mc>.jar and neoforge-runtime/neoforge-runtime.jar), or be an "
+					+ "earlier install's .forbric-build/out.");
 		}
 		return new IOException(String.join("\n", lines));
+	}
+
+	/** The older Forbric's merged base, when it sits where this set's base was looked for; null otherwise. */
+	private String oldMergedBase() {
+		String base = String.format(WANTED.get(ArtifactBuilder.BASE), Pins.MINECRAFT);
+		if (!missing.contains(base)) return null;
+		String old = String.format(OLD_MERGED_BASE, Pins.MINECRAFT);
+		for (Path candidate : new Path[] {dir.resolve(old), dir.resolve("merged-base").resolve(old)}) {
+			if (Files.isRegularFile(candidate)) return candidate.toString();
+		}
+		return null;
 	}
 
 	/**
 	 * Why {@code jar} cannot stand for {@code coordinate}, in words a player can act on, or null when it can.
 	 *
-	 * <p>The markers were chosen against the real artifacts — the ones the development scripts stage and the ones
+	 * <p>The markers were chosen against the real artifacts — the ones a development stage holds and the ones
 	 * {@link ArtifactBuilder} builds — and against what a player is likely to pick up instead: the MinecraftForge,
-	 * NeoForge and Fabric installers, the vanilla client jar, each family's {@code -universal} jar, and each
-	 * family's half-patched Minecraft from {@code .forbric-build/out}. Every real artifact has all of its markers;
-	 * none of the others has all of them.
+	 * NeoForge and Fabric installers, the vanilla client jar, NeoForge's {@code -universal} jar, a MinecraftForge
+	 * runtime, and the merged game base an older Forbric built. Every real artifact has all of its markers; none of the
+	 * others has all of them.
 	 *
 	 * <ul>
-	 *   <li>The merged base is Minecraft {@code mcVersion} (the id in its {@code version.json}, and the client's
-	 *       {@code Minecraft} class) whose own classes refer to BOTH {@code net/minecraftforge/} and
-	 *       {@code net/neoforged/}: that is what carrying both families' patches looks like in bytecode. Vanilla
-	 *       refers to neither, and each half-patched jar to only its own family. In the real merged base hundreds
-	 *       of classes refer to each, so this does not hinge on any one class keeping one hook.</li>
-	 *   <li>Each runtime holds its family's core class AND its family's mod loader. A {@code -universal} jar has
-	 *       the first without the second; the kernel needs both, and the loader half is exactly what was absent
-	 *       in #13 ({@code net/neoforged/neoforgespi/language/IModInfo}).</li>
-	 *   <li>Each runtime was built for the version this installer pins: the {@code Implementation-Version} in its
-	 *       manifest's main section, which both runtime builders (and both {@code assemble-*-runtime.sh}) write
-	 *       from the pin — {@link Pins#NEOFORGE}, and {@link Pins#FORGE}'s FML half ({@code 65.0.1}). A runtime
-	 *       from an older install passes every check above: 0.2.0's NeoForge runtime, {@code 26.2.0.38-beta},
-	 *       installed without a word.</li>
-	 *   <li>The MinecraftForge runtime is the interop-patched one ({@link #INTEROP_CLASS}), not
-	 *       {@code forge-runtime.jar} renamed — which passes everything else and fails in game with an
-	 *       {@code AbstractMethodError}.</li>
+	 *   <li>The base is Minecraft {@code mcVersion} (the id in its {@code version.json}, and the client's
+	 *       {@code Minecraft} class) whose own classes refer to {@code net/neoforged/}: that is what carrying
+	 *       NeoForge's patches looks like in bytecode, and in the real base hundreds of classes do, so this does not
+	 *       hinge on any one class keeping one hook. Vanilla refers to it nowhere. A base that refers to
+	 *       {@code net/minecraftforge/} too, or embeds the MinecraftForge native-reference index, is the merged base
+	 *       Forbric 0.4 and earlier built: refused by name, because it would install and then fail far away.</li>
+	 *   <li>The runtime holds NeoForge's core class AND its mod loader. The {@code -universal} jar has the first
+	 *       without the second; the kernel needs both, and the loader half is exactly what was absent in #13
+	 *       ({@code net/neoforged/neoforgespi/language/IModInfo}).</li>
+	 *   <li>The runtime was built for the NeoForge this installer pins: the {@code Implementation-Version} in its
+	 *       manifest's main section, which {@link NeoForgeRuntimeBuilder} (and {@code assemble-neoforge-runtime.sh})
+	 *       write from {@link Pins#NEOFORGE}. A runtime from an older install passes every check above: 0.2.0's,
+	 *       {@code 26.2.0.38-beta}, installed without a word.</li>
 	 * </ul>
 	 */
 	static String problem(String coordinate, Path jar, String mcVersion) {
@@ -245,12 +244,7 @@ final class GameArtifacts {
 			String installer = installerName(zip);
 			if (installer != null) return "It is " + installer + ", not " + what(coordinate, mcVersion) + ".";
 			return switch (coordinate) {
-				case ArtifactBuilder.MERGED -> mergedBaseProblem(zip, mcVersion);
-				case ArtifactBuilder.FORGE_RUNTIME -> {
-					String problem = runtimeProblem(zip, "MinecraftForge", FORGE_CORE, FORGE_LOADER,
-							new ForgeArtifacts(mcVersion, Pins.FORGE).fmlVersion);
-					yield problem != null ? problem : interopProblem(zip);
-				}
+				case ArtifactBuilder.BASE -> baseProblem(zip, mcVersion);
 				case ArtifactBuilder.NEOFORGE_RUNTIME -> runtimeProblem(zip, "NeoForge", NEO_CORE, NEO_LOADER,
 						Pins.NEOFORGE);
 				default -> throw new IllegalArgumentException("not a game artifact: " + coordinate);
@@ -263,15 +257,17 @@ final class GameArtifacts {
 
 	private static String what(String coordinate, String mcVersion) {
 		return switch (coordinate) {
-			case ArtifactBuilder.MERGED -> "the merged game base (Minecraft " + mcVersion
-					+ " with both MinecraftForge's and NeoForge's patches)";
-			case ArtifactBuilder.FORGE_RUNTIME -> "the MinecraftForge runtime";
+			case ArtifactBuilder.BASE -> "NeoForge's patched game (Minecraft " + mcVersion + " with NeoForge's patches)";
 			case ArtifactBuilder.NEOFORGE_RUNTIME -> "the NeoForge runtime";
 			default -> coordinate;
 		};
 	}
 
-	private static String mergedBaseProblem(ZipFile zip, String mcVersion) throws IOException {
+	/** What a supplied merged base from Forbric 0.4 or earlier is told. */
+	static final String OLD_INSTALL = "It is the merged game base Forbric 0.4 or earlier built; it still carries "
+			+ "MinecraftForge's patches. This installer runs on NeoForge's patched Minecraft, which it builds itself.";
+
+	private static String baseProblem(ZipFile zip, String mcVersion) throws IOException {
 		String id = versionId(zip);
 		if (id == null || zip.getEntry(MINECRAFT_CLIENT) == null) {
 			return "It does not contain Minecraft" + looksLike(zip, null) + ".";
@@ -279,8 +275,11 @@ final class GameArtifacts {
 		if (!id.equals(mcVersion)) {
 			return "It is Minecraft " + id + ", but this install is for Minecraft " + mcVersion + ".";
 		}
+		if (zip.getEntry(FORGE_NATIVE_INDEX) != null) return OLD_INSTALL;
 		boolean forge = false;
 		boolean neo = false;
+		// Every class is read, not just until NeoForge turns up: a merged base names NeoForge in some classes long
+		// before it names MinecraftForge.
 		for (Enumeration<? extends ZipEntry> entries = zip.entries(); entries.hasMoreElements(); ) {
 			ZipEntry entry = entries.nextElement();
 			String name = entry.getName();
@@ -291,13 +290,13 @@ final class GameArtifacts {
 			}
 			forge |= contains(bytes, FORGE_REFERENCE);
 			neo |= contains(bytes, NEO_REFERENCE);
-			if (forge && neo) return null;
 		}
-		if (!forge && !neo) {
-			return "It is plain Minecraft " + mcVersion + ", not the merged game base Forbric builds from it.";
+		if (forge && neo) return OLD_INSTALL;
+		if (forge) {
+			return "It is Minecraft " + mcVersion + " patched by MinecraftForge. This installer runs on NeoForge's patched "
+					+ "Minecraft, which it builds itself.";
 		}
-		return "It is Minecraft " + mcVersion + " patched by " + (forge ? "MinecraftForge" : "NeoForge")
-				+ " only. The merged game base carries both MinecraftForge's and NeoForge's patches.";
+		return neo ? null : "It is plain Minecraft " + mcVersion + ", not NeoForge's patched game Forbric builds from it.";
 	}
 
 	private static String runtimeProblem(ZipFile zip, String family, String core, List<String> loader,
@@ -320,23 +319,10 @@ final class GameArtifacts {
 		return null;
 	}
 
-	private static String interopProblem(ZipFile zip) throws IOException {
-		ZipEntry entry = zip.getEntry(INTEROP_CLASS);
-		byte[] bytes = null;
-		if (entry != null) {
-			try (InputStream in = zip.getInputStream(entry)) {
-				bytes = in.readAllBytes();
-			}
-		}
-		if (bytes != null && declaresMethod(bytes, INTEROP_METHOD, INTEROP_DESCRIPTOR)) return null;
-		return "It is forge-runtime.jar, the MinecraftForge runtime before Forbric patches it to fit the merged "
-				+ "game base; forge-runtime-interop.jar is the patched one.";
-	}
-
 	/**
-	 * The {@code Implementation-Version} of the manifest's main section, or null. Only the main section: the
-	 * MinecraftForge runtime's manifest also carries one per bundled library ({@code AccessTransformers 8.2.2},
-	 * {@code Bootstrap 2.1.8}, ...), and none of those says what the runtime was built for.
+	 * The {@code Implementation-Version} of the manifest's main section, or null. Only the main section: a runtime's
+	 * manifest may also carry one per bundled library ({@code AccessTransformers 8.2.2}, ...), and none of those says
+	 * what the runtime was built for.
 	 */
 	private static String implementationVersion(ZipFile zip) {
 		ZipEntry entry = zip.getEntry("META-INF/MANIFEST.MF");
@@ -346,66 +332,6 @@ final class GameArtifacts {
 			return version == null || version.isBlank() ? null : version.strip();
 		} catch (IOException unreadable) {
 			return null;
-		}
-	}
-
-	/**
-	 * Whether a class file declares the method {@code name}{@code descriptor}, read from its own method table; a
-	 * file that does not parse as a class declares nothing. Searching the bytes for the name would also match a
-	 * class that only CALLS such a method; this installer carries no ASM, and walking the constant pool to the
-	 * method table is all that is needed.
-	 */
-	private static boolean declaresMethod(byte[] classFile, String name, String descriptor) {
-		try {
-			return methodTableHas(new DataInputStream(new ByteArrayInputStream(classFile)), name, descriptor);
-		} catch (IOException | RuntimeException malformed) {
-			return false;
-		}
-	}
-
-	private static boolean methodTableHas(DataInputStream in, String name, String descriptor) throws IOException {
-		if (in.readInt() != 0xCAFEBABE) return false;
-		in.skipNBytes(4); // minor, major
-		int count = in.readUnsignedShort();
-		String[] utf8 = new String[count];
-		for (int i = 1; i < count; i++) {
-			int tag = in.readUnsignedByte();
-			switch (tag) {
-				case 1 -> utf8[i] = in.readUTF(); // the class file's modified UTF-8 is exactly readUTF's format
-				case 7, 8, 16, 19, 20 -> in.skipNBytes(2);
-				case 15 -> in.skipNBytes(3);
-				case 3, 4, 9, 10, 11, 12, 17, 18 -> in.skipNBytes(4);
-				case 5, 6 -> { // a long or double takes two constant-pool slots
-					in.skipNBytes(8);
-					i++;
-				}
-				default -> throw new IOException("not a class file: constant-pool tag " + tag);
-			}
-		}
-		in.skipNBytes(6); // access flags, this class, super class
-		in.skipNBytes(2L * in.readUnsignedShort()); // interfaces
-		skipMembers(in); // fields
-		for (int methods = in.readUnsignedShort(); methods > 0; methods--) {
-			in.skipNBytes(2); // access flags
-			String methodName = utf8[in.readUnsignedShort()];
-			String methodDescriptor = utf8[in.readUnsignedShort()];
-			if (name.equals(methodName) && descriptor.equals(methodDescriptor)) return true;
-			skipAttributes(in);
-		}
-		return false;
-	}
-
-	private static void skipMembers(DataInputStream in) throws IOException {
-		for (int members = in.readUnsignedShort(); members > 0; members--) {
-			in.skipNBytes(6); // access flags, name, descriptor
-			skipAttributes(in);
-		}
-	}
-
-	private static void skipAttributes(DataInputStream in) throws IOException {
-		for (int attributes = in.readUnsignedShort(); attributes > 0; attributes--) {
-			in.skipNBytes(2); // name
-			in.skipNBytes(in.readInt() & 0xFFFFFFFFL);
 		}
 	}
 

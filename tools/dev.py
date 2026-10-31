@@ -46,21 +46,20 @@ VANILLA_REFERENCE = 'vanilla-reference/vanilla-reference-26.2.jar'
 STAGED_FILES = (STAGED_BASE, STAGED_FORGE_CARRIER, STAGED_FORGE_INTEROP, STAGED_NEO_CARRIER,
                 # Not launched, but the bytecode tests compare the merge against both patched sides.
                 'forge-patched/patched-mc-forge-26.2.jar', 'neoforge-patched/patched-mc-neoforge-26.2.jar',
-                # Also only read by tests: the merge's own report, the pins that tie the Forge side to this merge,
-                # and the two canary mods (see CANARIES).
-                'merged-base/merge-conflicts.txt', 'merged-base/patched-mc-merged-26.2.jar.pins',
-                'forge-patched/patched-mc-forge-26.2.jar.pins',
+                # The build stamps DevPrepare stages beside NeoForge's patched game and the NeoForge carrier (see
+                # STAMPED_FILES), and the two canary mods (see CANARIES).
+                'neoforge-patched/patched-mc-neoforge-26.2.jar.pins',
                 'forge-runtime/forbriclive.jar', 'neoforge-runtime/forbricneolive.jar',
                 'neoforge-runtime/neoforge-runtime.jar.pins', VANILLA_REFERENCE)
 # The STAGED_FILES (and STAMPED_FILES) entries that are MinecraftForge's: what a stage legitimately lacks when it has no
 # MinecraftForge carrier (a genuine NeoForge base, or the ci-prepared-noforge profile's mirror). They are still demanded
 # by default; only --no-forge-carrier (or FORBRIC_NO_FORGE_CARRIER=1) says the stage is meant to be without them.
 FORGE_STAGED_FILES = (STAGED_FORGE_CARRIER, STAGED_FORGE_INTEROP, 'forge-patched/patched-mc-forge-26.2.jar',
-                      'forge-patched/patched-mc-forge-26.2.jar.pins', 'forge-runtime/forbriclive.jar')
-# The build stamps beside staged artifacts. Each begins with the installer's Pins.stamp(); an artifact whose stamp
-# names other pins was built from another NeoForge (or Forge, or NFRT) and must be rebuilt, not tested.
-STAMPED_FILES = ('merged-base/patched-mc-merged-26.2.jar.pins', 'forge-patched/patched-mc-forge-26.2.jar.pins',
-                 'neoforge-runtime/neoforge-runtime.jar.pins')
+                      'forge-runtime/forbriclive.jar')
+# The build stamps beside staged artifacts: NeoForge's patched game (the base) and the NeoForge carrier, which DevPrepare
+# stages with the artifacts. Each begins with the installer's Pins.stamp(); an artifact whose stamp names other pins was
+# built from another NeoForge (or NFRT) and must be rebuilt, not tested.
+STAMPED_FILES = ('neoforge-patched/patched-mc-neoforge-26.2.jar.pins', 'neoforge-runtime/neoforge-runtime.jar.pins')
 PINS_JAVA = ROOT / 'forbric-kernel-installer/src/main/java/net/forbric/installer/kernel/Pins.java'
 # forbric-loader/run/build-testmods.sh's two canary mods, built the same way into the stage: (sources, jar, javac
 # --release, the staged game jars they compile against). Their sources go beside them, as in forbric-loader/run/,
@@ -389,11 +388,20 @@ def build_properties(mc, stage):
             f'-Pforbric.rebornEnergy={STATE / "api" / API_PINS[1][0]}']
 
 
+def owned_stage(args, environ=None):
+    """True when the stage is this checkout's own (.dev/staged): not named with --staged or FORBRIC_OLD, which may point at
+    a stage another checkout still reads. Only an owned stage has the retired merged-base/, forge-runtime/ and
+    forge-patched/ directories removed by DevPrepare."""
+    environ = os.environ if environ is None else environ
+    return not (getattr(args, 'staged', None) or environ.get('FORBRIC_OLD'))
+
+
 def prepare(args, java, env):
     mc, stage, _, natives = options(args, env['FORBRIC_DEV_ARCH'])
     gradle('forbric-kernel-installer', ['devToolsJar'], env)
     tools = ROOT / 'forbric-kernel-installer/build/libs/forbric-dev-tools.jar'
-    subprocess.run([java, '-jar', str(tools), str(mc), str(stage), java], cwd=ROOT, env=env, check=True)
+    subprocess.run([java, '-jar', str(tools), str(mc), str(stage), java] + (['--owned-stage'] if owned_stage(args) else []),
+                   cwd=ROOT, env=env, check=True)
     stage_minecraft(mc, natives, env['FORBRIC_DEV_ARCH'], assets=not getattr(args, 'no_assets', False))
     for name, url, sha in API_PINS:
         fetch(url, STATE / 'api' / name, sha, 'sha256')
@@ -405,12 +413,11 @@ def prepare(args, java, env):
 
 
 def pins_stamp(pins_java=PINS_JAVA):
-    """The installer's Pins.stamp(), read from Pins.java: 'mc=… forge=… neoforge=… nfrt=… result=…'."""
+    """The installer's Pins.stamp(), read from Pins.java: 'mc=… neoforge=… nfrt=… result=…'."""
     text = pins_java.read_text(encoding='utf-8')
     value = {name: re.search(r'static final String ' + name + r' = "([^"]+)"', text).group(1)
-             for name in ('MINECRAFT', 'FORGE', 'NEOFORGE', 'NFRT', 'NFRT_RESULT')}
-    return (f"mc={value['MINECRAFT']} forge={value['FORGE']} neoforge={value['NEOFORGE']}"
-            f" nfrt={value['NFRT']} result={value['NFRT_RESULT']}")
+             for name in ('MINECRAFT', 'NEOFORGE', 'NFRT', 'NFRT_RESULT')}
+    return f"mc={value['MINECRAFT']} neoforge={value['NEOFORGE']} nfrt={value['NFRT']} result={value['NFRT_RESULT']}"
 
 
 def staged_files(forge=True):

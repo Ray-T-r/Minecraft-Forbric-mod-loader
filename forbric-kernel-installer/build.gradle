@@ -15,9 +15,9 @@ tasks.withType(JavaCompile).configureEach {
 	options.release = 17
 }
 
-// The installer carries Forbric's OWN jars and nothing else. The merged game base and the two Forge-family
-// runtimes embed Mojang, MinecraftForge and NeoForge code, so they are never bundled — the installer takes them
-// from a build on this machine (see ArtifactSource), which is also what the project's own scripts produce.
+// The installer carries Forbric's OWN jars and nothing else. NeoForge's patched game and the NeoForge runtime
+// embed Mojang's and NeoForge's code, so they are never bundled — the installer builds them on the player's
+// machine (ArtifactBuilder), or takes a developer's build (--artifacts, GameArtifacts).
 def kernelDir = file('../forbric-kernel')
 def loaderDir = file('../forbric-loader')
 // Read from each module's own build file rather than spelled out here. The four literals this replaces named
@@ -31,12 +31,14 @@ def moduleVersion = { File dir ->
 }
 def kernelJar  = { "forbric-kernel-${moduleVersion(kernelDir)}.jar" }
 def genResources = layout.buildDirectory.dir('generated-resources')
-// The merge tools ride in EVERY build, slim included. They are 284 KB and they are what turns a
-// machine with no prebuilt artifacts into one that can make them; fetching them over the network
-// would add a way for the build step to fail before it starts, to save a quarter of a megabyte.
+// The merge-tools jar rides in EVERY build, slim included, for the one tool the installer still runs from it: the
+// link checker (LinkCheckTool), which every install runs over the base and the NeoForge runtime. It is under
+// 600 KB; fetching it over the network would add a way for the install to fail before it starts.
 def genTools = layout.buildDirectory.dir('generated-tools')
 def isWindows = System.getProperty('os.name').toLowerCase().contains('win')
-// The reviewed link baseline the merge-tools jar carries: the same file build-merged-base.sh and gate-m0 read.
+// The reviewed link baseline the merge-tools jar carries: the same file build-merged-base.sh and gate-m0 read. The
+// installer itself no longer judges against it (LinkCheckTool requires zero dangling references on the genuine pair);
+// bundleTools still refuses a jar that carries another one, so the jar it ships is the one the tree builds.
 def linkBaseline = file("${loaderDir}/src/test/resources/merge/link-check-baseline.txt")
 def mergeToolsJar = file("${loaderDir}/build/libs/forbric-merge-tools-0.1.0.jar")
 
@@ -49,24 +51,25 @@ tasks.register('buildForbricJars', Exec) {
 	outputs.dir("${kernelDir}/build/libs")
 }
 
-// The byte-merge tools, shaded with the ASM they need. Not a library of the installer's — it is run as a
-// subprocess (4 GB heap, which this JVM cannot grant itself), so it travels as a resource and is unpacked.
+// The merge tools, shaded with the ASM they need. Not a library of the installer's — its link checker is run as a
+// subprocess, so the jar travels as a resource and is unpacked.
 tasks.register('buildMergeTools', Exec) {
-	description = "Build the merge-tools jar the installer ships and runs."
+	description = "Build the merge-tools jar whose link checker the installer ships and runs."
 	workingDir loaderDir
 	commandLine(isWindows ? ['cmd', '/c', 'gradlew.bat', 'mergeToolsJar'] : ['./gradlew', 'mergeToolsJar'])
 	inputs.dir("${loaderDir}/src/tools")
 	inputs.file("${loaderDir}/build.gradle")
 	// The baseline rides in this jar but lives under src/test/resources, which the two inputs above do not
 	// cover: a baseline-only change left this task UP-TO-DATE and the installer shipping the previous baseline,
-	// so players' installs judged the merge against a different list than every gate in the tree.
+	// so players' installs judged the merge against a different list than every gate in the tree (when installs
+	// still built the merged base).
 	inputs.file(linkBaseline).withPropertyName('linkBaseline')
 	// The one file this task makes. Declaring the shared build/libs let the loader-jar task's output decide whether
 	// this task was up to date.
 	outputs.file(mergeToolsJar)
 }
 
-// Development preparation needs the artifact builder and merge tools, not a player payload or Fabric substrate.
+// Development preparation needs the artifact builder and the link checker, not a player payload or Fabric substrate.
 // Avoid processResources here: that task intentionally builds the complete player installer payload.
 tasks.register('devToolsJar', Jar) {
 	group = 'development'
@@ -85,19 +88,20 @@ def linkGateClasses = tasks.register('compileLinkGateTest', JavaCompile) {
 	// The supplied-artifact content check and the window's path fields ride along: the gate's main calls both, so
 	// every runner of linkGateTest (CI, the kernel's linkToolTest) exercises them too.
 	source = fileTree('src/test/java') {
-		include '**/MergedBaseLinkGateTest.java', '**/SuppliedArtifactContentTest.java',
-				'**/InstallerWindowInputTest.java', '**/MinecraftLibrariesTest.java', '**/VanillaReferenceTest.java'
+		include '**/BaseLinkGateTest.java', '**/SuppliedArtifactContentTest.java',
+				'**/InstallerWindowInputTest.java', '**/MinecraftLibrariesTest.java', '**/VanillaReferenceTest.java',
+				'**/BaseCoordinatePinTest.java', '**/DevPrepareRetiredTest.java'
 	}
 	classpath = files(sourceSets.main.output.classesDirs)
 	destinationDirectory = layout.buildDirectory.dir('link-gate-classes')
 }
 tasks.register('linkGateTest', JavaExec) {
 	group = 'verification'
-	description = 'Exercise the packaged merge link gate with synthetic positive and negative controls.'
+	description = 'Exercise the packaged link gate with synthetic positive and negative controls.'
 	dependsOn linkGateClasses, 'devToolsJar'
 	classpath = files(linkGateClasses.flatMap { it.destinationDirectory },
 			tasks.named('devToolsJar').flatMap { it.archiveFile })
-	mainClass = 'net.forbric.installer.kernel.MergedBaseLinkGateTest'
+	mainClass = 'net.forbric.installer.kernel.BaseLinkGateTest'
 	doFirst {
 		def scratch = layout.buildDirectory.dir('link-gate-test').get().asFile
 		scratch.deleteDir()
@@ -176,8 +180,8 @@ tasks.register('bundleForbric') {
 	}
 }
 
-// The merge tools are staged, never listed in the libraries manifest: they are a build tool the installer
-// runs as a subprocess, not something the installed profile puts on a classpath.
+// The merge-tools jar is staged, never listed in the libraries manifest: it is a tool the installer runs as a
+// subprocess (the link checker), not something the installed profile puts on a classpath.
 tasks.register('bundleTools') {
 	description = "Copy the merge-tools jar into the installer's resources."
 	dependsOn 'buildMergeTools'
@@ -191,8 +195,8 @@ tasks.register('bundleTools') {
 	doLast {
 		def src = mergeToolsJar
 		if (!src.isFile()) throw new GradleException("missing ${src} — build it first")
-		// What the installer will judge every player's merge against has to be the reviewed file, byte for byte.
-		// A stale jar reaching this point is refused here rather than shipped.
+		// The jar shipped must be the one the tree builds: a stale jar (its baseline is the cheapest tell) is refused
+		// here rather than shipped. The installer no longer reads the baseline itself.
 		def packed = new java.util.zip.ZipFile(src).withCloseable { zip ->
 			def entry = zip.getEntry('net/forbric/tools/link-check-baseline.txt')
 			entry == null ? null : zip.getInputStream(entry).bytes
@@ -253,7 +257,7 @@ if (project.hasProperty('releasePin')) {
 // `evidence.py release-check` finds them all passed, bound to one candidate, and the kernel and merge-tools jars
 // about to ship byte-identical to the accepted ones. Forbric's loader jars are not acceptance roles and are not
 // compared; the game artifacts are built on each player's machine and do not reproduce byte for byte (zip entry
-// times), so for them the installer's link check against the packaged baseline is the gate.
+// times), so for them the installer's link check is the gate.
 //
 //   ./gradlew releaseAssets -PreleaseTag=v0.1.0 -PreleaseEvidence=build/evidence/release.json
 //   gh release create v0.1.0 build/release/assets/*

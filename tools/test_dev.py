@@ -4,6 +4,7 @@ import hashlib
 import io
 import json
 import os
+import re
 import shutil
 from pathlib import Path
 import subprocess
@@ -24,7 +25,14 @@ class DevelopmentWorkflowTest(unittest.TestCase):
 
     def test_a_stage_built_from_other_pins_is_not_ready(self):
         stamp = dev.pins_stamp()
-        self.assertRegex(stamp, r'^mc=\S+ forge=\S+ neoforge=\S+ nfrt=\S+ result=\S+$')
+        self.assertRegex(stamp, r'^mc=\S+ neoforge=\S+ nfrt=\S+ result=\S+$')
+        # The stamp is the installer's Pins.stamp(), read from its source: the same four pins, in the same order.
+        java = re.search(r'static String stamp\(\) \{\s*return (.*?);', dev.PINS_JAVA.read_text(encoding='utf-8'), re.S)
+        self.assertEqual(['MINECRAFT', 'NEOFORGE', 'NFRT', 'NFRT_RESULT'], re.findall(r'\b([A-Z_]+)\b', java.group(1)))
+        # NeoForge's patched game and the NeoForge carrier carry the stamps, as DevPrepare stages them.
+        self.assertEqual(('neoforge-patched/patched-mc-neoforge-26.2.jar.pins', 'neoforge-runtime/neoforge-runtime.jar.pins'),
+                         dev.STAMPED_FILES)
+        self.assertTrue(set(dev.STAMPED_FILES) <= set(dev.STAGED_FILES))
         stage = self.root / 'run'
         for name in dev.STAMPED_FILES:
             (stage / name).parent.mkdir(parents=True, exist_ok=True)
@@ -32,11 +40,20 @@ class DevelopmentWorkflowTest(unittest.TestCase):
         self.assertEqual([], dev.stale_stamps(stage))
         # A carrier from the previous NeoForge pin: same file name, older stamp. The stage must be rebuilt.
         older = stamp.replace('neoforge=', 'neoforge=0.0.0.0-').split(' nfrt=')[0] + ' nfrt=x result=y'
-        (stage / dev.STAMPED_FILES[2]).write_text(older)
-        self.assertEqual([dev.STAMPED_FILES[2]], dev.stale_stamps(stage))
+        (stage / dev.STAMPED_FILES[1]).write_text(older)
+        self.assertEqual([dev.STAMPED_FILES[1]], dev.stale_stamps(stage))
+        # A base stamped by an installer that still built the merged base: its stamp names MinecraftForge.
+        (stage / dev.STAMPED_FILES[0]).write_text(stamp.replace(' neoforge=', ' forge=26.2-65.0.1 neoforge=') + ' tools=abc\n')
+        self.assertEqual([dev.STAMPED_FILES[0], dev.STAMPED_FILES[1]], dev.stale_stamps(stage))
         (stage / dev.STAMPED_FILES[0]).unlink()
-        self.assertEqual([dev.STAMPED_FILES[0], dev.STAMPED_FILES[2]], dev.stale_stamps(stage))
+        self.assertEqual([dev.STAMPED_FILES[0], dev.STAMPED_FILES[1]], dev.stale_stamps(stage))
         self.assertFalse(dev.ready(self.root / 'mc', stage, self.root / 'natives'))
+
+    def test_only_the_checkouts_own_stage_is_owned(self):
+        self.assertTrue(dev.owned_stage(argparse.Namespace(staged=None), {}))
+        self.assertFalse(dev.owned_stage(argparse.Namespace(staged='/elsewhere'), {}))
+        self.assertFalse(dev.owned_stage(argparse.Namespace(staged=None), {'FORBRIC_OLD': '/shared'}))
+        self.assertFalse(dev.owned_stage(argparse.Namespace(), {'FORBRIC_OLD': '/shared'}))
 
     def test_platform_defaults(self):
         self.assertEqual(dev.default_minecraft_dir('windows', {'APPDATA': 'C:/Users/A B/Roaming'}, self.root),
@@ -313,7 +330,8 @@ class DevelopmentWorkflowTest(unittest.TestCase):
             self.assertFalse(dev.ready(mc, stage, natives, assets=False))
             self.assertTrue(dev.ready(mc, stage, natives, assets=False, forge=False))
             self.assertEqual([], dev.stale_stamps(stage, forge=False))
-            self.assertIn('forge-patched/patched-mc-forge-26.2.jar.pins', dev.stale_stamps(stage))
+            # No MinecraftForge artifact is stamped any more: only its staged files make the default profile unready.
+            self.assertEqual([], dev.stale_stamps(stage))
             # The profile still demands everything that is not MinecraftForge's.
             (stage / dev.STAGED_NEO_CARRIER).unlink()
             self.assertFalse(dev.ready(mc, stage, natives, assets=False, forge=False))

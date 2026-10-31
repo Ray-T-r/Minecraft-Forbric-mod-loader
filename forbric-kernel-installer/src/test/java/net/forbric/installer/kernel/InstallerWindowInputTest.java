@@ -62,7 +62,7 @@ public final class InstallerWindowInputTest {
 		// A supplied set it refuses on content, so nothing is downloaded: the refusal names the files inside the
 		// unquoted folder, which is the proof the quotes were dropped before the installer looked.
 		Path wrong = Files.createDirectories(work.resolve("wrong set"));
-		for (String name : List.of("patched-mc-merged-26.2.jar", "forge-runtime-interop.jar", "neoforge-runtime.jar")) {
+		for (String name : List.of("patched-mc-neoforge-26.2.jar", "neoforge-runtime.jar")) {
 			try (ZipOutputStream out = new ZipOutputStream(Files.newOutputStream(wrong.resolve(name)))) {
 				out.putNextEntry(new ZipEntry("com/google/gson/Gson.class"));
 				out.closeEntry();

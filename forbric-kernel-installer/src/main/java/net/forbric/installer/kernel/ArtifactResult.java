@@ -20,8 +20,8 @@ import java.nio.file.Path;
 
 /**
  * The result of an install-time build: a jar on disk plus the metadata the version-profile writer needs. The two
- * built categories ({@code patched-mc}, {@code forge-runtime}) arrive in the manifest as placeholders with null
- * {@code file}/{@code sha1}; {@link Installer} fills them in from these results, keyed by coordinate.
+ * built categories ({@code patched-mc-neoforge}, {@code neoforge-runtime}) and the vanilla reference are staged by
+ * {@link Installer} from these results, keyed by coordinate.
  */
 final class ArtifactResult {
 	final String coordinate;

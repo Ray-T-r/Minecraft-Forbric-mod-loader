@@ -26,7 +26,7 @@ import java.nio.file.Path;
  *
  * <p><b>Why this exists.</b> Every builder's reuse test used to be "the output file exists and is not empty", and
  * none of the artifacts carries its version in its filename — {@code neoforge-runtime.jar},
- * {@code patched-mc-neoforge-26.2.jar}, {@code patched-mc-merged-26.2.jar}. So moving the NeoForge pin from
+ * {@code patched-mc-neoforge-26.2.jar}. So moving the NeoForge pin from
  * {@code 26.2.0.38-beta} to {@code 26.2.0.88} and re-running the installer on a machine that had built before
  * printed {@code neoforge=26.2.0.88} in its own pin line and then {@code [neoforge-runtime] up-to-date} — and
  * installed the OLD carrier. Nothing failed; the install said "Installed." and the game came up. What it came up
@@ -37,8 +37,8 @@ import java.nio.file.Path;
  * install was a cold one and the cache path was never exercised at a bump.
  *
  * <p><b>Every artifact is stamped with the WHOLE pin set</b>, not with the subset that feeds it. A per-artifact
- * key would avoid rebuilding the MinecraftForge half when only NeoForge moves, and would also be a second place
- * to get wrong — omit one input and the cache is silently stale again, which is the bug being fixed. The cost of
+ * key would avoid rebuilding the runtime when only NFRT moves, and would also be a second place to get wrong — omit
+ * one input and the cache is silently stale again, which is the bug being fixed. The cost of
  * over-invalidating is one rebuild of a few minutes on a pin bump; the cost of under-invalidating is an install
  * that is wrong and says nothing.
  *
@@ -51,11 +51,13 @@ final class BuildStamp {
 	}
 
 	/**
-	 * The key an artifact is stamped with: the pins, plus a digest of the merge tools that ride in this installer.
+	 * The key an artifact is stamped with: the pins, plus a digest of the tools jar that rides in this installer.
 	 *
-	 * <p>The tools are not a pin and they change without one — the merge tool's lambda-realignment pass changed no
-	 * version at all and changed every merged class it fixed. Keying only on pins would have served the old merged
-	 * base out of the cache to exactly the people who needed the new one.
+	 * <p>The tools are not a pin and they change without one. When they built the merged base, the merge tool's
+	 * lambda-realignment pass changed no version at all and changed every merged class it fixed, and keying only on
+	 * pins would have served the old base out of the cache to exactly the people who needed the new one. They only
+	 * link-check now, so a new tools jar costs one rebuild; kept, because the jar is the one input the pins cannot
+	 * name.
 	 */
 	private static String key() {
 		return Pins.stamp() + " tools=" + toolsDigest();

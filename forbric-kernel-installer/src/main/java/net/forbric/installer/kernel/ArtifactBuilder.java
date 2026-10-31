@@ -20,33 +20,26 @@ import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.LinkedHashMap;
-import java.util.List;
 import java.util.Map;
 import java.util.function.Consumer;
 
 /**
- * Builds the three jars a Forbric instance runs on, here, on the machine that will run them.
+ * Builds the two jars a Forbric instance runs on, here, on the machine that will run them, and the vanilla reference
+ * the kernel reads beside them.
  *
- * <p>They cannot be shipped. The merged base is Minecraft with two loaders' patches applied and then byte-merged;
- * the two runtimes are assembled from MinecraftForge's and NeoForge's own distributions. All three carry code
- * this project has no right to hand out, so an installer that shipped them would be redistributing Mojang's,
- * MinecraftForge's and NeoForge's work. Building them from the upstreams' own Mavens, on the user's machine, is
- * the only lawful shape this can take — and it is the shape the previous generation's installer already used for
- * the Forge half.
+ * <p>They cannot be shipped. The base is Minecraft with NeoForge's patches applied, and the runtime is assembled from
+ * NeoForge's own distribution. Both carry code this project has no right to hand out, so an installer that shipped
+ * them would be redistributing Mojang's and NeoForge's work. Building them from the upstreams' own Mavens, on the
+ * user's machine, is the only lawful shape this can take.
  *
- * <p>The pipeline, with the two halves independent until the merge:
+ * <p>The pipeline:
  *
  * <pre>
- *   forge userdev ─┬→ forge-runtime ───────────────┬→ patched-mc-forge ─┐
- *                  └───────────────────────────────┘                    ├→ patched-mc-merged
- *   neoforge userdev ─┬→ neoforge-runtime ──────────────────────────────┤
- *                     └→ NFRT → patched-mc-neoforge ────────────────────┘
- *   vanilla 26.2.jar ───────────────────────────────────────────────────┘
+ *   neoforge userdev ─┬→ neoforge-runtime
+ *                     └→ NFRT (client jar + server jar seeded) → patched-mc-neoforge   (the game base)
  *
- *   forge-runtime ────────────────────────────────→ forge-runtime-interop   (what actually gets staged)
- *   vanilla 26.2.jar + patched-mc-merged ──────────→ vanilla-reference       (resources only; see VanillaReference)
- *
- *   versions/26.2/26.2.json's libraries ──→ read by the merge and the interop patch, fetched only if they run
+ *   patched-mc-neoforge + neoforge-runtime ──→ link check            (nothing may dangle)
+ *   vanilla 26.2.jar + patched-mc-neoforge ──→ vanilla-reference     (resources only; see VanillaReference)
  * </pre>
  *
  * <p>Everything lands under {@code <mcDir>/.forbric-build/}, one directory that can be deleted wholesale, and
@@ -55,8 +48,7 @@ import java.util.function.Consumer;
 final class ArtifactBuilder {
 
 	/** The coordinates {@link Installer} stages and the profile names, without their version suffix. */
-	static final String MERGED = "net.forbric:patched-mc-merged";
-	static final String FORGE_RUNTIME = "net.forbric:forge-runtime";
+	static final String BASE = "net.forbric:patched-mc-neoforge";
 	static final String NEOFORGE_RUNTIME = "net.forbric:neoforge-runtime";
 	/** Not a game jar: the resources-only vanilla reference the kernel reads beside the base; see {@link VanillaReference}. */
 	static final String VANILLA_REFERENCE = VanillaReference.COORDINATE;
@@ -68,7 +60,7 @@ final class ArtifactBuilder {
 	}
 
 	/**
-	 * Produces all three, reusing whatever is already built.
+	 * Produces both, and the vanilla reference, reusing whatever is already built.
 	 *
 	 * @param mcDir     the Minecraft directory; its {@code versions/<mc>/<mc>.jar} is the vanilla input and its
 	 *                  {@code .forbric-build/} holds every intermediate
@@ -95,61 +87,28 @@ final class ArtifactBuilder {
 
 		Http http = new Http(log);
 
-		// ---- MinecraftForge ----
-		log.accept("");
-		log.accept("== MinecraftForge " + Pins.FORGE + " ==");
-		ForgeArtifacts fa = new ForgeArtifacts(mcVersion, Pins.FORGE);
-		Path forgeUserdev = dl.resolve(userdevFile("forge", Pins.FORGE));
-		http.ensureWithFallback(fa.forgeUrl(fa.userdevCoordinate()), fa.centralUrl(fa.userdevCoordinate()),
-				forgeUserdev);
-		ForgeArtifacts.UserdevConfig forgeCfg = ForgeArtifacts.readConfig(forgeUserdev);
-
-		ArtifactResult forgeRuntime = new ForgeRuntimeBuilder(fa, http, build, out.resolve("forge-runtime.jar"), log)
-				.build(forgeCfg);
-		ArtifactResult forgePatched = new PatchedMcBuilder(fa, http, mcDir, build,
-				out.resolve("patched-mc-forge-" + mcVersion + ".jar"), log)
-				.build(forgeUserdev, forgeCfg, forgeRuntime.file);
-
-		// ---- NeoForge ----
 		log.accept("");
 		log.accept("== NeoForge " + Pins.NEOFORGE + " ==");
 		NeoForgeArtifacts nfa = new NeoForgeArtifacts(mcVersion, Pins.NEOFORGE);
 		Path neoUserdev = dl.resolve(userdevFile("neoforge", Pins.NEOFORGE));
 		http.ensureWithFallback(nfa.neoforgedUrl(nfa.userdevCoordinate()), nfa.centralUrl(nfa.userdevCoordinate()),
 				neoUserdev);
-		// The same NeoForm userdev config shape on both sides, so the Forge reader serves; see NeoForgeArtifacts.
-		ForgeArtifacts.UserdevConfig neoCfg = ForgeArtifacts.readConfig(neoUserdev);
 
 		ArtifactResult neoRuntime = new NeoForgeRuntimeBuilder(nfa, http, build,
-				out.resolve("neoforge-runtime.jar"), log).build(neoCfg);
-		ArtifactResult neoPatched = new NfrtRunner(http, tools, build.resolve("nfrt"),
-				build.resolve("nfrt-work"), log)
+				out.resolve("neoforge-runtime.jar"), log).build(NeoForgeArtifacts.readLibraries(neoUserdev));
+		// The server jar is fetched by NfrtRunner itself, and only when NFRT is about to run (see NfrtRunner.run).
+		ArtifactResult base = new NfrtRunner(http, tools, build.resolve("nfrt"), build.resolve("nfrt-work"), log)
 				.run(jvm, mcDir, out.resolve("patched-mc-neoforge-" + mcVersion + ".jar"),
-						nfa.patchedMcCoordinate(), mcVersion, build.resolve("dl").resolve("server.jar"));
+						nfa.patchedMcCoordinate(), mcVersion, dl.resolve("server.jar"));
 
-		// ---- the merge, and the interop patch the merge makes necessary ----
 		log.accept("");
-		log.accept("== merging ==");
-		MergedBaseTool.Libraries libraries = baseLibraries(mcDir, mcVersion, new MojangDownloader(log));
-		MergedBaseTool merge = new MergedBaseTool(tools, log);
-		ArtifactResult merged = merge.merge(jvm, vanilla, forgePatched.file, neoPatched.file,
-				forgeRuntime.file, neoRuntime.file,
-				out.resolve("patched-mc-merged-" + mcVersion + ".jar"),
-				out.resolve("merge-conflicts.txt"),
-				MERGED + ":" + mcVersion, libraries, forgeUserdev, neoUserdev);
-		ArtifactResult interop = merge.interop(jvm, forgeRuntime.file,
-				out.resolve("forge-runtime-interop.jar"), FORGE_RUNTIME + ":" + mcVersion, merged.file, neoRuntime.file,
-				libraries);
-		// After the interop patch, not before: the check resolves against what actually gets staged.
-		merge.linkCheck(jvm, merged.file, neoRuntime.file, interop.file);
-		ArtifactResult reference = vanillaReference(vanilla, merged.file, out.resolve(VanillaReference.fileName(mcVersion)),
+		log.accept("== checking ==");
+		new LinkCheckTool(tools, log).linkCheck(jvm, base.file, neoRuntime.file);
+		ArtifactResult reference = vanillaReference(vanilla, base.file, out.resolve(VanillaReference.fileName(mcVersion)),
 				log);
 
 		Map<String, Path> result = new LinkedHashMap<>();
-		result.put(MERGED, merged.file);
-		// The INTEROP jar, not the raw runtime: the merge widened interfaces on NeoForge's behalf that the raw
-		// jar's own classes no longer satisfy. It keeps the forge-runtime coordinate so nothing downstream moves.
-		result.put(FORGE_RUNTIME, interop.file);
+		result.put(BASE, base.file);
 		result.put(NEOFORGE_RUNTIME, neoRuntime.file);
 		result.put(VANILLA_REFERENCE, reference.file);
 
@@ -164,9 +123,9 @@ final class ArtifactBuilder {
 
 	/**
 	 * The vanilla-reference sidecar for {@code base}: how vanilla compiled each class, beside the base rather than inside
-	 * it, so the kernel's FABRIC references do not depend on the base being the merge that used to embed them. Built
-	 * in-process — it is a zip, a byte comparison and SHA-256 — and reused when it records these two inputs, which the
-	 * pins stamp cannot say: a base can be rebuilt, or supplied, without a pin moving.
+	 * it — the kernel's only source of FABRIC references, since NeoForge's patched game carries none. Built in-process
+	 * — it is a zip, a byte comparison and SHA-256 — and reused when it records these two inputs, which the pins stamp
+	 * cannot say: a base can be rebuilt, or supplied, without a pin moving.
 	 *
 	 * <p>Shared by the build above and by an install from supplied artifacts ({@link Installer}), which has a base but
 	 * never runs this builder.
@@ -178,44 +137,6 @@ final class ArtifactBuilder {
 						+ built.differing() + " of them differ from " + base.getFileName() + " and carry their vanilla bytes");
 		return new ArtifactResult(VANILLA_REFERENCE + ":" + Installer.artifactVersion(VANILLA_REFERENCE, ""), out,
 				Util.sha1(out), Files.size(out));
-	}
-
-	/**
-	 * The base version's libraries as the merge tools read them: exactly the jars {@code versions/<mc>/<mc>.json}
-	 * lists for this platform, verified against it and, where missing or not matching, downloaded into
-	 * {@code <mcDir>/libraries} -- the paths a launcher would use, so it finds them in place -- and handed over in
-	 * the order the JSON lists them. Nothing else in that folder reaches the tools, however many other versions sit
-	 * there.
-	 *
-	 * <p>The merge needs them because proving a merged field is built the same way on both sides follows the
-	 * construction into them, and a launcher fetches them only on the first launch, which has not happened in a
-	 * directory no launcher has started this version in. But only a tool that runs reads them: this resolves on the
-	 * first {@link MergedBaseTool.Libraries#jars()} -- after the merge or the interop patch has found its output
-	 * stale -- and keeps the answer for the other. A reinstall whose artifacts are all cached never asks, so it
-	 * neither reads the version JSON nor touches the network.
-	 */
-	static MergedBaseTool.Libraries baseLibraries(Path mcDir, String mcVersion, MojangDownloader downloader) {
-		return new MergedBaseTool.Libraries() {
-			private List<Path> jars;
-
-			@Override
-			public List<Path> jars() throws IOException {
-				if (jars == null) {
-					jars = downloader.downloadLibraries(Installer.minecraftLibraryArtifacts(baseJson(mcDir, mcVersion)),
-							mcDir.resolve("libraries"));
-				}
-				return jars;
-			}
-		};
-	}
-
-	/** {@code versions/<mc>/<mc>.json}, which lists the libraries a launcher fetches for it. */
-	@SuppressWarnings("unchecked")
-	private static Map<String, Object> baseJson(Path mcDir, String mcVersion) throws IOException {
-		Path json = mcDir.resolve("versions").resolve(mcVersion).resolve(mcVersion + ".json");
-		Object parsed = Json.parse(Files.readString(json, java.nio.charset.StandardCharsets.UTF_8));
-		if (!(parsed instanceof Map)) throw new IOException(json + " is not a version JSON");
-		return (Map<String, Object>) parsed;
 	}
 
 	/**

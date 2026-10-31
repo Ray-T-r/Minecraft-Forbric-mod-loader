@@ -22,7 +22,6 @@ import java.nio.file.AtomicMoveNotSupportedException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
-import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.function.Consumer;
@@ -32,10 +31,9 @@ import java.util.function.Consumer;
  *
  * <p>Two jobs. {@link #downloadClient} follows the standard Mojang chain -- the version manifest → the per-version
  * JSON → the client jar -- and writes {@code versions/<v>/<v>.json} and {@code <v>.jar}; that JSON is what makes the
- * Forbric profile's {@code inheritsFrom:<v>} resolvable. {@link #downloadLibraries} fetches the libraries that JSON
- * lists for this platform into {@code libraries/}, because the merge reads them before any launcher has run the
- * version (see {@link ArtifactBuilder}); a launcher finds them already in place. Assets and native extraction stay
- * the launcher's job on first launch.
+ * Forbric profile's {@code inheritsFrom:<v>} resolvable. {@link #downloadServer} fetches the server jar that JSON
+ * names, which NeoFormRuntime needs for its joined distribution and is handed rather than left to fetch
+ * ({@link NfrtRunner}). Libraries, assets and native extraction stay the launcher's job on first launch.
  *
  * <p>Safety: every artifact is written to a {@code .part} temp beside its target and verified (size + SHA-1)
  * before an atomic move into place. The client's two files are moved only after both verified, and a directory
@@ -122,51 +120,40 @@ final class MojangDownloader {
 	}
 
 	/**
-	 * Every library a version JSON lists for this platform, downloaded and verified (size + SHA-1) into
-	 * {@code libraries} at the path the JSON gives it -- the same files, at the same paths, a launcher fetches on the
-	 * first launch -- skipping each already there with the right SHA-1, and fetching again any whose SHA-1 is not.
-	 *
-	 * <p>The installer needs them before the launcher does: the merge reads them. Proving that both carriers build a
-	 * merged field the same way follows each construction into library code (Guava's memoizing Supplier among it),
-	 * and a fresh Minecraft directory, which no launcher has started this version in yet, has no libraries at all --
-	 * so the merge could prove nothing and refused ("Incompatible initializer dependency").
-	 *
-	 * @param artifacts each library's {@code downloads.artifact}: {@code path}, {@code url}, {@code sha1}, {@code size}
-	 * @return the verified jars, in the order {@code artifacts} lists them: exactly what the merge is given to read,
-	 *         and nothing else that happens to sit in {@code libraries}
+	 * The server jar {@code versions/<mc>/<mc>.json} names under {@code downloads.server}, at {@code dest}: reused when a
+	 * copy is already there whose SHA-1 matches the JSON, otherwise downloaded beside it and verified before it is moved
+	 * into place, so a partial or mismatched download never stands in for it.
 	 */
-	List<Path> downloadLibraries(List<Map<String, Object>> artifacts, Path libraries) throws IOException {
-		int fetched = 0;
-		List<Path> verified = new ArrayList<>();
-		for (Map<String, Object> artifact : artifacts) {
-			Object path = artifact.get("path"), url = artifact.get("url");
-			if (!(path instanceof String relative) || !(url instanceof String from)) continue;
-			String sha1 = artifact.get("sha1") instanceof String s ? s : null;
-			long size = artifact.get("size") instanceof Number n ? n.longValue() : -1L;
-			Path dest = libraries.resolve(relative).normalize();
-			if (!dest.startsWith(libraries.normalize())) throw new IOException("library path leaves the libraries directory: " + relative);
-			if (Files.isRegularFile(dest) && (sha1 == null ? Files.size(dest) > 0 : sha1.equalsIgnoreCase(Util.sha1(dest)))) {
-				verified.add(dest);
-				continue;
-			}
-			Files.createDirectories(dest.getParent());
-			Path part = dest.resolveSibling(dest.getFileName() + ".part");
-			try {
-				http.downloadToFile(from, part);
-				if (size >= 0 && Files.size(part) != size) {
-					throw new IOException("size mismatch on " + relative + " (expected " + size + ", got " + Files.size(part) + ")");
-				}
-				if (sha1 != null) verifySha1(part, sha1, relative);
-				move(part, dest);
-				verified.add(dest);
-				fetched++;
-			} catch (IOException | RuntimeException e) {
-				deleteQuietly(part);
-				throw e;
-			}
+	@SuppressWarnings("unchecked")
+	void downloadServer(Path mcDir, String mcVersion, Path dest) throws IOException {
+		Path versionJson = mcDir.resolve("versions").resolve(mcVersion).resolve(mcVersion + ".json");
+		if (!Files.isRegularFile(versionJson)) {
+			throw new IOException("version json not found: " + versionJson + " — download vanilla " + mcVersion + " first");
 		}
-		if (fetched > 0) log.accept("downloaded " + fetched + " Minecraft librar" + (fetched == 1 ? "y" : "ies") + " into " + libraries);
-		return List.copyOf(verified);
+		Object root = parseJson(Files.readString(versionJson, StandardCharsets.UTF_8), versionJson.toString());
+		Object downloads = root instanceof Map<?, ?> map ? map.get("downloads") : null;
+		Map<String, Object> server = downloads instanceof Map<?, ?> d && d.get("server") instanceof Map<?, ?> s
+				? (Map<String, Object>) s : null;
+		if (server == null || !(server.get("url") instanceof String url)) {
+			throw new IOException(mcVersion + ".json has no downloads.server.url (a client-only version can't be "
+					+ "NeoForge-patched)");
+		}
+		String sha1 = server.get("sha1") instanceof String s ? s : null;
+		if (Files.isRegularFile(dest) && Files.size(dest) > 0
+				&& (sha1 == null || sha1.equalsIgnoreCase(Util.sha1(dest)))) {
+			return;
+		}
+		Files.createDirectories(dest.getParent());
+		Path part = dest.resolveSibling(dest.getFileName() + ".part");
+		log.accept("[neoform] downloading the " + mcVersion + " server jar …");
+		try {
+			http.downloadToFile(url, part);
+			if (sha1 != null) verifySha1(part, sha1, mcVersion + " server.jar");
+			move(part, dest);
+		} catch (IOException | RuntimeException e) {
+			deleteQuietly(part);
+			throw e;
+		}
 	}
 
 	// ---- helpers ----

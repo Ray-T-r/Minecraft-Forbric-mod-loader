@@ -1,10 +1,14 @@
-"""Every executable copy of the NeoForge and MinecraftForge pins agrees with the installer's Pins.java.
+"""Every executable copy of the NeoForge pin agrees with the installer's Pins.java, and the MinecraftForge copies agree
+with each other.
 
 The pins live in one Java file, but scripts that cannot read it (the native-control installers, the evidence
 recorder, the carrier assembly script, the merged-base script's userdev defaults, the census table's platform
 line) carry their own copy. A bump that misses one of them does not fail anywhere: the native controls quietly
 compare against the previous NeoForge, or the release check records the wrong build. This test is where a
 half-done bump stops.
+
+The installer builds nothing of MinecraftForge any more, so Pins.java has no MinecraftForge pin. The copies that remain
+serve native MinecraftForge as an oracle (native controls, evidence, breath-drown); they are held to one value.
 """
 import re
 import unittest
@@ -30,8 +34,10 @@ def found(path, pattern):
 class PinAgreementTest(unittest.TestCase):
     def setUp(self):
         self.neo = java_pin('NEOFORGE')
-        self.forge = java_pin('FORGE')
         self.mc = java_pin('MINECRAFT')
+
+    def test_the_installer_has_no_minecraftforge_pin(self):
+        self.assertIsNone(re.search(r'static final String FORGE = ', PINS_JAVA.read_text(encoding='utf-8')))
 
     def assertAll(self, values, expected, where):
         self.assertEqual({expected}, set(values), where)
@@ -56,8 +62,10 @@ class PinAgreementTest(unittest.TestCase):
         self.assertAll(found(table, r'^platform neoforge minecraft=\S+ neoforge=(\S+)$'.replace('^', '(?m)^')), neo,
                        'native-only-methods.txt platform line (regenerate with FORBRIC_WRITE_NATIVE_ONLY_METHODS=1)')
 
-    def test_forge_pin_everywhere(self):
-        forge, compat = self.forge, COMPAT
+    def test_minecraftforge_oracle_pin_everywhere(self):
+        compat = COMPAT
+        forge = found(compat / 'evidence.py', r'"forge": "([^"]+)"')[0]
+        self.assertRegex(forge, r'^' + re.escape(self.mc) + r'-[0-9.]+$', 'evidence.py PINS forge is <mc>-<fml>')
         fml = forge.split('-', 1)[1]
         self.assertAll(found(compat / 'evidence.py', r'"forge": "([^"]+)"'), forge, 'evidence.py PINS')
         self.assertAll(found(compat / 'native-controls.py', r'"forge": "([0-9][^"]*)"'), fml, 'native-controls.py VERSIONS')

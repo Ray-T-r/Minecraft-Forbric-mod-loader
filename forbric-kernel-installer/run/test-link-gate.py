@@ -22,8 +22,10 @@ with tempfile.TemporaryDirectory(prefix="forbric-installer-links-") as temporary
     sources += sorted((project / "src/test/java").rglob("InstallerWindowInputTest.java"))
     sources += sorted((project / "src/test/java").rglob("MinecraftLibrariesTest.java"))
     sources += sorted((project / "src/test/java").rglob("VanillaReferenceTest.java"))
+    sources += sorted((project / "src/test/java").rglob("BaseCoordinatePinTest.java"))
+    sources += sorted((project / "src/test/java").rglob("DevPrepareRetiredTest.java"))
     subprocess.run(["javac", "--release", "17", "-d", str(classes), *map(str, sources)], check=True)
     resource = classes / "forbric/tools/forbric-merge-tools.jar"
     resource.parent.mkdir(parents=True)
     shutil.copyfile(tools, resource)
-    subprocess.run(["java", "-cp", str(classes), "net.forbric.installer.kernel.MergedBaseLinkGateTest", str(work)], check=True)
+    subprocess.run(["java", "-cp", str(classes), "net.forbric.installer.kernel.BaseLinkGateTest", str(work)], check=True)
