@@ -88,6 +88,8 @@ public final class BaseLinkGateTest {
 		BaseCoordinatePinTest.main(new String[0]);
 		// And the development stage's cleanup of the merged base's directories (D12).
 		DevPrepareRetiredTest.main(new String[] { work.resolve("dev-stage").toString() });
+		// And the server jar NFRT is handed: fetched only when NFRT runs, verified before NFRT is seeded with it (R4).
+		ServerJarTest.main(new String[] { work.resolve("server-jar").toString() });
 	}
 
 	/**
