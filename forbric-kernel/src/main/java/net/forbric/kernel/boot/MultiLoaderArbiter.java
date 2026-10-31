@@ -383,6 +383,14 @@ public final class MultiLoaderArbiter {
 		return declared;
 	}
 
+	/**
+	 * Whether {@code jar} carries a MinecraftForge manifest ({@code META-INF/mods.toml}): a half nothing on Forbric loads,
+	 * set aside in a universal jar another family owns and the whole jar in a refused one.
+	 */
+	public static boolean carriesMinecraftForgeHalf(Path jar) {
+		return manifestsOf(jar).contains(LoaderKind.MINECRAFTFORGE);
+	}
+
 	/** The loader manifests {@code jar} carries, in {@link #declaredBy}'s order. */
 	private static List<LoaderKind> manifestsOf(Path jar) {
 		List<LoaderKind> declared = new ArrayList<>();

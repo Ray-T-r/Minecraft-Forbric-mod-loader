@@ -81,6 +81,31 @@ class AbiLinkAuditTest {
 				"a Fabric port of a Forge library ships the classes its dependants name");
 	}
 
+	/**
+	 * A universal jar's MinecraftForge half is set aside, so its {@code net.minecraftforge.*} references never link and
+	 * are not judged (collective, doubledoors and nutritiousmilk read DEGRADED without this). Its NeoForge references
+	 * still are, and a jar without a MinecraftForge half is still judged for the MinecraftForge root.
+	 */
+	@Test
+	void aSetAsideMinecraftForgeHalfIsNotJudgedForMinecraftForgeReferences(@TempDir Path dir) throws Exception {
+		String forge = "net/minecraftforge/fml/javafmlmod/FMLJavaModLoadingContext";
+		Path universal = dir.resolve("universal.jar");
+		try (OutputStream out = Files.newOutputStream(universal); ZipOutputStream zip = new ZipOutputStream(out)) {
+			put(zip, "a/b/ForgeHalf", caller("a/b/ForgeHalf", forge));
+			put(zip, "a/b/NeoHalf", caller("a/b/NeoHalf", GONE));
+		}
+		Path single = jar(dir.resolve("single.jar"), "c/d/Uses", caller("c/d/Uses", forge));
+		Set<String> present = AbiLinkAudit.classesOf(List.of(universal, single));
+
+		List<AbiLinkAudit.Finding> findings = AbiLinkAudit.audit(List.of(universal, single), present,
+				jar -> jar.equals(universal));
+		assertEquals(2, findings.size(), findings.toString());
+		assertEquals("universal.jar", findings.get(0).jar());
+		assertEquals(List.of(GONE), findings.get(0).missing(), "the NeoForge half is still judged");
+		assertEquals("single.jar", findings.get(1).jar());
+		assertEquals(List.of(forge), findings.get(1).missing(), "a jar with no MinecraftForge half still is");
+	}
+
 	@Test
 	void theLoadingLayerTheKernelReplacesIsOutOfScope(@TempDir Path dir) throws Exception {
 		Path mod = jar(dir.resolve("mod.jar"), "a/b/Uses", caller("a/b/Uses", LOADING));

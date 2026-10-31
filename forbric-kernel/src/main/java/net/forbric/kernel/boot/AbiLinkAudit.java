@@ -26,6 +26,7 @@ import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.function.Predicate;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipFile;
 
@@ -37,13 +38,18 @@ import net.forbric.kernel.util.Caught;
 import net.forbric.kernel.util.ForbricLog;
 
 /**
- * Names the mods compiled against a NeoForge or MinecraftForge this instance does not carry.
+ * Names the mods compiled against a NeoForge (or a MinecraftForge port layer) this instance does not carry.
  *
  * <p>A mod built for another loader version links fine at load and dies at the first call into a class that is
  * not there — a {@code NoClassDefFoundError} inside a deferred task, a listener, a render pass — and the report
  * names the class, not the mod. This reads every class's constant pool for the Forge-family classes it names and
  * resolves each against the carriers, the merged base and every installed jar (a Fabric port of a Forge library
  * legitimately ships {@code net.minecraftforge.*} classes for its dependants); what resolves nowhere is dangling.
+ *
+ * <p>A jar that carries a MinecraftForge half ({@code META-INF/mods.toml}) is not judged for its
+ * {@code net.minecraftforge.*} references: nothing on Forbric loads that half — a universal jar's is set aside, a refused
+ * jar is not loaded at all — so its classes naming MinecraftForge never link. Every other jar still is: a NeoForge or
+ * Fabric jar naming a {@code net.minecraftforge.*} class that resolves nowhere is dangling.
  *
  * <p>Loader-bootstrap packages are out of scope: the kernel REPLACES FML's loading layer, so
  * {@code fml/loading}, {@code fml/relauncher} and the {@code locating} SPIs are absent here by design and a mod
@@ -60,6 +66,8 @@ public final class AbiLinkAudit {
 	/** …except the loading layer the kernel replaces. */
 	static final String[] OUT_OF_SCOPE = { "net/neoforged/fml/loading/", "net/minecraftforge/fml/loading/",
 			"net/minecraftforge/fml/relauncher/", "net/neoforged/neoforgespi/locating/", "net/minecraftforge/forgespi/locating/" };
+	/** The root a jar's set-aside MinecraftForge half names; see the class comment. */
+	static final String MINECRAFTFORGE_ROOT = "net/minecraftforge/";
 	private static final byte[][] NEEDLES = { ByteScan.needle("net/neoforged/"), ByteScan.needle("net/minecraftforge/") };
 
 	/** One jar with dangling references: which family, and the classes (internal names) that resolve nowhere. */
@@ -78,14 +86,14 @@ public final class AbiLinkAudit {
 		return !"off".equalsIgnoreCase(System.getProperty(SWITCH, "on"));
 	}
 
-	/** Scans {@code jars}, resolving against {@code jars} themselves plus {@code alsoAgainst} (carriers, merged base). */
+	/** Scans {@code jars}, resolving against {@code jars} themselves plus {@code alsoAgainst} (carriers, base). */
 	public static void scan(List<Path> jars, List<Path> alsoAgainst) {
 		if (!enabled()) return;
 		long start = System.nanoTime();
 		List<Path> universe = new ArrayList<>(alsoAgainst);
 		for (Path jar : jars) if (!universe.contains(jar)) universe.add(jar);
 		Set<String> present = classesOf(universe);
-		List<Finding> findings = audit(jars, present);
+		List<Finding> findings = audit(jars, present, MultiLoaderArbiter::carriesMinecraftForgeHalf);
 		synchronized (FINDINGS) {
 			for (Finding f : findings) FINDINGS.put(f.jar(), f);
 			scannedJars += jars.size();
@@ -110,10 +118,19 @@ public final class AbiLinkAudit {
 		return present;
 	}
 
-	/** The findings over {@code jars}, given the set of classes that exist. Pure; the test's entry point. */
+	/** The findings over {@code jars}, given the set of classes that exist, no jar carrying a MinecraftForge half. */
 	static List<Finding> audit(List<Path> jars, Set<String> present) {
+		return audit(jars, present, jar -> false);
+	}
+
+	/**
+	 * The findings over {@code jars}, given the set of classes that exist; a jar {@code minecraftForgeHalf} answers true
+	 * for is not judged for its {@code net/minecraftforge/} references. Pure; the test's entry point.
+	 */
+	static List<Finding> audit(List<Path> jars, Set<String> present, Predicate<Path> minecraftForgeHalf) {
 		List<Finding> out = new ArrayList<>();
 		for (Path jar : jars) {
+			boolean setAside = minecraftForgeHalf.test(jar);
 			Set<String> missing = new LinkedHashSet<>();
 			try (ZipFile zip = new ZipFile(jar.toFile())) {
 				for (ZipEntry entry : zip.stream().toList()) {
@@ -124,6 +141,7 @@ public final class AbiLinkAudit {
 					}
 					if (!ByteScan.containsAny(bytes, NEEDLES)) continue;
 					for (String named : namedClasses(bytes)) {
+						if (setAside && named.startsWith(MINECRAFTFORGE_ROOT)) continue;
 						if (inScope(named) && !present.contains(named)) missing.add(named);
 					}
 				}
