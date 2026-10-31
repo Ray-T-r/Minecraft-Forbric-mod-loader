@@ -14,8 +14,9 @@ import net.forbric.kernel.classloading.LoaderProbePolicy.Family;
  */
 class PayloadEncoderFamilyTest {
 	@Test void theCarriersOwnPayloadsByTheirPlatformPackage() {
+		// No package of its own makes a payload MinecraftForge's to write any more: its codec is not consulted.
+		assertNull(PayloadInterop.encoderFamily("net.minecraftforge.network.ForgePayload", null));
 		assertEquals(Family.NEOFORGE, PayloadInterop.encoderFamily("net.neoforged.neoforge.network.payload.MinecraftRegisterPayload", null));
-		assertEquals(Family.FORGE, PayloadInterop.encoderFamily("net.minecraftforge.network.ForgePayload", null));
 	}
 
 	@Test void aFabricModsPayloadByItsJarWhateverItsPackage() {

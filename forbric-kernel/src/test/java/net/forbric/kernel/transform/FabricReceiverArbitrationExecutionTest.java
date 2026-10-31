@@ -31,7 +31,8 @@ import net.forbric.kernel.ExpectCaught;
  * <ul>
  *   <li>the courier's own body gets the payload as its own codec reads the same bytes, and keeps its own state;</li>
  *   <li>for the negotiation, its own answer stands aside and NeoForge's handler answers, once, after it;</li>
- *   <li>for a channel declaration, NeoForge is told first, the courier second, MinecraftForge's declaration last;</li>
+ *   <li>for a channel declaration, NeoForge is told first and the courier second, and MinecraftForge's channel list is not
+ *       asked to declare anything (Forbric loads no MinecraftForge mod);</li>
  *   <li>a subclass's override handing the payload on to the handle it overrides does not arbitrate it again;</li>
  *   <li>any other payload reaches the courier untouched.</li>
  * </ul>
@@ -218,6 +219,7 @@ class FabricReceiverArbitrationExecutionTest {
 					}
 				}
 				""");
+		// MinecraftForge's channel list, present so that a declaration made through it would show in the trace.
 		SOURCES.put("net.minecraftforge.network.ChannelListManager", """
 				package net.minecraftforge.network;
 				import fixture.Trace;
@@ -440,13 +442,14 @@ class FabricReceiverArbitrationExecutionTest {
 
 	// The stub custom-payload packets have no GAMEPLAY_STREAM_CODEC for the packet census to read.
 	@ExpectCaught("GAMEPLAY_STREAM_CODEC")
-	@Test void aChannelDeclarationTellsNeoForgeFirstTheCourierSecondAndForgeLast() throws Throwable {
+	@Test void aChannelDeclarationTellsNeoForgeFirstAndTheCourierSecond() throws Throwable {
 		Object courier = courier(repaired);
 		Object channel = InjectorExecution.construct(repaired.loadClass("net.minecraft.resources.Identifier"), "mod:sync");
 		Object neoRegister = InjectorExecution.construct(repaired.loadClass("net.neoforged.neoforge.network.payload.MinecraftRegisterPayload"),
 				Set.of(channel));
 		assertEquals(true, InjectorExecution.invoke(courier, "handle", neoRegister));
-		assertEquals(List.of("neoforge register [mod:sync]", "relay", "courier joins [mod:sync]", "forge declares"), trace(repaired));
+		assertEquals(List.of("neoforge register [mod:sync]", "relay", "courier joins [mod:sync]"), trace(repaired),
+				"NeoForge first, the courier second, and no MinecraftForge declaration after them");
 	}
 
 	// The stub custom-payload packets have no GAMEPLAY_STREAM_CODEC for the packet census to read.

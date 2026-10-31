@@ -194,7 +194,9 @@ public final class ForbricSwitches {
 			Map.entry("forbric.forgeScanData", "Forbric loads no MinecraftForge mod, so there is no MinecraftForge annotation index to fill; NeoForge's "
 					+ "has its own switch (-Dforbric.neoScanData)"),
 			Map.entry("forbric.forgeDatapackRegistries", "Forbric loads no MinecraftForge mod, so there is no MinecraftForge datapack-registry "
-					+ "declaration event to fire; NeoForge's own declares its registries"));
+					+ "declaration event to fire; NeoForge's own declares its registries"),
+			Map.entry("forbric.forgeHandshake", "Forbric loads no MinecraftForge mod, so there is no MinecraftForge login handshake, channel list "
+					+ "or config sync to restore; NeoForge's own configuration tasks run as on NeoForge"));
 
 	private static final ForbricSwitches SYSTEM =
 			new ForbricSwitches(RENAMED, RETIRED, System::getProperty, ForbricLog::warn);

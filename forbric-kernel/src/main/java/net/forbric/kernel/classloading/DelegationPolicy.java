@@ -84,7 +84,7 @@ public final class DelegationPolicy {
 			// The reflective interop hooks that GUEST bytecode calls into (PayloadInterop, ClientShutdown). They name no game type — every game/ecosystem class they touch is reached
 			// reflectively through the loader of the object handed to them — so they are boot-side like the rest
 			// of the kernel. Pinning them here is not cosmetic: each holds process-wide state keyed by ClassLoader
-			// (PayloadInterop.MIRRORED_LOADERS, FORGE_CHANNELS_DECLARED; ClientShutdown's executor bookkeeping),
+			// (PayloadInterop.MIRRORED_LOADERS and DECLARED; ClientShutdown's executor bookkeeping),
 			// and a second copy defined game-side would start that bookkeeping over from empty while the first
 			// copy still believed it had done the work.
 			"net.forbric.kernel.interop.",
