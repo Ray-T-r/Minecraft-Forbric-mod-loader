@@ -13,22 +13,16 @@ import org.junit.jupiter.api.Test;
 import net.forbric.kernel.transform.TransferTransactionHooks;
 
 /**
- * Block energy between Team Reborn Energy and NeoForge (and the MinecraftForge adapters the runtime still carries), on the real engines. Each scenario gets its
+ * Block energy between Team Reborn Energy and NeoForge, on the real engines. Each scenario gets its
  * own loader over the transfer test classpath (which carries the Team Reborn Energy 5.0.0 jar the runtime compiles
  * against): the four transaction classes get the kernel's pairing hooks. The Reborn-absent scenario's loader refuses every team.reborn class and records the attempt.
  */
 class EnergyInteropTest {
 	@Test void fabricConsumerOfNeoNestsSimulatesAndNotifiesOnce() throws Exception { scenario("fabricConsumerOfNeo"); }
 	@Test void neoConsumerOfFabricNestsSimulatesAndNotifiesOnce() throws Exception { scenario("neoConsumerOfFabric"); }
-	@Test void forgeConsumerSimulatesByAbortAndExecutesByCommit() throws Exception { scenario("forgeConsumerOfTransactionalStores"); }
 	@Test void bothDirectionsConserveEnergy() throws Exception { scenario("conservationAcrossBothDirections"); }
 	@Test void longRequestsClampToIntAndTheRemainderStaysInTheSource() throws Exception { scenario("longAmountsClampToIntWithoutLoss"); }
-	@Test void anUncertifiedStandardForgeStoreGetsNoWriteBridge() throws Exception {
-		run(NativeEnergyScenarios.class.getName(), "uncertifiedStandardStoreIsRefused", null);
-	}
 	@Test void invalidProviderAmountsAreRolledBack() throws Exception { scenario("invalidProviderAmountsRollBack"); }
-	@Test void aForgeConsumerOfAnEndpointInvalidatedMidOperationMovesNothing() throws Exception { scenario("forgeConsumerOfAnInvalidatedEndpointMovesNothing"); }
-	@Test void forgesEmptyStoreIsAnEmptyAnswerNotARefusal() throws Exception { scenario("forgesEmptyStoreIsAnEmptyAnswer"); }
 	@Test void liveRebornViewsResolveAgainAndMoveNothingOnceInvalidated() throws Exception { scenario("liveRebornStoresMoveNothingOnceInvalidated"); }
 	@Test void liveViewsResolveAgainAndAnInvalidatedEndpointMovesNothing() throws Exception { scenario("liveEndpointsResolveAndRefuseAfterInvalidation"); }
 	@Test void bridgeViewsAreNeverWrappedAgain() throws Exception { scenario("bridgesNeverStack"); }
@@ -38,7 +32,7 @@ class EnergyInteropTest {
 		run(RebornAbsentEnergyScenarios.class.getName(), "theEnergyPathLinksWithoutReborn", requested);
 		assertEquals(List.of(), requested, "a Reborn class was requested in a pack without Team Reborn Energy");
 	}
-	@Test void aFailedRebornInstallLeavesForgeAndNeoEnergyUntouched() throws Exception {
+	@Test void aFailedRebornInstallLeavesNeoEnergyUntouched() throws Exception {
 		List<String> requested = new CopyOnWriteArrayList<>();
 		run(RebornAbsentEnergyScenarios.class.getName(), "aFailedRebornInstallExposesNothing", requested);
 		assertTrue(requested.stream().anyMatch(name -> name.startsWith("team.reborn.")), "the install never reached Reborn: " + requested);

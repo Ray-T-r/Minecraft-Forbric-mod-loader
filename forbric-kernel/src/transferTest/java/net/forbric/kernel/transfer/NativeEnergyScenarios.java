@@ -9,13 +9,9 @@ import java.util.concurrent.atomic.AtomicReference;
 
 import net.fabricmc.fabric.api.transfer.v1.transaction.Transaction;
 import net.forbric.kernel.runtime.transfer.EnergyUnits;
-import net.forbric.kernel.runtime.transfer.ForgeEnergyAdapters;
 import net.forbric.kernel.runtime.transfer.LiveTransferEndpoints;
 import net.forbric.kernel.runtime.transfer.RebornEnergyAdapters;
 import net.forbric.kernel.runtime.transfer.TransferIssues;
-import net.minecraftforge.energy.EmptyEnergyStorage;
-import net.minecraftforge.energy.EnergyStorage;
-import net.minecraftforge.energy.IEnergyStorage;
 import net.neoforged.neoforge.transfer.energy.EnergyHandler;
 import net.neoforged.neoforge.transfer.energy.EnergyHandlerUtil;
 import net.neoforged.neoforge.transfer.energy.SimpleEnergyHandler;
@@ -24,11 +20,10 @@ import team.reborn.energy.api.EnergyStorageUtil;
 import team.reborn.energy.api.base.SimpleEnergyStorage;
 
 /**
- * Block energy across the three APIs with the real engines: Fabric's transfer transactions (transformed with the
- * kernel's pairing hooks), NeoForge's, Team Reborn Energy 5.0.0's own SimpleEnergyStorage, NeoForge's own
- * SimpleEnergyHandler and Forge's own EnergyStorage (no longer certified: the MinecraftForge transfer audit is gone, so
- * the scenarios that needed a certified Forge store went with it; the runtime lane removes the rest with the adapters). Only
- * the kernel's adapters are exercised; no store below is a test double except where a broken provider is the point.
+ * Block energy across Team Reborn Energy and NeoForge with the real engines: Fabric's transfer transactions
+ * (transformed with the kernel's pairing hooks), NeoForge's, Team Reborn Energy 5.0.0's own SimpleEnergyStorage and
+ * NeoForge's own SimpleEnergyHandler. Only the kernel's adapters are exercised; no store below is a test double except
+ * where a broken provider is the point.
  */
 public final class NativeEnergyScenarios {
 	private NativeEnergyScenarios() { }
@@ -59,9 +54,6 @@ public final class NativeEnergyScenarios {
 	}
 	private static List<TransferIssues.Issue> capture() {
 		List<TransferIssues.Issue> issues = new ArrayList<>(); TransferIssues.setReporter(issues::add); return issues;
-	}
-	private static long count(List<TransferIssues.Issue> issues, String code, Class<?> type) {
-		return issues.stream().filter(issue -> issue.code().equals(code) && type.getName().equals(issue.providerClass())).count();
 	}
 
 	/** A Fabric (Reborn) consumer of a NeoForge handler: nested commit and abort, repeated simulation, limits, one final. */
@@ -111,31 +103,6 @@ public final class NativeEnergyScenarios {
 		eq(200, fabric.amount); eq(1, fabric.finals); eq(1000, view.getCapacityAsLong()); closed();
 	}
 
-	/** A Forge consumer of NeoForge and Reborn stores: simulate is a real aborted operation, execute commits it. */
-	public static void forgeConsumerOfTransactionalStores() {
-		Neo neo = new Neo(1000, 300, 200, 0);
-		IEnergyStorage onNeo = ForgeEnergyAdapters.forge(neo);
-		for (int i = 0; i < 3; i++) { eq(300, onNeo.receiveEnergy(500, true)); eq(0, neo.getAmountAsLong()); }
-		eq(300, onNeo.receiveEnergy(500, false)); eq(300, neo.getAmountAsLong()); eq(1, neo.changes);
-		eq(200, onNeo.extractEnergy(500, true)); eq(300, onNeo.getEnergyStored());
-		eq(200, onNeo.extractEnergy(500, false)); eq(100, onNeo.getEnergyStored()); eq(1000, onNeo.getMaxEnergyStored());
-		yes(onNeo.canReceive() && onNeo.canExtract(), "NeoForge's rule for a handler with capacity");
-		eq(0, onNeo.receiveEnergy(0, false)); eq(0, onNeo.receiveEnergy(-5, false));
-		// Inside an open transaction the caller's scope stays the owner of the final commit, on either engine.
-		try (var outer = neoRoot()) { eq(50, onNeo.receiveEnergy(50, false)); eq(150, neo.getAmountAsLong()); }
-		eq(100, neo.getAmountAsLong());
-		try (Transaction outer = Transaction.openOuter()) { eq(50, onNeo.receiveEnergy(50, false)); eq(150, neo.getAmountAsLong()); }
-		eq(100, neo.getAmountAsLong()); closed();
-
-		Reborn generator = new Reborn(1000, 0, 200); generator.amount = 700;
-		IEnergyStorage onFabric = ForgeEnergyAdapters.forge(RebornEnergyAdapters.neo(generator));
-		yes(!onFabric.canReceive() && onFabric.canExtract(), "Reborn's own supportsInsertion/Extraction reach Forge");
-		eq(0, onFabric.receiveEnergy(100, false));
-		for (int i = 0; i < 3; i++) { eq(200, onFabric.extractEnergy(999, true)); eq(700, generator.amount); }
-		eq(200, onFabric.extractEnergy(999, false)); eq(500, generator.amount); eq(1, generator.finals);
-		eq(500, onFabric.getEnergyStored()); eq(1000, onFabric.getMaxEnergyStored()); closed();
-	}
-
 	/** Both directed moves between Fabric (Reborn) and NeoForge, each through the consumer's own API, and the total never changes. */
 	public static void conservationAcrossBothDirections() {
 		Reborn fabric = new Reborn(10_000, 10_000, 10_000); fabric.amount = 3000;
@@ -180,22 +147,6 @@ public final class NativeEnergyScenarios {
 		eq(Integer.MAX_VALUE, EnergyUnits.request(Long.MAX_VALUE)); eq(7, EnergyUnits.request(7)); closed();
 	}
 
-	static final class Plain extends EnergyStorage {
-		String label;
-		Plain() { super(100); }
-		void describe(StringBuilder out) { out.append(label); }
-	}
-
-	/** Run WITHOUT the shape certificate: even Forge's standard class gets no write view, and says why. */
-	public static void uncertifiedStandardStoreIsRefused() {
-		List<TransferIssues.Issue> issues = capture();
-		EnergyStorage forge = new EnergyStorage(100, 100, 100, 30);
-		yes(ForgeEnergyAdapters.neo(forge) == null, "an uncertified EnergyStorage got a write bridge");
-		eq(30, forge.getEnergyStored());
-		eq(1, count(issues, "TRANSFER_HELPER_UNVERIFIED", EnergyStorage.class));
-		eq(1, count(issues, "FORGE_HANDLER_NOT_ROLLBACK_SAFE", EnergyStorage.class));
-	}
-
 	/** A result outside [0, request] is rejected before its nested scope commits, so the provider is rolled back. */
 	public static void invalidProviderAmountsRollBack() {
 		Neo lying = new Neo(1000, 1000, 1000, 0) { @Override public int insert(int max, TransactionContext tx) { super.insert(max, tx); return max + 1; } };
@@ -208,68 +159,6 @@ public final class NativeEnergyScenarios {
 		negative.amount = 100;
 		try (var root = neoRoot()) { expected(IllegalStateException.class, () -> RebornEnergyAdapters.neo(negative).extract(10, root)); eq(100, negative.amount); }
 		closed();
-	}
-
-	/**
-	 * A Forge consumer of a live view whose endpoint goes away DURING the operation (a machine that replaces its own
-	 * block or invalidates its capabilities while being filled). The NeoForge and Reborn views already answer 0 and
-	 * report it; the Forge facade must too, rather than throwing into a Forge cable's tick. The provider's own engine
-	 * rolls the write back, execute and simulate alike, also inside a caller's open scope.
-	 */
-	public static void forgeConsumerOfAnInvalidatedEndpointMovesNothing() {
-		List<TransferIssues.Issue> issues = capture();
-		AtomicLong generation = new AtomicLong();
-		AtomicBoolean present = new AtomicBoolean(true);
-		Neo machine = new Neo(1000, 1000, 1000, 500) {
-			@Override public int insert(int max, TransactionContext tx) { int moved = super.insert(max, tx); generation.incrementAndGet(); return moved; }
-			@Override public int extract(int max, TransactionContext tx) { int moved = super.extract(max, tx); present.set(false); return moved; }
-		};
-		IEnergyStorage facade = ForgeEnergyAdapters.forge(LiveTransferEndpoints.energy(() -> machine, present::get, generation::get));
-		eq(0, facade.receiveEnergy(100, false)); eq(500, machine.getAmountAsLong());
-		eq(0, facade.receiveEnergy(100, true)); eq(500, machine.getAmountAsLong());
-		eq(0, facade.extractEnergy(100, false)); eq(500, machine.getAmountAsLong());
-		present.set(true);
-		try (var outer = neoRoot()) {
-			eq(0, facade.receiveEnergy(50, false)); eq(500, machine.getAmountAsLong());
-			yes(net.neoforged.neoforge.transfer.transaction.Transaction.getCurrentOpenedTransaction() == outer, "the caller's scope was disturbed");
-			outer.commit();
-		}
-		eq(500, machine.getAmountAsLong()); eq(0, machine.changes); closed();
-		yes(issues.stream().anyMatch(issue -> issue.code().equals("ENDPOINT_INVALIDATED")), "the invalidation was not reported: " + issues);
-		// A valid endpoint through the same facade still moves energy.
-		Neo plain = new Neo(1000, 1000, 1000, 0);
-		IEnergyStorage onPlain = ForgeEnergyAdapters.forge(LiveTransferEndpoints.energy(() -> plain, () -> true, () -> 0L));
-		eq(30, onPlain.receiveEnergy(30, false)); eq(30, plain.getAmountAsLong()); closed();
-	}
-
-	/**
-	 * Forge's own EmptyEnergyStorage is the owner's answer "no energy here". It is not refused or reported (it has no
-	 * state to roll back), and it stays an answer: an empty view that accepts nothing, gives nothing, and tells every API
-	 * it cannot receive or extract. A subclass of it is a store of its own, audited and refused like any other.
-	 */
-	public static void forgesEmptyStoreIsAnEmptyAnswer() {
-		List<TransferIssues.Issue> issues = capture();
-		EnergyHandler view = ForgeEnergyAdapters.neo(EmptyEnergyStorage.INSTANCE);
-		yes(view != null, "Forge's empty store was treated as no answer");
-		eq(0, view.getAmountAsLong()); eq(0, view.getCapacityAsLong());
-		try (var tx = neoRoot()) { eq(0, view.insert(10, tx)); eq(0, view.extract(10, tx)); tx.commit(); }
-		yes(ForgeEnergyAdapters.forge(view) == EmptyEnergyStorage.INSTANCE, "Forge -> NeoForge -> Forge stacked on the empty store");
-		team.reborn.energy.api.EnergyStorage fabric = RebornEnergyAdapters.fabric(view);
-		yes(!fabric.supportsInsertion() && !fabric.supportsExtraction(), "Reborn was told the empty store takes or gives energy");
-		try (Transaction tx = Transaction.openOuter()) { eq(0, fabric.insert(10, tx)); eq(0, fabric.extract(10, tx)); tx.commit(); }
-		Neo neo = new Neo(100, 100, 100, 50);
-		try (var tx = neoRoot()) { eq(0, EnergyHandlerUtil.move(neo, view, 10, tx)); tx.commit(); }
-		eq(50, neo.getAmountAsLong());
-		expected(IllegalArgumentException.class, () -> { try (var tx = neoRoot()) { view.insert(-1, tx); } });
-		yes(issues.isEmpty(), "Forge's empty store produced a finding: " + issues);
-		EmptyEnergyStorage custom = new EmptyEnergyStorage() { @Override public int receiveEnergy(int max, boolean simulate) { return max; } };
-		yes(ForgeEnergyAdapters.neo(custom) == null, "a subclass of the empty store got a write bridge");
-		eq(1, count(issues, "FORGE_HANDLER_NOT_ROLLBACK_SAFE", custom.getClass())); closed();
-	}
-
-	private static void setEnergy(EnergyStorage storage, int energy) {
-		try { var field = EnergyStorage.class.getDeclaredField("energy"); field.setAccessible(true); field.setInt(storage, energy); }
-		catch (ReflectiveOperationException impossible) { throw new AssertionError(impossible); }
 	}
 
 	/** Views resolve their store for every operation, and an endpoint invalidated mid-operation moves nothing. */
@@ -304,7 +193,7 @@ public final class NativeEnergyScenarios {
 	}
 
 	/**
-	 * A NeoForge or Forge consumer's view of a Reborn store through its own live endpoint (RebornEnergyAdapters.live):
+	 * A NeoForge consumer's view of a Reborn store through its own live endpoint (RebornEnergyAdapters.live):
 	 * resolved again for every operation, and when the endpoint is invalidated or removed DURING an operation, Reborn's
 	 * own journal rolls the store back and the consumer is told nothing moved.
 	 */
@@ -328,7 +217,6 @@ public final class NativeEnergyScenarios {
 		current.set(invalidating);
 		try (var tx = neoRoot()) { eq(0, view.insert(5, tx)); eq(0, invalidating.amount); tx.commit(); }
 		eq(0, invalidating.amount); eq(0, invalidating.finals);
-		eq(0, ForgeEnergyAdapters.forge(view).receiveEnergy(5, false)); eq(0, invalidating.amount); eq(0, invalidating.finals);
 		// It is removed while it is being drained.
 		Reborn removing = new Reborn(1000, 1000, 1000) {
 			@Override public long extract(long max, net.fabricmc.fabric.api.transfer.v1.transaction.TransactionContext tx) {

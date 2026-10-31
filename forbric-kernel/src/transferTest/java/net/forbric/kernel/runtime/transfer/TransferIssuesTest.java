@@ -39,7 +39,7 @@ class TransferIssuesTest {
 	@Test void aProxyProvidersSourceIsItsInvocationHandler() {
 		capture();
 		Object proxy = Proxy.newProxyInstance(getClass().getClassLoader(), new Class<?>[] { Runnable.class }, new ModHandler());
-		TransferIssues.report("FORGE_HANDLER_NOT_ROLLBACK_SAFE", proxy, "detail");
+		TransferIssues.report("UNSLOTTED_STORAGE", proxy, "detail");
 		assertEquals(1, issues.size(), issues::toString);
 		assertEquals(proxy.getClass().getName(), issues.getFirst().providerClass(), "the finding still names what was offered");
 		assertSame(ModHandler.class, issues.getFirst().source());
@@ -60,13 +60,13 @@ class TransferIssuesTest {
 		Object first = Proxy.newProxyInstance(getClass().getClassLoader(), new Class<?>[] { Runnable.class }, new ModHandler());
 		Object second = Proxy.newProxyInstance(getClass().getClassLoader(), new Class<?>[] { Runnable.class }, new OtherModHandler());
 		assertSame(first.getClass(), second.getClass(), "the shape this case is about: one proxy class for both handlers");
-		TransferIssues.report("FORGE_HANDLER_NOT_ROLLBACK_SAFE", first, "first");
-		TransferIssues.report("FORGE_HANDLER_NOT_ROLLBACK_SAFE", second, "second");
+		TransferIssues.report("UNSLOTTED_STORAGE", first, "first");
+		TransferIssues.report("UNSLOTTED_STORAGE", second, "second");
 		assertEquals(2, issues.size(), issues::toString);
 		assertSame(ModHandler.class, issues.get(0).source());
 		assertSame(OtherModHandler.class, issues.get(1).source());
 		// Still once per finding: the same handler class offered again, through another instance, is not a new one.
-		TransferIssues.report("FORGE_HANDLER_NOT_ROLLBACK_SAFE",
+		TransferIssues.report("UNSLOTTED_STORAGE",
 				Proxy.newProxyInstance(getClass().getClassLoader(), new Class<?>[] { Runnable.class }, new ModHandler()), "again");
 		assertEquals(2, issues.size(), issues::toString);
 	}
@@ -75,7 +75,7 @@ class TransferIssuesTest {
 		capture();
 		InvocationHandler lambda = (proxy, method, arguments) -> null;
 		Object proxy = Proxy.newProxyInstance(getClass().getClassLoader(), new Class<?>[] { Runnable.class }, lambda);
-		TransferIssues.report("FORGE_HANDLER_NOT_ROLLBACK_SAFE", proxy, "detail");
+		TransferIssues.report("UNSLOTTED_STORAGE", proxy, "detail");
 		// A hidden class: the boot side reads its jar from it directly (its definer's protection domain), never by name.
 		assertSame(lambda.getClass(), issues.getFirst().source());
 	}
@@ -88,8 +88,8 @@ class TransferIssuesTest {
 
 	@Test void aFindingWithNoProviderOrOnlyANameCarriesNoSource() {
 		capture();
-		TransferIssues.report("FORGE_QUERY_HOOK_MISSING", null, "detail");
-		TransferIssues.reportType("TRANSFER_HELPER_UNVERIFIED", "net.minecraftforge.items.ItemStackHandler", "detail");
+		TransferIssues.report("FABRIC_FALLBACK_ORDER", null, "detail");
+		TransferIssues.reportType("UNSLOTTED_STORAGE", "net.neoforged.neoforge.transfer.item.ItemStacksResourceHandler", "detail");
 		assertEquals(2, issues.size(), issues::toString);
 		assertNull(issues.get(0).source());
 		assertNull(issues.get(1).source());

@@ -9,52 +9,23 @@ import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.function.BiFunction;
 
 import org.junit.jupiter.api.Test;
-import org.objectweb.asm.ClassWriter;
-import org.objectweb.asm.Opcodes;
-import org.objectweb.asm.Type;
 
 import net.fabricmc.fabric.api.lookup.v1.block.BlockApiLookup;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
 import net.minecraft.resources.Identifier;
-import net.minecraft.world.Container;
 import net.minecraft.world.level.Level;
 import net.minecraft.world.level.block.Block;
-import net.minecraft.world.level.block.entity.BaseContainerBlockEntity;
 import net.minecraft.world.level.block.entity.BlockEntity;
 import net.minecraft.world.level.block.entity.BlockEntityType;
-import net.minecraft.world.level.block.entity.RandomizableContainerBlockEntity;
 import net.minecraft.world.level.block.state.BlockState;
-import net.minecraftforge.items.wrapper.InvWrapper;
 
 /**
- * The parts of the bridge that decide on their own rather than through TransferPrecedence. ahead(): a Fabric
- * consumer reaches a Forge or NeoForge owner only because the owner's provider goes in FRONT of Fabric's generic
- * Container fallback; if that silently degraded to appending, every Forge/NeoForge Container would again be
- * answered by Fabric's ContainerStorage. wholeContainer() and vanillaWrites(): which Forge answer is Forge's generic
- * InvWrapper, and which Containers NeoForge's own wrapper may write in its place.
+ * The part of the bridge that decides on its own rather than through TransferPrecedence. ahead(): a Fabric consumer
+ * reaches a NeoForge owner only because the owner's provider goes in FRONT of Fabric's generic Container fallback; if
+ * that silently degraded to appending, every NeoForge Container would again be answered by Fabric's ContainerStorage.
  */
 class BlockTransferBridgeTest {
-	/** A class carrying the marker ForgeTransferCapabilityFallback adds to BlockEntity. */
-	static final class Composed { void forbric$forgeTransferFallback() { } }
-
-	@Test void theForgeFallbackIsLookedForOnlyWhereTheKernelRegisteredIt() {
-		List<TransferIssues.Issue> issues = new CopyOnWriteArrayList<>();
-		TransferIssues.resetForTests();
-		TransferIssues.setReporter(issues::add);
-		long failures = net.forbric.kernel.util.Caught.errorCount();
-		// -Dforbric.forgeCapabilities=off: the kernel registered no fallback, so its absence is the switch, not a defect.
-		assertFalse(BlockTransferBridge.forgeFallback(Object.class, false));
-		assertEquals(failures, net.forbric.kernel.util.Caught.errorCount(), "a fallback that was never registered is no failure");
-		assertTrue(issues.isEmpty(), issues::toString);
-		assertTrue(BlockTransferBridge.forgeFallback(Composed.class, true));
-		// Registered and missing is the composition's defect, and stays one.
-		assertFalse(BlockTransferBridge.forgeFallback(Object.class, true));
-		assertEquals(failures + 1, net.forbric.kernel.util.Caught.errorCount());
-		assertEquals(1, issues.size(), issues::toString);
-		assertEquals("FORGE_QUERY_HOOK_MISSING", issues.getFirst().code());
-		assertNull(issues.getFirst().providerClass(), "a finding with no provider object names no class");
-	}
 
 	@Test void theOwnersProviderGoesInFrontOfFabricsOwnFallbacks() {
 		List<String> issues = capture();
@@ -112,53 +83,6 @@ class BlockTransferBridgeTest {
 		assertEquals(List.of(owner, generic), fallbacks);
 	}
 
-	@Test void onlyForgesOwnInvWrapperIsTheGenericWholeContainerView() {
-		Container chest = container();
-		assertTrue(BlockTransferBridge.wholeContainer(new InvWrapper(chest)));
-		// A subclass can refuse slots or faces of its own; it stays a handler for the audit to accept or refuse.
-		assertFalse(BlockTransferBridge.wholeContainer(new InvWrapper(chest) { }));
-		assertFalse(BlockTransferBridge.wholeContainer(null));
-		assertFalse(BlockTransferBridge.wholeContainer(chest));
-	}
-	/**
-	 * NeoForge's Container wrapper writes through setItem(slot, stack, true), which BaseContainerBlockEntity implements
-	 * without calling the two-argument setItem. A mod class that declares either form, or onTransfer, anywhere below
-	 * the vanilla base would have its own writes skipped or replayed, so its Container is not offered to NeoForge.
-	 */
-	@Test void neoForgesContainerWrapperWritesOnlyContainersWhoseWritesAreTheGamesOwn() {
-		String item = Type.getDescriptor(net.minecraft.world.item.ItemStack.class);
-		Loader loader = new Loader();
-		Class<?> chest = loader.define("PlainChest", RandomizableContainerBlockEntity.class);
-		assertTrue(BlockTransferBridge.vanillaWrites(chest));
-		assertTrue(BlockTransferBridge.vanillaWrites(loader.define("PlainCrate", BaseContainerBlockEntity.class)));
-		assertTrue(BlockTransferBridge.vanillaWrites(RandomizableContainerBlockEntity.class));
-		assertFalse(BlockTransferBridge.vanillaWrites(loader.define("ResettingMachine", BaseContainerBlockEntity.class, "setItem", "(I" + item + ")V")));
-		assertFalse(BlockTransferBridge.vanillaWrites(loader.define("TransactionAwareMachine", RandomizableContainerBlockEntity.class, "setItem", "(I" + item + "Z)V")));
-		assertFalse(BlockTransferBridge.vanillaWrites(loader.define("CountingMachine", BaseContainerBlockEntity.class, "onTransfer",
-				"(II" + Type.getDescriptor(net.neoforged.neoforge.transfer.transaction.TransactionContext.class) + ")V")));
-		// An override further down a chain of otherwise plain mod classes counts as much as one right below the base.
-		assertFalse(BlockTransferBridge.vanillaWrites(loader.define("SortingChest", chest, "setItem", "(I" + item + ")V")));
-		// A Container that is not a BaseContainerBlockEntity at all.
-		assertFalse(BlockTransferBridge.vanillaWrites(container().getClass()));
-	}
-
-	private static Container container() {
-		return (Container) java.lang.reflect.Proxy.newProxyInstance(BlockTransferBridgeTest.class.getClassLoader(), new Class<?>[] { Container.class }, (proxy, method, arguments) -> {
-			throw new UnsupportedOperationException(method.getName());
-		});
-	}
-	/** Mod block entity classes: javac cannot extend the merged base's block entities, so they are written directly. */
-	private static final class Loader extends ClassLoader {
-		Loader() { super(BlockTransferBridgeTest.class.getClassLoader()); }
-		Class<?> define(String name, Class<?> parent, String... methods) {
-			ClassWriter writer = new ClassWriter(0);
-			writer.visit(Opcodes.V21, Opcodes.ACC_PUBLIC | Opcodes.ACC_ABSTRACT, "forbrictest/" + name, null, Type.getInternalName(parent), null);
-			for (int i = 0; i < methods.length; i += 2) writer.visitMethod(Opcodes.ACC_PUBLIC | Opcodes.ACC_ABSTRACT, methods[i], methods[i + 1], null, null).visitEnd();
-			writer.visitEnd();
-			byte[] bytes = writer.toByteArray();
-			return defineClass("forbrictest." + name, bytes, 0, bytes.length);
-		}
-	}
 	private static List<String> capture() {
 		List<String> issues = new CopyOnWriteArrayList<>();
 		TransferIssues.setReporter(issue -> issues.add(issue.code()));

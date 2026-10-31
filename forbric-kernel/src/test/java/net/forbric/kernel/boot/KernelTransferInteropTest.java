@@ -123,7 +123,7 @@ class KernelTransferInteropTest {
 	}
 	/**
 	 * The game side names Team Reborn Energy in exactly two classes, which only the boot seam loads and only when Reborn
-	 * is installed. Any other class naming it (BlockTransferBridge above all, which every NeoForge and Forge energy query
+	 * is installed. Any other class naming it (BlockTransferBridge above all, which every NeoForge energy query
 	 * reaches) would make a pack without Reborn fail to link that class.
 	 */
 	@Test void onlyTheRebornHalfOfTheGameSideNamesTeamRebornEnergy() throws Exception {
@@ -141,18 +141,17 @@ class KernelTransferInteropTest {
 		for (String name : naming) assertTrue(name.startsWith("net/forbric/kernel/runtime/transfer/RebornEnergyAdapters")
 				|| name.startsWith("net/forbric/kernel/runtime/transfer/RebornEnergyBridge"), name + " names Team Reborn Energy");
 	}
-	/** Install reaches the bridge once, and tells it there is no MinecraftForge block fallback to look for. */
-	@Test void installCallsTheBridgeOnceWithNoForgeFallback() throws Exception {
+	/** Install reaches the bridge once. */
+	@Test void installCallsTheBridgeOnce() throws Exception {
 		try (var loader = loader(true, true)) {
 			assertTrue(KernelTransferInterop.configure(loader));
 			ClassLoader game = new GameSide();
 			KernelTransferInterop.install(game);
 			Class<?> bridge = Class.forName(KernelTransferInterop.BRIDGE, false, game);
 			assertEquals(1, bridge.getField("calls").getInt(null));
-			assertFalse(bridge.getField("forgeFallback").getBoolean(null));
 		}
 	}
-	/** A game side with only what install calls: TransferIssues.setReporter and a bridge that records its argument. */
+	/** A game side with only what install calls: TransferIssues.setReporter and a bridge that counts its calls. */
 	private static final class GameSide extends ClassLoader {
 		GameSide() { super(KernelTransferInteropTest.class.getClassLoader()); }
 		@Override protected Class<?> loadClass(String name, boolean resolve) throws ClassNotFoundException {
@@ -169,15 +168,12 @@ class KernelTransferInteropTest {
 			ClassWriter writer = new ClassWriter(ClassWriter.COMPUTE_MAXS);
 			writer.visit(Opcodes.V17, Opcodes.ACC_PUBLIC | Opcodes.ACC_SUPER, self, null, "java/lang/Object", null);
 			writer.visitField(Opcodes.ACC_PUBLIC | Opcodes.ACC_STATIC, "calls", "I", null, null).visitEnd();
-			writer.visitField(Opcodes.ACC_PUBLIC | Opcodes.ACC_STATIC, "forgeFallback", "Z", null, null).visitEnd();
-			var install = writer.visitMethod(Opcodes.ACC_PUBLIC | Opcodes.ACC_STATIC, "install", "(Z)V", null, null);
+			var install = writer.visitMethod(Opcodes.ACC_PUBLIC | Opcodes.ACC_STATIC, "install", "()V", null, null);
 			install.visitCode();
 			install.visitFieldInsn(Opcodes.GETSTATIC, self, "calls", "I");
 			install.visitInsn(Opcodes.ICONST_1);
 			install.visitInsn(Opcodes.IADD);
 			install.visitFieldInsn(Opcodes.PUTSTATIC, self, "calls", "I");
-			install.visitVarInsn(Opcodes.ILOAD, 0);
-			install.visitFieldInsn(Opcodes.PUTSTATIC, self, "forgeFallback", "Z");
 			install.visitInsn(Opcodes.RETURN);
 			install.visitMaxs(0, 0);
 			install.visitEnd();

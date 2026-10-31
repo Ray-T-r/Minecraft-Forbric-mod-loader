@@ -14,12 +14,11 @@ public final class RebornAbsentEnergyScenarios {
 	private static void yes(boolean value, String what) { if (!value) throw new AssertionError(what); }
 
 	/**
-	 * Every class on the energy path of a Forge or NeoForge query, linked and initialised (so verified) with their
+	 * Every class on the energy path of a NeoForge query, linked and initialised (so verified) with their
 	 * nested classes. BlockTransferBridge is where a stray Reborn reference would have to live; it must link without one.
 	 */
-	static final List<String> ENERGY_PATH = List.of("BlockTransferBridge", "ForgeEnergyAdapters", "LiveTransferEndpoints",
-			"EnergyAbilities", "EnergyUnits", "TransferPrecedence", "ForgeLegacyFacades", "NativeTransferAdapters",
-			"PairedTransactions", "TransferIssues", "ForgeCapabilityWatch");
+	static final List<String> ENERGY_PATH = List.of("BlockTransferBridge", "LiveTransferEndpoints", "EnergyAbilities",
+			"EnergyUnits", "TransferPrecedence", "NativeTransferAdapters", "PairedTransactions", "TransferIssues");
 
 	public static void theEnergyPathLinksWithoutReborn() throws Exception {
 		ClassLoader loader = RebornAbsentEnergyScenarios.class.getClassLoader();
@@ -29,7 +28,7 @@ public final class RebornAbsentEnergyScenarios {
 	/**
 	 * The Reborn half installed where Reborn cannot link (drifted, or absent while the seam thought otherwise) must fail
 	 * with NOTHING exposed. It used to hand BlockTransferBridge its Fabric side first; the lookup then failed, and every
-	 * later NeoForge or Forge energy query that reached that side threw NoClassDefFoundError.
+	 * later NeoForge energy query that reached that side threw NoClassDefFoundError.
 	 */
 	public static void aFailedRebornInstallExposesNothing() throws Exception {
 		ClassLoader loader = RebornAbsentEnergyScenarios.class.getClassLoader();
@@ -40,7 +39,7 @@ public final class RebornAbsentEnergyScenarios {
 		try { Class.forName("net.forbric.kernel.runtime.transfer.RebornEnergyBridge", true, loader).getMethod("install").invoke(null); }
 		catch (java.lang.reflect.InvocationTargetException thrown) { failure = thrown.getCause(); }
 		yes(failure instanceof LinkageError, "installing the Reborn half without Reborn did not fail: " + failure);
-		yes(side.get(null) == null, "a failed Reborn install left its Fabric side exposed to NeoForge and Forge queries");
+		yes(side.get(null) == null, "a failed Reborn install left its Fabric side exposed to NeoForge queries");
 		enabled.setBoolean(null, false);
 	}
 	private static void link(Class<?> type) throws Exception {

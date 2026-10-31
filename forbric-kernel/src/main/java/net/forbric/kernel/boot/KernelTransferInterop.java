@@ -97,7 +97,7 @@ public final class KernelTransferInterop {
 		try {
 			Consumer<Object> reporter = issue -> recordIssue(loader, issue);
 			Class.forName(ISSUES, true, loader).getMethod("setReporter", Consumer.class).invoke(null, reporter);
-			Class.forName(BRIDGE, true, loader).getMethod("install", boolean.class).invoke(null, false);
+			Class.forName(BRIDGE, true, loader).getMethod("install").invoke(null);
 			installed = true;
 			CompatibilityFindings.resolve("transfer-initialization", "forbric", "block transfer initialization completed");
 			ForbricLog.info("[Forbric/Transfer] initialized cross-ecosystem block transfer after native capability registration");
@@ -113,7 +113,7 @@ public final class KernelTransferInterop {
 		try {
 			Class.forName(ENERGY, true, loader).getMethod("install").invoke(null);
 			CompatibilityFindings.resolve("transfer-energy-initialization", "forbric", "Team Reborn Energy bridge initialized");
-			ForbricLog.info("[Forbric/Transfer] connected Team Reborn Energy to Forge and NeoForge block energy");
+			ForbricLog.info("[Forbric/Transfer] connected Team Reborn Energy to NeoForge block energy");
 		} catch (Throwable failure) {
 			Throwable cause = net.forbric.kernel.util.Reflect.unwrap(failure);
 			CompatibilityFindings.record(new CompatibilityFinding("transfer-energy-initialization", "forbric",
