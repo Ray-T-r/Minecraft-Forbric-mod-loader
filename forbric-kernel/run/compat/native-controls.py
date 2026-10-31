@@ -244,8 +244,9 @@ def run_control(family, engine, timeout):
         env["FORBRIC_COMPAT_POLICY"] = "strict"
         env["FORBRIC_JVM"] = " ".join(java_args) + " " + env.get("FORBRIC_JVM", "")
         old = ORIGINAL / "forbric-loader/run"
-        carrier_paths = [Path(env.get("MERGED", old / "merged-base/patched-mc-merged-26.2.jar")),
-                         Path(env.get("FORGE_RT", old / "merged-base/forge-runtime-interop.jar")),
+        # What launch-kernel-server.sh runs: NeoForge's patched game (BASE) and its one carrier (NEO_RT), the same
+        # defaults. MERGED/FORGE_RT are retired with MinecraftForge; the launcher refuses a caller that still sets them.
+        carrier_paths = [Path(env.get("BASE", old / "neoforge-patched/patched-mc-neoforge-26.2.jar")),
                          Path(env.get("NEO_RT", old / "neoforge-runtime/neoforge-runtime.jar")),
                          KERNEL / "build/libs/forbric-kernel-0.1.0-SNAPSHOT.jar"]
         carrier_inputs = [record(p) for p in carrier_paths]
@@ -460,8 +461,8 @@ def run_set(engine, family, mods, ticks=200, timeout=900, xmx="3G", level_type="
         env["FORBRIC_COMPAT_POLICY"] = policy
         env["FORBRIC_JVM"] = " ".join(java_args) + " " + env.get("FORBRIC_JVM", "")
         old = ORIGINAL / "forbric-loader/run"
-        carriers = {"merged": Path(env.get("MERGED", old / "merged-base/patched-mc-merged-26.2.jar")),
-                    "forgeRuntime": Path(env.get("FORGE_RT", old / "merged-base/forge-runtime-interop.jar")),
+        # The launcher's two inputs, with launch-kernel-server.sh's BASE and NEO_RT defaults (as run_control records them).
+        carriers = {"base": Path(env.get("BASE", old / "neoforge-patched/patched-mc-neoforge-26.2.jar")),
                     "neoRuntime": Path(env.get("NEO_RT", old / "neoforge-runtime/neoforge-runtime.jar"))}
         identity = {"kernel": {"name": jar.name, "bytes": jar.stat().st_size, "sha256": sha(jar)},
                     "carriers": {k: {"name": v.name, "sha256": sha(v)} for k, v in carriers.items()}, "policy": policy}

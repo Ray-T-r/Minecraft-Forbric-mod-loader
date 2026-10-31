@@ -8,8 +8,8 @@ from evidence import source_record,file_record
 sys.dont_write_bytecode=True
 K=Path(__file__).resolve().parents[2];BASE=K/'build/corpse-render-control';BASE.mkdir(parents=True,exist_ok=True)
 old=Path(os.environ['FORBRIC_OLD']);mc=Path(os.environ.get('MC_DIR',Path.home()/'Library/Application Support/minecraft'));fixture=K/'run/client-merged-pack'
-compile_game=old/'run/neoforge-patched/patched-mc-neoforge-26.2.jar';boot=K/'build/libs/forbric-kernel-0.1.0-SNAPSHOT.jar'
-cp=[compile_game,boot,Path(os.environ['FORGE_RT']),Path(os.environ['NEO_RT']),mc/'libraries/net/fabricmc/sponge-mixin/0.17.3+mixin.0.8.7/sponge-mixin-0.17.3+mixin.0.8.7.jar']
+compile_game=Path(os.environ.get('BASE',old/'run/neoforge-patched/patched-mc-neoforge-26.2.jar'));boot=K/'build/libs/forbric-kernel-0.1.0-SNAPSHOT.jar'
+cp=[compile_game,boot,Path(os.environ['NEO_RT']),mc/'libraries/net/fabricmc/sponge-mixin/0.17.3+mixin.0.8.7/sponge-mixin-0.17.3+mixin.0.8.7.jar']
 for entry in json.loads((mc/'versions/26.2/26.2.json').read_text())['libraries']:
  path=entry.get('downloads',{}).get('artifact',{}).get('path')
  if path and (mc/'libraries'/path).is_file():cp.append(mc/'libraries'/path)
@@ -23,7 +23,7 @@ token=uuid.uuid4().hex;run=BASE/token;run.mkdir();(run/'saves').mkdir()
 for name in ('mods','config'):
  if (fixture/name).exists():shutil.copytree(fixture/name,run/name)
 shutil.copytree(fixture/'saves/ForbricTest',run/'saves/ForbricTest');shutil.copy2(fixture/'options.txt',run/'options.txt');shutil.copy2(canary,run/'mods'/canary.name);(run/'quickPlay').mkdir();(run/'.corpse-repro-owned').write_text(token)
-artifacts=[file_record(p) for p in [*cp,Path(os.environ['MERGED']),K/'build/libs/forbric-kernel-runtime-0.1.0-SNAPSHOT.jar',*sorted((run/'mods').glob('*.jar'))]]
+artifacts=[file_record(p) for p in [*cp,K/'build/libs/forbric-kernel-runtime-0.1.0-SNAPSHOT.jar',*sorted((run/'mods').glob('*.jar'))]]
 source=source_record(K.parent,set());(run/'inputs.json').write_text(json.dumps({'source':source,'artifacts':artifacts,'token':token},indent=2))
 env=os.environ.copy();env.update(RUNDIR=str(run),FORBRIC_COMPAT_POLICY='strict',FORBRIC_JVM='-Dforbric.compatibilityPolicy=strict -Dforbric.clientSmoke=true -Dforbric.clientSmokeWorld=ForbricTest -Dforbric.clientSmokeReadyTicks=60 -Dforbric.clientSmokeScreenshots=100,200 -Dforbric.clientSmokeDisconnectTicks=300')
 command=[str(K/'run/launch-kernel-client.sh'),'--quickPlayPath',str(run/'quickPlay/log.json'),'--quickPlaySingleplayer','ForbricTest'];log=run/'client.log';began=time.monotonic();crashed=None;timed_out=False

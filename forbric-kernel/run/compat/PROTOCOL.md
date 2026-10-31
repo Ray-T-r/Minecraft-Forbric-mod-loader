@@ -508,8 +508,8 @@ hashes must agree. This attributes one observed native retention issue; it does 
 root by itself. Evidence stays under `build/retention-control/`, and `native-retention.json` names the root
 and exact jar hash it proved; a release M34 run re-reads that evidence before launching.
 
-`ui-control.py` requires the built kernel, `FORBRIC_OLD`, `MERGED`, `FORGE_RT` and `NEO_RT`. It creates a
-nonce-owned copy of the full mixed pack/world under `build/compat-ui/`, publishes late necessary findings,
+`ui-control.py` requires the built kernel, `FORBRIC_OLD` and `NEO_RT` (`BASE` optional, as for the launchers). It
+creates a nonce-owned copy of the full mixed pack/world under `build/compat-ui/`, publishes late necessary findings,
 clicks the actual native Continue button, then closes a second prompt. It requires preserved failure
 evidence, initial refusal focus, normal save/return to title and two fresh game screenshots. Its deliberately
 incompatible control scenario is separate from a strict compatibility acceptance run.

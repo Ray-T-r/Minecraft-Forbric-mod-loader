@@ -6,8 +6,8 @@ from evidence import source_record,file_record
 sys.dont_write_bytecode=True
 K=Path(__file__).resolve().parents[2];BASE=K/'build/compat-ui';BASE.mkdir(parents=True,exist_ok=True)
 old=Path(os.environ['FORBRIC_OLD']);mc=Path.home()/'Library/Application Support/minecraft'
-compile_game=old/'run/neoforge-patched/patched-mc-neoforge-26.2.jar';boot=K/'build/libs/forbric-kernel-0.1.0-SNAPSHOT.jar'
-cp=[compile_game,boot,Path(os.environ['FORGE_RT']),Path(os.environ['NEO_RT'])]
+compile_game=Path(os.environ.get('BASE',old/'run/neoforge-patched/patched-mc-neoforge-26.2.jar'));boot=K/'build/libs/forbric-kernel-0.1.0-SNAPSHOT.jar'
+cp=[compile_game,boot,Path(os.environ['NEO_RT'])]
 for entry in json.loads((mc/'versions/26.2/26.2.json').read_text())['libraries']:
  path=entry.get('downloads',{}).get('artifact',{}).get('path')
  if path and (mc/'libraries'/path).is_file():cp.append(mc/'libraries'/path)
@@ -22,7 +22,7 @@ token=uuid.uuid4().hex;run=BASE/token;fixture=K/'run/client-merged-pack';run.mkd
 for name in ('mods','config'):
  if (fixture/name).exists():shutil.copytree(fixture/name,run/name)
 shutil.copytree(fixture/'saves/ForbricTest',run/'saves/CompatUiWorld');shutil.copy2(fixture/'options.txt',run/'options.txt');shutil.copy2(canary,run/'mods'/canary.name);(run/'quickPlay').mkdir();(run/'.compat-ui-owned').write_text(token)
-artifacts=[file_record(p) for p in [*cp,Path(os.environ['MERGED']),K/'build/libs/forbric-kernel-runtime-0.1.0-SNAPSHOT.jar',*sorted((run/'mods').glob('*.jar'))]]
+artifacts=[file_record(p) for p in [*cp,K/'build/libs/forbric-kernel-runtime-0.1.0-SNAPSHOT.jar',*sorted((run/'mods').glob('*.jar'))]]
 source=source_record(K.parent,set());before={'token':token,'source':source,'artifacts':artifacts,'compileGame':str(compile_game)};(run/'inputs.json').write_text(json.dumps(before,indent=2))
 env=os.environ.copy();env.update(RUNDIR=str(run),FORBRIC_COMPAT_POLICY='ask',FORBRIC_JVM=f'-Dforbric.compatibilityPolicy=ask -Dcompatui.token={token}')
 command=[str(K/'run/launch-kernel-client.sh'),'--quickPlayPath',str(run/'quickPlay/log.json'),'--quickPlaySingleplayer','CompatUiWorld'];began=time.monotonic()
