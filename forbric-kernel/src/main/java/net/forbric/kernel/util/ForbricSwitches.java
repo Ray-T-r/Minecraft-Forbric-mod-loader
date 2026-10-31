@@ -178,7 +178,10 @@ public final class ForbricSwitches {
 			Map.entry("forbric.forgeWorldgen", "Forbric loads no MinecraftForge mod, so there are no forge:biome_modifier or forge:structure_modifier "
 					+ "registries to declare; NeoForge's own modifiers run in its single pass"),
 			Map.entry("forbric.forgeWorldgen.lenient", "Forbric loads no MinecraftForge mod, so no MinecraftForge worldgen modifier is decoded, leniently or not"),
-			Map.entry("forbric.worldgenAuditNormalise", "Forbric loads no MinecraftForge mod, so there is no MinecraftForge worldgen round-trip audit to normalise"));
+			Map.entry("forbric.worldgenAuditNormalise", "Forbric loads no MinecraftForge mod, so there is no MinecraftForge worldgen round-trip audit to normalise"),
+			// Stage 4: MinecraftForge's picture-in-picture registration event is gone with its carrier.
+			Map.entry("forbric.forgePipRenderers", "Forbric loads no MinecraftForge mod, so no picture-in-picture renderer is registered through "
+					+ "MinecraftForge's event; vanilla's plain map holds the constructor list's renderers"));
 
 	private static final ForbricSwitches SYSTEM =
 			new ForbricSwitches(RENAMED, RETIRED, System::getProperty, ForbricLog::warn);

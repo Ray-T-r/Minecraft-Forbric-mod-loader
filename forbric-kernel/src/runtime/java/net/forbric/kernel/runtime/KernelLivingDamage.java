@@ -1,99 +1,17 @@
 /* Copyright 2026 The Forbric Project. Licensed under the Apache License, Version 2.0. */
 package net.forbric.kernel.runtime;
 
-import java.util.Collections;
-import java.util.IdentityHashMap;
-import java.util.Set;
-import java.util.concurrent.atomic.AtomicBoolean;
-
-import net.forbric.kernel.util.Caught;
-import net.minecraft.world.damagesource.DamageSource;
 import net.minecraft.world.entity.LivingEntity;
-import net.minecraftforge.common.ForgeHooks;
 import net.neoforged.neoforge.common.damagesource.DamageContainer;
 
 /**
- * MinecraftForge's {@code LivingHurtEvent}, {@code LivingDamageEvent} and the player half of {@code LivingAttackEvent},
- * posted from seams ForgeDamageSeamsInjector puts in the merged {@code actuallyHurt} and {@code Player.hurtServer}.
- *
- * <p>No NeoForge event sits where these were. Hurt is asked before armour — after the shield, the i-frame check and
- * NeoForge's incoming-damage event — and a MinecraftForge answer of zero or less ends the hit there, as it does
- * natively. Damage is asked after armour, magic and absorption, just before the health is written, which is where
- * MinecraftForge asks it (NeoForge's {@code LivingDamageEvent.Pre} is before absorption, so a lethal check made there
- * would fire on hits absorption would soak). Both answers go through the hit's {@code DamageContainer}, so
- * NeoForge's {@code LivingDamageEvent.Post} reports what actually happened.
+ * Vanilla's reads of {@code actuallyHurt}'s damage, put back for Fabric mixins (VanillaDamageReadInjector): NeoForge's
+ * body keeps the hit's amount in its {@code DamageContainer}, so a Fabric mod's {@code @ModifyVariable} on vanilla's
+ * local would otherwise change nothing. Each helper moves the container by exactly what the mod changed and leaves it
+ * alone when nothing was changed, so NeoForge's own amount stays as NeoForge computed it.
  */
 public final class KernelLivingDamage {
-	private static final AtomicBoolean PLAYER_SEAM = new AtomicBoolean();
-	/** Hits whose Hurt ended at zero with nothing to take away: MinecraftForge never reaches Damage for them. */
-	private static final ThreadLocal<Set<DamageContainer>> NO_DAMAGE =
-			ThreadLocal.withInitial(() -> Collections.newSetFromMap(new IdentityHashMap<>()));
-
 	private KernelLivingDamage() {
-	}
-
-	/** Whether the player-attack seam is in, so the attack forward leaves players to it. */
-	public static boolean playerSeamInstalled() {
-		return PLAYER_SEAM.get();
-	}
-
-	/** Called once from {@code Player.<clinit>} when the seam was put in. */
-	public static void notePlayerSeam() {
-		PLAYER_SEAM.set(true);
-	}
-
-	/**
-	 * The Hurt seam. True ends {@code actuallyHurt} now: MinecraftForge answered zero or less for a hit that had
-	 * damage (its native {@code amount <= 0 → return}), or a MinecraftForge listener killed the entity (asked by the
-	 * seam itself, which can read {@code dead}).
-	 */
-	public static boolean hurt(LivingEntity entity, DamageContainer container, DamageSource source) {
-		try {
-			float in = container.getNewDamage();
-			float out = ForgeHooks.onLivingHurt(entity, source, in);
-			if (!(out > 0)) {
-				if (in > 0) {
-					container.setNewDamage(0);
-					return true;
-				}
-				NO_DAMAGE.get().add(container);
-				return false;
-			}
-			if (out != in) container.setNewDamage(out);
-		} catch (Throwable t) {
-			Caught.warn(t, "[Forbric/Damage] MinecraftForge's %s failed inside the damage pipeline — the hit went on "
-					+ "as NeoForge computed it", "LivingHurtEvent");
-		}
-		return false;
-	}
-
-	/** The Damage seam: the health damage after armour, magic and absorption, as MinecraftForge's listeners leave it. */
-	public static float damage(LivingEntity entity, DamageContainer container, DamageSource source, float amount) {
-		if (NO_DAMAGE.get().remove(container)) return amount;
-		try {
-			float out = ForgeHooks.onLivingDamage(entity, source, amount);
-			if (Float.isNaN(out) || out < 0) {
-				Caught.warn(new IllegalArgumentException("a listener set " + out), "[Forbric/Damage] a MinecraftForge "
-						+ "LivingDamageEvent listener set %s; NeoForge's damage cannot be negative, so it is taken as 0",
-						out);
-				out = 0;
-			}
-			if (out != amount) container.setNewDamage(out);
-			return out;
-		} catch (Throwable t) {
-			Caught.warn(t, "[Forbric/Damage] MinecraftForge's %s failed inside the damage pipeline — the hit went on "
-					+ "as NeoForge computed it", "LivingDamageEvent");
-			return amount;
-		}
-	}
-
-	/**
-	 * The merged body's own MinecraftForge Damage call, routed here where the Hurt seam is this repair's: the same
-	 * answer as {@link #damage(LivingEntity, DamageContainer, DamageSource, float)}, so a zero-damage hit Hurt recorded
-	 * is skipped as MinecraftForge's own body skips it (it returns before Damage).
-	 */
-	public static float damage(LivingEntity entity, DamageSource source, float amount, DamageContainer container) {
-		return damage(entity, container, source, amount);
 	}
 
 	/**
@@ -125,16 +43,5 @@ public final class KernelLivingDamage {
 	public static float spentAbsorption(LivingEntity entity, float damage) {
 		float absorption = entity.getAbsorptionAmount();
 		return absorption <= 0.0F ? absorption - damage : absorption;
-	}
-
-	/** The player-attack seam, at the head of {@code Player.hurtServer}: false ends the hit, as MinecraftForge's does. */
-	public static boolean playerAttack(LivingEntity player, DamageSource source, float amount) {
-		try {
-			return ForgeHooks.onPlayerAttack(player, source, amount);
-		} catch (Throwable t) {
-			Caught.warn(t, "[Forbric/Damage] MinecraftForge's %s failed inside the damage pipeline — the hit went on "
-					+ "as NeoForge computed it", "LivingAttackEvent");
-			return true;
-		}
 	}
 }

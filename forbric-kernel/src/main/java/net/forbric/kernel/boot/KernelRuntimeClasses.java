@@ -241,7 +241,6 @@ public final class KernelRuntimeClasses {
 		// directly, so a renamed entry point here is a NoSuchMethodError inside the game's own constructor. complete()
 		// is not listed: it takes Guava's ImmutableMap.Builder, a game-side type this boot class cannot name.
 		CLASSES.put("net.forbric.kernel.runtime.KernelForgePipRenderers", new Entry(Origin.COMPILED, List.of(
-				new Call("build", java.util.Map.class),
 				new Call("build", java.util.Map.class, List.class),
 				new Call("poolRegistrations", List.class, List.class),
 				new Call("close", void.class, java.util.Map.class))));

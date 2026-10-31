@@ -86,31 +86,6 @@ class DamageSeamsExecutionTest {
 						}
 					}
 					"""),
-			Map.entry("net.minecraftforge.common.ForgeHooks", """
-					package net.minecraftforge.common;
-
-					import fixture.Trace;
-					import net.minecraft.world.damagesource.DamageSource;
-					import net.minecraft.world.entity.LivingEntity;
-
-					/** MinecraftForge's events, with Tombstone-like listeners: ghost immunity, a Voodoo Poppet, a friendly-fire guard. */
-					public class ForgeHooks {
-						public static float onLivingHurt(LivingEntity entity, DamageSource source, float amount) {
-							Trace.events.add("Hurt " + amount);
-							return source.type().equals("ghost") ? 0 : amount;
-						}
-
-						public static float onLivingDamage(LivingEntity entity, DamageSource source, float amount) {
-							Trace.events.add("Damage " + amount);
-							return amount >= entity.health ? 0 : amount;
-						}
-
-						public static boolean onPlayerAttack(LivingEntity player, DamageSource source, float amount) {
-							Trace.events.add("Attack " + amount);
-							return !source.type().equals("friendly");
-						}
-					}
-					"""),
 			Map.entry(LIVING, """
 					package net.minecraft.world.entity;
 

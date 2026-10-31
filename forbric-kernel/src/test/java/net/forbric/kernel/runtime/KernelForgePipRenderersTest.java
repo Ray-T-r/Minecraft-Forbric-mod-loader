@@ -45,19 +45,6 @@ class KernelForgePipRenderersTest {
 						 }
 						}
 						""",
-				"net.minecraftforge.client.event.RegisterPictureInPictureRendererEvent", """
-						public class RegisterPictureInPictureRendererEvent implements net.minecraftforge.eventbus.internal.Event {
-						 public static final Object REGISTERED = new net.minecraft.client.gui.render.pip.PictureInPictureRenderer();
-						 public static final net.minecraftforge.eventbus.api.bus.EventBus BUS = event -> {
-						  ((RegisterPictureInPictureRendererEvent)event).builder.put(String.class, REGISTERED);
-						  return false;
-						 };
-						 private final com.google.common.collect.ImmutableMap.Builder builder;
-						 public RegisterPictureInPictureRendererEvent(java.util.List list, com.google.common.collect.ImmutableMap.Builder builder) { this.builder = builder; }
-						}
-						""",
-				"net.minecraftforge.eventbus.api.bus.EventBus", "public interface EventBus { boolean post(net.minecraftforge.eventbus.internal.Event event); }",
-				"net.minecraftforge.eventbus.internal.Event", "public interface Event {}",
 				"net.forbric.kernel.util.ForbricLog", """
 						public class ForbricLog {
 						 public static void info(String text, Object... args) {}
@@ -87,13 +74,11 @@ class KernelForgePipRenderersTest {
 			Class<?> bridge = loader.loadClass("net.forbric.kernel.runtime.KernelForgePipRenderers");
 			Object renderer = loader.loadClass("net.minecraft.client.gui.render.pip.PictureInPictureRenderer").getConstructor().newInstance();
 			Object registration = loader.loadClass("net.neoforged.neoforge.client.gui.PictureInPictureRendererRegistration").getConstructor().newInstance();
-			Object eventRenderer = loader.loadClass("net.minecraftforge.client.event.RegisterPictureInPictureRendererEvent").getField("REGISTERED").get(null);
 			for (List<?> input : List.of(List.of(), List.of(renderer), List.of(registration), List.of(registration, renderer))) {
 				List<?> pools = (List<?>) bridge.getMethod("poolRegistrations", List.class).invoke(null, input);
 				Map<?, ?> plain = (Map<?, ?>) bridge.getMethod("build", List.class).invoke(null, input);
 				assertEquals(input.contains(registration) ? List.of(registration) : List.of(), pools);
-				assertEquals(input.contains(renderer) ? 2 : 1, plain.size());
-				assertSame(eventRenderer, plain.get(String.class), "Forge event registrations must still be served");
+				assertEquals(input.contains(renderer) ? 1 : 0, plain.size(), "only the constructor list's renderers go in");
 				if (input.contains(renderer)) assertSame(renderer, plain.get(renderer.getClass()));
 				assertEquals(0, renderer.getClass().getField("closes").getInt(renderer));
 			}

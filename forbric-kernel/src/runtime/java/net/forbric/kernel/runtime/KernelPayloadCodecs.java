@@ -16,6 +16,9 @@
 
 package net.forbric.kernel.runtime;
 
+import java.lang.invoke.MethodHandle;
+import java.lang.invoke.MethodHandles;
+import java.lang.invoke.MethodType;
 import java.util.List;
 
 import net.minecraft.network.ConnectionProtocol;
@@ -35,6 +38,10 @@ import net.minecraft.network.protocol.common.custom.CustomPacketPayload;
  *
  * <p>{@code PayloadCodecFunnelInjector} makes NeoForge's overload call {@link #through}, which records the protocol
  * and flow for this thread and calls vanilla's; vanilla's, inside that call, hands back to NeoForge's with them.
+ *
+ * <p>Vanilla's two-argument overload is asked through a method handle, not by name at compile time: the genuine
+ * NeoForge jar has only NeoForge's four-argument one, and VanillaMemberTwinInjector puts vanilla's back when the class
+ * is defined, which is before anything builds a codec.
  */
 public final class KernelPayloadCodecs {
 	private record Context(ConnectionProtocol protocol, PacketFlow flow) { }
@@ -51,7 +58,7 @@ public final class KernelPayloadCodecs {
 		Context previous = CONTEXT.get();
 		CONTEXT.set(new Context(protocol, flow));
 		try {
-			return CustomPacketPayload.codec(fallback, types);
+			return Vanilla.codec(fallback, types);
 		} finally {
 			if (previous == null) CONTEXT.remove();
 			else CONTEXT.set(previous);
@@ -68,5 +75,31 @@ public final class KernelPayloadCodecs {
 	public static PacketFlow flow() {
 		Context context = CONTEXT.get();
 		return context == null ? null : context.flow();
+	}
+
+	/** Vanilla's {@code CustomPacketPayload.codec(FallbackProvider, List)}, resolved once at first use. */
+	private static final class Vanilla {
+		private static final MethodHandle CODEC = resolve();
+
+		private static MethodHandle resolve() {
+			try {
+				return MethodHandles.lookup().findStatic(CustomPacketPayload.class, "codec",
+						MethodType.methodType(StreamCodec.class, CustomPacketPayload.FallbackProvider.class, List.class));
+			} catch (ReflectiveOperationException drift) {
+				throw new IllegalStateException("vanilla's CustomPacketPayload.codec(FallbackProvider, List) is not there", drift);
+			}
+		}
+
+		@SuppressWarnings("unchecked")
+		static <B extends FriendlyByteBuf> StreamCodec<B, CustomPacketPayload> codec(
+				CustomPacketPayload.FallbackProvider<B> fallback, List<CustomPacketPayload.TypeAndCodec<? super B, ?>> types) {
+			try {
+				return (StreamCodec<B, CustomPacketPayload>) (StreamCodec<?, ?>) CODEC.invoke(fallback, types);
+			} catch (RuntimeException | Error thrown) {
+				throw thrown;
+			} catch (Throwable checked) {
+				throw new IllegalStateException(checked);
+			}
+		}
 	}
 }

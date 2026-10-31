@@ -23,7 +23,6 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
-import java.util.function.BiFunction;
 import java.util.function.Function;
 
 import net.fabricmc.loader.api.FabricLoader;
@@ -91,7 +90,8 @@ public final class KernelModConfigScreens {
 		return switch (entry.ecosystem()) {
 			case FABRIC -> null;
 			case NEOFORGE -> Neo.resolve(entry.modId(), parent, probe);
-			case FORGE -> Forge.resolve(entry.modId(), parent, probe);
+			// No MinecraftForge mod is loaded any more; the arm goes with Ecosystem.FORGE (C4).
+			case FORGE -> null;
 		};
 	}
 
@@ -140,11 +140,11 @@ public final class KernelModConfigScreens {
 	/**
 	 * Ids a loader's registry holds that no jar is, each as an entry its own family is asked about -- only those with
 	 * a config screen. The game is always one: its options screen is always there. The rest are found, not named: a
-	 * container in NeoForge's or MinecraftForge's list, or a mod in Fabric's, whose id the catalogue does not have. On
+	 * container in NeoForge's list, or a mod in Fabric's, whose id the catalogue does not have. On
 	 * NeoForge that is NeoForge itself, which registers a config screen for its own settings; its own Mods screen
 	 * shows it, and this one is that screen's replacement. Whether such a loader's own entry becomes a row is not
 	 * decided here: {@link ModListRows} lists it only when the catalogue holds a mod that loader serves (NeoForge's,
-	 * when the instance has a NeoForge or MinecraftForge mod).
+	 * when the instance has a NeoForge mod).
 	 */
 	private static List<ModListRows.Platform> platform(Set<String> catalogued) {
 		List<ModListRows.Platform> out = new ArrayList<>();
@@ -154,11 +154,6 @@ public final class KernelModConfigScreens {
 				"The game's own options.", List.of(), "", "", ""), null));
 		try {
 			Neo.platform(taken, out);
-		} catch (Throwable absent) {
-			Caught.expected(absent);
-		}
-		try {
-			Forge.platform(taken, out);
 		} catch (Throwable absent) {
 			Caught.expected(absent);
 		}
@@ -227,8 +222,8 @@ public final class KernelModConfigScreens {
 	 * <p>On Mod Menu's list such a mod is a row like any Fabric mod -- Fabric's registry has it, as a presence identity
 	 * the kernel registers so that {@code isModLoaded} tells the truth -- but Mod Menu can only find a config screen in
 	 * a {@code "modmenu"} entrypoint, and the mod's Fabric build, which declared one, is not the build that runs. A
-	 * universal jar arbitrated to NeoForge loses its Mod Menu entrypoint this way, and so does every NeoForge or
-	 * MinecraftForge mod, which never had one. The screen they have is their own family's, asked here exactly as this
+	 * universal jar arbitrated to NeoForge loses its Mod Menu entrypoint this way, and so does every NeoForge mod,
+	 * which never had one. The screen they have is their own family's, asked here exactly as this
 	 * class's own Config button asks it, and nothing but that family's registry is asked: Mod Menu is what is asking.
 	 *
 	 * <p>Decided by shape alone: the catalogue says a family other than Fabric loaded the id, and Fabric's registry
@@ -267,13 +262,12 @@ public final class KernelModConfigScreens {
 	/**
 	 * How many mods of each ecosystem have a config screen, and the first one that does.
 	 *
-	 * <p>Exists for the client smoke. The whole claim of this class is that it asks THREE registries, and the
-	 * only way to see that is a count per family: a Fabric-only count would be indistinguishable from Mod Menu's
+	 * <p>Exists for the client smoke. The whole claim of this class is that it asks both families' registries, and
+	 * the only way to see that is a count per family: a Fabric-only count would be indistinguishable from Mod Menu's
 	 * own answer, which is the thing this replaces.
 	 */
 	public static String summary() {
-		return probe(Ecosystem.FABRIC) + " Fabric, " + probe(Ecosystem.NEOFORGE) + " NeoForge, "
-				+ probe(Ecosystem.FORGE) + " MinecraftForge";
+		return probe(Ecosystem.FABRIC) + " Fabric, " + probe(Ecosystem.NEOFORGE) + " NeoForge";
 	}
 
 	private static int probe(Ecosystem ecosystem) {
@@ -336,30 +330,6 @@ public final class KernelModConfigScreens {
 					net.neoforged.neoforge.client.gui.IConfigScreenFactory.getForMod(container.get().getModInfo());
 			if (factory.isEmpty()) return null;
 			return probe ? PRESENT : factory.get().createScreen(container.get(), parent);
-		}
-	}
-
-	/** Traditional MinecraftForge's answer: a different registry, a different shape, the same question. */
-	private static final class Forge {
-		/** Every container in MinecraftForge's list whose id is not taken, offered as a platform row. */
-		static void platform(Set<String> taken, List<ModListRows.Platform> out) {
-			net.minecraftforge.fml.ModList.forEachModContainer((id, container) -> {
-				var info = container.getModInfo();
-				offer(taken, out, new ModCatalog.Entry(Ecosystem.FORGE, id, info.getDisplayName(),
-						String.valueOf(info.getVersion()), info.getDescription(), List.of(), "", "", ""));
-			});
-		}
-
-		static Screen resolve(String modId, Screen parent, boolean probe) {
-			// Static, with no get(): the two families' ModList classes share a name and not much else.
-			Optional<? extends net.minecraftforge.fml.ModContainer> container =
-					net.minecraftforge.fml.ModList.getModContainerById(modId);
-			if (container.isEmpty()) return null;
-			Optional<BiFunction<Minecraft, Screen, Screen>> factory =
-					net.minecraftforge.client.ConfigScreenHandler.getScreenFactoryFor(
-							container.get().getModInfo());
-			if (factory.isEmpty()) return null;
-			return probe ? PRESENT : factory.get().apply(Minecraft.getInstance(), parent);
 		}
 	}
 }
