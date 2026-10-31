@@ -104,7 +104,7 @@ class KernelModInfoConfigTest {
 	void puzzlesLibReadsItsAuthorsAndHomepage() throws Exception {
 		TestFixtures.require(Fixture.THIRD_PARTY, Files.isRegularFile(PUZZLES), "the popular pack's Puzzles Lib jar is not here");
 		DiscoveredMod declared = new ForbricModDiscoverer().discoverJar(PUZZLES).get(0);
-		Path guava = KernelForgeModInfoTest.newestUnder("com/google/guava/guava");
+		Path guava = TestFixtures.newestLibrary("com/google/guava/guava");
 		TestFixtures.require(Fixture.MC_LIBRARIES, guava != null, "no Guava in the local Minecraft library tree");
 		try (URLClassLoader runtime = runtimeLoader();
 				URLClassLoader puzzles = new URLClassLoader(new URL[] {PUZZLES.toUri().toURL(), guava.toUri().toURL()}, runtime)) {

@@ -367,6 +367,20 @@ public final class TestFixtures {
 		return Path.of(home, ".minecraft");
 	}
 
+	/**
+	 * The newest jar under {@code libraries/<path>} of {@link #minecraftDir()} — {@code com/google/guava/guava}, say —
+	 * by file name, sources jars left out; {@code null} when the directory is not there. For a test that builds a class
+	 * loader from the libraries the game compiles against.
+	 */
+	public static Path newestLibrary(String path) throws IOException {
+		Path under = minecraftDir().resolve("libraries").resolve(path);
+		if (!Files.isDirectory(under)) return null;
+		try (var stream = Files.walk(under)) {
+			return stream.filter(f -> f.toString().endsWith(".jar") && !f.toString().contains("sources"))
+					.sorted(java.util.Comparator.comparing(f -> f.getFileName().toString())).reduce((a, b) -> b).orElse(null);
+		}
+	}
+
 	/** Minecraft 26.2's own client jar inside {@link #minecraftDir()}. */
 	public static Path vanillaJar() {
 		return minecraftDir().resolve("versions/26.2/26.2.jar");
