@@ -12,6 +12,8 @@ import java.util.concurrent.TimeUnit;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
+import net.forbric.kernel.TestFixtures;
+
 /**
  * Runs the NeoForge canary's blocks of gate-m21 and gate-m26 against synthetic logs, without launching a game.
  *
@@ -180,6 +182,107 @@ class GateNeoCanaryContractTest {
 				"id=0 roundTrip=Block{minecraft:air}")), "the late block has a real id, read back in the world");
 		assertRed(m26Fabric(green + "[ForbricFabricLive/LATEBLOCK] read-back FAILED: no world within six minutes\n"),
 				"the late-block probe never failed");
+	}
+
+	// --- gate-m26's options seed and session block: shared contracts that outlive every canary --------------------
+	// Restored from ForgeRegistrationA2ContractTest when Stage 4 deleted the MinecraftForge canary: these three never
+	// read that canary, and nothing else runs M26_OPTIONS or M26_SESSION_ASSERTIONS. C5 re-pins them with the gate.
+
+	@Test
+	void clientGateSeedsTheNeoForgeF9AndBothScriptsParse() throws Exception {
+		// The options section reads the world version out of the staged base, as the gate does from MERGED.
+		Path base = TestFixtures.stagedBase();
+		TestFixtures.requireFiles(TestFixtures.Fixture.STAGED, "staged base", base);
+		String script = Files.readString(M26);
+		Path result = temporary.resolve("options-command.log");
+		ProcessBuilder builder = new ProcessBuilder("bash", "-c", section(script, "M26_OPTIONS"));
+		builder.environment().put("RUNDIR", temporary.toString());
+		builder.environment().put("MERGED", base.toAbsolutePath().toString());
+		builder.environment().put("RUN_OLD", TestFixtures.stagedRoot().toAbsolutePath().toString());
+		Result seededRun = execute(builder, result);
+		assertEquals(0, seededRun.exit(), seededRun.output());
+		String seeded = Files.readString(temporary.resolve("options.txt"));
+		assertTrue(seeded.matches("version:[1-9][0-9]*\\nonboardAccessibility:false\\nkey_key\\.forbricneolive\\.probe:key\\.keyboard\\.f9\\n"), seeded);
+		for (Path gate : List.of(M21, M26)) {
+			Result parsed = execute(new ProcessBuilder("bash", "-n", gate.toString()), result);
+			assertEquals(0, parsed.exit(), parsed.output());
+		}
+		assertTrue(script.contains("# WORLD_CONFIRM_BEGIN"));
+		assertTrue(script.contains("# CLIENT_CANARY_STAGE_BEGIN"));
+		assertTrue(script.contains("SRC_MODS=\"$RUNDIR/empty-mods\""));
+	}
+
+	private static final List<String> SESSION_GREEN = List.of(
+			"[ClientSmoke] joined world via quick-play", "[ClientSmoke] client-ready after 60 ticks",
+			"[ClientSmoke] clean disconnect observed",
+			"[Forbric/ClientResources] client resource manager preloaded with 3 selected pack(s)",
+			"[Forbric/Bridges] all 3 CLIENT_INIT bridge(s) installed", "[Forbric/Bridges] all 2 REGISTRATION bridge(s) installed",
+			"[Forbric/HudBridge] MinecraftForge's overlay stack is on NeoForge's layer manager — silenced 23 vanilla leaf/leaves",
+			"[Forbric/MergedBaseCompat] gave GuiRenderer's pooled picture-in-picture lookup a fallback to the orphaned vanilla "
+					+ "map, and gave that map its only writer",
+			"[ForbricNeoLive/FLUID] water at 3 64 -2: Block{minecraft:water}",
+			"[Forbric/Fluids] MinecraftForge client extensions consulted for 4 fluid(s) so far");
+
+	/**
+	 * The session block keeps every kernel line that printed with no MinecraftForge mod aboard, and each row is
+	 * load-bearing. Some rows name kernel lines earlier Stage 4 lanes deleted; the block is C5's to re-pin, and until then
+	 * this pins the block as the gate has it.
+	 */
+	@Test
+	void theSessionBlockAssertsTheRewritesThatRunWithNoMinecraftForgeMod() throws Exception {
+		String green = String.join("\n", SESSION_GREEN) + "\n";
+		assertEquals(0, session(green, 0, "HUD_TREE=absent").exit());
+		for (String line : SESSION_GREEN) {
+			assertEquals(1, session(green.replace(line + "\n", ""), 0, "HUD_TREE=absent").exit(),
+					"a missing row is red: " + line);
+		}
+		assertEquals(1, session("", 0, "HUD_TREE=absent").exit());
+		assertEquals(1, session(green, 1, "HUD_TREE=absent").exit(), "a preceding failure stays red");
+	}
+
+	/**
+	 * The HUD drop row follows the base the gate read before its assertions: where the base's Hud kept MinecraftForge's
+	 * overlay tree the kernel's drop line is required, and where it did not the same line is red.
+	 */
+	@Test
+	void theHudDropRowFollowsTheBaseTheGateRead() throws Exception {
+		String green = String.join("\n", SESSION_GREEN) + "\n";
+		String dropped = "[Forbric/HudBridge] net.minecraft.client.gui.Hud kept MinecraftForge's own overlay tree (built in 1 "
+				+ "place(s), drawn instead of NeoForge's layer manager in 1) — dropped: the kernel builds that tree once "
+				+ "every mod is loaded and puts it on NeoForge's manager, the one HUD pipeline\n";
+		assertEquals(0, session(green + dropped, 0, "HUD_TREE=kept").exit());
+		assertEquals(1, session(green, 0, "HUD_TREE=kept").exit(),
+				"a base that kept the tree and no drop: both pipelines still run");
+		assertEquals(0, session(green, 0, "HUD_TREE=absent").exit());
+		assertEquals(1, session(green + dropped, 0, "HUD_TREE=absent").exit(),
+				"a drop on a base that never carried the tree is a drop of something else");
+	}
+
+	/** gate-m26's session block over {@code log}; {@code preamble} is what the gate computes from the base first. */
+	private Result session(String log, int precedingFailure, String preamble) throws Exception {
+		Path input = temporary.resolve("session.log");
+		Files.writeString(input, log);
+		String program = ". \"$1\"\nLOG=\"$2\"\nFAIL=" + precedingFailure + "\n" + preamble + "\n"
+				+ section(Files.readString(M26), "M26_SESSION_ASSERTIONS") + "\nexit \"$FAIL\"\n";
+		return execute(new ProcessBuilder("bash", "-c", program, "session-contract",
+				Path.of("run/lib.sh").toAbsolutePath().toString(), input.toString()), temporary.resolve("session-result.log"));
+	}
+
+	private static String section(String script, String name) {
+		int start = script.indexOf("# " + name + "_BEGIN");
+		assertTrue(start >= 0, "missing production fragment: " + name);
+		start = script.indexOf('\n', start) + 1;
+		int end = script.indexOf("# " + name + "_END", start);
+		assertTrue(end > start, "missing production fragment end: " + name);
+		return script.substring(start, end);
+	}
+
+	private static Result execute(ProcessBuilder builder, Path output) throws Exception {
+		Process process = builder.redirectErrorStream(true).redirectOutput(output.toFile()).start();
+		boolean ended = process.waitFor(15, TimeUnit.SECONDS);
+		if (!ended) process.destroyForcibly();
+		assertTrue(ended, "offline gate fragment timed out");
+		return new Result(process.exitValue(), Files.readString(output));
 	}
 
 	private Result m21(String log, String perJarLog) throws Exception {
