@@ -56,6 +56,28 @@ class ClientPartTrackingInjectorTest {
 	private static final String NEO_GET_PARTS = ClientPartTrackingInjector.NEO_GET_PARTS;
 	private static final String FORGE_GET_PARTS = ClientPartTrackingInjector.FORGE_GET_PARTS;
 
+	/**
+	 * The real merged onTrackingStart after this repair: NeoForge's parts reach dragonParts, NeoForge's part array is never
+	 * dereferenced before a null test, the canonical reads stay in their order, and a second pass changes nothing. The
+	 * null test of MinecraftForge's array was the companion repair's, which went with MinecraftForge (that array does not
+	 * exist on the genuine base); this is the subject of the C3 red-check for this repair.
+	 */
+	@Test void theMergedCallbackTracksNeoForgesPartsAndDereferencesThemOnlyAfterANullTest() throws Exception {
+		byte[] merged = NativeCoremodParityTest.read(MERGED, CALLBACKS);
+		List<String> reads = partsRead(method(node(merged), "onTrackingStart", START_DESC));
+		assertTrue(reads.contains(NEO_GET_PARTS), "premise: the merge keeps NeoForge's registration: " + reads);
+		byte[] client = new ClientPartTrackingInjector().transform(ClientPartTrackingInjector.CALLBACKS, merged, null);
+		if (!reads.contains(FORGE_GET_PARTS)) assertSame(merged, client, "NeoForge's body alone needs no repair");
+		ClassNode node = node(client);
+		MethodNode start = method(node, "onTrackingStart", START_DESC);
+		assertEquals(reads, partsRead(start), "the canonical reads remain, in their order");
+		assertTrue(ClientPartTrackingInjector.tracksNeoForgeParts(client), "NeoForge's parts reach dragonParts");
+		assertEquals(Set.of(), ClientPartTrackingFlow.analyze(node, start, false).unchecked(),
+				"NeoForge's part array is not dereferenced unchecked");
+		new Analyzer<>(new BasicVerifier()).analyze(CALLBACKS, start);
+		assertSame(client, new ClientPartTrackingInjector().transform(ClientPartTrackingInjector.CALLBACKS, client, null));
+	}
+
 	@Test void neoForgesOwnCallbacksAreLeftAlone() throws Exception {
 		byte[] own = NativeCoremodParityTest.read(NEO, CALLBACKS);
 		assertSame(own, new ClientPartTrackingInjector().transform(ClientPartTrackingInjector.CALLBACKS, own, null));
