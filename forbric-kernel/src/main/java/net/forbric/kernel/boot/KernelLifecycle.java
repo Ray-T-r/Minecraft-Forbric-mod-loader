@@ -84,7 +84,7 @@ public final class KernelLifecycle {
 		modJars = jars == null ? List.of() : jars;
 	}
 
-	/** The ecosystem runtime jars (forge/neoforge). Each is that ecosystem's OWN mod file — FML scans it too. */
+	/** The ecosystem runtime jar (neoforge). It is that ecosystem's OWN mod file — FML scans it too. */
 	public static void setRuntimeJars(List<Path> jars) {
 		runtimeJars = jars == null ? List.of() : jars;
 	}

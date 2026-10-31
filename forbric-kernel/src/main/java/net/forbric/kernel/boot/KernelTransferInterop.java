@@ -15,8 +15,8 @@ import net.forbric.kernel.util.ForbricLog;
 /**
  * Boot/game seam for the optional transfer API. No game or Fabric API implementation type crosses it.
  *
- * <p>Energy rides on the same component: Forge and NeoForge energy bridge each other whenever the transfer bridge is
- * active. The Fabric side of energy is Team Reborn Energy, an ordinary mod; only when its API is installed is the
+ * <p>Energy rides on the same component, on NeoForge's block energy, whenever the transfer bridge is active. The
+ * Fabric side of energy is Team Reborn Energy, an ordinary mod; only when its API is installed is the
  * Reborn half (RebornEnergyBridge) required and installed. Presence is read as a RESOURCE, so a pack without it never
  * loads a Reborn class, and no seam class names a Reborn type.
  */
@@ -65,7 +65,7 @@ public final class KernelTransferInterop {
 		energy = reborn && present(loader, ENERGY.replace('.', '/') + ".class");
 		if (reborn && !energy) {
 			// Not a necessary loss: without the Reborn half, Fabric energy mods behave exactly as they would without
-			// the bridge, and Forge/NeoForge energy still bridge each other.
+			// the bridge, and NeoForge energy is untouched.
 			CompatibilityFindings.record(new CompatibilityFinding("transfer-energy-component", "forbric",
 					"Cross-ecosystem energy (Team Reborn Energy)", "KernelTransferInterop", CompatibilityFinding.Confidence.CONFIRMED,
 					false, "This kernel build is missing its Team Reborn Energy bridge; Fabric energy stays unconnected.",
@@ -118,7 +118,7 @@ public final class KernelTransferInterop {
 			Throwable cause = net.forbric.kernel.util.Reflect.unwrap(failure);
 			CompatibilityFindings.record(new CompatibilityFinding("transfer-energy-initialization", "forbric",
 					"Cross-ecosystem energy (Team Reborn Energy)", "KernelTransferInterop", CompatibilityFinding.Confidence.CONFIRMED,
-					false, "Team Reborn Energy could not be connected; Fabric energy stays unconnected, Forge/NeoForge energy is unaffected.",
+					false, "Team Reborn Energy could not be connected; Fabric energy stays unconnected, NeoForge energy is unaffected.",
 					List.of(cause.toString())));
 			Caught.error(failure, "[Forbric/Transfer] Team Reborn Energy bridge failed; Fabric energy will not be exposed");
 		}

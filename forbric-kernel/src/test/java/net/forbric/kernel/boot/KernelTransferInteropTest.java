@@ -98,7 +98,7 @@ class KernelTransferInteropTest {
 	/** A kernel without the Reborn half is recorded, but it is not a necessary loss: the pack runs as it did before. */
 	@Test void rebornWithoutTheKernelsEnergyHalfIsRecordedButNotNecessary() throws Exception {
 		try (var loader = loader(true, true, true, false)) {
-			assertTrue(KernelTransferInterop.configure(loader), "items, fluids and Forge/NeoForge energy stay connected");
+			assertTrue(KernelTransferInterop.configure(loader), "items, fluids and NeoForge energy stay connected");
 			assertFalse(KernelTransferInterop.energyActive());
 			assertFalse(KernelRuntimeClasses.compiled().contains(KernelTransferInterop.ENERGY));
 			assertTrue(CompatibilityFindings.confirmedRequired().isEmpty());
