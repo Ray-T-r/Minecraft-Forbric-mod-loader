@@ -32,15 +32,15 @@ import net.forbric.api.ModPresence;
 import net.forbric.kernel.util.ForbricLog;
 
 /**
- * Makes both Forge families' {@code ModList.isLoaded} answer for mods the OTHER ecosystem loaded.
+ * Makes NeoForge's {@code ModList.isLoaded} answer for mods the OTHER ecosystem loaded.
  *
  * <p>{@code isLoaded} is the presence check Forge-family mods gate their compatibility branches on, and it reads
- * that family's own {@code indexedMods}. In this instance that map can only ever hold that family's mods, so a
+ * NeoForge's own {@code indexedMods}. In this instance that map can only ever hold NeoForge's mods, so a
  * NeoForge mod asking whether Sodium is installed is told no while a Fabric Sodium is running — and it then takes
  * the "no Sodium" branch, which is not a smaller feature but a wrong one. See {@code ModPresence} for why
  * that is invisible rather than loud.
  *
- * <p>The rewrite ORs the family's own answer with the kernel's cross-ecosystem one. Both operands are evaluated
+ * <p>The rewrite ORs NeoForge's own answer with the kernel's cross-ecosystem one. Both operands are evaluated
  * (an {@code IOR}, not a short circuit), which is deliberate: it keeps the method BRANCH-FREE, so no stack map
  * frame has to be written for a merged control flow, and both calls are pure map lookups anyway.
  *
@@ -50,7 +50,6 @@ import net.forbric.kernel.util.ForbricLog;
  */
 public final class ForeignModPresenceInjector implements ClassTransformer {
 	private static final String NEOFORGE_MOD_LIST = ForeignType.MOD_LIST.binary(Ecosystem.NEOFORGE);
-	private static final String FORGE_MOD_LIST = ForeignType.MOD_LIST.binary(Ecosystem.FORGE);
 	private static final String IS_LOADED = "isLoaded";
 	private static final String IS_LOADED_DESC = "(Ljava/lang/String;)Z";
 	private static final String PRESENCE = "net/forbric/api/ModPresence";
@@ -66,14 +65,13 @@ public final class ForeignModPresenceInjector implements ClassTransformer {
 				+ "while that mod is running. Physics Mod took that branch next to a live Fabric Sodium: loaded, "
 				+ "mixins applied, no error anywhere, and nothing on screen";
 		return AnchorSet.of(
-				new AnchorSet.Anchor(NEOFORGE_MOD_LIST, AnchorSet.Severity.REQUIRED, cost),
-				new AnchorSet.Anchor(FORGE_MOD_LIST, AnchorSet.Severity.REQUIRED, cost));
+				new AnchorSet.Anchor(NEOFORGE_MOD_LIST, AnchorSet.Severity.REQUIRED, cost));
 	}
 
 	@Override
 	public byte[] transform(String className, byte[] classBytes, TransformContext context) {
 		if (classBytes == null || classBytes.length == 0) return classBytes;
-		if (!NEOFORGE_MOD_LIST.equals(className) && !FORGE_MOD_LIST.equals(className)) return classBytes;
+		if (!NEOFORGE_MOD_LIST.equals(className)) return classBytes;
 
 		ClassNode node = new ClassNode();
 		new ClassReader(classBytes).accept(node, 0);
@@ -87,9 +85,9 @@ public final class ForeignModPresenceInjector implements ClassTransformer {
 		}
 		if (isLoaded == null || isLoaded.instructions.size() == 0) return classBytes;
 
-		// The id argument is slot 0 on the static overload (MinecraftForge) and slot 1 on the instance one
-		// (NeoForge). Read it from the descriptor rather than from the class, so a future signature change fails
-		// here rather than silently reading `this`.
+		// The id argument is slot 1 on NeoForge's instance method (slot 0 on a static overload, as MinecraftForge's
+		// was). Read it from the access flags rather than assumed, so a signature change fails here rather than silently
+		// reading `this`.
 		int idSlot = (isLoaded.access & Opcodes.ACC_STATIC) != 0 ? 0 : 1;
 
 		int returns = 0;

@@ -76,27 +76,9 @@ class ForeignModPresenceInjectorTest {
 	}
 
 	@Test
-	void theStaticOverloadReadsTheIdFromSlotZero() throws Exception {
-		ModPresence.publishFabric(List.of(fabric("iris")));
-
-		byte[] out = transform(FORGE_MOD_LIST, syntheticModList(FORGE_MOD_LIST.replace('.', '/'), true));
-		Class<?> loaded = define(FORGE_MOD_LIST, out);
-
-		// A static isLoaded takes the id in slot 0; reading slot 1 would either verify-fail or read garbage.
-		assertTrue((boolean) loaded.getMethod("isLoaded", String.class).invoke(null, "iris"));
-		assertFalse((boolean) loaded.getMethod("isLoaded", String.class).invoke(null, "oculus"));
-	}
-
-	@Test
 	void theRealNeoForgeModListIsRewrittenAndStillVerifies() throws Exception {
 		TestFixtures.requireFile(Fixture.STAGED, NEOFORGE, "staged NeoForge runtime absent — skipping real-bytecode check");
 		assertRewritten(NEO_MOD_LIST, readClass(NEOFORGE, "net/neoforged/fml/ModList.class"));
-	}
-
-	@Test
-	void theRealMinecraftForgeModListIsRewrittenAndStillVerifies() throws Exception {
-		TestFixtures.requireFiles(Fixture.STAGED, "staged MinecraftForge runtime absent — skipping real-bytecode check", FORGE);
-		assertRewritten(FORGE_MOD_LIST, readClass(FORGE, "net/minecraftforge/fml/ModList.class"));
 	}
 
 	@Test

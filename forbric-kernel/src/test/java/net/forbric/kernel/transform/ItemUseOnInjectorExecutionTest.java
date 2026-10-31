@@ -109,7 +109,7 @@ class ItemUseOnInjectorExecutionTest {
 						}
 					}
 					"""),
-			Map.entry(ItemUseOnInjector.FORGE_HOOKS, """
+			Map.entry("net.minecraftforge.common.ForgeHooks", """
 					package net.minecraftforge.common;
 
 					import java.util.function.Function;
@@ -206,7 +206,7 @@ class ItemUseOnInjectorExecutionTest {
 					}
 					"""));
 
-	private static final List<String> TARGETS = List.of(STACK, ItemUseOnInjector.NEO_HOOKS, ItemUseOnInjector.FORGE_HOOKS);
+	private static final List<String> TARGETS = List.of(STACK, ItemUseOnInjector.NEO_HOOKS);
 
 	private static ClassLoader transformed(Map<String, byte[]> original) {
 		Map<String, byte[]> classes = new HashMap<>(original);
@@ -249,13 +249,6 @@ class ItemUseOnInjectorExecutionTest {
 		assertEquals(List.of("ITEM_AFTER_BLOCK", "ITEM_AFTER_BLOCK"), phases, "NeoForge's phase is posted on both sides");
 		assertEquals(List.of(ItemUseOnInjector.RELAY, ItemUseOnInjector.RELAY), callers(loader),
 				"server and client both reach Item.useOn through the relay Fabric's wrap is pointed at");
-
-		// A mod calling MinecraftForge's own hook goes through the same relay.
-		Object item = InjectorExecution.construct(loader.loadClass("net.minecraft.world.item.Item"));
-		Object context = InjectorExecution.construct(loader.loadClass(CONTEXT),
-				InjectorExecution.construct(loader.loadClass(STACK), item), false);
-		InjectorExecution.invokeStatic(loader.loadClass(ItemUseOnInjector.FORGE_HOOKS), "onPlaceItemIntoWorld", context);
-		assertEquals(ItemUseOnInjector.RELAY, callers(loader).get(2));
 
 		ClassLoader merged = InjectorExecution.load(original);
 		List<String> unposted = new ArrayList<>();

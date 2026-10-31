@@ -22,10 +22,8 @@ import org.objectweb.asm.tree.analysis.BasicVerifier;
 @ResourceLock("system-properties")
 class ItemUseOnInjectorTest {
 	private static final Path MERGED = TestFixtures.stagedBase();
-	private static final Path FORGE_RUNTIME = TestFixtures.forgeCarrier();
 	private static final Path VANILLA = TestFixtures.vanillaJar();
 	private static final String STACK = "net/minecraft/world/item/ItemStack";
-	private static final String HOOKS = "net/minecraftforge/common/ForgeHooks";
 	private static final Path NEO_RUNTIME = TestFixtures.neoCarrier();
 	private static final String NEO_HOOKS = "net/neoforged/neoforge/common/CommonHooks";
 
@@ -65,9 +63,8 @@ class ItemUseOnInjectorTest {
 		assertSame(out, new ItemUseOnInjector().transform(ItemUseOnInjector.STACK, out, null), "a second pass changes nothing");
 	}
 
-	@Test void bothFamiliesServerCallsGoThroughTheStackTheItemWasReadFrom() throws Exception {
-		TestFixtures.requireForgeCarrier("MinecraftForge's ForgeHooks");
-		for (Object[] hooks : new Object[][] { { FORGE_RUNTIME, HOOKS, ItemUseOnInjector.FORGE_HOOKS }, { NEO_RUNTIME, NEO_HOOKS, ItemUseOnInjector.NEO_HOOKS } }) {
+	@Test void neoForgesServerCallGoesThroughTheStackTheItemWasReadFrom() throws Exception {
+		for (Object[] hooks : new Object[][] { { NEO_RUNTIME, NEO_HOOKS, ItemUseOnInjector.NEO_HOOKS } }) {
 			byte[] original = NativeCoremodParityTest.read((Path) hooks[0], (String) hooks[1]);
 			byte[] out = new ItemUseOnInjector().transform((String) hooks[2], original, null);
 			MethodNode place = method(node(out), "onPlaceItemIntoWorld", ItemUseOnInjector.USE_ON_DESC);
@@ -184,12 +181,9 @@ class ItemUseOnInjectorTest {
 	}
 
 	@Test void theSwitchLeavesBothAlone() throws Exception {
-		TestFixtures.requireForgeCarrier("MinecraftForge's ForgeHooks");
 		System.setProperty(ItemUseOnInjector.PROPERTY, "off");
-		byte[] stack = NativeCoremodParityTest.read(MERGED, STACK), hooks = NativeCoremodParityTest.read(FORGE_RUNTIME, HOOKS),
-				neo = NativeCoremodParityTest.read(NEO_RUNTIME, NEO_HOOKS);
+		byte[] stack = NativeCoremodParityTest.read(MERGED, STACK), neo = NativeCoremodParityTest.read(NEO_RUNTIME, NEO_HOOKS);
 		assertSame(stack, new ItemUseOnInjector().transform(ItemUseOnInjector.STACK, stack, null));
-		assertSame(hooks, new ItemUseOnInjector().transform(ItemUseOnInjector.FORGE_HOOKS, hooks, null));
 		assertSame(neo, new ItemUseOnInjector().transform(ItemUseOnInjector.NEO_HOOKS, neo, null));
 	}
 

@@ -47,8 +47,7 @@ class CommonNetworkInteropInjectorExecutionTest {
 	private static final String CLIENT_CONFIG = "net.minecraft.client.multiplayer.ClientConfigurationPacketListenerImpl";
 	private static final String NEO_REGISTRY = "net.neoforged.neoforge.network.registration.NetworkRegistry";
 	private static final String SYNC_CONFIG = "net.minecraftforge.network.tasks.SyncConfigTask";
-	private static final List<String> TARGETS = List.of(SERVER_CONFIG, CLIENT_COMMON, SERVER_COMMON, CLIENT_CONFIG,
-			NEO_REGISTRY, SYNC_CONFIG);
+	private static final List<String> TARGETS = List.of(SERVER_CONFIG, CLIENT_CONFIG);
 
 	private static String payload(String binaryName, String fields, String id) {
 		int dot = binaryName.lastIndexOf('.');
@@ -331,6 +330,17 @@ class CommonNetworkInteropInjectorExecutionTest {
 						}
 					}
 
+					/** A vanilla-shaped task that runs next. */
+					public static class Next implements ConfigurationTask {
+						public Type type() {
+							return new Type("minecraft:next");
+						}
+
+						public void start(Consumer<String> send) {
+							send.accept("minecraft:next");
+						}
+					}
+
 					/** A MinecraftForge handshake task: it refuses the vanilla overload. */
 					public static class ForgeHandshake implements ConfigurationTask {
 						public Type type() {
@@ -481,14 +491,14 @@ class CommonNetworkInteropInjectorExecutionTest {
 		return InjectorExecution.construct(type, id);
 	}
 
-	@Test void finishingFabricsTaskFinishesNeoForgesAndAForgeTaskStarts(@TempDir Path work) throws Throwable {
+	@Test void finishingFabricsTaskFinishesNeoForgesAndTheNextTaskStarts(@TempDir Path work) throws Throwable {
 		Game game = game(work);
 		Object listener = configuration(game.repaired);
 		Object fabricVersion = InjectorExecution.construct(game.repaired("net.minecraft.server.network.ConfigurationTask$Type"), "c:version");
 		InjectorExecution.invoke(listener, "finishCurrentTask", fabricVersion);
-		assertEquals("forge:handshake", InjectorExecution.invoke(listener, "current"), "NeoForge's equivalent task finished");
-		assertEquals(List.of("neoforge:common_version", "forge:handshake"), listener.getClass().getField("sent").get(listener),
-				"and MinecraftForge's task started through its context");
+		assertEquals("minecraft:next", InjectorExecution.invoke(listener, "current"), "NeoForge's equivalent task finished");
+		assertEquals(List.of("neoforge:common_version", "minecraft:next"), listener.getClass().getField("sent").get(listener),
+				"and the next task started");
 		Object unrelated = InjectorExecution.construct(game.repaired("net.minecraft.server.network.ConfigurationTask$Type"), "c:register");
 		assertThrows(IllegalStateException.class, () -> InjectorExecution.invoke(listener, "finishCurrentTask", unrelated),
 				"a task that is not the current one's equivalent is still refused, as vanilla refuses it");
@@ -497,108 +507,17 @@ class CommonNetworkInteropInjectorExecutionTest {
 		Object stockVersion = InjectorExecution.construct(game.merged("net.minecraft.server.network.ConfigurationTask$Type"), "c:version");
 		assertTrue(assertThrows(IllegalStateException.class, () -> InjectorExecution.invoke(stock, "finishCurrentTask", stockVersion))
 				.getMessage().startsWith("Unexpected request for task finish"), "premise: as merged, the client is refused");
-		Object stockNeo = InjectorExecution.construct(game.merged("net.minecraft.server.network.ConfigurationTask$Type"), "neoforge:common_version");
-		assertThrows(UnsupportedOperationException.class, () -> InjectorExecution.invoke(stock, "finishCurrentTask", stockNeo),
-				"premise: as merged, MinecraftForge's task is started through the overload it refuses");
 	}
 
-	/** A server configuring a client: NeoForge's common-version task, then a MinecraftForge one; the first started. */
+	/** A server configuring a client: NeoForge's common-version task, then a vanilla-shaped one; the first started. */
 	private static Object configuration(ClassLoader loader) throws Throwable {
 		Object listener = InjectorExecution.construct(loader.loadClass(SERVER_CONFIG));
 		@SuppressWarnings("unchecked")
 		java.util.Queue<Object> tasks = (java.util.Queue<Object>) listener.getClass().getField("tasks").get(listener);
 		tasks.add(InjectorExecution.construct(loader.loadClass("fixture.Tasks$NeoVersion")));
-		tasks.add(InjectorExecution.construct(loader.loadClass("fixture.Tasks$ForgeHandshake")));
+		tasks.add(InjectorExecution.construct(loader.loadClass("fixture.Tasks$Next")));
 		InjectorExecution.invoke(listener, "startConfiguration");
 		return listener;
-	}
-
-	@Test void aMinecraftForgePayloadGoesToForgeHooksOnBothSides(@TempDir Path work) throws Throwable {
-		Game game = game(work);
-		for (String[] side : new String[][] {{CLIENT_COMMON, "ClientboundCustomPayloadPacket"}, {SERVER_COMMON, "ServerboundCustomPayloadPacket"}}) {
-			for (boolean repaired : new boolean[] {true, false}) {
-				ClassLoader loader = repaired ? game.repaired : game.merged;
-				Object connection = InjectorExecution.construct(loader.loadClass("net.minecraft.network.Connection"));
-				Object listener = InjectorExecution.construct(loader.loadClass(side[0]), connection);
-				Class<?> packet = loader.loadClass("net.minecraft.network.protocol.common." + side[1]);
-				Object forge = InjectorExecution.construct(loader.loadClass("net.minecraftforge.network.ForgePayload"),
-						identifier(loader.loadClass("net.minecraft.resources.Identifier"), "forgemod:sync"));
-				InjectorExecution.invoke(listener, "handleCustomPayload", InjectorExecution.construct(packet, forge));
-				Object neo = InjectorExecution.construct(loader.loadClass("fixture.ModPayload"), "neomod:sync");
-				InjectorExecution.invoke(listener, "handleCustomPayload", InjectorExecution.construct(packet, neo));
-				Object received = InjectorExecution.getStatic(loader.loadClass("net.minecraftforge.common.ForgeHooks"), "received");
-				Object disconnected = connection.getClass().getField("disconnected").get(connection);
-				if (repaired) {
-					assertNull(disconnected, side[0] + ": the connection stays up");
-					assertEquals(List.of("forgemod:sync"), received, side[0] + ": MinecraftForge's dispatcher took its payload");
-					assertEquals(List.of("neoforge neomod:sync"), listener.getClass().getField("handled").get(listener),
-							side[0] + ": NeoForge's payload still reaches NeoForge's body");
-				} else {
-					assertEquals("No Channel for forgemod:sync", disconnected, side[0] + ": premise: as merged, NeoForge's body disconnects");
-				}
-				((List<?>) received).clear();
-			}
-		}
-	}
-
-	@Test void neoForgeDoesNotPoliceChannelsItDidNotNegotiate(@TempDir Path work) throws Throwable {
-		Game game = game(work);
-		java.util.function.Function<ClassLoader, java.util.function.Function<Object, Object>> send = loader -> payload -> {
-			try {
-				Object packet = InjectorExecution.construct(loader.loadClass("net.minecraft.network.protocol.common.ServerboundCustomPayloadPacket"), payload);
-				Object listener = java.lang.reflect.Proxy.newProxyInstance(loader,
-						new Class<?>[] {loader.loadClass("net.minecraft.network.protocol.common.ServerCommonPacketListener")}, (p, m, a) -> false);
-				InjectorExecution.invokeStatic(loader.loadClass(NEO_REGISTRY), "checkPacket", packet, listener);
-				return "sent";
-			} catch (Throwable refused) {
-				return refused.getMessage();
-			}
-		};
-		ClassLoader loader = game.repaired;
-		Class<?> id = loader.loadClass("net.minecraft.resources.Identifier");
-		assertEquals("sent", send.apply(loader).apply(InjectorExecution.construct(loader.loadClass("net.minecraftforge.network.ForgePayload"),
-				identifier(id, "forgemod:sync"))), "a MinecraftForge payload is not NeoForge's to police");
-		assertEquals("sent", send.apply(loader).apply(InjectorExecution.construct(loader.loadClass("fixture.ModPayload"), "polymer:hello")),
-				"nor is a channel another ecosystem negotiated");
-		assertEquals("Payload neomod:sync may not be sent to the server!",
-				send.apply(loader).apply(InjectorExecution.construct(loader.loadClass("fixture.ModPayload"), "neomod:sync")),
-				"a channel NeoForge registered is still policed");
-		assertEquals("Payload minecraft:register may not be sent to the server!",
-				send.apply(loader).apply(InjectorExecution.construct(loader.loadClass("net.neoforged.neoforge.network.payload.MinecraftRegisterPayload"),
-						Set.of())), "and so is NeoForge's own");
-
-		ClassLoader stock = game.merged;
-		assertEquals("Payload forgemod:sync may not be sent to the server!",
-				send.apply(stock).apply(InjectorExecution.construct(stock.loadClass("net.minecraftforge.network.ForgePayload"),
-						identifier(stock.loadClass("net.minecraft.resources.Identifier"), "forgemod:sync"))),
-				"premise: as merged, a MinecraftForge mod's client cannot send on its own channel");
-	}
-
-	@ExpectCaught("was gone when MinecraftForge's SyncConfigTask read")
-	@Test void aMissingServerConfigIsWrittenBackInsteadOfDisconnecting(@TempDir Path work) throws Throwable {
-		Game game = game(work.resolve("classes"));
-		for (boolean repaired : new boolean[] {true, false}) {
-			ClassLoader loader = repaired ? game.repaired : game.merged;
-			Path file = work.resolve((repaired ? "repaired" : "merged") + "-server.toml");
-			Object config = InjectorExecution.construct(loader.loadClass("net.minecraftforge.fml.config.ModConfig"), file, "spawnRate = 3\n");
-			@SuppressWarnings("unchecked")
-			Map<String, Set<Object>> sets = (Map<String, Set<Object>>) InjectorExecution.getStatic(
-					loader.loadClass("net.minecraftforge.fml.config.ConfigTracker"), "SETS");
-			sets.put("SERVER", Set.of(config));
-			Object connection = InjectorExecution.construct(loader.loadClass("net.minecraft.network.Connection"));
-			Object task = InjectorExecution.construct(loader.loadClass(SYNC_CONFIG), connection, config);
-			assertFalse(Files.exists(file), "the per-world config is not on disk when the handshake reads it");
-			InjectorExecution.invoke(task, "start");
-			Object disconnected = connection.getClass().getField("disconnected").get(connection);
-			if (repaired) {
-				assertNull(disconnected, "the joining client stays connected");
-				assertEquals("spawnRate = 3\n", new String((byte[]) task.getClass().getField("sent").get(task)),
-						"and is sent the config the server holds, written back first");
-				assertTrue(Files.exists(file));
-			} else {
-				assertEquals("Connection closed - Failed to read config on server", disconnected, "premise: as merged, the join ends");
-			}
-		}
 	}
 
 	/**

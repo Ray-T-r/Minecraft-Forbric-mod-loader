@@ -111,21 +111,18 @@ public final class LifecycleHookInjector implements ClassTransformer {
 	 */
 	private record Trigger(String owner, String name, String desc, String hookName, int popSlots) {}
 
-	// Server triggers: NeoForge's load(Z)V and MinecraftForge's no-arg load()V. A base may carry both (an edit-spliced
-	// merge keeps MinecraftForge's `if (!initSettings) load()` in front of NeoForge's): each is redirected, the kernel's
-	// window runs once (KernelLifecycle.openWindow) at whichever comes first, and the one marker follows the first.
-	// Same descriptor as the hook — keep the boolean on the stack, plain owner+name swap.
+	// Server trigger: NeoForge's load(Z)V. Same descriptor as the hook — keep the boolean on the stack, plain owner+name
+	// swap. (MinecraftForge's no-arg load()V, which an edit-spliced merge kept in front of NeoForge's, went with
+	// MinecraftForge.)
 	private static final Trigger[] SERVER_TRIGGERS = {
 			new Trigger(ForeignType.SERVER_MOD_LOADER.internal(Ecosystem.NEOFORGE), "load", "(Z)V", "onServerModLoading", 0),
-			new Trigger(ForeignType.SERVER_MOD_LOADER.internal(Ecosystem.FORGE), "load", "()V", "onServerModLoadingNoArg", 0),
 	};
 
 	// Client trigger: ClientModLoader.begin()V in net.minecraft.client.main.Main.main — the EXACT client analogue of
 	// the server's ServerModLoader.load redirect in the dedicated-server Main.main. bc 814, after Bootstrap.validate
 	// (811) and after BackgroundWaiter.runAndTick (796) has already run the bootstrap lambda (registries frozen), and
 	// BEFORE `new Minecraft` (1613) → Minecraft.<init> → ClientHooks.initClientHooks (which fires the client mod-bus
-	// events onClientModLoading must have populated the ModList for). No-arg swap (popSlots 0). Class name differs by
-	// family (Neo/Forge).
+	// events onClientModLoading must have populated the ModList for). No-arg swap (popSlots 0).
 	//
 	// (History: an earlier M5 attempt redirected setupModResourcePacks(PackRepository) in Minecraft.<init> instead,
 	// with begin() neutered — that HANGS before Minecraft.<init>, because neutering begin() defers onClientModLoading
@@ -133,7 +130,6 @@ public final class LifecycleHookInjector implements ClassTransformer {
 	private static final String BEGIN = "begin";
 	private static final Trigger[] CLIENT_TRIGGERS = {
 			new Trigger(ForeignType.CLIENT_MOD_LOADER.internal(Ecosystem.NEOFORGE), BEGIN, "()V", "onClientModLoading", 0),
-			new Trigger(ForeignType.CLIENT_MOD_LOADER.internal(Ecosystem.FORGE), BEGIN, "()V", "onClientModLoading", 0),
 	};
 
 	// The class + method carrying the trigger to rewrite. Server: Main.main. Client: Main.main (client entry), where

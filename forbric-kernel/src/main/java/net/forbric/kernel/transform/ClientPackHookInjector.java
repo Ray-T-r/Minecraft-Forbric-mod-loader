@@ -52,14 +52,9 @@ public final class ClientPackHookInjector implements ClassTransformer {
 	// PackRepository into an Object parameter is a widening reference conversion — the verifier accepts it.
 	private static final String HOOK_DESC = "(Ljava/lang/Object;)V";
 
-	// NeoForge is the live one. MinecraftForge's ClientModLoader has NO setupModResourcePacks on the staged carrier
-	// — it takes the repository in begin(Minecraft, PackRepository, ReloadableResourceManager) instead — so that
-	// entry currently matches nothing. It is kept as a hedge for a base that flips which family wins this seam, the
-	// same way LifecycleHookInjector keeps Forge's no-arg ServerModLoader.load. ClientPackHookInjectorTest asserts
-	// BOTH halves of that, so if a carrier ever adds the method the hedge stops being inert and says so.
+	// NeoForge's ClientModLoader is the seam. (MinecraftForge's was kept here as an inert hedge; it went with MinecraftForge.)
 	private static final String[] OWNERS = {
 		ForeignType.CLIENT_MOD_LOADER.binary(Ecosystem.NEOFORGE),
-		ForeignType.CLIENT_MOD_LOADER.binary(Ecosystem.FORGE),
 	};
 
 	@Override
@@ -69,17 +64,10 @@ public final class ClientPackHookInjector implements ClassTransformer {
 
 	@Override
 	public AnchorSet anchors() {
-		// The two halves differ, and the difference is the point. NeoForge's ClientModLoader is the live seam;
-		// MinecraftForge's has no setupModResourcePacks on the staged carrier at all, and that entry is kept
-		// deliberately so it starts working by itself if a base ever flips which family wins here. Reporting the
-		// second one every boot is how a reader learns to skip the first.
 		return AnchorSet.of(
 				new AnchorSet.Anchor(OWNERS[0], AnchorSet.Severity.REQUIRED,
 						"the kernel would never receive the live PackRepository, so no mod's client assets are "
-								+ "served -- missing textures and models, with nothing in the log naming the loader"),
-				new AnchorSet.Anchor(OWNERS[1], AnchorSet.Severity.HEDGE,
-						"nothing today: this carrier has no setupModResourcePacks. Kept so that a base which "
-								+ "flips this seam to MinecraftForge is noticed rather than silently unhooked"));
+								+ "served -- missing textures and models, with nothing in the log naming the loader"));
 	}
 
 	@Override

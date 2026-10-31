@@ -64,14 +64,13 @@ import org.objectweb.asm.tree.VarInsnNode;
  * <p>Each {@code useOn} edit checks the reviewed shape and declines on anything else: {@code useOn} must be
  * MinecraftForge's or NeoForge's (no {@code Item.useOn}, one {@code onPlaceItemIntoWorld}, one lambda whose body is
  * exactly {@code getItem().useOn(context)}); {@code onPlaceItemIntoWorld} must make exactly one {@code Item.useOn}
- * call. Both families' {@code onPlaceItemIntoWorld} are relayed, NeoForge's because useOn calls it and MinecraftForge's
- * because a mod may call it itself — MinecraftForge's is a HEDGE, there only while its carrier is. On vanilla's body
- * {@code useOn} is not changed. {@code -Dforbric.itemUseOn=off} leaves all three classes alone.
+ * call. NeoForge's {@code onPlaceItemIntoWorld} is relayed, because useOn calls it (MinecraftForge's was too, while its
+ * carrier was there). On vanilla's body {@code useOn} is not changed. {@code -Dforbric.itemUseOn=off} leaves both classes
+ * alone.
  */
 public final class ItemUseOnInjector implements ClassTransformer {
 	public static final String PROPERTY = "forbric.itemUseOn";
 	static final String STACK = "net.minecraft.world.item.ItemStack";
-	static final String FORGE_HOOKS = "net.minecraftforge.common.ForgeHooks";
 	static final String NEO_HOOKS = "net.neoforged.neoforge.common.CommonHooks";
 	static final String STACK_INTERNAL = "net/minecraft/world/item/ItemStack";
 	static final String ITEM = "net/minecraft/world/item/Item";
@@ -97,10 +96,7 @@ public final class ItemUseOnInjector implements ClassTransformer {
 		return AnchorSet.of(
 				new AnchorSet.Anchor(STACK, AnchorSet.Severity.REQUIRED, "NeoForge's UseItemOnBlockEvent ITEM_AFTER_BLOCK phase "
 						+ "and fabric-api's ItemEvents.USE_ON never fire"),
-				new AnchorSet.Anchor(NEO_HOOKS, AnchorSet.Severity.REQUIRED, "fabric-api's ItemEvents.USE_ON never fires on a server"),
-				// MinecraftForge's hooks exist only while its carrier does; NeoForge's genuine base has none to relay.
-				new AnchorSet.Anchor(FORGE_HOOKS, AnchorSet.Severity.HEDGE, "fabric-api's ItemEvents.USE_ON never fires when a mod "
-						+ "calls MinecraftForge's onPlaceItemIntoWorld itself"));
+				new AnchorSet.Anchor(NEO_HOOKS, AnchorSet.Severity.REQUIRED, "fabric-api's ItemEvents.USE_ON never fires on a server"));
 	}
 
 	/** The {@code useOn} edit on its own line: the class anchor alone is hit by the bridge, which always goes in. */
@@ -142,7 +138,7 @@ public final class ItemUseOnInjector implements ClassTransformer {
 
 	@Override public byte[] transform(String className, byte[] bytes, TransformContext context) {
 		if (!enabled() || bytes == null || bytes.length == 0
-				|| !(STACK.equals(className) || FORGE_HOOKS.equals(className) || NEO_HOOKS.equals(className))) return bytes;
+				|| !(STACK.equals(className) || NEO_HOOKS.equals(className))) return bytes;
 		ClassNode node = new ClassNode();
 		new ClassReader(bytes).accept(node, 0);
 		boolean stack = STACK.equals(className);

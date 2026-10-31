@@ -15,14 +15,13 @@ public final class AxeStripCallbacksInjector implements ClassTransformer {
     static final String STACK = "net/minecraft/world/item/ItemStack";
     static final String HELPER = "forbric$getStrippedState";
     static final String DESC = "(" + STATE + CONTEXT + ")" + STATE;
-    private static final Set<String> BLOCKS = Set.of("net/neoforged/neoforge/common/extensions/IBlockExtension", "net/minecraftforge/common/extensions/IForgeBlock");
+    private static final Set<String> BLOCKS = Set.of("net/neoforged/neoforge/common/extensions/IBlockExtension");
     private static boolean enabled() { return !"off".equalsIgnoreCase(System.getProperty(PROPERTY, "on")); }
     @Override public String name() { return "forbric-axe-strip-callbacks"; }
     @Override public AnchorSet anchors() {
         if (!enabled()) return AnchorSet.scanned("axe stripping callbacks left disconnected by request");
         return AnchorSet.of(new AnchorSet.Anchor(AXE.replace('/', '.'), AnchorSet.Severity.REQUIRED, "Fabric stripping callbacks never run on native tool modification"),
-                new AnchorSet.Anchor("net.neoforged.neoforge.common.extensions.IBlockExtension", AnchorSet.Severity.REQUIRED, "NeoForge tool actions must reach the axe's stripping callbacks"),
-                new AnchorSet.Anchor("net.minecraftforge.common.extensions.IForgeBlock", AnchorSet.Severity.REQUIRED, "Forge tool actions must reach the axe's stripping callbacks"));
+                new AnchorSet.Anchor("net.neoforged.neoforge.common.extensions.IBlockExtension", AnchorSet.Severity.REQUIRED, "NeoForge tool actions must reach the axe's stripping callbacks"));
     }
     @Override public byte[] transform(String name, byte[] bytes, TransformContext context) {
         String internal = name.replace('.', '/');

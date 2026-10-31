@@ -123,7 +123,7 @@ class TransformerAnchorCensusTest {
 		}
 		assertEquals(ForbricMergedBaseCompatTransformer.REPAIRS, called, "the transform runs exactly the claimed repairs, in order");
 
-		assertTrue(new CommonNetworkInteropInjector().claims().size() >= 5, "one claim per network branch");
+		assertTrue(new CommonNetworkInteropInjector().claims().size() >= 4, "one claim per network branch");
 	}
 
 	@Test
