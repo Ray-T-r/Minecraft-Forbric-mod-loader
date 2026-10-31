@@ -91,7 +91,7 @@ class UnifiedDependencyTest {
 				""";
 		List<DiscoveredMod> mods = ForgeMetadataMapper.toDiscoveredMods(
 				ModsTomlParser.parse(new ByteArrayInputStream(toml.getBytes(StandardCharsets.UTF_8))),
-				"1.0.0", "examplemod.jar");
+				"1.0.0", "examplemod.jar", List.of(), List.of(), config -> true, Ecosystem.NEOFORGE);
 
 		assertEquals(1, mods.size());
 		UnifiedDependency jei = mods.get(0).getDependencies().get(0);

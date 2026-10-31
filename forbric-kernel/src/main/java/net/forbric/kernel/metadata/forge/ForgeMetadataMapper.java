@@ -29,49 +29,18 @@ public final class ForgeMetadataMapper {
 	private ForgeMetadataMapper() {
 	}
 
-	/** @see #toDiscoveredMods(ForgeModsToml, String, String, List) */
-	public static List<DiscoveredMod> toDiscoveredMods(ForgeModsToml toml, String jarVersion, String source) {
-		return toDiscoveredMods(toml, jarVersion, source, toml.getAccessTransformers());
-	}
-
 	/**
-	 * @param toml               the parsed mods.toml
+	 * @param toml               the parsed manifest
 	 * @param jarVersion         the jar manifest {@code Implementation-Version} for resolving {@code ${file.jarVersion}}, or {@code null}
 	 * @param source             where the mod was found (for diagnostics)
 	 * @param accessTransformers the Access Transformer config paths to attach (declared + classic default present in the jar)
-	 */
-	public static List<DiscoveredMod> toDiscoveredMods(ForgeModsToml toml, String jarVersion, String source, List<String> accessTransformers) {
-		return toDiscoveredMods(toml, jarVersion, source, accessTransformers, List.of());
-	}
-
-	/**
-	 * @param extraMixinConfigs mixin configs declared OUTSIDE mods.toml — in the wild most Forge mods use
-	 *                          the jar manifest's {@code MixinConfigs} attribute rather than {@code [[mixins]]}
-	 */
-	public static List<DiscoveredMod> toDiscoveredMods(ForgeModsToml toml, String jarVersion, String source,
-			List<String> accessTransformers, List<String> extraMixinConfigs) {
-		return toDiscoveredMods(toml, jarVersion, source, accessTransformers, extraMixinConfigs, config -> true);
-	}
-
-	/**
+	 * @param extraMixinConfigs  mixin configs declared outside the toml
 	 * @param mixinConfigPresent tests whether a declared mixin config actually exists in the jar. Multiloader
-	 *                           jars frequently over-declare a sibling loader's configs (e.g. a NeoForge-style
-	 *                           {@code [[mixins]]} block listing {@code *.neoforge.mixins.json} that only ships
-	 *                           in the NeoForge jar); traditional Forge reads configs from the manifest
-	 *                           {@code MixinConfigs} attribute, so a declared-but-absent config is dropped
-	 *                           rather than handed to Mixin, which would abort on the phantom resource.
-	 */
-	public static List<DiscoveredMod> toDiscoveredMods(ForgeModsToml toml, String jarVersion, String source,
-			List<String> accessTransformers, List<String> extraMixinConfigs, java.util.function.Predicate<String> mixinConfigPresent) {
-		return toDiscoveredMods(toml, jarVersion, source, accessTransformers, extraMixinConfigs, mixinConfigPresent,
-				Ecosystem.FORGE);
-	}
-
-	/**
-	 * @param ecosystem which Forge-family ecosystem declared this toml — {@link Ecosystem#NEOFORGE} when it
-	 *                  came from {@code META-INF/neoforge.mods.toml}, {@link Ecosystem#FORGE} for the classic
-	 *                  {@code META-INF/mods.toml}. Both files share the same schema; the ecosystem is decided by
-	 *                  which manifest the jar carried, not by the toml contents.
+	 *                           jars frequently over-declare a sibling loader's configs, so a declared-but-absent config
+	 *                           is dropped rather than handed to Mixin, which would abort on the phantom resource.
+	 * @param ecosystem          which ecosystem declared this toml, decided by which manifest the jar carried (the
+	 *                           MinecraftForge and NeoForge files share one schema), not by the toml contents. There is
+	 *                           no default: the overloads that assumed MinecraftForge went with it.
 	 */
 	public static List<DiscoveredMod> toDiscoveredMods(ForgeModsToml toml, String jarVersion, String source,
 			List<String> accessTransformers, List<String> extraMixinConfigs,

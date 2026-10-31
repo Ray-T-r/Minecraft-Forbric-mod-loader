@@ -42,11 +42,21 @@ class MixinFitReportManifestTest {
 	@Test void twoModsOrNoManifestGiveNoMod() {
 		String toml = "modLoader=\"javafml\"\nloaderVersion=\"[1,)\"\nlicense=\"MIT\"\n[[mods]]\nmodId=\"one\"\nversion=\"1\"\n"
 				+ "[[mods]]\nmodId=\"two\"\nversion=\"1\"\n";
-		assertNull(MixinFitReport.modOf(Map.of("META-INF/mods.toml", bytes(toml)), Ecosystem.FORGE, "two.jar"));
-		assertNull(MixinFitReport.modOf(Map.of("META-INF/mods.toml", bytes(toml)), Ecosystem.NEOFORGE, "two.jar"));
+		assertNull(MixinFitReport.modOf(Map.of("META-INF/neoforge.mods.toml", bytes(toml)), Ecosystem.NEOFORGE, "two.jar"));
+		// A MinecraftForge toml is no NeoForge manifest, whatever it lists.
+		assertNull(MixinFitReport.modOf(Map.of("META-INF/mods.toml", bytes(toml.replace("[[mods]]\nmodId=\"two\"\nversion=\"1\"\n", ""))),
+				Ecosystem.NEOFORGE, "forge.jar"));
 		assertNull(MixinFitReport.modOf(Map.of(), Ecosystem.FABRIC, "none.jar"));
 		assertNull(MixinFitReport.modOf(Map.of("fabric.mod.json", bytes("{")), Ecosystem.FABRIC, "broken.jar"));
 		assertNull(MixinFitReport.modOf(Map.of("fabric.mod.json", bytes("{}")), null, "universal.jar"));
+	}
+
+	/** D30: a MinecraftForge manifest declares no platform, so a Fabric jar that also carries one is judged as Fabric. */
+	@Test void aMinecraftForgeManifestDeclaresNoPlatform() {
+		assertEquals(Ecosystem.FABRIC, MixinFitReport.platformOf(Map.of("fabric.mod.json", bytes("{}"), "META-INF/mods.toml", bytes(""))));
+		assertNull(MixinFitReport.platformOf(Map.of("META-INF/mods.toml", bytes(""))));
+		assertNull(MixinFitReport.platformOf(Map.of("fabric.mod.json", bytes("{}"), "META-INF/neoforge.mods.toml", bytes(""))),
+				"a Fabric+NeoForge universal jar is still the arbitration's to place");
 	}
 
 	private static byte[] bytes(String text) {
