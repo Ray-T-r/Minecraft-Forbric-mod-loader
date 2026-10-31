@@ -106,51 +106,6 @@ class DevelopmentWorkflowTest(unittest.TestCase):
         self.assertEqual([p['path'] for p in dev.libraries(metadata, 'osx', 'x86_64')], ['intel'])
         self.assertEqual(list(dev.libraries(metadata, 'windows', 'amd64')), [])
 
-    def test_merge_libraries_are_exactly_the_jars_the_version_json_names(self):
-        # build-merged-base.sh hands the merge tools this list. The folder also holds an older guava, sorting first:
-        # the tools once walked the folder and the first jar in path order answered for a class.
-        libraries = self.root / 'libraries'
-        listed = {'org/zlib/zlib/1/zlib-1.jar': b'zlib', 'com/google/guava/guava/33/guava-33.jar': b'guava 33',
-                  'org/lwjgl/lwjgl/3/lwjgl-3-natives-macos-arm64.jar': b'arm natives'}
-        for relative, content in listed.items():
-            (libraries / relative).parent.mkdir(parents=True, exist_ok=True)
-            (libraries / relative).write_bytes(content)
-        stale = libraries / 'com/google/guava/guava/25/guava-25.jar'
-        stale.parent.mkdir(parents=True)
-        stale.write_bytes(b'guava 25')
-
-        def library(relative, name=None, rules=None):
-            artifact = {'path': relative, 'url': 'https://fixture.invalid/' + relative,
-                        'sha1': hashlib.sha1(listed.get(relative, b'')).hexdigest()}
-            entry = {'name': name or relative, 'downloads': {'artifact': artifact}}
-            if rules:
-                entry['rules'] = rules
-            return entry
-        on_osx = [{'action': 'allow', 'os': {'name': 'osx'}}]
-        # Out of path order, so a list that sorts shows; the Intel natives are not in the folder, as in a directory
-        # tools/dev.py prepared on Apple silicon, and a Windows-only library is not either.
-        metadata = {'libraries': [
-            library('org/zlib/zlib/1/zlib-1.jar'),
-            library('com/google/guava/guava/33/guava-33.jar'),
-            library('org/lwjgl/lwjgl/3/lwjgl-3-natives-macos.jar', 'org.lwjgl:lwjgl:3:natives-macos', on_osx),
-            library('org/lwjgl/lwjgl/3/lwjgl-3-natives-macos-arm64.jar', 'org.lwjgl:lwjgl:3:natives-macos-arm64', on_osx),
-            library('org/win/win/1/win-1.jar', rules=[{'action': 'allow', 'os': {'name': 'windows'}}])]}
-
-        jars, problems = dev.merge_libraries(metadata, libraries, 'osx', 'aarch64')
-        self.assertEqual(problems, [])
-        self.assertEqual(jars, [libraries / 'org/zlib/zlib/1/zlib-1.jar', libraries / 'com/google/guava/guava/33/guava-33.jar',
-                                libraries / 'org/lwjgl/lwjgl/3/lwjgl-3-natives-macos-arm64.jar'])
-        self.assertNotIn(stale, jars)
-
-        # A jar the JSON names that is not what it says, or not there, or outside the folder, is refused by name.
-        (libraries / 'com/google/guava/guava/33/guava-33.jar').write_bytes(b'GUAVA 33')
-        metadata['libraries'].append(library('../escape/1/escape-1.jar'))
-        jars, problems = dev.merge_libraries(metadata, libraries, 'osx', 'x86_64')
-        self.assertEqual(jars, [libraries / 'org/zlib/zlib/1/zlib-1.jar'])
-        self.assertEqual(problems, ['SHA-1 differs from the version JSON: ' + str(libraries / 'com/google/guava/guava/33/guava-33.jar'),
-                                    'missing: ' + str(libraries / 'org/lwjgl/lwjgl/3/lwjgl-3-natives-macos.jar'),
-                                    'leaves the libraries directory: ../escape/1/escape-1.jar'])
-
     def test_native_caches_are_separate_for_jvms_with_different_architectures(self):
         args = argparse.Namespace(command='client', mc_dir=None, staged=None, instance=None, natives=None)
         with patch.dict(os.environ, {}, clear=True), patch.object(dev, 'system_name', return_value='osx'):
@@ -241,22 +196,34 @@ class DevelopmentWorkflowTest(unittest.TestCase):
             with self.assertRaisesRegex(RuntimeError, 'unsafe artifact path'):
                 dev.confined(self.root, relative)
 
-    def launch_fixture(self, with_runtime=True, forge_carrier=True):
-        mc, stage = self.root / 'Minecraft With Spaces', self.root / 'stage/run'
+    @staticmethod
+    def sidecar(stage, base_sha1):
+        """A vanilla-reference sidecar recording base_sha1 as the base it was measured against, as VanillaReference writes."""
+        sidecar = stage / dev.VANILLA_REFERENCE
+        sidecar.parent.mkdir(parents=True, exist_ok=True)
+        with zipfile.ZipFile(sidecar, 'w') as archive:
+            archive.writestr('META-INF/forbric/native-reference/FABRIC/index.tsv', '# forbric-native-reference-v1\n')
+            archive.writestr(dev.VANILLA_REFERENCE_PROVENANCE, f'format=1\nvanilla-sha1={"0" * 40}\nbase-sha1={base_sha1}\n')
+        return sidecar
+
+    def launch_fixture(self, with_runtime=True, root=None):
+        root = root or self.root
+        mc, stage = root / 'Minecraft With Spaces', root / 'stage/run'
         version = mc / 'versions/26.2/26.2.json'
         version.parent.mkdir(parents=True)
         version.write_text(json.dumps({'assetIndex': {'id': '32'}, 'libraries': []}))
-        boot = self.root / 'kernel.jar'
+        boot = root / 'kernel.jar'
         with zipfile.ZipFile(boot, 'w') as archive:
             if with_runtime:
                 archive.writestr('META-INF/jars/forbric-kernel-runtime.jar', b'runtime')
-        merged = stage / dev.STAGED_BASE
-        merged.parent.mkdir(parents=True)
-        with zipfile.ZipFile(merged, 'w') as archive:
+        base = stage / dev.STAGED_BASE
+        base.parent.mkdir(parents=True)
+        with zipfile.ZipFile(base, 'w') as archive:
             archive.writestr('version.json', '{"protocol_version":776}')
             archive.writestr('net/minecraft/NotParentLoaded.class', b'bytecode')
-        if forge_carrier:
-            (stage / dev.STAGED_FORGE_INTEROP).write_bytes(b'carrier')
+        (stage / dev.STAGED_NEO_CARRIER).parent.mkdir(parents=True)
+        (stage / dev.STAGED_NEO_CARRIER).write_bytes(b'carrier')
+        self.sidecar(stage, dev.digest(base, 'sha1'))
         return {'bootJar': str(boot), 'dependencies': ['dependency.jar']}, mc, stage
 
     def test_windows_classpaths_and_mac_only_flag(self):
@@ -266,7 +233,6 @@ class DevelopmentWorkflowTest(unittest.TestCase):
             mac = dev.launch_arguments('client', info, mc, stage, self.root, self.root, system='osx', pathsep=':')
             linux = dev.launch_arguments('client', info, mc, stage, self.root, self.root, system='linux', pathsep=':')
         self.assertIn(';dependency.jar;', win[win.index('-cp')+1])
-        self.assertIn(';', win[win.index('--runtimeJar')+1])
         # The vanilla reference travels in its own flag, so a launcher's last-value-wins dedup cannot replace the game.
         for argv in (win, mac, linux):
             self.assertEqual(1, argv.count('--gameJar'))
@@ -279,65 +245,62 @@ class DevelopmentWorkflowTest(unittest.TestCase):
         with zipfile.ZipFile(stage / dev.STAGED_GAME_METADATA) as archive:
             self.assertEqual(archive.namelist(), ['version.json'])
 
-    def test_runtime_jars_are_named_by_role_and_the_forge_carrier_is_optional(self):
+    def test_the_launch_owns_neoforges_patched_game_and_its_one_carrier(self):
         info, mc, stage = self.launch_fixture()
+        # What an older prepare left in a shared stage: never launched, whatever is there.
+        for retired in ('merged-base/patched-mc-merged-26.2.jar', 'merged-base/forge-runtime-interop.jar',
+                        'forge-runtime/forge-runtime.jar'):
+            (stage / retired).parent.mkdir(parents=True, exist_ok=True)
+            (stage / retired).write_bytes(b'retired')
         with patch.dict(os.environ, {}, clear=True):
-            both = dev.launch_arguments('server', info, mc, stage, self.root, self.root, pathsep=';')
-        self.assertEqual(str(stage / dev.STAGED_BASE), both[both.index('--gameJar')+1])
-        self.assertEqual([str(stage / dev.STAGED_FORGE_INTEROP), str(stage / dev.STAGED_NEO_CARRIER)],
-                         both[both.index('--runtimeJar')+1].split(';'))
-        # Without the MinecraftForge carrier the NeoForge one is the only runtime jar, never left in another's slot.
-        (stage / dev.STAGED_FORGE_INTEROP).unlink()
-        with patch.dict(os.environ, {}, clear=True):
-            neo = dev.launch_arguments('server', info, mc, stage, self.root, self.root, pathsep=';')
-        self.assertEqual(str(stage / dev.STAGED_NEO_CARRIER), neo[neo.index('--runtimeJar')+1])
+            argv = dev.launch_arguments('server', info, mc, stage, self.root, self.root, pathsep=';')
+        self.assertEqual(str(stage / 'neoforge-patched/patched-mc-neoforge-26.2.jar'), argv[argv.index('--gameJar')+1])
+        self.assertEqual(1, argv.count('--runtimeJar'))
+        self.assertEqual(str(stage / 'neoforge-runtime/neoforge-runtime.jar'), argv[argv.index('--runtimeJar')+1])
+        self.assertFalse([a for a in argv if any(f'/{d}/' in a for d in ('merged-base', 'forge-runtime', 'forge-patched'))],
+                         argv)
+        self.assertEqual(str(stage / 'neoforge-patched' / dev.GAME_METADATA_JAR), str(stage / dev.STAGED_GAME_METADATA))
+        self.assertFalse(hasattr(dev, 'launch_carriers') or hasattr(dev, 'forge_carrier_expected')
+                         or hasattr(dev, 'merge_libraries'))
+        with self.assertRaises(SystemExit):
+            with patch('sys.stderr', io.StringIO()):
+                dev.main(['server', '--no-forge-carrier'])
 
-    def shell_forge_carrier(self, launcher, stage):
-        """The MinecraftForge carrier launcher's own selection lines pick on stage, run by bash: '' for none."""
-        lines = [line for line in (dev.KERNEL / 'run' / launcher).read_text().splitlines()
-                 if line.startswith('FORGE_RT=') or line.startswith('[ -f "$FORGE_RT" ]')]
-        self.assertGreaterEqual(len(lines), 3, launcher + ' no longer picks its carrier in the lines this test runs')
-        script = '\n'.join(lines + ['printf %s "$FORGE_RT"'])
-        environment = {'PATH': os.environ.get('PATH', ''), 'STAGE': str(stage)}
-        return subprocess.run(['bash', '-c', script], env=environment, capture_output=True, text=True, check=True).stdout
+    @unittest.skipIf(os.name == 'nt' or not shutil.which('bash'), 'runs the POSIX launchers')
+    def test_the_shell_launchers_take_the_same_files_and_refuse_the_retired_variables(self):
+        stage = self.root / 'stage/run'
+        for launcher in ('launch-kernel-server.sh', 'launch-kernel-client.sh'):
+            text = (dev.KERNEL / 'run' / launcher).read_text()
+            lines = [line for line in text.splitlines() if line.startswith(('BASE=', 'NEO_RT='))]
+            self.assertEqual(2, len(lines), launcher + ' no longer picks its base and carrier in the lines this test runs')
+            script = '\n'.join(lines + ['printf "%s\\n%s" "$BASE" "$NEO_RT"'])
+            picked = subprocess.run(['bash', '-c', script], env={'PATH': os.environ.get('PATH', ''), 'STAGE': str(stage)},
+                                    capture_output=True, text=True, check=True).stdout.splitlines()
+            self.assertEqual([str(stage / dev.STAGED_BASE), str(stage / dev.STAGED_NEO_CARRIER)], picked, launcher)
+            self.assertIn('--gameJar "$BASE" --runtimeJar "$NEO_RT"', text, launcher)
+            self.assertNotIn('FORGE_RT:+', text, launcher)
+            # MERGED or FORGE_RT set: the launcher stops (exit 2) before it builds or reads anything. With no stage at
+            # all it would also exit 2, but naming the missing base -- the control that the guard is what speaks.
+            base_env = {'PATH': os.environ.get('PATH', ''), 'HOME': str(self.root), 'FORBRIC_OLD': str(self.root / 'absent')}
+            for variable in ('MERGED', 'FORGE_RT'):
+                run = subprocess.run(['bash', str(dev.KERNEL / 'run' / launcher)], env=dict(base_env, **{variable: '/x.jar'}),
+                                     capture_output=True, text=True, timeout=60)
+                self.assertEqual(2, run.returncode, (launcher, variable, run.stdout, run.stderr))
+                self.assertIn('MERGED/FORGE_RT are retired', run.stderr, (launcher, variable))
+            control = subprocess.run(['bash', str(dev.KERNEL / 'run' / launcher)], env=base_env, capture_output=True,
+                                     text=True, timeout=60)
+            self.assertEqual(2, control.returncode, control.stderr)
+            self.assertNotIn('retired', control.stderr)
+            self.assertIn('game base not found', control.stderr)
 
-    @unittest.skipIf(os.name == 'nt' or not shutil.which('bash'), 'runs the POSIX launchers selection lines in bash')
-    def test_the_launch_owns_the_carriers_the_shell_launchers_pick(self):
-        _, _, stage = self.launch_fixture(forge_carrier=False)
-        (stage / dev.STAGED_FORGE_CARRIER).parent.mkdir(parents=True)
-        cases = []
-        for present in ((dev.STAGED_FORGE_INTEROP, dev.STAGED_FORGE_CARRIER), (dev.STAGED_FORGE_CARRIER,), ()):
-            for name in (dev.STAGED_FORGE_INTEROP, dev.STAGED_FORGE_CARRIER):
-                (stage / name).unlink(missing_ok=True)
-            for name in present:
-                (stage / name).write_bytes(b'carrier')
-            picked = dev.launch_carriers(stage)
-            self.assertEqual(dev.STAGED_NEO_CARRIER, picked[-1])
-            for launcher in ('launch-kernel-server.sh', 'launch-kernel-client.sh'):
-                shell = self.shell_forge_carrier(launcher, stage)
-                self.assertEqual([str(stage / name) for name in picked[:-1]], [shell] if shell else [], (launcher, present))
-            cases.append(picked)
-        # The interop jar first, then the assembled carrier, then none: the three answers are all different.
-        self.assertEqual([[dev.STAGED_FORGE_INTEROP, dev.STAGED_NEO_CARRIER], [dev.STAGED_FORGE_CARRIER, dev.STAGED_NEO_CARRIER],
-                          [dev.STAGED_NEO_CARRIER]], cases)
-
-    def test_the_profile_without_a_forge_carrier_owns_only_neoforges(self):
-        info, mc, stage = self.launch_fixture()
-        self.assertEqual([dev.STAGED_NEO_CARRIER], dev.launch_carriers(stage, forge=False))
-        with patch.dict(os.environ, {}, clear=True):
-            neo = dev.launch_arguments('server', info, mc, stage, self.root, self.root, pathsep=';', forge=False)
-        self.assertEqual(str(stage / dev.STAGED_NEO_CARRIER), neo[neo.index('--runtimeJar')+1])
-        self.assertTrue(dev.forge_carrier_expected(argparse.Namespace(no_forge_carrier=False), {}))
-        self.assertFalse(dev.forge_carrier_expected(argparse.Namespace(no_forge_carrier=True), {}))
-        self.assertFalse(dev.forge_carrier_expected(argparse.Namespace(), {'FORBRIC_NO_FORGE_CARRIER': '1'}))
-
-    def prepared_stage(self, forge):
-        """Every input ready() checks for a dedicated server, with or without MinecraftForge's staged files."""
+    def prepared_stage(self):
+        """Every input ready() checks for a dedicated server."""
         mc, stage, natives, state = self.root / 'mc', self.root / 'stage/run', self.root / 'natives', self.root / 'state'
         stamp = dev.pins_stamp()
-        for name in dev.staged_files(forge):
+        for name in dev.STAGED_FILES:
             (stage / name).parent.mkdir(parents=True, exist_ok=True)
             (stage / name).write_text(stamp + ' tools=abc\n' if name in dev.STAMPED_FILES else 'staged')
+        self.sidecar(stage, dev.digest(stage / dev.STAGED_BASE, 'sha1'))
         (state / 'api').mkdir(parents=True)
         (state / 'api/pinned.jar').write_bytes(b'api')
         version = mc / f'versions/{dev.MC_VERSION}/{dev.MC_VERSION}.json'
@@ -352,32 +315,42 @@ class DevelopmentWorkflowTest(unittest.TestCase):
         pins = (('pinned.jar', '', hashlib.sha256(b'api').hexdigest()),)
         return mc, stage, natives, patch.multiple(dev, STATE=state, API_PINS=pins)
 
-    def test_a_stage_without_minecraftforge_is_ready_only_when_the_profile_says_so(self):
-        mc, stage, natives, pinned = self.prepared_stage(forge=False)
-        with pinned:
-            # Today's strictness by default: a stage missing MinecraftForge's files is not prepared.
-            self.assertFalse(dev.ready(mc, stage, natives, assets=False))
-            self.assertTrue(dev.ready(mc, stage, natives, assets=False, forge=False))
-            self.assertEqual([], dev.stale_stamps(stage, forge=False))
-            # No MinecraftForge artifact is stamped any more: only its staged files make the default profile unready.
-            self.assertEqual([], dev.stale_stamps(stage))
-            # The profile still demands everything that is not MinecraftForge's.
-            (stage / dev.STAGED_NEO_CARRIER).unlink()
-            self.assertFalse(dev.ready(mc, stage, natives, assets=False, forge=False))
-        self.assertEqual(set(dev.STAGED_FILES) - set(dev.staged_files(False)), set(dev.FORGE_STAGED_FILES))
-        self.assertTrue(all('forge-runtime' in name or 'forge-patched' in name or 'forge-runtime-interop' in name
-                            for name in dev.FORGE_STAGED_FILES))
-
-    def test_a_stage_with_minecraftforge_is_ready_either_way(self):
-        mc, stage, natives, pinned = self.prepared_stage(forge=True)
+    def test_a_prepared_stage_needs_nothing_of_minecraftforge(self):
+        mc, stage, natives, pinned = self.prepared_stage()
         with pinned:
             self.assertTrue(dev.ready(mc, stage, natives, assets=False))
-            self.assertTrue(dev.ready(mc, stage, natives, assets=False, forge=False))
+            self.assertEqual([], dev.stale_stamps(stage))
+            (stage / dev.STAGED_NEO_CARRIER).unlink()
+            self.assertFalse(dev.ready(mc, stage, natives, assets=False))
+        self.assertFalse([name for name in dev.STAGED_FILES
+                          if name.startswith(('merged-base/', 'forge-runtime/', 'forge-patched/'))], dev.STAGED_FILES)
+        self.assertEqual((dev.STAGED_BASE, dev.STAGED_BASE + '.pins', dev.STAGED_NEO_CARRIER, dev.STAGED_NEO_CARRIER + '.pins',
+                          'neoforge-runtime/forbricneolive.jar', dev.VANILLA_REFERENCE), dev.STAGED_FILES)
+
+    def test_a_vanilla_reference_measured_against_another_base_is_not_handed_out(self):
+        mc, stage, natives, pinned = self.prepared_stage()
+        with pinned:
+            self.assertIsNone(dev.sidecar_problem(stage))
+            # Another checkout prepared the shared stage last, or the base was rebuilt: same names, other bytes.
+            self.sidecar(stage, '0' * 40)
+            problem = dev.sidecar_problem(stage)
+            self.assertIn('was measured against another base (base-sha1=' + '0' * 40, problem)
+            self.assertFalse(dev.ready(mc, stage, natives, assets=False))
+            # Not a sidecar at all (no provenance), and absent.
+            (stage / dev.VANILLA_REFERENCE).write_bytes(b'not a jar')
+            self.assertIn('is not a vanilla reference', dev.sidecar_problem(stage))
+            (stage / dev.VANILLA_REFERENCE).unlink()
+            self.assertTrue(dev.sidecar_problem(stage).startswith('missing '))
+        info, mc, stage = self.launch_fixture(root=self.root / 'launch')
+        self.sidecar(stage, '0' * 40)
+        with patch.dict(os.environ, {}, clear=True):
+            with self.assertRaisesRegex(RuntimeError, 'refusing to launch with this vanilla reference'):
+                dev.launch_arguments('server', info, mc, stage, self.root, self.root)
 
     def test_the_metadata_jar_is_named_once_and_beside_the_base_as_the_shell_writes_it(self):
         self.assertEqual(str(Path(dev.STAGED_BASE).parent / dev.GAME_METADATA_JAR), str(Path(dev.STAGED_GAME_METADATA)))
         script = (dev.KERNEL / 'run/game-metadata-jar.sh').read_text()
-        self.assertIn('OUT="${GAME_METADATA_JAR:-$(dirname "$MERGED")/' + dev.GAME_METADATA_JAR + '}"', script)
+        self.assertIn('OUT="${GAME_METADATA_JAR:-$(dirname "$BASE")/' + dev.GAME_METADATA_JAR + '}"', script)
 
     def test_boot_only_jar_is_refused(self):
         info, mc, stage = self.launch_fixture(False)
@@ -432,14 +405,14 @@ class DevelopmentWorkflowTest(unittest.TestCase):
                                          cwd=self.root, text=True)
         self.assertEqual(base64.b64decode(output.strip()).decode('utf-8'), '中文值')
 
-    def test_canaries_compile_against_the_staged_game_and_package_their_resources(self):
+    def test_the_canary_compiles_against_the_staged_game_and_packages_its_resources(self):
         env = dev.java_environment(dev.java_bin(), minimum=21)
         bin_dir = Path(env['JAVA_HOME']) / 'bin'
         suffix = '.exe' if os.name == 'nt' else ''
         stage, sources, work = self.root / 'stage', self.root / 'sources', self.root / 'work'
 
         def library(jar, name):
-            # One class per jar, so each compile fails unless its exact jar is on the classpath.
+            # One class per jar, so the compile fails unless its exact jar is on the classpath.
             package, simple = name.rsplit('.', 1)
             java = work / jar.stem / (simple + '.java')
             java.parent.mkdir(parents=True)
@@ -449,45 +422,36 @@ class DevelopmentWorkflowTest(unittest.TestCase):
             subprocess.run([str(bin_dir / ('jar' + suffix)), '--create', '--file', str(jar), '-C',
                             str(java.parent / 'classes'), '.'], check=True)
 
-        library(stage / 'forge-patched/patched-mc-forge-26.2.jar', 'net.minecraftforge.Game')
+        library(stage / 'neoforge-patched/patched-mc-neoforge-26.2.jar', 'net.minecraft.Game')
         library(stage / 'neoforge-runtime/neoforge-runtime.jar', 'net.neoforged.Carrier')
         mixin = work / 'sponge-mixin-0.17.jar'
         library(mixin, 'org.spongepowered.Plugin')
-        forge, neo = sources / 'livemod-src', sources / 'livemod-src-neoforge'
-        for tree, body in ((forge, 'net.minecraftforge.Game g; org.spongepowered.Plugin p;'),
-                           (neo, 'net.neoforged.Carrier c;')):
-            (tree / 'live').mkdir(parents=True)
-            (tree / 'live/Probe.java').write_text('package live; class Probe { ' + body + ' }')
-            (tree / 'data/live').mkdir(parents=True)
-            (tree / 'data/live/probe.json').write_text('{}')
-            (tree / 'notes.txt').write_text('not packaged')
-        (forge / 'META-INF').mkdir()
-        (forge / 'META-INF/mods.toml').write_text('modLoader="javafml"')
-        (forge / 'forbriclive.mixins.json').write_text('{}')
-        (forge / 'assets/live').mkdir(parents=True)
-        (forge / 'assets/live/setup_probe.txt').write_text('probe')
+        neo = sources / 'livemod-src-neoforge'
+        (neo / 'live').mkdir(parents=True)
+        (neo / 'live/Probe.java').write_text('package live; class Probe { net.neoforged.Carrier c; net.minecraft.Game g; '
+                                             'org.spongepowered.Plugin p; }')
+        (neo / 'data/live').mkdir(parents=True)
+        (neo / 'data/live/probe.json').write_text('{}')
+        (neo / 'notes.txt').write_text('not packaged')
         (neo / 'META-INF').mkdir()
         (neo / 'META-INF/neoforge.mods.toml').write_text('modLoader="javafml"')
         (neo / 'forbricneolive.mixins.json').write_text('{}')
-        # What an earlier prepare left must not survive in either place.
-        (stage / 'livemod-src/stale').mkdir(parents=True)
+        # What an earlier prepare left must not survive.
+        (stage / 'livemod-src-neoforge/stale').mkdir(parents=True)
 
         dev.stage_canaries(stage, [mixin], env['JAVA_HOME'], sources)
 
-        with zipfile.ZipFile(stage / 'forge-runtime/forbriclive.jar') as archive:
-            names = set(archive.namelist())
-        self.assertTrue({'live/Probe.class', 'META-INF/mods.toml', 'forbriclive.mixins.json', 'data/live/probe.json',
-                         'assets/live/setup_probe.txt'} <= names, names)
-        self.assertFalse({'live/Probe.java', 'notes.txt'} & names)
         with zipfile.ZipFile(stage / 'neoforge-runtime/forbricneolive.jar') as archive:
             names = set(archive.namelist())
         self.assertTrue({'live/Probe.class', 'META-INF/neoforge.mods.toml', 'forbricneolive.mixins.json',
                          'data/live/probe.json'} <= names, names)
-        # Each canary carries only its own mixin config.
-        self.assertNotIn('forbriclive.mixins.json', names)
-        self.assertEqual((stage / 'livemod-src/live/Probe.java').read_text(), (forge / 'live/Probe.java').read_text())
-        self.assertFalse((stage / 'livemod-src/stale').exists())
-        self.assertTrue((stage / 'livemod-src-neoforge/data/live/probe.json').is_file())
+        self.assertFalse({'live/Probe.java', 'notes.txt'} & names)
+        self.assertEqual((stage / 'livemod-src-neoforge/live/Probe.java').read_text(), (neo / 'live/Probe.java').read_text())
+        self.assertFalse((stage / 'livemod-src-neoforge/stale').exists())
+        # No MinecraftForge canary any more: nothing is written where DevPrepare removes the retired directories.
+        self.assertEqual([('livemod-src-neoforge', 'neoforge-runtime/forbricneolive.jar')],
+                         [(source, output) for source, output, _, _ in dev.CANARIES])
+        self.assertFalse((stage / 'forge-runtime').exists() or (stage / 'livemod-src').exists())
 
     def test_canaries_take_only_mixin_and_asm_from_the_kernel_classpath(self):
         jars = [self.root / name for name in ('sponge-mixin-0.17.3.jar', 'asm-9.10.1.jar', 'asm-tree-9.10.1.jar',

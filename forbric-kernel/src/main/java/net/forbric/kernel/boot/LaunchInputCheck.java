@@ -42,12 +42,12 @@ import net.forbric.kernel.util.ForbricLog;
  *
  * <h2>Why it exists</h2>
  *
- * <p>Issue #13. A player's installer was given a directory of unrelated jars, matched the three game files in it by
- * name alone, and staged two "runtime" jars that opened fine and held no Forge or NeoForge at all. The kernel took
- * them as given, and every step that read them had a legitimate empty answer: {@code EcosystemVersions} found no
- * manifest and said so at debug, the access transformers found none, Mixin found no config. The first class either
- * family owns was asked for inside {@link KernelRuntimeClasses#verify}, and its {@code NoClassDefFoundError} went to
- * stderr. The player's {@code latest.log} -- the only file a launcher collects -- was five INFO lines.
+ * <p>Issue #13. A player's installer was given a directory of unrelated jars, matched the game files in it by name
+ * alone, and staged "runtime" jars that opened fine and held no NeoForge at all. The kernel took them as given, and
+ * every step that read them had a legitimate empty answer: {@code EcosystemVersions} found no manifest and said so at
+ * debug, the access transformers found none, Mixin found no config. The first class NeoForge owns was asked for inside
+ * {@link KernelRuntimeClasses#verify}, and its {@code NoClassDefFoundError} went to stderr. The player's
+ * {@code latest.log} -- the only file a launcher collects -- was five INFO lines.
  *
  * <p>So the inputs are checked once, here, while nothing has been read out of them, and a launch that cannot work
  * stops with the reason and the fix in {@code latest.log} instead of a stack trace somewhere else.
@@ -55,29 +55,40 @@ import net.forbric.kernel.util.ForbricLog;
  * <h2>What "the right jars" means</h2>
  *
  * <ul>
- *   <li>The game jar is the MERGED base: its {@code Block} implements an extension interface from each Forge family.
- *       Vanilla's implements neither, a NeoForge- or MinecraftForge-patched game one, and a jar that is not
- *       Minecraft has no {@code Block}.</li>
- *   <li>Every {@code --runtimeJar} carries at least one family completely: the loader SPI, {@code ModContainer},
- *       {@code FMLLoader}, {@code FMLEnvironment} and the family's own manifest. A jar with some of that is a broken
- *       carrier; a jar with only the manifest is one of that family's mods, which carry the same manifest; a jar
- *       with none of it is something else wearing a carrier's name.</li>
- *   <li>Both families are carried by something this launch owns. The merged base and the kernel's own game side
- *       name both, so a launch missing either cannot start -- that includes no {@code --runtimeJar} at all, and a
- *       launcher that kept only the last of two repeated flags.</li>
+ *   <li>The game jar is NeoForge's patched game: its {@code Block} implements NeoForge's extension interface
+ *       ({@code IBlockExtension}). Vanilla's implements none, and a jar that is not Minecraft has no {@code Block}.</li>
+ *   <li>Every {@code --runtimeJar} carries NeoForge completely: the loader SPI, {@code ModContainer}, {@code FMLLoader},
+ *       {@code FMLEnvironment} and NeoForge's manifest. A jar with some of that is a broken carrier; a jar with only the
+ *       manifest is a NeoForge mod, which carries the same manifest; a jar with none of it is something else wearing a
+ *       carrier's name.</li>
+ *   <li>NeoForge is carried by something this launch owns. The base and the kernel's own game side name it, so a
+ *       launch without it cannot start -- that includes no {@code --runtimeJar} at all.</li>
  * </ul>
  *
- * <p>By content, never by file name: an installed profile passes {@code forge-runtime-26.2.jar}, a developer launch
- * {@code merged-base/forge-runtime-interop.jar}, and the names in the broken install were exactly right. Nor is it a
- * version or link check -- the installer's link gate is that. It asks only whether each jar is the kind of thing its
- * flag says it is, which is cheap enough to ask on every launch: one central directory per jar and one class read.
+ * <p>By content, never by file name: an installed profile passes {@code neoforge-runtime-26.2.0.93.jar}, a developer
+ * launch {@code neoforge-runtime/neoforge-runtime.jar}, and the names in the broken install were exactly right. Nor is
+ * it a version or link check -- the installer's link check is that. It asks only whether each jar is the kind of thing
+ * its flag says it is, which is cheap enough to ask on every launch: one central directory per jar and one class read.
+ *
+ * <h2>An install made by Forbric 0.4 or earlier</h2>
+ *
+ * <p>Those installs ran a MERGED base (NeoForge's and MinecraftForge's patches in one jar) with a MinecraftForge carrier
+ * beside the NeoForge one. The merged base is NeoForge-patched too -- its {@code Block} implements
+ * {@code IBlockExtension} -- and its NeoForge carrier is complete, so the checks above would let it through, and this
+ * kernel, which carries no MinecraftForge, would fail far away on the first MinecraftForge class the base names. So
+ * an old install is recognised first, by three signals spelled here as plain strings (they must outlive the kernel's
+ * own knowledge of MinecraftForge): the base's {@code Block} implements an interface under {@code net/minecraftforge/};
+ * the base embeds MinecraftForge's native-reference index ({@value #OLD_FORGE_INDEX}); or a {@code --runtimeJar} (or an
+ * extra {@code --gameJar}) is a complete MinecraftForge carrier ({@link #OLD_FORGE_CARRIER}). Any one of them gives
+ * exactly one problem, {@link #OLD_INSTALL}, and the fix is to run the new installer over the same game directory. That
+ * refusal is enforced even with {@code -Dforbric.launchInputCheck=off}: no switch makes the old game run on this kernel.
  *
  * <h2>What it does not catch</h2>
  *
- * <p>Five names per family are evidence of a carrier, not proof of a whole one. A jar that has them and lacks some
- * other class passes, and so does an entry whose bytes are damaged, a carrier from a different build than the
- * merged base, a base whose {@code Block} is intact and whose other classes are not, and anything wrong with the
- * libraries or the mods folder. Each of those fails where the missing piece is first used:
+ * <p>Five names are evidence of a carrier, not proof of a whole one. A jar that has them and lacks some other class
+ * passes, and so does an entry whose bytes are damaged, a carrier from a different build than the base, a base whose
+ * {@code Block} is intact and whose other classes are not, and anything wrong with the libraries or the mods folder.
+ * Each of those fails where the missing piece is first used:
  *
  * <ul>
  *   <li>In the kernel's own boot -- {@link KernelRuntimeClasses#verify} reports a class it cannot resolve, and
@@ -86,29 +97,47 @@ import net.forbric.kernel.util.ForbricLog;
  *   <li>In the first three steps of the client's own {@code Main.main} (detecting the version, building and running
  *       the argument parser). Vanilla catches what they throw, prints it to stderr and exits with status 249, 252 or
  *       251, so nothing that ends the game there leaves {@code main}.
- *       {@code FMLEnvironment} is a marker for that reason: the merged base's {@code SharedConstants.<clinit>} --
- *       the first game code that runs -- calls NeoForge's, and a carrier without it ended the launch there with a
- *       {@code NoClassDefFoundError} on stderr and nothing in {@code latest.log}. MinecraftForge's is the one
- *       {@code PassiveSeeder} decides, which takes its absence for "no MinecraftForge" and says so only at debug.
+ *       {@code FMLEnvironment} is a marker for that reason: the base's {@code SharedConstants.<clinit>} -- the first
+ *       game code that runs -- calls NeoForge's, and a carrier without it ended the launch there with a
+ *       {@code NoClassDefFoundError} on stderr and nothing in {@code latest.log}.
  *       Any other failure on that path is put in the log by {@code LifecycleHookInjector}'s hook in
  *       {@code Main.logEarlyException} ({@link KernelLifecycle#onEarlyStartupFailure}), again as a crash.</li>
  *   <li>Anywhere after that: what leaves {@code main} is logged by the boundary, what the game catches by the game's
  *       own crash handling.</li>
  * </ul>
  *
- * <p>{@code -Dforbric.launchInputCheck=off} reports the same problems as warnings and launches anyway.
+ * <p>{@code -Dforbric.launchInputCheck=off} reports the same problems as warnings and launches anyway -- except an
+ * install made by Forbric 0.4 or earlier, which it still refuses.
  */
 final class LaunchInputCheck {
 	static final String SWITCH = "forbric.launchInputCheck";
 
-	/** The two families the merged base is built from, in the order a problem list names them. */
-	static final List<Ecosystem> FAMILIES = List.of(Ecosystem.NEOFORGE, Ecosystem.FORGE);
+	/** The family the base is patched by and the runtime jars carry. */
+	static final List<Ecosystem> FAMILIES = List.of(Ecosystem.NEOFORGE);
 
 	/**
-	 * The class both families patch an extension interface onto ({@code IBlockExtension}, {@code IForgeBlock}), so its
-	 * interface list says which families a game jar was built with.
+	 * The class NeoForge patches an extension interface onto ({@code IBlockExtension}), so its interface list says
+	 * whether a game jar is NeoForge's patched game -- and, for an old merged base, that MinecraftForge's
+	 * {@code IForgeBlock} is there too.
 	 */
 	static final String BLOCK = "net/minecraft/world/level/block/Block.class";
+
+	// --- an install made by Forbric 0.4 or earlier: plain strings, never the kernel's MinecraftForge names ---------
+
+	/** The package root MinecraftForge's extension interfaces on an old merged base's {@code Block} live under. */
+	static final String OLD_FORGE_ROOT = "net/minecraftforge/";
+	/** MinecraftForge's half of the native-reference index the old merged base embedded. */
+	static final String OLD_FORGE_INDEX = "META-INF/forbric/native-reference/FORGE/index.tsv";
+	/**
+	 * What a complete MinecraftForge carrier held (the old {@code forge-runtime.jar} and the developer stage's
+	 * {@code forge-runtime-interop.jar}): its loader SPI, ModContainer, FMLLoader, FMLEnvironment and manifest.
+	 */
+	static final List<String> OLD_FORGE_CARRIER = List.of("net/minecraftforge/forgespi/language/IModInfo.class",
+			"net/minecraftforge/fml/ModContainer.class", "net/minecraftforge/fml/loading/FMLLoader.class",
+			"net/minecraftforge/fml/loading/FMLEnvironment.class", "META-INF/mods.toml");
+	/** The one problem an old install gets; the evidence goes between the parentheses. */
+	static final String OLD_INSTALL = "this game was installed by Forbric 0.4 or earlier, still carries MinecraftForge "
+			+ "(%s); run the new installer again with the same game directory";
 
 	private LaunchInputCheck() {
 	}
@@ -130,38 +159,46 @@ final class LaunchInputCheck {
 				manifest(family));
 	}
 
-	/** The family's manifest. Its runtime carries one, and so does every one of its mods. */
+	/**
+	 * The family's manifest. Its runtime carries one, and so does every one of its mods. NeoForge is the only family
+	 * ({@link #FAMILIES}); an old MinecraftForge carrier's {@code META-INF/mods.toml} is {@link #OLD_FORGE_CARRIER}'s.
+	 */
 	static String manifest(Ecosystem family) {
-		return family == Ecosystem.NEOFORGE ? "META-INF/neoforge.mods.toml" : "META-INF/mods.toml";
+		return "META-INF/neoforge.mods.toml";
 	}
 
-	/** The package root a family's extension interfaces on {@code Block} live under. */
-	private static String root(Ecosystem family) {
-		return family == Ecosystem.NEOFORGE ? "net/neoforged/" : "net/minecraftforge/";
-	}
+	/** The package root NeoForge's extension interfaces on {@code Block} live under. */
+	private static final String NEOFORGE_ROOT = "net/neoforged/";
 
 	/**
 	 * Checks the inputs and, if they cannot run, logs why and what to do, then stops the launch.
 	 *
 	 * @param gameJars    every {@code --gameJar}, the base first
 	 * @param runtimeJars every {@code --runtimeJar}
-	 * @throws Rejected when a problem was found and the check is enforced
+	 * @throws Rejected when a problem was found and the check is enforced, or the install is an old one
 	 */
 	static void require(List<Path> gameJars, List<Path> runtimeJars) {
-		List<String> problems = problems(gameJars, runtimeJars);
+		String old = oldInstall(gameJars, runtimeJars);
+		List<String> problems = old != null ? List.of(old) : problems(gameJars, runtimeJars);
 		if (problems.isEmpty()) return;
 
-		boolean enforced = enforced();
+		// An old install is refused whatever the switch says: the merged game cannot run on a kernel without
+		// MinecraftForge, so "launch anyway" would only move the failure somewhere the player cannot read it.
+		boolean enforced = old != null || enforced();
 		// Plain-string overloads throughout: these lines carry paths, and a '%' in a path is not a format.
 		log(enforced, "[Forbric/Install] the Forbric install is broken: the game files this launch was given are not "
 				+ "the ones Forbric runs on (" + problems.size() + " problem(s) below), so "
 				+ (enforced ? "the game stops here instead of crashing later on a class that is not there"
 						: "the game is likely to crash, because -D" + SWITCH + "=off launches it anyway"));
 		for (String problem : problems) log(enforced, "[Forbric/Install]   - " + problem);
+		if (old != null && !enforced()) {
+			log(true, "[Forbric/Install] -D" + SWITCH + "=off does not apply to an install made by Forbric 0.4 or "
+					+ "earlier: its game carries MinecraftForge, which this Forbric no longer has");
+		}
 		log(enforced, "[Forbric/Install] to fix it: close the launcher, run the Forbric installer again with the same "
-				+ "Game directory and leave \"Built artifacts\" EMPTY — the installer then builds the merged game and both "
-				+ "runtime jars itself instead of copying them from a folder. Developers: run `python3 tools/dev.py "
-				+ "prepare`, or point FORBRIC_OLD / -Pforbric.stagedRoot at a complete staged tree");
+				+ "Game directory and leave \"Built artifacts\" EMPTY — the installer then builds NeoForge's patched game "
+				+ "and the NeoForge runtime itself instead of copying them from a folder. Developers: run `python3 "
+				+ "tools/dev.py prepare`, or point FORBRIC_OLD / -Pforbric.stagedRoot at a complete staged tree");
 		if (enforced) throw new Rejected(problems);
 	}
 
@@ -171,10 +208,60 @@ final class LaunchInputCheck {
 	}
 
 	/**
+	 * The evidence that these inputs are an install made by Forbric 0.4 or earlier -- one or more of the three
+	 * signals, separated by "; " -- worded as {@link #OLD_INSTALL}, or {@code null} when none is there. A jar that
+	 * cannot be read gives no evidence here; {@link #problems} names it.
+	 */
+	static String oldInstall(List<Path> gameJars, List<Path> runtimeJars) {
+		List<String> evidence = new ArrayList<>();
+		if (!gameJars.isEmpty()) {
+			Path base = gameJars.get(0);
+			String name = "game jar " + base.getFileName();
+			if (Files.isRegularFile(base)) {
+				try (ZipFile zip = new ZipFile(base.toFile())) {
+					ZipEntry block = zip.getEntry(BLOCK);
+					if (block != null) {
+						try (InputStream in = zip.getInputStream(block)) {
+							for (String implemented : new ClassReader(in).getInterfaces()) {
+								if (implemented.startsWith(OLD_FORGE_ROOT)) {
+									evidence.add(name + "'s Block implements " + implemented);
+								}
+							}
+						}
+					}
+					if (zip.getEntry(OLD_FORGE_INDEX) != null) evidence.add(name + " embeds " + OLD_FORGE_INDEX);
+				} catch (IOException | RuntimeException unreadable) {
+					Caught.expected(unreadable);
+				}
+			}
+		}
+		List<Path> carriers = new ArrayList<>(runtimeJars);
+		if (gameJars.size() > 1) carriers.addAll(gameJars.subList(1, gameJars.size()));
+		for (Path jar : carriers) {
+			if (!Files.isRegularFile(jar)) continue;
+			try (ZipFile zip = new ZipFile(jar.toFile())) {
+				if (OLD_FORGE_CARRIER.stream().allMatch(entry -> zip.getEntry(entry) != null)) {
+					evidence.add((runtimeJars.contains(jar) ? "runtime jar " : "game jar ") + jar.getFileName()
+							+ " is a complete MinecraftForge runtime");
+				}
+			} catch (IOException | RuntimeException unreadable) {
+				Caught.expected(unreadable);
+			}
+		}
+		// Not String.format over the evidence: it carries file names, and a '%' in one is not a format.
+		return evidence.isEmpty() ? null : OLD_INSTALL.replace("%s", String.join("; ", evidence));
+	}
+
+	/**
 	 * Everything wrong with these inputs, one line each and worded for whoever reads {@code latest.log}; empty when
-	 * the launch can proceed.
+	 * the launch can proceed. An install made by Forbric 0.4 or earlier is one problem, {@link #OLD_INSTALL}, and
+	 * nothing else is said about it: "the runtime jar is a MinecraftForge runtime" would send the player looking for
+	 * the wrong file.
 	 */
 	static List<String> problems(List<Path> gameJars, List<Path> runtimeJars) {
+		String old = oldInstall(gameJars, runtimeJars);
+		if (old != null) return List.of(old);
+
 		List<String> problems = new ArrayList<>();
 		Set<Ecosystem> carried = EnumSet.noneOf(Ecosystem.class);
 
@@ -224,9 +311,8 @@ final class LaunchInputCheck {
 				problems.add("runtime jar " + jar.getFileName() + " " + String.join("; and ", partial) + " ("
 						+ described(jar) + ")");
 			} else {
-				problems.add("runtime jar " + jar.getFileName() + " contains neither NeoForge nor MinecraftForge: none of "
-						+ markers(Ecosystem.NEOFORGE) + " and none of " + markers(Ecosystem.FORGE) + " ("
-						+ described(jar) + ")");
+				problems.add("runtime jar " + jar.getFileName() + " does not contain NeoForge: none of "
+						+ markers(Ecosystem.NEOFORGE) + " (" + described(jar) + ")");
 			}
 		}
 
@@ -241,7 +327,7 @@ final class LaunchInputCheck {
 		return problems;
 	}
 
-	/** Why {@code jar} is not the merged base, or {@code null} if it is. */
+	/** Why {@code jar} is not NeoForge's patched game, or {@code null} if it is. */
 	static String baseProblem(Path jar) {
 		String name = "game jar " + jar.getFileName();
 		if (!Files.isRegularFile(jar)) return name + " does not exist (" + jar + ")";
@@ -261,18 +347,9 @@ final class LaunchInputCheck {
 			return name + " cannot be read as a game jar: " + unreadable + " (" + described(jar) + ")";
 		}
 
-		List<Ecosystem> patched = new ArrayList<>();
-		for (Ecosystem family : FAMILIES) {
-			if (interfaces.stream().anyMatch(i -> i.startsWith(root(family)))) patched.add(family);
-		}
-		if (patched.size() == FAMILIES.size()) return null;
-		if (patched.isEmpty()) {
-			return name + " is plain Minecraft, not Forbric's merged game: its Block carries neither NeoForge's nor "
-					+ "MinecraftForge's changes (" + described(jar) + ")";
-		}
-		Ecosystem missing = FAMILIES.stream().filter(f -> !patched.contains(f)).findFirst().orElseThrow();
-		return name + " carries only " + patched.get(0).displayName() + "'s changes and not " + missing.displayName()
-				+ "'s, so it is not Forbric's merged game (" + described(jar) + ")";
+		if (interfaces.stream().anyMatch(i -> i.startsWith(NEOFORGE_ROOT))) return null;
+		return name + " is plain Minecraft, not NeoForge's patched game: its Block carries none of NeoForge's changes ("
+				+ described(jar) + ")";
 	}
 
 	/**

@@ -23,7 +23,8 @@ def main():
             parser.error('duplicate artifact: ' + coordinate)
         data = Path(path).read_bytes()
         artifacts[coordinate] = (hashlib.sha1(data).hexdigest(), len(data))
-    # push-and-run stages the kernel, the three game jars and the vanilla reference; each must already be in the profile.
+    # push-and-run stages the kernel, the two game jars (base, carrier) and the vanilla reference; each must already be
+    # in the profile.
     if not artifacts:
         parser.error('at least one artifact is required')
     document = json.loads(args.version_json.read_text(encoding='utf-8-sig'))

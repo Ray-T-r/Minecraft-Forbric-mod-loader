@@ -30,53 +30,40 @@ API_PINS = (
     ('energy-5.0.0.jar', 'https://maven.modmuss50.me/teamreborn/energy/5.0.0/energy-5.0.0.jar',
      '889afc438d3e4add5cfdac76517da7987a2c495e4731690a56f2c5dee775db59'),
 )
-# The staged files a launch reads, by role. Named rather than picked out of STAGED_FILES by position: dropping the
-# MinecraftForge entries from that tuple would otherwise have moved the NeoForge carrier into the Forge one's slot.
-STAGED_BASE = 'merged-base/patched-mc-merged-26.2.jar'
-STAGED_FORGE_CARRIER = 'forge-runtime/forge-runtime.jar'
-STAGED_FORGE_INTEROP = 'merged-base/forge-runtime-interop.jar'
+# The staged files a launch reads, by role: the game base (NeoForge's patched game, the NFRT output DevPrepare stages)
+# and the one carrier, NeoForge's runtime. The merged base and the MinecraftForge carrier are gone with MinecraftForge;
+# DevPrepare removes their directories from a stage this checkout owns (owned_stage) and leaves shared stages alone.
+STAGED_BASE = 'neoforge-patched/patched-mc-neoforge-26.2.jar'
 STAGED_NEO_CARRIER = 'neoforge-runtime/neoforge-runtime.jar'
+# The NeoForge canary mod every gate stages (see CANARIES).
+STAGED_NEO_CANARY = 'neoforge-runtime/forbricneolive.jar'
 # The resources-only jar carrying the base's version.json for the parent classpath, written beside the base: the rule
-# run/game-metadata-jar.sh applies to the base the shell launchers hand it ($(dirname "$MERGED")), so the two launch paths
+# run/game-metadata-jar.sh applies to the base the shell launchers hand it ($(dirname "$BASE")), so the two launch paths
 # write one file and it moves with STAGED_BASE. test_dev.py holds the script's default to this name.
 GAME_METADATA_JAR = 'forbric-game-metadata.jar'
 STAGED_GAME_METADATA = STAGED_BASE.rsplit('/', 1)[0] + '/' + GAME_METADATA_JAR
-# Launched (--nativeReference): how vanilla compiled each class, measured against the base.
+# Launched (--nativeReference): how vanilla compiled each class, measured against the base. Its provenance records the
+# base's SHA-1 (sidecar_problem), the only guard there is: the base embeds no index of its own to fall back on.
 VANILLA_REFERENCE = 'vanilla-reference/vanilla-reference-26.2.jar'
-STAGED_FILES = (STAGED_BASE, STAGED_FORGE_CARRIER, STAGED_FORGE_INTEROP, STAGED_NEO_CARRIER,
-                # Not launched, but the bytecode tests compare the merge against both patched sides.
-                'forge-patched/patched-mc-forge-26.2.jar', 'neoforge-patched/patched-mc-neoforge-26.2.jar',
-                # The build stamps DevPrepare stages beside NeoForge's patched game and the NeoForge carrier (see
-                # STAMPED_FILES), and the two canary mods (see CANARIES).
-                'neoforge-patched/patched-mc-neoforge-26.2.jar.pins',
-                'forge-runtime/forbriclive.jar', 'neoforge-runtime/forbricneolive.jar',
-                'neoforge-runtime/neoforge-runtime.jar.pins', VANILLA_REFERENCE)
-# The STAGED_FILES (and STAMPED_FILES) entries that are MinecraftForge's: what a stage legitimately lacks when it has no
-# MinecraftForge carrier (a genuine NeoForge base, or the ci-prepared-noforge profile's mirror). They are still demanded
-# by default; only --no-forge-carrier (or FORBRIC_NO_FORGE_CARRIER=1) says the stage is meant to be without them.
-FORGE_STAGED_FILES = (STAGED_FORGE_CARRIER, STAGED_FORGE_INTEROP, 'forge-patched/patched-mc-forge-26.2.jar',
-                      'forge-runtime/forbriclive.jar')
+VANILLA_REFERENCE_PROVENANCE = 'META-INF/forbric/vanilla-reference.properties'
 # The build stamps beside staged artifacts: NeoForge's patched game (the base) and the NeoForge carrier, which DevPrepare
 # stages with the artifacts. Each begins with the installer's Pins.stamp(); an artifact whose stamp names other pins was
 # built from another NeoForge (or NFRT) and must be rebuilt, not tested.
-STAMPED_FILES = ('neoforge-patched/patched-mc-neoforge-26.2.jar.pins', 'neoforge-runtime/neoforge-runtime.jar.pins')
+STAMPED_FILES = (STAGED_BASE + '.pins', STAGED_NEO_CARRIER + '.pins')
+STAGED_FILES = (STAGED_BASE, STAMPED_FILES[0], STAGED_NEO_CARRIER, STAMPED_FILES[1], STAGED_NEO_CANARY,
+                VANILLA_REFERENCE)
 PINS_JAVA = ROOT / 'forbric-kernel-installer/src/main/java/net/forbric/installer/kernel/Pins.java'
-# forbric-loader/run/build-testmods.sh's two canary mods, built the same way into the stage: (sources, jar, javac
-# --release, the staged game jars they compile against). Their sources go beside them, as in forbric-loader/run/,
-# because the tests check the packaged data against the source it was built from.
+# forbric-loader/run/build-testmods.sh's NeoForge canary mod, built the same way into the stage: (sources, jar, javac
+# --release, the staged game jars it compiles against). Its sources go beside it, as in forbric-loader/run/, because
+# the tests check the packaged data against the source it was built from.
 CANARY_SOURCES = ROOT / 'forbric-loader' / 'run'
 CANARIES = (
-    # The NeoForge carrier last: the MinecraftForge canary asks NeoForge's loader whether a foreign mod is there, as
-    # a multi-platform mod does. build-testmods.sh found that loader among a launcher's libraries.
-    ('livemod-src', 'forge-runtime/forbriclive.jar', '17',
-     ('forge-runtime/forge-runtime.jar', 'forge-patched/patched-mc-forge-26.2.jar', 'neoforge-runtime/neoforge-runtime.jar')),
-    ('livemod-src-neoforge', 'neoforge-runtime/forbricneolive.jar', '21',
-     ('neoforge-runtime/neoforge-runtime.jar', 'neoforge-patched/patched-mc-neoforge-26.2.jar')),
+    ('livemod-src-neoforge', STAGED_NEO_CANARY, '21', (STAGED_NEO_CARRIER, STAGED_BASE)),
 )
-# What build-testmods.sh packages besides classes. The mixin config goes at the jar root: Forge drops a declared
-# config whose entry is missing with only a warning, so a misplaced one makes the canary silently do nothing. Each
-# canary carries its own config, and a name the other tree lacks is skipped, so one list serves both.
-CANARY_RESOURCES = ('META-INF', 'forbriclive.mixins.json', 'forbricneolive.mixins.json', 'data', 'assets')
+# What build-testmods.sh packages besides classes. The mixin config goes at the jar root: NeoForge drops a declared
+# config whose entry is missing with only a warning, so a misplaced one makes the canary silently do nothing. A name
+# the tree lacks is skipped.
+CANARY_RESOURCES = ('META-INF', 'forbricneolive.mixins.json', 'data', 'assets')
 CONSOLE_PINS = (
     ('jline-reader', '26333a275de502adf1dd9e6ea50aa0b4021412c71490df9ed5e88a648886ee89'),
     ('jline-terminal', 'c0f5d70901255da66a94e59778b265d19f9308342578e34c88fc92d1b0c65fef'),
@@ -205,37 +192,6 @@ def libraries(metadata, system=None, arch=None):
                 yield native
 
 
-def merge_libraries(metadata, root, system=None, arch=None):
-    """The base version's libraries as forbric-loader/run/build-merged-base.sh hands them to the merge tools.
-
-    Each jar libraries() picks for this platform -- the rule prepare() fetched by, so a directory prepared here, by
-    the installer or by a launcher has every one -- at the path the version JSON gives it under root, in the JSON's
-    order, and checked against the JSON's SHA-1. Exactly those: root also holds every other version any launcher
-    ever fetched there, and when the tools were given the folder, the first jar in sorted path order answered for a
-    class (guava-25.1-jre before 26.2's guava-33.6.0-jre). Nothing is downloaded.
-
-    Returns (jars, problems); each problem names a jar that is not in place as the JSON describes it.
-    """
-    root = Path(os.path.normpath(root))
-    jars, problems = [], []
-    for entry in libraries(metadata, system, arch):
-        relative = entry.get('path')
-        if not isinstance(relative, str) or not relative.endswith('.jar'):
-            continue
-        jar = Path(os.path.normpath(root / relative))
-        if jar == root or os.path.commonpath([root, jar]) != str(root):
-            problems.append('leaves the libraries directory: ' + relative)
-        elif not jar.is_file():
-            problems.append('missing: ' + str(jar))
-        elif isinstance(entry.get('sha1'), str) and digest(jar, 'sha1') != entry['sha1'].lower():
-            problems.append('SHA-1 differs from the version JSON: ' + str(jar))
-        elif not isinstance(entry.get('sha1'), str) and jar.stat().st_size == 0:
-            problems.append('empty: ' + str(jar))
-        else:
-            jars.append(jar)
-    return jars, problems
-
-
 NO_ASSETS = '.no-assets'
 
 
@@ -268,7 +224,7 @@ def stage_minecraft(mc, native_dir, arch=None, assets=True):
         # client launch knows to fetch them instead of reporting a broken install.
         (mc / NO_ASSETS).write_text('prepared with --no-assets\n')
         print('[dev] Assets skipped (--no-assets): enough for tests and dedicated servers, not for the client', flush=True)
-    # Forge-family runtimes omit JLine as a game-provided library, but vanilla metadata does not list it.
+    # NeoForge's runtime omits JLine as a game-provided library, but vanilla metadata does not list it.
     for name, sha in CONSOLE_PINS:
         relative = f'org/jline/{name}/3.25.1/{name}-3.25.1.jar'
         fetch('https://repo.maven.apache.org/maven2/' + relative, mc / 'libraries' / relative,
@@ -461,41 +417,49 @@ def pins_stamp(pins_java=PINS_JAVA):
     return f"mc={value['MINECRAFT']} neoforge={value['NEOFORGE']} nfrt={value['NFRT']} result={value['NFRT_RESULT']}"
 
 
-def staged_files(forge=True):
-    """The STAGED_FILES a prepared stage must hold: all of them, or without FORGE_STAGED_FILES when forge is False."""
-    return tuple(name for name in STAGED_FILES if forge or name not in FORGE_STAGED_FILES)
-
-
-def forge_carrier_expected(args=None, environ=None):
-    """False when this run says the stage has no MinecraftForge carrier: --no-forge-carrier or FORBRIC_NO_FORGE_CARRIER=1."""
-    environ = os.environ if environ is None else environ
-    return not (getattr(args, 'no_forge_carrier', False) or environ.get('FORBRIC_NO_FORGE_CARRIER') == '1')
-
-
-def stale_stamps(stage, stamp=None, forge=True):
+def stale_stamps(stage, stamp=None):
     """Staged build stamps that do not begin with the current pins (a missing stamp counts as stale)."""
     stamp = stamp or pins_stamp()
     stale = []
     for name in STAMPED_FILES:
-        if not forge and name in FORGE_STAGED_FILES:
-            continue
         path = stage / name
         if not path.is_file() or not path.read_text(encoding='utf-8').strip().startswith(stamp):
             stale.append(name)
     return stale
 
 
-def ready(mc, stage, natives, arch=None, assets=True, forge=True):
-    """Prepared for this use. assets=False is for tests and dedicated servers, which never read them; forge=False is for
-    a stage that has no MinecraftForge carrier on purpose, which then is not asked for MinecraftForge's files."""
-    if stale_stamps(stage, forge=forge):
+def sidecar_problem(stage):
+    """Why the staged vanilla reference cannot go out with the staged base, or None when it records that base.
+
+    Provenance, never presence or age: the sidecar records the SHA-1 of the base it was measured against, and the base
+    embeds no index of its own, so one measured against another base (a stage another checkout prepared last, a rebuilt
+    base) would silently cost every class it cannot verify its FABRIC reference -- one WARN line, no failure. The rule
+    run/vanilla-reference-jar.sh and push-and-run.py apply to the same file."""
+    sidecar, base = stage / VANILLA_REFERENCE, stage / STAGED_BASE
+    if not sidecar.is_file() or not base.is_file():
+        return 'missing ' + str(sidecar if not sidecar.is_file() else base)
+    try:
+        with zipfile.ZipFile(sidecar) as jar:
+            provenance = jar.read(VANILLA_REFERENCE_PROVENANCE).decode('utf-8')
+    except (OSError, KeyError, zipfile.BadZipFile) as error:
+        return f'{sidecar} is not a vanilla reference ({error})'
+    recorded = next((line.split('=', 1)[1].strip() for line in provenance.splitlines() if line.startswith('base-sha1=')), '')
+    actual = digest(base, 'sha1')
+    if recorded != actual:
+        return f'{sidecar} was measured against another base (base-sha1={recorded or "none"}, {base} is {actual})'
+    return None
+
+
+def ready(mc, stage, natives, arch=None, assets=True):
+    """Prepared for this use. assets=False is for tests and dedicated servers, which never read them."""
+    if stale_stamps(stage):
         return False
-    basic = (all((stage / p).is_file() for p in staged_files(forge))
+    basic = (all((stage / p).is_file() for p in STAGED_FILES)
             and all((STATE / 'api' / name).is_file() and digest(STATE / 'api' / name) == sha
                     for name, _, sha in API_PINS)
             and (mc / f'versions/{MC_VERSION}/{MC_VERSION}.json').is_file()
             and (not assets or (mc / 'assets/indexes').is_dir()) and natives.is_dir())
-    if not basic:
+    if not basic or sidecar_problem(stage):
         return False
     metadata = json.loads((mc / f'versions/{MC_VERSION}/{MC_VERSION}.json').read_text())
     if any(not confined(mc / 'libraries', lib['path']).is_file() for lib in libraries(metadata, arch=arch)):
@@ -515,16 +479,7 @@ def ready(mc, stage, natives, arch=None, assets=True, forge=True):
     return any(p.is_file() for p in natives.iterdir())
 
 
-def launch_carriers(stage, forge=True):
-    """The runtime jars a launch owns, as launch-kernel-{client,server}.sh pick them: the MinecraftForge carrier while one
-    is staged (the merge's interop jar, else the assembled forge-runtime.jar), then the NeoForge one. forge=False owns
-    the NeoForge carrier alone even where a MinecraftForge one is staged."""
-    forge_carrier = next((name for name in (STAGED_FORGE_INTEROP, STAGED_FORGE_CARRIER) if (stage / name).is_file()), None)
-    return ([forge_carrier] if forge and forge_carrier else []) + [STAGED_NEO_CARRIER]
-
-
-def launch_arguments(side, info, mc, stage, instance, natives, jvm=(), game=(), system=None, pathsep=None, arch=None,
-                     forge=True):
+def launch_arguments(side, info, mc, stage, instance, natives, jvm=(), game=(), system=None, pathsep=None, arch=None):
     system, pathsep = system or system_name(), pathsep or os.pathsep
     metadata = json.loads((mc / f'versions/{MC_VERSION}/{MC_VERSION}.json').read_text())
     owned = [str(confined(mc / 'libraries', lib['path'])) for lib in libraries(metadata, system, arch)]
@@ -537,9 +492,12 @@ def launch_arguments(side, info, mc, stage, instance, natives, jvm=(), game=(), 
     with zipfile.ZipFile(boot) as archive:
         if 'META-INF/jars/forbric-kernel-runtime.jar' not in archive.namelist():
             raise RuntimeError('refusing to launch a boot-only kernel jar; run prepare and rebuild')
-    merged = stage / STAGED_BASE
+    base = stage / STAGED_BASE
+    problem = sidecar_problem(stage)
+    if problem:
+        raise RuntimeError('refusing to launch with this vanilla reference; run prepare: ' + problem)
     metadata_jar = stage / STAGED_GAME_METADATA
-    with zipfile.ZipFile(merged) as archive:
+    with zipfile.ZipFile(base) as archive:
         version = archive.read('version.json')
     # System-classloader consumers need metadata, but must never see game bytecode on the parent classpath.
     with zipfile.ZipFile(metadata_jar, 'w') as archive:
@@ -551,8 +509,9 @@ def launch_arguments(side, info, mc, stage, instance, natives, jvm=(), game=(), 
     args += [f'-Dforbric.compatibilityPolicy={os.environ.get("FORBRIC_COMPAT_POLICY", "strict")}',
              f'-Dforbric.dependencyDialog={os.environ.get("FORBRIC_DEP_DIALOG", "off")}']
     args += list(jvm) + ['-cp', cp, 'net.forbric.kernel.boot.Kernel' + side.title() + 'Launch',
-                        '--gameJar', str(stage / STAGED_BASE),
-                        '--runtimeJar', pathsep.join(str(stage / name) for name in launch_carriers(stage, forge)),
+                        '--gameJar', str(base),
+                        # One carrier, one value: NeoForge's runtime. A launch owns no MinecraftForge carrier any more.
+                        '--runtimeJar', str(stage / STAGED_NEO_CARRIER),
                         '--libraryPath', pathsep.join(owned),
                         # Its own flag, never a second --gameJar: a launcher keeping the last value of a repeated flag
                         # would hand the kernel this resources-only jar as the game.
@@ -624,8 +583,7 @@ def launch(args, java, env):
     if args.command == 'client' and args.no_assets:
         raise RuntimeError('the client needs Minecraft assets; drop --no-assets')
     need_assets = args.command == 'client' or not (args.no_assets or assets_skipped(mc))
-    forge = forge_carrier_expected(args)
-    if not ready(mc, stage, natives, env['FORBRIC_DEV_ARCH'], assets=need_assets, forge=forge):
+    if not ready(mc, stage, natives, env['FORBRIC_DEV_ARCH'], assets=need_assets):
         if args.no_build:
             raise RuntimeError('development inputs missing; run prepareDev first')
         prepare(args, java, env)
@@ -650,7 +608,7 @@ def launch(args, java, env):
             eula.write_text('eula=true\n')
     argument_file = instance / '.forbric-java.args'
     command = launch_arguments(args.command, info, mc, stage, instance, natives, args.jvm, args.game,
-                               arch=env['FORBRIC_DEV_ARCH'], forge=forge)
+                               arch=env['FORBRIC_DEV_ARCH'])
     write_argument_file(argument_file, command)
     if args.dry_run:
         print(json.dumps([java] + command, indent=2))
@@ -671,17 +629,22 @@ def doctor(args):
         print('[dev] JDK: ' + java)
     except (OSError, subprocess.SubprocessError, RuntimeError, KeyError) as error:
         failures.append(str(error))
-    forge = forge_carrier_expected(args)
-    for relative in staged_files(forge):
+    for relative in STAGED_FILES:
         path = stage / relative
         if not path.is_file():
             failures.append('missing ' + str(path))
+    for relative in stale_stamps(stage):
+        if (stage / relative).is_file():
+            failures.append('built from other pins: ' + str(stage / relative))
+    problem = sidecar_problem(stage)
+    if problem and not problem.startswith('missing '):
+        failures.append(problem)
     for name, _, sha in API_PINS:
         path = STATE / 'api' / name
         if not path.is_file() or digest(path) != sha:
             failures.append('missing or incorrect API: ' + str(path))
     skipped = assets_skipped(mc)
-    if not ready(mc, stage, natives, arch, assets=not skipped, forge=forge):
+    if not ready(mc, stage, natives, arch, assets=not skipped):
         failures.append('Minecraft libraries/assets/natives or staged APIs need preparation')
     print(f'[dev] Minecraft: {mc}\n[dev] Stage: {stage}\n[dev] Instance: {instance}')
     if skipped:
@@ -707,9 +670,6 @@ def main(argv=None):
                         help='prepare: skip the ~1 GB of Minecraft assets; enough for tests and dedicated servers')
     parser.add_argument('--dry-run', action='store_true', help='build and print launch command without starting Minecraft')
     parser.add_argument('--no-build', action='store_true', help=argparse.SUPPRESS)
-    parser.add_argument('--no-forge-carrier', action='store_true',
-                        help='the stage has no MinecraftForge carrier on purpose (FORBRIC_NO_FORGE_CARRIER=1): do not ask '
-                             'for its files, and launch with the NeoForge carrier alone')
     parser.add_argument('--gate', default='m0', help='gate name, e.g. m0 or m33-transfer')
     arguments = list(sys.argv[1:] if argv is None else argv)
     game = []
@@ -740,8 +700,7 @@ def main(argv=None):
             gradle('forbric-kernel', ['check'], env)
         elif args.command == 'integration':
             mc, stage, _, natives = options(args, env['FORBRIC_DEV_ARCH'])
-            if not ready(mc, stage, natives, env['FORBRIC_DEV_ARCH'], assets=not (args.no_assets or assets_skipped(mc)),
-                         forge=forge_carrier_expected(args)):
+            if not ready(mc, stage, natives, env['FORBRIC_DEV_ARCH'], assets=not (args.no_assets or assets_skipped(mc))):
                 prepare(args, java, env)
             gradle('forbric-kernel', ['cleanTest', 'cleanTransferTest', 'integrationTest'] + build_properties(mc, stage), env)
         elif args.command == 'gate':

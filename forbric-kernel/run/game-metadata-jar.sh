@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
 # Print the path to a RESOURCES-ONLY jar carrying the game's root metadata (version.json), generating it from the
-# merged base when missing or stale. Both launchers put it on the PARENT -cp.
+# game base (NeoForge's patched game) when missing or stale. Both launchers put it on the PARENT -cp.
 #
 # WHY THIS EXISTS. Mods reach for the game's version.json through ClassLoader.getSystemClassLoader(), because on
 # the loaders they were built against the game jar is on the application classpath. Under Forbric it is not: the
-# merged base is handed to ForbricClassLoader via --gameJar, so a getSystemClassLoader().getResourceAsStream(
+# base is handed to ForbricClassLoader via --gameJar, so a getSystemClassLoader().getResourceAsStream(
 # "version.json") returns null and the mod silently falls back to a default.
 #
 # Measured cost of that: CustomSkinLoader's bootstrap picks its bytecode patch variant by PROTOCOL VERSION
@@ -14,27 +14,28 @@
 # PlayerTabOverlay with it, i.e. skin loading. 26.2's real protocol is 776, which selects v2. Its documented
 # fallback (net/minecraft/realms/RealmsSharedConstants) cannot help either: that class no longer exists.
 #
-# NO CLASS FILES, EVER. Putting the merged base itself on the parent -cp would let the application loader win
+# NO CLASS FILES, EVER. Putting the base itself on the parent -cp would let the application loader win
 # parent-first for game classes and quietly strip every mixin from them. This jar is asserted to be class-free
 # below so that can never happen by accident.
 #
-# Usage: game-metadata-jar.sh <merged-base.jar>   → prints the jar path on stdout (nothing else goes to stdout)
+# Usage: game-metadata-jar.sh <base.jar>   → prints the jar path on stdout (nothing else goes to stdout)
+# The jar is written beside the base (<dir of base>/forbric-game-metadata.jar); tools/dev.py writes the same name there.
 set -uo pipefail
 
-MERGED="${1:?usage: game-metadata-jar.sh <merged-base.jar>}"
-[ -f "$MERGED" ] || { echo "[game-metadata] merged base not found: $MERGED" >&2; exit 2; }
+BASE="${1:?usage: game-metadata-jar.sh <base.jar>}"
+[ -f "$BASE" ] || { echo "[game-metadata] game base not found: $BASE" >&2; exit 2; }
 
-OUT="${GAME_METADATA_JAR:-$(dirname "$MERGED")/forbric-game-metadata.jar}"
+OUT="${GAME_METADATA_JAR:-$(dirname "$BASE")/forbric-game-metadata.jar}"
 RESOURCES="version.json"
 
-if [ -f "$OUT" ] && [ "$OUT" -nt "$MERGED" ]; then echo "$OUT"; exit 0; fi
+if [ -f "$OUT" ] && [ "$OUT" -nt "$BASE" ]; then echo "$OUT"; exit 0; fi
 
 WORK="$(mktemp -d)"
 trap 'rm -rf "$WORK"' EXIT
 
 for r in $RESOURCES; do
-  if ! unzip -p "$MERGED" "$r" > "$WORK/$r" 2>/dev/null || [ ! -s "$WORK/$r" ]; then
-    echo "[game-metadata] $(basename "$MERGED") has no $r — skipping the metadata jar" >&2
+  if ! unzip -p "$BASE" "$r" > "$WORK/$r" 2>/dev/null || [ ! -s "$WORK/$r" ]; then
+    echo "[game-metadata] $(basename "$BASE") has no $r — skipping the metadata jar" >&2
     exit 3
   fi
 done

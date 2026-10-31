@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
-# Boot the MC 26.2 CLIENT through the SOVEREIGN KERNEL (no Knot, no genuine FML/FancyModLoader lifecycle) from the
-# merged 3-ABI base, with the Forge + NeoForge runtime jars as PASSIVE ABI carriers. M5 goal: reach the TITLE screen.
+# Boot the MC 26.2 CLIENT through the SOVEREIGN KERNEL (no Knot, no genuine FML/FancyModLoader lifecycle) from
+# NeoForge's patched game, with the NeoForge runtime jar as the PASSIVE ABI carrier. M5 goal: reach the TITLE screen.
 #
-# Parent -cp: kernel boot jar + kernel deps + MC 26.2 libraries (incl. LWJGL). Owned (transform-loaded): merged
-# base + forge-runtime + neoforge-runtime + the MC libraries (via --libraryPath, so mods can mixin into them).
+# Parent -cp: kernel boot jar + kernel deps + MC 26.2 libraries (incl. LWJGL). Owned (transform-loaded): the base +
+# neoforge-runtime + the MC libraries (via --libraryPath, so mods can mixin into them).
 #
 # macOS: -XstartOnFirstThread is MANDATORY (GLFW must own the main thread); the kernel invokes the client Main on
 # that same thread, so the window is created on thread 0 as GLFW requires.
@@ -14,27 +14,31 @@ set -uo pipefail
 MC="${MC_DIR:-$HOME/Library/Application Support/minecraft}"
 HERE="$(cd "$(dirname "$0")" && pwd)"
 KERNEL="$(cd "$HERE/.." && pwd)"
+# MERGED and FORGE_RT named the merged base and the MinecraftForge carrier, both retired with MinecraftForge (Stage 4).
+# A caller still setting them means a base or carrier it expects to be launched, and ignoring it would launch the staged
+# base instead and report on that, so stop. The game jar is BASE; there is no second carrier.
+if [ -n "${MERGED:-}${FORGE_RT:-}" ]; then
+  echo "[kernel-launch] FATAL: MERGED/FORGE_RT are retired: the game jar is BASE (NeoForge's patched game) and NEO_RT" \
+    "the one carrier; there is no MinecraftForge carrier any more (MERGED=${MERGED:-} FORGE_RT=${FORGE_RT:-})" >&2
+  exit 2
+fi
 # Same FORBRIC_OLD knob lib.sh uses: one variable points a second working tree at the staged artifacts
-# instead of needing MERGED, FORGE_RT and NEO_RT set individually.
+# instead of needing BASE and NEO_RT set individually.
 OLD="$(cd "${FORBRIC_OLD:-$KERNEL/../forbric-loader}" && pwd)"
 STAGE="$OLD/run"
 
-MERGED="${MERGED:-$STAGE/merged-base/patched-mc-merged-26.2.jar}"
-FORGE_RT="${FORGE_RT:-$STAGE/merged-base/forge-runtime-interop.jar}"
-[ -f "$FORGE_RT" ] || FORGE_RT="$STAGE/forge-runtime/forge-runtime.jar"
-# The MinecraftForge carrier is owned only while it is staged; without it the NeoForge carrier is the only one.
-[ -f "$FORGE_RT" ] || FORGE_RT=""
+BASE="${BASE:-$STAGE/neoforge-patched/patched-mc-neoforge-26.2.jar}"
 NEO_RT="${NEO_RT:-$STAGE/neoforge-runtime/neoforge-runtime.jar}"
 # The vanilla reference the kernel reads beside the base (--nativeReference): staged by prepare, else built once into
-# build/ by run/vanilla-reference-jar.sh. Without one the kernel says so in its "native references:" line and the merged
-# base's own embedded index answers; NATIVE_REF=none launches without it on purpose.
+# build/ by run/vanilla-reference-jar.sh. The base embeds no index of its own, so without one the kernel has no FABRIC
+# references and says so in its "native references:" line; NATIVE_REF=none launches without it on purpose.
 NATIVE_REF="${NATIVE_REF:-}"
 RUNDIR="${RUNDIR:-$KERNEL/run/client-kernel}"
 NATIVES="${NATIVES_DIR:-$MC/versions/26.2/26.2-natives}"
 ASSETS="$MC/assets"
 mkdir -p "$RUNDIR/mods"
 
-[ -f "$MERGED" ] || { echo "merged base not found: $MERGED (run $STAGE/build-merged-base.sh)" >&2; exit 2; }
+[ -f "$BASE" ] || { echo "game base not found: $BASE (run python3 tools/dev.py prepare)" >&2; exit 2; }
 [ -d "$NATIVES" ] || { echo "LWJGL natives not found: $NATIVES" >&2; exit 2; }
 
 if ! "$KERNEL/gradlew" --offline -q -p "$KERNEL" jar >/tmp/forbric-kernel-jar.log 2>&1; then
@@ -68,26 +72,27 @@ ASSET_INDEX="$(python3 -c "import json;print(json.load(open('$MC/versions/26.2/2
 
 # Game root metadata (version.json) on the PARENT -cp, as a resources-only jar. Mods that ask
 # getSystemClassLoader() for it — CustomSkinLoader's bootstrap picks its bytecode patch variant by the protocol
-# version it finds there — get null under Forbric otherwise, because the merged base belongs to
+# version it finds there — get null under Forbric otherwise, because the base belongs to
 # ForbricClassLoader. See run/game-metadata-jar.sh for why this must never carry class files.
-META_JAR="$("$HERE/game-metadata-jar.sh" "$MERGED" 2>/dev/null)" || META_JAR=""
+META_JAR="$("$HERE/game-metadata-jar.sh" "$BASE" 2>/dev/null)" || META_JAR=""
 if [ -z "$NATIVE_REF" ]; then
   # Exit 6 is a refusal (an explicitly named sidecar that records another base): stop rather than launch with none,
-  # which on a base without an embedded index would cost every FABRIC reference, not only the ones it cannot verify.
-  NATIVE_REF="$(MC_DIR="$MC" "$HERE/vanilla-reference-jar.sh" "$MERGED")" || { rc=$?; [ "$rc" = 6 ] && exit 6; NATIVE_REF=""; }
+  # which on a base without an embedded index (this one) would cost every FABRIC reference, not only the ones it
+  # cannot verify.
+  NATIVE_REF="$(MC_DIR="$MC" "$HERE/vanilla-reference-jar.sh" "$BASE")" || { rc=$?; [ "$rc" = 6 ] && exit 6; NATIVE_REF=""; }
 fi
 [ "$NATIVE_REF" = none ] && NATIVE_REF=""
 CP="$BOOT_JAR:$BOOT_DEPS:$VANILLA_CP${META_JAR:+:$META_JAR}"
 
-# Guest mixins are written against VANILLA bytecode; the merged base is vanilla+Forge+NeoForge byte-merged, so an
+# Guest Fabric mixins are written against VANILLA bytecode; the base is vanilla patched by NeoForge, so an
 # injection anchor a mixin expects may have moved. The KERNEL now relaxes EVERY discovered guest mod's mixin configs
 # by default (ForbricMixinService.setGuestConfigs), turning such a failure into a soft skip instead of a fatal
 # MixinApplyError — no launcher-side glob needed. Add more with -Dforbric.relaxMixinOverwrites, or get strict Mixin
-# behaviour back for debugging with -Dforbric.relaxGuestMixins=off. Merged-base incompatibilities that survive apply
-# but break at runtime are shipped defaults in MergedBaseMixinCompat.
+# behaviour back for debugging with -Dforbric.relaxGuestMixins=off. Base incompatibilities that survive apply but
+# break at runtime are shipped defaults in MergedBaseMixinCompat.
 
 echo "[kernel-launch] CLIENT rundir=$RUNDIR  assetIndex=$ASSET_INDEX"
-echo "[kernel-launch] merged base = $MERGED"
+echo "[kernel-launch] base = $BASE"
 echo "[kernel-launch] vanilla reference = ${NATIVE_REF:-none}"
 echo "[kernel-launch] natives = $NATIVES"
 echo "[kernel-launch] mods: $(ls "$RUNDIR/mods" 2>/dev/null | paste -sd' ' -)"
@@ -103,7 +108,7 @@ exec java -XstartOnFirstThread -Djava.library.path="$NATIVES" \
   -Dforbric.compatibilityPolicy="${FORBRIC_COMPAT_POLICY:-strict}" \
   -Dforbric.dependencyDialog="${FORBRIC_DEP_DIALOG:-off}" ${FORBRIC_JVM:-} \
   -cp "$CP" net.forbric.kernel.boot.KernelClientLaunch \
-  --gameJar "$MERGED" ${FORGE_RT:+--runtimeJar "$FORGE_RT"} --runtimeJar "$NEO_RT" ${NATIVE_REF:+--nativeReference "$NATIVE_REF"} \
+  --gameJar "$BASE" --runtimeJar "$NEO_RT" ${NATIVE_REF:+--nativeReference "$NATIVE_REF"} \
   --libraryPath "$VANILLA_CP" \
   -- --version 26.2-forbric-kernel --gameDir "$RUNDIR" --assetsDir "$ASSETS" --assetIndex "$ASSET_INDEX" \
   --accessToken 0 --username ForbricKernel --uuid 00000000000000000000000000000000 \

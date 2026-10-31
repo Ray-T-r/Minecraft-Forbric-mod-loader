@@ -5,16 +5,16 @@
 # WHAT IT IS. A RESOURCES-ONLY jar that says how vanilla Minecraft compiled each class, measured against the base the
 # game runs on (META-INF/forbric/native-reference/FABRIC/: an index of every vanilla class and its hash, plus the vanilla
 # bytes of every class the base changed). The kernel's mixin adapters compare a Fabric mixin's vanilla target against
-# it. The merged base used to embed the same tree; a base that does not (the genuine NeoForge-patched jar) has no
-# FABRIC references without this, and every adapter that needs them stands down without a word. The installer builds
+# it. The base (NeoForge's patched game) embeds no such tree -- the merged base of Forbric 0.4 and earlier did -- so
+# without this the kernel has no FABRIC references, and every adapter that needs them stands down without a word. The installer builds
 # it for a player's profile; tools/dev.py prepare stages it at <stage>/vanilla-reference/. This covers a staged tree
 # that predates it, or one this checkout must not write into.
 #
 # WHERE IT COMES FROM, in order:
 #   1. $VANILLA_REFERENCE_JAR, when set and present — a gate or a developer naming one explicitly. Used as named while
 #      it records this base. One that records another base is REFUSED (exit 6, the reason on stderr, nothing on
-#      stdout): on the genuine NeoForge base no embedded index stands behind the sidecar, so a sidecar measured against
-#      another base silently costs every changed class without a vanilla copy its FABRIC reference. The launchers and
+#      stdout): no embedded index stands behind the sidecar on the base, so a sidecar measured against another base
+#      silently costs every changed class without a vanilla copy its FABRIC reference. The launchers and
 #      gate-m34's soak stop on it (a launch without the flag would cost every FABRIC reference). For a deliberate experiment,
 #      FORBRIC_VANILLA_REFERENCE_ANY_BASE=1 uses it anyway, with the mismatch said on stderr.
 #   2. <stage>/vanilla-reference/vanilla-reference-26.2.jar, when it records THIS base (what prepare staged).
@@ -24,8 +24,8 @@
 #
 # CURRENT means provenance, never file age: every sidecar records the SHA-1 of the base and the vanilla jar it was
 # measured from (META-INF/forbric/vanilla-reference.properties), and it is current only while the base being launched
-# (and, when it is here, the vanilla jar) hash to those. A base rebuilt, restaged or swapped for another one (the genuine
-# jar staged beside the merged one) can be older than a sidecar that was never measured against it.
+# (and, when it is here, the vanilla jar) hash to those. A base rebuilt, restaged or swapped for another one (a stage
+# shared with an older checkout, an NFRT rebuild) can be older than a sidecar that was never measured against it.
 #
 # Usage: vanilla-reference-jar.sh <base.jar> [<vanilla.jar>]   → prints the jar path on stdout (nothing else goes there)
 # The vanilla jar defaults to $MC_DIR's versions/26.2/26.2.jar. Exits non-zero, printing nothing, when it cannot provide

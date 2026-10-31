@@ -51,15 +51,19 @@ import net.forbric.kernel.TestFixtures;
 import net.forbric.kernel.TestFixtures.Fixture;
 
 /**
- * The check that the jars a launch was handed are a Forbric game, by content (issue #13).
+ * The check that the jars a launch was handed are a Forbric game, by content (issue #13), and that an install made by
+ * Forbric 0.4 or earlier -- a merged base with a MinecraftForge carrier -- is refused with the one line that says how to
+ * fix it.
  *
  * <p>The jars here are built to the check's own definition -- {@link LaunchInputCheck#markers} for a carrier, a
- * {@code Block} with the families' extension interfaces for the base -- and the staged test at the bottom holds that
- * definition to the real artifacts, so the two cannot agree with each other while disagreeing with the game.
+ * {@code Block} with NeoForge's extension interface for the base, {@link LaunchInputCheck#OLD_FORGE_CARRIER} and
+ * {@link LaunchInputCheck#OLD_FORGE_INDEX} for an old install -- and the staged test at the bottom holds that definition
+ * to the real artifacts, so the two cannot agree with each other while disagreeing with the game.
  */
 @ResourceLock("system-properties")
 class LaunchInputCheckTest {
 	private static final String NEO_EXTENSION = "net/neoforged/neoforge/common/extensions/IBlockExtension";
+	/** What an old merged base's Block implemented besides NeoForge's interface. */
 	private static final String FORGE_EXTENSION = "net/minecraftforge/common/extensions/IForgeBlock";
 
 	@AfterEach
@@ -78,7 +82,7 @@ class LaunchInputCheckTest {
 		return jar;
 	}
 
-	/** A jar with only some of a family's markers. */
+	/** A jar with exactly these (empty) entries. */
 	private static Path entries(Path jar, String... names) throws IOException {
 		try (OutputStream out = Files.newOutputStream(jar); ZipOutputStream zip = new ZipOutputStream(out)) {
 			put(zip, "META-INF/MANIFEST.MF", "Manifest-Version: 1.0\n".getBytes(StandardCharsets.UTF_8));
@@ -87,8 +91,18 @@ class LaunchInputCheckTest {
 		return jar;
 	}
 
+	/** An old install's MinecraftForge carrier (forge-runtime.jar, or the stage's forge-runtime-interop.jar). */
+	private static Path forgeCarrier(Path jar) throws IOException {
+		return entries(jar, LaunchInputCheck.OLD_FORGE_CARRIER.toArray(String[]::new));
+	}
+
 	/** A game jar whose {@code Block} implements {@code interfaces}, which is all the check reads of a base. */
 	private static Path base(Path jar, String... interfaces) throws IOException {
+		return base(jar, List.of(), interfaces);
+	}
+
+	/** The same, with more (empty) entries beside the Block. */
+	private static Path base(Path jar, List<String> extra, String... interfaces) throws IOException {
 		ClassWriter cw = new ClassWriter(0);
 		cw.visit(Opcodes.V21, Opcodes.ACC_PUBLIC, "net/minecraft/world/level/block/Block", null, "java/lang/Object",
 				interfaces);
@@ -96,6 +110,7 @@ class LaunchInputCheckTest {
 		try (OutputStream out = Files.newOutputStream(jar); ZipOutputStream zip = new ZipOutputStream(out)) {
 			put(zip, "version.json", "{\"id\":\"26.2\"}".getBytes(StandardCharsets.UTF_8));
 			put(zip, LaunchInputCheck.BLOCK, cw.toByteArray());
+			for (String name : extra) put(zip, name, new byte[0]);
 		}
 		return jar;
 	}
@@ -106,9 +121,13 @@ class LaunchInputCheckTest {
 		zip.closeEntry();
 	}
 
-	private static Path merged(Path dir) throws IOException {
-		return base(dir.resolve("patched-mc-merged-26.2.jar"), "net/minecraft/world/level/ItemLike", NEO_EXTENSION,
-				FORGE_EXTENSION);
+	/** NeoForge's patched game, as the installer stages it. */
+	private static Path genuine(Path dir) throws IOException {
+		return base(dir.resolve("patched-mc-neoforge-26.2.jar"), "net/minecraft/world/level/ItemLike", NEO_EXTENSION);
+	}
+
+	private static Path neo(Path dir) throws IOException {
+		return carrier(dir.resolve("neoforge-runtime-26.2.0.93.jar"), Ecosystem.NEOFORGE);
 	}
 
 	private static String all(List<String> problems) {
@@ -117,178 +136,141 @@ class LaunchInputCheckTest {
 
 	@Test
 	void aCompleteInstallHasNothingToSay(@TempDir Path dir) throws IOException {
-		List<Path> runtimes = List.of(carrier(dir.resolve("forge-runtime-26.2.jar"), Ecosystem.FORGE),
-				carrier(dir.resolve("neoforge-runtime-26.2.jar"), Ecosystem.NEOFORGE));
+		List<Path> runtimes = List.of(neo(dir));
 
-		assertEquals(List.of(), LaunchInputCheck.problems(List.of(merged(dir)), runtimes));
-		assertDoesNotThrow(() -> LaunchInputCheck.require(List.of(merged(dir)), runtimes));
+		assertEquals(List.of(), LaunchInputCheck.problems(List.of(genuine(dir)), runtimes));
+		assertEquals(null, LaunchInputCheck.oldInstall(List.of(genuine(dir)), runtimes));
+		assertDoesNotThrow(() -> LaunchInputCheck.require(List.of(genuine(dir)), runtimes));
 	}
 
 	@Test
-	void theCarriersAreRecognisedByContentInAnyOrderAndUnderAnyName(@TempDir Path dir) throws IOException {
-		// A developer launch passes merged-base/forge-runtime-interop.jar; the order is whatever the launcher kept.
-		Path forge = carrier(dir.resolve("forge-runtime-interop.jar"), Ecosystem.FORGE);
+	void theCarrierIsRecognisedByContentUnderAnyName(@TempDir Path dir) throws IOException {
+		// A developer launch passes neoforge-runtime/neoforge-runtime.jar, an installed profile a versioned name.
 		Path neo = carrier(dir.resolve("whatever.jar"), Ecosystem.NEOFORGE);
-		assertEquals(List.of(), LaunchInputCheck.problems(List.of(merged(dir)), List.of(neo, forge)));
-
-		Path both = carrier(dir.resolve("both.jar"), Ecosystem.NEOFORGE, Ecosystem.FORGE);
-		assertEquals(List.of(), LaunchInputCheck.problems(List.of(merged(dir)), List.of(both)));
+		assertEquals(List.of(), LaunchInputCheck.problems(List.of(genuine(dir)), List.of(neo)));
 	}
 
 	@Test
-	void issue13RuntimeJarsHoldingNeitherFamilyStopTheLaunchNamingEachJarAndTheFix(@TempDir Path dir)
-			throws IOException {
-		// What the player's installer staged: right names, opened fine, nothing of either family inside.
-		Path forge = entries(dir.resolve("forge-runtime-26.2.jar"));
-		Path neo = entries(dir.resolve("neoforge-runtime-26.2.jar"));
-		List<String> problems = LaunchInputCheck.problems(List.of(merged(dir)), List.of(forge, neo));
+	void issue13RuntimeJarsHoldingNoNeoForgeStopTheLaunchNamingEachJarAndTheFix(@TempDir Path dir) throws IOException {
+		// What the player's installer staged: right name, opened fine, nothing of NeoForge inside.
+		Path neo = entries(dir.resolve("neoforge-runtime-26.2.0.93.jar"));
+		List<String> problems = LaunchInputCheck.problems(List.of(genuine(dir)), List.of(neo));
 
-		assertEquals(4, problems.size(), all(problems));
-		assertTrue(problems.get(0).startsWith("runtime jar forge-runtime-26.2.jar contains neither NeoForge nor "
-				+ "MinecraftForge"), problems.get(0));
+		assertEquals(2, problems.size(), all(problems));
+		assertTrue(problems.get(0).startsWith("runtime jar neoforge-runtime-26.2.0.93.jar does not contain NeoForge"),
+				problems.get(0));
 		assertTrue(problems.get(0).contains("net/neoforged/neoforgespi/language/IModInfo.class"), problems.get(0));
-		assertTrue(problems.get(0).contains(forge.toString()), "the player has to be able to find the file");
-		assertTrue(problems.get(1).startsWith("runtime jar neoforge-runtime-26.2.jar contains neither"), problems.get(1));
-		assertTrue(problems.get(2).contains("contains a complete NeoForge runtime"), problems.get(2));
-		assertTrue(problems.get(3).contains("contains a complete MinecraftForge runtime"), problems.get(3));
+		assertTrue(problems.get(0).contains(neo.toString()), "the player has to be able to find the file");
+		assertTrue(problems.get(1).contains("contains a complete NeoForge runtime"), problems.get(1));
 
 		String said = KernelLoadReportTest.capture(() -> assertThrows(LaunchInputCheck.Rejected.class,
-				() -> LaunchInputCheck.require(List.of(merged(dir)), List.of(forge, neo))));
+				() -> LaunchInputCheck.require(List.of(genuine(dir)), List.of(neo))));
 		// ForbricLog's fallback when log4j is absent, as it is on the test classpath. In the game these are the same
 		// lines in latest.log.
 		assertTrue(said.contains("[Forbric/ERROR] [Forbric/Install] the Forbric install is broken"), said);
-		assertTrue(said.contains("forge-runtime-26.2.jar contains neither"), said);
+		assertTrue(said.contains("neoforge-runtime-26.2.0.93.jar does not contain NeoForge"), said);
 		assertTrue(said.contains("run the Forbric installer again with the same Game directory and leave "
 				+ "\"Built artifacts\" EMPTY"), said);
+		assertFalse(said.contains("merged"), "nothing of the merged base is left to build: " + said);
 	}
 
 	@Test
 	void aRuntimeJarThatIsMissingOrIsNoJarIsNamed(@TempDir Path dir) throws IOException {
-		Path absent = dir.resolve("nope/forge-runtime-26.2.jar");
-		Path garbage = dir.resolve("neoforge-runtime-26.2.jar");
+		Path absent = dir.resolve("nope/neoforge-runtime-26.2.0.93.jar");
+		Path garbage = dir.resolve("neoforge-runtime.jar");
 		Files.writeString(garbage, "<html>404 Not Found</html>");
 
-		String problems = all(LaunchInputCheck.problems(List.of(merged(dir)), List.of(absent, garbage)));
+		String problems = all(LaunchInputCheck.problems(List.of(genuine(dir)), List.of(absent, garbage)));
 
-		assertTrue(problems.contains("runtime jar forge-runtime-26.2.jar does not exist (" + absent + ")"), problems);
-		assertTrue(problems.contains("runtime jar neoforge-runtime-26.2.jar cannot be opened as a jar"), problems);
+		assertTrue(problems.contains("runtime jar neoforge-runtime-26.2.0.93.jar does not exist (" + absent + ")"), problems);
+		assertTrue(problems.contains("runtime jar neoforge-runtime.jar cannot be opened as a jar"), problems);
 	}
 
 	@Test
-	void aCarrierWithOnlyPartOfItsFamilyIsCalledIncompleteAndSaysWhatIsMissing(@TempDir Path dir) throws IOException {
+	void aCarrierWithOnlyPartOfNeoForgeIsCalledIncompleteAndSaysWhatIsMissing(@TempDir Path dir) throws IOException {
 		List<String> neo = LaunchInputCheck.markers(Ecosystem.NEOFORGE);
-		Path partial = entries(dir.resolve("neoforge-runtime-26.2.jar"), neo.get(1), neo.get(2), neo.get(3));
-		Path forge = carrier(dir.resolve("forge-runtime-26.2.jar"), Ecosystem.FORGE);
+		Path partial = entries(dir.resolve("neoforge-runtime-26.2.0.93.jar"), neo.get(1), neo.get(2), neo.get(3));
 
-		List<String> problems = LaunchInputCheck.problems(List.of(merged(dir)), List.of(forge, partial));
+		List<String> problems = LaunchInputCheck.problems(List.of(genuine(dir)), List.of(partial));
 
 		assertEquals(2, problems.size(), all(problems));
-		assertTrue(problems.get(0).startsWith("runtime jar neoforge-runtime-26.2.jar is an incomplete NeoForge "
+		assertTrue(problems.get(0).startsWith("runtime jar neoforge-runtime-26.2.0.93.jar is an incomplete NeoForge "
 				+ "runtime: it is missing " + neo.get(0)), problems.get(0));
 		assertTrue(problems.get(1).contains("contains a complete NeoForge runtime"), problems.get(1));
 	}
 
 	/**
-	 * A carrier with everything but FMLEnvironment. The merged base's {@code SharedConstants.<clinit>} is the first
-	 * game code that runs and calls NeoForge's; vanilla's {@code Main} catches what it throws, prints it to stderr and
-	 * exits 249, so without the marker this launch passed the check and ended with nothing in latest.log.
+	 * A carrier with everything but FMLEnvironment. The base's {@code SharedConstants.<clinit>} is the first game code
+	 * that runs and calls NeoForge's; vanilla's {@code Main} catches what it throws, prints it to stderr and exits 249,
+	 * so without the marker this launch passed the check and ended with nothing in latest.log.
 	 */
 	@Test
-	void aCarrierWithoutFmlEnvironmentIsIncompleteForEitherFamily(@TempDir Path dir) throws IOException {
-		assertTrue(LaunchInputCheck.markers(Ecosystem.NEOFORGE).contains("net/neoforged/fml/loading/FMLEnvironment.class"));
-		assertTrue(LaunchInputCheck.markers(Ecosystem.FORGE).contains("net/minecraftforge/fml/loading/FMLEnvironment.class"));
+	void aCarrierWithoutFmlEnvironmentIsIncomplete(@TempDir Path dir) throws IOException {
+		String environment = "net/neoforged/fml/loading/FMLEnvironment.class";
+		assertTrue(LaunchInputCheck.markers(Ecosystem.NEOFORGE).contains(environment));
+		assertEquals(List.of(Ecosystem.NEOFORGE), LaunchInputCheck.FAMILIES);
 
-		for (Ecosystem family : LaunchInputCheck.FAMILIES) {
-			String environment = LaunchInputCheck.markers(family).stream().filter(m -> m.endsWith("/FMLEnvironment.class"))
-					.findFirst().orElseThrow();
-			Path stripped = entries(dir.resolve(family.name() + "-runtime-26.2.jar"), LaunchInputCheck.markers(family)
-					.stream().filter(m -> !m.equals(environment)).toArray(String[]::new));
-			Ecosystem other = family == Ecosystem.NEOFORGE ? Ecosystem.FORGE : Ecosystem.NEOFORGE;
-			Path complete = carrier(dir.resolve(other.name() + "-runtime-26.2.jar"), other);
+		Path stripped = entries(dir.resolve("neoforge-runtime.jar"), LaunchInputCheck.markers(Ecosystem.NEOFORGE)
+				.stream().filter(m -> !m.equals(environment)).toArray(String[]::new));
+		List<String> problems = LaunchInputCheck.problems(List.of(genuine(dir)), List.of(stripped));
 
-			List<String> problems = LaunchInputCheck.problems(List.of(merged(dir)), List.of(complete, stripped));
-
-			assertEquals(2, problems.size(), all(problems));
-			assertTrue(problems.get(0).startsWith("runtime jar " + stripped.getFileName() + " is an incomplete "
-					+ family.displayName() + " runtime: it is missing " + environment + " ("), problems.get(0));
-		}
+		assertEquals(2, problems.size(), all(problems));
+		assertTrue(problems.get(0).startsWith("runtime jar neoforge-runtime.jar is an incomplete NeoForge runtime: it is "
+				+ "missing " + environment + " ("), problems.get(0));
 	}
 
 	/**
-	 * A NeoForge or MinecraftForge mod under a runtime's name has the family's manifest -- one of the markers -- and
-	 * nothing else of it. Called an incomplete runtime, it read as a carrier missing its classes, which no mod has.
+	 * A NeoForge mod under a runtime's name has NeoForge's manifest -- one of the markers -- and nothing else of it.
+	 * Called an incomplete runtime, it read as a carrier missing its classes, which no mod has.
 	 */
 	@Test
 	void aModJarUnderARuntimeNameIsCalledAModNotAnIncompleteRuntime(@TempDir Path dir) throws IOException {
-		Path forge = carrier(dir.resolve("forge-runtime-26.2.jar"), Ecosystem.FORGE);
 		// The shape of sodium-neoforge-0.9.2+mc26.2.jar: the manifest, the mod itself nested, a few classes of its own.
-		Path neoMod = entries(dir.resolve("neoforge-runtime-26.2.jar"), "META-INF/neoforge.mods.toml",
+		Path neoMod = entries(dir.resolve("neoforge-runtime-26.2.0.93.jar"), "META-INF/neoforge.mods.toml",
 				"META-INF/jarjar/net.caffeinemc.sodium-neoforge-0.9.2+mc26.2-mod.jar",
 				"net/caffeinemc/mods/sodium/service/SodiumWorkarounds.class");
 
-		List<String> problems = LaunchInputCheck.problems(List.of(merged(dir)), List.of(forge, neoMod));
+		List<String> problems = LaunchInputCheck.problems(List.of(genuine(dir)), List.of(neoMod));
 
 		assertEquals(2, problems.size(), all(problems));
-		assertTrue(problems.get(0).startsWith("runtime jar neoforge-runtime-26.2.jar looks like a NeoForge mod, not a "
-				+ "runtime: it has META-INF/neoforge.mods.toml, which mods carry too, and none of the runtime's classes ["
+		assertTrue(problems.get(0).startsWith("runtime jar neoforge-runtime-26.2.0.93.jar looks like a NeoForge mod, not "
+				+ "a runtime: it has META-INF/neoforge.mods.toml, which mods carry too, and none of the runtime's classes ["
 				+ "net/neoforged/neoforgespi/language/IModInfo.class, "), problems.get(0));
 		assertFalse(problems.get(0).contains("incomplete"), problems.get(0));
 		assertTrue(problems.get(1).contains("contains a complete NeoForge runtime"), problems.get(1));
 
-		Path neo = carrier(dir.resolve("neoforge-runtime.jar"), Ecosystem.NEOFORGE);
-		Path forgeMod = entries(dir.resolve("forge-runtime-interop.jar"), "META-INF/mods.toml");
-		String said = LaunchInputCheck.problems(List.of(merged(dir)), List.of(forgeMod, neo)).get(0);
-		assertTrue(said.startsWith("runtime jar forge-runtime-interop.jar looks like a MinecraftForge mod, not a "
-				+ "runtime: it has META-INF/mods.toml,"), said);
-
-		// A mod declaring both manifests -- and one that has a runtime class besides is a broken runtime, not a mod.
-		Path both = entries(dir.resolve("both.jar"), "META-INF/neoforge.mods.toml", "META-INF/mods.toml");
-		said = LaunchInputCheck.problems(List.of(merged(dir)), List.of(both)).get(0);
-		assertTrue(said.startsWith("runtime jar both.jar looks like a NeoForge and MinecraftForge mod, not a runtime: "
-				+ "it has META-INF/neoforge.mods.toml and META-INF/mods.toml,"), said);
+		// A manifest and a runtime class besides is a broken runtime, not a mod.
 		Path broken = entries(dir.resolve("broken.jar"), "META-INF/neoforge.mods.toml",
 				LaunchInputCheck.markers(Ecosystem.NEOFORGE).get(2));
-		said = LaunchInputCheck.problems(List.of(merged(dir)), List.of(broken)).get(0);
+		String said = LaunchInputCheck.problems(List.of(genuine(dir)), List.of(broken)).get(0);
 		assertTrue(said.startsWith("runtime jar broken.jar is an incomplete NeoForge runtime"), said);
+
+		// A MinecraftForge mod (its manifest only) is no NeoForge at all -- and no old carrier either.
+		Path forgeMod = entries(dir.resolve("forge-mod.jar"), "META-INF/mods.toml");
+		said = LaunchInputCheck.problems(List.of(genuine(dir)), List.of(forgeMod)).get(0);
+		assertTrue(said.startsWith("runtime jar forge-mod.jar does not contain NeoForge"), said);
 	}
 
 	@Test
-	void aLaunchWithNoRuntimeJarOrOnlyOneOfTheTwoCannotStartAndSaysSo(@TempDir Path dir) throws IOException {
-		// No --runtimeJar at all: this always died -- the merged base and the kernel's own game side both name NeoForge
-		// and MinecraftForge classes -- but with a NoClassDefFoundError on stderr and nothing in latest.log.
-		String none = all(LaunchInputCheck.problems(List.of(merged(dir)), List.of()));
-		assertTrue(none.contains("nothing this launch was given contains a complete NeoForge runtime"), none);
-		assertTrue(none.contains("nothing this launch was given contains a complete MinecraftForge runtime"), none);
-		assertTrue(none.contains("no --runtimeJar was passed at all"), none);
-
-		// A launcher that keeps only the last of two repeated --runtimeJar flags.
-		Path neo = carrier(dir.resolve("neoforge-runtime-26.2.jar"), Ecosystem.NEOFORGE);
-		List<String> one = LaunchInputCheck.problems(List.of(merged(dir)), List.of(neo));
-		assertEquals(1, one.size(), all(one));
-		assertTrue(one.get(0).startsWith("nothing this launch was given contains a complete MinecraftForge runtime"),
-				one.get(0));
-		assertTrue(one.get(0).contains("[neoforge-runtime-26.2.jar]"), one.get(0));
+	void aLaunchWithNoRuntimeJarCannotStartAndSaysSo(@TempDir Path dir) throws IOException {
+		// No --runtimeJar at all: this always died -- the base and the kernel's own game side name NeoForge classes --
+		// but with a NoClassDefFoundError on stderr and nothing in latest.log.
+		List<String> none = LaunchInputCheck.problems(List.of(genuine(dir)), List.of());
+		assertEquals(1, none.size(), all(none));
+		assertTrue(none.get(0).startsWith("nothing this launch was given contains a complete NeoForge runtime"), none.get(0));
+		assertTrue(none.get(0).contains("no --runtimeJar was passed at all"), none.get(0));
 	}
 
 	@Test
-	void theGameJarHasToBeTheMergedBase(@TempDir Path dir) throws IOException {
-		List<Path> runtimes = List.of(carrier(dir.resolve("forge-runtime-26.2.jar"), Ecosystem.FORGE),
-				carrier(dir.resolve("neoforge-runtime-26.2.jar"), Ecosystem.NEOFORGE));
+	void theGameJarHasToBeNeoForgesPatchedGame(@TempDir Path dir) throws IOException {
+		List<Path> runtimes = List.of(neo(dir));
 
 		Path vanilla = base(dir.resolve("26.2.jar"), "net/minecraft/world/level/ItemLike");
-		assertProblem(vanilla, runtimes, "game jar 26.2.jar is plain Minecraft, not Forbric's merged game");
+		assertProblem(vanilla, runtimes, "game jar 26.2.jar is plain Minecraft, not NeoForge's patched game");
 
-		Path neoOnly = base(dir.resolve("neo-patched.jar"), NEO_EXTENSION);
-		assertProblem(neoOnly, runtimes,
-				"game jar neo-patched.jar carries only NeoForge's changes and not MinecraftForge's");
-
-		Path forgeOnly = base(dir.resolve("forge-patched.jar"), FORGE_EXTENSION);
-		assertProblem(forgeOnly, runtimes,
-				"game jar forge-patched.jar carries only MinecraftForge's changes and not NeoForge's");
-
-		// gson renamed to the merged base's name passes a name match and the installer's link check alike.
-		Path notMinecraft = entries(dir.resolve("patched-mc-merged-26.2.jar"), "com/google/gson/Gson.class");
-		assertProblem(notMinecraft, runtimes, "game jar patched-mc-merged-26.2.jar is not a Minecraft game jar: it "
+		// gson renamed to the base's name passes a name match and the installer's link check alike.
+		Path notMinecraft = entries(dir.resolve("patched-mc-neoforge-26.2.jar"), "com/google/gson/Gson.class");
+		assertProblem(notMinecraft, runtimes, "game jar patched-mc-neoforge-26.2.jar is not a Minecraft game jar: it "
 				+ "has no " + LaunchInputCheck.BLOCK);
 
 		Path brokenBlock = dir.resolve("broken.jar");
@@ -309,22 +291,19 @@ class LaunchInputCheckTest {
 
 	@Test
 	void aCarrierPassedAsOneMoreGameJarIsOwnedAllTheSame(@TempDir Path dir) throws IOException {
-		Path forge = carrier(dir.resolve("forge-runtime-26.2.jar"), Ecosystem.FORGE);
-		Path neo = carrier(dir.resolve("neoforge-runtime-26.2.jar"), Ecosystem.NEOFORGE);
-
-		assertEquals(List.of(), LaunchInputCheck.problems(List.of(merged(dir), forge, neo), List.of()));
+		assertEquals(List.of(), LaunchInputCheck.problems(List.of(genuine(dir), neo(dir)), List.of()));
 	}
 
 	@Test
 	void switchedOffItWarnsWithTheSameProblemsAndLaunchesAnyway(@TempDir Path dir) throws IOException {
 		System.setProperty(LaunchInputCheck.SWITCH, "off");
-		Path forge = entries(dir.resolve("forge-runtime-26.2.jar"));
+		Path neo = entries(dir.resolve("neoforge-runtime-26.2.0.93.jar"));
 
 		String said = KernelLoadReportTest.capture(() -> assertDoesNotThrow(
-				() -> LaunchInputCheck.require(List.of(merged(dir)), List.of(forge))));
+				() -> LaunchInputCheck.require(List.of(genuine(dir)), List.of(neo))));
 
 		assertTrue(said.contains("[Forbric/WARN] [Forbric/Install] the Forbric install is broken"), said);
-		assertTrue(said.contains("forge-runtime-26.2.jar contains neither"), said);
+		assertTrue(said.contains("neoforge-runtime-26.2.0.93.jar does not contain NeoForge"), said);
 		assertTrue(said.contains("-D" + LaunchInputCheck.SWITCH + "=off launches it anyway"), said);
 		assertFalse(said.contains("[Forbric/ERROR]"), said);
 	}
@@ -332,12 +311,135 @@ class LaunchInputCheckTest {
 	@Test
 	void aPercentSignInAPathIsPrintedNotFormatted(@TempDir Path dir) throws IOException {
 		Path odd = Files.createDirectories(dir.resolve("100%d done"));
-		Path forge = entries(odd.resolve("forge-runtime-26.2.jar"));
+		Path neo = entries(odd.resolve("neoforge-runtime-26.2.0.93.jar"));
 
 		String said = KernelLoadReportTest.capture(() -> assertThrows(LaunchInputCheck.Rejected.class,
-				() -> LaunchInputCheck.require(List.of(merged(dir)), List.of(forge))));
+				() -> LaunchInputCheck.require(List.of(genuine(dir)), List.of(neo))));
 
-		assertTrue(said.contains(forge.toString()), said);
+		assertTrue(said.contains(neo.toString()), said);
+
+		// And in an old install's evidence, which names files too.
+		Path forge = forgeCarrier(odd.resolve("forge-runtime-%s-%d.jar"));
+		String old = LaunchInputCheck.oldInstall(List.of(genuine(dir)), List.of(neo(dir), forge));
+		assertTrue(old != null && old.contains("forge-runtime-%s-%d.jar is a complete MinecraftForge runtime"), old);
+	}
+
+	// --- an install made by Forbric 0.4 or earlier (D9) ------------------------------------------------------
+
+	/** The single problem an old install gets, with its evidence. */
+	private static String oldInstallProblem(List<Path> gameJars, List<Path> runtimeJars) {
+		List<String> problems = LaunchInputCheck.problems(gameJars, runtimeJars);
+		assertEquals(1, problems.size(), "an old install is one problem, nothing else: " + all(problems));
+		String problem = problems.get(0);
+		assertTrue(problem.startsWith("this game was installed by Forbric 0.4 or earlier, still carries MinecraftForge ("),
+				problem);
+		assertTrue(problem.endsWith("); run the new installer again with the same game directory"), problem);
+		assertEquals(problem, LaunchInputCheck.oldInstall(gameJars, runtimeJars));
+		return problem;
+	}
+
+	/** Signal (1): the base's Block implements a MinecraftForge interface -- the merged base's shape. */
+	@Test
+	void aBaseWhoseBlockImplementsAMinecraftForgeInterfaceIsAnOldInstall(@TempDir Path dir) throws IOException {
+		// The merged base is NeoForge-patched too, so the base check alone lets it through: the old-install check must.
+		Path merged = base(dir.resolve("patched-mc-merged-26.2.jar"), "net/minecraft/world/level/ItemLike",
+				NEO_EXTENSION, FORGE_EXTENSION);
+		assertEquals(null, LaunchInputCheck.baseProblem(merged), "premise: the merged base carries NeoForge's changes");
+
+		String problem = oldInstallProblem(List.of(merged), List.of(neo(dir)));
+		assertTrue(problem.contains("game jar patched-mc-merged-26.2.jar's Block implements " + FORGE_EXTENSION), problem);
+
+		// A MinecraftForge-only patched game names the same interface; it is no game of this Forbric either.
+		Path forgeOnly = base(dir.resolve("patched-mc-forge-26.2.jar"), FORGE_EXTENSION);
+		assertTrue(oldInstallProblem(List.of(forgeOnly), List.of(neo(dir))).contains("Block implements " + FORGE_EXTENSION));
+	}
+
+	/** Signal (2): the base embeds MinecraftForge's native-reference index. */
+	@Test
+	void aBaseEmbeddingMinecraftForgesNativeReferenceIndexIsAnOldInstall(@TempDir Path dir) throws IOException {
+		Path indexed = base(dir.resolve("patched-mc-merged-26.2.jar"), List.of(LaunchInputCheck.OLD_FORGE_INDEX,
+				"META-INF/forbric/native-reference/NEOFORGE/index.tsv"), NEO_EXTENSION);
+
+		String problem = oldInstallProblem(List.of(indexed), List.of(neo(dir)));
+		assertTrue(problem.contains("game jar patched-mc-merged-26.2.jar embeds " + LaunchInputCheck.OLD_FORGE_INDEX), problem);
+		assertFalse(problem.contains("Block implements"), problem);
+		// NeoForge's own half of that index is no signal: only MinecraftForge's is.
+		Path neoIndex = base(dir.resolve("neo-indexed.jar"), List.of("META-INF/forbric/native-reference/NEOFORGE/index.tsv",
+				"META-INF/forbric/native-reference/FABRIC/index.tsv"), NEO_EXTENSION);
+		assertEquals(List.of(), LaunchInputCheck.problems(List.of(neoIndex), List.of(neo(dir))));
+	}
+
+	/**
+	 * Signal (3): a {@code --runtimeJar}, or an extra {@code --gameJar}, is a complete MinecraftForge carrier -- in an
+	 * old profile's one joined flag, a launcher's repeated flags, or one jar carrying both families.
+	 */
+	@Test
+	void aCompleteMinecraftForgeCarrierBesideTheBaseIsAnOldInstall(@TempDir Path dir) throws IOException {
+		Path forge = forgeCarrier(dir.resolve("forge-runtime-26.2-65.0.1.jar"));
+
+		String problem = oldInstallProblem(List.of(genuine(dir)), List.of(forge, neo(dir)));
+		assertTrue(problem.contains("runtime jar forge-runtime-26.2-65.0.1.jar is a complete MinecraftForge runtime"), problem);
+		assertFalse(problem.contains("Block implements") || problem.contains(" embeds "), problem);
+
+		assertTrue(oldInstallProblem(List.of(genuine(dir), forge), List.of(neo(dir)))
+				.contains("game jar forge-runtime-26.2-65.0.1.jar is a complete MinecraftForge runtime"));
+
+		Path both = entries(dir.resolve("both.jar"), java.util.stream.Stream.concat(
+				LaunchInputCheck.markers(Ecosystem.NEOFORGE).stream(), LaunchInputCheck.OLD_FORGE_CARRIER.stream())
+				.toArray(String[]::new));
+		assertTrue(oldInstallProblem(List.of(genuine(dir)), List.of(both)).contains("runtime jar both.jar is a complete "
+				+ "MinecraftForge runtime"));
+
+		// Not complete, no signal: one marker short is a broken jar of some kind, judged by the ordinary checks.
+		for (String left : LaunchInputCheck.OLD_FORGE_CARRIER) {
+			Path partial = entries(dir.resolve("partial.jar"), LaunchInputCheck.OLD_FORGE_CARRIER.stream()
+					.filter(entry -> !entry.equals(left)).toArray(String[]::new));
+			assertEquals(null, LaunchInputCheck.oldInstall(List.of(genuine(dir)), List.of(partial, neo(dir))), left);
+		}
+	}
+
+	/** All three at once -- the real merged install -- is still one problem, carrying every piece of evidence. */
+	@Test
+	void theWholeOldInstallIsOneProblemWithAllItsEvidence(@TempDir Path dir) throws IOException {
+		Path merged = base(dir.resolve("patched-mc-merged-26.2.jar"), List.of(LaunchInputCheck.OLD_FORGE_INDEX),
+				NEO_EXTENSION, FORGE_EXTENSION);
+		Path forge = forgeCarrier(dir.resolve("forge-runtime-26.2-65.0.1.jar"));
+
+		String problem = oldInstallProblem(List.of(merged), List.of(forge, neo(dir)));
+		assertTrue(problem.contains("Block implements " + FORGE_EXTENSION + "; game jar patched-mc-merged-26.2.jar embeds "
+				+ LaunchInputCheck.OLD_FORGE_INDEX + "; runtime jar forge-runtime-26.2-65.0.1.jar is a complete "
+				+ "MinecraftForge runtime"), problem);
+
+		String said = KernelLoadReportTest.capture(() -> assertThrows(LaunchInputCheck.Rejected.class,
+				() -> LaunchInputCheck.require(List.of(merged), List.of(forge, neo(dir)))));
+		assertTrue(said.contains("[Forbric/ERROR] [Forbric/Install]   - this game was installed by Forbric 0.4 or earlier, "
+				+ "still carries MinecraftForge ("), said);
+		assertTrue(said.contains("(1 problem(s) below)"), said);
+		assertTrue(said.contains("run the Forbric installer again with the same Game directory"), said);
+	}
+
+	/** D9: the switch that turns every other problem into a warning does not let an old install run. */
+	@Test
+	void switchedOffItStillRefusesAnOldInstall(@TempDir Path dir) throws IOException {
+		System.setProperty(LaunchInputCheck.SWITCH, "off");
+		Path merged = base(dir.resolve("patched-mc-merged-26.2.jar"), NEO_EXTENSION, FORGE_EXTENSION);
+
+		for (List<Path> runtimes : List.of(List.of(neo(dir)), List.of(forgeCarrier(dir.resolve("forge.jar")), neo(dir)))) {
+			String said = KernelLoadReportTest.capture(() -> assertThrows(LaunchInputCheck.Rejected.class,
+					() -> LaunchInputCheck.require(List.of(merged), runtimes)));
+			assertTrue(said.contains("[Forbric/ERROR] [Forbric/Install] the Forbric install is broken"), said);
+			assertTrue(said.contains("installed by Forbric 0.4 or earlier, still carries MinecraftForge"), said);
+			assertTrue(said.contains("-D" + LaunchInputCheck.SWITCH + "=off does not apply to an install made by Forbric "
+					+ "0.4 or earlier"), said);
+			assertFalse(said.contains("[Forbric/WARN]"), said);
+			assertFalse(said.contains("launches it anyway"), said);
+		}
+		// The signal from the runtime jar alone, too.
+		List<Path> game = List.of(genuine(dir));
+		List<Path> runtimes = List.of(forgeCarrier(dir.resolve("forge-runtime-26.2-65.0.1.jar")), neo(dir));
+		String said = KernelLoadReportTest.capture(() -> assertThrows(LaunchInputCheck.Rejected.class,
+				() -> LaunchInputCheck.require(game, runtimes)));
+		assertTrue(said.contains("forge-runtime-26.2-65.0.1.jar is a complete MinecraftForge runtime"), said);
 	}
 
 	// --- where the launch asks ------------------------------------------------------------------------------
@@ -417,7 +519,8 @@ class LaunchInputCheckTest {
 
 	/**
 	 * The definition above, held to the jars it describes: the staged base (NeoForge's patched game) and the one
-	 * NeoForge carrier a launch passes as {@code --runtimeJar}, which is what the installer and tools/dev.py launch.
+	 * NeoForge carrier a launch passes as {@code --runtimeJar}, which is what the installer and tools/dev.py launch --
+	 * and neither of them carries any of the old-install signals.
 	 */
 	@Test
 	void theStagedBaseAndItsNeoForgeCarrierPass() {
@@ -426,7 +529,9 @@ class LaunchInputCheckTest {
 		TestFixtures.requireFiles(Fixture.STAGED,
 				"staged game artifacts absent: " + base.getParent().getParent(), base, neo);
 
+		assertEquals(null, LaunchInputCheck.oldInstall(List.of(base), List.of(neo)));
 		assertEquals(List.of(), LaunchInputCheck.problems(List.of(base), List.of(neo)));
 		assertEquals(java.util.Set.of(Ecosystem.NEOFORGE), LaunchInputCheck.read(neo).complete());
+		assertDoesNotThrow(() -> LaunchInputCheck.require(List.of(base), List.of(neo)));
 	}
 }

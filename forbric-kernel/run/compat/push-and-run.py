@@ -31,18 +31,27 @@ CLEAN = ('config', 'mods', 'saves', 'logs', '.forbric-kernel', '.mixin.out', '.f
          'crash-reports', 'screenshots', 'server-gen', 'quickPlay', 'resourcepacks',
          'defaultconfigs', '.cache', '.physics_mod_cache', 'replay_recordings', 'client-console.log',
          'server-console.log', 'bisect-console.log')
+# The game artifacts the installer stages and the profile names, by coordinate: NeoForge's patched game (the base), its
+# one carrier, and the vanilla reference measured against the base.
+BASE = 'net.forbric:patched-mc-neoforge'
+NEO_RUNTIME = 'net.forbric:neoforge-runtime'
+VANILLA_REFERENCE = 'net.forbric:vanilla-reference'
+# What a profile an older installer (Forbric 0.4 and earlier) wrote names instead: the merged base and the MinecraftForge
+# carrier. The new kernel refuses that game (LaunchInputCheck), so with_genuine_base rewrites such a profile.
+RETIRED_ARTIFACTS = {'net.forbric:patched-mc-merged': BASE, 'net.forbric:forge-runtime': None,
+                     'net.forbric:patched-mc-forge': None}
 ARTIFACTS = {
     'net.forbric:forbric-kernel': KERNEL / 'build/libs/forbric-kernel-0.1.0-SNAPSHOT.jar',
-    'net.forbric:patched-mc-merged': STAGED / 'merged-base/patched-mc-merged-26.2.jar',
-    'net.forbric:forge-runtime': (STAGED / 'merged-base/forge-runtime-interop.jar'
-                                if (STAGED / 'merged-base/forge-runtime-interop.jar').is_file()
-                                else STAGED / 'forge-runtime/forge-runtime.jar'),
-    'net.forbric:neoforge-runtime': STAGED / 'neoforge-runtime/neoforge-runtime.jar',
+    BASE: STAGED / 'neoforge-patched/patched-mc-neoforge-26.2.jar',
+    NEO_RUNTIME: STAGED / 'neoforge-runtime/neoforge-runtime.jar',
     # How vanilla compiled each class, measured against the base above: the kernel's FABRIC native references
     # (--nativeReference). tools/dev.py prepare stages it; local_vanilla_reference builds it for a stage that predates it.
-    'net.forbric:vanilla-reference': STAGED / 'vanilla-reference/vanilla-reference-26.2.jar',
+    VANILLA_REFERENCE: STAGED / 'vanilla-reference/vanilla-reference-26.2.jar',
 }
-VANILLA_REFERENCE = 'net.forbric:vanilla-reference'
+# The installer's pins, read from its source as tools/test_pins.py reads them, so the versions a rewritten profile names
+# are the ones the installer of this tree writes and the two cannot drift apart.
+PINS_JAVA = KERNEL.parent / 'forbric-kernel-installer/src/main/java/net/forbric/installer/kernel/Pins.java'
+LIBRARY_DIRECTORY = '${library_directory}/'
 
 
 def ps(value):
@@ -170,6 +179,102 @@ def clean_command(instance):
                      ' -Force -Recurse }' for child in CLEAN)
 
 
+def java_pin(name, pins_java=None):
+    """A pin from the installer's Pins.java (static final String NAME = "...")."""
+    pins_java = Path(pins_java or PINS_JAVA)
+    found = re.search(r'static final String ' + name + r' = "([^"]+)"', pins_java.read_text(encoding='utf-8'))
+    if not found:
+        raise ValueError(f'{pins_java} has no pin {name}')
+    return found.group(1)
+
+
+def artifact_versions(pins_java=None):
+    """The versions the installer gives each game artifact (Installer.artifactVersion): NeoForge's patched game and the
+    vanilla reference measured against it are <minecraft>-<neoforge>, the carrier is <neoforge>."""
+    mc, neo = java_pin('MINECRAFT', pins_java), java_pin('NEOFORGE', pins_java)
+    return {BASE: f'{mc}-{neo}', NEO_RUNTIME: neo, VANILLA_REFERENCE: f'{mc}-{neo}'}
+
+
+def library_path(coordinate, version):
+    """Where a launcher keeps group:name:version under libraries/ (Util.coordinateToPath)."""
+    group, name = coordinate.split(':')
+    return f"{group.replace('.', '/')}/{name}/{version}/{name}-{version}.jar"
+
+
+def with_genuine_base(profile, versions=None):
+    """Rewrite a profile an older installer wrote to the game the new installer stages: NeoForge's patched game and its
+    one carrier, without the merged base and the MinecraftForge carrier.
+
+    Libraries: the net.forbric:patched-mc-merged entry becomes net.forbric:patched-mc-neoforge (in its place on the
+    classpath), net.forbric:forge-runtime goes, and the carrier and the vanilla reference are named at the versions the
+    installer of this tree gives them (artifact_versions); every other library is left as it was. Game arguments: exactly
+    the installer's --gameJar <base> --runtimeJar <carrier> --libraryPath <unchanged> --nativeReference <sidecar>, one
+    value per flag; any other argument is kept after them. Without this, resolve_artifacts refuses every remote whose
+    profile came from an older installer (no patched-mc-neoforge entry), and a kernel launched on the old arguments
+    refuses the merged game anyway.
+
+    Returns what changed, empty for a profile that already matches."""
+    versions = versions or artifact_versions()
+    wanted = {coordinate: f'{coordinate}:{version}' for coordinate, version in versions.items()}
+
+    def entry(coordinate):
+        return dict(name=wanted[coordinate], downloads=dict(artifact=dict(
+            path=library_path(coordinate, versions[coordinate]), sha1='', size=0)))
+
+    def coordinate_of(library):
+        return ':'.join(library.get('name', '').split(':')[:2])
+
+    changes, libraries, placed = [], [], set()
+    for library in profile.get('libraries', []):
+        coordinate = coordinate_of(library)
+        if coordinate in RETIRED_ARTIFACTS or (coordinate in wanted and library.get('name') != wanted[coordinate]):
+            changes.append('drop library ' + library.get('name', ''))
+            replacement = RETIRED_ARTIFACTS.get(coordinate, coordinate if coordinate in wanted else None)
+            if replacement and replacement not in placed:
+                libraries.append(entry(replacement))
+                placed.add(replacement)
+                changes.append('library ' + wanted[replacement])
+            continue
+        if coordinate in wanted:
+            if coordinate in placed:
+                changes.append('drop duplicate library ' + library.get('name', ''))
+                continue
+            placed.add(coordinate)
+        libraries.append(library)
+    for coordinate in (BASE, NEO_RUNTIME, VANILLA_REFERENCE):
+        if coordinate not in placed:
+            libraries.append(entry(coordinate))
+            changes.append('library ' + wanted[coordinate])
+    paths = {coordinate_of(library): library['downloads']['artifact']['path']
+             for library in libraries if coordinate_of(library) in wanted}
+
+    game = profile.get('arguments', {}).get('game', [])
+    flags = ('--gameJar', '--runtimeJar', '--libraryPath', '--nativeReference')
+    library_value, others, index = None, [], 0
+    while index < len(game):
+        argument = game[index]
+        if isinstance(argument, str) and argument in flags:
+            if index + 1 >= len(game):
+                raise ValueError('profile game argument ' + argument + ' has no value')
+            if argument == '--libraryPath':
+                library_value = game[index + 1]
+            index += 2
+            continue
+        others.append(argument)
+        index += 1
+    if library_value is None:
+        raise ValueError('profile has no --libraryPath game argument; reinstall it with the Forbric installer')
+    target = ['--gameJar', LIBRARY_DIRECTORY + paths[BASE], '--runtimeJar', LIBRARY_DIRECTORY + paths[NEO_RUNTIME],
+              '--libraryPath', library_value, '--nativeReference', LIBRARY_DIRECTORY + paths[VANILLA_REFERENCE]] + others
+    if changes or game != target:
+        profile['libraries'] = libraries
+        profile.setdefault('arguments', {})['game'] = target
+        if game != target:
+            changes.append('game arguments --gameJar ' + paths[BASE] + ' --runtimeJar ' + paths[NEO_RUNTIME]
+                           + ' --nativeReference ' + paths[VANILLA_REFERENCE])
+    return changes
+
+
 def with_native_reference(profile):
     """Give a profile an older installer wrote the vanilla reference it lacks: the library and its own game flag.
 
@@ -181,9 +286,9 @@ def with_native_reference(profile):
     libraries = profile.setdefault('libraries', [])
     entry = next((e for e in libraries if ':'.join(e.get('name', '').split(':')[:2]) == VANILLA_REFERENCE), None)
     if entry is None:
-        base = next((e for e in libraries if e.get('name', '').startswith('net.forbric:patched-mc-merged:')), None)
+        base = next((e for e in libraries if e.get('name', '').startswith(BASE + ':')), None)
         if base is None:
-            raise ValueError('profile has no net.forbric:patched-mc-merged library to measure a vanilla reference against')
+            raise ValueError('profile has no ' + BASE + ' library to measure a vanilla reference against')
         version = base['name'].split(':')[2]
         path = f'net/forbric/vanilla-reference/{version}/vanilla-reference-{version}.jar'
         entry = dict(name=f'{VANILLA_REFERENCE}:{version}', downloads=dict(artifact=dict(path=path, sha1='', size=0)))
@@ -209,7 +314,7 @@ def recorded_base_sha1(sidecar):
     return None
 
 
-def local_vanilla_reference(merged):
+def local_vanilla_reference(base):
     """The sidecar for the base being staged: the staged one while it records that base's SHA-1, else
     run/vanilla-reference-jar.sh's (which checks the same provenance, and builds one into build/ when nothing matches).
 
@@ -217,17 +322,17 @@ def local_vanilla_reference(merged):
     against, and handing that sidecar out with it silently costs the run its evidence for every class the two bases
     disagree on."""
     staged = ARTIFACTS[VANILLA_REFERENCE]
-    if not Path(merged).is_file():
+    if not Path(base).is_file():
         return staged
-    if staged.is_file() and recorded_base_sha1(staged) == hashlib.sha1(Path(merged).read_bytes()).hexdigest():
+    if staged.is_file() and recorded_base_sha1(staged) == hashlib.sha1(Path(base).read_bytes()).hexdigest():
         return staged
     try:
-        built = subprocess.check_output(['bash', str(KERNEL / 'run/vanilla-reference-jar.sh'), str(merged)], text=True,
+        built = subprocess.check_output(['bash', str(KERNEL / 'run/vanilla-reference-jar.sh'), str(base)], text=True,
                                         stderr=subprocess.PIPE)
     except subprocess.CalledProcessError as failed:
-        raise RuntimeError('could not build the vanilla reference for ' + str(merged) + ':\n' + (failed.stderr or '')[-2000:])
+        raise RuntimeError('could not build the vanilla reference for ' + str(base) + ':\n' + (failed.stderr or '')[-2000:])
     if not built.strip():
-        raise RuntimeError('run/vanilla-reference-jar.sh named no vanilla reference for ' + str(merged))
+        raise RuntimeError('run/vanilla-reference-jar.sh named no vanilla reference for ' + str(base))
     return Path(built.strip().splitlines()[-1])
 
 
@@ -671,16 +776,20 @@ def main():
     else:
         profile_path = args.version_json
     profile = json.loads(profile_path.read_text(encoding='utf-8-sig'))
+    # An older installer's profile first (merged base + MinecraftForge carrier -> NeoForge's patched game + its carrier),
+    # then the sidecar for a profile that still lacks it.
+    rewritten = with_genuine_base(profile)
     added = with_native_reference(profile)
-    if added and not args.dry_run:
+    if (rewritten or added) and not args.dry_run:
         profile_path.write_text(json.dumps(profile, ensure_ascii=False, indent=2) + '\n', encoding='utf-8')
     if not args.dry_run and not any(item.startswith(VANILLA_REFERENCE + '=') for item in args.artifact):
-        merged = next((item.split('=', 1)[1] for item in args.artifact if item.startswith('net.forbric:patched-mc-merged=')),
-                      ARTIFACTS['net.forbric:patched-mc-merged'])
-        ARTIFACTS[VANILLA_REFERENCE] = local_vanilla_reference(merged)
+        base = next((item.split('=', 1)[1] for item in args.artifact if item.startswith(BASE + '=')), ARTIFACTS[BASE])
+        ARTIFACTS[VANILLA_REFERENCE] = local_vanilla_reference(base)
     entries = resolve_artifacts(profile, args.artifact)
     if args.dry_run:
         print('STOP_BY_PID ' + stop_command(args.instance))
+        if rewritten:
+            print('PROFILE_REWRITES ' + '; '.join(rewritten))
         if added:
             print('PROFILE_ADDS ' + '; '.join(added))
         print('CLEAN ' + json.dumps(CLEAN))

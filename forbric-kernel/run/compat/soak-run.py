@@ -394,15 +394,15 @@ def launch(args):
         embedded = [name for name in jar.namelist() if name.endswith('forbric-kernel-runtime.jar')]
         if len(embedded) != 1 or hashlib.sha256(jar.read(embedded[0])).hexdigest() != digest(runtime):
             raise ValueError('boot embedded runtime is missing or differs from frozen runtime jar')
-    merged = copy_frozen(Path(args.merged) if args.merged else staged / 'merged-base/patched-mc-merged-26.2.jar', frozen / 'merged.jar', records)
-    forge_source = Path(args.forge) if args.forge else staged / 'merged-base/forge-runtime-interop.jar'
-    if not forge_source.is_file(): forge_source = staged / 'forge-runtime/forge-runtime.jar'
-    forge = copy_frozen(forge_source, frozen / 'forge.jar', records)
+    # The game base (NeoForge's patched game) and its one carrier, as launch-kernel-client.sh launches them.
+    base_source = Path(args.base) if args.base else staged / 'neoforge-patched/patched-mc-neoforge-26.2.jar'
+    base = copy_frozen(base_source, frozen / 'base.jar', records)
     neo = copy_frozen(Path(args.neo) if args.neo else staged / 'neoforge-runtime/neoforge-runtime.jar', frozen / 'neo.jar', records)
     # The kernel's FABRIC native references (--nativeReference), handed over as on every other launch path and frozen
-    # with the rest: the sidecar recording this base. Without one the soak still runs, on the base's embedded index.
+    # with the rest: the sidecar recording this base. The base embeds no index, so without one the soak runs with no
+    # FABRIC references.
     reference_source = (Path(args.native_reference) if args.native_reference
-                        else vanilla_reference(kernel, Path(args.merged) if args.merged else staged / 'merged-base/patched-mc-merged-26.2.jar', mc))
+                        else vanilla_reference(kernel, base_source, mc))
     native_reference = copy_frozen(reference_source, frozen / 'vanilla-reference.jar', records) if reference_source else None
     parent = [boot]
     cp_raw = Path(args.boot_classpath).read_text().strip().split(os.pathsep)
@@ -430,10 +430,10 @@ def launch(args):
     native_source = Path(args.natives).resolve() if args.natives else mc / 'versions/26.2/26.2-natives'
     native_hashes = inventory(native_source)
     for name in native_hashes: copy_frozen(native_source / name, frozen / 'natives' / name, records)
-    with zipfile.ZipFile(merged) as jar, zipfile.ZipFile(frozen / 'game-metadata.jar', 'w') as output:
+    with zipfile.ZipFile(base) as jar, zipfile.ZipFile(frozen / 'game-metadata.jar', 'w') as output:
         output.writestr('version.json', jar.read('version.json'))
     parent.append(frozen / 'game-metadata.jar')
-    records.append({'source': 'generated from frozen merged.jar/version.json', 'snapshot': str(parent[-1]), 'sha256': digest(parent[-1]), 'size': parent[-1].stat().st_size})
+    records.append({'source': 'generated from frozen base.jar/version.json', 'snapshot': str(parent[-1]), 'sha256': digest(parent[-1]), 'size': parent[-1].stat().st_size})
     asset_index = mc / 'assets/indexes' / (version['assetIndex']['id'] + '.json')
     copy_frozen(asset_index, frozen / 'asset-index.json', records)
     # The launcher never regenerates these binaries after this manifest has been sealed.
@@ -456,8 +456,8 @@ def launch(args):
     if getattr(args, 'heap_dump_on_retention', False) or not args.control: properties['forbric.soak.heapDumpOnRetention'] = 'true'
     command = [java] + (['-XstartOnFirstThread'] if platform.system() == 'Darwin' else []) + ['-Xmx' + args.heap]
     command += [f'-D{key}={value}' for key, value in properties.items()]
-    command += ['-cp', os.pathsep.join(map(str, parent)), 'net.forbric.kernel.boot.KernelClientLaunch', '--gameJar', str(merged),
-                '--runtimeJar', str(forge), '--runtimeJar', str(neo), '--libraryPath', os.pathsep.join(map(str, game_libraries)),
+    command += ['-cp', os.pathsep.join(map(str, parent)), 'net.forbric.kernel.boot.KernelClientLaunch', '--gameJar', str(base),
+                '--runtimeJar', str(neo), '--libraryPath', os.pathsep.join(map(str, game_libraries)),
                 # Its own flag, never a second --gameJar: the resources-only sidecar is not a game.
                 *(['--nativeReference', str(native_reference)] if native_reference else []),
                 '--', '--version', version['id'] + '-forbric-kernel', '--gameDir', str(run), '--assetsDir', str(mc / 'assets'),
@@ -505,7 +505,7 @@ def launch(args):
         heap_dump = evidence / 'retained-after-native-release.hprof'
         mod_owned = None
         if heap_dump.is_file() and any(server['alive'] for server in result.get('oldServersAfterNativeRelease', result['oldServers'])):
-            mod_owned = mod_owned_retention(java, heap_dump, run / 'mods', [merged, forge, neo], evidence / 'retention-paths.txt')
+            mod_owned = mod_owned_retention(java, heap_dump, run / 'mods', [base, neo], evidence / 'retention-paths.txt')
             validation['modOwnedAnalysis'] = mod_owned
         validation.update(validate_trace(rows, result, nonce, args.seconds, args.control, elapsed, args.sessions, native_roots, mod_owned))
     except RetentionReview as review:
@@ -532,7 +532,8 @@ def main():
     parser.add_argument('--boot-classpath', required=True)
     parser.add_argument('--minecraft', default=str(Path.home() / 'Library/Application Support/minecraft'))
     parser.add_argument('--world-source')
-    parser.add_argument('--merged'); parser.add_argument('--forge'); parser.add_argument('--neo'); parser.add_argument('--natives')
+    parser.add_argument('--base', help="the game jar, NeoForge's patched game (default: the stage's neoforge-patched/)")
+    parser.add_argument('--neo'); parser.add_argument('--natives')
     parser.add_argument('--native-reference', help='the vanilla-reference sidecar for the base (default: run/vanilla-reference-jar.sh)')
     parser.add_argument('--seconds', type=int, default=7200)
     parser.add_argument('--control', action='store_true')

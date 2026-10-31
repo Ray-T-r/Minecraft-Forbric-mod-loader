@@ -131,9 +131,9 @@ step() { printf '\n[kernel] ==== %s ====\n' "$1"; }
 
 # The kernel's one boot line saying where FABRIC's native references come from (NativeReferenceSources.describe). Every
 # launch path hands it the vanilla-reference sidecar (--nativeReference): launch-kernel-{client,server}.sh through
-# run/vanilla-reference-jar.sh, an installed profile through its own library. On the merged base a launch without it
-# still works -- the base embeds the same index -- so only this line tells a launch path that dropped the flag from one
-# that kept it, and only the sidecar exists on a base that is not the merge. gate-m1 and gate-m17 assert it.
+# run/vanilla-reference-jar.sh, an installed profile through its own library. The base (NeoForge's patched game) embeds
+# no index, so the sidecar is the only FABRIC source: a launch without it still boots, with no FABRIC references, and
+# only this line tells a launch path that dropped the flag from one that kept it. gate-m1 and gate-m17 assert it.
 NATIVE_REFS_FROM_SIDECAR='Forbric/Mixin\] native references: FABRIC from the vanilla-reference sidecar'
 
 # Is there anything here to read at all? A log the run never wrote, or wrote empty, is not evidence either way,
@@ -204,6 +204,11 @@ check_exactly() {
   else printf '[kernel] FAIL %s (want exactly %s got %s)\n' "$what" "$want" "${got:-0}"; FAIL=1; fi
 }
 
+# RETIRED WITH THE MERGED BASE, kept only until gates m4, m42, m48 and m49 drop their off-phase expectations (Stage 4
+# C5, D3): merged_calls, merged_delivers and MERGED_NATIVE read $RUN_OLD/merged-base/, which a genuine stage does not
+# have (merged_delivers then FAILs the gate), and a gate that sets MERGED for them makes launch-kernel-*.sh refuse to
+# start (exit 2). Do not add callers.
+#
 # merged_calls <class> <method> <ref>... — does the merged base this run boots make one of these calls (or
 # constructions) in <class>.<method>, any overload, or in a lambda that method captures? 0 yes, 1 no, 2 unreadable.
 # Reads $MERGED, else the staged base. Grammar and the reason only CAPTURED lambdas count are in merged_calls.py: a

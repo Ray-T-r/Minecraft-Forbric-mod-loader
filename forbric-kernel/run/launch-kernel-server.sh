@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
 # Boot the MC 26.2 DEDICATED SERVER through the SOVEREIGN KERNEL (no Knot, no genuine FML/FancyModLoader lifecycle)
-# from the merged 3-ABI base, with the Forge + NeoForge runtime jars as PASSIVE ABI carriers. M1 goal: reach Done.
+# from NeoForge's patched game, with the NeoForge runtime jar as the PASSIVE ABI carrier. M1 goal: reach Done.
 #
 # Parent -cp: kernel boot jar + kernel deps + MC 26.2 libraries (parent-loaded).
-# Owned (transform-loaded by ForbricClassLoader): merged base + forge-runtime + neoforge-runtime.
+# Owned (transform-loaded by ForbricClassLoader): the base + neoforge-runtime.
 #
 # Usage: [RUNDIR=…] [FORBRIC_JVM=…] ./launch-kernel-server.sh [extra game args]
 set -uo pipefail
@@ -11,25 +11,29 @@ set -uo pipefail
 MC="${MC_DIR:-$HOME/Library/Application Support/minecraft}"
 HERE="$(cd "$(dirname "$0")" && pwd)"
 KERNEL="$(cd "$HERE/.." && pwd)"
+# MERGED and FORGE_RT named the merged base and the MinecraftForge carrier, both retired with MinecraftForge (Stage 4).
+# A caller still setting them means a base or carrier it expects to be launched, and ignoring it would launch the staged
+# base instead and report on that, so stop. The game jar is BASE; there is no second carrier.
+if [ -n "${MERGED:-}${FORGE_RT:-}" ]; then
+  echo "[kernel-launch] FATAL: MERGED/FORGE_RT are retired: the game jar is BASE (NeoForge's patched game) and NEO_RT" \
+    "the one carrier; there is no MinecraftForge carrier any more (MERGED=${MERGED:-} FORGE_RT=${FORGE_RT:-})" >&2
+  exit 2
+fi
 # Same FORBRIC_OLD knob lib.sh uses: one variable points a second working tree at the staged artifacts
-# instead of needing MERGED, FORGE_RT and NEO_RT set individually.
+# instead of needing BASE and NEO_RT set individually.
 OLD="$(cd "${FORBRIC_OLD:-$KERNEL/../forbric-loader}" && pwd)"
 STAGE="$OLD/run"
 
-MERGED="${MERGED:-$STAGE/merged-base/patched-mc-merged-26.2.jar}"
-FORGE_RT="${FORGE_RT:-$STAGE/merged-base/forge-runtime-interop.jar}"
-[ -f "$FORGE_RT" ] || FORGE_RT="$STAGE/forge-runtime/forge-runtime.jar"
-# The MinecraftForge carrier is owned only while it is staged; without it the NeoForge carrier is the only one.
-[ -f "$FORGE_RT" ] || FORGE_RT=""
+BASE="${BASE:-$STAGE/neoforge-patched/patched-mc-neoforge-26.2.jar}"
 NEO_RT="${NEO_RT:-$STAGE/neoforge-runtime/neoforge-runtime.jar}"
 # The vanilla reference the kernel reads beside the base (--nativeReference): staged by prepare, else built once into
-# build/ by run/vanilla-reference-jar.sh. Without one the kernel says so in its "native references:" line and the merged
-# base's own embedded index answers; NATIVE_REF=none launches without it on purpose.
+# build/ by run/vanilla-reference-jar.sh. The base embeds no index of its own, so without one the kernel has no FABRIC
+# references and says so in its "native references:" line; NATIVE_REF=none launches without it on purpose.
 NATIVE_REF="${NATIVE_REF:-}"
 RUNDIR="${RUNDIR:-$KERNEL/run/server-kernel}"
 mkdir -p "$RUNDIR"
 
-[ -f "$MERGED" ] || { echo "merged base not found: $MERGED (run $STAGE/build-merged-base.sh)" >&2; exit 2; }
+[ -f "$BASE" ] || { echo "game base not found: $BASE (run python3 tools/dev.py prepare)" >&2; exit 2; }
 
 # EULA (dedicated server refuses to start otherwise). Kernel testing only — the user has accepted MC's EULA.
 [ -f "$RUNDIR/eula.txt" ] || echo "eula=true" > "$RUNDIR/eula.txt"
@@ -68,27 +72,28 @@ JLINE="$(find "$MC/libraries/org/jline" -name 'jline-*-3.25.1.jar' 2>/dev/null |
 
 # Game root metadata (version.json) on the PARENT -cp, as a resources-only jar. Mods that ask
 # getSystemClassLoader() for it — CustomSkinLoader's bootstrap picks its bytecode patch variant by the protocol
-# version it finds there — get null under Forbric otherwise, because the merged base belongs to
+# version it finds there — get null under Forbric otherwise, because the base belongs to
 # ForbricClassLoader. See run/game-metadata-jar.sh for why this must never carry class files.
-META_JAR="$("$HERE/game-metadata-jar.sh" "$MERGED" 2>/dev/null)" || META_JAR=""
+META_JAR="$("$HERE/game-metadata-jar.sh" "$BASE" 2>/dev/null)" || META_JAR=""
 if [ -z "$NATIVE_REF" ]; then
   # Exit 6 is a refusal (an explicitly named sidecar that records another base): stop rather than launch with none,
-  # which on a base without an embedded index would cost every FABRIC reference, not only the ones it cannot verify.
-  NATIVE_REF="$(MC_DIR="$MC" "$HERE/vanilla-reference-jar.sh" "$MERGED")" || { rc=$?; [ "$rc" = 6 ] && exit 6; NATIVE_REF=""; }
+  # which on a base without an embedded index (this one) would cost every FABRIC reference, not only the ones it
+  # cannot verify.
+  NATIVE_REF="$(MC_DIR="$MC" "$HERE/vanilla-reference-jar.sh" "$BASE")" || { rc=$?; [ "$rc" = 6 ] && exit 6; NATIVE_REF=""; }
 fi
 [ "$NATIVE_REF" = none ] && NATIVE_REF=""
 CP="$BOOT_JAR:$BOOT_DEPS:$VANILLA_CP${JLINE:+:$JLINE}${META_JAR:+:$META_JAR}"
 
-# Guest mixins are written against VANILLA bytecode; the merged base is vanilla+Forge+NeoForge byte-merged, so an
+# Guest Fabric mixins are written against VANILLA bytecode; the base is vanilla patched by NeoForge, so an
 # injection anchor a mixin expects may have moved. The KERNEL now relaxes EVERY discovered guest mod's mixin
 # configs by default (ForbricMixinService.setGuestConfigs), turning such a failure into a soft skip instead of a
 # fatal MixinApplyError — no launcher-side glob needed. Add more with -Dforbric.relaxMixinOverwrites, or get
 # strict Mixin behaviour back for debugging with -Dforbric.relaxGuestMixins=off.
 
 echo "[kernel-launch] rundir=$RUNDIR"
-echo "[kernel-launch] merged base = $MERGED"
+echo "[kernel-launch] base = $BASE"
 echo "[kernel-launch] vanilla reference = ${NATIVE_REF:-none}"
-echo "[kernel-launch] owned carriers: ${FORGE_RT:+$(basename "$FORGE_RT"), }$(basename "$NEO_RT")"
+echo "[kernel-launch] owned carrier: $(basename "$NEO_RT")"
 cd "$RUNDIR"
 
 # The MC libraries go BOTH on the parent -cp and to the kernel as owned jars (--libraryPath): mods mixin into
@@ -97,6 +102,6 @@ cd "$RUNDIR"
 # Developer runs use strict compatibility decisions; installed profiles retain the product default (ask).
 exec java -Djava.awt.headless=true -Dforbric.compatibilityPolicy="${FORBRIC_COMPAT_POLICY:-strict}" ${FORBRIC_JVM:-} \
   -cp "$CP" net.forbric.kernel.boot.KernelServerLaunch \
-  --gameJar "$MERGED" ${FORGE_RT:+--runtimeJar "$FORGE_RT"} --runtimeJar "$NEO_RT" ${NATIVE_REF:+--nativeReference "$NATIVE_REF"} \
+  --gameJar "$BASE" --runtimeJar "$NEO_RT" ${NATIVE_REF:+--nativeReference "$NATIVE_REF"} \
   --libraryPath "$VANILLA_CP${JLINE:+:$JLINE}" \
   -- --gameDir "$RUNDIR" --nogui "$@"

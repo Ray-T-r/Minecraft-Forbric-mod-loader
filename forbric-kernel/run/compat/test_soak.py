@@ -251,19 +251,20 @@ class SoakVerifierTest(unittest.TestCase):
                 return path
             runtime=put(kernel/'build/libs/forbric-kernel-runtime-0.1.0-SNAPSHOT.jar')
             jar(kernel/'build/libs/forbric-kernel-0.1.0-SNAPSHOT.jar',{'bundled/forbric-kernel-runtime.jar':runtime.read_bytes()})
-            merged=jar(staged/'merged-base/patched-mc-merged-26.2.jar',{'version.json':'{}'})
-            put(staged/'merged-base/forge-runtime-interop.jar');put(staged/'neoforge-runtime/neoforge-runtime.jar')
+            base=jar(staged/'neoforge-patched/patched-mc-neoforge-26.2.jar',{'version.json':'{}'})
+            put(staged/'neoforge-runtime/neoforge-runtime.jar')
             put(pack/'saves/ForbricTest/level.dat');put(pack/'mods/probe.jar');put(pack/'options.txt')
             metadata={'id':'26.2','assetIndex':{'id':'test'},'libraries':[{'name':'group:test:1','downloads':{'artifact':{'path':'test.jar'}}}]}
             put(mc/'versions/26.2/26.2.json',json.dumps(metadata).encode());put(mc/'libraries/test.jar');put(mc/'assets/indexes/test.json',b'{}');put(mc/'versions/26.2/26.2-natives/probe.dylib')
             cp=put(root/'boot-classpath.txt',str(put(root/'dependency.jar')).encode())
-            args=argparse.Namespace(kernel=str(kernel),staged=str(staged),fixture=str(pack),minecraft=str(mc),world_source=None,merged=str(merged),forge=None,neo=None,natives=None,boot_classpath=str(cp),seconds=1,control=True,sessions=2,dwell_ticks=20,between_seconds=0,settle_seconds=0,timeout=60,policy='strict',heap='1G',java='unused-test-java',native_reference=None)
+            args=argparse.Namespace(kernel=str(kernel),staged=str(staged),fixture=str(pack),minecraft=str(mc),world_source=None,base=str(base),neo=None,natives=None,boot_classpath=str(cp),seconds=1,control=True,sessions=2,dwell_ticks=20,between_seconds=0,settle_seconds=0,timeout=60,policy='strict',heap='1G',java='unused-test-java',native_reference=None)
             source={'root':str(root),'commit':'test','sha256':'source-content','files':{},'dirty':False}
-            manifests=[]
+            manifests=[];commands=[]
             class Child:
                 pid=123
                 returncode=0
                 def __init__(self,command,cwd,**kwargs):
+                    commands.append(command)
                     evidence=cwd/'evidence';manifest=json.loads((evidence/'manifest.json').read_text());manifests.append(manifest)
                     # What the kernel's Caught does in the real JVM: append a failure site to the file it was handed.
                     with open(kwargs['env']['FORBRIC_CAUGHT_FILE'],'a') as sink:sink.write('FAILURE\tWARN\tnet.forbric.Probe.site:1\t[Forbric/Probe] injected\tjava.lang.IllegalStateException\n')
@@ -278,6 +279,12 @@ class SoakVerifierTest(unittest.TestCase):
             with patch.object(soak,'source_record',return_value=source),patch.object(soak,'vanilla_reference',return_value=None),patch.object(soak.subprocess,'Popen',Child),patch.object(soak,'wait_for_client',return_value=0),patch.object(soak.time,'monotonic',side_effect=[0,24]),patch.dict(soak.os.environ,{'FORBRIC_CAUGHT_FILE':str(gate)}):
                 self.assertEqual(0,soak.launch(args))
             self.assertEqual(source,manifests[0]['source'])
+            # NeoForge's patched game, frozen, and its one carrier: no MinecraftForge carrier is owned any more.
+            command=commands[0]
+            self.assertEqual(1,command.count('--gameJar'));self.assertEqual(1,command.count('--runtimeJar'))
+            self.assertEqual('base.jar',Path(command[command.index('--gameJar')+1]).name)
+            self.assertEqual('neo.jar',Path(command[command.index('--runtimeJar')+1]).name)
+            self.assertIn('generated from frozen base.jar/version.json',[record['source'] for record in manifests[0]['artifacts']])
             acceptance=json.loads((kernel/'build/verification/m34-soak/last-control.json').read_text())['acceptance']
             self.assertFalse(acceptance['releaseAccepted'])
             # The client's failure is in the run's evidence AND in the gate's file, which the gate's CAUGHT line reports.

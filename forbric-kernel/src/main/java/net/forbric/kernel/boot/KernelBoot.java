@@ -192,7 +192,7 @@ public final class KernelBoot {
 		}
 
 		if (owned.isEmpty()) {
-			System.err.println("forbric-kernel: no --gameJar given (need the merged base jar)");
+			System.err.println("forbric-kernel: no --gameJar given (need NeoForge's patched game jar)");
 			System.exit(2);
 			return;
 		}
@@ -1190,10 +1190,12 @@ public final class KernelBoot {
 		Class<?> mainClass = Class.forName(side.entryClass, false, loader);
 		if (lifecycleHook.missedRequiredExcision()) {
 			throw new IllegalStateException("kernel refusing to boot: the genuine " + side.name().toLowerCase()
-					+ "-loading lifecycle trigger was NOT redirected from the merged base (its shape changed). "
+					+ "-loading lifecycle trigger was NOT redirected from the game base (its shape changed). "
 					+ "See LifecycleHookInjector.");
 		}
-		ForbricLog.info("[Forbric/Boot] merged base %s entry loaded through kernel loader; lifecycle redirected to "
+		// gate-m17 greps this line for "the installed profile opened the base"; the wording follows the base (NeoForge's
+		// patched game since Forbric stopped merging MinecraftForge in), so the gate's pattern follows it too.
+		ForbricLog.info("[Forbric/Boot] game base %s entry loaded through kernel loader; lifecycle redirected to "
 				+ "the kernel — handing to vanilla boot", side.name().toLowerCase());
 
 		Method main = mainClass.getMethod("main", String[].class);
