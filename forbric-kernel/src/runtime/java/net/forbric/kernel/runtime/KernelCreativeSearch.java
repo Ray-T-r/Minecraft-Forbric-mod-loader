@@ -73,30 +73,13 @@ public final class KernelCreativeSearch {
 	/**
 	 * {@code SessionSearchTrees.getSearchTree(Key)}: a tag key's tag tree, any other key's name tree. A key nothing was
 	 * built under answers the empty tree — as merged it joined a default the merged constructor left incomplete.
-	 *
-	 * <p>The caller of this method is a MinecraftForge mod, and its key may come from MinecraftForge's own registry.
-	 * For the search tab both registries hand out vanilla's shared constants, but for a mod's searchable tab each
-	 * makes its own {@code Key}, so a MinecraftForge key is first turned into NeoForge's key for the same tab — the
-	 * one the trees are filed under. Without that, the tab's tree is there and the mod is told it is empty.
+	 * (MinecraftForge's own registry handed out keys of its own for a mod's searchable tab, which used to be turned into
+	 * NeoForge's here; Forbric loads no MinecraftForge mod any more, so every key a caller holds is NeoForge's.)
 	 */
 	public static SearchTree<ItemStack> tree(SessionSearchTrees trees, SessionSearchTrees.Key key) {
-		SessionSearchTrees.Key filed = neoForgeKeyFor(key);
-		return CreativeModeTabSearchRegistry.getTagSearchKeys().containsValue(filed)
-				? trees.creativeTagSearch(filed)
-				: trees.creativeNameSearch(filed);
-	}
-
-	/** NeoForge's key for the tab MinecraftForge's {@code key} stands for; {@code key} itself when it is not one. */
-	private static SessionSearchTrees.Key neoForgeKeyFor(SessionSearchTrees.Key key) {
-		for (Map.Entry<CreativeModeTab, SessionSearchTrees.Key> tab
-				: net.minecraftforge.client.CreativeModeTabSearchRegistry.getTagSearchKeys().entrySet()) {
-			if (tab.getValue() == key) return CreativeModeTabSearchRegistry.getTagSearchKey(tab.getKey());
-		}
-		for (Map.Entry<CreativeModeTab, SessionSearchTrees.Key> tab
-				: net.minecraftforge.client.CreativeModeTabSearchRegistry.getNameSearchKeys().entrySet()) {
-			if (tab.getValue() == key) return CreativeModeTabSearchRegistry.getNameSearchKey(tab.getKey());
-		}
-		return key;
+		return CreativeModeTabSearchRegistry.getTagSearchKeys().containsValue(key)
+				? trees.creativeTagSearch(key)
+				: trees.creativeNameSearch(key);
 	}
 
 	private static List<ItemStack> itemsOf(CreativeModeTab tab, List<ItemStack> searchTabItems) {

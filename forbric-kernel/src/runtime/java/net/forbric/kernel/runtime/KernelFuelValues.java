@@ -23,29 +23,18 @@ import net.forbric.kernel.util.ForbricLog;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.crafting.RecipeType;
 import net.minecraft.world.level.block.entity.FuelValues;
-import net.minecraftforge.event.ForgeEventFactory;
 import net.neoforged.neoforge.event.EventHooks;
 
 /**
- * Lets both ecosystems say how long something burns, instead of only the one that won the merge.
+ * Lets NeoForge say how long something burns where the merge kept only MinecraftForge's question.
  *
- * <h2>The shape, which is the other way round from the bridges</h2>
+ * <p>{@code FuelValues.burnDuration} on the merged base calls MinecraftForge's {@code getItemBurnTime} and nothing
+ * else, so NeoForge's {@code FurnaceFuelBurnTimeEvent} is never posted — and {@code balm}, in the test pack, subscribes
+ * to it. A listener cannot fix that: NeoForge's hook is a static call, not something to subscribe to. So the call site
+ * is redirected here (ForbricMergedBaseCompatTransformer) and NeoForge's hook answers it.
  *
- * <p>Every other seam in this package is NeoForge-won: its hook survives and MinecraftForge's is re-emitted
- * from a listener. This one is the reverse. {@code FuelValues.burnDuration} on the merged base calls
- * MinecraftForge's {@code getItemBurnTime} and nothing else, so NeoForge's {@code FurnaceFuelBurnTimeEvent} is
- * never posted — and {@code balm}, in the test pack, subscribes to it.
- *
- * <p>A listener cannot fix that direction: NeoForge's hook is a static call, not something to subscribe to. So
- * the call site is redirected here and both are asked, which is also why this lives beside the bridges rather
- * than among them.
- *
- * <h2>Chained, not both-from-the-same-start</h2>
- *
- * <p>MinecraftForge is asked first with the value the game computed, and NeoForge is asked with whatever
- * MinecraftForge returned. Asking both from the original and picking one would silently discard a mod's answer;
- * chaining means two mods from two ecosystems can each adjust a burn time, which is the whole premise of
- * running them together.
+ * <p>MinecraftForge's own hook used to be asked first and NeoForge chained on its answer; Forbric loads no
+ * MinecraftForge mod any more, so only NeoForge is asked, with the value the game computed.
  *
  * <p>NeoForge's hook takes the {@code FuelValues} the call site is inside, which is why the redirect pushes the
  * receiver: its four-argument shape cannot be reached from MinecraftForge's three-argument one.
@@ -57,30 +46,23 @@ public final class KernelFuelValues {
 	}
 
 	/**
-	 * Both ecosystems' burn-time hooks, in order.
+	 * NeoForge's burn-time hook, where the merged body asked MinecraftForge's.
 	 *
-	 * @param base what the game's own table says, before either ecosystem is consulted
+	 * @param base what the game's own table says, before NeoForge is consulted
 	 * @param fuel the {@code FuelValues} the call site is inside; NeoForge's hook requires it
 	 */
 	public static int burnDuration(ItemStack stack, int base, RecipeType<?> type, FuelValues fuel) {
-		int value = base;
 		try {
-			value = ForgeEventFactory.getItemBurnTime(stack, value, type);
-		} catch (Throwable t) {
-			Caught.warn(t, "[Forbric/Fuel] MinecraftForge's burn-time hook failed for %s — mods on that side cannot "
-					+ "change how long it burns", stack);
-		}
-		try {
-			value = EventHooks.getItemBurnTime(stack, value, type, fuel);
+			int value = EventHooks.getItemBurnTime(stack, base, type, fuel);
 			if (PROVED.compareAndSet(false, true)) {
-				ForbricLog.info("[Forbric/Fuel] both ecosystems now set burn times — the merged FuelValues asked "
-						+ "only MinecraftForge, so NeoForge's FurnaceFuelBurnTimeEvent was never posted");
+				ForbricLog.info("[Forbric/Fuel] NeoForge now sets burn times — the merged FuelValues asked only "
+						+ "MinecraftForge, so NeoForge's FurnaceFuelBurnTimeEvent was never posted");
 			}
+			return value;
 		} catch (Throwable t) {
-			Caught.warn(t, "[Forbric/Fuel] NeoForge's burn-time hook failed for %s — mods on that side cannot "
-					+ "change how long it burns", stack);
+			Caught.warn(t, "[Forbric/Fuel] NeoForge's burn-time hook failed for %s — mods cannot change how long it "
+					+ "burns", stack);
+			return base;
 		}
-		return value;
 	}
-
 }

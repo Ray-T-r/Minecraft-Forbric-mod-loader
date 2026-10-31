@@ -18,7 +18,6 @@ package net.forbric.kernel.transform;
 
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-import java.io.IOException;
 import java.io.InputStream;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -70,16 +69,6 @@ class MergedBaseNoUnwrittenDuplicateFieldTest {
 		List<String> dead = new ArrayList<>();
 		int scanned = 0;
 		try (ZipFile jar = new ZipFile(MERGED_BASE.toFile())) {
-			var views = new ModifiableDataViewsTransformer(path -> {
-				try {
-					ZipEntry local = jar.getEntry(path);
-					if (local != null) try (InputStream in = jar.getInputStream(local)) { return in.readAllBytes(); }
-					for (Path platform : List.of(TestFixtures.stagedRoot().resolve(TestFixtures.FORGE_CARRIER_JAR),TestFixtures.stagedRoot().resolve(TestFixtures.NEO_CARRIER_JAR))) {
-						try (ZipFile runtime = new ZipFile(platform.toFile())) { ZipEntry entry = runtime.getEntry(path); if(entry!=null)try(InputStream in=runtime.getInputStream(entry)){return in.readAllBytes();} }
-					}
-					return null;
-				} catch(IOException error) { throw new java.io.UncheckedIOException(error); }
-			});
 			for (ZipEntry entry : jar.stream().toList()) {
 				if (!entry.getName().endsWith(".class")) continue;
 				byte[] bytes;
@@ -88,8 +77,7 @@ class MergedBaseNoUnwrittenDuplicateFieldTest {
 				}
 				scanned++;
 				String binary = entry.getName().substring(0, entry.getName().length() - 6).replace('/', '.');
-				byte[] repaired = views.transform(binary, bytes, null);
-				repaired = new ForbricMergedBaseCompatTransformer().transform(binary, repaired, null);
+				byte[] repaired = new ForbricMergedBaseCompatTransformer().transform(binary, bytes, null);
 				repaired = new WidenedFieldTwinInjector().transform(binary, repaired, null);
 
 				ClassNode node = new ClassNode();

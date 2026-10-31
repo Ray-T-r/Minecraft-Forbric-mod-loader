@@ -96,7 +96,6 @@ public final class KernelRuntimeClasses {
 	static {
 		// Bytecode readers compose the two native part arrays without choosing an entity family.
 		CLASSES.put("net.forbric.kernel.runtime.KernelMultipartViews", new Entry(Origin.COMPILED, List.of()));
-		CLASSES.put("net.forbric.kernel.runtime.KernelModifiableDataViews", new Entry(Origin.COMPILED, List.of()));
 		// The mod-container factory: the whole IModInfo/IModFileInfo/IModFile/IConfigurable chain plus the
 		// ModContainer itself. Only this entry point is named from the boot side; the five classes behind it are
 		// reached through it, game-side, with the compiler checking every call. See KernelModContainerFactory.

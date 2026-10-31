@@ -383,26 +383,14 @@ class CreativeSearchTreesInjectorExecutionTest {
 		assertEquals(List.of("examplemod:stone_gear"), ids(screenSearch(loader, trees, "MOD", "gear", false)),
 				"a mod's own searchable tab is refreshed too, from its own contents");
 
-		// MinecraftForge's reader sees the same trees, and a key nothing was built under answers at once.
+		// MinecraftForge's reader (the merged getSearchTree) sees the same trees, and a key nothing was built under answers
+		// at once. (A MinecraftForge mod's own registry keys are no longer translated: no MinecraftForge mod is loaded.)
 		Object names = InjectorExecution.getStatic(loader.loadClass(TREES), "CREATIVE_NAMES");
 		Object tags = InjectorExecution.getStatic(loader.loadClass(TREES), "CREATIVE_TAGS");
 		assertEquals(List.of("minecraft:stone"),
 				ids((List<?>) InjectorExecution.invoke(InjectorExecution.invoke(trees, "getSearchTree", names), "search", "stone")));
 		assertEquals(List.of("minecraft:oak_planks"),
 				ids((List<?>) InjectorExecution.invoke(InjectorExecution.invoke(trees, "getSearchTree", tags), "search", "planks")));
-		// A MinecraftForge mod asks with the key ITS registry gave its tab, a different object from NeoForge's.
-		Object modTab = InjectorExecution.getStatic(loader.loadClass("net.minecraft.world.item.CreativeModeTabs"), "MOD");
-		Class<?> forge = loader.loadClass("net.minecraftforge.client.CreativeModeTabSearchRegistry");
-		Object forgeNames = InjectorExecution.invokeStatic(forge, "getNameSearchKey", modTab);
-		Object forgeTags = InjectorExecution.invokeStatic(forge, "getTagSearchKey", modTab);
-		assertNotSame(InjectorExecution.invokeStatic(loader.loadClass(NEO), "getNameSearchKey", modTab), forgeNames,
-				"premise: the two registries key a mod's tab differently");
-		assertEquals(List.of("examplemod:stone_gear"),
-				ids((List<?>) InjectorExecution.invoke(InjectorExecution.invoke(trees, "getSearchTree", forgeNames), "search", "gear")),
-				"MinecraftForge's key for a mod's tab reaches the tree built for it");
-		assertEquals(List.of("examplemod:stone_gear"),
-				ids((List<?>) InjectorExecution.invoke(InjectorExecution.invoke(trees, "getSearchTree", forgeTags), "search", "gears")),
-				"and so does its tag key");
 		Object unknown = InjectorExecution.construct(loader.loadClass(TREES + "$Key"));
 		Object empty = assertTimeoutPreemptively(Duration.ofSeconds(10), () -> InjectorExecution.invoke(trees, "getSearchTree", unknown),
 				"as merged this joined a future nothing ever completes");
