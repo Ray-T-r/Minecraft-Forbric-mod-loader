@@ -9,11 +9,8 @@ import hashlib, json, os, pathlib, subprocess, zipfile
 kernel, old, work = (pathlib.Path(os.environ[key]) for key in ('M37_KERNEL', 'M37_OLD', 'M37_WORK'))
 mc = pathlib.Path(os.environ.get('MC_DIR', pathlib.Path.home() / 'Library/Application Support/minecraft'))
 compile_game = pathlib.Path(os.environ.get('M37_COMPILE_GAME', old / 'run/neoforge-patched/patched-mc-neoforge-26.2.jar'))
-merged = pathlib.Path(os.environ.get('MERGED', old / 'run/merged-base/patched-mc-merged-26.2.jar'))
-forge = pathlib.Path(os.environ.get('FORGE_RT', old / 'run/merged-base/forge-runtime-interop.jar'))
-if not forge.is_file(): forge = old / 'run/forge-runtime/forge-runtime.jar'
-# Optional for a NeoForge canary: on the compile classpath when staged, left out (and recorded as null) when not.
-forge = [forge] if forge.is_file() else []
+# The game base the gate launches, with launch-kernel-server.sh's default (BASE): NeoForge's patched game.
+base = pathlib.Path(os.environ.get('BASE', old / 'run/neoforge-patched/patched-mc-neoforge-26.2.jar'))
 neo = pathlib.Path(os.environ.get('NEO_RT', old / 'run/neoforge-runtime/neoforge-runtime.jar'))
 libraries = []
 for entry in json.loads((mc / 'versions/26.2/26.2.json').read_text())['libraries']:
@@ -28,13 +25,10 @@ with zipfile.ZipFile(fapi) as archive:
         names=[name for name in archive.namelist() if name.startswith('META-INF/jars/'+prefix) and name.endswith('.jar')]
         if len(names)!=1: raise SystemExit('required actual Fabric module missing or ambiguous: '+prefix)
         target=modules/pathlib.PurePosixPath(names[0]).name;target.write_bytes(archive.read(names[0]));selected.append(target)
-classpath = [compile_game, *forge, neo, mixin, *selected, *libraries]
-for path in [*classpath, merged]:
+classpath = [compile_game, neo, mixin, *selected, *libraries]
+for path in [*classpath, base]:
     if not path.is_file(): raise SystemExit(f'M37 prerequisite absent: {path}')
 root = kernel / 'canary/entity-callbacks'
-# Without a MinecraftForge carrier only a canary whose own sources name none of it compiles: say so, not javac.
-if not forge and any('net.minecraftforge' in source.read_text(errors='replace') for source in root.rglob('*.java')):
-    raise SystemExit(f'M37 prerequisite absent: no MinecraftForge carrier is staged, and {root} still names net.minecraftforge')
 classes = work / 'classes'; classes.mkdir()
 subprocess.run(['javac', '-proc:none', '--release', '21', '-cp', os.pathsep.join(map(str, classpath)),
                 '-d', str(classes), *map(str, sorted((root / 'src').rglob('*.java')))], check=True)
@@ -46,6 +40,6 @@ with zipfile.ZipFile(jar, 'w', zipfile.ZIP_DEFLATED) as target:
 def record(path):
     path = path.resolve(); return {'path': str(path), 'sha256': hashlib.sha256(path.read_bytes()).hexdigest()}
 (output / 'm37-build-inputs.json').write_text(json.dumps({'mod': record(jar), 'compileGame': record(compile_game),
-    'compileClasspath': [record(path) for path in classpath], 'fabricApi': record(fapi), 'modules': [record(path) for path in selected], 'merged': record(merged), 'forge': record(forge[0]) if forge else None, 'neo': record(neo)}, indent=2) + '\n')
+    'compileClasspath': [record(path) for path in classpath], 'fabricApi': record(fapi), 'modules': [record(path) for path in selected], 'base': record(base), 'neo': record(neo)}, indent=2) + '\n')
 print('[M37Entity] built real entity callback fixture')
 PY
