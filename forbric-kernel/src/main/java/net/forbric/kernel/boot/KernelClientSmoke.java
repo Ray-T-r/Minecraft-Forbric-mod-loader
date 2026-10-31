@@ -134,6 +134,12 @@ public final class KernelClientSmoke {
 	public static final String ELYTRA = "forbric.clientSmokeElytra";
 	/** Altitude to drop from. Absolute, because the world keeps whatever the last run left behind. */
 	public static final String ELYTRA_ALTITUDE = "forbric.clientSmokeElytraAltitude";
+	/**
+	 * {@code off} withholds the tooltip probe's own NeoForge {@code ItemTooltipEvent} listener, so the line gate-m9 reads
+	 * for "a NeoForge mod can add a line to an item's tooltip" goes red: the control that shows the check measures the
+	 * listener, not the log.
+	 */
+	public static final String TOOLTIP_EVENT = "forbric.clientSmokeTooltipEvent";
 	/** Ticks to leave it open. Long enough for frames to be drawn, short enough not to move the disconnect. */
 	private static final int MODS_SCREEN_HOLD = 20;
 
@@ -2608,6 +2614,12 @@ public final class KernelClientSmoke {
 	 * One advanced tooltip, drawn the way the inventory screen draws it, for a damaged iron sword carrying lore: its
 	 * lore, attribute and durability lines come from NeoForge's appenders, with every installed mod's tooltip listeners
 	 * in the path. Keys are read from the components, not their text, so the client's language does not matter.
+	 *
+	 * <p>The probe is also a NeoForge mod for one tooltip: it adds a listener for NeoForge's {@code ItemTooltipEvent}
+	 * that appends one line to this sword's tooltip and counts how often it was asked, which is what a NeoForge mod that
+	 * adds a tooltip line (Architectury, RarityCore) relies on. Heard once and drawn once is the native answer: the game
+	 * posts the event itself from {@code getTooltipLines}; never heard is a body that does not post it, twice is a second
+	 * post beside the game's. {@code -Dforbric.clientSmokeTooltipEvent=off} withholds the listener.
 	 */
 	private static void probeTooltip(Object level, Object player) {
 		tooltipProbed = true;
@@ -2629,11 +2641,18 @@ public final class KernelClientSmoke {
 			Object context = contextCls.getMethod("of", Class.forName("net.minecraft.world.level.Level", false, cl)).invoke(null, level);
 			Class<?> flagCls = Class.forName("net.minecraft.world.item.TooltipFlag", false, cl);
 			Object advanced = flagCls.getField("ADVANCED").get(null);
+			String eventLine = "forbric-smoke-neoforge-tooltip-event";
+			int[] heard = new int[1];
+			boolean listening = !"off".equalsIgnoreCase(System.getProperty(TOOLTIP_EVENT, "on"));
+			if (listening) listenForTooltipEvent(cl, stack, componentCls.getMethod("literal", String.class).invoke(null, eventLine), heard);
 			java.util.List<?> lines = (java.util.List<?>) stackCls.getMethod("getTooltipLines", contextCls,
 					Class.forName("net.minecraft.world.entity.player.Player", false, cl), flagCls).invoke(stack, context, player, advanced);
 			boolean loreShown = false, durability = false, attributes = false;
+			int eventLines = 0;
 			for (Object drawn : lines) {
-				if (String.valueOf(componentCls.getMethod("getString").invoke(drawn)).contains("forbric-smoke-lore")) loreShown = true;
+				String text = String.valueOf(componentCls.getMethod("getString").invoke(drawn));
+				if (text.contains("forbric-smoke-lore")) loreShown = true;
+				if (text.equals(eventLine)) eventLines++;
 				Object contents = componentCls.getMethod("getContents").invoke(drawn);
 				if (!contents.getClass().getSimpleName().equals("TranslatableContents")) continue;
 				String key = String.valueOf(contents.getClass().getMethod("getKey").invoke(contents));
@@ -2642,9 +2661,34 @@ public final class KernelClientSmoke {
 			}
 			ForbricLog.info("[Forbric/ClientSmoke] advanced tooltip of a damaged iron sword with lore: %d line(s), lore %s, "
 					+ "attributes %s, durability %s", lines.size(), loreShown, attributes, durability);
+			ForbricLog.info("[Forbric/ClientSmoke] a NeoForge ItemTooltipEvent listener on that tooltip%s: heard %d time(s), "
+					+ "its line drawn %d time(s)", listening ? "" : " (withheld by -D" + TOOLTIP_EVENT + "=off)", heard[0], eventLines);
 		} catch (Throwable t) {
 			Caught.warn(t, "[Forbric/ClientSmoke] tooltip probe failed");
 		}
+	}
+
+	/**
+	 * Registers, on NeoForge's game bus, a listener for {@code ItemTooltipEvent} that adds {@code line} to the tooltip of
+	 * {@code stack} (that exact stack, so no other tooltip in the session changes) and counts the posts in {@code heard}.
+	 */
+	@SuppressWarnings("unchecked")
+	private static void listenForTooltipEvent(ClassLoader cl, Object stack, Object line, int[] heard) throws ReflectiveOperationException {
+		Class<?> eventCls = Class.forName("net.neoforged.neoforge.event.entity.player.ItemTooltipEvent", false, cl);
+		Class<?> busCls = Class.forName("net.neoforged.bus.api.IEventBus", false, cl);
+		Object bus = Class.forName("net.neoforged.neoforge.common.NeoForge", false, cl).getField("EVENT_BUS").get(null);
+		Method getStack = eventCls.getMethod("getItemStack");
+		Method getToolTip = eventCls.getMethod("getToolTip");
+		java.util.function.Consumer<Object> listener = event -> {
+			try {
+				if (getStack.invoke(event) != stack) return;
+				heard[0]++;
+				((java.util.List<Object>) getToolTip.invoke(event)).add(line);
+			} catch (ReflectiveOperationException e) {
+				throw new IllegalStateException(e);
+			}
+		};
+		busCls.getMethod("addListener", Class.class, java.util.function.Consumer.class).invoke(bus, eventCls, listener);
 	}
 
 	private static void probeHotbar(Object level) {
