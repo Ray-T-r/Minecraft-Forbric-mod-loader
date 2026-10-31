@@ -17,11 +17,11 @@
 /**
  * The reflective hooks that GUEST bytecode calls into.
  *
- * <p>Three classes, each the landing site of an {@code INVOKESTATIC} the kernel splices into someone else's class:
+ * <p>Two classes, each the landing site of an {@code INVOKESTATIC} the kernel splices into someone else's class:
  * {@link net.forbric.kernel.interop.PayloadInterop} for the custom-payload codec and dispatch split between
  * Fabric API, MinecraftForge and NeoForge; {@link net.forbric.kernel.interop.ClientShutdown} for the non-daemon
- * executors a session leaves behind; {@link net.forbric.kernel.interop.ForgeRuntimeInterop} for the
- * Forge/NeoForge {@code FluidType} ABI split.
+ * executors a session leaves behind. (A third, for the MinecraftForge/NeoForge {@code FluidType} ABI split, went with
+ * MinecraftForge.)
  *
  * <h2>Why they are boot-side, and why every parameter is {@code Object}</h2>
  *

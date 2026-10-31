@@ -39,7 +39,7 @@ import net.forbric.kernel.TestFixtures.Fixture;
 class RepairDriftCensusStagedTest {
 	private static final Path RUN = TestFixtures.stagedRoot();
 	private static final String KEY_MAPPING = "net.minecraft.client.KeyMapping";
-	private static final String LOOKUP_CLAIM = "forbric-merged-base-compat#addMissingForgeKeyMappingLookupInitializer";
+	private static final String LOOKUP_CLAIM = "forbric-merged-base-compat#routeKeyMappingClickToPopulatedLookup";
 
 	@TempDir Path temporary;
 
@@ -68,13 +68,13 @@ class RepairDriftCensusStagedTest {
 		byte[] real = RepairDriftCensus.bytesOf(jars, KEY_MAPPING);
 		assertNotNull(real, "the staged base carries KeyMapping");
 
-		// The candidate: one class in which MinecraftForge's KeyMapping.MAP already has an initializer, so the
-		// repair that adds one has nothing left to do. This is the shape of an upstream bump that fixes
+		// The candidate: one class whose click already reads the populated key lookup, so the repair that routes it
+		// there has nothing left to do. This is the shape of an upstream bump that fixes
 		// something the kernel was compensating for — which is a decline just as much as a break is.
 		Path candidate = temporary.resolve("candidate.jar");
 		try (OutputStream os = Files.newOutputStream(candidate); ZipOutputStream zos = new ZipOutputStream(os)) {
 			zos.putNextEntry(new ZipEntry("net/minecraft/client/KeyMapping.class"));
-			zos.write(withForgeLookupInitialised(real));
+			zos.write(withClickReadingTheLiveLookup(real));
 			zos.closeEntry();
 		}
 
@@ -88,15 +88,31 @@ class RepairDriftCensusStagedTest {
 				"the decline must name the claim, not just count one: " + drift.declined().get(0));
 	}
 
-	private static byte[] withForgeLookupInitialised(byte[] classBytes) {
+	/**
+	 * {@code KeyMapping} as an upstream that fixed the merge's {@code click} would ship it: every read of the Forge-side
+	 * {@code MAP} outside the initialisers already goes to NeoForge's lookup, which is the edit
+	 * routeKeyMappingClickToPopulatedLookup makes, so that repair has nothing left to do.
+	 */
+	private static byte[] withClickReadingTheLiveLookup(byte[] classBytes) {
+		String forgeLookup = "Lnet/minecraftforge/client/settings/KeyMappingLookup;";
+		String neoLookup = "Lnet/neoforged/neoforge/client/settings/KeyMappingLookup;";
 		ClassNode node = new ClassNode();
 		new ClassReader(classBytes).accept(node, 0);
-		MethodNode clinit = null;
-		for (MethodNode m : node.methods) if (m.name.equals("<clinit>")) clinit = m;
-		assertNotNull(clinit, "KeyMapping has a <clinit>");
-		clinit.instructions.insert(new FieldInsnNode(Opcodes.PUTSTATIC, "net/minecraft/client/KeyMapping", "MAP",
-				"Lnet/minecraftforge/client/settings/KeyMappingLookup;"));
-		clinit.instructions.insert(new InsnNode(Opcodes.ACONST_NULL));
+		int edited = 0;
+		for (MethodNode m : node.methods) {
+			if (m.name.equals("<init>") || m.name.equals("<clinit>")) continue;
+			for (org.objectweb.asm.tree.AbstractInsnNode insn : m.instructions) {
+				if (insn instanceof FieldInsnNode f && f.getOpcode() == Opcodes.GETSTATIC && f.name.equals("MAP") && f.desc.equals(forgeLookup)) {
+					f.desc = neoLookup;
+					edited++;
+				} else if (insn instanceof org.objectweb.asm.tree.MethodInsnNode c && c.name.equals("getAll")
+						&& c.owner.equals(forgeLookup.substring(1, forgeLookup.length() - 1))) {
+					c.owner = neoLookup.substring(1, neoLookup.length() - 1);
+					edited++;
+				}
+			}
+		}
+		assertTrue(edited > 0, "premise: the staged KeyMapping still reads the Forge-side MAP outside its initialisers");
 		ClassWriter writer = new ClassWriter(0);
 		node.accept(writer);
 		return writer.toByteArray();

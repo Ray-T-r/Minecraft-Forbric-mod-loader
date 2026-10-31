@@ -81,8 +81,7 @@ public final class DelegationPolicy {
 			// ModListRows plans, and the compatibility screens act on CompatibilityDecision's process-wide state. A
 			// second copy defined game-side would be a second answer, and a seam type both sides cannot share.
 			"net.forbric.kernel.ui.",
-			// The reflective interop hooks that GUEST bytecode calls into (PayloadInterop, ClientShutdown,
-			// ForgeRuntimeInterop). They name no game type — every game/ecosystem class they touch is reached
+			// The reflective interop hooks that GUEST bytecode calls into (PayloadInterop, ClientShutdown). They name no game type — every game/ecosystem class they touch is reached
 			// reflectively through the loader of the object handed to them — so they are boot-side like the rest
 			// of the kernel. Pinning them here is not cosmetic: each holds process-wide state keyed by ClassLoader
 			// (PayloadInterop.MIRRORED_LOADERS, FORGE_CHANNELS_DECLARED; ClientShutdown's executor bookkeeping),

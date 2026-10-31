@@ -76,29 +76,6 @@ class MergedBaseInteropAdoptionTest {
 	}
 
 	/**
-	 * The Forge {@code getFluidType()} bridge the merge dropped is re-added pointing at a kernel method — the one
-	 * hook that is written by the kernel rather than inherited from the base, so nothing else would catch a rename.
-	 */
-	@Test
-	void theReAddedForgeFluidTypeBridgeResolves() throws Exception {
-		TestFixtures.requireFile(Fixture.STAGED, MERGED_BASE, "staged merged base absent — skipping real-bytecode check");
-
-		String fluid = null;
-		for (String entry : entriesUnder("net/minecraft/world/level/material/")) {
-			if (contains(readClass(entry), "net/neoforged/neoforge/common/extensions/IFluidExtension")) {
-				byte[] out = new ForbricMergedBaseCompatTransformer()
-						.transform(entry.substring(0, entry.length() - 6).replace('/', '.'), readClass(entry), null);
-				if (containsInterop(out)) {
-					fluid = entry;
-					InteropHookAssertions.assertEveryInteropCallResolves(out);
-					break;
-				}
-			}
-		}
-		assertTrue(fluid != null, "content drift: no merged fluid needed the Forge bridge in this base");
-	}
-
-	/**
 	 * A legacy reference in a shape the adoption does not rewrite is REPORTED, not swallowed.
 	 *
 	 * <p>The builder only ever emits a method owner, so the rewrite only walks method owners. If it ever emits a

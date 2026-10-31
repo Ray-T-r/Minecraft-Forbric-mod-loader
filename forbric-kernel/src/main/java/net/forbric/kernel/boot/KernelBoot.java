@@ -505,8 +505,7 @@ public final class KernelBoot {
 		// merged base keeps divergent-pipeline lambda twins whose invokedynamic bootstrap handle disagrees with the
 		// surviving lambda's static-ness (e.g. PrepareSpawnTask$Ready: a REF_invokeStatic handle on lambda$spawn$1
 		// that merged in as an INSTANCE method, its static twin renamed lambda$spawn$2) → IncompatibleClassChangeError
-		// when the player spawns. Also re-adds the MinecraftForge getFluidType() bridge the NeoForge-won Fluid classes
-		// dropped (the Forge/Neo FluidType ABI split).
+		// when the player spawns.
 		// With a class resolver: one of its repairs has to read the superclass chain to tell a stub that bypasses
 		// a real implementation from one that bypasses nothing. Reads a RESOURCE rather than loading a class, for
 		// the same reason MergedBaseFrameRecomputer does — loading one here would define it before the chain that
@@ -895,7 +894,7 @@ public final class KernelBoot {
 		// first time during shutdown.
 		//
 		// The exit hook is not the only one. Every hook the chain splices into the game is read from the kernel jar at
-		// its first use, and gate M22 measured two more after the jar was truncated: ForgeRuntimeInterop at the first
+		// its first use, and gate M22 measured two more after the jar was truncated: an interop hook at the first
 		// lava flow (a server crash report) and KernelRegistryRevert on leaving a world. So the whole jar is defined
 		// now, while it is readable; the exit hook is still initialized by name below, as before.
 		KernelJarPreload.run(KernelBoot.class);

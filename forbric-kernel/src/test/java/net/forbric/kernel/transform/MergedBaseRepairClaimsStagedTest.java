@@ -54,7 +54,7 @@ class MergedBaseRepairClaimsStagedTest {
 			RUN.resolve(TestFixtures.NEO_CARRIER_JAR), RUN.resolve(TestFixtures.FORGE_CARRIER_JAR));
 	private static final TransformContext CTX = new TransformContext(EnvType.CLIENT, false, "intermediary");
 	private static final String KEY_MAPPING = "net.minecraft.client.KeyMapping";
-	private static final String LOOKUP_CLAIM = "forbric-merged-base-compat#addMissingForgeKeyMappingLookupInitializer";
+	private static final String LOOKUP_CLAIM = "forbric-merged-base-compat#routeKeyMappingClickToPopulatedLookup";
 
 	@Test
 	void everyClaimLandsOnItsStagedTargetAndTheLedgerIsClean() throws Exception {
@@ -83,17 +83,17 @@ class MergedBaseRepairClaimsStagedTest {
 
 		byte[] real = bytesOf(KEY_MAPPING);
 		assertNotNull(real);
-		// The merge left MinecraftForge's KeyMapping.MAP without an initializer; give it one, and the repair that
-		// adds the initializer has nothing to do while the other three KeyMapping repairs still apply.
-		chain.applyBeforeMixin(KEY_MAPPING, withForgeLookupInitialised(real), CTX);
+		// Give KeyMapping a click that already reads the populated lookup: the repair that routes it there has nothing
+		// to do, while the other KeyMapping repair still applies.
+		chain.applyBeforeMixin(KEY_MAPPING, withClickReadingTheLiveLookup(real), CTX);
 
 		AnchorLedger.Report report = chain.ledger().report();
 		List<String> missed = new ArrayList<>();
 		for (AnchorLedger.Miss miss : report.misses()) missed.add(miss.transformer());
 		assertEquals(List.of(LOOKUP_CLAIM), missed, "exactly the one repair that declined, on its own line");
 		assertEquals(KEY_MAPPING, report.misses().get(0).className());
-		assertTrue(report.misses().get(0).cost().contains("never initialised"), report.misses().get(0).cost());
-		assertEquals(3, report.hit(), "the other three KeyMapping claims are hits");
+		assertTrue(report.misses().get(0).cost().contains("never fire"), report.misses().get(0).cost());
+		assertEquals(1, report.hit(), "the other KeyMapping claim is a hit");
 	}
 
 	/** Binary name → class bytes for every fixed anchor of every claim. */
@@ -123,15 +123,31 @@ class MergedBaseRepairClaimsStagedTest {
 		return null;
 	}
 
-	private static byte[] withForgeLookupInitialised(byte[] classBytes) {
+	/**
+	 * {@code KeyMapping} as an upstream that fixed the merge's {@code click} would ship it: every read of the Forge-side
+	 * {@code MAP} outside the initialisers already goes to NeoForge's lookup, which is the edit
+	 * routeKeyMappingClickToPopulatedLookup makes, so that repair has nothing left to do.
+	 */
+	private static byte[] withClickReadingTheLiveLookup(byte[] classBytes) {
+		String forgeLookup = "Lnet/minecraftforge/client/settings/KeyMappingLookup;";
+		String neoLookup = "Lnet/neoforged/neoforge/client/settings/KeyMappingLookup;";
 		ClassNode node = new ClassNode();
 		new ClassReader(classBytes).accept(node, 0);
-		MethodNode clinit = null;
-		for (MethodNode m : node.methods) if (m.name.equals("<clinit>")) clinit = m;
-		assertNotNull(clinit, "KeyMapping has a <clinit>");
-		clinit.instructions.insert(new FieldInsnNode(Opcodes.PUTSTATIC, "net/minecraft/client/KeyMapping", "MAP",
-				"Lnet/minecraftforge/client/settings/KeyMappingLookup;"));
-		clinit.instructions.insert(new InsnNode(Opcodes.ACONST_NULL));
+		int edited = 0;
+		for (MethodNode m : node.methods) {
+			if (m.name.equals("<init>") || m.name.equals("<clinit>")) continue;
+			for (org.objectweb.asm.tree.AbstractInsnNode insn : m.instructions) {
+				if (insn instanceof FieldInsnNode f && f.getOpcode() == Opcodes.GETSTATIC && f.name.equals("MAP") && f.desc.equals(forgeLookup)) {
+					f.desc = neoLookup;
+					edited++;
+				} else if (insn instanceof org.objectweb.asm.tree.MethodInsnNode c && c.name.equals("getAll")
+						&& c.owner.equals(forgeLookup.substring(1, forgeLookup.length() - 1))) {
+					c.owner = neoLookup.substring(1, neoLookup.length() - 1);
+					edited++;
+				}
+			}
+		}
+		assertTrue(edited > 0, "premise: the staged KeyMapping still reads the Forge-side MAP outside its initialisers");
 		ClassWriter writer = new ClassWriter(0);
 		node.accept(writer);
 		return writer.toByteArray();

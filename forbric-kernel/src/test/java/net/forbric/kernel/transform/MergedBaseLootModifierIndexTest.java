@@ -48,7 +48,6 @@ import net.forbric.kernel.TestFixtures.Fixture;
 /** Both carriers' LootModifierManager after the repair: NeoForge's synthesized prepare, MinecraftForge's wrapped one. */
 class MergedBaseLootModifierIndexTest {
 	private static final Path RUN = TestFixtures.stagedRoot();
-	private static final Path FORGE_RT = RUN.resolve(TestFixtures.FORGE_CARRIER_JAR);
 	private static final Path NEO_RT = RUN.resolve(TestFixtures.NEO_CARRIER_JAR);
 
 	@Test
@@ -70,32 +69,6 @@ class MergedBaseLootModifierIndexTest {
 				"ALOAD 2", "INVOKESPECIAL " + ForbricMergedBaseCompatTransformer.SIMPLE_JSON_LISTENER + ".prepare", Integer.toString(Opcodes.ARETURN)), real);
 		for (MethodNode m : node.methods) new Analyzer<>(new BasicVerifier()).analyze(node.name, m);
 		assertSame(out, transform(ForbricMergedBaseCompatTransformer.LOOT_MODIFIER_MANAGER_NEO, out), "second pass");
-	}
-
-	@Test
-	void minecraftForgesPrepareScansThroughTheViewAndStillReadsItsOwnIndexByName() throws Exception {
-		byte[] original = bytesOf(FORGE_RT, ForbricMergedBaseCompatTransformer.LOOT_MODIFIER_MANAGER_FORGE);
-		byte[] out = transform(ForbricMergedBaseCompatTransformer.LOOT_MODIFIER_MANAGER_FORGE, original);
-		assertNotSame(original, out);
-		ClassNode node = parse(out);
-		MethodNode prepare = find(node, ForbricMergedBaseCompatTransformer.PREPARE, ForbricMergedBaseCompatTransformer.PREPARE_DESC);
-		int wraps = 0;
-		boolean ownIndex = false;
-		for (AbstractInsnNode insn = prepare.instructions.getFirst(); insn != null; insn = insn.getNext()) {
-			if (insn instanceof MethodInsnNode c && ForbricMergedBaseCompatTransformer.KERNEL_LOOT_MODIFIERS.equals(c.owner)) {
-				wraps++;
-				// …placed right after the aload_1 that feeds super.prepare, and right before the aload_2.
-				AbstractInsnNode prev = insn.getPrevious(), next = insn.getNext();
-				while (prev != null && prev.getOpcode() < 0) prev = prev.getPrevious();
-				while (next != null && next.getOpcode() < 0) next = next.getNext();
-				assertTrue(prev instanceof VarInsnNode p && p.var == 1 && next instanceof VarInsnNode n && n.var == 2, "wraps the manager argument of super.prepare");
-			}
-			if (insn instanceof LdcInsnNode ldc && "loot_modifiers/global_loot_modifiers.json".equals(ldc.cst)) ownIndex = true;
-		}
-		assertEquals(1, wraps);
-		assertTrue(ownIndex, "premise: MinecraftForge reads its own index by name, and that read is not touched");
-		for (MethodNode m : node.methods) new Analyzer<>(new BasicVerifier()).analyze(node.name, m);
-		assertSame(out, transform(ForbricMergedBaseCompatTransformer.LOOT_MODIFIER_MANAGER_FORGE, out), "second pass");
 	}
 
 	private static byte[] transform(String internal, byte[] bytes) {
