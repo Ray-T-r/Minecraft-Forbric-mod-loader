@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# Builds run/canary/forbriccoremodparity.jar for gate-m42: a NeoForge mod that drives the game paths the two
-# families' coremods rewrite (flower pots, the liquid getter, spawn finalization, biome and structure modifiers) and
+# Builds run/canary/forbriccoremodparity.jar for gate-m42: a NeoForge mod that drives the game paths NeoForge's
+# coremods rewrite (flower pots, spawn finalization, biome and structure modifiers) and
 # records each verdict, plus the unmodified fabric-biome-api modules its Fabric weather change needs.
 # Only javac/jar; no kernel Gradle. The gate owns the separately scheduled kernel build.
 set -euo pipefail
@@ -12,10 +12,6 @@ import hashlib, json, os, pathlib, subprocess, zipfile
 kernel, old, work = (pathlib.Path(os.environ[key]) for key in ('M42_KERNEL', 'M42_OLD', 'M42_WORK'))
 mc = pathlib.Path(os.environ.get('MC_DIR', pathlib.Path.home() / 'Library/Application Support/minecraft'))
 compile_game = pathlib.Path(os.environ.get('M42_COMPILE_GAME', old / 'run/neoforge-patched/patched-mc-neoforge-26.2.jar'))
-forge = pathlib.Path(os.environ.get('FORGE_RT', old / 'run/merged-base/forge-runtime-interop.jar'))
-if not forge.is_file(): forge = old / 'run/forge-runtime/forge-runtime.jar'
-# Optional for a NeoForge canary: on the compile classpath when staged, left out (and recorded as null) when not.
-forge = [forge] if forge.is_file() else []
 neo = pathlib.Path(os.environ.get('NEO_RT', old / 'run/neoforge-runtime/neoforge-runtime.jar'))
 fapi = pathlib.Path(os.environ.get('M42_FABRIC_API', kernel / 'run/client-merged-pack/mods/fabric-api-0.155.2+26.2.jar'))
 libraries = []
@@ -29,13 +25,10 @@ with zipfile.ZipFile(fapi) as archive:
         names = [n for n in archive.namelist() if n.startswith('META-INF/jars/' + prefix) and n.endswith('.jar')]
         if len(names) != 1: raise SystemExit('required actual Fabric module missing or ambiguous: ' + prefix)
         target = modules / pathlib.PurePosixPath(names[0]).name; target.write_bytes(archive.read(names[0])); selected.append(target)
-classpath = [compile_game, *forge, neo, *selected, *libraries]
-for path in [compile_game, *forge, neo, fapi]:
+classpath = [compile_game, neo, *selected, *libraries]
+for path in [compile_game, neo, fapi]:
     if not path.is_file(): raise SystemExit(f'M42 prerequisite absent: {path}')
 root = kernel / 'canary/coremod-parity'
-# Without a MinecraftForge carrier only a canary whose own sources name none of it compiles: say so, not javac.
-if not forge and any('net.minecraftforge' in source.read_text(errors='replace') for source in root.rglob('*.java')):
-    raise SystemExit(f'M42 prerequisite absent: no MinecraftForge carrier is staged, and {root} still names net.minecraftforge')
 classes = work / 'classes'; classes.mkdir()
 subprocess.run(['javac', '-proc:none', '--release', '21', '-cp', os.pathsep.join(map(str, classpath)),
                 '-d', str(classes), *map(str, sorted((root / 'src').rglob('*.java')))], check=True)
@@ -50,6 +43,6 @@ os.replace(staged, jar)
 def record(path):
     path = path.resolve(); return {'path': str(path), 'sha256': hashlib.sha256(path.read_bytes()).hexdigest()}
 (output / 'm42-build-inputs.json').write_text(json.dumps({'mod': record(jar), 'compileGame': record(compile_game),
-    'forge': record(forge[0]) if forge else None, 'neo': record(neo), 'fabricApi': record(fapi), 'modules': [record(p) for p in selected]}, indent=2) + '\n')
+    'neo': record(neo), 'fabricApi': record(fapi), 'modules': [record(p) for p in selected]}, indent=2) + '\n')
 print('[M42Coremod] built the coremod parity probe')
 PY
