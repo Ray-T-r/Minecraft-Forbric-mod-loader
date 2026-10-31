@@ -1755,10 +1755,6 @@ test	net.forbric.kernel.transform.MergedBaseItemAttributesTest	bothOverloadsAskN
 test	net.forbric.kernel.transform.MergedBaseItemAttributesTest	readsOutsideForEachModifierAreLeftAlone()	[fixture:staged] staged merged base absent
 test	net.forbric.kernel.transform.MergedBaseItemAttributesTest	theNeoForgeBaseIsWhatTheRepairReproduces()	[fixture:staged] staged NeoForge base absent
 test	net.forbric.kernel.transform.MergedBaseItemAttributesTest	theRebuiltBaseAlreadyUsesTheNativeComputedAttributes()	[fixture:staged] staged merged base absent
-test	net.forbric.kernel.transform.MergedBaseItemTooltipTest	aSecondPassLeavesTheRepairedClassAlone()	[fixture:staged] $ROOT/forbric-loader/run/merged-base/patched-mc-merged-26.2.jar absent (reading net/minecraft/world/item/ItemStack.class)
-test	net.forbric.kernel.transform.MergedBaseItemTooltipTest	theGateRecognisesBothWaysTheEventGetsPosted(Path)	[fixture:staged] $ROOT/forbric-loader/run/merged-base/patched-mc-merged-26.2.jar absent (reading net/minecraft/world/item/ItemStack.class)
-test	net.forbric.kernel.transform.MergedBaseItemTooltipTest	theRepairLeavesExactlyOneNeoForgeTooltipEventOnTheStagedBase()	[fixture:staged] $ROOT/forbric-loader/run/merged-base/patched-mc-merged-26.2.jar absent (reading net/minecraft/world/item/ItemStack.class)
-test	net.forbric.kernel.transform.MergedBaseItemTooltipTest	theRepairPostsNeoForgesEventWithTheRealContextAndDisplay()	[fixture:staged] $ROOT/forbric-loader/run/merged-base/patched-mc-merged-26.2.jar absent (reading net/minecraft/world/item/ItemStack.class)
 test	net.forbric.kernel.transform.MergedBaseKeyMappingMapTest	aSecondPassAndAnotherClassAreLeftAlone()	[fixture:staged] staged merged base absent
 test	net.forbric.kernel.transform.MergedBaseKeyMappingMapTest	itIsAViewOfAllAssignedRightAfterAll()	[fixture:staged] staged merged base absent
 test	net.forbric.kernel.transform.MergedBaseKeyMappingMapTest	vanillasMapIsBackAndPublicSoAModReadingItLinks()	[fixture:staged] staged merged base absent

@@ -104,9 +104,6 @@ public final class KernelRuntimeClasses {
 				new Call("container", Object.class, String.class, Object.class, Path.class, Object.class),
 				new Call("modInfo", Object.class, String.class, Path.class),
 				new Call("minecraftContainer", Object.class))));
-		// Its one entry point takes six GAME types, which cannot be named from here — the descriptor the
-		// transformer writes is the contract, and TransformerAnchorCensusTest is what holds the two in step.
-		CLASSES.put("net.forbric.kernel.runtime.KernelItemTooltips", new Entry(Origin.COMPILED, List.of()));
 		// Every parameter is Object (netty is not on the runtime source set's compile path), so the call CAN be
 		// checked: a rename on either side becomes one line at the top of the log instead of an AbstractMethodError
 		// inside the netty pipeline.

@@ -201,7 +201,9 @@ public final class ForbricSwitches {
 			Map.entry("forbric.neoScreenEvents", "NeoForge's own Gui.setScreen posts ScreenEvent.Opening and Closing itself, so there is "
 					+ "no merged MinecraftForge body to add them to"),
 			Map.entry("forbric.neoConversionPost", "NeoForge's own conversion lambdas post LivingConversionEvent.Post themselves, so there "
-					+ "is no MinecraftForge lambda to send through the kernel"));
+					+ "is no MinecraftForge lambda to send through the kernel"),
+			Map.entry("forbric.itemTooltipBridge", "NeoForge's own ItemStack.getTooltipLines posts ItemTooltipEvent itself, so the kernel "
+					+ "posts no second one beside a MinecraftForge call"));
 
 	private static final ForbricSwitches SYSTEM =
 			new ForbricSwitches(RENAMED, RETIRED, System::getProperty, ForbricLog::warn);
