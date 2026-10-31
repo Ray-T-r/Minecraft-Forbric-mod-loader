@@ -100,7 +100,9 @@ class MergedBaseRepairClaimsStagedTest {
 		Map<String, byte[]> out = new LinkedHashMap<>();
 		for (ClassTransformer.Claim claim : transformer.claims()) {
 			for (AnchorSet.Anchor anchor : claim.anchors().anchors()) {
-				out.computeIfAbsent(anchor.binaryName(), MergedBaseRepairClaimsStagedTest::bytesOf);
+				// As the chain feeds the compat transformer: after the vanilla member twins (the PiP map's lookup the
+				// bridge wires exists only once they have run on the genuine base).
+				out.computeIfAbsent(anchor.binaryName(), n -> PreMixinView.twinned(n.replace('.', '/'), bytesOf(n)));
 			}
 		}
 		return out;

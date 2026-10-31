@@ -46,7 +46,7 @@ import net.forbric.kernel.TestFixtures;
 import net.forbric.kernel.TestFixtures.Fixture;
 
 /**
- * Covers the picture-in-picture bridge in real merged-base bytecode.
+ * Covers the picture-in-picture bridge in real base bytecode, as the chain hands it over (the vanilla twins first).
  *
  * <p>The bridge is a whole synthesized method plus a rewritten branch, emitted under {@code ClassWriter(0)} with a
  * hand-authored frame and hand-computed maxs — the highest-risk bytecode the kernel writes, and until this test it
@@ -140,7 +140,7 @@ class MergedBasePipBridgeTest {
 
 	@Test
 	void isIdempotent() throws Exception {
-		TestFixtures.requireFile(Fixture.STAGED, MERGED_BASE, "staged merged base absent — skipping real-bytecode check");
+		TestFixtures.requireFile(Fixture.STAGED, MERGED_BASE, "staged base absent — skipping real-bytecode check");
 
 		byte[] original = readClass(GUI_RENDERER + ".class");
 		byte[] once = transform(original);
@@ -149,7 +149,7 @@ class MergedBasePipBridgeTest {
 
 	@Test
 	void leavesClassesWithoutBothMapsAlone() throws Exception {
-		TestFixtures.requireFile(Fixture.STAGED, MERGED_BASE, "staged merged base absent — skipping real-bytecode check");
+		TestFixtures.requireFile(Fixture.STAGED, MERGED_BASE, "staged base absent — skipping real-bytecode check");
 
 		// Hud is heavily merged but has no picture-in-picture maps; the bridge must not touch it.
 		byte[] hud = readClass("net/minecraft/client/gui/Hud.class");
@@ -161,7 +161,7 @@ class MergedBasePipBridgeTest {
 	// --- helpers -------------------------------------------------------------------------------------------------
 
 	private static ClassNode transformedGuiRenderer() throws Exception {
-		TestFixtures.requireFile(Fixture.STAGED, MERGED_BASE, "staged merged base absent — skipping real-bytecode check");
+		TestFixtures.requireFile(Fixture.STAGED, MERGED_BASE, "staged base absent — skipping real-bytecode check");
 
 		byte[] out = transform(readClass(GUI_RENDERER + ".class"));
 		ClassNode node = new ClassNode();
@@ -186,12 +186,16 @@ class MergedBasePipBridgeTest {
 		throw new AssertionError("GuiRenderer has no boolean preparePictureInPictureState — the merge shifted");
 	}
 
+	/**
+	 * {@code entry} as the chain hands it to the compat repairs: after {@link VanillaMemberTwinInjector}, which gives the
+	 * genuine GuiRenderer back vanilla's {@code pictureInPictureRenderers} map and its lookup for the bridge to wire.
+	 */
 	private static byte[] readClass(String entry) throws Exception {
 		try (ZipFile zip = new ZipFile(MERGED_BASE.toFile())) {
 			ZipEntry found = zip.getEntry(entry);
-			assertNotNull(found, entry + " missing from the staged merged base");
+			assertNotNull(found, entry + " missing from the staged base");
 			try (InputStream in = zip.getInputStream(found)) {
-				return in.readAllBytes();
+				return PreMixinView.twinned(entry.substring(0, entry.length() - ".class".length()), in.readAllBytes());
 			}
 		}
 	}

@@ -10,7 +10,7 @@ class CreateInjectionAdaptersTest {
 		for(var entry:expected.entrySet()){
 			var node=CreateGuestMixinFixture.mixin("com/zurrtum/create/"+entry.getKey());
 			Map<String,String> bodies=new HashMap<>();for(var method:node.methods)bodies.put(method.name+method.desc,MixinInstructionFingerprint.hash(method));
-			java.util.function.Function<String,org.objectweb.asm.tree.ClassNode> resolver=name->{var target=CarpetMixinAdapterTest.target(name);if(name.equals("net/minecraft/client/gui/render/GuiRenderer")){byte[] bytes=new net.forbric.kernel.transform.ForbricMergedBaseCompatTransformer().transform(name.replace('/','.'),CarpetMixinAdapterTest.bytes(target),null);target=MixinFit.parse(bytes);}return target;};
+			java.util.function.Function<String,org.objectweb.asm.tree.ClassNode> resolver=CarpetMixinAdapterTest::target;
 			assertEquals(entry.getValue(),MixinCarrierCallbackAdapters.adapt(node,resolver,(family,name)->nativeTarget(name)),entry.getKey());
 			for(var method:node.methods)if(method.name.endsWith("$forbricOriginal"))assertEquals(bodies.get(method.name.replace("$forbricOriginal","")+method.desc),MixinInstructionFingerprint.hash(method));
 			CarpetMixinAdapterTest.verify(node);assertEquals(0,MixinCarrierCallbackAdapters.adapt(node,resolver,(family,name)->nativeTarget(name)),entry.getKey()+" idempotence");

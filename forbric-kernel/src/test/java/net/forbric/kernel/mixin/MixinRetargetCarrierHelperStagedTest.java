@@ -171,11 +171,16 @@ class MixinRetargetCarrierHelperStagedTest {
 
 	// ---------------------------------------------------------------------------------------------------------------
 
+	/**
+	 * MixinFit's resolver as the game hands it ({@code ForbricMixinService.readAdapterClass}): a game class's pre-Mixin
+	 * bytes ({@link net.forbric.kernel.transform.PreMixinView}), so a member the vanilla twins add back is there.
+	 */
 	static Function<String, byte[]> mergedResolver() {
-		TestFixtures.requireFile(Fixture.STAGED, MERGED_BASE, "staged merged base absent");
+		TestFixtures.requireFile(Fixture.STAGED, MERGED_BASE, "staged base absent");
 		return name -> {
 			try {
-				return readFromJar(MERGED_BASE, name);
+				byte[] raw = readFromJar(MERGED_BASE, name);
+				return name.endsWith(".class") ? net.forbric.kernel.transform.PreMixinView.of(name.substring(0, name.length() - 6), raw) : raw;
 			} catch (Exception e) {
 				return null;
 			}

@@ -1034,12 +1034,14 @@ class MixinStubRebindTest {
 				.filter(m -> m.name.equals(handler)).findFirst().orElseThrow()), "method"));
 	}
 
+	/**
+	 * A game class as the adapters see it in the game: the pre-Mixin view ({@link net.forbric.kernel.transform.PreMixinView}),
+	 * where the vanilla twins have given the genuine {@code AxeItem} back vanilla's four-argument stub.
+	 */
 	private static ClassNode merged(String name) throws Exception {
 		TestFixtures.requireFile(Fixture.STAGED, MERGED, "actual game required");
 		try (ZipFile zip = new ZipFile(MERGED.toFile())) {
-			ClassNode node = new ClassNode();
-			new ClassReader(zip.getInputStream(zip.getEntry(name + ".class")).readAllBytes()).accept(node, 0);
-			return node;
+			return net.forbric.kernel.transform.PreMixinView.node(name, zip.getInputStream(zip.getEntry(name + ".class")).readAllBytes(), 0);
 		}
 	}
 

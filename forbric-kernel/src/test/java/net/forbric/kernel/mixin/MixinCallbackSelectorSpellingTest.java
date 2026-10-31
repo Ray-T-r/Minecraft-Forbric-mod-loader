@@ -90,13 +90,9 @@ class MixinCallbackSelectorSpellingTest {
 	}
 	private static ClassNode copy(ClassNode node) { ClassNode copy = new ClassNode(); node.accept(copy); return copy; }
 
+	/** The pre-Mixin view, which already carries the compat repairs (the PiP bridge on GuiRenderer among them). */
 	private static ClassNode read(String name) {
-		ClassNode target = CarpetMixinAdapterTest.target(name);
-		if (name.equals("net/minecraft/client/gui/render/GuiRenderer")) {
-			byte[] bytes = new net.forbric.kernel.transform.ForbricMergedBaseCompatTransformer().transform(name.replace('/', '.'), CarpetMixinAdapterTest.bytes(target), null);
-			return MixinFit.parse(bytes);
-		}
-		return target;
+		return CarpetMixinAdapterTest.target(name);
 	}
 
 	/** Another package, another class name and other handler names, with self references and private delegates remapped. */

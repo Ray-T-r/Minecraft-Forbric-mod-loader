@@ -150,7 +150,7 @@ class MergedBaseParticleProvidersTest {
 	}
 
 	private static byte[] original() throws IOException {
-		TestFixtures.requireFile(Fixture.STAGED, MERGED_BASE, "staged merged base absent — skipping real-bytecode check");
+		TestFixtures.requireFile(Fixture.STAGED, MERGED_BASE, "staged base absent — skipping real-bytecode check");
 		byte[] in = readClass(ENTRY);
 		assertNotNull(in, "content drift: ParticleResources absent from this base");
 		ClassNode node = new ClassNode();
@@ -174,7 +174,9 @@ class MergedBaseParticleProvidersTest {
 			var e = jar.getEntry(entry);
 			if (e == null) return null;
 			try (InputStream in = jar.getInputStream(e)) {
-				return in.readAllBytes();
+				// As the chain hands it to the compat repairs: after the vanilla twins, which give the genuine
+				// ParticleResources back vanilla's int-keyed providers map beside NeoForge's.
+				return PreMixinView.twinned(entry.substring(0, entry.length() - ".class".length()), in.readAllBytes());
 			}
 		}
 	}

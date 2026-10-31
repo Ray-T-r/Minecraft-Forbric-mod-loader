@@ -151,12 +151,15 @@ class MergedBaseNoVanishedVanillaFieldTest {
 		return node;
 	}
 
-	/** What the game actually sees: the merged bytes after the kernel's own compat pass. */
+	/** What the game actually sees: the base's bytes after the vanilla twins and the kernel's own compat pass. */
 	private static ClassNode repaired(ClassNode merged, String entryName) {
 		org.objectweb.asm.ClassWriter writer = new org.objectweb.asm.ClassWriter(0);
 		merged.accept(writer);
 		String binary = entryName.substring(0, entryName.length() - ".class".length()).replace('/', '.');
-		byte[] out = new ForbricMergedBaseCompatTransformer().transform(binary, writer.toByteArray(), null);
+		// The vanilla member twins run first in KernelBoot's chain: on the genuine base they add back vanilla's
+		// ParticleResources.providers (Int2ObjectMap) and GuiRenderer.pictureInPictureRenderers beside NeoForge's.
+		byte[] twinned = PreMixinView.twinned(entryName.substring(0, entryName.length() - ".class".length()), writer.toByteArray());
+		byte[] out = new ForbricMergedBaseCompatTransformer().transform(binary, twinned, null);
 		// …and the twin injector, which answers three of the drifts this census used to list as KNOWN.
 		out = new WidenedFieldTwinInjector().transform(binary, out, null);
 		ClassNode node = new ClassNode();

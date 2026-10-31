@@ -35,13 +35,24 @@ class CarpetMixinAdapterTest {
 		Path root=TestFixtures.stagedRoot();
 		return root.resolve(name.startsWith("net/neoforged/")?TestFixtures.NEO_CARRIER_JAR:TestFixtures.BASE_JAR);
 	}
+	/**
+	 * A staged game class as {@code ForbricMixinService} hands it to the adapters: the pre-Mixin view
+	 * ({@link net.forbric.kernel.transform.PreMixinView}), so a member the vanilla twins add back on the genuine base is there.
+	 */
 	static ClassNode target(String name) {
         try{
             if(name.startsWith("java/")){try(var resource=ClassLoader.getSystemResourceAsStream(name+".class")){if(resource==null)return null;ClassNode node=new ClassNode();new ClassReader(resource).accept(node,0);return node;}}
             TestFixtures.requireFiles(Fixture.STAGED,"current callback target declarations",jarOf(name));
             try(ZipFile zip=new ZipFile(jarOf(name).toFile())){if(zip.getEntry(name+".class")==null)return null;}
-            return from(Fixture.STAGED,jarOf(name),name);
+            // As the adapters see it in the game: the pre-Mixin bytes, after the vanilla member twins and the compat repairs.
+            return net.forbric.kernel.transform.PreMixinView.node(name,staged(name+".class"),0);
         }
+		catch(org.opentest4j.TestAbortedException e){throw e;}
+		catch(Exception e){throw new AssertionError(e);}
+	}
+	/** A staged game class exactly as its jar holds it, before any transformer: for a premise about NeoForge's own bytes. */
+	static ClassNode raw(String name) {
+		try{return from(Fixture.STAGED,jarOf(name),name);}
 		catch(org.opentest4j.TestAbortedException e){throw e;}
 		catch(Exception e){throw new AssertionError(e);}
 	}

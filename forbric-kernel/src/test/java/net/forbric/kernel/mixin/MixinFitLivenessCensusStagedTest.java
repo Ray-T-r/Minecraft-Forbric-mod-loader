@@ -170,8 +170,11 @@ class MixinFitLivenessCensusStagedTest {
 			byte[] raw = game.get(name);
 			if (raw == null || !name.startsWith("net/minecraft/")) return raw;
 			return pruned.computeIfAbsent(name, n -> {
-				byte[] out = prune.transform(n.substring(0, n.length() - ".class".length()).replace('/', '.'), raw, null);
-				return out == null ? raw : out;
+				// The vanilla member twins first, as in KernelBoot's chain: on the genuine base they add back the vanilla
+				// members guests bind (Hud.extractHotbarAndDecorations, AxeItem's four-argument evaluateNewBlockState…).
+				byte[] twinned = net.forbric.kernel.transform.PreMixinView.twinned(n.substring(0, n.length() - ".class".length()), raw);
+				byte[] out = prune.transform(n.substring(0, n.length() - ".class".length()).replace('/', '.'), twinned, null);
+				return out == null ? twinned : out;
 			});
 		};
 
@@ -680,7 +683,9 @@ class MixinFitLivenessCensusStagedTest {
 			if (raw == null || !(name.startsWith("net/minecraft/") || name.startsWith("com/mojang/"))) return null;
 			return served.computeIfAbsent(name, n -> {
 				String binary = n.substring(0, n.length() - ".class".length()).replace('/', '.');
-				byte[] out = new net.forbric.kernel.transform.ForbricMergedBaseCompatTransformer().transform(binary, raw, null);
+				// KernelBoot's order: the vanilla member twins, then the compat repairs that wire them.
+				byte[] twinned = net.forbric.kernel.transform.PreMixinView.twinned(n.substring(0, n.length() - ".class".length()), raw);
+				byte[] out = new net.forbric.kernel.transform.ForbricMergedBaseCompatTransformer().transform(binary, twinned, null);
 				out = new net.forbric.kernel.transform.WidenedFieldTwinInjector().transform(binary, out, null);
 				byte[] pruned = new net.forbric.kernel.transform.DuplicateLambdaPruneInjector().transform(binary, out, null);
 				return pruned == null ? out : pruned;

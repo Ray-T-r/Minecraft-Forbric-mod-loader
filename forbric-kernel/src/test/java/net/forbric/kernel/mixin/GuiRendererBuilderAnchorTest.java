@@ -8,7 +8,6 @@ import java.util.ArrayList;
 import java.util.List;
 
 import net.forbric.kernel.TestFixtures.Fixture;
-import net.forbric.kernel.transform.ForbricMergedBaseCompatTransformer;
 import org.junit.jupiter.api.Test;
 import org.objectweb.asm.Type;
 import org.objectweb.asm.tree.AnnotationNode;
@@ -19,8 +18,8 @@ import org.objectweb.asm.tree.MethodNode;
 /**
  * The released mods that hook {@code ImmutableMap.builder()} in {@code GuiRenderer.<init>} — Create Fly's
  * {@code @WrapOperation} and SuperMartijn642's core lib's {@code @Inject} before it with a {@code LocalRef} to the renderer
- * list — against the real merged GuiRenderer. As NeoForge left it, the constructor makes no builder and both bind nothing.
- * Once the kernel builds the map in vanilla's shape, each binds as written: its selector names the one constructor, the
+ * list — against the genuine GuiRenderer. As NeoForge left it, the constructor makes no builder and both bind nothing.
+ * Once the kernel builds the map in vanilla's shape (the pre-Mixin view: the vanilla twins, then the compat repair), each binds as written: its selector names the one constructor, the
  * constructor makes the call exactly once, and the core lib's list capture names one local there. No callback adapter
  * touches either mixin.
  */
@@ -34,9 +33,9 @@ class GuiRendererBuilderAnchorTest {
 						"com/supermartijn642/core/mixin/GuiRendererMixin"));
 	}
 
+	/** GuiRenderer as the adapters see it in the game: the vanilla twins' PiP members, then the compat repair's builder. */
 	private static ClassNode kernelShaped() {
-		ClassNode merged = CarpetMixinAdapterTest.target(GUI);
-		return MixinFit.parse(new ForbricMergedBaseCompatTransformer().transform(GUI.replace('/', '.'), CarpetMixinAdapterTest.bytes(merged), null));
+		return CarpetMixinAdapterTest.target(GUI);
 	}
 
 	@Test void everyReleasedBuilderHookBindsTheConstructorTheKernelShaped() throws Exception {
@@ -66,7 +65,7 @@ class GuiRendererBuilderAnchorTest {
 	}
 
 	@Test void onTheConstructorNeoForgeLeftNoHookHasAPoint() throws Exception {
-		ClassNode gui = CarpetMixinAdapterTest.target(GUI);
+		ClassNode gui = CarpetMixinAdapterTest.raw(GUI);
 		for (ClassNode mixin : releasedMixins()) for (MethodNode hook : builderHooks(mixin)) {
 			List<MethodNode> bound = MixinTargetSelectors.bound(hook, gui);
 			assertNotNull(bound, mixin.name);
