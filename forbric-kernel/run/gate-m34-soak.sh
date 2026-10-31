@@ -3,17 +3,18 @@
 # --control explicitly produces non-release evidence. Inputs are copied and frozen before launch.
 set -euo pipefail
 . "$(cd "$(dirname "$0")" && pwd)/lib.sh"
+# MERGED and FORGE_RT are retired with the merged base and the MinecraftForge carrier: refused here as the launchers
+# refuse them, rather than ignored, and before the kernel is built, as the launchers refuse before building anything.
+if [ -n "${MERGED:-}${FORGE_RT:-}" ]; then
+  echo "[kernel] FAIL M34: MERGED/FORGE_RT are retired; name the game jar with BASE (there is no MinecraftForge carrier)" >&2
+  exit 2
+fi
 kernel_jar
 kernel_classpath
 printf '%s\n' "$KERNEL_CP" > "$BUILD/m34-boot-classpath.txt"
 args=(--kernel "$KERNEL" --staged "$RUN_OLD" --fixture "${M34_FIXTURE:-$KERNEL/run/client-merged-pack}"
       --boot-classpath "$BUILD/m34-boot-classpath.txt")
-# The game base and its carrier, as launch-kernel-client.sh takes them (BASE, NEO_RT). MERGED and FORGE_RT are retired
-# with the merged base and the MinecraftForge carrier: refused here as the launchers refuse them, rather than ignored.
-if [ -n "${MERGED:-}${FORGE_RT:-}" ]; then
-  echo "[kernel] FAIL M34: MERGED/FORGE_RT are retired; name the game jar with BASE (there is no MinecraftForge carrier)" >&2
-  exit 2
-fi
+# The game base and its carrier, as launch-kernel-client.sh takes them (BASE, NEO_RT).
 [ -z "${BASE:-}" ] || args+=(--base "$BASE")
 [ -z "${NEO_RT:-}" ] || args+=(--neo "$NEO_RT")
 # Not `exec`. lib.sh's EXIT trap is what prints this gate's [kernel] CAUGHT line, and an exec'd python replaces the
