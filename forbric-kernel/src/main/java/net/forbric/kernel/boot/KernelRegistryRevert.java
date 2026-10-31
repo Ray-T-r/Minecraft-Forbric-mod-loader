@@ -22,7 +22,7 @@ import java.util.Set;
 
 import net.forbric.api.Ecosystem;
 import net.forbric.api.ForeignType;
-import net.forbric.kernel.transform.RegistrySyncParityInjector;
+import net.forbric.kernel.transform.RegistryRemapContracts;
 import net.forbric.kernel.util.Caught;
 import net.forbric.kernel.util.ForbricLog;
 
@@ -127,7 +127,7 @@ public final class KernelRegistryRevert {
 	}
 
 	/**
-	 * The undo of every remap contract a mixin adds to the registries ({@link RegistrySyncParityInjector.RemapContract}:
+	 * The undo of every remap contract a mixin adds to the registries ({@link RegistryRemapContracts.RemapContract}:
 	 * fabric-api's {@code unmap()} is one) on every plain registry that carries it, so the mod's own bookkeeping is left
 	 * the way its disconnect would leave it before NeoForge's snapshot goes back. The Forge-wrapped registries are
 	 * skipped: their ids live in the delegate, and the NeoForge pass that follows restores those through
@@ -136,7 +136,7 @@ public final class KernelRegistryRevert {
 	 */
 	private static int unmapFabricPlainRegistries(ClassLoader cl) {
 		java.util.Map<String, String> undos = new java.util.LinkedHashMap<>();
-		for (var contract : RegistrySyncParityInjector.discoveredContracts()) {
+		for (var contract : RegistryRemapContracts.discoveredContracts()) {
 			if (contract.undo() != null) undos.putIfAbsent(contract.owner().replace('/', '.') + "." + contract.undo(), contract.owner());
 		}
 		if (undos.isEmpty()) return 0;
