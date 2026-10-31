@@ -13,7 +13,7 @@ import net.neoforged.neoforge.event.server.ServerStartedEvent;
 import net.neoforged.neoforge.event.tick.ServerTickEvent;
 import net.neoforged.neoforge.registries.DeferredRegister;
 
-/** One NeoForge test mod subscribes to both live game buses; it is not presented as three separate mods. */
+/** One NeoForge test mod subscribes to NeoForge's game bus. */
 @Mod("forbricbehaviorprobe")
 public final class BehaviorCanary {
     private static final DeferredRegister<EntityType<?>> TYPES = DeferredRegister.create(Registries.ENTITY_TYPE, "forbricbehaviorprobe");
@@ -26,6 +26,6 @@ public final class BehaviorCanary {
         WorldProbe.installListeners();
         NeoForge.EVENT_BUS.addListener(ServerStartedEvent.class, event -> WorldProbe.arm(event.getServer()));
         NeoForge.EVENT_BUS.addListener(ServerTickEvent.Post.class, event -> WorldProbe.tick(event.getServer()));
-        System.out.println("[M35Behavior] REGISTERED one NeoForge driver with Forge and Neo event listeners");
+        System.out.println("[M35Behavior] REGISTERED one NeoForge driver with NeoForge event listeners");
     }
 }
