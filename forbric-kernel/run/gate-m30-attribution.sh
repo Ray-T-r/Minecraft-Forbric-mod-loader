@@ -68,7 +68,9 @@ mkdir -p "$BUILD"
 step "build three attribution canaries, the refused MinecraftForge fixture and two healthy ones"
 "$KERNEL/run/build-attribution-canaries.sh" >"$BUILD/gate-m30-canary.log" 2>&1
 "$KERNEL/run/build-fabric-canary.sh" >>"$BUILD/gate-m30-canary.log" 2>&1
-"$KERNEL/run/build-forge-refusal-fixtures.sh" >>"$BUILD/gate-m30-canary.log" 2>&1
+# Its exit code, not only the jar: a failed build leaves the previous jar in place.
+"$KERNEL/run/build-forge-refusal-fixtures.sh" >>"$BUILD/gate-m30-canary.log" 2>&1 \
+  || { echo "[kernel] FAIL canary build (see $BUILD/gate-m30-canary.log): build-forge-refusal-fixtures.sh"; exit 1; }
 for jar in $CANARIES "$FORGEFIXTURE" "$FABRIC" "$NEO"; do
   [ -f "$jar" ] || { echo "[kernel] FAIL missing canary: $jar (see $BUILD/gate-m30-canary.log)"; exit 1; }
 done

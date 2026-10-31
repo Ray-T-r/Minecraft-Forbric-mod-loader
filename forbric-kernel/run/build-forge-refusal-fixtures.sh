@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # Builds the MinecraftForge-only jars the refusal gates stage, without MinecraftForge:
-#   run/canary/forge-refused/forbriclive.jar         gate-m26, gate-m29   the plain case: a mods.toml and its @Mod
+#   run/canary/forge-refused/forbriclive.jar         gate-m26, gate-m29   the plain case: a mods.toml, its @Mod and its
+#                                                                         mixin config
 #   run/canary/forge-refused/forbricnestforge.jar    gate-m19             a MinecraftForge parent JarJar-nesting its own build
 #                                                                         of forbricnestlib
 #   run/canary/forge-refused/forbricforgecanary.jar  gate-m30             an @Mod.EventBusSubscriber waiting on a Forge event
@@ -17,13 +18,25 @@
 #   forbricnestforge, forbricforgecanary, forbricbreathforge  their sources in canary/nesteddupe, canary/attribution and
 #                                                             canary/forge-breath-drown, unchanged;
 #   forbriclive                                               canary/forge-refusal-stubs/forbriclive: the live canary's
-#                                                             mods.toml byte for byte and its @Mod entry. The canary's
-#                                                             own source (forbric-loader/run/livemod-src) probes a
-#                                                             hundred MinecraftForge types nothing runs any more.
+#                                                             mods.toml and forbriclive.mixins.json byte for byte, its
+#                                                             @Mod entry, and the mixin config plugin whose static
+#                                                             initialiser prints [ForbricLive/PLUGIN] the moment Mixin
+#                                                             is handed the config — what gate-m26 and gate-m29's
+#                                                             "nothing of the refused jar ran" checks look for. The
+#                                                             canary's own source (forbric-loader/run/livemod-src)
+#                                                             probes a hundred MinecraftForge types nothing runs any more.
 #
 # The rest of each classpath is NeoForge's patched game and runtime (the runtime only completes vanilla's supertypes:
 # NeoForge's patched Fluid implements its IFluidExtension) and the Minecraft libraries. A fixture that ends up naming
 # NeoForge is not a MinecraftForge-only jar any more, so that is a build failure too.
+#
+# A failed build exits non-zero and leaves the previous jars in place (outputs are only ever replaced by an atomic
+# rename, because gates that run in parallel read them while another gate rebuilds them), so every caller checks the
+# exit code instead of only testing that the jar exists.
+#
+# Only forbricforgecanary (gate-m30's refusal boot) and forbricbreathforge (gate-m57's refused phase) use the event,
+# fluid and registry stand-ins and patched-vanilla; Stage 4 deletes those two phases (gate-m26 and gate-m29 cover the
+# refusal), and whoever deletes them removes their steps here and the stand-ins only they use.
 set -uo pipefail
 . "$(cd "$(dirname "$0")" && pwd)/lib.sh"
 
@@ -53,6 +66,20 @@ for f in "$NEO_MC" "$NEO_RT"; do
   [ -f "$f" ] || { echo "[kernel] FAIL missing: $f"; exit 1; }
 done
 [ -n "$VLIBS" ] || { echo "[kernel] FAIL no 26.2 libraries under $MC_DIR (versions/26.2/26.2.json)"; exit 1; }
+# forbriclive's mixin config plugin implements Mixin's IMixinConfigPlugin, whose methods take ASM's ClassNode. Found as
+# build-attribution-canaries.sh finds Mixin: the launcher's libraries first, then Gradle's cache.
+library() { # library <launcher libraries subdir> <gradle cache group/artifact>
+  local found
+  found="$(find "$MC_DIR/libraries/$1" -name '*.jar' ! -name '*sources*' 2>/dev/null | sort | tail -1)"
+  [ -n "$found" ] || found="$(find "$HOME/.gradle/caches/modules-2/files-2.1/$2" -name '*.jar' ! -name '*sources*' 2>/dev/null | sort | tail -1)"
+  printf '%s' "$found"
+}
+MIXIN="$(library net/fabricmc/sponge-mixin net.fabricmc/sponge-mixin)"
+ASM="$(library org/ow2/asm/asm org.ow2.asm/asm)"
+ASM_TREE="$(library org/ow2/asm/asm-tree org.ow2.asm/asm-tree)"
+for f in "$MIXIN" "$ASM" "$ASM_TREE"; do
+  [ -n "$f" ] || { echo "[kernel] FAIL sponge-mixin, asm or asm-tree jar not found"; exit 1; }
+done
 mkdir -p "$WORK/stubs" "$OUT"
 
 # javac_quiet <javac args>... — javac without its "Note:" lines, keeping its exit code.
@@ -71,37 +98,54 @@ javac_quiet -cp "$NEO_MC:$NEO_RT:$VLIBS" -d "$WORK/stubs" $(find "$STUBS/api/src
 CP="$WORK/stubs:$NEO_MC:$NEO_RT:$VLIBS"
 
 # compile <classes dir> <source>... — fails the build on a compile error, never ships a half-compiled fixture.
+# EXTRA_CP, when set, goes after the common classpath.
 compile() {
   local classes="$1"; shift
   mkdir -p "$classes"
-  javac_quiet -cp "$CP" -d "$classes" "$@" || { echo "[kernel] FAIL $(basename "$classes") did not compile"; exit 1; }
+  javac_quiet -cp "$CP${EXTRA_CP:+:$EXTRA_CP}" -d "$classes" "$@" \
+    || { echo "[kernel] FAIL $(basename "$classes") did not compile"; exit 1; }
 }
 
-# publish <staged jar> — checks the jar is what a MinecraftForge-only build is, then installs it into $OUT.
+# publish <staged jar> — checks the jar is what a MinecraftForge-only build is, then installs it into $OUT. The jar and
+# every jar nested in it are unpacked first, and an unpack that fails fails the build: a check that could not look
+# must not pass.
 publish() {
-  local jar="$1" name entries
+  local jar="$1" name scan nested root rc
   name="$(basename "$jar")"
-  entries="$(unzip -Z1 "$jar")" || { echo "[kernel] FAIL $name is not a zip"; exit 1; }
-  if grep -qE '^net/(minecraftforge|minecraft)/' <<< "$entries"; then
-    echo "[kernel] FAIL a stub leaked into $name:"; grep -E '^net/(minecraftforge|minecraft)/' <<< "$entries"; exit 1
-  fi
-  grep -qx 'META-INF/mods.toml' <<< "$entries" || { echo "[kernel] FAIL $name has no META-INF/mods.toml"; exit 1; }
-  if grep -qxE 'fabric\.mod\.json|META-INF/neoforge\.mods\.toml' <<< "$entries"; then
+  scan="$WORK/scan/${name%.jar}"
+  rm -rf "$scan"; mkdir -p "$scan"
+  unzip -q "$jar" -d "$scan" || { echo "[kernel] FAIL $name is not a zip"; exit 1; }
+  while IFS= read -r nested; do
+    unzip -q "$nested" -d "${nested%.jar}.x" || { echo "[kernel] FAIL ${nested#"$scan"/} in $name is not a zip"; exit 1; }
+  done < <(find "$scan" -type f -name '*.jar')
+  # No stand-in in the jar or in any jar nested in it: each unpacked root is checked for the two packages they live in.
+  while IFS= read -r root; do
+    for pkg in net/minecraftforge net/minecraft; do
+      if [ -e "$root/$pkg" ]; then
+        echo "[kernel] FAIL a stub leaked into $name: ${root#"$WORK/scan/"}/$pkg"; exit 1
+      fi
+    done
+  done < <(printf '%s\n' "$scan"; find "$scan" -type d -name '*.x')
+  [ -f "$scan/META-INF/mods.toml" ] || { echo "[kernel] FAIL $name has no META-INF/mods.toml"; exit 1; }
+  if [ -e "$scan/fabric.mod.json" ] || [ -e "$scan/META-INF/neoforge.mods.toml" ]; then
     echo "[kernel] FAIL $name declares a Fabric or NeoForge half"; exit 1
   fi
   # The judge's own test for a class naming NeoForge, on every class of the jar and of the jars nested in it.
-  if (cd "$WORK" && rm -rf scan && mkdir scan && cd scan && unzip -q "$jar" \
-        && for nested in $(find . -name '*.jar'); do unzip -qo "$nested" -d "${nested%.jar}.x"; done \
-        && find . -name '*.class' -exec grep -lq 'net/neoforged/' {} + 2>/dev/null); then
-    echo "[kernel] FAIL $name names NeoForge, so it is no longer a MinecraftForge-only build"; exit 1
-  fi
+  [ -n "$(find "$scan" -name '*.class' -print -quit)" ] || { echo "[kernel] FAIL $name has no classes to check"; exit 1; }
+  grep -rq --include='*.class' 'net/neoforged/' "$scan"; rc=$?
+  case "$rc" in
+    0) echo "[kernel] FAIL $name names NeoForge, so it is no longer a MinecraftForge-only build"; exit 1 ;;
+    1) ;;
+    *) echo "[kernel] FAIL could not scan $name for NeoForge names (grep exit $rc)"; exit 1 ;;
+  esac
   publish_canary "$jar" "$OUT/$name" || exit 1
   echo "[kernel] built $OUT/$name"
 }
 
 step "forbriclive"
-compile "$WORK/live" $(find "$STUBS/forbriclive/src" -name '*.java')
+EXTRA_CP="$MIXIN:$ASM:$ASM_TREE" compile "$WORK/live" $(find "$STUBS/forbriclive/src" -name '*.java')
 mkdir -p "$WORK/live/META-INF" && cp "$STUBS/forbriclive/META-INF/mods.toml" "$WORK/live/META-INF/"
+cp "$STUBS/forbriclive/forbriclive.mixins.json" "$WORK/live/"
 (cd "$WORK/live" && jar --create --file "$WORK/forbriclive.jar" .) || exit 1
 publish "$WORK/forbriclive.jar"
 

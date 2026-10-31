@@ -62,8 +62,11 @@ mkdir -p "$BUILD" "$RUNDIR/quickPlay" "$RUNDIR/empty-mods"
 [ -f "$NEOLIVE" ] || { echo "[kernel] FATAL: missing $NEOLIVE; run build-testmods.sh or run/build-neolive-canary.sh" >&2; exit 3; }
 # The Fabric canary is built from this tree every run, as gate-m4/m18/m30 build it.
 "$KERNEL/run/build-fabric-canary.sh" > "$BUILD/gate-m26-fabric-canary.log" 2>&1
-"$KERNEL/run/build-forge-refusal-fixtures.sh" > "$BUILD/gate-m26-refusal-fixtures.log" 2>&1
 [ -f "$FABRIC" ] || { echo "[kernel] FATAL: the Fabric canary did not build (see $BUILD/gate-m26-fabric-canary.log)" >&2; exit 3; }
+# Phase 2's refused canary, built now so a broken build stops the gate before the session phase rather than after it.
+# Its exit code, not only the jar: a failed build leaves the previous jar in place.
+"$KERNEL/run/build-forge-refusal-fixtures.sh" > "$BUILD/gate-m26-refusal-fixtures.log" 2>&1 \
+  || { echo "[kernel] FATAL: the refusal fixtures did not build (see $BUILD/gate-m26-refusal-fixtures.log)" >&2; exit 3; }
 
 step "generate a zero-mod save once, then join it with the NeoForge and Fabric client canaries"
 reap_stale_server "$RUNDIR"
@@ -260,7 +263,15 @@ check "and the game asked" \
   "Forbric/Compatibility\] asking in the game about [1-9][0-9]* required feature loss\(es\) the launch could not ask about in a window" "$PROMPT_LOG"
 check_absent "nothing stopped the launch before the player was asked" "Forbric/Compatibility\] launch stopped" "$PROMPT_LOG"
 assert_eq "and it was still waiting for the answer when the gate stopped it" "waiting" "$PROMPT_EXIT"
+# The fixture keeps the live canary's mixin config and its plugin, whose static initialiser prints [ForbricLive/PLUGIN]
+# the moment Mixin is handed the config, so "nothing ran" covers the earliest thing a refused jar could do. The kernel's
+# own count of the Forge-family configs it registered says the same from the other side: present, and none of them
+# MinecraftForge's or the refused canary's.
 check_absent "nothing of the refused canary ran" 'constructed @Mod forbriclive|\[ForbricLive' "$PROMPT_LOG"
+check "no MinecraftForge mixin config was registered" \
+  '\[Forbric/Mixin\] mixin configs: .*\([0-9]+ NeoForge, 0 MinecraftForge\)' "$PROMPT_LOG"
+check_absent "and not the refused canary's under another name" \
+  '\[Forbric/Mixin\] mixin configs: .*forbriclive\.mixins\.json' "$PROMPT_LOG"
 check_absent "no crash" "Preparing crash report|Game crashed" "$PROMPT_LOG"
 # M26_REFUSAL_END
 

@@ -59,7 +59,9 @@ OWL="${M29_OWL:-$KERNEL/run/client-popular/forge-refused/animalgarden-owl-1.2.8-
 REFUSED=("$FORGE_CANARY" "$OWL")
 if [ -n "${M29_REFUSED+set}" ]; then read -r -a REFUSED <<< "$M29_REFUSED"; fi
 mkdir -p "$BUILD"
-"$KERNEL/run/build-forge-refusal-fixtures.sh" > "$BUILD/gate-m29-canary.log" 2>&1
+# Its exit code, not only the jar: a failed build leaves the previous jar in place.
+"$KERNEL/run/build-forge-refusal-fixtures.sh" > "$BUILD/gate-m29-canary.log" 2>&1 \
+  || { echo "[kernel] FATAL: the refusal fixtures did not build (see $BUILD/gate-m29-canary.log)" >&2; exit 3; }
 for jar in "$FORGE_CANARY" "$OWL" "$NEOLIVE"; do
   [ -f "$jar" ] || { echo "[kernel] SKIP-FATAL: missing $jar (build-forge-refusal-fixtures.sh builds forbriclive, see $BUILD/gate-m29-canary.log; build-testmods.sh the NeoForge canary; the owl jar is a local fixture)" >&2; exit 3; }
 done
@@ -156,6 +158,13 @@ refused_and_stopped() {
   # wrote about itself is not the mod running. Its "constructed @Mod" line would be, and it is not excluded.
   check_absent "$lang: nothing of the refused jars ran" "constructed @Mod (forbriclive|animalgarden_owl)|\[ForbricLive|aquariusplayz" \
     "$log" '\[Forbric/(Unsupported|MultiLoader)\]'
+  # forbriclive's fixture keeps the live canary's mixin config and its plugin, which prints [ForbricLive/PLUGIN] (above)
+  # the moment Mixin is handed the config. The kernel's own count of what it registered says the same from the other
+  # side: the line is there, and no config of it is MinecraftForge's or the refused canary's.
+  check "$lang: no MinecraftForge mixin config was registered" \
+    '\[Forbric/Mixin\] mixin configs: .*\([0-9]+ NeoForge, 0 MinecraftForge\)' "$log"
+  check_absent "$lang: and not the refused canary's under another name" \
+    '\[Forbric/Mixin\] mixin configs: .*forbriclive\.mixins\.json' "$log"
   check_absent "$lang: no crash report for a policy decision" "Preparing crash report|Game crashed" "$log"
 }
 

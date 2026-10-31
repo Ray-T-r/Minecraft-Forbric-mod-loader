@@ -42,7 +42,9 @@ mkdir -p "$BUILD"
 
 step "build the three parents"
 "$KERNEL/run/build-nested-dupe-canary.sh" >"$BUILD/gate-m19-canary.log" 2>&1
-"$KERNEL/run/build-forge-refusal-fixtures.sh" >>"$BUILD/gate-m19-canary.log" 2>&1
+# Its exit code, not only the jar: a failed build leaves the previous jar in place.
+"$KERNEL/run/build-forge-refusal-fixtures.sh" >>"$BUILD/gate-m19-canary.log" 2>&1 \
+  || { echo "[kernel] FAIL canary build (see $BUILD/gate-m19-canary.log): build-forge-refusal-fixtures.sh"; exit 1; }
 for jar in "$FAB" "$FORGE" "$NEOPARENT"; do
   [ -f "$jar" ] || { echo "[kernel] FAIL canary build (see $BUILD/gate-m19-canary.log): $jar"; exit 1; }
 done

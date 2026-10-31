@@ -1,0 +1,9 @@
+{
+  "required": true,
+  "package": "forbric.live.mixin",
+  "compatibilityLevel": "JAVA_17",
+  "plugin": "forbric.live.ForbricLiveMixinPlugin",
+  "mixins": [],
+  "client": [],
+  "injectors": { "defaultRequire": 0 }
+}
