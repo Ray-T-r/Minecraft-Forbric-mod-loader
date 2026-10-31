@@ -110,11 +110,10 @@ public final class KernelClientSmoke {
 	 * notch through the game's OWN {@code MouseHandler}. 0 (the default) leaves it alone.
 	 *
 	 * <p>It exists because the screen-mouse bridges cannot be judged from anything the kernel says. A forward
-	 * counter proves the kernel forwarded; what was in doubt is whether a traditional-Forge mod's listener runs,
-	 * and the only witness to that is the mod itself. Driving {@code MouseHandler.onButton},
-	 * {@code handleAccumulatedMovement} and {@code onScroll} — the three private methods the merged base's own
-	 * GLFW callbacks call, and the three that hold NeoForge's hooks — makes a mod that listens on the
-	 * MinecraftForge side speak, or stay silent, with nothing in between.
+	 * counter proves the kernel forwarded; what is in doubt is whether a mod's own listener runs, and the only
+	 * witness to that is the mod itself. Driving {@code MouseHandler.onButton}, {@code handleAccumulatedMovement} and
+	 * {@code onScroll} — the three private methods the base's own GLFW callbacks call, and the three that hold
+	 * NeoForge's hooks — makes a listening mod speak, or stay silent, with nothing in between.
 	 */
 	public static final String SCREEN_MOUSE = "forbric.clientSmokeScreenMouse";
 
@@ -189,15 +188,6 @@ public final class KernelClientSmoke {
 				disconnectRequested = false;
 				stopRequested = true;
 				probeIds(minecraft, "after disconnect");
-				if (connectionProbesArmed) {
-					ForbricLog.info("[Forbric/ClientSmoke] MinecraftForge connection events: LoggingIn %d, LoggingOut %d",
-							forgeLogins[0], forgeLogins[1]);
-					StringBuilder census = new StringBuilder();
-					for (String[] heard : FORGE_CLIENT_CENSUS) {
-						census.append(' ').append(heard[0]).append('=').append(forgeHeard.getOrDefault(heard[0], 0));
-					}
-					ForbricLog.info("[Forbric/ClientSmoke] MinecraftForge client events heard:%s", census);
-				}
 				ForbricLog.info("[Forbric/ClientSmoke] clean disconnect observed; stopping client");
 				invokeNoArg(minecraft, "stop");
 			}
@@ -249,26 +239,16 @@ public final class KernelClientSmoke {
 
 	private static boolean keyBindsTried;
 
-	/** LoggingIn, LoggingOut as MinecraftForge listeners saw them. */
-	private static final int[] forgeLogins = new int[2];
-	/** MinecraftForge client events a smoke run produces on its own, each heard by a listener as a mod's would be. */
-	private static final String[][] FORGE_CLIENT_CENSUS = {
-			{"RenderFog", "net.minecraftforge.client.event.ViewportEvent$RenderFog"},
-			{"FogColor", "net.minecraftforge.client.event.ViewportEvent$ComputeFogColor"},
-			{"FovModifier", "net.minecraftforge.client.event.ComputeFovModifierEvent"},
-			{"ScreenRenderPre", "net.minecraftforge.client.event.ScreenEvent$Render$Pre"},
-			{"ScreenRenderPost", "net.minecraftforge.client.event.ScreenEvent$Render$Post"},
-			{"SystemMessage", "net.minecraftforge.client.event.SystemMessageReceivedEvent"},
-			{"TextureStitched", "net.minecraftforge.client.event.TextureStitchEvent$Post"},
-			{"ModelsBaked", "net.minecraftforge.client.event.ModelEvent$BakingCompleted"}};
-	private static final java.util.Map<String, Integer> forgeHeard = new java.util.concurrent.ConcurrentHashMap<>();
 	private static boolean connectionProbesArmed;
 
 	/**
-	 * Listens the way a MinecraftForge mod does for the client joining and leaving, and registers one client command
-	 * through each family's registration event, before any world is joined. What the game's command tree holds after
-	 * joining says whether both registrations reached the dispatcher the game runs — and whether MinecraftForge's own
-	 * handler replaced it with a tree of its own (the NeoForge command would then be gone).
+	 * Registers one client command through NeoForge's client-command registration event, before any world is joined.
+	 * Whether the game's command tree holds it after joining says whether the registration reached the dispatcher the
+	 * game runs.
+	 *
+	 * <p>NeoForge's listener stands alone in its own try. It used to share one with the MinecraftForge listeners, and on
+	 * a base without MinecraftForge the first {@code Class.forName} of a MinecraftForge event threw, disarmed the probes
+	 * and left the NeoForge command unregistered and {@link #reportClientCommands} silent.
 	 */
 	@SuppressWarnings({"unchecked", "rawtypes"})
 	private static void armConnectionProbes(Object minecraft) {
@@ -284,44 +264,18 @@ public final class KernelClientSmoke {
 					throw new IllegalStateException(e);
 				}
 			};
-			String forgeNet = "net.minecraftforge.client.event.ClientPlayerNetworkEvent$";
-			for (String[] heard : FORGE_CLIENT_CENSUS) {
-				forgeListen(cl, heard[1], e -> forgeHeard.merge(heard[0], 1, Integer::sum));
-			}
-			forgeListen(cl, forgeNet + "LoggingIn", e -> forgeLogins[0]++);
-			forgeListen(cl, forgeNet + "LoggingOut", e -> forgeLogins[1]++);
-			forgeListen(cl, net.forbric.api.ForeignType.CLIENT_COMMANDS_EVENT.binary(net.forbric.api.Ecosystem.FORGE),
-					e -> register.accept(invoke(e, "getDispatcher"), "forbricsmokeforge"));
 			Object neoBus = Class.forName("net.neoforged.neoforge.common.NeoForge", true, cl).getField("EVENT_BUS").get(null);
 			Class<?> neoEvent = Class.forName(net.forbric.api.ForeignType.CLIENT_COMMANDS_EVENT.binary(net.forbric.api.Ecosystem.NEOFORGE), true, cl);
 			neoBus.getClass().getMethod("addListener", Class.class, java.util.function.Consumer.class).invoke(neoBus, neoEvent,
 					(java.util.function.Consumer) e -> register.accept(invoke(e, "getDispatcher"), "forbricsmokeneo"));
 		} catch (ClassNotFoundException absent) {
 			Caught.expected(absent);
-			ForbricLog.debug("[Forbric/ClientSmoke] not both families on this client — no connection probes");
+			ForbricLog.debug("[Forbric/ClientSmoke] no NeoForge client-command event on this client — no connection probe");
 			connectionProbesArmed = false;
 		} catch (Throwable t) {
 			Caught.warn(t, "[Forbric/ClientSmoke] could not arm the connection probes");
 			connectionProbesArmed = false;
 		}
-	}
-
-	@SuppressWarnings({"unchecked", "rawtypes"})
-	private static void forgeListen(ClassLoader cl, String event, java.util.function.Consumer<Object> listener) throws Exception {
-		Object bus = Class.forName(event, true, cl).getField("BUS").get(null);
-		// The bus's public interface, not its class: the implementation is not public.
-		for (Class<?> type = bus.getClass(); type != null; type = type.getSuperclass()) {
-			for (Class<?> api : type.getInterfaces()) {
-				try {
-					api.getMethod("addListener", java.util.function.Consumer.class).invoke(bus, (java.util.function.Consumer) listener);
-					return;
-				} catch (NoSuchMethodException elsewhere) {
-					Caught.expected(elsewhere);
-					continue;
-				}
-			}
-		}
-		throw new NoSuchMethodException(event + ".BUS.addListener(Consumer)");
 	}
 
 	private static Object invoke(Object target, String method) {
@@ -332,14 +286,14 @@ public final class KernelClientSmoke {
 		}
 	}
 
-	/** Which of the two probe commands the joined connection's command tree has. */
+	/** Whether the joined connection's command tree has the probe command. */
 	private static void reportClientCommands(Object minecraft) {
 		try {
 			Object connection = invoke(minecraft, "getConnection");
 			Object root = invoke(invoke(connection, "getCommands"), "getRoot");
 			java.lang.reflect.Method child = root.getClass().getMethod("getChild", String.class);
-			ForbricLog.info("[Forbric/ClientSmoke] client command tree after joining: forge=%s neo=%s",
-					child.invoke(root, "forbricsmokeforge") != null, child.invoke(root, "forbricsmokeneo") != null);
+			ForbricLog.info("[Forbric/ClientSmoke] client command tree after joining: neo=%s",
+					child.invoke(root, "forbricsmokeneo") != null);
 		} catch (Throwable t) {
 			Caught.warn(t, "[Forbric/ClientSmoke] could not read the client command tree");
 		}
@@ -3009,8 +2963,7 @@ public final class KernelClientSmoke {
 
 	/**
 	 * Where the trees are, said as data: how many name and tag trees NeoForge's registry holds and whether the
-	 * search tab's own keys are among them, and how many the merged class's private MinecraftForge map holds. The
-	 * screen reads the first; a producer that wrote the second fed nothing the player sees.
+	 * search tab's own keys are among them. The screen reads them.
 	 */
 	private static String searchTreeCensus(Object connection, ClassLoader cl) {
 		StringBuilder out = new StringBuilder();
@@ -3025,9 +2978,6 @@ public final class KernelClientSmoke {
 			out.append("neoforge name trees=").append(neoNames.size()).append(" (search tab: ")
 					.append(neoNames.containsKey(names)).append("), tag trees=").append(neoTags.size())
 					.append(" (search tab: ").append(neoTags.containsKey(tags)).append(')');
-			Object session = accessible(connection.getClass(), "searchTrees").invoke(connection);
-			Object forge = fieldValue(session, "creativeSearch");
-			if (forge instanceof java.util.Map<?, ?> map) out.append("; minecraftforge map=").append(map.size());
 		} catch (Throwable t) {
 			Caught.expected(t);
 			out.append("<census unreadable: ").append(t).append('>');
