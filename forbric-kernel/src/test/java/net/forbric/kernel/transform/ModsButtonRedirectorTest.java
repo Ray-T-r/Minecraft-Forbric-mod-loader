@@ -53,18 +53,17 @@ import net.forbric.kernel.TestFixtures.Fixture;
  * and, on a real sixteen-jar Forbric pack, three of them.
  */
 class ModsButtonRedirectorTest {
-	private static final Path MERGED_BASE = TestFixtures.stagedBase();
+	private static final Path BASE = TestFixtures.stagedBase();
 
 	/**
 	 * The Forge-family button does not live in one fixed class, and pinning it to one is the mistake the
 	 * transformer's own javadoc is about. It was {@code PauseScreen} on NeoForge 26.2.0.38-beta; on 26.2.0.88 the
-	 * NeoForge half moved out to {@code neoforge.client.gui.widget.ModsButton}, which is not in the merged base at
-	 * all — it is in the runtime jar. So these tests FIND the carriers the same way the transformer does, by
+	 * NeoForge half moved out to {@code neoforge.client.gui.widget.ModsButton}, which is not in the base at all — it is
+	 * in the runtime jar. So these tests FIND the carriers the same way the transformer does, by
 	 * marker, across both staged jars, and then assert against whatever they turn out to be.
 	 */
 	private static final Path NEO_RUNTIME = TestFixtures.stagedRoot().resolve(TestFixtures.NEO_CARRIER_JAR);
 
-	private static final String PAUSE = "net/minecraft/client/gui/screens/PauseScreen";
 	private static final String NEO = ForeignType.MOD_LIST_SCREEN.internal(Ecosystem.NEOFORGE);
 	private static final String FORGE = ForeignType.MOD_LIST_SCREEN.internal(Ecosystem.FORGE);
 
@@ -80,19 +79,16 @@ class ModsButtonRedirectorTest {
 		assertTrue(opened.values().stream().flatMap(List::stream).anyMatch(NEO::equals),
 				"something in the staged jars must still open NeoForge's own ModListScreen — if nothing does, the "
 						+ "button moved again and this redirect needs re-deriving. Carriers found: " + opened);
-		// MinecraftForge's own site is NOT required. Whether the merged createPauseMenu carries it depends on the
-		// base: one where NeoForge's body wins keeps only NeoForge's button, one that keeps both families' edits
-		// carries both — and then the redirector keeps the first and drops the other (ModsButtonRedirectorExecution
-		// Test). One live Forge-family button, re-pointed, is the whole claim; requiring two was describing a merge
-		// outcome.
+		// MinecraftForge's own site is NOT required: the genuine base has none. One live Forge-family button,
+		// re-pointed, is the whole claim.
 	}
 
 	/**
 	 * BOTH families' construction sites are re-pointed, not only the one the button happens to be bound to.
 	 *
-	 * <p>The merged base carries a lambda for each, and which one the button calls is a byte-merge outcome rather
-	 * than a decision. Redirecting only the winner would make the repair conditional on a merge detail that has
-	 * changed before, and the symptom would be a mods button that silently lists one family again.
+	 * <p>On the genuine base only NeoForge's {@code ModsButton} builds one. The merged base carried a lambda for each
+	 * family, and which one the button called was a byte-merge outcome; redirecting only the winner would have made the
+	 * repair conditional on it. Every carrier found is checked, whatever the base.
 	 */
 	@Test
 	void everyCarrierIsRePointedAtTheUnifiedOne() throws Exception {
@@ -233,18 +229,28 @@ class ModsButtonRedirectorTest {
 				+ "sprites/<path>.png, and a missing one renders as magenta rather than failing: " + icon);
 	}
 
+	/**
+	 * Every staged class the first pass re-points (on the genuine base, NeoForge's {@code ModsButton}; its
+	 * {@code PauseScreen} builds no list and is handed back untouched either way) is handed back as it is the second time.
+	 */
 	@Test
 	void aSecondPassLeavesTheRedirectedClassAlone() throws Exception {
-		TestFixtures.requireFile(Fixture.STAGED, MERGED_BASE, "staged merged base absent");
-		byte[] once = transform(PAUSE, readClass(MERGED_BASE, PAUSE + ".class"));
-		assertSame(once, transform(PAUSE, once), "nothing left to re-point means nothing to rewrite");
+		int checked = 0;
+		for (Map.Entry<String, byte[]> carrier : carriers().entrySet()) {
+			if (opensAFamilysList(parse(carrier.getValue())).isEmpty()) continue;
+			byte[] once = transform(carrier.getKey(), carrier.getValue());
+			assertTrue(once != carrier.getValue(), carrier.getKey() + ": premise, the first pass re-points it");
+			assertSame(once, transform(carrier.getKey(), once), carrier.getKey() + ": nothing left to re-point means nothing to rewrite");
+			checked++;
+		}
+		assertTrue(checked >= 1, "no staged class builds a family's mod list, so no second pass was measured");
 	}
 
 	/** Only the two screens that carry a mods button are touched; everything else is handed back unchanged. */
 	@Test
 	void anyOtherClassIsHandedBackUntouched() throws Exception {
-		TestFixtures.requireFile(Fixture.STAGED, MERGED_BASE, "staged merged base absent");
-		byte[] unrelated = readClass(MERGED_BASE, "net/minecraft/client/gui/screens/ChatScreen.class");
+		TestFixtures.requireFile(Fixture.STAGED, BASE, "staged base absent");
+		byte[] unrelated = readClass(BASE, "net/minecraft/client/gui/screens/ChatScreen.class");
 		assertSame(unrelated, transform("net/minecraft/client/gui/screens/ChatScreen", unrelated));
 	}
 
@@ -314,14 +320,14 @@ class ModsButtonRedirectorTest {
 
 	/**
 	 * Every class in the staged jars that mentions a mods-button marker, excluding the screens being replaced.
-	 * Scanned once: the merged base alone is tens of thousands of entries.
+	 * Scanned once: the base alone is tens of thousands of entries.
 	 */
 	private static Map<String, byte[]> carriers() throws Exception {
 		if (CARRIERS != null) return CARRIERS;
-		TestFixtures.require(Fixture.STAGED, Files.isRegularFile(MERGED_BASE) && Files.isRegularFile(NEO_RUNTIME),
+		TestFixtures.require(Fixture.STAGED, Files.isRegularFile(BASE) && Files.isRegularFile(NEO_RUNTIME),
 				"staged jars absent");
 		Map<String, byte[]> found = new TreeMap<>();
-		for (Path jar : List.of(MERGED_BASE, NEO_RUNTIME)) {
+		for (Path jar : List.of(BASE, NEO_RUNTIME)) {
 			try (ZipFile zip = new ZipFile(jar.toFile())) {
 				for (ZipEntry entry : zip.stream().toList()) {
 					if (!entry.getName().endsWith(".class")) continue;
