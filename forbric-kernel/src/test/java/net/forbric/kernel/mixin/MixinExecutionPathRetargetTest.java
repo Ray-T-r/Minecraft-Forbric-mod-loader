@@ -148,8 +148,19 @@ class MixinExecutionPathRetargetTest {
 						"registerItemModels", "registerModels", "setFabricPackOutput", "registerModels"));
 		assertActual("fabric-renderer-api-v1", "net/fabricmc/fabric/mixin/client/renderer/block/model/SimpleModelWrapperMixin",
 				"net/minecraft/client/resources/model/SimpleModelWrapper", Map.of("storeModelBakery", "bake"));
-		assertActual("fabric-content-registries-v0", "net/fabricmc/fabric/mixin/content/registry/fluid/LivingEntityMixin",
-				"net/minecraft/world/entity/LivingEntity", Map.of("travelInCustomFluid", "travelInFluid"));
+		// The fluid wrap needs no move on the genuine base: its bare travelInFluid binds NeoForge's one travelInFluid(Vec3),
+		// which makes the travelInLava call itself (javap). The merged base also declared MinecraftForge's
+		// travelInFluid(Vec3, FluidState), so the bare name bound two bodies and the plan pinned the live one.
+		ClassNode fluid = StagedFabricMixinFixture.mixin("fabric-content-registries-v0", "net/fabricmc/fabric/mixin/content/registry/fluid/LivingEntityMixin");
+		ClassNode living = gameWithDebug("net/minecraft/world/entity/LivingEntity", false);
+		MixinStubRebind.noteEcosystem(fluid.name, Ecosystem.FABRIC);
+		MethodNode wrap = fluid.methods.stream().filter(m -> m.name.equals("travelInCustomFluid")).findFirst().orElseThrow();
+		List<MethodNode> bound = MixinTargetSelectors.bound(wrap, living);
+		assertEquals(List.of("travelInFluid(Lnet/minecraft/world/phys/Vec3;)V"), bound.stream().map(m -> m.name + m.desc).toList());
+		assertTrue(java.util.Arrays.stream(bound.getFirst().instructions.toArray()).anyMatch(i -> i instanceof MethodInsnNode call
+				&& call.name.equals("travelInLava")), "the body the wrap binds makes the call it wraps");
+		MixinRetarget.Plan plan = NativeCallTestEvidence.plan(fluid, path -> path.equals(living.name + ".class") ? StagedFabricMixinFixture.bytes(living) : null);
+		assertTrue(plan.rewrites().stream().noneMatch(r -> r.handler().startsWith("travelInCustomFluid(")), plan.describe());
 	}
 
 	@Test void actualHudFragmentsMoveIntoReachedPrivateHelpersAndRetainTheOriginalOperationBodies() throws Exception {
@@ -204,8 +215,10 @@ class MixinExecutionPathRetargetTest {
 		net.forbric.kernel.TestFixtures.require(vanilla ? net.forbric.kernel.TestFixtures.Fixture.MC_LIBRARIES
 				: net.forbric.kernel.TestFixtures.Fixture.STAGED, java.nio.file.Files.isRegularFile(jar), "actual game with LVT required");
 		try (java.util.zip.ZipFile zip = new java.util.zip.ZipFile(jar.toFile())) {
-			ClassNode node = new ClassNode(); new ClassReader(zip.getInputStream(zip.getEntry(owner + ".class")).readAllBytes())
-					.accept(node, ClassReader.SKIP_FRAMES); return node;
+			byte[] raw = zip.getInputStream(zip.getEntry(owner + ".class")).readAllBytes();
+			// The staged game as the adapters see it: the pre-Mixin view (vanilla twins, then the compat repairs).
+			if (!vanilla) return net.forbric.kernel.transform.PreMixinView.node(owner, raw, ClassReader.SKIP_FRAMES);
+			ClassNode node = new ClassNode(); new ClassReader(raw).accept(node, ClassReader.SKIP_FRAMES); return node;
 		}
 	}
 

@@ -23,7 +23,8 @@ final class StagedFabricMixinFixture {
  static ClassNode game(String name,boolean vanilla)throws Exception{
   Path p=vanilla?TestFixtures.vanillaJar():TestFixtures.stagedBase();
   TestFixtures.require(vanilla?Fixture.MC_LIBRARIES:Fixture.STAGED,Files.isRegularFile(p),"actual game required");
-  try(ZipFile z=new ZipFile(p.toFile())){return MixinFit.parse(z.getInputStream(z.getEntry(name+".class")).readAllBytes());}
+  // The staged game as the adapters see it in the game: the pre-Mixin view (vanilla twins, then the compat repairs).
+  try(ZipFile z=new ZipFile(p.toFile())){byte[] raw=z.getInputStream(z.getEntry(name+".class")).readAllBytes();return MixinFit.parse(vanilla?raw:net.forbric.kernel.transform.PreMixinView.of(name,raw));}
  }
  static MethodNode method(ClassNode c,String name){return c.methods.stream().filter(m->m.name.equals(name)).findFirst().orElseThrow();}
  static AnnotationNode at(ClassNode c,String name){return MixinFit.atNodes(MixinFit.injectorOf(method(c,name))).getFirst();}
