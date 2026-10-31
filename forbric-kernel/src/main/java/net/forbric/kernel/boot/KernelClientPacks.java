@@ -208,26 +208,18 @@ public final class KernelClientPacks {
 	 * where NeoForge's reader supplies a default — so those stay on NeoForge's. Game side, a vanilla read that
 	 * yields nothing falls back to NeoForge's reader, and then to the synthesised metadata.
 	 *
-	 * <p>A {@code carrier} is an ecosystem runtime jar, and what it is comes from its own manifest, never from
-	 * {@link MultiLoaderArbiter}: nobody arbitrates a carrier, and each one also ships a {@code fabric.mod.json}, so
-	 * asking the arbiter scanned the 4 MB MinecraftForge carrier for {@code @Mod} classes on the render thread
-	 * inside {@code Minecraft.<init>} and logged that it was "loading it as FORGE only, suppressing [FABRIC]" —
-	 * while nothing was being loaded or suppressed. NeoForge's carrier is read by NeoForge's reader, as NeoForge
-	 * reads it; MinecraftForge's by vanilla's, as MinecraftForge reads it.
+	 * <p>A {@code carrier} is the NeoForge runtime jar, never put to {@link MultiLoaderArbiter}: nobody arbitrates a
+	 * carrier, and it also ships a {@code fabric.mod.json}, so asking the arbiter scanned a carrier for {@code @Mod}
+	 * classes on the render thread inside {@code Minecraft.<init>} and logged a load decision nothing was making. It
+	 * is read by NeoForge's reader, as NeoForge reads it.
 	 */
 	static boolean readsItsMetadataTheVanillaWay(Path jar, boolean carrier) {
 		if ("off".equalsIgnoreCase(System.getProperty(VANILLA_READER, "on"))) return false;
 		// The cheap question first: without a pack.mcmeta there is nothing to route, and no owner to ask about.
 		if (!declaresPackMetadata(jar)) return false;
 		// NeoForge's reader for what NeoForge loads; vanilla's for everything else, a refused jar and a library among it.
-		boolean neoForge = carrier ? carrierEcosystem(jar) == Ecosystem.NEOFORGE
-				: MultiLoaderArbiter.claimOf(jar).ownedBy(Ecosystem.NEOFORGE);
+		boolean neoForge = carrier || MultiLoaderArbiter.claimOf(jar).ownedBy(Ecosystem.NEOFORGE);
 		return !neoForge;
-	}
-
-	/** The ecosystem a runtime carrier is: NeoForge's declares {@code neoforge.mods.toml}, MinecraftForge's does not. */
-	private static Ecosystem carrierEcosystem(Path jar) {
-		return MultiLoaderArbiter.declaredBy(jar).contains(Ecosystem.NEOFORGE) ? Ecosystem.NEOFORGE : Ecosystem.FORGE;
 	}
 
 	private static boolean declaresPackMetadata(Path jar) {

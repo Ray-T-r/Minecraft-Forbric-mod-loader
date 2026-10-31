@@ -81,26 +81,21 @@ class KernelClientPacksReaderTest {
 	}
 
 	/**
-	 * The two carriers as they ship: each its ecosystem's manifest plus a {@code fabric.mod.json}, and a
-	 * pack.mcmeta. Nobody arbitrates a carrier, and asking the arbiter about the MinecraftForge one scanned it for
-	 * {@code @Mod} classes inside {@code Minecraft.<init>} and logged a load decision nothing was making.
+	 * The carrier as it ships: NeoForge's manifest plus a {@code fabric.mod.json}, and a pack.mcmeta. Nobody arbitrates
+	 * a carrier, and asking the arbiter about one scanned it for {@code @Mod} classes inside {@code Minecraft.<init>}
+	 * and logged a load decision nothing was making.
 	 */
 	@Test
-	void aCarrierIsReadAsItsOwnEcosystemReadsItWithoutBeingArbitrated() throws IOException {
-		Path forge = jarDeclaring("forge-runtime-interop.jar", PACK_MCMETA, "META-INF/mods.toml", "fabric.mod.json");
+	void theCarrierIsReadAsNeoForgeReadsItWithoutBeingArbitrated() throws IOException {
 		Path neo = jarDeclaring("neoforge-runtime.jar", PACK_MCMETA, "META-INF/neoforge.mods.toml", "fabric.mod.json");
-		boolean[] vanilla = new boolean[2];
-		String log = captured(() -> {
-			vanilla[0] = KernelClientPacks.readsItsMetadataTheVanillaWay(forge, true);
-			vanilla[1] = KernelClientPacks.readsItsMetadataTheVanillaWay(neo, true);
-		});
-		assertTrue(vanilla[0], "MinecraftForge's carrier: vanilla's reader, as MinecraftForge reads it");
-		assertFalse(vanilla[1], "NeoForge's carrier: NeoForge's reader, as NeoForge reads it");
+		boolean[] vanilla = new boolean[1];
+		String log = captured(() -> vanilla[0] = KernelClientPacks.readsItsMetadataTheVanillaWay(neo, true));
+		assertFalse(vanilla[0], "NeoForge's carrier: NeoForge's reader, as NeoForge reads it");
 		assertFalse(log.contains("[Forbric/MultiLoader]"), "a carrier is never put to the arbiter: " + log);
 
 		// premise: the same jar as a MOD is arbitrated, and that is the line the carrier used to get
-		assertTrue(captured(() -> KernelClientPacks.readsItsMetadataTheVanillaWay(forge, false))
-				.contains("forge-runtime-interop.jar declares 2 loaders"));
+		assertTrue(captured(() -> KernelClientPacks.readsItsMetadataTheVanillaWay(neo, false))
+				.contains("neoforge-runtime.jar declares 2 loaders"));
 	}
 
 	private Path jar(String name, String manifest, String packMcmeta) throws IOException {

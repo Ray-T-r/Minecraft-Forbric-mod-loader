@@ -27,27 +27,23 @@ import net.forbric.kernel.util.Caught;
 import net.forbric.kernel.util.ForbricLog;
 
 /**
- * Loads each carrier's OWN built-in translations, the way its client mod loader would have.
+ * Loads the NeoForge carrier's OWN built-in translations, the way its client mod loader would have.
  *
- * <p>The carriers keep a second, private translation table beside Minecraft's. Minecraft's is built from the
+ * <p>The carrier keeps a second, private translation table beside Minecraft's. Minecraft's is built from the
  * resource packs at the first reload; the carrier's is a plain map loaded from the classpath before any of that,
  * because the text it holds — the loading screen, the mod list, the "you are running X" branding, every load-error
  * message — has to render before a resource pack exists. {@code FMLTranslations.getPattern} reads
- * {@code I18nManager.currentLocale} and MinecraftForge's {@code ForgeI18n.getPattern} reads its own map; neither
- * ever consults the resource manager, and when a key is missing BOTH return the key itself, so the screen shows
- * {@code fml.menu.branding} where it meant to show a sentence.
+ * {@code I18nManager.currentLocale}; it never consults the resource manager, and when a key is missing it returns
+ * the key itself, so the screen shows {@code fml.menu.branding} where it meant to show a sentence.
  *
- * <p>That table is filled in exactly one place per carrier, and both are inside the client mod loader the kernel
- * replaces: NeoForge's {@code ClientModLoader.begin()} calls {@code LanguageHook.loadBuiltinLanguages()}, which
- * reads {@code assets/minecraft/lang/en_us.json} and {@code assets/neoforge/lang/en_us.json} off the context class
- * loader and ends in {@code I18nManager.injectTranslations}; MinecraftForge's twin is
- * {@code LanguageHook.loadForgeAndMCLangs()}, ending in {@code ForgeI18n.loadLanguageData}. The kernel redirects
- * the {@code begin()} CALL SITE, so its body never runs and neither map was ever filled — on a Forbric client the
- * main menu's branding line and the loading screen's continue button rendered as their raw keys.
+ * <p>That table is filled in exactly one place, inside the client mod loader the kernel replaces: NeoForge's
+ * {@code ClientModLoader.begin()} calls {@code LanguageHook.loadBuiltinLanguages()}, which reads
+ * {@code assets/minecraft/lang/en_us.json} and {@code assets/neoforge/lang/en_us.json} off the context class loader
+ * and ends in {@code I18nManager.injectTranslations}. The kernel redirects the {@code begin()} CALL SITE, so its body
+ * never runs and the map was never filled — on a Forbric client the main menu's branding line and the loading
+ * screen's continue button rendered as their raw keys.
  *
- * <p>Both calls are idempotent (each rebuilds its map from scratch) and neither touches Minecraft's own language,
- * so running them both on a merged base costs nothing: the two tables belong to different classes and neither
- * carrier reads the other's.
+ * <p>The call is idempotent (it rebuilds its map from scratch) and does not touch Minecraft's own language.
  *
  * <p>{@code -Dforbric.carrierLanguages=off} skips the load, which is the old behaviour — every FML-side string
  * renders as its key.
@@ -83,9 +79,7 @@ public final class CarrierLanguages {
 
 	private static final List<Carrier> CARRIERS = List.of(
 			new Carrier("neoforge", ForeignType.LANGUAGE_HOOK.binary(Ecosystem.NEOFORGE), "loadBuiltinLanguages",
-					"net.neoforged.fml.i18n.I18nManager", "currentLocale", "fml.menu.branding"),
-			new Carrier("forge", ForeignType.LANGUAGE_HOOK.binary(Ecosystem.FORGE), "loadForgeAndMCLangs",
-					"net.minecraftforge.common.ForgeI18n", "i18n", "fml.menu.mods"));
+					"net.neoforged.fml.i18n.I18nManager", "currentLocale", "fml.menu.branding"));
 
 	static List<Carrier> carriers() {
 		return CARRIERS;

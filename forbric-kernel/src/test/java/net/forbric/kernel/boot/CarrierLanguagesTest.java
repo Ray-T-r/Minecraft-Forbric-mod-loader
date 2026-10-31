@@ -166,12 +166,11 @@ class CarrierLanguagesTest {
 	@Test
 	void everyCarriersLoaderAndTableAreWhereTheTableSaysTheyAre() throws IOException {
 		Path neoforge = staged(TestFixtures.NEO_CARRIER_JAR);
-		Path forge = staged(TestFixtures.FORGE_CARRIER_JAR);
-		TestFixtures.requireFiles(Fixture.STAGED, "staged carriers absent", neoforge, forge);
+		TestFixtures.requireFiles(Fixture.STAGED, "staged carrier absent", neoforge);
 
 		List<String> wrong = new ArrayList<>();
 		for (CarrierLanguages.Carrier carrier : CarrierLanguages.carriers()) {
-			Path jar = "forge".equals(carrier.label()) ? forge : neoforge;
+			Path jar = neoforge;
 			if (!hasMethod(jar, carrier.hookClass(), carrier.loadMethod(), "()V")) {
 				wrong.add(carrier.hookClass() + "#" + carrier.loadMethod() + "() is not in " + jar.getFileName());
 			}
