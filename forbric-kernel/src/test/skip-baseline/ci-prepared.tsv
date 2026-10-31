@@ -610,6 +610,7 @@ test	net.forbric.kernel.mixin.MixinReturnOrdinalsTest	theSwitchLeavesTheOrdinalA
 test	net.forbric.kernel.mixin.MixinShearsRelayTest	aWrapStillBoundToOtherIsCallsKeepsThemAndAnswersTheCarrierToo()	[fixture:third-party] sweep pack absent
 test	net.forbric.kernel.mixin.MixinShearsRelayTest	aWrapWhoseCallIsGoneMovesToTheCarrierCall()	[fixture:third-party] sweep pack absent
 test	net.forbric.kernel.mixin.MixinShearsRelayTest	onlyAFabricModsReviewedShapeIsRelayed()	[fixture:third-party] sweep pack absent
+test	net.forbric.kernel.mixin.MixinShearsRelayTest	theMobWrapsAreLeftAsCompiled()	[fixture:third-party] sweep pack absent
 test	net.forbric.kernel.mixin.MixinStubRebindSpellingTest	aShareGroupSpelledThreeWaysMovesWhole()	[fixture:third-party] build/compat-inputs/sweep90/mods/owo-lib-0.13.1+26.2.jar absent
 test	net.forbric.kernel.mixin.MixinStubRebindSpellingTest	aSharerOnAnotherMethodOrUnreadableDecidesTheGroupByWhatItBinds()	[fixture:third-party] build/compat-inputs/sweep90/mods/owo-lib-0.13.1+26.2.jar absent
 test	net.forbric.kernel.mixin.MixinStubRebindTest	aByTypeLocalDecidedOnlyBesideTheCarriersAddedArgumentIsPinned()	[fixture:third-party] run/client-popular/mods/architectury-fabric-21.1.10.jar absent

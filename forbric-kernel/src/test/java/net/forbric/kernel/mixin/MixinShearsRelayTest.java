@@ -19,8 +19,9 @@ import org.objectweb.asm.tree.analysis.Analyzer;
 import org.objectweb.asm.tree.analysis.BasicVerifier;
 
 /**
- * BCLib's six wraps of vanilla's is(Items.SHEARS) also answer the carrier's canPerformAction(SHEARS_*) the merge put in
- * its place, with the carrier's answer as their original; the rows are pinned to both bodies.
+ * BCLib's three block wraps of vanilla's is(Items.SHEARS) also answer the carrier's canPerformAction(SHEARS_*) NeoForge
+ * put in its place, with the carrier's answer as their original; the rows are pinned to both bodies. Its three mob wraps
+ * are not relayed (see {@link #theMobWrapsAreLeftAsCompiled}).
  */
 @ResourceLock("system-properties")
 class MixinShearsRelayTest {
@@ -120,6 +121,29 @@ class MixinShearsRelayTest {
 
 		System.setProperty(MixinShearsRelay.PROPERTY, "off");
 		assertEquals(0, MixinShearsRelay.adapt(fabric("PumpkinBlockMixin"), n -> target));
+	}
+
+	/**
+	 * BCLib's Sheep, SnowGolem and MushroomCow wraps come back untouched. NeoForge 26.2.0.93 keeps vanilla's is(SHEARS) in
+	 * MushroomCow.mobInteract, where the wrap binds as compiled, and has no shears check in Sheep's or SnowGolem's (it
+	 * shears them through ShearsItem.interactLivingEntity), so those two wraps bind nowhere: an item BCLib calls shears
+	 * that is not a ShearsItem shears neither mob, which native Fabric would. The rows that relayed them went with
+	 * MinecraftForge's ToolActions; a relay onto NeoForge's ShearsItem path would be new Fabric-on-NeoForge adaptation.
+	 */
+	@Test void theMobWrapsAreLeftAsCompiled() throws Exception {
+		for (String[] mob : List.of(new String[]{"SheepMixin", "net/minecraft/world/entity/animal/sheep/Sheep"},
+				new String[]{"SnowGolemMixin", "net/minecraft/world/entity/animal/golem/SnowGolem"},
+				new String[]{"MushroomCowMixin", "net/minecraft/world/entity/animal/cow/MushroomCow"})) {
+			ClassNode target = StagedFabricMixinFixture.game(mob[1], false);
+			assertTrue(MixinShearsRelay.ROWS.stream().noneMatch(row -> row.target().equals(mob[1])), mob[1] + " has no row");
+			ClassNode mixin = fabric(mob[0]);
+			int methods = mixin.methods.size();
+			Object point = MixinFit.value(StagedFabricMixinFixture.at(mixin, HANDLER), "target");
+			assertEquals(0, MixinShearsRelay.adapt(mixin, n -> target), mob[0]);
+			assertEquals(methods, mixin.methods.size(), mob[0] + ": nothing added or moved aside");
+			assertEquals(point, MixinFit.value(StagedFabricMixinFixture.at(mixin, HANDLER), "target"), mob[0] + ": its point is as compiled");
+			assertNotNull(MixinFit.injectorOf(only(mixin, HANDLER)), mob[0] + ": its injector stays");
+		}
 	}
 
 	private static List<String> calls(MethodNode method) {
