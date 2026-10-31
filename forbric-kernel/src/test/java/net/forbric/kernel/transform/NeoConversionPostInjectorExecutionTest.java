@@ -9,26 +9,19 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
-import org.junit.jupiter.api.AfterEach;
-import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
 import net.fabricmc.api.EnvType;
-import net.forbric.api.EventBridges;
-import net.forbric.api.GameEventBridge;
 
 /**
  * {@link NeoConversionPostInjector}'s output, run: a zombie drowning (one of the conversions the merge gave
- * MinecraftForge's lambdas) tells NeoForge mods as well as MinecraftForge mods, each once, where as merged only
- * MinecraftForge heard of it.
+ * MinecraftForge's lambdas) tells NeoForge mods, once, where as merged only MinecraftForge heard of it.
  *
  * <p>The hook is the kernel's real {@code KernelConversions}, compiled from {@code src/runtime/java} against stand-ins
- * for the entity and the two event factories; it reads the kernel's real {@link EventBridges}, so the test drives both
- * of its answers: the conversion forward installed (NeoForge's post reaches MinecraftForge through it) or not.
+ * for the entity and the two event factories (the merged lambda still names MinecraftForge's).
  */
 @ExecutesInjector(NeoConversionPostInjector.class)
-@org.junit.jupiter.api.parallel.ResourceLock("EventBridges")
 class NeoConversionPostInjectorExecutionTest {
 	private static final Path HOOK_SOURCE = Path.of("src/runtime/java/net/forbric/kernel/runtime/KernelConversions.java");
 	private static final String ZOMBIE = NeoConversionPostInjector.ZOMBIE;
@@ -100,12 +93,6 @@ class NeoConversionPostInjectorExecutionTest {
 					}
 					""");
 
-	@BeforeEach
-	@AfterEach
-	void reset() throws Throwable {
-		InjectorExecution.invokeStatic(EventBridges.class, "reset");
-	}
-
 	private static List<?> drown(ClassLoader loader) throws Throwable {
 		Object zombie = InjectorExecution.construct(loader.loadClass(ZOMBIE));
 		java.util.function.Consumer<Object> spawn = drowned -> { };
@@ -113,7 +100,7 @@ class NeoConversionPostInjectorExecutionTest {
 		return (List<?>) InjectorExecution.getStatic(loader.loadClass("fixture.Told"), "who");
 	}
 
-	@Test void aDrowningZombieTellsBothFamiliesOnce(@TempDir Path work) throws Throwable {
+	@Test void aDrowningZombieTellsNeoForgeOnce(@TempDir Path work) throws Throwable {
 		assertTrue(Files.isRegularFile(HOOK_SOURCE), "the game-side hook's source is part of the checkout: " + HOOK_SOURCE.toAbsolutePath());
 		Map<String, String> sources = new HashMap<>(STAND_INS);
 		sources.put("net/forbric/kernel/runtime/KernelConversions.java", Files.readString(HOOK_SOURCE));
@@ -124,11 +111,8 @@ class NeoConversionPostInjectorExecutionTest {
 		classes.put(internal, posted);
 		assertEquals("", InjectorExecution.verify(posted, InjectorExecution.load(classes)));
 
-		assertEquals(List.of("NeoForge zombie->drowned", "MinecraftForge zombie->drowned"), drown(InjectorExecution.load(classes)),
-				"without the conversion forward, the kernel tells MinecraftForge itself");
-		EventBridges.installed(GameEventBridge.CONVERSION_POST);
 		assertEquals(List.of("NeoForge zombie->drowned"), drown(InjectorExecution.load(classes)),
-				"with the forward installed, NeoForge's post reaches MinecraftForge through it: telling it here too would be twice");
+				"the moved call tells NeoForge, and nobody tells MinecraftForge: Forbric loads no MinecraftForge mod");
 
 		assertEquals(List.of("MinecraftForge zombie->drowned"), drown(InjectorExecution.load(original)),
 				"premise: as merged, NeoForge mods never hear of it");

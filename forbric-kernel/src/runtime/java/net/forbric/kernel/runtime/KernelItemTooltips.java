@@ -18,8 +18,6 @@ package net.forbric.kernel.runtime;
 
 import java.util.List;
 
-import net.forbric.api.EventBridges;
-import net.forbric.api.GameEventBridge;
 import net.forbric.kernel.util.Caught;
 import net.forbric.kernel.util.ForbricLog;
 import net.minecraft.network.chat.Component;
@@ -83,7 +81,6 @@ public final class KernelItemTooltips {
 			NeoForge.EVENT_BUS.post(new ItemTooltipEvent(stack, player, tooltip, flag, context, display));
 			if (!announced) {
 				announced = true;
-				EventBridges.installed(GameEventBridge.ITEM_TOOLTIP);
 				ForbricLog.info(POSTED);
 			}
 		} catch (Throwable t) {

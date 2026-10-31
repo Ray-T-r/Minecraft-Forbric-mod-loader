@@ -3352,7 +3352,6 @@ public final class ForbricMergedBaseCompatTransformer implements ClassTransforme
 			// A merge that keeps both families' edits gives getTooltipLines NeoForge's own event call back; posting
 			// another here would hand every NeoForge listener the tooltip twice and draw each of its lines twice.
 			if (postsNeoForgesTooltipEvent(method)) {
-				EventBridges.deliveredNatively(GameEventBridge.ITEM_TOOLTIP);
 				ForbricLog.info("[Forbric/MergedBaseCompat] %s.getTooltipLines already posts NeoForge's ItemTooltipEvent "
 						+ "beside MinecraftForge's — the tooltip repair stands down rather than post it twice", node.name);
 				return false;
