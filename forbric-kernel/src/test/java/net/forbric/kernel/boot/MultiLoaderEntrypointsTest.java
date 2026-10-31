@@ -13,8 +13,8 @@ import java.util.jar.JarOutputStream;
 
 import net.forbric.api.Ecosystem;
 import net.forbric.kernel.TestFixtures;
-import net.forbric.kernel.discovery.LoaderKind;
 import net.forbric.kernel.TestFixtures.Fixture;
+import net.forbric.kernel.discovery.LoaderKind;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -42,7 +42,8 @@ class MultiLoaderEntrypointsTest {
 				type("example/ForgeEntry", Ecosystem.FORGE, "example", null, false)));
 		assertEquals(new JarClaim.Refused(LoaderKind.MINECRAFTFORGE), MultiLoaderArbiter.claimOf(jar),
 				"refused is a claim of its own, never unowned (a library)");
-		assertNull(MultiLoaderArbiter.ownerOf(jar));
+		assertThrows(IllegalStateException.class, () -> MultiLoaderArbiter.ownerOf(jar),
+				"a refused jar has no owner, and is not answered as a library's null");
 		assertTrue(MultiLoaderArbiter.refused(jar));
 		assertEquals(List.of(Ecosystem.NEOFORGE, Ecosystem.FORGE, Ecosystem.FABRIC), MultiLoaderArbiter.declaredBy(jar),
 				"declarations are still reported as they are");
@@ -223,12 +224,13 @@ class MultiLoaderEntrypointsTest {
 		// loader halves' verdict) and bannerstone falls back to the bare preference among its usable halves.
 		for (int i = 0; i < names.size(); i++) {
 			Path jar = mods.resolve(names.get(i));
-			assertEquals(i < 2 ? null : Ecosystem.FABRIC, MultiLoaderArbiter.ownerOf(jar), names.get(i));
+			assertEquals(i < 2 ? new JarClaim.Refused(LoaderKind.MINECRAFTFORGE) : new JarClaim.Owned(Ecosystem.FABRIC),
+					MultiLoaderArbiter.claimOf(jar), names.get(i));
 			assertEquals(i < 2, MultiLoaderArbiter.refused(jar), names.get(i));
 			MultiLoaderArbiter.reset();
 			System.setProperty(MultiLoaderArbiter.ENTRYPOINT_SWITCH, "off");
-			assertEquals(i < 2 ? null : Ecosystem.NEOFORGE, MultiLoaderArbiter.ownerOf(jar),
-					"negative control: " + names.get(i));
+			assertEquals(i < 2 ? new JarClaim.Refused(LoaderKind.MINECRAFTFORGE) : new JarClaim.Owned(Ecosystem.NEOFORGE),
+					MultiLoaderArbiter.claimOf(jar), "negative control: " + names.get(i));
 			assertEquals(i < 2, MultiLoaderArbiter.refused(jar), names.get(i));
 			System.clearProperty(MultiLoaderArbiter.ENTRYPOINT_SWITCH);
 			MultiLoaderArbiter.reset();

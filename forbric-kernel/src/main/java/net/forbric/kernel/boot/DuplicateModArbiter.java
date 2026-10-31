@@ -1088,9 +1088,10 @@ public final class DuplicateModArbiter {
 			StringBuilder out = new StringBuilder();
 			for (String line : MergeReport.overrideTemplateHeader()) out.append(line).append('\n');
 			for (Map.Entry<String, Path> e : decision.ownerByModId().entrySet()) {
-				Ecosystem owner = MultiLoaderArbiter.ownerOf(e.getValue());
+				// A winner is never a refused jar: a refused jar claims no id.
+				JarClaim claim = MultiLoaderArbiter.claimOf(e.getValue());
 				out.append("# ").append(e.getKey()).append(" = ")
-						.append(owner == null ? "fabric" : owner.configId())
+						.append(claim instanceof JarClaim.Owned owned ? owned.ecosystem().configId() : "fabric")
 						.append('\n');
 			}
 			Files.writeString(file, out.toString());
@@ -1177,8 +1178,8 @@ public final class DuplicateModArbiter {
 		// Only an owned jar claims. A plain library has no identity; a refused MinecraftForge build claims nothing
 		// either: it cannot win an id from the NeoForge or Fabric build of the same mod beside it, have its nested jars
 		// inventoried as a mod's, or publish presence aliases from its fake halves. Its refusal is reported by discovery.
-		Ecosystem owner = MultiLoaderArbiter.claimOf(jar).owner();
-		if (owner == null) return null;
+		if (!(MultiLoaderArbiter.claimOf(jar) instanceof JarClaim.Owned owned)) return null;
+		Ecosystem owner = owned.ecosystem();
 		Map<String, String> versions = new LinkedHashMap<>();
 		List<String> ids = owner == Ecosystem.FABRIC
 				? fabricIds(jar, envType, versions)

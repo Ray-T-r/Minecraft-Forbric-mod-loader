@@ -72,9 +72,9 @@ import net.forbric.kernel.util.ForbricLog;
  * family, so no loader constructs it, registers its mixins or reads its access transformer. It is never an ecosystem
  * and never read as unowned: unowned is this class's word for "a plain library, nobody claims it", and every pass
  * treats such a jar as one to keep — it would put the refused jar's Forge classes, mixins and ATs on the game.
- * {@link #ownerOf} answers {@code null} for a refused jar as for a library, so a pass that keeps what nobody owns asks
- * {@link #claimOf} or {@link #suppressedFor} instead. {@code minecraftforge} in {@code -Dforbric.multiLoaderPreference}
- * is warned about and ignored.
+ * {@link #ownerOf} answers {@code null} for a library alone and has no answer for a refused jar, so no pass can read
+ * one as the other; a pass that may meet a refused jar asks {@link #claimOf} or {@link #suppressedFor}.
+ * {@code minecraftforge} in {@code -Dforbric.multiLoaderPreference} is warned about and ignored.
  */
 public final class MultiLoaderArbiter {
 	private static final List<Ecosystem> DEFAULT_PREFERENCE = List.of(Ecosystem.NEOFORGE, Ecosystem.FABRIC);
@@ -100,12 +100,23 @@ public final class MultiLoaderArbiter {
 	}
 
 	/**
-	 * The ecosystem that owns {@code jar}, or {@code null} when nothing does: a plain library, or a
-	 * {@linkplain #refused refused} jar. A pass that keeps an unowned jar must not keep a refused one, so it asks
-	 * {@link #claimOf} (or {@link #suppressedFor}), which tells the two apart.
+	 * The ecosystem that owns {@code jar}, or {@code null} for a plain library — null means that and nothing else.
+	 *
+	 * <p>A {@linkplain #refused refused} jar has no owner and is not a library, so it has no answer here: asking throws.
+	 * Null was the answer once, and every pass that keeps unowned jars would have kept the refused one with it — put its
+	 * Forge classes, mixins and data on the game. No boot pass asks this; each tells the claims apart with
+	 * {@link #claimOf} or {@link #suppressedFor}. It stays for the tests and the sweep tool, which ask about jars they
+	 * know.
+	 *
+	 * @throws IllegalStateException when {@code jar} is refused
 	 */
 	public static synchronized Ecosystem ownerOf(Path jar) {
-		return claimOf(jar).owner();
+		JarClaim claim = claimOf(jar);
+		if (claim.refused()) {
+			throw new IllegalStateException(jar.getFileName() + " is refused: it has no owner and is not a plain library "
+					+ "(ask claimOf)");
+		}
+		return claim instanceof JarClaim.Owned owned ? owned.ecosystem() : null;
 	}
 
 	/**

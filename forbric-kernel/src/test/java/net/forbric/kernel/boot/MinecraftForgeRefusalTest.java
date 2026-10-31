@@ -84,11 +84,14 @@ class MinecraftForgeRefusalTest {
 		// Arbitration: refused is a claim of its own — no owner, never unowned (a library) — suppressed for everyone;
 		// the universal jar is Fabric's.
 		assertEquals(new JarClaim.Refused(LoaderKind.MINECRAFTFORGE), MultiLoaderArbiter.claimOf(forgeOnly));
-		assertNull(MultiLoaderArbiter.ownerOf(forgeOnly));
+		assertThrows(IllegalStateException.class, () -> MultiLoaderArbiter.ownerOf(forgeOnly),
+				"a refused jar has no owner, and is not answered as a library's null");
 		assertFalse(MultiLoaderArbiter.claimOf(forgeOnly).unowned(), "a refused jar is not a plain library");
 		assertTrue(MultiLoaderArbiter.refused(forgeOnly));
 		for (Ecosystem family : Ecosystem.values()) assertTrue(MultiLoaderArbiter.suppressedFor(forgeOnly, family), family.name());
+		for (Ecosystem family : Ecosystem.values()) assertFalse(MultiLoaderArbiter.claimOf(forgeOnly).ownedBy(family), family.name());
 		assertEquals(Ecosystem.FABRIC, MultiLoaderArbiter.ownerOf(universal));
+		assertTrue(MultiLoaderArbiter.claimOf(universal).ownedBy(Ecosystem.FABRIC));
 		assertFalse(MultiLoaderArbiter.suppressedFor(universal, Ecosystem.FABRIC));
 		assertNull(DuplicateModArbiter.claimOf(new ForbricModDiscoverer(), forgeOnly, null, new java.util.ArrayList<>()),
 				"a refused jar claims no id");

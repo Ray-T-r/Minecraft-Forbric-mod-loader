@@ -219,8 +219,10 @@ public final class KernelClientPacks {
 		if ("off".equalsIgnoreCase(System.getProperty(VANILLA_READER, "on"))) return false;
 		// The cheap question first: without a pack.mcmeta there is nothing to route, and no owner to ask about.
 		if (!declaresPackMetadata(jar)) return false;
-		Ecosystem owner = carrier ? carrierEcosystem(jar) : MultiLoaderArbiter.ownerOf(jar);
-		return owner != Ecosystem.NEOFORGE;
+		// NeoForge's reader for what NeoForge loads; vanilla's for everything else, a refused jar and a library among it.
+		boolean neoForge = carrier ? carrierEcosystem(jar) == Ecosystem.NEOFORGE
+				: MultiLoaderArbiter.claimOf(jar).ownedBy(Ecosystem.NEOFORGE);
+		return !neoForge;
 	}
 
 	/** The ecosystem a runtime carrier is: NeoForge's declares {@code neoforge.mods.toml}, MinecraftForge's does not. */
