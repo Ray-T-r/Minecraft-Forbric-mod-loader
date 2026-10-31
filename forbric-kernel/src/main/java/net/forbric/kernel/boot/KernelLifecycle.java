@@ -478,7 +478,7 @@ public final class KernelLifecycle {
 	private static void loadEarlyConfigs(ClassLoader cl, Side side) {
 		if ("off".equalsIgnoreCase(System.getProperty("forbric.earlyConfigs", "on"))) {
 			ForbricLog.warn("[Forbric/Lifecycle] early config loading DISABLED (-Dforbric.earlyConfigs=off) — "
-					+ "Forge and NeoForge COMMON/CLIENT configs are not opened by the kernel; mods may keep "
+					+ "NeoForge COMMON/CLIENT configs are not opened by the kernel; mods may keep "
 					+ "defaults or read unloaded values");
 			return;
 		}
