@@ -92,7 +92,7 @@ public final class ForbricMergedBaseCompatTransformer implements ClassTransforme
 	}
 
 	/** The repairs {@link #transform} runs, in its order; a test pins the two lists against each other. */
-	static final List<String> REPAIRS = List.of("repairLambdaBootstrapHandles", "addBlockStateModelConflictResolvers", "addBlockStateAppearanceResolver", "routeKeyMappingClickToPopulatedLookup", "giveKeyMappingItsVanillaMap", "giveTheVanillaParticleMapAViewOfTheLiveOne", "letDungeonsGenerateWithoutTheDataMap", "restoreDoublePrecisionToTheRandomSources", "convertRadiansWithVanillasFoldedConstant", "callVanillasWriteByteAgain", "saveTheHeightmapsVanillaSaves", "guardNeoForgesWorldModifierPass", "letForeignResourceConditionsThrough", "letFabricResourceConditionsDecide", "translateAGuestsPrivateSkipMarker", "nameTheReloadListenersNeoForgeRefusesToName", "dropInterfaceDefaultShadowingOverrides", "tolerateEmptyCreativeTabStacks", "routePlaceItemHookToNeoForge", "bridgeOrphanedPipRenderers", "dropTheWindowTitlesLoaderBrand", "keepTheSaveOffTheTeardownsFailurePath", "askNeoForgeWhatAnItemsAttributesAre", "giveTheUnwrittenLoggerAValue", "dropStubsThatBypassARealSuperclassMethod", "inlineTheSwitchMapTheMergeLost", "vetoUnjudgeableOverlayConditions", "hideTheLegacyLootModifierIndexFromTheDirectoryScan", "letModdedFeatureFlagsRegister", "dropTheKeyModifierSuffixBeforeParsingAKeyName", "letTheAtlasLowerItsMipLevelLikeVanilla", "wrapTheStreamsVanillaWraps", "returnFromANestedBootstrapBeforeItsTail", "letBothEcosystemsSetBurnTime");
+	static final List<String> REPAIRS = List.of("repairLambdaBootstrapHandles", "addBlockStateModelConflictResolvers", "addBlockStateAppearanceResolver", "routeKeyMappingClickToPopulatedLookup", "giveKeyMappingItsVanillaMap", "giveTheVanillaParticleMapAViewOfTheLiveOne", "letDungeonsGenerateWithoutTheDataMap", "restoreDoublePrecisionToTheRandomSources", "convertRadiansWithVanillasFoldedConstant", "callVanillasWriteByteAgain", "saveTheHeightmapsVanillaSaves", "guardNeoForgesWorldModifierPass", "letForeignResourceConditionsThrough", "letFabricResourceConditionsDecide", "translateAGuestsPrivateSkipMarker", "nameTheReloadListenersNeoForgeRefusesToName", "dropInterfaceDefaultShadowingOverrides", "tolerateEmptyCreativeTabStacks", "routePlaceItemHookToNeoForge", "bridgeOrphanedPipRenderers", "dropTheWindowTitlesLoaderBrand", "keepTheSaveOffTheTeardownsFailurePath", "askNeoForgeWhatAnItemsAttributesAre", "giveTheUnwrittenLoggerAValue", "dropStubsThatBypassARealSuperclassMethod", "inlineTheSwitchMapTheMergeLost", "vetoUnjudgeableOverlayConditions", "hideTheLegacyLootModifierIndexFromTheDirectoryScan", "letModdedFeatureFlagsRegister", "dropTheKeyModifierSuffixBeforeParsingAKeyName", "letTheAtlasLowerItsMipLevelLikeVanilla", "wrapTheStreamsVanillaWraps", "returnFromANestedBootstrapBeforeItsTail");
 
 	private static final String NEO_EVENT_HOOKS_BINARY = "net.neoforged.neoforge.event.EventHooks";
 
@@ -199,9 +199,6 @@ public final class ForbricMergedBaseCompatTransformer implements ClassTransforme
 				"MinecraftForge's ForgeRegistries re-enters Bootstrap.bootStrap() from inside the first one, so every "
 						+ "mixin at its TAIL runs twice, the first time half-way through bootstrap — a Fabric mod that "
 						+ "initialises there once (cristellib) throws and the server does not start"));
-		out.add(fixed("letBothEcosystemsSetBurnTime", FUEL_VALUES,
-				"NeoForge's FurnaceFuelBurnTimeEvent is never posted, so a NeoForge mod cannot change how long "
-						+ "anything burns while a MinecraftForge one can"));
 		return List.copyOf(out);
 	}
 
@@ -271,7 +268,6 @@ public final class ForbricMergedBaseCompatTransformer implements ClassTransforme
 					letTheAtlasLowerItsMipLevelLikeVanilla(node));
 			changed |= claim(reporter, "wrapTheStreamsVanillaWraps", wrapTheStreamsVanillaWraps(node));
 			changed |= claim(reporter, "returnFromANestedBootstrapBeforeItsTail", returnFromANestedBootstrapBeforeItsTail(node));
-		changed |= claim(reporter, "letBothEcosystemsSetBurnTime", letBothEcosystemsSetBurnTime(node), bothEcosystemsSetBurnTime(node));
 			changed |= namedOldLoader && adoptInteropHooksTheBaseStillNamesAfterTheOldLoader(node);
 
 			byte[] result = classBytes;
@@ -352,14 +348,6 @@ public final class ForbricMergedBaseCompatTransformer implements ClassTransforme
 
 
 	private static final String KERNEL_NEO_WORLDGEN = "net/forbric/kernel/runtime/KernelNeoWorldgen";
-	private static final String KERNEL_FUEL_VALUES = "net/forbric/kernel/runtime/KernelFuelValues";
-	private static final String NEO_EVENT_HOOKS = "net/neoforged/neoforge/event/EventHooks";
-	private static final String FUEL_VALUES = "net/minecraft/world/level/block/entity/FuelValues";
-	private static final String FORGE_BURN_TIME_DESC =
-			"(Lnet/minecraft/world/item/ItemStack;ILnet/minecraft/world/item/crafting/RecipeType;)I";
-	private static final String KERNEL_BURN_TIME_DESC =
-			"(Lnet/minecraft/world/item/ItemStack;ILnet/minecraft/world/item/crafting/RecipeType;"
-					+ "Lnet/minecraft/world/level/block/entity/FuelValues;)I";
 	private static final String MONSTER_ROOM_FEATURE = "net/minecraft/world/level/levelgen/feature/MonsterRoomFeature";
 	private static final String MONSTER_ROOM_HOOKS = "net/neoforged/neoforge/common/MonsterRoomHooks";
 	private static final String RANDOM_MONSTER_ROOM_MOB =
@@ -2569,77 +2557,6 @@ public final class ForbricMergedBaseCompatTransformer implements ClassTransforme
 			if (method.name.equals(name)) return method;
 		}
 		return null;
-	}
-	/**
-	 * Sends the burn-time question through the kernel so both ecosystems answer it.
-	 *
-	 * <p>The merged {@code FuelValues.burnDuration} calls MinecraftForge's {@code getItemBurnTime} and nothing
-	 * else, so NeoForge's {@code FurnaceFuelBurnTimeEvent} is never posted — measured, and {@code balm} in the
-	 * test pack subscribes to it. This is the reverse of every bridge in this tree, where NeoForge won and
-	 * MinecraftForge is re-emitted, and it cannot be fixed by a listener: NeoForge's side is a static call, not
-	 * something to subscribe to.
-	 *
-	 * <p>NeoForge's hook needs the {@code FuelValues} instance, which MinecraftForge's three-argument shape does
-	 * not carry, so the receiver is pushed before the call and the descriptor widened. Only in INSTANCE methods:
-	 * in a static one, slot 0 is the first parameter and pushing it would hand NeoForge an ItemStack typed as a
-	 * FuelValues.
-	 *
-	 * <p>A method that already asks NeoForge's {@code EventHooks.getItemBurnTime} itself — a merge that keeps both
-	 * sides' edits can write both families' calls into one body — is left alone: the kernel would ask NeoForge twice.
-	 */
-	private static boolean letBothEcosystemsSetBurnTime(ClassNode node) {
-		if (!FUEL_VALUES.equals(node.name)) return false;
-		int redirected = 0;
-		for (MethodNode method : node.methods) {
-			if ((method.access & Opcodes.ACC_STATIC) != 0) continue;
-			if (method.instructions == null || callsAny(method, NEO_EVENT_HOOKS, "getItemBurnTime")) continue;
-			for (AbstractInsnNode insn = method.instructions.getFirst(); insn != null; insn = insn.getNext()) {
-				if (!(insn instanceof MethodInsnNode call) || call.getOpcode() != Opcodes.INVOKESTATIC
-						|| !"net/minecraftforge/event/ForgeEventFactory".equals(call.owner)
-						|| !"getItemBurnTime".equals(call.name)
-						|| !FORGE_BURN_TIME_DESC.equals(call.desc)) {
-					continue;
-				}
-				method.instructions.insertBefore(call, new VarInsnNode(Opcodes.ALOAD, 0));
-				call.owner = KERNEL_FUEL_VALUES;
-				call.name = "burnDuration";
-				call.desc = KERNEL_BURN_TIME_DESC;
-				method.maxStack = Math.max(method.maxStack, 5);
-				redirected++;
-			}
-		}
-		if (redirected == 0) return false;
-		ForbricLog.info("[Forbric/MergedBaseCompat] FuelValues now asks both ecosystems how long something burns "
-				+ "(%d call site(s)) — the merge kept only MinecraftForge's hook, so NeoForge's "
-				+ "FurnaceFuelBurnTimeEvent was posted nowhere", redirected);
-		return true;
-	}
-
-	/** Whether {@code method} calls {@code owner.name} with any descriptor. */
-	private static boolean callsAny(MethodNode method, String owner, String name) {
-		if (method.instructions == null) return false;
-		for (AbstractInsnNode insn = method.instructions.getFirst(); insn != null; insn = insn.getNext()) {
-			if (insn instanceof MethodInsnNode call && owner.equals(call.owner) && name.equals(call.name)) return true;
-		}
-		return false;
-	}
-
-	/**
-	 * The burn-time claim's end state: every instance method of {@code FuelValues} that asks MinecraftForge's hook asks
-	 * NeoForge's as well — through the kernel, or by calling {@code EventHooks.getItemBurnTime} itself.
-	 */
-	private static boolean bothEcosystemsSetBurnTime(ClassNode node) {
-		if (!FUEL_VALUES.equals(node.name)) return false;
-		boolean any = false;
-		for (MethodNode method : node.methods) {
-			if ((method.access & Opcodes.ACC_STATIC) != 0) continue;
-			if (callsAny(method, KERNEL_FUEL_VALUES, "burnDuration")) { any = true; continue; }
-			if (callsAny(method, "net/minecraftforge/event/ForgeEventFactory", "getItemBurnTime")) {
-				if (!callsAny(method, NEO_EVENT_HOOKS, "getItemBurnTime")) return false;
-				any = true;
-			}
-		}
-		return any;
 	}
 
 }

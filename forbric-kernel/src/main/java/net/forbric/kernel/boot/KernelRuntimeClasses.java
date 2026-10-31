@@ -256,9 +256,6 @@ public final class KernelRuntimeClasses {
 		// their descriptors are the ones the merged base and the carrier already had — game types, not the JDK
 		// types this registry's own seams use. Listed with no calls for that reason, as KernelConfigApiBridge is.
 		CLASSES.put("net.forbric.kernel.runtime.KernelNeoWorldgen", new Entry(Origin.COMPILED, List.of()));
-		// Called from an inserted instruction in FuelValues.burnDuration, not from boot code, so there is no
-		// entry point to declare — only that the class has to be here for the redirect to land on something.
-		CLASSES.put("net.forbric.kernel.runtime.KernelFuelValues", new Entry(Origin.COMPILED, List.of()));
 		// Called from the position check SpawnPositionCallsInjector writes into BaseSpawner.serverTick.
 		CLASSES.put("net.forbric.kernel.runtime.KernelSpawnPosition", new Entry(Origin.COMPILED, List.of()));
 		// NeoForge's coremods, done after Mixin (NativeCoremodParity) and before it (FlowerPotRepairInjector,
