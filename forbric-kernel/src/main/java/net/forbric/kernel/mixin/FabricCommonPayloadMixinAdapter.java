@@ -61,6 +61,8 @@ import net.forbric.kernel.util.ForbricLog;
  * merged base controlled the same delivery) leaves the handler as written.
  */
 public final class FabricCommonPayloadMixinAdapter {
+	/** The off switch: the play-phase hand-over's, read through {@link CommonNetworkInteropInjector#playFallThroughEnabled()}. */
+	public static final String PROPERTY = "forbric.playPayloadFallThrough";
 	static final String COMMON_LISTENER = "net/minecraft/server/network/ServerCommonPacketListenerImpl";
 	static final String GAME_LISTENER = "net/minecraft/server/network/ServerGamePacketListenerImpl";
 	static final String HANDLE = "handleCustomPayload";
