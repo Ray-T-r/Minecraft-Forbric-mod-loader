@@ -23,8 +23,6 @@ import java.util.Map;
 import java.util.Set;
 import java.util.LinkedHashSet;
 
-import net.forbric.api.EventBridges;
-import net.forbric.api.GameEventBridge;
 import net.forbric.kernel.util.Caught;
 import net.forbric.kernel.util.ForbricLog;
 import net.forbric.kernel.util.Reflect;
@@ -91,16 +89,10 @@ public final class KernelForgeOverlayLayers {
 		if (!enabled()) {
 			ForbricLog.warn("[Forbric/HudBridge] -D%s=off — a MinecraftForge mod's HUD overlay layers will not draw",
 					PROPERTY);
-			// Falls THROUGH to verify rather than returning: returning here produced neither an installed nor a
-			// MISSING line, so the switch could not be used as a negative control for its own mechanism.
-			EventBridges.verify(GameEventBridge.Pass.CLIENT_HUD);
 			return;
 		}
 		synchronized (KernelForgeOverlayLayers.class) {
-			if (treeRegistered) {
-				EventBridges.verify(GameEventBridge.Pass.CLIENT_HUD);
-				return;
-			}
+			if (treeRegistered) return;
 			treeRegistered = true;
 		}
 
@@ -123,19 +115,12 @@ public final class KernelForgeOverlayLayers {
 			refusal = "MinecraftForge's own tree builder threw (" + Reflect.unwrap(t) + ")";
 		}
 
-		// The EVENT half is reported separately from the DRAWING half, because they can differ. Once init has
-		// run through resolveLayers the event really was posted and the listeners really did run; saying
-		// otherwise makes DeadEventAudit mark xaerominimap/xaeroworldmap DEGRADED with "which this merged game
-		// never posts", which would be false.
-		if (NEUTERED.ran()) EventBridges.installed(GameEventBridge.GUI_OVERLAY_LAYERS);
-
 		if (refusal != null) {
 			// Deliberately NOT the success sentence, and deliberately no GuiLayerManager.add: registering a tree
 			// whose vanilla leaves are live draws the entire vanilla HUD a second time, which is worse than the
 			// bug. This WARN is then the only thing carrying the bad news, so it is mandatory.
 			ForbricLog.warn("[Forbric/HudBridge] refusing to register MinecraftForge's overlay stack (%s) — every "
 					+ "MinecraftForge HUD overlay will draw nothing%s", refusal, NEUTERED.strandedSuffix());
-			EventBridges.verify(GameEventBridge.Pass.CLIENT_HUD);
 			return;
 		}
 
@@ -149,7 +134,6 @@ public final class KernelForgeOverlayLayers {
 			Caught.warn(t, "[Forbric/HudBridge] could not give MinecraftForge's overlay layers a place to draw — "
 					+ "a mod's HUD overlay will render nothing");
 		}
-		EventBridges.verify(GameEventBridge.Pass.CLIENT_HUD);
 	}
 
 	/**

@@ -845,28 +845,7 @@ public final class KernelBoot {
 		// Inert unless -Dforbric.clientSmoke=true. It is what lets gate-m9 run a client unattended: enter a
 		// world, live in it, disconnect and stop, so the gate waits for an outcome instead of a timeout.
 		chain.register(TransformPhase.COREMOD, new ClientSmokeTickInjector());
-		// Inert unless -Dforbric.eventChainAudit=<report>: wraps both families' bus dispatch for gate-m41.
-		chain.register(TransformPhase.COREMOD, new net.forbric.kernel.transform.EventChainAuditInjector());
 		chain.register(TransformPhase.COREMOD, new net.forbric.kernel.transform.CompatibilityPromptTickInjector());
-		// Where a merged method delivers a bridged MinecraftForge event natively on the path of the NeoForge event its
-		// bridge forwards from, scope that NeoForge delivery so the bridge stands down for it (GameEventMultiplexer's
-		// guard). Order-free: the proof is dominance or post-dominance, not which family's call comes first. A native call
-		// the method may bypass after NeoForge's is judged against MinecraftForge's own patched body of the method (the
-		// merged base's hash-pinned native reference): the bypasses both bodies share need no delivery, the others get it.
-		java.util.function.Function<String, byte[]> gameResources = path -> {
-			try (java.io.InputStream input = loader.getGameResourceAsStream(path)) {
-				return input == null ? null : input.readAllBytes();
-			} catch (java.io.IOException unavailable) {
-				Caught.warn(unavailable, "[Forbric/Boot] could not read game class %s for the native dual events;"
-						+ " it reads as absent", path);
-				return null;
-			}
-		};
-		net.forbric.kernel.mixin.NativeGameReferences forgeBodies = new net.forbric.kernel.mixin.NativeGameReferences(gameResources);
-		chain.register(TransformPhase.COREMOD, new net.forbric.kernel.transform.NativeDualEventInjector(gameResources,
-				DeadEventAudit.forwardedForgeEvents(), net.forbric.kernel.transform.NativeDualEventInjector.Families.DEFAULT,
-				owner -> forgeBodies.get(net.forbric.api.Ecosystem.FORGE, owner)));
-		chain.register(TransformPhase.COREMOD, new net.forbric.kernel.transform.PortalSpawnInjector());
 		// After merged-base compatibility: upgrade its owner-only redirect with the proven spawn input.
 		chain.register(TransformPhase.COREMOD, new net.forbric.kernel.transform.SpawnerFinalizeInjector());
 		// After it, so the finalize repair reads NeoForge's serverTick shape: vanilla's spawn-position calls go back

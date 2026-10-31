@@ -27,24 +27,19 @@ import net.neoforged.neoforge.event.server.ServerAboutToStartEvent;
 import net.neoforged.neoforge.event.server.ServerStartedEvent;
 
 /**
- * What the kernel does on a running server for NeoForge and Fabric, apart from any forward to MinecraftForge.
+ * What the kernel does on a running server for NeoForge and Fabric.
  *
- * <p>Every duty here used to sit inside MinecraftForge-gated code: the compatibility tick on
- * {@link KernelGameServerLifecycle}, a class that names {@code net.minecraftforge.server.ServerLifecycleHooks}; the game
- * instance and the server-started work installed by {@code GameEventMultiplexer}, after its probe for
- * {@code net.minecraftforge.event.ForgeEventFactory} and behind {@code -Dforbric.unifiedEvents}; the experience relay inside
- * the MinecraftForge break bridge. None of them is about MinecraftForge. Measured on the genuine NeoForge base (no
- * MinecraftForge anywhere), the probe's {@code ClassNotFoundException} went to {@code Caught.expected} and took them all
- * with it, silently: {@code FabricLoader.getGameInstance()} stayed null on a dedicated server, no load report was written
- * once a world was up, a dedicated server never made its compatibility decision at world load, and a Fabric mod's hooks in
- * {@code Block.tryDropExperience} never ran. {@code -Dforbric.unifiedEvents=off} did the same on today's base.
+ * <p>Every duty here used to sit inside MinecraftForge-gated code: the compatibility tick on a server-lifecycle forward
+ * that named {@code net.minecraftforge.server.ServerLifecycleHooks}; the game instance and the server-started work behind
+ * the forward pass's probe for {@code net.minecraftforge.event.ForgeEventFactory}; the experience relay inside the
+ * MinecraftForge break bridge. None of them is about MinecraftForge. Measured on the genuine NeoForge base (no
+ * MinecraftForge anywhere), the probe's {@code ClassNotFoundException} took them all with it, silently:
+ * {@code FabricLoader.getGameInstance()} stayed null on a dedicated server, no load report was written once a world was up,
+ * a dedicated server never made its compatibility decision at world load, and a Fabric mod's hooks in
+ * {@code Block.tryDropExperience} never ran.
  *
- * <p>So this class names nothing of MinecraftForge, and the boot side installs it on NeoForge's bus itself, unconditionally,
- * right after the bridges ({@code KernelServerDutiesInstaller}, from {@code KernelLifecycle.startGameBuses}). Right after
- * them on purpose: each listener here then keeps the place it had among the kernel's own listeners on the same event and
- * priority. What stays with MinecraftForge is what is about MinecraftForge: the login gate its started hook opens, and the
- * dead-event judgement of MinecraftForge listeners ({@link KernelGameServerLifecycle#installStartedDuties}), which runs
- * first, so the load report written here still carries what that judgement found.
+ * <p>So this class names nothing of MinecraftForge, and the boot side installs it on NeoForge's bus itself, unconditionally
+ * ({@code KernelServerDutiesInstaller}, from {@code KernelLifecycle.startGameBuses}).
  */
 public final class KernelServerDuties {
 	private KernelServerDuties() {
@@ -77,9 +72,8 @@ public final class KernelServerDuties {
 	/**
 	 * What the kernel does once a server is up: the load report, and on a dedicated server the compatibility decision.
 	 *
-	 * <p>Registered on NeoForge's bus itself at {@code LOWEST}, after every forward and after MinecraftForge's own
-	 * server-started duties, so it runs once per start whoever delivered what, and after the dead-event judgement those
-	 * duties make. The world is up, so whatever failed on the way there — a mixin applying to a class first loaded at world
+	 * <p>Registered on NeoForge's bus itself at {@code LOWEST}, so it runs once per start, after every mod's own
+	 * server-started listener. The world is up, so whatever failed on the way there — a mixin applying to a class first loaded at world
 	 * creation, a deferred task on the server thread — is known now. Integrated servers post this too, so the client's
 	 * world load is covered; the decision itself is the dedicated server's, a client has its own screen for it.
 	 *
@@ -112,8 +106,7 @@ public final class KernelServerDuties {
 	 * The relay of vanilla's {@code Block.tryDropExperience}, which the merged game never calls (NeoForge moved the value it
 	 * computes into {@code BlockDropsEvent}): last of all, whatever the drops event now holds is what a Fabric mod's hooks in
 	 * that method are handed, as their own game would hand them the value there, and what they leave is what drops
-	 * ({@link net.forbric.kernel.mixin.UncalledValueRelay}). {@code LOWEST}, so every NeoForge listener and MinecraftForge's
-	 * experience decision (carried in at {@code HIGHEST} by the break bridge) come first. {@code -Dforbric.uncalledValueRelay=off}
+	 * ({@link net.forbric.kernel.mixin.UncalledValueRelay}). {@code LOWEST}, so every NeoForge listener comes first. {@code -Dforbric.uncalledValueRelay=off}
 	 * is its switch; nothing woven into the method, or a block whose game never asked it, leaves the event as it is.
 	 */
 	public static void installExperienceRelay(Object neoBus) {

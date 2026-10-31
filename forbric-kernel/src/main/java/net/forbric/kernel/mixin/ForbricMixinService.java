@@ -381,7 +381,6 @@ public final class ForbricMixinService
 		FabricRegistryInitializationMixinAdapter.adapt(node, this::mergedBaseNode);
 		FabricFreezeHookMixinAdapter.adapt(node, this::mergedBaseNode);
 		FabricCreativePagerMixinAdapter.adapt(node, this::mergedBaseNode);
-		KernelClientHookMixinAnchors.adapt(node, this::mergedBaseNodeWithCode);
 		MixinGuiItemCaptureAdapter.adapt(node, this::mergedBaseNodeWithCode);
 		MixinCameraRollAdapter.adapt(node, this::mergedBaseNodeWithCode);
 		// …and a redirect of a vanilla call the carrier replaced at the same place, whose handler only conditions it,
@@ -606,19 +605,15 @@ public final class ForbricMixinService
 	}
 
 	/**
-	 * A target's pre-mixin bytes, with code, as the game's own instructions: without the delivery bookkeeping the kernel's
-	 * stand-down writes around the hook calls of a method that calls both families' hooks
-	 * ({@link net.forbric.kernel.transform.DeliveryBookkeeping}). The bookkeeping never moves, removes or repeats a game
-	 * instruction, so every point decided on this view — a call and its occurrence, a return and its ordinal, a local's
-	 * slot — is the same point in the bytes Mixin applies to; read with it in the way, the run in front of a hook, the
-	 * locals at a call or the way a return is reached no longer read as the game's (Create's released-key hooks on
-	 * {@code keyPress} and its section-change hook on {@code onMove} landed nowhere). Null for null bytes.
+	 * A target's pre-mixin bytes, with code, as the game's own instructions. No kernel transform before Mixin writes
+	 * bookkeeping of its own into a game method any more, so every point decided on this view — a call and its
+	 * occurrence, a return and its ordinal, a local's slot — is the same point in the bytes Mixin applies to. Null for
+	 * null bytes.
 	 */
 	static ClassNode codeView(byte[] bytes) {
 		if (bytes == null) return null;
 		ClassNode target = new ClassNode();
 		new ClassReader(bytes).accept(target, 0);
-		net.forbric.kernel.transform.DeliveryBookkeeping.strip(target);
 		return target;
 	}
 

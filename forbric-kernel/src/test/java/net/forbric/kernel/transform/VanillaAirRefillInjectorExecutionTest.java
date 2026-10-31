@@ -32,7 +32,7 @@ import org.objectweb.asm.tree.*;
  * control). A NeoForge listener still decides from that default: it reads the refill vanilla gives, and what it sets — amounts,
  * whether the body breathes — is what happens, as on NeoForge. The cross-host predicate island's prefix, put into the same
  * hook, is executed too: its decision replaces the hook's, and its protected decision hands the event vanilla's water-branch
- * refill. As in the chain, the kernel's delivery bookkeeping (NativeDualEventInjector) is in the hook before either.
+ * refill.
  */
 @ExecutesInjector({VanillaAirRefillInjector.class, CrossHostPredicateIslandInjector.class})
 @ResourceLock("system-properties")
@@ -347,21 +347,6 @@ class VanillaAirRefillInjectorExecutionTest {
 		return staged(HOOK);
 	}
 
-	/** The game's class resources by path, as the chain hands them to the delivery bookkeeping. */
-	private static byte[] stagedResource(String path) {
-		for (String jar : List.of(TestFixtures.BASE_JAR, TestFixtures.NEO_CARRIER_JAR, TestFixtures.FORGE_INTEROP_JAR)) {
-			Path file = TestFixtures.stagedRoot().resolve(jar);
-			if (!Files.isRegularFile(file)) continue;
-			try (ZipFile z = new ZipFile(file.toFile())) {
-				var entry = z.getEntry(path);
-				if (entry != null) return z.getInputStream(entry).readAllBytes();
-			} catch (java.io.IOException unreadable) {
-				throw new java.io.UncheckedIOException(unreadable);
-			}
-		}
-		return null;
-	}
-
 	private static byte[] staged(String entry) throws Exception {
 		Path jar = TestFixtures.stagedRoot().resolve(TestFixtures.NEO_CARRIER_JAR);
 		TestFixtures.requireFile(Fixture.STAGED, jar, "actual NeoForge CommonHooks required");
@@ -384,12 +369,7 @@ class VanillaAirRefillInjectorExecutionTest {
 	private static ClassLoader loader(Path work, Mode mode) throws Exception {
 		Files.createDirectories(work);
 		Map<String, byte[]> classes = new HashMap<>(InjectorExecution.compile(work, SOURCES));
-		// The kernel's delivery bookkeeping goes into the hook first, as in the chain: it reports the event the hook constructs
-		// between the construction and the local the event is kept in.
-		byte[] raw = hook();
-		byte[] original = InjectorExecution.transform(new NativeDualEventInjector(VanillaAirRefillInjectorExecutionTest::stagedResource,
-				net.forbric.kernel.boot.DeadEventAudit.forwardedForgeEvents()), HOOK.replace('/', '.'), raw, EnvType.SERVER);
-		assertNotSame(raw, original, "the delivery bookkeeping instruments the hook");
+		byte[] original = hook();
 		if (mode == Mode.OFF || mode == Mode.ISLAND_UNDECORATED) System.setProperty(VanillaAirRefillInjector.PROPERTY, "off");
 		byte[] transformed = InjectorExecution.transform(new VanillaAirRefillInjector(), HOOK.replace('/', '.'), original, EnvType.SERVER);
 		System.clearProperty(VanillaAirRefillInjector.PROPERTY);
@@ -403,7 +383,6 @@ class VanillaAirRefillInjectorExecutionTest {
 			assertNotSame(transformed, islanded, "the island is put into the hook");
 			transformed = islanded;
 		}
-		assertTrue(mentionsBookkeeping(transformed), "the hook still carries the delivery bookkeeping");
 		classes.put(HOOK, prefix(transformed));
 		Path runtime = Path.of(System.getProperty("forbric.fluidBreathingRuntime", Path.of(System.getProperty("user.dir"), "build/classes/java/runtime").toString()));
 		Path file = runtime.resolve(VanillaAirRefillInjector.RUNTIME + ".class");
@@ -413,13 +392,6 @@ class VanillaAirRefillInjectorExecutionTest {
 		assertEquals("", InjectorExecution.verify(classes.get(HOOK), loader));
 		assertEquals("", InjectorExecution.verify(classes.get(VanillaAirRefillInjector.RUNTIME), loader));
 		return loader;
-	}
-
-	private static boolean mentionsBookkeeping(byte[] bytes) {
-		ClassNode node = new ClassNode();
-		new ClassReader(bytes).accept(node, 0);
-		MethodNode hook = node.methods.stream().filter(m -> m.name.equals("onLivingBreathe")).findFirst().orElseThrow();
-		return DeliveryBookkeeping.mentions(hook);
 	}
 
 	/** The hook unchanged through its air update; the drowning damage and vehicle tail after it are cut off. */

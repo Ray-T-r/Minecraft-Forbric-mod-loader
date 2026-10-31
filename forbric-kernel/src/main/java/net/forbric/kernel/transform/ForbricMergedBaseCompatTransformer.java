@@ -45,9 +45,7 @@ import org.objectweb.asm.tree.TypeInsnNode;
 import org.objectweb.asm.tree.VarInsnNode;
 
 import net.forbric.api.Ecosystem;
-import net.forbric.api.EventBridges;
 import net.forbric.api.ForeignType;
-import net.forbric.api.GameEventBridge;
 import net.forbric.kernel.util.Caught;
 import net.forbric.kernel.util.ForbricLog;
 
@@ -94,19 +92,17 @@ public final class ForbricMergedBaseCompatTransformer implements ClassTransforme
 	}
 
 	/** The repairs {@link #transform} runs, in its order; a test pins the two lists against each other. */
-	static final List<String> REPAIRS = List.of("repairLambdaBootstrapHandles", "addBlockStateModelConflictResolvers", "addBlockStateAppearanceResolver", "addMissingForgeFluidTypeBridge", "addMissingForgeKeyMappingLookupInitializer", "routeKeyMappingClickToPopulatedLookup", "giveKeyMappingItsMinecraftForgeFace", "giveKeyMappingItsVanillaMap", "giveTheVanillaParticleMapAViewOfTheLiveOne", "letDungeonsGenerateWithoutTheDataMap", "restoreDoublePrecisionToTheRandomSources", "convertRadiansWithVanillasFoldedConstant", "callVanillasWriteByteAgain", "saveTheHeightmapsVanillaSaves", "guardNeoForgesWorldModifierPass", "letForeignResourceConditionsThrough", "letForeignResourceConditionsThroughMinecraftForge", "letFabricResourceConditionsDecide", "letMinecraftForgeResourceConditionsDecide", "judgeDataFilesWhereMinecraftForgeDid", "judgeRegistryElementsWhereMinecraftForgeDid", "giveMinecraftForgesRecipeConditionsTheirContext", "translateAGuestsPrivateSkipMarker", "serveDefaultAttributesBothEcosystems", "restoreForgeClientInit", "restoreForgeGeometryReload", "nameTheReloadListenersNeoForgeRefusesToName", "dropInterfaceDefaultShadowingOverrides", "tolerateEmptyCreativeTabStacks", "routePlaceItemHookToNeoForge", "bridgeOrphanedPipRenderers", "keepForgeOutboundProtocolCurrent", "surviveTheMissingForgeModelDataManager", "dropTheWindowTitlesLoaderBrand", "keepTheSaveOffTheTeardownsFailurePath", "postNeoForgesItemTooltipEvent", "askNeoForgeWhatAnItemsAttributesAre", "readTheSpawnReasonThatIsActuallyWritten", "giveTheUnwrittenLoggerAValue", "addTheMissingCapabilityLifecycleStubs", "addTheMissingNbtBuilderFactory", "postMinecraftForgesReloadListenerEvent", "giveMinecraftForgesReloadEventItsConditionContext", "letMinecraftForgeIngredientTypesDecode", "letMinecraftForgeFluidsChooseTheirModel", "giveMinecraftForgesParticleLookupItsFirstVariant", "dropStubsThatBypassARealSuperclassMethod", "inlineTheSwitchMapTheMergeLost", "vetoUnjudgeableOverlayConditions", "hideTheLegacyLootModifierIndexFromTheDirectoryScan", "letModdedFeatureFlagsRegister", "dropTheKeyModifierSuffixBeforeParsingAKeyName", "letTheAtlasLowerItsMipLevelLikeVanilla", "wrapTheStreamsVanillaWraps", "returnFromANestedBootstrapBeforeItsTail", "letBothEcosystemsSetBurnTime", "letMinecraftForgeSeeSpawnerMobs", "letMinecraftForgeAddPackFinders");
+	static final List<String> REPAIRS = List.of("repairLambdaBootstrapHandles", "addBlockStateModelConflictResolvers", "addBlockStateAppearanceResolver", "addMissingForgeFluidTypeBridge", "addMissingForgeKeyMappingLookupInitializer", "routeKeyMappingClickToPopulatedLookup", "giveKeyMappingItsMinecraftForgeFace", "giveKeyMappingItsVanillaMap", "giveTheVanillaParticleMapAViewOfTheLiveOne", "letDungeonsGenerateWithoutTheDataMap", "restoreDoublePrecisionToTheRandomSources", "convertRadiansWithVanillasFoldedConstant", "callVanillasWriteByteAgain", "saveTheHeightmapsVanillaSaves", "guardNeoForgesWorldModifierPass", "letForeignResourceConditionsThrough", "letForeignResourceConditionsThroughMinecraftForge", "letFabricResourceConditionsDecide", "letMinecraftForgeResourceConditionsDecide", "judgeDataFilesWhereMinecraftForgeDid", "judgeRegistryElementsWhereMinecraftForgeDid", "giveMinecraftForgesRecipeConditionsTheirContext", "translateAGuestsPrivateSkipMarker", "serveDefaultAttributesBothEcosystems", "nameTheReloadListenersNeoForgeRefusesToName", "dropInterfaceDefaultShadowingOverrides", "tolerateEmptyCreativeTabStacks", "routePlaceItemHookToNeoForge", "bridgeOrphanedPipRenderers", "keepForgeOutboundProtocolCurrent", "surviveTheMissingForgeModelDataManager", "dropTheWindowTitlesLoaderBrand", "keepTheSaveOffTheTeardownsFailurePath", "postNeoForgesItemTooltipEvent", "askNeoForgeWhatAnItemsAttributesAre", "readTheSpawnReasonThatIsActuallyWritten", "giveTheUnwrittenLoggerAValue", "addTheMissingCapabilityLifecycleStubs", "addTheMissingNbtBuilderFactory", "postMinecraftForgesReloadListenerEvent", "giveMinecraftForgesReloadEventItsConditionContext", "letMinecraftForgeIngredientTypesDecode", "letMinecraftForgeFluidsChooseTheirModel", "giveMinecraftForgesParticleLookupItsFirstVariant", "dropStubsThatBypassARealSuperclassMethod", "inlineTheSwitchMapTheMergeLost", "vetoUnjudgeableOverlayConditions", "hideTheLegacyLootModifierIndexFromTheDirectoryScan", "letModdedFeatureFlagsRegister", "dropTheKeyModifierSuffixBeforeParsingAKeyName", "letTheAtlasLowerItsMipLevelLikeVanilla", "wrapTheStreamsVanillaWraps", "returnFromANestedBootstrapBeforeItsTail", "letBothEcosystemsSetBurnTime", "letMinecraftForgeSeeSpawnerMobs", "letMinecraftForgeAddPackFinders");
 
 	private static final String NEO_EVENT_HOOKS_BINARY = "net.neoforged.neoforge.event.EventHooks";
 
 	/**
 	 * One claim per repair, in {@link #REPAIRS} order. A repair with one fixed target declares it REQUIRED with
 	 * the cost of its silence; one that scans by shape declares {@link AnchorSet#scanned}. Client-only targets
-	 * are simply never loaded on a dedicated server, which the ledger reports as absent, not missed. The two
-	 * repairs behind {@code -Dforbric.forgeClientInit} stand down with it, so switching them off is not a Miss.
+	 * are simply never loaded on a dedicated server, which the ledger reports as absent, not missed.
 	 */
 	@Override
 	public List<Claim> claims() {
-		boolean clientInit = !"off".equalsIgnoreCase(System.getProperty("forbric.forgeClientInit", "on"));
 		List<Claim> out = new ArrayList<>();
 		out.add(scanned("repairLambdaBootstrapHandles", "any class whose invokedynamic still names the old loader's hook owners"));
 		out.add(fixed("addBlockStateModelConflictResolvers", "net/minecraft/client/renderer/block/dispatch/BlockStateModel",
@@ -177,12 +173,6 @@ public final class ForbricMergedBaseCompatTransformer implements ClassTransforme
 				"fabric-api's skip marker reaches the merged reader's cast — the datapack load dies (\"can't proceed with server load\")"));
 		out.add(fixed("serveDefaultAttributesBothEcosystems", DEFAULT_ATTRIBUTES,
 				"DefaultAttributes reads only the ecosystem that won the merge — the other's entities \"have no attributes\""));
-		out.add(clientInit ? fixed("restoreForgeClientInit", "net/minecraft/client/Minecraft",
-				"ForgeHooksClient.initClientHooks never runs — traditional-Forge key mappings, renderers and layers are never registered")
-				: scanned("restoreForgeClientInit", "switched off by -Dforbric.forgeClientInit=off"));
-		out.add(clientInit ? fixed("restoreForgeGeometryReload", "net/minecraft/client/resources/model/ModelManager",
-				"MinecraftForge's geometry loaders never reload — Forge OBJ/custom models are missing")
-				: scanned("restoreForgeGeometryReload", "switched off by -Dforbric.forgeClientInit=off"));
 		out.add(fixed("nameTheReloadListenersNeoForgeRefusesToName", ADD_CLIENT_RELOAD_LISTENERS,
 				"a Fabric mod's client reload listener kills the client — NeoForge refuses to name it"));
 		out.add(scanned("dropInterfaceDefaultShadowingOverrides", "native-absent delegates with one proved current interface default"));
@@ -331,8 +321,6 @@ public final class ForbricMergedBaseCompatTransformer implements ClassTransforme
 			changed |= claim(reporter, "giveMinecraftForgesRecipeConditionsTheirContext", giveMinecraftForgesRecipeConditionsTheirContext(node));
 			changed |= claim(reporter, "translateAGuestsPrivateSkipMarker", translateAGuestsPrivateSkipMarker(node));
 			changed |= claim(reporter, "serveDefaultAttributesBothEcosystems", serveDefaultAttributesBothEcosystems(node));
-			changed |= claim(reporter, "restoreForgeClientInit", restoreForgeClientInit(node));
-			changed |= claim(reporter, "restoreForgeGeometryReload", restoreForgeGeometryReload(node), forgeGeometryReloadAlreadyInPlace(node));
 			changed |= claim(reporter, "nameTheReloadListenersNeoForgeRefusesToName", nameTheReloadListenersNeoForgeRefusesToName(node));
 			changed |= claim(reporter, "dropInterfaceDefaultShadowingOverrides", dropInterfaceDefaultShadowingOverrides(node));
 			changed |= claim(reporter, "tolerateEmptyCreativeTabStacks", tolerateEmptyCreativeTabStacks(node));
@@ -1622,129 +1610,6 @@ public final class ForbricMergedBaseCompatTransformer implements ClassTransforme
 				+ "(%d call site(s)) — the merge kept only NeoForge's reader, so a traditional MinecraftForge mod's "
 				+ "entities had no attributes and could not exist", redirected);
 		return true;
-	}
-
-	/**
-	 * Gives MinecraftForge's client init and particle registration their places in the merged {@code Minecraft.<init>}.
-	 *
-	 * <p>NeoForge's two calls are found once each in one constructor. Where the merge kept no MinecraftForge call, both
-	 * are routed to the kernel's composition, which runs MinecraftForge's half first. Where a merge that keeps both
-	 * sides' edits kept MinecraftForge's own call ahead of NeoForge's, each pair is handled on its own: MinecraftForge's
-	 * {@code initClientHooks} is routed to the kernel's Forge half (a scratch capture and the options reload, at its own
-	 * place) and NeoForge's to the composition, which then takes that capture instead of running MinecraftForge's init
-	 * again; the two particle calls already register each family's providers, as the composition would, and are left.
-	 * NeoForge's call keeps the name it is relayed under, so guest mixins aimed at it are still re-anchored.
-	 */
-	static boolean restoreForgeClientInit(ClassNode node) {
-		if (!"net/minecraft/client/Minecraft".equals(node.name)
-				|| "off".equalsIgnoreCase(System.getProperty("forbric.forgeClientInit", "on"))) return false;
-		String owner = ForeignType.CLIENT_HOOKS.internal(Ecosystem.NEOFORGE);
-		String forgeOwner = "net/minecraftforge/client/ForgeHooksClient";
-		String target = "net/forbric/kernel/runtime/KernelForgeClientInit";
-		String init = "(Lnet/minecraft/client/Minecraft;Lnet/minecraft/server/packs/resources/ReloadableResourceManager;)V";
-		String particles = "(Lnet/minecraft/client/particle/ParticleResources;)V";
-		MethodNode constructor = null;
-		MethodInsnNode neoInit = null, neoParticles = null, forgeInit = null, forgeParticles = null;
-		for (MethodNode method : node.methods) {
-			if (!"<init>".equals(method.name)) continue;
-			for (AbstractInsnNode instruction : method.instructions) {
-				if (!(instruction instanceof MethodInsnNode call)) continue;
-				if (!"initClientHooks".equals(call.name) && !"onRegisterParticleProviders".equals(call.name)) continue;
-				if (target.equals(call.owner)) return false;
-				boolean forge = forgeOwner.equals(call.owner);
-				if (!owner.equals(call.owner) && !forge) continue;
-				if (call.getOpcode() != Opcodes.INVOKESTATIC || call.itf) return false;
-				boolean initializer = "initClientHooks".equals(call.name) && init.equals(call.desc);
-				if (!initializer && !("onRegisterParticleProviders".equals(call.name) && particles.equals(call.desc))) return false;
-				if (forge && initializer) { if (forgeInit != null) return false; forgeInit = call; }
-				else if (forge) { if (forgeParticles != null) return false; forgeParticles = call; }
-				else if (initializer) { if (neoInit != null) return false; neoInit = call; }
-				else { if (neoParticles != null) return false; neoParticles = call; }
-				if (constructor != null && constructor != method) return false;
-				constructor = method;
-			}
-		}
-		if (neoInit == null || neoParticles == null) return false;
-		// MinecraftForge's own call must come first, as the composition runs it: its half is what NeoForge's then takes.
-		if (forgeInit != null && constructor.instructions.indexOf(forgeInit) > constructor.instructions.indexOf(neoInit)) return false;
-		if (forgeParticles != null && constructor.instructions.indexOf(forgeParticles) > constructor.instructions.indexOf(neoParticles)) return false;
-		neoInit.owner = target;
-		if (forgeInit != null) {
-			forgeInit.owner = target;
-			forgeInit.name = "initForgeClientHooks";
-		}
-		if (forgeParticles == null) neoParticles.owner = target;
-		// Both sites land or neither does (the checks above are whole-or-nothing), so both bridges are recorded
-		// here; EventBridges.verify(CLIENT_INIT) names them at the client setup hook if this repair stood down. A
-		// native particle pair is the delivery the particle bridge stands for.
-		EventBridges.installed(GameEventBridge.CLIENT_INIT_HOOKS);
-		EventBridges.installed(GameEventBridge.PARTICLE_PROVIDERS);
-		ForbricLog.info("[Forbric/MergedBaseCompat] Minecraft now initializes both Forge families' client hooks and particles%s",
-				forgeInit == null && forgeParticles == null ? "" : " (the merged constructor's own MinecraftForge "
-						+ (forgeInit != null ? "client init runs as the kernel's Forge half" : "client init is the kernel's")
-						+ (forgeParticles != null ? "; both particle calls are its own" : "") + ")");
-		return true;
-	}
-
-	static boolean restoreForgeGeometryReload(ClassNode node) {
-		if (!"net/minecraft/client/resources/model/ModelManager".equals(node.name)
-				|| "off".equalsIgnoreCase(System.getProperty("forbric.forgeClientInit", "on"))) return false;
-		String desc = "(Lnet/minecraft/server/packs/resources/PreparableReloadListener$SharedState;Ljava/util/concurrent/Executor;"
-				+ "Lnet/minecraft/server/packs/resources/PreparableReloadListener$PreparationBarrier;Ljava/util/concurrent/Executor;)Ljava/util/concurrent/CompletableFuture;";
-		MethodNode method = findMethod(node, "reload", desc);
-		if (method == null || (method.access & Opcodes.ACC_STATIC) != 0) return false;
-		if (geometryReloadsFirst(method)) return false;
-		AbstractInsnNode first = method.instructions.getFirst();
-		while (first != null && first.getOpcode() < 0) first = first.getNext();
-		if (!(first instanceof VarInsnNode load) || load.getOpcode() != Opcodes.ALOAD || load.var != 1) return false;
-		AbstractInsnNode next = first.getNext();
-		while (next != null && next.getOpcode() < 0) next = next.getNext();
-		if (!(next instanceof MethodInsnNode call) || call.getOpcode() != Opcodes.INVOKEVIRTUAL
-				|| !"net/minecraft/server/packs/resources/PreparableReloadListener$SharedState".equals(call.owner)
-				|| !"resourceManager".equals(call.name)
-				|| !"()Lnet/minecraft/server/packs/resources/ResourceManager;".equals(call.desc)) return false;
-		method.instructions.insertBefore(first, new MethodInsnNode(Opcodes.INVOKESTATIC,
-				"net/forbric/kernel/runtime/KernelForgeClientInit", "initGeometryLoaders", "()V", false));
-		ForbricLog.info("[Forbric/MergedBaseCompat] ModelManager initializes Forge geometry loaders on every resource reload");
-		return true;
-	}
-
-	/**
-	 * Whether {@code ModelManager.reload} already initialises MinecraftForge's geometry loaders: through this repair, or
-	 * — where a merge kept MinecraftForge's own edit — by calling {@code GeometryLoaderManager.init()} itself, which is
-	 * MinecraftForge's first statement there. Either way the repair adds no second init; whether the claim is met is
-	 * {@link #forgeGeometryReloadAlreadyInPlace}, which also asks that the init come first.
-	 */
-	private static boolean geometryReloadsFirst(MethodNode method) {
-		for (AbstractInsnNode instruction : method.instructions) {
-			if (instruction instanceof MethodInsnNode call
-					&& (("net/forbric/kernel/runtime/KernelForgeClientInit".equals(call.owner)
-							&& "initGeometryLoaders".equals(call.name))
-						|| ("net/minecraftforge/client/model/geometry/GeometryLoaderManager".equals(call.owner)
-							&& "init".equals(call.name)))) return true;
-		}
-		return false;
-	}
-
-	/**
-	 * Whether {@code ModelManager.reload} already starts by initialising MinecraftForge's geometry loaders, where
-	 * MinecraftForge's own {@code reload} does: its first instruction is MinecraftForge's
-	 * {@code GeometryLoaderManager.init()} (the edit-spliced merge carries that statement into the kept body) or the
-	 * kernel's {@code initGeometryLoaders()} this repair puts there. {@link #restoreForgeGeometryReload} then has
-	 * nothing to restore and leaves the method alone, and the claim is met rather than declined.
-	 */
-	static boolean forgeGeometryReloadAlreadyInPlace(ClassNode node) {
-		if (!"net/minecraft/client/resources/model/ModelManager".equals(node.name)
-				|| "off".equalsIgnoreCase(System.getProperty("forbric.forgeClientInit", "on"))) return false;
-		MethodNode method = findMethod(node, "reload", "(Lnet/minecraft/server/packs/resources/PreparableReloadListener$SharedState;"
-				+ "Ljava/util/concurrent/Executor;Lnet/minecraft/server/packs/resources/PreparableReloadListener$PreparationBarrier;"
-				+ "Ljava/util/concurrent/Executor;)Ljava/util/concurrent/CompletableFuture;");
-		if (method == null || (method.access & Opcodes.ACC_STATIC) != 0) return false;
-		AbstractInsnNode first = method.instructions.getFirst();
-		while (first != null && first.getOpcode() < 0) first = first.getNext();
-		return first instanceof MethodInsnNode call && call.getOpcode() == Opcodes.INVOKESTATIC && "()V".equals(call.desc)
-				&& (("net/minecraftforge/client/model/geometry/GeometryLoaderManager".equals(call.owner) && "init".equals(call.name))
-						|| ("net/forbric/kernel/runtime/KernelForgeClientInit".equals(call.owner) && "initGeometryLoaders".equals(call.name)));
 	}
 
 	/**

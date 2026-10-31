@@ -16,7 +16,6 @@
 
 package net.forbric.kernel.boot;
 
-import java.lang.invoke.MethodHandles;
 import java.nio.file.FileSystem;
 import java.nio.file.FileSystems;
 import java.nio.file.Files;
@@ -41,54 +40,23 @@ import net.forbric.kernel.util.ForbricLog;
 import net.forbric.kernel.util.Reflect;
 
 /**
- * Registers a Forge-family mod's {@code @Mod$EventBusSubscriber} classes on the game event bus — the kernel's
- * native replacement for FML's {@code AutomaticEventSubscriber}.
+ * Registers a NeoForge mod's {@code @EventBusSubscriber} classes on the game event bus — the kernel's native
+ * replacement for FML's {@code AutomaticEventSubscriber}.
  *
- * <p>Many Forge mods declare their game-event listeners not in the {@code @Mod} constructor but on a separate
- * class annotated {@code @Mod.EventBusSubscriber} whose static {@code @SubscribeEvent} methods FML auto-registers
- * during mod loading. The kernel does no FML scan, so those listeners would never fire (e.g. a mod's
- * {@code ServerTickEvent} handler). This ASM-scans each mod jar for the annotation and registers what it finds.
+ * <p>Many mods declare their game-event listeners not in the {@code @Mod} constructor but on a separate class
+ * annotated {@code @EventBusSubscriber} whose static {@code @SubscribeEvent} methods FML auto-registers during mod
+ * loading. The kernel does no FML scan, so those listeners would never fire (e.g. a mod's {@code ServerTickEvent}
+ * handler). This ASM-scans each mod jar for NeoForge's annotation and registers what it finds, per METHOD through
+ * {@link #wireNeoSubscriber} — the router this class also uses for NeoForge's own internal subscribers — so a class
+ * declaring a single listener is wired as NeoForge wires it, and {@code Dist} is consulted: a {@code Dist.CLIENT}
+ * subscriber is never loaded on a dedicated server.
  *
- * <p><b>The two families are NOT interchangeable and each needs its own entry point.</b> An earlier version scanned
- * for both annotations, discarded which one matched, and handed every result to MinecraftForge's
- * {@code BusGroup.register(Lookup, Class)}. That was three bugs at once, all of them visible in the gate logs:
- *
- * <ul>
- *   <li><b>Per-CLASS registration on MinecraftForge is the wrong entry point.</b> {@code BusGroup.register} routes
- *       through {@code EventListenerFactory}, which throws {@code IllegalArgumentException: Only a single listener
- *       found in class …} when a subscriber declares exactly one listener — a performance hint, fatal here because
- *       the caller swallowed it. Genuine FML never takes that path: {@code AutomaticEventSubscriber} calls
- *       {@link #FML_EBS_LOGIC}, which builds listeners PER METHOD. gate-m4 lost {@code NoChatReports$Events} and
- *       {@code GeckoLibClient} to this.</li>
- *   <li><b>A NeoForge subscriber cannot be registered on a MinecraftForge {@code BusGroup}.</b> It carries
- *       {@code net.neoforged.bus.api.SubscribeEvent}, which MinecraftForge's scan does not recognise, so the class
- *       registers zero listeners and fails with {@code No listeners found}. gate-m4 lost collective's
- *       {@code RegisterCollectiveNeoForgeEvents}; gate-m7-neo lost all six of Architectury's, i.e. its ENTIRE event
- *       layer, silently, on a dedicated server.</li>
- *   <li><b>{@code Dist} was never consulted</b>, so a {@code @Dist.CLIENT} subscriber was loaded and registered on a
- *       dedicated server — noise at best, {@code NoClassDefFoundError} at worst.</li>
- * </ul>
- *
- * <p>So: the scan keeps which annotation matched, and each family goes to its own registrar. MinecraftForge reuses
- * FML's own {@code EventBusSubscriberLogic} rather than re-deriving its validation matrix (priority,
- * {@code Cancellable}, {@code alwaysCancelling}, boolean-returning predicates, 2-arg monitor listeners) — that is
- * the highest-drift code we could otherwise own, and it mints its own full-power lookup so {@link KernelGameLookup}
- * is not needed on that path. NeoForge reuses {@link #wireNeoSubscriber}, the per-method router this class already
- * had for NeoForge's own internal subscribers.
+ * <p>Only NeoForge's annotation is a subscriber, as on NeoForge. A universal jar's glue class carrying MinecraftForge's
+ * {@code @Mod.EventBusSubscriber} beside NeoForge's is NeoForge's subscriber whichever annotation comes first;
+ * MinecraftForge's alone marks nothing, since Forbric loads no MinecraftForge mod.
  */
 public final class KernelEventSubscribers {
-	private static final String SUBSCRIBE_FORGE = "Lnet/minecraftforge/eventbus/api/listener/SubscribeEvent;";
-	private static final String SUBSCRIBE_NEO = "Lnet/neoforged/bus/api/SubscribeEvent;";
-	private static final String EBS_FORGE = "Lnet/minecraftforge/fml/common/Mod$EventBusSubscriber;";
 	private static final String EBS_NEO = "Lnet/neoforged/fml/common/EventBusSubscriber;";
-
-	/**
-	 * FML's own {@code @EventBusSubscriber} registration logic. The CLASS is package-private but this entry point is
-	 * {@code public static void register(BusGroup, Class<?>)}, and it is exactly what
-	 * {@code AutomaticEventSubscriber.inject} calls, so a {@code setAccessible(true)} reaches it.
-	 */
-	private static final String FML_EBS_LOGIC =
-			"net.minecraftforge.fml.javafmlmod.AutomaticEventSubscriber$EventBusSubscriberLogic";
 
 	private KernelEventSubscribers() {
 	}
@@ -96,35 +64,12 @@ public final class KernelEventSubscribers {
 	/**
 	 * One {@code @EventBusSubscriber} class plus the annotation attributes that decide where its listeners go.
 	 *
-	 * @param family which ecosystem's annotation matched — the bit the old scan threw away
+	 * @param family which ecosystem's annotation matched (NeoForge's, the only one the scan recognises)
 	 * @param dists  the declared {@code Dist[] value()}; EMPTY means "every side", not "no side"
 	 * @param modId  the declared {@code modid()}, or null
 	 * @param bus    the declared {@code bus()}, defaulting to {@code BOTH} when absent
 	 */
-	record Subscriber(String className, Ecosystem family, java.util.Set<String> dists,
-			String modId, String bus, java.util.Set<String> subscribedEvents) {
-
-		/** The five-field form callers and tests use when the subscribed event types are not needed. */
-		Subscriber(String className, Ecosystem family, java.util.Set<String> dists, String modId, String bus) {
-			this(className, family, dists, modId, bus, java.util.Set.of());
-		}
-	}
-
-	/** Which {@code BusGroup} a MinecraftForge subscriber's listeners belong on. */
-	enum BusChoice {
-		/** {@code bus = FORGE} — the game bus. */
-		DEFAULT,
-		/** {@code bus = MOD} — the owning mod's own bus group. */
-		MOD,
-		/**
-		 * {@code bus = BOTH}, the default. Pass {@code null} and let Forge route per event type — its
-		 * {@code registerListener} opens with {@code if (busGroup == null)} and picks the mod bus for an
-		 * {@code IModBusEvent}, {@code BusGroup.DEFAULT} otherwise. Passing DEFAULT here instead would strand
-		 * every mod-bus listener.
-		 */
-		AUTO,
-		/** {@code bus = MOD} but the owning mod has no bus group — anywhere else would be a lie that never fires. */
-		SKIP
+	record Subscriber(String className, Ecosystem family, java.util.Set<String> dists, String modId, String bus) {
 	}
 
 	/** Whether a subscriber declaring {@code dists} runs on this side. An empty {@code value()} means every side. */
@@ -132,53 +77,34 @@ public final class KernelEventSubscribers {
 		return dists.isEmpty() || dists.contains(side.distName());
 	}
 
-	/** Maps a MinecraftForge {@code bus()} attribute to the group to pass FML. See {@link BusChoice}. */
-	static BusChoice busGroupChoice(String bus, boolean handlePresent) {
-		if ("FORGE".equals(bus)) return BusChoice.DEFAULT;
-		if ("MOD".equals(bus)) return handlePresent ? BusChoice.MOD : BusChoice.SKIP;
-		return BusChoice.AUTO;
-	}
-
-	/** Scans + registers every guest mod's {@code @EventBusSubscriber} class, each on its own family's bus. */
+	/** Scans + registers every guest mod's NeoForge {@code @EventBusSubscriber} class on NeoForge's buses. */
 	public static void registerAll(ClassLoader cl, List<Path> modJars, Side side) {
 		if (!(cl instanceof ForbricClassLoader)) {
 			ForbricLog.debug("[Forbric/EBS] not running under the sovereign loader — skipping @EventBusSubscriber");
 			return;
 		}
-		ForbricClassLoader loader = (ForbricClassLoader) cl;
 
-		ForgeBusApi forge = ForgeBusApi.resolve(cl);
 		NeoBusApi neo = NeoBusApi.resolve(cl);
-		if (forge == null && neo == null) {
-			ForbricLog.debug("[Forbric/EBS] neither Forge family bus API is present — skipping @EventBusSubscriber");
+		if (neo == null) {
+			ForbricLog.debug("[Forbric/EBS] NeoForge's bus API is not present — skipping @EventBusSubscriber");
 			return;
 		}
 
-		int forgeClasses = 0;
 		int neoMethods = 0;
 		int skippedSide = 0;
 		int skippedOwner = 0;
 		int skippedFamily = 0;
 		int skippedFailed = 0;
-		// modId -> the event types its subscribers wait on. Collected here because this is the one pass that reads
-		// every subscriber class of every mod; DeadEventAudit turns it into the one line that says a listener will
-		// never run.
-		java.util.Map<String, java.util.Set<String>> subscribedByMod = new java.util.LinkedHashMap<>();
-		// Each jar's scan, kept for the listeners its classes register in code (GuestListeners), which the audit names like
-		// annotation subscribers.
-		java.util.Map<Path, JarScan> scans = new java.util.LinkedHashMap<>();
 		for (Path jar : modJars) {
-			JarScan scanned = scanJar(jar);
-			scans.put(jar, scanned);
-			List<Subscriber> subscribers = scanned.subscribers();
+			List<Subscriber> subscribers = scan(jar);
 			if (subscribers.isEmpty()) continue;
 			List<ModAnnotationScanner.ModClassInfo> modsInJar = null; // scanned lazily, only if a modid() is missing
 
 			for (Subscriber sub : subscribers) {
-				// A universal jar ships one @EventBusSubscriber per family, and MultiLoaderArbiter has already
-				// decided which family owns this jar. Registering both means the SAME handler runs twice for
-				// every event both families post — double drops, double damage, double packets — and the mod has
-				// no way to notice: each call looks like the only one.
+				// A universal jar ships one subscriber per loader, and MultiLoaderArbiter has already decided which
+				// family owns this jar: a Fabric+NeoForge jar given to Fabric must not also run its NeoForge listeners,
+				// or the SAME handler runs twice for every event both post — double drops, double damage, double
+				// packets — and the mod has no way to notice: each call looks like the only one.
 				if (MultiLoaderArbiter.suppressedFor(jar, sub.family())) {
 					skippedFamily++;
 					ForbricLog.debug("[Forbric/EBS] skipping %s — %s does not own %s", sub.className(),
@@ -206,24 +132,10 @@ public final class KernelEventSubscribers {
 					continue;
 				}
 
-				if (!sub.subscribedEvents().isEmpty()) {
-					subscribedByMod
-							.computeIfAbsent(modId == null ? sub.className() : modId,
-								k -> new java.util.LinkedHashSet<>())
-							.addAll(sub.subscribedEvents());
-				}
-
 				try {
-					if (sub.family() == Ecosystem.FORGE) {
-						if (forge == null) continue;
-						if (registerForgeSubscriber(cl, loader, forge, sub, modId)) forgeClasses++;
-						else skippedOwner++;
-					} else {
-						if (neo == null) continue;
-						Object modBus = neoModBus(modId);
-						if (modBus == null) skippedOwner++;
-						neoMethods += wireNeoSubscriber(cl, sub.className(), modBus, neo);
-					}
+					Object modBus = neoModBus(modId);
+					if (modBus == null) skippedOwner++;
+					neoMethods += wireNeoSubscriber(cl, sub.className(), modBus, neo);
 				} catch (Throwable t) {
 					Throwable real = Reflect.unwrap(t);
 					Caught.warn(real, "[Forbric/EBS] could not register %s%s", sub.className(), causeChain(real));
@@ -233,177 +145,16 @@ public final class KernelEventSubscribers {
 		}
 
 		// gate-m4-canary greps "registered [0-9]+ @EventBusSubscriber" — keep this wording verbatim.
-		// It is not on the MinecraftForge path, and needs no moving off it: without MinecraftForge ForgeBusApi.resolve answers
-		// null and the loop skips that family's subscribers one by one, so this prints for NeoForge's alone, and it comes
-		// before the two passes below that are about MinecraftForge. KernelEventSubscribersGenuineBaseTest prints it on the
-		// genuine NeoForge base, with no MinecraftForge class on the loader.
-		int total = forgeClasses + neoMethods;
+		// KernelEventSubscribersGenuineBaseTest prints it on the genuine NeoForge base.
+		int total = neoMethods;
 		if (total > 0) {
 			ForbricLog.info("[Forbric/EBS] registered %d @EventBusSubscriber class(es) on the game bus", total);
 		}
 		if (total > 0 || skippedSide > 0 || skippedOwner > 0 || skippedFamily > 0) {
-			ForbricLog.info("[Forbric/EBS] %d MinecraftForge class(es) + %d NeoForge listener method(s); "
+			ForbricLog.info("[Forbric/EBS] %d NeoForge listener method(s); "
 					+ "%d skipped as wrong-side, %d skipped (owning mod has no bus), %d skipped as the other "
 					+ "family's half of a universal jar, %d skipped because the owning mod did not finish loading",
-					forgeClasses, neoMethods, skippedSide, skippedOwner, skippedFamily, skippedFailed);
-		}
-		// Everything above is about listeners the kernel DID wire. This is about the ones it wired onto a hook the
-		// merged base no longer calls — registered successfully, and never to be reached.
-		//
-		// The annotation scan's input is {class-level @EventBusSubscriber} x {@SubscribeEvent methods}. A listener
-		// registered with bus.addListener(...) lives in a method BODY and is invisible to it — and for an audit whose
-		// failure mode is silence, invisible reads exactly like fine. Two sources close that: each MinecraftForge mod's
-		// own BusGroup (ForgeBusSubscriptions), whose internal map is keyed by the event classes that bus has seen —
-		// its mod-bus events — and, for the static game buses EventBus 7 shares between all mods, the registrations
-		// the guest's own code makes (GuestListeners, read in the same pass as the annotations, and parsed only for a
-		// class whose constant pool names a bus).
-		reportDeadEvents(loader, modJars, side, ForgeBusSubscriptions.merge(subscribedByMod,
-				ForgeBusSubscriptions.byMod(KernelModLoader.publishedForgeMods())), scans);
-		// The partial-mixin and unmodelled-accessor censuses used to be logged here; they are about neither listeners nor
-		// MinecraftForge, and KernelLifecycle.reportGuestCensuses logs them right after this pass, whether or not it ran.
-		// Everything above is about listeners. This is about a whole subsystem the merged game does not carry.
-		CapabilityUseAudit.report(net.forbric.kernel.transform.ForgeCapabilityCompositionTransformer.enabled(),
-				net.forbric.kernel.transform.ForgeCapabilityCompositionTransformer.composedRoots());
-	}
-
-	/**
-	 * Hands the listeners found to {@link DeadEventAudit} — the annotation scan's and the bus groups' ({@code subscribedByMod}),
-	 * and those each jar's classes register in code ({@code scans}, {@link #addCodeListeners}; judged once loading completes,
-	 * where a class that registers it has loaded and the event's own bus has a listener) — told which of the events it would call never posted a loaded guest posts
-	 * itself. Split out of {@link #registerAll} so this wiring — the code
-	 * listeners merged in, the hook classes read through {@code loader}, the guests' jars scanned — is tested as production
-	 * runs it.
-	 *
-	 * <p>Before it names anyone, the audit asks the loaded jars whether one of them posts the event itself (a mod calling
-	 * a family hook as API): the hooks that post it are read from the hook classes this class loader serves — its own jars
-	 * first, then its parent, as the merged-base repairs read game classes, so the bytes are the carrier's whichever of the
-	 * two serves it (a launch that also puts a stale copy of a hook class on the parent class path reads the carrier's).
-	 */
-	static void reportDeadEvents(ForbricClassLoader loader, List<Path> modJars, Side side,
-			java.util.Map<String, java.util.Set<String>> subscribedByMod, java.util.Map<Path, JarScan> scans) {
-		java.util.Map<String, java.util.Set<String>> inCode = new java.util.LinkedHashMap<>();
-		java.util.Map<String, java.util.Map<String, java.util.Set<String>>> registrars = new java.util.LinkedHashMap<>();
-		for (java.util.Map.Entry<Path, JarScan> scan : scans.entrySet()) {
-			if (!scan.getValue().code().isEmpty()) addCodeListeners(scan.getKey(), scan.getValue(), side, inCode, registrars);
-		}
-		DeadEventAudit.report(subscribedByMod, side,
-				events -> GuestEventPosters.find(events, name -> resourceBytes(loader, name + ".class"), modJars),
-				inCode, registrars, type -> loader.isClassLoadedByName(type.replace('/', '.')),
-				event -> GuestListeners.listenersOnBus(loader, event));
-	}
-
-	/**
-	 * Adds the listeners {@code jar}'s classes register in code ({@link GuestListeners}) to {@code into}, under the jar's mod:
-	 * a listener on an event's static bus, or a class handed to a bus to register. Skipped like an annotation subscriber is:
-	 * a client-only class on a dedicated server, the half of a universal jar the arbiter gave to the other family, a mod
-	 * that did not finish loading.
-	 */
-	static void addCodeListeners(Path jar, JarScan scanned, Side side, java.util.Map<String, java.util.Set<String>> into) {
-		addCodeListeners(jar, scanned, side, into, new java.util.LinkedHashMap<>());
-	}
-
-	/**
-	 * The same, also recording in {@code registrars} (mod → event → classes) which classes make each registration: the class
-	 * whose code calls {@code addListener}, or the class handed to a bus to register. {@link DeadEventAudit} counts a
-	 * registration only once one of them has loaded.
-	 */
-	static void addCodeListeners(Path jar, JarScan scanned, Side side, java.util.Map<String, java.util.Set<String>> into,
-			java.util.Map<String, java.util.Map<String, java.util.Set<String>>> registrars) {
-		java.util.Map<String, java.util.Set<String>> byClass = new java.util.LinkedHashMap<>();
-		for (java.util.Map.Entry<String, GuestListeners.Found> e : scanned.code().entrySet()) {
-			GuestListeners.Found found = e.getValue();
-			if (found.clientOnly() && !side.isClient()) continue;
-			if (!found.events().isEmpty()) byClass.computeIfAbsent(e.getKey(), k -> new java.util.TreeSet<>()).addAll(found.events());
-			for (String registered : found.registeredClasses()) {
-				// A class with a class-level @EventBusSubscriber is the annotation scan's already.
-				GuestListeners.Found annotated = scanned.annotated().get(registered);
-				if (annotated == null || annotated.events().isEmpty() || scanned.subscriberClasses().contains(registered)) continue;
-				if (annotated.clientOnly() && !side.isClient()) continue;
-				byClass.computeIfAbsent(registered, k -> new java.util.TreeSet<>()).addAll(annotated.events());
-			}
-		}
-		if (byClass.isEmpty()) return;
-		List<ModAnnotationScanner.ModClassInfo> modsInJar = scanModClasses(jar);
-		for (java.util.Map.Entry<String, java.util.Set<String>> e : byClass.entrySet()) {
-			for (String event : e.getValue()) {
-				Ecosystem family = event.startsWith("net/minecraftforge/") ? Ecosystem.FORGE
-						: event.startsWith("net/neoforged/") ? Ecosystem.NEOFORGE : null;
-				if (family == null || MultiLoaderArbiter.suppressedFor(jar, family)) continue;
-				String modId = codeOwner(jar, e.getKey(), family, modsInJar);
-				if (didNotFinishLoading(modId)) continue;
-				String key = modId == null ? e.getKey().replace('/', '.') : modId;
-				into.computeIfAbsent(key, k -> new java.util.LinkedHashSet<>()).add(event);
-				registrars.computeIfAbsent(key, k -> new java.util.LinkedHashMap<>())
-						.computeIfAbsent(event, k -> new java.util.TreeSet<>()).add(e.getKey());
-			}
-		}
-	}
-
-	/**
-	 * The mod a class registering listeners in code belongs to: the jar's one {@code @Mod} id of {@code family}; between
-	 * several, the one whose {@code @Mod} class names the listener class in its constant pool (it constructs or calls it),
-	 * else the one whose {@code @Mod} class's name shares the longest prefix with it; null when the jar has none.
-	 */
-	static String codeOwner(Path jar, String internalName, Ecosystem family, List<ModAnnotationScanner.ModClassInfo> modsInJar) {
-		String binary = internalName.replace('/', '.'), best = null, naming = null;
-		int bestLength = -1;
-		java.util.Set<String> ids = new java.util.TreeSet<>();
-		for (ModAnnotationScanner.ModClassInfo info : modsInJar) {
-			if (info.family != family || info.modId == null) continue;
-			ids.add(info.modId);
-			int common = commonPrefix(binary, info.className);
-			if (common > bestLength) {
-				bestLength = common;
-				best = info.modId;
-			}
-		}
-		if (ids.size() <= 1) return ids.isEmpty() ? null : ids.iterator().next();
-		for (ModAnnotationScanner.ModClassInfo info : modsInJar) {
-			if (info.family != family || info.modId == null || !namesClass(jar, info.className.replace('.', '/'), internalName)) continue;
-			if (naming != null && !naming.equals(info.modId)) return best;
-			naming = info.modId;
-		}
-		return naming != null ? naming : best;
-	}
-
-	private static int commonPrefix(String a, String b) {
-		int i = 0;
-		while (i < a.length() && i < b.length() && a.charAt(i) == b.charAt(i)) i++;
-		return i;
-	}
-
-	/** Whether {@code owner}'s class file in {@code jar} names {@code type} as a class constant. */
-	private static boolean namesClass(Path jar, String owner, String type) {
-		if (owner.equals(type)) return true;
-		try (java.util.zip.ZipFile zip = new java.util.zip.ZipFile(jar.toFile())) {
-			java.util.zip.ZipEntry entry = zip.getEntry(owner + ".class");
-			if (entry == null) return false;
-			ClassReader reader;
-			try (java.io.InputStream in = zip.getInputStream(entry)) {
-				reader = new ClassReader(in.readAllBytes());
-			}
-			char[] buffer = new char[reader.getMaxStringLength()];
-			for (int item = 1; item < reader.getItemCount(); item++) {
-				int offset = reader.getItem(item);
-				if (offset != 0 && reader.readByte(offset - 1) == 7 && type.equals(reader.readUTF8(offset, buffer))) return true;
-			}
-			return false;
-		} catch (java.io.IOException | RuntimeException unreadable) {
-			Caught.warn(unreadable, "[Forbric/EBS] could not read %s in %s to attribute a listener to its mod", owner, jar.getFileName());
-			return false;
-		}
-	}
-
-	/**
-	 * A game resource's bytes from {@code loader} (its own jars first, as the merged-base repairs read them), or null when
-	 * it has none or it cannot be read.
-	 */
-	private static byte[] resourceBytes(ForbricClassLoader loader, String name) {
-		try (java.io.InputStream in = loader.getGameResourceAsStream(name)) {
-			return in == null ? null : in.readAllBytes();
-		} catch (java.io.IOException unreadable) {
-			Caught.warn(unreadable, "[Forbric/DeadEvents] could not read %s", name);
-			return null;
+					neoMethods, skippedSide, skippedOwner, skippedFamily, skippedFailed);
 		}
 	}
 
@@ -450,56 +201,6 @@ public final class KernelEventSubscribers {
 		return dot < 0 ? className : className.substring(dot + 1);
 	}
 
-	/**
-	 * Registers one MinecraftForge subscriber through FML's own logic. Returns false when it was deliberately
-	 * skipped (a {@code bus = MOD} subscriber whose mod was never constructed).
-	 *
-	 * <p>The owning mod's container is made active around the call because {@code registerListener}'s null-group
-	 * branch resolves the mod bus via {@code FMLJavaModLoadingContext.get()} — with no active container that
-	 * lookup fails, and every {@code IModBusEvent} listener in a {@code bus = BOTH} class would be lost.
-	 */
-	private static boolean registerForgeSubscriber(ClassLoader cl, ForbricClassLoader loader, ForgeBusApi forge,
-			Subscriber sub, String modId) throws Exception {
-		KernelForgeModContext.Handle handle = modId == null ? null
-				: KernelModLoader.publishedForgeMods().get(modId);
-		BusChoice choice = busGroupChoice(sub.bus(), handle != null);
-		if (choice == BusChoice.SKIP) {
-			ForbricLog.warn("[Forbric/EBS] %s declares bus = MOD but mod '%s' has no bus group — skipping rather "
-					+ "than parking its listeners on the game bus, where they would never fire",
-					sub.className(), String.valueOf(modId));
-			if (modId != null) {
-				ModCatalog.mark(modId, ModCatalog.Status.DEGRADED, "its @EventBusSubscriber " + simpleName(sub.className())
-						+ " declares bus = MOD but the mod never got a bus — its listeners will not run");
-			}
-			return false;
-		}
-
-		Object group = switch (choice) {
-			case DEFAULT -> forge.defaultGroup();
-			case MOD -> handle.busGroup();
-			default -> null; // AUTO: Forge routes per event type
-		};
-
-		Class<?> c = Class.forName(sub.className(), true, cl);
-		if (handle != null) KernelForgeModContext.setActiveContainer(cl, handle.container());
-		try {
-			if (forge.fmlRegister() != null) {
-				forge.fmlRegister().invoke(null, group, c);
-			} else {
-				// Fallback for a Forge revision without EventBusSubscriberLogic. Rejects a class carrying exactly
-				// one listener, and cannot honour AUTO — the defect this class exists to fix, kept only so an
-				// unexpected runtime still wires the multi-listener majority.
-				MethodHandles.Lookup lookup = KernelGameLookup.privateLookupIn(c, loader);
-				forge.busGroupRegister().invoke(group == null ? forge.defaultGroup() : group, lookup, c);
-			}
-		} finally {
-			if (handle != null) KernelForgeModContext.setActiveContainer(cl, null);
-		}
-		ForbricLog.debug("[Forbric/EBS] registered MinecraftForge @EventBusSubscriber %s (bus=%s)",
-				sub.className(), choice);
-		return true;
-	}
-
 	/** The mod bus of the NeoForge mod {@code modId}, or null when it was never published. */
 	private static Object neoModBus(String modId) {
 		if (modId == null) return null;
@@ -544,38 +245,6 @@ public final class KernelEventSubscribers {
 			Caught.warn(t, "[Forbric/EBS] could not scan %s for @Mod classes; its subscribers get no owner from it",
 					jar.getFileName());
 			return List.of();
-		}
-	}
-
-	/** MinecraftForge's bus API, resolved once. {@code fmlRegister} is null when FML's own logic is unavailable. */
-	private record ForgeBusApi(Object defaultGroup, java.lang.reflect.Method fmlRegister,
-			java.lang.reflect.Method busGroupRegister) {
-
-		static ForgeBusApi resolve(ClassLoader cl) {
-			try {
-				Class<?> busGroup = Class.forName("net.minecraftforge.eventbus.api.bus.BusGroup", false, cl);
-				Object defaultGroup = busGroup.getField("DEFAULT").get(null);
-				java.lang.reflect.Method busGroupRegister =
-						busGroup.getMethod("register", MethodHandles.Lookup.class, Class.class);
-				java.lang.reflect.Method fmlRegister = null;
-				try {
-					Class<?> logic = Class.forName(FML_EBS_LOGIC, false, cl);
-					fmlRegister = logic.getMethod("register", busGroup, Class.class);
-					fmlRegister.setAccessible(true);
-				} catch (Throwable t) {
-					Caught.warn(t, "[Forbric/EBS] %s absent — falling back to BusGroup.register(Lookup, Class), "
-							+ "which rejects a subscriber class carrying exactly one listener", FML_EBS_LOGIC);
-				}
-				return new ForgeBusApi(defaultGroup, fmlRegister, busGroupRegister);
-			} catch (ClassNotFoundException absent) {
-				Caught.expected(absent);
-				ForbricLog.debug("[Forbric/EBS] MinecraftForge BusGroup absent");
-				return null;
-			} catch (Throwable t) {
-				Caught.warn(t, "[Forbric/EBS] MinecraftForge BusGroup is present but unusable; no MinecraftForge "
-						+ "@EventBusSubscriber class is registered");
-				return null;
-			}
 		}
 	}
 
@@ -693,45 +362,18 @@ public final class KernelEventSubscribers {
 	}
 
 	/**
-	 * ASM-scans a jar for {@code @EventBusSubscriber} classes of EITHER family, keeping which one matched plus the
-	 * attributes that decide routing. Both families' {@code Dist} enums spell {@code CLIENT} /
-	 * {@code DEDICATED_SERVER}, so the captured constant names compare directly.
+	 * ASM-scans a jar for NeoForge {@code @EventBusSubscriber} classes, keeping the attributes that decide routing.
 	 */
-	private static List<Subscriber> scan(Path jar) {
-		return scanJar(jar).subscribers();
-	}
-
-	/**
-	 * One jar's listeners: its {@code @EventBusSubscriber} classes, and what its classes register in code
-	 * ({@link GuestListeners}) — class name (internal) → what its methods register; class name → the events its
-	 * {@code @SubscribeEvent} methods take, for every class that has one.
-	 */
-	record JarScan(List<Subscriber> subscribers, java.util.Map<String, GuestListeners.Found> code,
-			java.util.Map<String, GuestListeners.Found> annotated) {
-		/** The classes the annotation scan registered (internal names). */
-		java.util.Set<String> subscriberClasses() {
-			java.util.Set<String> out = new java.util.HashSet<>();
-			for (Subscriber s : subscribers) out.add(s.className().replace('.', '/'));
-			return out;
-		}
-	}
-
-	static JarScan scanJar(Path jar) {
+	static List<Subscriber> scan(Path jar) {
 		List<Subscriber> found = new ArrayList<>();
-		java.util.Map<String, GuestListeners.Found> code = new java.util.TreeMap<>(), annotated = new java.util.TreeMap<>();
 		try (FileSystem fs = FileSystems.newFileSystem(jar, (ClassLoader) null)) {
 			for (Path root : fs.getRootDirectories()) {
-				String jarName = jar.getFileName() == null ? jar.toString() : jar.getFileName().toString();
 				try (Stream<Path> walk = Files.walk(root)) {
 					walk.filter(p -> p.toString().endsWith(".class")).forEach(p -> {
 						byte[] bytes = read(p);
 						if (bytes == null) return;
-						ClassScan s = scanClass(bytes);
-						if (s != null && s.subscriber() != null) found.add(s.subscriber());
-						scanCode(bytes, s, code, annotated);
-						// Free ride on a pass that is already reading every class of every Forge-family jar.
-						// See CapabilityUseAudit for what it is looking for and why it can only warn.
-						CapabilityUseAudit.note(jarName, bytes);
+						Subscriber s = scanClassBytes(bytes);
+						if (s != null) found.add(s);
 					});
 				}
 			}
@@ -739,27 +381,7 @@ public final class KernelEventSubscribers {
 			Caught.warn(t, "[Forbric/EBS] could not scan %s for @EventBusSubscriber classes; %d found before the "
 					+ "failure are kept", jar.getFileName(), found.size());
 		}
-		return new JarScan(found, code, annotated);
-	}
-
-	/**
-	 * The code-registration half of a class's scan, into {@code code} and {@code annotated} ({@code annotation} is the class's
-	 * annotation scan, null when it could not be parsed). Never throws.
-	 */
-	static void scanCode(byte[] bytes, ClassScan annotation, java.util.Map<String, GuestListeners.Found> code,
-			java.util.Map<String, GuestListeners.Found> annotated) {
-		try {
-			ClassReader reader = new ClassReader(bytes);
-			if (annotation != null && !annotation.subscribedEvents().isEmpty()) {
-				annotated.put(reader.getClassName(), new GuestListeners.Found(annotation.subscribedEvents(), java.util.Set.of(),
-						annotation.clientOnly()));
-			}
-			if (!GuestListeners.namesABus(reader)) return;
-			GuestListeners.Found found = GuestListeners.scan(bytes);
-			if (!found.events().isEmpty() || !found.registeredClasses().isEmpty()) code.put(reader.getClassName(), found);
-		} catch (Throwable t) {
-			Caught.warn(t, "[Forbric/EBS] could not read a class's code for the listeners it registers; it is skipped");
-		}
+		return found;
 	}
 
 	static Subscriber scanClass(Path classFile) {
@@ -777,54 +399,15 @@ public final class KernelEventSubscribers {
 		}
 	}
 
-	/** The scan proper, split out so tests can drive it from bytes without a jar on disk. */
+	/** The scan proper, split out so tests can drive it from bytes without a jar on disk; null for no subscriber. */
 	static Subscriber scanClassBytes(byte[] bytes) {
-		ClassScan scan = scanClass(bytes);
-		return scan == null ? null : scan.subscriber();
-	}
-
-	/**
-	 * One class's annotation scan: its {@code @EventBusSubscriber} (null when it has none), the events its
-	 * {@code @SubscribeEvent} methods take whether or not it has one (a class a bus is handed to register is a listener
-	 * without it), and whether it carries a family's {@code @OnlyIn(Dist.CLIENT)}.
-	 */
-	record ClassScan(Subscriber subscriber, java.util.Set<String> subscribedEvents, boolean clientOnly) {
-	}
-
-	/** The scan proper; null when the class cannot be parsed. */
-	static ClassScan scanClass(byte[] bytes) {
 		try {
-			boolean[] clientOnly = new boolean[1];
 			String[] name = new String[1];
-			Ecosystem[] family = new Ecosystem[1];
+			boolean[] subscriber = new boolean[1];
 			String[] modId = new String[1];
 			String[] bus = new String[1];
 			java.util.Set<String> dists = new java.util.LinkedHashSet<>();
-			// The EVENT TYPES this class subscribes to, collected in the same pass. Nothing else knows them: the
-			// MinecraftForge path hands registration to FML, which never reports back what it wired, so without
-			// this the kernel cannot say "this mod is waiting for an event that will never arrive".
-			// See DeadEventAudit.
-			java.util.Set<String> events = new java.util.LinkedHashSet<>();
 			new ClassReader(bytes).accept(new ClassVisitor(Opcodes.ASM9) {
-				@Override
-				public org.objectweb.asm.MethodVisitor visitMethod(int access, String methodName, String desc,
-						String signature, String[] exceptions) {
-					org.objectweb.asm.Type[] params = org.objectweb.asm.Type.getArgumentTypes(desc);
-					if (params.length != 1 || params[0].getSort() != org.objectweb.asm.Type.OBJECT) return null;
-					String eventType = params[0].getInternalName();
-					return new org.objectweb.asm.MethodVisitor(Opcodes.ASM9) {
-						@Override
-						public AnnotationVisitor visitAnnotation(String annotation, boolean visible) {
-							// Either family's @SubscribeEvent. The audit judges only MinecraftForge event types,
-							// so collecting both costs nothing and misses nothing.
-							if (SUBSCRIBE_FORGE.equals(annotation) || SUBSCRIBE_NEO.equals(annotation)) {
-								events.add(eventType);
-							}
-							return null;
-						}
-					};
-				}
-
 				@Override
 				public void visit(int v, int access, String n, String sig, String sup, String[] itf) {
 					name[0] = n;
@@ -832,21 +415,8 @@ public final class KernelEventSubscribers {
 
 				@Override
 				public AnnotationVisitor visitAnnotation(String descriptor, boolean visible) {
-					if (descriptor.endsWith("/api/distmarker/OnlyIn;")) {
-						return new AnnotationVisitor(Opcodes.ASM9) {
-							@Override
-							public void visitEnum(String attr, String desc, String value) {
-								if ("value".equals(attr) && "CLIENT".equals(value)) clientOnly[0] = true;
-							}
-						};
-					}
-					boolean forge = EBS_FORGE.equals(descriptor);
-					if (!forge && !EBS_NEO.equals(descriptor)) return null;
-					// A universal jar's glue class can carry BOTH. First one wins and the other is ignored: the
-					// class can only be constructed once, and a second registration would double every listener.
-					if (family[0] != null) return null;
-					family[0] = forge ? Ecosystem.FORGE
-							: Ecosystem.NEOFORGE;
+					if (!EBS_NEO.equals(descriptor)) return null;
+					subscriber[0] = true;
 					return new AnnotationVisitor(Opcodes.ASM9) {
 						@Override
 						public void visit(String attr, Object value) {
@@ -872,10 +442,9 @@ public final class KernelEventSubscribers {
 				}
 			}, ClassReader.SKIP_CODE | ClassReader.SKIP_DEBUG | ClassReader.SKIP_FRAMES);
 
-			// Absent bus() is Bus.BOTH — Forge's own default, and the one that routes per event type.
-			Subscriber subscriber = family[0] == null ? null : new Subscriber(name[0].replace('/', '.'), family[0], dists, modId[0],
-					bus[0] == null ? "BOTH" : bus[0], java.util.Set.copyOf(events));
-			return new ClassScan(subscriber, java.util.Set.copyOf(events), clientOnly[0]);
+			// Absent bus() is Bus.BOTH, the default that routes per event type.
+			return !subscriber[0] ? null : new Subscriber(name[0].replace('/', '.'), Ecosystem.NEOFORGE, dists, modId[0],
+					bus[0] == null ? "BOTH" : bus[0]);
 		} catch (Throwable t) {
 			Caught.warn(t, "[Forbric/EBS] could not parse a class for @EventBusSubscriber; it is skipped");
 			return null;

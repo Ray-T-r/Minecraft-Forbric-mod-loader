@@ -28,8 +28,6 @@ import net.forbric.api.CompatibilityFinding;
 import net.forbric.api.CompatibilityFindings;
 import net.forbric.api.Side;
 import net.forbric.api.Ecosystem;
-import net.forbric.api.EventBridges;
-import net.forbric.api.GameEventBridge;
 import net.forbric.api.ForeignType;
 import net.forbric.kernel.util.Caught;
 import net.forbric.kernel.util.ForbricLog;
@@ -191,11 +189,6 @@ public final class KernelLifecycle {
 		// Step 2: construct both ecosystem baselines + fire RegisterEvent so default content (e.g. minecraft:empty
 		// FluidType, default attributes) registers, and run the Fabric main + side entrypoints in the same window.
 		registerNeoForgeContent(cl, side);
-		// Step 2a: the two REGISTRATION bridges (creative-tab contents, spawn placements) are landed by class
-		// transformers when the game defines CreativeModeTab and SpawnPlacements — both of which the window above
-		// has driven by now — not by the multiplexer. Verify them here, where a repair that stood down on an
-		// unexpected base gets named with its cost instead of leaving a Forge mod's items and mobs silently absent.
-		EventBridges.verify(GameEventBridge.Pass.REGISTRATION);
 		// Step 2b (client only): construct ClientNeoForgeMod on the baseline bus, so the game's
 		// ModLoader.postEvent(<client mod-bus event>) — fired from ClientHooks.initClientHooks during
 		// Minecraft.<init> for reload listeners, entity renderers, sprite sources, client extensions — has NeoForge's
@@ -228,13 +221,6 @@ public final class KernelLifecycle {
 		// attachments, configuration tasks, model data, …) never fired. Must precede step 2d — the network setup posts
 		// its Register*PayloadHandlersEvent to exactly these subscribers.
 		KernelEventSubscribers.registerNeoForgeInternal(cl, runtimeJars, baselineBus, side);
-		// Forge also declares internal subscribers in its carrier, including its geometry-loader registrations.
-		KernelForgeInternalSubscribers.register(cl, runtimeJars, side);
-		// Step 2c3 (client only): NeoForge won the client reload-listener path in the byte merge, so MinecraftForge's
-		// RegisterClientReloadListenersEvent is never posted and a Forge mod's handler for it sits on a dead bus.
-		// Bridge it off NeoForge's AddClientReloadListenersEvent, which ClientHooks.initClientHooks posts to the
-		// baseline mod bus during Minecraft.<init> — i.e. after this point, which is why the listener goes on now.
-		if (side.isClient()) GameEventMultiplexer.installClientReloadBridge(cl, baselineBus);
 		// Step 3 USED TO BE HERE: registering mods' @EventBusSubscriber classes. It has moved INSIDE
 		// registerNeoForgeContent, next to the constructors — see the comment at the new call site. Wiring them
 		// here meant every registration-phase event had already been posted to nobody.
@@ -272,9 +258,9 @@ public final class KernelLifecycle {
 		// or common setup — the "register with me" shape addon mods are built on — posted into nothing: no
 		// listener ran, no error, no log, and the posting mod carried on with an empty result.
 		//
-		// Everything the kernel wires onto these buses (the Neo→Forge bridges inside startGameBuses, NeoForge's own
-		// @EventBusSubscriber classes in step 2c2, the client reload bridge in 2c3) is already registered by this
-		// point, and adding a listener to a started bus is allowed anyway.
+		// Everything the kernel wires onto these buses (its own server duties inside startGameBuses, NeoForge's own
+		// @EventBusSubscriber classes in step 2c2) is already registered by this point, and adding a listener to a
+		// started bus is allowed anyway.
 		startGameBuses(cl, side);
 		// Step 3b: post the FML setup lifecycle at every NeoForge mod. Genuine NeoForge produces these inside
 		// CommonModLoader.load(), whose only client caller is ClientModLoader.finish() — which the kernel neuters
@@ -616,9 +602,9 @@ public final class KernelLifecycle {
 	 * The two census lines gates read once every mod's subscribers are wired: how many guest mixins apply only partially
 	 * (gate-m12 holds the count under a ceiling) and which mod-info questions were answered empty.
 	 *
-	 * <p>They used to be the last lines of {@code KernelEventSubscribers.registerAll}, whose pass ends with MinecraftForge's
-	 * dead-event and capability audits and returns early when neither family's bus API is there; neither census is about
-	 * MinecraftForge, or about subscribers at all. Logged at the same moment, right after that pass, with the same words.
+	 * <p>They used to be the last lines of {@code KernelEventSubscribers.registerAll}, which returns early when NeoForge's bus
+	 * API is not there; neither census is about subscribers at all. Logged at the same moment, right after that pass, with
+	 * the same words.
 	 *
 	 * <p>Isolated as that pass is: the call sits inside {@code registerNeoForgeContent}'s try, where an escape would abort the
 	 * whole registration window — RegisterEvent, the Fabric mains, every step after it — for a log line. Each census on its
@@ -647,27 +633,20 @@ public final class KernelLifecycle {
 	}
 
 	/**
-	 * Starts NeoForge's global game bus + Forge's DEFAULT BusGroup so game-event listeners dispatch.
+	 * Starts NeoForge's global game bus so game-event listeners dispatch.
 	 *
-	 * <p>Absent and failed are split here for the same reason as in {@link #invokeGameDataOn}: a single-family
-	 * instance legitimately has only one of these two buses, and that is a debug line. A bus that is PRESENT and
-	 * fails to start is total — every game-event listener of that family, of every mod, is on a bus nothing
-	 * dispatches, and the game then runs with no visible error at all.
+	 * <p>Absent and failed are split here for the same reason as in {@link #invokeGameDataOn}: an instance without
+	 * NeoForge's runtime legitimately has no such bus, and that is a debug line. A bus that is PRESENT and fails to
+	 * start is total — every game-event listener of every mod is on a bus nothing dispatches, and the game then runs
+	 * with no visible error at all.
 	 */
 	private static void startGameBuses(ClassLoader cl, Side side) {
-		// Bridge merge-lost game events (Neo won the tick hook → forward to Forge) BEFORE starting the buses.
-		// The side decides whether the CLIENT-only game-bus bridges go on: they name NeoForge's client event
-		// package, which a dedicated server must never be made to resolve.
-		GameEventMultiplexer.install(cl, side.isClient());
 		// The kernel's own server duties (Fabric's game instance, the load report and compatibility decision once a world
-		// is up, the tryDropExperience relay, the data-map watch) go on unconditionally: they forward nothing to
-		// MinecraftForge, so neither its absence nor -Dforbric.unifiedEvents=off may take them away. After the bridges, so
-		// each keeps its place among the kernel's listeners on its event — the server-started work after MinecraftForge's.
+		// is up, the tryDropExperience relay, the data-map watch) go on right before the bus starts, so each is in place
+		// before the first game event dispatches.
 		KernelServerDutiesInstaller.install(cl);
 		startBus(cl, "net.neoforged.neoforge.common.NeoForge", "EVENT_BUS",
 				"net.neoforged.bus.api.IEventBus", "start", "NeoForge.EVENT_BUS");
-		startBus(cl, "net.minecraftforge.eventbus.api.bus.BusGroup", "DEFAULT",
-				"net.minecraftforge.eventbus.api.bus.BusGroup", "startup", "Forge BusGroup.DEFAULT");
 	}
 
 	/**
@@ -1808,9 +1787,6 @@ public final class KernelLifecycle {
 		fireForgeSetupPhase(cl, ForeignType.INTER_MOD_PROCESS_EVENT, "IMC process");
 		fireSetupPhase(cl, mods, ForeignType.FML_LOAD_COMPLETE_EVENT, "load complete");
 		fireForgeSetupPhase(cl, ForeignType.FML_LOAD_COMPLETE_EVENT, "load complete");
-		// Every mod's setup has run, so every listener a mod registers in code is registered: judge them now, before the
-		// load report is written.
-		DeadEventAudit.judgeCodeListeners();
 
 		// Loading is over on this side, so whatever went wrong during it is now the whole story rather than a
 		// partial one. A clean run writes no file and says one line.
@@ -2010,9 +1986,6 @@ public final class KernelLifecycle {
 		fireForgeSetupPhase(cl, ForeignType.INTER_MOD_PROCESS_EVENT, "IMC process");
 		fireSetupPhase(cl, mods, ForeignType.FML_LOAD_COMPLETE_EVENT, "load complete");
 		fireForgeSetupPhase(cl, ForeignType.FML_LOAD_COMPLETE_EVENT, "load complete");
-		// As on the server: the listeners mods register in code are all registered now, and a client that only ever joins a
-		// remote server has no ServerStarted to judge them at.
-		DeadEventAudit.judgeCodeListeners();
 
 		// The client's own end of loading. Same reason as the server twin: at this point what went wrong is the
 		// whole story, and this is the last moment before the player is looking at a title screen.
@@ -2851,10 +2824,6 @@ public final class KernelLifecycle {
 	 */
 	public static void onNeoClientSetup() {
 		ClassLoader cl = gameLoader;
-		// The three CLIENT_INIT bridges are landed by class transformers in Minecraft and BlockColors, both defined
-		// before this point, so this is the first moment their absence can be named with its cost rather than
-		// noticed later as an empty Controls screen.
-		EventBridges.verify(GameEventBridge.Pass.CLIENT_INIT);
 		preloadClientResources(cl);
 		// Step 3a's last chance: client setup posts RegisterDataMapTypesEvent, which reads the declared list, so the
 		// declaration must have happened by now even if the Fabric hook above never landed. Normally a no-op.

@@ -24,8 +24,6 @@ import org.objectweb.asm.tree.MethodInsnNode;
 import org.objectweb.asm.tree.MethodNode;
 
 import net.forbric.api.Ecosystem;
-import net.forbric.api.GameEventBridge;
-import net.forbric.api.EventBridges;
 import net.forbric.api.ForeignType;
 import net.forbric.kernel.util.ForbricLog;
 
@@ -90,7 +88,6 @@ public final class ForgeCreativeTabsInjector implements ClassTransformer {
 		// Four references in, void out on both sides: no instructions, locals, frames or exception ranges change.
 		hook.owner = RUNTIME;
 		hook.name = METHOD;
-		EventBridges.installed(GameEventBridge.CREATIVE_TAB_CONTENTS);
 		ClassWriter writer = new ClassWriter(0);
 		node.accept(writer);
 		ForbricLog.info("[Forbric/CreativeTabs] creative-tab contents now run NeoForge and MinecraftForge's "

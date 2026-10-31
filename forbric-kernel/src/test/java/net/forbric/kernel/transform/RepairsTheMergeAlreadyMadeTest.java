@@ -18,27 +18,18 @@ import org.objectweb.asm.tree.FieldInsnNode;
 import org.objectweb.asm.tree.MethodNode;
 
 /**
- * Two compat repairs on bases whose merge already does part of their work, the shapes the edit-spliced merge emits.
+ * A compat repair on bases whose merge already does part of its work, the shapes the edit-spliced merge emits.
  * Invented classes under the game's names, so each shape and its near misses are exact.
  *
  * <p>{@code Mob}: the merge keeps both families' spawn fields, and a base may write both from one statement each
  * ({@code this.spawnReason = reason; this.spawnType = reason;}) while the save is read and written through
  * {@code spawnType} alone. That mirrored write adds nothing {@code spawnType} lacks, so the read still moves; a write
  * {@code spawnType} does not repeat (another value, or control that can arrive between the two) keeps the field live.
- *
- * <p>{@code ModelManager}: a base whose {@code reload} already starts with MinecraftForge's
- * {@code GeometryLoaderManager.init()} needs no kernel call, and the repair's claim is met without a change.
  */
 class RepairsTheMergeAlreadyMadeTest implements Opcodes {
 	private static final String MOB = "net/minecraft/world/entity/Mob";
 	private static final String REASON = "Lnet/minecraft/world/entity/EntitySpawnReason;";
 	private static final String SPAWN_CLAIM = "forbric-merged-base-compat#readTheSpawnReasonThatIsActuallyWritten";
-	private static final String MODELS = "net/minecraft/client/resources/model/ModelManager";
-	private static final String RELOAD = "(Lnet/minecraft/server/packs/resources/PreparableReloadListener$SharedState;Ljava/util/concurrent/Executor;"
-			+ "Lnet/minecraft/server/packs/resources/PreparableReloadListener$PreparationBarrier;Ljava/util/concurrent/Executor;)"
-			+ "Ljava/util/concurrent/CompletableFuture;";
-	private static final String GEOMETRY_CLAIM = "forbric-merged-base-compat#restoreForgeGeometryReload";
-
 	private enum Write { NONE, MIRRORED_AFTER, MIRRORED_BEFORE, OTHER_VALUE, ALONE, ENTRY_BETWEEN }
 
 	@Test void aSpawnReasonWriteSpawnTypeRepeatsLeavesTheFieldDeadAndTheReadMoves() {
@@ -59,24 +50,6 @@ class RepairsTheMergeAlreadyMadeTest implements Opcodes {
 			assertFalse(hits.contains(SPAWN_CLAIM), write + ": " + hits);
 			assertEquals("spawnReason", read(method(parse(out), "getSpawnReason")), write + ": a live field keeps its read");
 		}
-	}
-
-	@Test void aReloadThatAlreadyInitialisesForgeGeometryMeetsTheClaimUnchanged() {
-		for (String owner : List.of("net/minecraftforge/client/model/geometry/GeometryLoaderManager", "net/forbric/kernel/runtime/KernelForgeClientInit")) {
-			byte[] in = models(owner, owner.endsWith("GeometryLoaderManager") ? "init" : "initGeometryLoaders");
-			List<String> hits = new ArrayList<>();
-			assertSame(in, new ForbricMergedBaseCompatTransformer().transform(MODELS.replace('/', '.'), in, null, hits::add), owner);
-			assertTrue(hits.contains(GEOMETRY_CLAIM), owner + ": " + hits);
-		}
-		// Elsewhere than first, or another static call first: not where MinecraftForge initialises, so not met.
-		ClassNode notFirst = parse(models("net/minecraftforge/client/model/geometry/GeometryLoaderManager", "init"));
-		MethodNode reload = notFirst.methods.stream().filter(m -> m.name.equals("reload")).findFirst().orElseThrow();
-		AbstractInsnNode call = reload.instructions.getFirst();
-		while (call.getOpcode() < 0) call = call.getNext();
-		reload.instructions.remove(call);
-		reload.instructions.insertBefore(reload.instructions.getLast(), call);
-		assertFalse(ForbricMergedBaseCompatTransformer.forgeGeometryReloadAlreadyInPlace(notFirst));
-		assertFalse(ForbricMergedBaseCompatTransformer.forgeGeometryReloadAlreadyInPlace(parse(models("java/lang/Thread", "dumpStack"))));
 	}
 
 	/** A Mob with both spawn fields, the save path through spawnType, and {@code finalizeSpawn} writing as {@code write} says. */
@@ -129,25 +102,6 @@ class RepairsTheMergeAlreadyMadeTest implements Opcodes {
 		mv.visitVarInsn(ALOAD, 0);
 		mv.visitVarInsn(ALOAD, local);
 		mv.visitFieldInsn(PUTFIELD, MOB, field, REASON);
-	}
-
-	/** A ModelManager whose {@code reload} starts with {@code owner.name()V}, then MinecraftForge's own next step. */
-	private static byte[] models(String owner, String name) {
-		ClassWriter cw = new ClassWriter(ClassWriter.COMPUTE_MAXS);
-		cw.visit(V1_6, ACC_PUBLIC, MODELS, null, "java/lang/Object", null);
-		MethodVisitor mv = cw.visitMethod(ACC_PUBLIC, "reload", RELOAD, null, null);
-		mv.visitCode();
-		mv.visitMethodInsn(INVOKESTATIC, owner, name, "()V", false);
-		mv.visitVarInsn(ALOAD, 1);
-		mv.visitMethodInsn(INVOKEVIRTUAL, "net/minecraft/server/packs/resources/PreparableReloadListener$SharedState", "resourceManager",
-				"()Lnet/minecraft/server/packs/resources/ResourceManager;", false);
-		mv.visitInsn(POP);
-		mv.visitInsn(ACONST_NULL);
-		mv.visitInsn(ARETURN);
-		mv.visitMaxs(0, 0);
-		mv.visitEnd();
-		cw.visitEnd();
-		return cw.toByteArray();
 	}
 
 	private static ClassNode parse(byte[] bytes) {

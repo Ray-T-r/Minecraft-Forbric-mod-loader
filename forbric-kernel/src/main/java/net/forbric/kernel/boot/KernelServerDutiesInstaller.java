@@ -25,23 +25,17 @@ import net.forbric.kernel.util.ForbricLog;
 /**
  * Puts the kernel's own server duties on NeoForge's game bus: the boot half of the game-side {@code KernelServerDuties}.
  *
- * <p>Each of these used to be installed from MinecraftForge-gated code, and so went wherever that code went.
- * {@link GameEventMultiplexer#install} probes {@code net.minecraftforge.event.ForgeEventFactory} before it installs anything,
- * and returns at once under {@code -Dforbric.unifiedEvents=off}; the game instance, the server-started work and (inside the
- * MinecraftForge break bridge) the experience relay were installed after that probe, so a base without MinecraftForge — the
- * genuine NeoForge base Stage 4 switches to, measured — and the switch both dropped them without a word. None of them forwards
- * anything to MinecraftForge. This installs them unconditionally, each on its own, so one that fails costs only itself.
+ * <p>Each of these used to be installed from MinecraftForge-gated code (the NeoForge-to-MinecraftForge forward pass, which
+ * probed for MinecraftForge before it installed anything), so a base without MinecraftForge — the genuine NeoForge base,
+ * measured — dropped them without a word. None of them is about MinecraftForge. This installs them unconditionally, each on
+ * its own, so one that fails costs only itself.
  *
- * <p>Called from {@code KernelLifecycle.startGameBuses} right after the bridges and before the buses start. After them,
- * because a NeoForge bus runs the listeners of one priority in the order they were added: the started work registered here
- * must still run after MinecraftForge's own started duties (the login gate, the dead-event judgement whose findings the load
- * report carries), and each listener here keeps the place it had among the kernel's listeners on its event. The data-map watch
- * came last before and still does.
+ * <p>Called from {@code KernelLifecycle.startGameBuses} right before NeoForge's game bus starts, so every duty is on the bus
+ * before the first game event dispatches. The data-map watch goes on last.
  *
- * <p>Its own lines say {@code [Forbric/Duties]}, since none of this is the multiplexer's. The game-instance, started-work and
- * data-map lines said {@code [Forbric/EventMux]} while {@link GameEventMultiplexer} installed them; no gate or test greps
- * them under either prefix (only failure and debug lines, checked against {@code run/*.sh}, {@code run/compat} and the unit
- * tests). The runtime warnings in {@code KernelServerDuties} keep the words they had, prefix included.
+ * <p>Its own lines say {@code [Forbric/Duties]}. No gate or test greps the duties' lines under that prefix or the old
+ * {@code [Forbric/EventMux]} one (only failure and debug lines, checked against {@code run/*.sh}, {@code run/compat} and the
+ * unit tests). The runtime warnings in {@code KernelServerDuties} keep the words they had, prefix included.
  */
 public final class KernelServerDutiesInstaller {
 	/** The duties, in the order they go on the bus; what {@link #install} answers when all of them did. */
@@ -51,8 +45,7 @@ public final class KernelServerDutiesInstaller {
 	}
 
 	/**
-	 * Installs every duty on NeoForge's game bus, whatever else is on the classpath and whatever {@code -Dforbric.unifiedEvents}
-	 * says.
+	 * Installs every duty on NeoForge's game bus, whatever else is on the classpath.
 	 *
 	 * @return the duties that installed, in {@link #DUTIES} order; none when the game has no NeoForge bus
 	 */
@@ -103,8 +96,7 @@ public final class KernelServerDutiesInstaller {
 
 	/**
 	 * Watches NeoForge's own data-map reload path (registration, apply per reload, dispatch) so the kernel's about-to-start
-	 * fallback can stand down when it ran. It forwards nothing; it lived in {@link GameEventMultiplexer}, and moved here with
-	 * the other duties that are not about MinecraftForge.
+	 * fallback can stand down when it ran. It forwards nothing.
 	 */
 	private static boolean installDataMapWatch(ClassLoader cl, Object neoBus) {
 		try {

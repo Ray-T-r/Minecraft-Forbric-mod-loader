@@ -13,8 +13,6 @@ import org.junit.jupiter.api.io.TempDir;
 import org.junit.jupiter.api.parallel.ResourceLock;
 
 import net.fabricmc.api.EnvType;
-import net.forbric.api.EventBridges;
-import net.forbric.api.GameEventBridge;
 
 /**
  * {@link ForgeSpawnPlacementsInjector}'s output, run: NeoForge's {@code SpawnPlacements.fireSpawnPlacementEvent} serves
@@ -30,7 +28,6 @@ import net.forbric.api.GameEventBridge;
  */
 @ExecutesInjector(ForgeSpawnPlacementsInjector.class)
 @ResourceLock("system-properties")
-@ResourceLock("EventBridges")
 class ForgeSpawnPlacementsInjectorExecutionTest {
 	private static final String TARGET = "net.minecraft.world.entity.SpawnPlacements";
 
@@ -153,7 +150,6 @@ class ForgeSpawnPlacementsInjectorExecutionTest {
 
 	@AfterEach void reset() throws Throwable {
 		System.clearProperty(ForgeSpawnPlacementsInjector.PROPERTY);
-		InjectorExecution.invokeStatic(EventBridges.class, "reset");
 	}
 
 	private static Object spawnTable(ClassLoader loader) throws Throwable {
@@ -168,7 +164,6 @@ class ForgeSpawnPlacementsInjectorExecutionTest {
 		String internal = TARGET.replace('.', '/');
 		byte[] routed = InjectorExecution.transform(new ForgeSpawnPlacementsInjector(), TARGET, original.get(internal), EnvType.SERVER);
 		assertNotSame(original.get(internal), routed, "the post was routed");
-		assertTrue(EventBridges.installed().contains(GameEventBridge.SPAWN_PLACEMENTS), "and the bridge says so");
 		Map<String, byte[]> classes = new HashMap<>(original);
 		classes.put(internal, routed);
 		ClassLoader loader = InjectorExecution.load(classes);

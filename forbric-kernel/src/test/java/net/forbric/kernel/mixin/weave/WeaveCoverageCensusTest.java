@@ -126,7 +126,6 @@ class WeaveCoverageCensusTest {
 			Map.entry("CarrierReturnedCalls", Switch.own("forbric.carrierReturnedCalls")), // CarrierReturnedCallsWeaveTest
 			Map.entry("NativeSliceOccurrences", Switch.own("forbric.nativeSliceOccurrences")), // NativeSliceOccurrencesWeaveTest
 			Map.entry("MixinGuiItemCaptureAdapter", Switch.own("forbric.guiItemCaptureAnchor")),
-			Map.entry("KernelClientHookMixinAnchors", Switch.own("forbric.clientHookMixinAnchors")),
 			Map.entry("MixinShearsRelay", Switch.own("forbric.shearsRelay")),
 			Map.entry("InsertedLambdaArgumentShim", Switch.own("forbric.insertedLambdaArguments")),
 			Map.entry("MixinPlayerWorldCallbackAdapter", Switch.own("forbric.playerWorldCallbacks")),

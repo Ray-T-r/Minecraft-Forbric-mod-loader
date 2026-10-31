@@ -50,11 +50,9 @@ import net.forbric.kernel.classloading.ForbricClassLoader;
  * (the NFRT-patched game jar and the NeoForge carrier, no MinecraftForge class anywhere on the loader) prints it for a
  * NeoForge mod's subscriber.
  *
- * <p>Plan item 2.3 asked for the line to be moved off the MinecraftForge path. It is not on it: {@code registerAll} returns
- * early only under a loader that is not the kernel's or when NEITHER family's bus API resolves; {@code ForgeBusApi.resolve}
- * answers null without MinecraftForge and the loop then skips that family's subscribers one by one; and the line is printed
- * before {@code reportDeadEvents} and {@code CapabilityUseAudit}, the two passes that are about MinecraftForge. Its caller,
- * {@code registerNeoForgeContent}, opens with {@code setForgeLoadingState}, whose absent-class path is a debug line. Measured
+ * <p>{@code registerAll} returns early only under a loader that is not the kernel's or when NeoForge's bus API does not
+ * resolve; nothing in it is about MinecraftForge. Its caller, {@code registerNeoForgeContent}, opens with
+ * {@code setForgeLoadingState}, whose absent-class path is a debug line. Measured
  * the same way in Stage 2.0's throwaway boot of the genuine base (carriers {@code none, neoforge-runtime.jar}): {@code registered
  * 38 @EventBusSubscriber class(es) on the game bus} for the 77 server mods of client-merged-pack.
  */
@@ -135,7 +133,7 @@ class KernelEventSubscribersGenuineBaseTest {
 		}
 		assertTrue(out[0].contains("[Forbric/EBS] registered 1 @EventBusSubscriber class(es) on the game bus"),
 				"the NeoForge subscriber's one listener, counted in the line's own words: " + out[0]);
-		assertTrue(out[0].contains("0 MinecraftForge class(es) + 1 NeoForge listener method(s)"), out[0]);
+		assertTrue(out[0].contains("[Forbric/EBS] 1 NeoForge listener method(s); "), out[0]);
 		assertEquals(1, GateLogContract.count(temporary, canaryPattern(), out[0]), "gate-m4-canary's grep finds it: " + out[0]);
 	}
 }

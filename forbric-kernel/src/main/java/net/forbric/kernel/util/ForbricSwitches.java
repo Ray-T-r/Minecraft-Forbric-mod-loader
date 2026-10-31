@@ -87,7 +87,19 @@ public final class ForbricSwitches {
 					+ "in a helper that answers whether it made it runs on that answer, by structure (-Dforbric.carrierHelperResults)"),
 			Map.entry("forbric.fabricEntityAnchors", "fabric-api's bed occupancy redirect is no longer replaced by a rewrite of its handler: it moves onto the state's "
 					+ "setBedOccupied and runs NeoForge's inherited default with fabric-api's own handler wherever a bed inherits it "
-					+ "(-Dforbric.carrierDefaultChains); a NeoForge bed that overrides the setter keeps its own and no longer asks Fabric's event"));
+					+ "(-Dforbric.carrierDefaultChains); a NeoForge bed that overrides the setter keeps its own and no longer asks Fabric's event"),
+			// Stage 4: the NeoForge-to-MinecraftForge event forward pass, its ledger and its audits are gone with MinecraftForge.
+			Map.entry("forbric.unifiedEvents", "Forbric loads no MinecraftForge mod, so no NeoForge event is forwarded to MinecraftForge's "
+					+ "buses any more; the kernel's own server duties never depended on it"),
+			Map.entry("forbric.deadEventAudit", "Forbric loads no MinecraftForge mod, so there are no MinecraftForge listeners left to audit"),
+			Map.entry("forbric.eventChainAudit", "Forbric loads no MinecraftForge mod, so there is no second event bus to pair posts across"),
+			Map.entry("forbric.forgeBreakExperience", "Forbric loads no MinecraftForge mod, so nothing decides a broken block's experience "
+					+ "for MinecraftForge; the Fabric experience relay is -Dforbric.uncalledValueRelay"),
+			Map.entry("forbric.forgeInternalSubscribers", "Forbric loads no MinecraftForge runtime, so it has no internal subscribers to wire"),
+			Map.entry("forbric.portalSpawn", "a nether portal asks NeoForge's own portal hook, as on NeoForge; there is no MinecraftForge "
+					+ "half to compose with it"),
+			Map.entry("forbric.clientHookMixinAnchors", "NeoForge's own initClientHooks and onRegisterParticleProviders calls run in "
+					+ "Minecraft's constructor, so a mod's mixin on them binds there with no relay to move it onto"));
 
 	private static final ForbricSwitches SYSTEM =
 			new ForbricSwitches(RENAMED, RETIRED, System::getProperty, ForbricLog::warn);

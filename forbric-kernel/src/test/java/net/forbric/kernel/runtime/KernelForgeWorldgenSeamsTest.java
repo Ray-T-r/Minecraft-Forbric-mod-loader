@@ -60,24 +60,6 @@ class KernelForgeWorldgenSeamsTest {
 		}
 	}
 
-	@Test
-	void theAboutToStartBridgeNoLongerInvokesForgesOwnPass() throws Exception {
-		Path compiled = Path.of(System.getProperty("forbric.testRuntimeClasses", "build/classes/java/runtime"),
-				"net/forbric/kernel/runtime/KernelGameServerAboutToStart.class");
-		TestFixtures.require(Fixture.GAME_SIDE, Files.isRegularFile(compiled), "runtime helper not compiled");
-		ClassNode node = new ClassNode();
-		new ClassReader(Files.readAllBytes(compiled)).accept(node, 0);
-		for (MethodNode method : node.methods) {
-			for (var insn : method.instructions) {
-				assertFalse(insn instanceof LdcInsnNode ldc && "runModifiers".equals(ldc.cst),
-						"KernelGameServerAboutToStart still reaches for Forge's runModifiers — two passes, two sources of truth");
-			}
-		}
-		String source = Files.readString(Path.of("src/runtime/java/net/forbric/kernel/runtime/KernelForgeWorldgen.java"), StandardCharsets.UTF_8);
-		assertTrue(source.contains("standDown("), "the bridge must be able to stand down whole");
-		assertTrue(source.indexOf("auditRoundTrip") > 0);
-	}
-
 	/** The runtime output plus the staged carriers and merged base, which is what these classes link against. */
 	private static URLClassLoader gameSideLoader() throws Exception {
 		Path compiled = Path.of(System.getProperty("user.dir"), "build", "classes", "java", "runtime").normalize();

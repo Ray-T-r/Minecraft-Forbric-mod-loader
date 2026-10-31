@@ -15,7 +15,6 @@ import org.junit.jupiter.api.io.TempDir;
 import org.junit.jupiter.api.parallel.ResourceLock;
 
 import net.fabricmc.api.EnvType;
-import net.forbric.api.EventBridges;
 
 /**
  * {@link ForgeBlockTintInjector}'s output, run: the live {@code BlockColors} that {@code createDefault} builds holds a
@@ -27,7 +26,6 @@ import net.forbric.api.EventBridges;
  */
 @ExecutesInjector(ForgeBlockTintInjector.class)
 @ResourceLock("system-properties")
-@ResourceLock("EventBridges")
 class ForgeBlockTintInjectorExecutionTest {
 	private static final Path HOOK_SOURCE = Path.of("src/runtime/java/net/forbric/kernel/runtime/KernelForgeBlockColors.java");
 	private static final String COLORS = ForgeBlockTintInjector.TARGET;
@@ -101,7 +99,6 @@ class ForgeBlockTintInjectorExecutionTest {
 	@AfterEach
 	void reset() throws Throwable {
 		System.clearProperty("forbric.forgeClientInit");
-		InjectorExecution.invokeStatic(EventBridges.class, "reset");
 	}
 
 	private static Map<String, byte[]> compile(Path work) throws Exception {

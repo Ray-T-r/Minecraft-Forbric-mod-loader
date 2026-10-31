@@ -11,25 +11,17 @@ import java.util.function.Function;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipFile;
 
-import net.forbric.api.Ecosystem;
 import net.forbric.kernel.TestFixtures;
 import net.forbric.kernel.TestFixtures.Fixture;
-import net.forbric.kernel.boot.DeadEventAudit;
-import net.forbric.kernel.transform.DeliveryBookkeeping;
-import net.forbric.kernel.transform.NativeDualEventInjector;
 import org.junit.jupiter.api.Test;
 import org.objectweb.asm.ClassReader;
 import org.objectweb.asm.tree.*;
 
 /**
- * The guest-mixin adapters read a target as the mixin service hands it to them: the merged base after the kernel's own
- * pre-mixin transforms, among them the stand-down's delivery bookkeeping around every method that calls both families'
- * hooks. Two of Create Fly's callbacks land only where the adapters can read the game's code there: the released-key
- * hooks on {@code KeyboardHandler.keyPress} (the join in front of the final return now holds both families' key hooks,
- * each bracketed), and the section-change hook on {@code PersistentEntitySectionManager$Callback.onMove} (both
- * families' enter-section hooks follow it, each bracketed, and the caller opens its invocation at its entry). Read
- * with the bookkeeping in the way, neither lands (the defect, kept here as the control); read through
- * {@link ForbricMixinService#codeView}, each lands exactly as on the plain merged base.
+ * The guest-mixin adapters read a target as the mixin service hands it to them: the base after the kernel's own pre-mixin
+ * transforms, among them the early returns vanilla compiled given back in front of a method's tail. Create Fly's two
+ * released-key hooks and Balm's TAIL on {@code KeyboardHandler.keyPress} land on that split body exactly as on the plain
+ * base, and none of them runs on a release.
  */
 class BracketedTargetAdaptersStagedTest {
 	@org.junit.jupiter.api.io.TempDir Path scratch;
@@ -41,7 +33,6 @@ class BracketedTargetAdaptersStagedTest {
 			Path root = TestFixtures.stagedRoot().normalize();
 			Path forge = root.resolve(TestFixtures.FORGE_INTEROP_JAR);
 			if (!Files.isRegularFile(forge)) forge = root.resolve(TestFixtures.FORGE_CARRIER_JAR);
-			// The merged base, not BASE_JAR: the FORGE native references read below are the index only the merge embeds.
 			for (Path jar : List.of(root.resolve(TestFixtures.MERGED_BASE_JAR), forge, root.resolve(TestFixtures.NEO_CARRIER_JAR))) {
 				TestFixtures.requireFile(Fixture.STAGED, jar, "staged jar absent: " + jar);
 				zips.add(new ZipFile(jar.toFile()));
@@ -66,64 +57,20 @@ class BracketedTargetAdaptersStagedTest {
 		}
 	}
 
-	/** Each target as the kernel's pre-mixin pass leaves it: the stand-down written into the merged base's class. */
-	private static Function<String, byte[]> instrumented(Resources resources) {
-		NativeGameReferences references = new NativeGameReferences(resources);
-		NativeDualEventInjector injector = new NativeDualEventInjector(resources, DeadEventAudit.forwardedForgeEvents(),
-				NativeDualEventInjector.Families.DEFAULT, owner -> references.get(Ecosystem.FORGE, owner));
-		return name -> {
-			byte[] bytes = resources.apply(name + ".class");
-			return bytes == null ? null : injector.transform(name.replace('/', '.'), bytes, null);
-		};
-	}
-
 	/**
-	 * Each target as the whole pre-mixin pass leaves it, in its run-time order: the stand-down's bookkeeping, then — last
-	 * in the coremod phase — the early returns vanilla compiled given back, each in a block placed in front of the tail.
+	 * Each target as the pre-mixin pass leaves it for these hooks: last in the coremod phase, the early returns vanilla
+	 * compiled given back, each in a block placed in front of the tail.
 	 */
-	private static Function<String, byte[]> instrumentedAndSplit(Resources resources) {
-		Function<String, byte[]> instrumented = instrumented(resources);
+	private static Function<String, byte[]> split(Resources resources) {
 		net.forbric.kernel.transform.VanillaEarlyReturns split = new net.forbric.kernel.transform.VanillaEarlyReturns();
 		return name -> {
-			byte[] bytes = instrumented.apply(name);
+			byte[] bytes = resources.apply(name + ".class");
 			return bytes == null ? null : split.transform(name.replace('/', '.'), bytes, null);
 		};
 	}
 
-	private static ClassNode raw(byte[] bytes) {
-		if (bytes == null) return null;
-		ClassNode node = new ClassNode();
-		new ClassReader(bytes).accept(node, 0);
-		return node;
-	}
-
 	private static Function<String, ClassNode> java(Function<String, ClassNode> game) {
 		return name -> name.startsWith("java/") ? CarpetMixinAdapterTest.target(name) : game.apply(name);
-	}
-
-	@Test
-	void createsReleasedKeyHooksLandOnlyWhereTheAdapterReadsTheGamesCode() throws Exception {
-		try (Resources resources = new Resources()) {
-			Function<String, byte[]> bytes = instrumented(resources);
-			assertTrue(DeliveryBookkeeping.mentions(raw(bytes.apply(MixinKeyActionAdapter.TARGET)).methods.stream()
-					.filter(m -> m.name.equals("keyPress")).findFirst().orElseThrow()), "keyPress carries the stand-down");
-			var control = CreateGuestMixinFixture.mixin("com/zurrtum/create/client/mixin/KeyboardHandlerMixin");
-			assertEquals(0, MixinKeyActionAdapter.adapt(control, java(name -> raw(bytes.apply(name))),
-					(family, name) -> CreateInjectionAdaptersTest.nativeTarget(name)), "read with the bookkeeping in the way");
-
-			var node = CreateGuestMixinFixture.mixin("com/zurrtum/create/client/mixin/KeyboardHandlerMixin");
-			assertEquals(2, MixinKeyActionAdapter.adapt(node, java(name -> ForbricMixinService.codeView(bytes.apply(name))),
-					(family, name) -> CreateInjectionAdaptersTest.nativeTarget(name)));
-			for (String handler : List.of("onKeyReleased", "onKey")) {
-				var at = MixinFit.atNodes(MixinFit.injectorOf(node.methods.stream().filter(m -> m.name.equals(handler)).findFirst().orElseThrow())).getFirst();
-				assertEquals("TAIL", MixinFit.value(at, "value"), handler);
-				assertNull(MixinFit.value(at, "ordinal"), handler);
-			}
-			// The same answer as on the plain merged base.
-			var plain = CreateGuestMixinFixture.mixin("com/zurrtum/create/client/mixin/KeyboardHandlerMixin");
-			assertEquals(2, MixinKeyActionAdapter.adapt(plain, CarpetMixinAdapterTest::target, (family, name) -> CreateInjectionAdaptersTest.nativeTarget(name)));
-			assertArrayEquals(CarpetMixinAdapterTest.bytes(plain), CarpetMixinAdapterTest.bytes(node));
-		}
 	}
 
 	/**
@@ -134,7 +81,7 @@ class BracketedTargetAdaptersStagedTest {
 	@Test
 	void releasedKeyHooksLandAfterTheEarlyReturnsAreGivenBack() throws Exception {
 		try (Resources resources = new Resources()) {
-			Function<String, byte[]> bytes = instrumentedAndSplit(resources);
+			Function<String, byte[]> bytes = split(resources);
 			MethodNode keyPress = ForbricMixinService.codeView(bytes.apply(MixinKeyActionAdapter.TARGET)).methods.stream()
 					.filter(m -> m.name.equals("keyPress")).findFirst().orElseThrow();
 			long returns = java.util.stream.StreamSupport.stream(keyPress.instructions.spliterator(), false)
@@ -207,27 +154,6 @@ class BracketedTargetAdaptersStagedTest {
 					for (int action : new int[] {0, 1, 2}) tail.invoke(receiver, 0L, action, event, null, flagImpl.getConstructor(boolean.class).newInstance(global));
 				assertEquals(List.of(1, 2), type.getField("calls").get(receiver), "Balm's TAIL: press and repeat, never release, never after a handled global key");
 			}
-		}
-	}
-
-	@Test
-	void createsSectionHookLocalIsPinnedOnlyWhereTheAdapterReadsTheGamesCode() throws Exception {
-		try (Resources resources = new Resources()) {
-			Function<String, byte[]> bytes = instrumented(resources);
-			String owner = "net/minecraft/world/level/entity/PersistentEntitySectionManager$Callback";
-			assertTrue(DeliveryBookkeeping.mentions(raw(bytes.apply(owner)).methods.stream()
-					.filter(m -> m.name.equals("onMove")).findFirst().orElseThrow()), "onMove carries the stand-down");
-			String mixin = "com/zurrtum/create/mixin/PersistentEntitySectionManagerCallbackMixin";
-			var control = CreateGuestMixinFixture.mixin(mixin);
-			assertEquals(0, MixinCarrierCallbackAdapters.adapt(control, java(name -> raw(bytes.apply(name))),
-					(family, name) -> CreateInjectionAdaptersTest.nativeTarget(name)), "read with the bookkeeping in the way");
-
-			var node = CreateGuestMixinFixture.mixin(mixin);
-			assertEquals(1, MixinCarrierCallbackAdapters.adapt(node, java(name -> ForbricMixinService.codeView(bytes.apply(name))),
-					(family, name) -> CreateInjectionAdaptersTest.nativeTarget(name)));
-			var plain = CreateGuestMixinFixture.mixin(mixin);
-			assertEquals(1, MixinCarrierCallbackAdapters.adapt(plain, CarpetMixinAdapterTest::target, (family, name) -> CreateInjectionAdaptersTest.nativeTarget(name)));
-			assertArrayEquals(CarpetMixinAdapterTest.bytes(plain), CarpetMixinAdapterTest.bytes(node));
 		}
 	}
 }

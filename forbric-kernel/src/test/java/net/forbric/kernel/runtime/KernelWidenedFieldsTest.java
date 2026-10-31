@@ -25,7 +25,7 @@ import java.nio.file.Path;
 import org.junit.jupiter.api.Test;
 
 /**
- * Source-text pins on the two write shapes, in the {@code KernelGameTickEventsTest} shape: a {@code Mob} cannot be
+ * Source-text pins on the two write shapes: a {@code Mob} cannot be
  * constructed without a level, so {@code asMonster} is pinned by what it tests and returns, and {@code drain} by
  * which guava call it makes and which map merge it uses — the two things a mutation would change.
  */

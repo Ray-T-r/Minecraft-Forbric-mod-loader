@@ -16,7 +16,6 @@ import org.junit.jupiter.api.io.TempDir;
 import org.junit.jupiter.api.parallel.ResourceLock;
 
 import net.fabricmc.api.EnvType;
-import net.forbric.api.EventBridges;
 
 /**
  * {@link ForgeCreativeTabsInjector}'s output, run: a creative tab's contents now hold what a MinecraftForge mod adds
@@ -29,7 +28,6 @@ import net.forbric.api.EventBridges;
  */
 @ExecutesInjector(ForgeCreativeTabsInjector.class)
 @ResourceLock("system-properties")
-@ResourceLock("EventBridges")
 class ForgeCreativeTabsInjectorExecutionTest {
 	private static final Path HOOK_SOURCE = Path.of("src/runtime/java/net/forbric/kernel/runtime/KernelForgeCreativeTabs.java");
 	private static final String TAB = ForgeCreativeTabsInjector.TARGET;
@@ -93,7 +91,6 @@ class ForgeCreativeTabsInjectorExecutionTest {
 	@AfterEach
 	void reset() throws Throwable {
 		System.clearProperty(ForgeCreativeTabsInjector.PROPERTY);
-		InjectorExecution.invokeStatic(EventBridges.class, "reset");
 	}
 
 	private static List<?> contents(ClassLoader loader) throws Throwable {

@@ -32,7 +32,6 @@ import org.objectweb.asm.tree.MethodNode;
 import net.forbric.api.Ecosystem;
 import net.forbric.kernel.TestFixtures;
 import net.forbric.kernel.TestFixtures.Fixture;
-import net.forbric.kernel.transform.ForbricMergedBaseCompatTransformer;
 import net.forbric.kernel.transform.ItemUseOnInjector;
 
 /**
@@ -64,7 +63,6 @@ class AdapterPointSpellingTest {
 	private static final String LIVING = "net/minecraft/world/entity/LivingEntity";
 	private static final String PLAYER = "net/minecraft/server/level/ServerPlayer";
 	private static final String STACK = "net/minecraft/world/item/ItemStack";
-	private static final String CLIENT = "net/minecraft/client/Minecraft";
 	private static final String LOADER = "net/minecraft/resources/RegistryDataLoader";
 	private static final String BOOTSTRAP = "net/minecraft/server/Bootstrap";
 	private static final String STATE = "Lnet/minecraft/world/level/block/state/BlockState;";
@@ -76,7 +74,6 @@ class AdapterPointSpellingTest {
 	private static final Path POPULAR = Path.of("run/client-popular/mods");
 	private static final Path VIA = Path.of("../build/random100-20260929/downloads/dmLiENU0/ViaFabricPlus-5.0.2.jar");
 	private static final Path BCLIB = Path.of("build/compat-inputs/sweep90/mods/bclib-26.201.2.jar");
-	private static final Path FANCYMENU = Path.of("build/sweep80-mac/v020-rounds/r1/mods/fancymenu_neoforge_3.9.12_MC_26.2.jar");
 	private static final Path REGISTRY_SYNC = Path.of("build/compat-inputs/player-loading/api/fabric-registry-sync-v0-7.1.1+c7bd5b8e9e.jar");
 
 	@AfterEach void reset() {
@@ -167,11 +164,6 @@ class AdapterPointSpellingTest {
 				true, Ecosystem.FABRIC, STACK, MixinRelocatedCall::adapt, 1,
 				List.of("Lnet/minecraft/world/item/Item;useOn(Lnet/minecraft/world/item/context/UseOnContext;)Lnet/minecraft/world/InteractionResult;"),
 				mixin -> assertTrue(selectors(mixin).contains(ItemUseOnInjector.RELAY + ItemUseOnInjector.RELAY_DESC))));
-		// KernelClientHookMixinAnchors: FancyMenu's NeoForge client initializer hook.
-		cases.add(new Case("client hooks", () -> jar(Fixture.THIRD_PARTY, FANCYMENU, "de/keksuccino/fancymenu/mixin/mixins/neoforge/client/MixinMinecraft"), true,
-				Ecosystem.NEOFORGE, CLIENT, KernelClientHookMixinAnchors::adapt, 1,
-				List.of("Lnet/neoforged/neoforge/client/ClientHooks;initClientHooks(L" + CLIENT + ";Lnet/minecraft/server/packs/resources/ReloadableResourceManager;)V"),
-				mixin -> assertTrue(atTargets(mixin).stream().anyMatch(t -> t.startsWith("Lnet/forbric/kernel/runtime/KernelForgeClientInit;")))));
 		// FabricRegistryLoaderMixinAdapter: fabric-registry-sync's wrap and its companion on the dead loader.
 		cases.add(new Case("registry loader", () -> jar(Fixture.THIRD_PARTY, REGISTRY_SYNC, "net/fabricmc/fabric/mixin/registry/sync/RegistryDataLoaderMixin"), true,
 				Ecosystem.FABRIC, LOADER, FabricRegistryLoaderMixinAdapter::adapt, 2,
@@ -468,7 +460,6 @@ class AdapterPointSpellingTest {
 					if (entry == null) continue;
 					byte[] read = zip.getInputStream(entry).readAllBytes();
 					if (n.equals(STACK)) read = new ItemUseOnInjector().transform(n.replace('/', '.'), read, null);
-					if (n.equals(CLIENT)) read = new ForbricMergedBaseCompatTransformer().transform(n.replace('/', '.'), read, null);
 					return read;
 				} catch (Exception unreadable) {
 					return null;

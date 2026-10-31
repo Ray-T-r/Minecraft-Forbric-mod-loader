@@ -1,1 +1,0 @@
-{"required": true, "package": "de.keksuccino.fancymenu.mixin.mixins.neoforge", "compatibilityLevel": "JAVA_21", "client": ["client.MixinMinecraft"], "injectors": {"defaultRequire": 1}}

@@ -51,7 +51,7 @@ import net.forbric.kernel.util.ForbricLog;
  * formats by {@link ModelFormatFunnelInjector}); what is NOT is listed here, one surface per row, with the
  * predicate that says whether it is still lost on THIS boot — so switching a restoration off with its
  * {@code -Dforbric.<x>=off} makes its users show up here, and the row goes quiet again the day the surface is
- * restored. Same needle/note/report shape as {@link CapabilityUseAudit}.
+ * restored. Same needle/note/report shape as the retired {@code CapabilityUseAudit}.
  *
  * <p>A constant-pool needle over-reports a mod that names the API only in an optional compat class. That is the
  * safe direction: a DEGRADED row that turns out not to matter costs a glance; a silent loss costs a bug hunt.

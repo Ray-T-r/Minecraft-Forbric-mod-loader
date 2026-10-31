@@ -16,6 +16,7 @@
 
 package net.forbric.kernel.runtime;
 
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.nio.charset.StandardCharsets;
@@ -25,8 +26,7 @@ import java.nio.file.Path;
 import org.junit.jupiter.api.Test;
 
 /**
- * Source-text pins on the runtime shim, in the {@code KernelGameTickEventsTest} shape: the runtime set compiles
- * only against the staged game jars, which are not on every machine, but the FILE always is. What matters is
+ * Source-text pins on the runtime shim: the runtime set compiles only against the staged game jars, which are not on every machine, but the FILE always is. What matters is
  * ORDER and the one guard — NeoForge's hook first, its {@code null} respected, Fabric only for a survivor.
  */
 class KernelLootBridgeTest {
@@ -52,6 +52,8 @@ class KernelLootBridgeTest {
 		assertTrue(guard > neo, "a null from NeoForge (EMPTY, or a cancelled event) must drop the table exactly as before");
 		assertTrue(fabric > guard, "Fabric is offered only a survivor");
 		assertTrue(body.contains("Registries.LOOT_TABLE"), "the ResourceKey is built for the LOOT_TABLE registry");
+		assertFalse(Files.readString(SOURCE, StandardCharsets.UTF_8).contains("forgeLink"),
+				"no MinecraftForge link sits between NeoForge's hook and Fabric's any more");
 	}
 
 	@Test

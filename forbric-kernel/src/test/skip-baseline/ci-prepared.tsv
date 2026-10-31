@@ -45,20 +45,6 @@ test	net.forbric.kernel.mixin.AdapterPointSpellingTest	break locals / no owner, 
 test	net.forbric.kernel.mixin.AdapterPointSpellingTest	break locals / owner-qualified selector	[fixture:third-party] run/client-popular/mods/architectury-fabric-21.1.10.jar absent
 test	net.forbric.kernel.mixin.AdapterPointSpellingTest	break locals / selector in two spellings	[fixture:third-party] run/client-popular/mods/architectury-fabric-21.1.10.jar absent
 test	net.forbric.kernel.mixin.AdapterPointSpellingTest	break locals / with whitespace	[fixture:third-party] run/client-popular/mods/architectury-fabric-21.1.10.jar absent
-test	net.forbric.kernel.mixin.AdapterPointSpellingTest	client hooks	[fixture:third-party] build/sweep80-mac/v020-rounds/r1/mods/fancymenu_neoforge_3.9.12_MC_26.2.jar absent
-test	net.forbric.kernel.mixin.AdapterPointSpellingTest	client hooks / a selector binding another method	[fixture:third-party] build/sweep80-mac/v020-rounds/r1/mods/fancymenu_neoforge_3.9.12_MC_26.2.jar absent
-test	net.forbric.kernel.mixin.AdapterPointSpellingTest	client hooks / another owner	[fixture:third-party] build/sweep80-mac/v020-rounds/r1/mods/fancymenu_neoforge_3.9.12_MC_26.2.jar absent
-test	net.forbric.kernel.mixin.AdapterPointSpellingTest	client hooks / dotted owner	[fixture:third-party] build/sweep80-mac/v020-rounds/r1/mods/fancymenu_neoforge_3.9.12_MC_26.2.jar absent
-test	net.forbric.kernel.mixin.AdapterPointSpellingTest	client hooks / dotted owner, no descriptor	[fixture:third-party] build/sweep80-mac/v020-rounds/r1/mods/fancymenu_neoforge_3.9.12_MC_26.2.jar absent
-test	net.forbric.kernel.mixin.AdapterPointSpellingTest	client hooks / dotted-owner selector	[fixture:third-party] build/sweep80-mac/v020-rounds/r1/mods/fancymenu_neoforge_3.9.12_MC_26.2.jar absent
-test	net.forbric.kernel.mixin.AdapterPointSpellingTest	client hooks / no descriptor	[fixture:third-party] build/sweep80-mac/v020-rounds/r1/mods/fancymenu_neoforge_3.9.12_MC_26.2.jar absent
-test	net.forbric.kernel.mixin.AdapterPointSpellingTest	client hooks / no descriptor, another overload there too	[fixture:third-party] build/sweep80-mac/v020-rounds/r1/mods/fancymenu_neoforge_3.9.12_MC_26.2.jar absent
-test	net.forbric.kernel.mixin.AdapterPointSpellingTest	client hooks / no owner	[fixture:third-party] build/sweep80-mac/v020-rounds/r1/mods/fancymenu_neoforge_3.9.12_MC_26.2.jar absent
-test	net.forbric.kernel.mixin.AdapterPointSpellingTest	client hooks / no owner, another owner's member there too	[fixture:third-party] build/sweep80-mac/v020-rounds/r1/mods/fancymenu_neoforge_3.9.12_MC_26.2.jar absent
-test	net.forbric.kernel.mixin.AdapterPointSpellingTest	client hooks / no owner, without the class it was compiled against	[fixture:third-party] build/sweep80-mac/v020-rounds/r1/mods/fancymenu_neoforge_3.9.12_MC_26.2.jar absent
-test	net.forbric.kernel.mixin.AdapterPointSpellingTest	client hooks / owner-qualified selector	[fixture:third-party] build/sweep80-mac/v020-rounds/r1/mods/fancymenu_neoforge_3.9.12_MC_26.2.jar absent
-test	net.forbric.kernel.mixin.AdapterPointSpellingTest	client hooks / selector in two spellings	[fixture:third-party] build/sweep80-mac/v020-rounds/r1/mods/fancymenu_neoforge_3.9.12_MC_26.2.jar absent
-test	net.forbric.kernel.mixin.AdapterPointSpellingTest	client hooks / with whitespace	[fixture:third-party] build/sweep80-mac/v020-rounds/r1/mods/fancymenu_neoforge_3.9.12_MC_26.2.jar absent
 test	net.forbric.kernel.mixin.AdapterPointSpellingTest	harvest ordinal	[fixture:third-party] popular-pack Origins fixture absent
 test	net.forbric.kernel.mixin.AdapterPointSpellingTest	harvest ordinal / a selector binding another method	[fixture:third-party] popular-pack Origins fixture absent
 test	net.forbric.kernel.mixin.AdapterPointSpellingTest	harvest ordinal / another owner	[fixture:third-party] popular-pack Origins fixture absent
@@ -239,8 +225,6 @@ test	net.forbric.kernel.mixin.BlockBreakCallbackShapesTest	aShorterCaptureNoneOr
 test	net.forbric.kernel.mixin.BlockBreakCallbackShapesTest	capturesVanillaCannotServeStayAsCompiled()	[fixture:third-party] real fixture required: build/compat-inputs/carpet/mods/fabric-carpet-26.2+v260616.jar
 test	net.forbric.kernel.mixin.BlockQueryNativeEvidenceTest	apolisFirstFrictionHookMovesWithItsOrdinalOnlyBesideTheVanillaBody()	[fixture:third-party] real fixture required: build/compat-inputs/popular/mods/Origins-Legacy-1.12.18+26.2.jar
 test	net.forbric.kernel.mixin.BlockQueryNativeEvidenceTest	createsReleasedWrapsPairWithTheVanillaBodies()	[fixture:third-party] real fixture required: $ROOT/forbric-kernel/build/compat-inputs/create-fly/create-fly.jar
-test	net.forbric.kernel.mixin.BracketedTargetAdaptersStagedTest	createsReleasedKeyHooksLandOnlyWhereTheAdapterReadsTheGamesCode()	[fixture:third-party] real fixture required: $ROOT/forbric-kernel/build/compat-inputs/create-fly/create-fly.jar
-test	net.forbric.kernel.mixin.BracketedTargetAdaptersStagedTest	createsSectionHookLocalIsPinnedOnlyWhereTheAdapterReadsTheGamesCode()	[fixture:third-party] real fixture required: $ROOT/forbric-kernel/build/compat-inputs/create-fly/create-fly.jar
 test	net.forbric.kernel.mixin.BracketedTargetAdaptersStagedTest	releasedKeyHooksLandAfterTheEarlyReturnsAreGivenBack()	[fixture:third-party] real fixture required: $ROOT/forbric-kernel/build/compat-inputs/create-fly/create-fly.jar
 test	net.forbric.kernel.mixin.C2meBlockUpdateRetargetTest	aRestoredVanillaAnchorOrStaticHelperRefusesTheMove()	[fixture:third-party] C2ME 0.4.1-beta.1.0 notickvd fixture required
 test	net.forbric.kernel.mixin.C2meBlockUpdateRetargetTest	localCaptureSliceAndGroupRefuseTheMoveButNamesDoNotIdentifyTheContract()	[fixture:third-party] C2ME 0.4.1-beta.1.0 notickvd fixture required
@@ -308,8 +292,6 @@ test	net.forbric.kernel.mixin.InsertedLambdaArgumentShimTest	actualLitematicaOpa
 test	net.forbric.kernel.mixin.JecharactersKnotDecoratorTest	jecharactersOwnHookWrapsTheWeaverTheClassPipelineReads()	[fixture:third-party] local mod fixture absent: build/sweep100-mac-network/mods/jecharacters-26.1.2-fabric-4.6.8.jar
 test	net.forbric.kernel.mixin.JecharactersKnotDecoratorTest	onALoaderWithoutKnotsFieldTheHookFails()	[fixture:third-party] local mod fixture absent: build/sweep100-mac-network/mods/jecharacters-26.1.2-fabric-4.6.8.jar
 test	net.forbric.kernel.mixin.JecharactersKnotDecoratorTest	switchedOffItsHookGoesIntoAFieldTheClassPipelineDoesNotRead()	[fixture:third-party] local mod fixture absent: build/sweep100-mac-network/mods/jecharacters-26.1.2-fabric-4.6.8.jar
-test	net.forbric.kernel.mixin.KernelClientHookMixinAnchorsTest	fancyMenusOriginalInitializerFollowsTheLiveRelayWithoutChangingItsShift()	[fixture:third-party] local game or mod fixture unavailable
-test	net.forbric.kernel.mixin.KernelClientHookMixinAnchorsTest	originalHooksAndDisabledAdapterAreLeftAsCompiled()	[fixture:third-party] local game or mod fixture unavailable
 test	net.forbric.kernel.mixin.LambdaShapeEvidenceStagedTest	onTheMergedBaseEveryDecisionIsTheOneTheParentMade()	[fixture:third-party] no guest mixin with a lambda selector in the local packs
 test	net.forbric.kernel.mixin.LambdaShapeEvidenceStagedTest	onTheMergedBaseTheReferenceChangesNoDecisionWithThePrunerOnOrOff()	[fixture:third-party] no guest mixin with a lambda selector in the local packs
 test	net.forbric.kernel.mixin.MergedBaseGateSpellingTest	aDeferredFreezeWrittenAnotherWayIsLetThroughWhenItCanBeAdapted()	[fixture:third-party] fabric-registry-sync's released mixins: build/compat-inputs/player-loading/api/fabric-registry-sync-v0-7.1.1+c7bd5b8e9e.jar

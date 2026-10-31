@@ -29,9 +29,9 @@ import org.objectweb.asm.tree.MethodInsnNode;
 import org.objectweb.asm.tree.MethodNode;
 
 /**
- * A universal jar's event subscribers must be registered for ONE family, the one that owns the jar.
+ * A universal jar's NeoForge event subscribers must not be registered when arbitration gave the jar to another family.
  *
- * <p>Such a jar ships one subscriber class per family and arbitration has already picked which family runs it.
+ * <p>Such a jar ships one subscriber class per loader and arbitration has already picked which family runs it.
  * Registering both means the same handler runs twice for every event both families post — double drops, double
  * damage, double packets — and the mod cannot notice, because each call looks like the only one.
  *
@@ -39,14 +39,13 @@ import org.objectweb.asm.tree.MethodNode;
  *
  * <p>Honestly: no pack in any gate has a jar of that shape. The two universal jars in the gates ship their
  * subscriber classes for one family only, so the duplicate never occurs there and a live assertion would pass
- * whether or not the guard exists. Proving it live needs a purpose-built universal jar carrying a subscriber for
- * each Forge family, which does not exist yet. What IS assertable is that the registration pass asks arbitration
- * at all, and asks before it dispatches on family — which is exactly the line that was missing.
+ * whether or not the guard exists. What IS assertable is that the registration pass asks arbitration at all, and
+ * asks before it wires a subscriber — which is exactly the line that was missing.
  */
 class KernelEventSubscribersArbitrationTest {
 
 	@Test
-	void theRegistrationPassAsksArbitrationBeforeItDispatchesOnFamily() throws Exception {
+	void theRegistrationPassAsksArbitrationBeforeItWiresASubscriber() throws Exception {
 		Path compiled = Path.of(System.getProperty("user.dir"), "build", "classes", "java", "main",
 				"net", "forbric", "kernel", "boot", "KernelEventSubscribers.class");
 		assertTrue(Files.isRegularFile(compiled),
@@ -66,8 +65,7 @@ class KernelEventSubscribersArbitrationTest {
 					&& call.owner.endsWith("MultiLoaderArbiter")) {
 				suppressed = i;
 			}
-			if (register < 0 && ("registerForgeSubscriber".equals(call.name)
-					|| "wireNeoSubscriber".equals(call.name))) {
+			if (register < 0 && "wireNeoSubscriber".equals(call.name)) {
 				register = i;
 			}
 		}

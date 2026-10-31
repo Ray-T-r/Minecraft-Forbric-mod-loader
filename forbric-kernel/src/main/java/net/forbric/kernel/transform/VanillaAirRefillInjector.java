@@ -135,8 +135,8 @@ public final class VanillaAirRefillInjector implements ClassTransformer {
 			return declined("the refill amount is not zeroed right where the hook decides the body breathes");
 		// The event is kept in a local, and the air update of a body that breathes reads its refill from there:
 		// setAirSupply(Math.min(getAirSupply() + event.getRefillAirAmount(), getMaxAirSupply())). Which local, and that the update
-		// reads the event on every path, is followed through the hook's values (copies kept as the value they copy), so the
-		// kernel's own bookkeeping of what the hook constructs (NativeDualEventInjector) may sit between the two.
+		// reads the event on every path, is followed through the hook's values (copies kept as the value they copy), so
+		// copies of it may sit between the two.
 		Frame<SourceValue>[] frames;
 		try {
 			frames = new Analyzer<>(new Copies()).analyze(node.name, hook);

@@ -164,29 +164,16 @@ class KernelLoadReportTest {
 	void theServerStartedHookWritesTheReportAgain() throws Exception {
 		java.nio.file.Path runtime = java.nio.file.Path.of(System.getProperty("user.dir"), "build", "classes", "java", "runtime",
 				"net", "forbric", "kernel", "runtime").normalize();
-		java.nio.file.Path duties = runtime.resolve("KernelServerDuties.class"), lifecycle = runtime.resolve("KernelGameServerLifecycle.class");
-		TestFixtures.require(Fixture.GAME_SIDE, java.nio.file.Files.isRegularFile(duties) && java.nio.file.Files.isRegularFile(lifecycle),
-				"runtime helper not compiled");
-		// The report is the kernel's own work at server start, not part of the forward to MinecraftForge's hook (which stands
-		// down where the merged game already called that hook) and not part of MinecraftForge's own started duties (which go
-		// wherever MinecraftForge goes): it is KernelServerDuties', installed whatever else is there.
+		java.nio.file.Path duties = runtime.resolve("KernelServerDuties.class");
+		TestFixtures.require(Fixture.GAME_SIDE, java.nio.file.Files.isRegularFile(duties), "runtime helper not compiled");
+		// The report is the kernel's own work at server start: KernelServerDuties', installed whatever else is there.
 		assertTrue(lambdaWrites(duties, "lambda$installStartedDuties$"), "the kernel's server-started work writes the report");
-		assertFalse(lambdaWrites(lifecycle, "lambda$installStarted$"), "the forward to MinecraftForge's handleServerStarted, which "
-				+ "stands down where the base calls it natively, does not carry the report");
-		assertFalse(lambdaWrites(lifecycle, "lambda$installStartedDuties$"), "nor do MinecraftForge's own started duties, which go "
-				+ "with MinecraftForge");
-		// AFTER MinecraftForge's handleServerStarted and its started duties (the dead-event judgement the report carries): the
-		// work is registered after the whole bridge pass, on the same event and priority, and a NeoForge bus runs one priority's
-		// listeners in the order they were added.
-		String multiplexer = java.nio.file.Files.readString(java.nio.file.Path.of(System.getProperty("user.dir"), "src", "main", "java",
-				"net", "forbric", "kernel", "boot", "GameEventMultiplexer.java"));
-		int forwardInstall = multiplexer.indexOf("\"installStarted\")"), forgeDuties = multiplexer.indexOf("\"installStartedDuties\")");
-		assertTrue(forwardInstall >= 0 && forgeDuties > forwardInstall, "MinecraftForge's started duties are installed after its forward");
+		// Installed before NeoForge's game bus starts, so it is in place for the first ServerStartedEvent.
 		String lifecycleSource = java.nio.file.Files.readString(java.nio.file.Path.of(System.getProperty("user.dir"), "src", "main", "java",
 				"net", "forbric", "kernel", "boot", "KernelLifecycle.java"));
-		int bridges = lifecycleSource.indexOf("GameEventMultiplexer.install(cl, side.isClient());"),
-				kernelDuties = lifecycleSource.indexOf("KernelServerDutiesInstaller.install(cl);");
-		assertTrue(bridges >= 0 && kernelDuties > bridges, "the kernel's work is installed after the whole bridge pass");
+		int kernelDuties = lifecycleSource.indexOf("KernelServerDutiesInstaller.install(cl);"),
+				neoBus = lifecycleSource.indexOf("\"NeoForge.EVENT_BUS\");");
+		assertTrue(kernelDuties >= 0 && neoBus > kernelDuties, "the kernel's work is installed before NeoForge's bus starts");
 	}
 
 	/** Whether a lambda of {@code compiled} whose name starts with {@code prefix} calls {@code KernelLoadReport.write}. */
