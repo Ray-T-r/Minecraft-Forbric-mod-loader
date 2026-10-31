@@ -191,8 +191,6 @@ public final class KernelRuntimeClasses {
 		// mod loading inside the first resource reload and the kernel's window is before it. See KernelClientResources.
 		CLASSES.put("net.forbric.kernel.runtime.KernelClientResources", new Entry(Origin.COMPILED, List.of(
 				new Call("preload", int.class))));
-		// NeoForge's conversion Post from the merged Zombie's Forge lambdas.
-		CLASSES.put("net.forbric.kernel.runtime.KernelConversions", new Entry(Origin.COMPILED, List.of()));
 		// A Fabric mod's creative tabs placed by the Fabric pager's rule in NeoForge's order; CreativeTabOrderInjector calls place.
 		CLASSES.put("net.forbric.kernel.runtime.KernelCreativeTabOrder", new Entry(Origin.COMPILED, List.of()));
 		// fabric-content-registries' fuel events on NeoForge's fuel builder; FabricFuelValuesInjector calls apply.

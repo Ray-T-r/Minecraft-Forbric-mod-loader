@@ -858,8 +858,6 @@ public final class KernelBoot {
 		// Those data-map lookups (and the oxidation, waxing and stripping ones) end in Holder.Reference.getData, which
 		// threw for a value not registered yet; it answers "no data" there, so they fall back to vanilla's maps.
 		chain.register(TransformPhase.COREMOD, new net.forbric.kernel.transform.UnboundHolderDataInjector());
-		// The merged Zombie converts through MinecraftForge's lambdas; NeoForge's conversion Post is posted there too.
-		chain.register(TransformPhase.COREMOD, new net.forbric.kernel.transform.NeoConversionPostInjector());
 		// NeoForge's tooltip registration event goes to each mod on its own, not through ModLoader's aborting fan-out.
 		chain.register(TransformPhase.COREMOD, new net.forbric.kernel.transform.NeoTooltipAppendersInjector());
 		// NeoForge's coremods never run on the merged base; NativeCoremodParity does their rewrites after Mixin. These

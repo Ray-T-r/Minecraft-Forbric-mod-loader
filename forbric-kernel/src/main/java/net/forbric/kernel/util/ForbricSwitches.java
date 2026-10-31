@@ -199,7 +199,9 @@ public final class ForbricSwitches {
 					+ "or config sync to restore; NeoForge's own configuration tasks run as on NeoForge"),
 			// Stage 4: repairs of NeoForge hooks the merged base had lost; NeoForge's own base calls them itself.
 			Map.entry("forbric.neoScreenEvents", "NeoForge's own Gui.setScreen posts ScreenEvent.Opening and Closing itself, so there is "
-					+ "no merged MinecraftForge body to add them to"));
+					+ "no merged MinecraftForge body to add them to"),
+			Map.entry("forbric.neoConversionPost", "NeoForge's own conversion lambdas post LivingConversionEvent.Post themselves, so there "
+					+ "is no MinecraftForge lambda to send through the kernel"));
 
 	private static final ForbricSwitches SYSTEM =
 			new ForbricSwitches(RENAMED, RETIRED, System::getProperty, ForbricLog::warn);
