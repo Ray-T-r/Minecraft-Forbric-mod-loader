@@ -136,8 +136,6 @@ class WeaveCoverageCensusTest {
 			Map.entry("UncalledValueRelay", Switch.own("forbric.uncalledValueRelay")), // UncalledValueRelayWeaveTest
 			Map.entry("PostMixinCodecReturnArbitration", Switch.own("forbric.postMixinCodecArbitration")), // PostMixinCodecReturnArbitrationWeaveTest
 			Map.entry("PostMixinCallbackPriority", Switch.own()), // MixinNullableCompositeWeaveTest's absent installed-callback control
-			// An audit with no switch: ForgeTransferShapeAuditWeaveTest's control is an unreviewed twin in the same run.
-			Map.entry("ForgeTransferShapeAudit", Switch.own()),
 			Map.entry("FabricRegistryInitializationMixinAdapter", Switch.own("forbric.fabricRegistryInitialization")),
 			// FabricFreezeHookMixinAdapter stands down with FabricFreezePointInjector, whose hooks its test puts on the pre-Mixin chain.
 			Map.entry("FabricFreezeHookMixinAdapter", new Switch(List.of("forbric.fabricFreezePoint"), "net.forbric.kernel.transform.FabricFreezePointInjector")),
@@ -174,7 +172,7 @@ class WeaveCoverageCensusTest {
 		assertEquals(Set.of("KernelGuestMixinAdapter"), configTime, "the config-time stages changed; place the new one in a list");
 		assertTrue(preMixin.size() >= 40, "the census could not read getClassNode's adapters: " + preMixin);
 		assertEquals(Set.of("NativeCoremodParity", "PostMixinFixups", "UncalledValueRelay", "InterfaceDefaultConflictRepair",
-				"ForgeTransferShapeAudit", "PostMixinCodecReturnArbitration", "PostMixinCallbackPriority"), postMixin, "the post-Mixin stages changed; place the new one in a list");
+				"PostMixinCodecReturnArbitration", "PostMixinCallbackPriority"), postMixin, "the post-Mixin stages changed; place the new one in a list");
 
 		Set<String> stages = new TreeSet<>(configTime);
 		stages.addAll(preMixin);

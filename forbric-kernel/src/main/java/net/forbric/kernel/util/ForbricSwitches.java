@@ -116,7 +116,10 @@ public final class ForbricSwitches {
 			Map.entry("forbric.kernel.registryRedirect", "Forbric loads no MinecraftForge runtime, so there is no MinecraftForge registry wrapper lookup to "
 					+ "redirect"),
 			Map.entry("forbric.registryAliasParity", "Forbric loads no MinecraftForge runtime, so no registry wrapper overrides the lookups "
-					+ "fabric-registry-sync resolves aliases in"));
+					+ "fabric-registry-sync resolves aliases in"),
+			// Stage 4: MinecraftForge's capability composition, its enum and token plugins and its transfer audit are gone with its carrier.
+			Map.entry("forbric.transferShapeDump", "Forbric loads no MinecraftForge runtime, so the MinecraftForge transfer audit that dumped the shapes "
+					+ "it refused is gone"));
 
 	private static final ForbricSwitches SYSTEM =
 			new ForbricSwitches(RENAMED, RETIRED, System::getProperty, ForbricLog::warn);

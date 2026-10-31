@@ -72,8 +72,7 @@ import net.forbric.kernel.transform.TransformContext;
  * match.
  */
 // The staged jars and the test classpath carry no fastutil, which the frame recomputer's hierarchy walk reaches from some
-// targets; it abstains there, as the chain's last step, after everything a lambda decision reads (as in
-// ForgeTransferShapeAuditChainStagedTest). On the class: whichever merged test runs first measures the corpus for both.
+// targets; it abstains there, as the chain's last step, after everything a lambda decision reads. On the class: whichever merged test runs first measures the corpus for both.
 @ExpectCaught("cannot prove a frame repair")
 @ResourceLock("native-game-references")
 @ResourceLock("system-properties")

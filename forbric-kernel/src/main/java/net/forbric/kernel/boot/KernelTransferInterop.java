@@ -32,7 +32,6 @@ public final class KernelTransferInterop {
 	private static volatile boolean active;
 	private static volatile boolean energy;
 	private static volatile boolean hopper;
-	private static volatile boolean forgeFallback;
 	private static boolean installed;
 	private KernelTransferInterop() { }
 
@@ -75,8 +74,6 @@ public final class KernelTransferInterop {
 		return active;
 	}
 	public static boolean active() { return active; }
-	/** Boot's decision whether the Forge block fallback is registered this run; the bridge looks for it only then. */
-	public static void forgeFallback(boolean registered) { forgeFallback = registered; }
 	/** Whether Team Reborn Energy is installed and its half of the bridge is required and will be installed. */
 	public static boolean energyActive() { return energy; }
 	/** Whether hoppers ask Fabric's item storage lookup where NeoForge's found nothing (HopperFabricStorageInjector). */
@@ -100,7 +97,7 @@ public final class KernelTransferInterop {
 		try {
 			Consumer<Object> reporter = issue -> recordIssue(loader, issue);
 			Class.forName(ISSUES, true, loader).getMethod("setReporter", Consumer.class).invoke(null, reporter);
-			Class.forName(BRIDGE, true, loader).getMethod("install", boolean.class).invoke(null, forgeFallback);
+			Class.forName(BRIDGE, true, loader).getMethod("install", boolean.class).invoke(null, false);
 			installed = true;
 			CompatibilityFindings.resolve("transfer-initialization", "forbric", "block transfer initialization completed");
 			ForbricLog.info("[Forbric/Transfer] initialized cross-ecosystem block transfer after native capability registration");

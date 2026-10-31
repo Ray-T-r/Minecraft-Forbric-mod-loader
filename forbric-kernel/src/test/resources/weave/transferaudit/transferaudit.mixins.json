@@ -1,1 +1,0 @@
-{"required": true, "package": "fixture.transferaudit.mixin", "compatibilityLevel": "JAVA_21", "mixins": ["StorageMixin"], "injectors": {"defaultRequire": 1}}

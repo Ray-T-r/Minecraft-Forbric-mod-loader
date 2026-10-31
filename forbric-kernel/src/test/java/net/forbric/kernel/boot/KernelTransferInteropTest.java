@@ -141,22 +141,15 @@ class KernelTransferInteropTest {
 		for (String name : naming) assertTrue(name.startsWith("net/forbric/kernel/runtime/transfer/RebornEnergyAdapters")
 				|| name.startsWith("net/forbric/kernel/runtime/transfer/RebornEnergyBridge"), name + " names Team Reborn Energy");
 	}
-	/** The bridge is told what boot decided about the Forge fallback, and looks for it only when boot registered it. */
-	@Test void installHandsTheBridgeBootsForgeFallbackDecision() throws Exception {
-		try {
-			for (boolean registered : new boolean[] { false, true }) {
-				try (var loader = loader(true, true)) {
-					assertTrue(KernelTransferInterop.configure(loader));
-					KernelTransferInterop.forgeFallback(registered);
-					ClassLoader game = new GameSide();
-					KernelTransferInterop.install(game);
-					Class<?> bridge = Class.forName(KernelTransferInterop.BRIDGE, false, game);
-					assertEquals(1, bridge.getField("calls").getInt(null));
-					assertEquals(registered, bridge.getField("forgeFallback").getBoolean(null));
-				}
-			}
-		} finally {
-			KernelTransferInterop.forgeFallback(false);
+	/** Install reaches the bridge once, and tells it there is no MinecraftForge block fallback to look for. */
+	@Test void installCallsTheBridgeOnceWithNoForgeFallback() throws Exception {
+		try (var loader = loader(true, true)) {
+			assertTrue(KernelTransferInterop.configure(loader));
+			ClassLoader game = new GameSide();
+			KernelTransferInterop.install(game);
+			Class<?> bridge = Class.forName(KernelTransferInterop.BRIDGE, false, game);
+			assertEquals(1, bridge.getField("calls").getInt(null));
+			assertFalse(bridge.getField("forgeFallback").getBoolean(null));
 		}
 	}
 	/** A game side with only what install calls: TransferIssues.setReporter and a bridge that records its argument. */

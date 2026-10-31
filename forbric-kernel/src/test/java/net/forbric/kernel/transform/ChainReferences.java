@@ -1,30 +1,41 @@
 /* Copyright 2026 The Forbric Project. Licensed under the Apache License, Version 2.0. */
 package net.forbric.kernel.transform;
 
+import static org.junit.jupiter.api.Assertions.assertTrue;
+
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.UncheckedIOException;
+import java.lang.reflect.Constructor;
 import java.lang.reflect.Field;
 import java.lang.reflect.Method;
+import java.lang.reflect.ParameterizedType;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.Comparator;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.TreeSet;
+import java.util.function.Function;
+import java.util.function.Predicate;
 import java.util.zip.ZipFile;
 
 import org.objectweb.asm.ClassReader;
 import org.objectweb.asm.Handle;
+import org.objectweb.asm.Opcodes;
 import org.objectweb.asm.Type;
 import org.objectweb.asm.tree.AbstractInsnNode;
 import org.objectweb.asm.tree.ClassNode;
 import org.objectweb.asm.tree.FieldInsnNode;
 import org.objectweb.asm.tree.FieldNode;
+import org.objectweb.asm.tree.IntInsnNode;
 import org.objectweb.asm.tree.InvokeDynamicInsnNode;
+import org.objectweb.asm.tree.LdcInsnNode;
 import org.objectweb.asm.tree.MethodInsnNode;
 import org.objectweb.asm.tree.MethodNode;
 import org.objectweb.asm.tree.TypeInsnNode;
@@ -96,13 +107,13 @@ public final class ChainReferences {
 
 	/**
 	 * The transformers KernelBoot registers before Mixin, read off KernelBoot's own bytecode in its phases, sort indexes
-	 * and order ({@link ForgeTransferShapeAuditChainStagedTest#chain}), with game resources served from {@code jars}:
+	 * and order ({@link BootChain}), with game resources served from {@code jars}:
 	 * what hands a class to Mixin, for a test outside this package. Hold {@code @ResourceLock("native-game-references")}
 	 * with the jars' references bound, as the merged-base repair proves against them. The transformers that need
 	 * KernelBoot's runtime state are left out and named in {@code skipped}.
 	 */
 	public static TransformChain preMixinChain(List<Path> jars, List<String> registered, List<String> skipped) throws Exception {
-		return ForgeTransferShapeAuditChainStagedTest.chain(jars, registered, skipped);
+		return BootChain.chain(jars, registered, skipped);
 	}
 
 	/** {@code internalName}'s class file from the first of {@code jars} that has it; a missing class fails. */
@@ -294,6 +305,104 @@ public final class ChainReferences {
 		private static boolean judged(String internal) {
 			for (String prefix : JUDGED) if (internal.startsWith(prefix)) return true;
 			return false;
+		}
+	}
+
+	/**
+	 * KernelBoot's own registrations, read off its bytecode: what {@link #preMixinChain} builds. Moved here from the
+	 * MinecraftForge transfer audit's chain test, which went with that audit; the chain is not about MinecraftForge.
+	 */
+	static final class BootChain {
+		private BootChain() {
+		}
+
+		private static final String KERNEL_BOOT = "net/forbric/kernel/boot/KernelBoot";
+		private static final String CHAIN = "net/forbric/kernel/transform/TransformChain";
+		private static final String PHASE = "net/forbric/kernel/transform/TransformPhase";
+
+		/** {@code chain.register(phase, new transformer(...), sortIndex)} at instruction {@code position} of KernelBoot. */
+		record Registration(String transformer, TransformPhase phase, int sortIndex, String constructor, long position) { }
+
+		private static byte[] resource(List<Path> jars, String name) { return StagedGameClasses.resource(jars, name); }
+
+
+		/** Every direct {@code chain.register(PHASE, new X(...)[, n])} in KernelBoot, in registration order. */
+		static List<Registration> registrations() throws IOException {
+			ClassNode boot = new ClassNode();
+			try (InputStream in = ChainReferences.class.getClassLoader().getResourceAsStream(KERNEL_BOOT + ".class")) {
+				assertTrue(in != null, "KernelBoot is not on the test classpath");
+				new ClassReader(in).accept(boot, 0);
+			}
+			List<Registration> found = new ArrayList<>();
+			for (int m = 0; m < boot.methods.size(); m++) {
+				AbstractInsnNode[] insns = real(boot.methods.get(m));
+				for (int i = 1; i < insns.length; i++) {
+					if (!(insns[i] instanceof TypeInsnNode type) || type.getOpcode() != Opcodes.NEW
+							|| !(insns[i - 1] instanceof FieldInsnNode phase) || phase.getOpcode() != Opcodes.GETSTATIC || !phase.owner.equals(PHASE)) continue;
+					int ctor = i, nested = 0;
+					while (++ctor < insns.length) {
+						if (insns[ctor] instanceof TypeInsnNode inner && inner.getOpcode() == Opcodes.NEW && inner.desc.equals(type.desc)) nested++;
+						if (insns[ctor] instanceof MethodInsnNode call && call.getOpcode() == Opcodes.INVOKESPECIAL
+								&& call.owner.equals(type.desc) && call.name.equals("<init>") && nested-- == 0) break;
+					}
+					if (ctor + 1 >= insns.length) continue;
+					int at = ctor + 1, sortIndex = 0;
+					Integer constant = intConstant(insns[at]);
+					if (constant != null) { sortIndex = constant; at++; }
+					if (at < insns.length && insns[at] instanceof MethodInsnNode register && register.owner.equals(CHAIN) && register.name.equals("register"))
+						found.add(new Registration(type.desc.replace('/', '.'), TransformPhase.valueOf(phase.name), sortIndex,
+								((MethodInsnNode) insns[ctor]).desc, ((long) m << 32) | i));
+				}
+			}
+			found.sort(Comparator.comparingLong(Registration::position));
+			return found;
+		}
+
+		/** The chain those registrations make, with game resources served from {@code jars}; the rest are returned in {@code skipped}. */
+		private static TransformChain chain(List<Path> jars, List<String> registered, List<String> skipped) throws Exception {
+			TransformChain chain = new TransformChain();
+			for (Registration r : registrations()) {
+				Class<?> type = Class.forName(r.transformer());
+				Constructor<?> constructor = Arrays.stream(type.getDeclaredConstructors())
+						.filter(c -> org.objectweb.asm.Type.getConstructorDescriptor(c).equals(r.constructor())).findFirst().orElseThrow();
+				Object[] arguments = new Object[constructor.getParameterCount()];
+				boolean supplied = true;
+				for (int p = 0; p < arguments.length; p++) {
+					arguments[p] = lookup(constructor.getGenericParameterTypes()[p], jars);
+					supplied &= arguments[p] != null;
+				}
+				String name = type.getSimpleName();
+				if (!supplied) { skipped.add(name + r.constructor()); continue; }
+				constructor.setAccessible(true);
+				chain.register(r.phase(), (ClassTransformer) constructor.newInstance(arguments), r.sortIndex());
+				registered.add(name);
+			}
+			return chain;
+		}
+
+		/** A game-resource lookup of the parameter's type, or null when the parameter is something else. */
+		private static Object lookup(java.lang.reflect.Type parameter, List<Path> jars) {
+			if (!(parameter instanceof ParameterizedType generic)) return null;
+			java.lang.reflect.Type[] types = generic.getActualTypeArguments();
+			if (generic.getRawType() == Predicate.class && types[0] == String.class) return (Predicate<String>) name -> resource(jars, name) != null;
+			if (generic.getRawType() != Function.class || types[0] != String.class) return null;
+			if (types[1] == byte[].class) return (Function<String, byte[]>) name -> resource(jars, name);
+			if (types[1] == Boolean.class) return (Function<String, Boolean>) name -> resource(jars, name) != null;
+			return null;
+		}
+
+		private static AbstractInsnNode[] real(MethodNode method) {
+			List<AbstractInsnNode> code = new ArrayList<>();
+			for (AbstractInsnNode insn : method.instructions) if (insn.getOpcode() >= 0) code.add(insn);
+			return code.toArray(AbstractInsnNode[]::new);
+		}
+
+		private static Integer intConstant(AbstractInsnNode insn) {
+			int op = insn.getOpcode();
+			if (op >= Opcodes.ICONST_M1 && op <= Opcodes.ICONST_5) return op - Opcodes.ICONST_0;
+			if (insn instanceof IntInsnNode push && (op == Opcodes.BIPUSH || op == Opcodes.SIPUSH)) return push.operand;
+			if (insn instanceof LdcInsnNode ldc && ldc.cst instanceof Integer value) return value;
+			return null;
 		}
 	}
 }

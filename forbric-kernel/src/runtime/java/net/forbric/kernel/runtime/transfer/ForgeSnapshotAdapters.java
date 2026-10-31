@@ -22,7 +22,6 @@ import net.neoforged.neoforge.transfer.fluid.FluidResource;
 import net.neoforged.neoforge.transfer.item.ItemResource;
 import net.neoforged.neoforge.transfer.transaction.SnapshotJournal;
 import net.neoforged.neoforge.transfer.transaction.TransactionContext;
-import net.forbric.kernel.transform.ForgeTransferShapeAudit;
 import net.forbric.kernel.util.Caught;
 
 /**
@@ -41,19 +40,7 @@ public final class ForgeSnapshotAdapters {
 	private static final Field VALIDATOR = field(FluidTank.class, "validator");
 	private static final Set<Predicate<FluidStack>> PURE_VALIDATORS = Collections.newSetFromMap(new IdentityHashMap<>());
 	private static final ThreadLocal<ForgeJournal> CURRENT = new ThreadLocal<>();
-	private static volatile boolean itemHelpersReady, fluidHelpersReady;
 	private static boolean defaultValidatorKnown;
-	private static final ClassValue<Boolean> CERTIFIED = new ClassValue<>() {
-		protected Boolean computeValue(Class<?> type) {
-			try { type.getDeclaredMethod(ForgeTransferShapeAudit.MARKER); return true; }
-			catch (NoSuchMethodException unverified) { Caught.expected(unverified); return false; }
-			catch (LinkageError unreadable) {
-				Caught.warn(unreadable, "[Forbric/Transfer] could not look for the audit marker on %s; it is treated as "
-						+ "unaudited", type.getName());
-				return false;
-			}
-		}
-	};
 	private static final ClassValue<Boolean> PURE_ITEM = new ClassValue<>() {
 		protected Boolean computeValue(Class<?> type) {
 			try {
@@ -93,42 +80,17 @@ public final class ForgeSnapshotAdapters {
 		if (!defaultValidatorKnown) { PURE_VALIDATORS.add(validator(new FluidTank(0))); defaultValidatorKnown = true; }
 		return PURE_VALIDATORS.contains(validator((FluidTank) handler));
 	}
+	/**
+	 * Never approved now: what approved a Forge helper was the MinecraftForge transfer audit's certificate on its final
+	 * definition, and that audit went with MinecraftForge, so no class carries it. Reported once per class as before.
+	 */
 	private static boolean audited(Class<?> type) {
-		boolean approved = CERTIFIED.get(type);
-		if (!approved) TransferIssues.reportType("TRANSFER_HELPER_UNVERIFIED", type.getName(), ForgeTransferShapeAudit.declined(type.getName()));
-		return approved;
+		TransferIssues.reportType("TRANSFER_HELPER_UNVERIFIED", type.getName(),
+				"the MinecraftForge transfer audit that certified this helper is gone with MinecraftForge");
+		return false;
 	}
-	private static boolean helpers(List<String> names) {
-		for (String name : names) try {
-			if (!audited(Class.forName(name, false, ForgeSnapshotAdapters.class.getClassLoader()))) return false;
-		} catch (ClassNotFoundException | LinkageError absent) {
-			Caught.warn(absent, "[Forbric/Transfer] required transfer helper %s is absent; Forge snapshot transfer stays off", name);
-			TransferIssues.reportType("TRANSFER_HELPER_UNVERIFIED", name, "required transfer helper is absent"); return false;
-		}
-		return true;
-	}
-	private static boolean itemHelpers() {
-		if (itemHelpersReady) return true;
-		if (!helpers(ForgeTransferShapeAudit.ITEM_HELPERS) || !safeAddedInterfaces(ItemStack.class) || !safeAddedInterfaces(Item.class)) return false;
-		itemHelpersReady = true; return true;
-	}
-	private static boolean fluidHelpers() {
-		if (fluidHelpersReady) return true;
-		if (!helpers(ForgeTransferShapeAudit.FLUID_HELPERS)) return false;
-		fluidHelpersReady = true; return true;
-	}
-	private static boolean safeAddedInterfaces(Class<?> owner) {
-		Set<String> critical = Set.of("get", "getOrDefault", "getComponents", "getComponentsPatch", "components", "builtInRegistryHolder", "computeDefaultResource", "getDefaultMaxStackSize", "getMaxStackSize", "getCount", "setCount", "grow", "shrink", "copy", "copyWithCount", "isEmpty", "typeHolder", "getItem", "gatherCapabilities");
-		for (Class<?> contract : owner.getInterfaces()) {
-			// The interfaces a mod added that the certified digest left out; every other one is in the digest.
-			if (!ForgeTransferShapeAudit.excludedInterfaces(owner.getName()).contains(contract.getName().replace('.', '/'))) continue;
-			boolean safe = true;
-			// Its own methods and every superinterface's: none may be named like a transfer-critical helper.
-			for (var method : contract.getMethods()) if (!java.lang.reflect.Modifier.isStatic(method.getModifiers()) && critical.contains(method.getName())) safe = false;
-			if (!safe) { TransferIssues.reportType("TRANSFER_HELPER_UNVERIFIED", contract.getName(), "an added interface can override a transfer-critical helper"); return false; }
-		}
-		return true;
-	}
+	private static boolean itemHelpers() { return false; }
+	private static boolean fluidHelpers() { return false; }
 	private static boolean pureItem(Item item) {
 		boolean pure = PURE_ITEM.get(item.getClass());
 		if (!pure) TransferIssues.report("ITEM_TRANSFER_HELPER_UNVERIFIED", item, "custom capacity/component helper needs an explicit reversible adapter");

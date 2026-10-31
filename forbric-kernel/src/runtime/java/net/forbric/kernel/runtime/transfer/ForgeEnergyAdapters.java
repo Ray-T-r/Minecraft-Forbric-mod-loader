@@ -9,7 +9,6 @@ import java.util.List;
 import java.util.Objects;
 import java.util.Set;
 
-import net.forbric.kernel.transform.ForgeTransferShapeAudit;
 import net.forbric.kernel.util.Caught;
 import net.minecraftforge.energy.EmptyEnergyStorage;
 import net.minecraftforge.energy.EnergyStorage;
@@ -52,17 +51,6 @@ public final class ForgeEnergyAdapters {
 	/** Every IEnergyStorage method. A subclass declaring any of them no longer runs the audited code. */
 	private static final Set<String> CRITICAL = Set.of("receiveEnergy", "extractEnergy", "getEnergyStored", "getMaxEnergyStored", "canReceive", "canExtract");
 	private static final ThreadLocal<Journal> CURRENT = new ThreadLocal<>();
-	private static final ClassValue<Boolean> CERTIFIED = new ClassValue<>() {
-		protected Boolean computeValue(Class<?> type) {
-			try { type.getDeclaredMethod(ForgeTransferShapeAudit.MARKER); return true; }
-			catch (NoSuchMethodException unverified) { Caught.expected(unverified); return false; }
-			catch (LinkageError unreadable) {
-				Caught.warn(unreadable, "[Forbric/Transfer] could not look for the audit marker on %s; it is treated as "
-						+ "unaudited", type.getName());
-				return false;
-			}
-		}
-	};
 	private static final ClassValue<Boolean> STANDARD_SHAPE = new ClassValue<>() {
 		protected Boolean computeValue(Class<?> type) {
 			if (!EnergyStorage.class.isAssignableFrom(type)) return false;
@@ -93,11 +81,11 @@ public final class ForgeEnergyAdapters {
 	public static boolean supports(IEnergyStorage storage) {
 		return storage instanceof EnergyStorage standard && STANDARD_SHAPE.get(standard.getClass()) && certified();
 	}
+	/** Never certified now: the MinecraftForge transfer audit that certified the standard store went with MinecraftForge. */
 	private static boolean certified() {
-		boolean approved = CERTIFIED.get(EnergyStorage.class);
-		if (!approved) TransferIssues.reportType("TRANSFER_HELPER_UNVERIFIED", EnergyStorage.class.getName(),
-				ForgeTransferShapeAudit.declined(EnergyStorage.class.getName()));
-		return approved;
+		TransferIssues.reportType("TRANSFER_HELPER_UNVERIFIED", EnergyStorage.class.getName(),
+				"the MinecraftForge transfer audit that certified this store is gone with MinecraftForge");
+		return false;
 	}
 	private static void refused(Object storage) {
 		TransferIssues.report("FORGE_HANDLER_NOT_ROLLBACK_SAFE", storage,

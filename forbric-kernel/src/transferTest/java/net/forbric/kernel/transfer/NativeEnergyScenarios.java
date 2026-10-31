@@ -26,7 +26,8 @@ import team.reborn.energy.api.base.SimpleEnergyStorage;
 /**
  * Block energy across the three APIs with the real engines: Fabric's transfer transactions (transformed with the
  * kernel's pairing hooks), NeoForge's, Team Reborn Energy 5.0.0's own SimpleEnergyStorage, NeoForge's own
- * SimpleEnergyHandler and Forge's own EnergyStorage (certified through ForgeTransferShapeAudit as the game does). Only
+ * SimpleEnergyHandler and Forge's own EnergyStorage (no longer certified: the MinecraftForge transfer audit is gone, so
+ * the scenarios that needed a certified Forge store went with it; the runtime lane removes the rest with the adapters). Only
  * the kernel's adapters are exercised; no store below is a test double except where a broken provider is the point.
  */
 public final class NativeEnergyScenarios {
@@ -110,49 +111,6 @@ public final class NativeEnergyScenarios {
 		eq(200, fabric.amount); eq(1, fabric.finals); eq(1000, view.getCapacityAsLong()); closed();
 	}
 
-	/**
-	 * A transactional consumer of Forge's own EnergyStorage, from both engines. The store's own receive/extract code
-	 * applies its limits; every abort restores its energy field at the depth it happened; the owner hears of it once
-	 * per root commit, however many writes that root held.
-	 */
-	public static void transactionalConsumersOfForge() {
-		EnergyStorage forge = new EnergyStorage(1000, 300, 200, 0);
-		AtomicInteger changed = new AtomicInteger();
-		EnergyHandler neoView = ForgeEnergyAdapters.neo(forge, forge, changed::incrementAndGet);
-		yes(neoView != null, "the standard Forge store was refused");
-		team.reborn.energy.api.EnergyStorage fabricView = RebornEnergyAdapters.fabric(neoView);
-		try (Transaction root = Transaction.openOuter()) {
-			eq(300, fabricView.insert(500, root));
-			try (Transaction child = root.openNested()) { eq(100, fabricView.insert(100, child)); child.commit(); }
-			try (Transaction child = root.openNested()) { eq(200, fabricView.extract(900, child)); eq(200, forge.getEnergyStored()); }
-			eq(400, forge.getEnergyStored());
-		}
-		eq(0, forge.getEnergyStored()); eq(0, changed.get()); closed();
-		for (int i = 0; i < 3; i++) {
-			try (var simulation = neoRoot()) { eq(300, neoView.insert(1000, simulation)); }
-			eq(0, forge.getEnergyStored()); closed();
-		}
-		try (var root = neoRoot()) {
-			eq(300, neoView.insert(300, root)); eq(300, neoView.insert(300, root));
-			try (var child = neoChild(root)) { eq(200, neoView.extract(1000, child)); child.commit(); }
-			root.commit();
-		}
-		eq(400, forge.getEnergyStored()); eq(1, changed.get()); closed();
-		// A store first touched at depth 2, while depth 0 already holds a snapshot of another one: aborting depth 0
-		// must restore both, so every live snapshot learns the newcomer before it changes.
-		EnergyStorage second = new EnergyStorage(1000, 1000, 1000, 10);
-		EnergyHandler secondView = ForgeEnergyAdapters.neo(second, second, changed::incrementAndGet);
-		try (var root = neoRoot()) {
-			eq(100, neoView.extract(100, root));
-			try (var child = neoChild(root)) {
-				try (var grandchild = neoChild(child)) { eq(500, secondView.insert(500, grandchild)); grandchild.commit(); }
-				child.commit();
-			}
-			eq(510, second.getEnergyStored()); eq(300, forge.getEnergyStored());
-		}
-		eq(10, second.getEnergyStored()); eq(400, forge.getEnergyStored()); eq(1, changed.get()); closed();
-	}
-
 	/** A Forge consumer of NeoForge and Reborn stores: simulate is a real aborted operation, execute commits it. */
 	public static void forgeConsumerOfTransactionalStores() {
 		Neo neo = new Neo(1000, 300, 200, 0);
@@ -178,38 +136,28 @@ public final class NativeEnergyScenarios {
 		eq(500, onFabric.getEnergyStored()); eq(1000, onFabric.getMaxEnergyStored()); closed();
 	}
 
-	/** Six directed moves, each through the consumer's own API, and the total never changes. */
-	public static void conservationAcrossAllSixDirections() {
+	/** Both directed moves between Fabric (Reborn) and NeoForge, each through the consumer's own API, and the total never changes. */
+	public static void conservationAcrossBothDirections() {
 		Reborn fabric = new Reborn(10_000, 10_000, 10_000); fabric.amount = 3000;
 		Neo neo = new Neo(10_000, 10_000, 10_000, 3000);
-		EnergyStorage forge = new EnergyStorage(10_000, 10_000, 10_000, 3000);
-		Runnable total = () -> eq(9000, fabric.amount + neo.getAmountAsLong() + forge.getEnergyStored());
+		Runnable total = () -> eq(6000, fabric.amount + neo.getAmountAsLong());
 		team.reborn.energy.api.EnergyStorage fabricOnNeo = RebornEnergyAdapters.fabric(neo);
-		team.reborn.energy.api.EnergyStorage fabricOnForge = RebornEnergyAdapters.fabric(ForgeEnergyAdapters.neo(forge));
-		EnergyHandler neoOnFabric = RebornEnergyAdapters.neo(fabric), neoOnForge = ForgeEnergyAdapters.neo(forge);
-		IEnergyStorage forgeOnFabric = ForgeEnergyAdapters.forge(RebornEnergyAdapters.neo(fabric)), forgeOnNeo = ForgeEnergyAdapters.forge(neo);
+		EnergyHandler neoOnFabric = RebornEnergyAdapters.neo(fabric);
 		// Fabric consumer: Reborn's own move helper, a real nested extract/insert/verify.
 		try (Transaction tx = Transaction.openOuter()) { eq(700, EnergyStorageUtil.move(fabric, fabricOnNeo, 700, tx)); tx.commit(); } total.run();
-		try (Transaction tx = Transaction.openOuter()) { eq(600, EnergyStorageUtil.move(fabric, fabricOnForge, 600, tx)); tx.commit(); } total.run();
 		// NeoForge consumer: NeoForge's own move helper.
 		try (var tx = neoRoot()) { eq(500, EnergyHandlerUtil.move(neo, neoOnFabric, 500, tx)); tx.commit(); } total.run();
-		try (var tx = neoRoot()) { eq(400, EnergyHandlerUtil.move(neo, neoOnForge, 400, tx)); tx.commit(); } total.run();
-		// Forge consumer: the usual simulate-then-execute pair on its own store and a bridged one.
-		for (IEnergyStorage target : List.of(forgeOnFabric, forgeOnNeo)) {
-			int offer = forge.extractEnergy(300, true), accepted = target.receiveEnergy(offer, true);
-			eq(300, accepted); eq(accepted, target.receiveEnergy(forge.extractEnergy(accepted, false), false)); total.run();
-		}
-		eq(3000 - 700 - 600 + 500 + 300, fabric.amount); eq(3000 + 700 - 500 - 400 + 300, neo.getAmountAsLong());
-		eq(3000 + 600 + 400 - 600, forge.getEnergyStored());
-		// A move that cannot complete moves nothing, in every direction.
+		eq(3000 - 700 + 500, fabric.amount); eq(3000 + 700 - 500, neo.getAmountAsLong());
+		// A move that cannot complete moves nothing, in either direction.
 		Neo full = new Neo(100, 100, 100, 100);
 		try (Transaction tx = Transaction.openOuter()) { eq(0, EnergyStorageUtil.move(fabric, RebornEnergyAdapters.fabric(full), 50, tx)); tx.commit(); }
-		try (var tx = neoRoot()) { eq(0, EnergyHandlerUtil.move(neo, ForgeEnergyAdapters.neo(new EnergyStorage(100, 100, 100, 100)), 50, tx)); tx.commit(); }
+		Reborn fullFabric = new Reborn(100, 100, 100); fullFabric.amount = 100;
+		try (var tx = neoRoot()) { eq(0, EnergyHandlerUtil.move(neo, RebornEnergyAdapters.neo(fullFabric), 50, tx)); tx.commit(); }
 		total.run(); closed();
 	}
 
 	/**
-	 * Reborn counts in long, Forge and NeoForge in int. A long request is clamped before anything moves, the int side
+	 * Reborn counts in long, NeoForge in int. A long request is clamped before anything moves, the int side
 	 * reports exactly what it moved, and the rest stays in the source; a long amount read through an int API saturates.
 	 */
 	public static void longAmountsClampToIntWithoutLoss() {
@@ -217,11 +165,8 @@ public final class NativeEnergyScenarios {
 		Reborn reservoir = new Reborn(10_000_000_000L, Long.MAX_VALUE, Long.MAX_VALUE); reservoir.amount = five;
 		EnergyHandler neoView = RebornEnergyAdapters.neo(reservoir);
 		eq(five, neoView.getAmountAsLong()); eq(Integer.MAX_VALUE, neoView.getAmountAsInt()); eq(Integer.MAX_VALUE, neoView.getCapacityAsInt());
-		IEnergyStorage forgeView = ForgeEnergyAdapters.forge(neoView);
-		eq(Integer.MAX_VALUE, forgeView.getEnergyStored()); eq(Integer.MAX_VALUE, forgeView.getMaxEnergyStored());
 		try (var tx = neoRoot()) { eq(Integer.MAX_VALUE, neoView.extract(Integer.MAX_VALUE, tx)); eq(five - Integer.MAX_VALUE, reservoir.amount); }
 		eq(five, reservoir.amount);
-		eq(Integer.MAX_VALUE, forgeView.extractEnergy(Integer.MAX_VALUE, true)); eq(five, reservoir.amount);
 		// Fabric consumer, long request into an int store with room for all of it: exactly Integer.MAX_VALUE moves.
 		Neo sink = new Neo(Integer.MAX_VALUE, Integer.MAX_VALUE, Integer.MAX_VALUE, 0);
 		try (Transaction tx = Transaction.openOuter()) {
@@ -231,51 +176,10 @@ public final class NativeEnergyScenarios {
 		try (Transaction tx = Transaction.openOuter()) { eq(Integer.MAX_VALUE, EnergyStorageUtil.move(reservoir, RebornEnergyAdapters.fabric(sink), five, tx)); tx.commit(); }
 		eq(Integer.MAX_VALUE, sink.getAmountAsLong()); eq(five - Integer.MAX_VALUE, reservoir.amount);
 		eq(five, reservoir.amount + sink.getAmountAsLong());
-		// The same into Forge's own store: its int capacity takes Integer.MAX_VALUE of the remaining 2,852,516,353.
-		EnergyStorage forge = new EnergyStorage(Integer.MAX_VALUE, Integer.MAX_VALUE, Integer.MAX_VALUE, 0);
-		try (Transaction tx = Transaction.openOuter()) {
-			eq(Integer.MAX_VALUE, EnergyStorageUtil.move(reservoir, RebornEnergyAdapters.fabric(ForgeEnergyAdapters.neo(forge)), five, tx)); tx.commit();
-		}
-		eq(Integer.MAX_VALUE, forge.getEnergyStored()); eq(five - 2L * Integer.MAX_VALUE, reservoir.amount);
-		eq(five, reservoir.amount + sink.getAmountAsLong() + forge.getEnergyStored());
 		expected(IllegalArgumentException.class, () -> { try (Transaction tx = Transaction.openOuter()) { RebornEnergyAdapters.fabric(sink).insert(-1, tx); } });
 		eq(Integer.MAX_VALUE, EnergyUnits.request(Long.MAX_VALUE)); eq(7, EnergyUnits.request(7)); closed();
 	}
 
-	/**
-	 * Only Forge's standard store (certified) and subclasses that declare none of IEnergyStorage's methods are written
-	 * transactionally. Anything else gets no view, is never called, and is reported once per class.
-	 */
-	public static void unauditedForgeStoresAreRefused() {
-		List<TransferIssues.Issue> issues = capture();
-		AtomicInteger touched = new AtomicInteger();
-		IEnergyStorage custom = new IEnergyStorage() {
-			public int receiveEnergy(int max, boolean simulate) { touched.incrementAndGet(); return max; }
-			public int extractEnergy(int max, boolean simulate) { touched.incrementAndGet(); return max; }
-			public int getEnergyStored() { touched.incrementAndGet(); return 0; }
-			public int getMaxEnergyStored() { touched.incrementAndGet(); return 100; }
-			public boolean canExtract() { touched.incrementAndGet(); return true; }
-			public boolean canReceive() { touched.incrementAndGet(); return true; }
-		};
-		for (int i = 0; i < 3; i++) yes(ForgeEnergyAdapters.neo(custom) == null, "a custom IEnergyStorage got a write bridge");
-		eq(0, touched.get()); eq(1, count(issues, "FORGE_HANDLER_NOT_ROLLBACK_SAFE", custom.getClass()));
-		EnergyStorage overriding = new EnergyStorage(100) {
-			@Override public int receiveEnergy(int max, boolean simulate) { touched.incrementAndGet(); return super.receiveEnergy(max, simulate); }
-		};
-		yes(ForgeEnergyAdapters.neo(overriding) == null, "a subclass with its own receiveEnergy got a write bridge");
-		eq(1, count(issues, "FORGE_HANDLER_NOT_ROLLBACK_SAFE", overriding.getClass()));
-		IEnergyStorage proxy = (IEnergyStorage) java.lang.reflect.Proxy.newProxyInstance(NativeEnergyScenarios.class.getClassLoader(),
-				new Class<?>[] {IEnergyStorage.class}, (self, method, arguments) -> { touched.incrementAndGet(); throw new AssertionError("proxy was called"); });
-		yes(ForgeEnergyAdapters.neo(proxy) == null, "a proxy got a write bridge"); eq(0, touched.get());
-		// A subclass that only adds state of its own runs exactly the audited code: it is admitted, and rolls back.
-		Plain plain = new Plain(); plain.label = "unchanged";
-		EnergyHandler view = ForgeEnergyAdapters.neo(plain);
-		yes(view != null, "a structurally standard subclass was refused");
-		try (var tx = neoRoot()) { eq(40, view.insert(40, tx)); eq(40, plain.getEnergyStored()); }
-		eq(0, plain.getEnergyStored());
-		try (var tx = neoRoot()) { eq(40, view.insert(40, tx)); tx.commit(); }
-		eq(40, plain.getEnergyStored()); eq(0, count(issues, "FORGE_HANDLER_NOT_ROLLBACK_SAFE", Plain.class)); closed();
-	}
 	static final class Plain extends EnergyStorage {
 		String label;
 		Plain() { super(100); }
@@ -304,52 +208,6 @@ public final class NativeEnergyScenarios {
 		negative.amount = 100;
 		try (var root = neoRoot()) { expected(IllegalStateException.class, () -> RebornEnergyAdapters.neo(negative).extract(10, root)); eq(100, negative.amount); }
 		closed();
-	}
-
-	/**
-	 * Forge's standard store outside its own bounds: its deserializeNBT sets the field unclamped, so a save made before
-	 * the configured capacity was lowered loads with more energy than capacity, and its own receiveEnergy then answers
-	 * a negative amount. That is a state Forge allows, not a broken provider: the bridge moves nothing and leaves the
-	 * field as it was, even in a COMMITTED transaction, instead of throwing into the consumer (NeoForge's own move
-	 * helper turns any exception into a crash report, and the cable's tick into a server crash). Energy is conserved
-	 * throughout and the store still gives energy away normally.
-	 */
-	public static void outOfBoundsForgeStoresMoveNothing() {
-		EnergyStorage overfull = new EnergyStorage(100, 100, 100, 0); setEnergy(overfull, 150);
-		AtomicInteger changed = new AtomicInteger();
-		EnergyHandler view = ForgeEnergyAdapters.neo(overfull, overfull, changed::incrementAndGet);
-		yes(view != null, "the standard Forge store was refused");
-		for (int i = 0; i < 2; i++) {
-			try (var root = neoRoot()) { eq(0, view.insert(10, root)); eq(150, overfull.getEnergyStored()); root.commit(); }
-			eq(150, overfull.getEnergyStored()); closed();
-		}
-		eq(0, changed.get());
-		// The consumers' own move helpers, NeoForge's and Reborn's, as a cable calls them every tick.
-		Neo neo = new Neo(1000, 1000, 1000, 500);
-		Reborn fabric = new Reborn(1000, 1000, 1000); fabric.amount = 500;
-		Runnable total = () -> eq(1150, neo.getAmountAsLong() + fabric.amount + overfull.getEnergyStored());
-		try (var tx = neoRoot()) { eq(0, EnergyHandlerUtil.move(neo, view, 10, tx)); tx.commit(); } total.run();
-		try (Transaction tx = Transaction.openOuter()) { eq(0, EnergyStorageUtil.move(fabric, RebornEnergyAdapters.fabric(view), 10, tx)); tx.commit(); } total.run();
-		eq(500, neo.getAmountAsLong()); eq(500, fabric.amount); eq(150, overfull.getEnergyStored()); eq(0, changed.get()); closed();
-		// Giving energy away is the store's normal code; once back in its bounds it accepts energy again.
-		try (var tx = neoRoot()) { eq(100, EnergyHandlerUtil.move(view, neo, 100, tx)); tx.commit(); } total.run();
-		eq(50, overfull.getEnergyStored()); eq(1, changed.get());
-		try (var tx = neoRoot()) { eq(10, EnergyHandlerUtil.move(neo, view, 10, tx)); tx.commit(); } total.run();
-		eq(60, overfull.getEnergyStored()); eq(2, changed.get());
-		// Below nothing (also only reachable through deserializeNBT): extraction answers negative, and moves nothing.
-		EnergyStorage negative = new EnergyStorage(100, 100, 100, 0); setEnergy(negative, -20);
-		EnergyHandler negativeView = ForgeEnergyAdapters.neo(negative);
-		try (var tx = neoRoot()) { eq(0, negativeView.extract(10, tx)); eq(-20, negative.getEnergyStored()); tx.commit(); }
-		eq(-20, negative.getEnergyStored());
-		// Refusals inside nested scopes of a root that finally aborts: the journal still restores the loaded value.
-		EnergyStorage again = new EnergyStorage(100, 100, 100, 0); setEnergy(again, 150);
-		EnergyHandler againView = ForgeEnergyAdapters.neo(again);
-		try (var root = neoRoot()) {
-			eq(40, againView.extract(40, root)); eq(110, again.getEnergyStored());
-			try (var child = neoChild(root)) { eq(0, againView.insert(10, child)); eq(110, again.getEnergyStored()); child.commit(); }
-			eq(20, againView.extract(20, root)); eq(10, againView.insert(30, root)); eq(100, again.getEnergyStored());
-		}
-		eq(150, again.getEnergyStored()); closed();
 	}
 
 	/**
@@ -489,30 +347,21 @@ public final class NativeEnergyScenarios {
 
 	/** A bridge is never wrapped in another bridge, in any direction. */
 	public static void bridgesNeverStack() {
-		Reborn fabric = new Reborn(10, 10, 10); Neo neo = new Neo(10, 10, 10, 0); EnergyStorage forge = new EnergyStorage(10);
+		Reborn fabric = new Reborn(10, 10, 10); Neo neo = new Neo(10, 10, 10, 0);
 		yes(RebornEnergyAdapters.fabric(RebornEnergyAdapters.neo(fabric)) == fabric, "Reborn -> NeoForge -> Reborn stacked");
 		yes(RebornEnergyAdapters.neo(RebornEnergyAdapters.fabric(neo)) == neo, "NeoForge -> Reborn -> NeoForge stacked");
-		yes(ForgeEnergyAdapters.neo(ForgeEnergyAdapters.forge(neo)) == neo, "NeoForge -> Forge -> NeoForge stacked");
-		yes(ForgeEnergyAdapters.forge(ForgeEnergyAdapters.neo(forge)) == forge, "Forge -> NeoForge -> Forge stacked");
 	}
 
 	/** Final notifications of both engines run once, and only after both roots closed. */
 	public static void finalNotificationsAfterBothRootsClose() {
 		Reborn fabric = new Reborn(1000, 1000, 1000); Neo neo = new Neo(1000, 1000, 1000, 0);
 		fabric.checkClosed = true; neo.checkClosed = true;
-		EnergyStorage forge = new EnergyStorage(1000, 1000, 1000, 0);
-		AtomicInteger forgeChanged = new AtomicInteger();
-		List<String> order = new ArrayList<>();
 		team.reborn.energy.api.EnergyStorage onNeo = RebornEnergyAdapters.fabric(neo);
-		team.reborn.energy.api.EnergyStorage onForge = RebornEnergyAdapters.fabric(ForgeEnergyAdapters.neo(forge, forge, () -> {
-			order.add("forge"); forgeChanged.incrementAndGet();
-			yes(!Transaction.isOpen() && net.neoforged.neoforge.transfer.transaction.Transaction.getCurrentOpenedTransaction() == null, "notified before both roots closed");
-		}));
 		try (Transaction root = Transaction.openOuter()) {
-			eq(10, fabric.insert(10, root)); eq(10, onNeo.insert(10, root)); eq(10, onForge.insert(10, root));
-			try (Transaction child = root.openNested()) { eq(5, onForge.insert(5, child)); child.commit(); }
+			eq(10, fabric.insert(10, root)); eq(10, onNeo.insert(10, root));
+			try (Transaction child = root.openNested()) { eq(5, onNeo.insert(5, child)); child.commit(); }
 			root.commit();
 		}
-		eq(1, fabric.finals); eq(1, neo.changes); eq(1, forgeChanged.get()); eq(15, forge.getEnergyStored()); closed();
+		eq(1, fabric.finals); eq(1, neo.changes); eq(15, neo.getAmountAsLong()); closed();
 	}
 }

@@ -515,33 +515,6 @@ public final class KernelBoot {
 		// a real implementation from one that bypasses nothing. Reads a RESOURCE rather than loading a class, for
 		// the same reason MergedBaseFrameRecomputer does — loading one here would define it before the chain that
 		// is still being built can see it.
-		// MinecraftForge's capability provider, composed into Entity/BlockEntity/Level the way Forge composes it into
-		// LevelChunk. BEFORE the compat transformer: its bare-return invalidateCaps/reviveCaps stubs then stand down
-		// on their own, and remain the fallback for a root the composition could not reach.
-		// Registered on EVERY launch, as the transformer and as the loader's ancestor-composition proof: the merged
-		// base requires those roots composed (required-ancestor-compositions.tsv) and the loader refuses to define one
-		// without a proof. -Dforbric.forgeCapabilities=off is read by the transformer and turns off only dispatch.
-		var composition = new net.forbric.kernel.transform.ForgeCapabilityCompositionTransformer(path -> {
-			try (var input = loader.getGameResourceAsStream(path)) { return input == null ? null : input.readAllBytes(); }
-			catch (java.io.IOException unavailable) {
-				Caught.warn(unavailable, "[Forbric/Boot] could not read game class %s for the capability composition;"
-						+ " it reads as absent", path);
-				return null;
-			}
-		}, transferInterop);
-		loader.registerAncestorComposition(composition);
-		chain.register(TransformPhase.COREMOD, composition);
-		boolean forgeCapabilities = composition.dispatches();
-		// The fallback edits the composed getCapability; the composition's proof expects it exactly when it says so.
-		if (composition.transferFallback()) chain.register(TransformPhase.COREMOD,
-				new net.forbric.kernel.transform.ForgeTransferCapabilityFallback());
-		KernelTransferInterop.forgeFallback(composition.transferFallback());
-		if (!forgeCapabilities) {
-			ForbricLog.warn("[Forbric/Capabilities] -D%s=off — MinecraftForge capability dispatch is off: Entity, BlockEntity "
-					+ "and Level still carry the composed provider state their merged definition requires, but nothing is "
-					+ "attached or answered and ForgeCapabilities cannot initialise; storage, pipe and machine mods stay inert",
-					net.forbric.kernel.transform.ForgeCapabilityCompositionTransformer.PROPERTY);
-		}
 		chain.register(TransformPhase.COREMOD, new net.forbric.kernel.transform.FabricModelContextTransformer(path -> {
 			try (var in = loader.getGameResourceAsStream(path)) { return in == null ? null : in.readAllBytes(); }
 			catch (java.io.IOException unavailable) {
@@ -1164,22 +1137,6 @@ public final class KernelBoot {
 		if (NeoEnumExtensions.load(loader, modJars) > 0) {
 			NeoEnumExtensionInjector enumExtensions = NeoEnumExtensionInjector.create(loader);
 			if (enumExtensions != null) chain.register(TransformPhase.COREMOD, enumExtensions);
-		}
-
-		// The traditional-MinecraftForge twin. Unconditional, unlike the NeoForge one above: NeoForge's model is a
-		// declaration file per mod, so "did anyone declare anything" is answerable up front, while MinecraftForge's
-		// is a mod calling create(...) at runtime — there is nothing to count beforehand. Their own processor
-		// declines every class outside two packages, and declines everything unless MinecraftForge's mod list holds
-		// more than two mods, so this is inert on a pack without traditional-Forge mods by their rule.
-		net.forbric.kernel.transform.ForgeEnumExtensionInjector forgeEnums =
-				net.forbric.kernel.transform.ForgeEnumExtensionInjector.create(loader);
-		if (forgeEnums != null) chain.register(TransformPhase.COREMOD, forgeEnums);
-		// MinecraftForge's CapabilityTokenSubclass plugin, driven the same way: without it every capability token's
-		// getType() throws and ForgeCapabilities.<clinit> dies for every Forge mod that names it.
-		if (forgeCapabilities) {
-			net.forbric.kernel.transform.ForgeCapabilityTokenInjector tokens =
-					net.forbric.kernel.transform.ForgeCapabilityTokenInjector.create(loader);
-			if (tokens != null) chain.register(TransformPhase.COREMOD, tokens);
 		}
 
 		// Ordinary virtual method references expose their exact invocation for provenance-checked guest anchors.

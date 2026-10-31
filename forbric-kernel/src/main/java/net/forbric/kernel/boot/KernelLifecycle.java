@@ -508,8 +508,7 @@ public final class KernelLifecycle {
 	 * MinecraftForge {@code ModFile}s carried an EMPTY scan data; see {@code ModFileScanner.scanForge}.
 	 */
 	private static void injectForgeCapabilities(ClassLoader cl) {
-		if (KernelModLoader.publishedForgeMods().isEmpty()
-				|| !net.forbric.kernel.transform.ForgeCapabilityCompositionTransformer.enabled()) return;
+		if (KernelModLoader.publishedForgeMods().isEmpty()) return;
 		try {
 			Object count = Class.forName("net.forbric.kernel.runtime.KernelForgeCapabilities", true, cl)
 					.getMethod("injectCapabilities").invoke(null);

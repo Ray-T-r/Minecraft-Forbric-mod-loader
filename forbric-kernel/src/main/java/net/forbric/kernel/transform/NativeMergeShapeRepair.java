@@ -41,8 +41,7 @@ public final class NativeMergeShapeRepair {
      * The delegates {@link #dropDefaultStubs} removes from {@code owner}, without removing them: each is a pure
      * {@code I.super.m()} the merge introduced (neither native class declares it), no superclass implements it, and
      * the complete interface closure has exactly one maximally specific default, the same one {@code I.super.m()}
-     * reaches. Removing such a method leaves every call to it dispatching to the same code. ForgeTransferShapeAudit
-     * digests an audited class as if exactly these were gone, so its fingerprint folds what this proves and no more.
+     * reaches. Removing such a method leaves every call to it dispatching to the same code.
      */
     public List<MethodNode> defaultStubs(ClassNode owner) { return provedDelegates(owner, false); }
     private List<MethodNode> provedDelegates(ClassNode owner, boolean superclass) {

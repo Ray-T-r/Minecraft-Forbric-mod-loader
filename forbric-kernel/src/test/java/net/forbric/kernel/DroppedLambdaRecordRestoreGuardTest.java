@@ -29,9 +29,8 @@ import org.junit.jupiter.api.Test;
  * <p>What counts as changing it, in the source with comments and literals blanked: a call to a record seam
  * ({@code recordDroppedForTest}, {@code forgetDroppedForTest}, {@code restoreDroppedForTest}), constructing the pruner
  * (its transform records every body it drops), and running KernelBoot's pre-Mixin chain, which constructs it
- * reflectively ({@code ChainReferences.preMixinChain}, {@code ForgeTransferShapeAuditChainStagedTest.chain}, and the file
- * that declares the latter, known by its {@code chain(List<Path> jars, ...)} signature; another test's own
- * {@code chain()} of its own transformers is not that). The weave harness builds the same chain in a child JVM, which shares nothing with this one,
+ * reflectively ({@code ChainReferences.preMixinChain}, and a test that declares such a chain itself, known by its
+ * {@code chain(List<Path> jars, ...)} signature; another test's own {@code chain()} of its own transformers is not that). The weave harness builds the same chain in a child JVM, which shares nothing with this one,
  * so it needs no restore. Only files with a test method are held: a helper's caller is.
  */
 class DroppedLambdaRecordRestoreGuardTest {
@@ -44,7 +43,7 @@ class DroppedLambdaRecordRestoreGuardTest {
 			"a record seam", Pattern.compile("\\b(?:recordDroppedForTest|forgetDroppedForTest|restoreDroppedForTest)\\s*\\("),
 			"constructs the pruner", Pattern.compile("\\bnew\\s+(?:[\\w.]+\\.)?DuplicateLambdaPruneInjector\\s*\\("),
 			"runs KernelBoot's pre-Mixin chain", Pattern.compile(
-					"\\b(?:preMixinChain|ForgeTransferShapeAuditChainStagedTest\\s*\\.\\s*chain)\\s*\\(|\\bstatic\\s+TransformChain\\s+chain\\s*\\(\\s*List\\s*<\\s*Path\\s*>"));
+					"\\bpreMixinChain\\s*\\(|\\bstatic\\s+TransformChain\\s+chain\\s*\\(\\s*List\\s*<\\s*Path\\s*>"));
 	private static final Pattern TEST = Pattern.compile("@\\s*(?:[\\w.]+\\.)?(?:Test|ParameterizedTest|RepeatedTest|TestFactory|TestTemplate)\\b");
 	private static final Pattern RESTORES = Pattern.compile(
 			"@\\s*(?:[\\w.]+\\.)?ExtendWith\\s*\\([^)]*?\\b(?:[\\w.]+\\.)?DroppedLambdaRecordRestore\\s*\\.\\s*class");
@@ -66,7 +65,7 @@ class DroppedLambdaRecordRestoreGuardTest {
 		Map<String, Where> fillers = fillers();
 		for (String known : List.of("net/forbric/kernel/mixin/MixinOverloadPinTest.java", "net/forbric/kernel/mixin/MixinHandlerShimTest.java",
 				"net/forbric/kernel/transform/DuplicateLambdaPruneInjectorExecutionTest.java",
-				"net/forbric/kernel/transform/ForgeTransferShapeAuditChainStagedTest.java")) {
+				"net/forbric/kernel/mixin/LambdaShapeEvidenceStagedTest.java")) {
 			assertTrue(fillers.containsKey("src/test/java/" + known), known + " fills the record and was not found: " + fillers.keySet());
 		}
 	}
@@ -80,7 +79,6 @@ class DroppedLambdaRecordRestoreGuardTest {
 				"byte[] out = new DuplicateLambdaPruneInjector().transform(name, bytes, null);",
 				"new net.forbric.kernel.transform.DuplicateLambdaPruneInjector ()",
 				"TransformChain chain = ChainReferences.preMixinChain(jars, registered, skipped);",
-				"ForgeTransferShapeAuditChainStagedTest.chain(jars, a, b)",
 				"static TransformChain chain(List<Path> jars, List<String> registered, List<String> skipped)")) {
 			assertTrue(!fills(fills).isEmpty(), "not caught: " + fills);
 		}

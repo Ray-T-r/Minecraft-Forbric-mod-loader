@@ -86,22 +86,6 @@ class TransformerRegistrationOrderTest {
 	}
 
 	@Test
-	void capabilityCompositionStillComesBeforeTheCompatTransformer() throws Exception {
-		List<String> order = transformerConstructionOrder();
-		int composition = order.indexOf("net/forbric/kernel/transform/ForgeCapabilityCompositionTransformer");
-		int compat = order.indexOf("net/forbric/kernel/transform/ForbricMergedBaseCompatTransformer");
-		// Both are src/main and constructed by every launch() today; retiring one retires this test with it.
-		assertTrue(composition >= 0 && compat >= 0,
-				"one of the two is no longer constructed in launch(). Full order: " + order);
-		// The compat transformer's addTheMissingCapabilityLifecycleStubs stands down when composition has
-		// already run. Reversed, it adds bare-return stubs the composition then has to work around, and its own
-		// claim ledger records a repair that did nothing useful.
-		assertTrue(composition < compat,
-				"capability composition must be registered before the compat transformer, so the latter's "
-						+ "lifecycle stubs stand down on their own. Full order: " + order);
-	}
-
-	@Test
 	void theVanillaMemberTwinsComeBeforeTheCompatTransformerThatWiresThem() throws Exception {
 		List<String> order = transformerConstructionOrder();
 		int twins = order.indexOf("net/forbric/kernel/transform/VanillaMemberTwinInjector");
@@ -112,42 +96,6 @@ class TransformerRegistrationOrderTest {
 		// falls back to — while every test of each transformer alone stays green.
 		assertTrue(twins < compat, "the vanilla member twins must be registered before the compat transformer, so its "
 				+ "repairs find the members they wire. Full order: " + order);
-	}
-
-	/**
-	 * The merged base lists Entity/BlockEntity/Level in required-ancestor-compositions.tsv and the loader refuses to
-	 * define them without a registered proof; the capability composition is that proof. It used to be constructed
-	 * and registered only when -Dforbric.forgeCapabilities was on, so off stopped the game at the first Entity.
-	 * Pinned on the compiled launch(): the construction and the registration are one straight line that no branch
-	 * enters, leaves or skips — whatever decides dispatch must happen inside the transformer.
-	 */
-	@Test
-	void theCapabilityCompositionIsRegisteredAsTheAncestorProofOnEveryLaunch() throws Exception {
-		MethodNode launch = launch();
-		List<AbstractInsnNode> code = List.of(launch.instructions.toArray());
-		int created = -1, registered = -1;
-		for (int i = 0; i < code.size(); i++) {
-			AbstractInsnNode insn = code.get(i);
-			if (insn.getOpcode() == Opcodes.NEW && insn instanceof TypeInsnNode t
-					&& t.desc.equals("net/forbric/kernel/transform/ForgeCapabilityCompositionTransformer")) {
-				assertEquals(-1, created, "constructed once");
-				created = i;
-			}
-			if (insn instanceof MethodInsnNode call && call.name.equals("registerAncestorComposition")
-					&& call.owner.equals("net/forbric/kernel/classloading/ForbricClassLoader")) {
-				assertEquals(-1, registered, "registered once");
-				registered = i;
-			}
-		}
-		assertTrue(created >= 0 && registered > created, "the composition must be constructed, then registered as the proof");
-		for (int i = 0; i < code.size(); i++) {
-			for (LabelNode target : targets(code.get(i))) {
-				int to = code.indexOf(target);
-				assertFalse(i > created && i < registered, "a branch between constructing and registering the proof");
-				assertFalse(to > created && to <= registered, "a branch into the middle of the registration");
-				assertFalse(i < created && to > registered, "a branch that can skip registering the ancestor-composition proof");
-			}
-		}
 	}
 
 	private static List<LabelNode> targets(AbstractInsnNode insn) {
