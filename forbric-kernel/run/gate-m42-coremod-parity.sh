@@ -22,6 +22,9 @@
 #      throws from Blocks.<clinit> -- so the repair is shown to be needed by the only evidence there is.
 #   3. rebase-off — -Dforbric.biomeRebase=off: everything passes except the two Fabric climates, so the pass
 #      bookkeeping (rebase and pass-time record) is what keeps them.
+#   4. withhold-conversion — -Dforbric.coremodParityWithholdConversionPost=true takes the probe's own NeoForge
+#      LivingConversionEvent.Post listener away: exactly drown.neo fails, so that case can fail (no repair is involved:
+#      NeoForge's own Zombie conversion lambdas post the event).
 # Not covered here: the trial spawner (its helper is unit-tested, KernelFinalizeSpawnTest; no trial spawner runs in
 # this world), natural and structure spawns (the redirect is unit-tested), and a rendered client.
 # GATE-PARALLEL: rundirs=server-coremod-m42 mem=2000
@@ -108,6 +111,10 @@ fi
 step "3. rebase-off: NeoForge's pass from the biome's original info"
 run_server rebase-off continue "-Dforbric.biomeRebase=off"
 judge rebase-off "failed == {'biome.fabric.keep', 'biome.late.keep'}" "only the Fabric climates are lost"
+
+step "4. withhold-conversion: the conversion case without its listener"
+run_server withhold-conversion continue "-Dforbric.coremodParityWithholdConversionPost=true"
+judge withhold-conversion "failed == {'drown.neo'}" "only drown.neo fails: the case hears NeoForge's own conversion Post"
 
 if [ "$FAIL" -eq 0 ]; then
   echo "[kernel] ✅ M42 COREMOD PARITY GATE GREEN — pots, fluids, finalization and modifiers behave natively, each by its repair"

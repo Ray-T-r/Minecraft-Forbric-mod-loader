@@ -105,8 +105,9 @@ public final class CoremodParity {
    if(mode.equals("neo-cancel"))e.setCanceled(true);if(mode.equals("neo-veto"))e.setSpawnCancelled(true);});
 
   // NeoForge's own conversion Post, as a NeoForge mod hears it (its attachments ride this event): moved here from
-  // gate-m49's world-events probe, whose other listeners were MinecraftForge's.
-  NeoForge.EVENT_BUS.addListener(LivingConversionEvent.Post.class,e->{if(e.getEntity().entityTags().contains("m42_drown")){drowned++;drownedOutcome=e.getOutcome();}});
+  // gate-m49's world-events probe, whose other listeners were MinecraftForge's. -Dforbric.coremodParityWithholdConversionPost=true
+  // withholds the listener, so drown.neo, and only it, goes red: the case can fail.
+  if(!Boolean.getBoolean("forbric.coremodParityWithholdConversionPost"))NeoForge.EVENT_BUS.addListener(LivingConversionEvent.Post.class,e->{if(e.getEntity().entityTags().contains("m42_drown")){drowned++;drownedOutcome=e.getOutcome();}});
   NeoForge.EVENT_BUS.addListener(ServerStartedEvent.class,e->{server=e.getServer();lateWrite(server);});
   NeoForge.EVENT_BUS.addListener(ServerTickEvent.Post.class,e->{if(e.getServer()!=server||++ticks!=20)return;try{run();}finally{finish();}});
  }
