@@ -17,7 +17,7 @@
 #
 #   1. positive — STRICT, every case passes, zero confirmed required findings.
 #   2. off — -Dforbric.itemUseOn=off -Dforbric.mixinRelocatedCall=off -Dforbric.wrapOperationShim=off: exactly the
-#      repaired cases fail, and the controls (block placed, ITEM_BEFORE_BLOCK, pick-entity) still hold.
+#      repaired cases fail, and the controls (block placed, ITEM_BEFORE_BLOCK, a NeoForge cancel, pick-entity) still hold.
 # Not covered here: a client (the use-on lambda and client pick), and a native NeoForge or Fabric server as an oracle.
 # GATE-PARALLEL: rundirs=server-interaction-m44 mem=2000
 set -uo pipefail
@@ -26,7 +26,9 @@ set -uo pipefail
 SERVER_DIR="$KERNEL/run/server-interaction-m44"
 RESULTS="$BUILD/verification/m44-interaction-events"
 FAIL=0
-REPAIRED="{'use.place.fabric', 'use.place.neoAfter', 'use.fabricOverrides', 'use.neoCancel', 'use.direct', 'pick.block.vanilla', 'pick.block.fabric', 'pick.block.empty', 'pick.block.includeData'}"
+# use.neoCancel is a control: NeoForge's own useOn returns a cancelling listener's result itself (the merged base's
+# MinecraftForge body needed ItemUseOnInjector to put that post back; that half went with the merged base).
+REPAIRED="{'use.place.fabric', 'use.place.neoAfter', 'use.fabricOverrides', 'use.direct', 'pick.block.vanilla', 'pick.block.fabric', 'pick.block.empty', 'pick.block.includeData'}"
 rm -rf "$RESULTS"; mkdir -p "$RESULTS"
 
 kernel_jar
@@ -75,7 +77,9 @@ judge positive "not failed" "all 12 cases pass"
 if python3 -c "import json,sys; r=json.load(open(sys.argv[1])); sys.exit(0 if r['confirmedRequired']==0 else 1)" "$RESULTS/positive-compatibility.json" 2>/dev/null
 then echo "[kernel] PASS positive: zero confirmed required findings under STRICT"
 else echo "[kernel] FAIL positive: STRICT report missing or has confirmed required findings"; FAIL=1; fi
-check "positive: the use-on relay was installed" 'ItemStack.useOn posts NeoForge' "$RESULTS/positive.log"
+# NeoForge's useOn posts ITEM_AFTER_BLOCK itself; ItemUseOnInjector only routes its Item.useOn call (the merged base's
+# "posts NeoForge's ... again" half went with that base).
+check "positive: the use-on relay was installed on NeoForge's own useOn" 'ItemStack\.useOn is NeoForge.s, which posts UseItemOnBlockEvent \(ITEM_AFTER_BLOCK\) itself' "$RESULTS/positive.log"
 check "positive: NeoForge's place hook calls the item through the relay" 'CommonHooks.onPlaceItemIntoWorld calls Item.useOn through ItemStack' "$RESULTS/positive.log"
 check "positive: fabric-api's use-on wrap moved to the relay" 'handleUseOnEvent now wraps Item.useOn in forbric\$useOnItem' "$RESULTS/positive.log"
 check "positive: fabric-api's pick-block wrap bound to NeoForge's call" 'onPickItemFromBlock now wraps getCloneItemStack' "$RESULTS/positive.log"

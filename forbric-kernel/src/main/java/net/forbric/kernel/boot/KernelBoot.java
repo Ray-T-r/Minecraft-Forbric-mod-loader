@@ -779,7 +779,7 @@ public final class KernelBoot {
 		}));
 		// Each LootPool constructor fills the other family's fields too, so a pool built one way encodes the other.
 		chain.register(TransformPhase.COREMOD, new net.forbric.kernel.transform.LootPoolFieldsInjector());
-		// MinecraftForge's ItemStack.useOn posts NeoForge's ITEM_AFTER_BLOCK phase again, and its Item.useOn calls go
+		// NeoForge's ItemStack.useOn makes its Item.useOn calls in CommonHooks.onPlaceItemIntoWorld and a lambda; both go
 		// through one ItemStack relay that Fabric's ItemEvents.USE_ON wraps (MixinRelocatedCall moves the injector).
 		chain.register(TransformPhase.COREMOD, new net.forbric.kernel.transform.ItemUseOnInjector());
 		// NeoForge's furnace tick calls MinecraftForge's instance canBurn/consumeFuel/burn as static; the ticked furnace
