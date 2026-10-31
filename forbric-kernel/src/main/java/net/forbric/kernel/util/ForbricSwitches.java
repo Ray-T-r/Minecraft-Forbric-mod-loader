@@ -155,7 +155,13 @@ public final class ForbricSwitches {
 			Map.entry("forbric.forgeFluidOwnType", "Forbric loads no MinecraftForge mod, so no fluid has a MinecraftForge type of its own to show NeoForge; a "
 					+ "fluid NeoForge cannot type gets the type its tags imply"),
 			Map.entry("forbric.forgeFluidModels", "Forbric loads no MinecraftForge mod, so no fluid chooses its model and tint through MinecraftForge's "
-					+ "client extensions"));
+					+ "client extensions"),
+			// Stage 4: MinecraftForge's client consumers, creative tabs and HUD overlay tree are gone with its carrier.
+			Map.entry("forbric.forgeClientConsumers", "Forbric loads no MinecraftForge mod, so NeoForge's layer definitions, tooltip components, preset editors "
+					+ "and tint caches are filled by NeoForge's own hooks alone"),
+			Map.entry("forbric.forgeCreativeTabs", "Forbric loads no MinecraftForge mod, so a creative tab's contents are built by NeoForge's own event alone"),
+			Map.entry("forbric.forgeOverlayLayers", "Forbric loads no MinecraftForge mod, so there is no MinecraftForge HUD overlay tree to lay over "
+					+ "NeoForge's GUI layers"));
 
 	private static final ForbricSwitches SYSTEM =
 			new ForbricSwitches(RENAMED, RETIRED, System::getProperty, ForbricLog::warn);

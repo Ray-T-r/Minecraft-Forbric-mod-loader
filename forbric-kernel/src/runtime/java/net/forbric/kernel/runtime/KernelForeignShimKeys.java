@@ -39,11 +39,11 @@ import net.neoforged.neoforge.client.event.RegisterKeyMappingsEvent;
  *
  * <p>{@code register} writes straight into the live {@code Options.keyMappings} array, so re-posting the event here
  * puts the mappings where the game reads them. The two calls after it are what make them USABLE rather than merely
- * present: {@code Options.load(true)} is the late pass that applies a binding saved in {@code options.txt} for a key
- * that did not exist during the first load (the kernel already keeps those in {@code unknownKeys} — see
- * {@link net.forbric.kernel.runtime.KernelForgeOptions}), without which the player's own rebind is silently
- * reverted to the mod's default; and {@code KeyMapping.resetMapping()} rebuilds the input→mapping index that
- * dispatch reads, without which the key is listed in Controls and does nothing when pressed.
+ * present: {@code Options.load()} is the late pass that applies a binding saved in {@code options.txt} for a key
+ * that did not exist during the first load, without which the player's own rebind is silently reverted to the mod's
+ * default (vanilla's and NeoForge's only loader: it reads the whole file again, which at this point holds what the
+ * first load read); and {@code KeyMapping.resetMapping()} rebuilds the input→mapping index that dispatch reads,
+ * without which the key is listed in Controls and does nothing when pressed.
  */
 public final class KernelForeignShimKeys {
 	private KernelForeignShimKeys() {
@@ -73,7 +73,7 @@ public final class KernelForeignShimKeys {
 
 			// Order matters: the saved binding has to be applied BEFORE the index is rebuilt, or the index holds
 			// the default and the player's own key does nothing until the next restart.
-			options.load(true);
+			options.load();
 			KeyMapping.resetMapping();
 			ForbricLog.info("[Forbric/ShimContext] delivered %d key mapping(s) registered by non-NeoForge mod(s) "
 					+ "— their bus is not in ModList, so the one fan-out from Options.<init> had already run",

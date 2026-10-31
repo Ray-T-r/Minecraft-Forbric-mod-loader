@@ -1518,14 +1518,6 @@ test	net.forbric.kernel.mixin.weave.NativeSourcePredicateIslandWeaveTest	theUpst
 test	net.forbric.kernel.runtime.EnergyUnitsTest	aLongRequestIsClampedBeforeAnythingMoves()	skipped without a message (a class-level abort, e.g. in @BeforeAll)
 test	net.forbric.kernel.runtime.EnergyUnitsTest	aProviderAnswerMustLieWithinItsRequest()	skipped without a message (a class-level abort, e.g. in @BeforeAll)
 test	net.forbric.kernel.runtime.EnergyUnitsTest	readsSaturateAtTheIntLimit()	skipped without a message (a class-level abort, e.g. in @BeforeAll)
-test	net.forbric.kernel.runtime.ForgeClientConsumerFlowTest	bothContributorsMutateTheSameMapInNeoThenForgeOrder()	[fixture:game-side] runtime source set not compiled
-test	net.forbric.kernel.runtime.ForgeClientConsumerFlowTest	contributorFailurePropagatesAndDoesNotPretendTheOtherFamilyRan()	[fixture:game-side] runtime source set not compiled
-test	net.forbric.kernel.runtime.ForgeClientConsumerFlowTest	factoryIllegalArgumentsIncludingTheSameMessageAreNeverSwallowed()	[fixture:game-side] runtime source set not compiled
-test	net.forbric.kernel.runtime.ForgeClientConsumerFlowTest	independentConsumerAndInitSwitchesBothDisableTheFlow()	[fixture:game-side] runtime source set not compiled
-test	net.forbric.kernel.runtime.ForgeClientConsumerFlowTest	presetDefaultMustNotHideEitherFamilysOverrideOfAVanillaKey()	[fixture:game-side] runtime source set not compiled
-test	net.forbric.kernel.runtime.ForgeClientConsumerFlowTest	presetUsesIdentityAndReportsAnActualTwoCustomEditorConflict()	[fixture:game-side] runtime source set not compiled
-test	net.forbric.kernel.runtime.ForgeClientConsumerFlowTest	tooltipFallsBackAndOnlyRecognizesTheRealForgeManagersUnknownSentinel()	[fixture:game-side] runtime source set not compiled
-test	net.forbric.kernel.runtime.ForgeClientConsumerFlowTest	tooltipKeepsNeoResultsAndFailuresWithoutCallingForge()	[fixture:game-side] runtime source set not compiled
 test	net.forbric.kernel.runtime.KernelClientPackSourceTest	aPackVanillaReadsNothingFromIsServedButNotCountedAsRead()	[fixture:staged] staged game jars absent: $ROOT/forbric-loader/run/merged-base/patched-mc-merged-26.2.jar
 test	net.forbric.kernel.runtime.KernelClientPackSourceTest	aPackWithoutMetadataGivesTheVanillaReaderNothing()	[fixture:staged] staged game jars absent: $ROOT/forbric-loader/run/merged-base/patched-mc-merged-26.2.jar
 test	net.forbric.kernel.runtime.KernelClientPackSourceTest	buildPackTriesVanillasReaderFirstOnlyWhenAskedTo()	[fixture:game-side] game side not compiled
@@ -1587,9 +1579,6 @@ test	net.forbric.kernel.runtime.KernelForgeConfigLoadTest	invalidTypeListsAreRej
 test	net.forbric.kernel.runtime.KernelForgeConfigLoadTest	neitherPassReopensExistingDataAndLatePassCatchesANewRegistration()	[fixture:game-side] runtime helper not compiled
 test	net.forbric.kernel.runtime.KernelForgeConfigLoadTest	overlappingEarlyAndLatePassesStillOpenEachConfigOnlyOnce()	[fixture:game-side] runtime helper not compiled
 test	net.forbric.kernel.runtime.KernelForgeConfigLoadTest	registrationDuringLoadingUsesASnapshotAndIsPickedUpOnlyByTheNextPass()	[fixture:game-side] runtime helper not compiled
-test	net.forbric.kernel.runtime.KernelForgeCreativeTabsTest	aGeneratorFailureIsNotSwallowedOrRetried()	[fixture:game-side] compile the staged runtime source set before this test: build/classes/java/runtime/net/forbric/kernel/runtime/KernelForgeCreativeTabs.class
-test	net.forbric.kernel.runtime.KernelForgeCreativeTabsTest	disabledFunnelPreservesTheNeoPathWithoutResolvingForge()	[fixture:game-side] compile the staged runtime source set before this test: build/classes/java/runtime/net/forbric/kernel/runtime/KernelForgeCreativeTabs.class
-test	net.forbric.kernel.runtime.KernelForgeCreativeTabsTest	neoRunsInsideForgeAndTheGeneratorRunsOnlyOnce()	[fixture:game-side] compile the staged runtime source set before this test: build/classes/java/runtime/net/forbric/kernel/runtime/KernelForgeCreativeTabs.class
 test	net.forbric.kernel.runtime.KernelForgeIngredientsTest	theOnlyForgeCodecConstructorNamedIsTheCarriersOwnComposition()	[fixture:game-side] runtime helper not compiled
 test	net.forbric.kernel.runtime.KernelForgeModInfoTest	aJarWithoutAModsTomlStillHasAnOwningFileThatDeclaresNothing(Path)	[fixture:staged] the staged artifacts are absent: $ROOT/forbric-loader/run/neoforge-runtime/neoforge-runtime.jar
 test	net.forbric.kernel.runtime.KernelForgeModInfoTest	modPropertiesKeepMinecraftForgesValueTypes(Path)	[fixture:staged] the staged artifacts are absent: $ROOT/forbric-loader/run/neoforge-runtime/neoforge-runtime.jar
