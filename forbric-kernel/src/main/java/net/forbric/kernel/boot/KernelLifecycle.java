@@ -489,52 +489,11 @@ public final class KernelLifecycle {
 		} catch (Throwable t) {
 			Caught.warn(t, "[Forbric/Lifecycle] could not load NeoForge configs");
 		}
-		try {
-			Class<?> forge = forgeConfigClass(cl);
-			if (forge != null) forge.getMethod("loadEarly", List.class).invoke(null, forgeEarlyConfigTypes(side));
-		} catch (Throwable t) {
-			Caught.warn(t, "[Forbric/Lifecycle] could not load MinecraftForge configs");
-		}
 	}
 
 	/** The game-side half of config loading. */
 	private static Class<?> configClass(ClassLoader cl) throws ClassNotFoundException {
 		return Class.forName("net.forbric.kernel.runtime.KernelConfigLoad", true, cl);
-	}
-
-	/**
-	 * Forge's own capability registration stage. Advisory on this base (isRegistered is read only by Forge's own
-	 * manager), so the count is logged rather than acted on. It was structurally zero while the seeded
-	 * MinecraftForge {@code ModFile}s carried an EMPTY scan data; see {@code ModFileScanner.scanForge}.
-	 */
-	private static void injectForgeCapabilities(ClassLoader cl) {
-		if (KernelModLoader.publishedForgeMods().isEmpty()) return;
-		try {
-			Object count = Class.forName("net.forbric.kernel.runtime.KernelForgeCapabilities", true, cl)
-					.getMethod("injectCapabilities").invoke(null);
-			ForbricLog.info("[Forbric/Capabilities] ran MinecraftForge's injectCapabilities — %s @AutoRegisterCapability "
-					+ "annotation(s) in the mod scan data (lookups work without it; -1 = the index could not be read)",
-					count);
-		} catch (Throwable t) {
-			Caught.warn(t, "[Forbric/Capabilities] MinecraftForge's injectCapabilities threw — capability lookups still "
-					+ "work, isRegistered() answers false");
-		}
-	}
-
-	/** The carrier itself owns configs even if no third-party Forge mod was installed. */
-	private static Class<?> forgeConfigClass(ClassLoader cl) throws ClassNotFoundException {
-		try {
-			Class.forName(ForeignType.CONFIG_TRACKER.binary(Ecosystem.FORGE), false, cl);
-		} catch (ClassNotFoundException absent) {
-			Caught.expected(absent);
-			return null;
-		}
-		return Class.forName("net.forbric.kernel.runtime.KernelForgeConfigLoad", true, cl);
-	}
-
-	/** Forge has no STARTUP type; its native config phase opens CLIENT before COMMON. */
-	static List<String> forgeEarlyConfigTypes(Side side) {
-		return side.isClient() ? List.of("CLIENT", "COMMON") : List.of("COMMON");
 	}
 
 	/**
@@ -568,21 +527,6 @@ public final class KernelLifecycle {
 		} catch (Throwable t) {
 			Caught.warn(t, "[Forbric/Lifecycle] could not open late-registered NeoForge configs");
 		}
-		try {
-			Class<?> forge = forgeConfigClass(cl);
-			Object result = forge == null ? null : forge.getMethod("openLate", List.class)
-					.invoke(null, forgeLateConfigTypes(side));
-			if (result instanceof List<?> opened && !opened.isEmpty()) {
-				ForbricLog.info("[Forbric/Lifecycle] opened %d late-registered MinecraftForge config(s) after %s %s",
-						opened.size(), when, opened);
-			}
-		} catch (Throwable t) {
-			Caught.warn(t, "[Forbric/Lifecycle] could not open late-registered MinecraftForge configs");
-		}
-	}
-
-	static List<String> forgeLateConfigTypes(Side side) {
-		return forgeEarlyConfigTypes(side);
 	}
 
 	/**
@@ -788,9 +732,6 @@ public final class KernelLifecycle {
 			// whatever it does in the earliest mod-bus phase never happened. Pairing the two names in ForeignType
 			// is what made the absence visible.
 			fireForgeSetupPhase(cl, ForeignType.FML_CONSTRUCT_MOD_EVENT, "construct");
-			// Forge's INJECT_CAPABILITIES state comes right after CREATE_REGISTRIES, i.e. here, before the registry
-			// window: CapabilityManager.injectCapabilities scans mod scan data for @AutoRegisterCapability.
-			injectForgeCapabilities(cl);
 
 			// Each ecosystem's mods take their own RegisterEvent flavour: NeoForge's 2-arg event on an IEventBus, and
 			// traditional Forge's 3-arg (key, ForgeRegistry, Registry) on a BusGroup. Split them here; both streams
@@ -892,28 +833,6 @@ public final class KernelLifecycle {
 			// RegisterEvent above (DeferredRegister$EventDispatcher calls updateReference right after each register),
 			// not here — so a mod reading another mod's RegistryObject during RegisterEvent depends on the dispatch
 			// order, not on this bake.
-			// NOT MinecraftForge's GameData.postRegisterEvents, which the kernel called here for years and which
-			// NEVER ONCE RAN: its second instruction block is `new LinkedHashSet<>(GameData.vanillaRegistryOrder)`
-			// and that field is written only by GameData.vanillaSnapshot(), which the kernel deliberately does not
-			// call on this side (it LOCKS the vanilla wrappers — see openRegistrationWindow). So it threw
-			// NPE at instruction 36 on every boot and the warning it produced described the symptom. What it would
-			// have reached is the same dispatch loop the kernel already drives itself, plus the attribute events —
-			// so the attribute events are what is called, directly, the way NeoForge's tail already is.
-			// On a client whose MinecraftForge mods wait for Minecraft.<init>, not yet: their DeferredRegisters have not
-			// registered, so their attribute listeners would read unbound RegistryObjects and throw, and the first
-			// throw ends the post for every Forge mod — their mobs had no attributes and the client was disconnected
-			// as soon as one came into view. Held, with NeoForge's half (so it still runs after MinecraftForge's, as
-			// it does here on a server) and MinecraftForge's spawn placements, until constructDeferredForgeMods.
-			boolean forgeLater = side.isClient() && !deferredForge.isEmpty();
-			forgeRegistrationEventsHeld = forgeLater;
-			// The freeze that closes this window also runs MinecraftForge's DefaultAttributes.validate, which asks
-			// every entity type for its attributes: held too, or it reports every Forge mob as having none and is
-			// the first hasSupplier call, made against a frozen registry (Better Nether's lazy entity
-			// registration then fails, and the world its biomes reference cannot load).
-			if (forgeLater) invokeStaticOn(cl, "net.forbric.kernel.runtime.KernelForgeAttributes", "holdValidation");
-			if (!forgeLater) {
-				invokeStaticOn(cl, "net.forbric.kernel.runtime.KernelForgeAttributes", "fireForgeAttributeEvents");
-			}
 			// NeoForge's postRegisterEvents is NOT the bake — it is the dispatch loop the kernel REPLACES: it walks
 			// getRegistrationOrder() and re-fires RegisterEvent through ModLoader.postEventWrapContainerInModOrder.
 			// While ModList was empty that was a silent no-op, so calling it looked harmless. Once the kernel
@@ -922,13 +841,12 @@ public final class KernelLifecycle {
 			// RegistryManager.revertToVanilla(), ROLLING BACK the NeoForge registries: 21 baseline entries
 			// (attribute_type, ticket_type, slot_display, entity_sub_predicate_type, …) silently disappeared.
 			// Only its tail is wanted, so call that directly.
-			if (!forgeLater) invokeStaticOn(cl, "net.neoforged.neoforge.common.CommonHooks", "modifyAttributes");
+			invokeStaticOn(cl, "net.neoforged.neoforge.common.CommonHooks", "modifyAttributes");
 			// The rest of postRegisterEvents' tail, in its order. Cheap calls, and each one is a whole feature that
 			// simply did not exist: without fireSpawnPlacementEvent a mod's mob has no spawn rules and never
 			// generates, without BlockEntityTypeAddBlocksEvent a mod cannot attach its blocks to a vanilla block
 			// entity, and without registerModdedCategories its gamerules have no category to sit in.
 			// (CreativeModeTabRegistry.sortTabs is the kernel's sortNeoCreativeTabs, below, after the freeze.)
-			if (forgeLater) invokeStaticOn(cl, "net.forbric.kernel.runtime.KernelForgeSpawnPlacements", "holdForgeHalf");
 			invokeStaticOn(cl, "net.minecraft.world.entity.SpawnPlacements", "fireSpawnPlacementEvent");
 			postModBusEvent(cl, "net.neoforged.neoforge.event.BlockEntityTypeAddBlocksEvent");
 			invokeStaticOn(cl, "net.minecraft.world.level.gamerules.GameRuleCategory", "registerModdedCategories");
@@ -1427,7 +1345,6 @@ public final class KernelLifecycle {
 			// Before the Fabric mirror: that one would also carry these across, but as bare (key, codec) copies.
 			reconcileLoaderRegistriesIntoNeoForge(cl, hooksCls);
 			mirrorFabricDynamicRegistriesIntoNeoForge(cl, eventCls, hooksCls);
-			declareMinecraftForgeModifierRegistries(cl, eventCls, hooksCls);
 			reconcileSynchronizedRegistries(cl, hooksCls);
 		} catch (ClassNotFoundException absent) {
 			Caught.expected(absent);
@@ -1628,49 +1545,6 @@ public final class KernelLifecycle {
 		} catch (Throwable t) {
 			Caught.warn(t, "[Forbric/Lifecycle] could not mirror Fabric's datapack registries into NeoForge's "
 					+ "list — a Fabric mod's worldgen registry may be missing at world load");
-		}
-	}
-
-	/**
-	 * Declares {@code forge:biome_modifier} and {@code forge:structure_modifier} on NeoForge's datapack-registry
-	 * list through a second {@code NewRegistry} event — the shape of {@link #mirrorFabricDynamicRegistriesIntoNeoForge}
-	 * — so the merged {@code RegistryDataLoader} (which asks only NeoForge's hooks) loads a MinecraftForge mod's
-	 * {@code data/<ns>/forge/biome_modifier} files at all. The codecs are Forge's own, wrapped leniently in the
-	 * game-side helper. Guarded by the carrier's presence, not by "a Forge mod is installed": the declaration is
-	 * cheap and a later-installed mod's files must load. {@code -Dforbric.forgeWorldgen=off} skips it and names
-	 * the mods that ship such files instead.
-	 */
-	private static void declareMinecraftForgeModifierRegistries(ClassLoader cl, Class<?> eventCls, Class<?> hooksCls) {
-		try {
-			Class.forName(ForeignType.MODIFIER_REGISTRY_KEYS.binary(Ecosystem.FORGE), false, cl);
-		} catch (ClassNotFoundException absent) {
-			Caught.expected(absent);
-			return;
-		}
-		boolean enabled = !"off".equalsIgnoreCase(System.getProperty("forbric.forgeWorldgen", "on"));
-		try {
-			ForgeWorldgenShippers.report(modJars, enabled);
-		} catch (Throwable t) {
-			Caught.warn(t, "[Forbric/Worldgen] could not scan mod jars for forge modifier files; the mods that ship "
-					+ "them are not named");
-		}
-		if (!enabled) return;
-		try {
-			int before = ((java.util.List<?>) hooksCls.getMethod("getDataPackRegistries").invoke(null)).size();
-			Object event = eventCls.getConstructor().newInstance();
-			Class.forName("net.forbric.kernel.runtime.KernelForgeWorldgen", true, cl)
-					.getMethod("declareForgeModifierRegistries", Object.class).invoke(null, event);
-			Method process = eventCls.getDeclaredMethod("process");
-			process.setAccessible(true);
-			process.invoke(event);
-			java.util.List<?> now = (java.util.List<?>) hooksCls.getMethod("getDataPackRegistries").invoke(null);
-			java.util.List<String> added = new java.util.ArrayList<>();
-			for (int i = before; i < now.size(); i++) added.add(String.valueOf(now.get(i)));
-			ForbricLog.info("[Forbric/Lifecycle] posted datapack-registry declaration for MinecraftForge's modifier "
-					+ "registries — %d declared (%s), %d total", now.size() - before, added, now.size());
-		} catch (Throwable t) {
-			Caught.warn(t, "[Forbric/Worldgen] could not declare MinecraftForge's biome/structure modifier registries — "
-					+ "a Forge mod's forge/biome_modifier files will not load");
 		}
 	}
 
@@ -2721,17 +2595,7 @@ public final class KernelLifecycle {
 		try {
 			// main first, then client — Fabric's own Hooks.startClient order, now at Fabric's own point in the
 			// constructor. A no-op when the pre-Minecraft window already ran them (the switch, or a server).
-			try {
-				KernelFabricEcosystem.runMainEntrypoints();
-			} finally {
-				// After the mains, as on a server, where they run inside the registration window before its
-				// attribute events: every mod's content is registered by now. Better Nether registers its entity
-				// types from onInitialize but also from a static initializer its DefaultAttributes.hasSupplier
-				// mixin reaches; an attribute event that ran first started that registration in the middle of
-				// MinecraftForge iterating the entity registry (ConcurrentModificationException, every Forge
-				// mob without attributes), and one that ran after a freeze made it fail outright.
-				postHeldForgeRegistrationEvents(cl);
-			}
+			KernelFabricEcosystem.runMainEntrypoints();
 			KernelFabricEcosystem.runClientEntrypoints();
 		} catch (Throwable t) {
 			Caught.warn(t, "[Forbric/Lifecycle] client entrypoints failed");
@@ -2753,25 +2617,6 @@ public final class KernelLifecycle {
 		// dedicated server declares in. Before NeoForge's client setup, whose RegisterDataMapTypesEvent reads the
 		// declared list. A no-op when the pre-Minecraft window already declared.
 		registerDataPackRegistries(cl);
-	}
-
-	/** Set by the registration window when a client's MinecraftForge mods are not constructed yet. */
-	private static volatile boolean forgeRegistrationEventsHeld;
-
-	/**
-	 * The tail of the registration window that waited for the deferred MinecraftForge mods: the attribute events,
-	 * MinecraftForge's then NeoForge's as the registration window posts them on a server, and MinecraftForge's half of
-	 * the spawn placements; MinecraftForge's attribute validation is released for the freeze that closes the window.
-	 * After the Fabric mains and still inside the reopened span, as on a server, and before anything creates a living
-	 * entity. Runs even when every deferred mod failed: ForgeMod's listeners still need it.
-	 */
-	private static void postHeldForgeRegistrationEvents(ClassLoader cl) {
-		if (!forgeRegistrationEventsHeld) return;
-		forgeRegistrationEventsHeld = false;
-		invokeStaticOn(cl, "net.forbric.kernel.runtime.KernelForgeAttributes", "releaseValidation");
-		invokeStaticOn(cl, "net.forbric.kernel.runtime.KernelForgeAttributes", "fireForgeAttributeEvents");
-		invokeStaticOn(cl, "net.neoforged.neoforge.common.CommonHooks", "modifyAttributes");
-		invokeStaticOn(cl, "net.forbric.kernel.runtime.KernelForgeSpawnPlacements", "postForgeHalf");
 	}
 
 	/**

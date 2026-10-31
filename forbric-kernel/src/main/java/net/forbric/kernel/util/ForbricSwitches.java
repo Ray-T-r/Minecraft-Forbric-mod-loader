@@ -170,7 +170,15 @@ public final class ForbricSwitches {
 			Map.entry("forbric.forgeConditionContext", "Forbric loads no MinecraftForge mod, so there is no MinecraftForge condition context to hand a reload"),
 			Map.entry("forbric.forgePoolConditions", "Forbric loads no MinecraftForge mod, so no loot pool is judged by MinecraftForge's conditions"),
 			Map.entry("forbric.forgeIngredients", "Forbric loads no MinecraftForge mod, so NeoForge's ingredient codec decodes NeoForge's and vanilla's "
-					+ "ingredient types alone, as on NeoForge"));
+					+ "ingredient types alone, as on NeoForge"),
+			// Stage 4: MinecraftForge's capabilities, spawn placements and worldgen modifiers are gone with its carrier.
+			Map.entry("forbric.forgeCapabilities", "Forbric loads no MinecraftForge mod, so there is no MinecraftForge capability provider to compose onto "
+					+ "entities, levels or block entities"),
+			Map.entry("forbric.forgeSpawnPlacements", "Forbric loads no MinecraftForge mod, so spawn placements are registered by NeoForge's own event alone"),
+			Map.entry("forbric.forgeWorldgen", "Forbric loads no MinecraftForge mod, so there are no forge:biome_modifier or forge:structure_modifier "
+					+ "registries to declare; NeoForge's own modifiers run in its single pass"),
+			Map.entry("forbric.forgeWorldgen.lenient", "Forbric loads no MinecraftForge mod, so no MinecraftForge worldgen modifier is decoded, leniently or not"),
+			Map.entry("forbric.worldgenAuditNormalise", "Forbric loads no MinecraftForge mod, so there is no MinecraftForge worldgen round-trip audit to normalise"));
 
 	private static final ForbricSwitches SYSTEM =
 			new ForbricSwitches(RENAMED, RETIRED, System::getProperty, ForbricLog::warn);

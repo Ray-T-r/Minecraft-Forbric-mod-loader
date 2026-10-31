@@ -263,9 +263,6 @@ public final class KernelNeoWorldgen {
 	private static void applyBiomeAndStructureModifiers(MinecraftServer server) {
 		int biome = countOrMinusOne(server, NeoForgeRegistries.Keys.BIOME_MODIFIERS);
 		int structure = countOrMinusOne(server, NeoForgeRegistries.Keys.STRUCTURE_MODIFIERS);
-		// MinecraftForge's modifiers ride inside this same pass (ForgeWorldModifierInjector splices them into the
-		// lists runModifiers materialises); the round-trip audit decides beforehand whether they may.
-		KernelForgeWorldgen.auditRoundTrip(server);
 		try {
 			Method runModifiers =
 					ServerLifecycleHooks.class.getDeclaredMethod("runModifiers", MinecraftServer.class);
@@ -274,7 +271,6 @@ public final class KernelNeoWorldgen {
 			ForbricLog.info("[Forbric/Worldgen] applied NeoForge's %d biome modifier(s) and %d structure "
 					+ "modifier(s) — the kernel used to neuter this outright because its datapack registries were "
 					+ "not declared", biome, structure);
-			KernelForgeWorldgen.summarize();
 		} catch (Throwable t) {
 			Caught.warn(t, "[Forbric/Worldgen] NeoForge's biome/structure modifiers did not apply — %d biome and %d "
 					+ "structure modifier(s) were loaded and none of them changed the world. The server start is "

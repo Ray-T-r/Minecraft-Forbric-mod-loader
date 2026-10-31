@@ -171,9 +171,6 @@ public final class KernelRuntimeClasses {
 		CLASSES.put("net.forbric.kernel.runtime.KernelConfigLoad", new Entry(Origin.COMPILED, List.of(
 				new Call("loadEarly", void.class, List.class),
 				new Call("openLate", List.class, List.class))));
-		CLASSES.put("net.forbric.kernel.runtime.KernelForgeConfigLoad", new Entry(Origin.COMPILED, List.of(
-				new Call("loadEarly", void.class, List.class),
-				new Call("openLate", List.class, List.class))));
 		// Called by game bytecode; its signatures name Minecraft client types, not boot-side seam types.
 		CLASSES.put("net.forbric.kernel.runtime.KernelCompatibilityPrompts", new Entry(Origin.COMPILED, List.of()));
 		CLASSES.put("net.forbric.kernel.runtime.soak.ClientSoakController", new Entry(Origin.COMPILED,
@@ -197,15 +194,7 @@ public final class KernelRuntimeClasses {
 		CLASSES.put("net.forbric.kernel.runtime.KernelFeatureFlags", new Entry(Origin.COMPILED, List.of()));
 		CLASSES.put("net.forbric.kernel.runtime.KernelSnippets", new Entry(Origin.COMPILED, List.of()));
 		CLASSES.put("net.forbric.kernel.runtime.KernelWidenedFields", new Entry(Origin.COMPILED, List.of()));
-		CLASSES.put("net.forbric.kernel.runtime.KernelForgeWorldgen", new Entry(Origin.COMPILED, List.of(
-				new Call("declareForgeModifierRegistries", void.class, Object.class))));
-		CLASSES.put("net.forbric.kernel.runtime.KernelForgeCapabilities", new Entry(Origin.COMPILED, List.of(
-				new Call("injectCapabilities", int.class))));
 		CLASSES.put("net.forbric.kernel.runtime.KernelCreativeSearch", new Entry(Origin.COMPILED, List.of()));
-		// Also asked by the lifecycle: hold MinecraftForge's half while a client's Forge mods wait for Minecraft.<init>,
-		// then post it once they exist.
-		CLASSES.put("net.forbric.kernel.runtime.KernelForgeSpawnPlacements", new Entry(Origin.COMPILED, List.of(
-				new Call("holdForgeHalf", void.class), new Call("postForgeHalf", void.class))));
 		// The NeoForge setup phases. A twin of KernelForgeSetup rather than a merge of it: NeoForge dispatches on
 		// a per-mod IEventBus while EventBus 7 resolves a bus from the EVENT plus that mod's BusGroup, and folding
 		// the two would be the averaging-away ForeignType's javadoc warns about. See KernelNeoSetup.
@@ -352,12 +341,6 @@ public final class KernelRuntimeClasses {
 		// the creative screen call the first, and the screen implements the second. Descriptors name game types only.
 		CLASSES.put("net.forbric.kernel.runtime.KernelCreativePager", new Entry(Origin.COMPILED, List.of()));
 		CLASSES.put("net.forbric.kernel.runtime.KernelCreativePagerScreen", new Entry(Origin.COMPILED, List.of()));
-		// Both ecosystems collect mod entity attributes into a map of their own and the merge kept only NeoForge's
-		// reader in DefaultAttributes, so a traditional MinecraftForge mod's entities had no attributes at all.
-		// attributesView() is called from a REWRITTEN CALL SITE and so carries the descriptor that site had.
-		CLASSES.put("net.forbric.kernel.runtime.KernelForgeAttributes", new Entry(Origin.COMPILED, List.of(
-				new Call("fireForgeAttributeEvents", void.class), new Call("holdValidation", void.class),
-				new Call("releaseValidation", void.class))));
 		// NeoForge refuses to NAME a client reload listener a mixin added, and throws inside Minecraft.<init>.
 		// Called from a REWRITTEN CALL SITE, so it carries that site's game-typed descriptor.
 		CLASSES.put("net.forbric.kernel.runtime.KernelClientReloadNames", new Entry(Origin.COMPILED, List.of()));
