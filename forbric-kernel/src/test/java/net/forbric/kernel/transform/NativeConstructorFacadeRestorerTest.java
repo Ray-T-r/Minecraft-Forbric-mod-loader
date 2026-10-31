@@ -3,8 +3,10 @@ package net.forbric.kernel.transform;
 import static org.junit.jupiter.api.Assertions.*;
 import java.nio.file.*;import java.util.*;import java.util.zip.*;import net.fabricmc.api.EnvType;import net.forbric.api.Ecosystem;import net.forbric.kernel.TestFixtures;import net.forbric.kernel.mixin.*;import org.junit.jupiter.api.Test;import org.junit.jupiter.api.io.TempDir;import org.objectweb.asm.*;import org.objectweb.asm.tree.*;
 
+@org.junit.jupiter.api.parallel.ResourceLock("native-game-references")
 class NativeConstructorFacadeRestorerTest {
  @TempDir Path work;
+ @org.junit.jupiter.api.AfterEach void unconfigure(){NativeGameReferences.configure(null);}
  @Test void anIndexedConstructorClosureRestoresItsExactParameterScopeAndExecutesOnce()throws Throwable{
   Map<String,String> shared=Map.of("fixture.Builder","package fixture;public class Builder{public static int constructors;private final String label;public Builder(String label){constructors++;this.label=label;}public Builder append(int value){return new Builder(label+value);}public String finish(){return label;}}");
   Map<String,String> nativeSources=new HashMap<>(shared);nativeSources.put("fixture.Facade","package fixture;public class Facade{public static String make(String label,int value){return new Builder(label).append(value).finish();}}");
@@ -24,10 +26,14 @@ class NativeConstructorFacadeRestorerTest {
  }
  @Test void actualFuelFacadeBodyMatchesTheOriginalExactlyAndRetainsAllThreeContextArguments()throws Exception{
   Path base=Path.of(System.getProperty("forbric.predicateBase"));TestFixtures.requireFile(TestFixtures.Fixture.STAGED, base,"native-indexed game required");
+  // The restorer reads vanilla through this launch's sources (NativeGameReferences.over), as KernelBoot builds it: on the
+  // genuine base, which embeds no FABRIC index, vanilla's FuelValues comes from the vanilla-reference sidecar.
+  NativeGameReferences.configure(TestFixtures.launchSources(base));
   try(ZipFile z=new ZipFile(base.toFile())){
-   String owner="net/minecraft/world/level/block/entity/FuelValues";byte[] bytes=z.getInputStream(z.getEntry(owner+".class")).readAllBytes();var injector=new NativeConstructorFacadeRestorer(path->{try{var e=z.getEntry(path);return e==null?null:z.getInputStream(e).readAllBytes();}catch(Exception bad){throw new IllegalStateException(bad);}});
+   java.util.function.Function<String,byte[]> game=path->{try{var e=z.getEntry(path);return e==null?null:z.getInputStream(e).readAllBytes();}catch(Exception bad){throw new IllegalStateException(bad);}};
+   String owner="net/minecraft/world/level/block/entity/FuelValues";byte[] bytes=z.getInputStream(z.getEntry(owner+".class")).readAllBytes();var injector=new NativeConstructorFacadeRestorer(game::apply);
    byte[] result=injector.transform(owner.replace('/','.'),bytes,null);assertFalse(Arrays.equals(bytes,result));ClassNode node=parse(result);MethodNode wrapper=node.methods.stream().filter(m->Type.getArgumentTypes(m.desc).length==3&&m.name.equals("vanillaBurnTimes")).findFirst().orElseThrow();
-   MethodNode original=method(parse(z.getInputStream(z.getEntry("META-INF/forbric/native-reference/FABRIC/"+owner+".class.bin")).readAllBytes()),wrapper.name,wrapper.desc);assertEquals(MixinInstructionFingerprint.hash(original),MixinInstructionFingerprint.hash(wrapper));
+   MethodNode original=method(NativeGameReferences.over(game).get(Ecosystem.FABRIC,owner),wrapper.name,wrapper.desc);assertEquals(MixinInstructionFingerprint.hash(original),MixinInstructionFingerprint.hash(wrapper));
    byte[] shorted=new FabricFuelValuesInjector().transform(owner.replace('/','.'),result,null);MethodNode scoped=method(parse(shorted),wrapper.name,wrapper.desc);assertTrue(Arrays.stream(scoped.instructions.toArray()).anyMatch(i->i instanceof MethodInsnNode c&&c.name.equals("takePendingBuilder")));
    MethodNode closure=node.methods.stream().filter(m->m.name.equals(wrapper.name)&&Type.getArgumentTypes(m.desc).length==2&&m.desc.contains("$Builder;")).findFirst().orElseThrow();assertFalse(Arrays.stream(closure.instructions.toArray()).anyMatch(i->i instanceof MethodInsnNode c&&c.name.equals("takePendingBuilder")));
    // The carry brackets the native point in both copies of vanilla's body: the restored facade, where the guests bind, and the closure.

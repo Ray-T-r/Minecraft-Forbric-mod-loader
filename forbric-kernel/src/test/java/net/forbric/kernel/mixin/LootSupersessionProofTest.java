@@ -5,8 +5,10 @@ import org.junit.jupiter.api.parallel.ResourceLock;
 import org.junit.jupiter.api.parallel.Resources;
 import net.forbric.kernel.transform.LootTableEventBridgeInjector;
 
-@ResourceLock(Resources.SYSTEM_PROPERTIES)
+@ResourceLock(Resources.SYSTEM_PROPERTIES) @ResourceLock("native-game-references")
 class LootSupersessionProofTest {
+	/** The offer reads vanilla's loot host through this launch's sources ({@code NativeGameReferences.over}); see below. */
+	@org.junit.jupiter.api.AfterEach void unconfigure() { NativeGameReferences.configure(null); }
 	@Test void aNameOrAnUnmodifiedLoaderCannotResolveTheMissingLootMixin() throws Exception {
 		String mixin="net.fabricmc.fabric.mixin.loot.ReloadableServerRegistriesMixin";
 		String target="net.minecraft.server.ReloadableServerRegistries";
@@ -28,6 +30,8 @@ class LootSupersessionProofTest {
         var plan=net.forbric.kernel.boot.LootSourceCallbacks.plan(source);assertNotNull(plan);
         java.nio.file.Path base=java.nio.file.Path.of(System.getProperty("forbric.predicateBase",net.forbric.kernel.TestFixtures.stagedBase().toString()));
         net.forbric.kernel.TestFixtures.requireFiles(net.forbric.kernel.TestFixtures.Fixture.STAGED,"native-indexed actual loot source proof",base);
+        // As a launch on this base configures them: the genuine base embeds no FABRIC index, so vanilla's host comes from the sidecar.
+        NativeGameReferences.configure(net.forbric.kernel.TestFixtures.launchSources(base));
         try(var jar=new java.util.zip.ZipFile(base.toFile());var loader=new net.forbric.kernel.classloading.ForbricClassLoader(new java.net.URL[0],getClass().getClassLoader())){
             String targetPath=plan.targetName().replace('.','/')+".class";byte[] raw=jar.getInputStream(jar.getEntry(targetPath)).readAllBytes(),host=new LootTableEventBridgeInjector().transform(plan.targetName(),raw,null);
             java.nio.file.Path bridgePath=java.nio.file.Path.of("build/classes/java/runtime/net/forbric/kernel/runtime/KernelLootBridge.class");if(!java.nio.file.Files.exists(bridgePath))bridgePath=java.nio.file.Path.of("forbric-kernel").resolve(bridgePath);byte[] bridge=java.nio.file.Files.readAllBytes(bridgePath);

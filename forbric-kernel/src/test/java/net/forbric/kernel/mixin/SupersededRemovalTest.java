@@ -30,6 +30,7 @@ import net.forbric.kernel.transform.LootTableEventBridgeInjector;
  */
 @ResourceLock("ModCatalog")
 @ResourceLock(Resources.SYSTEM_PROPERTIES)
+@ResourceLock("native-game-references")
 class SupersededRemovalTest {
 	private static final String CONFIG = "pour.mixins.json", MOD = "pourmod", PACKAGE = "fixture.relay.mixin",
 			MIXIN = PACKAGE + ".PourMixin", CONDITIONAL_OPS = "net.neoforged.neoforge.common.conditions.ConditionalOps";
@@ -49,6 +50,7 @@ class SupersededRemovalTest {
 
 	@AfterEach
 	void forget() {
+		NativeGameReferences.configure(null);
 		CompatibilityFindings.reset();
 		MixinCompatibility.reset();
 		MixinConfigOwners.reset();
@@ -159,6 +161,9 @@ class SupersededRemovalTest {
 		java.nio.file.Path base = java.nio.file.Path.of(System.getProperty("forbric.predicateBase",
 				net.forbric.kernel.TestFixtures.stagedBase().toString()));
 		net.forbric.kernel.TestFixtures.requireFiles(net.forbric.kernel.TestFixtures.Fixture.STAGED, "native-indexed actual loot source proof", base);
+		// As a launch on this base configures them: the genuine base embeds no FABRIC index, so the offer reads vanilla's
+		// loot host from the sidecar (LootSourceContracts.offer, through NativeGameReferences.over).
+		NativeGameReferences.configure(net.forbric.kernel.TestFixtures.launchSources(base));
 		String config = "loot.mixins.json", pkg = plan.sourceName().substring(0, plan.sourceName().lastIndexOf('.'));
 		String entry = plan.sourceName().substring(pkg.length() + 1);
 		MixinConfigOwners.publish(List.of(new MixinConfigOwners.Owned(config, MOD, Ecosystem.FABRIC)));
