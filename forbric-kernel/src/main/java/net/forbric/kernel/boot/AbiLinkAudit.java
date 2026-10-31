@@ -48,8 +48,11 @@ import net.forbric.kernel.util.ForbricLog;
  *
  * <p>A jar that carries a MinecraftForge half ({@code META-INF/mods.toml}) is not judged for its
  * {@code net.minecraftforge.*} references: nothing on Forbric loads that half — a universal jar's is set aside, a refused
- * jar is not loaded at all — so its classes naming MinecraftForge never link. Every other jar still is: a NeoForge or
- * Fabric jar naming a {@code net.minecraftforge.*} class that resolves nowhere is dangling.
+ * jar is not loaded at all. The skip is per jar, not per half: a universal jar's halves can share classes, so which
+ * half a class belongs to is not decidable from the jar, and a {@code net.minecraftforge.*} reference in the NeoForge or
+ * Fabric half of such a jar goes unjudged too. Its {@code net.neoforged.*} references are still judged, and so is every
+ * jar without a MinecraftForge half: a NeoForge or Fabric jar naming a {@code net.minecraftforge.*} class that resolves
+ * nowhere is dangling.
  *
  * <p>Loader-bootstrap packages are out of scope: the kernel REPLACES FML's loading layer, so
  * {@code fml/loading}, {@code fml/relauncher} and the {@code locating} SPIs are absent here by design and a mod
