@@ -49,6 +49,7 @@ public final class WorldProbe {
     private static int portalNeo, spawnerNeo;
     private static int itemNeo, elapsed;
     private static ProbeMob itemUser;
+    private static FinalizeSpawnEvent neoFinalize;
     private static FakePlayer player;
     private static MinecraftServer armed;
     private static Path root, output;
@@ -64,7 +65,7 @@ public final class WorldProbe {
         });
         NeoForge.EVENT_BUS.addListener(FinalizeSpawnEvent.class, event -> {
             if (activeSpawner == null || !(event.getEntity() instanceof ProbeMob)) return;
-            spawnerNeo++; event.setSpawnData(NEO_DATA);
+            spawnerNeo++; neoFinalize = event; event.setSpawnData(NEO_DATA);
             if (activeSpawner.equals("neo-cancel-finalize")) event.setCanceled(true);
             if (activeSpawner.equals("neo-veto-spawn")) event.setSpawnCancelled(true);
         });
@@ -157,7 +158,7 @@ public final class WorldProbe {
 
     private static void spawner(ServerLevel level, String mode, BlockPos pos) {
         Map<String, Object> evidence = new LinkedHashMap<>(); boolean pass = false;
-        activeSpawner = mode; created.clear(); spawnerNeo = 0;
+        activeSpawner = mode; created.clear(); spawnerNeo = 0; neoFinalize = null;
         try {
             level.getChunk(pos.getX() >> 4, pos.getZ() >> 4); player.snapTo(pos.getX() + 6, 80, 68);
             for (int x = -5; x <= 5; x++) for (int z = -5; z <= 5; z++) level.setBlockAndUpdate(pos.offset(x, -1, z), Blocks.STONE.defaultBlockState());
@@ -185,11 +186,20 @@ public final class WorldProbe {
             evidence.put("finalizations", mob.finalizations); evidence.put("worldInsertion", added); evidence.put("spawnVeto", mob.isSpawnCancelled());
             evidence.put("publicLookupVisible", level.getEntity(mob.getUUID()) == mob);
             evidence.put("neoDataUsed", mob.finalizedWith == NEO_DATA);
+            // What Entity.load was handed: the spawner's own entity tag (vanilla), read back from the mob itself.
+            String inputId = mob.loadedInput == null ? null : mob.loadedInput.getStringOr("id", "");
+            int inputMarker = mob.loadedInput == null ? -1 : mob.loadedInput.getIntOr("m35_marker", -1);
+            evidence.put("valueInputId", inputId); evidence.put("valueInputMarker", inputMarker);
+            evidence.put("eventDataAfter", neoFinalize == null ? "no event" : neoFinalize.getSpawnData() == NEO_DATA ? "NeoForge's" : String.valueOf(neoFinalize.getSpawnData()));
             int expectedFinal = mode.contains("cancel-finalize") || mode.equals("nonempty-input") ? 0 : 1;
             require(spawnerNeo == 1, "spawner callback count differs");
             require(mob.finalizations == expectedFinal, "finalization count differs");
             require(added == !mode.contains("veto-spawn"), "event cancellation and world-insertion veto were conflated");
             if (expectedFinal == 1) require(mob.finalizedWith == NEO_DATA, "NeoForge's replacement SpawnGroupData did not reach finalizer");
+            require(MOB_ID.toString().equals(inputId), "actual nonempty entity ValueInput was not observed by Entity.load");
+            // EventHooks.finalizeMobSpawnSpawner discards finalizeSpawn's return (javap: invokevirtual finalizeSpawn; pop).
+            require(neoFinalize != null && neoFinalize.getSpawnData() == NEO_DATA, "native discarded finalizer return was written back into the event");
+            if (mode.equals("nonempty-input")) require(inputMarker == 35, "the spawner's custom entity tag field did not reach Entity.load");
             pass = true;
         } catch (Throwable failure) { evidence.put("detail", failure.toString()); failure.printStackTrace(); }
         finally {
