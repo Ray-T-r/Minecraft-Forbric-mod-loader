@@ -101,7 +101,22 @@ public final class ForbricSwitches {
 			Map.entry("forbric.clientHookMixinAnchors", "NeoForge's own initClientHooks and onRegisterParticleProviders calls run in "
 					+ "Minecraft's constructor, so a mod's mixin on them binds there with no relay to move it onto"),
 			Map.entry("forbric.forgeReloadListeners", "a datapack reload posts NeoForge's own reload-listener event alone (EventHooks.onResourceReload), as on "
-					+ "NeoForge; there is no MinecraftForge AddReloadListenerEvent to post beside it"));
+					+ "NeoForge; there is no MinecraftForge AddReloadListenerEvent to post beside it"),
+			// Stage 4: MinecraftForge's registry wrappers are gone with its carrier, and every rewrite of them with them.
+			Map.entry("forbric.forgeWrapperSync", "Forbric loads no MinecraftForge runtime, so there are no MinecraftForge registry wrappers to stage "
+					+ "the server's ids into; NeoForge's own snapshot applies them"),
+			Map.entry("forbric.publicRegistryWrappers", "Forbric loads no MinecraftForge runtime, so there are no MinecraftForge registry wrappers to make "
+					+ "public"),
+			Map.entry("forbric.soundRegistryIdentity", "Forbric loads no MinecraftForge runtime, so there is no MinecraftForge sound registry wrapper to "
+					+ "give an identity map"),
+			Map.entry("forbric.wrapperEntryEvents", "Forbric loads no MinecraftForge runtime, so no registry wrapper bypasses fabric-registry-sync's "
+					+ "entry-added event"),
+			Map.entry("forbric.blockItemLinks", "Forbric loads no MinecraftForge runtime, so there is no MinecraftForge item add-callback to point at "
+					+ "Item.BY_BLOCK"),
+			Map.entry("forbric.kernel.registryRedirect", "Forbric loads no MinecraftForge runtime, so there is no MinecraftForge registry wrapper lookup to "
+					+ "redirect"),
+			Map.entry("forbric.registryAliasParity", "Forbric loads no MinecraftForge runtime, so no registry wrapper overrides the lookups "
+					+ "fabric-registry-sync resolves aliases in"));
 
 	private static final ForbricSwitches SYSTEM =
 			new ForbricSwitches(RENAMED, RETIRED, System::getProperty, ForbricLog::warn);

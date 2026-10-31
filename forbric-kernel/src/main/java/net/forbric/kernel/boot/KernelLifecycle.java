@@ -1167,11 +1167,9 @@ public final class KernelLifecycle {
 	 *
 	 * <p>{@code Block.asItem()} resolves through {@code Item.byBlock(this)}, which is a plain
 	 * {@code BY_BLOCK.get(block)}. The merged {@code BlockItem} constructor only stores its block; it never adds
-	 * itself to that map. As on MinecraftForge, the ITEMS registry's ADD-CALLBACK ({@code GameData.ItemCallbacks} ->
-	 * {@code BlockItem.registerBlocks}) links each one as it is added, into the map {@code BlockItemLinkInjector} makes
-	 * {@code Item.BY_BLOCK} itself; before that, the callback filled a map nothing read and every modded block's
-	 * {@code asItem()} fell through to AIR until this sweep. Normally it now links nothing
-	 * ({@code -Dforbric.blockItemLinks=off} brings the late links back).
+	 * itself to that map. On MinecraftForge the ITEMS registry's add-callback linked each one as it was added; the
+	 * kernel's rewrite of that callback went with MinecraftForge, so this sweep is what links any block item still
+	 * missing.
 	 *
 	 * <p>That is invisible in the registry dump (the blocks and their items both register fine, and gate-m4 counted
 	 * them) but breaks anything that goes block→item. It is why Macaw's Bridges was unreachable: its creative tab

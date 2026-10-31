@@ -162,11 +162,6 @@ public final class KernelRuntimeClasses {
 				new Call("startCreativeTabProbe", void.class),
 				new Call("linkBlockItems", int.class),
 				new Call("logRegisteredContent", void.class))));
-		// Called from MinecraftForge's item callbacks (BlockItemLinkInjector): the live item registry's block->item map is
-		// Item.BY_BLOCK. Object-typed on purpose — linking this class here must load no game class. See KernelBlockItemLinks.
-		CLASSES.put("net.forbric.kernel.runtime.KernelBlockItemLinks", new Entry(Origin.COMPILED, List.of(
-				new Call("blockToItemMap", Object.class, Object.class, Object.class),
-				new Call("clear", void.class, Object.class, Object.class))));
 		// Loading NeoForge's configs: the early pass and the late pass that catches what it could not have seen.
 		// WHICH types each covers stays boot-side, where lateConfigTypes has a test. See KernelConfigLoad.
 		// Key mappings a mod registered on a bus that is not in ModList, so the one fan-out from Options.<init>
@@ -414,7 +409,6 @@ public final class KernelRuntimeClasses {
 		CLASSES.put("net.forbric.kernel.runtime.KernelServerReloadNames", new Entry(Origin.COMPILED, List.of()));
 		CLASSES.put("net.forbric.kernel.runtime.KernelBlockSoundQuery", new Entry(Origin.COMPILED, List.of()));
 		CLASSES.put("net.forbric.kernel.runtime.KernelHudContextQuery", new Entry(Origin.COMPILED, List.of()));
-		CLASSES.put("net.forbric.kernel.runtime.IdentityValueBiMap", new Entry(Origin.COMPILED, List.of()));
 		// fabric-api's own two mixins for fabric:load_conditions cannot apply on the merged base, so nothing
 		// evaluated them. Wrapped into ConditionalOps' one codec factory by an inserted instruction, in Codec,
 		// which no JDK type can stand for.

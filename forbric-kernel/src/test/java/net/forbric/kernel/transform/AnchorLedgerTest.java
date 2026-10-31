@@ -102,8 +102,7 @@ class AnchorLedgerTest {
 
 	@Test
 	void aHedgeThatDeclinesIsRecordedButIsNotADefect() {
-		// ClientPackHookInjector, LifecycleHookInjector and RegistrySyncParityInjector all carry a target they
-		// expect never to match, so that they start working by themselves if a carrier ever grows the method.
+		// Some injectors carry a target they expect never to match, so that they start working by themselves if a carrier ever grows the method.
 		// Filing those as defects every boot is exactly how a reader learns to skip the lines that matter -- and
 		// the first live run of this mechanism did precisely that, reddening gate-m1 over a repair that was
 		// declining correctly.

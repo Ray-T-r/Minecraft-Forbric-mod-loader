@@ -104,7 +104,7 @@ public final class PostMixinFixups {
 	 * inherited {@code byLocation}, so the check fails even when the target was registered first. More Nemo's
 	 * Woodcutter Variants registers each woodcutter and then aliases its old id to it, and every one of them — 11
 	 * blocks and 11 items — logged "Adding … as an alias for …, but the latter doesn't exist" on Forbric and nowhere
-	 * else. The alias itself was recorded and resolves (RegistryAliasParityInjector); only the warning was wrong.
+	 * else. The alias itself was recorded and resolved; only the warning was wrong.
 	 *
 	 * <p>The map read becomes {@code this.keySet()}, whose {@code contains} is the same exact, non-resolving lookup:
 	 * {@code byLocation}'s key set on a vanilla or NeoForge registry, the ForgeRegistry's own names on a wrapper.

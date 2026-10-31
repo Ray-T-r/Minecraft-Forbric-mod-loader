@@ -40,14 +40,12 @@ import net.forbric.kernel.util.Caught;
  *
  * <p>fabric-api's registry sync puts a method on every {@code MappedRegistry} that takes the server's ids and remaps the
  * registry's own entry storage, and an argument-free one that undoes it; whatever the interface and the methods are
- * called, they are recognised by what the mixin does ({@link RemapContract}). Two passes need them, and neither is about
- * MinecraftForge: {@code KernelRegistryRevert} calls every undo on the plain registries before NeoForge's snapshot goes
- * back on a disconnect, and {@link RegistrySyncParityInjector} hands a contract on to MinecraftForge's registry wrapper,
- * which inherits empty copies of the storage it works on.
+ * called, they are recognised by what the mixin does ({@link RemapContract}). {@code KernelRegistryRevert} calls every
+ * undo on the registries before NeoForge's snapshot goes back on a disconnect.
  *
- * <p>Lived inside {@link RegistrySyncParityInjector} until that injector had to be deletable on its own: on a base
- * without MinecraftForge there is no wrapper to give a contract to, but fabric-api's {@code unmap()} still has to run on
- * every registry before the snapshot is re-applied, and the revert finds it here.
+ * <p>Lived inside the MinecraftForge registry-sync injector, which also handed a contract on to MinecraftForge's registry
+ * wrapper, until that injector went with MinecraftForge: fabric-api's {@code unmap()} still has to run on every registry
+ * before the snapshot is re-applied, and the revert finds it here.
  */
 public final class RegistryRemapContracts {
 	/** The server's ids, by entry name, as a remap contract takes them. */

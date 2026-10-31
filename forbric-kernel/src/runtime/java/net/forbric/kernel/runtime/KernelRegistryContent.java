@@ -289,10 +289,8 @@ public final class KernelRegistryContent {
 	 *
 	 * <p>{@code putIfAbsent} so an entry vanilla already established always wins.
 	 *
-	 * <p>Normally this finds nothing left: since {@code BlockItemLinkInjector} the map that callback links into is
-	 * {@code Item.BY_BLOCK} itself ({@link KernelBlockItemLinks}), so every block item is linked as it registers. The
-	 * walk stays as the net under {@code -Dforbric.blockItemLinks=off} and under a merge that moves the map again; a
-	 * non-zero count here means some add did not link.
+	 * <p>The kernel's rewrite of MinecraftForge's item add-callback, which linked each block item as it registered,
+	 * went with MinecraftForge; a non-zero count here means a registration did not link its block item itself.
 	 *
 	 * @return how many links were made
 	 */

@@ -43,17 +43,14 @@ import net.forbric.kernel.TestFixtures.Fixture;
  * {@link RegistryRevertInjector} on NeoForge's real {@code RegistryManager}, from the staged NeoForge carrier — the class it
  * edits is NeoForge's on either base, so this is the genuine base's class as much as the merged base's.
  *
- * <p>It used to be one of {@link RegistrySyncParityInjector}'s edits; split off so it stays when MinecraftForge's wrapper half
- * goes. Two shapes are proved here: alone (the genuine base, no MinecraftForge), it rewrites the revert and captures at
- * {@code applySnapshot}'s head itself; after the parity injector (today's chain, KernelBoot's order), it rewrites the same
- * revert and its capture stands down, so {@code RegistryManager} comes out with exactly the edits the one injector made
- * before the split.
+ * <p>It used to be one of the MinecraftForge registry-sync injector's edits, split off so it stayed when MinecraftForge's
+ * wrapper half went. Nothing else edits {@code RegistryManager} now: the revert is rewritten and the capture is added at
+ * {@code applySnapshot}'s head by this injector alone.
  */
 class RegistryRevertInjectorTest {
 	private static final Path NEO_RUNTIME = TestFixtures.neoCarrier();
 	private static final String MANAGER = "net.neoforged.neoforge.registries.RegistryManager";
 	private static final String REVERT = "net/forbric/kernel/boot/KernelRegistryRevert";
-	private static final String SYNC = "net/forbric/kernel/boot/KernelForgeWrapperSync";
 
 	private static byte[] manager() {
 		return TestFixtures.requireEntry(Fixture.STAGED, NEO_RUNTIME, MANAGER.replace('.', '/') + ".class");
@@ -86,7 +83,7 @@ class RegistryRevertInjectorTest {
 		new Analyzer<>(new BasicVerifier()).analyze(out.name, revert);
 	}
 
-	/** The genuine base: no MinecraftForge, nothing else edits RegistryManager, and the revert needs a capture of its own. */
+	/** Nothing else edits RegistryManager, so the revert needs a capture of its own. */
 	@Test
 	void aloneItRewritesTheRevertAndCapturesAtTheHeadOfApplySnapshot() throws Exception {
 		byte[] in = manager();
@@ -103,63 +100,7 @@ class RegistryRevertInjectorTest {
 		List<String> applyCalls = calls(apply);
 		assertEquals(REVERT + ".captureIfNeeded", applyCalls.get(0), "the capture is the first thing applySnapshot does");
 		assertEquals(1, applyCalls.stream().filter(c -> c.equals(REVERT + ".captureIfNeeded")).count(), "once");
-		assertTrue(applyCalls.stream().noneMatch(c -> c.startsWith(SYNC)), "and nothing of MinecraftForge's wrapper sync");
 		new Analyzer<>(new BasicVerifier()).analyze(node.name, apply);
-	}
-
-	/** Today's chain, in KernelBoot's order: the edits the parity injector made to this class before the split, exactly. */
-	@Test
-	void afterTheWrapperSyncTheCaptureStandsDownAndTheClassIsWhatItWasBeforeTheSplit() throws Exception {
-		byte[] in = manager();
-		RegistrySyncParityInjector parity = new RegistrySyncParityInjector(type -> true, target -> List.of());
-		byte[] synced = parity.transform(MANAGER, in, null);
-		assertNotSame(in, synced, "premise: the wrapper sync hooks applySnapshot");
-		ClassNode syncedNode = parse(synced);
-		MethodNode syncedRevert = method(syncedNode, RegistryRevertInjector.REVERT_TO_FROZEN, "()V");
-		assertTrue(calls(syncedRevert).stream().noneMatch(c -> c.startsWith(REVERT)),
-				"the parity injector no longer touches the revert: that edit is the revert injector's alone");
-
-		byte[] out = new RegistryRevertInjector().transform(MANAGER, synced, null);
-		ClassNode node = parse(out);
-		assertRevertBody(node);
-		List<String> applyCalls = calls(method(node, RegistryRevertInjector.APPLY_SNAPSHOT, RegistryRevertInjector.APPLY_SNAPSHOT_DESC));
-		assertEquals(SYNC + ".beginSnapshotApplication", applyCalls.get(0), "the wrapper sync's prologue is still first");
-		assertEquals(0, applyCalls.stream().filter(c -> c.equals(REVERT + ".captureIfNeeded")).count(),
-				"its prologue captures already, so the revert's own capture stood down: " + applyCalls);
-		assertEquals(calls(method(syncedNode, RegistryRevertInjector.APPLY_SNAPSHOT, RegistryRevertInjector.APPLY_SNAPSHOT_DESC)),
-				applyCalls, "applySnapshot is exactly what the wrapper sync made it");
-		// Every other method is the carrier's, untouched by either.
-		ClassNode original = parse(in);
-		for (MethodNode m : original.methods) {
-			if (m.name.equals(RegistryRevertInjector.REVERT_TO_FROZEN) || m.name.equals(RegistryRevertInjector.APPLY_SNAPSHOT)) continue;
-			assertEquals(calls(m), calls(method(node, m.name, m.desc)), m.name + m.desc);
-		}
-	}
-
-	/**
-	 * KernelBoot registers the revert after the wrapper sync, within the same phase, where registration order is the order
-	 * they run: the other way round the revert would find no prologue, add its own capture, and the wrapper sync would add
-	 * a second. Read from the compiled KernelBoot, as {@code TransformerRegistrationOrderTest} reads it.
-	 */
-	@Test
-	void kernelBootRegistersTheRevertAfterTheWrapperSync() throws Exception {
-		Path compiled = Path.of(System.getProperty("user.dir"), "build", "classes", "java", "main", "net", "forbric", "kernel", "boot",
-				"KernelBoot.class");
-		assertTrue(java.nio.file.Files.isRegularFile(compiled), "KernelBoot is compiled before any test runs");
-		ClassNode boot = parse(java.nio.file.Files.readAllBytes(compiled));
-		int sync = -1, revert = -1, at = 0;
-		for (MethodNode m : boot.methods) {
-			if (!m.name.equals("launch")) continue;
-			for (AbstractInsnNode insn : m.instructions) {
-				at++;
-				if (insn instanceof MethodInsnNode call && call.owner.equals("net/forbric/kernel/transform/RegistrySyncParityInjector")
-						&& call.name.equals("forGameLoader")) sync = at;
-				if (insn instanceof org.objectweb.asm.tree.TypeInsnNode type && insn.getOpcode() == Opcodes.NEW
-						&& type.desc.equals("net/forbric/kernel/transform/RegistryRevertInjector")) revert = at;
-			}
-		}
-		assertTrue(sync > 0, "the wrapper sync is registered in launch()");
-		assertTrue(revert > sync, "and the revert after it");
 	}
 
 	@Test

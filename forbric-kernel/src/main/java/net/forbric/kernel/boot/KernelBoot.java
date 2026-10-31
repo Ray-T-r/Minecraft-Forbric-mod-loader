@@ -63,8 +63,6 @@ import net.forbric.kernel.transform.NeoEnumExtensionInjector;
 import net.forbric.kernel.transform.NullPackGuardInjector;
 import net.forbric.kernel.transform.PackMetadataFailSoftInjector;
 import net.forbric.kernel.transform.PackOverlayMutabilityInjector;
-import net.forbric.kernel.transform.RegistryAliasParityInjector;
-import net.forbric.kernel.transform.RegistryHookRedirector;
 import net.forbric.kernel.transform.TransformChain;
 import net.forbric.kernel.transform.TransformContext;
 import net.forbric.kernel.transform.TransformPhase;
@@ -672,11 +670,6 @@ public final class KernelBoot {
 		if (net.forbric.kernel.transform.ForgeAttributeValidationInjector.enabled()) {
 			chain.register(TransformPhase.COREMOD, new net.forbric.kernel.transform.ForgeAttributeValidationInjector());
 		}
-		// MinecraftForge's item add-callback links each block item into its live registry's block->item map, which on
-		// MinecraftForge is Item.BY_BLOCK; the merged Item is NeoForge's and reads another map, so Block.asItem() was AIR
-		// until the window closed — after the Fabric mains (Naturalist's Ingredient.of(Blocks.MELON.asItem()) stopped the
-		// server). The live registry now gets Item.BY_BLOCK as that map.
-		chain.register(TransformPhase.COREMOD, new net.forbric.kernel.transform.BlockItemLinkInjector());
 		chain.register(TransformPhase.COREMOD, new net.forbric.kernel.transform.ForgeWorldModifierInjector());
 
 		// Client only: hand the kernel the live PackRepository at the vanilla-woven
@@ -725,10 +718,6 @@ public final class KernelBoot {
 		// leaves ModList.modFiles empty, so NeoForge's own mod-pack finder walks an empty list and adds nothing.
 		chain.register(TransformPhase.COREMOD, new DataPackHookInjector());
 
-		// …and the ids in that data only resolve if the Forge registry wrappers honour aliases, which their overrides
-		// of fabric-api's mixin targets silently stopped them doing.
-		chain.register(TransformPhase.COREMOD, new RegistryAliasParityInjector());
-		chain.register(TransformPhase.COREMOD, new net.forbric.kernel.transform.SoundRegistryIdentityInjector());
 		chain.register(TransformPhase.COREMOD, new net.forbric.kernel.transform.ServerReloadListenerNamesInjector());
 		java.util.function.Function<String, org.objectweb.asm.tree.ClassNode> gameDeclarations = internal -> {
 			try (var input = loader.getGameResourceAsStream(internal.replace('.', '/') + ".class")) {
@@ -756,25 +745,9 @@ public final class KernelBoot {
 		chain.register(TransformPhase.COREMOD, new net.forbric.kernel.transform.BlockSoundQueryInjector());
 		if (side == Side.CLIENT) chain.register(TransformPhase.COREMOD, new net.forbric.kernel.transform.HudContextQueryInjector());
 
-		// …and NeoForge's configuration-phase registry sync remaps a registry through MappedRegistry fields those same
-		// wrappers never fill, so the first real client to connect was dropped with "Failed to sync registries from the
-		// server: NullPointerException". The wrapper gets NeoForge's remap contract and Forge's own injectSnapshot
-		// does the work. fabric-api's remap is added only when its types are on this loader: getMethod resolves the
-		// types of the public methods of each class it searches, so one naming an absent class makes a mod's
-		// registry.getClass().getMethod throw whenever the search reaches the wrapper (forGameLoader decides it).
-		chain.register(TransformPhase.COREMOD, net.forbric.kernel.transform.RegistrySyncParityInjector.forGameLoader(loader));
 		// NeoForge's disconnect-time revert (RegistryManager.revertToFrozen) puts back the kernel's own pre-connection
-		// snapshot. It used to be one of the edits above; it is NeoForge's lifecycle on any base, so it is its own. After
-		// them: where the wrapper sync's applySnapshot prologue already captures the ids, its own capture stands down.
+		// snapshot, which it captures at the head of NeoForge's applySnapshot.
 		chain.register(TransformPhase.COREMOD, new net.forbric.kernel.transform.RegistryRevertInjector());
-		// …and their register never reaches MappedRegistry.register, where fabric-registry-sync fires
-		// RegistryEntryAddedCallback, so fabric-menu-api had no codec for a Fabric mod's menu registered after its own
-		// main entrypoint, and Farmer's Delight's cooking pot never opened. The wrapper fires the event itself.
-		chain.register(TransformPhase.COREMOD, new net.forbric.kernel.transform.WrapperEntryAddedInjector());
-		// …and they are not public, where the MappedRegistry they stand in for is: a registry method a mod looks up on
-		// registry.getClass() is declared by a class it cannot access, and invoking it threw. Meow Anti-Xray resolves its
-		// ores that way and took the server down the moment it was Done. The wrappers are public, as vanilla's are.
-		chain.register(TransformPhase.COREMOD, new net.forbric.kernel.transform.RegistryWrapperAccessInjector());
 
 		// A Fabric mod's registry reads its data where native Fabric reads it. The merged Registries body is
 		// NeoForge's, which prefixes the namespace itself; Fabric prefixes in a return-value mixin instead, and
@@ -1159,11 +1132,6 @@ public final class KernelBoot {
 		} else {
 			ForbricLog.warn("[Forbric/ChunkGuard] -Dforbric.chunkExecutorGuard=off — chunk work offered to a "
 					+ "stopped server's executor will park its caller forever instead of being refused");
-		}
-
-		if (Boolean.getBoolean("forbric.kernel.registryRedirect")) {
-			chain.register(TransformPhase.COREMOD, new RegistryHookRedirector());
-			ForbricLog.info("[Forbric/Boot] registry-wrapper redirect ENABLED (experimental)");
 		}
 
 		// Two targets used to sit above this one and no longer do, because their reasons stopped being true:

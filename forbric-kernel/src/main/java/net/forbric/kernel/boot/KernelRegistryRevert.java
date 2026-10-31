@@ -131,7 +131,7 @@ public final class KernelRegistryRevert {
 	 * fabric-api's {@code unmap()} is one) on every plain registry that carries it, so the mod's own bookkeeping is left
 	 * the way its disconnect would leave it before NeoForge's snapshot goes back. The Forge-wrapped registries are
 	 * skipped: their ids live in the delegate, and the NeoForge pass that follows restores those through
-	 * {@link KernelForgeWrapperSync}. Without such a contract there is nothing to do. The contract is found by what the
+	 * the MinecraftForge wrapper sync. Without such a contract there is nothing to do. The contract is found by what the
 	 * mixin does, so its interface and method are called whatever the mod calls them.
 	 */
 	private static int unmapFabricPlainRegistries(ClassLoader cl) {

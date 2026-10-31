@@ -442,7 +442,7 @@ public final class PayloadInterop {
 	 * reports without naming a registry. The first run of it ruled out aliases and missing entries (every remote
 	 * name was a real local key) and the second — the class and the {@code byKey} count — found the cause: the
 	 * registries that are MinecraftForge {@code NamespacedWrapper}s answer {@code containsKey} from their
-	 * delegate while their inherited {@code byKey} holds zero entries. See the kernel's RegistrySyncParityInjector.
+	 * delegate while their inherited {@code byKey} holds zero entries. (MinecraftForge's registry wrapper, whose kernel sync went with MinecraftForge.)
 	 */
 	private static void describeFrozenRegistrySnapshot(Object payload) {
 		if (payload == null || !"neoforge:frozen_registry".equals(payloadId(payload))) return;

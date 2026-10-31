@@ -43,20 +43,13 @@ import net.forbric.kernel.util.ForbricLog;
  * remap began, or says there is nothing to revert.
  *
  * <p>This is NeoForge's class and NeoForge's lifecycle on any base, which is why it is its own transformer: it was one of the
- * edits {@link RegistrySyncParityInjector} made to the same class, beside the ones that give MinecraftForge's
- * {@code NamespacedWrapper} NeoForge's remap contract — and those go with MinecraftForge, while this must not.
+ * edits the MinecraftForge registry-sync injector made to the same class, beside the ones that gave MinecraftForge's
+ * {@code NamespacedWrapper} NeoForge's remap contract; those went with MinecraftForge, and this stayed.
  *
  * <p><b>The capture.</b> The snapshot is captured at the head of {@code applySnapshot(Map, boolean)}, NeoForge's remap entry
- * point. On a base with MinecraftForge, {@link RegistrySyncParityInjector} (registered before this) already hooks that head
- * with {@code KernelForgeWrapperSync.beginSnapshotApplication}, which resets the wrappers' staging and captures; so this
- * adds {@code KernelRegistryRevert.captureIfNeeded} only where nothing there captures yet, and on today's base stands down
- * for it, leaving {@code applySnapshot} exactly as that hook made it. Without MinecraftForge the head call is this one.
- *
- * <p><b>Its log line moved.</b> {@code RegistryManager.revertToFrozen() now restores the kernel's own pre-connection snapshot},
- * word for word as before, now prints after {@link RegistrySyncParityInjector}'s {@code flushing the Forge-wrapped registries'
- * staged ids ...} line rather than before it: the two edits were one transformer's, and this one now runs second. No gate
- * reads either line or their order; gate-m12 and gate-m14 read what happens at run time ({@code Forge-wrapped registr.*
- * followed the server's ids}, {@code reverted .* registr.* to their pre-connection ids}), each line on its own.
+ * point: this adds {@code KernelRegistryRevert.captureIfNeeded} there, unless that call is already in place (so running
+ * it twice adds one capture). gate-m12 and gate-m14 read what happens at run time
+ * ({@code reverted .* registr.* to their pre-connection ids}).
  */
 public final class RegistryRevertInjector implements ClassTransformer {
 	private static final String NEO_REGISTRY_MANAGER = ForeignType.REGISTRY_MANAGER.binary(Ecosystem.NEOFORGE);
@@ -65,8 +58,6 @@ public final class RegistryRevertInjector implements ClassTransformer {
 	static final String APPLY_SNAPSHOT = "applySnapshot";
 	static final String APPLY_SNAPSHOT_DESC = "(Ljava/util/Map;Z)Ljava/util/Set;";
 	static final String REVERT_OWNER = "net/forbric/kernel/boot/KernelRegistryRevert";
-	/** MinecraftForge's wrapper sync, whose head hook on {@code applySnapshot} captures as well. */
-	static final String WRAPPER_SYNC_OWNER = "net/forbric/kernel/boot/KernelForgeWrapperSync";
 
 	@Override
 	public String name() {
@@ -130,12 +121,11 @@ public final class RegistryRevertInjector implements ClassTransformer {
 		return writer.toByteArray();
 	}
 
-	/** Whether {@code applySnapshot} already calls something that captures the pre-connection ids. */
+	/** Whether {@code applySnapshot} already captures the pre-connection ids. */
 	static boolean captures(MethodNode applySnapshot) {
 		for (AbstractInsnNode insn : applySnapshot.instructions) {
 			if (!(insn instanceof MethodInsnNode call) || call.getOpcode() != Opcodes.INVOKESTATIC) continue;
 			if (call.owner.equals(REVERT_OWNER) && call.name.equals("captureIfNeeded")) return true;
-			if (call.owner.equals(WRAPPER_SYNC_OWNER) && call.name.equals("beginSnapshotApplication")) return true;
 		}
 		return false;
 	}
