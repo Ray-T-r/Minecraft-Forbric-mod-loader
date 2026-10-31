@@ -37,9 +37,7 @@ test	net.forbric.kernel.boot.ForgeClientCanaryTest	presetListenerUsesTheModsBusG
 test	net.forbric.kernel.boot.ForgeFamilyClassDeclarationsTest	onTheRealModJarsEveryClassShapedDeclarationIsTheModsOwn()	[fixture:third-party] build/compat-inputs is absent
 test	net.forbric.kernel.boot.FrapiRendererEvidenceTest	theRealSodiumBuildsAreToldApart()	[fixture:third-party] sodium fixtures absent: $ROOT/forbric-kernel/run/client-merged-pack/mods
 test	net.forbric.kernel.boot.GateWorldgenContractTest	theGateProbesExactlyTheBlocksThePackagedCanariesPlace()	[fixture:forge-carrier] build canaries with forbric-loader/run/build-testmods.sh
-test	net.forbric.kernel.boot.KernelBootNeutersTest	onEverySideMinecraftForgesOwnModPackFinderIsEmptied()	[fixture:forge-carrier] $ROOT/forbric-loader/run/forge-runtime/forge-runtime.jar absent
-test	net.forbric.kernel.boot.KernelBootNeutersTest	onEverySideMinecraftForgesOwnModifierPassIsEmptiedAndItsAboutToStartIsNot()	[fixture:forge-carrier] $ROOT/forbric-loader/run/forge-runtime/forge-runtime.jar absent
-test	net.forbric.kernel.boot.KernelBootNeutersTest	onTheClientMinecraftForgesOwnBeginIsEmptiedAndNothingElseOfItsName()	[fixture:forge-carrier] $ROOT/forbric-loader/run/forge-runtime/forge-runtime.jar absent
+test	net.forbric.kernel.boot.KernelBootNeutersTest	onTheClientNeoForgesFinishIsEmptiedAndItsBeginIsNot()	[fixture:staged] $ROOT/forbric-loader/run/neoforge-runtime/neoforge-runtime.jar absent
 test	net.forbric.kernel.boot.KernelBundledMixinExtrasStagedTest	[1] true	[fixture:third-party] stage the popular compatibility pack and the boot jar (or set fixture overrides): $ROOT/forbric-kernel/build/compat-inputs/popular/mods/badpackets-forge-0.12.2.jar, $ROOT/forbric
 test	net.forbric.kernel.boot.KernelBundledMixinExtrasStagedTest	[2] false	[fixture:third-party] stage the popular compatibility pack and the boot jar (or set fixture overrides): $ROOT/forbric-kernel/build/compat-inputs/popular/mods/badpackets-forge-0.12.2.jar, $ROOT/forbric
 test	net.forbric.kernel.boot.KernelBusSupportTest	theCarrierStillOffersEveryBusBuilderCallMakeModBusMakes()	[fixture:staged] staged NeoForge carrier absent
@@ -71,10 +69,10 @@ test	net.forbric.kernel.boot.ModMenuApiStandInShapeTest	everyTypeIsTheSameKindOf
 test	net.forbric.kernel.boot.ModMenuApiStandInShapeTest	theNullScreenFactoryMatchesModMenu()	[fixture:game-side] the Mod Menu API stand-in is compiled before the tests: build/classes/java/modMenuApi/com/terraformersmc/modmenu/util/NullScreenFactory.class
 test	net.forbric.kernel.boot.ModMenuApiStandInShapeTest	theStandInIsTheWholeApiPackageAndOnlyIt()	[fixture:game-side] the Mod Menu API stand-in is compiled before the tests: build/classes/java/modMenuApi/com/terraformersmc/modmenu/api/ModMenuApi.class
 test	net.forbric.kernel.boot.MultiLoaderEntrypointsTest	actualBisonAquariusAndBannerstoneUseTheirExecutableFamilies()	[fixture:third-party] requires the prepared random baseline jars
-test	net.forbric.kernel.boot.NeoDeferredWorkTest	theCarriersDeferredWorkQueueStillHasTheFieldsTheFailureReadNeeds()	[fixture:staged] staged carrier absent: $ROOT/forbric-loader/run/neoforge-runtime/neoforge-runtime.jar
-test	net.forbric.kernel.boot.NeoDeferredWorkTest	theSetupPhaseAttributesAThrowingDeferredTask()	[fixture:game-side] KernelNeoSetup not compiled yet (no staged game jars)
 test	net.forbric.kernel.boot.NeoDeferredWorkTest	theCarrierStillOffersTheExecutorNeoForgeRunsDeferredWorkOn()	[fixture:staged] staged NeoForge carrier absent
+test	net.forbric.kernel.boot.NeoDeferredWorkTest	theCarriersDeferredWorkQueueStillHasTheFieldsTheFailureReadNeeds()	[fixture:staged] staged carrier absent: $ROOT/forbric-loader/run/neoforge-runtime/neoforge-runtime.jar
 test	net.forbric.kernel.boot.NeoDeferredWorkTest	theNeoForgeSetupPhaseRunsItsQueueThroughThisHelper()	[fixture:game-side] KernelNeoSetup not compiled yet (no staged game jars)
+test	net.forbric.kernel.boot.NeoDeferredWorkTest	theSetupPhaseAttributesAThrowingDeferredTask()	[fixture:game-side] KernelNeoSetup not compiled yet (no staged game jars)
 test	net.forbric.kernel.boot.NeoGraphicsBootstrappersTest	neoForgesConfigStopsPromisingAnEarlyWindowAndNothingElseChanges()	[fixture:staged] staged neoforge-runtime.jar absent
 test	net.forbric.kernel.boot.NeoGraphicsBootstrappersTest	theCarrierDeclaresTheSpiByThatNameAndShape()	[fixture:staged] $ROOT/forbric-loader/run/neoforge-runtime/neoforge-runtime.jar absent (reading net/neoforged/neoforgespi/earlywindow/GraphicsBootstrapper.class)
 test	net.forbric.kernel.boot.NeoPostRegisterTailCensusTest	everyStepAfterNeoForgesRegisterLoopIsOneTheKernelTakes()	[fixture:staged] $ROOT/forbric-loader/run/neoforge-runtime/neoforge-runtime.jar absent

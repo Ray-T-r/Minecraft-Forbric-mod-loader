@@ -425,7 +425,7 @@ public final class KernelBoot {
 		if (accessWideners != null) chain.register(TransformPhase.ACCESS, accessWideners);
 
 		// The Forge-family twin: every mod jar's META-INF/accesstransformer.cfg, in the same ACCESS phase — and
-		// the two runtime carriers' own, which the merged base needs just as much. See the method.
+		// the NeoForge runtime carrier's own, which the base needs just as much. See the method.
 		net.forbric.kernel.access.AccessTransformer forgeAts =
 				forgeFamilyAccessTransformer(modJars, runtimeJars);
 		if (forgeAts != null) chain.register(TransformPhase.ACCESS, forgeAts);
@@ -1044,9 +1044,9 @@ public final class KernelBoot {
 
 		// LAST in the chain, because it has to see every edit the coremod phase made: a transformer that adds a
 		// branch leaves a frame of its own, and the recomputation must be over the final shape. A mod compiled
-		// against one ecosystem can name a superclass the merge took off that hierarchy — MinecraftForge's
-		// CapabilityProvider above Entity is the live case — and such a class fails VERIFICATION, before any of
-		// its code runs, naming a type its author never wrote. See MergedBaseFrameRecomputer.
+		// against one ecosystem can name a superclass the base does not have in that hierarchy (MinecraftForge's
+		// CapabilityProvider above Entity was the case on the merged base), and such a class fails VERIFICATION,
+		// before any of its code runs, naming a type its author never wrote. See MergedBaseFrameRecomputer.
 		chain.register(TransformPhase.FABRIC_BUILTIN,
 				new net.forbric.kernel.access.RestoredAccessTransformer(accessWideners, forgeAts));
 		chain.register(TransformPhase.FABRIC_BUILTIN, new MergedBaseFrameRecomputer(path -> {
@@ -1206,24 +1206,6 @@ public final class KernelBoot {
 	 */
 	static MethodBodyNeuter neuters(Side side) {
 		MethodBodyNeuter neuter = new MethodBodyNeuter();
-		// MinecraftForge's own biome/structure modifier pass, on every side. Its modifiers ride inside NeoForge's single
-		// pass (the kernel used to append them to NeoForge's lists; KernelForgeWorldgen loads them), and two
-		// passes are two sources of truth. On a base whose initServer calls only NeoForge's about-to-start nothing
-		// reaches this method; a merge that keeps MinecraftForge's handleServerAboutToStart too runs it before its
-		// own event, and there it looks forge:biome_modifier up with lookupOrThrow -- which a world that loaded
-		// Fabric's registry list does not have, so the integrated server died before the first tick.
-		neuter.add(new MethodBodyNeuter.Target(ForeignType.SERVER_LIFECYCLE_HOOKS.binary(Ecosystem.FORGE),
-				FORGE_RUN_MODIFIERS, FORGE_RUN_MODIFIERS_DESC, "MinecraftForge's modifiers run inside NeoForge's "
-						+ "single pass (KernelForgeWorldgen); its own pass would be a second one"));
-		// MinecraftForge's own mod-pack finder, on every side. The kernel serves each Forge-family mod's data/ to the
-		// server repository itself (DataPackHookInjector, as forbric/data/<mod> over the carriers) and its assets to
-		// the client's (KernelClientPacks); Forge's finder offers every mod in its ModList again as mod:<id>. On a base
-		// whose configurePackRepository asks only NeoForge nothing reaches it; a merge that keeps MinecraftForge's call
-		// there (and in CreateWorldScreen) put a second copy of each mod's data under a new id -- an existing world
-		// auto-enabled ~50 of them on load, above the kernel's ordering, and loaded the same files twice.
-		neuter.add(new MethodBodyNeuter.Target(FORGE_RESOURCE_PACK_LOADER, "loadResourcePacks",
-				FORGE_LOAD_RESOURCE_PACKS_DESC, "the kernel serves Forge-family mods' own packs itself (DataPackHookInjector, "
-						+ "KernelClientPacks); MinecraftForge's finder would offer each a second time as mod:<id>"));
 		addSideNeuters(side, neuter);
 		return neuter;
 	}
@@ -1245,48 +1227,20 @@ public final class KernelBoot {
 		// body to apply the kernel's own pre-connection snapshot (KernelRegistryRevert) — and this neuter, registered
 		// after that injector, was emptying the rewritten body again. Do not add it back.
 
-		for (String owner : new String[] {
-				ForeignType.CLIENT_MOD_LOADER.binary(Ecosystem.NEOFORGE),
-				ForeignType.CLIENT_MOD_LOADER.binary(Ecosystem.FORGE)}) {
-			// begin() is NOT neutered: its call at Main.main bc 814 is the redirect target (→ onClientModLoading), so
-			// its genuine body is never reached from there. Neutering it instead defers registration to a point never
-			// reached and hangs the boot (empirically). The LATER client mod-loading calls in Minecraft.<init> are the
-			// ones to stub — they would run the FancyModLoader lifecycle the kernel replaces.
-			neuter.add(new MethodBodyNeuter.Target(owner, "finish", "()V",
-					"kernel owns client mod loading (registration in onClientModLoading)"));
-			neuter.add(new MethodBodyNeuter.Target(owner, "completeModLoading", "()Z",
-					"kernel owns client mod loading"));
-			// setupModResourcePacks is NOT neutered: ClientPackHookInjector redirects its body to
-			// KernelLifecycle.onClientResourcePacks, so the genuine loader's resource integration still never runs, but
-			// the kernel gets the live PackRepository at the one correctly-timed point (Minecraft.<init>, pre-reload)
-			// and serves the ecosystem jars' assets itself. Neutering it threw that handle away.
-		}
-		// MinecraftForge's own begin is not the no-arg one above: it takes the game, its pack repository and its
-		// resource manager, and genuine MinecraftForge calls it from Minecraft.<init> -- one of the LATER calls, not
-		// the Main.main trigger. Its body IS the MinecraftForge lifecycle: gatherAndInitializeMods, its own mod
-		// resource packs and AddPackFindersEvent, its reload listeners. A merge that keeps both ecosystems' edits to
-		// Minecraft.<init> keeps this call too, and run there it died on FMLLoader's background scan, which nothing
-		// started. Everything it would do the kernel does at its own points (onClientEntrypoints constructs the held
-		// MinecraftForge mods where this would, KernelClientPacks serves the packs), so the body goes, exactly as on a
-		// base that never called it.
-		neuter.add(new MethodBodyNeuter.Target(ForeignType.CLIENT_MOD_LOADER.binary(Ecosystem.FORGE), BEGIN,
-				FORGE_CLIENT_BEGIN_DESC, "kernel owns client mod loading (MinecraftForge's Minecraft.<init> window is "
-						+ "onClientEntrypoints)"));
+		String owner = ForeignType.CLIENT_MOD_LOADER.binary(Ecosystem.NEOFORGE);
+		// begin() is NOT neutered: its call at Main.main bc 814 is the redirect target (→ onClientModLoading), so
+		// its genuine body is never reached from there. Neutering it instead defers registration to a point never
+		// reached and hangs the boot (empirically). The LATER client mod-loading calls in Minecraft.<init> are the
+		// ones to stub — they would run the FancyModLoader lifecycle the kernel replaces.
+		neuter.add(new MethodBodyNeuter.Target(owner, "finish", "()V",
+				"kernel owns client mod loading (registration in onClientModLoading)"));
+		neuter.add(new MethodBodyNeuter.Target(owner, "completeModLoading", "()Z",
+				"kernel owns client mod loading"));
+		// setupModResourcePacks is NOT neutered: ClientPackHookInjector redirects its body to
+		// KernelLifecycle.onClientResourcePacks, so the genuine loader's resource integration still never runs, but
+		// the kernel gets the live PackRepository at the one correctly-timed point (Minecraft.<init>, pre-reload)
+		// and serves the ecosystem jars' assets itself. Neutering it threw that handle away.
 	}
-
-	/** MinecraftForge's {@code ResourcePackLoader.loadResourcePacks(PackRepository, boolean)}. */
-	static final String FORGE_RESOURCE_PACK_LOADER = ForeignType.RESOURCE_PACK_LOADER.binary(Ecosystem.FORGE);
-	static final String FORGE_LOAD_RESOURCE_PACKS_DESC = "(Lnet/minecraft/server/packs/repository/PackRepository;Z)V";
-
-	/** MinecraftForge's {@code ServerLifecycleHooks.runModifiers(MinecraftServer)}. */
-	static final String FORGE_RUN_MODIFIERS = "runModifiers";
-	static final String FORGE_RUN_MODIFIERS_DESC = "(Lnet/minecraft/server/MinecraftServer;)V";
-
-	/** MinecraftForge's {@code ClientModLoader.begin}: {@code (Minecraft, PackRepository, ReloadableResourceManager)V}. */
-	static final String FORGE_CLIENT_BEGIN_DESC = "(Lnet/minecraft/client/Minecraft;"
-			+ "Lnet/minecraft/server/packs/repository/PackRepository;"
-			+ "Lnet/minecraft/server/packs/resources/ReloadableResourceManager;)V";
-	private static final String BEGIN = "begin";
 
 	/** The game version, read from the base jar's {@code version.json} (vanilla ships it at the jar root). */
 	private static String detectGameVersion(Path gameJar) {
@@ -1419,17 +1373,10 @@ public final class KernelBoot {
 	 *
 	 * <h2>The carriers' own files, which is the larger half</h2>
 	 *
-	 * <p>{@code carrierJars} are read for the same files, and they are not an afterthought. Each Forge family
-	 * ships an access transformer that widens the GAME for every mod of that family, and the genuine loader
-	 * applies it before anything else runs. The merged base keeps whichever family's method body won the merge,
-	 * along with that body's access flags — so where the two families patched the same method, the loser's
-	 * widening is simply gone.
-	 *
-	 * <p>{@code MenuScreens.register} is the one that matters most: traditional MinecraftForge's file declares it
-	 * public, the merged base has it private, and it is the single line EVERY MinecraftForge mod with a GUI runs
-	 * during client setup. Without this the mod dies there with an illegal-access error and its screens never
-	 * register. Re-applying a widening that is already in place is a no-op, so feeding both families' files in is
-	 * safe as well as correct.
+	 * <p>{@code carrierJars} are read for the same files, and they are not an afterthought. NeoForge ships an access
+	 * transformer that widens the GAME for every NeoForge mod, and the genuine loader applies it before anything else
+	 * runs; a base whose bytes do not already carry a widening gets it here. Re-applying a widening that is already in
+	 * place is a no-op.
 	 */
 	private static net.forbric.kernel.access.AccessTransformer forgeFamilyAccessTransformer(List<Path> modJars,
 			List<Path> carrierJars) {
@@ -1470,10 +1417,8 @@ public final class KernelBoot {
 		if (directives.isEmpty()) return null;
 
 		ForbricLog.info("[Forbric/AT] applying %d Forge-family access-transformer directive(s) from %d jar(s), %d of "
-				+ "them from the runtime carriers — the carriers' file is what makes the game's own members "
-				+ "reachable to every mod of that family, and where the merge kept the other family's method body "
-				+ "it kept that body's access too (MenuScreens.register, which every MinecraftForge GUI mod calls, "
-				+ "came out private)",
+				+ "them from the runtime carrier — the carrier's file is what makes the game's own members "
+				+ "reachable to every NeoForge mod",
 				directives.size(), jarsWithAts, carrierDirectives);
 		return new net.forbric.kernel.access.AccessTransformer(directives);
 	}
@@ -1755,20 +1700,22 @@ public final class KernelBoot {
 	 * <p>De-duplicated per jar: {@code ForgeMetadataMapper} copies one manifest's config list into EVERY
 	 * {@code DiscoveredMod} that manifest declares, so a toml with three {@code [[mods]]} yields the same list three
 	 * times. Cross-jar de-duplication and arbitration happen later, in {@link KernelForgeFamilyMixins}.
+	 *
+	 * <p>Only {@code neoforge.mods.toml} is parsed here. A MinecraftForge {@code mods.toml} is not read for mixin
+	 * requirements: whether a jar's MinecraftForge half refuses the jar or is set aside is decided upstream, by
+	 * {@code LoaderHalfJudge} alone, and none of its mixin configs is collected for anyone.
 	 */
 	private static void collectForgeFamily(ForbricModDiscoverer discoverer, Path jar, List<Path> jars,
 			List<KernelForgeFamilyMixins.ForgeMixinConfig> configs) throws IOException {
 		boolean forgeFamily = false;
 		java.util.Map<Ecosystem, net.forbric.kernel.metadata.forge.ForgeModsToml> tomls = new java.util.HashMap<>();
 		try (java.util.jar.JarFile zip = new java.util.jar.JarFile(jar.toFile())) {
-			for (Ecosystem family : List.of(Ecosystem.NEOFORGE, Ecosystem.FORGE)) {
-				var entry = zip.getJarEntry(family == Ecosystem.NEOFORGE ? "META-INF/neoforge.mods.toml" : "META-INF/mods.toml");
-				if (entry != null) try (var in = zip.getInputStream(entry)) {
-					tomls.put(family, net.forbric.kernel.metadata.forge.ModsTomlParser.parse(in));
-				} catch (RuntimeException unreadable) {
-					// Discovery below records this manifest's failure and yields no mods for its family.
-					Caught.expected(unreadable);
-				}
+			var entry = zip.getJarEntry(ForbricModDiscoverer.NEOFORGE_MANIFEST);
+			if (entry != null) try (var in = zip.getInputStream(entry)) {
+				tomls.put(Ecosystem.NEOFORGE, net.forbric.kernel.metadata.forge.ModsTomlParser.parse(in));
+			} catch (RuntimeException unreadable) {
+				// Discovery below records this manifest's failure and yields no mods for its family.
+				Caught.expected(unreadable);
 			}
 		}
 		java.util.Set<String> seen = new java.util.LinkedHashSet<>();
