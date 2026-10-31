@@ -56,7 +56,12 @@ import net.forbric.kernel.util.ForbricLog;
  * the mixin can name a private method, so its behaviour is unchanged and the interface's default is the one every caller
  * of the interface gets, as on NeoForge. Only private, non-static, concrete methods that are neither injectors nor
  * {@code @Shadow}/{@code @Overwrite} members, and only against interfaces the target's hierarchy declares in the game or
- * a carrier. {@code -Dforbric.mixinPrivateDefaults=off} leaves the names as written.
+ * a carrier. A default of an interface that only a class below the target implements is not hidden: HotSpot selects it
+ * for that class past the private method (MixinPrivateDefaultCollisionTest, measured on the JDK the game runs on), so
+ * those interfaces are not read. Where a class nested in the mixin (a nest member, which may call the mixin's private
+ * methods directly by name) calls the method or cannot be read, the method keeps its name and the clash is logged: that
+ * class is not rewritten here, and renamed alone its call would reach the interface's default instead.
+ * {@code -Dforbric.mixinPrivateDefaults=off} leaves the names as written.
  */
 public final class MixinPrivateDefaultCollision {
 	public static final String PROPERTY = "forbric.mixinPrivateDefaults";
@@ -69,8 +74,17 @@ public final class MixinPrivateDefaultCollision {
 		return !"off".equalsIgnoreCase(System.getProperty(PROPERTY, "on"));
 	}
 
-	/** @return the number of private methods renamed */
+	/** Reading the mixin's nest members through the same lookup: for tests. */
 	public static int adapt(ClassNode mixin, Function<String, ClassNode> classes) {
+		return adapt(mixin, classes, classes);
+	}
+
+	/**
+	 * @param classes  the game's and carriers' classes by internal name, members only
+	 * @param withCode any class the game's loader reads, by internal name, with code (for the mixin's nest members)
+	 * @return the number of private methods renamed
+	 */
+	public static int adapt(ClassNode mixin, Function<String, ClassNode> classes, Function<String, ClassNode> withCode) {
 		if (!enabled() || (mixin.access & Opcodes.ACC_INTERFACE) != 0) return 0;
 		List<String> targets = MixinFit.mixinTargets(mixin);
 		if (targets.isEmpty()) return 0;
@@ -84,6 +98,14 @@ public final class MixinPrivateDefaultCollision {
 			}
 			String owner = defaults.get(m.name + m.desc);
 			if (owner == null) continue;
+			String nested = nestMemberCalling(mixin, m, withCode);
+			if (nested != null) {
+				ForbricLog.warn("[Forbric/Mixin] guest mixin %s's private %s%s keeps its name although %s declares a default of the "
+						+ "same name that it hides from the classes below its target at run time (AbstractMethodError): %s, nested in "
+						+ "the mixin, %s", mixin.name.replace('/', '.'), m.name, m.desc, owner.replace('/', '.'),
+						nested.replace('/', '.'), withCode.apply(nested) == null ? "could not be read" : "calls it by that name");
+				continue;
+			}
 			String name = m.name + "$forbric$" + Integer.toHexString(mixin.name.hashCode());
 			ForbricLog.info("[Forbric/Mixin] guest mixin %s's private %s%s is now %s — %s declares a default of the same name "
 					+ "for its target, and a private method merged under that name hides it from every subclass at run time "
@@ -108,6 +130,28 @@ public final class MixinPrivateDefaultCollision {
 			}
 		}
 		return renamed.size();
+	}
+
+	/** A nest member of the mixin that calls {@code m} (or that cannot be read), or null. */
+	static String nestMemberCalling(ClassNode mixin, MethodNode m, Function<String, ClassNode> withCode) {
+		if (mixin.nestMembers == null) return null;
+		for (String member : mixin.nestMembers) {
+			ClassNode node = withCode.apply(member);
+			if (node == null) return member;
+			for (MethodNode method : node.methods) {
+				for (AbstractInsnNode insn : method.instructions) {
+					if (insn instanceof MethodInsnNode call && call.owner.equals(mixin.name) && call.name.equals(m.name)
+							&& call.desc.equals(m.desc)) return member;
+					if (insn instanceof InvokeDynamicInsnNode indy) {
+						for (Object arg : indy.bsmArgs) {
+							if (arg instanceof Handle h && h.getOwner().equals(mixin.name) && h.getName().equals(m.name)
+									&& h.getDesc().equals(m.desc)) return member;
+						}
+					}
+				}
+			}
+		}
+		return null;
 	}
 
 	/** A private, non-static, concrete method Mixin merges under its own name. */

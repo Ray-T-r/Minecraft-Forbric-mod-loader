@@ -1120,6 +1120,10 @@ test	net.forbric.kernel.mixin.MixinPredicateDelegateSpellingTest	owner-qualified
 test	net.forbric.kernel.mixin.MixinPredicateDelegateSpellingTest	selector in two spellings	[fixture:staged] actual predicate inputs required
 test	net.forbric.kernel.mixin.MixinPredicateDelegateSpellingTest	theReleasedWrapUnderOtherNamesIsLifted()	[fixture:staged] actual predicate inputs required
 test	net.forbric.kernel.mixin.MixinPredicateDelegateSpellingTest	with whitespace	[fixture:staged] actual predicate inputs required
+test	net.forbric.kernel.mixin.MixinPrivateDefaultCollisionTest	aNestMemberThatCallsTheMethodKeepsItsName()	[fixture:staged] the staged base and its NeoForge carrier: $ROOT/forbric-loader/run/neoforge-patched/patched-mc-neoforge-26.2.jar
+test	net.forbric.kernel.mixin.MixinPrivateDefaultCollisionTest	fabricEntityEventsSelfIsRenamedAgainstNeoForgesLivingEntityExtension()	[fixture:staged] actual Fabric API fixture required
+test	net.forbric.kernel.mixin.MixinPrivateDefaultCollisionTest	onVanillaNoInterfaceDefaultsSelf()	[fixture:staged] actual Fabric API fixture required
+test	net.forbric.kernel.mixin.MixinPrivateDefaultCollisionTest	theOffSwitchKeepsTheName()	[fixture:staged] actual Fabric API fixture required
 test	net.forbric.kernel.mixin.MixinRelocatedCallTest	aDeclinedBodyGivesTheWrapNoRelayToMoveTo()	[fixture:staged] actual game required
 test	net.forbric.kernel.mixin.MixinRelocatedCallTest	anInjectAtTheCallStaysPut()	[fixture:staged] actual Fabric API fixture required
 test	net.forbric.kernel.mixin.MixinRelocatedCallTest	fabricsUseOnWrapSelectsTheRelayAndItsUseWrapStays()	[fixture:staged] actual Fabric API fixture required

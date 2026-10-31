@@ -489,7 +489,7 @@ public final class ForbricMixinService
 		FabricCommonPayloadMixinAdapter.adapt(node, this::mergedBaseNodeWithCode);
 		// …and a private method that would hide a default of the same name an interface of its target declares on this base
 		// (fabric-entity-events' self() against NeoForge's ILivingEntityExtension.self()) takes a name of its own.
-		MixinPrivateDefaultCollision.adapt(node, this::mergedBaseNode);
+		MixinPrivateDefaultCollision.adapt(node, this::mergedBaseNode, this::mergedBaseNodeWithCode);
 		MixinPlayerWorldCallbackAdapter.adapt(node, this::mergedBaseNodeWithCode);
 		MixinFluidReactionAdapter.adapt(node, this::mergedBaseNodeWithCode);
 		// …and an @Inject anchored on a call the merged body makes through a subtype of the same method

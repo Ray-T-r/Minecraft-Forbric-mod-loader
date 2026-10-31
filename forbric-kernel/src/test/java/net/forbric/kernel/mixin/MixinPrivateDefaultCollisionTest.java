@@ -117,11 +117,16 @@ class MixinPrivateDefaultCollisionTest {
 
 	/** Defines I (default self()), A (implements I, carrying {@code merged} as its own method) and B extends A; calls I.self() on a B. */
 	private static Object callThroughTheInterface(MethodNode merged) throws Throwable {
+		return callThroughTheInterface(merged, false);
+	}
+
+	/** The same, with I implemented by B instead of A when {@code onTheSubclass}: A, the mixin's target, implements nothing. */
+	private static Object callThroughTheInterface(MethodNode merged, boolean onTheSubclass) throws Throwable {
 		ClassNode i = new ClassNode();
 		i.visit(Opcodes.V21, Opcodes.ACC_PUBLIC | Opcodes.ACC_INTERFACE | Opcodes.ACC_ABSTRACT, "probe/I", null, "java/lang/Object", null);
 		i.methods.add(returnsThis(Opcodes.ACC_PUBLIC, "()Lprobe/I;"));
 		ClassNode a = new ClassNode();
-		a.visit(Opcodes.V21, Opcodes.ACC_PUBLIC, "probe/A", null, "java/lang/Object", new String[] {"probe/I"});
+		a.visit(Opcodes.V21, Opcodes.ACC_PUBLIC, "probe/A", null, "java/lang/Object", onTheSubclass ? null : new String[] {"probe/I"});
 		MethodNode init = new MethodNode(Opcodes.ACC_PUBLIC, "<init>", "()V", null, null);
 		init.instructions.add(new VarInsnNode(Opcodes.ALOAD, 0));
 		init.instructions.add(new MethodInsnNode(Opcodes.INVOKESPECIAL, "java/lang/Object", "<init>", "()V", false));
@@ -129,7 +134,7 @@ class MixinPrivateDefaultCollisionTest {
 		a.methods.add(init);
 		a.methods.add(merged);
 		ClassNode b = new ClassNode();
-		b.visit(Opcodes.V21, Opcodes.ACC_PUBLIC, "probe/B", null, "probe/A", null);
+		b.visit(Opcodes.V21, Opcodes.ACC_PUBLIC, "probe/B", null, "probe/A", onTheSubclass ? new String[] {"probe/I"} : null);
 		MethodNode binit = new MethodNode(Opcodes.ACC_PUBLIC, "<init>", "()V", null, null);
 		binit.instructions.add(new VarInsnNode(Opcodes.ALOAD, 0));
 		binit.instructions.add(new MethodInsnNode(Opcodes.INVOKESPECIAL, "probe/A", "<init>", "()V", false));
@@ -157,5 +162,52 @@ class MixinPrivateDefaultCollisionTest {
 		MethodNode renamed = returnsThis(Opcodes.ACC_PRIVATE, "()Lprobe/I;");
 		renamed.name = "self$forbric$probe";
 		assertNotNull(callThroughTheInterface(renamed), "renamed, the interface's default answers");
+	}
+
+	/**
+	 * Why only the target's own hierarchy is read: a default of an interface that only a class below the target implements is
+	 * not hidden by the private method in the target; HotSpot selects it for that class (Entity-level mixins against
+	 * LivingEntity's ILivingEntityExtension need nothing).
+	 */
+	@Test void aDefaultOnlyASubclasssInterfaceDeclaresIsNotHidden() throws Throwable {
+		assertNotNull(callThroughTheInterface(returnsThis(Opcodes.ACC_PRIVATE, "()Lprobe/I;"), true),
+				"the default answers on a subclass that implements the interface itself, private method in its superclass or not");
+	}
+
+	/** A class nested in the mixin may call its private method by name; it is not rewritten here, so the name stays. */
+	@Test void aNestMemberThatCallsTheMethodKeepsItsName() throws Exception {
+		System.clearProperty(MixinPrivateDefaultCollision.PROPERTY);
+		Function<String, ClassNode> genuine = genuine();
+		String inner = MIXIN + "$Inner";
+
+		ClassNode calling = nestedIn(MIXIN, inner);
+		MethodNode run = new MethodNode(Opcodes.ACC_PUBLIC, "run", "(L" + MIXIN + ";)V", null, null);
+		run.instructions.add(new VarInsnNode(Opcodes.ALOAD, 1));
+		run.instructions.add(new MethodInsnNode(Opcodes.INVOKEVIRTUAL, MIXIN, "self", "()Lnet/minecraft/world/entity/LivingEntity;", false));
+		run.instructions.add(new InsnNode(Opcodes.POP));
+		run.instructions.add(new InsnNode(Opcodes.RETURN));
+		calling.methods.add(run);
+		ClassNode mixin = StagedFabricMixinFixture.mixin("fabric-entity-events-v1", MIXIN);
+		mixin.nestMembers = List.of(inner);
+		assertEquals(0, MixinPrivateDefaultCollision.adapt(mixin, genuine, n -> n.equals(inner) ? calling : genuine.apply(n)));
+		assertTrue(mixin.methods.stream().anyMatch(m -> (m.name + m.desc).equals(SELF)), "a nest member calls it: the name stays");
+
+		ClassNode unreadable = StagedFabricMixinFixture.mixin("fabric-entity-events-v1", MIXIN);
+		unreadable.nestMembers = List.of(inner);
+		assertEquals(0, MixinPrivateDefaultCollision.adapt(unreadable, genuine, n -> n.equals(inner) ? null : genuine.apply(n)),
+				"a nest member that cannot be read might call it: the name stays");
+
+		ClassNode quiet = nestedIn(MIXIN, inner);
+		ClassNode renamed = StagedFabricMixinFixture.mixin("fabric-entity-events-v1", MIXIN);
+		renamed.nestMembers = List.of(inner);
+		assertEquals(1, MixinPrivateDefaultCollision.adapt(renamed, genuine, n -> n.equals(inner) ? quiet : genuine.apply(n)),
+				"a nest member that does not call it changes nothing");
+	}
+
+	private static ClassNode nestedIn(String host, String name) {
+		ClassNode c = new ClassNode();
+		c.visit(Opcodes.V21, Opcodes.ACC_SUPER, name, null, "java/lang/Object", null);
+		c.nestHostClass = host;
+		return c;
 	}
 }
