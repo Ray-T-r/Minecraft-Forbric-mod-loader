@@ -92,7 +92,7 @@ public final class ForbricMergedBaseCompatTransformer implements ClassTransforme
 	}
 
 	/** The repairs {@link #transform} runs, in its order; a test pins the two lists against each other. */
-	static final List<String> REPAIRS = List.of("repairLambdaBootstrapHandles", "addBlockStateModelConflictResolvers", "addBlockStateAppearanceResolver", "routeKeyMappingClickToPopulatedLookup", "giveKeyMappingItsVanillaMap", "giveTheVanillaParticleMapAViewOfTheLiveOne", "letDungeonsGenerateWithoutTheDataMap", "restoreDoublePrecisionToTheRandomSources", "convertRadiansWithVanillasFoldedConstant", "callVanillasWriteByteAgain", "saveTheHeightmapsVanillaSaves", "guardNeoForgesWorldModifierPass", "letForeignResourceConditionsThrough", "letFabricResourceConditionsDecide", "translateAGuestsPrivateSkipMarker", "nameTheReloadListenersNeoForgeRefusesToName", "dropInterfaceDefaultShadowingOverrides", "tolerateEmptyCreativeTabStacks", "bridgeOrphanedPipRenderers", "dropTheWindowTitlesLoaderBrand", "keepTheSaveOffTheTeardownsFailurePath", "askNeoForgeWhatAnItemsAttributesAre", "giveTheUnwrittenLoggerAValue", "dropStubsThatBypassARealSuperclassMethod", "inlineTheSwitchMapTheMergeLost", "vetoUnjudgeableOverlayConditions", "hideTheLegacyLootModifierIndexFromTheDirectoryScan", "letModdedFeatureFlagsRegister", "dropTheKeyModifierSuffixBeforeParsingAKeyName", "letTheAtlasLowerItsMipLevelLikeVanilla", "wrapTheStreamsVanillaWraps", "returnFromANestedBootstrapBeforeItsTail");
+	static final List<String> REPAIRS = List.of("repairLambdaBootstrapHandles", "addBlockStateModelConflictResolvers", "addBlockStateAppearanceResolver", "routeKeyMappingClickToPopulatedLookup", "giveKeyMappingItsVanillaMap", "giveTheVanillaParticleMapAViewOfTheLiveOne", "letDungeonsGenerateWithoutTheDataMap", "restoreDoublePrecisionToTheRandomSources", "convertRadiansWithVanillasFoldedConstant", "callVanillasWriteByteAgain", "saveTheHeightmapsVanillaSaves", "guardNeoForgesWorldModifierPass", "letForeignResourceConditionsThrough", "letFabricResourceConditionsDecide", "translateAGuestsPrivateSkipMarker", "nameTheReloadListenersNeoForgeRefusesToName", "dropInterfaceDefaultShadowingOverrides", "tolerateEmptyCreativeTabStacks", "bridgeOrphanedPipRenderers", "dropTheWindowTitlesLoaderBrand", "keepTheSaveOffTheTeardownsFailurePath", "giveTheUnwrittenLoggerAValue", "dropStubsThatBypassARealSuperclassMethod", "inlineTheSwitchMapTheMergeLost", "vetoUnjudgeableOverlayConditions", "hideTheLegacyLootModifierIndexFromTheDirectoryScan", "letModdedFeatureFlagsRegister", "dropTheKeyModifierSuffixBeforeParsingAKeyName", "letTheAtlasLowerItsMipLevelLikeVanilla", "wrapTheStreamsVanillaWraps", "returnFromANestedBootstrapBeforeItsTail");
 
 	private static final String NEO_EVENT_HOOKS_BINARY = "net.neoforged.neoforge.event.EventHooks";
 
@@ -162,8 +162,6 @@ public final class ForbricMergedBaseCompatTransformer implements ClassTransforme
 				"the window title carries another loader's brand"));
 		out.add(fixed("keepTheSaveOffTheTeardownsFailurePath", INTEGRATED_SERVER,
 				"a throw in IntegratedServer.teardownPublishedState costs the world save"));
-		out.add(fixed("askNeoForgeWhatAnItemsAttributesAre", ITEM_STACK,
-				"an item's attributes are read off the raw component — elytra flight and every NeoForge attribute modifier stop working"));
 		out.add(scanned("giveTheUnwrittenLoggerAValue", "any class with a static final Logger the merge left unassigned"));
 		out.add(scanned("dropStubsThatBypassARealSuperclassMethod", "native-absent delegates with a proved public current superclass implementation"));
 		out.add(scanned("inlineTheSwitchMapTheMergeLost", "absent compiler map fields whose actual native initialization proves each enum case"));
@@ -252,7 +250,6 @@ public final class ForbricMergedBaseCompatTransformer implements ClassTransforme
 			changed |= claim(reporter, "bridgeOrphanedPipRenderers", bridgeOrphanedPipRenderers(node));
 			changed |= claim(reporter, "dropTheWindowTitlesLoaderBrand", dropTheWindowTitlesLoaderBrand(node));
 			changed |= claim(reporter, "keepTheSaveOffTheTeardownsFailurePath", keepTheSaveOffTheTeardownsFailurePath(node));
-			changed |= claim(reporter, "askNeoForgeWhatAnItemsAttributesAre", askNeoForgeWhatAnItemsAttributesAre(node), attributesAlreadyComputed(node));
 			changed |= claim(reporter, "giveTheUnwrittenLoggerAValue", giveTheUnwrittenLoggerAValue(node));
 			changed |= claim(reporter, "dropStubsThatBypassARealSuperclassMethod", dropStubsThatBypassARealSuperclassMethod(node));
 			changed |= claim(reporter, "inlineTheSwitchMapTheMergeLost", inlineTheSwitchMapTheMergeLost(node));
@@ -1669,98 +1666,6 @@ public final class ForbricMergedBaseCompatTransformer implements ClassTransforme
 		return false;
 	}
 
-	/**
-	 * Takes the loader brand out of the window title.
-	 *
-	 * <p>{@code Minecraft.createTitle} builds "Minecraft" and then, when the game reports itself as modified, splices
-	 * in a space, the loader's name and an asterisk before the version — so the merged base, whose title patch is
-	 * NeoForge's, puts "NeoForge" on the window of an instance that is running Fabric, MinecraftForge and NeoForge
-	 * mods side by side. Naming one of the three is worse than naming none.
-	 *
-	 * <p>The brand and its leading space go; the asterisk stays, which is vanilla's own mark for a modified game and
-	 * leaves the title reading "Minecraft* 26.2". Only that one append chain is touched, so a title patch that
-	 * changes shape is left alone rather than half-rewritten.
-	 */
-	private static final String ITEM_STACK = "net/minecraft/world/item/ItemStack";
-	private static final String ATTRIBUTE_MODIFIERS_TYPE = "net/minecraft/world/item/component/ItemAttributeModifiers";
-	private static final String DATA_COMPONENTS = "net/minecraft/core/component/DataComponents";
-	private static final String NEO_ATTRIBUTES = "getAttributeModifiers";
-
-	/**
-	 * Gives an item's attributes back to the mod that computes them — which is what elytra flight hangs off.
-	 *
-	 * <p>The merge split one mechanism down the middle. {@code LivingEntity.canGlide} came from NeoForge, and
-	 * NeoForge's version does not look at the item at all: it asks whether the entity has the
-	 * {@code neoforge:gliding_flight} attribute above zero. {@code ItemStack.forEachModifier} came from vanilla
-	 * (Forge leaves it alone), and vanilla's version reads the raw {@code ATTRIBUTE_MODIFIERS} component. NeoForge's
-	 * version calls {@code getAttributeModifiers()}, whose whole purpose is to post
-	 * {@code ItemAttributeModifierEvent} — and {@code NeoForgeMod.onItemAttributeModifiers} is the ONLY thing
-	 * anywhere that adds the gliding attribute, off the item's {@code minecraft:glider} component.
-	 *
-	 * <p>So the producer was on one side of the merge and the consumer on the other: the attribute is a
-	 * {@code BooleanAttribute} defaulting to false, nothing ever raises it, {@code canGlide()} is permanently
-	 * false, {@code tryToStartFallFlying} refuses and {@code updateFallFlying} clears the flag every tick. Elytra
-	 * simply does not work, with no error anywhere.
-	 *
-	 * <p>The damage is wider than elytra — every mod that adds a modifier through that event was being ignored, and
-	 * elytra is only the case vanilla itself routes through it. The repair points the read at NeoForge's computed
-	 * answer: four instructions become one, same stack shape, no branch and no frame.
-	 *
-	 * <p>The merge-conflict report does not list this method. NeoForge's patch here is an unqualified call to a
-	 * method on {@code ItemStack} itself — an interface default from {@code IItemStackExtension}, which the merged
-	 * class still implements — so it names nothing under {@code net/neoforged/} for a detector to notice.
-	 */
-	private static boolean askNeoForgeWhatAnItemsAttributesAre(ClassNode node) {
-		if (!ITEM_STACK.equals(node.name)) return false;
-		boolean changed = false;
-		for (MethodNode method : node.methods) {
-			if (!"forEachModifier".equals(method.name) || method.instructions == null) continue;
-			for (AbstractInsnNode insn = method.instructions.getFirst(); insn != null; insn = insn.getNext()) {
-				if (!(insn instanceof FieldInsnNode type) || type.getOpcode() != Opcodes.GETSTATIC
-						|| !DATA_COMPONENTS.equals(type.owner) || !"ATTRIBUTE_MODIFIERS".equals(type.name)) {
-					continue;
-				}
-				AbstractInsnNode empty = nextReal(type);
-				AbstractInsnNode fetch = nextReal(empty);
-				AbstractInsnNode cast = nextReal(fetch);
-				// The exact vanilla shape and nothing else: getOrDefault(ATTRIBUTE_MODIFIERS, EMPTY) then a cast.
-				if (!(empty instanceof FieldInsnNode e) || e.getOpcode() != Opcodes.GETSTATIC
-						|| !ATTRIBUTE_MODIFIERS_TYPE.equals(e.owner) || !"EMPTY".equals(e.name)) {
-					continue;
-				}
-				if (!(fetch instanceof MethodInsnNode f) || !"getOrDefault".equals(f.name)) continue;
-				if (!(cast instanceof TypeInsnNode c) || c.getOpcode() != Opcodes.CHECKCAST
-						|| !ATTRIBUTE_MODIFIERS_TYPE.equals(c.desc)) {
-					continue;
-				}
-				AbstractInsnNode after = cast.getNext();
-				method.instructions.insert(cast, new MethodInsnNode(Opcodes.INVOKEVIRTUAL, ITEM_STACK,
-						NEO_ATTRIBUTES, "()L" + ATTRIBUTE_MODIFIERS_TYPE + ";", false));
-				for (AbstractInsnNode dead : new AbstractInsnNode[] { type, empty, fetch, cast }) {
-					method.instructions.remove(dead);
-				}
-				insn = after == null ? method.instructions.getLast() : after;
-				changed = true;
-			}
-		}
-		if (changed) {
-			ForbricLog.info("[Forbric/MergedBaseCompat] ItemStack.forEachModifier now asks NeoForge what an item's "
-					+ "attributes are instead of reading the raw component — the merge took NeoForge's canGlide, which "
-					+ "reads an attribute only NeoForge's ItemAttributeModifierEvent ever sets, and vanilla's reader, "
-					+ "which never posts it. Elytra flight was the visible half of that");
-		}
-		return changed;
-	}
-	private static boolean attributesAlreadyComputed(ClassNode node) {
-		if (!ITEM_STACK.equals(node.name)) return false;
-		List<MethodNode> methods = node.methods.stream().filter(m -> "forEachModifier".equals(m.name)).toList();
-		return !methods.isEmpty() && methods.stream().allMatch(m -> java.util.Arrays.stream(m.instructions.toArray()).anyMatch(i ->
-				i instanceof MethodInsnNode call && node.name.equals(call.owner) && NEO_ATTRIBUTES.equals(call.name)
-						&& ("()L" + ATTRIBUTE_MODIFIERS_TYPE + ";").equals(call.desc))
-				&& java.util.Arrays.stream(m.instructions.toArray()).noneMatch(i -> i instanceof FieldInsnNode field
-						&& DATA_COMPONENTS.equals(field.owner) && "ATTRIBUTE_MODIFIERS".equals(field.name)));
-	}
-
 	static final String LOOT_MODIFIER_MANAGER_NEO = ForeignType.LOOT_MODIFIER_MANAGER.internal(Ecosystem.NEOFORGE);
 	static final String SIMPLE_JSON_LISTENER = "net/minecraft/server/packs/resources/SimpleJsonResourceReloadListener";
 	static final String PREPARE = "prepare";
@@ -2097,6 +2002,18 @@ public final class ForbricMergedBaseCompatTransformer implements ClassTransforme
 		return false;
 	}
 
+	/**
+	 * Takes the loader brand out of the window title.
+	 *
+	 * <p>{@code Minecraft.createTitle} builds "Minecraft" and then, when the game reports itself as modified, splices
+	 * in a space, the loader's name and an asterisk before the version — so the merged base, whose title patch is
+	 * NeoForge's, puts "NeoForge" on the window of an instance that is running Fabric, MinecraftForge and NeoForge
+	 * mods side by side. Naming one of the three is worse than naming none.
+	 *
+	 * <p>The brand and its leading space go; the asterisk stays, which is vanilla's own mark for a modified game and
+	 * leaves the title reading "Minecraft* 26.2". Only that one append chain is touched, so a title patch that
+	 * changes shape is left alone rather than half-rewritten.
+	 */
 	private static boolean dropTheWindowTitlesLoaderBrand(ClassNode node) {
 		if (!"net/minecraft/client/Minecraft".equals(node.name)) return false;
 		MethodNode createTitle = findMethod(node, "createTitle", "()Ljava/lang/String;");

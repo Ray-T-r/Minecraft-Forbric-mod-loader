@@ -1748,13 +1748,6 @@ test	net.forbric.kernel.transform.MergedBaseFrameRecomputerTest	theRealModLinksA
 test	net.forbric.kernel.transform.MergedBaseFrameRecomputerTest	theRecomputedFrameNamesWhatTheRealHierarchySays()	[fixture:staged] staged merged base and carriers absent — skipping the real-hierarchy check: $ROOT/forbric-loader/run/merged-base/patched-mc-merged-26.2.jar
 test	net.forbric.kernel.transform.MergedBaseFrameRecomputerTest	theTypeItemStackKeptIsNotTreatedAsLost()	[fixture:staged] staged merged base and carriers absent — skipping the real-hierarchy check: $ROOT/forbric-loader/run/merged-base/patched-mc-merged-26.2.jar
 test	net.forbric.kernel.transform.MergedBaseInteropAdoptionTest	everyCallTheBaseMakesUnderTheOldNameIsAdoptedAndResolves()	[fixture:staged] staged merged base absent — skipping real-bytecode check
-test	net.forbric.kernel.transform.MergedBaseItemAttributesTest	aSecondPassLeavesTheRepairedClassAlone()	[fixture:staged] staged merged base absent
-test	net.forbric.kernel.transform.MergedBaseItemAttributesTest	anActualRawReaderRegressionIsStillRepairedWithoutOtherBodyChanges()	[fixture:staged] staged merged base absent
-test	net.forbric.kernel.transform.MergedBaseItemAttributesTest	anyOtherClassIsHandedBackUntouchedByTHISRepair()	[fixture:staged] staged merged base absent
-test	net.forbric.kernel.transform.MergedBaseItemAttributesTest	bothOverloadsAskNeoForgeAfterTheRepair()	[fixture:staged] staged merged base absent
-test	net.forbric.kernel.transform.MergedBaseItemAttributesTest	readsOutsideForEachModifierAreLeftAlone()	[fixture:staged] staged merged base absent
-test	net.forbric.kernel.transform.MergedBaseItemAttributesTest	theNeoForgeBaseIsWhatTheRepairReproduces()	[fixture:staged] staged NeoForge base absent
-test	net.forbric.kernel.transform.MergedBaseItemAttributesTest	theRebuiltBaseAlreadyUsesTheNativeComputedAttributes()	[fixture:staged] staged merged base absent
 test	net.forbric.kernel.transform.MergedBaseKeyMappingMapTest	aSecondPassAndAnotherClassAreLeftAlone()	[fixture:staged] staged merged base absent
 test	net.forbric.kernel.transform.MergedBaseKeyMappingMapTest	itIsAViewOfAllAssignedRightAfterAll()	[fixture:staged] staged merged base absent
 test	net.forbric.kernel.transform.MergedBaseKeyMappingMapTest	vanillasMapIsBackAndPublicSoAModReadingItLinks()	[fixture:staged] staged merged base absent
