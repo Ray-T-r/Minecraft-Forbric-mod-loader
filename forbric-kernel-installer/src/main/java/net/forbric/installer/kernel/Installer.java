@@ -35,8 +35,9 @@ import java.util.function.Consumer;
  * <p>The profile inherits from vanilla, which is what lets the launcher resolve assets, natives and the base
  * libraries by itself; on top of that it carries the kernel as {@code mainClass}, Forbric's jars and the kernel's
  * dependencies as libraries, and — as game arguments — the two jars the kernel opens the game with (NeoForge's
- * patched game and the NeoForge runtime) and the vanilla reference it reads beside them. The kernel's own argument parser takes those flags out and forwards everything else
- * to the game, so the launcher's own arguments can arrive in any order around them.
+ * patched game and the NeoForge runtime) and the vanilla reference it reads beside them. The kernel's own argument
+ * parser takes those flags out and forwards everything else to the game, so the launcher's own arguments can arrive in
+ * any order around them.
  *
  * <p>The Minecraft libraries are listed explicitly rather than left to the classpath: the kernel has to OWN them
  * (mods weave into DataFixerUpper and friends), and only the version JSON knows which ones this version uses.

@@ -30,10 +30,10 @@ import java.util.zip.ZipOutputStream;
  * (the kernel's {@code NativeGameReferences}, ecosystem {@code FABRIC}). That evidence used to ride inside the merged
  * base Forbric 0.4 and earlier ran on: {@code MergedBaseBuilder.writeNativeReferences} embedded one
  * {@code META-INF/forbric/native-reference/<ECO>/} tree per ecosystem. NeoForge's patched game, the base Forbric runs
- * on now, embeds nothing, and every adapter that compares against vanilla would then stand down without a word: measured on the
- * genuine base, fabric-api alone left 13 vanilla datapack registries empty, and a resources-only jar with the FABRIC
- * half brought it back to Done. This class is that jar, built from the two files it is a function of, so it can sit
- * beside any base rather than inside one.
+ * on now, embeds nothing, and every adapter that compares against vanilla would then stand down without a word:
+ * measured on the genuine base, fabric-api alone left 13 vanilla datapack registries empty, and a resources-only jar
+ * with the FABRIC half brought it back to Done. This class is that jar, built from the two files it is a function of,
+ * so it can sit beside any base rather than inside one.
  *
  * <p><b>The format is the embedded one, byte for byte</b> — the FABRIC half of {@code writeNativeReferences}, so the
  * kernel reads both through the same code and a test can hold the two side by side: one
