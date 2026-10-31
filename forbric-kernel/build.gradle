@@ -306,8 +306,8 @@ dependencies {
 	// javac's need to READ the class files, which is all this is for, so the pin is about reproducibility.
 	runtimeCompileOnly 'com.google.guava:guava:33.6.0-jre'
 
-	// JOML, GAME side only, on the same terms: fog data carries its colour as a Vector4f, and the MinecraftForge fog
-	// event KernelGameClientEvents posts takes it. Pinned to the version Minecraft 26.2 lists.
+	// JOML, GAME side only, on the same terms: fog data carries its colour as a Vector4f, and the fluid fog colour
+	// KernelForgeFluidClientViews hands on takes it. Pinned to the version Minecraft 26.2 lists.
 	runtimeCompileOnly('org.joml:joml:1.10.8') { transitive = false }
 
 	testImplementation "org.junit.jupiter:junit-jupiter:${project.junit_version}"
@@ -447,8 +447,9 @@ test {
 		systemProperty 'forbric.fabricLoaderJar', file(fabricLoaderFixture).absolutePath
 	}
 	inputs.files(fabricLoaderCandidates).withPropertyName('fabricLoaderCandidates').optional()
-	// Only EventChainAuditTest's own loader gets log4j (the real buses need it); the test classpath keeps none,
-	// because several tests assert ForbricLog's fallback when log4j is absent.
+	// Only the loaders of the tests that run the real event buses get log4j (KernelModLoaderClasslessTest,
+	// FmlTransformerViewTest); the test classpath keeps none, because several tests assert ForbricLog's fallback when
+	// log4j is absent.
 	doFirst { systemProperty 'forbric.log4jApiForTests', configurations.compileClasspath.files.find { it.name.startsWith('log4j-api-') }?.absolutePath ?: '' }
 	// Game-side tests that name MixinExtras (KernelWrapOperationsTest) load it beside build/classes/java/runtime.
 	doFirst { systemProperty 'forbric.mixinExtrasForTests', configurations.nestedMods.files.find { it.name.startsWith('mixinextras-') }?.absolutePath ?: '' }

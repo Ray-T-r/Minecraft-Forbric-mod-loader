@@ -53,8 +53,7 @@ FIXTURES = (
     # The NeoForge builds of the real mods the gates staged as MinecraftForge jars until Stage 3 of dropping MinecraftForge
     # (lib.sh NEO_BUILDS: gate-m4, m12, m13, m32). A gate without it stops on a missing jar.
     'forbric-kernel/run/neoforge-builds',
-    # Two more the tests read by path (GuiItemCaptureMixinAdapterTest, KernelClientHookMixinAnchorsTest,
-    # CompatPluginPlatformInjectorTest). Without them the first nightly's strict run failed those tests as skipped.
+    # Two more the tests read by path (GuiItemCaptureMixinAdapterTest, CompatPluginPlatformInjectorTest). Without them the first nightly's strict run failed those tests as skipped.
     'forbric-kernel/build/sweep80-mac',
     'forbric-kernel/build/sweep100-mac-network',
     # The fabric-loader substrate ./bootstrap.sh checks out (gitignored). forbric-loader compiles its sources, so the
