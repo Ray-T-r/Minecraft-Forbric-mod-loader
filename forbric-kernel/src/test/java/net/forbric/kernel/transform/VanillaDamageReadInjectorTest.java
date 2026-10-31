@@ -121,8 +121,8 @@ class VanillaDamageReadInjectorTest {
 			m.instructions.add(new VarInsnNode(Opcodes.ALOAD, 0));
 			m.instructions.add(new org.objectweb.asm.tree.FieldInsnNode(Opcodes.GETFIELD, living, "damageContainers", "Ljava/util/Stack;"));
 			m.instructions.add(new MethodInsnNode(Opcodes.INVOKEVIRTUAL, "java/util/Stack", "peek", "()Ljava/lang/Object;", false));
-			m.instructions.add(new org.objectweb.asm.tree.TypeInsnNode(Opcodes.CHECKCAST, ForgeDamageSeamsInjector.CONTAINER));
-			m.instructions.add(new MethodInsnNode(Opcodes.INVOKEVIRTUAL, ForgeDamageSeamsInjector.CONTAINER, "getNewDamage", "()F", false));
+			m.instructions.add(new org.objectweb.asm.tree.TypeInsnNode(Opcodes.CHECKCAST, VanillaDamageReadInjector.CONTAINER));
+			m.instructions.add(new MethodInsnNode(Opcodes.INVOKEVIRTUAL, VanillaDamageReadInjector.CONTAINER, "getNewDamage", "()F", false));
 		} else {
 			m.instructions.add(new VarInsnNode(Opcodes.FLOAD, 3));
 		}
