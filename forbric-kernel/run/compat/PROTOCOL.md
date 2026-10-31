@@ -186,14 +186,20 @@ must save and shut down normally. See [the menu probe instructions](../../canary
 
 ## Run and collect
 
-1. Build the five staged artifacts and canaries: the kernel jar, the base, both carriers, and the vanilla-reference
-   sidecar measured against that base (`tools/dev.py prepare` stages it; push-and-run builds one with
-   `run/vanilla-reference-jar.sh` when the staged one records another base). Do not run a gate while a Windows
-   sweep is using those artifacts; gates rebuild the kernel jar in place.
+1. Build the four staged artifacts and canaries: the kernel jar, the base (NeoForge's patched game), its one carrier
+   (the NeoForge runtime), and the vanilla-reference sidecar measured against that base (`tools/dev.py prepare` stages
+   them; push-and-run builds a sidecar with `run/vanilla-reference-jar.sh` when the staged one records another base).
+   The base and the carrier go up only while their build stamps (`<jar>.pins`) name this tree's installer pins;
+   otherwise push-and-run refuses before building or touching anything (point `FORBRIC_OLD` at a prepared stage, or
+   name the files with `--artifact`). Do not run a gate while a Windows sweep is using those artifacts; gates rebuild
+   the kernel jar in place.
 2. Use `push-and-run.sh --label <label> --mods <mods-dir> --manifest <manifest.json>`.
    Preview with `--dry-run --version-json <installed-profile.json>`. The dry run names
-   all five artifact uploads, sanitized mod names, PID stop, cleanup, and evidence. A profile an older installer
-   wrote gains the sidecar's library and its own `--nativeReference` game argument (`PROFILE_ADDS`).
+   all four artifact uploads, sanitized mod names, PID stop, cleanup, and evidence. A profile an older installer
+   (Forbric 0.4 or earlier) wrote is rewritten to the new installer's game: NeoForge's patched game in the merged
+   base's place, no MinecraftForge carrier, the carrier and sidecar at this tree's versions, and exactly the new
+   installer's game arguments (`PROFILE_REWRITES`). A profile that still lacks the sidecar gains its library and its
+   own `--nativeReference` game argument (`PROFILE_ADDS`).
 3. Stop only PIDs read from `.forbric-sweep.pid` / `.forbric-gate.pid`, including the
    server subdirectory's gate file. Never kill all Java/Python/game processes by name.
    Those PIDs include the client and bisect drivers, so a stop also skips their own restore of the player's

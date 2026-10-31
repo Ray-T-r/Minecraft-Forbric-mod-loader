@@ -11,6 +11,8 @@ import java.util.Map;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
+import net.forbric.kernel.TestFixtures;
+
 class PushAndRunTest {
     @TempDir Path temp;
 
@@ -37,7 +39,7 @@ class PushAndRunTest {
         Path mods = Files.createDirectory(temp.resolve("mods"));
         Files.writeString(mods.resolve("a?b.jar"), "fixture");
         Path profile = profile();
-        var result = DriverTools.script("push-and-run.py", Map.of(), "--dry-run", "--label", "baseline",
+        var result = DriverTools.script("push-and-run.py", Map.of("FORBRIC_OLD", stampedStage().toString()), "--dry-run", "--label", "baseline",
                 "--mc", "D:\\FixtureMC", "--version", "test-profile", "--mods", mods.toString(),
                 "--version-json", profile.toString(), "--output", temp.resolve("unused-output").toString());
         assertEquals(0, result.exit(), result.output());
@@ -98,6 +100,80 @@ class PushAndRunTest {
                 assert m.recorded_base_sha1(other) is None
                 """);
         assertEquals(0, result.exit(), result.output());
+    }
+
+    /**
+     * The profile rewrite names the base and the carrier at this tree's pins whatever they were, so a staged jar goes up
+     * only while its build stamp (DevPrepare's {@code <jar>.pins}, dev.py's readiness rule) begins with this tree's
+     * Pins.stamp(): an unstamped carrier (forbric-loader/run's is NeoForge 26.2.0.88) or one stamped by other pins is
+     * refused before anything is built, staged or touched remotely, the dry run included. A file named with --artifact
+     * is the caller's choice and is not judged.
+     */
+    @Test
+    void aStagedGameFromOtherPinsIsRefusedInsteadOfGoingUpUnderThisTreesVersions() throws Exception {
+        Path mods = Files.createDirectory(temp.resolve("mods"));
+        Files.writeString(mods.resolve("a.jar"), "fixture");
+        Path profile = profile();
+        Path stage = stampedStage();
+        Path carrierPins = stage.resolve("run").resolve(TestFixtures.NEO_CARRIER_JAR + ".pins");
+        java.util.function.Function<String[], DriverTools.Result> dryRun = extra -> {
+            var arguments = new java.util.ArrayList<>(java.util.List.of("--dry-run", "--label", "stamps", "--mc", "D:\\FixtureMC",
+                    "--version", "test-profile", "--mods", mods.toString(), "--version-json", profile.toString()));
+            arguments.addAll(java.util.List.of(extra));
+            try {
+                return DriverTools.script("push-and-run.py", Map.of("FORBRIC_OLD", stage.toString()),
+                        arguments.toArray(String[]::new));
+            } catch (Exception failed) {
+                throw new AssertionError(failed);
+            }
+        };
+        assertEquals(0, dryRun.apply(new String[0]).exit(), "a stamped stage goes up");
+
+        Files.delete(carrierPins);
+        var unstamped = dryRun.apply(new String[0]);
+        assertEquals(2, unstamped.exit(), unstamped.output());
+        assertTrue(unstamped.output().contains("neoforge-runtime.jar would go up as net.forbric:neoforge-runtime:"
+                + neoVersion()) && unstamped.output().contains("neoforge-runtime.jar.pins is missing"), unstamped.output());
+        assertFalse(unstamped.output().contains("PUT_ARTIFACT"), unstamped.output());
+
+        Files.writeString(carrierPins, "mc=26.2 neoforge=26.2.0.88 nfrt=2.0.18 result=gameJarNoRecomp tools=0\n");
+        var stale = dryRun.apply(new String[0]);
+        assertEquals(2, stale.exit(), stale.output());
+        assertTrue(stale.output().contains("says \"mc=26.2 neoforge=26.2.0.88"), stale.output());
+        assertFalse(stale.output().contains("patched-mc-neoforge-26.2.jar would go up"), "the stamped base is not named: "
+                + stale.output());
+
+        Path named = Files.writeString(temp.resolve("my-carrier.jar"), "fixture");
+        var overridden = dryRun.apply(new String[] {"--artifact", "net.forbric:neoforge-runtime=" + named});
+        assertEquals(0, overridden.exit(), overridden.output());
+        assertTrue(overridden.output().contains("PUT_ARTIFACT net.forbric:neoforge-runtime " + named.toRealPath()),
+                overridden.output());
+    }
+
+    /** A FORBRIC_OLD stage whose base and carrier carry build stamps of this tree's pins, as DevPrepare writes them. */
+    private Path stampedStage() throws Exception {
+        Path stage = temp.resolve("stamped-stage");
+        String stamp = "mc=" + pin("MINECRAFT") + " neoforge=" + pin("NEOFORGE") + " nfrt=" + pin("NFRT") + " result="
+                + pin("NFRT_RESULT") + " tools=fixture\n";
+        // push-and-run's STAGED layout is the stage's own (ARTIFACTS), which TestFixtures names.
+        for (String jar : new String[] {TestFixtures.BASE_JAR, TestFixtures.NEO_CARRIER_JAR}) {
+            Path path = stage.resolve("run").resolve(jar);
+            Files.createDirectories(path.getParent());
+            if (!Files.exists(path)) Files.writeString(path, "fixture");
+            Files.writeString(path.resolveSibling(path.getFileName() + ".pins"), stamp);
+        }
+        return stage;
+    }
+
+    private static String neoVersion() throws Exception {
+        return pin("NEOFORGE");
+    }
+
+    private static String pin(String name) throws Exception {
+        String pins = Files.readString(Path.of("../forbric-kernel-installer/src/main/java/net/forbric/installer/kernel/Pins.java"));
+        var found = java.util.regex.Pattern.compile("static final String " + name + " = \"([^\"]+)\"").matcher(pins);
+        assertTrue(found.find(), "Pins.java has no " + name);
+        return found.group(1);
     }
 
     /** The version the installer gives NeoForge's patched game and the vanilla reference: Pins.MINECRAFT-Pins.NEOFORGE. */
@@ -269,6 +345,7 @@ class PushAndRunTest {
                 m.stage_tools = lambda args, output: 'D:\\\\tools'
                 m.subprocess.run = lambda *arguments, **options: None
                 m.local_vanilla_reference = lambda base: m.ARTIFACTS[m.VANILLA_REFERENCE]
+                m.stamp_problems = lambda overrides: []  # stamps: aStagedGameFromOtherPinsIsRefused...
                 def run_job(args, stage, tools, output, driver, extra=()):
                     jobs.append((driver, list(extra)))
                     return 0
@@ -406,6 +483,7 @@ class PushAndRunTest {
                 gradlew.write_text('#!/bin/sh\\necho "$@" > "$(dirname "$0")/built"\\necho compile error\\nexit 1\\n')
                 gradlew.chmod(gradlew.stat().st_mode | stat.S_IEXEC)
                 m.KERNEL = kernel
+                m.stamp_problems = lambda overrides: []  # stamps: aStagedGameFromOtherPinsIsRefused...
                 calls = []
                 m.remote = lambda command: calls.append(command) or ''
                 m.put = lambda *a: calls.append(a)

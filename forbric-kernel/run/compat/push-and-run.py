@@ -195,6 +195,43 @@ def artifact_versions(pins_java=None):
     return {BASE: f'{mc}-{neo}', NEO_RUNTIME: neo, VANILLA_REFERENCE: f'{mc}-{neo}'}
 
 
+def pins_stamp(pins_java=None):
+    """The installer's Pins.stamp() (Pins.java), read as tools/dev.py reads it: 'mc=… neoforge=… nfrt=… result=…'.
+
+    DevPrepare writes it, followed by the tools digest, into the build stamp beside each artifact it builds."""
+    value = {name: java_pin(name, pins_java) for name in ('MINECRAFT', 'NEOFORGE', 'NFRT', 'NFRT_RESULT')}
+    return f"mc={value['MINECRAFT']} neoforge={value['NEOFORGE']} nfrt={value['NFRT']} result={value['NFRT_RESULT']}"
+
+
+def stamp_problems(overrides=(), stamp=None, pins_java=None):
+    """Why a staged base or carrier cannot go out under the versions artifact_versions gives it: its build stamp
+    (<jar>.pins) is missing or names other pins. Empty when both are stamped by this tree's pins.
+
+    with_genuine_base names the base and the carrier at this tree's pins whatever the profile said before, and
+    version-json-sync records the SHA-1 of whatever bytes go up, so nothing downstream would notice a carrier built from
+    another NeoForge travelling under the new version: a jar from a stage nobody re-prepared (forbric-loader/run's
+    neoforge-runtime.jar is 26.2.0.88 and unstamped) would run on Windows under a profile that says 26.2.0.93. The stamp is
+    dev.py's own readiness rule (stale_stamps). A file named with --artifact is the caller's choice and is not judged."""
+    named = {item.split('=', 1)[0] for item in overrides}
+    stamp = stamp or pins_stamp(pins_java)
+    versions = artifact_versions(pins_java)
+    problems = []
+    for coordinate in (BASE, NEO_RUNTIME):
+        if coordinate in named:
+            continue
+        jar = Path(ARTIFACTS[coordinate])
+        pins = jar.with_name(jar.name + '.pins')
+        try:
+            recorded = pins.read_text(encoding='utf-8').strip()
+        except OSError:
+            recorded = None
+        if recorded is None or not recorded.startswith(stamp):
+            problems.append(f'{jar} would go up as {coordinate}:{versions[coordinate]}, but '
+                            + (f'{pins} is missing' if recorded is None else f'{pins} says "{recorded}"')
+                            + f' (this tree builds "{stamp}")')
+    return problems
+
+
 def library_path(coordinate, version):
     """Where a launcher keeps group:name:version under libraries/ (Util.coordinateToPath)."""
     group, name = coordinate.split(':')
@@ -759,6 +796,12 @@ def main():
     files = mod_files(args.mods)
     if args.dry_run and not args.version_json:
         parser.error('--dry-run needs --version-json so every artifact destination can be verified')
+    # Before the kernel is built or any evidence directory exists: a refused run leaves nothing to clean up.
+    stale = stamp_problems(args.artifact)
+    if stale:
+        parser.error('the staged game is not the one this tree installs, so nothing was staged:\n  ' + '\n  '.join(stale)
+                     + '\nRun python3 tools/dev.py prepare and set FORBRIC_OLD=forbric-kernel/.dev/staged, or name the '
+                     'files with --artifact ' + BASE + '=<jar> --artifact ' + NEO_RUNTIME + '=<jar>')
     if not args.dry_run:
         if output.exists() and any(output.iterdir()):
             parser.error('output already contains evidence; choose a new --label or --output')
