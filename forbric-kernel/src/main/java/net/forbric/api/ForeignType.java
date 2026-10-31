@@ -88,7 +88,7 @@ public enum ForeignType {
 	/** Custom skull models: MinecraftForge's is never posted on the merged client, NeoForge's through the kernel's client init. */
 	CREATE_SKULL_MODELS_EVENT("net.minecraftforge.client.event.EntityRenderersEvent$CreateSkullModels",
 			"net.neoforged.neoforge.client.event.EntityRenderersEvent$CreateSkullModels"),
-	/** An item's burn time: the merged FuelValues asks both families through the kernel. */
+	/** An item's burn time: NeoForge's base posts NeoForge's event from ItemStack.getBurnTime itself; no kernel code reads this pair. */
 	FURNACE_FUEL_BURN_TIME_EVENT("net.minecraftforge.event.furnace.FurnaceFuelBurnTimeEvent",
 			"net.neoforged.neoforge.event.furnace.FurnaceFuelBurnTimeEvent"),
 	// The mod-lifecycle phases. Paired because the kernel posts each one at BOTH families and the two events are
