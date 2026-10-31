@@ -53,7 +53,8 @@ public final class DelegationPolicy {
 			"org.objectweb.asm.",
 			"org.spongepowered.asm.", "org.spongepowered.include.",
 			"org.apache.logging.log4j.", "org.slf4j.",
-			// NightConfig, and the reason it is pinned. The MinecraftForge runtime carrier bundles a copy at the
+			// NightConfig, and the reason it is pinned. The MinecraftForge runtime carrier (gone since Forbric stopped
+			// loading MinecraftForge; the pin stays, because any carrier or mod jar may shade it) bundled a copy at the
 			// UNSHADED package name, and in that copy StampedConfig.valueMap() is the 3.7.4 stub that throws
 			// "StampedConfig does not support valueMap() yet." Because the carrier is one of this loader's own
 			// jars, child-first handed every NightConfig class to that copy — shadowing the working 3.8.x on the

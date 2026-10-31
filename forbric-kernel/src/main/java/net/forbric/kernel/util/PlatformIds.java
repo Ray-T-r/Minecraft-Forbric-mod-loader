@@ -12,8 +12,11 @@ import java.util.Set;
  *   <li>{@code minecraft}, {@code java}, {@code fabricloader}: the builtin mods the kernel registers for the Fabric
  *       family ({@code KernelFabricEcosystem.build});</li>
  *   <li>{@code mixinextras}: the MixinExtras the kernel bundles and initialises for every family;</li>
- *   <li>{@code forge}, {@code neoforge}: the ecosystem ids the runtime carriers declare in their own mods.toml, and
- *       {@code fml}, their loader's.</li>
+ *   <li>{@code neoforge}: the ecosystem id the runtime carrier declares in its own mods.toml, and {@code fml}, its
+ *       loader's;</li>
+ *   <li>{@code forge}: declared by no carrier since Forbric stopped loading MinecraftForge, and kept on purpose (Stage 4
+ *       decision D26) so that a requirement on it reads as met as it always has, instead of every mod naming it turning
+ *       up as a new unmet dependency.</li>
  * </ul>
  *
  * <p>{@code fabric} is not one of them. It was fabric-api's own {@code provides} alias in older releases; neither Fabric

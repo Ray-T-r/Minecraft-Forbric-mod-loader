@@ -37,8 +37,9 @@
  *       entire event layer on a dedicated server ({@code KernelEventSubscribers}' javadoc has the account). So
  *       {@link net.forbric.api.ForeignType} maps <em>names</em> only, and the two {@code ServerModLoader.load}
  *       triggers keep their different descriptors and different hooks.</li>
- *   <li><b>Not every grouping is a missing split.</b> {@code LoaderProbePolicy.Family} stays two-valued on
- *       purpose: a NeoForge mod probing for MinecraftForge's {@code FMLLoader} must still be told yes.</li>
+ *   <li><b>Not every grouping is a missing split, nor every split a grouping.</b> {@code LoaderProbePolicy.Family}
+ *       has one constant per family Forbric loads (Fabric, NeoForge); a mod probing for MinecraftForge's
+ *       {@code FMLLoader} is told it is absent, whatever its family, as on its own loader.</li>
  * </ol>
  *
  * <h2>On the dependency back into {@code net.forbric.kernel.util.ForbricLog}</h2>
