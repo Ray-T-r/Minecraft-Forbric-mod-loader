@@ -78,9 +78,11 @@ replacing a block entity makes every cached view move nothing (the Fabric view o
 handler of a Reborn cell), and fresh queries then reach the new cell; a NeoForge write into a Reborn cell in a clean
 chunk stays clean on abort and dirties it exactly once per root commit; the Fabric addon's explicit Reborn provider on
 the NeoForge `bare` block (nothing answers there before it registers) is reached by the NeoForge consumer on NORTH and
-null with the face passed through, SOUTH refused, and moves land in the addon's store; a 5,000,000,000 E Reborn cell
+null with the face passed through, SOUTH refused, and its committed inserts and extracts land in the addon's store
+(whose capacity it reads); a 5,000,000,000 E Reborn cell
 reads as Integer.MAX_VALUE through int APIs and moving all of it into an int cell moves exactly 2,147,483,647 and
 keeps the rest. `reload` checks every amount after a real save and runs the routes again. `noreborn` removes Reborn
 and the Fabric cell: the NeoForge cell, read by the NeoForge consumer, and the JVM's own class-load log must contain no
-`team.reborn` class and no Reborn half of the bridge. `negative` turns the bridge off and must fail at a foreign
+`team.reborn` class and no Reborn half of the bridge. With one family nothing crosses engines and no consumer of
+another family caches a view, so the nested-rollback and cached-view checks print SKIP there, not PASS. `negative` turns the bridge off and must fail at a foreign
 lookup. Evidence: `build/verification/m40-energy/`.

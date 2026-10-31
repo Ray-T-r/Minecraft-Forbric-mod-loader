@@ -216,15 +216,18 @@ public final class EnergyWorldProbe {
 
 	/** Real nested scopes across engines: a committed child survives only until its root aborts. */
 	private static void checkNestedRollback(ServerLevel level, List<Consumer> consumers, Map<String, BlockPos> primaries) {
+		int pairs = 0;
 		for (Consumer consumer : consumers) {
 			for (var destination : primaries.entrySet()) {
 				if (destination.getKey().equals(consumer.family())) continue;
 				Object from = consumer.find(level, primaries.get(consumer.family()), Direction.NORTH), to = consumer.find(level, destination.getValue(), Direction.NORTH);
 				equal(700, consumer.nestedThenAbort(from, to, 700));
-				checkPrimaryState(level, primaries);
+				checkPrimaryState(level, primaries); pairs++;
 			}
 		}
-		System.out.println("[M40Energy] PASS nested commit then root abort restored every cell on both transaction engines");
+		// Without Reborn there is one family, so no pair crosses engines: say so instead of passing on nothing.
+		if (pairs == 0) System.out.println("[M40Energy] SKIP nested rollback: one transaction engine, no cross-engine pair");
+		else System.out.println("[M40Energy] PASS nested commit then root abort restored every cell on both transaction engines (" + pairs + " pairs)");
 	}
 
 	/** Removing the block entity invalidates every cached foreign view by itself; no manual invalidation. */
@@ -256,7 +259,9 @@ public final class EnergyWorldProbe {
 		yes(neoReplacement != neoCell && ((BlockEntity) neoCell).isRemoved(), "world did not replace the NeoForge cell");
 		for (Object[] entry : cached) equal(0, ((Consumer) entry[0]).insert(entry[1], 10, true));
 		for (Cell cell : List.of(neoCell, neoReplacement)) equal(0, cell.energy());
-		System.out.println("[M40Energy] PASS cached foreign energy views cannot write replaced block entities");
+		// Only another family's consumer caches a foreign view of the NeoForge cell (none without Reborn).
+		if (cached.isEmpty()) System.out.println("[M40Energy] SKIP cached foreign energy views: no consumer of another family cached one");
+		else System.out.println("[M40Energy] PASS cached foreign energy views cannot write replaced block entities (" + cached.size() + " cached)");
 		if (reborn) {
 			Cell fabricReplacement = place(level, EnergyMachines.INVALIDATE_FABRIC, EnergyMachines.FABRIC, "cell");
 			yes(fabricReplacement != fabricCell && ((BlockEntity) fabricCell).isRemoved(), "world did not replace the Fabric cell");
@@ -299,7 +304,8 @@ public final class EnergyWorldProbe {
 		Object neo = NEO_CONSUMER.find(level, EnergyMachines.EXPLICIT, Direction.NORTH);
 		equal(300, NEO_CONSUMER.insert(neo, 300, false)); equal(0, addon.energy(EnergyMachines.EXPLICIT));
 		equal(300, NEO_CONSUMER.insert(neo, 300, true)); equal(300, addon.energy(EnergyMachines.EXPLICIT));
-		equal(300, NEO_CONSUMER.amount(neo));
+		equal(100, NEO_CONSUMER.extract(neo, 100, true)); equal(200, addon.energy(EnergyMachines.EXPLICIT));
+		equal(200, NEO_CONSUMER.amount(neo)); equal(100_000, NEO_CONSUMER.capacity(neo));
 		System.out.println("[M40Energy] PASS a Fabric addon's explicit Reborn provider on a NeoForge block reaches the NeoForge consumer");
 	}
 
