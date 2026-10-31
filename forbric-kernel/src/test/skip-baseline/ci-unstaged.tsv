@@ -1250,7 +1250,7 @@ test	net.forbric.kernel.mixin.MixinStubRebindTest	aDefaultForwardingToAnAbstract
 test	net.forbric.kernel.mixin.MixinStubRebindTest	aLambdaStubIsAStubAndACapturingOneAComputedStub()	[fixture:staged] actual game required
 test	net.forbric.kernel.mixin.MixinStubRebindTest	aModifyVariableByNameMovesToTheBodyThatHasTheLocal()	[fixture:staged] actual game required
 test	net.forbric.kernel.mixin.MixinStubRebindTest	aModifyVariableIsLeftWhereNothingProvesTheLocal()	[fixture:staged] actual game required
-test	net.forbric.kernel.mixin.MixinStubRebindTest	aNeoForgeModMovesOffAStubOnlyMinecraftForgeHas()	[fixture:staged] actual game required
+test	net.forbric.kernel.mixin.MixinStubRebindTest	aHookOnTheDetectorBodyNeoForgeKeptStaysThere()	[fixture:staged] actual game required
 test	net.forbric.kernel.mixin.MixinStubRebindTest	aNeoForgeModsMixinIsLeftAsNeoForgeWouldHaveIt()	[fixture:third-party] run/client-popular/mods/architectury-fabric-21.1.10.jar absent
 test	net.forbric.kernel.mixin.MixinStubRebindTest	aPairVanillaAlreadyHasStaysWhereTheModPutIt()	[fixture:third-party] local merged mod pack: run/client-merged-pack/mods
 test	net.forbric.kernel.mixin.MixinStubRebindTest	aParameterAnnotationThatIsNotSugarDoesNotKeepTheInjectorOnTheStub()	[fixture:staged] actual game required

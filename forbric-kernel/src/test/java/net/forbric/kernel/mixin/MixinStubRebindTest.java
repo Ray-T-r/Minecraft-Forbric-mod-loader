@@ -550,17 +550,20 @@ class MixinStubRebindTest {
 		return method == null ? null : method.name + method.desc;
 	}
 
-	/** The mirror: MinecraftForge forwards PackDetector's two-argument detectPackResources; NeoForge kept it as the body. */
-	@Test void aNeoForgeModMovesOffAStubOnlyMinecraftForgeHas() throws Exception {
+	/**
+	 * PackDetector's two-argument detectPackResources: the merged base carried it as MinecraftForge's stub, so a NeoForge
+	 * mod's bare-name hook was moved onto the body. Genuine NeoForge kept it as the body, so the hook binds where it was
+	 * written and nothing moves, for a NeoForge mod as for a Fabric one.
+	 */
+	@Test void aHookOnTheDetectorBodyNeoForgeKeptStaysThere() throws Exception {
 		String owner = "net/minecraft/server/packs/repository/PackDetector";
 		ClassNode detector = merged(owner);
-		for (Ecosystem ecosystem : List.of(Ecosystem.NEOFORGE, Ecosystem.FORGE)) {
+		for (Ecosystem ecosystem : List.of(Ecosystem.NEOFORGE, Ecosystem.FABRIC)) {
 			ClassNode mixin = synthetic("com/example/PackDetectorMixin", owner, "onDetect", "(" + CALLBACK_INFO_RETURNABLE + ")V", false,
 					injector(INJECT, "detectPackResources", List.of(at("HEAD"))));
 			MixinStubRebind.noteEcosystem(mixin.name, ecosystem);
-			assertEquals(ecosystem == Ecosystem.NEOFORGE ? 1 : 0, MixinStubRebind.adapt(mixin, name -> detector), ecosystem.name());
-			assertEquals(List.of(ecosystem == Ecosystem.NEOFORGE ? "detectPackResources(Ljava/nio/file/Path;Ljava/util/List;Z)Ljava/lang/Object;"
-					: "detectPackResources"), selectors(mixin, "onDetect"), ecosystem.name());
+			assertEquals(0, MixinStubRebind.adapt(mixin, name -> detector), ecosystem.name());
+			assertEquals(List.of("detectPackResources"), selectors(mixin, "onDetect"), ecosystem.name());
 		}
 	}
 
