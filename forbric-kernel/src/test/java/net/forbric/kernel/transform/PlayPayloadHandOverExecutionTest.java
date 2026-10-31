@@ -210,9 +210,7 @@ class PlayPayloadHandOverExecutionTest {
 	}
 
 	/**
-	 * Off leaves out the hand-over: the override still drops what MinecraftForge declines. The filter on the override's
-	 * own Forge call is a separate repair and stays ({@code NativeForgePayloadDispatchExecutionTest}); it moves that one
-	 * call's constants and nothing else.
+	 * Off leaves out the hand-over: the override still drops what MinecraftForge declines.
 	 */
 	@Test void theOffSwitchLeavesOutTheHandOver(@TempDir Path work) throws Throwable {
 		System.setProperty(SWITCH, "off");

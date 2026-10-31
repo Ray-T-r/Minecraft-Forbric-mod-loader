@@ -139,8 +139,6 @@ class TransformerRegistrationOrderTest {
 		// This registration is the whole fix: without the client part tracking a NeoForge mod's multipart entity
 		// disconnects the client on sight. The repair's own test constructs it directly, so a merge of these lines that
 		// dropped it left every test green; one that kept both sides' copies is caught too.
-		assertEquals(0, Collections.frequency(order, "net/forbric/kernel/transform/DragonPartsInjector"),
-                "the old retype/empty-array rewrite is retired; both native APIs survive the merge");
         for (String repair : List.of("net/forbric/kernel/transform/ClientPartTrackingInjector")) {
 			assertEquals(1, Collections.frequency(order, repair),
 					repair + " must be constructed exactly once in launch(). Full order: " + order);

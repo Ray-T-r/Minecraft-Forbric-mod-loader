@@ -341,8 +341,7 @@ public final class KernelRuntimeClasses {
 		CLASSES.put("net.forbric.kernel.runtime.KernelSharedPredicateScopes", new Entry(Origin.COMPILED, List.of()));
 		CLASSES.put("net.forbric.kernel.runtime.KernelFluidPredicateIslands", new Entry(Origin.COMPILED, List.of()));
 		CLASSES.put("net.forbric.kernel.runtime.KernelSourceDecodeScopes", new Entry(Origin.COMPILED, List.of()));
-		// MinecraftForge's Hurt, Damage and player Attack, from the seams ForgeDamageSeamsInjector writes into the merged
-		// actuallyHurt and Player.hurtServer; Player.<clinit> reports the attack seam in.
+		// The vanilla damage reads VanillaDamageReadInjector routes through it (vanillaRead / absorbedRead).
 		CLASSES.put("net.forbric.kernel.runtime.KernelLivingDamage", new Entry(Origin.COMPILED, List.of()));
 		// NeoForge's CustomPacketPayload.codec calls through(), and vanilla's asks protocol()/flow(): every payload codec
 		// is built through vanilla's overload again (PayloadCodecFunnelInjector). Inserted calls, game-typed descriptors.

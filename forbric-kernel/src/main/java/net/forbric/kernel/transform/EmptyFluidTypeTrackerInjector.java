@@ -36,8 +36,7 @@ import org.objectweb.asm.tree.VarInsnNode;
  * with MinecraftForge's, whose view is NeoForge's) loses its tracker too, where both native loaders give it one — a
  * measured difference (a body in it falls as through air; natively MinecraftForge moves it as through lava and NeoForge
  * holds it still) that no jar in the local corpus has a fluid for. Keying on the kernel's stand-in is the open fix.
- * MinecraftForge's record of the same cell (ForgeEntityFluidsInjector, which keeps MinecraftForge's "any fluid
- * touched") is taken before this lookup and is unchanged. On the reviewed shape only: one parameter, NeoForge's type,
+ * On the reviewed shape only: one parameter, NeoForge's type,
  * returning the tracker. Not made twice. {@code -Dforbric.emptyFluidTypeTracker=off} leaves it as merged.
  */
 public final class EmptyFluidTypeTrackerInjector implements ClassTransformer {
