@@ -8,7 +8,7 @@
 #
 # Run this before adopting a carrier bump, not after a player reports it.
 #
-# Usage: ./repair-drift.sh <candidate-merged-base.jar> [<carrier.jar> ...]
+# Usage: ./repair-drift.sh <candidate-game-base.jar> [<carrier.jar> ...]
 #        ./repair-drift.sh                     # the currently staged build, as a baseline
 set -uo pipefail
 HERE="$(cd "$(dirname "$0")" && pwd)"
@@ -17,9 +17,8 @@ OLD="${FORBRIC_OLD:-$(cd "$KERNEL/../forbric-loader" && pwd)}"
 RUN_OLD="$OLD/run"
 
 if [ "$#" -eq 0 ]; then
-  set -- "$RUN_OLD/merged-base/patched-mc-merged-26.2.jar" \
-         "$RUN_OLD/neoforge-runtime/neoforge-runtime.jar" \
-         "$RUN_OLD/forge-runtime/forge-runtime.jar"
+  set -- "$RUN_OLD/neoforge-patched/patched-mc-neoforge-26.2.jar" \
+         "$RUN_OLD/neoforge-runtime/neoforge-runtime.jar"
 fi
 for f in "$@"; do
   [ -f "$f" ] || { echo "not a file: $f" >&2; exit 3; }
