@@ -142,10 +142,11 @@ public final class CommonNetworkInteropInjector implements ClassTransformer {
 	 * NeoForge's {@code super} body makes for a mod payload, {@code NetworkRegistry.handleModdedPayload}, directly.
 	 *
 	 * <p>NeoForge's own base makes that override {@code super.handleCustomPayload(packet)}, so this rewrite finds nothing
-	 * there and the same switch governs {@link net.forbric.kernel.mixin.FabricCommonPayloadMixinAdapter}, which lets the
-	 * fabric-api handler waiting in super pass a play listener's payload on to NeoForge's body instead of throwing.
+	 * there; {@link net.forbric.kernel.mixin.FabricCommonPayloadMixinAdapter} lets the fabric-api handler waiting in super
+	 * pass a play listener's payload on to NeoForge's body instead of throwing. It reads the same property name itself, so
+	 * removing this rewrite and its reader leaves that adapter and its off switch as they are.
 	 */
-	public static boolean playFallThroughEnabled() {
+	static boolean playFallThroughEnabled() {
 		return !"off".equalsIgnoreCase(System.getProperty("forbric.playPayloadFallThrough", "on"));
 	}
 

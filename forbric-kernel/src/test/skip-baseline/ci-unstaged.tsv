@@ -487,6 +487,12 @@ test	net.forbric.kernel.mixin.FabricClientMixinAnchorsTest	releasedLiquidBounceD
 test	net.forbric.kernel.mixin.FabricClientMixinAnchorsTest	screenExtractIsLeftAloneWhereFabricsOwnAnchorExistsOrItsHandlerDoesNotVerify()	[fixture:mc-libraries] actual game required
 test	net.forbric.kernel.mixin.FabricClientMixinAnchorsTest	sourceScreenEventsKeepTheirEntireBodyAroundTheActualTopDraw()	[fixture:staged] actual Fabric API fixture required
 test	net.forbric.kernel.mixin.FabricClientMixinAnchorsTest	unmatchedSignaturesMissingNativePointsAndAVanillaHostRemainUnchanged()	[fixture:staged] actual game required
+test	net.forbric.kernel.mixin.FabricCommonPayloadMixinAdapterTest	aHandlerThatServesAPlayAddonOrMoreThanOneKindIsLeftAlone()	[fixture:staged] actual game required
+test	net.forbric.kernel.mixin.FabricCommonPayloadMixinAdapterTest	onNeoForgesBaseThePlayListenerReturnsBeforeTheRefusal()	[fixture:staged] actual game required
+test	net.forbric.kernel.mixin.FabricCommonPayloadMixinAdapterTest	onVanillaNothingChanges()	[fixture:mc-libraries] actual game required
+test	net.forbric.kernel.mixin.FabricCommonPayloadMixinAdapterTest	runTheHandlerAPlayListenerGoesOnAndTheConfigurationListenerIsServedAsWritten()	[fixture:staged] actual game required
+test	net.forbric.kernel.mixin.FabricCommonPayloadMixinAdapterTest	theOffSwitchLeavesTheHandlerAsWritten()	[fixture:staged] actual game required
+test	net.forbric.kernel.mixin.FabricCommonPayloadMixinAdapterTest	theRuleReadsWhatTheHandlerDoes()	[fixture:staged] actual Fabric API fixture required
 test	net.forbric.kernel.mixin.FabricCreativePagerGuestControlsTest	theDecisionFollowsWhatIsInstalledAndTheCarriersShape()	[fixture:third-party] run/client-merged-pack/mods/fabric-api-0.155.2+26.2.jar is not present beside this checkout or the staged one
 test	net.forbric.kernel.mixin.FabricCreativePagerGuestControlsTest	withTheGuestsControlsDrawnItsButtonInjectorStaysWithoutItsPageWrite()	[fixture:third-party] run/client-merged-pack/mods/fabric-api-0.155.2+26.2.jar is not present beside this checkout or the staged one
 test	net.forbric.kernel.mixin.FabricCreativePagerMixinAdapterTest	keyboardKeepsItsExactBodyAndTheSecondPagerStateIsRemoved()	[fixture:third-party] build/compat-inputs/player-loading/api/fabric-creative-tab-api-v1-5.0.15+6468574f9e.jar absent

@@ -33,7 +33,6 @@ import org.objectweb.asm.tree.MethodNode;
 import org.objectweb.asm.tree.TypeInsnNode;
 import org.objectweb.asm.tree.VarInsnNode;
 
-import net.forbric.kernel.transform.CommonNetworkInteropInjector;
 import net.forbric.kernel.util.ForbricLog;
 
 /**
@@ -55,13 +54,17 @@ import net.forbric.kernel.util.ForbricLog;
  * <p>The handler now returns at its head for a play listener, the one listener this base sends there that vanilla never
  * does: fabric-api has already offered that payload to its play receiver at the play listener's own HEAD, and NeoForge's
  * body then runs as written. The configuration listener is untouched. Recognised by what the handler does — a non-static
- * HEAD {@code @Inject} of {@code handleCustomPayload} on {@code ServerCommonPacketListenerImpl} that throws an
- * {@code IllegalStateException} — and only against a base whose play listener calls that super; on vanilla's empty
- * override nothing changes. {@code -Dforbric.playPayloadFallThrough=off} (the play-phase hand-over's switch, which on the
- * merged base controlled the same delivery) leaves the handler as written.
+ * HEAD {@code @Inject} of {@code handleCustomPayload} on {@code ServerCommonPacketListenerImpl} that tests its listener's
+ * network addon once, against a configuration addon, and throws an {@code IllegalStateException} for every other addon
+ * (the else-branch of that one test) — and only against a base whose play listener calls that super; on vanilla's empty
+ * override nothing changes. A handler that serves more than one kind of addon, or one that is not a configuration addon,
+ * is left as written: returning before it would silently drop the play payloads it serves, where leaving it shows as the
+ * disconnect. {@code -Dforbric.playPayloadFallThrough=off} leaves the handler as written; it is the switch that on the
+ * merged base turned off the same delivery ({@code CommonNetworkInteropInjector}'s play-phase hand-over), read here on its
+ * own so either side can go without the other.
  */
 public final class FabricCommonPayloadMixinAdapter {
-	/** The off switch: the play-phase hand-over's, read through {@link CommonNetworkInteropInjector#playFallThroughEnabled()}. */
+	/** The off switch (the same name as the merged base's play-phase hand-over in {@code CommonNetworkInteropInjector}). */
 	public static final String PROPERTY = "forbric.playPayloadFallThrough";
 	static final String COMMON_LISTENER = "net/minecraft/server/network/ServerCommonPacketListenerImpl";
 	static final String GAME_LISTENER = "net/minecraft/server/network/ServerGamePacketListenerImpl";
@@ -74,10 +77,13 @@ public final class FabricCommonPayloadMixinAdapter {
 
 	private FabricCommonPayloadMixinAdapter() { }
 
+	public static boolean enabled() {
+		return !"off".equalsIgnoreCase(System.getProperty(PROPERTY, "on"));
+	}
+
 	/** @return the number of handlers that now let a play listener's payload through, or 0 */
 	public static int adapt(ClassNode mixin, Function<String, ClassNode> targets) {
-		if (!CommonNetworkInteropInjector.playFallThroughEnabled()
-				|| !MixinFit.mixinTargets(mixin).equals(List.of(COMMON_LISTENER))) return 0;
+		if (!enabled() || !MixinFit.mixinTargets(mixin).equals(List.of(COMMON_LISTENER))) return 0;
 		int adapted = 0;
 		for (MethodNode handler : mixin.methods) {
 			if (!refusesOtherListeners(handler)) continue;
@@ -93,7 +99,11 @@ public final class FabricCommonPayloadMixinAdapter {
 		return adapted;
 	}
 
-	/** A non-static HEAD {@code @Inject} of {@code handleCustomPayload} that throws an {@code IllegalStateException} somewhere. */
+	/**
+	 * A non-static HEAD {@code @Inject} of {@code handleCustomPayload} that serves one kind of network addon, a configuration
+	 * one, and throws an {@code IllegalStateException} for every other: exactly one {@code INSTANCEOF} in the handler, of a
+	 * type whose simple name says configuration, whose false branch goes straight to {@code new IllegalStateException}.
+	 */
 	static boolean refusesOtherListeners(MethodNode handler) {
 		if ((handler.access & Opcodes.ACC_STATIC) != 0 || !HANDLER_DESC.equals(handler.desc)) return false;
 		AnnotationNode inject = MixinFit.injectorOf(handler);
@@ -102,10 +112,29 @@ public final class FabricCommonPayloadMixinAdapter {
 		if (methods.size() != 1 || !(methods.getFirst().equals(HANDLE) || methods.getFirst().equals(HANDLE + HANDLE_DESC))) return false;
 		List<AnnotationNode> at = MixinFit.atNodes(inject);
 		if (at.size() != 1 || !"HEAD".equals(MixinFit.value(at.getFirst(), "value"))) return false;
+		TypeInsnNode test = null;
 		for (AbstractInsnNode insn : handler.instructions) {
-			if (insn instanceof TypeInsnNode type && type.getOpcode() == Opcodes.NEW && REFUSAL.equals(type.desc)) return true;
+			if (insn instanceof TypeInsnNode type && type.getOpcode() == Opcodes.INSTANCEOF) {
+				if (test != null) return false;   // serves more than one kind: not the configuration-only handler
+				test = type;
+			}
 		}
-		return false;
+		if (test == null || !servesConfiguration(test.desc)) return false;
+		AbstractInsnNode branch = nextReal(test);
+		if (!(branch instanceof JumpInsnNode jump) || jump.getOpcode() != Opcodes.IFEQ) return false;
+		return nextReal(jump.label) instanceof TypeInsnNode refusal && refusal.getOpcode() == Opcodes.NEW && REFUSAL.equals(refusal.desc);
+	}
+
+	/** The addon the handler serves is a configuration addon, never the play listener or a play addon. */
+	static boolean servesConfiguration(String type) {
+		String simple = type.substring(type.lastIndexOf('/') + 1);
+		return simple.contains("Configuration") && !simple.contains("Play") && !GAME_LISTENER.equals(type);
+	}
+
+	private static AbstractInsnNode nextReal(AbstractInsnNode insn) {
+		AbstractInsnNode next = insn.getNext();
+		while (next != null && next.getOpcode() < 0) next = next.getNext();
+		return next;
 	}
 
 	/** The base's play listener declares {@code handleCustomPayload} and hands the packet to its super's. */
