@@ -52,7 +52,6 @@ public final class FlowerPotRepairInjector implements ClassTransformer {
 			+ "Lnet/minecraft/world/InteractionHand;Lnet/minecraft/world/phys/BlockHitResult;)Lnet/minecraft/world/InteractionResult;";
 	static final String ADD_PLANT = "(Lnet/minecraft/resources/Identifier;Ljava/util/function/Supplier;)V";
 	static final String RUNTIME = "net/forbric/kernel/runtime/KernelFlowerPots";
-	static final String FULL_POT_FOR = "(Ljava/util/Map;L" + OWNER + ";L" + BLOCK + ";)L" + BLOCK + ";";
 	static final String FORGE_BLOCKS = "net/minecraftforge/registries/ForgeRegistries";
 	static final String MAP = "java/util/Map";
 
@@ -127,7 +126,8 @@ public final class FlowerPotRepairInjector implements ClassTransformer {
 
 	/**
 	 * In {@code useItemOn}, the MinecraftForge expression after {@code getEmptyPot().fullPots} — registry key, air
-	 * delegate, {@code getOrDefault}, supplier, cast — becomes {@code KernelFlowerPots.fullPotFor(fullPots, this, block)}.
+	 * delegate, {@code getOrDefault}, supplier, cast — keeps its answer and is decorated with
+	 * {@code KernelFlowerPots.legacyPotOrNative(answer, this, block)}; the public lookup with {@code fullPotOrNative}.
 	 */
 	static int lookUpAllFamilies(ClassNode node) {
 		int publicLookup = decoratePublicLookup(node);

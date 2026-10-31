@@ -32,19 +32,6 @@ public final class KernelFlowerPots {
 	private KernelFlowerPots() {
 	}
 
-	/** The full pot {@code content} makes in {@code self}'s empty pot, or air. Supplier failures remain visible. */
-	public static Block fullPotFor(Map<?, ?> explicit, FlowerPotBlock self, Block content) {
-			if (explicit != null && !explicit.isEmpty()) {
-				Identifier key = BuiltInRegistries.BLOCK.getKey(content);
-				// An unregistered block answers the default key (air); that is not a request for the air slot.
-				boolean aliased = content != Blocks.AIR && key.equals(BuiltInRegistries.BLOCK.getDefaultKey());
-				if (!aliased && explicit.containsKey(key)) {
-					return (Block)((Supplier<?>)explicit.get(key)).get();
-				}
-			}
-			Block full = GameData.getFlowerPotBlockTable().get(self.getEmptyPot(), content);
-			return full != null ? full : Blocks.AIR;
-	}
 	/** Decorates the SDK's already computed answer; native guards and table reads have already happened once. */
 	public static Block fullPotOrNative(Block nativeAnswer,Map<?,?> explicit,FlowerPotBlock empty,Block content){
 		if(explicit!=null&&!explicit.isEmpty()){Identifier key=BuiltInRegistries.BLOCK.getKey(content);boolean aliased=content!=Blocks.AIR&&key.equals(BuiltInRegistries.BLOCK.getDefaultKey());
