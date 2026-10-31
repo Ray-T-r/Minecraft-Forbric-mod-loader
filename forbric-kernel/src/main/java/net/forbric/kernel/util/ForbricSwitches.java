@@ -161,7 +161,16 @@ public final class ForbricSwitches {
 					+ "and tint caches are filled by NeoForge's own hooks alone"),
 			Map.entry("forbric.forgeCreativeTabs", "Forbric loads no MinecraftForge mod, so a creative tab's contents are built by NeoForge's own event alone"),
 			Map.entry("forbric.forgeOverlayLayers", "Forbric loads no MinecraftForge mod, so there is no MinecraftForge HUD overlay tree to lay over "
-					+ "NeoForge's GUI layers"));
+					+ "NeoForge's GUI layers"),
+			// Stage 4: MinecraftForge's resource conditions and ingredient types are gone with its carrier.
+			Map.entry("forbric.forgeConditions", "Forbric loads no MinecraftForge mod, so no MinecraftForge condition is decoded; a forge:condition key is "
+					+ "data NeoForge does not read, as on NeoForge"),
+			Map.entry("forbric.forgeConditionFunnel", "Forbric loads no MinecraftForge mod, so NeoForge's ConditionalOps funnel judges NeoForge's conditions "
+					+ "alone, as on NeoForge"),
+			Map.entry("forbric.forgeConditionContext", "Forbric loads no MinecraftForge mod, so there is no MinecraftForge condition context to hand a reload"),
+			Map.entry("forbric.forgePoolConditions", "Forbric loads no MinecraftForge mod, so no loot pool is judged by MinecraftForge's conditions"),
+			Map.entry("forbric.forgeIngredients", "Forbric loads no MinecraftForge mod, so NeoForge's ingredient codec decodes NeoForge's and vanilla's "
+					+ "ingredient types alone, as on NeoForge"));
 
 	private static final ForbricSwitches SYSTEM =
 			new ForbricSwitches(RENAMED, RETIRED, System::getProperty, ForbricLog::warn);

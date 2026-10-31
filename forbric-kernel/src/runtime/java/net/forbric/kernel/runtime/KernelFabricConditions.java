@@ -17,8 +17,6 @@
 package net.forbric.kernel.runtime;
 
 import java.lang.invoke.MethodHandle;
-import java.lang.invoke.MethodHandles;
-import java.lang.invoke.MethodType;
 import java.util.Collections;
 import java.util.Optional;
 import java.util.Set;
@@ -224,61 +222,6 @@ public final class KernelFabricConditions {
 					+ "not judged", KEY);
 			return null;
 		}
-	}
-
-	private static final String TYPES = "net.fabricmc.fabric.api.resource.conditions.v1.ResourceConditions";
-
-	/** fabric-api's own type lookup, {@code ResourceConditions.getConditionType}; substitutable for the tests. */
-	private static volatile java.util.function.Predicate<String> registeredTypes = KernelFabricConditions::askFabricApi;
-	private static volatile MethodHandle typeLookup;
-	private static volatile boolean typeLookupResolved;
-
-	/**
-	 * Whether fabric-api's resource-condition registry has this type id -- false without fabric-api, and for an id that
-	 * does not parse. What MinecraftForge's leniency asks to tell a type another ecosystem owns from one nobody here owns.
-	 */
-	static boolean registers(String id) {
-		return Identifier.tryParse(id) != null && registeredTypes.test(id);
-	}
-
-	private static boolean askFabricApi(String id) {
-		MethodHandle lookup = typeLookupHandle();
-		if (lookup == null) return false;
-		try {
-			Object type = lookup.invoke(Identifier.tryParse(id));
-			return type != null;
-		} catch (Throwable t) {
-			Caught.warn(t, "[Forbric/Conditions] could not ask fabric-api whether it registers the resource condition "
-					+ "type %s — read as not registered there", id);
-			return false;
-		}
-	}
-
-	private static MethodHandle typeLookupHandle() {
-		if (typeLookupResolved) return typeLookup;
-		synchronized (KernelFabricConditions.class) {
-			if (typeLookupResolved) return typeLookup;
-			try {
-				Class<?> types = Class.forName(TYPES, false, KernelFabricConditions.class.getClassLoader());
-				typeLookup = MethodHandles.lookup().findStatic(types, "getConditionType",
-						MethodType.methodType(Class.forName("net.fabricmc.fabric.api.resource.conditions.v1.ResourceConditionType",
-								false, KernelFabricConditions.class.getClassLoader()), Identifier.class));
-			} catch (ClassNotFoundException absent) {
-				Caught.expected(absent);
-				typeLookup = null;
-			} catch (Throwable t) {
-				Caught.warn(t, "[Forbric/Conditions] fabric-api's public condition-type lookup is there but could not be "
-						+ "read; its types read as not registered");
-				typeLookup = null;
-			}
-			typeLookupResolved = true;
-			return typeLookup;
-		}
-	}
-
-	/** Test seam: fabric-api's registered condition types, replaced. */
-	static void bindRegisteredTypesForTest(java.util.function.Predicate<String> types) {
-		registeredTypes = types;
 	}
 
 	/**

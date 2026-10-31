@@ -122,8 +122,6 @@ public final class KernelNeoConditions {
 	/** The foreign types met while decoding one pack.mcmeta overlay list; present only during that decode. */
 	private static final ThreadLocal<Set<String>> OVERLAY = new ThreadLocal<>();
 
-	/** The foreign types met while {@link #judgesItsOwnDialect} reads one element's NeoForge conditions. */
-	private static final ThreadLocal<Set<String>> PROBE = new ThreadLocal<>();
 	private static final Set<String> VETOED_REPORTED = Collections.newSetFromMap(new ConcurrentHashMap<>());
 
 	private static final Set<String> REPORTED = Collections.newSetFromMap(new ConcurrentHashMap<>());
@@ -151,14 +149,6 @@ public final class KernelNeoConditions {
 	}
 
 	/**
-	 * Whether NeoForge's condition registry has this type id; an id that does not parse is registered by nobody. What
-	 * MinecraftForge's leniency asks to tell a type another ecosystem owns from one nobody here owns.
-	 */
-	static boolean registers(String id) {
-		return Identifier.tryParse(id) != null && known.test(id);
-	}
-
-	/**
 	 * Wraps NeoForge's own {@code ICondition} codec, which is what {@code ICondition.<clinit>} hands over.
 	 *
 	 * <p>Declared and returned as {@code Codec} so the rewritten {@code <clinit>} is one inserted instruction
@@ -174,8 +164,6 @@ public final class KernelNeoConditions {
 				String foreign = foreignType(ops, input);
 				if (foreign != null) {
 					report(foreign);
-					Set<String> probe = PROBE.get();
-					if (probe != null) probe.add(foreign);
 					Set<String> overlay = OVERLAY.get();
 					if (overlay != null && overlayVetoEnabled()) {
 						overlay.add(foreign);
@@ -200,34 +188,6 @@ public final class KernelNeoConditions {
 				return "Forbric(" + strict + ")";
 			}
 		};
-	}
-
-	/**
-	 * Whether NeoForge's evaluator judges this element's NeoForge conditions itself -- the value under the key the
-	 * NeoForge decoder reading it judges, usually {@code neoforge:conditions}.
-	 *
-	 * <p>It does unless they name a condition type NeoForge's registry lacks: {@link #lenient} then decodes that
-	 * condition as one that does not veto and says the ecosystem owning the id decides, so NeoForge's verdict on the
-	 * element is not a judgement of it. Read with NeoForge's own {@code ICondition.LIST_CODEC}, the codec its
-	 * conditional decoder reads the key with, so every nesting level is seen the way NeoForge will see it; nothing is
-	 * evaluated and nothing about the element changes. Conditions that do not decode at all are NeoForge's to fail,
-	 * as they fail now, so they count as judged.
-	 */
-	public static <T> boolean judgesItsOwnDialect(DynamicOps<T> ops, T conditions) {
-		Set<String> outer = PROBE.get();
-		Set<String> foreign = new LinkedHashSet<>();
-		PROBE.set(foreign);
-		try {
-			ICondition.LIST_CODEC.decode(ops, conditions);
-		} catch (RuntimeException unreadable) {
-			Caught.expected(unreadable);
-			// NeoForge's own decode meets the same input next and fails it with its own error.
-			return true;
-		} finally {
-			if (outer == null) PROBE.remove();
-			else PROBE.set(outer);
-		}
-		return foreign.isEmpty();
 	}
 
 	/**

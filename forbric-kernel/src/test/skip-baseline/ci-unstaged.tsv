@@ -1540,7 +1540,6 @@ test	net.forbric.kernel.runtime.KernelCompatibilityPromptsTest	theSameObservatio
 test	net.forbric.kernel.runtime.KernelCompostablesTest	neoForgeDecidesWhateverItsDataMapListed()	[fixture:staged] the staged game required
 test	net.forbric.kernel.runtime.KernelCompostablesTest	nothingShowsUntilTheBootstrapWasSeen()	[fixture:staged] the staged game required
 test	net.forbric.kernel.runtime.KernelCompostablesTest	onlyWhatWasAddedOrChangedAfterBootstrapShows()	[fixture:staged] the staged game required
-test	net.forbric.kernel.runtime.KernelConditionKillSwitchesTest	minecraftForgeLeniencyIgnoresAForeignTypeUnlessSwitchedOff()	[fixture:staged] the staged artifacts are absent: $ROOT/forbric-loader/run/neoforge-runtime/neoforge-runtime.jar
 test	net.forbric.kernel.runtime.KernelConditionKillSwitchesTest	neoForgeLeniencyIgnoresAForeignTypeUnlessSwitchedOff()	[fixture:staged] the staged artifacts are absent: $ROOT/forbric-loader/run/neoforge-runtime/neoforge-runtime.jar
 test	net.forbric.kernel.runtime.KernelCreativePagerMergedScreenTest	theBridgedMergedScreenLinksAndAnswersThroughTheFabricInterface()	[fixture:staged] the staged game is absent: $ROOT/forbric-loader/run/merged-base/patched-mc-merged-26.2.jar
 test	net.forbric.kernel.runtime.KernelCreativePagerTest	neoForgesPageButtonsKeepTheSelectionUnlessAHookActs()	[fixture:game-side] compile the staged runtime source set before this test: build/classes/java/runtime/net/forbric/kernel/runtime/KernelCreativePager.class
@@ -1563,13 +1562,6 @@ test	net.forbric.kernel.runtime.KernelFeatureFlagsTest	aRefusedJarRegistersNoFla
 test	net.forbric.kernel.runtime.KernelFeatureFlagsTest	switchedOffNothingIsRegistered(Path)	[fixture:staged] the staged artifacts are absent: $ROOT/forbric-loader/run/neoforge-runtime/neoforge-runtime.jar
 test	net.forbric.kernel.runtime.KernelForeignSkipConsumerTest	knownMarkerSkipsDataWhileNormalOptionalAndDecodeErrorsRemainIntact()	[fixture:staged] the staged merged base required
 test	net.forbric.kernel.runtime.KernelForgeCapabilitiesShapeTest	eachComposedProviderFiresAndAsksExactlyWhatTheCarriersOwnDoes()	[fixture:forge-carrier] staged Forge carrier absent: $ROOT/forbric-loader/run/forge-runtime/forge-runtime.jar
-test	net.forbric.kernel.runtime.KernelForgeConditionFunnelTest	aCodecThatJudgesTheKeyItselfIsNeverAskedAround()	[fixture:staged] the staged artifacts are absent: $ROOT/forbric-loader/run/neoforge-runtime/neoforge-runtime.jar
-test	net.forbric.kernel.runtime.KernelForgeConditionFunnelTest	aForgeConditionIsJudgedBeforeNeoForgeDecodes(Path)	[fixture:staged] the staged artifacts are absent: $ROOT/forbric-loader/run/neoforge-runtime/neoforge-runtime.jar
-test	net.forbric.kernel.runtime.KernelForgeConditionFunnelTest	aForgeConditionalElementBecomesItsChosenVariant()	[fixture:staged] the staged artifacts are absent: $ROOT/forbric-loader/run/neoforge-runtime/neoforge-runtime.jar
-test	net.forbric.kernel.runtime.KernelForgeConditionFunnelTest	anElementNeoForgeJudgesIsNotAskedAgainByMinecraftForge()	[fixture:staged] the staged artifacts are absent: $ROOT/forbric-loader/run/neoforge-runtime/neoforge-runtime.jar
-test	net.forbric.kernel.runtime.KernelForgeConditionFunnelTest	eachReaderJudgesWithItsOwnCode()	[fixture:staged] the staged artifacts are absent: $ROOT/forbric-loader/run/neoforge-runtime/neoforge-runtime.jar
-test	net.forbric.kernel.runtime.KernelForgeConditionFunnelTest	nothingIsJudgedOutsideMinecraftForgesTwoReaders()	[fixture:staged] the staged artifacts are absent: $ROOT/forbric-loader/run/neoforge-runtime/neoforge-runtime.jar
-test	net.forbric.kernel.runtime.KernelForgeConditionFunnelTest	onlyTheOutermostDecodeIsMinecraftForgesToJudge()	[fixture:staged] the staged artifacts are absent: $ROOT/forbric-loader/run/neoforge-runtime/neoforge-runtime.jar
 test	net.forbric.kernel.runtime.KernelForgeConfigLoadTest	acceptLoadingAndSaveFailuresWithPublishedDataAreNotRetriedByLateLoading()	[fixture:game-side] runtime helper not compiled
 test	net.forbric.kernel.runtime.KernelForgeConfigLoadTest	actualCarrierHasOnlyTheThreeForgeTypesAndThePrivateStaticTwoArgumentOpen()	[fixture:forge-carrier] staged Forge carrier absent: $ROOT/forbric-loader/run/forge-runtime/forge-runtime.jar
 test	net.forbric.kernel.runtime.KernelForgeConfigLoadTest	actualTomlFailureOnlyDegradesItsOwnerAndTheFollowingConfigStillLoads()	[fixture:game-side] runtime helper not compiled
@@ -1579,7 +1571,6 @@ test	net.forbric.kernel.runtime.KernelForgeConfigLoadTest	invalidTypeListsAreRej
 test	net.forbric.kernel.runtime.KernelForgeConfigLoadTest	neitherPassReopensExistingDataAndLatePassCatchesANewRegistration()	[fixture:game-side] runtime helper not compiled
 test	net.forbric.kernel.runtime.KernelForgeConfigLoadTest	overlappingEarlyAndLatePassesStillOpenEachConfigOnlyOnce()	[fixture:game-side] runtime helper not compiled
 test	net.forbric.kernel.runtime.KernelForgeConfigLoadTest	registrationDuringLoadingUsesASnapshotAndIsPickedUpOnlyByTheNextPass()	[fixture:game-side] runtime helper not compiled
-test	net.forbric.kernel.runtime.KernelForgeIngredientsTest	theOnlyForgeCodecConstructorNamedIsTheCarriersOwnComposition()	[fixture:game-side] runtime helper not compiled
 test	net.forbric.kernel.runtime.KernelForgeModInfoTest	aJarWithoutAModsTomlStillHasAnOwningFileThatDeclaresNothing(Path)	[fixture:staged] the staged artifacts are absent: $ROOT/forbric-loader/run/neoforge-runtime/neoforge-runtime.jar
 test	net.forbric.kernel.runtime.KernelForgeModInfoTest	modPropertiesKeepMinecraftForgesValueTypes(Path)	[fixture:staged] the staged artifacts are absent: $ROOT/forbric-loader/run/neoforge-runtime/neoforge-runtime.jar
 test	net.forbric.kernel.runtime.KernelForgeModInfoTest	switchedOffTheManifestIsReadAsStringsAgain(Path)	[fixture:staged] the staged artifacts are absent: $ROOT/forbric-loader/run/neoforge-runtime/neoforge-runtime.jar

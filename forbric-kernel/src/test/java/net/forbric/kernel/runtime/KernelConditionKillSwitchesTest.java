@@ -37,7 +37,7 @@ import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 
 /**
- * The two condition leniencies, on and off, over the compiled game-side classes: with the switch unset a foreign
+ * NeoForge's condition leniency, on and off, over the compiled game-side classes: with the switch unset a foreign
  * type never reaches the strict codec and decodes to the kernel's marker; with it off the strict codec is asked
  * exactly once, as the carrier's own path would.
  */
@@ -46,17 +46,11 @@ class KernelConditionKillSwitchesTest {
 	@AfterEach
 	void reset() {
 		System.clearProperty("forbric.neoConditions");
-		System.clearProperty("forbric.forgeConditions");
 	}
 
 	@Test
 	void neoForgeLeniencyIgnoresAForeignTypeUnlessSwitchedOff() throws Exception {
 		run("net.forbric.kernel.runtime.KernelNeoConditions", "net.neoforged.neoforge.common.conditions.ICondition", "forbric.neoConditions");
-	}
-
-	@Test
-	void minecraftForgeLeniencyIgnoresAForeignTypeUnlessSwitchedOff() throws Exception {
-		run("net.forbric.kernel.runtime.KernelForgeConditions", "net.minecraftforge.common.crafting.conditions.ICondition", "forbric.forgeConditions");
 	}
 
 	private static void run(String helperName, String conditionName, String property) throws Exception {
