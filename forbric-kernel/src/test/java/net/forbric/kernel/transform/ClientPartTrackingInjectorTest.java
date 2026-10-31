@@ -84,8 +84,12 @@ class ClientPartTrackingInjectorTest {
 
 	@Test void theSwitchLeavesTheMergedCallbacksAlone() throws Exception {
 		System.setProperty(ClientPartTrackingInjector.PROPERTY, "off");
-		byte[] merged = NativeCoremodParityTest.read(MERGED, CALLBACKS);
-		assertSame(merged, new ClientPartTrackingInjector().transform(ClientPartTrackingInjector.CALLBACKS, merged, null));
+		try {
+			byte[] merged = NativeCoremodParityTest.read(MERGED, CALLBACKS);
+			assertSame(merged, new ClientPartTrackingInjector().transform(ClientPartTrackingInjector.CALLBACKS, merged, null));
+		} finally {
+			System.clearProperty(ClientPartTrackingInjector.PROPERTY);
+		}
 	}
 
 	@Test void aNeoForgeModsMultipartEntityIsTrackedInsteadOfDisconnectingTheClient() throws Exception {
