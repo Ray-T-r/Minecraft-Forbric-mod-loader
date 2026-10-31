@@ -62,15 +62,15 @@ def main():
     output = (args.output or kernel / 'build/verification' / ('carpet-' + datetime.now().strftime('%Y%m%d-%H%M%S'))).resolve()
     output.mkdir(parents=True, exist_ok=False)
     root = kernel / 'canary/carpet'
+    # NeoForge's patched game and its carrier: what the probe (a NeoForge mod) is built against and what the launcher runs.
     game = stage / 'neoforge-patched/patched-mc-neoforge-26.2.jar'
-    forge = stage / 'merged-base/forge-runtime-interop.jar'
     neo = stage / 'neoforge-runtime/neoforge-runtime.jar'
-    cp = [game, forge, neo, carpet]
+    cp = [game, neo, carpet]
     for lib in json.loads((mc / 'versions/26.2/26.2.json').read_text())['libraries']:
         path = lib.get('downloads', {}).get('artifact', {}).get('path')
         if path and (mc / 'libraries' / path).is_file():
             cp.append(mc / 'libraries' / path)
-    for path in cp[:4]:
+    for path in cp[:3]:
         if not path.is_file():
             parser.error(f'Missing prerequisite: {path}')
     with tempfile.TemporaryDirectory(prefix='carpet-probe-', dir=output) as temp:

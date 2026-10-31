@@ -24,7 +24,7 @@ def main():
     kernel = Path(__file__).resolve().parents[2]
     # The same defaults as the kernel build: FORBRIC_OLD, then tools/dev.py prepare's tree, then the substrate's.
     dev = kernel / '.dev'
-    staged = os.environ.get('FORBRIC_OLD') or (dev / 'staged' if (dev / 'staged/run/merged-base').is_dir() else kernel.parent / 'forbric-loader')
+    staged = os.environ.get('FORBRIC_OLD') or (dev / 'staged' if (dev / 'staged/run/neoforge-patched').is_dir() else kernel.parent / 'forbric-loader')
     stage = (args.staged_root or Path(staged) / 'run').resolve()
     # Like the build: .dev/minecraft only while it has the version JSON this script reads below.
     mc = Path(os.environ.get('MC_DIR') or (dev / 'minecraft' if (dev / 'minecraft/versions/26.2/26.2.json').is_file()
@@ -44,17 +44,17 @@ def main():
     output = (args.output or kernel / 'build/verification' / ('menu-codec-' + datetime.now().strftime('%Y%m%d-%H%M%S'))).resolve()
     output.mkdir(parents=True, exist_ok=False)
     root = kernel / 'canary/menu-codec'
-    game = stage / 'merged-base/patched-mc-merged-26.2.jar'
-    forge = stage / 'merged-base/forge-runtime-interop.jar'
+    # The game base and its NeoForge carrier, as the launcher runs them (its defaults under the stage).
+    game = stage / 'neoforge-patched/patched-mc-neoforge-26.2.jar'
     neo = stage / 'neoforge-runtime/neoforge-runtime.jar'
     # The kernel's boot jar carries Fabric Loader's API (ModInitializer); launch-kernel-server.sh rebuilds it below.
     loader = kernel / 'build/libs/forbric-kernel-0.1.0-SNAPSHOT.jar'
-    for path in (game, forge, neo, loader, delight, api):
+    for path in (game, neo, loader, delight, api):
         if not path.is_file():
             parser.error(f'Missing prerequisite: {path}')
     with tempfile.TemporaryDirectory(prefix='menu-probe-', dir=output) as temp:
         temp = Path(temp)
-        cp = [game, forge, neo, loader, delight]
+        cp = [game, neo, loader, delight]
         with zipfile.ZipFile(api) as jar:
             for name in jar.namelist():
                 if name.startswith('META-INF/jars/') and name.endswith('.jar'):
