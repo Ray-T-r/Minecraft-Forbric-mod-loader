@@ -74,28 +74,27 @@ class KernelModFileInfoVersionTest {
     }
 
     @Test
-    void forgeDeclaredVersionIsRetainedWithoutAManifestVersion() throws Exception {
-        // A MinecraftForge-only jar is refused (Stage 3): no mod, so no version for any ModInfo to carry.
-        assertRefused(fixture("forge.jar", "META-INF/mods.toml", "3.8.7", null));
-        // The mods.toml dialect is still read where a jar has a real NeoForge half beside it: discovery stays
-        // truthful about what a universal jar declares, and only MultiLoaderArbiter sets its Forge half aside.
-        Path jar = universal("universal.jar", "3.8.7", null);
+    void aDeclaredVersionIsRetainedWithoutAManifestVersion() throws Exception {
+        Path jar = fixture("neo-declared.jar", "META-INF/neoforge.mods.toml", "3.8.7", null);
         try (URLClassLoader runtime = runtimeLoader()) {
             assertEquals("3.8.7", version(info(runtime, jar)));
-            assertFalse(MetadataFailures.unsupported(jar), "a jar with a usable NeoForge half is not refused");
         }
+        // A MinecraftForge-only jar is refused (Stage 3): no mod, so no version for any ModInfo to carry.
+        assertRefused(fixture("forge.jar", "META-INF/mods.toml", "3.8.7", null));
+        // Beside a usable NeoForge half the jar loads, but its mods.toml is not read into mods: NeoForge never reads that
+        // file, and Forbric loads no MinecraftForge mod.
+        Path universal = universal("universal.jar", "3.8.7", null);
+        assertFalse(MetadataFailures.unsupported(universal), "a jar with a usable NeoForge half is not refused");
+        assertEquals(List.of("neohalf"), new ForbricModDiscoverer().discoverJar(universal).stream()
+                .map(net.forbric.api.DiscoveredMod::getId).toList(), "only the NeoForge half is discovered");
     }
 
     @Test
-    void bothTomlDialectsUseTheResolvedManifestPlaceholder() throws Exception {
+    void theTomlDialectUsesTheResolvedManifestPlaceholder() throws Exception {
         try (URLClassLoader runtime = runtimeLoader()) {
-            for (String metadata : List.of("META-INF/mods.toml", "META-INF/neoforge.mods.toml")) {
-                // mods.toml sits in a universal jar: on its own it is a MinecraftForge-only jar, which is refused.
-                Path jar = metadata.contains("neoforge")
-                        ? fixture("neo.jar", metadata, "${file.jarVersion}", "7.6.5-dev")
-                        : universal("universal.jar", "${file.jarVersion}", "7.6.5-dev");
-                assertEquals("7.6.5-dev", version(info(runtime, jar)), "discovery must resolve " + metadata);
-            }
+            // The dialect is shared; NeoForge's file is the one discovery reads (a mods.toml alone is refused, below).
+            Path jar = fixture("neo.jar", "META-INF/neoforge.mods.toml", "${file.jarVersion}", "7.6.5-dev");
+            assertEquals("7.6.5-dev", version(info(runtime, jar)), "discovery must resolve META-INF/neoforge.mods.toml");
         }
         assertRefused(fixture("forge.jar", "META-INF/mods.toml", "${file.jarVersion}", "7.6.5-dev"));
     }

@@ -1503,9 +1503,9 @@ test	net.forbric.kernel.runtime.KernelLootModifiersTest	switchedOffTheOriginalMa
 test	net.forbric.kernel.runtime.KernelLootModifiersTest	theViewHidesEveryLegacyIndexAndNothingElse()	[fixture:staged] the staged artifacts are absent: $ROOT/forbric-loader/run/neoforge-runtime/neoforge-runtime.jar
 test	net.forbric.kernel.runtime.KernelModFileInfoVersionTest	aPalReleaseVersionSupportsItsActualContainsCall()	[fixture:staged] staged carrier absent
 test	net.forbric.kernel.runtime.KernelModFileInfoVersionTest	bothCarriersDelegateVersionStringToTheFirstModVersion()	[fixture:forge-carrier] staged carrier absent
-test	net.forbric.kernel.runtime.KernelModFileInfoVersionTest	bothTomlDialectsUseTheResolvedManifestPlaceholder()	[fixture:staged] staged carrier absent
+test	net.forbric.kernel.runtime.KernelModFileInfoVersionTest	theTomlDialectUsesTheResolvedManifestPlaceholder()	[fixture:staged] staged carrier absent
 test	net.forbric.kernel.runtime.KernelModFileInfoVersionTest	fileVersionUsesItsPublishedOwnerRatherThanLaterPresenceMetadata()	[fixture:staged] staged carrier absent
-test	net.forbric.kernel.runtime.KernelModFileInfoVersionTest	forgeDeclaredVersionIsRetainedWithoutAManifestVersion()	[fixture:staged] staged carrier absent
+test	net.forbric.kernel.runtime.KernelModFileInfoVersionTest	aDeclaredVersionIsRetainedWithoutAManifestVersion()	[fixture:staged] staged carrier absent
 test	net.forbric.kernel.runtime.KernelModFileInfoVersionTest	missingVersionKeepsTheOwnersExistingExplicitUnknownValue()	[fixture:staged] staged carrier absent
 test	net.forbric.kernel.runtime.KernelModFileInfoVersionTest	neoDeclaredVersionWinsOverAnUnrelatedManifestVersion()	[fixture:staged] staged carrier absent
 test	net.forbric.kernel.runtime.KernelModFileInfoVersionTest	presenceAliasesHaveAnEmptyNativeResourceViewAndRealFilesKeepTheirResources()	[fixture:staged] staged carrier absent

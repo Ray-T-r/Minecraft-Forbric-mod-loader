@@ -51,6 +51,8 @@ import org.junit.jupiter.api.io.TempDir;
 import net.forbric.api.DiscoveredMod;
 import net.forbric.api.Ecosystem;
 import net.forbric.kernel.discovery.ForbricModDiscoverer;
+import net.forbric.kernel.discovery.LoaderHalfJudge;
+import net.forbric.kernel.discovery.LoaderKind;
 import net.forbric.kernel.discovery.MetadataFailures;
 import net.forbric.kernel.metadata.forge.FmlConfigElements;
 
@@ -82,8 +84,8 @@ class FmlTomlShapeOracleTest {
 	/**
 	 * Every value shape a {@code [modproperties]} table can take, in a MinecraftForge {@code mods.toml}: Iceberg's
 	 * real list-of-strings declaration, scalars, a table two levels deep, and an array of tables. Read as a
-	 * {@code mods.toml} it rides in a universal jar ({@link #discoveredForge}); the NeoForge tests read it as a
-	 * {@code neoforge.mods.toml}, which shares the dialect.
+	 * {@code mods.toml}. Read as a {@code neoforge.mods.toml}, which shares the dialect: discovery no longer maps a
+	 * MinecraftForge {@code mods.toml} into mods, so the shapes are compared where NeoForge reads them.
 	 */
 	private static final String FORGE_TOML = """
 			modLoader="javafml"
@@ -146,7 +148,7 @@ class FmlTomlShapeOracleTest {
 	@TempDir
 	Path tmp;
 
-	/** {@link #discoveredForge} records a refusal; nothing of it outlives the test. */
+	/** {@link #refusedAndSetAside} records a refusal; nothing of it outlives the test. */
 	@AfterEach
 	void forgetRefusals() {
 		MetadataFailures.reset();
@@ -236,19 +238,17 @@ class FmlTomlShapeOracleTest {
 	/**
 	 * wthit's MinecraftForge {@code mods.toml}, the dialect only the refusal path still reads. wthit's MinecraftForge
 	 * build left the popular pack for its NeoForge build in Stage 3 and sits beside it in forge-refused/; the manifest
-	 * is a checked-in copy either way. Alone in a jar it is refused, with no mod; beside a NeoForge half (a universal
-	 * jar) discovery still reports its two mods, with the ids, names and file keys a refusal prompt or a set-aside half
-	 * is described with.
+	 * is a checked-in copy either way. Alone in a jar it is refused, with no mod, and {@code LoaderHalfJudge} names its
+	 * two mods by id and display name, which is what the refusal prompt and the Lost row show; beside a NeoForge half (a
+	 * universal jar) the same half is read and set aside, and discovery reports none of its mods.
 	 */
 	@Test
 	void aMinecraftForgeManifestIsStillReadForWhatTheRefusalNames() throws Exception {
 		String wthit = fixture("wthit.mods.toml", "run/client-popular/forge-refused/wthit-26.2-forge-20.0.0.jar", "META-INF/mods.toml");
-		List<DiscoveredMod> wthitMods = discoveredForge(wthit);
-		assertEquals(List.of("wthit", "waila"), wthitMods.stream().map(DiscoveredMod::getId).toList());
-		assertTrue(wthitMods.stream().allMatch(mod -> mod.getDisplayName() != null && !mod.getDisplayName().isBlank()),
-				"every mod keeps a display name: " + wthitMods);
-		assertEquals("https://github.com/badasintended/wthit/issues",
-				wthitMods.get(0).getFileConfigElements().get("issueTrackerURL"));
+		for (LoaderHalfJudge.Half half : refusedAndSetAside(wthit)) {
+			assertEquals(List.of("wthit", "waila"), half.modIds());
+			assertFalse(half.name().isBlank(), "the half keeps a display name: " + half);
+		}
 	}
 
 	/** The top level against {@code fileWrapper}; each mod's entry against a wrapper over that entry. */
@@ -319,7 +319,7 @@ class FmlTomlShapeOracleTest {
 	@Test
 	void everyPropertyShapeMatchesNeoForges() throws Exception {
 		UnmodifiableConfig root = root(FORGE_TOML);
-		Map<String, Object> kernel = only(discoveredForge(FORGE_TOML)).getModProperties();
+		Map<String, Object> kernel = discovered(FORGE_TOML, "META-INF/neoforge.mods.toml").getModProperties();
 
 		try (URLClassLoader neo = neoOracle()) {
 			Object nativeProperties = element(wrapper(neo, NEO_WRAPPER, root), "modproperties", "shapetest").orElseThrow();
@@ -388,22 +388,25 @@ class FmlTomlShapeOracleTest {
 	}
 
 	/**
-	 * Every mod a MinecraftForge {@code mods.toml} declares, in order, as discovery reports them. A jar with nothing
-	 * else is refused since Forbric stopped loading MinecraftForge mods — checked here for the manifest at hand: no mod,
-	 * and an UNSUPPORTED failure. So the manifest is read where discovery still reads one: in a universal jar beside a
-	 * NeoForge half declaring the same mods (the same toml as {@code neoforge.mods.toml}, the shape FallingTree and
-	 * collective ship). Discovery reports that jar's MinecraftForge mods truthfully and only {@code MultiLoaderArbiter}
-	 * sets them aside.
+	 * The MinecraftForge half {@code LoaderHalfJudge} reads from {@code toml}: alone in a jar (refused, no mod, an
+	 * UNSUPPORTED failure) and in a universal jar beside a NeoForge half declaring the same mods (not refused, and
+	 * discovery reports only the NeoForge mods).
 	 */
-	private List<DiscoveredMod> discoveredForge(String toml) throws IOException {
+	private List<LoaderHalfJudge.Half> refusedAndSetAside(String toml) throws IOException {
 		Path alone = jar("forge-only", "META-INF/mods.toml", toml);
 		assertEquals(List.of(), new ForbricModDiscoverer().discoverJar(alone), "a MinecraftForge-only jar yields no mod");
 		assertTrue(MetadataFailures.unsupported(alone), "a MinecraftForge-only jar is refused: " + MetadataFailures.of(alone));
+		LoaderHalfJudge.Verdict refused = LoaderHalfJudge.judge(alone);
+		assertTrue(refused.refused());
 
 		Path universal = jar("universal", "META-INF/mods.toml", toml, "META-INF/neoforge.mods.toml", toml);
 		List<DiscoveredMod> mods = new ForbricModDiscoverer().discoverJar(universal);
 		assertFalse(MetadataFailures.unsupported(universal), "a universal jar is not refused: " + MetadataFailures.of(universal));
-		return mods.stream().filter(mod -> mod.getEcosystem() == Ecosystem.FORGE).toList();
+		assertTrue(mods.stream().allMatch(mod -> mod.getEcosystem() == Ecosystem.NEOFORGE), "only the NeoForge half: " + mods);
+		LoaderHalfJudge.Verdict setAside = LoaderHalfJudge.judge(universal);
+		assertFalse(setAside.refused());
+		return List.of(refused.half(LoaderKind.MINECRAFTFORGE).orElseThrow(),
+				setAside.half(LoaderKind.MINECRAFTFORGE).orElseThrow());
 	}
 
 	/** A jar under {@link #tmp} holding each name/content pair of {@code entries}, named after its prefix and contents. */
