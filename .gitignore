@@ -42,8 +42,11 @@ world/
 # slash, so it matches at ANY depth, and it was swallowing forbric-loader's
 # src/test/java/net/minecraft/world/** stand-ins — three files that were therefore never
 # committed, so a fresh clone failed `./gradlew build` on missing net.minecraft.world
-# classes. Same shape as the `config/` exception below.
-!*/src/**/world/
+# classes. Same shape as the `config/` exception below. `**/src/`, not `*/src/`: the
+# exception has to reach a src/ at any depth too, or forbric-kernel's
+# canary/forge-refusal-stubs/patched-vanilla/src/net/minecraft/world/** stand-ins fall into the
+# same trap (`*/` only matches a src/ one directory below the root).
+!**/src/**/world/
 world_nether/
 world_the_end/
 crash-reports/
@@ -60,7 +63,7 @@ downloads/
 *.log.gz
 config/
 # ...but not a source package that happens to be called config (test stand-ins for FML's config classes).
-!*/src/**/config/
+!**/src/**/config/
 debug/
 usercache.json
 usernamecache.json
