@@ -140,8 +140,12 @@ public final class CommonNetworkInteropInjector implements ClassTransformer {
 	 * empty — no play payload ever reaches it. Fabric's own play receive is a separate HEAD injection into THIS
 	 * method, and works. So the fall-through no longer goes through {@code super} at all: it makes the one call
 	 * NeoForge's {@code super} body makes for a mod payload, {@code NetworkRegistry.handleModdedPayload}, directly.
+	 *
+	 * <p>NeoForge's own base makes that override {@code super.handleCustomPayload(packet)}, so this rewrite finds nothing
+	 * there and the same switch governs {@link net.forbric.kernel.mixin.FabricCommonPayloadMixinAdapter}, which lets the
+	 * fabric-api handler waiting in super pass a play listener's payload on to NeoForge's body instead of throwing.
 	 */
-	static boolean playFallThroughEnabled() {
+	public static boolean playFallThroughEnabled() {
 		return !"off".equalsIgnoreCase(System.getProperty("forbric.playPayloadFallThrough", "on"));
 	}
 

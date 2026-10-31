@@ -484,6 +484,9 @@ public final class ForbricMixinService
 		MixinKeyActionAdapter.adapt(node, this::mergedBaseGameCode);
 		MixinStructurePlacementAdapter.adapt(node, this::mergedBaseNodeWithCode);
 		FabricBlockStateCodecMixinAdapter.adapt(node, this::mergedBaseNodeWithCode);
+		// …and fabric-api's configuration-only payload handler on the common listener lets a play listener's payload go on to
+		// NeoForge's dispatcher in that method, which this base's play listener hands its leftovers to.
+		FabricCommonPayloadMixinAdapter.adapt(node, this::mergedBaseNodeWithCode);
 		MixinPlayerWorldCallbackAdapter.adapt(node, this::mergedBaseNodeWithCode);
 		MixinFluidReactionAdapter.adapt(node, this::mergedBaseNodeWithCode);
 		// …and an @Inject anchored on a call the merged body makes through a subtype of the same method
