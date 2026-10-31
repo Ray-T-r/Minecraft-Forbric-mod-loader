@@ -17,35 +17,63 @@ public final class BaseLinkGateTest {
 		Path classes = Files.createDirectories(work.resolve("classes"));
 		Path target = source.resolve("Target.java");
 		Path caller = source.resolve("Caller.java");
+		// The carrier side: a class the game calls into, as NeoForge's patched game calls into net/neoforged/.
+		Path hookSource = Files.createDirectories(work.resolve("src/carrier")).resolve("Hook.java");
+		Path carrierClasses = Files.createDirectories(work.resolve("carrier-classes"));
+		Files.writeString(hookSource, "package carrier; public class Hook { public static void present() { } }");
+		compileWith(carrierClasses, null, hookSource);
+		Path carrier = work.resolve("carrier.jar");
+		jar(carrierClasses, carrier);
 		Files.writeString(target, "package game; public class Target { public static int value = 3; }");
-		Files.writeString(caller, "package game; public class Caller { public static int read() { return Target.value; } }");
-		compile(classes, target, caller);
+		Files.writeString(caller, "package game; public class Caller { public static int read() { "
+				+ "carrier.Hook.present(); return Target.value; } }");
+		compileWith(classes, carrierClasses.toString(), target, caller);
 		Path game = work.resolve("game.jar");
 		jar(classes, game);
-		Path empty = work.resolve("carrier.jar");
+		Path empty = work.resolve("empty.jar");
 		try (JarOutputStream ignored = new JarOutputStream(Files.newOutputStream(empty))) { }
 		List<String> logs = new ArrayList<>();
 		LinkCheckTool tool = new LinkCheckTool(work.resolve("tools"), logs::add);
 		JdkLocator.Jvm jvm = new JdkLocator.Jvm(Path.of(ToolProcess.javaBin()), Runtime.version().feature(), "test");
-		tool.linkCheck(jvm, game, empty);
-		require(logs.stream().anyMatch(s -> s.endsWith("; dangling references: 0")), "successful gate did not scan: " + logs);
+		tool.linkCheck(jvm, game, carrier);
+		require(logs.stream().filter(s -> s.endsWith("; dangling references: 0")).count() == 2,
+				"a successful gate did not scan in both orders: " + logs);
 		Files.writeString(target, "package game; public class Target { }");
 		compile(classes, target); // Caller still refers to the removed field.
 		jar(classes, game);
 		try {
-			tool.linkCheck(jvm, game, empty);
+			tool.linkCheck(jvm, game, carrier);
 			throw new AssertionError("installer accepted a dangling reference");
 		} catch (LinkCheckTool.Failed expected) {
 			require(expected.getMessage().contains("game/Target.value"), "lost the underlying evidence");
 		}
+		// The game calling a carrier method that is gone: only the run with the carrier first resolves it.
+		Files.writeString(target, "package game; public class Target { public static int value = 3; }");
+		compile(classes, target);
+		jar(classes, game);
+		Files.writeString(hookSource, "package carrier; public class Hook { }");
+		compileWith(carrierClasses, null, hookSource);
+		jar(carrierClasses, carrier);
+		logs.clear();
 		try {
-			tool.linkCheck(jvm, empty, empty);
+			tool.linkCheck(jvm, game, carrier);
+			throw new AssertionError("installer accepted a game base calling a method the carrier does not have");
+		} catch (LinkCheckTool.Failed expected) {
+			require(expected.getMessage().contains("carrier/Hook.present") && expected.getMessage().contains(
+					"references into the NeoForge runtime"), "lost the underlying evidence: " + expected.getMessage());
+			List<String> verdicts = logs.stream().filter(s -> s.contains("dangling references:")).toList();
+			require(verdicts.size() == 2 && verdicts.get(0).endsWith("; dangling references: 0")
+					&& verdicts.get(1).endsWith("; dangling references: 1"), "the base-first run was not the clean one: " + logs);
+		}
+		try {
+			tool.linkCheck(jvm, empty, carrier);
 			throw new AssertionError("installer accepted an empty game base");
 		} catch (IOException expected) {
 			require(expected.getMessage().contains("no classes"), "empty scan was not explained");
 		}
 		verdicts();
-		System.out.println("PASS installer gate: valid build, dangling reference rejected, empty scan rejected");
+		System.out.println("PASS installer gate: valid build checked in both orders, a dangling reference into either jar"
+				+ " rejected, empty scan rejected");
 		suppliedArtifacts(work, classes, target, logs);
 		// The content check that runs before this link check on a supplied set; here so every runner of this gate
 		// (gradle linkGateTest, run/test-link-gate.py, CI) exercises it too.

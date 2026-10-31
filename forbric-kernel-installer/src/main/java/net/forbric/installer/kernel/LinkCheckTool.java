@@ -28,7 +28,7 @@ import java.util.regex.Pattern;
 
 /**
  * Link-checks the game base against the NeoForge carrier before a profile may name them: every class, field and
- * method one of them refers to must exist in one of the two.
+ * method one of them refers to in the other, or in itself, must exist in one of the two.
  *
  * <p>The checker ({@code net.forbric.tools.MergedLinkChecker}) lives in {@code forbric-merge-tools.jar}, which rides
  * inside the installer as a resource and is unpacked next to the build. It is run as a subprocess: it needs ASM, and
@@ -36,9 +36,16 @@ import java.util.regex.Pattern;
  * single-entry {@code -cp} is also the one classpath form with nothing to get wrong about {@code ;} versus
  * {@code :}.
  *
+ * <p><b>Twice, once in each order.</b> The checker scans the bodies of both jars but resolves only references whose
+ * owner is a class of the jar it is given first (and skips interface calls). Run once with the base first, it would
+ * check every reference into the game -- the carrier's included -- and none into the carrier: what the 2,402 base
+ * classes that name {@code net/neoforged/} refer to would never be resolved. So the base goes first and then the
+ * carrier does; each order must pass. Measured on NeoForge 26.2.0.93: {@code loaded 13394 classes (10964 from the merged
+ * jar); dangling references: 0} and {@code (2430 from the merged jar); dangling references: 0}, under a second each.
+ *
  * <p>No baseline. The packaged one lists the merged base's accepted dangling references, all of them MinecraftForge
- * members; NeoForge's patched game and its own carrier leave none (measured on NeoForge 26.2.0.93: 13,394 classes,
- * {@code dangling references: 0}), so any dangling reference is a defect and fails the install.
+ * members; NeoForge's patched game and its own carrier leave none, so any dangling reference is a defect and fails
+ * the install (D10).
  */
 final class LinkCheckTool {
 
@@ -65,7 +72,7 @@ final class LinkCheckTool {
 	}
 
 	/**
-	 * Checks {@code base} against {@code neoRuntime}, and puts the verdict line in the install log.
+	 * Checks {@code base} against {@code neoRuntime} in both orders, and puts each verdict line in the install log.
 	 *
 	 * <p>A built set and a supplied one are checked alike. For a supplied set this is half of the guard against
 	 * three unrelated jars with the right names (#13); the content check ({@link GameArtifacts#verifyContents}) is the
@@ -75,12 +82,18 @@ final class LinkCheckTool {
 	 */
 	void linkCheck(JdkLocator.Jvm jvm, Path base, Path neoRuntime) throws IOException {
 		Path tools = unpackTools();
+		check(jvm, tools, base, neoRuntime, "references into the game base");
+		check(jvm, tools, neoRuntime, base, "references into the NeoForge runtime");
+	}
+
+	/** One run of the checker: references whose owner is in {@code first}, from either jar. */
+	private void check(JdkLocator.Jvm jvm, Path tools, Path first, Path second, String what) throws IOException {
 		List<String> tail = new ArrayList<>();
 		int code = exec.exec(List.of(
 				jvm.javaBin().toString(),
 				"-cp", tools.toString(), LINK_CHECK_MAIN,
-				base.toString(), neoRuntime.toString()),
-				"link-checking the game base against the NeoForge runtime", tail);
+				first.toString(), second.toString()),
+				"link-checking the game base and the NeoForge runtime: " + what, tail);
 		String summary = tail.stream()
 				.filter(l -> l.contains("dangling references:"))
 				.reduce((a, b) -> b)
@@ -88,7 +101,7 @@ final class LinkCheckTool {
 				.strip();
 		log.accept(summary);
 		if (!passed(code, summary)) {
-			throw new Failed("the game base and the NeoForge runtime do not link (exit " + code + "):\n"
+			throw new Failed("the game base and the NeoForge runtime do not link (" + what + ", exit " + code + "):\n"
 					+ String.join("\n", tail));
 		}
 	}
