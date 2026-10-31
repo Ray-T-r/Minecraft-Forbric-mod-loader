@@ -67,6 +67,17 @@ public final class MixinDefaultCallbackTransport {
                     Plan plan = predicate(source, owner, method, roots); if (plan != null) found.add(plan);
                 }
             }
+            // …and the defaults the class inherits without forwarding to them itself. A class that implements the carrier's
+            // extension interface through its superclass declares none of those methods: NeoForge's own LadderBlock answers
+            // makesOpenTrapdoorAboveClimbable through Block's IBlockExtension, and only a byte merge that copied the defaults
+            // into every implementor gave it a forwarder to find.
+            for (ClassNode owner : inheritedInterfaces(atomic, classes)) {
+                for (MethodNode method : owner.methods) {
+                    if ((method.access & (Opcodes.ACC_ABSTRACT | Opcodes.ACC_STATIC | Opcodes.ACC_NATIVE | Opcodes.ACC_PRIVATE)) != 0
+                            || !seen.add(owner.name + "." + method.name + method.desc)) continue;
+                    Plan plan = predicate(source, owner, method, roots); if (plan != null) found.add(plan);
+                }
+            }
         }
         if (found.size() != 1) return 0;
         install(mixin, source, found.getFirst()); return 1;
@@ -266,6 +277,19 @@ public final class MixinDefaultCallbackTransport {
             else { if (above >= 0) return null; above = i; }
         }
         return below >= 0 && above >= 0 ? new Plan(owner, method, below, above) : null;
+    }
+
+    /** Every interface the class implements, through its superclasses and their superinterfaces, that {@code classes} can read. */
+    private static List<ClassNode> inheritedInterfaces(ClassNode atomic, Function<String, ClassNode> classes) {
+        List<ClassNode> out = new ArrayList<>(); Set<String> visited = new HashSet<>(); ArrayDeque<String> pending = new ArrayDeque<>();
+        for (ClassNode c = atomic; c != null && visited.add(c.name); c = c.superName == null ? null : classes.apply(c.superName))
+            if (c.interfaces != null) pending.addAll(c.interfaces);
+        while (!pending.isEmpty()) {
+            String name = pending.removeFirst(); if (!visited.add(name)) continue;
+            ClassNode node = classes.apply(name); if (node == null || (node.access & Opcodes.ACC_INTERFACE) == 0) continue;
+            out.add(node); if (node.interfaces != null) pending.addAll(node.interfaces);
+        }
+        return out;
     }
 
     private static MethodInsnNode defaultForwarder(MethodNode method) {

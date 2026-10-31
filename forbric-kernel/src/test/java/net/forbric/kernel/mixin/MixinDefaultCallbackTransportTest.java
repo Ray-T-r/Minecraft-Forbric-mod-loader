@@ -132,7 +132,10 @@ class MixinDefaultCallbackTransportTest {
             }
         }
         try (var jar = new java.util.zip.ZipFile(base.toFile())) {
-            for (String name : List.of("net/minecraft/world/entity/LivingEntity", "net/minecraft/world/level/block/LadderBlock"))
+            // LadderBlock reaches NeoForge's makesOpenTrapdoorAboveClimbable through Block's IBlockExtension (genuine NeoForge
+            // declares no forwarder in LadderBlock), so the hierarchy the transport walks is part of the input.
+            for (String name : List.of("net/minecraft/world/entity/LivingEntity", "net/minecraft/world/level/block/LadderBlock",
+                    "net/minecraft/world/level/block/Block"))
                 types.put(name, parse(jar.getInputStream(jar.getEntry(name + ".class")).readAllBytes()));
             original = new NativeGameReferences(path -> { try { var entry = jar.getEntry(path); return entry == null ? null : jar.getInputStream(entry).readAllBytes(); } catch (Exception e) { return null; } }, null, TestFixtures.launchSources(base))
                     .get(Ecosystem.FABRIC, "net/minecraft/world/entity/LivingEntity");
