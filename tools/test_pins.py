@@ -17,6 +17,13 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 COMPAT = ROOT / 'forbric-kernel/run/compat'
 PINS_JAVA = ROOT / 'forbric-kernel-installer/src/main/java/net/forbric/installer/kernel/Pins.java'
+COORDINATE_PIN_TEST = ROOT / 'forbric-kernel-installer/src/test/java/net/forbric/installer/kernel/BaseCoordinatePinTest.java'
+# BaseCoordinatePinTest.RECORDED's rows, as they were published: NFRT build, NFRT result, the base coordinate's version
+# (net.forbric:patched-mc-neoforge:<version>), the base's SHA-1. Append-only, like the Java table; the copy here is what
+# makes editing a published row in place fail (D11).
+PUBLISHED_BASES = (
+    ('2.0.18', 'gameJarNoRecomp', '26.2-26.2.0.93', '67bbf24f850965e5943a1bfe0295ecb701d4465b'),
+)
 
 
 def java_pin(name):
@@ -41,6 +48,15 @@ class PinAgreementTest(unittest.TestCase):
 
     def assertAll(self, values, expected, where):
         self.assertEqual({expected}, set(values), where)
+
+    def test_published_base_rows_are_never_edited(self):
+        text = COORDINATE_PIN_TEST.read_text(encoding='utf-8')
+        table = re.search(r'RECORDED = List\.of\((.*?)\);', text, re.S).group(1)
+        rows = [tuple(re.findall(r'"([^"]*)"', row)) for row in re.findall(r'List\.of\(([^()]*)\)', table)]
+        self.assertEqual(list(PUBLISHED_BASES), rows[:len(PUBLISHED_BASES)],
+                         'BaseCoordinatePinTest.RECORDED must begin with every published row, unchanged: add a row '
+                         'for a new NFRT build, never edit one')
+        self.assertIn((java_pin('NFRT'), java_pin('NFRT_RESULT')), [row[:2] for row in rows])
 
     def test_neoforge_pin_everywhere(self):
         neo, compat = self.neo, COMPAT
