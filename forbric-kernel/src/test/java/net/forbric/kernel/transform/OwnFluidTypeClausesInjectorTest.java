@@ -89,7 +89,7 @@ class OwnFluidTypeClausesInjectorTest {
 		assertEquals(new TreeSet<>(OwnFluidTypeClausesInjector.KNOWN), classes, "the injector's anchors are the classes holding such a method");
 	}
 
-	/** In each such method every getter's answer goes through the kernel with its fluid, the result verifies, and it is made once. */
+	/** In each such method every NeoForge getter's answer goes through the kernel with its fluid (MinecraftForge's is left as merged), the result verifies, and it is made once. */
 	@Test void eachGetterInTheDeclaredMethodsIsAnsweredWithTheFamilysOwnType() throws Exception {
 		Path merged = game().getFirst();
 		for (String target : OwnFluidTypeClausesInjector.KNOWN) {
@@ -103,14 +103,16 @@ class OwnFluidTypeClausesInjectorTest {
 				List<MethodInsnNode> neo = OwnFluidTypeClausesInjector.getters(m, OwnFluidTypeClausesInjector.NEO_TYPE);
 				if (forge.isEmpty() || neo.isEmpty()) continue;
 				edited++;
-				List<MethodInsnNode> all = new ArrayList<>(forge);
-				all.addAll(neo);
-				for (MethodInsnNode call : all) {
-					boolean isForge = forge.contains(call);
+				for (MethodInsnNode call : neo) {
 					assertEquals(Opcodes.DUP, previous(call).getOpcode(), target + ": the fluid is kept for the kernel");
 					AbstractInsnNode next = next(call);
 					assertTrue(next instanceof MethodInsnNode own && own.owner.equals(OwnFluidTypeClausesInjector.RUNTIME)
-							&& own.name.equals(isForge ? "ownForgeType" : "ownNeoType"), target + "." + m.name + ": " + call.desc + " then " + next);
+							&& own.name.equals("ownNeoType"), target + "." + m.name + ": " + call.desc + " then " + next);
+				}
+				for (MethodInsnNode call : forge) {
+					AbstractInsnNode next = next(call);
+					assertFalse(next instanceof MethodInsnNode own && own.owner.equals(OwnFluidTypeClausesInjector.RUNTIME),
+							target + "." + m.name + ": MinecraftForge's clause is left as merged");
 				}
 				new Analyzer<>(new BasicVerifier()).analyze(node.name, m);
 			}

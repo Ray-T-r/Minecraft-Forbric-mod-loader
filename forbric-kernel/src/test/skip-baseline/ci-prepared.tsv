@@ -727,7 +727,6 @@ test	net.forbric.kernel.runtime.KernelFabricFluidBehaviorsTest	aLookupThatBreaks
 test	net.forbric.kernel.runtime.KernelFabricFluidBehaviorsTest	aQuestionDuringTheFirstResolveWaitsForIt()	[fixture:third-party] sweep pack absent
 test	net.forbric.kernel.runtime.KernelFabricFluidBehaviorsTest	aRegisteredTagAnswersNeoForgesQuestionsFromItsBehaviour()	[fixture:third-party] sweep pack absent
 test	net.forbric.kernel.runtime.KernelFabricFluidBehaviorsTest	aRegistryThatDoesNotLinkIsTreatedAsAbsent()	[fixture:third-party] sweep pack absent
-test	net.forbric.kernel.runtime.KernelFabricFluidBehaviorsTest	minecraftForgesFamilyAnswersTheSame()	[fixture:third-party] sweep pack absent
 test	net.forbric.kernel.runtime.KernelFabricFluidBehaviorsTest	offReportsNoBehaviourType()	[fixture:third-party] sweep pack absent
 test	net.forbric.kernel.runtime.KernelFabricFluidBehaviorsTest	withoutFabricApiNoTagHasAType()	[fixture:third-party] sweep pack absent
 test	net.forbric.kernel.runtime.KernelModInfoConfigTest	notEnoughCrashesDescribesAKernelModAsNeoForgeLetsIt()	[fixture:third-party] the sweep's Not Enough Crashes jar is not here

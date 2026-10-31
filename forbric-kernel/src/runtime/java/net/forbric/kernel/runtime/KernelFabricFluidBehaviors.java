@@ -39,7 +39,7 @@ import net.minecraft.world.level.material.FluidState;
  * other: the first entity to tick after a Fabric mod registered a behaviour took the server down
  * (FabricFluidBehaviorInjector).
  *
- * <p>So each registered tag gets one type of each family — {@link NeoType}, {@link ForgeType} — and a foreign fluid in
+ * <p>So each registered tag gets one NeoForge type — {@link NeoType} — and a foreign fluid in
  * that tag gets it (the water and lava tags still win, as before). The type answers canSwim, canDrownIn and
  * supportsBoating from the behaviour, and has NeoForge's empty type's properties, today's answer, in everything else but
 	 * the push — but it is not air: {@code FluidType.isAir()} is final and true for the empty type itself only.
@@ -51,7 +51,7 @@ import net.minecraft.world.level.material.FluidState;
  * then applies it at {@code motionScale} without using it up; so the type pushes at scale zero: the current is there
  * for the behaviour, NeoForge adds none of it, and fabric-api applies it once. Its fall-distance modifier stays 1.
  *
- * <p>The types are not in NeoForge's or MinecraftForge's fluid-type registry, and need not be: the trackers key them
+ * <p>The types are not in NeoForge's fluid-type registry, and need not be: the trackers key them
  * by identity, the client's fluid extensions default for an unknown type, the description id is set rather than
  * derived from a registry name, and NeoForge's own {@code toString} prints "Unregistered FluidType" for one.
  * Not covered: travel through the fluid (the merged {@code travelInFluid} asks only water's type, so no fluid type's
@@ -69,7 +69,6 @@ public final class KernelFabricFluidBehaviors {
 	private static final String BEHAVIOR = "net.fabricmc.fabric.api.registry.fluid.FluidBehavior";
 
 	private static final Map<TagKey<Fluid>, NeoType> NEO = new ConcurrentHashMap<>();
-	private static final Map<TagKey<Fluid>, ForgeType> FORGE = new ConcurrentHashMap<>();
 	private static final Set<TagKey<Fluid>> WARNED_NATIVE = ConcurrentHashMap.newKeySet();
 	private static volatile boolean resolved;
 	private static volatile Handles handles;
@@ -110,10 +109,6 @@ public final class KernelFabricFluidBehaviors {
 
 	/** Provenance of a type manufactured by this adapter, independent of the fluid/tag/mod that uses it. */
 	public static boolean ownsNeoType(net.neoforged.neoforge.fluids.FluidType type) { return type instanceof NeoType; }
-
-	static net.minecraftforge.fluids.FluidType forgeType(TagKey<Fluid> tag) {
-		return FORGE.computeIfAbsent(tag, ForgeType::new);
-	}
 
 	/** Registered tags in a fixed order (by name), re-sorted only when fabric-api's map has changed size. */
 	private static List<TagKey<Fluid>> ordered(Handles h) {
@@ -260,34 +255,6 @@ public final class KernelFabricFluidBehaviors {
 		 */
 		@Override public void setItemMovement(ItemEntity item) {
 			net.neoforged.neoforge.common.NeoForgeMod.EMPTY_TYPE.value().setItemMovement(item);
-		}
-	}
-
-	/** MinecraftForge's fluid type for the same tag, from MinecraftForge's own empty type: MinecraftForge mods ask this family. */
-	static final class ForgeType extends net.minecraftforge.fluids.FluidType {
-		final TagKey<Fluid> tag;
-
-		ForgeType(TagKey<Fluid> tag) {
-			super(Properties.create().descriptionId("block.minecraft.air").motionScale(0.0).canPushEntity(true).canSwim(false)
-					.canDrown(false).fallDistanceModifier(1.0F).pathType(null).adjacentPathType(null).density(0).temperature(0)
-					.viscosity(0));
-			this.tag = tag;
-		}
-
-		@Override public boolean canSwim(Entity entity) {
-			return ask(Handles::canSwim, tag, entity);
-		}
-
-		@Override public boolean canDrownIn(LivingEntity entity) {
-			return ask(Handles::canDrown, tag, entity);
-		}
-
-		@Override public boolean supportsBoating(AbstractBoat boat) {
-			return ask(Handles::canBoat, tag, boat);
-		}
-
-		@Override public void setItemMovement(ItemEntity item) {
-			net.minecraftforge.common.ForgeMod.EMPTY_TYPE.get().setItemMovement(item);
 		}
 	}
 }

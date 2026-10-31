@@ -32,11 +32,11 @@ import org.objectweb.asm.tree.MethodNode;
  * and so did a Fabric mod's fluid in that tag, which vanilla never extinguishes in (only {@code WaterFluid} does), and a
  * NeoForge fluid's own bucket sound gave way to water's or lava's.
  *
- * <p>In each such method every call of the fluid's MinecraftForge getter is followed by
- * {@code KernelFluidTypes.ownForgeType(fluid, type)}, and of its NeoForge getter by {@code ownNeoType}: the type itself,
- * or that family's empty type — which claims nothing — where the kernel's stand-in answered. A MinecraftForge mod's
- * fluid keeps its own type in MinecraftForge's clause and NeoForge's view of it in NeoForge's; a NeoForge mod's keeps its
- * own type; vanilla's fluids keep both families' types. The methods are found by that shape — calls of both
+ * <p>In each such method every call of the fluid's NeoForge getter is followed by
+ * {@code KernelFluidTypes.ownNeoType(fluid, type)}: the type itself, or NeoForge's empty type — which claims nothing —
+ * where the kernel's stand-in answered. A NeoForge mod's fluid keeps its own type; vanilla's fluids keep theirs.
+ * (MinecraftForge's clause is left as merged: Forbric loads no MinecraftForge mod, and no kernel stand-in answers
+ * MinecraftForge's getter any more.) The methods are found by that shape — calls of both
  * {@code Fluid.getFluidType()} getters in one body — not by name. Not made twice. {@code -Dforbric.ownFluidTypeClauses=off}
  * leaves them as merged.
  */
@@ -84,7 +84,6 @@ public final class OwnFluidTypeClausesInjector implements ClassTransformer {
 		for (MethodNode method : node.methods) {
 			List<MethodInsnNode> forge = getters(method, FORGE_TYPE), neo = getters(method, NEO_TYPE);
 			if (forge.isEmpty() || neo.isEmpty() || answered(method)) continue;
-			for (MethodInsnNode call : forge) own(method, call, "ownForgeType", FORGE_TYPE);
 			for (MethodInsnNode call : neo) own(method, call, "ownNeoType", NEO_TYPE);
 			edited++;
 		}
@@ -103,7 +102,7 @@ public final class OwnFluidTypeClausesInjector implements ClassTransformer {
 
 	private static boolean answered(MethodNode method) {
 		for (AbstractInsnNode insn : method.instructions) {
-			if (insn instanceof MethodInsnNode call && call.owner.equals(RUNTIME) && (call.name.equals("ownForgeType") || call.name.equals("ownNeoType"))) return true;
+			if (insn instanceof MethodInsnNode call && call.owner.equals(RUNTIME) && call.name.equals("ownNeoType")) return true;
 		}
 		return false;
 	}

@@ -28,7 +28,7 @@ import org.junit.jupiter.api.io.TempDir;
 import org.junit.jupiter.api.parallel.ResourceLock;
 
 /**
- * A tag a Fabric mod registered a fluid behaviour for answers NeoForge's (and MinecraftForge's) fluid-type questions
+ * A tag a Fabric mod registered a fluid behaviour for answers NeoForge's fluid-type questions
  * from that behaviour, over the COMPILED game-side classes, the staged game and fabric-api 0.161's own
  * content-registries module.
  */
@@ -97,12 +97,6 @@ class KernelFabricFluidBehaviorsTest {
 		return loader.loadClass("net.forbric.kernel.runtime.KernelFluidTypes").getMethod("byTag", tagKey).invoke(null, tag);
 	}
 
-	private Object forgeType(Object tag) throws Exception {
-		Method forge = loader.loadClass("net.forbric.kernel.runtime.KernelFabricFluidBehaviors").getDeclaredMethod("forgeType", tagKey);
-		forge.setAccessible(true);
-		return forge.invoke(null, tag);
-	}
-
 	/** canSwim, canDrownIn, supportsBoating of {@code type}, then that nothing else was asked of the behaviour. */
 	private void answersFromTheBehaviour(Object type, String family) throws Exception {
 		asked.clear();
@@ -138,14 +132,6 @@ class KernelFabricFluidBehaviorsTest {
 		answersFromTheBehaviour(type, "net.neoforged.neoforge.fluids.FluidType");
 	}
 
-	@Test void minecraftForgesFamilyAnswersTheSame() throws Exception {
-		load(true);
-		register(oil);
-		Object forge = forgeType(oil);
-		assertSame(forge, forgeType(oil));
-		answersFromTheBehaviour(forge, "net.minecraftforge.fluids.FluidType");
-	}
-
 	@Test void withoutFabricApiNoTagHasAType() throws Exception {
 		load(false);
 		assertNull(byTag(oil));
@@ -170,7 +156,7 @@ class KernelFabricFluidBehaviorsTest {
 
 	/**
 	 * A behaviour lookup that breaks after the registry resolved — here fabric-api's tracked set throws an Error, as a
-	 * half-linked module would — answers "no behaviour" in both families: a fluid's type is asked inside resource reloads.
+	 * half-linked module would — answers "no behaviour": a fluid's type is asked inside resource reloads.
 	 */
 	@Test void aLookupThatBreaksAnswersNoBehaviourType() throws Exception {
 		load(true);
@@ -185,12 +171,9 @@ class KernelFabricFluidBehaviorsTest {
 		Class<?> types = loader.loadClass("net.forbric.kernel.runtime.KernelFluidTypes");
 		Class<?> state = loader.loadClass("net.minecraft.world.level.material.FluidState");
 		Method neo = types.getDeclaredMethod("behaviourType", state);
-		Method forge = types.getDeclaredMethod("forgeBehaviourType", loader.loadClass("net.minecraft.world.level.material.Fluid"), state);
 		neo.setAccessible(true);
-		forge.setAccessible(true);
 		// The state is never reached: the tracked set is asked first.
-		assertNull(neo.invoke(null, (Object) null), "NeoForge's family: the tag-implied type");
-		assertNull(forge.invoke(null, null, null), "MinecraftForge's family: the tag-implied type");
+		assertNull(neo.invoke(null, (Object) null), "the tag-implied type");
 	}
 
 	private static void set(Class<?> owner, String name, Object value) throws Exception {

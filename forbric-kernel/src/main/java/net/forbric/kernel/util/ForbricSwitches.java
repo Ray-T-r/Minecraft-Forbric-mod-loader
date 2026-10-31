@@ -148,7 +148,14 @@ public final class ForbricSwitches {
 			Map.entry("forbric.forgeDamageSeams", "Forbric loads no MinecraftForge mod, so there are no MinecraftForge Hurt, Damage or player-Attack "
 					+ "events to post; vanilla's damage read stays (-Dforbric.vanillaDamageRead)"),
 			Map.entry("forbric.forgeLauncherInfo", "Forbric loads no MinecraftForge runtime, so there is no MinecraftForge FMLLoader whose launcher "
-					+ "methods need answering"));
+					+ "methods need answering"),
+			// Stage 4: MinecraftForge's fluid types, entity fluids and fluid models are gone with its carrier.
+			Map.entry("forbric.forgeEntityFluids", "Forbric loads no MinecraftForge mod, so no entity's fluid walk needs MinecraftForge's half; NeoForge's "
+					+ "own EntityFluidInteraction runs as on NeoForge"),
+			Map.entry("forbric.forgeFluidOwnType", "Forbric loads no MinecraftForge mod, so no fluid has a MinecraftForge type of its own to show NeoForge; a "
+					+ "fluid NeoForge cannot type gets the type its tags imply"),
+			Map.entry("forbric.forgeFluidModels", "Forbric loads no MinecraftForge mod, so no fluid chooses its model and tint through MinecraftForge's "
+					+ "client extensions"));
 
 	private static final ForbricSwitches SYSTEM =
 			new ForbricSwitches(RENAMED, RETIRED, System::getProperty, ForbricLog::warn);

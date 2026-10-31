@@ -63,14 +63,9 @@ class ForeignFluidTypeClaimsExecutionTest {
 			"net.forbric.kernel.runtime.KernelFluidTypes", """
 					package net.forbric.kernel.runtime;
 
-					/** Answers as the kernel does: a stand-in is replaced by that family's empty type, anything else passes. */
+					/** Answers as the kernel does: a stand-in is replaced by NeoForge's empty type, anything else passes. */
 					public final class KernelFluidTypes {
 						public static final java.util.List<String> calls = new java.util.ArrayList<>();
-						public static net.minecraftforge.fluids.FluidType ownForgeType(net.minecraft.world.level.material.Fluid fluid,
-								net.minecraftforge.fluids.FluidType type) {
-							calls.add("forge " + type.name);
-							return type.name.startsWith("stand-in") ? new net.minecraftforge.fluids.FluidType("empty", false) : type;
-						}
 						public static net.neoforged.neoforge.fluids.FluidType ownNeoType(net.minecraft.world.level.material.Fluid fluid,
 								net.neoforged.neoforge.fluids.FluidType type) {
 							calls.add("neo " + type.name);
@@ -127,10 +122,12 @@ class ForeignFluidTypeClaimsExecutionTest {
 	}
 
 	/**
-	 * Each family's clause is answered by the kernel with the type the fluid gave it: a stand-in becomes that family's empty
+	 * NeoForge's clause is answered by the kernel with the type the fluid gave it: a stand-in becomes NeoForge's empty
 	 * type, which puts out nothing; a type of the fluid's own still does. As merged, a stand-in that extinguishes did.
+	 * MinecraftForge's clause is left as merged (no kernel stand-in answers MinecraftForge's getter any more), so its
+	 * type here never extinguishes and never decides.
 	 */
-	@Test void eachFamilysClauseIsAskedOnlyTheTypeItGaveTheFluid(@TempDir Path work) throws Throwable {
+	@Test void neoForgesClauseIsAskedOnlyTheTypeItGaveTheFluid(@TempDir Path work) throws Throwable {
 		Map<String, byte[]> original = new HashMap<>(InjectorExecution.compile(work, CLAUSES));
 		original.put("net/minecraft/world/level/material/Fluid", mergedShape(original.get("net/minecraft/world/level/material/Fluid")));
 		Map<String, byte[]> classes = new HashMap<>(original);
@@ -146,33 +143,33 @@ class ForeignFluidTypeClaimsExecutionTest {
 		Class<?> fluidClass = loader.loadClass("net.minecraft.world.level.material.Fluid");
 		@SuppressWarnings("unchecked")
 		List<String> calls = (List<String>) InjectorExecution.getStatic(loader.loadClass("net.forbric.kernel.runtime.KernelFluidTypes"), "calls");
-		// A NeoForge mod's fluid: its own NeoForge type does not extinguish; MinecraftForge's stand-in (water's) would.
+		// A NeoForge mod's fluid whose own type does not extinguish.
 		Object neoFluid = InjectorExecution.construct(fluidClass);
-		setField(neoFluid, "forge", type(loader, "forge", "stand-in water", true));
+		setField(neoFluid, "forge", type(loader, "forge", "unasked", false));
 		setField(neoFluid, "neo", type(loader, "neo", "own", false));
 		InjectorExecution.invoke(neoFluid, "entityInside");
-		assertEquals(List.of(), field(neoFluid, "effects"), "the stand-in claims nothing; the fluid's own type says no");
-		assertEquals(List.of("forge stand-in water", "neo own"), calls, "each getter's answer goes through the kernel with its fluid");
+		assertEquals(List.of(), field(neoFluid, "effects"), "the fluid's own type says no");
+		assertEquals(List.of("neo own"), calls, "NeoForge's getter's answer goes through the kernel with its fluid");
 		calls.clear();
-		// A MinecraftForge mod's fluid: its own MinecraftForge type, and NeoForge's view of it, both say yes.
-		Object forgeFluid = InjectorExecution.construct(fluidClass);
-		setField(forgeFluid, "forge", type(loader, "forge", "own", true));
-		setField(forgeFluid, "neo", type(loader, "neo", "view", true));
-		InjectorExecution.invoke(forgeFluid, "entityInside");
-		assertEquals(List.of("forge:own", "neo:view"), field(forgeFluid, "effects"), "a family's own type still decides");
-		// A Fabric mod's fluid in minecraft:water: stand-ins on both sides, so nothing, as vanilla's Fluid.entityInside.
+		// A NeoForge mod's fluid whose own type extinguishes still does.
+		Object wetFluid = InjectorExecution.construct(fluidClass);
+		setField(wetFluid, "forge", type(loader, "forge", "unasked", false));
+		setField(wetFluid, "neo", type(loader, "neo", "own", true));
+		InjectorExecution.invoke(wetFluid, "entityInside");
+		assertEquals(List.of("neo:own"), field(wetFluid, "effects"), "the fluid's own type still decides");
+		// A Fabric mod's fluid in minecraft:water: NeoForge's stand-in claims nothing, as vanilla's Fluid.entityInside.
 		Object fabricFluid = InjectorExecution.construct(fluidClass);
-		setField(fabricFluid, "forge", type(loader, "forge", "stand-in water", true));
+		setField(fabricFluid, "forge", type(loader, "forge", "unasked", false));
 		setField(fabricFluid, "neo", type(loader, "neo", "stand-in water", true));
 		InjectorExecution.invoke(fabricFluid, "entityInside");
 		assertEquals(List.of(), field(fabricFluid, "effects"));
 
 		ClassLoader merged = InjectorExecution.load(original);
 		Object stock = InjectorExecution.construct(merged.loadClass("net.minecraft.world.level.material.Fluid"));
-		setField(stock, "forge", type(merged, "forge", "stand-in water", true));
-		setField(stock, "neo", type(merged, "neo", "own", false));
+		setField(stock, "forge", type(merged, "forge", "unasked", false));
+		setField(stock, "neo", type(merged, "neo", "stand-in water", true));
 		InjectorExecution.invoke(stock, "entityInside");
-		assertEquals(List.of("forge:stand-in water"), field(stock, "effects"), "premise: as merged, the stand-in put the fire out");
+		assertEquals(List.of("neo:stand-in water"), field(stock, "effects"), "premise: as merged, the stand-in put the fire out");
 	}
 
 	private static final Map<String, String> TRACKERS = Map.of(
