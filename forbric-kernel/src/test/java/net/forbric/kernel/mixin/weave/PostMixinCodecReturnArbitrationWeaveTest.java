@@ -24,12 +24,12 @@ class PostMixinCodecReturnArbitrationWeaveTest {
 				public class CodecProbe {
 				 public static int heads;
 				 public void run() {
-				  Codec fabric=new Codec("fabric",Register.class), forge=new Codec("forge",net.minecraftforge.network.ForgePayload.class);
+				  Codec fabric=new Codec("fabric",Register.class), neo=new Codec("neo",net.neoforged.neoforge.network.payload.MinecraftRegisterPayload.class);
 				  Channels.SERVERBOUND_CONFIGURATION.entries.put("minecraft:register",new net.minecraft.network.protocol.common.custom.CustomPacketPayload.TypeAndCodec<>("type",fabric));
-				  net.minecraftforge.network.NetworkRegistry.CODECS.put("minecraft:register",forge);
+				  net.neoforged.neoforge.network.registration.NetworkRegistry.BUILTIN_PAYLOADS.put("minecraft:register",neo);
 				  Fallback fallback=new Fallback();Lookup lookup=new Lookup(new HashMap<>(),ConnectionProtocol.CONFIGURATION,PacketFlow.SERVERBOUND,fallback);
 				  lookup.guest=fabric;StreamCodec<Object,Object> chosen=lookup.lookup("minecraft:register");Buffer buffer=new Buffer();
-				  try{chosen.encode(buffer,new net.minecraftforge.network.ForgePayload());System.out.println("[CodecReturn] encoded="+buffer.by);}
+				  try{chosen.encode(buffer,new net.neoforged.neoforge.network.payload.MinecraftRegisterPayload());System.out.println("[CodecReturn] encoded="+buffer.by);}
 				  catch(ClassCastException expected){System.out.println("[CodecReturn] encoded=wrong-guest-class");}
 				  System.out.println("[CodecReturn] heads="+heads+" body="+lookup.callbacks+" fallback="+fallback.calls);
 				 }
@@ -58,14 +58,14 @@ class PostMixinCodecReturnArbitrationWeaveTest {
 		String config="codec-head.mixins.json";Path json=work.resolve(config);Files.writeString(json,"{\"required\":true,\"package\":\"fixture.mixin\",\"mixins\":[\"CodecHeadMixin\"],\"injectors\":{\"defaultRequire\":1}}");
 		Path fixture=WeaveHarness.fixture(work,"codec-head",files,Map.of(config,json));
 		WeaveHarness.Result repaired=WeaveHarness.run(work,"on",fixture,config,"codecheadprobe",Ecosystem.FABRIC,EnvType.CLIENT,"fixture.CodecProbe","run",Map.of());
-		assertTrue(repaired.printed("[CodecReturn] encoded=forge"),repaired.describe());
+		assertTrue(repaired.printed("[CodecReturn] encoded=neo"),repaired.describe());
 		assertTrue(repaired.printed("[CodecReturn] heads=1 body=0 fallback=1"),repaired.describe());
 		assertTrue(repaired.findings().stream().noneMatch(f->f.confirmedRequired()),repaired.describe());
 		WeaveHarness.assertWovenAndVerified(repaired,"fixture/Lookup",fixture);
 		WeaveHarness.Result control=WeaveHarness.run(work,"off",fixture,config,"codecheadprobe",Ecosystem.FABRIC,EnvType.CLIENT,"fixture.CodecProbe","run",Map.of(PostMixinCodecReturnArbitration.PROPERTY,"off"));
 		assertTrue(control.printed("[CodecReturn] encoded=wrong-guest-class"),control.describe());
 		assertTrue(control.printed("[CodecReturn] heads=1 body=0 fallback=0"),control.describe());
-		assertFalse(control.printed("[CodecReturn] encoded=forge"),control.describe());
+		assertFalse(control.printed("[CodecReturn] encoded=neo"),control.describe());
 	}
 
 	@Test void aRealOperationWrapperCanReturnBeforeItsOriginalAndStillArbitrateBothDirections() throws Exception {
@@ -84,13 +84,11 @@ class PostMixinCodecReturnArbitrationWeaveTest {
 				public class CodecProbe {
 				 public static int wraps;
 				 public void run() {
-				  Codec fabric=new Codec("fabric",Register.class), forge=new Codec("forge",net.minecraftforge.network.ForgePayload.class),neo=new Codec("neo",net.neoforged.neoforge.network.payload.MinecraftRegisterPayload.class);
+				  Codec fabric=new Codec("fabric",Register.class), neo=new Codec("neo",net.neoforged.neoforge.network.payload.MinecraftRegisterPayload.class);
 				  Channels.SERVERBOUND_CONFIGURATION.entries.put("minecraft:register",new net.minecraft.network.protocol.common.custom.CustomPacketPayload.TypeAndCodec<>("type",fabric));
-				  net.minecraftforge.network.NetworkRegistry.CODECS.put("minecraft:register",forge);
 				  net.neoforged.neoforge.network.registration.NetworkRegistry.BUILTIN_PAYLOADS.put("minecraft:register",neo);
 				  Fallback fallback=new Fallback();Map<Object,Object> locals=new HashMap<>();Lookup lookup=new Lookup(locals,ConnectionProtocol.CONFIGURATION,PacketFlow.SERVERBOUND,fallback);Buffer buffer=new Buffer();
 				  lookup.guest=fabric;
-				  try{lookup.write("minecraft:register",buffer,new net.minecraftforge.network.ForgePayload());System.out.println("[CodecWrap] forge="+buffer.by);}catch(ClassCastException expected){System.out.println("[CodecWrap] forge=wrong-guest-class");}
 				  try{lookup.write("minecraft:register",buffer,new net.neoforged.neoforge.network.payload.MinecraftRegisterPayload());System.out.println("[CodecWrap] neo="+buffer.by);}catch(ClassCastException expected){System.out.println("[CodecWrap] neo=wrong-guest-class");}
 				  lookup.write("minecraft:register",buffer,new Register());System.out.println("[CodecWrap] fabric="+buffer.by);
 				  System.out.println("[CodecWrap] decode="+lookup.read("minecraft:register",buffer).getClass().getName());
@@ -124,14 +122,14 @@ class PostMixinCodecReturnArbitrationWeaveTest {
 		String config="codec-operation.mixins.json";Path json=work.resolve(config);Files.writeString(json,"{\"required\":true,\"package\":\"fixture.mixin\",\"mixins\":[\"CodecOperationMixin\"],\"injectors\":{\"defaultRequire\":1}}");
 		Path fixture=WeaveHarness.fixture(work,"codec-operation",files,Map.of(config,json));
 		WeaveHarness.Result repaired=WeaveHarness.run(work,"on",fixture,config,"codecoperationprobe",Ecosystem.FABRIC,EnvType.CLIENT,"fixture.CodecProbe","run",Map.of());
-		for(String expected:List.of("[CodecWrap] forge=forge","[CodecWrap] neo=neo","[CodecWrap] fabric=fabric","[CodecWrap] decode=net.neoforged.neoforge.network.payload.MinecraftRegisterPayload","[CodecWrap] unknown=guest:fixture.UnknownPayload","[CodecWrap] local=guest","[CodecWrap] fallback=fixture.UnknownPayload","[CodecWrap] wraps=8 body=2 fallbackCalls=8")) assertTrue(repaired.printed(expected),repaired.describe());
+		for(String expected:List.of("[CodecWrap] neo=neo","[CodecWrap] fabric=fabric","[CodecWrap] decode=net.neoforged.neoforge.network.payload.MinecraftRegisterPayload","[CodecWrap] unknown=guest:fixture.UnknownPayload","[CodecWrap] local=guest","[CodecWrap] fallback=fixture.UnknownPayload","[CodecWrap] wraps=7 body=2 fallbackCalls=7")) assertTrue(repaired.printed(expected),repaired.describe());
 		assertTrue(repaired.findings().stream().noneMatch(f->f.confirmedRequired()),repaired.describe());
 		WeaveHarness.assertWovenAndVerified(repaired,"fixture/Lookup",fixture);
 		WeaveHarness.Result control=WeaveHarness.run(work,"off",fixture,config,"codecoperationprobe",Ecosystem.FABRIC,EnvType.CLIENT,"fixture.CodecProbe","run",Map.of(PostMixinCodecReturnArbitration.PROPERTY,"off"));
-		assertTrue(control.printed("[CodecWrap] forge=wrong-guest-class"),control.describe());assertTrue(control.printed("[CodecWrap] neo=wrong-guest-class"),control.describe());
+		assertTrue(control.printed("[CodecWrap] neo=wrong-guest-class"),control.describe());
 		assertTrue(control.printed("[CodecWrap] decode=org.quarry.net.Register"),control.describe());
-		assertTrue(control.printed("[CodecWrap] wraps=8 body=2 fallbackCalls=2"),control.describe());
-		assertFalse(control.printed("[CodecWrap] forge=forge"),control.describe());
+		assertTrue(control.printed("[CodecWrap] wraps=7 body=2 fallbackCalls=2"),control.describe());
+		assertFalse(control.printed("[CodecWrap] neo=neo"),control.describe());
 	}
 
 	@Test void anOperationsChangedIdKeepsItsOwnUnifiedCodecAndCallsTheFactoryOnce() throws Exception {

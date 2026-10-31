@@ -101,10 +101,12 @@ public class PostMixinCodecReturnArbitrationTest {
 		Object lookup=lookup(loader,new HashMap<>()),fallback=lookup.getClass().getField("fallback").get(lookup);
 		lookup.getClass().getField("guest").set(lookup,fabric);
 		Object chosen=InjectorExecution.invoke(lookup,"lookup","minecraft:register");
-		for(var test:Map.of("fabric","org.quarry.net.Register","neo","net.neoforged.neoforge.network.payload.MinecraftRegisterPayload","forge","net.minecraftforge.network.ForgePayload").entrySet()){
+		// MinecraftForge's codec stays registered but is never a candidate: Forbric loads no MinecraftForge mod.
+		for(var test:Map.of("fabric","org.quarry.net.Register","neo","net.neoforged.neoforge.network.payload.MinecraftRegisterPayload").entrySet()){
 			Object buffer=InjectorExecution.construct(loader.loadClass("fixture.Buffer")),payload=InjectorExecution.construct(loader.loadClass(test.getValue()));
 			InjectorExecution.invoke(chosen,"encode",buffer,payload);assertEquals(test.getKey(),buffer.getClass().getField("by").get(buffer));
 		}
+		assertEquals(0,forge.getClass().getField("writes").getInt(forge),"MinecraftForge's codec is never chosen");
 		assertEquals(1,lookup.getClass().getField("callbacks").getInt(lookup));assertEquals(1,fallback.getClass().getField("calls").getInt(fallback));
 		Object buffer=InjectorExecution.construct(loader.loadClass("fixture.Buffer"));
 		assertEquals("net.neoforged.neoforge.network.payload.MinecraftRegisterPayload",InjectorExecution.invoke(chosen,"decode",buffer).getClass().getName());

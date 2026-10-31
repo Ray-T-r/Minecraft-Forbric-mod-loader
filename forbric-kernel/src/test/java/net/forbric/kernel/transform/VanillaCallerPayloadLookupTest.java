@@ -68,8 +68,8 @@ class VanillaCallerPayloadLookupTest {
 		// flow, is not among them when neither is known.
 		Object shared = InjectorExecution.invoke(vanillaShaped(loader, new HashMap<>()), "lookup", "minecraft:register");
 		assertEquals("neo", encode(loader, shared, NEO_PAYLOAD));
-		assertEquals("forge", encode(loader, shared, FORGE_PAYLOAD));
 		assertEquals(0, fabric.getClass().getField("writes").getInt(fabric), "Fabric's per-protocol codec is never chosen");
+		assertEquals(0, forge.getClass().getField("writes").getInt(forge), "nor MinecraftForge's, which Forbric no longer consults");
 		assertEquals(NEO_PAYLOAD, InjectorExecution.invoke(shared, "decode", InjectorExecution.construct(loader.loadClass("fixture.Buffer")))
 				.getClass().getName(), "and NeoForge's protocol-free codec reads it back");
 	}
