@@ -29,27 +29,21 @@ import net.forbric.kernel.util.Caught;
 import net.forbric.kernel.util.ForbricLog;
 
 /**
- * Stops the non-daemon background executors the two Forge-family config systems leave running, so the JVM can
+ * Stops the non-daemon background executors NeoForge's config system leaves running, so the JVM can
  * end: a client at the end of {@code Minecraft.close()} instead of hanging until vanilla's 15-second
  * {@code ClientShutdownWatchdog} files a "Client shutdown from post-main" crash, a dedicated server at the end of
  * {@code onServerExit()} instead of sitting there forever after "Stopping server" (it has no watchdog and no
  * {@code System.exit}). The class keeps its client-era name; the kernel calls it on both sides.
  *
- * <p>Both leaks are night-config's {@code FileWatcher}: each of its per-filesystem watchers owns a
+ * <p>The leak is night-config's {@code FileWatcher}: each of its per-filesystem watchers owns a
  * {@code Executors.newScheduledThreadPool(1)} built with no thread factory — a non-daemon worker parked forever on
  * {@code DelayedWorkQueue.take}, so the JVM cannot exit while one exists. FML's own shutdown would close them; the
- * kernel drives both loaders' lifecycles itself and does not run that path. There are TWO owners, and until this
- * class knew both it only ever stopped one:
- * <ul>
- * <li>NeoForge's {@code ConfigTracker} watches through night-config's {@code FileWatcher.defaultInstance()};</li>
- * <li>MinecraftForge's {@code ConfigFileTypeHandler} has three static handlers (CLIENT, COMMON, SERVER), each
- *     lazily building a PRIVATE {@code new FileWatcher()} in {@code getWatcher()} and dropping it in
- *     {@code stopWatcher()} — which Forge calls only for SERVER on disconnect and for all three from
- *     {@code ConfigTracker.forceUnload()}, which nobody calls here.</li>
- * </ul>
+ * kernel drives the loader lifecycle itself and does not run that path. NeoForge's {@code ConfigTracker} watches
+ * through night-config's {@code FileWatcher.defaultInstance()}. (MinecraftForge's {@code ConfigFileTypeHandler} kept
+ * three private watchers of its own; they left with MinecraftForge.)
  *
  * <p>And a stop is not the end of it: night-config's {@code defaultInstance()} builds a NEW watcher when the old
- * one is stopped, and Forge's {@code getWatcher()} does the same once its field is null. A config (re)load that
+ * one is stopped. A config (re)load that
  * lands after the stop — the client's disconnect is still being processed on a Netty thread while the render thread
  * is already in {@code close()} — quietly brings a fresh non-daemon executor into a JVM that is trying to exit.
  * That was the one-in-three hang. So after the first sweep a daemon guard keeps sweeping for a few seconds, until
@@ -63,12 +57,11 @@ import net.forbric.kernel.util.ForbricLog;
  * thread has ended and every non-daemon thread still alive is parked without a timeout, with nothing running that
  * could wake it, it ends the JVM ({@link #runExitGuard}).
  *
- * <p>Reflection-only (no compile/runtime dep on night-config or either loader); every piece is a no-op where its
+ * <p>Reflection-only (no compile/runtime dep on night-config or the loader); every piece is a no-op where its
  * class is absent, and everything is idempotent.
  */
 public final class ClientShutdown {
 	private static final String NIGHTCONFIG_WATCHER = "com.electronwill.nightconfig.core.file.FileWatcher";
-	private static final String FORGE_FILE_TYPE_HANDLER = "net.minecraftforge.fml.config.ConfigFileTypeHandler";
 	private static final long GUARD_DEADLINE_MS = Long.getLong("forbric.exitGuardMillis", 8_000L);
 	private static final long GUARD_PERIOD_MS = 200L;
 	private static final long STOP_WAIT_MS = Long.getLong("forbric.watcherStopMillis", 1_500L);
@@ -117,7 +110,6 @@ public final class ClientShutdown {
 		List<String> stopped = new ArrayList<>();
 		synchronized (STOPPED) {
 			stopNightconfigDefaultInstance(cl, stopped);
-			stopForgeHandlerWatchers(cl, stopped);
 		}
 		return stopped;
 	}
@@ -140,40 +132,6 @@ public final class ClientShutdown {
 			if (instance != null) stopWatcher(fileWatcher, instance, "night-config default instance", stopped);
 		} catch (Throwable t) {
 			Caught.warn(t, "[Forbric/Shutdown] could not inspect night-config's default file-watcher");
-		}
-	}
-
-	/** MinecraftForge's side: the private watcher of each of ConfigFileTypeHandler's static handlers. */
-	private static void stopForgeHandlerWatchers(ClassLoader cl, List<String> stopped) {
-		Class<?> handlerClass = load(cl, FORGE_FILE_TYPE_HANDLER);
-		if (handlerClass == null) return;
-		Class<?> fileWatcher = load(cl, NIGHTCONFIG_WATCHER);
-		if (fileWatcher == null) return;
-		try {
-			Field watcherField = null;
-			for (Field f : handlerClass.getDeclaredFields()) {
-				if (!Modifier.isStatic(f.getModifiers()) && f.getType() == fileWatcher) {
-					watcherField = f;
-					break;
-				}
-			}
-			if (watcherField == null) return;
-			watcherField.setAccessible(true);
-			for (Field f : handlerClass.getDeclaredFields()) {
-				if (!Modifier.isStatic(f.getModifiers()) || f.getType() != handlerClass) continue;
-				f.setAccessible(true);
-				Object handler = f.get(null);
-				if (handler == null) continue;
-				Object watcher = watcherField.get(handler);
-				if (watcher == null) continue;
-				// Forge's own stopWatcher(): stop + null the field, so a later getWatcher() builds afresh instead of
-				// using a stopped one (which would throw on addWatch).
-				if (stopWatcher(fileWatcher, watcher, "MinecraftForge " + f.getName() + " config handler", stopped)) {
-					watcherField.set(handler, null);
-				}
-			}
-		} catch (Throwable t) {
-			Caught.warn(t, "[Forbric/Shutdown] could not inspect MinecraftForge's config file-watchers");
 		}
 	}
 
