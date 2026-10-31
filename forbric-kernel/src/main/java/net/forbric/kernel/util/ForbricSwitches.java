@@ -99,7 +99,9 @@ public final class ForbricSwitches {
 			Map.entry("forbric.portalSpawn", "a nether portal asks NeoForge's own portal hook, as on NeoForge; there is no MinecraftForge "
 					+ "half to compose with it"),
 			Map.entry("forbric.clientHookMixinAnchors", "NeoForge's own initClientHooks and onRegisterParticleProviders calls run in "
-					+ "Minecraft's constructor, so a mod's mixin on them binds there with no relay to move it onto"));
+					+ "Minecraft's constructor, so a mod's mixin on them binds there with no relay to move it onto"),
+			Map.entry("forbric.forgeReloadListeners", "a datapack reload posts NeoForge's own reload-listener event alone (EventHooks.onResourceReload), as on "
+					+ "NeoForge; there is no MinecraftForge AddReloadListenerEvent to post beside it"));
 
 	private static final ForbricSwitches SYSTEM =
 			new ForbricSwitches(RENAMED, RETIRED, System::getProperty, ForbricLog::warn);

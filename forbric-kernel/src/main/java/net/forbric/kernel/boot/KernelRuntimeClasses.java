@@ -196,7 +196,6 @@ public final class KernelRuntimeClasses {
 				new Call("beforeOpen", void.class), new Call("beforeClose", void.class, Object.class, boolean.class),
 				new Call("afterClose", void.class, Object.class, Throwable.class),
 				new Call("fabricFinal", void.class, Object.class, Object.class), new Call("neoFinal", void.class, Object.class))));
-		CLASSES.put("net.forbric.kernel.runtime.KernelForgeReload", new Entry(Origin.COMPILED, List.of()));
 		// The loot-table chain (NeoForge, then Fabric) is routed to by LootTableEventBridgeInjector and named by nothing else.
 		CLASSES.put("net.forbric.kernel.runtime.KernelLootBridge", new Entry(Origin.COMPILED, List.of()));
 		CLASSES.put("net.forbric.kernel.runtime.KernelLootModifiers", new Entry(Origin.COMPILED, List.of()));

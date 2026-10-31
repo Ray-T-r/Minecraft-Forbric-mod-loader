@@ -92,7 +92,7 @@ public final class ForbricMergedBaseCompatTransformer implements ClassTransforme
 	}
 
 	/** The repairs {@link #transform} runs, in its order; a test pins the two lists against each other. */
-	static final List<String> REPAIRS = List.of("repairLambdaBootstrapHandles", "addBlockStateModelConflictResolvers", "addBlockStateAppearanceResolver", "addMissingForgeFluidTypeBridge", "addMissingForgeKeyMappingLookupInitializer", "routeKeyMappingClickToPopulatedLookup", "giveKeyMappingItsMinecraftForgeFace", "giveKeyMappingItsVanillaMap", "giveTheVanillaParticleMapAViewOfTheLiveOne", "letDungeonsGenerateWithoutTheDataMap", "restoreDoublePrecisionToTheRandomSources", "convertRadiansWithVanillasFoldedConstant", "callVanillasWriteByteAgain", "saveTheHeightmapsVanillaSaves", "guardNeoForgesWorldModifierPass", "letForeignResourceConditionsThrough", "letForeignResourceConditionsThroughMinecraftForge", "letFabricResourceConditionsDecide", "letMinecraftForgeResourceConditionsDecide", "judgeDataFilesWhereMinecraftForgeDid", "judgeRegistryElementsWhereMinecraftForgeDid", "giveMinecraftForgesRecipeConditionsTheirContext", "translateAGuestsPrivateSkipMarker", "serveDefaultAttributesBothEcosystems", "nameTheReloadListenersNeoForgeRefusesToName", "dropInterfaceDefaultShadowingOverrides", "tolerateEmptyCreativeTabStacks", "routePlaceItemHookToNeoForge", "bridgeOrphanedPipRenderers", "keepForgeOutboundProtocolCurrent", "surviveTheMissingForgeModelDataManager", "dropTheWindowTitlesLoaderBrand", "keepTheSaveOffTheTeardownsFailurePath", "postNeoForgesItemTooltipEvent", "askNeoForgeWhatAnItemsAttributesAre", "readTheSpawnReasonThatIsActuallyWritten", "giveTheUnwrittenLoggerAValue", "addTheMissingCapabilityLifecycleStubs", "addTheMissingNbtBuilderFactory", "postMinecraftForgesReloadListenerEvent", "giveMinecraftForgesReloadEventItsConditionContext", "letMinecraftForgeIngredientTypesDecode", "letMinecraftForgeFluidsChooseTheirModel", "giveMinecraftForgesParticleLookupItsFirstVariant", "dropStubsThatBypassARealSuperclassMethod", "inlineTheSwitchMapTheMergeLost", "vetoUnjudgeableOverlayConditions", "hideTheLegacyLootModifierIndexFromTheDirectoryScan", "letModdedFeatureFlagsRegister", "dropTheKeyModifierSuffixBeforeParsingAKeyName", "letTheAtlasLowerItsMipLevelLikeVanilla", "wrapTheStreamsVanillaWraps", "returnFromANestedBootstrapBeforeItsTail", "letBothEcosystemsSetBurnTime", "letMinecraftForgeSeeSpawnerMobs", "letMinecraftForgeAddPackFinders");
+	static final List<String> REPAIRS = List.of("repairLambdaBootstrapHandles", "addBlockStateModelConflictResolvers", "addBlockStateAppearanceResolver", "addMissingForgeFluidTypeBridge", "addMissingForgeKeyMappingLookupInitializer", "routeKeyMappingClickToPopulatedLookup", "giveKeyMappingItsMinecraftForgeFace", "giveKeyMappingItsVanillaMap", "giveTheVanillaParticleMapAViewOfTheLiveOne", "letDungeonsGenerateWithoutTheDataMap", "restoreDoublePrecisionToTheRandomSources", "convertRadiansWithVanillasFoldedConstant", "callVanillasWriteByteAgain", "saveTheHeightmapsVanillaSaves", "guardNeoForgesWorldModifierPass", "letForeignResourceConditionsThrough", "letForeignResourceConditionsThroughMinecraftForge", "letFabricResourceConditionsDecide", "letMinecraftForgeResourceConditionsDecide", "judgeDataFilesWhereMinecraftForgeDid", "judgeRegistryElementsWhereMinecraftForgeDid", "giveMinecraftForgesRecipeConditionsTheirContext", "translateAGuestsPrivateSkipMarker", "serveDefaultAttributesBothEcosystems", "nameTheReloadListenersNeoForgeRefusesToName", "dropInterfaceDefaultShadowingOverrides", "tolerateEmptyCreativeTabStacks", "routePlaceItemHookToNeoForge", "bridgeOrphanedPipRenderers", "keepForgeOutboundProtocolCurrent", "surviveTheMissingForgeModelDataManager", "dropTheWindowTitlesLoaderBrand", "keepTheSaveOffTheTeardownsFailurePath", "postNeoForgesItemTooltipEvent", "askNeoForgeWhatAnItemsAttributesAre", "readTheSpawnReasonThatIsActuallyWritten", "giveTheUnwrittenLoggerAValue", "addTheMissingCapabilityLifecycleStubs", "addTheMissingNbtBuilderFactory", "giveMinecraftForgesReloadEventItsConditionContext", "letMinecraftForgeIngredientTypesDecode", "letMinecraftForgeFluidsChooseTheirModel", "giveMinecraftForgesParticleLookupItsFirstVariant", "dropStubsThatBypassARealSuperclassMethod", "inlineTheSwitchMapTheMergeLost", "vetoUnjudgeableOverlayConditions", "hideTheLegacyLootModifierIndexFromTheDirectoryScan", "letModdedFeatureFlagsRegister", "dropTheKeyModifierSuffixBeforeParsingAKeyName", "letTheAtlasLowerItsMipLevelLikeVanilla", "wrapTheStreamsVanillaWraps", "returnFromANestedBootstrapBeforeItsTail", "letBothEcosystemsSetBurnTime", "letMinecraftForgeSeeSpawnerMobs", "letMinecraftForgeAddPackFinders");
 
 	private static final String NEO_EVENT_HOOKS_BINARY = "net.neoforged.neoforge.event.EventHooks";
 
@@ -209,8 +209,6 @@ public final class ForbricMergedBaseCompatTransformer implements ClassTransforme
 		out.add(scanned("addTheMissingCapabilityLifecycleStubs", "the capability composition composes the roots first; these stubs are its fallback"));
 		out.add(fixed("addTheMissingNbtBuilderFactory", "net/minecraft/nbt/CompoundTag",
 				"CompoundTag.builder() is gone — IForgeBlockPos.toCompoundTag and ForgeHooks.createEmptyStructure NoSuchMethodError"));
-		out.add(fixed("postMinecraftForgesReloadListenerEvent", RELOADABLE_SERVER_RESOURCES,
-				"MinecraftForge's AddReloadListenerEvent is never posted — traditional-Forge JSON data loaders never register"));
 		out.add(fixed("giveMinecraftForgesReloadEventItsConditionContext", FORGE_RELOAD_EVENT,
 				"AddReloadListenerEvent must expose the active reload context through the Forge interface"));
 		out.add(fixed("letMinecraftForgeIngredientTypesDecode", "net/minecraft/world/item/crafting/Ingredient",
@@ -336,7 +334,6 @@ public final class ForbricMergedBaseCompatTransformer implements ClassTransforme
 			changed |= claim(reporter, "giveTheUnwrittenLoggerAValue", giveTheUnwrittenLoggerAValue(node));
 			changed |= claim(reporter, "addTheMissingCapabilityLifecycleStubs", addTheMissingCapabilityLifecycleStubs(node));
 			changed |= claim(reporter, "addTheMissingNbtBuilderFactory", addTheMissingNbtBuilderFactory(node));
-			changed |= claim(reporter, "postMinecraftForgesReloadListenerEvent", postMinecraftForgesReloadListenerEvent(node));
 			changed |= claim(reporter, "giveMinecraftForgesReloadEventItsConditionContext", giveMinecraftForgesReloadEventItsConditionContext(node));
 			changed |= claim(reporter, "letMinecraftForgeIngredientTypesDecode", letMinecraftForgeIngredientTypesDecode(node));
 			changed |= claim(reporter, "letMinecraftForgeFluidsChooseTheirModel", letMinecraftForgeFluidsChooseTheirModel(node));
@@ -465,7 +462,6 @@ public final class ForbricMergedBaseCompatTransformer implements ClassTransforme
 	private static final String KERNEL_NEO_CONDITIONS = "net/forbric/kernel/runtime/KernelNeoConditions";
 	private static final String FORGE_ICONDITION = ForeignType.ICONDITION.internal(Ecosystem.FORGE);
 	private static final String KERNEL_FORGE_CONDITIONS = "net/forbric/kernel/runtime/KernelForgeConditions";
-	private static final String KERNEL_FORGE_RELOAD = "net/forbric/kernel/runtime/KernelForgeReload";
 	private static final String KERNEL_FORGE_INGREDIENTS = "net/forbric/kernel/runtime/KernelForgeIngredients";
 	private static final String KERNEL_FORGE_FLUIDS = "net/forbric/kernel/runtime/KernelForgeFluids";
 	private static final String FLUID_RENDERER = "net/minecraft/client/renderer/block/FluidRenderer";
@@ -487,8 +483,6 @@ public final class ForbricMergedBaseCompatTransformer implements ClassTransforme
 	static final String CODEC_TO_CODEC = "(Lcom/mojang/serialization/Codec;)Lcom/mojang/serialization/Codec;";
 	private static final String BOOTSTRAP = "net/minecraft/server/Bootstrap";
 	private static final String RELOADABLE_SERVER_RESOURCES = "net/minecraft/server/ReloadableServerResources";
-	private static final String RELOAD_HOOK_DESC = "(L" + RELOADABLE_SERVER_RESOURCES
-			+ ";Lnet/minecraft/core/RegistryAccess;Ljava/util/Map;)Ljava/util/List;";
 	/** The carrier's own reload event; NeoForge's twin has a different name, so ForeignType has no pair. */
 	private static final String FORGE_RELOAD_EVENT = "net/minecraftforge/event/AddReloadListenerEvent";
 	private static final String FORGE_CONDITION_CONTEXT_DESC = "()L" + FORGE_ICONDITION + "$IContext;";
@@ -909,44 +903,6 @@ public final class ForbricMergedBaseCompatTransformer implements ClassTransforme
 				+ "CompoundTag$1, an anonymous class the merge could not carry (the merged CompoundTag$1 is a different "
 				+ "class), so the body emitted is INBTBuilder.nbt()'s own; IForgeBlockPos.toCompoundTag() and "
 				+ "ForgeHooks.createEmptyStructure link again");
-		return true;
-	}
-
-	/**
-	 * Posts MinecraftForge's {@code AddReloadListenerEvent} from the merged server reload.
-	 *
-	 * <p>Merged {@code ReloadableServerResources.lambda$loadResources$2} calls only NeoForge's
-	 * {@code EventHooks.onResourceReload}; the merged base names Forge's event nowhere. One owner redirect, same
-	 * name and descriptor, to {@code KernelForgeReload.onResourceReload}, whose body calls NeoForge's hook and then
-	 * the carrier's own {@code ForgeEventFactory.onResourceReload}. Exactly one call site is expected; more means
-	 * an unrecognised base and the repair stands down whole. Idempotent: a second pass finds no NeoForge-owned call.
-	 * The kill switch lives in the helper ({@code -Dforbric.forgeReloadListeners=off}), so the redirect is inert
-	 * rather than absent when it is off.
-	 */
-	private static boolean postMinecraftForgesReloadListenerEvent(ClassNode node) {
-		if (!RELOADABLE_SERVER_RESOURCES.equals(node.name)) return false;
-		String neo = ForeignType.EVENT_HOOKS.internal(Ecosystem.NEOFORGE);
-		List<MethodInsnNode> calls = new java.util.ArrayList<>();
-		for (MethodNode method : node.methods) {
-			for (AbstractInsnNode insn = method.instructions.getFirst(); insn != null; insn = insn.getNext()) {
-				if (insn instanceof MethodInsnNode call && call.getOpcode() == Opcodes.INVOKESTATIC
-						&& neo.equals(call.owner) && "onResourceReload".equals(call.name)
-						&& RELOAD_HOOK_DESC.equals(call.desc)) {
-					calls.add(call);
-				}
-			}
-		}
-		if (calls.isEmpty()) return false;
-		if (calls.size() != 1) {
-			ForbricLog.warn("[Forbric/MergedBaseCompat] ReloadableServerResources calls EventHooks.onResourceReload "
-					+ "%d times, not once — not redirecting any of them, because MinecraftForge's reload event would "
-					+ "then be posted for some reloads and not others", calls.size());
-			return false;
-		}
-		calls.getFirst().owner = KERNEL_FORGE_RELOAD;
-		ForbricLog.info("[Forbric/MergedBaseCompat] ReloadableServerResources now posts both families' reload-listener "
-				+ "events (1 call site) — the merged base posted only NeoForge's, so a traditional-Forge mod's "
-				+ "AddReloadListenerEvent listeners never ran and its JSON data loaders were never registered");
 		return true;
 	}
 

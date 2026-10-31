@@ -2116,10 +2116,6 @@ test	net.forbric.kernel.transform.MergedBaseForgeReloadContextTest	aSecondPassCh
 test	net.forbric.kernel.transform.MergedBaseForgeReloadContextTest	theAdapterExistsWithThatExactDescriptorInTheCompiledRuntime()	[fixture:game-side] runtime helper not compiled
 test	net.forbric.kernel.transform.MergedBaseForgeReloadContextTest	theCarrierAndBothPublicContextDescriptorsAreRetained()	[fixture:forge-carrier] staged artifact absent: $ROOT/forbric-loader/run/forge-runtime/forge-runtime.jar
 test	net.forbric.kernel.transform.MergedBaseForgeReloadContextTest	theOneAskIsRedirectedToTheKernelAdapterWithTheReceiverAsArgument()	[fixture:forge-carrier] staged artifact absent: $ROOT/forbric-loader/run/forge-runtime/forge-runtime.jar
-test	net.forbric.kernel.transform.MergedBaseForgeReloadListenersTest	aSecondPassChangesNothingFurther()	[fixture:staged] staged merged base absent
-test	net.forbric.kernel.transform.MergedBaseForgeReloadListenersTest	anUnrelatedClassIsUntouched()	[fixture:staged] staged merged base absent
-test	net.forbric.kernel.transform.MergedBaseForgeReloadListenersTest	theOneCallSiteIsRedirectedWithTheSameDescriptor()	[fixture:staged] staged merged base absent
-test	net.forbric.kernel.transform.MergedBaseForgeReloadListenersTest	thePremiseTheBaseCallsOnlyNeoForgesHookExactlyOnceAndNamesNoForgeReloadEvent()	[fixture:staged] staged merged base absent
 test	net.forbric.kernel.transform.MergedBaseFrameRecomputerTest	aClassNamingItOnlyInThePoolIsReturnedUnchanged()	[fixture:staged] staged merged base and carriers absent — skipping the real-hierarchy check: $ROOT/forbric-loader/run/merged-base/patched-mc-merged-26.2.jar
 test	net.forbric.kernel.transform.MergedBaseFrameRecomputerTest	aClassNamingNoLostAncestorIsReturnedUnchanged()	[fixture:staged] staged merged base and carriers absent — skipping the real-hierarchy check: $ROOT/forbric-loader/run/merged-base/patched-mc-merged-26.2.jar
 test	net.forbric.kernel.transform.MergedBaseFrameRecomputerTest	aSharedSuperclassIsFound()	[fixture:staged] staged merged base and carriers absent — skipping the real-hierarchy check: $ROOT/forbric-loader/run/merged-base/patched-mc-merged-26.2.jar
