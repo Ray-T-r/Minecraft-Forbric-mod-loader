@@ -1,43 +1,10 @@
 #!/usr/bin/env bash
-# Builds run/canary/forbricserverevents.jar for gate-m48: a NeoForge mod whose MinecraftForge server listeners are
-# written the way packedup's and Tombstone's are. Only javac/jar; no kernel Gradle. The gate owns the separately scheduled kernel build.
-set -euo pipefail
-. "$(cd "$(dirname "$0")" && pwd)/lib.sh"
-canary_scratch server-events
-export M48_WORK="$WORK" M48_KERNEL="$KERNEL" M48_OLD="$OLD"
-python3 - <<'PY'
-import hashlib, json, os, pathlib, subprocess, zipfile
-kernel, old, work = (pathlib.Path(os.environ[key]) for key in ('M48_KERNEL', 'M48_OLD', 'M48_WORK'))
-mc = pathlib.Path(os.environ.get('MC_DIR', pathlib.Path.home() / 'Library/Application Support/minecraft'))
-compile_game = pathlib.Path(os.environ.get('M48_COMPILE_GAME', old / 'run/neoforge-patched/patched-mc-neoforge-26.2.jar'))
-forge = pathlib.Path(os.environ.get('FORGE_RT', old / 'run/merged-base/forge-runtime-interop.jar'))
-if not forge.is_file(): forge = old / 'run/forge-runtime/forge-runtime.jar'
-# Optional for a NeoForge canary: on the compile classpath when staged, left out (and recorded as null) when not.
-forge = [forge] if forge.is_file() else []
-neo = pathlib.Path(os.environ.get('NEO_RT', old / 'run/neoforge-runtime/neoforge-runtime.jar'))
-libraries = []
-for entry in json.loads((mc / 'versions/26.2/26.2.json').read_text())['libraries']:
-    artifact = entry.get('downloads', {}).get('artifact', {}).get('path')
-    if artifact and (mc / 'libraries' / artifact).is_file(): libraries.append(mc / 'libraries' / artifact)
-for path in [compile_game, *forge, neo]:
-    if not path.is_file(): raise SystemExit(f'M48 prerequisite absent: {path}')
-root = kernel / 'canary/server-events'
-# Without a MinecraftForge carrier only a canary whose own sources name none of it compiles: say so, not javac.
-if not forge and any('net.minecraftforge' in source.read_text(errors='replace') for source in root.rglob('*.java')):
-    raise SystemExit(f'M48 prerequisite absent: no MinecraftForge carrier is staged, and {root} still names net.minecraftforge')
-classes = work / 'classes'; classes.mkdir()
-subprocess.run(['javac', '-proc:none', '--release', '21', '-cp', os.pathsep.join(map(str, [compile_game, *forge, neo, *libraries])),
-                '-d', str(classes), *map(str, sorted((root / 'src').rglob('*.java')))], check=True)
-output = kernel / 'run/canary'; output.mkdir(exist_ok=True)
-staged = work / 'forbricserverevents.jar'
-with zipfile.ZipFile(staged, 'w', zipfile.ZIP_DEFLATED) as target:
-    for path in sorted(classes.rglob('*.class')): target.write(path, path.relative_to(classes).as_posix())
-    target.write(root / 'META-INF/neoforge.mods.toml', 'META-INF/neoforge.mods.toml')
-jar = output / 'forbricserverevents.jar'
-os.replace(staged, jar)
-def record(path):
-    path = path.resolve(); return {'path': str(path), 'sha256': hashlib.sha256(path.read_bytes()).hexdigest()}
-(output / 'm48-build-inputs.json').write_text(json.dumps({'mod': record(jar), 'compileGame': record(compile_game),
-    'forge': record(forge[0]) if forge else None, 'neo': record(neo)}, indent=2) + '\n')
-print('[M48Server] built the server-events probe')
-PY
+# Built run/canary/forbricserverevents.jar for gate-m48: a NeoForge mod whose MinecraftForge server listeners are
+# written the way packedup's and Tombstone's are. The probe's listeners are MinecraftForge's (net.minecraftforge event
+# buses), so it compiles only against a MinecraftForge carrier, and since Stage 4 of dropping MinecraftForge no stage
+# carries one: Forbric runs NeoForge's patched game with the NeoForge carrier alone. gate-m48 exists only for the
+# deleted Neo->MinecraftForge forwards and is deleted with this builder and canary/server-events (gates map, C5). Its
+# experience-drop cases (through NeoForge's own hook) are the gates map's to move into gate-m43 if kept.
+# Until then the builder stops here with a reason instead of reading a stale MinecraftForge carrier off an old stage.
+echo "[kernel] FAIL M48 canary retired: canary/server-events listens on MinecraftForge's buses and no stage carries MinecraftForge since Stage 4; gate-m48 goes with it" >&2
+exit 1
