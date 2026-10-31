@@ -305,8 +305,6 @@ public final class KernelRuntimeClasses {
 		// NeoForge's CustomPacketPayload.codec calls through(), and vanilla's asks protocol()/flow(): every payload codec
 		// is built through vanilla's overload again (PayloadCodecFunnelInjector). Inserted calls, game-typed descriptors.
 		CLASSES.put("net.forbric.kernel.runtime.KernelPayloadCodecs", new Entry(Origin.COMPILED, List.of()));
-		// NeoForge's ScreenEvent.Opening/Closing from the merged (MinecraftForge) Gui.setScreen; NeoScreenEventsInjector.
-		CLASSES.put("net.forbric.kernel.runtime.KernelScreenEvents", new Entry(Origin.COMPILED, List.of()));
 		// FabricCreativeModeInventoryScreen answered from NeoForge's pager: the bodies CreativePagerBridgeInjector gives
 		// the creative screen call the first, and the screen implements the second. Descriptors name game types only.
 		CLASSES.put("net.forbric.kernel.runtime.KernelCreativePager", new Entry(Origin.COMPILED, List.of()));

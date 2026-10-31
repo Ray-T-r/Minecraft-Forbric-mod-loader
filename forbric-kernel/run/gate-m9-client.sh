@@ -572,7 +572,8 @@ done
 check "both families' client commands are in the game's command tree" \
   "ClientSmoke\] client command tree after joining: forge=true neo=true" "$LOG"
 # NeoForge's ScreenEvent.Opening, judged by a NeoForge mod's own answer: Controlling swaps vanilla's key binds screen
-# for its own. The merged Gui.setScreen is MinecraftForge's and asked only MinecraftForge's (NeoScreenEventsInjector).
+# for its own. NeoForge's Gui.setScreen posts Opening and Closing itself; on the merged base, whose Gui.setScreen was
+# MinecraftForge's, a kernel repair had to post them, and this check went red without it.
 check "a NeoForge mod's screen swap is obeyed (Controlling)" \
   "ClientSmoke\] opened vanilla's KeyBindsScreen; the game shows com.blamejared.controlling.client.NewKeyBindsScreen" "$LOG"
 # fabric-screen-api's per-screen draw events (Jade's overlay on an open screen): NeoForge draws the screen from

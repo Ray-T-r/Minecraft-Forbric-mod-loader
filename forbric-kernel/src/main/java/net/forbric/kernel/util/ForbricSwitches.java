@@ -196,7 +196,10 @@ public final class ForbricSwitches {
 			Map.entry("forbric.forgeDatapackRegistries", "Forbric loads no MinecraftForge mod, so there is no MinecraftForge datapack-registry "
 					+ "declaration event to fire; NeoForge's own declares its registries"),
 			Map.entry("forbric.forgeHandshake", "Forbric loads no MinecraftForge mod, so there is no MinecraftForge login handshake, channel list "
-					+ "or config sync to restore; NeoForge's own configuration tasks run as on NeoForge"));
+					+ "or config sync to restore; NeoForge's own configuration tasks run as on NeoForge"),
+			// Stage 4: repairs of NeoForge hooks the merged base had lost; NeoForge's own base calls them itself.
+			Map.entry("forbric.neoScreenEvents", "NeoForge's own Gui.setScreen posts ScreenEvent.Opening and Closing itself, so there is "
+					+ "no merged MinecraftForge body to add them to"));
 
 	private static final ForbricSwitches SYSTEM =
 			new ForbricSwitches(RENAMED, RETIRED, System::getProperty, ForbricLog::warn);

@@ -815,8 +815,6 @@ public final class KernelBoot {
 		if (net.forbric.kernel.transform.VanillaDamageReadInjector.enabled()) {
 			chain.register(TransformPhase.COREMOD, new net.forbric.kernel.transform.VanillaDamageReadInjector());
 		}
-		// The merged Gui.setScreen is MinecraftForge's; NeoForge's ScreenEvent.Opening and Closing go in after its hooks.
-		chain.register(TransformPhase.COREMOD, new net.forbric.kernel.transform.NeoScreenEventsInjector());
 		// fabric-api's class tweaker injects FabricCreativeModeInventoryScreen into the creative screen, and the mixin that
 		// implements it is pinned (MergedBaseMixinCompat), so every call threw AssertionError — owo-lib makes one the
 		// moment the creative inventory opens. The screen answers it from NeoForge's pager instead. Client only: a
