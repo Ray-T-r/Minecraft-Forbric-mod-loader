@@ -47,7 +47,6 @@ import net.forbric.kernel.util.ForbricLog;
 public final class KernelRegistryRevert {
 	private static final String REGISTRY_MANAGER = ForeignType.REGISTRY_MANAGER.binary(Ecosystem.NEOFORGE);
 	private static final String SNAPSHOT_TYPE = REGISTRY_MANAGER + "$SnapshotType";
-	private static final String WRAPPER = "net.minecraftforge.registries.NamespacedWrapper";
 
 	/** {@code Map<Identifier, RegistrySnapshot>} of every synced registry as it was before the connection remapped it. */
 	private static volatile Map<?, ?> originals;
@@ -128,9 +127,9 @@ public final class KernelRegistryRevert {
 	/**
 	 * The undo of every remap contract a mixin adds to the registries ({@link RegistryRemapContracts.RemapContract}:
 	 * fabric-api's {@code unmap()} is one) on every plain registry that carries it, so the mod's own bookkeeping is left
-	 * the way its disconnect would leave it before NeoForge's snapshot goes back. A registry that is not a plain one
-	 * (the {@code WRAPPER} type, absent on the genuine base) is skipped. Without such a contract there is nothing to do. The contract is found by what the
-	 * mixin does, so its interface and method are called whatever the mod calls them.
+	 * the way its disconnect would leave it before NeoForge's snapshot goes back. Without such a contract there is
+	 * nothing to do. The contract is found by what the mixin does, so its interface and method are called whatever the
+	 * mod calls them.
 	 */
 	private static int unmapFabricPlainRegistries(ClassLoader cl) {
 		java.util.Map<String, String> undos = new java.util.LinkedHashMap<>();
@@ -140,13 +139,6 @@ public final class KernelRegistryRevert {
 		if (undos.isEmpty()) return 0;
 		int done = 0;
 		try {
-			Class<?> wrapper = null;
-			try {
-				wrapper = Class.forName(WRAPPER, false, cl);
-			} catch (ClassNotFoundException noForge) {
-				// no wrappers to skip
-				Caught.expected(noForge);
-			}
 			Object root = Class.forName("net.minecraft.core.registries.BuiltInRegistries", false, cl).getField("REGISTRY").get(null);
 			for (var undo : undos.entrySet()) {
 				Class<?> owner;
@@ -159,7 +151,7 @@ public final class KernelRegistryRevert {
 				}
 				Method method = owner.getMethod(undo.getKey().substring(undo.getKey().lastIndexOf('.') + 1));
 				for (Object registry : (Iterable<?>) root) {
-					if (!owner.isInstance(registry) || (wrapper != null && wrapper.isInstance(registry))) continue;
+					if (!owner.isInstance(registry)) continue;
 					try {
 						method.invoke(registry);
 						done++;
