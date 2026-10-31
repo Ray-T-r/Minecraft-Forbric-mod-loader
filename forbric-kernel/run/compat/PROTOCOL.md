@@ -135,7 +135,9 @@ must go RED.
 ## Breathing, drowning and liquids (gate-m57)
 
 `breath-drown.py` is gate-m57's measuring tool. Its canaries (`canary/forge-breath-drown`, one MinecraftForge and one
-NeoForge mod, built by `run/build-breath-drown-canary.sh`) play 53 scenarios on a dedicated server and write one JSON
+NeoForge mod; `run/build-breath-drown-canary.sh` builds the NeoForge one from the stage, and
+`run/build-forge-refusal-fixtures.sh` the MinecraftForge one against stand-ins, entry for entry the jar the real
+carrier gave) play 53 scenarios on a dedicated server and write one JSON
 result: air and health every tick, what each family's breathe, drown and damage listeners saw, a liquid's bucket round
 trip, the body's random-source steps per tick, and the entity events the server sent for the body (the probe's player
 gets an entity tracker of its own for that, as a player in a level has one). Since Stage 3 of dropping MinecraftForge,

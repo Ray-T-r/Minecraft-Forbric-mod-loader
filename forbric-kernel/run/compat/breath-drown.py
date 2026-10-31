@@ -152,6 +152,14 @@ def sha256(path):
     return hashlib.sha256(Path(path).read_bytes()).hexdigest()
 
 
+def jar_entries(path):
+    """A jar's entries (name and bytes, in name order), not its zip framing: two builds of the same classes agree."""
+    import zipfile
+    with zipfile.ZipFile(path) as archive:
+        names = sorted(n for n in archive.namelist() if not n.endswith('/'))
+        return hashlib.sha256(b''.join(n.encode() + b'\0' + hashlib.sha256(archive.read(n)).digest() for n in names)).hexdigest()
+
+
 # ---- running a server -----------------------------------------------------------------------------------------------
 
 def clone(source, target):
@@ -369,9 +377,17 @@ def cmd_reference(args):
     subprocess.run(['bash', str(KERNEL / 'run/build-forge-refusal-fixtures.sh')], check=True, env=env)
     built = json.loads((KERNEL / 'run/canary/m57-build-inputs.json').read_text(encoding='utf-8'))
     work = Path(args.work); work.mkdir(parents=True, exist_ok=True)
+    # The MinecraftForge jar is built against stand-ins (canary/forge-refusal-stubs), which canarySources does not cover:
+    # each family records the entries it ran, and a regeneration says when native runs other bytes than the last did.
+    previous = json.loads(Path(args.out).read_text(encoding='utf-8')).get('families', {}) if Path(args.out).is_file() else {}
     families = {}
     for family in (F, N):
         jar = KERNEL / 'run/canary' / JARS[family]
+        entries = jar_entries(jar)
+        before = previous.get(family, {}).get('jarEntries')
+        if before and before != entries:
+            print(f'NOTE native {family} runs other jar entries than the last reference ({before[:12]} -> {entries[:12]}): '
+                  f'check the canary or, for MinecraftForge, the stand-ins it compiles against')
         runs = []
         for i in range(args.runs):
             result = run(f'native-{family}', [jar], family, work / f'native-{family}-{i + 1}', args.port, timeout=args.timeout)
@@ -386,6 +402,7 @@ def cmd_reference(args):
         image = NATIVE / family
         families[family] = {'loader': '/'.join(NATIVE_VERSIONS[family]), 'runs': args.runs,
                             'installation': sha256(image / 'installation.json') if (image / 'installation.json').is_file() else None,
+                            'jarEntries': entries,
                             'rows': runs[0]}
     reference = {'about': 'gate-m57 native reference: what each native loader does with the same canary jar, every stored field '
                           '(what is judged, and the random draws) agreeing across all runs. Regenerate with: '
