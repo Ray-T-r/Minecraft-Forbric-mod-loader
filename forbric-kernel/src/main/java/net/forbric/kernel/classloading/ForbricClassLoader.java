@@ -59,7 +59,6 @@ public final class ForbricClassLoader extends URLClassLoader {
 	private volatile ClassLoader fallbackClassLoader;
 	private final DefinedClassEvidence definitionEvidence = new DefinedClassEvidence();
 	private final RequiredAncestorCompositions ancestorCompositions = new RequiredAncestorCompositions();
-	private final PlatformAncestorBridges ancestorBridges = new PlatformAncestorBridges();
 
 	/** Registers a source-protocol proof checked against the final bytes before defining a required class. */
 	public void registerAncestorComposition(net.forbric.api.AncestorComposition proof) {
@@ -181,7 +180,6 @@ public final class ForbricClassLoader extends URLClassLoader {
 		if (family != null) {
 			return switch (family) {
 				case FABRIC -> Ecosystem.FABRIC;
-				case FORGE -> Ecosystem.FORGE;
 				case NEOFORGE -> Ecosystem.NEOFORGE;
 			};
 		}
@@ -542,12 +540,7 @@ public final class ForbricClassLoader extends URLClassLoader {
 		if (!open.isEmpty()) bytes = deferLinkTimeTypes(bytes, open.peekLast(), name);
 
 		definePackageIfNeeded(name, resource);
-		Class<?> defined = define(name, bytes, domainFor(resource));
-		// A platform carrier's class whose superclass another platform's carrier serves: the merged base's proved
-		// ancestor bridge, reported once as it takes effect. See PlatformAncestorBridges.
-		if (resource != null && !runtimeJarFamilies.isEmpty())
-			ancestorBridges.observe(bytes, familyOfUrl(resource, runtimeJarFamilies), this::carrierOfClass);
-		return defined;
+		return define(name, bytes, domainFor(resource));
 	}
 
 	/**
@@ -600,17 +593,6 @@ public final class ForbricClassLoader extends URLClassLoader {
 					internalName);
 			return null;
 		}
-	}
-
-	/** The platform runtime carrier this loader serves {@code internalName} from, or null. */
-	private LoaderProbePolicy.Family carrierOfClass(String internalName) {
-		URL resource = findResource(internalName + ".class");
-		return resource == null ? null : familyOfUrl(resource, runtimeJarFamilies);
-	}
-
-	/** The cross-platform ancestor edges this loader has defined so far. */
-	java.util.List<PlatformAncestorBridges.Bridge> platformAncestorBridges() {
-		return ancestorBridges.observed();
 	}
 
 	/**

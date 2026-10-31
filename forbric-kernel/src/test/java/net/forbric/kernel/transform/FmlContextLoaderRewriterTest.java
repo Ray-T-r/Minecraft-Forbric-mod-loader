@@ -112,8 +112,6 @@ class FmlContextLoaderRewriterTest {
 	void onlyNeoForgeModsAreRewritten() {
 		byte[] in = pluginShaped();
 		assertSame(in, rewrite(in, LoaderProbePolicy.Family.FABRIC));
-		assertSame(in, rewrite(in, LoaderProbePolicy.Family.FORGE),
-				"MinecraftForge's TransformingClassLoader is modlauncher's, another class altogether");
 		assertSame(in, rewrite(in, null), "the merged base, the carriers and the kernel are never rewritten");
 	}
 

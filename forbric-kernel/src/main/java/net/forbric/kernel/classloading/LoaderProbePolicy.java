@@ -17,6 +17,7 @@
 package net.forbric.kernel.classloading;
 
 import java.util.Map;
+import java.util.Set;
 
 import net.forbric.api.Ecosystem;
 import net.forbric.api.ForeignType;
@@ -42,9 +43,11 @@ import net.forbric.kernel.util.ForbricLog;
  * config plugin, out through Mixin's {@code select()}, and aborted mixin config preparation for the whole game —
  * one wrong branch, a dozen unrelated-looking symptoms downstream.
  *
- * <p>So the kernel answers the probe honestly: a Fabric-owned class asking whether a Forge-family loader exists is
- * told no, and vice versa. That is the answer the mod would get on its own loader, which is the answer its code was
- * written and tested against.
+ * <p>So the kernel answers the probe honestly: a Fabric-owned class asking whether NeoForge's loader exists is told
+ * no, and vice versa. That is the answer the mod would get on its own loader, which is the answer its code was
+ * written and tested against. MinecraftForge's loader is absent for every family: Forbric loads no MinecraftForge mod,
+ * and neither native loader has that class, but a porting layer may still ship {@code net.minecraftforge.*} classes
+ * on the game side ({@code DelegationPolicy}), so the probe is answered rather than left to whatever resolves.
  *
  * <h2>Why the answer is given at the call site, not in the class loader</h2>
  *
@@ -74,13 +77,10 @@ public final class LoaderProbePolicy {
 	/**
 	 * Which loader a guest class belongs to, for probe purposes.
 	 *
-	 * <p><b>Three-valued, and it used to be two.</b> The two Forge families were grouped under one
-	 * {@code FORGE_FAMILY} constant on the reasoning that a NeoForge mod "is running on FML" and should be told
-	 * yes when it probes for MinecraftForge's loader. That reasoning does not survive contact with the class
-	 * names: the two families' marker classes are {@code net.minecraftforge.fml.loading.FMLLoader} and
-	 * {@code net.neoforged.fml.loading.FMLLoader}, and on a real NeoForge instance the first one is absent. That
-	 * probe is a mod asking "is TRADITIONAL Forge here", and the grouping answered yes to a NeoForge-only mod,
-	 * sending it down the branch written for the other family.
+	 * <p>One constant per family Forbric loads. MinecraftForge had one too until Forbric stopped loading MinecraftForge
+	 * mods; before that, the two Forge families had once been grouped under one {@code FORGE_FAMILY} constant, which
+	 * told a NeoForge-only mod probing {@code net.minecraftforge.fml.loading.FMLLoader} that traditional Forge was
+	 * there — on a real NeoForge instance that class is absent.
 	 *
 	 * <p>The case the grouping was protecting — a genuinely multi-platform jar that probes to find out which half
 	 * of itself to run — is already exempt by a different rule: a jar carrying more than one loader's manifest
@@ -93,18 +93,21 @@ public final class LoaderProbePolicy {
 	public enum Family {
 		/** Loaded from a jar that declares only {@code fabric.mod.json}. */
 		FABRIC,
-		/** Loaded from a jar that declares only a traditional MinecraftForge {@code mods.toml}. */
-		FORGE,
 		/** Loaded from a jar that declares only a {@code neoforge.mods.toml}. */
 		NEOFORGE
 	}
 
-	/** The {@link Family} for an arbitrated ecosystem, one for one. */
+	/**
+	 * The {@link Family} for an arbitrated ecosystem, one for one. MinecraftForge has none: no jar is owned by it (a
+	 * MinecraftForge-only jar is refused, never owned), and a jar or runtime carrier that declares only a
+	 * {@code mods.toml} gets no family, so its classes probe as an unowned jar's do. The arm goes with
+	 * {@code Ecosystem.FORGE} (C4).
+	 */
 	public static Family familyOf(Ecosystem ecosystem) {
 		if (ecosystem == null) return null;
 		return switch (ecosystem) {
 			case FABRIC -> Family.FABRIC;
-			case FORGE -> Family.FORGE;
+			case FORGE -> null;
 			case NEOFORGE -> Family.NEOFORGE;
 		};
 	}
@@ -120,8 +123,13 @@ public final class LoaderProbePolicy {
 			// no here, as it always was by their absence; a Fabric class is told yes, as on Fabric.
 			"net.fabricmc.loader.impl.FabricLoaderImpl", Family.FABRIC,
 			"net.fabricmc.loader.FabricLoader", Family.FABRIC,
-			ForeignType.FML_LOADER.binary(Ecosystem.FORGE), Family.FORGE,
 			ForeignType.FML_LOADER.binary(Ecosystem.NEOFORGE), Family.NEOFORGE);
+
+	/**
+	 * Marker classes of a loader no family Forbric loads is running on: absent to every asking family, as on each one's
+	 * own loader. Spelled out, not taken from {@code ForeignType}: the class is named here only to be refused.
+	 */
+	private static final Set<String> ABSENT_LOADERS = Set.of("net.minecraftforge.fml.loading.FMLLoader");
 
 	private static final boolean ENABLED = !"off".equalsIgnoreCase(System.getProperty("forbric.loaderProbes", "on"));
 
@@ -135,7 +143,7 @@ public final class LoaderProbePolicy {
 
 	/** Whether {@code name} is one of the loader marker classes a mod probes for. */
 	public static boolean isProbe(String name) {
-		return PROBES.containsKey(name);
+		return PROBES.containsKey(name) || ABSENT_LOADERS.contains(name);
 	}
 
 	/**
@@ -152,7 +160,7 @@ public final class LoaderProbePolicy {
 			throws ClassNotFoundException {
 		Family proves = PROBES.get(name);
 
-		if (ENABLED && proves != null && !proves.name().equals(askingFamily)) {
+		if (ENABLED && (proves != null && !proves.name().equals(askingFamily) || ABSENT_LOADERS.contains(name))) {
 			ForbricLog.debug("[Forbric/Probe] told a %s class that %s does not exist — it sees the loader it was "
 					+ "loaded as (-Dforbric.loaderProbes=off to disable)", askingFamily, name);
 			throw new ClassNotFoundException(name);

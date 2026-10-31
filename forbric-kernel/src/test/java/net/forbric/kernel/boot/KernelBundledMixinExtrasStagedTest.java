@@ -75,8 +75,8 @@ class KernelBundledMixinExtrasStagedTest {
 		guests.addAll(nested);
 		List<URL> owned = KernelOwnedClasspath.compose(List.of(), List.of(), guests, List.of(), List.of(bundle));
 		try (ForbricClassLoader loader = new ForbricClassLoader(owned.toArray(URL[]::new), getClass().getClassLoader())) {
-			loader.setJarFamilies(Map.of(badpackets, LoaderProbePolicy.Family.FORGE,
-					wrapper, LoaderProbePolicy.Family.FORGE));
+			loader.setJarFamilies(Map.of(badpackets, LoaderProbePolicy.Family.NEOFORGE,
+					wrapper, LoaderProbePolicy.Family.NEOFORGE));
 			Path classProvider = suppliedFirst ? bundle : common;
 			Path configProvider = suppliedFirst ? bundle : wrapper;
 			assertArrayEquals(bytes(classProvider, VERSION),
@@ -99,11 +99,11 @@ class KernelBundledMixinExtrasStagedTest {
 			Class<?> guest = Class.forName("lol.bai.badpackets.impl.Constants", false, loader);
 			assertSame(loader, guest.getClassLoader());
 			assertEquals(badpackets.toUri().toURL(), guest.getProtectionDomain().getCodeSource().getLocation());
-			assertEquals(LoaderProbePolicy.Family.FORGE, loader.familyOfClass(guest.getName()));
+			assertEquals(LoaderProbePolicy.Family.NEOFORGE, loader.familyOfClass(guest.getName()));
 			Class<?> platform = Class.forName("com.llamalad7.mixinextras.platform.forge.MixinExtrasConfigPlugin", false, loader);
 			assertEquals(wrapper.toUri().toURL(), platform.getProtectionDomain().getCodeSource().getLocation(),
 					"the guest-only platform classes must remain accessible; do not discard the whole wrapper");
-			assertEquals(LoaderProbePolicy.Family.FORGE, loader.familyOfClass(platform.getName()));
+			assertEquals(LoaderProbePolicy.Family.NEOFORGE, loader.familyOfClass(platform.getName()));
 		}
 	}
 

@@ -465,9 +465,9 @@ class EnvironmentStripTransformerTest {
 
 	@Test
 	void onlyFabricArbitratedClassesAreStripped() {
-		// NeoForge and MinecraftForge strip nothing, so a class they own must reach the game as its jar has it -- a
-		// universal jar arbitrated to NeoForge included. The merged base, carriers and libraries answer null.
-		for (Family family : new Family[] {Family.NEOFORGE, Family.FORGE, null}) {
+		// NeoForge strips nothing, so a class it owns must reach the game as its jar has it -- a universal jar
+		// arbitrated to NeoForge included. The base, the carrier and libraries answer null.
+		for (Family family : new Family[] {Family.NEOFORGE, null}) {
 			byte[] raw = methodOnly(PKG + "MethodOnly");
 			assertSame(raw, strip(name -> family).transform("forbrictest.envstrip.MethodOnly", raw, SERVER),
 					"stripped a class owned by " + family);

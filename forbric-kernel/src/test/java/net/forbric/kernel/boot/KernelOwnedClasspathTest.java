@@ -82,7 +82,7 @@ class KernelOwnedClasspathTest {
 				entry(GUEST), type(GUEST, "unique-guest"), CONFIG, "guest-config".getBytes(StandardCharsets.UTF_8)));
 		List<URL> owned = KernelOwnedClasspath.compose(List.of(), List.of(), List.of(guest), List.of(), List.of(bundle));
 		try (ForbricClassLoader loader = new ForbricClassLoader(owned.toArray(URL[]::new), getClass().getClassLoader())) {
-			loader.setJarFamilies(Map.of(guest, LoaderProbePolicy.Family.FORGE));
+			loader.setJarFamilies(Map.of(guest, LoaderProbePolicy.Family.NEOFORGE));
 			assertArrayEquals(suppliedFirst ? supplied : guestCopy, loader.getPreMixinClassBytes(BOOTSTRAP));
 			Class<?> bootstrap = loader.loadClass(BOOTSTRAP);
 			assertSame(loader, bootstrap.getClassLoader(), "MixinExtras must remain game-side");
@@ -96,7 +96,7 @@ class KernelOwnedClasspathTest {
 			Class<?> unique = loader.loadClass(GUEST);
 			assertSame(loader, unique.getClassLoader());
 			assertEquals(guest.toUri().toURL(), source(unique));
-			assertEquals(LoaderProbePolicy.Family.FORGE, loader.familyOfClass(GUEST));
+			assertEquals(LoaderProbePolicy.Family.NEOFORGE, loader.familyOfClass(GUEST));
 			assertEquals("unique-guest", unique.getMethod("marker").invoke(null));
 		}
 	}

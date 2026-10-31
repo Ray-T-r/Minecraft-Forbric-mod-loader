@@ -29,12 +29,14 @@ import net.forbric.api.ForeignType;
 /**
  * Covers which loader a guest class is allowed to see.
  *
- * <p>The two Forge families were grouped under one constant, so a NeoForge-only mod probing for TRADITIONAL
+ * <p>The two Forge families were once grouped under one constant, so a NeoForge-only mod probing for TRADITIONAL
  * MinecraftForge's loader class was told it exists. On a real NeoForge instance it does not, and that probe is
- * exactly how a mod decides which family's branch to take — so the grouping sent it down the other family's.
+ * exactly how a mod decides which family's branch to take. Forbric loads no MinecraftForge mod now, so that marker
+ * is absent to every family.
  */
 class LoaderProbePolicyTest {
-	private static final String FORGE_MARKER = ForeignType.FML_LOADER.binary(Ecosystem.FORGE);
+	// Spelled out: the policy refuses this name for every family, and C4 removes the ForeignType column it came from.
+	private static final String FORGE_MARKER = "net.minecraftforge.fml.loading.FMLLoader";
 	private static final String NEO_MARKER = ForeignType.FML_LOADER.binary(Ecosystem.NEOFORGE);
 
 	@Test
@@ -49,8 +51,8 @@ class LoaderProbePolicyTest {
 	@Test
 	void eachEcosystemMapsToItsOwnFamily() {
 		assertEquals(LoaderProbePolicy.Family.FABRIC, LoaderProbePolicy.familyOf(Ecosystem.FABRIC));
-		assertEquals(LoaderProbePolicy.Family.FORGE, LoaderProbePolicy.familyOf(Ecosystem.FORGE));
 		assertEquals(LoaderProbePolicy.Family.NEOFORGE, LoaderProbePolicy.familyOf(Ecosystem.NEOFORGE));
+		assertNull(LoaderProbePolicy.familyOf(Ecosystem.FORGE), "no jar is owned by MinecraftForge, so it has no family");
 		assertNull(LoaderProbePolicy.familyOf(null), "an unowned jar has no family and probes as before");
 	}
 
@@ -65,12 +67,14 @@ class LoaderProbePolicyTest {
 	}
 
 	@Test
-	void aTraditionalForgeClassIsToldNeoForgeIsAbsent() {
+	void traditionalForgesLoaderIsAbsentForEveryFamily() {
+		// No family Forbric loads runs on MinecraftForge, so its marker is refused to all of them -- even when a porting
+		// layer ships a class by that name on the game side, as DelegationPolicy allows.
 		assertTrue(LoaderProbePolicy.enabled(), "the test JVM never sets -Dforbric.loaderProbes=off");
-
-		assertThrows(ClassNotFoundException.class, () -> LoaderProbePolicy.forName(
-				NEO_MARKER, false, LoaderProbePolicyTest.class.getClassLoader(),
-				LoaderProbePolicy.Family.FORGE.name()));
+		for (LoaderProbePolicy.Family family : LoaderProbePolicy.Family.values()) {
+			assertThrows(ClassNotFoundException.class, () -> LoaderProbePolicy.forName(
+					FORGE_MARKER, false, LoaderProbePolicyTest.class.getClassLoader(), family.name()), family.name());
+		}
 	}
 
 	@Test
@@ -93,7 +97,7 @@ class LoaderProbePolicyTest {
 		assertTrue(!LoaderProbePolicy.isProbe("java.lang.String"));
 
 		assertEquals(String.class, assertDoesNotThrowClass(
-				"java.lang.String", LoaderProbePolicy.Family.FORGE.name()));
+				"java.lang.String", LoaderProbePolicy.Family.NEOFORGE.name()));
 	}
 
 	@Test

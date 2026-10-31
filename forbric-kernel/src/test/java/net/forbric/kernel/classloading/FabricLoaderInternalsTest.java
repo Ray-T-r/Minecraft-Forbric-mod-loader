@@ -59,7 +59,7 @@ class FabricLoaderInternalsTest {
 
 		for (String marker : List.of(IMPL, LEGACY)) {
 			assertTrue(LoaderProbePolicy.isProbe(marker), marker + " must be a probe now that it exists");
-			for (LoaderProbePolicy.Family family : List.of(LoaderProbePolicy.Family.FORGE, LoaderProbePolicy.Family.NEOFORGE)) {
+			for (LoaderProbePolicy.Family family : List.of(LoaderProbePolicy.Family.NEOFORGE)) {
 				assertThrows(ClassNotFoundException.class, () -> LoaderProbePolicy.forName(marker, false, here, family.name()),
 						family + " asking for " + marker);
 			}

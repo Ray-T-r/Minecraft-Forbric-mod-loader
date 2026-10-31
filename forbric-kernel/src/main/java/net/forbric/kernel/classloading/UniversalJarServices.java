@@ -61,10 +61,12 @@ import net.forbric.kernel.util.ForbricLog;
  * not have is left out of the file the jar's {@code ServiceLoader} reads, which is the list its own loader would have
  * ended up with. Such a type is one of two things, each read off where the class comes from rather than off a mod's name:
  * <ul>
- *   <li>another loader's own platform: for a NeoForge or MinecraftForge owner, Fabric Loader's packages
- *       ({@code net/fabricmc/loader/}, {@code net/fabricmc/api/}) and the other Forge family's; for a Fabric owner only the
- *       Forge families' loading packages, {@code ModList} and {@code ModContainer}, because a Fabric port
- *       (ForgeConfigAPIPort) legitimately supplies NeoForge's config types on Fabric;</li>
+ *   <li>another loader's own platform: for a NeoForge owner, Fabric Loader's packages ({@code net/fabricmc/loader/},
+ *       {@code net/fabricmc/api/}) and MinecraftForge's; for a Fabric owner only the Forge families' loading packages,
+ *       {@code ModList} and {@code ModContainer}, because a Fabric port (ForgeConfigAPIPort) legitimately supplies
+ *       NeoForge's config types on Fabric. MinecraftForge's names stay on both lists although Forbric loads no
+ *       MinecraftForge mod: a universal jar still ships its MinecraftForge provider, and neither native loader could
+ *       link it;</li>
  *   <li>a class outside every platform's packages that this class loader reads from a mod jar of another loader's family:
  *       a Fabric mod's class — fabric-api's included, which is a mod like any other — for a NeoForge owner, a NeoForge
  *       mod's for a Fabric owner. No such class exists on the owner's own loader.</li>
@@ -95,10 +97,9 @@ public final class UniversalJarServices {
 	static List<String> foreign(LoaderProbePolicy.Family owner) {
 		return switch (owner) {
 			case NEOFORGE -> List.of("net/fabricmc/loader/", "net/fabricmc/api/", "net/minecraftforge/");
-			case FORGE -> List.of("net/fabricmc/loader/", "net/fabricmc/api/", "net/neoforged/");
 			case FABRIC -> List.of("net/neoforged/fml/loading/", "net/minecraftforge/fml/loading/",
-					ForeignType.MOD_LIST.internal(Ecosystem.NEOFORGE), ForeignType.MOD_LIST.internal(Ecosystem.FORGE),
-					ForeignType.MOD_CONTAINER.internal(Ecosystem.NEOFORGE), ForeignType.MOD_CONTAINER.internal(Ecosystem.FORGE));
+					ForeignType.MOD_LIST.internal(Ecosystem.NEOFORGE), "net/minecraftforge/fml/ModList",
+					ForeignType.MOD_CONTAINER.internal(Ecosystem.NEOFORGE), "net/minecraftforge/fml/ModContainer");
 		};
 	}
 

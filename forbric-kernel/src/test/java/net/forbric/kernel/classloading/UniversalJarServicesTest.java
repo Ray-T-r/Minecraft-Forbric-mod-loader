@@ -48,6 +48,18 @@ class UniversalJarServicesTest {
 		UniversalJarServices.forget();
 	}
 
+	/**
+	 * Forbric loads no MinecraftForge mod, but a universal jar still lists its MinecraftForge provider. Neither native loader
+	 * could link it, so both owners keep treating MinecraftForge's platform as foreign: spelled out here, because the names
+	 * no longer come from a MinecraftForge column anywhere.
+	 */
+	@Test
+	void bothOwnersStillTreatMinecraftForgesPlatformAsForeign() {
+		assertTrue(UniversalJarServices.foreign(LoaderProbePolicy.Family.NEOFORGE).contains("net/minecraftforge/"));
+		assertTrue(UniversalJarServices.foreign(LoaderProbePolicy.Family.FABRIC).containsAll(List.of(
+				"net/minecraftforge/fml/loading/", "net/minecraftforge/fml/ModList", "net/minecraftforge/fml/ModContainer")));
+	}
+
 	@Test
 	void aNeoForgeOwnerDropsTheProviderThatLinksFabric() {
 		List<String> listed = List.of(dotted(FABRIC_IMPL), dotted(FALLBACK_IMPL), dotted(NEO_IMPL));
