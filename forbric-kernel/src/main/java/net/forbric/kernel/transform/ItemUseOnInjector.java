@@ -26,11 +26,11 @@ import org.objectweb.asm.tree.VarInsnNode;
 /**
  * {@code ItemStack.useOn} again does what both NeoForge's and Fabric's code expect it to do.
  *
- * <p>The merge kept MinecraftForge's body: on a server it returns {@code onPlaceItemIntoWorld(context)} (NeoForge's
- * {@code CommonHooks} one since the kernel's {@code routePlaceItemHookToNeoForge}, whose block snapshots it drains), on
- * a client {@code onItemUse(context, c -> getItem().useOn(context))}. Vanilla's body calls {@code Item.useOn}
- * itself, and NeoForge's first posts {@code UseItemOnBlockEvent} in its {@code ITEM_AFTER_BLOCK} phase and returns its
- * result when a listener cancels. Two things were lost with that:
+ * <p>The merge kept MinecraftForge's body: on a server it returns {@code onPlaceItemIntoWorld(context)} (on the merged
+ * base a compat repair sent that call to NeoForge's {@code CommonHooks}, whose block snapshots it drains), on a client
+ * {@code onItemUse(context, c -> getItem().useOn(context))}. Vanilla's body calls {@code Item.useOn} itself, and
+ * NeoForge's first posts {@code UseItemOnBlockEvent} in its {@code ITEM_AFTER_BLOCK} phase and returns its result when a
+ * listener cancels. Two things were lost with that:
  *
  * <ul>
  *   <li>NeoForge's {@code ITEM_AFTER_BLOCK} phase was never posted (its {@code ITEM_BEFORE_BLOCK} phase, in

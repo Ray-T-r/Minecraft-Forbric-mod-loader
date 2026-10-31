@@ -92,7 +92,7 @@ public final class ForbricMergedBaseCompatTransformer implements ClassTransforme
 	}
 
 	/** The repairs {@link #transform} runs, in its order; a test pins the two lists against each other. */
-	static final List<String> REPAIRS = List.of("repairLambdaBootstrapHandles", "addBlockStateModelConflictResolvers", "addBlockStateAppearanceResolver", "routeKeyMappingClickToPopulatedLookup", "giveKeyMappingItsVanillaMap", "giveTheVanillaParticleMapAViewOfTheLiveOne", "letDungeonsGenerateWithoutTheDataMap", "restoreDoublePrecisionToTheRandomSources", "convertRadiansWithVanillasFoldedConstant", "callVanillasWriteByteAgain", "saveTheHeightmapsVanillaSaves", "guardNeoForgesWorldModifierPass", "letForeignResourceConditionsThrough", "letFabricResourceConditionsDecide", "translateAGuestsPrivateSkipMarker", "nameTheReloadListenersNeoForgeRefusesToName", "dropInterfaceDefaultShadowingOverrides", "tolerateEmptyCreativeTabStacks", "routePlaceItemHookToNeoForge", "bridgeOrphanedPipRenderers", "dropTheWindowTitlesLoaderBrand", "keepTheSaveOffTheTeardownsFailurePath", "askNeoForgeWhatAnItemsAttributesAre", "giveTheUnwrittenLoggerAValue", "dropStubsThatBypassARealSuperclassMethod", "inlineTheSwitchMapTheMergeLost", "vetoUnjudgeableOverlayConditions", "hideTheLegacyLootModifierIndexFromTheDirectoryScan", "letModdedFeatureFlagsRegister", "dropTheKeyModifierSuffixBeforeParsingAKeyName", "letTheAtlasLowerItsMipLevelLikeVanilla", "wrapTheStreamsVanillaWraps", "returnFromANestedBootstrapBeforeItsTail");
+	static final List<String> REPAIRS = List.of("repairLambdaBootstrapHandles", "addBlockStateModelConflictResolvers", "addBlockStateAppearanceResolver", "routeKeyMappingClickToPopulatedLookup", "giveKeyMappingItsVanillaMap", "giveTheVanillaParticleMapAViewOfTheLiveOne", "letDungeonsGenerateWithoutTheDataMap", "restoreDoublePrecisionToTheRandomSources", "convertRadiansWithVanillasFoldedConstant", "callVanillasWriteByteAgain", "saveTheHeightmapsVanillaSaves", "guardNeoForgesWorldModifierPass", "letForeignResourceConditionsThrough", "letFabricResourceConditionsDecide", "translateAGuestsPrivateSkipMarker", "nameTheReloadListenersNeoForgeRefusesToName", "dropInterfaceDefaultShadowingOverrides", "tolerateEmptyCreativeTabStacks", "bridgeOrphanedPipRenderers", "dropTheWindowTitlesLoaderBrand", "keepTheSaveOffTheTeardownsFailurePath", "askNeoForgeWhatAnItemsAttributesAre", "giveTheUnwrittenLoggerAValue", "dropStubsThatBypassARealSuperclassMethod", "inlineTheSwitchMapTheMergeLost", "vetoUnjudgeableOverlayConditions", "hideTheLegacyLootModifierIndexFromTheDirectoryScan", "letModdedFeatureFlagsRegister", "dropTheKeyModifierSuffixBeforeParsingAKeyName", "letTheAtlasLowerItsMipLevelLikeVanilla", "wrapTheStreamsVanillaWraps", "returnFromANestedBootstrapBeforeItsTail");
 
 	private static final String NEO_EVENT_HOOKS_BINARY = "net.neoforged.neoforge.event.EventHooks";
 
@@ -156,8 +156,6 @@ public final class ForbricMergedBaseCompatTransformer implements ClassTransforme
 		out.add(scanned("dropInterfaceDefaultShadowingOverrides", "native-absent delegates with one proved current interface default"));
 		out.add(fixed("tolerateEmptyCreativeTabStacks", NEO_EVENT_HOOKS_BINARY.replace('.', '/'),
 				"one empty stack from any mod aborts the whole creative menu"));
-		out.add(fixed("routePlaceItemHookToNeoForge", ITEM_STACK,
-				"placing any block ClassCastExceptions on the server thread — ItemStack.useOn drains a NeoForge-typed snapshot list as MinecraftForge's"));
 		out.add(fixed("bridgeOrphanedPipRenderers", GUI_RENDERER,
 				"a picture-in-picture renderer registered the vanilla way never draws"));
 		out.add(fixed("dropTheWindowTitlesLoaderBrand", "net/minecraft/client/Minecraft",
@@ -251,7 +249,6 @@ public final class ForbricMergedBaseCompatTransformer implements ClassTransforme
 			changed |= claim(reporter, "nameTheReloadListenersNeoForgeRefusesToName", nameTheReloadListenersNeoForgeRefusesToName(node));
 			changed |= claim(reporter, "dropInterfaceDefaultShadowingOverrides", dropInterfaceDefaultShadowingOverrides(node));
 			changed |= claim(reporter, "tolerateEmptyCreativeTabStacks", tolerateEmptyCreativeTabStacks(node));
-			changed |= claim(reporter, "routePlaceItemHookToNeoForge", routePlaceItemHookToNeoForge(node));
 			changed |= claim(reporter, "bridgeOrphanedPipRenderers", bridgeOrphanedPipRenderers(node));
 			changed |= claim(reporter, "dropTheWindowTitlesLoaderBrand", dropTheWindowTitlesLoaderBrand(node));
 			changed |= claim(reporter, "keepTheSaveOffTheTeardownsFailurePath", keepTheSaveOffTheTeardownsFailurePath(node));
@@ -1595,48 +1592,6 @@ public final class ForbricMergedBaseCompatTransformer implements ClassTransforme
 	/** Removes source-proved delegates only when the complete default hierarchy has one dispatch target. */
 	private boolean dropInterfaceDefaultShadowingOverrides(ClassNode node) {
 		return NativeMergeShapeRepair.production(node, classBytes).dropDefaultStubs(node);
-	}
-
-	/**
-	 * Sends the block-placement hook to NeoForge, whose type the merged snapshot list actually has.
-	 *
-	 * <p>{@code Level.capturedBlockSnapshots} survived the merge as
-	 * {@code ArrayList<net.neoforged.neoforge.common.util.BlockSnapshot>} — NeoForge's element type won, and there is
-	 * only ONE such field. But {@code ItemStack.useOn} kept calling MINECRAFTFORGE's
-	 * {@code ForgeHooks.onPlaceItemIntoWorld}, which drains that same list expecting
-	 * {@code net.minecraftforge.common.util.BlockSnapshot}. So placing ANY block threw
-	 * {@code ClassCastException: neoforge…BlockSnapshot cannot be cast to minecraftforge…BlockSnapshot} on the
-	 * server thread while handling {@code use_item_on} — the integrated server died the instant you right-clicked.
-	 *
-	 * <p>{@code CommonHooks.onPlaceItemIntoWorld(UseOnContext)} is NeoForge's counterpart with an IDENTICAL
-	 * descriptor, so retargeting the {@code invokestatic} is type-exact and makes the consumer match the producer.
-	 * Cost: MinecraftForge mods' {@code BlockEvent.EntityPlaceEvent} no longer fires (NeoForge's does). That is the
-	 * same trade the merge already made for the snapshot type itself — the alternative is that nobody can place
-	 * anything at all.
-	 */
-	private static boolean routePlaceItemHookToNeoForge(ClassNode node) {
-		if (!node.name.startsWith("net/minecraft/") || node.methods == null) return false;
-
-		boolean changed = false;
-		for (MethodNode method : node.methods) {
-			if (method.instructions == null) continue;
-
-			for (AbstractInsnNode insn = method.instructions.getFirst(); insn != null; insn = insn.getNext()) {
-				if (!(insn instanceof MethodInsnNode call) || call.getOpcode() != Opcodes.INVOKESTATIC) continue;
-				if (!"net/minecraftforge/common/ForgeHooks".equals(call.owner)
-						|| !"onPlaceItemIntoWorld".equals(call.name)) {
-					continue;
-				}
-				call.owner = "net/neoforged/neoforge/common/CommonHooks";
-				changed = true;
-			}
-		}
-		if (!changed) return false;
-
-		ForbricLog.warn("[Forbric/MergedBaseCompat] routed %s's block-placement hook to NeoForge — the merged "
-				+ "Level.capturedBlockSnapshots holds NeoForge BlockSnapshots, so MinecraftForge's hook threw "
-				+ "ClassCastException on every block placed", node.name.replace('/', '.'));
-		return true;
 	}
 
 	private static final String STACK_COUNT_MESSAGE = "The stack count must be 1";
