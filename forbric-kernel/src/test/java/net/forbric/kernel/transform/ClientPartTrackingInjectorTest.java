@@ -51,40 +51,10 @@ class ClientPartTrackingInjectorTest {
 	private static final String LEVEL = ClientPartTrackingInjector.LEVEL;
 	private static final String ENTITY = ClientPartTrackingInjector.ENTITY;
 	private static final String DRAGON = ClientPartTrackingInjector.DRAGON;
-	private static final String DRAGON_PART = DragonPartsInjector.PART_INTERNAL;
+	private static final String DRAGON_PART = "net/minecraft/world/entity/boss/enderdragon/EnderDragonPart";
 	private static final String START_DESC = ClientPartTrackingInjector.TRACKING_START_DESC;
 	private static final String NEO_GET_PARTS = ClientPartTrackingInjector.NEO_GET_PARTS;
 	private static final String FORGE_GET_PARTS = ClientPartTrackingInjector.FORGE_GET_PARTS;
-
-	@AfterEach void reset() { System.clearProperty(ClientPartTrackingInjector.PROPERTY); }
-
-    /**
-     * Whichever body the merge keeps — NeoForge's alone, or MinecraftForge's with NeoForge's registration spliced in — the
-     * client repair and its companion leave onTrackingStart registering NeoForge's parts in dragonParts and MinecraftForge's
-     * in partEntities, each exactly once, with no part array of either family dereferenced before a null test.
-     */
-    @Test void theMergedCallbackAddsNeoForgesPartsAndSkipsMinecraftForgesWhenNull() throws Exception {
-        byte[] merged=NativeCoremodParityTest.read(MERGED,CALLBACKS);
-        List<String> reads=partsRead(method(node(merged),"onTrackingStart",START_DESC));
-        assertTrue(reads.contains(NEO_GET_PARTS),"premise: the merge keeps NeoForge's registration: "+reads);
-        byte[] client=new ClientPartTrackingInjector().transform(ClientPartTrackingInjector.CALLBACKS,merged,null);
-        if(!reads.contains(FORGE_GET_PARTS))assertSame(merged,client,"NeoForge's body alone is the companion repair's");
-        byte[] repaired=forgeRepair().transform(ClientPartTrackingInjector.CALLBACKS,client,null);
-        ClassNode node=node(repaired);MethodNode start=method(node,"onTrackingStart",START_DESC);
-        assertEquals(reads,partsRead(start),"the canonical reads remain, in their order");
-        assertTrue(ClientPartTrackingInjector.tracksNeoForgeParts(repaired),"NeoForge's parts reach dragonParts and MinecraftForge's array is null-tested");
-        assertEquals(Set.of(),ClientPartTrackingFlow.analyze(node,start,true).unchecked(),"no part array of either family is dereferenced unchecked");
-        boolean helper=real(start).stream().anyMatch(i->i instanceof MethodInsnNode call&&call.name.equals(ForgePartTrackingInjector.TRACK));
-        assertNotEquals(reads.contains(FORGE_GET_PARTS),helper,"MinecraftForge's parts reach partEntities once: natively or through the added loop");
-        if(helper)assertTrue(real(method(node,ForgePartTrackingInjector.TRACK,ForgePartTrackingInjector.TRACK_DESC)).stream().anyMatch(i->i instanceof MethodInsnNode call&&call.desc.equals(FORGE_GET_PARTS)));
-        new Analyzer<>(new BasicVerifier()).analyze(CALLBACKS,start);
-        assertSame(repaired,new ClientPartTrackingInjector().transform(ClientPartTrackingInjector.CALLBACKS,repaired,null));
-        assertSame(repaired,forgeRepair().transform(ClientPartTrackingInjector.CALLBACKS,repaired,null));
-    }
-    private static ForgePartTrackingInjector forgeRepair(){return new ForgePartTrackingInjector(owner->{
-        try(java.util.zip.ZipFile jar=new java.util.zip.ZipFile(MERGED.toFile())){var entry=jar.getEntry(owner+".class");if(entry==null)return null;try(var input=jar.getInputStream(entry)){return input.readAllBytes();}}
-        catch(Exception unavailable){return null;}
-    });}
 
 	@Test void neoForgesOwnCallbacksAreLeftAlone() throws Exception {
 		byte[] own = NativeCoremodParityTest.read(NEO, CALLBACKS);
@@ -122,23 +92,11 @@ class ClientPartTrackingInjectorTest {
 		}
 	}
 
-	@Test void aMinecraftForgeModsMultipartEntityKeepsItsTracking() throws Exception {
-		try (Game repaired = new Game(true)) {
-			Object entity = repaired.multipart("fixture.ForgeMultipartEntity", "fixture.ForgePart", 2);
-			repaired.startTracking(entity);
-			Map<?, ?> tracked = repaired.partEntities();
-			assertEquals(Set.of(1, 2), new HashSet<>(tracked.keySet()), "MinecraftForge's own loop, as before");
-			assertSame(repaired.parts(entity)[1], tracked.get(2));
-			assertTrue(repaired.dragonParts().isEmpty(), "NeoForge's getParts() answers null for it, and is skipped");
-		}
-	}
-
 	@Test void theDragonsPartsAreTrackedOnce() throws Exception {
 		try (Game repaired = new Game(true)) {
 			Object dragon = repaired.dragon(2);
 			repaired.startTracking(dragon);
 			assertEquals(List.of(1, 2), repaired.ids(repaired.dragonParts()), "by the dragon's own case, and only by it");
-			assertEquals(Set.of(1, 2), new HashSet<>(repaired.partEntities().keySet()), "both native APIs keep the actual dragon parts");
 		}
 	}
 
@@ -154,7 +112,7 @@ class ClientPartTrackingInjectorTest {
 			for (Path jar : List.of(MERGED, NEO_CARRIER, FORGE_CARRIER)) TestFixtures.requireFile(Fixture.STAGED, jar, jar + " absent");
 			Map<String, byte[]> defined = new HashMap<>();
 			byte[] callbacks = NativeCoremodParityTest.read(MERGED, CALLBACKS);
-			if(repaired){callbacks=new ClientPartTrackingInjector().transform(ClientPartTrackingInjector.CALLBACKS,callbacks,null);callbacks=forgeRepair().transform(ClientPartTrackingInjector.CALLBACKS,callbacks,null);}
+			if(repaired){callbacks=new ClientPartTrackingInjector().transform(ClientPartTrackingInjector.CALLBACKS,callbacks,null);}
             defined.put(dotted(CALLBACKS),callbacks);
 			// The coherent hierarchy keeps both native getParts APIs and their actual parts.
 			defined.put(dotted(DRAGON_PART), NativeCoremodParityTest.read(MERGED, DRAGON_PART));
@@ -166,8 +124,8 @@ class ClientPartTrackingInjectorTest {
 			// Entity's and Level's superclass asks FML whether this is a production run.
 			String attachments = "net/neoforged/neoforge/attachment/AttachmentHolder";
 			defined.put(dotted(attachments), withoutInitializer(NativeCoremodParityTest.read(NEO_CARRIER, attachments)));
-			defined.put("fixture.NeoPart", part("fixture/NeoPart", DragonPartsInjector.NEO_PART));
-			defined.put("fixture.ForgePart", part("fixture/ForgePart", DragonPartsInjector.FORGE_PART));
+			defined.put("fixture.NeoPart", part("fixture/NeoPart", net.forbric.api.ForeignType.PART_ENTITY.internal(net.forbric.api.Ecosystem.NEOFORGE)));
+			defined.put("fixture.ForgePart", part("fixture/ForgePart", net.forbric.api.ForeignType.PART_ENTITY.internal(net.forbric.api.Ecosystem.FORGE)));
 			defined.put("fixture.NeoMultipartEntity", multipartEntity("fixture/NeoMultipartEntity", NEO_GET_PARTS));
 			defined.put("fixture.ForgeMultipartEntity", multipartEntity("fixture/ForgeMultipartEntity", FORGE_GET_PARTS));
 

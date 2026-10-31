@@ -44,7 +44,6 @@ import net.forbric.kernel.transform.ChunkExecutorGuardInjector;
 import net.forbric.kernel.transform.ClientPackHookInjector;
 import net.forbric.kernel.transform.ClientSmokeTickInjector;
 import net.forbric.kernel.transform.CommonNetworkInteropInjector;
-import net.forbric.kernel.transform.ForgeOverlayNeuterInjector;
 import net.forbric.kernel.transform.DataPackHookInjector;
 import net.forbric.kernel.transform.DuplicateLambdaPruneInjector;
 import net.forbric.kernel.transform.ExitHookInjector;
@@ -53,7 +52,6 @@ import net.forbric.kernel.transform.ForeignModPresenceInjector;
 import net.forbric.kernel.transform.ForgeBindingsLookupInjector;
 import net.forbric.kernel.transform.ForgeLoadingListHolderInjector;
 import net.forbric.kernel.transform.GuestMixinPluginGuard;
-import net.forbric.kernel.transform.HudElementBridgeInjector;
 import net.forbric.kernel.transform.LifecycleHookInjector;
 import net.forbric.kernel.transform.MergedBaseFrameRecomputer;
 import net.forbric.kernel.transform.ConfigApiAbiInjector;
@@ -563,10 +561,6 @@ public final class KernelBoot {
 				return null;
 			}
 		}));
-		// MinecraftForge's block-model data on the merged client, whose model questions, section compiler and renderers are
-		// NeoForge's: the model contract, the level's ModelDataManager and the tessellation entry's edge (fusion's
-		// connected textures never connected; Physics Mod's vine hook never ran).
-		chain.register(TransformPhase.COREMOD, new net.forbric.kernel.transform.ForgeModelDataFlowTransformer());
 		// Both sides: a merged local's variable-table range starts at its declaring store again where the merge spliced a
 		// carrier's reads of the local in front of the range, so a mod's @Local / @ModifyVariable finds it where vanilla's
 		// compiler had it in scope. Just before the early returns, which split tails by those ranges.
@@ -631,12 +625,6 @@ public final class KernelBoot {
 		if (net.forbric.kernel.transform.ForbricBrandingInjector.enabled()) {
 			chain.register(TransformPhase.COREMOD, new net.forbric.kernel.transform.ForbricBrandingInjector());
 		}
-		chain.register(TransformPhase.COREMOD, new net.forbric.kernel.transform.ForgeBlockTintInjector());
-		chain.register(TransformPhase.COREMOD, new net.forbric.kernel.transform.ForgeOptionsInjector());
-
-		chain.register(TransformPhase.COREMOD, new net.forbric.kernel.transform.ForgeClientConsumersInjector());
-
-		chain.register(TransformPhase.COREMOD, new net.forbric.kernel.transform.ForgeCreativeTabsInjector());
 		chain.register(TransformPhase.COREMOD, new net.forbric.kernel.transform.ForgeSpawnPlacementsInjector());
 		// A client freezes once before its MinecraftForge mods exist; that freeze's attribute validation waits for
 		// their (held) attribute events, or it runs first and Better Nether's lazy entity registration fails.
@@ -677,11 +665,6 @@ public final class KernelBoot {
 		if (net.forbric.kernel.transform.ForeignPayloadReceiveInjector.enabled()) {
 			chain.register(TransformPhase.COREMOD, new net.forbric.kernel.transform.ForeignPayloadReceiveInjector());
 		}
-
-		// …and keep the packs it serves OUT of the player's resource-pack screen. Pack.isHidden survived the
-		// merge; the screen-side filter that reads it did not.
-		chain.register(TransformPhase.COREMOD,
-				new net.forbric.kernel.transform.PackScreenHiddenFilterInjector());
 
 		// The pause menu's mods button opened NeoForge's list, which is every mod NeoForge loaded and, on this
 		// instance, a fraction of what is installed. It now opens the kernel's, which reads ModCatalog.
@@ -817,17 +800,6 @@ public final class KernelBoot {
 		// NeoForge mod's multipart entity leaves null, and the client disconnected on sight of one. NeoForge's parts are
 		// tracked too. A NeoForge body already does that; the repair's claim judges the end state either way.
 		chain.register(TransformPhase.COREMOD, new net.forbric.kernel.transform.ClientPartTrackingInjector());
-		// The mirror image: the server's tracking callbacks, the client's onTrackingEnd and the debug hitboxes are NeoForge-
-		// typed, and a MinecraftForge mod's multipart entity leaves NeoForge's getParts() null — adding one to a world, or
-		// removing it, threw. Its parts are tracked in MinecraftForge's partEntities, and Level.getEntities finds them there.
-		chain.register(TransformPhase.COREMOD, new net.forbric.kernel.transform.ForgePartTrackingInjector(name -> {
-			try (var in = loader.getGameResourceAsStream(name + ".class")) { return in == null ? null : in.readAllBytes(); }
-			catch (java.io.IOException unavailable) {
-				Caught.warn(unavailable, "[Forbric/Boot] could not read game class %s for the Forge part tracking;"
-						+ " it reads as absent", name);
-				return null;
-			}
-		}));
 		// A Fabric or MinecraftForge mod's fluid has no NeoForge type; it gets the one its fluid tags imply.
 		chain.register(TransformPhase.COREMOD, new net.forbric.kernel.transform.ForeignFluidTypeInjector());
 		// …and a tag a Fabric mod gave a fluid behaviour has that behaviour's fluid type where the merged
@@ -993,16 +965,6 @@ public final class KernelBoot {
 		// instead, so WHEN it is first touched stops mattering. See PassiveSeeder.publishForgeLoadingList.
 		chain.register(TransformPhase.COREMOD, new ForgeLoadingListHolderInjector());
 
-		// Client only: NeoForge won Hud.extractRenderState, so the call sites fabric-rendering-v1's HudMixin anchors
-		// on no longer exist — as METHOD REFERENCES in the layer manager they exist as no bytecode at all, so no
-		// anchor resolution can reach them. Every Fabric mod's HUD element silently drew nothing. Matches only
-		// GuiLayerManager, which a dedicated server never loads.
-		chain.register(TransformPhase.COREMOD, new HudElementBridgeInjector());
-		// Client only, and only on a base whose Hud also kept MinecraftForge's overlay tree: drop its own build and its
-		// own draw, which returns before NeoForge's layer manager draws, so the manager stays the one HUD pipeline and
-		// the kernel's build (KernelForgeOverlayLayers) puts MinecraftForge's stack on it.
-		chain.register(TransformPhase.COREMOD, new net.forbric.kernel.transform.ForgeHudPipelineInjector());
-
 		// Both sides: route ReloadableServerRegistries' two loot seams through the kernel so fabric-loot-api-v3's
 		// LootTableEvents fire from NeoForge's own LootTableLoadEvent point — its mixin cannot fit the merged base.
 		if (net.forbric.kernel.transform.LootTableEventBridgeInjector.enabled()) {
@@ -1062,7 +1024,6 @@ public final class KernelBoot {
 				try (var in = loader.getGameResourceAsStream(name + ".class")) { return in == null ? null : in.readAllBytes(); }
 				catch (java.io.IOException unavailable) { Caught.warn(unavailable, "[Forbric/Boot] could not read game class %s for the common-network interop; it reads as absent", name); return null; }
 			}));
-			chain.register(TransformPhase.COREMOD, new ForgeOverlayNeuterInjector());
 		} else {
 			ForbricLog.warn("[Forbric/Net] common-networking arbitration DISABLED — a tri-in-one client will be "
 					+ "kicked \"invalid packet\" when Fabric's addon is handed a NeoForge payload");
@@ -1147,7 +1108,6 @@ public final class KernelBoot {
 		Thread.currentThread().setContextClassLoader(loader);
 
 		KernelLifecycle.bind(loader);
-		KernelHudBridge.bind(loader);
 		LootTableEventDispatch.bind(loader);
 		KernelLifecycle.setModJars(modJars);
 		// Where the load report goes, and the shutdown hook that writes it if loading never finishes -- which is

@@ -199,15 +199,10 @@ public final class KernelRuntimeClasses {
 		CLASSES.put("net.forbric.kernel.runtime.KernelWidenedFields", new Entry(Origin.COMPILED, List.of()));
 		CLASSES.put("net.forbric.kernel.runtime.KernelForgeIngredients", new Entry(Origin.COMPILED, List.of()));
 		CLASSES.put("net.forbric.kernel.runtime.KernelForgeFluids", new Entry(Origin.COMPILED, List.of()));
-		CLASSES.put("net.forbric.kernel.runtime.KernelForgeModelData", new Entry(Origin.COMPILED, List.of()));
 		CLASSES.put("net.forbric.kernel.runtime.KernelForgeWorldgen", new Entry(Origin.COMPILED, List.of(
 				new Call("declareForgeModifierRegistries", void.class, Object.class))));
 		CLASSES.put("net.forbric.kernel.runtime.KernelForgeCapabilities", new Entry(Origin.COMPILED, List.of(
 				new Call("injectCapabilities", int.class))));
-		CLASSES.put("net.forbric.kernel.runtime.KernelForgeBlockColors", new Entry(Origin.COMPILED, List.of()));
-		CLASSES.put("net.forbric.kernel.runtime.KernelForgeOptions", new Entry(Origin.COMPILED, List.of()));
-		CLASSES.put("net.forbric.kernel.runtime.KernelForgeClientConsumers", new Entry(Origin.COMPILED, List.of()));
-		CLASSES.put("net.forbric.kernel.runtime.KernelForgeCreativeTabs", new Entry(Origin.COMPILED, List.of()));
 		CLASSES.put("net.forbric.kernel.runtime.KernelCreativeSearch", new Entry(Origin.COMPILED, List.of()));
 		// Also asked by the lifecycle: hold MinecraftForge's half while a client's Forge mods wait for Minecraft.<init>,
 		// then post it once they exist.
@@ -265,10 +260,6 @@ public final class KernelRuntimeClasses {
 				new Call("build", java.util.Map.class, List.class),
 				new Call("poolRegistrations", List.class, List.class),
 				new Call("close", void.class, java.util.Map.class))));
-		// MinecraftForge's HUD overlay stack, which the merged base has no reference to at all. Client only, and
-		// a renamed entry point here is a mod's overlay silently not drawing.
-		CLASSES.put("net.forbric.kernel.runtime.KernelForgeOverlayLayers", new Entry(Origin.COMPILED, List.of(
-				new Call("install", void.class, Object.class))));
 		// The kernel's own server duties (KernelServerDutiesInstaller): the game instance, the server-started work, the
 		// experience relay; and the
 		// compatibility tick, an ASM owner the tick return seam calls (ServerCompatibilityTickInjector).

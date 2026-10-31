@@ -136,15 +136,12 @@ class TransformerRegistrationOrderTest {
 	void eachMultipartRepairIsConstructedExactlyOnce() throws Exception {
 		List<String> order = transformerConstructionOrder();
 		assertTrue(!order.isEmpty(), "no transformers found — launch() did not compile the way this expects");
-		// These registrations are the whole fix: without the client part tracking a NeoForge mod's multipart entity
-		// disconnects the client on sight, and without the Forge part tracking a MinecraftForge one throws in the
-		// server's tracking callbacks and the server cannot stop. Each repair's own test constructs it directly, so a
-		// merge of these lines that dropped one left every test green; one that kept both sides' copies is caught too.
-		// The order is free: all six give the same classes on the merged base.
+		// This registration is the whole fix: without the client part tracking a NeoForge mod's multipart entity
+		// disconnects the client on sight. The repair's own test constructs it directly, so a merge of these lines that
+		// dropped it left every test green; one that kept both sides' copies is caught too.
 		assertEquals(0, Collections.frequency(order, "net/forbric/kernel/transform/DragonPartsInjector"),
                 "the old retype/empty-array rewrite is retired; both native APIs survive the merge");
-        for (String repair : List.of("net/forbric/kernel/transform/ClientPartTrackingInjector",
-				"net/forbric/kernel/transform/ForgePartTrackingInjector")) {
+        for (String repair : List.of("net/forbric/kernel/transform/ClientPartTrackingInjector")) {
 			assertEquals(1, Collections.frequency(order, repair),
 					repair + " must be constructed exactly once in launch(). Full order: " + order);
 		}

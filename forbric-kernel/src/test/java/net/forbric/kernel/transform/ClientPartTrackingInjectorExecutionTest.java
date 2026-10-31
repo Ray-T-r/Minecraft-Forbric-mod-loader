@@ -88,7 +88,7 @@ class ClientPartTrackingInjectorExecutionTest {
 					import net.minecraft.world.entity.Entity;
 					import net.neoforged.neoforge.entity.PartEntity;
 
-					/** As DragonPartsInjector leaves it: NeoForge's getParts() has the parts, MinecraftForge's is empty. */
+					/** As the merge leaves it: NeoForge's getParts() has the parts, MinecraftForge's is empty. */
 					public class EnderDragon extends Entity {
 						public final PartEntity<?>[] subEntities = {new PartEntity<>(11), new PartEntity<>(12)};
 
@@ -208,7 +208,7 @@ class ClientPartTrackingInjectorExecutionTest {
 		Map<String,String> source=new HashMap<>(STAND_INS);
         source.put("net.minecraftforge.entity.PartEntity",partEntity("net.minecraftforge.entity").replace("extends Entity {","extends net.neoforged.neoforge.entity.PartEntity<T> {"));
         source.put("net.minecraft.world.entity.boss.enderdragon.EnderDragon",source.get("net.minecraft.world.entity.boss.enderdragon.EnderDragon")
-            .replace("/** As DragonPartsInjector leaves it: NeoForge's getParts() has the parts, MinecraftForge's is empty. */","/** Both native descriptors keep the actual part array. */")
+            .replace("/** As the merge leaves it: NeoForge's getParts() has the parts, MinecraftForge's is empty. */","/** Both native descriptors keep the actual part array. */")
             .replace("public final PartEntity<?>[] subEntities = {new PartEntity<>(11), new PartEntity<>(12)};","public final net.minecraftforge.entity.PartEntity<?>[] subEntities = {new net.minecraftforge.entity.PartEntity<>(11), new net.minecraftforge.entity.PartEntity<>(12)};")
             .replace("return new net.minecraftforge.entity.PartEntity<?>[0];","return subEntities;"));
         source.put("net.forbric.kernel.runtime.KernelMultipartViews",java.nio.file.Files.readString(Path.of("src/runtime/java/net/forbric/kernel/runtime/KernelMultipartViews.java")));

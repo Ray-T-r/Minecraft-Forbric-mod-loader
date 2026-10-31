@@ -47,8 +47,8 @@ class ClientPartTrackingClaimTest {
 	private static final String START = ClientPartTrackingInjector.TRACKING_START_DESC;
 	private static final String FORGE_GET_PARTS = ClientPartTrackingInjector.FORGE_GET_PARTS;
 	private static final String NEO_GET_PARTS = ClientPartTrackingInjector.NEO_GET_PARTS;
-	private static final String FORGE_PART = DragonPartsInjector.FORGE_PART;
-	private static final String NEO_PART = DragonPartsInjector.NEO_PART;
+	private static final String FORGE_PART = net.forbric.api.ForeignType.PART_ENTITY.internal(net.forbric.api.Ecosystem.FORGE);
+	private static final String NEO_PART = net.forbric.api.ForeignType.PART_ENTITY.internal(net.forbric.api.Ecosystem.NEOFORGE);
 	private static final String PARTS_MAP = "it/unimi/dsi/fastutil/ints/Int2ObjectMap";
 	private static final TransformContext CLIENT = new TransformContext(EnvType.CLIENT, false, "intermediary");
 

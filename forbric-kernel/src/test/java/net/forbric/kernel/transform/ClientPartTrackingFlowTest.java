@@ -57,8 +57,8 @@ class ClientPartTrackingFlowTest {
 	private static final String START = ClientPartTrackingInjector.TRACKING_START_DESC;
 	private static final String FORGE_GET_PARTS = ClientPartTrackingInjector.FORGE_GET_PARTS;
 	private static final String NEO_GET_PARTS = ClientPartTrackingInjector.NEO_GET_PARTS;
-	private static final String FORGE_PART = DragonPartsInjector.FORGE_PART;
-	private static final String NEO_PART = DragonPartsInjector.NEO_PART;
+	private static final String FORGE_PART = net.forbric.api.ForeignType.PART_ENTITY.internal(net.forbric.api.Ecosystem.FORGE);
+	private static final String NEO_PART = net.forbric.api.ForeignType.PART_ENTITY.internal(net.forbric.api.Ecosystem.NEOFORGE);
 	private static final String PARTS_MAP = "it/unimi/dsi/fastutil/ints/Int2ObjectMap";
 	private static final String LIST = "java/util/List";
 	private static final String OUTER = "owningLevel";
@@ -309,18 +309,6 @@ class ClientPartTrackingFlowTest {
 			method.instructions.insert(read, new InsnNode(Opcodes.ARRAYLENGTH));
 		});
 		assertMissTheGateSees(counted);
-	}
-
-	/**
-	 * The companion MinecraftForge repair, run after this one as the kernel registers them, wraps NeoForge's read in
-	 * requireNonNullElse where it edits; the parts still arrive.
-	 */
-	@Test void theStagedBodyAfterTheCompanionRepairStillTracksNeoForgesParts() throws Exception {
-		ClassNode node = node(new ClientPartTrackingInjector().transform(CALLBACKS, NativeCoremodParityTest.read(MERGED, CALLBACKS_INTERNAL), null));
-		assertEquals(1, ForgePartTrackingInjector.clientCallbacks(node, true), "premise: the companion repair edits the staged body");
-		ClassWriter writer = new ClassWriter(ClassWriter.COMPUTE_MAXS);
-		node.accept(writer);
-		assertHit(writer.toByteArray());
 	}
 
 	// ---------------------------------------------------------------------------------------------------------------

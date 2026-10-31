@@ -21,6 +21,7 @@ import org.objectweb.asm.tree.LabelNode;
 import org.objectweb.asm.tree.LineNumberNode;
 import org.objectweb.asm.tree.MethodInsnNode;
 import org.objectweb.asm.tree.MethodNode;
+import org.objectweb.asm.tree.TypeInsnNode;
 import org.objectweb.asm.tree.VarInsnNode;
 
 /** Completes a Forge-canonical client tracking body with the other native part view. Existing
@@ -196,7 +197,7 @@ public final class ClientPartTrackingInjector implements ClassTransformer {
 		if (flow == null) return declined("onTrackingStart reads both families' parts and could not be analysed");
 		if (flow.unchecked().isEmpty()) return 0;
 		if (!flow.registers()) return declined("onTrackingStart reads NeoForge's parts but never adds them to dragonParts");
-		for (AbstractInsnNode read : flow.unchecked()) ForgePartTrackingInjector.tolerate(start, (MethodInsnNode) read);
+		for (AbstractInsnNode read : flow.unchecked()) tolerate(start, (MethodInsnNode) read);
 		ForbricLog.info("[Forbric/Entity] the client's onTrackingStart registers both families' parts and now tolerates "
 				+ "either family's null array (%d read(s)) — each family's getParts() is null for the other's multipart entity, "
 				+ "and dereferencing it disconnected the client", flow.unchecked().size());
@@ -237,5 +238,20 @@ public final class ClientPartTrackingInjector implements ClassTransformer {
 	private static MethodNode method(ClassNode node, String name, String desc) {
 		for (MethodNode method : node.methods) if (method.name.equals(name) && method.desc.equals(desc)) return method;
 		return null;
+	}
+
+	/**
+	 * {@code Objects.requireNonNullElse(entity.getParts(), new PartEntity[0])}: no branch, so no frame to add. Moved here
+	 * from the MinecraftForge part-tracking repair, which went with MinecraftForge.
+	 */
+	static void tolerate(MethodNode method, MethodInsnNode read) {
+		String part = read.desc.substring(4, read.desc.length() - 1);
+		InsnList empty = new InsnList();
+		empty.add(new InsnNode(Opcodes.ICONST_0));
+		empty.add(new TypeInsnNode(Opcodes.ANEWARRAY, part));
+		empty.add(new MethodInsnNode(Opcodes.INVOKESTATIC, "java/util/Objects", "requireNonNullElse",
+				"(Ljava/lang/Object;Ljava/lang/Object;)Ljava/lang/Object;", false));
+		empty.add(new TypeInsnNode(Opcodes.CHECKCAST, "[L" + part + ";"));
+		method.instructions.insert(read, empty);
 	}
 }

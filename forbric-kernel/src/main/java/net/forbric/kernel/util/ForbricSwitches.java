@@ -131,7 +131,14 @@ public final class ForbricSwitches {
 			Map.entry("forbric.spawnerFinalize", "Forbric loads no MinecraftForge mod, so no spawner needs MinecraftForge's ValueInput; a spawner's "
 					+ "mob is finalized by NeoForge's own hook, as on NeoForge"),
 			Map.entry("forbric.forgeFieldGetters", "Forbric loads no MinecraftForge runtime, so no liquid block or bucket keeps its fluid in a "
-					+ "MinecraftForge supplier"));
+					+ "MinecraftForge supplier"),
+			// Stage 4: MinecraftForge's client repairs are gone with its carrier.
+			Map.entry("forbric.forgePartTracking", "Forbric loads no MinecraftForge mod, so no multipart entity needs MinecraftForge's part tracking; "
+					+ "NeoForge's parts are tracked as on NeoForge"),
+			Map.entry("forbric.forgeModelData", "Forbric loads no MinecraftForge mod, so no block model asks MinecraftForge's model data; the client "
+					+ "level keeps NeoForge's own"),
+			Map.entry("forbric.forgeModelDataEdge", "Forbric loads no MinecraftForge mod, so no injector needs an edge twin of MinecraftForge's "
+					+ "model-data overload"));
 
 	private static final ForbricSwitches SYSTEM =
 			new ForbricSwitches(RENAMED, RETIRED, System::getProperty, ForbricLog::warn);

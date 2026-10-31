@@ -36,7 +36,6 @@ import org.objectweb.asm.tree.MethodInsnNode;
 import org.objectweb.asm.tree.MethodNode;
 
 import net.forbric.api.Ecosystem;
-import net.forbric.kernel.transform.ForgeOverlayNeuterInjector;
 
 /**
  * Re-derives {@code uncalled-methods.txt} — every merged-base method that an ecosystem's own game calls and nothing in the
@@ -124,9 +123,9 @@ class UncalledMethodCensusTest {
 		for (Path code : List.of(INTEROP, NEO_RUNTIME, KERNEL_MAIN, KERNEL_RUNTIME)) scan(code, (c, m) -> {}, game, null, named);
 		Set<String> gameClasses = Set.copyOf(game.keySet());
 
-		// Code the kernel keeps from ever running: the leaves MinecraftForge's builder puts in its vanilla HUD tree, each
-		// replaced before the tree bakes (KernelForgeOverlayLayers.neuterVanillaLeaves).
-		Set<String> silenced = ForgeOverlayNeuterInjector.silencedLeafBodies(node(INTEROP, ForgeOverlayNeuterInjector.TARGET));
+		// Code the kernel kept from ever running: the leaves MinecraftForge's builder puts in its vanilla HUD tree, each
+		// replaced before the tree baked (the MinecraftForge overlay neuter, gone with MinecraftForge; see silencedLeafBodies).
+		Set<String> silenced = silencedLeafBodies(node(INTEROP, "net.minecraftforge.client.gui.overlay.ForgeLayeredDraw"));
 		assertFalse(silenced.isEmpty(), "MinecraftForge's vanilla HUD tree builder registers no leaf this census can read");
 
 		// Uncalled: every place the merged game names it is itself uncalled, or silenced — a fixpoint, so a method only an
@@ -487,4 +486,61 @@ class UncalledMethodCensusTest {
 		}
 		return false;
 	}
+
+	/**
+	 * The bodies of the leaves MinecraftForge's own builder puts in its vanilla HUD tree ({@code ForgeLayeredDraw.init}),
+	 * as {@code owner#name+desc}. Copied from the MinecraftForge overlay neuter, which went with MinecraftForge, so this
+	 * merged-base census keeps the inputs its pinned table was written from until C4 regenerates the table on the genuine
+	 * base, which has no such tree.
+	 */
+	private static java.util.Set<String> silencedLeafBodies(ClassNode tree) {
+		java.util.Set<String> out = new java.util.TreeSet<>();
+		if (tree == null || tree.methods == null) return out;
+		java.util.Set<String> constants = new java.util.HashSet<>();
+		if (tree.fields != null) {
+			for (org.objectweb.asm.tree.FieldNode field : tree.fields) {
+				if ((field.access & org.objectweb.asm.Opcodes.ACC_STATIC) != 0 && field.desc.startsWith("L")) constants.add(field.name + ":" + field.desc);
+			}
+		}
+		for (org.objectweb.asm.tree.MethodNode build : tree.methods) {
+			if (!"init".equals(build.name) || (build.access & org.objectweb.asm.Opcodes.ACC_STATIC) == 0 || build.instructions == null) continue;
+			org.objectweb.asm.tree.analysis.Frame<org.objectweb.asm.tree.analysis.SourceValue>[] frames;
+			try {
+				frames = new org.objectweb.asm.tree.analysis.Analyzer<>(new org.objectweb.asm.tree.analysis.SourceInterpreter())
+						.analyze(tree.name, build);
+			} catch (org.objectweb.asm.tree.analysis.AnalyzerException unreadable) {
+				net.forbric.kernel.util.Caught.expected(unreadable);
+				continue;
+			}
+			for (org.objectweb.asm.tree.AbstractInsnNode insn : build.instructions) {
+				if (!(insn instanceof org.objectweb.asm.tree.MethodInsnNode call) || call.getOpcode() != org.objectweb.asm.Opcodes.INVOKEVIRTUAL || !call.owner.equals(tree.name)) continue;
+				org.objectweb.asm.tree.analysis.Frame<org.objectweb.asm.tree.analysis.SourceValue> frame = frames[build.instructions.indexOf(call)];
+				org.objectweb.asm.Type[] arguments = org.objectweb.asm.Type.getArgumentTypes(call.desc);
+				if (frame == null || frame.getStackSize() < arguments.length) continue;
+				java.util.List<String> leaves = new java.util.ArrayList<>();
+				boolean named = false, plain = true;
+				for (int i = 0; i < arguments.length && plain; i++) {
+					if (arguments[i].getSort() != org.objectweb.asm.Type.OBJECT) continue;
+					org.objectweb.asm.tree.analysis.SourceValue value = frame.getStack(frame.getStackSize() - arguments.length + i);
+					if (value.insns.size() != 1) { plain = false; break; }
+					org.objectweb.asm.tree.AbstractInsnNode source = value.insns.iterator().next();
+					if (source instanceof org.objectweb.asm.tree.FieldInsnNode field && field.getOpcode() == org.objectweb.asm.Opcodes.GETSTATIC
+							&& field.owner.equals(tree.name) && constants.contains(field.name + ":" + field.desc)
+							&& field.desc.equals(arguments[i].getDescriptor())) {
+						named = true;
+					} else if (source instanceof org.objectweb.asm.tree.InvokeDynamicInsnNode lambda
+							&& lambda.bsm.getOwner().equals("java/lang/invoke/LambdaMetafactory") && lambda.bsmArgs.length >= 2
+							&& lambda.bsmArgs[1] instanceof org.objectweb.asm.Handle body && body.getOwner().equals(tree.name)) {
+						String type = org.objectweb.asm.Type.getReturnType(lambda.desc).getInternalName();
+						if (!type.startsWith("java/")) leaves.add(body.getOwner() + "#" + body.getName() + body.getDesc());
+					} else if (!(source instanceof org.objectweb.asm.tree.VarInsnNode)) {
+						plain = false;    // a sub-stack held in a local is a branch of the same tree; anything else is not this shape
+					}
+				}
+				if (plain && named) out.addAll(leaves);
+			}
+		}
+		return out;
+	}
+
 }

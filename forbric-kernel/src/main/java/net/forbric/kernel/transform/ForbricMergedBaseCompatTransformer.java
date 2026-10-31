@@ -92,7 +92,7 @@ public final class ForbricMergedBaseCompatTransformer implements ClassTransforme
 	}
 
 	/** The repairs {@link #transform} runs, in its order; a test pins the two lists against each other. */
-	static final List<String> REPAIRS = List.of("repairLambdaBootstrapHandles", "addBlockStateModelConflictResolvers", "addBlockStateAppearanceResolver", "addMissingForgeFluidTypeBridge", "addMissingForgeKeyMappingLookupInitializer", "routeKeyMappingClickToPopulatedLookup", "giveKeyMappingItsMinecraftForgeFace", "giveKeyMappingItsVanillaMap", "giveTheVanillaParticleMapAViewOfTheLiveOne", "letDungeonsGenerateWithoutTheDataMap", "restoreDoublePrecisionToTheRandomSources", "convertRadiansWithVanillasFoldedConstant", "callVanillasWriteByteAgain", "saveTheHeightmapsVanillaSaves", "guardNeoForgesWorldModifierPass", "letForeignResourceConditionsThrough", "letForeignResourceConditionsThroughMinecraftForge", "letFabricResourceConditionsDecide", "letMinecraftForgeResourceConditionsDecide", "judgeDataFilesWhereMinecraftForgeDid", "judgeRegistryElementsWhereMinecraftForgeDid", "giveMinecraftForgesRecipeConditionsTheirContext", "translateAGuestsPrivateSkipMarker", "serveDefaultAttributesBothEcosystems", "nameTheReloadListenersNeoForgeRefusesToName", "dropInterfaceDefaultShadowingOverrides", "tolerateEmptyCreativeTabStacks", "routePlaceItemHookToNeoForge", "bridgeOrphanedPipRenderers", "keepForgeOutboundProtocolCurrent", "surviveTheMissingForgeModelDataManager", "dropTheWindowTitlesLoaderBrand", "keepTheSaveOffTheTeardownsFailurePath", "postNeoForgesItemTooltipEvent", "askNeoForgeWhatAnItemsAttributesAre", "readTheSpawnReasonThatIsActuallyWritten", "giveTheUnwrittenLoggerAValue", "addTheMissingCapabilityLifecycleStubs", "addTheMissingNbtBuilderFactory", "giveMinecraftForgesReloadEventItsConditionContext", "letMinecraftForgeIngredientTypesDecode", "letMinecraftForgeFluidsChooseTheirModel", "giveMinecraftForgesParticleLookupItsFirstVariant", "dropStubsThatBypassARealSuperclassMethod", "inlineTheSwitchMapTheMergeLost", "vetoUnjudgeableOverlayConditions", "hideTheLegacyLootModifierIndexFromTheDirectoryScan", "letModdedFeatureFlagsRegister", "dropTheKeyModifierSuffixBeforeParsingAKeyName", "letTheAtlasLowerItsMipLevelLikeVanilla", "wrapTheStreamsVanillaWraps", "returnFromANestedBootstrapBeforeItsTail", "letBothEcosystemsSetBurnTime", "letMinecraftForgeAddPackFinders");
+	static final List<String> REPAIRS = List.of("repairLambdaBootstrapHandles", "addBlockStateModelConflictResolvers", "addBlockStateAppearanceResolver", "addMissingForgeFluidTypeBridge", "addMissingForgeKeyMappingLookupInitializer", "routeKeyMappingClickToPopulatedLookup", "giveKeyMappingItsMinecraftForgeFace", "giveKeyMappingItsVanillaMap", "giveTheVanillaParticleMapAViewOfTheLiveOne", "letDungeonsGenerateWithoutTheDataMap", "restoreDoublePrecisionToTheRandomSources", "convertRadiansWithVanillasFoldedConstant", "callVanillasWriteByteAgain", "saveTheHeightmapsVanillaSaves", "guardNeoForgesWorldModifierPass", "letForeignResourceConditionsThrough", "letForeignResourceConditionsThroughMinecraftForge", "letFabricResourceConditionsDecide", "letMinecraftForgeResourceConditionsDecide", "judgeDataFilesWhereMinecraftForgeDid", "judgeRegistryElementsWhereMinecraftForgeDid", "giveMinecraftForgesRecipeConditionsTheirContext", "translateAGuestsPrivateSkipMarker", "serveDefaultAttributesBothEcosystems", "nameTheReloadListenersNeoForgeRefusesToName", "dropInterfaceDefaultShadowingOverrides", "tolerateEmptyCreativeTabStacks", "routePlaceItemHookToNeoForge", "bridgeOrphanedPipRenderers", "keepForgeOutboundProtocolCurrent", "dropTheWindowTitlesLoaderBrand", "keepTheSaveOffTheTeardownsFailurePath", "postNeoForgesItemTooltipEvent", "askNeoForgeWhatAnItemsAttributesAre", "readTheSpawnReasonThatIsActuallyWritten", "giveTheUnwrittenLoggerAValue", "addTheMissingCapabilityLifecycleStubs", "addTheMissingNbtBuilderFactory", "giveMinecraftForgesReloadEventItsConditionContext", "letMinecraftForgeIngredientTypesDecode", "letMinecraftForgeFluidsChooseTheirModel", "giveMinecraftForgesParticleLookupItsFirstVariant", "dropStubsThatBypassARealSuperclassMethod", "inlineTheSwitchMapTheMergeLost", "vetoUnjudgeableOverlayConditions", "hideTheLegacyLootModifierIndexFromTheDirectoryScan", "letModdedFeatureFlagsRegister", "dropTheKeyModifierSuffixBeforeParsingAKeyName", "letTheAtlasLowerItsMipLevelLikeVanilla", "wrapTheStreamsVanillaWraps", "returnFromANestedBootstrapBeforeItsTail", "letBothEcosystemsSetBurnTime", "letMinecraftForgeAddPackFinders");
 
 	private static final String NEO_EVENT_HOOKS_BINARY = "net.neoforged.neoforge.event.EventHooks";
 
@@ -184,13 +184,6 @@ public final class ForbricMergedBaseCompatTransformer implements ClassTransforme
 				"a picture-in-picture renderer registered the vanilla way never draws"));
 		out.add(fixed("keepForgeOutboundProtocolCurrent", "net/minecraft/network/Connection",
 				"MinecraftForge's channels pick their packet type from a protocol field nothing writes — Forge networking sends the wrong packet type"));
-		// Stands down while ForgeModelDataFlowTransformer gives the level MinecraftForge's manager back: the overlay's own
-		// lookup then answers what MinecraftForge's does, so there is nothing to replace.
-		out.add(ForgeModelDataFlowTransformer.enabled()
-				? scanned("surviveTheMissingForgeModelDataManager", "stands down: the client level keeps MinecraftForge's "
-						+ "model-data manager (" + ForgeModelDataFlowTransformer.PROPERTY + ")")
-				: fixed("surviveTheMissingForgeModelDataManager", "net/minecraft/client/renderer/extract/LevelExtractor",
-						"the block-breaking overlay crashes the render frame on MinecraftForge's absent model-data manager"));
 		out.add(fixed("dropTheWindowTitlesLoaderBrand", "net/minecraft/client/Minecraft",
 				"the window title carries another loader's brand"));
 		out.add(fixed("keepTheSaveOffTheTeardownsFailurePath", INTEGRATED_SERVER,
@@ -322,7 +315,6 @@ public final class ForbricMergedBaseCompatTransformer implements ClassTransforme
 			changed |= claim(reporter, "routePlaceItemHookToNeoForge", routePlaceItemHookToNeoForge(node));
 			changed |= claim(reporter, "bridgeOrphanedPipRenderers", bridgeOrphanedPipRenderers(node));
 			changed |= claim(reporter, "keepForgeOutboundProtocolCurrent", keepForgeOutboundProtocolCurrent(node));
-			changed |= claim(reporter, "surviveTheMissingForgeModelDataManager", surviveTheMissingForgeModelDataManager(node));
 			changed |= claim(reporter, "dropTheWindowTitlesLoaderBrand", dropTheWindowTitlesLoaderBrand(node));
 			changed |= claim(reporter, "keepTheSaveOffTheTeardownsFailurePath", keepTheSaveOffTheTeardownsFailurePath(node));
 			changed |= claim(reporter, "postNeoForgesItemTooltipEvent", postNeoForgesItemTooltipEvent(node), tooltipAlreadyPostsNeoForge(node));
@@ -3051,72 +3043,6 @@ public final class ForbricMergedBaseCompatTransformer implements ClassTransforme
 		return false;
 	}
 
-	/**
-	 * Stops the block-breaking overlay from crashing the render frame.
-	 *
-	 * <p>{@code LevelExtractor.extractBlockDestroyAnimation} asks the level for MinecraftForge's
-	 * {@code ModelDataManager} and dereferences it without a check. On a single-ecosystem base that is safe, because
-	 * Forge's own {@code ClientLevel} patch overrides the accessor; on the merged base NeoForge's override won, and
-	 * because the two return different types it does not override Forge's at all — so the call lands on Forge's
-	 * interface default, whose whole body is {@code return null}. Every frame drawn while any block is being broken
-	 * then dies with "Description: Render Frame", which is why this only showed up once, in a run where a break
-	 * animation happened to be on screen.
-	 *
-	 * <p>There is nothing to route it to while no path on this base builds a Forge-typed manager, so no Forge-typed
-	 * model data exists to find. {@link ForgeModelDataFlowTransformer} builds one (the level keeps MinecraftForge's own),
-	 * and then this repair stands down and the overlay asks the manager as on MinecraftForge; it acts only with
-	 * {@code -Dforbric.forgeModelData=off}. The call therefore becomes the value Forge's own lookup returns for a position it
-	 * is not tracking — {@code ModelData.EMPTY} — which is what the overlay would have drawn with anyway. A mod's
-	 * dynamic model data still reaches the block itself through NeoForge's manager, which the level does have; only
-	 * the break overlay draws with defaults.
-	 */
-	private static boolean surviveTheMissingForgeModelDataManager(ClassNode node) {
-		if (!"net/minecraft/client/renderer/extract/LevelExtractor".equals(node.name)) return false;
-		// With MinecraftForge's manager back on the level (ForgeModelDataFlowTransformer), the lookup answers the block
-		// entity's model data, or EMPTY where none is tracked — what MinecraftForge's own overlay draws with.
-		if (ForgeModelDataFlowTransformer.enabled()) return false;
-
-		boolean changed = false;
-		for (MethodNode m : node.methods) {
-			List<MethodInsnNode> lookups = new ArrayList<>();
-			for (AbstractInsnNode insn = m.instructions.getFirst(); insn != null; insn = insn.getNext()) {
-				if (insn.getOpcode() == Opcodes.INVOKEVIRTUAL && insn instanceof MethodInsnNode call
-						&& FORGE_MODEL_DATA_MANAGER.equals(call.owner) && "getAtOrEmpty".equals(call.name)) {
-					lookups.add(call);
-				}
-			}
-			for (MethodInsnNode lookup : lookups) {
-				// The receiver expression, exactly: ALOAD this; GETFIELD level; INVOKEVIRTUAL getModelDataManager;
-				// then the position argument. Anything else means the method was rewritten upstream — leave it be.
-				AbstractInsnNode pos = previousRealInsn(lookup);
-				AbstractInsnNode manager = previousRealInsn(pos);
-				AbstractInsnNode level = previousRealInsn(manager);
-				AbstractInsnNode self = previousRealInsn(level);
-				if (pos == null || pos.getOpcode() != Opcodes.ALOAD
-						|| !(manager instanceof MethodInsnNode get) || !"getModelDataManager".equals(get.name)
-						|| level == null || level.getOpcode() != Opcodes.GETFIELD
-						|| self == null || self.getOpcode() != Opcodes.ALOAD) {
-					continue;
-				}
-				// The constant goes in where the receiver expression began, BEFORE the five are unlinked: a removed
-				// node's neighbours are no longer a usable anchor.
-				m.instructions.insertBefore(self,
-						new FieldInsnNode(Opcodes.GETSTATIC, FORGE_MODEL_DATA, "EMPTY", "L" + FORGE_MODEL_DATA + ";"));
-				for (AbstractInsnNode dead : new AbstractInsnNode[] {self, level, manager, pos, lookup}) {
-					m.instructions.remove(dead);
-				}
-				changed = true;
-			}
-		}
-		if (!changed) return false;
-		ForbricLog.warn("[Forbric/MergedBaseCompat] the block-breaking overlay no longer asks for MinecraftForge's "
-				+ "model-data manager — NeoForge won the level's accessor, so Forge's returned null and every frame "
-				+ "drawn while a block was being broken crashed the game");
-		return true;
-	}
-
-	private static final String FORGE_MODEL_DATA_MANAGER = "net/minecraftforge/client/model/data/ModelDataManager";
-	private static final String FORGE_MODEL_DATA = "net/minecraftforge/client/model/data/ModelData";
 	/** Forge-only, like {@link #FORGE_MODEL_DATA}: NeoForge has no INBTBuilder, so ForeignType has no pair for it. */
 	private static final String FORGE_NBT_BUILDER = "net/minecraftforge/common/util/INBTBuilder$Builder";
 	private static final String NBT_BUILDER_FACTORY_DESC = "()L" + FORGE_NBT_BUILDER + ";";
