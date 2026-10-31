@@ -280,9 +280,26 @@ class KernelModLoaderWithdrawalTest {
 	}
 
 	@Test
-	void aMinecraftForgeClassThatThrowsIsLeftToTheForgeWithdrawal() {
-		// The MinecraftForge half withdraws by what constructed, on its own list; a NeoForge settlement must not
-		// see its ids at all.
+	void everyConstructedModIsKeptAndNoneIsWithdrawn() {
+		// The construction loop's own output, through the settlement: two NeoForge mods that both constructed (one of
+		// them with two @Mod classes) must come out kept, and the published list must not be withdrawn. An empty
+		// constructedIds withdrew every NeoForge mod from ModList with every other test here green.
+		List<KernelModLoader.ConstructedMod> built = List.of(
+				new KernelModLoader.ConstructedMod("alpha", "demo.Alpha", Ecosystem.NEOFORGE, null),
+				new KernelModLoader.ConstructedMod("beta", "demo.Beta", Ecosystem.NEOFORGE, null),
+				new KernelModLoader.ConstructedMod("beta", "demo.BetaClient", Ecosystem.NEOFORGE, null));
+		Set<String> constructed = KernelModLoader.constructedIds(built);
+		assertEquals(List.of("alpha", "beta"), new ArrayList<>(constructed));
+		KernelModLoader.NeoSettlement settled = KernelModLoader.settleNeo(Set.of(), constructed, Set.of());
+		assertEquals(Set.of("alpha", "beta"), settled.kept());
+		assertFalse(KernelModLoader.neoNeedsWithdrawal(Set.of("alpha", "beta"), settled.kept()),
+				"all constructed: none withdrawn");
+	}
+
+	@Test
+	void aMinecraftForgeClassIsNeverPartOfTheNeoForgeSettlement() {
+		// Arbitration suppresses every MinecraftForge @Mod before construction; should one reach the outcome record
+		// anyway, a NeoForge settlement must not see its id. The FORGE clause this pins goes with Ecosystem.FORGE (C4).
 		Set<String> otherSide = new LinkedHashSet<>();
 		Map<String, List<String>> failed = new LinkedHashMap<>();
 		KernelModLoader.recordNeoOutcome(new ModClassInfo("demo.ForgeMod", "demo", Ecosystem.FORGE), true,
@@ -310,6 +327,7 @@ class KernelModLoaderWithdrawalTest {
 		MethodNode construct = node.methods.stream().filter(m -> m.name.equals("constructMods")).findFirst().orElseThrow();
 		assertEquals(2, calls(construct, "recordNeoOutcome"), "the other-side branch and the catch both record");
 		assertEquals(1, calls(construct, "settleNeo"));
+		assertEquals(1, calls(construct, "constructedIds"), "the settlement is fed the ids of what constructed");
 		assertEquals(1, calls(construct, "markPartlyConstructed"));
 		assertEquals(1, calls(construct, "constructorThrew"), "the withdrawn row names the class that threw");
 	}

@@ -280,10 +280,7 @@ public final class KernelModLoader {
 		//
 		// Each id is settled from ALL of its @Mod classes (settleNeo): RollingGate's client-only class used to
 		// stand in for its common class that threw, and the mod read as fine everywhere a player could look.
-		// Every built mod is a NeoForge one (the loop above constructs nothing else), so every built id counts.
-		// An empty set here withdraws every NeoForge mod from ModList, silently.
-		Set<String> neoConstructed = new LinkedHashSet<>();
-		for (ConstructedMod mod : built) neoConstructed.add(mod.modId());
+		Set<String> neoConstructed = constructedIds(built);
 		NeoSettlement settled = settleNeo(otherSide, neoConstructed, failedNeo.keySet());
 		Set<String> neoBuilt = settled.kept();
 		markPartlyConstructed(settled.degraded(), failedNeo);
@@ -324,6 +321,19 @@ public final class KernelModLoader {
 			else dropped.add(entry.getKey());
 		}
 		return kept;
+	}
+
+	/**
+	 * The ids of the mods whose {@code @Mod} constructor ran, in construction order: what {@link #settleNeo} keeps.
+	 *
+	 * <p>Every built mod is a NeoForge one (the construction loop builds nothing else), so every built id counts. An
+	 * empty answer here withdraws every NeoForge mod from {@code ModList}, silently, which is why it is a helper the
+	 * test can reach and not an inline loop.
+	 */
+	static Set<String> constructedIds(List<ConstructedMod> built) {
+		Set<String> ids = new LinkedHashSet<>();
+		for (ConstructedMod mod : built) ids.add(mod.modId());
+		return ids;
 	}
 
 	static final String NEO_TWIN_SWITCH = "forbric.neoTwinCtorFailure";
