@@ -841,7 +841,7 @@ public final class KernelLifecycle {
 			// RegistryManager.revertToVanilla(), ROLLING BACK the NeoForge registries: 21 baseline entries
 			// (attribute_type, ticket_type, slot_display, entity_sub_predicate_type, …) silently disappeared.
 			// Only its tail is wanted, so call that directly.
-			invokeStaticOn(cl, "net.neoforged.neoforge.common.CommonHooks", "modifyAttributes");
+			postAttributeEvents(cl);
 			// The rest of postRegisterEvents' tail, in its order. Cheap calls, and each one is a whole feature that
 			// simply did not exist: without fireSpawnPlacementEvent a mod's mob has no spawn rules and never
 			// generates, without BlockEntityTypeAddBlocksEvent a mod cannot attach its blocks to a vanilla block
@@ -2429,6 +2429,34 @@ public final class KernelLifecycle {
 		for (String className : GAME_DATA_CLASSES) {
 			invokeGameDataOn(cl, className, method);
 		}
+	}
+
+	/**
+	 * NeoForge's entity-attribute events ({@code CommonHooks.modifyAttributes}), with {@code DefaultAttributes} initialised
+	 * first.
+	 *
+	 * <p>{@code EntityAttributeModificationEvent}'s constructor builds its entity-type list by streaming
+	 * {@code BuiltInRegistries.ENTITY_TYPE} through {@code DefaultAttributes::hasSupplier}, so whatever first touches
+	 * {@code DefaultAttributes} runs its class initialiser in the middle of that walk. Mods extend that initialiser: a Fabric
+	 * mod that wraps the build of the supplier map with its own entities' attributes, whose classes register entity types
+	 * as they initialise (Create Fly with fabric-api), changes the registry under the stream. The iterator throws
+	 * {@code ConcurrentModificationException}, the event never finishes, NeoForge's own attributes ({@code swim_speed},
+	 * {@code nametag_distance}) reach no entity, and the first living entity in water crashes.
+	 *
+	 * <p>Vanilla, and so Fabric, initialises the class in {@code Bootstrap.validate()}, before any mod event walks the
+	 * entity types. NeoForge's {@code Bootstrap.validate} does not (javap on the genuine 26.2.0.93 base: only
+	 * {@code checkBootstrapCalled}, the missing-translation report and {@code Commands.validate}), so this is the
+	 * Fabric-on-NeoForge half of the order and stays: initialised here, on the same thread, just no longer inside the walk.
+	 * A class already initialised is left as it is.
+	 */
+	static void postAttributeEvents(ClassLoader cl) {
+		try {
+			Class.forName("net.minecraft.world.entity.ai.attributes.DefaultAttributes", true, cl);
+		} catch (Throwable t) {
+			Caught.warn(t, "[Forbric/Attributes] DefaultAttributes could not initialise before the entity-attribute events — "
+					+ "they read it for every entity type and will fail on it too");
+		}
+		invokeStaticOn(cl, "net.neoforged.neoforge.common.CommonHooks", "modifyAttributes");
 	}
 
 	/** Invokes a no-arg static hook, tolerating its absence — for reaching past a method the kernel must not call. */
