@@ -14,7 +14,7 @@ class ServerCompatibilityTickInjectorTest {
  }
  /** The genuine NeoForge base Stage 4 switches to: the same seam on its MinecraftServer, calling the same owner. */
  @Test void theGenuineNeoForgeServerGetsTheSameSeam() throws Exception {
-  assertEveryReturnChecked(TestFixtures.genuineBase());
+  assertEveryReturnChecked(TestFixtures.stagedBase());
  }
  /** The owner the seam calls declares the method, and is not the class that names MinecraftForge's lifecycle hooks. */
  @Test void theSeamCallsTheKernelsServerDutiesNotTheMinecraftForgeLifecycleBridge() throws Exception {

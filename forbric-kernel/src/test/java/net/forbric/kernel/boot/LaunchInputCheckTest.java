@@ -416,26 +416,17 @@ class LaunchInputCheckTest {
 	}
 
 	/**
-	 * The definition above, held to the jars it describes. Both MinecraftForge carrier spellings, because both can be
-	 * launched: the installer and tools/dev.py use the interop one (the installer stages forge-runtime-interop.jar
-	 * under the forge-runtime coordinate, as forge-runtime-26.2.jar), and run/launch-kernel-*.sh fall back to the plain
-	 * forge-runtime.jar when the interop one has not been built.
+	 * The definition above, held to the jars it describes: the staged base (NeoForge's patched game) and the one
+	 * NeoForge carrier a launch passes as {@code --runtimeJar}, which is what the installer and tools/dev.py launch.
 	 */
 	@Test
-	void theStagedMergedBaseAndBothStagedCarrierSpellingsPass() {
+	void theStagedBaseAndItsNeoForgeCarrierPass() {
 		Path base = staged(TestFixtures.BASE_JAR);
 		Path neo = staged(TestFixtures.NEO_CARRIER_JAR);
-		Path forge = staged(TestFixtures.FORGE_CARRIER_JAR);
-		Path interop = staged(TestFixtures.FORGE_INTEROP_JAR);
 		TestFixtures.requireFiles(Fixture.STAGED,
-				"staged game artifacts absent: " + base.getParent().getParent(), base, neo, forge);
+				"staged game artifacts absent: " + base.getParent().getParent(), base, neo);
 
-		assertEquals(List.of(), LaunchInputCheck.problems(List.of(base), List.of(forge, neo)));
-		if (Files.isRegularFile(interop)) {
-			assertEquals(List.of(), LaunchInputCheck.problems(List.of(base), List.of(interop, neo)));
-		}
-		// And the carriers are not mistaken for each other, which is what would let one stand in for both.
+		assertEquals(List.of(), LaunchInputCheck.problems(List.of(base), List.of(neo)));
 		assertEquals(java.util.Set.of(Ecosystem.NEOFORGE), LaunchInputCheck.read(neo).complete());
-		assertEquals(java.util.Set.of(Ecosystem.FORGE), LaunchInputCheck.read(forge).complete());
 	}
 }

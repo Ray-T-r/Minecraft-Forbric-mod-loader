@@ -42,11 +42,11 @@ class KernelModFileInfoVersionTest {
     }
 
     @Test
-    void bothCarriersDelegateVersionStringToTheFirstModVersion() throws Exception {
-        for (String family : List.of("forge", "neoforge")) {
-            Path jar = STAGED.resolve(family + "-runtime/" + family + "-runtime.jar");
+    void theCarrierDelegatesVersionStringToTheFirstModVersion() throws Exception {
+        {
+            Path jar = TestFixtures.neoCarrier();
             TestFixtures.requireFile(Fixture.STAGED, jar, "staged carrier absent");
-            String namespace = family.equals("forge") ? "net/minecraftforge" : "net/neoforged";
+            String namespace = "net/neoforged";
             try (ZipFile zip = new ZipFile(jar.toFile())) {
                 String entry = namespace + "/fml/loading/moddiscovery/ModFileInfo.class";
                 ClassNode node = new ClassNode();

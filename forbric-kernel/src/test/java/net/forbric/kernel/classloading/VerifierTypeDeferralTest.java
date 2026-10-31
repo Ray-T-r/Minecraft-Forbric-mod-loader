@@ -329,11 +329,10 @@ class VerifierTypeDeferralTest {
 		Path mod = Path.of("build/compat-inputs/player-loading/mods/iris-neoforge-1.11.4+mc26.2.jar");
 		TestFixtures.requireFiles(Fixture.THIRD_PARTY, "a mod whose config plugins reach its platform provider", mod);
 		Path staged = TestFixtures.stagedRoot();
-		Path merged = staged.resolve(TestFixtures.BASE_JAR);
+		Path base = staged.resolve(TestFixtures.BASE_JAR);
 		Path neoforge = staged.resolve(TestFixtures.NEO_CARRIER_JAR);
-		Path forge = staged.resolve(TestFixtures.FORGE_CARRIER_JAR);
-		TestFixtures.requireFiles(Fixture.STAGED, "the merged game the provider names", merged, neoforge, forge);
-		URL[] owned = {mod.toUri().toURL(), merged.toUri().toURL(), neoforge.toUri().toURL(), forge.toUri().toURL()};
+		TestFixtures.requireFiles(Fixture.STAGED, "the game the provider names", base, neoforge);
+		URL[] owned = {mod.toUri().toURL(), base.toUri().toURL(), neoforge.toUri().toURL()};
 		// What ServiceLoader does to a provider before it constructs one: look up its constructor, which links it.
 		String provider = "net.irisshaders.iris.platform.IrisForgeHelpers";
 		String outer = "net.irisshaders.iris.compat.dh.DHMixinConfigPlugin";

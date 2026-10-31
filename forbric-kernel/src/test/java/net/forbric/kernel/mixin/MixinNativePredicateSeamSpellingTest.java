@@ -242,12 +242,12 @@ class MixinNativePredicateSeamSpellingTest {
 
 	private static Inputs inputs() throws Exception {
 		Path base = Path.of(System.getProperty("forbric.predicateBase", TestFixtures.stagedBase().toString()));
-		Path neo = TestFixtures.stagedRoot().resolve(TestFixtures.NEO_CARRIER_JAR), forge = TestFixtures.stagedRoot().resolve(TestFixtures.FORGE_CARRIER_JAR);
+		Path neo = TestFixtures.stagedRoot().resolve(TestFixtures.NEO_CARRIER_JAR);
 		Path api = Path.of(System.getProperty("forbric.fabricApi", TestFixtures.fabricApi().toString()));
-		TestFixtures.requireFiles(TestFixtures.Fixture.STAGED, "hash-pinned native predicate base, runtimes and the actual Fabric API", base, neo, forge, api);
+		TestFixtures.requireFiles(TestFixtures.Fixture.STAGED, "hash-pinned native predicate base, runtime and the actual Fabric API", base, neo, api);
 		Map<String, byte[]> cache = new HashMap<>();
 		Function<String, byte[]> resource = name -> cache.computeIfAbsent(name, path -> {
-			for (Path jar : List.of(base, neo, forge)) try (ZipFile zip = new ZipFile(jar.toFile())) {
+			for (Path jar : List.of(base, neo)) try (ZipFile zip = new ZipFile(jar.toFile())) {
 				var entry = zip.getEntry(path);
 				if (entry != null) return zip.getInputStream(entry).readAllBytes();
 			} catch (java.io.IOException unreadable) { throw new IllegalStateException(unreadable); }

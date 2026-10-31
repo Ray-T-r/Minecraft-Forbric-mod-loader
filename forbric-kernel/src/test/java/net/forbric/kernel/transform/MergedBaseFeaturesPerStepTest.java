@@ -19,7 +19,7 @@ import org.objectweb.asm.tree.*;
 
 /** The rebuilt base keeps both public field descriptors while the stronger view reads the live Supplier cell. */
 class MergedBaseFeaturesPerStepTest {
-    private static final Path RUN=TestFixtures.stagedRoot(),MERGED=RUN.resolve(TestFixtures.BASE_JAR),INTEROP=RUN.resolve(TestFixtures.FORGE_INTEROP_JAR),NEO=RUN.resolve(TestFixtures.NEO_CARRIER_JAR);
+    private static final Path RUN=TestFixtures.stagedRoot(),MERGED=RUN.resolve(TestFixtures.BASE_JAR),NEO=RUN.resolve(TestFixtures.NEO_CARRIER_JAR);
     private static final String OWNER="net/minecraft/world/level/chunk/ChunkGenerator",BINARY=OWNER.replace('/','.'),SUPPLIER="Ljava/util/function/Supplier;",STRONG="Lnet/minecraftforge/common/util/ClearableLazy;";
     @Test void theFieldCarriesVanillasDescriptorAndOnlyThatOne()throws Exception{
         ClassNode node=node(original());List<String> descriptors=node.fields.stream().filter(f->f.name.equals("featuresPerStep")).map(f->f.desc).sorted().toList();
@@ -59,7 +59,7 @@ class MergedBaseFeaturesPerStepTest {
     }
     private record World(URLClassLoader loader,Class<?> type,Object owner,Field strong,AtomicInteger computations)implements AutoCloseable{public void close()throws IOException{loader.close();}}
     private static World world()throws Exception{
-        TestFixtures.require(Fixture.JAVA_25,Runtime.version().feature()>=25,"actual classfile 69 needs Java 25");for(Path jar:List.of(MERGED,INTEROP,NEO))TestFixtures.requireFile(Fixture.STAGED, jar,jar+" required");
+        TestFixtures.require(Fixture.JAVA_25,Runtime.version().feature()>=25,"actual classfile 69 needs Java 25");for(Path jar:List.of(MERGED,NEO))TestFixtures.requireFile(Fixture.STAGED, jar,jar+" required");
         Map<String,byte[]> definitions=new HashMap<>();ClassNode host=node(widened());host.methods.removeIf(m->m.name.equals("<clinit>"));host.access&=~Opcodes.ACC_ABSTRACT;
         // Exercise the actual game readers/reset bodies while avoiding unrelated bootstrap/biome construction.
         for(MethodNode method:host.methods)if((method.access&Opcodes.ACC_ABSTRACT)!=0){
@@ -69,7 +69,7 @@ class MergedBaseFeaturesPerStepTest {
         }
         MethodNode read=new MethodNode(Opcodes.ACC_PUBLIC,"forbric$testRead","()Ljava/lang/Object;",null,null);read.instructions.add(new VarInsnNode(Opcodes.ALOAD,0));read.instructions.add(new FieldInsnNode(Opcodes.GETFIELD,OWNER,"featuresPerStep",STRONG));read.instructions.add(new MethodInsnNode(Opcodes.INVOKEINTERFACE,Type.getType(STRONG).getInternalName(),"get","()Ljava/lang/Object;",true));read.instructions.add(new InsnNode(Opcodes.ARETURN));host.methods.add(read);ClassWriter writer=new ClassWriter(ClassWriter.COMPUTE_MAXS);host.accept(writer);definitions.put(BINARY,writer.toByteArray());
         ClassNode external=new ClassNode();external.version=Opcodes.V17;external.access=Opcodes.ACC_PUBLIC;external.name="fixture/ExternalProviderWriter";external.superName="java/lang/Object";MethodNode install=new MethodNode(Opcodes.ACC_PUBLIC|Opcodes.ACC_STATIC,"install","(L"+OWNER+";Ljava/util/function/Supplier;)V",null,null);install.instructions.add(new VarInsnNode(Opcodes.ALOAD,0));install.instructions.add(new VarInsnNode(Opcodes.ALOAD,1));install.instructions.add(new FieldInsnNode(Opcodes.PUTFIELD,OWNER,"featuresPerStep",SUPPLIER));install.instructions.add(new InsnNode(Opcodes.RETURN));external.methods.add(install);writer=new ClassWriter(ClassWriter.COMPUTE_MAXS);external.accept(writer);definitions.put("fixture.ExternalProviderWriter",writer.toByteArray());
-        List<URL> urls=new ArrayList<>();for(Path jar:List.of(MERGED,INTEROP,NEO))urls.add(jar.toUri().toURL());Path libraries=TestFixtures.minecraftDir().resolve("libraries");TestFixtures.require(Fixture.MC_LIBRARIES,Files.isDirectory(libraries),"Minecraft libraries required for actual game signatures");try(var files=Files.walk(libraries)){for(Path jar:files.filter(p->p.toString().endsWith(".jar")).sorted().toList())urls.add(jar.toUri().toURL());}
+        List<URL> urls=new ArrayList<>();for(Path jar:List.of(MERGED,NEO))urls.add(jar.toUri().toURL());Path libraries=TestFixtures.minecraftDir().resolve("libraries");TestFixtures.require(Fixture.MC_LIBRARIES,Files.isDirectory(libraries),"Minecraft libraries required for actual game signatures");try(var files=Files.walk(libraries)){for(Path jar:files.filter(p->p.toString().endsWith(".jar")).sorted().toList())urls.add(jar.toUri().toURL());}
         URLClassLoader loader=new URLClassLoader(urls.toArray(URL[]::new),ClassLoader.getPlatformClassLoader()){@Override protected Class<?> findClass(String name)throws ClassNotFoundException{byte[] bytes=definitions.get(name);return bytes==null?super.findClass(name):defineClass(name,bytes,0,bytes.length);}};
         Class<?> type=loader.loadClass(BINARY);Object owner=unsafe().allocateInstance(type);AtomicInteger computations=new AtomicInteger();Object nativeProvider=loader.loadClass("net.neoforged.neoforge.common.util.Lazy").getMethod("of",Supplier.class).invoke(null,(Supplier<Object>)()->{computations.incrementAndGet();return List.of("initial");});Field strong=null;
         for(Field field:type.getDeclaredFields())if(field.getName().equals("featuresPerStep")){field.setAccessible(true);if(field.getType()==Supplier.class)field.set(owner,nativeProvider);else strong=field;}

@@ -78,10 +78,8 @@ import net.forbric.kernel.mixin.MergedBaseCalleeSwaps;
 class MergedBaseCalleeSwapTest {
 	private static final Path RUN = TestFixtures.stagedRoot();
 	private static final Path MERGED = RUN.resolve(TestFixtures.BASE_JAR);
-	private static final Path FORGE_RT = RUN.resolve(TestFixtures.FORGE_CARRIER_JAR);
 	private static final Path NEO_RT = RUN.resolve(TestFixtures.NEO_CARRIER_JAR);
-	private static final Path FORGE_PATCHED = TestFixtures.forgeMergeInput();
-	private static final Path NEO_PATCHED = RUN.resolve(TestFixtures.GENUINE_BASE_JAR);
+	private static final Path NEO_PATCHED = RUN.resolve(TestFixtures.BASE_JAR);
 
 	/** {@code owner.method | callee-owner.vanilla→merged desc}, one line per swap — 25 on the staged base. */
 	static final Set<String> PINNED = new TreeSet<>(List.of(
@@ -139,7 +137,7 @@ class MergedBaseCalleeSwapTest {
 	@Test
 	void everyAdmittedSwapIsEitherRewrittenOrExplained() throws Exception {
 		Path vanilla = vanillaJar();
-		TestFixtures.requireFiles(Fixture.STAGED, "staged merged base or carriers absent", MERGED, FORGE_RT, NEO_RT);
+		TestFixtures.requireFiles(Fixture.STAGED, "staged base or carrier absent", MERGED, NEO_RT);
 		TestFixtures.require(Fixture.MC_LIBRARIES, Files.isRegularFile(vanilla), "stock 26.2 absent: " + vanilla);
 		Map<String, ClassNode> world = new HashMap<>();
 		List<String> admitted = new ArrayList<>();
@@ -203,7 +201,7 @@ class MergedBaseCalleeSwapTest {
 	@Test
 	void everySubstitutionIsOneCallInAnOtherwiseUnchangedBody() throws Exception {
 		Path vanilla = vanillaJar();
-		for (Path jar : List.of(MERGED, FORGE_PATCHED, NEO_PATCHED)) TestFixtures.requireFile(Fixture.STAGED, jar, jar + " absent");
+		for (Path jar : List.of(MERGED, NEO_PATCHED)) TestFixtures.requireFile(Fixture.STAGED, jar, jar + " absent");
 		TestFixtures.require(Fixture.MC_LIBRARIES, Files.isRegularFile(vanilla), vanilla + " absent");
 		var derivedSubstitution=net.forbric.kernel.mixin.NativeCallTestEvidence.modelRow();
 		assertNotNull(derivedSubstitution);
@@ -214,7 +212,8 @@ class MergedBaseCalleeSwapTest {
 			assertEquals(0, occurrences(merged, row.member()), where + ": the merged body makes the reference call again");
 			assertEquals(1, occurrences(merged, row.replacement()), where + ": the merged body no longer makes the replacement once");
 			for (Ecosystem ecosystem : Ecosystem.values()) {
-				Path reference = switch (ecosystem) { case FABRIC -> vanilla; case FORGE -> FORGE_PATCHED; case NEOFORGE -> NEO_PATCHED; };
+				if (ecosystem == Ecosystem.FORGE) continue; // no MinecraftForge reference is staged any more (C4 removes the constant)
+				Path reference = ecosystem == Ecosystem.FABRIC ? vanilla : NEO_PATCHED;
 				MethodNode original = debugMethod(reference, row.target(), row.method());
 				assertTrue(original != null, where + " is not in " + ecosystem + "'s own jar");
 				List<Integer> differ = differingInstructions(original, merged);
@@ -560,7 +559,7 @@ class MergedBaseCalleeSwapTest {
 	private static ClassNode load(String internal, Map<String, ClassNode> world) throws IOException {
 		if (world.containsKey(internal)) return world.get(internal);
 		ClassNode node = null;
-		for (Path jar : List.of(MERGED, NEO_RT, FORGE_RT)) {
+		for (Path jar : List.of(MERGED, NEO_RT)) {
 			try (ZipFile zip = new ZipFile(jar.toFile())) {
 				ZipEntry entry = zip.getEntry(internal + ".class");
 				if (entry != null) { node = read(zip, entry); break; }

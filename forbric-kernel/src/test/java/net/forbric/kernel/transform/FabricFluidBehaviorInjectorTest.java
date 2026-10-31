@@ -46,7 +46,6 @@ class FabricFluidBehaviorInjectorTest {
 
 	/** The JVM's own verifier, frames included: the class is defined and initialised over the staged game. */
 	@Test void theRepairedClassPassesTheJvmVerifier() throws Exception {
-		TestFixtures.requireForgeCarrierWhereTheBaseNamesIt("the base classes the repaired one is verified against");
 		byte[] out = new FabricFluidBehaviorInjector().transform(FabricFluidBehaviorInjector.INTERACTION,
 				NativeCoremodParityTest.read(MERGED, INTERACTION), null);
 		try (URLClassLoader game = net.forbric.kernel.runtime.StagedGameClassLoader.create(List.of())) {

@@ -45,7 +45,6 @@ import net.forbric.kernel.TestFixtures.Fixture;
 @org.junit.jupiter.api.extension.ExtendWith(net.forbric.kernel.DroppedLambdaRecordRestore.class)
 class MixinRetargetRenamedBodyCorpusTest {
 	private static final Path MERGED = TestFixtures.stagedBase();
-	private static final Path INTEROP = TestFixtures.stagedRoot().resolve(TestFixtures.FORGE_INTEROP_JAR);
 	private static final Path NEO_RUNTIME = TestFixtures.stagedRoot().resolve(TestFixtures.NEO_CARRIER_JAR);
 	/** The audit's corpus — the packs, the sweeps and the random Modrinth sample — and the pure-Fabric A/B's mods, each walked whole. */
 	private static final List<Path> CORPUS = List.of(Path.of("build/compat-inputs"), Path.of("run/client-merged-pack/mods"),
@@ -114,7 +113,7 @@ class MixinRetargetRenamedBodyCorpusTest {
 
 	@Test
 	void r3MovesExactlyThePinnedInjectorsOverTheAuditCorpus() throws Exception {
-		for (Path p : List.of(MERGED, INTEROP, NEO_RUNTIME)) TestFixtures.requireFile(Fixture.STAGED, p, p + " required");
+		for (Path p : List.of(MERGED, NEO_RUNTIME)) TestFixtures.requireFile(Fixture.STAGED, p, p + " required");
 		for (Path p : CORPUS) TestFixtures.require(Fixture.THIRD_PARTY, Files.isDirectory(p), p + " required (symlink it from the main checkout)");
 		Function<String, byte[]> resolver = resolver();
 
@@ -233,7 +232,7 @@ class MixinRetargetRenamedBodyCorpusTest {
 	/** The staged game as KernelGuestMixinAdapter resolves it, with the merge's orphaned duplicate lambdas pruned. */
 	private static Function<String, byte[]> resolver() throws IOException {
 		Map<String, byte[]> game = new HashMap<>();
-		for (Path jar : List.of(NEO_RUNTIME, INTEROP, MERGED)) {
+		for (Path jar : List.of(NEO_RUNTIME, MERGED)) {
 			game.putAll(MixinFitLivenessCensusStagedTest.read(Files.readAllBytes(jar), n -> n.endsWith(".class")));
 		}
 		Map<String, byte[]> pruned = new java.util.concurrent.ConcurrentHashMap<>();

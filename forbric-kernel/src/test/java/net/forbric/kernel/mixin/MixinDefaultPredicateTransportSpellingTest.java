@@ -58,7 +58,6 @@ class MixinDefaultPredicateTransportSpellingTest {
 				TransportSpellings.fabricMixin("fabric-rendering-fluids-v1", "net/fabricmc/fabric/mixin/client/rendering/fluid/FluidRendererMixin"));
 		ZipFile game = open(TransportSpellings.base());
 		ZipFile neo = open(TestFixtures.stagedRoot().resolve(TestFixtures.NEO_CARRIER_JAR));
-		ZipFile forge = open(TestFixtures.stagedRoot().resolve(TestFixtures.FORGE_CARRIER_JAR));
 		NativeGameReferences references = new NativeGameReferences(name -> read(game, name), null, TestFixtures.launchSources(TransportSpellings.base()));
 		ClassNode host = references.get(Ecosystem.FABRIC, HOST);
 		TestFixtures.require(Fixture.STAGED, host != null, "the hash-pinned native " + HOST + " the merged base indexes");
@@ -67,7 +66,6 @@ class MixinDefaultPredicateTransportSpellingTest {
 		Function<String, ClassNode> current = name -> currentCache.computeIfAbsent(name, n -> {
 			byte[] bytes = read(game, n + ".class");
 			if (bytes == null) bytes = read(neo, n + ".class");
-			if (bytes == null) bytes = read(forge, n + ".class");
 			if (bytes == null) try (InputStream in = ClassLoader.getSystemResourceAsStream(n + ".class")) {
 				if (in != null) bytes = in.readAllBytes();
 			} catch (Exception unavailable) {

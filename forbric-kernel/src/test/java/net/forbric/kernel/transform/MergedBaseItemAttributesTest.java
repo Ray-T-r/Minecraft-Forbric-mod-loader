@@ -56,7 +56,7 @@ import net.forbric.kernel.TestFixtures.Fixture;
  */
 class MergedBaseItemAttributesTest {
 	private static final Path MERGED_BASE = TestFixtures.stagedBase();
-	private static final Path NEO_BASE = TestFixtures.genuineBase();
+	private static final Path NEO_BASE = TestFixtures.stagedBase();
 
 	private static final String ITEM_STACK = "net/minecraft/world/item/ItemStack";
 

@@ -44,9 +44,7 @@ class RepairDriftCensusStagedTest {
 	@TempDir Path temporary;
 
 	private static List<Path> stagedJars() {
-		return List.of(RUN.resolve(TestFixtures.BASE_JAR),
-				RUN.resolve(TestFixtures.NEO_CARRIER_JAR),
-				RUN.resolve(TestFixtures.FORGE_CARRIER_JAR));
+		return List.of(RUN.resolve(TestFixtures.BASE_JAR), RUN.resolve(TestFixtures.NEO_CARRIER_JAR));
 	}
 
 	@Test

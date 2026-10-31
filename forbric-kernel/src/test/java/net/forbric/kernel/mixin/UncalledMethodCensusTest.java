@@ -50,12 +50,9 @@ import net.forbric.api.Ecosystem;
 class UncalledMethodCensusTest {
 	private static final Path STAGED = TestFixtures.stagedRoot();
 	private static final Path MERGED = STAGED.resolve(TestFixtures.BASE_JAR);
-	private static final Path INTEROP = STAGED.resolve(TestFixtures.FORGE_INTEROP_JAR);
 	private static final Path NEO_RUNTIME = STAGED.resolve(TestFixtures.NEO_CARRIER_JAR);
-	private static final Path FORGE_RUNTIME = STAGED.resolve(TestFixtures.FORGE_CARRIER_JAR);
 	private static final Path VANILLA = TestFixtures.vanillaJar();
-	private static final Path FORGE = STAGED.resolve(TestFixtures.FORGE_PATCHED_JAR);
-	private static final Path NEOFORGE = STAGED.resolve(TestFixtures.GENUINE_BASE_JAR);
+	private static final Path NEOFORGE = STAGED.resolve(TestFixtures.BASE_JAR);
 	private static final Path KERNEL_MAIN = mainClasses();
 	private static final Path KERNEL_RUNTIME = Path.of(System.getProperty("forbric.test.runtimeClasses", "build/classes/java/runtime"));
     private static Path mainClasses() {
@@ -109,7 +106,7 @@ class UncalledMethodCensusTest {
 	}
 
 	@Test void theShippedTableIsExactlyWhatTheArtifactsSay() throws Exception {
-		for (Path jar : List.of(MERGED, INTEROP, NEO_RUNTIME, FORGE_RUNTIME, VANILLA, FORGE, NEOFORGE)) {
+		for (Path jar : List.of(MERGED, NEO_RUNTIME, VANILLA, NEOFORGE)) {
 			TestFixtures.requireFile(jar == VANILLA ? Fixture.MC_LIBRARIES : Fixture.STAGED, jar, jar + " required");
 		}
 		TestFixtures.require(Fixture.GAME_SIDE, Files.isDirectory(KERNEL_RUNTIME), "the game-side classes are compiled only with staged jars");
@@ -120,13 +117,12 @@ class UncalledMethodCensusTest {
 		Map<String, Shape> mergedOnly = new LinkedHashMap<>();
 		Names named = new Names();
 		scan(MERGED, (c, m) -> {}, game, mergedOnly, named);
-		for (Path code : List.of(INTEROP, NEO_RUNTIME, KERNEL_MAIN, KERNEL_RUNTIME)) scan(code, (c, m) -> {}, game, null, named);
+		for (Path code : List.of(NEO_RUNTIME, KERNEL_MAIN, KERNEL_RUNTIME)) scan(code, (c, m) -> {}, game, null, named);
 		Set<String> gameClasses = Set.copyOf(game.keySet());
 
-		// Code the kernel kept from ever running: the leaves MinecraftForge's builder puts in its vanilla HUD tree, each
-		// replaced before the tree baked (the MinecraftForge overlay neuter, gone with MinecraftForge; see silencedLeafBodies).
-		Set<String> silenced = silencedLeafBodies(node(INTEROP, "net.minecraftforge.client.gui.overlay.ForgeLayeredDraw"));
-		assertFalse(silenced.isEmpty(), "MinecraftForge's vanilla HUD tree builder registers no leaf this census can read");
+		// Code the kernel kept from ever running: on the merged base, the leaves MinecraftForge's builder put in its vanilla
+		// HUD tree (silencedLeafBodies). The genuine base has no MinecraftForge HUD tree, so nothing is silenced.
+		Set<String> silenced = Set.of();
 
 		// Uncalled: every place the merged game names it is itself uncalled, or silenced — a fixpoint, so a method only an
 		// uncalled method calls is uncalled too (NeoForge's layers replaced vanilla's only call of extractHotbarAndDecorations,
@@ -145,7 +141,6 @@ class UncalledMethodCensusTest {
 		// Each reference: which of those it calls, from where, through a type that reaches the declaring class.
 		Map<Ecosystem, List<Path>> references = new EnumMap<>(Ecosystem.class);
 		references.put(Ecosystem.FABRIC, List.of(VANILLA));
-		references.put(Ecosystem.FORGE, List.of(FORGE, FORGE_RUNTIME));
 		references.put(Ecosystem.NEOFORGE, List.of(NEOFORGE, NEO_RUNTIME));
 		TreeMap<String, Set<Ecosystem>> ecosystems = new TreeMap<>();
 		Map<String, TreeSet<String>> callers = new HashMap<>();

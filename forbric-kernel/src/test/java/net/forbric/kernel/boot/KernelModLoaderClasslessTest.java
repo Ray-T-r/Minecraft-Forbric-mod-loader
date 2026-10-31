@@ -288,17 +288,16 @@ class KernelModLoaderClasslessTest {
 		return cw.toByteArray();
 	}
 
-	/** The game side as a boot sees it: the kernel's runtime classes, both carriers and the mod jar. */
+	/** The game side as a boot sees it: the kernel's runtime classes, the NeoForge carrier and the mod jar. */
 	private static URLClassLoader gameLoader(Path modJar) throws Exception {
 		Path compiled = Path.of(System.getProperty("forbric.testRuntimeClasses", "build/classes/java/runtime"));
 		Path neo = STAGED.resolve(TestFixtures.NEO_CARRIER_JAR);
-		Path forge = STAGED.resolve(TestFixtures.FORGE_CARRIER_JAR);
 		TestFixtures.requireFiles(Fixture.STAGED,
-				"staged runtime classes/carriers absent", neo, forge);
+				"staged runtime classes/carrier absent", neo);
 		TestFixtures.require(Fixture.GAME_SIDE, Files.isDirectory(compiled), "staged runtime classes/carriers absent");
 		Path stubs = PassiveSeederLoadingModListTest.loggingStubs(shared.resolve("stubs"));
 		Set<URL> urls = new LinkedHashSet<>(List.of(compiled.toUri().toURL(), stubs.toUri().toURL(),
-				neo.toUri().toURL(), forge.toUri().toURL(), modJar.toUri().toURL()));
+				neo.toUri().toURL(), modJar.toUri().toURL()));
 		// NeoForge's event bus logs through log4j, which the unit-test classpath deliberately does not carry.
 		// build.gradle resolves it as a compileOnly dependency and hands it to every test run, staged or not.
 		String log4j = System.getProperty("forbric.log4jApiForTests", "");

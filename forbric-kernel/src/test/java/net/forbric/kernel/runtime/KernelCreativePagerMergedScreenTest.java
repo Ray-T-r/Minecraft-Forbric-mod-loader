@@ -148,9 +148,8 @@ class KernelCreativePagerMergedScreenTest {
 		Path compiled = Path.of(System.getProperty("forbric.test.runtimeClasses", "build/classes/java/runtime"));
 		Path merged = RUN.resolve(TestFixtures.BASE_JAR);
 		Path neo = RUN.resolve(TestFixtures.NEO_CARRIER_JAR);
-		Path forge = RUN.resolve(TestFixtures.FORGE_INTEROP_JAR);
 		TestFixtures.requireFiles(Fixture.STAGED,
-				"the staged game is absent", merged, neo, forge);
+				"the staged game is absent", merged, neo);
 		TestFixtures.require(Fixture.GAME_SIDE, Files.isRegularFile(compiled.resolve("net/forbric/kernel/runtime/KernelCreativePager.class")),
 				"the compiled runtime set is absent");
 		Map<String, byte[]> defined = new HashMap<>();
@@ -159,7 +158,7 @@ class KernelCreativePagerMergedScreenTest {
 		defined.put(SCREEN, bridgedScreen(merged, api));
 		defined.put(PROBE, owoCall());
 
-		List<URL> urls = new ArrayList<>(List.of(compiled.toUri().toURL(), forge.toUri().toURL(), neo.toUri().toURL(),
+		List<URL> urls = new ArrayList<>(List.of(compiled.toUri().toURL(), neo.toUri().toURL(),
 				merged.toUri().toURL()));
 		for (String pattern : List.of("com/mojang/datafixerupper", "com/google/code/gson", "com/mojang/brigadier",
 				"com/google/guava/guava", "it/unimi/dsi/fastutil", "org/slf4j/slf4j-api", "org/apache/logging/log4j/log4j-api",

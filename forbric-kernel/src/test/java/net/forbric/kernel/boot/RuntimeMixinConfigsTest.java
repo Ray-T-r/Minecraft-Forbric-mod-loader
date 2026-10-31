@@ -27,9 +27,4 @@ class RuntimeMixinConfigsTest {
 				"nothing arbitrates NeoForge's own jar away");
 	}
 
-	@Test void minecraftForgesRuntimeDeclaresNone() {
-		Path forge = STAGED.resolve(TestFixtures.FORGE_INTEROP_JAR);
-		TestFixtures.requireFiles(Fixture.STAGED, "staged MinecraftForge runtime absent", forge);
-		assertEquals(List.of(), KernelBoot.discoverForgeMixinConfigs(List.of(forge), "runtime jar"));
-	}
 }

@@ -49,27 +49,12 @@ import net.forbric.kernel.mixin.NativeReferenceSources;
  * that name them bind — the real fabric-api and balm mixins where one exists, a fixture mixin for the rest.
  */
 class VanillaMemberTwinInjectorTest {
-	private static final Path MERGED = TestFixtures.mergedBase().normalize();
-	private static final Path GENUINE = TestFixtures.genuineBase().normalize();
+	private static final Path GENUINE = TestFixtures.stagedBase().normalize();
 	private static final Path NEO_RUNTIME = TestFixtures.neoCarrier().normalize();
 	private static final Path BALM = Path.of(System.getProperty("forbric.balmFabricJar",
 			Path.of("run/client-popular/mods/balm-fabric-26.2-26.2.0.8.jar").toString()));
 
 	@AfterEach void reset() { System.clearProperty(VanillaMemberTwinInjector.PROPERTY); }
-
-	@Test void onTheMergedBaseEveryMemberIsAlreadyThereAndNothingChanges() {
-		Function<String, byte[]> merged = reader(MERGED);
-		VanillaMemberTwinInjector twins = new VanillaMemberTwinInjector(vanilla());
-		for (String owner : owners()) {
-			byte[] raw = merged.apply(owner + ".class");
-			assertNotNull(raw, owner);
-			for (VanillaMemberTwinInjector.Row row : rows(owner)) {
-				assertTrue(declares(node(raw), row), "premise: the merged base declares " + row.name() + row.desc());
-			}
-			assertSame(raw, twins.transform(owner.replace('/', '.'), raw, null), owner + " is left exactly as it is");
-		}
-		assertEquals(0, twins.twinsAdded());
-	}
 
 	@Test void onTheGenuineBaseEveryRowLandsAndLinks() throws Exception {
 		Function<String, byte[]> genuine = reader(GENUINE);
@@ -113,7 +98,6 @@ class VanillaMemberTwinInjectorTest {
 	/** A delegate is vanilla's signature forwarding to NeoForge's overload, its own arguments in place, nulls for the rest. */
 	@Test void theDelegatesForwardToNeoForgesLiveOverloads() {
 		Function<String, byte[]> genuine = reader(GENUINE);
-		Function<String, byte[]> merged = reader(MERGED);
 		VanillaMemberTwinInjector twins = new VanillaMemberTwinInjector(vanilla());
 		for (VanillaMemberTwinInjector.Row row : VanillaMemberTwinInjector.ROWS) {
 			if (row.kind() != VanillaMemberTwinInjector.Kind.DELEGATE) continue;
@@ -124,11 +108,6 @@ class VanillaMemberTwinInjectorTest {
 			assertEquals(1, calls.size(), row.name());
 			assertEquals(row.owner(), calls.getFirst().owner);
 			assertEquals(row.live(), calls.getFirst().desc);
-			if (row.owner().equals(VanillaMemberTwinInjector.AXE)) {
-				// The merged base's own stub, instruction for instruction: carrier-stubs.txt's row keeps moving Fabric injectors.
-				MethodNode mergedStub = VanillaMemberTwinInjector.method(node(merged.apply(row.owner() + ".class")), row.name(), row.desc());
-				assertEquals(opcodes(mergedStub), opcodes(stub));
-			}
 		}
 	}
 

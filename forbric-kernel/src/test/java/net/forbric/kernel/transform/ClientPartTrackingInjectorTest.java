@@ -44,9 +44,8 @@ import org.objectweb.asm.tree.analysis.BasicVerifier;
 class ClientPartTrackingInjectorTest {
 	private static final Path STAGED = TestFixtures.stagedRoot();
 	private static final Path MERGED = STAGED.resolve(TestFixtures.BASE_JAR);
-	private static final Path NEO = STAGED.resolve(TestFixtures.GENUINE_BASE_JAR);
+	private static final Path NEO = STAGED.resolve(TestFixtures.BASE_JAR);
 	private static final Path NEO_CARRIER = STAGED.resolve(TestFixtures.NEO_CARRIER_JAR);
-	private static final Path FORGE_CARRIER = STAGED.resolve(TestFixtures.FORGE_INTEROP_JAR);
 	private static final String CALLBACKS = ClientPartTrackingInjector.CALLBACKS_INTERNAL;
 	private static final String LEVEL = ClientPartTrackingInjector.LEVEL;
 	private static final String ENTITY = ClientPartTrackingInjector.ENTITY;
@@ -131,7 +130,7 @@ class ClientPartTrackingInjectorTest {
 
 		Game(boolean repaired) throws Exception {
 			TestFixtures.require(Fixture.JAVA_25, Runtime.version().feature() >= 25, "the merged game is class-file 69, which only Java 25 links");
-			for (Path jar : List.of(MERGED, NEO_CARRIER, FORGE_CARRIER)) TestFixtures.requireFile(Fixture.STAGED, jar, jar + " absent");
+			for (Path jar : List.of(MERGED, NEO_CARRIER)) TestFixtures.requireFile(Fixture.STAGED, jar, jar + " absent");
 			Map<String, byte[]> defined = new HashMap<>();
 			byte[] callbacks = NativeCoremodParityTest.read(MERGED, CALLBACKS);
 			if(repaired){callbacks=new ClientPartTrackingInjector().transform(ClientPartTrackingInjector.CALLBACKS,callbacks,null);}
@@ -151,7 +150,7 @@ class ClientPartTrackingInjectorTest {
 			defined.put("fixture.NeoMultipartEntity", multipartEntity("fixture/NeoMultipartEntity", NEO_GET_PARTS));
 			defined.put("fixture.ForgeMultipartEntity", multipartEntity("fixture/ForgeMultipartEntity", FORGE_GET_PARTS));
 
-			List<URL> urls = new ArrayList<>(List.of(MERGED.toUri().toURL(), NEO_CARRIER.toUri().toURL(), FORGE_CARRIER.toUri().toURL()));
+			List<URL> urls = new ArrayList<>(List.of(MERGED.toUri().toURL(), NEO_CARRIER.toUri().toURL()));
 			for (String pattern : List.of("com/mojang/datafixerupper", "com/google/code/gson", "com/mojang/brigadier",
 					"com/google/guava/guava", "it/unimi/dsi/fastutil", "org/slf4j/slf4j-api", "org/apache/logging/log4j/log4j-api",
 					"io/netty/netty-common", "io/netty/netty-buffer", "org/joml/joml", "com/mojang/authlib",

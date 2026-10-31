@@ -66,8 +66,7 @@ import net.forbric.kernel.TestFixtures.Fixture;
 @ResourceLock("native-game-references")
 @org.junit.jupiter.api.extension.ExtendWith(net.forbric.kernel.DroppedLambdaRecordRestore.class)
 class MixinFitLivenessCensusStagedTest {
-	private static final Path MERGED = TestFixtures.mergedBase();
-	private static final Path INTEROP = TestFixtures.stagedRoot().resolve(TestFixtures.FORGE_INTEROP_JAR);
+	private static final Path MERGED = TestFixtures.stagedBase();
 	private static final Path NEO_RUNTIME = TestFixtures.stagedRoot().resolve(TestFixtures.NEO_CARRIER_JAR);
 	private static final Map<String, Path> PACKS = new LinkedHashMap<>();
 	static {
@@ -141,6 +140,7 @@ class MixinFitLivenessCensusStagedTest {
 	@AfterEach
 	void reset() throws IOException {
 		NativeGameReferences.bind(null);
+		NativeGameReferences.configure(null);
 		if (references != null) references.close();
 		references = null;
 		System.clearProperty(MixinFit.LIVENESS_PROPERTY);
@@ -151,15 +151,16 @@ class MixinFitLivenessCensusStagedTest {
 
 	@Test
 	void exactlyThePinnedMixinsChangeVerdict() throws Exception {
-		for (Path p : List.of(MERGED, INTEROP, NEO_RUNTIME)) TestFixtures.requireFile(Fixture.STAGED, p, p + " required");
+		for (Path p : List.of(MERGED, NEO_RUNTIME)) TestFixtures.requireFile(Fixture.STAGED, p, p + " required");
 		for (Path p : PACKS.values()) TestFixtures.require(Fixture.THIRD_PARTY, Files.isDirectory(p), p + " required (symlink it from the main checkout)");
 		// KernelGuestMixinAdapter judges with the merged base's native references bound: MixinStubRebind's move of a
 		// state-sharing @Redirect counts the calls it replaces against the mod's own platform there, and MixinFit asks the
 		// same move before it calls a stub's injector one that never runs. Unbound, the census would judge a game no boot has.
 		references = new net.forbric.kernel.classloading.ForbricClassLoader(new java.net.URL[] {MERGED.toUri().toURL()}, getClass().getClassLoader());
+		NativeGameReferences.configure(TestFixtures.launchSources(MERGED));
 		NativeGameReferences.bind(references);
 		Map<String, byte[]> game = new HashMap<>();
-		for (Path jar : List.of(NEO_RUNTIME, INTEROP, MERGED)) game.putAll(read(Files.readAllBytes(jar), n -> n.endsWith(".class")));
+		for (Path jar : List.of(NEO_RUNTIME, MERGED)) game.putAll(read(Files.readAllBytes(jar), n -> n.endsWith(".class")));
 		// The one step of the transform chain that removes methods an injector binds to: the merge's orphaned duplicate
 		// lambdas, which InsertedLambdaArgumentShim then follows into the live one (litematica, fusion). Raw bytes would
 		// report those injectors as bound in dead code; the kernel's resolver never serves them.
@@ -493,7 +494,7 @@ class MixinFitLivenessCensusStagedTest {
 	@Test
 	void vanillaAnchorsTheMergedBaseLostArePinned() throws Exception {
 		Path vanilla = TestFixtures.vanillaJar();
-		for (Path p : List.of(MERGED, INTEROP, NEO_RUNTIME)) TestFixtures.requireFile(Fixture.STAGED, p, p + " required");
+		for (Path p : List.of(MERGED, NEO_RUNTIME)) TestFixtures.requireFile(Fixture.STAGED, p, p + " required");
 		TestFixtures.require(Fixture.MC_LIBRARIES, Files.isRegularFile(vanilla), vanilla + " required");
 		Path fabricApi = TestFixtures.fabricApi();
 		TestFixtures.requireFile(Fixture.STAGED, fabricApi, fabricApi + " required");
@@ -549,7 +550,6 @@ class MixinFitLivenessCensusStagedTest {
 	}
 
     @Test void theNewRawRowsNameActualNativePredicateAndAbiChangesWithoutInventingEquivalence()throws Exception {
-        TestFixtures.requireForgeCarrier("the census reads MinecraftForge's carrier among its artifacts");
         ClassNode vanillaHud=StagedFabricMixinFixture.game("net/minecraft/client/gui/Hud",true),hud=StagedFabricMixinFixture.game("net/minecraft/client/gui/Hud",false);
         String water="Lnet/minecraft/world/entity/player/Player;isEyeInFluid(Lnet/minecraft/tags/TagKey;)Z";
         MethodNode original=StagedFabricMixinFixture.method(vanillaHud,"extractAirBubbles"),current=StagedFabricMixinFixture.method(hud,"extractAirBubbles");
@@ -572,7 +572,7 @@ class MixinFitLivenessCensusStagedTest {
 	@Test
 	void theAnchorCensusSeesALostAnchorAndItsRepair() throws Exception {
 		Path vanilla = TestFixtures.vanillaJar();
-		for (Path p : List.of(MERGED, INTEROP, NEO_RUNTIME)) TestFixtures.requireFile(Fixture.STAGED, p, p + " required");
+		for (Path p : List.of(MERGED, NEO_RUNTIME)) TestFixtures.requireFile(Fixture.STAGED, p, p + " required");
 		TestFixtures.require(Fixture.MC_LIBRARIES, Files.isRegularFile(vanilla), vanilla + " required");
 		Function<String, byte[]> before = vanillaResolver(vanilla), after = mergedResolver();
 		byte[] debugify = debugifyShaped();
@@ -595,7 +595,7 @@ class MixinFitLivenessCensusStagedTest {
 	@Test
 	void theAnchorCensusSeesANameTheCarrierTookOver() throws Exception {
 		Path vanilla = TestFixtures.vanillaJar();
-		for (Path p : List.of(MERGED, INTEROP, NEO_RUNTIME)) TestFixtures.requireFile(Fixture.STAGED, p, p + " required");
+		for (Path p : List.of(MERGED, NEO_RUNTIME)) TestFixtures.requireFile(Fixture.STAGED, p, p + " required");
 		TestFixtures.require(Fixture.MC_LIBRARIES, Files.isRegularFile(vanilla), vanilla + " required");
 		Function<String, byte[]> before = vanillaResolver(vanilla), after = mergedResolver();
 		byte[] head = moogsHeadShaped();
@@ -673,7 +673,7 @@ class MixinFitLivenessCensusStagedTest {
 	/** The merged game as the kernel serves it: its compat pass, the field twins, and the duplicate-lambda prune. */
 	private static Function<String, byte[]> mergedResolver() throws IOException {
 		Map<String, byte[]> game = new HashMap<>();
-		for (Path jar : List.of(NEO_RUNTIME, INTEROP, MERGED)) game.putAll(read(Files.readAllBytes(jar), n -> n.endsWith(".class")));
+		for (Path jar : List.of(NEO_RUNTIME, MERGED)) game.putAll(read(Files.readAllBytes(jar), n -> n.endsWith(".class")));
 		Map<String, byte[]> served = new java.util.concurrent.ConcurrentHashMap<>();
 		return name -> {
 			byte[] raw = game.get(name);

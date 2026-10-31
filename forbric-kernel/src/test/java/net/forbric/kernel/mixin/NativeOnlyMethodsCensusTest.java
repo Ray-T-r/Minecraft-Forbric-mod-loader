@@ -77,12 +77,10 @@ class NativeOnlyMethodsCensusTest {
 	/** Each platform's game: the jar its mods were compiled against and run on. */
 	private static final Map<Ecosystem, Path> NATIVE = new EnumMap<>(Map.of(
 			Ecosystem.FABRIC, TestFixtures.vanillaJar(),
-			Ecosystem.FORGE, TestFixtures.forgeMergeInput(),
-			Ecosystem.NEOFORGE, STAGED.resolve(TestFixtures.GENUINE_BASE_JAR)));
+			Ecosystem.NEOFORGE, STAGED.resolve(TestFixtures.BASE_JAR)));
 
-	/** The merge's own build pins: which vanilla, MinecraftForge and NeoForge it read. Only the merged base has them. */
-	private static final Path PINS = STAGED.resolve(TestFixtures.MERGED_BASE_JAR + ".pins");
-	private static final Path FORGE_RUNTIME = STAGED.resolve(TestFixtures.FORGE_CARRIER_JAR);
+	/** The base's build pins ({@code mc= neoforge= nfrt= result= tools=}), which prepare stages beside it (D31). */
+	private static final Path PINS = STAGED.resolve(TestFixtures.BASE_JAR + ".pins");
 	private static final Path NEO_RUNTIME = STAGED.resolve(TestFixtures.NEO_CARRIER_JAR);
 	private static final Path VERSION_JSON = TestFixtures.minecraftDir().resolve("versions/26.2/26.2.json");
 
@@ -97,7 +95,7 @@ class NativeOnlyMethodsCensusTest {
 
 	@BeforeAll static void read() throws Exception {
 		TestFixtures.requireFile(Fixture.STAGED, MERGED, "staged merged base required: " + MERGED);
-		TestFixtures.requireFiles(Fixture.STAGED, "the merge's build pins and both carriers", PINS, FORGE_RUNTIME, NEO_RUNTIME);
+		TestFixtures.requireFiles(Fixture.STAGED, "the base's build pins and the NeoForge carrier", PINS, NEO_RUNTIME);
 		TestFixtures.require(Fixture.MC_LIBRARIES, Files.isRegularFile(VERSION_JSON), "vanilla's version JSON: " + VERSION_JSON);
 		for (Map.Entry<Ecosystem, Path> platform : NATIVE.entrySet()) {
 			Path jar = platform.getValue();
@@ -136,22 +134,14 @@ class NativeOnlyMethodsCensusTest {
 			if (eq > 0) pins.put(pin.substring(0, eq), pin.substring(eq + 1));
 		}
 		String minecraft = pins.get("mc");
-		String forge = pins.get("forge");
 		String neoforge = pins.get("neoforge");
 		assertNotNull(minecraft, "pins name the Minecraft version: " + pins);
-		assertNotNull(forge, "pins name the MinecraftForge build: " + pins);
 		assertNotNull(neoforge, "pins name the NeoForge build: " + pins);
-		assertTrue(forge.startsWith(minecraft + "-"), "MinecraftForge's pin carries the Minecraft prefix: " + forge);
-		forge = forge.substring(minecraft.length() + 1);
 
 		try (ZipFile vanilla = new ZipFile(NATIVE.get(Ecosystem.FABRIC).toFile())) {
 			UnmodifiableConfig json = JsonFormat.fancyInstance().createParser()
 					.parse(new String(vanilla.getInputStream(vanilla.getEntry("version.json")).readAllBytes(), StandardCharsets.UTF_8));
 			assertEquals(minecraft, json.get("id"), "vanilla's jar is the Minecraft the merge read");
-		}
-		try (JarFile carrier = new JarFile(FORGE_RUNTIME.toFile())) {
-			assertEquals(forge, carrier.getManifest().getMainAttributes().getValue("Implementation-Version"),
-					"the MinecraftForge carrier is the build the merge read");
 		}
 		try (ZipFile carrier = new ZipFile(NEO_RUNTIME.toFile())) {
 			var toml = ModsTomlParser.parse(carrier.getInputStream(carrier.getEntry("META-INF/neoforge.mods.toml")));
@@ -160,7 +150,6 @@ class NativeOnlyMethodsCensusTest {
 		}
 		Map<Ecosystem, Map<String, String>> out = new EnumMap<>(Ecosystem.class);
 		out.put(Ecosystem.FABRIC, Map.of(NativeAbsentTargets.MINECRAFT, minecraft));
-		out.put(Ecosystem.FORGE, Map.of(NativeAbsentTargets.MINECRAFT, minecraft, "forge", forge));
 		out.put(Ecosystem.NEOFORGE, Map.of(NativeAbsentTargets.MINECRAFT, minecraft, "neoforge", neoforge));
 		return out;
 	}

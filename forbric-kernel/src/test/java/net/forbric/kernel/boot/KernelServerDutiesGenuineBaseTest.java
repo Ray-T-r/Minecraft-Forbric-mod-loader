@@ -62,7 +62,7 @@ class KernelServerDutiesGenuineBaseTest {
 
 	/** The compiled kernel over the genuine NeoForge game jar, the NeoForge carrier and Minecraft's libraries: no MinecraftForge. */
 	private static URLClassLoader genuine() throws Exception {
-		Path game = TestFixtures.genuineBase(), neo = TestFixtures.neoCarrier();
+		Path game = TestFixtures.stagedBase(), neo = TestFixtures.neoCarrier();
 		TestFixtures.requireFiles(Fixture.STAGED, "the genuine NeoForge base or its carrier is absent", game, neo);
 		TestFixtures.require(Fixture.GAME_SIDE, Files.isDirectory(RUNTIME_CLASSES), "the compiled game side is absent");
 		List<URL> urls = new ArrayList<>(List.of(RUNTIME_CLASSES.toUri().toURL(), MAIN_CLASSES.toUri().toURL(), game.toUri().toURL(),

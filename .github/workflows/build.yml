@@ -133,12 +133,10 @@ jobs:
         run: python tools/dev.py prepare --no-assets
       # Same ratchet as the boot-only job, against its own baseline: what still skips here needs third-party mod
       # packs that are not in this repository. Every other kind of fixture is prepared above, so requireFixtures
-      # turns a skip for any of them (or an untagged skip) into a failure at the test that skipped. That includes the
-      # MinecraftForge carrier: prepare stages it beside the merged base, so a test that skips for want of it here has
-      # lost it, and forge-carrier keeps that a failure (a missing carrier is its own fixture kind, not part of staged).
+      # turns a skip for any of them (or an untagged skip) into a failure at the test that skipped.
       - name: Unit and transfer tests with the game files
         shell: bash
-        run: cd forbric-kernel && ./gradlew jar test transferTest skipRatchet -Pforbric.skipBaseline=ci-prepared -Pforbric.requireTransfer=true -Pforbric.requireFixtures=staged,game-side,mc-libraries,java-25,forge-carrier
+        run: cd forbric-kernel && ./gradlew jar test transferTest skipRatchet -Pforbric.skipBaseline=ci-prepared -Pforbric.requireTransfer=true -Pforbric.requireFixtures=staged,game-side,mc-libraries,java-25
       # forbric-loader's merge-loss ratchet (MergedBaseHookLossRatchetTest) holds the merge to the platform calls the
       # edit splice keeps. It reads a merged base together with the build record run/build-merged-base.sh writes
       # beside it, which pairs the jar with its report; anywhere without one it skips, so this is the one place it

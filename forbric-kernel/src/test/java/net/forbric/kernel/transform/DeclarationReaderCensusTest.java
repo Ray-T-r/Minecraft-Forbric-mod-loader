@@ -44,8 +44,7 @@ class DeclarationReaderCensusTest {
 	@Test
 	void noPlatformClassIsEdited() throws IOException {
 		Path run = TestFixtures.stagedRoot();
-		List<Path> platform = List.of(run.resolve(TestFixtures.BASE_JAR),
-				run.resolve(TestFixtures.NEO_CARRIER_JAR), run.resolve(TestFixtures.FORGE_CARRIER_JAR));
+		List<Path> platform = List.of(run.resolve(TestFixtures.BASE_JAR), run.resolve(TestFixtures.NEO_CARRIER_JAR));
 		for (Path jar : platform) TestFixtures.requireFile(Fixture.STAGED, jar, jar + " is absent");
 		TreeSet<String> edited = new TreeSet<>();
 		int classes = 0;

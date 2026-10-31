@@ -65,7 +65,7 @@ class NativeReferenceLineContractTest {
 	 */
 	@Test
 	void theSidecarScriptChoosesTheStagedSidecarByTheBaseItRecords(@TempDir Path work) throws Exception {
-		Path base = jar(work.resolve("stage/merged-base/base.jar"), "net/minecraft/Fixture.class");
+		Path base = jar(work.resolve("stage/neoforge-patched/base.jar"), "net/minecraft/Fixture.class");
 		Path staged = work.resolve("stage/vanilla-reference/vanilla-reference-26.2.jar");
 		Path noVanilla = work.resolve("no-such/26.2.jar");
 
@@ -87,7 +87,7 @@ class NativeReferenceLineContractTest {
 	 */
 	@Test
 	void anExplicitlyNamedSidecarRecordingAnotherBaseIsRefusedUnlessTheExperimentSaysSo(@TempDir Path work) throws Exception {
-		Path base = jar(work.resolve("stage/merged-base/base.jar"), "net/minecraft/Fixture.class");
+		Path base = jar(work.resolve("stage/neoforge-patched/base.jar"), "net/minecraft/Fixture.class");
 		Path noVanilla = work.resolve("no-such/26.2.jar");
 		Path named = work.resolve("elsewhere/vanilla-reference-26.2.jar");
 

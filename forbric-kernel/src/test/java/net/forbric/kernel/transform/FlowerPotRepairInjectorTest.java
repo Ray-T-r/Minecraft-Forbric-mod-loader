@@ -31,17 +31,6 @@ class FlowerPotRepairInjectorTest {
 	private static final String POT = FlowerPotRepairInjector.OWNER;
 	private static final String FULL_POT = "(L" + FlowerPotRepairInjector.BLOCK + ";)L" + FlowerPotRepairInjector.BLOCK + ";";
 
-	@Test void onTheMergedBaseAllThreeEditsLand() throws Exception {
-		Path merged = TestFixtures.stagedRoot().resolve(TestFixtures.MERGED_BASE_JAR);
-		byte[] original = NativeCoremodParityTest.read(merged, POT);
-		ClassNode pot = node(new FlowerPotRepairInjector().transform(FlowerPotRepairInjector.TARGET, original, null));
-		assertTrue(storesThePlant(pot), "the vanilla-shaped constructor stores its plant");
-		assertTrue(calls(method(pot, "getFullPot", FULL_POT), FlowerPotRepairInjector.RUNTIME),
-				"the pot lookup answers from every family's pots");
-		assertTrue(reads(method(pot, "addPlant", FlowerPotRepairInjector.ADD_PLANT), "fullPots"), "addPlant records into fullPots");
-		for (MethodNode m : pot.methods) new Analyzer<>(new BasicVerifier()).analyze(POT, m);
-	}
-
 	@Test void onTheGenuineBaseTheConstructorEditLandsAloneAndLinks() throws Exception {
 		List<Path> genuine = ChainReferences.genuineJars();
 		byte[] original = ChainReferences.read(genuine, POT);

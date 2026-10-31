@@ -63,7 +63,6 @@ class MixinPlacementTransactionGeneralTest {
 	}
 
 	@Test void aLoneHandlerAtTheCallCapturingThePlayerIsReplayedAtTheHead() throws Exception {
-		TestFixtures.requireForgeCarrierWhereTheBaseNamesIt("the classes the base's useOn reaches");
 		CallbackSourceFixture source = new CallbackSourceFixture("org/example/builder/mixin/BuilderMixin", STACK);
 		source.handler("beforeUse", "(" + CONTEXT + CIR + PLAYER + ")V", INJECT, "method", List.of("useOn"), "at", List.of(at("INVOKE", CALL)))
 				.local(2).code(RETURN);
@@ -79,7 +78,6 @@ class MixinPlacementTransactionGeneralTest {
 	}
 
 	@Test void aCancellableHandlerAtTheCallTakingOnlyItsCallbackAndThePositionStaysCancellable() throws Exception {
-		TestFixtures.requireForgeCarrierWhereTheBaseNamesIt("the classes the base's useOn reaches");
 		CallbackSourceFixture source = new CallbackSourceFixture("org/example/builder/mixin/GuardMixin", STACK);
 		source.handler("guard", "(" + CIR + POS + ")V", INJECT, "method", List.of("L" + STACK + ";" + USE_ON), "at", List.of(at("INVOKE", CALL)),
 				"cancellable", true).local(1, "ordinal", 0).code(RETURN);
@@ -92,7 +90,6 @@ class MixinPlacementTransactionGeneralTest {
 	}
 
 	@Test void aLoneLaterHandlerWithoutAShareIsReplayedAtTheReturnWhenTheCallWasReached() throws Exception {
-		TestFixtures.requireForgeCarrierWhereTheBaseNamesIt("the classes the base's useOn reaches");
 		CallbackSourceFixture source = new CallbackSourceFixture("org/example/builder/mixin/StatsMixin", STACK);
 		source.handler("countUse", "(" + CIR + PLAYER + ")V", INJECT, "method", List.of(USE_ON), "at", List.of(at("INVOKE", WAS_ITEM)))
 				.local(1, "ordinal", 0).code(code -> {
@@ -111,7 +108,6 @@ class MixinPlacementTransactionGeneralTest {
 	}
 
 	@Test void aLaterHandlerThatReadsItsCallbackStays() throws Exception {
-		TestFixtures.requireForgeCarrierWhereTheBaseNamesIt("the classes the base's useOn reaches");
 		CallbackSourceFixture source = new CallbackSourceFixture("org/example/builder/mixin/PeekMixin", STACK);
 		source.handler("peek", "(" + CONTEXT + CIR + ")V", INJECT, "method", List.of("useOn"), "at", List.of(at("INVOKE", WAS_ITEM))).code(code -> {
 			code.visitVarInsn(Opcodes.ALOAD, 2);
@@ -123,14 +119,12 @@ class MixinPlacementTransactionGeneralTest {
 	}
 
 	@Test void aLaterHandlerThatCancelsStays() throws Exception {
-		TestFixtures.requireForgeCarrierWhereTheBaseNamesIt("the classes the base's useOn reaches");
 		CallbackSourceFixture source = new CallbackSourceFixture("org/example/builder/mixin/StopMixin", STACK);
 		source.handler("stop", "(" + CONTEXT + CIR + ")V", INJECT, "method", List.of("useOn"), "at", List.of(at("INVOKE", WAS_ITEM)), "cancellable", true).code(RETURN);
 		assertUntouched(source.build(), VANILLA);
 	}
 
 	@Test void aPointPastACallTheReplayWouldMakeAgainStays() throws Exception {
-		TestFixtures.requireForgeCarrierWhereTheBaseNamesIt("the classes the base's useOn reaches");
 		CallbackSourceFixture source = new CallbackSourceFixture("org/example/builder/mixin/AwardMixin", STACK);
 		source.handler("award", "(" + CONTEXT + CIR + ")V", INJECT, "method", List.of("useOn"),
 				"at", List.of(at("FIELD", "Lnet/minecraft/stats/Stats;ITEM_USED:Lnet/minecraft/stats/StatType;"))).code(RETURN);
@@ -138,7 +132,6 @@ class MixinPlacementTransactionGeneralTest {
 	}
 
 	@Test void aLocalVanillaHadNoSlotForStays() throws Exception {
-		TestFixtures.requireForgeCarrierWhereTheBaseNamesIt("the classes the base's useOn reaches");
 		CallbackSourceFixture source = new CallbackSourceFixture("org/example/builder/mixin/ResultMixin", STACK);
 		source.handler("result", "(" + CONTEXT + CIR + "Lnet/minecraft/world/InteractionResult;)V", INJECT, "method", List.of("useOn"),
 				"at", List.of(at("INVOKE", CALL))).local(2).code(RETURN);
@@ -146,7 +139,6 @@ class MixinPlacementTransactionGeneralTest {
 	}
 
 	@Test void twoHandlersAtTheCallStay() throws Exception {
-		TestFixtures.requireForgeCarrierWhereTheBaseNamesIt("the classes the base's useOn reaches");
 		CallbackSourceFixture source = new CallbackSourceFixture("org/example/builder/mixin/TwiceMixin", STACK);
 		source.handler("first", "(" + CONTEXT + CIR + ")V", INJECT, "method", List.of("useOn"), "at", List.of(at("INVOKE", CALL))).code(RETURN);
 		source.handler("second", "(" + CONTEXT + CIR + ")V", INJECT, "method", List.of("useOn"), "at", List.of(at("INVOKE", CALL))).code(RETURN);

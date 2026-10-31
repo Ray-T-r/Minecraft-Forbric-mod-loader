@@ -28,34 +28,10 @@ import net.forbric.kernel.TestFixtures;
  * one the jar has, not one this test names.
  */
 class CustomPayloadInteropSeamTest {
-	private static final Path MERGED = TestFixtures.mergedBase().normalize();
-	private static final Path GENUINE = TestFixtures.genuineBase().normalize();
+	private static final Path GENUINE = TestFixtures.stagedBase().normalize();
 	private static final String PAYLOAD = CustomPayloadInteropSeam.PAYLOAD;
 
 	@AfterEach void reset() { System.clearProperty(CustomPayloadInteropSeam.PROPERTY); }
-
-	@Test void onTheMergedBaseTheCodecClassAlreadyAsksTheHelperSoNothingChanges() throws Exception {
-		Function<String, byte[]> merged = VanillaMemberTwinInjectorTest.reader(MERGED);
-		assertEquals(PAYLOAD + "$1$forbricneo", CustomPayloadInteropSeam.instantiated(merged.apply(PAYLOAD + ".class")),
-				"premise: the merged codec overload instantiates the renamed NeoForge twin");
-		byte[] twin = merged.apply(PAYLOAD + "$1$forbricneo.class");
-		assertTrue(calls(method(node(twin), "findCodec"), CustomPayloadInteropSeam.LEGACY_INTEROP),
-				"premise: the merge tool spliced the call under the old loader's owner");
-
-		CustomPayloadInteropSeam seam = new CustomPayloadInteropSeam(merged);
-		assertSame(twin, seam.transform((PAYLOAD + "$1$forbricneo").replace('/', '.'), twin, null),
-				"the splice is already there under the old owner: stand down");
-		byte[] adopted = adopt(twin);
-		assertSame(adopted, seam.transform((PAYLOAD + "$1$forbricneo").replace('/', '.'), adopted, null),
-				"and under the kernel's owner, once the merged-base compat transformer adopted it");
-		byte[] vanillaShaped = merged.apply(PAYLOAD + "$1.class");
-		assertSame(vanillaShaped, seam.transform((PAYLOAD + "$1").replace('/', '.'), vanillaShaped, null),
-				"the merged base's vanilla-shaped $1 is not the class NeoForge's overload builds: untouched");
-		for (String sibling : List.of("$Type", "$TypeAndCodec", "$FallbackProvider")) {
-			byte[] bytes = merged.apply(PAYLOAD + sibling + ".class");
-			assertSame(bytes, seam.transform((PAYLOAD + sibling).replace('/', '.'), bytes, null), sibling);
-		}
-	}
 
 	@Test void onTheGenuineBaseNeoForgesCodecClassGetsTheMergedBasesLookup() throws Exception {
 		Function<String, byte[]> genuine = VanillaMemberTwinInjectorTest.reader(GENUINE);

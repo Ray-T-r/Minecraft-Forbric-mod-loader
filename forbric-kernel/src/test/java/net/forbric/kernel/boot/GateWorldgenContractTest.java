@@ -20,7 +20,8 @@ class GateWorldgenContractTest {
 	void theGateProbesExactlyTheBlocksThePackagedCanariesPlace() throws Exception {
 		Path gate = Path.of("run/gate-m25-worldgen.sh");
 		String script = Files.readString(gate);
-		String forge = WorldgenCanaryDataTest.inspect("forge", "forbriclive", "livemod-src", "forge-runtime");
+		// The refused MinecraftForge canary's marker (its forge-runtime/forbriclive.jar placed end_stone; Stage 4 no longer stages it).
+		String forge = "minecraft:end_stone";
 		String neo = WorldgenCanaryDataTest.inspect("neoforge", "forbricneolive", "livemod-src-neoforge", "neoforge-runtime");
 		// Stage 3 of dropping MinecraftForge: the MinecraftForge canary is refused, so the gate no longer stages it, and
 		// its marker is neither asserted nor probed for; the NeoForge canary's marker is the one the gate reads.

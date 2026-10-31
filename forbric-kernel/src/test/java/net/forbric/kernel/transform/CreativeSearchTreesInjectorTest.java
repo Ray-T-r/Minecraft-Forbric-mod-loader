@@ -32,7 +32,7 @@ import net.forbric.kernel.TestFixtures.Fixture;
 @org.junit.jupiter.api.extension.ExtendWith(net.forbric.kernel.DroppedLambdaRecordRestore.class)
 class CreativeSearchTreesInjectorTest {
 	private static final Path MERGED = TestFixtures.stagedBase();
-	private static final Path NEOFORGE_PATCHED = TestFixtures.genuineBase();
+	private static final Path NEOFORGE_PATCHED = TestFixtures.stagedBase();
 	private static final Path HELPER_CLASS = Path.of(System.getProperty("forbric.test.runtimeClasses","build/classes/java/runtime")).resolve("net/forbric/kernel/runtime/KernelCreativeSearch.class");
 	private static final String TREES = CreativeSearchTreesInjector.TREES;
 

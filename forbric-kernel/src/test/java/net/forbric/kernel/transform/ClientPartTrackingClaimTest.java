@@ -37,8 +37,7 @@ import org.objectweb.asm.Opcodes;
 class ClientPartTrackingClaimTest {
 	private static final Path STAGED = TestFixtures.stagedRoot();
 	private static final Path MERGED = STAGED.resolve(TestFixtures.BASE_JAR);
-	private static final Path FORGE = STAGED.resolve(TestFixtures.FORGE_PATCHED_JAR);
-	private static final Path NEO = STAGED.resolve(TestFixtures.GENUINE_BASE_JAR);
+	private static final Path NEO = STAGED.resolve(TestFixtures.BASE_JAR);
 	private static final Path GATE = Path.of("run/gate-m9-client.sh");
 	private static final String CALLBACKS = ClientPartTrackingInjector.CALLBACKS;
 	private static final String CALLBACKS_INTERNAL = ClientPartTrackingInjector.CALLBACKS_INTERNAL;
@@ -74,16 +73,6 @@ class ClientPartTrackingClaimTest {
 	@Test void neoForgesOwnBodyIsTheEndStateToo() throws Exception {
 		byte[] own = NativeCoremodParityTest.read(NEO, CALLBACKS_INTERNAL);
 		assertEquals(Set.of(ClientPartTrackingInjector.CLAIM), hits(own));
-	}
-
-	@Test void minecraftForgesOwnBodyIsNotTheEndStateUntilTheRepairEditsIt() throws Exception {
-		byte[] forge = NativeCoremodParityTest.read(FORGE, CALLBACKS_INTERNAL);
-		assertFalse(ClientPartTrackingInjector.tracksNeoForgeParts(forge), "MinecraftForge's body dereferences its own array, null for a NeoForge mod's entity");
-		Set<String> hits = new HashSet<>();
-		byte[] repaired = new ClientPartTrackingInjector().transform(CALLBACKS, forge, null, hits::add);
-		assertNotSame(forge, repaired, "the repair edits MinecraftForge's body");
-		assertEquals(Set.of(ClientPartTrackingInjector.CLAIM), hits);
-		assertTrue(ClientPartTrackingInjector.tracksNeoForgeParts(repaired));
 	}
 
 	/**

@@ -35,7 +35,16 @@ class NativeDecisionIslandStagedTest {
 	private static final String EFFECT = "Lnet/minecraft/world/effect/MobEffectUtil;hasWaterBreathing(L" + LIVING + ";)Z";
 
 	private static ClassNode staged(String jar, String entry) {
-		Path path = TestFixtures.stagedRoot().resolve(jar);
+		return read(TestFixtures.stagedRoot().resolve(jar), entry);
+	}
+
+	/** {@code owner} as vanilla compiled it: the FABRIC reference in the vanilla-reference sidecar a launch has. */
+	private static ClassNode vanilla(String owner) {
+		return read(TestFixtures.vanillaReference(TestFixtures.stagedRoot().resolve(TestFixtures.BASE_JAR)),
+				"META-INF/forbric/native-reference/FABRIC/" + owner + ".class.bin");
+	}
+
+	private static ClassNode read(Path path, String entry) {
 		ClassNode node = new ClassNode();
 		new ClassReader(TestFixtures.requireEntry(Fixture.STAGED, path, entry)).accept(node, 0);
 		return node;
@@ -54,7 +63,7 @@ class NativeDecisionIslandStagedTest {
 
 	@Test void vanillasBreathingChecksComeBackInFrontOfTheCarriersHookWithTheEffectCheckRelayed() throws Exception {
 		ClassNode merged = staged(TestFixtures.BASE_JAR, LIVING + ".class");
-		ClassNode vanilla = staged(TestFixtures.MERGED_BASE_JAR, "META-INF/forbric/native-reference/FABRIC/" + LIVING + ".class.bin");
+		ClassNode vanilla = vanilla(LIVING);
 		MethodNode host = NativeCallInlining.method(merged, "baseTick()V"), was = NativeCallInlining.method(vanilla, "baseTick()V");
 		assertNotNull(host);
 		assertNotNull(was);
@@ -98,7 +107,7 @@ class NativeDecisionIslandStagedTest {
 	 */
 	@Test void theVanillaRefillInTheHookLeavesTheEyeCheckToTheIsland() throws Exception {
 		ClassNode merged = staged(TestFixtures.BASE_JAR, LIVING + ".class");
-		ClassNode vanilla = staged(TestFixtures.MERGED_BASE_JAR, "META-INF/forbric/native-reference/FABRIC/" + LIVING + ".class.bin");
+		ClassNode vanilla = vanilla(LIVING);
 		MethodNode host = NativeCallInlining.method(merged, "baseTick()V"), was = NativeCallInlining.method(vanilla, "baseTick()V");
 		String hook = "net/neoforged/neoforge/common/CommonHooks", refill = net.forbric.kernel.transform.VanillaAirRefillInjector.RUNTIME;
 		ClassNode decorated = new ClassNode();
@@ -151,7 +160,7 @@ class NativeDecisionIslandStagedTest {
 		String owner = "net/minecraft/client/resources/model/SimpleModelWrapper";
 		String sprites = "L" + owner + ";findNonBlockSprites(Lnet/minecraft/client/resources/model/geometry/QuadCollection;)Lcom/google/common/collect/Multimap;";
 		ClassNode merged = staged(TestFixtures.BASE_JAR, owner + ".class");
-		ClassNode vanilla = staged(TestFixtures.MERGED_BASE_JAR, "META-INF/forbric/native-reference/FABRIC/" + owner + ".class.bin");
+		ClassNode vanilla = vanilla(owner);
 		String bake = "bake(Lnet/minecraft/client/resources/model/ModelBaker;Lnet/minecraft/resources/Identifier;"
 				+ "Lnet/minecraft/client/renderer/block/dispatch/ModelState;)Lnet/minecraft/client/renderer/block/dispatch/BlockStateModelPart;";
 		MethodNode host = NativeCallInlining.method(merged, bake), was = NativeCallInlining.method(vanilla, bake);

@@ -19,7 +19,7 @@ import org.objectweb.asm.tree.analysis.BasicVerifier;
 class NeoScreenEventsInjectorTest {
 	private static final Path STAGED = Path.of(System.getProperty("forbric.stagedRoot", "../forbric-loader/run"));
 	private static final Path MERGED = STAGED.resolve(net.forbric.kernel.TestFixtures.BASE_JAR);
-	private static final Path NEO = STAGED.resolve(net.forbric.kernel.TestFixtures.GENUINE_BASE_JAR);
+	private static final Path NEO = STAGED.resolve(net.forbric.kernel.TestFixtures.BASE_JAR);
 	private static final String GUI = "net/minecraft/client/gui/Gui";
 
 	@AfterEach void reset() { System.clearProperty(NeoScreenEventsInjector.PROPERTY); }

@@ -36,14 +36,9 @@ import org.objectweb.asm.tree.MethodNode;
 class CarrierStubCensusTest {
 	private static final Path MERGED = TestFixtures.stagedBase();
 	private static final Path MC = TestFixtures.minecraftDir();
-	/**
-	 * The two jars the merge merged. For MinecraftForge that is {@link TestFixtures#forgeMergeInput}, never whatever sits
-	 * in forge-patched/: forbric-loader's is an older build, and its LivingEntity differs from the one the merge took.
-	 */
-	private static final Path FORGE = TestFixtures.forgeMergeInput();
-	private static final Path NEO = TestFixtures.genuineBase();
+	/** NeoForge's patched game, the reference a NeoForge mod was compiled against (on the genuine base, the base itself). */
+	private static final Path NEO = TestFixtures.stagedBase();
 	private static final Path VANILLA = MC.resolve("versions/26.2/26.2.jar");
-	private static final Path INTEROP = TestFixtures.stagedRoot().resolve(TestFixtures.FORGE_INTEROP_JAR);
 	private static final Path NEO_RUNTIME = TestFixtures.stagedRoot().resolve(TestFixtures.NEO_CARRIER_JAR);
 	private static final Path KERNEL_MAIN = mainClasses();
     private static Path mainClasses(){
@@ -53,18 +48,16 @@ class CarrierStubCensusTest {
 	private static final Path KERNEL_RUNTIME = Path.of(System.getProperty("forbric.test.runtimeClasses", "build/classes/java/runtime"));
 
 	@Test void theShippedTableIsExactlyWhatTheArtifactsSay() throws Exception {
-		TestFixtures.requireForgeCarrier("the census is of every staged carrier, MinecraftForge's included");
 		TestFixtures.requireFile(Fixture.STAGED, MERGED, "merged base and vanilla jar required");
 		TestFixtures.require(Fixture.MC_LIBRARIES, Files.isRegularFile(VANILLA), "merged base and vanilla jar required");
-		// The rows themselves need only the merged base and vanilla; each row's forge=/neo= columns need both carriers.
-		boolean carriers = Files.isRegularFile(FORGE) && Files.isRegularFile(NEO);
+		// The rows themselves need only the base and vanilla; each row's neo= column needs NeoForge's patched game.
+		boolean carriers = Files.isRegularFile(NEO);
 		Map<String, ClassNode> vanilla = read(VANILLA, true);
 		// Who calls what, by name and descriptor whatever the owner: in vanilla, and in the merged game the kernel runs.
 		Map<String, Set<String>> vanillaCalls = callers(List.of(VANILLA));
 		Map<String, Set<String>> mergedCalls = null;   // read on the first stub that works an argument out
 		TreeSet<String> rows = new TreeSet<>();
-		try (ZipFile zip = new ZipFile(MERGED.toFile()); ZipFile forge = carriers ? new ZipFile(FORGE.toFile()) : null;
-				ZipFile neo = carriers ? new ZipFile(NEO.toFile()) : null) {
+		try (ZipFile zip = new ZipFile(MERGED.toFile()); ZipFile neo = carriers ? new ZipFile(NEO.toFile()) : null) {
 			for (ZipEntry entry : Collections.list(zip.entries())) {
 				if (!entry.getName().endsWith(".class") || !entry.getName().startsWith("net/minecraft/")) continue;
 				ClassNode merged = new ClassNode();
@@ -83,7 +76,7 @@ class CarrierStubCensusTest {
 					if (delegation.computed()) {
 						if (mergedCalls == null) {
 							TestFixtures.require(Fixture.GAME_SIDE, Files.isDirectory(KERNEL_RUNTIME), "the merged game's callers include the kernel's");
-							mergedCalls = callers(List.of(MERGED, INTEROP, NEO_RUNTIME, KERNEL_MAIN, KERNEL_RUNTIME));
+							mergedCalls = callers(List.of(MERGED, NEO_RUNTIME, KERNEL_MAIN, KERNEL_RUNTIME));
 						}
 						String self = merged.name + "#" + stub.name + stub.desc;
 						Set<String> fromVanilla = vanillaCalls.getOrDefault(stub.name + stub.desc, Set.of());
@@ -96,7 +89,6 @@ class CarrierStubCensusTest {
 					if (!declares(original, stub.name, stub.desc) || declares(original, delegation.delegate().name, delegate)) continue;
 					String row = merged.name + "#" + stub.name + stub.desc + " -> " + delegate;
 					rows.add(!carriers ? row : row
-							+ " forge=" + MixinStubRebind.Shape.of(entry(forge, merged.name), stub.name, stub.desc, delegate).token
 							+ " neo=" + MixinStubRebind.Shape.of(entry(neo, merged.name), stub.name, stub.desc, delegate).token);
 				}
 			}

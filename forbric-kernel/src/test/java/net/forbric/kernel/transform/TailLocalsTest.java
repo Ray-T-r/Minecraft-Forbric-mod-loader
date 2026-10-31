@@ -171,9 +171,10 @@ class TailLocalsTest {
 	 */
 	@Test void theMergedRenderLayersTailHoldsVanillasNextOrderAgain() {
 		String owner = "net/minecraft/client/renderer/entity/layers/EquipmentLayerRenderer";
-		java.nio.file.Path merged = net.forbric.kernel.TestFixtures.mergedBase();
-		ClassNode node = node(net.forbric.kernel.TestFixtures.requireEntry(net.forbric.kernel.TestFixtures.Fixture.STAGED, merged, owner + ".class"));
-		ClassNode vanilla = node(net.forbric.kernel.TestFixtures.requireEntry(net.forbric.kernel.TestFixtures.Fixture.STAGED, merged,
+		java.nio.file.Path base = net.forbric.kernel.TestFixtures.stagedBase();
+		ClassNode node = node(net.forbric.kernel.TestFixtures.requireEntry(net.forbric.kernel.TestFixtures.Fixture.STAGED, base, owner + ".class"));
+		java.nio.file.Path sidecar = net.forbric.kernel.TestFixtures.vanillaReference(base);
+		ClassNode vanilla = node(net.forbric.kernel.TestFixtures.requireEntry(net.forbric.kernel.TestFixtures.Fixture.STAGED, sidecar,
 				"META-INF/forbric/native-reference/FABRIC/" + owner + ".class.bin"));
 		String desc = "(Lnet/minecraft/client/resources/model/EquipmentClientInfo$LayerType;Lnet/minecraft/resources/ResourceKey;"
 				+ "Lnet/minecraft/client/model/Model;Ljava/lang/Object;Lnet/minecraft/world/item/ItemStack;Lcom/mojang/blaze3d/vertex/PoseStack;"

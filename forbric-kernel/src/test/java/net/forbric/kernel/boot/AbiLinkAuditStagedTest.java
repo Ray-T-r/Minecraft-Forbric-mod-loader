@@ -29,7 +29,7 @@ import net.forbric.kernel.TestFixtures.Fixture;
 import org.junit.jupiter.api.Test;
 
 /**
- * The false-positive pin: over the staged 97-jar client pack, resolved against both carriers, the merged base and
+ * The false-positive pin: over the staged 97-jar client pack, resolved against the NeoForge carrier, the base and
  * the pack itself, the audit finds NOTHING. A real pack has CustomSkinLoader naming fml/loading and fml/relauncher,
  * universal jars naming both families, Fabric ports shipping net.minecraftforge.* for their dependants — every one
  * of those is a shape a naive audit cries wolf on.
@@ -39,8 +39,7 @@ class AbiLinkAuditStagedTest {
 	void theStagedClientPackHasNoDanglingForgeFamilyReference() throws Exception {
 		Path mods = Path.of(System.getProperty("user.dir"), "run", "client-merged-pack", "mods").normalize();
 		Path run = TestFixtures.stagedRoot().normalize();
-		List<Path> against = List.of(run.resolve(TestFixtures.FORGE_CARRIER_JAR), run.resolve(TestFixtures.NEO_CARRIER_JAR),
-				run.resolve(TestFixtures.BASE_JAR));
+		List<Path> against = List.of(run.resolve(TestFixtures.NEO_CARRIER_JAR), run.resolve(TestFixtures.BASE_JAR));
 		TestFixtures.requireFiles(Fixture.STAGED, "staged pack or carriers absent", against.toArray(Path[]::new));
 		TestFixtures.require(Fixture.THIRD_PARTY, Files.isDirectory(mods), "staged pack or carriers absent");
 		List<Path> jars = new ArrayList<>();

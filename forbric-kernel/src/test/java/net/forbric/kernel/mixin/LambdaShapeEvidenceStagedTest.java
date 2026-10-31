@@ -130,56 +130,6 @@ class LambdaShapeEvidenceStagedTest {
 	// The merged base: the reference changes no decision, and no decision is not the parent's
 	// ---------------------------------------------------------------------------------------------------------------
 
-	@Test void onTheMergedBaseTheReferenceChangesNoDecisionWithThePrunerOnOrOff() throws Exception {
-		Measured measured = merged();
-		List<String> different = new ArrayList<>(), reworded = new ArrayList<>();
-		int wraps = 0;
-		for (Row row : measured.rows()) {
-			wraps += row.withReference().wrapped();
-			if (!row.recordOnly().decided().equals(row.withReference().decided())) {
-				different.add(row + "\n    record only:    " + row.recordOnly().decided() + "\n    with reference: " + row.withReference().decided());
-			}
-			if (!row.recordOnly().explained().equals(row.withReference().explained())) {
-				reworded.add(row + "\n    record only:    " + row.recordOnly().explained() + "\n    with reference: " + row.withReference().explained());
-			}
-		}
-		System.out.println("[LambdaShapeEvidence] " + measured.guests().size() + " guest mixins (lambda selectors, and LevelRenderer), "
-				+ measured.rows().size() + " decided twice, " + wraps + " wraps; named mods: " + measured.named());
-		assertEquals(List.of(), different, "the native reference must decide nothing on the merged base the pruner's record did not");
-		assertEquals(List.of(), reworded, "nor say anything there the record did not: no new warning, no new compatibility reason");
-		assertTrue(wraps > 0, "the corpus exercises a wrap (Apoli's sky-skip): equality over no decisions would prove nothing");
-	}
-
-	/**
-	 * Every row this machine reproduces — same guest, same arm, same digest of the classes the chain handed Mixin and of
-	 * the record the pruner left — decides and says exactly what b37e6ae0 did, with the reference on and off. A row whose
-	 * inputs moved (a rebuilt base, a chain transformer that changed since) cannot be compared and is counted, not judged.
-	 */
-	@Test void onTheMergedBaseEveryDecisionIsTheOneTheParentMade() throws Exception {
-		Measured measured = merged();
-		Map<String, String> parent = parentTable();
-		List<String> different = new ArrayList<>();
-		TreeSet<String> comparedNamed = new TreeSet<>();
-		int compared = 0, unmatched = 0;
-		for (Row row : measured.rows()) {
-			String recorded = parent.get(row.key());
-			if (recorded == null) {
-				unmatched++;
-				continue;
-			}
-			compared++;
-			for (String mod : NAMED.keySet()) if (NAMED.get(mod).test(row.guest().jar())) comparedNamed.add(mod);
-			for (Decisions now : List.of(row.recordOnly(), row.withReference())) {
-				if (!recorded.equals(now.digest())) different.add(row + " (" + row.key() + "): b37e6ae0 " + recorded + ", now " + now.digest()
-						+ "\n    " + now.decided() + "\n    " + now.explained());
-			}
-		}
-		System.out.println("[LambdaShapeEvidence] against b37e6ae0: " + compared + " of " + measured.rows().size() + " rows compared, "
-				+ unmatched + " with inputs the table does not record; named mods compared: " + comparedNamed);
-		TestFixtures.require(Fixture.THIRD_PARTY, compared > 0, "no row of " + PARENT_TABLE + " matches this machine's corpus and base");
-		assertEquals(List.of(), different, "decisions or diagnoses that are not what b37e6ae0 made over the same inputs");
-	}
-
 	/** On the merged base no census row names a lambda the pruner dropped, so asking the census first changes nothing. */
 	private static void assertCensusAndRecordAreDisjoint(Map<String, byte[]> classes) throws IOException {
 		try (InputStream in = MixinHandlerShim.class.getResourceAsStream(MixinHandlerShim.TABLE)) {
@@ -208,77 +158,6 @@ class LambdaShapeEvidenceStagedTest {
 	}
 
 	private static Measured measured;
-
-	/**
-	 * Measures the corpus on the merged base, once: the targets through the pre-Mixin chain under each pruner arm, then each
-	 * guest's decisions with the reference off and on. Leaves the pruner's record as the last arm left it; the caller's
-	 * {@link #reset} puts back what it found.
-	 *
-	 * <p>On the merged base as such ({@link TestFixtures#mergedBase()}, {@link ChainReferences#mergedJars()}), never on
-	 * {@link TestFixtures#BASE_JAR}: what is measured — the FABRIC/FORGE references embedded in the base, the duplicate
-	 * lambdas the pruner drops — only the merge produces. Once Stage 4 points BASE_JAR at the genuine base, these two tests
-	 * keep measuring the merged one while it is staged, and skip when it is not.
-	 */
-	private static synchronized Measured merged() throws Exception {
-		if (measured != null) return measured;
-		Path merged = TestFixtures.mergedBase().normalize();
-		TestFixtures.requireFiles(Fixture.STAGED, "the merged base", merged);
-		List<Guest> guests = corpus(merged);
-		TestFixtures.require(Fixture.THIRD_PARTY, !guests.isEmpty(), "no guest mixin with a lambda selector in the local packs");
-		Map<String, List<String>> named = new LinkedHashMap<>();
-		for (String mod : NAMED.keySet()) {
-			List<String> mixins = new ArrayList<>();
-			for (Guest guest : guests) {
-				if (NAMED.get(mod).test(guest.jar()) && guest.targets().contains(LEVEL_RENDERER)) mixins.add(guest.mixin().name);
-			}
-			named.put(mod, mixins);
-		}
-		List<String> absent = named.entrySet().stream().filter(e -> e.getValue().isEmpty()).map(Map.Entry::getKey).toList();
-		TestFixtures.require(Fixture.THIRD_PARTY, absent.isEmpty(), "Stage 2.4's named mods with no LevelRenderer mixin in the local packs: "
-				+ absent + " (present: " + named + ")");
-
-		List<Path> jars = ChainReferences.mergedJars();
-		List<Row> rows = new ArrayList<>();
-		try (ForbricClassLoader loader = new ForbricClassLoader(jars.stream().map(LambdaShapeEvidenceStagedTest::url).toArray(URL[]::new),
-				LambdaShapeEvidenceStagedTest.class.getClassLoader())) {
-			bind(loader);
-			List<String> registered = new ArrayList<>(), skipped = new ArrayList<>();
-			TransformChain chain = ChainReferences.preMixinChain(jars, registered, skipped);
-			assertTrue(registered.contains(DuplicateLambdaPruneInjector.class.getSimpleName()), "premise: the chain prunes: " + registered);
-			System.out.println("[LambdaShapeEvidence] the pre-Mixin chain: " + registered.size() + " transformer(s); not reproducible here: " + skipped);
-			TreeSet<String> targets = new TreeSet<>();
-			for (Guest guest : guests) for (String target : guest.targets()) if (resource(jars, target) != null) targets.add(target);
-			// The pruner off first; each arm starts from no record.
-			for (boolean pruner : new boolean[] { false, true }) {
-				DuplicateLambdaPruneInjector.forgetDroppedForTest();
-				if (!pruner) System.setProperty(PRUNER, "off");
-				Map<String, byte[]> classes = new TreeMap<>();
-				for (String target : targets) {
-					classes.put(target, chain.applyBeforeMixin(target.replace('/', '.'), resource(jars, target),
-							new TransformContext(EnvType.CLIENT, false, "named")));
-				}
-				System.clearProperty(PRUNER);
-				if (pruner) assertCensusAndRecordAreDisjoint(classes);
-				Map<String, List<String>> dropped = DuplicateLambdaPruneInjector.droppedForTest();
-				// What makes this the merged base: it carries addSkyPass's lambda twice and the pruner drops one. Any other
-				// base measured here would be equality over the wrong jar, and stayed green when it was the genuine one.
-				if (pruner) assertTrue(dropped.containsKey(LEVEL_RENDERER + "#" + SKY), "premise: the pruner drops the merge's "
-						+ "second " + SKY + "; " + merged + " is not the merged base (dropped: " + dropped.keySet() + ")");
-				for (Guest guest : guests) {
-					System.setProperty(LambdaShapeEvidence.PROPERTY, "off");
-					Decisions recordOnly = decide(guest, classes);
-					System.clearProperty(LambdaShapeEvidence.PROPERTY);
-					Decisions withReference = decide(guest, classes);
-					rows.add(new Row(guest, pruner, inputs(guest, classes, dropped), recordOnly, withReference));
-				}
-				dumpInputs(jars, guests, pruner, classes, dropped, rows);
-			}
-		} finally {
-			bind(null);
-		}
-		measured = new Measured(guests, rows, named);
-		return measured;
-	}
 
 	/**
 	 * Writes one arm's inputs and decisions under {@code $FORBRIC_LAMBDA_DUMP}, when it is set: what {@link #PARENT_TABLE}'s

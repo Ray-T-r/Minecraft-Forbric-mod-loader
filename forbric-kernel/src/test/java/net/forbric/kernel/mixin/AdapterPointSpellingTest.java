@@ -125,7 +125,6 @@ class AdapterPointSpellingTest {
 		// CarrierDefaultChains: fabric-api's bed occupancy redirect, bound to the sleep start and the wake-up lambda, under
 		// unrelated names.
 		cases.add(new Case("fabric-api beds", () -> {
-					TestFixtures.requireForgeCarrierWhereTheBaseNamesIt("the state's setBedOccupied defaults, through the base's hierarchy");
 					return StagedFabricMixinFixture.mixin("fabric-entity-events-v1", root + "LivingEntityMixin");
 				}, true,
 				Ecosystem.FABRIC, LIVING, CarrierDefaultChains::adapt, 1,
@@ -452,7 +451,7 @@ class AdapterPointSpellingTest {
 	 */
 	static ClassNode merged(String name) {
 		byte[] bytes = MERGED.computeIfAbsent(name, n -> {
-			for (String jarName : List.of(TestFixtures.BASE_JAR, TestFixtures.NEO_CARRIER_JAR, TestFixtures.FORGE_INTEROP_JAR)) {
+			for (String jarName : List.of(TestFixtures.BASE_JAR, TestFixtures.NEO_CARRIER_JAR)) {
 				Path jar = TestFixtures.stagedRoot().resolve(jarName);
 				if (!Files.isRegularFile(jar)) continue;
 				try (ZipFile zip = new ZipFile(jar.toFile())) {

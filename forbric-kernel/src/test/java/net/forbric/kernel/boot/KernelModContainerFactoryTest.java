@@ -51,7 +51,6 @@ import org.objectweb.asm.tree.MethodNode;
 class KernelModContainerFactoryTest {
 	private static final Path NEOFORGE =
 			TestFixtures.stagedRoot().resolve(TestFixtures.NEO_CARRIER_JAR).normalize();
-	private static final Path FORGE = TestFixtures.stagedRoot().resolve(TestFixtures.FORGE_CARRIER_JAR).normalize();
 
 	/** The four types the factory resolves by name, and the visibility its typed use of them needs. */
 	@Test
@@ -111,17 +110,6 @@ class KernelModContainerFactoryTest {
 						+ "the right shape");
 	}
 
-	/** UnsafeHacks is MinecraftForge's, borrowed by the NeoForge path; both entry points are named by string. */
-	@Test
-	void unsafeHacksStillOffersTheTwoMethodsTheFactoryCalls() throws Exception {
-		ClassNode unsafe = readClass(FORGE, "net/minecraftforge/unsafe/UnsafeHacks");
-
-		assertNotNull(method(unsafe, "newInstance"),
-				"UnsafeHacks.newInstance is gone — the factory allocates FMLModContainer without a constructor "
-						+ "precisely to avoid running genuine FancyModLoader discovery");
-		assertNotNull(method(unsafe, "setField"), "UnsafeHacks.setField is gone");
-	}
-
 	/** The IModInfo methods the Proxy answers, so a mod reading its own metadata gets something real. */
 	@Test
 	void iModInfoStillDeclaresWhatTheProxyAnswers() throws Exception {
@@ -141,7 +129,7 @@ class KernelModContainerFactoryTest {
 	/** The class out of a staged carrier; one the carrier no longer has fails the test, it does not skip it. */
 	private static ClassNode readClass(Path jar, String internalName) throws Exception {
 		TestFixtures.requireFile(Fixture.STAGED, jar,
-				"staged " + (jar.equals(FORGE) ? "MinecraftForge" : "NeoForge") + " carrier absent");
+				"staged NeoForge carrier absent");
 		try (ZipFile zip = new ZipFile(jar.toFile())) {
 			ZipEntry e = zip.getEntry(internalName + ".class");
 			assertNotNull(e, internalName + " is gone from " + jar.getFileName());

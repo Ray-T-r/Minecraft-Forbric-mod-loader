@@ -37,7 +37,7 @@ import net.forbric.kernel.TestFixtures.Fixture;
  * and only for anchors among their calls.
  *
  * <p>The references are the jars each kind of mod was compiled against: stock 26.2 for Fabric, MinecraftForge's and
- * NeoForge's patched clients for theirs (MinecraftForge's exactly as the merge read it, {@link TestFixtures#forgeMergeInput}).
+ * NeoForge's patched clients for theirs (on the genuine base the NeoForge reference is the base itself; C4 regenerates the table).
  * A pair is tagged with an ecosystem only when that jar declares the method and not the renamed one, and the renamed
  * one is made of that jar's method ({@link CarrierRenames}); its rows are the calls and field accesses that moved, and
  * its kind says whether the renamed method carries the whole of that jar's body or a piece.
@@ -45,8 +45,7 @@ import net.forbric.kernel.TestFixtures.Fixture;
 class CarrierRenameCensusTest {
 	private static final Path MERGED = TestFixtures.stagedBase();
 	private static final Path VANILLA = TestFixtures.vanillaJar();
-	private static final Path FORGE = TestFixtures.forgeMergeInput();
-	private static final Path NEOFORGE = TestFixtures.genuineBase();
+	private static final Path NEOFORGE = TestFixtures.stagedBase();
 
 	@Test void theShippedTableIsExactlyWhatTheArtifactsSay() throws Exception {
 		TreeSet<String> rows = derive();
@@ -260,14 +259,12 @@ class CarrierRenameCensusTest {
 
 	/** Every row the staged jars support, as the census writes it. */
 	static TreeSet<String> derive() throws Exception {
-		for (Path jar : List.of(MERGED, VANILLA, FORGE, NEOFORGE)) {
-			// MinecraftForge's merge input is the launcher library's copy where the staged one is not the merge's build.
-			Fixture kind = jar == VANILLA || jar == FORGE && FORGE.startsWith(TestFixtures.minecraftDir()) ? Fixture.MC_LIBRARIES : Fixture.STAGED;
+		for (Path jar : List.of(MERGED, VANILLA, NEOFORGE)) {
+			Fixture kind = jar == VANILLA ? Fixture.MC_LIBRARIES : Fixture.STAGED;
 			TestFixtures.require(kind, Files.isRegularFile(jar), jar + " required");
 		}
 		Map<Ecosystem, ZipFile> references = new LinkedHashMap<>();
 		references.put(Ecosystem.FABRIC, new ZipFile(VANILLA.toFile()));
-		references.put(Ecosystem.FORGE, new ZipFile(FORGE.toFile()));
 		references.put(Ecosystem.NEOFORGE, new ZipFile(NEOFORGE.toFile()));
 		TreeMap<String, Set<Ecosystem>> derived = new TreeMap<>();
 		Set<String> lefts = new TreeSet<>(), uncalled = new TreeSet<>();

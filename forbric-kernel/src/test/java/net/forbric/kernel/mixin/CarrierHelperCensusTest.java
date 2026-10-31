@@ -44,16 +44,14 @@ import net.forbric.api.Ecosystem;
 class CarrierHelperCensusTest {
 	private static final Path MERGED = TestFixtures.stagedBase();
 	private static final Path VANILLA = TestFixtures.vanillaJar();
-	private static final Path FORGE = TestFixtures.stagedRoot().resolve(TestFixtures.FORGE_PATCHED_JAR);
-	private static final Path NEOFORGE = TestFixtures.genuineBase();
+	private static final Path NEOFORGE = TestFixtures.stagedBase();
 
 	@Test void theShippedTableIsExactlyWhatTheArtifactsSay() throws Exception {
-		for (Path jar : List.of(MERGED, VANILLA, FORGE, NEOFORGE)) {
+		for (Path jar : List.of(MERGED, VANILLA, NEOFORGE)) {
 			TestFixtures.require(jar == VANILLA ? Fixture.MC_LIBRARIES : Fixture.STAGED, Files.isRegularFile(jar), jar + " required");
 		}
 		Map<Ecosystem, ZipFile> references = new LinkedHashMap<>();
 		references.put(Ecosystem.FABRIC, new ZipFile(VANILLA.toFile()));
-		references.put(Ecosystem.FORGE, new ZipFile(FORGE.toFile()));
 		references.put(Ecosystem.NEOFORGE, new ZipFile(NEOFORGE.toFile()));
 		TreeMap<String, Set<Ecosystem>> derived = new TreeMap<>();
 		try (ZipFile zip = new ZipFile(MERGED.toFile())) {

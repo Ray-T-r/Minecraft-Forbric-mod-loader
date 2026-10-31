@@ -113,22 +113,31 @@ class ModsButtonRedirectorTest {
 				+ repointed);
 	}
 
-	/** The constructor call has to move with the NEW, or the class does not link. */
+	/**
+	 * The constructor call has to move with the NEW, or the class does not link. Checked in every staged class that
+	 * builds a family's list (on the genuine base that is NeoForge's own {@code ModsButton} in the carrier; the merged
+	 * base's {@code PauseScreen} built it itself), found by marker as the transformer finds them.
+	 */
 	@Test
 	void theConstructorCallMovesWithTheAllocation() throws Exception {
-		TestFixtures.requireFile(Fixture.STAGED, MERGED_BASE, "staged merged base absent");
-		ClassNode node = parse(transform(PAUSE, readClass(MERGED_BASE, PAUSE + ".class")));
-		for (MethodNode method : node.methods) {
-			if (method.instructions == null) continue;
-			for (AbstractInsnNode insn : method.instructions) {
-				if (insn instanceof MethodInsnNode call && call.getOpcode() == Opcodes.INVOKESPECIAL
-						&& "<init>".equals(call.name)) {
-					assertTrue(!NEO.equals(call.owner) && !FORGE.equals(call.owner),
-							"a family's ModListScreen constructor is still called in " + method.name);
+		int checked = 0;
+		for (Map.Entry<String, byte[]> carrier : carriers().entrySet()) {
+			if (opensAFamilysList(parse(carrier.getValue())).isEmpty()) continue;
+			ClassNode node = parse(transform(carrier.getKey(), carrier.getValue()));
+			for (MethodNode method : node.methods) {
+				if (method.instructions == null) continue;
+				for (AbstractInsnNode insn : method.instructions) {
+					if (insn instanceof MethodInsnNode call && call.getOpcode() == Opcodes.INVOKESPECIAL
+							&& "<init>".equals(call.name)) {
+						assertTrue(!NEO.equals(call.owner) && !FORGE.equals(call.owner),
+								"a family's ModListScreen constructor is still called in " + carrier.getKey() + "." + method.name);
+					}
 				}
+				new Analyzer<>(new BasicVerifier()).analyze(node.name, method);
 			}
-			new Analyzer<>(new BasicVerifier()).analyze(node.name, method);
+			checked++;
 		}
+		assertTrue(checked >= 1, "no staged class builds a family's mod list, so nothing was checked");
 	}
 
 	/**

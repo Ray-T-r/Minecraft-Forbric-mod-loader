@@ -51,8 +51,7 @@ class StagedArtifactCoverageTest {
 	 * Where the staged artifacts live: {@link TestFixtures#stagedRoot()}, the root Gradle hands every test task.
 	 *
 	 * <p>This used to resolve {@code FORBRIC_OLD} itself, which was right when every other test hardcoded the
-	 * relative path and a worktree skipped them all; it now has to agree with the root the tests it counts read,
-	 * including the Forge-less one {@code -Pforbric.hideForgeCarrier} hands them.
+	 * relative path and a worktree skipped them all; it now has to agree with the root the tests it counts read.
 	 */
 	static Path stagedRoot() {
 		return TestFixtures.stagedRoot().normalize();
@@ -60,8 +59,7 @@ class StagedArtifactCoverageTest {
 
 	/**
 	 * The artifacts whose presence means the real-bytecode tests must have run: the base and the NeoForge carrier,
-	 * which every staged root has. The MinecraftForge carrier is reported but does not decide it: a root without it
-	 * (the genuine base's layout) still runs every test that does not need MinecraftForge.
+	 * which every staged root has.
 	 */
 	private static List<Path> artifacts() {
 		return List.of(TestFixtures.stagedBase(), TestFixtures.neoCarrier());
@@ -96,7 +94,7 @@ class StagedArtifactCoverageTest {
 				// TestFixtures is the one place that resolves the staged root now; a test reading the staged
 				// artifacts says so with stagedRoot() or Fixture.STAGED. The two spellings it replaced still count.
 				if (text.contains("stagedRoot()") || text.contains("Fixture.STAGED")
-						|| text.contains("stagedBase()") || text.contains("genuineBase()") || text.contains("BASE_JAR")
+						|| text.contains("stagedBase()") || text.contains("BASE_JAR")
 						|| text.contains("forbric-loader") || text.contains("FORBRIC_OLD")) {
 					readers.add(file.getFileName().toString());
 				}
@@ -113,11 +111,6 @@ class StagedArtifactCoverageTest {
 		if (!missing.isEmpty()) {
 			System.out.println("[staged] present: " + present.size() + "/" + artifacts().size() + ", missing: " + missing
 					+ " — the assertions that read the missing one(s) skipped.");
-		}
-		if (!TestFixtures.forgeCarrierStaged()) {
-			System.out.println("[staged] no MinecraftForge carrier ("
-					+ (TestFixtures.forgeCarrierHidden() ? "hidden by -Pforbric.hideForgeCarrier" : "not staged")
-					+ ") — the assertions that need it skipped as [fixture:forge-carrier].");
 		}
 	}
 }

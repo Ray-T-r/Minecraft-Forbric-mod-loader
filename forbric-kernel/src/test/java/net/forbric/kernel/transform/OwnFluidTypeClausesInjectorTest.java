@@ -42,9 +42,8 @@ class OwnFluidTypeClausesInjectorTest {
 
 	private static List<Path> game() {
 		Path root = TestFixtures.stagedRoot();
-		List<Path> jars = List.of(root.resolve(TestFixtures.BASE_JAR), root.resolve(TestFixtures.FORGE_INTEROP_JAR),
-				root.resolve(TestFixtures.NEO_CARRIER_JAR));
-		TestFixtures.requireFiles(Fixture.STAGED, "the merged base and its carriers", jars.toArray(Path[]::new));
+		List<Path> jars = List.of(root.resolve(TestFixtures.BASE_JAR), root.resolve(TestFixtures.NEO_CARRIER_JAR));
+		TestFixtures.requireFiles(Fixture.STAGED, "the base and its carrier", jars.toArray(Path[]::new));
 		return jars;
 	}
 

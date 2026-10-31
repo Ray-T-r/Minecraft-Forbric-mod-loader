@@ -39,16 +39,18 @@ class MixinStubRebindSharedRedirectTest {
 	private ForbricClassLoader loader;
 
 	@BeforeEach void bindTheMergedBasesNativeReferences() throws Exception {
-		Path merged = TestFixtures.mergedBase();
-		TestFixtures.requireFiles(Fixture.STAGED, "the staged merged base and its native-reference index", merged);
+		Path base = TestFixtures.stagedBase();
+		TestFixtures.requireFiles(Fixture.STAGED, "the staged base", base);
 		MixinStubRebind.forget();
-		loader = new ForbricClassLoader(new java.net.URL[] {merged.toUri().toURL()}, getClass().getClassLoader());
+		loader = new ForbricClassLoader(new java.net.URL[] {base.toUri().toURL()}, getClass().getClassLoader());
+		NativeGameReferences.configure(TestFixtures.launchSources(base));
 		NativeGameReferences.bind(loader);
-		assertNotNull(NativeGameReferences.reference(Ecosystem.FABRIC, TARGET), "premise: the merged base pins vanilla's SectionCompiler");
+		assertNotNull(NativeGameReferences.reference(Ecosystem.FABRIC, TARGET), "premise: the launch's sidecar pins vanilla's SectionCompiler");
 	}
 
 	@AfterEach void reset() throws Exception {
 		NativeGameReferences.bind(null);
+		NativeGameReferences.configure(null);
 		if (loader != null) loader.close();
 		MixinStubRebind.forget();
 	}
@@ -59,7 +61,7 @@ class MixinStubRebindSharedRedirectTest {
 
 	private static ClassNode target() throws Exception {
 		ClassNode node = new ClassNode();
-		try (var zip = new java.util.zip.ZipFile(TestFixtures.mergedBase().toFile())) {
+		try (var zip = new java.util.zip.ZipFile(TestFixtures.stagedBase().toFile())) {
 			new org.objectweb.asm.ClassReader(zip.getInputStream(zip.getEntry(TARGET + ".class"))).accept(node, 0);
 		}
 		return node;

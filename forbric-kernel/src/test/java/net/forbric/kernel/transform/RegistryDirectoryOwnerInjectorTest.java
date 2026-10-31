@@ -81,7 +81,6 @@ import net.forbric.kernel.mixin.MergedBaseMixinCompat;
 class RegistryDirectoryOwnerInjectorTest {
 	private static final Path STAGED = TestFixtures.stagedRoot();
 	private static final Path MERGED_BASE = STAGED.resolve(TestFixtures.BASE_JAR);
-	private static final Path FORGE_PATCHED = STAGED.resolve(TestFixtures.FORGE_PATCHED_JAR);
 	private static final Path NEO_RUNTIME = STAGED.resolve(TestFixtures.NEO_CARRIER_JAR);
 	private static final Path VANILLA = TestFixtures.vanillaJar();
 	private static final Path SWEEP = Path.of("build/compat-inputs/sweep90/mods");
@@ -190,20 +189,6 @@ class RegistryDirectoryOwnerInjectorTest {
 		// componentsDirPath is datagen's, and Fabric never prefixed it.
 		assertEquals(nativeFabric.body("componentsDirPath", "owo", "owo_things"),
 				after.body("componentsDirPath", "owo", "owo_things"));
-	}
-
-	@Test
-	void minecraftForgesInlineBodyIsEditedAtBothOfItsReturns() throws Exception {
-		requireAll(FORGE_PATCHED);
-		ModPresence.publishFabric(List.of(mod(Ecosystem.FABRIC, "wover")));
-		byte[] in = classBytes(FORGE_PATCHED, REGISTRIES);
-		MethodNode original = method(node(in), "registryDirPath");
-		assertEquals(2, count(original, Opcodes.ARETURN), "MinecraftForge prefixes inline, with its own return");
-
-		Arm forge = arm(registries(FORGE_PATCHED, true));
-		assertEquals(PRESET_INFO, forge.body("elementsDirPath", "wover", PRESET_INFO));
-		assertEquals("examplemod/thing", forge.body("elementsDirPath", "examplemod", "thing"));
-		assertEquals("worldgen/biome", forge.body("elementsDirPath", "minecraft", "worldgen/biome"));
 	}
 
 	@Test

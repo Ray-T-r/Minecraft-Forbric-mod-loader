@@ -59,7 +59,7 @@ class CustomPayloadInteropSeamWeaveTest {
 	@AfterEach void unconfigure() { NativeGameReferences.configure(null); }
 
 	@Test void fabricNetworkingsWrapIsArbitratedAroundTheSeamOnTheGenuineBase() throws Exception {
-		Path genuine = TestFixtures.genuineBase().normalize();
+		Path genuine = TestFixtures.stagedBase().normalize();
 		Path neo = TestFixtures.neoCarrier().normalize();
 		TestFixtures.requireFiles(Fixture.STAGED, "the genuine NeoForge base and its carrier", genuine, neo);
 		Path networking = nested(TestFixtures.fabricApi(), "fabric-networking-api-v1");

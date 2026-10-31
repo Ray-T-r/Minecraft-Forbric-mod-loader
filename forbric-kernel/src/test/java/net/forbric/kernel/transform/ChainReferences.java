@@ -72,37 +72,22 @@ public final class ChainReferences {
 	}
 
 	/**
-	 * The genuine base ({@link TestFixtures#genuineBase()}, NeoForge's own patched game for 26.2, the base Stage 4
+	 * The genuine base ({@link TestFixtures#stagedBase()}, NeoForge's own patched game for 26.2, the base Stage 4
 	 * switches to) and the one carrier it runs with: the jar set a staged genuine-base test links against.
 	 */
 	public static List<Path> genuineJars() {
-		Path base = TestFixtures.genuineBase().normalize();
+		Path base = TestFixtures.stagedBase().normalize();
 		Path neo = TestFixtures.neoCarrier().normalize();
 		TestFixtures.requireFiles(Fixture.STAGED, "the genuine NeoForge base and its carrier", base, neo);
 		return List.of(base, neo);
 	}
 
 	/**
-	 * The staged base and its carriers as the game owns them ({@link StagedGameClasses#jars()}): the base, the MinecraftForge
-	 * carrier when staged, the NeoForge carrier.
+	 * The staged base and its carrier as the game owns them ({@link StagedGameClasses#jars()}): the base, then the NeoForge
+	 * carrier.
 	 */
 	public static List<Path> stagedJars() {
 		return StagedGameClasses.jars();
-	}
-
-	/**
-	 * The merged base as such ({@link TestFixtures#mergedBase()}) and its carriers, in {@link #stagedJars()}'s order: for a
-	 * test about what only the merge produces — the native-reference index embedded in it, the duplicate lambdas the pruner
-	 * drops from it. Today the same jars as {@link #stagedJars()}; when Stage 4 points {@link TestFixtures#BASE_JAR} at the
-	 * genuine base these stay on the merged one, and a root that no longer stages it skips the test instead of running it
-	 * against a base that has neither.
-	 */
-	public static List<Path> mergedJars() {
-		Path merged = TestFixtures.mergedBase().normalize();
-		Path forge = TestFixtures.forgeCarrier().normalize();
-		Path neo = TestFixtures.neoCarrier().normalize();
-		TestFixtures.requireFiles(Fixture.STAGED, "the merged base and its carriers", merged, neo);
-		return Files.isRegularFile(forge) ? List.of(merged, forge, neo) : List.of(merged, neo);
 	}
 
 	/**

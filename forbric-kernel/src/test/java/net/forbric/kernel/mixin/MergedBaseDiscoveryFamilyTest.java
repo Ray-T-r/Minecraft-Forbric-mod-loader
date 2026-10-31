@@ -55,18 +55,20 @@ class MergedBaseDiscoveryFamilyTest {
 	private ForbricClassLoader loader;
 
 	@BeforeEach void bindTheMergedBasesNativeReferences() throws Exception {
-		merged = TestFixtures.mergedBase();
-		TestFixtures.requireFiles(Fixture.STAGED, "the staged merged base and its native-reference index", merged);
+		merged = TestFixtures.stagedBase();
+		TestFixtures.requireFiles(Fixture.STAGED, "the staged base", merged);
+		NativeGameReferences.configure(TestFixtures.launchSources(merged));
 		MergedBaseMixinCompat.reset();
 		MixinConfigOwners.reset();
 		MixinStubRebind.forget();
 		loader = new ForbricClassLoader(new java.net.URL[] { merged.toUri().toURL() }, getClass().getClassLoader());
 		NativeGameReferences.bind(loader);
-		assertNotNull(NativeGameReferences.reference(Ecosystem.FABRIC, BOOTSTRAP), "premise: the merged base indexes vanilla's Bootstrap");
+		assertNotNull(NativeGameReferences.reference(Ecosystem.FABRIC, BOOTSTRAP), "premise: the launch's sidecar indexes vanilla's Bootstrap");
 	}
 
 	@AfterEach void reset() throws Exception {
 		NativeGameReferences.bind(null);
+		NativeGameReferences.configure(null);
 		if (loader != null) loader.close();
 		MergedBaseMixinCompat.reset();
 		MixinConfigOwners.reset();

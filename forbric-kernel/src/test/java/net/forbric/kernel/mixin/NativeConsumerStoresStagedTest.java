@@ -39,7 +39,7 @@ class NativeConsumerStoresStagedTest {
 
 	@Test void theSoundModifierMovesToThePlaySoundRead() {
 		String owner = "net/minecraft/world/item/BucketItem";
-		ClassNode merged = staged(owner + ".class"), vanilla = staged(TestFixtures.mergedBase(), // the reference the merge embeds
+		ClassNode merged = staged(owner + ".class"), vanilla = staged(TestFixtures.vanillaReference(TestFixtures.stagedBase()), // the launch's sidecar
 				"META-INF/forbric/native-reference/FABRIC/" + owner + ".class.bin");
 		String method = "playEmptySound(Lnet/minecraft/world/entity/LivingEntity;Lnet/minecraft/world/level/LevelAccessor;Lnet/minecraft/core/BlockPos;)V";
 		MethodNode host = NativeCallInlining.method(merged, method), was = NativeCallInlining.method(vanilla, method);

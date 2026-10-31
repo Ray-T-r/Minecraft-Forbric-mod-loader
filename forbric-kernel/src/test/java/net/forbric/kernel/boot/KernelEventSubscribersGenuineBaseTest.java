@@ -68,7 +68,7 @@ class KernelEventSubscribersGenuineBaseTest {
 	 * libraries, Mixin and ASM on its parent, where its delegation policy sends them in a launch.
 	 */
 	private static ForbricClassLoader genuine(List<Path> mods) throws Exception {
-		Path game = TestFixtures.genuineBase(), neo = TestFixtures.neoCarrier();
+		Path game = TestFixtures.stagedBase(), neo = TestFixtures.neoCarrier();
 		TestFixtures.requireFiles(Fixture.STAGED, "the genuine NeoForge base or its carrier is absent", game, neo);
 		List<URL> owned = new ArrayList<>();
 		for (Path mod : mods) owned.add(mod.toUri().toURL());

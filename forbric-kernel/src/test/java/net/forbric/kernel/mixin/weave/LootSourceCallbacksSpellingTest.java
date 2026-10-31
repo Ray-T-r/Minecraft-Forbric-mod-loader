@@ -64,7 +64,7 @@ class LootSourceCallbacksSpellingTest {
 	 */
 	@Test
 	void eachPairSpelledApartIsStillOneHostOnTheGenuineBase() throws Exception {
-		try (Evidence evidence = new Evidence(TestFixtures.genuineBase())) {
+		try (Evidence evidence = new Evidence(TestFixtures.stagedBase())) {
 			assertNull(evidence.jar.getEntry("META-INF/forbric/native-reference/FABRIC/index.tsv"),
 					"premise: the genuine base embeds no FABRIC index, so only the sidecar can answer");
 			assertTrue(evidence.sources.describe().contains("native references: FABRIC from the vanilla-reference sidecar "

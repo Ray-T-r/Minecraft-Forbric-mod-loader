@@ -17,9 +17,9 @@ import net.forbric.kernel.classloading.ForbricClassLoader;
 import net.forbric.kernel.mixin.NativeGameReferences;
 
 /**
- * The staged merged base and its carriers as the game serves them: raw class files by resource path, and the native
+ * The staged base and the NeoForge carrier as the game serves them: raw class files by resource path, and the native
  * reference index bound the way the kernel binds it at boot. What {@link NativeMergeShapeRepair} needs to prove a
- * merge delegate, so a test can ask the same proof the game asks. Hold {@code @ResourceLock("native-game-references")}
+ * merge delegate (a C3 candidate; {@link #proof()} goes with it), so a test can ask the same proof the game asks. Hold {@code @ResourceLock("native-game-references")}
  * while one is open: binding is process-wide.
  */
 final class StagedGameClasses implements AutoCloseable {
@@ -38,23 +38,18 @@ final class StagedGameClasses implements AutoCloseable {
 		return new StagedGameClasses(jars());
 	}
 
-	/**
-	 * The base, the MinecraftForge carrier (its interop jar when staged) and the NeoForge carrier, in the order the
-	 * kernel owns them. The MinecraftForge carrier only when staged: the base and the NeoForge carrier are what every
-	 * staged root has, and a root without the Forge carrier (the genuine base's layout) is served as those two.
-	 */
+	/** The base and the NeoForge carrier, in the order the kernel owns them. */
 	static List<Path> jars() {
-		Path merged = TestFixtures.stagedBase().normalize();
-		Path forge = TestFixtures.forgeCarrier().normalize();
+		Path base = TestFixtures.stagedBase().normalize();
 		Path neo = TestFixtures.neoCarrier().normalize();
-		TestFixtures.requireFiles(Fixture.STAGED, "the merged base and both carriers", merged, neo);
-		return Files.isRegularFile(forge) ? List.of(merged, forge, neo) : List.of(merged, neo);
+		TestFixtures.requireFiles(Fixture.STAGED, "the base and the NeoForge carrier", base, neo);
+		return List.of(base, neo);
 	}
 
 	/**
 	 * A game resource, asked for as {@code a/b/C.class} or as a class name in either spelling: the staged jars first,
 	 * then the JDK and libraries, which the game loader serves too. Without the second, no hierarchy reaches
-	 * java/lang/Object and the merged-base repair can prove nothing.
+	 * java/lang/Object and the repair can prove nothing.
 	 */
 	static byte[] resource(List<Path> jars, String name) {
 		String entry = name.endsWith(".class") || name.contains("/") && name.contains(".") ? name : name.replace('.', '/') + ".class";

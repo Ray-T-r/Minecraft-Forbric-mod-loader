@@ -146,7 +146,6 @@ class MixinSharedPredicateSeamSpellingTest {
 	// ---- reading ----------------------------------------------------------------------------------------------------------
 
 	private static void assertRestored(Pair pair, Function<String, ClassNode> source) {
-		TestFixtures.requireForgeCarrierWhereTheBaseNamesIt("Entity's hierarchy, where the shared predicate's default lives");
 		var input = pair.input();
 		String underBody = MixinInstructionFingerprint.hash(pair.under()), groundBody = MixinInstructionFingerprint.hash(pair.ground());
 		assertEquals(2, MixinSharedPredicateSeam.adapt(pair.mixin(), input.classes(), source, input.carrier()));

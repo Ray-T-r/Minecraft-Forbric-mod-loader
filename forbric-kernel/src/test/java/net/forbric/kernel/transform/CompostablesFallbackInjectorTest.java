@@ -59,7 +59,6 @@ class CompostablesFallbackInjectorTest {
 	 * before its initialiser, which off-game stops at the unbootstrapped registries — never at a VerifyError.
 	 */
 	@Test void theRepairedClassesPassTheJvmVerifier() throws Exception {
-		TestFixtures.requireForgeCarrierWhereTheBaseNamesIt("the base classes the repaired ones are verified against");
 		Map<String, byte[]> repaired = new HashMap<>();
 		for (String name : List.of(COMPOSTER, INPUT)) {
 			byte[] original = NativeCoremodParityTest.read(MERGED, name);

@@ -73,7 +73,7 @@ class ClientPackHookInjectorTest {
 	 * whether the hedge has become a second live rewrite.
 	 */
 	@Test
-	void neoForgeDeclaresTheMethodStaticallyAndMinecraftForgeDoesNotDeclareItAtAll() throws Exception {
+	void neoForgeDeclaresTheMethodStatically() throws Exception {
 		byte[] neo = carrier(Ecosystem.NEOFORGE);
 
 		MethodNode m = method(parse(neo), METHOD, DESC);
@@ -81,11 +81,6 @@ class ClientPackHookInjectorTest {
 				+ "and no mod's assets are mounted");
 		assertTrue((m.access & Opcodes.ACC_STATIC) != 0, "NeoForge: " + METHOD + " is no longer static, so the "
 				+ "injector's ALOAD 0 would hand the kernel `this` instead of the PackRepository");
-
-		byte[] forge = carrier(Ecosystem.FORGE);
-		assertNull(method(parse(forge), METHOD, DESC),
-				"MinecraftForge's ClientModLoader now declares " + METHOD + " — the OWNERS entry for it has stopped "
-						+ "being a hedge and become a live rewrite; re-check that the kernel should own both");
 	}
 
 	@Test
@@ -133,14 +128,6 @@ class ClientPackHookInjectorTest {
 		return false;
 	}
 
-	/** The hedge really is inert today: handed the real MinecraftForge class, the injector changes nothing. */
-	@Test
-	void theMinecraftForgeCarrierIsUnchangedBecauseItHasNoSuchMethod() throws Exception {
-		byte[] real = carrier(Ecosystem.FORGE);
-
-		assertSame(real, injector.transform(ForeignType.CLIENT_MOD_LOADER.binary(Ecosystem.FORGE), real, ctx()));
-	}
-
 	/** A same-named method with a different descriptor is not the one, and must be left running. */
 	@Test
 	void aDifferentDescriptorIsNotRewritten() {
@@ -161,9 +148,7 @@ class ClientPackHookInjectorTest {
 	}
 
 	private static byte[] carrier(Ecosystem eco) throws Exception {
-		Path jar = eco == Ecosystem.NEOFORGE
-				? RUN.resolve(TestFixtures.NEO_CARRIER_JAR)
-				: RUN.resolve(TestFixtures.FORGE_CARRIER_JAR);
+		Path jar = RUN.resolve(TestFixtures.NEO_CARRIER_JAR);
 		return TestFixtures.requireEntry(Fixture.STAGED, jar, ForeignType.CLIENT_MOD_LOADER.internal(eco) + ".class");
 	}
 

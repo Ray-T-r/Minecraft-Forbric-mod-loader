@@ -28,8 +28,7 @@ import org.objectweb.asm.tree.analysis.BasicVerifier;
 class HopperFabricStorageInjectorTest {
 	private static final Path STAGED = TestFixtures.stagedRoot();
 	private static final Path MERGED = STAGED.resolve(TestFixtures.BASE_JAR);
-	private static final Path NEO = STAGED.resolve(TestFixtures.GENUINE_BASE_JAR);
-	private static final Path FORGE = STAGED.resolve(TestFixtures.FORGE_PATCHED_JAR);
+	private static final Path NEO = STAGED.resolve(TestFixtures.BASE_JAR);
 	private static final Path FABRIC_API = TestFixtures.fabricApi().toAbsolutePath();
 	private static final String HOPPER = HopperFabricStorageInjector.HOPPER_INTERNAL;
 
@@ -97,12 +96,9 @@ class HopperFabricStorageInjectorTest {
 		assertSame(out, new HopperFabricStorageInjector().transform(HopperFabricStorageInjector.HOPPER, out, null), "a second pass changes nothing");
 	}
 
-	@Test void neoForgesOwnBodyGetsTheSameEditAndMinecraftForgesIsLeftAlone() throws Exception {
+	@Test void neoForgesOwnBodyGetsTheSameEdit() throws Exception {
 		byte[] neo = NativeCoremodParityTest.read(NEO, HOPPER);
 		assertNotSame(neo, new HopperFabricStorageInjector().transform(HopperFabricStorageInjector.HOPPER, neo, null));
-		byte[] forge = NativeCoremodParityTest.read(FORGE, HOPPER);
-		assertSame(forge, new HopperFabricStorageInjector().transform(HopperFabricStorageInjector.HOPPER, forge, null),
-				"MinecraftForge's body calls getAttachedContainer, where Fabric's own mixin applies");
 	}
 
 	@Test void theSwitchLeavesTheHopperAlone() throws Exception {

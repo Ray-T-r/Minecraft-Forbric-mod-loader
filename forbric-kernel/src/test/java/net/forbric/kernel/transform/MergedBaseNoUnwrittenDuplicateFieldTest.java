@@ -59,11 +59,10 @@ import net.forbric.kernel.TestFixtures.Fixture;
  * one. That distinction is structural and is asserted in {@link MergedBaseParticleProvidersTest}.
  */
 class MergedBaseNoUnwrittenDuplicateFieldTest {
-	private static final Path MERGED_BASE = TestFixtures.mergedBase();
+	private static final Path MERGED_BASE = TestFixtures.stagedBase();
 
 	@Test
 	void everyDuplicatedFieldNameHasAWriterForEveryOneOfItsTypes() throws Exception {
-		TestFixtures.requireForgeCarrier("the merge's field writers in MinecraftForge's carrier");
 		TestFixtures.requireFile(Fixture.STAGED, MERGED_BASE, "staged merged base absent — skipping whole-artifact scan");
 
 		List<String> dead = new ArrayList<>();
