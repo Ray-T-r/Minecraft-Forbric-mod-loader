@@ -292,7 +292,7 @@ test	net.forbric.kernel.mixin.MergedBaseMixinCompatPinnedContractsTest	thePinned
 test	net.forbric.kernel.mixin.MixinAddedMembersTest	morecullingsShadowOfFabricRenderersMeshResolves()	[fixture:third-party] sweep90 pack absent
 test	net.forbric.kernel.mixin.MixinAtShapeTest	architecturysNaturalSpawnerRedirectIsUnwrapped()	[fixture:third-party] popular inputs absent
 test	net.forbric.kernel.mixin.MixinBlockInteractionCaptureTest	theReleasedControlsHandEachCaptureTheSlotHoldingItsNativeValue()	[fixture:third-party] real fixture required: $ROOT/forbric-kernel/build/compat-inputs/create-fly/create-fly.jar
-test	net.forbric.kernel.mixin.MixinBuilderStubRebindTest	createsNormalsWrapMovesToTheOverloadThatBakesTheQuads()	[fixture:third-party] real fixture required: $ROOT/forbric-kernel/build/compat-inputs/create-fly/create-fly.jar
+test	net.forbric.kernel.mixin.MixinBuilderStubRebindTest	onTheGenuineBaseCreatesNormalsWrapStaysOnVanillasBodyWhichBakesTheQuads()	[fixture:third-party] real fixture required: $ROOT/forbric-kernel/build/compat-inputs/create-fly/create-fly.jar
 test	net.forbric.kernel.mixin.MixinBuilderStubRebindTest	onVanillaOrSwitchedOffNothingMoves()	[fixture:third-party] real fixture required: $ROOT/forbric-kernel/build/compat-inputs/create-fly/create-fly.jar
 test	net.forbric.kernel.mixin.MixinCallbackContractsTest	GUI item / MixinGuiItemCaptureAdapter	[fixture:third-party] real fixture required: build/sweep80-mac/v020-rounds/r3/mods/itemglintrelight-fabric-26.2-0.3.0+26.2.jar
 test	net.forbric.kernel.mixin.MixinCallbackContractsTest	GUI item / unsafe source	[fixture:third-party] real fixture required: build/sweep80-mac/v020-rounds/r3/mods/itemglintrelight-fabric-26.2-0.3.0+26.2.jar
@@ -678,7 +678,6 @@ test	net.forbric.kernel.mixin.MixinRetargetCarrierHelperStagedTest	fabricRenderi
 test	net.forbric.kernel.mixin.MixinRetargetCarrierHelperStagedTest	highlightersSlotMarkFollowsTheDecorationsIntoRenderSlotContents()	[fixture:third-party] $ROOT/forbric-kernel/build/compat-inputs/sweep90/mods/Highlighter-26.2-forge-1.2.2.jar absent (symlink build/compat-inputs from the main checkout)
 test	net.forbric.kernel.mixin.MixinRetargetCarrierHelperStagedTest	puzzleslibsFogColourStaysAtTheSourceSetInsideClientHooks()	[fixture:third-party] $ROOT/forbric-kernel/build/compat-inputs/sweep90/mods/PuzzlesLib-v26.2.4-mc26.2.x-Fabric.jar absent (symlink build/compat-inputs from the main checkout)
 test	net.forbric.kernel.mixin.MixinRetargetRenamedBodyCorpusTest	r3MovesExactlyThePinnedInjectorsOverTheAuditCorpus()	[fixture:forge-carrier] $ROOT/forbric-kernel/build/staged-noforge/run/merged-base/forge-runtime-interop.jar required
-test	net.forbric.kernel.mixin.MixinRetargetSubstitutedCallTest	fusionsRealMixinOnTheRealMergedBase()	[fixture:third-party] sweep pack or staged merged base absent
 test	net.forbric.kernel.mixin.MixinReturnOrdinalsTest	apolisLastReturnOfDestroyBlockIsTheMergedLastReturn()	[fixture:third-party] popular-pack Origins fixture absent
 test	net.forbric.kernel.mixin.MixinReturnOrdinalsTest	onTheNativeBodyItselfNothingMoves()	[fixture:third-party] popular-pack Origins fixture absent
 test	net.forbric.kernel.mixin.MixinReturnOrdinalsTest	theSwitchLeavesTheOrdinalAsCompiled()	[fixture:third-party] popular-pack Origins fixture absent

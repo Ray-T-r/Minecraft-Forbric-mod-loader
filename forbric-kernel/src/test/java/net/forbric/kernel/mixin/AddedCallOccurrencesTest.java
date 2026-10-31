@@ -73,9 +73,9 @@ class AddedCallOccurrencesTest {
 
 	/**
 	 * Architectury's CLIENT_RIGHT_CLICK_AIR is an {@code @Inject} at vanilla's second {@code ItemStack.isEmpty} in
-	 * {@code Minecraft.startUseItem} (ordinal 1, the check in front of {@code useItem}). MinecraftForge's
-	 * {@code onRightClickEmpty} and NeoForge's {@code onEmptyClick} each add an {@code isEmpty} in front of it, so ordinal 1
-	 * named MinecraftForge's check. It now names the merged body's fourth, the one in front of {@code useItem}.
+	 * {@code Minecraft.startUseItem} (ordinal 1, the check in front of {@code useItem}). NeoForge's {@code onEmptyClick}
+	 * adds an {@code isEmpty} in front of it (javap: genuine offsets 368, 418, 455; vanilla 319, 369), so ordinal 1 names
+	 * NeoForge's check. It now names the genuine body's third, the one in front of {@code useItem}.
 	 */
 	@Test void architecturysRightClickAirKeepsVanillasIsEmptyByNumber() throws Exception {
 		String minecraft = "net/minecraft/client/Minecraft";
@@ -90,11 +90,11 @@ class AddedCallOccurrencesTest {
 		MixinStubRebind.noteEcosystem(mixin.name, Ecosystem.FABRIC);
 		MethodNode start = StagedFabricMixinFixture.method(merged, "startUseItem");
 		List<MethodInsnNode> isEmpty = calls(start, "Lnet/minecraft/world/item/ItemStack;isEmpty()Z");
-		assertEquals(4, isEmpty.size(), "two family checks were added");
+		assertEquals(3, isEmpty.size(), "NeoForge's onEmptyClick check was added");
 		assertTrue(AddedCallOccurrences.adapt(mixin, name -> name.equals(minecraft) ? merged : null,
 				(ecosystem, name) -> name.equals(minecraft) ? vanilla : null) >= 1);
-		assertEquals(3, MixinFit.value(StagedFabricMixinFixture.at(mixin, "rightClickAir"), "ordinal"));
-		MethodInsnNode chosen = isEmpty.get(3);
+		assertEquals(2, MixinFit.value(StagedFabricMixinFixture.at(mixin, "rightClickAir"), "ordinal"));
+		MethodInsnNode chosen = isEmpty.get(2);
 		AbstractInsnNode after = chosen;
 		while (!(after instanceof MethodInsnNode call && !call.name.equals("isEmpty"))) after = after.getNext();
 		assertEquals("useItem", ((MethodInsnNode) after).name, "the check in front of useItem");

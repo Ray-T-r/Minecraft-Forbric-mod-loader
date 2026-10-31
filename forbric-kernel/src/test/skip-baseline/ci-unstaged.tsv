@@ -568,7 +568,7 @@ test	net.forbric.kernel.mixin.MixinBlockInteractionCaptureTest	aSpringAppendingW
 test	net.forbric.kernel.mixin.MixinBlockInteractionCaptureTest	aSpringTakingTheCollidedStateAsAppendedReadsItWhereNeoForgesHostTakesIt()	[fixture:staged] current callback target declarations: $ROOT/forbric-loader/run/merged-base/patched-mc-merged-26.2.jar
 test	net.forbric.kernel.mixin.MixinBlockInteractionCaptureTest	readAgainstTheMethodItIsWrittenForAnAppendedArgumentServesWhereItsLocalWould()	[fixture:staged] current callback target declarations: $ROOT/forbric-loader/run/merged-base/patched-mc-merged-26.2.jar
 test	net.forbric.kernel.mixin.MixinBlockInteractionCaptureTest	theReleasedControlsHandEachCaptureTheSlotHoldingItsNativeValue()	[fixture:third-party] real fixture required: $ROOT/forbric-kernel/build/compat-inputs/create-fly/create-fly.jar
-test	net.forbric.kernel.mixin.MixinBuilderStubRebindTest	createsNormalsWrapMovesToTheOverloadThatBakesTheQuads()	[fixture:staged] game jar
+test	net.forbric.kernel.mixin.MixinBuilderStubRebindTest	onTheGenuineBaseCreatesNormalsWrapStaysOnVanillasBodyWhichBakesTheQuads()	[fixture:staged] game jar
 test	net.forbric.kernel.mixin.MixinBuilderStubRebindTest	onVanillaOrSwitchedOffNothingMoves()	[fixture:staged] game jar
 test	net.forbric.kernel.mixin.MixinCallbackContractsTest	GUI item / MixinGuiItemCaptureAdapter	[fixture:third-party] real fixture required: build/sweep80-mac/v020-rounds/r3/mods/itemglintrelight-fabric-26.2-0.3.0+26.2.jar
 test	net.forbric.kernel.mixin.MixinCallbackContractsTest	GUI item / unsafe source	[fixture:third-party] real fixture required: build/sweep80-mac/v020-rounds/r3/mods/itemglintrelight-fabric-26.2-0.3.0+26.2.jar
@@ -1157,7 +1157,6 @@ test	net.forbric.kernel.mixin.MixinRetargetReplacedCallTest	withoutTheRuleTheHea
 test	net.forbric.kernel.mixin.MixinRetargetStagedTest	fabricBlockApisTwoAirCheckRedirectsGoPartialToFit()	[fixture:staged] staged merged base absent
 test	net.forbric.kernel.mixin.MixinRetargetStagedTest	fabricTransfersTwoContainerMixinsGoPartialToFit()	[fixture:staged] staged merged base absent
 test	net.forbric.kernel.mixin.MixinRetargetStagedTest	fuelValuesMixinIsLeftAloneBecauseItsLocalsLiveOnlyInTheStub()	[fixture:staged] staged merged base absent
-test	net.forbric.kernel.mixin.MixinRetargetSubstitutedCallTest	fusionsRealMixinOnTheRealMergedBase()	[fixture:staged] sweep pack or staged merged base absent
 test	net.forbric.kernel.mixin.MixinReturnDecorationAdapterTest	aChangedNativePrefixAndAUsedReturnValueCannotBorrowTheProjectionProof()	[fixture:staged] actual API and native-indexed game required
 test	net.forbric.kernel.mixin.MixinReturnDecorationAdapterTest	aNewComputationBeforeTheSnapshotCannotMoveTheCallbackPastItsOriginalValue()	[fixture:staged] actual API and native-indexed game required
 test	net.forbric.kernel.mixin.MixinReturnDecorationAdapterTest	actualPositionCallbackFollowsTheConservedReturnBeforeItsNativeSnapshot()	[fixture:staged] actual API and native-indexed game required

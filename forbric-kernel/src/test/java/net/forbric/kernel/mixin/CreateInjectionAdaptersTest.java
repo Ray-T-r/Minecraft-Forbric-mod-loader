@@ -54,7 +54,13 @@ class CreateInjectionAdaptersTest {
         var node=CreateGuestMixinFixture.mixin("com/zurrtum/create/client/mixin/MultiPlayerGameModeMixin");MethodNode handler=predictionHandler(node);
         String before=MixinFit.stringList(MixinFit.value(MixinFit.injectorOf(handler),"method")).getFirst(),name=before.substring(0,before.indexOf('('));
         ClassNode target=CarpetMixinAdapterTest.target("net/minecraft/client/multiplayer/MultiPlayerGameMode");
-        List<MethodNode> alternatives=target.methods.stream().filter(method->method.name.equals(name)).toList();assertEquals(2,alternatives.size(),"the real merged base retains both native implementations");
+        // The merged base kept both families' lambda$startDestroyBlock$1; the genuine base has NeoForge's alone. The rule under
+        // test (two referenced native implementations: choose neither) is given its second implementation here, a copy of
+        // NeoForge's taking another event type, as the merge's MinecraftForge one did.
+        List<MethodNode> natives=target.methods.stream().filter(method->method.name.equals(name)).toList();assertEquals(1,natives.size(),"premise: the genuine base has one native implementation");
+        MethodNode other=new MethodNode(natives.getFirst().access,natives.getFirst().name,natives.getFirst().desc.replace("net/neoforged/neoforge/event/entity/player/PlayerInteractEvent$LeftClickBlock","org/example/OtherLeftClickBlock"),null,null);
+        assertNotEquals(natives.getFirst().desc,other.desc,"premise: the copy takes another event type");natives.getFirst().accept(other);other.desc=natives.getFirst().desc.replace("net/neoforged/neoforge/event/entity/player/PlayerInteractEvent$LeftClickBlock","org/example/OtherLeftClickBlock");target.methods.add(other);
+        List<MethodNode> alternatives=target.methods.stream().filter(method->method.name.equals(name)).toList();assertEquals(2,alternatives.size());
         MethodNode root=new MethodNode(Opcodes.ACC_PUBLIC,"arbitraryHandleConsumer","()V",null,null);
         for(MethodNode method:alternatives){root.instructions.add(new LdcInsnNode(new Handle(Opcodes.H_INVOKEVIRTUAL,target.name,method.name,method.desc,false)));root.instructions.add(new InsnNode(Opcodes.POP));}
         root.instructions.add(new InsnNode(Opcodes.RETURN));root.maxStack=1;root.maxLocals=1;target.methods.add(root);

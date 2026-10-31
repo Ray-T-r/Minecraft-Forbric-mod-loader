@@ -26,8 +26,12 @@ class MixinNativePredicateSeamTest{
 		Inputs inputs=inputs();ClassNode host=inputs.classes().apply("net/minecraft/world/entity/vehicle/boat/AbstractBoat");
 		MethodNode body=host.methods.stream().filter(m->m.name.equals("checkInWater")).findFirst().orElseThrow();body.instructions.insert(new MethodInsnNode(Opcodes.INVOKESTATIC,"unknown/Effects","run","()V",false));
 		Inputs first=inputs;assertEquals(0,MixinNativePredicateSeam.adapt(inputs.guest(),name->name.equals(host.name)?host:first.classes().apply(name),inputs.originals()));
-		inputs=inputs();ClassNode query=inputs.classes().apply(host.name);MethodNode entry=query.methods.stream().filter(m->m.name.equals("canBoatInFluid")&&m.desc.startsWith("(Lnet/minecraft/world/level/material/FluidState;")).findFirst().orElseThrow();entry.instructions.insert(new MethodInsnNode(Opcodes.INVOKESTATIC,"unknown/Effects","run","()V",false));Inputs unchanged=inputs;
-		assertEquals(0,MixinNativePredicateSeam.adapt(inputs.guest(),name->name.equals(query.name)?query:unchanged.classes().apply(name),inputs.originals()));
+		// The current query: genuine NeoForge declares canBoatInFluid(FluidState) as IAbstractBoatExtension's default, in
+		// the carrier (the merged base had copied it onto AbstractBoat itself).
+		inputs=inputs();java.util.function.Predicate<MethodNode> isQuery=m->m.name.equals("canBoatInFluid")&&m.desc.startsWith("(Lnet/minecraft/world/level/material/FluidState;");
+		ClassNode query=inputs.classes().apply(host.name);if(query.methods.stream().noneMatch(isQuery))query=inputs.classes().apply("net/neoforged/neoforge/common/extensions/IAbstractBoatExtension");
+		MethodNode entry=query.methods.stream().filter(isQuery).findFirst().orElseThrow();ClassNode queried=query;entry.instructions.insert(new MethodInsnNode(Opcodes.INVOKESTATIC,"unknown/Effects","run","()V",false));Inputs unchanged=inputs;
+		assertEquals(0,MixinNativePredicateSeam.adapt(inputs.guest(),name->name.equals(queried.name)?queried:unchanged.classes().apply(name),inputs.originals()));
 	}
 	@Test void missingNativeRootAndDisabledControlKeepTheOriginalHandler()throws Exception{
 		Inputs inputs=inputs();assertEquals(0,MixinNativePredicateSeam.adapt(inputs.guest(),inputs.classes(),name->null));

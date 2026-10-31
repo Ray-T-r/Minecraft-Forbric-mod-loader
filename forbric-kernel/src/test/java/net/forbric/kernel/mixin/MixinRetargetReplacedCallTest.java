@@ -80,10 +80,11 @@ class MixinRetargetReplacedCallTest {
 		Function<String, byte[]> resolver = merged();
 		MixinFit.Result before = NativeCallTestEvidence.evaluate(moogsShaped(), resolver);
 		assertEquals(MixinFit.Verdict.PARTIAL, before.verdict());
+		// Genuine NeoForge declares no placeEntities at all (javap): the HEAD selector simply binds nothing. The merged base
+		// kept MinecraftForge's eight-argument placeEntities, which the bare name bound and Mixin then rejected.
 		assertEquals(List.of("@At(INVOKE) StructureTemplate.placeEntities in placeInWorld",
-				"@Inject target StructureTemplate." + row().vanilla() + " is gone: the carrier replaced it with addEntitiesToWorld, "
-						+ "and the name binds placeEntities" + forgeShape(resolver) + ", which the handler was not written for"),
-				before.unresolved().stream().distinct().toList(), "the HEAD selector is a miss too: Mixin rejects its descriptor");
+				"@Inject target StructureTemplate.placeEntities"),
+				before.unresolved().stream().distinct().toList(), "the HEAD selector is a miss too: nothing of that name is left");
 
 		MixinRetarget.Plan plan = NativeCallTestEvidence.plan(MixinFit.parse(moogsShaped()), resolver);
 		assertEquals(List.of(MixinRetarget.Element.AT_TARGET, MixinRetarget.Element.AT_TARGET, MixinRetarget.Element.PROJECT),
@@ -120,8 +121,7 @@ class MixinRetargetReplacedCallTest {
 		Function<String, byte[]> resolver = merged();
 		assertTrue(NativeCallTestEvidence.plan(MixinFit.parse(moogsShaped()), resolver).isEmpty());
 		assertEquals(List.of("@At(INVOKE) StructureTemplate.placeEntities in placeInWorld",
-				"@Inject target StructureTemplate.placeEntities binds placeEntities" + forgeShape(resolver)
-						+ ", which the handler was not written for"),
+				"@Inject target StructureTemplate.placeEntities"),
 				NativeCallTestEvidence.evaluate(moogsShaped(), resolver).unresolved().stream().distinct().toList(),
 				"the HEAD selector's miss is seen without the row: only the move is the row's");
 	}
@@ -167,7 +167,9 @@ class MixinRetargetReplacedCallTest {
 		byte[] both = withRefusedInjector(headOnly());
 		MixinFit.Result fit = NativeCallTestEvidence.evaluate(both, resolver);
 		assertEquals(MixinFit.Verdict.UNFIT, fit.verdict(), fit.reason());
-		assertEquals(2, fit.rejected().size(), fit.rejected().toString());
+		// One rejection: onPlaceInWorld's. The HEAD injector is a plain miss on the genuine base (no placeEntities is left to
+		// bind and be rejected, as MinecraftForge's was on the merged base).
+		assertEquals(1, fit.rejected().size(), fit.rejected().toString());
 		MixinRetarget.Plan plan = NativeCallTestEvidence.plan(MixinFit.parse(both), resolver);
 		MixinFit.Result after = NativeCallTestEvidence.evaluate(MixinRetarget.rewritten(both, plan), resolver);
 		assertEquals(MixinFit.Verdict.PARTIAL, after.verdict(), "the plan does move the HEAD injector: " + after.reason());
@@ -229,12 +231,6 @@ class MixinRetargetReplacedCallTest {
 		assertTrue(!asides.get(0).equals(asides.get(1)), "one name for both bodies: " + asides);
 		assertEquals(List.of(MixinHandlerShim.asideName(MIXIN, "processAndPlaceEntities", MixinRetarget.PROJECTED_SUFFIX),
 				MixinHandlerShim.asideName("test/OtherEntityProcessorMixin", "processAndPlaceEntities", MixinRetarget.PROJECTED_SUFFIX)), asides);
-	}
-
-	/** The descriptor of the first {@code placeEntities} the merged class declares: the one a bare name binds. */
-	private static String forgeShape(Function<String, byte[]> resolver) {
-		ClassNode node = MixinFit.parse(resolver.apply(TEMPLATE + ".class"));
-		return node.methods.stream().filter(m -> m.name.equals("placeEntities")).findFirst().orElseThrow().desc;
 	}
 
 	/** EntityProcessorMixin with its HEAD injector only. */

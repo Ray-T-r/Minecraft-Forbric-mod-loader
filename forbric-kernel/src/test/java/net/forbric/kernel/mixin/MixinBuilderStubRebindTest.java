@@ -15,23 +15,29 @@ import org.objectweb.asm.ClassReader;
 import org.objectweb.asm.tree.*;
 
 /**
- * NeoForge keeps vanilla's {@code UnbakedCuboidGeometry.bake(List, TextureSlots, ModelBaker, ModelState, ModelDebugName)}
- * as a builder stub over {@code bake(QuadCollection.Builder, …, Function)}, which makes vanilla's
- * {@code FaceBakery.bakeQuad} calls. Create's normals {@code @WrapOperation} on {@code bakeQuad} bound the stub (census:
- * natively once in {@code bake}, on Forbric nowhere) and now binds the overload.
+ * The merged base kept vanilla's {@code UnbakedCuboidGeometry.bake(List, TextureSlots, ModelBaker, ModelState, ModelDebugName)}
+ * as a builder stub over a {@code bake(QuadCollection.Builder, …, Function)} overload (MinecraftForge's), which made
+ * vanilla's {@code FaceBakery.bakeQuad} calls, so Create's normals {@code @WrapOperation} on {@code bakeQuad} bound the
+ * stub and the rebind moved it to the overload. Genuine NeoForge has no such overload: its static {@code bake(List, …)}
+ * is vanilla's own body and makes the {@code bakeQuad} call itself (javap), so the wrap binds where Fabric binds it and
+ * nothing moves.
  */
 class MixinBuilderStubRebindTest {
 	private static final String GEOMETRY = "net/minecraft/client/resources/model/cuboid/UnbakedCuboidGeometry";
-	private static final String BUILDER_BAKE = "bake(Lnet/minecraft/client/resources/model/geometry/QuadCollection$Builder;Ljava/util/List;"
-			+ "Lnet/minecraft/client/resources/model/sprite/TextureSlots;Lnet/minecraft/client/resources/model/ModelBaker;"
-			+ "Lnet/minecraft/client/renderer/block/dispatch/ModelState;Lnet/minecraft/client/resources/model/ModelDebugName;Ljava/util/function/Function;)V";
+	private static final String BAKE_QUAD = "net/minecraft/client/resources/model/cuboid/FaceBakery";
 
-	@Test void createsNormalsWrapMovesToTheOverloadThatBakesTheQuads() throws Exception {
-		ClassNode merged = full(TestFixtures.stagedBase()), vanilla = full(TestFixtures.vanillaJar());
+	@Test void onTheGenuineBaseCreatesNormalsWrapStaysOnVanillasBodyWhichBakesTheQuads() throws Exception {
+		ClassNode base = full(TestFixtures.stagedBase()), vanilla = full(TestFixtures.vanillaJar());
 		ClassNode mixin = create();
-		assertEquals(1, MixinBuilderStubRebind.adapt(mixin, name -> name.equals(GEOMETRY) ? merged : null, (e, name) -> name.equals(GEOMETRY) ? vanilla : null));
 		MethodNode handler = mixin.methods.stream().filter(m -> m.name.equals("bakeQuad")).findFirst().orElseThrow();
-		assertEquals(List.of(BUILDER_BAKE), MixinFit.stringList(MixinFit.value(MixinFit.injectorOf(handler), "method")));
+		List<String> selectors = MixinFit.stringList(MixinFit.value(MixinFit.injectorOf(handler), "method"));
+		List<MethodNode> bound = MixinTargetSelectors.bound(handler, base);
+		assertNotNull(bound);
+		assertEquals(1, bound.size(), "the selector binds one body");
+		assertEquals(1, java.util.Arrays.stream(bound.getFirst().instructions.toArray()).filter(i -> i instanceof MethodInsnNode call
+				&& call.owner.equals(BAKE_QUAD) && call.name.equals("bakeQuad")).count(), "which makes the bakeQuad call itself, as vanilla's does");
+		assertEquals(0, MixinBuilderStubRebind.adapt(mixin, name -> name.equals(GEOMETRY) ? base : null, (e, name) -> name.equals(GEOMETRY) ? vanilla : null));
+		assertEquals(selectors, MixinFit.stringList(MixinFit.value(MixinFit.injectorOf(handler), "method")), "nothing moves");
 	}
 
 	@Test void onVanillaOrSwitchedOffNothingMoves() throws Exception {
