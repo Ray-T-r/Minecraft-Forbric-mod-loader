@@ -41,7 +41,9 @@ import net.forbric.kernel.TestFixtures.Fixture;
  * menu drew "Mods (Forbric)" twice, NeoForge's icon in the icon row and MinecraftForge's full-width button under
  * Options, because each family's body adds its own and the redirector points both at the one unified list. The stand-in
  * menu adds both shapes the real one does — a widget factory of another class whose own lambda opens NeoForge's list,
- * and an inline button whose lambda constructs MinecraftForge's — and is run before and after the pass.
+ * and an inline button whose lambda constructs a second list — and is run before and after the pass. MinecraftForge's
+ * screen, which was that second list, went with MinecraftForge; the stand-in now uses the other screen the redirector
+ * still re-points, NeoForge's pre-26.2.0.88 {@code client.gui.ModListScreen}, which has the same constructor shape.
  */
 class ModsButtonRedirectorExecutionTest {
 	private static final String MENU = "fixture.Menu";
@@ -57,10 +59,10 @@ class ModsButtonRedirectorExecutionTest {
 				package net.minecraft.client.gui.screens;
 				public class Screen { }
 				""");
-		sources.put("net.minecraftforge.client.gui.ModListScreen", """
-				package net.minecraftforge.client.gui;
+		sources.put("net.neoforged.neoforge.client.gui.ModListScreen", """
+				package net.neoforged.neoforge.client.gui;
 				public class ModListScreen extends net.minecraft.client.gui.screens.Screen {
-					public ModListScreen(net.minecraft.client.gui.screens.Screen parent) { fixture.Trace.opened.add("forge list"); }
+					public ModListScreen(net.minecraft.client.gui.screens.Screen parent) { fixture.Trace.opened.add("pre-88 list"); }
 				}
 				""");
 		sources.put("net.neoforged.neoforge.client.gui.modlist.ModListScreen", """
@@ -140,7 +142,7 @@ class ModsButtonRedirectorExecutionTest {
 	private static final String FRIENDS = "layout.add(FriendsWidget.create(this));";
 	private static final String OPTIONS = "layout.add(new Button(\"options\", () -> { }));";
 	private static final String FORGE_ROW =
-			"layout.add(new Button(\"row mods\", () -> open(new net.minecraftforge.client.gui.ModListScreen(this))));";
+			"layout.add(new Button(\"row mods\", () -> open(new net.neoforged.neoforge.client.gui.ModListScreen(this))));";
 	private static final String QUIT = "layout.add(new Button(\"quit\", () -> { }));";
 
 	/** Classes as the transform chain would hand them over: the factory's own class, read by name. */
@@ -183,7 +185,7 @@ class ModsButtonRedirectorExecutionTest {
 	@Test void aMenuThatAddsOneModsButtonPerFamilyShowsTheFirstOnce(@TempDir Path work) throws Throwable {
 		Map<String, byte[]> original = InjectorExecution.compile(work, standIns(BACK, NEO_ICON, FRIENDS, OPTIONS, FORGE_ROW, QUIT));
 		assertEquals(new Run(List.of("back", "icon mods", "friends", "options", "row mods", "quit"),
-						List.of("neoforge list", "forge list")), run(InjectorExecution.load(original)),
+						List.of("neoforge list", "pre-88 list")), run(InjectorExecution.load(original)),
 				"premise: as merged, the menu shows a mods button per family, each opening its own family's list");
 
 		Map<String, byte[]> classes = transformed(original, lookup(original));
@@ -242,7 +244,7 @@ class ModsButtonRedirectorExecutionTest {
 	 * later instruction may read. The method keeps running, and the report says the menu still shows two.
 	 */
 	@Test void aDuplicateThatCannotBeDroppedSafelyIsLeftAndReported(@TempDir Path work) throws Throwable {
-		String stored = "Button mods = new Button(\"row mods\", () -> open(new net.minecraftforge.client.gui.ModListScreen(this)));"
+		String stored = "Button mods = new Button(\"row mods\", () -> open(new net.neoforged.neoforge.client.gui.ModListScreen(this)));"
 				+ " layout.add(mods);";
 		Map<String, byte[]> original = InjectorExecution.compile(work, standIns(BACK, NEO_ICON, OPTIONS, stored, QUIT));
 		Map<String, byte[]>[] holder = new Map[1];

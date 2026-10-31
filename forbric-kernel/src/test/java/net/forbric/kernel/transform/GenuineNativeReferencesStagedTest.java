@@ -208,23 +208,10 @@ class GenuineNativeReferencesStagedTest {
 		byte[] restored = new NativeConstructorFacadeRestorer(resources(genuine)).transform(FUEL.replace('/', '.'), fuel, null);
 		assertNotSame(fuel, restored, "NativeConstructorFacadeRestorer restores FuelValues' native constructor facade");
 
-		assertNotSame(compatFluid(genuine), localRanges(genuine),
-				"LocalRanges widens FluidRenderer.tesselate's local, the one genuine survivor of the merge's pattern");
-	}
-
-	/**
-	 * LocalRanges asks only whether a class is the base's (any ecosystem's reference pins it), so the base's own bytes are
-	 * enough: it lands with no sidecar, and declined on the genuine base for as long as an embedded index was the only
-	 * source (the census' "0 without the index"). It runs after the merged-base compat edit of tesselate, as in the chain.
-	 */
-	@Test
-	void localRangesNeedsOnlyTheBasesOwnBytes() throws Exception {
-		Path genuine = genuine();
-		launch(genuine, null);
-		assertNotSame(compatFluid(genuine), localRanges(genuine), "the base answers for itself");
-		NativeGameReferences.configure(null);
-		StagedGameClasses.bind(loader);
-		assertSame(compatFluid(genuine), localRanges(genuine), "with the embedded index as the only source, nothing");
+		// LocalRanges' one genuine site was FluidRenderer.tesselate as the MinecraftForge fluid-model splice left it; that
+		// splice went with MinecraftForge, and NeoForge's own tesselate gives LocalRanges nothing to widen.
+		assertSame(compatFluid(genuine), localRanges(genuine),
+				"LocalRanges leaves the genuine FluidRenderer.tesselate as NeoForge ships it");
 	}
 
 	private byte[] compatFluidBytes;

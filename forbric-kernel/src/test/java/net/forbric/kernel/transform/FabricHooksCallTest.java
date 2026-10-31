@@ -125,27 +125,6 @@ class FabricHooksCallTest {
 				"the branch that skips mod loading must also skip the marker");
 	}
 
-	/**
-	 * A base carrying BOTH server triggers gets one marker. SERVER_TRIGGERS keeps the no-argument form in case a base
-	 * flips back to it; two markers would fail owo's {@code @Group(max = 1)} with "expected 1 but 2".
-	 */
-	@Test
-	void aMainWithBothTriggersGetsOneMarker() throws Exception {
-		byte[] out = LifecycleHookInjector.forServer().transform(LifecycleHookInjector.SERVER_MAIN, serverMainBothForms(),
-				null);
-
-		MethodNode main = method(out, "main");
-		int markers = 0;
-		for (AbstractInsnNode insn : main.instructions) {
-			if (insn instanceof MethodInsnNode call && call.owner.equals(HOOKS) && call.name.equals("startServer")) markers++;
-		}
-		assertEquals(1, markers, "one Hooks.startServer per method, whatever the number of triggers");
-		assertTrue(indexOfCall(real(main), KERNEL_LIFECYCLE, "onServerModLoading") >= 0
-				&& indexOfCall(real(main), KERNEL_LIFECYCLE, "onServerModLoadingNoArg") >= 0,
-				"premise: both triggers were redirected");
-		verify("net.minecraft.server.Main", out);
-	}
-
 	/** The switch puts back exactly the bytes from before: the plain owner+name redirect, nothing else. */
 	@Test
 	void switchedOffTheServerEntryIsExactlyTheRedirect() {
@@ -361,29 +340,6 @@ class FabricHooksCallTest {
 		mv.visitJumpInsn(Opcodes.IFNE, skip);
 		mv.visitInsn(Opcodes.ICONST_0);
 		mv.visitMethodInsn(Opcodes.INVOKESTATIC, SERVER_MOD_LOADER, "load", "(Z)V", false);
-		mv.visitLabel(skip);
-		mv.visitInsn(Opcodes.RETURN);
-		mv.visitMaxs(0, 0);
-		mv.visitEnd();
-		cw.visitEnd();
-		return cw.toByteArray();
-	}
-
-	/** {@code main(String[])}: NeoForge's {@code ServerModLoader.load(false)} and then Forge's {@code load()}. */
-	private static byte[] serverMainBothForms() {
-		ClassWriter cw = new ClassWriter(ClassWriter.COMPUTE_FRAMES | ClassWriter.COMPUTE_MAXS);
-		cw.visit(Opcodes.V21, Opcodes.ACC_PUBLIC, "net/minecraft/server/Main", null, "java/lang/Object", null);
-		MethodVisitor mv = cw.visitMethod(Opcodes.ACC_PUBLIC | Opcodes.ACC_STATIC, "main", "([Ljava/lang/String;)V",
-				null, null);
-		mv.visitCode();
-		Label skip = new Label();
-		mv.visitVarInsn(Opcodes.ALOAD, 0);
-		mv.visitInsn(Opcodes.ARRAYLENGTH);
-		mv.visitJumpInsn(Opcodes.IFNE, skip);
-		mv.visitInsn(Opcodes.ICONST_0);
-		mv.visitMethodInsn(Opcodes.INVOKESTATIC, SERVER_MOD_LOADER, "load", "(Z)V", false);
-		mv.visitMethodInsn(Opcodes.INVOKESTATIC, "net/minecraftforge/server/loading/ServerModLoader", "load", "()V",
-				false);
 		mv.visitLabel(skip);
 		mv.visitInsn(Opcodes.RETURN);
 		mv.visitMaxs(0, 0);
