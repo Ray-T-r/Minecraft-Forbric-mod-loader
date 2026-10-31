@@ -120,7 +120,7 @@ class DeclarationReaderCensusTest {
 					continue;
 				}
 				boolean isStatic = (declared.get(0).access & org.objectweb.asm.Opcodes.ACC_STATIC) != 0;
-				if (isStatic != family.staticList()) missing.add(family.modList() + "." + member.getKey() + " static=" + isStatic);
+				if (isStatic) missing.add(family.modList() + "." + member.getKey() + " is static; the redirect rewrites instance calls only");
 				String desc = DeclarationReaderModListInjector.hookDesc(declared.get(0).desc, family);
 				boolean present = hook.methods.stream().anyMatch(m -> m.name.equals(member.getKey()) && m.desc.equals(desc)
 						&& (m.access & org.objectweb.asm.Opcodes.ACC_STATIC) != 0
