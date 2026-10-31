@@ -12,14 +12,16 @@ set -uo pipefail
 SRC="$KERNEL/canary/attribution"
 OUT="$KERNEL/run/canary"
 canary_scratch attribution
-MERGED="$OLD/run/merged-base/patched-mc-merged-26.2.jar"
-NEO_RT="$OLD/run/neoforge-runtime/neoforge-runtime.jar"
+# The game base and its one carrier, with the launchers' defaults (BASE, NEO_RT): the Fabric canaries compile against
+# the files they run on. NEO_MC is the same NeoForge patched game the NeoForge canaries have always compiled against.
+BASE="${BASE:-$OLD/run/neoforge-patched/patched-mc-neoforge-26.2.jar}"
+NEO_RT="${NEO_RT:-$OLD/run/neoforge-runtime/neoforge-runtime.jar}"
 NEO_MC="$OLD/run/neoforge-patched/patched-mc-neoforge-26.2.jar"
 MC_DIR="${MC_DIR:-$HOME/Library/Application Support/minecraft}"
 VLIBS="$(find "$MC_DIR/libraries" -name '*.jar' 2>/dev/null | paste -sd: -)"
 
 step "prerequisites"
-for f in "$MERGED" "$NEO_RT" "$NEO_MC"; do
+for f in "$BASE" "$NEO_RT" "$NEO_MC"; do
   [ -f "$f" ] || { echo "[kernel] FAIL missing: $f"; exit 1; }
 done
 MIXIN="$(find "$MC_DIR/libraries/net/fabricmc/sponge-mixin" -name '*.jar' 2>/dev/null | sort | tail -1)"
@@ -30,7 +32,7 @@ mkdir -p "$WORK" "$OUT"
 build_fabric() { # <mod id>
   local id="$1" classes="$WORK/$1"
   mkdir -p "$classes"
-  javac -nowarn -proc:none --release 21 -cp "$MERGED:$MIXIN:$NEO_RT:$VLIBS" -d "$classes" \
+  javac -nowarn -proc:none --release 21 -cp "$BASE:$MIXIN:$NEO_RT:$VLIBS" -d "$classes" \
         $(find "$SRC/$id/src" -name '*.java') 2>&1 | grep -v '^Note:' || true
   [ -n "$(find "$classes" -name '*.class')" ] || { echo "[kernel] FAIL $id did not compile"; exit 1; }
   cp "$SRC/$id/fabric.mod.json" "$SRC/$id/$id.mixins.json" "$classes/"
