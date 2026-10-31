@@ -521,10 +521,6 @@ public final class CommonNetworkInteropInjector implements ClassTransformer {
 	}
 
 	/**
-	 * {@code if (interop.dispatchForgePayload(this, packet)) return;} — prepended to the void method. At the
-	 * fall-through label the stack is empty and both params live: locals=[this, packet] / stack=[], the entry frame.
-	 */
-	/**
 	 * Makes MinecraftForge's play-phase override fall through to NeoForge's dispatcher.
 	 *
 	 * <p>The merged {@code ServerGamePacketListenerImpl.handleCustomPayload} is MinecraftForge's patch and it is
