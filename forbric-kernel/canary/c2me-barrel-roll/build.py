@@ -1,4 +1,4 @@
-"""Build the read-only runtime probe against staged carrier APIs and an isolated installed profile."""
+"""Build the read-only runtime probe against the staged game base, its NeoForge carrier and an isolated installed profile."""
 from pathlib import Path
 import json
 import os
@@ -17,8 +17,10 @@ CLASSES = OUT / 'classes'
 if CLASSES.exists():
     shutil.rmtree(CLASSES)
 CLASSES.mkdir(parents=True, exist_ok=True)
-classpath = [STAGE / 'merged-base/patched-mc-merged-26.2.jar',
-             STAGE / 'neoforge-runtime/neoforge-runtime.jar', DBR, *sorted((MC / 'libraries').rglob('*.jar'))]
+# The game base and the NeoForge carrier the launchers run (BASE, NEO_RT; their defaults under the stage).
+BASE = Path(os.environ.get('BASE', STAGE / 'neoforge-patched/patched-mc-neoforge-26.2.jar'))
+NEO_RT = Path(os.environ.get('NEO_RT', STAGE / 'neoforge-runtime/neoforge-runtime.jar'))
+classpath = [BASE, NEO_RT, DBR, *sorted((MC / 'libraries').rglob('*.jar'))]
 java = Path(os.environ['FORBRIC_JAVA'])
 command = [str(java.with_name('javac')), '-proc:none', '-cp', os.pathsep.join(map(str, classpath)),
            '-d', str(CLASSES), *map(str, sorted((SOURCE / 'src').rglob('*.java')))]

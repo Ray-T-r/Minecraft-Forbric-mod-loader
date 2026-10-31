@@ -13,7 +13,8 @@ A read-only NeoForge probe (`c2merollprobe`) for two repairs, run on a client ne
   synchronized fields are in place in `OceanMonumentPieces$RoomDefinition` and `NetherFortressPieces$StartPiece`, then
   builds 64 fortresses and 64 monuments on 8 threads, printing `[C2MERollProbe] STRUCTURES_PASS` or `STRUCTURES_FAIL`.
 
-Build it with `build.py` against the staged carriers and an installed profile's libraries:
+Build it with `build.py` against the staged game base (NeoForge's patched game; `BASE` overrides it), the NeoForge
+carrier (`NEO_RT`) and an installed profile's libraries:
 
 ```sh
 FORBRIC_OLD=<staged root parent> FORBRIC_MC=<installed .minecraft> DBR_JAR=<do_a_barrel_roll jar> \
