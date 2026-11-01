@@ -12,7 +12,7 @@ import subprocess
 import tempfile
 import zipfile
 
-CHECKS = 27
+CHECKS = 34
 # Exactly these fail without the adapter (-Dforbric.playerWorldCallbacks=off): each needs a callback it restores.
 # fill.direct.lamp.false is not one any more: MixinRetarget's helper-edge rule carries Level_fillUpdatesMixin's
 # updateNeighborsMaybe redirect from setBlock onto markAndNotifyBlock on its own, so it passes with the adapter off too
@@ -25,11 +25,18 @@ CARPET = {'fill.shape.false', 'fluid.blackstone.neighbor', 'fluid.deepslate.neig
           'break.creative.scarpetCancel.true', 'break.creative.scarpetCancel.false',
           'break.survival.scarpetCancel.true', 'break.survival.scarpetCancel.false',
           'break.creative.bedCancel', 'break.survival.unstableTntCancel'}
-# Vanilla's own lava/water reactions. They failed in the baseline too until FluidInteractionsInjector: placement asked
-# MinecraftForge's neutered registry, and only Carpet's adapter happened to fall back to NeoForge's. Not Carpet's;
-# they must pass with the adapter off.
+# Vanilla's own lava/water reactions, not Carpet's: they must pass in every run. On placement NeoForge's LiquidBlock.onPlace
+# calls vanilla's shouldSpreadLiquid; on a neighbour change its neighborChanged asks NeoForge's FluidInteractionRegistry
+# (vanilla's reactions, in vanilla's direction order), which the kernel's neighbour-change wrap asks after running Carpet's
+# rules where vanilla would have reached them. The .neighbor twins are that wrap's negative controls: with Carpet's rules
+# on, a source stays obsidian, a reaction above zero stays cobblestone, the rule off gives cobblestone, basalt keeps
+# precedence over blackstone and (blue ice reached before water) over deepslate, lava with no water stays lava, and
+# flowing water next to water stays water.
 BASE_FLUID = {'fluid.sourceStaysObsidian', 'fluid.aboveZeroStaysCobblestone', 'fluid.basaltPrecedesBlackstone',
-              'fluid.deepslate.false'}
+              'fluid.deepslate.false', 'fluid.sourceStaysObsidian.neighbor', 'fluid.aboveZeroStaysCobblestone.neighbor',
+              'fluid.deepslate.false.neighbor', 'fluid.basaltPrecedesBlackstone.neighbor',
+              'fluid.basaltPrecedesDeepslate.neighbor', 'fluid.noWaterNoDeepslate.neighbor',
+              'fluid.flowingWaterStaysWater.neighbor'}
 # Exactly these fail with only the neighbour-change wrap off (-Dforbric.fluidReactionNeighbourChange=off): the rules then
 # run where NeoForge's base runs them, on placement alone.
 NEIGHBOUR = {'fluid.blackstone.neighbor', 'fluid.deepslate.neighbor'}

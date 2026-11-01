@@ -97,16 +97,19 @@ JVM and compare.
 
 ## Carpet rule and event verification
 
-`carpet-gate.py --carpet <fabric-carpet-26.2+v260616.jar> --staged-root <forbric-loader/run>`
-compiles the Carpet probe and runs 27 behavior checks in isolated dedicated-server worlds. The baseline
-runs with `forbric.playerWorldCallbacks=off` and must fail exactly the 16 checks that need the adapter (fill shape
-updates, a direct `Level.setBlock` under `impendingFillSkipUpdates` for the neighbour-update redirect, renewable
-blackstone and deepslate on, both Scarpet events and their native-Fabric order); vanilla's own lava/water reactions
-pass there, since placement no longer depends on the adapter (`FluidInteractionsInjector`), and the summary lists
-Carpet and base-fluid failures separately. The fixed run uses strict compatibility policy and must pass every
-behavior check with no confirmed Carpet losses, and none of the five adapted mixins may be left suspected or
-"applies only partially" (the baseline must still show them, so the check can fail). Both runs
-must save and shut down normally. Reports, logs, test worlds and input hashes stay under the printed
+`carpet-gate.py --carpet <fabric-carpet-26.2+v260616.jar> --staged-root <stage/run>`
+compiles the Carpet probe and runs 34 behavior checks in isolated dedicated-server worlds, three times. The baseline
+runs with `forbric.playerWorldCallbacks=off` and must fail exactly the 13 checks that need the adapter (fill shape
+updates, renewable blackstone and deepslate on a neighbour change, both Scarpet events and their native-Fabric order;
+the direct `Level.setBlock` lamp check and the two fluid rules on placement pass without it, because the generic
+retarget carries that redirect and NeoForge's `LiquidBlock.onPlace` calls vanilla's `shouldSpreadLiquid`). Vanilla's
+own lava/water reactions, on placement and on a neighbour change, must pass in every run (NeoForge's own registry and
+vanilla's placement path give them; the neighbour-change twins are the neighbour wrap's negative controls), and the
+summary lists Carpet and base-fluid failures separately. A third run with only
+`-Dforbric.fluidReactionNeighbourChange=off` must fail exactly the two neighbour-change rule checks. The fixed run uses
+strict compatibility policy and must pass every behavior check with no confirmed Carpet losses, and none of the five
+adapted mixins may be left suspected or "applies only partially" (the baseline must still show them, so the check can
+fail). Every run must save and shut down normally. Reports, logs, test worlds and input hashes stay under the printed
 output directory; `--output` selects a new directory explicitly. See
 [the Carpet probe instructions](../../canary/carpet/README.md) for prerequisites and coverage.
 
