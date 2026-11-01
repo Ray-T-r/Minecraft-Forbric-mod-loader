@@ -768,8 +768,6 @@ public final class KernelBoot {
 				return null;
 			}
 		}));
-		// Each LootPool constructor fills the other family's fields too, so a pool built one way encodes the other.
-		chain.register(TransformPhase.COREMOD, new net.forbric.kernel.transform.LootPoolFieldsInjector());
 		// NeoForge's ItemStack.useOn makes its Item.useOn calls in CommonHooks.onPlaceItemIntoWorld and a lambda; both go
 		// through one ItemStack relay that Fabric's ItemEvents.USE_ON wraps (MixinRelocatedCall moves the injector).
 		chain.register(TransformPhase.COREMOD, new net.forbric.kernel.transform.ItemUseOnInjector());

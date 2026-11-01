@@ -206,7 +206,9 @@ public final class ForbricSwitches {
 					+ "posts no second one beside a MinecraftForge call"),
 			// Stage 4: repairs of merged-base damage that NeoForge's own base does not have.
 			Map.entry("forbric.mipmapLowering", "NeoForge's own SpriteLoader lowers an atlas's mip level exactly as vanilla's does, with "
-					+ "no setting gating it, so there is no allocation left to bound"));
+					+ "no setting gating it, so there is no allocation left to bound"),
+			Map.entry("forbric.lootPoolFields", "NeoForge's own LootPool has one name field and one codec that reads only its own fields, "
+					+ "so there is no second family's field for a constructor to fill"));
 
 	private static final ForbricSwitches SYSTEM =
 			new ForbricSwitches(RENAMED, RETIRED, System::getProperty, ForbricLog::warn);

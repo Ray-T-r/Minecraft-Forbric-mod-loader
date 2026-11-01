@@ -1708,8 +1708,6 @@ test	net.forbric.kernel.transform.LambdaInvocationThunkInjectorTest	theActualHud
 test	net.forbric.kernel.transform.LifecycleHookInjectorTest	excisesServerModLoaderFromRealMain()	[fixture:staged] $ROOT/forbric-loader/run/merged-base/patched-mc-merged-26.2.jar absent (reading net/minecraft/server/Main.class)
 test	net.forbric.kernel.transform.LifecycleHookInjectorTest	theRealClientMainReportsItsEarlyFailuresToTheKernelFirst()	[fixture:staged] $ROOT/forbric-loader/run/merged-base/patched-mc-merged-26.2.jar absent (reading net/minecraft/client/main/Main.class)
 test	net.forbric.kernel.transform.LifecycleHookInjectorTest	theRealServerEntryHandsTheServerToFabricAsItIsConstructed()	[fixture:staged] $ROOT/forbric-loader/run/merged-base/patched-mc-merged-26.2.jar absent (reading net/minecraft/server/Main.class)
-test	net.forbric.kernel.transform.LootPoolFieldsInjectorTest	bothConstructorsFillBothFamiliesFields()	[fixture:staged] staged merged base absent
-test	net.forbric.kernel.transform.LootPoolFieldsInjectorTest	theSwitchLeavesTheClassAlone()	[fixture:staged] staged merged base absent
 test	net.forbric.kernel.transform.LootTableEventBridgeInjectorTest	aSecondPassChangesNothingFurther()	[fixture:staged] staged merged base absent
 test	net.forbric.kernel.transform.LootTableEventBridgeInjectorTest	bothSeamsAreRoutedOnceAndTheOriginalsAreGone()	[fixture:staged] staged merged base absent
 test	net.forbric.kernel.transform.LootTableEventBridgeInjectorTest	switchedOffItStandsDownAndDeclaresNoAnchor()	[fixture:staged] staged merged base absent
