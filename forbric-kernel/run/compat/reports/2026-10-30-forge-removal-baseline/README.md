@@ -187,7 +187,7 @@ sweep has gate-m0 RED for the R3 corpus only and gate-m14 RED once because its p
 HTTPS handshake while downloading (`SSLHandshakeException: Remote host terminated the handshake`, before the game
 started); rerun alone under zh it is GREEN. Every other gate GREEN.
 
-## Stage 4: the flip to NeoForge's own patched game, C2 + C1 + C3 + C4's census lane (tips 00a5e585, 73a4314c, s4-c3, s4-c4); C4's wording follow-up, C5 and C6 not done yet
+## Stage 4: the flip to NeoForge's own patched game, C2 + C1 + C3 + C4 (tips 00a5e585, 73a4314c, s4-c3, s4-c4); C5 and C6 not done yet
 
 Stage 4 is one stack of branches: `s4-c2` (C2: delete MinecraftForge's code, on the merged base) → `s4-c1` (C1: build,
 test and launch on NeoForge's patched 26.2 jar, "G", with the NeoForge 26.2.0.93 carrier and the vanilla-reference
@@ -195,8 +195,8 @@ sidecar) → `s4-c3` (C3: delete the repairs that existed only because the base 
 after three checks). Every lane was reviewed adversarially twice (A, B) and followed by a review-fix round; each phase
 ended with a completeness critic. Decisions D1-D41 bound every lane. C4's census lane (census tables regenerated with
 `Ecosystem.FORGE`'s removal, then its review fixes: the anchor census test, the furnace rows, the stand-ins) is recorded at
-the end of this section; **C4's wording follow-up, C5 (rebaseline: tests, gates, C5b world upgrade, C5c Forge → NeoForge
-build swap) and C6 (CI, release, installer clean-up) have not started**.
+the end of this section, followed by C4's wording lane and C4's outcome as a whole; **C5 (rebaseline: tests, gates, C5b
+world upgrade, C5c Forge → NeoForge build swap) and C6 (CI, release, installer clean-up) have not started**.
 
 | phase | commits | tip | diff | details |
 |---|---|---|---|---|
@@ -427,9 +427,8 @@ consumeClick key (#6); whether `LocalRanges`' one site could be written correctl
 
 ### Not done yet
 
-- **C4**: done by the census lane and its review fixes (sections below), except the wording follow-up: 151 string
-  literals and 546 javadoc/comment lines that still say "merged"/"the merge" on NeoForge's base
-  (`stage4-c4-census-wording-left.txt`), each to move with its pins.
+- **C4**: done (census lane, its review fixes and the wording lane, sections below). Left for Stage 6's naming pass: 94
+  present-tense comment lines that still say "merged" (`stage4-c4-wording-left.txt`) and the merged-base identifiers.
 - **C5**: every gate line classified above, the 34 + 6 + 1 re-pins, the C1 gate list, gate-m49's retired switches, the
   four-native-call-sites pin, weave scenarios for the new adapters, wiring regress-gate.py and fluid-head-gate.py into the
   gate list, C5b (world upgrade) and C5c (Forge → NeoForge build swap).
@@ -495,3 +494,52 @@ Forge-family = NeoForge check (1 = 1), its control phases fail on the retired ca
 (C5), m9 165 PASS / 21 FAIL, the same 21 lines as the lane's and verify-c3b's (C5), with both furnace rows RESOLVED in the
 98-mod client's report and no furnace injection warning. regress-gate (four phases, on the tree of d3ab1755, ports
 46400-46411): 4/4. gate-m26 not run (shared client-forge fixtures, no clone variable), gate-m17 not run (installer, C6).
+
+### C4, lane wording-reports (3f989f97, 9debd7b4): merged-base wording, the furnace rows, the C4 failure rows
+
+Everything C4 owned that was not the census commit. Details, the facts checked with javap and the wording rules:
+`stage4-c4-wording.md`; per item `s4/c4/checks.md` "wording-reports".
+
+| item | outcome | commit |
+|---|---|---|
+| false SUSPECTED furnace-remainder rows | already fixed in the judge by the census lane's review fixes (SupersededMixins' `native-furnace-remainder`, red when `shrink` moves first and in regress-gate's `superseded-off` phase); re-checked here: its staged test green in the final suite, and gate-m9's boot log says the furnace mixin "is superseded" | d3ab1755 |
+| merged-base wording in log and report strings | about 140 literals in 63 files reworded ("the current body/method", "the game", "this base", "left X as the base has it", "carrier-added stub", "NeoForge's base"); the 17 literals left mean something else by "merge" (DupeId merge report, class tweakers, merged mappings, Mixin-merged handlers, overlay merge, transformer names, the census format word `merged-only`). A full suite with only these edits found 21 test methods pinning old text (15 classes); all moved in the same commit, with gate-m52's step text. No `check`/`check_absent` pattern in any gate or compat tool greps a changed line | 3f989f97 |
+| merged-base wording in javadoc and comments | 635 comment lines in 136 files (comment lines only, checked mechanically) plus 2 test lines the C3 handoff named; the handoff's named items (CMT prose, KernelForgePipRenderers, KernelGuestMixinAdapter, KernelMixinBootstrap:161, MixinAnonymousRetarget, ForbricMixinService.mergedBaseHas, KernelRuntimeClasses' particle/KeyMapping/PiP lines, MixinFitTest:457, CNI test readClass) rewritten by hand where substitution would have made them false. Left: 94 present-tense lines, 196 history lines not proof-read, 97 other meanings (`stage4-c4-wording-left.txt`) | 9debd7b4 |
+| C4 and C4+C5 rows of the C3 failure list (24) | 23 resolved by the census lane; `MergedBaseCalleeSwapTest.everyAdmittedSwapIsEitherRewrittenOrExplained` has its C4 half done and its C5 half (genuine `ServerPlayer.teleport unsetRemoved -> revive`: rewrite or explain) stays with C5 | — |
+
+Suite at 9debd7b4 (`.stage4`, `-Pforbric.requireFixtures=all`, `cleanTest test`): **5,762 tests, 42 failed**, name for name
+identical to 38bed6fb's 42, same message prefixes; against the C3 tip's 65: 0 new, 23 gone. List with cause and owner:
+`stage4-c4-wording-open-failures.txt` (C5 35, C5 tool 1, P1 6).
+
+Gates at 9debd7b4 (`.stage4`, clean tree, ports 46420-46424; m9 on an APFS clone of `client-merged-pack` resolved by
+real path): m1 GREEN, m46 GREEN, m52 GREEN, m9 165 PASS / 21 FAIL, the same 21 lines as the census lane's (C5). The m9
+boot log carries no merged-base wording; its one "merged" line is Mixin merging a private method into its target.
+
+### C4 as a whole: outcome, suite at the C4 tip, open items
+
+C4 is done on `s4-c4` (daa94207..this record): the eight census tables regenerated from NeoForge's own patched game and
+`Ecosystem.FORGE` removed in the same commit (3d8364b4), the refusal on its own `LoaderKind` marker, `ForeignType`'s
+MinecraftForge column gone, D31's every-chain anchor census landed as a staged test (15138373), the furnace rows resolved
+in the judge (d3ab1755), the MinecraftForge test stand-ins removed or re-shaped (770d8cc7), and the merged-base wording
+reworded in log/report strings and most prose (3f989f97, 9debd7b4). Suite at the C4 tip: 5,762 / 42 failed, every one
+owned by C5 (35 + 1 tool) or P1 (6). Of the C3 tip's 65 failures, the 24 owned by C4 are gone except
+`MergedBaseCalleeSwapTest`'s C5 half.
+
+Open, handed on:
+- **C5**: the 36 C5 rows above; `MergedBaseCalleeSwapTest`'s second admitted swap; gate-m4 (reads the merged base), gate-m29's
+  control phases (retired capability lines), gate-m26 (shared `client-forge-*` fixtures, no clone variable) and gate-m17
+  (installer) not run on `.stage4`; regress-gate.py's four phases and fluid-head-gate.py into the gate list; skip
+  baselines (NativeOnlyMethodsCensusTest x7, MixinFitLivenessCensusStagedTest x5 must no longer skip); gate prose and
+  test-tree messages that still say "merged base" (~80 "staged merged base" fixture reasons and messages, gate-m1/m10/m45
+  labels), wording only; KeyActionExitsTest's MinecraftForge stand-ins; the JoinedReturnExits and one-mods-button dedup
+  hedges measured idle on NeoForge's base (owner decision).
+- **C6**: CI regenerates the two skip TSVs (ci-unstaged.tsv got the 7 rows of ChainAnchorCensusStagedTest and
+  SupersededFurnaceRemainderStagedTest); release notes: refused MinecraftForge jars counted under no ecosystem and no
+  NeoForge row for a pack whose only Forge-family jar is refused; the furnace rows RESOLVED; every log line this C4
+  changed (the wording lane's lines are listed in its commit body; the census lane's in its section above);
+  introduction.md's `<merged-base.jar>` usage for MixinFitReport/MixinOverlapLint.
+- **Stage 6**: the 94 present-tense comment lines, the merged-base class/field/parameter names and the
+  `[Forbric/MergedBaseCompat]` tag; `ForeignType` to one column; `forbric.mixinStubRebind.forgeFamily`'s name.
+- **Owner questions**: KernelModelFormats' optional-loader arm may exist only for the merged cuboid deserializer
+  (unmeasured on NeoForge's base); KernelClientSmoke's "traditional-Forge listener" drill; MixinTwinRebind's captured-locals
+  branch beyond the arguments has no row on NeoForge's table.
