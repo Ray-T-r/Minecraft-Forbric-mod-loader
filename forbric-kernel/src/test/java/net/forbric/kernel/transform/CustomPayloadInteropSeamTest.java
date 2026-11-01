@@ -83,19 +83,6 @@ class CustomPayloadInteropSeamTest {
 		assertTrue(new CustomPayloadInteropSeam(genuine).anchors().anchors().isEmpty());
 	}
 
-	/** The merged-base compat transformer's adoption of the old owner, so the second stand-down is the shape it leaves. */
-	private static byte[] adopt(byte[] bytes) {
-		ClassNode node = node(bytes);
-		for (MethodNode m : node.methods) for (AbstractInsnNode insn : m.instructions) {
-			if (insn instanceof MethodInsnNode call && call.owner.equals(CustomPayloadInteropSeam.LEGACY_INTEROP)) {
-				call.owner = CustomPayloadInteropSeam.INTEROP;
-			}
-		}
-		org.objectweb.asm.ClassWriter writer = new org.objectweb.asm.ClassWriter(0);
-		node.accept(writer);
-		return writer.toByteArray();
-	}
-
 	private static ClassNode node(byte[] bytes) {
 		ClassNode node = new ClassNode();
 		new ClassReader(bytes).accept(node, 0);

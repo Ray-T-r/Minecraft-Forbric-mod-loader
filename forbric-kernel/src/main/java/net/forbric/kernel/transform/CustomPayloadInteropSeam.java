@@ -55,9 +55,8 @@ import net.forbric.kernel.util.ForbricLog;
  * PASS 4b's, field for field: {@code findCodec(idToType, id, protocol, packetFlow, fallback)}, cast back to
  * {@code StreamCodec} — the helper returns {@code Object} because it is compiled without the game.
  *
- * <p>Dormant on the merged base: its {@code findCodec} already makes the call (under the old loader's owner until
- * {@code ForbricMergedBaseCompatTransformer} adopts it, which may run before or after this), so it stands down there
- * and the anchor is a HEDGE. Registered before Mixin, so the post-Mixin arbitration finds the seam in whatever shape the
+ * <p>Stands down where {@code findCodec} already asks {@code PayloadInterop} (a second pass; the merged base, whose
+ * codec class carried the call), so the anchor is a HEDGE. Registered before Mixin, so the post-Mixin arbitration finds the seam in whatever shape the
  * guests leave around it. {@code -Dforbric.customPayloadInteropSeam=off}.
  */
 public final class CustomPayloadInteropSeam implements ClassTransformer {
@@ -68,8 +67,6 @@ public final class CustomPayloadInteropSeam implements ClassTransformer {
 	/** The genuine base's name for the class, and what its anchor declares. */
 	static final String GENUINE_CODEC = PAYLOAD + "$1";
 	static final String INTEROP = "net/forbric/kernel/interop/PayloadInterop";
-	/** What the merged base still calls until ForbricMergedBaseCompatTransformer adopts it under {@link #INTEROP}. */
-	static final String LEGACY_INTEROP = "net/forbric/loader/impl/compat/ForbricCustomPayloadInterop";
 	static final String FIND = "(Ljava/util/Map;Ljava/lang/Object;Ljava/lang/Object;Ljava/lang/Object;Ljava/lang/Object;)Ljava/lang/Object;";
 	private static final String STREAM_CODEC = "net/minecraft/network/codec/StreamCodec";
 	private static final String FALLBACK = "L" + PAYLOAD + "$FallbackProvider;";
@@ -183,7 +180,7 @@ public final class CustomPayloadInteropSeam implements ClassTransformer {
 		if (find == null || (find.access & Opcodes.ACC_STATIC) != 0) return false;
 		for (AbstractInsnNode insn = find.instructions.getFirst(); insn != null; insn = insn.getNext()) {
 			if (insn instanceof MethodInsnNode call && call.getOpcode() == Opcodes.INVOKESTATIC && call.name.equals("findCodec")
-					&& call.desc.equals(FIND) && (call.owner.equals(INTEROP) || call.owner.equals(LEGACY_INTEROP))) {
+					&& call.desc.equals(FIND) && call.owner.equals(INTEROP)) {
 				return false;
 			}
 		}
