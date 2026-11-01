@@ -540,10 +540,6 @@ public final class KernelBoot {
 				}
 			}));
 		}
-		// With a class resolver: one of its repairs has to read the superclass chain to tell a stub that bypasses
-		// a real implementation from one that bypasses nothing. Reads a RESOURCE rather than loading a class, for
-		// the same reason MergedBaseFrameRecomputer does — loading one here would define it before the chain that
-		// is still being built can see it.
 		chain.register(TransformPhase.COREMOD, new ForbricMergedBaseCompatTransformer(path -> {
 			try (java.io.InputStream in = loader.getGameResourceAsStream(path)) {
 				return in == null ? null : in.readAllBytes();

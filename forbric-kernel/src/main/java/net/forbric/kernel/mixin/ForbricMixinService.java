@@ -819,9 +819,9 @@ public final class ForbricMixinService
 	/**
 	 * The class bytes {@link KernelGuestMixinAdapter} resolves mixin anchors against.
 	 *
-	 * <p>This MUST serve post-transform-chain bytes, not raw jar bytes: the chain both ADDS members (the vanilla
-	 * {@code KeyMapping.MAP} view, {@code giveKeyMappingItsVanillaMap}) and REMOVES them ({@code dropInterfaceDefaultShadowingOverrides} deletes methods across
-	 * {@code net/minecraft/client/gui/**}). Resolving against the raw jar would judge the mixin against bytecode
+	 * <p>This MUST serve post-transform-chain bytes, not raw jar bytes: the chain ADDS members (the vanilla
+	 * {@code KeyMapping.MAP} view, {@code giveKeyMappingItsVanillaMap}; the vanilla member twins) and rewrites bodies.
+	 * Resolving against the raw jar would judge the mixin against bytecode
 	 * that never reaches Mixin — the orphaned-field check in particular would report a false hazard on
 	 * {@code KeyMapping.MAP}.
 	 *

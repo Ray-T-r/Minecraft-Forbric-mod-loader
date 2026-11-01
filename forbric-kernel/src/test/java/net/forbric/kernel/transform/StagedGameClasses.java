@@ -18,8 +18,7 @@ import net.forbric.kernel.mixin.NativeGameReferences;
 
 /**
  * The staged base and the NeoForge carrier as the game serves them: raw class files by resource path, and the native
- * reference index bound the way the kernel binds it at boot. What {@link NativeMergeShapeRepair} needs to prove a
- * merge delegate (a C3 candidate; {@link #proof()} goes with it), so a test can ask the same proof the game asks. Hold {@code @ResourceLock("native-game-references")}
+ * reference index bound the way the kernel binds it at boot, so a test can ask what the game asks. Hold {@code @ResourceLock("native-game-references")}
  * while one is open: binding is process-wide.
  */
 final class StagedGameClasses implements AutoCloseable {
@@ -73,8 +72,6 @@ final class StagedGameClasses implements AutoCloseable {
 	byte[] bytes(String name) { return resource(jars, name); }
 	/** The raw-class lookup KernelBoot gives the merged-base repair and KernelMixinBootstrap gives the transfer audit. */
 	Function<String, byte[]> resources() { return name -> resource(jars, name); }
-	/** The merged-base repair's proof over these jars and the bound native references. */
-	NativeMergeShapeRepair proof() { return NativeMergeShapeRepair.production(null, resources()); }
 
 	@Override public void close() throws IOException, ReflectiveOperationException {
 		try { bind(null); } finally { loader.close(); }

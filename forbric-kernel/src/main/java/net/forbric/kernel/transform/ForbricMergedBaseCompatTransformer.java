@@ -51,19 +51,16 @@ import net.forbric.kernel.util.ForbricLog;
  * Repairs class-local bytecode invariants that can drift when two patched Minecraft bases are merged.
  */
 public final class ForbricMergedBaseCompatTransformer implements ClassTransformer {
-	/**
-	 * Reads another class's bytes, for the one repair that has to look up the superclass chain. Null when the
-	 * transformer was built without one, in which case that repair stands down rather than guessing.
-	 */
-	private final java.util.function.Function<String, byte[]> classBytes;
-
-	/** Without a resolver: every repair except the shadowing-override one, which needs to read other classes. */
 	public ForbricMergedBaseCompatTransformer() {
 		this(null);
 	}
 
+	/**
+	 * With the game's raw class lookup, as KernelBoot builds it. No repair reads another class any more: the three that
+	 * proved a merge delegate or a lost switch map from the superclass chain went with the merged base. The resolver is
+	 * still taken so every caller builds the transformer the way the boot chain does.
+	 */
 	public ForbricMergedBaseCompatTransformer(java.util.function.Function<String, byte[]> classBytes) {
-		this.classBytes = classBytes;
 	}
 
 	@Override
@@ -90,7 +87,7 @@ public final class ForbricMergedBaseCompatTransformer implements ClassTransforme
 	}
 
 	/** The repairs {@link #transform} runs, in its order; a test pins the two lists against each other. */
-	static final List<String> REPAIRS = List.of("addBlockStateModelConflictResolvers", "addBlockStateAppearanceResolver", "giveKeyMappingItsVanillaMap", "giveTheVanillaParticleMapAViewOfTheLiveOne", "letDungeonsGenerateWithoutTheDataMap", "restoreDoublePrecisionToTheRandomSources", "convertRadiansWithVanillasFoldedConstant", "callVanillasWriteByteAgain", "saveTheHeightmapsVanillaSaves", "guardNeoForgesWorldModifierPass", "letForeignResourceConditionsThrough", "letFabricResourceConditionsDecide", "translateAGuestsPrivateSkipMarker", "nameTheReloadListenersNeoForgeRefusesToName", "dropInterfaceDefaultShadowingOverrides", "bridgeOrphanedPipRenderers", "dropTheWindowTitlesLoaderBrand", "keepTheSaveOffTheTeardownsFailurePath", "dropStubsThatBypassARealSuperclassMethod", "inlineTheSwitchMapTheMergeLost", "vetoUnjudgeableOverlayConditions", "hideTheLegacyLootModifierIndexFromTheDirectoryScan", "letModdedFeatureFlagsRegister", "dropTheKeyModifierSuffixBeforeParsingAKeyName", "wrapTheStreamsVanillaWraps");
+	static final List<String> REPAIRS = List.of("addBlockStateModelConflictResolvers", "addBlockStateAppearanceResolver", "giveKeyMappingItsVanillaMap", "giveTheVanillaParticleMapAViewOfTheLiveOne", "letDungeonsGenerateWithoutTheDataMap", "restoreDoublePrecisionToTheRandomSources", "convertRadiansWithVanillasFoldedConstant", "callVanillasWriteByteAgain", "saveTheHeightmapsVanillaSaves", "guardNeoForgesWorldModifierPass", "letForeignResourceConditionsThrough", "letFabricResourceConditionsDecide", "translateAGuestsPrivateSkipMarker", "nameTheReloadListenersNeoForgeRefusesToName", "bridgeOrphanedPipRenderers", "dropTheWindowTitlesLoaderBrand", "keepTheSaveOffTheTeardownsFailurePath", "vetoUnjudgeableOverlayConditions", "hideTheLegacyLootModifierIndexFromTheDirectoryScan", "letModdedFeatureFlagsRegister", "dropTheKeyModifierSuffixBeforeParsingAKeyName", "wrapTheStreamsVanillaWraps");
 
 	/**
 	 * One claim per repair, in {@link #REPAIRS} order. A repair with one fixed target declares it REQUIRED with
@@ -146,15 +143,12 @@ public final class ForbricMergedBaseCompatTransformer implements ClassTransforme
 				"fabric-api's skip marker reaches the merged reader's cast — the datapack load dies (\"can't proceed with server load\")"));
 		out.add(fixed("nameTheReloadListenersNeoForgeRefusesToName", ADD_CLIENT_RELOAD_LISTENERS,
 				"a Fabric mod's client reload listener kills the client — NeoForge refuses to name it"));
-		out.add(scanned("dropInterfaceDefaultShadowingOverrides", "native-absent delegates with one proved current interface default"));
 		out.add(fixed("bridgeOrphanedPipRenderers", GUI_RENDERER,
 				"a picture-in-picture renderer registered the vanilla way never draws"));
 		out.add(fixed("dropTheWindowTitlesLoaderBrand", "net/minecraft/client/Minecraft",
 				"the window title carries another loader's brand"));
 		out.add(fixed("keepTheSaveOffTheTeardownsFailurePath", INTEGRATED_SERVER,
 				"a throw in IntegratedServer.teardownPublishedState costs the world save"));
-		out.add(scanned("dropStubsThatBypassARealSuperclassMethod", "native-absent delegates with a proved public current superclass implementation"));
-		out.add(scanned("inlineTheSwitchMapTheMergeLost", "absent compiler map fields whose actual native initialization proves each enum case"));
 		out.add(fixed("vetoUnjudgeableOverlayConditions", OVERLAY_ENTRY,
 				"a pack.mcmeta overlay gated by a condition no evaluator here can judge is mounted anyway"));
 		out.add(fixed("hideTheLegacyLootModifierIndexFromTheDirectoryScan", LOOT_MODIFIER_MANAGER_NEO,
@@ -221,12 +215,9 @@ public final class ForbricMergedBaseCompatTransformer implements ClassTransforme
 			changed |= claim(reporter, "letFabricResourceConditionsDecide", letFabricResourceConditionsDecide(node));
 			changed |= claim(reporter, "translateAGuestsPrivateSkipMarker", translateAGuestsPrivateSkipMarker(node));
 			changed |= claim(reporter, "nameTheReloadListenersNeoForgeRefusesToName", nameTheReloadListenersNeoForgeRefusesToName(node));
-			changed |= claim(reporter, "dropInterfaceDefaultShadowingOverrides", dropInterfaceDefaultShadowingOverrides(node));
 			changed |= claim(reporter, "bridgeOrphanedPipRenderers", bridgeOrphanedPipRenderers(node));
 			changed |= claim(reporter, "dropTheWindowTitlesLoaderBrand", dropTheWindowTitlesLoaderBrand(node));
 			changed |= claim(reporter, "keepTheSaveOffTheTeardownsFailurePath", keepTheSaveOffTheTeardownsFailurePath(node));
-			changed |= claim(reporter, "dropStubsThatBypassARealSuperclassMethod", dropStubsThatBypassARealSuperclassMethod(node));
-			changed |= claim(reporter, "inlineTheSwitchMapTheMergeLost", inlineTheSwitchMapTheMergeLost(node));
 			changed |= claim(reporter, "vetoUnjudgeableOverlayConditions", vetoUnjudgeableOverlayConditions(node));
 			changed |= claim(reporter, "hideTheLegacyLootModifierIndexFromTheDirectoryScan", hideTheLegacyLootModifierIndexFromTheDirectoryScan(node));
 			changed |= claim(reporter, "letModdedFeatureFlagsRegister", letModdedFeatureFlagsRegister(node));
@@ -1274,10 +1265,6 @@ public final class ForbricMergedBaseCompatTransformer implements ClassTransforme
 		return true;
 	}
 
-	/** Removes only source-proved merge delegates that bypass a current public superclass implementation. */
-	private boolean dropStubsThatBypassARealSuperclassMethod(ClassNode node) {
-		return NativeMergeShapeRepair.production(node, classBytes).dropSuperclassStubs(node);
-	}
 
 
 
@@ -1358,10 +1345,6 @@ public final class ForbricMergedBaseCompatTransformer implements ClassTransforme
 		return true;
 	}
 
-	/** Removes source-proved delegates only when the complete default hierarchy has one dispatch target. */
-	private boolean dropInterfaceDefaultShadowingOverrides(ClassNode node) {
-		return NativeMergeShapeRepair.production(node, classBytes).dropDefaultStubs(node);
-	}
 
 
 
@@ -1569,14 +1552,6 @@ public final class ForbricMergedBaseCompatTransformer implements ClassTransforme
 		return true;
 	}
 
-	// ---------------------------------------------------------------------------------------------------------------
-	// A javac switch map whose synthetic holder class the merge replaced
-	// ---------------------------------------------------------------------------------------------------------------
-
-	/** Inlines a missing compiler map only from its hash-verified native initializer and actual enum fields. */
-	private boolean inlineTheSwitchMapTheMergeLost(ClassNode node) {
-		return NativeMergeShapeRepair.production(node, classBytes).inlineLostSwitchMaps(node);
-	}
 
 	private static AbstractInsnNode nextReal(AbstractInsnNode cursor) {
 		AbstractInsnNode next = cursor == null ? null : cursor.getNext();
