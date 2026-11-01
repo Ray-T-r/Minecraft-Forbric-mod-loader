@@ -214,7 +214,9 @@ public final class ForbricSwitches {
 			Map.entry("forbric.mixinMergedTwins", "NeoForge's own base has one class per name, with no $forbricneo twin the "
 					+ "merge renamed, so a mixin applies to the class it names and gets no second target"),
 			Map.entry("forbric.pruneDuplicateLambdas", "NeoForge's own base carries no lambda name twice, so there is no orphaned "
-					+ "body to drop before a mod's mixin selects a lambda by name"));
+					+ "body to drop before a mod's mixin selects a lambda by name"),
+			Map.entry("forbric.clientPartTracking", "NeoForge's own ClientLevel tracking callback reads NeoForge's getParts() "
+					+ "itself, so a NeoForge mod's multipart entity is tracked with no MinecraftForge body to repair"));
 
 	private static final ForbricSwitches SYSTEM =
 			new ForbricSwitches(RENAMED, RETIRED, System::getProperty, ForbricLog::warn);

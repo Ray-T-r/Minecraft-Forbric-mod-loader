@@ -140,6 +140,21 @@ public final class KernelClientSmoke {
 	 * listener, not the log.
 	 */
 	public static final String TOOLTIP_EVENT = "forbric.clientSmokeTooltipEvent";
+	/**
+	 * World tick at which to summon each entity type of {@link #MULTIPART_TYPES} beside the player (on the integrated
+	 * server, without AI) and, {@link #MULTIPART_HOLD} ticks later, read on the CLIENT whether each one is there with
+	 * every part its {@code getParts()} answers in the level's part list. 0 (the default) leaves it alone.
+	 *
+	 * <p>A multipart entity is where the client once disconnected: the merged base's tracking callback read the other
+	 * family's part array, which is null for a NeoForge mod's entity. A client that tracks one says so here, part by
+	 * part; a client that disconnected never gets to say anything, and the gate's clean-disconnect line goes missing.
+	 */
+	public static final String MULTIPART = "forbric.clientSmokeMultipart";
+	/** {@code namespace:path[,…]}: the entity types {@link #MULTIPART} summons (default {@code minecraft:ender_dragon}). */
+	public static final String MULTIPART_TYPES = "forbric.clientSmokeMultipartTypes";
+	/** Ticks between the summons and the client-side read: long enough for the spawn packets to arrive. */
+	private static final int MULTIPART_HOLD = 40;
+	private static int multipartStage;
 	/** Ticks to leave it open. Long enough for frames to be drawn, short enough not to move the disconnect. */
 	private static final int MODS_SCREEN_HOLD = 20;
 
@@ -230,6 +245,7 @@ public final class KernelClientSmoke {
 		if (ready) modsScreenIfDue(minecraft);
 		if (ready) configScreensIfDue(minecraft);
 		if (ready) creativeSearchIfDue(minecraft, player);
+		if (ready) multipartIfDue(minecraft, level);
 		if (ready && !tooltipProbed) probeTooltip(level, player);
 		if (ready && !probed && worldTicks >= Integer.getInteger(PROBE_TICKS, 160)) {
 			probed = true;
@@ -2838,6 +2854,70 @@ public final class KernelClientSmoke {
 	 * search after it, close. Pass 2 is there because the trees are built asynchronously: a grid that is empty
 	 * on the first look and full on the second is a timing problem, empty on both is a wiring one.
 	 */
+	/** See {@link #MULTIPART}: summon on the server at the due tick, read the client's level {@link #MULTIPART_HOLD} later. */
+	private static void multipartIfDue(Object minecraft, Object level) {
+		int due = Integer.getInteger(MULTIPART, 0);
+		if (due <= 0 || multipartStage > 1 || worldTicks < due + (multipartStage == 0 ? 0 : MULTIPART_HOLD)) return;
+		String[] types = System.getProperty(MULTIPART_TYPES, "minecraft:ender_dragon").split(",");
+		try {
+			ClassLoader cl = minecraft.getClass().getClassLoader();
+			if (multipartStage++ == 0) {
+				Object server = accessible(minecraft.getClass(), "getSingleplayerServer").invoke(minecraft);
+				if (server == null) {
+					multipartStage = 2;
+					ForbricLog.info("[Forbric/ClientSmoke] multipart: no integrated server to summon on");
+					return;
+				}
+				Class<?> sourceCls = Class.forName("net.minecraft.commands.CommandSourceStack", true, cl);
+				onServer(server, () -> {
+					Object commands = accessible(server.getClass(), "getCommands").invoke(server);
+					Object source = accessible(server.getClass(), "createCommandSourceStack").invoke(server);
+					Method perform = accessible(commands.getClass(), "performPrefixedCommand", sourceCls, String.class);
+					int offset = 4;
+					for (String type : types) {
+						String command = "execute at @p run summon " + type.trim() + " ~" + offset + " ~ ~4 {NoAI:1b}";
+						offset += 6;
+						perform.invoke(commands, source, command);
+						ForbricLog.info("[Forbric/ClientSmoke] multipart: asked the integrated server to %s", command);
+					}
+				});
+				return;
+			}
+			Class<?> entityCls = Class.forName("net.minecraft.world.entity.Entity", true, cl);
+			Class<?> typeCls = Class.forName("net.minecraft.world.entity.EntityType", true, cl);
+			Method key = accessible(typeCls, "getKey", typeCls);
+			java.util.Collection<?> partList = (java.util.Collection<?>) accessible(level.getClass(), "dragonParts").invoke(level);
+			for (String type : types) {
+				String wanted = type.trim();
+				int found = 0;
+				for (Object entity : (Iterable<?>) accessible(level.getClass(), "entitiesForRendering").invoke(level)) {
+					if (!wanted.equals(String.valueOf(key.invoke(null, accessible(entityCls, "getType").invoke(entity))))) continue;
+					found++;
+					Object multipart = accessible(entityCls, "isMultipartEntity").invoke(entity);
+					Object[] parts = (Object[]) accessible(entityCls, "getParts").invoke(entity);
+					int listed = 0;
+					if (parts != null) {
+						for (Object part : parts) {
+							for (Object known : partList) {
+								if (known == part) {
+									listed++;
+									break;
+								}
+							}
+						}
+					}
+					ForbricLog.info("[Forbric/ClientSmoke] multipart: %s tracked on the client: multipart=%s, %d part(s) from "
+							+ "its getParts(), %d of them in the level's part list", wanted, multipart,
+							parts == null ? -1 : parts.length, listed);
+				}
+				if (found == 0) ForbricLog.info("[Forbric/ClientSmoke] multipart: no %s in the client's level", wanted);
+			}
+		} catch (Throwable t) {
+			multipartStage = 2;
+			Caught.warn(t, "[Forbric/ClientSmoke] multipart probe failed");
+		}
+	}
+
 	private static void creativeSearchIfDue(Object minecraft, Object player) {
 		String spec = System.getProperty(CREATIVE_SEARCH, "");
 		if (spec.isBlank() || creativeStage > 8) return;

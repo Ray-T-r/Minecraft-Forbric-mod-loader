@@ -7,7 +7,6 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
-import java.util.Collections;
 import java.util.List;
 
 import org.junit.jupiter.api.Test;
@@ -130,18 +129,5 @@ class TransformerRegistrationOrderTest {
 		new ClassReader(Files.readAllBytes(compiled)).accept(cn, ClassReader.SKIP_FRAMES | ClassReader.SKIP_DEBUG);
 		return cn.methods.stream().filter(m -> m.name.equals("launch") && m.instructions != null && m.instructions.size() > 0)
 				.findFirst().orElseThrow(() -> new AssertionError("KernelBoot.launch() not found"));
-	}
-
-	@Test
-	void eachMultipartRepairIsConstructedExactlyOnce() throws Exception {
-		List<String> order = transformerConstructionOrder();
-		assertTrue(!order.isEmpty(), "no transformers found — launch() did not compile the way this expects");
-		// This registration is the whole fix: without the client part tracking a NeoForge mod's multipart entity
-		// disconnects the client on sight. The repair's own test constructs it directly, so a merge of these lines that
-		// dropped it left every test green; one that kept both sides' copies is caught too.
-        for (String repair : List.of("net/forbric/kernel/transform/ClientPartTrackingInjector")) {
-			assertEquals(1, Collections.frequency(order, repair),
-					repair + " must be constructed exactly once in launch(). Full order: " + order);
-		}
 	}
 }

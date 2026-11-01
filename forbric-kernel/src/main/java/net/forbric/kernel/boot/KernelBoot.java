@@ -766,10 +766,6 @@ public final class KernelBoot {
 		// NeoForge's furnace tick calls MinecraftForge's instance canBurn/consumeFuel/burn as static; the ticked furnace
 		// is the receiver MinecraftForge's own tick uses.
 		chain.register(TransformPhase.COREMOD, new net.forbric.kernel.transform.FurnaceTickCallsInjector());
-		// When the client's onTrackingStart is MinecraftForge's body it reads only MinecraftForge's getParts(), which a
-		// NeoForge mod's multipart entity leaves null, and the client disconnected on sight of one. NeoForge's parts are
-		// tracked too. A NeoForge body already does that; the repair's claim judges the end state either way.
-		chain.register(TransformPhase.COREMOD, new net.forbric.kernel.transform.ClientPartTrackingInjector());
 		// A Fabric or MinecraftForge mod's fluid has no NeoForge type; it gets the one its fluid tags imply.
 		chain.register(TransformPhase.COREMOD, new net.forbric.kernel.transform.ForeignFluidTypeInjector());
 		// …and a tag a Fabric mod gave a fluid behaviour has that behaviour's fluid type where the merged
