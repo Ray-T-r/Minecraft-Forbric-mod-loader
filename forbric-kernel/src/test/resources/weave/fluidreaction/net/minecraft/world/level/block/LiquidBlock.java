@@ -11,14 +11,14 @@ import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.level.material.FlowingFluid;
 
 /**
- * Fixture stand-in for the merged liquid block: placement asks MinecraftForge's interaction registry and a neighbour
- * change NeoForge's. Vanilla's shouldSpreadLiquid — with its lava-meets-water point, the {@code isSource} call — is still
- * in the class, and nothing calls it.
+ * Fixture stand-in for NeoForge's liquid block: placement asks vanilla's shouldSpreadLiquid — with its lava-meets-water
+ * point, the {@code isSource} call — and a neighbour change asks NeoForge's interaction registry instead. The fluid is
+ * public, as the kernel's game-side walk ({@code KernelFluidReactions}) reads it.
  */
 public class LiquidBlock extends Block {
 	public static final List<Direction> POSSIBLE_FLOW_DIRECTIONS = List.of(Direction.DOWN, Direction.SOUTH, Direction.NORTH,
 			Direction.EAST, Direction.WEST);
-	protected final FlowingFluid fluid;
+	public final FlowingFluid fluid;
 
 	public LiquidBlock(FlowingFluid fluid) {
 		super("lava");
@@ -26,7 +26,7 @@ public class LiquidBlock extends Block {
 	}
 
 	public void onPlace(BlockState state, Level level, BlockPos pos, BlockState oldState, boolean movedByPiston) {
-		if (!net.minecraftforge.fluids.FluidInteractionRegistry.canInteract(level, pos)) {
+		if (this.shouldSpreadLiquid(level, pos, state)) {
 			level.scheduleTick(pos, fluid, 30);
 		}
 	}

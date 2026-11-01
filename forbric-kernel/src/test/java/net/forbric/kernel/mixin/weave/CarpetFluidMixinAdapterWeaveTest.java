@@ -18,19 +18,18 @@ import org.objectweb.asm.tree.MethodNode;
 
 import net.fabricmc.api.EnvType;
 import net.forbric.api.Ecosystem;
-import net.forbric.kernel.mixin.MixinPlayerWorldCallbackAdapter;
+import net.forbric.kernel.mixin.MixinFluidReactionAdapter;
 
 /**
  * MixinFluidReactionAdapter through the real weave: Carpet's renewable-blackstone rule, a TAIL hook on vanilla's
- * {@code shouldSpreadLiquid}, on a liquid block whose placement and neighbour change ask the two families' fluid
- * interaction registries instead and never call that method.
+ * {@code shouldSpreadLiquid}, on NeoForge's liquid block, whose placement calls that method and whose neighbour change
+ * asks NeoForge's interaction registry instead.
  *
  * <p>The probe places lava under blue ice, changes a neighbour of lava under blue ice, places lava in the open, and
- * places lava under blue ice in a cell a native interaction handles. Restored, the rule runs where the registries
- * answer "not handled": the first two cells turn to blackstone and fizz instead of ticking, the open cell ticks, and
- * the natively handled cell is left to the registry. With {@code -Dforbric.playerWorldCallbacks=off} (the switch this adapter
- * shares with MixinPlayerWorldCallbackAdapter) the hook is woven into the method nothing calls: every lava cell just ticks, and
- * the final audit, seeing an attached injector, reports nothing.
+ * changes a neighbour of lava under blue ice in a cell the registry handles. Restored, the rule runs on placement as
+ * compiled and on a neighbour change where the registry answers "not handled": the first two cells turn to blackstone and
+ * fizz instead of ticking, the open cell ticks, and the registry's cell is left to the registry. With
+ * {@code -Dforbric.fluidReactionNeighbourChange=off} the rule runs on placement alone: the changed cell stays lava and ticks.
  */
 class CarpetFluidMixinAdapterWeaveTest {
 	private static final Path SOURCES = Path.of("src/test/resources/weave/carpetfluid");
@@ -39,8 +38,8 @@ class CarpetFluidMixinAdapterWeaveTest {
 	private static final String LIQUID = "net/minecraft/world/level/block/LiquidBlock";
 	private static final String CONVERTED = WeaveHarnessMain.DONE + " placed=blackstone changed=blackstone open=air handled=air"
 			+ " events=[fizz@0,64,0, fizz@10,64,0, tick@20,64,0]";
-	private static final String ONLY_TICKS = WeaveHarnessMain.DONE + " placed=air changed=air open=air handled=air"
-			+ " events=[tick@0,64,0, tick@10,64,0, tick@20,64,0]";
+	private static final String PLACEMENT_ONLY = WeaveHarnessMain.DONE + " placed=blackstone changed=air open=air handled=air"
+			+ " events=[fizz@0,64,0, tick@10,64,0, tick@20,64,0]";
 	private static final String RESTORED = "[Forbric/Mixin] fluid reaction callbacks now follow the native interaction sites";
 
 	@TempDir static Path work;
@@ -52,26 +51,26 @@ class CarpetFluidMixinAdapterWeaveTest {
 		try (Stream<Path> walk = Files.walk(SOURCES)) {
 			sources = walk.filter(p -> p.toString().endsWith(".java")).sorted().toList();
 		}
-		assertEquals(16, sources.size(), "the fixture's sources changed; update this test with it: " + sources);
+		assertEquals(15, sources.size(), "the fixture's sources changed; update this test with it: " + sources);
 		fixture = WeaveHarness.fixture(work, "carpetfluid", sources, Map.of(CONFIG, SOURCES.resolve(CONFIG)));
 		restored = run("restored", Map.of());
-		off = run("carpet-off", Map.of(MixinPlayerWorldCallbackAdapter.PROPERTY, "off"));
+		off = run("neighbour-off", Map.of(MixinFluidReactionAdapter.NEIGHBOUR_PROPERTY, "off"));
 	}
 
-	@Test void lavaUnderBlueIceTurnsToBlackstoneWhereTheRegistriesLeaveIt() throws Exception {
+	@Test void lavaUnderBlueIceTurnsToBlackstoneOnANeighbourChangeWhereTheRegistryLeavesIt() throws Exception {
 		assertTrue(restored.printed(CONVERTED), restored.describe());
 		assertTrue(restored.printed(RESTORED), restored.describe());
 		assertEquals(List.of(), unsettled(restored), restored.findings() + "\n" + restored.describe());
-		// Each registry question is wrapped, and the vanilla method keeps no hook.
-		assertEquals(List.of("neighborChanged", "onPlace"), wrapped(restored), restored.describe());
-		assertFalse(hooked(restored, "shouldSpreadLiquid"), restored.describe());
+		// The neighbour change's registry question is wrapped; placement keeps the hook where vanilla's method binds it.
+		assertEquals(List.of("neighborChanged"), wrapped(restored), restored.describe());
+		assertTrue(hooked(restored, "shouldSpreadLiquid"), restored.describe());
 		WeaveHarness.assertWovenAndVerified(restored, LIQUID, fixture);
 	}
 
-	@Test void switchedOffTheRuleHooksTheMethodNothingCallsAndLavaJustTicks() throws Exception {
-		assertTrue(off.printed(ONLY_TICKS), off.describe());
+	@Test void switchedOffTheRuleRunsOnPlacementAloneAndTheChangedCellTicks() throws Exception {
+		assertTrue(off.printed(PLACEMENT_ONLY), off.describe());
 		assertFalse(off.printed(RESTORED), off.describe());
-		assertEquals(List.of(), unsettled(off), "attached to a dead method is attached — " + off.findings());
+		assertEquals(List.of(), unsettled(off), off.findings() + "\n" + off.describe());
 		assertEquals(List.of(), wrapped(off), off.describe());
 		assertTrue(hooked(off, "shouldSpreadLiquid"), off.describe());
 		WeaveHarness.assertWovenAndVerified(off, LIQUID, fixture);
@@ -80,21 +79,20 @@ class CarpetFluidMixinAdapterWeaveTest {
 	/** The switch is the runs' only difference, so each run's predicate must reject the other. */
 	@Test void theControlFlipsEveryFluidAssertion() throws Exception {
 		assertTrue(convertedHolds(restored) && !convertedHolds(off), "the restored predicate does not separate the runs");
-		assertTrue(ticksHold(off) && !ticksHold(restored), "the control predicate does not separate the runs");
+		assertTrue(placementOnlyHolds(off) && !placementOnlyHolds(restored), "the control predicate does not separate the runs");
 	}
 
 	private static boolean convertedHolds(WeaveHarness.Result run) throws Exception {
-		return run.printed(CONVERTED) && run.printed(RESTORED) && wrapped(run).equals(List.of("neighborChanged", "onPlace"))
-				&& !hooked(run, "shouldSpreadLiquid");
+		return run.printed(CONVERTED) && run.printed(RESTORED) && wrapped(run).equals(List.of("neighborChanged"));
 	}
 
-	private static boolean ticksHold(WeaveHarness.Result run) throws Exception {
-		return run.printed(ONLY_TICKS) && !run.printed(RESTORED) && wrapped(run).isEmpty() && hooked(run, "shouldSpreadLiquid");
+	private static boolean placementOnlyHolds(WeaveHarness.Result run) throws Exception {
+		return run.printed(PLACEMENT_ONLY) && !run.printed(RESTORED) && wrapped(run).isEmpty();
 	}
 
-	/** The woven methods that no longer ask a registry themselves but hand the question to a merged Carpet wrap. */
+	/** The woven methods that no longer ask the registry themselves but hand the question to the merged Carpet wrap. */
 	private static List<String> wrapped(WeaveHarness.Result run) throws Exception {
-		return woven(run).methods.stream().filter(m -> calls(m, "forbric$unhandledFluidReaction$")).map(m -> m.name).sorted().toList();
+		return woven(run).methods.stream().filter(m -> calls(m, "forbric$neighbourFluidReaction")).map(m -> m.name).sorted().toList();
 	}
 
 	private static boolean hooked(WeaveHarness.Result run, String method) throws Exception {

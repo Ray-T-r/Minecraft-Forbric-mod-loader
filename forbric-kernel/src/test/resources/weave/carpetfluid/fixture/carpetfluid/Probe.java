@@ -9,8 +9,8 @@ import net.minecraft.world.level.block.LiquidBlock;
 import net.minecraft.world.level.material.FlowingFluid;
 
 /**
- * Lava placed under blue ice, lava under blue ice whose neighbour changed, lava in the open, and lava under blue ice in
- * a cell a native interaction handles; reports each cell's block and what happened.
+ * Lava placed under blue ice, lava under blue ice whose neighbour changed, lava placed in the open, and lava under blue
+ * ice whose neighbour changed in a cell the registry handles; reports each cell's block and what happened.
  */
 public class Probe {
 	public String probe() {
@@ -26,7 +26,7 @@ public class Probe {
 		lava.onPlace(null, level, placed, null, false);
 		lava.neighborChanged(null, level, changed, Blocks.BLUE_ICE, false);
 		lava.onPlace(null, level, open, null, false);
-		lava.onPlace(null, level, handled, null, false);
+		lava.neighborChanged(null, level, handled, Blocks.BLUE_ICE, false);
 		return "placed=" + level.getBlockState(placed) + " changed=" + level.getBlockState(changed)
 				+ " open=" + level.getBlockState(open) + " handled=" + level.getBlockState(handled) + " events=" + level.events;
 	}

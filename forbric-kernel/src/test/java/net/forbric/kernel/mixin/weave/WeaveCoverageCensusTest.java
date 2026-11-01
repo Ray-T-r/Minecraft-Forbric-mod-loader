@@ -125,8 +125,8 @@ class WeaveCoverageCensusTest {
 			Map.entry("MixinShearsRelay", Switch.own("forbric.shearsRelay")),
 			Map.entry("InsertedLambdaArgumentShim", Switch.own("forbric.insertedLambdaArguments")),
 			Map.entry("MixinPlayerWorldCallbackAdapter", Switch.own("forbric.playerWorldCallbacks")),
-			// MixinFluidReactionAdapter stands down with MixinPlayerWorldCallbackAdapter's switch, which both read through its enabled().
-			Map.entry("MixinFluidReactionAdapter", new Switch(List.of("forbric.playerWorldCallbacks"), "net.forbric.kernel.mixin.MixinPlayerWorldCallbackAdapter")),
+			// The neighbour-change wrap, TAIL and reaction-point handler: CarpetFluidMixinAdapterWeaveTest, MixinFluidReactionWeaveTest.
+			Map.entry("MixinFluidReactionAdapter", Switch.own("forbric.fluidReactionNeighbourChange")),
 			Map.entry("NativeCoremodParity", Switch.own("forbric.flowerPotRepair")), // NativeCoremodParityWeaveTest
 			Map.entry("PostMixinFixups", Switch.own("forbric.postMixinFixups")), // PostMixinFixupsWeaveTest
 			Map.entry("UncalledValueRelay", Switch.own("forbric.uncalledValueRelay")), // UncalledValueRelayWeaveTest

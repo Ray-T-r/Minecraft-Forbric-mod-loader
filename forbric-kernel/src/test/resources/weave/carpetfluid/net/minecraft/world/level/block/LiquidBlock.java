@@ -7,9 +7,8 @@ import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.level.material.FlowingFluid;
 
 /**
- * Fixture stand-in for the merged liquid block: placement asks MinecraftForge's interaction registry and a neighbour
- * change NeoForge's, and a cell the registry did not handle schedules its fluid tick. Vanilla's shouldSpreadLiquid,
- * the method those two asked before, is still in the class and nothing calls it.
+ * Fixture stand-in for NeoForge's liquid block: placement asks vanilla's shouldSpreadLiquid, as vanilla does, and a
+ * neighbour change asks NeoForge's interaction registry instead; a cell the answer did not handle schedules its fluid tick.
  */
 public class LiquidBlock {
 	protected final FlowingFluid fluid;
@@ -19,7 +18,7 @@ public class LiquidBlock {
 	}
 
 	public void onPlace(BlockState state, Level level, BlockPos pos, BlockState oldState, boolean movedByPiston) {
-		if (!net.minecraftforge.fluids.FluidInteractionRegistry.canInteract(level, pos)) {
+		if (this.shouldSpreadLiquid(level, pos, state)) {
 			level.scheduleTick(pos, fluid, 30);
 		}
 	}
