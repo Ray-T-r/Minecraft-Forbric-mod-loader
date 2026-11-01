@@ -15,7 +15,9 @@ import net.minecraft.world.entity.EntitySpawnReason;
 import net.minecraft.world.entity.EntityTypes;
 import net.minecraft.world.entity.boss.enderdragon.EnderDragon;
 import net.minecraft.world.item.Item;
+import net.minecraft.world.item.ItemInstance;
 import net.minecraft.world.item.ItemStack;
+import net.minecraft.world.item.ItemStackTemplate;
 import net.minecraft.world.item.Items;
 import net.minecraft.world.item.alchemy.PotionContents;
 import net.minecraft.world.item.alchemy.Potions;
@@ -32,6 +34,8 @@ import net.neoforged.neoforge.common.util.FakePlayer;
 import net.neoforged.neoforge.event.furnace.FurnaceFuelBurnTimeEvent;
 import net.neoforged.neoforge.event.server.ServerStartedEvent;
 import net.neoforged.neoforge.event.tick.ServerTickEvent;
+import net.neoforged.neoforge.registries.DeferredItem;
+import net.neoforged.neoforge.registries.DeferredRegister;
 
 /** The things every player does in a session — craft, smelt, brew, meet the dragon — with fabric-item-api installed. */
 @Mod(EverydayActions.ID)
@@ -42,7 +46,16 @@ public final class EverydayActions {
  // What this mod's FurnaceFuelBurnTimeEvent listener makes cobblestone burn for, and the burn time the event brought for
  // the Fabric mod's dirt fuel (-1: the listener never heard dirt).
  static final int NEO_COBBLESTONE_BURN=321; private static volatile int dirtSeenByNeo=-1;
+ // A NeoForge mod's item that leaves a glass bottle behind, the way a NeoForge mod says it: by overriding IItemExtension's
+ // getCraftingRemainder(ItemInstance). Crafting, brewing and fuel ask ItemStack.getCraftingRemainder(); with
+ // fabric-item-api aboard that resolves through FabricItemStack and Item.getCraftingRemainder(ItemStack), which must still
+ // reach this override.
+ static final class JugItem extends Item{JugItem(Properties p){super(p);}
+  @Override public ItemStackTemplate getCraftingRemainder(ItemInstance stack){return new ItemStackTemplate(Items.GLASS_BOTTLE);}}
+ private static final DeferredRegister.Items ITEMS=DeferredRegister.createItems(ID);
+ static final DeferredItem<JugItem> JUG=ITEMS.registerItem("jug",JugItem::new);
  public EverydayActions(IEventBus bus){
+  ITEMS.register(bus);
   // A NeoForge mod deciding how long something burns, the way balm does: NeoForge posts FurnaceFuelBurnTimeEvent from
   // ItemStack.getBurnTime, the question the furnace asks. -Dforbric.everydayWithholdFuelEvent=true withholds the
   // listener, so its three cases go red.
@@ -72,6 +85,14 @@ public final class EverydayActions {
   test("remainder.item",()->{Object r=remainder(Items.WATER_BUCKET,ItemStack.class,bucket);return expect(String.valueOf(r).contains("minecraft:bucket"),"Item.getCraftingRemainder(ItemStack) gave "+r);});
   test("remainder.neoOverload",()->{Object r=remainder(Items.WATER_BUCKET,Class.forName("net.minecraft.world.item.ItemInstance"),bucket);
    return expect(String.valueOf(r).contains("minecraft:bucket"),"NeoForge's getCraftingRemainder(ItemInstance) gave "+r);});
+  // The NeoForge mod's own override, asked the way crafting, brewing and furnace fuel ask, and through a crafting grid.
+  test("remainder.neoOverride",()->{Object r=ItemStack.class.getMethod("getCraftingRemainder").invoke(new ItemStack(JUG.get()));
+   return expect(String.valueOf(r).contains("minecraft:glass_bottle"),"the NeoForge jug leaves "+r+", its override says a glass bottle");});
+  test("craft.neoRemainder",()->{CraftingInput input=CraftingInput.of(2,1,List.of(new ItemStack(JUG.get()),new ItemStack(Items.WHEAT)));
+   var recipe=server.getRecipeManager().getRecipeFor(RecipeType.CRAFTING,input,level).orElseThrow();
+   String result=id(recipe.value().assemble(input));
+   List<String> left=new ArrayList<>();for(ItemStack s:recipe.value().getRemainingItems(input))if(!s.isEmpty())left.add(id(s));
+   return expect(result.equals("1 minecraft:bread")&&left.equals(List.of("1 minecraft:glass_bottle")),"bread="+result+" left="+left);});
   test("craft.cake",()->{List<ItemStack> grid=new ArrayList<>(List.of(new ItemStack(Items.MILK_BUCKET),new ItemStack(Items.MILK_BUCKET),new ItemStack(Items.MILK_BUCKET),
     new ItemStack(Items.SUGAR),new ItemStack(Items.EGG),new ItemStack(Items.SUGAR),new ItemStack(Items.WHEAT),new ItemStack(Items.WHEAT),new ItemStack(Items.WHEAT)));
    CraftingInput input=CraftingInput.of(3,3,grid);
@@ -135,6 +156,20 @@ public final class EverydayActions {
     for(int i=0;i<5;i++)pig.tick();
     boolean water=name.equals("brine");
     return expect(pig.isInWater()==water&&pig.isUnderWater()==water,"a pig in "+name+": inWater="+pig.isInWater()+" underWater="+pig.isUnderWater());}
+   finally{pig.discard();level.setBlock(pos,Blocks.AIR.defaultBlockState(),3);level.setBlock(pos.above(),Blocks.AIR.defaultBlockState(),3);}});
+  // A burning pig in vanilla water (control: WaterFluid puts the fire out) and in the Fabric mod's water-tagged brine,
+  // which on Fabric does not: vanilla's Fluid.entityInside is empty, and only WaterFluid extinguishes. NeoForge's
+  // Fluid.entityInside asks the fluid's NeoForge type instead, and a Fabric fluid's is the kernel's tag-derived stand-in.
+  for(String name:new String[]{"water","brine"})test(name.equals("water")?"fire.vanillaWater":"fire.fabricWater",()->{
+   var fluid=name.equals("water")?net.minecraft.world.level.material.Fluids.WATER
+     :BuiltInRegistries.FLUID.getValue(net.minecraft.resources.Identifier.fromNamespaceAndPath("forbricgoo",name));
+   if(fluid==null||fluid==net.minecraft.world.level.material.Fluids.EMPTY)return "the Fabric fluid mod is not loaded";
+   BlockPos pos=new BlockPos(name.equals("water")?18:22,100,10);var pig=EntityTypes.PIG.create(level,EntitySpawnReason.COMMAND);
+   try{level.setBlock(pos.below(),Blocks.STONE.defaultBlockState(),3);level.setBlock(pos,fluid.defaultFluidState().createLegacyBlock(),3);level.setBlock(pos.above(),fluid.defaultFluidState().createLegacyBlock(),3);
+    pig.snapTo(pos.getX()+0.5,pos.getY(),pos.getZ()+0.5);level.addFreshEntity(pig);pig.igniteForSeconds(30);
+    for(int i=0;i<5;i++)pig.tick();
+    boolean extinguishes=name.equals("water");
+    return expect(pig.isOnFire()!=extinguishes,"a burning pig in "+name+": still on fire="+pig.isOnFire()+" ("+pig.getRemainingFireTicks()+" fire ticks left), inWater="+pig.isInWater());}
    finally{pig.discard();level.setBlock(pos,Blocks.AIR.defaultBlockState(),3);level.setBlock(pos.above(),Blocks.AIR.defaultBlockState(),3);}});
  }
  private static void finish(){
