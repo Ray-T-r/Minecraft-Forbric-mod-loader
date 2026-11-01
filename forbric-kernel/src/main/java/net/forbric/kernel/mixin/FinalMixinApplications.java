@@ -214,7 +214,9 @@ public final class FinalMixinApplications {
         injector.understood()?"partial count":"grouped, sugar or several injector annotations")));
     // Register after the finding exists: a replacement witness arriving here must resolve this observation,
     // rather than resolve nothing and then leave a newly recorded loss behind.
-    if(unattached&&superseded==null&&SupersededMixins.replacementFor(mixin)!=null)SupersededMixins.awaitProof(plan.config().name(),mixin);
+    // Also when already proved (its witness can be this very class, observed first): awaitProof then resolves the
+    // mixin-level row beside this one at once, which nothing else would.
+    if(unattached&&SupersededMixins.replacementFor(mixin)!=null)SupersededMixins.awaitProof(plan.config().name(),mixin);
     if(SupersededMixins.provedReplacement(mixin)==null&&replacement==null
       &&(lost||optionalMiss||state==Outcome.UNKNOWN&&injector.minimum()>=1&&references<injector.minimum())) {
      String reason=dead!=null?"attached only in "+dead+", so the injector never runs"

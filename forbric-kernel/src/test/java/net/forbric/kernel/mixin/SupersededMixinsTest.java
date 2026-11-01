@@ -38,7 +38,8 @@ import org.objectweb.asm.tree.MethodInsnNode;
 import org.objectweb.asm.tree.MethodNode;
 
 /**
- * Every entry in {@link SupersededMixins} claims a named kernel repair does a guest mixin's whole job.
+ * Every entry in {@link SupersededMixins} claims a named kernel repair (or, for a {@code native-} entry, the base's own
+ * code) does a guest mixin's whole job.
  *
  * <p>The claim is what makes the entry safe, and it is the thing that rots: a repair gets renamed, or narrowed,
  * or deleted, and the entry keeps quietly suppressing a real failure report. So the kernel class each sentence
@@ -54,6 +55,17 @@ class SupersededMixinsTest {
 		List<String> broken = new ArrayList<>();
 
 		for (Map.Entry<String, String> entry : SupersededMixins.kinds().entrySet()) {
+			// A native- entry names no kernel class: the base does the job, and the class its witness reads must be in the
+			// staged base instead (SupersededFurnaceRemainderStagedTest proves the witness on it).
+			if (entry.getKey().startsWith("native-")) {
+				String witness = SupersededMixins.witnesses().get(entry.getKey()).replace('.', '/') + ".class";
+				Path base = TestFixtures.stagedBase();
+				TestFixtures.requireFile(Fixture.STAGED, base, "the staged base a native entry's witness is read from");
+				try (var zip = new java.util.zip.ZipFile(base.toFile())) {
+					if (zip.getEntry(witness) == null) broken.add(entry.getKey() + " -> " + witness + " is not in the base");
+				}
+				continue;
+			}
 			List<String> named = new ArrayList<>();
 			Matcher matcher = KERNEL_CLASS.matcher(entry.getValue());
 			while (matcher.find()) named.add(matcher.group(1));

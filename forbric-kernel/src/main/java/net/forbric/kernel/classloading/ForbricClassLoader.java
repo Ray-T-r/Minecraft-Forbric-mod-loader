@@ -622,8 +622,11 @@ public final class ForbricClassLoader extends URLClassLoader {
 			net.forbric.kernel.mixin.MixinCrossHostPredicateIsland.observeDefinition(name, bytes);
 			net.forbric.kernel.mixin.MixinAbsorbedCallbackTransport.observeDefinition(this, name, bytes);
 			net.forbric.kernel.mixin.MixinOperationSeamTransport.observeDefinition(this, name, bytes);
-			net.forbric.kernel.mixin.FinalMixinApplications.onClassDefined(name, bytes);
+			// The replacement's witness first: when it is the class being defined (the furnace's and the hopper's are their
+			// mixins' own targets), the injector misses the final-class check finds next are already answered for, and are
+			// recorded resolved rather than warned about and resolved a moment later.
 			net.forbric.kernel.mixin.SupersededMixins.observeDefinition(this, name, bytes);
+			net.forbric.kernel.mixin.FinalMixinApplications.onClassDefined(name, bytes);
 			return defined;
 		} catch (LinkageError duplicate) {
 			Class<?> already = findLoadedClass(name);

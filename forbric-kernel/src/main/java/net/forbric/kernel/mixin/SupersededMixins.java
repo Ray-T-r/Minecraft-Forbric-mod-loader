@@ -38,11 +38,12 @@ import net.forbric.kernel.util.ForbricLog;
  *
  * <p>A mixin that cannot apply normally means a mod lost something, and the Mods screen says so. Sometimes it
  * means the opposite: the kernel could not make the mixin fit, looked at what it was for, and did that job
- * itself somewhere else. Marking the mod then reports a loss that did not happen — and a report that cries wolf
+ * itself somewhere else — or NeoForge's base already does that job natively, as its own code. Marking the mod then reports a loss that did not happen — and a report that cries wolf
  * is worse than no report, because the next real one is read the same way.
  *
  * <p>The bar for an entry here is deliberately high. It is not "the kernel has something similar"; it is that a
- * kernel repair does <b>everything this mixin class does</b>, and was written for exactly this failure. A mixin class
+ * kernel repair (or the base's own code, for a {@code native-} kind) does <b>everything this mixin class does</b>, and
+ * was written for exactly this failure. A mixin class
  * with a second injection the kernel does not replace does not belong here, because suppressing the mark would hide
  * that half.
  *
@@ -75,6 +76,14 @@ public final class SupersededMixins {
 	}
 
 	private static final String HOPPER = "net/minecraft/world/level/block/entity/HopperBlockEntity";
+	static final String FURNACE = "net/minecraft/world/level/block/entity/AbstractFurnaceBlockEntity";
+	private static final String ITEM_STACK = "net/minecraft/world/item/ItemStack";
+	private static final String STACK_REMAINDER = "getCraftingRemainder";
+	private static final String REMAINDER_DESC = "()Lnet/minecraft/world/item/ItemStackTemplate;";
+	private static final String CONSUME_FUEL = "consumeFuel";
+	private static final String CONSUME_FUEL_DESC = "(Lnet/minecraft/core/NonNullList;Lnet/minecraft/world/item/ItemStack;)V";
+	private static final String LOCAL_REF = "com/llamalad7/mixinextras/sugar/ref/LocalRef";
+	private static final String SHARE = "Lcom/llamalad7/mixinextras/sugar/Share;";
 	private static final String JSON_READER = "net/minecraft/server/packs/resources/SimpleJsonResourceReloadListener";
 	/** The JSON key the kernel's funnel (KernelFabricConditions) evaluates: Fabric's public data contract for conditions. */
 	private static final String CONDITIONS_KEY = "fabric:load_conditions";
@@ -100,7 +109,18 @@ public final class SupersededMixins {
 			new Replacement("hopper-storage", "the kernel runs Fabric's hopper storage lookup on NeoForge's found-nothing branches of "
 					+ "ejectItems and suckInItems instead (KernelFabricHopperStorage)",
 					"forbric.hopperFabricStorage", "net.minecraft.world.level.block.entity.HopperBlockEntity",
-					SupersededMixins::hopperAsksFabric, (mixin, classes) -> asksSidedItemStorage(mixin)));
+					SupersededMixins::hopperAsksFabric, (mixin, classes) -> asksSidedItemStorage(mixin)),
+			// Not a kernel repair: NeoForge's base. fabric-item-api's furnace mixin copies the fuel stack at consumeFuel's HEAD
+			// (@Share) and redirects vanilla's Item.getCraftingRemainder() to the copy's stack-aware getCraftingRemainder(),
+			// because vanilla asks the item only after shrinking the stack. NeoForge's consumeFuel asks the stack itself,
+			// ItemStack.getCraftingRemainder(), on the unshrunk argument before shrinking it, so the redirect's anchor is gone
+			// and its job is the base's own: a remainder measured the same as native Fabric (gate fuel.remainder.*). Seen when
+			// AbstractFurnaceBlockEntity is defined with consumeFuel in that shape; no switch of its own, -Dforbric.supersededMixins
+			// =off marks the row again.
+			new Replacement("native-furnace-remainder", "NeoForge's own consumeFuel already asks the fuel stack for its "
+					+ "stack-aware crafting remainder before shrinking it, which is what this mixin's HEAD copy and redirect "
+					+ "restore on vanilla", PROPERTY, FURNACE.replace('/', '.'), SupersededMixins::consumeFuelAsksTheStack,
+					(mixin, classes) -> copiesTheFuelForTheRemainder(mixin)));
 
 	/** Mixin class (binary name) → the kind of replacement whose claim it fits, as config discovery noted it. */
 	private static final Map<String, String> CLAIMS = new ConcurrentHashMap<>();
@@ -378,6 +398,112 @@ public final class SupersededMixins {
 			}
 		}
 		return insert && extract;
+	}
+
+	/** The kind of every replacement, with the class its witness is read from: for the tests that check each still exists. */
+	static Map<String, String> witnesses() {
+		Map<String, String> out = new LinkedHashMap<>();
+		for (Replacement kind : KINDS) out.put(kind.kind(), kind.witnessClass());
+		return out;
+	}
+
+	/**
+	 * AbstractFurnaceBlockEntity's {@code consumeFuel(slots, fuel)} asks the fuel stack itself for its crafting remainder
+	 * ({@code fuel.getCraftingRemainder()}, the stack-aware one, its receiver the argument as handed in) before any
+	 * {@code fuel.shrink}, and never asks {@code Item.getCraftingRemainder()}: the remainder is read off the unshrunk stack,
+	 * as fabric-item-api's furnace mixin makes vanilla's do.
+	 */
+	static boolean consumeFuelAsksTheStack(ClassNode node) {
+		MethodNode consume = null;
+		for (MethodNode method : node.methods) {
+			if (CONSUME_FUEL.equals(method.name) && CONSUME_FUEL_DESC.equals(method.desc) && (method.access & Opcodes.ACC_STATIC) != 0) {
+				if (consume != null) return false;
+				consume = method;
+			}
+		}
+		HandlerFlow flow = HandlerFlow.of(node.name, consume);
+		if (flow == null) return false;
+		boolean asked = false;
+		for (AbstractInsnNode instruction : consume.instructions) {
+			if (!(instruction instanceof MethodInsnNode call)) continue;
+			if (call.name.equals(STACK_REMAINDER) && call.desc.equals(REMAINDER_DESC) && !call.owner.equals(ITEM_STACK)) return false;
+			boolean onTheFuel = call.owner.equals(ITEM_STACK) && HandlerFlow.isParameter(HandlerFlow.only(flow.argument(call, 0)), 1);
+			if (onTheFuel && call.name.equals(STACK_REMAINDER) && call.desc.equals(REMAINDER_DESC)) asked = true;
+			if (onTheFuel && call.name.equals("shrink") && !asked) return false;
+		}
+		return asked;
+	}
+
+	/**
+	 * Whether {@code mixin}, a mixin into the furnace, is fabric-item-api's remainder fix and nothing else: exactly two
+	 * injectors, both on {@code consumeFuel} and sharing one {@code @Share} slot — an {@code @Inject} at {@code HEAD} that
+	 * stores a copy of the fuel argument in it and calls nothing else, and a {@code @Redirect} of
+	 * {@code Item.getCraftingRemainder()} that answers the shared stack's {@code getCraftingRemainder()} and calls nothing
+	 * else.
+	 */
+	static boolean copiesTheFuelForTheRemainder(ClassNode mixin) {
+		if (!MixinFit.mixinTargets(mixin).equals(List.of(FURNACE))) return false;
+		String shared = null;
+		boolean copies = false, answers = false;
+		int injectors = 0;
+		for (MethodNode method : mixin.methods) {
+			org.objectweb.asm.tree.AnnotationNode injector = MixinFit.injectorOf(method);
+			if (injector == null) continue;
+			injectors++;
+			if (!MixinFit.stringList(MixinFit.value(injector, "method")).equals(List.of(CONSUME_FUEL))) return false;
+			List<org.objectweb.asm.tree.AnnotationNode> at = MixinFit.atNodes(injector);
+			org.objectweb.asm.Type[] params = org.objectweb.asm.Type.getArgumentTypes(method.desc);
+			int ref = params.length - 1;
+			if (at.size() != 1 || ref < 0 || !params[ref].getInternalName().equals(LOCAL_REF)) return false;
+			String share = shareOf(method, ref);
+			if (share == null || shared != null && !shared.equals(share)) return false;
+			shared = share;
+			int refSlot = (method.access & Opcodes.ACC_STATIC) != 0 ? 0 : 1;
+			for (int i = 0; i < ref; i++) refSlot += params[i].getSize();
+			int slot = refSlot;
+			HandlerFlow flow = HandlerFlow.of(mixin.name, method);
+			if (flow == null) return false;
+			String point = MixinFit.asString(MixinFit.value(at.getFirst(), "value"));
+			if (injector.desc.equals("Lorg/spongepowered/asm/mixin/injection/Inject;") && "HEAD".equals(point)
+					&& method.desc.equals("(Lnet/minecraft/core/NonNullList;Lnet/minecraft/world/item/ItemStack;"
+							+ "Lorg/spongepowered/asm/mixin/injection/callback/CallbackInfo;L" + LOCAL_REF + ";)V")) {
+				int fuel = refSlot - 2;   // slots, fuel, callback, ref (all one slot wide): the fuel sits two below the ref
+				List<MethodInsnNode> sets = flow.calls(c -> c.owner.equals(LOCAL_REF) && c.name.equals("set"));
+				if (sets.size() != 1 || !HandlerFlow.isParameter(HandlerFlow.only(flow.argument(sets.getFirst(), 0)), slot)
+						|| !(HandlerFlow.only(flow.argument(sets.getFirst(), 1)) instanceof MethodInsnNode copy)
+						|| !copy.owner.equals(ITEM_STACK) || !copy.name.equals("copy")
+						|| !HandlerFlow.isParameter(HandlerFlow.only(flow.argument(copy, 0)), fuel)
+						|| !flow.onlyCalls(c -> c == copy || c == sets.getFirst())) return false;
+				copies = true;
+			} else if (injector.desc.equals("Lorg/spongepowered/asm/mixin/injection/Redirect;") && "INVOKE".equals(point)
+					&& ("Lnet/minecraft/world/item/Item;getCraftingRemainder" + REMAINDER_DESC)
+							.equals(MixinFit.asString(MixinFit.value(at.getFirst(), "target")))) {
+				Set<AbstractInsnNode> returned = flow.returned();
+				if (returned.size() != 1 || !(returned.iterator().next() instanceof MethodInsnNode remainder)
+						|| !remainder.owner.equals(ITEM_STACK) || !remainder.name.equals(STACK_REMAINDER) || !remainder.desc.equals(REMAINDER_DESC)
+						|| !(HandlerFlow.only(flow.argument(remainder, 0)) instanceof MethodInsnNode get)
+						|| !get.owner.equals(LOCAL_REF) || !get.name.equals("get")
+						|| !HandlerFlow.isParameter(HandlerFlow.only(flow.argument(get, 0)), slot)
+						|| !flow.onlyCalls(c -> c == remainder || c == get)) return false;
+				answers = true;
+			} else {
+				return false;
+			}
+		}
+		return injectors == 2 && copies && answers;
+	}
+
+	/** The {@code @Share} name on parameter {@code index} of {@code method}, or null when it has none. */
+	private static String shareOf(MethodNode method, int index) {
+		for (List<org.objectweb.asm.tree.AnnotationNode>[] table : List.of(
+				method.visibleParameterAnnotations == null ? new List[0] : method.visibleParameterAnnotations,
+				method.invisibleParameterAnnotations == null ? new List[0] : method.invisibleParameterAnnotations)) {
+			if (index >= table.length || table[index] == null) continue;
+			for (org.objectweb.asm.tree.AnnotationNode a : table[index]) {
+				if (SHARE.equals(a.desc) && MixinFit.value(a, "value") instanceof String name) return name;
+			}
+		}
+		return null;
 	}
 
 	/** ConditionalOps' codec factory hands its one result to KernelFabricConditions.alsoAskFabric, then returns. */

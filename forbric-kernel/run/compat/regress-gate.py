@@ -8,8 +8,10 @@ base had stopped doing until the kernel adapted the Fabric mixin:
             Fabric item and a NeoForge item that bring an entity entry of their own (Fabric's is pre-empted, as on
             Fabric; NeoForge's runs, as on NeoForge);
   fuel.*    fabric-item-api's stack-aware furnace remainder, which NeoForge's consumeFuel already honours (no adaptation:
-            a standing check that it stays so).
-The fixed run must pass every case and leave the two adapted mixins' report rows unsuspected; each switch-off run must
+            a standing check that it stays so). Its furnace mixin's redirect has no anchor on NeoForge's base, and
+            SupersededMixins' native-furnace-remainder entry resolves its report rows once the defined consumeFuel is
+            seen asking the unshrunk stack (-Dforbric.supersededMixins=off reports them again).
+The fixed run must pass every case and leave the three watched mixins' report rows unsuspected; each switch-off run must
 fail exactly its cases and show its mixin suspected again, so each check is known to be able to fail.
 """
 import argparse
@@ -28,6 +30,9 @@ CASES = {'damage.mob', 'damage.player', 'damage.vanillaControl', 'damage.breaks'
          'fuel.remainder.consumeFuel', 'fuel.remainder.lavaControl', 'fuel.remainder.furnace',
          'shears.tagLoaded', 'shears.sheep.vanilla', 'shears.sheep.tag', 'shears.sheep.ownEntry.fabric',
          'shears.sheep.ownEntry.neo', 'shears.snowGolem.vanilla', 'shears.snowGolem.tag', 'shears.stickControl'}
+# fabric-item-api's furnace mixin: its redirect's target, Item.getCraftingRemainder, is gone from NeoForge's consumeFuel, which
+# asks the unshrunk stack itself (fuel.remainder.* measure the behaviour as native); SupersededMixins resolves its rows.
+FURNACE = 'fabric-item-api-v1.mixins.json:net.fabricmc.fabric.mixin.item.AbstractFurnaceBlockEntityMixin'
 # phase -> (switch, the cases it must fail exactly, the mixins whose report rows it must show suspected)
 PHASES = {
     'fixed': ('', set(), ()),
@@ -36,12 +41,9 @@ PHASES = {
     'shears-mobs-off': ('-Dforbric.shearsRelayMobs=off', {'shears.sheep.tag', 'shears.snowGolem.tag', 'shears.sheep.ownEntry.fabric'},
                         ('bclib.mixins.common.json:org.betterx.bclib.mixin.common.shears.SheepMixin',
                          'bclib.mixins.common.json:org.betterx.bclib.mixin.common.shears.SnowGolemMixin')),
+    'superseded-off': ('-Dforbric.supersededMixins=off', set(), (FURNACE,)),
 }
 WATCHED = tuple(m for _, _, mixins in PHASES.values() for m in mixins)
-# fabric-item-api's furnace redirect: reported SUSPECTED on NeoForge's base although fuel.remainder.* measure the behaviour
-# as native (its target, Item.getCraftingRemainder, is gone from consumeFuel, which asks the unshrunk stack itself). Listed in
-# the summary, not judged, until the census can say "native" for it (s4/c3 handoff).
-KNOWN_FALSE = 'fabric-item-api-v1.mixins.json:net.fabricmc.fabric.mixin.item.AbstractFurnaceBlockEntityMixin'
 
 
 def rows(compatibility, mixin):
@@ -143,7 +145,7 @@ def main():
         results[phase] = {'switch': switch, 'passed': len(cases) - len(failed), 'failed': sorted(failed),
                           'details': {c['name']: c['detail'] for c in cases if c['name'] in failed | expected},
                           'suspectedRows': {m: r for m, r in watched.items() if r},
-                          'knownFalseSuspected': rows(compatibility, KNOWN_FALSE), 'policy': compatibility.get('policy')}
+                          'policy': compatibility.get('policy')}
         if failed != expected:
             raise RuntimeError(f'{phase}: unexpected failures {sorted(failed - expected)}, did not fail {sorted(expected - failed)}: '
                                f'{results[phase]["details"]}')
