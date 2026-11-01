@@ -435,3 +435,26 @@ consumeClick key (#6); whether `LocalRanges`' one site could be written correctl
   gate list, C5b (world upgrade) and C5c (Forge → NeoForge build swap).
 - **C6**: CI (merge-loss ratchet, hidden-carrier job, `ci-prepared-noforge.tsv`), release roles, installer clean-up of its
   own old artifacts (D6), docs for the new switches and classes (KernelFluidReactions, KernelItemDamage, KernelMobShears).
+
+### C4, lane census-forge (3d8364b4): census tables regenerated, `Ecosystem.FORGE` removed
+
+One commit on `s4-c4` regenerates the eight census tables from NeoForge's own base and removes `Ecosystem.FORGE`
+(the row parsers drop a whole row whose ecosystem no longer parses, so the two cannot be separate). Details, the
+raw-vs-post-twin choice per table (D31) and the review of every new FABRIC row by kind: `stage4-c4-census.md`.
+
+| | before (merged base) | after (genuine base) |
+|---|---|---|
+| carrier-renames / -helpers / -stubs / -twins rows | 389 / 37 / 79 / 7 | 335 / 35 / 74 / 5 |
+| native-only-methods rows (base digest) | 1001 (`080a89b5…`) | 659 (`d033f1ac…`, raw) |
+| uncalled-methods / vanilla-early-returns rows | 262 / 3271 | 86 / 3276 |
+| rows naming FORGE | 1,057 | 0 |
+| new FABRIC rows | | renames 10 (EntityType.trackDeltas), twins 2, uncalled 8 |
+| unit suite (`.stage4`) | 5,760 / 65 failed (C3 tip) | **5,755 / 45 failed**: 23 C4 rows fixed, 3 new (TwinCapturedLocalsWeaveTest, its fixture models the merged base's FORGE-only twin row; C5) |
+| gates | | m1 GREEN, m46 GREEN, m9 165/21 (same 21 C5 lines as at 5efabdc5), m29 refusal phases PASS (control phases: C5) |
+
+Behaviour visible to players: a refused MinecraftForge jar is still listed on the Mods screen under "MinecraftForge",
+but counted under no ecosystem ("N refused") and no longer makes NeoForge's own settings row appear; the boot lines
+no longer print a MinecraftForge count. Still open after this lane: the every-chain-transformer anchor census test
+(D31), the merged-base wording in log and report strings, the false SUSPECTED furnace-remainder row, and the
+remaining MinecraftForge test stand-ins (C4); TwinCapturedLocalsWeaveTest's fixture and MergedBaseCalleeSwapTest's
+second admitted swap (C5).
