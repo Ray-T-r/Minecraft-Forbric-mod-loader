@@ -23,9 +23,9 @@ import org.objectweb.asm.tree.analysis.BasicVerifier;
 import net.forbric.kernel.TestFixtures;
 
 /**
- * FlowerPotRepairInjector on the real classes of both bases. Its constructor edit is not a merge repair — NeoForge's own
- * {@code FlowerPotBlock(Block, Properties)} stores null into {@code potted} on the genuine base too — so it must land
- * there; only the two edits of MinecraftForge's half may stand down, and nothing either base gets may dangle.
+ * FlowerPotRepairInjector on the real classes. Its constructor edit is not a merge repair — NeoForge's own
+ * {@code FlowerPotBlock(Block, Properties)} stores null into {@code potted} — so it must land on NeoForge's base, leave its
+ * lookups alone, and nothing it writes may dangle.
  */
 class FlowerPotRepairInjectorTest {
 	private static final String POT = FlowerPotRepairInjector.OWNER;
@@ -45,9 +45,9 @@ class FlowerPotRepairInjectorTest {
 		MethodNode ctor = method(pot, "<init>", FlowerPotRepairInjector.BLOCK_CTOR);
 		assertTrue(Arrays.stream(ctor.instructions.toArray()).anyMatch(i -> i instanceof FieldInsnNode f && f.name.equals("POTTED_BY_CONTENT")),
 				"and registers itself in POTTED_BY_CONTENT, as vanilla's does — Fabric mods read both");
-		assertFalse(calls(method(pot, "getFullPot", FULL_POT), FlowerPotRepairInjector.RUNTIME)
-				|| calls(method(pot, "useItemOn", FlowerPotRepairInjector.USE_ITEM_ON), FlowerPotRepairInjector.RUNTIME),
-				"the lookups serve MinecraftForge's fullPots, which this class does not have");
+		assertFalse(calls(method(pot, "getFullPot", FULL_POT), "net/forbric/")
+				|| calls(method(pot, "useItemOn", FlowerPotRepairInjector.USE_ITEM_ON), "net/forbric/"),
+				"NeoForge's own lookups are left as they are: nothing of the kernel's is called from them");
 		for (MethodNode m : pot.methods) {
 			assertFalse(reads(m, "fullPots"), m.name + " names no fullPots the class does not have");
 			new Analyzer<>(new BasicVerifier()).analyze(POT, m);
@@ -72,8 +72,8 @@ class FlowerPotRepairInjectorTest {
 		return false;
 	}
 
-	private static boolean calls(MethodNode method, String owner) {
-		return Arrays.stream(method.instructions.toArray()).anyMatch(i -> i instanceof MethodInsnNode c && c.owner.equals(owner));
+	private static boolean calls(MethodNode method, String ownerPrefix) {
+		return Arrays.stream(method.instructions.toArray()).anyMatch(i -> i instanceof MethodInsnNode c && c.owner.startsWith(ownerPrefix));
 	}
 
 	private static boolean reads(MethodNode method, String field) {

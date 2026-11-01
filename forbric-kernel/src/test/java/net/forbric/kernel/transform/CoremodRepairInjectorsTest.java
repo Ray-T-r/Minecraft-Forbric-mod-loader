@@ -30,28 +30,6 @@ class CoremodRepairInjectorsTest {
 			System.clearProperty(key);
 	}
 
-	@Test void theFlowerPotStoresItsPlantLooksUpEveryFamilyAndRecordsAddPlant() throws Exception {
-		byte[] original = NativeCoremodParityTest.read(MERGED, FlowerPotRepairInjector.OWNER);
-		byte[] out = new FlowerPotRepairInjector().transform(FlowerPotRepairInjector.TARGET, original, null);
-		assertNotSame(original, out);
-		ClassNode node = node(out);
-		MethodNode ctor = method(node, "<init>", FlowerPotRepairInjector.BLOCK_CTOR);
-		FieldInsnNode store = find(ctor, FieldInsnNode.class, f -> f.getOpcode() == Opcodes.PUTFIELD && f.name.equals("potted"));
-		assertTrue(store.getPrevious() instanceof VarInsnNode load && load.var == 1, "potted = the plant, as vanilla");
-		assertNotNull(find(ctor, FieldInsnNode.class, f -> f.name.equals("POTTED_BY_CONTENT")), "and in POTTED_BY_CONTENT, as vanilla");
-		MethodNode use = method(node, "useItemOn", FlowerPotRepairInjector.USE_ITEM_ON);
-		assertEquals(net.forbric.kernel.mixin.MixinInstructionFingerprint.hash(method(node(original),"useItemOn",FlowerPotRepairInjector.USE_ITEM_ON)),net.forbric.kernel.mixin.MixinInstructionFingerprint.hash(use),"the public native query and all interaction effects stay intact");
-        MethodNode lookup=method(node,"getFullPot","(L"+FlowerPotRepairInjector.BLOCK+";)L"+FlowerPotRepairInjector.BLOCK+";");
-        assertNotNull(find(lookup,MethodInsnNode.class,c->c.name.equals("getFlowerPotBlockTable")),"the original public SDK lookup remains");
-        assertNotNull(find(lookup,MethodInsnNode.class,c->c.owner.equals(FlowerPotRepairInjector.RUNTIME)&&c.name.equals("fullPotOrNative")),"explicit SDK additions decorate its actual result");
-        new Analyzer<>(new BasicVerifier()).analyze(node.name,lookup);
-		MethodNode add = method(node, "addPlant", FlowerPotRepairInjector.ADD_PLANT);
-		assertNotNull(find(add, MethodInsnNode.class, c -> c.name.equals("put")));
-		for (MethodNode m : List.of(ctor, use, add)) new Analyzer<>(new BasicVerifier()).analyze(node.name, m);
-		assertEquals(0, FlowerPotRepairInjector.storePlant(node) + FlowerPotRepairInjector.lookUpAllFamilies(node) + FlowerPotRepairInjector.recordAddedPlant(node),
-				"a second pass changes nothing");
-	}
-
 	@Test void vanillasFlowerPotAndTheSwitchAreLeftAlone() throws Exception {
 		TestFixtures.require(Fixture.MC_LIBRARIES, Files.isRegularFile(VANILLA), "vanilla 26.2 absent");
 		byte[] vanilla = NativeCoremodParityTest.read(VANILLA, FlowerPotRepairInjector.OWNER);

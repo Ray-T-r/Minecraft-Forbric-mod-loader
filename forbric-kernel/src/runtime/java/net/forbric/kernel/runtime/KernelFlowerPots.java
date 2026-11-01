@@ -2,45 +2,24 @@
 package net.forbric.kernel.runtime;
 
 import java.lang.reflect.Field;
-import java.util.Map;
-import java.util.function.Supplier;
 
 import com.google.common.collect.Table;
 import net.forbric.kernel.util.Caught;
 import net.forbric.kernel.util.ForbricLog;
 import net.minecraft.core.registries.BuiltInRegistries;
-import net.minecraft.resources.Identifier;
 import net.minecraft.world.level.block.Block;
-import net.minecraft.world.level.block.Blocks;
 import net.minecraft.world.level.block.FlowerPotBlock;
 import net.neoforged.neoforge.registries.GameData;
 
 /**
- * Which full pot a plant makes, for every family's way of declaring one (FlowerPotRepairInjector).
+ * NeoForge's flower pot table, filled from every registered pot the way its bake callback does (rebuildTable).
  *
- * <p>The merged {@code FlowerPotBlock.useItemOn} is MinecraftForge's body: it looks the plant up in the empty pot's
- * {@code fullPots} map, which only MinecraftForge's constructor and {@code addPlant} ever filled, and the merge kept
- * NeoForge's bodies of both. NeoForge declares a pot by its constructor (empty pot + plant) and keeps them in
- * {@code GameData}'s pot table, which its registry bake callback fills — and that callback never runs on the merged
- * base, where the block registry is MinecraftForge's wrapper. So every lookup answered air.
- *
- * <p>The lookup now asks, in order: the empty pot's explicit {@code addPlant} entries (MinecraftForge's API), then
- * NeoForge's table, which {@link #rebuildTable} fills from every registered pot the way NeoForge's bake does. A
- * vanilla or Fabric pot is in that table too: NeoForge's (Block, Properties) constructor names the vanilla empty pot.
+ * <p>The merged block registry was MinecraftForge's wrapper, and NeoForge's bake callback never ran on it, so every pot
+ * lookup answered air. The merged {@code useItemOn} lookup also asked MinecraftForge's {@code fullPots} first through two
+ * decorators here; NeoForge's base has no such half, and they went in Stage 4.
  */
 public final class KernelFlowerPots {
 	private KernelFlowerPots() {
-	}
-
-	/** Decorates the SDK's already computed answer; native guards and table reads have already happened once. */
-	public static Block fullPotOrNative(Block nativeAnswer,Map<?,?> explicit,FlowerPotBlock empty,Block content){
-		if(explicit!=null&&!explicit.isEmpty()){Identifier key=BuiltInRegistries.BLOCK.getKey(content);boolean aliased=content!=Blocks.AIR&&key.equals(BuiltInRegistries.BLOCK.getDefaultKey());
-			if(!aliased&&explicit.containsKey(key))return (Block)((Supplier<?>)explicit.get(key)).get();}
-		return nativeAnswer;
-	}
-	/** A legacy query has already evaluated its explicit supplier. Only its absent-entry AIR answer needs the shared table. */
-	public static Block legacyPotOrNative(Block nativeAnswer,FlowerPotBlock empty,Block content){
-		if(nativeAnswer!=Blocks.AIR)return nativeAnswer;Block full=GameData.getFlowerPotBlockTable().get(empty,content);return full==null?nativeAnswer:full;
 	}
 
 	/**

@@ -13,34 +13,20 @@ import org.objectweb.asm.tree.InsnList;
 import org.objectweb.asm.tree.InsnNode;
 import org.objectweb.asm.tree.MethodInsnNode;
 import org.objectweb.asm.tree.MethodNode;
-import org.objectweb.asm.tree.TypeInsnNode;
 import org.objectweb.asm.tree.VarInsnNode;
 
 /**
- * Makes the merged {@code FlowerPotBlock} accept, give back and name its plant for every family.
+ * Makes NeoForge's {@code FlowerPotBlock(Block, Properties)} store its plant the way vanilla's does.
  *
- * <p>The merged class is three halves. Its constructors are NeoForge's: the plant goes into a supplier, the
- * {@code potted} field is left null, and nothing registers the pot anywhere, because NeoForge derives its pot table
- * from the registry at bake time. Its {@code useItemOn} is MinecraftForge's: it looks the plant up in the empty pot's
- * {@code fullPots} map, which only MinecraftForge's constructor and {@code addPlant} filled. And its {@code addPlant}
- * is NeoForge's, which only checks its argument. Together with NeoForge's field-to-getter coremod never running
- * (NativeCoremodParity), every pot threw on pick-block, planting and taking a plant out.
+ * <p>NeoForge's vanilla-shaped constructor puts the plant into a supplier and leaves vanilla's {@code potted} field null,
+ * and registers nothing in vanilla's {@code POTTED_BY_CONTENT}: NeoForge derives its pot table from the registry at bake
+ * time and reads the plant through {@code getPotted()}. A Fabric mod reads {@code potted} and {@code POTTED_BY_CONTENT}
+ * as vanilla has them and finds nothing. The constructor now stores the plant in both, as vanilla does. This is not a
+ * merge repair: NeoForge's own base stores null just the same.
  *
- * <p>Three edits, each stood down on its own when the method is not the reviewed shape:
- * <ul>
- *   <li>the vanilla-shaped constructor {@code (Block, Properties)} stores its plant in {@code potted} and in
- *       {@code POTTED_BY_CONTENT}, as vanilla does — Fabric mods read both;</li>
- *   <li>{@code useItemOn}'s MinecraftForge lookup asks KernelFlowerPots instead, which answers from the explicit
- *       {@code addPlant} entries first and then NeoForge's table;</li>
- *   <li>{@code addPlant} records its entry in {@code fullPots}, as MinecraftForge's does.</li>
- * </ul>
- * The table itself is filled when the registration window closes (KernelFlowerPots.rebuildTable).
- *
- * <p>Only the last two are the merge's doing. The constructor's null is NeoForge's own: the genuine NeoForge base, which
- * Stage 4 switches to, stores null into {@code potted} just the same, and a Fabric mod reading {@code potted} or
- * {@code POTTED_BY_CONTENT} there finds nothing. So the constructor edit keys on NeoForge's half alone and lands on
- * either base; the two MinecraftForge edits key on {@code fullPots} and stand down where it does not exist.
- * {@code -Dforbric.flowerPotRepair=off} leaves the class as merged.
+ * <p>The merged base also needed two edits of MinecraftForge's half of the class (its {@code useItemOn} lookup in
+ * {@code fullPots} and its {@code addPlant}); NeoForge's base has no such half, and they went in Stage 4 with
+ * {@code KernelFlowerPots}' lookup decorators. {@code -Dforbric.flowerPotRepair=off} leaves the class as NeoForge has it.
  */
 public final class FlowerPotRepairInjector implements ClassTransformer {
 	static final String TARGET = "net.minecraft.world.level.block.FlowerPotBlock";
@@ -50,9 +36,6 @@ public final class FlowerPotRepairInjector implements ClassTransformer {
 	static final String USE_ITEM_ON = "(Lnet/minecraft/world/item/ItemStack;Lnet/minecraft/world/level/block/state/BlockState;"
 			+ "Lnet/minecraft/world/level/Level;Lnet/minecraft/core/BlockPos;Lnet/minecraft/world/entity/player/Player;"
 			+ "Lnet/minecraft/world/InteractionHand;Lnet/minecraft/world/phys/BlockHitResult;)Lnet/minecraft/world/InteractionResult;";
-	static final String ADD_PLANT = "(Lnet/minecraft/resources/Identifier;Ljava/util/function/Supplier;)V";
-	static final String RUNTIME = "net/forbric/kernel/runtime/KernelFlowerPots";
-	static final String FORGE_BLOCKS = "net/minecraftforge/registries/ForgeRegistries";
 	static final String MAP = "java/util/Map";
 
 	static boolean enabled() {
@@ -71,28 +54,18 @@ public final class FlowerPotRepairInjector implements ClassTransformer {
 		if (!enabled() || !TARGET.equals(className) || bytes == null || bytes.length == 0) return bytes;
 		ClassNode node = new ClassNode();
 		new ClassReader(bytes).accept(node, 0);
-		// The constructor's null is NeoForge's own, on the genuine base as on the merged one, so that edit needs only
-		// NeoForge's half: potted beside the plant's supplier. The other two serve MinecraftForge's half — its fullPots map
-		// and the useItemOn that reads it — and stand down where there is no fullPots, as on the genuine base: an edit that
-		// wrote to it there would not link. Vanilla's class has neither half and is not this repair's.
-		boolean forgeHalf = hasField(node, "fullPots", "L" + MAP + ";");
-		if (!hasField(node, "potted", "L" + BLOCK + ";")
-				|| !forgeHalf && !hasField(node, "flowerDelegate", "Ljava/util/function/Supplier;")) return bytes;
-		int constructor = storePlant(node), lookup = forgeHalf ? lookUpAllFamilies(node) : 0, addPlant = forgeHalf ? recordAddedPlant(node) : 0;
-		if (constructor + lookup + addPlant == 0) {
-			ForbricLog.warn("[Forbric/FlowerPot] left FlowerPotBlock as merged: none of its constructor, useItemOn or addPlant "
-					+ "is the reviewed shape");
+		// The constructor's null is NeoForge's own, so the edit needs NeoForge's half: potted beside the plant's supplier.
+		// Vanilla's class has no supplier and is not this repair's.
+		if (!hasField(node, "potted", "L" + BLOCK + ";") || !hasField(node, "flowerDelegate", "Ljava/util/function/Supplier;")) return bytes;
+		if (storePlant(node) == 0) {
+			ForbricLog.warn("[Forbric/FlowerPot] left FlowerPotBlock as it is: its (Block, Properties) constructor is not the "
+					+ "reviewed shape");
 			return bytes;
 		}
 		ClassWriter writer = new ClassWriter(ClassWriter.COMPUTE_MAXS);
 		node.accept(writer);
-		ForbricLog.info("[Forbric/FlowerPot] FlowerPotBlock repaired: plant stored by the vanilla constructor %s, lookup over "
-				+ "every family's pots %s, addPlant recorded %s", yes(constructor), yes(lookup), yes(addPlant));
+		ForbricLog.info("[Forbric/FlowerPot] FlowerPotBlock repaired: plant stored by the vanilla constructor");
 		return writer.toByteArray();
-	}
-
-	private static String yes(int edits) {
-		return edits > 0 ? "yes" : "NO";
 	}
 
 	/** {@code (Block, Properties)}: {@code potted = plant} instead of null, and {@code POTTED_BY_CONTENT.put(plant, this)}. */
@@ -122,74 +95,6 @@ public final class FlowerPotRepairInjector implements ClassTransformer {
 			}
 		}
 		return 1;
-	}
-
-	/**
-	 * In {@code useItemOn}, the MinecraftForge expression after {@code getEmptyPot().fullPots} — registry key, air
-	 * delegate, {@code getOrDefault}, supplier, cast — keeps its answer and is decorated with
-	 * {@code KernelFlowerPots.legacyPotOrNative(answer, this, block)}; the public lookup with {@code fullPotOrNative}.
-	 */
-	static int lookUpAllFamilies(ClassNode node) {
-		int publicLookup = decoratePublicLookup(node);
-		MethodNode use = method(node, "useItemOn", USE_ITEM_ON);
-		if (use == null) return publicLookup;
-		for(AbstractInsnNode i:use.instructions)if(i instanceof MethodInsnNode call&&call.owner.equals(RUNTIME)&&call.name.equals("legacyPotOrNative"))return publicLookup;
-		// Real instructions only: a line-number label may sit inside the expression.
-		AbstractInsnNode[] code = java.util.Arrays.stream(use.instructions.toArray()).filter(insn -> insn.getOpcode() >= 0)
-				.toArray(AbstractInsnNode[]::new);
-		for (int i = 0; i < code.length; i++) {
-			if (!(code[i] instanceof FieldInsnNode full) || full.getOpcode() != Opcodes.GETFIELD || !full.name.equals("fullPots")) continue;
-			// fullPots, then: GETSTATIC BLOCKS, ALOAD item, INVOKEVIRTUAL getBlock, getKey, GETSTATIC BLOCKS, GETSTATIC AIR,
-			// getDelegateOrThrow, Map.getOrDefault, CHECKCAST Supplier, Supplier.get, CHECKCAST Block.
-			int at = i + 1;
-			if (at + 10 >= code.length) return publicLookup;
-			if (!(code[at] instanceof FieldInsnNode registry) || !registry.owner.equals(FORGE_BLOCKS)) return publicLookup;
-			if (!(code[at + 1] instanceof VarInsnNode item) || item.getOpcode() != Opcodes.ALOAD) return publicLookup;
-			if (!(code[at + 2] instanceof MethodInsnNode getBlock) || !getBlock.name.equals("getBlock")) return publicLookup;
-			if (!call(code[at + 3], "getKey") || !(code[at + 4] instanceof FieldInsnNode) || !(code[at + 5] instanceof FieldInsnNode)
-					|| !call(code[at + 6], "getDelegateOrThrow") || !call(code[at + 7], "getOrDefault")
-					|| !(code[at + 8] instanceof TypeInsnNode supplier) || !supplier.desc.equals("java/util/function/Supplier")
-					|| !call(code[at + 9], "get") || !(code[at + 10] instanceof TypeInsnNode block) || !block.desc.equals(BLOCK)) return publicLookup;
-			// Keep the registry lookup and supplier effects. Save the already evaluated receiver and content once.
-			int empty=use.maxLocals++,content=use.maxLocals++;
-			InsnList receiver=new InsnList();receiver.add(new InsnNode(Opcodes.DUP));receiver.add(new VarInsnNode(Opcodes.ASTORE,empty));use.instructions.insertBefore(full,receiver);
-			InsnList plant=new InsnList();plant.add(new InsnNode(Opcodes.DUP));plant.add(new VarInsnNode(Opcodes.ASTORE,content));use.instructions.insert(code[at+2],plant);
-			InsnList lookup=new InsnList();lookup.add(new VarInsnNode(Opcodes.ALOAD,empty));lookup.add(new VarInsnNode(Opcodes.ALOAD,content));
-			lookup.add(new MethodInsnNode(Opcodes.INVOKESTATIC,RUNTIME,"legacyPotOrNative","(L"+BLOCK+";L"+OWNER+";L"+BLOCK+";)L"+BLOCK+";",false));use.instructions.insert(code[at+10],lookup);
-			return publicLookup+1;
-		}
-		return publicLookup;
-	}
-	/** The public SDK query remains intact, including its non-empty-pot guard and native table read. */
-	private static int decoratePublicLookup(ClassNode node){
-		MethodNode query=method(node,"getFullPot","(L"+BLOCK+";)L"+BLOCK+";");if(query==null||(query.access&Opcodes.ACC_STATIC)!=0)return 0;
-		boolean table=false;for(AbstractInsnNode i:query.instructions)if(i instanceof MethodInsnNode call){if(call.owner.equals(RUNTIME))return 0;if(call.owner.equals("net/neoforged/neoforge/registries/GameData")&&call.name.equals("getFlowerPotBlockTable"))table=true;}
-		if(!table)return 0;int changed=0;
-		for(AbstractInsnNode i:query.instructions.toArray())if(i.getOpcode()==Opcodes.ARETURN){InsnList decorate=new InsnList();decorate.add(new VarInsnNode(Opcodes.ALOAD,0));decorate.add(new FieldInsnNode(Opcodes.GETFIELD,node.name,"fullPots","Ljava/util/Map;"));decorate.add(new VarInsnNode(Opcodes.ALOAD,0));decorate.add(new VarInsnNode(Opcodes.ALOAD,1));
-			decorate.add(new MethodInsnNode(Opcodes.INVOKESTATIC,RUNTIME,"fullPotOrNative","(L"+BLOCK+";Ljava/util/Map;L"+OWNER+";L"+BLOCK+";)L"+BLOCK+";",false));query.instructions.insertBefore(i,decorate);changed++;}
-		return changed>0?1:0;
-	}
-
-	/** {@code addPlant}: after NeoForge's check, {@code fullPots.put(id, supplier)}, as MinecraftForge's body does. */
-	static int recordAddedPlant(ClassNode node) {
-		MethodNode add = method(node, "addPlant", ADD_PLANT);
-		if (add == null || references(add, "fullPots")) return 0;
-		AbstractInsnNode last = add.instructions.getLast();
-		while (last != null && last.getOpcode() < 0) last = last.getPrevious();
-		if (last == null || last.getOpcode() != Opcodes.RETURN) return 0;
-		InsnList put = new InsnList();
-		put.add(new VarInsnNode(Opcodes.ALOAD, 0));
-		put.add(new FieldInsnNode(Opcodes.GETFIELD, OWNER, "fullPots", "L" + MAP + ";"));
-		put.add(new VarInsnNode(Opcodes.ALOAD, 1));
-		put.add(new VarInsnNode(Opcodes.ALOAD, 2));
-		put.add(new MethodInsnNode(Opcodes.INVOKEINTERFACE, MAP, "put", "(Ljava/lang/Object;Ljava/lang/Object;)Ljava/lang/Object;", true));
-		put.add(new InsnNode(Opcodes.POP));
-		add.instructions.insertBefore(last, put);
-		return 1;
-	}
-
-	private static boolean call(AbstractInsnNode insn, String name) {
-		return insn instanceof MethodInsnNode method && method.name.equals(name);
 	}
 
 	private static boolean references(MethodNode method, String field) {
