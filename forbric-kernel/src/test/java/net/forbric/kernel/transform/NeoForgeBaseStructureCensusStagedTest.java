@@ -36,10 +36,11 @@ import org.objectweb.asm.tree.MethodNode;
  * of its own class with an {@code H_INVOKESTATIC} tag while the method is an instance method (or the other way round), or
  * names a {@code lambda$} method the class does not have, links into an {@code IncompatibleClassChangeError} or
  * {@code NoSuchMethodError} at the first call. The merge could leave that when two carriers' lambdas collided by name;
- * {@code repairLambdaBootstrapHandles} re-tagged them. Checked on the raw jars and on the view the game's pre-Mixin chain
- * hands Mixin ({@link PreMixinView}: the vanilla twins, which copy vanilla lambdas into NeoForge classes, then the compat
- * repairs), which is where a twin copying a vanilla lambda whose name and descriptor collide with a NeoForge lambda of the
- * other static-ness would show.
+ * {@code repairLambdaBootstrapHandles} re-tagged them. Checked on the raw jars and after the two transformers of the
+ * pre-Mixin chain that copy or wire vanilla members ({@link PreMixinView}: the vanilla twins, which copy vanilla lambdas
+ * into NeoForge classes, then the compat repairs), which is where a twin copying a vanilla lambda whose name and
+ * descriptor collide with a NeoForge lambda of the other static-ness would show. The rest of the chain is not replayed
+ * here (see the scope note at the end).
  *
  * <p><b>A second {@code Bootstrap.bootStrap()} inside the first.</b> On the merged base MinecraftForge's
  * {@code ForgeRegistries.init} called {@code Bootstrap.bootStrap()} from a class initializer that vanilla's own bootstrap
@@ -59,10 +60,17 @@ import org.objectweb.asm.tree.MethodNode;
  * {@code lambda$x$0}; the merged base had 133 such classes (both carriers' lambdas, one body kept), and a mod's
  * {@code method = "lambda$load$2"} carries no descriptor, so Mixin bound whichever came first (Lithostitched's Tectonic
  * modifiers on {@code ResourceManagerRegistryLoadTask}). {@code DuplicateLambdaPruneInjector} dropped the orphaned body
- * and was deleted in C3: NeoForge's base has none. Checked on the pre-Mixin view too, because
+ * and was deleted in C3: NeoForge's base has none. Checked after the twins and compat repairs too, because
  * {@link VanillaMemberTwinInjector} copies vanilla bodies with their lambdas and keeps a lambda's vanilla name when the
  * class has no method of that name and descriptor, so a twin could re-create a pair beside a NeoForge lambda of the same
  * name, and nothing at run time would say so.
+ *
+ * <p><b>Scope.</b> "The pre-Mixin view" here is {@link PreMixinView}: the raw class after VanillaMemberTwinInjector and
+ * ForbricMergedBaseCompatTransformer only, not after the game's whole COREMOD chain. Other kernel transformers do reshape
+ * base classes (NativeTagTrackerSourceInjector rewrites {@code EntityFluidInteraction}), but none of them copies
+ * {@code lambda$} methods today (VanillaMemberTwinInjector holds the only lambda copier). A duplicate a later chain step
+ * made would not show here; the whole chain is measured by a real boot with {@code -Dmixin.debug.export=true}, scanning
+ * {@code .mixin.out} for a class that declares one {@code lambda$} name twice (Stage 4 C3: 1,227 woven classes, none).
  */
 class NeoForgeBaseStructureCensusStagedTest {
 	private static final String BOOTSTRAP = "net/minecraft/server/Bootstrap";
