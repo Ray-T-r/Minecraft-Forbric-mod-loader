@@ -1,6 +1,8 @@
 # Stage 4 C3, lane "c3b-postmixin-fixups": how PostMixinFixups' repairs were checked
 
 Branch `s4-c3`, commits 45ec501e, 6fc5a910, 2fba129f and 4bf8a6d8 on 72a3ff7b, plus the commit that adds this file.
+Review fixes: 27f9f4a2 (the replay's native-delegation skip narrowed to private wide constructors, with its own switch)
+and the commit that updates this file.
 `PostMixinFixups` runs on every class after Mixin has woven it. Its javadoc blamed the Forge/NeoForge byte merge, and
 no C3 lane had given it a verdict (critic item 2). The lane checked each repair in it with the plan's three checks.
 Two were merge-only:
@@ -10,7 +12,8 @@ Two were merge-only:
 The rest do work on NeoForge's own base and stay:
 - the alias rewrite's NeoForge alias-first routing;
 - `MixinFieldInitialiserPlacement`;
-- the delegated-constructor replay, now restricted to delegations the mixin's own platform does not have;
+- the delegated-constructor replay, now restricted to delegations the mixin's own platform does not have into a private
+  wide constructor;
 - `NativeDeadValueConsumers`, whose wording was the only change.
 
 Names:
@@ -31,10 +34,10 @@ pack.
 |---|---|---|---|---|---|
 | alias rewrite, `keySet()` half (MinecraftForge `NamespacedWrapper` never filled `byLocation`) | DELETE | More Nemo's Woodcutter Variants + nemos-woodcutter + fabric-api 0.161.0, server to Done. **M**: on 0 warnings, `-Dforbric.aliasPresenceParity=off` 22, throwaway "routing kept, `byLocation.keySet()` instead of `this.keySet()`" 22 (11 block + 11 item): red proven. **G**: 0 before and after | `MappedRegistry` subclasses overriding `register`/`keySet`/`containsKey`. **G**: only `DefaultedMappedRegistry` (`register`, calls `super.register`); `MappedRegistry.keySet()` = `unmodifiableSet(byLocation.keySet())`. **M**: `NamespacedWrapper` overrides all four | fabric-registry-sync-v0 7.1.0 `MappedRegistryMixin.addAlias`, every shipped copy (unit census). 97-jar server: 0 warnings; m9 0 | 45ec501e |
 | alias rewrite, NeoForge alias-first routing (`KernelRegistryAliases.aliasTargetPresent`) | KEEP (EDIT: reads `byLocation`; `.deferredRegister` sub-switch → `ForbricSwitches.RENAMED` → `forbric.aliasPresenceParity`) | **G**, 97-jar server: 0 warnings with it; 67 with `-Dforbric.aliasPresenceParity.deferredRegister=off` (66 waystones, 1 sophisticatedcore), the same 67 under the former name after the edit (with the RENAMED warning) | G: `MappedRegistry extends BaseMappedRegistry` (NeoForge `addAlias`, overridden by the mixin's); `DeferredRegister.addEntries` runs `aliases.forEach(registry::addAlias)` before `RegisterEvent.register` | waystones, sophisticatedcore (NeoForge) under fabric-registry-sync | 45ec501e |
-| `seedOrphanedPipRenderers` (+ `SEEDED_FIELDS`, MixinFit's exemption) | DELETE | **G** without it: m9 149/21 with identical sets, no orphan finding, PiP fallback "gave that map its only writer". Its log line appears in no G log, nor in the merged m9 log of 2026-11-01 (seeded 0, writer 4): it was already dead on M, so the merged red check is impossible (D37) | Private fields vanilla assigns in a constructor that the base declares and never assigns. **G**: 0 (GuiRenderer declares no `pictureInPictureRenderers`; `VanillaMemberTwinInjector` adds it pre-mixin and the CMT bridge writes it). **M**: 4 | fabric-rendering-v1 `GuiRendererMixin`, malilib: applied, no HAZARD | 6fc5a910 |
-| `replayDelegatedConstructorInjections` | KEEP, EDIT | **G**, throwaway early return: the 97-jar server reaches Done and m9 is 149/21 with identical sets. No gate line covers it. By bytecode, `ModelManager.lambda$reload$4` is the only caller of `ModelBakery`'s constructors and calls NeoForge's 9-argument one, so fabric-model-loading's `onReturnInit` (in the vanilla 7-argument one) would never run | Constructors that only delegate `this(...)` to a wider one whose parameters they prefix, where vanilla lacks the wide one: G 59, M 66 | replayed on G: fabric-object-builder `BlockEntityType.mutableBlocks`, fabric-data-generation `TagsProvider.initPathResolver`, fabric-model-loading `ModelBakery.onReturnInit`, and (before the edit) fabric-permission-api `CommandSourceStack.storeOriginalSource` | 2fba129f |
+| `seedOrphanedPipRenderers` (+ `SEEDED_FIELDS`, MixinFit's exemption) | DELETE | **G** without it: m9 149/21 with identical sets, no orphan finding, PiP fallback "gave that map its only writer". Its log line appears in no G log, nor in the merged m9 log of 2026-11-01 (seeded 0, writer 4): it was already dead on M, so the merged red check is impossible (D37) | Private fields vanilla assigns in a constructor that the base declares and never assigns. **G**: 0 (GuiRenderer declares no `pictureInPictureRenderers`; `VanillaMemberTwinInjector` adds it pre-mixin and the CMT bridge writes it). **M**: 4 | fabric-rendering-v1 `GuiRendererMixin`, malilib: applied, no HAZARD. This overrides map row interop-misc.md:121 ("`seedOrphanedPipRenderers` stays"): the CMT bridge `bridgeOrphanedPipRenderers` (R2 KEEP, REQUIRED claim) is now the twin's writer on both bases, and the seed never fired on either. Removing it also removed `apply()`'s early return for `GuiRenderer`, which now reaches `FabricFuelValuesInjector.afterMixin` and the replay like any class; no G log shows either acting on it | 6fc5a910 |
+| `replayDelegatedConstructorInjections` | KEEP, EDIT | **G**, throwaway early return: the 97-jar server reaches Done and m9 is 149/21 with identical sets. No gate line covers it. By bytecode, `ModelManager.lambda$reload$4` is the only caller of `ModelBakery`'s constructors and calls NeoForge's 9-argument one, so fabric-model-loading's `onReturnInit` (in the vanilla 7-argument one) would never run | Constructors that only delegate `this(...)` to a wider one whose parameters they prefix, where vanilla lacks the wide one: G 59, M 66 | replayed on G: fabric-object-builder `BlockEntityType.mutableBlocks`, fabric-data-generation `TagsProvider.initPathResolver`, fabric-model-loading `ModelBakery.onReturnInit`, and (before the edit, or with `-Dforbric.postMixinFixups.nativeDelegation=off`) fabric-permission-api `CommandSourceStack.storeOriginalSource` | 2fba129f, 27f9f4a2 |
 | `MixinFieldInitialiserPlacement` (`-Dforbric.mixinFieldInitialisers`) | KEEP, wording | **G**, off: the 97-jar server fails `Registry must be non-empty: minecraft:cat_sound_variant` / "Failed to load datapacks"; the client crashes with `NullPointerException ... this.parentsPredicate is null` at `Pack.fabric$parentsEnabled` (from `ModPackResourcesUtil.refreshAutoEnabledPacks`); m9 105/65 | `super()`-chaining constructors that construct their own class or superclass after `super()`. On G only `Pack` differs from vanilla; six vanilla classes have the same shape natively | fabric-resource-loader-v1 `PackMixin.parentsPredicate`, repaired on every G boot | 4bf8a6d8 |
-| `NativeDeadValueConsumers` | KEEP, wording (`merged` → carrier's / NeoForge's) | not re-measured. NeoForge's own `TitleScreen` still draws `BrandingControl` lines instead of vanilla's version string | — | Mod Menu's title-screen suffix | 4bf8a6d8 |
+| `NativeDeadValueConsumers` | KEEP, wording (`merged` → carrier's / NeoForge's) | not re-measured with it off. NeoForge's own `TitleScreen` still draws `BrandingControl` lines instead of vanilla's version string | — | Mod Menu's title-screen suffix, live on G: m9 boot log 22:14:07 `TitleScreen.extractRenderState: the value com.terraformersmc.modmenu.mixin.MixinTitleScreen's handler changed is stored and never read — the carrier replaced its native consumer — and now reaches the carrier's own [lambda$extractRenderState$0, lambda$extractRenderState$1]` | 4bf8a6d8 |
 
 ### The replay edit
 
@@ -46,7 +49,18 @@ wide one:
 - for a FABRIC mixin, the vanilla reference;
 - for a NEOFORGE mixin, the base itself, so it is never moved.
 
-An unknown ecosystem or a missing reference keeps the old behaviour. After the edit, m9 replays only `ModelBakery`,
+An unknown ecosystem or a missing reference keeps the old behaviour. So the skip is inert without the FABRIC
+vanilla-reference sidecar: with no reference staged, every handler is moved as before.
+
+Review fix (27f9f4a2): the skip also requires the wide constructor to be private, in the vanilla reference and in the
+carrier's class. A public wide constructor can gain callers the narrow one natively had: vanilla `RegistryLoadTask`
+calls `MappedRegistry(ResourceKey, Lifecycle)`, while on G every datapack registry is built through NeoForge's
+`RegistryBuilder.create`, which calls the wide `(ResourceKey, Lifecycle, boolean)`. Without the access test, a Fabric
+`RETURN` injection into the narrow constructor would have run for none of them (no shipped mod has one today).
+`CommandSourceStack`'s wide constructor is private on both sides, so its skip stands. After the fix the 97-jar server
+replays `TagsProvider` and `BlockEntityType` only (`srv-g-fix`); `-Dforbric.postMixinFixups.nativeDelegation=off` brings
+the `CommandSourceStack` replay back (`srv-g-natdeloff`). Mutation red: dropping the access test fails the two new unit
+tests. After the edit, m9 replays only `ModelBakery`,
 `TagsProvider` and `BlockEntityType`, and its line sets are unchanged. The mutation red check: removing the guard fails 4
 tests, 3 unit tests plus the NeoForge weave case.
 
@@ -54,6 +68,13 @@ tests, 3 unit tests plus the NeoForge weave case.
 
 No switch was retired. `forbric.aliasPresenceParity.deferredRegister` is RENAMED to `forbric.aliasPresenceParity`: once
 the `keySet()` half was gone, both did the same thing. `forbric.postMixinFixups` and `forbric.mixinFieldInitialisers` stay.
+New: `forbric.postMixinFixups.nativeDelegation` (27f9f4a2), the replay's native-delegation skip.
+Measured under the current name on G after the edit: the 97-jar server with `-Dforbric.aliasPresenceParity=off` logs 67
+"but the latter doesn't exist" warnings (0 with it on). gate-m9 with
+`M9_EXTRA_JVM=-Dforbric.aliasPresenceParity=off`: 134 in `build/gate-m9-client-boot.log` (67 per JVM, server and
+client), 0 with it on (`m9-fix`); both runs 149 PASS / 21 FAIL with the same line sets as before, so no m9 check notices
+the switch yet (C5). The earlier "0 vs 134" figure in the lane handoff came from a `-Dforbric.postMixinFixups=off` run,
+not from this switch.
 
 ### Suite
 

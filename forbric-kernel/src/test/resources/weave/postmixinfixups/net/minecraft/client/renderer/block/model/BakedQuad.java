@@ -1,7 +1,7 @@
 package net.minecraft.client.renderer.block.model;
 
 /**
- * Fixture stand-in for the merged quad: NeoForge made its wider constructor canonical and the vanilla-shaped one
+ * Fixture stand-in for NeoForge's quad: NeoForge made its wider constructor canonical and the vanilla-shaped one
  * delegates to it with NeoForge's defaults, so a caller of either builds the same kind of quad.
  */
 public class BakedQuad {
