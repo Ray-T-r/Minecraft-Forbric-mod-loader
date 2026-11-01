@@ -32,7 +32,7 @@ import net.forbric.kernel.TestFixtures.Fixture;
  * ordinal names is read off the native body, never assumed. The fixtures are stand-ins compiled here with the platform
  * names the adapter is about and an unrelated guest ({@code com/example/keyecho}); one native body keeps vanilla 26.2's
  * six exits (the key release is ordinal 4, the final return ordinal 5), another moves the release to ordinal 2, so
- * one guest ordinal means a different exit in each. The last tests read the real vanilla jar and merged base.
+ * one guest ordinal means a different exit in each. The last tests read the real vanilla jar and the staged base.
  */
 @ResourceLock("system-properties")
 class KeyActionExitsTest {
@@ -49,12 +49,17 @@ class KeyActionExitsTest {
 			import net.minecraft.client.input.KeyEvent;
 			public final class ClientHooks { public static void onKeyInput(KeyEvent event, int action) { } }
 			""";
-	/** Another ecosystem's twin of the hook, which a merge can keep in the same join in front of it. */
-	private static final String TWIN = "Lnet/minecraftforge/client/ForgeHooksClient;onKeyInput(Lnet/minecraft/client/input/KeyEvent;I)V";
+	/**
+	 * A second void hook fed by the hook's own operands, in the same join in front of it. JoinedReturnExits lets the join hold
+	 * such calls; on the merged base of Forbric 0.4 and earlier it held MinecraftForge's twin of the hook there. NeoForge's
+	 * base holds NeoForge's hook alone (the staged test below), so this stand-in, in no platform's package, keeps the
+	 * allowance tested.
+	 */
+	private static final String TWIN = "Lcom/example/keyhooks/OtherHooks;onKeyInput(Lnet/minecraft/client/input/KeyEvent;I)V";
 	private static final String TWIN_HOOKS = """
-			package net.minecraftforge.client;
+			package com.example.keyhooks;
 			import net.minecraft.client.input.KeyEvent;
-			public final class ForgeHooksClient {
+			public final class OtherHooks {
 				public static void onKeyInput(KeyEvent event, int action) { }
 				public static boolean onKeyInputChecked(KeyEvent event, int action) { return false; }
 			}
@@ -132,9 +137,9 @@ class KeyActionExitsTest {
 				}
 			}
 			""";
-	/** The joined body as an edit-spliced merge leaves it: MinecraftForge's own hook kept in the join, in front. */
+	/** The joined body with a second hook kept in the join, in front of NeoForge's. */
 	private static final String JOINED_SIX_TWIN = JOINED_SIX.replace("ClientHooks.onKeyInput(event, action);",
-			"net.minecraftforge.client.ForgeHooksClient.onKeyInput(event, action); ClientHooks.onKeyInput(event, action);");
+			"com.example.keyhooks.OtherHooks.onKeyInput(event, action); ClientHooks.onKeyInput(event, action);");
 	private static final String JOINED_FOUR = HEAD + """
 				private void keyPress(long handle, int action, KeyEvent event) {
 					if (handle != window) return;
@@ -180,7 +185,7 @@ class KeyActionExitsTest {
 		assertEquals(MixinKeyActionAdapter.HANDLER.replace(")V", "Lcom/llamalad7/mixinextras/sugar/ref/LocalBooleanRef;)V"), method(mixin, "heardTail").desc,
 				"a bare TAIL handler is wrapped with the full arguments, and the global key's share");
 		JoinedReturnExits exits = exits(original, current);
-		assertEquals(1, exits.decisionExits().size(), "the global key: natively a return on its own answer, merged a jump into the join");
+		assertEquals(1, exits.decisionExits().size(), "the global key: natively a return on its own answer, on the carrier's body a jump into the join");
 		assertEquals(1, exits.decisionExits().getFirst().ordinal());
 		assertEquals("Lnet/minecraft/client/KeyboardHandler;global(Lnet/minecraft/client/input/KeyEvent;)Z", exits.decisionExits().getFirst().member());
 		assertTrue(exits.decisionExits().getFirst().nonZero());
@@ -203,13 +208,13 @@ class KeyActionExitsTest {
 	}
 
 	/**
-	 * A merge that keeps both ecosystems' hooks leaves two calls in the join; the joined release still runs where the
-	 * native return ran — before every hook, so in front of the twin the merge kept first — and only for a release.
+	 * Two hook calls in the join: the joined release still runs where the native return ran — before every hook, so in
+	 * front of the first — and only for a release.
 	 */
 	@Test void aJoinOfTwoHooksPlacesTheJoinedExitInFrontOfBoth() throws Exception {
 		ClassNode original = handler("native", NATIVE_SIX), current = handler("joined-twin", JOINED_SIX_TWIN);
 		JoinedReturnExits exits = exits(original, current);
-		assertEquals(TWIN, exits.entry(), "the join begins at the twin the merge kept in front of the hook");
+		assertEquals(TWIN, exits.entry(), "the join begins at the hook kept in front of NeoForge's");
 		assertEquals(0, exits.entryOrdinal());
 		assertEquals("0", exits.joined(4).toString());
 		for (int ordinal = 0; ordinal < 4; ordinal++) assertNull(exits.joined(ordinal), "ordinal " + ordinal);
@@ -228,7 +233,7 @@ class KeyActionExitsTest {
 
 		// Not a join: something in front of the hook that computes a value (here a call whose result is dropped).
 		String computing = JOINED_SIX.replace("ClientHooks.onKeyInput(event, action);",
-				"net.minecraftforge.client.ForgeHooksClient.onKeyInputChecked(event, action); ClientHooks.onKeyInput(event, action);");
+				"com.example.keyhooks.OtherHooks.onKeyInputChecked(event, action); ClientHooks.onKeyInput(event, action);");
 		assertNotEquals(JOINED_SIX, computing);
 		ClassNode notJoined = handler("joined-computing", computing);
 		assertNull(JoinedReturnExits.of(original, MixinPlayerWorldCallbackAdapter.selector(original, MixinKeyActionAdapter.HOST),
@@ -292,13 +297,13 @@ class KeyActionExitsTest {
 		assertEquals(0, MixinKeyActionAdapter.adapt(guest(4, 5), n -> current, (family, n) -> original));
 	}
 
-	/** Vanilla 26.2 against the staged merged base: the claim about ordinals 4 and 5, read off the real jars. */
+	/** Vanilla 26.2 against the staged base: the claim about ordinals 4 and 5, read off the real jars. */
 	@Test void vanillaReleaseIsOrdinalFourAndItsFinalReturnOrdinalFive() throws Exception {
-		Path merged = TestFixtures.stagedBase();
-		TestFixtures.requireFile(Fixture.STAGED, merged, "actual game required");
-		ClassNode current = CarpetMixinAdapterTest.from(Fixture.STAGED, merged, MixinKeyActionAdapter.TARGET);
+		Path base = TestFixtures.stagedBase();
+		TestFixtures.requireFile(Fixture.STAGED, base, "actual game required");
+		ClassNode current = CarpetMixinAdapterTest.from(Fixture.STAGED, base, MixinKeyActionAdapter.TARGET);
 		ClassNode original, neoforge;
-		try (ZipFile jar = new ZipFile(merged.toFile())) {
+		try (ZipFile jar = new ZipFile(base.toFile())) {
 			// The hash-pinned native references production reads: for a Fabric mod, vanilla's own class.
 			NativeGameReferences references = new NativeGameReferences(path -> {
 				try {
@@ -307,7 +312,7 @@ class KeyActionExitsTest {
 				} catch (java.io.IOException unavailable) {
 					return null;
 				}
-			}, null, TestFixtures.launchSources(merged));
+			}, null, TestFixtures.launchSources(base));
 			original = references.get(Ecosystem.FABRIC, MixinKeyActionAdapter.TARGET);
 
 			neoforge = references.get(Ecosystem.NEOFORGE, MixinKeyActionAdapter.TARGET);
@@ -320,7 +325,7 @@ class KeyActionExitsTest {
 		assertTrue(exits.isFinal(5));
 		assertEquals("1, 2, any other", exits.finalGuard().toString(), "the final return is never reached on a release");
 
-		// The release runs where the join begins: in front of every hook the merged body joined its exits into. The
+		// The release runs where the join begins: in front of every hook the base's body joined its exits into. The
 		// join ends in NeoForge's hook; whatever runs in front of it there is nothing but hook calls on parameter loads.
 		MethodNode host = MixinPlayerWorldCallbackAdapter.selector(current, MixinKeyActionAdapter.HOST);
 		List<AbstractInsnNode> join = joinRun(host, exits.entry(), exits.entryOrdinal());
@@ -470,7 +475,7 @@ class KeyActionExitsTest {
 	private ClassNode handler(String label, String source) throws Exception {
 		Path classes = compile(label, Map.of("net/minecraft/client/input/KeyEvent.java", EVENT,
 				"net/neoforged/neoforge/client/ClientHooks.java", HOOKS,
-				"net/minecraftforge/client/ForgeHooksClient.java", TWIN_HOOKS, "net/minecraft/client/KeyboardHandler.java", source));
+				"com/example/keyhooks/OtherHooks.java", TWIN_HOOKS, "net/minecraft/client/KeyboardHandler.java", source));
 		return MixinFit.parse(Files.readAllBytes(classes.resolve("net/minecraft/client/KeyboardHandler.class")));
 	}
 

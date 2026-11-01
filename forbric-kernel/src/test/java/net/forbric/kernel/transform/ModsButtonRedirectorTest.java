@@ -65,8 +65,6 @@ class ModsButtonRedirectorTest {
 	private static final Path NEO_RUNTIME = TestFixtures.stagedRoot().resolve(TestFixtures.NEO_CARRIER_JAR);
 
 	private static final String NEO = ForeignType.MOD_LIST_SCREEN.internal(Ecosystem.NEOFORGE);
-	/** MinecraftForge's Mods screen: no ecosystem's any more, still never what a button is pointed at. */
-	private static final String FORGE = "net/minecraftforge/client/gui/ModListScreen";
 
 	@Test
 	void theStagedGameStillOpensAFamilysOwnModListSomewhere() throws Exception {
@@ -80,8 +78,7 @@ class ModsButtonRedirectorTest {
 		assertTrue(opened.values().stream().flatMap(List::stream).anyMatch(NEO::equals),
 				"something in the staged jars must still open NeoForge's own ModListScreen — if nothing does, the "
 						+ "button moved again and this redirect needs re-deriving. Carriers found: " + opened);
-		// MinecraftForge's own site is NOT required: the genuine base has none. One live Forge-family button,
-		// re-pointed, is the whole claim.
+		// One live NeoForge button, re-pointed, is the whole claim (the merged base also had MinecraftForge's).
 	}
 
 	/**
@@ -126,7 +123,7 @@ class ModsButtonRedirectorTest {
 				for (AbstractInsnNode insn : method.instructions) {
 					if (insn instanceof MethodInsnNode call && call.getOpcode() == Opcodes.INVOKESPECIAL
 							&& "<init>".equals(call.name)) {
-						assertTrue(!NEO.equals(call.owner) && !FORGE.equals(call.owner),
+						assertTrue(!NEO.equals(call.owner),
 								"a family's ModListScreen constructor is still called in " + carrier.getKey() + "." + method.name);
 					}
 				}
@@ -285,10 +282,10 @@ class ModsButtonRedirectorTest {
 			if (method.instructions == null) continue;
 			for (AbstractInsnNode insn : method.instructions) {
 				if (insn instanceof TypeInsnNode type && type.getOpcode() == Opcodes.NEW
-						&& (NEO.equals(type.desc) || FORGE.equals(type.desc))) {
+						&& NEO.equals(type.desc)) {
 					out.add(type.desc);
 				} else if (insn instanceof MethodInsnNode call && call.getOpcode() == Opcodes.INVOKESTATIC
-						&& (NEO.equals(call.owner) || FORGE.equals(call.owner))
+						&& NEO.equals(call.owner)
 						&& call.desc.startsWith("(Lnet/minecraft/client/gui/screens/Screen;)")) {
 					out.add(call.owner);
 				}
@@ -332,7 +329,7 @@ class ModsButtonRedirectorTest {
 				for (ZipEntry entry : zip.stream().toList()) {
 					if (!entry.getName().endsWith(".class")) continue;
 					String internal = entry.getName().substring(0, entry.getName().length() - 6);
-					if (NEO.equals(internal) || FORGE.equals(internal)) continue;
+					if (NEO.equals(internal)) continue;
 					byte[] bytes;
 					try (InputStream in = zip.getInputStream(entry)) {
 						bytes = in.readAllBytes();
@@ -434,7 +431,7 @@ class ModsButtonRedirectorTest {
 		// A false negative here silently drops the redirect, which is far worse than the scan it saves.
 		org.objectweb.asm.ClassWriter cw = new org.objectweb.asm.ClassWriter(0);
 		cw.visit(Opcodes.V17, Opcodes.ACC_PUBLIC, "com/example/Pause", null, "java/lang/Object", null);
-		cw.visitField(Opcodes.ACC_STATIC, "screen", "Lnet/minecraftforge/client/gui/ModListScreen;", null, null)
+		cw.visitField(Opcodes.ACC_STATIC, "screen", "Lnet/neoforged/neoforge/client/gui/ModListScreen;", null, null)
 				.visitEnd();
 		cw.visitEnd();
 

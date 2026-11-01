@@ -198,13 +198,14 @@ class KernelTransferInteropTest {
 		Issue(String code, String providerClass, String detail) { this(code, providerClass, detail, null); }
 	}
 	@Test void aFindingWithNoProviderIsTheKernelsOwnAndLooksUpNoClass() {
-		// A finding with no provider object (the Forge fallback hook missing) has no class to attribute. It used to be
-		// looked up as a class named "unknown", which never exists, so every such finding was also a failure.
-		KernelTransferInterop.recordIssue(getClass().getClassLoader(), new Issue("FORGE_QUERY_HOOK_MISSING", null, "detail"));
+		// A finding with no provider object has no class to attribute (the code here is a live one; on the merged base
+		// MinecraftForge's missing fallback hook was the case that had none). It used to be looked up as a class named
+		// "unknown", which never exists, so every such finding was also a failure.
+		KernelTransferInterop.recordIssue(getClass().getClassLoader(), new Issue("FABRIC_FALLBACK_ORDER", null, "detail"));
 		CompatibilityFinding finding = CompatibilityFindings.all().stream()
-				.filter(f -> f.id().equals("transfer:FORGE_QUERY_HOOK_MISSING:unknown")).findFirst().orElseThrow();
+				.filter(f -> f.id().equals("transfer:FABRIC_FALLBACK_ORDER:unknown")).findFirst().orElseThrow();
 		assertEquals("forbric", finding.modId());
-		assertEquals(List.of("FORGE_QUERY_HOOK_MISSING", "unknown"), finding.evidence());
+		assertEquals(List.of("FABRIC_FALLBACK_ORDER", "unknown"), finding.evidence());
 	}
 	/**
 	 * gate-m39's proxy item handler, as the boot side saw it before the runtime carried the handler across: the name
@@ -215,8 +216,8 @@ class KernelTransferInteropTest {
 	@Test void aProxyReportedByNameIsNoModsAndNoFailure() {
 		Object proxy = java.lang.reflect.Proxy.newProxyInstance(getClass().getClassLoader(), new Class<?>[] { Runnable.class }, (p, m, a) -> null);
 		String name = proxy.getClass().getName();
-		KernelTransferInterop.recordIssue(getClass().getClassLoader(), new Issue("FORGE_HANDLER_NOT_ROLLBACK_SAFE", name, "detail"));
-		assertEquals("forbric", attributed("transfer:FORGE_HANDLER_NOT_ROLLBACK_SAFE:" + name));
+		KernelTransferInterop.recordIssue(getClass().getClassLoader(), new Issue("ROLLBACK_FAILED", name, "detail"));
+		assertEquals("forbric", attributed("transfer:ROLLBACK_FAILED:" + name));
 		assertEquals("forbric", KernelTransferInterop.owner(getClass().getClassLoader(), "java.lang.String", null), "a JDK class names no mod either");
 		assertEquals("forbric", KernelTransferInterop.owner(getClass().getClassLoader(), name, String.class));
 	}
@@ -234,8 +235,8 @@ class KernelTransferInteropTest {
 		try (var loader = new java.net.URLClassLoader(new java.net.URL[] { jar.toUri().toURL() }, null)) {
 			Class<?> handler = loader.loadClass("p.Handler");
 			KernelTransferInterop.recordIssue(getClass().getClassLoader(),
-					new Issue("FORGE_HANDLER_NOT_ROLLBACK_SAFE", "jdk.proxy9.$Proxy1", "detail", handler));
-			assertEquals("handlermod", attributed("transfer:FORGE_HANDLER_NOT_ROLLBACK_SAFE:jdk.proxy9.$Proxy1 via p.Handler"),
+					new Issue("ROLLBACK_FAILED", "jdk.proxy9.$Proxy1", "detail", handler));
+			assertEquals("handlermod", attributed("transfer:ROLLBACK_FAILED:jdk.proxy9.$Proxy1 via p.Handler"),
 					"the source is used as it is: the name is never looked up");
 			Class<?> lambda = loader.loadClass("p.Anchor").getMethod("make").invoke(null).getClass();
 			assertTrue(lambda.isHidden(), "the shape this case is about");
@@ -262,11 +263,11 @@ class KernelTransferInteropTest {
 				var b = new java.net.URLClassLoader(new java.net.URL[] { second.toUri().toURL() }, null)) {
 			String shared = "jdk.proxy3.$Proxy7";
 			KernelTransferInterop.recordIssue(getClass().getClassLoader(),
-					new Issue("FORGE_HANDLER_NOT_ROLLBACK_SAFE", shared, "first", a.loadClass("a.Handler")));
+					new Issue("ROLLBACK_FAILED", shared, "first", a.loadClass("a.Handler")));
 			KernelTransferInterop.recordIssue(getClass().getClassLoader(),
-					new Issue("FORGE_HANDLER_NOT_ROLLBACK_SAFE", shared, "second", b.loadClass("b.Handler")));
-			assertEquals("firstmod", attributed("transfer:FORGE_HANDLER_NOT_ROLLBACK_SAFE:" + shared + " via a.Handler"));
-			assertEquals("secondmod", attributed("transfer:FORGE_HANDLER_NOT_ROLLBACK_SAFE:" + shared + " via b.Handler"));
+					new Issue("ROLLBACK_FAILED", shared, "second", b.loadClass("b.Handler")));
+			assertEquals("firstmod", attributed("transfer:ROLLBACK_FAILED:" + shared + " via a.Handler"));
+			assertEquals("secondmod", attributed("transfer:ROLLBACK_FAILED:" + shared + " via b.Handler"));
 			assertEquals(2, CompatibilityFindings.all().stream().filter(f -> f.id().startsWith("transfer:")).count(),
 					CompatibilityFindings.all()::toString);
 		} finally {

@@ -14,7 +14,6 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
 import net.fabricmc.api.EnvType;
-import net.forbric.kernel.ExpectCaught;
 
 /**
  * {@link CommonNetworkInteropInjector}'s output, run against the kernel's real boot-side {@code PayloadInterop}: its
@@ -22,13 +21,13 @@ import net.forbric.kernel.ExpectCaught;
  * handed NeoForge's payload of a shared channel is {@code FabricReceiverArbitrationExecutionTest}'s.)
  * <ul>
  *   <li>the server finishing Fabric's {@code c:version} task while NeoForge's equivalent is current: the next task
- *       starts — as merged, "Unexpected request for task finish";</li>
+ *       starts — unrepaired, "Unexpected request for task finish";</li>
  *   <li>NeoForge's {@code checkPacket}: a payload on a channel another ecosystem negotiated is not policed, and a
  *       NeoForge-registered or vanilla one still is — unrepaired, Polymer's client could not send on its own channel;</li>
  *   <li>and, unclaimed, the client's register answered by fabric-api before NeoForge.</li>
  * </ul>
- * Not run here: the HEDGE initialisation guard (inert since NeoForge 26.2.0.88), and the play-phase hand-over to
- * NeoForge, which {@code PlayPayloadHandOverExecutionTest} runs on stand-ins of its own. The injector has no switch of its own:
+ * Not run here: the play-phase hand-over to NeoForge, which {@code PlayPayloadHandOverExecutionTest} runs on stand-ins
+ * of its own. The injector has no switch of its own:
  * {@code -Dforbric.commonNetworkInterop=off} is read where KernelBoot registers it.
  */
 @ExecutesInjector(CommonNetworkInteropInjector.class)
@@ -38,7 +37,6 @@ class CommonNetworkInteropInjectorExecutionTest {
 	private static final String SERVER_COMMON = "net.minecraft.server.network.ServerCommonPacketListenerImpl";
 	private static final String CLIENT_CONFIG = "net.minecraft.client.multiplayer.ClientConfigurationPacketListenerImpl";
 	private static final String NEO_REGISTRY = "net.neoforged.neoforge.network.registration.NetworkRegistry";
-	private static final String SYNC_CONFIG = "net.minecraftforge.network.tasks.SyncConfigTask";
 	private static final List<String> TARGETS = List.of(SERVER_CONFIG, CLIENT_CONFIG, NEO_REGISTRY);
 
 	private static String payload(String binaryName, String fields, String id) {
@@ -138,7 +136,6 @@ class CommonNetworkInteropInjectorExecutionTest {
 			"net.minecraft.network.protocol.Packet", "package net.minecraft.network.protocol; public interface Packet { }",
 			"net.minecraft.network.protocol.common.ClientboundCustomPayloadPacket", customPacket("ClientboundCustomPayloadPacket"),
 			"net.minecraft.network.protocol.common.ServerboundCustomPayloadPacket", customPacket("ServerboundCustomPayloadPacket"),
-			"net.minecraftforge.network.ForgePayload", payload("net.minecraftforge.network.ForgePayload", "Identifier channel", "channel"),
 			"fixture.ModPayload", payload("fixture.ModPayload", "String id", "new Identifier(id)"),
 			"net.neoforged.neoforge.network.payload.CommonVersionPayload",
 			payload("net.neoforged.neoforge.network.payload.CommonVersionPayload", "java.util.List<Integer> versions",
@@ -153,23 +150,6 @@ class CommonNetworkInteropInjectorExecutionTest {
 
 				public interface ServerCommonPacketListener {
 					boolean negotiated(String channel);
-				}
-				""");
-		STAND_INS.put("net.minecraftforge.common.ForgeHooks", """
-				package net.minecraftforge.common;
-
-				import java.util.ArrayList;
-				import java.util.List;
-				import net.minecraft.network.Connection;
-				import net.minecraft.network.protocol.common.custom.CustomPacketPayload;
-
-				public class ForgeHooks {
-					public static final List<String> received = new ArrayList<>();
-
-					public static boolean onCustomPayload(CustomPacketPayload payload, Connection connection) {
-						received.add(payload.type().id().toString());
-						return true;
-					}
 				}
 				""");
 		STAND_INS.put(NEO_REGISTRY, """
@@ -217,28 +197,10 @@ class CommonNetworkInteropInjectorExecutionTest {
 					}
 				}
 				""");
-		STAND_INS.put("net.minecraftforge.network.config.ConfigurationTaskContext", """
-				package net.minecraftforge.network.config;
-
-				import java.util.function.Consumer;
-
-				public class ConfigurationTaskContext {
-					private final Consumer<String> send;
-
-					public ConfigurationTaskContext(Consumer<String> send) {
-						this.send = send;
-					}
-
-					public void send(String packet) {
-						send.accept(packet);
-					}
-				}
-				""");
 		STAND_INS.put("net.minecraft.server.network.ConfigurationTask", """
 				package net.minecraft.server.network;
 
 				import java.util.function.Consumer;
-				import net.minecraftforge.network.config.ConfigurationTaskContext;
 
 				public interface ConfigurationTask {
 					record Type(String id) {
@@ -247,11 +209,6 @@ class CommonNetworkInteropInjectorExecutionTest {
 					Type type();
 
 					void start(Consumer<String> send);
-
-					/** MinecraftForge's overload; its default goes back to the vanilla one. */
-					default void start(ConfigurationTaskContext context) {
-						start(context::send);
-					}
 				}
 				""");
 		STAND_INS.put(SERVER_CONFIG, """
@@ -261,14 +218,11 @@ class CommonNetworkInteropInjectorExecutionTest {
 				import java.util.ArrayList;
 				import java.util.List;
 				import java.util.Queue;
-				import net.minecraftforge.network.config.ConfigurationTaskContext;
 
 				public class ServerConfigurationPacketListenerImpl {
 					public final Queue<ConfigurationTask> tasks = new ArrayDeque<>();
 					public final List<String> sent = new ArrayList<>();
 					private ConfigurationTask currentTask;
-					/** MinecraftForge's. */
-					private final ConfigurationTaskContext taskContext = new ConfigurationTaskContext(this::send);
 
 					public void startConfiguration() {
 						startNextTask();
@@ -308,7 +262,6 @@ class CommonNetworkInteropInjectorExecutionTest {
 
 				import java.util.function.Consumer;
 				import net.minecraft.server.network.ConfigurationTask;
-				import net.minecraftforge.network.config.ConfigurationTaskContext;
 
 				public class Tasks {
 					/** NeoForge's common-version task, vanilla-shaped. */
@@ -333,21 +286,6 @@ class CommonNetworkInteropInjectorExecutionTest {
 						}
 					}
 
-					/** A MinecraftForge handshake task: it refuses the vanilla overload. */
-					public static class ForgeHandshake implements ConfigurationTask {
-						public Type type() {
-							return new Type("forge:handshake");
-						}
-
-						public void start(Consumer<String> send) {
-							throw new UnsupportedOperationException("MinecraftForge tasks start through their context");
-						}
-
-						@Override
-						public void start(ConfigurationTaskContext context) {
-							context.send("forge:handshake");
-						}
-					}
 				}
 				""");
 		STAND_INS.put(CLIENT_COMMON, commonListener("net.minecraft.client.multiplayer", "ClientCommonPacketListenerImpl",
@@ -380,84 +318,12 @@ class CommonNetworkInteropInjectorExecutionTest {
 					}
 				}
 				""");
-		STAND_INS.put("net.minecraftforge.fml.config.ModConfig", """
-				package net.minecraftforge.fml.config;
-
-				import java.io.IOException;
-				import java.io.UncheckedIOException;
-				import java.nio.file.Files;
-				import java.nio.file.Path;
-
-				public class ModConfig {
-					private final Path path;
-					private final String held;
-
-					public ModConfig(Path path, String held) {
-						this.path = path;
-						this.held = held;
-					}
-
-					public Path getFullPath() {
-						return path;
-					}
-
-					public void save() {
-						try {
-							Files.writeString(path, held);
-						} catch (IOException e) {
-							throw new UncheckedIOException(e);
-						}
-					}
-				}
-				""");
-		STAND_INS.put("net.minecraftforge.fml.config.ConfigTracker", """
-				package net.minecraftforge.fml.config;
-
-				import java.util.HashMap;
-				import java.util.Map;
-				import java.util.Set;
-
-				public class ConfigTracker {
-					public static final Map<String, Set<ModConfig>> SETS = new HashMap<>();
-
-					public static Map<String, Set<ModConfig>> configSets() {
-						return SETS;
-					}
-				}
-				""");
-		STAND_INS.put(SYNC_CONFIG, """
-				package net.minecraftforge.network.tasks;
-
-				import java.io.IOException;
-				import java.nio.file.Files;
-				import net.minecraft.network.Connection;
-				import net.minecraftforge.fml.config.ModConfig;
-
-				public class SyncConfigTask {
-					private final Connection connection;
-					private final ModConfig config;
-					public byte[] sent;
-
-					public SyncConfigTask(Connection connection, ModConfig config) {
-						this.connection = connection;
-						this.config = config;
-					}
-
-					public void start() {
-						try {
-							sent = Files.readAllBytes(config.getFullPath());
-						} catch (IOException e) {
-							connection.disconnect("Connection closed - Failed to read config on server");
-						}
-					}
-				}
-				""");
 	}
 
-	/** The same stand-ins as merged, and with every target transformed. */
-	private record Game(ClassLoader merged, ClassLoader repaired) {
-		Class<?> merged(String name) throws ClassNotFoundException {
-			return merged.loadClass(name);
+	/** The same stand-ins as compiled, and with every target transformed. */
+	private record Game(ClassLoader stock, ClassLoader repaired) {
+		Class<?> stock(String name) throws ClassNotFoundException {
+			return stock.loadClass(name);
 		}
 
 		Class<?> repaired(String name) throws ClassNotFoundException {
@@ -495,10 +361,10 @@ class CommonNetworkInteropInjectorExecutionTest {
 		assertThrows(IllegalStateException.class, () -> InjectorExecution.invoke(listener, "finishCurrentTask", unrelated),
 				"a task that is not the current one's equivalent is still refused, as vanilla refuses it");
 
-		Object stock = configuration(game.merged);
-		Object stockVersion = InjectorExecution.construct(game.merged("net.minecraft.server.network.ConfigurationTask$Type"), "c:version");
+		Object stock = configuration(game.stock);
+		Object stockVersion = InjectorExecution.construct(game.stock("net.minecraft.server.network.ConfigurationTask$Type"), "c:version");
 		assertTrue(assertThrows(IllegalStateException.class, () -> InjectorExecution.invoke(stock, "finishCurrentTask", stockVersion))
-				.getMessage().startsWith("Unexpected request for task finish"), "premise: as merged, the client is refused");
+				.getMessage().startsWith("Unexpected request for task finish"), "premise: unrepaired, the client is refused");
 	}
 
 	@Test void neoForgeDoesNotPoliceChannelsItDidNotNegotiate(@TempDir Path work) throws Throwable {
@@ -524,7 +390,7 @@ class CommonNetworkInteropInjectorExecutionTest {
 				send.apply(loader).apply(InjectorExecution.construct(loader.loadClass("net.neoforged.neoforge.network.payload.MinecraftRegisterPayload"),
 						Set.of())), "and so is NeoForge's own");
 
-		ClassLoader stock = game.merged;
+		ClassLoader stock = game.stock;
 		assertEquals("Payload polymer:hello may not be sent to the server!",
 				send.apply(stock).apply(InjectorExecution.construct(stock.loadClass("fixture.ModPayload"), "polymer:hello")),
 				"premise: unrepaired, a Polymer client cannot send on its own channel");
@@ -573,14 +439,14 @@ class CommonNetworkInteropInjectorExecutionTest {
 	@Test void fabricAnswersTheServersRegisterBeforeNeoForge(@TempDir Path work) throws Throwable {
 		Game game = game(work);
 		for (boolean repaired : new boolean[] {true, false}) {
-			ClassLoader loader = repaired ? game.repaired : game.merged;
+			ClassLoader loader = repaired ? game.repaired : game.stock;
 			Object listener = InjectorExecution.construct(loader.loadClass(CLIENT_CONFIG),
 					InjectorExecution.construct(loader.loadClass("net.minecraft.network.Connection")));
 			Object register = InjectorExecution.construct(loader.loadClass("net.neoforged.neoforge.network.payload.MinecraftRegisterPayload"), Set.of());
 			InjectorExecution.invoke(listener, "handleCustomPayload",
 					InjectorExecution.construct(loader.loadClass("net.minecraft.network.protocol.common.ClientboundCustomPayloadPacket"), register));
 			assertEquals(repaired ? List.of("fabric", "neoforge") : List.of("neoforge"), listener.getClass().getField("handled").get(listener),
-					repaired ? "fabric-api's first register goes out ahead of NeoForge's" : "premise: as merged, fabric-api never sees it");
+					repaired ? "fabric-api's first register goes out ahead of NeoForge's" : "premise: unrepaired, fabric-api never sees it");
 		}
 	}
 }

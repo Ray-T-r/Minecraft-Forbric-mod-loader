@@ -21,7 +21,7 @@ import net.forbric.kernel.boot.LootTableEventDispatch;
 /**
  * {@link LootTableEventBridgeInjector}'s output, run: a Fabric mod's {@code LootTableEvents.REPLACE}, {@code MODIFY} and
  * {@code ALL_LOADED} listeners are called during a loot table reload, from NeoForge's own load seam and after the tags
- * load — where as merged they were registered and never called. A table NeoForge's hook cancels never reaches them.
+ * load — where on NeoForge's base they were registered and never called. A table NeoForge's hook cancels never reaches them.
  *
  * <p>Both hooks are real: the game-side {@code KernelLootBridge}, compiled from {@code src/runtime/java}, and the
  * boot-side {@code LootTableEventDispatch}, bound to the test's loader as KernelBoot binds it to the game's. Everything
@@ -148,18 +148,6 @@ class LootTableEventBridgeInjectorExecutionTest {
 					}
 				}
 				""");
-		STAND_INS.put("net.minecraftforge.event.ForgeEventFactory", """
-				package net.minecraftforge.event;
-
-				import net.minecraft.resources.Identifier;
-				import net.minecraft.world.level.storage.loot.LootTable;
-
-				public class ForgeEventFactory {
-					public static LootTable onLoadLootTable(Identifier id, LootTable table) {
-						return table;
-					}
-				}
-				""");
 		STAND_INS.put("net.fabricmc.fabric.api.event.Event", """
 				package net.fabricmc.fabric.api.event;
 
@@ -261,7 +249,7 @@ class LootTableEventBridgeInjectorExecutionTest {
 				import net.neoforged.neoforge.event.EventHooks;
 
 				public class ReloadableServerRegistries {
-					/** The two calls that bracket loot table loading, as NeoForge's merged body makes them. */
+					/** The two calls that bracket loot table loading, as NeoForge's body makes them. */
 					public static Map<Identifier, LootTable> scheduleRegistryLoad(HolderLookup.Provider provider, ResourceManager resources,
 							Map<Identifier, LootTable> parsed, WritableRegistry<LootTable> registry) {
 						Map<Identifier, LootTable> loaded = new LinkedHashMap<>();
@@ -365,10 +353,10 @@ class LootTableEventBridgeInjectorExecutionTest {
 				"replace minecraft:blocks/stone from DATA_PACK", "modify minecraft:blocks/stone from DATA_PACK",
 				"all loaded after [tags]"), reloaded.get(1), "in fabric-api's order, ALL_LOADED once the tags are in");
 
-		List<Object> merged = reload(InjectorExecution.load(original));
+		List<Object> stock = reload(InjectorExecution.load(original));
 		assertEquals(Map.of("Identifier[id=minecraft:chests/village]", List.of("vanilla pool"), "Identifier[id=minecraft:blocks/stone]",
-				List.of("vanilla pool")), merged.get(0), "premise: as merged, the tables load as NeoForge returns them");
-		assertEquals(List.of(), merged.get(1), "premise: and no Fabric listener is ever called");
+				List.of("vanilla pool")), stock.get(0), "premise: unrepaired, the tables load as NeoForge returns them");
+		assertEquals(List.of(), stock.get(1), "premise: and no Fabric listener is ever called");
 		assertSame(routed, InjectorExecution.transform(new LootTableEventBridgeInjector(), TARGET, routed, EnvType.SERVER),
 				"routed sites are not routed again");
 	}

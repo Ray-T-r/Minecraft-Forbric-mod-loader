@@ -32,9 +32,10 @@ import net.forbric.kernel.util.Caught;
  * a return the current body may no longer have, or a different one.
  *
  * <p>The joined exits arrive at the JOIN: the straight-line run that ends in the hook, entered only at its first
- * instruction. Besides the hook's own operand loads it may hold other void calls fed by operand loads alone — another
- * ecosystem's twin of the hook that a merge kept in front of it — so the join may begin before the hook itself; its
- * first call ({@link #entry()}) is where "before the hook" now starts.
+ * instruction. Besides the hook's own operand loads it may hold other void calls fed by operand loads alone — on the
+ * merged base of Forbric 0.4 and earlier, MinecraftForge's twin of the hook stood there; NeoForge's base has the hook
+ * alone — so the join may begin before the hook itself; its first call ({@link #entry()}) is where "before the hook"
+ * now starts.
  *
  * <p>Everything here is read off the two bodies; no ordinal is assumed. The int parameter the hook receives is the
  * discriminator. A forward analysis of each body records, for every instruction, which of the constants that
@@ -109,7 +110,7 @@ final class JoinedReturnExits {
 	}
 
 	/**
-	 * The member ({@code Lowner;name(desc)}) of the join's first call: the hook itself, or a call the merge kept in front
+	 * The member ({@code Lowner;name(desc)}) of the join's first call: the hook itself, or a call kept in front
 	 * of it in the same join. A joined exit runs just before it.
 	 */
 	String entry() {

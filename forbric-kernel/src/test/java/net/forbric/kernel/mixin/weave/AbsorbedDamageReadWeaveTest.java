@@ -25,7 +25,7 @@ import net.forbric.kernel.transform.VanillaDamageReadInjector;
  * <p>Natively the body holds the damage left after absorption when it calls {@code setAbsorptionAmount}, goes on to the health
  * with it, and calls {@code setAbsorptionAmount} a second time after the health (a no-op: the absorption is spent). The guest
  * {@code org.quill.mend} rewrites that damage there with a {@code @ModifyVariable(argsOnly = true)} — twice per hit natively,
- * the second time on a value nothing reads. As merged (NeoForge's damage container), the parameter holds the incoming
+ * the second time on a value nothing reads. On NeoForge's base (its damage container), the parameter holds the incoming
  * damage at the call and is overwritten right after it, and the second call is gone: the guest saw the wrong value once and
  * its answer reached nothing. With the absorbed read, every line of every hit — what the guest saw, each absorption set, the
  * health — is the native run's; switched off, the halved hit takes the whole damage again.
@@ -44,7 +44,7 @@ class AbsorbedDamageReadWeaveTest {
 		try (Stream<Path> walk = Files.walk(SOURCES)) {
 			sources = walk.filter(p -> p.toString().endsWith(".java") && !SOURCES.relativize(p).startsWith("native")).sorted().toList();
 		}
-		assertEquals(14, sources.size(), "the fixture's sources changed; update this test with it: " + sources);
+		assertEquals(13, sources.size(), "the fixture's sources changed; update this test with it: " + sources);
 		List<Path> current = new ArrayList<>(sources);
 		current.add(Path.of("src/runtime/java/net/forbric/kernel/runtime/KernelLivingDamage.java"));
 		List<Path> natives = new ArrayList<>(current);
@@ -54,7 +54,7 @@ class AbsorbedDamageReadWeaveTest {
 		}
 		Path nativeFixture = WeaveHarness.fixture(work, "absorbed-native", natives, Map.of(CONFIG, SOURCES.resolve(CONFIG)), List.of("-g"));
 		Path plain = WeaveHarness.fixture(work, "absorbed", current, Map.of(CONFIG, SOURCES.resolve(CONFIG), NEO, SOURCES.resolve(NEO)), List.of("-g"));
-		// Fabric's mods were compiled against the vanilla body, NeoForge's against NeoForge's — the merged one here.
+		// Fabric's mods were compiled against the vanilla body, NeoForge's against NeoForge's — the base's one here.
 		fixture = NativeWeaveReferences.withEcosystems(work, plain, Map.of("FABRIC", NativeWeaveReferences.classes(nativeFixture),
 				"NEOFORGE", NativeWeaveReferences.classes(plain)));
 		natively = run(nativeFixture, "native", List.of(), Map.of());

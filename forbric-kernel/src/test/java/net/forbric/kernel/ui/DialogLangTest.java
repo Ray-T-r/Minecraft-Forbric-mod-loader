@@ -105,9 +105,9 @@ class DialogLangTest {
 		assertEquals("Biomes O' Plenty needs terrablender, which is not installed",
 				DialogLang.EN.get("bullet.absent", "Biomes O' Plenty", "terrablender"));
 		// A placeholder repeated in one sentence — fix.install names the ecosystem twice — must be filled twice.
-		String install = DialogLang.EN.get("fix.install", "terrablender", "Biomes O' Plenty", "FORGE");
+		String install = DialogLang.EN.get("fix.install", "terrablender", "Biomes O' Plenty", "NEOFORGE");
 		assertFalse(install.contains("{"), install);
-		assertEquals(2, install.split("FORGE", -1).length - 1, install);
+		assertEquals(2, install.split("NEOFORGE", -1).length - 1, install);
 	}
 
 	@Test

@@ -63,10 +63,10 @@ import net.forbric.kernel.util.ForbricLog;
  * was three of sixteen, and no other family's screen does better: each reads its own loader's registry and is
  * right about it. So the button is re-pointed at {@code KernelModListScreen}, which reads {@code ModCatalog}.
  *
- * <p>BOTH families' screens are redirected, not just the one the merged button happens to call. The merged base
- * carries a lambda for each — {@code lambda$createPauseMenu$3} builds NeoForge's, {@code lambda$createPauseMenu$11}
- * builds MinecraftForge's — and which one the button is bound to is a byte-merge outcome, not a decision. Leaving
- * the loser in place would make this repair silently conditional on a merge detail that has changed before.
+ * <p>Every construction site of a family's screen is redirected, not just the one a button happens to call. On
+ * NeoForge's base that is NeoForge's own {@code ModsButton}; the merged base of Forbric 0.4 and earlier carried a
+ * lambda for each family ({@code lambda$createPauseMenu$3} NeoForge's, {@code lambda$createPauseMenu$11}
+ * MinecraftForge's), and which one the button was bound to was a byte-merge outcome, not a decision.
  *
  * <p>The rewrite is two instructions: the {@code NEW} and the {@code INVOKESPECIAL} of its {@code (Screen)}
  * constructor. Same stack shape, same descriptor, no branch and no frame — the button, its sprite, its tooltip and
@@ -251,9 +251,9 @@ public final class ModsButtonRedirector implements ClassTransformer {
 	 * Keeps one mods button in a menu that adds one per family.
 	 *
 	 * <p>A base that keeps both families' edits of one menu method carries both families' mods buttons in it. The
-	 * merged {@code PauseScreen.createPauseMenu} adds NeoForge's ({@code ModsButton.create(this)} in the icon row)
-	 * AND MinecraftForge's (a full-width {@code fml.menu.mods} button under Options), where each family's own body
-	 * adds one. Once this pass points every family's button at the one unified list they are the same button
+	 * merged base's {@code PauseScreen.createPauseMenu} (Forbric 0.4 and earlier) added NeoForge's
+	 * ({@code ModsButton.create(this)} in the icon row) AND MinecraftForge's (a full-width {@code fml.menu.mods} button
+	 * under Options), where each family's own body adds one; NeoForge's base adds one. Once this pass points every family's button at the one unified list they are the same button
 	 * twice: a player saw "Mods (Forbric)" as an icon and again as a row of its own.
 	 *
 	 * <p>A mods button is recognised by what pressing it does, never by whose it is: a lambda of this class whose

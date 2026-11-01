@@ -35,9 +35,10 @@ import net.forbric.kernel.TestFixtures;
 import net.forbric.kernel.TestFixtures.Fixture;
 
 /**
- * A menu the merge left with one mods button per family shows it once.
+ * A menu that adds one mods button per family shows it once.
  *
- * <p>Seen on a real client: on a base that keeps both families' edits of {@code PauseScreen.createPauseMenu} the pause
+ * <p>Seen on a real client of Forbric 0.4 and earlier: on the merged base, which kept both families' edits of
+ * {@code PauseScreen.createPauseMenu}, the pause
  * menu drew "Mods (Forbric)" twice, NeoForge's icon in the icon row and MinecraftForge's full-width button under
  * Options, because each family's body adds its own and the redirector points both at the one unified list. The stand-in
  * menu adds both shapes the real one does — a widget factory of another class whose own lambda opens NeoForge's list,
@@ -50,8 +51,6 @@ class ModsButtonRedirectorExecutionTest {
 	private static final Path MERGED_BASE = TestFixtures.stagedBase();
 	private static final Path NEO_RUNTIME = TestFixtures.stagedRoot().resolve(TestFixtures.NEO_CARRIER_JAR);
 	private static final String NEO = ForeignType.MOD_LIST_SCREEN.internal(Ecosystem.NEOFORGE);
-	/** MinecraftForge's Mods screen: no ecosystem's any more, still never what a button is pointed at. */
-	private static final String FORGE = "net/minecraftforge/client/gui/ModListScreen";
 
 	/** The statements of {@code Menu.build}, in order; each adds one widget to the layout. */
 	private static Map<String, String> standIns(String... build) {
@@ -187,7 +186,7 @@ class ModsButtonRedirectorExecutionTest {
 		Map<String, byte[]> original = InjectorExecution.compile(work, standIns(BACK, NEO_ICON, FRIENDS, OPTIONS, FORGE_ROW, QUIT));
 		assertEquals(new Run(List.of("back", "icon mods", "friends", "options", "row mods", "quit"),
 						List.of("neoforge list", "pre-88 list")), run(InjectorExecution.load(original)),
-				"premise: as merged, the menu shows a mods button per family, each opening its own family's list");
+				"premise: unrepaired, the menu shows a mods button per family, each opening its own family's list");
 
 		Map<String, byte[]> classes = transformed(original, lookup(original));
 		ClassLoader loader = InjectorExecution.load(classes);
@@ -317,9 +316,9 @@ class ModsButtonRedirectorExecutionTest {
 	private static boolean opens(MethodNode m) {
 		for (AbstractInsnNode insn : m.instructions) {
 			if (insn instanceof TypeInsnNode type && type.getOpcode() == Opcodes.NEW
-					&& (NEO.equals(type.desc) || FORGE.equals(type.desc) || ModsButtonRedirector.KERNEL_SCREEN.equals(type.desc))) return true;
+					&& (NEO.equals(type.desc) || ModsButtonRedirector.KERNEL_SCREEN.equals(type.desc))) return true;
 			if (insn instanceof MethodInsnNode call && call.getOpcode() == Opcodes.INVOKESTATIC && "create".equals(call.name)
-					&& (NEO.equals(call.owner) || FORGE.equals(call.owner) || ModsButtonRedirector.KERNEL_SCREEN.equals(call.owner))) return true;
+					&& (NEO.equals(call.owner) || ModsButtonRedirector.KERNEL_SCREEN.equals(call.owner))) return true;
 		}
 		return false;
 	}

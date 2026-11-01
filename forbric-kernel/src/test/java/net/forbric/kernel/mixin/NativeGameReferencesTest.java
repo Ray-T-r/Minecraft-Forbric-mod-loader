@@ -130,9 +130,11 @@ class NativeGameReferencesTest {
   String block="net/minecraft/world/level/block/Block";
   Map<String,String[]> cases=new java.util.LinkedHashMap<>();
   cases.put("NEOFORGE",new String[]{"net/minecraft/world/level/ItemLike","net/neoforged/neoforge/common/extensions/IBlockExtension"});
-  cases.put("FORGE",new String[]{"net/minecraftforge/common/extensions/IForgeBlock"});
+  // An old MinecraftForge-patched base, and a merged one: no ecosystem Forbric loads compiled against either, so neither
+  // answers for any (LaunchInputCheck refuses both before this is asked).
+  cases.put("minecraftforge",new String[]{"net/minecraftforge/common/extensions/IForgeBlock"});
   cases.put("FABRIC",new String[]{"net/minecraft/world/level/ItemLike"});
-  cases.put("none",new String[]{"net/neoforged/neoforge/common/extensions/IBlockExtension","net/minecraftforge/common/extensions/IForgeBlock"});
+  cases.put("merged",new String[]{"net/neoforged/neoforge/common/extensions/IBlockExtension","net/minecraftforge/common/extensions/IForgeBlock"});
   for(var c:cases.entrySet()){
    Map<String,byte[]> entries=new HashMap<>();entries.put(block+".class",type(block,c.getValue()));entries.put(OWNER+".class",bytes(OWNER,5));
    java.nio.file.Path base=jar(work.resolve(c.getKey()+".jar"),entries);NativeReferenceSources sources=NativeReferenceSources.open(base,null);
