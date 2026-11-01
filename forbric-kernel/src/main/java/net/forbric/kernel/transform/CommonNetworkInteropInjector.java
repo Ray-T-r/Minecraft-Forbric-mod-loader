@@ -398,8 +398,9 @@ public final class CommonNetworkInteropInjector implements ClassTransformer {
 	/**
 	 * Lets Fabric answer the server's {@code minecraft:register} — and answer it FIRST.
 	 *
-	 * <p>{@code minecraft:register} is the one channel BOTH ecosystems claim, and on the merged base they claim it
-	 * at two different depths of the same call chain. NeoForge patched the vanilla override:
+	 * <p>{@code minecraft:register} is the one channel BOTH ecosystems claim, and with Fabric running on NeoForge's
+	 * base they claim it at two different depths of the same call chain. The NeoForge 26.2.0.38 beta patched the vanilla
+	 * override like this:
 	 * <pre>
 	 *   ClientConfigurationPacketListenerImpl.handleCustomPayload(packet) {
 	 *       if (!initializedConnection &amp;&amp; packet.payload() instanceof MinecraftRegisterPayload) {
@@ -410,10 +411,10 @@ public final class CommonNetworkInteropInjector implements ClassTransformer {
 	 *       super.handleCustomPayload(packet);
 	 *   }
 	 * </pre>
-	 * while Fabric injects its dispatch at the HEAD of the SUPERCLASS's {@code handleCustomPayload}. On a real
-	 * NeoForge instance nothing is downstream of that {@code return}; on a real Fabric instance the override does
-	 * not exist. Only on a merged base does one ecosystem's early exit starve the other's entry point — and
-	 * Fabric's {@code ClientConfigurationNetworkAddon.receiveRegistration} is the SOLE caller of
+	 * while Fabric injects its dispatch at the HEAD of the SUPERCLASS's {@code handleCustomPayload}. On a NeoForge-only
+	 * instance nothing is downstream of that {@code return}; on a Fabric-only instance the override does not exist. Only
+	 * with both in one game does one ecosystem's early exit starve the other's entry point — and Fabric's
+	 * {@code ClientConfigurationNetworkAddon.receiveRegistration} is the SOLE caller of
 	 * {@code sendInitialChannelRegistrationPacket()}, so the client never declared a single Fabric channel.
 	 *
 	 * <p>Merely appending the super call before that {@code return} is not enough, and the reason is a contract on
@@ -423,7 +424,7 @@ public final class CommonNetworkInteropInjector implements ClassTransformer {
 	 * its {@code canSend(fabric:registry/sync)} check right there. If NeoForge's list has gone out first, that check
 	 * sees seven NeoForge channels and kicks with "This server requires Fabric Loader and Fabric API installed on
 	 * your client!" — while Fabric's list is one packet behind on the same socket. A pure Fabric server would do the
-	 * same, so this is the merged CLIENT's obligation: be a well-formed Fabric client, whose first register is
+	 * same, so this is the Forbric CLIENT's obligation: be a well-formed Fabric client, whose first register is
 	 * Fabric's. NeoForge's {@code NetworkRegistry.onMinecraftRegister} is purely additive and order-blind, so a
 	 * NeoForge server is indifferent to which list arrives first.
 	 *
@@ -433,9 +434,12 @@ public final class CommonNetworkInteropInjector implements ClassTransformer {
 	 * the condition — no duplicate of {@code initializedConnection} to drift — and no branch target is added, so
 	 * every original stack map frame stays valid.
 	 *
-	 * <p>A carrier that already hands the packet to super right before its reply (NeoForge 26.2.0.88 does) gets nothing:
-	 * a second super call there handed the same register to Fabric's addon twice, and every Fabric listener on the
-	 * client's configuration channel events heard each of the server's declarations twice.
+	 * <p>A carrier that already hands the packet to super right before its reply gets nothing: a second super call there
+	 * handed the same register to Fabric's addon twice, and every Fabric listener on the client's configuration channel
+	 * events heard each of the server's declarations twice. NeoForge does that itself from 26.2.0.88 on (its listener
+	 * now tests {@code ClientNetworkRegistry.isConnectionInitialized} and calls super ahead of
+	 * {@code sendInitialListeningChannels}), so on the 26.2.0.93 base this finds nothing to do and the game logs "already
+	 * hands minecraft:register to super"; {@code CommonNetworkInteropInjectorTest} pins that shape on the staged base.
 	 *
 	 * @return 1 when the super call was spliced in, 0 when every early exit already makes it ahead of the reply, -1 when
 	 *         the method is not the shape this repair knows

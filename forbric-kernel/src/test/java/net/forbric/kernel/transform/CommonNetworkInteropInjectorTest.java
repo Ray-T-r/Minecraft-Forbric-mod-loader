@@ -153,6 +153,30 @@ class CommonNetworkInteropInjectorTest {
 		return out;
 	}
 
+	/**
+	 * NeoForge's own client configuration listener hands the server's {@code minecraft:register} to super (where
+	 * fabric-api's addon waits) right before its own reply, so {@code shareMinecraftRegisterWithSuper} finds nothing to
+	 * splice on the staged base and leaves the method as it is.
+	 *
+	 * <p>The repair exists for a NeoForge build whose override answers the register and returns before super (26.2.0.38
+	 * beta did): Fabric's server then reads NeoForge's channel list as the client's whole declaration and kicks. From
+	 * 26.2.0.88 NeoForge calls super ahead of {@code sendInitialListeningChannels} itself. This pins that shape on the
+	 * staged base: if a NeoForge update drops the super call, this goes red and the repair is live again (it then splices
+	 * the call, which {@code CommonNetworkInteropInjectorExecutionTest} covers on a stand-in of the old shape).
+	 */
+	@Test
+	void theBasesConfigurationListenerHandsTheRegisterToSuperBeforeNeoForgesReply() throws Exception {
+		TestFixtures.requireFile(Fixture.STAGED, STAGED_BASE, "staged base absent — skipping real-bytecode check");
+		MethodNode handler = method(parse(readClass(LISTENER + ".class")), "handleCustomPayload",
+				"(Lnet/minecraft/network/protocol/common/ClientboundCustomPayloadPacket;)V");
+		int before = handler.instructions.size();
+		assertEquals(0, CommonNetworkInteropInjector.shareMinecraftRegisterWithSuper(handler),
+				"NeoForge's handleCustomPayload no longer hands minecraft:register to super right before "
+						+ "sendInitialListeningChannels and its return (1 = the repair spliced the call in, -1 = not a shape "
+						+ "it knows); re-derive whether fabric-api's addon still hears the register first");
+		assertEquals(before, handler.instructions.size(), "the repair left the staged listener as it is");
+	}
+
 	/** Whether {@code owner.method} (any overload) calls a method named {@code callee}. */
 	private static boolean calls(ClassNode owner, String method, String callee) {
 		for (MethodNode m : owner.methods) {
