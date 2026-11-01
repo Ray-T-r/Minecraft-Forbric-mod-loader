@@ -157,7 +157,7 @@ public final class InsertedLambdaArgumentShim {
         String member = MixinTargetSelectors.nativeMember(handler, null, target.name);
         ClassNode nativeClass = null;
         if (member == null && natives != null) {
-            // A bare name binds the live lambda in the merged class: only where a lambda of the name it reaches has lost a
+            // A bare name binds the live lambda in the current class: only where a lambda of the name it reaches has lost a
             // shape (LambdaShapeEvidence: vanilla's was reshaped), or the class the mod was
             // compiled against has that lambda in another shape, is that class worth reading.
             List<MixinTargetSelectors.Reach> reach = MixinTargetSelectors.reach(handler, target);
@@ -174,7 +174,7 @@ public final class InsertedLambdaArgumentShim {
         String name = member.substring(0, split), desc = member.substring(split);
         if (LambdaShapeEvidence.descriptors(target, name).contains(desc)) return member;
         // The second evidence: the class the mod was compiled against (its own platform's native game) declares the lambda
-        // in exactly the shape the selector names, and the merged class, whose one lambda of that name the selector binds,
+        // in exactly the shape the selector names, and the current class, whose one lambda of that name the selector binds,
         // has it in no such shape: the carrier's body has an argument vanilla's lacks. Screenshot.grab's lambda$grab$3 is
         // (NativeImage, File, ScreenshotEvent, Consumer) on both carriers and (NativeImage, File, Consumer) on Fabric;
         // Essential's capture handler, written for Fabric's, failed its whole mixin on the descriptor.

@@ -32,7 +32,7 @@ import net.forbric.kernel.transform.CreativePagerBridgeInjector;
  * <p><b>Whose page controls are drawn.</b> The page is always the carrier's; the controls a player clicks need not be.
  * When the player's mods use no pager family but the guest's — no installed mod belongs to a Forge family, whose own
  * platform draws the carrier's pager, so the guest's is the one every installed mod was built to be seen with — and the
- * carrier's controls on the merged screen are exactly the two page buttons and the page label
+ * carrier's controls on the current screen are exactly the two page buttons and the page label
  * ({@code CreativePagerBridgeInjector.carrierControls}), the guest's are drawn and the carrier's stand aside. An injector
  * of the guest pager that writes its page state and reads none of it — the one that adds its page buttons when the
  * screen opens — is then kept with that write dropped, instead of removed with the rest; its buttons turn the page
@@ -125,7 +125,7 @@ public final class FabricCreativePagerMixinAdapter {
 	/** Without class lookup: the carrier's own rows decide what it answers. */
 	public static int adapt(ClassNode mixin){return adapt(mixin,name->null);}
 
-	/** @param classes the installed interface and the merged screen by internal name, or null for either */
+	/** @param classes the installed interface and the current screen by internal name, or null for either */
 	public static int adapt(ClassNode mixin,Function<String,ClassNode> classes){
 		return adapt(mixin,classes,GUEST_CONTROLS.get()).changed();
 	}

@@ -35,7 +35,7 @@ import net.forbric.kernel.util.Caught;
 import net.forbric.kernel.util.ForbricLog;
 
 /**
- * Gives an {@code @Inject} handler the shape the merged target actually has, by wrapping it.
+ * Gives an {@code @Inject} handler the shape the current target actually has, by wrapping it.
  *
  * <p>The last shape of the same problem the rest of this package is about, and the one nothing else could reach.
  * {@code LevelRenderer.addSkyPass}'s lambda is {@code (GpuBufferSlice, SkyRenderState)} and STATIC in vanilla and
@@ -72,11 +72,11 @@ import net.forbric.kernel.util.ForbricLog;
  * aborted, and a dedicated server with bclib died on "Failed to load datapacks" before it made a world.
  *
  * <p>So {@code lambda-permutations.txt}, which LambdaPermutationCensusTest re-derives from the vanilla jar and the
- * staged merged base, lists every vanilla lambda the merged class declares once with the same parameters in another
+ * staged merged base, lists every vanilla lambda the current class declares once with the same parameters in another
  * order — and the order is taken from the local variable NAMES, each vanilla parameter matching exactly one merged
  * one by name and type. The type-only guard below would refuse WorldLoader's (two {@code List}s, two
  * {@code Executor}s); a row does not need it, because a row is not a guess. A row is used only when the handler fits
- * its vanilla descriptor, does not fit the live one, and the live descriptor IS the row's merged one: a table left
+ * its vanilla descriptor, does not fit the live one, and the live descriptor IS the row's current one: a table left
  * stale by a base rebuild is a no-op, never a wrong mapping. A selector that spells the vanilla descriptor is
  * rewritten to the live one. {@code -Dforbric.lambdaPermutations=off} turns this source off alone.
  *
@@ -231,7 +231,7 @@ public final class MixinHandlerShim {
 
 	/**
 	 * The census row that is evidence for this handler on this live method, or null: the handler fits vanilla's
-	 * descriptor and not the live one, the live one is the row's merged one, and a spelled selector names vanilla's.
+	 * descriptor and not the live one, the live one is the row's current one, and a spelled selector names vanilla's.
 	 */
 	private static Permutation rowFor(String owner, String name, String spelled, MethodNode handler, MethodNode live) {
 		if (!tableEnabled() || owner == null) return null;

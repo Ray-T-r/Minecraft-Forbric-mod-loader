@@ -39,21 +39,21 @@ import org.objectweb.asm.tree.MethodNode;
 import net.forbric.kernel.util.Caught;
 
 /**
- * Decides whether a guest mixin still FITS the merged base, by resolving every anchor it names against the merged
+ * Decides whether a guest mixin still FITS the base, by resolving every anchor it names against the
  * target's actual bytecode.
  *
  * <h2>Why resolution and not provenance</h2>
  *
- * <p>The merged base IS NeoForge's patched Minecraft — {@code MergedBaseBuilder} takes NeoForge as the base and
- * splices Forge in, so its own report reads {@code forge=195 neo=10161 MERGED=611}. "The target is a class
- * Forge/NeoForge owns" therefore describes ~93% of every class in the jar: it is the normal state, not a hazard
+ * <p>The base IS NeoForge's patched Minecraft (even the merged base of Forbric 0.4 and earlier was: its builder took
+ * NeoForge as the base and spliced Forge in, {@code forge=195 neo=10161 MERGED=611}). "The target is a class
+ * NeoForge owns" therefore describes ~93% of every class in the jar: it is the normal state, not a hazard
  * signal. Measured over the 163 suppressions the previous owned-target rule actually made, 108 (66%) targeted a
  * class BYTE-IDENTICAL to NeoForge's own patched jar.
  *
  * <p>Nor does provenance answer the question even when it is exact. Iris's {@code MixinLevelRenderer} anchors on
  * {@code lambda$addSkyPass$8}, {@code lambda$addCloudsPass$3}, {@code lambda$addMainPass$1} — none of which exist in
- * the merged {@code LevelRenderer}, and none of which exist in the VANILLA jar either, because lambda numbering is
- * an artifact of the remap toolchain rather than of the merge. "Neo-identical" does not imply "vanilla-equivalent".
+ * the base's {@code LevelRenderer}, and none of which exist in the VANILLA jar either, because lambda numbering is
+ * an artifact of the remap toolchain rather than of NeoForge's patches. "Neo-identical" does not imply "vanilla-equivalent".
  * The only question that predicts breakage is the direct one: <em>do the members this mixin names still exist?</em>
  *
  * <h2>Why the decision is atomic per mixin</h2>
@@ -73,7 +73,7 @@ import net.forbric.kernel.util.Caught;
  *
  * <h2>What native drops as well</h2>
  *
- * <p>A miss is the merge's only when the mod's own platform had the member: vanilla 26.2 for a Fabric mod, its own
+ * <p>A miss is the base's only when the mod's own platform had the member: vanilla 26.2 for a Fabric mod, its own
  * patched game for a MinecraftForge or NeoForge mod. An injector whose every target that platform lacks too, and which
  * nothing requires to inject, is one native Mixin drops without a word; it is counted neither way and listed in
  * {@link Result#nativeAbsent}, so the mixin is judged on the rest. See {@link NativeAbsentTargets}.
@@ -121,7 +121,7 @@ public final class MixinFit {
 		PARTIAL,
 		/** No anchor resolved; the mixin was going to be dead weight. Drop it. */
 		UNFIT,
-		/** Applies cleanly but would misbehave: it {@code @Shadow}s a field the merge orphaned. Drop it. */
+		/** Applies cleanly but would misbehave: it {@code @Shadow}s a field the base orphaned. Drop it. */
 		HAZARD
 	}
 
@@ -229,7 +229,7 @@ public final class MixinFit {
 	}
 
 	/**
-	 * {@code -Dforbric.mixinFit.liveness=off}: an injector bound only to a merged-base method nothing in the merged game
+	 * {@code -Dforbric.mixinFit.liveness=off}: an injector bound only to a base method nothing in the game
 	 * calls ({@link MergedBaseUncalledMethods}) reads as resolved again, and the final-class ledger counts a handler
 	 * called only from such a method as attached, as before.
 	 */
@@ -265,10 +265,10 @@ public final class MixinFit {
 	/**
 	 * Resolve every anchor {@code mixinBytes} names against its {@code @Mixin} target(s).
 	 *
-	 * <p>{@code targetResolver} maps an internal class name ({@code net/minecraft/Foo}) to its MERGED bytes — it must
+	 * <p>{@code targetResolver} maps an internal class name ({@code net/minecraft/Foo}) to its base bytes — it must
 	 * serve POST-transform-chain bytes, because the chain both adds members (the {@code KeyMapping.MAP} initializer)
 	 * and deletes them (the interface-default shadowing overrides). Resolving against raw jar bytes gives wrong
-	 * answers. A null return means "not a merged-base class", which counts as resolved.
+	 * answers. A null return means "not a base class", which counts as resolved.
 	 */
 	public static Result evaluate(byte[] mixinBytes, Function<String, byte[]> targetResolver) {
 		// Everything is the game's unless a caller says otherwise, which is the pre-existing behaviour: no target
@@ -297,7 +297,7 @@ public final class MixinFit {
 	}
 
 	/**
-	 * @param nativeView what lets an injector target the mod's own platform lacks too be told from one the merge lost;
+	 * @param nativeView what lets an injector target the mod's own platform lacks too be told from one the base lost;
 	 *                   such an injector is left out of the verdict and named in {@link Result#nativeAbsent}.
 	 *                   {@code Context.NONE} asks nothing and counts it as a miss, as before
 	 */
@@ -336,7 +336,7 @@ public final class MixinFit {
 			if (targetBytes == null) continue;
 			ClassNode target = read(targetBytes, true);
 			// Whether this target belongs to the game/carriers or to ANOTHER MOD. The distinction is the whole
-			// value of the signal: an anchor that does not resolve on a merged-base class is routine (1226 of
+			// value of the signal: an anchor that does not resolve on a base class is routine (1226 of
 			// them across every gate log in this repo, all of them on runs that pass), while one that does not
 			// resolve on another mod's class means two mods that were built to fit no longer do. Across those
 			// same 1226 there is not one of the latter.
@@ -637,7 +637,7 @@ public final class MixinFit {
 		}
 		if (selectors.isEmpty()) return;
 		// The move MixinTwinRebind will make for an injector written for vanilla's signature of a method nothing in the
-		// merged game calls, onto the overload the carrier added in its place, judged here too so the verdict and the
+		// game calls, onto the overload the carrier added in its place, judged here too so the verdict and the
 		// move cannot disagree: bound to vanilla's method it would read as never running, and an @Inject whose name binds
 		// the overload first as refused. Asked of the target with code: the plan counts each anchor in both bodies.
 		if (MixinTwinRebind.mayMove(target, m)) {
@@ -655,7 +655,7 @@ public final class MixinFit {
 		// here too: otherwise a one-injector mixin (fusion's sprite loader hook) is UNFIT, removed from its
 		// config, and never reaches the shim that would have given it the live lambda. Captured locals are
 		// proven from the local variable table, which the plain read skipped. MixinHandlerShim's first: a selector
-		// spelling vanilla's descriptor of a lambda whose captures the merge reordered lands on the one live lambda.
+		// spelling vanilla's descriptor of a lambda whose captures the base reordered lands on the one live lambda.
 		if (hits.isEmpty()) {
 			// The shim reads every selector as Mixin does: several spellings of the one lost lambda move together.
 			MethodNode shimmed = selectors.size() == 1 ? MixinHandlerShim.destination(m, target) : null;
@@ -680,7 +680,7 @@ public final class MixinFit {
 			// Not Enough Crashes' populateCrashReport: a name no vanilla 26.2 BlockEntity has either, in a Fabric mod.
 			// Native Mixin skips an injector that matches nothing and need not inject, and says nothing; a miss here
 			// would have been the whole mixin's, and a required loss native never has. A MinecraftForge or NeoForge
-			// mod is asked about its own patched game, which may have the method the merge lost. Asked only when no
+			// mod is asked about its own patched game, which may have the method the base lost. Asked only when no
 			// selector bound at all: a refused binding is a method the game HAS, bound where the handler does not fit.
 			if (refused.isEmpty() && NativeAbsentTargets.dropsNatively(m, injector, selectors, target.name, nativeView)) {
 				out.add(Anchor.absentNatively(where));
@@ -713,7 +713,7 @@ public final class MixinFit {
 			if (locals != null) moved = MixinStubRebind.destination(mixin, m, locals);
 			if (moved != null) hits = new ArrayList<>(List.of(moved));
 		}
-		// The move MixinSplitBodyEdges will make for a start or end of a method a carrier split into pieces the merged game
+		// The move MixinSplitBodyEdges will make for a start or end of a method a carrier split into pieces the game
 		// runs one by one (Balm's health events on Hud.extractPlayerHealth), judged here too so the verdict and the move
 		// cannot disagree: bound to the dispatcher it would read as never running.
 		if (selectors.size() == 1 && hits.size() == 1) {
@@ -772,7 +772,7 @@ public final class MixinFit {
 				anywhere = MixinAtWidenedCall.wouldMove(m, injector, wideningTarget.methods, atValue, atTarget) != null
 						|| MixinWrapOperationShim.wouldWrap(mixin, m, target) != null
 						// …and MixinSubtypeOwnerRetarget's: the same call through another owner (Decoder.parse made as
-						// Codec.parse, Monster.lookAt made as Mob.lookAt through the field the merge widened).
+						// Codec.parse, Monster.lookAt made as Mob.lookAt through the field the base widened).
 						|| MixinSubtypeOwnerRetarget.wouldMove(mixin.name, m, injector, atTarget, target,
 								name -> withCode(resolver, name)) != null;
 			}
@@ -849,9 +849,9 @@ public final class MixinFit {
 
 	/**
 	 * {@code @Shadow}ed fields the target still DECLARES but never ASSIGNS — the archetype that made the old
-	 * owned-target rule exist. On the merged base NeoForge's {@code GuiRenderer.<init>} re-typed its third parameter and
-	 * replaced vanilla's {@code pictureInPictureRenderers} with its own {@code pictureInPictureRendererPools} while the
-	 * merge kept the field; erasure hides the change from Mixin (both descriptors are just {@code List}), so
+	 * owned-target rule exist. On the merged base of Forbric 0.4 and earlier NeoForge's {@code GuiRenderer.<init>}
+	 * re-typed its third parameter and replaced vanilla's {@code pictureInPictureRenderers} with its own
+	 * {@code pictureInPictureRendererPools} while the merge kept the field; erasure hides the change from Mixin (both descriptors are just {@code List}), so
 	 * fabric-rendering-v1's mixin applied with no error and then read a field with zero {@code putfield} anywhere → NPE.
 	 * (On NeoForge's own base that field is the kernel's twin, which the PiP bridge assigns in the constructor.)
 	 *
@@ -1002,9 +1002,9 @@ public final class MixinFit {
 	 * void method, {@code CallbackInfoReturnable} otherwise — or the callback alone; a {@code @Coerce} argument and the
 	 * locals captured after the callback are not judged, and a {@code @Surrogate} Mixin finds may stand in
 	 * ({@link #surrogateBinds}: exactly the callback descriptor, a visible annotation). On
-	 * vanilla the name bound the method the mod was compiled against; on the merged base it can bind a carrier's
+	 * vanilla the name bound the method the mod was compiled against; on the base it can bind a carrier's
 	 * overload. Every such case is a miss, whatever moves it afterwards: {@link MergedBaseCalleeSwaps#REPLACED} names the
-	 * replacement in the line and MixinRetarget's R7 follows it, MixinHandlerShim wraps a lambda the merge reshaped. A
+	 * replacement in the line and MixinRetarget's R7 follows it, MixinHandlerShim wraps a lambda the base reshaped. A
 	 * selector {@link MixinOverloadPin} will spell never gets here: the verdict asks the pin first and judges the
 	 * overload it lands on. Where the name is the injector's one binding, the miss is also a {@link Rejection}.
 	 */
@@ -1261,7 +1261,7 @@ public final class MixinFit {
 	/**
 	 * "extractHotbarAndDecorations never runs: …" when every method the injector bound is one
 	 * {@link MergedBaseUncalledMethods} lists for the mod's ecosystem, or a body a carrier renamed that nothing in the
-	 * merged game calls ({@link CarrierRenames#neverRuns}: NeoForge's {@code ItemStack.addDetailsToTooltipComponents},
+	 * game calls ({@link CarrierRenames#neverRuns}: NeoForge's {@code ItemStack.addDetailsToTooltipComponents},
 	 * where R3 moves malilib's tooltip hook), and the live bytes agree; null when any may run, the rule is off, or the
 	 * mod's ecosystem is unknown (a config two mods claim).
 	 */
@@ -1489,7 +1489,7 @@ public final class MixinFit {
 	/**
 	 * The duck-type interfaces a mixin implants on its target — its <em>cast contract</em>.
 	 *
-	 * <p>{@code @Mixin(Foo.class) class FooMixin implements Bar} makes the merged {@code Foo} implement {@code Bar},
+	 * <p>{@code @Mixin(Foo.class) class FooMixin implements Bar} makes the base's {@code Foo} implement {@code Bar},
 	 * which is how a mod then writes {@code ((Bar) foo).something()}. Dropping such a mixin does not merely remove a
 	 * feature, it converts every one of those casts into a {@code ClassCastException}. Verified live:
 	 * {@code fabric-rendering-v1}'s {@code GuiRendererMixin implements GuiRendererExtensions} while its sibling
@@ -1653,7 +1653,7 @@ public final class MixinFit {
 
 	/**
 	 * {@code @At(NEW)}: the handler of a {@code @WrapOperation} or {@code @Redirect} wraps a CONSTRUCTOR, and its
-	 * leading parameters are that constructor's arguments. When the merge gave the call site a different
+	 * leading parameters are that constructor's arguments. When the base gives the call site a different
 	 * constructor (NeoForge's {@code RenderPipeline$Snippet} takes 12 arguments where vanilla's takes 11), the
 	 * anchor is not "absent" — the type is still constructed there — but Mixin rejects the handler at apply time
 	 * ("has an invalid signature"), which drops the whole mixin. Judged by arity and types against every
@@ -1794,7 +1794,7 @@ public final class MixinFit {
 	 * <p>It used to always be the bare member, so every call into ANOTHER class was reported under the target's
 	 * name. owo's {@code MainMixin} anchors on Fabric Loader's {@code Hooks.startServer}, and the report said
 	 * "missing: @At(INVOKE) Main.startServer in main" — a method that does not exist, which pointed triage at the
-	 * merged {@code Main} instead of at the missing {@code Hooks} call that was the real cause.
+	 * base's {@code Main} instead of at the missing {@code Hooks} call that was the real cause.
 	 *
 	 * <p>The owner is named in full: owo's Quilt alternative anchors on a class ALSO called {@code Hooks}, and by simple
 	 * name its miss read exactly like the Fabric call that had just been fixed.

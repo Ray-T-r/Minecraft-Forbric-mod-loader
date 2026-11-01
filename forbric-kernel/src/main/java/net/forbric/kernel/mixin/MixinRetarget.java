@@ -48,13 +48,13 @@ import net.forbric.kernel.util.Caught;
 import net.forbric.kernel.util.ForbricLog;
 
 /**
- * Rebinds a guest injector from a merge-added DELEGATING STUB to the method that carries the body it wants.
+ * Rebinds a guest injector from a carrier-added DELEGATING STUB to the method that carries the body it wants.
  *
  * <p>NeoForge's patch of {@code SimpleContainer.setItem(int, ItemStack)} moved the body — including the
  * {@code setChanged()} call — into a new {@code setItem(int, ItemStack, boolean)} and left the vanilla-shaped
  * method as {@code aload/iload/aload/iconst_0/invokevirtual setItem(…Z)V/return}. fabric-transfer-api-v1's
  * {@code SimpleContainerMixin} selects the vanilla shape by explicit descriptor and {@code @Redirect}s the
- * {@code setChanged()} inside it; on the merged base the call is not there, the mixin reads PARTIAL, and every
+ * {@code setChanged()} inside it; on the base the call is not there, the mixin reads PARTIAL, and every
  * hopper or pipe transfer through a Fabric mod spams {@code setChanged} for each intermediate step. The same
  * shape hits {@code BaseContainerBlockEntity.setItem}.
  *
@@ -279,8 +279,8 @@ public final class MixinRetarget {
 
 	/**
 	 * Rule R2: an {@code @At(INVOKE)} whose member misses in every method the injector bound to, where a
-	 * {@link MergedBaseCalleeSwaps} row names the callee the merged body calls instead — present there, the vanilla
-	 * name absent — is rewritten to the merged callee. Only {@code @At}-driven kinds: the handler's shape is the
+	 * {@link MergedBaseCalleeSwaps} row names the callee the current body calls instead — present there, the vanilla
+	 * name absent — is rewritten to the current callee. Only {@code @At}-driven kinds: the handler's shape is the
 	 * callee's, which is identical on both sides by construction (same descriptor).
 	 */
 	private static List<Rewrite> swappedCallees(String mixinName, MethodNode handler, AnnotationNode injector, List<String> selectors,
@@ -319,7 +319,7 @@ public final class MixinRetarget {
 	 *
 	 * <p>NeoForge's patch of {@code PersistentEntitySectionManager.addEntity} posts its entity-join event and hands the
 	 * rest to a new {@code addEntityWithoutEvent} with the identical descriptor: vanilla's body, renamed. Carpet's scarpet
-	 * events and architectury's entity-add event anchor inside that body; on the merged base every one of their anchors
+	 * events and architectury's entity-add event anchor inside that body; on the base every one of their anchors
 	 * is in the renamed method, and the mixin reads PARTIAL.
 	 *
 	 * <p>R1 cannot take this: it needs an explicit descriptor in the selector and a body that is nothing but a
@@ -888,7 +888,7 @@ public final class MixinRetarget {
 	 * Rule R6: an {@code @Inject} whose {@code @At(INVOKE)} names a call the surviving carrier SUBSTITUTED — the method
 	 * kept its body, instruction for instruction and local for local, and makes a different call taking the same
 	 * arguments at that one instruction ({@link MergedBaseCalleeSwaps#SUBSTITUTED}) — has its point moved to the call
-	 * the merged body makes. The selector stays, and with it everything the handler is bound to: the method's
+	 * the current body makes. The selector stays, and with it everything the handler is bound to: the method's
 	 * arguments, its callback, and the locals at that instruction, which the row's census proves are the ones the mod
 	 * was compiled against.
 	 *

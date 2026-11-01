@@ -35,13 +35,13 @@ import net.forbric.kernel.util.ForbricLog;
  * its block hook — so fabric-api's pick-block wrap ({@code PlayerPickItemEvents.BLOCK}) matched nothing and the event
  * never fired.
  *
- * <p>The handler is renamed aside and a new one takes the merged call's shape: it carries the annotation with the
+ * <p>The handler is renamed aside and a new one takes the current call's shape: it carries the annotation with the
  * {@code @At} moved to the merged call, and hands the original exactly the arguments it was written for, with an
- * {@code Operation} of the old shape ({@code KernelWrapOperations.reordered}): what it passes goes to the merged call in
+ * {@code Operation} of the old shape ({@code KernelWrapOperations.reordered}): what it passes goes to the current call in
  * the merged order, the extra arguments as the merged call had them. Arguments it changes are changed; the call it skips
  * is skipped; the carrier's own call, with whatever its extra arguments feed, still runs whenever the handler calls it.
  *
- * <p>Not {@code @Redirect}. A redirect REPLACES the call, and on the merged base that call is the carrier's extended
+ * <p>Not {@code @Redirect}. A redirect REPLACES the call, and on the base that call is the carrier's extended
  * one: fabric-renderer-api's {@code hasMaterialFlag} redirects would have replaced NeoForge's context-aware
  * {@code hasMaterialFlag(BlockAndTintGetter, BlockPos, BlockState, int)} — and every NeoForge model's override of it —
  * with Fabric's own lookup. On vanilla that redirect replaces a vanilla call; here it would silently take a feature
@@ -114,7 +114,7 @@ public final class MixinWrapOperationShim {
 	}
 
 	/**
-	 * The merged call {@link #adapt} will point this handler's {@code @At} at, as an {@code @At} target, or null when it
+	 * The current call {@link #adapt} will point this handler's {@code @At} at, as an {@code @At} target, or null when it
 	 * wraps nothing — the same decision, nothing changed. {@link MixinFit} asks this so a reviewed wrap's anchor reads as
 	 * resolved exactly when the wrap will make it so. {@code declared}: the target's methods WITH instructions.
 	 */
@@ -133,7 +133,7 @@ public final class MixinWrapOperationShim {
 		return plan == null ? null : "L" + plan.named().owner() + ";" + plan.named().name() + plan.merged();
 	}
 
-	/** One wrap, decided: the injector and its point, the call it named, the merged call, and the argument mapping. */
+	/** One wrap, decided: the injector and its point, the call it named, the current call, and the argument mapping. */
 	private record Plan(AnnotationNode injector, AnnotationNode at, MixinAtWidenedCall.Member named, String merged,
 			int[] mapping, boolean staticCall, Integer ordinal) {
 	}
@@ -179,7 +179,7 @@ public final class MixinWrapOperationShim {
 		if (mapping == null) return null;
 		Integer ordinal = null;
 		if (MixinFit.value(at, "ordinal") instanceof Number n && n.intValue() >= 0) {
-			// The correspondence reads the ordinal as a native count; one already counted over the merged body is not.
+			// The correspondence reads the ordinal as a native count; one already counted over the current body is not.
 			if (target == null || bodies.size() != 1 || CurrentBodyOrdinals.counted(handler)) return null;
 			ordinal = InvocationOrdinals.correspondence(mixinName, target, bodies.getFirst(), named, merged, n.intValue());
 			if (ordinal == null) return null;
@@ -215,7 +215,7 @@ public final class MixinWrapOperationShim {
 		int head = receiver + wanted.length + 1;
 		boolean handlerStatic = (handler.access & Opcodes.ACC_STATIC) != 0;
 
-		// The new handler: (receiver?, merged arguments, Operation, trailing) → the original.
+		// The new handler: (receiver?, current arguments, Operation, trailing) → the original.
 		List<Type> outerParams = new ArrayList<>();
 		if (receiver == 1) outerParams.add(params[0]);
 		outerParams.addAll(Arrays.asList(available));
@@ -241,7 +241,7 @@ public final class MixinWrapOperationShim {
 			outer.instructions.add(new VarInsnNode(outerParams.get(position).getOpcode(Opcodes.ILOAD), slots[position]));
 		}
 		int trailingFrom = receiver + available.length;
-		// KernelWrapOperations.reordered(original, receiver, "i→j,…", extras in merged order)
+		// KernelWrapOperations.reordered(original, receiver, "i→j,…", extras in current order)
 		outer.instructions.add(new VarInsnNode(Opcodes.ALOAD, slots[trailingFrom]));
 		outer.instructions.add(new InsnNode(receiver == 1 ? Opcodes.ICONST_1 : Opcodes.ICONST_0));
 		StringJoiner map = new StringJoiner(",");
@@ -391,7 +391,7 @@ public final class MixinWrapOperationShim {
 	/**
 	 * The call the {@code @At} names, read as Mixin reads a target ({@link MixinFit#parseMember}: whitespace dropped, a
 	 * dotted owner the class): only a target that spells its owner and a method descriptor, since this shim decides on
-	 * the merged bodies alone, where a shorter target already matches the carrier's other form of the call.
+	 * the current bodies alone, where a shorter target already matches the carrier's other form of the call.
 	 */
 	private static MixinAtWidenedCall.Member named(AnnotationNode at) {
 		MixinFit.Member member = MixinFit.parseMember(MixinFit.asString(MixinFit.value(at, "target")));

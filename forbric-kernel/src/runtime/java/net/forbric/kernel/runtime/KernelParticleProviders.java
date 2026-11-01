@@ -46,7 +46,7 @@ import net.minecraft.resources.Identifier;
  * mechanism have to stay one map. A write through the int-keyed side must be visible to
  * {@code ParticleEngine.makeParticle}, which reads the {@code Identifier}-keyed one, and vice versa. The key
  * adaptation is the registry itself, which is the same thing each side already does — fabric-api spells
- * {@code getId(type)} and the merged {@code register} spells {@code getKey(type)}.
+ * {@code getId(type)} and NeoForge's {@code register} spells {@code getKey(type)}.
  *
  * <p>The view holds the live map BY REFERENCE, which is sound because {@code providers:Ljava/util/Map;} is final
  * and has exactly one {@code PUTFIELD} in the whole class, in {@code <init>}; nothing, reload included, replaces

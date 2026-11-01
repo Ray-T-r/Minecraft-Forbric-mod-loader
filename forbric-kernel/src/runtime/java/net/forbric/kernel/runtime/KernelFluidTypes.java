@@ -93,7 +93,7 @@ public final class KernelFluidTypes {
 	}
 
 	/**
-	 * The merged {@code EntityFluidInteraction.getFluidTypeByTag} answer for a tag other than water and lava: the type
+	 * NeoForge's {@code EntityFluidInteraction.getFluidTypeByTag} answer for a tag other than water and lava: the type
 	 * of a tag a Fabric mod registered a fluid behaviour for, else null, and NeoForge's {@code IllegalArgumentException}
 	 * stands. fabric-api asks {@code isInFluid}, {@code getFluidHeight} and {@code applyCurrentTo} by its tags every
 	 * entity tick, and {@code isEyeInFluid} for the air-bubble HUD every frame.
@@ -102,7 +102,7 @@ public final class KernelFluidTypes {
 		return tag != null && KernelFabricFluidBehaviors.registered(tag) ? KernelFabricFluidBehaviors.neoType(tag) : null;
 	}
 
-	/** Whether the merged type-based tracker has a meaning for this tag. An untracked vanilla tag query is false. */
+	/** Whether NeoForge's type-based tracker has a meaning for this tag. An untracked vanilla tag query is false. */
 	public static boolean hasTagType(TagKey<Fluid> tag) {
 		return FluidTags.WATER.equals(tag) || FluidTags.LAVA.equals(tag) || byTag(tag) != null;
 	}

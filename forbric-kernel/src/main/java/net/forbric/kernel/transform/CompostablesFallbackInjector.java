@@ -20,13 +20,13 @@ import org.objectweb.asm.tree.MethodNode;
 import net.forbric.kernel.util.Caught;
 
 /**
- * A Fabric mod's compostables go in a composter again: the merged composter asks vanilla's {@code COMPOSTABLES} map when
+ * A Fabric mod's compostables go in a composter again: NeoForge's composter asks vanilla's {@code COMPOSTABLES} map when
  * NeoForge's data map has no answer, through calls shaped the way vanilla made them.
  *
  * <p>Vanilla's {@code ComposterBlock} reads {@code COMPOSTABLES.containsKey(item)} in {@code useItemOn},
  * {@code insertItem} and {@code InputContainer.canPlaceItemThroughFace}, and {@code COMPOSTABLES.getFloat(item)} in
  * {@code addItem}. NeoForge replaced all four with {@code getValue(stack)}, its {@code neoforge:compostables} data map,
- * and in the merged game nothing reads the vanilla map any more. So fabric-content-registries'
+ * and in the game nothing reads the vanilla map any more. So fabric-content-registries'
  * {@code CompostableRegistry.add} put items where nobody looked, and BCLib's four {@code @WrapOperation}s on those
  * {@code containsKey}/{@code getFloat} calls (every item with a compostable trait) had nothing to attach to: by hand, by
  * hopper or by dropper, none of them composted.
@@ -56,7 +56,7 @@ import net.forbric.kernel.util.Caught;
  *
  * <p>All or nothing per class, on the reviewed shape: exactly one {@code getValue} in each of the four methods, no
  * vanilla map call already there, and {@code add} calls in {@code bootStrap}. {@code -Dforbric.composterBridge=off}
- * leaves every class as merged.
+ * leaves every class as the base has it.
  */
 public final class CompostablesFallbackInjector implements ClassTransformer {
 	public static final String PROPERTY = "forbric.composterBridge";
@@ -70,7 +70,7 @@ public final class CompostablesFallbackInjector implements ClassTransformer {
 	static final String GET_VALUE_DESC = "(L" + ITEM_STACK + ";)F";
 	static final String ADD_DESC = "(FLnet/minecraft/world/level/ItemLike;)V";
 
-	/** The three merged block methods and the vanilla call each made: true for {@code containsKey}, false for {@code getFloat}. */
+	/** The three base block methods and the vanilla call each made: true for {@code containsKey}, false for {@code getFloat}. */
 	static final Map<String, Boolean> COMPOSTER_SITES = Map.of("useItemOn", true, "insertItem", true, "addItem", false);
 
 	/** One {@code getValue} call and the method whose instruction list holds it. */
@@ -155,7 +155,7 @@ public final class CompostablesFallbackInjector implements ClassTransformer {
 	private static final byte[] COMPOSTABLES_NEEDLE = ByteScan.needle("COMPOSTABLES");
 	private static final byte[] COMPOSTER_NEEDLE = ByteScan.needle(COMPOSTER_INTERNAL);
 
-	/** The game's own classes, which the merge compiled against the data map: their reads of the map are the platform's. */
+	/** The game's own classes, which NeoForge compiled against the data map: their reads of the map are the platform's. */
 	static boolean platform(String className) {
 		return className.startsWith("net.minecraft.") || className.startsWith("com.mojang.") || className.startsWith("net.neoforged.")
 				|| className.startsWith("net.minecraftforge.") || className.startsWith("net.forbric.");

@@ -34,7 +34,7 @@ import net.forbric.kernel.util.Caught;
  * where the decompiler's {@code if} block ended, and the tail's frame drops them, because the guard's path used to arrive
  * without them. On vanilla those locals are in scope at the last return, and a Fabric mod's TAIL handler reads them:
  * Essential's emissive elytra layer asks for {@code @Local(ordinal = 4) int} at the tail of
- * {@code EquipmentLayerRenderer.renderLayers} (vanilla's {@code nextOrder}). On the merged tail Mixin found only the
+ * {@code EquipmentLayerRenderer.renderLayers} (vanilla's {@code nextOrder}). On the base's tail Mixin found only the
  * three {@code int} arguments, MixinExtras dropped the target, and the optional injector went unattached without a word.
  *
  * <p>A local is given back only on evidence, all of it required: vanilla's own body (the class the platform-free mod was

@@ -31,7 +31,7 @@ import net.forbric.kernel.util.Caught;
 import net.forbric.kernel.util.ForbricLog;
 
 /**
- * Guest hooks woven into a vanilla method the merged game never calls, run where the carrier computes that method's value.
+ * Guest hooks woven into a vanilla method the game never calls, run where the carrier computes that method's value.
  *
  * <p>Vanilla's {@code DropExperienceBlock.spawnAfterBreak} (and four more blocks' — the census lists them) calls
  * {@code Block.tryDropExperience(level, pos, tool, provider)}: {@code i = processBlockExperience(level, tool,
@@ -254,7 +254,7 @@ public final class UncalledValueRelay {
 		return null;
 	}
 
-	/** The mixins whose merged methods {@code method}'s woven body calls or hands as a method reference. */
+	/** The mixins whose current methods {@code method}'s woven body calls or hands as a method reference. */
 	private static Set<String> mixinsWovenInto(ClassNode node, ClassNode before, MethodNode method) {
 		Set<String> out = new LinkedHashSet<>();
 		for (AbstractInsnNode instruction : method.instructions) {
@@ -366,7 +366,7 @@ public final class UncalledValueRelay {
 				try {
 					return resolveRelay(of, c);
 				} catch (LinkageError | RuntimeException unresolvable) {
-					// Reading a class's declared methods links their types; one the merged game cannot link is not asked.
+					// Reading a class's declared methods links their types; one the game cannot link is not asked.
 					Caught.warn(unresolvable, "[Forbric/Mixin] could not tell whether the native game asks %s of %s; its relay is not run for it",
 							c.key(), of.getName());
 					return null;

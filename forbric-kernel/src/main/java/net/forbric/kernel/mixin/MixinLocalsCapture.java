@@ -27,9 +27,9 @@ import net.forbric.kernel.util.ForbricLog;
 /**
  * Turns a guest mixin's {@code @Inject(locals = CAPTURE_FAILHARD)} into {@code CAPTURE_FAILSOFT}.
  *
- * <p>A locals-capturing injector is written against ONE method body's local variable table. On the merged base
+ * <p>A locals-capturing injector is written against ONE method body's local variable table. On the base
  * the body a mixin targets can carry the other family's patch — architectury's {@code MixinServerPlayerGameMode}
- * captures {@code (BlockEntity, BlockState)} from {@code destroyBlock}, and the merged method has NeoForge's
+ * captures {@code (BlockEntity, BlockState)} from {@code destroyBlock}, and the current method has NeoForge's
  * {@code BreakBlockEvent} local in between. FAIL_HARD makes that an {@code InjectionError}, an {@link Error} no
  * mixin error handler sees, thrown from inside the class load of the target: the popular-set server died in
  * {@code WorldLoader}. FAIL_SOFT is Mixin's own answer to exactly this: the one injection is skipped with a WARN

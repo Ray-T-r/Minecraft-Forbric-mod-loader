@@ -20,12 +20,12 @@ import org.objectweb.asm.tree.TypeInsnNode;
 import org.objectweb.asm.tree.VarInsnNode;
 
 /**
- * A fluid tag a Fabric mod gave a fluid behaviour has a fluid type the merged {@code EntityFluidInteraction} knows.
+ * A fluid tag a Fabric mod gave a fluid behaviour has a fluid type NeoForge's {@code EntityFluidInteraction} knows.
  *
  * <p>fabric-content-registries tracks the tags registered with {@code EntityFluidInteractionRegistry} next to water and
  * lava, and every tick asks the entity's {@code EntityFluidInteraction.isInFluid(tag)} for each; its behaviours read
  * {@code getFluidHeight(tag)} and push through {@code applyCurrentTo(tag, …)}, and its HUD mixin asks
- * {@code isEyeInFluid(tag)} for the air bubbles every frame. The merged class is NeoForge's, which tracks by fluid type
+ * {@code isEyeInFluid(tag)} for the air bubbles every frame. NeoForge's class tracks by fluid type
  * and turns a tag into one in {@code getFluidTypeByTag} — water, lava, or {@code IllegalArgumentException}. So the
  * first entity to tick after a Fabric mod registered a behaviour threw "Ticking entity" and stopped the server.
  *
@@ -33,7 +33,7 @@ import org.objectweb.asm.tree.VarInsnNode;
  * registered for — the same type a foreign fluid in that tag reports ({@code KernelFabricFluidBehaviors}), so the tag
  * questions read the tracker the fluid fills. Any other tag still throws, as NeoForge does. On the reviewed shape only:
  * the static method returns water or lava and ends in exactly one {@code IllegalArgumentException}.
- * {@code -Dforbric.fabricFluidBehavior=off} leaves it as merged (and the runtime then reports no behaviour type either).
+ * {@code -Dforbric.fabricFluidBehavior=off} leaves it as the base has it (and the runtime then reports no behaviour type either).
  */
 public final class FabricFluidBehaviorInjector implements ClassTransformer {
 	public static final String PROPERTY = "forbric.fabricFluidBehavior";

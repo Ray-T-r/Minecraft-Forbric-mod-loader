@@ -18,7 +18,7 @@ import net.forbric.kernel.util.ForbricLog;
  * to {@code createContents()} alone (the deferred freeze) and a callback on {@code Main} or {@code Minecraft} later makes
  * the {@code bootStrap()} call itself (the post-freeze callback). The kernel keeps the freeze in the bootstrap, so the
  * deferring redirect is taken out, any other injector the deferring mixin hangs on the bootstrap's step after the freeze
- * ({@code wrapStreams}, which the merged bootstrap no longer calls) runs at its end, and the post-freeze callback keeps
+ * ({@code wrapStreams}, which the current bootstrap no longer calls) runs at its end, and the post-freeze callback keeps
  * everything but its second {@code bootStrap()} — a second freeze of frozen registries throws. What the callbacks call
  * besides is theirs and stays as written.
  *
@@ -49,11 +49,11 @@ public final class FabricRegistryInitializationMixinAdapter {
         ClassNode source=MixinCallbackShape.targets(mixin,BOOTSTRAP)&&references!=null?references.apply(MixinStubRebind.ecosystemOf(mixin.name),BOOTSTRAP):null;
         return deferredFreeze(mixin,source) != null || postFreeze(mixin) != null;
     }
-    /** Without the merged class: selectors by the member they can only name, points only when spelled with owner and descriptor. */
+    /** Without the current class: selectors by the member they can only name, points only when spelled with owner and descriptor. */
     public static int adapt(ClassNode mixin){
         return adapt(mixin,name->null,null);
     }
-    /** {@code targets} gives the merged classes, where selectors bind; owner-less points are read in the native classes. */
+    /** {@code targets} gives the current classes, where selectors bind; owner-less points are read in the native classes. */
     public static int adapt(ClassNode mixin,Function<String,ClassNode> targets){
         return adapt(mixin,targets,NativeGameReferences::reference);
     }

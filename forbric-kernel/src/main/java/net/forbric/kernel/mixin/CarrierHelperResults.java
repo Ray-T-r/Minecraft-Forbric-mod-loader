@@ -42,28 +42,28 @@ import net.forbric.kernel.util.Caught;
 import net.forbric.kernel.util.ForbricLog;
 
 /**
- * An {@code @Inject} at a vanilla call the merged method no longer makes, moved onto the answer of the helper the carrier now
+ * An {@code @Inject} at a vanilla call the current method no longer makes, moved onto the answer of the helper the carrier now
  * makes that call in, where the helper's answer says whether it made the call.
  *
  * <p>Vanilla's {@code ServerPlayerGameMode.destroyBlock} calls {@code Block.destroy} once, only when the block was removed;
  * NeoForge hands the removal to a private helper of its own ({@code removeBlock(pos, state, canHarvest, tool)}), called on two
  * exclusive paths (creative and survival), which calls {@code Block.destroy} exactly when it returns true. A mod's
- * {@code @Inject} at the vanilla call binds nothing in the merged method; the locals it reads with MixinExtras {@code @Local}
+ * {@code @Inject} at the vanilla call binds nothing in the current method; the locals it reads with MixinExtras {@code @Local}
  * exist in the method, not in the helper; and inlining the helper at both of its calls ({@link NativeCallInlining}) would put
  * two calls where vanilla has one.
  *
  * <p>Nothing here knows a mod, a class or a method by name. The injector moves when, read off the native method (the class
- * the mod's own loader has) and the merged one:
+ * the mod's own loader has) and the current one:
  * <ul>
  *   <li>it is an {@code @Inject} with one {@code INVOKE} point (at the call, or shifted before or after it, by no count), no
  *       slice, no {@code @Group}, not cancellable and capturing no locals the old way; its handler takes the method's arguments
  *       (or none), its callback, and after that only MixinExtras {@code @Local}s;</li>
- *   <li>its selectors bind the same method natively and merged; the native method makes the call once (or the occurrence its
- *       ordinal names), on no loop, and the merged method never makes it;</li>
- *   <li>the merged method calls exactly one method of its own class the native method never calls — private, static or final
+ *   <li>its selectors bind the same method natively and in the current class; the native method makes the call once (or the occurrence its
+ *       ordinal names), on no loop, and the current method never makes it;</li>
+ *   <li>the current method calls exactly one method of its own class the native method never calls — private, static or final
  *       (or of a final class), answering a boolean — whose body makes the call exactly once, and no execution of the method
  *       passes two of those calls (none is reachable from another, or from itself);</li>
- *   <li>the helper is not the native method's whole body under another name ({@link #carriesTheWholeBody}: the merged method's
+ *   <li>the helper is not the native method's whole body under another name ({@link #carriesTheWholeBody}: the current method's
  *       descriptor, handed the method's own arguments, making every call and field access the native method makes). There the
  *       native instruction still exists, inside the renamed body, and MixinRetarget's renamed-body rule puts the injector on it;
  *       moving it onto the helper's answer would run it after the whole body — Carpet's entity-load hook on
@@ -72,16 +72,16 @@ import net.forbric.kernel.util.ForbricLog;
  *       entry to a return, a test of a value already decided on the path taken only the way it was decided, and asks that each
  *       return hand back a constant or a value the path tested, true where the call was made and false where it was not; a
  *       helper with a loop, a handler or more paths than the proof follows is not read;</li>
- *   <li>each {@code @Local} names, at the native call, a local holding a value the merged method also holds, at every call
+ *   <li>each {@code @Local} names, at the native call, a local holding a value the current method also holds, at every call
  *       of the helper, in exactly one local of the same type: the same expression over the method's own values, its producer
  *       ({@link NativeCallChanges#localsAt}).</li>
  * </ul>
  * The handler keeps its body under its name with {@code $forbricOriginal} appended, without the annotation; a new handler of
  * that name, a MixinExtras {@code @ModifyExpressionValue} on the helper's answer bound to the same methods, hands it — when the
  * answer is true — the method's arguments, a fresh callback that is not cancellable (as the injector's was not), and each
- * local from the merged slot that holds it, and returns the answer unchanged.
+ * local from the current slot that holds it, and returns the answer unchanged.
  *
- * <p>What differs from the native order is the merged method's, not this move's: the handler runs after the helper returned,
+ * <p>What differs from the native order is the current method's, not this move's: the handler runs after the helper returned,
  * so after the call it was written to run before (a block that clears partner blocks in {@code destroy} has done so) and after
  * anything the helper does after the call. {@code -Dforbric.carrierHelperResults=off} leaves every injector as compiled.
  */
@@ -133,7 +133,7 @@ public final class CarrierHelperResults {
 
 	private static MethodNode move(ClassNode mixin, MethodNode handler, AnnotationNode inject, AnnotationNode at, String owner, MethodNode was,
 			ClassNode merged, MethodNode selected, Function<String, ClassNode> code) {
-		// The native call: once (or the ordinal's occurrence), on no loop; the merged method makes none.
+		// The native call: once (or the ordinal's occurrence), on no loop; the current method makes none.
 		if (!MixinCallbackShape.calls(at, selected).isEmpty()) return null;
 		List<MethodInsnNode> nativeCalls = MixinCallbackShape.calls(at, was);
 		int ordinal = MixinFit.value(at, "ordinal") instanceof Number number ? number.intValue() : -1;
@@ -188,7 +188,7 @@ public final class CarrierHelperResults {
 		for (MethodInsnNode site : sites) if (reachable(selected, successors(selected, site), new HashSet<>(sites))) return null;
 		if (!answersWhetherItCalled(merged.name, helper, call)) return null;
 
-		// Each @Local: the value its native local holds, held by one merged local of the same type at every call of the helper.
+		// Each @Local: the value its native local holds, held by one current local of the same type at every call of the helper.
 		Map<Integer, Integer> slots = new HashMap<>();
 		Map<Integer, NativeCallChanges.Expr> nativeValues = NativeCallChanges.localsAt(owner, was, call);
 		if (nativeValues == null && !locals.isEmpty()) return null;
@@ -473,8 +473,8 @@ public final class CarrierHelperResults {
 	}
 
 	/**
-	 * Whether {@code helper} is the native method's body renamed whole: it has the merged method's descriptor and static-ness,
-	 * the merged method hands it its own arguments unchanged ({@link CarrierRenames#handsOwnArguments}), and it makes every call
+	 * Whether {@code helper} is the native method's body renamed whole: it has the current method's descriptor and static-ness,
+	 * the current method hands it its own arguments unchanged ({@link CarrierRenames#handsOwnArguments}), and it makes every call
 	 * and field access the native method makes, at least as often (what {@link CarrierRenames} calls a RENAME). NeoForge's
 	 * {@code PersistentEntitySectionManager.addEntity} posts its join event and calls vanilla's body as
 	 * {@code addEntityWithoutEvent}; vanilla's {@code Visibility.isTicking} call is in that body, before {@code startTicking}.

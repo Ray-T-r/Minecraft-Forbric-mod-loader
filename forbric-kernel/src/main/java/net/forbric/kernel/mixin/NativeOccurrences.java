@@ -15,16 +15,16 @@ import net.forbric.kernel.util.ForbricSwitches;
 
 /**
  * Hands a guest's injection points to {@link NativeOccurrencePoint}, which keeps each point as written but counts and
- * selects its occurrences over the native body of the method (the platform's own bytes, pinned by the merged-base builder)
- * and maps them onto the merged body by code alignment — so an injector runs once per native execution of its point,
+ * selects its occurrences over the native body of the method (the platform's own bytes, hash-pinned native references)
+ * and maps them onto the current body by code alignment — so an injector runs once per native execution of its point,
  * on every path, however many occurrences of it the carriers' code added, dropped or reordered.
  *
  * <p>A point is handed over when its mixin has a platform, its target has a native body for that platform, and the point
  * selects instructions by what they are — a call, a field access, an allocation, a constant, a jump, a local load or store,
  * a MixinExtras expression — not by where the method begins or ends (HEAD, RETURN and TAIL have adapters of their own).
- * Left as written: an injector with a slice (its occurrences are counted inside the slice, which only the merged body
+ * Left as written: an injector with a slice (its occurrences are counted inside the slice, which only the current body
  * has), a point with a specifier ({@code INVOKE:LAST}), an injector an adapter before this one changed in any way (moved,
- * renumbered over the merged body, re-sliced — compared value for value with the mixin as its jar has it), and a
+ * renumbered over the current body, re-sliced — compared value for value with the mixin as its jar has it), and a
  * {@code @Redirect} of a field access or an allocation, which Mixin reads through the point's own type. What the point then selects is decided at weave time, from both bodies; where the bodies
  * agree in number, Mixin's own selection stands untouched.
  *
@@ -48,7 +48,7 @@ public final class NativeOccurrences {
 	/**
 	 * Hands every eligible point of {@code mixin} over; returns how many. {@code written} is the mixin's bytes as its jar has them: a
 	 * point is handed over only while its injector is still exactly as written there — an adapter before this one that
-	 * moved, renumbered or re-sliced it counts over the merged body, which this would read as a native count.
+	 * moved, renumbered or re-sliced it counts over the current body, which this would read as a native count.
 	 */
 	public static int adapt(ClassNode mixin, byte[] written) {
 		if (!enabled() || mixin == null || written == null) return 0;

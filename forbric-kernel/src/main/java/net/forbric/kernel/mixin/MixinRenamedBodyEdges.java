@@ -23,7 +23,7 @@ import net.forbric.api.Ecosystem;
 import net.forbric.kernel.util.ForbricLog;
 
 /**
- * Edges a body a carrier renamed on every path the merged game runs it by: a guest's edge injector — its method's start,
+ * Edges a body a carrier renamed on every path the game runs it by: a guest's edge injector — its method's start,
  * its end — stays on the method it names, and each method that runs the renamed body without passing through it, by
  * only forwarding to it, gets the same edge.
  *

@@ -40,7 +40,7 @@ import net.forbric.kernel.util.ForbricLog;
  * <p>Vanilla's {@code actuallyHurt(level, source, damage)} starts {@code damage = getDamageAfterArmorAbsorb(source,
  * damage)}: the first {@code fload 3} is the armour call's argument, and a Fabric mod's
  * {@code @ModifyVariable(at = @At(value = "LOAD", ordinal = 0), index = 3)} rewrites the damage about to be armoured.
- * The merged bodies are NeoForge's, which keep the amount in the entity's {@code DamageContainer} and do not read the
+ * NeoForge's bodies keep the amount in the entity's {@code DamageContainer} and do not read the
  * parameter until long after armour, magic, absorption and NeoForge's {@code LivingDamageEvent.Pre}. So that injector
  * lands at the end of the pipeline, too late to change anything — and TaCZ's pair of them breaks outright: its
  * {@code LOAD} handler creates the {@code LivingHurtEvent} it {@code @Share}s, its {@code @Inject} at the armour call

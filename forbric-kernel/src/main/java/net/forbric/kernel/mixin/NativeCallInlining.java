@@ -76,10 +76,10 @@ import net.forbric.kernel.util.Caught;
  * <p>Nothing here knows a mod, a class or a method by name. An inline is planned from one guest injector, when:
  * <ul>
  *   <li>its point is a call ({@code INVOKE}), without a slice; the method its selectors bind in the class the mod was
- *       compiled against (the native reference of its ecosystem) and in the merged class are the same method, and the
- *       native body makes more calls the point selects than the merged body does;</li>
+ *       compiled against (the native reference of its ecosystem) and in the current class are the same method, and the
+ *       native body makes more calls the point selects than the current body does;</li>
  *   <li>a sequence of at most {@value #MAX_DEPTH} inlines — each of a call the native method does not make (a call the
- *       carrier introduced), the second one inside what the first put in — makes the merged body select exactly as many
+ *       carrier introduced), the second one inside what the first put in — makes the current body select exactly as many
  *       calls as the native one, and only one such sequence of the fewest inlines does, or only one whose selected calls
  *       are handed every local and parameter of the method the native calls are handed (read by name and type);</li>
  *   <li>each inlined callee is a concrete, non-synchronized method no larger than {@value #MAX_CALLEE_INSNS} instructions,
@@ -405,7 +405,7 @@ public final class NativeCallInlining {
 			return Outcome.NONE;
 		List<MethodInsnNode> wanted = MixinCallbackShape.calls(at, was);
 		if (wanted.isEmpty() || MixinCallbackShape.calls(at, host).size() >= wanted.size()) return Outcome.NONE;
-		// A method the merged game never runs (a carrier's forwarding stub, a vanilla overload nothing calls) gains nothing from
+		// A method the game never runs (a carrier's forwarding stub, a vanilla overload nothing calls) gains nothing from
 		// the call: the adapters that move an injector to the method that runs handle it.
 		if (ecosystem != null && MergedBaseUncalledMethods.neverRuns(merged, host, ecosystem) != null) return Outcome.NONE;
 		// A carrier's forwarding stub is left to MixinStubRebind, which moves the injector onto the overload that does the work,

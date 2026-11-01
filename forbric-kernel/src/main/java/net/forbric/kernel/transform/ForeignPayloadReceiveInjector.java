@@ -35,7 +35,7 @@ import net.forbric.kernel.util.ForbricLog;
  * Sends a received payload on a channel another ecosystem negotiated down vanilla's path, not into NeoForge's
  * dispatcher, which disconnects on any channel NeoForge did not register.
  *
- * <p>The merged {@code ClientCommonPacketListenerImpl.handleCustomPayload} and its server twin are NeoForge's: a
+ * <p>NeoForge's {@code ClientCommonPacketListenerImpl.handleCustomPayload} and its server twin are NeoForge's: a
  * payload outside the {@code minecraft} namespace ({@code NetworkRegistry.isModdedPayload}) goes to
  * {@code handleModdedPayload}, which looks the channel up in NeoForge's registry and closes the connection when it
  * is not there; anything else goes on to vanilla's {@code handleCustomPayload(CustomPacketPayload)}. A Fabric mod

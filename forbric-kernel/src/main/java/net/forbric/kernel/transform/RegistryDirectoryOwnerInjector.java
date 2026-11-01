@@ -36,7 +36,7 @@ import net.forbric.kernel.util.ForbricLog;
  * Lets the owner of a registry decide the directory {@code Registries.registryDirPath} gives it, so WorldWeaver's
  * world presets and biome data are read from where WorldWeaver ships them.
  *
- * <p>The merged {@code registryDirPath} is NeoForge's: the namespace is put in front inside the body. Native Fabric
+ * <p>In NeoForge's {@code registryDirPath} the namespace is put in front inside the body. Native Fabric
  * keeps vanilla's body and adds the namespace with a return-value mixin, and WorldWeaver's own mixin returns the
  * body's answer before that mixin can — see {@link net.forbric.kernel.boot.KernelRegistryDirectories} for the whole
  * chain and what it cost. The edit hands every answer the body gives, with the registry's namespace and path, to
@@ -54,7 +54,7 @@ import net.forbric.kernel.util.ForbricLog;
  * because the stack now reaches three. The hook names only {@code String} and is parent-loaded, so the new call
  * cannot fail to link on a resource-reload path.
  *
- * <p>{@code -Dforbric.registryDirectoryOwner=off} leaves {@code Registries} exactly as merged; {@code =force} keeps
+ * <p>{@code -Dforbric.registryDirectoryOwner=off} leaves {@code Registries} exactly as the base has it; {@code =force} keeps
  * the edit but stops the hook checking that fabric-registry-sync's modifier is in {@code Registries} first.
  */
 public final class RegistryDirectoryOwnerInjector implements ClassTransformer {

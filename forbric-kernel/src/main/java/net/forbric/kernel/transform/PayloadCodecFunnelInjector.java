@@ -36,7 +36,7 @@ import net.forbric.kernel.util.ForbricLog;
  * Routes every custom-payload codec build through vanilla's {@code CustomPacketPayload.codec(fallback, types)}, so
  * a mod hooking it is heard, while the codec built stays NeoForge's.
  *
- * <p>The merged {@code CustomPacketPayload} has both overloads, each with its own body: vanilla's
+ * <p>NeoForge's {@code CustomPacketPayload} has both overloads, each with its own body: vanilla's
  * {@code codec(FallbackProvider, List)} and NeoForge's {@code codec(FallbackProvider, List, ConnectionProtocol,
  * PacketFlow)}, which builds the protocol-aware codec NeoForge's networking needs. Every merged caller calls
  * NeoForge's, so vanilla's is declared and never run. A mod's {@code @At(INVOKE)} on the call is moved by

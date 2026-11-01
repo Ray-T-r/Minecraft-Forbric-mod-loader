@@ -145,7 +145,7 @@ public final class KernelClientSmoke {
 	 * server, without AI) and, {@link #MULTIPART_HOLD} ticks later, read on the CLIENT whether each one is there with
 	 * every part its {@code getParts()} answers in the level's part list. 0 (the default) leaves it alone.
 	 *
-	 * <p>A multipart entity is where the client once disconnected: the merged base's tracking callback read the other
+	 * <p>A multipart entity is where the client once disconnected: the merged base's tracking callback (Forbric 0.4 and earlier) read the other
 	 * family's part array, which is null for a NeoForge mod's entity. A client that tracks one says so here, part by
 	 * part; a client that disconnected never gets to say anything, and the gate's clean-disconnect line goes missing.
 	 */
@@ -465,7 +465,7 @@ public final class KernelClientSmoke {
 	 *
 	 * <p>Everything goes through {@code MouseHandler}'s own methods — the ones GLFW calls — rather than through
 	 * either family's hook. That is the whole point: calling a hook would prove only that the hook posts, which
-	 * was never in doubt. What is being asked is whether the merged base, on its real input path, reaches a
+	 * was never in doubt. What is being asked is whether the base, on its real input path, reaches a
 	 * traditional-Forge mod's listener; so the drill starts where a mouse starts and lets the game do the rest.
 	 *
 	 * <p>One step per {@link #STEP_TICKS} ticks, never several in a tick. A screen opened and clicked in the same
@@ -1066,7 +1066,7 @@ public final class KernelClientSmoke {
 			Object block = accessible(state.getClass(), "getBlock").invoke(state);
 			Object blockRegistry = Class.forName("net.minecraft.core.registries.BuiltInRegistries", true, cl)
 					.getField("BLOCK").get(null);
-			// Through the Registry interface, not the implementation: the merged registry class names Fabric
+			// Through the Registry interface, not the implementation: the registry class names Fabric
 			// registry-sync types in its signatures, and listing its declared methods links them.
 			Object name = Class.forName("net.minecraft.core.Registry", true, cl).getMethod("getKey", Object.class)
 					.invoke(blockRegistry, block);
@@ -1174,7 +1174,7 @@ public final class KernelClientSmoke {
 	/**
 	 * Equips an elytra, drops the player into the air and asks whether they can glide.
 	 *
-	 * <p>{@code canGlide()} is the exact predicate that was false: the merge took NeoForge's version, which
+	 * <p>{@code canGlide()} is the exact predicate that was false: the base has NeoForge's version, which
 	 * decides gliding from the {@code neoforge:gliding_flight} attribute alone, and vanilla's
 	 * {@code forEachModifier}, which never posts the event that sets it. So this reports THREE things, because
 	 * they fail separately and only the last one is the player's complaint: the attribute reaching the entity,
@@ -1416,7 +1416,7 @@ public final class KernelClientSmoke {
 		return out.toString();
 	}
 
-	/** The NeoForge attribute the merged base's canGlide reads, or -1 if it cannot be asked. */
+	/** The NeoForge attribute the base's canGlide reads, or -1 if it cannot be asked. */
 	private static double glidingAttribute(Object player, ClassLoader cl) {
 		try {
 			Class<?> neoMod = Class.forName("net.neoforged.neoforge.common.NeoForgeMod", true, cl);
@@ -1467,7 +1467,7 @@ public final class KernelClientSmoke {
 	 *
 	 * <p>A mod's own assets are served into the repository as required packs, and required is what keeps them
 	 * applied. They are also marked hidden, and hidden is what is supposed to keep them off this screen — but the
-	 * byte merge kept the flag and dropped every reader of it, so ten rows a player did not add and cannot remove
+	 * merged base of Forbric 0.4 and earlier kept the flag and dropped every reader of it, so ten rows a player did not add and cannot remove
 	 * appeared in their resource-pack list.
 	 *
 	 * <p>Counted from the SCREEN's own row widgets rather than from the repository, because the repository's id
@@ -3127,7 +3127,7 @@ public final class KernelClientSmoke {
 
 	/**
 	 * What the game would put on its window. Read from {@code createTitle} itself rather than from the window, which
-	 * only has a setter — and that method is the one the merged base carries a single loader's patch of, so this is
+	 * only has a setter — and that method is the one the base carries NeoForge's patch of, so this is
 	 * the only place the result is observable at all.
 	 */
 	private static void reportWindowTitle(Object minecraft) {

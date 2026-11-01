@@ -35,7 +35,7 @@ import net.forbric.kernel.util.ForbricLog;
  * point ({@code Main.main}) to the kernel's own native lifecycle hook — so the kernel, not FancyModLoader / FML,
  * owns the lifecycle.
  *
- * <p><b>The merged-base facts.</b> NeoForge won the byte-merge of both entries:
+ * <p><b>The base facts.</b> NeoForge won the byte-merge of both entries:
  * <ul>
  *   <li><b>Server</b> — {@code net.minecraft.server.Main.main} calls
  *       {@code net.neoforged.neoforge.server.loading.ServerModLoader.load(Z)V} between {@code Bootstrap.bootStrap()}
@@ -77,9 +77,9 @@ import net.forbric.kernel.util.ForbricLog;
  */
 public final class LifecycleHookInjector implements ClassTransformer {
 
-	/** Merged-base dedicated-server entry. */
+	/** Base dedicated-server entry. */
 	public static final String SERVER_MAIN = "net.minecraft.server.Main";
-	/** Merged-base client entry. */
+	/** Base client entry. */
 	public static final String CLIENT_MAIN = "net.minecraft.client.main.Main";
 
 	private static final String KERNEL_HOOK_OWNER = "net/forbric/kernel/boot/KernelLifecycle";

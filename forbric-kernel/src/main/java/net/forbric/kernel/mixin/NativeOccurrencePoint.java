@@ -38,10 +38,10 @@ import net.forbric.kernel.util.ForbricLog;
 import net.forbric.kernel.util.Caught;
 
 /**
- * An injection point that selects, in the merged body, the occurrences of a guest's point that are the occurrences its
+ * An injection point that selects, in the current body, the occurrences of a guest's point that are the occurrences its
  * platform's own body has — however many more or fewer the carriers' code put there.
  *
- * <p>A mod's injection point is written for, and counted in, the method as its platform compiled it. The merged game
+ * <p>A mod's injection point is written for, and counted in, the method as its platform compiled it. The game
  * runs a body a carrier patched: a call, field access, local store or expression the guest points at may now occur more
  * often (NeoForge passes {@code getCameraType().isMirrored()} again as an argument of its detached-camera hook; it reads
  * a picked-up stack's count twice more to compute what was taken; MinecraftForge and NeoForge each store a bow's charge
@@ -49,19 +49,19 @@ import net.forbric.kernel.util.Caught;
  * path; or less often, or in another order, so a numbered point names a different occurrence.
  *
  * <p>The guest's own point is kept, unchanged, and asked twice — by Mixin's (or MixinExtras') own code, so whatever the
- * point is, it is read as its injector reads it: once over the merged body Mixin hands it, and once over the native body
- * of the same method (the hash-pinned bytes the merged-base builder emitted for the mod's platform), as a second target
- * of the same injector. Only when the two disagree in number does anything change. The native body and the merged body
+ * point is, it is read as its injector reads it: once over the current body Mixin hands it, and once over the native body
+ * of the same method (the hash-pinned native-reference bytes of the mod's platform, {@link NativeReferenceSources}), as a second target
+ * of the same injector. Only when the two disagree in number does anything change. The native body and the current body
  * are then aligned ({@link CodeAlignment}), and each native occurrence the point selects is mapped to the merged
  * instruction that is the same step:
  * <ul>
  * <li>a numbered point selects the counterpart of its native occurrence;</li>
- * <li>an unnumbered point selects the counterparts of every native occurrence, and of the occurrences only the merged body
+ * <li>an unnumbered point selects the counterparts of every native occurrence, and of the occurrences only the current body
  * has, every one that some execution can run without running a counterpart — a carrier that copied vanilla's code into
  * two exclusive branches, or decides the value itself on a path vanilla's code is skipped on, still runs the handler
  * there — but none that no execution can run without a counterpart: those would only ever run the handler a second time
  * where the native game runs it once;</li>
- * <li>a counterpart the point cannot bind where it stands (a {@code @ModifyVariable} whose local the merged body's
+ * <li>a counterpart the point cannot bind where it stands (a {@code @ModifyVariable} whose local the current body's
  * variable table does not yet cover there) is replaced by the one occurrence the point does bind that every path from the
  * counterpart reaches first.</li>
  * </ul>
@@ -152,7 +152,7 @@ public final class NativeOccurrencePoint extends InjectionPoint {
 		Target nativeTarget = TargetFields.create(target.classNode.name, nativeClass, nativeMethod);
 		List<AbstractInsnNode> native_ = nativeOccurrences(desc, insns, nativeTarget);
 		// No native occurrence: nothing native to count (the point may name what an adapter moved it to). The same number:
-		// Mixin's own count over the merged body is the native one.
+		// Mixin's own count over the current body is the native one.
 		// A numbered point is checked even where the numbers agree: the carrier may have put its own occurrence in front.
 		if (native_.isEmpty() || native_.size() == merged.size() && ordinal < 0) {
 			ForbricLog.debug("[Forbric/Mixin] %s: %s point in %s.%s: native %d, current %d — as written", owner(), point,
@@ -180,7 +180,7 @@ public final class NativeOccurrencePoint extends InjectionPoint {
 			if (same == null) {
 				// The step itself did not align — the carrier changed a value it is handed (NeoForge counts its own Mods button
 				// among the title screen's icon buttons, so every getHorizontalPosition there is handed 4 where vanilla hands 3) —
-				// but what consumes its value did: the merged occurrence that hands the aligned consumer the same operand is it.
+				// but what consumes its value did: the current occurrence that hands the aligned consumer the same operand is it.
 				if (nativeConsumers == null) {
 					nativeConsumers = Consumers.of(nativeClass.name, nativeMethod);
 					mergedConsumers = Consumers.of(target.classNode.name, target.method);
@@ -237,8 +237,8 @@ public final class NativeOccurrencePoint extends InjectionPoint {
 	}
 
 	/**
-	 * The merged counterpart of a native occurrence whose own step aligned with nothing: the value it produces is consumed by
-	 * exactly one instruction, as that operand alone, and that consumer aligned; the merged consumer's same operand is produced by
+	 * The current counterpart of a native occurrence whose own step aligned with nothing: the value it produces is consumed by
+	 * exactly one instruction, as that operand alone, and that consumer aligned; the current consumer's same operand is produced by
 	 * exactly one instruction, which is an occurrence the point binds, of the same opcode. Null otherwise.
 	 */
 	private static AbstractInsnNode byConsumer(AbstractInsnNode occurrence, Consumers natives, Consumers merged,

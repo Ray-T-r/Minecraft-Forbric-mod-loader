@@ -41,7 +41,7 @@ import net.forbric.kernel.util.ForbricLog;
  *
  * <p>Display only: {@code ClientBrandRetriever} and the brand NeoForge sends to servers are untouched. Each edit is
  * a one-for-one call swap with the stack unchanged, applied only where the call sequence is exactly the one below.
- * {@code -Dforbric.branding=off} leaves both as merged.
+ * {@code -Dforbric.branding=off} leaves both as the base has it.
  */
 public final class ForbricBrandingInjector implements ClassTransformer {
 	public static final String PROPERTY = "forbric.branding";

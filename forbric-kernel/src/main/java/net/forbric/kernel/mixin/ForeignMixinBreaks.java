@@ -33,8 +33,8 @@ import java.util.List;
  * same question from their side: two mods are installed and they do not fit.
  *
  * <p><b>Why this is worth being loud about when a half-applied mixin is not.</b> Measured across every gate log
- * in this repo: 1226 anchors that do not resolve, all of them on merged-base classes, all on runs that pass —
- * and not one on another mod's class. The signal separates cleanly because the merged base is a rewritten game
+ * in this repo: 1226 anchors that do not resolve, all of them on base classes, all on runs that pass —
+ * and not one on another mod's class. The signal separates cleanly because the base is a rewritten game
  * and mixins miss it constantly, while two mods either fit or do not.
  */
 public final class ForeignMixinBreaks {

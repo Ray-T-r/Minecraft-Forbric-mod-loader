@@ -11,7 +11,7 @@ import org.objectweb.asm.tree.*;
 import net.forbric.kernel.util.Caught;
 import net.forbric.kernel.util.ForbricLog;
 
-/** Restores Authored update and cancellable player callbacks at their merged-game equivalents. */
+/** Restores Authored update and cancellable player callbacks at their game equivalents. */
 public final class MixinPlayerWorldCallbackAdapter {
 	public static final String PROPERTY = "forbric.playerWorldCallbacks";
 	static final String LEVEL = "net/minecraft/world/level/Level";
@@ -147,7 +147,7 @@ public final class MixinPlayerWorldCallbackAdapter {
 	 * Mixin's locals capture of a leading run of them (block entity, block, adjusted state — vanilla's slots after the
 	 * argument, in order; a handler may stop after any of them, or capture none), or MixinExtras' {@code @Local} of the block
 	 * entity or the block by type (the only local of its type there). Cancellable or not: the new point runs it on the path
-	 * that removes the block either way. Each value it asks for is handed over by the merged slot its producer stored.
+	 * that removes the block either way. Each value it asks for is handed over by the current slot its producer stored.
 	 */
 	private static int blockBreak(ClassNode mixin, ClassNode target, ClassNode source) {
 		// The point is read as Mixin reads it in the native destroyBlock, when at hand (MixinCallbackShape#names).

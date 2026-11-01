@@ -104,7 +104,7 @@ public final class MergedBaseMixinCompat {
      * A source that fires the loot reload's public events itself, from the class whose reload the kernel's loot bridge
      * fires them for, and whose callback group was not proved for the generated helper (another build, a fork, a
      * recompile). The bridge then asks fabric-loot-api's public events itself, so they still fire once: a source left in
-     * would fire them a second time, or half-apply on the reordered merged lambdas. Decided by what the source dispatches,
+     * would fire them a second time, or half-apply on the reordered current lambdas. Decided by what the source dispatches,
      * never by which build of which module it is; the injectors that neither dispatch nor share the dispatchers' state
      * are named in the reason, since they go with it.
      */

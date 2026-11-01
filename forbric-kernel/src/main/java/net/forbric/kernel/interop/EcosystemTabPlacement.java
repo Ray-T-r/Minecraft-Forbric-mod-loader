@@ -10,9 +10,9 @@ import java.util.function.Predicate;
 import net.forbric.api.Ecosystem;
 
 /**
- * Where a creative tab goes in the merged game's one tab order, by the native rule of the ecosystem that owns it.
+ * Where a creative tab goes in the game's one tab order, by the native rule of the ecosystem that owns it.
  *
- * <p>The merged screen pages NeoForge's sorted tab list, ten categories to a page. NeoForge sorts it topologically: a
+ * <p>NeoForge's screen pages its sorted tab list, ten categories to a page. NeoForge sorts it topologically: a
  * tab that declares no ordering is chained after the tab registered before it, so a mod's unordered tabs land wherever
  * that chain puts them — on the probe's twelve, between vanilla's {@code redstone_blocks} and
  * {@code tools_and_utilities}, splitting vanilla's ten across three pages. That is NeoForge's rule, and a NeoForge mod's

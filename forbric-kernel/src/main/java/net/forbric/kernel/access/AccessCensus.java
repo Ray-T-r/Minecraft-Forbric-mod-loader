@@ -43,7 +43,7 @@ public final class AccessCensus {
 	 * is there with another descriptor. That distinction is the whole judgement: a name the class does not have
 	 * at all is a line the mod's file carries for another Minecraft version — a native loader ignores it just the
 	 * same, and a real pack has two dozen (journeymap's SRG-named fields, old overloads) — while a name that IS
-	 * there under another descriptor is a member the merge re-typed, and only that one costs the mod something
+	 * there under another descriptor is a member NeoForge re-typed, and only that one costs the mod something
 	 * it would have had on its own loader.
 	 */
 	public record Unmatched(String kind, String source, String directive, boolean retyped, boolean namePresent,

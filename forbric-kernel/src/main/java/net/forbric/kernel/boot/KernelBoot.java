@@ -66,9 +66,9 @@ import net.forbric.kernel.util.ForbricLog;
 
 /**
  * The shared boot flow behind {@link KernelServerLaunch} and {@code KernelClientLaunch}: build the one sovereign
- * {@link ForbricClassLoader} over the merged base + ecosystem carriers + all mods + MC libraries, install the
- * transform pipeline (access wideners → lifecycle redirect → concessions → Mixin), discover all three ecosystems,
- * bring up Mixin + Fabric, and hand off to the merged base's {@code Main.main} — which now runs plain vanilla boot
+ * {@link ForbricClassLoader} over the base + ecosystem carriers + all mods + MC libraries, install the
+ * transform pipeline (access wideners → lifecycle redirect → concessions → Mixin), discover both ecosystems,
+ * bring up Mixin + Fabric, and hand off to the base's {@code Main.main} — which now runs plain vanilla boot
  * with the genuine loader trigger redirected to the kernel's own native registration window.
  *
  * <p>Server vs client differ only in the {@link Side}: env type, entry class, which lifecycle trigger is
@@ -79,7 +79,7 @@ public final class KernelBoot {
 	private KernelBoot() {
 	}
 
-	/** Used only when the base jar carries no {@code version.json}; the merged base is built from 26.2. */
+	/** Used only when the base jar carries no {@code version.json}; the base is built from 26.2. */
 	private static final String FALLBACK_GAME_VERSION = "26.2";
 
 	/** The two boot sides. */
@@ -221,7 +221,7 @@ public final class KernelBoot {
 		DuplicateModArbiter.Decision topLevelDupes =
 				DuplicateModArbiter.arbitrate(gameDir.resolve("mods"), side.envType, gameVersion);
 
-		// Forge/NeoForge mod jars (Mojmap-compiled like the merged base → load directly, no remap), plus the
+		// Forge/NeoForge mod jars (Mojmap-compiled like the base → load directly, no remap), plus the
 		// libraries they nest at META-INF/jarjar/ — see extractForgeFamilyJarJar.
 		// Learn what each carrier says its own version is BEFORE discovery reads the mods, so a mod whose
 		// versionRange this instance cannot satisfy says so as it is discovered rather than failing later.
@@ -266,7 +266,7 @@ public final class KernelBoot {
 		// THE MC LIBRARIES GO IN AHEAD OF THE MODS, and the order is the whole policy.
 		//
 		// They are owned rather than merely parent-visible because mods mixin into them
-		// (fabric-dimension-api-v1 targets DataFixerUpper's TaggedChoice), and they sit AFTER the merged base and
+		// (fabric-dimension-api-v1 targets DataFixerUpper's TaggedChoice), and they sit AFTER the base and
 		// the carriers so nothing shadows those. What changed is that they used to sit after the MOD jars too, and
 		// URLClassLoader answers from the first URL that HAS the class — so a mod jar that bundles a copy of a
 		// library the game already has WON.
@@ -280,7 +280,7 @@ public final class KernelBoot {
 		//
 		// Ordering is the general form of that pin and needs no list. A class present only in a mod jar is
 		// unaffected, because the library jars do not have it; a class present in BOTH now comes from the copy
-		// the merged base was compiled against. That is also what the genuine loaders do — Knot and FML put
+		// the base was compiled against. That is also what the genuine loaders do — Knot and FML put
 		// Minecraft's libraries on the same loader ahead of mods — so a mod relying on winning here was relying on
 		// something that does not hold on its own platform either.
 		List<Path> minecraftLibraries = libraryJars(libraryPath);
@@ -353,16 +353,16 @@ public final class KernelBoot {
 		List<Path> shadowCandidates = new ArrayList<>(fabricJars);
 		for (Path jar : modJars) if (!shadowCandidates.contains(jar)) shadowCandidates.add(jar);
 		PortingLayerAudit.report(shadowCandidates, runtimeJars);
-		// Which installed mods name a fabric-api surface the merged base still switches off; reported after the
+		// Which installed mods name a fabric-api surface this boot still switches off; reported after the
 		// catalog is published, so the rows reach load-report.txt.
 		FabricApiModuleLossAudit.scan(shadowCandidates);
-		// Which installed jars read a vanilla field with a descriptor the merge no longer declares (NoSuchFieldError
+		// Which installed jars read a vanilla field with a descriptor the base no longer declares (NoSuchFieldError
 		// at that access); reported after the catalog is published, so the rows reach load-report.txt.
 		FieldDriftAudit.scan(shadowCandidates);
-		// Which merged-base methods nothing in the game calls an installed mod calls itself: an injector bound
+		// Which base methods nothing in the game calls an installed mod calls itself: an injector bound
 		// there still runs. Read before Mixin prepares a config, so MixinFit's liveness verdict can ask.
 		net.forbric.kernel.mixin.MergedBaseUncalledMethods.scanGuests(shadowCandidates);
-		// Which installed jars name a Forge-family class that exists in no carrier, not the merged base and no
+		// Which installed jars name a Forge-family class that exists in no carrier, not the base and no
 		// installed jar (compiled against another NeoForge/MinecraftForge); reported after the catalog is published.
 		List<Path> abiUniverse = new ArrayList<>(runtimeJars);
 		if (gameJar != null) abiUniverse.add(gameJar);
@@ -511,10 +511,10 @@ public final class KernelBoot {
 				return null;
 			}
 		}));
-		// Both sides, before the merged-base compatibility repairs, which find the vanilla members these add and wire them to
-		// NeoForge's live ones: the vanilla members only the merge's MinecraftForge half kept (the PiP map, the int-keyed
-		// particle providers, vanilla's payload codec, Hud's hotbar-and-decorations…), added where a base lacks them.
-		// Nothing is missing on the merged base, so nothing lands there. The copied bodies are vanilla's, read through this
+		// Both sides, before the base compatibility repairs, which find the vanilla members these add and wire them to
+		// NeoForge's live ones: vanilla members NeoForge's patches dropped (the int-keyed particle providers, vanilla's
+		// payload codec, Hud's hotbar-and-decorations…), added where the base lacks them (on the merged base of Forbric
+		// 0.4 and earlier, MinecraftForge's half kept them, so nothing landed there). The copied bodies are vanilla's, read through this
 		// launch's native-reference sources: on a base that embeds no index, the sidecar is the only place they exist.
 		if (net.forbric.kernel.transform.VanillaMemberTwinInjector.enabled()) {
 			chain.register(TransformPhase.COREMOD, new net.forbric.kernel.transform.VanillaMemberTwinInjector(
@@ -528,9 +528,9 @@ public final class KernelBoot {
 						}
 					})));
 		}
-		// Both sides: NeoForge's custom-payload codec looks codecs up by the payload's class across every ecosystem — the
-		// splice the merged base was built with (its builder's PASS 4b), on a base that never was. Pre-Mixin, so the post-Mixin
-		// codec arbitration finds the seam around fabric-networking's wrap. It stands down on the merged base.
+		// Both sides: NeoForge's custom-payload codec looks codecs up by the payload's class across every ecosystem (the
+		// merged base of Forbric 0.4 and earlier had this splice built in, its builder's PASS 4b). Pre-Mixin, so the post-Mixin
+		// codec arbitration finds the seam around fabric-networking's wrap.
 		if (net.forbric.kernel.transform.CustomPayloadInteropSeam.enabled()) {
 			chain.register(TransformPhase.COREMOD, new net.forbric.kernel.transform.CustomPayloadInteropSeam(path -> {
 				try (java.io.InputStream in = loader.getGameResourceAsStream(path)) {
@@ -565,7 +565,7 @@ public final class KernelBoot {
 					+ "tail, and a Fabric mod's TAIL handler also runs where vanilla's body returned early",
 					net.forbric.kernel.transform.VanillaEarlyReturns.PROPERTY);
 		}
-		// Both sides: vanilla-descriptor twins beside the fields the merge re-typed (RangedBow/CrossbowAttackGoal.mob,
+		// Both sides: vanilla-descriptor twins beside the fields NeoForge re-typed (RangedBow/CrossbowAttackGoal.mob,
 		// AttributeSupplier$Builder.builder), so a vanilla-compiled reader and fabric-object-builder's accessor bind.
 		if (net.forbric.kernel.transform.WidenedFieldTwinInjector.enabled()) {
 			chain.register(TransformPhase.COREMOD, new net.forbric.kernel.transform.WidenedFieldTwinInjector());
@@ -576,7 +576,7 @@ public final class KernelBoot {
 		}
 
 		// Both sides: vanilla's tooltip component order copied to the head of ItemStack.addDetailsToTooltip from the
-		// merge's own renamed body, so fabric-item-api-v1's bytecode scrape of it finds what it scrapes on Fabric.
+		// base's own renamed body, so fabric-item-api-v1's bytecode scrape of it finds what it scrapes on Fabric.
 		if (net.forbric.kernel.transform.TooltipOrderScrapeInjector.enabled()) {
 			chain.register(TransformPhase.COREMOD, new net.forbric.kernel.transform.TooltipOrderScrapeInjector());
 		} else {
@@ -625,7 +625,7 @@ public final class KernelBoot {
 		if (net.forbric.kernel.transform.RecipeSyncFailSoftInjector.enabled()) {
 			chain.register(TransformPhase.COREMOD, new net.forbric.kernel.transform.RecipeSyncFailSoftInjector());
 		}
-		// Every merged caller builds custom-payload codecs with NeoForge's overload, so a mod hooking vanilla's
+		// Every caller in the game builds custom-payload codecs with NeoForge's overload, so a mod hooking vanilla's
 		// CustomPacketPayload.codec was never called: Carpet's carpet:hello could not be encoded and a dedicated
 		// server running it disconnected every player at login. Builds go through vanilla's overload again.
 		if (net.forbric.kernel.transform.PayloadCodecFunnelInjector.enabled()) {
@@ -677,7 +677,7 @@ public final class KernelBoot {
 		// contract (fabric-api's client registry sync), whichever runs first.
 		chain.register(TransformPhase.COREMOD, new net.forbric.kernel.transform.RegistryRevertInjector());
 
-		// A Fabric mod's registry reads its data where native Fabric reads it. The merged Registries body is
+		// A Fabric mod's registry reads its data where native Fabric reads it. The base's Registries body is
 		// NeoForge's, which prefixes the namespace itself; Fabric prefixes in a return-value mixin instead, and
 		// WorldWeaver's own mixin hands back the body's answer ahead of it — so here its world presets and biome
 		// data were read from data/<ns>/wover/wover/…, which nothing ships, and loaded empty.
@@ -741,7 +741,7 @@ public final class KernelBoot {
 		chain.register(TransformPhase.COREMOD, new net.forbric.kernel.transform.ItemUseOnInjector());
 		// A Fabric or MinecraftForge mod's fluid has no NeoForge type; it gets the one its fluid tags imply.
 		chain.register(TransformPhase.COREMOD, new net.forbric.kernel.transform.ForeignFluidTypeInjector());
-		// …and a tag a Fabric mod gave a fluid behaviour has that behaviour's fluid type where the merged
+		// …and a tag a Fabric mod gave a fluid behaviour has that behaviour's fluid type where NeoForge's
 		// EntityFluidInteraction turns tags into types, instead of the IllegalArgumentException fabric-api hit every tick.
 		chain.register(TransformPhase.COREMOD, new net.forbric.kernel.transform.FabricFluidBehaviorInjector());
 		// A body that breathes where its eyes are (water breathing, a drowned, lava, a fluid it may breathe in) refills its air
@@ -751,7 +751,7 @@ public final class KernelBoot {
 		chain.register(TransformPhase.COREMOD, new net.forbric.kernel.transform.PredicateGetterResultRecorder());
 		chain.register(TransformPhase.COREMOD, new net.forbric.kernel.mixin.NativeTagTrackerSourceInjector());
 		chain.register(TransformPhase.COREMOD, new net.forbric.kernel.mixin.NativeTagSourceFacadeInjector());
-		// A merged method that asks one fluid both families' type (Fluid.entityInside, BucketItem.playEmptySound) asks each
+		// A base method that asks one fluid both families' type (Fluid.entityInside, BucketItem.playEmptySound) asks each
 		// family only the type it gave the fluid: where the kernel's tag-derived stand-in would answer, that family's empty
 		// type does — a NeoForge or Fabric fluid in minecraft:water no longer puts out fire by MinecraftForge's water type.
 		chain.register(TransformPhase.COREMOD, new net.forbric.kernel.transform.OwnFluidTypeClausesInjector());
@@ -790,7 +790,7 @@ public final class KernelBoot {
 						net.forbric.kernel.transform.CreativePagerBridgeInjector.PROPERTY);
 			}
 		}
-		// The merged game builds its fuels from NeoForge's data map; Fabric's fuel events run on that builder too.
+		// The game builds its fuels from NeoForge's data map; Fabric's fuel events run on that builder too.
 		chain.register(TransformPhase.COREMOD, new net.forbric.kernel.transform.NativeConstructorFacadeRestorer(path -> {
 			try (var in = loader.getGameResourceAsStream(path)) { return in == null ? null : in.readAllBytes(); }
 			catch (java.io.IOException missing) {
@@ -802,7 +802,7 @@ public final class KernelBoot {
 		chain.register(TransformPhase.COREMOD, new net.forbric.kernel.transform.FabricFuelValuesInjector());
 		// NeoForge's "Missing FluidModel" check runs inside the bake Fabric wraps, before Fabric adds its fluid models.
 		chain.register(TransformPhase.COREMOD, new net.forbric.kernel.transform.FabricFluidModelsInjector());
-		// The merged composter reads only NeoForge's compostables data map; on a miss it asks vanilla's map too (what a
+		// NeoForge's composter reads only its compostables data map; on a miss it asks vanilla's map too (what a
 		// Fabric mod added after bootstrap), through vanilla-shaped calls a Fabric wrap such as BCLib's binds to.
 		chain.register(TransformPhase.COREMOD, new net.forbric.kernel.transform.CompostablesFallbackInjector());
 		// Those data-map lookups (and the oxidation, waxing and stripping ones) end in Holder.Reference.getData, which
@@ -810,7 +810,7 @@ public final class KernelBoot {
 		chain.register(TransformPhase.COREMOD, new net.forbric.kernel.transform.UnboundHolderDataInjector());
 		// NeoForge's tooltip registration event goes to each mod on its own, not through ModLoader's aborting fan-out.
 		chain.register(TransformPhase.COREMOD, new net.forbric.kernel.transform.NeoTooltipAppendersInjector());
-		// NeoForge's coremods never run on the merged base; NativeCoremodParity does their rewrites after Mixin. These
+		// NeoForge's coremods never run under the kernel; NativeCoremodParity does their rewrites after Mixin. These
 		// are the parts that must come before it: the flower pot's constructor storing its plant; the biome modifier
 		// pass starting from the biome's current climate, and the biome's getters yielding to a later replacement.
 		chain.register(TransformPhase.COREMOD, new net.forbric.kernel.transform.FlowerPotRepairInjector());
@@ -872,7 +872,7 @@ public final class KernelBoot {
 		chain.register(TransformPhase.COREMOD, new ConfigApiAbiInjector(name -> readDeclaration(loader, name)));
 
 		// Both sides: route ReloadableServerRegistries' two loot seams through the kernel so fabric-loot-api-v3's
-		// LootTableEvents fire from NeoForge's own LootTableLoadEvent point — its mixin cannot fit the merged base.
+		// LootTableEvents fire from NeoForge's own LootTableLoadEvent point — its mixin cannot fit NeoForge's base.
 		if (net.forbric.kernel.transform.LootTableEventBridgeInjector.enabled()) {
 			chain.register(TransformPhase.COREMOD, new net.forbric.kernel.transform.LootTableEventBridgeInjector());
 		} else {
@@ -1096,7 +1096,7 @@ public final class KernelBoot {
 		// inside the seeder. It always read an empty list, so that section of the dialog had never once appeared.
 		PassiveSeeder.reportDependencies();
 
-		// Seed the minimum genuine-loader identity the merged base's patched <clinit>s read (no lifecycle). The
+		// Seed the minimum genuine-loader identity the base's patched <clinit>s read (no lifecycle). The
 		// Dist must match the side — a client seeded as DEDICATED_SERVER makes NeoForge reject the local player's
 		// integrated-server connection ("Server is still starting").
 		PassiveSeeder.seedAll(loader, gameDir, side.api());
@@ -1240,7 +1240,7 @@ public final class KernelBoot {
 	 * that decides {@code isDevMode()}.
 	 *
 	 * <p>A jar declaring no loader manifest at all is a plain library: its claim is unowned and it stays unowned, along
-	 * with the merged base, the runtime carriers and the MC libraries.
+	 * with the base, the runtime carriers and the MC libraries.
 	 */
 	private static Map<Path, LoaderProbePolicy.Family> probeFamilies(List<Path> fabricJars, List<Path> modJars) {
 		Map<Path, LoaderProbePolicy.Family> families = new java.util.LinkedHashMap<>();
@@ -1316,7 +1316,7 @@ public final class KernelBoot {
 	 * {@code IllegalAccessError: tried to access private field FoodData.exhaustionLevel} the moment its tick
 	 * listener finally started firing. Architectury declares ~30 of these, balm one, so this is not a niche path.
 	 *
-	 * <p>Names are Mojmap and the merged base runs Mojmap, so the directives are used as parsed — no remap step.
+	 * <p>Names are Mojmap and the base runs Mojmap, so the directives are used as parsed — no remap step.
 	 * Best-effort per jar: one unreadable AT file must not stop the others.
 	 *
 	 * <h2>The carriers' own files, which is the larger half</h2>

@@ -33,7 +33,7 @@ import net.forbric.kernel.util.Caught;
  * value that read sees, and its answer is what that read gets, as natively.
  *
  * <p>Vanilla's {@code BucketItem.playEmptySound} stores its sound once — lava's or water's — and hands it straight to
- * {@code playSound}; a {@code @ModifyVariable} at that {@code STORE} decides which sound plays. The merged method asks the
+ * {@code playSound}; a {@code @ModifyVariable} at that {@code STORE} decides which sound plays. The current method asks the
  * fluid type of one carrier first and stores that, stores vanilla's choice only when the type has none, then stores the other
  * carrier's custom sound when it has one: three stores, two or three of them on every use, so the modifier ran two or three
  * times on values vanilla never stores. Every one of those paths reaches the same {@code playSound} read.
@@ -43,9 +43,9 @@ import net.forbric.kernel.util.Caught;
  * <ul>
  *   <li>the method its selectors bind in the class the mod was compiled against stores that local exactly once, and from the
  *       store to the first read of it there are only reads of other locals and constants (nothing that could look at it);</li>
- *   <li>the same method in the merged class stores the local more often, and holds exactly one read of it inside the same
+ *   <li>the same method in the current class stores the local more often, and holds exactly one read of it inside the same
  *       instructions as the native read — the same reads before it, up to the instruction that consumes it;</li>
- *   <li>that read comes after every merged store, on every path the local holds a value there, and nothing jumps back over
+ *   <li>that read comes after every current store, on every path the local holds a value there, and nothing jumps back over
  *       it.</li>
  * </ul>
  * Its point becomes {@code @At("LOAD")} with the ordinal of that read. {@code -Dforbric.nativeConsumerStores=off} moves
@@ -114,7 +114,7 @@ public final class NativeConsumerStores {
 	}
 
 	/**
-	 * The ordinal, among the merged method's reads of {@code mergedSlot}, of the read that is the native method's first read
+	 * The ordinal, among the current method's reads of {@code mergedSlot}, of the read that is the native method's first read
 	 * after its one store of {@code nativeSlot}; -1 where the proof fails or nothing needs moving.
 	 */
 	static int consumer(MethodNode was, int nativeSlot, MethodNode host, int mergedSlot, String owner, String nativeOwner) {

@@ -80,14 +80,14 @@ public final class MixinDefaultPredicateAdapter {
         if (!"INVOKE".equals(MixinFit.value(at, "value")) || MixinFit.value(at, "shift") != null) return null;
         Object ordinal = MixinFit.value(at, "ordinal");
         if (ordinal instanceof Number number && number.intValue() >= 0) return null;
-        // The method Mixin binds the wrap to in the merged host, which must be the one the mod wrote it for.
+        // The method Mixin binds the wrap to in the current host, which must be the one the mod wrote it for.
         MethodNode body = MixinTargetSelectors.boundAsWritten(handler, host, nativeHost);
         if (body == null || (handler.access & Opcodes.ACC_STATIC) == 0 && (body.access & Opcodes.ACC_STATIC) != 0) return null;
         // The call the redirect names, as Mixin resolves its target: spelled in full, that member; shortened, the one call
         // it selects in the method the mod was compiled against (the merged body no longer makes it).
         String named = MixinCallbackShape.pointMember(at, null);
         if (named == null) {
-            // Only a merged body that still calls a method of that name (on that owner, where given) can hold the live
+            // Only a current body that still calls a method of that name (on that owner, where given) can hold the live
             // overload; any other body is left before the class the mod was compiled against is read.
             MixinFit.Member shortened = MixinFit.parseMember(MixinFit.asString(MixinFit.value(at, "target")));
             if (shortened == null || !callsNamed(body, shortened)) return null;

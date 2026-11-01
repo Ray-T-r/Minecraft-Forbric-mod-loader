@@ -14,7 +14,7 @@ import net.forbric.kernel.util.ForbricLog;
  * Lets a redirect that replaces the block-state model codecs the carrier builds keep the codec it replaces.
  *
  * <p>fabric-model-loading's {@code BlockStateModelUnbakedMixin} redirects the two {@code Codec.flatComapMap} calls in
- * {@code BlockStateModel$Unbaked.<clinit>} and returns fabric's own codecs instead. On the merged base those calls build
+ * {@code BlockStateModel$Unbaked.<clinit>} and returns fabric's own codecs instead. On the base those calls build
  * NeoForge's codecs, the only readers of a variant's {@code "type"} key, so every NeoForge custom block-state model parsed
  * as an empty plain variant while fabric-api was installed (issue #16: Sophisticated Backpacks' placed backpack drew only
  * its outline). Each such handler now makes the redirected call itself and returns

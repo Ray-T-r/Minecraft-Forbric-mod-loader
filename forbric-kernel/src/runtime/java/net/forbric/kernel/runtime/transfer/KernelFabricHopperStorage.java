@@ -23,7 +23,7 @@ import net.minecraft.world.level.block.entity.HopperBlockEntity;
  *
  * <p>fabric-transfer-api-v1's {@code HopperBlockEntityMixin} asks {@code ItemStorage.SIDED} when vanilla's hopper found
  * no container: after {@code getAttachedContainer} in {@code ejectItems}, after {@code getSourceContainer} in
- * {@code suckInItems}. The merged hopper is NeoForge's, which calls neither, so the mixin never attached. NeoForge
+ * {@code suckInItems}. NeoForge's hopper calls neither, so the mixin never attached. NeoForge
  * sees a Fabric storage only through the kernel's capability bridge, and that bridge exposes only a slotted storage on
  * a block entity: a {@code CombinedStorage}, a drawer or network storage, a block with no block entity — or every
  * Fabric storage with {@code -Dforbric.transferBridge=off} — was invisible, and the hopper moved nothing.

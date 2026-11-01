@@ -16,7 +16,7 @@ final class NativeCallbackSeam {
      * {@code target} is the {@code @At(INVOKE)} target as the mod wrote it. It selects calls as Mixin matches one
      * ({@link MixinCallbackShape#selected}: whitespace, a dotted owner, and an owner or descriptor left out all read as
      * Mixin reads them), in {@code source}, the method the handler was written for: there it must select exactly one
-     * call, and that call's member is the one followed into the helper and named by the plan. The merged method must
+     * call, and that call's member is the one followed into the helper and named by the plan. The current method must
      * keep no call the target would still select.
      */
     static Plan derive(ClassNode original, ClassNode current, MethodNode source, String target,
@@ -25,7 +25,7 @@ final class NativeCallbackSeam {
     }
 
     /**
-     * {@link #derive(ClassNode, ClassNode, MethodNode, String, Function)}, where the merged method may reach the helper
+     * {@link #derive(ClassNode, ClassNode, MethodNode, String, Function)}, where the current method may reach the helper
      * by the way one of {@code peers} reaches its own copy of the call instead: {@code peers} are the same class as other
      * ecosystems compiled it natively. A merge that keeps another ecosystem's own edit in front of the helper (its hook,
      * re-deriving the very operands the call is handed) leaves a prefix no longer the source's, but exactly that

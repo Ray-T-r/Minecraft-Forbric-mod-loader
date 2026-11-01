@@ -30,7 +30,7 @@ import net.forbric.kernel.util.Caught;
  * that answer in has not caught up with the equipment yet.
  *
  * <p>Vanilla's {@code LivingEntity.canGlide()} — and MinecraftForge's, and so Fabric's — reads the equipment: any slot
- * holding a glider that fits it. NeoForge's, which the merge took, reads the {@code neoforge:gliding_flight} attribute
+ * holding a glider that fits it. NeoForge's, which NeoForge took, reads the {@code neoforge:gliding_flight} attribute
  * when its flag says so ({@code canGlide()} passes true) and the equipment only otherwise. That attribute is the same
  * answer cached: it is derived from the equipment in {@code collectEquipmentChanges}, once per entity tick. Between an
  * equipment change and the next tick the cache is stale, so a mod that equips an elytra and asks
@@ -45,7 +45,7 @@ import net.forbric.kernel.util.Caught;
  * {@code collectEquipmentChanges} keeps.
  *
  * <p>Applied only where it is proved: the native reference's {@code canGlide()} reads no attribute and asks every
- * equipment slot, while the merged {@code canGlide(Z)} reads one and branches on its flag; the class keeps the last
+ * equipment slot, while NeoForge's {@code canGlide(Z)} reads one and branches on its flag; the class keeps the last
  * applied equipment in a {@code Map} field that its {@code equipmentHasChanged} test is run against.
  * {@code -Dforbric.glideFreshEquipment=off} leaves the carrier's body as shipped.
  */
@@ -147,7 +147,7 @@ public final class GlideFreshEquipmentInjector implements ClassTransformer {
 		return m;
 	}
 
-	/** The merged {@code canGlide(Z)}: reads an attribute value, then decides on its flag (local 1). */
+	/** NeoForge's {@code canGlide(Z)}: reads an attribute value, then decides on its flag (local 1). */
 	private static boolean readsAttributeThenBranchesOnFlag(MethodNode flagged) {
 		boolean attribute = false, flag = false;
 		for (AbstractInsnNode insn : flagged.instructions) {
@@ -195,7 +195,7 @@ public final class GlideFreshEquipmentInjector implements ClassTransformer {
 
 	/**
 	 * The {@code Map} field holding the equipment last applied: the map whose {@code get(slot)} feeds an
-	 * {@code equipmentHasChanged} test, read either directly from the field or, as the merged body does, from the one
+	 * {@code equipmentHasChanged} test, read either directly from the field or, as the base's body does, from the one
 	 * {@code Map} parameter of the method that tests, which the class calls with that field.
 	 */
 	private static FieldNode lastAppliedEquipment(ClassNode node) {

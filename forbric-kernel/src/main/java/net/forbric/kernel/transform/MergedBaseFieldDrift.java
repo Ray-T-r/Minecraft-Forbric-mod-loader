@@ -19,7 +19,7 @@ package net.forbric.kernel.transform;
 import java.util.List;
 
 /**
- * Vanilla fields whose descriptor the merge changed and that nothing restores: a mod compiled against vanilla
+ * Vanilla fields whose descriptor NeoForge changed and that nothing restores: a mod compiled against vanilla
  * reads them with vanilla's descriptor and gets {@code NoSuchFieldError}.
  *
  * <p>This is the ledger {@code MergedBaseNoVanishedVanillaFieldTest} keeps honest in both directions (a new

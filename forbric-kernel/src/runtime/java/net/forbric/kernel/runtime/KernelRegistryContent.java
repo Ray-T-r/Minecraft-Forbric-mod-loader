@@ -61,7 +61,7 @@ public final class KernelRegistryContent {
 	/**
 	 * Refills NeoForge's blockstate→id map, which the registration window's clear callback empties.
 	 *
-	 * <p>This is also {@code Block.BLOCK_STATE_REGISTRY} — the merged {@code Block.<clinit>} reads
+	 * <p>This is also {@code Block.BLOCK_STATE_REGISTRY} — NeoForge's {@code Block.<clinit>} reads
 	 * {@code GameData.getBlockStateIDMap()} into it — so it is what {@code Block.getId} answers from, what
 	 * {@code block_update} encodes with, and what any mod that walks every state in the game iterates.
 	 *
@@ -269,9 +269,9 @@ public final class KernelRegistryContent {
 	 * Fills {@code Item.BY_BLOCK} for every registered {@code BlockItem} — the block→item link.
 	 *
 	 * <p>{@code Block.asItem()} resolves through {@code Item.byBlock(this)}, which is a plain
-	 * {@code BY_BLOCK.get(block)}. The merged {@code BlockItem} constructor only stores its block; it never adds
+	 * {@code BY_BLOCK.get(block)}. NeoForge's {@code BlockItem} constructor only stores its block; it never adds
 	 * itself to that map. In Forge the map is filled by the ITEMS registry's ADD-CALLBACK
-	 * ({@code GameData.ItemCallbacks} → {@code BlockItem.registerBlocks}), and on the merged game that callback
+	 * ({@code GameData.ItemCallbacks} → {@code BlockItem.registerBlocks}), and in the game that callback
 	 * linked into its own registry's map, not the one {@code Item.byBlock} reads — so for every modded block
 	 * {@code asItem()} fell through to AIR.
 	 *

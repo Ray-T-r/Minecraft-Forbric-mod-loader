@@ -48,7 +48,7 @@ import net.forbric.kernel.util.ForbricLog;
  * the vanilla {@code CuboidModel$Deserializer}. On MinecraftForge the same key is read INSIDE that vanilla
  * deserializer (its geometry loaders), and so are the format hooks mods put on it: fusion claims
  * {@code "loader": "fusion:model"} at its HEAD. Fabric's {@code "fabric:type"} is never read at all, because the
- * two fabric-model-loading injectors that dispatched it cannot fit the merged {@code ModelManager}.
+ * two fabric-model-loading injectors that dispatched it cannot fit NeoForge's {@code ModelManager}.
  *
  * <p>Measured on sweep90: Traveler's Backpack's 220 backpack block and item models failed to bake
  * ({@code Expected BackpackDynamicModel, instead received ...CuboidModel}), and fusion's connected-texture models

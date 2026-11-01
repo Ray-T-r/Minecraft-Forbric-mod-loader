@@ -35,7 +35,7 @@ public final class MixinConfigPolicy {
 	}
 
 	/**
-	 * Whether {@code config} must not be registered: either it is on the built-in merged-base incompatibility list
+	 * Whether {@code config} must not be registered: either it is on the built-in base incompatibility list
 	 * ({@link MergedBaseMixinCompat#DISABLED_CONFIGS}) or {@code -Dforbric.disableMixinConfigs} names it (csv; a
 	 * trailing {@code *} is a prefix glob).
 	 *

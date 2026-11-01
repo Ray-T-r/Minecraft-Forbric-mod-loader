@@ -32,7 +32,7 @@ import net.forbric.kernel.util.ForbricSwitches;
 /**
  * A body that breathes where its eyes are refills its air as in vanilla, not as the carrier's breathing hook would hold it.
  *
- * <p>The merged {@code LivingEntity.baseTick} is NeoForge's: it hands the air supply to {@code CommonHooks.onLivingBreathe},
+ * <p>NeoForge's {@code LivingEntity.baseTick} hands the air supply to {@code CommonHooks.onLivingBreathe},
  * which decides it its own way. Where the eye is in a fluid that is not air and the body does not drown there — water
  * breathing, conduit power, a drowned, an invulnerable player, lava, a mod's fluid it may breathe in — the hook marks the body
  * as breathing and sets the refill it hands its breathe event to zero, so the air stays where it was. Vanilla refills it by 4 a

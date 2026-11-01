@@ -158,7 +158,7 @@ public final class KernelMixinBootstrap {
 		loader.knotDelegate().attach();
 		var codecReturns = new net.forbric.kernel.transform.PostMixinCodecReturnArbitration();
 		var callbackPriority = new net.forbric.kernel.transform.PostMixinCallbackPriority();
-		// UncalledValueRelay after the fixups: a vanilla method the merged game never calls, into which guest hooks were woven, gets
+		// UncalledValueRelay after the fixups: a vanilla method the game never calls, into which guest hooks were woven, gets
 		// a relay of its woven body the carrier's own place runs (Block.tryDropExperience, from NeoForge's drops event). It needs
 		// the bytes Mixin was handed, to tell what was woven.
 		//

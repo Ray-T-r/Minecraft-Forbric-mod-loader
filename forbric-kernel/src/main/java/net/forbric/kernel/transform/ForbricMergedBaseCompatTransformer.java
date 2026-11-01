@@ -48,7 +48,9 @@ import net.forbric.kernel.util.Caught;
 import net.forbric.kernel.util.ForbricLog;
 
 /**
- * Repairs class-local bytecode invariants that can drift when two patched Minecraft bases are merged.
+ * Repairs class-local bytecode drift between the base (NeoForge's patched Minecraft) and vanilla: what NeoForge's
+ * decompile-recompile pipeline or its patches changed that a Fabric mod or vanilla parity cannot live with. (The class
+ * kept its merged-base name; Stage 6 renames.)
  */
 public final class ForbricMergedBaseCompatTransformer implements ClassTransformer {
 	/**
@@ -273,10 +275,10 @@ public final class ForbricMergedBaseCompatTransformer implements ClassTransforme
 	private static final String KERNEL_KEY_MAPPING_MAP = "net/forbric/kernel/runtime/KernelKeyMappingMap";
 
 	/**
-	 * Gives merged {@code BlockState} its own {@code getAppearance}, because it inherits TWO.
+	 * Gives {@code BlockState} its own {@code getAppearance} where it inherits TWO.
 	 *
-	 * <p>The merged class declares {@code IBlockStateExtension} (NeoForge) and {@code IForgeBlockState}
-	 * (MinecraftForge); fabric-api's mixin then adds {@code FabricBlockState}. NeoForge's and Fabric's both
+	 * <p>On the merged base of Forbric 0.4 and earlier the class declared {@code IBlockStateExtension} (NeoForge) and
+	 * {@code IForgeBlockState} (MinecraftForge); fabric-api's mixin then adds {@code FabricBlockState}. NeoForge's and Fabric's both
 	 * carry a {@code default getAppearance} with a byte-identical descriptor, neither overrides the other, and
 	 * the class declares nothing — so the JVM refuses to choose and the FIRST caller dies:
 	 * <pre>
@@ -521,15 +523,13 @@ public final class ForbricMergedBaseCompatTransformer implements ClassTransforme
 	/**
 	 * Gives {@code ParticleResources}' vanilla-typed {@code providers} field a live view of the one that is written.
 	 *
-	 * <p>The same failure class as the merged {@code KeyMapping}'s two {@code MAP} lookups, at field level. Vanilla declares
-	 * {@code providers} as {@code Int2ObjectMap} keyed by particle id; NeoForge 26.2.0.88 RE-TYPES that field to
-	 * {@code Map<Identifier, ?>}. Same name, different descriptor is legal, so the merge keeps both and the
-	 * surviving {@code <init>} writes only NeoForge's. The vanilla-typed one is null for the life of the process.
-	 *
-	 * <p>The merge tool sees this pair and correctly declines to delete either — deleting the unwritten one trades
-	 * an NPE for a {@code NoSuchFieldError} at the same instruction — and it cannot repair it: its
-	 * exclusive-added-field initializer is scoped to fields an ecosystem ADDED, and this is a RE-TYPED VANILLA
-	 * field, outside that set by construction. So the repair belongs here, where the whole class is in hand.
+	 * <p>The same failure class as {@code KeyMapping}'s re-typed {@code MAP}, at field level. Vanilla declares
+	 * {@code providers} as {@code Int2ObjectMap} keyed by particle id; NeoForge RE-TYPES that field to
+	 * {@code Map<Identifier, ?>}. VanillaMemberTwinInjector adds vanilla's descriptor back beside it (same name,
+	 * different descriptor is legal), and {@code <init>} writes only NeoForge's, so without this the vanilla-typed
+	 * one is null for the life of the process. (The merged base of Forbric 0.4 and earlier carried both fields, and
+	 * its merge tool could not initialise a re-typed vanilla field.) So the repair belongs here, where the whole class
+	 * is in hand.
 	 *
 	 * <p>A view rather than a second map, because the two halves have to stay ONE mechanism. fabric-api's
 	 * {@code DirectParticleProviderRegistry.register} reads the field DIRECTLY — {@code getfield providers} of the
@@ -545,7 +545,7 @@ public final class ForbricMergedBaseCompatTransformer implements ClassTransforme
 	 */
 	private static boolean giveTheVanillaParticleMapAViewOfTheLiveOne(ClassNode node) {
 		if (!PARTICLE_RESOURCES.equals(node.name)) return false;
-		// Only when the merge actually split it. A single-ecosystem or rebuilt base is already coherent.
+		// Only when both fields are there (VanillaMemberTwinInjector adds vanilla's); a base with one is coherent.
 		if (!hasField(node, "providers", NAME_KEYED) || !hasField(node, "providers", ID_KEYED)) return false;
 
 		MethodNode init = findMethod(node, "<init>", "()V");
@@ -597,8 +597,8 @@ public final class ForbricMergedBaseCompatTransformer implements ClassTransforme
 	 * Stops one ecosystem's condition dialect from failing the other ecosystem's data files — and with them the
 	 * whole registry load.
 	 *
-	 * <p>The merged {@code RegistryLoadTask$PendingRegistration.loadFromResource} carries NeoForge's patch: stock
-	 * Minecraft's body calls {@code Decoder.parse} straight, and the merged one wraps every element in
+	 * <p>{@code RegistryLoadTask$PendingRegistration.loadFromResource} carries NeoForge's patch: stock
+	 * Minecraft's body calls {@code Decoder.parse} straight, and NeoForge's wraps every element in
 	 * {@code ConditionalOps.createConditionalCodec} first. There is no switch on it and no per-pack scoping, so
 	 * EVERY datapack-registry element from EVERY pack is judged by NeoForge's evaluator.
 	 *
@@ -650,15 +650,15 @@ public final class ForbricMergedBaseCompatTransformer implements ClassTransforme
 	}
 
 	/**
-	 * Converts a guest mixin's private "skip this file" sentinel before the merged reader casts it and dies.
+	 * Converts a guest mixin's private "skip this file" sentinel before the base's reader casts it and dies.
 	 *
 	 * <p>fabric-api's {@code SimpleJsonResourceReloadListenerMixin} is a producer and a consumer that only work
-	 * as a pair, and on the merged base exactly one of them applies. The producer — a {@code @WrapOperation} on
+	 * as a pair, and on NeoForge's base exactly one of them applies. The producer — a {@code @WrapOperation} on
 	 * {@code Codec.parse} — returns {@code DataResult.success(SKIP_DATA_MARKER)}, a bare {@code new Object()},
 	 * when a file's conditions say no. The consumer, an {@code @Inject} that recognises the marker, targets
-	 * {@code lambda$scanDirectory$0(Codec,Identifier,Map,Object)}; the merge left the class carrying TWO methods
-	 * of that name and the live {@code invokedynamic} binds the OTHER one,
-	 * {@code (Identifier,Identifier,Map,Optional)}. So the marker reaches {@code DataResult.ifSuccess}, whose
+	 * {@code lambda$scanDirectory$0(Codec,Identifier,Map,Object)}; NeoForge's class carries only
+	 * {@code (Identifier,Identifier,Map,Optional)} under that name (the merged base of Forbric 0.4 and earlier carried
+	 * both, and the live {@code invokedynamic} bound the Optional one), so the consumer binds nothing. So the marker reaches {@code DataResult.ifSuccess}, whose
 	 * consumer casts it to {@code Optional}, and the datapack load dies: "can't proceed with server load".
 	 *
 	 * <p>Both {@code scanDirectory} and {@code scanDirectoryWithModifier} are repaired, not just the one observed
@@ -759,7 +759,7 @@ public final class ForbricMergedBaseCompatTransformer implements ClassTransforme
 	 *
 	 * <p>The other half of {@link #letForeignResourceConditionsThrough}. That one stopped NeoForge's evaluator
 	 * failing a whole world load over an id it does not own; this one makes the answer come from the mod that
-	 * does own it. fabric-api reads that key from exactly two mixins and the merged base defeats both — one
+	 * does own it. fabric-api reads that key from exactly two mixins and NeoForge's base defeats both — one
 	 * anchors at a {@code Decoder.parse} NeoForge's patch replaced with {@code Codec.parse}, the other targets a
 	 * lambda whose descriptor the same patch changed — and the kernel's own {@code defaultRequire} rewrite turns
 	 * the first into a SILENT soft-skip. So every Fabric mod's conditional data file has loaded unconditionally
@@ -832,7 +832,8 @@ public final class ForbricMergedBaseCompatTransformer implements ClassTransforme
 	 * draws vanilla's way while NeoForge's live map is still exactly its shipped default, NeoForge's way as soon as a
 	 * mod changed it (so a NeoForge mod's additions count), and vanilla's way again if the map is missing altogether,
 	 * so a world never loses its dungeons to an unloaded data map. gate-m31 holds "every dungeon spawns vanilla's mob".
-	 * This is a vanilla-parity repair, not merge damage: NeoForge's own base draws the same way the merged one did.
+	 * This is a vanilla-parity repair, not merge damage: NeoForge's own base draws the same way the merged base of
+	 * Forbric 0.4 and earlier did.
 	 *
 	 * <p>One instruction for one: the call is static, takes the same argument and returns the same type, so
 	 * nothing on the stack or in a frame moves.
@@ -883,7 +884,7 @@ public final class ForbricMergedBaseCompatTransformer implements ClassTransforme
 	 * Puts the game's random sources back in double precision.
 	 *
 	 * <p>Vanilla's two {@code nextDouble()} bodies scale 53 random bits by 2^-53 in double:
-	 * {@code nextBits(53); l2d; ldc2_w 1.1102230246251565E-16; dmul}. The merged base does it in FLOAT —
+	 * {@code nextBits(53); l2d; ldc2_w 1.1102230246251565E-16; dmul}. NeoForge's base does it in FLOAT —
 	 * {@code l2f; ldc 1.110223E-16f; fmul; f2d} — in both {@code XoroshiroRandomSource.nextDouble()} and the
 	 * {@code BitRandomSource.nextDouble()} default that {@code LegacyRandomSource} and {@code WorldgenRandom}
 	 * inherit. The constant is right (2^-53 is exact as a float); the {@code l2f} is not, because it crushes a
@@ -904,9 +905,9 @@ public final class ForbricMergedBaseCompatTransformer implements ClassTransforme
 	 *
 	 * <p>This is not a patch either ecosystem wrote. {@code patched-mc-forge-26.2.jar} carries vanilla's
 	 * {@code l2d/dmul}; {@code patched-mc-neoforge-26.2.jar} carries the float form, which is what NeoForge's
-	 * decompile-recompile pipeline emitted, and the byte merge kept the NeoForge body. It names no class from
-	 * either ecosystem, so {@code merge-conflicts.txt} — which reports conflicts by REFERENCE, on purpose — cannot
-	 * see it and never did. That is the general shape to watch for: a purely numeric method can be re-typed by the
+	 * decompile-recompile pipeline emitted (the merged base of Forbric 0.4 and earlier kept that body). It names no
+	 * class from either ecosystem, so the old merge's {@code merge-conflicts.txt} — which reported conflicts by
+	 * REFERENCE, on purpose — never saw it. That is the general shape to watch for: a purely numeric method can be re-typed by the
 	 * pipeline and leave no trace in the conflict ledger.
 	 *
 	 * <p>Matched by SHAPE across the whole base rather than by a list of two class names, because the pipeline
@@ -964,13 +965,13 @@ public final class ForbricMergedBaseCompatTransformer implements ClassTransforme
 	private static final double RADIANS_TO_DEGREES = (double) (float) (180.0F / (float) Math.PI);
 
 	/**
-	 * Restores the radians-to-degrees constant vanilla folded, which the merged base recomputes at run time.
+	 * Restores the radians-to-degrees constant vanilla folded, which NeoForge's base recomputes at run time.
 	 *
 	 * <p>Vanilla's source multiplies by a compile-time constant: {@code (double)(180.0F / (float)Math.PI)}, which
-	 * javac folds in FLOAT and widens, giving {@code ldc2_w 57.2957763671875; dmul}. The merged base instead
+	 * javac folds in FLOAT and widens, giving {@code ldc2_w 57.2957763671875; dmul}. NeoForge's base instead
 	 * carries the expression — {@code ldc2_w 180.0; dmul; ldc2_w 3.1415927410125732; ddiv} — and evaluates it in
 	 * DOUBLE every time, which is a different number: 57.29577791868205. They differ by 1.55e-6, a relative
-	 * 2.7e-8, and the merged one is the more accurate of the two. Accuracy is not the question; being the game
+	 * 2.7e-8, and NeoForge's is the more accurate of the two. Accuracy is not the question; being the game
 	 * the same seed and the same inputs produce elsewhere is.
 	 *
 	 * <p>45 sites across 31 methods, and they are the ones that turn a direction into a rotation:
@@ -978,12 +979,12 @@ public final class ForbricMergedBaseCompatTransformer implements ClassTransforme
 	 * mob-specific siblings, {@code LookControl.getYRotD}, {@code Projectile.shoot} and {@code updateRotation},
 	 * {@code ProjectileUtil.rotateTowardsMovement}, {@code CommandSourceStack.facing}, the dragon phases,
 	 * {@code WitherBoss.aiStep}, {@code SignBlockEntity.isFacingFrontText}. Vanilla 26.2 has ZERO sites of this
-	 * shape; the merged base has 45.
+	 * shape; NeoForge's base has 45.
 	 *
 	 * <p>Same origin as {@link #restoreDoublePrecisionToTheRandomSources(ClassNode)} and the same blind spot:
-	 * NeoForge's decompile-recompile pipeline wrote the folded constant back out as its expression, the byte
-	 * merge kept that body, and because the method names no class from any ecosystem,
-	 * {@code merge-conflicts.txt} — which reports conflicts by reference — never mentioned it. A differential
+	 * NeoForge's decompile-recompile pipeline wrote the folded constant back out as its expression (the merged base
+	 * of Forbric 0.4 and earlier kept that body), and because the method names no class from any ecosystem, the old
+	 * merge's {@code merge-conflicts.txt} — which reported conflicts by reference — never mentioned it. A differential
 	 * census of all 94,202 shared methods, normalised for everything a recompile may legally change, found
 	 * exactly two families of this kind: that one and this one.
 	 *
@@ -1034,7 +1035,7 @@ public final class ForbricMergedBaseCompatTransformer implements ClassTransforme
 	}
 
 	/**
-	 * Calls vanilla's {@code FriendlyByteBuf.writeByte(int)} again where the merged body calls NeoForge's
+	 * Calls vanilla's {@code FriendlyByteBuf.writeByte(int)} again where the base's body calls NeoForge's
 	 * {@code writeByte(byte)}.
 	 *
 	 * <p>NeoForge's {@code IFriendlyByteBufExtension} declares {@code writeByte(byte)}, which only forwards to
@@ -1042,7 +1043,7 @@ public final class ForbricMergedBaseCompatTransformer implements ClassTransforme
 	 * {@code writeByte} handed a {@code byte} to the extension's overload — the more specific one — so NeoForge's game
 	 * calls it where vanilla and MinecraftForge's game call {@code writeByte(int)}: fourteen sites in ten network
 	 * {@code write} methods, through {@code FriendlyByteBuf} or {@code RegistryFriendlyByteBuf} as vanilla does. The
-	 * merge kept NeoForge's bodies, and a mixin anchored on vanilla's call bound nothing: ViaFabricPlus' 1.15.2 ability
+	 * base has NeoForge's bodies, and a mixin anchored on vanilla's call bound nothing: ViaFabricPlus' 1.15.2 ability
 	 * flags redirect {@code ServerboundPlayerAbilitiesPacket.write}'s {@code writeByte(int)}, a required injector, so
 	 * the strict policy stopped the client as soon as a world loaded.
 	 *
@@ -1145,7 +1146,7 @@ public final class ForbricMergedBaseCompatTransformer implements ClassTransforme
 	 * registries come back among the declared ones — so the neuter costs every NeoForge mod that adds ores, mobs
 	 * or features to a biome through {@code data/<ns>/neoforge/biome_modifier/*.json}.
 	 *
-	 * <p>Simply dropping the neuter is not the same thing, and the difference matters: the merged
+	 * <p>Simply dropping the neuter is not the same thing, and the difference matters: NeoForge's
 	 * {@code DedicatedServer} and {@code IntegratedServer} both call NeoForge's {@code handleServerAboutToStart},
 	 * which calls {@code runModifiers} FIRST and posts {@code ServerAboutToStartEvent} after it. An unguarded
 	 * {@code lookupOrThrow} there does not cost the modifiers, it costs the boot — and it would do so on a
@@ -1182,12 +1183,12 @@ public final class ForbricMergedBaseCompatTransformer implements ClassTransforme
 	/**
 	 * Gives {@code KeyMapping} vanilla's {@code MAP:Ljava/util/Map;} back, as a view of the mappings by key.
 	 *
-	 * <p>NeoForge re-types vanilla's {@code MAP} to its own {@code KeyMappingLookup} (the merged class kept MinecraftForge's
-	 * re-typed one beside it) and not vanilla's, so a mod compiled against vanilla
+	 * <p>NeoForge re-types vanilla's {@code MAP} to its own {@code KeyMappingLookup} and does not
+	 * keep vanilla's, so a mod compiled against vanilla
 	 * that reads {@code KeyMapping.MAP} as a {@code Map} gets {@code NoSuchFieldError}. LiquidBounce reads it on every
 	 * key press while a screen is open (its inventory movement), so the client died the first time a key was pressed
-	 * in a world. Nothing in the merged game reads vanilla's descriptor, so the field is added rather than moved, and
-	 * its value is {@code KernelKeyMappingMap}'s view of vanilla's {@code ALL}, which the merged class still keeps
+	 * in a world. Nothing in the game reads vanilla's descriptor, so the field is added rather than moved, and
+	 * its value is {@code KernelKeyMappingMap}'s view of vanilla's {@code ALL}, which NeoForge's class still keeps
 	 * and fills: what vanilla's map holds, grouped on each read.
 	 *
 	 * <p>Public, because the access wideners that would make vanilla's private field accessible have already run when
@@ -1543,9 +1544,9 @@ public final class ForbricMergedBaseCompatTransformer implements ClassTransforme
 	 * Takes the loader brand out of the window title.
 	 *
 	 * <p>{@code Minecraft.createTitle} builds "Minecraft" and then, when the game reports itself as modified, splices
-	 * in a space, the loader's name and an asterisk before the version — so the merged base, whose title patch is
-	 * NeoForge's, puts "NeoForge" on the window of an instance that is running Fabric, MinecraftForge and NeoForge
-	 * mods side by side. Naming one of the three is worse than naming none.
+	 * in a space, the loader's name and an asterisk before the version — so the base, whose title patch is
+	 * NeoForge's, puts "NeoForge" on the window of an instance that is running Fabric and NeoForge mods side by
+	 * side. Naming one of the two is worse than naming none.
 	 *
 	 * <p>The brand and its leading space go; the asterisk stays, which is vanilla's own mark for a modified game and
 	 * leaves the title reading "Minecraft* 26.2". Only that one append chain is touched, so a title patch that
@@ -1624,7 +1625,7 @@ public final class ForbricMergedBaseCompatTransformer implements ClassTransforme
 
 	/**
 	 * Makes a picture-in-picture renderer registered the VANILLA way draw again, by giving NeoForge's pooled lookup
-	 * a fallback to the map the merge orphaned.
+	 * a fallback to vanilla's plain map (VanillaMemberTwinInjector adds it back; NeoForge's constructor never writes it).
 	 *
 	 * <p>{@code GuiRenderer} ends up with BOTH ecosystems' versions of the same job:
 	 *
@@ -1648,7 +1649,7 @@ public final class ForbricMergedBaseCompatTransformer implements ClassTransforme
 	 * guest's single long-lived instance to one would free its GL target out from under it.
 	 *
 	 * <p>The bridge method is synthesized from the descriptors of the orphaned overload itself rather than from
-	 * hard-coded names, so it stays correct if the merge shifts.
+	 * hard-coded names, so it stays correct if the base shifts.
 	 */
 	private static boolean bridgeOrphanedPipRenderers(ClassNode node) {
 		if (!GUI_RENDERER.equals(node.name)) return false;
@@ -1664,7 +1665,7 @@ public final class ForbricMergedBaseCompatTransformer implements ClassTransforme
 		if (orphaned == null || live == null) return false;
 
 		// One source for the state type: the CALL SITE's. Deriving the bridge's descriptor from the orphaned overload
-		// instead would let the two drift apart if a future merge narrows one of them, and the only symptom would be a
+		// instead would let the two drift apart if a future base narrows one of them, and the only symptom would be a
 		// NoSuchMethodError on the first frame that actually reaches an orphaned renderer.
 		String stateDesc = Type.getArgumentTypes(live.desc)[0].getDescriptor();
 		MethodNode bridge = buildPipBridge(node, orphaned, stateDesc);
@@ -1680,12 +1681,12 @@ public final class ForbricMergedBaseCompatTransformer implements ClassTransforme
 	}
 
 	/**
-	 * Assigns the orphaned map in {@code GuiRenderer.<init>}, from MinecraftForge's registration event.
+	 * Assigns vanilla's plain map in {@code GuiRenderer.<init>}, from the renderers guest mixins add to the
+	 * constructor's list ({@link net.forbric.kernel.runtime.KernelForgePipRenderers}).
 	 *
-	 * <p>The field is declared, read in one place, and <b>written nowhere</b>: NeoForge's constructor won the byte
-	 * merge and fills its pooled map instead, so vanilla's plain one stays null. That is two failures in one. A
-	 * MinecraftForge mod's picture-in-picture renderer has nothing to register into, because the event that would
-	 * have filled this map is posted by nobody; and the fallback above reads the map WITHOUT a null check, so the
+	 * <p>The field (VanillaMemberTwinInjector's twin) is declared, read in one place, and <b>written nowhere</b>:
+	 * NeoForge's constructor fills its pooled map instead, so vanilla's plain one stays null. A guest's plain
+	 * renderer then has nothing to live in, and the fallback above reads the map WITHOUT a null check, so the
 	 * first frame reaching a state class with no pool would throw inside the game's own render loop.
 	 *
 	 * <p>Appended before each RETURN of the constructor, which is where a final field may still be assigned.

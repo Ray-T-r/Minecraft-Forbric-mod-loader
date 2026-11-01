@@ -39,7 +39,7 @@ public final class MixinNullableCompositeCallback {
 			List<AnnotationNode> points=MixinFit.atNodes(injection);
 			if(points.size()!=1||!"INVOKE_ASSIGN".equals(MixinFit.value(points.getFirst(),"value"))
 					||MixinFit.value(points.getFirst(),"shift")!=null||MixinFit.value(points.getFirst(),"ordinal")!=null)continue;
-			// The host natively and in the merged class, as Mixin binds the handler's selectors however they are spelled.
+			// The host natively and in the current class, as Mixin binds the handler's selectors however they are spelled.
 			MethodNode original=MixinTargetSelectors.one(handler,reference),host=MixinTargetSelectors.one(handler,target);
 			if(original==null||host==null||!original.name.equals(host.name)||!original.desc.equals(host.desc)||((host.access^handler.access)&Opcodes.ACC_STATIC)!=0)continue;
 			Type[] parameters=Type.getArgumentTypes(handler.desc),arguments=Type.getArgumentTypes(host.desc);int capture=arguments.length+1;
@@ -47,7 +47,7 @@ public final class MixinNullableCompositeCallback {
 					||!Type.getReturnType(handler.desc).equals(Type.VOID_TYPE)||!Arrays.equals(arguments,Arrays.copyOf(parameters,arguments.length)))continue;
 			AnnotationNode local=MixinStubRebind.sugar(handler,capture,LOCAL);if(local==null||!onlyLocal(handler,capture)||!nullFallback(handler,capture))continue;
 			// The lookup as Mixin resolves the point's target in the native host (an owner- or descriptor-less one where that
-			// body selects one method's calls alone): assigned once there, and no call it selects left in the merged host.
+			// body selects one method's calls alone): assigned once there, and no call it selects left in the current host.
 			if(MixinCallbackShape.invoked(points.getFirst(),original)==null)continue;
 			List<MethodInsnNode> nativeCalls=MixinCallbackShape.calls(points.getFirst(),original);
 			if(nativeCalls.size()!=1||!Type.getReturnType(nativeCalls.getFirst().desc).equals(parameters[capture])||!MixinCallbackShape.calls(points.getFirst(),host).isEmpty())continue;

@@ -59,7 +59,7 @@ import net.forbric.kernel.util.ForbricLog;
  * {@code @Redirect}s of one call, where Mixin keeps the first applied and skips the other with "conflict. Skipping"),
  * and every one of them is applied before any {@code postApply} runs.
  *
- * <p>This is the outcome Mixin itself gives the pair, not one the merged base produces: the merge does not change
+ * <p>This is the outcome Mixin itself gives the pair, not one the base produces: the base does not change
  * which instruction both mods want or move {@code postApply} relative to the injectors. Fabric runs the same
  * applicator. On NeoForge, FML's simple-processor group runs after {@code neoforge:mixin}
  * ({@code SimpleProcessorsGroup.runsAfter} is {@code COMPUTING_FRAMES} and {@code MIXIN}), so a raw patch shipped as a

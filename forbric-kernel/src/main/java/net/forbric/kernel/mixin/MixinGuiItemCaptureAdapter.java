@@ -14,7 +14,7 @@ import net.forbric.kernel.transform.VanillaEarlyReturns;
 import net.forbric.kernel.util.Caught;
 
 /**
- * A TAIL handler that captures locals the merged tail no longer declares is moved to the end of the one path that still
+ * A TAIL handler that captures locals the current tail no longer declares is moved to the end of the one path that still
  * holds them.
  *
  * <p>Vanilla's guard clause returned early, so a local its body declared stayed in scope to the last return: a Fabric
@@ -25,7 +25,7 @@ import net.forbric.kernel.util.Caught;
  * (CAPTURE_FAILSOFT skips the handler, CAPTURE_FAILHARD fails the mixin), or — where javac wrote only a "same" frame
  * there — types the slot from the earlier store and loads a slot the guard's path never wrote, and the class fails
  * verification. Item Glint Relight's capture of {@code GuiGraphicsExtractor.item}'s render state was the first seen;
- * the same fold is on thousands of merged methods.
+ * the same fold is on thousands of current methods.
  *
  * <p>Decided for any class and method, by comparing the tail the mod was compiled against with the merged one: the
  * handler is an {@code @Inject} at {@code TAIL} with a locals capture, whose leading parameters are exactly the target
@@ -35,7 +35,7 @@ import net.forbric.kernel.util.Caught;
  * by the data flow, every captured slot holds a value there, and the method's table names those slots, first after the
  * arguments, with the captured types, at the instruction that leaves for the tail. That instruction must be a call (or
  * its result's {@code pop}, or a {@code goto} right after one): the point becomes {@code INVOKE} that call, {@code AFTER}
- * (with the ordinal that singles it out, counted over the merged body and marked so — {@link CurrentBodyOrdinals}),
+ * (with the ordinal that singles it out, counted over the current body and marked so — {@link CurrentBodyOrdinals}),
  * still inside the locals' scope and still after everything the body did. A handler is moved only where it is the
  * mixin's one TAIL capture on that method. Where that call falls straight into the tail's join, {@link MixinCaptureLanding}
  * gives it a {@code NOP} to land on for a mixin below 0.10.0, so the capture holds under the 0.9.2 local walk too.
@@ -53,9 +53,9 @@ public final class MixinGuiItemCaptureAdapter {
 
     /**
      * {@code references} gives the class the mod was compiled against. With it, a capture moves only where that class's own
-     * tail serves it ({@link #tailServes}) and the merged tail does not: a capture its native tail could not serve either —
+     * tail serves it ({@link #tailServes}) and the current tail does not: a capture its native tail could not serve either —
      * a NeoForge mod's on NeoForge's own folded body, where CAPTURE_FAILSOFT skips the handler natively — stays as
-     * compiled, as it runs natively. Without that class the merged tail is the only evidence there is.
+     * compiled, as it runs natively. Without that class the current tail is the only evidence there is.
      */
     static int adapt(ClassNode mixin, Function<String, ClassNode> targets, BiFunction<Ecosystem, String, ClassNode> references) {
         if ("off".equalsIgnoreCase(System.getProperty(PROPERTY, "on")) || mixin == null || mixin.methods == null) return 0;
@@ -84,7 +84,7 @@ public final class MixinGuiItemCaptureAdapter {
             at.values = new ArrayList<>(List.of("value", "INVOKE", "target", point.member(),
                     "shift", new String[] {"Lorg/spongepowered/asm/mixin/injection/At$Shift;", "AFTER"}));
             if (point.ordinal() >= 0) { at.values.add("ordinal"); at.values.add(point.ordinal()); }
-            // The call and its ordinal are counted over the merged body: no later pass may read them as a native count.
+            // The call and its ordinal are counted over the current body: no later pass may read them as a native count.
             CurrentBodyOrdinals.mark(handler);
             // Where the call falls straight into the tail's join, AFTER is a label, and Mixin's 0.9.2 walk steps from it
             // onto the join's frame; the call gets a NOP to land on instead, in every class this mixin is applied to.

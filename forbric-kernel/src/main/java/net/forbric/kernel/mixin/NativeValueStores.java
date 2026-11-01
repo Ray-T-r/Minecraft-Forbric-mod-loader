@@ -19,7 +19,7 @@ import net.forbric.api.Ecosystem;
 import net.forbric.kernel.util.ForbricLog;
 
 /**
- * Points a value modifier written for the store of a call's result into a local at the store the merged method keeps that
+ * Points a value modifier written for the store of a call's result into a local at the store the current method keeps that
  * result in, where a carrier stores another value first into the local its discriminator picks.
  *
  * <p>Vanilla's {@code LivingEntity.completeUsingItem} stores {@code useItem.finishUsingItem(level, this)} in its first
@@ -36,10 +36,10 @@ import net.forbric.kernel.util.ForbricLog;
  * <ul>
  *   <li>in the method its selectors bind in the class the mod was compiled against, the discriminator picks exactly one store,
  *       and the value stored is the result of the call right before it;</li>
- *   <li>in the merged method none of the stores the discriminator picks stores that call's result, and the merged method makes
+ *   <li>in the current method none of the stores the discriminator picks stores that call's result, and the current method makes
  *       that call exactly once; its result is stored, straight on, into a local of the modifier's type — or handed, as the last
  *       argument, to a call answering that type (a carrier's hook around the native value), whose answer is stored so;</li>
- *   <li>that local is stored nowhere else in the merged method.</li>
+ *   <li>that local is stored nowhere else in the current method.</li>
  * </ul>
  * The discriminator then names that local by its index: the modifier runs once, on the store of the native value — after the
  * carrier's hook, which the native value has passed through — and every injector at the native call runs before it, as
@@ -106,7 +106,7 @@ public final class NativeValueStores {
 	}
 
 	/**
-	 * The merged local the native value is stored in, when the modifier must move there; -1 when the proof fails or it already
+	 * The current local the native value is stored in, when the modifier must move there; -1 when the proof fails or it already
 	 * lands on that store.
 	 */
 	static int target(AnnotationNode injector, Type type, MethodNode was, MethodNode host) {
@@ -115,7 +115,7 @@ public final class NativeValueStores {
 		MethodInsnNode call = producer(nativeStores.getFirst());
 		if (call == null || !Type.getReturnType(call.desc).equals(type)) return -1;
 		List<VarInsnNode> bound = picked(injector, type, host);
-		// Nothing read off the merged local variable table says what the modifier binds there now: left as compiled.
+		// Nothing read off the current local variable table says what the modifier binds there now: left as compiled.
 		if (bound.isEmpty()) return -1;
 		for (VarInsnNode store : bound) if (same(producer(store), call)) return -1;
 		MethodInsnNode made = null;

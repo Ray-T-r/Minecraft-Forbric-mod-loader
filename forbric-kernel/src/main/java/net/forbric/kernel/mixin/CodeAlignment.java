@@ -22,7 +22,7 @@ import net.forbric.kernel.util.Caught;
 
 /**
  * Aligns the instructions of a method as one platform compiled it with the instructions of the same method as the game
- * now runs it — the native body against the merged body, where a carrier inserted, removed or replaced code. The answer
+ * now runs it — the native body against the current body, where a carrier inserted, removed or replaced code. The answer
  * is a partial map from native instructions to the merged instructions that are the same step of the same program:
  * an instruction the carrier left in place maps to itself there; one it removed or rewrote maps to nothing.
  *
@@ -47,7 +47,7 @@ final class CodeAlignment {
 	private CodeAlignment() {
 	}
 
-	/** Native instruction -> merged instruction, for every native instruction the merged body still runs as the same step. */
+	/** Native instruction -> current instruction, for every native instruction the current body still runs as the same step. */
 	static Map<AbstractInsnNode, AbstractInsnNode> align(MethodNode nativeMethod, MethodNode mergedMethod) {
 		return align(null, nativeMethod, null, mergedMethod);
 	}

@@ -30,7 +30,7 @@ import net.neoforged.neoforge.event.RegisterTooltipAppendersEvent;
 /**
  * NeoForge's item tooltip appenders, built on the merged base, with Fabric's component tooltip providers in them.
  *
- * <p>The merged {@code ItemStack.addDetailsToTooltip} is NeoForge's dispatcher: it walks the head, middle and tail
+ * <p>NeoForge's {@code ItemStack.addDetailsToTooltip} is a dispatcher: it walks the head, middle and tail
  * appender lists {@code ItemTooltipHandler.init} fills — every vanilla component line (enchantments, lore, attribute
  * modifiers, potion effects, durability, …) and every mod's. Its only caller is {@code GameData.postRegisterEvents},
  * which the kernel replaces with its own copy of the tail, and that copy left it out: tooltips showed the name and

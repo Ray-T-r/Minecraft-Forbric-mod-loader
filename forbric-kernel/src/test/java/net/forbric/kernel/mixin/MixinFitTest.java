@@ -454,7 +454,7 @@ class MixinFitTest {
 
 	/**
 	 * {@code @At(NEW)} was never judged, so fabric-rendering-v1's snippet wrap read FIT while Mixin rejected it at
-	 * apply time ("has an invalid signature": the merged constructor takes 12 arguments, the handler wraps 11).
+	 * apply time ("has an invalid signature": NeoForge's constructor takes 12 arguments, the handler wraps 11).
 	 */
 	@Test
 	void aWrapOperationOnNewIsJudgedByTheConstructorsArity() {

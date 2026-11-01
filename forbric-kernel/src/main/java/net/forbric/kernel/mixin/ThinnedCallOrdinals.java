@@ -29,14 +29,14 @@ public final class ThinnedCallOrdinals {
 	 * @param owner      the class the mixins target (internal name)
 	 * @param method     the method there, {@code name + descriptor}
 	 * @param call       the call, as an {@code @At} target
-	 * @param ordinals   for each of vanilla's occurrences, the merged occurrence that is the same call, or -1 for none
+	 * @param ordinals   for each of vanilla's occurrences, the current occurrence that is the same call, or -1 for none
 	 * @param next       the call the method makes next after each kept occurrence, on both sides, as an {@code @At} target
 	 * @param ecosystems the mods compiled against vanilla's count
 	 * @param because    why the kept occurrences are vanilla's
 	 */
 	public record Site(String owner, String method, String call, int[] ordinals, String next, Set<Ecosystem> ecosystems,
 			String because) {
-		/** How many occurrences the merged method keeps. */
+		/** How many occurrences the current method keeps. */
 		int kept() {
 			int kept = 0;
 			for (int ordinal : ordinals) if (ordinal >= 0) kept++;
@@ -68,12 +68,12 @@ public final class ThinnedCallOrdinals {
         if (current == null || original == null) return 0;
         int moved = 0;
         for (MethodNode handler : mixin.methods) {
-            // An ordinal an earlier pass already counted over the merged body is not a native count: translating it
-            // again would read merged occurrence n as native occurrence n and land on another call.
+            // An ordinal an earlier pass already counted over the current body is not a native count: translating it
+            // again would read current occurrence n as native occurrence n and land on another call.
             if (CurrentBodyOrdinals.counted(handler)) continue;
             AnnotationNode injector = MixinFit.injectorOf(handler);
             if (injector == null || MixinFit.value(injector, "slice") != null || MixinFit.groupOf(handler) != null) continue;
-            // The one method the handler binds natively and in the merged class, as Mixin binds its selectors however
+            // The one method the handler binds natively and in the current class, as Mixin binds its selectors however
             // they are spelled: the same method on both sides (CallOccurrenceAlignment also holds it to one descriptor).
             MethodNode before = MixinTargetSelectors.one(handler, original);
             MethodNode after = MixinTargetSelectors.one(handler, current);
@@ -82,7 +82,7 @@ public final class ThinnedCallOrdinals {
                 if (!"INVOKE".equals(MixinFit.asString(MixinFit.value(at, "value")))
                         || !(MixinFit.value(at, "ordinal") instanceof Integer ordinal) || ordinal < 0) continue;
                 // The call the point counts, as Mixin resolves its target: spelled out, however written; without an
-                // owner or a descriptor, the one method it selects in the native body. In the merged body it must
+                // owner or a descriptor, the one method it selects in the native body. In the current body it must
                 // select that method's calls alone, or its ordinal there counts other calls too.
                 String member = MixinCallbackShape.invoked(at, before);
                 if (member == null || !onlyCallsOf(MixinCallbackShape.calls(at, after), member)) continue;

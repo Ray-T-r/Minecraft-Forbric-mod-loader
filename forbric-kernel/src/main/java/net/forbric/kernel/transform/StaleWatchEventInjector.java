@@ -18,7 +18,7 @@ import org.objectweb.asm.tree.MethodNode;
  * so a change event that only reports a file's own creation in an already-watched directory does not run it.
  *
  * <p>Generic over call sites: NeoForge's {@code ConfigTracker.openConfig} and MinecraftForge's config handler are the
- * two in the carriers, and the reason it matters in the merged game is that the carriers' own configs keep
+ * two in the carriers, and the reason it matters in the game is that the carriers' own configs keep
  * {@code config/} watched from startup (see StaleWatchGuard). At each call the stack is
  * {@code [watcher, file, handler]}; the guard is built from {@code file} and {@code handler} and replaces the handler,
  * nothing else changes. Calls inside {@code FileWatcher} itself (its overloads forwarding to each other) are left alone.

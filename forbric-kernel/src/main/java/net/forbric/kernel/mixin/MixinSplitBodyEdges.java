@@ -27,7 +27,7 @@ import net.forbric.kernel.transform.VanillaEarlyReturns;
 import net.forbric.kernel.util.ForbricLog;
 
 /**
- * Edges a body a carrier split into pieces the merged game runs one by one: a guest's {@code @Inject} at the start or the
+ * Edges a body a carrier split into pieces the game runs one by one: a guest's {@code @Inject} at the start or the
  * end of the method it names lands at the start of the first piece and the end of the last, because one run of the pieces is
  * what one run of the method was.
  *
@@ -45,10 +45,10 @@ import net.forbric.kernel.util.ForbricLog;
  * later piece is entered by a guard of the same mixin that cancels it at once while its run is marked. The pieces are told
  * apart by order: one run is the first piece, then the later ones in the dispatcher's order.
  *
- * <p>Kept exactly: the method the selector binds is, in the merged class, a pure dispatcher to two or more same-shaped pieces
+ * <p>Kept exactly: the method the selector binds is, in the current class, a pure dispatcher to two or more same-shaped pieces
  * ({@link CarrierHelpers#dispatchedHelpers}), and each piece does work the native method (the class the mod was compiled
  * against) did and the dispatcher no longer does — a call or field access the native method makes once, made once in that
- * piece and in no other (the census's own {@code SPLIT} rule, read on the bytes at hand); the merged game never calls the
+ * piece and in no other (the census's own {@code SPLIT} rule, read on the bytes at hand); the game never calls the
  * method ({@link MergedBaseUncalledMethods}); every piece is reached from exactly one other method of the class — through a
  * lambda or thunk that only forwards to it, standing for the place that registers it — the same one for all, in the
  * dispatcher's order (the carrier registers them, one after another, where it used to make the one call), and that place
@@ -177,7 +177,7 @@ public final class MixinSplitBodyEdges {
 
 	/**
 	 * The pieces of {@code named}, in its order, when it is a census-proven split nothing in the game calls and the
-	 * merged game reaches every piece from one other method of the class, the same for all, in that order; else null.
+	 * game reaches every piece from one other method of the class, the same for all, in that order; else null.
 	 */
 	static List<MethodNode> pieces(ClassNode target, MethodNode named, Ecosystem ecosystem,
 			java.util.function.BiFunction<Ecosystem, String, ClassNode> references) {
@@ -211,7 +211,7 @@ public final class MixinSplitBodyEdges {
 	}
 
 	/**
-	 * Whether {@code piece} does work the native method did and its merged dispatcher no longer does: some call or field
+	 * Whether {@code piece} does work the native method did and its current dispatcher no longer does: some call or field
 	 * access the native method makes exactly once, made exactly once in this piece and in no other piece or the dispatcher
 	 * (the census's own rule for a {@code SPLIT} piece, carrier-helpers.txt, read here on the bytes at hand).
 	 */

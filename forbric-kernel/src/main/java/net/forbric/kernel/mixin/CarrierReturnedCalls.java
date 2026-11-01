@@ -49,12 +49,12 @@ import net.forbric.kernel.util.Caught;
  *   <li>the wrap has one {@code INVOKE} point, no slice, no {@code @Group}; its handler takes exactly the call's values and
  *       the {@code Operation}, and uses the {@code Operation} only to call it with those very values, unchanged;</li>
  *   <li>the native method makes the call once (or the occurrence the ordinal names), and the call's answer is returned at
- *       once (a return right after it, or a jump straight to one); the method returns the call's type; the merged method
+ *       once (a return right after it, or a jump straight to one); the method returns the call's type; the current method
  *       never makes the call;</li>
- *   <li>every return of the merged method is reached either only under the native call's conditions (then it moves there)
+ *   <li>every return of the current method is reached either only under the native call's conditions (then it moves there)
  *       or never under them; at least one is reached under them;</li>
- *   <li>every value the native call is handed is there at those returns: a local of the merged method of the same debug name
- *       and type holding the same expression, or the same getter asked of the instance, which the merged method itself asks
+ *   <li>every value the native call is handed is there at those returns: a local of the current method of the same debug name
+ *       and type holding the same expression, or the same getter asked of the instance, which the current method itself asks
  *       under those conditions.</li>
  * </ul>
  * The handler keeps its name with {@code $forbricOriginal} appended. {@code -Dforbric.carrierReturnedCalls=off} leaves every
@@ -75,7 +75,7 @@ public final class CarrierReturnedCalls {
 		return !"off".equalsIgnoreCase(System.getProperty(PROPERTY, "on"));
 	}
 
-	/** One value the native call is handed, found at the merged returns: a merged local, or a getter of the instance. */
+	/** One value the native call is handed, found at the current returns: a current local, or a getter of the instance. */
 	private record Value(Type type, int local, MethodInsnNode getter) {
 	}
 
@@ -125,8 +125,8 @@ public final class CarrierReturnedCalls {
 	// Where
 
 	/**
-	 * The ordinals (among the merged method's returns) of the returns the merged method reaches under the native call's
-	 * conditions; null when the call's answer is not the native method's answer at once, or a merged return is reached both
+	 * The ordinals (among the current method's returns) of the returns the current method reaches under the native call's
+	 * conditions; null when the call's answer is not the native method's answer at once, or a current return is reached both
 	 * under those conditions and not, or none is reached under them.
 	 */
 	static List<Integer> moveTo(ClassNode original, MethodNode was, ClassNode merged, MethodNode selected, MethodInsnNode call) {
@@ -168,7 +168,7 @@ public final class CarrierReturnedCalls {
 	// ---------------------------------------------------------------------------------------------------------------
 	// What the native call was handed
 
-	/** Each value the native call is handed, as found at every one of the merged returns; null when one is not there. */
+	/** Each value the native call is handed, as found at every one of the current returns; null when one is not there. */
 	static List<Value> values(ClassNode original, MethodNode was, ClassNode merged, MethodNode selected, MethodInsnNode call, List<Integer> returns) {
 		Frame<SourceValue>[] nativeFrames = frames(original.name, was), mergedFrames = frames(merged.name, selected);
 		if (nativeFrames == null || mergedFrames == null) return null;
@@ -205,7 +205,7 @@ public final class CarrierReturnedCalls {
 		return out;
 	}
 
-	/** Whether the merged method asks {@code getter} of its own instance under (at least) {@code wanted}. */
+	/** Whether the current method asks {@code getter} of its own instance under (at least) {@code wanted}. */
 	private static boolean asksToo(NativeCallInlining.Conditions conditions, Frame<SourceValue>[] frames, MethodNode selected, MethodInsnNode getter, Set<String> wanted) {
 		for (AbstractInsnNode instruction : selected.instructions)
 			if (instruction instanceof MethodInsnNode asked && asked.name.equals(getter.name) && asked.desc.equals(getter.desc) && asked.getOpcode() == getter.getOpcode()
@@ -221,7 +221,7 @@ public final class CarrierReturnedCalls {
 		return frame.getLocal(0).insns.isEmpty();
 	}
 
-	/** The expression the merged local {@code slot} holds at {@code at}: its one store's value. */
+	/** The expression the current local {@code slot} holds at {@code at}: its one store's value. */
 	private static String stored(NativeCallInlining.Conditions conditions, Frame<SourceValue>[] frames, MethodNode method, int slot, AbstractInsnNode at) {
 		Frame<SourceValue> frame = frames[method.instructions.indexOf(at)];
 		if (frame == null) return "?";

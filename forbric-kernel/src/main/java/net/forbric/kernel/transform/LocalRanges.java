@@ -34,7 +34,7 @@ import net.forbric.kernel.util.ForbricLog;
 import net.forbric.kernel.util.Caught;
 
 /**
- * Gives a merged method's local back the variable-table range that covers its own uses.
+ * Gives a base method's local back the variable-table range that covers its own uses.
  *
  * <p>A compiler starts a local's range right after the store that declares it, so every read of the local is inside its
  * range. The merged base splices a carrier's statements into vanilla's body, and where it puts them between a local's

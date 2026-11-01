@@ -4,7 +4,7 @@ import java.util.*;import java.util.function.Function;
 import net.forbric.api.Ecosystem;import net.forbric.kernel.boot.*;
 import org.objectweb.asm.*;import org.objectweb.asm.tree.*;
 
-/** A namespace factory wrapper whose wrapped factory call the merged host replaced follows the host's own suffix-parse/prefix
+/** A namespace factory wrapper whose wrapped factory call the current host replaced follows the host's own suffix-parse/prefix
  * continuation into its final sink. The original body remains intact. Its fallback Operation receives the live resource and
  * prefix unchanged.
  *
@@ -13,7 +13,7 @@ import org.objectweb.asm.*;import org.objectweb.asm.tree.*;
  * unchanged {@code String}. Whatever else it computes — its own namespace test, its own path recipe — runs as written, on
  * the argument the native call would have been handed. Everything the move needs about the call is read from the native
  * host and the platform: the wrapped call is the platform's default-namespace factory, its argument a one-hole string recipe
- * over a final field's name, and the merged host builds the same field's value as {@code parse(name + suffix)} followed by
+ * over a final field's name, and the current host builds the same field's value as {@code parse(name + suffix)} followed by
  * the platform's prefix continuation into the same sink. */
 public final class MixinResourceContinuationAdapter {
     public static final String PROPERTY="forbric.mixinResourceContinuations";
@@ -45,7 +45,7 @@ public final class MixinResourceContinuationAdapter {
     /**
      * Whether the handler's {@code Operation} (slot 2) is used only as the receiver of {@code call}s handed a fresh
      * one-element array holding its own, unchanged {@code String} (slot 1): the wrapper may then answer every such call
-     * with the continuation the merged host makes, whatever else the handler computes around it.
+     * with the continuation the current host makes, whatever else the handler computes around it.
      */
     static boolean forwardsItsOwnArgument(String owner,MethodNode handler) {
         HandlerFlow flow=HandlerFlow.of(owner,handler);if(flow==null)return false;
@@ -91,7 +91,7 @@ public final class MixinResourceContinuationAdapter {
         if(host==null||old==null||!host.name.equals(old.name)||!host.desc.equals(old.desc))return null;
         AnnotationNode point=MixinFit.atNodes(source.injection()).getFirst();List<Move> matches=new ArrayList<>();
         // The point, however written, selects one (String) call in the written method — the platform's default-namespace
-        // factory — and the merged host no longer makes that call.
+        // factory — and the current host no longer makes that call.
         List<MethodInsnNode> olds=MixinCallbackShape.calls(point,old);if(olds.size()!=1)return null;MethodInsnNode defaultFactory=olds.getFirst();
         String valueName=defaultFactory.owner;if(defaultFactory.getOpcode()!=Opcodes.INVOKESTATIC||!defaultFactory.desc.equals("(Ljava/lang/String;)L"+valueName+";"))return null;
         String named=member(defaultFactory);if(calls(host).stream().anyMatch(c->member(c).equals(named)))return null;
@@ -108,7 +108,7 @@ public final class MixinResourceContinuationAdapter {
         AbstractInsnNode oldSink=next(defaultFactory);if(!(oldSink instanceof FieldInsnNode oldField)||oldField.getOpcode()!=Opcodes.PUTFIELD)return null;
         int hole=recipe.indexOf('\u0001');String prefix=recipe.substring(0,hole),suffix=recipe.substring(hole+1);
         for(MethodInsnNode call:calls(host)) {
-            // The merged host's parse of name + suffix: a static (String) factory of the same type over the same producer.
+            // The current host's parse of name + suffix: a static (String) factory of the same type over the same producer.
             if(call.getOpcode()!=Opcodes.INVOKESTATIC||!call.owner.equals(value.name)||!call.desc.equals("(Ljava/lang/String;)L"+value.name+";")
                     ||!(previous(call)instanceof InvokeDynamicInsnNode input)||!("\u0001"+suffix).equals(recipe(input))||!sameNameProducer(previous(input),name,field,target))continue;
             MethodNode parse=declared(value,call.name,call.desc);if(parse==null)continue;

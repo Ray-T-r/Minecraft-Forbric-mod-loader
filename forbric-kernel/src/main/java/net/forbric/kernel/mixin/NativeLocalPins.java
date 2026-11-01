@@ -19,26 +19,26 @@ import net.forbric.api.Ecosystem;
 import net.forbric.kernel.util.ForbricLog;
 
 /**
- * Points a mod's {@code @Local} at the local its own loader hands it, where the merged method holds more locals of that
+ * Points a mod's {@code @Local} at the local its own loader hands it, where the current method holds more locals of that
  * type at the point and MixinExtras would find several (or another) there.
  *
  * <p>A carrier often reads a value once more into a local of its own — NeoForge's {@code destroyBlock} keeps the state it
  * read first beside the state {@code playerWillDestroy} returned; a toss keeps the selected stack beside the removed one.
- * A {@code @Local BlockState} that names the only state at vanilla's point names two at the merged one, and MixinExtras
+ * A {@code @Local BlockState} that names the only state at vanilla's point names two at the current one, and MixinExtras
  * refuses the injection.
  *
  * <p>Nothing here knows a mod, a class or a method by name. For one injector with one call or field point and no slice,
  * whose method is the same natively (the class its ecosystem's mods were compiled against) and merged, and whose point
  * selects as many instructions in both: each {@code @Local} that resolves to one local at the native point and not to
- * one at the merged point is pinned ({@code @Local(index)}) to the merged local that holds what the native one holds —
+ * one at the current point is pinned ({@code @Local(index)}) to the current local that holds what the native one holds —
  * proved by the instruction that produced it ({@link MixinLocalOriginProof#prove}), or, where that proof is not
- * available, the one merged local with the native local's debug name and type live at the point. Where the point selects
+ * available, the one current local with the native local's debug name and type live at the point. Where the point selects
  * several instructions, every one must agree on the slot.
  *
  * <p>The same holds for a {@code @ModifyVariable} that picks its local by ordinal among the locals of its type: where the
- * ordinal picks another local at the merged point (or none) — NeoForge's {@code destroyBlock} stores the removal result
+ * ordinal picks another local at the current point (or none) — NeoForge's {@code destroyBlock} stores the removal result
  * after {@code mineBlock}, so vanilla's second boolean there is NeoForge's only one — it is pinned ({@code index}) to the one
- * merged local live at the point with the debug name and type of the local the ordinal picks natively.
+ * current local live at the point with the debug name and type of the local the ordinal picks natively.
  * {@code -Dforbric.nativeLocalPins=off} pins nothing.
  */
 public final class NativeLocalPins {
@@ -99,8 +99,8 @@ public final class NativeLocalPins {
 	static final String MODIFY_VARIABLE = "Lorg/spongepowered/asm/mixin/injection/ModifyVariable;";
 
 	/**
-	 * A {@code @ModifyVariable} that picks its local by ordinal among the locals of its type: the merged slot of the local the
-	 * ordinal picks natively (the one merged local live at the point with its debug name and type), when the ordinal picks
+	 * A {@code @ModifyVariable} that picks its local by ordinal among the locals of its type: the current slot of the local the
+	 * ordinal picks natively (the one current local live at the point with its debug name and type), when the ordinal picks
 	 * another local there (or none). Every point the injector selects must agree; null when nothing needs pinning or it is
 	 * not proved. Only for a call or field point, one point, no slice, no {@code index}, {@code name} or {@code argsOnly}.
 	 */
@@ -174,7 +174,7 @@ public final class NativeLocalPins {
 		return out.toString();
 	}
 
-	/** The pins one handler needs at its merged point, or null. */
+	/** The pins one handler needs at its current point, or null. */
 	static Pin derive(ClassNode original, ClassNode merged, MethodNode handler, AnnotationNode injector) {
 		List<AnnotationNode> points = MixinFit.atNodes(injector);
 		if (points.size() != 1) return null;
@@ -219,7 +219,7 @@ public final class NativeLocalPins {
 		return agreed == null ? null : new Pin(host, after.get(from), java.util.Collections.unmodifiableMap(new java.util.TreeMap<>(agreed)));
 	}
 
-	/** The one merged local live at the point with the native local's debug name and type. */
+	/** The one current local live at the point with the native local's debug name and type. */
 	private static Integer byName(MethodNode was, int nativeSlot, int nativeAt, MethodNode host, int mergedAt, Type type) {
 		LocalVariableNode named = live(was, nativeSlot, nativeAt);
 		if (named == null || !Type.getType(named.desc).equals(type) || host.localVariables == null) return null;

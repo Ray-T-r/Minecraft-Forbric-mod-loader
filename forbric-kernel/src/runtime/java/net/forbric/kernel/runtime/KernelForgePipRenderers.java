@@ -32,19 +32,19 @@ import net.minecraft.client.renderer.state.gui.pip.PictureInPictureRenderState;
 import net.neoforged.neoforge.client.gui.PictureInPictureRendererRegistration;
 
 /**
- * Fills {@code GuiRenderer.pictureInPictureRenderers} — the map the byte merge left with no writer at all.
+ * Fills {@code GuiRenderer.pictureInPictureRenderers} — vanilla's plain map, which nothing in NeoForge's game writes.
  *
- * <p>{@code GuiRenderer} ends up carrying both ecosystems' versions of picture-in-picture: NeoForge's pooled
+ * <p>{@code GuiRenderer} carries two versions of picture-in-picture: NeoForge's pooled
  * {@code pictureInPictureRendererPools}, which its constructor fills, and vanilla's plain
- * {@code Class -> PictureInPictureRenderer} map, which the merged constructor does not assign at all — the field
- * is declared, read in one place, and written nowhere. {@link net.forbric.kernel.transform
+ * {@code Class -> PictureInPictureRenderer} map, the twin VanillaMemberTwinInjector adds back, which NeoForge's
+ * constructor does not assign at all — the field is declared, read in one place, and written nowhere. {@link net.forbric.kernel.transform
  * .ForbricMergedBaseCompatTransformer}'s repair already routes NeoForge's "no pool for this state class" miss into
  * that map; this is what puts something in it.
  *
  * <p>What goes in is what the constructor's own list carries besides NeoForge's registrations: the renderer
  * instances guest mixins add there (Physics Mod, fabric-rendering, Xaero, malilib), which are vanilla's plain-map
- * renderers and must never be owned by a NeoForge pool. On the genuine base the same map is the twin
- * VanillaMemberTwinInjector adds back, filled the same way.
+ * renderers and must never be owned by a NeoForge pool. (On the merged base of Forbric 0.4 and earlier the map was
+ * MinecraftForge's half of the class, filled the same way; the class kept its name, Stage 6 renames.)
  *
  * <p>An empty map is still the right answer when no mod supplies one, and it is a better answer than the null
  * the field held: the repair's fallback reads it without a null check, so the first frame that reached a state
@@ -98,7 +98,7 @@ public final class KernelForgePipRenderers {
 		return builder.buildKeepingLast();
 	}
 
-	/** The merged close() only closes pools; plain renderers retain vanilla's whole-GuiRenderer lifetime. */
+	/** NeoForge's close() only closes pools; plain renderers retain vanilla's whole-GuiRenderer lifetime. */
 	public static void close(Map<?, ? extends PictureInPictureRenderer<?>> renderers) {
 		Set<PictureInPictureRenderer<?>> closed = Collections.newSetFromMap(new IdentityHashMap<>());
 		for (PictureInPictureRenderer<?> renderer : renderers.values()) {

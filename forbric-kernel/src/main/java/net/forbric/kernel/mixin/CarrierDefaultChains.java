@@ -46,7 +46,7 @@ import net.forbric.kernel.util.ForbricLog;
 import net.forbric.kernel.util.Caught;
 
 /**
- * A redirect of a vanilla call the merged method no longer makes, moved onto the carrier's call that makes it for it.
+ * A redirect of a vanilla call the current method no longer makes, moved onto the carrier's call that makes it for it.
  *
  * <p>A carrier routes some vanilla calls through a method of its own: vanilla's {@code soundBuffers.getStream(path, looping)}
  * becomes {@code sound.getStream(soundBuffers, sound, looping)}, whose inherited implementation (an interface default, a
@@ -71,11 +71,11 @@ import net.forbric.kernel.util.Caught;
  *       {@code @Group}; its handler takes the vanilla call's values (or the constant) and, after them, only arguments of the
  *       method it targets, with no parameter annotations;</li>
  *   <li>the native method (the mod's loader's) makes the vanilla call once (or the occurrence the ordinal names), or pushes
- *       the constant once, and the merged method never does — for every method the selectors bind, natively and merged
+ *       the constant once, and the current method never does — for every method the selectors bind, natively and in the current class
  *       alike: a redirect written for several methods (a method and the lambda it hands part of its work to) moves only when
  *       each of them lost the operation to the same carrier call, leading to it through the same implementations, and its
  *       captured arguments lead each method's; the one new handler is then bound to all of them, as written;</li>
- *   <li>the merged method makes exactly one virtual call the native method never makes whose selected implementation leads
+ *   <li>the current method makes exactly one virtual call the native method never makes whose selected implementation leads
  *       to the vanilla call: makes it exactly once, or makes exactly one call that leads to it, at most four levels down,
  *       with no loop, handler, lambda or monitor on the way (so it is made at most once per call);</li>
  *   <li>everything else those implementations touch is public, or private to the class that declares them (then inlined
@@ -86,7 +86,7 @@ import net.forbric.kernel.util.Caught;
  * The mod's handler keeps its name with {@code $forbricOriginal} appended. {@code -Dforbric.carrierDefaultChains=off} leaves
  * every redirect as compiled.
  *
- * <p>What this does not see: the implementations are inlined as the merged base has them, so another mod's mixin applied to
+ * <p>What this does not see: the implementations are inlined as the base has them, so another mod's mixin applied to
  * one of them (an injector into the interface default itself) does not run on the path the moved redirect takes. A receiver
  * that overrides the carrier's method never sees the mod's handler — the carrier's override decides there, as without the
  * mod; natively no such receiver exists.
@@ -138,7 +138,7 @@ public final class CarrierDefaultChains {
 				if (constant == null && (at == null || !"INVOKE".equals(MixinFit.asString(MixinFit.value(at, "value"))))) continue;
 				if (merged == null) merged = classes.apply(target);
 				if (merged == null) break;
-				// Every method the selectors bind, natively and merged, paired by name and descriptor: a redirect written for
+				// Every method the selectors bind, natively and in the current class, paired by name and descriptor: a redirect written for
 				// several methods (a method and the lambda it hands part of its work to) moves only when each of them lost the
 				// vanilla operation to the very same carrier call, so one new handler serves them all.
 				List<MethodNode> natively = MixinTargetSelectors.bound(handler, original), bound = MixinTargetSelectors.bound(handler, merged);

@@ -27,7 +27,7 @@ import org.objectweb.asm.tree.VarInsnNode;
  * minecraft:lava} nor a Fabric behaviour's tag (KernelFluidTypes) — meaning "entities do not interact with it", which
  * is what vanilla does with such a fluid. But the walk made a tracker for it all the same, and NeoForge's entity code
  * reads any tracker with height as "in a fluid": {@code shouldTravelInFluid} asks {@code isInFluidType(state)}, so a
- * body in such a fluid moved as through lava (the merged {@code travelInFluid} sends every fluid but water there),
+ * body in such a fluid moved as through lava (NeoForge's {@code travelInFluid} sends every fluid but water there),
  * where on Fabric it falls through it as through air.
  *
  * <p>NeoForge's private {@code getTrackerFor(FluidType)}, which only the walk calls, answers null for the empty type —
@@ -37,7 +37,7 @@ import org.objectweb.asm.tree.VarInsnNode;
  * measured difference (a body in it falls as through air; natively MinecraftForge moves it as through lava and NeoForge
  * holds it still) that no jar in the local corpus has a fluid for. Keying on the kernel's stand-in is the open fix.
  * On the reviewed shape only: one parameter, NeoForge's type,
- * returning the tracker. Not made twice. {@code -Dforbric.emptyFluidTypeTracker=off} leaves it as merged.
+ * returning the tracker. Not made twice. {@code -Dforbric.emptyFluidTypeTracker=off} leaves it as the base has it.
  */
 public final class EmptyFluidTypeTrackerInjector implements ClassTransformer {
 	public static final String PROPERTY = "forbric.emptyFluidTypeTracker";

@@ -22,7 +22,7 @@ import org.objectweb.asm.tree.VarInsnNode;
 
 /**
  * A NeoForge data-map lookup on a block, item or entity type that is not registered yet answers "no data" again,
- * so the vanilla lookup the merge routed through it falls back to vanilla's own table, as on Fabric.
+ * so the vanilla lookup NeoForge routed through it falls back to vanilla's own table, as on Fabric.
  *
  * <p>Vanilla's oxidation, waxing and stripping lookups read static maps keyed by the {@code Block} object:
  * {@code WeatheringCopper.getNext} is {@code NEXT_BY_BLOCK.get().get(block)}, {@code HoneycombItem.getWaxed}
@@ -53,13 +53,13 @@ import org.objectweb.asm.tree.VarInsnNode;
  *   aload_0; getfield key; ifnonnull BOUND
  *   aload_0; getfield value; aload_0; getfield owner; invokestatic KernelUnboundHolderData.unbound(Object, Object)
  *   goto NO_DATA                       // the method's own `aconst_null; areturn`
- * BOUND: (F_SAME frame)               // the method as merged
+ * BOUND: (F_SAME frame)               // the method as the base has it
  * </pre>
  *
  * <p>All or nothing, on the reviewed shape: {@code key}, {@code value} and {@code owner} fields, one {@code key()} call
  * in {@code getData}, and the {@code aconst_null; areturn} behind a first frame that is the arguments, so both
  * {@code BOUND} and {@code NO_DATA} hold exactly the arguments and an empty stack. {@code -Dforbric.unboundHolderData=off}
- * leaves the class as merged.
+ * leaves the class as the base has it.
  */
 public final class UnboundHolderDataInjector implements ClassTransformer {
 	public static final String PROPERTY = "forbric.unboundHolderData";

@@ -18,7 +18,7 @@ import net.forbric.kernel.util.Caught;
 /**
  * Which return of a method's current body is which return of the native body a guest was compiled against.
  *
- * <p>A guest's {@code @At("RETURN", ordinal = n)} counts the native body's returns. The merged body may have more (an
+ * <p>A guest's {@code @At("RETURN", ordinal = n)} counts the native body's returns. The current body may have more (an
  * early exit a carrier's patch added: MinecraftForge's {@code onBlockStartBreak} in {@code destroyBlock}, its
  * {@code handleServerAboutToStart} veto in {@code initServer}) or fewer, so the n-th return there can be another way
  * out, where other locals are in scope and other work has been done.

@@ -25,14 +25,14 @@ import net.forbric.kernel.util.ForbricLog;
  * <p>Vanilla's {@code LevelChunk.getBlockEntity} creates a missing block entity first and only then, for one that was
  * removed, takes it out of {@code blockEntities}; a mod that redirects that removal slices the method from the creation
  * call. NeoForge takes the removed block entity out first, before anything is created, so the slice holds no removal and
- * the point binds nothing — though the merged method still makes the very same call, on the same map, with the same key,
+ * the point binds nothing — though the current method still makes the very same call, on the same map, with the same key,
  * under the same conditions.
  *
  * <p>Nothing here knows a mod, a class or a method by name. A point is moved when its injector has one point, a call
  * ({@code INVOKE}/{@code INVOKE_ASSIGN}), one slice bounded by calls or field accesses (no {@code @Group}, no other
  * slice keys, no shift on its bounds); the method its selectors bind is the same natively (the class its ecosystem's mods
  * were compiled against) and merged; the native slice and ordinal pick exactly one call there and the merged slice picks
- * none; and the merged method makes exactly one call of that member that is handed the same operands — each the same
+ * none; and the current method makes exactly one call of that member that is handed the same operands — each the same
  * expression over the method's own values (its receiver, its parameters, fields, calls, constants, and locals by the value
  * stored in them) — and made under every branch condition the native call is made under. The point then names that call
  * by its ordinal and the slice is dropped, so it is selected however the carrier ordered the method.
@@ -82,11 +82,11 @@ public final class NativeSliceOccurrences {
 		return moved;
 	}
 
-	/** The merged call a moved point names, the method it is in, and its ordinal among the calls the point selects there. */
+	/** The current call a moved point names, the method it is in, and its ordinal among the calls the point selects there. */
 	record Found(MethodNode host, MethodInsnNode call, int ordinal) {
 	}
 
-	/** The merged call the native sliced point's one call is, or null. */
+	/** The current call the native sliced point's one call is, or null. */
 	static Found derive(ClassNode original, ClassNode merged, MethodNode handler, AnnotationNode injector) {
 		List<AnnotationNode> points = MixinFit.atNodes(injector);
 		if (points.size() != 1) return null;

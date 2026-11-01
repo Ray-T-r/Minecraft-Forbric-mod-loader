@@ -628,7 +628,7 @@ public final class MixinStubRebind {
 				String key = MixinFit.asString(MixinFit.value(share, "value"));
 				if (!sharedEnabled() || key == null || MixinFit.value(share, "namespace") != null) return null;
 				// A @Redirect that shares state with its siblings replaces the call as part of a takeover set up elsewhere
-				// in the method; on the merged body that call could be a carrier's own pipeline. It moves only where the
+				// in the method; on the current body that call could be a carrier's own pipeline. It moves only where the
 				// delegate makes each call it replaces exactly as often as the mod's own platform made it at that
 				// signature (replacesOnlyNativeCalls): the takeover then meets the calls it met natively, and none a
 				// carrier added. fabric-renderer-api's SectionCompilerMixin hands every block of a chunk section to the
@@ -1190,7 +1190,7 @@ public final class MixinStubRebind {
 	 * to the delegate unchanged, as the argument the same rule picks there ({@link #argumentSurvives}).
 	 *
 	 * <p>On the stub the modifier runs before the forwarding call and changes what the delegate receives, so a caller of the
-	 * stub sees it on the delegate as well; but a caller of the delegate itself — the merged game's own — never reaches it.
+	 * stub sees it on the delegate as well; but a caller of the delegate itself — the game's own — never reaches it.
 	 * architectury's tooltip position event changes vanilla's {@code tooltip(Font, List, int, int, ClientTooltipPositioner,
 	 * Identifier)} x and y that way at its head, beside the HEAD callback that fires the event and fills the position the
 	 * modifiers read; that callback moved to the body, the modifiers stayed on the stub, and the deferred tooltip — drawn
@@ -1616,7 +1616,7 @@ public final class MixinStubRebind {
 	 * back. A frame stands wherever one must — a jump, switch or handler target — so a target whose frame was not read
 	 * (MixinFit's read skips frames) is a frame of unknown type, which may drop it. An argument's slot is never lost: no
 	 * frame is sized below them. C2ME's watchdog report takes the dump's {@code StringBuilder} that way inside the thread
-	 * loop, whose head is an {@code APPEND} frame: Mixin keeps the builder there, natively and on the merged body.
+	 * loop, whose head is an {@code APPEND} frame: Mixin keeps the builder there, natively and on the current body.
 	 */
 	private static boolean loadedOrStoredSinceAFrame(MethodNode method, int slot, AbstractInsnNode anchor) {
 		if (slot < (Type.getArgumentsAndReturnSizes(method.desc) >> 2) - ((method.access & Opcodes.ACC_STATIC) != 0 ? 1 : 0)) return true;

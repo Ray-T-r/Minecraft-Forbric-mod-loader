@@ -245,7 +245,7 @@ public final class KernelFabricConditions {
 	}
 
 	/**
-	 * Turns a guest mixin's private "skip this file" sentinel into the one the merged consumer understands.
+	 * Turns a guest mixin's private "skip this file" sentinel into the one NeoForge's consumer understands.
 	 *
 	 * <h2>The half-applied pair</h2>
 	 *

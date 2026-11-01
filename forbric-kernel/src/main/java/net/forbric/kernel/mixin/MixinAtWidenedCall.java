@@ -316,7 +316,7 @@ public final class MixinAtWidenedCall {
 	/**
 	 * Rewrites every eligible {@code @At(INVOKE…)} in {@code mixin} whose named call the carrier widened.
 	 *
-	 * @param targets resolves an internal class name to its merged-base node WITH instructions
+	 * @param targets resolves an internal class name to its base node WITH instructions
 	 * @return how many injection points were moved
 	 */
 	public static int widen(ClassNode mixin, Function<String, ClassNode> targets) {

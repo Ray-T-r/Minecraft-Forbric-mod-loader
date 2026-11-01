@@ -40,7 +40,7 @@ import org.objectweb.asm.tree.VarInsnNode;
  * its other injector, per-page tab memory at the head of Fabric's private {@code updateSelection()}, had no method to
  * attach to.
  *
- * <p>Before Mixin, the merged screen gets, when the interface is installed and Fabric's mixin is pinned:
+ * <p>Before Mixin, NeoForge's screen gets, when the interface is installed and Fabric's mixin is pinned:
  * <ul>
  *   <li>every interface method whose default only throws ({@link MixinFit#implementerSupplies} of the installed
  *       interface), delegating to {@code KernelCreativePager}, which answers from NeoForge's {@code pages}/
@@ -58,8 +58,8 @@ import org.objectweb.asm.tree.VarInsnNode;
  *
  * <p>The added methods go after the existing ones: Mixin binds a selector without a descriptor to the FIRST method of
  * that name, and a NeoForge mod aiming at {@code getCurrentPage} means NeoForge's page-returning one. Applied only to
- * the merged shape (NeoForge's fields, setter and {@code selectTab}), never twice. {@code -Dforbric.creativePagerBridge=off}
- * leaves the screen as merged; the mixin adapter then leaves out any guest mixin that relies on the interface
+ * NeoForge's shape (NeoForge's fields, setter and {@code selectTab}), never twice. {@code -Dforbric.creativePagerBridge=off}
+ * leaves the screen as the base has it; the mixin adapter then leaves out any guest mixin that relies on the interface
  * ({@code MergedBaseMixinCompat.PINNED_CONTRACTS}) instead of letting it throw. With the pin lifted
  * ({@code -Dforbric.keepMixins}, {@code -Dforbric.mergedBaseCompat=off}) the bridge stands aside too: Fabric's mixin
  * implements the interface itself, and on a screen that already had these methods it would overwrite them (or, with
@@ -215,7 +215,7 @@ public final class CreativePagerBridgeInjector implements ClassTransformer {
 	}
 
 	/**
-	 * Backs the interface on {@code screen}, or {@code null} when it is not the merged shape or already backed.
+	 * Backs the interface on {@code screen}, or {@code null} when it is not NeoForge's shape or already backed.
 	 *
 	 * @param needed the interface's {@link MixinFit#implementerSupplies}, as {@code name + descriptor}
 	 * @param hooks  the selection hooks the guest pagers name; exactly one is given to the screen, none when it is ambiguous

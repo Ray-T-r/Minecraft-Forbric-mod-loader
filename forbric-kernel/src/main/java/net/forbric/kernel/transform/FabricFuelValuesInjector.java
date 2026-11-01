@@ -21,10 +21,10 @@ import org.objectweb.asm.tree.TypeInsnNode;
 import org.objectweb.asm.tree.VarInsnNode;
 
 /**
- * A Fabric mod's fuels go into the fuel values the merged game builds.
+ * A Fabric mod's fuels go into the fuel values the game builds.
  *
  * <p>fabric-content-registries fires {@code FuelValueEvents.BUILD}/{@code EXCLUSIONS} from a wrap in vanilla's
- * {@code FuelValues.vanillaBurnTimes}; the merged server (and a client on a NeoForge connection) builds its fuels in
+ * {@code FuelValues.vanillaBurnTimes}; the server (and a client on a NeoForge connection) builds its fuels in
  * NeoForge's {@code DataMapHooks.populateFuelValues} instead and never calls it, so a Fabric mod's fuel could not go in a
  * furnace. Right before that method's one {@code Builder.build()}, the builder goes through {@code KernelFabricFuel.apply}
  * with the method's own registries and feature flags. Applied only when the method builds one builder from its two
@@ -73,7 +73,7 @@ public final class FabricFuelValuesInjector implements ClassTransformer {
 	static final String FUEL_VALUES = "net/minecraft/world/level/block/entity/FuelValues";
 	static final String BUILDER = "net/minecraft/world/level/block/entity/FuelValues$Builder";
 	static final String DESC = "(Lnet/minecraft/core/RegistryAccess;Lnet/minecraft/world/flag/FeatureFlagSet;)Lnet/minecraft/world/level/block/entity/FuelValues;";
-	/** The merge-added body the forwarding {@code vanillaBurnTimes(Provider, FeatureFlagSet, int)} calls. */
+	/** The carrier-added body the forwarding {@code vanillaBurnTimes(Provider, FeatureFlagSet, int)} calls. */
 	static final String BODY_DESC = "(L" + BUILDER + ";I)L" + FUEL_VALUES + ";";
 	static final String KERNEL_FUEL = "net/forbric/kernel/runtime/KernelFabricFuel";
 	static final String THROUGH_DESC = "(L" + BUILDER + ";L" + FUEL_VALUES + ";Lnet/minecraft/core/HolderLookup$Provider;"
@@ -262,7 +262,7 @@ public final class FabricFuelValuesInjector implements ClassTransformer {
 	 * <p>The remove call itself stays exactly as shipped, so a guest's {@code @At(INVOKE)} on it — the wrap that fires the
 	 * fuel events — matches it as before; the bracket only duplicates its receiver and argument ahead of it. Every such
 	 * site is bracketed: where a native facade was restored ({@code NativeConstructorFacadeRestorer}) the class holds
-	 * vanilla's body twice — the facade, where the guests bind, and the merge-added closure — and which of them a guest's
+	 * vanilla's body twice — the facade, where the guests bind, and the carrier-added closure — and which of them a guest's
 	 * wrap lands in is Mixin's business; each window lives for one call of the method it is in.
 	 */
 	static byte[] bracketTheNativePoint(byte[] bytes) {

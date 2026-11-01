@@ -743,7 +743,7 @@ public final class KernelLifecycle {
 			invokeStaticOn(cl, "net.minecraft.world.level.gamerules.GameRuleCategory", "registerModdedCategories");
 			// Last in postRegisterEvents: NeoForge builds its item tooltip appenders — every vanilla component line
 			// (enchantments, lore, attributes, durability, …) and every mod's. Left out of this copy of the tail,
-			// the merged ItemStack's dispatcher walked three empty lists and tooltips showed only the name.
+			// NeoForge's ItemStack dispatcher walked three empty lists and tooltips showed only the name.
 			if (!"off".equalsIgnoreCase(System.getProperty(NEO_TOOLTIP_APPENDERS, "on"))) {
 				invokeStaticOn(cl, "net.forbric.kernel.runtime.KernelNeoTooltips", "init");
 			} else {
@@ -823,7 +823,7 @@ public final class KernelLifecycle {
 	/**
 	 * Re-sorts NeoForge's creative-tab ORDER list so tabs registered in the kernel's window become visible.
 	 *
-	 * <p>The merged {@code CreativeModeInventoryScreen} paginates its tab strip EXCLUSIVELY from
+	 * <p>NeoForge's {@code CreativeModeInventoryScreen} paginates its tab strip EXCLUSIVELY from
 	 * {@code net.neoforged.neoforge.common.CreativeModeTabRegistry.getSortedCreativeModeTabs()} — not from
 	 * {@code CreativeModeTabs.tabs()}. That {@code SORTED_TABS} list starts empty and is only rewritten by
 	 * {@code sortTabs()}, which walks the whole {@code CREATIVE_MODE_TAB} registry. Vanilla's tabs enter the
@@ -851,7 +851,7 @@ public final class KernelLifecycle {
 	 * Links any registered {@code BlockItem} still missing from {@code Item.BY_BLOCK} — a net for the block→item link.
 	 *
 	 * <p>{@code Block.asItem()} resolves through {@code Item.byBlock(this)}, which is a plain
-	 * {@code BY_BLOCK.get(block)}. The merged {@code BlockItem} constructor only stores its block; it never adds
+	 * {@code BY_BLOCK.get(block)}. NeoForge's {@code BlockItem} constructor only stores its block; it never adds
 	 * itself to that map. On MinecraftForge the ITEMS registry's add-callback linked each one as it was added; the
 	 * kernel's rewrite of that callback went with MinecraftForge, so this sweep is what links any block item still
 	 * missing.
@@ -905,7 +905,7 @@ public final class KernelLifecycle {
 	 *
 	 * <p>NeoForge's built-in CLIENT registrations — reload listeners ({@code AddClientReloadListenersEvent} adds
 	 * {@code AnimationLoader}, {@code ObjLoader}, branding), entity renderers, sprite sources, client extensions —
-	 * live in {@code ClientNeoForgeMod}'s {@code @SubscribeEvent} handlers. The merged base's
+	 * live in {@code ClientNeoForgeMod}'s {@code @SubscribeEvent} handlers. The base's
 	 * {@code Minecraft.<init>} fires those events via {@code ClientHooks.initClientHooks →
 	 * ModLoader.postEvent(...)}, which iterates {@code ModList.sortedContainers} and calls each container's
 	 * {@code acceptEvent} (→ its {@code getEventBus().post(...)}). The kernel seeded an EMPTY ModList, so those
@@ -1134,7 +1134,7 @@ public final class KernelLifecycle {
 	 * Puts NeoForge's synced datapack registries back into {@code RegistryDataLoader.SYNCHRONIZED_REGISTRIES}, the
 	 * list both ends sync from: the server packs each entry of it for the client, and the client builds each one.
 	 *
-	 * <p>NeoForge's merged {@code <clinit>} makes that field a live view of its own networkable list, and
+	 * <p>NeoForge's {@code <clinit>} makes that field a live view of its own networkable list, and
 	 * {@code DataPackRegistryEvent} adds every registry declared with a network codec to it. fabric-api's
 	 * {@code DynamicRegistriesImpl.registerSynced} replaces the field with an {@code ArrayList} copy the first time a
 	 * Fabric mod syncs a registry of its own, and on a Forbric client the Fabric mains run before NeoForge's
@@ -1319,7 +1319,7 @@ public final class KernelLifecycle {
 	 * Mirrors the NeoForge-declared datapack registries into Fabric API's {@code DynamicRegistries}, so both
 	 * ecosystems' worldgen registries exist whichever list the world loader ends up reading.
 	 *
-	 * <p><b>Why this is needed at all.</b> The merged base is NeoForge-patched, so {@code WorldLoader} passes
+	 * <p><b>Why this is needed at all.</b> The base is NeoForge-patched, so {@code WorldLoader} passes
 	 * {@code DataPackRegistriesHooks.getDataPackRegistries()} to {@code RegistryDataLoader}. But fabric-api's
 	 * {@code fabric-registry-sync-v0} ships {@code WorldLoaderMixin.modifyLoadedEntries}, which REPLACES that
 	 * argument with {@code DynamicRegistries.getBootstrappingRegistries()} — its own list, built only from what was
@@ -1619,7 +1619,7 @@ public final class KernelLifecycle {
 	/**
 	 * The client's end-of-loading decision, which runs inside {@code Minecraft.<init>}.
 	 *
-	 * <p>A refusal cannot leave as itself from here. The merged {@code Main.main} wraps {@code new Minecraft(..)}
+	 * <p>A refusal cannot leave as itself from here. The base's {@code Main.main} wraps {@code new Minecraft(..)}
 	 * in a catch-all that builds an "Initializing game" crash report and ends in {@code Minecraft.crash(.., -1)} —
 	 * {@code System.exit} before {@link CompatibilityLaunchBoundary} is ever reached — so the player's Quit, or a
 	 * strict stop, arrived as a game crash with a crash report and exit status 255. The same try has exactly one
@@ -2125,7 +2125,7 @@ public final class KernelLifecycle {
 	}
 
 	/**
-	 * Invoked from {@code Minecraft.<init>} at the merged base's own {@code ClientModLoader.finish()} call
+	 * Invoked from {@code Minecraft.<init>} at the base's own {@code ClientModLoader.finish()} call
 	 * ({@code NeoClientSetupHookInjector}) — the NeoForge half of the client mod-loading window, and the last
 	 * kernel hook the constructor reaches: the block-colour table, the particle providers and
 	 * {@code initClientHooks} have all run by then.

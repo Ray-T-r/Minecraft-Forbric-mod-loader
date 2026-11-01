@@ -35,9 +35,9 @@ import net.forbric.kernel.util.Caught;
 import net.forbric.kernel.util.ForbricLog;
 
 /**
- * Which merged-base classes a mixin config OTHER than the one being judged also targets.
+ * Which base classes a mixin config OTHER than the one being judged also targets.
  *
- * <p>{@link MixinFit} resolves a guest mixin's anchors against the MERGED BASE, and {@link KernelGuestMixinAdapter}
+ * <p>{@link MixinFit} resolves a guest mixin's anchors against the BASE, and {@link KernelGuestMixinAdapter}
  * drops the mixin when none of them resolve ({@link MixinFit.Verdict#UNFIT}) on the reasoning that it "was going to
  * be dead weight". That reasoning has one blind spot, and it is exactly the inter-mod compatibility layer: a mixin
  * may deliberately target a member that <em>another mod's mixin adds at runtime</em>, which is not in the merged

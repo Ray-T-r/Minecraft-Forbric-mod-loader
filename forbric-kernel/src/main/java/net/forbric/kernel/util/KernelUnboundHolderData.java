@@ -13,7 +13,7 @@ import java.util.Set;
  * Says so when a data-map lookup is answered "no data" for a value that was still not registered when its registry
  * closed — the one case where the answer {@code UnboundHolderDataInjector} gives can hide a defect instead of fixing one.
  *
- * <p>The merged {@code Holder.Reference.getData} answers {@code null} for an intrusive holder with no key, where native
+ * <p>NeoForge's {@code Holder.Reference.getData} answers {@code null} for an intrusive holder with no key, where native
  * NeoForge throws {@code Trying to access unbound value}. While its registry is still open for registration that is the
  * expected state: the value was constructed and is about to be registered, which is when fabric-api's
  * {@code OxidizableBlocksRegistry.registerNextStage} asks a block for its next stage, and nothing is logged. Once a

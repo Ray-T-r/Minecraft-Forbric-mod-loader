@@ -11,7 +11,7 @@ import org.objectweb.asm.tree.MethodNode;
 /**
  * The hand-off between the passes that re-count an injection point. A guest mixin's ordinal counts occurrences in the
  * body its mod was compiled against (the native body); several passes translate it into a count over the current
- * merged body. A translated ordinal must never be translated again: read as a native count, a current-body ordinal
+ * current body. A translated ordinal must never be translated again: read as a native count, a current-body ordinal
  * names a different occurrence, and a second translation silently lands the handler on another call.
  *
  * <p>The contract: a pass that leaves a handler's injection point counted over the current body marks the handler;

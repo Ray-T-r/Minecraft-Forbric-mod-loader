@@ -28,7 +28,7 @@ import net.minecraft.world.entity.monster.Monster;
 import net.forbric.kernel.util.ForbricLog;
 
 /**
- * The two write shapes {@code WidenedFieldTwinInjector} needs: a guarded narrowing for a field the merge widened
+ * The two write shapes {@code WidenedFieldTwinInjector} needs: a guarded narrowing for a field NeoForge widened
  * ({@code RangedBowAttackGoal.mob}: vanilla {@code Monster}, merged {@code Mob}) and a drain for a field it
  * re-typed ({@code AttributeSupplier$Builder.builder}: vanilla {@code ImmutableMap.Builder}, merged {@code Map}).
  */
@@ -53,7 +53,7 @@ public final class KernelWidenedFields {
 	}
 
 	/**
-	 * Everything put into the vanilla-typed twin builder that the merged map does not already hold. Called at the
+	 * Everything put into the vanilla-typed twin builder that the base's map does not already hold. Called at the
 	 * head of every reader of the map, so a Fabric {@code putAll} on the twin ({@code FabricDefaultAttributeRegistryImpl.
 	 * createFromExistingSupplier}) is visible to {@code build()}; a value the map already has — one added through
 	 * NeoForge's own {@code add} — wins, which is Fabric's copy-then-override order.

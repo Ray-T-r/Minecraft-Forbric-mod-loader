@@ -10,7 +10,7 @@ import net.forbric.kernel.util.PublicApiStorage;
 /**
  * NeoForge's fluid-model completeness check, told about the models fabric-rendering-fluids adds after it.
  *
- * <p>The merged {@code FluidStateModelSet.bake} ends in NeoForge's {@code ClientHooks.gatherFluidModels}, which posts
+ * <p>NeoForge's {@code FluidStateModelSet.bake} ends in NeoForge's {@code ClientHooks.gatherFluidModels}, which posts
  * {@code RegisterFluidModelsEvent} and then warns "Missing FluidModel for fluid '…'" for every registered fluid not in
  * the map. fabric-rendering-fluids wraps {@code bake} with a {@code @WrapMethod}: it calls the original — NeoForge's
  * check included — and only then bakes and adds every model a Fabric mod registered through

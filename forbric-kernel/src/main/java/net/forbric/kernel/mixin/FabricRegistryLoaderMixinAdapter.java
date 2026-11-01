@@ -27,11 +27,11 @@ import net.forbric.kernel.util.ForbricLog;
  *
  * <p>Every injector is read as Mixin reads it, never by spelling. Whether an injector is written for a dead loader is
  * the one method its selectors bind in the class the mod was compiled against ({@link MixinCallbackShape#written}), so a
- * bare name is the overload Mixin binds there, whatever the merged class declares beside it. One written there for a
- * live method stays as written only where the merged class binds it to that same method, or to its twin widened by the
+ * bare name is the overload Mixin binds there, whatever the current class declares beside it. One written there for a
+ * live method stays as written only where the current class binds it to that same method, or to its twin widened by the
  * parameters the carrier appended to the dead loader (the loader's own lambda), and to one that still runs there;
  * otherwise nothing moves. Only without that class (or
- * where its selectors bind no single method there) is it read by the methods it matches in the merged class
+ * where its selectors bind no single method there) is it read by the methods it matches in the current class
  * ({@link MixinTargetSelectors#reach}): an owner prefix, a dotted owner or whitespace is the same selector, and one that
  * binds a single method but matches several (a bare name shared by the dead loader and its live overloads) names neither
  * for certain. A point is the member it names ({@link MixinCallbackShape#member}) — one written without its owner or
@@ -50,11 +50,11 @@ public final class FabricRegistryLoaderMixinAdapter {
 	public static boolean enabled(){return !"off".equalsIgnoreCase(System.getProperty(PROPERTY,"on"));}
 
     /**
-     * Whether the mixin wraps a call of the loader the carrier left dead — a call no live body of the merged class makes
+     * Whether the mixin wraps a call of the loader the carrier left dead — a call no live body of the current class makes
      * any more, which a widened overload replaced — with its point read as {@link #adapt} reads it (one without its owner
      * or descriptor in the method it was written for, in the class the mod was compiled against). The gate refuses a mixin
      * only when this holds and {@link #adapt} cannot move it: a wrap left on a dead call would never run, and the rest of
-     * the mixin would apply without it. Decided by what the wrap names and what the merged class still calls, never by the
+     * the mixin would apply without it. Decided by what the wrap names and what the current class still calls, never by the
      * shape of the wrap's handler.
      */
     static boolean wrapsDeadCall(ClassNode mixin,Function<String,ClassNode> targets,java.util.function.BiFunction<net.forbric.api.Ecosystem,String,ClassNode> references) {
@@ -111,13 +111,13 @@ public final class FabricRegistryLoaderMixinAdapter {
 			String dead=null;boolean other=false;
 			// Which loader it was written for is decided where it was written: the one method its injector binds in the
 			// class the mod was compiled against. A bare name binds the first method of that name there, whatever the
-			// merged class declares beside it or no longer declares.
+			// current class declares beside it or no longer declares.
 			MethodNode compiled=MixinCallbackShape.written(handler,source);
 			if(compiled!=null){
 				String key=compiled.name+compiled.desc;
 				MethodNode here=MixinTargetSelectors.one(handler,target);
 				if(!deadCallees.contains(key)){
-					// Written for a live method: not this repair's case, and left as written only where the merged class
+					// Written for a live method: not this repair's case, and left as written only where the current class
 					// binds it to that same method, or to its twin widened by exactly the parameters the carrier appended to
 					// the dead loader (the loader's own lambda, widened with it, which the moved wrap now runs) — and to one
 					// that still runs there. Bound to a dead loader or to what only a dead loader reaches, to another overload

@@ -54,11 +54,11 @@ import net.forbric.kernel.util.Caught;
  * <ul>
  *   <li>it is an {@code @Inject} before one point (no {@code by}, no captured locals, no slice, no {@code @Group}), which
  *       selects one instruction in the method as the mod's own loader has it (the native reference of its ecosystem) and
- *       one in the merged method — or, where the merged method only forwards to an overload of its own (handing over its
+ *       one in the current method — or, where the current method only forwards to an overload of its own (handing over its
  *       own arguments and constants), in that overload, for a handler that captures no argument;</li>
- *   <li>the branches that decide whether the merged point's statement is reached ({@link NativeCallInlining.Conditions})
+ *   <li>the branches that decide whether the current point's statement is reached ({@link NativeCallInlining.Conditions})
  *       are those of the native one and more: the carrier's guard;</li>
- *   <li>right before the merged statement runs carrier code alone ({@link CodeAlignment}: no instruction of it is a step
+ *   <li>right before the current statement runs carrier code alone ({@link CodeAlignment}: no instruction of it is a step
  *       of the native method), and its earliest instruction reached under exactly the native conditions, on every way to
  *       the statement, is where the injector goes: before that instruction's first call, field access, allocation or
  *       branch, which only plain reads may precede;</li>
@@ -160,7 +160,7 @@ public final class CarrierGuardedPoints {
 		if (aligned == null) return null;
 		Set<AbstractInsnNode> steps = java.util.Collections.newSetFromMap(new IdentityHashMap<>());
 		steps.addAll(aligned.values());
-		// The carrier code right before the merged statement, back to the last step the native method has too.
+		// The carrier code right before the current statement, back to the last step the native method has too.
 		AbstractInsnNode last = previousReal(mergedStart);
 		while (last != null && !(steps.contains(last) && effect(last))) last = previousReal(last);
 		AbstractInsnNode from = last == null ? firstReal(host.instructions.getFirst()) : nextReal(last);

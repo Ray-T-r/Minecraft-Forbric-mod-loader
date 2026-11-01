@@ -43,8 +43,8 @@ import net.forbric.kernel.util.ForbricLog;
  *
  * <h2>The failure</h2>
  *
- * <p>The merged {@code RegistryLoadTask$PendingRegistration.loadFromResource} carries NeoForge's patch: where
- * stock Minecraft calls {@code Decoder.parse} directly, the merged body wraps every element in
+ * <p>NeoForge's {@code RegistryLoadTask$PendingRegistration.loadFromResource} carries NeoForge's patch: where
+ * stock Minecraft calls {@code Decoder.parse} directly, the base's body wraps every element in
  * {@code ConditionalOps.createConditionalCodec}. That is unconditional and global — EVERY datapack-registry
  * element, from EVERY pack, is decoded through NeoForge's condition evaluator, whichever ecosystem's mod shipped
  * the file.

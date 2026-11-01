@@ -29,7 +29,7 @@ import net.forbric.kernel.util.ForbricLog;
 import net.forbric.kernel.util.Caught;
 
 /**
- * Turns a guest {@code @Inject(locals = CAPTURE_*)} into MixinExtras {@code @Local}s that read, in the merged body, the
+ * Turns a guest {@code @Inject(locals = CAPTURE_*)} into MixinExtras {@code @Local}s that read, in the current body, the
  * locals it captured in the native one.
  *
  * <p>A locals capture takes the target's locals at the injection point, in slot order from the first one after the
@@ -42,11 +42,11 @@ import net.forbric.kernel.util.Caught;
  * <p>Each captured parameter is the native local in its position: the locals at the native point with a value
  * (NativeCallChanges.localsAt) from the first slot after the arguments, without the ones the local variable table says
  * are out of scope there, in slot order — and each must be of the parameter's type there (its table entry, or, for a
- * local the compiler left unnamed such as a for-each's array and index, the type of what produced it). In the merged body
+ * local the compiler left unnamed such as a for-each's array and index, the type of what produced it). In the current body
  * the same local is the one slot holding the same value (the same producing expression, loop counters and array reads
  * included), of the same type. Only then does every captured parameter become {@code @Local(index = slot)} and the
  * capture go; one unproved parameter leaves the injector as written. A slice, a callback group, more than one point, or a
- * point the merged body does not select exactly once are left alone. {@code -Dforbric.capturedLocals=off} leaves every
+ * point the current body does not select exactly once are left alone. {@code -Dforbric.capturedLocals=off} leaves every
  * capture as compiled.
  */
 public final class MixinCapturedLocals {
@@ -101,7 +101,7 @@ public final class MixinCapturedLocals {
 		return value instanceof String[] e && e.length == 2 && LOCAL_CAPTURE.equals(e[0]) && e[1].startsWith("CAPTURE_");
 	}
 
-	/** Handler parameter → merged slot for every captured parameter; null when any is not proved. */
+	/** Handler parameter → current slot for every captured parameter; null when any is not proved. */
 	static Map<Integer, Integer> convert(MethodNode handler, AnnotationNode at, ClassNode originalOwner, MethodNode before,
 			ClassNode currentOwner, MethodNode after) {
 		List<AbstractInsnNode> nativePoints = MixinCallbackProofs.points(before, at);
@@ -156,7 +156,7 @@ public final class MixinCapturedLocals {
 			if (result.containsValue(found)) return null;
 			result.put(parameter, found);
 		}
-		// Where the merged body lists the same locals in front, the capture still matches as written: nothing to change.
+		// Where the current body lists the same locals in front, the capture still matches as written: nothing to change.
 		Frame<SourceValue> mergedFrame = mergedFrames[mergedAt];
 		List<Integer> listed = new ArrayList<>();
 		for (int slot = firstLocal(after); mergedFrame != null && slot < mergedFrame.getLocals() && listed.size() < captured.size(); slot++) {
@@ -168,7 +168,7 @@ public final class MixinCapturedLocals {
 	}
 
 	/**
-	 * The merged point for a native point: the same instruction position when the merged body makes the call as often,
+	 * The current point for a native point: the same instruction position when the current body makes the call as often,
 	 * else the occurrence the alignment proves (CallOccurrenceAlignment), for an {@code INVOKE} point; null otherwise.
 	 */
 	private static AbstractInsnNode mergedPoint(AnnotationNode at, ClassNode originalOwner, MethodNode before, AbstractInsnNode nativePoint,

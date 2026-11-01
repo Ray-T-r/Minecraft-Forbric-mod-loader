@@ -35,7 +35,7 @@ import org.objectweb.asm.tree.TypeInsnNode;
 import org.objectweb.asm.tree.VarInsnNode;
 
 /**
- * A value modifier the merged method already applies: report-only proof that an argument modifier which found no call to
+ * A value modifier the current method already applies: report-only proof that an argument modifier which found no call to
  * attach to is no loss, because the method its selector binds hands the same-named call the same computation of the same
  * value. No guest, game or handler name is listed, and no body hash.
  *

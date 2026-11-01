@@ -158,7 +158,7 @@ public final class LootTableEventBridgeInjector implements ClassTransformer {
 	/** The events {@link net.forbric.kernel.boot.LootTableEventDispatch} fires on every loot reload, by their public fields. */
 	public static final Set<String> BRIDGED_EVENTS = Set.of("REPLACE", "MODIFY", "ALL_LOADED");
 
-	/** Whether {@code node} (the merged {@code ReloadableServerRegistries}) has the one seam of each kind this bridge routes. */
+	/** Whether {@code node} (NeoForge's {@code ReloadableServerRegistries}) has the one seam of each kind this bridge routes. */
 	public static boolean routable(ClassNode node) {
 		int loot = 0, tags = 0;
 		if (node == null) return false;

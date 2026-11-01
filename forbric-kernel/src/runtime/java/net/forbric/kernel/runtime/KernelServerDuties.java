@@ -103,7 +103,7 @@ public final class KernelServerDuties {
 	}
 
 	/**
-	 * The relay of vanilla's {@code Block.tryDropExperience}, which the merged game never calls (NeoForge moved the value it
+	 * The relay of vanilla's {@code Block.tryDropExperience}, which the game never calls (NeoForge moved the value it
 	 * computes into {@code BlockDropsEvent}): last of all, whatever the drops event now holds is what a Fabric mod's hooks in
 	 * that method are handed, as their own game would hand them the value there, and what they leave is what drops
 	 * ({@link net.forbric.kernel.mixin.UncalledValueRelay}). {@code LOWEST}, so every NeoForge listener comes first. {@code -Dforbric.uncalledValueRelay=off}

@@ -59,8 +59,8 @@ import net.forbric.kernel.util.ForbricLog;
  * {@code Gui.extractRenderState} no longer makes; its {@code @WrapOperation} found nothing, the check threw, and
  * {@code Gui} was defined without fabric-screen-api's {@code GuiExtensions}, architectury's {@code MixinGui} or anyone
  * else's: {@code Minecraft.<init>} died on the cast. balm's {@code FabricCropBlockMixin}, whose moisture wrap needs the
- * moisture read in {@code CropBlock.getGrowthSpeed} that neither of the merged base's two overloads still makes, cost
- * {@code CropBlock} every mixin the same way. Those two lost calls are the merged base's, not this class's, and stay
+ * moisture read in {@code CropBlock.getGrowthSpeed} that neither of the base's two overloads still makes, cost
+ * {@code CropBlock} every mixin the same way. Those two lost calls are the base's, not this class's, and stay
  * open: with or without the switch, isolated or not, those two wraps land nowhere, so spruceui's
  * {@code BEFORE_EXTRACT}/{@code AFTER_EXTRACT} screen events and balm's moisture hook do not fire. Without the switch the
  * packs measured never reached this class at all.

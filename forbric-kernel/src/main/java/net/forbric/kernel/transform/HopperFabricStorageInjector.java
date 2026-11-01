@@ -20,7 +20,7 @@ import org.objectweb.asm.tree.VarInsnNode;
  * NeoForge's hopper asks Fabric's item storage lookup where its own found nothing.
  *
  * <p>fabric-transfer-api-v1's {@code HopperBlockEntityMixin} anchors after vanilla's {@code getAttachedContainer} and
- * {@code getSourceContainer}; the merged hopper is NeoForge's, which looks up a {@code ContainerOrHandler} instead and
+ * {@code getSourceContainer}; NeoForge's hopper looks up a {@code ContainerOrHandler} instead and
  * calls neither, so a Fabric storage NeoForge cannot see (unslotted, on a block without a block entity, or any with
  * the transfer bridge off) never saw a hopper. Two edits, both on NeoForge's "found nothing" branches:
  * <ul>

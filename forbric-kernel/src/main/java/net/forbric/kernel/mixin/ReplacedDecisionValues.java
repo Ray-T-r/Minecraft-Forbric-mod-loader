@@ -44,10 +44,10 @@ import net.forbric.kernel.util.ForbricLog;
  * <p>Nothing here knows a mod, a class or a method by name. One injector is moved when its only point is a call, with no
  * slice and no {@code @Group}; its method is the same natively (the class its ecosystem's mods were compiled against) and
  * merged; the native method makes that call exactly where the point picks it (once, or the occurrence its ordinal names)
- * and the merged method never; the native call is followed by a conditional jump; and the merged method makes exactly
+ * and the current method never; the native call is followed by a conditional jump; and the current method makes exactly
  * one call the native method never makes, of the same return type, followed by the same conditional jump over a block
  * identical, instruction for instruction, to the native one — or the native call is stored straight into a local the
- * method stores only there, and the merged method stores exactly one such call, straight, into its one store of the local
+ * method stores only there, and the current method stores exactly one such call, straight, into its one store of the local
  * the table names alike (same debug name and type): every later read of that local reads it, as natively ({@code Hud}'s
  * {@code isUnderWater} for the air bubbles). The handler only changes that value (its first parameter
  * and its return are the call's type), so on the carrier's call it changes the value the same branch reads. The point is
@@ -127,7 +127,7 @@ public final class ReplacedDecisionValues {
 			}
 			return found;
 		}
-		// The value kept in a local the method stores once: the carrier's call that the merged method keeps in that same local
+		// The value kept in a local the method stores once: the carrier's call that the current method keeps in that same local
 		// (its debug name and type), stored there once too, is the value every later read of the local reads.
 		if (!(after instanceof VarInsnNode kept) || kept.getOpcode() != value.getOpcode(Opcodes.ISTORE) || stores(was, kept.var) != 1) return null;
 		String name = localName(was, kept, value);

@@ -4,7 +4,7 @@ package net.forbric.kernel.interop;
 import java.util.concurrent.ConcurrentHashMap;
 
 /**
- * One run of a method a carrier split into pieces the merged game calls one by one, as a guest's cancel at its start sees
+ * One run of a method a carrier split into pieces the game calls one by one, as a guest's cancel at its start sees
  * it (MixinSplitBodyEdges): the first piece starts the run, a cancel there marks it, and each later piece asks whether the
  * run it belongs to was cancelled — the native method returned at that cancel, so none of its later work ran.
  *

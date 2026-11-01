@@ -102,7 +102,7 @@ final class DatapackRegistryDeclaration {
 	 * patched {@code RegistryDataLoader.<clinit>} to call {@code DataPackRegistriesHooks.grabNetworkableRegistries}
 	 * just before it returns. Hooks first — step 3a's order, and native NeoForge's — and the copy happens after the
 	 * whole loader initialiser, TAIL injectors included. Loader first, and the copy happens nested inside that call,
-	 * BEFORE the TAIL injectors run: NeoForge's list is vanilla's 46, the merged {@code WorldLoader} loads only that
+	 * BEFORE the TAIL injectors run: NeoForge's list is vanilla's 46, NeoForge's {@code WorldLoader} loads only that
 	 * list, and wover's six registries are missing at world load without a word. Nothing the kernel controls picks
 	 * the order: fabric-api's {@code DynamicRegistriesImpl.<clinit>} reads {@code WORLDGEN_REGISTRIES}, so a mod
 	 * that calls {@code DynamicRegistries} from its main initialises the loader first (PuzzlesLib and Balm both

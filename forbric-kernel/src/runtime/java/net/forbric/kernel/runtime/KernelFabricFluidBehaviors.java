@@ -26,11 +26,11 @@ import net.minecraft.world.level.material.Fluid;
 import net.minecraft.world.level.material.FluidState;
 
 /**
- * fabric-content-registries' fluid behaviours as the fluid types the merged entity code asks (KernelFluidTypes).
+ * fabric-content-registries' fluid behaviours as the fluid types NeoForge's entity code asks (KernelFluidTypes).
  *
  * <p>A Fabric mod gives its fluid entity physics with {@code EntityFluidInteractionRegistry.register(tag, behaviour)}:
  * whether mobs swim or drown in it, whether a boat floats on it, how it pushes. Vanilla asks those questions through
- * fluid tags and fabric-api's mixins add the registered tags beside water and lava. The merged entity code asks
+ * fluid tags and fabric-api's mixins add the registered tags beside water and lava. NeoForge's entity code asks
  * NeoForge's {@code FluidType} instead ({@code canSwimInFluidType} in updateSwimming, {@code canDrownInFluidType} in
  * {@code CommonHooks.onLivingBreathe}, {@code supportsBoating} in the boat's {@code canBoatInFluid}), where
  * ForeignFluidTypeInjector gave such a fluid NeoForge's empty type — so none of it happened. Worse, fabric-api's own
@@ -46,7 +46,7 @@ import net.minecraft.world.level.material.FluidState;
 	 * A body that does not drown in such a type refills its air as in vanilla, like a body that breathes in any other
 	 * fluid (KernelAirRefill), before NeoForge's breathe event, which still has the final say.
  * Pushing and fall distance are fabric-api's: its per-tick hook hands the entity to the behaviour, which pushes through
- * {@code applyCurrentTo(tag, …)} — the tracker of this same type, since the merged class tracks by type identity — and
+ * {@code applyCurrentTo(tag, …)} — the tracker of this same type, since NeoForge's class tracks by type identity — and
  * scales the fall distance itself. NeoForge gathers a tracker's current only for a type that {@code canPushEntity},
  * then applies it at {@code motionScale} without using it up; so the type pushes at scale zero: the current is there
  * for the behaviour, NeoForge adds none of it, and fabric-api applies it once. Its fall-distance modifier stays 1.
@@ -54,13 +54,13 @@ import net.minecraft.world.level.material.FluidState;
  * <p>The types are not in NeoForge's fluid-type registry, and need not be: the trackers key them
  * by identity, the client's fluid extensions default for an unknown type, the description id is set rather than
  * derived from a registry name, and NeoForge's own {@code toString} prints "Unregistered FluidType" for one.
- * Not covered: travel through the fluid (the merged {@code travelInFluid} asks only water's type, so no fluid type's
+ * Not covered: travel through the fluid (NeoForge's {@code travelInFluid} asks only water's type, so no fluid type's
  * {@code move} is reached, and fabric-api's {@code travelInCustomFluid} anchor is gone — a body moves as through lava,
 	 * as it did before); a behaviour on a
  * tag holding a vanilla or NeoForge fluid (NeoForge answers those fluids; said once per tag, when the tag's fluids are
  * known the first time it is asked about — a question before tags are loaded, as a client's resource reload can ask,
  * says nothing); and a fluid in two behaviour tags (the first by tag name wins).
- * {@code -Dforbric.fabricFluidBehavior=off} leaves foreign fluids with the tag-implied type and the merged class as is.
+ * {@code -Dforbric.fabricFluidBehavior=off} leaves foreign fluids with the tag-implied type and NeoForge's class as is.
  */
 public final class KernelFabricFluidBehaviors {
 	public static final String PROPERTY = "forbric.fabricFluidBehavior";

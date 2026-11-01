@@ -28,7 +28,7 @@ import net.forbric.kernel.util.Caught;
  *
  * <p>Only a stretch that can run twice without being seen is copied: no field, static or array store, no monitor, throw,
  * subroutine or dynamic call, no exception handler over it, and — for a stretch that makes calls — only calls the caller
- * has shown the merged method still makes on the way to the moved call ({@link #replayable}).
+ * has shown the current method still makes on the way to the moved call ({@link #replayable}).
  */
 final class MixinNativeReplay {
 	private final String owner;
@@ -215,7 +215,7 @@ final class MixinNativeReplay {
 		}
 	}
 
-	// ---- the merged method still reaches the call -------------------------------------------------------------------
+	// ---- the current method still reaches the call -------------------------------------------------------------------
 
 	/**
 	 * Whether {@code from} (declared by {@code owner}) reaches a call of {@code member} through the methods it calls or
@@ -302,7 +302,7 @@ final class MixinNativeReplay {
 
 	/**
 	 * Computes {@code method}'s stack map frames and maxima as they stand in {@code mixin}, resolving the common
-	 * supertype of two classes through {@code classes} (the merged game) and falling back to {@code Object}.
+	 * supertype of two classes through {@code classes} (the game) and falling back to {@code Object}.
 	 */
 	static void frames(ClassNode mixin, MethodNode method, Function<String, ClassNode> classes) {
 		ClassNode shell = new ClassNode();

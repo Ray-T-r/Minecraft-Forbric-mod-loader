@@ -47,7 +47,7 @@ import net.forbric.kernel.transform.TransformContext;
  * kernel boot classes) — see {@link DelegationPolicy}.
  *
  * <p>The transform hook is injected by the boot orchestrator: {@code (binaryName, classBytes) -> newBytes}. It
- * runs the {@code TransformChain} (Access, merged-base compat, the kernel redirectors) and, last, Mixin. A
+ * runs the {@code TransformChain} (Access, base compat, the kernel redirectors) and, last, Mixin. A
  * {@code null}/identity return means "unchanged".
  */
 public final class ForbricClassLoader extends URLClassLoader {

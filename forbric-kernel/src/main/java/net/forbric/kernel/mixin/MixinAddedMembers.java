@@ -44,8 +44,8 @@ import net.forbric.kernel.util.ForbricLog;
  * The members other guest mixins add to a class before a given mixin is applied to it: what that mixin's
  * {@code @Shadow} of such a member binds to.
  *
- * <p>{@link MixinFit} resolves a {@code @Shadow} against the merged class, and a member another mod's mixin adds is in
- * no merged class. moreculling's {@code BlockModelRenderState_fabricCullMixin} shadows {@code mesh}, the
+ * <p>{@link MixinFit} resolves a {@code @Shadow} against the current class, and a member another mod's mixin adds is in
+ * no current class. moreculling's {@code BlockModelRenderState_fabricCullMixin} shadows {@code mesh}, the
  * {@code @Unique MutableMesh} fabric-renderer-api-v1's own {@code BlockModelRenderStateMixin} adds to
  * {@code BlockModelRenderState}; it was reported as "applies only partially — missing @Shadow field mesh" on every
  * client boot, a possible problem in the load report for a mixin that binds exactly as it does on Fabric.
@@ -65,7 +65,7 @@ import net.forbric.kernel.util.ForbricLog;
  * from what the configs declare: a mixin its plugin or the kernel later declines is still counted, which at worst
  * leaves a miss unreported, as it was before any of this.
  *
- * <p>{@code -Dforbric.mixinFit.addedMembers=off} judges a shadow against the merged class alone again.
+ * <p>{@code -Dforbric.mixinFit.addedMembers=off} judges a shadow against the current class alone again.
  */
 public final class MixinAddedMembers {
 	public static final String PROPERTY = "forbric.mixinFit.addedMembers";
@@ -84,7 +84,7 @@ public final class MixinAddedMembers {
 		/** Whether a mixin applied to {@code target} before this one adds the method. */
 		boolean method(String target, String name, String desc);
 
-		/** Nothing is added: the judgement against the merged class alone. */
+		/** Nothing is added: the judgement against the current class alone. */
 		View NONE = new View() {
 			@Override
 			public boolean field(String target, String name, String desc) {
@@ -128,7 +128,7 @@ public final class MixinAddedMembers {
 	}
 
 	/**
-	 * What the mixin {@code entry} of {@code configName} will find on its targets beyond the merged class. The index
+	 * What the mixin {@code entry} of {@code configName} will find on its targets beyond the current class. The index
 	 * is built on the first question, not here: most mixins shadow nothing that is missing.
 	 *
 	 * @param resource resolves a config name or {@code some/pkg/Name.class} to its bytes, as the adapter's does

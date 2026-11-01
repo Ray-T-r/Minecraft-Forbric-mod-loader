@@ -244,7 +244,7 @@ public final class VanillaEarlyReturns implements ClassTransformer {
 
 	/**
 	 * The rows that give the last piece of each body a carrier split into pieces ({@code CarrierHelpers.dispatchedHelpers}:
-	 * the merged method is nothing but calls to same-shaped helpers handed its own arguments) the early returns of the native
+	 * the base's method is nothing but calls to same-shaped helpers handed its own arguments) the early returns of the native
 	 * method: that piece ends where the native method ended, and the guard every piece repeats is the native method's early
 	 * return, so a {@code TAIL} moved onto the piece runs only where the native one runs. Keyed against the native method,
 	 * as every other row is keyed against vanilla's method of the same name; formatted as the table writes them.
@@ -488,7 +488,7 @@ public final class VanillaEarlyReturns implements ClassTransformer {
 	// --- pairing ---
 
 	/**
-	 * Which merged edges into {@code tail} vanilla sent to an early return, and to which one (its index among
+	 * Which base edges into {@code tail} vanilla sent to an early return, and to which one (its index among
 	 * vanilla's returns). A key is paired only when it occurs as often here as in {@code vanilla}.
 	 *
 	 * <p>When one key's occurrences went to different returns in vanilla, order alone does not say which is which: the

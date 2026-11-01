@@ -64,10 +64,10 @@ public final class MixinOperationSeamTransport implements Opcodes {
             AnnotationNode injector=MixinFit.injectorOf(handler);if(!closed(handler,injector)||!verified(mixin.name,handler))continue;
             List<AnnotationNode> ats=MixinFit.atNodes(injector);if(ats.size()!=1)continue;
             AnnotationNode at=ats.getFirst();if(!"INVOKE".equals(MixinFit.value(at,"value"))||MixinFit.value(at,"target")==null||MixinFit.value(at,"by")!=null||MixinFit.value(at,"args")!=null||MixinFit.value(at,"ordinal") instanceof Integer ordinal&&ordinal>0)continue;
-            // The host natively and in the merged class, as Mixin binds the handler's selectors however they are spelled.
+            // The host natively and in the current class, as Mixin binds the handler's selectors however they are spelled.
             MethodNode original=MixinTargetSelectors.one(handler,source),host=MixinTargetSelectors.one(handler,target);if(original==null||host==null||!original.name.equals(host.name)||Type.getReturnType(original.desc)!=Type.VOID_TYPE)continue;
             // The wrapped call as Mixin resolves the point's target in the native host (an owner- or descriptor-less one where
-            // that body selects one method's calls alone), read from here on in its one spelling; the merged host must keep
+            // that body selects one method's calls alone), read from here on in its one spelling; the current host must keep
             // no call the point selects, or Mixin injects there as written.
             String member=MixinCallbackShape.invoked(at,original);if(member==null||!MixinCallbackShape.calls(at,host).isEmpty())continue;
             boolean wrap=injector.desc.equals("Lcom/llamalad7/mixinextras/injector/wrapoperation/WrapOperation;");String shift=MixinFit.asString(MixinFit.value(at,"shift"));if(wrap&&shift!=null||!wrap&&shift!=null&&!List.of("BEFORE","NONE","AFTER").contains(shift))continue;
@@ -228,7 +228,7 @@ public final class MixinOperationSeamTransport implements Opcodes {
      * is written by the added code, no handler is gone, and the added code is another mixin's (a HEAD {@code @Inject} of
      * a NeoForge mod into {@code ClientHooks.extractScreen}, JourneyMap's): it calls at least one method merged into
      * {@code owner} by a mixin not in {@code excluded}, and every method of {@code owner} it calls, or hands over as a
-     * method handle, is such a merged method. Such a body still makes the proved call with the values the carrier
+     * method handle, is such a current method. Such a body still makes the proved call with the values the carrier
      * computes, as the mixin's own loader would run both. Anything else — a call or constant replaced, a local reassigned,
      * added code that calls a method of the class no other mixin merged (a transformer's change, even in a body that
      * already calls another mixin's {@code @Overwrite}) — declines as before, and so does every change with

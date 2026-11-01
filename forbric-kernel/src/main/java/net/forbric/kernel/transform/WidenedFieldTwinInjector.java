@@ -43,7 +43,7 @@ import net.forbric.kernel.util.ForbricLog;
  * {@code @Accessor} typed {@code ImmutableMap$Builder} cannot bind ({@code InvalidAccessorException} on every
  * fabric-api boot) and every Fabric mod loses the default-attribute registry path. One field cannot serve both
  * readers — a {@code HashMap} is never an {@code ImmutableMap.Builder} — so each row gets a public, non-final
- * TWIN with vanilla's descriptor, written where the merged field is written. Two write shapes:
+ * TWIN with vanilla's descriptor, written where the base's field is written. Two write shapes:
  * <ul>
  *   <li>NARROW ({@code mob}): after every {@code putfield mob:LMob;} fed by an {@code aload n}, the twin is written
  *       from the same slot through {@code KernelWidenedFields.asMonster} — the guarded cast, null when NeoForge's
@@ -84,7 +84,7 @@ public final class WidenedFieldTwinInjector implements ClassTransformer {
 					MAP_DESC, Shape.FRESH_DRAIN));
 
 	/**
-	 * A field the merge WIDENED to a supertype of vanilla's: javac names the field's static type as the owner of every
+	 * A field NeoForge WIDENED to a supertype of vanilla's: javac names the field's static type as the owner of every
 	 * call made through it, so each such call moved owner with it ({@code Monster.lookAt} became {@code Mob.lookAt}).
 	 *
 	 * @param owner       the class declaring the field (internal name)
@@ -95,7 +95,7 @@ public final class WidenedFieldTwinInjector implements ClassTransformer {
 	public record Narrowed(String owner, String name, String vanillaType, String mergedType) {
 	}
 
-	/** The {@link Shape#NARROW} rows, for MixinSubtypeOwnerRetarget: the merge widened these fields, nothing else. */
+	/** The {@link Shape#NARROW} rows, for MixinSubtypeOwnerRetarget: NeoForge widened these fields, nothing else. */
 	public static List<Narrowed> narrowed() {
 		List<Narrowed> out = new ArrayList<>();
 		for (Row row : ROWS) {

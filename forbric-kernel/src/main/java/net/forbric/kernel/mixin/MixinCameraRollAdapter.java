@@ -23,7 +23,7 @@ import net.forbric.kernel.util.ForbricLog;
  * only two wrappers on one current occurrence keep the whole mixin as compiled. A wrapper without an ordinal wraps every
  * native occurrence, so every one must be matched: per current overload it then binds all of that overload's calls when
  * they are all counterparts (otherwise each by its ordinal), the mod's own handler taking the first and copies of it the
- * rest — on the merged camera it keeps the two two-float calls and a widened copy takes the two three-float ones.
+ * rest — on the current camera it keeps the two two-float calls and a widened copy takes the two three-float ones.
  */
 public final class MixinCameraRollAdapter {
 	public static final String PROPERTY = "forbric.cameraRollCallbacks";
@@ -57,7 +57,7 @@ public final class MixinCameraRollAdapter {
     private static final String ARGS="org/spongepowered/asm/mixin/injection/invoke/arg/Args";
 
     /**
-     * Moves a {@code @ModifyArgs} from the call its point picks natively to the merged call that plays that call's role,
+     * Moves a {@code @ModifyArgs} from the call its point picks natively to the current call that plays that call's role,
      * where the carrier made that call through a widened overload of the same method.
      *
      * <p>Vanilla's {@code Camera.alignWithEntity} sets the ordinary view's angles with {@code setRotation(FF)}; the merged
@@ -66,13 +66,13 @@ public final class MixinCameraRollAdapter {
      * {@code setPosition} — matched the first two-float call left in that slice, the sleeper's, and its angles callback ran
      * only in bed.
      *
-     * <p>Moved only when every link is proved: the native slice and ordinal pick exactly one call; the merged call that
+     * <p>Moved only when every link is proved: the native slice and ordinal pick exactly one call; the current call that
      * plays its role is found by its operand origins and branch conditions ({@link CallOccurrenceAlignment#prefixCall}),
      * and is a call of the same method with the named descriptor's parameters as its leading ones; the named overload is a
      * pure forwarding to that one with constants for the appended parameters (what it would pass, had the carrier kept
      * the old call); and the handler only reads and writes the call's arguments by constant indices below the named
      * descriptor's count ({@link #argumentsWithin}) — so the appended ones are untouched, as natively, where they did not
-     * exist. Its point then names that call by its ordinal in the merged method, the slice dropped.
+     * exist. Its point then names that call by its ordinal in the current method, the slice dropped.
      */
     static int adaptArgumentLists(ClassNode mixin,ClassNode owner,ClassNode source,Function<String,ClassNode> targets) {
         if("off".equalsIgnoreCase(net.forbric.kernel.util.ForbricSwitches.get(ARGUMENT_LISTS_PROPERTY,"on")))return 0;
@@ -231,7 +231,7 @@ public final class MixinCameraRollAdapter {
 
     /** The condition wrappers on two-float calls; the rest of this class's contract. */
     static int adaptConditions(ClassNode mixin,ClassNode camera,ClassNode source,Function<String,ClassNode> targets) {
-        // One handler's native occurrences, each matched to the merged call that stands for it; a handler without an ordinal
+        // One handler's native occurrences, each matched to the current call that stands for it; a handler without an ordinal
         // wraps every occurrence natively, so it stands for all of them.
         record Move(MethodNode handler,MethodNode align,List<CallOccurrenceAlignment.Match> matches,boolean everyOccurrence,int nativeOrdinal) { }
         List<Move> moves=new ArrayList<>();
@@ -275,14 +275,14 @@ public final class MixinCameraRollAdapter {
             moves.add(new Move(handler,align,matches,every,every?-1:nativeOrdinals.getFirst()));
         }
         if(moves.isEmpty())return 0;
-        // Two handlers on one merged occurrence: which wrap the mod meant to run first is not this pass's to decide.
+        // Two handlers on one current occurrence: which wrap the mod meant to run first is not this pass's to decide.
         Set<String> claimed=new java.util.HashSet<>();
         for(Move move:moves)for(var match:move.matches())if(!claimed.add(CallOccurrenceAlignment.member(match.call())+"#"+match.ordinal()))return 0;
         MethodNode roll=MixinCallbackShape.unique(mixin,m->MixinCallbackShape.shape(m,"(F)F")&&MixinCallbackShape.kind(m,"ModifyArg")
                 &&MixinCallbackShape.plainPoint(m,"INVOKE","Lorg/joml/Quaternionf;rotationYXZ(FFF)Lorg/joml/Quaternionf;",MixinTargetSelectors.one(m,source)));
         int changed=0;
         for(Move move:moves) {
-            // Per merged overload: one handler for all of its calls when the handler wrapped every occurrence and they are
+            // Per current overload: one handler for all of its calls when the handler wrapped every occurrence and they are
             // all counterparts, else one per occurrence. The first keeps the mod's handler; the rest are copies of it.
             java.util.Map<String,List<Integer>> byCall=new java.util.LinkedHashMap<>();
             for(var match:move.matches())byCall.computeIfAbsent(CallOccurrenceAlignment.member(match.call()),k->new ArrayList<>()).add(match.ordinal());
@@ -309,7 +309,7 @@ public final class MixinCameraRollAdapter {
                     if(call.equals(LONG))widen(target);
                     retarget(target,call,points.get(n).getValue());changed++;
                 }
-                // The point now counts the merged body: ThinnedCallOrdinals must not read it as a native count again,
+                // The point now counts the current body: ThinnedCallOrdinals must not read it as a native count again,
                 // and this pass must not split the handler again.
                 CurrentBodyOrdinals.mark(target);
                 if(n>0)mixin.methods.add(target);

@@ -277,7 +277,7 @@ class CommonNetworkInteropInjectorTest {
 	private static byte[] readClass(String entry) throws Exception {
 		try (ZipFile zip = new ZipFile(STAGED_BASE.toFile())) {
 			ZipEntry found = zip.getEntry(entry);
-			assertNotNull(found, entry + " missing from the staged merged base");
+			assertNotNull(found, entry + " missing from the staged base");
 			try (InputStream in = zip.getInputStream(found)) {
 				return in.readAllBytes();
 			}

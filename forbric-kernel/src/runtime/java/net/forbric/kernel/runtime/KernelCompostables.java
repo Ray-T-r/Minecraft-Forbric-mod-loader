@@ -20,9 +20,9 @@ import net.neoforged.neoforge.registries.datamaps.builtin.Compostable;
 import net.neoforged.neoforge.registries.datamaps.builtin.NeoForgeDataMaps;
 
 /**
- * What the vanilla compostables map still has to say to the merged composter (CompostablesFallbackInjector).
+ * What the vanilla compostables map still has to say to NeoForge's composter (CompostablesFallbackInjector).
  *
- * <p>The merged {@code ComposterBlock} asks only NeoForge's {@code neoforge:compostables} data map
+ * <p>NeoForge's {@code ComposterBlock} asks only NeoForge's {@code neoforge:compostables} data map
  * ({@code getValue(ItemStack)}), while Fabric-side code still writes and wraps vanilla's {@code COMPOSTABLES}:
  * fabric-content-registries' {@code CompostableRegistry.add} puts into it, and BCLib wraps its {@code containsKey} and
  * {@code getFloat} calls to add every item with a compostable trait. Nothing read the map any more, so none of that
@@ -55,7 +55,7 @@ public final class KernelCompostables {
 		recorded = true;
 	}
 
-	/** The vanilla map as the merged composter may still consult it: entries added or changed after bootstrap only. */
+	/** The vanilla map as NeoForge's composter may still consult it: entries added or changed after bootstrap only. */
 	public static Object2FloatMap<ItemLike> fallback() {
 		Delta<ItemLike> current = view;
 		if (current == null) {
@@ -83,7 +83,7 @@ public final class KernelCompostables {
 	}
 
 	/**
-	 * The chance the merged composter itself would use for {@code item}, as a map: fabric-transfer's
+	 * The chance NeoForge's composter itself would use for {@code item}, as a map: fabric-transfer's
 	 * {@code ComposterWrapper} reads {@code COMPOSTABLES.getFloat} straight, so without this a Fabric pipe and the block
 	 * would disagree about every item the data map and the vanilla map list differently.
 	 */

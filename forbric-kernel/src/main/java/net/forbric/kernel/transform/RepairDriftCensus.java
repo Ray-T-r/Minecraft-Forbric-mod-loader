@@ -119,7 +119,7 @@ public final class RepairDriftCensus {
 		return null;
 	}
 
-	/** {@code RepairDriftCensus <candidate-merged-base.jar> [<carrier.jar> ...]} */
+	/** {@code RepairDriftCensus <candidate-base.jar> [<carrier.jar> ...]} */
 	public static void main(String[] args) throws IOException {
 		if (args.length < 1) {
 			System.err.println("usage: RepairDriftCensus <candidate-base.jar> [<carrier.jar> ...]");

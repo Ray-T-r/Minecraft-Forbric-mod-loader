@@ -29,19 +29,19 @@ import net.forbric.api.Ecosystem;
 import net.forbric.kernel.util.Caught;
 
 /**
- * Calls a vanilla method made itself that the merged base makes in a helper the carrier added — the shipped table
+ * Calls a vanilla method made itself that the base makes in a helper the carrier added — the shipped table
  * {@code carrier-helpers.txt}, which CarrierHelperCensusTest re-derives from the staged jars and pins.
  *
  * <p>A row says: in {@code owner#method}, the reference jar of each listed ecosystem makes {@code member} exactly
- * once; the merged method no longer makes it, and the one place it is made instead is the carrier-added
+ * once; the current method no longer makes it, and the one place it is made instead is the carrier-added
  * {@code helper}, exactly once, reached from the method in the listed {@code shape}. MixinRetarget moves an
  * injector only along a row, for a mod of a listed ecosystem, and re-checks the row against the live bytes first.
  *
- * <p>{@code SPLIT}: the merged method is nothing but calls to same-shaped helpers the carrier added, each handed the
+ * <p>{@code SPLIT}: the current method is nothing but calls to same-shaped helpers the carrier added, each handed the
  * method's own arguments in place — NeoForge turned {@code Hud.extractPlayerHealth} into
  * {@code extractHealthLevel; extractArmorLevel; extractFoodLevel; extractAirLevel} so each can be a HUD layer.
  *
- * <p>{@code HEAD} / {@code TAIL}: the merged method keeps a body and calls the helper exactly once, and the call is the
+ * <p>{@code HEAD} / {@code TAIL}: the current method keeps a body and calls the helper exactly once, and the call is the
  * helper's first act (only loads before it, nothing jumps back to it) or its last (only a {@code pop} and the one
  * {@code return} after it, no other way out, nothing jumps past it). Before the helper call and before the call inside
  * it, or after the one and after the other, are then the same program point. NeoForge moved the item decorations out

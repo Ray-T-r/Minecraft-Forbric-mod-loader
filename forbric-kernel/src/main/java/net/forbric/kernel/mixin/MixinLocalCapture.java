@@ -11,15 +11,15 @@ import org.objectweb.asm.tree.AnnotationNode;
 import org.objectweb.asm.tree.MethodNode;
 
 /**
- * The slot a handler's {@code @Local} capture reads once its anchor moves from the native call to the call the merged body
+ * The slot a handler's {@code @Local} capture reads once its anchor moves from the native call to the call the current body
  * makes in its place, in the same method.
  *
  * <p>With the native body: the slot MixinExtras resolves the capture to at the native point ({@code argsOnly}, {@code index},
  * {@code name}, {@code ordinal}, or the one local of its type — {@link MixinLocalOriginProof#slot}) holds a value with a
- * producer; the merged slot is the one slot holding a value with the same producer at the merged point — first by
+ * producer; the current slot is the one slot holding a value with the same producer at the current point — first by
  * {@link MixinLocalOriginProof#prove} (parameters, constants, allocations), then by the producing expression itself
  * ({@link NativeCallChanges#localsAt}: {@code Mth.floor(this.getX())} is the same value in both bodies whatever slot either
- * stores it in). Without the native body: the slot MixinExtras itself resolves the same capture to at the merged point.
+ * stores it in). Without the native body: the slot MixinExtras itself resolves the same capture to at the current point.
  * Never by the order in which one mod happened to declare its captures.
  */
 final class MixinLocalCapture {
@@ -71,7 +71,7 @@ final class MixinLocalCapture {
 					found = candidate.getKey();
 				}
 				if (found == null) return null;
-				// A parameter is named by its slot: the merged method's parameter there must be of the captured type.
+				// A parameter is named by its slot: the current method's parameter there must be of the captured type.
 				if (value.kind().equals("parameter") && !local.type().equals(parameterType(merged, found))) return null;
 				proved = found;
 			}

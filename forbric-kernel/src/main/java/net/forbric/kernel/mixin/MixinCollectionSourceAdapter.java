@@ -89,7 +89,7 @@ public final class MixinCollectionSourceAdapter {
 		ClassNode originalOwner = classes.apply(original.owner());
 		if (originalOwner == null || originalOwner.fields.stream().noneMatch(f -> f.name.equals(original.name())
 				&& f.desc.equals(original.desc()) && (f.access & Opcodes.ACC_STATIC) != 0)) return null;
-		// The method Mixin binds the wrap to in the merged target, which must be the one the mod wrote it for.
+		// The method Mixin binds the wrap to in the current target, which must be the one the mod wrote it for.
 		MethodNode body = MixinTargetSelectors.boundAsWritten(handler, target, nativeTarget);
 		if (body == null) return null;
 		List<Plan> candidates = new ArrayList<>();

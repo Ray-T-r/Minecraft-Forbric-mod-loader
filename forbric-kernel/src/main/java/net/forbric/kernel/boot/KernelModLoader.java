@@ -595,7 +595,7 @@ public final class KernelModLoader {
 	 * Installs the kernel's NeoForge {@code ModContainer}s into the live {@code ModList}, so {@code isLoaded(id)} and
 	 * {@code getModContainerById(id)} answer for mods the kernel loaded.
 	 *
-	 * <p>{@link PassiveSeeder#seedNeoForgeModList} seeds an EMPTY list purely so early merged-base reads do not NPE;
+	 * <p>{@link PassiveSeeder#seedNeoForgeModList} seeds an EMPTY list purely so early base reads do not NPE;
 	 * nothing ever put the constructed mods in it. That is invisible to a mod whose entrypoint only registers
 	 * listeners — which is why the universal jars (FallingTree, collective) never showed it — but a library mod
 	 * typically resolves its OWN container to get its event bus, and got an exception instead.

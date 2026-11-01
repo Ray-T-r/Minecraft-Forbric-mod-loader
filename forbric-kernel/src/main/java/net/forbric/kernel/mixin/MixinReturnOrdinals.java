@@ -13,13 +13,13 @@ import net.forbric.api.Ecosystem;
 import net.forbric.kernel.util.ForbricLog;
 
 /**
- * Re-counts a guest's {@code @At("RETURN", ordinal = n)} on the merged body, when the merged body's returns are not the
+ * Re-counts a guest's {@code @At("RETURN", ordinal = n)} on the current body, when the current body's returns are not the
  * native body's returns one for one.
  *
  * <p>The ordinal counts the returns of the body the guest was compiled against. A merge that keeps another family's
  * early exit gives the method one more return in front of the one the guest named (MinecraftForge's
  * {@code onBlockStartBreak} veto in {@code ServerPlayerGameMode.destroyBlock}: Apoli's {@code action_on_block_break}
- * names vanilla's last return, ordinal 4, and the merged ordinal 4 is the creative-mode exit, where the two booleans it
+ * names vanilla's last return, ordinal 4, and the current ordinal 4 is the creative-mode exit, where the two booleans it
  * reads are not even in scope — the injector failed and the power never acted); a carrier that dropped or joined exits
  * gives it fewer. Which current return is which native return is read off both bodies ({@link ReturnAlignment}): the
  * native last return is the current last, an early return is the one the same test decides. A point it proves lands

@@ -41,7 +41,7 @@ import net.forbric.kernel.util.ForbricLog;
  * case that is provably harmless: no {@code Minecraft} means no options, which is exactly the answer the branch is for.
  *
  * <p>On Fabric nobody reaches the early case, because nothing calls into a mod before {@code Minecraft.<init>}. Here a
- * guest mixin on a merged-base seam can run earlier than its Fabric equivalent and drag a mod's {@code <clinit>} along:
+ * guest mixin on a base seam can run earlier than its Fabric equivalent and drag a mod's {@code <clinit>} along:
  * Flashback's {@code MixinMappedRegistry} HEAD injection on {@code freeze} initialises {@code Flashback}, whose
  * {@code <clinit>} registers four key mappings — and the kernel's registration window is at
  * {@code ClientModLoader.begin()}, inside {@code Main.main}, before {@code new Minecraft(...)}, by NeoForge's lifecycle.

@@ -26,10 +26,10 @@ import net.minecraft.world.item.Item;
 import net.minecraft.world.level.block.entity.FuelValues;
 
 /**
- * fabric-content-registries' fuel events, on the fuel values the merged game actually builds.
+ * fabric-content-registries' fuel events, on the fuel values the game actually builds.
  *
  * <p>Fabric registers fuels through {@code FuelValueEvents.BUILD} and {@code EXCLUSIONS}, fired by a wrap in vanilla's
- * {@code FuelValues.vanillaBurnTimes}. The merged server never calls that: it builds its fuels from NeoForge's
+ * {@code FuelValues.vanillaBurnTimes}. The server never calls that: it builds its fuels from NeoForge's
  * {@code furnace_fuels} data map in {@code DataMapHooks.populateFuelValues}, as a client on a NeoForge connection does,
  * so a Fabric mod's fuel never went in a furnace. FabricFuelValuesInjector calls {@link #apply} on that builder just
  * before it is built, in Fabric's order: BUILD, vanilla's non-flammable-wood removal, EXCLUSIONS. The removal applies
@@ -41,7 +41,7 @@ import net.minecraft.world.level.block.entity.FuelValues;
  * torrential puts its Angling Table in the table that way ({@code @ModifyReturnValue}, 1.5 × the base unit) and
  * Lithium runs its whole block-info pass from there. On native Fabric — and on native MinecraftForge — the server's
  * fuel table comes out of {@code vanillaBurnTimes(Provider, FeatureFlagSet)}, which calls the three-argument overload
- * with 200, so both run on it. The merged server never calls it — its table comes from {@code populateFuelValues} —
+ * with 200, so both run on it. The server never calls it — its table comes from {@code populateFuelValues} —
  * so the Angling Table would not burn on a Forbric server while the client, which does call it, thought it would.
  *
  * <p>{@link #throughVanillaReturnHooks} hands the builder {@code populateFuelValues} built from through that same
@@ -219,7 +219,7 @@ public final class KernelFabricFuel {
 	 * {@code @WrapOperation} that adds its fuels to the builder first among them — and through its return hooks.
 	 *
 	 * <p>Natively a guest's wrap of the {@code build()} in {@code vanillaBurnTimes} runs on the server's table, because
-	 * that is where the native server's table is built. The merged server builds its table in populateFuelValues, so the
+	 * that is where the native server's table is built. The server builds its table in populateFuelValues, so the
 	 * short-circuit in the body jumps to right before its {@code build()} with this builder on the stack instead of
 	 * vanilla's: vanilla's entries and the native point (where the fuel events fire, already fired by {@link #apply}) are
 	 * skipped, the build and everything Mixin put at it run once, on the data map's builder.

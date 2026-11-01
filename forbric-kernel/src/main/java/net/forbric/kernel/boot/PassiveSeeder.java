@@ -44,10 +44,10 @@ import net.forbric.kernel.util.Caught;
 import net.forbric.kernel.util.ForbricLog;
 
 /**
- * Seeds the MINIMUM genuine-loader identity state that the merged base's patched-vanilla {@code <clinit>}s read,
+ * Seeds the MINIMUM genuine-loader identity state that the base's patched-vanilla {@code <clinit>}s read,
  * WITHOUT running any genuine loader lifecycle.
  *
- * <p>The merged base is vanilla woven with Forge + NeoForge patches. Even a zero-mod boot trips over static
+ * <p>The base is vanilla woven with NeoForge's patches. Even a zero-mod boot trips over static
  * initializers that ask the genuine loaders "who am I?" — e.g. {@code SharedConstants.<clinit>} calls
  * {@code FMLEnvironment.isProduction()} → {@code FMLLoader.getCurrent()}, which throws
  * {@code "There is no current FML Loader"} if no {@code FMLLoader} instance exists. Normally
@@ -55,7 +55,7 @@ import net.forbric.kernel.util.ForbricLog;
  *
  * <p>This class establishes just the identity: an {@code FMLLoader} instance that answers dist / production /
  * classloader, made "current". It runs NO discovery, builds NO module layer, sorts NO mods — it only makes the
- * merged base's environment queries return sane answers. Everything is done reflectively THROUGH the kernel's
+ * base's environment queries return sane answers. Everything is done reflectively THROUGH the kernel's
  * transforming loader so the seeded {@code FMLLoader} shares the exact class identity the game classes will read.
  *
  * <p>This is passive seeding, not lifecycle driving: it is the kernel-owned equivalent of "the environment exists",
@@ -82,7 +82,7 @@ public final class PassiveSeeder {
 	private static final boolean PRODUCTION = true;
 
 	/**
-	 * Seeds every genuine-loader identity the merged base needs before the game entry runs. Best-effort per family.
+	 * Seeds every genuine-loader identity the base needs before the game entry runs. Best-effort per family.
 	 *
 	 * <p>{@code side} selects the seeded {@code Dist}. It is load-bearing: with the wrong dist, NeoForge's client
 	 * code (and the integrated server's connection handshake) treats the client as a dedicated server — e.g. the
@@ -122,7 +122,7 @@ public final class PassiveSeeder {
 
 	/**
 	 * Seeds an EMPTY NeoForge {@code ModList} so {@code ModList.get()} returns an empty list instead of null. The
-	 * merged base reads it early (e.g. {@code ResourcePackLoader.findResourcePacks} → {@code ModList.get().getModFiles()}
+	 * base reads it early (e.g. {@code ResourcePackLoader.findResourcePacks} → {@code ModList.get().getModFiles()}
 	 * when building the server pack repository). Zero mods = empty list. No-op if already present/absent.
 	 */
 	public static void seedNeoForgeModList(ClassLoader gameLoader) {
@@ -227,7 +227,7 @@ public final class PassiveSeeder {
 
 	/**
 	 * Seeds an EMPTY {@code LoadingModList} on the FMLLoader so {@code FMLLoader.getLoadingModList()} returns an
-	 * empty list instead of throwing "The loading mod list isn't built yet" — the merged base reads it from
+	 * empty list instead of throwing "The loading mod list isn't built yet" — the base reads it from
 	 * {@code FeatureFlags.<clinit>} (via {@code FeatureFlagLoader.loadModdedFlags}) during {@code Bootstrap.bootStrap}.
 	 * Zero mods = empty list. This seeds data, not lifecycle.
 	 */
@@ -263,7 +263,7 @@ public final class PassiveSeeder {
 	 * through {@code FMLLoader.getLoadingModList()} finds itself.
 	 *
 	 * <p>The kernel used to seed a list that was structurally valid but empty ({@link #seedEmptyLoadingModList}),
-	 * which answers the "does this thing exist" question the merged base's {@code <clinit>}s ask and nothing more.
+	 * which answers the "does this thing exist" question the base's {@code <clinit>}s ask and nothing more.
 	 * That is not what mods ask. A mod asks {@code getModFileById(myId).versionString()} (a version probe, rendered
 	 * into a UI string) or walks {@code getMods()} looking for its own {@code ModInfo} to build a platform-neutral
 	 * mod handle from. Against an empty list the first returns {@code null} and NPEs at the caller — for Iris that
@@ -273,7 +273,7 @@ public final class PassiveSeeder {
 	 *
 	 * <p>Why those probes run AT ALL on a Fabric-flavoured mod: multi-platform mods detect their platform by class
 	 * presence ({@code Class.forName(ForeignType.FML_LOADER.binary(Ecosystem.NEOFORGE))}). On a normal instance exactly one
-	 * family answers; on the merged base ALL of them do, so the NeoForge branch runs even for a jar that was built
+	 * family answers; under Forbric both do, so the NeoForge branch runs even for a jar that was built
 	 * for Fabric. The kernel cannot make that branch not run, so it must make the branch's data true.
 	 *
 	 * <p>This stays passive seeding: it runs NO FancyModLoader discovery, builds no module layer, sorts nothing. It
@@ -592,7 +592,7 @@ public final class PassiveSeeder {
 	 * open for Indigo to take. Producer on one side, consumer on the other, link silently dead.
 	 *
 	 * <p><b>Contained by measurement, not by hope:</b> {@code fileById} has exactly one writer (the constructor)
-	 * and exactly one reader ({@code getModFileById}) in the merged base — verified on the bytecode — so an extra
+	 * and exactly one reader ({@code getModFileById}) in the base — verified on the bytecode — so an extra
 	 * key can only make that one lookup answer for a spelling it previously refused. {@code getMods()} and
 	 * {@code sortedList} are untouched, so nothing counts these twice and nothing lands in a handshake.
 	 *
@@ -1114,7 +1114,7 @@ public final class PassiveSeeder {
 
 	/**
 	 * Registers NeoForge's BASELINE registries (neoforge:fluid_type, biome_modifier serializers, …) into the ROOT
-	 * registry so the merged base's NeoForge-patched vanilla code can resolve them. The merged base references
+	 * registry so the base's NeoForge-patched vanilla code can resolve them. The base references
 	 * these even with zero mods (e.g. worldgen resolves {@code DeferredHolder{neoforge:fluid_type/minecraft:empty}}).
 	 *
 	 * <p>Mechanism: {@code NeoForgeRegistriesSetup.registerRegistries(NewRegistryEvent)} is NeoForge's own handler

@@ -34,16 +34,16 @@ import net.forbric.kernel.util.ForbricLog;
  * The count was right in the native body. A merge that keeps another family's code inside that stretch moves the count
  * onto that code instead. Shoulder Surfing (NeoForge) modifies {@code Camera.calculateFov}'s {@code fov} at
  * {@code TAIL} {@code by = -2}: natively that is the load of {@code fov} that feeds
- * {@code modifyFovBasedOnDeathOrFluid}, whose result the method returns. The merged body goes on after that call into
+ * {@code modifyFovBasedOnDeathOrFluid}, whose result the method returns. The current body goes on after that call into
  * MinecraftForge's {@code fireComputeFov(...).getFOV()} before it returns, so two places back from the return is the
  * Forge event call — the handler's value was stored into {@code fov} after the last read of it, and the FOV override
  * did nothing, with no error anywhere.
  *
  * <p>The native target is read off the native body (META-INF/forbric/native-reference, {@link NativeGameReferences}) with
- * Mixin's own counting. Its counterpart in the merged body is the one instruction that the same run of real
+ * Mixin's own counting. Its counterpart in the current body is the one instruction that the same run of real
  * instructions ending at it — or starting at it — singles out in both bodies (the shortest run that is unique in the
- * native body, grown until it is unique in the merged one); when both runs find one, they must agree. The point is then
- * re-spelled on the nearest call (or return) at or after that instruction, in the merged body's own count, shifted back
+ * native body, grown until it is unique in the current one); when both runs find one, they must agree. The point is then
+ * re-spelled on the nearest call (or return) at or after that instruction, in the current body's own count, shifted back
  * by the nodes in between — never forward, so Mixin's {@code maxShiftBy} limit is never met. Only an injector with one
  * {@code @At} that shifts {@code BY}, no slice, no group, on a method its selector binds alone in both bodies with the
  * same descriptor, whose points were not already translated to the merged body; nothing moves where the native target
@@ -112,7 +112,7 @@ public final class MixinShiftedPoints {
 			}
 			String was = describe(at);
 			rewrite(at, respelled);
-			// Counted over the merged body now: the ordinal rules after this one must not translate it again.
+			// Counted over the current body now: the ordinal rules after this one must not translate it again.
 			CurrentBodyOrdinals.mark(handler);
 			moved++;
 			ForbricLog.info("[Forbric/Mixin] %s: %s's point %s lands natively on %s in %s.%s%s; the current body keeps that instruction behind "
@@ -142,7 +142,7 @@ public final class MixinShiftedPoints {
 
 	/**
 	 * The instruction of {@code current} that is {@code nativeTarget} of {@code original}: the shortest run of real
-	 * instructions ending at it that occurs once in the native body, grown until it also occurs once in the merged one,
+	 * instructions ending at it that occurs once in the native body, grown until it also occurs once in the current one,
 	 * and the same for the run starting at it. Both found: they must agree. Neither: null.
 	 */
 	static AbstractInsnNode counterpart(MethodNode original, AbstractInsnNode nativeTarget, MethodNode current) {

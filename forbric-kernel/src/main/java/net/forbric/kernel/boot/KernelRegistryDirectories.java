@@ -43,7 +43,7 @@ import net.forbric.kernel.util.ForbricLog;
  * {@code wover:wover/world_preset_info}, and {@code data/minecraft/wover/worldgen/biome_data/} holds the ten
  * vanilla Nether and End biomes' placement data.
  *
- * <p>The merged base took NeoForge's body. The value wover handed back was therefore already prefixed,
+ * <p>The base has NeoForge's body. The value wover handed back was therefore already prefixed,
  * {@code wover/wover/world_preset_info} — {@code data/<ns>/wover/wover/world_preset_info/}, a directory nothing
  * ships — and the two of its registries that have data loaded EMPTY without a word: the sweep pack's content
  * census counted 5+3 preset entries and 10 biome entries on native Fabric and none here. Wover's world types lost
@@ -51,16 +51,16 @@ import net.forbric.kernel.util.ForbricLog;
  * defaults in silence. Its tags were never affected: its mixin leaves {@code tagsDirPath} to fabric's modifier.
  *
  * <p>So the body answers as the owner's loader would: vanilla's path for a registry whose namespace belongs to a
- * Fabric mod, whatever the merged body said for everything else. Nothing changes for a plain Fabric registry,
+ * Fabric mod, whatever NeoForge's body said for everything else. Nothing changes for a plain Fabric registry,
  * because fabric's modifier still runs after this and puts the namespace back exactly as it does natively — the
  * only registries whose directory moves are those a mod intercepted the way wover does, and they move to where
  * that mod put its data. {@code componentsDirPath} (datagen only) follows too; Fabric never prefixed it. That
  * leans on a modifier after the body (fabric-registry-sync's) applying here as it does natively, so {@code Registries}
- * is asked first whether one does ({@link #fabricPrefixes}): where none does, every registry keeps the merged answer.
+ * is asked first whether one does ({@link #fabricPrefixes}): where none does, every registry keeps NeoForge's answer.
  *
  * <p>Ownership is the namespace's: {@link ModPresence#soleEcosystem}. A namespace no mod claims — or that mods of
- * two ecosystems claim — keeps the merged answer, which is what every registry had before this existed. Called from
- * game code on resource-reload threads, so it never throws: a failed decision is the merged answer.
+ * two ecosystems claim — keeps NeoForge's answer, which is what every registry had before this existed. Called from
+ * game code on resource-reload threads, so it never throws: a failed decision is NeoForge's answer.
  */
 public final class KernelRegistryDirectories {
 	/** {@code RegistryDirectoryOwnerInjector.PROPERTY}; {@code force} skips {@link #fabricPrefixes}. */
@@ -85,7 +85,7 @@ public final class KernelRegistryDirectories {
 	/**
 	 * What {@code Registries.registryDirPath} returns for the registry {@code namespace:path}.
 	 *
-	 * @param merged    what the merged body computed (NeoForge's prefixed directory)
+	 * @param merged    what NeoForge's body computed (its prefixed directory)
 	 * @param namespace the registry id's namespace
 	 * @param path      the registry id's path — vanilla's whole answer
 	 */
@@ -116,11 +116,11 @@ public final class KernelRegistryDirectories {
 	 * game, fabric-registry-sync's {@code @ModifyReturnValue} — decided once.
 	 *
 	 * <p>Vanilla's path is only right for a Fabric registry because that modifier puts the namespace back after
-	 * the body. Before this hook the merged body made the modifier redundant, so losing it cost nothing; handing
+	 * the body. Before this hook NeoForge's body made the modifier redundant, so losing it cost nothing; handing
 	 * out vanilla's path without it would move every Fabric registry's elements and tags to an unprefixed
 	 * directory, and no line would name why — the guest mixin adapter dropping it as unfit, a pin, or an arbitrated
-	 * fabric-api without it all look like one more row in the load report. So without it every registry keeps the
-	 * merged answer, which is what they all had before this hook: WorldWeaver's two are empty again, and one WARN
+	 * fabric-api without it all look like one more row in the load report. So without it every registry keeps
+	 * NeoForge's answer, which is what they all had before this hook: WorldWeaver's two are empty again, and one WARN
 	 * says so.
 	 *
 	 * <p>Asked of the class the game runs, by what it does: {@code elementsDirPath} for a registry {@code namespace:}

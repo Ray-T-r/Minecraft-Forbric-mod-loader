@@ -12,7 +12,7 @@ import net.neoforged.neoforge.common.CreativeModeTabRegistry;
 /**
  * fabric-creative-tab-api-v1's {@code FabricCreativeModeInventoryScreen}, answered from NeoForge's creative pager.
  *
- * <p>On the merged game the creative screen implements that interface — fabric-api's class tweaker injects it — but the
+ * <p>In the game the creative screen implements that interface — fabric-api's class tweaker injects it — but the
  * mixin that implements it is pinned off ({@code MergedBaseMixinCompat}: two pagers on one screen hid mod tabs), so
  * every method was the interface's own default, {@code throw new AssertionError("Implemented by mixin")}. owo calls
  * {@code getCurrentPage()} from the tail of {@code selectTab}, which {@code init} calls: the first time a player with

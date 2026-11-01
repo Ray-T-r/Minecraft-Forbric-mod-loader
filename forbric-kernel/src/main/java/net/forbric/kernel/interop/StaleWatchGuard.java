@@ -20,7 +20,7 @@ import net.forbric.kernel.util.Caught;
  * file name. Where a directory is already watched for another file, a file created in it afterwards — a config tracker
  * writing a new config, then registering its watch on it — reaches the new watch as a change: the event (or, on a
  * polling watch service, the next directory scan) describes the creation, which happened before the watch existed.
- * The handler then "reloads" a file nobody touched. In the merged game the carriers' own configs sit in {@code config/}
+ * The handler then "reloads" a file nobody touched. In the game the carriers' own configs sit in {@code config/}
  * and are watched from startup, so the first server start of a Fabric mod's config through the config port fired a
  * Reloading event two seconds after its Loading event, every time; natively nothing else watched that directory and it
  * never fired.

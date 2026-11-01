@@ -58,25 +58,25 @@ import net.forbric.kernel.util.Caught;
  * vanilla's call binds nothing: the call is gone.
  *
  * <p>Nothing here knows a mod, a class or a method by name. The correspondence is read from the method as the mod's own
- * loader has it (the native reference of its ecosystem) and the merged one:
+ * loader has it (the native reference of its ecosystem) and the current one:
  * <ul>
  *   <li>the injector's one point is a call ({@code INVOKE}) the native method makes once (or the occurrence its ordinal
- *       names) and the merged method never — the method itself or, where the merged method hands the native body to one
+ *       names) and the current method never — the method itself or, where the current method hands the native body to one
  *       private helper of the class that nothing else calls, that helper;</li>
  *   <li>the native call's value decides a branch (a conditional jump right after it), or is stored straight into a local
  *       the method stores only there;</li>
- *   <li>the merged method makes exactly one call the native method never makes (or, for a stored value, one producer) that
+ *   <li>the current method makes exactly one call the native method never makes (or, for a stored value, one producer) that
  *       stands in its place: for a decision, a call of the same type followed by a conditional jump whose two ways on run
  *       the same straight-line code as the native call's two ways on — the same way for the same answer, or the opposite
  *       ways (then the polarity is inverted); for a stored value, a producer stored straight into its one store of the
  *       local the table names alike (same debug name and type);</li>
  *   <li>for a {@code @Redirect}, every value the native call is handed is there at the carrier's call: one of the values
- *       the carrier's call is handed (the same expression over the method's own values), or a local of the merged method
+ *       the carrier's call is handed (the same expression over the method's own values), or a local of the current method
  *       holding that very expression at the call ({@link NativeCallChanges#localsAt}).</li>
  * </ul>
  *
  * <p>An {@code @Inject} (before or after the call, with no captured locals) names the carrier's call (its occurrence in
- * the merged method). A {@code @Redirect} keeps its handler as written, under its name with {@code $forbricOriginal}
+ * the current method). A {@code @Redirect} keeps its handler as written, under its name with {@code $forbricOriginal}
  * appended and without the annotation; a new handler of the carrier's call's shape (and the same captured arguments, and a
  * MixinExtras {@code @Local} for each value read from a local) carries the annotation, hands the original the native
  * call's values, and returns its answer (negated when the polarity is inverted). Inside the original handler, a call of
@@ -102,9 +102,9 @@ public final class CarrierDecisions {
 	}
 
 	/**
-	 * The merged method's stand-in for the native call: the call in {@code host} (the selected method or its helper),
+	 * The current method's stand-in for the native call: the call in {@code host} (the selected method or its helper),
 	 * which occurrence of its member it is there, whether its answer is the native one's opposite, and, for each value
-	 * the native call is handed, the carrier's operand ({@code carried}) or merged local ({@code locals}) holding it.
+	 * the native call is handed, the carrier's operand ({@code carried}) or current local ({@code locals}) holding it.
 	 */
 	record Decision(MethodNode host, MethodInsnNode call, int occurrence, boolean inverted, boolean stored, int[] carried, int[] locals,
 			List<NativeCallChanges.Expr> values, int[] derivedFrom, MethodInsnNode[] getters, TypeInsnNode allocation) {
@@ -150,7 +150,7 @@ public final class CarrierDecisions {
 				MethodNode marked = redirect ? relocateRedirect(mixin, handler, injector, at, call, decision, selected, original, was, merged)
 						: relocateInject(injector, at, decision, selected) ? handler : null;
 				if (marked == null) continue;
-				// The point now counts the merged body's calls; no later pass may read it as a native count.
+				// The point now counts the current body's calls; no later pass may read it as a native count.
 				CurrentBodyOrdinals.mark(marked);
 				moved++;
 				String standIn = decision.call() != null ? decision.call().owner.replace('/', '.') + "." + decision.call().name
@@ -344,10 +344,10 @@ public final class CarrierDecisions {
 
 	/**
 	 * The carrier's statement standing where the native statement that {@code call} is part of stood: the native method and
-	 * the merged one run the same instructions up to the native statement (the instruction before it is the same step in
+	 * the current one run the same instructions up to the native statement (the instruction before it is the same step in
 	 * both, read by {@link CodeAlignment}, and every jump to the statement is the same step as a jump to the carrier's), the
 	 * native statement — from the first instruction computing a value the call is handed up to the store of its answer —
-	 * runs nowhere in the merged method, and the merged method runs, in its place, a statement of its own, storing into the
+	 * runs nowhere in the current method, and the current method runs, in its place, a statement of its own, storing into the
 	 * same local the native statement stores into (same slot and declared type). The injector goes before the carrier
 	 * statement's first call, allocation or field access, which only plain reads may precede.
 	 */
@@ -379,7 +379,7 @@ public final class CarrierDecisions {
 		if (!(end instanceof VarInsnNode store) || store.getOpcode() < Opcodes.ISTORE || store.getOpcode() > Opcodes.ASTORE) return null;
 		Map<AbstractInsnNode, AbstractInsnNode> aligned = CodeAlignment.align(original.name, was, merged.name, host);
 		if (aligned == null) return null;
-		// The native call and the store of its answer run nowhere in the merged method (a plain read feeding it may).
+		// The native call and the store of its answer run nowhere in the current method (a plain read feeding it may).
 		if (aligned.containsKey(call) || aligned.containsKey(end)) return null;
 		AbstractInsnNode before = previousReal(start);
 		if (before == null || !aligned.containsKey(before) || before instanceof JumpInsnNode jump && jump.getOpcode() == Opcodes.GOTO) return null;
@@ -603,13 +603,13 @@ public final class CarrierDecisions {
 			CALLBACK_INFO_RETURNABLE = "Lorg/spongepowered/asm/mixin/injection/callback/CallbackInfoReturnable;";
 
 	/**
-	 * A redirect of a native call whose answer the method keeps in a local, where the merged method keeps, in the local the
+	 * A redirect of a native call whose answer the method keeps in a local, where the current method keeps, in the local the
 	 * table names alike, the call's own operand instead: the carrier no longer makes the copy, it keeps the value itself
 	 * (vanilla's {@code Language.loadDefault} stores {@code Map.copyOf(loaded)} as its storage, NeoForge stores {@code loaded}
 	 * so its hook can still add to it). A handler whose every answer is that operand, or the same operation of the same name
 	 * made on it (another library's copy), only adds what it does before answering: it runs, where the native call stood,
 	 * as an {@code @Inject} handed the operand (a MixinExtras {@code @Local}), and the carrier's value stands. The injector goes
-	 * before the merged method's first call, field access or allocation after its store of the operand, which only plain
+	 * before the current method's first call, field access or allocation after its store of the operand, which only plain
 	 * reads may precede.
 	 */
 	private static boolean keepsOperand(ClassNode mixin, MethodNode handler, AnnotationNode injector, AnnotationNode at, MethodInsnNode call,
@@ -621,7 +621,7 @@ public final class CarrierDecisions {
 		String name = localName(was, kept, answer);
 		List<NativeCallChanges.Expr> values = operandsOf(original, was, call);
 		if (name == null || values == null) return false;
-		// The merged store into the same local, of the call's own operand.
+		// The current store into the same local, of the call's own operand.
 		VarInsnNode store = null;
 		int slot = -1;
 		Frame<SourceValue>[] frames;
@@ -678,7 +678,7 @@ public final class CarrierDecisions {
 					|| load.var != parameter || load.getOpcode() != Opcodes.ALOAD) return false;
 		}
 		if (answers == 0) return false;
-		// Where the native call stood: the merged method's first call, field access or allocation after the store.
+		// Where the native call stood: the current method's first call, field access or allocation after the store.
 		AbstractInsnNode point = nextReal(store);
 		while (point != null && (point instanceof VarInsnNode variable && variable.getOpcode() >= Opcodes.ILOAD && variable.getOpcode() <= Opcodes.ALOAD
 				|| point.getOpcode() >= Opcodes.ACONST_NULL && point.getOpcode() <= Opcodes.SIPUSH || point instanceof LdcInsnNode)) point = nextReal(point);
@@ -985,7 +985,7 @@ public final class CarrierDecisions {
 
 	/**
 	 * Whether a piece of sugar means the same at the carrier's call as at the native one: a {@code @Share} always (it is
-	 * the mixin's own value); a {@code @Local} named by its debug name alone when the merged method has a local of that
+	 * the mixin's own value); a {@code @Local} named by its debug name alone when the current method has a local of that
 	 * name and type at the call holding the very expression the native local of that name holds at the native call.
 	 */
 	private static boolean sugarHolds(AnnotationNode sugar, Type type, ClassNode original, MethodNode was, MethodInsnNode call, ClassNode merged,

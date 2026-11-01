@@ -7,7 +7,7 @@ import net.minecraft.world.item.CreativeModeTab;
 import net.neoforged.neoforge.client.gui.CreativeTabsScreenPage;
 
 /**
- * What {@link KernelCreativePager} needs from the merged {@code CreativeModeInventoryScreen}: NeoForge's pager state,
+ * What {@link KernelCreativePager} needs from NeoForge's {@code CreativeModeInventoryScreen}: NeoForge's pager state,
  * the screen's selected tab, and its two private methods.
  *
  * <p>CreativePagerBridgeInjector adds this interface to the screen with one-instruction trampolines, so every decision

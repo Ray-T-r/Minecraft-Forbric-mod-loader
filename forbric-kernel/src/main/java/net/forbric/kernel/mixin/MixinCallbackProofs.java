@@ -30,7 +30,7 @@ import net.forbric.kernel.util.Caught;
  * {@code original.call}, unchanged, and lets the {@code Operation} go nowhere else, so an adapter that supplies the
  * wrapped call's value may ignore what the handler passes.
  * <li>{@link #returnsOriginal}: on every path the handler returns exactly the value its {@code original.call} produced,
- * so an adapter that cannot feed the handler's answer back into the merged game drops nothing by ignoring it.
+ * so an adapter that cannot feed the handler's answer back into the game drops nothing by ignoring it.
  * <li>{@link #correspondLocals}: each {@code @Local} the handler asks for names, in the live body, a slot whose value is
  * produced the way the native slot's was — by the same calls, fields, allocations and parameters — never a slot that
  * merely has the same type.
@@ -659,7 +659,7 @@ final class MixinCallbackProofs {
 	 * value at every live point. With the native body ({@code reference}; {@code nativeDesc} is its descriptor either way)
 	 * by producer ({@link #correspondLocals}), {@code nativeParameter} telling which native parameter a live one carries.
 	 * Without it nothing records what a body local held natively, and an {@code ordinal}, {@code index} or {@code name}
-	 * describes the native body's locals, not the live one's: each is read only as far as the merged body and the
+	 * describes the native body's locals, not the live one's: each is read only as far as the current body and the
 	 * native descriptor answer it ({@link #unrecordedLocals}). Handler parameter to live slot; null when the handler has
 	 * an extra that is no {@code @Local}, any {@code @Local} is not read so, or two {@code @Local}s that name different
 	 * native locals would read one slot.
@@ -683,7 +683,7 @@ final class MixinCallbackProofs {
 
 	/**
 	 * {@link #replacedCallLocals} without the native body, at one live point: each {@code @Local} read only as far as the
-	 * merged body and the native descriptor {@code nativeDesc} answer it.
+	 * current body and the native descriptor {@code nativeDesc} answer it.
 	 * <ul>
 	 * <li>An {@code argsOnly} one is its parameter ({@link #parameterSlot}).
 	 * <li>One with no {@code ordinal}, {@code index} or {@code name} — natively the one local of its type — is the local of
@@ -741,7 +741,7 @@ final class MixinCallbackProofs {
 	 * locals of its type. A discriminator describes the native body, and the platform's own locals shift every position
 	 * in it, so it is read only where it means the same in both bodies:
 	 * <ul>
-	 * <li>a {@code name} is the variable's own: the slot MixinExtras' reading of it names in the merged body — a parameter
+	 * <li>a {@code name} is the variable's own: the slot MixinExtras' reading of it names in the current body — a parameter
 	 * the native method has ({@code nativeParameter}), or a body local the call is handed when it is handed any; never
 	 * with an {@code index}, which is a position;
 	 * <li>an {@code index} of the slot of a native parameter of its type (the slots the native descriptor gives the method
@@ -749,7 +749,7 @@ final class MixinCallbackProofs {
 	 * method takes it;
 	 * <li>an {@code ordinal} counts the native parameters of its type first, in their order: one within them is that
 	 * parameter where the live method takes it. The first past them names the first body local of its type, whose rank
-	 * the merged body does not keep: it is read, only when the call is handed exactly one local of its type, as that one —
+	 * the current body does not keep: it is read, only when the call is handed exactly one local of its type, as that one —
 	 * the premise an undiscriminated capture is read on, that the platform passes the native value where its call stood,
 	 * not a proof. A later one names a second body local, which only the native body orders.
 	 * </ul>
@@ -786,7 +786,7 @@ final class MixinCallbackProofs {
 	}
 
 	/**
-	 * Which native local a {@code @Local} read to {@code slot} of {@code live} names, as far as the merged body says: the
+	 * Which native local a {@code @Local} read to {@code slot} of {@code live} names, as far as the current body says: the
 	 * native parameter a live parameter carries ({@code nativeParameter}); otherwise only its discriminator — two that
 	 * differ name two native locals, two alike (an undiscriminated pair: the one local of their type) one.
 	 */

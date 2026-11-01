@@ -32,11 +32,11 @@ public final class MixinPredicateDelegateAdapter {
         List<MethodNode> added=new ArrayList<>();int changed=0;
         for(MethodNode handler:new ArrayList<>(mixin.methods)) {
             Source source=source(mixin.name,handler);if(source==null)continue;
-            // The host natively and in the merged class, as Mixin binds the handler's selectors however they are spelled.
+            // The host natively and in the current class, as Mixin binds the handler's selectors however they are spelled.
             MethodNode before=MixinTargetSelectors.one(handler,original),after=MixinTargetSelectors.one(handler,current);
             if(before==null||after==null||!before.name.equals(after.name)||!before.desc.equals(after.desc)||!before.desc.equals("(Ljava/lang/String;)V"))continue;
             // The wrapped call as Mixin resolves the point's target in the native host (an owner- or descriptor-less one
-            // where that body selects one method's calls alone): one call there, and none it selects in the merged host.
+            // where that body selects one method's calls alone): one call there, and none it selects in the current host.
             AnnotationNode point=MixinFit.atNodes(source.injection()).getFirst();
             if(MixinCallbackShape.invoked(point,before)==null)continue;
             List<MethodInsnNode> oldCalls=MixinCallbackShape.calls(point,before);

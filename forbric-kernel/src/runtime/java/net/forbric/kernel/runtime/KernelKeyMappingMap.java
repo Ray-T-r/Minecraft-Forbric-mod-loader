@@ -30,7 +30,7 @@ import net.minecraft.client.KeyMapping;
 
 /**
  * Vanilla's {@code KeyMapping.MAP} — every bound key to the mappings bound to it — as a read-only view of the
- * mappings by name, which the merged {@code KeyMapping} still keeps as vanilla's {@code ALL}.
+ * mappings by name, which NeoForge's {@code KeyMapping} still keeps as vanilla's {@code ALL}.
  *
  * <p>Both ecosystems re-type vanilla's {@code MAP:Ljava/util/Map;} to their own {@code KeyMappingLookup}, and the
  * merged class keeps their two and not vanilla's. A Fabric mod that reads {@code KeyMapping.MAP} as a {@code Map}
@@ -39,7 +39,7 @@ import net.minecraft.client.KeyMapping;
  *
  * <p>A view rather than a copy: the mappings and their keys change as the player rebinds them, and vanilla rebuilds
  * its map from {@code ALL} each time ({@code resetMapping}); grouping on every read gives the same answer without a
- * second structure to keep in step. Writes are refused — nothing in the merged game writes vanilla's map, and a
+ * second structure to keep in step. Writes are refused — nothing in the game writes vanilla's map, and a
  * write that went nowhere would be worse than one that throws.
  */
 public final class KernelKeyMappingMap {

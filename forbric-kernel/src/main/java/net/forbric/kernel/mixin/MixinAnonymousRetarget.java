@@ -28,10 +28,10 @@ import org.objectweb.asm.tree.ClassNode;
 import net.forbric.kernel.util.ForbricLog;
 
 /**
- * Points a guest mixin at the anonymous class the byte merge moved its target's body into.
+ * Points a guest mixin at the anonymous class NeoForge's patches moved its target's body into.
  *
  * <p>javac numbers anonymous classes per outer class in source order, so a carrier patch that adds one before
- * vanilla's renumbers every later one. The merge keeps one class per name, and the loser's body moves: on this
+ * vanilla's renumbers every later one. One class per name, so vanilla's body moves to a later number: on this
  * base {@code ByteBufCodecs$30} is a carrier's codec, and vanilla's — the one every mod was compiled against —
  * is at {@code $32}. {@link MergedBaseAnonymousDrift} is the measured table of where each body went.
  *
@@ -82,7 +82,7 @@ public final class MixinAnonymousRetarget {
 	/**
 	 * Rewrites every {@code targets} entry naming a relocated anonymous class to where its body went.
 	 *
-	 * @param present answers whether a binary class name exists in the merged base; a candidate that is not here
+	 * @param present answers whether a binary class name exists in the base; a candidate that is not here
 	 *                is never written in, so this cannot invent a target
 	 * @return how many targets were moved
 	 */
@@ -120,7 +120,7 @@ public final class MixinAnonymousRetarget {
 			String internal = owner.replace('.', '/');
 			// Both spellings Mixin accepts for an owner: `owner/Name.method(desc)` and `Lowner/Name;method(desc)`. The
 			// second is what MinecraftDev writes and most mods ship; matching only the first left those pinned to the class
-			// the target left, with the handler merged and never called.
+			// the target left, with the handler merged in and never called.
 			prefixes.add(internal + ".");
 			prefixes.add("L" + internal + ";");
 		}

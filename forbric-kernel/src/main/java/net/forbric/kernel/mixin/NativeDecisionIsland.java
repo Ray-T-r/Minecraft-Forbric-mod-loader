@@ -66,7 +66,7 @@ import net.forbric.kernel.util.Caught;
  * {@code LivingEntity.baseTick} hands the air supply to {@code CommonHooks.onLivingBreathe}, which decides it its own way (its
  * events, its fluid types). The vanilla stretch asked {@code isEyeInFluid(WATER)}, then — only with the eye in water, outside
  * a bubble column, for an entity that cannot breathe there — {@code MobEffectUtil.hasWaterBreathing(this)}. An injector on
- * either call has nothing to bind in the merged method; inlining the hook does not help either, since the hook asks
+ * either call has nothing to bind in the current method; inlining the hook does not help either, since the hook asks
  * {@code hasWaterBreathing} with the eye in any fluid (lava too) and never asks {@code isEyeInFluid(WATER)}.
  *
  * <p>The island is the native stretch's decisions, copied from the class the mod was compiled against (its ecosystem's native
@@ -83,15 +83,15 @@ import net.forbric.kernel.util.Caught;
  * <p>Nothing here knows a mod, a class or a method by name. An island is planned from one guest injector whose point is a call
  * ({@code INVOKE}, no slice), when:
  * <ul>
- *   <li>the method its selectors bind in the native reference and in the merged class is the same method, and the native
- *       body makes more calls the point selects than the merged body;</li>
+ *   <li>the method its selectors bind in the native reference and in the current class is the same method, and the native
+ *       body makes more calls the point selects than the current body;</li>
  *   <li>the two bodies agree instruction for instruction up to one place and again from another to the end (jumps across that
  *       stretch landing at corresponding instructions), and every native call the point selects lies between;</li>
  *   <li>from the last statement boundary before that place, the native stretch holds, up to the last selected call and to a
  *       statement boundary, only reads, arithmetic, branches, local stores and calls whose answers feed them — no field,
  *       array or static write, no call without an answer, no allocation or lambda, no exception handler; whatever it shares
- *       with the merged body before the place is plain reads;</li>
- *   <li>the merged stretch leaves only by running on into the shared end, no instruction outside it jumps to that end or back
+ *       with the current body before the place is plain reads;</li>
+ *   <li>the current stretch leaves only by running on into the shared end, no instruction outside it jumps to that end or back
  *       into it, and nothing jumps back before the island;</li>
  *   <li>the injector leaves the call's answer as it is (an {@code @Inject}, or a wrap proved to hand back what the call
  *       answered), or the carrier asks the call again and is relayed its answer: an answer the island would hand nobody is
@@ -100,12 +100,12 @@ import net.forbric.kernel.util.Caught;
  *   <li>the carrier does not make the selected call itself (directly or in a static method it calls) with operands of its
  *       own: such a call moved rather than went, and the injector is left to the adapters that bind it at the carrier's call,
  *       the one whose answer counts — unless the carrier is relayed the island's answer;</li>
- *   <li>the merged game runs the method, and it is not a carrier's forwarding stub — those are left to the adapters that move
+ *   <li>the game runs the method, and it is not a carrier's forwarding stub — those are left to the adapters that move
  *       the injector to the method that runs.</li>
  * </ul>
  * An injector of another mod on a call an island already holds binds there as on any present call; where it may change the
  * answer and no carrier method asks the call again, that is said once: its answer steers the native decisions after it.
- * A static method the island asks is relayed when the merged stretch asks it too, directly or in a static method it calls, and
+ * A static method the island asks is relayed when the current stretch asks it too, directly or in a static method it calls, and
  * the island hands it plain reads of what the method held when the island began (never a value the island computed itself,
  * which the carrier, computing its own, would never ask with); its class must not be defined yet (it is checked again when it
  * is). Every relayed method's class and the host must still be undefined when the plan is registered, or no island is planned
@@ -139,8 +139,8 @@ public final class NativeDecisionIsland {
 	}
 
 	/**
-	 * Where an island goes in the host method and what it holds, as derived from one native body and one merged body; {@code
-	 * carried} are the members the merged stretch asks itself, directly or in a static method it calls.
+	 * Where an island goes in the host method and what it holds, as derived from one native body and one current body; {@code
+	 * carried} are the members the current stretch asks itself, directly or in a static method it calls.
 	 */
 	record Island(int start, int end, int resume, Map<Integer, Integer> slots, int fresh, Map<Integer, Relay> relays, Set<String> members,
 			Map<String, Relay> relayable, Set<String> carried) {
@@ -239,7 +239,7 @@ public final class NativeDecisionIsland {
 						}
 						continue;
 					}
-					// A method the merged game never runs, or a carrier's forwarding stub, is left to the adapters that move the injector
+					// A method the game never runs, or a carrier's forwarding stub, is left to the adapters that move the injector
 					// to the method that runs (as NativeCallInlining leaves it).
 					if (MergedBaseUncalledMethods.neverRuns(merged, host, ecosystem) != null || MixinStubRebind.isCarrierStub(merged, host)) continue;
 					Outcome outcome = derive(merged, host, original, was, union(registry, plan), code);
@@ -500,7 +500,7 @@ public final class NativeDecisionIsland {
 			int from = index(ml, block.start), to = index(ml, block.end);
 			if (from <= mEnd && to > s) return new Outcome(null, "the current stretch is inside an exception handler's range");
 		}
-		// Nothing comes back before the island, in either body; the merged stretch leaves only into the shared end, which only it reaches.
+		// Nothing comes back before the island, in either body; the current stretch leaves only into the shared end, which only it reaches.
 		for (int i = s; i < n.size(); i++) for (int t : targets(n.get(i), nl)) if (t <= s) return new Outcome(null, "the native body jumps back before the stretch");
 		for (int i = s; i < m.size(); i++) for (int t : targets(m.get(i), ml)) if (t <= s) return new Outcome(null, "the current body jumps back before the stretch");
 		for (int i = p; i < mEnd; i++) {
@@ -538,7 +538,7 @@ public final class NativeDecisionIsland {
 				slots.put(variable.var, variable.var);
 			}
 		}
-		// Relays: a static call of the decisions that the merged stretch asks again, handed plain reads.
+		// Relays: a static call of the decisions that the current stretch asks again, handed plain reads.
 		Map<Integer, Relay> relays = new LinkedHashMap<>();
 		Set<String> members = new LinkedHashSet<>();
 		Set<String> reached = reached(m, p, mEnd, code);
@@ -563,7 +563,7 @@ public final class NativeDecisionIsland {
 		return new Outcome(new Island(s, e, mEnd, slots, fresh, relays, members, relayable, carried), null);
 	}
 
-	/** Every member the merged stretch asks, directly or in a static method of a class at hand it calls, a few calls deep. */
+	/** Every member the current stretch asks, directly or in a static method of a class at hand it calls, a few calls deep. */
 	private static Set<String> reached(List<AbstractInsnNode> m, int from, int to, Function<String, ClassNode> code) {
 		Set<String> out = new HashSet<>();
 		List<MethodInsnNode> frontier = new ArrayList<>();

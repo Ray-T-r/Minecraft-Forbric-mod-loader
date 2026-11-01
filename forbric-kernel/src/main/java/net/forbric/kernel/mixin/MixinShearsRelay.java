@@ -58,9 +58,9 @@ import org.objectweb.asm.tree.VarInsnNode;
  * <p>Only a Fabric mod's handler — NeoForge's mods were written against the carrier call — and only
  * the reviewed shape: a {@code @WrapOperation} on {@code ItemStack.is(Object)Z} — its point read as Mixin reads a target, so
  * whitespace, a dotted owner, or (where the method it was written for, in the class the mod was compiled against, decides
- * it) no owner or descriptor name the same call — bound by its selectors, as Mixin binds them in the merged class, to a
+ * it) no owner or descriptor name the same call — bound by its selectors, as Mixin binds them in the current class, to a
  * row's method, no ordinal, slice or {@code @Group}, and a handler that is exactly {@code (ItemStack, Object, Operation) → boolean}
- * with no sugar, of the target method's static-ness. The merged method must make the row's carrier call exactly once,
+ * with no sugar, of the target method's static-ness. The current method must make the row's carrier call exactly once,
  * with the row's constant. {@code -Dforbric.shearsRelay=off} relays nothing.
  */
 public final class MixinShearsRelay {
@@ -79,10 +79,10 @@ public final class MixinShearsRelay {
 	private static final String ABILITY = "Lnet/neoforged/neoforge/common/ItemAbility;";
 
 	/**
-	 * A vanilla {@code stack.is(Items.SHEARS)} the merge replaced with {@code stack.canPerformAction(constant)}.
+	 * A vanilla {@code stack.is(Items.SHEARS)} the base replaced with {@code stack.canPerformAction(constant)}.
 	 *
 	 * @param target  the class (internal name)
-	 * @param method  the method's name; the merged class has one of that name
+	 * @param method  the method's name; the current class has one of that name
 	 * @param owner   the constant's owner, {@link #ABILITIES}
 	 * @param field   the constant
 	 * @param type    the constant's descriptor, which is also the carrier call's one parameter
@@ -178,7 +178,7 @@ public final class MixinShearsRelay {
 		if (!"INVOKE".equals(MixinFit.asString(MixinFit.value(at, "value")))
 				|| !MixinCallbackShape.names(at, VANILLA_TARGET, MixinCallbackShape.written(handler, source))
 				|| MixinFit.value(at, "ordinal") != null || MixinFit.value(at, "slice") != null) return false;
-		// The one method Mixin binds the selectors to in the merged class, however they are written.
+		// The one method Mixin binds the selectors to in the current class, however they are written.
 		MethodNode body = MixinTargetSelectors.one(handler, target);
 		if (body == null) return false;
 		Row row = ROWS.stream().filter(r -> r.target().equals(target.name) && r.method().equals(body.name)).findFirst().orElse(null);

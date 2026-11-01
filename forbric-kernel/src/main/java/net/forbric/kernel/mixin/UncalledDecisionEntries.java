@@ -36,7 +36,7 @@ import net.forbric.kernel.util.Caught;
 import net.forbric.kernel.util.ForbricLog;
 
 /**
- * A mod's {@code HEAD} injector on a static decision method the merged game no longer calls, moved around the decision the
+ * A mod's {@code HEAD} injector on a static decision method the game no longer calls, moved around the decision the
  * carrier makes in its place, at each place the native game asked the method — so it runs where its own loader runs it, on the
  * values its own loader hands it, and its answer is the answer there.
  *
@@ -52,16 +52,16 @@ import net.forbric.kernel.util.ForbricLog;
  * injector nothing changes; with one, the place answers what natively the method would have answered for it.
  *
  * <p>Nothing here knows a mod, a class or a method by name. An injector moves when, read off the class the mod was compiled
- * against (the native reference of its ecosystem) and the merged one:
+ * against (the native reference of its ecosystem) and the current one:
  * <ul>
  *   <li>it is an {@code @Inject} whose one point is {@code HEAD}, with no slice, no {@code @Group} and no captured locals, its
  *       handler static and taking the method's arguments and its callback (or the callback alone);</li>
- *   <li>its selectors bind one static, value-returning method, the same natively and merged, that the census of uncalled
+ *   <li>its selectors bind one static, value-returning method, the same natively and in the current class, that the census of uncalled
  *       methods lists for the mod's ecosystem ({@link MergedBaseUncalledMethods}) and that no installed mod calls;</li>
  *   <li>every native caller the census lists is in the same class: either itself listed as uncalled (followed to its own
  *       callers — a method that only forwards to the decision with constants, read through when the callers are), or a
- *       method the merged class still has, which is a host;</li>
- *   <li>in each host, the merged body makes calls of one method the native body never makes (the carrier's decision, of the
+ *       method the current class still has, which is a host;</li>
+ *   <li>in each host, the current body makes calls of one method the native body never makes (the carrier's decision, of the
  *       decision's return type), and reads, path for path, exactly as the native body reads with every native call of the
  *       decision (inlined forwarders included) replaced by a call of the carrier's — the native call's every argument being
  *       one operand of the carrier's call, the same value on every path ({@link Symbolic}: both bodies as trees of tests over
@@ -163,7 +163,7 @@ public final class UncalledDecisionEntries {
 		return moved;
 	}
 
-	/** One host: the merged method, the carrier's call standing for the decision there, and which of its operands is which argument. */
+	/** One host: the current method, the carrier's call standing for the decision there, and which of its operands is which argument. */
 	record Entry(MethodNode host, MethodInsnNode carrier, int[] operands, int places) {
 	}
 
@@ -231,7 +231,7 @@ public final class UncalledDecisionEntries {
 
 	/**
 	 * The carrier's decision in {@code mergedHost}: the one method (and the one assignment of the decision's arguments to its
-	 * operands) under which the merged body reads as the native one with the decision replaced; null, with {@code why} told,
+	 * operands) under which the current body reads as the native one with the decision replaced; null, with {@code why} told,
 	 * when there is none or more than one.
 	 */
 	private static Entry entry(String target, MethodNode decision, MethodNode nativeHost, MethodNode mergedHost, Function<String, ClassNode> nativeCode,

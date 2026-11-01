@@ -12,7 +12,7 @@ import net.forbric.api.Ecosystem;
  * which are the {@code @Local(argsOnly = true)}s they stand for ({@link MixinCallbackShape#captures}) — never a list one
  * mod happened to declare. Each is proved to the slot holding its value where the replacement call stands
  * ({@link MixinCallbackProofs#replacedCallLocals}: by producer when the class the mod was compiled against is at hand;
- * without it an {@code ordinal}, {@code index} or {@code name} only where it means the same in the merged body, and never
+ * without it an {@code ordinal}, {@code index} or {@code name} only where it means the same in the current body, and never
  * two native locals read from one slot) and handed on by a {@code @Local} of that slot; a handler whose selector moves
  * instead has them proved and pinned where it lands ({@link MixinCallbackProofs#land}). A handler with any other extra,
  * or a capture that is not proved, stays as written.

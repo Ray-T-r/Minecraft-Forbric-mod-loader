@@ -45,7 +45,7 @@ import net.forbric.kernel.util.ForbricLog;
  *       read anywhere, and keeps its meaning — the handler gets the value vanilla passed in that place;</li>
  *   <li>when the carrier's call returns another type, every return of the handler returns null or the forwarded value;
  *       </li>
- *   <li>the merged method calls the vanilla member nowhere and the carrier's as many times as the row says, each after
+ *   <li>the current method calls the vanilla member nowhere and the carrier's as many times as the row says, each after
  *       the row's marker.</li>
  * </ul>
  * The handler's descriptor becomes the carrier's call's ({@code -Dforbric.replacedCallRedirects=off} leaves every one as
@@ -69,16 +69,16 @@ public final class ReplacedCallRedirects {
 	 * @param vanilla    the call the listed ecosystems' mods redirect, as an {@code @At} target
 	 * @param vanillaOpcode how vanilla invokes it (whether the redirect handler takes a receiver)
 	 * @param merged     the carrier's call in its place, as an {@code @At} target
-	 * @param opcode     how the merged body invokes it
-	 * @param count      how many times the merged method makes that call
-	 * @param ordinals   for each ordinal of the vanilla call (within the slice), the merged call's
-	 * @param markers    for each merged call in order, a field the method reads before it and after the call before;
+	 * @param opcode     how the current body invokes it
+	 * @param count      how many times the current method makes that call
+	 * @param ordinals   for each ordinal of the vanilla call (within the slice), the current call's
+	 * @param markers    for each current call in order, a field the method reads before it and after the call before;
 	 *                   shorter than {@code count} when only the first ones are told apart
 	 * @param slice      the {@code @At(FIELD)} target a slice may start from (then dropped), or null when none may
-	 * @param from       for each operand of the vanilla call (receiver first), the merged operand carrying the same
-	 *                   value, or -1 when the merged call has none
+	 * @param from       for each operand of the vanilla call (receiver first), the current operand carrying the same
+	 *                   value, or -1 when the current call has none
 	 * @param ecosystems the mods compiled against {@code vanilla} in this method
-	 * @param because    why the merged call's place is the vanilla one's
+	 * @param because    why the current call's place is the vanilla one's
 	 */
 	public record Site(String owner, String method, String vanilla, int vanillaOpcode, String merged, int opcode, int count,
 			int[] ordinals,
@@ -256,7 +256,7 @@ public final class ReplacedCallRedirects {
 		}
 	}
 
-	/** The merged method makes the carrier's call {@code count} times, after each marker, and the vanilla one never. */
+	/** The current method makes the carrier's call {@code count} times, after each marker, and the vanilla one never. */
 	static boolean hostHasTheSiteShape(ClassNode target, Site site) {
 		MethodNode host = null;
 		for (MethodNode m : target.methods) if ((m.name + m.desc).equals(site.method())) host = m;
@@ -290,7 +290,7 @@ public final class ReplacedCallRedirects {
 		if (parameterAnnotated(handler.visibleParameterAnnotations) || parameterAnnotated(handler.invisibleParameterAnnotations)) return false;
 		for (int i = 0; i + 1 < redirect.values.size(); i += 2) if (!INJECTOR_KEYS.contains(redirect.values.get(i))) return false;
 		String name = site.method().substring(0, site.method().indexOf('('));
-		// Bound, in the merged class, to the row's method itself, however the selectors are written.
+		// Bound, in the current class, to the row's method itself, however the selectors are written.
 		if (!MixinCallbackShape.binds(handler, target, site.method())) return false;
 		List<AnnotationNode> points = MixinFit.atNodes(redirect);
 		if (points.size() != 1) return false;
@@ -304,7 +304,7 @@ public final class ReplacedCallRedirects {
 		Object ordinal = MixinFit.value(at, "ordinal");
 		Integer mergedOrdinal;
 		if (ordinal == null || Integer.valueOf(-1).equals(ordinal)) {
-			// Every vanilla call: every merged one, when the rows pair them all, in order; the one, when there is one.
+			// Every vanilla call: every current one, when the rows pair them all, in order; the one, when there is one.
 			if (site.ordinals().length == site.count() && identity(site.ordinals())) mergedOrdinal = null;
 			else if (site.ordinals().length == 1) mergedOrdinal = site.ordinals()[0];
 			else return false;
@@ -404,7 +404,7 @@ public final class ReplacedCallRedirects {
 		set(at, "target", site.merged());
 		if (mergedOrdinal == null) remove(at, "ordinal");
 		else set(at, "ordinal", mergedOrdinal);
-		// The point now counts the merged body's calls; no later pass may read it as a native count.
+		// The point now counts the current body's calls; no later pass may read it as a native count.
 		CurrentBodyOrdinals.mark(handler);
 		remove(redirect, "slice");
 		if (log) {

@@ -27,7 +27,7 @@ import net.forbric.kernel.util.ForbricSwitches;
  * loader defined from a mod jar it attributes to one ecosystem, and the answer is that ecosystem's native name, as its
  * own loader would give it. The JDK's frames are passed over on the way, and so is game-side code no single ecosystem
  * owns — a library bundled without a loader manifest, say, whose plugin base class reads the name in its constructor,
- * the merged base, a carrier, a jar two ecosystems claim — since such code has no platform of its own and runs on its
+ * the base, a carrier, a jar two ecosystems claim — since such code has no platform of its own and runs on its
  * caller's. With no owned frame before the walk leaves the game loader — Mixin asking, the kernel asking, either of
  * them calling such unowned code directly — the answer is {@code "Forbric"}, as before. Because the answer is made
  * where the name is read, it holds however the mod asks: a switch or a single comparison, a helper or a base class in
@@ -86,7 +86,7 @@ public final class MixinPlatformIdentity {
 	 *   <li>The JDK's frames are passed over. Reflection and lambda frames are not even shown to a walker, so a method
 	 *       reference handed to {@code Optional.map} or a {@code Method.invoke} is answered for the code that set it up.</li>
 	 *   <li>So is code the game loader defined that no single ecosystem owns ({@link ForbricClassLoader#ecosystemOfClass}
-	 *       is null): a library a mod bundles without a loader manifest, the merged base, a runtime carrier. It has no
+	 *       is null): a library a mod bundles without a loader manifest, the base, a runtime carrier. It has no
 	 *       platform of its own; natively it is loaded into the one platform there is, and here it runs on the platform
 	 *       of whoever drives it. A plugin whose base class lives in such a library is answered for the plugin.</li>
 	 *   <li>The first game-side frame that is owned answers.</li>

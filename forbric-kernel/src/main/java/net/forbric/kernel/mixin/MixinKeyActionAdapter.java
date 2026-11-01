@@ -15,7 +15,7 @@ import net.forbric.kernel.util.ForbricLog;
 
 /**
  * NeoForge joins {@code KeyboardHandler.keyPress}'s exits into one {@code ClientHooks.onKeyInput(event, action)} call just
- * before its final return (the merged body keeps MinecraftForge's own {@code ForgeHooksClient.onKeyInput} in the same
+ * before its final return (the current body keeps MinecraftForge's own {@code ForgeHooksClient.onKeyInput} in the same
  * join, in front of it), so a guest's {@code @Inject} at a native {@code RETURN} ordinal names a return the merged
  * body no longer has, and its {@code TAIL} also runs on the paths whose native returns came earlier.
  *
@@ -72,7 +72,7 @@ public final class MixinKeyActionAdapter {
 		if (exits == null) return 0;
 		int changed = 0;
 		for (MethodNode handler : candidates) {
-			// However the selector is written, it must bind keyPress alone, natively and in the merged class.
+			// However the selector is written, it must bind keyPress alone, natively and in the current class.
 			MethodNode bound = MixinTargetSelectors.one(handler, current), nativeBound = MixinTargetSelectors.one(handler, original);
 			if (host == null || source == null || bound != host || nativeBound != source) continue;
 			if (relocate(mixin, handler, exits)) changed++;

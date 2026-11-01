@@ -24,7 +24,7 @@ public final class FinalMixinApplications {
  /** MixinExtras' injectors are built on Mixin's InjectionInfo, so require/defaultRequire mean the same thing, and
   * each successful injection is a direct call to the merged handler too: zero references still proves the handler
   * did not attach. Left out, the kernel's defaultRequire relaxation made their misses silent. What zero references
-  * does not settle is whether the feature is lost. Stock fabric-api misses this way on the merged base in many
+  * does not settle is whether the feature is lost. Stock fabric-api misses this way on the base in many
   * places, and the kernel supplies some of those features outside any mixin (a fuel or hopper bridge, a tooltip bridge
   * over NeoForge's appenders). None of those replacements is a
   * structural proof here yet. Confirming them would stop every dedicated server carrying fabric-api at boot, so an
@@ -158,7 +158,7 @@ public final class FinalMixinApplications {
     if(replacement!=null)state=Outcome.EQUIVALENT;
     // Attached, but only inside a forwarding stub the merge kept for vanilla's signature, where the mod's own platform
     // ran code: it runs only when something still calls that old signature. torrential's fuel hook stays on
-    // FuelValues.vanillaBurnTimes' stub (its captures need the stub's arguments), which the merged server never called
+    // FuelValues.vanillaBurnTimes' stub (its captures need the stub's arguments), which the server never calls
     // until the kernel's fuel bridge began handing its table through it (KernelFabricFuel.throughVanillaReturnHooks).
     // Still a reference, so not a loss; not a discharge either.
     String stub=references>0?stubOnlyHost(target,candidates.getFirst(),plan.config().name()):null;
@@ -176,7 +176,7 @@ public final class FinalMixinApplications {
     if(superseded!=null)CompatibilityFindings.record(new CompatibilityFinding(id,mod,
       "Mixin injection "+injector.name(),"mixin-application:"+plan.config().name(),CompatibilityFinding.Confidence.RESOLVED,
       plan.config().required()||injector.minimum()>=1,superseded,List.of("target="+binary,"handler="+injector.symbol(),superseded)));
-    // Proved from the final class and the merged game's census, not observed: a guest mod calling the dead method itself
+    // Proved from the final class and the game's census, not observed: a guest mod calling the dead method itself
     // is outside both. So it marks the mod's row and never asks the player to quit or stops a STRICT server; the author's
     // requirement stays in the evidence. MixinExtras kinds stay SUSPECTED, as for MISSING (a kernel bridge serves some).
     else if(state==Outcome.NEVER_RUNS)CompatibilityFindings.record(new CompatibilityFinding(id,mod,
