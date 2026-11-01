@@ -34,8 +34,10 @@ import org.objectweb.asm.tree.MethodNode;
 import org.objectweb.asm.tree.TypeInsnNode;
 import org.objectweb.asm.tree.VarInsnNode;
 
+import net.forbric.kernel.boot.KernelRegistryAliases;
 import net.forbric.kernel.util.ByteScan;
 import net.forbric.kernel.util.ForbricLog;
+import net.forbric.kernel.util.ForbricSwitches;
 
 /**
  * Repairs the few classes a guest mixin wove <em>incorrectly</em> because the Forge/NeoForge byte-merge restructured
@@ -90,38 +92,38 @@ public final class PostMixinFixups {
 	}
 
 	private static final String MAPPED_REGISTRY = "net/minecraft/core/MappedRegistry";
-	/** {@code off} leaves a mixin's alias-target warning reading {@code byLocation} directly. */
-	static final String ALIAS_PRESENCE_PROPERTY = "forbric.aliasPresenceParity";
-	/** The registry's vanilla id map, which a MinecraftForge wrapper never fills. */
+	/** {@code off} leaves the alias-target warning as Mixin wove it, so NeoForge's alias-first order warns again. */
+	static final String ALIAS_PRESENCE_PROPERTY = KernelRegistryAliases.PROPERTY;
+	/** The registry's id map, which fabric-registry-sync's warning reads. */
 	private static final String BY_LOCATION = "byLocation";
 
 	/**
-	 * Makes a mixin's "alias target doesn't exist" warning ask the registry, not its vanilla map.
+	 * Lets fabric-registry-sync's "alias target doesn't exist" warning hear about NeoForge's alias-first order.
 	 *
 	 * <p>fabric-registry-sync's mixin-added {@code MappedRegistry.addAlias} warns when {@code !this.byLocation.containsKey(target)}.
-	 * On the merged base {@code BuiltInRegistries.BLOCK} and {@code ITEM} are MinecraftForge
-	 * {@code NamespacedWrapper}s: their {@code register} goes to a {@code ForgeRegistry} and never writes the
-	 * inherited {@code byLocation}, so the check fails even when the target was registered first. More Nemo's
-	 * Woodcutter Variants registers each woodcutter and then aliases its old id to it, and every one of them — 11
-	 * blocks and 11 items — logged "Adding … as an alias for …, but the latter doesn't exist" on Forbric and nowhere
-	 * else. The alias itself was recorded and resolved; only the warning was wrong.
+	 * On NeoForge {@code MappedRegistry} extends NeoForge's {@code BaseMappedRegistry}, whose own {@code addAlias} the mixin's
+	 * method overrides, and NeoForge's {@code DeferredRegister.addEntries} applies a mod's aliases BEFORE it registers that
+	 * mod's entries, in the same call. So every NeoForge mod alias reached fabric-api's warning before its target existed:
+	 * sophisticatedcore's "Adding sophisticatedcore:render_info_tag as an alias for …, but the latter doesn't exist" on every
+	 * boot, for an entry registered a few lines later. NeoForge's own {@code addAlias} never warns about its own order.
 	 *
-	 * <p>The map read becomes {@code this.keySet()}, whose {@code contains} is the same exact, non-resolving lookup:
-	 * {@code byLocation}'s key set on a vanilla or NeoForge registry, the ForgeRegistry's own names on a wrapper.
-	 * Not {@code containsKey(Identifier)}, which an alias mixin's {@code @ModifyVariable} and the parity injector both
-	 * resolve through aliases, so an alias chain would change what the warning says. The answer then goes through
-	 * {@code KernelRegistryAliases.aliasTargetPresent}, which also knows NeoForge's own alias-first order.
+	 * <p>The {@code containsKey} becomes {@code KernelRegistryAliases.aliasTargetPresent(byLocation, target)}: the same exact,
+	 * non-resolving lookup of the same map, and yes besides while NeoForge's {@code DeferredRegister.addEntries} is the
+	 * caller. Not {@code containsKey(Identifier)}, which an alias mixin's {@code @ModifyVariable} and the parity injector
+	 * both resolve through aliases, so an alias chain would change what the warning says.
 	 *
-	 * <p>Only a check whose only consequence is a warning: {@code this.byLocation.containsKey(x)} whose "absent" path
-	 * goes straight into a logger's {@code warn} without throwing or returning first — whatever the method and the
-	 * message are called. The collision check before it ("already present in registry", which throws) reads the same
-	 * map for the ALIAS, and is left alone: making it see the wrapper's names would turn a collision the game accepts
-	 * today into a crash for a Forge-family mod. Straight-line replacement with the same stack shape (the receiver,
-	 * then the id, then a boolean), so every frame stays valid. {@code -Dforbric.aliasPresenceParity=off} leaves the
-	 * method as Mixin wove it.
+	 * <p>Only a check whose only consequence is a warning: {@code this.byLocation.containsKey(x)} whose "absent" path goes
+	 * straight into a logger's {@code warn} without throwing or returning first — whatever the method and the message are
+	 * called. The collision check before it ("already present in registry", which throws) reads the same map for the ALIAS,
+	 * and is left alone. Straight-line replacement with the same stack shape (the map, then the id, then a boolean), so
+	 * every frame stays valid. {@code -Dforbric.aliasPresenceParity=off} leaves the method as Mixin wove it.
+	 *
+	 * <p>On the merged base this also swapped the map read for the registry's {@code keySet()}, because MinecraftForge's
+	 * registry wrappers never filled {@code byLocation}. NeoForge's registries fill it and {@code keySet()} is a view of it,
+	 * so the read is the mixin's own again.
 	 */
 	static byte[] askTheRegistryWhetherAnAliasTargetExists(byte[] bytes) {
-		if ("off".equalsIgnoreCase(System.getProperty(ALIAS_PRESENCE_PROPERTY, "on"))) return bytes;
+		if ("off".equalsIgnoreCase(ForbricSwitches.get(ALIAS_PRESENCE_PROPERTY, "on"))) return bytes;
 		if (!ByteScan.contains(bytes, BY_LOCATION_NEEDLE) || !ByteScan.contains(bytes, WARN_NEEDLE)) return bytes;
 		ClassNode node = new ClassNode();
 		new ClassReader(bytes).accept(node, 0);
@@ -139,20 +141,17 @@ public final class PostMixinFixups {
 						|| !(map instanceof FieldInsnNode field) || field.getOpcode() != Opcodes.GETFIELD
 						|| !field.owner.equals(node.name) || !field.name.equals(BY_LOCATION) || !field.desc.equals("Ljava/util/Map;")
 						|| !onlyWarnsWhenAbsent(contains)) continue;
-				method.instructions.set(field, new MethodInsnNode(Opcodes.INVOKEVIRTUAL, node.name, "keySet",
-						"()Ljava/util/Set;", false));
 				method.instructions.set(contains, new MethodInsnNode(Opcodes.INVOKESTATIC,
 						"net/forbric/kernel/boot/KernelRegistryAliases", "aliasTargetPresent",
-						"(Ljava/util/Set;Ljava/lang/Object;)Z", false));
+						"(Ljava/util/Map;Ljava/lang/Object;)Z", false));
 				repaired++;
 			}
 			if (repaired > before) where.add(method.name);
 		}
 		if (repaired == 0) return bytes;
-		ForbricLog.info("[Forbric/Aliases] post-mixin repair: %s.%s asks the registry's own key set whether the target "
-				+ "it warns about exists — MinecraftForge's wrapped registries (block, item, …) never fill the map it read, "
-				+ "so every alias to a registered block warned that the block did not exist", node.name.replace('/', '.'),
-				String.join(", ", where));
+		ForbricLog.info("[Forbric/Aliases] post-mixin repair: %s.%s no longer warns that an alias target is missing while "
+				+ "NeoForge's DeferredRegister is applying its aliases, which it does before it registers their targets",
+				node.name.replace('/', '.'), String.join(", ", where));
 		ClassWriter writer = new ClassWriter(ClassWriter.COMPUTE_MAXS);
 		node.accept(writer);
 		return writer.toByteArray();

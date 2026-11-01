@@ -31,6 +31,9 @@ import java.util.function.UnaryOperator;
 public final class ForbricSwitches {
 	/** Old name → the switch that now controls the same mechanism. */
 	static final Map<String, String> RENAMED = Map.ofEntries(
+			// Stage 4: with MinecraftForge's registry wrappers gone the alias-target warning's only repair is NeoForge's
+			// alias-first order, which the outer switch already gated; one switch is left for it.
+			Map.entry("forbric.aliasPresenceParity.deferredRegister", "forbric.aliasPresenceParity"),
 			Map.entry("forbric.barrelRollCamera", "forbric.cameraRollCallbacks"),
 			Map.entry("forbric.blockInfoCaches", "forbric.registryElementCallbacks"),
 			Map.entry("forbric.c2meBlockUpdates", "forbric.chunkStatusRetarget"),

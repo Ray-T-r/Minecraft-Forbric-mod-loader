@@ -50,40 +50,24 @@ import org.objectweb.asm.tree.MethodInsnNode;
 import org.objectweb.asm.tree.MethodNode;
 
 /**
- * fabric-registry-sync's "alias target doesn't exist" warning asks the registry's own key set — so a MinecraftForge
- * wrapper's registered entry counts — and stays quiet for NeoForge's alias-first order; its collision check is untouched.
+ * fabric-registry-sync's "alias target doesn't exist" warning still reads the registry's own map and stays quiet for
+ * NeoForge's alias-first order; its collision check is untouched.
  */
 @ResourceLock("system-properties")
 class PostMixinFixupsAliasTargetTest {
 	private static final String REGISTRY = "net/minecraft/core/MappedRegistry";
-	private static final String WRAPPER = "net/minecraftforge/registries/NamespacedWrapper";
 	private static final String DEFERRED = "net/neoforged/neoforge/registries/DeferredRegister";
 	private static final String WARNING = "Adding {} as an alias for {}, but the latter doesn't exist in registry {}";
-	/** KernelRegistryAliases' switch for NeoForge's alias-first order. */
-	private static final String DEFERRED_REGISTER_ORDER = "forbric.aliasPresenceParity.deferredRegister";
+	/** The former name of the switch, which ForbricSwitches.RENAMED still honours. */
+	private static final String FORMER_NAME = "forbric.aliasPresenceParity.deferredRegister";
 
 	@AfterEach
 	void reset() {
 		System.clearProperty(PostMixinFixups.ALIAS_PRESENCE_PROPERTY);
-		System.clearProperty(DEFERRED_REGISTER_ORDER);
+		System.clearProperty(FORMER_NAME);
 	}
 
-	/** More Nemo's Woodcutter Variants' shape: register on a Forge wrapper, then alias the old id to it. */
-	@Test
-	void anAliasToAnEntryAForgeWrapperRegisteredDoesNotWarn() throws Exception {
-		Fixture before = new Fixture(registryClass());
-		before.register(before.wrapper, "new");
-		before.addAlias(before.wrapper, "old", "new");
-		assertEquals(1, before.warnings(), "the unrepaired check reads byLocation, which the wrapper never fills");
-
-		Fixture after = new Fixture(repaired());
-		after.register(after.wrapper, "new");
-		after.addAlias(after.wrapper, "old", "new");
-		assertEquals(0, after.warnings(), "the wrapper's own names answer, and it registered the target");
-		after.addAlias(after.wrapper, "older", "missing");
-		assertEquals(1, after.warnings(), "a target that really is missing still warns");
-	}
-
+	/** More Nemo's Woodcutter Variants' shape: register, then alias the old id to it. */
 	@Test
 	void aPlainRegistryAnswersExactlyAsItsMapDid() throws Exception {
 		Fixture f = new Fixture(repaired());
@@ -103,17 +87,27 @@ class PostMixinFixupsAliasTargetTest {
 		f.addAlias(f.plain, "elsewhere", "not_registered");
 		assertEquals(1, f.warnings(), "any other caller still hears about a missing target");
 
-		System.setProperty(DEFERRED_REGISTER_ORDER, "off");
+		System.setProperty(PostMixinFixups.ALIAS_PRESENCE_PROPERTY, "off");
 		f.addEntries(f.plain, "second_alias", "second_target");
 		assertEquals(2, f.warnings());
 	}
 
-	/** Making the collision check see the wrapper's names would turn an alias the game accepts today into a crash. */
+	/** The sub-switch the outer one absorbed still works under its former name. */
+	@Test
+	void theFormerSubSwitchNameStillWarnsAboutNeoForgesOrder() throws Exception {
+		Fixture f = new Fixture(repaired());
+		System.setProperty(FORMER_NAME, "off");
+		f.addEntries(f.plain, "render_info_tag", "render_data");
+		assertEquals(1, f.warnings());
+		byte[] original = registryClass();
+		assertSame(original, PostMixinFixups.apply(REGISTRY.replace('/', '.'), original),
+				"switched off under its former name, the method is left as Mixin wove it");
+	}
+
+	/** Only the warning's check is rewritten; the one that throws for a taken alias reads the map as Mixin wove it. */
 	@Test
 	void theCollisionCheckIsLeftAsMixinWoveIt() throws Exception {
 		Fixture f = new Fixture(repaired());
-		f.register(f.wrapper, "taken");
-		f.addAlias(f.wrapper, "taken", "other");
 		f.register(f.plain, "taken");
 		InvocationTargetException thrown = assertThrows(InvocationTargetException.class, () -> f.addAlias(f.plain, "taken", "other"));
 		assertTrue(thrown.getCause() instanceof IllegalArgumentException);
@@ -122,7 +116,7 @@ class PostMixinFixupsAliasTargetTest {
 		MethodNode addAlias = node.methods.stream().filter(m -> m.name.equals("linkOldId")).findFirst().orElseThrow();
 		List<String> calls = new ArrayList<>();
 		for (AbstractInsnNode insn : addAlias.instructions) if (insn instanceof MethodInsnNode call) calls.add(call.name);
-		assertEquals(List.of("containsKey", "<init>", "keySet", "aliasTargetPresent", "warn", "put"), calls);
+		assertEquals(List.of("containsKey", "<init>", "aliasTargetPresent", "warn", "put"), calls);
 	}
 
 	@Test
@@ -194,14 +188,14 @@ class PostMixinFixupsAliasTargetTest {
 		return node;
 	}
 
-	/** The three classes in a loader of their own, with the registry class under test. */
+	/** The two classes in a loader of their own, with the registry class under test. */
 	private static final class Fixture {
 		final ClassLoader loader;
-		final Object plain, wrapper;
+		final Object plain;
 		final Class<?> registry;
 
 		Fixture(byte[] registryBytes) throws Exception {
-			Map<String, byte[]> classes = Map.of(REGISTRY, registryBytes, WRAPPER, wrapperClass(), DEFERRED, deferredClass());
+			Map<String, byte[]> classes = Map.of(REGISTRY, registryBytes, DEFERRED, deferredClass());
 			loader = new ClassLoader(PostMixinFixupsAliasTargetTest.class.getClassLoader()) {
 				@Override
 				protected Class<?> findClass(String name) throws ClassNotFoundException {
@@ -212,7 +206,6 @@ class PostMixinFixupsAliasTargetTest {
 			};
 			registry = loader.loadClass(REGISTRY.replace('/', '.'));
 			plain = registry.getConstructor().newInstance();
-			wrapper = loader.loadClass(WRAPPER.replace('/', '.')).getConstructor().newInstance();
 		}
 
 		void register(Object on, String id) throws Exception {
@@ -258,16 +251,6 @@ class PostMixinFixupsAliasTargetTest {
 		init.visitInsn(Opcodes.RETURN);
 		init.visitMaxs(0, 0);
 		init.visitEnd();
-
-		MethodVisitor keySet = cw.visitMethod(Opcodes.ACC_PUBLIC, "keySet", "()Ljava/util/Set;", null, null);
-		keySet.visitCode();
-		keySet.visitVarInsn(Opcodes.ALOAD, 0);
-		keySet.visitFieldInsn(Opcodes.GETFIELD, REGISTRY, "byLocation", "Ljava/util/Map;");
-		keySet.visitMethodInsn(Opcodes.INVOKEINTERFACE, "java/util/Map", "keySet", "()Ljava/util/Set;", true);
-		keySet.visitMethodInsn(Opcodes.INVOKESTATIC, "java/util/Collections", "unmodifiableSet", "(Ljava/util/Set;)Ljava/util/Set;", false);
-		keySet.visitInsn(Opcodes.ARETURN);
-		keySet.visitMaxs(0, 0);
-		keySet.visitEnd();
 
 		MethodVisitor register = cw.visitMethod(Opcodes.ACC_PUBLIC, "register", "(Ljava/lang/Object;)V", null, null);
 		register.visitCode();
@@ -324,44 +307,6 @@ class PostMixinFixupsAliasTargetTest {
 		alias.visitInsn(Opcodes.RETURN);
 		alias.visitMaxs(0, 0);
 		alias.visitEnd();
-		cw.visitEnd();
-		return cw.toByteArray();
-	}
-
-	/** A MinecraftForge wrapper in miniature: registers into its own names and answers keySet from them. */
-	private static byte[] wrapperClass() {
-		ClassWriter cw = new ClassWriter(ClassWriter.COMPUTE_FRAMES | ClassWriter.COMPUTE_MAXS);
-		cw.visit(Opcodes.V21, Opcodes.ACC_PUBLIC, WRAPPER, null, REGISTRY, null);
-		cw.visitField(Opcodes.ACC_PRIVATE | Opcodes.ACC_FINAL, "names", "Ljava/util/Set;", null, null).visitEnd();
-		MethodVisitor init = cw.visitMethod(Opcodes.ACC_PUBLIC, "<init>", "()V", null, null);
-		init.visitCode();
-		init.visitVarInsn(Opcodes.ALOAD, 0);
-		init.visitMethodInsn(Opcodes.INVOKESPECIAL, REGISTRY, "<init>", "()V", false);
-		init.visitVarInsn(Opcodes.ALOAD, 0);
-		init.visitTypeInsn(Opcodes.NEW, "java/util/HashSet");
-		init.visitInsn(Opcodes.DUP);
-		init.visitMethodInsn(Opcodes.INVOKESPECIAL, "java/util/HashSet", "<init>", "()V", false);
-		init.visitFieldInsn(Opcodes.PUTFIELD, WRAPPER, "names", "Ljava/util/Set;");
-		init.visitInsn(Opcodes.RETURN);
-		init.visitMaxs(0, 0);
-		init.visitEnd();
-		MethodVisitor keySet = cw.visitMethod(Opcodes.ACC_PUBLIC, "keySet", "()Ljava/util/Set;", null, null);
-		keySet.visitCode();
-		keySet.visitVarInsn(Opcodes.ALOAD, 0);
-		keySet.visitFieldInsn(Opcodes.GETFIELD, WRAPPER, "names", "Ljava/util/Set;");
-		keySet.visitInsn(Opcodes.ARETURN);
-		keySet.visitMaxs(0, 0);
-		keySet.visitEnd();
-		MethodVisitor register = cw.visitMethod(Opcodes.ACC_PUBLIC, "register", "(Ljava/lang/Object;)V", null, null);
-		register.visitCode();
-		register.visitVarInsn(Opcodes.ALOAD, 0);
-		register.visitFieldInsn(Opcodes.GETFIELD, WRAPPER, "names", "Ljava/util/Set;");
-		register.visitVarInsn(Opcodes.ALOAD, 1);
-		register.visitMethodInsn(Opcodes.INVOKEINTERFACE, "java/util/Set", "add", "(Ljava/lang/Object;)Z", true);
-		register.visitInsn(Opcodes.POP);
-		register.visitInsn(Opcodes.RETURN);
-		register.visitMaxs(0, 0);
-		register.visitEnd();
 		cw.visitEnd();
 		return cw.toByteArray();
 	}
