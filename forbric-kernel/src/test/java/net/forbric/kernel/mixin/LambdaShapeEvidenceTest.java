@@ -16,7 +16,7 @@ import org.objectweb.asm.tree.MethodNode;
  * merely renumbered (that name is a different lambda now) or one whose captures were only reordered (the permutation
  * census's case, proven by local names).
  */
-@org.junit.jupiter.api.extension.ExtendWith(net.forbric.kernel.DroppedLambdaRecordRestore.class)
+@org.junit.jupiter.api.extension.ExtendWith(net.forbric.kernel.VanillaLambdaReference.class)
 class LambdaShapeEvidenceTest {
 	private static final String SKY = "lambda$addSkyPass$0";
 	private static final String VANILLA_SKY = "(Lcom/mojang/blaze3d/buffers/GpuBufferSlice;Lnet/minecraft/client/renderer/state/level/SkyRenderState;)V";
@@ -33,7 +33,7 @@ class LambdaShapeEvidenceTest {
 		ClassNode vanilla = node(method(SKY, VANILLA_SKY));
 		assertEquals(List.of(), LambdaShapeEvidence.reshaped(node(method(SKY, VANILLA_SKY)), vanilla, SKY));
 		assertEquals(List.of(), LambdaShapeEvidence.reshaped(node(method(SKY, NEO_SKY), method(SKY, VANILLA_SKY)), vanilla, SKY),
-				"the merged base before the pruner: both bodies carried, and vanilla's shape is still declared");
+				"both bodies carried, and vanilla's shape is still declared");
 	}
 
 	@Test void aRenumberedLambdaIsNot() {
@@ -71,17 +71,20 @@ class LambdaShapeEvidenceTest {
 				"only a lambda's name is ambiguous this way");
 	}
 
-	@Test void thePrunersRecordStillCountsAndIsMarkedAsSuch() {
-		var saved = net.forbric.kernel.transform.DuplicateLambdaPruneInjector.droppedForTest();
+	/** The test seam answers for the launch's reference: what the vanilla-reference sidecar would declare. */
+	@Test @org.junit.jupiter.api.parallel.ResourceLock("system-properties") void theDeclaredVanillaShapeIsTheEvidence() {
+		String owner = "net/example/LambdaShapeEvidenceTestTarget";
+		ClassNode target = node(method(SKY, NEO_SKY));
+		target.name = owner;
+		assertEquals(List.of(), LambdaShapeEvidence.vanished(target, SKY), "unbound references (no game): no evidence");
+		net.forbric.kernel.VanillaLambdaReference.declare(owner, SKY, VANILLA_SKY);
+		assertEquals(List.of(new LambdaShapeEvidence.Shape(VANILLA_SKY)), LambdaShapeEvidence.vanished(target, SKY));
+		String previous = System.getProperty(LambdaShapeEvidence.PROPERTY);
+		System.setProperty(LambdaShapeEvidence.PROPERTY, "off");
 		try {
-			String owner = "net/example/LambdaShapeEvidenceTestTarget";
-			net.forbric.kernel.transform.DuplicateLambdaPruneInjector.recordDroppedForTest(owner, SKY, VANILLA_SKY);
-			ClassNode target = node(method(SKY, NEO_SKY));
-			target.name = owner;
-			assertEquals(List.of(new LambdaShapeEvidence.Shape(VANILLA_SKY, true)), LambdaShapeEvidence.vanished(target, SKY),
-					"unbound references (no game): the pruner's record alone, as before");
+			assertEquals(List.of(), LambdaShapeEvidence.vanished(target, SKY), "switched off, no shape is evidence");
 		} finally {
-			net.forbric.kernel.transform.DuplicateLambdaPruneInjector.restoreDroppedForTest(saved);
+			if (previous == null) System.clearProperty(LambdaShapeEvidence.PROPERTY); else System.setProperty(LambdaShapeEvidence.PROPERTY, previous);
 		}
 	}
 
@@ -101,7 +104,7 @@ class LambdaShapeEvidenceTest {
 		assertEquals(List.of(), LambdaShapeEvidence.vanished(genuine, "render", reference));
 		assertEquals(List.of(), LambdaShapeEvidence.vanished(genuine, "lambda$addSkyPass$7", reference));
 		assertEquals(List.of(), reads, "a method's name, or a lambda the class does not declare, reads nothing");
-		assertEquals(List.of(new LambdaShapeEvidence.Shape(VANILLA_SKY, false)), LambdaShapeEvidence.vanished(genuine, SKY, reference));
+		assertEquals(List.of(new LambdaShapeEvidence.Shape(VANILLA_SKY)), LambdaShapeEvidence.vanished(genuine, SKY, reference));
 		assertEquals(List.of(genuine.name), reads, "the declared lambda reads its class once");
 	}
 

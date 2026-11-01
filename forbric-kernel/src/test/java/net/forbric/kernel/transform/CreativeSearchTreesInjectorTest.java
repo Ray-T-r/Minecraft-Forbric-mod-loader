@@ -29,7 +29,6 @@ import net.forbric.kernel.TestFixtures.Fixture;
  * are, and NeoForge's own patched class, whose producers already delegate, is not touched.
  */
 @ResourceLock("system-properties")
-@org.junit.jupiter.api.extension.ExtendWith(net.forbric.kernel.DroppedLambdaRecordRestore.class)
 class CreativeSearchTreesInjectorTest {
 	private static final Path MERGED = TestFixtures.stagedBase();
 	private static final Path NEOFORGE_PATCHED = TestFixtures.stagedBase();
@@ -87,28 +86,6 @@ class CreativeSearchTreesInjectorTest {
 				"a second pass changes nothing");
 		System.setProperty(CreativeSearchTreesInjector.PROPERTY, "off");
 		assertSame(original, new CreativeSearchTreesInjector().transform(CreativeSearchTreesInjector.TARGET, original, null));
-	}
-
-	/**
-	 * The rewrite leaves MinecraftForge's two lambdas unreachable beside NeoForge's live ones of the same names, which
-	 * is what DuplicateLambdaPruneInjector exists to drop -- but only if it runs after the rewrite. KernelBoot
-	 * registers this repair first for that reason; the premise half shows the prune alone cannot see them.
-	 */
-	@Test void thePruneDropsTheLambdasTheRewriteOrphans() {
-		byte[] original = NativeCoremodParityTest.read(MERGED, TREES);
-		byte[] pruneFirst = new CreativeSearchTreesInjector().transform(CreativeSearchTreesInjector.TARGET,
-				new DuplicateLambdaPruneInjector().transform(CreativeSearchTreesInjector.TARGET, original, null), null);
-		byte[] repairFirst = new DuplicateLambdaPruneInjector().transform(CreativeSearchTreesInjector.TARGET,
-				new CreativeSearchTreesInjector().transform(CreativeSearchTreesInjector.TARGET, original, null), null);
-		assertEquals(List.of(),forgeLambdas(node(pruneFirst)),"the new canonical producers already leave the other producer lambdas uncalled");
-		assertEquals(List.of(), forgeLambdas(node(repairFirst)), "after the rewrite they are orphans and go");
-	}
-
-	/** MinecraftForge's producer lambdas: instance methods that take the registry map's entries. */
-	private static List<String> forgeLambdas(ClassNode node) {
-		return node.methods.stream()
-				.filter(m -> m.name.startsWith("lambda$updateCreative") && m.desc.startsWith("(Ljava/util/Map$Entry;"))
-				.map(m -> m.name + m.desc).toList();
 	}
 
 	@Test void neoForgesOwnPatchedClassIsLeftAlone() {

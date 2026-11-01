@@ -41,14 +41,13 @@ import org.objectweb.asm.tree.MethodNode;
  *
  * <p>The live case: {@code LevelRenderer.addSkyPass}'s lambda is {@code (GpuBufferSlice, SkyRenderState)} and
  * static in vanilla and on MinecraftForge's base, and {@code (SkyRenderState, Matrix4fc, GpuBufferSlice)} and an
- * instance method on NeoForge's. The merge kept NeoForge's and the pruner dropped the other, so Apoli's sky-skip
- * has a live injection point and the wrong parameter list.
+ * instance method on NeoForge's, so Apoli's sky-skip has a live injection point and the wrong parameter list.
  *
  * <p>The generated wrapper is not asserted as text: it is DEFINED and CALLED, with recorded arguments, so the
  * test fails on a mapping that compiles and hands over the wrong object — which is the only failure mode of this
  * class that matters.
  */
-@org.junit.jupiter.api.extension.ExtendWith(net.forbric.kernel.DroppedLambdaRecordRestore.class)
+@org.junit.jupiter.api.extension.ExtendWith(net.forbric.kernel.VanillaLambdaReference.class)
 public class MixinHandlerShimTest {
 	private static final String TARGET = "net/example/Renderer";
 	private static final String MIXIN = "net/example/RendererMixin";
@@ -96,7 +95,7 @@ public class MixinHandlerShimTest {
 		assertNotNull(methodNamed(mixin, "handler").visibleAnnotations.get(0));
 	}
 
-	/** No pruner record for that name: nothing says the mod was written for a shape this class ever had. */
+	/** No reference shape for that name: nothing says the mod was written for a shape this class ever had. */
 	@Test
 	void aHandlerWithNoDroppedShapeToPointAtIsLeftAlone() {
 		ClassNode mixin = mixin("(Ljava/lang/Object;Ljava/lang/String;" + CI + ")V", true);
@@ -106,7 +105,7 @@ public class MixinHandlerShimTest {
 		target.methods = new ArrayList<>(List.of(instanceMethod("lambda$nothingWasDropped$0",
 				"(Ljava/lang/String;ILjava/lang/Object;)V")));
 		assertEquals(0, MixinHandlerShim.adapt(mixin, targets(target)),
-				"without the pruner's record this is just a handler Mixin may well accept as written");
+				"without vanilla's shape in the reference this is just a handler Mixin may well accept as written");
 	}
 
 	/** A handler that already fits the surviving shape needs nothing, whatever was dropped beside it. */
@@ -117,14 +116,14 @@ public class MixinHandlerShimTest {
 	}
 
 	/**
-	 * A handler that fits the SURVIVOR is left alone even when a shape it also fits was dropped beside it.
+	 * A handler that fits the live lambda is left alone even when the reference declares that shape too.
 	 *
-	 * <p>The pruner drops one body per name and a class can lose one shaped like the one it kept. Wrapping then
-	 * would put a wrapper around a handler that binds perfectly well — the churn this class exists not to cause.
+	 * <p>Wrapping then would put a wrapper around a handler that binds perfectly well — the churn this class exists not
+	 * to cause.
 	 */
 	@Test
 	void aHandlerThatFitsTheSurvivorIsLeftAloneEvenWhenItsShapeWasAlsoDropped() {
-		net.forbric.kernel.transform.DuplicateLambdaPruneInjector.recordDroppedForTest(
+		net.forbric.kernel.VanillaLambdaReference.declare(
 				TARGET, "lambda$sameShape$0", "(Ljava/lang/String;ILjava/lang/Object;)V");
 		ClassNode mixin = mixin("(Ljava/lang/String;ILjava/lang/Object;" + CI + ")V", true);
 		setSelector(mixin, "lambda$sameShape$0");
@@ -140,31 +139,32 @@ public class MixinHandlerShimTest {
 	 * A type the target offers TWICE cannot be mapped: choosing is a coin toss, and a coin toss here hands the
 	 * injection the wrong object silently, which is worse than the exception it would replace.
 	 *
-	 * <p>The name is lambda-shaped because the evidence only ever is: the pruner records nothing else, and
-	 * LambdaShapeEvidence answers nothing for any other name, so a plain name would be left alone before the mapping
-	 * is reached and the refusal would go untested. The control is the same handler, the same record and a target that
-	 * offers the String once: that one IS wrapped, so the refusal is the only thing that tells the two apart.
+	 * <p>The name is lambda-shaped because the evidence only ever is: LambdaShapeEvidence answers nothing for any other
+	 * name, so a plain name would be left alone before the mapping is reached and the refusal would go untested. Vanilla's
+	 * shape is {@code (String, Long)}; the live shapes reorder it around an added argument, so it is neither a pure
+	 * reordering nor an insertion and the reference counts as evidence. The control is the same handler and reference
+	 * with a target that offers the String once: that one IS wrapped, so the refusal is the only thing that tells the two
+	 * apart.
 	 */
 	@Test
 	void anAmbiguousParameterTypeIsRefused() {
 		String name = "lambda$ambiguous$0";
-		net.forbric.kernel.transform.DuplicateLambdaPruneInjector.recordDroppedForTest(
-				TARGET, name, "(Ljava/lang/String;)V");
+		net.forbric.kernel.VanillaLambdaReference.declare(TARGET, name, "(Ljava/lang/String;Ljava/lang/Long;)V");
 
 		ClassNode once = new ClassNode();
 		once.name = TARGET;
-		once.methods = new ArrayList<>(List.of(instanceMethod(name, "(Ljava/lang/String;I)V")));
-		ClassNode control = mixin("(Ljava/lang/String;" + CI + ")V", true);
+		once.methods = new ArrayList<>(List.of(instanceMethod(name, "(Ljava/lang/Long;ILjava/lang/String;)V")));
+		ClassNode control = mixin("(Ljava/lang/String;Ljava/lang/Long;" + CI + ")V", true);
 		setSelector(control, name);
 		assertEquals(1, MixinHandlerShim.adapt(control, targets(once)),
-				"premise: with the String offered once, the record is evidence and the handler is wrapped");
+				"premise: with the String offered once, the reference is evidence and the handler is wrapped");
 
-		ClassNode mixin = mixin("(Ljava/lang/String;" + CI + ")V", true);
+		ClassNode mixin = mixin("(Ljava/lang/String;Ljava/lang/Long;" + CI + ")V", true);
 		setSelector(mixin, name);
 		ClassNode target = new ClassNode();
 		target.name = TARGET;
 		target.methods = new ArrayList<>(List.of(
-				instanceMethod(name, "(Ljava/lang/String;Ljava/lang/String;)V")));
+				instanceMethod(name, "(Ljava/lang/Long;Ljava/lang/String;Ljava/lang/String;)V")));
 		assertEquals(0, MixinHandlerShim.adapt(mixin, targets(target)), "offered twice, the String is not guessed at");
 	}
 
@@ -230,7 +230,7 @@ public class MixinHandlerShimTest {
 		ClassNode target = staticTarget(WORLD_LOADER, "lambda$load$1", MERGED_LOAD + STAGE);
 
 		System.setProperty(MixinHandlerShim.TABLE_PROPERTY, "off");
-		assertEquals(0, MixinHandlerShim.adapt(mixin, targets(target)), "no pruner record: only the census is evidence here");
+		assertEquals(0, MixinHandlerShim.adapt(mixin, targets(target)), "no reference shape: only the census is evidence here");
 		System.clearProperty(MixinHandlerShim.TABLE_PROPERTY);
 		assertEquals(1, MixinHandlerShim.adapt(mixin, targets(target)));
 		MethodNode outer = mixin.methods.stream().filter(m -> m.name.equals("handler") && m.visibleAnnotations != null
@@ -367,9 +367,9 @@ public class MixinHandlerShimTest {
 
 	// --- fixtures ---
 
-	/** NeoForge's surviving shape, with vanilla's recorded as dropped by the pruner. */
+	/** NeoForge's shape, with vanilla's in the FABRIC reference. */
 	private static ClassNode instanceTarget() {
-		net.forbric.kernel.transform.DuplicateLambdaPruneInjector.recordDroppedForTest(
+		net.forbric.kernel.VanillaLambdaReference.declare(
 				TARGET, SELECTOR, "(Ljava/lang/Object;Ljava/lang/String;)V");
 		ClassNode target = new ClassNode();
 		target.name = TARGET;

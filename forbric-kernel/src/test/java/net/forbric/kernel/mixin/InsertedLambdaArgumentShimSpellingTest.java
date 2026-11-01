@@ -7,7 +7,6 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.function.Function;
 
-import net.forbric.kernel.transform.DuplicateLambdaPruneInjector;
 import org.junit.jupiter.api.Test;
 import org.objectweb.asm.Opcodes;
 import org.objectweb.asm.Type;
@@ -29,7 +28,7 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
  * a handler taking two arguments, an anchor on another class.
  */
 @org.junit.jupiter.api.parallel.ResourceLock("system-properties")
-@org.junit.jupiter.api.extension.ExtendWith(net.forbric.kernel.DroppedLambdaRecordRestore.class)
+@org.junit.jupiter.api.extension.ExtendWith(net.forbric.kernel.VanillaLambdaReference.class)
 class InsertedLambdaArgumentShimSpellingTest {
 	private static final String TARGET = "spry/Canvas", LAMBDA = "lambda$paint$4", BRUSH = "spry/Brush";
 	private static final String OLD = "(ILjava/lang/String;)V", NEW = "(ILjava/lang/Object;Ljava/lang/String;)V";
@@ -108,11 +107,12 @@ class InsertedLambdaArgumentShimSpellingTest {
 				List.of("/" + LAMBDA.replace("$", "\\$") + "/"));
 		for (List<String> selectors : refused) {
 			ClassNode mixin = mixin(Painter.class, selectors, "L" + BRUSH + ";stroke()V", false), target = target(false);
-			assertEquals(0, InsertedLambdaArgumentShim.adapt(mixin, n -> target), selectors.toString());
+			// No class the mod was compiled against to read them in: only the shape evidence could move them, and it does not.
+			assertEquals(0, InsertedLambdaArgumentShim.adapt(mixin, n -> target, n -> null), selectors.toString());
 		}
 		ClassNode bare = mixin(Painter.class, List.of(LAMBDA), "L" + BRUSH + ";stroke()V", false), target = target(false);
 		assertEquals(0, InsertedLambdaArgumentShim.adapt(bare, n -> target, n -> null), "no class to decide a bare name in");
-		assertEquals(0, InsertedLambdaArgumentShim.adapt(bare, n -> target, n -> nativeCanvas("(I)V")), "the name bound a shape the pruner kept");
+		assertEquals(0, InsertedLambdaArgumentShim.adapt(bare, n -> target, n -> nativeCanvas("(I)V")), "the class the mod was compiled against has the name in another shape");
 	}
 
 	@Test
@@ -135,6 +135,8 @@ class InsertedLambdaArgumentShimSpellingTest {
 		try (var in = source.getResourceAsStream(simple + ".class")) { node = MixinFit.parse(in.readAllBytes()); }
 		node.nestHostClass = null;
 		node.innerClasses.clear();
+		// A Fabric mod's mixin: the class it was compiled against is the FABRIC reference, vanilla's lambda shape.
+		MixinStubRebind.noteEcosystem(node.name, net.forbric.api.Ecosystem.FABRIC);
 		AnnotationNode mixin = new AnnotationNode("Lorg/spongepowered/asm/mixin/Mixin;");
 		mixin.values = new ArrayList<>(List.of("value", List.of(Type.getObjectType(TARGET))));
 		node.invisibleAnnotations = new ArrayList<>(List.of(mixin));
@@ -168,7 +170,7 @@ class InsertedLambdaArgumentShimSpellingTest {
 		caller.instructions.add(new MethodInsnNode(Opcodes.INVOKESTATIC, TARGET, LAMBDA, NEW, false));
 		caller.instructions.add(new InsnNode(Opcodes.RETURN));
 		target.methods.add(caller);
-		DuplicateLambdaPruneInjector.recordDroppedForTest(TARGET, LAMBDA, OLD);
+		net.forbric.kernel.VanillaLambdaReference.declare(TARGET, LAMBDA, OLD);
 		return target;
 	}
 

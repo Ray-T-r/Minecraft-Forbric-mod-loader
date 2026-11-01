@@ -14,13 +14,12 @@ import org.objectweb.asm.tree.ClassNode;
 
 import net.fabricmc.api.EnvType;
 import net.forbric.api.Ecosystem;
-import net.forbric.kernel.transform.DuplicateLambdaPruneInjector;
 
 /** The harness must be able to tell a woven class from an unwoven one, or nothing it reports means anything. */
 class WeaveHarnessSelfTest {
 	private static final Path SOURCES = Path.of("src/test/resources/weave/selftest");
 	private static final String CONFIG = "selftest.mixins.json";
-	private static final List<String> CONFIGS = List.of(CONFIG, "selftest-chain.mixins.json",
+	private static final List<String> CONFIGS = List.of(CONFIG,
 			"selftest-fabric.mixins.json", "selftest-neoforge.mixins.json", "selftest-client.mixins.json");
 
 	@TempDir static Path work;
@@ -28,10 +27,10 @@ class WeaveHarnessSelfTest {
 
 	@BeforeAll static void compile() throws Exception {
 		List<Path> sources = new java.util.ArrayList<>();
-		for (String name : List.of("Greeter", "Merged", "Ledger", "Panel")) {
+		for (String name : List.of("Greeter", "Ledger", "Panel")) {
 			sources.add(SOURCES.resolve("fixture/selftest/" + name + ".java"));
 		}
-		for (String name : List.of("GreeterMixin", "MergedMixin", "FabricLedgerMixin", "NeoForgeLedgerMixin", "PanelClientMixin")) {
+		for (String name : List.of("GreeterMixin", "FabricLedgerMixin", "NeoForgeLedgerMixin", "PanelClientMixin")) {
 			sources.add(SOURCES.resolve("fixture/selftest/mixin/" + name + ".java"));
 		}
 		Map<String, Path> configs = new java.util.LinkedHashMap<>();
@@ -63,32 +62,6 @@ class WeaveHarnessSelfTest {
 		assertFalse(plain.printed("Mixin up on the sovereign kernel"), plain.describe());
 		assertFalse(WeaveHarness.hasMergedMethod(plain.defined("fixture/selftest/Greeter")), plain.describe());
 		assertTrue(plain.findings().stream().noneMatch(f -> f.id().startsWith("mixin-injector:")), plain.findings().toString());
-	}
-
-	/**
-	 * A named chain transformer reaches the class Mixin weaves: the pruner drops Merged's dead lambda body before Mixin
-	 * reads the class, and the defined class carries both edits. Without the chain the same weave keeps both bodies.
-	 */
-	@Test void aPreMixinChainShapesTheClassMixinWeaves() throws Exception {
-		WeaveHarness.Result chained = WeaveHarness.run(work, "chain", fixture,
-				List.of(new WeaveHarness.Config("selftest-chain.mixins.json", "selfchain", Ecosystem.FABRIC)),
-				List.of(DuplicateLambdaPruneInjector.class), EnvType.SERVER, "fixture.selftest.Merged", "probe", Map.of());
-		WeaveHarness.Result unchained = WeaveHarness.run(work, "no-chain", fixture,
-				List.of(new WeaveHarness.Config("selftest-chain.mixins.json", "selfchain", Ecosystem.FABRIC)),
-				List.of(), EnvType.SERVER, "fixture.selftest.Merged", "probe", Map.of());
-
-		assertTrue(chained.printed("[WeaveHarness] pre-Mixin chain installed: COREMOD DuplicateLambdaPruneInjector — KernelBoot.java:"),
-				chained.describe());
-		assertTrue(chained.printed("[Forbric/Merge] fixture.selftest.Merged carried 1 duplicated lambda name(s)"), chained.describe());
-		assertTrue(chained.printed(WeaveHarnessMain.DONE + " bodies=1 label=merged|woven"), chained.describe());
-		assertEquals(1, bodies(chained), chained.describe());
-		assertTrue(WeaveHarness.hasMergedMethod(chained.defined("fixture/selftest/Merged")), chained.describe());
-		WeaveHarness.assertWovenAndVerified(chained, "fixture/selftest/Merged", fixture);
-
-		assertFalse(unchained.printed("[WeaveHarness] pre-Mixin chain installed"), unchained.describe());
-		assertFalse(unchained.printed("[Forbric/Merge]"), unchained.describe());
-		assertTrue(unchained.printed(WeaveHarnessMain.DONE + " bodies=2 label=merged|woven"), unchained.describe());
-		assertEquals(2, bodies(unchained), unchained.describe());
 	}
 
 	/**
@@ -164,10 +137,6 @@ class WeaveHarnessSelfTest {
 	private static WeaveHarness.Result panel(String label, EnvType side) throws Exception {
 		return WeaveHarness.run(work, label, fixture, "selftest-client.mixins.json", "selfclient", Ecosystem.FABRIC, side,
 				"fixture.selftest.Panel", "title", Map.of());
-	}
-
-	private static long bodies(WeaveHarness.Result run) throws Exception {
-		return node(run, "fixture/selftest/Merged").methods.stream().filter(m -> m.name.equals("lambda$label$0")).count();
 	}
 
 	/** The mod id KernelMixinBootstrap decorated into each merged handler's name, in the order the handlers were merged. */

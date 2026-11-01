@@ -7,7 +7,7 @@ import net.forbric.kernel.util.ForbricLog;
 import org.objectweb.asm.*;
 import org.objectweb.asm.tree.*;
 
-/** Restores explicit lambda selectors only when their old shape is proven gone (the pruner dropped it, or vanilla had it).
+/** Restores explicit lambda selectors only when their old shape is proven gone (vanilla had it and the class does not).
  * The old parameter sequence must have exactly one order-preserving embedding in the live one.
  * Unlike a type-only map this preserves repeated resource handles, while refusing ambiguous insertions.
  */
@@ -83,7 +83,7 @@ public final class InsertedLambdaArgumentShim {
     }
 
     /**
-     * The live lambda a handler's pruned selector moves to — the same decision {@link #adapt} acts on, so
+     * The live lambda a handler's selector for a lost lambda shape moves to — the same decision {@link #adapt} acts on, so
      * {@link MixinFit} can judge the injector where it will land instead of calling it unfit and removing it before
      * the shim ever runs. {@code target} must carry code, and its local variable table when the handler captures.
      */
@@ -148,8 +148,8 @@ public final class InsertedLambdaArgumentShim {
 
     /**
      * The lambda ({@code name + desc}) the handler's selectors name as Mixin reads them, where it is a shape
-     * {@code target}'s lambda has lost ({@link LambdaShapeEvidence}: the pruner dropped it, or it is vanilla's and a
-     * carrier patch reshaped it): spelled with its descriptor — whitespace, an owner prefix (the target's) or a dotted
+     * {@code target}'s lambda has lost ({@link LambdaShapeEvidence}: it is vanilla's and a carrier patch reshaped it):
+     * spelled with its descriptor — whitespace, an owner prefix (the target's) or a dotted
      * owner, one spelling or several of the same member — or bound by a bare name in the class the mod was compiled
      * against. Null for anything else: another owner, a pattern, a shape the lambda still has or never had.
      */
@@ -158,12 +158,12 @@ public final class InsertedLambdaArgumentShim {
         ClassNode nativeClass = null;
         if (member == null && natives != null) {
             // A bare name binds the live lambda in the merged class: only where a lambda of the name it reaches has lost a
-            // shape (LambdaShapeEvidence: the pruner dropped it, or vanilla's was reshaped), or the class the mod was
+            // shape (LambdaShapeEvidence: vanilla's was reshaped), or the class the mod was
             // compiled against has that lambda in another shape, is that class worth reading.
             List<MixinTargetSelectors.Reach> reach = MixinTargetSelectors.reach(handler, target);
-            boolean pruned = reach != null && !reach.isEmpty() && reach.stream().allMatch(r -> r.matched().stream()
+            boolean lost = reach != null && !reach.isEmpty() && reach.stream().allMatch(r -> r.matched().stream()
                     .anyMatch(m -> !LambdaShapeEvidence.vanished(target, m.name).isEmpty()));
-            if (pruned || (reach != null && !reach.isEmpty() && nativeShapes())) {
+            if (lost || (reach != null && !reach.isEmpty() && nativeShapes())) {
                 nativeClass = natives.apply(target.name);
                 member = MixinTargetSelectors.nativeMember(handler, nativeClass, target.name);
             }
@@ -175,8 +175,7 @@ public final class InsertedLambdaArgumentShim {
         if (LambdaShapeEvidence.descriptors(target, name).contains(desc)) return member;
         // The second evidence: the class the mod was compiled against (its own platform's native game) declares the lambda
         // in exactly the shape the selector names, and the merged class, whose one lambda of that name the selector binds,
-        // has it in no such shape. The pruner never saw that shape: the merge carried the name twice, both carriers'
-        // bodies with an argument vanilla's lacks, and dropped the other carrier's. Screenshot.grab's lambda$grab$3 is
+        // has it in no such shape: the carrier's body has an argument vanilla's lacks. Screenshot.grab's lambda$grab$3 is
         // (NativeImage, File, ScreenshotEvent, Consumer) on both carriers and (NativeImage, File, Consumer) on Fabric;
         // Essential's capture handler, written for Fabric's, failed its whole mixin on the descriptor.
         // -Dforbric.insertedLambdaArguments.nativeShapes=off leaves this evidence out.

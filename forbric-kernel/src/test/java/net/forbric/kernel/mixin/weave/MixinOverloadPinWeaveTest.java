@@ -4,6 +4,7 @@ import static org.junit.jupiter.api.Assertions.*;
 
 import java.io.PrintWriter;
 import java.io.StringWriter;
+import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.Arrays;
 import java.util.List;
@@ -23,24 +24,24 @@ import net.forbric.api.Ecosystem;
 /**
  * MixinOverloadPin's diagnosis, made by the real pipeline and read where a player reads it: the mod's finding.
  *
- * <p>The fixture's {@code SkyPass} is shaped like a merged class — two bodies named {@code lambda$render$0}, the
- * vanilla one orphaned — and its config plugin installs the production DuplicateLambdaPruneInjector as the
- * pre-Mixin chain, which the harness does not do, so the vanilla shape is pruned and recorded as a real boot would.
- * The guest mixin is written for that vanilla shape. Nothing can make it bind: the surviving lambda takes two
- * Strings, so MixinHandlerShim declines to guess, and Mixin rejects the descriptor in both runs.
+ * <p>The fixture's {@code SkyPass} is shaped like a class a carrier patch reshaped — its {@code lambda$render$0} takes
+ * other captures than vanilla's — and vanilla's {@code SkyPass}, indexed into the fixture as the FABRIC native reference a
+ * launch reads from the vanilla-reference sidecar, has the vanilla shape. The guest mixin is written for that vanilla
+ * shape. Nothing can make it bind: the carrier's lambda takes two Strings, so MixinHandlerShim declines to guess, and Mixin
+ * rejects the descriptor in both runs. (Until Stage 4 this fixture was a merged class carrying both bodies, and the
+ * duplicate-lambda pruner's record was the evidence; NeoForge's base carries one body.)
  *
  * <p>What the stage decides is only what the failure SAYS. With it on, the mod's finding carries why ("a lambda of
- * the render body the byte merge did not keep"); with {@code -Dforbric.mixinOverloadPin=off} it is the bare
+ * render whose captures a carrier patch changed from vanilla's"); with {@code -Dforbric.mixinOverloadPin=off} it is the bare
  * InvalidInjectionException. And it decides nothing else: the woven class and what it returns are identical in
  * both runs, because a diagnosis that moved the injection would put it somewhere the mod did not ask for.
  *
- * <p>Both of those runs keep the mixin in front of Mixin with {@code -Dforbric.mixinFit.handlerFit=off}: by default
- * the verdict now sees that the name binds a lambda the handler was not written for, and with that its only injector,
- * the mixin is UNFIT and left out before Mixin reads it ({@link #theVerdictLeavesTheMixinOutBeforeMixinRejectsIt}) —
- * no InvalidInjectionException, the same untouched render, and the loss named by the kernel. Beside an injector that
- * binds it would be a PARTIAL whose refused injector GuestInjectorPruner takes out (MixinRefusedBindingWeaveTest), so
- * MixinOverloadPin's diagnosis is what a failure says only where Mixin still meets such a binding: with
- * {@code -Dforbric.guestInjectorPruner.refused=off} or the handler rule off, as here.
+ * <p>Both of those runs keep the mixin in front of Mixin with {@code -Dforbric.mixinFit.handlerFit=off}. By default, with
+ * vanilla's class in the reference, the pipeline does better than explain: MixinRetarget reads the handler's arguments in
+ * vanilla's lambda and moves it onto the carrier's, and the hook runs
+ * ({@link #byDefaultTheRetargetBindsTheHandlerFromTheReference}). (On the merged base the evidence was the pruner's
+ * record, with no reference to map from, and the default verdict left the mixin out as UNFIT.) So MixinOverloadPin's
+ * diagnosis is what a failure says only where Mixin still meets such a binding: with the handler rule off, as here.
  */
 class MixinOverloadPinWeaveTest {
 	private static final Path SOURCES = Path.of("src/test/resources/weave/overloadpin");
@@ -49,60 +50,68 @@ class MixinOverloadPinWeaveTest {
 	private static final String TARGET = "fixture/overloadpin/SkyPass";
 	private static final String MIXIN = "fixture.overloadpin.mixin.SkyPassMixin";
 	private static final String VANILLA_SHAPE = "(Ljava/lang/String;Ljava/lang/StringBuilder;)V";
-	private static final String REASON = "its beforeSky targets lambda$render$0, a lambda of the render body the byte "
-			+ "merge did not keep";
+	private static final String REASON = "its beforeSky targets lambda$render$0, a lambda of render whose captures a "
+			+ "carrier patch changed from vanilla's";
 	private static final String BARE = "its mixin " + MIXIN + " failed to apply to fixture.overloadpin.SkyPass "
 			+ "(InvalidInjectionException)";
 	private static final String EXPLAINED_LOG = "SkyPassMixin.beforeSky cannot bind to " + TARGET + ".lambda$render$0";
+
+	/** Vanilla's SkyPass: the one lambda, in the shape the guest's handler was written for. */
+	private static final String VANILLA_SKY_PASS = """
+			package fixture.overloadpin;
+			public class SkyPass {
+			 public String render() { StringBuilder out = new StringBuilder(); lambda$render$0("sky", out); return out.toString(); }
+			 private void lambda$render$0(String sky, StringBuilder out) { out.append("vanilla drew ").append(sky); }
+			}
+			""";
 
 	@TempDir static Path work;
 	private static Path fixture;
 	private static WeaveHarness.Result explained;
 	private static WeaveHarness.Result off;
-	private static WeaveHarness.Result leftOut;
+	private static WeaveHarness.Result bound;
 
 	@BeforeAll static void weaveBothWays() throws Exception {
-		fixture = WeaveHarness.fixture(work, "overloadpin", List.of(
+		Path current = WeaveHarness.fixture(work, "overloadpin", List.of(
 				SOURCES.resolve("fixture/overloadpin/SkyPass.java"),
 				SOURCES.resolve("fixture/overloadpin/SkyProbe.java"),
-				SOURCES.resolve("fixture/overloadpin/MergePrunePlugin.java"),
 				SOURCES.resolve("fixture/overloadpin/mixin/SkyPassMixin.java")),
 				Map.of(CONFIG, SOURCES.resolve(CONFIG)));
+		Path vanilla = work.resolve("native-src/fixture/overloadpin/SkyPass.java");
+		Files.createDirectories(vanilla.getParent());
+		Files.writeString(vanilla, VANILLA_SKY_PASS);
+		Path nativeFixture = WeaveHarness.fixture(work, "native-overloadpin", List.of(vanilla,
+				SOURCES.resolve("fixture/overloadpin/SkyProbe.java"),
+				SOURCES.resolve("fixture/overloadpin/mixin/SkyPassMixin.java")),
+				Map.of(CONFIG, SOURCES.resolve(CONFIG)));
+		fixture = NativeWeaveReferences.with(work, current, Map.of(TARGET, NativeWeaveReferences.classes(nativeFixture).get(TARGET)));
 		explained = run("explained", Map.of("forbric.mixinOverloadPin", "on", "forbric.mixinFit.handlerFit", "off"));
 		off = run("overload-pin-off", Map.of("forbric.mixinOverloadPin", "off", "forbric.mixinFit.handlerFit", "off"));
-		leftOut = run("left-out", Map.of());
+		bound = run("default", Map.of());
 	}
 
 	/**
-	 * By default the verdict judges the handler against the lambda the name binds, and the mixin's only injector misses:
-	 * UNFIT, left out before Mixin reads it, the loss the kernel's and naming why. The two runs above, with that rule off,
-	 * are the control: there Mixin rejects the descriptor.
+	 * By default MixinRetarget reads the handler against vanilla's lambda in the reference and moves it onto the carrier's,
+	 * mapping the one {@code StringBuilder} it uses: the hook runs and nothing is lost. The two runs above, with the
+	 * handler rule off, are the control: there Mixin rejects the descriptor and the hook never runs.
 	 */
-	@Test void theVerdictLeavesTheMixinOutBeforeMixinRejectsIt() throws Exception {
-		assertTrue(leftOutHolds(leftOut), leftOut.describe() + "\nfindings: " + leftOut.findings());
-		assertFalse(callsHandler(leftOut.defined(TARGET)), leftOut.describe());
-		WeaveHarness.assertWovenAndVerified(leftOut, TARGET, fixture);
-		for (WeaveHarness.Result control : List.of(explained, off)) assertFalse(leftOutHolds(control), control.describe());
+	@Test void byDefaultTheRetargetBindsTheHandlerFromTheReference() throws Exception {
+		assertTrue(boundHolds(bound), bound.describe() + "\nfindings: " + bound.findings());
+		assertTrue(callsHandler(bound.defined(TARGET)), bound.describe());
+		WeaveHarness.assertWovenAndVerified(bound, TARGET, fixture);
+		for (WeaveHarness.Result control : List.of(explained, off)) assertFalse(boundHolds(control), control.describe());
 	}
 
-	private static boolean leftOutHolds(WeaveHarness.Result run) {
-		List<WeaveHarness.Finding> losses = mixinLosses(run);
-		return run.printed("auto-suppressing guest mixin " + MOD + " (" + CONFIG + "):SkyPassMixin — UNFIT")
-				&& run.printed("@Inject target SkyPass.lambda$render$0 binds lambda$render$0(Ljava/lang/StringBuilder;"
-						+ "Ljava/lang/String;Ljava/lang/String;)V, which the handler was not written for")
-				&& !run.printed("InvalidInjectionException") && run.printedLine(WeaveHarnessMain.DONE + " drew sky+moon")
-				&& losses.size() == 1 && losses.get(0).confirmedRequired()
-				&& losses.get(0).detail().equals("guest mixin SkyPassMixin did not fit the merged game and was left out");
+	private static boolean boundHolds(WeaveHarness.Result run) {
+		return run.printed("retargeted guest mixin " + MOD + " (" + CONFIG + "):SkyPassMixin")
+				&& !run.printed("InvalidInjectionException") && run.printedLine(WeaveHarnessMain.DONE + " [sky hook ran] drew sky+moon")
+				&& mixinLosses(run).isEmpty();
 	}
 
-	@Test void theFailureCarriesTheMergesReasonOnlyWhileTheStageIsOn() throws Exception {
+	@Test void theFailureCarriesTheReshapeReasonOnlyWhileTheStageIsOn() throws Exception {
 		for (WeaveHarness.Result run : List.of(explained, off)) {
-			// The stage's evidence must exist in BOTH runs, or the control would differ for the wrong reason.
-			assertTrue(run.printed("[OverloadPinFixture] pre-Mixin chain installed"), run.describe());
-			assertTrue(run.printed("dropped 1 orphaned bod(ies) so a mixin selecting by name cannot bind to the half "
-					+ "that lost: lambda$render$0" + VANILLA_SHAPE), run.describe());
-			assertFalse(declares(run.defined(TARGET), "lambda$render$0", VANILLA_SHAPE),
-					"the pruner's drop did not reach the defined class — " + run.describe());
+			// The shape the handler was written for is in neither run's class: the control differs by the stage alone.
+			assertFalse(declares(run.defined(TARGET), "lambda$render$0", VANILLA_SHAPE), run.describe());
 
 			// What the woven code did: the injection landed nowhere, in particular not on the surviving lambda.
 			assertTrue(run.printed(WeaveHarnessMain.DONE + " drew sky+moon"), run.describe());

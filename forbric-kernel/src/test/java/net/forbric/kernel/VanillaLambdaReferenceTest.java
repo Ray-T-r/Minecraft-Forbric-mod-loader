@@ -21,11 +21,10 @@ import org.junit.platform.launcher.core.LauncherFactory;
 import org.junit.platform.launcher.listeners.SummaryGeneratingListener;
 import org.junit.platform.launcher.listeners.TestExecutionSummary;
 
-import net.forbric.kernel.transform.DuplicateLambdaPruneInjector;
 
 /**
- * {@link DroppedLambdaRecordRestore} does what the classes carrying it rely on: a test class that fills the drop record
- * in {@code @BeforeAll} and in a test leaves it exactly as it found it, and each of its tests starts from what the class
+ * {@link VanillaLambdaReference} does what the classes carrying it rely on: a test class that declares vanilla lambda
+ * shapes in {@code @BeforeAll} and in a test leaves the declarations exactly as it found them, and each of its tests starts from what the class
  * started from plus what its {@code @BeforeAll} added, never from what an earlier test added.
  *
  * <p>The probes are run through a launcher of their own, as FixturePolicyExtensionTest runs its, so what is checked is
@@ -33,26 +32,26 @@ import net.forbric.kernel.transform.DuplicateLambdaPruneInjector;
  * them as test classes too. The unrestored probe is the control: without the extension the same class leaks, so the
  * check would see a restore that did not happen.
  */
-@ExtendWith(DroppedLambdaRecordRestore.class)
+@ExtendWith(VanillaLambdaReference.class)
 @ResourceLock("system-properties")
-class DroppedLambdaRecordRestoreTest {
-	private static final String PROBE = "forbric.test.droppedLambdaRecordProbe";
-	private static final String OWNER = "net/example/DroppedLambdaRecordRestoreProbe";
+class VanillaLambdaReferenceTest {
+	private static final String PROBE = "forbric.test.vanillaLambdaReferenceProbe";
+	private static final String OWNER = "net/example/VanillaLambdaReferenceProbe";
 
 	@Test
 	void aClassThatFillsTheRecordLeavesItAsItFoundIt() {
-		DuplicateLambdaPruneInjector.recordDroppedForTest(OWNER, "lambda$before$0", "()V");
-		Map<String, List<String>> before = DuplicateLambdaPruneInjector.droppedForTest();
+		VanillaLambdaReference.declare(OWNER, "lambda$before$0", "()V");
+		Map<String, Map<String, List<String>>> before = VanillaLambdaReference.snapshot();
 
 		TestExecutionSummary restored = run(RestoredProbe.class);
 		assertEquals(0, restored.getTotalFailureCount(), () -> String.valueOf(restored.getFailures().stream()
 				.map(f -> f.getTestIdentifier().getDisplayName() + ": " + f.getException()).toList()));
 		assertEquals(2, restored.getTestsSucceededCount(), "both probe tests ran");
-		assertEquals(before, DuplicateLambdaPruneInjector.droppedForTest(), "what was there is there, and nothing else");
+		assertEquals(before, VanillaLambdaReference.snapshot(), "what was there is there, and nothing else");
 
 		run(UnrestoredProbe.class);
-		assertTrue(DuplicateLambdaPruneInjector.droppedDescriptors(OWNER, "lambda$leaked$0").contains("()V"),
-				"the control: without the extension the class's drop stays behind");
+		assertTrue(VanillaLambdaReference.declared(OWNER, "lambda$leaked$0").contains("()V"),
+				"the control: without the extension the class's declaration stays behind");
 	}
 
 	private static TestExecutionSummary run(Class<?> probe) {
@@ -67,38 +66,38 @@ class DroppedLambdaRecordRestoreTest {
 		return listener.getSummary();
 	}
 
-	@ExtendWith(DroppedLambdaRecordRestore.class)
+	@ExtendWith(VanillaLambdaReference.class)
 	@TestMethodOrder(MethodOrderer.OrderAnnotation.class)
 	static class RestoredProbe {
 		@BeforeAll
 		static void fillForTheClass() {
-			if (Boolean.getBoolean(PROBE)) DuplicateLambdaPruneInjector.recordDroppedForTest(OWNER, "lambda$beforeAll$0", "()V");
+			if (Boolean.getBoolean(PROBE)) VanillaLambdaReference.declare(OWNER, "lambda$beforeAll$0", "()V");
 		}
 
 		@Test
 		@Order(1)
 		void fills() {
 			if (!Boolean.getBoolean(PROBE)) return;
-			DuplicateLambdaPruneInjector.recordDroppedForTest(OWNER, "lambda$first$0", "()V");
-			DuplicateLambdaPruneInjector.forgetDroppedForTest();
+			VanillaLambdaReference.declare(OWNER, "lambda$first$0", "()V");
+			VanillaLambdaReference.forget();
 		}
 
 		@Test
 		@Order(2)
 		void startsFromTheClassNotFromTheTestBefore() {
 			if (!Boolean.getBoolean(PROBE)) return;
-			assertEquals(List.of("()V"), DuplicateLambdaPruneInjector.droppedDescriptors(OWNER, "lambda$beforeAll$0"),
-					"what @BeforeAll recorded is what every test starts from, though the test before forgot everything");
-			assertEquals(List.of("()V"), DuplicateLambdaPruneInjector.droppedDescriptors(OWNER, "lambda$before$0"),
+			assertEquals(List.of("()V"), VanillaLambdaReference.declared(OWNER, "lambda$beforeAll$0"),
+					"what @BeforeAll declared is what every test starts from, though the test before forgot everything");
+			assertEquals(List.of("()V"), VanillaLambdaReference.declared(OWNER, "lambda$before$0"),
 					"and so is what the class found");
-			assertEquals(List.of(), DuplicateLambdaPruneInjector.droppedDescriptors(OWNER, "lambda$first$0"));
+			assertEquals(List.of(), VanillaLambdaReference.declared(OWNER, "lambda$first$0"));
 		}
 	}
 
 	static class UnrestoredProbe {
 		@Test
 		void leaks() {
-			if (Boolean.getBoolean(PROBE)) DuplicateLambdaPruneInjector.recordDroppedForTest(OWNER, "lambda$leaked$0", "()V");
+			if (Boolean.getBoolean(PROBE)) VanillaLambdaReference.declare(OWNER, "lambda$leaked$0", "()V");
 		}
 	}
 }

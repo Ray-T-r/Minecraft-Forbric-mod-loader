@@ -7,7 +7,6 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.function.Function;
 
-import net.forbric.kernel.transform.DuplicateLambdaPruneInjector;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.parallel.ResourceLock;
@@ -29,7 +28,7 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
  * screenshot-capture mixin failed. The fixture is invented: a camera whose lambda gained an {@code Object}.
  */
 @ResourceLock("system-properties")
-@org.junit.jupiter.api.extension.ExtendWith(net.forbric.kernel.DroppedLambdaRecordRestore.class)
+@org.junit.jupiter.api.extension.ExtendWith(net.forbric.kernel.VanillaLambdaReference.class)
 class InsertedLambdaNativeShapeTest {
 	private static final String LAMBDA = "lambda$snap$3", LENS = "spry/Lens";
 	private static final String OLD = "(ILjava/lang/String;)V", NEW = "(ILjava/lang/Object;Ljava/lang/String;)V";
@@ -47,7 +46,7 @@ class InsertedLambdaNativeShapeTest {
 	@Test
 	void aLambdaBothCarriersWidenedMovesWhereItsNativeShapeIsTheHandlers() throws Exception {
 		String owner = "spry/CameraPruned";
-		DuplicateLambdaPruneInjector.recordDroppedForTest(owner, LAMBDA, "(ILjava/lang/Integer;Ljava/lang/String;)V");
+		net.forbric.kernel.VanillaLambdaReference.declare(owner, LAMBDA, "(ILjava/lang/Integer;Ljava/lang/String;)V");
 		for (List<String> selectors : List.of(List.of(LAMBDA), List.of(LAMBDA + OLD))) {
 			ClassNode mixin = mixin(owner, selectors, "L" + LENS + ";open()V"), target = target(owner, true);
 			assertEquals(1, InsertedLambdaArgumentShim.adapt(mixin, n -> target, natives(owner, OLD)), selectors.toString());

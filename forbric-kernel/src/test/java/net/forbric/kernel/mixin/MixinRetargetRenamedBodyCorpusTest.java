@@ -42,7 +42,7 @@ import net.forbric.kernel.TestFixtures.Fixture;
  * full list of moves is written to {@code build/reports/r3-renamed-body-corpus.txt}.
  */
 @ResourceLock("system-properties")
-@org.junit.jupiter.api.extension.ExtendWith(net.forbric.kernel.DroppedLambdaRecordRestore.class)
+@org.junit.jupiter.api.extension.ExtendWith(net.forbric.kernel.VanillaLambdaReference.class)
 class MixinRetargetRenamedBodyCorpusTest {
 	private static final Path MERGED = TestFixtures.stagedBase();
 	private static final Path NEO_RUNTIME = TestFixtures.stagedRoot().resolve(TestFixtures.NEO_CARRIER_JAR);
@@ -229,21 +229,12 @@ class MixinRetargetRenamedBodyCorpusTest {
 		return name.endsWith(".class") || name.endsWith(".json") || name.endsWith(".jar") || name.endsWith(".toml") || name.endsWith("MANIFEST.MF");
 	}
 
-	/** The staged game as KernelGuestMixinAdapter resolves it, with the merge's orphaned duplicate lambdas pruned. */
+	/** The staged game as the jars hold it. */
 	private static Function<String, byte[]> resolver() throws IOException {
 		Map<String, byte[]> game = new HashMap<>();
 		for (Path jar : List.of(NEO_RUNTIME, MERGED)) {
 			game.putAll(MixinFitLivenessCensusStagedTest.read(Files.readAllBytes(jar), n -> n.endsWith(".class")));
 		}
-		Map<String, byte[]> pruned = new java.util.concurrent.ConcurrentHashMap<>();
-		net.forbric.kernel.transform.DuplicateLambdaPruneInjector prune = new net.forbric.kernel.transform.DuplicateLambdaPruneInjector();
-		return name -> {
-			byte[] raw = game.get(name);
-			if (raw == null || !name.startsWith("net/minecraft/")) return raw;
-			return pruned.computeIfAbsent(name, n -> {
-				byte[] out = prune.transform(n.substring(0, n.length() - ".class".length()).replace('/', '.'), raw, null);
-				return out == null ? raw : out;
-			});
-		};
+		return game::get;
 	}
 }

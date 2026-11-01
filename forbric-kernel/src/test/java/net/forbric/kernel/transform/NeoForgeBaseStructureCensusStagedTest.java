@@ -54,6 +54,15 @@ import org.objectweb.asm.tree.MethodNode;
  * on a call vanilla's body makes (Create's normals wrap on {@code FaceBakery.bakeQuad}) bound a method with no such call;
  * {@code MixinBuilderStubRebind} moved it to the overload. It was deleted in C3: on NeoForge's base every builder stub
  * (new builder, hand it to a same-name void overload, return its product) is one vanilla has too.
+ *
+ * <p><b>Two lambdas of one name in one class.</b> javac numbers lambdas per class, so a compiled class never has two
+ * {@code lambda$x$0}; the merged base had 133 such classes (both carriers' lambdas, one body kept), and a mod's
+ * {@code method = "lambda$load$2"} carries no descriptor, so Mixin bound whichever came first (Lithostitched's Tectonic
+ * modifiers on {@code ResourceManagerRegistryLoadTask}). {@code DuplicateLambdaPruneInjector} dropped the orphaned body
+ * and was deleted in C3: NeoForge's base has none. Checked on the pre-Mixin view too, because
+ * {@link VanillaMemberTwinInjector} copies vanilla bodies with their lambdas and keeps a lambda's vanilla name when the
+ * class has no method of that name and descriptor, so a twin could re-create a pair beside a NeoForge lambda of the same
+ * name, and nothing at run time would say so.
  */
 class NeoForgeBaseStructureCensusStagedTest {
 	private static final String BOOTSTRAP = "net/minecraft/server/Bootstrap";
@@ -83,6 +92,53 @@ class NeoForgeBaseStructureCensusStagedTest {
 		assertTrue(changed > 0, "premise: the pre-Mixin view changed some class (the vanilla twins at least)");
 		assertEquals(List.of(), raw, "raw jars");
 		assertEquals(List.of(), viewed, "the pre-Mixin view (twins + compat repairs)");
+	}
+
+	@Test void noClassHasTwoLambdasOfOneName() throws Exception {
+		List<String> raw = new ArrayList<>(), viewed = new ArrayList<>();
+		int classes = 0, changed = 0;
+		for (Path jar : StagedGameClasses.jars()) {
+			try (ZipFile zip = new ZipFile(jar.toFile())) {
+				for (ZipEntry entry : Collections.list(zip.entries())) {
+					String name = entry.getName();
+					if (!name.endsWith(".class") || name.startsWith("META-INF/")) continue;
+					byte[] bytes;
+					try (InputStream in = zip.getInputStream(entry)) { bytes = in.readAllBytes(); }
+					String internal = name.substring(0, name.length() - ".class".length());
+					classes++;
+					raw.addAll(sharedLambdaNames(node(bytes)));
+					byte[] view = PreMixinView.of(internal, bytes);
+					if (view != bytes) {
+						changed++;
+						viewed.addAll(sharedLambdaNames(node(view)));
+					}
+				}
+			}
+		}
+		assertTrue(classes > 10_000, "premise: the base and carrier were read (" + classes + " classes)");
+		assertTrue(changed > 0, "premise: the pre-Mixin view changed some class (the vanilla twins at least)");
+		assertEquals(List.of(), raw, "raw jars");
+		assertEquals(List.of(), viewed, "the pre-Mixin view (twins + compat repairs)");
+	}
+
+	/** The criterion has teeth: two lambda$ bodies of one name are named, overloads of a plain method and distinct lambdas are not. */
+	@Test void theLambdaNameCriterionNamesOnlyASharedLambdaName() {
+		ClassNode node = new ClassNode();
+		node.name = "fixture/Merged";
+		for (String[] m : new String[][] {{"lambda$load$2", "(Ljava/lang/String;)Z"}, {"lambda$load$2", "(Ljava/lang/String;I)Z"},
+				{"lambda$load$1", "()V"}, {"load", "()V"}, {"load", "(I)V"}}) {
+			node.methods.add(new MethodNode(Opcodes.ACC_PRIVATE | Opcodes.ACC_STATIC, m[0], m[1], null, null));
+		}
+		assertEquals(List.of("fixture/Merged#lambda$load$2 [(Ljava/lang/String;)Z, (Ljava/lang/String;I)Z]"), sharedLambdaNames(node));
+	}
+
+	/** Each {@code lambda$} name {@code node} declares more than once, with its descriptors. */
+	static List<String> sharedLambdaNames(ClassNode node) {
+		Map<String, List<String>> byName = new java.util.TreeMap<>();
+		for (MethodNode m : node.methods) if (m.name.startsWith("lambda$")) byName.computeIfAbsent(m.name, k -> new ArrayList<>()).add(m.desc);
+		List<String> out = new ArrayList<>();
+		byName.forEach((name, descriptors) -> { if (descriptors.size() > 1) out.add(node.name + "#" + name + " " + descriptors); });
+		return out;
 	}
 
 	/** The criterion has teeth: a static lambda re-tagged as an instance handle, and a handle to a missing lambda, are both named. */

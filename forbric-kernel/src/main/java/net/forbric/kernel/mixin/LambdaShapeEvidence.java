@@ -13,7 +13,6 @@ import org.objectweb.asm.tree.ClassNode;
 import org.objectweb.asm.tree.MethodNode;
 
 import net.forbric.api.Ecosystem;
-import net.forbric.kernel.transform.DuplicateLambdaPruneInjector;
 
 /**
  * The shapes a lambda had in the game a Fabric mod was compiled against that the class in front of Mixin no longer gives
@@ -26,50 +25,38 @@ import net.forbric.kernel.transform.DuplicateLambdaPruneInjector;
  * other parameters and Mixin rejects it — "Invalid descriptor", and with a required mixin the whole class goes. The repairs
  * that hand such a handler what it asked for must know the mod really was written for a shape the name used to have, or
  * they would wrap every handler Mixin accepts by its own looser rules (two earlier versions did, eighteen handlers on one
- * pack). This class is where that knowledge comes from, and it has two sources.
+ * pack). This class is where that knowledge comes from.
  *
- * <ul>
- *   <li><b>The native reference.</b> {@code NativeGameReferences}' FABRIC class is vanilla's, the game a Fabric mod is
- *       compiled against. When it declares {@code N} with descriptor {@code Dv}, and the current class declares {@code N}
- *       but never with {@code Dv}, the mod's {@code N} meant {@code Dv}. Three look-alikes are left out on purpose. If the
- *       current class declares {@code Dv} under another lambda of the same enclosing method, a patch inserted a lambda and
- *       javac renumbered the rest: vanilla's lambda is still there under another name, and the one now called {@code N}
- *       is a different lambda, which nothing may be mapped onto. If every current {@code N} takes {@code Dv}'s parameters
- *       in another order, the lambda's captures were reordered, not reshaped: {@code lambda-permutations.txt} is the
- *       evidence for that, proven by local variable names, and MixinHandlerShim asks it first. And if every current
- *       {@code N} takes {@code Dv}'s parameters in their order with others inserted, a carrier patch added captures:
- *       that is InsertedLambdaArgumentShim's case, which it proves from the same reference itself and maps by an
- *       order-preserving embedding that keeps repeated types apart — Screenshot.grab's {@code lambda$grab$3} gains a
- *       {@code ScreenshotEvent} between the file and the consumer on both carriers. Left in, the type-only wrap would
- *       claim it first.</li>
- *   <li><b>The duplicate-lambda pruner's record.</b> On the merged base a name can be carried twice, one body per
- *       carrier; {@code DuplicateLambdaPruneInjector} drops the orphaned one before Mixin looks and remembers its
- *       descriptor. That is where this evidence came from first, and on the merged base it still counts: the record knows
- *       MinecraftForge's own shapes, which the FABRIC reference does not.</li>
- * </ul>
+ * <p>The source is the native reference. {@code NativeGameReferences}' FABRIC class is vanilla's, the game a Fabric mod is
+ * compiled against. When it declares {@code N} with descriptor {@code Dv}, and the current class declares {@code N} but
+ * never with {@code Dv}, the mod's {@code N} meant {@code Dv}. Three look-alikes are left out on purpose. If the current
+ * class declares {@code Dv} under another lambda of the same enclosing method, a patch inserted a lambda and javac
+ * renumbered the rest: vanilla's lambda is still there under another name, and the one now called {@code N} is a different
+ * lambda, which nothing may be mapped onto. If every current {@code N} takes {@code Dv}'s parameters in another order, the
+ * lambda's captures were reordered, not reshaped: {@code lambda-permutations.txt} is the evidence for that, proven by local
+ * variable names, and MixinHandlerShim asks it first. And if every current {@code N} takes {@code Dv}'s parameters in their
+ * order with others inserted, a carrier patch added captures: that is InsertedLambdaArgumentShim's case, which it proves
+ * from the same reference itself and maps by an order-preserving embedding that keeps repeated types apart —
+ * Screenshot.grab's {@code lambda$grab$3} gains a {@code ScreenshotEvent} between the file and the consumer. Left in, the
+ * type-only wrap would claim it first.
  *
- * <p>The first source is the one that survives the switch to NeoForge's own base, where nothing is carried twice and the
- * pruner has nothing to record: there {@code LevelRenderer}'s only {@code lambda$addSkyPass$0} is NeoForge's
+ * <p>On NeoForge's base {@code LevelRenderer}'s only {@code lambda$addSkyPass$0} is NeoForge's
  * {@code (SkyRenderState, Matrix4fc, GpuBufferSlice)}, vanilla's {@code (GpuBufferSlice, SkyRenderState)} is in the
- * reference, and Apoli's sky-skip is shimmed exactly as on the merged base. On the merged base it decides and says
- * nothing the record did not ({@link #diagnosable} keeps the words): LambdaShapeEvidenceStagedTest replays every guest
- * mixin of the local corpus with a lambda selector or a {@code LevelRenderer} target, against the classes the pre-Mixin
- * chain hands Mixin, through the four consumers with the reference on and off and the pruner on and off, and finds the
- * same decisions and words as each other and as the code before the reference (b37e6ae0, a recorded table).
- * {@code -Dforbric.lambdaShapeEvidence=off} leaves the reference out; the record still counts.
+ * reference, and Apoli's sky-skip is shimmed (LambdaShapeEvidenceStagedTest). Until Stage 4 a second source counted: the
+ * merged base could carry a name twice, one body per carrier, and the duplicate-lambda pruner dropped the orphaned one and
+ * recorded its descriptor; NeoForge's base carries no name twice (NeoForgeBaseStructureCensusStagedTest), so that pruner
+ * and its record were deleted. {@code -Dforbric.lambdaShapeEvidence=off} leaves the reference out, and with it all
+ * evidence.
  */
 public final class LambdaShapeEvidence {
-	/** {@code off}: only the duplicate-lambda pruner's record is evidence, as before the native reference was. */
+	/** {@code off}: no lambda shape is evidence. */
 	static final String PROPERTY = "forbric.lambdaShapeEvidence";
 
 	private LambdaShapeEvidence() {
 	}
 
-	/**
-	 * One shape the mod may have been written for. {@code dropped}: the pruner removed a body of that shape from this very
-	 * class, which is what the merged base's diagnostics say; otherwise it is known from the native reference alone.
-	 */
-	public record Shape(String descriptor, boolean dropped) {
+	/** One shape the mod may have been written for, known from the native reference. */
+	public record Shape(String descriptor) {
 	}
 
 	static boolean referenceEnabled() {
@@ -77,13 +64,12 @@ public final class LambdaShapeEvidence {
 	}
 
 	/**
-	 * The shapes of lambda {@code name} that {@code current} — the class as Mixin will see it — no longer has: the pruner's
-	 * record for it first, then the native reference's. Distinct by descriptor; empty for anything else.
+	 * The shapes of lambda {@code name} that {@code current} — the class as Mixin will see it — no longer has, as the native
+	 * reference knows them. Distinct by descriptor; empty for anything else.
 	 *
 	 * <p>Every bare selector of every handler that does not bind as compiled asks this, so what it costs for the names it
 	 * can say nothing about is checked first, before the reference is read (which re-reads, re-hashes and re-parses the
-	 * class each time): a name that is not a lambda's, or a lambda the class does not declare. The pruner records lambdas
-	 * only, so the first check changes no answer the record gave.
+	 * class each time): a name that is not a lambda's, or a lambda the class does not declare.
 	 */
 	public static List<Shape> vanished(ClassNode current, String name) {
 		return vanished(current, name, owner -> NativeGameReferences.reference(Ecosystem.FABRIC, owner));
@@ -93,33 +79,12 @@ public final class LambdaShapeEvidence {
 	static List<Shape> vanished(ClassNode current, String name, Function<String, ClassNode> fabricReference) {
 		if (current == null || name == null || !name.startsWith("lambda$")) return List.of();
 		Map<String, Shape> shapes = new LinkedHashMap<>();
-		for (String dropped : DuplicateLambdaPruneInjector.droppedDescriptors(current.name, name)) {
-			shapes.putIfAbsent(dropped, new Shape(dropped, true));
-		}
 		if (referenceEnabled() && declares(current, name)) {
 			for (String reshaped : reshaped(current, fabricReference.apply(current.name), name)) {
-				shapes.putIfAbsent(reshaped, new Shape(reshaped, false));
+				shapes.putIfAbsent(reshaped, new Shape(reshaped));
 			}
 		}
 		return List.copyOf(shapes.values());
-	}
-
-	/**
-	 * Whether a diagnosis — MixinOverloadPin's warning and the compatibility reason it hands on, MixinFit's reason — may tell
-	 * {@code shape} as a lambda a carrier patch reshaped from vanilla's. A decision never asks this: what MixinHandlerShim
-	 * wraps, InsertedLambdaArgumentShim moves and MixinFit decides is the same with it either way.
-	 *
-	 * <p>Always for a shape the pruner dropped, which is what the diagnoses said before the reference was evidence. For one
-	 * known from the reference alone, only on a class the game holds no MinecraftForge compile of. A class that has one is
-	 * the merged base's, where the pruner's record is the only story these diagnoses have told, and a shape the reference
-	 * adds there would be new merged-base output: measured over the local corpus it is one, fabric-api's resource-conditions
-	 * {@code skipData} on {@code SimpleJsonResourceReloadListener.lambda$scanDirectory$0}, with the pruner on and off alike,
-	 * which would gain a warning and a compatibility reason it never had (LambdaShapeEvidenceStagedTest holds the merged
-	 * base's words to the record's). On NeoForge's own base no class has a MinecraftForge compile, and the reference's
-	 * diagnosis is the only one there is.
-	 */
-	public static boolean diagnosable(ClassNode current, Shape shape) {
-		return shape.dropped() || current == null || !NativeGameReferences.has(Ecosystem.FORGE, current.name);
 	}
 
 	private static boolean declares(ClassNode current, String name) {

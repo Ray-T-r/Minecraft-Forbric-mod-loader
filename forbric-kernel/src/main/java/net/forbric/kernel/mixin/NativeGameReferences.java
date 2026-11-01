@@ -97,7 +97,23 @@ public final class NativeGameReferences {
 		active=reader;
 	}
 
+	/** Test seam: answers before the launch's reader when it answers at all; null when unset. */
+	private static volatile java.util.function.BiFunction<Ecosystem, String, ClassNode> referenceForTest;
+
+	/**
+	 * Test seam: {@code reference} answers {@link #reference} for the classes it knows (a unit test's stand-in for what the
+	 * vanilla-reference sidecar would answer); null takes it away.
+	 */
+	public static void referenceForTest(java.util.function.BiFunction<Ecosystem, String, ClassNode> reference) {
+		referenceForTest = reference;
+	}
+
 	public static ClassNode reference(Ecosystem ecosystem, String owner) {
+		java.util.function.BiFunction<Ecosystem, String, ClassNode> seam = referenceForTest;
+		if (seam != null) {
+			ClassNode answered = seam.apply(ecosystem, owner);
+			if (answered != null) return answered;
+		}
 		NativeGameReferences reader = active;
 		return reader == null ? null : reader.get(ecosystem, owner);
 	}

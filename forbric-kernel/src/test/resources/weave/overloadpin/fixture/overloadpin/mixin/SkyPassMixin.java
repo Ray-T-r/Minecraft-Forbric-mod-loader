@@ -8,9 +8,8 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 
 /**
  * Written the way a mod writes it against vanilla, where {@code lambda$render$0} is unique: name only, and a handler
- * shaped for vanilla's {@code (String, StringBuilder)}. On the merged class that shape was pruned, and the surviving
- * {@code (StringBuilder, String, String)} has two Strings, so MixinHandlerShim cannot say which one to hand over and
- * declines. Mixin then rejects the descriptor; nothing can make this bind, and the only question left is whether the
+ * shaped for vanilla's {@code (String, StringBuilder)}. The carrier's {@code (StringBuilder, String, String)} has two
+ * Strings, so MixinHandlerShim cannot say which one to hand over and declines. Mixin then rejects the descriptor; nothing can make this bind, and the only question left is whether the
  * report says why.
  */
 @Mixin(SkyPass.class)

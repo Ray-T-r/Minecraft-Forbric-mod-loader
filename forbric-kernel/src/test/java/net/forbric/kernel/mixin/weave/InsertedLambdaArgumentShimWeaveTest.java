@@ -18,19 +18,20 @@ import org.objectweb.asm.tree.MethodNode;
 
 import net.fabricmc.api.EnvType;
 import net.forbric.api.Ecosystem;
-import net.forbric.kernel.transform.DuplicateLambdaPruneInjector;
 
 /**
  * InsertedLambdaArgumentShim through the real weave: Litematica's two schematic passes, selected by vanilla's main-pass
- * lambda name and descriptor, on a byte-merged renderer whose live lambda of that name is the carrier's, with a pose
- * inserted between the state and the sections.
+ * lambda name and descriptor, on a renderer whose one lambda of that name is NeoForge's, with a pose inserted between the
+ * state and the sections.
  *
- * <p>The run's pre-Mixin chain is KernelBoot's DuplicateLambdaPruneInjector, registered as KernelBoot registers it: it
- * drops vanilla's unreachable body and records its descriptor, which is the evidence the shim acts on. The probe renders
- * one main pass and reports what was drawn. Shimmed, each pass runs right after its layer group with the arguments it
- * was written for, in its own order, the inserted pose left out. With {@code -Dforbric.insertedLambdaArguments=off} the
- * selector names the body the pruner removed: the fit check, which asks the shim where a pruned selector lands, finds no
- * anchor and leaves the mixin out of its config, neither pass ever draws, and the mod gets a confirmed finding.
+ * <p>The evidence the shim acts on is the native reference: vanilla's renderer, indexed into the fixture as the FABRIC
+ * reference a launch reads from the vanilla-reference sidecar, declares the lambda in the shape the selector spells. (Until
+ * Stage 4 the merged base carried vanilla's body beside the carrier's and the duplicate-lambda pruner's record was the
+ * evidence; NeoForge's base carries one body.) The probe renders one main pass and reports what was drawn. Shimmed, each
+ * pass runs right after its layer group with the arguments it was written for, in its own order, the inserted pose left
+ * out. With {@code -Dforbric.insertedLambdaArguments=off} the selector names a shape the class does not have: the fit
+ * check, which asks the shim where such a selector lands, finds no anchor and leaves the mixin out of its config, neither
+ * pass ever draws, and the mod gets a confirmed finding.
  */
 class InsertedLambdaArgumentShimWeaveTest {
 	private static final Path SOURCES = Path.of("src/test/resources/weave/insertedlambda");
@@ -45,10 +46,26 @@ class InsertedLambdaArgumentShimWeaveTest {
 	private static final String DRAWN = WeaveHarnessMain.DONE + " [opaque, schematic opaque(state, sections, 0.25), "
 			+ "translucent, schematic translucent(state, sections, 0.25)]";
 	private static final String NOT_DRAWN = WeaveHarnessMain.DONE + " [opaque, translucent]";
-	private static final String PRUNED = "[Forbric/Merge] net.minecraft.client.renderer.LevelRenderer carried 1 duplicated lambda name(s)";
 	private static final String LEFT_OUT = "auto-suppressing guest mixin litematica (" + CONFIG + "):render.MixinLevelRenderer — UNFIT";
 	private static final String SHIM_LOG = "MixinLevelRenderer.litematica_renderMainSection_Opaque forwards the uniquely aligned "
 			+ "original arguments to the retained " + LAMBDA + LIVE;
+
+	/** Vanilla's renderer: the main-pass lambda without the pose, the shape Litematica's selectors spell. */
+	private static final String VANILLA_RENDERER = """
+			package net.minecraft.client.renderer;
+			import java.util.ArrayList;
+			import java.util.List;
+			import net.minecraft.client.renderer.chunk.ChunkSectionsToRender;
+			import net.minecraft.client.renderer.state.level.LevelRenderState;
+			public class LevelRenderer {
+			 public final List<String> trace = new ArrayList<>();
+			 public void addMainPass(LevelRenderState state, ChunkSectionsToRender sections) { lambda$addMainPass$0(state, sections, 0.25F); }
+			 private void lambda$addMainPass$0(LevelRenderState state, ChunkSectionsToRender sections, float alpha) {
+			  sections.renderGroup(trace, "opaque");
+			  sections.renderGroup(trace, "translucent");
+			 }
+			}
+			""";
 
 	@TempDir static Path work;
 	private static Path fixture;
@@ -60,13 +77,18 @@ class InsertedLambdaArgumentShimWeaveTest {
 			sources = walk.filter(p -> p.toString().endsWith(".java")).sorted().toList();
 		}
 		assertEquals(6, sources.size(), "the fixture's sources changed; update this test with it: " + sources);
-		fixture = WeaveHarness.fixture(work, "insertedlambda", sources, Map.of(CONFIG, SOURCES.resolve(CONFIG)));
+		Path current = WeaveHarness.fixture(work, "insertedlambda", sources, Map.of(CONFIG, SOURCES.resolve(CONFIG)));
+		Path vanilla = work.resolve("native-src/net/minecraft/client/renderer/LevelRenderer.java");
+		Files.createDirectories(vanilla.getParent());
+		Files.writeString(vanilla, VANILLA_RENDERER);
+		List<Path> nativeSources = sources.stream().map(p -> p.endsWith(Path.of("net/minecraft/client/renderer/LevelRenderer.java")) ? vanilla : p).toList();
+		Path nativeFixture = WeaveHarness.fixture(work, "native-insertedlambda", nativeSources, Map.of(CONFIG, SOURCES.resolve(CONFIG)));
+		fixture = NativeWeaveReferences.with(work, current, Map.of(RENDERER, NativeWeaveReferences.classes(nativeFixture).get(RENDERER)));
 		shimmed = run("shimmed", Map.of());
 		off = run("shim-off", Map.of(SWITCH, "off"));
 	}
 
 	@Test void bothPassesDrawWithTheArgumentsTheyWereWrittenFor() throws Exception {
-		assertTrue(shimmed.printed(PRUNED), shimmed.describe());
 		assertTrue(shimmed.printed(DRAWN), shimmed.describe());
 		assertTrue(shimmed.printed(SHIM_LOG), shimmed.describe());
 		assertTrue(shimmed.printed("MixinLevelRenderer.litematica_renderMainSection_Translucent forwards"), shimmed.describe());
@@ -76,8 +98,7 @@ class InsertedLambdaArgumentShimWeaveTest {
 		WeaveHarness.assertWovenAndVerified(shimmed, RENDERER, fixture);
 	}
 
-	@Test void switchedOffTheSelectorNamesThePrunedBodyAndNeitherPassDraws() throws Exception {
-		assertTrue(off.printed(PRUNED), "the chain is the same in both runs — " + off.describe());
+	@Test void switchedOffTheSelectorNamesAShapeTheClassLacksAndNeitherPassDraws() throws Exception {
 		assertTrue(off.printed(NOT_DRAWN), off.describe());
 		assertFalse(off.printed("forwards the uniquely aligned"), off.describe());
 		assertTrue(off.printed(LEFT_OUT), off.describe());
@@ -108,7 +129,7 @@ class InsertedLambdaArgumentShimWeaveTest {
 		ClassNode renderer = new ClassNode();
 		new ClassReader(run.defined(RENDERER)).accept(renderer, 0);
 		List<MethodNode> lambdas = renderer.methods.stream().filter(m -> m.name.equals(LAMBDA)).toList();
-		assertEquals(List.of(LIVE), lambdas.stream().map(m -> m.desc).toList(), "the pruner left only the live body");
+		assertEquals(List.of(LIVE), lambdas.stream().map(m -> m.desc).toList(), "one body of the name, NeoForge's");
 		long calls = 0;
 		for (var insn : lambdas.get(0).instructions) {
 			if (insn instanceof MethodInsnNode call && call.owner.equals(RENDERER) && call.name.contains("litematica_renderMainSection_")) {
@@ -125,6 +146,6 @@ class InsertedLambdaArgumentShimWeaveTest {
 
 	private static WeaveHarness.Result run(String label, Map<String, String> properties) throws Exception {
 		return WeaveHarness.run(work, label, fixture, List.of(new WeaveHarness.Config(CONFIG, MOD, Ecosystem.FABRIC)),
-				List.of(DuplicateLambdaPruneInjector.class), EnvType.CLIENT, "fixture.insertedlambda.Probe", "probe", properties);
+				List.of(), EnvType.CLIENT, "fixture.insertedlambda.Probe", "probe", properties);
 	}
 }

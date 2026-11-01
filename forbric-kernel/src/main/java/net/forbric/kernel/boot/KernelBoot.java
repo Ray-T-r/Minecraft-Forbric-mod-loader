@@ -45,7 +45,6 @@ import net.forbric.kernel.transform.ClientPackHookInjector;
 import net.forbric.kernel.transform.ClientSmokeTickInjector;
 import net.forbric.kernel.transform.CommonNetworkInteropInjector;
 import net.forbric.kernel.transform.DataPackHookInjector;
-import net.forbric.kernel.transform.DuplicateLambdaPruneInjector;
 import net.forbric.kernel.transform.ExitHookInjector;
 import net.forbric.kernel.transform.ForbricMergedBaseCompatTransformer;
 import net.forbric.kernel.transform.ForeignModPresenceInjector;
@@ -735,10 +734,7 @@ public final class KernelBoot {
 		// nothing fills and nothing completes: a MinecraftForge mod reading a creative search tree through it hangs the
 		// thread it asks on. It reads the trees NeoForge's keyed producers file instead (and so would vanilla's two
 		// producers, on a merge that kept MinecraftForge's bodies for them; the current base does not).
-		// Client only: a dedicated server never loads the class, so it carries no anchor for it. Registered before
-		// DuplicateLambdaPruneInjector (same phase, ties go by registration order): the rewrite leaves MinecraftForge's
-		// two lambdas unreachable beside NeoForge's live ones of the same name, and only a prune that runs after it
-		// sees them as the orphans they now are.
+		// Client only: a dedicated server never loads the class, so it carries no anchor for it.
 		if (side == Side.CLIENT && net.forbric.kernel.transform.CreativeSearchTreesInjector.enabled()) {
 			chain.register(TransformPhase.COREMOD, new net.forbric.kernel.transform.CreativeSearchTreesInjector());
 		} else if (side == Side.CLIENT) {
@@ -747,11 +743,6 @@ public final class KernelBoot {
 					+ "search tree through it hangs the thread it asks on",
 					net.forbric.kernel.transform.CreativeSearchTreesInjector.PROPERTY);
 		}
-
-		// A merged method keeps ONE body but BOTH ecosystems' lambdas, and a mixin's `method = "lambda$x$0"`
-		// carries no descriptor because javac never lets one class have two. Drop the orphaned half before Mixin
-		// looks, or it binds to dead code and the injection silently does nothing.
-		chain.register(TransformPhase.COREMOD, new DuplicateLambdaPruneInjector());
 
 		// Inert unless -Dforbric.clientSmoke=true. It is what lets gate-m9 run a client unattended: enter a
 		// world, live in it, disconnect and stop, so the gate waits for an outcome instead of a timeout.

@@ -40,8 +40,7 @@ import net.forbric.api.Ecosystem;
  *   <li>shim-off with {@code -Dforbric.mixinFit.handlerFit=off} — the mixin reaches Mixin, which rejects the descriptor,
  *       as every control did before the verdict asked.</li>
  * </ul>
- * The shim's other evidence, {@code DuplicateLambdaPruneInjector}'s record, is not reached: the pruner is a COREMOD
- * transformer that KernelBoot registers, and the harness bootstraps Mixin without that chain.
+ * The shim's other evidence, the native reference's vanilla shape, is not reached: the fixture indexes no reference.
  */
 class MixinHandlerShimWeaveTest {
 	private static final Path SOURCES = Path.of("src/test/resources/weave/handlershim");

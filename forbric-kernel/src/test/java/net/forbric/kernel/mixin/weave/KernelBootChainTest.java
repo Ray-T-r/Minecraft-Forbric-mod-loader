@@ -6,7 +6,7 @@ import org.junit.jupiter.api.Test;
 
 import net.forbric.kernel.transform.HudContextQueryInjector;
 import net.forbric.kernel.transform.BlockSoundQueryInjector;
-import net.forbric.kernel.transform.DuplicateLambdaPruneInjector;
+import net.forbric.kernel.transform.ClientSmokeTickInjector;
 import net.forbric.kernel.transform.InterfaceDefaultConflictRepair;
 import net.forbric.kernel.transform.ItemUseOnInjector;
 import net.forbric.kernel.transform.SpawnPositionCallsInjector;
@@ -26,7 +26,7 @@ class KernelBootChainTest {
 		assertEquals(Integer.MAX_VALUE, earlyReturns.sortIndex(), "registered LAST in the coremod phase");
 		assertTrue(earlyReturns.gated(), "registered only while VanillaEarlyReturns.enabled()");
 
-		for (Class<?> plain : java.util.List.of(ItemUseOnInjector.class, DuplicateLambdaPruneInjector.class, BlockSoundQueryInjector.class)) {
+		for (Class<?> plain : java.util.List.of(ItemUseOnInjector.class, ClientSmokeTickInjector.class, BlockSoundQueryInjector.class)) {
 			KernelBootChain.Registration r = KernelBootChain.registration(plain.getName());
 			assertEquals(TransformPhase.COREMOD, r.phase(), plain.getSimpleName());
 			assertEquals(0, r.sortIndex(), plain.getSimpleName());
@@ -37,9 +37,9 @@ class KernelBootChainTest {
 	/** Within one sort index TransformChain runs registration order, so the harness must keep KernelBoot's. */
 	@Test void keepsKernelBootsRegistrationOrder() throws Exception {
 		long earlyReturns = KernelBootChain.registration(VanillaEarlyReturns.class.getName()).position();
-		long prune = KernelBootChain.registration(DuplicateLambdaPruneInjector.class.getName()).position();
+		long smoke = KernelBootChain.registration(ClientSmokeTickInjector.class.getName()).position();
 		long useOn = KernelBootChain.registration(ItemUseOnInjector.class.getName()).position();
-		assertTrue(earlyReturns < prune && prune < useOn, earlyReturns + " " + prune + " " + useOn);
+		assertTrue(earlyReturns < smoke && smoke < useOn, earlyReturns + " " + smoke + " " + useOn);
 	}
 
 	@Test void refusesWhatItCannotReproduceFaithfully() {

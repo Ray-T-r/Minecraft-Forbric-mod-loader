@@ -116,8 +116,8 @@ step "launch the client into $WORLD via quick-play ($(ls -1 "$RUNDIR/mods"/*.jar
 #                                                   "and not in the pre-Minecraft window"). Off, a Fabric mod that
 #                                                   caches Minecraft.getInstance() from onInitialize caches null:
 #                                                   ClickCrystals then killed the client inside Minecraft.<init>.
-# Verified with
-# -Dforbric.pruneDuplicateLambdas=off, which brings back StubException and the failed world load.
+# (-Dforbric.pruneDuplicateLambdas=off was a control here on the merged base, where it brought back StubException and the
+# failed world load; NeoForge's base carries no lambda name twice and the pruner was deleted in Stage 4.)
 FORBRIC_JVM="-Dforbric.clientSmoke=true -Dforbric.clientSmokeWorld=$WORLD -Dforbric.clientSmokeReadyTicks=60 -Dforbric.clientSmokeModsScreen=80 -Dforbric.clientSmokeKeyBinds=70 -Dforbric.clientSmokeDisconnectTicks=140 ${M9_EXTRA_JVM:-}" \
 RUNDIR="$RUNDIR" "$KERNEL/run/launch-kernel-client.sh" \
   --quickPlayPath "$RUNDIR/quickPlay/log.json" --quickPlaySingleplayer "$WORLD" > "$LOG" 2>&1 &

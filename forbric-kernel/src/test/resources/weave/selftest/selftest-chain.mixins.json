@@ -1,1 +1,0 @@
-{"required": true, "package": "fixture.selftest.mixin", "compatibilityLevel": "JAVA_21", "mixins": ["MergedMixin"], "injectors": {"defaultRequire": 1}}

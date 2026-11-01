@@ -5,30 +5,19 @@ import static org.junit.jupiter.api.Assertions.*;
 
 import java.io.ByteArrayInputStream;
 import java.io.IOException;
-import java.io.InputStream;
 import java.net.URL;
-import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.security.MessageDigest;
 import java.util.ArrayList;
 import java.util.Arrays;
-import java.util.HexFormat;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.TreeMap;
-import java.util.TreeSet;
 import java.util.function.Function;
-import java.util.function.Predicate;
-import java.util.stream.Stream;
 import java.util.zip.ZipEntry;
-import java.util.zip.ZipFile;
 import java.util.zip.ZipInputStream;
 
-import net.fabricmc.api.EnvType;
 import org.junit.jupiter.api.AfterEach;
-import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.parallel.ResourceLock;
 import org.objectweb.asm.ClassReader;
@@ -43,40 +32,23 @@ import org.objectweb.asm.tree.MethodNode;
 import net.forbric.api.Ecosystem;
 import net.forbric.kernel.ExpectCaught;
 import net.forbric.kernel.TestFixtures;
-import net.forbric.kernel.TestFixtures.Fixture;
 import net.forbric.kernel.classloading.ForbricClassLoader;
 import net.forbric.kernel.transform.ChainReferences;
-import net.forbric.kernel.transform.DuplicateLambdaPruneInjector;
-import net.forbric.kernel.transform.TransformChain;
-import net.forbric.kernel.transform.TransformContext;
 
 /**
- * {@link LambdaShapeEvidence} on the real bases: on the merged base the native reference decides nothing the pruner's
- * record did not, nor anything the code before it decided, and on NeoForge's genuine base — no pruner record at all — it
- * is what still shims a handler written for vanilla's lambda.
+ * {@link LambdaShapeEvidence} on NeoForge's genuine base: the native reference, read from the vanilla-reference sidecar
+ * through the sources KernelBoot configures, is what still shims a handler written for vanilla's lambda.
  *
- * <p>Decision equality is measured, not argued. The corpus is every guest mixin in the local packs (under {@code run/}
- * and {@code build/compat-inputs/}) with a lambda selector, and every one that targets {@code LevelRenderer} — where the
- * mods Stage 2.4 names (iris, sodium, sodium-extra, litematica, fabric-api) inject, and which the test checks are there.
- * Each target class is what KernelBoot's pre-Mixin chain hands Mixin, read off KernelBoot's own registrations
- * ({@link ChainReferences#preMixinChain}; the few that need KernelBoot's runtime state are left out and named in the
- * output), under the pruner on (the record full) and off (no record). Each guest goes through the four consumers with
- * the reference on and off: what MixinHandlerShim wraps and where it lands, what InsertedLambdaArgumentShim moves, and
- * MixinFit's verdict, which decides whether a mixin stays in its config; and what MixinOverloadPin and MixinFit say about
- * a selector that does not bind, which reaches the player as a warning and a compatibility reason. Both must be the same.
- * The corpus is what this machine has: on another, the named mods' absence skips these two tests rather than proving
- * less, and the guest mixins themselves are not re-woven here (gate-m9-client boots the merged pack end to end).
- *
- * <p>The code before the reference is measured too: {@code lambda-decisions-b37e6ae0.tsv} records what this lane's parent,
- * b37e6ae0, decided and said over the same inputs, keyed by a digest of them, and every row this machine reproduces must
- * match.
+ * <p>Until Stage 4 this class also replayed every guest mixin of the local packs with a lambda selector or a
+ * {@code LevelRenderer} target against the merged base, with the duplicate-lambda pruner on and off, and held the
+ * decisions to a table recorded at b37e6ae0 (lambda-decisions-b37e6ae0.tsv). The merged base and the pruner are gone; the
+ * genuine base carries no lambda name twice (NeoForgeBaseStructureCensusStagedTest.noClassHasTwoLambdasOfOneName).
  */
 // The staged jars and the test classpath carry no fastutil, which the frame recomputer's hierarchy walk reaches from some
-// targets; it abstains there, as the chain's last step, after everything a lambda decision reads. On the class: whichever merged test runs first measures the corpus for both.
+// targets; it abstains there, after everything a lambda decision reads.
 @ExpectCaught("cannot prove a frame repair")
 @ResourceLock("native-game-references")
 @ResourceLock("system-properties")
-@org.junit.jupiter.api.extension.ExtendWith(net.forbric.kernel.DroppedLambdaRecordRestore.class)
 class LambdaShapeEvidenceStagedTest {
 	private static final String MIXIN_DESC = "Lorg/spongepowered/asm/mixin/Mixin;";
 	private static final String INJECT = "Lorg/spongepowered/asm/mixin/injection/Inject;";
@@ -84,158 +56,11 @@ class LambdaShapeEvidenceStagedTest {
 	private static final String SKY = "lambda$addSkyPass$0";
 	private static final String CI = "Lorg/spongepowered/asm/mixin/injection/callback/CallbackInfo;";
 	private static final String VANILLA_SKY_ARGS = "Lcom/mojang/blaze3d/buffers/GpuBufferSlice;Lnet/minecraft/client/renderer/state/level/SkyRenderState;";
-	/** DuplicateLambdaPruneInjector's switch: {@code off} keeps the orphaned bodies, as a boot without the pruner would. */
-	private static final String PRUNER = "forbric.pruneDuplicateLambdas";
-	/** The decisions b37e6ae0 made over the corpus, one row per guest and pruner arm. */
-	static final String PARENT_TABLE = "lambda-decisions-b37e6ae0.tsv";
-
-	/**
-	 * The mods Stage 2.4 names as relying on these decisions through their {@code LevelRenderer} mixins, each recognised by
-	 * the innermost jar a guest came from: sodium nests fabric-api's rendering modules, and those are fabric-api's.
-	 */
-	static final Map<String, Predicate<String>> NAMED = namedMods();
-
-	private static Map<String, Predicate<String>> namedMods() {
-		Map<String, Predicate<String>> named = new LinkedHashMap<>();
-		named.put("iris", jar -> innermost(jar).contains("iris-"));
-		named.put("sodium", jar -> innermost(jar).contains("sodium-fabric-") || innermost(jar).contains("sodium-neoforge-"));
-		named.put("sodium-extra", jar -> innermost(jar).contains("sodium-extra-"));
-		named.put("litematica", jar -> innermost(jar).contains("litematica-"));
-		named.put("fabric-api", jar -> innermost(jar).startsWith("fabric-api-") || innermost(jar).matches("fabric-[a-z-]+-v\\d+-.*"));
-		return named;
-	}
-
-	/** {@code outer.jar!META-INF/jars/inner.jar} -> {@code inner.jar}; a jar that is not nested is its own. */
-	private static String innermost(String jar) {
-		String inner = jar.substring(jar.lastIndexOf('!') + 1);
-		return inner.substring(inner.lastIndexOf('/') + 1);
-	}
-
-	/** The pruner's process-wide record as this test found it: every pass below clears or fills it. */
-	private Map<String, List<String>> droppedBefore;
-
-	@BeforeEach void save() {
-		droppedBefore = DuplicateLambdaPruneInjector.droppedForTest();
-	}
 
 	@AfterEach void reset() {
 		System.clearProperty(LambdaShapeEvidence.PROPERTY);
-		System.clearProperty(PRUNER);
 		bind(null);
 		NativeGameReferences.configure(null);
-		DuplicateLambdaPruneInjector.restoreDroppedForTest(droppedBefore);
-	}
-
-	// ---------------------------------------------------------------------------------------------------------------
-	// The merged base: the reference changes no decision, and no decision is not the parent's
-	// ---------------------------------------------------------------------------------------------------------------
-
-	/** On the merged base no census row names a lambda the pruner dropped, so asking the census first changes nothing. */
-	private static void assertCensusAndRecordAreDisjoint(Map<String, byte[]> classes) throws IOException {
-		try (InputStream in = MixinHandlerShim.class.getResourceAsStream(MixinHandlerShim.TABLE)) {
-			assertNotNull(in, MixinHandlerShim.TABLE);
-			for (String line : new String(in.readAllBytes(), StandardCharsets.UTF_8).split("\n")) {
-				MixinHandlerShim.Permutation row = line.isBlank() || line.startsWith("#") ? null : MixinHandlerShim.Permutation.parse(line);
-				if (row == null || !classes.containsKey(row.owner())) continue;
-				assertEquals(List.of(), DuplicateLambdaPruneInjector.droppedDescriptors(row.owner(), row.name()), line);
-			}
-		}
-	}
-
-	/** One guest under one pruner arm: its decisions with the reference off and on, and the digest of what they read. */
-	record Row(Guest guest, boolean pruner, String inputs, Decisions recordOnly, Decisions withReference) {
-		String key() {
-			return (pruner ? "on" : "off") + "\t" + guest.mixin().name + "\t" + inputs;
-		}
-
-		@Override public String toString() {
-			return (pruner ? "pruner on: " : "pruner off: ") + guest;
-		}
-	}
-
-	/** The corpus measured once per JVM: both merged tests read it. */
-	record Measured(List<Guest> guests, List<Row> rows, Map<String, List<String>> named) {
-	}
-
-	private static Measured measured;
-
-	/**
-	 * Writes one arm's inputs and decisions under {@code $FORBRIC_LAMBDA_DUMP}, when it is set: what {@link #PARENT_TABLE}'s
-	 * rows are made from. {@code jars.txt} (the jars to bind), {@code guests.tsv} and {@code guests/<n>.class} (index, jar,
-	 * ecosystem, class file), and per arm {@code arm-<off|on>/classes/} (the chain's output), {@code dropped.tsv} (the
-	 * pruner's record), {@code rows.tsv} (index, mixin, inputs, the two digests) and {@code new-<n>.txt} (what was decided
-	 * and said, to diff against an older run). The generator that reads them at another commit is
-	 * {@code lambda-decisions-generator.java.txt} beside the table.
-	 */
-	private static void dumpInputs(List<Path> jars, List<Guest> guests, boolean pruner, Map<String, byte[]> classes,
-			Map<String, List<String>> dropped, List<Row> rows) throws IOException {
-		String dir = System.getenv("FORBRIC_LAMBDA_DUMP");
-		if (dir == null || dir.isBlank()) return;
-		Path out = Path.of(dir), arm = out.resolve(pruner ? "arm-on" : "arm-off");
-		Files.createDirectories(out.resolve("guests"));
-		StringBuilder jarList = new StringBuilder(), guestList = new StringBuilder(), record = new StringBuilder(), rowList = new StringBuilder();
-		for (Path jar : jars) jarList.append(jar.toAbsolutePath()).append('\n');
-		Files.writeString(out.resolve("jars.txt"), jarList);
-		for (int i = 0; i < guests.size(); i++) {
-			Guest guest = guests.get(i);
-			Files.write(out.resolve("guests/" + i + ".class"), guest.raw());
-			guestList.append(i).append('\t').append(guest.jar()).append('\t').append(guest.ecosystem() == null ? "-" : guest.ecosystem().name())
-					.append('\n');
-		}
-		Files.writeString(out.resolve("guests.tsv"), guestList);
-		for (Map.Entry<String, byte[]> target : classes.entrySet()) {
-			Path file = arm.resolve("classes/" + target.getKey() + ".class");
-			Files.createDirectories(file.getParent());
-			Files.write(file, target.getValue());
-		}
-		for (Map.Entry<String, List<String>> entry : new TreeMap<>(dropped).entrySet()) {
-			for (String desc : entry.getValue()) record.append(entry.getKey()).append('\t').append(desc).append('\n');
-		}
-		Files.writeString(arm.resolve("dropped.tsv"), record);
-		for (Row row : rows) {
-			if (row.pruner() != pruner) continue;
-			int index = guests.indexOf(row.guest());
-			rowList.append(index).append('\t').append(row.guest().mixin().name).append('\t').append(row.inputs()).append('\t')
-					.append(row.recordOnly().digest()).append('\t').append(row.withReference().digest()).append('\n');
-			Files.writeString(arm.resolve("new-" + index + ".txt"), String.join("\n", row.withReference().decided()) + "\n--\n"
-					+ String.join("\n", row.withReference().explained()));
-		}
-		Files.writeString(arm.resolve("rows.tsv"), rowList);
-	}
-
-	/**
-	 * What a guest's decisions read: its own class file, each of its targets as the chain left it, and what the pruner
-	 * recorded for those targets. Sixteen hex digits of a SHA-256 over them, in a fixed order.
-	 */
-	static String inputs(Guest guest, Map<String, byte[]> classes, Map<String, List<String>> dropped) {
-		MessageDigest digest = sha256();
-		digest.update(guest.raw());
-		for (String target : new TreeSet<>(guest.targets())) {
-			digest.update(target.getBytes(StandardCharsets.UTF_8));
-			byte[] bytes = classes.get(target);
-			if (bytes != null) digest.update(bytes);
-			for (Map.Entry<String, List<String>> entry : new TreeMap<>(dropped).entrySet()) {
-				if (!entry.getKey().startsWith(target + "#")) continue;
-				digest.update(entry.getKey().getBytes(StandardCharsets.UTF_8));
-				for (String desc : entry.getValue()) digest.update(desc.getBytes(StandardCharsets.UTF_8));
-			}
-		}
-		return HexFormat.of().formatHex(digest.digest()).substring(0, 16);
-	}
-
-	/** {@link #PARENT_TABLE}: {@code arm<TAB>mixin<TAB>inputs} to the digest of what b37e6ae0 decided and said. */
-	private static Map<String, String> parentTable() throws IOException {
-		Map<String, String> table = new TreeMap<>();
-		try (InputStream in = LambdaShapeEvidenceStagedTest.class.getResourceAsStream(PARENT_TABLE)) {
-			assertNotNull(in, PARENT_TABLE);
-			for (String line : new String(in.readAllBytes(), StandardCharsets.UTF_8).split("\n")) {
-				if (line.isBlank() || line.startsWith("#")) continue;
-				String[] part = line.split("\t");
-				assertEquals(4, part.length, line);
-				assertNull(table.put(part[0] + "\t" + part[1] + "\t" + part[2], part[3]), "a row twice: " + line);
-			}
-		}
-		return table;
 	}
 
 	// ---------------------------------------------------------------------------------------------------------------
@@ -243,8 +68,8 @@ class LambdaShapeEvidenceStagedTest {
 	// ---------------------------------------------------------------------------------------------------------------
 
 	/**
-	 * Apoli's phasing-blindness sky-skip on NeoForge's own base. There is one {@code lambda$addSkyPass$0}, NeoForge's,
-	 * nothing is pruned, and the record is empty; vanilla's shape comes from the FABRIC reference, which the launch reads
+	 * Apoli's phasing-blindness sky-skip on NeoForge's own base. There is one {@code lambda$addSkyPass$0}, NeoForge's;
+	 * vanilla's shape comes from the FABRIC reference, which the launch reads
 	 * from the vanilla-reference sidecar the installer's own writer builds for this base, through the sources
 	 * KernelBoot configures. With it the handler is wrapped onto the live lambda, MixinFit sees where it lands, and a
 	 * selector that cannot bind is told as the carrier reshape it is; without the sidecar the base answers for NEOFORGE
@@ -253,7 +78,6 @@ class LambdaShapeEvidenceStagedTest {
 	@Test void onTheGenuineBaseAHandlerWrittenForVanillasSkyLambdaIsStillShimmed() throws Exception {
 		List<Path> genuine = ChainReferences.genuineJars();
 		Path sidecar = TestFixtures.vanillaReference(genuine.get(0));
-		DuplicateLambdaPruneInjector.forgetDroppedForTest();    // the genuine base carries no name twice: nothing is pruned
 		byte[] levelRenderer = ChainReferences.read(genuine, LEVEL_RENDERER);
 		ClassNode target = MixinFit.parse(levelRenderer);
 		assertEquals(1, target.methods.stream().filter(m -> m.name.equals(SKY)).count(), "premise: one lambda of the name, NeoForge's");
@@ -268,7 +92,7 @@ class LambdaShapeEvidenceStagedTest {
 		try (ForbricClassLoader loader = new ForbricClassLoader(genuine.stream().map(LambdaShapeEvidenceStagedTest::url).toArray(URL[]::new),
 				getClass().getClassLoader())) {
 			bind(loader);
-			assertEquals(List.of(new LambdaShapeEvidence.Shape("(" + VANILLA_SKY_ARGS + ")V", false)),
+			assertEquals(List.of(new LambdaShapeEvidence.Shape("(" + VANILLA_SKY_ARGS + ")V")),
 					LambdaShapeEvidence.vanished(target, SKY), "vanilla's shape, known from the reference alone");
 
 			for (ClassNode mixin : skySkips()) {
@@ -364,92 +188,15 @@ class LambdaShapeEvidenceStagedTest {
 		}
 	}
 
-	/**
-	 * What the consumers decided for one guest, and separately what MixinOverloadPin and MixinFit said about it. The
-	 * strings are the ones the parent table was recorded from: keep them as they are, or the table no longer compares.
-	 */
-	record Decisions(List<String> decided, List<String> explained, int wrapped) {
-		/** Sixteen hex digits of a SHA-256 over both lists, as the parent table records them. */
-		String digest() {
-			MessageDigest digest = sha256();
-			digest.update(String.join("\n", decided).getBytes(StandardCharsets.UTF_8));
-			digest.update("\n--\n".getBytes(StandardCharsets.UTF_8));
-			digest.update(String.join("\n", explained).getBytes(StandardCharsets.UTF_8));
-			return HexFormat.of().formatHex(digest.digest()).substring(0, 16);
-		}
-	}
-
-	private static Decisions decide(Guest guest, Map<String, byte[]> classes) {
-		Function<String, ClassNode> targets = name -> classes.get(name) == null ? null : MixinFit.parse(classes.get(name));
-		Function<String, byte[]> resolver = path -> path.endsWith(".class") ? classes.get(path.substring(0, path.length() - 6)) : null;
-		Function<String, ClassNode> natives = owner -> guest.ecosystem() == null ? null : NativeGameReferences.reference(guest.ecosystem(), owner);
-		List<String> decided = new ArrayList<>(), explained = new ArrayList<>();
-
-		for (MethodNode handler : guest.mixin().methods) {
-			if (injected(handler) == null) continue;
-			for (String target : guest.targets()) {
-				ClassNode node = targets.apply(target);
-				MethodNode lands = node == null ? null : MixinHandlerShim.destination(handler, node);
-				decided.add("destination " + handler.name + handler.desc + " in " + target + " = " + (lands == null ? "-" : lands.name + lands.desc));
-			}
-			for (String selector : MixinFit.stringList(MixinFit.value(injected(handler), "method"))) {
-				if (!selector.startsWith("lambda$") || selector.indexOf('(') >= 0) continue;
-				MixinOverloadPin.clearReasons();
-				boolean said = MixinOverloadPin.explain(guest.mixin(), handler, selector, guest.targets(), targets);
-				explained.add(handler.name + " " + selector + " " + said + " " + MixinOverloadPin.reasonFor(guest.mixin().name));
-			}
-		}
-		ClassNode shimmed = copy(guest.mixin());
-		int wrapped = MixinHandlerShim.adapt(shimmed, targets);
-		decided.add("MixinHandlerShim wraps " + wrapped + ": " + signature(shimmed));
-		ClassNode expanded = copy(guest.mixin());
-		decided.add("InsertedLambdaArgumentShim moves " + InsertedLambdaArgumentShim.adapt(expanded, targets, natives) + ": " + signature(expanded));
-		MixinFit.Result fit = MixinFit.evaluate(bytes(guest.mixin()), resolver);
-		decided.add("MixinFit " + fit.verdict() + " " + fit.resolved() + "/" + fit.total());
-		explained.add("MixinFit unresolved " + fit.unresolved() + " rejected " + fit.rejected());
-		return new Decisions(decided, explained, wrapped);
-	}
-
 	private static AnnotationNode injected(MethodNode method) {
 		AnnotationNode injector = MixinFit.injectorOf(method);
 		return injector == null || MixinFit.value(injector, "method") == null ? null : injector;
-	}
-
-	/** Every method with its descriptor and every selector it carries: what a consumer's edit of the class amounts to. */
-	private static String signature(ClassNode mixin) {
-		List<String> out = new ArrayList<>();
-		for (MethodNode m : mixin.methods) {
-			AnnotationNode injector = injected(m);
-			out.add(m.name + m.desc + (injector == null ? "" : " " + MixinFit.stringList(MixinFit.value(injector, "method"))));
-		}
-		out.sort(null);
-		return String.join("; ", out);
-	}
-
-	private static ClassNode copy(ClassNode mixin) {
-		return MixinFit.parse(bytes(mixin));
 	}
 
 	private static byte[] bytes(ClassNode mixin) {
 		ClassWriter writer = new ClassWriter(0);
 		mixin.accept(writer);
 		return writer.toByteArray();
-	}
-
-	/** {@code internal}'s class file from the first of {@code jars} that holds it, or null. */
-	private static byte[] resource(List<Path> jars, String internal) {
-		for (Path jar : jars) {
-			try (ZipFile zip = new ZipFile(jar.toFile())) {
-				ZipEntry entry = zip.getEntry(internal + ".class");
-				if (entry == null) continue;
-				try (InputStream in = zip.getInputStream(entry)) {
-					return in.readAllBytes();
-				}
-			} catch (IOException unreadable) {
-				throw new java.io.UncheckedIOException(unreadable);
-			}
-		}
-		return null;
 	}
 
 	private static void bind(ForbricClassLoader loader) {
@@ -464,47 +211,9 @@ class LambdaShapeEvidenceStagedTest {
 		}
 	}
 
-	private static MessageDigest sha256() {
-		try {
-			return MessageDigest.getInstance("SHA-256");
-		} catch (java.security.NoSuchAlgorithmException impossible) {
-			throw new AssertionError(impossible);
-		}
-	}
-
 	// ---------------------------------------------------------------------------------------------------------------
-	// The corpus
+	// The guests
 	// ---------------------------------------------------------------------------------------------------------------
-
-	/** The packs a machine has: the local run/ packs and the compat inputs, as MixinFitLivenessCensusStagedTest reads them. */
-	static List<Path> packs() {
-		List<Path> packs = new ArrayList<>();
-		for (String pack : List.of("client-merged-pack/mods", "client-popular/mods", "client-neo-pack/mods", "client-kernel/mods",
-				"carry-on", "modmenu")) packs.add(Path.of("run", pack));
-		for (String pack : List.of("sweep90", "mix80", "popular", "random")) packs.add(Path.of("build/compat-inputs", pack, "mods"));
-		return packs;
-	}
-
-	/**
-	 * Every guest mixin in {@link #packs()} with a bare lambda selector, or targeting {@code LevelRenderer}, on a class
-	 * {@code base} carries; one per class name, the first in pack and file order.
-	 */
-	private static List<Guest> corpus(Path base) throws IOException {
-		Map<String, Guest> byName = new TreeMap<>();
-		try (ZipFile game = new ZipFile(base.toFile())) {
-			for (Path pack : packs()) {
-				if (!Files.isDirectory(pack)) continue;
-				try (Stream<Path> jars = Files.list(pack)) {
-					for (Path jar : jars.filter(p -> p.toString().endsWith(".jar")).sorted().toList()) {
-						for (Guest guest : guests(Files.readAllBytes(jar), jar.getFileName().toString(), null)) {
-							if (guest.targets().stream().anyMatch(t -> game.getEntry(t + ".class") != null)) byName.putIfAbsent(guest.mixin().name, guest);
-						}
-					}
-				}
-			}
-		}
-		return new ArrayList<>(byName.values());
-	}
 
 	/**
 	 * The guest mixins of one jar and of every jar nested in it whose injectors select a lambda by name, or that target

@@ -651,13 +651,13 @@ public final class MixinFit {
 				refusedIn.clear();
 			}
 		}
-		// The move InsertedLambdaArgumentShim will make for a selector naming a lambda the pruner dropped, judged
+		// The move InsertedLambdaArgumentShim will make for a selector naming a lambda shape the class lost, judged
 		// here too: otherwise a one-injector mixin (fusion's sprite loader hook) is UNFIT, removed from its
 		// config, and never reaches the shim that would have given it the live lambda. Captured locals are
 		// proven from the local variable table, which the plain read skipped. MixinHandlerShim's first: a selector
 		// spelling vanilla's descriptor of a lambda whose captures the merge reordered lands on the one live lambda.
 		if (hits.isEmpty()) {
-			// The shim reads every selector as Mixin does: several spellings of the one dropped lambda move together.
+			// The shim reads every selector as Mixin does: several spellings of the one lost lambda move together.
 			MethodNode shimmed = selectors.size() == 1 ? MixinHandlerShim.destination(m, target) : null;
 			if (shimmed == null) shimmed = InsertedLambdaArgumentShim.destination(mixin, m, target);
 			ClassNode locals = shimmed == null ? withLocals.get() : null;
@@ -1029,21 +1029,17 @@ public final class MixinFit {
 			}
 		}
 		// What the handler was written for, when the class says: a later overload of the name, or (MixinOverloadPin's
-		// evidence, LambdaShapeEvidence) a shape of it the pruner dropped or vanilla had and a carrier patch changed.
+		// evidence, LambdaShapeEvidence) a shape of it vanilla had and a carrier patch changed.
 		for (MethodNode m : target.methods) {
 			if (m != bound && m.name.equals(name) && handlerFits(handler, m.desc)) {
 				return name + " " + binds + "; it fits " + name + m.desc + ", declared later, and Mixin binds the first";
 			}
 		}
 		for (LambdaShapeEvidence.Shape gone : LambdaShapeEvidence.vanished(target, name)) {
-			String dropped = gone.descriptor();
-			if (!MixinOverloadPin.fits(handler.desc, dropped) || !LambdaShapeEvidence.diagnosable(target, gone)) continue;
-			if (!gone.dropped()) {
-				return name + " " + binds + "; the shape it was written for, " + dropped + ", is vanilla's, whose captures a "
-						+ "carrier patch of " + MixinOverloadPin.enclosing(name) + " changed";
-			}
-			return name + " " + binds + "; the shape it was written for, " + dropped + ", was a lambda of the "
-					+ MixinOverloadPin.enclosing(name) + " body the byte merge did not keep";
+			String written = gone.descriptor();
+			if (!MixinOverloadPin.fits(handler.desc, written)) continue;
+			return name + " " + binds + "; the shape it was written for, " + written + ", is vanilla's, whose captures a "
+					+ "carrier patch of " + MixinOverloadPin.enclosing(name) + " changed";
 		}
 		return name + " " + binds;
 	}

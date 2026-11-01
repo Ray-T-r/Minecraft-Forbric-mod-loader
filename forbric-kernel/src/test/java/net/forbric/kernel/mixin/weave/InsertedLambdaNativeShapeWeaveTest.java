@@ -14,14 +14,12 @@ import org.junit.jupiter.api.io.TempDir;
 
 import net.fabricmc.api.EnvType;
 import net.forbric.api.Ecosystem;
-import net.forbric.kernel.transform.DuplicateLambdaPruneInjector;
 
 /**
  * InsertedLambdaArgumentShim's native-shape evidence through the real weave: Essential's screenshot capture, in miniature.
- * Screenshot.grab's {@code lambda$grab$3} takes a {@code ScreenshotEvent} between the file and the consumer on both
- * carriers and none on Fabric; the merge carried the name twice, DuplicateLambdaPruneInjector drops the other carrier's
- * unreachable body, and the guest's {@code @Inject} (bare name, Fabric's shape, with a {@code @Surrogate} for an
- * {@code Object} in the middle) is shimmed onto the live one: the hook hears the saved file. With
+ * Screenshot.grab's {@code lambda$grab$3} takes a {@code ScreenshotEvent} between the file and the consumer on NeoForge
+ * and none on Fabric, and the guest's {@code @Inject} (bare name, Fabric's shape, with a {@code @Surrogate} for an
+ * {@code Object} in the middle) is shimmed onto NeoForge's lambda: the hook hears the saved file. With
  * {@code -Dforbric.insertedLambdaArguments.nativeShapes=off} the fit check, which asks the shim where the selector lands,
  * finds the native lambda gone and leaves the mixin out (where it is kept, Mixin rejects the descriptor: the surrogate
  * does not fit either), and the hook never runs.
@@ -45,9 +43,8 @@ class InsertedLambdaNativeShapeWeaveTest {
 			public class Disk { public static void write(String file){} }
 			""";
 	private static final String NEO_EVENT = "package net.minecraft.fixture; public class NeoShotEvent {}";
-	private static final String FORGE_EVENT = "package net.minecraft.fixture; public class ForgeShotEvent {}";
 
-	/** The merged class: both carriers' bodies of the lambda, the other carrier's reached by nothing. */
+	/** NeoForge's class: the lambda takes the event between the file and the consumer. */
 	private static final String MERGED = """
 			package net.minecraft.fixture;
 			import java.util.ArrayList;
@@ -57,7 +54,6 @@ class InsertedLambdaNativeShapeWeaveTest {
 			 public static final List<String> captured=new ArrayList<>(), said=new ArrayList<>();
 			 public static void grab(String file, Consumer<String> out){lambda$grab$3(file,new NeoShotEvent(),out);}
 			 private static void lambda$grab$3(String file, NeoShotEvent event, Consumer<String> out){Disk.write(file);out.accept("saved "+file);}
-			 private static void lambda$grab$3(String file, ForgeShotEvent event, Consumer<String> out){Disk.write(file);out.accept("forge "+file);}
 			 public void run(){grab("a.png",said::add);System.out.println("[NativeShape] captured="+captured+" said="+said);}
 			}
 			""";
@@ -98,8 +94,7 @@ class InsertedLambdaNativeShapeWeaveTest {
 		Path json = work.resolve(CONFIG);
 		Files.writeString(json, "{\"required\":true,\"package\":\"fixture.nativeshape.mixin\",\"mixins\":[\"ShotsMixin\"],\"injectors\":{\"defaultRequire\":1}}");
 		Path mixin = source("mixin/ShotsMixin.java", MIXIN);
-		List<Path> shared = List.of(source("shared/Disk.java", DISK), source("shared/NeoShotEvent.java", NEO_EVENT),
-				source("shared/ForgeShotEvent.java", FORGE_EVENT));
+		List<Path> shared = List.of(source("shared/Disk.java", DISK), source("shared/NeoShotEvent.java", NEO_EVENT));
 		Path nativeFixture = WeaveHarness.fixture(work, "native-nativeshape",
 				java.util.stream.Stream.concat(shared.stream(), java.util.stream.Stream.of(source("native/Shots.java", NATIVE), mixin)).toList(), Map.of(CONFIG, json));
 		Path current = WeaveHarness.fixture(work, "nativeshape",
@@ -141,6 +136,6 @@ class InsertedLambdaNativeShapeWeaveTest {
 
 	private static WeaveHarness.Result run(String label, Map<String, String> properties) throws Exception {
 		return WeaveHarness.run(work, label, fixture, List.of(new WeaveHarness.Config(CONFIG, MOD, Ecosystem.FABRIC)),
-				List.of(DuplicateLambdaPruneInjector.class), EnvType.CLIENT, "net.minecraft.fixture.Shots", "run", properties);
+				List.of(), EnvType.CLIENT, "net.minecraft.fixture.Shots", "run", properties);
 	}
 }

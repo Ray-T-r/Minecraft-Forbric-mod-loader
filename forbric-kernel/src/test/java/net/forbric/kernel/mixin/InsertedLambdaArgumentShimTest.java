@@ -6,13 +6,12 @@ import static org.junit.jupiter.api.Assertions.*;
 import java.util.*;
 import java.nio.file.*;
 import java.util.zip.*;
-import net.forbric.kernel.transform.DuplicateLambdaPruneInjector;
 import org.junit.jupiter.api.*;
 import org.objectweb.asm.*;
 import org.objectweb.asm.tree.*;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 @org.junit.jupiter.api.parallel.ResourceLock("system-properties")
-@org.junit.jupiter.api.extension.ExtendWith(net.forbric.kernel.DroppedLambdaRecordRestore.class)
+@org.junit.jupiter.api.extension.ExtendWith(net.forbric.kernel.VanillaLambdaReference.class)
 class InsertedLambdaArgumentShimTest {
  private static final String OLD="(JLjava/lang/Object;Ljava/lang/Object;D)V",NEW="(JLjava/lang/Object;Ljava/lang/String;Ljava/lang/Object;D)V",CI="Lorg/spongepowered/asm/mixin/injection/callback/CallbackInfo;";
  @AfterEach void reset(){System.clearProperty(InsertedLambdaArgumentShim.PROPERTY);}
@@ -29,6 +28,8 @@ class InsertedLambdaArgumentShimTest {
  private ClassNode shell(Class<?> source)throws Exception{
   ClassNode node;try(var in=source.getResourceAsStream(source.getName().substring(source.getName().lastIndexOf('.')+1)+".class")){node=MixinFit.parse(in.readAllBytes());}
   node.nestHostClass=null;node.innerClasses.clear();
+  // A Fabric mod's mixin: the class it was compiled against is the FABRIC reference, vanilla's lambda shape.
+  MixinStubRebind.noteEcosystem(node.name,net.forbric.api.Ecosystem.FABRIC);
   AnnotationNode mixin=new AnnotationNode("Lorg/spongepowered/asm/mixin/Mixin;");mixin.values=new ArrayList<>(List.of("value",List.of(Type.getObjectType("probe/Target"))));node.invisibleAnnotations=new ArrayList<>(List.of(mixin));
   AnnotationNode at=new AnnotationNode("Lorg/spongepowered/asm/mixin/injection/At;");at.values=new ArrayList<>(List.of("value","INVOKE","target","Lprobe/Anchor;call()V","ordinal",0));
   AnnotationNode inject=new AnnotationNode("Lorg/spongepowered/asm/mixin/injection/Inject;");inject.values=new ArrayList<>(List.of("method",new ArrayList<>(List.of("lambda$render$0"+OLD)),"at",List.of(at),"cancellable",true));
@@ -38,7 +39,7 @@ class InsertedLambdaArgumentShimTest {
   ClassNode target=new ClassNode();target.name="probe/Target";target.superName="java/lang/Object";
   MethodNode lambda=new MethodNode(Opcodes.ACC_PRIVATE|Opcodes.ACC_STATIC,"lambda$render$0",NEW,null,null);lambda.instructions.add(new MethodInsnNode(Opcodes.INVOKESTATIC,"probe/Anchor","call","()V",false));lambda.instructions.add(new InsnNode(Opcodes.RETURN));target.methods.add(lambda);
   MethodNode caller=new MethodNode(Opcodes.ACC_PUBLIC,"render","()V",null,null);caller.instructions.add(new MethodInsnNode(Opcodes.INVOKESTATIC,target.name,lambda.name,lambda.desc,false));target.methods.add(caller);
-  DuplicateLambdaPruneInjector.recordDroppedForTest(target.name,lambda.name,OLD);return target;
+  net.forbric.kernel.VanillaLambdaReference.declare(target.name,lambda.name,OLD);return target;
  }
  @Test void repeatedArgumentsHaveOneOrderedMappingButAmbiguousOrReorderedSequencesAreRejected(){
   assertArrayEquals(new int[]{0,1,3,4},InsertedLambdaArgumentShim.uniqueEmbedding(Type.getArgumentTypes(OLD),Type.getArgumentTypes(NEW)));
@@ -69,7 +70,7 @@ class InsertedLambdaArgumentShimTest {
   Path jar;try(var files=Files.list(Path.of("run/client-merged-pack/mods"))){jar=files.filter(p->p.getFileName().toString().contains("litematica")&&p.toString().endsWith(".jar")).findFirst().orElse(null);}
   TestFixtures.require(Fixture.THIRD_PARTY,jar!=null,"Litematica in the local merged mod pack");
   ClassNode mixin;try(ZipFile z=new ZipFile(jar.toFile())){mixin=MixinFit.parse(z.getInputStream(z.getEntry("fi/dy/masa/litematica/mixin/render/MixinLevelRenderer.class")).readAllBytes());}
-  String owner="net/minecraft/client/renderer/LevelRenderer";ClassNode target=StagedFabricMixinFixture.game(owner,false);target=MixinFit.parse(new DuplicateLambdaPruneInjector().transform(owner.replace('/','.'),StagedFabricMixinFixture.bytes(target),null));ClassNode finalTarget=target;
+  String owner="net/minecraft/client/renderer/LevelRenderer";ClassNode target=StagedFabricMixinFixture.game(owner,false);ClassNode finalTarget=target;
   assertEquals(2,InsertedLambdaArgumentShim.adapt(mixin,n->finalTarget));
   for(String suffix:List.of("Opaque","Translucent")){MethodNode shim=StagedFabricMixinFixture.method(mixin,"forbric$expanded$litematica_renderMainSection_"+suffix);assertEquals(12,Type.getArgumentTypes(shim.desc).length);assertEquals("Lorg/joml/Matrix4fc;",Type.getArgumentTypes(shim.desc)[4].getDescriptor());new org.objectweb.asm.tree.analysis.Analyzer<>(new org.objectweb.asm.tree.analysis.BasicVerifier()).analyze(mixin.name,shim);assertNull(MixinFit.injectorOf(StagedFabricMixinFixture.method(mixin,"litematica_renderMainSection_"+suffix)));}
  }
@@ -87,6 +88,7 @@ class InsertedLambdaArgumentShimTest {
  private ClassNode localsShell(String... localsDescs)throws Exception{
   ClassNode node;try(var in=LocalsShell.class.getResourceAsStream("InsertedLambdaArgumentShimTest$LocalsShell.class")){node=MixinFit.parse(in.readAllBytes());}
   node.nestHostClass=null;node.innerClasses.clear();
+  MixinStubRebind.noteEcosystem(node.name,net.forbric.api.Ecosystem.FABRIC);
   AnnotationNode mixin=new AnnotationNode("Lorg/spongepowered/asm/mixin/Mixin;");mixin.values=new ArrayList<>(List.of("value",List.of(Type.getObjectType("probe/Target"))));node.invisibleAnnotations=new ArrayList<>(List.of(mixin));
   AnnotationNode at=new AnnotationNode("Lorg/spongepowered/asm/mixin/injection/At;");at.values=new ArrayList<>(List.of("value","INVOKE","target","Lprobe/Anchor;call()V"));
   AnnotationNode inject=new AnnotationNode("Lorg/spongepowered/asm/mixin/injection/Inject;");inject.values=new ArrayList<>(List.of("method",new ArrayList<>(List.of("lambda$render$0"+OLD)),"at",List.of(at),"locals",new String[]{"Lorg/spongepowered/asm/mixin/injection/callback/LocalCapture;","CAPTURE_FAILHARD"}));
@@ -129,9 +131,9 @@ class InsertedLambdaArgumentShimTest {
   // The raw class, local variable table included: the fixture's parse drops it, and the live table is the proof.
   Path merged=TestFixtures.stagedBase();TestFixtures.requireFile(Fixture.STAGED, merged,"actual game required");
   byte[] raw;try(ZipFile z=new ZipFile(merged.toFile())){raw=z.getInputStream(z.getEntry(owner+".class")).readAllBytes();}
-  byte[] pruned=new DuplicateLambdaPruneInjector().transform(owner.replace('/','.'),raw,null);
+  byte[] pruned=raw;
   ClassNode target=new ClassNode();new ClassReader(pruned).accept(target,ClassReader.SKIP_FRAMES);
-  MixinFit.Result real=MixinFit.evaluate(StagedFabricMixinFixture.bytes(mixin),path->path.equals(owner+".class")?pruned:null);assertEquals(MixinFit.Verdict.FIT,real.verdict(),real.unresolved()+" dropped="+DuplicateLambdaPruneInjector.droppedDescriptors(owner,"lambda$create$0"));
+  MixinFit.Result real=MixinFit.evaluate(StagedFabricMixinFixture.bytes(mixin),path->path.equals(owner+".class")?pruned:null);assertEquals(MixinFit.Verdict.FIT,real.verdict(),real.unresolved()+" vanished="+LambdaShapeEvidence.descriptors(target,"lambda$create$0"));
   assertEquals(1,InsertedLambdaArgumentShim.adapt(mixin,n->target));
   MethodNode shim=StagedFabricMixinFixture.method(mixin,"forbric$expanded$handleFusionTextures");
   assertEquals(8+1,Type.getArgumentTypes(shim.desc).length,"4 live arguments, the callback, 4 captured locals");

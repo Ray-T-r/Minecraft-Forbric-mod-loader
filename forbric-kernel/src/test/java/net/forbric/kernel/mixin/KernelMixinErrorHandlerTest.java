@@ -44,7 +44,7 @@ import net.forbric.api.ModCatalog;
 
 /** The handler over a proxied IMixinInfo: the owner is marked, the action is never changed, and the bootstrap registers it. */
 @org.junit.jupiter.api.parallel.ResourceLock("ModCatalog")
-@org.junit.jupiter.api.extension.ExtendWith(net.forbric.kernel.DroppedLambdaRecordRestore.class)
+@org.junit.jupiter.api.extension.ExtendWith(net.forbric.kernel.VanillaLambdaReference.class)
 class KernelMixinErrorHandlerTest {
 	@org.junit.jupiter.api.BeforeEach
 	@org.junit.jupiter.api.AfterEach
@@ -330,7 +330,7 @@ class KernelMixinErrorHandlerTest {
 	 */
 	@Test
 	void aReasonTheKernelWorkedOutReachesTheRow() {
-		net.forbric.kernel.transform.DuplicateLambdaPruneInjector.recordDroppedForTest(
+		net.forbric.kernel.VanillaLambdaReference.declare(
 				"net/example/Target", "lambda$doThing$0", "(I)V");
 		org.objectweb.asm.tree.ClassNode mixin = new org.objectweb.asm.tree.ClassNode();
 		mixin.name = "a/b/ThingMixin";
@@ -363,7 +363,7 @@ class KernelMixinErrorHandlerTest {
 				info("t.mixins.json", "a.b.ThingMixin"), IMixinErrorHandler.ErrorAction.WARN);
 
 		assertEquals(1, ModCatalog.failures().size());
-		assertTrue(ModCatalog.failures().get(0).statusDetail().contains("the byte merge did not keep"),
+		assertTrue(ModCatalog.failures().get(0).statusDetail().contains("whose captures a carrier patch changed from vanilla's"),
 				ModCatalog.failures().get(0).statusDetail());
 	}
 

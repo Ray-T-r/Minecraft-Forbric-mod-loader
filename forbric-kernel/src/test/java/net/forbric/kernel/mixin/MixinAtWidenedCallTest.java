@@ -50,7 +50,7 @@ import org.objectweb.asm.tree.TypeInsnNode;
  * call must never be pointed at a different call.
  */
 @org.junit.jupiter.api.parallel.ResourceLock("system-properties")
-@org.junit.jupiter.api.extension.ExtendWith(net.forbric.kernel.DroppedLambdaRecordRestore.class)
+@org.junit.jupiter.api.extension.ExtendWith(net.forbric.kernel.VanillaLambdaReference.class)
 class MixinAtWidenedCallTest {
 	private static final String OWNER = "net/minecraft/network/protocol/common/custom/CustomPacketPayload";
 	private static final String SHORT = "L" + OWNER + ";codec(Ljava/util/List;)Lnet/minecraft/network/codec/StreamCodec;";
@@ -166,7 +166,6 @@ class MixinAtWidenedCallTest {
 			targetBytes = zip.getInputStream(zip.getEntry("net/minecraft/server/WorldLoader.class")).readAllBytes();
 		}
 		org.junit.jupiter.api.Assertions.assertNotNull(mixinBytes);
-		targetBytes = new net.forbric.kernel.transform.DuplicateLambdaPruneInjector().transform("net.minecraft.server.WorldLoader", targetBytes, null);
 		ClassNode target = MixinFit.parse(targetBytes), mixin = MixinFit.parse(mixinBytes);
 		assertEquals(1, MixinAtWidenedCall.widen(mixin, name -> target));
 		MethodNode handler = mixin.methods.stream().filter(m -> m.name.equals("modifyLoadedEntries")).findFirst().orElseThrow();
