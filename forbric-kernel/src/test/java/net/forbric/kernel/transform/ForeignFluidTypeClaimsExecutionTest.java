@@ -15,18 +15,11 @@ import org.junit.jupiter.api.io.TempDir;
 /**
  * The two edits that keep a type the kernel derived for a fluid from claiming what its family never claimed, run: their
  * output is defined and called over stand-ins with the shapes each edit keys on. The staged tests
- * ({@code OwnFluidTypeClausesInjectorTest}) hold the edits to the real merged classes; the in-game probe holds the whole
- * against native NeoForge and Fabric.
+ * ({@code OwnFluidTypeClausesInjectorTest}) hold the edits to NeoForge's real classes; gate-m45 holds the whole in game
+ * (fire.vanillaWater, fire.fabricWater).
  */
 @ExecutesInjector({OwnFluidTypeClausesInjector.class, EmptyFluidTypeTrackerInjector.class})
 class ForeignFluidTypeClaimsExecutionTest {
-	private static final String FORGE_TYPE = """
-			package net.minecraftforge.fluids;
-			public class FluidType {
-				public final String name; public final boolean extinguishes;
-				public FluidType(String name, boolean extinguishes) { this.name = name; this.extinguishes = extinguishes; }
-			}
-			""";
 	private static final String NEO_TYPE = """
 			package net.neoforged.neoforge.fluids;
 			public class FluidType {
@@ -36,28 +29,32 @@ class ForeignFluidTypeClaimsExecutionTest {
 			}
 			""";
 
-	/** The merged Fluid's shape: both families' getters, and a clause asking each, as entityInside does. */
+	/** NeoForge's Fluid's shape: its getter, and entityInside's fire clause handing that getter's type to the entity. */
 	private static final Map<String, String> CLAUSES = Map.of(
-			"net.minecraftforge.fluids.FluidType", FORGE_TYPE,
 			"net.neoforged.neoforge.fluids.FluidType", NEO_TYPE,
+			"net.minecraft.world.entity.Entity", """
+					package net.minecraft.world.entity;
+
+					public class Entity {
+						public boolean canFluidExtinguish(net.neoforged.neoforge.fluids.FluidType type) { return type.extinguishes; }
+					}
+					""",
 			"net.minecraft.world.level.material.Fluid", """
 					package net.minecraft.world.level.material;
 
 					public class Fluid {
-						public net.minecraftforge.fluids.FluidType forge;
 						public net.neoforged.neoforge.fluids.FluidType neo;
 						public final java.util.List<String> effects = new java.util.ArrayList<>();
 
-						public net.minecraftforge.fluids.FluidType getFluidType() { return forge; }
-						public net.neoforged.neoforge.fluids.FluidType getNeoFluidType() { return neo; }
+						public net.neoforged.neoforge.fluids.FluidType getFluidType() { return neo; }
 
-						/** Both families' clauses, each putting the fire out when its type says so. */
-						public void entityInside() {
-							if (getFluidType().extinguishes) effects.add("forge:" + getFluidType().name);
-							if (neoType().extinguishes) effects.add("neo:" + neoType().name);
+						/** NeoForge's clause: put the fire out when the fluid's type says the entity can be extinguished in it. */
+						public void entityInside(net.minecraft.world.entity.Entity entity) {
+							if (entity.canFluidExtinguish(getFluidType())) effects.add("extinguish");
 						}
 
-						private net.neoforged.neoforge.fluids.FluidType neoType() { return neo; }
+						/** Asks the type for something else: not the fire clause, left alone. */
+						public String typeName() { return getFluidType().name; }
 					}
 					""",
 			"net.forbric.kernel.runtime.KernelFluidTypes", """
@@ -74,40 +71,6 @@ class ForeignFluidTypeClaimsExecutionTest {
 					}
 					""");
 
-	/**
-	 * The stand-in's shape needs NeoForge's getter under the same name as MinecraftForge's; javac cannot declare two
-	 * methods differing only in return type, so the source names it {@code getNeoFluidType} and calls it through a
-	 * private helper, and the bytes are renamed to the merged class's shape before the edit.
-	 */
-	private static byte[] mergedShape(byte[] bytes) {
-		org.objectweb.asm.tree.ClassNode node = new org.objectweb.asm.tree.ClassNode();
-		new org.objectweb.asm.ClassReader(bytes).accept(node, 0);
-		for (var m : node.methods) {
-			if (m.name.equals("getNeoFluidType")) m.name = "getFluidType";
-			if (m.name.equals("neoType")) {
-				// private neoType() { return this.neo; } becomes { return this.getFluidType(); } (NeoForge's getter)
-				m.instructions.clear();
-				m.instructions.add(new org.objectweb.asm.tree.VarInsnNode(org.objectweb.asm.Opcodes.ALOAD, 0));
-				m.instructions.add(new org.objectweb.asm.tree.MethodInsnNode(org.objectweb.asm.Opcodes.INVOKEVIRTUAL, node.name, "getFluidType",
-						"()Lnet/neoforged/neoforge/fluids/FluidType;", false));
-				m.instructions.add(new org.objectweb.asm.tree.InsnNode(org.objectweb.asm.Opcodes.ARETURN));
-			}
-		}
-		// entityInside asks NeoForge's getter directly, as the merged one does: inline the helper call.
-		for (var m : node.methods) {
-			if (!m.name.equals("entityInside")) continue;
-			for (var insn : m.instructions.toArray()) {
-				if (insn instanceof org.objectweb.asm.tree.MethodInsnNode call && call.name.equals("neoType")) {
-					m.instructions.set(call, new org.objectweb.asm.tree.MethodInsnNode(org.objectweb.asm.Opcodes.INVOKEVIRTUAL, node.name,
-							"getFluidType", "()Lnet/neoforged/neoforge/fluids/FluidType;", false));
-				}
-			}
-		}
-		org.objectweb.asm.ClassWriter writer = new org.objectweb.asm.ClassWriter(org.objectweb.asm.ClassWriter.COMPUTE_MAXS);
-		node.accept(writer);
-		return writer.toByteArray();
-	}
-
 	private static Object field(Object owner, String name) throws ReflectiveOperationException {
 		return owner.getClass().getField(name).get(owner);
 	}
@@ -116,24 +79,21 @@ class ForeignFluidTypeClaimsExecutionTest {
 		owner.getClass().getField(name).set(owner, value);
 	}
 
-	private static Object type(ClassLoader loader, String family, String name, boolean extinguishes) throws Throwable {
-		return InjectorExecution.construct(loader.loadClass(family.equals("forge") ? "net.minecraftforge.fluids.FluidType" : "net.neoforged.neoforge.fluids.FluidType"),
-				name, extinguishes);
+	private static Object type(ClassLoader loader, String name, boolean extinguishes) throws Throwable {
+		return InjectorExecution.construct(loader.loadClass("net.neoforged.neoforge.fluids.FluidType"), name, extinguishes);
 	}
 
 	/**
-	 * NeoForge's clause is answered by the kernel with the type the fluid gave it: a stand-in becomes NeoForge's empty
-	 * type, which puts out nothing; a type of the fluid's own still does. As merged, a stand-in that extinguishes did.
-	 * MinecraftForge's clause is left as merged (no kernel stand-in answers MinecraftForge's getter any more), so its
-	 * type here never extinguishes and never decides.
+	 * NeoForge's fire clause is answered by the kernel with the type the fluid gave itself: a stand-in becomes NeoForge's
+	 * empty type, which puts out nothing (vanilla's empty Fluid.entityInside); a type of the fluid's own still does. Left
+	 * alone, a stand-in that extinguishes did.
 	 */
-	@Test void neoForgesClauseIsAskedOnlyTheTypeItGaveTheFluid(@TempDir Path work) throws Throwable {
+	@Test void neoForgesFireClauseIsAskedOnlyTheTypeTheFluidGaveItself(@TempDir Path work) throws Throwable {
 		Map<String, byte[]> original = new HashMap<>(InjectorExecution.compile(work, CLAUSES));
-		original.put("net/minecraft/world/level/material/Fluid", mergedShape(original.get("net/minecraft/world/level/material/Fluid")));
 		Map<String, byte[]> classes = new HashMap<>(original);
 		byte[] fluidBytes = original.get("net/minecraft/world/level/material/Fluid");
 		byte[] edited = InjectorExecution.transform(new OwnFluidTypeClausesInjector(), "net.minecraft.world.level.material.Fluid", fluidBytes, EnvType.SERVER);
-		assertNotSame(fluidBytes, edited, "a method asking both families' type is the shape the edit takes");
+		assertNotSame(fluidBytes, edited, "a fluid type handed to canFluidExtinguish is the shape the edit takes");
 		classes.put("net/minecraft/world/level/material/Fluid", edited);
 		ClassLoader loader = InjectorExecution.load(classes);
 		assertEquals("", InjectorExecution.verify(edited, loader));
@@ -141,35 +101,35 @@ class ForeignFluidTypeClaimsExecutionTest {
 				"not made twice");
 
 		Class<?> fluidClass = loader.loadClass("net.minecraft.world.level.material.Fluid");
+		Object entity = InjectorExecution.construct(loader.loadClass("net.minecraft.world.entity.Entity"));
 		@SuppressWarnings("unchecked")
 		List<String> calls = (List<String>) InjectorExecution.getStatic(loader.loadClass("net.forbric.kernel.runtime.KernelFluidTypes"), "calls");
 		// A NeoForge mod's fluid whose own type does not extinguish.
 		Object neoFluid = InjectorExecution.construct(fluidClass);
-		setField(neoFluid, "forge", type(loader, "forge", "unasked", false));
-		setField(neoFluid, "neo", type(loader, "neo", "own", false));
-		InjectorExecution.invoke(neoFluid, "entityInside");
+		setField(neoFluid, "neo", type(loader, "own", false));
+		InjectorExecution.invoke(neoFluid, "entityInside", entity);
 		assertEquals(List.of(), field(neoFluid, "effects"), "the fluid's own type says no");
-		assertEquals(List.of("neo own"), calls, "NeoForge's getter's answer goes through the kernel with its fluid");
+		assertEquals(List.of("neo own"), calls, "the getter's answer goes through the kernel with its fluid");
 		calls.clear();
-		// A NeoForge mod's fluid whose own type extinguishes still does.
+		// A NeoForge mod's (or vanilla's) fluid whose own type extinguishes still does.
 		Object wetFluid = InjectorExecution.construct(fluidClass);
-		setField(wetFluid, "forge", type(loader, "forge", "unasked", false));
-		setField(wetFluid, "neo", type(loader, "neo", "own", true));
-		InjectorExecution.invoke(wetFluid, "entityInside");
-		assertEquals(List.of("neo:own"), field(wetFluid, "effects"), "the fluid's own type still decides");
-		// A Fabric mod's fluid in minecraft:water: NeoForge's stand-in claims nothing, as vanilla's Fluid.entityInside.
+		setField(wetFluid, "neo", type(loader, "own", true));
+		InjectorExecution.invoke(wetFluid, "entityInside", entity);
+		assertEquals(List.of("extinguish"), field(wetFluid, "effects"), "the fluid's own type still decides");
+		// A Fabric mod's fluid in minecraft:water: the stand-in claims nothing, as vanilla's Fluid.entityInside.
 		Object fabricFluid = InjectorExecution.construct(fluidClass);
-		setField(fabricFluid, "forge", type(loader, "forge", "unasked", false));
-		setField(fabricFluid, "neo", type(loader, "neo", "stand-in water", true));
-		InjectorExecution.invoke(fabricFluid, "entityInside");
+		setField(fabricFluid, "neo", type(loader, "stand-in water", true));
+		InjectorExecution.invoke(fabricFluid, "entityInside", entity);
 		assertEquals(List.of(), field(fabricFluid, "effects"));
+		calls.clear();
+		assertEquals("stand-in water", InjectorExecution.invoke(fabricFluid, "typeName"), "a getter call that is not the fire clause is left alone");
+		assertEquals(List.of(), calls);
 
-		ClassLoader merged = InjectorExecution.load(original);
-		Object stock = InjectorExecution.construct(merged.loadClass("net.minecraft.world.level.material.Fluid"));
-		setField(stock, "forge", type(merged, "forge", "unasked", false));
-		setField(stock, "neo", type(merged, "neo", "stand-in water", true));
-		InjectorExecution.invoke(stock, "entityInside");
-		assertEquals(List.of("neo:stand-in water"), field(stock, "effects"), "premise: as merged, the stand-in put the fire out");
+		ClassLoader stockLoader = InjectorExecution.load(original);
+		Object stock = InjectorExecution.construct(stockLoader.loadClass("net.minecraft.world.level.material.Fluid"));
+		setField(stock, "neo", type(stockLoader, "stand-in water", true));
+		InjectorExecution.invoke(stock, "entityInside", InjectorExecution.construct(stockLoader.loadClass("net.minecraft.world.entity.Entity")));
+		assertEquals(List.of("extinguish"), field(stock, "effects"), "premise: left alone, the stand-in put the fire out");
 	}
 
 	private static final Map<String, String> TRACKERS = Map.of(

@@ -28,10 +28,10 @@ import org.objectweb.asm.tree.analysis.Analyzer;
 import org.objectweb.asm.tree.analysis.BasicVerifier;
 
 /**
- * Over the staged game: the merged methods that ask one fluid both families' type, found by that shape across the merged
- * base and both carriers, are exactly the ones {@code OwnFluidTypeClausesInjector} declares and edits; and NeoForge's
- * tracker lookup by type is the one place {@code EmptyFluidTypeTrackerInjector} needs, called only by the walk that passes
- * over a cell with no tracker.
+ * Over the staged game: the methods that hand a fluid's NeoForge type straight to {@code Entity.canFluidExtinguish},
+ * found by that shape across NeoForge's base and carrier, are exactly the ones {@code OwnFluidTypeClausesInjector}
+ * declares and edits; and NeoForge's tracker lookup by type is the one place {@code EmptyFluidTypeTrackerInjector} needs,
+ * called only by the walk that passes over a cell with no tracker.
  */
 @ResourceLock("system-properties")
 class OwnFluidTypeClausesInjectorTest {
@@ -58,22 +58,26 @@ class OwnFluidTypeClausesInjectorTest {
 	}
 
 	/**
-	 * Every method of the game asking a fluid both families' type, by shape, is in a class the injector declares, and every
-	 * declared class has one: today {@code Fluid.entityInside} and {@code BucketItem.playEmptySound}. A merged base that
-	 * grows another such method still gets the edit (the injector looks for the shape), and fails here until it is named.
+	 * Every method of the game asking whether a fluid's own NeoForge getter's type puts out fire, by shape, is in a class the
+	 * injector declares, and every declared class has one: today only {@code Fluid.entityInside}. Every other caller of
+	 * {@code canFluidExtinguish} is listed too, so a new one that asks a fluid's type some other way fails here instead of
+	 * going unanswered.
 	 */
-	@Test void theMethodsAskingBothFamiliesAreTheOnesDeclared() throws Exception {
-		TreeSet<String> found = new TreeSet<>(), classes = new TreeSet<>();
+	@Test void theFireClausesAreTheOnesDeclared() throws Exception {
+		TreeSet<String> found = new TreeSet<>(), classes = new TreeSet<>(), askers = new TreeSet<>();
 		for (Path jar : game()) {
 			try (ZipFile zip = new ZipFile(jar.toFile())) {
 				for (var entry : java.util.Collections.list(zip.entries())) {
 					if (!entry.getName().endsWith(".class")) continue;
 					byte[] bytes = zip.getInputStream(entry).readAllBytes();
-					if (!contains(bytes, OwnFluidTypeClausesInjector.FORGE_TYPE) || !contains(bytes, OwnFluidTypeClausesInjector.NEO_TYPE)) continue;
+					if (!contains(bytes, OwnFluidTypeClausesInjector.EXTINGUISH)) continue;
 					ClassNode node = parse(bytes);
 					for (MethodNode m : node.methods) {
-						if (!OwnFluidTypeClausesInjector.getters(m, OwnFluidTypeClausesInjector.FORGE_TYPE).isEmpty()
-								&& !OwnFluidTypeClausesInjector.getters(m, OwnFluidTypeClausesInjector.NEO_TYPE).isEmpty()) {
+						for (AbstractInsnNode insn : m.instructions) {
+							if (insn instanceof MethodInsnNode call && call.name.equals(OwnFluidTypeClausesInjector.EXTINGUISH)
+									&& call.desc.equals(OwnFluidTypeClausesInjector.EXTINGUISH_DESC)) askers.add(node.name + "#" + m.name + m.desc);
+						}
+						if (!OwnFluidTypeClausesInjector.clauses(m).isEmpty()) {
 							found.add(node.name + "#" + m.name + m.desc);
 							classes.add(node.name.replace('/', '.'));
 						}
@@ -81,46 +85,48 @@ class OwnFluidTypeClausesInjectorTest {
 				}
 			}
 		}
-		assertEquals(new TreeSet<>(List.of(
-				"net/minecraft/world/item/BucketItem#playEmptySound(Lnet/minecraft/world/entity/LivingEntity;Lnet/minecraft/world/level/LevelAccessor;Lnet/minecraft/core/BlockPos;)V",
-				"net/minecraft/world/level/material/Fluid#entityInside(Lnet/minecraft/world/level/Level;Lnet/minecraft/core/BlockPos;Lnet/minecraft/world/entity/Entity;Lnet/minecraft/world/entity/InsideBlockEffectApplier;)V")),
-				found);
+		String entityInside = "net/minecraft/world/level/material/Fluid#entityInside(Lnet/minecraft/world/level/Level;Lnet/minecraft/core/BlockPos;Lnet/minecraft/world/entity/Entity;Lnet/minecraft/world/entity/InsideBlockEffectApplier;)V";
+		assertEquals(new TreeSet<>(List.of(entityInside)), found);
 		assertEquals(new TreeSet<>(OwnFluidTypeClausesInjector.KNOWN), classes, "the injector's anchors are the classes holding such a method");
+		assertTrue(askers.contains(entityInside), askers.toString());
 	}
 
-	/** In each such method every NeoForge getter's answer goes through the kernel with its fluid (MinecraftForge's is left as merged), the result verifies, and it is made once. */
-	@Test void eachGetterInTheDeclaredMethodsIsAnsweredWithTheFamilysOwnType() throws Exception {
-		Path merged = game().getFirst();
+	/** In each such method every fire clause's type goes through the kernel with its fluid, the result verifies, and it is made once. */
+	@Test void eachFireClauseIsAnsweredWithTheFluidsOwnType() throws Exception {
+		Path base = game().getFirst();
 		for (String target : OwnFluidTypeClausesInjector.KNOWN) {
-			byte[] original = NativeCoremodParityTest.read(merged, target.replace('.', '/'));
+			byte[] original = NativeCoremodParityTest.read(base, target.replace('.', '/'));
 			byte[] out = InjectorExecution.transform(new OwnFluidTypeClausesInjector(), target, original, EnvType.SERVER);
 			assertNotSame(original, out, target);
-			ClassNode node = parse(out);
+			ClassNode node = parse(out), stock = parse(original);
 			int edited = 0;
 			for (MethodNode m : node.methods) {
-				List<MethodInsnNode> forge = OwnFluidTypeClausesInjector.getters(m, OwnFluidTypeClausesInjector.FORGE_TYPE);
-				List<MethodInsnNode> neo = OwnFluidTypeClausesInjector.getters(m, OwnFluidTypeClausesInjector.NEO_TYPE);
-				if (forge.isEmpty() || neo.isEmpty()) continue;
+				MethodNode before = stock.methods.stream().filter(o -> o.name.equals(m.name) && o.desc.equals(m.desc)).findFirst().orElseThrow();
+				List<MethodInsnNode> clauses = OwnFluidTypeClausesInjector.clauses(before);
+				if (clauses.isEmpty()) {
+					assertEquals(before.instructions.size(), m.instructions.size(), target + "." + m.name + " has no fire clause and is not touched");
+					continue;
+				}
 				edited++;
-				for (MethodInsnNode call : neo) {
+				int answered = 0;
+				for (AbstractInsnNode insn : m.instructions) {
+					if (!(insn instanceof MethodInsnNode call) || !call.name.equals("getFluidType") || !call.owner.equals(OwnFluidTypeClausesInjector.FLUID)) continue;
 					assertEquals(Opcodes.DUP, previous(call).getOpcode(), target + ": the fluid is kept for the kernel");
-					AbstractInsnNode next = next(call);
-					assertTrue(next instanceof MethodInsnNode own && own.owner.equals(OwnFluidTypeClausesInjector.RUNTIME)
-							&& own.name.equals("ownNeoType"), target + "." + m.name + ": " + call.desc + " then " + next);
+					AbstractInsnNode own = next(call), ask = next(own);
+					assertTrue(own instanceof MethodInsnNode o && o.owner.equals(OwnFluidTypeClausesInjector.RUNTIME) && o.name.equals("ownNeoType"),
+							target + "." + m.name + ": " + call.desc + " then " + own);
+					assertTrue(ask instanceof MethodInsnNode a && a.name.equals(OwnFluidTypeClausesInjector.EXTINGUISH), "then the fire question: " + ask);
+					answered++;
 				}
-				for (MethodInsnNode call : forge) {
-					AbstractInsnNode next = next(call);
-					assertFalse(next instanceof MethodInsnNode own && own.owner.equals(OwnFluidTypeClausesInjector.RUNTIME),
-							target + "." + m.name + ": MinecraftForge's clause is left as merged");
-				}
+				assertEquals(clauses.size(), answered, target + "." + m.name);
 				new Analyzer<>(new BasicVerifier()).analyze(node.name, m);
 			}
-			assertEquals(1, edited, target + " has one method asking both families");
+			assertEquals(1, edited, target + " has one method with a fire clause");
 			assertSame(out, InjectorExecution.transform(new OwnFluidTypeClausesInjector(), target, out, EnvType.SERVER), "made once");
 		}
 	}
 
-	@Test void switchedOffBothAreLeftAsMerged() throws Exception {
+	@Test void switchedOffBothAreLeftAlone() throws Exception {
 		System.setProperty(OwnFluidTypeClausesInjector.PROPERTY, "off");
 		System.setProperty(EmptyFluidTypeTrackerInjector.PROPERTY, "off");
 		Path merged = game().getFirst();

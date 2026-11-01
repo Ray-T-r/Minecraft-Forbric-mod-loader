@@ -80,12 +80,13 @@ public final class KernelFluidTypes {
 		return fluid != null && NEO_STAND_INS.contains(fluid);
 	}
 
-	/** {@code -Dforbric.ownFluidTypeClauses=off} leaves each family's clause asking whatever type the fluid answers it. */
+	/** {@code -Dforbric.ownFluidTypeClauses=off} leaves NeoForge's fire clause asking whatever type the fluid answers it. */
 	public static final String CLAUSES_PROPERTY = "forbric.ownFluidTypeClauses";
 
 	/**
-	 * In a merged method that asks one fluid both families' type (OwnFluidTypeClausesInjector), NeoForge's clause gets
-	 * NeoForge's empty type where the kernel's tag-derived stand-in answered, which claims nothing; else the type itself.
+	 * In NeoForge's fire clause ({@code Fluid.entityInside}, OwnFluidTypeClausesInjector): NeoForge's empty type where the
+	 * kernel's tag-derived stand-in answered, which claims nothing, as vanilla's empty {@code entityInside}; else the type
+	 * itself.
 	 */
 	public static FluidType ownNeoType(Fluid fluid, FluidType type) {
 		return neoTypeIsStandIn(fluid) ? NeoForgeMod.EMPTY_TYPE.value() : type;
