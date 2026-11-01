@@ -90,7 +90,7 @@ RuntimeInteropPatcher}` + `run/{build-merged-base,assemble-*-runtime}.sh` 产出
 
 其余闸门（`m8`、`m10`、`m11`、`m18`–`m23`）各自锁定一个曾经发布出去的缺陷。上次统计时，二十五个闸门里有十六个已有一天没跑过，其中一个一直是红的。所以 `gate-m0` 现在拒绝为没有实际执行的测试任务出报告。
 
-旧的 `forbric-loader` 仍保持可运行，用作**差分对照基准**，并且仍负责构建内核所用的共享游戏产物。它无法验证被移除的有状态父类；声明 `required-ancestor-compositions.tsv` 的基底必须使用已注册状态协议证明的内核。
+旧的 `forbric-loader` 仍保持可运行，用作**差分对照基准**，并且仍负责构建内核所用的共享游戏产物。它会拒绝声明了被移除的有状态父类（`required-ancestor-compositions.tsv`）的合并基底；内核运行在 NeoForge 自己的基底上，而该基底不声明任何此类父类。
 
 ## 通用兼容规则与协议扩展
 

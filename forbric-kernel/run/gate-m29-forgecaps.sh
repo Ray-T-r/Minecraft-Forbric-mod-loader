@@ -211,12 +211,12 @@ check_absent "control: no capability error signature" 'java\.lang\.(ExceptionInI
 check "control: the server saved cleanly" 'All dimensions are saved' "$CONTROL_LOG"
 
 step "4. control with MinecraftForge capability dispatch off"
-# The switch turns off DISPATCH only: the merged base requires Entity/BlockEntity/Level composed
-# (required-ancestor-compositions.tsv), so the roots still get the (inert) composition and nothing is refused.
+# The switch turns off DISPATCH only, so the roots still get the (inert) composition. (MinecraftForge capabilities went in
+# Stage 4 C2; C5 rewrites this boot. Its "no root refused for a missing ancestor composition" absence went with
+# RequiredAncestorCompositions in C3, which was the only producer of that refusal.)
 boot "$OFF_LOG" strict "-Dforbric.forgeCapabilities=off" "$NEOLIVE"
 check "off: the kernel says it is off" 'forgeCapabilities=off — MinecraftForge capability dispatch is off' "$OFF_LOG"
 check "off: the roots still get the inert composition their definition requires" 'Capabilities\] gave net\.minecraft\.world\.entity\.Entity the composed MinecraftForge provider state .* with dispatch off' "$OFF_LOG"
-check_absent "off: no root refused for a missing ancestor composition" 'Unresolved stateful ancestor composition' "$OFF_LOG"
 check "off: the server still reached Done" 'Done \(' "$OFF_LOG"
 check_absent "off: and the composition line of boot 3 is gone, so the switch reached it" \
   'Capabilities\] composed MinecraftForge capabilities into net\.minecraft\.world\.entity\.Entity' "$OFF_LOG"

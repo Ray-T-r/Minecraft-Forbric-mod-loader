@@ -153,8 +153,8 @@ had not been run for a day when that was last measured, and one of them had been
 why `gate-m0` now refuses to report on a test task that did not execute.
 
 The old `forbric-loader` is kept runnable as the **differential oracle**, and still builds the shared game
-artifacts the kernel consumes. It cannot certify removed mutable ancestors: a base declaring
-`required-ancestor-compositions.tsv` must use the kernel with registered composition proofs.
+artifacts the kernel consumes. It refuses a merged base that declares removed mutable ancestors
+(`required-ancestor-compositions.tsv`); the kernel runs on NeoForge's own base, which declares none.
 
 ## Generic compatibility and protocol extensions
 
