@@ -1754,7 +1754,6 @@ test	net.forbric.kernel.transform.MergedBaseKeyMappingMapTest	itIsAViewOfAllAssi
 test	net.forbric.kernel.transform.MergedBaseKeyMappingMapTest	vanillasMapIsBackAndPublicSoAModReadingItLinks()	[fixture:staged] staged merged base absent
 test	net.forbric.kernel.transform.MergedBaseKeyModifierSuffixTest	theRealMergedBaseStillNeedsItAndStaysVerifiable()	[fixture:staged] staged merged base absent — skipping real-bytecode check
 test	net.forbric.kernel.transform.MergedBaseLootModifierIndexTest	neoForgesManagerGetsAPrepareThatScansThroughTheHidingView()	[fixture:staged] staged carrier absent: $ROOT/forbric-loader/run/neoforge-runtime/neoforge-runtime.jar
-test	net.forbric.kernel.transform.MergedBaseMipmapLoweringTest	theRealGateKeepsItsGetterAndOnlyTheSelectedLevelIsBounded()	[fixture:staged] real atlas allocation: $ROOT/forbric-loader/run/merged-base/patched-mc-merged-26.2.jar
 test	net.forbric.kernel.transform.MergedBaseNoUnwrittenDuplicateFieldTest	everyDuplicatedFieldNameHasAWriterForEveryOneOfItsTypes()	[fixture:forge-carrier] the merge's field writers in MinecraftForge's carrier: $ROOT/forbric-loader/run/forge-runtime/forge-runtime.jar
 test	net.forbric.kernel.transform.MergedBaseNoVanishedVanillaFieldTest	noVanillaFieldDescriptorHasVanishedBeyondTheKnownSet()	[fixture:staged] staged merged base absent — skipping whole-artifact scan
 test	net.forbric.kernel.transform.MergedBaseOverlayConditionsTest	aSecondPassChangesNothingFurther()	[fixture:staged] staged merged base absent

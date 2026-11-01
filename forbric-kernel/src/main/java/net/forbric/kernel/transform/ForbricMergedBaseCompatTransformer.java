@@ -90,7 +90,7 @@ public final class ForbricMergedBaseCompatTransformer implements ClassTransforme
 	}
 
 	/** The repairs {@link #transform} runs, in its order; a test pins the two lists against each other. */
-	static final List<String> REPAIRS = List.of("addBlockStateModelConflictResolvers", "addBlockStateAppearanceResolver", "giveKeyMappingItsVanillaMap", "giveTheVanillaParticleMapAViewOfTheLiveOne", "letDungeonsGenerateWithoutTheDataMap", "restoreDoublePrecisionToTheRandomSources", "convertRadiansWithVanillasFoldedConstant", "callVanillasWriteByteAgain", "saveTheHeightmapsVanillaSaves", "guardNeoForgesWorldModifierPass", "letForeignResourceConditionsThrough", "letFabricResourceConditionsDecide", "translateAGuestsPrivateSkipMarker", "nameTheReloadListenersNeoForgeRefusesToName", "dropInterfaceDefaultShadowingOverrides", "bridgeOrphanedPipRenderers", "dropTheWindowTitlesLoaderBrand", "keepTheSaveOffTheTeardownsFailurePath", "dropStubsThatBypassARealSuperclassMethod", "inlineTheSwitchMapTheMergeLost", "vetoUnjudgeableOverlayConditions", "hideTheLegacyLootModifierIndexFromTheDirectoryScan", "letModdedFeatureFlagsRegister", "dropTheKeyModifierSuffixBeforeParsingAKeyName", "letTheAtlasLowerItsMipLevelLikeVanilla", "wrapTheStreamsVanillaWraps");
+	static final List<String> REPAIRS = List.of("addBlockStateModelConflictResolvers", "addBlockStateAppearanceResolver", "giveKeyMappingItsVanillaMap", "giveTheVanillaParticleMapAViewOfTheLiveOne", "letDungeonsGenerateWithoutTheDataMap", "restoreDoublePrecisionToTheRandomSources", "convertRadiansWithVanillasFoldedConstant", "callVanillasWriteByteAgain", "saveTheHeightmapsVanillaSaves", "guardNeoForgesWorldModifierPass", "letForeignResourceConditionsThrough", "letFabricResourceConditionsDecide", "translateAGuestsPrivateSkipMarker", "nameTheReloadListenersNeoForgeRefusesToName", "dropInterfaceDefaultShadowingOverrides", "bridgeOrphanedPipRenderers", "dropTheWindowTitlesLoaderBrand", "keepTheSaveOffTheTeardownsFailurePath", "dropStubsThatBypassARealSuperclassMethod", "inlineTheSwitchMapTheMergeLost", "vetoUnjudgeableOverlayConditions", "hideTheLegacyLootModifierIndexFromTheDirectoryScan", "letModdedFeatureFlagsRegister", "dropTheKeyModifierSuffixBeforeParsingAKeyName", "wrapTheStreamsVanillaWraps");
 
 	/**
 	 * One claim per repair, in {@link #REPAIRS} order. A repair with one fixed target declares it REQUIRED with
@@ -169,14 +169,6 @@ public final class ForbricMergedBaseCompatTransformer implements ClassTransforme
 				? fixed("dropTheKeyModifierSuffixBeforeParsingAKeyName", INPUT_CONSTANTS,
 						"one modded key bound with a modifier throws out of options.txt parsing — the player loses EVERY setting")
 				: scanned("dropTheKeyModifierSuffixBeforeParsingAKeyName", "-D" + KEY_SUFFIX_PROPERTY + "=off"));
-		// The repair itself is structural and runs wherever its proof holds; the anchor is only the ledger's
-		// account of the one platform class that MUST be bounded. Without it a proof that rejects the real
-		// SpriteLoader is exactly the old failure: a permanent black screen, and nothing in the log saying why.
-		out.add(mipmapLoweringEnabled()
-				? fixed("letTheAtlasLowerItsMipLevelLikeVanilla", SPRITE_LOADER,
-						"an atlas holding a sprite smaller than the mip level allows fails to upload — the FIRST resource "
-								+ "reload dies, every pack is dropped, and the client sits on a black screen with no further log")
-				: scanned("letTheAtlasLowerItsMipLevelLikeVanilla", "-D" + MIPMAP_PROPERTY + "=off"));
 		out.add(fixed("wrapTheStreamsVanillaWraps", BOOTSTRAP,
 				"System.out and System.err are never routed into log4j, so every line a mod PRINTS rather than logs "
 						+ "is absent from latest.log — including the debug output a mod is told to turn on when it "
@@ -240,8 +232,6 @@ public final class ForbricMergedBaseCompatTransformer implements ClassTransforme
 			changed |= claim(reporter, "letModdedFeatureFlagsRegister", letModdedFeatureFlagsRegister(node));
 			changed |= claim(reporter, "dropTheKeyModifierSuffixBeforeParsingAKeyName",
 					dropTheKeyModifierSuffixBeforeParsingAKeyName(node));
-			changed |= claim(reporter, "letTheAtlasLowerItsMipLevelLikeVanilla",
-					letTheAtlasLowerItsMipLevelLikeVanilla(node));
 			changed |= claim(reporter, "wrapTheStreamsVanillaWraps", wrapTheStreamsVanillaWraps(node));
 			changed |= namedOldLoader && adoptInteropHooksTheBaseStillNamesAfterTheOldLoader(node);
 
@@ -1420,27 +1410,7 @@ public final class ForbricMergedBaseCompatTransformer implements ClassTransforme
 				+ "registered and a mod asking for its own died in its static initialiser");
 		return true;
 	}
-	/**
-	 * The vanilla atlas loader whose allocation the merge left gated on MinecraftForge's opt-in. Named for the
-	 * anchor ledger only: the repair finds its target by the proof in {@link AtlasMipBoundsRepair}, never by name.
-	 */
-	static final String SPRITE_LOADER = "net/minecraft/client/renderer/texture/SpriteLoader";
-	/** {@code -Dforbric.mipmapLowering=off} disables the allocation-boundary constraint check. */
-	static final String MIPMAP_PROPERTY = "forbric.mipmapLowering";
 
-	static boolean mipmapLoweringEnabled() {
-		return !"off".equalsIgnoreCase(System.getProperty(MIPMAP_PROPERTY, "on"));
-	}
-
-	/**
-	 * Bounds the selected mip level at the native allocation boundary. Configuration getters keep their real
-	 * value and side effects; a level unsupported by the smallest image cannot be allocated regardless of policy.
-	 * The dataflow proof derives the limit and chosen local from the actual branch and Stitcher consumer.
-	 */
-	private static boolean letTheAtlasLowerItsMipLevelLikeVanilla(ClassNode node) {
-		if (!mipmapLoweringEnabled()) return false;
-		return AtlasMipBoundsRepair.apply(node);
-	}
 
 	static final String INPUT_CONSTANTS = "com/mojang/blaze3d/platform/InputConstants";
 	/** {@code -Dforbric.keyModifierSuffix=off} hands the whole value back to vanilla's parse, which throws on it. */

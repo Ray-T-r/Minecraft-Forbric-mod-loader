@@ -203,7 +203,10 @@ public final class ForbricSwitches {
 			Map.entry("forbric.neoConversionPost", "NeoForge's own conversion lambdas post LivingConversionEvent.Post themselves, so there "
 					+ "is no MinecraftForge lambda to send through the kernel"),
 			Map.entry("forbric.itemTooltipBridge", "NeoForge's own ItemStack.getTooltipLines posts ItemTooltipEvent itself, so the kernel "
-					+ "posts no second one beside a MinecraftForge call"));
+					+ "posts no second one beside a MinecraftForge call"),
+			// Stage 4: repairs of merged-base damage that NeoForge's own base does not have.
+			Map.entry("forbric.mipmapLowering", "NeoForge's own SpriteLoader lowers an atlas's mip level exactly as vanilla's does, with "
+					+ "no setting gating it, so there is no allocation left to bound"));
 
 	private static final ForbricSwitches SYSTEM =
 			new ForbricSwitches(RENAMED, RETIRED, System::getProperty, ForbricLog::warn);

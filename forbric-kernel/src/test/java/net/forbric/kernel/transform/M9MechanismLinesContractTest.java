@@ -18,21 +18,22 @@ import net.forbric.kernel.interop.RegistryElementCallbacks;
 
 /**
  * gate-m9 asserts on LOG LINES, and twice those lines were reworded or dropped while the gate kept grepping for
- * the old text: the mip-level repair and the late block-state callback were both made generic, went silent or
- * changed their wording, and every m9 run would have gone red whether the repairs worked or not.
+ * the old text: the mip-level repair (since deleted with the merged base) and the late block-state callback were both
+ * made generic, went silent or changed their wording, and every m9 run would have gone red whether the repairs worked or
+ * not.
  *
  * <p>So this reads the gate's own patterns out of {@code run/gate-m9-client.sh} and greps (with the real
  * {@code grep -acE}, as the gate does) what the mechanisms actually print when they are run here. The one line the
  * gate cannot see in its pack, the late completion's, is pinned here on the real code path. Every fixture
- * uses names no mod has; the only real names are the platform's: the atlas loader the mip repair must bound, and
- * the block-state registry the walk is over. Each positive has a look-alike that the mechanism must leave alone,
+ * uses names no mod has; the only real names are the platform's: the bootstrap class a compat claim is anchored on,
+ * and the block-state registry the walk is over. Each positive has a look-alike that the mechanism must leave alone,
  * and whose output the same gate pattern must not accept.
  */
 @ExecutesInjector(RegistryElementCallbackInjector.class)
 class M9MechanismLinesContractTest {
 	private static final Path GATE = Path.of("run/gate-m9-client.sh");
-	private static final String SPRITE_LOADER = "net.minecraft.client.renderer.texture.SpriteLoader";
-	private static final String MIP_CLAIM = "forbric-merged-base-compat#letTheAtlasLowerItsMipLevelLikeVanilla";
+	private static final String BOOTSTRAP = "net.minecraft.server.Bootstrap";
+	private static final String STREAMS_CLAIM = "forbric-merged-base-compat#wrapTheStreamsVanillaWraps";
 	private static final String WALKER = "unknown/cachecontract/EarlyWalker";
 	private static final String LOOP = "if(CacheElement.class.isAssignableFrom(BlockState.class)) for(BlockState state:Block.BLOCK_STATE_REGISTRY) ((CacheElement)state).initializeDerivedState();";
 	private static final TransformContext CLIENT = new TransformContext(EnvType.CLIENT, false, "intermediary");
@@ -44,78 +45,38 @@ class M9MechanismLinesContractTest {
 
 	@TempDir Path root;
 
-	// ---- the mip-level bound -----------------------------------------------------------------------------------
+	// ---- the claim census line --------------------------------------------------------------------------------
+	// The gate reads one census line for every REQUIRED claim of the chain: a repair handed its target that makes no
+	// edit. Its subject here is the compat repair that puts vanilla's wrapStreams() call back into Bootstrap.bootStrap(),
+	// on a fixture shaped like NeoForge's (which calls the snapshot instead) and on one shaped like vanilla's.
 
 	@Test
-	void theAtlasLoaderBeingBoundedIsWhatTheGateSees() throws Exception {
-		byte[] raw = atlas(SPRITE_LOADER, true).get(internal(SPRITE_LOADER));
-		String[] out = new String[1];
-		byte[] edited = capture(() -> new ForbricMergedBaseCompatTransformer().transform(SPRITE_LOADER, raw, null), out);
-		assertNotSame(raw, edited);
-		assertEquals(1, grep(gatePattern("an atlas may lower its mip level again"), out[0]), out[0]);
-		assertTrue(out[0].contains(SPRITE_LOADER + ".assemble bounds"), "the line names the method it bounded: " + out[0]);
-
-		String[] again = new String[1];
-		assertSame(edited, capture(() -> new ForbricMergedBaseCompatTransformer().transform(SPRITE_LOADER, edited, null), again));
-		assertEquals(0, grep(gatePattern("an atlas may lower its mip level again"), again[0]), "an already bounded class says nothing twice");
-	}
-
-	@Test
-	void aRenamedAtlasIsBoundedAndSaysSoButIsNotTheClassTheGateNeeds() throws Exception {
-		byte[] raw = atlas("unknown.images.Atlas", true).get("unknown/images/Atlas");
-		String[] out = new String[1];
-		assertNotSame(raw, capture(() -> new ForbricMergedBaseCompatTransformer().transform("unknown.images.Atlas", raw, null), out));
-		assertTrue(out[0].contains("unknown.images.Atlas.assemble bounds the mip level it allocates"), out[0]);
-		assertEquals(0, grep(gatePattern("an atlas may lower its mip level again"), out[0]),
-				"the gate asks for the platform's atlas loader, not for any class the proof happens to bound");
-	}
-
-	@Test
-	void aLookAlikeTheProofRejectsIsSilentAndTheLedgerNamesTheRepairThatDeclined() throws Exception {
-		byte[] raw = atlas(SPRITE_LOADER, false).get(internal(SPRITE_LOADER));
+	void aClaimThatDeclinesItsTargetIsNamedOnTheCensusLineTheGateReads() throws Exception {
+		byte[] raw = bootstrap(true).get(internal(BOOTSTRAP));
 		TransformChain chain = chain();
 		String[] out = new String[1];
-		assertSame(raw, capture(() -> chain.applyBeforeMixin(SPRITE_LOADER, raw, CLIENT), out));
-		assertEquals(0, grep(gatePattern("an atlas may lower its mip level again"), out[0]), out[0]);
+		assertSame(raw, capture(() -> chain.applyBeforeMixin(BOOTSTRAP, raw, CLIENT), out));
 
 		AnchorLedger.Report report = chain.ledger().report();
-		assertEquals(1, report.misses().size(), () -> "exactly the mip repair declined: " + report.misses());
+		assertEquals(1, report.misses().size(), () -> "exactly the streams repair declined: " + report.misses());
 		AnchorLedger.Miss miss = report.misses().getFirst();
-		assertEquals(MIP_CLAIM, miss.transformer());
-		assertEquals(SPRITE_LOADER, miss.className());
-		assertTrue(miss.cost().contains("black screen"), miss.cost());
+		assertEquals(STREAMS_CLAIM, miss.transformer());
+		assertEquals(BOOTSTRAP, miss.className());
+		assertTrue(miss.cost().contains("latest.log"), miss.cost());
 		assertEquals(1, grep(gatePattern("no repair was handed its target and declined"), out[0]),
-				"the census line the gate reads goes red the moment the atlas loader is not bounded: " + out[0]);
+				"the census line the gate reads goes red the moment a REQUIRED target is left unrepaired: " + out[0]);
 	}
 
 	@Test
-	void theBoundedAtlasLoaderIsAHitOnTheLedger() throws Exception {
-		byte[] raw = atlas(SPRITE_LOADER, true).get(internal(SPRITE_LOADER));
+	void aClaimThatLandsIsAHitAndTheCensusLineStaysQuiet() throws Exception {
+		byte[] raw = bootstrap(false).get(internal(BOOTSTRAP));
 		TransformChain chain = chain();
 		String[] out = new String[1];
-		assertNotSame(raw, capture(() -> chain.applyBeforeMixin(SPRITE_LOADER, raw, CLIENT), out));
+		assertNotSame(raw, capture(() -> chain.applyBeforeMixin(BOOTSTRAP, raw, CLIENT), out));
 		AnchorLedger.Report report = chain.ledger().report();
 		assertTrue(report.clean(), () -> String.valueOf(report.misses()));
-		assertEquals(1, report.hit(), "the one claim anchored on the atlas loader landed");
+		assertEquals(1, report.hit(), "the one claim anchored on Bootstrap landed");
 		assertEquals(0, grep(gatePattern("no repair was handed its target and declined"), out[0]), out[0]);
-	}
-
-	@Test
-	void switchedOffTheClaimStandsDownInsteadOfReportingTheSwitchAsABrokenAnchor() throws Exception {
-		byte[] raw = atlas(SPRITE_LOADER, true).get(internal(SPRITE_LOADER));
-		String previous = System.setProperty(ForbricMergedBaseCompatTransformer.MIPMAP_PROPERTY, "off");
-		try {
-			TransformChain chain = chain();
-			String[] out = new String[1];
-			assertSame(raw, capture(() -> chain.applyBeforeMixin(SPRITE_LOADER, raw, CLIENT), out));
-			AnchorLedger.Report report = chain.ledger().report();
-			assertTrue(report.clean(), () -> String.valueOf(report.misses()));
-			assertEquals(0, grep(gatePattern("an atlas may lower its mip level again"), out[0]), "the switch is the one red it should be");
-			assertEquals(0, grep(gatePattern("no repair was handed its target and declined"), out[0]), out[0]);
-		} finally {
-			if (previous == null) System.clearProperty(ForbricMergedBaseCompatTransformer.MIPMAP_PROPERTY);
-			else System.setProperty(ForbricMergedBaseCompatTransformer.MIPMAP_PROPERTY, previous);
-		}
 	}
 
 	// ---- the late block-state callback -------------------------------------------------------------------------
@@ -176,26 +137,26 @@ class M9MechanismLinesContractTest {
 
 	// ---- fixtures ------------------------------------------------------------------------------------------------
 
-	/** A class that picks a mip level the way the merged SpriteLoader does, under {@code binaryName}. */
-	private Map<String, byte[]> atlas(String binaryName, boolean limitIsTheImageLog) throws Exception {
-		int dot = binaryName.lastIndexOf('.');
-		String pkg = binaryName.substring(0, dot), simple = binaryName.substring(dot + 1);
+	/** {@code Bootstrap} with its own {@code wrapStreams()}, which {@code bootStrap()} calls (vanilla) or does not (NeoForge). */
+	private Map<String, byte[]> bootstrap(boolean callsWrapStreams) throws Exception {
 		String source = """
-				package %s;
-				public class %s {
-				    public static boolean configured;
-				    public static boolean policy(){return configured;}
-				    public int assemble(int requested,int imageSize){
-				        int maximum=%s; int selected;
-				        if(maximum<requested && policy()) selected=maximum; else selected=requested;
-				        return new net.minecraft.client.renderer.texture.Stitcher(16,16,selected,0).level;
+				package net.minecraft.server;
+				public class Bootstrap {
+				    private static final java.util.concurrent.atomic.AtomicLong bootstrapDuration = new java.util.concurrent.atomic.AtomicLong(-1L);
+				    private static volatile boolean isBootstrapped;
+				    public static int wraps;
+				    public static void bootStrap() {
+				        if (!isBootstrapped) {
+				            isBootstrapped = true;
+				            long start = System.nanoTime();
+				            %s
+				            bootstrapDuration.set(System.nanoTime() - start);
+				        }
 				    }
+				    private static void wrapStreams() { wraps++; }
 				}
-				""".formatted(pkg, simple, limitIsTheImageLog ? "net.minecraft.util.Mth.log2(imageSize)" : "imageSize");
-		return InjectorExecution.compile(root.resolve(simple + limitIsTheImageLog), Map.of(
-				"net.minecraft.util.Mth", "package net.minecraft.util; public class Mth {public static int log2(int size){return 31-Integer.numberOfLeadingZeros(size);}}",
-				"net.minecraft.client.renderer.texture.Stitcher", "package net.minecraft.client.renderer.texture; public class Stitcher {public final int level; public Stitcher(int w,int h,int selected,int other){level=selected;}}",
-				binaryName, source));
+				""".formatted(callsWrapStreams ? "wrapStreams();" : "");
+		return InjectorExecution.compile(root.resolve("bootstrap" + callsWrapStreams), Map.of(BOOTSTRAP, source));
 	}
 
 	/** A guest initializer over the block-state registry, plus the minimal platform types it names. */

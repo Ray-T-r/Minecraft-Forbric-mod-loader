@@ -66,7 +66,6 @@ rm -f "$RUNDIR/logs/latest.log"
 
 step "launch the client into $WORLD via quick-play ($(ls -1 "$RUNDIR/mods"/*.jar 2>/dev/null | wc -l | tr -d ' ') mods, no compatibility flags)"
 # M9_EXTRA_JVM is how the gate's teeth are demonstrated: switch a fix off and this must go RED. Also verified:
-#   -Dforbric.mipmapLowering=off   -> 1 red ("an atlas may lower its mip level again")
 #   -Dforbric.keyModifierSuffix=off -> 2 red ("the key-modifier suffix is dropped before the name is parsed",
 #                                             "options.txt loads with modded modifier bindings in it")
 #   -Dforbric.carrierLanguages=off -> 2 red ("NeoForge's own screens have their text", "and MinecraftForge's do too")
@@ -159,16 +158,12 @@ check "server side really ran"        "joined the game"                         
 check "datapacks fully loaded"        "Loaded [1-9][0-9]* advancements"                 "$LOG"
 
 step "the merge did not leave one ecosystem's opt-out binding the other two (client-fatal both times)"
-# VANILLA lowers an atlas's mip level to fit its smallest sprite. MinecraftForge patches SpriteLoader to gate that
-# on ForgeConfig.CLIENT.allowMipmapLowering(), default FALSE; the byte merge kept that half. The Logistics mod
-# (NeoForge) has an 8x8 sprite in its own atlas, so the GPU refused the upload, the FIRST resource reload died,
-# Minecraft dropped every pack, reloaded into the same failure -- and the client rendered a BLACK SCREEN for the
-# rest of the run with no crash report and no further log line. That is the worst report shape there is.
-# The repair keeps MinecraftForge's getter and bounds the level SpriteLoader hands the Stitcher by the image-size
-# limit the method itself computed (found by a dataflow proof, not by name). It says so once per bounded method;
-# if the proof ever rejects SpriteLoader, its REQUIRED anchor makes the census above say "made no edit" instead.
-check "an atlas may lower its mip level again" \
-  'Forbric/MergedBaseCompat\] net\.minecraft\.client\.renderer\.texture\.SpriteLoader\.[^ ]+ bounds the mip level it allocates' "$LOG"
+# VANILLA lowers an atlas's mip level to fit its smallest sprite, and so does NeoForge's own SpriteLoader (the same
+# bytes, no setting gating it). The merged base gated it on MinecraftForge's allowMipmapLowering (default FALSE), so a
+# sprite smaller than the mip level (Logistics has an 8x8 one) made the GPU refuse the upload, the FIRST resource
+# reload died, Minecraft dropped every pack, reloaded into the same failure -- and the client rendered a BLACK SCREEN
+# for the rest of the run with no crash report and no further log line. These two absences say it does not happen.
+# They can only go red when the pack holds a sprite smaller than its mip level (mipmapLevels:4 here).
 check_absent "no resource reload was abandoned" 'Caught error loading resourcepacks' "$LOG"
 check_absent "no atlas was refused by the GPU" 'mipLevels must be at most' "$LOG"
 # MinecraftForge writes a modified binding as key.keyboard.o:CONTROL_OR_COMMAND and then hands that whole string
