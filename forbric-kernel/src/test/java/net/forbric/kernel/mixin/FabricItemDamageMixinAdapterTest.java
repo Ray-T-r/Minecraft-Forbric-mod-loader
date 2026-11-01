@@ -3,6 +3,7 @@ package net.forbric.kernel.mixin;
 import static org.junit.jupiter.api.Assertions.*;
 import java.util.List;
 import org.junit.jupiter.api.Test;
+import net.forbric.api.Ecosystem;
 import org.junit.jupiter.api.parallel.ResourceLock;
 import org.junit.jupiter.api.parallel.Resources;
 import org.objectweb.asm.Opcodes;
@@ -21,8 +22,11 @@ class FabricItemDamageMixinAdapterTest {
 	private static final String MIXIN = "net/fabricmc/fabric/mixin/item/ItemStackMixin";
 	private static final String SWITCH = "forbric.itemDamageHandler";
 
+	/** The mixin as the service hands it over: listed by fabric-item-api-v1's config, so its family is Fabric. */
 	private static ClassNode mixin() throws Exception {
-		return StagedFabricMixinFixture.mixin("fabric-item-api-v1", MIXIN);
+		ClassNode mixin = StagedFabricMixinFixture.mixin("fabric-item-api-v1", MIXIN);
+		MixinStubRebind.noteEcosystem(mixin.name, Ecosystem.FABRIC);
+		return mixin;
 	}
 
 	private static ClassNode stack(boolean vanilla) throws Exception {
@@ -92,6 +96,21 @@ class FabricItemDamageMixinAdapterTest {
 			System.clearProperty(SWITCH);
 		}
 		assertArrayEquals(before, StagedFabricMixinFixture.bytes(mixin));
+	}
+
+	/** A mixin whose family is NeoForge's, or not known, is not a Fabric mod's handler: left as written. */
+	@Test void onlyAFabricMixinIsMoved() throws Exception {
+		System.clearProperty(SWITCH);
+		ClassNode stack = stack(false);
+		for (Ecosystem family : new Ecosystem[] { Ecosystem.NEOFORGE, null }) {
+			// The same bytes under a name of its own, so the family recorded for fabric-item-api's mixin is not touched.
+			ClassNode mixin = mixin();
+			mixin.name = "forbric/test/itemdamage/" + family + "/ItemStackMixin";
+			MixinStubRebind.noteEcosystem(mixin.name, family);
+			byte[] before = StagedFabricMixinFixture.bytes(mixin);
+			assertEquals(0, FabricItemDamageMixinAdapter.adapt(mixin, n -> stack), String.valueOf(family));
+			assertArrayEquals(before, StagedFabricMixinFixture.bytes(mixin));
+		}
 	}
 
 	/** Another occurrence, or a handler that reads more than the call's operands without sugar, is not the reviewed shape. */

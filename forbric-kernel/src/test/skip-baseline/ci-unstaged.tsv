@@ -1901,6 +1901,7 @@ test	net.forbric.kernel.mixin.CreateNormalsWrapBindingTest	createsNormalsWrapBin
 test	net.forbric.kernel.mixin.FabricItemDamageMixinAdapterTest	anotherShapeIsLeftAsWritten()	[fixture:staged] actual game required
 test	net.forbric.kernel.mixin.FabricItemDamageMixinAdapterTest	onNeoForgesBaseTheWrapMovesToTheLivingEntityOverload()	[fixture:staged] actual game required
 test	net.forbric.kernel.mixin.FabricItemDamageMixinAdapterTest	onVanillaNothingChanges()	[fixture:mc-libraries] actual game required
+test	net.forbric.kernel.mixin.FabricItemDamageMixinAdapterTest	onlyAFabricMixinIsMoved()	[fixture:staged] actual game required
 test	net.forbric.kernel.mixin.FabricItemDamageMixinAdapterTest	theOffSwitchLeavesTheHandlerAsWritten()	[fixture:staged] actual game required
 test	net.forbric.kernel.transform.NeoForgeBaseStructureCensusStagedTest	noVanillaBodyMovedBehindABuilderStub()	[fixture:mc-libraries] the vanilla client jar
 test	net.forbric.kernel.transform.NeoForgeBaseStructureCensusStagedTest	noClassHasTwoLambdasOfOneName()	[fixture:staged] the base and the NeoForge carrier: $ROOT/forbric-loader/run/neoforge-patched/patched-mc-neoforge-26.2.jar

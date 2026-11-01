@@ -56,7 +56,8 @@ import net.forbric.kernel.util.ForbricLog;
  * with the entity when the handler passes that value on. Its sugar parameters ({@code @Local(argsOnly = true)} entity and
  * slot) stay on the new wrap, at the same place, reading the same host method.
  *
- * <p>Only a Fabric mod's handler (NeoForge's mods were written against NeoForge's call), and only this shape: a
+ * <p>Only a Fabric mod's handler (NeoForge's mods were written against NeoForge's call; a mixin whose family is not known
+ * as Fabric is left alone, as {@link MixinShearsRelay} does), and only this shape: a
  * {@code @WrapOperation} with one {@code INVOKE} point naming vanilla's call (as Mixin reads a target), no ordinal, slice or
  * group, bound by its selectors to {@code hurtAndBreak(int, LivingEntity, EquipmentSlot)} alone, whose handler takes the
  * call's operands and an {@code Operation} first, then only sugar, and returns nothing; and only where that host method
@@ -93,7 +94,7 @@ public final class FabricItemDamageMixinAdapter {
 	/** @return how many handlers now wrap NeoForge's call; {@code targets} must return nodes WITH code */
 	public static int adapt(ClassNode mixin, Function<String, ClassNode> targets) {
 		if (!enabled() || mixin == null || mixin.methods == null || targets == null) return 0;
-		if (MixinStubRebind.ecosystemOf(mixin.name) == Ecosystem.NEOFORGE || !MixinFit.mixinTargets(mixin).equals(List.of(STACK))) return 0;
+		if (MixinStubRebind.ecosystemOf(mixin.name) != Ecosystem.FABRIC || !MixinFit.mixinTargets(mixin).equals(List.of(STACK))) return 0;
 		ClassNode stack = targets.apply(STACK);
 		MethodNode host = stack == null || stack.methods == null ? null
 				: stack.methods.stream().filter(m -> HOST.equals(m.name + m.desc)).findFirst().orElse(null);
