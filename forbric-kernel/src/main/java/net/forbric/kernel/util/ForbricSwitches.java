@@ -208,7 +208,9 @@ public final class ForbricSwitches {
 			Map.entry("forbric.mipmapLowering", "NeoForge's own SpriteLoader lowers an atlas's mip level exactly as vanilla's does, with "
 					+ "no setting gating it, so there is no allocation left to bound"),
 			Map.entry("forbric.lootPoolFields", "NeoForge's own LootPool has one name field and one codec that reads only its own fields, "
-					+ "so there is no second family's field for a constructor to fill"));
+					+ "so there is no second family's field for a constructor to fill"),
+			Map.entry("forbric.builderStubRebind", "NeoForge's own base keeps vanilla's bodies where MinecraftForge left a builder stub "
+					+ "(UnbakedCuboidGeometry.bake), so an injector binds the body it was written for and nothing moves"));
 
 	private static final ForbricSwitches SYSTEM =
 			new ForbricSwitches(RENAMED, RETIRED, System::getProperty, ForbricLog::warn);

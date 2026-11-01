@@ -243,6 +243,7 @@ test	net.forbric.kernel.mixin.CreateInjectionAdaptersTest	releasedCallbacksKeepT
 test	net.forbric.kernel.mixin.CreateInjectionAdaptersTest	twoReferencedPredictionImplementationsRemainAmbiguous()	[fixture:third-party] real fixture required: $ROOT/forbric-kernel/build/compat-inputs/create-fly/create-fly.jar
 test	net.forbric.kernel.mixin.CreateKeyboardMixinAdapterTest	releasedHooksRunWhereVanillasFinalReturnRuns()	[fixture:third-party] real fixture required: $ROOT/forbric-kernel/build/compat-inputs/create-fly/create-fly.jar
 test	net.forbric.kernel.mixin.CreateKeyboardMixinAdapterTest	vanillaKeepsTheOriginalReturnSelectors()	[fixture:third-party] real fixture required: $ROOT/forbric-kernel/build/compat-inputs/create-fly/create-fly.jar
+test	net.forbric.kernel.mixin.CreateNormalsWrapBindingTest	createsNormalsWrapBindsABodyThatBakesTheQuadsAsVanillasDoes()	[fixture:third-party] real fixture required: $ROOT/forbric-kernel/build/compat-inputs/create-fly/create-fly.jar
 test	net.forbric.kernel.mixin.CreateStructureMixinAdapterTest	aMissingCallerRefusesAllThreeSelectorsTogether()	[fixture:third-party] real fixture required: $ROOT/forbric-kernel/build/compat-inputs/create-fly/create-fly.jar
 test	net.forbric.kernel.mixin.CreateStructureMixinAdapterTest	setupIterationAndCleanupMoveTogetherToTheCalledEntityPlacementBody()	[fixture:third-party] real fixture required: $ROOT/forbric-kernel/build/compat-inputs/create-fly/create-fly.jar
 test	net.forbric.kernel.mixin.DefaultPredicateTransportTest	actualRendererContractsBindFromJarBodiesAndDeclaredInterfaceInjection()	[fixture:forge-carrier] actual staged carrier required
@@ -292,8 +293,6 @@ test	net.forbric.kernel.mixin.MergedBaseMixinCompatPinnedContractsTest	thePinned
 test	net.forbric.kernel.mixin.MixinAddedMembersTest	morecullingsShadowOfFabricRenderersMeshResolves()	[fixture:third-party] sweep90 pack absent
 test	net.forbric.kernel.mixin.MixinAtShapeTest	architecturysNaturalSpawnerRedirectIsUnwrapped()	[fixture:third-party] popular inputs absent
 test	net.forbric.kernel.mixin.MixinBlockInteractionCaptureTest	theReleasedControlsHandEachCaptureTheSlotHoldingItsNativeValue()	[fixture:third-party] real fixture required: $ROOT/forbric-kernel/build/compat-inputs/create-fly/create-fly.jar
-test	net.forbric.kernel.mixin.MixinBuilderStubRebindTest	onTheGenuineBaseCreatesNormalsWrapStaysOnVanillasBodyWhichBakesTheQuads()	[fixture:third-party] real fixture required: $ROOT/forbric-kernel/build/compat-inputs/create-fly/create-fly.jar
-test	net.forbric.kernel.mixin.MixinBuilderStubRebindTest	onVanillaOrSwitchedOffNothingMoves()	[fixture:third-party] real fixture required: $ROOT/forbric-kernel/build/compat-inputs/create-fly/create-fly.jar
 test	net.forbric.kernel.mixin.MixinCallbackContractsTest	GUI item / MixinGuiItemCaptureAdapter	[fixture:third-party] real fixture required: build/sweep80-mac/v020-rounds/r3/mods/itemglintrelight-fabric-26.2-0.3.0+26.2.jar
 test	net.forbric.kernel.mixin.MixinCallbackContractsTest	GUI item / unsafe source	[fixture:third-party] real fixture required: build/sweep80-mac/v020-rounds/r3/mods/itemglintrelight-fabric-26.2-0.3.0+26.2.jar
 test	net.forbric.kernel.mixin.MixinCallbackContractsTest	Level_fillUpdatesMixin / player/world and fluid reactions	[fixture:third-party] real fixture required: build/compat-inputs/carpet/mods/fabric-carpet-26.2+v260616.jar

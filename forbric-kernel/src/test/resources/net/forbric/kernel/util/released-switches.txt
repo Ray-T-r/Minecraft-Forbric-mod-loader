@@ -18,6 +18,7 @@ forbric.blockStateIdRefill
 forbric.blockStateModelFormats
 forbric.bootJarPreload
 forbric.branding
+forbric.builderStubRebind
 forbric.c2meBlockUpdates
 forbric.carpetMixins
 forbric.carrierLanguages

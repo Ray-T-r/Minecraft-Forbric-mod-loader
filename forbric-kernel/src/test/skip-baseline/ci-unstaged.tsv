@@ -574,8 +574,6 @@ test	net.forbric.kernel.mixin.MixinBlockInteractionCaptureTest	aSpringAppendingW
 test	net.forbric.kernel.mixin.MixinBlockInteractionCaptureTest	aSpringTakingTheCollidedStateAsAppendedReadsItWhereNeoForgesHostTakesIt()	[fixture:staged] current callback target declarations: $ROOT/forbric-loader/run/merged-base/patched-mc-merged-26.2.jar
 test	net.forbric.kernel.mixin.MixinBlockInteractionCaptureTest	readAgainstTheMethodItIsWrittenForAnAppendedArgumentServesWhereItsLocalWould()	[fixture:staged] current callback target declarations: $ROOT/forbric-loader/run/merged-base/patched-mc-merged-26.2.jar
 test	net.forbric.kernel.mixin.MixinBlockInteractionCaptureTest	theReleasedControlsHandEachCaptureTheSlotHoldingItsNativeValue()	[fixture:third-party] real fixture required: $ROOT/forbric-kernel/build/compat-inputs/create-fly/create-fly.jar
-test	net.forbric.kernel.mixin.MixinBuilderStubRebindTest	onTheGenuineBaseCreatesNormalsWrapStaysOnVanillasBodyWhichBakesTheQuads()	[fixture:staged] game jar
-test	net.forbric.kernel.mixin.MixinBuilderStubRebindTest	onVanillaOrSwitchedOffNothingMoves()	[fixture:staged] game jar
 test	net.forbric.kernel.mixin.MixinCallbackContractsTest	GUI item / MixinGuiItemCaptureAdapter	[fixture:third-party] real fixture required: build/sweep80-mac/v020-rounds/r3/mods/itemglintrelight-fabric-26.2-0.3.0+26.2.jar
 test	net.forbric.kernel.mixin.MixinCallbackContractsTest	GUI item / unsafe source	[fixture:third-party] real fixture required: build/sweep80-mac/v020-rounds/r3/mods/itemglintrelight-fabric-26.2-0.3.0+26.2.jar
 test	net.forbric.kernel.mixin.MixinCallbackContractsTest	Level_fillUpdatesMixin / player/world and fluid reactions	[fixture:third-party] real fixture required: build/compat-inputs/carpet/mods/fabric-carpet-26.2+v260616.jar
@@ -1922,3 +1920,5 @@ test	net.forbric.kernel.mixin.VanillaReferenceStagedTest	theSidecarRecordsTheBas
 test	net.forbric.kernel.mixin.VanillaReferenceStagedTest	everyVanillaClassIsIndexedAndEveryRowVerifiesOnThisBase()	[fixture:staged] the staged base: $ROOT/forbric-loader/run/neoforge-patched/patched-mc-neoforge-26.2.jar
 test	net.forbric.kernel.mixin.VanillaReferenceStagedTest	withTheSidecarTheFabricAnswersAreVanillasAndWithoutItThereAreNone()	[fixture:staged] the staged base: $ROOT/forbric-loader/run/neoforge-patched/patched-mc-neoforge-26.2.jar
 test	net.forbric.kernel.mixin.VanillaReferenceStagedTest	aSidecarMeasuredAgainstAnotherBaseAnswersNothingItCannotVerify(Path)	[fixture:staged] the staged base: $ROOT/forbric-loader/run/neoforge-patched/patched-mc-neoforge-26.2.jar
+test	net.forbric.kernel.mixin.CreateNormalsWrapBindingTest	createsNormalsWrapBindsABodyThatBakesTheQuadsAsVanillasDoes()	[fixture:staged] game jar
+test	net.forbric.kernel.transform.NeoForgeBaseStructureCensusStagedTest	noVanillaBodyMovedBehindABuilderStub()	[fixture:mc-libraries] the vanilla client jar

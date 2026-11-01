@@ -514,9 +514,6 @@ public final class ForbricMixinService
 		// piece or the end of the last; a cancel at the start skips the later pieces of that run.
 		MixinSplitBodyEdges.adapt(node, this::mergedBaseNodeWithCode);
 		MixinStubRebind.adapt(node, this::mergedBaseNodeWithCode);
-		// …and an injector anchored in a body a carrier moved behind a builder stub (new builder, hand it over, build) moves
-		// to the overload that makes its calls.
-		MixinBuilderStubRebind.adapt(node, this::mergedBaseGameCode);
 		// …and a point shifted BY a count of nodes lands on the instruction it lands on natively, where a carrier's code now
 		// stands in that stretch (Shoulder Surfing's TAIL-2 FOV override on Camera.calculateFov landed on MinecraftForge's
 		// event call, after the last read of the local it modifies). After the rebind: it reads the injector's final target.

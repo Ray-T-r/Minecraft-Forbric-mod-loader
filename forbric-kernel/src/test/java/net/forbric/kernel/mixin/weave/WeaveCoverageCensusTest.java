@@ -53,8 +53,7 @@ class WeaveCoverageCensusTest {
 	static final Map<String, Switch> WOVEN = Map.ofEntries(
 			// KernelGuestMixinAdapterWeaveTest; NativeAbsentTargetsWeaveTest flips NativeAbsentTargets' switch, which the
 			// adapter's verdict reads, and this one as its native control.
-			// The late judgment alone, by behaviour: PluginAddedRenameRetargetWeaveTest (a repair only MixinRetarget's plan makes);
-			// PluginAddedMixinRetargetWeaveTest's builder-stubbed wrap is moved by MixinBuilderStubRebind too.
+			// The late judgment alone, by behaviour: PluginAddedRenameRetargetWeaveTest (a repair only MixinRetarget's plan makes).
 			Map.entry("KernelGuestMixinAdapter", Switch.own("forbric.guestMixinAdapter", "forbric.lateMixinJudgment")), // + PluginAddedMixinRetargetWeaveTest
 			Map.entry("FinalMixinApplications", Switch.own()), // WeaveHarnessSelfTest, MixinOutcomeWeaveTest
 			// MixinOutcomeWeaveTest; the redirect of a widened static call in MixinAtWidenedRedirectWeaveTest.
@@ -104,7 +103,6 @@ class WeaveCoverageCensusTest {
 			Map.entry("AddedCallOccurrences", Switch.own("forbric.addedCallOccurrences")), // AddedCallOccurrencesWeaveTest
 			Map.entry("NativeOccurrences", Switch.own("forbric.nativeOccurrences")), // NativeOccurrencePointWeaveTest
 			Map.entry("MixinCapturedLocals", Switch.own("forbric.capturedLocals")), // MixinCapturedLocalsWeaveTest
-			Map.entry("MixinBuilderStubRebind", Switch.own("forbric.builderStubRebind")), // MixinBuilderStubRebindWeaveTest
 			Map.entry("MixinExpressionThunks", Switch.own("forbric.expressionThunks")), // MixinExpressionThunksWeaveTest
 			Map.entry("MixinRenamedBodyEdges", Switch.own("forbric.renamedBodyEdges")), // MixinRenamedBodyEdgesWeaveTest
 			Map.entry("MixinSplitBodyEdges", Switch.own("forbric.splitBodyEdges")), // MixinSplitBodyEdgesWeaveTest
