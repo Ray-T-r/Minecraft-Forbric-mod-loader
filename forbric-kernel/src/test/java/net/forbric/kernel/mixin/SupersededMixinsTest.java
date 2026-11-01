@@ -55,15 +55,11 @@ class SupersededMixinsTest {
 		List<String> broken = new ArrayList<>();
 
 		for (Map.Entry<String, String> entry : SupersededMixins.kinds().entrySet()) {
-			// A native- entry names no kernel class: the base does the job, and the class its witness reads must be in the
-			// staged base instead (SupersededFurnaceRemainderStagedTest proves the witness on it).
+			// A native- entry names no kernel class: the base does the job. Its witness is proved on the staged base's own
+			// class by a staged test of its own (SupersededFurnaceRemainderStagedTest), so this check needs no fixture.
 			if (entry.getKey().startsWith("native-")) {
-				String witness = SupersededMixins.witnesses().get(entry.getKey()).replace('.', '/') + ".class";
-				Path base = TestFixtures.stagedBase();
-				TestFixtures.requireFile(Fixture.STAGED, base, "the staged base a native entry's witness is read from");
-				try (var zip = new java.util.zip.ZipFile(base.toFile())) {
-					if (zip.getEntry(witness) == null) broken.add(entry.getKey() + " -> " + witness + " is not in the base");
-				}
+				if (!SupersededMixins.witnesses().get(entry.getKey()).startsWith("net.minecraft."))
+					broken.add(entry.getKey() + ": a native entry's witness must be a class of the base");
 				continue;
 			}
 			List<String> named = new ArrayList<>();
