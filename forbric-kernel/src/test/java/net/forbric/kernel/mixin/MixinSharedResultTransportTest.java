@@ -132,33 +132,52 @@ class MixinSharedResultTransportTest {
         assertArrayEquals(before, TransportSpellings.bytes(input.mixin));
     }
 
+    /**
+     * The crafting group, the one the transport still moves on NeoForge's base: each perturbation is checked against an
+     * unperturbed copy of the same inputs that IS transported, so a rejection here is the perturbation's doing.
+     */
+    private static Inputs crafting() throws Exception {
+        return inputs("net/fabricmc/fabric/mixin/item/CraftingRecipeMixin", "net/minecraft/world/item/crafting/CraftingRecipe");
+    }
+
+    private static void assertTransportedUnperturbed() throws Exception {
+        Inputs control = crafting();
+        assertEquals(2, MixinSharedResultTransport.adapt(control.mixin, name -> control.current, name -> control.reference),
+                "positive control: the unperturbed crafting group is transported");
+    }
+
     @Test void usedOldInputOrAdditionalSourceEffectCannotBeTransported() throws Exception {
-        Inputs input = inputs(); MethodNode source = method(input.mixin, "getCraftingRemainder");
+        assertTransportedUnperturbed();
+        Inputs input = crafting(); MethodNode source = method(input.mixin, "getStackRemainder");
         source.instructions.insert(new InsnNode(Opcodes.POP)); source.instructions.insert(new VarInsnNode(Opcodes.ALOAD, 0));
         Inputs used = input;
-        assertEquals(0, MixinSharedResultTransport.adapt(used.mixin, name -> used.current, name -> used.reference));
-        input = inputs(); source = method(input.mixin, "getCraftingRemainder");
+        assertEquals(0, MixinSharedResultTransport.adapt(used.mixin, name -> used.current, name -> used.reference), "the consumer reads the old input");
+        input = crafting(); source = method(input.mixin, "getStackRemainder");
         source.instructions.insert(new InsnNode(Opcodes.POP));
         source.instructions.insert(new MethodInsnNode(Opcodes.INVOKESTATIC, "fixture/Effects", "touch", "()I", false));
         Inputs extra = input;
-        assertEquals(0, MixinSharedResultTransport.adapt(extra.mixin, name -> extra.current, name -> extra.reference));
+        assertEquals(0, MixinSharedResultTransport.adapt(extra.mixin, name -> extra.current, name -> extra.reference), "the consumer has an effect of its own");
     }
 
     @Test void ambiguousResultCallAndChangedConsumerBranchAreRejected() throws Exception {
-        Inputs input = inputs(); MethodNode host = method(input.current, "consumeFuel");
+        assertTransportedUnperturbed();
+        Inputs input = crafting(); MethodNode host = method(input.current, "defaultCraftingReminder");
         MethodInsnNode candidate = resultCall(host);
-        host.instructions.insert(new InsnNode(Opcodes.POP));
-        host.instructions.insert(new MethodInsnNode(candidate.getOpcode(), candidate.owner, candidate.name, candidate.desc, candidate.itf));
-        host.instructions.insert(new VarInsnNode(Opcodes.ALOAD, (host.access & Opcodes.ACC_STATIC) == 0 ? 2 : 1));
+        // A second remainder call on the same stack, just before the live one: which one the redirect stood for is a guess.
+        InsnList second = new InsnList();
+        second.add(new VarInsnNode(Opcodes.ALOAD, ((VarInsnNode) candidate.getPrevious()).var));
+        second.add(new MethodInsnNode(candidate.getOpcode(), candidate.owner, candidate.name, candidate.desc, candidate.itf));
+        second.add(new InsnNode(Opcodes.POP));
+        host.instructions.insertBefore(candidate.getPrevious(), second);
         Inputs duplicate = input;
-        assertEquals(0, MixinSharedResultTransport.adapt(duplicate.mixin, name -> duplicate.current, name -> duplicate.reference));
-        input = inputs(); host = method(input.current, "consumeFuel");
+        assertEquals(0, MixinSharedResultTransport.adapt(duplicate.mixin, name -> duplicate.current, name -> duplicate.reference), "two result calls");
+        input = crafting(); host = method(input.current, "defaultCraftingReminder");
         MethodInsnNode call = resultCall(host); LabelNode skip = new LabelNode();
         host.instructions.insert(call, skip);
         host.instructions.insert(call, new JumpInsnNode(Opcodes.IFEQ, skip));
         host.instructions.insert(call, new InsnNode(Opcodes.ICONST_1)); host.maxStack += 1;
         Inputs changed = input;
-        assertEquals(0, MixinSharedResultTransport.adapt(changed.mixin, name -> changed.current, name -> changed.reference));
+        assertEquals(0, MixinSharedResultTransport.adapt(changed.mixin, name -> changed.current, name -> changed.reference), "a branch on the consumer's path");
     }
 
     public static final class Snapshot {
