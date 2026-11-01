@@ -27,9 +27,10 @@ import net.forbric.api.Ecosystem;
  * <p>The fixture's {@code SkyPass} is shaped like a class a carrier patch reshaped — its {@code lambda$render$0} takes
  * other captures than vanilla's — and vanilla's {@code SkyPass}, indexed into the fixture as the FABRIC native reference a
  * launch reads from the vanilla-reference sidecar, has the vanilla shape. The guest mixin is written for that vanilla
- * shape. Nothing can make it bind: the carrier's lambda takes two Strings, so MixinHandlerShim declines to guess, and Mixin
- * rejects the descriptor in both runs. (Until Stage 4 this fixture was a merged class carrying both bodies, and the
- * duplicate-lambda pruner's record was the evidence; NeoForge's base carries one body.)
+ * shape. The carrier's lambda takes two Strings, so MixinHandlerShim alone declines to guess; with the handler rule off
+ * ({@code -Dforbric.mixinFit.handlerFit=off}), as in the two diagnosis runs, nothing binds it and Mixin rejects the
+ * descriptor. (Until Stage 4 this fixture was a merged class carrying both bodies, and the duplicate-lambda pruner's
+ * record was the evidence; NeoForge's base carries one body.)
  *
  * <p>What the stage decides is only what the failure SAYS. With it on, the mod's finding carries why ("a lambda of
  * render whose captures a carrier patch changed from vanilla's"); with {@code -Dforbric.mixinOverloadPin=off} it is the bare
@@ -91,8 +92,10 @@ class MixinOverloadPinWeaveTest {
 	}
 
 	/**
-	 * By default MixinRetarget reads the handler against vanilla's lambda in the reference and moves it onto the carrier's,
-	 * mapping the one {@code StringBuilder} it uses: the hook runs and nothing is lost. The two runs above, with the
+	 * By default MixinRetarget reads the handler against vanilla's lambda in the reference and moves it onto the carrier's:
+	 * vanilla's {@code String sky} must arrive as the carrier's {@code sky}, not its {@code moon} (the carrier's lambda
+	 * takes two Strings, so the type alone does not decide), and the {@code StringBuilder} as the carrier's. The handler
+	 * prints the String it got, so a mapping that handed over {@code moon} fails here. The two runs above, with the
 	 * handler rule off, are the control: there Mixin rejects the descriptor and the hook never runs.
 	 */
 	@Test void byDefaultTheRetargetBindsTheHandlerFromTheReference() throws Exception {
@@ -104,7 +107,7 @@ class MixinOverloadPinWeaveTest {
 
 	private static boolean boundHolds(WeaveHarness.Result run) {
 		return run.printed("retargeted guest mixin " + MOD + " (" + CONFIG + "):SkyPassMixin")
-				&& !run.printed("InvalidInjectionException") && run.printedLine(WeaveHarnessMain.DONE + " [sky hook ran] drew sky+moon")
+				&& !run.printed("InvalidInjectionException") && run.printedLine(WeaveHarnessMain.DONE + " [sky hook ran sky] drew sky+moon")
 				&& mixinLosses(run).isEmpty();
 	}
 
@@ -115,7 +118,7 @@ class MixinOverloadPinWeaveTest {
 
 			// What the woven code did: the injection landed nowhere, in particular not on the surviving lambda.
 			assertTrue(run.printed(WeaveHarnessMain.DONE + " drew sky+moon"), run.describe());
-			assertFalse(run.printed("[sky hook ran]"), run.describe());
+			assertFalse(run.printed("[sky hook ran"), run.describe());
 			// Mixin merges the handler before the descriptor check rejects it; what must not exist is a call to it.
 			assertFalse(callsHandler(run.defined(TARGET)), "something calls beforeSky — " + run.describe());
 			WeaveHarness.assertWovenAndVerified(run, TARGET, fixture);
