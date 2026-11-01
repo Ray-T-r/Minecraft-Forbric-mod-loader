@@ -156,6 +156,26 @@ class NativeCallInliningRegisteredMixinsStagedTest {
 	}
 
 	/**
+	 * Wall 1's loss, which the switch off brings back: the inline is planned on the mixins seen so far, the class view the
+	 * next adapters read has the screen draw put back, so the operation seam is not tried; then spruceui's mixin is
+	 * planned and Gui is defined with the inline withdrawn, so fabric-screen-api's wrap has no draw to wrap.
+	 */
+	@Test void decidedOnTheMixinsPlannedSoFarTheSeamIsNotTriedAndTheWithdrawnInlineLosesTheWrap() throws Exception {
+		System.setProperty(NativeCallInlining.REGISTERED_PROPERTY, "off");
+		ClassNode fabric = fabricScreen(), spruce = spruceGui(), gui = StagedFabricMixinFixture.game(GUI, false);
+		assertEquals(1, NativeCallInlining.adapt(fabric, code(gui), NativeCallTestEvidence.staged(), loader, () -> List.of(spruce)));
+		ClassNode view = defined(gui);
+		assertEquals(0, gatewayCalls(spruce, view), "the view the next adapters read has ClientHooks.extractScreen inlined away");
+		assertEquals(1, screenDraws(fabric, view), "and the screen draw put back");
+		assertEquals(0, MixinOperationSeamTransport.adapt(fabric, code(view), NativeCallTestEvidence.staged(), loader),
+				"so the operation seam is not tried");
+		NativeCallInlining.adapt(spruce, code(gui), NativeCallTestEvidence.staged(), loader, null);
+		ClassNode defined = defined(gui);
+		assertEquals(1, gatewayCalls(spruce, defined), "spruceui's mixin planned, Gui is defined with the inline withdrawn");
+		assertEquals(0, screenDraws(fabric, defined), "so fabric-screen-api's wrap finds no screen draw in extractRenderState");
+	}
+
+	/**
 	 * A registered mixin Mixin does not apply (its config served without it) declines nothing: spruceui's anchor, when
 	 * spruceui's mixin is not applied, leaves the inline planned and applied when Gui is defined.
 	 */
