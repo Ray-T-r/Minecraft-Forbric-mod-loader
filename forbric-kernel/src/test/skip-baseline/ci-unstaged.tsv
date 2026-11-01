@@ -528,7 +528,7 @@ test	net.forbric.kernel.mixin.GuiItemCaptureMixinAdapterTest	theCaptureSelectsTh
 test	net.forbric.kernel.mixin.GuiRendererBuilderAnchorTest	everyReleasedBuilderHookBindsTheConstructorTheKernelShaped()	[fixture:staged] current callback target declarations: $ROOT/forbric-loader/run/merged-base/patched-mc-merged-26.2.jar
 test	net.forbric.kernel.mixin.GuiRendererBuilderAnchorTest	onTheConstructorNeoForgeLeftNoHookHasAPoint()	[fixture:staged] current callback target declarations: $ROOT/forbric-loader/run/merged-base/patched-mc-merged-26.2.jar
 test	net.forbric.kernel.mixin.InsertedLambdaArgumentShimTest	actualFusionSpriteLoaderHookFollowsNeoForgesLiveLambda()	[fixture:third-party] sweep pack absent
-test	net.forbric.kernel.mixin.InsertedLambdaArgumentShimTest	actualLitematicaOpaqueAndTranslucentHandlersFollowThePrunedLiveLambda()	[fixture:third-party] local merged mod pack: run/client-merged-pack/mods
+test	net.forbric.kernel.mixin.InsertedLambdaArgumentShimTest	actualLitematicaOpaqueAndTranslucentHandlersFollowTheLiveLambda()	[fixture:third-party] local merged mod pack: run/client-merged-pack/mods
 test	net.forbric.kernel.mixin.InvocationOrdinalsTest	theActualPayloadOrdinalsKeepTheirOriginalProtocolFields()	[fixture:mc-libraries] actual game required
 test	net.forbric.kernel.mixin.JecharactersKnotDecoratorTest	jecharactersOwnHookWrapsTheWeaverTheClassPipelineReads()	[fixture:third-party] local mod fixture absent: build/sweep100-mac-network/mods/jecharacters-26.1.2-fabric-4.6.8.jar
 test	net.forbric.kernel.mixin.JecharactersKnotDecoratorTest	onALoaderWithoutKnotsFieldTheHookFails()	[fixture:third-party] local mod fixture absent: build/sweep100-mac-network/mods/jecharacters-26.1.2-fabric-4.6.8.jar

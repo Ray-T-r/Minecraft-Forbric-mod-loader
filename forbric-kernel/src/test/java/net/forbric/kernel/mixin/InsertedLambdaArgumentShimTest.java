@@ -65,7 +65,7 @@ class InsertedLambdaArgumentShimTest {
   method.invoke(null,42L,first,"inserted",second,0.5d,callback);
   assertArrayEquals(new Object[]{42L,first,second,0.5d,callback},((Object[][])defined.getField("SEEN").get(null))[0]);assertTrue(callback.isCancelled());
  }
- @Test void actualLitematicaOpaqueAndTranslucentHandlersFollowThePrunedLiveLambda()throws Exception{
+ @Test void actualLitematicaOpaqueAndTranslucentHandlersFollowTheLiveLambda()throws Exception{
   TestFixtures.requireDirectory(Fixture.THIRD_PARTY,"local merged mod pack",Path.of("run/client-merged-pack/mods"));
   Path jar;try(var files=Files.list(Path.of("run/client-merged-pack/mods"))){jar=files.filter(p->p.getFileName().toString().contains("litematica")&&p.toString().endsWith(".jar")).findFirst().orElse(null);}
   TestFixtures.require(Fixture.THIRD_PARTY,jar!=null,"Litematica in the local merged mod pack");
@@ -121,7 +121,7 @@ class InsertedLambdaArgumentShimTest {
   MixinFit.Result fit=MixinFit.evaluate(StagedFabricMixinFixture.bytes(shell),path->path.equals("probe/Target.class")?targetBytes:null);
   assertEquals(MixinFit.Verdict.FIT,fit.verdict(),"UNFIT here removes the mixin from its config before the shim can run: "+fit.unresolved());
   System.setProperty(InsertedLambdaArgumentShim.PROPERTY,"off");
-  try{assertEquals(MixinFit.Verdict.UNFIT,MixinFit.evaluate(StagedFabricMixinFixture.bytes(localsShell()),path->path.equals("probe/Target.class")?targetBytes:null).verdict(),"without the shim the pruned selector resolves nothing");}
+  try{assertEquals(MixinFit.Verdict.UNFIT,MixinFit.evaluate(StagedFabricMixinFixture.bytes(localsShell()),path->path.equals("probe/Target.class")?targetBytes:null).verdict(),"without the shim the vanilla-shaped selector resolves nothing");}
   finally{System.clearProperty(InsertedLambdaArgumentShim.PROPERTY);}
  }
  @Test void actualFusionSpriteLoaderHookFollowsNeoForgesLiveLambda()throws Exception{
@@ -131,9 +131,8 @@ class InsertedLambdaArgumentShimTest {
   // The raw class, local variable table included: the fixture's parse drops it, and the live table is the proof.
   Path merged=TestFixtures.stagedBase();TestFixtures.requireFile(Fixture.STAGED, merged,"actual game required");
   byte[] raw;try(ZipFile z=new ZipFile(merged.toFile())){raw=z.getInputStream(z.getEntry(owner+".class")).readAllBytes();}
-  byte[] pruned=raw;
-  ClassNode target=new ClassNode();new ClassReader(pruned).accept(target,ClassReader.SKIP_FRAMES);
-  MixinFit.Result real=MixinFit.evaluate(StagedFabricMixinFixture.bytes(mixin),path->path.equals(owner+".class")?pruned:null);assertEquals(MixinFit.Verdict.FIT,real.verdict(),real.unresolved()+" vanished="+LambdaShapeEvidence.descriptors(target,"lambda$create$0"));
+  ClassNode target=new ClassNode();new ClassReader(raw).accept(target,ClassReader.SKIP_FRAMES);
+  MixinFit.Result real=MixinFit.evaluate(StagedFabricMixinFixture.bytes(mixin),path->path.equals(owner+".class")?raw:null);assertEquals(MixinFit.Verdict.FIT,real.verdict(),real.unresolved()+" vanished="+LambdaShapeEvidence.descriptors(target,"lambda$create$0"));
   assertEquals(1,InsertedLambdaArgumentShim.adapt(mixin,n->target));
   MethodNode shim=StagedFabricMixinFixture.method(mixin,"forbric$expanded$handleFusionTextures");
   assertEquals(8+1,Type.getArgumentTypes(shim.desc).length,"4 live arguments, the callback, 4 captured locals");
@@ -145,7 +144,7 @@ class InsertedLambdaArgumentShimTest {
   assertEquals(0,InsertedLambdaArgumentShim.adapt(localsShell(),n->{try{return targetWithLocals(false,"Ljava/lang/String;");}catch(Exception e){throw new RuntimeException(e);}}),"no table, no proof");
   assertEquals(0,InsertedLambdaArgumentShim.adapt(localsShell(),n->{try{return targetWithLocals(true,"Ljava/lang/Object;");}catch(Exception e){throw new RuntimeException(e);}}),"slot 7 holds another type");
  }
- @Test void absentPrunerEvidenceAndExplicitOffRefuse()throws Exception{
-  ClassNode mixin=shell(),target=target();target.name="probe/NeverPruned";assertEquals(0,InsertedLambdaArgumentShim.adapt(mixin,n->target));System.setProperty(InsertedLambdaArgumentShim.PROPERTY,"off");assertEquals(0,InsertedLambdaArgumentShim.adapt(shell(),n->target()));
+ @Test void aTargetWithNoVanillaReferenceAndExplicitOffRefuse()throws Exception{
+  ClassNode mixin=shell(),target=target();target.name="probe/NoVanillaReference";assertEquals(0,InsertedLambdaArgumentShim.adapt(mixin,n->target));System.setProperty(InsertedLambdaArgumentShim.PROPERTY,"off");assertEquals(0,InsertedLambdaArgumentShim.adapt(shell(),n->target()));
  }
 }

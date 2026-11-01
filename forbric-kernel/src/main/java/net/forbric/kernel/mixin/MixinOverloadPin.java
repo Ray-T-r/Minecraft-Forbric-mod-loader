@@ -33,10 +33,10 @@ import net.forbric.kernel.util.ForbricLog;
  * selector cannot bind when that is two files away.
  *
  * <p>A mixin usually names its target by NAME alone — {@code @Inject(method = "handleCustomClickAction")} — because
- * on the loader it was built for there is only one method with that name. The byte merge sometimes produces two:
+ * on the loader it was built for there is only one method with that name. NeoForge's patches sometimes add a second:
  * NeoForge's patch put {@code MinecraftServer.handleCustomClickAction(Identifier, Optional, ServerPlayer, GameProfile)}
- * — fire NeoForge's event, then call vanilla's — in front of vanilla's {@code (Identifier, Optional)}, and the merge
- * kept both, NeoForge's first.
+ * — fire NeoForge's event, then call vanilla's — in front of vanilla's {@code (Identifier, Optional)}, so NeoForge's
+ * base declares both, NeoForge's first.
  *
  * <p>Mixin binds a bare name to the FIRST declared method of that name (the selector's default quantifier is one
  * match) and only then checks the handler against it. When that is the other ecosystem's overload the descriptors do

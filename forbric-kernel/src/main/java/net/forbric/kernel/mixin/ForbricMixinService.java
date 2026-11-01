@@ -450,8 +450,8 @@ public final class ForbricMixinService
 		// body went.
 		MixinAnonymousRetarget.retarget(node, this::mergedBaseHas);
 		// …and an @Inject handler written for the other ecosystem's shape of the one surviving target is wrapped,
-		// so it still receives the values it asked for rather than failing the whole mixin class — on the pruner's
-		// record, or on the census of lambdas whose captures a carrier patch reordered (wover-events' WorldLoader hook).
+		// so it still receives the values it asked for rather than failing the whole mixin class — on the census of
+		// lambdas whose captures a carrier patch reordered (wover-events' WorldLoader hook).
 		MixinHandlerShim.adapt(node, this::mergedBaseNode);
 		InsertedLambdaArgumentShim.adapt(node, this::mergedBaseNodeWithCode);
 		// …and a name-only @Inject selector that Mixin would bind to the other ecosystem's overload, declared first,
