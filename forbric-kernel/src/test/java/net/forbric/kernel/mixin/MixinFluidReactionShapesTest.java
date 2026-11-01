@@ -26,8 +26,11 @@ class MixinFluidReactionShapesTest {
 	private static final String DEEPSLATE = "LiquidBlock_renewableDeepslateMixin";
 	private static final String FIZZ = "fizz";
 
+	/** Carpet's rule under unrelated names, still recorded as a Fabric mod's (the wrap is for a Fabric mod's handler). */
 	private static ClassNode renamed() throws Exception {
-		return MixinCallbackSelectorSpellingTest.unrelatedNames(CarpetMixinAdapterTest.mixin(DEEPSLATE));
+		ClassNode mixin = MixinCallbackSelectorSpellingTest.unrelatedNames(CarpetMixinAdapterTest.mixin(DEEPSLATE));
+		MixinStubRebind.noteEcosystem(mixin.name, net.forbric.api.Ecosystem.FABRIC);
+		return mixin;
 	}
 
 	private static MethodNode handler(ClassNode mixin) {

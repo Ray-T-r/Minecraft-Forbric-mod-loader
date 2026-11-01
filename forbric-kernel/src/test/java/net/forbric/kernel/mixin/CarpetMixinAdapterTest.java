@@ -28,8 +28,11 @@ class CarpetMixinAdapterTest {
 	static final String PACKETS="net/minecraft/server/network/ServerGamePacketListenerImpl";
 	static final String SWAP_HOST="handlePlayerAction(Lnet/minecraft/network/protocol/game/ServerboundPlayerActionPacket;)V";
 	static final String BREAK_HOST="destroyBlock("+MixinPlayerWorldCallbackAdapter.POS+")Z";
+	/** A released Carpet mixin, recorded as a Fabric mod's, as the service records a mixin its Fabric config lists. */
 	static ClassNode mixin(String name)throws Exception {
-		return from(Fixture.THIRD_PARTY,CARPET,"carpet/mixins/"+name);
+		ClassNode c=from(Fixture.THIRD_PARTY,CARPET,"carpet/mixins/"+name);
+		MixinStubRebind.noteEcosystem(c.name,Ecosystem.FABRIC);
+		return c;
 	}
 	static Path jarOf(String name) {
 		Path root=TestFixtures.stagedRoot();
@@ -151,6 +154,20 @@ class CarpetMixinAdapterTest {
 		ClassNode c=mixin(NAMES.get(4));
 		assertEquals(1,MixinFluidReactionAdapter.adapt(c,name->{ClassNode t=target(name);if(MixinFluidReactionAdapter.REGISTRIES.contains(name))for(var m:t.methods)for(var i:m.instructions)if(i instanceof VarInsnNode v&&v.getOpcode()==Opcodes.ASTORE&&v.var==5)v.var=9;return t;}));
 		verify(c);
+	}
+
+	/**
+	 * The neighbour-change wrap is for a Fabric mod's handler: the same released bytes under a name recorded as NeoForge's,
+	 * or with no family recorded (a config two families claim), are left as written, as MixinShearsRelay and
+	 * FabricItemDamageMixinAdapter leave them; recorded as Fabric's, the same rename is wrapped.
+	 */
+	@Test void onlyAFabricMixinGetsTheNeighbourChangeWrap()throws Exception {
+		for(String name:NAMES.subList(3,5))for(Ecosystem family:new Ecosystem[]{Ecosystem.FABRIC,Ecosystem.NEOFORGE,null}){
+			ClassNode c=mixin(name);c.name="forbric/test/fluidreaction/"+family+"/"+name;MixinStubRebind.noteEcosystem(c.name,family);
+			byte[] before=bytes(c);int adapted=MixinFluidReactionAdapter.adapt(c,CarpetMixinAdapterTest::target);
+			if(family==Ecosystem.FABRIC){assertEquals(1,adapted,"premise, the rename alone: "+name);continue;}
+			assertEquals(0,adapted,name+" "+family);assertArrayEquals(before,bytes(c),name+" "+family);
+		}
 	}
 
 	/** The staged classes, with one merged method edited before the adapters read it. */

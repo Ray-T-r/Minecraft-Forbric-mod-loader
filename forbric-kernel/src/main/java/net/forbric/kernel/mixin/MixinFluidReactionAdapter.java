@@ -119,12 +119,14 @@ public final class MixinFluidReactionAdapter {
 	 * callback as Mixin's own at an INVOKE point; if it
 	 * cancels, its answer, negated, is the registry's and the registry's interaction does not run, else the registry runs as
 	 * written. One such handler per mixin, an instance {@code @Inject} that Mixin binds to {@code shouldSpreadLiquid} alone,
-	 * no slice or group; not a NeoForge mod's (on NeoForge it runs on placement alone too). Placement and the neighbour change
+	 * no slice or group; only a mixin known to be a Fabric mod's (on NeoForge a NeoForge mod's runs on placement alone too, and
+	 * a mixin whose family is not known — a config two families claim — is left alone, as {@link MixinShearsRelay} and
+	 * {@link FabricItemDamageMixinAdapter} leave it). Placement and the neighbour change
 	 * must each make their one call, and the registry's answer must skip the tick. {@link #NEIGHBOUR_PROPERTY} off leaves the
 	 * handler as compiled.
 	 */
 	private static int neighbourChangeOnly(ClassNode mixin, Function<String, ClassNode> targets) {
-		if (!neighbourChangeEnabled() || MixinStubRebind.ecosystemOf(mixin.name) == Ecosystem.NEOFORGE) return 0;
+		if (!neighbourChangeEnabled() || MixinStubRebind.ecosystemOf(mixin.name) != Ecosystem.FABRIC) return 0;
 		ClassNode liquid = targets.apply(LIQUID);
 		if (liquid == null) return 0;
 		MethodNode onPlace = named(liquid, "onPlace"), changed = named(liquid, "neighborChanged");
