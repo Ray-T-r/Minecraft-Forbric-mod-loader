@@ -956,7 +956,8 @@ public final class KernelBoot {
 		//     (guardNeoForgesWorldModifierPass), so a failure costs the modifiers rather than the boot.
 		//   MonsterRoomFeature.place — "MONSTER_ROOM_MOBS datamap not yet loaded". Neutering the whole feature
 		//     meant no dungeon, no spawner and no dungeon chest in EVERY world, for everyone, mods or no mods.
-		//     KernelNeoWorldgen loads the data maps for real and the mob pick falls back to vanilla's own set.
+		//     NeoForge's own reload path loads the data maps, and the mob pick goes through
+		//     KernelNeoWorldgen.randomMonsterRoomMob, which draws vanilla's mob while the map is NeoForge's default.
 		// A neuter is a promise that the method cannot work here; both promises had expired.
 		MethodBodyNeuter neuter = neuters(side);
 		chain.register(TransformPhase.COREMOD, neuter);

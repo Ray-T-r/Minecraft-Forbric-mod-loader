@@ -36,7 +36,7 @@ import net.forbric.kernel.util.Caught;
 import net.forbric.kernel.util.ForbricLog;
 
 /**
- * Two NeoForge worldgen mechanisms the kernel drives itself, and their guards.
+ * Two NeoForge worldgen mechanisms the kernel steers, and where NeoForge's own data maps come from.
  *
  * <h2>Data maps</h2>
  *
@@ -48,17 +48,19 @@ import net.forbric.kernel.util.ForbricLog;
  *
  * <h2>Monster rooms</h2>
  *
- * <p>The merged {@code MonsterRoomFeature.randomEntityId} was two instructions —
- * {@code invokestatic MonsterRoomHooks.getRandomMonsterRoomMob} — reading a static {@code WeightedList} that only
- * a {@code DataMapsUpdatedEvent} listener fills, so it was null and threw. The kernel had answered that by
- * neutering {@code MonsterRoomFeature.place} outright, which means NO dungeon, therefore no spawner and no
- * dungeon chest, in EVERY world every player generated, mods or no mods.
+ * <p>NeoForge's {@code MonsterRoomFeature.randomEntityId} is two instructions,
+ * {@code invokestatic MonsterRoomHooks.getRandomMonsterRoomMob}: a weighted {@code nextInt(400)} draw from the list
+ * NeoForge's {@code DataMapsUpdatedEvent} listener fills from its monster-room data map. Vanilla's body draws
+ * {@code MOBS[nextInt(4)]}. NeoForge's shipped {@code data/neoforge/data_maps/entity_type/monster_room_mobs.json} is
+ * skeleton 100 / spider 100 / zombie 200, and vanilla's {@code MOBS} is {@code {SKELETON, ZOMBIE, ZOMBIE, SPIDER}}: the
+ * same distribution, but not the same mob for the same seed.
  *
- * <p>So the call goes through {@link #randomMonsterRoomMob} instead, which falls back to vanilla's own set when
- * the data map is not there. The fallback is not a guess: vanilla's {@code MonsterRoomFeature.MOBS} is
- * {@code {SKELETON, ZOMBIE, ZOMBIE, SPIDER}} and NeoForge's shipped
- * {@code data/neoforge/data_maps/entity_type/monster_room_mobs.json} is skeleton 100 / spider 100 / zombie 200 —
- * the same distribution, which is what makes a fallback honest rather than a different game.
+ * <p>So the call goes through {@link #randomMonsterRoomMob} instead: vanilla's draw while the live map is still
+ * NeoForge's shipped default, so a seed's dungeons get vanilla's mobs; NeoForge's draw once a mod changed the map; and
+ * vanilla's draw again if the map is missing, so a world never loses its dungeons to it. This is vanilla parity, not a
+ * fallback for a map that fails to load. (On the byte-merged base the list was null because nothing loaded the map, and
+ * the kernel had once neutered {@code MonsterRoomFeature.place} outright: no dungeon, spawner or dungeon chest in any
+ * world.)
  *
  * <h2>Biome and structure modifiers</h2>
  *
