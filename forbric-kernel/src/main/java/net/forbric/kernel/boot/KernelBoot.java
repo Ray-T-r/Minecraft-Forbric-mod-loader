@@ -548,14 +548,15 @@ public final class KernelBoot {
 				return null;
 			}
 		}));
-		// Both sides: a merged local's variable-table range starts at its declaring store again where the merge spliced a
-		// carrier's reads of the local in front of the range, so a mod's @Local / @ModifyVariable finds it where vanilla's
-		// compiler had it in scope. Just before the early returns, which split tails by those ranges.
+		// Both sides: a game local whose variable-table range starts after reads of it starts at its declaring store again,
+		// so a mod's @Local / @ModifyVariable finds it where vanilla's compiler had it in scope. On NeoForge's base the one
+		// such local is left by the kernel's own NativeTagTrackerSourceInjector rewrite of EntityFluidInteraction. Just
+		// before the early returns, which split tails by those ranges.
 		if (net.forbric.kernel.transform.LocalRanges.enabled()) {
 			chain.register(TransformPhase.COREMOD, new net.forbric.kernel.transform.LocalRanges(), Integer.MAX_VALUE - 1);
 		} else {
-			ForbricLog.warn("[Forbric/LocalRanges] -D%s=off — a merged local whose range the merge started after a carrier's "
-					+ "reads of it stays out of scope there for a mod's @Local", net.forbric.kernel.transform.LocalRanges.PROPERTY);
+			ForbricLog.warn("[Forbric/LocalRanges] -D%s=off — a game local whose range the kernel's chain starts after its "
+					+ "reads (EntityFluidInteraction, after the tag-tracker rewrite) stays out of scope there for a mod's @Local", net.forbric.kernel.transform.LocalRanges.PROPERTY);
 		}
 		// Both sides: the early returns the carriers' decompile-recompile folded into each method's last return, so a
 		// Fabric mod's TAIL handler runs only where vanilla's does (TaCZ's Camera.update hook ran on the title screen,
