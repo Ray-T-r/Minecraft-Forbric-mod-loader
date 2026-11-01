@@ -294,12 +294,10 @@ public final class KernelLifecycle {
 	 */
 	private static void rebuildNeoForgeBlockStateIds(ClassLoader cl) {
 		contentCall(cl, "rebuildBlockStateIds", "rebuild the NeoForge blockstate→id map");
-		// The pot half of the same bake callback: NeoForge's flower pot table, which every pot lookup reads.
-		contentCall(cl, "rebuildFlowerPotTable", "fill NeoForge's flower pot table");
 		// Same moment, same reason: vanilla fills every block state's cache in Bootstrap, before any mod has
 		// registered a block, and the kernel drives registration itself.
 		contentCall(cl, "initialiseBlockStateCaches", "initialise the block state caches");
-		// Third, and AFTER the id map is whole, because the completion walks those registries: a mod whose own
+		// Last, and AFTER the id map is whole, because the completion walks those registries: a mod whose own
 		// "every element exists now" pass ran before the kernel's last wave of registrations never saw those elements,
 		// so each element registered since gets that pass's per-element callback now, once.
 		contentCall(cl, "initialiseBlockInfoCaches", "complete the mods' whole-registry passes for late registrations");

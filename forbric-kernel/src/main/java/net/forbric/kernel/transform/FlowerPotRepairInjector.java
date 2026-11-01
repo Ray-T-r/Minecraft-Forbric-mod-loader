@@ -25,8 +25,9 @@ import org.objectweb.asm.tree.VarInsnNode;
  * merge repair: NeoForge's own base stores null just the same.
  *
  * <p>The merged base also needed two edits of MinecraftForge's half of the class (its {@code useItemOn} lookup in
- * {@code fullPots} and its {@code addPlant}); NeoForge's base has no such half, and they went in Stage 4 with
- * {@code KernelFlowerPots}' lookup decorators. {@code -Dforbric.flowerPotRepair=off} leaves the class as NeoForge has it.
+ * {@code fullPots} and its {@code addPlant}) and a kernel refill of NeoForge's pot table, whose bake callback never ran
+ * on the merged block registry; NeoForge's base has no such half and its own bake fills the table, so all three went in
+ * Stage 4. {@code -Dforbric.flowerPotRepair=off} leaves the class as NeoForge has it.
  */
 public final class FlowerPotRepairInjector implements ClassTransformer {
 	static final String TARGET = "net.minecraft.world.level.block.FlowerPotBlock";
