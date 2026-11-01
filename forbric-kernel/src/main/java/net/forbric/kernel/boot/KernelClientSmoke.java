@@ -2848,12 +2848,6 @@ public final class KernelClientSmoke {
 	private static int creativeStage;
 	private static int creativeStageAt;
 
-	/**
-	 * The creative-search probe, one step per {@link #CREATIVE_STEP_TICKS}: game mode, open, search (pass 1),
-	 * screenshot, search again (pass 2), every OTHER tab that has a search bar, a language-change rebuild and a
-	 * search after it, close. Pass 2 is there because the trees are built asynchronously: a grid that is empty
-	 * on the first look and full on the second is a timing problem, empty on both is a wiring one.
-	 */
 	/** See {@link #MULTIPART}: summon on the server at the due tick, read the client's level {@link #MULTIPART_HOLD} later. */
 	private static void multipartIfDue(Object minecraft, Object level) {
 		int due = Integer.getInteger(MULTIPART, 0);
@@ -2918,6 +2912,12 @@ public final class KernelClientSmoke {
 		}
 	}
 
+	/**
+	 * The creative-search probe, one step per {@link #CREATIVE_STEP_TICKS}: game mode, open, search (pass 1),
+	 * screenshot, search again (pass 2), every OTHER tab that has a search bar, a language-change rebuild and a
+	 * search after it, close. Pass 2 is there because the trees are built asynchronously: a grid that is empty
+	 * on the first look and full on the second is a timing problem, empty on both is a wiring one.
+	 */
 	private static void creativeSearchIfDue(Object minecraft, Object player) {
 		String spec = System.getProperty(CREATIVE_SEARCH, "");
 		if (spec.isBlank() || creativeStage > 8) return;
