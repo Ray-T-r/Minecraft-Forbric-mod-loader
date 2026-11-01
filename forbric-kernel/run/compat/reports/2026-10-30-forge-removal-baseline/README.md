@@ -302,9 +302,13 @@ rewritten yet still assert merged-base or MinecraftForge premises; every red lin
 | compat: carpet-gate | 21/34, 34/34, 32/34 | baseline = exactly the Carpet set, fixed STRICT, neighbour-off exactly the two neighbour cases (also at 3c88e7e1) |
 | compat: regress-gate (new, 7ff223f9) | 15/15 | item-damage-off fails exactly damage.mob/player; shears-mobs-off exactly the three tag-shears cases |
 | compat: fluid-head-gate (new, 8462a705) | 6/6 | HEAD-off 3/6, failing exactly the three neighbour cases |
+| m12 (at 5efabdc5) | 31 / 1 | `Forge-wrapped registries followed the server's ids`: printed only by `KernelForgeWrapperSync`, deleted in 3c72ff50: vacuous (D34, C5) |
 
-Not run on `.stage4` after their C3 edits: gate-m26 and gate-m29 (`bash -n` only). Not re-run after 7b07d377: m9, m22,
-the client-neo-pack boot.
+Not run on `.stage4` after their C3 edits: gate-m26 and gate-m29 (`bash -n` only); C5 owns them (it rewrites both). Re-run
+at 5efabdc5, after 7b07d377: m1 17/0, m9 149/21 (same lines as a3791619), m22 5/0, m44 9/0, m45 17/2, m54 9/2, m12 31/1,
+regress-gate 15/15, fluid-head-gate 6/6, and the five boot-ladder steps exit 0 with the same injection warnings; every
+anchor census line reads "0 hedge(s)". The 65 failing test methods by name, with message and owner, are in
+`stage4-c3-open-failures.txt`.
 
 ### Open unit failures at the C3 tip (65, grouped by cause; each with its owner and failure message)
 
@@ -380,6 +384,14 @@ Totals: C4 18, C4+C5 6, C5 34, C5 (tool) 1, P1 6.
 - **D38**: `wrapTheStreamsVanillaWraps` stays (39d6ef58): System.out/err are wrapped as vanilla and Fabric wrap them; native
   NeoForge does not.
 - **D39**: the shared fixture above.
+- **D40**: 7b07d377 stands. The connection-initialisation guard was a NeoForge 26.2.0.38-beta carrier repair, not a merge
+  repair, but it had edited nothing on either base since 26.2.0.88 (NeoForge guards that case itself); a carrier test now
+  pins NeoForge's own guard and goes red if a carrier loses it (ccf9851b). D37's list also takes 6fc5a910 and 7b07d377.
+- **D41**: two more C3b adaptations are accepted like D36: the fluid HEAD arm (8462a705, `forbric.fluidReactionNeighbourChange.head`),
+  so fabric-block-api's flow veto and Create Fly's lava reaction run on a neighbour change as natively (two HEAD wraps on
+  one cell run in reverse native order, recorded), and the constructor replay that stands down where the mixin's own
+  platform already delegates (27f9f4a2, `forbric.postMixinFixups.nativeDelegation`), which is what native Fabric does for
+  fabric-permission-api's `storeOriginalSource`.
 
 ### Accepted behaviour changes (release notes)
 
@@ -405,11 +417,11 @@ Totals: C4 18, C4+C5 6, C5 34, C5 (tool) 1, P1 6.
 - A Fabric mixin written for a vanilla lambda that NeoForge reshaped is now bound and runs where it was UNFIT on the merged
   base (mixin-side).
 
-Awaiting the owner (not yet accepted): 7b07d377 (a carrier repair deleted under C3); the fluid HEAD arm (8462a705, needs a
-D-number; two HEAD wraps run in reverse native order on a neighbour change where both act on one cell); better-nether's
-placement-only `bn_shouldSpreadLiquid`; fabric-permission-api's `storeOriginalSource` no longer replayed into
-`CommandSourceStack`'s private wide constructor (`forbric.postMixinFixups.nativeDelegation`); a Fabric TAIL `@Inject` on
-`ItemStack.useOn` most likely never runs server-side (same on the merged base); a ClientSmoke probe that presses a
+Known gaps that are not Stage 4 regressions (the merged base had them too; follow-up work, not Stage 4 blockers):
+better-nether's placement-only `bn_shouldSpreadLiquid` (its handler captures locals inside the method, so the
+neighbour-change wrap cannot serve it); a Fabric TAIL `@Inject` on `ItemStack.useOn` most likely never runs server-side,
+because NeoForge's server path returns from `CommonHooks.onPlaceItemIntoWorld` before vanilla's tail (bytecode only, not
+measured). Minor follow-ups: a ClientSmoke probe that presses a
 consumeClick key (#6); whether `LocalRanges`' one site could be written correctly by `NativeTagTrackerSource` itself.
 
 ### Not done yet
